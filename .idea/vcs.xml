@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="VcsDirectoryMappings">
+    <mapping directory="$PROJECT_DIR$" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/business-intelligence" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/company-contact" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/company-evaluation" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/company-profile" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/company-publication" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/master-data" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/node-microservice-template" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/packages/auth" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/packages/events" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/packages/queue-client/node_modules_stub" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/structured-content" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/user-interface" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/website" vcs="Git" />
+  </component>
+</project>

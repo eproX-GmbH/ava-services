@@ -1,0 +1,7 @@
+packages:
+  - "packages/*"
+  - "company-profile"
+  - "company-contact"
+  - "company-publication"
+  - "company-evaluation"
+  - "website"

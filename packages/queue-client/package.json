@@ -1,0 +1,22 @@
+{
+  "name": "@ava/queue-client",
+  "version": "0.1.0",
+  "description": "Driver-agnostic queue client (RabbitMQ today, NATS JetStream for desktop). Switched via QUEUE_DRIVER.",
+  "license": "MIT",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist",
+    "src"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "prepare": "tsc"
+  },
+  "dependencies": {
+    "@ava/event": "1.1.33"
+  },
+  "devDependencies": {
+    "typescript": "^5.4.0"
+  }
+}

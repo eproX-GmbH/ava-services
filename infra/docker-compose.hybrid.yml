@@ -1,0 +1,18 @@
+# Hybrid stack — services run locally but talk to cloud Postgres and
+# Elasticsearch (still-cloud per D4 embeddings + D11 online-only). Useful for
+# reproducing production data-shape bugs without pulling the full schema
+# locally.
+#
+# Only local queue lives here — swapping QUEUE_DRIVER=nats later just points
+# `packages/queue-client` at a locally-bundled JetStream (D1).
+
+services:
+  rabbitmq:
+    image: rabbitmq:3.13-management-alpine
+    restart: unless-stopped
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    environment:
+      RABBITMQ_DEFAULT_USER: ava
+      RABBITMQ_DEFAULT_PASS: ava
