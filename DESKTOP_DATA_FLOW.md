@@ -251,20 +251,27 @@ All 25 workflows covered.
 
 ---
 
-## 9. Open questions
+## 9. Resolved questions (2026-04-24)
 
-1. **Tenant boundary on `companyId`.** Is `companyId` globally unique across tenants, or does the same German register entry appear as different ids per tenant? If the former, we also need a tenant-scoped view table. *Action: check master-data schema + seed logic before implementing §4.1.*
-2. **Corrections (W23–W25) — audit trail depth.** Manual overrides may need revision history (who changed what, when, previous value). The current services don't store this. Do we add it in the gateway's audit_log or push down to per-service schemas? *Deferred — ship upsert first, layer revision history in Step 7 hardening.*
-3. **SSE vs polling for W4.** SSE is clearly better long-term but costs us the service-side subscription bridge. *Ship polling in v0, upgrade to SSE before Step 6.*
-4. **Embedding API exposure.** Company-evaluation uses `text-embedding-3-large` via OpenAI. Desktop doesn't call this directly (it's server-internal), so no gateway endpoint. Confirm this stays true when the evaluation pipeline moves to desktop-local compute post-transition.
+1. **Tenant boundary on `companyId`** → **Global.** All tenants see all companies; `companyId` is not tenant-scoped. Company read endpoints (§4.1) filter only by `companyId`, NOT by tenant. Tenant scoping still applies to tenant-owned artifacts (transactions, chat sessions, best-match jobs, match feedback, clusters, comparisons, audit log).
+2. **Audit-trail depth for corrections (W23–W25)** → **Deferred to Step 7 hardening.** v0 ships plain upserts; revision history is a separate schema + middleware change later.
+3. **SSE vs polling for W4** → **SSE from the start, no polling fallback.** Read endpoints that depend on realtime progress (§4.2) are blocked until the SSE bridge in §6 is ready.
+
+## 10. Open questions (still pending)
+
+4. **Embedding API exposure.** Company-evaluation uses `text-embedding-3-large` via OpenAI. Desktop doesn't call this directly (server-internal). Confirm this stays true when the evaluation pipeline moves to desktop-local compute post-transition.
 5. **File download / report export.** None of W1–W25 includes "download PDF report" today. If the Desktop-App adds this, we need `GET /v1/…/export` endpoints + pre-signed URL strategy.
 
 ---
 
-## 10. Next steps
+## 11. Implementation order
 
-1. Review this spec with the product owner — confirm the 25 workflows and their framing.
-2. Lock scope tags (§5).
-3. Flesh out Zod schemas for each endpoint in `services/db-gateway/src/routes/v1.ts`, batch by section (reads first).
-4. Decide on SSE-vs-polling timing for W4.
-5. Resolve open question #1 (tenant + companyId) before any `/v1/companies/*` implementation.
+Derived from the resolved questions above. Each bullet is a PR-sized batch.
+
+1. **§4.1 Company reads (9 endpoints).** Unblocked — `companyId` is global, no cross-service tenant join needed. Hits master-data + 5 drill-down services. Zero write risk, largest UI surface unblocked.
+2. **§6 SSE bridge (1 endpoint).** Transaction progress stream. Unblocks §4.2.
+3. **§4.2 Transaction reads (5 endpoints).** Depends on 2.
+4. **§4.3 Evaluation reads (6 endpoints).** Independent — can land in parallel with 2 or 3.
+5. **§5.1 Excel import (1 endpoint).** First write path; validates the idempotency-key + event-fanout pattern.
+6. **§5.2 Evaluation writes (7 endpoints).** Exposes the back-of-the-house evaluation features for the first time.
+7. **§5.3 Corrections (3 endpoints).** Simple upserts; revision history deferred per Q2.
