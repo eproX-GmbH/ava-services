@@ -1,0 +1,48 @@
+[submodule "company-contact"]
+	path = company-contact
+	url = https://github.com/eproX-GmbH/company-contact.git
+	branch = chore/ai-sdk-migration
+[submodule "company-evaluation"]
+	path = company-evaluation
+	url = https://github.com/eproX-GmbH/company-evaluation.git
+	branch = chore/ai-sdk-migration
+[submodule "company-profile"]
+	path = company-profile
+	url = https://github.com/eproX-GmbH/company-profile.git
+	branch = chore/ai-sdk-migration
+[submodule "company-publication"]
+	path = company-publication
+	url = https://github.com/eproX-GmbH/company-publication.git
+	branch = chore/ai-sdk-migration
+[submodule "master-data"]
+	path = master-data
+	url = https://github.com/eproX-GmbH/master-data.git
+	branch = main
+[submodule "structured-content"]
+	path = structured-content
+	url = https://github.com/eproX-GmbH/structured-content.git
+	branch = main
+[submodule "website"]
+	path = website
+	url = https://github.com/eproX-GmbH/website.git
+	branch = chore/ai-sdk-migration
+[submodule "business-intelligence"]
+	path = business-intelligence
+	url = https://gitlab.com/eprox-gmbh/ava/business-intelligence.git
+	branch = main
+[submodule "user-interface"]
+	path = user-interface
+	url = https://gitlab.com/eprox-gmbh/ava/user-interface.git
+	branch = deploy
+[submodule "node-microservice-template"]
+	path = node-microservice-template
+	url = https://gitlab.com/eprox-gmbh/ava/lib/node-microservice-template.git
+	branch = main
+[submodule "packages/auth"]
+	path = packages/auth
+	url = https://gitlab.com/eprox-gmbh/ava/lib/Auth.git
+	branch = whitelist-env
+[submodule "packages/events"]
+	path = packages/events
+	url = https://gitlab.com/eprox-gmbh/ava/lib/events.git
+	branch = main
