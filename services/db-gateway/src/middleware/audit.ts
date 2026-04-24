@@ -1,11 +1,22 @@
 import { createMiddleware } from "hono/factory";
 import { randomUUID } from "node:crypto";
-import { PrismaClient } from "../../prisma/generated/client";
 import { logger } from "../lib/logger";
 
-// Singleton — gateway has a single audit DB. Real DATABASE_URL comes from
-// fly.io secrets.
-const prisma = new PrismaClient();
+// Prisma client is loaded lazily so typecheck and dev-time edits don't
+// require `prisma generate` to have run. At runtime this is a hard failure
+// path — deploys must run `prisma generate` in the Docker build.
+type AuditWrite = { create: (args: { data: Record<string, unknown> }) => Promise<unknown> };
+let auditLog: AuditWrite | undefined;
+function getAuditLog(): AuditWrite {
+  if (!auditLog) {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-var-requires
+    const { PrismaClient } = require("../../prisma/generated/client") as {
+      PrismaClient: new () => { auditLog: AuditWrite };
+    };
+    auditLog = new PrismaClient().auditLog;
+  }
+  return auditLog;
+}
 
 // Audit middleware: assigns a request id, times the request, writes one
 // row to audit_log post-response. Errors in the audit path must NEVER
@@ -22,7 +33,7 @@ export const auditMiddleware = createMiddleware(async (c, next) => {
   if (!auth) return; // unauthenticated request — nothing to pin audit to
 
   const durationMs = Date.now() - c.get("startedAt");
-  prisma.auditLog
+  getAuditLog()
     .create({
       data: {
         tenantId: auth.tenantId,
@@ -34,5 +45,5 @@ export const auditMiddleware = createMiddleware(async (c, next) => {
         durationMs,
       },
     })
-    .catch((err) => logger.error({ err, requestId }, "audit write failed"));
+    .catch((err: unknown) => logger.error({ err, requestId }, "audit write failed"));
 });

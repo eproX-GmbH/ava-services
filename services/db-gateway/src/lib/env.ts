@@ -12,9 +12,16 @@ const schema = z.object({
   DATABASE_URL: z.string().url(),
   DIRECT_URL: z.string().url().optional(),
 
-  // Upstream service DB (single connection for now; Step 5 scope may expand
-  // to one per service if the Desktop-App needs cross-service reads).
-  UPSTREAM_DATABASE_URL: z.string().url(),
+  // Upstream service base URLs. Gateway fans out to these over HTTP and
+  // forwards the caller's Bearer token (service-to-service JWT hardening is
+  // a Step 7 item — see DESKTOP_DATA_FLOW.md Q4/5 follow-up).
+  UPSTREAM_MASTER_DATA_URL: z.string().url(),
+  UPSTREAM_COMPANY_PROFILE_URL: z.string().url(),
+  UPSTREAM_COMPANY_CONTACT_URL: z.string().url(),
+  UPSTREAM_COMPANY_PUBLICATION_URL: z.string().url(),
+  UPSTREAM_COMPANY_EVALUATION_URL: z.string().url(),
+  UPSTREAM_WEBSITE_URL: z.string().url(),
+  UPSTREAM_STRUCTURED_CONTENT_URL: z.string().url(),
 
   // JWT signing material. Public keys as JSON: { "<tenantId>": "<pem>" }.
   // Private keys NEVER live in the gateway — they're held by the issuer
