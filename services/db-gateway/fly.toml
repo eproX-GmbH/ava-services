@@ -1,0 +1,47 @@
+# Template fly config. One app per customer per D3 (tenant isolation at
+# the infra level, not just in JWT claims). Copy to fly.<customer>.toml
+# and set app name + region before `fly deploy`.
+
+app = "ava-db-gateway"
+primary_region = "fra"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  NODE_ENV = "production"
+  PORT = "8080"
+  JWT_ISSUER = "ava-auth"
+  JWT_AUDIENCE = "ava-gateway"
+  RATE_LIMIT_PER_MIN = "600"
+  LOG_LEVEL = "info"
+
+# Secrets managed via `fly secrets set` (D3):
+#   DATABASE_URL           — gateway's own audit DB
+#   DIRECT_URL             — optional, for prisma migrate
+#   UPSTREAM_DATABASE_URL  — service DB (read/write per scoped endpoints)
+#   JWT_PUBLIC_KEYS        — JSON {tenantId: pem}
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 1
+
+  [http_service.concurrency]
+    type = "requests"
+    soft_limit = 200
+    hard_limit = 400
+
+  [[http_service.checks]]
+    grace_period = "10s"
+    interval = "30s"
+    method = "GET"
+    timeout = "5s"
+    path = "/health"
+
+[[vm]]
+  cpu_kind = "shared"
+  cpus = 1
+  memory_mb = 512

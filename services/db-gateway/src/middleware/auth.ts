@@ -1,0 +1,93 @@
+import { createMiddleware } from "hono/factory";
+import { jwtVerify, importSPKI, type KeyLike } from "jose";
+import { loadEnv } from "../lib/env";
+
+// Auth context populated after successful JWT verification.
+// Downstream handlers read this via c.get(...).
+export type AuthContext = {
+  tenantId: string;
+  actorId: string; // JWT `sub`
+  scopes: string[]; // JWT `scope` space-separated, split
+};
+
+declare module "hono" {
+  interface ContextVariableMap {
+    auth: AuthContext;
+    requestId: string;
+    startedAt: number;
+  }
+}
+
+// Per-tenant public-key cache. Keys are PEM-encoded SPKI strings in
+// JWT_PUBLIC_KEYS env; we materialize them on first use.
+const keyCache = new Map<string, KeyLike>();
+
+async function resolveKey(tenantId: string): Promise<KeyLike> {
+  const cached = keyCache.get(tenantId);
+  if (cached) return cached;
+  const { JWT_PUBLIC_KEYS } = loadEnv();
+  const pem = JWT_PUBLIC_KEYS[tenantId];
+  if (!pem) throw new Error(`No public key configured for tenant=${tenantId}`);
+  const key = await importSPKI(pem, "RS256");
+  keyCache.set(tenantId, key);
+  return key;
+}
+
+// JWT middleware. Expects `Authorization: Bearer <token>` with claims:
+//   sub     — actor id (user or service account)
+//   tenant  — customer id (used to pick the verification key)
+//   scope   — space-separated scopes
+// 15-minute access token (D3). Refresh flow is handled by the customer's
+// auth issuer, NOT by the gateway.
+export const authMiddleware = createMiddleware(async (c, next) => {
+  const header = c.req.header("authorization");
+  if (!header?.startsWith("Bearer ")) {
+    return c.json({ error: "missing_bearer_token" }, 401);
+  }
+  const token = header.slice("Bearer ".length);
+
+  // Peek tenant claim without verifying — we need it to pick the key.
+  // jose refuses to decode unverified payloads, so do it manually and
+  // validate immediately after.
+  const [, payloadB64] = token.split(".");
+  let tenantId: string;
+  try {
+    const payload = JSON.parse(
+      Buffer.from(payloadB64, "base64url").toString("utf8"),
+    ) as { tenant?: unknown };
+    if (typeof payload.tenant !== "string") throw new Error("tenant claim missing");
+    tenantId = payload.tenant;
+  } catch {
+    return c.json({ error: "malformed_token" }, 401);
+  }
+
+  const { JWT_ISSUER, JWT_AUDIENCE } = loadEnv();
+  try {
+    const key = await resolveKey(tenantId);
+    const { payload } = await jwtVerify(token, key, {
+      issuer: JWT_ISSUER,
+      audience: JWT_AUDIENCE,
+    });
+    if (typeof payload.sub !== "string") throw new Error("sub claim missing");
+    const scopes =
+      typeof payload.scope === "string" ? payload.scope.split(/\s+/).filter(Boolean) : [];
+    c.set("auth", { tenantId, actorId: payload.sub, scopes });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "verification_failed";
+    return c.json({ error: "invalid_token", detail: message }, 401);
+  }
+
+  await next();
+});
+
+// Scope guard — thin wrapper for route-level authorization. Usage:
+//   .get("/companies", requireScope("company:read"), handler)
+export function requireScope(required: string) {
+  return createMiddleware(async (c, next) => {
+    const auth = c.get("auth");
+    if (!auth || !auth.scopes.includes(required)) {
+      return c.json({ error: "insufficient_scope", required }, 403);
+    }
+    await next();
+  });
+}

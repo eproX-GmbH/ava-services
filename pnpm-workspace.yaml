@@ -1,5 +1,6 @@
 packages:
   - "packages/*"
+  - "services/*"
   - "company-profile"
   - "company-contact"
   - "company-publication"

@@ -1,0 +1,38 @@
+// Gateway-only schema. Per DECISIONS.md D3 the gateway does NOT mirror the
+// full service schemas — it owns an audit log plus whatever operational
+// tables get scoped in Step 5 from the Desktop-App's data flow.
+//
+// Per-service data is reached via a separate Prisma client connected to the
+// upstream service database; that connection is configured at runtime in
+// src/lib/prisma.ts, not declared here.
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "./generated/client"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+/// Append-only audit log. One row per gateway request after successful auth.
+/// Retention policy TBD with the customer (fly.io secrets hold the cutoff).
+model AuditLog {
+  id           BigInt   @id @default(autoincrement())
+  tenantId     String // customer id from JWT `tenant` claim
+  actorId      String // user/service id from JWT `sub`
+  method       String // HTTP method
+  path         String // request path incl. /v1/...
+  statusCode   Int
+  requestId    String // X-Request-Id correlation
+  durationMs   Int
+  requestHash  String? // sha256 of body for high-integrity audits (optional)
+  errorMessage String?
+  createdAt    DateTime @default(now())
+
+  @@index([tenantId, createdAt])
+  @@index([actorId, createdAt])
+  @@index([requestId])
+}
