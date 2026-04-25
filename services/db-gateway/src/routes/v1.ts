@@ -3,6 +3,7 @@ import { authMiddleware } from "../middleware/auth";
 import { rateLimitMiddleware } from "../middleware/rate-limit";
 import { auditMiddleware } from "../middleware/audit";
 import { companiesRouter } from "./v1/companies";
+import { transactionsRouter } from "./v1/transactions";
 
 // /v1 router.
 //
@@ -24,6 +25,9 @@ v1.use("*", auditMiddleware);
 
 // §4.1 Company reads (W6-W13).
 v1.route("/", companiesRouter);
+
+// §6 SSE bridge — transaction progress streaming (W4).
+v1.route("/", transactionsRouter);
 
 // Retained for smoke-testing auth end-to-end. Safe to remove once clients
 // exist — no workflow reference.

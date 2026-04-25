@@ -23,6 +23,13 @@ const schema = z.object({
   UPSTREAM_WEBSITE_URL: z.string().url(),
   UPSTREAM_STRUCTURED_CONTENT_URL: z.string().url(),
 
+  // Event bus (AMQP today, NATS JetStream future per D1). Used by the SSE
+  // bridge to subscribe to `transaction.progress` events and re-emit them
+  // to the Desktop-App. Exchange name matches what the services publish to.
+  EVENT_BUS_URL: z.string().url(),
+  EVENT_BUS_EXCHANGE: z.string().default("exchange"),
+  EVENT_BUS_QUEUE: z.string().default("db-gateway-progress"),
+
   // JWT signing material. Public keys as JSON: { "<tenantId>": "<pem>" }.
   // Private keys NEVER live in the gateway — they're held by the issuer
   // (customer's auth service on fly.io). Gateway only verifies.

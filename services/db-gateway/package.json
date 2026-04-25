@@ -12,6 +12,7 @@
     "prisma:migrate:deploy": "prisma migrate deploy"
   },
   "dependencies": {
+    "@ava/event": "file:../../packages/events",
     "@hono/node-server": "^1.11.0",
     "@hono/swagger-ui": "^0.4.0",
     "@hono/zod-openapi": "^0.14.0",

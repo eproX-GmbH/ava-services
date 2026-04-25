@@ -186,18 +186,45 @@ All writes are **synchronous to the gateway** but may be **asynchronous downstre
 
 Today each service exposes its own WebSocket for transaction state. The Desktop-App should not maintain 6 concurrent WebSockets.
 
-**Proposal:** Gateway exposes **one SSE endpoint per transaction**:
+**Decision (2026-04-25):** Path A — extend the event bus. Each service that owns an `EntityTransaction` row publishes a per-row `transaction.progress` CloudEvent when the row reaches a terminal state. The gateway subscribes once, fans out via SSE to each connected client.
+
+Endpoint:
 
 ```
 GET /v1/transactions/:transactionId/events  (text/event-stream)
+Scope required: transaction:read
 ```
 
-Server-side, the gateway bridges all per-service WebSocket feeds into a single stream, tagging each event with `{ service, state, companyId?, timestamp }`. SSE chosen over WebSocket because:
+**Per-row events only — no aggregate counts.** Services depend on each other (master-data → website / structured-content → company-profile → company-publication / company-contact / company-evaluation). Companies legitimately drop out of the chain when an upstream service finds nothing for them, so no service can authoritatively compute "100% done". The Desktop-App reconstructs the per-company × per-service matrix client-side from the per-row stream.
+
+**Wire format.** SSE events with the `event:` field set:
+- `open` — `{ transactionId }` (initial frame)
+- `progress` — `TransactionProgressPayload` (one per company × service, terminal-state only)
+- `ping` — empty heartbeat every 25s
+
+There is no terminal `end` frame: the gateway cannot synthesize one (same dependency-chain reason). The stream stays open until the client disconnects.
+
+`TransactionProgressPayload` shape (locked in `@ava/event` 1.1.37):
+```ts
+{
+  transactionId: string;
+  tenantId: string;        // gateway tenant-gates on this
+  service: string;         // "company-profile" | "company-publication" | ...
+  companyId: string;       // the row this event is about
+  state: "completed" | "failed" | "skipped";
+  errorMessage?: string;
+  updatedAt: string;       // ISO8601
+}
+```
+
+SSE chosen over WebSocket because:
 - One-way (server → client), which matches the actual use case
 - Works over HTTP/2, auto-reconnects, plays well with fly.io proxies
 - Easier to audit — each tick is just an HTTP request extension
 
-**Deferred until Step 6:** The bridging implementation needs service-side subscription; for the v0 gateway we can ship a polling endpoint (`GET /v1/transactions/:id/entities` called every N seconds) and upgrade to SSE once the supervisor is wired.
+**Producer responsibility.** All 6 services that own an `EntityTransaction` (company-profile, company-publication, company-contact, company-evaluation, website, structured-content) MUST publish one `transaction.progress` event per company-row when it reaches a terminal state, alongside their existing in-process WebSocket emits. The legacy per-service WebSockets remain available during transition; once the Desktop-App ships against SSE the WebSocket routes are slated for removal in Step 7.
+
+**Tenant identification.** Producers source `tenantId` from `process.env.TENANT_ID`, set per fly.io customer deploy (D1 single-tenant model). The gateway tenant-gates on this against the caller's JWT `tenantId` claim — events for other tenants are silently dropped at the SSE writer.
 
 ---
 
