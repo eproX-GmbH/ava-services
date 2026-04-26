@@ -234,7 +234,7 @@ transactionsRouter.openapi(listRoute, async (c) => {
   const start = (page - 1) * pageSize;
   return c.json(
     {
-      items: all.slice(start, start + pageSize) as Array<Record<string, unknown>>,
+      items: all.slice(start, start + pageSize) as Array<z.infer<typeof TransactionShape>>,
       page,
       pageSize,
       total: all.length,
@@ -259,12 +259,12 @@ const detailRoute = createRoute({
 
 transactionsRouter.openapi(detailRoute, async (c) => {
   const { transactionId } = c.req.valid("param");
-  const upstream = await callUpstream<Record<string, unknown>>(
+  const upstream = await callUpstream<z.infer<typeof TransactionShape>>(
     c,
     "companyProfile",
     `/api/v1/transactions/${encodeURIComponent(transactionId)}`,
   );
-  await assertTransactionOwnership(c, upstream);
+  await assertTransactionOwnership(c, upstream as Record<string, unknown>);
   return c.json(upstream, 200);
 });
 
@@ -299,7 +299,7 @@ transactionsRouter.openapi(entitiesRoute, async (c) => {
   );
 
   const items =
-    (upstream?.entityTransactions ?? upstream?.items ?? []) as Array<Record<string, unknown>>;
+    (upstream?.entityTransactions ?? upstream?.items ?? []) as Array<z.infer<typeof EntityTransactionShape>>;
   const total = upstream?.count ?? upstream?.total ?? items.length;
 
   return c.json({ items, page, pageSize, total }, 200);
@@ -331,7 +331,7 @@ transactionsRouter.openapi(entityDetailRoute, async (c) => {
 
   const match = entities.find(
     (e) => (e as { companyId?: unknown }).companyId === companyId,
-  );
+  ) as z.infer<typeof EntityTransactionShape> | undefined;
   if (!match) {
     throw new HTTPException(404, { message: "not_found" });
   }
@@ -400,7 +400,10 @@ transactionsRouter.openapi(errorsRoute, async (c) => {
     }),
   );
 
-  return c.json({ items: perCompany.flat() }, 200);
+  return c.json(
+    { items: perCompany.flat() as Array<z.infer<typeof ProcessingErrorShape>> },
+    200,
+  );
 });
 
 // ---- Per-request cache + ownership helpers ---------------------------------

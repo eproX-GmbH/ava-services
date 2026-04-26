@@ -63,7 +63,9 @@ companiesRouter.openapi(searchRoute, async (c) => {
     query: { q, limit },
   });
   // master-data returns either an array or an object — normalize.
-  const items = (Array.isArray(upstream) ? upstream : ((upstream as { items?: unknown[] })?.items ?? [])) as Array<Record<string, unknown>>;
+  const items = (Array.isArray(upstream)
+    ? upstream
+    : ((upstream as { items?: unknown[] })?.items ?? [])) as Array<z.infer<typeof CompanyShape>>;
   return c.json({ items, total: items.length }, 200);
 });
 
@@ -96,7 +98,7 @@ companiesRouter.openapi(listRoute, async (c) => {
   );
   return c.json(
     {
-      items: (upstream?.items ?? []) as Array<Record<string, unknown>>,
+      items: (upstream?.items ?? []) as Array<z.infer<typeof CompanyShape>>,
       page,
       pageSize,
       total: upstream?.total ?? 0,
@@ -180,7 +182,9 @@ companiesRouter.openapi(keywordsRoute, async (c) => {
     "companyProfile",
     `/api/v1/company-keywords/${encodeURIComponent(companyId)}`,
   );
-  const items = (Array.isArray(upstream) ? upstream : ((upstream as { items?: unknown[] })?.items ?? [])) as Array<Record<string, unknown>>;
+  const items = (Array.isArray(upstream)
+    ? upstream
+    : ((upstream as { items?: unknown[] })?.items ?? [])) as Array<z.infer<typeof CompanyKeywordShape>>;
   return c.json({ items }, 200);
 });
 
@@ -234,7 +238,9 @@ companiesRouter.openapi(publicationsRoute, async (c) => {
     "companyPublication",
     `/api/v1/company-publications/${encodeURIComponent(companyId)}`,
   );
-  const items = (Array.isArray(upstream) ? upstream : ((upstream as { items?: unknown[] })?.items ?? [])) as Array<Record<string, unknown>>;
+  const items = (Array.isArray(upstream)
+    ? upstream
+    : ((upstream as { items?: unknown[] })?.items ?? [])) as Array<z.infer<typeof CompanyPublicationShape>>;
   return c.json({ items }, 200);
 });
 
@@ -262,7 +268,9 @@ companiesRouter.openapi(contactsRoute, async (c) => {
     "companyContact",
     `/api/v1/company-contacts/${encodeURIComponent(companyId)}`,
   );
-  const items = (Array.isArray(upstream) ? upstream : ((upstream as { items?: unknown[] })?.items ?? [])) as Array<Record<string, unknown>>;
+  const items = (Array.isArray(upstream)
+    ? upstream
+    : ((upstream as { items?: unknown[] })?.items ?? [])) as Array<z.infer<typeof CompanyContactShape>>;
   return c.json({ items }, 200);
 });
 
