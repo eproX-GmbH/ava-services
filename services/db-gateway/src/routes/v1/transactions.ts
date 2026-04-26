@@ -28,16 +28,71 @@ import {
 //   - on terminal state (completed/failed/cancelled): close the stream
 //   - on client disconnect: unsubscribe; do NOT throw
 //
-// Note: the route is registered as a plain Hono handler (not via
-// `createRoute`) because streamSSE's Response type doesn't fit the
-// zod-openapi typed-response generic. The endpoint is documented in
-// DESKTOP_DATA_FLOW.md §6 — adding it to OpenAPI is a Step 7 hardening item.
+// Note: the streaming handler is a plain Hono `.get(...)` (not `openapi()`)
+// because streamSSE's Response type doesn't satisfy zod-openapi's typed-
+// response generic. We document the endpoint in OpenAPI separately via
+// `openAPIRegistry.registerPath` below — Swagger UI lists it, but the actual
+// handler keeps the streaming-friendly typing.
 
 export const transactionsRouter = new OpenAPIHono();
 transactionsRouter.use("*", requireScope("transaction:read"));
 
 const TransactionEventsParam = z.object({
   transactionId: z.string().min(1),
+});
+
+// ---- OpenAPI doc-only registration for the SSE endpoint --------------------
+//
+// Per-row `progress` events are the wire contract (DESKTOP_DATA_FLOW.md §6).
+// We model the payload here so the schema shows up under Swagger UI's
+// `text/event-stream` content type alongside the framing notes.
+
+const TransactionProgressEvent = z
+  .object({
+    transactionId: z.string(),
+    tenantId: z.string(),
+    service: z.string(),
+    companyId: z.string(),
+    state: z.enum(["completed", "failed", "skipped"]),
+    errorMessage: z.string().optional(),
+    updatedAt: z.string(),
+  })
+  .openapi("TransactionProgressEvent");
+
+transactionsRouter.openAPIRegistry.registerPath({
+  method: "get",
+  path: "/transactions/{transactionId}/events",
+  tags: ["transactions"],
+  summary: "Subscribe to live transaction progress (W4, SSE)",
+  description: [
+    "Server-Sent Events stream of per-row `transaction.progress` events for a single transaction.",
+    "",
+    "Frame types:",
+    "- `event: open`   — initial hello, `data` is `{ transactionId }`.",
+    "- `event: progress` — one frame per (companyId, service) terminal transition;",
+    "  `data` is a JSON `TransactionProgressEvent`.",
+    "- `event: ping`   — keep-alive heartbeat every ~25s, empty `data`.",
+    "",
+    "The stream stays open until the client disconnects — no service can",
+    "authoritatively declare a transaction complete (the dependency chain may",
+    "legitimately drop companies), so there is no terminal frame.",
+    "",
+    "Tenant-scoped: events are filtered to the caller's `tenantId` by the gateway.",
+  ].join("\n"),
+  request: { params: TransactionIdParam },
+  responses: {
+    200: {
+      description: "SSE stream of progress events",
+      content: {
+        "text/event-stream": {
+          schema: TransactionProgressEvent,
+        },
+      },
+    },
+    401: { description: "unauthenticated" },
+    403: { description: "forbidden" },
+    502: { description: "event bus unavailable" },
+  },
 });
 
 transactionsRouter.get("/transactions/:transactionId/events", async (c) => {
