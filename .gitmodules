@@ -26,14 +26,6 @@
 	path = website
 	url = https://github.com/eproX-GmbH/website.git
 	branch = chore/ai-sdk-migration
-[submodule "business-intelligence"]
-	path = business-intelligence
-	url = https://gitlab.com/eprox-gmbh/ava/business-intelligence.git
-	branch = main
-[submodule "user-interface"]
-	path = user-interface
-	url = https://gitlab.com/eprox-gmbh/ava/user-interface.git
-	branch = deploy
 [submodule "node-microservice-template"]
 	path = node-microservice-template
 	url = https://gitlab.com/eprox-gmbh/ava/lib/node-microservice-template.git

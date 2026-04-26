@@ -46,8 +46,6 @@ SERVICES=(
   "website:3014"
   "structured-content:3015"
   "master-data:3016"
-  "business-intelligence:3017"
-  "user-interface:3018"
 )
 
 pids=()
