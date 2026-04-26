@@ -299,10 +299,13 @@ Derived from the resolved questions above. Each bullet is a PR-sized batch.
 2. **§6 SSE bridge (1 endpoint).** ✅ done. Transaction progress stream. Unblocks §4.2.
 3. **§4.2 Transaction reads (5 endpoints).** ✅ done. Depends on 2. Gateway-side ownership check (§4.2 caches the user-transactions lookup per request).
 4. **§4.3 Evaluation reads (6 endpoints).** ✅ done — five proxy cleanly to company-evaluation; **`GET /v1/evaluations/clusters/:id` returns 501** because upstream only exposes the `POST /api/v1/clusters/cluster/k-means` command. Removing the 501 = adding a cluster-query endpoint upstream (open follow-up). Two endpoints (chat messages by sessionId, comparisons by id) currently rely on JWT scope+tenant only — the underlying entities have no `transactionId` or `userId` column upstream, so cheap gateway-side ownership isn't possible until upstream adds one.
-5. **§5.1 Excel import (1 endpoint).** First write path; validates the idempotency-key + event-fanout pattern.
+5. **§5.1 Excel import (1 endpoint).** ✅ done. Multipart in at the gateway, raw octet-stream out to `master-data` `POST /api/v1/data-care`. Upstream now sets a `Transaction-Id` response header (additive — the legacy xlsx response is unchanged); the gateway reads it and returns `202 { transactionId }` so the desktop client opens its SSE stream immediately. Idempotency-Key replay window is a Step 7 follow-up — not yet wired (see Open follow-ups below).
 6. **§5.2 Evaluation writes (7 endpoints).** Exposes the back-of-the-house evaluation features for the first time.
 7. **§5.3 Corrections (3 endpoints).** Simple upserts; revision history deferred per Q2.
 
 **Open §4.3 follow-ups (upstream company-evaluation work):**
 - Add `GET /api/v1/clusters/:id` (clears the gateway 501).
 - Add ownership signal (`userId` column or transaction link) on `chat-session`, `chat-message`, and `comparison-job` tables so the gateway can verify per-id reads without iterating the user's transaction list.
+
+**Open §5.1 follow-ups:**
+- Wire `Idempotency-Key` (gateway-side dedupe table, 24h window) for `POST /v1/imports/excel`. The advertised contract in §10 says we accept it; today we don't honor it. Low-stakes for v0 because upstream creates a fresh `transactionId` per call, but desktop-side network flakes can otherwise produce duplicate transactions.

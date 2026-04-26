@@ -98,3 +98,78 @@ export async function callUpstream<T = unknown>(
   if (!text) return undefined as T;
   return JSON.parse(text) as T;
 }
+
+// Binary upstream call.
+//
+// Used for endpoints that take a raw binary body (file uploads) and where we
+// care about response headers more than the response body — e.g. the §5.1
+// excel import: master-data's `POST /api/v1/data-care` consumes
+// `application/octet-stream` and signals the persisted transactionId via the
+// `Transaction-Id` response header (the body is the legacy xlsx report we
+// don't need on the desktop async path).
+//
+// We don't share `callUpstream`'s code path because the content-type, body
+// pass-through, and "headers-not-body" return contract diverge enough that
+// branching the existing helper would muddy it.
+
+interface UpstreamBinaryOptions {
+  query?: Record<string, string | number | string[] | undefined>;
+  contentType?: string;
+}
+
+export interface UpstreamBinaryResult {
+  status: number;
+  headers: Headers;
+}
+
+export async function callUpstreamBinary(
+  c: Context,
+  name: UpstreamName,
+  path: string,
+  body: ArrayBuffer | Uint8Array,
+  opts: UpstreamBinaryOptions = {},
+): Promise<UpstreamBinaryResult> {
+  const base = baseUrlFor(name);
+  const url = new URL(path, base);
+  if (opts.query) {
+    for (const [k, v] of Object.entries(opts.query)) {
+      if (v === undefined) continue;
+      if (Array.isArray(v)) {
+        // Express parses repeated `?key=a&key=b` as string[] — match that.
+        for (const item of v) url.searchParams.append(k, String(item));
+      } else {
+        url.searchParams.set(k, String(v));
+      }
+    }
+  }
+
+  const headers: Record<string, string> = {
+    "content-type": opts.contentType ?? "application/octet-stream",
+    "x-request-id": c.get("requestId"),
+  };
+  const auth = c.req.header("authorization");
+  if (auth) headers["authorization"] = auth;
+
+  const res = await fetch(url, { method: "POST", headers, body });
+
+  if (!res.ok) {
+    const bodySnippet = await res.text().catch(() => "");
+    logger.warn(
+      {
+        upstream: name,
+        path,
+        status: res.status,
+        body: bodySnippet.slice(0, 500),
+        requestId: c.get("requestId"),
+      },
+      "upstream binary call failed",
+    );
+    if (res.status === 404) throw new HTTPException(404, { message: "not_found" });
+    if (res.status === 413) throw new HTTPException(413, { message: "payload_too_large" });
+    throw new HTTPException(502, { message: `upstream_${name}_failed` });
+  }
+
+  // Drain the body so the connection can be reused; we don't need it.
+  await res.arrayBuffer().catch(() => undefined);
+  return { status: res.status, headers: res.headers };
+}

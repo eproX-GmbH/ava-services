@@ -345,6 +345,33 @@ const ComparisonRankingItemShape = z
   })
   .openapi("ComparisonRankingItem");
 
+// ---- Imports (master-data data-care) ---------------------------------------
+//
+// §5.1: the gateway accepts the multipart upload, hands the binary to
+// master-data's `POST /api/v1/data-care`, and returns just the transactionId
+// so the desktop client can subscribe to the SSE progress stream.
+
+export const ImportExcelQuery = z.object({
+  // Heading rows in the uploaded sheet that mark the company-name column(s).
+  // Repeats are allowed; upstream parses them as a list.
+  companyNameIdentifiers: z
+    .union([z.string(), z.array(z.string())])
+    .transform((v) => (Array.isArray(v) ? v : [v]))
+    .openapi({ example: ["company"] }),
+  // City column heading. Required upstream.
+  city: z.string().min(1),
+  // Optional transaction name (shown in the desktop UI's transaction list).
+  name: z.string().optional(),
+  // Whether to fall back to a fuzzy match for unmatched companies.
+  isFuzzy: z.coerce.boolean().optional().default(false),
+});
+
+export const ImportExcelResponseShape = z
+  .object({
+    transactionId: z.string(),
+  })
+  .openapi("ImportExcelResponse");
+
 export const ComparisonShape = z
   .object({
     id: z.string(),
