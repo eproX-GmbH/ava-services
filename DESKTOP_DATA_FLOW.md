@@ -295,10 +295,14 @@ All 25 workflows covered.
 
 Derived from the resolved questions above. Each bullet is a PR-sized batch.
 
-1. **§4.1 Company reads (9 endpoints).** Unblocked — `companyId` is global, no cross-service tenant join needed. Hits master-data + 5 drill-down services. Zero write risk, largest UI surface unblocked.
-2. **§6 SSE bridge (1 endpoint).** Transaction progress stream. Unblocks §4.2.
-3. **§4.2 Transaction reads (5 endpoints).** Depends on 2.
-4. **§4.3 Evaluation reads (6 endpoints).** Independent — can land in parallel with 2 or 3.
+1. **§4.1 Company reads (9 endpoints).** ✅ done. `companyId` is global, no cross-service tenant join needed. Hits master-data + 5 drill-down services.
+2. **§6 SSE bridge (1 endpoint).** ✅ done. Transaction progress stream. Unblocks §4.2.
+3. **§4.2 Transaction reads (5 endpoints).** ✅ done. Depends on 2. Gateway-side ownership check (§4.2 caches the user-transactions lookup per request).
+4. **§4.3 Evaluation reads (6 endpoints).** ✅ done — five proxy cleanly to company-evaluation; **`GET /v1/evaluations/clusters/:id` returns 501** because upstream only exposes the `POST /api/v1/clusters/cluster/k-means` command. Removing the 501 = adding a cluster-query endpoint upstream (open follow-up). Two endpoints (chat messages by sessionId, comparisons by id) currently rely on JWT scope+tenant only — the underlying entities have no `transactionId` or `userId` column upstream, so cheap gateway-side ownership isn't possible until upstream adds one.
 5. **§5.1 Excel import (1 endpoint).** First write path; validates the idempotency-key + event-fanout pattern.
 6. **§5.2 Evaluation writes (7 endpoints).** Exposes the back-of-the-house evaluation features for the first time.
 7. **§5.3 Corrections (3 endpoints).** Simple upserts; revision history deferred per Q2.
+
+**Open §4.3 follow-ups (upstream company-evaluation work):**
+- Add `GET /api/v1/clusters/:id` (clears the gateway 501).
+- Add ownership signal (`userId` column or transaction link) on `chat-session`, `chat-message`, and `comparison-job` tables so the gateway can verify per-id reads without iterating the user's transaction list.

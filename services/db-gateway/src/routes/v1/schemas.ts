@@ -261,3 +261,97 @@ export const ProcessingErrorShape = z
     updatedAt: z.string(),
   })
   .openapi("ProcessingError");
+
+// ---- Evaluations (company-evaluation) --------------------------------------
+//
+// §4.3 reads. All shapes are upstream DTOs; signal blobs / citations are
+// passthrough because their structure is LLM-output dependent and evolves
+// faster than the gateway should chase.
+
+export const BestMatchIdParam = z.object({
+  bestMatchId: z.string().min(1).openapi({ param: { name: "bestMatchId", in: "path" } }),
+});
+
+export const ComparisonIdParam = z.object({
+  comparisonId: z.string().min(1).openapi({ param: { name: "comparisonId", in: "path" } }),
+});
+
+export const ChatSessionIdParam = z.object({
+  sessionId: z.string().min(1).openapi({ param: { name: "sessionId", in: "path" } }),
+});
+
+export const ClusterIdParam = z.object({
+  clusterId: z.string().min(1).openapi({ param: { name: "clusterId", in: "path" } }),
+});
+
+export const TransactionIdQuery = z.object({
+  transactionId: z.string().min(1),
+});
+
+const BestMatchResultItemShape = z
+  .object({
+    id: z.string(),
+    companyId: z.string().nullable().optional(),
+    explanation: z.string().nullable().optional(),
+    score: z.number().nullable().optional(),
+    // Signals + match-feedback are LLM-shaped JSON blobs; keep loose.
+    signals: z.record(z.string(), z.unknown()).nullable().optional(),
+    matchFeedback: z.record(z.string(), z.unknown()).nullable().optional(),
+  })
+  .openapi("BestMatchResultItem");
+
+export const BestMatchShape = z
+  .object({
+    id: z.string(),
+    input: z.string(),
+    transactionId: z.string().nullable().optional(),
+    results: z.array(BestMatchResultItemShape).default([]),
+    createdAt: z.string(),
+    updatedAt: z.string(),
+  })
+  .openapi("BestMatch");
+
+export const ChatSessionShape = z
+  .object({
+    id: z.string(),
+    transactionId: z.string(),
+    allowedCompanyIds: z.array(z.string()).default([]),
+    summary: z.string().nullable().optional(),
+    createdAt: z.string(),
+    updatedAt: z.string(),
+  })
+  .openapi("ChatSession");
+
+export const ChatMessageShape = z
+  .object({
+    id: z.string(),
+    sessionId: z.string(),
+    role: z.enum(["user", "assistant"]),
+    content: z.string(),
+    // Citations: list of {companyId, sourceFieldRef, ...} blobs from the
+    // RAG layer — keep passthrough until upstream locks the schema.
+    citations: z.array(z.record(z.string(), z.unknown())).nullable().optional(),
+    turnIndex: z.number().int(),
+    createdAt: z.string(),
+  })
+  .openapi("ChatMessage");
+
+const ComparisonRankingItemShape = z
+  .object({
+    id: z.string().optional(),
+    companyId: z.string(),
+    order: z.number().int(),
+    createdAt: z.string().optional(),
+  })
+  .openapi("ComparisonRankingItem");
+
+export const ComparisonShape = z
+  .object({
+    id: z.string(),
+    targetCompanyId: z.string().nullable().optional(),
+    companyIds: z.array(z.string()).default([]),
+    ranking: z.array(ComparisonRankingItemShape).default([]),
+    createdAt: z.string(),
+    updatedAt: z.string(),
+  })
+  .openapi("Comparison");
