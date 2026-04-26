@@ -46,3 +46,17 @@ export const ErrorShape = z.object({
   message: z.string().optional(),
   detail: z.record(z.string(), z.unknown()).optional(),
 });
+
+// §4.2 transaction reads — passthrough shapes (services own the domain).
+export const TransactionIdParam = z.object({
+  transactionId: z.string().min(1).openapi({ param: { name: "transactionId", in: "path" } }),
+});
+
+export const TransactionEntityParams = z.object({
+  transactionId: z.string().min(1).openapi({ param: { name: "transactionId", in: "path" } }),
+  companyId: z.string().min(1).openapi({ param: { name: "companyId", in: "path" } }),
+});
+
+export const TransactionShape = z.object({}).passthrough();
+export const EntityTransactionShape = z.object({}).passthrough();
+export const ProcessingErrorShape = z.object({}).passthrough();
