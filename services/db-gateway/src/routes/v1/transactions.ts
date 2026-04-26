@@ -1,4 +1,5 @@
 import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
+import type { Context } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { streamSSE } from "hono/streaming";
 import { requireScope } from "../../middleware/auth";
@@ -189,7 +190,10 @@ transactionsRouter.get("/transactions/:transactionId/events", async (c) => {
 //
 // Tenant isolation: company-profile's existing JWT validation filters
 // `/api/v1/users/transactions` by user. Per-id endpoints don't filter by user
-// today, so we layer ownership verification at the gateway (TODO below).
+// today, so we layer ownership verification at the gateway. The user-list
+// fetch and the 1000-row entities-page fetch are both memoized per request
+// (see helpers below), so the routes that need both — list, entityDetail,
+// errors — don't pay duplicate round-trips.
 // =============================================================================
 
 const tag = "transactions";
@@ -223,19 +227,14 @@ transactionsRouter.openapi(listRoute, async (c) => {
 
   // Upstream returns an unpaginated array (filtered by token's userId).
   // Gateway slices client-side. TODO upstream: add pageNumber/pageSize.
-  const upstream = await callUpstream<unknown>(
-    c,
-    "companyProfile",
-    "/api/v1/users/transactions",
-  );
-  const all = (Array.isArray(upstream)
-    ? upstream
-    : ((upstream as { items?: unknown[] })?.items ?? [])) as Array<Record<string, unknown>>;
+  // Cached for the request so a follow-up ownership check on a per-id route
+  // (rare but possible if a client batches list+detail) reuses the same fetch.
+  const all = await getMyTransactions(c);
 
   const start = (page - 1) * pageSize;
   return c.json(
     {
-      items: all.slice(start, start + pageSize),
+      items: all.slice(start, start + pageSize) as Array<Record<string, unknown>>,
       page,
       pageSize,
       total: all.length,
@@ -327,14 +326,10 @@ transactionsRouter.openapi(entityDetailRoute, async (c) => {
 
   // Upstream has no direct (txn, company) lookup; pull a large entities page
   // and filter. TODO upstream: add /api/v1/transactions/:tid/entities/:cid.
-  const upstream = await callUpstream<{ entityTransactions?: Array<Record<string, unknown>> }>(
-    c,
-    "companyProfile",
-    `/api/v1/transactions/${encodeURIComponent(transactionId)}/entities`,
-    { query: { pageNumber: 1, pageSize: 1000 } },
-  );
+  // Cached per request — the errors route would re-fetch the same page.
+  const entities = await getTransactionEntitiesAll(c, transactionId);
 
-  const match = (upstream?.entityTransactions ?? []).find(
+  const match = entities.find(
     (e) => (e as { companyId?: unknown }).companyId === companyId,
   );
   if (!match) {
@@ -370,15 +365,10 @@ transactionsRouter.openapi(errorsRoute, async (c) => {
   // For typical excel-import-sized transactions (≤ a few hundred companies)
   // this is acceptable; large transactions warrant an aggregate upstream
   // endpoint. TODO upstream: /api/v1/processing-errors/transactions/:tid.
-  const entitiesResp = await callUpstream<{ entityTransactions?: Array<Record<string, unknown>> }>(
-    c,
-    "companyProfile",
-    `/api/v1/transactions/${encodeURIComponent(transactionId)}/entities`,
-    { query: { pageNumber: 1, pageSize: 1000 } },
-  );
+  const entities = await getTransactionEntitiesAll(c, transactionId);
   const companies = Array.from(
     new Set(
-      (entitiesResp?.entityTransactions ?? [])
+      entities
         .map((e) => (e as { companyId?: unknown }).companyId)
         .filter((id): id is string => typeof id === "string"),
     ),
@@ -413,13 +403,39 @@ transactionsRouter.openapi(errorsRoute, async (c) => {
   return c.json({ items: perCompany.flat() }, 200);
 });
 
-// ---- Ownership helpers -----------------------------------------------------
+// ---- Per-request cache + ownership helpers ---------------------------------
 //
 // Transactions are tenant-scoped (Q1). Verify the JWT's actor (`sub`) owns
 // the transaction before returning detail/entity/errors data. Upstream's
 // `/api/v1/users/transactions` is the source of truth for ownership today.
-// We accept a small extra round-trip on per-id reads — caching (per
-// requestId) is a Step 7 hardening item.
+//
+// Several handlers re-fetch the same upstream pages (the user's transaction
+// list, or the 1000-row entities page). We memoize those calls on the Hono
+// `Context` so within one inbound request they hit upstream at most once.
+// Different inbound requests do not share — each one has a fresh context, so
+// the freshness contract is "as fresh as the start of the request", which is
+// what we want for a per-request ownership/snapshot read.
+
+type RequestCache = Map<string, Promise<unknown>>;
+
+function reqCache(c: Context): RequestCache {
+  let m = c.get("v1TxCache") as RequestCache | undefined;
+  if (!m) {
+    m = new Map();
+    c.set("v1TxCache", m);
+  }
+  return m;
+}
+
+function memoize<T>(c: Context, key: string, fn: () => Promise<T>): Promise<T> {
+  const m = reqCache(c);
+  let p = m.get(key) as Promise<T> | undefined;
+  if (!p) {
+    p = fn();
+    m.set(key, p);
+  }
+  return p;
+}
 
 interface UpstreamTransaction {
   id?: string;
@@ -427,8 +443,36 @@ interface UpstreamTransaction {
   userId?: string;
 }
 
+async function getMyTransactions(c: Context): Promise<UpstreamTransaction[]> {
+  return memoize(c, "users/transactions", async () => {
+    const list = await callUpstream<unknown>(
+      c,
+      "companyProfile",
+      "/api/v1/users/transactions",
+    );
+    return (Array.isArray(list)
+      ? list
+      : ((list as { items?: unknown[] })?.items ?? [])) as UpstreamTransaction[];
+  });
+}
+
+async function getTransactionEntitiesAll(
+  c: Context,
+  transactionId: string,
+): Promise<Array<Record<string, unknown>>> {
+  return memoize(c, `entities-all:${transactionId}`, async () => {
+    const upstream = await callUpstream<{ entityTransactions?: Array<Record<string, unknown>> }>(
+      c,
+      "companyProfile",
+      `/api/v1/transactions/${encodeURIComponent(transactionId)}/entities`,
+      { query: { pageNumber: 1, pageSize: 1000 } },
+    );
+    return upstream?.entityTransactions ?? [];
+  });
+}
+
 async function assertTransactionOwnership(
-  c: Parameters<typeof callUpstream>[0],
+  c: Context,
   txn: Record<string, unknown>,
 ): Promise<void> {
   const actorId = c.get("auth").actorId;
@@ -447,17 +491,10 @@ async function assertTransactionOwnership(
 }
 
 async function assertTransactionOwnershipById(
-  c: Parameters<typeof callUpstream>[0],
+  c: Context,
   transactionId: string,
 ): Promise<void> {
-  const list = await callUpstream<unknown>(
-    c,
-    "companyProfile",
-    "/api/v1/users/transactions",
-  );
-  const all = (Array.isArray(list)
-    ? list
-    : ((list as { items?: unknown[] })?.items ?? [])) as Array<UpstreamTransaction>;
+  const all = await getMyTransactions(c);
   const owns = all.some(
     (t) => t.id === transactionId || t.transactionId === transactionId,
   );
