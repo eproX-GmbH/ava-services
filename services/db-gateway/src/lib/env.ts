@@ -53,6 +53,12 @@ const schema = z.object({
   RATE_LIMIT_PER_MIN: z.coerce.number().default(600),
 
   LOG_LEVEL: z.enum(["fatal", "error", "warn", "info", "debug", "trace"]).default("info"),
+
+  // CORS allow-list, prod only. Comma-separated origins; the literal
+  // value `electron` enables the `null` origin produced by Electron's
+  // file:// renderer load. In dev (NODE_ENV !== "production") the
+  // gateway mirrors the request Origin so any localhost port works.
+  GATEWAY_ALLOWED_ORIGINS: z.string().optional(),
 });
 
 export type Env = z.infer<typeof schema>;

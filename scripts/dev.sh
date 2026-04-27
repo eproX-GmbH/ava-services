@@ -46,7 +46,17 @@ SERVICES=(
   "website:3014"
   "structured-content:3015"
   "master-data:3016"
+  "services/db-gateway:8080"
 )
+
+# The Electron desktop app (services/desktop) is not started here on
+# purpose — `electron-vite dev` opens a window and is best driven from a
+# separate terminal:
+#
+#   cd services/desktop && GATEWAY_URL=http://localhost:8080 pnpm dev
+#
+# Mixing it into this fanout would mean closing the window kills the whole
+# stack, which makes iteration awkward.
 
 pids=()
 trap 'echo; echo "==> Stopping services"; kill "${pids[@]}" 2>/dev/null || true; wait 2>/dev/null || true' INT TERM EXIT

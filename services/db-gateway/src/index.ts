@@ -1,6 +1,7 @@
 import { serve } from "@hono/node-server";
 import { swaggerUI } from "@hono/swagger-ui";
 import { OpenAPIHono } from "@hono/zod-openapi";
+import { cors } from "hono/cors";
 import { loadEnv } from "./lib/env";
 import { logger } from "./lib/logger";
 import { healthRouter } from "./routes/health";
@@ -8,6 +9,38 @@ import { v1 } from "./routes/v1";
 
 const env = loadEnv();
 const app = new OpenAPIHono();
+
+// CORS.
+//
+// The Electron renderer loads from `file://` (prod) or
+// `http://localhost:<vite-port>` (dev). Both are cross-origin to the
+// gateway, so without this middleware the browser blocks every fetch.
+//
+// Allow-list strategy:
+//   - In dev (`NODE_ENV !== "production"`) we mirror back the request's
+//     Origin so any localhost port works without config churn.
+//   - In prod we restrict to GATEWAY_ALLOWED_ORIGINS (comma-separated),
+//     which production deployments set explicitly. `null` origin (the
+//     `file://` Electron prod load) is allow-listed when the env var
+//     contains the literal string `electron`.
+const allowedOrigins = (env.GATEWAY_ALLOWED_ORIGINS ?? "")
+  .split(",").map((s) => s.trim()).filter(Boolean);
+app.use(
+  "*",
+  cors({
+    origin: (origin) => {
+      if (env.NODE_ENV !== "production") return origin ?? "*";
+      if (!origin || origin === "null") {
+        return allowedOrigins.includes("electron") ? "null" : "";
+      }
+      return allowedOrigins.includes(origin) ? origin : "";
+    },
+    allowHeaders: ["Authorization", "Content-Type", "X-Request-Id", "Idempotency-Key"],
+    exposeHeaders: ["X-Request-Id", "Transaction-Id"],
+    credentials: true,
+    maxAge: 600,
+  }),
+);
 
 // Public routes — no auth.
 app.route("/health", healthRouter);
