@@ -4,6 +4,7 @@ import { rateLimitMiddleware } from "../middleware/rate-limit";
 import { auditMiddleware } from "../middleware/audit";
 import { companiesRouter } from "./v1/companies";
 import { evaluationsRouter } from "./v1/evaluations";
+import { evaluationWritesRouter } from "./v1/evaluation-writes";
 import { importsRouter } from "./v1/imports";
 import { transactionsRouter } from "./v1/transactions";
 
@@ -17,7 +18,8 @@ import { transactionsRouter } from "./v1/transactions";
 //   3. §4.2 Transaction reads ← done (snapshot views; live progress via SSE)
 //   4. §4.3 Evaluation reads  ← done (cluster GET stubbed 501 — upstream gap)
 //   5. §5.1 Excel import      ← done
-//   6-7. Remaining writes     ← pending
+//   6. §5.2 Evaluation writes ← done
+//   7. §5.3 Corrections       ← pending
 //
 // Every /v1 route runs: auth → rate-limit → audit.
 export const v1 = new OpenAPIHono();
@@ -37,6 +39,9 @@ v1.route("/", evaluationsRouter);
 
 // §5.1 Excel import (W1).
 v1.route("/", importsRouter);
+
+// §5.2 Evaluation writes (W14, W16, W17, W18, W20, W21).
+v1.route("/", evaluationWritesRouter);
 
 // Retained for smoke-testing auth end-to-end. Safe to remove once clients
 // exist — no workflow reference.

@@ -345,6 +345,111 @@ const ComparisonRankingItemShape = z
   })
   .openapi("ComparisonRankingItem");
 
+// ---- Evaluation writes (company-evaluation) --------------------------------
+//
+// §5.2 writes. Spec in DESKTOP_DATA_FLOW.md §5.2 was written aspirational
+// — these schemas align to the actual upstream contracts (controller bodies
+// in company-evaluation/src/web/api/controllers/v1/*). Drift documented in
+// §11.
+
+// Topics list reused by best-match + cluster (k-means uses the same set).
+export const EvaluationTopic = z.enum([
+  "keywords",
+  "companyProfile",
+  "businessPurpose",
+  "serpCategory",
+  "sales",
+  "profits",
+  "employees",
+  "totalAssets",
+  "stateOfAffairs",
+]);
+
+export const BestMatchCreateBody = z
+  .object({
+    companyIds: z.array(z.string().min(1)).min(2),
+    input: z.string().min(1),
+    transactionId: z.string().min(1).optional(),
+    topics: z.array(EvaluationTopic).min(1),
+  })
+  .openapi("BestMatchCreate");
+
+export const BestMatchCreateResponse = z
+  .object({ bestMatchJobId: z.string() })
+  .openapi("BestMatchCreateResponse");
+
+export const OfferAnalysisBody = z
+  .object({
+    offer: z.string().min(1),
+    topK: z.number().int().min(1).max(100).optional(),
+  })
+  .openapi("OfferAnalysis");
+
+export const BestMatchFeedbackBody = z
+  .object({
+    bestMatchJobResultId: z.string().min(1),
+    label: z.enum(["ACCEPTED", "REJECTED", "NOTSURE", "IGNORED", "CONTACTED", "CLICKED"]),
+    reason: z.string().optional(),
+  })
+  .openapi("BestMatchFeedback");
+
+export const ChatCreateBody = z
+  .object({
+    transactionId: z.string().min(1),
+    question: z.string().min(1),
+    topK: z.number().int().min(2).max(200).default(10),
+  })
+  .openapi("ChatCreate");
+
+export const ChatCreateResponse = z
+  .object({
+    sessionId: z.string(),
+    messageId: z.string().optional(),
+  })
+  .passthrough()
+  .openapi("ChatCreateResponse");
+
+export const ChatMessageCreateBody = z
+  .object({
+    // The desktop spec calls this `question`; upstream calls it `message`.
+    // We accept the desktop name and re-key on the way out.
+    question: z.string().min(1),
+    scopeCompanyIds: z.array(z.string().min(1)).optional(),
+    topK: z.number().int().min(2).max(200).optional(),
+  })
+  .openapi("ChatMessageCreate");
+
+// Upstream chat-message POST returns OpenAI result + metadata; the exact
+// shape is RAG-pipeline dependent. Keep loose.
+export const ChatMessageCreateResponse = z
+  .object({})
+  .passthrough()
+  .openapi("ChatMessageCreateResponse");
+
+export const ClusterCreateBody = z
+  .object({
+    companyIds: z.array(z.string().min(1)).min(2),
+    k: z.number().int().min(2).max(50),
+    topics: z.array(EvaluationTopic).min(1),
+  })
+  .openapi("ClusterCreate");
+
+export const ClusterCreateResponse = z
+  .object({})
+  .passthrough()
+  .openapi("ClusterCreateResponse");
+
+export const ComparisonCreateBody = z
+  .object({
+    companyIds: z.array(z.string().min(1)).min(2),
+    targetCompanyId: z.string().min(1),
+  })
+  .openapi("ComparisonCreate");
+
+export const ComparisonCreateResponse = z
+  .object({ comparisonJobId: z.string() })
+  .openapi("ComparisonCreateResponse");
+
 // ---- Imports (master-data data-care) ---------------------------------------
 //
 // §5.1: the gateway accepts the multipart upload, hands the binary to
