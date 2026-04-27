@@ -3,9 +3,11 @@
 # services as host Node processes (D5 model). Designed to mirror what the
 # Electron supervisor will do in production (Step 6).
 #
-# Usage: bash scripts/dev.sh [hybrid]
-#   default  — full local stack (infra/docker-compose.dev.yml)
-#   hybrid   — RabbitMQ local, Postgres+Elastic from cloud (.env.hybrid)
+# Usage: bash scripts/dev.sh [dev|hostlocal|hybrid]
+#   dev        — full local stack in Docker (infra/docker-compose.dev.yml)
+#   hostlocal  — no Docker; assumes Postgres/RabbitMQ/Keycloak already running
+#                on the host (uses .env.dev + docker-compose.dev-hostlocal.yml)
+#   hybrid     — RabbitMQ local, Postgres+Elastic from cloud (.env.hybrid)
 
 set -euo pipefail
 
@@ -18,12 +20,16 @@ case "$MODE" in
     COMPOSE_FILE="infra/docker-compose.dev.yml"
     ENV_FILE=".env.dev"
     ;;
+  hostlocal)
+    COMPOSE_FILE="infra/docker-compose.dev-hostlocal.yml"
+    ENV_FILE=".env.dev"
+    ;;
   hybrid)
     COMPOSE_FILE="infra/docker-compose.hybrid.yml"
     ENV_FILE=".env.hybrid"
     ;;
   *)
-    echo "Unknown mode: $MODE (expected: dev | hybrid)" >&2
+    echo "Unknown mode: $MODE (expected: dev | hostlocal | hybrid)" >&2
     exit 1
     ;;
 esac

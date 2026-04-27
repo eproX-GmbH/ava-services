@@ -1,0 +1,9 @@
+# No-op compose for "host-local" dev mode.
+#
+# Use this when you already run Postgres/RabbitMQ/Keycloak directly on the
+# host (not in Docker) and just want `scripts/dev.sh hostlocal` to skip
+# infra and only fork the Node services.
+#
+# `docker compose up -d` against this file is a no-op (no services declared)
+# and exits 0, which is exactly what scripts/dev.sh needs.
+services: {}
