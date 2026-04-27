@@ -301,7 +301,7 @@ Derived from the resolved questions above. Each bullet is a PR-sized batch.
 4. **§4.3 Evaluation reads (6 endpoints).** ✅ done — five proxy cleanly to company-evaluation; **`GET /v1/evaluations/clusters/:id` returns 501** because upstream only exposes the `POST /api/v1/clusters/cluster/k-means` command. Removing the 501 = adding a cluster-query endpoint upstream (open follow-up). Two endpoints (chat messages by sessionId, comparisons by id) currently rely on JWT scope+tenant only — the underlying entities have no `transactionId` or `userId` column upstream, so cheap gateway-side ownership isn't possible until upstream adds one.
 5. **§5.1 Excel import (1 endpoint).** ✅ done. Multipart in at the gateway, raw octet-stream out to `master-data` `POST /api/v1/data-care`. Upstream now sets a `Transaction-Id` response header (additive — the legacy xlsx response is unchanged); the gateway reads it and returns `202 { transactionId }` so the desktop client opens its SSE stream immediately. Idempotency-Key replay window is a Step 7 follow-up — not yet wired (see Open follow-ups below).
 6. **§5.2 Evaluation writes (7 endpoints).** ✅ done. All seven proxy to `company-evaluation`. Bodies aligned to upstream contracts; the §5.2 table above was aspirational and several fields were missing/misnamed (see "Open §5.2 follow-ups" below). `chats` verifies transaction ownership via the shared `v1TxCache`; the rest gate on JWT scope+tenant only (companies are global per D2; chat sessions / comparisons have no upstream ownership column — same v0 trade-off as §4.3 reads).
-7. **§5.3 Corrections (3 endpoints).** Simple upserts; revision history deferred per Q2.
+7. **§5.3 Corrections (3 endpoints).** ✅ done. Three "re-scrape" PUT routes that fan out to company-profile / website / company-publication. Each one mirrors the same upstream command master-data fires through the CloudEvent pipeline — these gateway routes just expose the *manual* trigger path the desktop UI needs. Step 5 endpoint surface is now complete.
 
 **Open §4.3 follow-ups (upstream company-evaluation work):**
 - Add `GET /api/v1/clusters/:id` (clears the gateway 501).
@@ -314,6 +314,11 @@ Derived from the resolved questions above. Each bullet is a PR-sized batch.
 - `clusters`: spec was `{ transactionId, k }`; implementation is `{ companyIds[], k, topics[] }` because upstream's k-means controller takes companyIds explicitly. Caller resolves companyIds via §4.2 if it has only a transactionId. A future upstream `transactionId`-aware variant would let us collapse this back to the spec.
 - `comparisons`: spec missed `targetCompanyId` (required upstream).
 - Idempotency-Key wiring (advertised in §10) is not yet honored on §5.2 writes either. Folded into the §5.1 follow-up below.
+
+**Open §5.3 follow-ups (spec ↔ implementation drift to reconcile in §5.3 table):**
+- `profile`: spec wording implies field-level upsert; implementation re-scrapes a URL — body is `{ url }` because that's what `company-profile`'s `POST /api/v1/company-profiles` accepts. If the desktop UI later needs in-place field edits, that's an upstream addition (a new `PATCH` command on company-profile).
+- `website`: implementation body is `{ companyName, street, zipCode, city }` (forwarded as the upstream re-scrape command). No field-level edit upstream.
+- `publications`: spec was `/publications/:year` (per-year row upsert); upstream `company-publication`'s `PUT /api/v1/company-publications` takes `{ companyId, companyName, companyLocation }` and re-scrapes ALL years for the company. Path simplified to `/companies/:companyId/publications` (no `:year`). Per-year manual edit needs an upstream addition.
 
 **Open §5.1 follow-ups:**
 - Wire `Idempotency-Key` (gateway-side dedupe table, 24h window) for `POST /v1/imports/excel`. The advertised contract in §10 says we accept it; today we don't honor it. Low-stakes for v0 because upstream creates a fresh `transactionId` per call, but desktop-side network flakes can otherwise produce duplicate transactions.

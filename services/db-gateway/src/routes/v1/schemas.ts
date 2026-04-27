@@ -450,7 +450,43 @@ export const ComparisonCreateResponse = z
   .object({ comparisonJobId: z.string() })
   .openapi("ComparisonCreateResponse");
 
-// ---- Imports (master-data data-care) ---------------------------------------
+// ---- Manual corrections (§5.3) ---------------------------------------------
+//
+// Three PUT-shaped upserts. Bodies match the upstream commands; the
+// `companyId` is taken from the path and injected on the way out so the
+// gateway URL keeps the natural REST shape (`/companies/:id/...`) even
+// though upstream services accept companyId in the body.
+
+export const CompanyProfileUpsertBody = z
+  .object({
+    // Upstream calls its endpoint POST /api/v1/company-profiles and treats it
+    // as "scrape this URL for this company". Body upstream is {companyId,url};
+    // we expose just `url` here and inject companyId from the path.
+    url: z.string().min(1),
+    // Upstream also accepts ?isSkippable=…; surfaced for the desktop client
+    // that wants to retry-without-replace.
+    isSkippable: z.boolean().optional(),
+  })
+  .openapi("CompanyProfileUpsert");
+
+export const CompanyWebsiteUpsertBody = z
+  .object({
+    companyName: z.string().min(1),
+    street: z.string().min(1),
+    zipCode: z.string().min(1),
+    city: z.string().min(1),
+    isSkippable: z.boolean().optional(),
+  })
+  .openapi("CompanyWebsiteUpsert");
+
+export const CompanyPublicationsUpsertBody = z
+  .object({
+    companyName: z.string().min(1),
+    companyLocation: z.string().min(1),
+  })
+  .openapi("CompanyPublicationsUpsert");
+
+
 //
 // §5.1: the gateway accepts the multipart upload, hands the binary to
 // master-data's `POST /api/v1/data-care`, and returns just the transactionId
