@@ -207,3 +207,91 @@ button.primary:disabled { opacity: 0.6; cursor: not-allowed; }
 .badge.ok { background: rgba(34, 197, 94, 0.15); border-color: rgba(34, 197, 94, 0.4); }
 .badge.warn { background: rgba(234, 179, 8, 0.15); border-color: rgba(234, 179, 8, 0.4); }
 .badge.bad { background: rgba(239, 68, 68, 0.15); border-color: rgba(239, 68, 68, 0.4); }
+
+/* Evaluation panels */
+.grid-2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.5rem;
+}
+@media (max-width: 900px) {
+  .grid-2 { grid-template-columns: 1fr; }
+}
+.panel {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 1rem;
+}
+.panel h3 { margin-top: 0; }
+.form.compact { gap: 0.5rem; }
+.form .field textarea {
+  font: inherit;
+  padding: 0.4rem 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: transparent;
+  color: var(--fg);
+  resize: vertical;
+}
+.list { list-style: none; padding: 0; }
+.list li {
+  border-bottom: 1px solid var(--border);
+  padding: 0.5rem 0;
+}
+.list li:last-child { border-bottom: none; }
+
+/* Chip-as-button (topic picker) */
+.chips.selectable .chip {
+  cursor: pointer;
+  font: inherit;
+  background: none;
+  color: var(--fg);
+}
+.chips.selectable .chip.active {
+  background: var(--accent);
+  color: white;
+  border-color: var(--accent);
+}
+
+/* Feedback select */
+.feedback select {
+  font: inherit;
+  padding: 0.2rem 0.3rem;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: transparent;
+  color: var(--fg);
+}
+
+/* Chat */
+.chat { display: flex; flex-direction: column; height: calc(100vh - 8rem); }
+.chat-scroll {
+  flex: 1;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.75rem;
+  margin-bottom: 0.75rem;
+}
+.msg { margin-bottom: 0.75rem; }
+.msg-role { font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; }
+.msg-body { white-space: pre-wrap; }
+.msg-user .msg-body { color: var(--fg); }
+.msg-assistant .msg-body {
+  background: rgba(37, 99, 235, 0.06);
+  padding: 0.5rem 0.75rem;
+  border-radius: 6px;
+}
+@media (prefers-color-scheme: dark) {
+  .msg-assistant .msg-body { background: rgba(96, 165, 250, 0.1); }
+}
+.chat-form { display: flex; gap: 0.5rem; align-items: flex-start; }
+.chat-form textarea { flex: 1; }
+
+/* Re-scrape blocks (W23–W25) inside CompanyDetail tabs */
+.rescrape {
+  margin-top: 1.5rem;
+  padding-top: 1rem;
+  border-top: 1px dashed var(--border);
+}
+.rescrape h4 { margin: 0 0 0.5rem; color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em; }

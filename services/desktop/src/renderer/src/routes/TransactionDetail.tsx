@@ -67,6 +67,9 @@ export function TransactionDetail() {
         Transaction <code>{id?.slice(0, 8)}…</code>{" "}
         <Link to={`/transactions/${id}/stream`} className="muted">
           (live stream)
+        </Link>{" "}
+        <Link to={`/transactions/${id}/evaluations`} className="muted">
+          (evaluations)
         </Link>
       </h2>
 

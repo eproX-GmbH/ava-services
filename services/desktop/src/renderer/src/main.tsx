@@ -10,6 +10,9 @@ import { TransactionDetail } from "./routes/TransactionDetail";
 import { TransactionStream } from "./routes/TransactionStream";
 import { Companies } from "./routes/Companies";
 import { CompanyDetail } from "./routes/CompanyDetail";
+import { Evaluations } from "./routes/Evaluations";
+import { BestMatchDetail } from "./routes/BestMatchDetail";
+import { ChatSession } from "./routes/ChatSession";
 import { useAuthStore } from "./store/auth";
 import "./styles.css";
 
@@ -64,6 +67,9 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
               <Route path="/transactions/:id/stream" element={<TransactionStream />} />
               <Route path="/companies" element={<Companies />} />
               <Route path="/companies/:id" element={<CompanyDetail />} />
+              <Route path="/transactions/:id/evaluations" element={<Evaluations />} />
+              <Route path="/evaluations/best-matches/:id" element={<BestMatchDetail />} />
+              <Route path="/evaluations/chats/:sessionId" element={<ChatSession />} />
             </Routes>
           </main>
         </App>

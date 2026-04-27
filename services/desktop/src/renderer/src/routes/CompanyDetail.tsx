@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useState, type FormEvent } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useParams } from "react-router-dom";
 import { gatewayFetch, GatewayError } from "../api/gateway";
 
@@ -127,7 +127,53 @@ function ProfileTab({ id }: { id: string }) {
           <dd>{q.data.businessPurpose || <span className="muted">—</span>}</dd>
         </dl>
       )}
+      <ProfileRescrape id={id} />
     </TabState>
+  );
+}
+
+// W23 — re-scrape profile from a URL. The upstream is a "scrape this URL"
+// command (not a field-level edit), so the form is a single URL input.
+function ProfileRescrape({ id }: { id: string }) {
+  const qc = useQueryClient();
+  const [url, setUrl] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [ok, setOk] = useState(false);
+  const mut = useMutation({
+    mutationFn: (body: { url: string }) =>
+      gatewayFetch<unknown>(`/v1/companies/${id}/profile`, { method: "PUT", body }),
+    onSuccess: () => {
+      setOk(true);
+      setError(null);
+      setUrl("");
+      qc.invalidateQueries({ queryKey: ["company", id, "profile"] });
+    },
+    onError: (err) => setError((err as Error).message),
+  });
+  function onSubmit(e: FormEvent) {
+    e.preventDefault();
+    if (!url.trim()) return;
+    setOk(false);
+    mut.mutate({ url: url.trim() });
+  }
+  return (
+    <form onSubmit={onSubmit} className="form compact rescrape">
+      <h4>Re-scrape (W23)</h4>
+      <label className="field">
+        <span>Source URL</span>
+        <input
+          type="url"
+          value={url}
+          onChange={(e) => setUrl(e.target.value)}
+          placeholder="https://example.com/about"
+        />
+      </label>
+      <button type="submit" className="primary" disabled={mut.isPending || !url.trim()}>
+        {mut.isPending ? "Submitting…" : "Re-scrape profile"}
+      </button>
+      {ok && <p className="muted">Submitted. Refreshing data…</p>}
+      {error && <p className="error">{error}</p>}
+    </form>
   );
 }
 
@@ -186,7 +232,64 @@ function WebsiteTab({ id }: { id: string }) {
           )}
         </dl>
       )}
+      <WebsiteRescrape id={id} />
     </TabState>
+  );
+}
+
+// W24 — re-scrape website data. Upstream needs the postal address to
+// disambiguate a re-detection, so this form takes companyName + street +
+// zip + city, not field-level edits to the existing row.
+function WebsiteRescrape({ id }: { id: string }) {
+  const qc = useQueryClient();
+  const [companyName, setCompanyName] = useState("");
+  const [street, setStreet] = useState("");
+  const [zipCode, setZipCode] = useState("");
+  const [city, setCity] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [ok, setOk] = useState(false);
+  const mut = useMutation({
+    mutationFn: (body: { companyName: string; street: string; zipCode: string; city: string }) =>
+      gatewayFetch<unknown>(`/v1/companies/${id}/website`, { method: "PUT", body }),
+    onSuccess: () => {
+      setOk(true);
+      setError(null);
+      qc.invalidateQueries({ queryKey: ["company", id, "website"] });
+    },
+    onError: (err) => setError((err as Error).message),
+  });
+  function onSubmit(e: FormEvent) {
+    e.preventDefault();
+    if (!companyName || !street || !zipCode || !city) return;
+    setOk(false);
+    mut.mutate({ companyName, street, zipCode, city });
+  }
+  const valid = companyName && street && zipCode && city;
+  return (
+    <form onSubmit={onSubmit} className="form compact rescrape">
+      <h4>Re-scrape (W24)</h4>
+      <label className="field">
+        <span>Company name</span>
+        <input type="text" value={companyName} onChange={(e) => setCompanyName(e.target.value)} />
+      </label>
+      <label className="field">
+        <span>Street</span>
+        <input type="text" value={street} onChange={(e) => setStreet(e.target.value)} />
+      </label>
+      <label className="field">
+        <span>ZIP</span>
+        <input type="text" value={zipCode} onChange={(e) => setZipCode(e.target.value)} />
+      </label>
+      <label className="field">
+        <span>City</span>
+        <input type="text" value={city} onChange={(e) => setCity(e.target.value)} />
+      </label>
+      <button type="submit" className="primary" disabled={mut.isPending || !valid}>
+        {mut.isPending ? "Submitting…" : "Re-scrape website"}
+      </button>
+      {ok && <p className="muted">Submitted. Refreshing data…</p>}
+      {error && <p className="error">{error}</p>}
+    </form>
   );
 }
 
@@ -225,7 +328,62 @@ function PublicationsTab({ id }: { id: string }) {
           </tbody>
         </table>
       )}
+      <PublicationsRescrape id={id} />
     </TabState>
+  );
+}
+
+// W25 — re-scrape publications. Upstream re-fetches all yearly rows for
+// the company in one shot, keyed by name + location (per-year manual edit
+// is upstream follow-up — see §11 in DESKTOP_DATA_FLOW.md).
+function PublicationsRescrape({ id }: { id: string }) {
+  const qc = useQueryClient();
+  const [companyName, setCompanyName] = useState("");
+  const [companyLocation, setCompanyLocation] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [ok, setOk] = useState(false);
+  const mut = useMutation({
+    mutationFn: (body: { companyName: string; companyLocation: string }) =>
+      gatewayFetch<unknown>(`/v1/companies/${id}/publications`, { method: "PUT", body }),
+    onSuccess: () => {
+      setOk(true);
+      setError(null);
+      qc.invalidateQueries({ queryKey: ["company", id, "publications"] });
+    },
+    onError: (err) => setError((err as Error).message),
+  });
+  function onSubmit(e: FormEvent) {
+    e.preventDefault();
+    if (!companyName || !companyLocation) return;
+    setOk(false);
+    mut.mutate({ companyName, companyLocation });
+  }
+  return (
+    <form onSubmit={onSubmit} className="form compact rescrape">
+      <h4>Re-scrape (W25)</h4>
+      <label className="field">
+        <span>Company name</span>
+        <input type="text" value={companyName} onChange={(e) => setCompanyName(e.target.value)} />
+      </label>
+      <label className="field">
+        <span>Location</span>
+        <input
+          type="text"
+          value={companyLocation}
+          onChange={(e) => setCompanyLocation(e.target.value)}
+          placeholder="Berlin"
+        />
+      </label>
+      <button
+        type="submit"
+        className="primary"
+        disabled={mut.isPending || !companyName || !companyLocation}
+      >
+        {mut.isPending ? "Submitting…" : "Re-scrape publications"}
+      </button>
+      {ok && <p className="muted">Submitted. Refreshing data…</p>}
+      {error && <p className="error">{error}</p>}
+    </form>
   );
 }
 
