@@ -276,6 +276,29 @@ export class Auth extends EventEmitter {
     this.emit("status", next);
   }
 
+  /**
+   * DEV ONLY — fake a signed-in session for UI testing without Keycloak.
+   * Triggered by main/index.ts when AVA_DEV_AUTH_BYPASS=1 is set.
+   *
+   * The "token" is a synthetic value that real backends will reject. Use only
+   * with the mock gateway (scripts/mock-gateway.mjs), which doesn't verify
+   * JWTs. Anyone running this against a real gateway will get 401s — by
+   * design, so you can't accidentally pretend you're authenticated in prod.
+   */
+  devBypassSignIn(actorId = "dev-user", tenantId = "dev-tenant"): void {
+    if (process.env.NODE_ENV === "production") {
+      throw new Error("devBypassSignIn refuses to run with NODE_ENV=production");
+    }
+    this.setStatus({
+      signedIn: true,
+      accessToken: "dev-bypass-token",
+      expiresAt: Date.now() + 60 * 60 * 1000, // 1h
+      actorId,
+      tenantId,
+      scopes: this.scopes.filter((s) => s !== "openid" && s !== "profile" && s !== "email"),
+    });
+  }
+
   // ---- Refresh-token persistence (OS keychain via safeStorage) --------------
 
   private refreshTokenPath(): string {

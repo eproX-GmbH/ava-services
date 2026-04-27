@@ -77,9 +77,18 @@ app.whenReady().then(async () => {
   ipcMain.handle("auth:signIn", () => auth.signIn());
   ipcMain.handle("auth:signOut", () => auth.signOut());
 
-  // Try silent restore from the OS-keychain–stored refresh token before
-  // showing any UI — if it works the renderer never sees a sign-in screen.
-  await auth.tryRestoreSession();
+  // DEV ONLY — bypass OIDC entirely for UI testing against a mock gateway.
+  // Set AVA_DEV_AUTH_BYPASS=1 alongside GATEWAY_URL to skip Keycloak.
+  if (process.env.AVA_DEV_AUTH_BYPASS === "1") {
+    console.warn(
+      "[auth] AVA_DEV_AUTH_BYPASS=1 — faking a signed-in session. DO NOT USE IN PROD.",
+    );
+    auth.devBypassSignIn();
+  } else {
+    // Try silent restore from the OS-keychain–stored refresh token before
+    // showing any UI — if it works the renderer never sees a sign-in screen.
+    await auth.tryRestoreSession();
+  }
 
   createMainWindow();
 

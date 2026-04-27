@@ -6,6 +6,8 @@
   "main": "./out/main/index.js",
   "scripts": {
     "dev": "electron-vite dev",
+    "dev:mock": "AVA_DEV_AUTH_BYPASS=1 GATEWAY_URL=http://localhost:9080 electron-vite dev",
+    "mock-gateway": "node scripts/mock-gateway.mjs",
     "build": "electron-vite build",
     "build:typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
     "preview": "electron-vite preview",
