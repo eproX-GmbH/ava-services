@@ -6,7 +6,26 @@ import { App } from "./App";
 import { Whoami } from "./routes/Whoami";
 import { Transactions } from "./routes/Transactions";
 import { TransactionStream } from "./routes/TransactionStream";
+import { useAuthStore } from "./store/auth";
 import "./styles.css";
+
+function UserBadge() {
+  const actorId = useAuthStore((s) => s.actorId);
+  const tenantId = useAuthStore((s) => s.tenantId);
+  return (
+    <div className="user-badge">
+      <span className="muted">{tenantId} / </span>
+      <span>{actorId ?? "—"}</span>
+      <button
+        onClick={() => void window.api.auth.signOut()}
+        className="link"
+        title="Sign out"
+      >
+        sign out
+      </button>
+    </div>
+  );
+}
 
 // React Query is the only HTTP cache. Defaults err on the side of "fresh
 // is cheap, the gateway is fast" — short staleTime, refetch on focus stays
@@ -23,8 +42,11 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
       <HashRouter>
         <App>
           <nav className="nav">
-            <NavLink to="/whoami">Whoami</NavLink>
-            <NavLink to="/transactions">Transactions</NavLink>
+            <div className="nav-links">
+              <NavLink to="/whoami">Whoami</NavLink>
+              <NavLink to="/transactions">Transactions</NavLink>
+            </div>
+            <UserBadge />
           </nav>
           <main className="main">
             <Routes>

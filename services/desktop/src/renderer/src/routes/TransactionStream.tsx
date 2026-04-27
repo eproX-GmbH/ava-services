@@ -22,12 +22,20 @@ export function TransactionStream() {
     if (!id) return;
     setEvents([]);
     setError(null);
-    const stop = gatewaySSE(
+    let stop: (() => void) | null = null;
+    let cancelled = false;
+    void gatewaySSE(
       `/v1/transactions/${id}/stream`,
       (ev) => setEvents((prev) => [...prev, { ...ev, receivedAt: Date.now() }]),
       () => setError("SSE connection error (auth or upstream); see DevTools network tab"),
-    );
-    return stop;
+    ).then((teardown) => {
+      if (cancelled) teardown();
+      else stop = teardown;
+    });
+    return () => {
+      cancelled = true;
+      stop?.();
+    };
   }, [id]);
 
   return (
