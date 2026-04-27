@@ -4,8 +4,12 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { HashRouter, Route, Routes, NavLink, Navigate } from "react-router-dom";
 import { App } from "./App";
 import { Whoami } from "./routes/Whoami";
+import { Ingest } from "./routes/Ingest";
 import { Transactions } from "./routes/Transactions";
+import { TransactionDetail } from "./routes/TransactionDetail";
 import { TransactionStream } from "./routes/TransactionStream";
+import { Companies } from "./routes/Companies";
+import { CompanyDetail } from "./routes/CompanyDetail";
 import { useAuthStore } from "./store/auth";
 import "./styles.css";
 
@@ -43,17 +47,23 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
         <App>
           <nav className="nav">
             <div className="nav-links">
-              <NavLink to="/whoami">Whoami</NavLink>
+              <NavLink to="/ingest">Ingest</NavLink>
               <NavLink to="/transactions">Transactions</NavLink>
+              <NavLink to="/companies">Companies</NavLink>
+              <NavLink to="/whoami">Whoami</NavLink>
             </div>
             <UserBadge />
           </nav>
           <main className="main">
             <Routes>
-              <Route path="/" element={<Navigate to="/whoami" replace />} />
+              <Route path="/" element={<Navigate to="/transactions" replace />} />
               <Route path="/whoami" element={<Whoami />} />
+              <Route path="/ingest" element={<Ingest />} />
               <Route path="/transactions" element={<Transactions />} />
+              <Route path="/transactions/:id" element={<TransactionDetail />} />
               <Route path="/transactions/:id/stream" element={<TransactionStream />} />
+              <Route path="/companies" element={<Companies />} />
+              <Route path="/companies/:id" element={<CompanyDetail />} />
             </Routes>
           </main>
         </App>

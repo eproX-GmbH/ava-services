@@ -39,17 +39,25 @@ export function Transactions() {
               <th>ID</th>
               <th>Started</th>
               <th>Companies</th>
+              <th>Detail</th>
               <th>Live</th>
             </tr>
           </thead>
           <tbody>
             {q.data.items.map((t) => (
               <tr key={t.id}>
-                <td><code>{t.id.slice(0, 8)}…</code></td>
+                <td>
+                  <Link to={`/transactions/${t.id}`}>
+                    <code>{t.id.slice(0, 8)}…</code>
+                  </Link>
+                </td>
                 <td>{t.startTime ?? "—"}</td>
                 <td>{t.companyCount ?? "—"}</td>
                 <td>
-                  <Link to={`/transactions/${t.id}/stream`}>open stream →</Link>
+                  <Link to={`/transactions/${t.id}`}>open →</Link>
+                </td>
+                <td>
+                  <Link to={`/transactions/${t.id}/stream`}>stream →</Link>
                 </td>
               </tr>
             ))}

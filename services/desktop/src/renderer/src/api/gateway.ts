@@ -68,6 +68,43 @@ export async function gatewayFetch<T>(path: string, opts: GatewayOptions = {}): 
   return parsed as T;
 }
 
+// Multipart upload — for W1 Excel ingest. Kept separate from gatewayFetch so
+// the JSON path stays trivially typed; FormData callers always know they're
+// uploading and what response they expect.
+export async function gatewayUpload<T>(
+  path: string,
+  form: FormData,
+  opts: { query?: GatewayOptions["query"]; signal?: AbortSignal } = {},
+): Promise<T> {
+  const url = new URL(path.startsWith("/") ? path : `/${path}`, getGatewayUrl());
+  if (opts.query) {
+    for (const [k, v] of Object.entries(opts.query)) {
+      if (v === undefined) continue;
+      if (Array.isArray(v)) for (const item of v) url.searchParams.append(k, String(item));
+      else url.searchParams.set(k, String(v));
+    }
+  }
+
+  const headers: Record<string, string> = { "x-request-id": newRequestId() };
+  const token = await window.api.auth.getAccessToken();
+  if (token) headers["authorization"] = `Bearer ${token}`;
+  // Don't set content-type — the browser fills in the multipart boundary.
+
+  const res = await fetch(url, { method: "POST", headers, body: form, signal: opts.signal });
+  const text = await res.text();
+  const parsed = text ? safeParse(text) : undefined;
+  if (!res.ok) {
+    throw new GatewayError(
+      typeof parsed === "object" && parsed && "message" in parsed
+        ? String((parsed as { message: unknown }).message)
+        : `gateway ${res.status}`,
+      res.status,
+      parsed,
+    );
+  }
+  return parsed as T;
+}
+
 function safeParse(s: string): unknown {
   try {
     return JSON.parse(s);
