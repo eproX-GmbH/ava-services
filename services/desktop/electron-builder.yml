@@ -7,15 +7,38 @@ files:
   - "out/**/*"
   - "package.json"
 asar: true
+
+# Ollama runtime (D7) — see scripts/fetch-ollama.mjs.
+#
+# `extraResources` copies platform-matched binaries into the packaged app's
+# Resources folder. The OllamaSupervisor looks them up at runtime via
+# `<resourcesPath>/ollama/<platform>-<arch>/ollama[.exe]`.
+#
+# Files MUST exist at package time. CI runs `pnpm fetch:ollama` before
+# `electron-builder` to populate `resources/ollama/` from the upstream
+# Ollama release artifacts. If that fetch step is skipped electron-builder
+# will fail with "Cannot find file" — that's the intended behavior (a
+# silently empty extraResources copy was the worst-case here in earlier
+# drafts).
+extraResources:
+  - from: resources/ollama
+    to: ollama
+    filter:
+      - "**/*"
+
 mac:
   target:
     - target: dmg
       arch: [arm64, x64]
   category: public.app-category.business
+  # Code-signing & notarization (Step 7) — kept here as a TODO marker.
+  # identity: "Developer ID Application: …"
+  # notarize: { teamId: "…" }
 win:
   target:
     - target: nsis
       arch: [x64]
+  # Windows code-signing requires an EV cert; left unset for v0.
 linux:
   target:
     - target: AppImage

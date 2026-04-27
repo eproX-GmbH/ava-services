@@ -1,0 +1,6 @@
+# Ollama binaries are fetched at package time by scripts/fetch-ollama.mjs.
+# We don't commit them — they're large (~20MB each), platform-specific, and
+# their canonical source is the upstream release page.
+*
+!.gitignore
+!README.md

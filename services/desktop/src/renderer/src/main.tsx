@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { HashRouter, Route, Routes, NavLink, Navigate } from "react-router-dom";
 import { App } from "./App";
 import { Whoami } from "./routes/Whoami";
+import { Chat } from "./routes/Chat";
 import { Ingest } from "./routes/Ingest";
 import { Transactions } from "./routes/Transactions";
 import { TransactionDetail } from "./routes/TransactionDetail";
@@ -50,6 +51,7 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
         <App>
           <nav className="nav">
             <div className="nav-links">
+              <NavLink to="/chat">Chat</NavLink>
               <NavLink to="/ingest">Ingest</NavLink>
               <NavLink to="/transactions">Transactions</NavLink>
               <NavLink to="/companies">Companies</NavLink>
@@ -59,7 +61,8 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
           </nav>
           <main className="main">
             <Routes>
-              <Route path="/" element={<Navigate to="/transactions" replace />} />
+              <Route path="/" element={<Navigate to="/chat" replace />} />
+              <Route path="/chat" element={<Chat />} />
               <Route path="/whoami" element={<Whoami />} />
               <Route path="/ingest" element={<Ingest />} />
               <Route path="/transactions" element={<Transactions />} />

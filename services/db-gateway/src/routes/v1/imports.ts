@@ -2,7 +2,14 @@ import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
 import { HTTPException } from "hono/http-exception";
 import { requireScope } from "../../middleware/auth";
 import { callUpstreamBinary } from "../../lib/upstream";
-import { ErrorShape, ImportExcelQuery, ImportExcelResponseShape } from "./schemas";
+import { buildXlsx } from "../../lib/xlsx-mini";
+import {
+  CompanyIngestBody,
+  CompanyIngestResponseShape,
+  ErrorShape,
+  ImportExcelQuery,
+  ImportExcelResponseShape,
+} from "./schemas";
 
 // =============================================================================
 // §5.1 Excel import (W1 — start a transaction).
@@ -129,5 +136,82 @@ importsRouter.openapi(importExcelRoute, async (c) => {
     throw new HTTPException(502, { message: "upstream omitted Transaction-Id header" });
   }
 
+  return c.json({ transactionId }, 202);
+});
+
+// ---- POST /v1/companies (Phase 8.h) ----------------------------------------
+//
+// Single-row sibling of `/v1/imports/excel`. The body is JSON `{name, city,
+// transactionName?, isFuzzy?}`; the gateway hand-encodes a 2-column,
+// 1-data-row xlsx (see lib/xlsx-mini.ts) and POSTs it to the same upstream
+// `/api/v1/data-care` endpoint as the bulk import. Response shape matches
+// the bulk endpoint exactly (`{transactionId}`) so the desktop client
+// can subscribe to the same SSE progress stream regardless of how the
+// transaction was started.
+//
+// Why not let upstream accept JSON directly: master-data's xlsx parser is
+// the only ingest path, and gating one extra route at the gateway keeps
+// upstream untouched. If/when master-data grows a JSON ingest, swap the
+// internals here without changing the desktop-facing shape.
+//
+// `companyNameIdentifiers` and `city` query strings on the upstream call
+// must match the xlsx column headers — we pin both to "company"/"city"
+// in the encoder and the URL so the parser correctly picks up the row.
+
+const COMPANY_HEADER = "company";
+const CITY_HEADER = "city";
+
+const companyIngestRoute = createRoute({
+  method: "post",
+  path: "/companies",
+  tags: [tag],
+  summary: "Ingest one company (single-row sibling of /imports/excel)",
+  request: {
+    body: {
+      content: { "application/json": { schema: CompanyIngestBody } },
+      required: true,
+    },
+  },
+  responses: {
+    202: {
+      content: { "application/json": { schema: CompanyIngestResponseShape } },
+      description: "transaction accepted; pipeline events published",
+    },
+    ...errorResponses,
+  },
+});
+
+importsRouter.openapi(companyIngestRoute, async (c) => {
+  const { name, city, transactionName, isFuzzy } = c.req.valid("json");
+
+  const xlsx = buildXlsx({
+    headers: [COMPANY_HEADER, CITY_HEADER],
+    rows: [[name, city]],
+  });
+
+  const { headers } = await callUpstreamBinary(
+    c,
+    "masterData",
+    "/api/v1/data-care",
+    xlsx,
+    {
+      contentType: "application/octet-stream",
+      query: {
+        companyNameIdentifiers: COMPANY_HEADER,
+        city: CITY_HEADER,
+        // Mirror the bulk endpoint's default-fallback name shape.
+        name: transactionName ?? `Single ingest: ${name}`,
+        isFuzzy: String(isFuzzy ?? false),
+      },
+    },
+  );
+
+  const transactionId =
+    headers.get("transaction-id") ?? headers.get("Transaction-Id");
+  if (!transactionId) {
+    throw new HTTPException(502, {
+      message: "upstream omitted Transaction-Id header",
+    });
+  }
   return c.json({ transactionId }, 202);
 });

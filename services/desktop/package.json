@@ -9,18 +9,20 @@
     "dev:mock": "AVA_DEV_AUTH_BYPASS=1 GATEWAY_URL=http://localhost:9080 electron-vite dev",
     "dev:real": "GATEWAY_URL=http://localhost:8081 AUTH_ISSUER=http://auth.localhost/realms/ava AUTH_CLIENT_ID=ava-desktop electron-vite dev",
     "mock-gateway": "node scripts/mock-gateway.mjs",
+    "fetch:ollama": "node scripts/fetch-ollama.mjs",
     "build": "electron-vite build",
     "build:typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
     "preview": "electron-vite preview",
-    "package:mac": "electron-vite build && electron-builder --mac",
-    "package:win": "electron-vite build && electron-builder --win",
-    "package:linux": "electron-vite build && electron-builder --linux"
+    "package:mac": "pnpm fetch:ollama --platform=darwin-arm64 && pnpm fetch:ollama --platform=darwin-x64 && electron-vite build && electron-builder --mac",
+    "package:win": "pnpm fetch:ollama --platform=win32-x64 && electron-vite build && electron-builder --win",
+    "package:linux": "pnpm fetch:ollama --platform=linux-x64 && electron-vite build && electron-builder --linux"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.40.0",
     "react": "^18.3.0",
     "react-dom": "^18.3.0",
     "react-router-dom": "^6.23.0",
+    "yup": "^1.7.1",
     "zustand": "^4.5.0"
   },
   "devDependencies": {

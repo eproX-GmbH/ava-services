@@ -218,15 +218,6 @@ const server = createServer(async (req, res) => {
       return json(res, 200, fixture);
     }
 
-    // --- Company writes (W23–W25) — accept and echo ---
-    mc = p.match(/^\/v1\/companies\/([^\/]+)\/(profile|website|publications)$/);
-    if (mc && m === "PUT") {
-      log();
-      const body = await readBody(req);
-      console.log("  body:", body);
-      return json(res, 200, { ok: true, companyId: mc[1], received: body });
-    }
-
     // --- Transactions list / detail / entities / errors ---
     if (m === "GET" && p === "/v1/transactions") {
       log();

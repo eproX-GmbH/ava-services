@@ -152,6 +152,34 @@ export const StructuredContentShape = z
 
 // ---- Company publications (company-publication) ----------------------------
 
+// Upstream stores the volume fields as `{value, currency}` value objects and
+// `stateOfAffairs` as an aggregate `{topic, bullets, guidance, ...}` — keep
+// them passthrough so the gateway's OpenAPI surface doesn't lie about the
+// shape (and the renderer can read the nested data).
+const VolumeShape = z
+  .object({ value: z.number().nullable().optional(), currency: z.string().nullable().optional() })
+  .passthrough();
+const StateOfAffairsShape = z
+  .object({
+    topic: z.string().nullable().optional(),
+    isRelevant: z.boolean().nullable().optional(),
+    bullets: z.array(z.string()).default([]),
+    guidance: z.array(z.string()).default([]),
+    risksOpportunities: z.array(z.string()).default([]),
+    kpis: z
+      .array(
+        z
+          .object({
+            name: z.string(),
+            value: z.string(),
+            period: z.string().nullable().optional(),
+          })
+          .passthrough(),
+      )
+      .default([]),
+  })
+  .passthrough();
+
 export const CompanyPublicationShape = z
   .object({
     companyId: z.string(),
@@ -159,10 +187,10 @@ export const CompanyPublicationShape = z
     year: z.number().int().nullable().optional(),
     begin: z.string().nullable().optional(),
     end: z.string().nullable().optional(),
-    salesVolume: z.number().nullable().optional(),
-    revenueVolume: z.number().nullable().optional(),
-    totalAssetsVolume: z.number().nullable().optional(),
-    stateOfAffairs: z.string().nullable().optional(),
+    salesVolume: VolumeShape.nullable().optional(),
+    revenueVolume: VolumeShape.nullable().optional(),
+    totalAssetsVolume: VolumeShape.nullable().optional(),
+    stateOfAffairs: StateOfAffairsShape.nullable().optional(),
     employeeCount: z.number().int().nullable().optional(),
     createdAt: z.string(),
     updatedAt: z.string(),
@@ -180,9 +208,13 @@ export const CompanyContactShape = z
     id: z.string(),
     companyName: z.string().nullable().optional(),
     websiteUrl: z.string().nullable().optional(),
-    companyFacts: z.record(z.string(), z.unknown()).nullable().optional(),
-    companyObservations: z.record(z.string(), z.unknown()).nullable().optional(),
-    companySignals: z.record(z.string(), z.unknown()).nullable().optional(),
+    // Upstream returns these as arrays of fact-shaped objects (Fact[],
+    // Observation[], Signal[]) — keep loose since the inner shape is
+    // LLM-extractor dependent, but the array-vs-record distinction matters
+    // for the renderer.
+    companyFacts: z.array(z.record(z.string(), z.unknown())).default([]),
+    companyObservations: z.array(z.record(z.string(), z.unknown())).default([]),
+    companySignals: z.array(z.record(z.string(), z.unknown())).default([]),
     employments: z.array(z.record(z.string(), z.unknown())).default([]),
     createdAt: z.string(),
     updatedAt: z.string(),
@@ -499,8 +531,12 @@ export const ImportExcelQuery = z.object({
     .union([z.string(), z.array(z.string())])
     .transform((v) => (Array.isArray(v) ? v : [v]))
     .openapi({ example: ["company"] }),
-  // City column heading. Required upstream.
-  city: z.string().min(1),
+  // City column heading(s). Same multi-value shape as companyNameIdentifiers
+  // — multiple columns get joined with a single space (e.g. postal-code +
+  // city) so master-data sees a single location string per row.
+  city: z
+    .union([z.string(), z.array(z.string())])
+    .transform((v) => (Array.isArray(v) ? v : [v])),
   // Optional transaction name (shown in the desktop UI's transaction list).
   name: z.string().optional(),
   // Whether to fall back to a fuzzy match for unmatched companies.
@@ -512,6 +548,173 @@ export const ImportExcelResponseShape = z
     transactionId: z.string(),
   })
   .openapi("ImportExcelResponse");
+
+// ---- Single-row company ingest (Phase 8.h) ---------------------------------
+//
+// JSON-shaped sibling of `/v1/imports/excel` — the agent (and any future
+// "add a company" UI affordance) needs a way to push one company without
+// asking the user to manufacture an xlsx. The gateway hand-encodes a
+// minimal one-row workbook and forwards it to master-data through the
+// same upstream path the bulk import uses, so the downstream pipeline
+// (transaction row + 6 CloudEvents) is identical for one-row vs. N-row
+// inputs.
+//
+// `name` and `city` are the canonical xlsx columns; `transactionName`
+// becomes the optional `name` query param the bulk endpoint accepts.
+
+export const CompanyIngestBody = z
+  .object({
+    /** Company name as it should appear in the xlsx `company` column. */
+    name: z.string().min(1).max(500),
+    /** City / location string for the upstream's location-resolution step. */
+    city: z.string().min(1).max(200),
+    /** Optional human label for the resulting transaction (visible in the
+     *  Transactions list). Falls back to `Single ingest: <name>`. */
+    transactionName: z.string().min(1).max(200).optional(),
+    /** Whether master-data may fall back to a fuzzy match if the exact
+     *  name+city tuple yields no match. Defaults to false to mirror the
+     *  bulk default. */
+    isFuzzy: z.boolean().optional().default(false),
+  })
+  .openapi("CompanyIngest");
+
+export const CompanyIngestResponseShape = z
+  .object({
+    transactionId: z.string(),
+  })
+  .openapi("CompanyIngestResponse");
+
+// ---- Pipeline view (cross-producer fan-out) --------------------------------
+//
+// Per-company × per-producer state matrix for the desktop W3 transaction view.
+// One row per company; one cell per pipeline stage. Built by fanning out to
+// every producer's `/api/v1/transactions/:tid/entities` and merging by
+// companyId — the gateway is the only place that has cross-service visibility.
+//
+// State semantics:
+//   - "completed" / "failed" / "skipped" / "in_progress" — from upstream
+//     EntityTransaction.state (matches EntityTransactionShape)
+//   - "pending" — synthesized when the company appears in some other stage
+//     but the queried producer hasn't (yet) created its row
+//   - master-data: synthesized as "completed" iff the company appears in any
+//     downstream stage (master-data has no per-row table; the existence of
+//     downstream rows proves master-data fanned out successfully)
+//
+// `errorCount` is best-effort: a value of 1 is set when the cell's state is
+// "failed" (we know there's at least one error; the drill-down panel pulls
+// the full list via /v1/transactions/:tid/errors). Zero otherwise.
+
+export const PipelineStage = z.enum([
+  "masterData",
+  "structuredContent",
+  "companyPublication",
+  "website",
+  "companyProfile",
+  "companyContact",
+  "companyEvaluation",
+]);
+
+export const PipelineCellState = z.enum([
+  "completed",
+  "failed",
+  "skipped",
+  "pending",
+  "in_progress",
+]);
+
+export const PipelineCellShape = z
+  .object({
+    state: PipelineCellState,
+    updatedAt: z.string().nullable().optional(),
+    errorCount: z.number().int().nonnegative().default(0),
+  })
+  .openapi("PipelineCell");
+
+export const PipelineRowShape = z
+  .object({
+    companyId: z.string(),
+    cells: z.object({
+      masterData: PipelineCellShape,
+      structuredContent: PipelineCellShape,
+      companyPublication: PipelineCellShape,
+      website: PipelineCellShape,
+      companyProfile: PipelineCellShape,
+      companyContact: PipelineCellShape,
+      companyEvaluation: PipelineCellShape,
+    }),
+    lastActivityAt: z.string().nullable().optional(),
+  })
+  .openapi("PipelineRow");
+
+export const PipelineShape = z
+  .object({
+    transactionId: z.string(),
+    totalCompanies: z.number().int().nonnegative(),
+    // Canonical stage order — clients render columns in this sequence.
+    stages: z.array(PipelineStage),
+    // Stages whose upstream call failed at fetch time. Cells for these
+    // stages are filled with state="pending" and `errorCount: 0` (we can't
+    // tell). Renderer should gray-out these columns and surface a banner.
+    unavailableStages: z.array(PipelineStage).default([]),
+    rows: z.array(PipelineRowShape),
+  })
+  .openapi("Pipeline");
+
+// ---- Per-stage retry (DESKTOP_DATA_FLOW.md §6.2) ---------------------------
+//
+// `POST /v1/transactions/:tid/entities/:cid/retry` republishes the trigger
+// AMQP event(s) for a single (transaction, company, stage). The gateway maps
+// the requested `stage` to the producer service that owns the relevant
+// `*.upsert*` event:
+//
+//   - structuredContent  → master-data
+//   - companyPublication → master-data
+//   - website            → structured-content
+//   - companyProfile     → website + structured-content
+//   - companyContact     → website
+//   - companyEvaluation  → fan-out across structured-content, company-
+//                          publication, website, company-profile, company-
+//                          contact (each republishes the slice it owns)
+//
+// `companyName` is only needed when retrying `companyContact` (the
+// website.upsertCompanyContact event requires it).
+
+export const RetryStage = z.enum([
+  "structuredContent",
+  "companyPublication",
+  "website",
+  "companyProfile",
+  "companyContact",
+  "companyEvaluation",
+]);
+
+export const RetryStageBody = z
+  .object({
+    stage: RetryStage,
+    companyName: z.string().optional(),
+  })
+  .openapi("RetryStageBody");
+
+export const RetryStageDispatch = z
+  .object({
+    upstream: z.string(),
+    stage: z.string(),
+    ok: z.boolean(),
+    status: z.number().int().optional(),
+    body: z.unknown().optional(),
+    error: z.string().optional(),
+  })
+  .openapi("RetryStageDispatch");
+
+export const RetryStageResultShape = z
+  .object({
+    transactionId: z.string(),
+    companyId: z.string(),
+    stage: RetryStage,
+    dispatched: z.array(RetryStageDispatch),
+    ok: z.boolean(),
+  })
+  .openapi("RetryStageResult");
 
 export const ComparisonShape = z
   .object({

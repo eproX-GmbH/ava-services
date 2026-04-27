@@ -150,7 +150,16 @@ export async function callUpstreamBinary(
   const auth = c.req.header("authorization");
   if (auth) headers["authorization"] = auth;
 
-  const res = await fetch(url, { method: "POST", headers, body });
+  // TS lib.dom's BodyInit doesn't currently accept Uint8Array under all
+  // @types/node + @types/bun matrices we run on (the union widens to
+  // ArrayBuffer | Uint8Array<ArrayBufferLike> after Node 22). Cast at the
+  // boundary — the runtime accepts both forms identically since fetch
+  // delegates to undici/Node's HTTP layer.
+  const res = await fetch(url, {
+    method: "POST",
+    headers,
+    body: body as unknown as BodyInit,
+  });
 
   if (!res.ok) {
     const bodySnippet = await res.text().catch(() => "");
@@ -166,6 +175,15 @@ export async function callUpstreamBinary(
     );
     if (res.status === 404) throw new HTTPException(404, { message: "not_found" });
     if (res.status === 413) throw new HTTPException(413, { message: "payload_too_large" });
+    // Forward client-error statuses (400/422 etc.) so the Desktop sees the
+    // upstream's validation message instead of an opaque 502. Server-side
+    // failures (5xx, network errors) still map to 502 — the upstream is
+    // unreachable from the client's perspective.
+    if (res.status >= 400 && res.status < 500) {
+      throw new HTTPException(res.status as 400, {
+        message: bodySnippet || `upstream_${name}_${res.status}`,
+      });
+    }
     throw new HTTPException(502, { message: `upstream_${name}_failed` });
   }
 
