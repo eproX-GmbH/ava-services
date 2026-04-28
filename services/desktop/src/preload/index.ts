@@ -11,6 +11,7 @@ import type {
   LlmProviderKind,
   OllamaPullProgress,
   OllamaStatus,
+  ProviderCatalogEntry,
   ProviderConfig,
   ProviderConfigBundle,
 } from "../shared/types";
@@ -27,6 +28,7 @@ export type {
   LlmProviderKind,
   OllamaPullProgress,
   OllamaStatus,
+  ProviderCatalogEntry,
   ProviderConfig,
   ProviderConfigBundle,
   ProviderStatusSnapshot,
@@ -128,6 +130,13 @@ const api = {
     // settings_* tools, exposed for the Settings → Agent panel (8.g).
     getProviderConfig: (): Promise<ProviderConfigBundle> =>
       ipcRenderer.invoke("agent:getProviderConfig"),
+    /**
+     * Phase 8.k2 — catalog of pickable models. Always LLM-role +
+     * tool-capable; embeddings are intentionally hidden (vector
+     * compatibility lock-in across users).
+     */
+    listModels: (): Promise<ProviderCatalogEntry[]> =>
+      ipcRenderer.invoke("agent:listModels"),
     setProvider: (args: {
       kind: LlmProviderKind;
       model?: string;

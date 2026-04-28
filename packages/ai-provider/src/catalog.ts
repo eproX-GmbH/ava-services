@@ -84,20 +84,73 @@ export interface CatalogEntry {
 
 // ---- Ollama (local) --------------------------------------------------------
 //
-// The desktop default is `llama3.2:3b` — small enough for an 8GB Mac,
-// reliable tool-calling, less RLHF-refusal-prone than qwen2.5:3b on
-// "self-service" prompts (Phase 8.k decision). qwen2.5:7b stays
-// available for users with more RAM.
+// Default = `gemma4:e4b` (Gemma 4 Effective-4B, released April 2026).
+// Apache 2.0, native tool/function calling + structured JSON, image +
+// audio + document OCR, 128K context. ~9.6 GB on disk, comfortable on
+// 16 GB RAM.
+//
+// Why Gemma 4 over Qwen 2.5 / Llama 3.2:
+//   - Tool calling is a first-class feature (we send tools[] on every
+//     turn — the 8.b orchestrator depends on this working).
+//   - OCR + chart/document parsing is built in. Replaces a separate
+//     vision-model hop for the future "import a screenshot of a
+//     spreadsheet" agent flow (8.e).
+//   - 128K context (E2B/E4B) / 256K (26B/31B) — fits long company
+//     dossiers without summary truncation.
+//   - Apache 2.0 — no Llama-style "you can't compete with us" clause
+//     and no Gemma-specific use restrictions like Gemma 2/3 had.
+//
+// Hardware sizing (for the 8.k9 hardware-aware picker):
+//   - E2B (~7.2 GB): 8 GB RAM laptops, tight.
+//   - E4B (~9.6 GB): 16 GB RAM, default — best speed/quality trade-off.
+//   - 26B MoE (~18 GB on disk, ~4 B active): 24+ GB unified memory.
+//   - 31B dense (~20 GB): 48+ GB or a 24 GB+ GPU.
 
 const OLLAMA_LLM: CatalogEntry[] = [
   {
     provider: "ollama",
+    id: "gemma4:e4b",
+    label: "Gemma 4 E4B (local, default — multimodal + OCR)",
+    role: "llm",
+    capabilities: { tools: true, vision: true, contextWindow: 128_000 },
+    costClass: "free",
+    recommended: true,
+    approxBytes: 9_600_000_000,
+  },
+  {
+    provider: "ollama",
+    id: "gemma4:e2b",
+    label: "Gemma 4 E2B (local, 8 GB RAM)",
+    role: "llm",
+    capabilities: { tools: true, vision: true, contextWindow: 128_000 },
+    costClass: "free",
+    approxBytes: 7_200_000_000,
+  },
+  {
+    provider: "ollama",
+    id: "gemma4:26b",
+    label: "Gemma 4 26B MoE (local, needs ≥24 GB RAM)",
+    role: "llm",
+    capabilities: { tools: true, vision: true, contextWindow: 256_000 },
+    costClass: "free",
+    approxBytes: 18_000_000_000,
+  },
+  {
+    provider: "ollama",
+    id: "gemma4:31b",
+    label: "Gemma 4 31B (local, needs ≥48 GB RAM or GPU)",
+    role: "llm",
+    capabilities: { tools: true, vision: true, contextWindow: 256_000 },
+    costClass: "free",
+    approxBytes: 20_000_000_000,
+  },
+  {
+    provider: "ollama",
     id: "llama3.2:3b",
-    label: "Llama 3.2 3B (local, default)",
+    label: "Llama 3.2 3B (local)",
     role: "llm",
     capabilities: { tools: true, vision: false, contextWindow: 128_000 },
     costClass: "free",
-    recommended: true,
     approxBytes: 2_000_000_000,
   },
   {

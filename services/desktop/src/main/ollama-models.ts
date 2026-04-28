@@ -16,23 +16,32 @@ import type { OllamaModelSpec, OllamaInstalledModel } from "../shared/types";
 // installed-but-not-required models, and users may roll back. Old tags get
 // pruned by a future "Free space" UI, not silently.
 
-// LLM choice: `qwen2.5:7b` over `gemma3:4b`.
+// LLM choice: `gemma4:e4b` (Gemma 4 Effective-4B, April 2026 release).
 //
-// Why: the 8.b agent loop sends `tools[]` on every /api/chat call. gemma3
-// has a known Ollama runner crash on Apple Silicon when tool schemas are
-// attached (issue surfaces as
-// `llama runner process has terminated: %!w(<nil>)` — Go's empty-error
-// fallthrough on a segfaulting child). qwen2.5 has battle-tested tool
-// support across Ollama versions and runs cleanly on M-series hardware.
+// Why Gemma 4 E4B over the previous default (qwen2.5:7b):
+//   - Native tool/function calling — first-class feature, not a
+//     fine-tune retrofit. The 8.b orchestrator sends tools[] on every
+//     /api/chat turn; Gemma 3 crashed Ollama's runner on Apple Silicon
+//     when tool schemas were attached, Gemma 4 fixed that and made
+//     tools a headline capability.
+//   - Built-in OCR + chart/handwriting/document parsing. Replaces a
+//     separate vision-model hop for screenshot/PDF ingest flows (8.e).
+//   - 128K context vs Qwen 2.5's 32K — fits long company dossiers.
+//   - 4.5B effective params (Per-Layer Embeddings architecture) at
+//     ~9.6 GB on disk. ~10–11 GB resident at inference; comfortable on
+//     16 GB unified-memory laptops.
 //
-// Footprint: ~4.7GB on disk, ~5–6GB resident at inference. Safe headroom
-// on 16GB M1; tight on 8GB. If you need to fit 8GB, swap to `qwen2.5:3b`
-// (≈2GB) — tool calling still works, just less coherent on long chains.
+// Hardware sizing — see catalog.ts in @ava/ai-provider. Users with
+// 8 GB should switch to `gemma4:e2b` (~7.2 GB); 24+ GB users can pick
+// `gemma4:26b` MoE (4 B active) for better quality at similar speed.
+// The 8.k9 follow-on adds an automatic recommendation based on
+// os.totalmem() — until then this list is the one-size default that
+// works for the most common laptop profile (16 GB).
 export const REQUIRED_MODELS: OllamaModelSpec[] = [
   {
-    name: "qwen2.5:7b",
+    name: "gemma4:e4b",
     role: "llm",
-    approxBytes: 4_700_000_000,
+    approxBytes: 9_600_000_000,
   },
   {
     name: "embeddinggemma:latest",

@@ -724,3 +724,66 @@ button.primary:disabled { opacity: 0.6; cursor: not-allowed; }
 .activity-thinking {
   color: var(--muted); font-style: italic; font-size: 13px;
 }
+
+/* Provider section (Whoami, Phase 8.k4) */
+.provider-section {
+  margin-top: 2rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--border);
+}
+.provider-section h3 { margin-top: 0; }
+.provider-section h4 { margin-bottom: 0.5rem; }
+.provider-grid {
+  display: grid;
+  grid-template-columns: 1fr 2fr;
+  gap: 1rem;
+  max-width: 720px;
+  margin: 0.5rem 0;
+}
+@media (max-width: 720px) {
+  .provider-grid { grid-template-columns: 1fr; }
+}
+.provider-grid select {
+  font: inherit;
+  padding: 0.4rem 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: transparent;
+  color: var(--fg);
+}
+.muted.small { font-size: 12px; margin: 0.25rem 0 0.75rem; }
+.api-keys {
+  display: grid;
+  gap: 0.5rem;
+  max-width: 720px;
+}
+.api-key-row {
+  display: grid;
+  grid-template-columns: 130px 1fr auto auto;
+  align-items: center;
+  gap: 0.5rem;
+}
+.api-key-label { color: var(--muted); font-size: 13px; }
+.api-key-row input {
+  font: inherit;
+  padding: 0.35rem 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: transparent;
+  color: var(--fg);
+}
+.api-key-row button {
+  font: inherit;
+  padding: 0.35rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: transparent;
+  color: var(--fg);
+  cursor: pointer;
+}
+.api-key-row button:disabled { opacity: 0.5; cursor: not-allowed; }
+.api-key-row button.link {
+  border: none;
+  color: var(--accent);
+  padding: 0.35rem 0.25rem;
+}

@@ -1,12 +1,13 @@
 import { EventEmitter } from "node:events";
-import { recommendedFor } from "@ava/ai-provider";
-import type { CatalogProvider } from "@ava/ai-provider";
+import { listCatalog, recommendedFor } from "@ava/ai-provider";
+import type { CatalogEntry, CatalogProvider } from "@ava/ai-provider";
 import type { OllamaSupervisor } from "../../ollama-supervisor";
 import { AiSdkProvider } from "./ai-sdk-provider";
 import { ProviderConfigStore } from "./store";
 import type {
   HostedProviderKind,
   LlmProviderKind,
+  ProviderCatalogEntry,
   ProviderConfig,
 } from "../../../shared/types";
 import type {
@@ -185,6 +186,26 @@ export class LlmProviderManager extends EventEmitter {
     return this.store.hasAllKeys();
   }
 
+  /**
+   * Project the catalog into the IPC shape the renderer's model picker
+   * consumes (Phase 8.k2). Always filters to:
+   *   - role: "llm" — embeddings are deliberately NOT user-switchable
+   *     (vector compatibility across users; see catalog.ts header).
+   *   - tools: true — the agent calls tool_use on every turn; a model
+   *     that ignores tools[] would silently break the whole flow. We'd
+   *     rather hide it than let the user pick a foot-gun. (Override via
+   *     `toolsOnly: false` for a future "loose chat" mode.)
+   *
+   * Order matches the catalog (curated by us — Ollama defaults first,
+   * then hosted in cost-tier order). The renderer can group by
+   * `provider` to render per-provider sections.
+   */
+  listModels(opts?: { toolsOnly?: boolean }): ProviderCatalogEntry[] {
+    const toolsOnly = opts?.toolsOnly ?? true;
+    const entries = listCatalog({ role: "llm", toolsOnly });
+    return entries.map(projectCatalogEntry);
+  }
+
   // ---- Streaming ------------------------------------------------------------
 
   /**
@@ -238,6 +259,27 @@ function statusEqual(a: LlmProviderStatus, b: LlmProviderStatus): boolean {
     a.ready === b.ready &&
     a.errorMessage === b.errorMessage
   );
+}
+
+/**
+ * Lossy projection of a CatalogEntry into the IPC shape. Drops embedding
+ * dimensions and the role enum (renderer only sees LLM rows). Narrows
+ * `provider` from the wider `CatalogProvider` to `LlmProviderKind` —
+ * safe because we filter to role="llm" before calling this and every
+ * provider in our LLM list is also a LlmProviderKind.
+ */
+function projectCatalogEntry(e: CatalogEntry): ProviderCatalogEntry {
+  return {
+    provider: e.provider as LlmProviderKind,
+    id: e.id,
+    label: e.label,
+    tools: e.capabilities.tools,
+    vision: e.capabilities.vision,
+    contextWindow: e.capabilities.contextWindow,
+    costClass: e.costClass,
+    recommended: e.recommended ?? false,
+    ...(e.approxBytes !== undefined ? { approxBytes: e.approxBytes } : {}),
+  };
 }
 
 function labelFor(kind: LlmProviderKind): string {

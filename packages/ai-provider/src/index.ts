@@ -78,7 +78,10 @@ export function getLLM(): LanguageModel {
       const client = createOllama({
         baseURL: process.env.OLLAMA_URL ?? "http://localhost:11434/api",
       });
-      return client(model ?? "gemma3:4b");
+      // Default = gemma4:e4b (April 2026 Gemma 4 release). Native tool
+      // calling, OCR, 128K context, ~9.6 GB on disk. See catalog.ts for
+      // sizing across the full Gemma 4 family.
+      return client(model ?? "gemma4:e4b");
     }
     default:
       throw new Error(`Unknown LLM_PROVIDER: ${String(provider)}`);

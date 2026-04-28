@@ -193,6 +193,9 @@ app.whenReady().then(async () => {
   // Provider switch IPC (Phase 8.j). Mirrors the settings_* tools so the
   // forthcoming Settings → Agent panel (8.g) can drive the same surface.
   ipcMain.handle("agent:getProviderConfig", () => providers.getConfigBundle());
+  // Catalog projection (Phase 8.k2). Always LLM + tool-capable models —
+  // see LlmProviderManager.listModels() for the rationale.
+  ipcMain.handle("agent:listModels", () => providers.listModels());
   ipcMain.handle(
     "agent:setProvider",
     (_e, args: { kind: LlmProviderKind; model?: string }): ProviderConfig =>
