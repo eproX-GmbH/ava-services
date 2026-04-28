@@ -476,6 +476,11 @@ button.primary:disabled { opacity: 0.6; cursor: not-allowed; }
 .first-run__bar-fill.ok { background: rgb(34, 197, 94); }
 .first-run__bar-fill.warn { background: rgb(234, 179, 8); }
 .first-run__bar-fill.bad { background: rgb(239, 68, 68); }
+.first-run__model-meter {
+  display: flex; gap: 0.45rem; align-items: baseline;
+  font-size: 11.5px; font-variant-numeric: tabular-nums;
+}
+.first-run__model-sep { opacity: 0.5; }
 .first-run__card button {
   margin-top: 1rem; padding: 0.6rem 1rem; font-size: 14px;
   background: var(--accent, #3b82f6); color: white;

@@ -29,6 +29,7 @@ export function FirstRunWizard({
 }: { memoryProbe?: MemoryProbe | null } = {}) {
   const status = useOllamaStore((s) => s.status);
   const pullProgress = useOllamaStore((s) => s.pullProgress);
+  const pullRate = useOllamaStore((s) => s.pullRate);
   const [running, setRunning] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
@@ -108,6 +109,7 @@ export function FirstRunWizard({
               <ModelRow
                 model={model}
                 progress={pullProgress[model.name]}
+                bytesPerSec={pullRate[model.name]?.bytesPerSec ?? 0}
                 running={running}
               />
             </li>
@@ -135,10 +137,14 @@ export function FirstRunWizard({
 function ModelRow({
   model,
   progress,
+  bytesPerSec,
   running,
 }: {
   model: OllamaModelSpec;
   progress: OllamaPullProgress | undefined;
+  /** Smoothed download rate from the renderer-side EMA. 0 means
+   *  "not transferring right now" (queued, paused, finishing up). */
+  bytesPerSec: number;
   running: boolean;
 }) {
   const total = progress?.total ?? model.approxBytes;
@@ -146,6 +152,20 @@ function ModelRow({
   const pct = total > 0 ? Math.min(100, (completed / total) * 100) : 0;
   const done = progress?.done === true && !progress.errorMessage;
   const failed = progress?.done === true && Boolean(progress.errorMessage);
+
+  // The "byte progress" line is the one the user actually scans for —
+  // they want to see numbers move. We always show it once a pull frame
+  // exists (even if Ollama hasn't reported `total` yet, falling back to
+  // the catalog's approxBytes), so the user immediately sees this isn't
+  // stuck. While idle/queued we hide the line and just show the size.
+  const showBytes = running && !failed && !done && completed > 0;
+  // Speed must sustain >0 to display — see the EMA reset rules in the
+  // store. We also skip "bytes/sec" once we're in the final post-stream
+  // phase ("verifying digest", "extracting") where data has stopped
+  // flowing but the row is still active.
+  const showSpeed = showBytes && bytesPerSec > 0;
+  const remaining = Math.max(total - completed, 0);
+  const etaSec = showSpeed && bytesPerSec > 0 ? remaining / bytesPerSec : null;
 
   return (
     <div className="first-run__model">
@@ -172,6 +192,25 @@ function ModelRow({
           style={{ width: `${done ? 100 : pct}%` }}
         />
       </div>
+      {showBytes && (
+        <div className="first-run__model-meter muted">
+          <span>
+            {formatBytes(completed)} / {formatBytes(total)} ({pct.toFixed(1)}%)
+          </span>
+          {showSpeed && (
+            <>
+              <span className="first-run__model-sep">·</span>
+              <span>{formatBytes(bytesPerSec)}/s</span>
+            </>
+          )}
+          {etaSec !== null && Number.isFinite(etaSec) && (
+            <>
+              <span className="first-run__model-sep">·</span>
+              <span>ETA {formatDuration(etaSec)}</span>
+            </>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -181,4 +220,17 @@ function formatBytes(n: number): string {
   if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
   if (n < 1024 * 1024 * 1024) return `${(n / 1024 / 1024).toFixed(1)} MB`;
   return `${(n / 1024 / 1024 / 1024).toFixed(1)} GB`;
+}
+
+function formatDuration(sec: number): string {
+  if (!Number.isFinite(sec) || sec < 0) return "—";
+  if (sec < 60) return `${Math.round(sec)}s`;
+  if (sec < 3600) {
+    const m = Math.floor(sec / 60);
+    const s = Math.round(sec % 60);
+    return s === 0 ? `${m}m` : `${m}m ${s}s`;
+  }
+  const h = Math.floor(sec / 3600);
+  const m = Math.round((sec % 3600) / 60);
+  return m === 0 ? `${h}h` : `${h}h ${m}m`;
 }
