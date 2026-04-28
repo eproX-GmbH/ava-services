@@ -1,8 +1,7 @@
 export { LlmProviderManager } from "./manager";
 export { ProviderConfigStore } from "./store";
 export type { ProviderConfig } from "./store";
-export { OllamaProvider } from "./ollama";
-export { OpenAiProvider } from "./openai";
+export { AiSdkProvider } from "./ai-sdk-provider";
 export type {
   LlmProvider,
   LlmProviderKind,

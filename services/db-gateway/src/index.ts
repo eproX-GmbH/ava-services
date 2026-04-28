@@ -1,3 +1,10 @@
+// Load gateway-local .env BEFORE anything reads process.env. dev.sh exports
+// the shared root .env.dev (JWKS, AMQP, upstream URLs, etc.) into the shell;
+// the gateway's own audit DATABASE_URL/DIRECT_URL must NOT live there because
+// the producers each have their own per-service Postgres on :5434 and would
+// otherwise inherit the gateway's URL via dev.sh's `set -a; source` and
+// silently connect to the wrong DB (dotenv won't override exported vars).
+import "dotenv/config";
 import { serve } from "@hono/node-server";
 import { swaggerUI } from "@hono/swagger-ui";
 import { OpenAPIHono } from "@hono/zod-openapi";

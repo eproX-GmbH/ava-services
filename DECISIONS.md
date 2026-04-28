@@ -282,6 +282,40 @@ Fehlt Konnektivität: klare Fehlermeldung im UI, App geht nicht in degraded mode
 
 ---
 
+## D12 — AI SDK by default; direct provider SDKs only as documented exception
+
+**Kontext:** Beim Aufbau des Desktop-Agenten (Phase 8) und der Self-Service-Provider-Wahl wurde nochmal sichtbar, dass AVA grundsätzlich auf Vercel AI SDK steht (`packages/ai-provider`). Mehrere Services nutzen aber zusätzlich den **direkten** OpenAI-SDK (`openai` v4/v6) — das ist *kein* Versehen, sondern bewusste Ausnahme für Features, die AI SDK nicht abdeckt.
+
+**Regel:**
+
+1. **Default: AI SDK über `@ava/ai-provider`.** Jeder neue LLM-/Embedding-Aufruf geht über `getLLM()` / `getEmbedder()` (env-gesteuert) bzw. `createLLM(...)` / `createEmbedder(...)` (runtime-gesteuert, Phase 8.k). Damit bleibt die Provider-Wahl austauschbar (OpenAI, Anthropic, Google, Mistral, Ollama).
+2. **Ausnahme: direkter Provider-SDK** ist erlaubt, wenn AI SDK das benötigte Feature nicht ausdrückt. Aktuell dokumentierte Ausnahmen:
+   - `services/website` — **OpenAI Deep Research** (`responses.create()` mit `o4-mini-deep-research-*`, `web_search`-Tool, Responses-API). Kein AI-SDK-Provider wrappt die Responses-API.
+   - `services/website/.../public-companies-extractor` — Place-Matching via `gpt-5-mini` mit OpenAI-spezifischen Strukturhinweisen.
+   - `services/company-evaluation` — direkter `OpenAI`-Client wird per DI durchgereicht, aber heute **nicht** für Calls genutzt; alle Embeddings/Generationen laufen über AI SDK. Halten wir als Vorbereitung für künftige Realtime-/Batch-API-Nutzung.
+3. **Gegen die Regel verstoßen heißt:** im Code-Header des Aufrufers begründen *warum* AI SDK nicht reicht (welches API/Feature fehlt) und einen `// @ai-sdk-exception:` Marker setzen, damit Audits die Stellen finden.
+4. **Auswahl-Filter im Desktop-Agenten:** Nur Modelle, die AI SDK unterstützt, sind im Provider-Picker selektierbar. Direkt-SDK-Features sind kein User-Switch — sie sind Pipeline-intern.
+
+**Begründung:**
+
+- Eine zentrale Provider-Stelle hält die Switch-Kosten (neuer Vendor) bei einem einzigen Adapter.
+- Direktclient-Abenteuer (z.B. Deep Research) sind nützlich, aber gehören klar markiert, sonst wandert die Codebasis schleichend zurück zu vendor-lock-in.
+- Damit ist auch die Aussage gegenüber Kunden sauber: *"alle Standard-Calls laufen über austauschbare Provider; spezialisierte OpenAI-Features (Deep Research) sind als solche gekennzeichnet."*
+
+**Bekannte Limits von AI SDK (Stand 2026-04):**
+
+| Feature | AI SDK? | Workaround |
+|---|---|---|
+| `streamText` / `generateText` mit Tools | ✅ | — |
+| `generateObject` mit JSON-Schema | ✅ | — |
+| `embed` / `embedMany` | ✅ (OpenAI/Google/Ollama) | — |
+| OpenAI Responses-API (`o4-mini-deep-research`) | ❌ | direkter `openai`-SDK |
+| OpenAI Realtime (Voice) | ❌ | direkter `openai`-SDK |
+| OpenAI Batch | ❌ | direkter `openai`-SDK |
+| OpenAI Assistants v2 (Threads/Runs) | ❌ (außer Scope) | nicht genutzt |
+
+---
+
 ## Offene Rückfragen — geklärt (User 2026-04-21)
 
 1. **D4:** ✅ Embeddings bleiben Cloud/OpenAI. Kein Referenz-Datensatz nötig.

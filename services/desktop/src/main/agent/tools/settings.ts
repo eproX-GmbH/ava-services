@@ -2,8 +2,12 @@ import * as yup from "yup";
 import { defineTool } from "../define-tool";
 import type { LlmProviderManager } from "../providers";
 import type { Tool } from "../types";
+import type {
+  HostedProviderKind,
+  LlmProviderKind,
+} from "../../../shared/types";
 
-// Settings tools (Phase 8.j).
+// Settings tools (Phase 8.j, expanded in 8.k1).
 //
 // These are the agent's self-service surface for the provider switch.
 // They map onto the LlmProviderManager 1:1, and exist as tools (not
@@ -11,10 +15,68 @@ import type { Tool } from "../types";
 // my key" in chat — the model needs callable functions that perform the
 // change atomically and report the resulting status.
 //
+// 8.k1: tools generalised across all five hosted-or-local providers
+// (ollama, openai, anthropic, google, mistral). The api-key tools take
+// `{provider, apiKey}` so a single tool surface handles every vendor.
+//
 // Security: the key arrives in chat as plaintext. We accept that risk
 // because it's the same channel where the user typed it; once stored
 // it's encrypted via safeStorage. The Settings → Agent panel (8.g) is
 // the recommended UX, but the chat path stays open as the fallback.
+
+const ALL_KINDS: readonly LlmProviderKind[] = [
+  "ollama",
+  "openai",
+  "anthropic",
+  "google",
+  "mistral",
+];
+
+const HOSTED_KINDS: readonly HostedProviderKind[] = [
+  "openai",
+  "anthropic",
+  "google",
+  "mistral",
+];
+
+/**
+ * Per-vendor key-format hint. Kept loose on purpose — vendors rotate
+ * formats and we'd rather store an unrecognised-but-valid key than
+ * reject a legitimate one. The substring/prefix checks below catch the
+ * obvious "user pasted the wrong thing" mistake without being strict
+ * about exact length.
+ */
+function validateApiKey(provider: HostedProviderKind, key: string): void {
+  if (key.length < 16) {
+    throw new Error(`${provider} key looks too short`);
+  }
+  switch (provider) {
+    case "openai":
+      if (!/^sk-/i.test(key)) {
+        throw new Error("OpenAI keys start with 'sk-'");
+      }
+      break;
+    case "anthropic":
+      if (!/^sk-ant-/i.test(key)) {
+        throw new Error("Anthropic keys start with 'sk-ant-'");
+      }
+      break;
+    case "google":
+      // Google AI Studio keys typically start with "AIza" but the SDK
+      // also accepts service-account tokens — leave the prefix as a
+      // soft hint via the message rather than a hard reject.
+      if (!/^[A-Za-z0-9_\-]{20,}$/.test(key)) {
+        throw new Error("Google API key looks malformed");
+      }
+      break;
+    case "mistral":
+      // Mistral keys are opaque hex-ish tokens; just check shape.
+      if (!/^[A-Za-z0-9_\-]{20,}$/.test(key)) {
+        throw new Error("Mistral API key looks malformed");
+      }
+      break;
+  }
+}
 
 export interface SettingsToolDeps {
   providers: LlmProviderManager;
@@ -26,54 +88,58 @@ export function buildSettingsTools(deps: SettingsToolDeps): Tool[] {
   const getProvider = defineTool({
     name: "settings_get_provider",
     description:
-      "Read the active LLM provider configuration. Use this BEFORE proposing a switch so you can confirm what's currently set.",
+      "Read the active LLM provider configuration plus per-provider key presence. Use this BEFORE proposing a switch so you can confirm what's currently set and which providers are usable.",
     parameters: { type: "object", properties: {} },
     schema: yup.object({}),
     run: async () => {
-      const cfg = providers.getConfig();
-      const status = providers.getStatus();
+      const bundle = providers.getConfigBundle();
       return {
-        kind: cfg.kind,
-        ollamaModel: cfg.ollamaModel,
-        openaiModel: cfg.openaiModel,
-        ready: status.ready,
-        hasOpenAiKey: providers.hasOpenAiKey(),
-        encryptionAvailable: providers.isEncryptionAvailable(),
-        errorMessage: status.errorMessage,
+        kind: bundle.config.kind,
+        models: bundle.config.models,
+        ready: bundle.status.ready,
+        model: bundle.status.model,
+        hasKey: bundle.hasKey,
+        encryptionAvailable: bundle.encryptionAvailable,
+        errorMessage: bundle.status.errorMessage,
       };
     },
-    preview: (r) =>
-      `provider: ${r.kind}${r.ready ? "" : " (not ready)"}${
-        r.kind === "openai" && !r.hasOpenAiKey ? " — key missing" : ""
-      }`,
+    preview: (r) => {
+      const missing = HOSTED_KINDS.filter((k) => !r.hasKey[k]);
+      const missingNote = missing.length > 0
+        ? ` — missing keys: ${missing.join(", ")}`
+        : "";
+      return `provider: ${r.kind}${r.ready ? "" : " (not ready)"}${missingNote}`;
+    },
   });
 
   const setProvider = defineTool({
     name: "settings_set_provider",
     description:
-      "Switch the active LLM provider. Pass `kind:'openai'` to use the cloud model (requires an API key set via `settings_set_openai_key`) or `kind:'ollama'` for the bundled local model. Optionally override the model tag.",
+      "Switch the active LLM provider. `kind` is one of 'ollama', 'openai', 'anthropic', 'google', 'mistral'. Hosted providers require their API key to be stored first via `settings_set_api_key`. Optionally override the model tag for the chosen provider.",
     parameters: {
       type: "object",
       properties: {
         kind: {
           type: "string",
-          enum: ["ollama", "openai"],
+          enum: [...ALL_KINDS],
           description: "Provider to make active.",
         },
         model: {
           type: "string",
           description:
-            "Optional model tag override (e.g. 'qwen2.5:7b' for ollama, 'gpt-4o-mini' for openai).",
+            "Optional model id for this provider (e.g. 'llama3.2:3b', 'gpt-4o-mini', 'claude-sonnet-4-6', 'gemini-2.5-pro', 'mistral-large-latest').",
         },
       },
       required: ["kind"],
     },
     schema: yup.object({
-      kind: yup.string().oneOf(["ollama", "openai"]).required(),
+      kind: yup.string().oneOf([...ALL_KINDS]).required(),
       model: yup.string().trim().optional(),
     }),
     run: async (args) => {
-      const next = providers.setProvider(args.kind, { model: args.model });
+      const next = providers.setProvider(args.kind as LlmProviderKind, {
+        model: args.model,
+      });
       const status = providers.getStatus();
       return {
         kind: next.kind,
@@ -89,31 +155,35 @@ export function buildSettingsTools(deps: SettingsToolDeps): Tool[] {
   });
 
   const setKey = defineTool({
-    name: "settings_set_openai_key",
+    name: "settings_set_api_key",
     description:
-      "Store the user's OpenAI API key. Encrypted at rest via the OS keychain (safeStorage). Call this BEFORE switching to the OpenAI provider. Never echo the key back in your reply.",
+      "Store the user's API key for a hosted provider. Encrypted at rest via the OS keychain (safeStorage). Call this BEFORE switching to that provider. Never echo the key back in your reply.",
     parameters: {
       type: "object",
       properties: {
+        provider: {
+          type: "string",
+          enum: [...HOSTED_KINDS],
+          description: "Hosted provider to store the key for.",
+        },
         apiKey: {
           type: "string",
-          description: "The user's OpenAI API key (sk-…).",
+          description: "The user's API key for the chosen provider.",
         },
       },
-      required: ["apiKey"],
+      required: ["provider", "apiKey"],
     },
     schema: yup.object({
-      apiKey: yup
-        .string()
-        .trim()
-        .min(20, "API key looks too short")
-        .matches(/^sk-/i, "OpenAI keys start with 'sk-'")
-        .required(),
+      provider: yup.string().oneOf([...HOSTED_KINDS]).required(),
+      apiKey: yup.string().trim().min(16, "API key looks too short").required(),
     }),
     run: async (args) => {
-      providers.setOpenAiKey(args.apiKey);
+      const provider = args.provider as HostedProviderKind;
+      validateApiKey(provider, args.apiKey);
+      providers.setApiKey(provider, args.apiKey);
       return {
         ok: true,
+        provider,
         encryptionAvailable: providers.isEncryptionAvailable(),
       };
     },
@@ -121,22 +191,35 @@ export function buildSettingsTools(deps: SettingsToolDeps): Tool[] {
     // would still expose it, but `summarizeArgs` truncates at 80 chars
     // and the key is longer; either way the preview itself never carries it.
     preview: (r) =>
-      r.encryptionAvailable
-        ? "key stored (OS keychain)"
-        : "key stored (basic cipher — keychain unavailable)",
+      `${r.provider} key stored (${
+        r.encryptionAvailable ? "OS keychain" : "basic cipher — keychain unavailable"
+      })`,
   });
 
   const clearKey = defineTool({
-    name: "settings_clear_openai_key",
+    name: "settings_clear_api_key",
     description:
-      "Forget the stored OpenAI API key. If the OpenAI provider was active it auto-falls-back to the local Ollama model.",
-    parameters: { type: "object", properties: {} },
-    schema: yup.object({}),
-    run: async () => {
-      providers.clearOpenAiKey();
-      return { kind: providers.getConfig().kind };
+      "Forget the stored API key for a hosted provider. If that provider was active it auto-falls-back to the local Ollama model.",
+    parameters: {
+      type: "object",
+      properties: {
+        provider: {
+          type: "string",
+          enum: [...HOSTED_KINDS],
+          description: "Hosted provider whose key should be cleared.",
+        },
+      },
+      required: ["provider"],
     },
-    preview: (r) => `key cleared, now using ${r.kind}`,
+    schema: yup.object({
+      provider: yup.string().oneOf([...HOSTED_KINDS]).required(),
+    }),
+    run: async (args) => {
+      const provider = args.provider as HostedProviderKind;
+      providers.clearApiKey(provider);
+      return { provider, kind: providers.getConfig().kind };
+    },
+    preview: (r) => `${r.provider} key cleared, now using ${r.kind}`,
   });
 
   return [getProvider, setProvider, setKey, clearKey];

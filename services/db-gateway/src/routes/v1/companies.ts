@@ -62,11 +62,20 @@ companiesRouter.openapi(searchRoute, async (c) => {
   const upstream = await callUpstream<unknown>(c, "masterData", "/api/germany/v1/companies/fuzzy/search", {
     query: { q, limit },
   });
-  // master-data returns either an array or an object — normalize.
-  const items = (Array.isArray(upstream)
-    ? upstream
-    : ((upstream as { items?: unknown[] })?.items ?? [])) as Array<z.infer<typeof CompanyShape>>;
-  return c.json({ items, total: items.length }, 200);
+  // master-data canonical shape is `{ count, germanCompanies }` (see
+  // master-data/src/application/germany/companies/queries/fuzzy-search-companies).
+  // Tolerate `items`/array too in case some other upstream ever ends up here,
+  // but read the canonical fields first or the search will silently look empty.
+  const u = upstream as
+    | unknown[]
+    | { germanCompanies?: unknown[]; items?: unknown[]; count?: number; total?: number }
+    | null
+    | undefined;
+  const items = (
+    Array.isArray(u) ? u : (u?.germanCompanies ?? u?.items ?? [])
+  ) as Array<z.infer<typeof CompanyShape>>;
+  const total = (Array.isArray(u) ? u.length : (u?.count ?? u?.total ?? items.length));
+  return c.json({ items, total }, 200);
 });
 
 // ---- GET /v1/companies -----------------------------------------------------
@@ -89,22 +98,22 @@ const listRoute = createRoute({
 companiesRouter.openapi(listRoute, async (c) => {
   const { page, pageSize } = c.req.valid("query");
   // master-data list is POST /api/germany/v1/companies with pagination in query.
-  // Filter body is deferred until the Desktop-App sends structured filter input.
-  const upstream = await callUpstream<{ items?: unknown[]; total?: number }>(
+  // Canonical response shape is `{count, pageNumber, pageSize, germanCompanies}`
+  // (see master-data list-companies query). Tolerate `items`/`total` as a
+  // fallback in case anything else ever ends up wired here.
+  const upstream = await callUpstream<unknown>(
     c,
     "masterData",
     "/api/germany/v1/companies",
     { method: "POST", query: { pageNumber: page, pageSize }, body: {} },
   );
-  return c.json(
-    {
-      items: (upstream?.items ?? []) as Array<z.infer<typeof CompanyShape>>,
-      page,
-      pageSize,
-      total: upstream?.total ?? 0,
-    },
-    200,
-  );
+  const u = upstream as
+    | { germanCompanies?: unknown[]; items?: unknown[]; count?: number; total?: number }
+    | null
+    | undefined;
+  const items = (u?.germanCompanies ?? u?.items ?? []) as Array<z.infer<typeof CompanyShape>>;
+  const total = u?.count ?? u?.total ?? items.length;
+  return c.json({ items, page, pageSize, total }, 200);
 });
 
 // ---- GET /v1/companies/:companyId ------------------------------------------
@@ -254,7 +263,7 @@ const contactsRoute = createRoute({
   request: { params: CompanyIdParam },
   responses: {
     200: {
-      content: { "application/json": { schema: z.object({ items: z.array(CompanyContactShape) }) } },
+      content: { "application/json": { schema: CompanyContactShape } },
       description: "contacts",
     },
     ...errorResponses,
@@ -263,15 +272,15 @@ const contactsRoute = createRoute({
 
 companiesRouter.openapi(contactsRoute, async (c) => {
   const { companyId } = c.req.valid("param");
-  const upstream = await callUpstream<unknown>(
+  // Upstream returns a single CompanyContact aggregate (not a list) — see
+  // company-contact/web/api/controllers/v1/company-contacts-controller.ts.
+  // Earlier wrapping into `{items: [...]}` always produced an empty list.
+  const upstream = await callUpstream<z.infer<typeof CompanyContactShape>>(
     c,
     "companyContact",
     `/api/v1/company-contacts/${encodeURIComponent(companyId)}`,
   );
-  const items = (Array.isArray(upstream)
-    ? upstream
-    : ((upstream as { items?: unknown[] })?.items ?? [])) as Array<z.infer<typeof CompanyContactShape>>;
-  return c.json({ items }, 200);
+  return c.json(upstream, 200);
 });
 
 // ---- GET /v1/companies/:companyId/structured-content -----------------------

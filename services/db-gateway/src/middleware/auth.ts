@@ -40,11 +40,24 @@ async function resolveKey(tenantId: string): Promise<KeyLike> {
 // 15-minute access token (D3). Refresh flow is handled by the customer's
 // auth issuer, NOT by the gateway.
 export const authMiddleware = createMiddleware(async (c, next) => {
+  // Bearer header is the primary path. SSE clients fall back to
+  // `?access_token=…` because the browser EventSource API can't set custom
+  // headers; the renderer code in services/desktop only uses this on SSE
+  // routes (see services/desktop/src/renderer/src/api/gateway.ts → gatewaySSE).
+  // Keeping it here rather than per-route because the verification logic
+  // below (key lookup, jwtVerify, scope parsing) is identical regardless of
+  // where the token came from.
   const header = c.req.header("authorization");
-  if (!header?.startsWith("Bearer ")) {
+  let token: string | undefined;
+  if (header?.startsWith("Bearer ")) {
+    token = header.slice("Bearer ".length);
+  } else {
+    const queryToken = c.req.query("access_token");
+    if (queryToken) token = queryToken;
+  }
+  if (!token) {
     return c.json({ error: "missing_bearer_token" }, 401);
   }
-  const token = header.slice("Bearer ".length);
 
   // Peek tenant claim without verifying — we need it to pick the key.
   // jose refuses to decode unverified payloads, so do it manually and

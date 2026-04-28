@@ -10,6 +10,7 @@ import {
   buildReadOnlyRegistry,
 } from "./agent";
 import type { ProviderConfig, LlmProviderKind } from "./agent";
+import type { HostedProviderKind } from "../shared/types";
 import type {
   AgentChoiceAnswer,
   AgentSendInput,
@@ -191,23 +192,29 @@ app.whenReady().then(async () => {
 
   // Provider switch IPC (Phase 8.j). Mirrors the settings_* tools so the
   // forthcoming Settings → Agent panel (8.g) can drive the same surface.
-  ipcMain.handle("agent:getProviderConfig", () => ({
-    config: providers.getConfig(),
-    status: providers.getStatus(),
-    hasOpenAiKey: providers.hasOpenAiKey(),
-    encryptionAvailable: providers.isEncryptionAvailable(),
-  }));
+  ipcMain.handle("agent:getProviderConfig", () => providers.getConfigBundle());
   ipcMain.handle(
     "agent:setProvider",
     (_e, args: { kind: LlmProviderKind; model?: string }): ProviderConfig =>
       providers.setProvider(args.kind, { model: args.model }),
   );
-  ipcMain.handle("agent:setOpenAiKey", (_e, apiKey: string) => {
-    providers.setOpenAiKey(apiKey);
-  });
-  ipcMain.handle("agent:clearOpenAiKey", () => {
-    providers.clearOpenAiKey();
-  });
+  ipcMain.handle(
+    "agent:setModel",
+    (_e, args: { kind: LlmProviderKind; model: string }): ProviderConfig =>
+      providers.setModel(args.kind, args.model),
+  );
+  ipcMain.handle(
+    "agent:setApiKey",
+    (_e, args: { kind: HostedProviderKind; apiKey: string }) => {
+      providers.setApiKey(args.kind, args.apiKey);
+    },
+  );
+  ipcMain.handle(
+    "agent:clearApiKey",
+    (_e, args: { kind: HostedProviderKind }) => {
+      providers.clearApiKey(args.kind);
+    },
+  );
 
   // Memory IPC (Phase 8.d). The probe is cached on the MemoryStore — these
   // handlers are read-only views; mutations happen implicitly as the

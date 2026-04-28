@@ -4,6 +4,7 @@
     <mapping directory="$PROJECT_DIR$" vcs="Git" />
     <mapping directory="$PROJECT_DIR$/business-intelligence" vcs="Git" />
     <mapping directory="$PROJECT_DIR$/company-contact" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/company-contact/company-contact" vcs="Git" />
     <mapping directory="$PROJECT_DIR$/company-evaluation" vcs="Git" />
     <mapping directory="$PROJECT_DIR$/company-profile" vcs="Git" />
     <mapping directory="$PROJECT_DIR$/company-publication" vcs="Git" />

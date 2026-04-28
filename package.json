@@ -14,6 +14,22 @@
     "website"
   ],
   "scripts": {
-    "dev": "bash scripts/dev.sh"
+    "dev": "bash scripts/dev.sh",
+    "dev:hostlocal": "bash scripts/dev.sh hostlocal",
+    "dev:hybrid": "bash scripts/dev.sh hybrid",
+    "dev:desktop": "pnpm --dir services/desktop dev:real",
+    "dev:desktop:mock": "pnpm --dir services/desktop dev:mock",
+    "dev:all": "bash scripts/dev-all.sh hostlocal",
+    "dev:all:dev": "bash scripts/dev-all.sh dev",
+    "dev:all:hybrid": "bash scripts/dev-all.sh hybrid",
+    "dev:stop": "bash scripts/dev-stop.sh",
+    "dev:check": "bash scripts/dev-stop.sh --check"
+  },
+  "pnpm": {
+    "overrides": {
+      "@ava/auth": "workspace:*",
+      "@ava/event": "workspace:*",
+      "@ava/ai-provider": "workspace:*"
+    }
   }
 }

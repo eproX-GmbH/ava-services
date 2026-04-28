@@ -1,47 +1,91 @@
 import { EventEmitter } from "node:events";
-import { existsSync, mkdirSync, readFileSync, writeFileSync, unlinkSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  writeFileSync,
+  unlinkSync,
+  renameSync,
+} from "node:fs";
 import { join } from "node:path";
 import { app, safeStorage } from "electron";
-import type { LlmProviderKind } from "./types";
+import type {
+  HostedProviderKind,
+  LlmProviderKind,
+  ProviderConfig,
+} from "../../../shared/types";
 
-// Provider config persistence (Phase 8.j).
+// Provider config persistence (Phase 8.j, expanded in 8.k1).
 //
-// Two files under `app.getPath("userData")/agent/`:
+// Files under `app.getPath("userData")/agent/`:
 //
 //   provider.json
 //     {
-//       "kind": "ollama" | "openai",
-//       "ollamaModel": "qwen2.5:7b" | null,
-//       "openaiModel": "gpt-4o-mini"
+//       "kind": "ollama" | "openai" | "anthropic" | "google" | "mistral",
+//       "models": {
+//         "ollama":    "llama3.2:3b" | "",
+//         "openai":    "gpt-4o-mini",
+//         "anthropic": "claude-sonnet-4-6",
+//         "google":    "gemini-2.5-pro",
+//         "mistral":   "mistral-large-latest"
+//       }
 //     }
 //     Plain JSON — nothing sensitive in here. Atomic write
 //     (write-temp + rename) so a crash mid-write can't leave a 0-byte file.
+//     An empty string means "use catalog recommendation"; populated
+//     value is what the user picked in the picker.
 //
-//   openai.enc
+//   <provider>.enc  (one each for openai, anthropic, google, mistral)
 //     Output of safeStorage.encryptString(apiKey). On macOS this is
 //     Keychain-backed; Windows uses DPAPI; Linux falls back to
 //     libsecret/kwallet or a basic obfuscation if neither is available.
 //     `safeStorage.isEncryptionAvailable()` reports the strength —
 //     callers should warn the user before storing on the basic path.
 //
-// The store is a singleton; orchestrator + tools both go through
-// `ProviderConfigStore.shared()`.
+// Ollama is keyless (talks to localhost only) so it has no .enc file.
+//
+// Backward-compat note: 8.j shipped with `openai.enc` already. New
+// installs will simply create the additional .enc files as the user
+// adds keys. Old installs keep their existing openai.enc — the file
+// name is unchanged.
 
-export interface ProviderConfig {
-  kind: LlmProviderKind;
-  ollamaModel: string | null;
-  openaiModel: string;
-}
+const HOSTED_KINDS: readonly HostedProviderKind[] = [
+  "openai",
+  "anthropic",
+  "google",
+  "mistral",
+];
 
+const ALL_KINDS: readonly LlmProviderKind[] = [
+  "ollama",
+  "openai",
+  "anthropic",
+  "google",
+  "mistral",
+];
+
+/**
+ * Default config: Ollama active, all model fields empty (recommendation
+ * from the shared catalog kicks in). Renderer never sees this — `manager`
+ * resolves "" to the catalog default before reporting.
+ */
 const DEFAULT_CONFIG: ProviderConfig = {
   kind: "ollama",
-  ollamaModel: null, // null → fall back to REQUIRED_MODELS llm tag
-  openaiModel: "gpt-4o-mini",
+  models: {
+    ollama: "",
+    openai: "",
+    anthropic: "",
+    google: "",
+    mistral: "",
+  },
 };
+
+export type { ProviderConfig };
 
 export interface ProviderConfigStoreEvents {
   configChanged: (cfg: ProviderConfig) => void;
-  keyChanged: () => void;
+  /** Fires for any provider's key being set/cleared. Listener can re-check via `hasKey`. */
+  keyChanged: (kind: HostedProviderKind) => void;
 }
 
 export declare interface ProviderConfigStore {
@@ -59,14 +103,12 @@ export class ProviderConfigStore extends EventEmitter {
   private static instance: ProviderConfigStore | null = null;
   private readonly dir: string;
   private readonly configPath: string;
-  private readonly keyPath: string;
   private cached: ProviderConfig;
 
   private constructor() {
     super();
     this.dir = join(app.getPath("userData"), "agent");
     this.configPath = join(this.dir, "provider.json");
-    this.keyPath = join(this.dir, "openai.enc");
     if (!existsSync(this.dir)) {
       mkdirSync(this.dir, { recursive: true });
     }
@@ -81,21 +123,38 @@ export class ProviderConfigStore extends EventEmitter {
   // ---- Provider config ------------------------------------------------------
 
   getConfig(): ProviderConfig {
-    return { ...this.cached };
+    return cloneConfig(this.cached);
   }
 
-  setConfig(partial: Partial<ProviderConfig>): ProviderConfig {
-    const next: ProviderConfig = { ...this.cached, ...partial };
-    if (next.kind !== "ollama" && next.kind !== "openai") {
-      throw new Error(`unknown provider kind: ${String(next.kind)}`);
+  /**
+   * Patch one or more fields and persist atomically. `models` is
+   * shallow-merged so callers can update a single provider's model
+   * without re-supplying the rest.
+   */
+  setConfig(partial: {
+    kind?: LlmProviderKind;
+    models?: Partial<Record<LlmProviderKind, string>>;
+  }): ProviderConfig {
+    const next: ProviderConfig = cloneConfig(this.cached);
+    if (partial.kind) {
+      if (!ALL_KINDS.includes(partial.kind)) {
+        throw new Error(`unknown provider kind: ${String(partial.kind)}`);
+      }
+      next.kind = partial.kind;
+    }
+    if (partial.models) {
+      for (const [k, v] of Object.entries(partial.models)) {
+        if (!ALL_KINDS.includes(k as LlmProviderKind)) continue;
+        next.models[k as LlmProviderKind] = v ?? "";
+      }
     }
     this.writeConfigAtomic(next);
     this.cached = next;
-    this.emit("configChanged", { ...next });
-    return { ...next };
+    this.emit("configChanged", cloneConfig(next));
+    return cloneConfig(next);
   }
 
-  // ---- Encrypted OpenAI key -------------------------------------------------
+  // ---- Encrypted API keys ---------------------------------------------------
 
   /**
    * Whether the OS-level encrypted store is usable. False on Linux without
@@ -110,74 +169,119 @@ export class ProviderConfigStore extends EventEmitter {
     }
   }
 
-  hasOpenAiKey(): boolean {
-    return existsSync(this.keyPath);
+  hasKey(kind: HostedProviderKind): boolean {
+    return existsSync(this.keyPath(kind));
   }
 
-  async getOpenAiKey(): Promise<string | null> {
-    if (!existsSync(this.keyPath)) return null;
+  /**
+   * Map of all hosted-provider key presence flags. Convenient for the
+   * IPC bundle so the renderer doesn't fan out four sequential calls.
+   */
+  hasAllKeys(): Record<LlmProviderKind, boolean> {
+    return {
+      ollama: true, // no key needed
+      openai: this.hasKey("openai"),
+      anthropic: this.hasKey("anthropic"),
+      google: this.hasKey("google"),
+      mistral: this.hasKey("mistral"),
+    };
+  }
+
+  /**
+   * Decrypt and return the key for `kind`, or null if the file is
+   * missing or undecryptable. Async so callers don't synchronously hold
+   * plaintext key material — each turn re-reads.
+   */
+  async getKey(kind: HostedProviderKind): Promise<string | null> {
+    const path = this.keyPath(kind);
+    if (!existsSync(path)) return null;
     try {
-      const buf = readFileSync(this.keyPath);
+      const buf = readFileSync(path);
       return safeStorage.decryptString(buf);
     } catch (err) {
       // Decrypt failure typically means the user re-installed the OS,
       // their keychain entry was wiped, or someone else's blob landed
       // on disk. Surface as missing rather than crashing — the
       // orchestrator will then prompt for a fresh key.
-      console.warn("[provider-store] failed to decrypt openai key:", err);
+      console.warn(`[provider-store] failed to decrypt ${kind} key:`, err);
       return null;
     }
   }
 
-  setOpenAiKey(plaintext: string): void {
+  setKey(kind: HostedProviderKind, plaintext: string): void {
     const trimmed = plaintext.trim();
-    if (!trimmed) throw new Error("openai key is empty");
+    if (!trimmed) throw new Error(`${kind} key is empty`);
     if (!safeStorage.isEncryptionAvailable()) {
       // Still proceed — Electron will use a basic cipher. We log so a
       // developer notices in the console; user-facing warning lives in
       // the Settings → Agent panel.
       console.warn(
-        "[provider-store] safeStorage encryption not available — falling back to basic cipher",
+        `[provider-store] safeStorage encryption not available — falling back to basic cipher (${kind})`,
       );
     }
     const enc = safeStorage.encryptString(trimmed);
-    writeFileSync(this.keyPath, enc, { mode: 0o600 });
-    this.emit("keyChanged");
+    writeFileSync(this.keyPath(kind), enc, { mode: 0o600 });
+    this.emit("keyChanged", kind);
   }
 
-  clearOpenAiKey(): void {
-    if (existsSync(this.keyPath)) {
+  clearKey(kind: HostedProviderKind): void {
+    const path = this.keyPath(kind);
+    if (existsSync(path)) {
       try {
-        unlinkSync(this.keyPath);
+        unlinkSync(path);
       } catch (err) {
-        console.warn("[provider-store] clearOpenAiKey unlink failed:", err);
+        console.warn(`[provider-store] clearKey unlink failed (${kind}):`, err);
       }
     }
-    this.emit("keyChanged");
+    this.emit("keyChanged", kind);
+  }
+
+  /** All hosted providers we track, in stable order — for fan-out loops. */
+  hostedKinds(): readonly HostedProviderKind[] {
+    return HOSTED_KINDS;
   }
 
   // ---- Disk I/O -------------------------------------------------------------
 
+  private keyPath(kind: HostedProviderKind): string {
+    return join(this.dir, `${kind}.enc`);
+  }
+
   private readConfigFromDisk(): ProviderConfig {
-    if (!existsSync(this.configPath)) return { ...DEFAULT_CONFIG };
+    if (!existsSync(this.configPath)) return cloneConfig(DEFAULT_CONFIG);
     try {
       const raw = readFileSync(this.configPath, "utf8");
-      const parsed = JSON.parse(raw) as Partial<ProviderConfig>;
-      return {
-        kind:
-          parsed.kind === "openai" ? "openai" : "ollama", // unknown → ollama
-        ollamaModel:
-          typeof parsed.ollamaModel === "string"
-            ? parsed.ollamaModel
-            : DEFAULT_CONFIG.ollamaModel,
-        openaiModel:
-          typeof parsed.openaiModel === "string" && parsed.openaiModel.length > 0
-            ? parsed.openaiModel
-            : DEFAULT_CONFIG.openaiModel,
+      const parsed = JSON.parse(raw) as Partial<ProviderConfig> & {
+        // 8.j legacy fields — read once, then dropped on next write.
+        ollamaModel?: string | null;
+        openaiModel?: string;
       };
+      const kind: LlmProviderKind = ALL_KINDS.includes(
+        parsed.kind as LlmProviderKind,
+      )
+        ? (parsed.kind as LlmProviderKind)
+        : "ollama";
+
+      const models = cloneConfig(DEFAULT_CONFIG).models;
+      // 8.j → 8.k1 forward-compat: pull the legacy single-key fields into
+      // the new map so an upgrade doesn't lose the user's prior choice.
+      if (typeof parsed.ollamaModel === "string") {
+        models.ollama = parsed.ollamaModel;
+      }
+      if (typeof parsed.openaiModel === "string") {
+        models.openai = parsed.openaiModel;
+      }
+      // 8.k1 native shape: takes precedence over legacy.
+      if (parsed.models && typeof parsed.models === "object") {
+        for (const k of ALL_KINDS) {
+          const v = parsed.models[k];
+          if (typeof v === "string") models[k] = v;
+        }
+      }
+      return { kind, models };
     } catch (err) {
       console.warn("[provider-store] failed to read provider.json:", err);
-      return { ...DEFAULT_CONFIG };
+      return cloneConfig(DEFAULT_CONFIG);
     }
   }
 
@@ -186,6 +290,10 @@ export class ProviderConfigStore extends EventEmitter {
     writeFileSync(tmp, JSON.stringify(cfg, null, 2));
     // rename is atomic on POSIX; on Windows it falls back to an unlink+rename
     // sequence under the hood — still race-safe because we're the only writer.
-    require("node:fs").renameSync(tmp, this.configPath);
+    renameSync(tmp, this.configPath);
   }
+}
+
+function cloneConfig(cfg: ProviderConfig): ProviderConfig {
+  return { kind: cfg.kind, models: { ...cfg.models } };
 }

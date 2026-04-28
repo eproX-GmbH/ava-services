@@ -7,6 +7,7 @@ import type {
   AgentStreamFrame,
   AuthStatus,
   AppConfig,
+  HostedProviderKind,
   LlmProviderKind,
   OllamaPullProgress,
   OllamaStatus,
@@ -22,6 +23,7 @@ export type {
   AgentStreamFrame,
   AppConfig,
   AuthStatus,
+  HostedProviderKind,
   LlmProviderKind,
   OllamaPullProgress,
   OllamaStatus,
@@ -131,10 +133,17 @@ const api = {
       model?: string;
     }): Promise<ProviderConfig> =>
       ipcRenderer.invoke("agent:setProvider", args),
-    setOpenAiKey: (apiKey: string): Promise<void> =>
-      ipcRenderer.invoke("agent:setOpenAiKey", apiKey),
-    clearOpenAiKey: (): Promise<void> =>
-      ipcRenderer.invoke("agent:clearOpenAiKey"),
+    setModel: (args: {
+      kind: LlmProviderKind;
+      model: string;
+    }): Promise<ProviderConfig> =>
+      ipcRenderer.invoke("agent:setModel", args),
+    setApiKey: (args: {
+      kind: HostedProviderKind;
+      apiKey: string;
+    }): Promise<void> => ipcRenderer.invoke("agent:setApiKey", args),
+    clearApiKey: (args: { kind: HostedProviderKind }): Promise<void> =>
+      ipcRenderer.invoke("agent:clearApiKey", args),
 
     // Memory (Phase 8.d). The probe is the FirstRunWizard's signal that
     // transcripts will (or won't) survive a restart; `listConversations`

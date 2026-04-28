@@ -1,27 +1,19 @@
-import type { AgentMessage } from "../../../shared/types";
+import type { AgentMessage, LlmProviderKind } from "../../../shared/types";
 import type { OllamaToolSpec } from "../types";
 
-// LlmProvider abstraction (Phase 8.j).
+// LlmProvider abstraction.
 //
-// The orchestrator was originally hard-wired to the Ollama HTTP shape
-// (see ../ollama-client.ts). Adding OpenAI as a peer provider means the
-// streaming + tool-calling surface needs a single interface that both
-// implementations satisfy.
+// Originally introduced in 8.j to seam Ollama vs. OpenAI. In 8.k1 the
+// implementation moved behind Vercel AI SDK (via `@ava/ai-provider`),
+// so a single `AiSdkProvider` now satisfies this interface for all five
+// supported kinds. The interface itself stayed stable on purpose — the
+// orchestrator's ReAct loop is identical regardless of vendor.
 //
-// Design notes:
-//   - The frame shape is intentionally identical to OllamaChatStreamFrame
-//     so the orchestrator's reduce loop is provider-agnostic. Each
-//     implementation adapts its native protocol (Ollama NDJSON, OpenAI
-//     SSE) into this shape.
-//   - tool_calls are passed back whole (not streamed token-by-token)
-//     because that's what Ollama emits and OpenAI's `tool_calls` deltas
-//     are easy to coalesce in the adapter without leaking complexity up.
-//   - `ready()` is a synchronous probe used by AgentStatus — the
-//     orchestrator gates `send()` on it. Slow checks (network round-trip)
-//     belong in `prefetch()` instead, which the supervisor calls during
-//     boot.
+// Frame shape: each yielded `LlmStreamFrame` is a *delta*. Tool calls
+// arrive whole on the final frame (we coalesce streamed argument
+// fragments inside the adapter so the orchestrator never sees partials).
 
-export type LlmProviderKind = "ollama" | "openai";
+export type { LlmProviderKind };
 
 export interface LlmStreamRequest {
   messages: AgentMessage[];
@@ -51,7 +43,7 @@ export interface LlmStreamFrame {
  */
 export interface LlmProviderStatus {
   kind: LlmProviderKind;
-  /** Tag/model name passed to the provider (e.g. "qwen2.5:7b", "gpt-4o-mini"). */
+  /** Tag/model name passed to the provider (e.g. "llama3.2:3b", "gpt-4o-mini"). */
   model: string | null;
   /** True iff a `streamChat` call would start without throwing. */
   ready: boolean;

@@ -220,21 +220,37 @@ export interface AgentChoiceAnswer {
   value: string;
 }
 
-// ---- Provider switch (Phase 8.j) -------------------------------------------
+// ---- Provider switch (Phase 8.j + 8.k) -------------------------------------
 //
-// The agent can run against the bundled Ollama runtime or against the
-// OpenAI cloud API. The selection persists in `userData/agent/provider.json`.
-// The OpenAI key is encrypted via Electron's `safeStorage` and lives in
-// `userData/agent/openai.enc`.
+// The agent runs against one of five providers, three of which require an
+// API key. The selection persists in `userData/agent/provider.json`; each
+// hosted provider's key is encrypted via Electron's `safeStorage` and
+// lives in `userData/agent/<provider>.enc`.
+//
+// Providers wrapped via Vercel AI SDK through `@ava/ai-provider` (Phase
+// 8.k1). Adding a sixth provider means: pick its model from the shared
+// catalog, add a kind below, add a `runtime.ts` branch in ai-provider —
+// no orchestrator or UI changes.
 
-export type LlmProviderKind = "ollama" | "openai";
+export type LlmProviderKind =
+  | "ollama"
+  | "openai"
+  | "anthropic"
+  | "google"
+  | "mistral";
+
+/** Subset that requires an API key — used by the key-storage UIs. */
+export type HostedProviderKind = Exclude<LlmProviderKind, "ollama">;
 
 export interface ProviderConfig {
+  /** Currently active provider for new turns. */
   kind: LlmProviderKind;
-  /** Override for the Ollama llm-role tag. Null → fall back to catalog default. */
-  ollamaModel: string | null;
-  /** OpenAI model name (e.g. "gpt-4o-mini"). */
-  openaiModel: string;
+  /**
+   * Selected model id per provider. Always present so flipping providers
+   * doesn't drop the user's prior model choice. Empty string for a kind
+   * means "use catalog recommendation".
+   */
+  models: Record<LlmProviderKind, string>;
 }
 
 export interface ProviderStatusSnapshot {
@@ -247,6 +263,30 @@ export interface ProviderStatusSnapshot {
 export interface ProviderConfigBundle {
   config: ProviderConfig;
   status: ProviderStatusSnapshot;
-  hasOpenAiKey: boolean;
+  /** Per-provider key presence. ollama is always `true` (no key needed). */
+  hasKey: Record<LlmProviderKind, boolean>;
   encryptionAvailable: boolean;
+}
+
+/**
+ * Catalog entry projected over IPC for the renderer's model picker.
+ * Mirrors `CatalogEntry` from `@ava/ai-provider/catalog` but stays a
+ * plain JSON shape so the renderer doesn't import the package directly.
+ */
+export interface ProviderCatalogEntry {
+  provider: LlmProviderKind;
+  id: string;
+  label: string;
+  /**
+   * Capabilities the agent picker filters on. The shared catalog tracks
+   * more (vision, embedding dimensions, …) but the desktop only needs
+   * "can I use this for the chat agent".
+   */
+  tools: boolean;
+  vision: boolean;
+  contextWindow: number;
+  costClass: "free" | "cheap" | "mid" | "high";
+  recommended: boolean;
+  /** Approximate on-disk size for Ollama tags — UX hint only. */
+  approxBytes?: number;
 }

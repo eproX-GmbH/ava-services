@@ -18,11 +18,14 @@
     "package:linux": "pnpm fetch:ollama --platform=linux-x64 && electron-vite build && electron-builder --linux"
   },
   "dependencies": {
+    "@ava/ai-provider": "workspace:*",
     "@tanstack/react-query": "^5.40.0",
+    "ai": "^5.0.0",
     "react": "^18.3.0",
     "react-dom": "^18.3.0",
     "react-router-dom": "^6.23.0",
     "yup": "^1.7.1",
+    "zod": "^3.25.76",
     "zustand": "^4.5.0"
   },
   "devDependencies": {

@@ -1,9 +1,35 @@
-# No-op compose for "host-local" dev mode.
+# Host-local dev mode — Postgres/RabbitMQ/Keycloak/Elasticsearch run
+# directly on the host (not in Docker). The only thing we run in Docker
+# here is Ollama, because:
+#   1) Customers shouldn't need to install Ollama themselves (D4 + the
+#      OLLAMA_PLAN.md design — local-first LLM for non-technical users).
+#   2) The host may not have the binary, and asking devs to `brew install
+#      ollama` defeats the "single command to boot the stack" promise.
+#   3) The official `ollama/ollama` image is small (~700 MB), supports both
+#      arm64 and amd64, and exposes the same :11434 HTTP API the
+#      packaged-Electron supervisor will use later (Phase 2 — bundled binary).
 #
-# Use this when you already run Postgres/RabbitMQ/Keycloak directly on the
-# host (not in Docker) and just want `scripts/dev.sh hostlocal` to skip
-# infra and only fork the Node services.
-#
-# `docker compose up -d` against this file is a no-op (no services declared)
-# and exits 0, which is exactly what scripts/dev.sh needs.
-services: {}
+# A named volume keeps the ~4 GB of pulled models (gemma3:4b +
+# embeddinggemma) across container restarts so devs don't re-download
+# them every time.
+services:
+  ollama:
+    image: ollama/ollama:latest
+    container_name: ava-ollama
+    restart: unless-stopped
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama-models:/root/.ollama
+    # No GPU passthrough by default — works on every dev machine. M-series
+    # Macs use Metal automatically inside the container's CPU build (slow
+    # but works). For prod the bundled binary uses native GPU on each OS.
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 5s
+
+volumes:
+  ollama-models:

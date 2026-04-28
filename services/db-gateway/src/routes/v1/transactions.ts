@@ -11,11 +11,18 @@ import {
   ErrorShape,
   PaginatedShape,
   PaginationQuery,
+  PipelineCellShape,
+  PipelineShape,
+  PipelineStage,
   ProcessingErrorShape,
+  RetryStage,
+  RetryStageBody,
+  RetryStageResultShape,
   TransactionEntityParams,
   TransactionIdParam,
   TransactionShape,
 } from "./schemas";
+import type { UpstreamName } from "../../lib/upstream";
 
 // §6 SSE bridge.
 //
@@ -403,6 +410,327 @@ transactionsRouter.openapi(errorsRoute, async (c) => {
   return c.json(
     { items: perCompany.flat() as Array<z.infer<typeof ProcessingErrorShape>> },
     200,
+  );
+});
+
+// ---- GET /v1/transactions/:transactionId/pipeline --------------------------
+//
+// Cross-producer state matrix (DESKTOP_DATA_FLOW.md §6.1). Fans out to every
+// LLM producer's `/api/v1/transactions/:tid/entities` in parallel, unions the
+// companyIds across all six lists, and projects each company × stage cell.
+//
+// master-data is derived: any company that appears in any downstream is
+// trivially "completed" upstream-of-master-data (the per-company AMQP
+// upsert event already fanned out). Master-data has no per-row table.
+//
+// Per-stage failure is best-effort: an upstream call that errors is added to
+// `unavailableStages` and its column is filled with `state: "pending"`. The
+// matrix still returns rather than 502'ing, because partial info is better
+// than none for a pipeline status view.
+
+const STAGE_UPSTREAMS: Array<{
+  stage: Exclude<z.infer<typeof PipelineStage>, "masterData">;
+  upstream: UpstreamName;
+}> = [
+  { stage: "structuredContent", upstream: "structuredContent" },
+  { stage: "companyPublication", upstream: "companyPublication" },
+  { stage: "website", upstream: "website" },
+  { stage: "companyProfile", upstream: "companyProfile" },
+  { stage: "companyContact", upstream: "companyContact" },
+  { stage: "companyEvaluation", upstream: "companyEvaluation" },
+];
+
+const ALL_STAGES: Array<z.infer<typeof PipelineStage>> = [
+  "masterData",
+  "structuredContent",
+  "companyPublication",
+  "website",
+  "companyProfile",
+  "companyContact",
+  "companyEvaluation",
+];
+
+const pipelineRoute = createRoute({
+  method: "get",
+  path: "/transactions/{transactionId}/pipeline",
+  tags: [tag],
+  summary: "Per-company × per-stage state matrix (W3)",
+  description: [
+    "Returns one row per company in the transaction with one cell per pipeline",
+    "stage. Built by fan-out across all six LLM producers' `/entities` lists.",
+    "",
+    "Use this as the snapshot view alongside the live SSE stream",
+    "(`/transactions/:transactionId/events`): the matrix gives state at request",
+    "time, the SSE stream applies live deltas onto it.",
+  ].join("\n"),
+  request: { params: TransactionIdParam },
+  responses: {
+    200: {
+      content: { "application/json": { schema: PipelineShape } },
+      description: "pipeline matrix",
+    },
+    ...errorResponses,
+  },
+});
+
+type CellState = z.infer<typeof PipelineCellShape>["state"];
+type EntityRow = z.infer<typeof EntityTransactionShape>;
+
+transactionsRouter.openapi(pipelineRoute, async (c) => {
+  const { transactionId } = c.req.valid("param");
+
+  await assertTransactionOwnershipById(c, transactionId);
+
+  // Fan out to every producer in parallel. Each producer exposes
+  // `/api/v1/transactions/:tid/entities` (Phase 1 normalization). Use
+  // pageSize=10000 — typical excel-import transactions are ≤ a few hundred
+  // companies; if this ever exceeds 10k we add cursoring.
+  const fanOut = await Promise.all(
+    STAGE_UPSTREAMS.map(async ({ stage, upstream }) => {
+      try {
+        const res = await callUpstream<{
+          entityTransactions?: EntityRow[];
+          items?: EntityRow[];
+          count?: number;
+          total?: number;
+        }>(
+          c,
+          upstream,
+          `/api/v1/transactions/${encodeURIComponent(transactionId)}/entities`,
+          { query: { pageNumber: 1, pageSize: 10000 } },
+        );
+        const items = (res?.entityTransactions ?? res?.items ?? []) as EntityRow[];
+        return { stage, available: true as const, items };
+      } catch (err) {
+        // Don't poison the whole matrix — log and mark the stage unavailable.
+        logger.warn(
+          {
+            err,
+            stage,
+            upstream,
+            transactionId,
+            requestId: c.get("requestId"),
+          },
+          "pipeline fan-out: stage upstream failed",
+        );
+        return { stage, available: false as const, items: [] as EntityRow[] };
+      }
+    }),
+  );
+
+  const unavailableStages = fanOut.filter((f) => !f.available).map((f) => f.stage);
+
+  // stage -> Map<companyId, EntityRow> for O(1) lookup when projecting cells.
+  const byStage = new Map<string, Map<string, EntityRow>>();
+  for (const f of fanOut) {
+    const m = new Map<string, EntityRow>();
+    for (const row of f.items) {
+      if (typeof row?.companyId === "string") m.set(row.companyId, row);
+    }
+    byStage.set(f.stage, m);
+  }
+
+  // Union of companyIds across all stages — the row set for the matrix.
+  const allCompanyIds = new Set<string>();
+  for (const m of byStage.values()) for (const id of m.keys()) allCompanyIds.add(id);
+
+  const cellFromRow = (row: EntityRow | undefined): z.infer<typeof PipelineCellShape> => {
+    if (!row) {
+      return { state: "pending" as CellState, errorCount: 0 };
+    }
+    return {
+      state: row.state,
+      updatedAt: row.updatedAt ?? row.finishedAt ?? null,
+      errorCount: row.state === "failed" ? 1 : 0,
+    };
+  };
+
+  type Cell = z.infer<typeof PipelineCellShape>;
+  const rows = Array.from(allCompanyIds).map((companyId) => {
+    const cells: {
+      masterData: Cell;
+      structuredContent: Cell;
+      companyPublication: Cell;
+      website: Cell;
+      companyProfile: Cell;
+      companyContact: Cell;
+      companyEvaluation: Cell;
+    } = {
+      // master-data is derived: appearing in any downstream stage proves its
+      // upstream upsert event fanned out successfully for this company.
+      masterData: { state: "completed" as CellState, errorCount: 0 },
+      structuredContent: cellFromRow(byStage.get("structuredContent")?.get(companyId)),
+      companyPublication: cellFromRow(byStage.get("companyPublication")?.get(companyId)),
+      website: cellFromRow(byStage.get("website")?.get(companyId)),
+      companyProfile: cellFromRow(byStage.get("companyProfile")?.get(companyId)),
+      companyContact: cellFromRow(byStage.get("companyContact")?.get(companyId)),
+      companyEvaluation: cellFromRow(byStage.get("companyEvaluation")?.get(companyId)),
+    };
+    // Most-recent activity across cells for sort order.
+    const timestamps = Object.values(cells)
+      .map((cell) => cell.updatedAt)
+      .filter((t): t is string => typeof t === "string");
+    const lastActivityAt =
+      timestamps.length > 0
+        ? timestamps.reduce((a, b) => (a > b ? a : b))
+        : null;
+    return { companyId, cells, lastActivityAt };
+  });
+
+  // Sort newest-first so freshly-progressing companies surface at the top.
+  rows.sort((a, b) => {
+    const aT = a.lastActivityAt ?? "";
+    const bT = b.lastActivityAt ?? "";
+    if (aT === bT) return a.companyId.localeCompare(b.companyId);
+    return bT.localeCompare(aT);
+  });
+
+  return c.json(
+    {
+      transactionId,
+      totalCompanies: rows.length,
+      stages: ALL_STAGES,
+      unavailableStages,
+      rows,
+    },
+    200,
+  );
+});
+
+// ---- POST /v1/transactions/:tid/entities/:cid/retry ------------------------
+//
+// Per-stage retry (DESKTOP_DATA_FLOW.md §6.2). Maps the requested stage to
+// the producer service(s) that own its trigger event(s) and republishes.
+// Each producer's `/api/v1/transactions/:tid/retry` reads its own persisted
+// row and re-emits the AMQP event so the downstream consumer re-runs.
+//
+// `companyEvaluation` retry fans out across all 5 LLM producers — each one
+// republishes its own slice of the evaluation event family in parallel.
+// Partial success returns 207-like semantics in-band: `ok` per dispatch
+// + an aggregate `ok = true` only if every dispatch succeeded.
+
+const RetryParams = TransactionEntityParams; // { transactionId, companyId }
+
+const RETRY_DISPATCH: Record<
+  z.infer<typeof RetryStage>,
+  Array<{ upstream: UpstreamName; stage: string }>
+> = {
+  // Master-data owns both downstream-of-master-data slices.
+  structuredContent: [{ upstream: "masterData", stage: "structuredContent" }],
+  companyPublication: [{ upstream: "masterData", stage: "companyPublication" }],
+  // Structured-content drives website. (No `website` retry from website
+  // itself — there's no upstream of website to republish; you'd have to
+  // restart the structured-content slice.)
+  website: [{ upstream: "structuredContent", stage: "website" }],
+  // company-profile is fed by website (url-based) AND structured-content
+  // (business-purpose-based). Republish both so company-profile re-runs
+  // both inputs and idempotently merges.
+  companyProfile: [
+    { upstream: "website", stage: "companyProfile" },
+    { upstream: "structuredContent", stage: "companyProfile" },
+  ],
+  // company-contact is fed by website only.
+  companyContact: [{ upstream: "website", stage: "companyContact" }],
+  // The evaluation fan-out: each producer republishes the slice it owns.
+  // company-evaluation is the consumer, never republishes for itself.
+  companyEvaluation: [
+    { upstream: "structuredContent", stage: "companyEvaluation" },
+    { upstream: "companyPublication", stage: "companyEvaluation" },
+    { upstream: "website", stage: "companyEvaluation" },
+    { upstream: "companyProfile", stage: "companyEvaluation" },
+    { upstream: "companyContact", stage: "companyEvaluation" },
+  ],
+};
+
+const retryRoute = createRoute({
+  method: "post",
+  path: "/transactions/{transactionId}/entities/{companyId}/retry",
+  tags: [tag],
+  summary: "Retry a pipeline stage for a single company (W3)",
+  description: [
+    "Republishes the AMQP trigger event(s) for the given (transaction,",
+    "company, stage) so the downstream consumer re-runs. The gateway maps",
+    "stage → producer(s); the producers read their own persisted rows and",
+    "re-emit. `companyEvaluation` fans out across all 5 LLM producers.",
+  ].join("\n"),
+  request: {
+    params: RetryParams,
+    body: {
+      content: { "application/json": { schema: RetryStageBody } },
+      required: true,
+    },
+  },
+  responses: {
+    202: {
+      content: { "application/json": { schema: RetryStageResultShape } },
+      description: "retry dispatched",
+    },
+    ...errorResponses,
+  },
+});
+
+transactionsRouter.openapi(retryRoute, async (c) => {
+  const { transactionId, companyId } = c.req.valid("param");
+  const { stage, companyName } = c.req.valid("json");
+
+  await assertTransactionOwnershipById(c, transactionId);
+
+  const targets = RETRY_DISPATCH[stage];
+  const dispatched = await Promise.all(
+    targets.map(async ({ upstream, stage: producerStage }) => {
+      try {
+        const body: Record<string, unknown> = {
+          companyId,
+          stage: producerStage,
+        };
+        // companyContact retry on website needs companyName for the
+        // website.upsertCompanyContact payload.
+        if (companyName !== undefined) body.companyName = companyName;
+
+        const res = await callUpstream<unknown>(
+          c,
+          upstream,
+          `/api/v1/transactions/${encodeURIComponent(transactionId)}/retry`,
+          { method: "POST", body },
+        );
+        return {
+          upstream,
+          stage: producerStage,
+          ok: true,
+          status: 202,
+          body: res,
+        };
+      } catch (err) {
+        const status =
+          err instanceof HTTPException ? err.status : undefined;
+        const message = err instanceof Error ? err.message : String(err);
+        logger.warn(
+          {
+            err,
+            upstream,
+            producerStage,
+            stage,
+            transactionId,
+            companyId,
+            requestId: c.get("requestId"),
+          },
+          "retry dispatch: upstream call failed",
+        );
+        return {
+          upstream,
+          stage: producerStage,
+          ok: false,
+          status,
+          error: message,
+        };
+      }
+    }),
+  );
+
+  const ok = dispatched.every((d) => d.ok);
+  return c.json(
+    { transactionId, companyId, stage, dispatched, ok },
+    202,
   );
 });
 

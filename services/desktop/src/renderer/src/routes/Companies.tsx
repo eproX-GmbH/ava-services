@@ -13,10 +13,12 @@ import { gatewayFetch } from "../api/gateway";
 // keeps the input responsive while the request is in flight; React Query's
 // keepPreviousData avoids the page flicker between keystrokes.
 
+// Mirrors CompanyShape in db-gateway/src/routes/v1/schemas.ts. The canonical
+// master-data fields are `companyId` + `location` (not `id`/`city`).
 interface Company {
-  id: string;
+  companyId: string;
   name?: string | null;
-  city?: string | null;
+  location?: string | null;
 }
 interface SearchResult<T> {
   items: T[];
@@ -93,13 +95,13 @@ export function Companies() {
           </thead>
           <tbody>
             {items.map((c) => (
-              <tr key={c.id}>
+              <tr key={c.companyId}>
                 <td>
-                  <Link to={`/companies/${c.id}`}>{c.name ?? "(unnamed)"}</Link>
+                  <Link to={`/companies/${c.companyId}`}>{c.name ?? "(unnamed)"}</Link>
                 </td>
-                <td>{c.city ?? <span className="muted">—</span>}</td>
+                <td>{c.location ?? <span className="muted">—</span>}</td>
                 <td>
-                  <code>{c.id.slice(0, 12)}…</code>
+                  <code>{c.companyId.slice(0, 12)}…</code>
                 </td>
               </tr>
             ))}
