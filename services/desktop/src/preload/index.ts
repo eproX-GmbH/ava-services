@@ -5,6 +5,7 @@ import type {
   AgentSendResult,
   AgentStatus,
   AgentStreamFrame,
+  ApiKeyValidation,
   AuthStatus,
   AppConfig,
   HostedProviderKind,
@@ -22,6 +23,7 @@ export type {
   AgentSendResult,
   AgentStatus,
   AgentStreamFrame,
+  ApiKeyValidation,
   AppConfig,
   AuthStatus,
   HostedProviderKind,
@@ -151,6 +153,17 @@ const api = {
       kind: HostedProviderKind;
       apiKey: string;
     }): Promise<void> => ipcRenderer.invoke("agent:setApiKey", args),
+    /**
+     * Phase 8.k10b — verify a hosted-provider key against its cheapest
+     * auth-checked endpoint without persisting. Used by the FirstRunWizard
+     * skip flow ("Test & continue") and reusable by any future Settings
+     * surface that wants a "Test key" affordance.
+     */
+    validateApiKey: (args: {
+      kind: HostedProviderKind;
+      apiKey: string;
+    }): Promise<ApiKeyValidation> =>
+      ipcRenderer.invoke("agent:validateApiKey", args),
     clearApiKey: (args: { kind: HostedProviderKind }): Promise<void> =>
       ipcRenderer.invoke("agent:clearApiKey", args),
 

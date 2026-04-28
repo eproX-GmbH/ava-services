@@ -212,6 +212,14 @@ app.whenReady().then(async () => {
       providers.setApiKey(args.kind, args.apiKey);
     },
   );
+  // Phase 8.k10b — cheap probe ("is this key valid") used by the
+  // skip-to-external flow before we persist + flip provider. Does not
+  // mutate state on its own.
+  ipcMain.handle(
+    "agent:validateApiKey",
+    (_e, args: { kind: HostedProviderKind; apiKey: string }) =>
+      providers.validateApiKey(args.kind, args.apiKey),
+  );
   ipcMain.handle(
     "agent:clearApiKey",
     (_e, args: { kind: HostedProviderKind }) => {

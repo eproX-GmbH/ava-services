@@ -4,6 +4,7 @@ import type { CatalogEntry, CatalogProvider } from "@ava/ai-provider";
 import type { OllamaSupervisor } from "../../ollama-supervisor";
 import { AiSdkProvider } from "./ai-sdk-provider";
 import { ProviderConfigStore } from "./store";
+import { validateApiKey, type KeyValidation } from "./validate-key";
 import type {
   HostedProviderKind,
   LlmProviderKind,
@@ -161,6 +162,20 @@ export class LlmProviderManager extends EventEmitter {
 
   setApiKey(kind: HostedProviderKind, plaintext: string): void {
     this.store.setKey(kind, plaintext);
+  }
+
+  /**
+   * Validate a hosted-provider API key against the provider's cheapest
+   * auth-checked endpoint (usually `GET /v1/models`). Does NOT persist
+   * — callers (the FirstRunWizard skip flow, the Settings panel) decide
+   * what to do based on the result. See validate-key.ts for the exact
+   * probes and rationale.
+   */
+  validateApiKey(
+    kind: HostedProviderKind,
+    apiKey: string,
+  ): Promise<KeyValidation> {
+    return validateApiKey(kind, apiKey);
   }
 
   clearApiKey(kind: HostedProviderKind): void {

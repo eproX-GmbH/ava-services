@@ -290,3 +290,15 @@ export interface ProviderCatalogEntry {
   /** Approximate on-disk size for Ollama tags — UX hint only. */
   approxBytes?: number;
 }
+
+/**
+ * Result of an API-key probe (Phase 8.k10b). The validator hits the
+ * provider's cheapest auth-checked endpoint and reports whether the key
+ * works. `reason` is a short user-facing string for the failure case
+ * (e.g. "OpenAI rejected the key (invalid).") — distinct enough that
+ * the UI can decide between "wrong key" and "you're offline" without
+ * parsing it. See validate-key.ts for the per-provider probes.
+ */
+export type ApiKeyValidation =
+  | { ok: true }
+  | { ok: false; reason: string };

@@ -10,6 +10,7 @@ export { GatewayClient } from "./gateway-client";
 export { defineTool } from "./define-tool";
 export { buildReadOnlyRegistry } from "./tools";
 export { LlmProviderManager, ProviderConfigStore } from "./providers";
+export type { KeyValidation } from "./providers";
 export { MemoryStore } from "./memory";
 export type { MemoryProbeResult, MemoryListEntry } from "./memory";
 export type {

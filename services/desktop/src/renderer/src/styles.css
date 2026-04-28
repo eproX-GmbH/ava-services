@@ -481,6 +481,36 @@ button.primary:disabled { opacity: 0.6; cursor: not-allowed; }
   font-size: 11.5px; font-variant-numeric: tabular-nums;
 }
 .first-run__model-sep { opacity: 0.5; }
+.first-run__actions {
+  display: flex; gap: 0.75rem; align-items: center; flex-wrap: wrap;
+  margin-top: 1rem;
+}
+.first-run__card .first-run__actions button { margin-top: 0; }
+.first-run__card button.link {
+  background: none; color: var(--accent, #3b82f6);
+  padding: 0.4rem 0.2rem; text-decoration: underline;
+}
+.first-run__card button.link:disabled {
+  opacity: 0.5; text-decoration: none;
+}
+.first-run__chooser {
+  display: flex; flex-direction: column; gap: 0.75rem;
+  margin-top: 0.75rem;
+}
+.first-run__chooser .field { display: flex; flex-direction: column; gap: 0.3rem; }
+.first-run__chooser .field > span {
+  font-size: 12px; opacity: 0.75;
+}
+.first-run__chooser input,
+.first-run__chooser select {
+  padding: 0.5rem 0.6rem; font-size: 13px;
+  background: rgba(255,255,255,0.04); color: inherit;
+  border: 1px solid rgba(255,255,255,0.12); border-radius: 4px;
+}
+.first-run__chooser input:focus,
+.first-run__chooser select:focus {
+  outline: none; border-color: var(--accent, #3b82f6);
+}
 .first-run__card button {
   margin-top: 1rem; padding: 0.6rem 1rem; font-size: 14px;
   background: var(--accent, #3b82f6); color: white;
