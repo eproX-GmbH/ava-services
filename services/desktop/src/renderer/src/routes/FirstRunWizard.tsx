@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useOllamaStore } from "../store/ollama";
+import { pullModelTracked, useOllamaStore } from "../store/ollama";
 import type {
   ApiKeyValidation,
   HostedProviderKind,
@@ -49,7 +49,20 @@ const PROVIDER_LABEL: Record<HostedProviderKind, string> = {
 
 export function FirstRunWizard({
   memoryProbe,
-}: { memoryProbe?: MemoryProbe | null } = {}) {
+  onPathChosen,
+  onProviderConfigChanged,
+}: {
+  memoryProbe?: MemoryProbe | null;
+  /** Fires once the user has either kicked off "Download all" or
+   *  successfully completed "Skip → cloud". App.tsx flips its
+   *  `pathChosen` state on this so the wizard stops being a hard modal
+   *  and the routed app + DownloadDock take over. */
+  onPathChosen?: () => void;
+  /** Fires whenever the wizard refreshes the persisted provider bundle
+   *  (currently: after a successful "Skip → cloud" save). Lets App.tsx
+   *  update its mirror of `providerKind` without a separate IPC poll. */
+  onProviderConfigChanged?: (bundle: ProviderConfigBundle) => void;
+} = {}) {
   const status = useOllamaStore((s) => s.status);
   const pullProgress = useOllamaStore((s) => s.pullProgress);
   const pullRate = useOllamaStore((s) => s.pullRate);
@@ -119,11 +132,17 @@ export function FirstRunWizard({
   const onDownloadAll = async () => {
     setRunning(true);
     setErrorMessage(null);
+    // Tell App.tsx the user has committed to a path BEFORE we await the
+    // first pull. Otherwise the wizard would stay full-screen for the
+    // entire ~9 GB download instead of collapsing into the dock.
+    onPathChosen?.();
     try {
       // Sequential. The per-model progress is broadcast over IPC so we
-      // don't need to thread it through the await chain.
+      // don't need to thread it through the await chain. We use the
+      // tracked wrapper so the DownloadDock renders a "Queued…" row
+      // immediately, before Ollama emits the first frame.
       for (const model of visibleMissing) {
-        await window.api.ollama.pullModel(model.name);
+        await pullModelTracked(model.name);
       }
     } catch (err) {
       setErrorMessage(err instanceof Error ? err.message : String(err));
@@ -158,6 +177,26 @@ export function FirstRunWizard({
               // render filters the LLM out of the missing list.
               const next = await window.api.agent.getProviderConfig();
               setConfig(next);
+              onProviderConfigChanged?.(next);
+              // Kick off any still-required pulls (the embedding model)
+              // so they run in the dock while the user explores the app.
+              // We deliberately do this BEFORE onPathChosen() so the
+              // dock has a "Queued" row to render the moment the gate
+              // flips — otherwise the user sees a blank routed app for
+              // a few seconds while Ollama resolves the manifest.
+              const stillNeeded = status.missing.filter((m) => m.role !== "llm");
+              for (const m of stillNeeded) {
+                // Fire-and-forget — the dock subscribes to the same
+                // store and reports progress + final state. We don't
+                // surface errors here because by this point the user
+                // is already in the routed app; failures show up in
+                // the dock row.
+                void pullModelTracked(m.name).catch(() => undefined);
+              }
+              // The user has committed to the cloud path — tell App.tsx
+              // it can drop into the routed app while the embedding
+              // download (still required) finishes in the dock.
+              onPathChosen?.();
               setView("intro");
             }}
           />

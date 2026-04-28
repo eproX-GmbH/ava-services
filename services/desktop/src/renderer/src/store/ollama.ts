@@ -44,9 +44,31 @@ interface OllamaState {
    *  {@link OllamaPullRate}. Cleared when a pull starts fresh (a
    *  completed=0 frame arriving after a `done:true` for the same model). */
   pullRate: Record<string, OllamaPullRate>;
+  /**
+   * Models the renderer has explicitly asked main to pull. Used by the
+   * Download Dock (Phase 8.k10c) to know what to render even before the
+   * first progress frame arrives — the pullModel IPC call resolves on
+   * the *final* frame, so without this set the dock would show nothing
+   * during the latency between click and first frame. Cleared once we
+   * see a `done` frame.
+   */
+  activePulls: Record<string, true>;
 
   setStatus: (status: OllamaStatus) => void;
   setPullProgress: (progress: OllamaPullProgress) => void;
+  /**
+   * Mark a model pull as in-flight. Called by `pullModelTracked` (the
+   * thin renderer wrapper around the preload IPC) right before it
+   * invokes the IPC, so the dock can show a "Queued / 0%" row instead
+   * of nothing during the gap before the first progress frame.
+   */
+  markPullStarted: (modelName: string) => void;
+  /**
+   * Discard a finished pull from the dock entirely (renders nothing
+   * until the next pullStart). Triggered by the user-facing "clear
+   * completed" button. Doesn't touch pullRate, since that's free.
+   */
+  dismissPull: (modelName: string) => void;
 }
 
 // EMA smoothing factor. 0.3 keeps the display responsive (~3-frame
@@ -68,6 +90,26 @@ export const useOllamaStore = create<OllamaState>((setState) => ({
   status: INITIAL_STATUS,
   pullProgress: {},
   pullRate: {},
+  activePulls: {},
+  markPullStarted: (modelName) =>
+    setState((s) => ({
+      activePulls: { ...s.activePulls, [modelName]: true },
+      // Wipe any stale "done" frame from a previous run so the dock
+      // shows a fresh "queued" row rather than the prior pull's tail.
+      pullProgress: (() => {
+        const next = { ...s.pullProgress };
+        delete next[modelName];
+        return next;
+      })(),
+    })),
+  dismissPull: (modelName) =>
+    setState((s) => {
+      const nextProgress = { ...s.pullProgress };
+      delete nextProgress[modelName];
+      const nextActive = { ...s.activePulls };
+      delete nextActive[modelName];
+      return { pullProgress: nextProgress, activePulls: nextActive };
+    }),
   setStatus: (status) => setState({ status, ready: true }),
   setPullProgress: (progress) =>
     setState((s) => {
@@ -109,11 +151,53 @@ export const useOllamaStore = create<OllamaState>((setState) => ({
         }
       }
 
+      // When a pull resolves (done:true), drop it from activePulls so
+      // the dock can decide whether to keep the row pinned (it does, for
+      // the "✓ done" affordance) without conflating "still running" with
+      // "just finished".
+      let nextActive = s.activePulls;
+      if (progress.done && s.activePulls[progress.modelName]) {
+        nextActive = { ...s.activePulls };
+        delete nextActive[progress.modelName];
+      }
+
       return {
         pullProgress: { ...s.pullProgress, [progress.modelName]: progress },
         pullRate: nextRate
           ? { ...s.pullRate, [progress.modelName]: nextRate }
           : s.pullRate,
+        activePulls: nextActive,
       };
     }),
 }));
+
+/**
+ * Tracked wrapper around the preload's `pullModel` IPC. Use this from
+ * the renderer instead of `window.api.ollama.pullModel` directly so the
+ * Download Dock sees the row immediately (the IPC's promise resolves on
+ * the *final* frame; without this wrapper the dock would be blank
+ * during the click-to-first-frame gap, which can be a few seconds while
+ * Ollama resolves the manifest).
+ */
+export async function pullModelTracked(
+  modelName: string,
+): Promise<OllamaPullProgress> {
+  useOllamaStore.getState().markPullStarted(modelName);
+  try {
+    return await window.api.ollama.pullModel(modelName);
+  } catch (err) {
+    // The supervisor emits a final progress frame on failure, so the
+    // store is already up-to-date — we just need to make sure the row
+    // leaves "queued/active" state if Ollama returned an HTTP error
+    // before any frame at all (rare but possible). Synthesise a final
+    // frame so the dock can render the failure message.
+    const message = err instanceof Error ? err.message : String(err);
+    useOllamaStore.getState().setPullProgress({
+      modelName,
+      status: "error",
+      done: true,
+      errorMessage: message,
+    });
+    throw err;
+  }
+}

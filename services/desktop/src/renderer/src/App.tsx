@@ -4,6 +4,7 @@ import { useAuthStore } from "./store/auth";
 import { useOllamaStore } from "./store/ollama";
 import { SignIn } from "./routes/SignIn";
 import { FirstRunWizard } from "./routes/FirstRunWizard";
+import { DownloadDock } from "./components/DownloadDock";
 import type { LlmProviderKind } from "../../shared/types";
 
 interface MemoryProbe {
@@ -54,6 +55,15 @@ export function App({ children }: PropsWithChildren) {
     null,
   );
 
+  // Whether the user has made an explicit choice on the FirstRunWizard
+  // (clicked "Download all" OR completed "Skip → cloud"). Once true, the
+  // wizard stops being a hard modal and the routed app + Download Dock
+  // take over while the actual pull progresses in the background. We
+  // keep this in App.tsx rather than the ollama store because it's a
+  // pure UI gate — the source of truth for "is the agent actually
+  // usable" stays `status.missing` + provider config.
+  const [pathChosen, setPathChosen] = useState(false);
+
   useEffect(() => {
     void window.api.getConfig().then(setConfig);
     void window.api.auth.getStatus().then(setAuth);
@@ -96,10 +106,38 @@ export function App({ children }: PropsWithChildren) {
   const blockingMissing = usingHostedLlm
     ? ollamaStatus.missing.filter((m) => m.role !== "llm")
     : ollamaStatus.missing;
-  const ollamaBlocking =
-    ollamaStatus.state !== "ready" || blockingMissing.length > 0;
-  if (ollamaBlocking) {
-    return <FirstRunWizard memoryProbe={memoryProbe} />;
+
+  // Wizard is a HARD modal only when the supervisor isn't reachable or
+  // the user hasn't yet chosen between "download local" and "skip to
+  // cloud". After they pick a path we drop into the routed app and the
+  // Download Dock surfaces ongoing progress non-blockingly — see
+  // Phase 8.k10c. The supervisor's `state==="error"` and
+  // `state==="starting"` cases stay hard-modal because there's literally
+  // nothing useful the user can do in the routed app while the runtime
+  // is missing.
+  const supervisorHardBlock =
+    ollamaStatus.state === "error" ||
+    ollamaStatus.state === "starting" ||
+    ollamaStatus.state === "idle";
+  // Show the wizard whenever there's still a *blocking* missing model and
+  // the user hasn't yet acknowledged the choice screen this session.
+  // We deliberately don't gate on `!usingHostedLlm` here — a returning
+  // user who chose cloud last time but quit before the embedding pull
+  // finished still needs the wizard to recover (the wizard's intro view
+  // detects `cloudOk` and renders "Almost ready" with just a Download
+  // button for the remaining embedding row).
+  const needsFirstRunChoice = !pathChosen && blockingMissing.length > 0;
+  if (supervisorHardBlock || needsFirstRunChoice) {
+    return (
+      <>
+        <FirstRunWizard
+          memoryProbe={memoryProbe}
+          onPathChosen={() => setPathChosen(true)}
+          onProviderConfigChanged={(b) => setProviderKind(b.config.kind)}
+        />
+        <DownloadDock />
+      </>
+    );
   }
   // Memory probe failure isn't fatal — the agent still runs in-memory —
   // but we want the user to know transcripts won't survive a restart.
@@ -115,6 +153,7 @@ export function App({ children }: PropsWithChildren) {
         </div>
       )}
       {children}
+      <DownloadDock />
     </>
   );
 }

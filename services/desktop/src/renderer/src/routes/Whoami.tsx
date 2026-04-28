@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { gatewayFetch } from "../api/gateway";
+import { pullModelTracked, useOllamaStore } from "../store/ollama";
 import type {
   HostedProviderKind,
   LlmProviderKind,
@@ -129,6 +130,16 @@ function ProviderSection() {
   const activeList = modelsByKind[activeKind] ?? [];
   const activeEntry = activeList.find((m) => m.id === activeModelId);
 
+  // Phase 8.k10c — let the user kick a pull for an Ollama model that
+  // isn't on disk yet. We only surface the affordance when the active
+  // provider is Ollama AND the picked model isn't in `installed`. The
+  // dock then takes over the progress UI; no need for inline progress
+  // here.
+  const showOllamaDownload =
+    activeKind === "ollama" &&
+    activeEntry !== undefined &&
+    activeEntry.provider === "ollama";
+
   return (
     <section className="provider-section">
       <h3>Agent provider</h3>
@@ -202,6 +213,10 @@ function ProviderSection() {
         </p>
       )}
 
+      {showOllamaDownload && (
+        <OllamaDownloadAffordance modelId={activeEntry.id} />
+      )}
+
       {setProvider.error && (
         <p className="error">{(setProvider.error as Error).message}</p>
       )}
@@ -223,6 +238,54 @@ function ProviderSection() {
         ))}
       </div>
     </section>
+  );
+}
+
+// -- Ollama download affordance ---------------------------------------
+
+function OllamaDownloadAffordance({ modelId }: { modelId: string }) {
+  const installed = useOllamaStore((s) => s.status.installed);
+  const activePulls = useOllamaStore((s) => s.activePulls);
+  const pullProgress = useOllamaStore((s) => s.pullProgress);
+
+  const isInstalled = installed.some((m) => m.name === modelId);
+  const isPulling =
+    activePulls[modelId] === true ||
+    (pullProgress[modelId] !== undefined && pullProgress[modelId]?.done !== true);
+
+  // Once the model is on disk, surface a tiny green confirmation rather
+  // than nothing — the user just clicked through a dropdown change and
+  // wants to know the picked model is actually usable. Stays subtle to
+  // not crowd the existing "active model" line above.
+  if (isInstalled) {
+    return <p className="muted small ok">On disk ✓</p>;
+  }
+  if (isPulling) {
+    return (
+      <p className="muted small">
+        Downloading… see the dock in the bottom-right corner for progress.
+      </p>
+    );
+  }
+
+  return (
+    <div className="ollama-dl">
+      <p className="muted small warn">
+        This model isn't on disk yet. Downloading runs in the background;
+        you can keep using the app.
+      </p>
+      <button
+        type="button"
+        onClick={() => {
+          // Fire-and-forget — the dock owns the progress UI and reports
+          // both success and failure. We swallow the rejection so React
+          // Query doesn't surface it as an unhandled promise.
+          void pullModelTracked(modelId).catch(() => undefined);
+        }}
+      >
+        Download model
+      </button>
+    </div>
   );
 }
 
