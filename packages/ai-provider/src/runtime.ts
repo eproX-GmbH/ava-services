@@ -23,6 +23,29 @@ import { createOllama } from "ollama-ai-provider-v2";
 import type { EmbeddingModel, LanguageModel } from "ai";
 import type { CatalogProvider } from "./catalog";
 
+// Force Node's undici-based fetch instead of Electron's Chromium-net
+// global fetch when we're inside an Electron main process. Chromium's
+// trust_store_mac.cc has a known bug parsing certain TLS certificate
+// extensions in Hardened-Runtime macOS builds, which manifests as
+// `read ECONNRESET` inside TLSWrap.onStreamRead the moment OpenAI's
+// streamed `/v1/responses` chunked response starts coming back.
+//
+// undici is bundled with Node 20+ and re-exposed here via a runtime
+// require so this file still type-checks in environments without
+// undici on the resolution path. We probe at module load and fall
+// back to the global fetch if undici isn't reachable (browser /
+// edge runtime).
+let preferredFetch: typeof fetch | undefined;
+try {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-var-requires
+  const undici = require("undici") as { fetch?: typeof fetch };
+  if (typeof undici.fetch === "function") {
+    preferredFetch = undici.fetch;
+  }
+} catch {
+  /* undici not on resolution path — keep global fetch */
+}
+
 /** Runtime-config taxonomy. Same set as catalog.CatalogProvider. */
 export type RuntimeProvider = CatalogProvider;
 
@@ -64,30 +87,35 @@ export function createLLM(opts: CreateLLMOptions): LanguageModel {
         apiKey: requireKey(opts, "OPENAI_API_KEY"),
         project: opts.openaiProject,
         organization: opts.openaiOrganization,
+        fetch: preferredFetch,
       });
       return client(opts.model);
     }
     case "anthropic": {
       const client = createAnthropic({
         apiKey: requireKey(opts, "ANTHROPIC_API_KEY"),
+        fetch: preferredFetch,
       });
       return client(opts.model);
     }
     case "google": {
       const client = createGoogleGenerativeAI({
         apiKey: requireKey(opts, "GOOGLE_API_KEY"),
+        fetch: preferredFetch,
       });
       return client(opts.model);
     }
     case "mistral": {
       const client = createMistral({
         apiKey: requireKey(opts, "MISTRAL_API_KEY"),
+        fetch: preferredFetch,
       });
       return client(opts.model);
     }
     case "ollama": {
       const client = createOllama({
         baseURL: opts.baseURL ?? "http://localhost:11434/api",
+        fetch: preferredFetch,
       });
       return client(opts.model);
     }
@@ -110,18 +138,21 @@ export function createEmbedder(
         apiKey: requireKey(opts, "OPENAI_API_KEY"),
         project: opts.openaiProject,
         organization: opts.openaiOrganization,
+        fetch: preferredFetch,
       });
       return client.textEmbeddingModel(opts.model);
     }
     case "google": {
       const client = createGoogleGenerativeAI({
         apiKey: requireKey(opts, "GOOGLE_API_KEY"),
+        fetch: preferredFetch,
       });
       return client.textEmbeddingModel(opts.model);
     }
     case "ollama": {
       const client = createOllama({
         baseURL: opts.baseURL ?? "http://localhost:11434/api",
+        fetch: preferredFetch,
       });
       return client.textEmbeddingModel(opts.model);
     }

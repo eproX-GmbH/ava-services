@@ -1,5 +1,21 @@
 import type { HostedProviderKind } from "../../../shared/types";
 
+// Use Node's undici fetch instead of Electron's Chromium-net global
+// fetch — same reasoning as packages/ai-provider/src/runtime.ts.
+// Chromium's macOS trust store fails to parse some intermediate
+// certs in Hardened-Runtime builds, surfacing as ECONNRESET. undici
+// uses Node's TLS stack directly.
+let probeFetch: typeof fetch = fetch;
+try {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-var-requires
+  const undici = require("undici") as { fetch?: typeof fetch };
+  if (typeof undici.fetch === "function") {
+    probeFetch = undici.fetch;
+  }
+} catch {
+  /* keep global fetch */
+}
+
 // Cheap API-key validation probes (Phase 8.k10b).
 //
 // Goal: tell the user "yes that key works" or "401, try again" in <2s
@@ -72,7 +88,7 @@ async function probeOpenAI(
   apiKey: string,
   signal: AbortSignal,
 ): Promise<KeyValidation> {
-  const res = await fetch("https://api.openai.com/v1/models", {
+  const res = await probeFetch("https://api.openai.com/v1/models", {
     method: "GET",
     headers: { authorization: `Bearer ${apiKey}` },
     signal,
@@ -87,7 +103,7 @@ async function probeAnthropic(
   apiKey: string,
   signal: AbortSignal,
 ): Promise<KeyValidation> {
-  const res = await fetch("https://api.anthropic.com/v1/models", {
+  const res = await probeFetch("https://api.anthropic.com/v1/models", {
     method: "GET",
     headers: {
       "x-api-key": apiKey,
@@ -109,7 +125,7 @@ async function probeGoogle(
 ): Promise<KeyValidation> {
   const url = new URL("https://generativelanguage.googleapis.com/v1beta/models");
   url.searchParams.set("key", apiKey);
-  const res = await fetch(url, { method: "GET", signal });
+  const res = await probeFetch(url, { method: "GET", signal });
   if (res.ok) return { ok: true };
   const body = await safeReadJson(res);
   const status = body?.error?.status as string | undefined;
@@ -124,7 +140,7 @@ async function probeMistral(
   apiKey: string,
   signal: AbortSignal,
 ): Promise<KeyValidation> {
-  const res = await fetch("https://api.mistral.ai/v1/models", {
+  const res = await probeFetch("https://api.mistral.ai/v1/models", {
     method: "GET",
     headers: { authorization: `Bearer ${apiKey}` },
     signal,
