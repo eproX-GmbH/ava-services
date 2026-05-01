@@ -1,56 +1,310 @@
-:root {
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
-  color-scheme: light dark;
-  --fg: #111;
-  --muted: #777;
-  --bg: #fafafa;
-  --border: #ddd;
-  --accent: #2563eb;
-  --error: #b91c1c;
+/* AVA design system — phase 8.l1.
+ *
+ * We import Tailwind v4's *theme* and *utilities* layers but NOT
+ * *preflight*. Preflight is Tailwind's opinionated reset (resets
+ * margins, list bullets, heading sizes, etc.) — turning it on now
+ * would shift every legacy screen overnight. We'll opt in once the
+ * primitives in 8.l4 land and routes are migrated route-by-route
+ * (8.l5/6). Until then, the legacy CSS below is canonical and
+ * Tailwind utilities live alongside it.
+ *
+ * The `@theme` block defines AVA's brand tokens. Tailwind v4 surfaces
+ * each declared `--color-*`, `--font-*`, `--radius-*` etc. as
+ * matching utility classes (e.g. `bg-brand-500`, `text-fg-muted`) AND
+ * as plain CSS variables for use inside this file. Decisions:
+ *   - Brand hue: #00c0a7 (the AVA "Aqua" logo mark).
+ *   - Dark-first; light theme deferred to 8.l5.
+ *   - Surface stack uses near-blacks with a green-leaning tint so the
+ *     brand colour reads as part of the same family.
+ *   - Radii bounded at 8px; we never go pill-shaped.
+ *   - Type stack falls back to system fonts; Inter / JetBrains Mono
+ *     get bundled in 8.l7.
+ */
+@import "tailwindcss/theme.css";
+@import "tailwindcss/utilities.css";
+
+/* Override the default `dark:` variant so it matches a `.dark` class
+ * on <html> instead of the OS-level `prefers-color-scheme`. Lets us
+ * stay dark-mode regardless of OS, and gives us a single toggle to
+ * flip when the (deferred) light theme lands in 8.l5. */
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme {
+  /* Brand */
+  --color-brand-50:  #e6faf6;
+  --color-brand-100: #b8f0e6;
+  --color-brand-200: #7ee2cf;
+  --color-brand-300: #3fd2b8;
+  --color-brand-400: #14c8ad;
+  --color-brand-500: #00c0a7;          /* logo mark */
+  --color-brand-600: #009f8a;
+  --color-brand-700: #007e6d;
+  --color-brand-800: #005d51;
+  --color-brand-900: #003c34;
+
+  /* Surface (dark-first). bg-0 = app background, bg-3 = popover.
+   *
+   * Dark grey rather than near-black — easier on the eyes for long
+   * data-care sessions and the aqua brand pops more against grey than
+   * black. Each step is ~9% lighter than the last (perceptual, not
+   * linear), with a faint green tint so the surfaces read as the same
+   * family as `--color-brand-*` instead of fighting it. */
+  --color-bg-0: #1a1d1c;   /* canvas */
+  --color-bg-1: #232726;   /* topbar, cards */
+  --color-bg-2: #2c302f;   /* elevated panels */
+  --color-bg-3: #363b39;   /* popovers, menus */
+  --color-border:        #383d3b;
+  --color-border-strong: #4a504d;
+
+  --color-fg:       #e5e7e6;
+  --color-fg-muted: #9aa3a0;
+  --color-fg-faint: #6b7370;
+
+  /* Semantic — muted ~60% saturation so they don't shout. */
+  --color-ok:   #4ade80;
+  --color-warn: #f6c66b;
+  --color-err:  #f47272;
+
+  /* Type. Geist is Vercel's product-UI face — slightly geometric, very
+   * even rhythm at small sizes, pairs with Geist Mono for tabular /
+   * code cells. The "Variable" suffix is what @fontsource-variable/*
+   * registers via @font-face (loaded once in main.tsx). System
+   * fallbacks keep the UI legible if the woff2 hasn't streamed in by
+   * first paint. */
+  --font-sans: "Geist Variable", "Geist", -apple-system, BlinkMacSystemFont,
+               "Segoe UI", system-ui, sans-serif;
+  --font-mono: "Geist Mono Variable", "Geist Mono", "SF Mono",
+               ui-monospace, "Menlo", "Consolas", monospace;
+
+  /* Radii — capped at 8px (Codex / Claude Code don't go higher). */
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
 }
-@media (prefers-color-scheme: dark) {
-  :root {
-    --fg: #eee;
-    --muted: #999;
-    --bg: #1a1a1a;
-    --border: #333;
-    --accent: #60a5fa;
-    --error: #f87171;
-  }
+
+/* ---- Legacy variables (8.l1 keeps them; 8.l8 deletes the unused). ----
+ *
+ * The remaining route files still reference --fg / --bg / --accent etc.
+ * We re-point them at the new tokens so the existing CSS rules keep
+ * working but every visible pixel is now sourced from the brand
+ * palette. Side effect: minor tone shifts (slightly less blue accent,
+ * slightly warmer dark surfaces) that we explicitly want.
+ */
+:root {
+  font-family: var(--font-sans);
+  color-scheme: dark;
+  --fg:     var(--color-fg);
+  --muted:  var(--color-fg-muted);
+  --bg:     var(--color-bg-0);
+  --border: var(--color-border);
+  --accent: var(--color-brand-500);
+  --error:  var(--color-err);
+
+  /* 8.l5 — control tokens shared by buttons, selects, and text inputs.
+   * Same palette the chat composer uses (subtle white-on-dark surfaces,
+   * 8 px radius, 120 ms transitions) so every control reads as part of
+   * one design system instead of route-by-route hand-styling. */
+  --ctrl-bg:            rgba(255, 255, 255, 0.06);
+  --ctrl-bg-hover:      rgba(255, 255, 255, 0.10);
+  --ctrl-bg-input:      rgba(255, 255, 255, 0.04);
+  --ctrl-border:        rgba(255, 255, 255, 0.12);
+  --ctrl-border-hover:  rgba(255, 255, 255, 0.20);
+  --ctrl-border-focus:  rgba(255, 255, 255, 0.30);
+  --ctrl-radius:        8px;
+  --ctrl-pad-y:         6px;
+  --ctrl-pad-x:         12px;
+  --ctrl-transition:    background 120ms ease-out, border-color 120ms ease-out,
+                        color 120ms ease-out, opacity 120ms ease-out;
 }
 
 * { box-sizing: border-box; }
+
+/* ---- Form controls — global baseline (8.l5) -----------------------------
+ *
+ * Native <button>, <select>, and text inputs share one calm dark
+ * appearance. Route-specific classes (`.tabs .tab`, `.pager button`,
+ * `.chat-composer__icon-btn`, etc.) override what they need; this block
+ * just stops every unstyled control from reverting to the OS look.
+ * Specificity is 0,0,1 so any class-based rule wins automatically.
+ */
+button {
+  font: inherit;
+  padding: var(--ctrl-pad-y) var(--ctrl-pad-x);
+  background: var(--ctrl-bg);
+  color: var(--fg);
+  border: 1px solid var(--ctrl-border);
+  border-radius: var(--ctrl-radius);
+  cursor: pointer;
+  transition: var(--ctrl-transition);
+}
+button:hover:not(:disabled) {
+  background: var(--ctrl-bg-hover);
+  border-color: var(--ctrl-border-hover);
+}
+button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+button:disabled { opacity: 0.4; cursor: not-allowed; }
+
+button.primary {
+  background: var(--accent);
+  color: var(--color-bg-0);
+  border-color: transparent;
+  font-weight: 500;
+}
+button.primary:hover:not(:disabled) {
+  background: var(--color-brand-400, var(--accent));
+  border-color: transparent;
+  color: var(--color-bg-0);
+}
+
+button.link {
+  background: transparent;
+  color: var(--accent);
+  border: 0;
+  padding: 4px 6px;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+button.link:hover:not(:disabled) {
+  background: transparent;
+  color: var(--color-brand-400, var(--accent));
+}
+button.link.bad { color: var(--error); }
+button.link.bad:hover:not(:disabled) { color: var(--error); opacity: 0.85; }
+
+select {
+  font: inherit;
+  padding: var(--ctrl-pad-y) calc(var(--ctrl-pad-x) + 18px) var(--ctrl-pad-y) var(--ctrl-pad-x);
+  background-color: var(--ctrl-bg);
+  color: var(--fg);
+  border: 1px solid var(--ctrl-border);
+  border-radius: var(--ctrl-radius);
+  cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+  /* Custom chevron — keeps the chrome consistent across mac/win/linux,
+   * since native <select> chevrons render very differently per platform.
+   * Painted in the muted foreground tone so it sits quietly. */
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12' fill='none'><path d='M3 4.5l3 3 3-3' stroke='white' stroke-opacity='0.55' stroke-width='1.4' stroke-linecap='round' stroke-linejoin='round'/></svg>");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  transition: var(--ctrl-transition);
+}
+select:hover { background-color: var(--ctrl-bg-hover); border-color: var(--ctrl-border-hover); }
+select:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+select:disabled { opacity: 0.4; cursor: not-allowed; }
+/* Native <option> dropdowns can't fully restyle, but we can at least make
+ * the colors not flash white on macOS / Linux Chromium. */
+select option { background: var(--color-bg-1); color: var(--fg); }
+
+input[type="text"],
+input[type="search"],
+input[type="number"],
+input[type="email"],
+input[type="password"],
+input[type="url"],
+input[type="tel"],
+input[type="date"],
+textarea {
+  font: inherit;
+  padding: var(--ctrl-pad-y) var(--ctrl-pad-x);
+  background: var(--ctrl-bg-input);
+  color: var(--fg);
+  border: 1px solid var(--ctrl-border);
+  border-radius: var(--ctrl-radius);
+  outline: none;
+  transition: var(--ctrl-transition);
+}
+input::placeholder, textarea::placeholder { color: rgba(255, 255, 255, 0.35); }
+input:hover:not(:disabled, :focus),
+textarea:hover:not(:disabled, :focus) { border-color: var(--ctrl-border-hover); }
+input:focus, textarea:focus {
+  border-color: var(--ctrl-border-focus);
+  background: var(--ctrl-bg);
+}
+input:disabled, textarea:disabled { opacity: 0.5; cursor: not-allowed; }
 body {
   margin: 0;
   background: var(--bg);
   color: var(--fg);
   font-size: 14px;
 }
-.nav {
+/* ---- App shell / top bar (8.l2) -----------------------------------------
+ *
+ * 52px bar in `bg-1` with a 1px divider in `border`, the AVA wordmark
+ * pinned left (height-only — the SVG carries the aspect ratio via its
+ * viewBox), nav links snug against the brand, and the user badge on
+ * the right. Active nav state is a 2px brand underline pinned to the
+ * bottom edge of the bar so it reads as wayfinding rather than a button.
+ *
+ * The bar is `position: sticky` so long content scrolls under it; the
+ * brand sits inside a fixed-width slot so the nav alignment doesn't
+ * shift between routes.
+ */
+.app-shell { display: flex; flex-direction: column; min-height: 100vh; }
+.app-shell__main { flex: 1; padding: 1rem 1.5rem; min-width: 0; }
+
+.topbar {
+  height: 52px;
   display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 1rem;
-  padding: 0.75rem 1rem;
-  border-bottom: 1px solid var(--border);
-}
-.nav-links { display: flex; gap: 1rem; }
-.user-badge {
-  display: flex;
-  align-items: center;
+  align-items: stretch;
   gap: 0.5rem;
+  padding: 0 1rem;
+  background: var(--color-bg-1);
+  border-bottom: 1px solid var(--color-border);
+  position: sticky; top: 0; z-index: 20;
+}
+.topbar__brand {
+  display: flex; align-items: center;
+  padding-right: 1rem;
+  user-select: none;
+}
+.topbar__brand img {
+  display: block;
+  height: 18px;          /* tight, like Codex's logo lockup */
+  width: auto;
+  /* Viewbox is 347 x 182 ≈ 1.9:1; reinforce so browsers that ignore
+   * intrinsic SVG aspect-ratio don't fall back to 300×150. */
+  aspect-ratio: 347 / 182;
+}
+.topbar__nav {
+  display: flex; align-items: stretch; gap: 0;
+}
+.topbar__link {
+  display: inline-flex; align-items: center;
+  padding: 0 0.85rem;
+  font-size: 13px; font-weight: 500;
+  color: var(--color-fg-muted);
+  text-decoration: none;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;   /* overlap the bar's bottom border so the active
+                            underline merges with it */
+  transition: color 120ms ease-out, border-color 120ms ease-out;
+}
+.topbar__link:hover { color: var(--color-fg); }
+.topbar__link--active {
+  color: var(--color-fg);
+  border-bottom-color: var(--color-brand-500);
+}
+.topbar__spacer { flex: 1; }
+.topbar__user {
+  display: flex; align-items: center; gap: 0.4rem;
   font-size: 12px;
-  color: var(--fg);
+  color: var(--color-fg);
 }
-.user-badge button.link {
-  background: none;
-  border: none;
-  color: var(--accent);
-  cursor: pointer;
-  padding: 0;
-  font: inherit;
-  text-decoration: underline;
+.topbar__user-tenant { color: var(--color-fg-muted); }
+.topbar__user-sep    { color: var(--color-fg-faint); }
+.topbar__user-actor  { color: var(--color-fg); }
+.topbar__signout {
+  margin-left: 0.4rem;
+  background: none; border: 0; padding: 0; cursor: pointer;
+  font: inherit; font-size: 12px;
+  color: var(--color-brand-500);
+  text-decoration: underline; text-underline-offset: 2px;
 }
+.topbar__signout:hover { color: var(--color-brand-400); }
 .signin {
   max-width: 360px;
   margin: 6rem auto;
@@ -58,25 +312,12 @@ body {
   text-align: center;
 }
 .signin h1 { margin: 0 0 0.5rem; }
-.signin button.primary {
-  background: var(--accent);
-  color: white;
-  border: none;
-  padding: 0.6rem 1.2rem;
-  border-radius: 4px;
-  font: inherit;
-  cursor: pointer;
-  margin-top: 1rem;
-}
-.signin button.primary:disabled { opacity: 0.6; cursor: progress; }
-.nav a {
-  color: var(--fg);
-  text-decoration: none;
-  padding: 0.25rem 0.5rem;
-  border-radius: 4px;
-}
-.nav a.active { background: var(--accent); color: white; }
-.main { padding: 1rem 1.5rem; }
+/* SignIn primary button inherits the global `button.primary` look; the
+ * spinner cursor + extra top margin are the only signin-specifics. */
+.signin button.primary { padding: 8px 18px; margin-top: 1rem; }
+.signin button.primary:disabled { cursor: progress; }
+/* Legacy `.nav` / `.main` rules removed — superseded by the
+ * `.topbar` / `.app-shell__main` block above (8.l2). */
 .loading { padding: 2rem; color: var(--muted); }
 .error { color: var(--error); }
 .muted { color: var(--muted); font-size: 12px; }
@@ -102,50 +343,33 @@ dt { color: var(--muted); }
 @media (prefers-color-scheme: dark) {
   .event-log pre { background: rgba(255, 255, 255, 0.06); }
 }
-code { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 12px; }
+code, pre { font-family: var(--font-mono); font-size: 12px; }
 
 /* Forms — used by Ingest (W1) and (later) corrections (W23–W25). */
 .form { display: grid; gap: 1rem; max-width: 480px; margin-top: 1rem; }
 .field { display: grid; gap: 0.25rem; }
 .field span { font-size: 12px; color: var(--muted); }
-.field input[type="text"],
-.field input[type="search"],
-.field input[type="number"],
-.field input[type="file"],
-.field textarea {
+/* `.field` text inputs inherit the global input/textarea baseline; this
+ * block only adds the file-input variant (which the global block doesn't
+ * cover) and keeps `width: 100%` so the labels stretch the input across
+ * the form column. */
+.field input[type="file"] {
   font: inherit;
-  padding: 0.4rem 0.5rem;
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  background: transparent;
+  padding: var(--ctrl-pad-y) var(--ctrl-pad-x);
+  background: var(--ctrl-bg-input);
   color: var(--fg);
+  border: 1px solid var(--ctrl-border);
+  border-radius: var(--ctrl-radius);
 }
+.field input, .field select, .field textarea { width: 100%; }
 .field-inline { display: flex; align-items: center; gap: 0.5rem; }
-button.primary {
-  background: var(--accent);
-  color: white;
-  border: none;
-  padding: 0.5rem 1rem;
-  border-radius: 4px;
-  font: inherit;
-  cursor: pointer;
-  width: max-content;
-}
-button.primary:disabled { opacity: 0.6; cursor: not-allowed; }
 
-/* Toolbar (search bar in Companies, etc.) */
+/* Toolbar (search bar in Companies, etc.) — `.search` is just an input;
+ * lean on the global input baseline and only set the flex behavior. */
 .toolbar { display: flex; gap: 0.5rem; margin: 0.5rem 0 1rem; }
-.search {
-  flex: 1;
-  font: inherit;
-  padding: 0.4rem 0.6rem;
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  background: transparent;
-  color: var(--fg);
-}
+.search { flex: 1; }
 
-/* Pager */
+/* Pager — relies on the global button baseline, only tunes spacing/size. */
 .pager {
   display: flex;
   align-items: center;
@@ -153,16 +377,7 @@ button.primary:disabled { opacity: 0.6; cursor: not-allowed; }
   margin-top: 1rem;
   font-size: 12px;
 }
-.pager button {
-  font: inherit;
-  padding: 0.3rem 0.6rem;
-  border: 1px solid var(--border);
-  background: transparent;
-  color: var(--fg);
-  border-radius: 4px;
-  cursor: pointer;
-}
-.pager button:disabled { opacity: 0.4; cursor: not-allowed; }
+.pager button { padding: 4px 10px; font-size: 12px; }
 
 /* Tabs (CompanyDetail) */
 .tabs {
@@ -358,6 +573,13 @@ button.primary:disabled { opacity: 0.6; cursor: not-allowed; }
 .matrix tbody tr:hover { background: rgba(127,127,127,0.08); }
 .matrix tbody tr.active { background: rgba(37, 99, 235, 0.08); }
 .matrix-cell { text-align: center !important; }
+.matrix-company {
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 240px;
+}
 
 .dot {
   display: inline-block;
@@ -486,13 +708,7 @@ button.primary:disabled { opacity: 0.6; cursor: not-allowed; }
   margin-top: 1rem;
 }
 .first-run__card .first-run__actions button { margin-top: 0; }
-.first-run__card button.link {
-  background: none; color: var(--accent, #3b82f6);
-  padding: 0.4rem 0.2rem; text-decoration: underline;
-}
-.first-run__card button.link:disabled {
-  opacity: 0.5; text-decoration: none;
-}
+/* `.first-run__card button.link` inherits the global text-link styling. */
 .first-run__chooser {
   display: flex; flex-direction: column; gap: 0.75rem;
   margin-top: 0.75rem;
@@ -501,16 +717,10 @@ button.primary:disabled { opacity: 0.6; cursor: not-allowed; }
 .first-run__chooser .field > span {
   font-size: 12px; opacity: 0.75;
 }
+/* FirstRunWizard inputs/selects inherit the global form-control look;
+ * keep only the size tweak this card uses. */
 .first-run__chooser input,
-.first-run__chooser select {
-  padding: 0.5rem 0.6rem; font-size: 13px;
-  background: rgba(255,255,255,0.04); color: inherit;
-  border: 1px solid rgba(255,255,255,0.12); border-radius: 4px;
-}
-.first-run__chooser input:focus,
-.first-run__chooser select:focus {
-  outline: none; border-color: var(--accent, #3b82f6);
-}
+.first-run__chooser select { font-size: 13px; }
 
 /* Download Dock (Phase 8.k10c) ------------------------------------- */
 .dl-dock {
@@ -540,6 +750,50 @@ button.primary:disabled { opacity: 0.6; cursor: not-allowed; }
   cursor: pointer; opacity: 0.65; border-radius: 3px;
 }
 .dl-dock__icon-btn:hover { opacity: 1; background: rgba(255,255,255,0.06); }
+.dl-dock__retry-btn {
+  background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.15);
+  color: inherit; font-size: 11px; line-height: 1;
+  padding: 3px 8px; border-radius: 3px; cursor: pointer;
+}
+.dl-dock__retry-btn:hover { background: rgba(255,255,255,0.14); }
+
+/* Whoami → Local models on disk */
+.installed-models { list-style: none; padding: 0; margin: 0.5rem 0;
+  display: flex; flex-direction: column; gap: 0.3rem; }
+.installed-models__row {
+  display: flex; align-items: center; gap: 0.6rem;
+  padding: 0.3rem 0.5rem; border-radius: 4px;
+  background: rgba(255,255,255,0.03);
+}
+.installed-models__name { flex: 1; font-size: 12px; }
+
+/* Settings → Agent memory */
+.memory-list { list-style: none; padding: 0; margin: 0.5rem 0;
+  display: flex; flex-direction: column; gap: 0.4rem; }
+.memory-list__row {
+  display: grid; grid-template-columns: 1fr auto;
+  gap: 0.4rem 0.8rem; align-items: start;
+  padding: 0.5rem 0.6rem; border-radius: 4px;
+  background: rgba(255,255,255,0.03);
+}
+.memory-list__content { font-size: 13px; line-height: 1.4; word-break: break-word; }
+.memory-list__meta {
+  grid-column: 1 / -1;
+  display: flex; flex-wrap: wrap; gap: 0.4rem; align-items: center;
+}
+.memory-list__tag {
+  font-size: 10px; padding: 1px 6px; border-radius: 8px;
+  background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.1);
+}
+
+/* Chat empty state when no provider is usable */
+.chat-empty--blocked {
+  border: 1px solid rgba(255,200,80,0.4);
+  background: rgba(255,200,80,0.06);
+  padding: 0.75rem 1rem; border-radius: 6px;
+  margin: 0.5rem 0;
+}
+.chat-empty--blocked ul { margin: 0.5rem 0 0; padding-left: 1.2rem; }
 .dl-dock__list {
   list-style: none; padding: 0; margin: 0;
   display: flex; flex-direction: column; gap: 0.55rem;
@@ -610,6 +864,49 @@ button.primary:disabled { opacity: 0.6; cursor: not-allowed; }
 }
 .first-run__card button:disabled { opacity: 0.6; cursor: not-allowed; }
 
+/* ---- Markdown rendering (react-markdown) --------------------------------
+ *
+ * Used by the Company-detail "Firmenprofil" panel and (later) any
+ * other route that surfaces user/agent-authored markdown. Tight
+ * vertical rhythm so paragraphs / lists feel embedded in the panel
+ * rather than floating in their own document.
+ */
+.markdown { font-size: 14px; line-height: 1.55; }
+.markdown > :first-child { margin-top: 0; }
+.markdown > :last-child  { margin-bottom: 0; }
+.markdown p   { margin: 0 0 0.6rem; }
+.markdown h1, .markdown h2 { font-size: 16px; margin: 1rem 0 0.4rem; }
+.markdown h3, .markdown h4 { font-size: 14px; margin: 0.9rem 0 0.3rem; }
+.markdown ul, .markdown ol { margin: 0 0 0.6rem; padding-left: 1.25rem; }
+.markdown li  { margin: 0.15rem 0; }
+.markdown a   { color: var(--color-brand-500); text-decoration: underline; text-underline-offset: 2px; }
+.markdown a:hover { color: var(--color-brand-400); }
+.markdown code {
+  background: rgba(255,255,255,0.05);
+  padding: 1px 4px;
+  border-radius: 3px;
+  font-size: 12.5px;
+}
+.markdown pre {
+  margin: 0.6rem 0;
+  padding: 0.6rem 0.8rem;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  overflow-x: auto;
+}
+.markdown blockquote {
+  margin: 0.6rem 0;
+  padding: 0.2rem 0.8rem;
+  border-left: 2px solid var(--color-border-strong);
+  color: var(--color-fg-muted);
+}
+.markdown hr {
+  border: 0;
+  border-top: 1px solid var(--color-border);
+  margin: 1rem 0;
+}
+
 /* ---- Company detail (hero + KPIs + bar charts + facts) ------------------ */
 .company-hero {
   padding: 1rem 0 1.25rem;
@@ -665,87 +962,271 @@ button.primary:disabled { opacity: 0.6; cursor: not-allowed; }
   background: var(--accent, #3b82f6);
 }
 
-/* ---- Chat (Phase 8.a smoke-test) ---------------------------------------- */
+/* ---- Chat (8.l3 — ChatGPT-inspired redesign) ---------------------------- */
+/*
+ * Two layout modes:
+ *   .chat-route--empty   → centered welcome heading + composer pill, no
+ *                          scrollable log, used for fresh conversations.
+ *   .chat-route--active  → scrollable message log + sticky composer +
+ *                          disclaimer line below.
+ *
+ * Reading column is capped at ~760px; composer keeps the same width so the
+ * pill aligns vertically with assistant prose. Message bubbles only style
+ * the user turn; assistant turns flow as plain prose without a background.
+ */
 .chat-route {
+  position: relative;
   display: flex; flex-direction: column;
   height: calc(100vh - 80px);
-  max-width: 880px; margin: 0 auto; gap: 12px;
+  width: 100%;
+  max-width: 760px;
+  margin: 0 auto;
 }
-.chat-header { display: flex; align-items: baseline; justify-content: space-between; }
-.chat-status { font-size: 12px; }
+.chat-route--empty {
+  justify-content: center;
+}
+.chat-route--empty .chat-welcome-stack {
+  display: flex; flex-direction: column;
+  gap: 24px;
+  padding: 0 16px 12vh;
+}
+.chat-welcome {
+  text-align: center;
+  font-size: clamp(22px, 3.2vw, 32px);
+  font-weight: 500;
+  margin: 0;
+  letter-spacing: -0.01em;
+}
+
+/* Session-picker rail lives *under* the composer (and disclaimer) so it
+ * never visually competes with the centered welcome heading. Centered as
+ * a single chip; chooses width by content. */
+.chat-sessions-rail {
+  display: flex; justify-content: center;
+  padding: 4px 16px 4px;
+}
+.chat-sessions { display: inline-flex; align-items: center; gap: 8px; }
+.chat-sessions__select {
+  /* Pill variant of the global <select> — keep the chevron from the
+   * baseline (don't set the `background` shorthand), only override
+   * background-color, radius, and the muted resting state. */
+  background-color: transparent;
+  border-radius: 999px;
+  padding: 4px 28px 4px 12px;
+  font-size: 12px;
+  max-width: 280px;
+  opacity: 0.7;
+}
+.chat-sessions__select:hover,
+.chat-sessions__select:focus { opacity: 1; }
+.chat-sessions__delete { font-size: 11px; opacity: 0.6; }
+.chat-sessions__delete:hover { opacity: 1; }
+
+/* 8.k10i — drag/drop spreadsheet attachments. */
+.chat-route--drag { /* visual cue handled by overlay; container stays put */ }
+.chat-drop-overlay {
+  position: absolute; inset: 0; z-index: 10;
+  background: rgba(20, 110, 200, 0.08);
+  border: 2px dashed var(--accent, #2a7ad4);
+  border-radius: 8px;
+  display: flex; align-items: center; justify-content: center;
+  pointer-events: none;
+}
+.chat-drop-overlay__inner {
+  background: var(--bg);
+  padding: 16px 24px;
+  border-radius: 8px;
+  font-weight: 600;
+  text-align: center;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+}
+
+.chat-attachments {
+  display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px;
+}
+.chat-attachment-chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 4px 10px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-size: 12px;
+  max-width: 100%;
+}
+.chat-attachment-icon { flex-shrink: 0; }
+.chat-attachment-name {
+  font-weight: 500;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  max-width: 200px;
+}
+.chat-attachment-meta { white-space: nowrap; }
+.chat-attachment-remove { font-size: 11px; padding: 0 4px; }
+
+/* Active log: scrollable region above the composer. Scrollbar hidden for
+ * a cleaner reading surface — wheel/trackpad/keyboard scrolling still
+ * works, we just don't paint the chrome. */
 .chat-log {
   flex: 1; overflow-y: auto;
-  border: 1px solid var(--border);
-  border-radius: 8px; padding: 12px;
-  display: flex; flex-direction: column; gap: 12px;
-  background: var(--bg);
-  color: var(--fg);
+  padding: 24px 16px 12px;
+  display: flex; flex-direction: column; gap: 24px;
+  scrollbar-width: none;          /* Firefox */
+  -ms-overflow-style: none;       /* legacy Edge / IE */
 }
+.chat-log::-webkit-scrollbar { display: none; }
 .chat-empty { padding: 24px; text-align: center; }
-.chat-msg { display: flex; flex-direction: column; gap: 4px; }
-/* Bubble surfaces sit on top of --bg; lock text color explicitly so a
-   light bubble stays readable when the page-level --fg flips to white in
-   dark mode. Bubbles themselves stay light in both themes — proper theme
-   work lands with the design pass. */
-.chat-msg-user .chat-content { background: #dbeafe; color: #0f172a; }
-.chat-msg-assistant .chat-content { background: #f3f4f6; color: #0f172a; }
-.chat-msg-tool .chat-content {
-  background: #fef3c7; color: #0f172a;
-  font-family: monospace; font-size: 12px;
-}
-.chat-role { font-size: 11px; text-transform: uppercase; color: var(--muted); }
+
+.chat-msg { display: flex; flex-direction: column; }
+.chat-msg-user { align-items: flex-end; }
+.chat-msg-assistant,
+.chat-msg-system,
+.chat-msg-tool { align-items: stretch; }
+
 .chat-content {
   white-space: pre-wrap; word-break: break-word;
-  padding: 8px 12px; border-radius: 6px;
+  line-height: 1.55;
+}
+/* User: rounded grey bubble, right-aligned, max 75% column width. */
+.chat-msg-user .chat-content {
+  background: rgba(255, 255, 255, 0.09);
+  color: var(--fg);
+  border-radius: 18px;
+  padding: 10px 16px;
+  max-width: 75%;
+}
+/* Assistant: plain prose, no bubble. Tool/system inherit the same. */
+.chat-msg-assistant .chat-content,
+.chat-msg-system .chat-content {
+  background: transparent;
+  color: var(--fg);
+  padding: 0;
+}
+.chat-msg-tool .chat-content {
+  background: transparent;
+  color: var(--muted);
+  font-family: var(--font-mono, monospace); font-size: 12px;
+  padding: 0;
 }
 .chat-cursor { opacity: .4; animation: blink 1s steps(1) infinite; }
+.chat-company-link,
+.chat-link {
+  color: #7eb8ff;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.chat-company-link:hover,
+.chat-link:hover { color: #b3d4ff; }
 @keyframes blink { 50% { opacity: 0; } }
 .chat-error {
-  padding: 8px 12px; border-radius: 6px;
-  background: #fee2e2; color: #991b1b; font-size: 13px;
+  padding: 8px 12px; border-radius: 8px;
+  background: rgba(220, 38, 38, 0.12);
+  color: #fca5a5; font-size: 13px;
+  align-self: stretch;
 }
-.chat-input { display: flex; gap: 8px; align-items: flex-end; }
-.chat-input textarea {
-  flex: 1; resize: none;
-  font: inherit; padding: 8px;
-  border: 1px solid var(--border); border-radius: 6px;
-  background: var(--bg); color: var(--fg);
+
+/* Composer pill — the centerpiece. */
+.chat-composer-wrap {
+  padding: 8px 16px 12px;
 }
-.chat-actions { display: flex; align-items: center; }
+.chat-composer {
+  display: flex; align-items: flex-end;
+  gap: 4px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 24px;
+  padding: 6px 6px 6px 8px;
+  transition: border-color 120ms, background 120ms;
+}
+.chat-composer:focus-within {
+  border-color: rgba(255, 255, 255, 0.3);
+  background: rgba(255, 255, 255, 0.08);
+}
+.chat-composer.is-disabled { opacity: 0.6; }
+.chat-composer__textarea {
+  flex: 1; min-width: 0;
+  background: transparent;
+  border: 0; outline: none; resize: none;
+  color: var(--fg); font: inherit;
+  padding: 9px 6px;
+  min-height: 24px;
+  /* Height + overflow-y are computed in JS (see Chat.tsx auto-grow
+   * useLayoutEffect): grows from 1 row up to a 5-row cap, then
+   * scrolls internally. Setting either property here would race with
+   * the inline style. */
+  line-height: 1.4;
+}
+.chat-composer__textarea::placeholder { color: rgba(255, 255, 255, 0.4); }
+
+.chat-composer__icon-btn {
+  flex-shrink: 0;
+  width: 36px; height: 36px;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: transparent;
+  color: var(--fg);
+  border: 0; border-radius: 50%;
+  cursor: pointer;
+  padding: 0;
+  transition: background 120ms;
+}
+.chat-composer__icon-btn:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.1);
+}
+.chat-composer__icon-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+.chat-composer__send {
+  background: #ffffff;
+  color: #000000;
+}
+.chat-composer__send:hover:not(:disabled) { background: #e8e8e8; }
+.chat-composer__send:disabled {
+  background: rgba(255, 255, 255, 0.2);
+  color: rgba(0, 0, 0, 0.5);
+}
+
+.chat-disclaimer {
+  text-align: center;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.5);
+  padding: 8px 8px 0;
+}
+.chat-disclaimer .muted { color: inherit; }
 
 /* ---- ChoiceCard (Phase 8.c) --------------------------------------------- */
 .chat-msg-choice .chat-choice {
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 12px;
-  background: #f8fafc;
-  color: #0f172a;
+  border: 1px solid var(--ctrl-border);
+  border-radius: 12px;
+  padding: 14px;
+  background: var(--ctrl-bg);
+  color: var(--fg);
 }
-.chat-choice-prompt { font-weight: 600; margin-bottom: 8px; }
+.chat-choice-prompt { font-weight: 600; margin-bottom: 10px; }
 .chat-choice-options {
   display: flex; flex-direction: column; gap: 6px;
 }
 .chat-choice-option {
   display: flex; flex-direction: column; align-items: flex-start;
   gap: 2px;
-  padding: 8px 12px;
-  border: 1px solid var(--border); border-radius: 6px;
-  background: #fff; color: #0f172a;
+  padding: 10px 14px;
+  border: 1px solid var(--ctrl-border);
+  border-radius: var(--ctrl-radius);
+  background: var(--ctrl-bg);
+  color: var(--fg);
   text-align: left; cursor: pointer;
   font: inherit;
 }
 .chat-choice-option:hover:not(:disabled) {
   border-color: var(--accent);
-  background: #eff6ff;
+  background: var(--ctrl-bg-hover);
 }
 .chat-choice-option:disabled { opacity: .55; cursor: default; }
 .chat-choice-option.picked {
   border-color: var(--accent);
-  background: #dbeafe;
+  background: rgba(0, 192, 167, 0.12);
   opacity: 1;
 }
 .chat-choice-label { font-weight: 600; }
-.chat-choice-desc { font-size: 12px; color: #475569; }
+.chat-choice-desc { font-size: 12px; color: var(--muted); }
 
 /* ---- Activity timeline (chat) ------------------------------------------- */
 /*
@@ -891,26 +1372,843 @@ button.primary:disabled { opacity: 0.6; cursor: not-allowed; }
   gap: 0.5rem;
 }
 .api-key-label { color: var(--muted); font-size: 13px; }
-.api-key-row input {
-  font: inherit;
-  padding: 0.35rem 0.5rem;
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  background: transparent;
-  color: var(--fg);
+/* `.api-key-row` controls inherit the global button/input baseline; only
+ * the row-internal sizing remains here. */
+.api-key-row input { font-size: 13px; }
+.api-key-row button { font-size: 13px; padding: 4px 10px; }
+
+/* ---- Meldungen / `/alerts` (Phase 8.f1) --------------------------------- */
+.alerts {
+  max-width: 880px; margin: 0 auto;
+  padding: 1rem 0 4rem;
 }
-.api-key-row button {
-  font: inherit;
-  padding: 0.35rem 0.75rem;
-  border: 1px solid var(--border);
-  border-radius: 4px;
+.alerts__header {
+  display: flex; align-items: flex-start; justify-content: space-between;
+  gap: 1rem; flex-wrap: wrap;
+  margin-bottom: 1.25rem;
+}
+.alerts__header h2 { margin: 0 0 0.25rem; }
+.alerts__header p { margin: 0; }
+.alerts__toolbar { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; }
+.alerts__filters { display: inline-flex; gap: 4px; }
+.alerts__filters button { font-size: 13px; padding: 4px 12px; }
+.alerts__empty {
+  padding: 2.5rem 1rem; text-align: center;
+  border: 1px dashed var(--ctrl-border); border-radius: 12px;
+}
+.alerts__day { margin-bottom: 1.5rem; }
+.alerts__day-label {
+  font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em;
+  color: var(--muted); font-weight: 600;
+  margin: 0 0 0.5rem;
+}
+.alerts__list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 6px; }
+
+.alert {
+  border: 1px solid var(--ctrl-border); border-radius: 12px;
+  padding: 12px 14px;
+  background: var(--ctrl-bg);
+  cursor: pointer;
+  transition: var(--ctrl-transition);
+}
+.alert:hover { background: var(--ctrl-bg-hover); border-color: var(--ctrl-border-hover); }
+.alert--unread { border-left: 3px solid var(--accent); padding-left: 11px; }
+
+.alert__row {
+  display: flex; align-items: center; gap: 12px;
+}
+.alert__main { flex: 1; min-width: 0; }
+.alert__headline {
+  font-weight: 500; line-height: 1.4;
+  /* Allow wrapping; we cap at 120 chars upstream so 2 lines is the worst case. */
+  word-break: break-word;
+}
+.alert__meta {
+  display: flex; gap: 6px; align-items: center;
+  font-size: 12px; margin-top: 2px;
+  flex-wrap: wrap;
+}
+.alert__meta a {
+  color: inherit; text-decoration: underline; text-underline-offset: 2px;
+}
+.alert__meta a:hover { color: var(--fg); }
+.alert__sep { opacity: 0.5; }
+.alert__unread-pill {
+  font-size: 10px; text-transform: uppercase; letter-spacing: 0.04em;
+  padding: 2px 8px; border-radius: 999px;
+  background: var(--accent); color: var(--color-bg-0);
+  font-weight: 600;
+}
+
+.alert__dot {
+  flex-shrink: 0;
+  width: 10px; height: 10px; border-radius: 50%;
+  display: inline-block;
+}
+.alert__dot--info    { background: rgb(96, 165, 250); }   /* calm blue */
+.alert__dot--warn    { background: rgb(251, 191, 36); }   /* amber */
+.alert__dot--urgent  { background: rgb(248, 113, 113); }  /* red */
+
+.alert__detail {
+  margin-top: 10px; padding-top: 10px;
+  border-top: 1px solid var(--ctrl-border);
+  cursor: default;
+}
+.alert__detail p { margin: 0 0 8px; line-height: 1.55; }
+.alert__actions {
+  display: flex; gap: 12px; align-items: center; flex-wrap: wrap;
+  font-size: 13px;
+}
+.alert__actions a {
+  color: var(--accent);
+  text-decoration: underline; text-underline-offset: 2px;
+}
+
+/* ---- Topbar bell + popover (Phase 8.f2) -------------------------------- */
+/*
+ * Sits between the spacer and the user badge. The bell button itself is
+ * a 36 px tap target; the badge floats top-right and is suppressed when
+ * the unread count is zero. The popover anchors below the bell with a
+ * 6 px gap and never overflows the right edge of the topbar.
+ */
+.alert-bell {
+  position: relative;
+  display: flex; align-items: center;
+}
+.alert-bell__btn {
+  position: relative;
+  width: 36px; height: 36px;
+  display: inline-flex; align-items: center; justify-content: center;
   background: transparent;
+  border: 0;
   color: var(--fg);
+  border-radius: 50%;
+  cursor: pointer;
+  padding: 0;
+  transition: var(--ctrl-transition);
+}
+.alert-bell__btn:hover { background: var(--ctrl-bg-hover); }
+.alert-bell__btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.alert-bell__badge {
+  position: absolute;
+  top: 4px; right: 2px;
+  min-width: 16px; height: 16px;
+  padding: 0 4px;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: var(--accent);
+  color: var(--color-bg-0);
+  border-radius: 999px;
+  font-size: 10px; font-weight: 600; line-height: 1;
+  border: 2px solid var(--color-bg-1); /* punch through topbar bg */
+  pointer-events: none;
+}
+
+.alert-bell__popover {
+  position: absolute;
+  top: calc(100% + 6px); right: 0;
+  width: 360px;
+  max-height: 70vh;
+  display: flex; flex-direction: column;
+  background: var(--color-bg-3);
+  border: 1px solid var(--ctrl-border);
+  border-radius: 12px;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.35);
+  z-index: 100;
+  overflow: hidden;
+}
+.alert-bell__popover-header {
+  display: flex; justify-content: space-between; align-items: baseline;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--ctrl-border);
+  font-size: 13px;
+}
+.alert-bell__list {
+  list-style: none; padding: 0; margin: 0;
+  overflow-y: auto;
+  flex: 1;
+  scrollbar-width: thin;
+}
+.alert-bell__row { border-bottom: 1px solid var(--ctrl-border); }
+.alert-bell__row:last-child { border-bottom: 0; }
+.alert-bell__row-link {
+  display: flex; align-items: flex-start; gap: 10px;
+  padding: 10px 14px;
+  color: var(--fg); text-decoration: none;
+  transition: background 120ms ease-out;
+}
+.alert-bell__row-link:hover { background: var(--ctrl-bg-hover); }
+.alert-bell__row-main { flex: 1; min-width: 0; }
+.alert-bell__row-headline {
+  font-size: 13px; line-height: 1.4;
+  /* Two-line clamp keeps the popover predictable. */
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.alert-bell__row-meta {
+  display: flex; gap: 6px; align-items: center; flex-wrap: wrap;
+  font-size: 11px; margin-top: 2px;
+}
+.alert-bell__empty {
+  padding: 20px 14px;
+  text-align: center;
+}
+.alert-bell__empty p { margin: 0 0 4px; font-size: 13px; }
+.alert-bell__popover-footer {
+  display: flex; justify-content: center;
+  padding: 10px 14px;
+  border-top: 1px solid var(--ctrl-border);
+  font-size: 13px;
+}
+.alert-bell__popover-footer a {
+  color: var(--accent);
+  text-decoration: underline; text-underline-offset: 2px;
+}
+
+/* ---- Alert preferences in Settings (Phase 8.f3) ------------------------ */
+.alerts-prefs__row { margin: 12px 0; }
+.alerts-prefs__label {
+  display: block;
+  font-size: 12px; color: var(--muted);
+  margin-bottom: 4px;
+}
+.alerts-prefs__check {
+  display: inline-flex; align-items: center; gap: 8px;
+  cursor: pointer;
+  user-select: none;
+}
+.alerts-prefs__check input[type="checkbox"] {
+  margin: 0;
+  accent-color: var(--accent);
+  width: 16px; height: 16px;
   cursor: pointer;
 }
-.api-key-row button:disabled { opacity: 0.5; cursor: not-allowed; }
-.api-key-row button.link {
-  border: none;
-  color: var(--accent);
-  padding: 0.35rem 0.25rem;
+.alerts-prefs__check input[type="checkbox"]:disabled {
+  cursor: not-allowed; opacity: 0.5;
 }
+.alerts-prefs__quiet {
+  border: 1px solid var(--ctrl-border);
+  border-radius: var(--ctrl-radius);
+  padding: 12px 14px;
+  margin: 16px 0;
+  background: var(--ctrl-bg);
+}
+.alerts-prefs__quiet legend {
+  padding: 0 6px;
+  font-size: 12px; color: var(--muted);
+  text-transform: uppercase; letter-spacing: 0.04em;
+}
+.alerts-prefs__quiet-row {
+  display: flex; gap: 16px; align-items: center;
+  margin: 10px 0;
+  flex-wrap: wrap;
+}
+.alerts-prefs__quiet-row label {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: 13px;
+}
+.alerts-prefs__quiet-row input[type="time"] {
+  font-size: 13px; padding: 4px 8px;
+}
+.alerts-prefs__actions {
+  display: flex; gap: 12px; align-items: center;
+  margin-top: 16px;
+}
+
+/* ---- Heartbeat decision log (Phase 8.f3 transparency) ----------------- */
+.heartbeat-history {
+  margin-top: 24px;
+  border-top: 1px solid var(--ctrl-border);
+  padding-top: 18px;
+}
+.heartbeat-history__title {
+  font-size: 13px; font-weight: 600;
+  margin: 0 0 10px;
+  color: var(--muted);
+  text-transform: uppercase; letter-spacing: 0.04em;
+}
+.heartbeat-history--empty { padding: 8px 0 0; border: 0; }
+.heartbeat-history__list {
+  list-style: none; padding: 0; margin: 0;
+  display: flex; flex-direction: column; gap: 6px;
+}
+.heartbeat-tick {
+  border: 1px solid var(--ctrl-border);
+  border-radius: var(--ctrl-radius);
+  background: var(--ctrl-bg);
+  overflow: hidden;
+}
+.heartbeat-tick__header {
+  display: flex; align-items: center; gap: 10px;
+  width: 100%;
+  padding: 8px 12px;
+  background: transparent;
+  border: 0;
+  text-align: left;
+  font: inherit;
+  color: var(--fg);
+  cursor: pointer;
+  border-radius: 0;
+  transition: background 120ms ease-out;
+}
+.heartbeat-tick__header:hover { background: var(--ctrl-bg-hover); border-color: var(--ctrl-border); }
+.heartbeat-tick__chevron {
+  display: inline-flex; width: 12px; flex-shrink: 0;
+  color: var(--muted); font-size: 11px;
+}
+.heartbeat-tick__time {
+  font-variant-numeric: tabular-nums;
+  font-size: 12px;
+  font-weight: 500;
+  flex-shrink: 0;
+}
+.heartbeat-tick__summary {
+  font-size: 12px;
+  flex: 1;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.heartbeat-tick__detail {
+  padding: 4px 12px 12px 34px;
+}
+.heartbeat-decisions {
+  list-style: none; padding: 0; margin: 0 0 8px;
+}
+.heartbeat-decision {
+  padding: 8px 14px 8px 34px;
+  border-top: 1px solid var(--ctrl-border);
+  font-size: 13px;
+}
+.heartbeat-decision__row {
+  display: flex; gap: 8px; align-items: baseline; justify-content: space-between;
+  flex-wrap: wrap;
+}
+.heartbeat-decision__company {
+  font-weight: 500;
+  color: var(--fg);
+  text-decoration: none;
+}
+a.heartbeat-decision__company:hover {
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.heartbeat-decision__outcome {
+  font-size: 11px;
+  text-transform: uppercase; letter-spacing: 0.03em;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+}
+.heartbeat-decision__outcome--alerted    { background: rgba(0, 192, 167, 0.18); color: var(--accent); }
+.heartbeat-decision__outcome--duplicate  { background: rgba(255, 255, 255, 0.06); color: var(--muted); }
+.heartbeat-decision__outcome--not-worth  { background: rgba(255, 255, 255, 0.08); color: var(--muted); }
+.heartbeat-decision__outcome--judge-error { background: rgba(244, 114, 114, 0.16); color: var(--error); }
+.heartbeat-decision__summary {
+  margin-top: 2px;
+  /* Two-line clamp keeps long demo summaries from blowing up the panel. */
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.heartbeat-decision__rationale {
+  margin-top: 6px;
+  padding-left: 8px;
+  border-left: 2px solid var(--ctrl-border);
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--fg);
+  opacity: 0.85;
+}
+
+/* ---- Inline text-prompt card (Phase 8.f4 chat-form) ------------------- */
+.chat-textprompt__form {
+  display: flex; flex-direction: column; gap: 10px;
+}
+.chat-textprompt__input { width: 100%; }
+.chat-textprompt__actions {
+  display: flex; gap: 8px; justify-content: flex-end; align-items: center;
+}
+.chat-textprompt__answered {
+  font-size: 13px;
+  padding: 6px 0 0;
+}
+
+/* ---- Inline attachment disclosure inside user bubbles ----------------- */
+.chat-attachment-disclosure {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--ctrl-border);
+  border-radius: 12px;
+  margin-bottom: 6px;
+  overflow: hidden;
+}
+.chat-attachment-disclosure[open] {
+  background: rgba(255, 255, 255, 0.04);
+}
+.chat-attachment-disclosure > summary {
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 12px;
+  cursor: pointer;
+  list-style: none;
+  font-size: 13px;
+  user-select: none;
+}
+.chat-attachment-disclosure > summary::-webkit-details-marker { display: none; }
+.chat-attachment-disclosure > summary:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+.chat-attachment-disclosure .chat-attachment-name {
+  font-weight: 500;
+  flex: 1;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.chat-attachment-disclosure .chat-attachment-toggle {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.chat-attachment-body {
+  margin: 0;
+  padding: 8px 12px 10px;
+  border-top: 1px solid var(--ctrl-border);
+  background: rgba(0, 0, 0, 0.18);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre;
+  overflow-x: auto;
+  max-height: 360px;
+  overflow-y: auto;
+}
+.chat-attachment-typed {
+  margin-top: 4px;
+}
+
+/* ---- Composer attachment name input (Phase 8.f5) ---------------------- */
+.chat-attachment-row {
+  display: flex; align-items: center; gap: 8px;
+  flex-wrap: wrap;
+}
+.chat-attachment-name-input {
+  flex: 1;
+  min-width: 200px;
+  font-size: 12px;
+  padding: 4px 10px;
+}
+.chat-attachment-tx-name {
+  font-size: 12px;
+  color: var(--accent);
+  white-space: nowrap;
+}
+
+/* ---- Social icons + external-link warning (Phase 8.f5) ----------------- */
+.person-card__socials {
+  display: flex; gap: 8px;
+}
+.social-icon-link {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 32px; height: 32px;
+  border-radius: 8px;
+  color: var(--muted);
+  text-decoration: none;
+  transition: var(--ctrl-transition);
+}
+.social-icon-link:hover {
+  background: var(--ctrl-bg-hover);
+  color: var(--fg);
+}
+.social-icon-link:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.fact-url {
+  display: inline-flex; align-items: center; gap: 6px;
+  color: var(--accent);
+  text-decoration: none;
+  max-width: 100%;
+}
+.fact-url:hover { text-decoration: underline; text-underline-offset: 2px; }
+.fact-url__label {
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  max-width: 360px;
+}
+
+/* Screen-reader-only label, paired with brand-icon links so the icon's
+ * aria-hidden state still leaves an accessible name on the anchor. */
+.visually-hidden {
+  position: absolute;
+  width: 1px; height: 1px;
+  padding: 0; margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* External-link warning modal (LinkedIn rate-limit hinweis). */
+.link-warning-overlay {
+  position: fixed; inset: 0;
+  z-index: 200;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex; align-items: center; justify-content: center;
+  padding: 24px;
+  animation: link-warning-fade 120ms ease-out;
+}
+@keyframes link-warning-fade {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+.link-warning {
+  max-width: 460px; width: 100%;
+  background: var(--color-bg-2);
+  border: 1px solid var(--ctrl-border);
+  border-radius: 12px;
+  padding: 20px 22px;
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.45);
+}
+.link-warning:focus { outline: none; }
+.link-warning__headline {
+  margin: 0 0 8px;
+  font-size: 16px; font-weight: 600;
+}
+.link-warning__body {
+  margin: 0 0 12px;
+  line-height: 1.55;
+  font-size: 13px;
+}
+.link-warning__url {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  margin: 0 0 14px;
+  padding: 6px 8px;
+  background: var(--ctrl-bg);
+  border: 1px solid var(--ctrl-border);
+  border-radius: 6px;
+  word-break: break-all;
+}
+.link-warning__suppress {
+  display: inline-flex; align-items: center; gap: 8px;
+  font-size: 12px;
+  margin-bottom: 16px;
+  cursor: pointer;
+  user-select: none;
+}
+.link-warning__suppress input[type="checkbox"] {
+  width: 14px; height: 14px;
+  accent-color: var(--accent);
+  cursor: pointer;
+  margin: 0;
+}
+.link-warning__actions {
+  display: flex; justify-content: flex-end; gap: 8px;
+}
+
+/* ---- Freshness scheduler section (Phase 8.r3) ------------------------- */
+.freshness-cadences {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 10px;
+  margin: 4px 0 4px;
+}
+.freshness-cadence-row {
+  display: grid;
+  grid-template-columns: 180px 80px 1fr;
+  align-items: center;
+  gap: 12px;
+  font-size: 13px;
+}
+.freshness-cadence-row__label { font-weight: 500; }
+.freshness-cadence-row__hint {
+  white-space: normal;
+  line-height: 1.4;
+}
+.freshness-cadence-row input[type="number"] {
+  font-size: 13px; padding: 4px 8px;
+  width: 80px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.freshness-pins {
+  display: flex; flex-wrap: wrap; gap: 6px;
+  margin-top: 4px;
+}
+.freshness-pin {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 3px 8px;
+  border: 1px solid var(--ctrl-border);
+  border-radius: 999px;
+  background: var(--ctrl-bg);
+  font-size: 12px;
+}
+.freshness-pin code { font-size: 11px; }
+.freshness-pin button { padding: 0 4px; font-size: 14px; line-height: 1; }
+
+/* ---- Sprachmodell Settings panel (Phase 8.n1) ------------------------- */
+.voice-status {
+  display: flex; align-items: center; gap: 8px;
+  margin: 8px 0 12px;
+  font-size: 13px;
+}
+.voice-download {
+  margin: 12px 0;
+}
+.voice-download__bar {
+  height: 6px;
+  background: var(--ctrl-bg);
+  border: 1px solid var(--ctrl-border);
+  border-radius: 999px;
+  overflow: hidden;
+}
+.voice-download__fill {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+  transition: width 200ms ease-out;
+}
+.voice-download__meta {
+  margin-top: 6px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: center;
+  font-variant-numeric: tabular-nums;
+}
+.voice-download__meta button { font-size: 12px; padding: 0 4px; }
+
+/* Mic-button states (chat composer). The base styling already lives on
+ * .chat-composer__icon-btn; the data-voice-state attribute lets us
+ * surface a quiet visual hint for non-ready states without changing
+ * the button shape. */
+.chat-composer__icon-btn[data-voice-state="downloading"] {
+  color: var(--accent);
+}
+.chat-composer__icon-btn[data-voice-state="model-missing"],
+.chat-composer__icon-btn[data-voice-state="binary-missing"],
+.chat-composer__icon-btn[data-voice-state="error"] {
+  color: rgba(255, 255, 255, 0.35);
+}
+
+/* ---- Topbar Watch chip (Phase 8.t2) ----------------------------------- */
+.watch-chip {
+  position: relative;
+  display: flex; align-items: center;
+  margin-right: 4px;
+}
+.watch-chip__btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 4px 10px;
+  height: 28px;
+  border: 1px solid var(--ctrl-border);
+  border-radius: 999px;
+  background: var(--ctrl-bg);
+  color: var(--fg);
+  font-size: 12px; font-weight: 500;
+  cursor: pointer;
+  transition: var(--ctrl-transition);
+}
+.watch-chip__btn:hover { background: var(--ctrl-bg-hover); border-color: var(--ctrl-border-hover); }
+.watch-chip__btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.watch-chip__count { font-variant-numeric: tabular-nums; }
+.watch-chip__dot {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+}
+.watch-chip__dot--green  { background: rgb(74, 222, 128); }
+.watch-chip__dot--orange { background: rgb(251, 191, 36); }
+.watch-chip__dot--red    { background: rgb(248, 113, 113); }
+/* Subtle ring when at capacity so the chip itself reads "warning" not
+ * just the dot. */
+.watch-chip__btn--red {
+  border-color: rgba(248, 113, 113, 0.55);
+  background: rgba(248, 113, 113, 0.08);
+}
+
+.watch-chip__popover {
+  position: absolute;
+  top: calc(100% + 6px); right: 0;
+  width: 380px;
+  max-height: 70vh;
+  display: flex; flex-direction: column;
+  background: var(--color-bg-3);
+  border: 1px solid var(--ctrl-border);
+  border-radius: 12px;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.35);
+  z-index: 100;
+  overflow: hidden;
+}
+.watch-chip__popover-header {
+  display: flex; justify-content: space-between; align-items: baseline;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--ctrl-border);
+  font-size: 13px;
+}
+.watch-chip__list {
+  list-style: none; padding: 0; margin: 0;
+  overflow-y: auto;
+  flex: 1;
+  scrollbar-width: thin;
+}
+.watch-chip__row {
+  border-bottom: 1px solid var(--ctrl-border);
+  padding: 10px 14px;
+}
+.watch-chip__row:last-child { border-bottom: 0; }
+.watch-chip__row-prompt {
+  font-size: 13px; line-height: 1.4;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.watch-chip__row-meta {
+  display: flex; gap: 6px; align-items: center; flex-wrap: wrap;
+  font-size: 11px; margin-top: 2px;
+}
+.watch-chip__warn {
+  padding: 8px 14px;
+  border-top: 1px solid var(--ctrl-border);
+  font-size: 12px;
+  color: rgb(248, 113, 113);
+  background: rgba(248, 113, 113, 0.08);
+}
+.watch-chip__popover-footer {
+  display: flex; justify-content: center;
+  padding: 10px 14px;
+  border-top: 1px solid var(--ctrl-border);
+  font-size: 13px;
+}
+.watch-chip__popover-footer a {
+  color: var(--accent);
+  text-decoration: underline; text-underline-offset: 2px;
+}
+
+/* ---- Whisper auto-installer (Phase 8.n1 follow-up) -------------------- */
+.voice-installer { margin: 12px 0; }
+.voice-installer__head { margin-bottom: 4px; }
+.voice-installer__log {
+  margin-top: 12px;
+  padding: 10px 12px;
+  background: var(--ctrl-bg);
+  border: 1px solid var(--ctrl-border);
+  border-radius: var(--ctrl-radius);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--muted);
+  white-space: pre-wrap;
+  max-height: 220px;
+  overflow-y: auto;
+}
+.voice-installer__error {
+  margin-top: 12px;
+  padding: 10px 12px;
+  background: rgba(244, 114, 114, 0.08);
+  border: 1px solid rgba(244, 114, 114, 0.32);
+  border-radius: var(--ctrl-radius);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--fg);
+  white-space: pre-wrap;
+  user-select: text;
+}
+
+/* ---- Chat composer recording mode (Phase 8.n2) ----------------------- */
+/*
+ * When the user presses the mic the composer flips: the textarea
+ * + send button slot is replaced with a waveform canvas + cancel /
+ * finish buttons (ChatGPT-style). The pill outline pulses subtly so
+ * the user always knows recording is live, and the kbd hints under
+ * the composer surface ⌘D / Esc.
+ */
+.chat-composer--recording {
+  border-color: rgba(255, 255, 255, 0.28);
+  background: rgba(255, 255, 255, 0.05);
+}
+.chat-composer__rec {
+  flex: 1;
+  display: flex; align-items: center; gap: 6px;
+  min-width: 0;
+}
+.chat-composer__waveform {
+  flex: 1;
+  height: 32px;
+  width: 100%;
+}
+.chat-composer__rec-time {
+  font-variant-numeric: tabular-nums;
+  font-size: 12px;
+  padding: 0 6px;
+  white-space: nowrap;
+}
+.chat-composer__rec-cancel { color: var(--fg); }
+.chat-composer__rec-cancel:hover:not(:disabled) {
+  background: rgba(244, 114, 114, 0.16);
+  color: rgb(248, 113, 113);
+}
+.chat-composer__rec-finish {
+  /* Same brand-teal accent as the dispatch send button — the ✓
+   * primary action in this state. */
+  background: var(--accent);
+  color: var(--color-bg-0);
+}
+.chat-composer__rec-finish:hover:not(:disabled) {
+  background: var(--color-brand-400, var(--accent));
+}
+
+/* Subtle keyboard chip in the disclaimer line. */
+.chat-kbd {
+  display: inline-block;
+  padding: 1px 6px;
+  margin: 0 2px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  border: 1px solid var(--ctrl-border);
+  border-radius: 4px;
+  background: var(--ctrl-bg);
+  color: var(--fg);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Error state — surfaced under the composer when a transcription
+ * fails or the mic permission is denied. Red but quiet. */
+.chat-disclaimer--error {
+  color: rgb(248, 113, 113);
+}
+
+/* ---- Recording error card (Phase 8.n2 follow-up) --------------------- */
+/*
+ * Surfaces actionable next steps when getUserMedia / OS permission
+ * fails. Lives directly under the composer (above the disclaimer line)
+ * so the user sees buttons in the same visual region they just clicked.
+ * Two flavours: system-denied → "open System Settings" + "retry";
+ * any other → just retry + dismiss.
+ */
+.chat-recorder-error {
+  margin: 8px 16px 4px;
+  padding: 10px 12px;
+  border: 1px solid rgba(248, 113, 113, 0.32);
+  background: rgba(248, 113, 113, 0.08);
+  border-radius: var(--ctrl-radius);
+}
+.chat-recorder-error__msg {
+  margin: 0 0 8px;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--fg);
+}
+.chat-recorder-error__msg--note {
+  font-size: 12px;
+  color: var(--muted);
+  border-left: 2px solid var(--ctrl-border);
+  padding-left: 8px;
+  margin-top: 4px;
+}
+.chat-recorder-error__actions {
+  display: flex; gap: 8px; flex-wrap: wrap; align-items: center;
+}
+.chat-recorder-error__actions button { font-size: 12px; padding: 4px 12px; }

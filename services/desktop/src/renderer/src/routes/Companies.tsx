@@ -65,11 +65,11 @@ export function Companies() {
 
   return (
     <section>
-      <h2>Companies</h2>
+      <h2>Firmen</h2>
       <div className="toolbar">
         <input
           type="search"
-          placeholder="Type 2+ chars to search…"
+          placeholder="Mind. 2 Zeichen zum Suchen…"
           value={q}
           onChange={(e) => {
             setQ(e.target.value);
@@ -79,17 +79,19 @@ export function Companies() {
         />
       </div>
 
-      {loading && <p>Loading…</p>}
+      {loading && <p>Lädt…</p>}
       {error && <p className="error">{(error as Error).message}</p>}
       {items && items.length === 0 && (
-        <p className="muted">{showSearch ? "No matches." : "No companies."}</p>
+        <p className="muted">
+          {showSearch ? "Keine Treffer." : "Keine Firmen vorhanden."}
+        </p>
       )}
       {items && items.length > 0 && (
         <table>
           <thead>
             <tr>
               <th>Name</th>
-              <th>City</th>
+              <th>Stadt</th>
               <th>ID</th>
             </tr>
           </thead>
@@ -97,7 +99,9 @@ export function Companies() {
             {items.map((c) => (
               <tr key={c.companyId}>
                 <td>
-                  <Link to={`/companies/${c.companyId}`}>{c.name ?? "(unnamed)"}</Link>
+                  <Link to={`/companies/${c.companyId}`}>
+                    {c.name ?? "(ohne Namen)"}
+                  </Link>
                 </td>
                 <td>{c.location ?? <span className="muted">—</span>}</td>
                 <td>
@@ -116,17 +120,17 @@ export function Companies() {
             disabled={page <= 1}
             onClick={() => setPage((p) => Math.max(1, p - 1))}
           >
-            ← prev
+            ← zurück
           </button>
           <span className="muted">
-            page {page} / {totalPages} ({list.data.total} total)
+            Seite {page} / {totalPages} ({list.data.total} insgesamt)
           </span>
           <button
             type="button"
             disabled={page >= totalPages}
             onClick={() => setPage((p) => p + 1)}
           >
-            next →
+            weiter →
           </button>
         </div>
       )}

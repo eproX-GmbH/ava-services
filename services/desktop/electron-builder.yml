@@ -25,23 +25,75 @@ extraResources:
     to: ollama
     filter:
       - "**/*"
+  # Whisper.cpp sidecar (Phase 8.n1) — populated by
+  # `pnpm fetch:whisper`, same packaging hygiene as Ollama. Model
+  # GGUFs are NOT bundled (size; user-driven download via the
+  # voice:downloadModel IPC).
+  - from: resources/whisper
+    to: whisper
+    filter:
+      - "**/*"
 
 mac:
   target:
     - target: dmg
       arch: [arm64, x64]
   category: public.app-category.business
-  # Code-signing & notarization (Step 7) — kept here as a TODO marker.
-  # identity: "Developer ID Application: …"
-  # notarize: { teamId: "…" }
+  # Info.plist additions. macOS REQUIRES `NSMicrophoneUsageDescription`
+  # in the bundle's Info.plist for the OS-level mic prompt to appear
+  # (Phase 8.n2 voice mode). Without it, macOS silently denies mic
+  # access — no prompt, no error, just empty audio. The string is
+  # shown verbatim in the system prompt, so it's user-facing copy.
+  extendInfo:
+    NSMicrophoneUsageDescription: >-
+      AVA benötigt Zugriff auf das Mikrofon, um deine Diktate lokal
+      auf dem Gerät zu transkribieren. Audio verlässt das Gerät nicht.
+  # Code-signing + notarization (Phase 8.u1).
+  #
+  # `identity` resolves at build time against the keychain entry that
+  # matches the Developer ID Application certificate. CI imports the
+  # cert from the `MAC_CERTIFICATE_P12_BASE64` /
+  # `MAC_CERTIFICATE_PASSWORD` secrets via `apple-actions/import-codesign-certs`
+  # and electron-builder reads the resulting keychain. Locally a `null`
+  # value lets electron-builder pick the first valid signing identity
+  # in the user's keychain — works on a developer machine that already
+  # has the cert imported.
+  identity: null
+  hardenedRuntime: true
+  gatekeeperAssess: false
+  # Notarization runs in CI via apple-id + an app-specific password (not
+  # the team's iCloud password). Stored in `APPLE_ID`,
+  # `APPLE_APP_SPECIFIC_PASSWORD`, `APPLE_TEAM_ID` secrets — read by
+  # electron-builder's notarize step automatically when these env vars
+  # are set. We leave the YAML keys empty so a developer machine
+  # without the env doesn't try (and fail) to notarize on local
+  # builds.
+  notarize: false
+  entitlements: build/entitlements.mac.plist
+  entitlementsInherit: build/entitlements.mac.plist
 win:
   target:
     - target: nsis
       arch: [x64]
-  # Windows code-signing requires an EV cert; left unset for v0.
+  # Phase 8.u1: Windows code-signing intentionally deferred. Builds
+  # ship unsigned; users see SmartScreen's "unrecognized publisher"
+  # warning on first launch and must click "More info → Run anyway".
+  # Acceptable for the initial B2B rollout; revisit OV cert later.
 linux:
   target:
     - target: AppImage
       arch: [x64]
   category: Office
-publish: null
+
+# Auto-update feed (Phase 8.u4). electron-updater reads the manifest
+# from this provider on launch + on demand; CI's `electron-builder
+# --publish always` uploads the artifact + `latest-mac.yml` /
+# `latest.yml` to the matching GitHub Release.
+#
+# The owner / repo come from the `GH_OWNER` / `GH_REPO` env at CI
+# time so a fork can publish to its own releases without a YAML
+# rewrite. `vPrefixedTagName: true` matches our `v1.2.3` tag style.
+publish:
+  provider: github
+  releaseType: release
+  vPrefixedTagName: true

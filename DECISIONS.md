@@ -316,6 +316,36 @@ Fehlt Konnektivität: klare Fehlermeldung im UI, App geht nicht in degraded mode
 
 ---
 
+## D13 — Attachment-Staging-Pattern für File-Drops im Desktop-Chat
+
+**Kontext (Phase 8.e):** Excel-in-Chat sollte echte Bulk-Imports auslösen können (`POST /v1/imports/excel` → master-data Pipeline), nicht nur Metadaten in den Prompt schreiben. Damit musste eine Brücke her, wie der Renderer dem Agent-Tool ans rohe File kommt — ohne die Bytes durch den LLM-Kontext zu schicken.
+
+**Regel:**
+
+1. **Renderer parst client-side für die Preview** (Headers + 5 Sample-Rows + Total-Row-Count). Das wandert in den User-Prompt als `[attachment: filename, id: att-…, N rows]`-Block. Der Agent sieht *nur* dieses Metadata-Briefing und die `id`.
+2. **Bytes wandern parallel via IPC ins Main-Process** (`agent:stageAttachment`). Main hält sie in einer in-memory `AttachmentStore`, TTL 30 Minuten, gekeyed mit der gleichen `att-…`-UUID, die im Prompt steht.
+3. **Tools dereferenzieren** die `id`. `import_excel(attachmentId, …)` zieht die Bytes aus dem Store, baut `multipart/form-data`, postet ans Gateway. Nach Erfolg `discard()` — Bytes sind gegessen.
+4. **Stale Reload ist ok.** Der gespeicherte Transcript enthält den Block mit der ursprünglichen `id`; nach Restart existiert die nicht mehr im Store. Der Agent kriegt beim nächsten Tool-Call eine klare "expired"-Meldung und fragt den User höflich, das File neu zu droppen.
+5. **Bytes verlassen nie den Prompt-Kontext.** 25 MB-Caps im Renderer + TTL im Main + kein Logging der Body-Inhalte.
+
+**Begründung:**
+
+- LLM-Kontextfenster sind teuer; selbst 1000-Zeilen-CSVs würden bei vollem Inline-Listing >100k Tokens fressen, bevor das Modell überhaupt entscheiden kann, *was* zu tun ist.
+- Datenschutz/UX: User sieht im Chip *vor* dem Send, was geht — kann es entfernen, bevor irgendetwas hochgeladen wird.
+- Wiederverwendbar: dasselbe Pattern trägt zukünftige Drop-Targets (PDF-Reports, Audio-Memos, Bilder für Vision-Modelle) ohne neuen IPC-Wildwuchs.
+
+**Konkrete Files (Phase 8.e/slice 1):**
+
+- `services/desktop/src/main/agent/attachment-store.ts` — TTL'd Map<id, bytes+meta>.
+- `services/desktop/src/main/agent/tools/imports.ts` — `import_excel`, `import_status`.
+- `services/desktop/src/renderer/src/lib/attachment.ts` — SheetJS-Parsing + `composePromptWithAttachments` mit `id`-Hinweis.
+- `services/desktop/src/main/agent/prompts.ts` — System-Prompt-Block "Spreadsheet attachments" + "Starting the import" + "Checking progress".
+- IPC: `agent:stageAttachment`, `agent:discardAttachment`.
+
+**Idempotency:** Jeder `import_excel`-Call mintet einen frischen `Idempotency-Key`. Dedupe upstream im Gateway ist als Phase-7-Followup advertised; bis dahin sind Netzwerk-Retries innerhalb eines Tool-Calls *nicht* dedupliziert (low-stakes — master-data erzeugt fresh `transactionId` pro POST).
+
+---
+
 ## Offene Rückfragen — geklärt (User 2026-04-21)
 
 1. **D4:** ✅ Embeddings bleiben Cloud/OpenAI. Kein Referenz-Datensatz nötig.

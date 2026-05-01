@@ -60,6 +60,23 @@ export interface AgentOrchestratorOptions {
    * Not used to gate `send()` — we degrade silently.
    */
   memoryError?: string | null;
+  /**
+   * Hook invoked when the local model runtime crashes mid-turn ("llama
+   * runner process has terminated", "model load failed", …). Wired in
+   * main/index.ts to `ollama.restart()` so the user can hit Send again
+   * and have it work without quitting the app. We deliberately keep
+   * this as an opt-in callback rather than a hard import on the
+   * supervisor — the orchestrator is hosted-provider-aware too, and a
+   * future cloud-only build won't have a supervisor to restart.
+   */
+  runtimeRecover?: () => Promise<void>;
+  /**
+   * Phase 8.t1 — user profile store. When set, the system prompt
+   * builder injects the profile block on every turn so every
+   * response is biased by the user's lens. Optional so tests
+   * (and a future stateless mode) can omit it.
+   */
+  profileStore?: { get: () => import("../../shared/types").UserProfile };
 }
 
 export interface AgentOrchestratorEvents {
@@ -84,6 +101,13 @@ export class AgentOrchestrator extends EventEmitter {
   private readonly conversations = new Map<string, Conversation>();
   private readonly memory: MemoryStore | undefined;
   private readonly memoryError: string | null;
+  private readonly runtimeRecover: (() => Promise<void>) | undefined;
+  private readonly profileStore:
+    | { get: () => import("../../shared/types").UserProfile }
+    | undefined;
+  /** Coalesce concurrent recovery attempts — multiple in-flight turns
+   *  hitting the same crash should only kick one restart. */
+  private runtimeRecoverInFlight: Promise<void> | null = null;
 
   private inFlightRequestId: string | null = null;
   private currentAbort: AbortController | null = null;
@@ -103,6 +127,8 @@ export class AgentOrchestrator extends EventEmitter {
     this.registry = opts.registry ?? new ToolRegistry();
     this.memory = opts.memory;
     this.memoryError = opts.memoryError ?? null;
+    this.runtimeRecover = opts.runtimeRecover;
+    this.profileStore = opts.profileStore;
 
     // Re-emit status when the active provider moves so the renderer's
     // Chat tab can re-enable the input the moment the model is ready.
@@ -252,7 +278,10 @@ export class AgentOrchestrator extends EventEmitter {
         const systemMessage: AgentMessage = {
           id: "__system__",
           role: "system",
-          content: buildSystemPrompt(this.registry),
+          content: buildSystemPrompt(
+            this.registry,
+            this.profileStore?.get() ?? null,
+          ),
           createdAt: 0,
         };
         const messages = [systemMessage, ...conversation.messages];
@@ -353,7 +382,17 @@ export class AgentOrchestrator extends EventEmitter {
             ? "request aborted"
             : err.message
           : String(err);
-      const message = humaniseRunnerError(raw);
+      let message = humaniseRunnerError(raw);
+      // Local-runtime crashes leave `ollama serve` alive but its
+      // internal runner state wedged. Kick a supervisor restart so the
+      // next Send works without the user quitting the app — and tell
+      // them so they don't think the app is broken.
+      if (isRuntimeCrash(raw) && this.runtimeRecover) {
+        this.kickRuntimeRecover();
+        message =
+          message +
+          " (The local runtime is being restarted automatically — try sending again in a few seconds.)";
+      }
       this.errorMessage = message;
       this.emitFrame({
         kind: "error",
@@ -362,6 +401,23 @@ export class AgentOrchestrator extends EventEmitter {
         message,
       });
     }
+  }
+
+  private kickRuntimeRecover(): void {
+    if (!this.runtimeRecover || this.runtimeRecoverInFlight) return;
+    const p = (async () => {
+      try {
+        await this.runtimeRecover!();
+      } catch (err) {
+        console.warn("[agent] runtime recover failed:", err);
+      } finally {
+        this.runtimeRecoverInFlight = null;
+        // Bubble the post-restart status so the renderer's Chat tab
+        // can re-enable the input as soon as the supervisor is ready.
+        this.emit("status", this.getStatus());
+      }
+    })();
+    this.runtimeRecoverInFlight = p;
   }
 
   private emitFrame(frame: AgentStreamFrame): void {
@@ -468,17 +524,38 @@ export class AgentOrchestrator extends EventEmitter {
  * Map low-level Ollama errors to messages the user can act on. Pure
  * function so tests can pin the mapping without spinning a fake server.
  */
+/**
+ * Does this error look like Ollama's local runner crashed (as opposed
+ * to e.g. a network failure to a hosted provider, or a tool-validation
+ * miss)? If so the orchestrator kicks a supervisor restart. Match by
+ * substring rather than parsing JSON because the AI SDK wraps the body
+ * in its own RetryError before we see it.
+ */
+function isRuntimeCrash(raw: string): boolean {
+  return (
+    /llama runner process has terminated/i.test(raw) ||
+    /llama runner process no longer running/i.test(raw) ||
+    /model load failed/i.test(raw)
+  );
+}
+
 function humaniseRunnerError(raw: string): string {
-  // Llama runner crash. Almost always: model + tools[] mismatch (gemma3,
-  // older llama3 variants) OR out-of-memory on small Macs.
+  // Llama runner crash. On the Mac M1 / M2 8 GB tier this is almost
+  // always OOM (the runner gets SIGKILLed by the OS). Less commonly:
+  // model file corruption from an interrupted pull (pre-8.k10d, where
+  // a half-streamed pull would falsely report success), or a model
+  // that doesn't support tools[] in Ollama (gemma3 family).
   if (/llama runner process has terminated/i.test(raw)) {
     return [
       "The local model crashed mid-generation.",
-      "This usually means the current model can't handle tool calling on",
-      "your hardware, or it ran out of RAM.",
-      "Fix: pull a tool-capable model (e.g. `ollama pull qwen2.5:7b`),",
-      "close memory-hungry apps, or switch to a smaller model in",
-      "Settings → Agent (8.g).",
+      "Likely causes: not enough RAM for the current model, a corrupt",
+      "model file from an interrupted earlier download, or the model",
+      "doesn't support tool calls.",
+      "Fix: open the Whoami tab, click 'repair' next to the model to",
+      "wipe + re-download cleanly, or 'delete' and pull a smaller tag",
+      "(qwen2.5:3b is the M1-safe default).",
+      "You can also add a hosted provider key (OpenAI / Anthropic / …)",
+      "to bypass local inference entirely.",
     ].join(" ");
   }
   // Model not loaded yet — distinct, friendlier message.

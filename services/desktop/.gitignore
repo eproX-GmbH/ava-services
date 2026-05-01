@@ -6,3 +6,13 @@ release/
 *.log
 *.tsbuildinfo
 .electron-cache/
+
+# Bundled binaries — populated by scripts/fetch-{ollama,whisper}.mjs at
+# package time. Big (100s of MB), version-controlled via the script's
+# pinned version constant, never via Git.
+resources/ollama/*/
+resources/whisper/*/
+
+# Gateway-side annotation overlay (Phase 8.f5 transaction-name +
+# any future per-process state files). See lib/transaction-names.ts.
+.gateway-data/

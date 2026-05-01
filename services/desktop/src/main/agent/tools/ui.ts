@@ -128,5 +128,58 @@ export function buildUiTools(): Tool[] {
     preview: () => "notification sent",
   });
 
-  return [askUser, navigate, notify];
+  const askText = defineTool({
+    name: "ask_user_text",
+    description:
+      "Ask the user for a free-form line of text (e.g. a transaction name, a custom keyword). Renders as a small input field in the chat with optional default value and 'Überspringen' button. Returns the typed string — empty string means the user skipped an optional prompt. Prefer `ask_user_choice` whenever the answer set is finite.",
+    parameters: {
+      type: "object",
+      properties: {
+        prompt: {
+          type: "string",
+          description: "Short question shown above the input.",
+        },
+        placeholder: {
+          type: "string",
+          description:
+            "Optional placeholder text shown inside the empty input.",
+        },
+        defaultValue: {
+          type: "string",
+          description:
+            "Optional pre-filled value the user can accept or edit.",
+        },
+        optional: {
+          type: "boolean",
+          description:
+            "When true, render a 'Überspringen' button that returns an empty string. Default false (input is required).",
+        },
+      },
+      required: ["prompt"],
+    },
+    schema: yup.object({
+      prompt: yup.string().trim().min(1).required(),
+      placeholder: yup.string().trim().optional(),
+      defaultValue: yup.string().optional(),
+      optional: yup.boolean().optional(),
+    }),
+    run: async (args, ctx) => {
+      const value = await ctx.ui.askText(
+        args.prompt,
+        {
+          ...(args.placeholder ? { placeholder: args.placeholder } : {}),
+          ...(args.defaultValue !== undefined
+            ? { defaultValue: args.defaultValue }
+            : {}),
+          ...(args.optional ? { optional: true } : {}),
+        },
+        ctx.signal,
+      );
+      return { value };
+    },
+    preview: (r) =>
+      r.value ? `entered: ${r.value.slice(0, 60)}` : "skipped",
+  });
+
+  return [askUser, askText, navigate, notify];
 }

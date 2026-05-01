@@ -259,6 +259,11 @@ export const TransactionEntityParams = z.object({
 export const TransactionShape = z
   .object({
     id: z.string(),
+    /** User-supplied label set during ingest (`POST /v1/transactions`).
+     *  Upstream stores it as nullable; not all rows carry one. Surfaced
+     *  in the renderer's list + detail header — the id is opaque, the
+     *  name is what the analyst actually recognises. */
+    name: z.string().nullable().optional(),
     startTime: z.string().nullable().optional(),
     companyCount: z.number().int().nullable().optional(),
     // `userId` is the ownership field (gateway-side ownership check). Upstream
@@ -281,8 +286,12 @@ export const EntityTransactionShape = z
   })
   .openapi("EntityTransaction");
 
-// Gateway stamps `companyId` onto each upstream row in the errors fan-out
-// (transactions.ts) so the Desktop-App can group without a re-lookup.
+// Gateway stamps `companyId` and `service` onto each upstream row in the
+// errors fan-out (transactions.ts) so the Desktop-App can group without a
+// re-lookup AND knows which pipeline stage produced the failure. `service`
+// is one of the LLM-producer upstream identifiers (`structuredContent`,
+// `companyProfile`, …); `masterData` never appears here because that stage
+// has no per-row errors table.
 export const ProcessingErrorShape = z
   .object({
     id: z.string(),
@@ -291,6 +300,7 @@ export const ProcessingErrorShape = z
     errorReason: z.string(),
     createdAt: z.string(),
     updatedAt: z.string(),
+    service: z.string().optional(),
   })
   .openapi("ProcessingError");
 

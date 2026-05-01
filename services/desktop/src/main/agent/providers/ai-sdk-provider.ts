@@ -66,6 +66,15 @@ export interface AiSdkProviderOptions {
    */
   getApiKey: () => Promise<string | null>;
   /**
+   * Sync "is a key file present?" check — drives the status flag so the
+   * badge matches what the API-keys panel shows ("stored"). We deliberately
+   * do NOT gate status on decrypt success: a keychain that's temporarily
+   * locked or rotated would otherwise silently flip the provider to "not
+   * set" even though the user just saved a key. Decryption failures
+   * surface at streamChat time with an actionable message instead.
+   */
+  hasStoredKey: () => boolean;
+  /**
    * Subscribe to "the upstream key store moved" — fires for any provider
    * key change, the resolver decides if it's relevant. Returns an
    * unsubscribe handle.
@@ -82,8 +91,8 @@ export class AiSdkProvider extends EventEmitter implements LlmProvider {
   readonly kind: LlmProviderKind;
   private readonly getModel: () => string;
   private readonly getApiKey: () => Promise<string | null>;
+  private readonly hasStoredKey: () => boolean;
   private readonly supervisor?: OllamaSupervisor;
-  private hasKey = false;
   private readonly unsubscribeKey: () => void;
   private readonly unsubscribeOllama?: () => void;
 
@@ -92,11 +101,14 @@ export class AiSdkProvider extends EventEmitter implements LlmProvider {
     this.kind = opts.kind;
     this.getModel = opts.getModel;
     this.getApiKey = opts.getApiKey;
+    this.hasStoredKey = opts.hasStoredKey;
     this.supervisor = opts.supervisor;
 
-    void this.refreshKeyPresence();
     this.unsubscribeKey = opts.onKeyChanged(() => {
-      void this.refreshKeyPresence();
+      // The flag is recomputed sync each time getStatus() runs, so we
+      // just need to fan a status event out to subscribers when the key
+      // file appears or disappears.
+      this.emit("status", this.getStatus());
     });
 
     if (this.kind === "ollama" && opts.supervisor) {
@@ -157,29 +169,17 @@ export class AiSdkProvider extends EventEmitter implements LlmProvider {
 
   private hostedStatus(): LlmProviderStatus {
     const model = this.getModel() || null;
+    const hasKey = this.hasStoredKey();
     return {
       kind: this.kind,
       model,
-      ready: this.hasKey && model !== null,
-      errorMessage: !this.hasKey
+      ready: hasKey && model !== null,
+      errorMessage: !hasKey
         ? `${labelFor(this.kind)} API key not set.`
         : !model
           ? `No model selected for ${labelFor(this.kind)}.`
           : null,
     };
-  }
-
-  private async refreshKeyPresence(): Promise<void> {
-    if (this.kind === "ollama") {
-      // Ollama is keyless — the flag stays true so hostedStatus() never fires.
-      this.hasKey = true;
-      return;
-    }
-    const key = await this.getApiKey();
-    const next = !!key;
-    if (next === this.hasKey) return;
-    this.hasKey = next;
-    this.emit("status", this.getStatus());
   }
 
   // ---- Streaming -----------------------------------------------------------
@@ -196,6 +196,16 @@ export class AiSdkProvider extends EventEmitter implements LlmProvider {
     // than caching: keys can rotate between turns and Ollama's base URL
     // can shift if the supervisor restarts on a different port.
     const apiKey = (await this.getApiKey()) ?? undefined;
+    if (this.kind !== "ollama" && !apiKey && this.hasStoredKey()) {
+      // The key file exists on disk (so status reports "ready") but
+      // safeStorage couldn't decrypt it. The OS keychain may have been
+      // rotated or the encrypted blob written by a different binary —
+      // either way the user has to re-save. Surface that explicitly
+      // instead of letting the SDK fail with a generic 401.
+      throw new Error(
+        `${labelFor(this.kind)} API key is unreadable — the OS keychain may have changed since it was saved. Open Whoami → API keys and re-enter the key.`,
+      );
+    }
     const baseURL =
       this.kind === "ollama"
         ? this.ollamaBaseURL()

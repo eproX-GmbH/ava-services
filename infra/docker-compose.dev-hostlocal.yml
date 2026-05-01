@@ -1,35 +1,21 @@
 # Host-local dev mode — Postgres/RabbitMQ/Keycloak/Elasticsearch run
-# directly on the host (not in Docker). The only thing we run in Docker
-# here is Ollama, because:
-#   1) Customers shouldn't need to install Ollama themselves (D4 + the
-#      OLLAMA_PLAN.md design — local-first LLM for non-technical users).
-#   2) The host may not have the binary, and asking devs to `brew install
-#      ollama` defeats the "single command to boot the stack" promise.
-#   3) The official `ollama/ollama` image is small (~700 MB), supports both
-#      arm64 and amd64, and exposes the same :11434 HTTP API the
-#      packaged-Electron supervisor will use later (Phase 2 — bundled binary).
+# directly on the host (not in Docker), and producers run as host Node
+# processes via scripts/dev.sh. There is intentionally nothing to run
+# in Docker here.
 #
-# A named volume keeps the ~4 GB of pulled models (gemma3:4b +
-# embeddinggemma) across container restarts so devs don't re-download
-# them every time.
-services:
-  ollama:
-    image: ollama/ollama:latest
-    container_name: ava-ollama
-    restart: unless-stopped
-    ports:
-      - "11434:11434"
-    volumes:
-      - ollama-models:/root/.ollama
-    # No GPU passthrough by default — works on every dev machine. M-series
-    # Macs use Metal automatically inside the container's CPU build (slow
-    # but works). For prod the bundled binary uses native GPU on each OS.
-    healthcheck:
-      test: ["CMD", "ollama", "list"]
-      interval: 5s
-      timeout: 3s
-      retries: 12
-      start_period: 5s
-
-volumes:
-  ollama-models:
+# Ollama note: this file used to declare an `ava-ollama` container so
+# producers using LLM_PROVIDER=ollama had something to hit. That was
+# removed once the Electron desktop app shipped its own bundled
+# `ollama serve` supervisor (Phase 8.k10g) — running both collides on
+# :11434 and the desktop's pulls land in the wrong models dir. The
+# desktop's supervisor is now the single Ollama on the host; producers
+# (also on the host in hostlocal mode) reach it on localhost:11434
+# alongside the desktop. If you want to exercise producers without
+# opening the desktop, either:
+#   - install Ollama on the host (`brew install ollama && ollama serve`), or
+#   - flip the producer to LLM_PROVIDER=openai in .env.dev.
+#
+# Compose still expects at least one top-level key, so we keep an empty
+# services map. Newer docker-compose versions exit non-zero on `up` with
+# no services selected — `scripts/dev.sh` tolerates that.
+services: {}

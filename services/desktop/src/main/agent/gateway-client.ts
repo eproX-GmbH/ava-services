@@ -18,10 +18,30 @@ export interface GatewayClientDeps {
   getAccessToken: () => Promise<string | null>;
 }
 
+/** Query value: scalar, repeated as an array, or undefined to skip. */
+export type QueryValue =
+  | string
+  | number
+  | boolean
+  | undefined
+  | Array<string | number | boolean>;
+
 export interface RequestOptions {
   method?: "GET" | "POST" | "PUT" | "DELETE";
-  query?: Record<string, string | number | boolean | undefined>;
+  query?: Record<string, QueryValue>;
+  /**
+   * JSON-serialisable body. For binary uploads use `multipart` instead —
+   * we treat the two paths separately so the JSON branch can stay simple
+   * (auto Content-Type: application/json) without sniffing the body for
+   * FormData / Blob.
+   */
   body?: unknown;
+  /**
+   * `multipart/form-data` body. The runtime fetch (Node 20+ / Electron)
+   * sets Content-Type with the right boundary automatically; we just
+   * hand it the FormData. Used by `import_excel` for spreadsheet upload.
+   */
+  multipart?: FormData;
   signal?: AbortSignal;
   /** Set on writes to make the gateway dedupe replays (Phase 7 work). */
   idempotencyKey?: string;
@@ -46,7 +66,16 @@ export class GatewayClient {
     if (opts.query) {
       for (const [k, v] of Object.entries(opts.query)) {
         if (v === undefined || v === null) continue;
-        url.searchParams.set(k, String(v));
+        if (Array.isArray(v)) {
+          // Repeated key form (`?foo=a&foo=b`) — what the gateway's
+          // `companyNameIdentifiers[]` and `city[]` params expect.
+          for (const item of v) {
+            if (item === undefined || item === null) continue;
+            url.searchParams.append(k, String(item));
+          }
+        } else {
+          url.searchParams.set(k, String(v));
+        }
       }
     }
 
@@ -54,8 +83,12 @@ export class GatewayClient {
       authorization: `Bearer ${token}`,
       accept: "application/json",
     };
-    let body: string | undefined;
-    if (opts.body !== undefined) {
+    let body: string | FormData | undefined;
+    if (opts.multipart !== undefined) {
+      // Don't set content-type here — fetch fills in the multipart
+      // boundary. Manually setting it would break the upload.
+      body = opts.multipart;
+    } else if (opts.body !== undefined) {
       headers["content-type"] = "application/json";
       body = JSON.stringify(opts.body);
     }

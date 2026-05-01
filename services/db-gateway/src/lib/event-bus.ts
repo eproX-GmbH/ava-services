@@ -79,6 +79,23 @@ class TransactionProgressBus {
     }
   }
 
+  /**
+   * Locally inject a progress payload, bypassing AMQP. Used by the gateway
+   * itself to synthesize events that don't have an obvious AMQP origin —
+   * e.g. flipping a row to `in_progress` the moment the user clicks "Retry"
+   * (DESKTOP_DATA_FLOW.md §6.2). Each producer's terminal-state event still
+   * comes through AMQP normally; this is purely the immediate optimistic
+   * update.
+   *
+   * In-process only: this stays inside one gateway process. With multiple
+   * gateway replicas, the retry-receiver replica would dispatch but a
+   * peer replica holding the SSE connection would not. Promote to AMQP if
+   * we ever scale horizontally with sticky-less load balancing.
+   */
+  public publishLocal(payload: TransactionProgressPayload): void {
+    this.dispatch(payload);
+  }
+
   /** Returns an unsubscribe function. Caller MUST invoke it on disconnect. */
   public subscribe(transactionId: string, handler: ProgressHandler): () => void {
     let set = this.handlers.get(transactionId);

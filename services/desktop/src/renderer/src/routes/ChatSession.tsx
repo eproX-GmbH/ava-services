@@ -70,16 +70,18 @@ export function ChatSession() {
   return (
     <section className="chat">
       <h2>
-        Chat session <code>{sessionId?.slice(0, 8)}…</code>
+        Chat-Sitzung <code>{sessionId?.slice(0, 8)}…</code>
       </h2>
       <div className="chat-scroll" ref={scrollRef}>
-        {messages.isLoading && <p>Loading…</p>}
+        {messages.isLoading && <p>Lädt…</p>}
         {messages.error && (
           <p className="error">{(messages.error as Error).message}</p>
         )}
         {messages.data?.items.map((m) => (
           <div key={m.id} className={`msg msg-${m.role}`}>
-            <div className="msg-role muted">{m.role}</div>
+            <div className="msg-role muted">
+              {m.role === "user" ? "Du" : "AVA"}
+            </div>
             <div className="msg-body">{m.content}</div>
           </div>
         ))}
@@ -89,7 +91,7 @@ export function ChatSession() {
           value={question}
           onChange={(e) => setQuestion(e.target.value)}
           rows={2}
-          placeholder="Ask a follow-up…"
+          placeholder="Folgefrage stellen…"
           onKeyDown={(e) => {
             if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
               e.preventDefault();
@@ -98,7 +100,7 @@ export function ChatSession() {
           }}
         />
         <button type="submit" className="primary" disabled={send.isPending || !question.trim()}>
-          {send.isPending ? "Sending…" : "Send (⌘↵)"}
+          {send.isPending ? "Wird gesendet…" : "Senden (⌘↵)"}
         </button>
         {error && <p className="error">{error}</p>}
       </form>

@@ -16,32 +16,36 @@ import type { OllamaModelSpec, OllamaInstalledModel } from "../shared/types";
 // installed-but-not-required models, and users may roll back. Old tags get
 // pruned by a future "Free space" UI, not silently.
 
-// LLM choice: `gemma4:e4b` (Gemma 4 Effective-4B, April 2026 release).
+// LLM choice: `qwen2.5:3b` (Qwen 2.5 3B Instruct, ~1.9 GB on disk).
 //
-// Why Gemma 4 E4B over the previous default (qwen2.5:7b):
-//   - Native tool/function calling — first-class feature, not a
-//     fine-tune retrofit. The 8.b orchestrator sends tools[] on every
-//     /api/chat turn; Gemma 3 crashed Ollama's runner on Apple Silicon
-//     when tool schemas were attached, Gemma 4 fixed that and made
-//     tools a headline capability.
-//   - Built-in OCR + chart/handwriting/document parsing. Replaces a
-//     separate vision-model hop for screenshot/PDF ingest flows (8.e).
-//   - 128K context vs Qwen 2.5's 32K — fits long company dossiers.
-//   - 4.5B effective params (Per-Layer Embeddings architecture) at
-//     ~9.6 GB on disk. ~10–11 GB resident at inference; comfortable on
-//     16 GB unified-memory laptops.
+// Why Qwen 2.5 3B as the universal default (downgraded from 7B in
+// 8.k10g after M1 OOM reports):
+//   - Resource fit. The 7B variant is ~4.7 GB on disk and pushes
+//     ~6 GB resident with tools[]. On 8 GB M1 / M2 MacBook Air machines
+//     — the most common dev hardware — that crosses the OS swap
+//     threshold and the runner gets killed mid-generation
+//     ("llama runner process has terminated"). 3B is ~1.9 GB on disk,
+//     ~3 GB resident, comfortably fits 8 GB unified memory alongside
+//     embedder + Electron.
+//   - Native tool/function calling — same first-class Qwen 2.5
+//     family that the orchestrator targets, just smaller weights.
+//     Quality is meaningfully lower than 7B for multi-step plans
+//     but the alternative is a crashing app, which is the worse UX.
+//   - 32K context — unchanged from the 7B variant.
 //
-// Hardware sizing — see catalog.ts in @ava/ai-provider. Users with
-// 8 GB should switch to `gemma4:e2b` (~7.2 GB); 24+ GB users can pick
-// `gemma4:26b` MoE (4 B active) for better quality at similar speed.
-// The 8.k9 follow-on adds an automatic recommendation based on
-// os.totalmem() — until then this list is the one-size default that
-// works for the most common laptop profile (16 GB).
+// Users with 16+ GB should manually upgrade to `qwen2.5:7b` from the
+// model picker (8.g Settings → Agent) or the 8.k9 hardware-aware
+// recommendation (planned) for visibly better answers. Users with
+// 24+ GB can pick `qwen2.5:14b` or `gemma4:e4b`. Users who want
+// headline quality without local cost flip to a hosted provider via
+// the FirstRunWizard skip flow.
+//
+// Hardware sizing — see catalog.ts in @ava/ai-provider.
 export const REQUIRED_MODELS: OllamaModelSpec[] = [
   {
-    name: "gemma4:e4b",
+    name: "qwen2.5:3b",
     role: "llm",
-    approxBytes: 9_600_000_000,
+    approxBytes: 1_900_000_000,
   },
   {
     name: "embeddinggemma:latest",
@@ -53,14 +57,69 @@ export const REQUIRED_MODELS: OllamaModelSpec[] = [
 /**
  * Models in `REQUIRED_MODELS` that aren't present in `installed`.
  *
- * Matching is exact on `name` — Ollama returns the full tag (`gemma3:4b`,
- * not `gemma3`), so any user-side rename to a different tag will register
- * as missing. That's deliberate: the AVA pipeline is pinned to specific
- * weights and routing on a homonym is worse than re-downloading.
+ * Matching has two distinct rules per role:
+ *
+ *  - `embed` — exact match on the canonical tag, after stripping any
+ *    registry prefix and normalising the missing-tag-as-`:latest` case.
+ *    The vector space is determined by the embedder's exact weights, so
+ *    "any embedder" doesn't fit; we lock to `embeddinggemma:latest` and
+ *    reject substitutes (see catalog.ts header for the lock-in
+ *    rationale).
+ *
+ *  - `llm` — *any* tool-capable local LLM satisfies the requirement.
+ *    Once a user has one usable chat model on disk we don't drag them
+ *    through another multi-GB pull just because we shipped a new
+ *    default. The recommended tag (currently `qwen2.5:7b`) is what we'd
+ *    auto-pull on a fresh machine, but a user who already has e.g.
+ *    `gemma4:e4b` or `llama3.2:3b` from a prior version is considered
+ *    satisfied.
+ *
+ * Why both: without role-aware matching, a user with Gemma 4 on disk
+ * gets re-prompted to download Qwen the moment we change the default,
+ * which is the exact UX bug we're fixing here.
  */
 export function missingModels(
   installed: OllamaInstalledModel[],
 ): OllamaModelSpec[] {
-  const have = new Set(installed.map((m) => m.name));
-  return REQUIRED_MODELS.filter((m) => !have.has(m.name));
+  const haveTags = new Set(installed.map((m) => normaliseTag(m.name)));
+  const haveAnyLlm = installed.some((m) => looksLikeToolCapableLlm(m.name));
+  return REQUIRED_MODELS.filter((m) => {
+    if (m.role === "llm") {
+      // Satisfied by ANY known tool-capable LLM the user already has.
+      // The recommended tag is only what we'd pull from scratch.
+      if (haveAnyLlm) return false;
+      return !haveTags.has(normaliseTag(m.name));
+    }
+    // Embedding (and any other role): exact-match required.
+    return !haveTags.has(normaliseTag(m.name));
+  });
+}
+
+function normaliseTag(name: string): string {
+  // Strip any registry/path prefix — keep only the final segment.
+  const lastSlash = name.lastIndexOf("/");
+  const tail = lastSlash >= 0 ? name.slice(lastSlash + 1) : name;
+  // Default tag is `latest` when omitted.
+  return tail.includes(":") ? tail : `${tail}:latest`;
+}
+
+/**
+ * Heuristic: is this installed-model tag one of the LLM families we
+ * know supports tool calling in Ollama? Kept as a regex rather than a
+ * hard-coded tag list because the catalog evolves and we don't want a
+ * stale enum here to cause false-negatives ("you don't have an LLM!"
+ * when the user clearly does).
+ *
+ * False positives are bounded — at worst we'd accept a non-tool-capable
+ * model and the agent would fail at its first tool call with a clear
+ * error message, which the user can recover from in Whoami by picking
+ * a different model. False negatives are the bug we just fixed (forced
+ * re-download), so this leans permissive.
+ */
+function looksLikeToolCapableLlm(name: string): boolean {
+  const tag = normaliseTag(name).toLowerCase();
+  // Skip the embedder so a user with only embeddinggemma installed
+  // doesn't accidentally satisfy the LLM requirement.
+  if (tag.startsWith("embedding")) return false;
+  return /^(qwen|gemma|llama|mistral|phi|deepseek|granite|command-r)/i.test(tag);
 }

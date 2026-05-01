@@ -7,6 +7,10 @@ import { callUpstream } from "../../lib/upstream";
 import { transactionProgressBus } from "../../lib/event-bus";
 import { logger } from "../../lib/logger";
 import {
+  getTransactionName,
+  getTransactionNames,
+} from "../../lib/transaction-names";
+import {
   EntityTransactionShape,
   ErrorShape,
   PaginatedShape,
@@ -61,7 +65,7 @@ const TransactionProgressEvent = z
     tenantId: z.string(),
     service: z.string(),
     companyId: z.string(),
-    state: z.enum(["completed", "failed", "skipped"]),
+    state: z.enum(["completed", "failed", "skipped", "in_progress"]),
     errorMessage: z.string().optional(),
     updatedAt: z.string(),
   })
@@ -141,7 +145,15 @@ transactionsRouter.get("/transactions/:transactionId/events", async (c) => {
 
     const unsubscribe = transactionProgressBus.subscribe(transactionId, (payload) => {
       // Tenant gate: drop events that don't belong to caller's tenant.
-      if (payload.tenantId !== auth.tenantId) return;
+      //
+      // Producers stamp `tenantId` from `process.env.TENANT_ID`, which falls
+      // back to "" when the dep doesn't deploy with a tenant configured
+      // (single-tenant dev / hybrid setups). Treat blank as "implicit
+      // caller's tenant" so those events still flow — the bus is internal
+      // AMQP, the subscription is already scoped per-transactionId, and the
+      // SSE caller has already proven transaction ownership upstream. A
+      // populated mismatching tenantId is still rejected.
+      if (payload.tenantId && payload.tenantId !== auth.tenantId) return;
       // Per-row events only (DESKTOP_DATA_FLOW.md §6) — no terminal "end"
       // frame because no service can authoritatively declare a transaction
       // complete (dependency chain may legitimately drop companies).
@@ -233,18 +245,51 @@ transactionsRouter.openapi(listRoute, async (c) => {
   const { page, pageSize } = c.req.valid("query");
 
   // Upstream returns an unpaginated array (filtered by token's userId).
-  // Gateway slices client-side. TODO upstream: add pageNumber/pageSize.
-  // Cached for the request so a follow-up ownership check on a per-id route
-  // (rare but possible if a client batches list+detail) reuses the same fetch.
+  // Gateway sorts by `createdAt` descending (newest first — what every
+  // analyst's first instinct is when scanning their list of imports) and
+  // then slices client-side. TODO upstream: add pageNumber/pageSize +
+  // server-side ordering. Cached for the request so a follow-up ownership
+  // check on a per-id route reuses the same fetch.
   const all = await getMyTransactions(c);
 
+  const sorted = [...all].sort((a, b) => {
+    // String compare on ISO-8601 timestamps is correct because the format
+    // is lexicographically ordered. Missing `createdAt` (defensive) sorts
+    // to the bottom so a malformed row doesn't push the latest off-page.
+    const ax = (a as { createdAt?: unknown }).createdAt;
+    const bx = (b as { createdAt?: unknown }).createdAt;
+    const av = typeof ax === "string" ? ax : "";
+    const bv = typeof bx === "string" ? bx : "";
+    if (av === bv) return 0;
+    if (!av) return 1;
+    if (!bv) return -1;
+    return bv.localeCompare(av);
+  });
+
   const start = (page - 1) * pageSize;
+  const page_ = sorted.slice(start, start + pageSize) as Array<
+    z.infer<typeof TransactionShape>
+  >;
+
+  // Overlay gateway-side names. Upstream master-data accepts the `name`
+  // query param on POST but doesn't propagate it back through to
+  // company-profile, so the rows we receive here lack it. We persisted
+  // the value at POST time (lib/transaction-names) and merge it in here.
+  // Upstream wins if it ever starts returning a non-empty name itself.
+  const ids = page_.map((t) => t.id).filter((x): x is string => !!x);
+  const names = getTransactionNames(ids);
+  const annotated = page_.map((t) =>
+    !t.name && t.id && names.has(t.id)
+      ? { ...t, name: names.get(t.id) }
+      : t,
+  );
+
   return c.json(
     {
-      items: all.slice(start, start + pageSize) as Array<z.infer<typeof TransactionShape>>,
+      items: annotated,
       page,
       pageSize,
-      total: all.length,
+      total: sorted.length,
     },
     200,
   );
@@ -272,7 +317,12 @@ transactionsRouter.openapi(detailRoute, async (c) => {
     `/api/v1/transactions/${encodeURIComponent(transactionId)}`,
   );
   await assertTransactionOwnership(c, upstream as Record<string, unknown>);
-  return c.json(upstream, 200);
+  // Same gateway-owned overlay as the list route — see comment there.
+  const annotated =
+    !upstream.name
+      ? { ...upstream, name: getTransactionName(transactionId) ?? upstream.name }
+      : upstream;
+  return c.json(annotated, 200);
 });
 
 // ---- GET /v1/transactions/:transactionId/entities --------------------------
@@ -298,16 +348,15 @@ transactionsRouter.openapi(entitiesRoute, async (c) => {
 
   await assertTransactionOwnershipById(c, transactionId);
 
-  const upstream = await callUpstream<{ entityTransactions?: unknown[]; count?: number; items?: unknown[]; total?: number }>(
+  const upstream = await callUpstream<UpstreamEntitiesPayload>(
     c,
     "companyProfile",
     `/api/v1/transactions/${encodeURIComponent(transactionId)}/entities`,
     { query: { pageNumber: page, pageSize } },
   );
 
-  const items =
-    (upstream?.entityTransactions ?? upstream?.items ?? []) as Array<z.infer<typeof EntityTransactionShape>>;
-  const total = upstream?.count ?? upstream?.total ?? items.length;
+  const items = normalizeRows(pickRows(upstream));
+  const total = pickTotal(upstream, items.length);
 
   return c.json({ items, page, pageSize, total }, 200);
 });
@@ -367,48 +416,80 @@ transactionsRouter.openapi(errorsRoute, async (c) => {
 
   await assertTransactionOwnershipById(c, transactionId);
 
-  // company-profile only exposes processing errors per (transactionId, companyId).
-  // We fan out: list entities, then fetch errors per company in parallel.
-  // For typical excel-import-sized transactions (≤ a few hundred companies)
-  // this is acceptable; large transactions warrant an aggregate upstream
-  // endpoint. TODO upstream: /api/v1/processing-errors/transactions/:tid.
-  const entities = await getTransactionEntitiesAll(c, transactionId);
-  const companies = Array.from(
-    new Set(
-      entities
-        .map((e) => (e as { companyId?: unknown }).companyId)
-        .filter((id): id is string => typeof id === "string"),
-    ),
-  );
-
-  const perCompany = await Promise.all(
-    companies.map(async (companyId) => {
+  // Each LLM producer keeps its OWN processing-errors table and only
+  // exposes per-(transactionId, companyId) lookup. So we have to fan out
+  // across every producer × every company that producer knows about. The
+  // earlier implementation only queried `companyProfile`, which made
+  // structured-content / website / contact / publication / evaluation
+  // failures invisible — the Desktop UI would render "FEHLER (0)" while a
+  // red dot was sitting in another column.
+  //
+  // To avoid a 6×N+1-style fetch storm, we first ask each producer for its
+  // entities list (one call per producer = 6 in parallel), then fan out
+  // errors-per-company *per producer* using only the companies that
+  // producer actually knows. Each error row is stamped with both
+  // `companyId` (defensive) and `service` (the producer key) so the
+  // Desktop-App can group + label without a second lookup. TODO upstream:
+  // expose /api/v1/processing-errors/transactions/:tid on each producer.
+  const producerWork = await Promise.all(
+    STAGE_UPSTREAMS.map(async ({ stage, upstream }) => {
+      let entities: Array<Record<string, unknown>>;
       try {
-        const list = await callUpstream<unknown>(
+        const res = await callUpstream<UpstreamEntitiesPayload>(
           c,
-          "companyProfile",
-          `/api/v1/processing-errors/transactions/${encodeURIComponent(transactionId)}/companies/${encodeURIComponent(companyId)}`,
+          upstream,
+          `/api/v1/transactions/${encodeURIComponent(transactionId)}/entities`,
+          { query: { pageNumber: 1, pageSize: 10000 } },
         );
-        const arr = (Array.isArray(list)
-          ? list
-          : ((list as { items?: unknown[] })?.items ?? [])) as Array<Record<string, unknown>>;
-        // Stamp each row with companyId so the Desktop-App can group without
-        // a re-lookup. Upstream rows already carry it but be defensive.
-        return arr.map((row) => ({ companyId, ...row }));
+        entities = normalizeRows(pickRows(res)) as Array<Record<string, unknown>>;
       } catch (err) {
-        // A single company's errors-call failing must not poison the whole
-        // response — log and return nothing for that row.
         logger.warn(
-          { err, transactionId, companyId, requestId: c.get("requestId") },
-          "errors fan-out: single company failed",
+          { err, stage, upstream, transactionId, requestId: c.get("requestId") },
+          "errors fan-out: producer entities call failed",
         );
-        return [];
+        return [] as Array<Record<string, unknown>>;
       }
+
+      const companies = Array.from(
+        new Set(
+          entities
+            .map((e) => (e as { companyId?: unknown }).companyId)
+            .filter((id): id is string => typeof id === "string"),
+        ),
+      );
+
+      const rows = await Promise.all(
+        companies.map(async (companyId) => {
+          try {
+            const list = await callUpstream<unknown>(
+              c,
+              upstream,
+              `/api/v1/processing-errors/transactions/${encodeURIComponent(transactionId)}/companies/${encodeURIComponent(companyId)}`,
+            );
+            const arr = (Array.isArray(list)
+              ? list
+              : ((list as { items?: unknown[] })?.items ?? [])) as Array<Record<string, unknown>>;
+            // Spread upstream first, then overwrite companyId/service so the
+            // gateway-stamped values win even if an upstream row is missing
+            // them. `service` is the matrix stage id (`structuredContent`,
+            // `companyProfile`, …) for direct mapping to the UI's
+            // STAGE_LABEL.
+            return arr.map((row) => ({ ...row, companyId, service: stage }));
+          } catch (err) {
+            logger.warn(
+              { err, stage, transactionId, companyId, requestId: c.get("requestId") },
+              "errors fan-out: single (producer, company) failed",
+            );
+            return [];
+          }
+        }),
+      );
+      return rows.flat();
     }),
   );
 
   return c.json(
-    { items: perCompany.flat() as Array<z.infer<typeof ProcessingErrorShape>> },
+    { items: producerWork.flat() as Array<z.infer<typeof ProcessingErrorShape>> },
     200,
   );
 });
@@ -427,6 +508,91 @@ transactionsRouter.openapi(errorsRoute, async (c) => {
 // `unavailableStages` and its column is filled with `state: "pending"`. The
 // matrix still returns rather than 502'ing, because partial info is better
 // than none for a pipeline status view.
+
+// Upstream LLM producers (structured-content, company-profile, …) historically
+// shipped their `/api/v1/transactions/:tid/entities` payload with the array
+// keyed as `transactions` and the row state as the raw DB enum
+// ("DONE" | "ERROR" | "IN_PROGRESS" | "INTERIM"). The gateway's response shape
+// is normalized to `items[]` with lowercase state (`EntityTransactionShape`),
+// so we coerce at this boundary.
+//
+// Without this normalization:
+//   - `entityTransactions ?? items` returned `[]` for every stage (the rows
+//     are under `transactions`), so the pipeline matrix and `/entities`
+//     proxy reported every cell as "pending" forever — even though upstream
+//     had already finished the work.
+//   - Even if the rows were picked up, the uppercase state would either fail
+//     the response Zod schema or render as an unknown badge in the desktop UI.
+//
+// Keep this mapper additive: if a future producer emits already-lowercase
+// states, `STATE_MAP[s] ?? s` falls through unchanged.
+
+const UPSTREAM_STATE_MAP: Record<string, z.infer<typeof EntityTransactionShape>["state"]> = {
+  IN_PROGRESS: "in_progress",
+  DONE: "completed",
+  ERROR: "failed",
+  INTERIM: "in_progress",
+};
+
+interface UpstreamEntitiesPayload {
+  entityTransactions?: unknown[];
+  items?: unknown[];
+  transactions?: unknown[];
+  count?: number;
+  total?: number;
+}
+
+function pickRows(payload: UpstreamEntitiesPayload | null | undefined): unknown[] {
+  return (
+    payload?.entityTransactions ??
+    payload?.items ??
+    payload?.transactions ??
+    []
+  );
+}
+
+function pickTotal(
+  payload: UpstreamEntitiesPayload | null | undefined,
+  fallback: number,
+): number {
+  return payload?.count ?? payload?.total ?? fallback;
+}
+
+function normalizeRow(
+  raw: unknown,
+): z.infer<typeof EntityTransactionShape> | null {
+  if (!raw || typeof raw !== "object") return null;
+  const r = raw as Record<string, unknown>;
+  const state = typeof r.state === "string" ? r.state : "";
+  const mappedState = UPSTREAM_STATE_MAP[state] ?? state;
+  return {
+    // Some upstreams (structured-content) emit numeric ids; the gateway's
+    // contract is string. Coerce so the response validates.
+    id: r.id != null ? String(r.id) : "",
+    transactionId: r.transactionId != null ? String(r.transactionId) : "",
+    companyId: r.companyId != null ? String(r.companyId) : "",
+    state: mappedState as z.infer<typeof EntityTransactionShape>["state"],
+    finishedAt:
+      typeof r.finishedAt === "string"
+        ? r.finishedAt
+        : r.finishedAt === null
+          ? null
+          : undefined,
+    createdAt: typeof r.createdAt === "string" ? r.createdAt : "",
+    updatedAt: typeof r.updatedAt === "string" ? r.updatedAt : "",
+  };
+}
+
+function normalizeRows(
+  raw: unknown[],
+): Array<z.infer<typeof EntityTransactionShape>> {
+  const out: Array<z.infer<typeof EntityTransactionShape>> = [];
+  for (const r of raw) {
+    const n = normalizeRow(r);
+    if (n) out.push(n);
+  }
+  return out;
+}
 
 const STAGE_UPSTREAMS: Array<{
   stage: Exclude<z.infer<typeof PipelineStage>, "masterData">;
@@ -488,18 +654,13 @@ transactionsRouter.openapi(pipelineRoute, async (c) => {
   const fanOut = await Promise.all(
     STAGE_UPSTREAMS.map(async ({ stage, upstream }) => {
       try {
-        const res = await callUpstream<{
-          entityTransactions?: EntityRow[];
-          items?: EntityRow[];
-          count?: number;
-          total?: number;
-        }>(
+        const res = await callUpstream<UpstreamEntitiesPayload>(
           c,
           upstream,
           `/api/v1/transactions/${encodeURIComponent(transactionId)}/entities`,
           { query: { pageNumber: 1, pageSize: 10000 } },
         );
-        const items = (res?.entityTransactions ?? res?.items ?? []) as EntityRow[];
+        const items = normalizeRows(pickRows(res)) as EntityRow[];
         return { stage, available: true as const, items };
       } catch (err) {
         // Don't poison the whole matrix — log and mark the stage unavailable.
@@ -728,11 +889,54 @@ transactionsRouter.openapi(retryRoute, async (c) => {
   );
 
   const ok = dispatched.every((d) => d.ok);
+
+  // Optimistic SSE: flip the requested stage's matrix cell to `in_progress`
+  // immediately so the user sees their click register. The producer chain
+  // emits the terminal completed/failed event later via AMQP through the
+  // normal path. Without this, the cell sits on its prior failed state
+  // until the user navigates away and back (the snapshot fetch on remount
+  // is what was making the dot finally turn green). See DESKTOP_DATA_FLOW.md
+  // §6.2.
+  //
+  // Only synthesize when at least one upstream accepted the dispatch. If
+  // every producer 4xx'd, the row never starts running, so claiming
+  // in_progress would lie to the client.
+  if (dispatched.some((d) => d.ok)) {
+    const auth = c.get("auth");
+    transactionProgressBus.publishLocal({
+      transactionId,
+      tenantId: auth.tenantId,
+      service: STAGE_TO_SERVICE[stage],
+      companyId,
+      // The published `@ava/event@1.1.38` types omit "in_progress"
+      // (only completed/failed/skipped). The runtime accepts any
+      // string and the gateway is the only consumer of this synthetic
+      // event (re-emitted to SSE clients); cast through `as never` so
+      // TS doesn't widen the union for downstream type-flow.
+      state: "in_progress" as never,
+      updatedAt: new Date().toISOString(),
+    });
+  }
+
   return c.json(
     { transactionId, companyId, stage, dispatched, ok },
     202,
   );
 });
+
+// Inverse of SERVICE_TO_STAGE on the renderer side. Kept here because the
+// gateway is the only place that needs to translate "user-requested stage id"
+// → "service field on the AMQP payload" without an AMQP round-trip; producers
+// already know their own service name. If a new stage is added, both this
+// map and the renderer's SERVICE_TO_STAGE must be updated.
+const STAGE_TO_SERVICE: Record<z.infer<typeof RetryStage>, string> = {
+  structuredContent: "structured-content",
+  companyPublication: "company-publication",
+  website: "website",
+  companyProfile: "company-profile",
+  companyContact: "company-contact",
+  companyEvaluation: "company-evaluation",
+};
 
 // ---- Per-request cache + ownership helpers ---------------------------------
 //
@@ -792,13 +996,13 @@ async function getTransactionEntitiesAll(
   transactionId: string,
 ): Promise<Array<Record<string, unknown>>> {
   return memoize(c, `entities-all:${transactionId}`, async () => {
-    const upstream = await callUpstream<{ entityTransactions?: Array<Record<string, unknown>> }>(
+    const upstream = await callUpstream<UpstreamEntitiesPayload>(
       c,
       "companyProfile",
       `/api/v1/transactions/${encodeURIComponent(transactionId)}/entities`,
       { query: { pageNumber: 1, pageSize: 1000 } },
     );
-    return upstream?.entityTransactions ?? [];
+    return normalizeRows(pickRows(upstream)) as Array<Record<string, unknown>>;
   });
 }
 

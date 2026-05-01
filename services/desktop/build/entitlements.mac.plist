@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <!--
+    macOS Hardened Runtime entitlements for AVA Desktop (Phase 8.u1).
+
+    Why Hardened Runtime: Apple notarization REQUIRES it as of macOS
+    Catalina. Without `hardenedRuntime: true` in electron-builder.yml
+    the notarization step rejects the bundle. With it, the kernel
+    enforces a stricter sandbox-ish posture that breaks several
+    things every Electron app needs unless we declare exceptions
+    here.
+
+    Exceptions, narrowest-first:
+
+      com.apple.security.cs.allow-jit                  V8 / Node JIT
+      com.apple.security.cs.allow-unsigned-executable-memory
+                                                       Node native
+                                                       extensions
+      com.apple.security.cs.allow-dyld-environment-variables
+                                                       For sidecar
+                                                       env injection
+                                                       (Ollama,
+                                                       whisper-cli)
+      com.apple.security.cs.disable-library-validation Sidecars +
+                                                       native deps
+                                                       not signed by
+                                                       us
+      com.apple.security.device.audio-input            Mic (8.n2)
+      com.apple.security.network.client                HTTPS to the
+                                                       gateway, HF
+                                                       model
+                                                       downloads,
+                                                       update feed
+
+    NOT included (so we don't promise capabilities we don't use):
+      camera, location, address book, calendar, screen recording.
+  -->
+
+  <key>com.apple.security.cs.allow-jit</key>
+  <true/>
+  <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+  <true/>
+  <key>com.apple.security.cs.allow-dyld-environment-variables</key>
+  <true/>
+  <key>com.apple.security.cs.disable-library-validation</key>
+  <true/>
+
+  <key>com.apple.security.device.audio-input</key>
+  <true/>
+
+  <key>com.apple.security.network.client</key>
+  <true/>
+</dict>
+</plist>

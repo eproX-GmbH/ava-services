@@ -1,7 +1,26 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useParams } from "react-router-dom";
+import ReactMarkdown from "react-markdown";
 import { gatewayFetch, GatewayError } from "../api/gateway";
+import {
+  fmtMoney,
+  fmtShareCapital,
+  fmtDate,
+  fmtDateRange,
+  numVal,
+  telHref,
+  mailHref,
+  mapsHref,
+  looksLikeEmail,
+  looksLikePhone,
+} from "../lib/format";
+import { ExternalLink } from "../components/ExternalLink";
+import {
+  GlobeIcon,
+  LinkedInIcon,
+  XingIcon,
+} from "../components/icons";
 
 // W8–W13 — single company drill-down, ported from the legacy ava-v2 web app.
 //
@@ -32,12 +51,12 @@ type TabKey =
   | "jobs";
 
 const TABS: Array<{ key: TabKey; label: string; workflow: string }> = [
-  { key: "overview", label: "Overview", workflow: "W8/W10" },
-  { key: "financials", label: "Financials", workflow: "W11" },
-  { key: "management", label: "Management", workflow: "W13" },
-  { key: "contacts", label: "Contacts", workflow: "W12" },
-  { key: "insights", label: "Insights", workflow: "W11" },
-  { key: "jobs", label: "Jobs", workflow: "W10" },
+  { key: "overview", label: "Übersicht", workflow: "W8/W10" },
+  { key: "financials", label: "Finanzen", workflow: "W11" },
+  { key: "management", label: "Geschäftsführung", workflow: "W13" },
+  { key: "contacts", label: "Kontakte", workflow: "W12" },
+  { key: "insights", label: "Erkenntnisse", workflow: "W11" },
+  { key: "jobs", label: "Stellenanzeigen", workflow: "W10" },
 ];
 
 // ---- Shared hooks ----------------------------------------------------------
@@ -55,63 +74,11 @@ function useTabQuery<T>(key: string, id: string, path: string, enabled = true) {
   });
 }
 
-// ---- Helpers ---------------------------------------------------------------
+// Helpers — see `lib/format.ts` for the centralised formatters.
 
-const euro = new Intl.NumberFormat("de-DE", {
-  minimumFractionDigits: 0,
-  maximumFractionDigits: 0,
-});
-
-function numVal(v: unknown): number | null {
-  if (v == null) return null;
-  if (typeof v === "number") return Number.isFinite(v) ? v : null;
-  if (typeof v === "object" && "value" in (v as Record<string, unknown>)) {
-    const n = (v as { value?: unknown }).value;
-    return typeof n === "number" && Number.isFinite(n) ? n : null;
-  }
-  return null;
-}
-
-function currencySymbol(c?: string | null): string {
-  switch ((c ?? "").toUpperCase()) {
-    case "EUR":
-      return "€";
-    case "USD":
-      return "$";
-    case "GBP":
-      return "£";
-    default:
-      return c ? ` ${c}` : " €";
-  }
-}
-
-function fmtMoney(v: unknown): string {
-  const n = numVal(v);
-  if (n == null) return "—";
-  const cur =
-    typeof v === "object" && v !== null && "currency" in v
-      ? ((v as { currency?: string | null }).currency ?? null)
-      : null;
-  const sym = currencySymbol(cur);
-  // Symbol + value for €/$/£; trailing-code form for unknown currencies.
-  if (sym === "€" || sym === "$" || sym === "£") return `${euro.format(n)} ${sym}`;
-  return `${euro.format(n)}${sym}`;
-}
-
-function fmtDateRange(begin?: string | null, end?: string | null): string {
-  const fmt = (d?: string | null) => {
-    if (!d) return null;
-    try {
-      return new Date(d).toLocaleDateString("de-DE");
-    } catch {
-      return d;
-    }
-  };
-  const b = fmt(begin);
-  const e = fmt(end);
-  if (b && e) return `${b} – ${e}`;
-  return b ?? e ?? "";
-}
+// Numeric formatter for plain integer-style values (employee counts,
+// review counts) — money / dates / contacts go through `lib/format`.
+const numFmt = new Intl.NumberFormat("de-DE");
 
 // ---- Types — kept loose since gateway passes upstream JSON through ---------
 
@@ -236,6 +203,16 @@ export function CompanyDetail() {
   const { id } = useParams<{ id: string }>();
   const [tab, setTab] = useState<TabKey>("overview");
 
+  // Phase 8.r4 — interest signal. Pinging on every CompanyDetail mount
+  // tells the freshness scheduler the user is paying attention to this
+  // company; its stale cells get a 0–1 boost in the score formula so
+  // they sort to the top of the next refresh tick. Fire-and-forget;
+  // a failure here shouldn't block the page render.
+  useEffect(() => {
+    if (!id) return;
+    void window.api.interest.record(id);
+  }, [id]);
+
   // Hero data — always fetch profile + structured-content + website so the
   // hero (name/keywords/KPI tiles) has something even before the user clicks
   // around. These are the same calls the legacy page eager-loaded.
@@ -268,7 +245,7 @@ export function CompanyDetail() {
       {/* ---- Hero ---------------------------------------------------------- */}
       <header className="company-hero">
         <h2 style={{ marginBottom: "0.25rem" }}>
-          {structured.data?.name ?? summary.data?.name ?? "Company"}{" "}
+          {structured.data?.name ?? summary.data?.name ?? "Firma"}{" "}
           <span className="muted">
             <code>{id?.slice(0, 12)}…</code>
           </span>
@@ -294,23 +271,25 @@ export function CompanyDetail() {
         )}
 
         <div className="kpi-grid">
-          <KpiTile label="Location">
-            {[structured.data?.zipCode, structured.data?.city]
-              .filter(Boolean)
-              .join(" ") || "—"}
+          <KpiTile label="Standort">
+            <AddressLink
+              parts={[structured.data?.zipCode, structured.data?.city]}
+            />
           </KpiTile>
           {structured.data?.foundingYear && (
-            <KpiTile label="Founded">{String(structured.data.foundingYear)}</KpiTile>
+            <KpiTile label="Gegründet">
+              {String(structured.data.foundingYear)}
+            </KpiTile>
           )}
           {latest?.employeeCount != null && (
-            <KpiTile label="Employees">
-              {latest.employeeCount.toLocaleString()}
+            <KpiTile label="Mitarbeiter">
+              {numFmt.format(latest.employeeCount)}
             </KpiTile>
           )}
           {website.data?.companySerp?.url && (
             <KpiTile label="Website">
               <a href={website.data.companySerp.url} target="_blank" rel="noreferrer">
-                Visit ↗
+                Aufrufen ↗
               </a>
             </KpiTile>
           )}
@@ -378,19 +357,19 @@ function DeepResearchStrip({ items }: { items: DeepResearch[] }) {
       case "EXPANSION":
         return "Expansion";
       case "TENDER":
-        return "Tender";
+        return "Ausschreibung";
       case "PROCUREMENT":
-        return "Procurement";
+        return "Beschaffung";
       default:
-        return "Other";
+        return "Sonstiges";
     }
   };
 
   return (
     <section style={{ marginTop: "1.5rem" }}>
-      <h3 style={{ marginBottom: "0.25rem" }}>Recent events &amp; signals</h3>
+      <h3 style={{ marginBottom: "0.25rem" }}>Aktuelle Ereignisse &amp; Signale</h3>
       <p className="muted" style={{ marginTop: 0 }}>
-        Expansions, tenders and procurement opportunities
+        Expansionen, Ausschreibungen und Beschaffungschancen
       </p>
       <div className="grid-2" style={{ marginTop: "1rem" }}>
         {shown.map((r, i) => (
@@ -399,9 +378,11 @@ function DeepResearchStrip({ items }: { items: DeepResearch[] }) {
               <span className="badge">{labelFor(r.type)}</span>
               {r.company && <span className="muted">{r.company}</span>}
             </div>
-            <h4 style={{ margin: "0.5rem 0 0.25rem" }}>{r.title ?? "Untitled"}</h4>
+            <h4 style={{ margin: "0.5rem 0 0.25rem" }}>{r.title ?? "Ohne Titel"}</h4>
             <div className="muted" style={{ fontSize: 12, marginBottom: "0.5rem" }}>
-              {[r.country, r.date].filter(Boolean).join(" · ")}
+              {[r.country, r.date ? fmtDate(r.date) : null]
+                .filter(Boolean)
+                .join(" · ")}
             </div>
             {Array.isArray(r.citations) && r.citations.length > 0 && (
               <ul className="list" style={{ marginBottom: "0.5rem" }}>
@@ -425,7 +406,7 @@ function DeepResearchStrip({ items }: { items: DeepResearch[] }) {
       {more && (
         <div style={{ marginTop: "0.75rem" }}>
           <button type="button" className="tab" onClick={() => setExpanded((p) => !p)}>
-            {expanded ? "Show less" : `Show all (${items.length})`}
+            {expanded ? "Weniger anzeigen" : `Alle anzeigen (${items.length})`}
           </button>
         </div>
       )}
@@ -445,55 +426,83 @@ function OverviewTab({
   website?: Website;
 }) {
   if (!profile && !structured && !website) {
-    return <p className="muted">No data yet.</p>;
+    return <p className="muted">Noch keine Daten.</p>;
   }
+  // Address parts get reused for the maps link AND the visible string.
+  const street = [structured?.street, structured?.houseNumber]
+    .filter(Boolean)
+    .join(" ");
+  const cityLine = [structured?.zipCode, structured?.city]
+    .filter(Boolean)
+    .join(" ");
+  const mapsUrl = mapsHref([street, cityLine]);
+
   return (
     <div className="grid-2">
       <article className="panel">
-        <h3>Company profile</h3>
+        <h3>Firmenprofil</h3>
         {profile?.profile ? (
-          <p style={{ whiteSpace: "pre-wrap" }}>{profile.profile}</p>
+          <div className="markdown">
+            <ReactMarkdown>{profile.profile}</ReactMarkdown>
+          </div>
         ) : (
-          <p className="muted">No profile yet.</p>
+          <p className="muted">Noch kein Profil.</p>
         )}
         {profile?.businessPurpose && (
           <>
-            <h4>Business purpose</h4>
+            <h4>Geschäftszweck</h4>
             <p className="muted">{profile.businessPurpose}</p>
           </>
         )}
         <dl className="tx-summary" style={{ marginTop: "1rem" }}>
           <div>
-            <dt>Founding year</dt>
+            <dt>Gründungsjahr</dt>
             <dd>{structured?.foundingYear ?? "—"}</dd>
           </div>
           <div>
-            <dt>Share capital</dt>
-            <dd>{structured?.shareCapital ?? "—"}</dd>
+            <dt>Stammkapital</dt>
+            <dd>{fmtShareCapital(structured?.shareCapital)}</dd>
           </div>
           <div>
-            <dt>Legal form</dt>
+            <dt>Rechtsform</dt>
             <dd>{structured?.legalForm ?? "—"}</dd>
           </div>
           <div>
-            <dt>SERP category</dt>
+            <dt>SERP-Kategorie</dt>
             <dd>{website?.companySerp?.category ?? "—"}</dd>
           </div>
         </dl>
       </article>
 
       <article className="panel">
-        <h3>Contact &amp; location</h3>
-        <h4>Address</h4>
+        <h3>Kontakt &amp; Standort</h3>
+        <h4>Adresse</h4>
         <p>
-          {[structured?.street, structured?.houseNumber].filter(Boolean).join(" ") || "—"}
-          <br />
-          {[structured?.zipCode, structured?.city].filter(Boolean).join(" ") || "—"}
+          {mapsUrl ? (
+            <a href={mapsUrl} target="_blank" rel="noreferrer">
+              {street || "—"}
+              <br />
+              {cityLine || "—"}{" "}
+              <span className="muted" style={{ fontSize: 12 }}>
+                (Karte ↗)
+              </span>
+            </a>
+          ) : (
+            <>
+              {street || "—"}
+              <br />
+              {cityLine || "—"}
+            </>
+          )}
         </p>
         {website?.companySerp?.phone && (
           <>
-            <h4>Phone</h4>
-            <p>{website.companySerp.phone}</p>
+            <h4>Telefon</h4>
+            <p>
+              <a href={telHref(website.companySerp.phone)}>
+                {website.companySerp.phone}
+              </a>
+            </p>
           </>
         )}
         {website?.website?.url && (
@@ -508,11 +517,13 @@ function OverviewTab({
         )}
         {website?.companySerp?.rating != null && (
           <>
-            <h4>Rating</h4>
+            <h4>Bewertung</h4>
             <p>
               {String(website.companySerp.rating)} ★{" "}
               {website.companySerp.reviewCount != null && (
-                <span className="muted">({website.companySerp.reviewCount} reviews)</span>
+                <span className="muted">
+                  ({numFmt.format(website.companySerp.reviewCount)} Bewertungen)
+                </span>
               )}
             </p>
           </>
@@ -522,31 +533,52 @@ function OverviewTab({
   );
 }
 
+/** Render `parts` as a Google-Maps link when at least one part is non-empty. */
+function AddressLink({
+  parts,
+}: {
+  parts: Array<string | null | undefined>;
+}) {
+  const text = parts.filter(Boolean).join(" ");
+  const url = mapsHref(parts);
+  if (!text) return <>—</>;
+  if (!url) return <>{text}</>;
+  return (
+    <a href={url} target="_blank" rel="noreferrer">
+      {text}
+    </a>
+  );
+}
+
 function FinancialsTab({ pubs }: { pubs: Publication[] }) {
   if (pubs.length === 0) {
-    return <p className="muted">No publications yet.</p>;
+    return <p className="muted">Noch keine Veröffentlichungen.</p>;
   }
 
   // Build per-series rows for the four mini bar-charts. Each series is
   // skipped if every value is missing.
-  const series: Array<{ title: string; format: "eur" | "num"; data: Array<{ year: number | null; value: number | null }> }> = [
+  const series: Array<{
+    title: string;
+    format: "eur" | "num";
+    data: Array<{ year: number | null; value: number | null }>;
+  }> = [
     {
-      title: "Revenue",
+      title: "Umsatz",
       format: "eur",
       data: pubs.map((p) => ({ year: p.year ?? null, value: numVal(p.revenueVolume) })),
     },
     {
-      title: "Sales",
+      title: "Erlöse",
       format: "eur",
       data: pubs.map((p) => ({ year: p.year ?? null, value: numVal(p.salesVolume) })),
     },
     {
-      title: "Total assets",
+      title: "Bilanzsumme",
       format: "eur",
       data: pubs.map((p) => ({ year: p.year ?? null, value: numVal(p.totalAssetsVolume) })),
     },
     {
-      title: "Employees",
+      title: "Mitarbeiter",
       format: "num",
       data: pubs.map((p) => ({ year: p.year ?? null, value: p.employeeCount ?? null })),
     },
@@ -564,15 +596,15 @@ function FinancialsTab({ pubs }: { pubs: Publication[] }) {
         ))}
 
       <article className="panel" style={{ gridColumn: "1 / -1" }}>
-        <h3>Yearly breakdown</h3>
+        <h3>Jahresübersicht</h3>
         <table className="matrix">
           <thead>
             <tr>
-              <th>Year</th>
-              <th>Revenue</th>
-              <th>Sales</th>
-              <th>Total assets</th>
-              <th>Employees</th>
+              <th>Jahr</th>
+              <th>Umsatz</th>
+              <th>Erlöse</th>
+              <th>Bilanzsumme</th>
+              <th>Mitarbeiter</th>
             </tr>
           </thead>
           <tbody>
@@ -582,7 +614,9 @@ function FinancialsTab({ pubs }: { pubs: Publication[] }) {
                 <td>{fmtMoney(p.revenueVolume)}</td>
                 <td>{fmtMoney(p.salesVolume)}</td>
                 <td>{fmtMoney(p.totalAssetsVolume)}</td>
-                <td>{p.employeeCount ?? "—"}</td>
+                <td>
+                  {p.employeeCount != null ? numFmt.format(p.employeeCount) : "—"}
+                </td>
               </tr>
             ))}
           </tbody>
@@ -590,10 +624,10 @@ function FinancialsTab({ pubs }: { pubs: Publication[] }) {
       </article>
 
       {/* Per-publication detail: each year's KPIs, period, and full
-          stateOfAffairs aggregate (topic, bullets, guidance, risks &
-          opportunities, KPIs). Reverse-chronological so the latest is on top. */}
+          stateOfAffairs aggregate. Reverse-chronological so the latest
+          is on top. */}
       <section style={{ gridColumn: "1 / -1", display: "grid", gap: "1rem" }}>
-        <h3 style={{ margin: 0 }}>Annual reports</h3>
+        <h3 style={{ margin: 0 }}>Jahresberichte</h3>
         {[...pubs].reverse().map((p, i) => (
           <PublicationCard key={i} pub={p} />
         ))}
@@ -629,11 +663,11 @@ function PublicationCard({ pub }: { pub: Publication }) {
       </header>
 
       <div className="kpi-grid">
-        <KpiTile label="Revenue">{fmtMoney(pub.revenueVolume)}</KpiTile>
-        <KpiTile label="Sales">{fmtMoney(pub.salesVolume)}</KpiTile>
-        <KpiTile label="Total assets">{fmtMoney(pub.totalAssetsVolume)}</KpiTile>
-        <KpiTile label="Employees">
-          {pub.employeeCount != null ? pub.employeeCount.toLocaleString() : "—"}
+        <KpiTile label="Umsatz">{fmtMoney(pub.revenueVolume)}</KpiTile>
+        <KpiTile label="Erlöse">{fmtMoney(pub.salesVolume)}</KpiTile>
+        <KpiTile label="Bilanzsumme">{fmtMoney(pub.totalAssetsVolume)}</KpiTile>
+        <KpiTile label="Mitarbeiter">
+          {pub.employeeCount != null ? numFmt.format(pub.employeeCount) : "—"}
         </KpiTile>
       </div>
 
@@ -644,9 +678,12 @@ function PublicationCard({ pub }: { pub: Publication }) {
               <span className="badge">{topicLabel(soa.topic)}</span>
             </p>
           )}
-          <BulletList title="Key points" items={soa.bullets} />
-          <BulletList title="Guidance" items={soa.guidance} />
-          <BulletList title="Risks &amp; opportunities" items={soa.risksOpportunities} />
+          <BulletList title="Kernpunkte" items={soa.bullets} />
+          <BulletList title="Ausblick" items={soa.guidance} />
+          <BulletList
+            title="Risiken &amp; Chancen"
+            items={soa.risksOpportunities}
+          />
           {soa.kpis && soa.kpis.length > 0 && (
             <>
               <h4>KPIs</h4>
@@ -668,7 +705,7 @@ function PublicationCard({ pub }: { pub: Publication }) {
         </div>
       ) : (
         <p className="muted" style={{ marginTop: "1rem", marginBottom: 0 }}>
-          No state-of-affairs narrative for this report.
+          Keine Lagebericht-Zusammenfassung für diesen Bericht.
         </p>
       )}
     </article>
@@ -683,7 +720,7 @@ function BarChart({
   format: "eur" | "num";
 }) {
   const filtered = data.filter((d) => d.value != null);
-  if (filtered.length === 0) return <p className="muted">No data.</p>;
+  if (filtered.length === 0) return <p className="muted">Keine Daten.</p>;
   const max = Math.max(...filtered.map((d) => d.value!));
   return (
     <div className="bar-chart">
@@ -697,7 +734,7 @@ function BarChart({
             />
           </span>
           <span className="bar-value">
-            {format === "eur" ? `${euro.format(d.value!)} €` : d.value!.toLocaleString()}
+            {format === "eur" ? fmtMoney(d.value!) : numFmt.format(d.value!)}
           </span>
         </div>
       ))}
@@ -708,17 +745,17 @@ function BarChart({
 function ManagementTab({ structured }: { structured?: StructuredContent }) {
   const dirs = structured?.managingDirectors ?? [];
   if (dirs.length === 0) {
-    return <p className="muted">No management information.</p>;
+    return <p className="muted">Keine Angaben zur Geschäftsführung.</p>;
   }
   return (
     <div className="grid-2">
       {dirs.map((d, i) => (
         <article key={d.id ?? i} className="panel">
           <h3 style={{ margin: 0 }}>
-            {[d.firstName, d.lastName].filter(Boolean).join(" ") || "Unknown"}
+            {[d.firstName, d.lastName].filter(Boolean).join(" ") || "Unbekannt"}
           </h3>
           <p className="muted" style={{ marginTop: "0.25rem" }}>
-            Managing director
+            Geschäftsführer:in
           </p>
           {d.city && (
             <p className="muted" style={{ fontSize: 12 }}>
@@ -727,7 +764,7 @@ function ManagementTab({ structured }: { structured?: StructuredContent }) {
           )}
           {d.birthDay && (
             <p className="muted" style={{ fontSize: 12 }}>
-              Born {d.birthDay}
+              Geboren am {fmtDate(d.birthDay)}
             </p>
           )}
         </article>
@@ -743,16 +780,16 @@ function ManagementTab({ structured }: { structured?: StructuredContent }) {
 function ContactsTab({ id }: { id: string }) {
   const q = useTabQuery<CompanyContact>("contacts", id, `/v1/companies/${id}/contacts`);
 
-  if (q.isLoading) return <p>Loading…</p>;
+  if (q.isLoading) return <p>Lädt…</p>;
   if (q.error) {
     if (q.error instanceof GatewayError && q.error.status === 404) {
-      return <p className="muted">No contacts yet.</p>;
+      return <p className="muted">Noch keine Kontakte.</p>;
     }
     return <p className="error">{(q.error as Error).message}</p>;
   }
   const data = q.data;
   if (!data || !Array.isArray(data.companyFacts) || data.companyFacts.length === 0) {
-    return <p className="muted">No contacts yet.</p>;
+    return <p className="muted">Noch keine Kontakte.</p>;
   }
 
   const facts = data.companyFacts;
@@ -769,21 +806,25 @@ function ContactsTab({ id }: { id: string }) {
   return (
     <div style={{ display: "grid", gap: "1.5rem" }}>
       <article className="panel">
-        <h3 style={{ marginTop: 0 }}>Contacts &amp; people</h3>
+        <h3 style={{ marginTop: 0 }}>Kontakte &amp; Personen</h3>
         <div className="kpi-grid">
-          <KpiTile label="Phone numbers">{phones.length}</KpiTile>
-          <KpiTile label="Email addresses">{emails.length}</KpiTile>
-          <KpiTile label="People">{Object.keys(byPerson).length}</KpiTile>
+          <KpiTile label="Telefonnummern">{numFmt.format(phones.length)}</KpiTile>
+          <KpiTile label="E-Mail-Adressen">{numFmt.format(emails.length)}</KpiTile>
+          <KpiTile label="Personen">
+            {numFmt.format(Object.keys(byPerson).length)}
+          </KpiTile>
         </div>
       </article>
 
-      <FactGroup title="Phones" facts={phones} />
-      <FactGroup title="Emails" facts={emails} />
-      <FactGroup title="Addresses" facts={addresses} />
+      <FactGroup title="Telefon" kind="phone" facts={phones} />
+      <FactGroup title="E-Mail" kind="email" facts={emails} />
+      <FactGroup title="Adressen" kind="address" facts={addresses} />
 
       {Object.keys(byPerson).length > 0 && (
         <section>
-          <h3>Associated people ({Object.keys(byPerson).length})</h3>
+          <h3>
+            Zugeordnete Personen ({numFmt.format(Object.keys(byPerson).length)})
+          </h3>
           <div className="grid-2">
             {Object.entries(byPerson).map(([pid, pf]) => (
               <PersonCard key={pid} facts={pf} />
@@ -795,17 +836,93 @@ function ContactsTab({ id }: { id: string }) {
   );
 }
 
-function FactGroup({ title, facts }: { title: string; facts: Fact[] }) {
+/**
+ * Render a fact's value as a clickable link when its `kind` (or content
+ * sniff) maps to a URI scheme: phones → `tel:`, emails → `mailto:`,
+ * addresses → Google Maps. Falls back to plain text otherwise.
+ */
+function FactValue({
+  value,
+  kind,
+}: {
+  value: string;
+  kind?: "phone" | "email" | "address" | "url";
+}) {
+  const isPhone = kind === "phone" || (kind === undefined && looksLikePhone(value));
+  const isEmail = kind === "email" || (kind === undefined && looksLikeEmail(value));
+  // URL kind sniff: explicit `kind === "url"` (set on linkedinUrl /
+  // xingUrl / websiteUrl fields) wins; otherwise auto-detect any
+  // http(s) value so a stray URL in a generic fact still becomes
+  // clickable. The explicit kind controls icon choice; the auto-
+  // detected branch falls back to a generic globe.
+  const isUrl =
+    kind === "url" || (kind === undefined && looksLikeHttpUrl(value));
+  if (isPhone) {
+    return <a href={telHref(value)}>{value}</a>;
+  }
+  if (isEmail) {
+    return <a href={mailHref(value)}>{value}</a>;
+  }
+  if (kind === "address") {
+    const url = mapsHref([value]);
+    return url ? (
+      <a href={url} target="_blank" rel="noreferrer">
+        {value}
+      </a>
+    ) : (
+      <>{value}</>
+    );
+  }
+  if (isUrl) {
+    return (
+      <ExternalLink href={value} className="fact-url">
+        <UrlIcon href={value} />
+        <span className="fact-url__label">{value}</span>
+      </ExternalLink>
+    );
+  }
+  return <>{value}</>;
+}
+
+function UrlIcon({ href }: { href: string }) {
+  const host = (() => {
+    try {
+      return new URL(href).host.toLowerCase();
+    } catch {
+      return "";
+    }
+  })();
+  if (/(^|\.)linkedin\.com$/.test(host)) return <LinkedInIcon size={14} />;
+  if (/(^|\.)xing\.com$/.test(host)) return <XingIcon size={14} />;
+  return <GlobeIcon size={14} />;
+}
+
+function looksLikeHttpUrl(value: string): boolean {
+  if (!value) return false;
+  return /^https?:\/\/[^\s]+$/i.test(value.trim());
+}
+
+function FactGroup({
+  title,
+  facts,
+  kind,
+}: {
+  title: string;
+  facts: Fact[];
+  kind?: "phone" | "email" | "address";
+}) {
   if (facts.length === 0) return null;
   return (
     <article className="panel">
       <h3 style={{ marginTop: 0 }}>
-        {title} ({facts.length})
+        {title} ({numFmt.format(facts.length)})
       </h3>
       <ul className="list">
         {facts.map((f, i) => (
           <li key={f.id ?? i} className="fact-row">
-            <span className="fact-value">{f.value ?? "—"}</span>
+            <span className="fact-value">
+              {f.value ? <FactValue value={f.value} kind={kind} /> : "—"}
+            </span>
             {f.normalized && f.normalized !== f.value && (
               <span className="muted fact-normalized">{f.normalized}</span>
             )}
@@ -822,7 +939,7 @@ function FactGroup({ title, facts }: { title: string; facts: Fact[] }) {
 
 function PersonCard({ facts }: { facts: Fact[] }) {
   const find = (field: string) => facts.find((f) => f.field === field);
-  const name = find("fullName")?.value ?? "Unknown person";
+  const name = find("fullName")?.value ?? "Unbekannte Person";
   const job = facts.find((f) => f.field === "jobTitle" && f.status === "ACTIVE");
   const dept = find("department");
   const xing = find("xingUrl");
@@ -831,6 +948,31 @@ function PersonCard({ facts }: { facts: Fact[] }) {
   const display = facts.filter(
     (f) => !["fullName", "identityKey", "employmentCompanyId"].includes(f.field ?? ""),
   );
+
+  // Map a fact `field` → the link kind so contact rows on a person card
+  // also dial / open mail / open maps / open URL with the right icon
+  // and (for LinkedIn) the warning gate.
+  const kindFor = (
+    field?: string,
+  ): "phone" | "email" | "address" | "url" | undefined => {
+    switch (field) {
+      case "phone":
+      case "mobilePhone":
+        return "phone";
+      case "email":
+        return "email";
+      case "address":
+        return "address";
+      case "linkedinUrl":
+      case "xingUrl":
+      case "websiteUrl":
+      case "homepage":
+      case "url":
+        return "url";
+      default:
+        return undefined;
+    }
+  };
 
   return (
     <article className="panel">
@@ -844,16 +986,26 @@ function PersonCard({ facts }: { facts: Fact[] }) {
             </p>
           )}
         </div>
-        <div style={{ display: "flex", gap: "0.5rem" }}>
+        <div className="person-card__socials">
           {xing?.value && (
-            <a href={xing.value} target="_blank" rel="noreferrer" title="XING">
-              X↗
-            </a>
+            <ExternalLink
+              href={xing.value}
+              className="social-icon-link"
+              title="XING-Profil öffnen"
+            >
+              <span className="visually-hidden">XING</span>
+              <XingIcon size={18} />
+            </ExternalLink>
           )}
           {linkedin?.value && (
-            <a href={linkedin.value} target="_blank" rel="noreferrer" title="LinkedIn">
-              in↗
-            </a>
+            <ExternalLink
+              href={linkedin.value}
+              className="social-icon-link"
+              title="LinkedIn-Profil öffnen"
+            >
+              <span className="visually-hidden">LinkedIn</span>
+              <LinkedInIcon size={18} />
+            </ExternalLink>
           )}
         </div>
       </div>
@@ -862,7 +1014,9 @@ function PersonCard({ facts }: { facts: Fact[] }) {
           {display.map((f, i) => (
             <li key={f.id ?? i} className="fact-row">
               <span className="muted">{fieldLabel(f.field ?? "")}:</span>
-              <span className="fact-value">{f.value ?? "—"}</span>
+              <span className="fact-value">
+                {f.value ? <FactValue value={f.value} kind={kindFor(f.field)} /> : "—"}
+              </span>
               <span className="fact-meta">
                 <StatusPill status={f.status} />
                 <ConfidenceBar confidence={f.confidence} />
@@ -898,12 +1052,13 @@ function ConfidenceBar({ confidence }: { confidence?: number }) {
 
 function fieldLabel(field: string): string {
   const labels: Record<string, string> = {
-    phone: "Phone",
-    email: "Email",
-    address: "Address",
+    phone: "Telefon",
+    mobilePhone: "Mobil",
+    email: "E-Mail",
+    address: "Adresse",
     fullName: "Name",
-    jobTitle: "Title",
-    department: "Department",
+    jobTitle: "Position",
+    department: "Abteilung",
     xingUrl: "XING",
     linkedinUrl: "LinkedIn",
   };
@@ -944,50 +1099,54 @@ function InsightsTab({
   return (
     <div className="grid-2">
       <article className="panel">
-        <h3 style={{ marginTop: 0 }}>Company insights</h3>
+        <h3 style={{ marginTop: 0 }}>Erkenntnisse</h3>
         <dl className="tx-summary">
           <div>
-            <dt>Industry position</dt>
+            <dt>Branche</dt>
             <dd>{website?.companySerp?.category ?? "—"}</dd>
           </div>
           <div>
-            <dt>Company age</dt>
-            <dd>{age != null ? `${age} years in business` : "—"}</dd>
+            <dt>Firmenalter</dt>
+            <dd>{age != null ? `${age} Jahre am Markt` : "—"}</dd>
           </div>
           <div>
-            <dt>Corporate purpose</dt>
+            <dt>Unternehmensgegenstand</dt>
             <dd>{structured?.corporatePurpose ?? "—"}</dd>
           </div>
         </dl>
       </article>
 
       <article className="panel">
-        <h3 style={{ marginTop: 0 }}>Latest financials</h3>
+        <h3 style={{ marginTop: 0 }}>Aktuelle Finanzen</h3>
         {latest ? (
           <dl className="tx-summary">
             <div>
-              <dt>Latest report year</dt>
+              <dt>Letztes Berichtsjahr</dt>
               <dd>{latest.year ?? "—"}</dd>
             </div>
             <div>
-              <dt>Employees</dt>
-              <dd>{latest.employeeCount?.toLocaleString() ?? "—"}</dd>
+              <dt>Mitarbeiter</dt>
+              <dd>
+                {latest.employeeCount != null
+                  ? numFmt.format(latest.employeeCount)
+                  : "—"}
+              </dd>
             </div>
             <div>
-              <dt>Revenue</dt>
+              <dt>Umsatz</dt>
               <dd>{fmtMoney(latest.revenueVolume)}</dd>
             </div>
             <div>
-              <dt>Sales</dt>
+              <dt>Erlöse</dt>
               <dd>{fmtMoney(latest.salesVolume)}</dd>
             </div>
             <div>
-              <dt>Total assets</dt>
+              <dt>Bilanzsumme</dt>
               <dd>{fmtMoney(latest.totalAssetsVolume)}</dd>
             </div>
           </dl>
         ) : (
-          <p className="muted">No publications yet.</p>
+          <p className="muted">Noch keine Veröffentlichungen.</p>
         )}
       </article>
     </div>
@@ -1011,11 +1170,11 @@ function BulletList({ title, items }: { title: string; items?: string[] }) {
 function topicLabel(t?: string | null): string {
   switch ((t ?? "").toUpperCase()) {
     case "ECONOMIC_STATE":
-      return "Economic state";
+      return "Wirtschaftslage";
     case "FORECAST":
-      return "Forecast";
+      return "Prognose";
     case "ALL":
-      return "Full overview";
+      return "Gesamtüberblick";
     default:
       return t ?? "—";
   }
@@ -1023,7 +1182,7 @@ function topicLabel(t?: string | null): string {
 
 function JobsTab({ jobs }: { jobs: JobPosting[] }) {
   const [expanded, setExpanded] = useState(false);
-  if (jobs.length === 0) return <p className="muted">No jobs yet.</p>;
+  if (jobs.length === 0) return <p className="muted">Noch keine Stellenanzeigen.</p>;
   const more = jobs.length > 4;
   const shown = expanded ? jobs : jobs.slice(0, 4);
   return (
@@ -1031,21 +1190,27 @@ function JobsTab({ jobs }: { jobs: JobPosting[] }) {
       <div className="grid-2">
         {shown.map((j, i) => (
           <article key={i} className="panel">
-            <h3 style={{ marginTop: 0 }}>{j.title ?? "Untitled role"}</h3>
+            <h3 style={{ marginTop: 0 }}>{j.title ?? "Ohne Titel"}</h3>
             <p className="muted" style={{ fontSize: 12, marginTop: 0 }}>
-              {[j.location, j.workingModel, j.releaseDate].filter(Boolean).join(" · ")}
+              {[
+                j.location,
+                j.workingModel,
+                j.releaseDate ? fmtDate(j.releaseDate) : null,
+              ]
+                .filter(Boolean)
+                .join(" · ")}
             </p>
             {j.sourceUrl && (
               <p>
                 <a href={j.sourceUrl} target="_blank" rel="noreferrer">
-                  Open source ↗
+                  Quelle öffnen ↗
                 </a>
               </p>
             )}
             {j.description && <p>{j.description}</p>}
             {Array.isArray(j.requirements) && j.requirements.length > 0 && (
               <>
-                <h4>Requirements</h4>
+                <h4>Anforderungen</h4>
                 <ul>
                   {j.requirements.map((r, k) => (
                     <li key={k}>{r}</li>
@@ -1055,7 +1220,7 @@ function JobsTab({ jobs }: { jobs: JobPosting[] }) {
             )}
             {Array.isArray(j.technologies) && j.technologies.length > 0 && (
               <>
-                <h4>Technologies</h4>
+                <h4>Technologien</h4>
                 <ul className="chips">
                   {j.technologies.map((t, k) => (
                     <li key={k} className="chip">
@@ -1071,7 +1236,7 @@ function JobsTab({ jobs }: { jobs: JobPosting[] }) {
       {more && (
         <div style={{ marginTop: "0.75rem" }}>
           <button type="button" className="tab" onClick={() => setExpanded((p) => !p)}>
-            {expanded ? "Show less" : `Show all (${jobs.length})`}
+            {expanded ? "Weniger anzeigen" : `Alle anzeigen (${jobs.length})`}
           </button>
         </div>
       )}

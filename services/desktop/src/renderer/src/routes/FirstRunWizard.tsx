@@ -96,12 +96,13 @@ export function FirstRunWizard({
     return (
       <div className="first-run">
         <div className="first-run__card">
-          <h1>Local model runtime unavailable</h1>
-          <p className="bad">{status.errorMessage ?? "Unknown error"}</p>
+          <h1>Lokale Modell-Laufzeit nicht verfügbar</h1>
+          <p className="bad">{status.errorMessage ?? "Unbekannter Fehler"}</p>
           <p className="muted">
-            Reinstall the app, or set <code>OLLAMA_BIN</code> to a working
-            Ollama binary if you're running a development build. The rest of
-            the app stays disabled until this clears.
+            Installiere die App neu oder setze <code>OLLAMA_BIN</code> auf
+            eine funktionierende Ollama-Binary, falls du eine Entwickler-
+            Version verwendest. Die App bleibt deaktiviert, bis das behoben
+            ist.
           </p>
         </div>
       </div>
@@ -112,9 +113,9 @@ export function FirstRunWizard({
     return (
       <div className="first-run">
         <div className="first-run__card">
-          <h1>Starting local model runtime…</h1>
+          <h1>Lokale Modell-Laufzeit wird gestartet…</h1>
           <p className="muted">
-            This usually takes a few seconds on first launch.
+            Dauert beim ersten Start meist einige Sekunden.
           </p>
         </div>
       </div>
@@ -136,19 +137,33 @@ export function FirstRunWizard({
     // first pull. Otherwise the wizard would stay full-screen for the
     // entire ~9 GB download instead of collapsing into the dock.
     onPathChosen?.();
-    try {
-      // Sequential. The per-model progress is broadcast over IPC so we
-      // don't need to thread it through the await chain. We use the
-      // tracked wrapper so the DownloadDock renders a "Queued…" row
-      // immediately, before Ollama emits the first frame.
-      for (const model of visibleMissing) {
+    // Sequential. The per-model progress is broadcast over IPC so we
+    // don't need to thread it through the await chain. We use the
+    // tracked wrapper so the DownloadDock renders a "Queued…" row
+    // immediately, before Ollama emits the first frame.
+    //
+    // We deliberately *don't* break on a per-model failure here —
+    // Phase 8.k10d. The supervisor already retried internally; if it
+    // gave up, the dock surfaces a per-row Retry button and the user
+    // can also retry siblings independently. Aborting the loop on one
+    // failure would leave the user stuck if a later model would have
+    // pulled fine (e.g. embedding succeeds but LLM hits a CDN snag).
+    const failures: string[] = [];
+    for (const model of visibleMissing) {
+      try {
         await pullModelTracked(model.name);
+      } catch (err) {
+        failures.push(
+          `${model.name}: ${err instanceof Error ? err.message : String(err)}`,
+        );
       }
-    } catch (err) {
-      setErrorMessage(err instanceof Error ? err.message : String(err));
-    } finally {
-      setRunning(false);
     }
+    if (failures.length > 0) {
+      setErrorMessage(
+        `${failures.length === 1 ? "1 Download fehlgeschlagen" : `${failures.length} Downloads fehlgeschlagen`} — über den „Erneut versuchen“-Button im Dock (unten rechts) erneut starten.`,
+      );
+    }
+    setRunning(false);
   };
 
   // Memory-dir probe failure is non-blocking — we still let the user
@@ -157,10 +172,10 @@ export function FirstRunWizard({
   const memoryWarning =
     memoryProbe && !memoryProbe.writable ? (
       <p className="warn">
-        Conversation memory is disabled — couldn't write to{" "}
-        <code>{memoryProbe.path}</code>
-        {memoryProbe.reason ? <> ({memoryProbe.reason})</> : null}. The agent
-        will still work, but transcripts won't survive a restart.
+        Konversationsspeicher deaktiviert — konnte nicht in{" "}
+        <code>{memoryProbe.path}</code> schreiben
+        {memoryProbe.reason ? <> ({memoryProbe.reason})</> : null}. Der Agent
+        funktioniert weiterhin, Verläufe überleben aber keinen Neustart.
       </p>
     ) : null;
 
@@ -168,7 +183,7 @@ export function FirstRunWizard({
     return (
       <div className="first-run">
         <div className="first-run__card">
-          <h1>Use a cloud provider instead</h1>
+          <h1>Cloud-Anbieter verwenden</h1>
           {memoryWarning}
           <ChooseExternalProvider
             onCancel={() => setView("intro")}
@@ -201,9 +216,10 @@ export function FirstRunWizard({
             }}
           />
           <p className="muted small">
-            EmbeddingGemma (~600 MB) still needs to download — every provider
-            uses a different embedding space, and we keep yours local so
-            switching LLMs later doesn't invalidate your indexes.
+            EmbeddingGemma (~600 MB) muss trotzdem heruntergeladen werden —
+            jeder Anbieter nutzt einen eigenen Embedding-Raum. Wir halten
+            deinen lokal, damit ein späterer LLM-Wechsel deine Indizes nicht
+            entwertet.
           </p>
         </div>
       </div>
@@ -212,24 +228,59 @@ export function FirstRunWizard({
 
   // intro view
   const cloudOk = !!usingHostedLlm;
+  // If user has previously stored a hosted-provider key but never
+  // flipped `kind` away from "ollama" (e.g. they pasted a key in
+  // Whoami without using the Save+Switch flow), surface a one-click
+  // affordance to adopt that key. Without this, "Skip → cloud" makes
+  // them re-enter a key they already provided. Picks the first hosted
+  // provider with a key — order doesn't really matter, but openai
+  // first matches the chooser default.
+  const savedHostedKey: HostedProviderKind | null =
+    config && !cloudOk
+      ? (Object.keys(PROVIDER_LABEL) as HostedProviderKind[]).find(
+          (k) => config.hasKey[k],
+        ) ?? null
+      : null;
+
+  const onUseSavedKey = async (kind: HostedProviderKind) => {
+    setRunning(true);
+    setErrorMessage(null);
+    try {
+      await window.api.agent.setProvider({ kind });
+      const next = await window.api.agent.getProviderConfig();
+      setConfig(next);
+      onProviderConfigChanged?.(next);
+      // Kick the still-required embedding pull so it streams in the dock.
+      const stillNeeded = status.missing.filter((m) => m.role !== "llm");
+      for (const m of stillNeeded) {
+        void pullModelTracked(m.name).catch(() => undefined);
+      }
+      onPathChosen?.();
+    } catch (err) {
+      setErrorMessage(err instanceof Error ? err.message : String(err));
+    } finally {
+      setRunning(false);
+    }
+  };
   return (
     <div className="first-run">
       <div className="first-run__card">
-        <h1>{cloudOk ? "Almost ready" : "Download local models"}</h1>
+        <h1>{cloudOk ? "Fast bereit" : "Lokale Modelle herunterladen"}</h1>
         {memoryWarning}
         {cloudOk ? (
           <p className="muted">
-            You're set up to use <strong>{labelFor(config!.config.kind)}</strong>.
-            We just need {visibleMissing.length}{" "}
-            {visibleMissing.length === 1 ? "model" : "models"} (embedding) on
-            disk before you can continue.
+            Du bist mit <strong>{labelFor(config!.config.kind)}</strong>{" "}
+            eingerichtet. Es {visibleMissing.length === 1 ? "fehlt" : "fehlen"}{" "}
+            noch {visibleMissing.length}{" "}
+            {visibleMissing.length === 1 ? "Modell" : "Modelle"} (Embedding)
+            auf der Festplatte, dann kann es losgehen.
           </p>
         ) : (
           <p className="muted">
-            AVA Desktop runs its language and embedding models locally via
-            Ollama. We need to download {visibleMissing.length}{" "}
-            {visibleMissing.length === 1 ? "model" : "models"} before you can
-            continue. This happens once per machine.
+            AVA Desktop führt Sprach- und Embedding-Modelle lokal über Ollama
+            aus. Wir laden {visibleMissing.length}{" "}
+            {visibleMissing.length === 1 ? "Modell" : "Modelle"} herunter,
+            bevor es losgehen kann. Das passiert einmal pro Rechner.
           </p>
         )}
 
@@ -248,27 +299,59 @@ export function FirstRunWizard({
 
         {errorMessage && <p className="bad">{errorMessage}</p>}
 
+        {savedHostedKey && (
+          <p className="muted small">
+            Auf diesem Rechner ist bereits ein {PROVIDER_LABEL[savedHostedKey]}
+            -API-Key gespeichert. Damit kannst du den LLM-Download
+            überspringen.
+          </p>
+        )}
+
         <div className="first-run__actions">
-          <button
-            type="button"
-            onClick={onDownloadAll}
-            disabled={running || visibleMissing.length === 0}
-          >
-            {running
-              ? "Downloading…"
-              : visibleMissing.length === 0
-                ? "All models present ✓"
-                : `Download ${cloudOk ? "embedding" : "all"} (${visibleMissing.length})`}
-          </button>
-          {!cloudOk && (
+          {savedHostedKey ? (
+            <button
+              type="button"
+              onClick={() => void onUseSavedKey(savedHostedKey)}
+              disabled={running}
+              title={`Agent mit dem gespeicherten Key auf ${PROVIDER_LABEL[savedHostedKey]} umstellen`}
+            >
+              {running
+                ? "Wechsle…"
+                : `Gespeicherten ${PROVIDER_LABEL[savedHostedKey]}-Key verwenden`}
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={onDownloadAll}
+              disabled={running || visibleMissing.length === 0}
+            >
+              {running
+                ? "Lädt…"
+                : visibleMissing.length === 0
+                  ? "Alle Modelle vorhanden ✓"
+                  : `${cloudOk ? "Embedding" : "Alle"} herunterladen (${visibleMissing.length})`}
+            </button>
+          )}
+          {savedHostedKey && (
+            <button
+              type="button"
+              className="link"
+              onClick={onDownloadAll}
+              disabled={running || visibleMissing.length === 0}
+              title="Stattdessen die lokalen Modelle herunterladen"
+            >
+              Stattdessen lokale Modelle laden
+            </button>
+          )}
+          {!cloudOk && !savedHostedKey && (
             <button
               type="button"
               className="link"
               onClick={() => setView("chooser")}
               disabled={running}
-              title="Skip the LLM download and use a cloud provider (OpenAI, Anthropic, Google, Mistral)"
+              title="LLM-Download überspringen und einen Cloud-Anbieter (OpenAI, Anthropic, Google, Mistral) verwenden"
             >
-              Skip — use a cloud provider
+              Überspringen — Cloud-Anbieter verwenden
             </button>
           )}
         </div>
@@ -321,7 +404,7 @@ function ChooseExternalProvider({
   return (
     <div className="first-run__chooser">
       <label className="field">
-        <span>Provider</span>
+        <span>Anbieter</span>
         <select
           value={kind}
           onChange={(e) => {
@@ -338,7 +421,7 @@ function ChooseExternalProvider({
         </select>
       </label>
       <label className="field">
-        <span>API key</span>
+        <span>API-Key</span>
         <input
           type="password"
           value={apiKey}
@@ -351,7 +434,7 @@ function ChooseExternalProvider({
               ? "sk-…"
               : kind === "anthropic"
                 ? "sk-ant-…"
-                : "API key"
+                : "API-Key"
           }
           autoComplete="off"
           spellCheck={false}
@@ -367,7 +450,7 @@ function ChooseExternalProvider({
           onClick={onTest}
           disabled={busy || apiKey.trim().length === 0}
         >
-          {busy ? "Testing…" : "Test & continue"}
+          {busy ? "Teste…" : "Testen & fortfahren"}
         </button>
         <button
           type="button"
@@ -375,7 +458,7 @@ function ChooseExternalProvider({
           onClick={onCancel}
           disabled={busy}
         >
-          Back
+          Zurück
         </button>
       </div>
     </div>
@@ -402,6 +485,11 @@ function ModelRow({
   const pct = total > 0 ? Math.min(100, (completed / total) * 100) : 0;
   const done = progress?.done === true && !progress.errorMessage;
   const failed = progress?.done === true && Boolean(progress.errorMessage);
+  const retrying = progress?.retrying === true;
+  const attemptSuffix =
+    progress?.attempt && progress.maxAttempts && progress.attempt > 1
+      ? ` (Versuch ${progress.attempt}/${progress.maxAttempts})`
+      : "";
 
   // The "byte progress" line is the one the user actually scans for —
   // they want to see numbers move. We always show it once a pull frame
@@ -426,12 +514,14 @@ function ModelRow({
         </span>
         <span className="muted first-run__model-status">
           {failed
-            ? `Failed: ${progress?.errorMessage}`
+            ? `Fehlgeschlagen${attemptSuffix}: ${progress?.errorMessage}`
             : done
-              ? "Done ✓"
-              : running
-                ? (progress?.status ?? "Queued")
-                : `≈${formatBytes(model.approxBytes)} download`}
+              ? "Fertig ✓"
+              : retrying
+                ? `Verbinde erneut${attemptSuffix}…`
+                : running
+                  ? `${progress?.status ?? "Wartet"}${attemptSuffix}`
+                  : `≈${formatBytes(model.approxBytes)} Download`}
         </span>
       </div>
       <div className="first-run__bar">
@@ -488,7 +578,7 @@ function formatDuration(sec: number): string {
 function labelFor(kind: LlmProviderKind): string {
   switch (kind) {
     case "ollama":
-      return "Ollama (local)";
+      return "Ollama (lokal)";
     case "openai":
       return "OpenAI";
     case "anthropic":

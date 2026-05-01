@@ -2,6 +2,7 @@ import { useState, type FormEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useParams } from "react-router-dom";
 import { gatewayFetch } from "../api/gateway";
+import { fmtDate } from "../lib/format";
 
 // W14 (launcher) + W15 (list) + W17 (start chat) + W19 (chat list).
 //
@@ -23,6 +24,21 @@ const TOPICS = [
   "stateOfAffairs",
 ] as const;
 type Topic = (typeof TOPICS)[number];
+
+// Display labels for the topic chips. The wire identifiers stay
+// English (they're the gateway's API vocabulary), but the chip face
+// is German prose to match the rest of the UI.
+const TOPIC_LABEL: Record<Topic, string> = {
+  keywords: "Schlagwörter",
+  companyProfile: "Firmenprofil",
+  businessPurpose: "Unternehmenszweck",
+  serpCategory: "SERP-Kategorie",
+  sales: "Umsatz",
+  profits: "Gewinn",
+  employees: "Mitarbeiter",
+  totalAssets: "Bilanzsumme",
+  stateOfAffairs: "Lagebericht",
+};
 
 interface BestMatch {
   id: string;
@@ -48,7 +64,7 @@ export function Evaluations() {
   return (
     <section>
       <h2>
-        Evaluations · transaction <code>{transactionId?.slice(0, 8)}…</code>
+        Bewertungen · Vorgang <code>{transactionId?.slice(0, 8)}…</code>
       </h2>
 
       <div className="grid-2">
@@ -73,15 +89,15 @@ function BestMatchPanel({ transactionId }: { transactionId: string }) {
 
   return (
     <div className="panel">
-      <h3>Best matches</h3>
+      <h3>Best-Match-Auswertungen</h3>
       <BestMatchCreateForm
         transactionId={transactionId}
         onCreated={() => qc.invalidateQueries({ queryKey: ["best-matches", transactionId] })}
       />
-      {list.isLoading && <p>Loading…</p>}
+      {list.isLoading && <p>Lädt…</p>}
       {list.error && <p className="error">{(list.error as Error).message}</p>}
       {list.data && list.data.items.length === 0 && (
-        <p className="muted">No best-match jobs yet.</p>
+        <p className="muted">Noch keine Best-Match-Aufträge.</p>
       )}
       {list.data && list.data.items.length > 0 && (
         <ul className="list">
@@ -90,7 +106,7 @@ function BestMatchPanel({ transactionId }: { transactionId: string }) {
               <Link to={`/evaluations/best-matches/${m.id}`}>
                 <code>{m.id.slice(0, 8)}…</code>
               </Link>{" "}
-              <span className="muted">{m.createdAt}</span>
+              <span className="muted">{fmtDate(m.createdAt)}</span>
               <div className="muted">
                 {m.input.slice(0, 80)}
                 {m.input.length > 80 ? "…" : ""}
@@ -137,15 +153,15 @@ function BestMatchCreateForm({
       .map((s) => s.trim())
       .filter(Boolean);
     if (companyIds.length < 2) {
-      setError("Need at least 2 company IDs.");
+      setError("Mindestens 2 Firmen-IDs erforderlich.");
       return;
     }
     if (topics.length === 0) {
-      setError("Pick at least one topic.");
+      setError("Bitte mindestens ein Thema auswählen.");
       return;
     }
     if (!input.trim()) {
-      setError("Provide an offer / RFQ text.");
+      setError("Bitte Angebots- bzw. Ausschreibungstext angeben.");
       return;
     }
     create.mutate({ input: input.trim(), companyIds, topics });
@@ -158,16 +174,16 @@ function BestMatchCreateForm({
   return (
     <form onSubmit={onSubmit} className="form compact">
       <label className="field">
-        <span>Offer / RFQ text</span>
+        <span>Angebots- / Ausschreibungstext</span>
         <textarea
           value={input}
           onChange={(e) => setInput(e.target.value)}
           rows={3}
-          placeholder="Paste the offer brief…"
+          placeholder="Angebot / Briefing einfügen…"
         />
       </label>
       <label className="field">
-        <span>Company IDs (comma or space separated, ≥ 2)</span>
+        <span>Firmen-IDs (Komma- oder Leerzeichen-getrennt, ≥ 2)</span>
         <input
           type="text"
           value={companyIdsCsv}
@@ -176,7 +192,7 @@ function BestMatchCreateForm({
         />
       </label>
       <div className="field">
-        <span>Topics (≥ 1)</span>
+        <span>Themen (≥ 1)</span>
         <div className="chips selectable">
           {TOPICS.map((t) => (
             <button
@@ -185,13 +201,13 @@ function BestMatchCreateForm({
               className={`chip ${topics.includes(t) ? "active" : ""}`}
               onClick={() => toggleTopic(t)}
             >
-              {t}
+              {TOPIC_LABEL[t]}
             </button>
           ))}
         </div>
       </div>
       <button type="submit" className="primary" disabled={create.isPending}>
-        {create.isPending ? "Submitting…" : "Run best-match"}
+        {create.isPending ? "Wird gesendet…" : "Best-Match starten"}
       </button>
       {error && <p className="error">{error}</p>}
     </form>
@@ -234,27 +250,27 @@ function ChatPanel({ transactionId }: { transactionId: string }) {
 
   return (
     <div className="panel">
-      <h3>Chat sessions</h3>
+      <h3>Chat-Sitzungen</h3>
       <form onSubmit={onSubmit} className="form compact">
         <label className="field">
-          <span>Start a session with a question</span>
+          <span>Sitzung mit einer Frage starten</span>
           <textarea
             value={question}
             onChange={(e) => setQuestion(e.target.value)}
             rows={2}
-            placeholder="What do these companies have in common?"
+            placeholder="Was haben diese Firmen gemeinsam?"
           />
         </label>
         <button type="submit" className="primary" disabled={create.isPending}>
-          {create.isPending ? "Starting…" : "Start chat"}
+          {create.isPending ? "Wird gestartet…" : "Chat starten"}
         </button>
         {error && <p className="error">{error}</p>}
       </form>
 
-      {list.isLoading && <p>Loading…</p>}
+      {list.isLoading && <p>Lädt…</p>}
       {list.error && <p className="error">{(list.error as Error).message}</p>}
       {list.data && list.data.items.length === 0 && (
-        <p className="muted">No chat sessions yet.</p>
+        <p className="muted">Noch keine Chat-Sitzungen.</p>
       )}
       {list.data && list.data.items.length > 0 && (
         <ul className="list">
@@ -263,7 +279,7 @@ function ChatPanel({ transactionId }: { transactionId: string }) {
               <Link to={`/evaluations/chats/${s.id}`}>
                 <code>{s.id.slice(0, 8)}…</code>
               </Link>{" "}
-              <span className="muted">{s.createdAt}</span>
+              <span className="muted">{fmtDate(s.createdAt)}</span>
               {s.summary && <div className="muted">{s.summary}</div>}
             </li>
           ))}

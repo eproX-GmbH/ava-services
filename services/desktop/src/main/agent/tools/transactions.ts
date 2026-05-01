@@ -13,6 +13,19 @@ interface Ctx {
   gateway: GatewayClient;
 }
 
+/**
+ * Pull a usable display name out of the gateway's company-detail payload.
+ * Master-data uses `name` for the legal/registered name; some legacy rows
+ * surface it under `legalName`. Falls through to null so the caller can
+ * decide whether to swap in the companyId.
+ */
+function pickCompanyName(payload: Record<string, unknown>): string | null {
+  const name = payload.name ?? payload.legalName ?? payload.companyName;
+  return typeof name === "string" && name.trim().length > 0
+    ? name.trim()
+    : null;
+}
+
 export function buildTransactionTools(ctx: Ctx): Tool[] {
   const { gateway } = ctx;
 
@@ -115,18 +128,65 @@ export function buildTransactionTools(ctx: Ctx): Tool[] {
   const pipeline = defineTool({
     name: "transaction_pipeline",
     description:
-      "Get the per-company × per-stage state matrix for a transaction. Heavy payload — only call when the user asks for stage-level detail.",
+      "Get the per-company × per-stage state matrix for a transaction. " +
+      "Each row carries `companyId` AND `companyName` so you can refer to " +
+      "companies by name in your reply without a separate lookup. The " +
+      "top-level `companies` map gives the same id→name dictionary for " +
+      "convenience. Heavy payload — only call when the user asks for " +
+      "stage-level detail.",
     parameters: {
       type: "object",
       properties: { transactionId: { type: "string" } },
       required: ["transactionId"],
     },
     schema: yup.object({ transactionId: yup.string().trim().min(1).required() }),
-    run: async (args, c) =>
-      gateway.request<Record<string, unknown>>(
+    run: async (args, c) => {
+      const data = await gateway.request<{
+        rows?: Array<Record<string, unknown>>;
+        [k: string]: unknown;
+      }>(
         `/v1/transactions/${encodeURIComponent(args.transactionId)}/pipeline`,
         { signal: c.signal },
-      ),
+      );
+
+      // Resolve company names in parallel. The master-data store doesn't
+      // expose a bulk-by-ids endpoint yet, so we fan out per-id; typical
+      // import transactions stay well under 200 companies which is fine
+      // over the local gateway. Failures don't poison the response — a
+      // missing name falls through as null and the agent prompt tells
+      // the model to fall back to the companyId.
+      const rows = Array.isArray(data.rows) ? data.rows : [];
+      const companyIds = rows
+        .map((r) => (typeof r.companyId === "string" ? r.companyId : null))
+        .filter((id): id is string => id !== null);
+
+      const nameByCompanyId: Record<string, string | null> = {};
+      await Promise.all(
+        companyIds.map(async (id) => {
+          try {
+            const co = await gateway.request<Record<string, unknown>>(
+              `/v1/companies/${encodeURIComponent(id)}`,
+              { signal: c.signal },
+            );
+            const name = pickCompanyName(co);
+            nameByCompanyId[id] = name;
+          } catch {
+            nameByCompanyId[id] = null;
+          }
+        }),
+      );
+
+      const enrichedRows = rows.map((r) => {
+        const id = typeof r.companyId === "string" ? r.companyId : "";
+        return { ...r, companyName: id ? nameByCompanyId[id] ?? null : null };
+      });
+
+      return {
+        ...data,
+        rows: enrichedRows,
+        companies: nameByCompanyId,
+      };
+    },
     preview: () => "pipeline matrix fetched",
   });
 

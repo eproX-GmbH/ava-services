@@ -27,7 +27,7 @@ export function TransactionStream() {
     void gatewaySSE(
       `/v1/transactions/${id}/events`,
       (ev) => setEvents((prev) => [...prev, { ...ev, receivedAt: Date.now() }]),
-      () => setError("SSE connection error (auth or upstream); see DevTools network tab"),
+      () => setError("SSE-Verbindungsfehler (Auth oder Upstream); siehe DevTools-Netzwerk-Tab"),
     ).then((teardown) => {
       if (cancelled) teardown();
       else stop = teardown;
@@ -40,16 +40,19 @@ export function TransactionStream() {
 
   return (
     <section>
-      <h2>Transaction stream</h2>
+      <h2>Vorgangs-Live-Stream</h2>
       <p>
-        Transaction <code>{id}</code> · {events.length} event{events.length === 1 ? "" : "s"} received
+        Vorgang <code>{id}</code> · {events.length}{" "}
+        {events.length === 1 ? "Event" : "Events"} empfangen
       </p>
       {error && <p className="error">{error}</p>}
       <ul className="event-log">
         {events.map((ev, i) => (
           <li key={i}>
             <strong>{ev.type}</strong>{" "}
-            <span className="muted">{new Date(ev.receivedAt).toLocaleTimeString()}</span>
+            <span className="muted">
+              {new Date(ev.receivedAt).toLocaleTimeString("de-DE")}
+            </span>
             <pre>{JSON.stringify(ev.data, null, 2)}</pre>
           </li>
         ))}

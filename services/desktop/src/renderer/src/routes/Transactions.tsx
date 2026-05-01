@@ -1,11 +1,13 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import { gatewayFetch } from "../api/gateway";
+import { fmtDate } from "../lib/format";
 
 // W2 — list the actor's transactions. Uses the gateway's §4.2 read.
 
 interface Transaction {
   id: string;
+  name?: string | null;
   startTime?: string | null;
   companyCount?: number | null;
   createdAt: string;
@@ -24,22 +26,26 @@ export function Transactions() {
       gatewayFetch<Page<Transaction>>("/v1/transactions", {
         query: { page: 1, pageSize: 50 },
       }),
+    // Refetch on every remount — analysts come back to this page
+    // expecting to see the latest, not what was cached when they last
+    // looked. Cached data still paints immediately to avoid flashing.
+    staleTime: 0,
+    refetchOnMount: "always",
   });
 
   return (
     <section>
-      <h2>Transactions</h2>
-      {q.isLoading && <p>Loading…</p>}
-      {q.error && <p className="error">Error: {(q.error as Error).message}</p>}
-      {q.data && q.data.items.length === 0 && <p>No transactions yet.</p>}
+      <h2>Vorgänge</h2>
+      {q.isLoading && <p>Lädt…</p>}
+      {q.error && <p className="error">Fehler: {(q.error as Error).message}</p>}
+      {q.data && q.data.items.length === 0 && <p>Noch keine Vorgänge.</p>}
       {q.data && q.data.items.length > 0 && (
         <table>
           <thead>
             <tr>
-              <th>ID</th>
-              <th>Started</th>
-              <th>Companies</th>
-              <th>Detail</th>
+              <th>Name</th>
+              <th>Gestartet</th>
+              <th>Firmen</th>
               <th>Live</th>
             </tr>
           </thead>
@@ -48,16 +54,17 @@ export function Transactions() {
               <tr key={t.id}>
                 <td>
                   <Link to={`/transactions/${t.id}`}>
-                    <code>{t.id.slice(0, 8)}…</code>
+                    {t.name && t.name.trim().length > 0 ? (
+                      t.name
+                    ) : (
+                      <span className="muted">Ohne Namen</span>
+                    )}
                   </Link>
                 </td>
-                <td>{t.startTime ?? "—"}</td>
+                <td>{t.startTime ? fmtDate(t.startTime) : "—"}</td>
                 <td>{t.companyCount ?? "—"}</td>
                 <td>
-                  <Link to={`/transactions/${t.id}`}>open →</Link>
-                </td>
-                <td>
-                  <Link to={`/transactions/${t.id}/stream`}>stream →</Link>
+                  <Link to={`/transactions/${t.id}/stream`}>Live →</Link>
                 </td>
               </tr>
             ))}

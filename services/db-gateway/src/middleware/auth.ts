@@ -1,5 +1,11 @@
 import { createMiddleware } from "hono/factory";
-import { jwtVerify, importSPKI, type KeyLike } from "jose";
+import {
+  jwtVerify,
+  importSPKI,
+  createRemoteJWKSet,
+  type KeyLike,
+  type JWTVerifyGetKey,
+} from "jose";
 import { loadEnv } from "../lib/env";
 
 // Auth context populated after successful JWT verification.
@@ -18,18 +24,29 @@ declare module "hono" {
   }
 }
 
-// Per-tenant public-key cache. Keys are PEM-encoded SPKI strings in
-// JWT_PUBLIC_KEYS env; we materialize them on first use.
-const keyCache = new Map<string, KeyLike>();
+// Two key-resolution strategies (see env.ts):
+//   - JWKS_URI mode: shared remote JWKS for the whole realm.
+//   - Static-PEM mode: per-tenant PEM map.
+// resolveVerifier returns the right input for jose.jwtVerify().
+const staticKeyCache = new Map<string, KeyLike>();
+let remoteJwks: JWTVerifyGetKey | undefined;
 
-async function resolveKey(tenantId: string): Promise<KeyLike> {
-  const cached = keyCache.get(tenantId);
+function getRemoteJwks(): JWTVerifyGetKey {
+  if (remoteJwks) return remoteJwks;
+  const { JWKS_URI } = loadEnv();
+  if (!JWKS_URI) throw new Error("JWKS_URI not configured");
+  remoteJwks = createRemoteJWKSet(new URL(JWKS_URI));
+  return remoteJwks;
+}
+
+async function resolveStaticKey(tenantId: string): Promise<KeyLike> {
+  const cached = staticKeyCache.get(tenantId);
   if (cached) return cached;
   const { JWT_PUBLIC_KEYS } = loadEnv();
-  const pem = JWT_PUBLIC_KEYS[tenantId];
+  const pem = JWT_PUBLIC_KEYS?.[tenantId];
   if (!pem) throw new Error(`No public key configured for tenant=${tenantId}`);
   const key = await importSPKI(pem, "RS256");
-  keyCache.set(tenantId, key);
+  staticKeyCache.set(tenantId, key);
   return key;
 }
 
@@ -59,7 +76,8 @@ export const authMiddleware = createMiddleware(async (c, next) => {
     return c.json({ error: "missing_bearer_token" }, 401);
   }
 
-  // Peek tenant claim without verifying — we need it to pick the key.
+  // Peek tenant claim without verifying — we need it for the auth
+  // context (and, in static-PEM mode, to pick the verification key).
   // jose refuses to decode unverified payloads, so do it manually and
   // validate immediately after.
   const [, payloadB64] = token.split(".");
@@ -74,10 +92,15 @@ export const authMiddleware = createMiddleware(async (c, next) => {
     return c.json({ error: "malformed_token" }, 401);
   }
 
-  const { JWT_ISSUER, JWT_AUDIENCE } = loadEnv();
+  const { JWT_ISSUER, JWT_AUDIENCE, JWKS_URI } = loadEnv();
   try {
-    const key = await resolveKey(tenantId);
-    const { payload } = await jwtVerify(token, key, {
+    // Pick the verifier shape jose wants: either a JWTVerifyGetKey
+    // function (JWKS) or a KeyLike (static PEM). They share the same
+    // jwtVerify() signature, so a small branch keeps the rest uniform.
+    const verifier = JWKS_URI
+      ? getRemoteJwks()
+      : await resolveStaticKey(tenantId);
+    const { payload } = await jwtVerify(token, verifier as never, {
       issuer: JWT_ISSUER,
       audience: JWT_AUDIENCE,
     });

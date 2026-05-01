@@ -5,8 +5,12 @@ WORKDIR /app
 RUN apk add --no-cache openssl libc6-compat
 
 COPY package*.json ./
+COPY .npmrc ./
 COPY prisma ./prisma
 RUN npm ci --quiet
+# Strip the npmrc (with the gitlab token) from the image — runtime
+# never needs it. `npm prune` later doesn't touch dotfiles.
+RUN rm -f .npmrc
 
 COPY tsconfig.json ./
 COPY src ./src

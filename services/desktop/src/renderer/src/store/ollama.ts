@@ -92,16 +92,22 @@ export const useOllamaStore = create<OllamaState>((setState) => ({
   pullRate: {},
   activePulls: {},
   markPullStarted: (modelName) =>
-    setState((s) => ({
-      activePulls: { ...s.activePulls, [modelName]: true },
+    setState((s) => {
       // Wipe any stale "done" frame from a previous run so the dock
       // shows a fresh "queued" row rather than the prior pull's tail.
-      pullProgress: (() => {
-        const next = { ...s.pullProgress };
-        delete next[modelName];
-        return next;
-      })(),
-    })),
+      // Also drop the prior EMA rate; otherwise a Retry click would
+      // briefly show the speed from the previous failed attempt before
+      // the new EMA settles.
+      const nextProgress = { ...s.pullProgress };
+      delete nextProgress[modelName];
+      const nextRate = { ...s.pullRate };
+      delete nextRate[modelName];
+      return {
+        activePulls: { ...s.activePulls, [modelName]: true },
+        pullProgress: nextProgress,
+        pullRate: nextRate,
+      };
+    }),
   dismissPull: (modelName) =>
     setState((s) => {
       const nextProgress = { ...s.pullProgress };

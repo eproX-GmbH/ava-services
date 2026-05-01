@@ -66,6 +66,10 @@ export class LlmProviderManager extends EventEmitter {
           kind === "ollama"
             ? async () => null
             : () => this.store.getKey(kind as HostedProviderKind),
+        hasStoredKey:
+          kind === "ollama"
+            ? () => true
+            : () => this.store.hasKey(kind as HostedProviderKind),
         onKeyChanged: (cb) => {
           const handler = (changedKind: HostedProviderKind): void => {
             // Only fire the per-provider listener when its own key moved.

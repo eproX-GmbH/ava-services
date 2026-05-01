@@ -191,6 +191,15 @@ export class ProviderConfigStore extends EventEmitter {
    * Decrypt and return the key for `kind`, or null if the file is
    * missing or undecryptable. Async so callers don't synchronously hold
    * plaintext key material — each turn re-reads.
+   *
+   * Self-healing on decrypt failure: we unlink the broken `.enc` file
+   * and fire `keyChanged`. Without this, `hasKey()` would keep
+   * reporting true for an unreadable blob (e.g. keychain access
+   * denied in unsigned dev runs, OS keychain rotated, app reinstalled
+   * over a previous version), the status badge would stay "ready",
+   * and every chat turn would throw "API key is unreadable" forever.
+   * Removing the file flips the badge to "not set" so the user gets
+   * the normal "enter your key" affordance instead of a stuck loop.
    */
   async getKey(kind: HostedProviderKind): Promise<string | null> {
     const path = this.keyPath(kind);
@@ -199,11 +208,21 @@ export class ProviderConfigStore extends EventEmitter {
       const buf = readFileSync(path);
       return safeStorage.decryptString(buf);
     } catch (err) {
-      // Decrypt failure typically means the user re-installed the OS,
-      // their keychain entry was wiped, or someone else's blob landed
-      // on disk. Surface as missing rather than crashing — the
-      // orchestrator will then prompt for a fresh key.
-      console.warn(`[provider-store] failed to decrypt ${kind} key:`, err);
+      console.warn(
+        `[provider-store] failed to decrypt ${kind} key — removing broken blob:`,
+        err,
+      );
+      try {
+        unlinkSync(path);
+      } catch (unlinkErr) {
+        console.warn(
+          `[provider-store] could not unlink broken ${kind}.enc:`,
+          unlinkErr,
+        );
+      }
+      // Notify subscribers so the manager re-emits status with
+      // `hasKey:false` and the renderer redraws the picker.
+      this.emit("keyChanged", kind);
       return null;
     }
   }

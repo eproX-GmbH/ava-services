@@ -30,12 +30,28 @@ const schema = z.object({
   EVENT_BUS_EXCHANGE: z.string().default("exchange"),
   EVENT_BUS_QUEUE: z.string().default("db-gateway-progress"),
 
-  // JWT signing material. Public keys as JSON: { "<tenantId>": "<pem>" }.
-  // Private keys NEVER live in the gateway — they're held by the issuer
-  // (customer's auth service on fly.io). Gateway only verifies.
+  // JWT signing material — two mutually-exclusive modes:
+  //
+  //   A) JWKS_URI mode (preferred for Keycloak): set `JWKS_URI` to the
+  //      realm's `…/protocol/openid-connect/certs` endpoint. Gateway
+  //      fetches + caches the keys via `jose.createRemoteJWKSet`. All
+  //      tenants verify against the same realm; the `tenant` claim is
+  //      still used for downstream auth context but not for key
+  //      selection. Matches how master-data + sibling services already
+  //      verify tokens.
+  //
+  //   B) Static-PEM mode (multi-realm or air-gapped): set
+  //      `JWT_PUBLIC_KEYS` to JSON `{tenantId: pem}`. Gateway picks
+  //      the key by the token's `tenant` claim.
+  //
+  // Exactly one of the two MUST be set; loadEnv() rejects boot
+  // otherwise.
+  JWKS_URI: z.string().url().optional(),
   JWT_PUBLIC_KEYS: z
     .string()
+    .optional()
     .transform((raw, ctx) => {
+      if (raw === undefined || raw === "") return undefined;
       try {
         const parsed = JSON.parse(raw) as Record<string, string>;
         if (typeof parsed !== "object" || parsed === null) throw new Error();
@@ -70,6 +86,18 @@ export function loadEnv(): Env {
   if (!parsed.success) {
     // eslint-disable-next-line no-console
     console.error("Invalid gateway env:", parsed.error.flatten());
+    process.exit(1);
+  }
+  // Mutual-exclusion check: exactly one JWT verification mode.
+  const hasJwks = Boolean(parsed.data.JWKS_URI);
+  const hasStatic =
+    parsed.data.JWT_PUBLIC_KEYS !== undefined &&
+    Object.keys(parsed.data.JWT_PUBLIC_KEYS).length > 0;
+  if (!hasJwks && !hasStatic) {
+    // eslint-disable-next-line no-console
+    console.error(
+      "Invalid gateway env: must set either JWKS_URI or JWT_PUBLIC_KEYS",
+    );
     process.exit(1);
   }
   cached = parsed.data;

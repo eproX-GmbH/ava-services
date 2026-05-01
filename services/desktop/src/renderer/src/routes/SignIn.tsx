@@ -26,17 +26,17 @@ export function SignIn() {
   return (
     <div className="signin">
       <h1>AVA Desktop</h1>
-      <p>Sign in with your AVA account to continue.</p>
+      <p>Mit deinem AVA-Konto anmelden, um fortzufahren.</p>
       <button onClick={onClick} disabled={busy} className="primary">
-        {busy ? "Waiting for browser…" : "Sign in"}
+        {busy ? "Warte auf Browser…" : "Anmelden"}
       </button>
       {busy && (
         <p className="muted">
-          Your default browser should have opened. Complete the login there
-          and return to this window.
+          Dein Standard-Browser sollte sich geöffnet haben. Schließe die
+          Anmeldung dort ab und kehre zu diesem Fenster zurück.
         </p>
       )}
-      {error && <p className="error">Sign-in failed: {error}</p>}
+      {error && <p className="error">Anmeldung fehlgeschlagen: {error}</p>}
     </div>
   );
 }

@@ -1,9 +1,17 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { HashRouter, Route, Routes, NavLink, Navigate } from "react-router-dom";
+import { HashRouter, Route, Routes, Navigate } from "react-router-dom";
+// Variable woff2 fonts bundled locally — CSP `font-src 'self' data:` rules
+// out Google Fonts CDN, and shipping the variable axes lets us pick weights
+// (400/500/600/700) without separate files. Loaded once at app startup so
+// every route renders in Inter from first paint.
+import "@fontsource-variable/geist";
+import "@fontsource-variable/geist-mono";
 import { App } from "./App";
+import { AppShell } from "./components/AppShell";
 import { Whoami } from "./routes/Whoami";
+import { Settings } from "./routes/Settings";
 import { Chat } from "./routes/Chat";
 import { Ingest } from "./routes/Ingest";
 import { Transactions } from "./routes/Transactions";
@@ -14,26 +22,8 @@ import { CompanyDetail } from "./routes/CompanyDetail";
 import { Evaluations } from "./routes/Evaluations";
 import { BestMatchDetail } from "./routes/BestMatchDetail";
 import { ChatSession } from "./routes/ChatSession";
-import { useAuthStore } from "./store/auth";
+import { Alerts } from "./routes/Alerts";
 import "./styles.css";
-
-function UserBadge() {
-  const actorId = useAuthStore((s) => s.actorId);
-  const tenantId = useAuthStore((s) => s.tenantId);
-  return (
-    <div className="user-badge">
-      <span className="muted">{tenantId} / </span>
-      <span>{actorId ?? "—"}</span>
-      <button
-        onClick={() => void window.api.auth.signOut()}
-        className="link"
-        title="Sign out"
-      >
-        sign out
-      </button>
-    </div>
-  );
-}
 
 // React Query is the only HTTP cache. Defaults err on the side of "fresh
 // is cheap, the gateway is fast" — short staleTime, refetch on focus stays
@@ -49,22 +39,14 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
     <QueryClientProvider client={queryClient}>
       <HashRouter>
         <App>
-          <nav className="nav">
-            <div className="nav-links">
-              <NavLink to="/chat">Chat</NavLink>
-              <NavLink to="/ingest">Ingest</NavLink>
-              <NavLink to="/transactions">Transactions</NavLink>
-              <NavLink to="/companies">Companies</NavLink>
-              <NavLink to="/whoami">Whoami</NavLink>
-            </div>
-            <UserBadge />
-          </nav>
-          <main className="main">
+          <AppShell>
             <Routes>
               <Route path="/" element={<Navigate to="/chat" replace />} />
               <Route path="/chat" element={<Chat />} />
               <Route path="/whoami" element={<Whoami />} />
+              <Route path="/settings" element={<Settings />} />
               <Route path="/ingest" element={<Ingest />} />
+              <Route path="/alerts" element={<Alerts />} />
               <Route path="/transactions" element={<Transactions />} />
               <Route path="/transactions/:id" element={<TransactionDetail />} />
               <Route path="/transactions/:id/stream" element={<TransactionStream />} />
@@ -74,7 +56,7 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
               <Route path="/evaluations/best-matches/:id" element={<BestMatchDetail />} />
               <Route path="/evaluations/chats/:sessionId" element={<ChatSession />} />
             </Routes>
-          </main>
+          </AppShell>
         </App>
       </HashRouter>
     </QueryClientProvider>

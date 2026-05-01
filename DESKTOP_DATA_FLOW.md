@@ -322,3 +322,88 @@ Derived from the resolved questions above. Each bullet is a PR-sized batch.
 
 **Open §5.1 follow-ups:**
 - Wire `Idempotency-Key` (gateway-side dedupe table, 24h window) for `POST /v1/imports/excel`. The advertised contract in §10 says we accept it; today we don't honor it. Low-stakes for v0 because upstream creates a fresh `transactionId` per call, but desktop-side network flakes can otherwise produce duplicate transactions.
+
+---
+
+## 12. Agent tool surface — write tools (Phase 8.e, slice 1+2+3)
+
+The desktop's AI agent maps user intents to gateway calls. Read tools (8.b)
+already cover company / transaction / evaluation queries. As of this slice
+the write surface includes:
+
+| Tool | Gateway route | Trigger phrase | Notes |
+|---|---|---|---|
+| `import_excel` | `POST /v1/imports/excel` (multipart) | "import this", "Durchlauf starten", "process all rows" | Bytes resolved via §13 attachment staging. Idempotency-Key minted per call. |
+| `import_company` | `POST /v1/companies` | "Add Foo GmbH from Berlin", "Leg mir ACME aus Köln an" | Single-row counterpart to `import_excel`. Asks for city if missing. |
+| `import_status` | `GET /v1/transactions/:id/entities` (paginated) | "wie weit ist es?", "any failures?" | Reduces entity rows into per-state counts + 5 failure samples. Capped at 1000 entities (`truncated: true` beyond). |
+| `retry_stage` | `POST /v1/transactions/:tx/entities/:co/retry` | "retry the website for ACME", "den Profil-Schritt nochmal" | Stage enum: structuredContent, companyPublication, website, companyProfile, companyContact, companyEvaluation. |
+
+Not yet exposed as agent tools (deliberate — see footer):
+- `POST /v1/evaluations/best-matches` / `offer-analysis` / `comparisons` / `clusters` / `chats` — evaluation kick-offs need careful prompt design (which topics? what's the "input"?) and are better triggered from a dedicated UI for v0.
+- `PUT /v1/companies/:id/{profile,website,publications}` — manual re-scrape variants. The Transactions view exposes them per-stage; `retry_stage` covers the agent path.
+
+---
+
+## 13. Attachment staging (renderer ↔ main bridge)
+
+**Why this exists.** Tools like `import_excel` need the raw `.xlsx` bytes;
+LLM context can't carry them and shouldn't (a 25 MB workbook would
+explode the prompt). The renderer already buffers the bytes for its
+SheetJS preview, so we extend the same buffer's lifecycle to span the
+send → tool-call window without ever inlining bytes into the prompt.
+
+**Flow.**
+
+```
+renderer drop                          main process                       agent
+─────────────                          ────────────                       ─────
+parseAttachment(file)
+  ├─ Uint8Array bytes
+  ├─ headers + 5 sample rows
+  └─ totalRows
+                                                                   user hits Send
+window.api.agent.stageAttachment ───►  AttachmentStore.stage()
+   { filename, bytes, sheets }            → returns att-{uuid}
+                                          (in-memory, TTL 30 min)
+                                       ◄── { id, filename, sizeBytes }
+
+Compose user prompt with
+[attachment: leads.xlsx, id: att-7f3a…, 142 rows]
++ Columns + Sample
+                ────────────────► agent.send (composed)
+                                                                  LLM sees only
+                                                                  the metadata block
+                                                                  + the att-id.
+                                                                  Calls
+                                                                  import_excel({
+                                                                    attachmentId: "att-7f3a…",
+                                                                    companyNameColumns: ["Firma"],
+                                                                    cityColumns: ["Stadt"],
+                                                                  })
+                                       ◄── tool dereferences id
+                                       AttachmentStore.get(id) → bytes
+                                       → multipart POST /v1/imports/excel
+                                       → discard(id)              ─► returns
+                                                                     transactionId
+```
+
+**IPC surface** (`src/preload/index.ts`):
+
+| Channel | In | Out | Notes |
+|---|---|---|---|
+| `agent:stageAttachment` | `{filename, bytes:Uint8Array, sheets:[{name,headers,totalRows}]}` | `{id, filename, sizeBytes}` | id format `att-{uuid}`. |
+| `agent:discardAttachment` | `id` | `boolean` | Called when the user removes a chip pre-send. |
+
+**Lifetime invariants.**
+
+- Bytes never enter the LLM prompt. The agent only sees the `att-…` id.
+- TTL is 30 minutes (sweep every 5 min). A reload after expiry hands the
+  agent a clear "expired — please re-attach" error from the tool.
+- `import_excel` calls `discard()` on success — the bytes are spent;
+  no point keeping them just to expire.
+- A retry of a still-staged attachment is idempotent: the renderer
+  notices `stagedId` is already set and skips re-staging.
+
+**Future drops follow the same shape.** PDFs, audio memos, vision
+images plug in as new sheet-or-doc-shaped IPC variants without a new
+bytes-through-IPC route. See DECISIONS.md D13.

@@ -65,6 +65,13 @@ export interface MemoryListEntry {
   conversationId: string;
   modifiedAt: number;
   sizeBytes: number;
+  /**
+   * Human-readable label for the dropdown. Derived from the first
+   * user message's first line, truncated to ~60 chars. Empty string
+   * if the conversation has no user message yet (e.g. initialised
+   * but never sent).
+   */
+  label: string;
 }
 
 export class MemoryStore {
@@ -122,11 +129,30 @@ export class MemoryStore {
             conversationId: f.slice(0, -3),
             modifiedAt: st.mtimeMs,
             sizeBytes: st.size,
+            label: peekFirstUserMessage(path),
           };
         })
         .sort((a, b) => b.modifiedAt - a.modifiedAt);
     } catch {
       return [];
+    }
+  }
+
+  /**
+   * Hard-delete a conversation file. Used by the renderer when the
+   * user picks "delete session" from the dropdown. Returns true when
+   * a file existed and was unlinked.
+   */
+  delete(conversationId: string): boolean {
+    if (!this.writable) return false;
+    const path = this.fileFor(conversationId);
+    if (!existsSync(path)) return false;
+    try {
+      unlinkSync(path);
+      return true;
+    } catch (err) {
+      console.warn("[memory] delete failed:", err);
+      return false;
     }
   }
 
@@ -192,6 +218,41 @@ export class MemoryStore {
     // input here.
     const safe = conversationId.replace(/[^a-zA-Z0-9_-]/g, "_");
     return join(this.dir, `${safe}.md`);
+  }
+}
+
+/**
+ * Cheap label-extraction for the session dropdown. Reads the file,
+ * scans for the first `## user · …` header, and returns the first
+ * non-empty content line truncated to 60 chars. Returns "" on miss
+ * (e.g. an empty conversation that's been initialised but never
+ * sent). I/O cost is dominated by the directory scan in `list()`,
+ * which already touched stat — adding a readFile per entry is fine
+ * for typical session counts (< 100).
+ */
+function peekFirstUserMessage(path: string): string {
+  try {
+    const raw = readFileSync(path, "utf8");
+    const lines = raw.split(/\r?\n/);
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i] ?? "";
+      if (!line.startsWith("## user")) continue;
+      // Skip the blank line after the header, then take the first
+      // non-empty content line.
+      for (let j = i + 1; j < lines.length; j++) {
+        const candidate = (lines[j] ?? "").trim();
+        if (!candidate) continue;
+        // Stop at the next message header — no content in this msg.
+        if (candidate.startsWith("## ")) break;
+        return candidate.length > 60
+          ? candidate.slice(0, 57) + "…"
+          : candidate;
+      }
+      return "";
+    }
+    return "";
+  } catch {
+    return "";
   }
 }
 

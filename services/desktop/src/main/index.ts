@@ -1,14 +1,38 @@
-import { app, BrowserWindow, ipcMain, shell } from "electron";
+import {
+  app,
+  BrowserWindow,
+  ipcMain,
+  session,
+  shell,
+  systemPreferences,
+} from "electron";
 import { join } from "node:path";
 import { Auth, type AuthStatus } from "./auth";
 import { OllamaSupervisor } from "./ollama-supervisor";
 import {
   AgentOrchestrator,
+  AlertPrefsStore,
+  AlertsStore,
+  AttachmentStore,
+  FreshnessCursorStore,
+  FreshnessPrefsStore,
+  FreshnessScheduler,
+  InterestStore,
+  UserProfileStore,
+  WatchExecutor,
+  WatchStore,
   GatewayClient,
+  GeneralMemoryStore,
+  Heartbeat,
   LlmProviderManager,
   MemoryStore,
+  buildLlmAlertJudge,
   buildReadOnlyRegistry,
+  buildRealCandidateSource,
 } from "./agent";
+import { NotificationManager } from "./notifications";
+import { WhisperSidecar } from "./voice/whisper-sidecar";
+import type { StagedSheetSummary } from "./agent";
 import type { ProviderConfig, LlmProviderKind } from "./agent";
 import type { HostedProviderKind } from "../shared/types";
 import type {
@@ -16,8 +40,14 @@ import type {
   AgentSendInput,
   AgentStatus,
   AgentStreamFrame,
+  Alert,
+  AlertPrefs,
   OllamaPullProgress,
   OllamaStatus,
+  UserProfile,
+  Watch,
+  VoiceModelDownloadProgress,
+  VoiceStatus,
 } from "../shared/types";
 
 // Main process.
@@ -32,14 +62,18 @@ import type {
 // Auth status is *pushed* to every window via `auth-status:changed` so
 // renderer code can react without polling.
 
-const GATEWAY_URL = process.env.GATEWAY_URL ?? "http://localhost:8080";
-
-// OIDC config. Defaults aimed at the dev Keycloak compose service; in a
-// packaged build these come from the build-time env (see electron-builder
-// extraResources or a runtime config file in app.getPath('userData')).
-const AUTH_ISSUER =
-  process.env.AUTH_ISSUER ?? "http://auth.localhost/realms/ava";
-const AUTH_CLIENT_ID = process.env.AUTH_CLIENT_ID ?? "ava-desktop";
+// Phase 8.u2 — single source-of-truth for public boot config. See
+// `src/shared/config.ts` for the layered resolution (env → defaults).
+// Resolved here at module load using `app.isPackaged` + `app.getVersion()`
+// so the rest of main can treat config as static.
+import { resolveConfig } from "../shared/config";
+const APP_CONFIG = resolveConfig({
+  appVersion: app.getVersion(),
+  isPackaged: app.isPackaged,
+});
+const GATEWAY_URL = APP_CONFIG.gatewayUrl;
+const AUTH_ISSUER = APP_CONFIG.authIssuer;
+const AUTH_CLIENT_ID = APP_CONFIG.authClientId;
 
 const auth = new Auth(AUTH_ISSUER, AUTH_CLIENT_ID);
 
@@ -85,9 +119,249 @@ const gatewayClient = new GatewayClient({
 // the persisted config under userData/agent/. Constructed before the
 // registry so the settings tools can hold a reference to it.
 const providers = new LlmProviderManager(ollama);
+// General memory (Phase 8.k10h). Long-lived bag of facts the agent can
+// recall via the `recall_memory` / `remember` tools. Distinct from the
+// per-conversation MemoryStore below — that one mirrors transcripts.
+// Probe lives in the same userData/agent dir, so if MemoryStore's probe
+// failed we expect this one to fail too — surfaced via console for now;
+// renderer doesn't currently render a separate error for it.
+const generalMemory = new GeneralMemoryStore();
+const generalMemoryProbe = generalMemory.probe();
+if (!generalMemoryProbe.writable) {
+  console.warn(
+    `[general-memory] probe failed at ${generalMemoryProbe.path}: ${generalMemoryProbe.reason}`,
+  );
+}
+// Attachment store (Phase 8.e — Excel-in-chat Scope C bridge). Holds raw
+// xlsx/csv bytes the renderer staged on send so the `import_excel` tool
+// can re-upload them to the gateway. In-memory only, TTL'd inside the
+// store itself.
+const attachments = new AttachmentStore();
+
+// Heartbeat alerts (Phase 8.f1 → 8.f5).
+//
+// Constructed BEFORE the agent registry so the new alerts_* tools
+// (8.f5 — agent self-service) can hold references to the same store
+// the renderer reads. Order: alerts → prefs → notifications → real
+// candidate source → composite source → heartbeat → registry.
+const alerts = new AlertsStore();
+const alertsProbe = alerts.probe();
+if (!alertsProbe.writable) {
+  console.warn(
+    `[alerts] probe failed at ${alertsProbe.path}: ${alertsProbe.reason}`,
+  );
+}
+const alertPrefs = new AlertPrefsStore();
+const notifications = new NotificationManager(alertPrefs);
+// 8.f4 — real candidate source backed by existing gateway endpoints
+// (transactions → entities → publications). Falls back to the in-process
+// demo source ONLY when the real source returns nothing AND the alerts
+// file is empty, so a fresh-install user still sees something on the
+// /alerts page while a populated install only sees real candidates.
+const realCandidateSource = buildRealCandidateSource(gatewayClient);
+const compositeCandidateSource = (() => {
+  let demoFired = false;
+  const demoOnce = async (): Promise<
+    Awaited<ReturnType<typeof realCandidateSource>>
+  > => {
+    if (demoFired) return [];
+    demoFired = true;
+    const now = Date.now();
+    const recent = (daysAgo: number) =>
+      new Date(now - daysAgo * 86_400_000).toISOString();
+    return [
+      {
+        kind: "publication" as const,
+        companyId: "DEMO_KANNEGIESSER",
+        companyName: "Herbert Kannegiesser GmbH",
+        sourceRef: "demo:publication:kannegiesser:expansion-2026",
+        occurredAt: recent(2),
+        summary:
+          "Pressemitteilung zur Eröffnung eines neuen Werks in Polen mit 120 zusätzlichen Stellen.",
+        payload: { topic: "expansion" },
+      },
+      {
+        kind: "financial-delta" as const,
+        companyId: "DEMO_HETTICH",
+        companyName: "Paul Hettich GmbH & Co. KG",
+        sourceRef: "demo:financial-delta:hettich:fy2025",
+        occurredAt: recent(14),
+        summary:
+          "Geschäftsbericht 2025: Umsatz +18 % gegenüber 2024 (€ 1,42 Mrd.), Operatives Ergebnis +24 %.",
+        payload: { metric: "revenue", deltaPct: 18 },
+      },
+    ];
+  };
+  return async (since: Date | null) => {
+    const real = await realCandidateSource(since);
+    if (real.length > 0) return real;
+    if (alerts.list().length > 0) return [];
+    return demoOnce();
+  };
+})();
+// Watch store + executor (Phase 8.t2). Built BEFORE the heartbeat so
+// the executor can hook into the post-candidate slot. Storage probe
+// is non-fatal — like the other JSONL stores, the rest of the app
+// runs fine if the file isn't writable.
+const watchStore = new WatchStore();
+const watchProbe = watchStore.probe();
+if (!watchProbe.writable) {
+  console.warn(
+    `[watches] probe failed at ${watchProbe.path}: ${watchProbe.reason}`,
+  );
+}
+const watchExecutor = new WatchExecutor({
+  watches: watchStore,
+  alerts,
+  providers,
+});
+
+function broadcastWatchesChanged(): void {
+  const snapshot = watchStore.list();
+  for (const win of BrowserWindow.getAllWindows()) {
+    win.webContents.send("watches:changed", snapshot);
+  }
+}
+watchStore.on("changed", () => broadcastWatchesChanged());
+
+const heartbeat = new Heartbeat({
+  store: alerts,
+  // 8.f3 — read cadence from persisted prefs (default 15 min). The
+  // store fires `changed` on every patch; we re-route that into
+  // `setIntervalMs` below so the cadence radio in Settings takes
+  // effect without an app restart.
+  intervalMs: alertPrefs.get().cadenceMinutes * 60_000,
+  source: compositeCandidateSource,
+  // 8.f2 — real LLM judge. Throws `JudgeProviderUnavailable` when no
+  // provider is ready, which the heartbeat catches and turns into a
+  // skipped tick so dedup slots aren't burned during cold-start.
+  judge: buildLlmAlertJudge(providers, {
+    isProviderReady: () => providers.getStatus().ready,
+  }),
+  // 8.t2 — same candidate set the alert judge consumed → the watch
+  // executor evaluates each due watch's rubric. Hits create alerts
+  // tagged `kind: "evaluation-flag"` with a `watch:{id}:{ref}`
+  // sourceRef for dedup, so the existing bell + /alerts surface
+  // picks them up automatically.
+  postCandidateHook: (candidates) => watchExecutor.evaluate(candidates),
+});
+
+function broadcastAlertsChanged(): void {
+  for (const win of BrowserWindow.getAllWindows()) {
+    win.webContents.send("alerts:changed");
+  }
+}
+
+// Freshness scheduler (Phase 8.r1 — dry-run).
+//
+// Walks pipeline matrices every 30 min, scores each (companyId, stage)
+// cell against its configured cadence, and logs the top-K most-overdue
+// rows. Does NOT dispatch retries yet; that's 8.r2.
+//
+// The scheduler is independent of the heartbeat — different concern
+// (keeping data fresh vs. judging significance), different cadence,
+// different tools surface. Constructed before the registry so 8.r3
+// can register `freshness_*` chat tools the same way `alerts_*` got
+// wired.
+const freshnessPrefs = new FreshnessPrefsStore();
+const freshnessCursor = new FreshnessCursorStore();
+// 8.r4 — recent-interest signal store. The renderer pings this on
+// CompanyDetail mounts and chat company-link clicks; the scheduler
+// reads it during scoring so freshly-attended companies float to the
+// top of the queue without an explicit pin.
+const interest = new InterestStore();
+
+// User profile (Phase 8.t1). Persistent lens read by the system-prompt
+// builder on every turn so every response is biased by the user's role
+// / industries / topics. The propose-and-confirm gate lives in the
+// `profile_propose_update` tool — main only sees writes after the user
+// confirmed via ask_user_choice.
+const userProfile = new UserProfileStore();
+function broadcastProfileChanged(): void {
+  const next = userProfile.get();
+  for (const win of BrowserWindow.getAllWindows()) {
+    win.webContents.send("profile:changed", next);
+  }
+}
+userProfile.on("changed", () => broadcastProfileChanged());
+const freshness = new FreshnessScheduler({
+  gateway: gatewayClient,
+  prefs: freshnessPrefs,
+  cursor: freshnessCursor,
+  interest,
+});
+function broadcastFreshnessPrefsChanged(): void {
+  const next = freshnessPrefs.get();
+  for (const win of BrowserWindow.getAllWindows()) {
+    win.webContents.send("freshness:prefs-changed", next);
+  }
+}
+freshnessPrefs.on("changed", (next) => {
+  // Toggle off → cancel any timer; toggle on → restart at the default
+  // cadence. We don't expose the interval as a user pref in 8.r1 (the
+  // 30-min default is good enough); the toggle is the only knob that
+  // needs runtime application.
+  if (!next.enabled) {
+    freshness.stop();
+  } else {
+    freshness.start();
+  }
+  broadcastFreshnessPrefsChanged();
+});
+
+// Whisper sidecar (Phase 8.n1).
+//
+// Boot-time probes (binary present? GGUF on disk?) drive a lifecycle
+// the renderer mirrors via `voice:status:changed` — same channel
+// pattern as ollama / agent / alerts. Transcription itself stays
+// stubbed in 8.n1; renderer can already exercise the IPC roundtrip.
+const whisper = new WhisperSidecar();
+function broadcastVoiceStatus(status: VoiceStatus): void {
+  for (const win of BrowserWindow.getAllWindows()) {
+    win.webContents.send("voice:status:changed", status);
+  }
+}
+function broadcastVoiceProgress(p: VoiceModelDownloadProgress): void {
+  for (const win of BrowserWindow.getAllWindows()) {
+    win.webContents.send("voice:download:progress", p);
+  }
+}
+whisper.on("status", broadcastVoiceStatus);
+whisper.on("progress", broadcastVoiceProgress);
+// 8.n1 follow-up — auto-install streams stdout/stderr lines so the
+// renderer can show "Brewing whisper-cpp …" in the Settings panel
+// while the install is in flight.
+whisper.on("installLog", (line: string) => {
+  for (const win of BrowserWindow.getAllWindows()) {
+    win.webContents.send("voice:install:log", line);
+  }
+});
+
 const agentRegistry = buildReadOnlyRegistry({
   gateway: gatewayClient,
   providers,
+  generalMemory,
+  attachments,
+  alerts,
+  alertPrefs,
+  heartbeat,
+  freshness,
+  freshnessPrefs,
+  // 8.f5 — alerts_* tools call this after every mutation so the bell +
+  // /alerts route refresh live without polling. Same callback the IPC
+  // mutation handlers below use.
+  onAlertsChanged: broadcastAlertsChanged,
+  // 8.r3 — freshness_* tools fire this after every pref mutation so
+  // every open window's Settings panel re-fetches.
+  onFreshnessPrefsChanged: broadcastFreshnessPrefsChanged,
+  profile: userProfile,
+  // 8.t1 — profile_* tools fire this after every successful write so
+  // the Settings panel + every other window's mirror re-syncs.
+  onProfileChanged: broadcastProfileChanged,
+  watches: watchStore,
+  // 8.t2 — watch_* tools fire this after every successful mutation so
+  // the topbar chip + Settings panel re-sync.
+  onWatchesChanged: broadcastWatchesChanged,
 });
 
 // Memory store (Phase 8.d). Probed once at boot — if the userData/agent/memory
@@ -109,6 +383,34 @@ const agent = new AgentOrchestrator({
   memoryError: memoryProbe.writable
     ? null
     : `${memoryProbe.path}: ${memoryProbe.reason ?? "not writable"}`,
+  // Phase 8.k10f — when the orchestrator detects a local runner
+  // crash mid-turn, we restart the supervisor so the user can hit
+  // Send again without quitting the app. See `isRuntimeCrash` in
+  // orchestrator.ts for the substring matchers.
+  runtimeRecover: () => ollama.restart(),
+  // 8.t1 — system-prompt builder reads profile on every turn so every
+  // response is biased by the user's lens.
+  profileStore: userProfile,
+});
+
+alertPrefs.on("changed", (next: AlertPrefs) => {
+  // Apply the new cadence immediately. push / quiet-hours / threshold
+  // changes don't need a reschedule — `NotificationManager` re-reads
+  // prefs on every send.
+  heartbeat.setIntervalMs(next.cadenceMinutes * 60_000);
+  for (const win of BrowserWindow.getAllWindows()) {
+    win.webContents.send("alert-prefs:changed", next);
+  }
+});
+
+heartbeat.on("alerts", (created: Alert[]) => {
+  console.log(`[heartbeat] persisted ${created.length} new alert(s)`);
+  broadcastAlertsChanged();
+  // Native push (8.f3) — every gating decision (push enabled, severity
+  // threshold, quiet hours, OS support) lives inside the manager.
+  for (const a of created) {
+    notifications.notifyForAlert(a);
+  }
 });
 
 function broadcastAgentStream(frame: AgentStreamFrame): void {
@@ -157,12 +459,51 @@ function createMainWindow(): BrowserWindow {
 }
 
 app.whenReady().then(async () => {
+  // ---- Renderer permission grants (Phase 8.n2) -----------------------------
+  //
+  // Electron's default `setPermissionRequestHandler` denies every
+  // permission request silently. That's why `getUserMedia({ audio })`
+  // failed with NotAllowedError before — Chromium's permission prompt
+  // never even surfaced because Electron killed the request first.
+  //
+  // We grant the small set of permissions the app actually needs:
+  //   - `media` / `mediaKeySystem`: microphone for voice mode (8.n2)
+  //   - `clipboard-sanitized-write`: future "Copy answer" affordance
+  //   - everything else: deny
+  //
+  // The OS-level prompt (macOS Privacy & Security → Microphone) still
+  // gates the actual mic, but at least Electron stops being the wall
+  // before the OS gets a say.
+  const ALLOWED_PERMS = new Set([
+    "media",
+    "mediaKeySystem",
+    "clipboard-sanitized-write",
+  ]);
+  session.defaultSession.setPermissionRequestHandler(
+    (_wc, permission, callback) => {
+      callback(ALLOWED_PERMS.has(permission));
+    },
+  );
+  // The check handler is consulted synchronously by the renderer's
+  // Permissions API and by Chromium's media stack before kicking off
+  // a getUserMedia. Returning `true` here mirrors the request grant.
+  session.defaultSession.setPermissionCheckHandler((_wc, permission) =>
+    ALLOWED_PERMS.has(permission),
+  );
+
   // ---- IPC contract ---------------------------------------------------------
   //
   // `app:getConfig` returns *static* boot config — gateway URL only. The
   // access token is no longer included here; renderer fetches it on demand
   // via `auth:getAccessToken` so it always gets a fresh-enough one.
-  ipcMain.handle("app:getConfig", () => ({ gatewayUrl: GATEWAY_URL }));
+  ipcMain.handle("app:getConfig", () => ({
+    gatewayUrl: APP_CONFIG.gatewayUrl,
+    authIssuer: APP_CONFIG.authIssuer,
+    authClientId: APP_CONFIG.authClientId,
+    updateChannel: APP_CONFIG.updateChannel,
+    appVersion: APP_CONFIG.appVersion,
+    isDev: APP_CONFIG.isDev,
+  }));
 
   ipcMain.handle("auth:getStatus", () => auth.getStatus());
   ipcMain.handle("auth:getAccessToken", () => auth.getAccessToken());
@@ -177,6 +518,13 @@ app.whenReady().then(async () => {
   ipcMain.handle("ollama:pullModel", (_e, modelName: string) =>
     ollama.pullModel(modelName),
   );
+  // Phase 8.k10e — let the user reclaim disk space from Whoami. The
+  // supervisor refreshes its installed-models list before resolving so
+  // the renderer's next ollama-status push reflects the deletion.
+  ipcMain.handle("ollama:deleteModel", (_e, modelName: string) =>
+    ollama.deleteModel(modelName),
+  );
+  ipcMain.handle("ollama:restart", () => ollama.restart());
 
   // Agent IPC. Stream frames arrive via `agent:stream`; the renderer is
   // expected to filter by `requestId` (the protocol leaves room for future
@@ -232,10 +580,238 @@ app.whenReady().then(async () => {
   // orchestrator appends messages.
   ipcMain.handle("agent:getMemoryProbe", () => memoryProbe);
   ipcMain.handle("agent:listConversations", () => memory.list());
+  // Phase 8.k10h — load a specific conversation's transcript so the
+  // renderer can replay it on session-switch. Returns [] for unknown
+  // ids / parse failures (consistent with MemoryStore.load semantics).
+  ipcMain.handle("agent:loadConversation", (_e, conversationId: string) =>
+    memory.load(conversationId),
+  );
+  ipcMain.handle("agent:deleteConversation", (_e, conversationId: string) =>
+    memory.delete(conversationId),
+  );
+
+  // General memory IPC (Phase 8.k10h). The agent reads/writes via the
+  // `recall_memory` / `remember` tools; these handlers exist so a future
+  // Settings → Memory panel can surface entries to the user for review
+  // and manual deletion.
+  ipcMain.handle("agent:listGeneralMemory", () => generalMemory.list());
+  ipcMain.handle(
+    "agent:addGeneralMemory",
+    (_e, args: { content: string; tags?: string[] }) =>
+      generalMemory.add(args),
+  );
+  ipcMain.handle("agent:removeGeneralMemory", (_e, id: string) =>
+    generalMemory.remove(id),
+  );
+
+  // Heartbeat alerts IPC (Phase 8.f1). The renderer reads via
+  // `alerts:list` / `alerts:unreadCount` and mutates with
+  // `alerts:markSeen` / `alerts:dismiss`. `alerts:triggerNow` exists
+  // primarily as a dev affordance ("Jetzt auslösen" button in
+  // Settings — wired in 8.f3) but is safe to call at any time. Mutation
+  // handlers re-broadcast `alerts:changed` so every open window's store
+  // refreshes without the renderer having to invalidate cache.
+  ipcMain.handle("alerts:list", () => alerts.list());
+  ipcMain.handle("alerts:unreadCount", () => alerts.unreadCount());
+  ipcMain.handle("alerts:markSeen", (_e, id: string) => {
+    const ok = alerts.markSeen(id);
+    if (ok) broadcastAlertsChanged();
+    return ok;
+  });
+  ipcMain.handle("alerts:dismiss", (_e, id: string) => {
+    const ok = alerts.dismiss(id);
+    if (ok) broadcastAlertsChanged();
+    return ok;
+  });
+  ipcMain.handle("alerts:triggerNow", async () => {
+    const info = await heartbeat.triggerNow();
+    return info;
+  });
+  // Phase 8.f3 (transparency add-on) — surfaces the last N ticks with
+  // per-candidate decisions so the Settings panel can show the user
+  // what was weighed and why nothing was promoted on a given run.
+  ipcMain.handle("alerts:recentTicks", () => heartbeat.getRecentTicks());
+
+  // Freshness scheduler IPC (Phase 8.r1). Read-only + manual trigger;
+  // the chat tools surface (8.r3) layers on top. `triggerNow` returns
+  // the same FreshnessTickInfo shape `freshness:recentTicks` lists.
+  ipcMain.handle("freshness:recentTicks", () => freshness.getRecentTicks());
+  ipcMain.handle("freshness:triggerNow", () => freshness.triggerNow());
+  ipcMain.handle("freshness:getPrefs", () => freshnessPrefs.get());
+  ipcMain.handle(
+    "freshness:setPrefs",
+    (_e, patch: Parameters<typeof freshnessPrefs.set>[0]) =>
+      freshnessPrefs.set(patch),
+  );
+  // 8.r4 — interest-signal recorder. Fired by the renderer whenever
+  // the user opens CompanyDetail or clicks a `[…](company:id)` link
+  // in chat. No-op return; the scheduler picks the signal up on the
+  // next tick.
+  ipcMain.handle("interest:record", (_e, companyId: string) => {
+    if (typeof companyId === "string" && companyId.length > 0) {
+      interest.record(companyId);
+    }
+  });
+
+  // User profile IPC (Phase 8.t1). Read-only views + direct writes
+  // for Settings panel edits. Agent-inferred updates go through
+  // `profile_propose_update` which gates on ask_user_choice; the
+  // explicit-write IPC bypasses that gate intentionally because the
+  // Settings panel IS the explicit user surface.
+  ipcMain.handle("profile:get", () => userProfile.get());
+  ipcMain.handle("profile:set", (_e, patch: Partial<UserProfile>) =>
+    userProfile.set(patch),
+  );
+  ipcMain.handle("profile:clear", () => userProfile.clear());
+
+  // Watches IPC (Phase 8.t2). Read-only views + remove / pause /
+  // resume mutations for the Settings panel + topbar chip popover.
+  // Watch *creation* stays chat-only (the propose-and-confirm gate
+  // lives in the `watch_register` tool, which renders an
+  // ask_user_choice card before persistence).
+  ipcMain.handle("watches:list", (): Watch[] => watchStore.list());
+  ipcMain.handle(
+    "watches:remove",
+    (_e, id: string): boolean => watchStore.remove(id),
+  );
+  ipcMain.handle(
+    "watches:setEnabled",
+    (_e, args: { id: string; enabled: boolean }): boolean =>
+      watchStore.setEnabled(args.id, args.enabled),
+  );
+
+  // Voice / whisper sidecar IPC (Phase 8.n1). The download path is
+  // long-running but resolves only when the GGUF lands on disk; the
+  // renderer drives a progress bar off the `voice:download:progress`
+  // push that's already wired above.
+  ipcMain.handle("voice:getStatus", () => whisper.getStatus());
+  ipcMain.handle("voice:downloadModel", () => whisper.downloadModel());
+  ipcMain.handle("voice:cancelDownload", () => whisper.cancelDownload());
+  ipcMain.handle("voice:deleteModel", () => whisper.deleteModel());
+  // 8.n1 stub — renderer can already roundtrip but the body is a
+  // placeholder string; 8.n2 swaps in the real whisper.cpp invocation.
+  ipcMain.handle("voice:installBinary", async () => {
+    await whisper.installBinary();
+  });
+  ipcMain.handle("voice:transcribe", async (_e, audio: Uint8Array) => {
+    const u8 =
+      audio instanceof Uint8Array
+        ? audio
+        : new Uint8Array(audio as ArrayBufferLike);
+    return whisper.transcribe(u8);
+  });
+  // Microphone permission flow (Phase 8.n2 follow-up).
+  // - macOS gates the mic at the OS level via TCC. The renderer
+  //   queries the status BEFORE getUserMedia so it can show the
+  //   right next step (request prompt vs. open System Settings).
+  // - Windows / Linux don't expose an electron-queryable equivalent;
+  //   we report `unsupported` and rely on getUserMedia errors at use
+  //   time to drive the UI.
+  ipcMain.handle("voice:micPermission", () => {
+    // Dev mode runs the prebuilt `node_modules/electron/dist/Electron.app`
+    // binary; macOS attaches mic permissions to the bundle's
+    // CFBundleName, which for that binary is "Electron". In a packaged
+    // build the bundle is "AVA Desktop". Surface this to the renderer
+    // so the error message can tell the user where to LOOK in System
+    // Settings.
+    const isPackaged = app.isPackaged;
+    const appNameInSettings = isPackaged ? app.getName() : "Electron";
+    if (process.platform === "darwin") {
+      return {
+        status: systemPreferences.getMediaAccessStatus("microphone"),
+        appNameInSettings,
+        isDev: !isPackaged,
+      };
+    }
+    return {
+      status: "unsupported" as const,
+      appNameInSettings,
+      isDev: !isPackaged,
+    };
+  });
+  ipcMain.handle("voice:requestMicPermission", async () => {
+    if (process.platform === "darwin") {
+      // Pops the system prompt the FIRST time it's called per-app;
+      // subsequent calls return the user's prior decision. Returns
+      // false when the user previously denied — that's the cue to
+      // show the "open System Settings" affordance instead.
+      return await systemPreferences.askForMediaAccess("microphone");
+    }
+    return true;
+  });
+  ipcMain.handle("voice:openMicSettings", async () => {
+    // Deep-links into the OS privacy panel where the user can flip
+    // the per-app toggle. macOS uses the x-apple.systempreferences
+    // URL scheme; Windows uses the ms-settings: scheme.
+    if (process.platform === "darwin") {
+      await shell.openExternal(
+        "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone",
+      );
+    } else if (process.platform === "win32") {
+      await shell.openExternal("ms-settings:privacy-microphone");
+    } else {
+      // Linux distros vary; punt to the generic privacy page where
+      // it's available via the desktop session manager.
+      await shell.openExternal("https://help.ubuntu.com/stable/ubuntu-help/privacy.html");
+    }
+  });
+
+  // Alert preferences (Phase 8.f3). The renderer's Settings page
+  // reads via `alert-prefs:get` and patches via `alert-prefs:set`;
+  // main rebroadcasts `alert-prefs:changed` so every open window's
+  // store re-syncs without polling. Permission status is read-only
+  // — the OS owns that gate.
+  ipcMain.handle("alert-prefs:get", () => alertPrefs.get());
+  ipcMain.handle("alert-prefs:set", (_e, patch: Partial<AlertPrefs>) =>
+    alertPrefs.set(patch),
+  );
+  ipcMain.handle("notifications:getPermissionStatus", () =>
+    notifications.permissionStatus(),
+  );
+
+  // Attachment staging (Phase 8.e). The renderer parses the spreadsheet
+  // for the chip preview, then ships the raw bytes here on send so the
+  // `import_excel` tool can re-upload them to the gateway. We hold them
+  // in-process (TTL'd) keyed by a UUID that's woven into the user
+  // prompt — bytes never enter the LLM context.
+  ipcMain.handle(
+    "agent:stageAttachment",
+    (
+      _e,
+      input: {
+        filename: string;
+        bytes: Uint8Array;
+        sheets: StagedSheetSummary[];
+      },
+    ) => {
+      // Electron's structured-clone IPC may deliver the bytes as a Node
+      // Buffer or a Uint8Array view backed by a different ArrayBuffer.
+      // Normalise once so the store always holds a plain Uint8Array.
+      const u8 =
+        input.bytes instanceof Uint8Array
+          ? new Uint8Array(input.bytes)
+          : new Uint8Array(input.bytes as ArrayBufferLike);
+      const entry = attachments.stage({
+        filename: input.filename,
+        bytes: u8,
+        sheets: input.sheets,
+      });
+      return {
+        id: entry.id,
+        filename: entry.filename,
+        sizeBytes: entry.sizeBytes,
+      };
+    },
+  );
+  ipcMain.handle("agent:discardAttachment", (_e, id: string) =>
+    attachments.discard(id),
+  );
 
   // DEV ONLY — bypass OIDC entirely for UI testing against a mock gateway.
   // Set AVA_DEV_AUTH_BYPASS=1 alongside GATEWAY_URL to skip Keycloak.
-  if (process.env.AVA_DEV_AUTH_BYPASS === "1") {
+  // The resolver in shared/config.ts force-disables this in packaged
+  // builds, so a curious user can't enable it on a shipped binary.
+  if (APP_CONFIG.devAuthBypass) {
     console.warn(
       "[auth] AVA_DEV_AUTH_BYPASS=1 — faking a signed-in session. DO NOT USE IN PROD.",
     );
@@ -261,6 +837,19 @@ app.whenReady().then(async () => {
     );
   }
 
+  // Heartbeat begins ticking once the app + IPC are wired. Stopping
+  // happens on `before-quit` below.
+  heartbeat.start();
+  // Freshness scheduler (8.r1). Starts only when the user pref is on
+  // (default true). The `changed` listener above hooks pref-toggle
+  // transitions so changing the toggle takes effect without restart.
+  if (freshnessPrefs.get().enabled) freshness.start();
+  // Whisper sidecar (8.n1). Probes binary + model presence and emits
+  // a status frame. Failure modes (missing binary, missing model) are
+  // not fatal — the rest of the app still runs; the Settings panel
+  // surfaces the affordances to recover.
+  void whisper.start();
+
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) createMainWindow();
   });
@@ -274,6 +863,9 @@ app.on("window-all-closed", () => {
 // gives us a small window before SIGKILL — `stop()` issues SIGTERM and
 // returns immediately, the OS handles the rest.
 app.on("before-quit", () => {
+  whisper.cancelDownload();
+  freshness.stop();
+  heartbeat.stop();
   agent.dispose();
   providers.dispose();
   void ollama.stop();

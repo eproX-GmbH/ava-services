@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useParams } from "react-router-dom";
 import { gatewayFetch, gatewaySSE } from "../api/gateway";
+import { fmtDate } from "../lib/format";
 
 // W3 — pipeline matrix view.
 //
@@ -65,14 +66,26 @@ interface ProcessingError {
   createdAt?: string | null;
 }
 
+// Pipeline-stage labels stay close to the gateway's API vocabulary
+// (Master, Structured, …) so screenshots and the Settings/advanced
+// view match. We translate the few that read awkwardly in German UI:
+// "Profile" → "Profil", "Contact" → "Kontakt", "Evaluation" → "Bewertung".
 const STAGE_LABEL: Record<StageId, string> = {
-  masterData: "Master",
-  structuredContent: "Structured",
-  companyPublication: "Publication",
+  masterData: "Stamm",
+  structuredContent: "Struktur",
+  companyPublication: "Publikation",
   website: "Website",
-  companyProfile: "Profile",
-  companyContact: "Contact",
-  companyEvaluation: "Evaluation",
+  companyProfile: "Profil",
+  companyContact: "Kontakt",
+  companyEvaluation: "Bewertung",
+};
+
+const CELL_STATE_LABEL: Record<CellState, string> = {
+  completed: "fertig",
+  failed: "fehlgeschlagen",
+  skipped: "übersprungen",
+  pending: "wartet",
+  in_progress: "läuft",
 };
 
 // Map upstream `service` field on AMQP progress events → matrix stage id.
@@ -92,16 +105,28 @@ export function TransactionDetail() {
   const queryClient = useQueryClient();
   const [openCompanyId, setOpenCompanyId] = useState<string | null>(null);
 
+  // The detail/pipeline/errors queries opt into `refetchOnMount: "always"`
+  // (and a 0-ms stale window) so revisiting the page after a navigation
+  // round-trip kicks off a fresh server fetch, even if the global
+  // 30-second staleTime hasn't elapsed. The cached payload still paints
+  // immediately to keep the matrix from flashing, and the live
+  // /transactions/:id/events SSE bridge below patches new deltas into
+  // the cache as they arrive — but the boundary fetch is what catches
+  // up state that changed while the user was on a different route.
   const detail = useQuery({
     queryKey: ["transaction", id],
     queryFn: () => gatewayFetch<Transaction>(`/v1/transactions/${id}`),
     enabled: !!id,
+    staleTime: 0,
+    refetchOnMount: "always",
   });
 
   const pipeline = useQuery({
     queryKey: ["transaction", id, "pipeline"],
     queryFn: () => gatewayFetch<Pipeline>(`/v1/transactions/${id}/pipeline`),
     enabled: !!id,
+    staleTime: 0,
+    refetchOnMount: "always",
   });
 
   const errors = useQuery({
@@ -109,7 +134,49 @@ export function TransactionDetail() {
     queryFn: () =>
       gatewayFetch<{ items: ProcessingError[] }>(`/v1/transactions/${id}/errors`),
     enabled: !!id,
+    staleTime: 0,
+    refetchOnMount: "always",
   });
+
+  // The gateway's `/transactions/:id/pipeline` endpoint omits company
+  // names (it's already a heavy fan-out); resolve them client-side via
+  // a single batched query keyed on the row set so React Query
+  // dedupes across re-renders. We only paint names — the matrix and
+  // SSE deltas continue to address rows by `companyId` internally.
+  const companyIds = useMemo(() => {
+    const ids = (pipeline.data?.rows ?? []).map((r) => r.companyId);
+    ids.sort();
+    return ids;
+  }, [pipeline.data]);
+  const companyNames = useQuery({
+    queryKey: ["companyNames", companyIds],
+    queryFn: async () => {
+      const map = new Map<string, string>();
+      await Promise.all(
+        companyIds.map(async (cid) => {
+          try {
+            const data = await gatewayFetch<{
+              name?: string | null;
+              companyName?: string | null;
+            }>(`/v1/companies/${encodeURIComponent(cid)}`);
+            const n = data.name ?? data.companyName;
+            if (n && n.trim().length > 0) map.set(cid, n.trim());
+          } catch {
+            // Leave the entry missing; nameFor falls back to the id.
+          }
+        }),
+      );
+      return map;
+    },
+    enabled: companyIds.length > 0,
+    // Names are slow-changing master-data; 5 min keeps the cache warm
+    // while the user clicks through the matrix without forcing fresh
+    // round-trips on every focus.
+    staleTime: 5 * 60_000,
+  });
+
+  const nameFor = (cid: string): string =>
+    companyNames.data?.get(cid) ?? `${cid.slice(0, 12)}…`;
 
   // Live SSE binding — patch matching cells in-place.
   // We don't re-sort on each event: user-driven scroll position should stay
@@ -232,61 +299,57 @@ export function TransactionDetail() {
     <section className={openCompanyId ? "tx-detail tx-detail--with-panel" : "tx-detail"}>
       <div className="tx-detail__main">
         <h2>
-          Transaction <code>{id?.slice(0, 8)}…</code>{" "}
+          {detail.data?.name ?? "Vorgang"}{" "}
           <Link to={`/transactions/${id}/stream`} className="muted">
-            (raw event log)
+            (Roh-Eventprotokoll)
           </Link>{" "}
           <Link to={`/transactions/${id}/evaluations`} className="muted">
-            (evaluations)
+            (Bewertungen)
           </Link>
         </h2>
 
-        {detail.isLoading && <p>Loading…</p>}
+        {detail.isLoading && <p>Lädt…</p>}
         {detail.error && <p className="error">{(detail.error as Error).message}</p>}
         {detail.data && (
           <dl className="tx-summary">
             <div>
-              <dt>Name</dt>
-              <dd>{detail.data.name ?? <span className="muted">—</span>}</dd>
+              <dt>Gestartet</dt>
+              <dd>{fmtDate(detail.data.startTime ?? detail.data.createdAt)}</dd>
             </div>
             <div>
-              <dt>Started</dt>
-              <dd>{detail.data.startTime ?? detail.data.createdAt}</dd>
-            </div>
-            <div>
-              <dt>Companies</dt>
+              <dt>Firmen</dt>
               <dd>{detail.data.companyCount ?? "—"}</dd>
             </div>
           </dl>
         )}
 
-        {pipeline.isLoading && <p>Loading pipeline…</p>}
+        {pipeline.isLoading && <p>Pipeline wird geladen…</p>}
         {pipeline.error && (
           <p className="error">Pipeline: {(pipeline.error as Error).message}</p>
         )}
 
         {pipeline.data && pipeline.data.rows.length === 0 && (
-          <p className="muted">No companies have started yet.</p>
+          <p className="muted">Noch keine Firmen gestartet.</p>
         )}
 
         {pipeline.data && pipeline.data.rows.length > 0 && (
           <>
             {pipeline.data.unavailableStages.length > 0 && (
               <p className="warn">
-                Unavailable stages (cells shown as pending):{" "}
+                Nicht verfügbare Schritte (als „wartet" angezeigt):{" "}
                 {pipeline.data.unavailableStages.map((s) => STAGE_LABEL[s]).join(", ")}
               </p>
             )}
             <table className="matrix">
               <thead>
                 <tr>
-                  <th>Company</th>
+                  <th>Firma</th>
                   {stages.map((s) => (
                     <th key={s} className={pipeline.data!.unavailableStages.includes(s) ? "muted" : ""}>
                       {STAGE_LABEL[s]}
                     </th>
                   ))}
-                  <th>Last activity</th>
+                  <th>Letzte Aktivität</th>
                 </tr>
               </thead>
               <tbody>
@@ -296,9 +359,7 @@ export function TransactionDetail() {
                     className={openCompanyId === row.companyId ? "active" : ""}
                     onClick={() => setOpenCompanyId(row.companyId)}
                   >
-                    <td>
-                      <code>{row.companyId.slice(0, 12)}…</code>
-                    </td>
+                    <td className="matrix-company">{nameFor(row.companyId)}</td>
                     {stages.map((s) => (
                       <td key={s} className="matrix-cell">
                         <CellDot cell={row.cells[s]} />
@@ -318,30 +379,28 @@ export function TransactionDetail() {
       {openCompanyId && openRow && (
         <aside className="drill-panel">
           <header>
-            <h3>
-              <code>{openCompanyId.slice(0, 16)}…</code>
-            </h3>
+            <h3>{nameFor(openCompanyId)}</h3>
             <button
               type="button"
               className="link"
               onClick={() => setOpenCompanyId(null)}
-              aria-label="Close drill-down"
+              aria-label="Detail schließen"
             >
               ×
             </button>
           </header>
           <p>
-            <Link to={`/companies/${openCompanyId}`}>Open company detail →</Link>
+            <Link to={`/companies/${openCompanyId}`}>Firmendetails öffnen →</Link>
           </p>
 
-          <h4>Pipeline timeline</h4>
+          <h4>Pipeline-Verlauf</h4>
           <ol className="timeline">
             {stages.map((s) => {
               const cell = openRow.cells[s];
               return (
                 <li key={s} className={`timeline__item state-${cell.state}`}>
                   <span className="timeline__stage">{STAGE_LABEL[s]}</span>
-                  <span className="badge">{cell.state}</span>
+                  <span className="badge">{CELL_STATE_LABEL[cell.state]}</span>
                   <span className="muted timeline__time">
                     {cell.updatedAt ? formatTime(cell.updatedAt) : "—"}
                   </span>
@@ -350,24 +409,26 @@ export function TransactionDetail() {
             })}
           </ol>
 
-          <h4>Errors ({openErrors.length})</h4>
-          {errors.isLoading && <p className="muted">Loading errors…</p>}
+          <h4>Fehler ({openErrors.length})</h4>
+          {errors.isLoading && <p className="muted">Fehler werden geladen…</p>}
           {openErrors.length === 0 && !errors.isLoading && (
-            <p className="muted">No errors. ✓</p>
+            <p className="muted">Keine Fehler. ✓</p>
           )}
           {openErrors.length > 0 && (
             <ul className="event-log">
               {openErrors.map((e, i) => (
                 <li key={i}>
-                  <strong>{e.service ?? "—"}</strong>{" "}
-                  <span className="muted">{e.occurredAt ?? e.createdAt ?? ""}</span>
-                  <pre>{e.errorReason ?? e.message ?? "(no reason)"}</pre>
+                  <strong>{stageLabelForService(e.service)}</strong>{" "}
+                  <span className="muted">
+                    {fmtErrorTime(e.occurredAt ?? e.createdAt)}
+                  </span>
+                  <pre>{e.errorReason ?? e.message ?? "(kein Grund angegeben)"}</pre>
                 </li>
               ))}
             </ul>
           )}
 
-          <h4>Retry</h4>
+          <h4>Erneut versuchen</h4>
           <RetryStagePicker
             transactionId={id!}
             companyId={openCompanyId}
@@ -472,7 +533,7 @@ function RetryStagePicker({
   return (
     <div className="retry-form">
       <label className="retry-form__row">
-        <span>Stage</span>
+        <span>Schritt</span>
         <select
           value={stage}
           onChange={(e) => setStage(e.target.value as StageId)}
@@ -481,17 +542,17 @@ function RetryStagePicker({
           {RETRY_STAGES.map((s) => (
             <option key={s.id} value={s.id}>
               {s.label}
-              {row.cells[s.id]?.state === "failed" ? " (failed)" : ""}
+              {row.cells[s.id]?.state === "failed" ? " (fehlgeschlagen)" : ""}
             </option>
           ))}
         </select>
       </label>
       {stage === "companyContact" && (
         <label className="retry-form__row">
-          <span>Company name</span>
+          <span>Firmenname</span>
           <input
             type="text"
-            placeholder="Required for companyContact"
+            placeholder={`Pflichtfeld für „Kontakt"`}
             value={companyName}
             onChange={(e) => setCompanyName(e.target.value)}
             disabled={busy}
@@ -499,13 +560,13 @@ function RetryStagePicker({
         </label>
       )}
       <button type="button" onClick={onClick} disabled={busy}>
-        {busy ? "Dispatching…" : "Retry stage"}
+        {busy ? "Wird ausgelöst…" : "Schritt erneut starten"}
       </button>
-      {err && <p className="bad">Error: {err}</p>}
+      {err && <p className="bad">Fehler: {err}</p>}
       {result && (
         <div className={`retry-result ${result.ok ? "ok" : "warn"}`}>
           <p>
-            <strong>{result.ok ? "✓ Dispatched" : "⚠ Partial dispatch"}</strong>{" "}
+            <strong>{result.ok ? "✓ Ausgelöst" : "⚠ Teilweise ausgelöst"}</strong>{" "}
             <span className="muted">
               ({result.dispatched.filter((d) => d.ok).length}/
               {result.dispatched.length})
@@ -515,7 +576,7 @@ function RetryStagePicker({
             {result.dispatched.map((d, i) => (
               <li key={i} className={d.ok ? "ok" : "bad"}>
                 <code>{d.upstream}</code> → {d.stage} ·{" "}
-                {d.ok ? "ok" : `failed: ${d.error ?? "unknown"}`}
+                {d.ok ? "ok" : `fehlgeschlagen: ${d.error ?? "unbekannt"}`}
               </li>
             ))}
           </ul>
@@ -527,8 +588,8 @@ function RetryStagePicker({
 
 function CellDot({ cell }: { cell: PipelineCell }) {
   const cls = stateClass(cell.state);
-  const title = `${cell.state}${cell.updatedAt ? ` · ${formatTime(cell.updatedAt)}` : ""}${
-    cell.errorCount ? ` · ${cell.errorCount} error(s)` : ""
+  const title = `${CELL_STATE_LABEL[cell.state]}${cell.updatedAt ? ` · ${formatTime(cell.updatedAt)}` : ""}${
+    cell.errorCount ? ` · ${cell.errorCount} Fehler` : ""
   }`;
   return <span className={`dot ${cls}`} title={title} aria-label={title} />;
 }
@@ -552,6 +613,21 @@ function stateClass(state: CellState): string {
 function formatTime(iso: string): string {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return iso;
-  // Compact local time — drilldown panel has full ISO via tooltip elsewhere.
-  return d.toLocaleString();
+  // Compact German local time — drilldown panel has full ISO via tooltip elsewhere.
+  return d.toLocaleString("de-DE");
+}
+
+// Map an upstream `service` field (as stamped by the gateway's errors fan-out)
+// onto the matrix-stage label. The gateway tags each error row with its stage
+// id (e.g. "companyProfile", "structuredContent"); fall back to the raw value
+// for forward-compat, or "—" if the upstream didn't set it.
+function stageLabelForService(service?: string): string {
+  if (!service) return "—";
+  const known = STAGE_LABEL[service as StageId];
+  return known ?? service;
+}
+
+function fmtErrorTime(input?: string | null): string {
+  if (!input) return "";
+  return formatTime(input);
 }

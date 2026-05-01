@@ -1,6 +1,9 @@
-# Template fly config. One app per customer per D3 (tenant isolation at
-# the infra level, not just in JWT claims). Copy to fly.<customer>.toml
-# and set app name + region before `fly deploy`.
+# db-gateway fly config (Phase 8.u — pilot deploy).
+#
+# One app per customer per D3 (tenant isolation at the infra level,
+# not just in JWT claims). For the pilot we run a single app
+# (`ava-db-gateway`) shared across our test tenants — split per
+# customer when we sign the second.
 
 app = "ava-db-gateway"
 primary_region = "fra"
@@ -8,19 +11,49 @@ primary_region = "fra"
 [build]
   dockerfile = "Dockerfile"
 
+# Non-secret env. Anything sensitive goes through `fly secrets set`
+# below — fly bakes those into the runtime env at boot, never into
+# the image.
 [env]
   NODE_ENV = "production"
   PORT = "8080"
-  JWT_ISSUER = "ava-auth"
+  # Keycloak realm we run on fly. Tokens issued by the realm carry
+  # `iss = https://fly-keycloak-broken-bird-3701.fly.dev/realms/ava`,
+  # so we verify against that exact string.
+  JWT_ISSUER = "https://fly-keycloak-broken-bird-3701.fly.dev/realms/ava"
+  # `aud` claim that desktop-issued tokens must carry. Keycloak
+  # client must be configured with this audience mapper.
   JWT_AUDIENCE = "ava-gateway"
   RATE_LIMIT_PER_MIN = "600"
   LOG_LEVEL = "info"
+  # CORS allow-list. `electron` enables the `null` origin produced by
+  # the packaged Electron renderer's file:// load. Add explicit https
+  # origins here when the gateway is also accessed from a web UI.
+  GATEWAY_ALLOWED_ORIGINS = "electron"
+  # Upstream service base URLs. Other services beyond master-data are
+  # currently suspended; the gateway will return 502 for routes
+  # fanning out to them until they're resumed. That's intentional for
+  # the pilot scope.
+  UPSTREAM_MASTER_DATA_URL = "https://ava-master-data.fly.dev"
+  UPSTREAM_COMPANY_PROFILE_URL = "https://ava-company-profile.fly.dev"
+  UPSTREAM_COMPANY_CONTACT_URL = "https://ava-company-contact.fly.dev"
+  UPSTREAM_COMPANY_PUBLICATION_URL = "https://ava-company-publication.fly.dev"
+  UPSTREAM_COMPANY_EVALUATION_URL = "https://ava-company-evaluation.fly.dev"
+  UPSTREAM_WEBSITE_URL = "https://ava-website.fly.dev"
+  UPSTREAM_STRUCTURED_CONTENT_URL = "https://ava-structured-content.fly.dev"
+  EVENT_BUS_EXCHANGE = "exchange"
+  EVENT_BUS_QUEUE = "db-gateway-progress"
 
 # Secrets managed via `fly secrets set` (D3):
-#   DATABASE_URL           — gateway's own audit DB
-#   DIRECT_URL             — optional, for prisma migrate
-#   UPSTREAM_DATABASE_URL  — service DB (read/write per scoped endpoints)
-#   JWT_PUBLIC_KEYS        — JSON {tenantId: pem}
+#   DATABASE_URL    Gateway's own audit-log Postgres (we will provision
+#                   a small fly Postgres named `ava-db-gateway-db`).
+#   DIRECT_URL      Same DB, no pooler — required by `prisma migrate
+#                   deploy`. Fly Postgres provides this automatically.
+#   JWKS_URI        Keycloak realm certs endpoint. Set to:
+#                   https://fly-keycloak-broken-bird-3701.fly.dev/realms/ava/protocol/openid-connect/certs
+#                   This replaces the legacy JWT_PUBLIC_KEYS PEM map.
+#   EVENT_BUS_URL   AMQP URL for the same broker the producer services
+#                   already publish to (re-use what master-data uses).
 
 [http_service]
   internal_port = 8080

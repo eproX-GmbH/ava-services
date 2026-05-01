@@ -1,7 +1,12 @@
 import { useEffect, useState, type PropsWithChildren } from "react";
+import { useNavigate } from "react-router-dom";
 import { useConfigStore } from "./store/config";
 import { useAuthStore } from "./store/auth";
 import { useOllamaStore } from "./store/ollama";
+import { bindAlertsBridge } from "./store/alerts";
+import { bindVoiceBridge } from "./store/voice";
+import { bindProfileBridge } from "./store/profile";
+import { bindWatchesBridge } from "./store/watches";
 import { SignIn } from "./routes/SignIn";
 import { FirstRunWizard } from "./routes/FirstRunWizard";
 import { DownloadDock } from "./components/DownloadDock";
@@ -38,6 +43,8 @@ export function App({ children }: PropsWithChildren) {
   // process lifetime (the main-side store caches it). Null until the
   // first IPC call resolves; we treat that null window as "no warning".
   const [memoryProbe, setMemoryProbe] = useState<MemoryProbe | null>(null);
+
+  const navigate = useNavigate();
 
   const setOllamaStatus = useOllamaStore((s) => s.setStatus);
   const setPullProgress = useOllamaStore((s) => s.setPullProgress);
@@ -79,15 +86,36 @@ export function App({ children }: PropsWithChildren) {
     const offAuth = window.api.auth.onStatusChanged(setAuth);
     const offOllama = window.api.ollama.onStatusChanged(setOllamaStatus);
     const offPull = window.api.ollama.onPullProgress(setPullProgress);
+    // Phase 8.f1 — keep the alerts mirror in sync with main. Bootstraps
+    // by fetching the current list once, then re-fetches on every
+    // `alerts:changed` push.
+    const offAlerts = bindAlertsBridge();
+    // Phase 8.n1 — keep the voice/whisper status mirrored.
+    const offVoice = bindVoiceBridge();
+    // Phase 8.t1 — user profile mirror.
+    const offProfile = bindProfileBridge();
+    // Phase 8.t2 — watches mirror (topbar chip + Settings panel).
+    const offWatches = bindWatchesBridge();
+    // Phase 8.f3 — when the user clicks a native OS notification, main
+    // focuses the window and pushes this event; we route to /alerts so
+    // the alert is one click away from the user's attention.
+    const offFocus = window.api.alerts.onFocusAlerts(() => {
+      navigate("/alerts");
+    });
     return () => {
       offAuth();
       offOllama();
       offPull();
+      offAlerts();
+      offVoice();
+      offProfile();
+      offWatches();
+      offFocus();
     };
-  }, [setConfig, setAuth, setOllamaStatus, setPullProgress]);
+  }, [setConfig, setAuth, setOllamaStatus, setPullProgress, navigate]);
 
   if (!configReady || !authReady || !ollamaReady) {
-    return <div className="loading">Loading…</div>;
+    return <div className="loading">Lädt…</div>;
   }
   if (!signedIn) {
     return <SignIn />;
@@ -146,9 +174,9 @@ export function App({ children }: PropsWithChildren) {
     <>
       {memoryProbe && !memoryProbe.writable && (
         <div className="memory-warning">
-          <strong>Conversation memory disabled.</strong>{" "}
-          The agent will work for this session, but transcripts won't be saved.
-          Tried to use <code>{memoryProbe.path}</code>
+          <strong>Konversationsspeicher deaktiviert.</strong>{" "}
+          Der Agent funktioniert in dieser Sitzung, aber Verläufe werden nicht
+          gespeichert. Verzeichnis <code>{memoryProbe.path}</code>
           {memoryProbe.reason ? <> — {memoryProbe.reason}</> : null}.
         </div>
       )}

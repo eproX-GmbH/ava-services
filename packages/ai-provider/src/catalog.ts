@@ -110,11 +110,10 @@ const OLLAMA_LLM: CatalogEntry[] = [
   {
     provider: "ollama",
     id: "gemma4:e4b",
-    label: "Gemma 4 E4B (local, default — multimodal + OCR)",
+    label: "Gemma 4 E4B (local, multimodal + OCR — needs ≥24 GB RAM)",
     role: "llm",
     capabilities: { tools: true, vision: true, contextWindow: 128_000 },
     costClass: "free",
-    recommended: true,
     approxBytes: 9_600_000_000,
   },
   {
@@ -156,16 +155,17 @@ const OLLAMA_LLM: CatalogEntry[] = [
   {
     provider: "ollama",
     id: "qwen2.5:3b",
-    label: "Qwen 2.5 3B (local)",
+    label: "Qwen 2.5 3B (local, default — tool calling, 8 GB RAM)",
     role: "llm",
     capabilities: { tools: true, vision: false, contextWindow: 32_000 },
     costClass: "free",
+    recommended: true,
     approxBytes: 1_900_000_000,
   },
   {
     provider: "ollama",
     id: "qwen2.5:7b",
-    label: "Qwen 2.5 7B (local)",
+    label: "Qwen 2.5 7B (local, tool calling — needs ≥16 GB RAM)",
     role: "llm",
     capabilities: { tools: true, vision: false, contextWindow: 32_000 },
     costClass: "free",
@@ -246,23 +246,52 @@ const OLLAMA_EMBED: CatalogEntry[] = [
 // ---- OpenAI ----------------------------------------------------------------
 
 const OPENAI_LLM: CatalogEntry[] = [
+  // GPT-5 family — current generation. Pick gpt-5.4-mini as the default
+  // recommendation: it follows multi-step tool plans far more reliably
+  // than 4o-mini and stays cheap. Step up to gpt-5.4 for tricky agent
+  // turns, gpt-5.4-pro for analyst-grade reasoning.
   {
     provider: "openai",
-    id: "gpt-4o-mini",
-    label: "GPT-4o mini",
+    id: "gpt-5.4-pro",
+    label: "GPT-5.4 Pro",
     role: "llm",
-    capabilities: { tools: true, vision: true, contextWindow: 128_000 },
+    capabilities: { tools: true, vision: true, contextWindow: 1_000_000 },
+    costClass: "high",
+  },
+  {
+    provider: "openai",
+    id: "gpt-5.4",
+    label: "GPT-5.4",
+    role: "llm",
+    capabilities: { tools: true, vision: true, contextWindow: 1_000_000 },
+    costClass: "mid",
+  },
+  {
+    provider: "openai",
+    id: "gpt-5.4-mini",
+    label: "GPT-5.4 mini",
+    role: "llm",
+    capabilities: { tools: true, vision: true, contextWindow: 400_000 },
     costClass: "cheap",
     recommended: true,
   },
   {
     provider: "openai",
-    id: "gpt-4o",
-    label: "GPT-4o",
+    id: "gpt-5",
+    label: "GPT-5",
     role: "llm",
-    capabilities: { tools: true, vision: true, contextWindow: 128_000 },
+    capabilities: { tools: true, vision: true, contextWindow: 1_000_000 },
     costClass: "mid",
   },
+  {
+    provider: "openai",
+    id: "gpt-5-mini",
+    label: "GPT-5 mini",
+    role: "llm",
+    capabilities: { tools: true, vision: true, contextWindow: 400_000 },
+    costClass: "cheap",
+  },
+  // GPT-4 family — kept for users with prior keys/quotas pinned to it.
   {
     provider: "openai",
     id: "gpt-4.1",
@@ -279,6 +308,23 @@ const OPENAI_LLM: CatalogEntry[] = [
     capabilities: { tools: true, vision: true, contextWindow: 1_000_000 },
     costClass: "cheap",
   },
+  {
+    provider: "openai",
+    id: "gpt-4o",
+    label: "GPT-4o",
+    role: "llm",
+    capabilities: { tools: true, vision: true, contextWindow: 128_000 },
+    costClass: "mid",
+  },
+  {
+    provider: "openai",
+    id: "gpt-4o-mini",
+    label: "GPT-4o mini",
+    role: "llm",
+    capabilities: { tools: true, vision: true, contextWindow: 128_000 },
+    costClass: "cheap",
+  },
+  // Reasoning-tuned models — pricier but stronger on multi-step plans.
   {
     provider: "openai",
     id: "o4-mini",

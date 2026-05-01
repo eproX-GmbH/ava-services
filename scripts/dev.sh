@@ -45,16 +45,26 @@ echo "==> Starting infra ($COMPOSE_FILE)"
 # Tolerate that — `set -e` would otherwise abort the whole launcher.
 docker compose -f "$COMPOSE_FILE" up -d || echo "    (compose returned non-zero — ok if hostlocal/no services)"
 
-# Ollama (local LLM, see docs/OLLAMA_PLAN.md). The hostlocal/dev compose
-# files declare an `ollama` service; pull the default models so producers
-# can switch to LLM_PROVIDER=ollama without hitting 404s. Don't fail the
-# launcher if ollama isn't running (devs may be offline / on the OpenAI
-# path); just warn and continue.
+# Ollama (local LLM, see docs/OLLAMA_PLAN.md). Two cases:
+#
+#   - `dev` (full Docker stack): the compose file still runs an
+#     `ava-ollama` container so dockerised producers using
+#     LLM_PROVIDER=ollama have something to hit. Pull the default
+#     models so the first request doesn't 404.
+#   - `hostlocal` / `hybrid`: no compose-managed Ollama (removed in
+#     8.k10g — collided on :11434 with the Electron desktop app's
+#     bundled supervisor). The desktop's supervisor (or a host-level
+#     `ollama serve` the dev started themselves) is the single Ollama
+#     on the host; producers reach it on localhost:11434.
+#
+# Don't fail the launcher if Ollama isn't reachable — devs may be on
+# the OpenAI path or just not exercising producer LLM flows. Warn and
+# continue.
 if docker ps --format '{{.Names}}' | grep -q '^ava-ollama$'; then
   bash "$ROOT_DIR/scripts/ollama-bootstrap.sh" || \
     echo "!! ollama bootstrap failed — producers using LLM_PROVIDER=ollama will 404. See docs/OLLAMA_PLAN.md" >&2
 else
-  echo "    (ollama container not running — skipping model pull. LLM_PROVIDER=openai will still work)"
+  echo "    (no ava-ollama container — desktop app's bundled supervisor or a host 'ollama serve' provides :11434. LLM_PROVIDER=openai works without either.)"
 fi
 
 # Quick reachability checks for host-managed infra. In `dev` mode the

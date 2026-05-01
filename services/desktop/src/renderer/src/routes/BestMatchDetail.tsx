@@ -13,6 +13,17 @@ import { gatewayFetch } from "../api/gateway";
 const LABELS = ["ACCEPTED", "REJECTED", "NOTSURE", "IGNORED", "CONTACTED", "CLICKED"] as const;
 type Label = (typeof LABELS)[number];
 
+// The wire vocabulary stays English (matches the upstream contract);
+// the dropdown shows German prose.
+const LABEL_TEXT: Record<Label, string> = {
+  ACCEPTED: "Akzeptiert",
+  REJECTED: "Abgelehnt",
+  NOTSURE: "Unsicher",
+  IGNORED: "Ignoriert",
+  CONTACTED: "Kontaktiert",
+  CLICKED: "Angeklickt",
+};
+
 interface ResultItem {
   id: string;
   companyId?: string | null;
@@ -40,30 +51,32 @@ export function BestMatchDetail() {
   return (
     <section>
       <h2>
-        Best-match <code>{id?.slice(0, 8)}…</code>
+        Best-Match <code>{id?.slice(0, 8)}…</code>
       </h2>
-      {q.isLoading && <p>Loading…</p>}
+      {q.isLoading && <p>Lädt…</p>}
       {q.error && <p className="error">{(q.error as Error).message}</p>}
       {q.data && (
         <>
           <details>
-            <summary>Input ({q.data.input.length} chars)</summary>
+            <summary>Eingabe ({q.data.input.length} Zeichen)</summary>
             <pre>{q.data.input}</pre>
           </details>
 
           <p className="muted">
-            {q.data.results.length} result{q.data.results.length === 1 ? "" : "s"}
+            {q.data.results.length} {q.data.results.length === 1 ? "Ergebnis" : "Ergebnisse"}
           </p>
 
-          {q.data.results.length === 0 && <p className="muted">No results yet.</p>}
+          {q.data.results.length === 0 && (
+            <p className="muted">Noch keine Ergebnisse.</p>
+          )}
           {q.data.results.length > 0 && (
             <table>
               <thead>
                 <tr>
-                  <th>Company</th>
+                  <th>Firma</th>
                   <th>Score</th>
-                  <th>Explanation</th>
-                  <th>Feedback</th>
+                  <th>Begründung</th>
+                  <th>Bewertung</th>
                 </tr>
               </thead>
               <tbody>
@@ -136,11 +149,11 @@ function FeedbackPicker({
         <option value="">—</option>
         {LABELS.map((l) => (
           <option key={l} value={l}>
-            {l}
+            {LABEL_TEXT[l]}
           </option>
         ))}
       </select>
-      {mut.isPending && <span className="muted"> saving…</span>}
+      {mut.isPending && <span className="muted"> wird gespeichert…</span>}
       {error && <span className="error"> {error}</span>}
     </div>
   );

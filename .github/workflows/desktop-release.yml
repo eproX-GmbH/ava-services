@@ -1,0 +1,165 @@
+# Phase 8.u1 — desktop release pipeline.
+#
+# Triggered on tag push (`v*`). Runs three platform jobs in parallel,
+# each building a signed (where applicable) installer + auto-update
+# manifest and publishing them to the matching GitHub Release.
+#
+# Required GitHub repository secrets:
+#   APPLE_ID                       Apple Developer ID email used by
+#                                  notarization. (You already use it
+#                                  for the App Store account.)
+#   APPLE_APP_SPECIFIC_PASSWORD    App-specific password generated
+#                                  from appleid.apple.com (NOT the
+#                                  account password).
+#   APPLE_TEAM_ID                  10-char team ID from
+#                                  developer.apple.com → Membership.
+#   MAC_CERTIFICATE_P12_BASE64     Base64-encoded export of the
+#                                  Developer ID Application cert
+#                                  + private key (`.p12`):
+#                                    `base64 -i cert.p12 | pbcopy`
+#   MAC_CERTIFICATE_PASSWORD       Password used during the .p12
+#                                  export.
+#
+# `GITHUB_TOKEN` is auto-provided by GitHub Actions and used by
+# electron-builder to upload the release artifacts.
+#
+# Windows builds ship UNSIGNED in this revision (Phase 8.u1 scope cut).
+# Users see SmartScreen's "unrecognized publisher" warning on first
+# launch and must click "More info → Run anyway". Add an OV cert later.
+
+name: Desktop release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag name to build (must already exist)."
+        required: true
+
+permissions:
+  contents: write   # Needed to upload release assets.
+
+jobs:
+  build-mac:
+    name: Build & sign macOS (${{ matrix.arch }})
+    runs-on: macos-14
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [arm64, x64]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref_name }}
+
+      - uses: pnpm/action-setup@v3
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install workspace dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Validate version tag matches package.json
+        working-directory: services/desktop
+        env:
+          GITHUB_REF_NAME: ${{ github.event.inputs.tag || github.ref_name }}
+        run: node scripts/validate-version-tag.mjs
+
+      # Pulls Ollama + whisper-cli release artifacts into
+      # `services/desktop/resources/{ollama,whisper}/<platform>/`
+      # before electron-builder hits `extraResources`.
+      - name: Fetch Ollama binary
+        working-directory: services/desktop
+        run: pnpm fetch:ollama --platform=darwin-${{ matrix.arch }}
+
+      - name: Fetch whisper-cli binary
+        working-directory: services/desktop
+        run: pnpm fetch:whisper --platform=darwin-${{ matrix.arch }}
+
+      # Imports the Developer ID Application cert into a fresh
+      # keychain that's destroyed at job end. electron-builder's
+      # signing step picks it up automatically.
+      - name: Import macOS code-signing certificate
+        uses: apple-actions/import-codesign-certs@v3
+        with:
+          p12-file-base64: ${{ secrets.MAC_CERTIFICATE_P12_BASE64 }}
+          p12-password: ${{ secrets.MAC_CERTIFICATE_PASSWORD }}
+
+      - name: Build, sign, notarize, and publish (macOS ${{ matrix.arch }})
+        working-directory: services/desktop
+        env:
+          # Notarization credentials — electron-builder reads these
+          # automatically when `mac.notarize` is truthy.
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          # GitHub release upload.
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Force notarization on for CI; local dev keeps `notarize:
+          # false` in the YAML.
+          ELECTRON_BUILDER_NOTARIZE: "true"
+        run: |
+          # `--mac --${{ matrix.arch }} --publish always` produces the
+          # .dmg, signs it, notarizes it, staples the ticket, and
+          # uploads to the matching GitHub Release.
+          pnpm exec electron-builder \
+            --mac \
+            --${{ matrix.arch }} \
+            --publish always
+
+      - name: Audit bundle for secret leaks
+        working-directory: services/desktop
+        run: node scripts/check-bundle-secrets.mjs
+
+  build-windows:
+    name: Build Windows (unsigned, x64)
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref_name }}
+
+      - uses: pnpm/action-setup@v3
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install workspace dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Validate version tag matches package.json
+        working-directory: services/desktop
+        env:
+          GITHUB_REF_NAME: ${{ github.event.inputs.tag || github.ref_name }}
+        run: node scripts/validate-version-tag.mjs
+
+      - name: Fetch Ollama binary
+        working-directory: services/desktop
+        run: pnpm fetch:ollama --platform=win32-x64
+
+      - name: Fetch whisper-cli binary
+        working-directory: services/desktop
+        run: pnpm fetch:whisper --platform=win32-x64
+
+      - name: Build & publish (Windows, unsigned)
+        working-directory: services/desktop
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          pnpm exec electron-builder --win --x64 --publish always
+
+      - name: Audit bundle for secret leaks
+        working-directory: services/desktop
+        run: node scripts/check-bundle-secrets.mjs

@@ -1,5 +1,6 @@
 import { defineConfig, externalizeDepsPlugin } from "electron-vite";
 import react from "@vitejs/plugin-react";
+import tailwindcss from "@tailwindcss/vite";
 import { resolve } from "node:path";
 
 // electron-vite handles the three-process layout (main / preload / renderer)
@@ -48,7 +49,11 @@ export default defineConfig({
   },
   renderer: {
     root: resolve(__dirname, "src/renderer"),
-    plugins: [react()],
+    // Tailwind v4 uses a CSS-first config — no `tailwind.config.js`. The
+    // Vite plugin scans the renderer's source for utility classes at
+    // build time and emits exactly the CSS that's used. Token layer and
+    // any global rules live in `src/renderer/src/styles.css`.
+    plugins: [react(), tailwindcss()],
     resolve: {
       alias: {
         "@": resolve(__dirname, "src/renderer/src"),

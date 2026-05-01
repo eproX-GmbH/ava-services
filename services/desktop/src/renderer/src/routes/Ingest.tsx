@@ -30,15 +30,15 @@ export function Ingest() {
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
     if (!file) {
-      setError("Pick an .xlsx file first.");
+      setError("Bitte zuerst eine .xlsx-Datei auswählen.");
       return;
     }
     if (companyHeaders.length === 0) {
-      setError("Add at least one company-name column.");
+      setError("Mindestens eine Firmennamen-Spalte angeben.");
       return;
     }
     if (cityHeaders.length === 0) {
-      setError("Add at least one city column.");
+      setError("Mindestens eine Stadt-Spalte angeben.");
       return;
     }
     setBusy(true);
@@ -73,15 +73,15 @@ export function Ingest() {
 
   return (
     <section className="ingest">
-      <h2>Upload Excel</h2>
+      <h2>Excel hochladen</h2>
       <p className="muted">
-        Pick an .xlsx with one row per company. The pipeline will resolve each
-        row against master-data and start extraction across all enrichment
-        services.
+        Wähle eine .xlsx mit einer Zeile pro Firma. Die Pipeline gleicht jede
+        Zeile gegen die Stammdaten ab und startet anschließend die
+        Anreicherung über alle Dienste.
       </p>
       <form onSubmit={onSubmit} className="form">
         <label className="field">
-          <span>File</span>
+          <span>Datei</span>
           <input
             type="file"
             accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
@@ -90,28 +90,28 @@ export function Ingest() {
         </label>
 
         <ChipsField
-          label="Company-name column heading(s)"
-          hint="Add one or more column headings. Multiple values get joined with a space (e.g. first + last name)."
+          label="Firmennamen-Spalte(n)"
+          hint="Eine oder mehrere Spaltenüberschriften eintragen. Mehrere Werte werden mit Leerzeichen verbunden (z. B. Vorname + Nachname)."
           values={companyHeaders}
           onChange={setCompanyHeaders}
           placeholder="company"
         />
 
         <ChipsField
-          label="City column heading(s)"
-          hint="Add one or more headings. Multiple values get joined with a space (e.g. postal code + city)."
+          label="Stadt-Spalte(n)"
+          hint="Eine oder mehrere Überschriften. Mehrere Werte werden mit Leerzeichen verbunden (z. B. PLZ + Ort)."
           values={cityHeaders}
           onChange={setCityHeaders}
           placeholder="city"
         />
 
         <label className="field">
-          <span>Transaction name (optional)</span>
+          <span>Vorgangsname (optional)</span>
           <input
             type="text"
             value={name}
             onChange={(e) => setName(e.target.value)}
-            placeholder="Q2 outreach batch"
+            placeholder="Q2-Akquise"
           />
         </label>
         <label className="field-inline">
@@ -120,10 +120,10 @@ export function Ingest() {
             checked={isFuzzy}
             onChange={(e) => setIsFuzzy(e.target.checked)}
           />
-          <span>Fall back to fuzzy match for unresolved rows</span>
+          <span>Fuzzy-Match für nicht aufgelöste Zeilen verwenden</span>
         </label>
         <button type="submit" disabled={busy || !file} className="primary">
-          {busy ? "Uploading…" : "Start ingest"}
+          {busy ? "Wird hochgeladen…" : "Import starten"}
         </button>
         {error && <p className="error">{error}</p>}
       </form>
@@ -180,7 +180,7 @@ function ChipsField({ label, hint, values, onChange, placeholder }: ChipsFieldPr
             <button
               type="button"
               className="chip-remove"
-              aria-label={`Remove ${v}`}
+              aria-label={`${v} entfernen`}
               onClick={() => remove(i)}
             >
               ×

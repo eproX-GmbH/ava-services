@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { useOllamaStore } from "../store/ollama";
+import { pullModelTracked, useOllamaStore } from "../store/ollama";
 import type { OllamaPullProgress } from "../../../shared/types";
 
 // Download Dock (Phase 8.k10c).
@@ -55,7 +55,7 @@ export function DownloadDock() {
         type="button"
         className={`dl-dock dl-dock--mini ${allDone ? "dl-dock--ok" : ""}`}
         onClick={() => setMinimized(false)}
-        aria-label={`${rows.length} download${rows.length === 1 ? "" : "s"} — click to expand`}
+        aria-label={`${rows.length} Download${rows.length === 1 ? "" : "s"} — zum Aufklappen klicken`}
         title={summariseTooltip(rows, aggregate)}
       >
         <ProgressRing pct={aggregate.pct} done={allDone} />
@@ -65,12 +65,12 @@ export function DownloadDock() {
   }
 
   return (
-    <section className="dl-dock dl-dock--max" role="status" aria-label="Model downloads">
+    <section className="dl-dock dl-dock--max" role="status" aria-label="Modell-Downloads">
       <header className="dl-dock__head">
         <strong>
           {allDone
-            ? `Downloads complete (${rows.length})`
-            : `Downloading ${rows.length} model${rows.length === 1 ? "" : "s"}`}
+            ? `Downloads abgeschlossen (${rows.length})`
+            : `${rows.length} ${rows.length === 1 ? "Modell wird" : "Modelle werden"} geladen`}
         </strong>
         <span className="dl-dock__head-spacer" />
         {allDone && (
@@ -78,17 +78,17 @@ export function DownloadDock() {
             type="button"
             className="link"
             onClick={() => rows.forEach((r) => dismissPull(r.modelName))}
-            title="Hide all completed rows"
+            title="Alle abgeschlossenen Zeilen ausblenden"
           >
-            Clear all
+            Alle ausblenden
           </button>
         )}
         <button
           type="button"
           className="dl-dock__icon-btn"
           onClick={() => setMinimized(true)}
-          aria-label="Minimize"
-          title="Minimize"
+          aria-label="Minimieren"
+          title="Minimieren"
         >
           ▾
         </button>
@@ -110,7 +110,7 @@ export function DownloadDock() {
 
 // -- Row rendering ----------------------------------------------------
 
-type DockRowKind = "active" | "done" | "failed" | "queued";
+type DockRowKind = "active" | "done" | "failed" | "queued" | "retrying";
 
 interface DockRowData {
   modelName: string;
@@ -119,6 +119,8 @@ interface DockRowData {
   total: number;
   status?: string;
   errorMessage?: string;
+  attempt?: number;
+  maxAttempts?: number;
 }
 
 function DockRow({
@@ -134,18 +136,39 @@ function DockRow({
   const showSpeed = row.kind === "active" && bytesPerSec > 0;
   const remaining = Math.max(row.total - row.completed, 0);
   const etaSec = showSpeed && bytesPerSec > 0 ? remaining / bytesPerSec : null;
+  const attemptSuffix =
+    row.attempt && row.maxAttempts && row.attempt > 1
+      ? ` (Versuch ${row.attempt}/${row.maxAttempts})`
+      : "";
 
   return (
     <div className="dl-dock__row">
       <div className="dl-dock__row-head">
         <code className="dl-dock__row-name">{row.modelName}</code>
+        {row.kind === "failed" && (
+          <button
+            type="button"
+            className="dl-dock__retry-btn"
+            onClick={() => {
+              // Re-invoke the same tracked pull. Ollama resumes from
+              // existing partial layers, so the user doesn't lose the
+              // bytes they already pulled. We swallow the rejection
+              // because the dock will already render the failure state
+              // if the next attempt also fails.
+              void pullModelTracked(row.modelName).catch(() => undefined);
+            }}
+            title="Erneut versuchen — setzt am unterbrochenen Stand fort"
+          >
+            Erneut
+          </button>
+        )}
         {(row.kind === "done" || row.kind === "failed") && (
           <button
             type="button"
             className="dl-dock__icon-btn"
             onClick={onDismiss}
-            aria-label="Dismiss"
-            title="Dismiss"
+            aria-label="Ausblenden"
+            title="Ausblenden"
           >
             ✕
           </button>
@@ -166,13 +189,25 @@ function DockRow({
         />
       </div>
       <div className="dl-dock__row-meter muted">
-        {row.kind === "queued" && <span>Queued…</span>}
-        {row.kind === "failed" && (
-          <span className="bad">
-            Failed: {row.errorMessage ?? row.status ?? "unknown error"}
+        {row.kind === "queued" && <span>Wartet…</span>}
+        {row.kind === "retrying" && (
+          <span className="warn">
+            Verbinde erneut{attemptSuffix}
+            {row.completed > 0 && row.total > 0 ? (
+              <>
+                {" "}— pausiert bei {formatBytes(row.completed)} /{" "}
+                {formatBytes(row.total)}
+              </>
+            ) : null}
+            …
           </span>
         )}
-        {row.kind === "done" && <span>Done ✓</span>}
+        {row.kind === "failed" && (
+          <span className="bad">
+            Fehlgeschlagen{attemptSuffix}: {row.errorMessage ?? row.status ?? "Unbekannter Fehler"}
+          </span>
+        )}
+        {row.kind === "done" && <span>Fertig ✓</span>}
         {row.kind === "active" && (
           <>
             {row.completed > 0 ? (
@@ -181,7 +216,7 @@ function DockRow({
                 {pct.toFixed(1)}%)
               </span>
             ) : (
-              <span>{row.status ?? "Starting…"}</span>
+              <span>{row.status ?? "Startet…"}</span>
             )}
             {showSpeed && (
               <>
@@ -285,15 +320,19 @@ function buildRows(
         total: p.total ?? 0,
         status: p.status,
         errorMessage: p.errorMessage,
+        attempt: p.attempt,
+        maxAttempts: p.maxAttempts,
       });
       continue;
     }
     rows.push({
       modelName: name,
-      kind: "active",
+      kind: p.retrying ? "retrying" : "active",
       completed: p.completed ?? 0,
       total: p.total ?? 0,
       status: p.status,
+      attempt: p.attempt,
+      maxAttempts: p.maxAttempts,
     });
   }
 
@@ -358,11 +397,11 @@ function summariseTooltip(
   const parts: string[] = [];
   if (active.length > 0) {
     parts.push(
-      `${active.length} downloading · ${agg.pct.toFixed(0)}% (${formatBytes(agg.completed)}/${formatBytes(agg.total)})`,
+      `${active.length} aktiv · ${agg.pct.toFixed(0)}% (${formatBytes(agg.completed)}/${formatBytes(agg.total)})`,
     );
   }
-  if (done > 0) parts.push(`${done} done`);
-  if (failed > 0) parts.push(`${failed} failed`);
+  if (done > 0) parts.push(`${done} fertig`);
+  if (failed > 0) parts.push(`${failed} fehlgeschlagen`);
   return parts.join(" · ");
 }
 

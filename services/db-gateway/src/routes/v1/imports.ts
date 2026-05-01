@@ -2,6 +2,7 @@ import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
 import { HTTPException } from "hono/http-exception";
 import { requireScope } from "../../middleware/auth";
 import { callUpstreamBinary } from "../../lib/upstream";
+import { setTransactionName } from "../../lib/transaction-names";
 import { buildXlsx } from "../../lib/xlsx-mini";
 import {
   CompanyIngestBody,
@@ -136,6 +137,13 @@ importsRouter.openapi(importExcelRoute, async (c) => {
     throw new HTTPException(502, { message: "upstream omitted Transaction-Id header" });
   }
 
+  // Master-data accepts the `name` query param but doesn't currently
+  // propagate it to the company-profile transaction record that backs
+  // the read endpoints. Persist the gateway-side annotation so the
+  // list / detail routes can overlay it. Idempotent: re-uploading the
+  // same file with the same name is a no-op.
+  setTransactionName(transactionId, name ?? null);
+
   return c.json({ transactionId }, 202);
 });
 
@@ -189,6 +197,7 @@ importsRouter.openapi(companyIngestRoute, async (c) => {
     rows: [[name, city]],
   });
 
+  const effectiveTxName = transactionName ?? `Single ingest: ${name}`;
   const { headers } = await callUpstreamBinary(
     c,
     "masterData",
@@ -200,7 +209,7 @@ importsRouter.openapi(companyIngestRoute, async (c) => {
         companyNameIdentifiers: COMPANY_HEADER,
         city: CITY_HEADER,
         // Mirror the bulk endpoint's default-fallback name shape.
-        name: transactionName ?? `Single ingest: ${name}`,
+        name: effectiveTxName,
         isFuzzy: String(isFuzzy ?? false),
       },
     },
@@ -213,5 +222,8 @@ importsRouter.openapi(companyIngestRoute, async (c) => {
       message: "upstream omitted Transaction-Id header",
     });
   }
+  // Persist the gateway-side annotation so list/detail reads can
+  // surface it; same rationale as POST /v1/imports/excel.
+  setTransactionName(transactionId, effectiveTxName);
   return c.json({ transactionId }, 202);
 });
