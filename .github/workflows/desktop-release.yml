@@ -117,24 +117,33 @@ jobs:
       - name: Build, sign, notarize, and publish (macOS ${{ matrix.arch }})
         working-directory: services/desktop
         env:
-          # Notarization credentials — electron-builder reads these
-          # automatically when `mac.notarize` is truthy.
+          # Notarization credentials — electron-builder's notarytool
+          # invocation reads these automatically when `mac.notarize`
+          # is truthy. APPLE_ID is the Apple-Developer-Program email,
+          # APP_SPECIFIC_PASSWORD a 16-char `xxxx-xxxx-xxxx-xxxx`
+          # token from appleid.apple.com (NOT the iCloud password),
+          # TEAM_ID the 10-char team identifier.
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           # GitHub release upload.
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # Force notarization on for CI; local dev keeps `notarize:
-          # false` in the YAML.
-          ELECTRON_BUILDER_NOTARIZE: "true"
         run: |
           # `--mac --${{ matrix.arch }} --publish always` produces the
           # .dmg, signs it, notarizes it, staples the ticket, and
           # uploads to the matching GitHub Release.
+          #
+          # `--config.mac.notarize=true` overrides the `notarize: false`
+          # that lives in electron-builder.yml (the YAML default keeps
+          # local `pnpm package:mac` runs from blocking on notarytool
+          # without credentials). Setting it via CLI here is the only
+          # path electron-builder honors — there is NO env var that
+          # toggles it, despite older docs claiming otherwise.
           pnpm exec electron-builder \
             --mac \
             --${{ matrix.arch }} \
-            --publish always
+            --publish always \
+            --config.mac.notarize=true
 
       - name: Audit bundle for secret leaks
         working-directory: services/desktop

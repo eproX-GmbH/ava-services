@@ -1,6 +1,6 @@
 {
   "name": "@ava/desktop",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "private": true,
   "description": "AVA Electron desktop app — replaces user-interface/ Next.js. Talks to db-gateway only.",
   "author": {
