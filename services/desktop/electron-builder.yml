@@ -1,5 +1,16 @@
 appId: com.ava.desktop
-productName: AVA Desktop
+# Pin the electron runtime version baked into the .dmg/.exe.
+# electron-builder normally derives this by reading
+# `node_modules/electron/package.json`, but with pnpm's filter
+# install on CI (`--filter "@ava/desktop..."`) electron is hoisted
+# to the workspace root and the lookup from services/desktop fails.
+# Setting it explicitly here removes the ambiguity entirely.
+electronVersion: "31.7.7"
+# Display name everywhere the OS surfaces it: macOS Dock + Applications,
+# Windows Start menu + uninstall list, Linux menu, the .dmg / .exe
+# installer titles. Bundle id stays `com.ava.desktop` so existing
+# safeStorage entries + userData paths don't break with the rename.
+productName: AVA
 directories:
   buildResources: resources
   output: release/${version}
@@ -42,6 +53,11 @@ mac:
       # `.github/workflows/desktop-release.yml` build-mac matrix.
       arch: [arm64]
   category: public.app-category.business
+  # Icon source: `resources/icon.icns` — multi-resolution (16…1024)
+  # built from /Users/mac/Desktop/Repos/ava-v2/public/ios via
+  # `iconutil -c icns`. Used for Dock, Applications folder, Mission
+  # Control, and the .dmg installer thumbnail.
+  icon: icon.icns
   # Info.plist additions. macOS REQUIRES `NSMicrophoneUsageDescription`
   # in the bundle's Info.plist for the OS-level mic prompt to appear
   # (Phase 8.n2 voice mode). Without it, macOS silently denies mic
@@ -78,6 +94,9 @@ win:
   target:
     - target: nsis
       arch: [x64]
+  # Icon source: `resources/icon.ico` — 16/32/48/64/128/256 multi-res,
+  # built from the same 1024×1024 source via Pillow.
+  icon: icon.ico
   # Phase 8.u1: Windows code-signing intentionally deferred. Builds
   # ship unsigned; users see SmartScreen's "unrecognized publisher"
   # warning on first launch and must click "More info → Run anyway".

@@ -711,7 +711,7 @@ app.whenReady().then(async () => {
     // Dev mode runs the prebuilt `node_modules/electron/dist/Electron.app`
     // binary; macOS attaches mic permissions to the bundle's
     // CFBundleName, which for that binary is "Electron". In a packaged
-    // build the bundle is "AVA Desktop". Surface this to the renderer
+    // build the bundle is "AVA". Surface this to the renderer
     // so the error message can tell the user where to LOOK in System
     // Settings.
     const isPackaged = app.isPackaged;

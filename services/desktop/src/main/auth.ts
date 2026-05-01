@@ -344,7 +344,7 @@ const CALLBACK_HTML = `<!doctype html><meta charset="utf-8">
 <title>AVA — sign-in complete</title>
 <style>body{font:16px/1.5 -apple-system,system-ui,sans-serif;padding:3rem;color:#111}h1{margin:0 0 .5rem}</style>
 <h1>You're signed in.</h1>
-<p>You can close this tab and return to AVA Desktop.</p>
+<p>You can close this tab and return to AVA.</p>
 <script>setTimeout(()=>window.close(),300)</script>`;
 
 function runLoopbackFlow(

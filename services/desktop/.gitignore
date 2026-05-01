@@ -13,6 +13,11 @@ release/
 resources/ollama/*/
 resources/whisper/*/
 
+# Derived icon working dir — `iconutil -c icns` regenerates from the
+# source PNGs in /Users/mac/Desktop/Repos/ava-v2/public/ios. Only the
+# final .icns / .ico / .png are checked in.
+resources/icon.iconset/
+
 # Gateway-side annotation overlay (Phase 8.f5 transaction-name +
 # any future per-process state files). See lib/transaction-names.ts.
 .gateway-data/

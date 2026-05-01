@@ -25,7 +25,7 @@ export function SignIn() {
 
   return (
     <div className="signin">
-      <h1>AVA Desktop</h1>
+      <h1>AVA</h1>
       <p>Mit deinem AVA-Konto anmelden, um fortzufahren.</p>
       <button onClick={onClick} disabled={busy} className="primary">
         {busy ? "Warte auf Browser…" : "Anmelden"}

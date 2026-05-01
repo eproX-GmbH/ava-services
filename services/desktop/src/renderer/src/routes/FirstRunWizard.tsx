@@ -277,7 +277,7 @@ export function FirstRunWizard({
           </p>
         ) : (
           <p className="muted">
-            AVA Desktop führt Sprach- und Embedding-Modelle lokal über Ollama
+            AVA führt Sprach- und Embedding-Modelle lokal über Ollama
             aus. Wir laden {visibleMissing.length}{" "}
             {visibleMissing.length === 1 ? "Modell" : "Modelle"} herunter,
             bevor es losgehen kann. Das passiert einmal pro Rechner.
