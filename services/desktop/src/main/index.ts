@@ -455,6 +455,14 @@ function createMainWindow(): BrowserWindow {
   } else {
     void win.loadFile(join(__dirname, "../renderer/index.html"));
   }
+
+  // v0.1.7 diagnostic: auto-open DevTools in packaged builds while we
+  // chase the OpenAI ECONNRESET issue. Will be gated behind a settings
+  // toggle in a follow-up; for now the dock icon makes it obvious so
+  // pilot users aren't surprised.
+  if (app.isPackaged) {
+    win.webContents.openDevTools({ mode: "detach" });
+  }
   return win;
 }
 

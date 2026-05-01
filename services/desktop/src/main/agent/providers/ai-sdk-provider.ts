@@ -210,6 +210,21 @@ export class AiSdkProvider extends EventEmitter implements LlmProvider {
       this.kind === "ollama"
         ? this.ollamaBaseURL()
         : undefined;
+    // v0.1.7 diagnostic: log key shape (length + masked head/tail) and
+    // request shape so we can tell, post-mortem in DevTools, whether
+    // the key reached this layer intact and which model the SDK is
+    // about to talk to. Never logs the full key.
+    if (this.kind !== "ollama") {
+      const k = apiKey ?? "";
+      const masked =
+        k.length > 8 ? `${k.slice(0, 4)}…${k.slice(-4)}` : `len=${k.length}`;
+      const ascii = /^[\x20-\x7E]*$/.test(k);
+      const hasWS = /\s/.test(k);
+      // eslint-disable-next-line no-console
+      console.log(
+        `[${this.kind}] outgoing call → model=${status.model} key=${masked} keyLen=${k.length} ascii=${ascii} hasWhitespace=${hasWS}`,
+      );
+    }
     const model = createLLM({
       provider: this.kind as RuntimeProvider,
       model: status.model,
@@ -267,6 +282,14 @@ export class AiSdkProvider extends EventEmitter implements LlmProvider {
           }
           case "error": {
             const err = (part as { error?: unknown }).error;
+            // v0.1.7 diagnostic: dump the full error including the
+            // cause chain so DevTools shows undici's underlying
+            // ECONNRESET / TLS / etc., not just the SDK's wrapper.
+            // eslint-disable-next-line no-console
+            console.error(`[${this.kind}] stream error part:`, err, {
+              cause: err instanceof Error ? (err as { cause?: unknown }).cause : undefined,
+              stack: err instanceof Error ? err.stack : undefined,
+            });
             const msg =
               err instanceof Error
                 ? err.message
@@ -295,6 +318,18 @@ export class AiSdkProvider extends EventEmitter implements LlmProvider {
       // streamText throws on auth errors / network failures before the
       // first frame. Translate into our terminal error frame so the
       // orchestrator's catch block treats the turn as a sticky error.
+      //
+      // v0.1.7 diagnostic: dump the full error + cause chain to
+      // DevTools console. The wrapped message shown to the user often
+      // hides the underlying network reason (e.g. SDK says
+      // "Cannot connect to API: read ECONNRESET" but the cause has
+      // the actual TLS or DNS detail).
+      // eslint-disable-next-line no-console
+      console.error(`[${this.kind}] streamText threw before first frame:`, err, {
+        cause: err instanceof Error ? (err as { cause?: unknown }).cause : undefined,
+        stack: err instanceof Error ? err.stack : undefined,
+        name: err instanceof Error ? err.name : typeof err,
+      });
       const msg = err instanceof Error ? err.message : String(err);
       yield { done: true, errorMessage: msg };
       return;
