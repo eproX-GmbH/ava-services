@@ -39,7 +39,9 @@ import { spawn } from "node:child_process";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 
-const VERSION = process.env.WHISPER_CPP_VERSION ?? "v1.7.4";
+// v1.8.4 is the first release that ships the `whisper-bin-x64.zip`
+// asset we need for Windows. v1.7.4 was source-only (zero assets).
+const VERSION = process.env.WHISPER_CPP_VERSION ?? "v1.8.4";
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const RESOURCES_ROOT = resolve(__dirname, "..", "resources", "whisper");
 
@@ -49,25 +51,27 @@ const RESOURCES_ROOT = resolve(__dirname, "..", "resources", "whisper");
  * drops it at the canonical path. If upstream's archive layout
  * changes, only the helper bodies need to move.
  */
+// Acquisition strategies per platform:
+//
+//   - Windows: upstream ships `whisper-bin-x64.zip` from v1.8.0+.
+//   - macOS:   upstream ships NO darwin assets — only an iOS xcframework.
+//              Use Homebrew on the runner (`brew install whisper-cpp`)
+//              and copy the resulting `whisper-cli` into resources/.
+//              The runtime arch follows the runner's arch — that's why
+//              v0.1.0 pilots arm64 only. darwin-x64 needs an Intel
+//              Homebrew or an explicit cross-compile (Phase 8.u3).
+//   - Linux:   upstream also ships no Linux asset. Not in the v0.1.0
+//              build matrix; AppImage is opt-in for later.
 const TARGETS = [
   {
     id: "darwin-arm64",
-    asset: `whisper-bin-macOS-arm64.zip`,
-    extract: extractMacZip,
-  },
-  {
-    id: "darwin-x64",
-    asset: `whisper-bin-macOS-x64.zip`,
-    extract: extractMacZip,
-  },
-  {
-    id: "linux-x64",
-    asset: `whisper-bin-Linux.tar.gz`,
-    extract: extractLinuxTgz,
+    source: "brew",
+    formula: "whisper-cpp",
   },
   {
     id: "win32-x64",
-    asset: `whisper-bin-x64.zip`,
+    source: "release",
+    asset: "whisper-bin-x64.zip",
     extract: extractWindowsZip,
   },
 ];
@@ -98,14 +102,19 @@ async function main() {
       }
     }
 
-    const url = `https://github.com/ggerganov/whisper.cpp/releases/download/${VERSION}/${target.asset}`;
-    console.log(`[whisper] ${target.id}: downloading ${url}`);
     await mkdir(outDir, { recursive: true });
-    const archivePath = join(outDir, target.asset);
-    await streamTo(url, archivePath);
-    console.log(`[whisper] ${target.id}: extracting`);
-    await target.extract(archivePath, outDir, exeName);
-    rmSync(archivePath, { force: true });
+
+    if (target.source === "brew") {
+      await fetchViaBrew(target.formula, outDir, exeName);
+    } else {
+      const url = `https://github.com/ggerganov/whisper.cpp/releases/download/${VERSION}/${target.asset}`;
+      console.log(`[whisper] ${target.id}: downloading ${url}`);
+      const archivePath = join(outDir, target.asset);
+      await streamTo(url, archivePath);
+      console.log(`[whisper] ${target.id}: extracting`);
+      await target.extract(archivePath, outDir, exeName);
+      rmSync(archivePath, { force: true });
+    }
     if (!target.id.startsWith("win32")) {
       try {
         chmodSync(outBin, 0o755);
@@ -114,6 +123,44 @@ async function main() {
       }
     }
     console.log(`[whisper] ${target.id}: done → ${outBin}`);
+  }
+}
+
+/**
+ * Brew-based acquisition for macOS. Idempotent: if `whisper-cli` is
+ * already on PATH (cached on the CI runner), we skip the install
+ * step. Copies the resolved binary into the resources/ tree so
+ * electron-builder's `extraResources` block bundles it.
+ */
+async function fetchViaBrew(formula, outDir, exeName) {
+  // 1. Ensure the formula is installed. `brew install` is a no-op on
+  //    a runner that already has it.
+  await runCmd("brew", ["install", formula]);
+  // 2. Resolve the absolute path of the installed binary. `brew --prefix`
+  //    of the formula gives us `/opt/homebrew/opt/whisper-cpp` (arm64)
+  //    or `/usr/local/opt/whisper-cpp` (x64); the binary lives under
+  //    `bin/whisper-cli`.
+  const prefix = (await runCmdCapture("brew", ["--prefix", formula])).trim();
+  const srcBin = join(prefix, "bin", exeName);
+  if (!existsSync(srcBin)) {
+    throw new Error(`brew installed ${formula} but ${srcBin} is missing`);
+  }
+  const fs = await import("node:fs/promises");
+  await fs.copyFile(srcBin, join(outDir, exeName));
+  // Also copy any shared libraries the binary links to. On macOS the
+  // Homebrew formula is mostly self-contained, but `libwhisper.dylib`
+  // sometimes lives next to the binary in lib/; copy if present so the
+  // packaged .app doesn't break on a user without brew.
+  const libDir = join(prefix, "lib");
+  try {
+    const entries = await fs.readdir(libDir);
+    for (const name of entries) {
+      if (name.endsWith(".dylib")) {
+        await fs.copyFile(join(libDir, name), join(outDir, name));
+      }
+    }
+  } catch {
+    /* lib dir missing — fine, the binary is statically linked */
   }
 }
 
@@ -175,6 +222,21 @@ function runCmd(cmd, args) {
     child.on("error", rejectRun);
     child.on("exit", (code) => {
       if (code === 0) resolveRun();
+      else rejectRun(new Error(`${cmd} exited ${code}`));
+    });
+  });
+}
+
+function runCmdCapture(cmd, args) {
+  return new Promise((resolveRun, rejectRun) => {
+    const child = spawn(cmd, args, { stdio: ["ignore", "pipe", "inherit"] });
+    let out = "";
+    child.stdout.on("data", (b) => {
+      out += b.toString();
+    });
+    child.on("error", rejectRun);
+    child.on("exit", (code) => {
+      if (code === 0) resolveRun(out);
       else rejectRun(new Error(`${cmd} exited ${code}`));
     });
   });

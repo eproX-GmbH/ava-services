@@ -37,7 +37,10 @@ extraResources:
 mac:
   target:
     - target: dmg
-      arch: [arm64, x64]
+      # v0.1.0: arm64 only. darwin-x64 deferred until we ship an Intel
+      # whisper-cpp binary (the macos-14 CI runner is arm64). See
+      # `.github/workflows/desktop-release.yml` build-mac matrix.
+      arch: [arm64]
   category: public.app-category.business
   # Info.plist additions. macOS REQUIRES `NSMicrophoneUsageDescription`
   # in the bundle's Info.plist for the OS-level mic prompt to appear
