@@ -139,11 +139,18 @@ jobs:
           # without credentials). Setting it via CLI here is the only
           # path electron-builder honors — there is NO env var that
           # toggles it, despite older docs claiming otherwise.
+          # The notarize block has to be a full object that includes
+          # the teamId — passing just `--config.mac.notarize=true`
+          # leaves notarytool without the team identifier and it
+          # rejects the request with "teamId property is required
+          # when using notarization with password credentials". The
+          # APPLE_ID + APPLE_APP_SPECIFIC_PASSWORD env vars are still
+          # picked up automatically by notarytool from process.env.
           pnpm exec electron-builder \
             --mac \
             --${{ matrix.arch }} \
             --publish always \
-            --config.mac.notarize=true
+            --config.mac.notarize.teamId="$APPLE_TEAM_ID"
 
       - name: Audit bundle for secret leaks
         working-directory: services/desktop
