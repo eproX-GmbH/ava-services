@@ -65,7 +65,14 @@ jobs:
           cache: pnpm
 
       - name: Install workspace dependencies
-        run: pnpm install --frozen-lockfile
+        # Filter to only the @ava/desktop dependency closure. The
+        # parent workspace also includes producer services
+        # (master-data, company-*, queue-client) that pull from a
+        # private GitLab npm registry; CI doesn't have those creds and
+        # doesn't need them — desktop's transitive workspace dep is
+        # only @ava/ai-provider. The `...` suffix expands to "this
+        # package and its dependencies".
+        run: pnpm install --filter "@ava/desktop..." --frozen-lockfile
 
       - name: Validate version tag matches package.json
         working-directory: services/desktop
@@ -137,7 +144,14 @@ jobs:
           cache: pnpm
 
       - name: Install workspace dependencies
-        run: pnpm install --frozen-lockfile
+        # Filter to only the @ava/desktop dependency closure. The
+        # parent workspace also includes producer services
+        # (master-data, company-*, queue-client) that pull from a
+        # private GitLab npm registry; CI doesn't have those creds and
+        # doesn't need them — desktop's transitive workspace dep is
+        # only @ava/ai-provider. The `...` suffix expands to "this
+        # package and its dependencies".
+        run: pnpm install --filter "@ava/desktop..." --frozen-lockfile
 
       - name: Validate version tag matches package.json
         working-directory: services/desktop
