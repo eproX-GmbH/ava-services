@@ -97,6 +97,14 @@ jobs:
         working-directory: services/desktop
         run: pnpm fetch:whisper --platform=darwin-${{ matrix.arch }}
 
+      # Compile main + preload + renderer into `services/desktop/out/`
+      # so electron-builder's asar packer has something to bundle.
+      # electron-builder itself doesn't trigger this — it's a
+      # separate vite-driven step.
+      - name: Build renderer + main bundles
+        working-directory: services/desktop
+        run: pnpm build
+
       # Imports the Developer ID Application cert into a fresh
       # keychain that's destroyed at job end. electron-builder's
       # signing step picks it up automatically.
@@ -172,6 +180,10 @@ jobs:
       - name: Fetch whisper-cli binary
         working-directory: services/desktop
         run: pnpm fetch:whisper --platform=win32-x64
+
+      - name: Build renderer + main bundles
+        working-directory: services/desktop
+        run: pnpm build
 
       - name: Build & publish (Windows, unsigned)
         working-directory: services/desktop
