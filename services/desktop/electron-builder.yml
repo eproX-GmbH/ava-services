@@ -69,15 +69,17 @@ mac:
       auf dem Gerät zu transkribieren. Audio verlässt das Gerät nicht.
   # Code-signing + notarization (Phase 8.u1).
   #
-  # `identity` resolves at build time against the keychain entry that
-  # matches the Developer ID Application certificate. CI imports the
-  # cert from the `MAC_CERTIFICATE_P12_BASE64` /
-  # `MAC_CERTIFICATE_PASSWORD` secrets via `apple-actions/import-codesign-certs`
-  # and electron-builder reads the resulting keychain. Locally a `null`
-  # value lets electron-builder pick the first valid signing identity
-  # in the user's keychain — works on a developer machine that already
-  # has the cert imported.
-  identity: null
+  # `identity` is intentionally NOT set — leaving it undefined makes
+  # electron-builder auto-pick the first Developer ID Application
+  # cert from the keychain. CI imports the cert from
+  # `MAC_CERTIFICATE_P12_BASE64` / `MAC_CERTIFICATE_PASSWORD` via
+  # `apple-actions/import-codesign-certs` into a fresh per-job
+  # keychain, which auto-pick then resolves.
+  #
+  # WARNING: `identity: null` (literal null) means "skip signing
+  # entirely" in electron-builder semantics, NOT "auto-pick". Don't
+  # add it back without reading
+  # https://www.electron.build/configuration/mac.html#mac
   hardenedRuntime: true
   gatekeeperAssess: false
   # Notarization runs in CI via apple-id + an app-specific password (not
