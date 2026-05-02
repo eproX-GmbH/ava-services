@@ -60,16 +60,29 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.event.inputs.tag || github.ref_name }}
-          # Phase 8.v1.2 — local producer bundling needs the
-          # submodule sources (company-profile/, structured-content/,
-          # …). actions/checkout uses GITHUB_TOKEN by default, which
-          # only sees the parent repo. The SUBMODULES_PAT secret is
-          # a Personal Access Token with read access to the eproX
-          # org's private submodule repos. If the secret is unset,
-          # checkout proceeds without submodules and
-          # `pnpm fetch:producers` will skip them gracefully.
-          submodules: recursive
-          token: ${{ secrets.SUBMODULES_PAT || secrets.GITHUB_TOKEN }}
+
+      # Phase 8.v1.2 — selectively init only the GitHub submodules
+      # we actually vendor into the desktop. `submodules: recursive`
+      # on actions/checkout fails the whole job if ANY submodule
+      # can't be cloned (e.g. PAT scope misses one, or GitLab-hosted
+      # ones we don't need anyway). Manual loop below is per-submodule
+      # tolerant.
+      - name: Init producer submodules
+        env:
+          SUBMODULES_PAT: ${{ secrets.SUBMODULES_PAT }}
+        run: |
+          if [ -z "$SUBMODULES_PAT" ]; then
+            echo "SUBMODULES_PAT not set — skipping submodule fetch."
+            exit 0
+          fi
+          # Use the PAT to authenticate against github.com globally
+          # for the duration of this step.
+          git config --global url."https://x-access-token:${SUBMODULES_PAT}@github.com/".insteadOf "https://github.com/"
+          for sub in company-profile; do
+            git submodule update --init --depth=1 -- "$sub" \
+              && echo "✓ $sub" \
+              || echo "✗ $sub (skipped)"
+          done
 
       - uses: pnpm/action-setup@v3
         with:
@@ -192,16 +205,29 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.event.inputs.tag || github.ref_name }}
-          # Phase 8.v1.2 — local producer bundling needs the
-          # submodule sources (company-profile/, structured-content/,
-          # …). actions/checkout uses GITHUB_TOKEN by default, which
-          # only sees the parent repo. The SUBMODULES_PAT secret is
-          # a Personal Access Token with read access to the eproX
-          # org's private submodule repos. If the secret is unset,
-          # checkout proceeds without submodules and
-          # `pnpm fetch:producers` will skip them gracefully.
-          submodules: recursive
-          token: ${{ secrets.SUBMODULES_PAT || secrets.GITHUB_TOKEN }}
+
+      # Phase 8.v1.2 — selectively init only the GitHub submodules
+      # we actually vendor into the desktop. `submodules: recursive`
+      # on actions/checkout fails the whole job if ANY submodule
+      # can't be cloned (e.g. PAT scope misses one, or GitLab-hosted
+      # ones we don't need anyway). Manual loop below is per-submodule
+      # tolerant.
+      - name: Init producer submodules
+        env:
+          SUBMODULES_PAT: ${{ secrets.SUBMODULES_PAT }}
+        run: |
+          if [ -z "$SUBMODULES_PAT" ]; then
+            echo "SUBMODULES_PAT not set — skipping submodule fetch."
+            exit 0
+          fi
+          # Use the PAT to authenticate against github.com globally
+          # for the duration of this step.
+          git config --global url."https://x-access-token:${SUBMODULES_PAT}@github.com/".insteadOf "https://github.com/"
+          for sub in company-profile; do
+            git submodule update --init --depth=1 -- "$sub" \
+              && echo "✓ $sub" \
+              || echo "✗ $sub (skipped)"
+          done
 
       - uses: pnpm/action-setup@v3
         with:
