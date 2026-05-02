@@ -252,9 +252,23 @@ async function main() {
     //    We keep dist + node_modules + prisma + package.json.
     rmSync(dstDir, { recursive: true, force: true });
     mkdirSync(dstDir, { recursive: true });
-    for (const entry of ["dist", "node_modules", "prisma", "package.json"]) {
+    // Copy `generated/` too — the producer schema.prisma sets
+    //   `output = "../generated/prisma-client"`
+    // so tsc-alias rewrites `import "@prisma/client"` to a relative
+    // path into `generated/prisma-client`, NOT into node_modules.
+    // Without this, the bundled producer crashes at first import
+    // with `Cannot find module '..'` (tsc-alias collapsed the
+    // missing dir away).
+    // Required entries throw when missing; optional entries are
+    // copied if present and silently skipped otherwise. `generated/`
+    // is optional because not every producer overrides Prisma's
+    // default output dir.
+    const REQUIRED = ["dist", "node_modules", "prisma", "package.json"];
+    const OPTIONAL = ["generated"];
+    for (const entry of [...REQUIRED, ...OPTIONAL]) {
       const from = join(stageDir, entry);
       if (!existsSync(from)) {
+        if (OPTIONAL.includes(entry)) continue;
         throw new Error(
           `[producers] ${target.name}: stage missing ${entry} after build`,
         );
