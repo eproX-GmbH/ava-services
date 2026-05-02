@@ -105,6 +105,16 @@ function isAllowed(key) {
   return false;
 }
 
+// Vendored producer node_modules trees are excluded from
+// content-scanning. They contain upstream-published code we don't
+// control (test fixtures with placeholder tokens, PEM regex
+// strings, CLI help text with example postgres URLs, …) — every
+// hit there is a false positive. The forbidden-filename check
+// still fires on those paths so an accidental .env among the
+// vendored files is caught regardless.
+const SKIP_CONTENT_SCAN_RE =
+  /\/(?:resources\/producers\/[^/]+\/node_modules|producers\/[^/]+\/node_modules)\//;
+
 function* walk(dir) {
   let entries;
   try {
@@ -129,7 +139,10 @@ function* walk(dir) {
         }
       }
       const ext = extname(e.name);
-      if (SCAN_EXT.has(ext)) yield p;
+      // Skip content-scan on vendored producer node_modules — see
+      // SKIP_CONTENT_SCAN_RE comment above. Forbidden-filename
+      // check ran already.
+      if (SCAN_EXT.has(ext) && !SKIP_CONTENT_SCAN_RE.test(p)) yield p;
     }
   }
 }

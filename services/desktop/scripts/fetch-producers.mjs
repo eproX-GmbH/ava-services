@@ -344,9 +344,15 @@ function walkAndStrip(dir) {
       walkAndStrip(p);
     } else if (e.isFile()) {
       // Drop source maps, TypeScript sources alongside compiled JS,
-      // and assorted text noise.
+      // and assorted text noise. Also: standalone *.test.js fixtures
+      // that ship inside dist/ — they trip our bundle-secret audit
+      // with placeholder credentials and have no runtime purpose.
       if (
         e.name.endsWith(".map") ||
+        e.name.endsWith(".test.js") ||
+        e.name.endsWith(".test.cjs") ||
+        e.name.endsWith(".test.mjs") ||
+        e.name.endsWith(".spec.js") ||
         e.name === "CHANGELOG.md" ||
         e.name === "HISTORY.md" ||
         e.name === ".eslintrc" ||
