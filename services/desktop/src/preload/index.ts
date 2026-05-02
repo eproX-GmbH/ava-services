@@ -23,6 +23,7 @@ import type {
   NotificationPermissionStatus,
   OllamaPullProgress,
   OllamaStatus,
+  PostgresStatus,
   ProviderCatalogEntry,
   ProviderConfig,
   ProviderConfigBundle,
@@ -66,6 +67,7 @@ export type {
   NotificationPermissionStatus,
   OllamaPullProgress,
   OllamaStatus,
+  PostgresStatus,
   ProviderCatalogEntry,
   ProviderConfig,
   ProviderConfigBundle,
@@ -149,6 +151,25 @@ const api = {
       ) => cb(progress);
       ipcRenderer.on("ollama-pull:progress", handler);
       return () => ipcRenderer.removeListener("ollama-pull:progress", handler);
+    },
+  },
+
+  // Postgres (Phase 8.v1.0) — bundled local DB substrate. Same shape
+  // as `ollama` but read-only at this stage; the renderer uses it
+  // exclusively for the Settings status row. Producer subprocesses
+  // (8.v1.2+) will get their connection strings from the main process
+  // directly, not via the renderer.
+  postgres: {
+    getStatus: (): Promise<PostgresStatus> =>
+      ipcRenderer.invoke("postgres:getStatus"),
+    onStatusChanged: (cb: (status: PostgresStatus) => void): (() => void) => {
+      const handler = (
+        _e: Electron.IpcRendererEvent,
+        status: PostgresStatus,
+      ) => cb(status);
+      ipcRenderer.on("postgres-status:changed", handler);
+      return () =>
+        ipcRenderer.removeListener("postgres-status:changed", handler);
     },
   },
 

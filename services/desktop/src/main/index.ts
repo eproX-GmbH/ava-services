@@ -9,6 +9,7 @@ import {
 import { join } from "node:path";
 import { Auth, type AuthStatus } from "./auth";
 import { OllamaSupervisor } from "./ollama-supervisor";
+import { PostgresSupervisor } from "./postgres-supervisor";
 import {
   AgentOrchestrator,
   AlertPrefsStore,
@@ -44,6 +45,7 @@ import type {
   AlertPrefs,
   OllamaPullProgress,
   OllamaStatus,
+  PostgresStatus,
   UserProfile,
   Watch,
   VoiceModelDownloadProgress,
@@ -101,6 +103,24 @@ function broadcastOllamaPullProgress(progress: OllamaPullProgress): void {
 }
 ollama.on("status", broadcastOllamaStatus);
 ollama.on("progress", broadcastOllamaPullProgress);
+
+// Postgres supervisor (Phase 8.v1.0).
+//
+// Boots the bundled portable Postgres on app start. Producer services
+// (8.v1.2+) connect against this instance via DATABASE_URL pointing at
+// 127.0.0.1:<port>/<db>. In v0.1.x there are no producers yet, but the
+// substrate has to come up cleanly before we wire them in.
+//
+// Disabled by setting AVA_DISABLE_POSTGRES=1 — used in CI lint /
+// mock-gateway dev where the local DB is not under test.
+const postgres = new PostgresSupervisor();
+
+function broadcastPostgresStatus(status: PostgresStatus): void {
+  for (const win of BrowserWindow.getAllWindows()) {
+    win.webContents.send("postgres-status:changed", status);
+  }
+}
+postgres.on("status", broadcastPostgresStatus);
 
 // Agent orchestrator (Phase 8.a + 8.b).
 //
@@ -532,6 +552,11 @@ app.whenReady().then(async () => {
   ipcMain.handle("ollama:deleteModel", (_e, modelName: string) =>
     ollama.deleteModel(modelName),
   );
+
+  // Postgres supervisor IPC (8.v1.0). Renderer reads getStatus on
+  // mount and subscribes to `postgres-status:changed`. No restart /
+  // reset endpoints yet — those come with the Settings panel UX.
+  ipcMain.handle("postgres:getStatus", () => postgres.getStatus());
   ipcMain.handle("ollama:restart", () => ollama.restart());
 
   // Agent IPC. Stream frames arrive via `agent:stream`; the renderer is
@@ -845,6 +870,19 @@ app.whenReady().then(async () => {
     );
   }
 
+  // Postgres supervisor (8.v1.0). Same pattern as Ollama — fire and
+  // forget; renderer reacts to status pushes. First-launch `initdb`
+  // takes ~5s on a Mac, so we deliberately don't `await` either.
+  if (process.env.AVA_DISABLE_POSTGRES !== "1") {
+    void postgres.start().catch((err) => {
+      console.error("[postgres] supervisor.start() rejected:", err);
+    });
+  } else {
+    console.warn(
+      "[postgres] AVA_DISABLE_POSTGRES=1 — supervisor not started; renderer will see state=idle",
+    );
+  }
+
   // Heartbeat begins ticking once the app + IPC are wired. Stopping
   // happens on `before-quit` below.
   heartbeat.start();
@@ -877,4 +915,7 @@ app.on("before-quit", () => {
   agent.dispose();
   providers.dispose();
   void ollama.stop();
+  // Postgres last — producers (8.v1.2+) depend on it for clean
+  // shutdown of their own state.
+  void postgres.stop();
 });

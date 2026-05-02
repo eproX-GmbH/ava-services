@@ -28,6 +28,48 @@ export interface AuthStatus {
   scopes: string[];
 }
 
+// ---- Postgres (8.v1.0 — bundled local DB) ---------------------------------
+//
+// The desktop app spawns a portable PostgreSQL 17 binary as a child
+// process bound to 127.0.0.1:<port>. The producer services that join in
+// 8.v1.2+ each get their own database in this single instance and
+// connect via DATABASE_URL=postgres://postgres@127.0.0.1:port/<db>. The
+// renderer never talks SQL — it only reads supervisor state via IPC
+// to drive the "Local DB" status row in Settings.
+
+/**
+ * Lifecycle of the bundled Postgres child process.
+ *  - `idle`: not started yet
+ *  - `initializing`: first-launch initdb running (creates data dir
+ *    layout, the system catalog, etc. — takes ~5s on a Mac)
+ *  - `starting`: postgres spawned, waiting for the loopback port to
+ *    answer pg_isready
+ *  - `ready`: pg_isready returned `accepting connections`
+ *  - `error`: initdb / spawn / health-check failed
+ *  - `stopping`: graceful shutdown in flight (SIGTERM → wait)
+ */
+export type PostgresSupervisorState =
+  | "idle"
+  | "initializing"
+  | "starting"
+  | "ready"
+  | "error"
+  | "stopping";
+
+export interface PostgresStatus {
+  state: PostgresSupervisorState;
+  /** Loopback URL once `ready`, e.g. "postgres://postgres@127.0.0.1:54329". */
+  host: string | null;
+  /** Bound port — null until `ready`. */
+  port: number | null;
+  /** Absolute path to the data directory under userData. */
+  dataDir: string | null;
+  /** Server version string from `postgres --version`, e.g. "17.5". */
+  version: string | null;
+  /** Last error message (only set when state === "error"). */
+  errorMessage: string | null;
+}
+
 // ---- Ollama (D7 — bundled runtime) -----------------------------------------
 //
 // The desktop app spawns Ollama as a child process. The renderer never talks

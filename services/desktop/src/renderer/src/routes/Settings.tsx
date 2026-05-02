@@ -5,6 +5,7 @@ import { gatewayFetch } from "../api/gateway";
 import { pullModelTracked, useOllamaStore } from "../store/ollama";
 import { useVoiceStore } from "../store/voice";
 import { useProfileStore } from "../store/profile";
+import { usePostgresStore } from "../store/postgres";
 import type {
   AlertCadenceMinutes,
   AlertCandidateDecision,
@@ -75,9 +76,79 @@ export function Settings() {
       <ProviderSection />
       <ProfileSection />
       <VoiceSection />
+      <PostgresSection />
       <AlertsSection />
       <FreshnessSection />
       <GeneralMemorySection />
+    </section>
+  );
+}
+
+// -- Local Postgres status (8.v1.0) -----------------------------------
+//
+// Read-only status row at this stage. Producer wiring (8.v1.2+) will
+// extend this section with a per-producer status list. For v0.1.x we
+// just want the user to see "ja, die lokale DB läuft" or, in the
+// degraded case, a clear error string they can quote when filing a
+// bug report.
+
+function PostgresSection() {
+  const status = usePostgresStore((s) => s.status);
+
+  const stateLabel: Record<typeof status.state, string> = {
+    idle: "noch nicht gestartet",
+    initializing: "wird initialisiert (einmalig, ~5 s)…",
+    starting: "startet…",
+    ready: "bereit",
+    error: "Fehler",
+    stopping: "fährt herunter…",
+  };
+
+  const tone =
+    status.state === "ready"
+      ? "ok"
+      : status.state === "error"
+        ? "err"
+        : "muted";
+
+  return (
+    <section className="provider-section" id="local-services">
+      <h3>Lokale Datenbank</h3>
+      <p className="muted small">
+        AVA bündelt eine eingebettete PostgreSQL-Instanz für die lokal
+        laufenden Producer-Dienste. Die Datenbank läuft nur auf{" "}
+        <code>127.0.0.1</code> und ist von außen nicht erreichbar.
+      </p>
+      <ul className="kv">
+        <li>
+          <span className="muted">Status:</span>{" "}
+          <span className={`status-dot ${tone}`}>
+            {stateLabel[status.state]}
+          </span>
+        </li>
+        {status.version && (
+          <li>
+            <span className="muted">Version:</span> PostgreSQL {status.version}
+          </li>
+        )}
+        {status.host && (
+          <li>
+            <span className="muted">Endpoint:</span>{" "}
+            <code>{status.host}</code>
+          </li>
+        )}
+        {status.dataDir && (
+          <li>
+            <span className="muted">Datenverzeichnis:</span>{" "}
+            <code className="path">{status.dataDir}</code>
+          </li>
+        )}
+        {status.errorMessage && (
+          <li className="error">
+            <span className="muted">Fehler:</span> {status.errorMessage}
+          </li>
+        )}
+      </ul>
     </section>
   );
 }

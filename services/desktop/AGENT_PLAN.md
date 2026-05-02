@@ -2263,3 +2263,122 @@ appears in System Settings → Privacy → Microphone.
   ships, painful when users are mid-flight. Defer until we've
   seen one such fix; can land as a v2 IPC handshake the gateway
   participates in.
+
+## 8.v — Local producer pipeline (NEW)
+
+The plan from D5/D6 was always "shared substrate (master-data,
+gateway, Keycloak) in cloud; tenant-private producers on the
+tenant's machine." We deployed everything to fly during early
+plumbing because the desktop app needed *something* on the other
+end of the AMQP wire while we were still wiring up auth +
+packaging. v0.1.x has those out of the way; time to bring the
+producers home.
+
+### Scope (5 producer services to migrate locally)
+
+- `structured-content` — HTML scraping → cleaned text
+- `company-publication` — press release ingestion
+- `company-profile` — AI-generated company profiles + embeddings
+- `company-evaluation` — heuristic / LLM scoring
+- `company-contact` — contact harvesting
+
+`master-data` stays in the cloud (centralised company master).
+`db-gateway` stays in the cloud (auth + routing). `Keycloak` stays
+in the cloud.
+
+### Architectural decision: Plan B (native Electron sidecars)
+
+vs. the alternative (Plan A: spawn a docker-compose stack via
+Docker Desktop), Plan B was picked because:
+
+- B2B onboarding friction: Docker Desktop is a separate install
+  + license check (>250-MA orgs); B is a single .dmg / .exe.
+- Cold-start: B is 3-8s, A is 30-60s.
+- Memory: B ~1 GB, A ~4-5 GB (Docker daemon overhead).
+- Operational visibility: B uses our own supervisor pattern (same
+  as `OllamaSupervisor`); A is a Docker-Desktop black box we
+  can't introspect when something hangs.
+- Cross-platform: both work, but B avoids WSL2 / Hyper-V quirks
+  on Windows domain-managed PCs.
+
+### AMQP across cloud + local
+
+Single CloudAMQP broker, multiple vhosts:
+- `shared` vhost — master-data + gateway, full visibility
+- `tenant-<id>` vhost — one per tenant, scoped permissions
+
+Local producer credentials are issued by the gateway:
+1. Desktop authenticates via Keycloak (existing flow)
+2. Desktop calls `POST /v1/local-amqp-credentials` with bearer
+3. Gateway calls CloudAMQP Management API → creates short-lived
+   user `tenant-<id>-XXXX` with permissions ONLY on `tenant-<id>`
+   vhost
+4. Desktop receives `{ amqpUrl, expiresAt }`, stores via
+   `safeStorage`, injects into spawned producer subprocesses
+5. Refresh ~50min before expiry
+
+### Plan slice sequence
+
+- **8.v1.0** — bundled Postgres binary + `PostgresSupervisor`.
+  No producer wired yet; Settings shows "Local DB: ready".
+  Foundation to sign + ship one binary cleanly through CI.
+- **8.v1.1** — `ProducerSupervisor` skeleton (analog to
+  `OllamaSupervisor`). Spawns a single Node subprocess from a
+  bundled producer tarball. No-op handler — proves spawn works.
+- **8.v1.2** — Wire `company-profile` to local PG + local AMQP
+  (still using shared vhost for now, no tenant-scoped creds).
+  End-to-end transaction: gateway → AMQP → local producer →
+  result back.
+- **8.v1.3** — Gateway endpoint `POST /v1/local-amqp-credentials`
+  + Desktop refresh loop. Tenant-scoped vhost provisioning.
+- **8.v1.4** — Remaining 4 producers (structured-content,
+  company-publication, company-evaluation, company-contact).
+- **8.v1.5** — Settings → "Local services" panel: status per
+  producer, restart button, log viewer.
+- **8.v1.6** — Cutover: suspend the fly-hosted producer apps
+  (kept as failover until the dust settles). Update DECISIONS.md
+  to mark "tenant-private producers run locally" as the active
+  policy.
+
+### Touch points (8.v1.0)
+
+- `services/desktop/scripts/fetch-postgres.mjs` — new. Pulls
+  Zonky's portable PG distribution (macOS arm64 + win x64) into
+  `resources/postgres/<platform>-<arch>/`.
+- `services/desktop/electron-builder.yml` — `extraResources`
+  block extended to include `resources/postgres/`.
+- `services/desktop/src/main/postgres-supervisor.ts` — new.
+  Spawns `postgres` binary on a loopback port, manages data dir
+  under `app.getPath("userData")/postgres-data/`, exposes
+  `start()` / `stop()` / status events, runs `initdb` on first
+  boot.
+- `services/desktop/src/main/index.ts` — boot supervisor before
+  the agent registry; teardown in `before-quit`.
+- `services/desktop/src/preload/index.ts` — `window.api.postgres.*`
+  surface (getStatus, onStatus).
+- `services/desktop/src/shared/types.ts` — `PostgresStatus` type.
+- `services/desktop/src/renderer/src/store/postgres.ts` — Zustand
+  mirror.
+- `services/desktop/src/renderer/src/routes/Settings.tsx` —
+  "Local Postgres" status row in the existing Services section.
+- `.github/workflows/desktop-release.yml` — `pnpm fetch:postgres`
+  step before electron-vite build, both jobs.
+- `services/desktop/scripts/check-bundle-secrets.mjs` —
+  whitelist `POSTGRES_USER`, `POSTGRES_PORT` if they appear in
+  bundled scripts (likely won't).
+
+### Risks / open items
+
+- **Postgres binary signing on macOS**. The bundled Postgres
+  isn't signed by us; electron-builder's notarization step
+  re-signs all nested executables it sees, but Postgres ships
+  multiple binaries (`postgres`, `initdb`, `pg_ctl`, `psql`,
+  helper utilities). Need to verify electron-builder picks them
+  all up or add explicit signing globs to the YAML.
+- **Disk usage**. Each producer has its own database, with
+  embeddings and scraped content. A loaded Pilot tenant might
+  hit several GB. Plan for a "compact / vacuum" Settings action.
+- **First-launch UX**. `initdb` takes ~5s on a Mac; we can't
+  block the Splash screen for that. Either: pre-`initdb` at
+  install time (postinstall script), or kick it off in
+  background and gate "ready" in the topbar Status indicator.

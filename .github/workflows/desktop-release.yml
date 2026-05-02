@@ -97,6 +97,10 @@ jobs:
         working-directory: services/desktop
         run: pnpm fetch:whisper --platform=darwin-${{ matrix.arch }}
 
+      - name: Fetch embedded Postgres
+        working-directory: services/desktop
+        run: pnpm fetch:postgres --platform=darwin-${{ matrix.arch }}
+
       # Compile main + preload + renderer into `services/desktop/out/`
       # so electron-builder's asar packer has something to bundle.
       # electron-builder itself doesn't trigger this — it's a
@@ -196,6 +200,10 @@ jobs:
       - name: Fetch whisper-cli binary
         working-directory: services/desktop
         run: pnpm fetch:whisper --platform=win32-x64
+
+      - name: Fetch embedded Postgres
+        working-directory: services/desktop
+        run: pnpm fetch:postgres --platform=win32-x64
 
       - name: Build renderer + main bundles
         working-directory: services/desktop

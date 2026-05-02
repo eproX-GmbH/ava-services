@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { useConfigStore } from "./store/config";
 import { useAuthStore } from "./store/auth";
 import { useOllamaStore } from "./store/ollama";
+import { usePostgresStore } from "./store/postgres";
 import { bindAlertsBridge } from "./store/alerts";
 import { bindVoiceBridge } from "./store/voice";
 import { bindProfileBridge } from "./store/profile";
@@ -51,6 +52,8 @@ export function App({ children }: PropsWithChildren) {
   const ollamaReady = useOllamaStore((s) => s.ready);
   const ollamaStatus = useOllamaStore((s) => s.status);
 
+  const setPostgresStatus = usePostgresStore((s) => s.setStatus);
+
   // Active LLM provider — when the user has chosen a hosted provider
   // (Phase 8.k10b "Skip → cloud" flow), the missing-LLM rows in
   // status.missing must NOT block the app shell; only the embedding
@@ -75,6 +78,7 @@ export function App({ children }: PropsWithChildren) {
     void window.api.getConfig().then(setConfig);
     void window.api.auth.getStatus().then(setAuth);
     void window.api.ollama.getStatus().then(setOllamaStatus);
+    void window.api.postgres.getStatus().then(setPostgresStatus);
     void window.api.agent.getMemoryProbe().then(setMemoryProbe);
     void window.api.agent
       .getProviderConfig()
@@ -86,6 +90,7 @@ export function App({ children }: PropsWithChildren) {
     const offAuth = window.api.auth.onStatusChanged(setAuth);
     const offOllama = window.api.ollama.onStatusChanged(setOllamaStatus);
     const offPull = window.api.ollama.onPullProgress(setPullProgress);
+    const offPostgres = window.api.postgres.onStatusChanged(setPostgresStatus);
     // Phase 8.f1 — keep the alerts mirror in sync with main. Bootstraps
     // by fetching the current list once, then re-fetches on every
     // `alerts:changed` push.
@@ -106,13 +111,14 @@ export function App({ children }: PropsWithChildren) {
       offAuth();
       offOllama();
       offPull();
+      offPostgres();
       offAlerts();
       offVoice();
       offProfile();
       offWatches();
       offFocus();
     };
-  }, [setConfig, setAuth, setOllamaStatus, setPullProgress, navigate]);
+  }, [setConfig, setAuth, setOllamaStatus, setPullProgress, setPostgresStatus, navigate]);
 
   if (!configReady || !authReady || !ollamaReady) {
     return <div className="loading">Lädt…</div>;

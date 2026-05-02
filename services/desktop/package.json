@@ -19,6 +19,7 @@
     "mock-gateway": "node scripts/mock-gateway.mjs",
     "fetch:ollama": "node scripts/fetch-ollama.mjs",
     "fetch:whisper": "node scripts/fetch-whisper.mjs",
+    "fetch:postgres": "node scripts/fetch-postgres.mjs",
     "setup:mic": "node scripts/patch-electron-mic.mjs",
     "postinstall": "node scripts/patch-electron-mic.mjs",
     "build": "electron-vite build",
@@ -26,9 +27,9 @@
     "lint:german": "node scripts/check-german.mjs",
     "audit:bundle": "node scripts/check-bundle-secrets.mjs",
     "preview": "electron-vite preview",
-    "package:mac": "pnpm fetch:ollama --platform=darwin-arm64 && pnpm fetch:whisper --platform=darwin-arm64 && electron-vite build && electron-builder --mac --arm64",
-    "package:win": "pnpm fetch:ollama --platform=win32-x64 && pnpm fetch:whisper --platform=win32-x64 && electron-vite build && electron-builder --win",
-    "package:linux": "pnpm fetch:ollama --platform=linux-x64 && pnpm fetch:whisper --platform=linux-x64 && electron-vite build && electron-builder --linux"
+    "package:mac": "pnpm fetch:ollama --platform=darwin-arm64 && pnpm fetch:whisper --platform=darwin-arm64 && pnpm fetch:postgres --platform=darwin-arm64 && electron-vite build && electron-builder --mac --arm64",
+    "package:win": "pnpm fetch:ollama --platform=win32-x64 && pnpm fetch:whisper --platform=win32-x64 && pnpm fetch:postgres --platform=win32-x64 && electron-vite build && electron-builder --win",
+    "package:linux": "pnpm fetch:ollama --platform=linux-x64 && pnpm fetch:whisper --platform=linux-x64 && pnpm fetch:postgres --platform=linux-x64 && electron-vite build && electron-builder --linux"
   },
   "dependencies": {
     "@ava/ai-provider": "workspace:*",

@@ -12,6 +12,7 @@ release/
 # pinned version constant, never via Git.
 resources/ollama/*/
 resources/whisper/*/
+resources/postgres/*/
 
 # Derived icon working dir — `iconutil -c icns` regenerates from the
 # source PNGs in /Users/mac/Desktop/Repos/ava-v2/public/ios. Only the
