@@ -382,6 +382,10 @@ export function Chat() {
             m.id === frame.messageId ? { ...m, pending: false } : m,
           ),
         );
+        // Clear the spinner. Critical on abort + tool-only turns
+        // (no `token` frame ever arrives, so without this the
+        // "denkt nach…" indicator stays forever).
+        setThinking(false);
         activeRequestIdRef.current = null;
         // Refresh the list so the just-completed turn updates its
         // mtime (sort order) and label (in case it was the very first
@@ -389,6 +393,7 @@ export function Chat() {
         void refreshConversations();
       } else if (frame.kind === "error") {
         setError(frame.message);
+        setThinking(false);
         setMessages((prev) =>
           prev.map((m) => (m.pending ? { ...m, pending: false } : m)),
         );
@@ -754,6 +759,11 @@ export function Chat() {
   }
 
   function handleAbort() {
+    // Optimistic UI: stop the spinner immediately so the abort feels
+    // instant, even before the backend's terminal `done`/`error`
+    // frame lands. The frame still resets activeRequestIdRef and
+    // marks any pending message as not-pending.
+    setThinking(false);
     void window.api.agent.abort(activeRequestIdRef.current ?? undefined);
   }
 
