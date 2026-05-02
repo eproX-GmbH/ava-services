@@ -28,6 +28,39 @@ export interface AuthStatus {
   scopes: string[];
 }
 
+// ---- Local producers (8.v1.1) ---------------------------------------------
+//
+// Producer services (company-profile, structured-content, …) that
+// previously lived as fly.io apps now run as Node subprocesses
+// spawned by the desktop main process. The `ProducerSupervisor`
+// manages each one; the renderer mirrors the status array via IPC
+// for the Settings panel. State pushes happen via
+// `producers:status-changed` for any producer transition.
+
+export type ProducerSupervisorState =
+  | "idle"
+  | "migrating"
+  | "starting"
+  | "ready"
+  | "error"
+  | "stopping";
+
+export interface ProducerStatus {
+  /** Stable name — matches resources/producers/<name>/. */
+  name: string;
+  state: ProducerSupervisorState;
+  /** TCP port once `ready`, else null. */
+  port: number | null;
+  /** PGlite database the producer is bound to. */
+  databaseName: string;
+  /** OS process id while running. */
+  pid: number | null;
+  /** Last error message (set when state === "error"). */
+  errorMessage: string | null;
+  /** Most recent exit code observed; null if never exited. */
+  lastExitCode: number | null;
+}
+
 // ---- Postgres (8.v1.0 — bundled local DB) ---------------------------------
 //
 // The desktop app spawns a portable PostgreSQL 17 binary as a child

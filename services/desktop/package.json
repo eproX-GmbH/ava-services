@@ -1,6 +1,6 @@
 {
   "name": "@ava/desktop",
-  "version": "0.1.10",
+  "version": "0.1.11",
   "private": true,
   "description": "AVA Electron desktop app — replaces user-interface/ Next.js. Talks to db-gateway only.",
   "author": {
@@ -19,6 +19,7 @@
     "mock-gateway": "node scripts/mock-gateway.mjs",
     "fetch:ollama": "node scripts/fetch-ollama.mjs",
     "fetch:whisper": "node scripts/fetch-whisper.mjs",
+    "fetch:producers": "node scripts/fetch-producers.mjs",
     "setup:mic": "node scripts/patch-electron-mic.mjs",
     "postinstall": "node scripts/patch-electron-mic.mjs",
     "build": "electron-vite build",

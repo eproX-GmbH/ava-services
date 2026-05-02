@@ -10,6 +10,7 @@ import { join } from "node:path";
 import { Auth, type AuthStatus } from "./auth";
 import { OllamaSupervisor } from "./ollama-supervisor";
 import { PostgresSupervisor } from "./postgres-supervisor";
+import { ProducerSupervisor } from "./producer-supervisor";
 import {
   AgentOrchestrator,
   AlertPrefsStore,
@@ -46,6 +47,7 @@ import type {
   OllamaPullProgress,
   OllamaStatus,
   PostgresStatus,
+  ProducerStatus,
   UserProfile,
   Watch,
   VoiceModelDownloadProgress,
@@ -121,6 +123,81 @@ function broadcastPostgresStatus(status: PostgresStatus): void {
   }
 }
 postgres.on("status", broadcastPostgresStatus);
+
+// Producer supervisors (Phase 8.v1.1).
+//
+// One supervisor per local producer. Started in sequence after
+// PGlite reaches `ready` so DATABASE_URL targets are valid by the
+// time `prisma migrate deploy` runs. company-profile is the v1.1
+// proof; the remaining four producers join in 8.v1.4 once the
+// pipeline is confirmed end-to-end.
+const PRODUCERS_SHARED_AMQP_URL =
+  process.env.AMQP_URL ?? "amqp://localhost:5672";
+const producers: ProducerSupervisor[] = [];
+
+function buildProducer(
+  name: string,
+  entry: string,
+  databaseName: string,
+  port: number,
+): ProducerSupervisor {
+  return new ProducerSupervisor({
+    config: { name, entry, databaseName, port },
+    postgresHost: () => {
+      const ps = postgres.getStatus();
+      return ps.host ?? "postgres://postgres@127.0.0.1:54329";
+    },
+    amqpUrl: PRODUCERS_SHARED_AMQP_URL,
+  });
+}
+
+// Conditionally register company-profile only when the vendored
+// bundle is present. v0.1.11's CI doesn't yet vendor producers (no
+// NPM_TOKEN secret + size optimisation pending), so the packaged
+// .dmg won't have resources/producers/ at all and the supervisor
+// would otherwise sit in `error` state from boot. Dev runs that
+// have done `pnpm fetch:producers` locally pick it up normally.
+{
+  const candidatePackaged = join(
+    process.resourcesPath ?? "",
+    "producers",
+    "company-profile",
+  );
+  const candidateDev = join(
+    app.getAppPath(),
+    "resources",
+    "producers",
+    "company-profile",
+  );
+  const vendored =
+    (app.isPackaged ? candidatePackaged : candidateDev) || "";
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { existsSync } = require("node:fs") as typeof import("node:fs");
+  if (vendored && existsSync(vendored)) {
+    producers.push(
+      buildProducer(
+        "company-profile",
+        "dist/web/api/server.js",
+        "company_profile",
+        51010,
+      ),
+    );
+  } else {
+    console.log(
+      `[producers] company-profile not vendored (looked at ${vendored}); skipping. ` +
+        `Run \`pnpm fetch:producers\` to enable in dev.`,
+    );
+  }
+}
+
+function broadcastProducerStatus(status: ProducerStatus): void {
+  for (const win of BrowserWindow.getAllWindows()) {
+    win.webContents.send("producer-status:changed", status);
+  }
+}
+for (const p of producers) {
+  p.on("status", broadcastProducerStatus);
+}
 
 // Agent orchestrator (Phase 8.a + 8.b).
 //
@@ -557,6 +634,12 @@ app.whenReady().then(async () => {
   // mount and subscribes to `postgres-status:changed`. No restart /
   // reset endpoints yet — those come with the Settings panel UX.
   ipcMain.handle("postgres:getStatus", () => postgres.getStatus());
+
+  // Producer supervisors (8.v1.1). Renderer reads the snapshot list
+  // on mount and subscribes to `producer-status:changed` for diffs.
+  ipcMain.handle("producers:list", () =>
+    producers.map((p) => p.getStatus()),
+  );
   ipcMain.handle("ollama:restart", () => ollama.restart());
 
   // Agent IPC. Stream frames arrive via `agent:stream`; the renderer is
@@ -874,9 +957,27 @@ app.whenReady().then(async () => {
   // forget; renderer reacts to status pushes. First-launch `initdb`
   // takes ~5s on a Mac, so we deliberately don't `await` either.
   if (process.env.AVA_DISABLE_POSTGRES !== "1") {
-    void postgres.start().catch((err) => {
-      console.error("[postgres] supervisor.start() rejected:", err);
-    });
+    void postgres
+      .start()
+      .then(() => {
+        // Producer supervisors fire AFTER PGlite is ready so
+        // `prisma migrate deploy` has a target to talk to. They
+        // run in parallel with each other; failures are isolated
+        // per producer.
+        if (process.env.AVA_DISABLE_PRODUCERS !== "1") {
+          for (const p of producers) {
+            void p.start().catch((err) => {
+              console.error(
+                `[producer:${p.getStatus().name}] start() rejected:`,
+                err,
+              );
+            });
+          }
+        }
+      })
+      .catch((err) => {
+        console.error("[postgres] supervisor.start() rejected:", err);
+      });
   } else {
     console.warn(
       "[postgres] AVA_DISABLE_POSTGRES=1 — supervisor not started; renderer will see state=idle",
@@ -915,7 +1016,10 @@ app.on("before-quit", () => {
   agent.dispose();
   providers.dispose();
   void ollama.stop();
-  // Postgres last — producers (8.v1.2+) depend on it for clean
-  // shutdown of their own state.
+  // Producers go down before Postgres so their final commits
+  // succeed against the still-running PGlite instance.
+  for (const p of producers) {
+    void p.stop();
+  }
   void postgres.stop();
 });

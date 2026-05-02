@@ -1,0 +1,374 @@
+import { spawn, type ChildProcessByStdio } from "node:child_process";
+import type { Readable } from "node:stream";
+import { EventEmitter } from "node:events";
+import { existsSync } from "node:fs";
+import { join } from "node:path";
+import { app } from "electron";
+import type {
+  ProducerStatus,
+  ProducerSupervisorState,
+} from "../shared/types";
+
+// Producer supervisor (Phase 8.v1.1).
+//
+// Spawns one of the producer Node services (company-profile,
+// structured-content, …) as a child process of the desktop's main
+// process. Each producer was originally deployed as a fly.io app;
+// for the local-tenant pivot we bundle its dist/ + pruned
+// node_modules under `resources/producers/<name>/` and run it via
+// `process.execPath` with `ELECTRON_RUN_AS_NODE=1` so Electron's
+// own binary acts as a plain Node interpreter (no separate Node
+// runtime to bundle).
+//
+// The supervisor pattern mirrors `OllamaSupervisor` and
+// `PostgresSupervisor`:
+//
+//   - Single instance per producer, constructed at boot
+//   - State machine: idle → migrating → starting → ready → error
+//     (with a separate `stopping` for graceful shutdown)
+//   - `getStatus()` returns the snapshot the renderer mirrors via
+//     IPC; status changes fire on the `status` event, broadcast to
+//     all windows by main/index.ts
+//   - Health-check is a TCP probe of the producer's chosen port
+//     (each producer reads its port from `PORT` env)
+//
+// Migrations: before spawning the producer we run
+// `prisma migrate deploy` against the same DATABASE_URL the
+// producer will use. PGlite is wire-compatible enough that the
+// existing producer-shipped migrations apply cleanly. The migrate
+// step is idempotent (Prisma tracks applied rows in a
+// `_prisma_migrations` table inside the database) so subsequent
+// boots are fast.
+
+const HEALTH_TIMEOUT_MS = 30_000;
+const HEALTH_POLL_MS = 500;
+const STOP_TIMEOUT_MS = 10_000;
+
+export interface ProducerConfig {
+  /** Stable identifier — also the resources/producers/<name>/ subdir. */
+  name: string;
+  /** Path to the producer entry inside its dist/ tree. */
+  entry: string;
+  /** PGlite database name to inject into DATABASE_URL. */
+  databaseName: string;
+  /** TCP port the producer listens on (each producer reads PORT env). */
+  port: number;
+}
+
+export interface ProducerSupervisorOptions {
+  config: ProducerConfig;
+  /**
+   * PGlite gateway URL prefix: postgres://postgres@127.0.0.1:<port>.
+   * Passed as a getter because the actual port is decided by
+   * `PostgresSupervisor` at runtime (it walks +1 on EADDRINUSE),
+   * so we resolve it on every start() invocation.
+   */
+  postgresHost: () => string;
+  /** AMQP broker URL — passed through unchanged. */
+  amqpUrl: string;
+  /** Extra env merged in after the supervisor's defaults. */
+  extraEnv?: Record<string, string>;
+}
+
+export class ProducerSupervisor extends EventEmitter {
+  private child: ChildProcessByStdio<null, Readable, Readable> | null = null;
+  private state: ProducerSupervisorState = "idle";
+  private errorMessage: string | null = null;
+  private exitCode: number | null = null;
+
+  constructor(private readonly opts: ProducerSupervisorOptions) {
+    super();
+  }
+
+  // ---- Status ---------------------------------------------------------------
+
+  getStatus(): ProducerStatus {
+    return {
+      name: this.opts.config.name,
+      state: this.state,
+      port: this.state === "ready" ? this.opts.config.port : null,
+      databaseName: this.opts.config.databaseName,
+      pid: this.child?.pid ?? null,
+      errorMessage: this.errorMessage,
+      lastExitCode: this.exitCode,
+    };
+  }
+
+  private setState(next: ProducerSupervisorState, errorMessage?: string): void {
+    this.state = next;
+    this.errorMessage =
+      errorMessage ?? (next === "error" ? this.errorMessage : null);
+    this.emit("status", this.getStatus());
+  }
+
+  // ---- Lifecycle ------------------------------------------------------------
+
+  async start(): Promise<void> {
+    if (
+      this.state === "starting" ||
+      this.state === "ready" ||
+      this.state === "migrating"
+    ) {
+      return;
+    }
+    const producerDir = this.resolveProducerDir();
+    if (!producerDir) {
+      this.setState(
+        "error",
+        `producer ${this.opts.config.name}: vendored dir not found. Reinstall the app or run \`pnpm fetch:producers\`.`,
+      );
+      return;
+    }
+
+    const env = this.buildEnv();
+
+    // 1. Run prisma migrations against the target database. Idempotent
+    //    — already-applied migrations are no-ops in `_prisma_migrations`.
+    this.setState("migrating");
+    try {
+      await this.runMigrations(producerDir, env);
+    } catch (err) {
+      this.setState(
+        "error",
+        `prisma migrate deploy failed: ${err instanceof Error ? err.message : String(err)}`,
+      );
+      return;
+    }
+
+    // 2. Spawn the producer.
+    this.setState("starting");
+    const entryPath = join(producerDir, this.opts.config.entry);
+    if (!existsSync(entryPath)) {
+      this.setState(
+        "error",
+        `producer entry missing: ${entryPath}`,
+      );
+      return;
+    }
+
+    try {
+      this.child = spawn(process.execPath, [entryPath], {
+        cwd: producerDir,
+        env: { ...env, ELECTRON_RUN_AS_NODE: "1" },
+        stdio: ["ignore", "pipe", "pipe"],
+      });
+    } catch (err) {
+      this.setState(
+        "error",
+        `spawn failed: ${err instanceof Error ? err.message : String(err)}`,
+      );
+      return;
+    }
+
+    this.child.on("error", (err) => {
+      const msg = err instanceof Error ? err.message : String(err);
+      this.child = null;
+      this.setState("error", `failed to launch ${this.opts.config.name}: ${msg}`);
+    });
+
+    const tag = `producer:${this.opts.config.name}`;
+    this.child.stdout.on("data", (b: Buffer) => {
+      console.log(`[${tag}] ${b.toString().trimEnd()}`);
+    });
+    this.child.stderr.on("data", (b: Buffer) => {
+      console.warn(`[${tag}:err] ${b.toString().trimEnd()}`);
+    });
+    this.child.on("exit", (code, signal) => {
+      const wasRunning = this.state === "ready" || this.state === "starting";
+      this.child = null;
+      this.exitCode = code;
+      if (this.state === "stopping") {
+        this.setState("idle");
+      } else if (wasRunning) {
+        this.setState(
+          "error",
+          `${this.opts.config.name} exited unexpectedly (code=${code ?? "null"}, signal=${signal ?? "null"})`,
+        );
+      }
+    });
+
+    const ok = await this.waitUntilReady();
+    if (!ok) {
+      this.killChild();
+      this.setState(
+        "error",
+        `${this.opts.config.name} did not become healthy within ${HEALTH_TIMEOUT_MS / 1000}s`,
+      );
+      return;
+    }
+    this.setState("ready");
+  }
+
+  async stop(): Promise<void> {
+    if (this.state === "idle" || this.state === "error") return;
+    if (!this.child) {
+      this.setState("idle");
+      return;
+    }
+    this.setState("stopping");
+    return new Promise<void>((resolveStop) => {
+      const child = this.child;
+      if (!child) {
+        this.setState("idle");
+        resolveStop();
+        return;
+      }
+      const timer = setTimeout(() => {
+        if (this.child) {
+          try {
+            this.child.kill("SIGKILL");
+          } catch {
+            /* already gone */
+          }
+        }
+      }, STOP_TIMEOUT_MS);
+      child.once("exit", () => {
+        clearTimeout(timer);
+        this.child = null;
+        this.setState("idle");
+        resolveStop();
+      });
+      try {
+        child.kill("SIGTERM");
+      } catch {
+        /* exit listener cleans up */
+      }
+    });
+  }
+
+  // ---- Internals ------------------------------------------------------------
+
+  /**
+   * Run `prisma migrate deploy` synchronously against the producer's
+   * database. We use the Prisma CLI bundled in the producer's
+   * node_modules — `fetch-producers.mjs` promotes prisma to runtime
+   * deps so the CLI survives `npm prune --omit=dev`.
+   */
+  private runMigrations(producerDir: string, env: NodeJS.ProcessEnv): Promise<void> {
+    return new Promise((resolveMigrate, rejectMigrate) => {
+      const cliPath = join(producerDir, "node_modules", "prisma", "build", "index.js");
+      if (!existsSync(cliPath)) {
+        // Some Prisma versions ship the CLI under bin/; fall back.
+        const fallback = join(producerDir, "node_modules", ".bin", "prisma");
+        if (!existsSync(fallback)) {
+          rejectMigrate(
+            new Error(
+              `prisma CLI not found at ${cliPath} or ${fallback}`,
+            ),
+          );
+          return;
+        }
+      }
+      const args = [cliPath, "migrate", "deploy"];
+      const child = spawn(process.execPath, args, {
+        cwd: producerDir,
+        env: { ...env, ELECTRON_RUN_AS_NODE: "1" },
+        stdio: ["ignore", "pipe", "pipe"],
+      });
+      const tag = `producer:${this.opts.config.name}:migrate`;
+      let stderr = "";
+      child.stdout.on("data", (b: Buffer) => {
+        console.log(`[${tag}] ${b.toString().trimEnd()}`);
+      });
+      child.stderr.on("data", (b: Buffer) => {
+        const line = b.toString();
+        stderr += line;
+        console.warn(`[${tag}:err] ${line.trimEnd()}`);
+      });
+      child.on("error", rejectMigrate);
+      child.on("exit", (code) => {
+        if (code === 0) {
+          resolveMigrate();
+        } else {
+          rejectMigrate(
+            new Error(`prisma migrate deploy exited ${code}: ${stderr.trim()}`),
+          );
+        }
+      });
+    });
+  }
+
+  private buildEnv(): NodeJS.ProcessEnv {
+    return {
+      ...process.env,
+      // Per-producer database routing. PGlite gateway lazy-creates
+      // the database on first connect.
+      DATABASE_URL: `${this.opts.postgresHost()}/${this.opts.config.databaseName}`,
+      DIRECT_URL: `${this.opts.postgresHost()}/${this.opts.config.databaseName}`,
+      AMQP_URL: this.opts.amqpUrl,
+      PORT: String(this.opts.config.port),
+      LOGLEVEL: process.env.LOGLEVEL ?? "info",
+      NODE_ENV: app.isPackaged ? "production" : "development",
+      ...(this.opts.extraEnv ?? {}),
+    };
+  }
+
+  private async waitUntilReady(): Promise<boolean> {
+    const deadline = Date.now() + HEALTH_TIMEOUT_MS;
+    while (Date.now() < deadline) {
+      if (await this.probePort()) return true;
+      await sleep(HEALTH_POLL_MS);
+    }
+    return false;
+  }
+
+  private async probePort(): Promise<boolean> {
+    return new Promise<boolean>((resolveProbe) => {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const net = require("node:net") as typeof import("node:net");
+      const socket = new net.Socket();
+      socket.setTimeout(500);
+      socket.once("connect", () => {
+        socket.destroy();
+        resolveProbe(true);
+      });
+      socket.once("error", () => resolveProbe(false));
+      socket.once("timeout", () => {
+        socket.destroy();
+        resolveProbe(false);
+      });
+      socket.connect(this.opts.config.port, "127.0.0.1");
+    });
+  }
+
+  private killChild(): void {
+    if (!this.child) return;
+    try {
+      this.child.kill("SIGKILL");
+    } catch {
+      /* already gone */
+    }
+    this.child = null;
+  }
+
+  // ---- Path resolution ------------------------------------------------------
+
+  private resolveProducerDir(): string | null {
+    // Packaged: <resourcesPath>/producers/<name>/
+    if (app.isPackaged) {
+      const packaged = join(
+        process.resourcesPath,
+        "producers",
+        this.opts.config.name,
+      );
+      if (existsSync(packaged)) return packaged;
+      return null;
+    }
+    // Dev: alongside the desktop's resources/ — vendored locally
+    // by `pnpm fetch:producers`.
+    const dev = join(
+      app.getAppPath(),
+      "resources",
+      "producers",
+      this.opts.config.name,
+    );
+    if (existsSync(dev)) return dev;
+    return null;
+  }
+}
+
+// ---- Helpers ----------------------------------------------------------------
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((r) => setTimeout(r, ms));
+}

@@ -44,6 +44,16 @@ extraResources:
     to: whisper
     filter:
       - "**/*"
+  # NOTE (Phase 8.v1.1): producer Node services are NOT bundled
+  # into v0.1.11's .dmg/.exe yet. The vendoring path
+  # (`pnpm fetch:producers`) needs the GitLab NPM_TOKEN secret in
+  # CI plus a size optimisation pass — current company-profile
+  # vendor weighs 172 MB unpruned, which would balloon the
+  # installer. v0.1.12 will add an extraResources block here +
+  # the CI fetch step. For dev (`pnpm dev`) the supervisor
+  # resolves resources/producers/<name>/ directly from the repo,
+  # so a local `pnpm fetch:producers` run smoke-tests the spawn
+  # + migration + AMQP wiring end-to-end.
 
 mac:
   target:

@@ -24,6 +24,7 @@ import type {
   OllamaPullProgress,
   OllamaStatus,
   PostgresStatus,
+  ProducerStatus,
   ProviderCatalogEntry,
   ProviderConfig,
   ProviderConfigBundle,
@@ -68,6 +69,7 @@ export type {
   OllamaPullProgress,
   OllamaStatus,
   PostgresStatus,
+  ProducerStatus,
   ProviderCatalogEntry,
   ProviderConfig,
   ProviderConfigBundle,
@@ -170,6 +172,23 @@ const api = {
       ipcRenderer.on("postgres-status:changed", handler);
       return () =>
         ipcRenderer.removeListener("postgres-status:changed", handler);
+    },
+  },
+
+  // Local producer subprocesses (Phase 8.v1.1). The renderer reads
+  // the full list once on mount via `list()` and updates entries
+  // individually as `onStatusChanged` fires per-producer diffs.
+  producers: {
+    list: (): Promise<ProducerStatus[]> =>
+      ipcRenderer.invoke("producers:list"),
+    onStatusChanged: (cb: (status: ProducerStatus) => void): (() => void) => {
+      const handler = (
+        _e: Electron.IpcRendererEvent,
+        status: ProducerStatus,
+      ) => cb(status);
+      ipcRenderer.on("producer-status:changed", handler);
+      return () =>
+        ipcRenderer.removeListener("producer-status:changed", handler);
     },
   },
 

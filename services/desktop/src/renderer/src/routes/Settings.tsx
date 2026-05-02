@@ -6,6 +6,7 @@ import { pullModelTracked, useOllamaStore } from "../store/ollama";
 import { useVoiceStore } from "../store/voice";
 import { useProfileStore } from "../store/profile";
 import { usePostgresStore } from "../store/postgres";
+import { useProducersStore } from "../store/producers";
 import type {
   AlertCadenceMinutes,
   AlertCandidateDecision,
@@ -77,6 +78,7 @@ export function Settings() {
       <ProfileSection />
       <VoiceSection />
       <PostgresSection />
+      <ProducersSection />
       <AlertsSection />
       <FreshnessSection />
       <GeneralMemorySection />
@@ -149,6 +151,74 @@ function PostgresSection() {
           </li>
         )}
       </ul>
+    </section>
+  );
+}
+
+// -- Local producer subprocesses (Phase 8.v1.1) -----------------------
+//
+// Renders one row per ProducerSupervisor in the main process. v1.1
+// only ships company-profile; the remaining four producers will
+// add themselves automatically once registered in main/index.ts.
+
+function ProducersSection() {
+  const byName = useProducersStore((s) => s.byName);
+  const list = Object.values(byName);
+
+  const stateLabel: Record<string, string> = {
+    idle: "noch nicht gestartet",
+    migrating: "Datenbank-Migrationen…",
+    starting: "startet…",
+    ready: "bereit",
+    error: "Fehler",
+    stopping: "fährt herunter…",
+  };
+
+  return (
+    <section className="provider-section" id="local-producers">
+      <h3>Lokale Producer-Dienste</h3>
+      <p className="muted small">
+        Tenant-private Dienste laufen als Node-Subprozesse direkt auf
+        deinem Rechner. Sie nutzen die lokale Datenbank weiter oben
+        und sprechen über AMQP mit dem Cloud-Gateway.
+      </p>
+      {list.length === 0 ? (
+        <p className="muted small">Keine Producer konfiguriert.</p>
+      ) : (
+        <ul className="kv">
+          {list.map((p) => {
+            const tone =
+              p.state === "ready"
+                ? "ok"
+                : p.state === "error"
+                  ? "err"
+                  : "muted";
+            return (
+              <li key={p.name}>
+                <span className="muted">{p.name}:</span>{" "}
+                <span className={`status-dot ${tone}`}>
+                  {stateLabel[p.state] ?? p.state}
+                </span>
+                {p.port !== null && (
+                  <>
+                    {" · Port "}
+                    <code>{p.port}</code>
+                  </>
+                )}
+                {p.pid !== null && (
+                  <>
+                    {" · PID "}
+                    <code>{p.pid}</code>
+                  </>
+                )}
+                {p.errorMessage && (
+                  <div className="error small">{p.errorMessage}</div>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+      )}
     </section>
   );
 }
