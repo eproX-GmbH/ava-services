@@ -131,6 +131,9 @@ jobs:
       # SUBMODULES_PAT secret to enable bundling.
       - name: Vendor producer subprocesses
         working-directory: services/desktop
+        # bash on both jobs: PowerShell's `||` semantics differ for
+        # exit-code propagation, and `mkdir -p` isn't a builtin.
+        shell: bash
         # Always create the resources/producers dir (even empty) so
         # electron-builder's extraResources copy doesn't fail. If
         # the SUBMODULES_PAT secret is configured the fetch
@@ -268,6 +271,9 @@ jobs:
 
       - name: Vendor producer subprocesses
         working-directory: services/desktop
+        # bash on both jobs: PowerShell's `||` semantics differ for
+        # exit-code propagation, and `mkdir -p` isn't a builtin.
+        shell: bash
         # Always create the resources/producers dir (even empty) so
         # electron-builder's extraResources copy doesn't fail. If
         # the SUBMODULES_PAT secret is configured the fetch

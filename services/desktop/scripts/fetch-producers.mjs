@@ -369,6 +369,10 @@ function walkAndStrip(dir) {
 function runSyncStrict(cmd, args, opts) {
   const r = spawnSync(cmd, args, {
     stdio: "inherit",
+    // Windows needs shell:true so spawn finds .cmd / .bat files
+    // (npm, npx, prisma, …) without manual path resolution. On
+    // POSIX the shell wrapper is harmless but slightly slower.
+    shell: process.platform === "win32",
     ...opts,
     env: { ...process.env, ...(opts?.env ?? {}) },
   });
