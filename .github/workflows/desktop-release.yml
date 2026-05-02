@@ -68,6 +68,8 @@ jobs:
       # ones we don't need anyway). Manual loop below is per-submodule
       # tolerant.
       - name: Init producer submodules
+        shell: bash  # Windows runner defaults to pwsh; force bash so the
+                     # POSIX `[ -z … ]` test below works on both jobs.
         env:
           SUBMODULES_PAT: ${{ secrets.SUBMODULES_PAT }}
         run: |
@@ -213,6 +215,8 @@ jobs:
       # ones we don't need anyway). Manual loop below is per-submodule
       # tolerant.
       - name: Init producer submodules
+        shell: bash  # Windows runner defaults to pwsh; force bash so the
+                     # POSIX `[ -z … ]` test below works on both jobs.
         env:
           SUBMODULES_PAT: ${{ secrets.SUBMODULES_PAT }}
         run: |
