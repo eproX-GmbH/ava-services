@@ -112,8 +112,10 @@ function isAllowed(key) {
 // hit there is a false positive. The forbidden-filename check
 // still fires on those paths so an accidental .env among the
 // vendored files is caught regardless.
+// Match both POSIX and Windows path separators — CI runs on macOS
+// (/) and windows-2022 (\) so the regex has to handle both.
 const SKIP_CONTENT_SCAN_RE =
-  /\/(?:resources\/producers\/[^/]+\/node_modules|producers\/[^/]+\/node_modules)\//;
+  /[\\/](?:resources[\\/]producers|producers)[\\/][^\\/]+[\\/]node_modules[\\/]/;
 
 function* walk(dir) {
   let entries;
