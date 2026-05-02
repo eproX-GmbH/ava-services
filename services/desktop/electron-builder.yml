@@ -44,15 +44,6 @@ extraResources:
     to: whisper
     filter:
       - "**/*"
-  # Embedded PostgreSQL 17 (Phase 8.v1.0) — Zonky's portable
-  # distribution. PostgresSupervisor spawns the bundled `postgres`
-  # binary on a loopback port; the data directory lives outside the
-  # bundle under userData/. CI fetches via `pnpm fetch:postgres`
-  # before electron-builder. ~133 MB unpacked on macOS arm64.
-  - from: resources/postgres
-    to: postgres
-    filter:
-      - "**/*"
 
 mac:
   target:

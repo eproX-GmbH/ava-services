@@ -1,83 +1,73 @@
-import { spawn, type ChildProcessByStdio } from "node:child_process";
-import type { Readable } from "node:stream";
+import { createServer, type Server, type Socket } from "node:net";
 import { EventEmitter } from "node:events";
-import { existsSync, mkdirSync } from "node:fs";
-import { join, dirname } from "node:path";
+import { mkdirSync } from "node:fs";
+import { join } from "node:path";
 import { app } from "electron";
 import type {
   PostgresStatus,
   PostgresSupervisorState,
 } from "../shared/types";
 
-// Postgres supervisor (Phase 8.v1.0).
+// Postgres supervisor (Phase 8.v1.0 — PGlite pivot).
 //
-// Spawns the bundled portable PostgreSQL 17 binary as a child process
-// listening on 127.0.0.1:<port>, manages a per-app data directory under
-// `userData/postgres-data/`, and exposes a small surface (start, stop,
-// getStatus) the rest of the app uses to wait for the local DB before
-// the producer subprocesses are spawned.
+// Replaces the earlier "spawn a bundled postgres binary" approach,
+// which hit a hard wall on macOS: the kernel ships SysV-SHM defaults
+// (kern.sysv.shmmax=4MB, kern.sysv.shmall=4MB) too small for
+// PostgreSQL's bootstrap, and even a 56-byte shmget returns ENOMEM
+// without sudo-level sysctl tuning. PG has needed SysV SHM at
+// bootstrap for ~30 years; flag-based workaround does not exist.
 //
-// Why a class with EventEmitter (same justification as OllamaSupervisor):
-// the renderer pushes status updates via webContents.send. A single
-// instance constructed once in main/index.ts is the source of truth.
+// We instead embed PGlite — Postgres compiled to WebAssembly — and
+// expose it over a TCP socket via `pg-gateway`. The wire protocol is
+// identical to a real Postgres server, so producer services keep
+// using their existing Prisma+pg stack with a standard
+// `postgres://postgres@127.0.0.1:54329/<db>` DATABASE_URL.
 //
-// Binary layout — Zonky's portable Postgres ships:
+// Per-database routing: pg-gateway hands us the client's startup
+// `database` parameter; we lazy-create one PGlite instance per
+// database under userData/pglite/<db-name>/. A connection asking for
+// `database=company_profile` and another asking for
+// `database=structured_content` get isolated PGlite engines, mirroring
+// the per-service Postgres dev compose stack.
 //
-//   resources/postgres/<platform>-<arch>/
-//     bin/
-//       postgres            ← what we spawn for runtime
-//       initdb              ← run once on first launch
-//       pg_ctl              ← used for graceful stop
-//     lib/
-//     share/
-//
-// Data directory: created by `initdb` on first run under
-// `app.getPath("userData")/postgres-data/`. Survives app updates;
-// nuking it requires the user to consciously click "Reset local data"
-// (a future Settings action). The initdb-output PG_VERSION file is our
-// "is this dir initialized" sentinel.
-//
-// Port: not the standard 5432 — that often collides with a system
-// Postgres a developer or DBA already runs. We pick a high ephemeral
-// port (54329) deterministically. If it's already taken on launch,
-// the supervisor will retry on `port + 1` up to 5 times before
-// giving up.
+// Footprint: ~24 MB bundled (PGlite WASM + pg-gateway), vs ~133 MB
+// for a portable PG binary. Zero binary signing concerns. Works
+// identically on macOS, Windows, Linux without per-OS quirks.
 
 const DEFAULT_HOST = "127.0.0.1";
 const DEFAULT_BASE_PORT = 54329;
 const PORT_RETRY_LIMIT = 5;
-const HEALTH_TIMEOUT_MS = 30_000;
-const HEALTH_POLL_MS = 250;
-const STOP_TIMEOUT_MS = 10_000;
+const PG_SERVER_VERSION = "17.0";
 
 export interface PostgresSupervisorOptions {
   host?: string;
-  /** Override the binary directory lookup entirely (tests). */
-  binDir?: string;
-  /** Override the data directory — primarily for tests. */
-  dataDir?: string;
   /** Initial port to try; supervisor walks +1 on EADDRINUSE. */
   port?: number;
+  /** Override the data root — primarily for tests. */
+  dataRoot?: string;
 }
 
 export class PostgresSupervisor extends EventEmitter {
-  private child: ChildProcessByStdio<null, Readable, Readable> | null = null;
+  private server: Server | null = null;
   private state: PostgresSupervisorState = "idle";
   private errorMessage: string | null = null;
   private boundPort: number | null = null;
-  private serverVersion: string | null = null;
+  private dbs = new Map<string, unknown>();
+  /** Lazily resolved on first start() to avoid pulling PGlite into the
+   *  CommonJS module graph at boot time — keeps cold-start lean. */
+  private PGliteCtor: (new (path: string) => PGliteInstance) | null = null;
+  private fromNodeSocket: typeof import("pg-gateway/node").fromNodeSocket | null =
+    null;
 
   private readonly host: string;
   private readonly basePort: number;
-  private readonly binDirOverride?: string;
-  private readonly dataDirOverride?: string;
+  private readonly dataRootOverride?: string;
 
   constructor(opts: PostgresSupervisorOptions = {}) {
     super();
     this.host = opts.host ?? DEFAULT_HOST;
     this.basePort = opts.port ?? DEFAULT_BASE_PORT;
-    this.binDirOverride = opts.binDir;
-    this.dataDirOverride = opts.dataDir;
+    this.dataRootOverride = opts.dataRoot;
   }
 
   // ---- Status ---------------------------------------------------------------
@@ -90,8 +80,8 @@ export class PostgresSupervisor extends EventEmitter {
           ? `postgres://postgres@${this.host}:${this.boundPort}`
           : null,
       port: this.boundPort,
-      dataDir: this.resolveDataDir(),
-      version: this.serverVersion,
+      dataDir: this.resolveDataRoot(),
+      version: this.state === "ready" ? PG_SERVER_VERSION + " (PGlite/WASM)" : null,
       errorMessage: this.errorMessage,
     };
   }
@@ -106,99 +96,62 @@ export class PostgresSupervisor extends EventEmitter {
   // ---- Lifecycle ------------------------------------------------------------
 
   async start(): Promise<void> {
-    if (this.state === "starting" || this.state === "ready" || this.state === "initializing") {
+    if (
+      this.state === "starting" ||
+      this.state === "ready" ||
+      this.state === "initializing"
+    ) {
       return;
     }
+    this.setState("starting");
 
-    const binDir = this.resolveBinDir();
-    if (!binDir) {
-      this.setState(
-        "error",
-        "Postgres binary not found. Reinstall the app or set AVA_POSTGRES_BIN_DIR.",
-      );
-      return;
-    }
-
-    const exeSuffix = process.platform === "win32" ? ".exe" : "";
-    const postgresBin = join(binDir, `postgres${exeSuffix}`);
-    const initdbBin = join(binDir, `initdb${exeSuffix}`);
-    const pgCtlBin = join(binDir, `pg_ctl${exeSuffix}`);
-
-    if (!existsSync(postgresBin) || !existsSync(initdbBin) || !existsSync(pgCtlBin)) {
-      this.setState(
-        "error",
-        `Postgres binaries incomplete in ${binDir} (need postgres, initdb, pg_ctl).`,
-      );
-      return;
-    }
-
-    // Read version once for the status payload — cheap, deterministic,
-    // independent of whether initdb has been run yet.
-    if (!this.serverVersion) {
+    if (!this.PGliteCtor || !this.fromNodeSocket) {
       try {
-        const out = await runAndCapture(postgresBin, ["--version"]);
-        // "postgres (PostgreSQL) 17.5"
-        const match = out.match(/(\d+(?:\.\d+)+)/);
-        this.serverVersion = (match ? match[1] : out.trim()) ?? null;
-      } catch {
-        /* leave null; not fatal for startup */
-      }
-    }
-
-    const dataDir = this.resolveDataDir();
-    try {
-      mkdirSync(dirname(dataDir), { recursive: true });
-    } catch {
-      /* surfaced below if it actually mattered */
-    }
-
-    // Initdb on first launch. Sentinel: PG_VERSION inside the data dir.
-    // Postgres refuses to start without an initialized cluster, so this
-    // step is mandatory. ~5s on a Mac the first time.
-    const sentinel = join(dataDir, "PG_VERSION");
-    if (!existsSync(sentinel)) {
-      this.setState("initializing");
-      try {
-        // --auth-local=trust + --auth-host=trust: we're loopback-only and
-        // the bundled instance has no remote exposure. The producer
-        // services connect with a fixed `postgres` superuser without
-        // password. Future hardening: random-per-machine password stored
-        // via safeStorage and injected into producer env. Not critical
-        // for v0 because anyone with read access to userData/postgres-data
-        // already has the database files anyway.
-        await runAndCapture(initdbBin, [
-          "-D",
-          dataDir,
-          "--username=postgres",
-          "--auth-local=trust",
-          "--auth-host=trust",
-          "--encoding=UTF8",
-          "--locale=C",
-        ]);
+        // Dynamic imports — these packages are ESM-only and pulling
+        // them at module top-level breaks the CommonJS bundle that
+        // electron-vite emits for main. The runtime cost is paid once
+        // at first start() and amortised across the app lifetime.
+        const pgliteMod = (await import("@electric-sql/pglite")) as unknown as {
+          PGlite: new (path: string) => PGliteInstance;
+        };
+        this.PGliteCtor = pgliteMod.PGlite;
+        const gatewayMod = (await import("pg-gateway/node")) as typeof import(
+          "pg-gateway/node"
+        );
+        this.fromNodeSocket = gatewayMod.fromNodeSocket;
       } catch (err) {
         this.setState(
           "error",
-          `initdb failed: ${err instanceof Error ? err.message : String(err)}`,
+          `failed to load PGlite/pg-gateway: ${err instanceof Error ? err.message : String(err)}`,
         );
         return;
       }
     }
 
-    // Pick a free port, walking up from basePort.
+    try {
+      mkdirSync(this.resolveDataRoot(), { recursive: true });
+    } catch (err) {
+      this.setState(
+        "error",
+        `cannot create data root: ${err instanceof Error ? err.message : String(err)}`,
+      );
+      return;
+    }
+
     let port = this.basePort;
     let lastError: Error | null = null;
     for (let i = 0; i < PORT_RETRY_LIMIT; i++) {
-      this.setState("starting");
       try {
-        await this.spawnPostgres(postgresBin, dataDir, port);
+        await this.listenOn(port);
         this.boundPort = port;
-        await this.waitUntilReady(pgCtlBin, dataDir);
         this.setState("ready");
         return;
       } catch (err) {
         lastError = err instanceof Error ? err : new Error(String(err));
-        this.killChild();
-        if (lastError.message.toLowerCase().includes("address already in use")) {
+        if (
+          lastError.message.toLowerCase().includes("eaddrinuse") ||
+          lastError.message.toLowerCase().includes("address already in use")
+        ) {
           port += 1;
           continue;
         }
@@ -207,236 +160,156 @@ export class PostgresSupervisor extends EventEmitter {
     }
     this.setState(
       "error",
-      `postgres did not start: ${lastError?.message ?? "unknown"}`,
+      `pg-gateway did not start: ${lastError?.message ?? "unknown"}`,
     );
   }
 
   async stop(): Promise<void> {
     if (this.state === "idle" || this.state === "error") return;
-    if (!this.child) {
+    if (!this.server) {
       this.setState("idle");
       return;
     }
     this.setState("stopping");
     return new Promise<void>((resolveStop) => {
-      const child = this.child;
-      if (!child) {
-        this.setState("idle");
-        resolveStop();
-        return;
-      }
-      const timer = setTimeout(() => {
-        // Force-kill if graceful stop doesn't land in time. Postgres
-        // is normally well-behaved on SIGTERM, but if the WAL is busy
-        // it can take a few seconds.
-        if (this.child) {
-          try {
-            this.child.kill("SIGKILL");
-          } catch {
-            /* already gone */
+      const server = this.server!;
+      server.close(() => {
+        this.server = null;
+        this.boundPort = null;
+        // Flush all PGlite instances. Their close() persists any
+        // in-memory write batches to disk.
+        const pending: Promise<void>[] = [];
+        for (const db of this.dbs.values()) {
+          const close = (db as PGliteInstance).close;
+          if (typeof close === "function") {
+            try {
+              const p = close.call(db);
+              if (p && typeof (p as Promise<void>).then === "function") {
+                pending.push(p as Promise<void>);
+              }
+            } catch {
+              /* best-effort */
+            }
           }
         }
-      }, STOP_TIMEOUT_MS);
-      child.once("exit", () => {
-        clearTimeout(timer);
-        this.child = null;
-        this.boundPort = null;
-        this.setState("idle");
-        resolveStop();
+        Promise.allSettled(pending).then(() => {
+          this.dbs.clear();
+          this.setState("idle");
+          resolveStop();
+        });
       });
-      try {
-        child.kill("SIGTERM");
-      } catch {
-        // Process already dead. The exit listener will fire.
-      }
     });
   }
 
   // ---- Internals ------------------------------------------------------------
 
-  private spawnPostgres(
-    postgresBin: string,
-    dataDir: string,
-    port: number,
-  ): Promise<void> {
-    return new Promise((resolveSpawn, rejectSpawn) => {
-      const args = [
-        "-D",
-        dataDir,
-        "-p",
-        String(port),
-        "-h",
-        this.host,
-        // Disable unix socket — we're loopback-only by design and on
-        // some macOS sandbox setups /tmp isn't writable from inside the
-        // packaged app. TCP-only keeps the connection model uniform.
-        "-c",
-        "unix_socket_directories=",
-        // Quiet down the log to stderr; we forward it to console.
-        "-c",
-        "log_min_messages=warning",
-      ];
-      try {
-        this.child = spawn(postgresBin, args, {
-          stdio: ["ignore", "pipe", "pipe"],
+  private listenOn(port: number): Promise<void> {
+    return new Promise((resolveListen, rejectListen) => {
+      const server = createServer((socket) => this.handleConnection(socket));
+      server.once("error", (err) => {
+        rejectListen(err);
+      });
+      server.listen(port, this.host, () => {
+        this.server = server;
+        // Swap the rejection handler for the post-bind error pathway:
+        // unhandled connection-time errors should surface as a
+        // supervisor `error` state instead of resolving the listen
+        // promise twice.
+        server.removeAllListeners("error");
+        server.on("error", (err) => {
+          console.error("[postgres] server error:", err);
         });
-      } catch (err) {
-        rejectSpawn(err instanceof Error ? err : new Error(String(err)));
-        return;
-      }
-
-      this.child.on("error", (err) => {
-        const msg = err instanceof Error ? err.message : String(err);
-        this.child = null;
-        rejectSpawn(new Error(`spawn failed: ${msg}`));
+        resolveListen();
       });
-
-      this.child.stdout.on("data", (b: Buffer) => {
-        console.log(`[postgres] ${b.toString().trimEnd()}`);
-      });
-      this.child.stderr.on("data", (b: Buffer) => {
-        const line = b.toString().trimEnd();
-        console.warn(`[postgres:err] ${line}`);
-        // Detect the most common boot failure: another process owns
-        // the port. Surface it through reject so start() can pick a
-        // different port.
-        if (line.toLowerCase().includes("could not bind ipv4 socket")
-          || line.toLowerCase().includes("address already in use")) {
-          rejectSpawn(new Error("address already in use"));
-        }
-      });
-
-      this.child.on("exit", (code, signal) => {
-        const wasRunning = this.state === "ready" || this.state === "starting";
-        this.child = null;
-        if (this.state === "stopping") {
-          this.setState("idle");
-        } else if (wasRunning) {
-          this.setState(
-            "error",
-            `postgres exited unexpectedly (code=${code ?? "null"}, signal=${signal ?? "null"})`,
-          );
-        }
-      });
-
-      // We can't tell from spawn alone that postgres is up — only
-      // pg_isready can. Resolve the spawn promise immediately; the
-      // caller's waitUntilReady() handles the readiness gate.
-      resolveSpawn();
     });
   }
 
-  private async waitUntilReady(pgCtlBin: string, dataDir: string): Promise<void> {
-    const deadline = Date.now() + HEALTH_TIMEOUT_MS;
-    let lastErr = "no probe yet";
-    while (Date.now() < deadline) {
-      try {
-        // pg_ctl status -D <dir> exits 0 if the postmaster is running.
-        // Combined with our spawn check, that's enough to call it ready.
-        await runAndCapture(pgCtlBin, ["status", "-D", dataDir]);
-        // Belt-and-braces: also probe the loopback port. pg_ctl's
-        // "running" message can come a moment before postmaster has
-        // bound the socket.
-        if (await this.probePort()) return;
-      } catch (err) {
-        lastErr = err instanceof Error ? err.message : String(err);
-      }
-      await sleep(HEALTH_POLL_MS);
-    }
-    throw new Error(`pg_isready timeout: ${lastErr}`);
-  }
+  private async handleConnection(socket: Socket): Promise<void> {
+    if (!this.fromNodeSocket || !this.PGliteCtor) return;
+    let activeDb: PGliteInstance | null = null;
+    const PGlite = this.PGliteCtor;
+    const dataRoot = this.resolveDataRoot();
+    const dbs = this.dbs;
 
-  private async probePort(): Promise<boolean> {
-    if (this.boundPort === null) return false;
-    return new Promise<boolean>((resolveProbe) => {
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
-      const net = require("node:net") as typeof import("node:net");
-      const socket = new net.Socket();
-      socket.setTimeout(500);
-      socket.once("connect", () => {
-        socket.destroy();
-        resolveProbe(true);
-      });
-      socket.once("error", () => resolveProbe(false));
-      socket.once("timeout", () => {
-        socket.destroy();
-        resolveProbe(false);
-      });
-      socket.connect(this.boundPort!, this.host);
-    });
-  }
-
-  private killChild(): void {
-    if (!this.child) return;
     try {
-      this.child.kill("SIGKILL");
-    } catch {
-      /* already gone */
+      await this.fromNodeSocket(socket, {
+        serverVersion: PG_SERVER_VERSION,
+        auth: { method: "trust" },
+        onStartup: async (info) => {
+          // Database name is the routing key. Default to `postgres`
+          // for clients that don't specify one (psql shell, etc.) so
+          // they still reach a working DB.
+          const dbName = sanitiseDbName(
+            info.clientParams?.database ?? "postgres",
+          );
+          let db = dbs.get(dbName) as PGliteInstance | undefined;
+          if (!db) {
+            const dir = join(dataRoot, dbName);
+            mkdirSync(dir, { recursive: true });
+            db = new PGlite(dir);
+            // PGlite exposes `waitReady` as a thenable that resolves
+            // once the WASM module + persistence layer are warm.
+            await db.waitReady;
+            dbs.set(dbName, db);
+          }
+          activeDb = db;
+        },
+        onMessage: async (msg, { isAuthenticated }) => {
+          if (!isAuthenticated || !activeDb) return undefined;
+          // execProtocolRaw forwards the raw PostgreSQL wire-protocol
+          // bytes to PGlite and returns the response bytes verbatim.
+          // pg-gateway pipes them back to the client untouched.
+          return activeDb.execProtocolRaw(msg);
+        },
+      });
+    } catch (err) {
+      console.warn(
+        "[postgres] connection handler crashed:",
+        err instanceof Error ? err.message : String(err),
+      );
+      try {
+        socket.destroy();
+      } catch {
+        /* already closed */
+      }
     }
-    this.child = null;
   }
 
   // ---- Path resolution ------------------------------------------------------
 
-  private resolveBinDir(): string | null {
-    if (this.binDirOverride) return this.binDirOverride;
-
-    const fromEnv = process.env.AVA_POSTGRES_BIN_DIR;
-    if (fromEnv && existsSync(join(fromEnv, `postgres${process.platform === "win32" ? ".exe" : ""}`))) {
-      return fromEnv;
-    }
-
-    const platformDir = `${process.platform}-${process.arch}`;
-
-    // Packaged: <resourcesPath>/postgres/<platform>-<arch>/bin
-    if (app.isPackaged) {
-      const packaged = join(process.resourcesPath, "postgres", platformDir, "bin");
-      if (existsSync(packaged)) return packaged;
-      return null;
-    }
-
-    // Dev: alongside the repo's resources/ folder.
-    const devCandidate = join(
-      app.getAppPath(),
-      "resources",
-      "postgres",
-      platformDir,
-      "bin",
-    );
-    if (existsSync(devCandidate)) return devCandidate;
-
-    return null;
-  }
-
   /**
-   * Per-user data directory. Lives under userData (Library/Application
-   * Support/AVA on macOS; AppData/Roaming/AVA on Windows). Shared
-   * across app updates — only a deliberate "Reset local data" Settings
-   * action should wipe it.
+   * Per-user data root. Each PGlite database gets its own subdir.
+   * Lives under userData (Library/Application Support/AVA on macOS;
+   * AppData/Roaming/AVA on Windows). Survives app updates.
    */
-  private resolveDataDir(): string {
-    if (this.dataDirOverride) return this.dataDirOverride;
-    return join(app.getPath("userData"), "postgres-data");
+  private resolveDataRoot(): string {
+    if (this.dataRootOverride) return this.dataRootOverride;
+    return join(app.getPath("userData"), "pglite");
   }
 }
 
 // ---- Helpers ----------------------------------------------------------------
 
-function runAndCapture(cmd: string, args: string[]): Promise<string> {
-  return new Promise((resolveRun, rejectRun) => {
-    const child = spawn(cmd, args, { stdio: ["ignore", "pipe", "pipe"] });
-    let stdout = "";
-    let stderr = "";
-    child.stdout.on("data", (b) => (stdout += b.toString()));
-    child.stderr.on("data", (b) => (stderr += b.toString()));
-    child.on("error", rejectRun);
-    child.on("exit", (code) => {
-      if (code === 0) resolveRun(stdout);
-      else rejectRun(new Error(`${cmd} exited ${code}: ${stderr.trim() || stdout.trim()}`));
-    });
-  });
+/**
+ * Strict whitelist for database names. PGlite uses the value as a
+ * directory name on disk, so we refuse path-injection shapes
+ * (separators, leading dot) and force lowercase. Producer services
+ * pick their own DB name from a fixed set
+ * (`company_profile`, `structured_content`, …) — all match this
+ * pattern, so this is defence-in-depth, not a constraint anyone
+ * trips over.
+ */
+function sanitiseDbName(raw: string): string {
+  const lower = raw.toLowerCase();
+  if (!/^[a-z][a-z0-9_]{0,62}$/.test(lower)) return "postgres";
+  return lower;
 }
 
-function sleep(ms: number): Promise<void> {
-  return new Promise((r) => setTimeout(r, ms));
+// Minimal PGlite shape we actually use — full types come from the
+// imported module at runtime; this interface keeps the file
+// type-checkable without a top-level `import` of an ESM-only package.
+interface PGliteInstance {
+  waitReady: Promise<void>;
+  execProtocolRaw(msg: Uint8Array): Promise<Uint8Array>;
+  close?(): Promise<void> | void;
 }

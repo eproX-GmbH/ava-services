@@ -856,6 +856,9 @@ importers:
       '@ava/ai-provider':
         specifier: workspace:*
         version: link:../../packages/ai-provider
+      '@electric-sql/pglite':
+        specifier: ^0.4.5
+        version: 0.4.5
       '@fontsource-variable/geist':
         specifier: ^5.2.8
         version: 5.2.8
@@ -877,6 +880,12 @@ importers:
       ai:
         specifier: ^5.0.0
         version: 5.0.179(zod@3.25.76)
+      pg:
+        specifier: ^8.20.0
+        version: 8.20.0
+      pg-gateway:
+        specifier: 0.3.0-beta.4
+        version: 0.3.0-beta.4
       react:
         specifier: ^18.3.0
         version: 18.3.1
@@ -1336,6 +1345,9 @@ packages:
   '@elastic/transport@9.3.5':
     resolution: {integrity: sha512-hIMJbt1guqr3/N2zCN45k9hw9o78qcdsO0xietLe+Bfa+JL0YafHTgkWkM1oT3Ht5sGMJaDcJZiYomSMU6CtTA==}
     engines: {node: '>=20'}
+
+  '@electric-sql/pglite@0.4.5':
+    resolution: {integrity: sha512-aGG2zGEyZzGWKy8P+9ZoNUV0jxt1+hgbeTf+bVAYyxVZZLXg3/9aFlfLxb08AYZVAfAkQlQIysmWjhc5hwDG8g==}
 
   '@electron/asar@3.4.1':
     resolution: {integrity: sha512-i4/rNPRS84t0vSRa2HorerGRXWyF4vThfHesw0dmcWHp+cspK743UanA0suA5Q5y8kzY2y6YKrvbIUn69BCAiA==}
@@ -5787,6 +5799,9 @@ packages:
   pg-connection-string@2.12.0:
     resolution: {integrity: sha512-U7qg+bpswf3Cs5xLzRqbXbQl85ng0mfSV/J0nnA31MCLgvEaAo7CIhmeyrmJpOr7o+zm0rXK+hNnT5l9RHkCkQ==}
 
+  pg-gateway@0.3.0-beta.4:
+    resolution: {integrity: sha512-CTjsM7Z+0Nx2/dyZ6r8zRsc3f9FScoD5UAOlfUx1Fdv/JOIWvRbF7gou6l6vP+uypXQVoYPgw8xZDXgMGvBa4Q==}
+
   pg-int8@1.0.1:
     resolution: {integrity: sha512-WCtabS6t3c8SkpDBUlb1kjOs7l66xsGdKpIPZsg4wR+B3+u9UAum2odSsF9tnvxg80h4ZxLWMy4pRjOsFIqQpw==}
     engines: {node: '>=4.0.0'}
@@ -7340,6 +7355,8 @@ snapshots:
       undici: 7.25.0
     transitivePeerDependencies:
       - supports-color
+
+  '@electric-sql/pglite@0.4.5': {}
 
   '@electron/asar@3.4.1':
     dependencies:
@@ -12808,6 +12825,8 @@ snapshots:
     optional: true
 
   pg-connection-string@2.12.0: {}
+
+  pg-gateway@0.3.0-beta.4: {}
 
   pg-int8@1.0.1: {}
 

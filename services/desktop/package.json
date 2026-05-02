@@ -1,6 +1,6 @@
 {
   "name": "@ava/desktop",
-  "version": "0.1.8",
+  "version": "0.1.9",
   "private": true,
   "description": "AVA Electron desktop app — replaces user-interface/ Next.js. Talks to db-gateway only.",
   "author": {
@@ -19,7 +19,6 @@
     "mock-gateway": "node scripts/mock-gateway.mjs",
     "fetch:ollama": "node scripts/fetch-ollama.mjs",
     "fetch:whisper": "node scripts/fetch-whisper.mjs",
-    "fetch:postgres": "node scripts/fetch-postgres.mjs",
     "setup:mic": "node scripts/patch-electron-mic.mjs",
     "postinstall": "node scripts/patch-electron-mic.mjs",
     "build": "electron-vite build",
@@ -27,12 +26,13 @@
     "lint:german": "node scripts/check-german.mjs",
     "audit:bundle": "node scripts/check-bundle-secrets.mjs",
     "preview": "electron-vite preview",
-    "package:mac": "pnpm fetch:ollama --platform=darwin-arm64 && pnpm fetch:whisper --platform=darwin-arm64 && pnpm fetch:postgres --platform=darwin-arm64 && electron-vite build && electron-builder --mac --arm64",
-    "package:win": "pnpm fetch:ollama --platform=win32-x64 && pnpm fetch:whisper --platform=win32-x64 && pnpm fetch:postgres --platform=win32-x64 && electron-vite build && electron-builder --win",
-    "package:linux": "pnpm fetch:ollama --platform=linux-x64 && pnpm fetch:whisper --platform=linux-x64 && pnpm fetch:postgres --platform=linux-x64 && electron-vite build && electron-builder --linux"
+    "package:mac": "pnpm fetch:ollama --platform=darwin-arm64 && pnpm fetch:whisper --platform=darwin-arm64 && electron-vite build && electron-builder --mac --arm64",
+    "package:win": "pnpm fetch:ollama --platform=win32-x64 && pnpm fetch:whisper --platform=win32-x64 && electron-vite build && electron-builder --win",
+    "package:linux": "pnpm fetch:ollama --platform=linux-x64 && pnpm fetch:whisper --platform=linux-x64 && electron-vite build && electron-builder --linux"
   },
   "dependencies": {
     "@ava/ai-provider": "workspace:*",
+    "@electric-sql/pglite": "^0.4.5",
     "@fontsource-variable/geist": "^5.2.8",
     "@fontsource-variable/geist-mono": "^5.2.7",
     "@fontsource-variable/inter": "^5.2.8",
@@ -40,6 +40,8 @@
     "@tailwindcss/vite": "^4",
     "@tanstack/react-query": "^5.40.0",
     "ai": "^5.0.0",
+    "pg": "^8.20.0",
+    "pg-gateway": "0.3.0-beta.4",
     "react": "^18.3.0",
     "react-dom": "^18.3.0",
     "react-markdown": "^10.1.0",
