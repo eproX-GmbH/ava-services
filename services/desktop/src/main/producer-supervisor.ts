@@ -290,6 +290,33 @@ export class ProducerSupervisor extends EventEmitter {
         );
       `);
 
+      // Backfill: if a Prisma-managed `_prisma_migrations` table
+      // already exists from a previous build that ran
+      // `prisma migrate deploy` (v0.1.13/v0.1.14 lineage), pull its
+      // applied migration names into `_ava_migrations`. Without
+      // this, the SQL apply path below sees an empty tracking
+      // table and tries to re-apply migrations that already left
+      // CREATE TYPE / CREATE TABLE artefacts on disk, which fails
+      // with "<x> already exists".
+      const prismaTracking = await client.query<{ exists: boolean }>(
+        `SELECT EXISTS (
+           SELECT 1 FROM information_schema.tables
+           WHERE table_schema = 'public' AND table_name = '_prisma_migrations'
+         ) AS exists`,
+      );
+      if (prismaTracking.rows[0]?.exists) {
+        console.log(
+          `[${tag}] backfilling _ava_migrations from existing _prisma_migrations…`,
+        );
+        await client.query(`
+          INSERT INTO _ava_migrations (id, applied_at)
+          SELECT migration_name, COALESCE(finished_at, started_at, now())
+          FROM _prisma_migrations
+          WHERE finished_at IS NOT NULL
+          ON CONFLICT (id) DO NOTHING;
+        `);
+      }
+
       const entries = readdirSync(migrationsDir, { withFileTypes: true });
       const dirs = entries
         .filter((e) => e.isDirectory())
