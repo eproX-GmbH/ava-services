@@ -60,6 +60,16 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.event.inputs.tag || github.ref_name }}
+          # Phase 8.v1.2 — local producer bundling needs the
+          # submodule sources (company-profile/, structured-content/,
+          # …). actions/checkout uses GITHUB_TOKEN by default, which
+          # only sees the parent repo. The SUBMODULES_PAT secret is
+          # a Personal Access Token with read access to the eproX
+          # org's private submodule repos. If the secret is unset,
+          # checkout proceeds without submodules and
+          # `pnpm fetch:producers` will skip them gracefully.
+          submodules: recursive
+          token: ${{ secrets.SUBMODULES_PAT || secrets.GITHUB_TOKEN }}
 
       - uses: pnpm/action-setup@v3
         with:
@@ -96,6 +106,25 @@ jobs:
       - name: Fetch whisper-cli binary
         working-directory: services/desktop
         run: pnpm fetch:whisper --platform=darwin-${{ matrix.arch }}
+
+      # Vendor local producer subprocesses (Phase 8.v1.2). If the
+      # SUBMODULES_PAT secret is not configured, the submodule
+      # checkout silently skipped them — fetch:producers errors
+      # cleanly with "source dir missing" and we soft-skip via
+      # `|| true` so the .dmg/.exe still ships (just without local
+      # producers, which mirrors v0.1.11 behaviour). Add the
+      # SUBMODULES_PAT secret to enable bundling.
+      - name: Vendor producer subprocesses
+        working-directory: services/desktop
+        # Always create the resources/producers dir (even empty) so
+        # electron-builder's extraResources copy doesn't fail. If
+        # the SUBMODULES_PAT secret is configured the fetch
+        # populates company-profile/; otherwise we ship empty and
+        # the desktop's Settings panel reads "Keine Producer
+        # konfiguriert".
+        run: |
+          mkdir -p resources/producers
+          pnpm fetch:producers || echo "skipped — submodules not checked out"
 
       # Compile main + preload + renderer into `services/desktop/out/`
       # so electron-builder's asar packer has something to bundle.
@@ -163,6 +192,16 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.event.inputs.tag || github.ref_name }}
+          # Phase 8.v1.2 — local producer bundling needs the
+          # submodule sources (company-profile/, structured-content/,
+          # …). actions/checkout uses GITHUB_TOKEN by default, which
+          # only sees the parent repo. The SUBMODULES_PAT secret is
+          # a Personal Access Token with read access to the eproX
+          # org's private submodule repos. If the secret is unset,
+          # checkout proceeds without submodules and
+          # `pnpm fetch:producers` will skip them gracefully.
+          submodules: recursive
+          token: ${{ secrets.SUBMODULES_PAT || secrets.GITHUB_TOKEN }}
 
       - uses: pnpm/action-setup@v3
         with:
@@ -196,6 +235,18 @@ jobs:
       - name: Fetch whisper-cli binary
         working-directory: services/desktop
         run: pnpm fetch:whisper --platform=win32-x64
+
+      - name: Vendor producer subprocesses
+        working-directory: services/desktop
+        # Always create the resources/producers dir (even empty) so
+        # electron-builder's extraResources copy doesn't fail. If
+        # the SUBMODULES_PAT secret is configured the fetch
+        # populates company-profile/; otherwise we ship empty and
+        # the desktop's Settings panel reads "Keine Producer
+        # konfiguriert".
+        run: |
+          mkdir -p resources/producers
+          pnpm fetch:producers || echo "skipped — submodules not checked out"
 
       - name: Build renderer + main bundles
         working-directory: services/desktop

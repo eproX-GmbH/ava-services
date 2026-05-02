@@ -44,16 +44,21 @@ extraResources:
     to: whisper
     filter:
       - "**/*"
-  # NOTE (Phase 8.v1.1): producer Node services are NOT bundled
-  # into v0.1.11's .dmg/.exe yet. The vendoring path
-  # (`pnpm fetch:producers`) needs the GitLab NPM_TOKEN secret in
-  # CI plus a size optimisation pass — current company-profile
-  # vendor weighs 172 MB unpruned, which would balloon the
-  # installer. v0.1.12 will add an extraResources block here +
-  # the CI fetch step. For dev (`pnpm dev`) the supervisor
-  # resolves resources/producers/<name>/ directly from the repo,
-  # so a local `pnpm fetch:producers` run smoke-tests the spawn
-  # + migration + AMQP wiring end-to-end.
+  # Vendored producer Node services (Phase 8.v1.2+). `pnpm
+  # fetch:producers` builds + prunes + trims each producer
+  # submodule into resources/producers/<name>/. The fetch step in
+  # CI is soft-skipped if SUBMODULES_PAT isn't configured — in
+  # that case the dir doesn't exist and electron-builder's
+  # extraResources copy needs to NOT abort the build. We achieve
+  # that by always-writing a marker file before electron-builder
+  # runs (see workflow), so the directory always exists even if
+  # empty. The desktop's ProducerSupervisor then sees an empty
+  # producer list and the Settings panel reads "Keine Producer
+  # konfiguriert", which matches the v0.1.11 fallback path.
+  - from: resources/producers
+    to: producers
+    filter:
+      - "**/*"
 
 mac:
   target:
