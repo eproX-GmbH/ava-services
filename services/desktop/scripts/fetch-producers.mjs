@@ -259,7 +259,17 @@ async function main() {
           `[producers] ${target.name}: stage missing ${entry} after build`,
         );
       }
-      cpSync(from, join(dstDir, entry), { recursive: true });
+      // dereference: true replaces every symlink with its target.
+      // Required because the vendored tree gets packaged into the
+      // macOS .app bundle, and `codesign --deep --strict` rejects
+      // symlinks pointing outside the bundle ("invalid destination
+      // for symbolic link"). npm install creates lots of these
+      // under node_modules/.bin/ and as hoist trampolines. Cost is
+      // a few extra MB of duplication; correctness >> size here.
+      cpSync(from, join(dstDir, entry), {
+        recursive: true,
+        dereference: true,
+      });
     }
 
     // 7. Drop the .npmrc copy — it might carry a token-bearing line,
