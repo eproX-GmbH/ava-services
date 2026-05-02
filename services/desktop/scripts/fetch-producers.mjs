@@ -42,6 +42,7 @@ import {
   cpSync,
   existsSync,
   mkdirSync,
+  readdirSync,
   rmSync,
   readFileSync,
   writeFileSync,
@@ -233,7 +234,21 @@ async function main() {
     console.log(`[producers] ${target.name}: prisma generate…`);
     runSyncStrict("npx", ["prisma", "generate"], { cwd: stageDir });
 
-    // 6. Move the built+pruned tree into the desktop resources.
+    // 5b. Trim node_modules to the actually-needed shape. Runtime
+    //     producers don't need:
+    //       - swagger-ui-dist  (~11 MB) — /api-docs route, headless
+    //       - gpt-tokenizer's esm/ + dist/ rollups (the producer is
+    //         CJS, only cjs/ is loaded at runtime; saves ~25 MB)
+    //       - source maps (.map) anywhere (recoverable from the
+    //         workspace if a stack trace ever needs them)
+    //       - upstream test fixtures (tests/, __tests__/, examples/)
+    //       - LICENSE / README / CHANGELOG noise (pure cosmetic for
+    //         a vendored bundle the user never opens)
+    //     Kept on purpose: prisma CLI + @prisma/engines (both with
+    //     darwin binary) — needed for `migrate deploy` at first
+    //     launch. We accept the duplicate 18 MB cost there.
+    console.log(`[producers] ${target.name}: trimming node_modules…`);
+    trimNodeModules(join(stageDir, "node_modules"));
     //    We keep dist + node_modules + prisma + package.json.
     rmSync(dstDir, { recursive: true, force: true });
     mkdirSync(dstDir, { recursive: true });
@@ -256,6 +271,88 @@ async function main() {
     }
 
     console.log(`[producers] ${target.name}: done → ${dstDir}`);
+  }
+}
+
+/**
+ * Aggressive but safe trim of a vendored node_modules tree. Only
+ * touches files/dirs that are well-known noise for headless
+ * server runtime — never anything that could plausibly be required
+ * at first import.
+ */
+function trimNodeModules(nmDir) {
+  if (!existsSync(nmDir)) return;
+
+  // Whole packages we drop entirely.
+  const dropPackages = ["swagger-ui-dist"];
+  for (const name of dropPackages) {
+    const p = join(nmDir, name);
+    if (existsSync(p)) {
+      rmSync(p, { recursive: true, force: true });
+    }
+  }
+
+  // gpt-tokenizer ships dist/ + cjs/ + esm/ + src/ — runtime only
+  // needs cjs/. Saves ~25 MB.
+  const gptTok = join(nmDir, "gpt-tokenizer");
+  if (existsSync(gptTok)) {
+    for (const sub of ["esm", "dist", "src"]) {
+      const p = join(gptTok, sub);
+      if (existsSync(p)) rmSync(p, { recursive: true, force: true });
+    }
+  }
+
+  // Walk every package dir and strip noise files. We do it once at
+  // the top level rather than per-pkg-config so a freshly-added
+  // dep gets the same hygiene without code change.
+  walkAndStrip(nmDir);
+}
+
+function walkAndStrip(dir) {
+  let entries;
+  try {
+    entries = readdirSync(dir, { withFileTypes: true });
+  } catch {
+    return;
+  }
+  for (const e of entries) {
+    const p = join(dir, e.name);
+    if (e.isDirectory()) {
+      // Drop top-level junk dirs that are common across packages.
+      if (
+        e.name === "test" ||
+        e.name === "tests" ||
+        e.name === "__tests__" ||
+        e.name === "examples" ||
+        e.name === "docs" ||
+        e.name === ".github" ||
+        e.name === "coverage"
+      ) {
+        rmSync(p, { recursive: true, force: true });
+        continue;
+      }
+      walkAndStrip(p);
+    } else if (e.isFile()) {
+      // Drop source maps, TypeScript sources alongside compiled JS,
+      // and assorted text noise.
+      if (
+        e.name.endsWith(".map") ||
+        e.name === "CHANGELOG.md" ||
+        e.name === "HISTORY.md" ||
+        e.name === ".eslintrc" ||
+        e.name === ".eslintrc.js" ||
+        e.name === ".eslintrc.json" ||
+        e.name === ".prettierrc" ||
+        e.name === ".npmignore" ||
+        e.name === ".gitattributes"
+      ) {
+        try {
+          rmSync(p, { force: true });
+        } catch {
+          /* fine */
+        }
+      }
+    }
   }
 }
 
