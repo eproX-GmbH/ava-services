@@ -1,7 +1,7 @@
 import { spawn, type ChildProcessByStdio } from "node:child_process";
 import type { Readable } from "node:stream";
 import { EventEmitter } from "node:events";
-import { existsSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { app } from "electron";
 import type {
@@ -239,53 +239,93 @@ export class ProducerSupervisor extends EventEmitter {
   // ---- Internals ------------------------------------------------------------
 
   /**
-   * Run `prisma migrate deploy` synchronously against the producer's
-   * database. We use the Prisma CLI bundled in the producer's
-   * node_modules — `fetch-producers.mjs` promotes prisma to runtime
-   * deps so the CLI survives `npm prune --omit=dev`.
+   * Apply Prisma-format SQL migrations directly to the producer's
+   * database via the `pg` driver — no Prisma CLI subprocess.
+   *
+   * Why hand-rolled instead of `prisma migrate deploy`:
+   *   - PGlite's wire-protocol implementation doesn't fully match
+   *     real Postgres around prepared-statement reuse. Prisma's
+   *     migration engine uses statement names like "s1" and reuses
+   *     them across queries; against PGlite the second use raises
+   *     "prepared statement s1 already exists" and migrate aborts.
+   *   - Dropping the prisma CLI from the runtime bundle saves ~50 MB.
+   *   - Idempotent via our own `_ava_migrations` tracking table —
+   *     same shape as Prisma's `_prisma_migrations` but written by
+   *     us, so the tracking is guaranteed to live in the same DB
+   *     the migrations target.
+   *
+   * Migration source: `<producerDir>/prisma/migrations/<id>/migration.sql`
+   * — this is what `prisma migrate dev` produces, vendored verbatim.
+   * We sort by directory name (timestamp prefix) and apply in order.
+   * Each migration runs as a single multi-statement `query()` call;
+   * PGlite supports multi-statement strings on the simple-query
+   * protocol path, which avoids the prepared-statement collision.
    */
-  private runMigrations(producerDir: string, env: NodeJS.ProcessEnv): Promise<void> {
-    return new Promise((resolveMigrate, rejectMigrate) => {
-      const cliPath = join(producerDir, "node_modules", "prisma", "build", "index.js");
-      if (!existsSync(cliPath)) {
-        // Some Prisma versions ship the CLI under bin/; fall back.
-        const fallback = join(producerDir, "node_modules", ".bin", "prisma");
-        if (!existsSync(fallback)) {
-          rejectMigrate(
-            new Error(
-              `prisma CLI not found at ${cliPath} or ${fallback}`,
-            ),
-          );
-          return;
+  private async runMigrations(
+    producerDir: string,
+    env: NodeJS.ProcessEnv,
+  ): Promise<void> {
+    const migrationsDir = join(producerDir, "prisma", "migrations");
+    if (!existsSync(migrationsDir)) {
+      // Producer ships no migrations — nothing to do.
+      return;
+    }
+    const databaseUrl = env.DATABASE_URL;
+    if (!databaseUrl) {
+      throw new Error("DATABASE_URL not set in producer env");
+    }
+
+    // Dynamic import — `pg` is ESM-friendly but bundled as CJS.
+    // Loading it lazily keeps the supervisor's cold-start cheap if
+    // the producer never starts.
+    const { Client } = (await import("pg")) as typeof import("pg");
+    const client = new Client({ connectionString: databaseUrl });
+    await client.connect();
+    const tag = `producer:${this.opts.config.name}:migrate`;
+    try {
+      await client.query(`
+        CREATE TABLE IF NOT EXISTS _ava_migrations (
+          id          text        PRIMARY KEY,
+          applied_at  timestamptz NOT NULL DEFAULT now()
+        );
+      `);
+
+      const entries = readdirSync(migrationsDir, { withFileTypes: true });
+      const dirs = entries
+        .filter((e) => e.isDirectory())
+        .map((e) => e.name)
+        .sort(); // timestamp prefix sorts chronologically
+
+      for (const id of dirs) {
+        const sqlPath = join(migrationsDir, id, "migration.sql");
+        if (!existsSync(sqlPath)) continue;
+
+        const exists = await client.query(
+          "SELECT 1 FROM _ava_migrations WHERE id = $1",
+          [id],
+        );
+        if (exists.rows.length > 0) {
+          continue; // already applied
         }
+
+        console.log(`[${tag}] applying ${id}…`);
+        const sql = readFileSync(sqlPath, "utf8");
+        try {
+          await client.query(sql);
+        } catch (err) {
+          throw new Error(
+            `migration ${id} failed: ${err instanceof Error ? err.message : String(err)}`,
+          );
+        }
+        await client.query(
+          "INSERT INTO _ava_migrations (id) VALUES ($1)",
+          [id],
+        );
+        console.log(`[${tag}] ✓ ${id}`);
       }
-      const args = [cliPath, "migrate", "deploy"];
-      const child = spawn(process.execPath, args, {
-        cwd: producerDir,
-        env: { ...env, ELECTRON_RUN_AS_NODE: "1" },
-        stdio: ["ignore", "pipe", "pipe"],
-      });
-      const tag = `producer:${this.opts.config.name}:migrate`;
-      let stderr = "";
-      child.stdout.on("data", (b: Buffer) => {
-        console.log(`[${tag}] ${b.toString().trimEnd()}`);
-      });
-      child.stderr.on("data", (b: Buffer) => {
-        const line = b.toString();
-        stderr += line;
-        console.warn(`[${tag}:err] ${line.trimEnd()}`);
-      });
-      child.on("error", rejectMigrate);
-      child.on("exit", (code) => {
-        if (code === 0) {
-          resolveMigrate();
-        } else {
-          rejectMigrate(
-            new Error(`prisma migrate deploy exited ${code}: ${stderr.trim()}`),
-          );
-        }
-      });
-    });
+    } finally {
+      await client.end();
+    }
   }
 
   private buildEnv(): NodeJS.ProcessEnv {

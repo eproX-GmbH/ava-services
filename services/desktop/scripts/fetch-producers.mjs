@@ -155,9 +155,12 @@ async function main() {
     }
 
     // 2. Strip lifecycle scripts that aren't applicable to a vendored
-    //    install (husky, tests). Promote prisma to dependencies so
-    //    --omit=dev keeps it (we need the CLI at runtime to run
-    //    `prisma migrate deploy` against the user's PGlite database).
+    //    install (husky, tests). Prisma stays a *dev* dependency:
+    //    we only need the CLI at vendor time (for `prisma generate`),
+    //    not at runtime — the desktop's ProducerSupervisor applies
+    //    migrations directly via the `pg` driver against PGlite,
+    //    bypassing `prisma migrate deploy` entirely. Dropping prisma
+    //    from runtime saves ~50 MB per producer in the .dmg.
     const stagePkgPath = join(stageDir, "package.json");
     const pkg = JSON.parse(readFileSync(stagePkgPath, "utf8"));
     if (pkg.scripts) {
@@ -165,10 +168,6 @@ async function main() {
       delete pkg.scripts.test;
       delete pkg.scripts["test:unit"];
       delete pkg.scripts["test:functional"];
-    }
-    if (pkg.devDependencies?.prisma) {
-      pkg.dependencies = pkg.dependencies ?? {};
-      pkg.dependencies.prisma = pkg.devDependencies.prisma;
     }
     // Resolve file: deps that pointed at workspace siblings — the
     // staging dir is outside the monorepo so `file:../packages/foo`
@@ -227,12 +226,22 @@ async function main() {
     console.log(`[producers] ${target.name}: npm run build…`);
     runSyncStrict("npm", ["run", "build"], { cwd: stageDir });
 
-    // 5. Trim to runtime: prune dev deps, regenerate prisma client.
-    console.log(`[producers] ${target.name}: npm prune --omit=dev…`);
-    runSyncStrict("npm", ["prune", "--omit=dev"], { cwd: stageDir });
-
+    // 5a. Generate Prisma client BEFORE prune. The producer's
+    //     schema.prisma sets `output = "../generated/prisma-client"`,
+    //     which is what tsc-alias rewrote `@prisma/client` imports
+    //     to. Generation needs the prisma CLI which is a devDep —
+    //     after prune --omit=dev it's gone, so we must run this
+    //     before pruning.
     console.log(`[producers] ${target.name}: prisma generate…`);
     runSyncStrict("npx", ["prisma", "generate"], { cwd: stageDir });
+
+    // 5b. Trim to runtime: drop dev deps. Prisma CLI goes away here
+    //     (we don't need it at runtime — the desktop applies
+    //     migrations via raw SQL through the `pg` driver). The
+    //     generated/ dir we just produced stays untouched because
+    //     it's outside node_modules.
+    console.log(`[producers] ${target.name}: npm prune --omit=dev…`);
+    runSyncStrict("npm", ["prune", "--omit=dev"], { cwd: stageDir });
 
     // 5b. Trim node_modules to the actually-needed shape. Runtime
     //     producers don't need:
@@ -308,11 +317,60 @@ function trimNodeModules(nmDir) {
   if (!existsSync(nmDir)) return;
 
   // Whole packages we drop entirely.
-  const dropPackages = ["swagger-ui-dist"];
+  // - swagger-ui-dist: /api-docs route, headless producer doesn't serve it
+  // - prisma: the CLI. Survived `npm prune --omit=dev` because it's a
+  //   peer dep of @prisma/client. We don't run `prisma migrate` /
+  //   `prisma generate` at runtime — migrations are applied by the
+  //   desktop's ProducerSupervisor via raw SQL through `pg`. Saves ~29 MB.
+  const dropPackages = ["swagger-ui-dist", "prisma"];
   for (const name of dropPackages) {
     const p = join(nmDir, name);
     if (existsSync(p)) {
       rmSync(p, { recursive: true, force: true });
+    }
+  }
+
+  // Inside @prisma/engines, drop the schema-engine-darwin binary (~20 MB)
+  // — it's the migrate engine, only needed by `prisma migrate deploy`
+  // which we no longer call. The query engine stays (used by
+  // @prisma/client at runtime).
+  const enginesDir = join(nmDir, "@prisma", "engines");
+  if (existsSync(enginesDir)) {
+    for (const f of [
+      "schema-engine-darwin",
+      "schema-engine-darwin-arm64",
+      "schema-engine-linux-musl",
+      "schema-engine-windows.exe",
+    ]) {
+      const p = join(enginesDir, f);
+      if (existsSync(p)) rmSync(p, { force: true });
+    }
+  }
+
+  // Remove dangling symlinks under .bin/ — npm wired these to the
+  // packages we just dropped. The downstream cpSync({dereference:true})
+  // would error on them.
+  const dotBin = join(nmDir, ".bin");
+  if (existsSync(dotBin)) {
+    let entries;
+    try {
+      entries = readdirSync(dotBin, { withFileTypes: true });
+    } catch {
+      entries = [];
+    }
+    for (const e of entries) {
+      const p = join(dotBin, e.name);
+      if (e.isSymbolicLink()) {
+        // existsSync returns false for symlinks pointing at missing
+        // targets — perfect "dangling?" check.
+        if (!existsSync(p)) {
+          try {
+            rmSync(p, { force: true });
+          } catch {
+            /* fine */
+          }
+        }
+      }
     }
   }
 
