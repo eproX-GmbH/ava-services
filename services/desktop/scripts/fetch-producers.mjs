@@ -312,6 +312,43 @@ async function main() {
     console.log(`[producers] ${target.name}: prisma generate…`);
     runSyncStrict("npx", ["prisma", "generate"], { cwd: stageDir });
 
+    // 5a2. Rebuild native modules against Electron's Node ABI.
+    //      Producers ship native deps (node-expat, sharp, etc.).
+    //      `npm install` builds them for whatever Node ABI is on
+    //      PATH (115 = Node 20, 127 = Node 22). Electron 31 ships
+    //      its own Node patched with ABI 125 — so a CI-built bundle
+    //      crashes at first import with
+    //        Error: The module '...node_expat.node' was compiled
+    //        against NODE_MODULE_VERSION 115; this version requires 125
+    //      `@electron/rebuild` walks the stage's node_modules and
+    //      recompiles each native dep against the target Electron
+    //      version's ABI.
+    //
+    //      Find @electron/rebuild via the desktop's own node_modules
+    //      (it's a workspace devDep we install at vendor time).
+    const electronRebuildBin = resolve(
+      DESKTOP_ROOT,
+      "node_modules",
+      ".bin",
+      "electron-rebuild",
+    );
+    const electronVersion = readElectronVersion();
+    if (existsSync(electronRebuildBin) && electronVersion) {
+      console.log(
+        `[producers] ${target.name}: electron-rebuild for v${electronVersion}…`,
+      );
+      runSyncStrict(
+        electronRebuildBin,
+        ["--version", electronVersion, "--module-dir", stageDir],
+        { cwd: stageDir },
+      );
+    } else {
+      console.warn(
+        `[producers] ${target.name}: electron-rebuild missing — native modules may crash at runtime. ` +
+          `Install @electron/rebuild as a desktop devDep.`,
+      );
+    }
+
     // 5b. tsc-alias quirk workaround.
     //     The producer's tsconfig has
     //       "@prisma/client": ["generated/prisma-client"]
@@ -599,6 +636,27 @@ function walkAndStrip(dir) {
         }
       }
     }
+  }
+}
+
+/**
+ * Read the Electron version pinned in services/desktop/package.json.
+ * Used as the target ABI for `electron-rebuild` so native modules
+ * inside the producer bundle match what Electron loads at runtime.
+ */
+function readElectronVersion() {
+  const pkgPath = join(DESKTOP_ROOT, "package.json");
+  if (!existsSync(pkgPath)) return null;
+  try {
+    const pkg = JSON.parse(readFileSync(pkgPath, "utf8"));
+    const v =
+      pkg.devDependencies?.electron ??
+      pkg.dependencies?.electron ??
+      null;
+    if (!v) return null;
+    return v.replace(/^[\^~]/, "");
+  } catch {
+    return null;
   }
 }
 

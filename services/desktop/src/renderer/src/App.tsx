@@ -13,6 +13,7 @@ import { bindWatchesBridge } from "./store/watches";
 import { SignIn } from "./routes/SignIn";
 import { FirstRunWizard } from "./routes/FirstRunWizard";
 import { DownloadDock } from "./components/DownloadDock";
+import { UpdateBanner } from "./components/UpdateBanner";
 import type { LlmProviderKind } from "../../shared/types";
 
 interface MemoryProbe {
@@ -178,6 +179,7 @@ export function App({ children }: PropsWithChildren) {
           onProviderConfigChanged={(b) => setProviderKind(b.config.kind)}
         />
         <DownloadDock />
+        <UpdateBanner />
       </>
     );
   }

@@ -59,6 +59,15 @@ function buildProducerDatabaseUrls(): Record<string, string> {
   const result: Record<string, string> = {};
   for (const [producer, dbName] of Object.entries(PRODUCER_DATABASE_NAMES)) {
     parsed.pathname = `/${dbName}`;
+    // Cap each local producer's prisma pool to keep us under the
+    // pgbouncer connection limit. Free-tier MPG allots a few dozen
+    // connections; with 5 producers × 10 (default) + fly producers +
+    // gateway, we'd peg the limit and get
+    //   "Failed to establish a connection to the database"
+    // Connection_limit=2 still gives prisma room for a tx + a query
+    // in flight without blocking.
+    parsed.searchParams.set("connection_limit", "2");
+    parsed.searchParams.set("pool_timeout", "20");
     result[producer] = parsed.toString();
   }
   return result;

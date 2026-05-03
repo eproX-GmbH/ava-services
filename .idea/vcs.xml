@@ -2,9 +2,7 @@
 <project version="4">
   <component name="VcsDirectoryMappings">
     <mapping directory="$PROJECT_DIR$" vcs="Git" />
-    <mapping directory="$PROJECT_DIR$/business-intelligence" vcs="Git" />
     <mapping directory="$PROJECT_DIR$/company-contact" vcs="Git" />
-    <mapping directory="$PROJECT_DIR$/company-contact/company-contact" vcs="Git" />
     <mapping directory="$PROJECT_DIR$/company-evaluation" vcs="Git" />
     <mapping directory="$PROJECT_DIR$/company-profile" vcs="Git" />
     <mapping directory="$PROJECT_DIR$/company-publication" vcs="Git" />
@@ -14,7 +12,6 @@
     <mapping directory="$PROJECT_DIR$/packages/events" vcs="Git" />
     <mapping directory="$PROJECT_DIR$/packages/queue-client/node_modules_stub" vcs="Git" />
     <mapping directory="$PROJECT_DIR$/structured-content" vcs="Git" />
-    <mapping directory="$PROJECT_DIR$/user-interface" vcs="Git" />
     <mapping directory="$PROJECT_DIR$/website" vcs="Git" />
   </component>
 </project>
