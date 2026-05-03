@@ -65,3 +65,13 @@ app.get("/docs", swaggerUI({ url: "/openapi.json" }));
 serve({ fetch: app.fetch, port: env.PORT }, (info) => {
   logger.info({ port: info.port }, "db-gateway listening");
 });
+
+// §8.v3 — gateway is now the single persist service. Subscribe the
+// 5 `tenant.persist.<producer>.v1` queues at boot. A failure here
+// must not crash the HTTP server (read paths still work without
+// persist), but it's loud in logs.
+import("./lib/persist-bus")
+  .then(({ persistBus }) => persistBus.ensureConnected())
+  .catch((err) => {
+    logger.error({ err }, "persist-bus failed to start");
+  });

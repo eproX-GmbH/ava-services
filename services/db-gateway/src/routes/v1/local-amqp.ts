@@ -1,5 +1,6 @@
 import { OpenAPIHono } from "@hono/zod-openapi";
 import { loadEnv } from "../../lib/env";
+import { buildProducerDatabaseUrls } from "../../lib/db-urls";
 
 const env = loadEnv();
 
@@ -30,48 +31,9 @@ const env = loadEnv();
 
 export const localAmqpRouter = new OpenAPIHono();
 
-// Per-producer database name on the fly MPG cluster. Mirrors the
-// PRODUCER_REGISTRY in services/desktop/src/main/index.ts. When a
-// new producer is added there, mirror it here.
-const PRODUCER_DATABASE_NAMES: Record<string, string> = {
-  "company-profile": "ava_company_profile",
-  "structured-content": "ava_structured_content",
-  "company-publication": "ava_company_publication",
-  "company-evaluation": "ava_company_evaluation",
-  "company-contact": "ava_company_contact",
-};
-
-/**
- * Build per-producer DATABASE_URLs from the gateway's own
- * DATABASE_URL secret. The MPG cluster + auth + host are shared;
- * only the database segment differs.
- */
-function buildProducerDatabaseUrls(): Record<string, string> {
-  const gatewayUrl = env.DATABASE_URL;
-  // Replace the path segment (database name) with each producer's name.
-  // Falls back to URL parsing so query parameters survive.
-  let parsed: URL;
-  try {
-    parsed = new URL(gatewayUrl);
-  } catch {
-    return {};
-  }
-  const result: Record<string, string> = {};
-  for (const [producer, dbName] of Object.entries(PRODUCER_DATABASE_NAMES)) {
-    parsed.pathname = `/${dbName}`;
-    // Cap each local producer's prisma pool to keep us under the
-    // pgbouncer connection limit. Free-tier MPG allots a few dozen
-    // connections; with 5 producers × 10 (default) + fly producers +
-    // gateway, we'd peg the limit and get
-    //   "Failed to establish a connection to the database"
-    // Connection_limit=2 still gives prisma room for a tx + a query
-    // in flight without blocking.
-    parsed.searchParams.set("connection_limit", "2");
-    parsed.searchParams.set("pool_timeout", "20");
-    result[producer] = parsed.toString();
-  }
-  return result;
-}
+// Per-producer DATABASE_URL builder lives in `lib/db-urls.ts` so the
+// persist-bus consumer can share the same logic. The producer name
+// registry mirrors `services/desktop/src/main/index.ts`.
 
 localAmqpRouter.get("/local-amqp-url", (c) => {
   const auth = c.get("auth");
