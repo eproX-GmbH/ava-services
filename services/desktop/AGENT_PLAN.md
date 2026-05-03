@@ -2515,3 +2515,38 @@ wins; the earlier writer's data is silently dropped. Acceptable per the
   manually. Internet is required anyway for LLM calls.
 - Multi-device per tenant: not enforced in pilot; race conditions
   resolved by last-write-wins on the persist side
+
+### v0.2.0 cutover state (post 8.v2.3)
+
+**Deployed:**
+- ava-db-gateway @ 4682f66 — `/v1/local-credentials` endpoint
+- ava-company-profile @ d1744a0, fly-deployed in PRODUCER_MODE=persist mode (8.v2.5 cutover)
+- Other 4 fly producers still in legacy mode (no PRODUCER_MODE env)
+
+**Local desktop:**
+- v0.1.27+ ProducerSupervisor spawns ONLY `company-profile` in compute mode
+- Other 4 producer subprocesses are commented out in PRODUCER_REGISTRY
+  (their fly-legacy counterparts continue serving the chain until migrated)
+
+**End-to-end smoke test (pilot user):**
+
+1. Install v0.1.27 .dmg
+2. Sign in via Keycloak
+3. Settings → Lokale Producer-Dienste should show:
+     `company-profile: bereit · Port 51010 · PID xxx`
+   (other producers absent — expected)
+4. Upload an Excel via the chat and trigger a transaction with the
+   `company-profile` stage selected
+5. Watch the local producer terminal log:
+     `[compute-company-profile] received runId=...`
+     `[compute-company-profile] published persist event runId=...`
+6. Watch fly logs of ava-company-profile:
+     `fly logs -a ava-company-profile | grep persist`
+   Should show:
+     `[persist-company-profile] runId=... ✓ persisted`
+7. In the chat, agent tool `company_profile` for the same company
+   should now return the LLM-generated profile
+
+If any step fails, the gateway/master-data event chain has a gap —
+likely needs the rest of the producer chain (structured-content,
+website, etc.) which remain fly-legacy for the pilot.

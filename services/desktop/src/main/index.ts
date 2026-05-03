@@ -247,36 +247,25 @@ function buildProducer(
     databaseName: string;
     port: number;
   }> = [
+    // Only company-profile is wired for v0.2 PRODUCER_MODE=compute
+    // today — its compute-worker has a real implementation. The
+    // remaining four producers' compute-workers are skeletons that
+    // throw at startup (see AGENT_PLAN §8.v2.6); registering them
+    // here would crash-loop the supervisor. Re-add each one as its
+    // compute body lands.
     {
       name: "company-profile",
       entry: "dist/web/api/server.js",
       databaseName: "company_profile",
       port: 51010,
     },
-    {
-      name: "structured-content",
-      entry: "dist/web/api/server.js",
-      databaseName: "structured_content",
-      port: 51020,
-    },
-    {
-      name: "company-publication",
-      entry: "dist/web/api/server.js",
-      databaseName: "company_publication",
-      port: 51030,
-    },
-    {
-      name: "company-evaluation",
-      entry: "dist/web/api/server.js",
-      databaseName: "company_evaluation",
-      port: 51040,
-    },
-    {
-      name: "company-contact",
-      entry: "dist/web/api/server.js",
-      databaseName: "company_contact",
-      port: 51050,
-    },
+    // PENDING 8.v2.6 (compute-worker bodies):
+    //   structured-content   port 51020 / db structured_content
+    //   company-publication  port 51030 / db company_publication
+    //   company-evaluation   port 51040 / db company_evaluation
+    //   company-contact      port 51050 / db company_contact
+    // The fly-deployed legacy versions of these continue to handle
+    // events end-to-end until each gets migrated.
   ];
 
   // eslint-disable-next-line @typescript-eslint/no-require-imports
