@@ -7,6 +7,7 @@ import { useVoiceStore } from "../store/voice";
 import { useProfileStore } from "../store/profile";
 import { usePostgresStore } from "../store/postgres";
 import { useProducersStore } from "../store/producers";
+import { useConfigStore } from "../store/config";
 import type {
   AlertCadenceMinutes,
   AlertCandidateDecision,
@@ -73,7 +74,7 @@ export function Settings() {
   }, [hash]);
   return (
     <section>
-      <h2>Einstellungen</h2>
+      <SettingsHeader />
       <ProviderSection />
       <ProfileSection />
       <VoiceSection />
@@ -83,6 +84,32 @@ export function Settings() {
       <FreshnessSection />
       <GeneralMemorySection />
     </section>
+  );
+}
+
+// -- Settings header with version pill --------------------------------
+//
+// Tiny "AVA v0.1.x · channel" line under the page title. Pulls from
+// useConfigStore which mirrors `app:getConfig` (filled at App.tsx
+// mount). When config isn't ready yet we render the title alone so
+// the layout doesn't jump on slow boots.
+
+function SettingsHeader() {
+  const ready = useConfigStore((s) => s.ready);
+  const version = useConfigStore((s) => s.appVersion);
+  const channel = useConfigStore((s) => s.updateChannel);
+  const isDev = useConfigStore((s) => s.isDev);
+  return (
+    <header className="settings-header">
+      <h2>Einstellungen</h2>
+      {ready && version && (
+        <p className="muted small">
+          AVA v{version}
+          {channel && channel !== "latest" ? ` · ${channel}` : ""}
+          {isDev ? " · dev" : ""}
+        </p>
+      )}
+    </header>
   );
 }
 
