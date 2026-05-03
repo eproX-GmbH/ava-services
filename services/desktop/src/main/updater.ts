@@ -60,6 +60,18 @@ export class Updater extends EventEmitter {
       return;
     }
 
+    // Inject the build-time-baked GH_TOKEN so electron-updater can
+    // talk to the private repo's releases.atom feed. AVA_RELEASE_TOKEN
+    // gets replaced at compile time by electron-vite's `define` block
+    // (services/desktop/electron.vite.config.ts) with the contents of
+    // the build-host's SUBMODULES_PAT or GH_TOKEN env var. Empty
+    // string in dev / unconfigured CI; the updater then 404's exactly
+    // like before (harmless).
+    const bakedToken = process.env.AVA_RELEASE_TOKEN;
+    if (bakedToken && !process.env.GH_TOKEN) {
+      process.env.GH_TOKEN = bakedToken;
+    }
+
     // Don't auto-download — we surface the prompt and the user
     // confirms. Avoids surprising "where did my disk space go"
     // behaviour for slow connections.

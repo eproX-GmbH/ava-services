@@ -33,6 +33,18 @@ export default defineConfig({
     // (better-sqlite3, onnxruntime-node, …) working without rollup-side
     // shims.
     plugins: [externalizeDepsPlugin()],
+    // Bake the GitHub PAT into the main bundle at build time so
+    // electron-updater can fetch the (private) repo's release feed.
+    // Source: SUBMODULES_PAT secret in CI (or the GH_TOKEN env locally).
+    // The token is read-only on the repo's contents and is acceptable
+    // to leak in a closed-pilot context — anyone with the .dmg already
+    // has access to the published .dmg files which is what the token
+    // grants. Promote to runtime gateway-mediated token in 8.v1.6.
+    define: {
+      "process.env.AVA_RELEASE_TOKEN": JSON.stringify(
+        process.env.AVA_RELEASE_TOKEN ?? process.env.GH_TOKEN ?? "",
+      ),
+    },
     build: {
       rollupOptions: {
         input: resolve(__dirname, "src/main/index.ts"),

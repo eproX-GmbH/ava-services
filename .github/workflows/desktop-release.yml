@@ -150,6 +150,11 @@ jobs:
       # separate vite-driven step.
       - name: Build renderer + main bundles
         working-directory: services/desktop
+        env:
+          # Baked into the main bundle so electron-updater can read
+          # the private repo's release feed. See updater.ts +
+          # electron.vite.config.ts main.define block.
+          AVA_RELEASE_TOKEN: ${{ secrets.SUBMODULES_PAT }}
         run: pnpm build
 
       # Imports the Developer ID Application cert into a fresh
@@ -295,6 +300,11 @@ jobs:
 
       - name: Build renderer + main bundles
         working-directory: services/desktop
+        env:
+          # Baked into the main bundle so electron-updater can read
+          # the private repo's release feed. See updater.ts +
+          # electron.vite.config.ts main.define block.
+          AVA_RELEASE_TOKEN: ${{ secrets.SUBMODULES_PAT }}
         run: pnpm build
 
       - name: Build & publish (Windows, unsigned)
