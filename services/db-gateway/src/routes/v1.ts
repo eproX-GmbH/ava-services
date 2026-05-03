@@ -8,6 +8,7 @@ import { evaluationsRouter } from "./v1/evaluations";
 import { evaluationWritesRouter } from "./v1/evaluation-writes";
 import { importsRouter } from "./v1/imports";
 import { transactionsRouter } from "./v1/transactions";
+import { localAmqpRouter } from "./v1/local-amqp";
 
 // /v1 router.
 //
@@ -46,6 +47,11 @@ v1.route("/", evaluationWritesRouter);
 
 // §5.3 Manual corrections (W23, W24, W25).
 v1.route("/", companyWritesRouter);
+
+// 8.v1.3 — local-producer AMQP credential handout. Bearer-gated;
+// returns the broker URL the desktop's ProducerSupervisor injects
+// into spawned producer Node subprocesses.
+v1.route("/", localAmqpRouter);
 
 // Retained for smoke-testing auth end-to-end. Safe to remove once clients
 // exist — no workflow reference.
