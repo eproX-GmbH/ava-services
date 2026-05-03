@@ -102,7 +102,7 @@ function broadcastAuthStatus(status: AuthStatus): void {
       }
     }
   } else {
-    cachedAmqpUrl = null;
+    cachedCredentials = null;
     for (const p of producers) {
       void p.stop();
     }
@@ -154,40 +154,59 @@ postgres.on("status", broadcastPostgresStatus);
 // company-profile is the v1.1 proof; the remaining four producers
 // join in 8.v1.4 once the pipeline is confirmed end-to-end.
 //
-// AMQP URL cache: we hold the most recent fetch result so a producer
-// restart inside the cache window doesn't re-roundtrip to the
-// gateway. The cache invalidates on auth-status changes (sign-out
-// clears it) and on explicit refresh.
-let cachedAmqpUrl: { url: string; expiresAt: number } | null = null;
+// Local-credentials cache: we hold the most recent gateway fetch so
+// a producer restart inside the cache window doesn't re-roundtrip.
+// Invalidates on sign-out (cleared by the auth-status branch below)
+// and on explicit refresh.
+interface LocalCredentials {
+  amqpUrl: string;
+  databaseUrls: Record<string, string>;
+  expiresAt: number;
+}
+let cachedCredentials: LocalCredentials | null = null;
 
-async function fetchLocalAmqpUrl(): Promise<string | null> {
-  if (cachedAmqpUrl && cachedAmqpUrl.expiresAt > Date.now()) {
-    return cachedAmqpUrl.url;
+async function fetchLocalCredentials(): Promise<LocalCredentials | null> {
+  if (cachedCredentials && cachedCredentials.expiresAt > Date.now()) {
+    return cachedCredentials;
   }
   const status = auth.getStatus();
   if (!status.signedIn) return null;
   try {
     const res = await gatewayClient.request<{
       amqpUrl: string;
+      databaseUrls: Record<string, string>;
       expiresAt: string;
-    }>("/v1/local-amqp-url");
-    cachedAmqpUrl = {
-      url: res.amqpUrl,
+    }>("/v1/local-credentials");
+    cachedCredentials = {
+      amqpUrl: res.amqpUrl,
+      databaseUrls: res.databaseUrls ?? {},
       // Cache 90% of the way to the server-declared expiry so we
-      // refresh ahead of the actual deadline. The pilot endpoint
-      // returns 24h; in practice we'll re-fetch on the next
-      // producer restart anyway.
+      // refresh ahead of the actual deadline.
       expiresAt:
         Date.now() + 0.9 * (new Date(res.expiresAt).getTime() - Date.now()),
     };
-    return res.amqpUrl;
+    return cachedCredentials;
   } catch (err) {
     console.warn(
-      "[producers] failed to fetch local-amqp-url:",
+      "[producers] failed to fetch local-credentials:",
       err instanceof Error ? err.message : String(err),
     );
     return null;
   }
+}
+
+async function fetchAmqpUrl(): Promise<string | null> {
+  const c = await fetchLocalCredentials();
+  return c?.amqpUrl ?? null;
+}
+
+function makeDatabaseUrlGetter(
+  producerName: string,
+): () => Promise<string | null> {
+  return async () => {
+    const c = await fetchLocalCredentials();
+    return c?.databaseUrls[producerName] ?? null;
+  };
 }
 
 const producers: ProducerSupervisor[] = [];
@@ -200,11 +219,8 @@ function buildProducer(
 ): ProducerSupervisor {
   return new ProducerSupervisor({
     config: { name, entry, databaseName, port },
-    postgresHost: () => {
-      const ps = postgres.getStatus();
-      return ps.host ?? "postgres://postgres@127.0.0.1:54329";
-    },
-    amqpUrl: fetchLocalAmqpUrl,
+    databaseUrl: makeDatabaseUrlGetter(name),
+    amqpUrl: fetchAmqpUrl,
     jwksUri: `${APP_CONFIG.authIssuer}/protocol/openid-connect/certs`,
     llmConfig: () => providers.getProducerLlmEnv(),
   });

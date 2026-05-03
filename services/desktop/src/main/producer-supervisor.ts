@@ -1,7 +1,7 @@
 import { spawn, type ChildProcessByStdio } from "node:child_process";
 import type { Readable } from "node:stream";
 import { EventEmitter } from "node:events";
-import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { app } from "electron";
 import type {
@@ -58,12 +58,14 @@ export interface ProducerConfig {
 export interface ProducerSupervisorOptions {
   config: ProducerConfig;
   /**
-   * PGlite gateway URL prefix: postgres://postgres@127.0.0.1:<port>.
-   * Passed as a getter because the actual port is decided by
-   * `PostgresSupervisor` at runtime (it walks +1 on EADDRINUSE),
-   * so we resolve it on every start() invocation.
+   * DATABASE_URL for the producer — pulled from the gateway via
+   * `/v1/local-credentials`. Each producer hits the cloud-managed
+   * Postgres for its own database (ava_company_profile, etc.); no
+   * local persistence. Returns null if the user isn't signed in
+   * yet, in which case start() bails to `error` with a "wartet"
+   * message.
    */
-  postgresHost: () => string;
+  databaseUrl: () => Promise<string | null>;
   /**
    * AMQP broker URL provider — async because the URL is fetched
    * from the gateway's `/v1/local-amqp-url` endpoint after the
@@ -150,9 +152,9 @@ export class ProducerSupervisor extends EventEmitter {
 
     const env = await this.buildEnv();
     if (!env) {
-      // amqpUrl() returned null — user not signed in or gateway
-      // unreachable. Skip migrations and producer spawn entirely;
-      // the caller (main/index.ts) restarts the supervisor when
+      // Either AMQP URL, DATABASE URL, or LLM provider config is
+      // missing — user not signed in or no LLM key. Skip producer
+      // spawn entirely; main/index.ts restarts the supervisor when
       // auth status changes.
       this.setState(
         "error",
@@ -161,20 +163,13 @@ export class ProducerSupervisor extends EventEmitter {
       return;
     }
 
-    // 1. Run prisma migrations against the target database. Idempotent
-    //    — already-applied migrations are no-ops in `_prisma_migrations`.
-    this.setState("migrating");
-    try {
-      await this.runMigrations(producerDir, env);
-    } catch (err) {
-      this.setState(
-        "error",
-        `prisma migrate deploy failed: ${err instanceof Error ? err.message : String(err)}`,
-      );
-      return;
-    }
+    // Migrations are NOT run here — the cloud-managed Postgres
+    // schema is owned by each producer's fly deploy (via
+    // `prisma migrate deploy` at container start). Local
+    // producers connect to the same cloud DB and use the
+    // already-migrated schema. See AGENT_PLAN.md §8.v1.5 for the
+    // architecture clarification.
 
-    // 2. Spawn the producer.
     this.setState("starting");
     const entryPath = join(producerDir, this.opts.config.entry);
     if (!existsSync(entryPath)) {
@@ -277,122 +272,9 @@ export class ProducerSupervisor extends EventEmitter {
 
   // ---- Internals ------------------------------------------------------------
 
-  /**
-   * Apply Prisma-format SQL migrations directly to the producer's
-   * database via the `pg` driver — no Prisma CLI subprocess.
-   *
-   * Why hand-rolled instead of `prisma migrate deploy`:
-   *   - PGlite's wire-protocol implementation doesn't fully match
-   *     real Postgres around prepared-statement reuse. Prisma's
-   *     migration engine uses statement names like "s1" and reuses
-   *     them across queries; against PGlite the second use raises
-   *     "prepared statement s1 already exists" and migrate aborts.
-   *   - Dropping the prisma CLI from the runtime bundle saves ~50 MB.
-   *   - Idempotent via our own `_ava_migrations` tracking table —
-   *     same shape as Prisma's `_prisma_migrations` but written by
-   *     us, so the tracking is guaranteed to live in the same DB
-   *     the migrations target.
-   *
-   * Migration source: `<producerDir>/prisma/migrations/<id>/migration.sql`
-   * — this is what `prisma migrate dev` produces, vendored verbatim.
-   * We sort by directory name (timestamp prefix) and apply in order.
-   * Each migration runs as a single multi-statement `query()` call;
-   * PGlite supports multi-statement strings on the simple-query
-   * protocol path, which avoids the prepared-statement collision.
-   */
-  private async runMigrations(
-    producerDir: string,
-    env: NodeJS.ProcessEnv,
-  ): Promise<void> {
-    const migrationsDir = join(producerDir, "prisma", "migrations");
-    if (!existsSync(migrationsDir)) {
-      // Producer ships no migrations — nothing to do.
-      return;
-    }
-    const databaseUrl = env.DATABASE_URL;
-    if (!databaseUrl) {
-      throw new Error("DATABASE_URL not set in producer env");
-    }
-
-    // Dynamic import — `pg` is ESM-friendly but bundled as CJS.
-    // Loading it lazily keeps the supervisor's cold-start cheap if
-    // the producer never starts.
-    const { Client } = (await import("pg")) as typeof import("pg");
-    const client = new Client({ connectionString: databaseUrl });
-    await client.connect();
-    const tag = `producer:${this.opts.config.name}:migrate`;
-    try {
-      await client.query(`
-        CREATE TABLE IF NOT EXISTS _ava_migrations (
-          id          text        PRIMARY KEY,
-          applied_at  timestamptz NOT NULL DEFAULT now()
-        );
-      `);
-
-      // Backfill: if a Prisma-managed `_prisma_migrations` table
-      // already exists from a previous build that ran
-      // `prisma migrate deploy` (v0.1.13/v0.1.14 lineage), pull its
-      // applied migration names into `_ava_migrations`. Without
-      // this, the SQL apply path below sees an empty tracking
-      // table and tries to re-apply migrations that already left
-      // CREATE TYPE / CREATE TABLE artefacts on disk, which fails
-      // with "<x> already exists".
-      const prismaTracking = await client.query<{ exists: boolean }>(
-        `SELECT EXISTS (
-           SELECT 1 FROM information_schema.tables
-           WHERE table_schema = 'public' AND table_name = '_prisma_migrations'
-         ) AS exists`,
-      );
-      if (prismaTracking.rows[0]?.exists) {
-        console.log(
-          `[${tag}] backfilling _ava_migrations from existing _prisma_migrations…`,
-        );
-        await client.query(`
-          INSERT INTO _ava_migrations (id, applied_at)
-          SELECT migration_name, COALESCE(finished_at, started_at, now())
-          FROM _prisma_migrations
-          WHERE finished_at IS NOT NULL
-          ON CONFLICT (id) DO NOTHING;
-        `);
-      }
-
-      const entries = readdirSync(migrationsDir, { withFileTypes: true });
-      const dirs = entries
-        .filter((e) => e.isDirectory())
-        .map((e) => e.name)
-        .sort(); // timestamp prefix sorts chronologically
-
-      for (const id of dirs) {
-        const sqlPath = join(migrationsDir, id, "migration.sql");
-        if (!existsSync(sqlPath)) continue;
-
-        const exists = await client.query(
-          "SELECT 1 FROM _ava_migrations WHERE id = $1",
-          [id],
-        );
-        if (exists.rows.length > 0) {
-          continue; // already applied
-        }
-
-        console.log(`[${tag}] applying ${id}…`);
-        const sql = readFileSync(sqlPath, "utf8");
-        try {
-          await client.query(sql);
-        } catch (err) {
-          throw new Error(
-            `migration ${id} failed: ${err instanceof Error ? err.message : String(err)}`,
-          );
-        }
-        await client.query(
-          "INSERT INTO _ava_migrations (id) VALUES ($1)",
-          [id],
-        );
-        console.log(`[${tag}] ✓ ${id}`);
-      }
-    } finally {
-      await client.end();
-    }
-  }
+  // (8.v1.5: runMigrations() removed — schema is owned by the
+  // matching fly producer's deploy. Local producer connects to
+  // the already-migrated cloud DB.)
 
   /**
    * Resolve the runtime env for the producer subprocess. Returns
@@ -404,15 +286,18 @@ export class ProducerSupervisor extends EventEmitter {
   private async buildEnv(): Promise<NodeJS.ProcessEnv | null> {
     const amqpUrl = await this.opts.amqpUrl();
     if (!amqpUrl) return null;
+    const databaseUrl = await this.opts.databaseUrl();
+    if (!databaseUrl) return null;
     const llm = await this.opts.llmConfig();
     if (!llm) return null;
-    const baseUrl = `${this.opts.postgresHost()}/${this.opts.config.databaseName}`;
     return {
       ...process.env,
-      // Per-producer database routing. PGlite gateway lazy-creates
-      // the database on first connect.
-      DATABASE_URL: baseUrl,
-      DIRECT_URL: baseUrl,
+      // Cloud-managed Postgres URL fetched from gateway. The
+      // producer's prisma client connects directly to fly's MPG
+      // cluster; schema migrations were applied by the matching
+      // fly producer's deploy, not here.
+      DATABASE_URL: databaseUrl,
+      DIRECT_URL: databaseUrl,
       AMQP_URL: amqpUrl,
       PORT: String(this.opts.config.port),
       // simple-probe k8s-style health-check ports. Producers
