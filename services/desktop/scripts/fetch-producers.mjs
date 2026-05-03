@@ -326,14 +326,16 @@ async function main() {
     //
     //      Find @electron/rebuild via the desktop's own node_modules
     //      (it's a workspace devDep we install at vendor time).
-    const electronRebuildBin = resolve(
-      DESKTOP_ROOT,
-      "node_modules",
-      ".bin",
-      "electron-rebuild",
-    );
+    // Resolve electron-rebuild bin: pnpm with `node-linker=hoisted`
+    // puts the binary at the workspace root's node_modules/.bin,
+    // not at services/desktop/. Walk both.
+    const candidateBins = [
+      resolve(DESKTOP_ROOT, "node_modules", ".bin", "electron-rebuild"),
+      resolve(REPO_ROOT, "node_modules", ".bin", "electron-rebuild"),
+    ];
+    const electronRebuildBin = candidateBins.find((p) => existsSync(p));
     const electronVersion = readElectronVersion();
-    if (existsSync(electronRebuildBin) && electronVersion) {
+    if (electronRebuildBin && electronVersion) {
       console.log(
         `[producers] ${target.name}: electron-rebuild for v${electronVersion}…`,
       );
@@ -344,8 +346,7 @@ async function main() {
       );
     } else {
       console.warn(
-        `[producers] ${target.name}: electron-rebuild missing — native modules may crash at runtime. ` +
-          `Install @electron/rebuild as a desktop devDep.`,
+        `[producers] ${target.name}: electron-rebuild missing (looked at ${candidateBins.join(" + ")}) — native modules may crash at runtime.`,
       );
     }
 
@@ -645,6 +646,15 @@ function walkAndStrip(dir) {
  * inside the producer bundle match what Electron loads at runtime.
  */
 function readElectronVersion() {
+  // Prefer the version pinned in electron-builder.yml since that's
+  // what actually ships in the .dmg. Fall back to package.json
+  // (which may carry a caret/tilde range like "^31.0.0").
+  const yamlPath = join(DESKTOP_ROOT, "electron-builder.yml");
+  if (existsSync(yamlPath)) {
+    const text = readFileSync(yamlPath, "utf8");
+    const m = text.match(/^electronVersion:\s*"?(\d+\.\d+\.\d+)"?/m);
+    if (m) return m[1];
+  }
   const pkgPath = join(DESKTOP_ROOT, "package.json");
   if (!existsSync(pkgPath)) return null;
   try {

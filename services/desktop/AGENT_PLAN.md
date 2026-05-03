@@ -2382,3 +2382,136 @@ Local producer credentials are issued by the gateway:
   block the Splash screen for that. Either: pre-`initdb` at
   install time (postinstall script), or kick it off in
   background and gate "ready" in the topbar Status indicator.
+
+## 8.v2 — AMQP-driven persist-worker architecture (NEW)
+
+Resolves the architectural cul-de-sac of 8.v1.5: fly's MPG cluster
+isn't reachable from outside the fly network, so a local producer
+can't `prisma.upsert` directly to cloud. Instead, separate
+**compute** (local, on the user's device) from **persist** (cloud,
+fly-side). They communicate via AMQP events.
+
+### Architecture
+
+```
+Mac (Tenant)                        fly Cloud
+─────────────                       ──────────
+                                    Gateway: GET /v1/companies/X/profile
+                                       ↓ (calls master-data via callUpstream)
+                                    User triggers transaction
+                                       ↓
+                                    Gateway publishes:
+                                       tenant.<id>.work.<service>.<runId>
+                                       (payload: full inputs the producer needs,
+                                        hydrated from MPG by the gateway)
+                                       ↓ AMQP
+Local producer (PRODUCER_MODE=compute):
+  subscribe: tenant.<my-id>.work.*.*
+  do: LLM with USER's API key, scraping with USER's network, …
+       NO DB reads, NO DB writes (no MPG access from outside fly)
+  emit: tenant.<id>.persist.<service>.<runId>
+        (payload: full result + dispatchedAt + computedAt timestamps)
+                                       ↓ AMQP
+                                    Cloud persist-worker (PRODUCER_MODE=persist):
+                                      one fly app per producer service
+                                      (re-uses ava-company-profile,
+                                       ava-structured-content, …)
+                                      subscribe: tenant.*.persist.<my-service>.*
+                                      run prisma.upsert against MPG
+                                      LAST-WRITE-WINS on (companyId, computedAt):
+                                        only update DB row if event's
+                                        computedAt > existing row.updatedAt
+                                      emit (optional): tenant.<id>.persisted.<service>
+                                       ↓ MPG
+                                    Gateway HTTP read, agent tool, etc.
+                                    sees the just-persisted data.
+```
+
+### PRODUCER_MODE switch (single binary, two roles)
+
+Each existing producer (`company-profile`, `structured-content`, …)
+gets a `PRODUCER_MODE` env var. Same JS, different startup:
+
+- `compute` (local): the dispatched-event handler computes + emits
+  `persist.*`. Persistence handlers are NOT registered. No DB
+  connection at all.
+- `persist` (fly): the dispatched-event handler is NOT registered.
+  Persistence handlers subscribe to `persist.<my-service>.*` and
+  upsert with last-write-wins.
+
+### Event payload contract
+
+Two new event-type families (per service). Defined inline in each
+consumer for the pilot — promote to `@ava/event` once stable.
+
+```ts
+// Sent by: gateway dispatcher
+// Consumed by: local producer (compute mode)
+// Routing key: tenant.<tenantId>.work.<service>.<runId>
+interface ServiceWorkRequest {
+  runId: string;          // dispatcher-generated, used as idempotencyKey
+  tenantId: string;
+  dispatchedAt: string;   // ISO; gateway clock
+  // Per-service inputs; the event carries everything the producer
+  // needs so it never reads MPG.
+  inputs: { /* service-specific */ };
+}
+
+// Sent by: local producer (compute mode)
+// Consumed by: cloud persist-worker
+// Routing key: tenant.<tenantId>.persist.<service>.<runId>
+interface ServicePersistRequest {
+  runId: string;          // matches the work request — last-write-wins anchor
+  tenantId: string;
+  dispatchedAt: string;   // copied from work request
+  computedAt: string;     // ISO; producer clock at result emission
+  // Per-service result payload — full DB-row equivalent
+  result: { /* service-specific */ };
+}
+```
+
+### Last-write-wins gate (applied by every persist-worker)
+
+Pseudo-SQL inside the persist handler:
+
+```sql
+INSERT INTO <table> (key, ..., updated_at)
+VALUES ($1, ..., $computedAt)
+ON CONFLICT (key) DO UPDATE
+SET ... = EXCLUDED.*,
+    updated_at = EXCLUDED.updated_at
+WHERE EXCLUDED.updated_at > <table>.updated_at;
+```
+
+Two tenants generating profiles for the same `companyId` simultaneously:
+both events arrive, both get `INSERT ... ON CONFLICT`, the conflict-update
+gates on `EXCLUDED.updated_at > existing.updated_at`. The later writer
+wins; the earlier writer's data is silently dropped. Acceptable per the
+8.v2 spec (user explicitly accepted this trade-off).
+
+### Implementation order
+
+| Phase | Effort | Deliverable |
+|---|---|---|
+| 8.v2.1 | 0.5 day | `@ava/event` (or inline) persist payloads for all 5 services |
+| 8.v2.2 | 1 day   | Gateway dispatch hydration: load company context from MPG, embed in `work.*` payload before publish |
+| 8.v2.3 | 1 day   | `company-profile` POC: PRODUCER_MODE compute & persist, both branches; redeploy fly app as persist-worker |
+| 8.v2.4 | 0.5 day | Idempotency + last-write-wins SQL upsert pattern |
+| 8.v2.5 | 0.5 day | Cutover: fly producers → persist-only; local producers → compute-only |
+| 8.v2.6 | 2 days  | Repeat 8.v2.3-8.v2.5 for the remaining 4 producers |
+| 8.v2.7 | 0.5 day | Settings panel: per-producer "outbound persist queue depth" + last-error visibility |
+
+**Total: ~6 days realistic.** Can ship 8.v2.3-5 (company-profile end-to-end) as a v0.2.0 milestone and add the rest incrementally.
+
+### Decided trade-offs (from user, 2026-05-03)
+
+- Single fly app per producer becomes its persist-worker (no new
+  `ava-persist` aggregate service)
+- `runId` generated by gateway dispatcher (deterministic +
+  reproducible)
+- Multi-tenant on same company: last-write-wins via timestamp gate
+- Offline tenant: AMQP queue 24h TTL; if tenant doesn't come online
+  in time, work request is dropped to DLQ; user can re-trigger
+  manually. Internet is required anyway for LLM calls.
+- Multi-device per tenant: not enforced in pilot; race conditions
+  resolved by last-write-wins on the persist side
