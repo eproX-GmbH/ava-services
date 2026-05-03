@@ -73,6 +73,27 @@ export interface ProducerSupervisorOptions {
    * unreachable broker.
    */
   amqpUrl: () => Promise<string | null>;
+  /**
+   * JWKS endpoint the producer uses to verify inbound JWTs on its
+   * HTTP API. Same Keycloak realm the desktop authenticates
+   * against. Eagerly resolved (not async) — the URL is part of
+   * the bundled boot config.
+   */
+  jwksUri: string;
+  /**
+   * Provider/LLM config for the producer's AI calls. Pulled from
+   * the user's saved provider config; null when no provider is
+   * configured yet.
+   */
+  llmConfig: () => Promise<{
+    provider: string;
+    model?: string;
+    openaiApiKey?: string;
+    anthropicApiKey?: string;
+    googleApiKey?: string;
+    mistralApiKey?: string;
+    ollamaUrl?: string;
+  } | null>;
   /** Extra env merged in after the supervisor's defaults. */
   extraEnv?: Record<string, string>;
 }
@@ -135,7 +156,7 @@ export class ProducerSupervisor extends EventEmitter {
       // auth status changes.
       this.setState(
         "error",
-        `producer ${this.opts.config.name}: nicht angemeldet — Producer wartet auf Login.`,
+        `producer ${this.opts.config.name}: nicht angemeldet oder kein LLM-Provider konfiguriert — Producer wartet.`,
       );
       return;
     }
@@ -383,16 +404,35 @@ export class ProducerSupervisor extends EventEmitter {
   private async buildEnv(): Promise<NodeJS.ProcessEnv | null> {
     const amqpUrl = await this.opts.amqpUrl();
     if (!amqpUrl) return null;
+    const llm = await this.opts.llmConfig();
+    if (!llm) return null;
+    const baseUrl = `${this.opts.postgresHost()}/${this.opts.config.databaseName}`;
     return {
       ...process.env,
       // Per-producer database routing. PGlite gateway lazy-creates
       // the database on first connect.
-      DATABASE_URL: `${this.opts.postgresHost()}/${this.opts.config.databaseName}`,
-      DIRECT_URL: `${this.opts.postgresHost()}/${this.opts.config.databaseName}`,
+      DATABASE_URL: baseUrl,
+      DIRECT_URL: baseUrl,
       AMQP_URL: amqpUrl,
       PORT: String(this.opts.config.port),
       LOGLEVEL: process.env.LOGLEVEL ?? "info",
       NODE_ENV: app.isPackaged ? "production" : "development",
+      // JWT verification — producer's HTTP API verifies inbound
+      // tokens against the same Keycloak realm the desktop uses.
+      JWKS_URI: this.opts.jwksUri,
+      // LLM provider config — pulled from the user's saved
+      // provider settings via the llmConfig() callback. Producer
+      // crashes at boot without these, so we treat null as a
+      // soft-skip ("nicht konfiguriert" status), not a try-anyway.
+      LLM_PROVIDER: llm.provider,
+      ...(llm.model ? { LLM_MODEL: llm.model } : {}),
+      ...(llm.openaiApiKey ? { OPENAI_API_KEY: llm.openaiApiKey } : {}),
+      ...(llm.anthropicApiKey
+        ? { ANTHROPIC_API_KEY: llm.anthropicApiKey }
+        : {}),
+      ...(llm.googleApiKey ? { GOOGLE_API_KEY: llm.googleApiKey } : {}),
+      ...(llm.mistralApiKey ? { MISTRAL_API_KEY: llm.mistralApiKey } : {}),
+      ...(llm.ollamaUrl ? { OLLAMA_URL: llm.ollamaUrl } : {}),
       ...(this.opts.extraEnv ?? {}),
     };
   }

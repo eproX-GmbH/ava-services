@@ -249,6 +249,46 @@ export class LlmProviderManager extends EventEmitter {
     this.removeAllListeners();
   }
 
+  // ---- Producer-subprocess env (Phase 8.v1.3) -----------------------------
+  //
+  // Surface the user's saved LLM config in the env-shape the
+  // local producer Node services expect (LLM_PROVIDER, LLM_MODEL,
+  // OPENAI_API_KEY, …). The producer's @ava/ai-provider reads
+  // these directly. Returns null when no provider is configured
+  // yet; the supervisor then leaves the producer in `error`
+  // state with a wait-for-config message.
+  async getProducerLlmEnv(): Promise<{
+    provider: string;
+    model?: string;
+    openaiApiKey?: string;
+    anthropicApiKey?: string;
+    googleApiKey?: string;
+    mistralApiKey?: string;
+    ollamaUrl?: string;
+  } | null> {
+    const cfg = this.store.getConfig();
+    const kind = cfg.kind;
+    const model = this.resolveModel(kind);
+    const env: Awaited<ReturnType<typeof this.getProducerLlmEnv>> = {
+      provider: kind,
+      model: model || undefined,
+    };
+    if (kind === "ollama") {
+      // The producer's @ava/ai-provider getLLM defaults Ollama to
+      // http://localhost:11434/api which matches the bundled
+      // Ollama supervisor's default port. No explicit override
+      // needed for the pilot.
+      return env;
+    }
+    const key = await this.store.getKey(kind as HostedProviderKind);
+    if (!key) return null;
+    if (kind === "openai") env.openaiApiKey = key;
+    else if (kind === "anthropic") env.anthropicApiKey = key;
+    else if (kind === "google") env.googleApiKey = key;
+    else if (kind === "mistral") env.mistralApiKey = key;
+    return env;
+  }
+
   // ---- Internal -------------------------------------------------------------
 
   /**

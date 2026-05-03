@@ -205,6 +205,8 @@ function buildProducer(
       return ps.host ?? "postgres://postgres@127.0.0.1:54329";
     },
     amqpUrl: fetchLocalAmqpUrl,
+    jwksUri: `${APP_CONFIG.authIssuer}/protocol/openid-connect/certs`,
+    llmConfig: () => providers.getProducerLlmEnv(),
   });
 }
 

@@ -174,12 +174,35 @@ async function main() {
     // doesn't resolve. Rewrite them to the absolute workspace path
     // so npm install copies the built package into stage's
     // node_modules.
+    //
+    // ALSO: hoist the file-dep's own dependencies into the producer's
+    // dependencies. npm's install-from-tarball path is flaky about
+    // transitive deps — the company-profile bundle silently shipped
+    // without `openai`, `@ai-sdk/*`, etc. that ai-provider needs at
+    // runtime, leading to `Cannot find module 'openai'` at first
+    // import. Promoting them to top-level deps forces npm to put
+    // them in node_modules where the require chain finds them.
     if (pkg.dependencies) {
       for (const [k, v] of Object.entries(pkg.dependencies)) {
         if (typeof v === "string" && v.startsWith("file:")) {
           const rel = v.slice("file:".length);
           const abs = resolve(srcDir, rel);
           pkg.dependencies[k] = `file:${abs}`;
+          const fileDepPkgPath = join(abs, "package.json");
+          if (existsSync(fileDepPkgPath)) {
+            const fileDepPkg = JSON.parse(
+              readFileSync(fileDepPkgPath, "utf8"),
+            );
+            for (const [depName, depVer] of Object.entries(
+              fileDepPkg.dependencies ?? {},
+            )) {
+              // Don't overwrite producer's own pinned versions —
+              // they win for any conflicts.
+              if (!pkg.dependencies[depName]) {
+                pkg.dependencies[depName] = depVer;
+              }
+            }
+          }
         }
       }
     }
@@ -204,9 +227,16 @@ async function main() {
     //    tsc-alias can run). NPM_TOKEN must be set — producers
     //    depend on @ava/event from the GitLab npm registry.
     console.log(`[producers] ${target.name}: npm install (stage)…`);
-    runSyncStrict("npm", ["install", "--no-audit", "--no-fund"], {
-      cwd: stageDir,
-    });
+    // --legacy-peer-deps: needed because @ava/ai-provider's deps
+    // include both zod 4.x (via ai SDK 5) and `openai` (which has
+    // zod 3.x as an optional peer). Default npm v7+ peer-dep
+    // resolution rejects this. The conflict is harmless at runtime
+    // — both zod versions coexist fine in node_modules.
+    runSyncStrict(
+      "npm",
+      ["install", "--no-audit", "--no-fund", "--legacy-peer-deps"],
+      { cwd: stageDir },
+    );
 
     // 4b. Override TypeScript to a version that can parse the
     //     transitive .d.ts files we'll see in node_modules. The
@@ -218,7 +248,14 @@ async function main() {
     //     ESlint/Prisma already expect.
     runSyncStrict(
       "npm",
-      ["install", "--save-dev", "--no-audit", "--no-fund", "typescript@5.6"],
+      [
+        "install",
+        "--save-dev",
+        "--no-audit",
+        "--no-fund",
+        "--legacy-peer-deps",
+        "typescript@5.6",
+      ],
       { cwd: stageDir },
     );
 
@@ -266,7 +303,11 @@ module.exports = require("../generated/prisma-client");
     //     generated/ dir we just produced stays untouched because
     //     it's outside node_modules.
     console.log(`[producers] ${target.name}: npm prune --omit=dev…`);
-    runSyncStrict("npm", ["prune", "--omit=dev"], { cwd: stageDir });
+    runSyncStrict(
+      "npm",
+      ["prune", "--omit=dev", "--legacy-peer-deps"],
+      { cwd: stageDir },
+    );
 
     // 5b. Trim node_modules to the actually-needed shape. Runtime
     //     producers don't need:
