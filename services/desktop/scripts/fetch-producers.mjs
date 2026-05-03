@@ -399,12 +399,18 @@ function trimNodeModules(nmDir) {
   if (!existsSync(nmDir)) return;
 
   // Whole packages we drop entirely.
-  // - swagger-ui-dist: /api-docs route, headless producer doesn't serve it
   // - prisma: the CLI. Survived `npm prune --omit=dev` because it's a
   //   peer dep of @prisma/client. We don't run `prisma migrate` /
   //   `prisma generate` at runtime — migrations are applied by the
   //   desktop's ProducerSupervisor via raw SQL through `pg`. Saves ~29 MB.
-  const dropPackages = ["swagger-ui-dist", "prisma"];
+  //
+  // NOT dropped (despite headless producer): swagger-ui-dist. The
+  // producer's dist/web/api/app.js eagerly require()s
+  // swagger-ui-express, which in turn require()s swagger-ui-dist
+  // at module load time — so even though /api-docs is never served
+  // to a real user, dropping the dep makes the producer crash at
+  // boot. ~11 MB cost, accept it.
+  const dropPackages = ["prisma"];
   for (const name of dropPackages) {
     const p = join(nmDir, name);
     if (existsSync(p)) {
