@@ -64,8 +64,15 @@ export interface ProducerSupervisorOptions {
    * so we resolve it on every start() invocation.
    */
   postgresHost: () => string;
-  /** AMQP broker URL — passed through unchanged. */
-  amqpUrl: string;
+  /**
+   * AMQP broker URL provider — async because the URL is fetched
+   * from the gateway's `/v1/local-amqp-url` endpoint after the
+   * user has authenticated. Returns null if the user isn't
+   * signed in yet, in which case start() bails to `error` with
+   * a helpful message instead of trying to connect to a default
+   * unreachable broker.
+   */
+  amqpUrl: () => Promise<string | null>;
   /** Extra env merged in after the supervisor's defaults. */
   extraEnv?: Record<string, string>;
 }
@@ -120,7 +127,18 @@ export class ProducerSupervisor extends EventEmitter {
       return;
     }
 
-    const env = this.buildEnv();
+    const env = await this.buildEnv();
+    if (!env) {
+      // amqpUrl() returned null — user not signed in or gateway
+      // unreachable. Skip migrations and producer spawn entirely;
+      // the caller (main/index.ts) restarts the supervisor when
+      // auth status changes.
+      this.setState(
+        "error",
+        `producer ${this.opts.config.name}: nicht angemeldet — Producer wartet auf Login.`,
+      );
+      return;
+    }
 
     // 1. Run prisma migrations against the target database. Idempotent
     //    — already-applied migrations are no-ops in `_prisma_migrations`.
@@ -355,14 +373,23 @@ export class ProducerSupervisor extends EventEmitter {
     }
   }
 
-  private buildEnv(): NodeJS.ProcessEnv {
+  /**
+   * Resolve the runtime env for the producer subprocess. Returns
+   * null if the AMQP URL provider couldn't supply one (typically:
+   * user signed out, or `/v1/local-amqp-url` is unreachable). The
+   * caller treats null as a soft-failure → state="error" with a
+   * "wait for login" message → restart on auth-changed event.
+   */
+  private async buildEnv(): Promise<NodeJS.ProcessEnv | null> {
+    const amqpUrl = await this.opts.amqpUrl();
+    if (!amqpUrl) return null;
     return {
       ...process.env,
       // Per-producer database routing. PGlite gateway lazy-creates
       // the database on first connect.
       DATABASE_URL: `${this.opts.postgresHost()}/${this.opts.config.databaseName}`,
       DIRECT_URL: `${this.opts.postgresHost()}/${this.opts.config.databaseName}`,
-      AMQP_URL: this.opts.amqpUrl,
+      AMQP_URL: amqpUrl,
       PORT: String(this.opts.config.port),
       LOGLEVEL: process.env.LOGLEVEL ?? "info",
       NODE_ENV: app.isPackaged ? "production" : "development",

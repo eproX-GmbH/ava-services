@@ -85,6 +85,28 @@ function broadcastAuthStatus(status: AuthStatus): void {
   for (const win of BrowserWindow.getAllWindows()) {
     win.webContents.send("auth-status:changed", status);
   }
+  // 8.v1.3 — auth lifecycle drives producer lifecycle.
+  // Sign-in: invalidate any cached "no-amqp" error state and start
+  // every producer that's idle/error. Sign-out: stop every producer
+  // and drop the cached AMQP URL.
+  if (status.signedIn) {
+    for (const p of producers) {
+      const s = p.getStatus().state;
+      if (s === "idle" || s === "error") {
+        void p.start().catch((err) => {
+          console.error(
+            `[producer:${p.getStatus().name}] start() rejected:`,
+            err,
+          );
+        });
+      }
+    }
+  } else {
+    cachedAmqpUrl = null;
+    for (const p of producers) {
+      void p.stop();
+    }
+  }
 }
 auth.on("status", broadcastAuthStatus);
 
@@ -124,15 +146,50 @@ function broadcastPostgresStatus(status: PostgresStatus): void {
 }
 postgres.on("status", broadcastPostgresStatus);
 
-// Producer supervisors (Phase 8.v1.1).
+// Producer supervisors (Phase 8.v1.1+8.v1.3).
 //
-// One supervisor per local producer. Started in sequence after
-// PGlite reaches `ready` so DATABASE_URL targets are valid by the
-// time `prisma migrate deploy` runs. company-profile is the v1.1
-// proof; the remaining four producers join in 8.v1.4 once the
-// pipeline is confirmed end-to-end.
-const PRODUCERS_SHARED_AMQP_URL =
-  process.env.AMQP_URL ?? "amqp://localhost:5672";
+// One supervisor per local producer. AMQP URL is fetched on demand
+// from the gateway's `/v1/local-amqp-url` endpoint after the user
+// authenticates — we never bake the broker URL into the bundle.
+// company-profile is the v1.1 proof; the remaining four producers
+// join in 8.v1.4 once the pipeline is confirmed end-to-end.
+//
+// AMQP URL cache: we hold the most recent fetch result so a producer
+// restart inside the cache window doesn't re-roundtrip to the
+// gateway. The cache invalidates on auth-status changes (sign-out
+// clears it) and on explicit refresh.
+let cachedAmqpUrl: { url: string; expiresAt: number } | null = null;
+
+async function fetchLocalAmqpUrl(): Promise<string | null> {
+  if (cachedAmqpUrl && cachedAmqpUrl.expiresAt > Date.now()) {
+    return cachedAmqpUrl.url;
+  }
+  const status = auth.getStatus();
+  if (!status.signedIn) return null;
+  try {
+    const res = await gatewayClient.request<{
+      amqpUrl: string;
+      expiresAt: string;
+    }>("/v1/local-amqp-url");
+    cachedAmqpUrl = {
+      url: res.amqpUrl,
+      // Cache 90% of the way to the server-declared expiry so we
+      // refresh ahead of the actual deadline. The pilot endpoint
+      // returns 24h; in practice we'll re-fetch on the next
+      // producer restart anyway.
+      expiresAt:
+        Date.now() + 0.9 * (new Date(res.expiresAt).getTime() - Date.now()),
+    };
+    return res.amqpUrl;
+  } catch (err) {
+    console.warn(
+      "[producers] failed to fetch local-amqp-url:",
+      err instanceof Error ? err.message : String(err),
+    );
+    return null;
+  }
+}
+
 const producers: ProducerSupervisor[] = [];
 
 function buildProducer(
@@ -147,7 +204,7 @@ function buildProducer(
       const ps = postgres.getStatus();
       return ps.host ?? "postgres://postgres@127.0.0.1:54329";
     },
-    amqpUrl: PRODUCERS_SHARED_AMQP_URL,
+    amqpUrl: fetchLocalAmqpUrl,
   });
 }
 
