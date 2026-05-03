@@ -247,25 +247,19 @@ function buildProducer(
     databaseName: string;
     port: number;
   }> = [
-    // Only company-profile is wired for v0.2 PRODUCER_MODE=compute
-    // today — its compute-worker has a real implementation. The
-    // remaining four producers' compute-workers are skeletons that
-    // throw at startup (see AGENT_PLAN §8.v2.6); registering them
-    // here would crash-loop the supervisor. Re-add each one as its
-    // compute body lands.
-    {
-      name: "company-profile",
-      entry: "dist/web/api/server.js",
-      databaseName: "company_profile",
-      port: 51010,
-    },
-    // PENDING 8.v2.6 (compute-worker bodies):
-    //   structured-content   port 51020 / db structured_content
-    //   company-publication  port 51030 / db company_publication
-    //   company-evaluation   port 51040 / db company_evaluation
-    //   company-contact      port 51050 / db company_contact
-    // The fly-deployed legacy versions of these continue to handle
-    // events end-to-end until each gets migrated.
+    // Empty under Option D (BYO-key passthrough — see AGENT_PLAN).
+    //
+    // Only the network-sensitive scrapers will run as local
+    // PRODUCER_MODE=compute subprocesses:
+    //   structured-content   (Handelsregister; Playwright migration TBD)
+    //   company-publication  (Bundesanzeiger; Playwright migration TBD)
+    //
+    // The other three producers (company-profile, company-contact,
+    // company-evaluation) stay on fly in legacy mode and consume the
+    // user's API key from the work-event payload — they never need a
+    // local subprocess. Pre-Option-D the registry briefly held
+    // company-profile while we trialled persist-mode cutover; that
+    // entry was rolled back when we picked Option D.
   ];
 
   // eslint-disable-next-line @typescript-eslint/no-require-imports

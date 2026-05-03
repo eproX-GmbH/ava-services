@@ -1,11 +1,21 @@
-// §8.v3 — gateway persist consolidation.
+// §8.v3 — gateway persist consolidation (Option D scoped).
 //
-// One AMQP consumer per producer, all running inside this single
-// gateway process. Each consumer subscribes to its producer's
-// `tenant.persist.<producer>.v1` event family and applies the row to
-// the producer's database on the shared MPG cluster via raw SQL with
-// last-write-wins (`ON CONFLICT DO UPDATE WHERE EXCLUDED.updatedAt >
-// existing.updatedAt`).
+// Under Option D (BYO-key passthrough — see AGENT_PLAN), only the
+// network-sensitive scrapers are localized: `structured-content`
+// (Handelsregister) and `company-publication` (Bundesanzeiger).
+// Their fly apps are decommissioned, so the gateway is the only
+// remaining home for their SQL upserts.
+//
+// The other three producers (`company-profile`, `company-contact`,
+// `company-evaluation`) stay on fly in legacy mode with the user's
+// API key passed through via the work-event payload, so they keep
+// writing to MPG directly via their own prisma clients — the
+// gateway has no persist consumer for them.
+//
+// Each consumer here subscribes to its producer's
+// `tenant.persist.<producer>.v1` event family and applies the row
+// via raw SQL with last-write-wins (`ON CONFLICT DO UPDATE WHERE
+// EXCLUDED.updatedAt > existing.updatedAt`).
 //
 // Why this design:
 //   - One service to deploy/operate instead of five fly producer apps.
@@ -49,13 +59,6 @@ export interface PersistEvent<TResult = unknown> {
   result: TResult;
 }
 
-interface CompanyProfileResult {
-  companyId: string;
-  profile: string;
-  url: string;
-  businessPurpose?: string;
-}
-
 type ApplyFn = (
   pool: pg.Pool,
   event: CloudEvent<PersistEvent<unknown>>,
@@ -75,37 +78,8 @@ interface ProducerBinding {
 
 // ---- Per-producer apply functions ------------------------------------------
 
-const applyCompanyProfile: ApplyFn = async (pool, event, log) => {
-  const data = event.data as PersistEvent<CompanyProfileResult> | undefined;
-  if (!data) throw new Error("empty payload");
-  const { result, computedAt, tenantId, runId } = data;
-  if (!result?.companyId) throw new Error("missing result.companyId");
-  if (!computedAt) throw new Error("missing computedAt");
-
-  const res = await pool.query(
-    `INSERT INTO "CompanyProfile" (id, profile, url, "updatedAt")
-     VALUES ($1, $2, $3, $4)
-     ON CONFLICT (id) DO UPDATE
-     SET profile = EXCLUDED.profile,
-         url = EXCLUDED.url,
-         "updatedAt" = EXCLUDED."updatedAt"
-     WHERE EXCLUDED."updatedAt" > "CompanyProfile"."updatedAt"`,
-    [result.companyId, result.profile, result.url, new Date(computedAt)],
-  );
-  log.info(
-    {
-      runId,
-      tenantId,
-      companyId: result.companyId,
-      rowCount: res.rowCount,
-    },
-    res.rowCount === 0
-      ? "company-profile persist skipped (existing row newer)"
-      : "company-profile persist ✓",
-  );
-};
-
-/** Stub for unimplemented producers — schema survey is §8.v3.2. */
+/** Stub — schema + write logic land alongside each scraper's Playwright
+ *  migration (see todos: structured-content / company-publication). */
 const stubApply: (producer: ProducerName) => ApplyFn = (producer) =>
   async (_pool, _event, log) => {
     log.warn(
@@ -115,14 +89,12 @@ const stubApply: (producer: ProducerName) => ApplyFn = (producer) =>
   };
 
 // ---- Bindings registry ------------------------------------------------------
+//
+// Only the localized scrapers bind here. The other 3 producers run
+// in legacy mode on fly with user-key passthrough and persist via
+// their own prisma clients — they don't emit persist events.
 
 const BINDINGS: ProducerBinding[] = [
-  {
-    producer: "company-profile",
-    routingKey: "tenant.persist.company-profile.v1",
-    queue: "db-gateway-persist-company-profile",
-    apply: applyCompanyProfile,
-  },
   {
     producer: "structured-content",
     routingKey: "tenant.persist.structured-content.v1",
@@ -135,27 +107,14 @@ const BINDINGS: ProducerBinding[] = [
     queue: "db-gateway-persist-company-publication",
     apply: stubApply("company-publication"),
   },
-  {
-    producer: "company-evaluation",
-    routingKey: "tenant.persist.company-evaluation.v1",
-    queue: "db-gateway-persist-company-evaluation",
-    apply: stubApply("company-evaluation"),
-  },
-  {
-    producer: "company-contact",
-    routingKey: "tenant.persist.company-contact.v1",
-    queue: "db-gateway-persist-company-contact",
-    apply: stubApply("company-contact"),
-  },
 ];
 
-// Sanity: registry covers every producer name.
-{
-  const covered = new Set(BINDINGS.map((b) => b.producer));
-  for (const name of PRODUCER_NAMES) {
-    if (!covered.has(name)) {
-      throw new Error(`persist-bus: missing binding for producer "${name}"`);
-    }
+// Sanity: every binding's producer is a known name. (The reverse —
+// every producer covered — no longer holds since 3 of them run on
+// fly in legacy mode and never emit persist events.)
+for (const b of BINDINGS) {
+  if (!(PRODUCER_NAMES as readonly string[]).includes(b.producer)) {
+    throw new Error(`persist-bus: unknown producer "${b.producer}"`);
   }
 }
 
