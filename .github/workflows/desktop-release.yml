@@ -203,8 +203,17 @@ jobs:
         working-directory: services/desktop
         run: node scripts/check-bundle-secrets.mjs
 
+  # ---------------------------------------------------------------------------
+  # Windows build is currently DISABLED to conserve GitHub Actions
+  # minutes during the pilot. The Windows runner takes 14-18 min per
+  # tag (Windows runner minutes are charged at 2× the macOS rate).
+  # Re-enable by changing `if: false` below to remove it once the
+  # pilot moves to Windows users or the Actions plan is upgraded.
+  # The job body is left intact so re-enabling is a one-line change.
+  # ---------------------------------------------------------------------------
   build-windows:
     name: Build Windows (unsigned, x64)
+    if: false
     runs-on: windows-2022
     steps:
       - uses: actions/checkout@v4

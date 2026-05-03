@@ -28,6 +28,41 @@ export interface AuthStatus {
   scopes: string[];
 }
 
+// ---- Auto-updater (8.u4 / 8.v1.5) -----------------------------------------
+//
+// Background OTA flow via electron-updater talking to GitHub
+// Releases. The `Updater` class in main owns the state machine;
+// the renderer mirrors via IPC and surfaces a Settings affordance
+// + an in-app banner once an update is downloaded.
+
+export type UpdateState =
+  | "idle"        // not started yet
+  | "checking"    // GET /releases/latest in flight
+  | "up-to-date"  // installed version is the newest tag
+  | "available"   // newer version exists; awaiting user `download`
+  | "downloading" // user accepted; download in progress
+  | "ready"       // downloaded, awaiting `install` confirmation
+  | "error";
+
+export interface UpdateProgress {
+  bytesPerSec: number;
+  percent: number;
+  transferred: number;
+  total: number;
+}
+
+export interface UpdateStatus {
+  state: UpdateState;
+  /** Version string from package.json — always present. */
+  currentVersion: string;
+  /** Latest tag GitHub reports. Null until a check completes. */
+  latestVersion: string | null;
+  /** Download progress; only populated while state === "downloading". */
+  progress: UpdateProgress | null;
+  /** Set when state === "error". */
+  errorMessage: string | null;
+}
+
 // ---- Local producers (8.v1.1) ---------------------------------------------
 //
 // Producer services (company-profile, structured-content, …) that

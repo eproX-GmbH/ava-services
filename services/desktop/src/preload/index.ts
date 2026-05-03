@@ -25,6 +25,7 @@ import type {
   OllamaStatus,
   PostgresStatus,
   ProducerStatus,
+  UpdateStatus,
   ProviderCatalogEntry,
   ProviderConfig,
   ProviderConfigBundle,
@@ -70,6 +71,7 @@ export type {
   OllamaStatus,
   PostgresStatus,
   ProducerStatus,
+  UpdateStatus,
   ProviderCatalogEntry,
   ProviderConfig,
   ProviderConfigBundle,
@@ -172,6 +174,24 @@ const api = {
       ipcRenderer.on("postgres-status:changed", handler);
       return () =>
         ipcRenderer.removeListener("postgres-status:changed", handler);
+    },
+  },
+
+  // Auto-updater (Phase 8.u4). Renderer drives `check`/`download`/
+  // `install` from the Settings panel; status pushes via the
+  // `updater-status:changed` channel.
+  updater: {
+    getStatus: (): Promise<UpdateStatus> =>
+      ipcRenderer.invoke("updater:getStatus"),
+    check: (): Promise<void> => ipcRenderer.invoke("updater:check"),
+    download: (): Promise<void> => ipcRenderer.invoke("updater:download"),
+    install: (): Promise<void> => ipcRenderer.invoke("updater:install"),
+    onStatusChanged: (cb: (status: UpdateStatus) => void): (() => void) => {
+      const handler = (_e: Electron.IpcRendererEvent, status: UpdateStatus) =>
+        cb(status);
+      ipcRenderer.on("updater-status:changed", handler);
+      return () =>
+        ipcRenderer.removeListener("updater-status:changed", handler);
     },
   },
 

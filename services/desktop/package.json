@@ -1,6 +1,6 @@
 {
   "name": "@ava/desktop",
-  "version": "0.1.23",
+  "version": "0.1.24",
   "private": true,
   "description": "AVA Electron desktop app — replaces user-interface/ Next.js. Talks to db-gateway only.",
   "author": {
@@ -41,6 +41,7 @@
     "@tailwindcss/vite": "^4",
     "@tanstack/react-query": "^5.40.0",
     "ai": "^5.0.0",
+    "electron-updater": "^6.8.3",
     "pg": "^8.20.0",
     "pg-gateway": "0.3.0-beta.4",
     "react": "^18.3.0",

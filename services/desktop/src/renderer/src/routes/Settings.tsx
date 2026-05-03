@@ -8,6 +8,7 @@ import { useProfileStore } from "../store/profile";
 import { usePostgresStore } from "../store/postgres";
 import { useProducersStore } from "../store/producers";
 import { useConfigStore } from "../store/config";
+import { useUpdaterStore } from "../store/updater";
 import type {
   AlertCadenceMinutes,
   AlertCandidateDecision,
@@ -78,6 +79,7 @@ export function Settings() {
       <ProviderSection />
       <ProfileSection />
       <VoiceSection />
+      <UpdaterSection />
       <PostgresSection />
       <ProducersSection />
       <AlertsSection />
@@ -110,6 +112,74 @@ function SettingsHeader() {
         </p>
       )}
     </header>
+  );
+}
+
+// -- Auto-updater (Phase 8.u4) ----------------------------------------
+//
+// Renders the update lifecycle (idle → checking → up-to-date /
+// available → downloading → ready) plus action buttons. The user
+// always confirms downloads + installs — no silent updates.
+
+function UpdaterSection() {
+  const status = useUpdaterStore((s) => s.status);
+
+  const onCheck = () => void window.api.updater.check();
+  const onDownload = () => void window.api.updater.download();
+  const onInstall = () => void window.api.updater.install();
+
+  return (
+    <section className="provider-section" id="updates">
+      <h3>Updates</h3>
+      <p className="muted small">
+        AVA prüft beim Start und alle vier Stunden auf neue Versionen.
+        Du bestätigst jeden Download und jeden Neustart selbst — es gibt
+        keine stillen Updates.
+      </p>
+      <ul className="kv">
+        <li>
+          <span className="muted">Installiert:</span>{" "}
+          AVA v{status.currentVersion}
+        </li>
+        {status.latestVersion && status.latestVersion !== status.currentVersion && (
+          <li>
+            <span className="muted">Neue Version verfügbar:</span>{" "}
+            <strong>v{status.latestVersion}</strong>
+          </li>
+        )}
+        {status.state === "downloading" && status.progress && (
+          <li>
+            <span className="muted">Lade herunter:</span>{" "}
+            {status.progress.percent.toFixed(0)} % (
+            {(status.progress.bytesPerSec / 1024 / 1024).toFixed(1)} MB/s)
+          </li>
+        )}
+        {status.errorMessage && (
+          <li className="error">
+            <span className="muted">Fehler:</span> {status.errorMessage}
+          </li>
+        )}
+      </ul>
+      <div className="actions">
+        {(status.state === "idle" ||
+          status.state === "up-to-date" ||
+          status.state === "error") && (
+          <button type="button" className="link" onClick={onCheck}>
+            Jetzt nach Updates suchen
+          </button>
+        )}
+        {status.state === "available" && (
+          <button type="button" onClick={onDownload}>
+            v{status.latestVersion} herunterladen
+          </button>
+        )}
+        {status.state === "ready" && (
+          <button type="button" onClick={onInstall}>
+            Neu starten und v{status.latestVersion} installieren
+          </button>
+        )}
+      </div>
+    </section>
   );
 }
 

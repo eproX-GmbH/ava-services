@@ -5,6 +5,7 @@ import { useAuthStore } from "./store/auth";
 import { useOllamaStore } from "./store/ollama";
 import { usePostgresStore } from "./store/postgres";
 import { bindProducersBridge } from "./store/producers";
+import { bindUpdaterBridge } from "./store/updater";
 import { bindAlertsBridge } from "./store/alerts";
 import { bindVoiceBridge } from "./store/voice";
 import { bindProfileBridge } from "./store/profile";
@@ -95,6 +96,7 @@ export function App({ children }: PropsWithChildren) {
     // Phase 8.v1.1 — producer subprocess mirror. Bridge handles the
     // initial list fetch + diff subscription internally.
     const offProducers = bindProducersBridge();
+    const offUpdater = bindUpdaterBridge();
     // Phase 8.f1 — keep the alerts mirror in sync with main. Bootstraps
     // by fetching the current list once, then re-fetches on every
     // `alerts:changed` push.
@@ -117,6 +119,7 @@ export function App({ children }: PropsWithChildren) {
       offPull();
       offPostgres();
       offProducers();
+      offUpdater();
       offAlerts();
       offVoice();
       offProfile();

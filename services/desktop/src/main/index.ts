@@ -11,6 +11,7 @@ import { Auth, type AuthStatus } from "./auth";
 import { OllamaSupervisor } from "./ollama-supervisor";
 import { PostgresSupervisor } from "./postgres-supervisor";
 import { ProducerSupervisor } from "./producer-supervisor";
+import { Updater, broadcastUpdateStatus } from "./updater";
 import {
   AgentOrchestrator,
   AlertPrefsStore,
@@ -48,6 +49,7 @@ import type {
   OllamaStatus,
   PostgresStatus,
   ProducerStatus,
+  UpdateStatus,
   UserProfile,
   Watch,
   VoiceModelDownloadProgress,
@@ -145,6 +147,11 @@ function broadcastPostgresStatus(status: PostgresStatus): void {
   }
 }
 postgres.on("status", broadcastPostgresStatus);
+
+// Auto-updater (8.u4). Talks to GitHub Releases via the
+// publish-config in electron-builder.yml. No-op in dev mode.
+const updater = new Updater();
+updater.on("status", (s: UpdateStatus) => broadcastUpdateStatus(s));
 
 // Producer supervisors (Phase 8.v1.1+8.v1.3).
 //
@@ -743,6 +750,12 @@ app.whenReady().then(async () => {
   // reset endpoints yet — those come with the Settings panel UX.
   ipcMain.handle("postgres:getStatus", () => postgres.getStatus());
 
+  // Auto-updater IPC (8.u4).
+  ipcMain.handle("updater:getStatus", () => updater.getStatus());
+  ipcMain.handle("updater:check", () => updater.check());
+  ipcMain.handle("updater:download", () => updater.download());
+  ipcMain.handle("updater:install", () => updater.installAndRelaunch());
+
   // Producer supervisors (8.v1.1). Renderer reads the snapshot list
   // on mount and subscribes to `producer-status:changed` for diffs.
   ipcMain.handle("producers:list", () =>
@@ -1105,6 +1118,10 @@ app.whenReady().then(async () => {
   // surfaces the affordances to recover.
   void whisper.start();
 
+  // Auto-updater. No-op in dev. In packaged builds: checks GitHub
+  // Releases on launch + every 4h while the app is open.
+  updater.start();
+
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) createMainWindow();
   });
@@ -1123,6 +1140,7 @@ app.on("before-quit", () => {
   heartbeat.stop();
   agent.dispose();
   providers.dispose();
+  updater.stop();
   void ollama.stop();
   // Producers go down before Postgres so their final commits
   // succeed against the still-running PGlite instance.
