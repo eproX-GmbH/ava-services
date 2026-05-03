@@ -210,42 +210,77 @@ function buildProducer(
   });
 }
 
-// Conditionally register company-profile only when the vendored
-// bundle is present. v0.1.11's CI doesn't yet vendor producers (no
-// NPM_TOKEN secret + size optimisation pending), so the packaged
-// .dmg won't have resources/producers/ at all and the supervisor
-// would otherwise sit in `error` state from boot. Dev runs that
-// have done `pnpm fetch:producers` locally pick it up normally.
+// Producer registry. Each entry registers a supervisor only if
+// its vendored dir is present at startup — packaged builds without
+// the producer bundle (CI without SUBMODULES_PAT) silently skip
+// instead of sitting in `error` state from boot.
+//
+// Port allocation: 51010-step-10 to leave room for liveness/readiness
+// probes (PORT+100/+101) without collision between producers.
 {
-  const candidatePackaged = join(
-    process.resourcesPath ?? "",
-    "producers",
-    "company-profile",
-  );
-  const candidateDev = join(
-    app.getAppPath(),
-    "resources",
-    "producers",
-    "company-profile",
-  );
-  const vendored =
-    (app.isPackaged ? candidatePackaged : candidateDev) || "";
+  const PRODUCER_REGISTRY: Array<{
+    name: string;
+    entry: string;
+    databaseName: string;
+    port: number;
+  }> = [
+    {
+      name: "company-profile",
+      entry: "dist/web/api/server.js",
+      databaseName: "company_profile",
+      port: 51010,
+    },
+    {
+      name: "structured-content",
+      entry: "dist/web/api/server.js",
+      databaseName: "structured_content",
+      port: 51020,
+    },
+    {
+      name: "company-publication",
+      entry: "dist/web/api/server.js",
+      databaseName: "company_publication",
+      port: 51030,
+    },
+    {
+      name: "company-evaluation",
+      entry: "dist/web/api/server.js",
+      databaseName: "company_evaluation",
+      port: 51040,
+    },
+    {
+      name: "company-contact",
+      entry: "dist/web/api/server.js",
+      databaseName: "company_contact",
+      port: 51050,
+    },
+  ];
+
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const { existsSync } = require("node:fs") as typeof import("node:fs");
-  if (vendored && existsSync(vendored)) {
-    producers.push(
-      buildProducer(
-        "company-profile",
-        "dist/web/api/server.js",
-        "company_profile",
-        51010,
-      ),
+  for (const entry of PRODUCER_REGISTRY) {
+    const candidatePackaged = join(
+      process.resourcesPath ?? "",
+      "producers",
+      entry.name,
     );
-  } else {
-    console.log(
-      `[producers] company-profile not vendored (looked at ${vendored}); skipping. ` +
-        `Run \`pnpm fetch:producers\` to enable in dev.`,
+    const candidateDev = join(
+      app.getAppPath(),
+      "resources",
+      "producers",
+      entry.name,
     );
+    const vendored = app.isPackaged ? candidatePackaged : candidateDev;
+    if (existsSync(vendored)) {
+      producers.push(
+        buildProducer(entry.name, entry.entry, entry.databaseName, entry.port),
+      );
+    } else {
+      console.log(
+        `[producers] ${entry.name} not vendored (looked at ${vendored}); skipping. ` +
+          `Run \`pnpm fetch:producers\` to enable in dev.`,
+      );
+    }
   }
 }
 

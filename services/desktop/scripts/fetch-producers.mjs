@@ -72,9 +72,33 @@ const PRODUCERS = [
     entry: "dist/web/api/server.js",
     databaseName: "company_profile",
   },
-  // Add structured-content / company-publication / etc. once the
-  // company-profile pilot is green — same shape, no schema changes
-  // here required.
+  // Phase 8.v1.4 — remaining tenant-private producers.
+  // Same shape, same vendor pipeline; each gets its own PGlite
+  // database under userData/pglite/<name>/.
+  {
+    name: "structured-content",
+    workspaceDir: "structured-content",
+    entry: "dist/web/api/server.js",
+    databaseName: "structured_content",
+  },
+  {
+    name: "company-publication",
+    workspaceDir: "company-publication",
+    entry: "dist/web/api/server.js",
+    databaseName: "company_publication",
+  },
+  {
+    name: "company-evaluation",
+    workspaceDir: "company-evaluation",
+    entry: "dist/web/api/server.js",
+    databaseName: "company_evaluation",
+  },
+  {
+    name: "company-contact",
+    workspaceDir: "company-contact",
+    entry: "dist/web/api/server.js",
+    databaseName: "company_contact",
+  },
 ];
 
 const argv = process.argv.slice(2);
@@ -415,6 +439,52 @@ function trimNodeModules(nmDir) {
     const p = join(nmDir, name);
     if (existsSync(p)) {
       rmSync(p, { recursive: true, force: true });
+    }
+  }
+
+  // Drop non-target-platform binaries from packages that ship
+  // pre-built native modules for every OS. We only ship to the
+  // host platform per build; carrying win32 + linux blobs in a
+  // mac DMG (and vice-versa) is pure dead weight.
+  //
+  // - onnxruntime-node: ~174 MB savings on darwin-arm64
+  //   (drops bin/napi-v6/linux/ + bin/napi-v6/win32/)
+  // - @img/sharp-*: per-platform packages; keep darwin or win32
+  //   depending on host
+  const hostPlatform = process.platform;
+  const onnxBin = join(
+    nmDir,
+    "onnxruntime-node",
+    "bin",
+    "napi-v6",
+  );
+  if (existsSync(onnxBin)) {
+    for (const platDir of ["darwin", "linux", "win32"]) {
+      if (platDir === hostPlatform) continue;
+      const p = join(onnxBin, platDir);
+      if (existsSync(p)) rmSync(p, { recursive: true, force: true });
+    }
+  }
+  const imgDir = join(nmDir, "@img");
+  if (existsSync(imgDir)) {
+    let imgEntries;
+    try {
+      imgEntries = readdirSync(imgDir, { withFileTypes: true });
+    } catch {
+      imgEntries = [];
+    }
+    for (const e of imgEntries) {
+      if (!e.isDirectory()) continue;
+      // sharp packages are named e.g. `sharp-darwin-arm64`,
+      // `sharp-linux-x64`, `sharp-libvips-win32-x64`. Match the host
+      // platform substring; everything else gets dropped.
+      const platMatch =
+        (hostPlatform === "darwin" && e.name.includes("darwin")) ||
+        (hostPlatform === "win32" && e.name.includes("win32")) ||
+        (hostPlatform === "linux" && e.name.includes("linux"));
+      if (!platMatch) {
+        rmSync(join(imgDir, e.name), { recursive: true, force: true });
+      }
     }
   }
 
