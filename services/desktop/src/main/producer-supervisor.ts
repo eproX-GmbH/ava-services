@@ -415,6 +415,12 @@ export class ProducerSupervisor extends EventEmitter {
       DIRECT_URL: baseUrl,
       AMQP_URL: amqpUrl,
       PORT: String(this.opts.config.port),
+      // simple-probe k8s-style health-check ports. Producers
+      // refuse to boot without them. Pin to PORT+100/+101 so each
+      // producer has a unique liveness/readiness pair without
+      // bookkeeping in this file.
+      PROBE_LIVENESS_PORT: String(this.opts.config.port + 100),
+      PROBE_READINESS_PORT: String(this.opts.config.port + 101),
       LOGLEVEL: process.env.LOGLEVEL ?? "info",
       NODE_ENV: app.isPackaged ? "production" : "development",
       // JWT verification — producer's HTTP API verifies inbound

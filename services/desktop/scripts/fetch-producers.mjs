@@ -206,6 +206,22 @@ async function main() {
         }
       }
     }
+
+    // Force zod 4 as a top-level dep + an `overrides` block.
+    //   - @ai-sdk/provider-utils@3 (transitive via @ai-sdk/openai)
+    //     requires `zod/v4` (a sub-path export only present in zod 4)
+    //   - openai@4 has zod 3 as an optional peer, which under
+    //     --legacy-peer-deps caused npm to skip installing zod
+    //     entirely. Result: provider-utils crashes at boot with
+    //     "Cannot find module 'zod/v4'".
+    // Pinning zod top-level + overriding it everywhere ensures
+    // every dep that walks node_modules/zod/ finds v4.
+    pkg.dependencies = pkg.dependencies ?? {};
+    if (!pkg.dependencies.zod) {
+      pkg.dependencies.zod = "^4.0.0";
+    }
+    pkg.overrides = pkg.overrides ?? {};
+    pkg.overrides.zod = "^4.0.0";
     writeFileSync(stagePkgPath, JSON.stringify(pkg, null, 2));
 
     // 3. Inject `skipLibCheck: true` into the build tsconfig. The
