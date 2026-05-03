@@ -299,6 +299,12 @@ export class ProducerSupervisor extends EventEmitter {
       DATABASE_URL: databaseUrl,
       DIRECT_URL: databaseUrl,
       AMQP_URL: amqpUrl,
+      // 8.v2: split producers into compute (local) + persist (cloud).
+      // Local producers do LLM/scraping with the user's API key, emit
+      // result events, and DON'T touch a database. Cloud-deployed
+      // producers run with PRODUCER_MODE=persist and consume the
+      // result events.
+      PRODUCER_MODE: "compute",
       PORT: String(this.opts.config.port),
       // simple-probe k8s-style health-check ports. Producers
       // refuse to boot without them. Pin to PORT+100/+101 so each
