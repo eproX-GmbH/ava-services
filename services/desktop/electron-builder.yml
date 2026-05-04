@@ -67,6 +67,13 @@ mac:
       # whisper-cpp binary (the macos-14 CI runner is arm64). See
       # `.github/workflows/desktop-release.yml` build-mac matrix.
       arch: [arm64]
+    # electron-updater on macOS uses the `.zip` artifact (not `.dmg`)
+    # for OTA: the `.dmg` is the first-install installer; the `.zip`
+    # is what auto-update downloads + unpacks in place. Without `zip`
+    # here the updater fails with "ZIP file not provided" right after
+    # the user accepts the version pill (surfaced on the v0.1.28 OTA).
+    - target: zip
+      arch: [arm64]
   category: public.app-category.business
   # Icon source: `resources/icon.icns` — multi-resolution (16…1024)
   # built from /Users/mac/Desktop/Repos/ava-v2/public/ios via
