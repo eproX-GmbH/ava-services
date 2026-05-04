@@ -1,21 +1,14 @@
-// §8.v3 — gateway persist consolidation (Option D scoped).
+// §8.v3 — gateway persist consolidation.
 //
-// Under Option D (BYO-key passthrough — see AGENT_PLAN), only the
-// network-sensitive scrapers are localized: `structured-content`
-// (Handelsregister) and `company-publication` (Bundesanzeiger).
-// Their fly apps are decommissioned, so the gateway is the only
-// remaining home for their SQL upserts.
+// After the §8.v3 pivot-2 (see AGENT_PLAN.md): every producer
+// except `website` is localized. The cloud db-gateway is the
+// single persist service for all five — it subscribes to each
+// producer's `tenant.persist.<producer>.v1` event family and
+// applies rows to MPG via raw SQL with last-write-wins
+// (`ON CONFLICT DO UPDATE WHERE EXCLUDED.updatedAt > existing.updatedAt`).
 //
-// The other three producers (`company-profile`, `company-contact`,
-// `company-evaluation`) stay on fly in legacy mode with the user's
-// API key passed through via the work-event payload, so they keep
-// writing to MPG directly via their own prisma clients — the
-// gateway has no persist consumer for them.
-//
-// Each consumer here subscribes to its producer's
-// `tenant.persist.<producer>.v1` event family and applies the row
-// via raw SQL with last-write-wins (`ON CONFLICT DO UPDATE WHERE
-// EXCLUDED.updatedAt > existing.updatedAt`).
+// `website` keeps its own prisma client and writes directly
+// because it stays on fly (uses operator-paid valueserp).
 //
 // Why this design:
 //   - One service to deploy/operate instead of five fly producer apps.
@@ -78,8 +71,52 @@ interface ProducerBinding {
 
 // ---- Per-producer apply functions ------------------------------------------
 
-/** Stub — schema + write logic land alongside each scraper's Playwright
- *  migration (see todos: structured-content / company-publication). */
+/**
+ * `tenant.persist.company-profile.v1` payload shape — emitted by the
+ * local company-profile compute-worker. Mirrors the legacy
+ * `companyProfilesRepository.upsert` shape.
+ */
+interface CompanyProfileResult {
+  companyId: string;
+  profile: string;
+  url: string;
+  businessPurpose?: string;
+}
+
+/** Apply a company-profile persist event with last-write-wins. */
+const applyCompanyProfile: ApplyFn = async (pool, event, log) => {
+  const data = event.data as PersistEvent<CompanyProfileResult> | undefined;
+  if (!data) throw new Error("empty payload");
+  const { result, computedAt, tenantId, runId } = data;
+  if (!result?.companyId) throw new Error("missing result.companyId");
+  if (!computedAt) throw new Error("missing computedAt");
+
+  const res = await pool.query(
+    `INSERT INTO "CompanyProfile" (id, profile, url, "updatedAt")
+     VALUES ($1, $2, $3, $4)
+     ON CONFLICT (id) DO UPDATE
+     SET profile = EXCLUDED.profile,
+         url = EXCLUDED.url,
+         "updatedAt" = EXCLUDED."updatedAt"
+     WHERE EXCLUDED."updatedAt" > "CompanyProfile"."updatedAt"`,
+    [result.companyId, result.profile, result.url, new Date(computedAt)],
+  );
+  log.info(
+    {
+      runId,
+      tenantId,
+      companyId: result.companyId,
+      rowCount: res.rowCount,
+    },
+    res.rowCount === 0
+      ? "company-profile persist skipped (existing row newer)"
+      : "company-profile persist ✓",
+  );
+};
+
+/** Stub — schema + write logic land alongside each producer's
+ *  localization. See todos: structured-content / company-publication
+ *  / company-evaluation / company-contact. */
 const stubApply: (producer: ProducerName) => ApplyFn = (producer) =>
   async (_pool, _event, log) => {
     log.warn(
@@ -90,11 +127,20 @@ const stubApply: (producer: ProducerName) => ApplyFn = (producer) =>
 
 // ---- Bindings registry ------------------------------------------------------
 //
-// Only the localized scrapers bind here. The other 3 producers run
-// in legacy mode on fly with user-key passthrough and persist via
-// their own prisma clients — they don't emit persist events.
+// Each binding is the persist seam for one local producer. `website`
+// is absent — it stays on fly with its own prisma client.
+//
+// Stubs warn-and-drop until the producer's localization lands. They
+// stay safe because no compute-worker emits the routing key until the
+// producer is registered in the desktop's PRODUCER_REGISTRY.
 
 const BINDINGS: ProducerBinding[] = [
+  {
+    producer: "company-profile",
+    routingKey: "tenant.persist.company-profile.v1",
+    queue: "db-gateway-persist-company-profile",
+    apply: applyCompanyProfile,
+  },
   {
     producer: "structured-content",
     routingKey: "tenant.persist.structured-content.v1",
@@ -106,6 +152,18 @@ const BINDINGS: ProducerBinding[] = [
     routingKey: "tenant.persist.company-publication.v1",
     queue: "db-gateway-persist-company-publication",
     apply: stubApply("company-publication"),
+  },
+  {
+    producer: "company-evaluation",
+    routingKey: "tenant.persist.company-evaluation.v1",
+    queue: "db-gateway-persist-company-evaluation",
+    apply: stubApply("company-evaluation"),
+  },
+  {
+    producer: "company-contact",
+    routingKey: "tenant.persist.company-contact.v1",
+    queue: "db-gateway-persist-company-contact",
+    apply: stubApply("company-contact"),
   },
 ];
 

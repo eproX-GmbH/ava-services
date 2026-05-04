@@ -247,19 +247,24 @@ function buildProducer(
     databaseName: string;
     port: number;
   }> = [
-    // Empty under Option D (BYO-key passthrough — see AGENT_PLAN).
-    //
-    // Only the network-sensitive scrapers will run as local
-    // PRODUCER_MODE=compute subprocesses:
-    //   structured-content   (Handelsregister; Playwright migration TBD)
-    //   company-publication  (Bundesanzeiger; Playwright migration TBD)
-    //
-    // The other three producers (company-profile, company-contact,
-    // company-evaluation) stay on fly in legacy mode and consume the
-    // user's API key from the work-event payload — they never need a
-    // local subprocess. Pre-Option-D the registry briefly held
-    // company-profile while we trialled persist-mode cutover; that
-    // entry was rolled back when we picked Option D.
+    // §8.v3 pivot-2 — local compute for everything except `website`
+    // (which uses operator-paid valueserp). Each entry runs as a
+    // PRODUCER_MODE=compute Node subprocess; persistence happens via
+    // AMQP `tenant.persist.<svc>.v1` events that db-gateway's
+    // persist-bus upserts into MPG.
+    {
+      name: "company-profile",
+      entry: "dist/web/api/server.js",
+      databaseName: "company_profile",
+      port: 51010,
+    },
+    // Pending — re-add as each migration lands:
+    //   structured-content   port 51020 / db structured_content
+    //   company-publication  port 51030 / db company_publication
+    //   company-evaluation   port 51040 / db company_evaluation
+    //   company-contact      port 51050 / db company_contact
+    // The fly counterparts stay running in legacy mode until each
+    // local replacement is validated end-to-end.
   ];
 
   // eslint-disable-next-line @typescript-eslint/no-require-imports
