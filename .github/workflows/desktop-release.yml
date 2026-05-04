@@ -80,7 +80,7 @@ jobs:
           # Use the PAT to authenticate against github.com globally
           # for the duration of this step.
           git config --global url."https://x-access-token:${SUBMODULES_PAT}@github.com/".insteadOf "https://github.com/"
-          for sub in company-profile structured-content company-publication company-evaluation company-contact; do
+          for sub in company-profile structured-content company-publication company-evaluation company-contact website; do
             git submodule update --init --depth=1 -- "$sub" \
               && echo "✓ $sub" \
               || echo "✗ $sub (skipped)"
@@ -244,7 +244,7 @@ jobs:
           # Use the PAT to authenticate against github.com globally
           # for the duration of this step.
           git config --global url."https://x-access-token:${SUBMODULES_PAT}@github.com/".insteadOf "https://github.com/"
-          for sub in company-profile structured-content company-publication company-evaluation company-contact; do
+          for sub in company-profile structured-content company-publication company-evaluation company-contact website; do
             git submodule update --init --depth=1 -- "$sub" \
               && echo "✓ $sub" \
               || echo "✗ $sub (skipped)"

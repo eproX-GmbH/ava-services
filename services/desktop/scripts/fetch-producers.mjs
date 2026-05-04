@@ -129,10 +129,18 @@ async function main() {
     const dstDir = join(RESOURCES_ROOT, target.name);
     const sentinel = join(dstDir, "node_modules", ".package-lock.json");
 
-    if (!existsSync(srcDir)) {
-      throw new Error(
-        `[producers] ${target.name}: source dir missing at ${srcDir}`,
+    // Submodule may not be checked out (e.g. CI without
+    // SUBMODULES_PAT, or the submodule wasn't added to the workflow's
+    // init allowlist). Submodule placeholders leave an empty dir
+    // behind, so check for `package.json` rather than dir existence.
+    // Soft-skip the producer instead of crashing the whole run — the
+    // bundle ships without this producer and the desktop's
+    // ProducerSupervisor degrades gracefully ("not vendored").
+    if (!existsSync(join(srcDir, "package.json"))) {
+      console.warn(
+        `[producers] ${target.name}: source dir at ${srcDir} has no package.json — submodule not checked out, skipping`,
       );
+      continue;
     }
 
     if (existsSync(sentinel)) {

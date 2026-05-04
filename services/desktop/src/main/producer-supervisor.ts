@@ -155,6 +155,14 @@ export class ProducerSupervisor extends EventEmitter {
     ) {
       return;
     }
+    // Flip to `starting` synchronously *before* any await. Two
+    // concurrent callers (e.g. postgres.then() in main/index.ts and
+    // the auth `signedIn` listener that fires on the same tick) both
+    // observe `idle` if we wait until after `buildEnv()` resolves —
+    // both pass the guard, both spawn, the second one EADDRINUSEs.
+    // The pre-emptive setState narrows the race window to the
+    // synchronous prefix, which Node guarantees is uninterruptible.
+    this.setState("starting");
     const producerDir = this.resolveProducerDir();
     if (!producerDir) {
       this.setState(
