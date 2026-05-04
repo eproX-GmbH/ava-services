@@ -258,11 +258,17 @@ function buildProducer(
       databaseName: "company_profile",
       port: 51010,
     },
+    {
+      name: "structured-content",
+      entry: "dist/web/api/server.js",
+      databaseName: "structured_content",
+      port: 51020,
+    },
     // Pending — re-add as each migration lands:
-    //   structured-content   port 51020 / db structured_content
     //   company-publication  port 51030 / db company_publication
     //   company-evaluation   port 51040 / db company_evaluation
     //   company-contact      port 51050 / db company_contact
+    //   website              port 51060 / db website
     // The fly counterparts stay running in legacy mode until each
     // local replacement is validated end-to-end.
   ];
