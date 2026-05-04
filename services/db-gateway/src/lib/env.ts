@@ -30,6 +30,13 @@ const schema = z.object({
   EVENT_BUS_EXCHANGE: z.string().default("exchange"),
   EVENT_BUS_QUEUE: z.string().default("db-gateway-progress"),
 
+  // Operator-paid API keys proxied through the gateway. These never
+  // travel to the desktop — every producer that needs them issues an
+  // authenticated request to `/v1/proxy/<service>` and the gateway
+  // attaches the key server-side. Lets the operator rotate without
+  // redeploying every desktop.
+  VALUESERP_API_KEY: z.string().optional(),
+
   // JWT signing material — two mutually-exclusive modes:
   //
   //   A) JWKS_URI mode (preferred for Keycloak): set `JWKS_URI` to the

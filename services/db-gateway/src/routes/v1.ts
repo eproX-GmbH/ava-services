@@ -9,6 +9,7 @@ import { evaluationWritesRouter } from "./v1/evaluation-writes";
 import { importsRouter } from "./v1/imports";
 import { transactionsRouter } from "./v1/transactions";
 import { localAmqpRouter } from "./v1/local-amqp";
+import { proxyRouter } from "./v1/proxy";
 
 // /v1 router.
 //
@@ -52,6 +53,11 @@ v1.route("/", companyWritesRouter);
 // returns the broker URL the desktop's ProducerSupervisor injects
 // into spawned producer Node subprocesses.
 v1.route("/", localAmqpRouter);
+
+// §8.v3 — operator-paid API key proxies (today: valueserp). The
+// localized website + company-contact producers POST here instead
+// of holding the operator's key on-device.
+v1.route("/", proxyRouter);
 
 // Retained for smoke-testing auth end-to-end. Safe to remove once clients
 // exist — no workflow reference.
