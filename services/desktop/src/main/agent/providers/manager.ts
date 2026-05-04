@@ -109,6 +109,32 @@ export class LlmProviderManager extends EventEmitter {
   }
 
   /**
+   * Active provider's key + model — Option D BYO-key passthrough.
+   *
+   * Returns null when:
+   *   - no provider is configured (first-run wizard not done), or
+   *   - the active provider is `ollama` (keyless local), or
+   *   - the active provider's key is missing/unreadable.
+   *
+   * Producers fall back to their env-baked LLM in those cases. We
+   * decrypt on demand each call so plaintext key material isn't held
+   * in memory between dispatches.
+   */
+  async getActiveUserLlm(): Promise<{
+    provider: string;
+    key: string;
+    model?: string;
+  } | null> {
+    const config = this.store.getConfig();
+    const kind = config.kind;
+    if (!kind || kind === "ollama") return null;
+    const key = await this.store.getKey(kind as HostedProviderKind);
+    if (!key) return null;
+    const model = config.models?.[kind] || undefined;
+    return { provider: kind, key, model };
+  }
+
+  /**
    * Project the persisted config + per-provider key presence + active
    * status into the IPC-shaped bundle the renderer (and Settings panel)
    * consume. Centralised so all surfaces see the same view.

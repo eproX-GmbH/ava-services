@@ -11,11 +11,35 @@
 //     we wire it into fetch so a stop-button click really stops the HTTP
 //     request mid-flight.
 
+/**
+ * Active LLM provider context — Option D BYO-key passthrough.
+ *
+ *   { provider: "openai", key: "sk-...", model: "gpt-4o-mini" }
+ *
+ * The desktop owns the user's API key (encrypted in safeStorage,
+ * decrypted on demand). Dispatch tools attach it on outbound
+ * gateway calls so the producers running on fly can use it for
+ * LLM calls without ever holding a copy at rest.
+ */
+export interface UserLlmContext {
+  provider: string;
+  key: string;
+  model?: string;
+}
+
 export interface GatewayClientDeps {
   /** Static gateway URL (no trailing slash). Captured at construction. */
   baseUrl: string;
   /** Returns a fresh-enough access token, or throws if signed out. */
   getAccessToken: () => Promise<string | null>;
+  /**
+   * Returns the user's active LLM provider + key, or null when
+   * no provider is configured (e.g. user hasn't run the first-run
+   * wizard yet). Only called for requests with `attachUserLlm: true`.
+   * Returning null means "no headers attached, producer falls back
+   * to env-baked LLM" — the same behaviour as legacy clients.
+   */
+  getUserLlm?: () => Promise<UserLlmContext | null>;
 }
 
 /** Query value: scalar, repeated as an array, or undefined to skip. */
@@ -45,15 +69,25 @@ export interface RequestOptions {
   signal?: AbortSignal;
   /** Set on writes to make the gateway dedupe replays (Phase 7 work). */
   idempotencyKey?: string;
+  /**
+   * Opt-in: attach `X-Ava-User-Llm-{Provider,Key,Model}` headers from
+   * the active provider. Set on dispatch endpoints (`/v1/imports/excel`,
+   * `/v1/companies` POST) so master-data can forward them as AMQP
+   * headers to producers. Read endpoints leave this off — no reason
+   * to broadcast the user's key on every paginated list query.
+   */
+  attachUserLlm?: boolean;
 }
 
 export class GatewayClient {
   private readonly baseUrl: string;
   private readonly getAccessToken: () => Promise<string | null>;
+  private readonly getUserLlm?: () => Promise<UserLlmContext | null>;
 
   constructor(deps: GatewayClientDeps) {
     this.baseUrl = deps.baseUrl.replace(/\/+$/, "");
     this.getAccessToken = deps.getAccessToken;
+    this.getUserLlm = deps.getUserLlm;
   }
 
   async request<T = unknown>(path: string, opts: RequestOptions = {}): Promise<T> {
@@ -93,6 +127,17 @@ export class GatewayClient {
       body = JSON.stringify(opts.body);
     }
     if (opts.idempotencyKey) headers["idempotency-key"] = opts.idempotencyKey;
+
+    if (opts.attachUserLlm && this.getUserLlm) {
+      const llm = await this.getUserLlm().catch(() => null);
+      if (llm?.provider && llm?.key) {
+        headers["x-ava-user-llm-provider"] = llm.provider;
+        headers["x-ava-user-llm-key"] = llm.key;
+        if (llm.model) headers["x-ava-user-llm-model"] = llm.model;
+      }
+      // No header == producer uses its env-baked LLM. Logged at trace
+      // level only — info-level would print on every dispatch.
+    }
 
     const res = await fetch(url, {
       method: opts.method ?? "GET",

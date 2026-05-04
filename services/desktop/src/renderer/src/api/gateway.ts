@@ -74,7 +74,17 @@ export async function gatewayFetch<T>(path: string, opts: GatewayOptions = {}): 
 export async function gatewayUpload<T>(
   path: string,
   form: FormData,
-  opts: { query?: GatewayOptions["query"]; signal?: AbortSignal } = {},
+  opts: {
+    query?: GatewayOptions["query"];
+    signal?: AbortSignal;
+    /**
+     * Option D — BYO-key passthrough. When true, attach the active
+     * provider's `X-Ava-User-Llm-{Provider,Key,Model}` headers so
+     * master-data can forward them as AMQP headers to producers.
+     * Used by Excel ingest; reads leave it off.
+     */
+    attachUserLlm?: boolean;
+  } = {},
 ): Promise<T> {
   const url = new URL(path.startsWith("/") ? path : `/${path}`, getGatewayUrl());
   if (opts.query) {
@@ -89,6 +99,17 @@ export async function gatewayUpload<T>(
   const token = await window.api.auth.getAccessToken();
   if (token) headers["authorization"] = `Bearer ${token}`;
   // Don't set content-type — the browser fills in the multipart boundary.
+
+  if (opts.attachUserLlm) {
+    const llm = await window.api.agent
+      .getActiveUserLlm()
+      .catch(() => null);
+    if (llm?.provider && llm?.key) {
+      headers["x-ava-user-llm-provider"] = llm.provider;
+      headers["x-ava-user-llm-key"] = llm.key;
+      if (llm.model) headers["x-ava-user-llm-model"] = llm.model;
+    }
+  }
 
   const res = await fetch(url, { method: "POST", headers, body: form, signal: opts.signal });
   const text = await res.text();

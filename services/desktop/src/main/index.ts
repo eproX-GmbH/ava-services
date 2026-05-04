@@ -308,14 +308,20 @@ for (const p of producers) {
 // Phase 8.b: the gateway-backed read tools register up-front. Each tool
 // reads the access token at call time via `auth.getAccessToken()` so
 // re-auth/refresh is transparent to the model.
+// Provider manager (Phase 8.j). Owns the Ollama + OpenAI providers and
+// the persisted config under userData/agent/. Constructed before the
+// gateway client so the BYO-key callback (Option D) can read the
+// active provider's key on dispatch HTTP requests.
+const providers = new LlmProviderManager(ollama);
 const gatewayClient = new GatewayClient({
   baseUrl: GATEWAY_URL,
   getAccessToken: () => auth.getAccessToken(),
+  // Option D — BYO-key passthrough. Dispatch tools opt in via
+  // `attachUserLlm: true`; this callback returns the active provider's
+  // (provider, key, model) for those calls. Other reads pay no key
+  // cost and never broadcast the key.
+  getUserLlm: () => providers.getActiveUserLlm(),
 });
-// Provider manager (Phase 8.j). Owns the Ollama + OpenAI providers and
-// the persisted config under userData/agent/. Constructed before the
-// registry so the settings tools can hold a reference to it.
-const providers = new LlmProviderManager(ollama);
 // General memory (Phase 8.k10h). Long-lived bag of facts the agent can
 // recall via the `recall_memory` / `remember` tools. Distinct from the
 // per-conversation MemoryStore below — that one mirrors transcripts.
@@ -761,6 +767,15 @@ app.whenReady().then(async () => {
   // Provider switch IPC (Phase 8.j). Mirrors the settings_* tools so the
   // forthcoming Settings → Agent panel (8.g) can drive the same surface.
   ipcMain.handle("agent:getProviderConfig", () => providers.getConfigBundle());
+  // Option D — BYO-key passthrough. The renderer's `gatewayUpload`
+  // (Excel ingest) attaches these headers on dispatch. Returns null
+  // when no provider is configured / Ollama is active / key missing,
+  // and the producer falls back to its env-baked LLM. Keeps the
+  // plaintext key off-disk (decrypted on demand each call).
+  ipcMain.handle(
+    "agent:getActiveUserLlm",
+    () => providers.getActiveUserLlm(),
+  );
   // Catalog projection (Phase 8.k2). Always LLM + tool-capable models —
   // see LlmProviderManager.listModels() for the rationale.
   ipcMain.handle("agent:listModels", () => providers.listModels());

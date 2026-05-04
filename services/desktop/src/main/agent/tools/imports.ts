@@ -149,6 +149,9 @@ export function buildImportTools(deps: {
           multipart: form,
           idempotencyKey: randomUUID(),
           signal: ctx.signal,
+          // Option D — dispatch endpoint, attach user-LLM headers so
+          // master-data forwards them as AMQP headers to the producers.
+          attachUserLlm: true,
         },
       );
 
@@ -397,6 +400,8 @@ export function buildImportTools(deps: {
           },
           idempotencyKey: randomUUID(),
           signal: ctx.signal,
+          // Option D — dispatch endpoint, attach user-LLM headers.
+          attachUserLlm: true,
         },
       );
       return {
@@ -513,6 +518,9 @@ export function buildImportTools(deps: {
             },
             idempotencyKey: randomUUID(),
             signal: ctx.signal,
+            // Option D — retry redispatches an existing pipeline stage,
+            // which re-publishes work events that LLM producers consume.
+            attachUserLlm: true,
           },
         ),
         deps.gateway

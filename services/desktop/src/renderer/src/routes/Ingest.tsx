@@ -58,6 +58,11 @@ export function Ingest() {
             name: name || undefined,
             isFuzzy: String(isFuzzy),
           },
+          // Option D — BYO-key passthrough. Attach the user's active
+          // provider key so master-data can forward it to the LLM
+          // producers via AMQP headers. Producer falls back to env
+          // when the user hasn't configured a provider yet.
+          attachUserLlm: true,
         },
       );
       navigate(`/transactions/${transactionId}/stream`);

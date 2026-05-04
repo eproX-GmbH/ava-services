@@ -247,6 +247,18 @@ const api = {
     getProviderConfig: (): Promise<ProviderConfigBundle> =>
       ipcRenderer.invoke("agent:getProviderConfig"),
     /**
+     * Option D — BYO-key passthrough. Used by `gatewayUpload` to
+     * attach the user's active LLM (provider, key, model) on the
+     * dispatch HTTP headers. Returns null when no provider is
+     * configured, the active provider is keyless (Ollama), or the
+     * key blob can't be decrypted.
+     */
+    getActiveUserLlm: (): Promise<{
+      provider: string;
+      key: string;
+      model?: string;
+    } | null> => ipcRenderer.invoke("agent:getActiveUserLlm"),
+    /**
      * Phase 8.k2 — catalog of pickable models. Always LLM-role +
      * tool-capable; embeddings are intentionally hidden (vector
      * compatibility lock-in across users).
