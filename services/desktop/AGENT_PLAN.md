@@ -2550,3 +2550,188 @@ wins; the earlier writer's data is silently dropped. Acceptable per the
 If any step fails, the gateway/master-data event chain has a gap —
 likely needs the rest of the producer chain (structured-content,
 website, etc.) which remain fly-legacy for the pilot.
+
+## 8.v3 — Option D pivot, then full reversal to local-compute (NEW)
+
+Two architectural pivots happened in fast succession on 2026-05-04
+between the §8.v2.5 cutover (company-profile to local compute /
+fly persist-worker) and the start of §8.v2.6 (the remaining four
+producers). Documenting both because a future reader will otherwise
+see code that contradicts the §8.v / §8.v2 narrative.
+
+### Pivot 1 — "Option D" (BYO-key passthrough, no local exec)
+
+After §8.v2.5 succeeded for `company-profile`, we surveyed the
+remaining four producers for a §8.v2.6 repeat and hit walls:
+
+- `company-contact`: ~2.6k lines of `contact-extraction/`
+  interleaving LLM calls, valueserp fetches, and DB
+  reconciliation in the same flow. Splitting compute/persist
+  cleanly meant rewriting the reconcile pipeline, not flipping
+  a `PRODUCER_MODE` switch.
+- `company-evaluation`: similar coupling, plus an
+  `getEmbedder()` factory used in vector-index code paths.
+- `structured-content` and `company-publication` are
+  Selenium-based — running Selenium on the user's device meant
+  bundling Chromium + chromedriver (~200 MB installer growth)
+  or rewriting both scrapers as Playwright on Electron's
+  bundled Chromium (real engineering, not a switch flip).
+
+That made a 6-day §8.v2 estimate look more like 2–3 weeks.
+
+The interim compromise picked:
+- **LLM-key sovereignty (cost + privacy)** stays the priority.
+- **User's IP for scraping** is deferred for the producers
+  whose targets aren't IP-rate-limited (everything except
+  Handelsregister + Bundesanzeiger).
+- All five producers stay on fly in legacy mode. A new transport
+  carries the user's LLM key through every dispatch:
+    desktop → gateway → master-data → AMQP message header
+    → producer reads header → `createLLM({provider, apiKey})`
+    → bills to user's account.
+- `db-gateway` was lined up to be the one persist service for
+  the would-be local producers; under Option D only the two
+  Selenium producers will need it eventually, so its
+  `persist-bus` was scoped down to those two bindings (still
+  warn-and-drop stubs).
+- `company-profile` was rolled back from PRODUCER_MODE=persist
+  to legacy on fly (we'd flipped it in §8.v2.5). The desktop's
+  PRODUCER_REGISTRY was emptied — no local subprocess runs
+  under Option D.
+
+What landed under Option D (commits between roughly 22:00Z on
+2026-05-03 and 11:00Z on 2026-05-04):
+
+- `@ava/event 1.1.40` — `AMQPClient.publish(exchange, event,
+  { headers })` and listener `subscribe((evt, ack, meta) => …)`
+  with `meta.headers`. AMQP message-property side channel,
+  separate from the typed CloudEvent body so payload
+  generators' `fromAny(...)` strip never erases the key.
+- `master-data` — both controllers (`/api/v1/data-care` and
+  `/api/germany/v1/events`) read inbound HTTP headers
+  `X-Ava-User-Llm-{Provider,Key,Model}` and pass them as a
+  `userLlm` field into commands. Helper
+  `infrastructure/events/user-llm-headers.ts`. 18 publish call
+  sites across four commands carry the headers as AMQP options.
+- `db-gateway` — `lib/upstream.ts` forwards the three headers on
+  both `callUpstream` (JSON) and `callUpstreamBinary` (Excel)
+  paths. CORS allow-list extended.
+- `services/desktop` — `LlmProviderManager.getActiveUserLlm()`
+  decrypts on-demand from safeStorage, returns `{provider, key,
+  model}` or `null`. Exposed as IPC `agent:getActiveUserLlm`.
+  Both gateway clients (main `GatewayClient`, renderer
+  `gatewayUpload`) gained an opt-in `attachUserLlm: true` flag;
+  set on dispatch routes only (excel ingest, /v1/companies POST,
+  retry). Read endpoints don't broadcast the key.
+- `company-profile` and `company-contact` producer code:
+  `llmFactory(opts?)` resolver in DI with cache by
+  `(provider, key, model)`, `IOpenai`/command `userLlm` field
+  threaded through, listener reads meta.headers and resolves
+  via `resolveUserLlm(llmFactory, meta)`. Env-baked
+  `OPENAI_API_KEY` remains the fallback for events without
+  headers (legacy retries, dev-mode dispatch from `dev.sh`).
+- v0.1.27 desktop release — first build with the BYO-key code +
+  the `AVA_RELEASE_TOKEN` baked for OTA. Manual install required
+  once; future builds OTA cleanly.
+
+Validated end-to-end via `dev:hostlocal` + a real prod Excel
+upload. Producer logs showed
+`[company contact upsert] using user-supplied LLM` /
+`[company profile and keywords upsert] using user-supplied LLM`,
+LLM tokens billed to the active provider's account.
+
+### Pivot 2 — Full reversal: local compute for 5 of 6 producers
+
+Option D solved cost-sovereignty but left the user's IP
+exposure unaddressed for the LLM-using producers
+(`company-profile` does an HTTP `axios.get(url)` to fetch the
+company website; `company-contact` calls valueserp + fetches
+employee pages). Those requests originate from fly, not the
+user's network. The Handelsregister/Bundesanzeiger argument was
+the most visible IP concern, but the same argument applies to
+every site that throttles or fingerprints by IP for any reason.
+
+Per the user's call on 2026-05-04: localize ALL data extraction
+except where the API key being used is the operator's, not the
+user's. That singles out exactly one producer:
+
+| Producer | Runs where | Reason |
+|---|---|---|
+| `structured-content` | **local** | Handelsregister: user's IP, Selenium → Playwright |
+| `company-publication` | **local** | Bundesanzeiger: user's IP, Selenium → Playwright + AI agent for CAPTCHA-adjacent decision points |
+| `company-profile` | **local** | User's IP for HTML fetch + user's LLM key |
+| `company-contact` | **local** | User's LLM key for analysis; valueserp HTTP is IP-agnostic but the user's IP doesn't hurt |
+| `company-evaluation` | **local** | User's LLM key + embeddings, no scraping |
+| `website` | **fly stays** | Uses operator-paid valueserp; localizing it doesn't change billing — operator pays per-query regardless of caller IP |
+
+This is §8.v + §8.v2's original plan, narrowed to 5 of 6
+producers and with two refinements that fell out of Option D:
+
+1. The BYO-key infrastructure stays valid. Local
+   compute-workers receive the user's LLM key the same way
+   they did under Option D (via AMQP message header) — they're
+   on the receiving end of the same channel. The
+   `ProducerSupervisor` sets the env vars from the desktop's
+   safeStorage; the `llmFactory` continues to prefer header
+   over env. No re-architecture, just a pointer-flip.
+2. `db-gateway`'s `persist-bus` already exists. We extend it
+   from 2 stubbed bindings (scrapers) to 5 real ones, replacing
+   the stubs with raw-SQL upserts that mirror what each
+   producer's prisma client used to do. Schema source of truth
+   stays in each producer repo; gateway hand-writes the SQL.
+
+### What "compute split" means per producer
+
+Three different shapes:
+
+- **Pure-LLM (no DB merge)**: `company-profile`,
+  `company-evaluation`. Compute = one or two LLM calls,
+  produces a row. Persist = single upsert with last-write-wins.
+  Trivial split. The §8.v2.3 pattern from `company-profile`
+  applies directly — we just have to put it back.
+- **Scrape + LLM (no DB merge)**: `structured-content`,
+  `company-publication`. Compute = Playwright run +
+  optional LLM analysis, produces structured rows. Persist =
+  single upsert. The Playwright migration is the real work;
+  the compute/persist split is the same as above.
+- **Scrape + LLM + entity reconciliation (DB merge)**:
+  `company-contact`. Compute can produce raw observations
+  (Person × Employment × ContactSignal events) but the
+  reconciliation logic in `infrastructure/contact-extraction/`
+  (700+ lines: observation/applyObservation/employment/
+  reconcile-entity) needs DB read access throughout. Two
+  options:
+  - Move reconciliation to the gateway persist-handler (port
+    those 700 lines + their prisma deps into db-gateway).
+    Heavy.
+  - Keep the existing command intact on a producer that runs
+    locally with a thin "remote prisma" stub that proxies
+    reads/writes through the gateway over HTTPS. Each merge is
+    a few HTTP roundtrips; latency adds up.
+  Defer the choice until the easier producers are done.
+
+### Implementation order (post-pivot-2)
+
+| # | Producer | Effort | Notes |
+|---|---|---|---|
+| 1 | `company-profile` | low | Already had compute/persist code in Option-D rollback. Re-introduce, register in PRODUCER_REGISTRY, real persist handler in gateway. |
+| 2 | `company-evaluation` | medium | ~10 LLM call sites + per-event embedder factory (cache by `(provider, key)`). No scraping. |
+| 3 | `agentControl` helper | medium | LLM-on-Playwright "click this at this checkpoint" reusable module. Used by 4 + 5. |
+| 4 | `structured-content` | medium | Selenium → Playwright using Electron's bundled Chromium. No CAPTCHA. |
+| 5 | `company-publication` | high | Same migration + CAPTCHA-solving plug-in via agentControl. |
+| 6 | `company-contact` | high | Decide reconciliation strategy (port to gateway vs. remote-prisma proxy). |
+| 7 | Settings observability | low | Per-producer queue depth, last-error. §8.v2.7 deferred. |
+| 8 | Decommission 5 fly producer apps | low | After all migrations validated. `website` stays. |
+
+### Decommissioning policy
+
+Each fly producer app is decommissioned only after the local
+counterpart has run cleanly for one week of production traffic.
+Stop the fly machines (`fly machine stop --all`) but keep the
+app definitions for 30 days so a panic-rollback is one
+`fly machine start --all` away. After the 30-day window expires
+the app definitions are deleted and that producer's image
+registry artifacts pruned.
+
+`website` is exempt — it uses the operator's valueserp key and
+stays on fly indefinitely.
