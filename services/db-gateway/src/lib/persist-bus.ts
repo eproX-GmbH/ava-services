@@ -39,7 +39,7 @@
 // company-profile/src/application/integration-events/v1/persist-worker.ts.
 // The remaining four are stubbed until the schemas are surveyed in §8.v3.2.
 
-import { AMQPClient, type CloudEvent } from "@ava/event";
+import { AMQPClient, type CloudEvent, type AMQPListenerMeta } from "@ava/event";
 import pg from "pg";
 
 import { loadEnv } from "./env";
@@ -153,7 +153,13 @@ class PersistBus {
           operation: binding.routingKey as never,
         });
 
-        listener.subscribe(async (event, ack) => {
+        listener.subscribe(
+          async (
+            event: CloudEvent<PersistEvent<unknown>>,
+            ack: () => void,
+            // eslint-disable-next-line @typescript-eslint/no-unused-vars
+            _meta?: AMQPListenerMeta,
+          ) => {
           const log = logger.child({
             producer: binding.producer,
             runId: event.data?.runId ?? event.id ?? "<no-id>",
@@ -170,7 +176,8 @@ class PersistBus {
           } finally {
             ack();
           }
-        });
+          },
+        );
 
         this.clients.push(client);
         logger.info(

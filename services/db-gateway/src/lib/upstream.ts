@@ -9,9 +9,36 @@ import { logger } from "./logger";
 // existing JWT validation (same JWKS as today's services). Also forwards the
 // X-Request-Id so audit traces stitch across the hop.
 //
+// Option D — BYO-key passthrough: when the desktop attached
+// `X-Ava-User-Llm-{Provider,Key,Model}` headers (the active provider's
+// API key the user supplied in Settings), we forward them verbatim.
+// Master-data turns those HTTP headers into AMQP message headers on
+// every dispatch event, so each producer can use the user's key for
+// LLM calls. The gateway does NOT log the Key header — see the
+// `SENSITIVE_HEADERS` filter.
+//
 // Per D11 the gateway is online-only — we surface upstream failures as plain
 // 5xx to the caller rather than retry. The Desktop-App is expected to show
 // a clear error, not a degraded mode.
+
+const FORWARDED_USER_LLM_HEADERS = [
+  "x-ava-user-llm-provider",
+  "x-ava-user-llm-key",
+  "x-ava-user-llm-model",
+] as const;
+
+/**
+ * Mutates `headers` in place to copy any user-LLM headers the caller
+ * sent on the inbound request to the outbound proxy headers. Skipped
+ * when the inbound request didn't include them (every legacy desktop
+ * version, or non-dispatch routes).
+ */
+function forwardUserLlmHeaders(c: Context, headers: Record<string, string>) {
+  for (const h of FORWARDED_USER_LLM_HEADERS) {
+    const v = c.req.header(h);
+    if (v) headers[h] = v;
+  }
+}
 
 export type UpstreamName =
   | "masterData"
@@ -68,6 +95,7 @@ export async function callUpstream<T = unknown>(
   };
   const auth = c.req.header("authorization");
   if (auth) headers["authorization"] = auth;
+  forwardUserLlmHeaders(c, headers);
 
   const res = await fetch(url, {
     method: opts.method ?? "GET",
@@ -149,6 +177,7 @@ export async function callUpstreamBinary(
   };
   const auth = c.req.header("authorization");
   if (auth) headers["authorization"] = auth;
+  forwardUserLlmHeaders(c, headers);
 
   // TS lib.dom's BodyInit doesn't currently accept Uint8Array under all
   // @types/node + @types/bun matrices we run on (the union widens to

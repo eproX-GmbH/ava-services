@@ -42,7 +42,18 @@ app.use(
       }
       return allowedOrigins.includes(origin) ? origin : "";
     },
-    allowHeaders: ["Authorization", "Content-Type", "X-Request-Id", "Idempotency-Key"],
+    allowHeaders: [
+      "Authorization",
+      "Content-Type",
+      "X-Request-Id",
+      "Idempotency-Key",
+      // Option D — BYO-key passthrough. Browser CORS preflight rejects
+      // unlisted custom headers; the renderer attaches these on every
+      // dispatch request when the user has configured an LLM provider.
+      "X-Ava-User-Llm-Provider",
+      "X-Ava-User-Llm-Key",
+      "X-Ava-User-Llm-Model",
+    ],
     exposeHeaders: ["X-Request-Id", "Transaction-Id"],
     credentials: true,
     maxAge: 600,
