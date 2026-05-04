@@ -96,6 +96,20 @@ export interface ProducerSupervisorOptions {
     mistralApiKey?: string;
     ollamaUrl?: string;
   } | null>;
+  /**
+   * Provider for the gateway Bearer token the producer subprocess
+   * uses to call gateway-mediated endpoints (today: /v1/proxy/* —
+   * operator-paid valueserp for website + company-contact). Same
+   * token the desktop main uses for its own gateway calls.
+   *
+   * Captured at spawn time. If it expires mid-session the producer's
+   * gateway calls will 401; supervisor restart-on-error picks up a
+   * fresh token from the next call. For the pilot's typical
+   * Keycloak access-token TTLs this is acceptable — accept-the-401
+   * is simpler than threading a live refresh channel into a Node
+   * subprocess.
+   */
+  getAccessToken: () => Promise<string | null>;
   /** Extra env merged in after the supervisor's defaults. */
   extraEnv?: Record<string, string>;
 }
@@ -290,6 +304,12 @@ export class ProducerSupervisor extends EventEmitter {
     if (!databaseUrl) return null;
     const llm = await this.opts.llmConfig();
     if (!llm) return null;
+    // Bearer token for the producer's outbound gateway calls (today
+    // only the valueserp proxy). Captured once at spawn — see
+    // ProducerSupervisorOptions.getAccessToken docstring for the
+    // expiry-handling philosophy. Null token is OK; producers that
+    // don't need gateway calls (company-profile) ignore it.
+    const accessToken = await this.opts.getAccessToken();
     return {
       ...process.env,
       // Cloud-managed Postgres URL fetched from gateway. The
@@ -330,6 +350,10 @@ export class ProducerSupervisor extends EventEmitter {
       ...(llm.googleApiKey ? { GOOGLE_API_KEY: llm.googleApiKey } : {}),
       ...(llm.mistralApiKey ? { MISTRAL_API_KEY: llm.mistralApiKey } : {}),
       ...(llm.ollamaUrl ? { OLLAMA_URL: llm.ollamaUrl } : {}),
+      // Gateway URL + Bearer for /v1/proxy/* calls (operator-paid
+      // valueserp etc.). Same gateway the desktop main itself uses.
+      GATEWAY_URL: process.env.GATEWAY_URL ?? "https://ava-db-gateway.fly.dev",
+      ...(accessToken ? { PRODUCER_GATEWAY_TOKEN: accessToken } : {}),
       ...(this.opts.extraEnv ?? {}),
     };
   }

@@ -230,6 +230,9 @@ function buildProducer(
     amqpUrl: fetchAmqpUrl,
     jwksUri: `${APP_CONFIG.authIssuer}/protocol/openid-connect/certs`,
     llmConfig: () => providers.getProducerLlmEnv(),
+    // Bearer for producer→gateway calls (e.g. valueserp proxy).
+    // Captured at spawn; see ProducerSupervisorOptions.getAccessToken.
+    getAccessToken: () => auth.getAccessToken(),
   });
 }
 
