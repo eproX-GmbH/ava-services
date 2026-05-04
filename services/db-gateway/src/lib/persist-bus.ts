@@ -111,9 +111,149 @@ const applyCompanyProfile: ApplyFn = async (pool, event, log) => {
   );
 };
 
+/** `tenant.persist.structured-content.v1` payload — emitted by the
+ *  local structured-content compute-worker. Mirrors the legacy
+ *  `structuredContentsRepository.upsert` shape plus a normalized
+ *  managingDirectors child list. */
+interface StructuredContentResult {
+  companyId: string;
+  name: string;
+  legalForm: string;
+  street: string;
+  houseNumber: string;
+  zipCode: string;
+  city: string;
+  foundingYear?: number | null;
+  corporatePurpose?: string | null;
+  shareCapital?: number | null;
+  lastRegisterEntry?: string | null;
+  lastRegisterModification?: string | null;
+  managingDirectors: Array<{
+    firstName: string;
+    lastName: string;
+    birthDay?: string | null;
+    city?: string | null;
+  }>;
+}
+
+/**
+ * Apply a structured-content persist event with last-write-wins on
+ * the parent row + replace-all on the managingDirectors children.
+ *
+ * The two tables are kept in sync inside a single transaction so a
+ * partial failure can't leave the parent newer than its children.
+ * If the parent row is older than the existing one (someone else
+ * persisted a fresher copy first) we skip the children replace too.
+ */
+const applyStructuredContent: ApplyFn = async (pool, event, log) => {
+  const data = event.data as
+    | PersistEvent<StructuredContentResult>
+    | undefined;
+  if (!data) throw new Error("empty payload");
+  const { result, computedAt, tenantId, runId } = data;
+  if (!result?.companyId) throw new Error("missing result.companyId");
+  if (!computedAt) throw new Error("missing computedAt");
+
+  const updatedAt = new Date(computedAt);
+
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+
+    const upsertRes = await client.query(
+      `INSERT INTO "StructuredContent" (
+         "companyId", name, "corporatePurpose", "shareCapital",
+         "legalForm", street, "houseNumber", "zipCode", city,
+         "foundingYear", "lastRegisterEntry", "lastRegisterModification",
+         "createdAt", "updatedAt"
+       )
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12, NOW(), $13)
+       ON CONFLICT ("companyId") DO UPDATE SET
+         name = EXCLUDED.name,
+         "corporatePurpose" = EXCLUDED."corporatePurpose",
+         "shareCapital" = EXCLUDED."shareCapital",
+         "legalForm" = EXCLUDED."legalForm",
+         street = EXCLUDED.street,
+         "houseNumber" = EXCLUDED."houseNumber",
+         "zipCode" = EXCLUDED."zipCode",
+         city = EXCLUDED.city,
+         "foundingYear" = EXCLUDED."foundingYear",
+         "lastRegisterEntry" = EXCLUDED."lastRegisterEntry",
+         "lastRegisterModification" = EXCLUDED."lastRegisterModification",
+         "updatedAt" = EXCLUDED."updatedAt"
+       WHERE EXCLUDED."updatedAt" > "StructuredContent"."updatedAt"`,
+      [
+        result.companyId,
+        result.name,
+        result.corporatePurpose ?? null,
+        result.shareCapital ?? null,
+        result.legalForm,
+        result.street,
+        result.houseNumber,
+        result.zipCode,
+        result.city,
+        result.foundingYear ?? null,
+        result.lastRegisterEntry ? new Date(result.lastRegisterEntry) : null,
+        result.lastRegisterModification
+          ? new Date(result.lastRegisterModification)
+          : null,
+        updatedAt,
+      ],
+    );
+
+    if (upsertRes.rowCount === 0) {
+      await client.query("ROLLBACK");
+      log.info(
+        { runId, tenantId, companyId: result.companyId },
+        "structured-content persist skipped (existing row newer)",
+      );
+      return;
+    }
+
+    // Replace-all children: simpler than computing the diff, and
+    // the legacy producer did the same (ManagingDirector has no
+    // stable per-row key beyond the autoincrement id).
+    await client.query(
+      `DELETE FROM "ManagingDirector" WHERE "companyId" = $1`,
+      [result.companyId],
+    );
+    for (const md of result.managingDirectors ?? []) {
+      await client.query(
+        `INSERT INTO "ManagingDirector"
+           ("firstName", "lastName", "birthDay", city, "companyId",
+            "createdAt", "updatedAt")
+         VALUES ($1, $2, $3, $4, $5, NOW(), NOW())`,
+        [
+          md.firstName,
+          md.lastName,
+          md.birthDay ? new Date(md.birthDay) : null,
+          md.city ?? null,
+          result.companyId,
+        ],
+      );
+    }
+
+    await client.query("COMMIT");
+    log.info(
+      {
+        runId,
+        tenantId,
+        companyId: result.companyId,
+        managingDirectors: (result.managingDirectors ?? []).length,
+      },
+      "structured-content persist ✓",
+    );
+  } catch (err) {
+    await client.query("ROLLBACK").catch(() => {});
+    throw err;
+  } finally {
+    client.release();
+  }
+};
+
 /** Stub — schema + write logic land alongside each producer's
- *  localization. See todos: structured-content / company-publication
- *  / company-evaluation / company-contact. */
+ *  localization. See todos: company-publication / company-evaluation
+ *  / company-contact. */
 const stubApply: (producer: ProducerName) => ApplyFn = (producer) =>
   async (_pool, _event, log) => {
     log.warn(
@@ -142,7 +282,7 @@ const BINDINGS: ProducerBinding[] = [
     producer: "structured-content",
     routingKey: "tenant.persist.structured-content.v1",
     queue: "db-gateway-persist-structured-content",
-    apply: stubApply("structured-content"),
+    apply: applyStructuredContent,
   },
   {
     producer: "company-publication",

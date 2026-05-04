@@ -341,12 +341,82 @@ const structuredContentRoute = createRoute({
   },
 });
 
+// §8.v3 — structured-content lives only on the user's device now;
+// gateway reads MPG directly. JOINs the ManagingDirector children
+// in a second query to keep the two SQL statements simple.
 companiesRouter.openapi(structuredContentRoute, async (c) => {
   const { companyId } = c.req.valid("param");
-  const upstream = await callUpstream<z.infer<typeof StructuredContentShape>>(
-    c,
-    "structuredContent",
-    `/api/v1/structured-contents/${encodeURIComponent(companyId)}`,
+  const pool = getProducerPool("structured-content");
+  const sc = await pool.query<{
+    companyId: string;
+    name: string | null;
+    corporatePurpose: string | null;
+    shareCapital: string | null;
+    legalForm: string | null;
+    street: string | null;
+    houseNumber: string | null;
+    zipCode: string | null;
+    city: string | null;
+    foundingYear: number | null;
+    lastRegisterEntry: Date | null;
+    lastRegisterModification: Date | null;
+    createdAt: Date;
+    updatedAt: Date;
+  }>(
+    `SELECT "companyId", name, "corporatePurpose", "shareCapital", "legalForm",
+            street, "houseNumber", "zipCode", city, "foundingYear",
+            "lastRegisterEntry", "lastRegisterModification", "createdAt", "updatedAt"
+     FROM "StructuredContent" WHERE "companyId" = $1 LIMIT 1`,
+    [companyId],
   );
-  return c.json(upstream, 200);
+  if (sc.rowCount === 0) {
+    throw new HTTPException(404, { message: "not_found" });
+  }
+  const row = sc.rows[0];
+  const mds = await pool.query<{
+    firstName: string;
+    lastName: string;
+    birthDay: Date | null;
+    city: string | null;
+  }>(
+    `SELECT "firstName", "lastName", "birthDay", city
+     FROM "ManagingDirector" WHERE "companyId" = $1
+     ORDER BY id`,
+    [companyId],
+  );
+  const payload: z.infer<typeof StructuredContentShape> = {
+    companyId: row.companyId,
+    name: row.name ?? null,
+    corporatePurpose: row.corporatePurpose ?? null,
+    // Existing schema declares shareCapital + foundingYear as strings
+    // for OpenAPI compatibility; coerce numerics to strings here.
+    shareCapital:
+      row.shareCapital === null || row.shareCapital === undefined
+        ? null
+        : String(row.shareCapital),
+    legalForm: row.legalForm ?? null,
+    street: row.street ?? null,
+    houseNumber: row.houseNumber ?? null,
+    zipCode: row.zipCode ?? null,
+    city: row.city ?? null,
+    foundingYear:
+      row.foundingYear === null || row.foundingYear === undefined
+        ? null
+        : String(row.foundingYear),
+    lastRegisterEntry: row.lastRegisterEntry
+      ? row.lastRegisterEntry.toISOString()
+      : null,
+    lastRegisterModification: row.lastRegisterModification
+      ? row.lastRegisterModification.toISOString()
+      : null,
+    managingDirectors: mds.rows.map((md) => ({
+      firstName: md.firstName,
+      lastName: md.lastName,
+      birthDay: md.birthDay ? md.birthDay.toISOString() : null,
+      city: md.city ?? null,
+    })),
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
+  };
+  return c.json(payload, 200);
 });
