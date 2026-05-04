@@ -36,6 +36,14 @@ const schema = z.object({
   // attaches the key server-side. Lets the operator rotate without
   // redeploying every desktop.
   VALUESERP_API_KEY: z.string().optional(),
+  // valueserp config defaults applied by the proxy when the caller
+  // doesn't override. These are operator-deployment config, not
+  // tenant-specific, so they live on the gateway side too.
+  VALUESERP_DOMAIN: z.string().optional(),
+  VALUESERP_UI_LANGUAGE: z.string().optional(),
+  VALUESERP_LOCATION: z.string().optional(),
+  VALUESERP_COUNTRY: z.string().optional(),
+  VALUESERP_PAGINATION_SIZE: z.coerce.number().optional(),
 
   // JWT signing material — two mutually-exclusive modes:
   //

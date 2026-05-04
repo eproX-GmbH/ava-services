@@ -36,13 +36,33 @@ const env = loadEnv();
 
 interface ValueserpRequest {
   q: string;
+  // Pass-through whitelist. Caller-supplied values override the
+  // operator's gateway defaults.
+  search_type?: string;
+  engine?: string;
   num?: number;
   location?: string;
+  location_auto?: boolean;
   gl?: string;
   hl?: string;
+  google_domain?: string;
 }
 
 const VALUESERP_ENDPOINT = "https://api.valueserp.com/search";
+
+// Whitelist of params the proxy will pass through. Anything not in
+// this list is dropped to keep the surface small + auditable.
+const ALLOWED_PARAMS: ReadonlySet<keyof ValueserpRequest> = new Set([
+  "q",
+  "search_type",
+  "engine",
+  "num",
+  "location",
+  "location_auto",
+  "gl",
+  "hl",
+  "google_domain",
+]);
 
 proxyRouter.post("/v1/proxy/valueserp", async (c) => {
   if (!env.VALUESERP_API_KEY) {
@@ -64,11 +84,26 @@ proxyRouter.post("/v1/proxy/valueserp", async (c) => {
 
   const params = new URLSearchParams();
   params.set("api_key", env.VALUESERP_API_KEY);
-  params.set("q", body.q);
-  if (body.num != null) params.set("num", String(body.num));
-  if (body.location) params.set("location", body.location);
-  if (body.gl) params.set("gl", body.gl);
-  if (body.hl) params.set("hl", body.hl);
+
+  // Apply operator-side defaults first; caller body can override.
+  if (env.VALUESERP_DOMAIN) params.set("google_domain", env.VALUESERP_DOMAIN);
+  if (env.VALUESERP_UI_LANGUAGE) params.set("hl", env.VALUESERP_UI_LANGUAGE);
+  if (env.VALUESERP_LOCATION) params.set("gl", env.VALUESERP_LOCATION);
+  if (env.VALUESERP_COUNTRY) params.set("location", env.VALUESERP_COUNTRY);
+  if (env.VALUESERP_PAGINATION_SIZE) {
+    params.set("num", String(env.VALUESERP_PAGINATION_SIZE));
+  }
+  // Default engine to google (unless caller overrides).
+  params.set("engine", "google");
+  // location_auto defaults to false (matches the legacy producer's
+  // valueserp-utils.ts behaviour).
+  params.set("location_auto", "false");
+
+  for (const [k, v] of Object.entries(body)) {
+    if (v == null) continue;
+    if (!ALLOWED_PARAMS.has(k as keyof ValueserpRequest)) continue;
+    params.set(k, String(v));
+  }
 
   const auth = c.get("auth");
   const url = `${VALUESERP_ENDPOINT}?${params.toString()}`;
