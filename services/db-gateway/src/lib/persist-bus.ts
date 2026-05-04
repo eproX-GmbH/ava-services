@@ -7,8 +7,10 @@
 // applies rows to MPG via raw SQL with last-write-wins
 // (`ON CONFLICT DO UPDATE WHERE EXCLUDED.updatedAt > existing.updatedAt`).
 //
-// `website` keeps its own prisma client and writes directly
-// because it stays on fly (uses operator-paid valueserp).
+// `website` is also localized as of §8.v3 — its valueserp call
+// goes through the gateway proxy (/v1/proxy/valueserp) so the
+// operator's API key stays server-side, and the upsert lands here
+// like every other producer.
 //
 // Why this design:
 //   - One service to deploy/operate instead of five fly producer apps.
@@ -251,6 +253,123 @@ const applyStructuredContent: ApplyFn = async (pool, event, log) => {
   }
 };
 
+/** `tenant.persist.website.v1` — emitted by the local website
+ *  compute-worker. Carries both rows so this handler does a single
+ *  transactional upsert (Website + CompanySerp). */
+interface WebsiteResult {
+  companyId: string;
+  serp?: {
+    url?: string | null;
+    companyNickname?: string | null;
+    category?: string | null;
+    latitude?: number | null;
+    longitude?: number | null;
+    address?: string | null;
+    phone?: string | null;
+    rating?: number | null;
+    reviewCount?: number | null;
+  };
+  website?: {
+    url?: string | null;
+    siteName?: string | null;
+    description?: string | null;
+    tags?: string[];
+  };
+}
+
+const applyWebsite: ApplyFn = async (pool, event, log) => {
+  const data = event.data as PersistEvent<WebsiteResult> | undefined;
+  if (!data) throw new Error("empty payload");
+  const { result, computedAt, tenantId, runId } = data;
+  if (!result?.companyId) throw new Error("missing result.companyId");
+  if (!computedAt) throw new Error("missing computedAt");
+
+  const updatedAt = new Date(computedAt);
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+
+    if (result.serp) {
+      const s = result.serp;
+      await client.query(
+        `INSERT INTO "CompanySerp" (
+           "companyId", url, "companyNickname", category, latitude, longitude,
+           address, phone, rating, "reviewCount", "createdAt", "updatedAt"
+         )
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10, NOW(), $11)
+         ON CONFLICT ("companyId") DO UPDATE SET
+           url = EXCLUDED.url,
+           "companyNickname" = EXCLUDED."companyNickname",
+           category = EXCLUDED.category,
+           latitude = EXCLUDED.latitude,
+           longitude = EXCLUDED.longitude,
+           address = EXCLUDED.address,
+           phone = EXCLUDED.phone,
+           rating = EXCLUDED.rating,
+           "reviewCount" = EXCLUDED."reviewCount",
+           "updatedAt" = EXCLUDED."updatedAt"
+         WHERE EXCLUDED."updatedAt" > "CompanySerp"."updatedAt"`,
+        [
+          result.companyId,
+          s.url ?? null,
+          s.companyNickname ?? null,
+          s.category ?? null,
+          s.latitude ?? null,
+          s.longitude ?? null,
+          s.address ?? null,
+          s.phone ?? null,
+          s.rating ?? null,
+          s.reviewCount ?? null,
+          updatedAt,
+        ],
+      );
+    }
+
+    if (result.website) {
+      const w = result.website;
+      await client.query(
+        `INSERT INTO "Website" (
+           "companyId", url, "siteName", description, tags,
+           "createdAt", "updatedAt"
+         )
+         VALUES ($1,$2,$3,$4,$5, NOW(), $6)
+         ON CONFLICT ("companyId") DO UPDATE SET
+           url = EXCLUDED.url,
+           "siteName" = EXCLUDED."siteName",
+           description = EXCLUDED.description,
+           tags = EXCLUDED.tags,
+           "updatedAt" = EXCLUDED."updatedAt"
+         WHERE EXCLUDED."updatedAt" > "Website"."updatedAt"`,
+        [
+          result.companyId,
+          w.url ?? null,
+          w.siteName ?? null,
+          w.description ?? null,
+          w.tags ?? [],
+          updatedAt,
+        ],
+      );
+    }
+
+    await client.query("COMMIT");
+    log.info(
+      {
+        runId,
+        tenantId,
+        companyId: result.companyId,
+        serp: !!result.serp,
+        website: !!result.website,
+      },
+      "website persist ✓",
+    );
+  } catch (err) {
+    await client.query("ROLLBACK").catch(() => {});
+    throw err;
+  } finally {
+    client.release();
+  }
+};
+
 /** Stub — schema + write logic land alongside each producer's
  *  localization. See todos: company-publication / company-evaluation
  *  / company-contact. */
@@ -301,6 +420,12 @@ const BINDINGS: ProducerBinding[] = [
     routingKey: "tenant.persist.company-contact.v1",
     queue: "db-gateway-persist-company-contact",
     apply: stubApply("company-contact"),
+  },
+  {
+    producer: "website",
+    routingKey: "tenant.persist.website.v1",
+    queue: "db-gateway-persist-website",
+    apply: applyWebsite,
   },
 ];
 

@@ -252,14 +252,78 @@ const websiteRoute = createRoute({
   },
 });
 
+// §8.v3 — website is localized; gateway reads MPG directly. The
+// composite shape merges Website + CompanySerp; deepResearches +
+// jobPostings still come from their owners later (placeholders for
+// now since their producers haven't localized yet).
 companiesRouter.openapi(websiteRoute, async (c) => {
   const { companyId } = c.req.valid("param");
-  const upstream = await callUpstream<z.infer<typeof WebsiteShape>>(
-    c,
-    "website",
-    `/api/v1/websites/${encodeURIComponent(companyId)}`,
+  const pool = getProducerPool("website");
+  const websiteRow = await pool.query<{
+    companyId: string;
+    siteName: string | null;
+    description: string | null;
+    tags: string[];
+    createdAt: Date;
+    updatedAt: Date;
+  }>(
+    `SELECT "companyId", "siteName", description, tags, "createdAt", "updatedAt"
+     FROM "Website" WHERE "companyId" = $1 LIMIT 1`,
+    [companyId],
   );
-  return c.json(upstream, 200);
+  const serpRow = await pool.query<{
+    companyId: string;
+    url: string | null;
+    companyNickname: string | null;
+    category: string | null;
+    latitude: number | null;
+    longitude: number | null;
+    address: string | null;
+    phone: string | null;
+    rating: number | null;
+    reviewCount: number | null;
+    createdAt: Date;
+    updatedAt: Date;
+  }>(
+    `SELECT "companyId", url, "companyNickname", category, latitude, longitude,
+            address, phone, rating, "reviewCount", "createdAt", "updatedAt"
+     FROM "CompanySerp" WHERE "companyId" = $1 LIMIT 1`,
+    [companyId],
+  );
+  const payload: z.infer<typeof WebsiteShape> = {
+    website: websiteRow.rows[0]
+      ? {
+          companyId: websiteRow.rows[0].companyId,
+          siteName: websiteRow.rows[0].siteName ?? null,
+          description: websiteRow.rows[0].description ?? null,
+          tags: websiteRow.rows[0].tags ?? [],
+          createdAt: websiteRow.rows[0].createdAt.toISOString(),
+          updatedAt: websiteRow.rows[0].updatedAt.toISOString(),
+        }
+      : undefined,
+    companySerp: serpRow.rows[0]
+      ? {
+          companyId: serpRow.rows[0].companyId,
+          url: serpRow.rows[0].url ?? null,
+          companyNickname: serpRow.rows[0].companyNickname ?? null,
+          category: serpRow.rows[0].category ?? null,
+          latitude: serpRow.rows[0].latitude ?? null,
+          longitude: serpRow.rows[0].longitude ?? null,
+          address: serpRow.rows[0].address ?? null,
+          phone: serpRow.rows[0].phone ?? null,
+          rating: serpRow.rows[0].rating ?? null,
+          reviewCount: serpRow.rows[0].reviewCount ?? null,
+          createdAt: serpRow.rows[0].createdAt.toISOString(),
+          updatedAt: serpRow.rows[0].updatedAt.toISOString(),
+        }
+      : undefined,
+    // deepResearches + jobPostings still come from their (legacy)
+    // fly producers. When those localize, replace with direct MPG
+    // reads against their tables.
+    deepResearches: [],
+    jobPostings: [],
+  };
+  return c.json(payload, 200);
 });
 
 // ---- GET /v1/companies/:companyId/publications -----------------------------

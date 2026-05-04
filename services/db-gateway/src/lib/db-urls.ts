@@ -21,6 +21,7 @@ export const PRODUCER_DATABASE_NAMES: Record<string, string> = {
   "company-publication": "ava_company_publication",
   "company-evaluation": "ava_company_evaluation",
   "company-contact": "ava_company_contact",
+  "website": "ava_website",
 };
 
 export type ProducerName = keyof typeof PRODUCER_DATABASE_NAMES;

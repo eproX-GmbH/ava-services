@@ -99,6 +99,14 @@ const PRODUCERS = [
     entry: "dist/web/api/server.js",
     databaseName: "company_contact",
   },
+  {
+    // §8.v3 pivot-2 — website moves local. Uses operator-paid
+    // valueserp via the gateway proxy (key never leaves fly).
+    name: "website",
+    workspaceDir: "website",
+    entry: "dist/web/api/server.js",
+    databaseName: "website",
+  },
 ];
 
 const argv = process.argv.slice(2);
