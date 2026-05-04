@@ -33,15 +33,12 @@
 // The remaining four are stubbed until the schemas are surveyed in §8.v3.2.
 
 import { AMQPClient, type CloudEvent, type AMQPListenerMeta } from "@ava/event";
-import pg from "pg";
+import type pg from "pg";
 
 import { loadEnv } from "./env";
 import { logger } from "./logger";
-import {
-  PRODUCER_NAMES,
-  type ProducerName,
-  buildProducerDatabaseUrl,
-} from "./db-urls";
+import { PRODUCER_NAMES, type ProducerName } from "./db-urls";
+import { getProducerPool } from "./producer-pools";
 
 /** Persist-event payload contract — emitted by local compute-workers. */
 export interface PersistEvent<TResult = unknown> {
@@ -181,7 +178,6 @@ for (const b of BINDINGS) {
 class PersistBus {
   private connecting?: Promise<void>;
   private clients: AMQPClient[] = [];
-  private pools = new Map<ProducerName, pg.Pool>();
 
   /** Idempotent. Connects + binds + subscribes all producer queues. */
   public async ensureConnected(): Promise<void> {
@@ -253,25 +249,7 @@ class PersistBus {
   }
 
   private getPool(producer: ProducerName): pg.Pool {
-    let pool = this.pools.get(producer);
-    if (!pool) {
-      const url = buildProducerDatabaseUrl(producer);
-      if (!url) {
-        throw new Error(
-          `persist-bus: cannot derive DATABASE_URL for "${producer}"`,
-        );
-      }
-      pool = new pg.Pool({
-        connectionString: url,
-        max: 4, // budget against pgbouncer cap (see db-urls.ts)
-        idleTimeoutMillis: 30_000,
-      });
-      pool.on("error", (err) =>
-        logger.error({ err, producer }, "pg pool error"),
-      );
-      this.pools.set(producer, pool);
-    }
-    return pool;
+    return getProducerPool(producer);
   }
 }
 

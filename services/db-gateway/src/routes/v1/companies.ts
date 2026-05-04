@@ -1,6 +1,8 @@
 import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
+import { HTTPException } from "hono/http-exception";
 import { requireScope } from "../../middleware/auth";
 import { callUpstream } from "../../lib/upstream";
+import { getProducerPool } from "../../lib/producer-pools";
 import {
   CompanyContactShape,
   CompanyIdParam,
@@ -157,14 +159,43 @@ const profileRoute = createRoute({
   },
 });
 
+// §8.v3: company-profile lives only on the user's device now (compute
+// path) + cloud db-gateway (persist path + reads). Gateway reads MPG
+// directly via the producer-pool helper instead of proxying to a fly
+// upstream that no longer exists.
 companiesRouter.openapi(profileRoute, async (c) => {
   const { companyId } = c.req.valid("param");
-  const upstream = await callUpstream<z.infer<typeof CompanyProfileShape>>(
-    c,
-    "companyProfile",
-    `/api/v1/company-profiles/${encodeURIComponent(companyId)}`,
+  const pool = getProducerPool("company-profile");
+  const profileRow = await pool.query<{
+    id: string;
+    profile: string;
+    url: string | null;
+    businessPurpose: string | null;
+    createdAt: Date;
+    updatedAt: Date;
+  }>(
+    `SELECT id, profile, url, "businessPurpose", "createdAt", "updatedAt"
+     FROM "CompanyProfile" WHERE id = $1 LIMIT 1`,
+    [companyId],
   );
-  return c.json(upstream, 200);
+  if (profileRow.rowCount === 0) {
+    throw new HTTPException(404, { message: "not_found" });
+  }
+  const row = profileRow.rows[0];
+  const keywordsRows = await pool.query<{ keyword: string }>(
+    `SELECT keyword FROM "CompanyKeyword" WHERE "companyId" = $1 ORDER BY keyword`,
+    [companyId],
+  );
+  const payload: z.infer<typeof CompanyProfileShape> = {
+    id: row.id,
+    profile: row.profile,
+    url: row.url ?? null,
+    businessPurpose: row.businessPurpose ?? null,
+    keywords: keywordsRows.rows.map((r) => r.keyword),
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
+  };
+  return c.json(payload, 200);
 });
 
 // ---- GET /v1/companies/:companyId/keywords ---------------------------------
@@ -184,16 +215,26 @@ const keywordsRoute = createRoute({
   },
 });
 
+// §8.v3 — direct MPG read (see profileRoute above).
 companiesRouter.openapi(keywordsRoute, async (c) => {
   const { companyId } = c.req.valid("param");
-  const upstream = await callUpstream<unknown>(
-    c,
-    "companyProfile",
-    `/api/v1/company-keywords/${encodeURIComponent(companyId)}`,
+  const pool = getProducerPool("company-profile");
+  const rows = await pool.query<{
+    companyId: string;
+    keyword: string;
+    createdAt: Date;
+    updatedAt: Date;
+  }>(
+    `SELECT "companyId", keyword, "createdAt", "updatedAt"
+     FROM "CompanyKeyword" WHERE "companyId" = $1 ORDER BY keyword`,
+    [companyId],
   );
-  const items = (Array.isArray(upstream)
-    ? upstream
-    : ((upstream as { items?: unknown[] })?.items ?? [])) as Array<z.infer<typeof CompanyKeywordShape>>;
+  const items: Array<z.infer<typeof CompanyKeywordShape>> = rows.rows.map((r) => ({
+    companyId: r.companyId,
+    keyword: r.keyword,
+    createdAt: r.createdAt.toISOString(),
+    updatedAt: r.updatedAt.toISOString(),
+  }));
   return c.json({ items }, 200);
 });
 
