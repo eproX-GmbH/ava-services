@@ -98,7 +98,7 @@ async function getMyTransactions(c: Context): Promise<UpstreamTransaction[]> {
       c,
       "masterData",
       "/api/v1/transactions/users/user",
-      { query: { pageNumber: 1, pageSize: 100 } },
+      { query: { pageNumber: 1, pageSize: 50 } },
     );
     if (Array.isArray(list)) return list as UpstreamTransaction[];
     const obj = list as { transactions?: unknown[]; items?: unknown[] };
