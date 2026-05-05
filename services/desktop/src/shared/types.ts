@@ -42,6 +42,7 @@ export type UpdateState =
   | "available"   // newer version exists; awaiting user `download`
   | "downloading" // user accepted; download in progress
   | "ready"       // downloaded, awaiting `install` confirmation
+  | "installing"  // user clicked install; quitAndInstall() in flight
   | "error";
 
 export interface UpdateProgress {

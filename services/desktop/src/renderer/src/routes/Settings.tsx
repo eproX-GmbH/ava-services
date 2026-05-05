@@ -178,6 +178,11 @@ function UpdaterSection() {
             Neu starten und v{status.latestVersion} installieren
           </button>
         )}
+        {status.state === "installing" && (
+          <button type="button" disabled>
+            Update wird installiert… Anwendung startet gleich neu
+          </button>
+        )}
       </div>
     </section>
   );

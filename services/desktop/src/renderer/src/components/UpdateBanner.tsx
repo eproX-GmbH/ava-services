@@ -21,7 +21,8 @@ export function UpdateBanner() {
   if (
     status.state !== "available" &&
     status.state !== "downloading" &&
-    status.state !== "ready"
+    status.state !== "ready" &&
+    status.state !== "installing"
   ) {
     return null;
   }
@@ -40,7 +41,12 @@ export function UpdateBanner() {
     }
   };
 
-  const isClickable = status.state !== "downloading";
+  // `downloading` shows live percent (driven by main IPC pushes);
+  // `installing` shows an indeterminate spinner — Squirrel takes
+  // ~10–30s to swap the bundle and the user shouldn't wonder if
+  // their click did anything.
+  const isClickable =
+    status.state !== "downloading" && status.state !== "installing";
 
   return (
     <button
@@ -51,16 +57,44 @@ export function UpdateBanner() {
       aria-label={titleFor(status.state)}
     >
       <span className="update-banner__icon" aria-hidden="true">
-        {/* leaf-shaped glyph mirrors Claude Code's pill — simple SVG,
-            no asset dependency, blends with the dark/light theme via
-            currentColor. */}
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
-          <path
-            d="M20 4c-7 0-13 4-15 11-1 4 0 7 3 8 1-3 3-6 6-8 0 0-3 4-4 9 4 0 9-3 11-7 2-4 2-9-1-13z"
-            fill="currentColor"
-            opacity="0.85"
-          />
-        </svg>
+        {status.state === "installing" ? (
+          // Indeterminate spinner — Squirrel.Mac is unpacking the
+          // staged .zip and swapping the bundle; nothing to report
+          // a percent against, so a rotating SVG is the honest cue.
+          <svg
+            width="16"
+            height="16"
+            viewBox="0 0 24 24"
+            fill="none"
+            className="update-banner__spinner"
+          >
+            <circle
+              cx="12"
+              cy="12"
+              r="9"
+              stroke="currentColor"
+              strokeWidth="3"
+              opacity="0.25"
+            />
+            <path
+              d="M21 12a9 9 0 0 0-9-9"
+              stroke="currentColor"
+              strokeWidth="3"
+              strokeLinecap="round"
+            />
+          </svg>
+        ) : (
+          /* leaf-shaped glyph mirrors Claude Code's pill — simple SVG,
+              no asset dependency, blends with the dark/light theme via
+              currentColor. */
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+            <path
+              d="M20 4c-7 0-13 4-15 11-1 4 0 7 3 8 1-3 3-6 6-8 0 0-3 4-4 9 4 0 9-3 11-7 2-4 2-9-1-13z"
+              fill="currentColor"
+              opacity="0.85"
+            />
+          </svg>
+        )}
       </span>
       <span className="update-banner__body">
         <span className="update-banner__title">{titleFor(status.state, status.progress?.percent)}</span>
@@ -78,7 +112,7 @@ export function UpdateBanner() {
 }
 
 function titleFor(
-  state: "available" | "downloading" | "ready",
+  state: "available" | "downloading" | "ready" | "installing",
   percent?: number,
 ): string {
   switch (state) {
@@ -88,5 +122,7 @@ function titleFor(
       return `Lädt herunter… ${percent ? Math.round(percent) + " %" : ""}`;
     case "ready":
       return "Neu starten, um zu aktualisieren";
+    case "installing":
+      return "Update wird installiert… Anwendung startet gleich neu";
   }
 }

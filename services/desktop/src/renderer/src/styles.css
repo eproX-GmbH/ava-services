@@ -2283,3 +2283,12 @@ a.heartbeat-decision__company:hover {
   font-size: 16px;
   flex-shrink: 0;
 }
+
+/* Indeterminate spinner used while quitAndInstall() is in flight. The
+   "installing" state lasts ~10–30 s on macOS as Squirrel unpacks the
+   staged .zip and swaps the bundle. Reuses the existing
+   activity-spin keyframes so we don't add a second 360deg rotator. */
+.update-banner__spinner {
+  animation: activity-spin 1s linear infinite;
+  transform-origin: 50% 50%;
+}

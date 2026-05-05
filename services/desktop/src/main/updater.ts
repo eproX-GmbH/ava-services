@@ -161,7 +161,15 @@ export class Updater extends EventEmitter {
    */
   installAndRelaunch(): void {
     if (this.state !== "ready") return;
-    autoUpdater.quitAndInstall(false, true);
+    // Flip to "installing" + push the status BEFORE quitAndInstall so
+    // the renderer can show a "wird installiert…" indicator. Squirrel
+    // takes ~10–30 s on a 300 MB .zip to swap the bundle and relaunch;
+    // without this the pill goes silent and the user wonders if the
+    // click did anything.
+    this.setState("installing");
+    // Defer quitAndInstall so the IPC push has a tick to land in the
+    // renderer before the main process tears down.
+    setTimeout(() => autoUpdater.quitAndInstall(false, true), 100);
   }
 
   getStatus(): UpdateStatus {
