@@ -28,6 +28,7 @@
 import {
   CloudEvent,
   CompanyContactUpsertPayload,
+  EvaluationUpsertCompanyContactsPayload,
   EvaluationUpsertCompanyProfilePayload,
   EvaluationUpsertCompanySerpPayload,
   EvaluationUpsertDeepResearchPayload,
@@ -43,6 +44,7 @@ import { HTTPException } from "hono/http-exception";
 
 import { getGatewayAmqpPublisher } from "./amqp-publisher";
 import { getProducerPool } from "./producer-pools";
+import { getContactPrismaClient } from "./contact-prisma";
 import { loadEnv } from "./env";
 
 const ALL_PRODUCER_SERVICES = [
@@ -567,6 +569,103 @@ export async function publishCompanyPublicationRetry(opts: {
       .header(baseHeader(transactionId, companyId, source))
       .data(data)
       .build();
+  const env = loadEnv();
+  const client = await getGatewayAmqpPublisher();
+  await client.publish(env.EVENT_BUS_EXCHANGE, event);
+  return { published: 1 };
+}
+
+// =============================================================================
+// company-contact
+// =============================================================================
+
+/**
+ * Republishes company-contact's evaluation slice
+ * (companyEvaluation.upsertCompanyContacts). Reconstructs the contacts
+ * payload from the persisted Fact + Person + Employment graph, mirroring
+ * the legacy producer's retry-stage-command. Uses the gateway-local
+ * company-contact prisma client (vendored under prisma-company-contact/).
+ */
+export async function publishCompanyContactRetry(opts: {
+  transactionId: string;
+  companyId: string;
+  source: string;
+}): Promise<{ published: number }> {
+  const { transactionId, companyId, source } = opts;
+  const prisma = getContactPrismaClient();
+
+  const facts = await prisma.fact.findMany({
+    where: { companyId, status: "ACTIVE", entityType: "PERSON" },
+    include: { person: { include: { employments: true } } },
+  });
+
+  type ContactDto = {
+    fullName?: string | null;
+    linkedinUrl?: string;
+    xingUrl?: string;
+    email?: string;
+    phone?: string;
+    employments: Array<{
+      title?: string;
+      department?: string;
+      seniority?: string;
+      confidence: number;
+      startDate?: Date;
+    }>;
+  };
+
+  const contactsMap: Record<string, ContactDto> = {};
+  for (const fact of facts) {
+    const personId = fact.person?.id;
+    if (!personId) continue;
+    if (!contactsMap[personId]) {
+      contactsMap[personId] = {
+        fullName: fact.person?.fullName,
+        employments:
+          fact.person?.employments.map((empl) => ({
+            title: empl.title ?? undefined,
+            department: empl.department ?? undefined,
+            seniority: empl.seniority ?? undefined,
+            confidence: empl.confidence,
+            startDate: empl.startDate ?? undefined,
+          })) ?? [],
+      };
+    }
+    const c = contactsMap[personId];
+    switch (fact.field) {
+      case "fullName":
+        c.fullName ??= fact.value;
+        break;
+      case "linkedinUrl":
+        c.linkedinUrl ??= fact.value;
+        break;
+      case "xingUrl":
+        c.xingUrl ??= fact.value;
+        break;
+      case "email":
+        c.email ??= fact.value;
+        break;
+      case "phone":
+        c.phone ??= fact.value;
+        break;
+    }
+  }
+
+  const contacts = Object.values(contactsMap);
+  if (contacts.length === 0) {
+    notFound(
+      `No company contacts for ${companyId}; nothing to republish`,
+    );
+  }
+
+  const event: CloudEvent<EvaluationUpsertCompanyContactsPayload> =
+    new EventBuilder().companyEvaluation.upsertCompanyContacts
+      .header(baseHeader(transactionId, companyId, source))
+      .data({
+        contacts: contacts as EvaluationUpsertCompanyContactsPayload["contacts"],
+      })
+      .build();
+
   const env = loadEnv();
   const client = await getGatewayAmqpPublisher();
   await client.publish(env.EVENT_BUS_EXCHANGE, event);

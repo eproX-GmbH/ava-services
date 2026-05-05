@@ -7,6 +7,7 @@ import { callUpstream } from "../../lib/upstream";
 import { transactionProgressBus } from "../../lib/event-bus";
 import { getGatewayPool } from "../../lib/producer-pools";
 import {
+  publishCompanyContactRetry,
   publishCompanyProfileRetry,
   publishCompanyPublicationRetry,
   publishStructuredContentRetry,
@@ -771,8 +772,8 @@ const STAGE_UPSTREAMS: Array<{
   { stage: "companyPublication", upstream: "companyPublication", producer: "company-publication" },
   { stage: "website", upstream: "website", producer: "website" },
   { stage: "companyProfile", upstream: "companyProfile", producer: "company-profile" },
-  { stage: "companyContact", upstream: "companyContact", producer: null },
-  { stage: "companyEvaluation", upstream: "companyEvaluation", producer: null },
+  { stage: "companyContact", upstream: "companyContact", producer: "company-contact" },
+  { stage: "companyEvaluation", upstream: "companyEvaluation", producer: "company-evaluation" },
 ];
 
 /**
@@ -1025,7 +1026,16 @@ const RetryParams = TransactionEntityParams; // { transactionId, companyId }
 // destroying the localized fly apps in Phase 4 safe.
 type RetryTarget =
   | { kind: "upstream"; upstream: UpstreamName; stage: string }
-  | { kind: "gateway"; producer: "structured-content" | "website" | "company-profile" | "company-publication"; stage: string };
+  | {
+      kind: "gateway";
+      producer:
+        | "structured-content"
+        | "website"
+        | "company-profile"
+        | "company-publication"
+        | "company-contact";
+      stage: string;
+    };
 
 const RETRY_DISPATCH: Record<z.infer<typeof RetryStage>, RetryTarget[]> = {
   // Master-data owns both downstream-of-master-data slices.
@@ -1050,7 +1060,7 @@ const RETRY_DISPATCH: Record<z.infer<typeof RetryStage>, RetryTarget[]> = {
     { kind: "gateway", producer: "company-publication", stage: "companyEvaluation" },
     { kind: "gateway", producer: "website", stage: "companyEvaluation" },
     { kind: "gateway", producer: "company-profile", stage: "companyEvaluation" },
-    { kind: "upstream", upstream: "companyContact", stage: "companyEvaluation" },
+    { kind: "gateway", producer: "company-contact", stage: "companyEvaluation" },
   ],
 };
 
@@ -1146,6 +1156,13 @@ transactionsRouter.openapi(retryRoute, async (c) => {
             break;
           case "company-publication":
             res = await publishCompanyPublicationRetry({
+              transactionId,
+              companyId,
+              source: requestSource,
+            });
+            break;
+          case "company-contact":
+            res = await publishCompanyContactRetry({
               transactionId,
               companyId,
               source: requestSource,
