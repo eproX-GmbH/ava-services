@@ -563,16 +563,36 @@ const applyCompanyPublication: ApplyFn = async (pool, event, log) => {
         );
       }
       if (pub.stateOfAffairs) {
-        // The producer's `StateOfAffairsAggregate` table mirrors the
-        // LLM-emitted shape; stored as a single JSONB document
-        // because the inner schema (KPI list, topic enum) changes
-        // alongside the prompt.
-        await client.query(
+        // StateOfAffairsAggregate has typed columns + a separate
+        // StateOfAffairsKPI child table. Topic is a Postgres enum
+        // (Topic) — we cast through ::text so the LLM can emit any
+        // string and we accept it; if it's not a valid enum value
+        // the INSERT throws and the per-publication catch falls
+        // through. Fields the LLM omits get DB defaults.
+        const aggRes = await client.query<{ id: number }>(
           `INSERT INTO "StateOfAffairsAggregate"
-             (data, "companyPublicationId", "createdAt", "updatedAt")
-           VALUES ($1::jsonb, $2, NOW(), NOW())`,
-          [JSON.stringify(pub.stateOfAffairs), publicationId],
+             ("isRelevant", topic, bullets, guidance, "risksOpportunities",
+              "companyPublicationId", "createdAt", "updatedAt")
+           VALUES ($1, $2::"Topic", $3, $4, $5, $6, NOW(), NOW())
+           RETURNING id`,
+          [
+            pub.stateOfAffairs.isRelevant ?? false,
+            pub.stateOfAffairs.topic ?? "NOTHING",
+            pub.stateOfAffairs.bullets ?? [],
+            pub.stateOfAffairs.guidance ?? [],
+            pub.stateOfAffairs.risksOpportunities ?? [],
+            publicationId,
+          ],
         );
+        const aggregateId = aggRes.rows[0].id;
+        for (const kpi of pub.stateOfAffairs.kpis ?? []) {
+          await client.query(
+            `INSERT INTO "StateOfAffairsKPI"
+               (name, value, period, "aggregateId", "createdAt", "updatedAt")
+             VALUES ($1, $2, $3, $4, NOW(), NOW())`,
+            [kpi.name, kpi.value, kpi.period ?? null, aggregateId],
+          );
+        }
       }
 
       await client.query("COMMIT");

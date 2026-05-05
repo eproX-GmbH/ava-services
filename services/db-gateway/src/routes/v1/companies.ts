@@ -345,15 +345,17 @@ const publicationsRoute = createRoute({
   },
 });
 
-// §8.v3 — direct MPG read (see profileRoute above). The four 1:1 child
-// tables (Sales/Revenue/TotalAssetsVolume + StateOfAffairsAggregate)
-// LEFT JOIN against the parent so a publication with missing children
-// still surfaces. StateOfAffairs is JSONB upstream; we pass it through
-// untyped (the renderer reads inner fields like topic/bullets/kpis).
+// §8.v3 — direct MPG read (see profileRoute above). Two queries:
+// (1) parent + 1:1 money children via LEFT JOIN, (2) KPIs by
+// (publicationId)→(aggregateId)→KPI rows. We then assemble the
+// stateOfAffairs object in TS — the upstream schema has it as
+// typed columns (isRelevant/topic/bullets/guidance/
+// risksOpportunities) plus a child KPI table, NOT a JSONB blob.
 companiesRouter.openapi(publicationsRoute, async (c) => {
   const { companyId } = c.req.valid("param");
   const pool = getProducerPool("company-publication");
   const rows = await pool.query<{
+    publicationId: number;
     companyId: string;
     name: string | null;
     year: number | null;
@@ -368,15 +370,26 @@ companiesRouter.openapi(publicationsRoute, async (c) => {
     revenueCurrency: string | null;
     totalAssetsValue: string | null;
     totalAssetsCurrency: string | null;
-    stateOfAffairs: unknown;
+    soaId: number | null;
+    soaIsRelevant: boolean | null;
+    soaTopic: string | null;
+    soaBullets: string[] | null;
+    soaGuidance: string[] | null;
+    soaRisksOpportunities: string[] | null;
   }>(
     `SELECT
+       cp.id AS "publicationId",
        cp."companyId", cp.name, cp.year, cp."begin", cp."end",
        cp."employeeCount", cp."createdAt", cp."updatedAt",
        sv.value::text AS "salesValue", sv.currency AS "salesCurrency",
        rv.value::text AS "revenueValue", rv.currency AS "revenueCurrency",
        tv.value::text AS "totalAssetsValue", tv.currency AS "totalAssetsCurrency",
-       soa.data AS "stateOfAffairs"
+       soa.id AS "soaId",
+       soa."isRelevant" AS "soaIsRelevant",
+       soa.topic::text AS "soaTopic",
+       soa.bullets AS "soaBullets",
+       soa.guidance AS "soaGuidance",
+       soa."risksOpportunities" AS "soaRisksOpportunities"
      FROM "CompanyPublication" cp
      LEFT JOIN "SalesVolume" sv ON sv."companyPublicationId" = cp.id
      LEFT JOIN "RevenueVolume" rv ON rv."companyPublicationId" = cp.id
@@ -386,6 +399,38 @@ companiesRouter.openapi(publicationsRoute, async (c) => {
      ORDER BY cp.year DESC NULLS LAST, cp.name`,
     [companyId],
   );
+
+  // Pull KPI rows for the aggregates we found. One query, group by
+  // aggregateId in TS.
+  const aggregateIds = rows.rows
+    .map((r) => r.soaId)
+    .filter((id): id is number => id !== null);
+  const kpisByAggregate = new Map<
+    number,
+    Array<{ name: string; value: string; period: string | null }>
+  >();
+  if (aggregateIds.length > 0) {
+    const kpiRes = await pool.query<{
+      aggregateId: number;
+      name: string;
+      value: string;
+      period: string | null;
+    }>(
+      `SELECT "aggregateId", name, value, period
+       FROM "StateOfAffairsKPI"
+       WHERE "aggregateId" = ANY($1::int[])`,
+      [aggregateIds],
+    );
+    for (const row of kpiRes.rows) {
+      let arr = kpisByAggregate.get(row.aggregateId);
+      if (!arr) {
+        arr = [];
+        kpisByAggregate.set(row.aggregateId, arr);
+      }
+      arr.push({ name: row.name, value: row.value, period: row.period });
+    }
+  }
+
   const items: Array<z.infer<typeof CompanyPublicationShape>> = rows.rows.map(
     (r) => ({
       companyId: r.companyId,
@@ -410,7 +455,20 @@ companiesRouter.openapi(publicationsRoute, async (c) => {
           }
         : null,
       stateOfAffairs:
-        (r.stateOfAffairs as z.infer<typeof CompanyPublicationShape>["stateOfAffairs"]) ?? null,
+        r.soaId !== null
+          ? {
+              isRelevant: r.soaIsRelevant ?? false,
+              topic: r.soaTopic ?? "NOTHING",
+              bullets: r.soaBullets ?? [],
+              guidance: r.soaGuidance ?? [],
+              risksOpportunities: r.soaRisksOpportunities ?? [],
+              kpis: (kpisByAggregate.get(r.soaId) ?? []).map((k) => ({
+                name: k.name,
+                value: k.value,
+                period: k.period ?? undefined,
+              })),
+            }
+          : null,
       createdAt: r.createdAt.toISOString(),
       updatedAt: r.updatedAt.toISOString(),
     }),

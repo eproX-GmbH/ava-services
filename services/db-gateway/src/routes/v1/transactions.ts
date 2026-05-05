@@ -6,6 +6,12 @@ import { requireScope } from "../../middleware/auth";
 import { callUpstream } from "../../lib/upstream";
 import { transactionProgressBus } from "../../lib/event-bus";
 import { getGatewayPool } from "../../lib/producer-pools";
+import {
+  publishCompanyProfileRetry,
+  publishCompanyPublicationRetry,
+  publishStructuredContentRetry,
+  publishWebsiteRetry,
+} from "../../lib/retry-publish";
 import { logger } from "../../lib/logger";
 import {
   getTransactionName,
@@ -1004,34 +1010,47 @@ transactionsRouter.openapi(pipelineRoute, async (c) => {
 
 const RetryParams = TransactionEntityParams; // { transactionId, companyId }
 
-const RETRY_DISPATCH: Record<
-  z.infer<typeof RetryStage>,
-  Array<{ upstream: UpstreamName; stage: string }>
-> = {
+// §8.v3 Phase 1.5 — each retry target is either:
+//   - kind="upstream": still goes through fly via callUpstream (used for
+//     master-data, which is fly-permanent, plus the two un-localized
+//     producers companyContact / companyEvaluation that publish
+//     evaluation slices we haven't ported yet).
+//   - kind="gateway": gateway publishes the AMQP event directly via
+//     lib/retry-publish.ts. This is the path for the four localized
+//     producers' retry slices.
+//
+// Once company-evaluation + company-contact localize (Phase 2/3) and
+// their slices port into retry-publish.ts, every entry flips to
+// kind="gateway" except the masterData ones — which is what makes
+// destroying the localized fly apps in Phase 4 safe.
+type RetryTarget =
+  | { kind: "upstream"; upstream: UpstreamName; stage: string }
+  | { kind: "gateway"; producer: "structured-content" | "website" | "company-profile" | "company-publication"; stage: string };
+
+const RETRY_DISPATCH: Record<z.infer<typeof RetryStage>, RetryTarget[]> = {
   // Master-data owns both downstream-of-master-data slices.
-  structuredContent: [{ upstream: "masterData", stage: "structuredContent" }],
-  companyPublication: [{ upstream: "masterData", stage: "companyPublication" }],
-  // Structured-content drives website. (No `website` retry from website
-  // itself — there's no upstream of website to republish; you'd have to
-  // restart the structured-content slice.)
-  website: [{ upstream: "structuredContent", stage: "website" }],
+  structuredContent: [{ kind: "upstream", upstream: "masterData", stage: "structuredContent" }],
+  companyPublication: [{ kind: "upstream", upstream: "masterData", stage: "companyPublication" }],
+  // Structured-content drives website. Now gateway-side via retry-publish.
+  website: [{ kind: "gateway", producer: "structured-content", stage: "website" }],
   // company-profile is fed by website (url-based) AND structured-content
-  // (business-purpose-based). Republish both so company-profile re-runs
-  // both inputs and idempotently merges.
+  // (business-purpose-based). Republish both inputs so company-profile
+  // re-runs and idempotently merges.
   companyProfile: [
-    { upstream: "website", stage: "companyProfile" },
-    { upstream: "structuredContent", stage: "companyProfile" },
+    { kind: "gateway", producer: "website", stage: "companyProfile" },
+    { kind: "gateway", producer: "structured-content", stage: "companyProfile" },
   ],
   // company-contact is fed by website only.
-  companyContact: [{ upstream: "website", stage: "companyContact" }],
-  // The evaluation fan-out: each producer republishes the slice it owns.
-  // company-evaluation is the consumer, never republishes for itself.
+  companyContact: [{ kind: "gateway", producer: "website", stage: "companyContact" }],
+  // Evaluation fan-out: each producer republishes the slice it owns.
+  // companyContact + companyEvaluation are still fly-side until Phase 2/3,
+  // so their slices keep hitting upstream.
   companyEvaluation: [
-    { upstream: "structuredContent", stage: "companyEvaluation" },
-    { upstream: "companyPublication", stage: "companyEvaluation" },
-    { upstream: "website", stage: "companyEvaluation" },
-    { upstream: "companyProfile", stage: "companyEvaluation" },
-    { upstream: "companyContact", stage: "companyEvaluation" },
+    { kind: "gateway", producer: "structured-content", stage: "companyEvaluation" },
+    { kind: "gateway", producer: "company-publication", stage: "companyEvaluation" },
+    { kind: "gateway", producer: "website", stage: "companyEvaluation" },
+    { kind: "gateway", producer: "company-profile", stage: "companyEvaluation" },
+    { kind: "upstream", upstream: "companyContact", stage: "companyEvaluation" },
   ],
 };
 
@@ -1069,25 +1088,72 @@ transactionsRouter.openapi(retryRoute, async (c) => {
   await assertTransactionOwnershipById(c, transactionId);
 
   const targets = RETRY_DISPATCH[stage];
+  const requestSource = c.req.url;
   const dispatched = await Promise.all(
-    targets.map(async ({ upstream, stage: producerStage }) => {
+    targets.map(async (target) => {
+      const producerStage = target.stage;
       try {
-        const body: Record<string, unknown> = {
-          companyId,
-          stage: producerStage,
-        };
-        // companyContact retry on website needs companyName for the
-        // website.upsertCompanyContact payload.
-        if (companyName !== undefined) body.companyName = companyName;
-
-        const res = await callUpstream<unknown>(
-          c,
-          upstream,
-          `/api/v1/transactions/${encodeURIComponent(transactionId)}/retry`,
-          { method: "POST", body },
-        );
+        if (target.kind === "upstream") {
+          const body: Record<string, unknown> = {
+            companyId,
+            stage: producerStage,
+          };
+          if (companyName !== undefined) body.companyName = companyName;
+          const res = await callUpstream<unknown>(
+            c,
+            target.upstream,
+            `/api/v1/transactions/${encodeURIComponent(transactionId)}/retry`,
+            { method: "POST", body },
+          );
+          return {
+            upstream: target.upstream,
+            stage: producerStage,
+            ok: true,
+            status: 202,
+            body: res,
+          };
+        }
+        // kind === "gateway" — call into retry-publish.ts. Each helper
+        // throws HTTPException(404) when there's nothing to republish
+        // (no persisted row); the catch block below converts that to
+        // an `ok: false` dispatch result so the response surfaces it
+        // alongside other targets' outcomes.
+        let res: { published: number };
+        switch (target.producer) {
+          case "structured-content":
+            res = await publishStructuredContentRetry({
+              stage: producerStage as "website" | "companyProfile" | "companyEvaluation",
+              transactionId,
+              companyId,
+              source: requestSource,
+            });
+            break;
+          case "website":
+            res = await publishWebsiteRetry({
+              stage: producerStage as "companyProfile" | "companyContact" | "companyEvaluation",
+              transactionId,
+              companyId,
+              companyName,
+              source: requestSource,
+            });
+            break;
+          case "company-profile":
+            res = await publishCompanyProfileRetry({
+              transactionId,
+              companyId,
+              source: requestSource,
+            });
+            break;
+          case "company-publication":
+            res = await publishCompanyPublicationRetry({
+              transactionId,
+              companyId,
+              source: requestSource,
+            });
+            break;
+        }
         return {
-          upstream,
+          upstream: target.producer,
           stage: producerStage,
           ok: true,
           status: 202,
@@ -1100,17 +1166,16 @@ transactionsRouter.openapi(retryRoute, async (c) => {
         logger.warn(
           {
             err,
-            upstream,
-            producerStage,
+            target,
             stage,
             transactionId,
             companyId,
             requestId: c.get("requestId"),
           },
-          "retry dispatch: upstream call failed",
+          "retry dispatch failed",
         );
         return {
-          upstream,
+          upstream: target.kind === "upstream" ? target.upstream : target.producer,
           stage: producerStage,
           ok: false,
           status,
