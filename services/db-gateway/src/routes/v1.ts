@@ -10,6 +10,7 @@ import { importsRouter } from "./v1/imports";
 import { transactionsRouter } from "./v1/transactions";
 import { localAmqpRouter } from "./v1/local-amqp";
 import { proxyRouter } from "./v1/proxy";
+import { producersRouter } from "./v1/producers";
 
 // /v1 router.
 //
@@ -58,6 +59,9 @@ v1.route("/", localAmqpRouter);
 // localized website + company-contact producers POST here instead
 // of holding the operator's key on-device.
 v1.route("/", proxyRouter);
+
+// §8.v3 cosmetics — per-producer queue depth (Settings panel).
+v1.route("/", producersRouter);
 
 // Retained for smoke-testing auth end-to-end. Safe to remove once clients
 // exist — no workflow reference.

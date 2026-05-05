@@ -263,6 +263,13 @@ function PostgresSection() {
 // only ships company-profile; the remaining four producers will
 // add themselves automatically once registered in main/index.ts.
 
+interface QueueInfo {
+  ready: number;
+  unacked: number;
+  total: number;
+  consumers: number;
+}
+
 function ProducersSection() {
   const byName = useProducersStore((s) => s.byName);
   const list = Object.values(byName);
@@ -275,6 +282,23 @@ function ProducersSection() {
     error: "Fehler",
     stopping: "fährt herunter…",
   };
+
+  // §8.v3 cosmetic — per-producer AMQP queue depth from the gateway.
+  // Polled every 10s while this section is mounted; gateway caches
+  // the broker management API call for 5s so the actual upstream
+  // hit rate is ≤ 1 per 10s regardless of how many tabs are open.
+  const queueDepths = useQuery<{
+    producers: Record<string, QueueInfo>;
+  }>({
+    queryKey: ["producers", "queueDepths"],
+    queryFn: () =>
+      gatewayFetch<{ producers: Record<string, QueueInfo> }>(
+        "/v1/producers/queue-depths",
+      ),
+    refetchInterval: 10_000,
+    // Don't show stale "loading" flicker on each poll.
+    refetchOnWindowFocus: false,
+  });
 
   return (
     <section className="provider-section" id="local-producers">
@@ -295,6 +319,7 @@ function ProducersSection() {
                 : p.state === "error"
                   ? "err"
                   : "muted";
+            const depth = queueDepths.data?.producers?.[p.name];
             return (
               <li key={p.name}>
                 <span className="muted">{p.name}:</span>{" "}
@@ -311,6 +336,15 @@ function ProducersSection() {
                   <>
                     {" · PID "}
                     <code>{p.pid}</code>
+                  </>
+                )}
+                {depth && (
+                  <>
+                    {" · Queue: "}
+                    <code>
+                      {depth.ready}
+                      {depth.unacked > 0 ? ` (+${depth.unacked} in flight)` : ""}
+                    </code>
                   </>
                 )}
                 {p.errorMessage && (
