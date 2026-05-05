@@ -34,7 +34,7 @@
 // company-profile/src/application/integration-events/v1/persist-worker.ts.
 // The remaining four are stubbed until the schemas are surveyed in §8.v3.2.
 
-import { AMQPClient, type CloudEvent, type AMQPListenerMeta } from "@ava/event";
+import { AMQPClient, type CloudEvent } from "@ava/event";
 import type pg from "pg";
 
 import { loadEnv } from "./env";
@@ -1147,35 +1147,44 @@ class PersistBus {
           binding.queue,
         );
 
-        // Get a typed listener. The @ava/event helper expects a
-        // {context, operation} pair from the EventType enums; the
-        // persist family uses a flat string topic and isn't enumerated
-        // there, so cast through never. The broker filters by routing
-        // key regardless.
-        const listener = client.getListener<PersistEvent<unknown>>({
-          context: "tenant" as never,
-          operation: binding.routingKey as never,
-        });
-
-        listener.subscribe(
-          async (
-            event: CloudEvent<PersistEvent<unknown>>,
-            ack: () => void,
-            // eslint-disable-next-line @typescript-eslint/no-unused-vars
-            _meta?: AMQPListenerMeta,
-          ) => {
+        // Use the raw amqplib channel directly. We CANNOT go through
+        // @ava/event's getListener/subscribe path: its
+        // CloudEventGenerator.fromAny() looks up a typed payload
+        // generator by event.type, and our `tenant.persist.<producer>.v1`
+        // family isn't registered in @ava/event's catalog → fromAny
+        // returns `event.data = undefined`, every apply throws
+        // "empty payload", and no EntityProgress rows ever get written.
+        // (This was the silent v0.1.39/40 bug — Excel imports created
+        // master-data Transaction rows but the desktop saw zero
+        // entities for them.) Reading msg.content directly gives us
+        // the unmodified CloudEvent JSON the producer sent.
+        //
+        // The cast through unknown is the only ergonomic way to reach
+        // the underlying amqplib channel that @ava/event holds private.
+        // Acceptable — we're already coupled to the exact AMQPClient
+        // implementation by virtue of vendoring it.
+        const channel = (
+          client as unknown as { _channel: import("amqplib").Channel }
+        )._channel;
+        await channel.consume(binding.queue, async (msg) => {
+          if (!msg) return;
+          let event: CloudEvent<PersistEvent<unknown>>;
+          try {
+            event = JSON.parse(msg.content.toString()) as CloudEvent<
+              PersistEvent<unknown>
+            >;
+          } catch (err) {
+            logger.error(
+              { err, producer: binding.producer },
+              "persist message: invalid JSON; dropping",
+            );
+            channel.ack(msg);
+            return;
+          }
           const log = logger.child({
             producer: binding.producer,
             runId: event.data?.runId ?? event.id ?? "<no-id>",
           });
-          // Pull the (transactionId, companyId) pair out of the
-          // CloudEvent envelope BEFORE the apply runs — even on a
-          // failure path we want to record the entity-progress row
-          // so `/v1/transactions/:id/entities` reflects the failed
-          // state. Compute-workers set `transaction` and `subject`
-          // on every persist event (see e.g. company-publication
-          // compute-worker.ts), but be defensive in case an event
-          // arrives without them.
           const txId = (event as { transaction?: string }).transaction ?? "";
           const companyId =
             (event as { subject?: string }).subject ??
@@ -1202,15 +1211,13 @@ class PersistBus {
               err instanceof Error ? err.message : String(err),
               log,
             );
-            // Swallow + ack: with last-write-wins this is idempotent,
+            // Swallow + ack: last-write-wins makes this idempotent,
             // and a redelivery loop on a poisoned event would block
-            // the queue. Ops can replay from the work queue if a
-            // persist needs re-running.
+            // the queue.
           } finally {
-            ack();
+            channel.ack(msg);
           }
-          },
-        );
+        });
 
         this.clients.push(client);
         logger.info(
