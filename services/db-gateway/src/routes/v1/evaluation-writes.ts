@@ -93,10 +93,16 @@ function memoize<T>(c: Context, key: string, fn: () => Promise<T>): Promise<T> {
 }
 async function getMyTransactions(c: Context): Promise<UpstreamTransaction[]> {
   return memoize(c, "users/transactions", async () => {
-    const list = await callUpstream<unknown>(c, "companyProfile", "/api/v1/users/transactions");
-    return (Array.isArray(list)
-      ? list
-      : ((list as { items?: unknown[] })?.items ?? [])) as UpstreamTransaction[];
+    // §8.v3 — master-data is the source of truth.
+    const list = await callUpstream<unknown>(
+      c,
+      "masterData",
+      "/api/v1/transactions/users/user",
+      { query: { pageNumber: 1, pageSize: 100 } },
+    );
+    if (Array.isArray(list)) return list as UpstreamTransaction[];
+    const obj = list as { transactions?: unknown[]; items?: unknown[] };
+    return (obj.transactions ?? obj.items ?? []) as UpstreamTransaction[];
   });
 }
 async function assertTransactionOwnership(c: Context, transactionId: string): Promise<void> {

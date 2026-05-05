@@ -312,9 +312,14 @@ const detailRoute = createRoute({
 
 transactionsRouter.openapi(detailRoute, async (c) => {
   const { transactionId } = c.req.valid("param");
+  // §8.v3 — master-data is the canonical owner of the top-level
+  // Transaction row (writes happen there on Excel import / single-
+  // company kick-off). The legacy companyProfile call only had data
+  // from when the fly producer was creating its own per-stage rows;
+  // that path is gone now.
   const upstream = await callUpstream<z.infer<typeof TransactionShape>>(
     c,
-    "companyProfile",
+    "masterData",
     `/api/v1/transactions/${encodeURIComponent(transactionId)}`,
   );
   await assertTransactionOwnership(c, upstream as Record<string, unknown>);
@@ -541,7 +546,41 @@ transactionsRouter.openapi(errorsRoute, async (c) => {
   // Desktop-App can group + label without a second lookup. TODO upstream:
   // expose /api/v1/processing-errors/transactions/:tid on each producer.
   const producerWork = await Promise.all(
-    STAGE_UPSTREAMS.map(async ({ stage, upstream }) => {
+    STAGE_UPSTREAMS.map(async ({ stage, upstream, producer }) => {
+      // §8.v3 — local stages: synthesize errors from EntityProgress
+      // rows where state='failed'. The legacy "fan-out per company"
+      // dance was needed because producers each had their own per-
+      // (txn, company) processing-errors table; with EntityProgress
+      // we have a single SELECT per stage.
+      if (producer) {
+        const pool = getGatewayPool();
+        const res = await pool.query<{
+          companyId: string;
+          errorMessage: string | null;
+          updatedAt: Date;
+        }>(
+          `SELECT "companyId", "errorMessage", "updatedAt"
+           FROM "EntityProgress"
+           WHERE "transactionId" = $1
+             AND producer = $2
+             AND state = 'failed'`,
+          [transactionId, producer],
+        );
+        return res.rows.map((r) => ({
+          id: `${transactionId}:${producer}:${r.companyId}`,
+          transactionId,
+          companyId: r.companyId,
+          service: stage,
+          errorMessage: r.errorMessage ?? "",
+          createdAt:
+            r.updatedAt instanceof Date
+              ? r.updatedAt.toISOString()
+              : String(r.updatedAt),
+        })) as Array<Record<string, unknown>>;
+      }
+
+      // Fly stage — keep legacy per-company fan-out until the producer
+      // localizes.
       let entities: Array<Record<string, unknown>>;
       try {
         const res = await callUpstream<UpstreamEntitiesPayload>(
@@ -580,9 +619,7 @@ transactionsRouter.openapi(errorsRoute, async (c) => {
               : ((list as { items?: unknown[] })?.items ?? [])) as Array<Record<string, unknown>>;
             // Spread upstream first, then overwrite companyId/service so the
             // gateway-stamped values win even if an upstream row is missing
-            // them. `service` is the matrix stage id (`structuredContent`,
-            // `companyProfile`, …) for direct mapping to the UI's
-            // STAGE_LABEL.
+            // them.
             return arr.map((row) => ({ ...row, companyId, service: stage }));
           } catch (err) {
             logger.warn(
@@ -703,17 +740,103 @@ function normalizeRows(
   return out;
 }
 
+// §8.v3 — per-stage entity sourcing.
+//
+// Localized stages: read from gateway's EntityProgress table (MPG)
+// directly; the persist-bus writes one row per company per producer
+// on every persist event, so "what did this stage do for transaction
+// X?" is a single SELECT.
+//
+// Fly stages: still call the legacy upstream's
+// `/api/v1/transactions/:tid/entities` endpoint until those producers
+// localize (company-evaluation + company-contact). When they migrate
+// the `producer` column flips to populated and the upstream entry
+// can be deleted.
+//
+// `producer` matches the kebab-case PRODUCER_NAMES key the persist-bus
+// writes to EntityProgress.producer; `null` marks "still on fly,
+// upstream call required".
 const STAGE_UPSTREAMS: Array<{
   stage: Exclude<z.infer<typeof PipelineStage>, "masterData">;
   upstream: UpstreamName;
+  producer: string | null;
 }> = [
-  { stage: "structuredContent", upstream: "structuredContent" },
-  { stage: "companyPublication", upstream: "companyPublication" },
-  { stage: "website", upstream: "website" },
-  { stage: "companyProfile", upstream: "companyProfile" },
-  { stage: "companyContact", upstream: "companyContact" },
-  { stage: "companyEvaluation", upstream: "companyEvaluation" },
+  { stage: "structuredContent", upstream: "structuredContent", producer: "structured-content" },
+  { stage: "companyPublication", upstream: "companyPublication", producer: "company-publication" },
+  { stage: "website", upstream: "website", producer: "website" },
+  { stage: "companyProfile", upstream: "companyProfile", producer: "company-profile" },
+  { stage: "companyContact", upstream: "companyContact", producer: null },
+  { stage: "companyEvaluation", upstream: "companyEvaluation", producer: null },
 ];
+
+/**
+ * Load the entity list for a given (stage, transactionId). Local stages
+ * read from EntityProgress; fly stages still fall through to the
+ * upstream call.
+ *
+ * Shape returned matches `EntityTransactionShape` (the format the
+ * downstream fan-out logic expects). For local stages we synthesize
+ * `id`/`createdAt`/`finishedAt` from the EntityProgress row.
+ */
+async function loadStageEntities(
+  c: Context,
+  transactionId: string,
+  upstream: UpstreamName,
+  producer: string | null,
+): Promise<Array<z.infer<typeof EntityTransactionShape>>> {
+  if (producer) {
+    // Local stage — read from EntityProgress.
+    const pool = getGatewayPool();
+    const res = await pool.query<{
+      companyId: string;
+      state: string;
+      errorMessage: string | null;
+      updatedAt: Date;
+    }>(
+      `SELECT "companyId", state, "errorMessage", "updatedAt"
+       FROM "EntityProgress"
+       WHERE "transactionId" = $1 AND producer = $2`,
+      [transactionId, producer],
+    );
+    return res.rows.map((r) => {
+      const updatedAt =
+        r.updatedAt instanceof Date
+          ? r.updatedAt.toISOString()
+          : String(r.updatedAt);
+      const stateNarrow: z.infer<typeof EntityTransactionShape>["state"] =
+        r.state === "completed" ||
+        r.state === "failed" ||
+        r.state === "skipped" ||
+        r.state === "in_progress" ||
+        r.state === "pending"
+          ? r.state
+          : "pending";
+      const isTerminal =
+        stateNarrow === "completed" ||
+        stateNarrow === "failed" ||
+        stateNarrow === "skipped";
+      return {
+        id: `${transactionId}:${producer}:${r.companyId}`,
+        transactionId,
+        companyId: r.companyId,
+        state: stateNarrow,
+        finishedAt: isTerminal ? updatedAt : null,
+        createdAt: updatedAt,
+        updatedAt,
+      };
+    });
+  }
+  // Fly stage — upstream call.
+  const res = await callUpstream<UpstreamEntitiesPayload>(
+    c,
+    upstream,
+    `/api/v1/transactions/${encodeURIComponent(transactionId)}/entities`,
+    { query: { pageNumber: 1, pageSize: 10000 } },
+  );
+  return normalizeRows(pickRows(res)) as Array<
+    z.infer<typeof EntityTransactionShape>
+  >;
+}
 
 const ALL_STAGES: Array<z.infer<typeof PipelineStage>> = [
   "masterData",
@@ -761,15 +884,14 @@ transactionsRouter.openapi(pipelineRoute, async (c) => {
   // pageSize=10000 — typical excel-import transactions are ≤ a few hundred
   // companies; if this ever exceeds 10k we add cursoring.
   const fanOut = await Promise.all(
-    STAGE_UPSTREAMS.map(async ({ stage, upstream }) => {
+    STAGE_UPSTREAMS.map(async ({ stage, upstream, producer }) => {
       try {
-        const res = await callUpstream<UpstreamEntitiesPayload>(
+        const items = (await loadStageEntities(
           c,
+          transactionId,
           upstream,
-          `/api/v1/transactions/${encodeURIComponent(transactionId)}/entities`,
-          { query: { pageNumber: 1, pageSize: 10000 } },
-        );
-        const items = normalizeRows(pickRows(res)) as EntityRow[];
+          producer,
+        )) as EntityRow[];
         return { stage, available: true as const, items };
       } catch (err) {
         // Don't poison the whole matrix — log and mark the stage unavailable.
@@ -778,10 +900,11 @@ transactionsRouter.openapi(pipelineRoute, async (c) => {
             err,
             stage,
             upstream,
+            producer,
             transactionId,
             requestId: c.get("requestId"),
           },
-          "pipeline fan-out: stage upstream failed",
+          "pipeline fan-out: stage entities load failed",
         );
         return { stage, available: false as const, items: [] as EntityRow[] };
       }
@@ -1122,12 +1245,56 @@ async function getTransactionEntitiesAll(
   transactionId: string,
 ): Promise<Array<Record<string, unknown>>> {
   return memoize(c, `entities-all:${transactionId}`, async () => {
+    // §8.v3 — read from EntityProgress directly. The single (txn, company)
+    // lookup that calls this (entityDetailRoute) is satisfied by the
+    // distinct companies present in EntityProgress, regardless of which
+    // producer wrote them. Fall back to the legacy companyProfile upstream
+    // so pre-§8.v3 transactions still resolve.
+    const pool = getGatewayPool();
+    const localRes = await pool.query<{
+      companyId: string;
+      state: string;
+      errorMessage: string | null;
+      updatedAt: Date;
+    }>(
+      `SELECT DISTINCT ON ("companyId")
+         "companyId", state, "errorMessage", "updatedAt"
+       FROM "EntityProgress"
+       WHERE "transactionId" = $1
+       ORDER BY "companyId",
+         CASE state
+           WHEN 'failed' THEN 0
+           WHEN 'skipped' THEN 1
+           WHEN 'completed' THEN 2
+           ELSE 3
+         END,
+         "updatedAt" DESC`,
+      [transactionId],
+    );
+    if ((localRes.rowCount ?? 0) > 0) {
+      return localRes.rows.map((r) => {
+        const updatedAt =
+          r.updatedAt instanceof Date
+            ? r.updatedAt.toISOString()
+            : String(r.updatedAt);
+        return {
+          id: `${transactionId}:${r.companyId}`,
+          transactionId,
+          companyId: r.companyId,
+          state: r.state,
+          finishedAt: updatedAt,
+          createdAt: updatedAt,
+          updatedAt,
+        };
+      });
+    }
+    // Legacy fallback for pre-§8.v3 transactions.
     const upstream = await callUpstream<UpstreamEntitiesPayload>(
       c,
       "companyProfile",
       `/api/v1/transactions/${encodeURIComponent(transactionId)}/entities`,
       { query: { pageNumber: 1, pageSize: 1000 } },
-    );
+    ).catch(() => ({ items: [] }) as UpstreamEntitiesPayload);
     return normalizeRows(pickRows(upstream)) as Array<Record<string, unknown>>;
   });
 }

@@ -345,16 +345,76 @@ const publicationsRoute = createRoute({
   },
 });
 
+// §8.v3 — direct MPG read (see profileRoute above). The four 1:1 child
+// tables (Sales/Revenue/TotalAssetsVolume + StateOfAffairsAggregate)
+// LEFT JOIN against the parent so a publication with missing children
+// still surfaces. StateOfAffairs is JSONB upstream; we pass it through
+// untyped (the renderer reads inner fields like topic/bullets/kpis).
 companiesRouter.openapi(publicationsRoute, async (c) => {
   const { companyId } = c.req.valid("param");
-  const upstream = await callUpstream<unknown>(
-    c,
-    "companyPublication",
-    `/api/v1/company-publications/${encodeURIComponent(companyId)}`,
+  const pool = getProducerPool("company-publication");
+  const rows = await pool.query<{
+    companyId: string;
+    name: string | null;
+    year: number | null;
+    begin: Date | null;
+    end: Date | null;
+    employeeCount: number | null;
+    createdAt: Date;
+    updatedAt: Date;
+    salesValue: string | null;
+    salesCurrency: string | null;
+    revenueValue: string | null;
+    revenueCurrency: string | null;
+    totalAssetsValue: string | null;
+    totalAssetsCurrency: string | null;
+    stateOfAffairs: unknown;
+  }>(
+    `SELECT
+       cp."companyId", cp.name, cp.year, cp."begin", cp."end",
+       cp."employeeCount", cp."createdAt", cp."updatedAt",
+       sv.value::text AS "salesValue", sv.currency AS "salesCurrency",
+       rv.value::text AS "revenueValue", rv.currency AS "revenueCurrency",
+       tv.value::text AS "totalAssetsValue", tv.currency AS "totalAssetsCurrency",
+       soa.data AS "stateOfAffairs"
+     FROM "CompanyPublication" cp
+     LEFT JOIN "SalesVolume" sv ON sv."companyPublicationId" = cp.id
+     LEFT JOIN "RevenueVolume" rv ON rv."companyPublicationId" = cp.id
+     LEFT JOIN "TotalAssetsVolume" tv ON tv."companyPublicationId" = cp.id
+     LEFT JOIN "StateOfAffairsAggregate" soa ON soa."companyPublicationId" = cp.id
+     WHERE cp."companyId" = $1
+     ORDER BY cp.year DESC NULLS LAST, cp.name`,
+    [companyId],
   );
-  const items = (Array.isArray(upstream)
-    ? upstream
-    : ((upstream as { items?: unknown[] })?.items ?? [])) as Array<z.infer<typeof CompanyPublicationShape>>;
+  const items: Array<z.infer<typeof CompanyPublicationShape>> = rows.rows.map(
+    (r) => ({
+      companyId: r.companyId,
+      name: r.name ?? null,
+      year: r.year ?? null,
+      begin: r.begin ? r.begin.toISOString() : null,
+      end: r.end ? r.end.toISOString() : null,
+      employeeCount: r.employeeCount ?? null,
+      salesVolume: r.salesValue
+        ? { value: Number(r.salesValue), currency: r.salesCurrency ?? "EURO" }
+        : null,
+      revenueVolume: r.revenueValue
+        ? {
+            value: Number(r.revenueValue),
+            currency: r.revenueCurrency ?? "EURO",
+          }
+        : null,
+      totalAssetsVolume: r.totalAssetsValue
+        ? {
+            value: Number(r.totalAssetsValue),
+            currency: r.totalAssetsCurrency ?? "EURO",
+          }
+        : null,
+      stateOfAffairs:
+        (r.stateOfAffairs as z.infer<typeof CompanyPublicationShape>["stateOfAffairs"]) ?? null,
+      createdAt: r.createdAt.toISOString(),
+      updatedAt: r.updatedAt.toISOString(),
+    }),
+  );
   return c.json({ items }, 200);
 });
 

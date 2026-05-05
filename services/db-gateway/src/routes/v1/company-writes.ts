@@ -1,6 +1,6 @@
 import { OpenAPIHono, createRoute } from "@hono/zod-openapi";
+import { HTTPException } from "hono/http-exception";
 import { requireScope } from "../../middleware/auth";
-import { callUpstream } from "../../lib/upstream";
 import {
   CompanyIdParam,
   CompanyProfileShape,
@@ -11,28 +11,29 @@ import {
   ErrorShape,
   WebsiteShape,
 } from "./schemas";
-import { z } from "@hono/zod-openapi";
 
 // =============================================================================
-// §5.3 Manual corrections (W23, W24, W25).
+// §5.3 Manual corrections (W23, W24, W25) — STUBBED FOR §8.v3.
 //
-// Three "re-scrape" upserts the desktop client triggers when an analyst
-// notices a row needs refreshing. Each one fans out to a different upstream
-// service (company-profile / website / company-publication) and each one
-// already exists upstream as the same command master-data fires through the
-// CloudEvent fan-out — these gateway routes just expose the *manual* trigger
-// path the desktop UI needs.
+// These three "re-scrape this single company" trigger routes used to call
+// fly's company-profile / website / company-publication upstream. With those
+// fly apps decommissioned (§8.v3) and the producers running locally on the
+// user's desktop, the correct path is for the gateway to publish an AMQP
+// work event the local producer subscribes to.
 //
-// Spec ↔ upstream drift (DESKTOP_DATA_FLOW.md §5.3 was aspirational):
-//   - profile: spec implies "upsert profile fields"; upstream actually
-//     re-fetches a URL ({companyId,url}). Adopted upstream — desktop sends
-//     just `url`, gateway injects companyId from the path.
-//   - website: upstream wants {companyId, companyName, street, zipCode,
-//     city}; not field-level edits. Adopted upstream.
-//   - publications: spec was `/publications/:year` (per-year row); upstream
-//     scrapes ALL years for the company in one shot. Path simplified to
-//     `/publications` (no :year). Per-year manual edit is upstream work
-//     tracked in §11.
+// We haven't built that publish path yet — the desktop UI doesn't currently
+// expose the manual re-scrape buttons (see desktop CompanyDetail.tsx — only
+// GETs against the read endpoints). Until it does, returning 501 Not
+// Implemented is honest: the route exists in the OpenAPI spec but the
+// trigger path is pending.
+//
+// When the desktop adds the re-scrape buttons, replace each handler with:
+//   - Build the same CloudEvent the legacy producer's controller built
+//     (e.g. `website.upsertCompanyProfile` for profile)
+//   - Publish via a shared gateway AMQPClient (mirrors master-data's
+//     consolidated publisher)
+//   - Return 202 Accepted; the persist event flow + EntityProgress write
+//     surface completion via SSE / the entities endpoint
 //
 // Companies are global per D2 — no per-tenant ownership column on company
 // entities. JWT scope+tenant gate is the protection here.
@@ -78,20 +79,14 @@ const profileUpsertRoute = createRoute({
 });
 
 companyWritesRouter.openapi(profileUpsertRoute, async (c) => {
-  const { companyId } = c.req.valid("param");
-  const { url, isSkippable } = c.req.valid("json");
-
-  // Upstream is POST + body, with isSkippable on the query string.
-  const upstream = await callUpstream<z.infer<typeof CompanyProfileShape> | undefined>(
-    c,
-    "companyProfile",
-    `/api/v1/company-profiles${
-      isSkippable !== undefined ? `?isSkippable=${isSkippable ? "true" : "false"}` : ""
-    }`,
-    { method: "POST", body: { companyId, url } },
-  );
-  if (!upstream) return c.body(null, 204);
-  return c.json(upstream, 200);
+  // §8.v3 — upstream fly company-profile is gone; AMQP publish path is
+  // not yet built (see file header). Return 501 so callers see "not
+  // implemented" rather than a 502.
+  void c.req.valid("param");
+  void c.req.valid("json");
+  throw new HTTPException(501, {
+    message: "company-profile re-scrape trigger pending §8.v3 AMQP publish path",
+  });
 });
 
 // ---- PUT /v1/companies/:companyId/website ----------------------------------
@@ -116,19 +111,11 @@ const websiteUpsertRoute = createRoute({
 });
 
 companyWritesRouter.openapi(websiteUpsertRoute, async (c) => {
-  const { companyId } = c.req.valid("param");
-  const { companyName, street, zipCode, city, isSkippable } = c.req.valid("json");
-
-  const upstream = await callUpstream<z.infer<typeof WebsiteShape> | undefined>(
-    c,
-    "website",
-    `/api/v1/websites${
-      isSkippable !== undefined ? `?isSkippable=${isSkippable ? "true" : "false"}` : ""
-    }`,
-    { method: "PUT", body: { companyId, companyName, street, zipCode, city } },
-  );
-  if (!upstream) return c.body(null, 204);
-  return c.json(upstream, 200);
+  void c.req.valid("param");
+  void c.req.valid("json");
+  throw new HTTPException(501, {
+    message: "website re-scrape trigger pending §8.v3 AMQP publish path",
+  });
 });
 
 // ---- PUT /v1/companies/:companyId/publications -----------------------------
@@ -163,14 +150,9 @@ const publicationsUpsertRoute = createRoute({
 });
 
 companyWritesRouter.openapi(publicationsUpsertRoute, async (c) => {
-  const { companyId } = c.req.valid("param");
-  const { companyName, companyLocation } = c.req.valid("json");
-
-  const upstream = await callUpstream<z.infer<typeof CompanyPublicationShape>>(
-    c,
-    "companyPublication",
-    "/api/v1/company-publications",
-    { method: "PUT", body: { companyId, companyName, companyLocation } },
-  );
-  return c.json(upstream, 200);
+  void c.req.valid("param");
+  void c.req.valid("json");
+  throw new HTTPException(501, {
+    message: "publications re-scrape trigger pending §8.v3 AMQP publish path",
+  });
 });
