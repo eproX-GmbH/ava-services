@@ -1163,9 +1163,17 @@ class PersistBus {
         // the underlying amqplib channel that @ava/event holds private.
         // Acceptable — we're already coupled to the exact AMQPClient
         // implementation by virtue of vendoring it.
-        const channel = (
-          client as unknown as { _channel: import("amqplib").Channel }
-        )._channel;
+        // Structural type — we don't depend on @types/amqplib (only
+        // @ava/event has it transitively). The two methods we need.
+        type RawChannel = {
+          consume: (
+            queue: string,
+            handler: (msg: { content: Buffer } | null) => void,
+          ) => Promise<unknown>;
+          ack: (msg: { content: Buffer }) => void;
+        };
+        const channel = (client as unknown as { _channel: RawChannel })
+          ._channel;
         await channel.consume(binding.queue, async (msg) => {
           if (!msg) return;
           let event: CloudEvent<PersistEvent<unknown>>;
