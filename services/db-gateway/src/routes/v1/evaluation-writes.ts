@@ -135,23 +135,13 @@ const bestMatchCreateRoute = createRoute({
 });
 
 evaluationWritesRouter.openapi(bestMatchCreateRoute, async (c) => {
-  const body = c.req.valid("json");
-
-  // If the caller scopes the job to a transaction, verify they own it.
-  if (body.transactionId) {
-    await assertTransactionOwnership(c, body.transactionId);
-  }
-
-  const upstream = await callUpstream<{ bestMatchJobId?: string } | null>(
-    c,
-    "companyEvaluation",
-    "/api/v1/best-match",
-    { method: "POST", body },
-  );
-  if (!upstream?.bestMatchJobId) {
-    throw new HTTPException(502, { message: "upstream missing bestMatchJobId" });
-  }
-  return c.json({ bestMatchJobId: upstream.bestMatchJobId }, 202);
+  // §8.v3 Phase 2c — write path needs async rewiring (gateway publish + local
+  // company-evaluation compute-worker subscribe). Until that lands, returning
+  // 501 instead of proxying to a destroyed fly app.
+  void c.req.valid("json");
+  throw new HTTPException(501, {
+    message: "best-match POST pending §8.v3 async rewire",
+  });
 });
 
 // ---- POST /v1/evaluations/offer-analysis -----------------------------------
@@ -174,17 +164,13 @@ const offerAnalysisRoute = createRoute({
 });
 
 evaluationWritesRouter.openapi(offerAnalysisRoute, async (c) => {
-  const body = c.req.valid("json");
-  const upstream = await callUpstream<{ bestMatchJobId?: string } | null>(
-    c,
-    "companyEvaluation",
-    "/api/v1/best-match/offer-analysis",
-    { method: "POST", body },
-  );
-  if (!upstream?.bestMatchJobId) {
-    throw new HTTPException(502, { message: "upstream missing bestMatchJobId" });
-  }
-  return c.json({ bestMatchJobId: upstream.bestMatchJobId }, 202);
+  // §8.v3 Phase 2c — write path needs async rewiring (gateway publish + local
+  // company-evaluation compute-worker subscribe). Until that lands, returning
+  // 501 instead of proxying to a destroyed fly app.
+  void c.req.valid("json");
+  throw new HTTPException(501, {
+    message: "offer-analysis POST pending §8.v3 async rewire",
+  });
 });
 
 // ---- POST /v1/evaluations/best-matches/:bestMatchId/feedback ---------------
@@ -205,15 +191,13 @@ const bestMatchFeedbackRoute = createRoute({
 });
 
 evaluationWritesRouter.openapi(bestMatchFeedbackRoute, async (c) => {
-  const { bestMatchId } = c.req.valid("param");
-  const body = c.req.valid("json");
-  await callUpstream(
-    c,
-    "companyEvaluation",
-    `/api/v1/best-match/${encodeURIComponent(bestMatchId)}/feedback`,
-    { method: "POST", body },
-  );
-  return c.body(null, 204);
+  // §8.v3 Phase 2c — write path needs async rewiring (gateway publish + local
+  // company-evaluation compute-worker subscribe). Until that lands, returning
+  // 501 instead of proxying to a destroyed fly app.
+  void c.req.valid("json");
+  throw new HTTPException(501, {
+    message: "best-match feedback POST pending §8.v3 async rewire",
+  });
 });
 
 // =============================================================================
@@ -240,16 +224,13 @@ const chatCreateRoute = createRoute({
 });
 
 evaluationWritesRouter.openapi(chatCreateRoute, async (c) => {
-  const body = c.req.valid("json");
-  await assertTransactionOwnership(c, body.transactionId);
-
-  const upstream = await callUpstream<Record<string, unknown>>(
-    c,
-    "companyEvaluation",
-    "/api/v1/chats",
-    { method: "POST", body },
-  );
-  return c.json(upstream as z.infer<typeof ChatCreateResponse>, 202);
+  // §8.v3 Phase 2c — write path needs async rewiring (gateway publish + local
+  // company-evaluation compute-worker subscribe). Until that lands, returning
+  // 501 instead of proxying to a destroyed fly app.
+  void c.req.valid("json");
+  throw new HTTPException(501, {
+    message: "chat session POST pending §8.v3 async rewire",
+  });
 });
 
 // ---- POST /v1/evaluations/chats/:sessionId/messages ------------------------
@@ -273,19 +254,13 @@ const chatMessageCreateRoute = createRoute({
 });
 
 evaluationWritesRouter.openapi(chatMessageCreateRoute, async (c) => {
-  const { sessionId } = c.req.valid("param");
-  const { question, scopeCompanyIds, topK } = c.req.valid("json");
-
-  // Re-key `question` → `message` for upstream. (Same v0 ownership trade-off
-  // as the read side: chat-session table has no userId column — JWT
-  // scope+tenant gate only. Tracked as upstream follow-up in §11.)
-  const upstream = await callUpstream<Record<string, unknown>>(
-    c,
-    "companyEvaluation",
-    `/api/v1/chats/transactions/sessions/${encodeURIComponent(sessionId)}`,
-    { method: "POST", body: { message: question, scopeCompanyIds, topK } },
-  );
-  return c.json(upstream as z.infer<typeof ChatMessageCreateResponse>, 202);
+  // §8.v3 Phase 2c — write path needs async rewiring (gateway publish + local
+  // company-evaluation compute-worker subscribe). Until that lands, returning
+  // 501 instead of proxying to a destroyed fly app.
+  void c.req.valid("json");
+  throw new HTTPException(501, {
+    message: "chat message POST pending §8.v3 async rewire",
+  });
 });
 
 // =============================================================================
@@ -312,14 +287,13 @@ const clusterCreateRoute = createRoute({
 });
 
 evaluationWritesRouter.openapi(clusterCreateRoute, async (c) => {
-  const body = c.req.valid("json");
-  const upstream = await callUpstream<Record<string, unknown>>(
-    c,
-    "companyEvaluation",
-    "/api/v1/clusters/cluster/k-means",
-    { method: "POST", body },
-  );
-  return c.json(upstream as z.infer<typeof ClusterCreateResponse>, 202);
+  // §8.v3 Phase 2c — write path needs async rewiring (gateway publish + local
+  // company-evaluation compute-worker subscribe). Until that lands, returning
+  // 501 instead of proxying to a destroyed fly app.
+  void c.req.valid("json");
+  throw new HTTPException(501, {
+    message: "k-means cluster POST pending §8.v3 async rewire",
+  });
 });
 
 // =============================================================================
@@ -346,15 +320,11 @@ const comparisonCreateRoute = createRoute({
 });
 
 evaluationWritesRouter.openapi(comparisonCreateRoute, async (c) => {
-  const body = c.req.valid("json");
-  const upstream = await callUpstream<{ comparisonJobId?: string } | null>(
-    c,
-    "companyEvaluation",
-    "/api/v1/comparisons",
-    { method: "POST", body },
-  );
-  if (!upstream?.comparisonJobId) {
-    throw new HTTPException(502, { message: "upstream missing comparisonJobId" });
-  }
-  return c.json({ comparisonJobId: upstream.comparisonJobId }, 202);
+  // §8.v3 Phase 2c — write path needs async rewiring (gateway publish + local
+  // company-evaluation compute-worker subscribe). Until that lands, returning
+  // 501 instead of proxying to a destroyed fly app.
+  void c.req.valid("json");
+  throw new HTTPException(501, {
+    message: "comparison POST pending §8.v3 async rewire",
+  });
 });

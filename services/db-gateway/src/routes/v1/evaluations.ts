@@ -3,6 +3,7 @@ import type { Context } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { requireScope } from "../../middleware/auth";
 import { callUpstream } from "../../lib/upstream";
+import { getProducerPool } from "../../lib/producer-pools";
 import {
   BestMatchIdParam,
   BestMatchShape,
@@ -127,24 +128,84 @@ const bestMatchesListRoute = createRoute({
   },
 });
 
+// §8.v3 Phase 2c — MPG-direct read. Two queries: page of best-match
+// jobs (transactionId-filtered), then the result rows for each. The
+// company-evaluation producer's `BestMatchJob` table is the canonical
+// store; rows land here via the legacy POST endpoint today (which is
+// stubbed 501 in evaluation-writes.ts under Phase 2c — see there).
+// Existing rows from before §8.v3 cutover continue to surface.
 evaluationsRouter.openapi(bestMatchesListRoute, async (c) => {
   const { transactionId, page, pageSize } = c.req.valid("query");
-
   await assertTransactionOwnership(c, transactionId);
 
-  // Upstream takes pageNumber/pageSize and returns a page envelope.
-  const upstream = await callUpstream<{
-    bestMatches?: Array<Record<string, unknown>>;
-    count?: number;
+  const pool = getProducerPool("company-evaluation");
+  const offset = (page - 1) * pageSize;
+
+  const totalRes = await pool.query<{ total: string }>(
+    `SELECT COUNT(*)::text AS total
+     FROM "BestMatchJob"
+     WHERE "transactionId" = $1`,
+    [transactionId],
+  );
+  const total = Number(totalRes.rows[0]?.total ?? "0");
+
+  const jobsRes = await pool.query<{
+    id: string;
+    input: string;
+    transactionId: string | null;
+    createdAt: Date;
+    updatedAt: Date;
   }>(
-    c,
-    "companyEvaluation",
-    `/api/v1/best-match/transactions/${encodeURIComponent(transactionId)}`,
-    { query: { pageNumber: page, pageSize } },
+    `SELECT id, input, "transactionId", "createdAt", "updatedAt"
+     FROM "BestMatchJob"
+     WHERE "transactionId" = $1
+     ORDER BY "createdAt" DESC
+     LIMIT $2 OFFSET $3`,
+    [transactionId, pageSize, offset],
   );
 
-  const items = (upstream?.bestMatches ?? []) as Array<z.infer<typeof BestMatchShape>>;
-  return c.json({ items, page, pageSize, total: upstream?.count ?? items.length }, 200);
+  // Pull result rows for the page in one query.
+  const jobIds = jobsRes.rows.map((r) => r.id);
+  const resultsByJob = new Map<string, Array<z.infer<typeof BestMatchShape>["results"][number]>>();
+  if (jobIds.length > 0) {
+    const resultsRes = await pool.query<{
+      id: string;
+      bestMatchJobId: string;
+      companyId: string | null;
+      explanation: string | null;
+      score: number | null;
+    }>(
+      `SELECT id, "bestMatchJobId", "companyId", explanation, score
+       FROM "BestMatchJobResult"
+       WHERE "bestMatchJobId" = ANY($1::text[])`,
+      [jobIds],
+    );
+    for (const r of resultsRes.rows) {
+      let arr = resultsByJob.get(r.bestMatchJobId);
+      if (!arr) {
+        arr = [];
+        resultsByJob.set(r.bestMatchJobId, arr);
+      }
+      arr.push({
+        id: r.id,
+        companyId: r.companyId,
+        explanation: r.explanation,
+        score: r.score,
+        signals: null,
+        matchFeedback: null,
+      });
+    }
+  }
+
+  const items: Array<z.infer<typeof BestMatchShape>> = jobsRes.rows.map((j) => ({
+    id: j.id,
+    input: j.input,
+    transactionId: j.transactionId,
+    results: resultsByJob.get(j.id) ?? [],
+    createdAt: j.createdAt.toISOString(),
+    updatedAt: j.updatedAt.toISOString(),
+  }));
+  return c.json({ items, page, pageSize, total }, 200);
 });
 
 // ---- GET /v1/evaluations/best-matches/:bestMatchId -------------------------
@@ -163,19 +224,60 @@ const bestMatchDetailRoute = createRoute({
 
 evaluationsRouter.openapi(bestMatchDetailRoute, async (c) => {
   const { bestMatchId } = c.req.valid("param");
-  const upstream = await callUpstream<z.infer<typeof BestMatchShape>>(
-    c,
-    "companyEvaluation",
-    `/api/v1/best-match/${encodeURIComponent(bestMatchId)}`,
-  );
+  const pool = getProducerPool("company-evaluation");
 
-  // Upstream attaches `transactionId` on the row — cross-check against the
-  // caller's transactions. If upstream omits it (defensive: legacy rows),
-  // fall through; the JWT scope+tenant gate is then the only protection.
-  if (upstream?.transactionId) {
-    await assertTransactionOwnership(c, upstream.transactionId);
+  const jobRes = await pool.query<{
+    id: string;
+    input: string;
+    transactionId: string | null;
+    createdAt: Date;
+    updatedAt: Date;
+  }>(
+    `SELECT id, input, "transactionId", "createdAt", "updatedAt"
+     FROM "BestMatchJob" WHERE id = $1 LIMIT 1`,
+    [bestMatchId],
+  );
+  if (jobRes.rowCount === 0) {
+    throw new HTTPException(404, { message: "not_found" });
   }
-  return c.json(upstream, 200);
+  const job = jobRes.rows[0];
+
+  // Cross-check ownership against the caller's transactions (matches
+  // the legacy upstream's behaviour).
+  if (job.transactionId) {
+    await assertTransactionOwnership(c, job.transactionId);
+  }
+
+  const resultsRes = await pool.query<{
+    id: string;
+    companyId: string | null;
+    explanation: string | null;
+    score: number | null;
+  }>(
+    `SELECT id, "companyId", explanation, score
+     FROM "BestMatchJobResult" WHERE "bestMatchJobId" = $1`,
+    [bestMatchId],
+  );
+  const results = resultsRes.rows.map((r) => ({
+    id: r.id,
+    companyId: r.companyId,
+    explanation: r.explanation,
+    score: r.score,
+    signals: null,
+    matchFeedback: null,
+  }));
+
+  return c.json(
+    {
+      id: job.id,
+      input: job.input,
+      transactionId: job.transactionId,
+      results,
+      createdAt: job.createdAt.toISOString(),
+      updatedAt: job.updatedAt.toISOString(),
+    },
+    200,
+  );
 });
 
 // =============================================================================
@@ -201,21 +303,41 @@ const chatSessionsListRoute = createRoute({
 
 evaluationsRouter.openapi(chatSessionsListRoute, async (c) => {
   const { transactionId, page, pageSize } = c.req.valid("query");
-
   await assertTransactionOwnership(c, transactionId);
 
-  const upstream = await callUpstream<{
-    sessions?: Array<Record<string, unknown>>;
-    count?: number;
-  }>(
-    c,
-    "companyEvaluation",
-    `/api/v1/chats/transactions/${encodeURIComponent(transactionId)}`,
-    { query: { pageNumber: page, pageSize } },
-  );
+  const pool = getProducerPool("company-evaluation");
+  const offset = (page - 1) * pageSize;
 
-  const items = (upstream?.sessions ?? []) as Array<z.infer<typeof ChatSessionShape>>;
-  return c.json({ items, page, pageSize, total: upstream?.count ?? items.length }, 200);
+  const totalRes = await pool.query<{ total: string }>(
+    `SELECT COUNT(*)::text AS total FROM "ChatSession" WHERE "transactionId" = $1`,
+    [transactionId],
+  );
+  const total = Number(totalRes.rows[0]?.total ?? "0");
+
+  const rows = await pool.query<{
+    id: string;
+    transactionId: string;
+    allowedCompanyIds: string[];
+    summary: string | null;
+    createdAt: Date;
+    updatedAt: Date;
+  }>(
+    `SELECT id, "transactionId", "allowedCompanyIds", summary, "createdAt", "updatedAt"
+     FROM "ChatSession"
+     WHERE "transactionId" = $1
+     ORDER BY "createdAt" DESC
+     LIMIT $2 OFFSET $3`,
+    [transactionId, pageSize, offset],
+  );
+  const items: Array<z.infer<typeof ChatSessionShape>> = rows.rows.map((r) => ({
+    id: r.id,
+    transactionId: r.transactionId,
+    allowedCompanyIds: r.allowedCompanyIds ?? [],
+    summary: r.summary,
+    createdAt: r.createdAt.toISOString(),
+    updatedAt: r.updatedAt.toISOString(),
+  }));
+  return c.json({ items, page, pageSize, total }, 200);
 });
 
 // ---- GET /v1/evaluations/chats/:sessionId/messages -------------------------
@@ -239,25 +361,54 @@ evaluationsRouter.openapi(chatMessagesRoute, async (c) => {
   const { sessionId } = c.req.valid("param");
   const { page, pageSize } = c.req.valid("query");
 
-  // TODO ownership: upstream chat-session table has no userId column and no
-  // get-session-by-id endpoint, so we can't cheaply verify ownership without
-  // either (a) iterating the caller's transactions and listing sessions per
-  // transaction, or (b) adding a session-detail upstream endpoint. For now
-  // the JWT scope+tenant gate is the only protection — sessionId is a
-  // 128-bit opaque identifier so this is acceptable for v0; the proper fix
-  // is upstream work tracked as a Step 7 follow-up.
-  const upstream = await callUpstream<{
-    chatMessages?: Array<Record<string, unknown>>;
-    count?: number;
+  // §8.v3 Phase 2c — MPG-direct read against ChatTurn. Ownership story
+  // unchanged from the legacy upstream: ChatSession has no userId
+  // column, so we lean on JWT scope+tenant + the 128-bit opaque
+  // sessionId for the v0 trade-off.
+  const pool = getProducerPool("company-evaluation");
+  const offset = (page - 1) * pageSize;
+
+  const totalRes = await pool.query<{ total: string }>(
+    `SELECT COUNT(*)::text AS total FROM "ChatTurn" WHERE "sessionId" = $1`,
+    [sessionId],
+  );
+  const total = Number(totalRes.rows[0]?.total ?? "0");
+
+  const rows = await pool.query<{
+    id: string;
+    sessionId: string;
+    role: string;
+    content: string;
+    citations: unknown;
+    rowNumber: string;
+    createdAt: Date;
   }>(
-    c,
-    "companyEvaluation",
-    `/api/v1/chats/transactions/sessions/${encodeURIComponent(sessionId)}`,
-    { query: { pageNumber: page, pageSize } },
+    // Stable turnIndex: row_number() over chronological order. The
+    // legacy producer didn't store a turn index column either.
+    `SELECT id, "sessionId", role, content, citations,
+            ROW_NUMBER() OVER (PARTITION BY "sessionId" ORDER BY "createdAt")::text
+              AS "rowNumber",
+            "createdAt"
+     FROM "ChatTurn"
+     WHERE "sessionId" = $1
+     ORDER BY "createdAt" DESC
+     LIMIT $2 OFFSET $3`,
+    [sessionId, pageSize, offset],
   );
 
-  const items = (upstream?.chatMessages ?? []) as Array<z.infer<typeof ChatMessageShape>>;
-  return c.json({ items, page, pageSize, total: upstream?.count ?? items.length }, 200);
+  const items: Array<z.infer<typeof ChatMessageShape>> = rows.rows.map((r) => ({
+    id: r.id,
+    sessionId: r.sessionId,
+    role: (r.role === "user" || r.role === "assistant" ? r.role : "user") as
+      | "user"
+      | "assistant",
+    content: r.content,
+    citations:
+      (r.citations as z.infer<typeof ChatMessageShape>["citations"]) ?? null,
+    turnIndex: Number(r.rowNumber),
+    createdAt: r.createdAt.toISOString(),
+  }));
+  return c.json({ items, page, pageSize, total }, 200);
 });
 
 // =============================================================================
@@ -316,14 +467,53 @@ const comparisonDetailRoute = createRoute({
 evaluationsRouter.openapi(comparisonDetailRoute, async (c) => {
   const { comparisonId } = c.req.valid("param");
 
-  // TODO ownership: comparison rows upstream have no userId/transactionId
-  // field. Same v0 trade-off as chat messages above — JWT scope+tenant gate
-  // only. Upstream needs to add an ownership column (or link comparisons to
-  // a transaction) before we can verify here.
-  const upstream = await callUpstream<z.infer<typeof ComparisonShape>>(
-    c,
-    "companyEvaluation",
-    `/api/v1/comparisons/${encodeURIComponent(comparisonId)}`,
+  // §8.v3 Phase 2c — MPG-direct read. Ownership: ComparisonJob has no
+  // userId/transactionId field. JWT scope+tenant + opaque id is the
+  // v0 trade-off — same as legacy.
+  const pool = getProducerPool("company-evaluation");
+  const jobRes = await pool.query<{
+    id: string;
+    targetCompanyId: string | null;
+    companyIds: string[];
+    createdAt: Date;
+    updatedAt: Date;
+  }>(
+    `SELECT id, "targetCompanyId", "companyIds", "createdAt", "updatedAt"
+     FROM "ComparisonJob" WHERE id = $1 LIMIT 1`,
+    [comparisonId],
   );
-  return c.json(upstream, 200);
+  if (jobRes.rowCount === 0) {
+    throw new HTTPException(404, { message: "not_found" });
+  }
+  const job = jobRes.rows[0];
+
+  const rankingRes = await pool.query<{
+    id: number;
+    companyId: string;
+    order: number;
+    createdAt: Date;
+  }>(
+    `SELECT id, "companyId", "order", "createdAt"
+     FROM "ComparisonJobRanking"
+     WHERE "comparisonJobId" = $1
+     ORDER BY "order"`,
+    [comparisonId],
+  );
+
+  return c.json(
+    {
+      id: job.id,
+      targetCompanyId: job.targetCompanyId,
+      companyIds: job.companyIds ?? [],
+      ranking: rankingRes.rows.map((r) => ({
+        id: String(r.id),
+        companyId: r.companyId,
+        order: r.order,
+        createdAt: r.createdAt.toISOString(),
+      })),
+      createdAt: job.createdAt.toISOString(),
+      updatedAt: job.updatedAt.toISOString(),
+    },
+    200,
+  );
 });
