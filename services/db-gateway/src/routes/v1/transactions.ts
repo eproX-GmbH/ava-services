@@ -980,14 +980,31 @@ interface UpstreamTransaction {
 
 async function getMyTransactions(c: Context): Promise<UpstreamTransaction[]> {
   return memoize(c, "users/transactions", async () => {
+    // §8.v3 — master-data is now the single source of truth for the
+    // user-owned transaction list. Each Excel import / single-company
+    // dispatch creates a row in master-data's `Transaction` table
+    // with `userId = JWT actor`. The legacy `companyProfile` upstream
+    // we used to call only had transactions that the (now-suspended)
+    // fly company-profile producer wrote to its own DB — empty for
+    // anything dispatched after the §8.v3 cutover, so ownership
+    // checks were 403'ing every recent transaction.
+    //
+    // Master-data's response shape is paginated:
+    //   { count, transactions: [...], hasNextPage, ... }
+    // We pull `.transactions` and ignore pagination — the per-request
+    // memoize wrapper means we only fetch this once per inbound
+    // request, and the page-1 default of 10 is enough for ownership
+    // verification of any transactionId the user is asking about
+    // (chat tools always send a recent id).
     const list = await callUpstream<unknown>(
       c,
-      "companyProfile",
-      "/api/v1/users/transactions",
+      "masterData",
+      "/api/v1/transactions/users/user",
+      { query: { pageNumber: 1, pageSize: 100 } },
     );
-    return (Array.isArray(list)
-      ? list
-      : ((list as { items?: unknown[] })?.items ?? [])) as UpstreamTransaction[];
+    if (Array.isArray(list)) return list as UpstreamTransaction[];
+    const obj = list as { transactions?: unknown[]; items?: unknown[] };
+    return (obj.transactions ?? obj.items ?? []) as UpstreamTransaction[];
   });
 }
 
