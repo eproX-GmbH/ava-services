@@ -1019,8 +1019,45 @@ const applyCompanyEvaluation: ApplyFn = async (pool, event, log) => {
   }
 };
 
-/** Stub — schema + write logic land alongside each producer's
- *  localization. See todos: company-contact (Phase 3). */
+// =============================================================================
+// company-contact
+// =============================================================================
+//
+// §8.v3 Phase 3 — gateway-side reconciliation port. The desktop's
+// compute-worker scrapes + LLM-extracts raw observations (no DB), bundles
+// them into a single persist event per company per dispatch, and forwards
+// here. The reconciliation logic itself (Person identity merge, Employment
+// projection, Fact rollup, Signal emission, TTL cleanup) is the original
+// company-contact code vendored under `lib/contact-extraction/` with one
+// edit: the prisma client now points at the gateway-local
+// `ava_company_contact` MPG schema.
+//
+// Why prisma rather than raw pg: the reconciliation is the most subtle code
+// in the codebase (700+ lines of merge/score/dedup logic). A raw-pg port
+// would multiply the surface area for behaviour drift. The gateway already
+// runs against the same MPG cluster; one extra prisma client is cheap.
+//
+// Event shape: each event covers one (companyId, source) tuple. Compute can
+// emit MULTIPLE events per dispatch (one per agent: website-contact,
+// website-people, search) — apply runs independently per event. Order
+// doesn't matter because reconciliation is idempotent over observations.
+
+import type { CompanyContactPersistRequest } from "./contact-extraction-apply";
+
+const applyCompanyContact: ApplyFn = async (_pool, event, log) => {
+  // Lazy import — pulls in the prisma client + reconciliation graph only
+  // when the first contact event arrives, not at every gateway boot.
+  const { applyCompanyContactPersist } = await import(
+    "./contact-extraction-apply"
+  );
+  const data = event.data as
+    | PersistEvent<CompanyContactPersistRequest["result"]>
+    | undefined;
+  if (!data) throw new Error("empty payload");
+  await applyCompanyContactPersist(data, log);
+};
+
+/** Stub — for any future producer that lands without an apply yet. */
 const stubApply: (producer: ProducerName) => ApplyFn = (producer) =>
   async (_pool, _event, log) => {
     log.warn(
@@ -1067,7 +1104,7 @@ const BINDINGS: ProducerBinding[] = [
     producer: "company-contact",
     routingKey: "tenant.persist.company-contact.v1",
     queue: "db-gateway-persist-company-contact",
-    apply: stubApply("company-contact"),
+    apply: applyCompanyContact,
   },
   {
     producer: "website",

@@ -292,10 +292,19 @@ function buildProducer(
       databaseName: "company_evaluation",
       port: 51040,
     },
-    // Pending — re-add as each migration lands:
-    //   company-contact      port 51050 / db company_contact
-    // The fly counterpart stays running in legacy mode until the
-    // local replacement is validated end-to-end.
+    {
+      // Phase 3: thin compute-worker. BFS website crawl + LLM
+      // extracts + valueserp fallback all run here; DB writes
+      // (~700 lines of reconciliation graph) live server-side in
+      // db-gateway via the vendored prisma client + the moved
+      // lib/contact-extraction/ files.
+      name: "company-contact",
+      entry: "dist/web/api/server.js",
+      databaseName: "company_contact",
+      port: 51050,
+    },
+    // All six legacy producers now have a localized counterpart.
+    // Phase 4 cleanup destroys the suspended fly app definitions.
   ];
 
   // eslint-disable-next-line @typescript-eslint/no-require-imports

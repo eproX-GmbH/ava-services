@@ -1,0 +1,278 @@
+// §8.v3 Phase 3 — gateway-local mirror of company-contact's schema.
+//
+// Vendored from /company-contact/prisma/schema.prisma so the gateway
+// can run the reconciliation logic against MPG's `ava_company_contact`
+// database with the producer's full prisma typing intact. Migrations
+// continue to live in the company-contact repo and are applied to MPG
+// from there; this schema is read-only from the gateway's perspective
+// (we never run `prisma migrate` against this client). When the
+// company-contact schema changes, copy the new schema.prisma here +
+// `pnpm prisma generate --schema prisma-company-contact/schema.prisma`.
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../generated/company-contact-client"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("COMPANY_CONTACT_DATABASE_URL")
+  directUrl = env("COMPANY_CONTACT_DIRECT_URL")
+}
+
+enum TransactionState {
+    IN_PROGRESS
+    ERROR
+    DONE
+    INTERIM
+}
+
+model ProcessingError {
+        id                      Int             @id @default(autoincrement())
+
+        companyId               String
+        errorReason             String
+        transactionId           String?
+
+        createdAt               DateTime        @default(now())
+        updatedAt               DateTime        @updatedAt
+}
+
+model Transaction {
+    id                      String              @id
+
+    companyCount            Int
+    startTime               DateTime
+    userId                  String?
+
+    entities                EntityTransaction[]
+
+    createdAt               DateTime            @default(now())
+    updatedAt               DateTime            @updatedAt
+}
+
+model EntityTransaction {
+    id                      Int                 @id @default(autoincrement())
+    transaction             Transaction         @relation(fields: [transactionId], references: [id])
+    transactionId           String
+    entityId                String?
+
+    state                   TransactionState    @default(IN_PROGRESS)
+    finishedAt              DateTime?
+
+    createdAt               DateTime            @default(now())
+    updatedAt               DateTime            @updatedAt
+}
+
+model Company {
+  id         String   @id @unique
+  name       String?
+  websiteUrl String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  employments Employment[]
+  companyFacts Fact[]        @relation("CompanyFacts")
+  companyObservations Observation[] @relation("CompanyObservations")
+  companySignals SignalEvent[] @relation("CompanySignals")
+}
+
+model Person {
+  id         String   @id @default(cuid())
+  fullName   String
+  givenName  String?
+  familyName String?
+  location   String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  employments Employment[]
+  personFacts Fact[]        @relation("PersonFacts")
+  personObservations Observation[] @relation("PersonObservations")
+  personSignals SignalEvent[] @relation("PersonSignals")
+
+  @@index([fullName])
+}
+
+model Employment {
+  id         String   @id @default(cuid())
+  personId   String
+  companyId  String
+  title      String?
+  department String?
+  seniority  String?
+  isCurrent  Boolean  @default(true)
+  startDate  DateTime?
+  endDate    DateTime?
+  confidence Float    @default(0.6)
+  firstSeen  DateTime @default(now())
+  lastSeen   DateTime @updatedAt
+
+  person     Person   @relation(fields: [personId], references: [id], onDelete: Cascade)
+  company    Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  sources    EmploymentSource[]
+
+  @@index([personId, isCurrent])
+  @@index([companyId])
+  @@unique([personId, companyId, title, startDate])
+}
+
+model EmploymentSource {
+  id           String   @id @default(cuid())
+  employmentId String
+  source       String
+  url          String?
+  snippet      String?
+  observedAt   DateTime @default(now())
+  runId        String?
+
+  employment   Employment @relation(fields: [employmentId], references: [id], onDelete: Cascade)
+
+  @@index([employmentId])
+}
+
+model Fact {
+  id          String      @id @default(cuid())
+  entityType  EntityType
+  entityId    String
+  field       String
+  value       String
+  normalized  String
+  confidence  Float       @default(0.5)
+  status      FactStatus  @default(ACTIVE)
+  firstSeen   DateTime    @default(now())
+  lastSeen    DateTime    @updatedAt
+  lastObsId   String?
+
+  companyId   String?
+  personId    String?
+
+  company     Company?    @relation("CompanyFacts", fields: [companyId], references: [id], onDelete: Cascade)
+  person      Person?     @relation("PersonFacts", fields: [personId], references: [id], onDelete: Cascade)
+
+  observations FactObservationLink[]
+  signals      FactSignalLink[]
+
+  @@index([entityType, entityId, field])
+  @@index([companyId])
+  @@index([personId])
+  @@unique([entityType, entityId, field, normalized])
+}
+
+model Observation {
+  id          String     @id @default(cuid())
+  entityType  EntityType
+  entityId    String
+  field       String
+  value       String
+  normalized  String
+  source      String
+  evidenceUrl String?
+  evidence    String?
+  observedAt  DateTime   @default(now())
+  runId       String?
+  hash        String     @unique
+
+  companyId   String?
+  personId    String?
+
+  company     Company?   @relation("CompanyObservations", fields: [companyId], references: [id], onDelete: Cascade)
+  person      Person?    @relation("PersonObservations", fields: [personId], references: [id], onDelete: Cascade)
+
+  facts       FactObservationLink[]
+
+  @@index([entityType, entityId, field])
+  @@index([observedAt])
+  @@index([companyId])
+  @@index([personId])
+}
+
+model SignalEvent {
+  id          String      @id @default(cuid())
+  type        SignalType
+  entityType  EntityType
+  entityId    String
+  field       String?
+  before      String?
+  after       String?
+  beforeNorm  String?
+  afterNorm   String?
+  confidence  Float       @default(0.6)
+  reason      String?
+  source      String?
+  evidenceUrl String?
+  observedAt  DateTime    @default(now())
+  runId       String?
+  dedupKey    String?     @unique
+
+  companyId   String?
+  personId    String?
+
+  company     Company?    @relation("CompanySignals", fields: [companyId], references: [id], onDelete: Cascade)
+  person      Person?     @relation("PersonSignals", fields: [personId], references: [id], onDelete: Cascade)
+
+  facts       FactSignalLink[]
+
+  @@index([entityType, entityId, type])
+  @@index([observedAt])
+  @@index([companyId])
+  @@index([personId])
+}
+
+model FactObservationLink {
+  id            String      @id @default(cuid())
+  factId        String
+  observationId String
+
+  fact          Fact        @relation(fields: [factId], references: [id], onDelete: Cascade)
+  observation   Observation @relation(fields: [observationId], references: [id], onDelete: Cascade)
+
+  @@unique([factId, observationId])
+  @@index([observationId])
+}
+
+model FactSignalLink {
+  id        String     @id @default(cuid())
+  factId    String
+  signalId  String
+
+  fact      Fact       @relation(fields: [factId], references: [id], onDelete: Cascade)
+  signal    SignalEvent @relation(fields: [signalId], references: [id], onDelete: Cascade)
+
+  @@unique([factId, signalId])
+  @@index([signalId])
+}
+
+enum EntityType {
+  COMPANY
+  PERSON
+}
+
+enum FactStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum SignalType {
+  COMPANY_PHONE_CHANGED
+  COMPANY_PHONE_ADDED
+  COMPANY_PHONE_REMOVED
+  COMPANY_EMAIL_CHANGED
+  COMPANY_EMAIL_ADDED
+  COMPANY_EMAIL_REMOVED
+  COMPANY_SOCIAL_ADDED
+  COMPANY_SOCIAL_REMOVED
+  COMPANY_WEBSITE_CHANGED
+  COMPANY_ADDRESS_CHANGED
+
+  PERSON_EMPLOYER_CHANGED
+  PERSON_JOB_CHANGED
+  PERSON_PROFILE_CHANGED
+  PERSON_EMAIL_ADDED
+  PERSON_EMAIL_REMOVED
+  PERSON_PHONE_ADDED
+  PERSON_PHONE_REMOVED
+
+  FACT_RECONFIRMED
+}
