@@ -11,9 +11,11 @@
 
 import pg from "pg";
 import { logger } from "./logger";
+import { loadEnv } from "./env";
 import { buildProducerDatabaseUrl, type ProducerName } from "./db-urls";
 
 const pools = new Map<ProducerName, pg.Pool>();
+let gatewayPool: pg.Pool | undefined;
 
 export function getProducerPool(producer: ProducerName): pg.Pool {
   let pool = pools.get(producer);
@@ -32,4 +34,26 @@ export function getProducerPool(producer: ProducerName): pg.Pool {
   );
   pools.set(producer, pool);
   return pool;
+}
+
+/**
+ * Pool for the gateway's own audit database (DATABASE_URL). Hosts
+ * the AuditLog table and (since §8.v3) the EntityProgress table that
+ * the persist-bus writes per-company processing state into.
+ *
+ * Same lazy-init shape as `getProducerPool` — single shared pool,
+ * sized small to stay under pgbouncer's per-vhost cap.
+ */
+export function getGatewayPool(): pg.Pool {
+  if (gatewayPool) return gatewayPool;
+  const env = loadEnv();
+  gatewayPool = new pg.Pool({
+    connectionString: env.DATABASE_URL,
+    max: 4,
+    idleTimeoutMillis: 30_000,
+  });
+  gatewayPool.on("error", (err) =>
+    logger.error({ err, db: "gateway-audit" }, "pg pool error"),
+  );
+  return gatewayPool;
 }

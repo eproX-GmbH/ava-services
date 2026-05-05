@@ -40,7 +40,62 @@ import type pg from "pg";
 import { loadEnv } from "./env";
 import { logger } from "./logger";
 import { PRODUCER_NAMES, type ProducerName } from "./db-urls";
-import { getProducerPool } from "./producer-pools";
+import { getProducerPool, getGatewayPool } from "./producer-pools";
+
+/**
+ * Side-effect of every persist event: record per-company processing
+ * state in the gateway's audit DB. The chat agent's `import_status`
+ * tool reads this back via `/v1/transactions/:id/entities`. See
+ * §8.v3 entity-progress note in the schema.
+ *
+ * Best-effort. If the gateway's own DB is briefly unreachable we
+ * still ack the persist event — losing one progress row beats
+ * blocking the persist pipeline. The upstream consumer can re-fetch
+ * the row state from a future event if it needs to.
+ */
+async function recordEntityProgress(
+  producer: ProducerName,
+  transactionId: string,
+  companyId: string,
+  state: "completed" | "failed" | "skipped",
+  errorMessage: string | null,
+  log: typeof logger,
+): Promise<void> {
+  if (!transactionId || !companyId) {
+    log.debug(
+      { producer, transactionId, companyId, state },
+      "skipping entity-progress write (missing tx or company id)",
+    );
+    return;
+  }
+  const truncated = errorMessage ? errorMessage.slice(0, 500) : null;
+  try {
+    const pool = getGatewayPool();
+    await pool.query(
+      `INSERT INTO "EntityProgress"
+         ("transactionId", "companyId", producer, state, "errorMessage",
+          "updatedAt", "createdAt")
+       VALUES ($1, $2, $3, $4, $5, NOW(), NOW())
+       ON CONFLICT ("transactionId", "companyId", producer) DO UPDATE
+       SET state = EXCLUDED.state,
+           "errorMessage" = EXCLUDED."errorMessage",
+           "updatedAt" = EXCLUDED."updatedAt"
+       WHERE EXCLUDED."updatedAt" > "EntityProgress"."updatedAt"`,
+      [transactionId, companyId, producer, state, truncated],
+    );
+  } catch (err) {
+    // Don't propagate — best-effort.
+    log.warn(
+      {
+        err: err instanceof Error ? err.message : String(err),
+        producer,
+        transactionId,
+        companyId,
+      },
+      "entity-progress write failed",
+    );
+  }
+}
 
 /** Persist-event payload contract — emitted by local compute-workers. */
 export interface PersistEvent<TResult = unknown> {
@@ -665,11 +720,40 @@ class PersistBus {
             producer: binding.producer,
             runId: event.data?.runId ?? event.id ?? "<no-id>",
           });
+          // Pull the (transactionId, companyId) pair out of the
+          // CloudEvent envelope BEFORE the apply runs — even on a
+          // failure path we want to record the entity-progress row
+          // so `/v1/transactions/:id/entities` reflects the failed
+          // state. Compute-workers set `transaction` and `subject`
+          // on every persist event (see e.g. company-publication
+          // compute-worker.ts), but be defensive in case an event
+          // arrives without them.
+          const txId = (event as { transaction?: string }).transaction ?? "";
+          const companyId =
+            (event as { subject?: string }).subject ??
+            (event.data?.result as { companyId?: string } | undefined)?.companyId ??
+            "";
           try {
             const pool = this.getPool(binding.producer);
             await binding.apply(pool, event, log);
+            await recordEntityProgress(
+              binding.producer,
+              txId,
+              companyId,
+              "completed",
+              null,
+              log,
+            );
           } catch (err) {
             log.error({ err }, "persist handler failed");
+            await recordEntityProgress(
+              binding.producer,
+              txId,
+              companyId,
+              "failed",
+              err instanceof Error ? err.message : String(err),
+              log,
+            );
             // Swallow + ack: with last-write-wins this is idempotent,
             // and a redelivery loop on a poisoned event would block
             // the queue. Ops can replay from the work queue if a

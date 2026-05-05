@@ -5,6 +5,7 @@ import { streamSSE } from "hono/streaming";
 import { requireScope } from "../../middleware/auth";
 import { callUpstream } from "../../lib/upstream";
 import { transactionProgressBus } from "../../lib/event-bus";
+import { getGatewayPool } from "../../lib/producer-pools";
 import { logger } from "../../lib/logger";
 import {
   getTransactionName,
@@ -348,17 +349,125 @@ transactionsRouter.openapi(entitiesRoute, async (c) => {
 
   await assertTransactionOwnershipById(c, transactionId);
 
-  const upstream = await callUpstream<UpstreamEntitiesPayload>(
-    c,
-    "companyProfile",
-    `/api/v1/transactions/${encodeURIComponent(transactionId)}/entities`,
-    { query: { pageNumber: page, pageSize } },
+  // §8.v3 — read per-company state from the gateway's own
+  // EntityProgress table. Each `tenant.persist.<producer>.v1`
+  // event arrival writes a row; we aggregate the per-producer
+  // rows into a single per-company state here.
+  //
+  // Roll-up rule: failed > skipped > completed. Skipped because a
+  // single producer skipping doesn't fail the company; completed
+  // because we want optimistic "done" reporting (the chat tool
+  // counts buckets and this matches user expectations). If at
+  // least one producer for a company has shipped, the company is
+  // considered to have made progress — which is the most useful
+  // signal during a long import.
+  //
+  // Pre-§8.v3 transactions (from before the gateway started
+  // recording) won't have rows here. For those we fall back to the
+  // legacy fly company-profile upstream so old transactions still
+  // report state.
+  const pool = getGatewayPool();
+  const offset = (page - 1) * pageSize;
+
+  // First: total distinct companies for this transaction (no
+  // pagination on the count). One row per company even if it has
+  // multiple producer rows.
+  const totalRes = await pool.query<{ total: string }>(
+    `SELECT COUNT(DISTINCT "companyId")::text AS total
+     FROM "EntityProgress"
+     WHERE "transactionId" = $1`,
+    [transactionId],
+  );
+  const localTotal = Number(totalRes.rows[0]?.total ?? "0");
+
+  if (localTotal === 0) {
+    // No rows yet — either pre-§8.v3 transaction or a fresh
+    // dispatch where no producer has finished its first company.
+    // Defer to the legacy upstream so old transactions still work;
+    // the result will be empty for fresh ones, which is correct
+    // (zero entities done, total comes from master-data elsewhere).
+    const upstream = await callUpstream<UpstreamEntitiesPayload>(
+      c,
+      "companyProfile",
+      `/api/v1/transactions/${encodeURIComponent(transactionId)}/entities`,
+      { query: { pageNumber: page, pageSize } },
+    ).catch((err: unknown) => {
+      // Fly company-profile may be suspended (it is, in §8.v3).
+      // Return an empty page rather than 502 the caller — they get
+      // honest "no entities yet" rather than a hard error.
+      logger.warn(
+        { err, transactionId },
+        "entities upstream call failed; returning empty page",
+      );
+      return { items: [] } as UpstreamEntitiesPayload;
+    });
+    const items = normalizeRows(pickRows(upstream));
+    const total = pickTotal(upstream, items.length);
+    return c.json({ items, page, pageSize, total }, 200);
+  }
+
+  // Aggregate per-company state. We pick the worst observed state
+  // (failed > skipped > completed) and the latest errorMessage +
+  // updatedAt for that bucket.
+  const rowsRes = await pool.query<{
+    companyId: string;
+    state: string;
+    errorMessage: string | null;
+    updatedAt: Date;
+  }>(
+    `SELECT DISTINCT ON ("companyId")
+       "companyId",
+       state,
+       "errorMessage",
+       "updatedAt"
+     FROM "EntityProgress"
+     WHERE "transactionId" = $1
+     ORDER BY "companyId",
+       CASE state
+         WHEN 'failed' THEN 0
+         WHEN 'skipped' THEN 1
+         WHEN 'completed' THEN 2
+         ELSE 3
+       END,
+       "updatedAt" DESC
+     LIMIT $2 OFFSET $3`,
+    [transactionId, pageSize, offset],
   );
 
-  const items = normalizeRows(pickRows(upstream));
-  const total = pickTotal(upstream, items.length);
+  // Conform to EntityTransactionShape — same envelope the legacy
+  // upstream produced. Fields the gateway-side EntityProgress
+  // doesn't track yet (id, finishedAt) are synthesized: id from
+  // (transactionId, companyId), finishedAt from updatedAt for
+  // terminal states.
+  const items = rowsRes.rows.map((r) => {
+    const updatedAt =
+      r.updatedAt instanceof Date
+        ? r.updatedAt.toISOString()
+        : String(r.updatedAt);
+    const stateNarrow: "completed" | "failed" | "skipped" | "pending" | "in_progress" =
+      r.state === "completed" ||
+      r.state === "failed" ||
+      r.state === "skipped" ||
+      r.state === "in_progress" ||
+      r.state === "pending"
+        ? r.state
+        : "pending";
+    const isTerminal =
+      stateNarrow === "completed" ||
+      stateNarrow === "failed" ||
+      stateNarrow === "skipped";
+    return {
+      id: `${transactionId}:${r.companyId}`,
+      transactionId,
+      companyId: r.companyId,
+      state: stateNarrow,
+      finishedAt: isTerminal ? updatedAt : null,
+      createdAt: updatedAt,
+      updatedAt,
+    };
+  });
 
-  return c.json({ items, page, pageSize, total }, 200);
+  return c.json({ items, page, pageSize, total: localTotal }, 200);
 });
 
 // ---- GET /v1/transactions/:transactionId/entities/:companyId ---------------

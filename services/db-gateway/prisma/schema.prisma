@@ -17,6 +17,35 @@ datasource db {
   directUrl = env("DIRECT_URL")
 }
 
+/// Per-company processing state across the producer chain (§8.v3).
+///
+/// One row per (transactionId, companyId, producer) — composite PK.
+/// Persist-bus writes here as a side effect of applying each
+/// `tenant.persist.<producer>.v1` event: state="completed" on a
+/// successful upsert, state="failed" + errorMessage when the apply
+/// throws. Compute-only producers don't need to know about this
+/// table; the gateway derives entity state from event arrival.
+///
+/// Reads: `/v1/transactions/:id/entities` aggregates rows per
+/// (transactionId, companyId) into a single per-company state — the
+/// chat agent's `import_status` tool counts those buckets to answer
+/// "how far is the import?". Pre-§8.v3 transactions whose entities
+/// only ever existed in the legacy fly company-profile DB will show
+/// up empty here; the gateway's entities route falls back to the
+/// upstream call in that case so old transactions still report.
+model EntityProgress {
+  transactionId String
+  companyId     String
+  producer      String // matches PRODUCER_NAMES (lib/db-urls.ts)
+  state         String // completed | failed | skipped
+  errorMessage  String? // truncated to 500 chars at insert time
+  updatedAt     DateTime
+  createdAt     DateTime @default(now())
+
+  @@id([transactionId, companyId, producer])
+  @@index([transactionId])
+}
+
 /// Append-only audit log. One row per gateway request after successful auth.
 /// Retention policy TBD with the customer (fly.io secrets hold the cutoff).
 model AuditLog {
