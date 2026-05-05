@@ -3,6 +3,7 @@ import type { Context } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { requireScope } from "../../middleware/auth";
 import { callUpstream } from "../../lib/upstream";
+import { getProducerPool } from "../../lib/producer-pools";
 import {
   BestMatchCreateBody,
   BestMatchCreateResponse,
@@ -191,13 +192,50 @@ const bestMatchFeedbackRoute = createRoute({
 });
 
 evaluationWritesRouter.openapi(bestMatchFeedbackRoute, async (c) => {
-  // §8.v3 Phase 2c — write path needs async rewiring (gateway publish + local
-  // company-evaluation compute-worker subscribe). Until that lands, returning
-  // 501 instead of proxying to a destroyed fly app.
-  void c.req.valid("json");
-  throw new HTTPException(501, {
-    message: "best-match feedback POST pending §8.v3 async rewire",
-  });
+  // §8.v3 Phase 2c-restored — pure DB upsert, no LLM compute. Mirrors
+  // the legacy `feedback.recordMatchFeedback` path: compute the row's
+  // rank-at-action + score-at-action by sorting the parent job's
+  // results by score, then upsert MatchFeedback by (1:1) result-id.
+  // The legacy "refresh peer view" call happened against a SQL
+  // materialized view used by the next best-match scoring run; we
+  // skip it here — the view refresh is best-effort and gets rebuilt
+  // on the next compute cycle. If feedback signal staleness becomes
+  // a problem, surface as a follow-up cron in the gateway.
+  const { bestMatchId } = c.req.valid("param");
+  const { bestMatchJobResultId, label, reason } = c.req.valid("json");
+
+  const pool = getProducerPool("company-evaluation");
+
+  // Verify the result row belongs to the named job.
+  const ownership = await pool.query<{ id: string; score: number | null }>(
+    `SELECT id, score
+     FROM "BestMatchJobResult"
+     WHERE "bestMatchJobId" = $1
+     ORDER BY score DESC NULLS LAST`,
+    [bestMatchId],
+  );
+  const idx = ownership.rows.findIndex((r) => r.id === bestMatchJobResultId);
+  if (idx < 0) {
+    throw new HTTPException(404, {
+      message: `result ${bestMatchJobResultId} not in job ${bestMatchId}`,
+    });
+  }
+  const rank = idx + 1;
+  const score = ownership.rows[idx].score;
+
+  await pool.query(
+    `INSERT INTO "MatchFeedback"
+       (id, label, "rankAtAction", "scoreAtAction", reason,
+        "bestMatchJobResultId", "createdAt")
+     VALUES (gen_random_uuid()::text, $1::"MatchFeedbackLabel", $2, $3, $4, $5, NOW())
+     ON CONFLICT ("bestMatchJobResultId") DO UPDATE
+     SET label = EXCLUDED.label,
+         "rankAtAction" = EXCLUDED."rankAtAction",
+         "scoreAtAction" = EXCLUDED."scoreAtAction",
+         reason = EXCLUDED.reason`,
+    [label, rank, score, reason ?? null, bestMatchJobResultId],
+  );
+  return c.body(null, 204);
 });
 
 // =============================================================================
