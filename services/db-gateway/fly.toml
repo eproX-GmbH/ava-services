@@ -11,6 +11,20 @@ primary_region = "fra"
 [build]
   dockerfile = "Dockerfile"
 
+# Apply migrations to the gateway's own audit DB before each deploy
+# goes live (§8.v3 cosmetic). fly runs this in a temporary release
+# machine, blocks the rollout until it exits 0, and leaves the running
+# instances on the previous version if it fails — so the new code
+# never sees a DB it can't talk to.
+#
+# Only the gateway's own schema is migrated here. The
+# prisma-company-contact/ generated client points at MPG's
+# `ava_company_contact` database, whose migrations are owned by the
+# company-contact submodule's CI (we vendored the schema for typing,
+# not for migration ownership).
+[deploy]
+  release_command = "npx prisma migrate deploy"
+
 # Non-secret env. Anything sensitive goes through `fly secrets set`
 # below — fly bakes those into the runtime env at boot, never into
 # the image.
