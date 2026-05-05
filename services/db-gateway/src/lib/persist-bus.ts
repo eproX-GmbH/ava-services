@@ -370,9 +370,191 @@ const applyWebsite: ApplyFn = async (pool, event, log) => {
   }
 };
 
+/** `tenant.persist.company-publication.v1` payload — emitted by the
+ *  local company-publication compute-worker. One event per company,
+ *  carrying every Jahresabschluss publication the scrape produced.
+ *
+ *  The publication table is keyed `(companyId, name, year)`; child
+ *  tables (SalesVolume, RevenueVolume, TotalAssetsVolume,
+ *  StateOfAffairsAggregate) are 1:1 against the parent and replaced
+ *  whole-cloth on each upsert (legacy producer did the same — no
+ *  stable per-row child key beyond the parent). */
+interface CompanyPublicationsResult {
+  companyId: string;
+  publications: Array<{
+    name: string;
+    year: number;
+    begin: string;
+    end: string;
+    employeeCount?: number;
+    salesVolume?: { value: number; currency: string };
+    revenueVolume?: { value: number; currency: string };
+    totalAssets?: { value: number; currency: string };
+    stateOfAffairs?: {
+      topic?: string;
+      bullets?: string[];
+      guidance?: string[];
+      kpis?: Array<{ name: string; value: string; period?: string }>;
+      risksOpportunities?: string[];
+      isRelevant?: boolean;
+    };
+  }>;
+}
+
+/**
+ * Apply a company-publication persist event. Per-publication
+ * last-write-wins on the parent row by `(companyId, name, year)`,
+ * children replaced when the parent updates. Single transaction
+ * per publication (a partial-row failure for one Jahresabschluss
+ * doesn't roll back the others).
+ *
+ * The state-of-affairs payload is stored as JSONB in a single
+ * column rather than mapped to a typed schema — the LLM output's
+ * inner shape evolves and last-write-wins is the right semantics
+ * for the whole blob anyway.
+ */
+const applyCompanyPublication: ApplyFn = async (pool, event, log) => {
+  const data = event.data as
+    | PersistEvent<CompanyPublicationsResult>
+    | undefined;
+  if (!data) throw new Error("empty payload");
+  const { result, computedAt, tenantId, runId } = data;
+  if (!result?.companyId) throw new Error("missing result.companyId");
+  if (!computedAt) throw new Error("missing computedAt");
+  const updatedAt = new Date(computedAt);
+
+  let upsertedCount = 0;
+  let skippedCount = 0;
+
+  for (const pub of result.publications ?? []) {
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+
+      // Parent row. RETURNING id picks up the autoincrement key for
+      // children; a no-op `DO UPDATE SET id = id` (instead of `DO
+      // NOTHING`) makes RETURNING fire even when the row already
+      // exists — we need that id whether we update or skip the
+      // children.
+      const parentRes = await client.query<{ id: number }>(
+        `INSERT INTO "CompanyPublication"
+           ("companyId", name, year, "begin", "end",
+            "employeeCount", "createdAt", "updatedAt")
+         VALUES ($1,$2,$3,$4,$5,$6, NOW(), $7)
+         ON CONFLICT ("companyId", name, year) DO UPDATE
+         SET "begin" = EXCLUDED."begin",
+             "end" = EXCLUDED."end",
+             "employeeCount" = EXCLUDED."employeeCount",
+             "updatedAt" = EXCLUDED."updatedAt"
+         WHERE EXCLUDED."updatedAt" > "CompanyPublication"."updatedAt"
+         RETURNING id`,
+        [
+          result.companyId,
+          pub.name,
+          pub.year,
+          new Date(pub.begin),
+          new Date(pub.end),
+          pub.employeeCount ?? null,
+          updatedAt,
+        ],
+      );
+
+      if (parentRes.rowCount === 0) {
+        // Existing row newer than our compute. Skip children too.
+        await client.query("ROLLBACK");
+        skippedCount++;
+        continue;
+      }
+
+      const publicationId = parentRes.rows[0].id;
+
+      // Replace-all child rows. The inverse of NULL = "no row" —
+      // wipe-then-insert lets the persisted state cleanly mirror
+      // whatever the compute produced.
+      for (const child of [
+        "SalesVolume",
+        "RevenueVolume",
+        "TotalAssetsVolume",
+        "StateOfAffairsAggregate",
+      ]) {
+        await client.query(
+          `DELETE FROM "${child}" WHERE "companyPublicationId" = $1`,
+          [publicationId],
+        );
+      }
+
+      if (pub.salesVolume) {
+        await client.query(
+          `INSERT INTO "SalesVolume"
+             (value, currency, "companyPublicationId", "createdAt", "updatedAt")
+           VALUES ($1, $2, $3, NOW(), NOW())`,
+          [pub.salesVolume.value, pub.salesVolume.currency, publicationId],
+        );
+      }
+      if (pub.revenueVolume) {
+        await client.query(
+          `INSERT INTO "RevenueVolume"
+             (value, currency, "companyPublicationId", "createdAt", "updatedAt")
+           VALUES ($1, $2, $3, NOW(), NOW())`,
+          [pub.revenueVolume.value, pub.revenueVolume.currency, publicationId],
+        );
+      }
+      if (pub.totalAssets) {
+        await client.query(
+          `INSERT INTO "TotalAssetsVolume"
+             (value, currency, "companyPublicationId", "createdAt", "updatedAt")
+           VALUES ($1, $2, $3, NOW(), NOW())`,
+          [pub.totalAssets.value, pub.totalAssets.currency, publicationId],
+        );
+      }
+      if (pub.stateOfAffairs) {
+        // The producer's `StateOfAffairsAggregate` table mirrors the
+        // LLM-emitted shape; stored as a single JSONB document
+        // because the inner schema (KPI list, topic enum) changes
+        // alongside the prompt.
+        await client.query(
+          `INSERT INTO "StateOfAffairsAggregate"
+             (data, "companyPublicationId", "createdAt", "updatedAt")
+           VALUES ($1::jsonb, $2, NOW(), NOW())`,
+          [JSON.stringify(pub.stateOfAffairs), publicationId],
+        );
+      }
+
+      await client.query("COMMIT");
+      upsertedCount++;
+    } catch (err) {
+      await client.query("ROLLBACK").catch(() => {});
+      log.error(
+        {
+          runId,
+          tenantId,
+          companyId: result.companyId,
+          year: pub.year,
+          name: pub.name,
+          err: err instanceof Error ? err.message : String(err),
+        },
+        "company-publication: skipping bad publication, continuing batch",
+      );
+    } finally {
+      client.release();
+    }
+  }
+
+  log.info(
+    {
+      runId,
+      tenantId,
+      companyId: result.companyId,
+      upserted: upsertedCount,
+      skipped: skippedCount,
+      total: result.publications?.length ?? 0,
+    },
+    "company-publication persist ✓",
+  );
+};
+
 /** Stub — schema + write logic land alongside each producer's
- *  localization. See todos: company-publication / company-evaluation
- *  / company-contact. */
+ *  localization. See todos: company-evaluation / company-contact. */
 const stubApply: (producer: ProducerName) => ApplyFn = (producer) =>
   async (_pool, _event, log) => {
     log.warn(
@@ -407,7 +589,7 @@ const BINDINGS: ProducerBinding[] = [
     producer: "company-publication",
     routingKey: "tenant.persist.company-publication.v1",
     queue: "db-gateway-persist-company-publication",
-    apply: stubApply("company-publication"),
+    apply: applyCompanyPublication,
   },
   {
     producer: "company-evaluation",

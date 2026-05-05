@@ -273,8 +273,17 @@ function buildProducer(
       databaseName: "website",
       port: 51060,
     },
+    {
+      // Unternehmensregister Selenium scrape + FoxIO captcha click
+      // via the agentControl helper. The legacy onnx-runtime
+      // captcha-solver stays bound (idle) — rip out once we're
+      // sure no legacy URLs surface.
+      name: "company-publication",
+      entry: "dist/web/api/server.js",
+      databaseName: "company_publication",
+      port: 51030,
+    },
     // Pending — re-add as each migration lands:
-    //   company-publication  port 51030 / db company_publication
     //   company-evaluation   port 51040 / db company_evaluation
     //   company-contact      port 51050 / db company_contact
     // The fly counterparts stay running in legacy mode until each
