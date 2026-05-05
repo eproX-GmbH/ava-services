@@ -493,17 +493,57 @@ const contactsRoute = createRoute({
   },
 });
 
+// §8.v3 — direct MPG read against `ava_company_contact`. The legacy
+// fly upstream was destroyed in Phase 4; the company-contact compute-
+// worker on the desktop now feeds reconciliation events to gateway's
+// applyCompanyContactPersist, which writes Company + Fact +
+// Observation + SignalEvent + Employment rows. We aggregate them per
+// companyId here and return the same shape the legacy upstream did.
 companiesRouter.openapi(contactsRoute, async (c) => {
   const { companyId } = c.req.valid("param");
-  // Upstream returns a single CompanyContact aggregate (not a list) — see
-  // company-contact/web/api/controllers/v1/company-contacts-controller.ts.
-  // Earlier wrapping into `{items: [...]}` always produced an empty list.
-  const upstream = await callUpstream<z.infer<typeof CompanyContactShape>>(
-    c,
-    "companyContact",
-    `/api/v1/company-contacts/${encodeURIComponent(companyId)}`,
+  const pool = getProducerPool("company-contact");
+
+  const companyRes = await pool.query<{
+    id: string;
+    name: string | null;
+    websiteUrl: string | null;
+    createdAt: Date;
+    updatedAt: Date;
+  }>(
+    `SELECT id, name, "websiteUrl", "createdAt", "updatedAt"
+     FROM "Company" WHERE id = $1 LIMIT 1`,
+    [companyId],
   );
-  return c.json(upstream, 200);
+  if (companyRes.rowCount === 0) {
+    throw new HTTPException(404, { message: "not_found" });
+  }
+  const company = companyRes.rows[0];
+
+  // Pull the four child collections in parallel. Each is a
+  // tenant-scoped, opaque-shape JSON blob from the renderer's
+  // perspective (CompanyContactShape declares them as
+  // record<string, unknown>[]) — we just SELECT * and pass through.
+  const [facts, observations, signals, employments] = await Promise.all([
+    pool.query(`SELECT * FROM "Fact" WHERE "companyId" = $1`, [companyId]),
+    pool.query(`SELECT * FROM "Observation" WHERE "companyId" = $1`, [companyId]),
+    pool.query(`SELECT * FROM "SignalEvent" WHERE "companyId" = $1`, [companyId]),
+    pool.query(`SELECT * FROM "Employment" WHERE "companyId" = $1`, [companyId]),
+  ]);
+
+  return c.json(
+    {
+      id: company.id,
+      companyName: company.name,
+      websiteUrl: company.websiteUrl,
+      companyFacts: facts.rows as Array<Record<string, unknown>>,
+      companyObservations: observations.rows as Array<Record<string, unknown>>,
+      companySignals: signals.rows as Array<Record<string, unknown>>,
+      employments: employments.rows as Array<Record<string, unknown>>,
+      createdAt: company.createdAt.toISOString(),
+      updatedAt: company.updatedAt.toISOString(),
+    },
+    200,
+  );
 });
 
 // ---- GET /v1/companies/:companyId/structured-content -----------------------
