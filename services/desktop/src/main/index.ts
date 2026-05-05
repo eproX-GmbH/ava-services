@@ -283,10 +283,18 @@ function buildProducer(
       databaseName: "company_publication",
       port: 51030,
     },
+    {
+      // Phase 2a: 8-listener fan-in compute-worker. Each inbound
+      // event becomes a partial persist event the gateway upserts.
+      // Embedding compute + ES indexing pending in Phase 2b.
+      name: "company-evaluation",
+      entry: "dist/web/api/server.js",
+      databaseName: "company_evaluation",
+      port: 51040,
+    },
     // Pending — re-add as each migration lands:
-    //   company-evaluation   port 51040 / db company_evaluation
     //   company-contact      port 51050 / db company_contact
-    // The fly counterparts stay running in legacy mode until each
+    // The fly counterpart stays running in legacy mode until the
     // local replacement is validated end-to-end.
   ];
 

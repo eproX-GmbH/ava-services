@@ -628,8 +628,399 @@ const applyCompanyPublication: ApplyFn = async (pool, event, log) => {
   );
 };
 
+// =============================================================================
+// company-evaluation
+// =============================================================================
+//
+// Highest fan-in producer: 8 inbound event types from the legacy chain, each
+// carrying a different slice. The compute-worker normalises all 8 into a
+// single `tenant.persist.company-evaluation.v1` family with partial slices;
+// this apply handler does a partial upsert that mirrors the legacy
+// `evaluationDataRepository.upsert` semantics — fields not present in the
+// event don't overwrite existing values.
+//
+// Replace-all semantics on the children: when the slice contains a list
+// field (e.g. `keywords`, `managingDirectors`, `keyFigures.sales`), we
+// delete-then-insert. The legacy producer did the same. The "merge by id"
+// alternative would need stable per-row keys upstream that we don't have.
+//
+// Phase 2a: persist only. Embedding compute + ES indexing follow in Phase
+// 2b — until then `demandEmbedding` stays null for new transactions, which
+// degrades the company-search vector index for those companies.
+
+interface CompanyEvaluationResult {
+  companyId: string;
+  companyName?: string;
+  companyProfile?: string;
+  businessPurpose?: string | null;
+  companyAddress?: string;
+  latitude?: number;
+  longitude?: number;
+  serpCategory?: string;
+  keywords?: string[];
+  keyFigures?: {
+    sales?: { value: number; currency: string; year: number }[];
+    totalAssets?: { value: number; currency: string; year: number }[];
+    profits?: { value: number; currency: string; year: number }[];
+    employees?: { value: number; year: number }[];
+  };
+  stateOfAffairs?: Array<{
+    year: number;
+    isRelevant: boolean;
+    topic: string;
+    bullets: string[];
+    guidance: string[];
+    risksOpportunities: string[];
+    kpis: { name: string; value: string; period?: string }[];
+  }>;
+  managingDirectors?: Array<{
+    firstName: string;
+    lastName: string;
+    birthDay?: Date | string | null;
+    city?: string | null;
+  }>;
+  deepResearches?: Array<{
+    company?: string;
+    type: string;
+    title: string;
+    country?: string;
+    value?: string;
+    date?: string;
+    url: string;
+    citations: string[];
+  }>;
+  jobPostings?: Array<{
+    title: string;
+    location?: string;
+    workingModel?: string;
+    description?: string;
+    requirements: string[];
+    technologies: string[];
+    sourceUrl: string;
+    releaseDate?: Date | string;
+  }>;
+  contacts?: Array<{
+    fullName?: string;
+    linkedinUrl?: string;
+    xingUrl?: string;
+    email?: string;
+    phone?: string;
+    employments: Array<{
+      title?: string;
+      department?: string;
+      seniority?: string;
+      confidence: number;
+      startDate?: Date | string;
+    }>;
+  }>;
+}
+
+const applyCompanyEvaluation: ApplyFn = async (pool, event, log) => {
+  const data = event.data as PersistEvent<CompanyEvaluationResult> | undefined;
+  if (!data) throw new Error("empty payload");
+  const { result, computedAt, tenantId, runId } = data;
+  if (!result?.companyId) throw new Error("missing result.companyId");
+  if (!computedAt) throw new Error("missing computedAt");
+  const updatedAt = new Date(computedAt);
+  const companyId = result.companyId;
+
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+
+    // Parent row. Partial upsert: only overwrite columns the event
+    // brought. companyName has a NOT NULL constraint, so on first
+    // insert we need a value — fall back to companyId so the row
+    // can be created and a later structured-content event can set
+    // the real name.
+    const parentInsert = await client.query(
+      `INSERT INTO "EvaluationData"
+         ("companyId", "companyName",
+          "companyProfile", "businessPurpose",
+          "companyAddress", latitude, longitude, "serpCategory",
+          keywords,
+          "createdAt", "updatedAt")
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9, NOW(), $10)
+       ON CONFLICT ("companyId") DO UPDATE
+       SET "companyName" = COALESCE(EXCLUDED."companyName", "EvaluationData"."companyName"),
+           "companyProfile" = COALESCE(EXCLUDED."companyProfile", "EvaluationData"."companyProfile"),
+           "businessPurpose" = COALESCE(EXCLUDED."businessPurpose", "EvaluationData"."businessPurpose"),
+           "companyAddress" = COALESCE(EXCLUDED."companyAddress", "EvaluationData"."companyAddress"),
+           latitude = COALESCE(EXCLUDED.latitude, "EvaluationData".latitude),
+           longitude = COALESCE(EXCLUDED.longitude, "EvaluationData".longitude),
+           "serpCategory" = COALESCE(EXCLUDED."serpCategory", "EvaluationData"."serpCategory"),
+           keywords = CASE
+             WHEN cardinality(EXCLUDED.keywords) > 0 THEN EXCLUDED.keywords
+             ELSE "EvaluationData".keywords
+           END,
+           "updatedAt" = EXCLUDED."updatedAt"`,
+      [
+        companyId,
+        result.companyName ?? companyId,
+        result.companyProfile ?? null,
+        result.businessPurpose ?? null,
+        result.companyAddress ?? null,
+        result.latitude ?? null,
+        result.longitude ?? null,
+        result.serpCategory ?? null,
+        result.keywords ?? [],
+        updatedAt,
+      ],
+    );
+    void parentInsert;
+
+    // ---- managingDirectors: replace-all when the field is present.
+    if (result.managingDirectors) {
+      await client.query(
+        `DELETE FROM "ManagingDirector" WHERE "companyId" = $1`,
+        [companyId],
+      );
+      for (const md of result.managingDirectors) {
+        await client.query(
+          `INSERT INTO "ManagingDirector"
+             ("firstName", "lastName", "birthDay", city, "companyId",
+              "createdAt", "updatedAt")
+           VALUES ($1, $2, $3, $4, $5, NOW(), NOW())`,
+          [
+            md.firstName,
+            md.lastName,
+            md.birthDay ? new Date(md.birthDay) : null,
+            md.city ?? null,
+            companyId,
+          ],
+        );
+      }
+    }
+
+    // ---- keyFigures: parent row 1:1 with EvaluationData, four
+    //      child figure tables. Replace all four when keyFigures is
+    //      present on the slice.
+    if (result.keyFigures) {
+      // Ensure parent KeyFigures row exists; PK is (companyId).
+      const kfRes = await client.query<{ id: number }>(
+        `INSERT INTO "KeyFigures" ("companyId", "createdAt", "updatedAt")
+         VALUES ($1, NOW(), NOW())
+         ON CONFLICT ("companyId") DO UPDATE
+         SET "updatedAt" = NOW()
+         RETURNING id`,
+        [companyId],
+      );
+      const keyFiguresId = kfRes.rows[0].id;
+      // Wipe the four figure tables and re-insert.
+      await client.query(
+        `DELETE FROM "SalesFigure" WHERE "keyFiguresId" = $1`,
+        [keyFiguresId],
+      );
+      await client.query(
+        `DELETE FROM "TotalAssetsFigure" WHERE "keyFiguresId" = $1`,
+        [keyFiguresId],
+      );
+      await client.query(
+        `DELETE FROM "ProfitFigure" WHERE "keyFiguresId" = $1`,
+        [keyFiguresId],
+      );
+      await client.query(
+        `DELETE FROM "EmployeesFigure" WHERE "keyFiguresId" = $1`,
+        [keyFiguresId],
+      );
+      for (const f of result.keyFigures.sales ?? []) {
+        await client.query(
+          `INSERT INTO "SalesFigure"
+             (value, currency, year, "keyFiguresId", "createdAt", "updatedAt")
+           VALUES ($1, $2, $3, $4, NOW(), NOW())`,
+          [f.value, f.currency, f.year, keyFiguresId],
+        );
+      }
+      for (const f of result.keyFigures.totalAssets ?? []) {
+        await client.query(
+          `INSERT INTO "TotalAssetsFigure"
+             (value, currency, year, "keyFiguresId", "createdAt", "updatedAt")
+           VALUES ($1, $2, $3, $4, NOW(), NOW())`,
+          [f.value, f.currency, f.year, keyFiguresId],
+        );
+      }
+      for (const f of result.keyFigures.profits ?? []) {
+        await client.query(
+          `INSERT INTO "ProfitFigure"
+             (value, currency, year, "keyFiguresId", "createdAt", "updatedAt")
+           VALUES ($1, $2, $3, $4, NOW(), NOW())`,
+          [f.value, f.currency, f.year, keyFiguresId],
+        );
+      }
+      for (const f of result.keyFigures.employees ?? []) {
+        await client.query(
+          `INSERT INTO "EmployeesFigure"
+             (value, year, "keyFiguresId", "createdAt", "updatedAt")
+           VALUES ($1, $2, $3, NOW(), NOW())`,
+          [f.value, f.year, keyFiguresId],
+        );
+      }
+    }
+
+    // ---- stateOfAffairs: list keyed by (companyId, year). Replace-all
+    //      when the slice carries the field.
+    if (result.stateOfAffairs) {
+      // Drop existing aggregates for this company; KPI rows cascade.
+      await client.query(
+        `DELETE FROM "StateOfAffairsAggregate" WHERE "companyId" = $1`,
+        [companyId],
+      );
+      for (const soa of result.stateOfAffairs) {
+        const aggRes = await client.query<{ id: number }>(
+          `INSERT INTO "StateOfAffairsAggregate"
+             ("companyId", "isRelevant", topic, year,
+              bullets, guidance, "risksOpportunities",
+              "createdAt", "updatedAt")
+           VALUES ($1, $2, $3::"Topic", $4, $5, $6, $7, NOW(), NOW())
+           RETURNING id`,
+          [
+            companyId,
+            soa.isRelevant,
+            soa.topic,
+            soa.year,
+            soa.bullets,
+            soa.guidance,
+            soa.risksOpportunities,
+          ],
+        );
+        const aggregateId = aggRes.rows[0].id;
+        for (const kpi of soa.kpis ?? []) {
+          await client.query(
+            `INSERT INTO "StateOfAffairsKPI"
+               (name, value, period, "aggregateId", "createdAt", "updatedAt")
+             VALUES ($1, $2, $3, $4, NOW(), NOW())`,
+            [kpi.name, kpi.value, kpi.period ?? null, aggregateId],
+          );
+        }
+      }
+    }
+
+    // ---- deepResearches: replace-all by companyId.
+    if (result.deepResearches) {
+      await client.query(
+        `DELETE FROM "DeepResearch" WHERE "companyId" = $1`,
+        [companyId],
+      );
+      for (const dr of result.deepResearches) {
+        await client.query(
+          `INSERT INTO "DeepResearch"
+             (id, company, type, title, country, value, date, url, citations,
+              "companyId", "createdAt", "updatedAt")
+           VALUES (gen_random_uuid()::text,
+                   $1, $2::"DeepResearchType", $3, $4, $5, $6, $7, $8,
+                   $9, NOW(), NOW())`,
+          [
+            dr.company ?? null,
+            dr.type,
+            dr.title,
+            dr.country ?? null,
+            dr.value ?? null,
+            dr.date ?? null,
+            dr.url,
+            dr.citations ?? [],
+            companyId,
+          ],
+        );
+      }
+    }
+
+    // ---- jobPostings: replace-all by companyId.
+    if (result.jobPostings) {
+      await client.query(
+        `DELETE FROM "JobPosting" WHERE "companyId" = $1`,
+        [companyId],
+      );
+      for (const jp of result.jobPostings) {
+        await client.query(
+          `INSERT INTO "JobPosting"
+             (id, title, location, "workingModel", description,
+              requirements, technologies, "sourceUrl", "releaseDate",
+              "companyId", "createdAt", "updatedAt")
+           VALUES (gen_random_uuid()::text,
+                   $1, $2, $3, $4, $5, $6, $7, $8,
+                   $9, NOW(), NOW())`,
+          [
+            jp.title,
+            jp.location ?? null,
+            jp.workingModel ?? null,
+            jp.description ?? null,
+            jp.requirements ?? [],
+            jp.technologies ?? [],
+            jp.sourceUrl,
+            jp.releaseDate ? new Date(jp.releaseDate) : null,
+            companyId,
+          ],
+        );
+      }
+    }
+
+    // ---- contacts: replace-all by companyId, plus their employments
+    //      child rows (cascade-delete handles those).
+    if (result.contacts) {
+      await client.query(
+        `DELETE FROM "Contact" WHERE "companyId" = $1`,
+        [companyId],
+      );
+      for (const ct of result.contacts) {
+        const ctRes = await client.query<{ id: string }>(
+          `INSERT INTO "Contact"
+             (id, "fullName", "linkedinUrl", "xingUrl", email, phone,
+              "companyId", "createdAt", "updatedAt")
+           VALUES (gen_random_uuid()::text,
+                   $1, $2, $3, $4, $5,
+                   $6, NOW(), NOW())
+           RETURNING id`,
+          [
+            ct.fullName ?? null,
+            ct.linkedinUrl ?? null,
+            ct.xingUrl ?? null,
+            ct.email ?? null,
+            ct.phone ?? null,
+            companyId,
+          ],
+        );
+        const contactId = ctRes.rows[0].id;
+        for (const emp of ct.employments ?? []) {
+          await client.query(
+            `INSERT INTO "Employment"
+               (id, title, department, seniority, confidence, "startDate",
+                "contactId", "createdAt", "updatedAt")
+             VALUES (gen_random_uuid()::text,
+                     $1, $2, $3, $4, $5,
+                     $6, NOW(), NOW())`,
+            [
+              emp.title ?? null,
+              emp.department ?? null,
+              emp.seniority ?? null,
+              emp.confidence,
+              emp.startDate ? new Date(emp.startDate) : null,
+              contactId,
+            ],
+          );
+        }
+      }
+    }
+
+    await client.query("COMMIT");
+    log.info(
+      {
+        runId,
+        tenantId,
+        companyId,
+        sliceKeys: Object.keys(result).filter((k) => k !== "companyId"),
+      },
+      "company-evaluation persist ✓",
+    );
+  } catch (err) {
+    await client.query("ROLLBACK").catch(() => {});
+    throw err;
+  } finally {
+    client.release();
+  }
+};
+
 /** Stub — schema + write logic land alongside each producer's
- *  localization. See todos: company-evaluation / company-contact. */
+ *  localization. See todos: company-contact (Phase 3). */
 const stubApply: (producer: ProducerName) => ApplyFn = (producer) =>
   async (_pool, _event, log) => {
     log.warn(
@@ -670,7 +1061,7 @@ const BINDINGS: ProducerBinding[] = [
     producer: "company-evaluation",
     routingKey: "tenant.persist.company-evaluation.v1",
     queue: "db-gateway-persist-company-evaluation",
-    apply: stubApply("company-evaluation"),
+    apply: applyCompanyEvaluation,
   },
   {
     producer: "company-contact",
