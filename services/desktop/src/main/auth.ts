@@ -351,27 +351,30 @@ export class Auth extends EventEmitter {
 // =============================================================================
 
 // AVA brand colors mirror the renderer theme so the bridge moment
-// between browser and app doesn't feel disjointed. The page closes
-// itself after a short pause — this is best-effort because Chrome /
-// Safari often refuse `window.close()` on tabs they didn't open
-// (security). We rely on the desktop-side `app.focus()` (below) for
-// the actual "back to the app" experience; the tab closing is a
-// nicety, not the redirect mechanism.
+// between browser and app doesn't feel disjointed. We deliberately
+// do NOT auto-close the tab: Chrome / Safari refuse `window.close()`
+// on tabs they didn't open (security policy), so the close was a
+// no-op anyway, and the desktop-side `app.focus({ steal: true })`
+// often fails to bring the Electron window forward (macOS Stage
+// Manager / Spaces / unfocused-app activation policy). The
+// auto-close together with a non-focused app left the user staring
+// at the browser thinking the app should have appeared. Better UX:
+// show "Anmeldung erfolgreich", tell them explicitly to switch back,
+// and let them close the tab on their own time.
 const CALLBACK_HTML = `<!doctype html><meta charset="utf-8">
 <title>AVA — Anmeldung erfolgreich</title>
 <style>
   body{font:16px/1.5 -apple-system,system-ui,sans-serif;margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;background:#0b0d12;color:#e5e7eb}
-  .card{text-align:center;padding:2.5rem 3rem;border:1px solid #1f2937;border-radius:12px;background:#111827}
+  .card{text-align:center;padding:2.5rem 3rem;border:1px solid #1f2937;border-radius:12px;background:#111827;max-width:420px}
   h1{margin:0 0 .5rem;font-size:1.5rem;color:#f3f4f6}
   p{margin:0;color:#9ca3af}
-  .check{display:inline-flex;width:48px;height:48px;border-radius:50%;background:#10b981;color:#fff;align-items:center;justify-content:center;font-size:24px;margin-bottom:1rem}
+  .check{display:inline-flex;width:48px;height:48px;border-radius:50%;background:#00c0a7;color:#0b0d12;align-items:center;justify-content:center;font-size:24px;margin-bottom:1rem;font-weight:bold}
 </style>
 <div class="card">
   <div class="check">&#10003;</div>
   <h1>Anmeldung erfolgreich</h1>
-  <p>Sie können dieses Fenster schließen und zur AVA-App zurückkehren.</p>
-</div>
-<script>setTimeout(()=>window.close(),800)</script>`;
+  <p>Bitte zurück zur AVA-App wechseln. Dieses Fenster kannst du jetzt schließen.</p>
+</div>`;
 
 /** Bring the Electron main window to front + focus after a successful
  *  loopback callback. macOS, Windows and Linux all support
