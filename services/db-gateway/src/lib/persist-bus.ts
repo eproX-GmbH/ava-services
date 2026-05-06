@@ -41,6 +41,7 @@ import { loadEnv } from "./env";
 import { logger } from "./logger";
 import { PRODUCER_NAMES, type ProducerName } from "./db-urls";
 import { getProducerPool, getGatewayPool } from "./producer-pools";
+import { transactionProgressBus } from "./event-bus";
 
 /**
  * Side-effect of every persist event: record per-company processing
@@ -69,6 +70,38 @@ async function recordEntityProgress(
     return;
   }
   const truncated = errorMessage ? errorMessage.slice(0, 500) : null;
+  // Push the SSE progress event regardless of the DB write outcome —
+  // the renderer's matrix update path doesn't depend on EntityProgress
+  // having landed (the snapshot endpoint reads it on the next mount,
+  // but the live patch is purely SSE-driven). Doing the publish first
+  // keeps the user's UI responsive even if the audit DB is briefly
+  // misbehaving.
+  //
+  // §8.v3 — producer compute-workers used to publish their own
+  // `transaction.progress` events; the localized rewrites dropped that
+  // wiring, so the gateway now derives the terminal-state progress
+  // event from the persist arrival. `in_progress` is still emitted by
+  // each producer at handler entry (so the matrix shows yellow during
+  // long captcha-gated runs); this path covers the
+  // `pending → completed/failed/skipped` transition.
+  try {
+    transactionProgressBus.publishLocal({
+      transactionId,
+      tenantId: "",
+      service: producer,
+      companyId,
+      state,
+      errorMessage: truncated ?? undefined,
+      updatedAt: new Date().toISOString(),
+    });
+  } catch (err) {
+    // Bus dispatch is in-process — should never throw — but if a
+    // handler does, we don't want to block the audit write.
+    log.warn(
+      { err: err instanceof Error ? err.message : String(err) },
+      "progress-bus dispatch failed",
+    );
+  }
   try {
     const pool = getGatewayPool();
     await pool.query(
