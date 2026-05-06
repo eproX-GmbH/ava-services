@@ -1,0 +1,29 @@
+# fly.toml app configuration file generated for fly-keycloak-broken-bird-3701 on 2026-05-05T21:10:24-04:00
+#
+# See https://fly.io/docs/reference/configuration/ for information about how to use this file.
+#
+
+app = 'fly-keycloak-broken-bird-3701'
+primary_region = 'fra'
+kill_signal = 'SIGINT'
+kill_timeout = '5s'
+
+[experimental]
+  cmd = ['start', '--cache=ispn', '--cache-config-file=flyio-cache-config.xml']
+
+[env]
+  JAVA_OPTS = '-Djboss.bind.address.private=0.0.0.0 -Djboss.bind.address=0.0.0.0 -Djava.net.preferIPv6Addresses=true'
+  KC_DB = 'postgres'
+  KC_HOSTNAME_STRICT = 'false'
+  KC_HTTP_ENABLED = 'true'
+  KC_PROXY = 'edge'
+  KEYCLOAK_ADMIN = 'admin'
+  KEYCLOAK_ADMIN_PASSWORD = 'admin'
+  PROXY_ADDRESS_FORWARDING = 'true'
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = 'off'
+  auto_start_machines = true
+  min_machines_running = 1

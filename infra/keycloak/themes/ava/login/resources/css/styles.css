@@ -1,18 +1,19 @@
 /* =============================================================================
- * AVA Keycloak login theme — overrides the default `keycloak.v2` styles.
+ * AVA Keycloak login theme — Keycloak 20.0.3 (parent=keycloak, PatternFly 4).
  *
  * Goal: match the desktop-app palette so the OAuth detour through the
- * browser doesn't feel jarring. Renderer uses Tailwind + a dark/neutral
- * palette built around #0b0d12 backgrounds and #10b981 accents (see
- * services/desktop/src/renderer/src/styles.css). We mirror those here.
+ * browser doesn't feel jarring. Renderer uses Tailwind on a dark
+ * neutral palette around #0b0d12 backgrounds and #10b981 accents (see
+ * services/desktop/src/renderer/src/styles.css).
  *
- * Keycloak v2 uses PatternFly variables (`--pf-v5-*`). We override at
- * that layer rather than rewriting components — minimal CSS, robust to
- * Keycloak upgrades.
+ * On Keycloak 20 the login form is rendered via PatternFly 4 — there's
+ * no `--pf-v5-*` variable system; we override the concrete selectors
+ * directly. When this app is bumped to Keycloak 24+, switch the parent
+ * theme to `keycloak.v2` and migrate to the PF5 token overrides.
  * ========================================================================== */
 
+/* Palette */
 :root {
-  /* Brand */
   --ava-bg: #0b0d12;
   --ava-surface: #111827;
   --ava-surface-2: #1f2937;
@@ -22,109 +23,141 @@
   --ava-accent-hover: #0ea372;
   --ava-border: #1f2937;
   --ava-danger: #ef4444;
-
-  /* PatternFly tokens Keycloak v2 actually uses on the login screen */
-  --pf-v5-global--BackgroundColor--100: var(--ava-bg);
-  --pf-v5-global--BackgroundColor--light-100: var(--ava-surface);
-  --pf-v5-global--Color--100: var(--ava-text);
-  --pf-v5-global--Color--200: var(--ava-text-muted);
-  --pf-v5-global--link--Color: var(--ava-accent);
-  --pf-v5-global--link--Color--hover: var(--ava-accent-hover);
-  --pf-v5-global--primary-color--100: var(--ava-accent);
-  --pf-v5-global--primary-color--200: var(--ava-accent-hover);
-  --pf-v5-global--BorderColor--100: var(--ava-border);
 }
 
+/* Page background */
 html,
-body {
+body,
+.login-pf,
+.login-pf body,
+.login-pf-page {
   background: var(--ava-bg) !important;
-  color: var(--ava-text);
+  color: var(--ava-text) !important;
   font-family:
     -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", Roboto,
-    "Helvetica Neue", Arial, sans-serif;
+    "Helvetica Neue", Arial, sans-serif !important;
 }
 
-/* Card the form sits in */
-.login-pf-page .card-pf,
-.login-pf-page-main {
-  background: var(--ava-surface) !important;
-  border: 1px solid var(--ava-border) !important;
-  border-radius: 12px;
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
+/* The header strip with "Keycloak" label — replace with the AVA logo */
+#kc-header {
+  text-indent: -9999px;
+  overflow: hidden;
+  padding: 0;
+  margin: 0 0 1rem;
 }
-
-/* Header / logo block */
-#kc-header,
 #kc-header-wrapper {
-  background-image: url("../img/logo.svg") !important;
+  background-image: url("../img/logo.svg");
   background-repeat: no-repeat;
   background-position: center;
   background-size: contain;
-  height: 56px;
-  margin-bottom: 1.5rem;
+  height: 64px;
+  padding: 0;
   text-indent: -9999px;
-  overflow: hidden;
+  font-size: 0;
+  color: transparent;
 }
 
-/* Form fields */
-.pf-v5-c-form-control,
-input.pf-v5-c-form-control {
+/* Card around the form */
+.login-pf-page .card-pf {
+  background: var(--ava-surface) !important;
+  border: 1px solid var(--ava-border) !important;
+  border-radius: 12px !important;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45) !important;
+  color: var(--ava-text) !important;
+  padding: 2rem 1.5rem !important;
+}
+
+/* Form labels */
+.login-pf-page #kc-form-wrapper label,
+.login-pf-page label.control-label {
+  color: var(--ava-text-muted) !important;
+  font-weight: 500 !important;
+}
+
+/* Input fields */
+.login-pf-page input.form-control,
+.login-pf-page select.form-control,
+.login-pf-page textarea.form-control {
   background: var(--ava-bg) !important;
   border: 1px solid var(--ava-border) !important;
   color: var(--ava-text) !important;
-  border-radius: 8px;
+  border-radius: 8px !important;
+  height: 42px !important;
+  padding: 0 12px !important;
 }
-
-.pf-v5-c-form-control:focus,
-input.pf-v5-c-form-control:focus {
+.login-pf-page input.form-control:focus,
+.login-pf-page select.form-control:focus,
+.login-pf-page textarea.form-control:focus {
   border-color: var(--ava-accent) !important;
-  outline: none;
-  box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.25);
+  outline: none !important;
+  box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.25) !important;
 }
 
-label,
-.pf-v5-c-form__label {
-  color: var(--ava-text-muted) !important;
-}
-
-/* Primary button (sign in / register) */
-.pf-v5-c-button.pf-m-primary,
-input[type="submit"].pf-v5-c-button.pf-m-primary,
-.kc-login-tooltip,
+/* Primary button (Sign in / Register / etc) */
+.login-pf-page .btn-primary,
+.login-pf-page input.btn-primary,
+.login-pf-page button.btn-primary,
 #kc-login {
   background: var(--ava-accent) !important;
-  border-color: var(--ava-accent) !important;
+  background-image: none !important;
+  border: 1px solid var(--ava-accent) !important;
   color: #04221b !important;
-  font-weight: 600;
-  border-radius: 8px;
+  font-weight: 600 !important;
+  border-radius: 8px !important;
+  height: 42px !important;
+  text-shadow: none !important;
 }
-.pf-v5-c-button.pf-m-primary:hover,
+.login-pf-page .btn-primary:hover,
+.login-pf-page button.btn-primary:hover,
 #kc-login:hover {
   background: var(--ava-accent-hover) !important;
   border-color: var(--ava-accent-hover) !important;
 }
 
-/* Secondary links — register / forgot password */
-a,
-.pf-v5-c-button.pf-m-link,
+/* Secondary links — register / forgot password / locale */
+.login-pf-page a,
 #kc-registration a,
 #kc-form-options a {
   color: var(--ava-accent) !important;
 }
-a:hover {
+.login-pf-page a:hover {
   color: var(--ava-accent-hover) !important;
+  text-decoration: underline !important;
 }
 
-/* Error banners */
+/* Registration / forgot-password link row under the form */
+#kc-form-options .checkbox label,
+#kc-info-wrapper {
+  color: var(--ava-text-muted) !important;
+}
+#kc-info-wrapper {
+  border-top: 1px solid var(--ava-border) !important;
+  padding-top: 1rem !important;
+  margin-top: 1rem !important;
+}
+
+/* Error / success banners */
 .alert-error,
-.pf-v5-c-alert.pf-m-danger {
+.kc-feedback-text,
+#kc-content-wrapper .alert {
   background: rgba(239, 68, 68, 0.12) !important;
-  border-color: var(--ava-danger) !important;
+  border: 1px solid var(--ava-danger) !important;
+  color: var(--ava-text) !important;
+  border-radius: 8px !important;
+}
+
+/* Locale switcher (top-right) */
+#kc-locale ul {
+  background: var(--ava-surface) !important;
+  border: 1px solid var(--ava-border) !important;
+  border-radius: 8px !important;
+}
+#kc-locale a {
   color: var(--ava-text) !important;
 }
 
-/* Footer (locale switcher etc.) */
-#kc-locale,
-.login-pf-page .login-pf-page-footer {
-  color: var(--ava-text-muted);
+/* Strip Keycloak's default page-background image (its built-in
+ * gradient leaks through the dark surface in some browsers) */
+.login-pf body {
+  background-image: none !important;
 }
