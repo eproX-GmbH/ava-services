@@ -223,6 +223,23 @@ jobs:
         working-directory: services/desktop
         run: node scripts/check-bundle-secrets.mjs
 
+      # electron-builder's `--publish always` creates the GitHub
+      # Release as a draft on first upload, regardless of whether the
+      # job ultimately succeeds. If a later step fails (notarize,
+      # publish, audit) and we retry the tag, the next run uploads
+      # fresh artifacts but never promotes the draft — so users keep
+      # seeing the prior tag as Latest while the new one sits hidden.
+      # Flip draft=false + mark Latest at the end of a green build only.
+      # Idempotent: re-running against an already-public release is a
+      # no-op.
+      - name: Promote release to Latest
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${{ github.event.inputs.tag || github.ref_name }}"
+          gh release edit "$TAG" --draft=false --latest \
+            --repo "${{ github.repository }}"
+
   # ---------------------------------------------------------------------------
   # Windows build is currently DISABLED to conserve GitHub Actions
   # minutes during the pilot. The Windows runner takes 14-18 min per
