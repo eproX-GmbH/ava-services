@@ -185,10 +185,16 @@ jobs:
           # `readDirectoryAndSign` walker blows past once we vendor
           # the full producer set (zod's locales tree alone is 50+
           # files, multiplied across 6 producers + node_modules).
-          # Bumping to 65536 is what most Electron projects do; it's
-          # well within the kernel limit and stops EMFILE during
-          # signing without code changes.
-          ulimit -n 65536
+          #
+          # macOS caps `ulimit -n` at `kern.maxfilesperproc`; on the
+          # default GitHub runner that's typically 24576 — anything
+          # higher silently clamps and the EMFILE returns. Bump
+          # both the kernel ceiling and the soft limit so the bump
+          # actually sticks. Verify by echoing the result.
+          sudo sysctl -w kern.maxfiles=524288 || true
+          sudo sysctl -w kern.maxfilesperproc=524288 || true
+          ulimit -n 524288 || ulimit -n 65536 || ulimit -n 24576
+          echo "effective ulimit -n: $(ulimit -n)"
 
           # `--mac --${{ matrix.arch }} --publish always` produces the
           # .dmg, signs it, notarizes it, staples the ticket, and
