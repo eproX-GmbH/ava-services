@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Placeholder AVA wordmark. Drop the real logo at this path to replace.
+  Designed at 240×56 to match the .login-pf-page header block in
+  ../css/styles.css. Inline SVG keeps the image crisp at any DPR.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 56" width="240" height="56">
+  <defs>
+    <linearGradient id="g" x1="0" x2="1" y1="0" y2="1">
+      <stop offset="0" stop-color="#10b981"/>
+      <stop offset="1" stop-color="#0ea372"/>
+    </linearGradient>
+  </defs>
+  <text x="120" y="40" text-anchor="middle"
+        font-family="-apple-system, system-ui, 'Inter', sans-serif"
+        font-size="36" font-weight="700"
+        letter-spacing="2" fill="url(#g)">AVA</text>
+</svg>

@@ -1,4 +1,4 @@
-import { app, safeStorage, shell } from "electron";
+import { app, BrowserWindow, safeStorage, shell } from "electron";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { createHash, randomBytes } from "node:crypto";
@@ -340,12 +340,51 @@ export class Auth extends EventEmitter {
 // the browser flow.
 // =============================================================================
 
+// AVA brand colors mirror the renderer theme so the bridge moment
+// between browser and app doesn't feel disjointed. The page closes
+// itself after a short pause — this is best-effort because Chrome /
+// Safari often refuse `window.close()` on tabs they didn't open
+// (security). We rely on the desktop-side `app.focus()` (below) for
+// the actual "back to the app" experience; the tab closing is a
+// nicety, not the redirect mechanism.
 const CALLBACK_HTML = `<!doctype html><meta charset="utf-8">
-<title>AVA — sign-in complete</title>
-<style>body{font:16px/1.5 -apple-system,system-ui,sans-serif;padding:3rem;color:#111}h1{margin:0 0 .5rem}</style>
-<h1>You're signed in.</h1>
-<p>You can close this tab and return to AVA.</p>
-<script>setTimeout(()=>window.close(),300)</script>`;
+<title>AVA — Anmeldung erfolgreich</title>
+<style>
+  body{font:16px/1.5 -apple-system,system-ui,sans-serif;margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;background:#0b0d12;color:#e5e7eb}
+  .card{text-align:center;padding:2.5rem 3rem;border:1px solid #1f2937;border-radius:12px;background:#111827}
+  h1{margin:0 0 .5rem;font-size:1.5rem;color:#f3f4f6}
+  p{margin:0;color:#9ca3af}
+  .check{display:inline-flex;width:48px;height:48px;border-radius:50%;background:#10b981;color:#fff;align-items:center;justify-content:center;font-size:24px;margin-bottom:1rem}
+</style>
+<div class="card">
+  <div class="check">&#10003;</div>
+  <h1>Anmeldung erfolgreich</h1>
+  <p>Sie können dieses Fenster schließen und zur AVA-App zurückkehren.</p>
+</div>
+<script>setTimeout(()=>window.close(),800)</script>`;
+
+/** Bring the Electron main window to front + focus after a successful
+ *  loopback callback. macOS, Windows and Linux all support
+ *  `app.focus({ steal: true })` for cross-process focus stealing
+ *  (intentional UX here — the user just completed login and is
+ *  expecting to come back to the app). If no main window has been
+ *  created yet (very unlikely on the auth path) we fall back to
+ *  app-level focus only. */
+function focusAppAfterAuth(): void {
+  try {
+    app.focus({ steal: true });
+    const wins = BrowserWindow.getAllWindows();
+    if (wins.length > 0) {
+      const w = wins[0]!;
+      if (w.isMinimized()) w.restore();
+      w.show();
+      w.focus();
+    }
+  } catch (err) {
+    // Focus is purely cosmetic — never fail the auth flow over it.
+    console.warn("auth: focusAppAfterAuth failed:", (err as Error).message);
+  }
+}
 
 function runLoopbackFlow(
   expectedState: string,
@@ -372,6 +411,13 @@ function runLoopbackFlow(
       if (error) return reject(new Error(`auth provider returned error: ${error}`));
       if (!code) return reject(new Error("missing authorization code"));
       if (state !== expectedState) return reject(new Error("state mismatch (CSRF guard)"));
+      // Pull the app back to front the moment we have a valid code.
+      // The browser tab closes itself on a short timer; meanwhile the
+      // user sees their AVA window pop forward without a manual
+      // alt-tab. This is the actual "redirect to the app" UX —
+      // browsers can't focus a desktop app from JS, so we do it from
+      // the OS side.
+      focusAppAfterAuth();
       const port = (server.address() as AddressInfo).port;
       resolve({ code, redirectUri: `http://127.0.0.1:${port}/callback` });
     });
