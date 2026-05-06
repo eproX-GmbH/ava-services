@@ -53,6 +53,23 @@ const config = {
   realm: "ava",
   clientId: "ava-desktop",
   loginTheme: "ava",
+  // Custom client scopes added on top of OIDC defaults. Each is
+  // created once if missing, then attached as a *default* client
+  // scope on `ava-desktop` so every issued token includes the
+  // scope value in its `scope` claim — desktop's APP_SCOPES list
+  // already requests them, but Keycloak only mints what the client
+  // is configured for.
+  //
+  // Per-tenant gating: the gateway's ProxyQuotaOverride.enabled flag
+  // is the immediate kill-switch; this scope is the realm-level
+  // feature flag (would let us run a "free realm" without the
+  // proxy entirely, e.g. trial vs paid).
+  customClientScopes: [
+    {
+      name: "valueserp:enabled",
+      description: "Grants access to the operator-paid valueserp search proxy",
+    },
+  ],
   realmPatch: {
     registrationAllowed: true,
     registrationEmailAsUsername: true,
@@ -175,6 +192,57 @@ async function main() {
     ...config.clientPatch,
     attributes: { ...(client.attributes ?? {}), ...config.clientPatch.attributes },
   });
+
+  // ---- Custom client scopes ------------------------------------------------
+  //
+  // Idempotent: GET the realm's client-scopes list, create any
+  // missing ones, then ensure each is attached as a default scope
+  // on the `ava-desktop` client.
+  if (config.customClientScopes && config.customClientScopes.length > 0) {
+    console.log(`> ensuring custom client scopes`);
+    const existingScopes = await api(
+      token,
+      "GET",
+      `/realms/${config.realm}/client-scopes`,
+    );
+    for (const desired of config.customClientScopes) {
+      let scope = existingScopes.find((s) => s.name === desired.name);
+      if (!scope) {
+        await api(
+          token,
+          "POST",
+          `/realms/${config.realm}/client-scopes`,
+          {
+            name: desired.name,
+            description: desired.description,
+            protocol: "openid-connect",
+            attributes: {
+              "include.in.token.scope": "true",
+              "display.on.consent.screen": "false",
+            },
+          },
+        );
+        // POST returns 201 with no body; re-list to pick up the id.
+        const refreshed = await api(
+          token,
+          "GET",
+          `/realms/${config.realm}/client-scopes`,
+        );
+        scope = refreshed.find((s) => s.name === desired.name);
+        console.log(`  - created client scope: ${desired.name}`);
+      } else {
+        console.log(`  - client scope already exists: ${desired.name}`);
+      }
+      // Attach as default scope on the desktop client. PUT is a
+      // no-op if already attached, so safe to re-run.
+      await api(
+        token,
+        "PUT",
+        `/realms/${config.realm}/clients/${client.id}/default-client-scopes/${scope.id}`,
+      );
+      console.log(`    → attached as default scope on ${config.clientId}`);
+    }
+  }
 
   console.log("> done.");
   console.log("");

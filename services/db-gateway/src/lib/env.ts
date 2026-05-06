@@ -45,6 +45,21 @@ const schema = z.object({
   VALUESERP_COUNTRY: z.string().optional(),
   VALUESERP_PAGINATION_SIZE: z.coerce.number().optional(),
 
+  // Rate / quota limits for the valueserp proxy. All four windows
+  // are enforced independently; whichever fires first wins. Tune via
+  // `fly secrets set`; per-tenant overrides live in the
+  // `ProxyQuotaOverride` table for paid customers / incident
+  // response. See routes/v1/proxy.ts for the enforcement loop.
+  //
+  // Defaults aim at "lots of headroom for legitimate use, hard wall
+  // for runaway loops" — adjust if real traffic patterns differ.
+  VALUESERP_RATE_PER_MINUTE: z.coerce.number().default(60),
+  VALUESERP_RATE_PER_HOUR:   z.coerce.number().default(1000),
+  VALUESERP_RATE_PER_DAY:    z.coerce.number().default(5000),
+  VALUESERP_RATE_PER_MONTH:  z.coerce.number().default(50000),
+  // Same-query response cache TTL. 0 = caching disabled.
+  VALUESERP_CACHE_TTL_HOURS: z.coerce.number().default(24),
+
   // JWT signing material — two mutually-exclusive modes:
   //
   //   A) JWKS_URI mode (preferred for Keycloak): set `JWKS_URI` to the

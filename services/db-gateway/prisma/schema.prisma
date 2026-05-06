@@ -46,6 +46,89 @@ model EntityProgress {
   @@index([transactionId])
 }
 
+/// Operator-paid upstream proxy audit log (§8.v3 — today: valueserp).
+///
+/// One row per `/v1/proxy/<service>` call. Drives:
+///   1. Rate limiting — count rows in a recent window
+///      (per-minute/hour/day/month) to decide whether to admit the
+///      next call. Limits live in env (VALUESERP_RATE_*) so the
+///      operator can tune without a code change; per-tenant
+///      overrides come from `ProxyQuotaOverride` below.
+///   2. Cost / abuse review — `tenantId` × `proxy` over a date range
+///      tells the operator who's burning the most upstream budget.
+///   3. Forensics — `qHash` (sha256 of the canonicalized search params)
+///      lets the operator correlate spikes without storing the literal
+///      query (which can be PII / business-sensitive).
+///
+/// Append-only. Retention is a future concern; first cull TBD with
+/// the customer once a few months of data are accumulated and we
+/// know what cardinality looks like.
+model ProxyAudit {
+  id          BigInt   @id @default(autoincrement())
+  proxy       String   // 'valueserp' (room for more later)
+  tenantId    String
+  actorId     String
+  qHash       String   // sha256(canonicalized request body)
+  status      Int      // upstream HTTP status (or 429 for our own rate-limit)
+  latencyMs   Int      // 0 if denied at the rate-limit gate
+  cacheHit    Boolean  @default(false)
+  createdAt   DateTime @default(now())
+
+  // Counter-window queries: WHERE proxy=$1 AND tenantId=$2 AND createdAt > NOW() - $window
+  @@index([proxy, tenantId, createdAt])
+  // Cost-attribution sweeps over a calendar month
+  @@index([tenantId, createdAt])
+}
+
+/// Per-tenant override of the env-defined proxy rate limits.
+///
+/// All four columns are nullable: NULL means "fall back to env
+/// default" so the operator can override only the dimension they
+/// care about (e.g. raise just the monthly cap for paid customers).
+/// `enabled = false` → hard-deny without consulting limits, useful
+/// for incident response (cut a tenant immediately, sort it out
+/// later). Keyed on (tenantId, proxy); a tenant can have separate
+/// override rows per upstream when more proxies are added.
+model ProxyQuotaOverride {
+  tenantId    String
+  proxy       String
+  enabled     Boolean  @default(true)
+  perMinute   Int?
+  perHour     Int?
+  perDay      Int?
+  perMonth    Int?
+  // Free-text reason field — populated when the operator flips
+  // `enabled` so future-them remembers why ("billed dispute 2026-06").
+  note        String?
+  updatedAt   DateTime @updatedAt
+  createdAt   DateTime @default(now())
+
+  @@id([tenantId, proxy])
+}
+
+/// 24h response cache for proxy upstreams.
+///
+/// Same-query dedup across users on the same tenant. We hash
+/// (proxy + canonicalized params) into `cacheKey`, store the JSON
+/// response verbatim, and serve cache hits as if they were fresh
+/// upstream responses (the audit row records `cacheHit=true` and
+/// `latencyMs` of the local lookup, not the original upstream call).
+///
+/// `expiresAt` is set on insert (NOW() + VALUESERP_CACHE_TTL_HOURS).
+/// A periodic cleanup task can DELETE WHERE expiresAt < NOW() — for
+/// now we just let rows accumulate; at a few KB per row, even years
+/// of cache fits in a tiny table.
+model ProxyCache {
+  cacheKey    String   @id // sha256(proxy + canonicalized params)
+  proxy       String
+  responseJson String   // upstream response body verbatim
+  expiresAt   DateTime
+  createdAt   DateTime @default(now())
+
+  @@index([expiresAt])
+  @@index([proxy, createdAt])
+}
+
 /// Append-only audit log. One row per gateway request after successful auth.
 /// Retention policy TBD with the customer (fly.io secrets hold the cutoff).
 model AuditLog {

@@ -67,6 +67,15 @@ interface TokenResponse {
 const REFRESH_LEAD_MS = 60_000;
 
 // Default app scopes the gateway recognises (see middleware/auth.ts).
+//
+// `valueserp:enabled` is the per-tenant gate for the operator-paid
+// search proxy (`/v1/proxy/valueserp`). The desktop requests it
+// optimistically — Keycloak is configured to grant it to every user
+// in the `ava` realm by default, but the operator can flip it off
+// per-user/per-role from the admin UI to cut a tenant's access to
+// the upstream API without a code change. If Keycloak doesn't grant
+// the scope, the website producer's valueserp calls fall back to
+// 403 and the producer surfaces a clear "feature disabled" error.
 const APP_SCOPES = [
   "openid",
   "profile",
@@ -77,6 +86,7 @@ const APP_SCOPES = [
   "evaluation:read",
   "evaluation:write",
   "import:write",
+  "valueserp:enabled",
 ];
 
 export class Auth extends EventEmitter {
