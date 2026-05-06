@@ -9,7 +9,22 @@ kill_signal = 'SIGINT'
 kill_timeout = '5s'
 
 [experimental]
-  cmd = ['start', '--cache=ispn', '--cache-config-file=flyio-cache-config.xml']
+  cmd = [
+    'start',
+    '--cache=ispn',
+    '--cache-config-file=flyio-cache-config.xml',
+    # Theme cache controls. Default `--spi-theme-static-max-age` is one
+    # month, which means a browser that hit the login form once will
+    # never see CSS/img updates until the cache expires (or the user
+    # hard-reloads). One hour is a reasonable production default —
+    # bumps land within an hour of deploy without spamming the CDN
+    # tier on every request.
+    '--spi-theme-static-max-age=3600',
+    # `cache-themes` keeps the in-memory theme registry warm; safe to
+    # leave on. `cache-templates=false` is the dev-friendly toggle
+    # that re-reads .ftl files on every render — leave it default
+    # (true) in prod for performance.
+  ]
 
 [env]
   JAVA_OPTS = '-Djboss.bind.address.private=0.0.0.0 -Djboss.bind.address=0.0.0.0 -Djava.net.preferIPv6Addresses=true'
