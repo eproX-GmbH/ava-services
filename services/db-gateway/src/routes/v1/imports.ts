@@ -3,6 +3,7 @@ import { HTTPException } from "hono/http-exception";
 import { requireScope } from "../../middleware/auth";
 import { callUpstreamBinary } from "../../lib/upstream";
 import { setTransactionName } from "../../lib/transaction-names";
+import { seedEntityProgressForTransaction } from "../../lib/entity-progress-seed";
 import { buildXlsx } from "../../lib/xlsx-mini";
 import {
   CompanyIngestBody,
@@ -144,6 +145,12 @@ importsRouter.openapi(importExcelRoute, async (c) => {
   // same file with the same name is a no-op.
   setTransactionName(transactionId, name ?? null);
 
+  // §8.v3 — populate the per-(company × producer) matrix with
+  // pending rows immediately so the desktop transaction view is
+  // non-empty before any producer has finished its first company.
+  // Best-effort: failures are logged + swallowed inside the helper.
+  await seedEntityProgressForTransaction(c, transactionId);
+
   return c.json({ transactionId }, 202);
 });
 
@@ -225,5 +232,7 @@ importsRouter.openapi(companyIngestRoute, async (c) => {
   // Persist the gateway-side annotation so list/detail reads can
   // surface it; same rationale as POST /v1/imports/excel.
   setTransactionName(transactionId, effectiveTxName);
+  // §8.v3 — same matrix-seeding rationale as the bulk endpoint above.
+  await seedEntityProgressForTransaction(c, transactionId);
   return c.json({ transactionId }, 202);
 });
