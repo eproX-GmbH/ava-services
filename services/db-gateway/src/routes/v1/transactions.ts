@@ -573,17 +573,28 @@ transactionsRouter.openapi(errorsRoute, async (c) => {
              AND state = 'failed'`,
           [transactionId, producer],
         );
-        return res.rows.map((r) => ({
-          id: `${transactionId}:${producer}:${r.companyId}`,
-          transactionId,
-          companyId: r.companyId,
-          service: stage,
-          errorMessage: r.errorMessage ?? "",
-          createdAt:
+        return res.rows.map((r) => {
+          const ts =
             r.updatedAt instanceof Date
               ? r.updatedAt.toISOString()
-              : String(r.updatedAt),
-        })) as Array<Record<string, unknown>>;
+              : String(r.updatedAt);
+          // Field name `errorReason` matches the gateway's
+          // ProcessingErrorShape (schemas.ts) and the desktop's
+          // ProcessingError type. The DB column is `errorMessage`
+          // (EntityProgress.errorMessage); rename at the API
+          // boundary so the renderer's `e.errorReason ?? ...`
+          // chain doesn't silently fall through to the
+          // "(kein Grund angegeben)" fallback.
+          return {
+            id: `${transactionId}:${producer}:${r.companyId}`,
+            transactionId,
+            companyId: r.companyId,
+            service: stage,
+            errorReason: r.errorMessage ?? "",
+            createdAt: ts,
+            updatedAt: ts,
+          };
+        }) as Array<Record<string, unknown>>;
       }
 
       // Fly stage — keep legacy per-company fan-out until the producer
