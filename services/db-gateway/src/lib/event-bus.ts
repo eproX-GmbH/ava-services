@@ -8,6 +8,66 @@ import {
 
 import { loadEnv } from "./env";
 import { logger } from "./logger";
+import { getGatewayPool } from "./producer-pools";
+
+// EntityProgress write helper, isolated here so the event-bus can
+// persist incoming transaction.progress states alongside the SSE
+// dispatch. Without this, producer-side failures (state="failed"
+// emitted from a compute-worker catch handler) only flow over SSE —
+// they never land in the DB. The snapshot endpoint reads the DB on
+// every page load, so reloading the app would show those cells as
+// `pending` (the seeded value) instead of `failed`. Persist-bus
+// already writes the DB on its own apply path; this covers the
+// non-persist paths (in_progress, producer-side failed/skipped).
+//
+// Best-effort: a transient DB hiccup logs but doesn't block SSE
+// dispatch. Last-write-wins via the EXCLUDED.updatedAt > existing
+// guard, so out-of-order arrivals are safe.
+async function writeEntityProgressFromEvent(
+  payload: TransactionProgressPayload,
+): Promise<void> {
+  if (!payload?.transactionId || !payload?.companyId || !payload?.service) {
+    return;
+  }
+  const acceptedStates = new Set(["completed", "failed", "skipped", "in_progress"]);
+  const state = payload.state as string;
+  if (!acceptedStates.has(state)) return;
+  const truncated = payload.errorMessage
+    ? payload.errorMessage.slice(0, 500)
+    : null;
+  try {
+    const pool = getGatewayPool();
+    await pool.query(
+      `INSERT INTO "EntityProgress"
+         ("transactionId", "companyId", producer, state, "errorMessage",
+          "updatedAt", "createdAt")
+       VALUES ($1, $2, $3, $4, $5, NOW(), NOW())
+       ON CONFLICT ("transactionId", "companyId", producer) DO UPDATE
+       SET state = EXCLUDED.state,
+           "errorMessage" = EXCLUDED."errorMessage",
+           "updatedAt" = EXCLUDED."updatedAt"
+       WHERE EXCLUDED."updatedAt" > "EntityProgress"."updatedAt"`,
+      [
+        payload.transactionId,
+        payload.companyId,
+        payload.service,
+        state,
+        truncated,
+      ],
+    );
+  } catch (err) {
+    logger.warn(
+      {
+        err: err instanceof Error ? err.message : String(err),
+        transactionId: payload.transactionId,
+        companyId: payload.companyId,
+        service: payload.service,
+        state,
+      },
+      "event-bus: entity-progress write failed",
+    );
+  }
+}
 
 // In-process fan-out for transaction.progress events.
 //
@@ -44,7 +104,14 @@ class TransactionProgressBus {
       });
       listener.subscribe((event: CloudEvent<TransactionProgressPayload>, ack: () => void) => {
         try {
+          // Dispatch SSE first — keeps the live matrix update path
+          // tight even if the DB write below stalls. The persist
+          // happens out-of-band; SSE subscribers never wait on it.
           this.dispatch(event.data);
+          // Persist the state so a reload of the matrix shows the
+          // same thing the live SSE just showed. Fire-and-forget;
+          // the helper logs its own failures.
+          void writeEntityProgressFromEvent(event.data);
         } catch (err) {
           logger.error({ err }, "transaction.progress dispatch failed");
         } finally {
