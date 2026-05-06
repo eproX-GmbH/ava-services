@@ -1,163 +1,325 @@
 /* =============================================================================
  * AVA Keycloak login theme — Keycloak 20.0.3 (parent=keycloak, PatternFly 4).
  *
- * Goal: match the desktop-app palette so the OAuth detour through the
- * browser doesn't feel jarring. Renderer uses Tailwind on a dark
- * neutral palette around #0b0d12 backgrounds and #10b981 accents (see
- * services/desktop/src/renderer/src/styles.css).
+ * Mirrors services/desktop/src/renderer/src/styles.css 1:1 — same
+ * tokens, same fonts, same controls, same primary-button shape — so
+ * the OAuth detour through the browser visually continues the
+ * desktop experience instead of fighting it.
  *
- * On Keycloak 20 the login form is rendered via PatternFly 4 — there's
- * no `--pf-v5-*` variable system; we override the concrete selectors
- * directly. When this app is bumped to Keycloak 24+, switch the parent
- * theme to `keycloak.v2` and migrate to the PF5 token overrides.
+ * Why we didn't pull Tailwind into the Keycloak runtime:
+ *   - Keycloak's stock login uses static FreeMarker templates we don't
+ *     own. To get Tailwind utilities into them we'd either have to
+ *     ship Tailwind's CDN (extra round trip on every login) or
+ *     introduce a Node build step into the Keycloak Docker image
+ *     (cross-toolchain churn for one stylesheet). Neither buys
+ *     anything visible.
+ *   - Tailwind is a *utility library*; with one designer (us) and one
+ *     stylesheet (this), copying the resolved token values into
+ *     hand-written CSS gives the same visible result with zero runtime
+ *     cost. The token values are kept in sync with the desktop's
+ *     `@theme` block — when those change there, mirror them here.
+ *
+ * Constraint set the user gave (2026-05-05):
+ *   - Form max-width: ~400px (don't stretch across wide displays).
+ *   - Only primary or ghost buttons; no other accent colours.
+ *   - Real AVA logo (resources/img/logo.svg) replaces the placeholder.
+ *   - Match the desktop palette exactly.
  * ========================================================================== */
 
-/* Palette */
+/* ---- AVA design tokens — mirrored from services/desktop/src/renderer/src/styles.css */
 :root {
-  --ava-bg: #0b0d12;
-  --ava-surface: #111827;
-  --ava-surface-2: #1f2937;
-  --ava-text: #f3f4f6;
-  --ava-text-muted: #9ca3af;
-  --ava-accent: #10b981;
-  --ava-accent-hover: #0ea372;
-  --ava-border: #1f2937;
-  --ava-danger: #ef4444;
+  /* Brand — AVA Aqua (NOT emerald) */
+  --color-brand-400: #14c8ad;          /* hover */
+  --color-brand-500: #00c0a7;          /* primary / logo mark */
+  --color-brand-600: #009f8a;
+
+  /* Surface — dark grey with green tint, same as the app */
+  --color-bg-0: #1a1d1c;               /* canvas */
+  --color-bg-1: #232726;               /* cards */
+  --color-bg-2: #2c302f;               /* elevated panels */
+  --color-border:        #383d3b;
+  --color-border-strong: #4a504d;
+
+  /* Text */
+  --color-fg:       #e5e7e6;
+  --color-fg-muted: #9aa3a0;
+  --color-fg-faint: #6b7370;
+
+  /* Semantic — used for form errors only; NOT for buttons */
+  --color-err: #f47272;
+
+  /* Mirrors --ctrl-* from the app: subtle white-on-dark inputs */
+  --ctrl-bg-input:      rgba(255, 255, 255, 0.04);
+  --ctrl-border:        rgba(255, 255, 255, 0.12);
+  --ctrl-border-hover:  rgba(255, 255, 255, 0.20);
+  --ctrl-border-focus:  rgba(255, 255, 255, 0.30);
+  --ctrl-radius: 8px;
+  --ctrl-transition:
+    background 120ms ease-out, border-color 120ms ease-out,
+    color 120ms ease-out, opacity 120ms ease-out;
+
+  --font-sans: "Geist Variable", "Geist",
+    -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
 }
 
-/* Page background */
+/* ---- Page background ---------------------------------------------------- */
 html,
 body,
 .login-pf,
 .login-pf body,
 .login-pf-page {
-  background: var(--ava-bg) !important;
-  color: var(--ava-text) !important;
-  font-family:
-    -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", Roboto,
-    "Helvetica Neue", Arial, sans-serif !important;
+  background: var(--color-bg-0) !important;
+  background-image: none !important;
+  color: var(--color-fg) !important;
+  font-family: var(--font-sans) !important;
+  margin: 0 !important;
 }
 
-/* The header strip with "Keycloak" label — replace with the AVA logo */
+/* PatternFly's default <h1> Keycloak header strip — replace with the
+ * AVA logo. Same trick the desktop SignIn uses (an image rather than
+ * a wordmark). */
 #kc-header {
   text-indent: -9999px;
   overflow: hidden;
   padding: 0;
-  margin: 0 0 1rem;
+  margin: 0;
 }
 #kc-header-wrapper {
   background-image: url("../img/logo.svg");
   background-repeat: no-repeat;
   background-position: center;
   background-size: contain;
-  height: 64px;
+  height: 56px;
+  margin: 2.5rem auto 1.5rem;
   padding: 0;
   text-indent: -9999px;
   font-size: 0;
   color: transparent;
 }
 
-/* Card around the form */
+/* ---- Card (the form container) ----------------------------------------- */
+/*
+ * Default PatternFly stretches the card across the viewport on wide
+ * displays. Cap at 400px and centre — same proportions as the
+ * desktop's `.signin` block (max-width: 360px). The extra 40px gives
+ * Keycloak's slightly busier markup (form fields + register link +
+ * locale selector) breathing room without looking out of family.
+ */
+.login-pf-page .container,
+.login-pf-page .col-sm-offset-2.col-sm-8,
+.login-pf-page .col-md-6.col-md-offset-3,
+.login-pf-page .col-sm-12,
+.login-pf-page #kc-form,
+.login-pf-page #kc-content,
+.login-pf-page #kc-content-wrapper {
+  width: 100% !important;
+  max-width: 100% !important;
+  float: none !important;
+  margin-left: auto !important;
+  margin-right: auto !important;
+  padding-left: 0 !important;
+  padding-right: 0 !important;
+}
+
 .login-pf-page .card-pf {
-  background: var(--ava-surface) !important;
-  border: 1px solid var(--ava-border) !important;
-  border-radius: 12px !important;
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45) !important;
-  color: var(--ava-text) !important;
-  padding: 2rem 1.5rem !important;
+  max-width: 400px !important;
+  width: 100% !important;
+  margin: 0 auto !important;
+  background: var(--color-bg-1) !important;
+  border: 1px solid var(--color-border) !important;
+  border-radius: var(--ctrl-radius) !important;
+  box-shadow: none !important;
+  color: var(--color-fg) !important;
+  padding: 1.75rem 1.5rem !important;
 }
 
-/* Form labels */
-.login-pf-page #kc-form-wrapper label,
-.login-pf-page label.control-label {
-  color: var(--ava-text-muted) !important;
-  font-weight: 500 !important;
+/* ---- Typography --------------------------------------------------------- */
+.login-pf-page #kc-page-title,
+.login-pf-page h1,
+.login-pf-page h2,
+.login-pf-page h3 {
+  color: var(--color-fg) !important;
+  font-family: var(--font-sans) !important;
+  font-weight: 600 !important;
+  margin: 0 0 1rem !important;
+}
+.login-pf-page p,
+.login-pf-page label,
+.login-pf-page #kc-form-options,
+.login-pf-page #kc-info-wrapper {
+  color: var(--color-fg-muted) !important;
+  font-family: var(--font-sans) !important;
 }
 
-/* Input fields */
+/* ---- Form fields ------------------------------------------------------- */
 .login-pf-page input.form-control,
 .login-pf-page select.form-control,
 .login-pf-page textarea.form-control {
-  background: var(--ava-bg) !important;
-  border: 1px solid var(--ava-border) !important;
-  color: var(--ava-text) !important;
-  border-radius: 8px !important;
-  height: 42px !important;
+  background: var(--ctrl-bg-input) !important;
+  border: 1px solid var(--ctrl-border) !important;
+  color: var(--color-fg) !important;
+  border-radius: var(--ctrl-radius) !important;
+  height: 40px !important;
   padding: 0 12px !important;
+  font-family: var(--font-sans) !important;
+  font-size: 14px !important;
+  transition: var(--ctrl-transition) !important;
+  box-shadow: none !important;
+}
+.login-pf-page input.form-control:hover,
+.login-pf-page select.form-control:hover {
+  border-color: var(--ctrl-border-hover) !important;
 }
 .login-pf-page input.form-control:focus,
 .login-pf-page select.form-control:focus,
 .login-pf-page textarea.form-control:focus {
-  border-color: var(--ava-accent) !important;
+  border-color: var(--color-brand-500) !important;
   outline: none !important;
-  box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.25) !important;
+  box-shadow: 0 0 0 3px rgba(0, 192, 167, 0.25) !important;
 }
 
-/* Primary button (Sign in / Register / etc) */
+/* Textarea sits above the field rather than inside it (PatternFly
+ * default — preserve, just retint). */
+.login-pf-page label.control-label,
+.login-pf-page .pf-c-form__label,
+.login-pf-page .control-label {
+  color: var(--color-fg-muted) !important;
+  font-weight: 500 !important;
+  font-size: 13px !important;
+  margin-bottom: 6px !important;
+}
+
+/* ---- Buttons (primary + ghost only — user constraint) ----------------- */
+/*
+ * Two — and only two — button variants exist on AVA forms:
+ *   .btn-primary  → solid Aqua background, dark-canvas text
+ *   ghost link    → transparent background, brand-coloured text
+ *
+ * Anything else PatternFly emits (`.btn-default`, `.btn-info`,
+ * `.btn-warning`, …) gets coerced to the ghost style so we never
+ * leak Bootstrap blue / yellow / grey onto the page.
+ */
 .login-pf-page .btn-primary,
 .login-pf-page input.btn-primary,
 .login-pf-page button.btn-primary,
-#kc-login {
-  background: var(--ava-accent) !important;
+.login-pf-page #kc-login,
+.login-pf-page input[type="submit"].btn-primary {
+  background: var(--color-brand-500) !important;
   background-image: none !important;
-  border: 1px solid var(--ava-accent) !important;
-  color: #04221b !important;
-  font-weight: 600 !important;
-  border-radius: 8px !important;
-  height: 42px !important;
+  border: 1px solid transparent !important;
+  color: var(--color-bg-0) !important;
+  font-weight: 500 !important;
+  border-radius: var(--ctrl-radius) !important;
+  height: 40px !important;
+  padding: 0 18px !important;
   text-shadow: none !important;
+  transition: var(--ctrl-transition) !important;
+  font-family: var(--font-sans) !important;
 }
-.login-pf-page .btn-primary:hover,
-.login-pf-page button.btn-primary:hover,
-#kc-login:hover {
-  background: var(--ava-accent-hover) !important;
-  border-color: var(--ava-accent-hover) !important;
+.login-pf-page .btn-primary:hover:not(:disabled),
+.login-pf-page button.btn-primary:hover:not(:disabled),
+.login-pf-page #kc-login:hover:not(:disabled) {
+  background: var(--color-brand-400) !important;
+  color: var(--color-bg-0) !important;
+}
+.login-pf-page .btn-primary:focus,
+.login-pf-page #kc-login:focus {
+  outline: 2px solid var(--color-brand-500) !important;
+  outline-offset: 2px !important;
+}
+.login-pf-page .btn-primary:disabled {
+  opacity: 0.4 !important;
+  cursor: not-allowed !important;
 }
 
-/* Secondary links — register / forgot password / locale */
+/* Coerce every other PF button variant to a ghost button — same
+ * shape, brand-coloured text, transparent surface. */
+.login-pf-page .btn:not(.btn-primary):not(#kc-login),
+.login-pf-page .btn-default,
+.login-pf-page .btn-secondary,
+.login-pf-page .btn-info,
+.login-pf-page .btn-warning,
+.login-pf-page .btn-success {
+  background: transparent !important;
+  background-image: none !important;
+  border: 1px solid transparent !important;
+  color: var(--color-brand-500) !important;
+  font-weight: 500 !important;
+  border-radius: var(--ctrl-radius) !important;
+  text-shadow: none !important;
+  transition: var(--ctrl-transition) !important;
+  height: 40px !important;
+  padding: 0 14px !important;
+}
+.login-pf-page .btn:not(.btn-primary):not(#kc-login):hover {
+  color: var(--color-brand-400) !important;
+  background: rgba(255, 255, 255, 0.04) !important;
+}
+
+/* ---- Links (register / forgot password / locale) ---------------------- */
 .login-pf-page a,
-#kc-registration a,
-#kc-form-options a {
-  color: var(--ava-accent) !important;
+.login-pf-page #kc-registration a,
+.login-pf-page #kc-form-options a {
+  color: var(--color-brand-500) !important;
+  text-decoration: none !important;
+  font-weight: 500 !important;
 }
-.login-pf-page a:hover {
-  color: var(--ava-accent-hover) !important;
+.login-pf-page a:hover,
+.login-pf-page #kc-registration a:hover {
+  color: var(--color-brand-400) !important;
   text-decoration: underline !important;
+  text-underline-offset: 2px !important;
 }
 
-/* Registration / forgot-password link row under the form */
-#kc-form-options .checkbox label,
+/* The "noAccount? Register" / "forgot password" row sits below the
+ * form. Give it a soft top divider so it visually separates from the
+ * primary action without adding a heavy line. */
 #kc-info-wrapper {
-  color: var(--ava-text-muted) !important;
-}
-#kc-info-wrapper {
-  border-top: 1px solid var(--ava-border) !important;
+  border-top: 1px solid var(--color-border) !important;
   padding-top: 1rem !important;
-  margin-top: 1rem !important;
+  margin-top: 1.25rem !important;
+  text-align: center !important;
+  color: var(--color-fg-muted) !important;
 }
 
-/* Error / success banners */
+/* ---- Feedback (errors only — no other coloured panels) --------------- */
 .alert-error,
 .kc-feedback-text,
-#kc-content-wrapper .alert {
-  background: rgba(239, 68, 68, 0.12) !important;
-  border: 1px solid var(--ava-danger) !important;
-  color: var(--ava-text) !important;
-  border-radius: 8px !important;
+#kc-content-wrapper .alert,
+.alert {
+  background: rgba(244, 114, 114, 0.10) !important;
+  border: 1px solid var(--color-err) !important;
+  color: var(--color-fg) !important;
+  border-radius: var(--ctrl-radius) !important;
+  padding: 10px 12px !important;
+  font-size: 13px !important;
+}
+.alert-error .pficon,
+.alert .pficon {
+  color: var(--color-err) !important;
 }
 
-/* Locale switcher (top-right) */
+/* Strip any default success/info green-blue PF banners in case they
+ * appear (e.g. password reset confirmation) — coerce to neutral. */
+.alert-success,
+.alert-info,
+.alert-warning {
+  background: var(--color-bg-2) !important;
+  border: 1px solid var(--color-border) !important;
+  color: var(--color-fg) !important;
+}
+
+/* ---- Locale switcher (top-right dropdown) ---------------------------- */
 #kc-locale ul {
-  background: var(--ava-surface) !important;
-  border: 1px solid var(--ava-border) !important;
-  border-radius: 8px !important;
+  background: var(--color-bg-2) !important;
+  border: 1px solid var(--color-border) !important;
+  border-radius: var(--ctrl-radius) !important;
 }
 #kc-locale a {
-  color: var(--ava-text) !important;
+  color: var(--color-fg) !important;
 }
 
-/* Strip Keycloak's default page-background image (its built-in
- * gradient leaks through the dark surface in some browsers) */
-.login-pf body {
-  background-image: none !important;
+/* Checkboxes (rememberMe etc) */
+.login-pf-page .checkbox label {
+  color: var(--color-fg-muted) !important;
 }

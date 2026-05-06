@@ -311,7 +311,17 @@ body {
   padding: 2rem;
   text-align: center;
 }
-.signin h1 { margin: 0 0 0.5rem; }
+/* AVA wordmark — sized to roughly the same optical weight as the
+ * old <h1>AVA</h1> headline (32px tall), with breathing room above
+ * the tagline below. `display:block` + auto margins centres without
+ * relying on text-align inheritance, since the SVG's own viewBox is
+ * already centred. */
+.signin__logo {
+  display: block;
+  width: 160px;
+  height: auto;
+  margin: 0 auto 0.75rem;
+}
 /* SignIn primary button inherits the global `button.primary` look; the
  * spinner cursor + extra top margin are the only signin-specifics. */
 .signin button.primary { padding: 8px 18px; margin-top: 1rem; }
