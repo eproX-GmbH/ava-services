@@ -181,6 +181,15 @@ jobs:
           # GitHub release upload.
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          # macOS runners default to ulimit -n 256, which the
+          # `readDirectoryAndSign` walker blows past once we vendor
+          # the full producer set (zod's locales tree alone is 50+
+          # files, multiplied across 6 producers + node_modules).
+          # Bumping to 65536 is what most Electron projects do; it's
+          # well within the kernel limit and stops EMFILE during
+          # signing without code changes.
+          ulimit -n 65536
+
           # `--mac --${{ matrix.arch }} --publish always` produces the
           # .dmg, signs it, notarizes it, staples the ticket, and
           # uploads to the matching GitHub Release.
