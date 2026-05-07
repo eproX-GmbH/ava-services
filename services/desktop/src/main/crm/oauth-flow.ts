@@ -50,6 +50,28 @@ const VERIFIER_BYTES = 32;
 const FLOW_TIMEOUT_MS = 5 * 60_000;
 
 /**
+ * Fixed loopback port for the OAuth redirect (v0.1.55).
+ *
+ * Why fixed instead of ephemeral: HubSpot enforces exact-match on
+ * redirect URIs and won't accept wildcards or "any port". Salesforce
+ * and Microsoft Identity both work with a fixed port, so we
+ * standardize on one across all three providers.
+ *
+ * 51080 was picked to sit in the same band as the local producer
+ * subprocess ports (51010-51060) for operator clarity, but stays
+ * outside the producer range so a producer collision is impossible.
+ *
+ * On `localhost` rather than `127.0.0.1`: HubSpot's HTTP allowlist
+ * accepts only the literal string `http://localhost` for non-HTTPS
+ * redirects (RFC 8252 mentions both as equivalent, but HubSpot
+ * disagrees). `localhost` resolves to 127.0.0.1 anyway, so binding
+ * the loopback server on 127.0.0.1 + advertising the redirect with
+ * the `localhost` hostname is functionally identical.
+ */
+const LOOPBACK_HOST = "localhost";
+const LOOPBACK_PORT = 51080;
+
+/**
  * Run the full connect flow end-to-end:
  *   1. Build authorize URL (via gateway helper that knows each
  *      provider's URL + scopes + client_id).
@@ -80,7 +102,7 @@ export async function runConnectFlow(opts: {
   const { code, redirectUri } = await runLoopbackFlow(
     state,
     async (port) => {
-      const redirectUri = `http://127.0.0.1:${port}/callback`;
+      const redirectUri = `http://${LOOPBACK_HOST}:${port}/callback`;
       const params = new URLSearchParams({
         provider,
         codeChallenge: challenge,
@@ -243,7 +265,10 @@ function runLoopbackFlow(
         return reject(new Error("state mismatch (CSRF guard)"));
       focusAppAfterCallback();
       const port = (server.address() as AddressInfo).port;
-      resolve({ code, redirectUri: `http://127.0.0.1:${port}/callback` });
+      resolve({
+        code,
+        redirectUri: `http://${LOOPBACK_HOST}:${port}/callback`,
+      });
     });
     server.on("listening", () => {
       const port = (server.address() as AddressInfo).port;
@@ -253,14 +278,28 @@ function runLoopbackFlow(
         reject(err);
       });
     });
-    server.on("error", (err) => {
+    server.on("error", (err: NodeJS.ErrnoException) => {
       if (timer) clearTimeout(timer);
+      if (err.code === "EADDRINUSE") {
+        // Most likely cause: a previous OAuth flow still listening
+        // (the timeout below should have closed it, but rapid retries
+        // can race). German message so the Settings card can render
+        // it directly without re-translation.
+        reject(
+          new Error(
+            `OAuth-Port ${LOOPBACK_PORT} ist belegt. Bitte schließe andere AVA-Verbindungsversuche und versuche es erneut.`,
+          ),
+        );
+        return;
+      }
       reject(err);
     });
-    // RFC 8252 — random ephemeral 127.0.0.1 port. Each provider's
-    // Connected App config must allow `http://127.0.0.1:*` as a
-    // redirect URI.
-    server.listen(0, "127.0.0.1");
+    // v0.1.55 — fixed loopback port (51080). HubSpot's redirect-URI
+    // allowlist requires exact match (no wildcards / "any port"), so
+    // we standardize on one port across all three providers. Bound on
+    // 127.0.0.1 — `localhost` resolves there anyway and the redirect
+    // URI uses the `localhost` hostname for HubSpot's allowlist.
+    server.listen(LOOPBACK_PORT, "127.0.0.1");
 
     timer = setTimeout(() => {
       server.close();
