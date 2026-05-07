@@ -6,6 +6,7 @@ import type {
   UpdateState,
   UpdateStatus,
 } from "../shared/types";
+import { scrubQuarantine } from "./scrub-quarantine";
 
 // Auto-update via electron-updater (Phase 8.u4 — finally landed in
 // 8.v1.5).
@@ -167,9 +168,14 @@ export class Updater extends EventEmitter {
     // without this the pill goes silent and the user wonders if the
     // click did anything.
     this.setState("installing");
-    // Defer quitAndInstall so the IPC push has a tick to land in the
-    // renderer before the main process tears down.
-    setTimeout(() => autoUpdater.quitAndInstall(false, true), 100);
+    // v0.1.55 — last-chance quarantine scrub on the running bundle.
+    // The boot-time scrub in main/index.ts is the primary fix; this
+    // is belt-and-suspenders for the same-launch upgrade path.
+    void scrubQuarantine().finally(() => {
+      // Defer quitAndInstall so the IPC push has a tick to land in
+      // the renderer before the main process tears down.
+      setTimeout(() => autoUpdater.quitAndInstall(false, true), 100);
+    });
   }
 
   getStatus(): UpdateStatus {

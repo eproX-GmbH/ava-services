@@ -28,6 +28,7 @@ import {
 } from "./external-service-monitor";
 import { CrmManager } from "./crm";
 import type { CrmProvider, CrmStatus } from "./crm/types";
+import { scrubQuarantine } from "./scrub-quarantine";
 import { Updater, broadcastUpdateStatus } from "./updater";
 import {
   AgentOrchestrator,
@@ -835,6 +836,14 @@ app.whenReady().then(async () => {
   // a long-running install doesn't accumulate gigabytes of frames.
   registerScreenshotProtocol();
   void pruneOldScreenshots();
+
+  // v0.1.55 — clear `com.apple.quarantine` from this bundle. This
+  // launch's process retains its quarantine flag (set by the kernel
+  // at exec time), but the bundle on disk becomes clean — so the
+  // NEXT launch boots un-quarantined and OTA can complete without
+  // ShipIt tripping on hardened-runtime dylibs. See
+  // ./scrub-quarantine.ts for the full root-cause analysis.
+  void scrubQuarantine();
 
   // v0.1.52 — start the external-service reachability monitor. First
   // probe runs synchronously inside start(); the recurring 60s
