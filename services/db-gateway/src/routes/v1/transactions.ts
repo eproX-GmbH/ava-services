@@ -1108,6 +1108,11 @@ transactionsRouter.openapi(retryRoute, async (c) => {
 
   await assertTransactionOwnershipById(c, transactionId);
 
+  // v0.1.53 — per-user AMQP routing. Retry republishes need to land
+  // on the same user's per-user queue the original dispatch did.
+  // actorId from the JWT is the userId we suffix into the routing
+  // key (see lib/per-user-routing.ts).
+  const userId = c.get("auth").actorId;
   const targets = RETRY_DISPATCH[stage];
   const requestSource = c.req.url;
   const dispatched = await Promise.all(
@@ -1147,6 +1152,7 @@ transactionsRouter.openapi(retryRoute, async (c) => {
               transactionId,
               companyId,
               source: requestSource,
+              userId,
             });
             break;
           case "website":
@@ -1156,6 +1162,7 @@ transactionsRouter.openapi(retryRoute, async (c) => {
               companyId,
               companyName,
               source: requestSource,
+              userId,
             });
             break;
           case "company-profile":
@@ -1163,6 +1170,7 @@ transactionsRouter.openapi(retryRoute, async (c) => {
               transactionId,
               companyId,
               source: requestSource,
+              userId,
             });
             break;
           case "company-publication":
@@ -1170,6 +1178,7 @@ transactionsRouter.openapi(retryRoute, async (c) => {
               transactionId,
               companyId,
               source: requestSource,
+              userId,
             });
             break;
           case "company-contact":
@@ -1177,6 +1186,7 @@ transactionsRouter.openapi(retryRoute, async (c) => {
               transactionId,
               companyId,
               source: requestSource,
+              userId,
             });
             break;
         }

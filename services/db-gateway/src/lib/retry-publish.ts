@@ -45,6 +45,7 @@ import { HTTPException } from "hono/http-exception";
 import { getGatewayAmqpPublisher } from "./amqp-publisher";
 import { getProducerPool } from "./producer-pools";
 import { getContactPrismaClient } from "./contact-prisma";
+import { targetUserRoutingKey } from "./per-user-routing";
 import { loadEnv } from "./env";
 
 const ALL_PRODUCER_SERVICES = [
@@ -124,8 +125,10 @@ export async function publishStructuredContentRetry(opts: {
   transactionId: string;
   companyId: string;
   source: string;
+  /** v0.1.53 — JWT subject for per-user AMQP routing. */
+  userId: string;
 }): Promise<{ published: number }> {
-  const { stage, transactionId, companyId, source } = opts;
+  const { stage, transactionId, companyId, source, userId } = opts;
   const loaded = await loadStructuredContent(companyId);
   if (!loaded) {
     notFound(`No structured content for company ${companyId}; cannot retry stage ${stage}`);
@@ -156,7 +159,7 @@ export async function publishStructuredContentRetry(opts: {
           managingDirectors,
         })
         .build();
-    await client.publish(env.EVENT_BUS_EXCHANGE, event);
+    await client.publish(env.EVENT_BUS_EXCHANGE, targetUserRoutingKey(event, userId));
     return { published: 1 };
   }
 
@@ -175,7 +178,7 @@ export async function publishStructuredContentRetry(opts: {
           managingDirectors,
         })
         .build();
-    await client.publish(env.EVENT_BUS_EXCHANGE, event);
+    await client.publish(env.EVENT_BUS_EXCHANGE, targetUserRoutingKey(event, userId));
     return { published: 1 };
   }
 
@@ -202,7 +205,7 @@ export async function publishStructuredContentRetry(opts: {
         managingDirectors,
       })
       .build();
-  await client.publish(env.EVENT_BUS_EXCHANGE, event);
+  await client.publish(env.EVENT_BUS_EXCHANGE, targetUserRoutingKey(event, userId));
   return { published: 1 };
 }
 
@@ -223,8 +226,10 @@ export async function publishWebsiteRetry(opts: {
   companyId: string;
   companyName?: string;
   source: string;
+  /** v0.1.53 — JWT subject for per-user AMQP routing. */
+  userId: string;
 }): Promise<{ published: number }> {
-  const { stage, transactionId, companyId, companyName, source } = opts;
+  const { stage, transactionId, companyId, companyName, source, userId } = opts;
   const pool = getProducerPool("website");
   const websiteRes = await pool.query<{ url: string | null }>(
     `SELECT url FROM "Website" WHERE "companyId" = $1 LIMIT 1`,
@@ -243,7 +248,7 @@ export async function publishWebsiteRetry(opts: {
   if (stage === "companyProfile") {
     const event: CloudEvent<WebsiteUpsertPayload> =
       new EventBuilder().website.upsert.header(header).data({ url }).build();
-    await client.publish(env.EVENT_BUS_EXCHANGE, event);
+    await client.publish(env.EVENT_BUS_EXCHANGE, targetUserRoutingKey(event, userId));
     return { published: 1 };
   }
 
@@ -258,7 +263,7 @@ export async function publishWebsiteRetry(opts: {
         .header(header)
         .data({ url, companyName })
         .build();
-    await client.publish(env.EVENT_BUS_EXCHANGE, event);
+    await client.publish(env.EVENT_BUS_EXCHANGE, targetUserRoutingKey(event, userId));
     return { published: 1 };
   }
 
@@ -288,7 +293,7 @@ export async function publishWebsiteRetry(opts: {
           category: serp.category ?? undefined,
         })
         .build();
-    await client.publish(env.EVENT_BUS_EXCHANGE, event);
+    await client.publish(env.EVENT_BUS_EXCHANGE, targetUserRoutingKey(event, userId));
     published += 1;
   }
 
@@ -323,7 +328,7 @@ export async function publishWebsiteRetry(opts: {
           })),
         })
         .build();
-    await client.publish(env.EVENT_BUS_EXCHANGE, event);
+    await client.publish(env.EVENT_BUS_EXCHANGE, targetUserRoutingKey(event, userId));
     published += 1;
   }
 
@@ -359,7 +364,7 @@ export async function publishWebsiteRetry(opts: {
           })),
         })
         .build();
-    await client.publish(env.EVENT_BUS_EXCHANGE, event);
+    await client.publish(env.EVENT_BUS_EXCHANGE, targetUserRoutingKey(event, userId));
     published += 1;
   }
 
@@ -381,8 +386,10 @@ export async function publishCompanyProfileRetry(opts: {
   transactionId: string;
   companyId: string;
   source: string;
+  /** v0.1.53 — JWT subject for per-user AMQP routing. */
+  userId: string;
 }): Promise<{ published: number }> {
-  const { transactionId, companyId, source } = opts;
+  const { transactionId, companyId, source, userId } = opts;
   const pool = getProducerPool("company-profile");
 
   const profileRes = await pool.query<{ profile: string | null }>(
@@ -405,7 +412,7 @@ export async function publishCompanyProfileRetry(opts: {
         .header(header)
         .data({ profile: profileRes.rows[0].profile as string })
         .build();
-    await client.publish(env.EVENT_BUS_EXCHANGE, event);
+    await client.publish(env.EVENT_BUS_EXCHANGE, targetUserRoutingKey(event, userId));
     published += 1;
   }
 
@@ -415,7 +422,7 @@ export async function publishCompanyProfileRetry(opts: {
         .header(header)
         .data({ keywords: keywordsRes.rows.map((r) => r.keyword) })
         .build();
-    await client.publish(env.EVENT_BUS_EXCHANGE, event);
+    await client.publish(env.EVENT_BUS_EXCHANGE, targetUserRoutingKey(event, userId));
     published += 1;
   }
 
@@ -440,8 +447,10 @@ export async function publishCompanyPublicationRetry(opts: {
   transactionId: string;
   companyId: string;
   source: string;
+  /** v0.1.53 — JWT subject for per-user AMQP routing. */
+  userId: string;
 }): Promise<{ published: number }> {
-  const { transactionId, companyId, source } = opts;
+  const { transactionId, companyId, source, userId } = opts;
   const pool = getProducerPool("company-publication");
 
   const rows = await pool.query<{
@@ -571,7 +580,7 @@ export async function publishCompanyPublicationRetry(opts: {
       .build();
   const env = loadEnv();
   const client = await getGatewayAmqpPublisher();
-  await client.publish(env.EVENT_BUS_EXCHANGE, event);
+  await client.publish(env.EVENT_BUS_EXCHANGE, targetUserRoutingKey(event, userId));
   return { published: 1 };
 }
 
@@ -590,8 +599,10 @@ export async function publishCompanyContactRetry(opts: {
   transactionId: string;
   companyId: string;
   source: string;
+  /** v0.1.53 — JWT subject for per-user AMQP routing. */
+  userId: string;
 }): Promise<{ published: number }> {
-  const { transactionId, companyId, source } = opts;
+  const { transactionId, companyId, source, userId } = opts;
   const prisma = getContactPrismaClient();
 
   const facts = await prisma.fact.findMany({
@@ -668,6 +679,6 @@ export async function publishCompanyContactRetry(opts: {
 
   const env = loadEnv();
   const client = await getGatewayAmqpPublisher();
-  await client.publish(env.EVENT_BUS_EXCHANGE, event);
+  await client.publish(env.EVENT_BUS_EXCHANGE, targetUserRoutingKey(event, userId));
   return { published: 1 };
 }

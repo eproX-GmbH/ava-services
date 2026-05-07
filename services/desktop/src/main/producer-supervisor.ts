@@ -112,6 +112,19 @@ export interface ProducerSupervisorOptions {
    * subprocess.
    */
   getAccessToken: () => Promise<string | null>;
+  /**
+   * v0.1.53 — JWT subject (auth.actorId) used to scope AMQP queues
+   * + routing keys per-user. Each producer:
+   *   - Asserts a queue named `<base>-<userId>` instead of `<base>`.
+   *   - Binds `<context>.<operation>.<userId>` (master-data publishes
+   *     with the same suffix to land messages on this user's queue).
+   *   - Cascades downstream publishes with the same suffix so the
+   *     next producer in the chain receives them on its per-user
+   *     queue too.
+   * When null (signed-out / dev / tests) producers fall back to the
+   * legacy shared base names.
+   */
+  getUserId: () => Promise<string | null>;
   /** Extra env merged in after the supervisor's defaults. */
   extraEnv?: Record<string, string>;
 }
@@ -329,6 +342,11 @@ export class ProducerSupervisor extends EventEmitter {
     // expiry-handling philosophy. Null token is OK; producers that
     // don't need gateway calls (company-profile) ignore it.
     const accessToken = await this.opts.getAccessToken();
+    // v0.1.53 — per-user AMQP routing. Resolved at spawn; if the
+    // user signs out and back in as a different identity the
+    // supervisor cycles (auth-status branch in main/index.ts), so
+    // a new userId is captured fresh.
+    const userId = await this.opts.getUserId();
     return {
       ...process.env,
       // Cloud-managed Postgres URL fetched from gateway. The
@@ -373,6 +391,11 @@ export class ProducerSupervisor extends EventEmitter {
       // valueserp etc.). Same gateway the desktop main itself uses.
       GATEWAY_URL: process.env.GATEWAY_URL ?? "https://ava-db-gateway.fly.dev",
       ...(accessToken ? { PRODUCER_GATEWAY_TOKEN: accessToken } : {}),
+      // v0.1.53 — per-user AMQP queue + routing-key suffix. See
+      // utils/per-user-routing.ts in each producer for the read
+      // path. Empty / unset on legacy / dev paths; producer falls
+      // back to the shared base queue then.
+      ...(userId ? { AVA_USER_ID: userId } : {}),
       // Selenium-driven producers (structured-content,
       // company-publication, website) write per-step screenshots
       // here so the renderer can show them in the matrix drill-down.

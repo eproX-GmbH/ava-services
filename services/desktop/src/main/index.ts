@@ -286,6 +286,11 @@ function buildProducer(
     // Bearer for producer→gateway calls (e.g. valueserp proxy).
     // Captured at spawn; see ProducerSupervisorOptions.getAccessToken.
     getAccessToken: () => auth.getAccessToken(),
+    // v0.1.53 — userId for per-user AMQP queue isolation. The
+    // supervisor injects this as AVA_USER_ID env on spawn; the
+    // producer uses it to scope queue + binding key + downstream
+    // publish routing.
+    getUserId: async () => auth.getStatus().actorId ?? null,
   });
 }
 
