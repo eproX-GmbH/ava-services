@@ -458,32 +458,43 @@ export function TransactionDetail() {
           />
 
           {/* v0.1.50 — live producer logs + Selenium screenshots scoped
-              to this company. Picks the most "interesting" producer by
-              default (failed > in_progress > first available) so a user
-              clicking a red cell drops straight into the relevant log.
-              The dropdown lets them switch without closing the panel. */}
+              to this company. The dropdown ALWAYS lists every local
+              producer (not filtered by `stages` from the pipeline
+              endpoint) so we never accidentally hide one a user wants
+              to inspect. Picks the most "interesting" producer by
+              default (failed > in_progress > structured-content first)
+              so a user clicking a red cell drops straight into the
+              relevant log. */}
           {(() => {
-            const localProducers = stages
-              .map((s) => STAGE_TO_PRODUCER[s])
-              .filter((p): p is string => !!p);
-            if (localProducers.length === 0) return null;
+            const allProducers = [
+              "structured-content",
+              "company-publication",
+              "website",
+              "company-profile",
+              "company-contact",
+              "company-evaluation",
+            ];
             const interesting = (() => {
               for (const s of stages) {
-                if (openRow.cells[s].state === "failed")
-                  return STAGE_TO_PRODUCER[s];
+                if (openRow.cells[s].state === "failed") {
+                  const p = STAGE_TO_PRODUCER[s];
+                  if (p) return p;
+                }
               }
               for (const s of stages) {
-                if (openRow.cells[s].state === "in_progress")
-                  return STAGE_TO_PRODUCER[s];
+                if (openRow.cells[s].state === "in_progress") {
+                  const p = STAGE_TO_PRODUCER[s];
+                  if (p) return p;
+                }
               }
-              return localProducers[0];
+              return allProducers[0];
             })();
             return (
               <>
                 <h4>Diagnose</h4>
                 <DiagnosticsPanel
                   runId={`${id}:${openCompanyId}`}
-                  producers={localProducers}
+                  producers={allProducers}
                   initialProducer={interesting}
                 />
               </>
