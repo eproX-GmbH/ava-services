@@ -2,6 +2,7 @@ import {
   app,
   BrowserWindow,
   ipcMain,
+  protocol,
   session,
   shell,
   systemPreferences,
@@ -11,6 +12,15 @@ import { Auth, type AuthStatus } from "./auth";
 import { OllamaSupervisor } from "./ollama-supervisor";
 import { PostgresSupervisor } from "./postgres-supervisor";
 import { ProducerSupervisor } from "./producer-supervisor";
+import {
+  producerLogBuffer,
+  type ProducerLogEvent,
+} from "./producer-log-buffer";
+import {
+  listScreenshots,
+  pruneOldScreenshots,
+  registerScreenshotProtocol,
+} from "./producer-screenshots";
 import { Updater, broadcastUpdateStatus } from "./updater";
 import {
   AgentOrchestrator,
@@ -80,6 +90,23 @@ const APP_CONFIG = resolveConfig({
 const GATEWAY_URL = APP_CONFIG.gatewayUrl;
 const AUTH_ISSUER = APP_CONFIG.authIssuer;
 const AUTH_CLIENT_ID = APP_CONFIG.authClientId;
+
+// Register custom `ava-screenshot://` protocol as a privileged scheme.
+// Must be called before app.whenReady() (electron requirement). The
+// actual file-serving handler is wired in registerScreenshotProtocol()
+// inside the whenReady callback. Marking it as `standard` lets the
+// renderer use it in <img src=...> like a normal http:// URL.
+protocol.registerSchemesAsPrivileged([
+  {
+    scheme: "ava-screenshot",
+    privileges: {
+      standard: true,
+      secure: true,
+      supportFetchAPI: true,
+      bypassCSP: false,
+    },
+  },
+]);
 
 const auth = new Auth(AUTH_ISSUER, AUTH_CLIENT_ID);
 
@@ -713,6 +740,12 @@ function createMainWindow(): BrowserWindow {
 }
 
 app.whenReady().then(async () => {
+  // Wire the on-disk handler for the `ava-screenshot://` protocol we
+  // pre-registered above. Also prune captures older than the TTL so
+  // a long-running install doesn't accumulate gigabytes of frames.
+  registerScreenshotProtocol();
+  void pruneOldScreenshots();
+
   // ---- Renderer permission grants (Phase 8.n2) -----------------------------
   //
   // Electron's default `setPermissionRequestHandler` denies every
@@ -794,6 +827,32 @@ app.whenReady().then(async () => {
   // on mount and subscribes to `producer-status:changed` for diffs.
   ipcMain.handle("producers:list", () =>
     producers.map((p) => p.getStatus()),
+  );
+
+  // Producer log streaming. The Logs tab in the matrix drill-down
+  // panel calls tail() on open (backfill) then subscribes to
+  // `producer-log:line` for the live tail. See producer-log-buffer.ts
+  // for the ring-buffer semantics.
+  ipcMain.handle(
+    "producers:logs:tail",
+    (_e, args: { producer: string; limit?: number }) =>
+      producerLogBuffer.tail(args.producer, args.limit ?? 500),
+  );
+  producerLogBuffer.on("line", (event: ProducerLogEvent) => {
+    for (const win of BrowserWindow.getAllWindows()) {
+      win.webContents.send("producer-log:line", event);
+    }
+  });
+
+  // Producer screenshots. The Screenshots tab calls list() with
+  // (producer, runId) where runId = `${transactionId}:${companyId}`,
+  // matches the on-disk dir created by each producer's screenshot
+  // util. The custom `ava-screenshot://` protocol (registered before
+  // app.whenReady) serves the actual PNG bytes.
+  ipcMain.handle(
+    "producers:screenshots:list",
+    (_e, args: { producer: string; runId: string }) =>
+      listScreenshots(args.producer, args.runId),
   );
   ipcMain.handle("ollama:restart", () => ollama.restart());
 

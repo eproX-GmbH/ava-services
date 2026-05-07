@@ -3,6 +3,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useParams } from "react-router-dom";
 import { gatewayFetch, gatewaySSE } from "../api/gateway";
 import { fmtDate } from "../lib/format";
+import { DiagnosticsPanel } from "../components/DiagnosticsPanel";
 
 // W3 — pipeline matrix view.
 //
@@ -98,6 +99,19 @@ const SERVICE_TO_STAGE: Record<string, StageId> = {
   "company-profile": "companyProfile",
   "company-contact": "companyContact",
   "company-evaluation": "companyEvaluation",
+};
+
+// Inverse mapping — drives the diagnostics panel which addresses
+// producers by their service name (matches the on-disk producer dir
+// name and the supervisor's ProducerStatus.name). master-data isn't
+// a local producer (cloud-only), so it's intentionally absent.
+const STAGE_TO_PRODUCER: Partial<Record<StageId, string>> = {
+  structuredContent: "structured-content",
+  companyPublication: "company-publication",
+  website: "website",
+  companyProfile: "company-profile",
+  companyContact: "company-contact",
+  companyEvaluation: "company-evaluation",
 };
 
 export function TransactionDetail() {
@@ -442,6 +456,39 @@ export function TransactionDetail() {
               });
             }}
           />
+
+          {/* v0.1.50 — live producer logs + Selenium screenshots scoped
+              to this company. Picks the most "interesting" producer by
+              default (failed > in_progress > first available) so a user
+              clicking a red cell drops straight into the relevant log.
+              The dropdown lets them switch without closing the panel. */}
+          {(() => {
+            const localProducers = stages
+              .map((s) => STAGE_TO_PRODUCER[s])
+              .filter((p): p is string => !!p);
+            if (localProducers.length === 0) return null;
+            const interesting = (() => {
+              for (const s of stages) {
+                if (openRow.cells[s].state === "failed")
+                  return STAGE_TO_PRODUCER[s];
+              }
+              for (const s of stages) {
+                if (openRow.cells[s].state === "in_progress")
+                  return STAGE_TO_PRODUCER[s];
+              }
+              return localProducers[0];
+            })();
+            return (
+              <>
+                <h4>Diagnose</h4>
+                <DiagnosticsPanel
+                  runId={`${id}:${openCompanyId}`}
+                  producers={localProducers}
+                  initialProducer={interesting}
+                />
+              </>
+            );
+          })()}
         </aside>
       )}
     </section>

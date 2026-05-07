@@ -24,6 +24,9 @@ import type {
   OllamaPullProgress,
   OllamaStatus,
   PostgresStatus,
+  ProducerLogEvent,
+  ProducerLogLine,
+  ProducerScreenshotEntry,
   ProducerStatus,
   UpdateStatus,
   ProviderCatalogEntry,
@@ -70,6 +73,9 @@ export type {
   OllamaPullProgress,
   OllamaStatus,
   PostgresStatus,
+  ProducerLogEvent,
+  ProducerLogLine,
+  ProducerScreenshotEntry,
   ProducerStatus,
   UpdateStatus,
   ProviderCatalogEntry,
@@ -209,6 +215,45 @@ const api = {
       ipcRenderer.on("producer-status:changed", handler);
       return () =>
         ipcRenderer.removeListener("producer-status:changed", handler);
+    },
+    /** Producer log streaming (v0.1.50). The Logs tab in the matrix
+     *  drill-down panel calls `tail` once on mount for backfill, then
+     *  subscribes via `onLine` for the live tail. Ring buffer in the
+     *  main process caps memory at ~5000 lines per producer. */
+    logs: {
+      tail: (
+        producer: string,
+        limit?: number,
+      ): Promise<ProducerLogLine[]> =>
+        ipcRenderer.invoke("producers:logs:tail", { producer, limit }),
+      onLine: (
+        cb: (event: ProducerLogEvent) => void,
+      ): (() => void) => {
+        const handler = (
+          _e: Electron.IpcRendererEvent,
+          event: ProducerLogEvent,
+        ) => cb(event);
+        ipcRenderer.on("producer-log:line", handler);
+        return () => ipcRenderer.removeListener("producer-log:line", handler);
+      },
+    },
+    /** Selenium screenshots (v0.1.50). Producer drops PNGs to disk via
+     *  AVA_SCREENSHOT_DIR; the renderer lists them by (producer, runId)
+     *  where runId = `${transactionId}:${companyId}`. Image bytes are
+     *  served via the custom `ava-screenshot://` protocol so the
+     *  renderer can use a normal <img src> instead of base64 IPC. */
+    screenshots: {
+      list: (
+        producer: string,
+        runId: string,
+      ): Promise<ProducerScreenshotEntry[]> =>
+        ipcRenderer.invoke("producers:screenshots:list", { producer, runId }),
+      urlFor: (
+        producer: string,
+        runId: string,
+        filename: string,
+      ): string =>
+        `ava-screenshot://${encodeURIComponent(producer)}/${encodeURIComponent(runId)}/${encodeURIComponent(filename)}`,
     },
   },
 

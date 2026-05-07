@@ -97,6 +97,43 @@ export interface ProducerStatus {
   lastExitCode: number | null;
 }
 
+// ---- Producer logs (v0.1.50) ----------------------------------------------
+// Mirrored from main/producer-log-buffer.ts. Defined here in shared types so
+// both preload and renderer can refer to the same shape without circular
+// imports between the two TS projects (tsconfig.web vs tsconfig.node).
+
+export interface ProducerLogLine {
+  /** Process-monotonic id; renderer dedupes/seeks on this. */
+  id: number;
+  /** Wallclock ms when the line was emitted. */
+  ts: number;
+  stream: "stdout" | "stderr";
+  text: string;
+}
+
+export interface ProducerLogEvent {
+  /** Producer name (matches ProducerStatus.name). */
+  producer: string;
+  line: ProducerLogLine;
+}
+
+// ---- Producer screenshots (v0.1.50) ---------------------------------------
+// Mirrored from main/producer-screenshots.ts.
+
+export interface ProducerScreenshotEntry {
+  /** Filename within <userData>/screenshots/<producer>/<runId>/.
+   *  Use window.api.producers.screenshots.urlFor() to get a renderable
+   *  ava-screenshot:// URL. */
+  filename: string;
+  /** Capture timestamp (ms since epoch), parsed from filename prefix. */
+  ts: number;
+  /** Step label parsed from filename suffix — "click_search",
+   *  "before_iframe_sweep", "failure", etc. */
+  label: string;
+  /** PNG size in bytes. */
+  size: number;
+}
+
 // ---- Postgres (8.v1.0 — bundled local DB) ---------------------------------
 //
 // The desktop app spawns a portable PostgreSQL 17 binary as a child

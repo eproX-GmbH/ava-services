@@ -2302,3 +2302,149 @@ a.heartbeat-decision__company:hover {
   animation: activity-spin 1s linear infinite;
   transform-origin: 50% 50%;
 }
+
+/* ---- v0.1.50 — DiagnosticsPanel (matrix drill-down logs + screenshots) ---
+ *
+ * Lives inside .drill-panel; inherits the panel's font + foreground.
+ * The log stream is a fixed-height monospace pane with the same calm
+ * dark surface the rest of the app uses; screenshots render in a
+ * grid of thumbnails with a click-to-expand lightbox. Both views
+ * share the .diagnostics__header (producer dropdown + tabs).
+ */
+.diagnostics {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  background: var(--color-bg-1, #232726);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.75rem;
+}
+.diagnostics__header {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+.diagnostics__header select {
+  flex: 0 0 auto;
+}
+.diagnostics__tabs {
+  display: flex;
+  gap: 0.25rem;
+  margin-left: auto;
+}
+.diagnostics__tabs button {
+  padding: 4px 12px;
+  font-size: 12px;
+}
+.diagnostics__controls {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  flex-wrap: wrap;
+  font-size: 12px;
+}
+.diagnostics__controls input[type="search"] {
+  flex: 1 1 200px;
+  font: inherit;
+  font-family: var(--font-mono, monospace);
+  font-size: 12px;
+  padding: 4px 8px;
+}
+.diagnostics__controls label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  white-space: nowrap;
+}
+.diagnostics__log-stream {
+  height: 320px;
+  overflow-y: auto;
+  background: var(--color-bg-0, #1a1d1c);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.5rem;
+  font-family: var(--font-mono, ui-monospace, "SF Mono", Menlo, monospace);
+  font-size: 11px;
+  line-height: 1.45;
+  /* Render long lines on a single row but allow horizontal scroll
+   * so a stack trace doesn't wrap mid-symbol. */
+  white-space: pre;
+  overflow-x: auto;
+}
+.log-line {
+  display: grid;
+  grid-template-columns: 70px 1fr;
+  gap: 0.5rem;
+  padding: 1px 0;
+}
+.log-line--stderr {
+  color: var(--color-err, #f47272);
+}
+.log-line__time {
+  color: var(--muted);
+  user-select: none;
+}
+.log-line__text {
+  white-space: pre;
+}
+.diagnostics__shot-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 0.5rem;
+  max-height: 360px;
+  overflow-y: auto;
+}
+.shot-thumb {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  padding: 0.25rem;
+  background: var(--color-bg-0, #1a1d1c);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+}
+.shot-thumb:hover {
+  border-color: var(--accent);
+}
+.shot-thumb img {
+  width: 100%;
+  aspect-ratio: 16 / 10;
+  object-fit: cover;
+  border-radius: 3px;
+  background: #000;
+}
+.shot-thumb__label {
+  font-size: 11px;
+  font-weight: 500;
+  word-break: break-all;
+}
+.shot-thumb__time {
+  font-size: 10px;
+}
+.shot-lightbox {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.85);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+  cursor: zoom-out;
+  padding: 2rem;
+}
+.shot-lightbox img {
+  max-width: 95vw;
+  max-height: 85vh;
+  object-fit: contain;
+  border: 1px solid var(--border);
+}
+.shot-lightbox__caption {
+  margin-top: 0.75rem;
+  font-size: 12px;
+  color: var(--color-fg, #e5e7e6);
+}

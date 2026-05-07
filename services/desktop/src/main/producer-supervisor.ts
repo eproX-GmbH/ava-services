@@ -1,4 +1,6 @@
 import { spawn, type ChildProcessByStdio } from "node:child_process";
+import { producerLogBuffer } from "./producer-log-buffer";
+import { screenshotDirForProducer } from "./producer-screenshots";
 import type { Readable } from "node:stream";
 import { EventEmitter } from "node:events";
 import { existsSync } from "node:fs";
@@ -223,11 +225,20 @@ export class ProducerSupervisor extends EventEmitter {
     });
 
     const tag = `producer:${this.opts.config.name}`;
+    // Tee child stdio into:
+    //   - the launching console (existing developer affordance — quit
+    //     and re-launch the .app from Terminal to see live output)
+    //   - the in-process producer log buffer (renderer-visible Logs
+    //     tab via IPC, see main/index.ts and producer-log-buffer.ts)
     this.child.stdout.on("data", (b: Buffer) => {
-      console.log(`[${tag}] ${b.toString().trimEnd()}`);
+      const text = b.toString().trimEnd();
+      console.log(`[${tag}] ${text}`);
+      producerLogBuffer.push(this.opts.config.name, "stdout", text);
     });
     this.child.stderr.on("data", (b: Buffer) => {
-      console.warn(`[${tag}:err] ${b.toString().trimEnd()}`);
+      const text = b.toString().trimEnd();
+      console.warn(`[${tag}:err] ${text}`);
+      producerLogBuffer.push(this.opts.config.name, "stderr", text);
     });
     this.child.on("exit", (code, signal) => {
       const wasRunning = this.state === "ready" || this.state === "starting";
@@ -362,6 +373,13 @@ export class ProducerSupervisor extends EventEmitter {
       // valueserp etc.). Same gateway the desktop main itself uses.
       GATEWAY_URL: process.env.GATEWAY_URL ?? "https://ava-db-gateway.fly.dev",
       ...(accessToken ? { PRODUCER_GATEWAY_TOKEN: accessToken } : {}),
+      // Selenium-driven producers (structured-content,
+      // company-publication, website) write per-step screenshots
+      // here so the renderer can show them in the matrix drill-down.
+      // The producer creates per-runId subdirectories itself; we
+      // just give it the per-producer root. Producers that don't
+      // run Selenium ignore this env var.
+      AVA_SCREENSHOT_DIR: screenshotDirForProducer(this.opts.config.name),
       ...(this.opts.extraEnv ?? {}),
     };
   }
