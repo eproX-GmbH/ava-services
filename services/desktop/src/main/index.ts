@@ -26,6 +26,8 @@ import {
   UNTERNEHMENSREGISTER_DEPENDENT_PRODUCERS,
   type ExternalServiceStatus,
 } from "./external-service-monitor";
+import { CrmManager } from "./crm";
+import type { CrmProvider, CrmStatus } from "./crm/types";
 import { Updater, broadcastUpdateStatus } from "./updater";
 import {
   AgentOrchestrator,
@@ -122,6 +124,14 @@ const auth = new Auth(AUTH_ISSUER, AUTH_CLIENT_ID);
 // producers that depend on that site so we don't burn Selenium
 // cycles on a downed upstream.
 const externalServiceMonitor = new ExternalServiceMonitor();
+
+// v0.1.54 — CRM connection manager. Holds per-provider OAuth tokens
+// in memory + on disk (safeStorage); renderer + agent tool drive
+// connect/disconnect via IPC.
+const crmManager = new CrmManager({
+  getBearer: () => auth.getAccessToken(),
+  gatewayUrl: GATEWAY_URL,
+});
 
 function broadcastAuthStatus(status: AuthStatus): void {
   for (const win of BrowserWindow.getAllWindows()) {
@@ -715,6 +725,8 @@ const agentRegistry = buildReadOnlyRegistry({
   // 8.t2 — watch_* tools fire this after every successful mutation so
   // the topbar chip + Settings panel re-sync.
   onWatchesChanged: broadcastWatchesChanged,
+  // v0.1.54 — CRM connect/disconnect/status tools.
+  crm: crmManager,
 });
 
 // Memory store (Phase 8.d). Probed once at boot — if the userData/agent/memory
@@ -828,6 +840,20 @@ app.whenReady().then(async () => {
   // probe runs synchronously inside start(); the recurring 60s
   // interval kicks in after.
   externalServiceMonitor.start();
+
+  // v0.1.54 — hydrate persisted CRM tokens from disk + start
+  // broadcasting status changes to the renderer. Failures here are
+  // non-fatal: a corrupt/encrypted-unavailable record just leaves
+  // the provider as "not connected" until the user re-runs OAuth.
+  crmManager.on("status", (status: CrmStatus) => {
+    for (const win of BrowserWindow.getAllWindows()) {
+      win.webContents.send("crm-status:changed", status);
+    }
+  });
+  await crmManager.hydrate().catch((err: unknown) => {
+    // eslint-disable-next-line no-console
+    console.warn("[crm] hydrate failed:", err);
+  });
 
   // ---- Renderer permission grants (Phase 8.n2) -----------------------------
   //
@@ -949,6 +975,29 @@ app.whenReady().then(async () => {
   );
   ipcMain.handle("external-service:probeNow", () =>
     externalServiceMonitor.probeNow(),
+  );
+
+  // v0.1.54 — CRM connection manager. Drive OAuth connect/disconnect
+  // for the supported CRMs (Salesforce / HubSpot / Dynamics). Status
+  // pushes via `crm-status:changed`.
+  ipcMain.handle("crm:list", (): CrmStatus[] => crmManager.getAllStatuses());
+  ipcMain.handle(
+    "crm:getStatus",
+    (_e, provider: CrmProvider): CrmStatus => crmManager.getStatus(provider),
+  );
+  ipcMain.handle(
+    "crm:connect",
+    async (_e, args: { provider: CrmProvider; orgUrl?: string }) => {
+      await crmManager.connect(args.provider, { orgUrl: args.orgUrl });
+      return crmManager.getStatus(args.provider);
+    },
+  );
+  ipcMain.handle(
+    "crm:disconnect",
+    async (_e, provider: CrmProvider): Promise<CrmStatus> => {
+      await crmManager.disconnect(provider);
+      return crmManager.getStatus(provider);
+    },
   );
   ipcMain.handle("ollama:restart", () => ollama.restart());
 

@@ -11,6 +11,7 @@ import { transactionsRouter } from "./v1/transactions";
 import { localAmqpRouter } from "./v1/local-amqp";
 import { proxyRouter } from "./v1/proxy";
 import { producersRouter } from "./v1/producers";
+import { crmRouter } from "./v1/crm";
 
 // /v1 router.
 //
@@ -62,6 +63,11 @@ v1.route("/", proxyRouter);
 
 // §8.v3 cosmetics — per-producer queue depth (Settings panel).
 v1.route("/", producersRouter);
+
+// §8.v3 CRM — OAuth code-exchange + refresh proxy for Salesforce /
+// HubSpot / Dynamics. Tokens never persist on the gateway; desktop
+// stores them in the OS keychain via Electron safeStorage.
+v1.route("/", crmRouter);
 
 // Retained for smoke-testing auth end-to-end. Safe to remove once clients
 // exist — no workflow reference.

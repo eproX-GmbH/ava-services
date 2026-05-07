@@ -29,6 +29,8 @@ import type {
   ProducerScreenshotEntry,
   ProducerStatus,
   ExternalServiceStatus,
+  CrmProviderKind,
+  CrmProviderStatus,
   UpdateStatus,
   ProviderCatalogEntry,
   ProviderConfig,
@@ -79,6 +81,8 @@ export type {
   ProducerScreenshotEntry,
   ProducerStatus,
   ExternalServiceStatus,
+  CrmProviderKind,
+  CrmProviderStatus,
   UpdateStatus,
   ProviderCatalogEntry,
   ProviderConfig,
@@ -278,6 +282,35 @@ const api = {
       ipcRenderer.on("external-service-status:changed", handler);
       return () =>
         ipcRenderer.removeListener("external-service-status:changed", handler);
+    },
+  },
+
+  /** v0.1.54 — CRM connections (Salesforce / HubSpot / Dynamics).
+   *  Tokens never cross this boundary; only metadata + status. The
+   *  Settings panel surfaces a card per provider; the chat agent
+   *  drives the same calls via `connect_crm` / `disconnect_crm`. */
+  crm: {
+    list: (): Promise<CrmProviderStatus[]> => ipcRenderer.invoke("crm:list"),
+    getStatus: (provider: CrmProviderKind): Promise<CrmProviderStatus> =>
+      ipcRenderer.invoke("crm:getStatus", provider),
+    /** Run the interactive OAuth flow. Resolves with the new status
+     *  once tokens are persisted, or rejects on cancel / IdP error. */
+    connect: (
+      provider: CrmProviderKind,
+      opts?: { orgUrl?: string },
+    ): Promise<CrmProviderStatus> =>
+      ipcRenderer.invoke("crm:connect", { provider, orgUrl: opts?.orgUrl }),
+    disconnect: (provider: CrmProviderKind): Promise<CrmProviderStatus> =>
+      ipcRenderer.invoke("crm:disconnect", provider),
+    onStatusChanged: (
+      cb: (status: CrmProviderStatus) => void,
+    ): (() => void) => {
+      const handler = (
+        _e: Electron.IpcRendererEvent,
+        status: CrmProviderStatus,
+      ) => cb(status);
+      ipcRenderer.on("crm-status:changed", handler);
+      return () => ipcRenderer.removeListener("crm-status:changed", handler);
     },
   },
 

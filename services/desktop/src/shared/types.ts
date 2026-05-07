@@ -828,6 +828,30 @@ export interface UserProfile {
   updatedAt: string | null;
 }
 
+// ---- CRM integration (v0.1.54) ---------------------------------------------
+//
+// User-owned OAuth links to a CRM. Tokens live in the OS keychain
+// (Electron safeStorage); only metadata crosses the IPC boundary.
+// The renderer surfaces a card per provider in Settings; the chat
+// agent invokes connect_crm / disconnect_crm / crm_status tools to
+// drive the same flow.
+
+export type CrmProviderKind = "salesforce" | "hubspot" | "dynamics";
+
+export const CRM_PROVIDER_KINDS: ReadonlyArray<CrmProviderKind> = [
+  "salesforce",
+  "hubspot",
+  "dynamics",
+];
+
+export interface CrmProviderStatus {
+  provider: CrmProviderKind;
+  connected: boolean;
+  account: string | null;
+  lastRefreshedAt: string | null;
+  lastError: string | null;
+}
+
 // ---- Standing watches (Phase 8.t2) -----------------------------------------
 //
 // Watches are user-registered recurring rubrics: the agent evaluates each

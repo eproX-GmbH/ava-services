@@ -9,6 +9,7 @@ import type { FreshnessScheduler } from "../freshness-scheduler";
 import type { FreshnessPrefsStore } from "../freshness-prefs-store";
 import type { UserProfileStore } from "../profile-store";
 import type { WatchStore } from "../watch-store";
+import type { CrmManager } from "../../crm";
 import { ToolRegistry } from "../tool-registry";
 import { buildCompanyTools } from "./companies";
 import { buildTransactionTools } from "./transactions";
@@ -21,6 +22,7 @@ import { buildAlertsTools } from "./alerts";
 import { buildFreshnessTools } from "./freshness";
 import { buildProfileTools } from "./profile";
 import { buildWatchesTools } from "./watches";
+import { buildCrmTools } from "./crm";
 
 // Tool factory.
 //
@@ -49,6 +51,7 @@ export function buildReadOnlyRegistry(deps: {
   freshnessPrefs: FreshnessPrefsStore;
   profile: UserProfileStore;
   watches: WatchStore;
+  crm: CrmManager;
   /** Fired by the alerts tools after every mutation so the renderer's
    *  bell + /alerts list refresh live. main/index.ts wires this to the
    *  IPC `alerts:changed` broadcast. */
@@ -101,5 +104,6 @@ export function buildReadOnlyRegistry(deps: {
     onChanged: deps.onWatchesChanged,
   }))
     registry.register(t);
+  for (const t of buildCrmTools({ crm: deps.crm })) registry.register(t);
   return registry;
 }

@@ -82,6 +82,7 @@ export function Settings() {
       <UpdaterSection />
       <PostgresSection />
       <ProducersSection />
+      <CrmSection />
       <AlertsSection />
       <FreshnessSection />
       <GeneralMemorySection />
@@ -356,6 +357,168 @@ function ProducersSection() {
         </ul>
       )}
     </section>
+  );
+}
+
+// -- CRM section ------------------------------------------------------
+//
+// v0.1.54 — per-provider connect/disconnect cards. Tokens live in
+// the OS keychain via the main process; this UI only shows
+// metadata. The chat agent drives the same flow via the
+// `connect_crm` / `disconnect_crm` tools — same end state, just a
+// different entry point.
+
+const CRM_PROVIDER_LABELS: Record<
+  "salesforce" | "hubspot" | "dynamics",
+  { label: string; helper: string; requiresOrgUrl: boolean }
+> = {
+  salesforce: {
+    label: "Salesforce",
+    helper:
+      "Verbindung über OAuth (PKCE). Du wirst zu login.salesforce.com weitergeleitet.",
+    requiresOrgUrl: false,
+  },
+  hubspot: {
+    label: "HubSpot",
+    helper:
+      "Verbindung über OAuth. Es werden CRM-Lese- und Schreibrechte für Kontakte, Firmen und Deals angefragt.",
+    requiresOrgUrl: false,
+  },
+  dynamics: {
+    label: "Microsoft Dynamics 365",
+    helper:
+      "Verbindung über Microsoft Identity. Bitte gib zuerst die Org-URL deiner Dynamics-Instanz an (z. B. contoso.crm4.dynamics.com).",
+    requiresOrgUrl: true,
+  },
+};
+
+function CrmSection() {
+  const qc = useQueryClient();
+  const list = useQuery({
+    queryKey: ["crm", "list"],
+    queryFn: () => window.api.crm.list(),
+  });
+
+  // Push-driven cache invalidation: any status change from the main
+  // process refreshes the list query so we don't poll.
+  useEffect(() => {
+    return window.api.crm.onStatusChanged(() => {
+      void qc.invalidateQueries({ queryKey: ["crm", "list"] });
+    });
+  }, [qc]);
+
+  return (
+    <section className="provider-section" id="crm-connections">
+      <h3>CRM-Verbindungen</h3>
+      <p className="muted small">
+        Verknüpfe dein CRM mit AVA. Die OAuth-Tokens bleiben verschlüsselt
+        in deinem Betriebssystem-Schlüsselbund — niemals in der Cloud.
+        Du kannst Verbindungen auch direkt im Chat herstellen, z. B.
+        „Verbinde mein Salesforce-Konto“.
+      </p>
+      {list.isLoading ? (
+        <p className="muted small">Lade…</p>
+      ) : (
+        <ul className="kv">
+          {(list.data ?? []).map((s) => (
+            <CrmCard key={s.provider} status={s} />
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
+
+function CrmCard({
+  status,
+}: {
+  status: {
+    provider: "salesforce" | "hubspot" | "dynamics";
+    connected: boolean;
+    account: string | null;
+    lastRefreshedAt: string | null;
+    lastError: string | null;
+  };
+}) {
+  const meta = CRM_PROVIDER_LABELS[status.provider];
+  const [orgUrl, setOrgUrl] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [localError, setLocalError] = useState<string | null>(null);
+
+  const onConnect = async () => {
+    setBusy(true);
+    setLocalError(null);
+    try {
+      await window.api.crm.connect(
+        status.provider,
+        meta.requiresOrgUrl ? { orgUrl: orgUrl.trim() } : undefined,
+      );
+    } catch (err) {
+      setLocalError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const onDisconnect = async () => {
+    setBusy(true);
+    setLocalError(null);
+    try {
+      await window.api.crm.disconnect(status.provider);
+    } catch (err) {
+      setLocalError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const tone = status.connected ? "ok" : "muted";
+  const canConnect =
+    !busy && (!meta.requiresOrgUrl || orgUrl.trim().length > 0);
+
+  return (
+    <li>
+      <div>
+        <strong>{meta.label}</strong>{" "}
+        <span className={`status-dot ${tone}`}>
+          {status.connected ? "verbunden" : "nicht verbunden"}
+        </span>
+      </div>
+      {status.connected && status.account && (
+        <div className="muted small">Konto: {status.account}</div>
+      )}
+      {status.connected && status.lastRefreshedAt && (
+        <div className="muted small">
+          Zuletzt aktualisiert:{" "}
+          {new Date(status.lastRefreshedAt).toLocaleString("de-DE")}
+        </div>
+      )}
+      {!status.connected && <p className="muted small">{meta.helper}</p>}
+      {meta.requiresOrgUrl && !status.connected && (
+        <input
+          type="text"
+          placeholder="contoso.crm4.dynamics.com"
+          value={orgUrl}
+          onChange={(e) => setOrgUrl(e.target.value)}
+          disabled={busy}
+          style={{ marginTop: 4, marginRight: 8, width: 280 }}
+        />
+      )}
+      <div style={{ marginTop: 6 }}>
+        {status.connected ? (
+          <button onClick={() => void onDisconnect()} disabled={busy}>
+            Verbindung trennen
+          </button>
+        ) : (
+          <button onClick={() => void onConnect()} disabled={!canConnect}>
+            {busy ? "Verbinde…" : "Verbinden"}
+          </button>
+        )}
+      </div>
+      {(localError ?? status.lastError) && (
+        <div className="error small">{localError ?? status.lastError}</div>
+      )}
+    </li>
   );
 }
 

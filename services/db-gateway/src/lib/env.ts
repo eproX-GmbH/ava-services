@@ -98,6 +98,18 @@ const schema = z.object({
   // >1 instance per customer (D3 notes this is acceptable for now).
   RATE_LIMIT_PER_MIN: z.coerce.number().default(600),
 
+  // CRM OAuth client config — operator-side secrets the gateway uses to
+  // proxy the OAuth code-exchange + refresh dance for desktop clients.
+  // All optional; a missing CLIENT_ID disables that provider with a 503
+  // at the authorize-url endpoint. See routes/v1/crm.ts.
+  SALESFORCE_CLIENT_ID: z.string().optional(),
+  SALESFORCE_CLIENT_SECRET: z.string().optional(),
+  SALESFORCE_LOGIN_BASE: z.string().url().default("https://login.salesforce.com"),
+  HUBSPOT_CLIENT_ID: z.string().optional(),
+  HUBSPOT_CLIENT_SECRET: z.string().optional(),
+  DYNAMICS_CLIENT_ID: z.string().optional(),
+  DYNAMICS_CLIENT_SECRET: z.string().optional(),
+
   LOG_LEVEL: z.enum(["fatal", "error", "warn", "info", "debug", "trace"]).default("info"),
 
   // CORS allow-list, prod only. Comma-separated origins; the literal
