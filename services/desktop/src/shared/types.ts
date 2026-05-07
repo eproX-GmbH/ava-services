@@ -120,6 +120,23 @@ export interface ProducerLogEvent {
 // ---- Producer screenshots (v0.1.50) ---------------------------------------
 // Mirrored from main/producer-screenshots.ts.
 
+// ---- External service reachability (v0.1.52) ------------------------------
+// Used by main/external-service-monitor.ts to surface upstream
+// (today: unternehmensregister.de) reachability to the renderer
+// banner + auto-pause/resume the producers that depend on it.
+
+export type ExternalServiceState = "unknown" | "reachable" | "unreachable";
+
+export interface ExternalServiceStatus {
+  service: "unternehmensregister";
+  state: ExternalServiceState;
+  url: string;
+  lastCheckedAt: number | null;
+  lastReachableAt: number | null;
+  latencyMs: number | null;
+  errorMessage: string | null;
+}
+
 export interface ProducerScreenshotEntry {
   /** Filename within <userData>/screenshots/<producer>/<runId>/.
    *  Use window.api.producers.screenshots.urlFor() to get a renderable

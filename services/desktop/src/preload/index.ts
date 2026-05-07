@@ -28,6 +28,7 @@ import type {
   ProducerLogLine,
   ProducerScreenshotEntry,
   ProducerStatus,
+  ExternalServiceStatus,
   UpdateStatus,
   ProviderCatalogEntry,
   ProviderConfig,
@@ -77,6 +78,7 @@ export type {
   ProducerLogLine,
   ProducerScreenshotEntry,
   ProducerStatus,
+  ExternalServiceStatus,
   UpdateStatus,
   ProviderCatalogEntry,
   ProviderConfig,
@@ -254,6 +256,28 @@ const api = {
         filename: string,
       ): string =>
         `ava-screenshot://${encodeURIComponent(producer)}/${encodeURIComponent(runId)}/${encodeURIComponent(filename)}`,
+    },
+  },
+
+  /** v0.1.52 — external upstream reachability (today: only
+   *  unternehmensregister.de). Renderer reads on mount + subscribes
+   *  to push events for transitions. Drives the under-topbar banner
+   *  when the site is unreachable. */
+  externalService: {
+    getStatus: (): Promise<ExternalServiceStatus> =>
+      ipcRenderer.invoke("external-service:getStatus"),
+    probeNow: (): Promise<ExternalServiceStatus> =>
+      ipcRenderer.invoke("external-service:probeNow"),
+    onStatusChanged: (
+      cb: (status: ExternalServiceStatus) => void,
+    ): (() => void) => {
+      const handler = (
+        _e: Electron.IpcRendererEvent,
+        status: ExternalServiceStatus,
+      ) => cb(status);
+      ipcRenderer.on("external-service-status:changed", handler);
+      return () =>
+        ipcRenderer.removeListener("external-service-status:changed", handler);
     },
   },
 

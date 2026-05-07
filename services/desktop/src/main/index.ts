@@ -21,6 +21,11 @@ import {
   pruneOldScreenshots,
   registerScreenshotProtocol,
 } from "./producer-screenshots";
+import {
+  ExternalServiceMonitor,
+  UNTERNEHMENSREGISTER_DEPENDENT_PRODUCERS,
+  type ExternalServiceStatus,
+} from "./external-service-monitor";
 import { Updater, broadcastUpdateStatus } from "./updater";
 import {
   AgentOrchestrator,
@@ -110,6 +115,14 @@ protocol.registerSchemesAsPrivileged([
 
 const auth = new Auth(AUTH_ISSUER, AUTH_CLIENT_ID);
 
+// v0.1.52 — external-service reachability monitor. Probes
+// unternehmensregister.de every 60s. Used to (a) broadcast a banner
+// state to the renderer ("upstream service down — Stamm + Publikation
+// pausiert"), and (b) gate ProducerSupervisor.start() for the two
+// producers that depend on that site so we don't burn Selenium
+// cycles on a downed upstream.
+const externalServiceMonitor = new ExternalServiceMonitor();
+
 function broadcastAuthStatus(status: AuthStatus): void {
   for (const win of BrowserWindow.getAllWindows()) {
     win.webContents.send("auth-status:changed", status);
@@ -118,17 +131,30 @@ function broadcastAuthStatus(status: AuthStatus): void {
   // Sign-in: invalidate any cached "no-amqp" error state and start
   // every producer that's idle/error. Sign-out: stop every producer
   // and drop the cached AMQP URL.
+  //
+  // v0.1.52 — supersede with the external-service gate: producers
+  // whose work depends on unternehmensregister.de stay paused while
+  // that site is unreachable, so we don't burn Selenium cycles
+  // hammering a downed upstream. The monitor's own status listener
+  // (set up below) handles the inverse transition (resume on
+  // reachable). This branch only refuses to start them now.
   if (status.signedIn) {
     for (const p of producers) {
       const s = p.getStatus().state;
-      if (s === "idle" || s === "error") {
-        void p.start().catch((err) => {
-          console.error(
-            `[producer:${p.getStatus().name}] start() rejected:`,
-            err,
-          );
-        });
+      if (s !== "idle" && s !== "error") continue;
+      if (
+        UNTERNEHMENSREGISTER_DEPENDENT_PRODUCERS.has(p.getStatus().name) &&
+        externalServiceMonitor.getStatus().state === "unreachable"
+      ) {
+        // Skip; monitor will start it when reachability flips.
+        continue;
       }
+      void p.start().catch((err) => {
+        console.error(
+          `[producer:${p.getStatus().name}] start() rejected:`,
+          err,
+        );
+      });
     }
   } else {
     cachedCredentials = null;
@@ -370,6 +396,53 @@ function broadcastProducerStatus(status: ProducerStatus): void {
 for (const p of producers) {
   p.on("status", broadcastProducerStatus);
 }
+
+// v0.1.52 — pipe external-service status to (a) the renderer banner
+// and (b) producer auto-pause/resume. Only fires on transitions
+// (reachable ⇄ unreachable), not on every probe, so a stable
+// "down for an hour" doesn't churn the UI.
+function broadcastExternalServiceStatus(
+  status: ExternalServiceStatus,
+): void {
+  for (const win of BrowserWindow.getAllWindows()) {
+    win.webContents.send("external-service-status:changed", status);
+  }
+}
+externalServiceMonitor.on("status", (status: ExternalServiceStatus) => {
+  broadcastExternalServiceStatus(status);
+  // Auto-pause / auto-resume the unternehmensregister-dependent
+  // producers. The auth-status branch above also gates first-start;
+  // this branch handles transitions while the user is already
+  // signed in. Best-effort: a producer in "starting" or already
+  // "ready" obeys the toggle; one in "error" gets a fresh start
+  // attempt when the site recovers.
+  for (const p of producers) {
+    const name = p.getStatus().name;
+    if (!UNTERNEHMENSREGISTER_DEPENDENT_PRODUCERS.has(name)) continue;
+    if (status.state === "unreachable") {
+      const s = p.getStatus().state;
+      if (s !== "idle" && s !== "stopping") {
+        console.log(
+          `[external-service] unternehmensregister down — pausing ${name}`,
+        );
+        void p.stop();
+      }
+    } else if (status.state === "reachable") {
+      const s = p.getStatus().state;
+      if ((s === "idle" || s === "error") && auth.getStatus().signedIn) {
+        console.log(
+          `[external-service] unternehmensregister back — resuming ${name}`,
+        );
+        void p.start().catch((err) => {
+          console.error(
+            `[producer:${name}] start() rejected after upstream recovery:`,
+            err,
+          );
+        });
+      }
+    }
+  }
+});
 
 // Agent orchestrator (Phase 8.a + 8.b).
 //
@@ -746,6 +819,11 @@ app.whenReady().then(async () => {
   registerScreenshotProtocol();
   void pruneOldScreenshots();
 
+  // v0.1.52 — start the external-service reachability monitor. First
+  // probe runs synchronously inside start(); the recurring 60s
+  // interval kicks in after.
+  externalServiceMonitor.start();
+
   // ---- Renderer permission grants (Phase 8.n2) -----------------------------
   //
   // Electron's default `setPermissionRequestHandler` denies every
@@ -853,6 +931,19 @@ app.whenReady().then(async () => {
     "producers:screenshots:list",
     (_e, args: { producer: string; runId: string }) =>
       listScreenshots(args.producer, args.runId),
+  );
+
+  // v0.1.52 — external-service status (today: only
+  // unternehmensregister.de). Renderer reads on mount + subscribes
+  // to `external-service-status:changed` for transition pushes
+  // (state changes, not every probe). The banner under the topbar
+  // surfaces the unreachable state and explains which stages are
+  // paused so users aren't confused by stuck-pending cells.
+  ipcMain.handle("external-service:getStatus", () =>
+    externalServiceMonitor.getStatus(),
+  );
+  ipcMain.handle("external-service:probeNow", () =>
+    externalServiceMonitor.probeNow(),
   );
   ipcMain.handle("ollama:restart", () => ollama.restart());
 
@@ -1243,6 +1334,7 @@ app.on("before-quit", () => {
   agent.dispose();
   providers.dispose();
   updater.stop();
+  externalServiceMonitor.stop();
   void ollama.stop();
   // Producers go down before Postgres so their final commits
   // succeed against the still-running PGlite instance.

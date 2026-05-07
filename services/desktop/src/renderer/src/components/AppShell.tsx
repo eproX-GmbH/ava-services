@@ -1,8 +1,10 @@
 import type { PropsWithChildren } from "react";
 import { NavLink } from "react-router-dom";
+import { useEffect, useState } from "react";
 import { AlertBell } from "./AlertBell";
 import { WatchChip } from "./WatchChip";
 import logoUrl from "../assets/logo-aqua.svg";
+import type { ExternalServiceStatus } from "../../../shared/types";
 
 // Top-level chrome for the routed app (Phase 8.l2).
 //
@@ -26,9 +28,69 @@ export function AppShell({ children }: PropsWithChildren) {
   return (
     <div className="app-shell">
       <TopBar />
+      <ExternalServiceBanner />
       <main className="app-shell__main">{children}</main>
     </div>
   );
+}
+
+// v0.1.52 — slim banner under the topbar that surfaces upstream
+// reachability problems. Shows ONLY when state="unreachable" — when
+// reachable we render nothing so the chrome doesn't shift on every
+// boot. Driven by the main-process external-service-monitor (60s
+// probe of unternehmensregister.de). The Stamm + Publikation
+// producers auto-pause while this banner is up, so the matrix won't
+// accumulate red cells from work the scraper can't possibly do.
+function ExternalServiceBanner() {
+  const [status, setStatus] = useState<ExternalServiceStatus | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    void window.api.externalService.getStatus().then((s) => {
+      if (!cancelled) setStatus(s);
+    });
+    const off = window.api.externalService.onStatusChanged((s) => {
+      if (!cancelled) setStatus(s);
+    });
+    return () => {
+      cancelled = true;
+      off();
+    };
+  }, []);
+
+  if (!status || status.state !== "unreachable") return null;
+
+  const since = status.lastReachableAt
+    ? formatRelativeMinutes(status.lastReachableAt)
+    : null;
+
+  return (
+    <div className="upstream-banner" role="status">
+      <span className="upstream-banner__dot" aria-hidden="true" />
+      <strong>Unternehmensregister.de nicht erreichbar.</strong>{" "}
+      <span>
+        Stamm-Daten und Publikationen sind pausiert, bis der Dienst wieder
+        antwortet. Andere Stages laufen weiter normal.
+      </span>
+      {since && <span className="upstream-banner__since">· {since}</span>}
+      <button
+        type="button"
+        className="link upstream-banner__retry"
+        onClick={() => void window.api.externalService.probeNow()}
+        title="Sofort erneut prüfen"
+      >
+        Erneut prüfen
+      </button>
+    </div>
+  );
+}
+
+function formatRelativeMinutes(ts: number): string {
+  const ms = Date.now() - ts;
+  const min = Math.max(1, Math.round(ms / 60_000));
+  if (min < 60) return `letzter Erfolg vor ${min} Min.`;
+  const hours = Math.round(min / 60);
+  return `letzter Erfolg vor ${hours} Std.`;
 }
 
 function TopBar() {

@@ -2303,6 +2303,40 @@ a.heartbeat-decision__company:hover {
   transform-origin: 50% 50%;
 }
 
+/* ---- v0.1.52 — upstream-reachability banner -----------------------------
+ * Slim row under the topbar that appears when an external upstream
+ * (today: only unternehmensregister.de) is unreachable. Uses the
+ * brand error color but at low opacity so it reads as "advisory"
+ * not "red alert" — the producers downstream of the upstream are
+ * the ones actually paused, the rest of the app keeps working.
+ */
+.upstream-banner {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 1rem;
+  font-size: 12px;
+  background: rgba(244, 114, 114, 0.10);
+  border-bottom: 1px solid var(--color-err, #f47272);
+  color: var(--fg);
+}
+.upstream-banner__dot {
+  width: 8px;
+  height: 8px;
+  flex: 0 0 8px;
+  border-radius: 50%;
+  background: var(--color-err, #f47272);
+  box-shadow: 0 0 0 3px rgba(244, 114, 114, 0.20);
+}
+.upstream-banner__since {
+  color: var(--muted);
+  margin-left: 0.25rem;
+}
+.upstream-banner__retry {
+  margin-left: auto;
+  font-size: 12px;
+}
+
 /* ---- v0.1.50 — DiagnosticsPanel (matrix drill-down logs + screenshots) ---
  *
  * Lives inside .drill-panel; inherits the panel's font + foreground.
