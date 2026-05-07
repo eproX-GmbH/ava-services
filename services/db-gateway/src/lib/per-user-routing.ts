@@ -8,9 +8,9 @@
 // caller's reference (typically held by the EventBuilder) is not
 // mutated.
 
-import type { CloudEvent } from "@ava/event";
+import type { CloudEvent, EventPayload } from "@ava/event";
 
-export function targetUserRoutingKey<T>(
+export function targetUserRoutingKey<T extends EventPayload | undefined>(
   event: CloudEvent<T>,
   userId: string,
 ): CloudEvent<T> {
