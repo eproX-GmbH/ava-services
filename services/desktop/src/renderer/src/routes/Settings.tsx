@@ -1069,9 +1069,7 @@ function VoiceSection() {
       <h3>Sprachmodell</h3>
       <p className="muted">
         Lokale Spracherkennung über Whisper. Modell wird auf der Festplatte
-        gespeichert; Audio verlässt das Gerät nicht. Mikrofon-Aufnahme +
-        Transkription folgen mit 8.n2 — heute aktivierst du nur das
-        Sprachmodell.
+        gespeichert; Audio verlässt das Gerät nicht.
       </p>
 
       <div className="voice-status">

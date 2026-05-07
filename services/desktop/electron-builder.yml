@@ -19,6 +19,13 @@ files:
   - "package.json"
 asar: true
 
+# v0.1.51 — strip extended attributes from the .app bundle BEFORE
+# codesigning. Without this, OTA updates fail at the Squirrel.Mac
+# install step with "Permission denied: Couldn't remove quarantine
+# attribute" on signed dylibs (libwhisper.dylib in particular). The
+# hook is a no-op on Linux / Windows builds.
+afterPack: "./scripts/strip-xattrs.mjs"
+
 # Ollama runtime (D7) — see scripts/fetch-ollama.mjs.
 #
 # `extraResources` copies platform-matched binaries into the packaged app's
