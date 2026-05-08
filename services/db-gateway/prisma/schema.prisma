@@ -129,6 +129,38 @@ model ProxyCache {
   @@index([proxy, createdAt])
 }
 
+/// Per-(company, stage) freshness + tier provenance (v0.1.62).
+///
+/// Backs the multi-tenant tier-aware persist gate. One row per
+/// (companyId, stage) tracking when the canonical write last
+/// happened and which LLM tier produced it (null for non-LLM
+/// stages — structured-content, publication).
+///
+/// Persist-bus consults this table BEFORE applying any incoming
+/// event:
+///   - decides write/skip via @ava/ai-provider#tierShouldWrite
+///   - writes the row post-apply on a successful write (last-
+///     writer-wins on tier-eligible upgrades)
+///
+/// `llmTier` semantics:
+///   1..4 — the tier (C..S) of the LLM that produced the write
+///   null  — non-LLM stage OR pre-tier producer (legacy).
+///           Treated as "downgrade-equivalent" by the comparison
+///           helper; any tier-tagged producer can upgrade past it.
+model ContentFreshness {
+  companyId String
+  /// Producer name (= PRODUCER_NAMES). One stage per producer:
+  /// "structured-content" | "company-publication" | "website" |
+  /// "company-profile" | "company-contact" | "company-evaluation".
+  stage     String
+  llmTier   Int?
+  updatedAt DateTime  @default(now())
+
+  @@id([companyId, stage])
+  // Per-company lookups (matrix view + producer pre-check in F3).
+  @@index([companyId])
+}
+
 /// LLM-judge audit row for the website producer (v0.1.60).
 ///
 /// Stores the verdict metadata for each company's website resolution

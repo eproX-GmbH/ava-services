@@ -43,6 +43,7 @@ import { PRODUCER_NAMES, type ProducerName } from "./db-urls";
 import { getProducerPool, getGatewayPool } from "./producer-pools";
 import { transactionProgressBus } from "./event-bus";
 import { recordUsage } from "./billing";
+import { tierShouldWrite, type ModelTier } from "./tier";
 
 /**
  * Side-effect of every persist event: record per-company processing
@@ -138,6 +139,18 @@ export interface PersistEvent<TResult = unknown> {
   dispatchedAt: string;
   computedAt: string;
   result: TResult;
+  /**
+   * v0.1.62 — tier of the LLM that produced this write. Set on
+   * LLM-driven stages (website, company-profile, company-contact,
+   * company-evaluation); omitted on Selenium-only stages.
+   *
+   * Optional during the F2-only rollout: producers without F3 wiring
+   * still emit persist events without this field, and the persist-bus
+   * gate treats them as "untiered" (any tiered write upgrades past).
+   *
+   * 1..4 = C..S — see /MODEL_TIERS.md.
+   */
+  llmTier?: ModelTier | null;
 }
 
 type ApplyFn = (
@@ -155,6 +168,205 @@ interface ProducerBinding {
    *  the topic exchange). */
   queue: string;
   apply: ApplyFn;
+}
+
+// ---- Tier-aware persist gate (v0.1.62 — F2) --------------------------------
+//
+// Runs BEFORE every apply* function. Reads ContentFreshness for
+// (companyId, stage), compares the incoming event's `data.llmTier`
+// against the existing tier + age, and decides write/skip via
+// @ava/ai-provider#tierShouldWrite.
+//
+// Skip semantics: the apply function is NOT called. EntityProgress is
+// recorded as `skipped` (instead of `completed`/`failed`) so the
+// matrix shows the correct state. Caller still acks the AMQP message —
+// nothing to retry, the existing data is canonical.
+//
+// Stages classified as LLM-tiered (their persists carry an llmTier in
+// the payload): website, company-profile, company-contact,
+// company-evaluation. Non-LLM stages (structured-content,
+// company-publication) pass null and the gate falls into pure
+// time-based mode (30-day refresh).
+
+/** Map producer name to whether the stage is LLM-tiered. Determines
+ *  whether a missing `llmTier` is "non-LLM stage, time-based" or
+ *  "untiered LLM producer (legacy)". For now: SERP-bearing producers
+ *  (website, company-contact) AND profile/evaluation are LLM-tiered;
+ *  Selenium-only stages are not. */
+const STAGE_IS_LLM: Record<ProducerName, boolean> = {
+  "structured-content": false,
+  "company-publication": false,
+  website: true,
+  "company-profile": true,
+  "company-contact": true,
+  "company-evaluation": true,
+};
+
+/** Read the existing ContentFreshness row for (companyId, stage).
+ *  Returns null when no row exists (treated as "fresh write" / age=Infinity). */
+async function readFreshness(
+  companyId: string,
+  stage: ProducerName,
+): Promise<{ tier: ModelTier | null; updatedAt: Date } | null> {
+  const res = await getGatewayPool().query<{
+    llmTier: number | null;
+    updatedAt: Date;
+  }>(
+    `SELECT "llmTier", "updatedAt" FROM "ContentFreshness"
+     WHERE "companyId" = $1 AND stage = $2`,
+    [companyId, stage],
+  );
+  const row = res.rows[0];
+  if (!row) return null;
+  return {
+    tier: (row.llmTier as ModelTier | null) ?? null,
+    updatedAt: row.updatedAt,
+  };
+}
+
+/** Upsert the ContentFreshness row after a successful write. */
+async function recordFreshness(
+  companyId: string,
+  stage: ProducerName,
+  llmTier: ModelTier | null,
+): Promise<void> {
+  await getGatewayPool().query(
+    `INSERT INTO "ContentFreshness" ("companyId", stage, "llmTier", "updatedAt")
+       VALUES ($1, $2, $3, NOW())
+     ON CONFLICT ("companyId", stage) DO UPDATE SET
+       "llmTier" = EXCLUDED."llmTier",
+       "updatedAt" = NOW()`,
+    [companyId, stage, llmTier],
+  );
+}
+
+/**
+ * Higher-order wrapper: take an existing applyFn and return a
+ * gated version. The gate runs the freshness check first; if write
+ * is allowed, runs the inner apply, then upserts ContentFreshness.
+ * If write is denied, logs the reason + records a `skipped`
+ * EntityProgress row.
+ *
+ * Each producer's binding now uses `withTierGate(stage, applyX)`
+ * instead of `applyX` directly. Same signature so the rest of the
+ * persist-bus plumbing is unchanged.
+ */
+function withTierGate(stage: ProducerName, inner: ApplyFn): ApplyFn {
+  return async (pool, event, log) => {
+    const data = event.data as PersistEvent<{ companyId: string }> | undefined;
+    const companyId = data?.result?.companyId;
+    const incomingTier = (data?.llmTier ?? null) as ModelTier | null;
+    const transactionId = (event as { transaction?: string }).transaction ?? "";
+
+    if (!companyId) {
+      // Defer to inner handler's own validation; it will throw and
+      // the caller's catch records the failure.
+      return inner(pool, event, log);
+    }
+
+    const decision = await gatePersist(companyId, stage, incomingTier, log);
+    if (!decision.apply) {
+      log.info(
+        {
+          stage,
+          companyId,
+          incomingTier,
+          existingTier: decision.existingTier,
+          reason: decision.reason,
+        },
+        "tier-gate: skip",
+      );
+      // Surface the skip on the matrix the same way the in-process
+      // skips do (e.g. structured-content services-gate). The user
+      // sees "übersprungen" rather than a confusing red/green flicker.
+      await recordEntityProgress(
+        stage,
+        transactionId,
+        companyId,
+        "skipped",
+        decision.reason,
+        log,
+      );
+      return;
+    }
+
+    // Apply the write, then update ContentFreshness. Order matters: we
+    // only update freshness AFTER the apply succeeds, so a failed
+    // apply doesn't leave an orphan freshness row claiming the write
+    // happened.
+    await inner(pool, event, log);
+    try {
+      await recordFreshness(
+        companyId,
+        stage,
+        STAGE_IS_LLM[stage] ? incomingTier : null,
+      );
+    } catch (err) {
+      // Best-effort: a freshness-write failure should never roll back
+      // the actual data. Log + move on. Worst case the next event
+      // sees stale freshness and writes anyway.
+      log.warn(
+        {
+          err: err instanceof Error ? err.message : String(err),
+          companyId,
+          stage,
+        },
+        "ContentFreshness write failed (best-effort)",
+      );
+    }
+  };
+}
+
+/**
+ * Pre-apply gate. Returns `{ apply: true }` if the persist should
+ * proceed, `{ apply: false, reason }` if it should skip.
+ *
+ * Best-effort wrt the freshness DB read: a read failure is logged + we
+ * fall through to "apply" — losing one tier-skip beats blocking the
+ * whole pipeline on a brief audit-DB hiccup.
+ */
+async function gatePersist(
+  companyId: string,
+  stage: ProducerName,
+  incomingTier: ModelTier | null,
+  log: typeof logger,
+): Promise<{ apply: boolean; reason: string; existingTier: ModelTier | null }> {
+  // Sanity: if the stage is non-LLM, force incomingTier null to avoid
+  // accidental tier comparisons on Selenium-scraped content. Also
+  // catches a misconfigured producer that bolts on a tier where it
+  // shouldn't.
+  const effectiveIncomingTier = STAGE_IS_LLM[stage] ? incomingTier : null;
+
+  let existing: { tier: ModelTier | null; updatedAt: Date } | null;
+  try {
+    existing = await readFreshness(companyId, stage);
+  } catch (err) {
+    log.warn(
+      {
+        err: err instanceof Error ? err.message : String(err),
+        companyId,
+        stage,
+      },
+      "ContentFreshness read failed — defaulting to apply (best-effort)",
+    );
+    return {
+      apply: true,
+      reason: "freshness read failed; defaulting to apply",
+      existingTier: null,
+    };
+  }
+
+  const existingAgeMs = existing
+    ? Date.now() - existing.updatedAt.getTime()
+    : Infinity;
+  const existingTier = existing?.tier ?? null;
+
+  const decision = tierShouldWrite({
+    incomingTier: effectiveIncomingTier,
+    existingTier,
+    existingAgeMs,
+  });
+  return { apply: decision.write, reason: decision.reason, existingTier };
 }
 
 // ---- Per-producer apply functions ------------------------------------------
@@ -1175,42 +1387,47 @@ const stubApply: (producer: ProducerName) => ApplyFn = (producer) =>
 // stay safe because no compute-worker emits the routing key until the
 // producer is registered in the desktop's PRODUCER_REGISTRY.
 
+// v0.1.62 — every binding's apply function is wrapped in withTierGate(stage).
+// The gate consults ContentFreshness + tierShouldWrite() before invoking
+// the inner apply, and updates ContentFreshness on a successful write.
+// Skips emit a "skipped" EntityProgress row (visible on the matrix) and
+// ack the AMQP message — nothing to retry, the existing data is canonical.
 const BINDINGS: ProducerBinding[] = [
   {
     producer: "company-profile",
     routingKey: "tenant.persist.company-profile.v1",
     queue: "db-gateway-persist-company-profile",
-    apply: applyCompanyProfile,
+    apply: withTierGate("company-profile", applyCompanyProfile),
   },
   {
     producer: "structured-content",
     routingKey: "tenant.persist.structured-content.v1",
     queue: "db-gateway-persist-structured-content",
-    apply: applyStructuredContent,
+    apply: withTierGate("structured-content", applyStructuredContent),
   },
   {
     producer: "company-publication",
     routingKey: "tenant.persist.company-publication.v1",
     queue: "db-gateway-persist-company-publication",
-    apply: applyCompanyPublication,
+    apply: withTierGate("company-publication", applyCompanyPublication),
   },
   {
     producer: "company-evaluation",
     routingKey: "tenant.persist.company-evaluation.v1",
     queue: "db-gateway-persist-company-evaluation",
-    apply: applyCompanyEvaluation,
+    apply: withTierGate("company-evaluation", applyCompanyEvaluation),
   },
   {
     producer: "company-contact",
     routingKey: "tenant.persist.company-contact.v1",
     queue: "db-gateway-persist-company-contact",
-    apply: applyCompanyContact,
+    apply: withTierGate("company-contact", applyCompanyContact),
   },
   {
     producer: "website",
     routingKey: "tenant.persist.website.v1",
     queue: "db-gateway-persist-website",
-    apply: applyWebsite,
+    apply: withTierGate("website", applyWebsite),
   },
 ];
 
