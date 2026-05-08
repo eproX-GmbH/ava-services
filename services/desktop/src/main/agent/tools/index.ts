@@ -79,6 +79,7 @@ export function buildReadOnlyRegistry(deps: {
   for (const t of buildImportTools({
     gateway: deps.gateway,
     attachments: deps.attachments,
+    crm: deps.crm,
   }))
     registry.register(t);
   for (const t of buildAlertsTools({

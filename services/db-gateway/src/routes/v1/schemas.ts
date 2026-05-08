@@ -594,6 +594,47 @@ export const CompanyIngestResponseShape = z
   })
   .openapi("CompanyIngestResponse");
 
+// ---- Multi-row JSON ingest (v0.1.57 — CRM Phase 2) -------------------------
+//
+// JSON-shaped bulk sibling of `/v1/imports/excel`. The CRM-import path needs
+// to start a single transaction with N companies fetched from the user's
+// connected CRM (HubSpot today, Salesforce + Dynamics later) without making
+// the agent manufacture an xlsx. The gateway encodes the list into a multi-
+// row workbook and forwards it to master-data through the same upstream
+// `/api/v1/data-care` endpoint the file upload uses.
+//
+// Same downstream behavior: ONE transaction row + 6 CloudEvents fan out to
+// all producers. Per-company progress shows up on the same matrix as a
+// file-uploaded transaction.
+
+export const FromListIngestBody = z
+  .object({
+    /** Companies to ingest. Order is preserved into the synthetic xlsx. */
+    companies: z
+      .array(
+        z.object({
+          name: z.string().min(1).max(500),
+          city: z.string().min(1).max(200),
+        }),
+      )
+      .min(1)
+      .max(5000),
+    /** Optional human label for the resulting transaction. Defaults to
+     *  `<provider> import: N companies` — but the caller usually knows
+     *  the source better than the gateway does. */
+    transactionName: z.string().min(1).max(200).optional(),
+    /** Mirrors the bulk endpoint's fuzzy-match fallback. */
+    isFuzzy: z.boolean().optional().default(false),
+  })
+  .openapi("FromListIngest");
+
+export const FromListIngestResponseShape = z
+  .object({
+    transactionId: z.string(),
+    companyCount: z.number().int().nonnegative(),
+  })
+  .openapi("FromListIngestResponse");
+
 // ---- Pipeline view (cross-producer fan-out) --------------------------------
 //
 // Per-company × per-producer state matrix for the desktop W3 transaction view.

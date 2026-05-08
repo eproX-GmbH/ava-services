@@ -9,6 +9,8 @@ import {
   CompanyIngestBody,
   CompanyIngestResponseShape,
   ErrorShape,
+  FromListIngestBody,
+  FromListIngestResponseShape,
   ImportExcelQuery,
   ImportExcelResponseShape,
 } from "./schemas";
@@ -235,4 +237,84 @@ importsRouter.openapi(companyIngestRoute, async (c) => {
   // §8.v3 — same matrix-seeding rationale as the bulk endpoint above.
   await seedEntityProgressForTransaction(c, transactionId);
   return c.json({ transactionId }, 202);
+});
+
+// ---- POST /v1/imports/from-list (v0.1.57 — CRM Phase 2) --------------------
+//
+// Bulk JSON ingest used by the desktop's CRM-import flow. The agent fetches
+// companies from the user's connected CRM (HubSpot/Salesforce/Dynamics),
+// shapes them into `[{name, city}]`, and POSTs here. The gateway hand-encodes
+// a multi-row xlsx and forwards it to master-data exactly like the file-
+// upload endpoint — same upstream contract, same downstream pipeline.
+//
+// Why JSON-in / xlsx-out: master-data's xlsx parser is the canonical ingest
+// path; teaching it a second JSON path doubles the surface area of the
+// trickiest service in the cluster. The xlsx-mini encoder is already in the
+// gateway and was always designed for multi-row output (this just exercises
+// the path the single-row endpoint above doesn't).
+//
+// One transaction with N companies — NOT N transactions with 1 each — so the
+// resulting matrix view stays coherent and SSE progress updates land on the
+// same view the user opened after the import.
+
+const fromListIngestRoute = createRoute({
+  method: "post",
+  path: "/imports/from-list",
+  tags: [tag],
+  summary:
+    "Ingest a list of companies (JSON) and start one transaction. Used by the CRM-import flow; otherwise prefer /imports/excel for file uploads.",
+  request: {
+    body: {
+      content: { "application/json": { schema: FromListIngestBody } },
+      required: true,
+    },
+  },
+  responses: {
+    202: {
+      content: { "application/json": { schema: FromListIngestResponseShape } },
+      description: "transaction accepted; pipeline events published",
+    },
+    ...errorResponses,
+  },
+});
+
+importsRouter.openapi(fromListIngestRoute, async (c) => {
+  const { companies, transactionName, isFuzzy } = c.req.valid("json");
+
+  const xlsx = buildXlsx({
+    headers: [COMPANY_HEADER, CITY_HEADER],
+    rows: companies.map((c) => [c.name, c.city]),
+  });
+
+  const effectiveTxName =
+    transactionName ?? `CRM import: ${companies.length} companies`;
+  const { headers } = await callUpstreamBinary(
+    c,
+    "masterData",
+    "/api/v1/data-care",
+    xlsx,
+    {
+      contentType: "application/octet-stream",
+      query: {
+        companyNameIdentifiers: COMPANY_HEADER,
+        city: CITY_HEADER,
+        name: effectiveTxName,
+        isFuzzy: String(isFuzzy ?? false),
+      },
+    },
+  );
+
+  const transactionId =
+    headers.get("transaction-id") ?? headers.get("Transaction-Id");
+  if (!transactionId) {
+    throw new HTTPException(502, {
+      message: "upstream omitted Transaction-Id header",
+    });
+  }
+  setTransactionName(transactionId, effectiveTxName);
+  await seedEntityProgressForTransaction(c, transactionId);
+  return c.json(
+    { transactionId, companyCount: companies.length },
+    202,
+  );
 });

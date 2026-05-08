@@ -4,6 +4,9 @@ import { defineTool } from "../define-tool";
 import type { Tool } from "../types";
 import type { GatewayClient } from "../gateway-client";
 import type { AttachmentStore } from "../attachment-store";
+import type { CrmManager } from "../../crm";
+import type { CrmProvider } from "../../crm/types";
+import { fetchCompaniesFromCrm } from "../../crm/fetch-companies";
 
 // Bulk-import tools (Phase 8.e — Excel-in-chat Scope C, slice 1).
 //
@@ -47,6 +50,10 @@ function guessMime(filename: string): string {
 export function buildImportTools(deps: {
   gateway: GatewayClient;
   attachments: AttachmentStore;
+  /** v0.1.57 — used by `import_companies_from_crm` to borrow the user's
+   *  OAuth token + page through the CRM API. Same singleton the Settings
+   *  card and the connect_crm/disconnect_crm tools use. */
+  crm: CrmManager;
 }): Tool[] {
   const importExcel = defineTool({
     name: "import_excel",
@@ -412,6 +419,138 @@ export function buildImportTools(deps: {
     },
   });
 
+  // ---- import_companies_from_crm (v0.1.57 — CRM Phase 2) ------------------
+  //
+  // Pulls companies from a connected CRM (today: HubSpot; Salesforce +
+  // Dynamics return a clear "not yet implemented" so the agent can suggest
+  // HubSpot as the working alternative) and starts ONE master-data
+  // transaction with all rows. Same downstream pipeline as a file upload —
+  // the matrix view shows N companies, SSE progresses live.
+  //
+  // Why not have the agent loop `import_company`: that creates N transactions
+  // (one per row), scattering the matrix and breaking the user's mental model
+  // of "I imported a batch". One bulk POST → one transaction.
+  //
+  // Token handling is invisible to the agent: CrmManager auto-refreshes if
+  // near expiry. A 401 from the CRM surfaces as a German error the agent
+  // can act on by suggesting a re-connect.
+
+  const importFromCrm = defineTool({
+    name: "import_companies_from_crm",
+    description:
+      "Import companies from the user's CONNECTED CRM (HubSpot, Salesforce, or " +
+      "Microsoft Dynamics 365) and start one transaction with the full master- " +
+      "data pipeline. Use when the user says \"importiere alle Firmen aus " +
+      "HubSpot\", \"start a run for everyone in our CRM\", \"alles aus dem CRM\", " +
+      "etc. Today only HubSpot is wired end-to-end; if the user picks Salesforce " +
+      "or Dynamics this returns a clear 'not yet implemented' message — fall " +
+      "back to suggesting HubSpot or a file upload. Always check `crm_status` " +
+      "first if you're unsure which CRM is connected. Returns a transactionId " +
+      "you can hand back; progress checkable via `import_status`.",
+    parameters: {
+      type: "object",
+      required: ["provider"],
+      properties: {
+        provider: {
+          type: "string",
+          enum: ["hubspot", "salesforce", "dynamics"],
+          description: "Which CRM to import from. Must be connected first.",
+        },
+        transactionName: {
+          type: "string",
+          description:
+            "Optional human-readable label for the transaction. Defaults to '<provider> import: N companies'.",
+        },
+        isFuzzy: {
+          type: "boolean",
+          description:
+            "Allow fuzzy matching against existing companies. Default false.",
+        },
+        maxCompanies: {
+          type: "number",
+          description:
+            "Soft cap on rows imported in this run. Default 5000. Use a smaller value for a dry-run / preview, or leave unset to import everything.",
+        },
+      },
+    },
+    schema: yup
+      .object({
+        provider: yup
+          .string()
+          .required()
+          .oneOf(["hubspot", "salesforce", "dynamics"]),
+        transactionName: yup.string().optional(),
+        isFuzzy: yup.boolean().optional(),
+        maxCompanies: yup
+          .number()
+          .integer()
+          .min(1)
+          .max(5000)
+          .optional(),
+      })
+      .noUnknown(true),
+    preview: (r: {
+      transactionId: string;
+      provider: string;
+      companyCount: number;
+      skipped: number;
+    }) =>
+      `import ${r.companyCount} companies from ${r.provider}` +
+      (r.skipped > 0 ? ` (${r.skipped} skipped)` : "") +
+      ` → tx ${r.transactionId.slice(0, 8)}…`,
+    run: async (args, ctx) => {
+      const provider = args.provider as CrmProvider;
+      ctx.log(`import_companies_from_crm: provider=${provider}`);
+
+      const fetched = await fetchCompaniesFromCrm(deps.crm, provider, {
+        maxCompanies: args.maxCompanies,
+      });
+      if (fetched.companies.length === 0) {
+        // No usable rows — the agent should explain why (skipped count
+        // + total) and offer alternatives instead of starting an empty
+        // transaction.
+        throw new Error(
+          `Aus ${provider} konnten keine importierbaren Firmen gelesen werden ` +
+            `(insgesamt ${fetched.total} Firmen, davon ${fetched.skipped} ` +
+            `ohne Name oder Stadt). Bitte in HubSpot City-Felder pflegen oder ` +
+            `eine Datei hochladen.`,
+        );
+      }
+
+      ctx.log(
+        `import_companies_from_crm: ${fetched.companies.length}/${fetched.total} usable, ${fetched.skipped} skipped`,
+      );
+
+      const response = await deps.gateway.request<{
+        transactionId: string;
+        companyCount: number;
+      }>("/v1/imports/from-list", {
+        method: "POST",
+        body: {
+          companies: fetched.companies,
+          ...(args.transactionName
+            ? { transactionName: args.transactionName }
+            : {}),
+          ...(args.isFuzzy !== undefined ? { isFuzzy: args.isFuzzy } : {}),
+        },
+        idempotencyKey: randomUUID(),
+        signal: ctx.signal,
+        // Same Option-D dispatch path as import_excel / import_company:
+        // master-data needs the user-LLM headers for the per-company
+        // evaluation that runs later in the pipeline.
+        attachUserLlm: true,
+      });
+
+      return {
+        transactionId: response.transactionId,
+        provider,
+        companyCount: response.companyCount,
+        skipped: fetched.skipped,
+        total: fetched.total,
+      };
+    },
+  });
+
   // ---- retry_stage --------------------------------------------------------
   //
   // Pipeline retries are common: the website crawl times out, a contact
@@ -547,5 +686,5 @@ export function buildImportTools(deps: {
     },
   });
 
-  return [importExcel, importStatus, importCompany, retryStage];
+  return [importExcel, importStatus, importCompany, importFromCrm, retryStage];
 }
