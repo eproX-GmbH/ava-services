@@ -272,8 +272,8 @@ function ScreenshotsView({
     return (
       <p className="muted">
         Keine Screenshots für diesen Lauf. Selenium-Producer (Stamm-Daten,
-        Publikationen, Website) erzeugen automatisch Screenshots vor jedem
-        wichtigen Klick und bei Fehlern.
+        Publikationen) erzeugen automatisch Screenshots vor jedem wichtigen
+        Klick und bei Fehlern.
       </p>
     );
   }

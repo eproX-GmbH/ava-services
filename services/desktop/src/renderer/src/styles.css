@@ -2408,6 +2408,17 @@ a.heartbeat-decision__company:hover {
   margin-left: auto;
   font-size: 12px;
 }
+.upstream-banner__retry[aria-busy="true"],
+.upstream-banner__retry:disabled {
+  opacity: 0.55;
+  cursor: progress;
+}
+.upstream-banner__toast {
+  font-size: 12px;
+  color: var(--muted);
+  margin-left: 0.5rem;
+  font-style: italic;
+}
 
 /* ---- v0.1.50 — DiagnosticsPanel (matrix drill-down logs + screenshots) ---
  *

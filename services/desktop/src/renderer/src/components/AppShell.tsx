@@ -43,6 +43,11 @@ export function AppShell({ children }: PropsWithChildren) {
 // accumulate red cells from work the scraper can't possibly do.
 function ExternalServiceBanner() {
   const [status, setStatus] = useState<ExternalServiceStatus | null>(null);
+  const [probing, setProbing] = useState(false);
+  /** Tracks "we just probed but the upstream is still unreachable" so
+   *  the user sees a "noch nicht erreichbar" toast instead of a silent
+   *  click. Cleared after a few seconds or on next status change. */
+  const [stillDownAt, setStillDownAt] = useState<number | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -50,7 +55,11 @@ function ExternalServiceBanner() {
       if (!cancelled) setStatus(s);
     });
     const off = window.api.externalService.onStatusChanged((s) => {
-      if (!cancelled) setStatus(s);
+      if (!cancelled) {
+        setStatus(s);
+        // Clear the toast on any external-driven status update.
+        setStillDownAt(null);
+      }
     });
     return () => {
       cancelled = true;
@@ -58,14 +67,39 @@ function ExternalServiceBanner() {
     };
   }, []);
 
+  // Auto-dismiss the "still down" toast after 4s so it doesn't stick.
+  useEffect(() => {
+    if (stillDownAt === null) return;
+    const id = setTimeout(() => setStillDownAt(null), 4000);
+    return () => clearTimeout(id);
+  }, [stillDownAt]);
+
   if (!status || status.state !== "unreachable") return null;
 
   const since = status.lastReachableAt
     ? formatRelativeMinutes(status.lastReachableAt)
     : null;
 
+  const onRetry = async () => {
+    if (probing) return;
+    setProbing(true);
+    try {
+      const next = await window.api.externalService.probeNow();
+      // probeNow returns the latest status synchronously. If it's
+      // still unreachable, surface a brief "noch nicht erreichbar"
+      // toast next to the button so the click feels responsive.
+      if (next.state === "unreachable") {
+        setStillDownAt(Date.now());
+      }
+      // If it flipped to reachable the banner self-unmounts via
+      // onStatusChanged, no extra UI here.
+    } finally {
+      setProbing(false);
+    }
+  };
+
   return (
-    <div className="upstream-banner" role="status">
+    <div className="upstream-banner" role="status" aria-live="polite">
       <span className="upstream-banner__dot" aria-hidden="true" />
       <strong>Unternehmensregister.de nicht erreichbar.</strong>{" "}
       <span>
@@ -76,11 +110,18 @@ function ExternalServiceBanner() {
       <button
         type="button"
         className="link upstream-banner__retry"
-        onClick={() => void window.api.externalService.probeNow()}
+        onClick={() => void onRetry()}
+        disabled={probing}
         title="Sofort erneut prüfen"
+        aria-busy={probing}
       >
-        Erneut prüfen
+        {probing ? "Prüfe…" : "Erneut prüfen"}
       </button>
+      {stillDownAt !== null && !probing && (
+        <span className="upstream-banner__toast" role="status">
+          noch nicht erreichbar
+        </span>
+      )}
     </div>
   );
 }
