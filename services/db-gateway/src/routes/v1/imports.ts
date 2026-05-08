@@ -1,7 +1,7 @@
 import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
 import { HTTPException } from "hono/http-exception";
 import { requireScope } from "../../middleware/auth";
-import { callUpstreamBinary } from "../../lib/upstream";
+import { callUpstreamBinary, callUpstreamBinaryExpectJson } from "../../lib/upstream";
 import { setTransactionName } from "../../lib/transaction-names";
 import { seedEntityProgressForTransaction } from "../../lib/entity-progress-seed";
 import { buildXlsx } from "../../lib/xlsx-mini";
@@ -13,6 +13,7 @@ import {
   FromListIngestResponseShape,
   ImportExcelQuery,
   ImportExcelResponseShape,
+  ImportPreviewShape,
 } from "./schemas";
 
 // =============================================================================
@@ -87,6 +88,10 @@ const importExcelRoute = createRoute({
     },
   },
   responses: {
+    200: {
+      content: { "application/json": { schema: ImportPreviewShape } },
+      description: "dry-run preview (when ?dryRun=true)",
+    },
     202: {
       content: { "application/json": { schema: ImportExcelResponseShape } },
       description: "transaction accepted; pipeline events published",
@@ -96,7 +101,8 @@ const importExcelRoute = createRoute({
 });
 
 importsRouter.openapi(importExcelRoute, async (c) => {
-  const { companyNameIdentifiers, city, name, isFuzzy } = c.req.valid("query");
+  const { companyNameIdentifiers, city, name, isFuzzy, dryRun } =
+    c.req.valid("query");
 
   // Pull the file out of the multipart form. Hono's parseBody returns a File
   // (Web API) for binary parts. We accept either field name `file` or the
@@ -120,6 +126,28 @@ importsRouter.openapi(importExcelRoute, async (c) => {
   }
 
   const bytes = new Uint8Array(await file.arrayBuffer());
+
+  // v0.1.57 — dry-run path returns the JSON preview from master-data
+  // verbatim, no transaction created.
+  if (dryRun) {
+    const { body } = await callUpstreamBinaryExpectJson(
+      c,
+      "masterData",
+      "/api/v1/data-care",
+      bytes,
+      {
+        contentType: "application/octet-stream",
+        query: {
+          companyNameIdentifiers,
+          city,
+          name,
+          isFuzzy: String(isFuzzy),
+          dryRun: "true",
+        },
+      },
+    );
+    return c.json(body as object, 200);
+  }
 
   const { headers } = await callUpstreamBinary(
     c,
@@ -190,6 +218,10 @@ const companyIngestRoute = createRoute({
     },
   },
   responses: {
+    200: {
+      content: { "application/json": { schema: ImportPreviewShape } },
+      description: "dry-run preview (when body.dryRun=true)",
+    },
     202: {
       content: { "application/json": { schema: CompanyIngestResponseShape } },
       description: "transaction accepted; pipeline events published",
@@ -199,7 +231,7 @@ const companyIngestRoute = createRoute({
 });
 
 importsRouter.openapi(companyIngestRoute, async (c) => {
-  const { name, city, transactionName, isFuzzy } = c.req.valid("json");
+  const { name, city, transactionName, isFuzzy, dryRun } = c.req.valid("json");
 
   const xlsx = buildXlsx({
     headers: [COMPANY_HEADER, CITY_HEADER],
@@ -207,6 +239,28 @@ importsRouter.openapi(companyIngestRoute, async (c) => {
   });
 
   const effectiveTxName = transactionName ?? `Single ingest: ${name}`;
+
+  // v0.1.57 — dry-run preview path.
+  if (dryRun) {
+    const { body } = await callUpstreamBinaryExpectJson(
+      c,
+      "masterData",
+      "/api/v1/data-care",
+      xlsx,
+      {
+        contentType: "application/octet-stream",
+        query: {
+          companyNameIdentifiers: COMPANY_HEADER,
+          city: CITY_HEADER,
+          name: effectiveTxName,
+          isFuzzy: String(isFuzzy ?? false),
+          dryRun: "true",
+        },
+      },
+    );
+    return c.json(body as object, 200);
+  }
+
   const { headers } = await callUpstreamBinary(
     c,
     "masterData",
@@ -270,6 +324,10 @@ const fromListIngestRoute = createRoute({
     },
   },
   responses: {
+    200: {
+      content: { "application/json": { schema: ImportPreviewShape } },
+      description: "dry-run preview (when body.dryRun=true)",
+    },
     202: {
       content: { "application/json": { schema: FromListIngestResponseShape } },
       description: "transaction accepted; pipeline events published",
@@ -279,7 +337,7 @@ const fromListIngestRoute = createRoute({
 });
 
 importsRouter.openapi(fromListIngestRoute, async (c) => {
-  const { companies, transactionName, isFuzzy } = c.req.valid("json");
+  const { companies, transactionName, isFuzzy, dryRun } = c.req.valid("json");
 
   const xlsx = buildXlsx({
     headers: [COMPANY_HEADER, CITY_HEADER],
@@ -288,6 +346,28 @@ importsRouter.openapi(fromListIngestRoute, async (c) => {
 
   const effectiveTxName =
     transactionName ?? `CRM import: ${companies.length} companies`;
+
+  // v0.1.57 — dry-run preview path. Returns master-data's JSON envelope.
+  if (dryRun) {
+    const { body } = await callUpstreamBinaryExpectJson(
+      c,
+      "masterData",
+      "/api/v1/data-care",
+      xlsx,
+      {
+        contentType: "application/octet-stream",
+        query: {
+          companyNameIdentifiers: COMPANY_HEADER,
+          city: CITY_HEADER,
+          name: effectiveTxName,
+          isFuzzy: String(isFuzzy ?? false),
+          dryRun: "true",
+        },
+      },
+    );
+    return c.json(body as object, 200);
+  }
+
   const { headers } = await callUpstreamBinary(
     c,
     "masterData",

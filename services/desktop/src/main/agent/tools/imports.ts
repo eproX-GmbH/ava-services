@@ -8,6 +8,48 @@ import type { CrmManager } from "../../crm";
 import type { CrmProvider } from "../../crm/types";
 import { fetchCompaniesFromCrm } from "../../crm/fetch-companies";
 
+// v0.1.57 — dry-run preview envelope returned by master-data when the
+// import tools are called with `dryRun: true`. Mirrors the shape in
+// services/db-gateway/src/routes/v1/schemas.ts (ImportPreviewShape).
+//
+// The agent uses this to walk the user through unmatched / low-confidence
+// rows BEFORE committing the run. After collecting corrections, it
+// re-issues the same import call without dryRun (or via a follow-up
+// `import_company` / `import_excel` / `import_companies_from_crm` with
+// the corrected company list).
+interface ImportPreview {
+  dryRun: true;
+  providedCount: number;
+  matched: Array<{
+    name: string;
+    location: string;
+    companyId: string;
+    matchingType: "direct" | "history";
+  }>;
+  unmatched: Array<{
+    name: string;
+    location: string;
+    candidates: Array<{
+      companyId: string;
+      name: string;
+      location: string;
+      score: number;
+    }>;
+  }>;
+}
+
+/** Short summary line the agent's `preview` callback can stringify. */
+function summarizePreview(p: ImportPreview): string {
+  const total = p.matched.length + p.unmatched.length;
+  const directCount = p.matched.filter((m) => m.matchingType === "direct").length;
+  const historyCount = p.matched.filter((m) => m.matchingType === "history").length;
+  return (
+    `dry-run: ${total} provided, ` +
+    `${directCount} direct, ${historyCount} via history, ` +
+    `${p.unmatched.length} unmatched`
+  );
+}
+
 // Bulk-import tools (Phase 8.e — Excel-in-chat Scope C, slice 1).
 //
 // Replaces the per-row `company_search` storm the model used to do when
@@ -100,6 +142,11 @@ export function buildImportTools(deps: {
           description:
             "Allow fuzzy matching against existing companies. Default false (strict).",
         },
+        dryRun: {
+          type: "boolean",
+          description:
+            "Preview match results WITHOUT creating a transaction. Returns `{dryRun: true, matched, unmatched: [{candidates: [...]}]}` so you can walk the user through unmatched / low-confidence rows before committing. Default false.",
+        },
       },
     },
     schema: yup
@@ -113,10 +160,18 @@ export function buildImportTools(deps: {
         cityColumns: yup.array().of(yup.string().required().min(1)).optional(),
         name: yup.string().optional(),
         isFuzzy: yup.boolean().optional(),
+        dryRun: yup.boolean().optional(),
       })
       .noUnknown(true),
-    preview: (r: { transactionId: string; rows: number; filename: string }) =>
-      `import "${r.filename}" (${r.rows} rows) → tx ${r.transactionId.slice(0, 8)}…`,
+    preview: (r: {
+      transactionId?: string;
+      rows: number;
+      filename: string;
+      preview?: ImportPreview;
+    }) =>
+      r.preview
+        ? `${summarizePreview(r.preview)} (file: "${r.filename}")`
+        : `import "${r.filename}" (${r.rows} rows) → tx ${(r.transactionId ?? "").slice(0, 8)}…`,
     run: async (args, ctx) => {
       const att = deps.attachments.get(args.attachmentId);
       if (!att) {
@@ -143,31 +198,43 @@ export function buildImportTools(deps: {
       }
       if (args.name) query.name = args.name;
       if (args.isFuzzy !== undefined) query.isFuzzy = args.isFuzzy;
+      if (args.dryRun) query.dryRun = true;
 
       ctx.log(
-        `import_excel: ${att.filename} (${totalRows} rows) → POST /v1/imports/excel`,
+        `import_excel: ${att.filename} (${totalRows} rows)${args.dryRun ? " [dryRun]" : ""} → POST /v1/imports/excel`,
       );
 
-      const response = await deps.gateway.request<{ transactionId: string }>(
-        "/v1/imports/excel",
-        {
-          method: "POST",
-          query,
-          multipart: form,
-          idempotencyKey: randomUUID(),
-          signal: ctx.signal,
-          // Option D — dispatch endpoint, attach user-LLM headers so
-          // master-data forwards them as AMQP headers to the producers.
-          attachUserLlm: true,
-        },
-      );
+      const response = await deps.gateway.request<
+        { transactionId: string } | ImportPreview
+      >("/v1/imports/excel", {
+        method: "POST",
+        query,
+        multipart: form,
+        idempotencyKey: randomUUID(),
+        signal: ctx.signal,
+        // Option D — dispatch endpoint, attach user-LLM headers so
+        // master-data forwards them as AMQP headers to the producers.
+        attachUserLlm: true,
+      });
+
+      if (args.dryRun) {
+        // Don't discard the attachment — the agent will likely call us
+        // again without dryRun once the user has confirmed.
+        return {
+          filename: att.filename,
+          rows: totalRows,
+          preview: response as ImportPreview,
+          companyNameColumns: args.companyNameColumns,
+          cityColumns: args.cityColumns ?? [],
+        };
+      }
 
       // The bytes have done their job — free them so an idle session
       // doesn't hold onto a large workbook.
       deps.attachments.discard(args.attachmentId);
 
       return {
-        transactionId: response.transactionId,
+        transactionId: (response as { transactionId: string }).transactionId,
         filename: att.filename,
         rows: totalRows,
         sheets: att.sheets.map((s) => ({
@@ -354,8 +421,13 @@ export function buildImportTools(deps: {
       "this when the user asks to add or research one specific company they " +
       "haven't attached a spreadsheet for (e.g. \"Leg mir Foo GmbH aus Berlin an\", " +
       "\"add ACME from Munich and find their data\"). For multiple companies " +
-      "from a spreadsheet, use `import_excel` instead. Returns a transactionId " +
-      "you can hand back; progress is checkable via `import_status`.",
+      "from a spreadsheet, use `import_excel` instead. " +
+      "Set `dryRun: true` to preview what master-data would match WITHOUT " +
+      "starting a transaction — the response then has shape `{dryRun: true, " +
+      "matched, unmatched: [{candidates: [...]}]}` so you can confirm the match " +
+      "with the user (especially when the company is uncertain) before committing. " +
+      "Otherwise returns a transactionId you can hand back; progress is checkable " +
+      "via `import_status`.",
     parameters: {
       type: "object",
       required: ["name", "city"],
@@ -379,6 +451,11 @@ export function buildImportTools(deps: {
           description:
             "Allow fuzzy matching against existing companies (handles minor name variants). Default false.",
         },
+        dryRun: {
+          type: "boolean",
+          description:
+            "Preview match results WITHOUT creating a transaction. Returns `{dryRun: true, matched, unmatched}` so you can confirm with the user before committing. Default false (starts the transaction immediately).",
+        },
       },
     },
     schema: yup
@@ -387,32 +464,51 @@ export function buildImportTools(deps: {
         city: yup.string().required().min(1),
         transactionName: yup.string().optional(),
         isFuzzy: yup.boolean().optional(),
+        dryRun: yup.boolean().optional(),
       })
       .noUnknown(true),
-    preview: (r: { transactionId: string; name: string }) =>
-      `import "${r.name}" → tx ${r.transactionId.slice(0, 8)}…`,
+    preview: (r: {
+      transactionId?: string;
+      name: string;
+      preview?: ImportPreview;
+    }) =>
+      r.preview
+        ? `${summarizePreview(r.preview)} (single: "${r.name}")`
+        : `import "${r.name}" → tx ${(r.transactionId ?? "").slice(0, 8)}…`,
     run: async (args, ctx) => {
-      ctx.log(`import_company: ${args.name} / ${args.city}`);
-      const response = await deps.gateway.request<{ transactionId: string }>(
-        "/v1/companies",
-        {
-          method: "POST",
-          body: {
-            name: args.name,
-            city: args.city,
-            ...(args.transactionName
-              ? { transactionName: args.transactionName }
-              : {}),
-            ...(args.isFuzzy !== undefined ? { isFuzzy: args.isFuzzy } : {}),
-          },
-          idempotencyKey: randomUUID(),
-          signal: ctx.signal,
-          // Option D — dispatch endpoint, attach user-LLM headers.
-          attachUserLlm: true,
-        },
+      ctx.log(
+        `import_company: ${args.name} / ${args.city}${args.dryRun ? " [dryRun]" : ""}`,
       );
+      const body = {
+        name: args.name,
+        city: args.city,
+        ...(args.transactionName
+          ? { transactionName: args.transactionName }
+          : {}),
+        ...(args.isFuzzy !== undefined ? { isFuzzy: args.isFuzzy } : {}),
+        ...(args.dryRun ? { dryRun: true } : {}),
+      };
+      // The gateway returns ImportPreview for dryRun=true, the legacy
+      // {transactionId} otherwise. Use a permissive type and branch
+      // on the discriminator.
+      const response = await deps.gateway.request<
+        { transactionId: string } | ImportPreview
+      >("/v1/companies", {
+        method: "POST",
+        body,
+        idempotencyKey: randomUUID(),
+        signal: ctx.signal,
+        attachUserLlm: true,
+      });
+      if (args.dryRun) {
+        return {
+          name: args.name,
+          city: args.city,
+          preview: response as ImportPreview,
+        };
+      }
       return {
-        transactionId: response.transactionId,
+        transactionId: (response as { transactionId: string }).transactionId,
         name: args.name,
         city: args.city,
       };
@@ -471,6 +567,24 @@ export function buildImportTools(deps: {
           description:
             "Soft cap on rows imported in this run. Default 5000. Use a smaller value for a dry-run / preview, or leave unset to import everything.",
         },
+        dryRun: {
+          type: "boolean",
+          description:
+            "Preview matches WITHOUT starting a transaction. Returns `{dryRun: true, matched, unmatched: [{candidates: [...]}]}` so you can confirm with the user (especially when the CRM has a lot of unmatched / low-confidence rows). Default false.",
+        },
+        companies: {
+          type: "array",
+          description:
+            "Optional override for the {name, city} list. When set, SKIPS the CRM API fetch and uses this list directly — the typical use is to re-issue the call after a dryRun with corrections collected from the user. Items must be `{name, city}` pairs. Don't guess; only set this when you're committing user-confirmed values.",
+          items: {
+            type: "object",
+            required: ["name", "city"],
+            properties: {
+              name: { type: "string" },
+              city: { type: "string" },
+            },
+          },
+        },
       },
     },
     schema: yup
@@ -481,72 +595,106 @@ export function buildImportTools(deps: {
           .oneOf(["hubspot", "salesforce", "dynamics"]),
         transactionName: yup.string().optional(),
         isFuzzy: yup.boolean().optional(),
-        maxCompanies: yup
-          .number()
-          .integer()
-          .min(1)
-          .max(5000)
+        maxCompanies: yup.number().integer().min(1).max(5000).optional(),
+        dryRun: yup.boolean().optional(),
+        companies: yup
+          .array()
+          .of(
+            yup
+              .object({
+                name: yup.string().required().min(1),
+                city: yup.string().required().min(1),
+              })
+              .noUnknown(true),
+          )
           .optional(),
       })
       .noUnknown(true),
     preview: (r: {
-      transactionId: string;
+      transactionId?: string;
       provider: string;
-      companyCount: number;
+      companyCount?: number;
       skipped: number;
+      preview?: ImportPreview;
     }) =>
-      `import ${r.companyCount} companies from ${r.provider}` +
-      (r.skipped > 0 ? ` (${r.skipped} skipped)` : "") +
-      ` → tx ${r.transactionId.slice(0, 8)}…`,
+      r.preview
+        ? `${summarizePreview(r.preview)} (CRM: ${r.provider})`
+        : `import ${r.companyCount ?? 0} companies from ${r.provider}` +
+          (r.skipped > 0 ? ` (${r.skipped} skipped)` : "") +
+          ` → tx ${(r.transactionId ?? "").slice(0, 8)}…`,
     run: async (args, ctx) => {
       const provider = args.provider as CrmProvider;
-      ctx.log(`import_companies_from_crm: provider=${provider}`);
 
-      const fetched = await fetchCompaniesFromCrm(deps.crm, provider, {
-        maxCompanies: args.maxCompanies,
-      });
-      if (fetched.companies.length === 0) {
-        // No usable rows — the agent should explain why (skipped count
-        // + total) and offer alternatives instead of starting an empty
-        // transaction.
-        throw new Error(
-          `Aus ${provider} konnten keine importierbaren Firmen gelesen werden ` +
-            `(insgesamt ${fetched.total} Firmen, davon ${fetched.skipped} ` +
-            `ohne Name oder Stadt). Bitte in HubSpot City-Felder pflegen oder ` +
-            `eine Datei hochladen.`,
+      // Either the agent supplied an explicit companies list (e.g.
+      // post-dryRun confirmation), or we page the CRM ourselves.
+      let companies: { name: string; city: string }[];
+      let skipped = 0;
+      let total = 0;
+      if (args.companies && args.companies.length > 0) {
+        ctx.log(
+          `import_companies_from_crm: provider=${provider} explicit=${args.companies.length}${args.dryRun ? " [dryRun]" : ""}`,
+        );
+        companies = args.companies as { name: string; city: string }[];
+        total = companies.length;
+      } else {
+        ctx.log(
+          `import_companies_from_crm: provider=${provider} fetch${args.dryRun ? " [dryRun]" : ""}`,
+        );
+        const fetched = await fetchCompaniesFromCrm(deps.crm, provider, {
+          maxCompanies: args.maxCompanies,
+        });
+        if (fetched.companies.length === 0) {
+          throw new Error(
+            `Aus ${provider} konnten keine importierbaren Firmen gelesen werden ` +
+              `(insgesamt ${fetched.total} Firmen, davon ${fetched.skipped} ` +
+              `ohne Name oder Stadt). Bitte in HubSpot City-Felder pflegen oder ` +
+              `eine Datei hochladen.`,
+          );
+        }
+        companies = fetched.companies;
+        skipped = fetched.skipped;
+        total = fetched.total;
+        ctx.log(
+          `import_companies_from_crm: ${companies.length}/${total} usable, ${skipped} skipped`,
         );
       }
 
-      ctx.log(
-        `import_companies_from_crm: ${fetched.companies.length}/${fetched.total} usable, ${fetched.skipped} skipped`,
-      );
-
-      const response = await deps.gateway.request<{
-        transactionId: string;
-        companyCount: number;
-      }>("/v1/imports/from-list", {
+      const response = await deps.gateway.request<
+        { transactionId: string; companyCount: number } | ImportPreview
+      >("/v1/imports/from-list", {
         method: "POST",
         body: {
-          companies: fetched.companies,
+          companies,
           ...(args.transactionName
             ? { transactionName: args.transactionName }
             : {}),
           ...(args.isFuzzy !== undefined ? { isFuzzy: args.isFuzzy } : {}),
+          ...(args.dryRun ? { dryRun: true } : {}),
         },
         idempotencyKey: randomUUID(),
         signal: ctx.signal,
-        // Same Option-D dispatch path as import_excel / import_company:
-        // master-data needs the user-LLM headers for the per-company
-        // evaluation that runs later in the pipeline.
         attachUserLlm: true,
       });
 
+      if (args.dryRun) {
+        return {
+          provider,
+          skipped,
+          total,
+          preview: response as ImportPreview,
+        };
+      }
+
+      const committed = response as {
+        transactionId: string;
+        companyCount: number;
+      };
       return {
-        transactionId: response.transactionId,
+        transactionId: committed.transactionId,
         provider,
-        companyCount: response.companyCount,
-        skipped: fetched.skipped,
-        total: fetched.total,
+        companyCount: committed.companyCount,
+        skipped,
+        total,
       };
     },
   });

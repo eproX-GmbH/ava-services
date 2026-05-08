@@ -551,6 +551,9 @@ export const ImportExcelQuery = z.object({
   name: z.string().optional(),
   // Whether to fall back to a fuzzy match for unmatched companies.
   isFuzzy: z.coerce.boolean().optional().default(false),
+  // v0.1.57 — dry-run preview for the desktop chat agent. Returns
+  // ImportPreview JSON instead of starting a transaction.
+  dryRun: z.coerce.boolean().optional().default(false),
 });
 
 export const ImportExcelResponseShape = z
@@ -585,6 +588,9 @@ export const CompanyIngestBody = z
      *  name+city tuple yields no match. Defaults to false to mirror the
      *  bulk default. */
     isFuzzy: z.boolean().optional().default(false),
+    /** v0.1.57 — dry-run preview. Returns ImportPreview JSON instead of
+     *  starting a transaction. */
+    dryRun: z.boolean().optional().default(false),
   })
   .openapi("CompanyIngest");
 
@@ -625,6 +631,9 @@ export const FromListIngestBody = z
     transactionName: z.string().min(1).max(200).optional(),
     /** Mirrors the bulk endpoint's fuzzy-match fallback. */
     isFuzzy: z.boolean().optional().default(false),
+    /** v0.1.57 — dry-run preview. Returns ImportPreview JSON instead of
+     *  starting a transaction. */
+    dryRun: z.boolean().optional().default(false),
   })
   .openapi("FromListIngest");
 
@@ -634,6 +643,46 @@ export const FromListIngestResponseShape = z
     companyCount: z.number().int().nonnegative(),
   })
   .openapi("FromListIngestResponse");
+
+// ---- Dry-run import preview (v0.1.57 — CRM Phase 2 part 2) ----------------
+//
+// When the desktop chat agent is about to import a list of companies, it
+// first runs the request with `dryRun: true`. Master-data executes the full
+// match + ES fuzzy search but skips transaction creation + event publish,
+// returning this envelope. The agent walks the user through the unmatched
+// rows + low-confidence candidates, then re-issues the request with
+// `dryRun: false` and the corrected company list.
+
+export const ImportPreviewShape = z
+  .object({
+    dryRun: z.literal(true),
+    providedCount: z.number().int().nonnegative(),
+    matched: z.array(
+      z.object({
+        name: z.string(),
+        location: z.string(),
+        companyId: z.string(),
+        matchingType: z.enum(["direct", "history"]),
+      }),
+    ),
+    unmatched: z.array(
+      z.object({
+        name: z.string(),
+        location: z.string(),
+        candidates: z.array(
+          z.object({
+            companyId: z.string(),
+            name: z.string(),
+            location: z.string(),
+            /** Elasticsearch _score. Higher = better match.
+             *  Raw — the agent normalizes for UI display. */
+            score: z.number(),
+          }),
+        ),
+      }),
+    ),
+  })
+  .openapi("ImportPreview");
 
 // ---- Pipeline view (cross-producer fan-out) --------------------------------
 //

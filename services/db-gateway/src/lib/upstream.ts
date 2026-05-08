@@ -220,3 +220,89 @@ export async function callUpstreamBinary(
   await res.arrayBuffer().catch(() => undefined);
   return { status: res.status, headers: res.headers };
 }
+
+/**
+ * v0.1.57 — variant of callUpstreamBinary that ALSO returns the response
+ * body parsed as JSON. Used by the dry-run import preview path: master-data
+ * skips transaction creation and returns `{ dryRun: true, matched, ... }`
+ * which the gateway forwards verbatim to the desktop chat agent.
+ *
+ * Same auth + error mapping as the binary variant; the only difference is
+ * that we don't drain — we read the body and parse JSON. Throws 502 if the
+ * upstream returns non-JSON when JSON was expected.
+ */
+export interface UpstreamBinaryJsonResult {
+  status: number;
+  headers: Headers;
+  body: unknown;
+}
+
+export async function callUpstreamBinaryExpectJson(
+  c: Context,
+  name: UpstreamName,
+  path: string,
+  body: ArrayBuffer | Uint8Array,
+  opts: UpstreamBinaryOptions = {},
+): Promise<UpstreamBinaryJsonResult> {
+  const base = baseUrlFor(name);
+  const url = new URL(path, base);
+  if (opts.query) {
+    for (const [k, v] of Object.entries(opts.query)) {
+      if (v === undefined) continue;
+      if (Array.isArray(v)) {
+        for (const item of v) url.searchParams.append(k, String(item));
+      } else {
+        url.searchParams.set(k, String(v));
+      }
+    }
+  }
+
+  const headers: Record<string, string> = {
+    "content-type": opts.contentType ?? "application/octet-stream",
+    "x-request-id": c.get("requestId"),
+    accept: "application/json",
+  };
+  const auth = c.req.header("authorization");
+  if (auth) headers["authorization"] = auth;
+  forwardUserLlmHeaders(c, headers);
+
+  const res = await fetch(url, {
+    method: "POST",
+    headers,
+    body: body as unknown as BodyInit,
+  });
+
+  const text = await res.text().catch(() => "");
+
+  if (!res.ok) {
+    logger.warn(
+      {
+        upstream: name,
+        path,
+        status: res.status,
+        body: text.slice(0, 500),
+        requestId: c.get("requestId"),
+      },
+      "upstream binary call (json) failed",
+    );
+    if (res.status === 404) throw new HTTPException(404, { message: "not_found" });
+    if (res.status === 413) throw new HTTPException(413, { message: "payload_too_large" });
+    if (res.status >= 400 && res.status < 500) {
+      throw new HTTPException(res.status as 400, {
+        message: text || `upstream_${name}_${res.status}`,
+      });
+    }
+    throw new HTTPException(502, { message: `upstream_${name}_failed` });
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    throw new HTTPException(502, {
+      message: `upstream_${name}_invalid_json: ${text.slice(0, 200)}`,
+    });
+  }
+
+  return { status: res.status, headers: res.headers, body: parsed };
+}
