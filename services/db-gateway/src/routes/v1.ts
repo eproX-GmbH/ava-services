@@ -14,6 +14,7 @@ import { producersRouter } from "./v1/producers";
 import { crmRouter } from "./v1/crm";
 import { usageRouter } from "./v1/usage";
 import { companiesMatrixRouter } from "./v1/companies-matrix";
+import { companyStateRouter } from "./v1/company-state";
 
 // /v1 router.
 //
@@ -79,6 +80,11 @@ v1.route("/", usageRouter);
 // v0.1.61 — global per-tenant "all companies" matrix. Aggregates
 // EntityProgress per (companyId, producer) across all transactions.
 v1.route("/", companiesMatrixRouter);
+
+// v0.1.63 — F3 producer pre-check. /v1/companies/:id/state returns
+// per-stage ContentFreshness (updatedAt + llmTier). Producers query
+// this at compute start and skip if data is fresh+same-or-better-tier.
+v1.route("/", companyStateRouter);
 
 // Retained for smoke-testing auth end-to-end. Safe to remove once clients
 // exist — no workflow reference.
