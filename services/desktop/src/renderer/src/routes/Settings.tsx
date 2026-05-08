@@ -419,7 +419,7 @@ function CrmSection() {
       {list.isLoading ? (
         <p className="muted small">Lade…</p>
       ) : (
-        <ul className="kv">
+        <ul className="crm-cards">
           {(list.data ?? []).map((s) => (
             <CrmCard key={s.provider} status={s} />
           ))}
@@ -475,49 +475,56 @@ function CrmCard({
   const tone = status.connected ? "ok" : "muted";
   const canConnect =
     !busy && (!meta.requiresOrgUrl || orgUrl.trim().length > 0);
+  const errorMessage = localError ?? status.lastError;
 
   return (
-    <li>
-      <div>
-        <strong>{meta.label}</strong>{" "}
-        <span className={`status-dot ${tone}`}>
-          {status.connected ? "verbunden" : "nicht verbunden"}
-        </span>
-      </div>
-      {status.connected && status.account && (
-        <div className="muted small">Konto: {status.account}</div>
-      )}
-      {status.connected && status.lastRefreshedAt && (
-        <div className="muted small">
-          Zuletzt aktualisiert:{" "}
-          {new Date(status.lastRefreshedAt).toLocaleString("de-DE")}
+    <li className="crm-card">
+      <div className="crm-card-header">
+        <div className="crm-card-title">
+          <span>{meta.label}</span>
+          <span className={`status-dot ${tone}`}>
+            {status.connected ? "verbunden" : "nicht verbunden"}
+          </span>
         </div>
+        <div className="crm-card-actions">
+          {status.connected ? (
+            <button onClick={() => void onDisconnect()} disabled={busy}>
+              {busy ? "Trenne…" : "Verbindung trennen"}
+            </button>
+          ) : (
+            <button onClick={() => void onConnect()} disabled={!canConnect}>
+              {busy ? "Verbinde…" : "Verbinden"}
+            </button>
+          )}
+        </div>
+      </div>
+
+      {status.connected ? (
+        <div className="crm-card-meta">
+          {status.account && <span>Konto: {status.account}</span>}
+          {status.lastRefreshedAt && (
+            <span>
+              Zuletzt aktualisiert:{" "}
+              {new Date(status.lastRefreshedAt).toLocaleString("de-DE")}
+            </span>
+          )}
+        </div>
+      ) : (
+        <p className="crm-card-helper">{meta.helper}</p>
       )}
-      {!status.connected && <p className="muted small">{meta.helper}</p>}
+
       {meta.requiresOrgUrl && !status.connected && (
         <input
           type="text"
+          className="crm-card-orginput"
           placeholder="contoso.crm4.dynamics.com"
           value={orgUrl}
           onChange={(e) => setOrgUrl(e.target.value)}
           disabled={busy}
-          style={{ marginTop: 4, marginRight: 8, width: 280 }}
         />
       )}
-      <div style={{ marginTop: 6 }}>
-        {status.connected ? (
-          <button onClick={() => void onDisconnect()} disabled={busy}>
-            Verbindung trennen
-          </button>
-        ) : (
-          <button onClick={() => void onConnect()} disabled={!canConnect}>
-            {busy ? "Verbinde…" : "Verbinden"}
-          </button>
-        )}
-      </div>
-      {(localError ?? status.lastError) && (
-        <div className="error small">{localError ?? status.lastError}</div>
-      )}
+
+      {errorMessage && <p className="crm-card-error">{errorMessage}</p>}
     </li>
   );
 }
