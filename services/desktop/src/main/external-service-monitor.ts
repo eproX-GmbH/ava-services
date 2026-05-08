@@ -50,8 +50,32 @@ export interface ExternalServiceStatus {
 }
 
 const PROBE_URL = "https://www.unternehmensregister.de/";
-const PROBE_INTERVAL_MS = 60_000;
+// v0.1.56 — relaxed cadence. Hourly-ish probes are plenty; producers
+// that actually hit the upstream report ECONNRESET-class failures via
+// `reportUnreachable()` directly, which flips the state without waiting
+// for the next tick. Frequent HEAD probes used to be the only signal,
+// so 60s made sense. Now they're a fallback / recovery detector.
+const PROBE_INTERVAL_MS = 15 * 60_000;
 const PROBE_TIMEOUT_MS = 10_000;
+
+/** Connection-level error patterns producers surface when the upstream
+ *  is degraded mid-Selenium. Used by the log-buffer hook in main/index.ts
+ *  to flip the monitor immediately instead of waiting for the next
+ *  scheduled probe. */
+export const UPSTREAM_FAILURE_PATTERNS: RegExp[] = [
+  /\bECONNRESET\b/,
+  /\bECONNREFUSED\b/,
+  /\bETIMEDOUT\b/,
+  /\bENOTFOUND\b/,
+  /\bEAI_AGAIN\b/,
+  /\bEPIPE\b/,
+  /\bUND_ERR_CONNECT_TIMEOUT\b/,
+  /net::ERR_NAME_NOT_RESOLVED/i,
+  /net::ERR_CONNECTION_RESET/i,
+  /net::ERR_CONNECTION_REFUSED/i,
+  /net::ERR_CONNECTION_TIMED_OUT/i,
+  /unable to connect to renderer/i,
+];
 
 export class ExternalServiceMonitor extends EventEmitter {
   private status: ExternalServiceStatus = {
@@ -96,6 +120,29 @@ export class ExternalServiceMonitor extends EventEmitter {
   async probeNow(): Promise<ExternalServiceStatus> {
     await this.probe();
     return this.getStatus();
+  }
+
+  /**
+   * v0.1.56 — fast-path failure flag. Producers that hit an
+   * ECONNRESET-class error mid-scrape call this (via the log-buffer
+   * hook in main/index.ts) so the banner + auto-pause flip
+   * immediately, instead of waiting up to 15 minutes for the next
+   * scheduled probe. The next probe will eventually verify recovery
+   * and flip the state back to "reachable" on its own.
+   *
+   * Idempotent — repeated calls while already-unreachable are no-ops
+   * (no event emitted, since update() only emits on transition).
+   */
+  reportUnreachable(reason: string): void {
+    this.update({
+      service: "unternehmensregister",
+      state: "unreachable",
+      url: PROBE_URL,
+      lastCheckedAt: Date.now(),
+      lastReachableAt: this.status.lastReachableAt,
+      latencyMs: null,
+      errorMessage: reason,
+    });
   }
 
   private async probe(): Promise<void> {

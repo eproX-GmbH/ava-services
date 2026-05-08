@@ -24,6 +24,7 @@ import {
 import {
   ExternalServiceMonitor,
   UNTERNEHMENSREGISTER_DEPENDENT_PRODUCERS,
+  UPSTREAM_FAILURE_PATTERNS,
   type ExternalServiceStatus,
 } from "./external-service-monitor";
 import { CrmManager } from "./crm";
@@ -959,6 +960,21 @@ app.whenReady().then(async () => {
   producerLogBuffer.on("line", (event: ProducerLogEvent) => {
     for (const win of BrowserWindow.getAllWindows()) {
       win.webContents.send("producer-log:line", event);
+    }
+    // v0.1.56 — fast-path "upstream is down" detection. The scheduled
+    // 15-min HEAD probe is a slow recovery signal; producers that
+    // actually hit unternehmensregister.de during a scrape see
+    // ECONNRESET/ETIMEDOUT first. Pattern-match their log lines to
+    // flip the monitor state immediately so the banner + auto-pause
+    // fire without users having to wait.
+    if (
+      event.line.stream === "stderr" &&
+      UNTERNEHMENSREGISTER_DEPENDENT_PRODUCERS.has(event.producer) &&
+      UPSTREAM_FAILURE_PATTERNS.some((re) => re.test(event.line.text))
+    ) {
+      externalServiceMonitor.reportUnreachable(
+        `${event.producer}: ${event.line.text.slice(0, 200)}`,
+      );
     }
   });
 
