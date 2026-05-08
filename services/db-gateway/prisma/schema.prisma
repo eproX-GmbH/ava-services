@@ -129,6 +129,67 @@ model ProxyCache {
   @@index([proxy, createdAt])
 }
 
+/// Per-tenant billing state (M1 of monetization plan).
+///
+/// One row per tenant. Created on first usage write if not present
+/// (defaults to Free / 25-lifetime). Stripe webhooks update `tier` +
+/// `quotaLimit` + `periodEnd` after a Checkout success or
+/// subscription change.
+///
+/// Why "tier" + "quotaLimit" rather than just "tier" with a hard-coded
+/// lookup: lets the operator hand-edit a tenant's quota for support
+/// cases (extra credits as a goodwill, custom enterprise contracts)
+/// without code deploys.
+///
+/// `periodEnd` semantics:
+///   - tier="free"  → null (lifetime quota; resets only via support)
+///   - tier="starter" / "pro" → end of the current rolling-monthly window;
+///     persist-bus rolls usage over to the next periodKey when this passes.
+///   - tier="enterprise" → null (no quota enforced)
+model TenantBilling {
+  tenantId             String    @id
+  tier                 String    @default("free")
+  quotaLimit           Int       @default(25)
+  // Stripe linkage when present.
+  stripeCustomerId     String?
+  stripeSubscriptionId String?
+  // Rolls over for paid tiers; null for free / enterprise.
+  periodEnd            DateTime?
+  updatedAt            DateTime  @updatedAt
+  createdAt            DateTime  @default(now())
+}
+
+/// Per-(tenant, period, company) usage credit (M1 of monetization plan).
+///
+/// Inserted by the persist-bus listener whenever
+/// `tenant.persist.structured-content.v1` arrives — that's the
+/// "company successfully enriched" signal. Unique on (tenantId,
+/// periodKey, companyId) so:
+///   - retries within the same period don't double-bill
+///   - re-importing the same company in the same period is free
+///     (cache hit, no new operator cost — see the design doc rationale)
+///
+/// `periodKey` shape:
+///   - "lifetime" for the free tier (single grant, never resets)
+///   - "YYYY-MM"  for paid tiers (rolling monthly window keyed on
+///     the *charge* date, computed from TenantBilling.periodEnd)
+///
+/// `source` is the producer that emitted the persist event. Today
+/// only "structured-content" billsthe quota; other producers (website,
+/// company-profile, …) write their persist events but the listener
+/// short-circuits since they're free downstream of structured-content.
+model UsageEntry {
+  tenantId  String
+  periodKey String
+  companyId String
+  source    String
+  createdAt DateTime @default(now())
+
+  @@id([tenantId, periodKey, companyId])
+  // Counter window for /v1/usage: count(*) where (tenantId, periodKey).
+  @@index([tenantId, periodKey])
+}
+
 /// Append-only audit log. One row per gateway request after successful auth.
 /// Retention policy TBD with the customer (fly.io secrets hold the cutoff).
 model AuditLog {

@@ -42,6 +42,7 @@ import { logger } from "./logger";
 import { PRODUCER_NAMES, type ProducerName } from "./db-urls";
 import { getProducerPool, getGatewayPool } from "./producer-pools";
 import { transactionProgressBus } from "./event-bus";
+import { recordUsage } from "./billing";
 
 /**
  * Side-effect of every persist event: record per-company processing
@@ -338,6 +339,20 @@ const applyStructuredContent: ApplyFn = async (pool, event, log) => {
     throw err;
   } finally {
     client.release();
+  }
+
+  // M1 monetization — record a usage credit for this successful
+  // persist. Failed structured-content scrapes never reach here (they
+  // emit `transaction.progress` with state=failed but no persist
+  // event), which gives us the "failure doesn't bill" semantics for
+  // free. recordUsage is best-effort: a billing-table write failure
+  // must NEVER affect the producer's data path.
+  if (tenantId && result?.companyId) {
+    await recordUsage(getGatewayPool(), log, {
+      tenantId,
+      companyId: result.companyId,
+      source: "structured-content",
+    });
   }
 };
 
