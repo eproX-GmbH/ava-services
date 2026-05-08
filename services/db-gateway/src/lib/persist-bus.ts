@@ -378,6 +378,18 @@ interface WebsiteResult {
     description?: string | null;
     tags?: string[];
   };
+  /** v0.1.60 — LLM-judge audit trail. Persisted to the gateway's
+   *  WebsiteJudgment table (NOT the producer's website DB) so the
+   *  metadata is available for "why did the LLM pick X" debugging
+   *  + future explainable-UI surfaces. Always present from v0.1.60
+   *  producers; older producers omit it and we just skip the audit
+   *  write. */
+  judgment?: {
+    matchIndex: number | null;
+    confidence: "high" | "medium" | "low" | null;
+    reasoning: string;
+    candidatesConsidered: number;
+  };
 }
 
 const applyWebsite: ApplyFn = async (pool, event, log) => {
@@ -462,6 +474,7 @@ const applyWebsite: ApplyFn = async (pool, event, log) => {
         companyId: result.companyId,
         serp: !!result.serp,
         website: !!result.website,
+        judgment: !!result.judgment,
       },
       "website persist ✓",
     );
@@ -470,6 +483,45 @@ const applyWebsite: ApplyFn = async (pool, event, log) => {
     throw err;
   } finally {
     client.release();
+  }
+
+  // v0.1.60 — write the LLM-judge audit row to the gateway's audit DB
+  // (separate from the producer's website DB; see WebsiteJudgment
+  // schema rationale). Best-effort: a judgment-write failure should
+  // never roll back the actual website data we just persisted.
+  if (result.judgment) {
+    try {
+      const j = result.judgment;
+      await getGatewayPool().query(
+        `INSERT INTO "WebsiteJudgment" (
+           "companyId", "matchIndex", confidence, reasoning,
+           "candidatesConsidered", "judgedAt", "updatedAt"
+         )
+         VALUES ($1, $2, $3, $4, $5, NOW(), NOW())
+         ON CONFLICT ("companyId") DO UPDATE SET
+           "matchIndex" = EXCLUDED."matchIndex",
+           confidence = EXCLUDED.confidence,
+           reasoning = EXCLUDED.reasoning,
+           "candidatesConsidered" = EXCLUDED."candidatesConsidered",
+           "judgedAt" = NOW(),
+           "updatedAt" = NOW()`,
+        [
+          result.companyId,
+          j.matchIndex,
+          j.confidence,
+          j.reasoning,
+          j.candidatesConsidered,
+        ],
+      );
+    } catch (err) {
+      log.warn(
+        {
+          err: err instanceof Error ? err.message : String(err),
+          companyId: result.companyId,
+        },
+        "WebsiteJudgment write failed (best-effort)",
+      );
+    }
   }
 };
 

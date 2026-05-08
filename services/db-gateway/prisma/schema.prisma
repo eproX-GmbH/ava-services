@@ -129,6 +129,44 @@ model ProxyCache {
   @@index([proxy, createdAt])
 }
 
+/// LLM-judge audit row for the website producer (v0.1.60).
+///
+/// Stores the verdict metadata for each company's website resolution
+/// so admins can answer "why did the LLM pick foo.de over bar.de" or
+/// "why did the LLM say no website exists" without having to dig
+/// through producer logs.
+///
+/// One row per companyId — we overwrite on re-judges (e.g. freshness
+/// rerun picks differently as ranking shifts). The history of past
+/// verdicts is intentionally NOT kept; if we ever need that, the
+/// existing AuditLog covers gateway request shape + the producer's
+/// log-buffer shows the runtime details.
+///
+/// Storage rationale: producer DBs (ava_website, etc.) aren't on the
+/// release_command migration path post-§8.v3, so adding columns there
+/// is operationally fragile. The gateway's audit DB IS migrated on
+/// every deploy, and read access is co-located with EntityProgress
+/// which is the natural pairing for "matrix drilldown" UX.
+model WebsiteJudgment {
+  companyId             String    @id
+  /// Non-null when LLM picked a candidate. null = "no match" verdict
+  /// (LLM rejected all results) or "no SERP candidates" (empty page-1).
+  matchIndex            Int?
+  /// "high" | "medium" | "low". null when matchIndex is null.
+  confidence            String?
+  /// LLM's German-language explanation (≤200 chars at the source).
+  reasoning             String?
+  /// How many post-sponsor-strip candidates the LLM considered. Useful
+  /// for distinguishing "company has no public site" (0 candidates)
+  /// from "LLM rejected several" (>0 candidates + matchIndex null).
+  candidatesConsidered  Int
+  /// Last time this row was written. Persist-bus updates on each
+  /// successful website persist; same `last-write-wins` semantics as
+  /// the Website / CompanySerp tables in the producer DB.
+  judgedAt              DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+}
+
 /// Per-tenant billing state (M1 of monetization plan).
 ///
 /// One row per tenant. Created on first usage write if not present
