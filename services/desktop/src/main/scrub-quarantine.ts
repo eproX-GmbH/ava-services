@@ -1,57 +1,73 @@
-// v0.1.55 — runtime quarantine scrubber.
+// v0.1.57 — runtime quarantine scrubber (revised after v0.1.55+v0.1.56 logs).
 //
 // macOS adds `com.apple.quarantine` to every file inside an .app bundle
 // when the bundle is downloaded via Safari/Chrome (.dmg or .zip). The
 // quarantine attribute also flags the EXECUTING PROCESS at exec time,
-// which means files written by that process inherit quarantine. For
-// AVA's OTA update flow that's fatal: electron-updater downloads the
-// new .zip via HTTPS, ditto extracts it, every extracted file inherits
-// quarantine — and Squirrel.Mac then can't scrub quarantine from
-// hardened-runtime dylibs (libwhisper.dylib in particular returns
-// EPERM on `removexattr`), so the install aborts after 3 retries.
+// which means files written by that process inherit quarantine.
 //
-// The build-time `strip-xattrs.mjs` afterPack hook already produces a
-// clean .zip on the GitHub release. The remaining quarantine comes
-// from the user's first .dmg install (Chrome attaches quarantine).
+// The OTA failure chain (from real Squirrel.Mac logs):
+//   1. User installs AVA via Chrome-downloaded .dmg → bundle quarantined.
+//   2. AVA launches → kernel reads bundle's xattrs at exec → process is
+//      quarantine-flagged.
+//   3. AVA writes the OTA-downloaded .zip into
+//      `~/Library/Caches/com.ava.desktop.ShipIt/update.<X>/` → that .zip
+//      inherits quarantine.
+//   4. ShipIt forks, ditto-extracts the .zip → ditto preserves the
+//      quarantine xattr onto every extracted file.
+//   5. ShipIt calls `removexattr("com.apple.quarantine")` on each. The
+//      libwhisper.dylib (hardened runtime + library validation) returns
+//      EPERM. ShipIt aborts the install.
 //
-// This scrubber clears `com.apple.quarantine` from the running app's
-// bundle on every launch + once more right before `quitAndInstall`.
-// Note: the running PROCESS keeps its quarantine flag (kernel sets it
-// at exec from the binary's xattrs at the time of exec), so the
-// scrub here doesn't help THIS launch's OTA. It does help the NEXT
-// launch's OTA — from v0.1.55 forward, manually-installed builds
-// self-clean on first run, and subsequent OTAs go through cleanly
-// because the new AVA process boots without quarantine.
+// v0.1.55 fixed step 1 by scrubbing the bundle on boot. But that didn't
+// fix THIS launch's process flag (kernel-level state, can't change
+// retroactively), and didn't touch the cache dir. Logs from a v0.1.55 →
+// v0.1.56 OTA confirmed: the bundle on disk had no quarantine, but the
+// staged extract STILL had it.
 //
-// We target only `com.apple.quarantine`, not `xattr -cr`, because:
-//   - cr would also try to strip `com.apple.cs.*` (codesign attrs)
-//     which the kernel refuses on signed binaries → noisy errors
-//   - quarantine alone removal is permitted on signed Mach-Os
-//     (it's not part of the codesign seal).
+// v0.1.57 fix: scrub three places:
+//   (a) The .app bundle on disk (existing).
+//   (b) `~/Library/Caches/com.ava.desktop.ShipIt/` — where the OTA .zip
+//       lives between download and extraction. Stripping quarantine here
+//       breaks the propagation chain into ditto.
+//   (c) `<userData>/pending/` — electron-updater's general staging dir.
 //
-// Best effort: failures are logged + ignored. Worst case is a
-// status-quo OTA path; we never make things worse by trying.
+// Targets only `com.apple.quarantine`, not `xattr -cr`. cr would also try
+// to strip `com.apple.cs.*` (codesign attrs) which the kernel refuses on
+// signed binaries; quarantine alone removal is permitted.
 
 import { spawn } from "node:child_process";
 import { app } from "electron";
-import { dirname } from "node:path";
+import { existsSync } from "node:fs";
+import { homedir } from "node:os";
+import { dirname, join } from "node:path";
 
-/** Returns the path to the running .app bundle (parent of `.app/Contents`). */
+/** Path to the running .app bundle (`<bundle>.app`). */
 function appBundlePath(): string {
   // process.execPath = `<bundle>/Contents/MacOS/<exe>`. Three levels up
-  // → `<bundle>` (the .app dir itself). app.getAppPath() returns the
-  // asar dir which is two levels deeper, so we use execPath.
+  // → `<bundle>` (the .app dir itself).
   return dirname(dirname(dirname(process.execPath)));
 }
 
-/** Run `xattr -dr com.apple.quarantine <bundle>`. Returns when done.
- *  Never throws — exits silently on platform mismatch / errors. */
-export async function scrubQuarantine(): Promise<void> {
-  if (process.platform !== "darwin") return;
-  if (!app.isPackaged) return;
-  const bundle = appBundlePath();
+/** Squirrel.Mac's per-app cache dir. Holds the downloaded OTA .zip
+ *  between download and extraction. The bundle id is fixed at
+ *  electron-builder.yml's `appId`. */
+function shipItCachePath(): string {
+  return join(homedir(), "Library", "Caches", "com.ava.desktop.ShipIt");
+}
+
+/** electron-updater's generic staging dir. Some flows write the .zip
+ *  here before handing it off to Squirrel.Mac. */
+function pendingUpdatePath(): string {
+  return join(app.getPath("userData"), "pending");
+}
+
+/** Run `xattr -dr com.apple.quarantine <path>`. Returns when done.
+ *  Never throws — exits silently on platform mismatch / missing path
+ *  / xattr failures. */
+async function scrubPath(path: string): Promise<void> {
+  if (!existsSync(path)) return;
   await new Promise<void>((resolve) => {
-    const child = spawn("xattr", ["-dr", "com.apple.quarantine", bundle], {
+    const child = spawn("xattr", ["-dr", "com.apple.quarantine", path], {
       stdio: ["ignore", "ignore", "pipe"],
     });
     let stderr = "";
@@ -66,14 +82,33 @@ export async function scrubQuarantine(): Promise<void> {
     child.on("exit", (code) => {
       if (code === 0) {
         // eslint-disable-next-line no-console
-        console.log(`[scrub-quarantine] cleared from ${bundle}`);
+        console.log(`[scrub-quarantine] cleared from ${path}`);
       } else {
         // eslint-disable-next-line no-console
         console.warn(
-          `[scrub-quarantine] xattr exited ${code} (best-effort): ${stderr.slice(0, 200)}`,
+          `[scrub-quarantine] xattr exited ${code} on ${path}: ${stderr.slice(0, 200)}`,
         );
       }
       resolve();
     });
   });
+}
+
+/**
+ * Clear `com.apple.quarantine` from every place that could feed
+ * quarantine into the OTA install pipeline. Best-effort, never throws.
+ *
+ * Call sites:
+ *   - Boot (main/index.ts → app.whenReady) — clean bundle for next launch.
+ *   - Pre-quitAndInstall (updater.ts) — clean cache so Squirrel's ditto
+ *     extract doesn't propagate quarantine into the staged bundle.
+ */
+export async function scrubQuarantine(): Promise<void> {
+  if (process.platform !== "darwin") return;
+  if (!app.isPackaged) return;
+  await Promise.all([
+    scrubPath(appBundlePath()),
+    scrubPath(shipItCachePath()),
+    scrubPath(pendingUpdatePath()),
+  ]);
 }
