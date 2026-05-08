@@ -289,8 +289,12 @@ async function recordAudit(
     });
 }
 
+// Path is RELATIVE to the proxyRouter's mount point (`v1.route("/", proxyRouter)`
+// inside `/v1` app). Don't prefix with `/v1` here — Hono would concatenate
+// to `/v1/v1/proxy/valueserp` and producers (which hit `/v1/proxy/valueserp`)
+// would 404. v0.1.58 cosmetic fix.
 proxyRouter.post(
-  "/v1/proxy/valueserp",
+  "/proxy/valueserp",
   requireScope("valueserp:enabled"),
   async (c) => {
     if (!env.VALUESERP_API_KEY) {
