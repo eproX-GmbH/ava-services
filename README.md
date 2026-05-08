@@ -1,6 +1,6 @@
 # AVA
 
-> Recherche-Desktop für deutsche B2B-Daten. Handelsregister-zentriert, KI-gestützt, CRM-fähig.
+> Recherche-App für deutsche B2B-Daten. Handelsregister-zentriert, KI-gestützt, CRM-fähig.
 
 AVA ist eine Electron-Desktop-Anwendung, die deutsche Unternehmensdaten zu einem komplett ausgewerteten Firmenprofil verdichtet — vom Handelsregistereintrag über Veröffentlichungen, Webseite und Kontaktdaten bis zu einer LLM-basierten Bewertung. Importiert wird per Excel, einzelner Firma oder direkt aus dem verbundenen CRM (heute HubSpot, in Kürze Salesforce + Microsoft Dynamics 365).
 
