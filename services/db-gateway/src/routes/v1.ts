@@ -13,6 +13,7 @@ import { proxyRouter } from "./v1/proxy";
 import { producersRouter } from "./v1/producers";
 import { crmRouter } from "./v1/crm";
 import { usageRouter } from "./v1/usage";
+import { companiesMatrixRouter } from "./v1/companies-matrix";
 
 // /v1 router.
 //
@@ -74,6 +75,10 @@ v1.route("/", crmRouter);
 // via persist-bus side effect (lib/billing.ts) and the M3 Stripe
 // webhook; the desktop just reads.
 v1.route("/", usageRouter);
+
+// v0.1.61 — global per-tenant "all companies" matrix. Aggregates
+// EntityProgress per (companyId, producer) across all transactions.
+v1.route("/", companiesMatrixRouter);
 
 // Retained for smoke-testing auth end-to-end. Safe to remove once clients
 // exist — no workflow reference.

@@ -605,6 +605,56 @@ code, pre { font-family: var(--font-mono); font-size: 12px; }
 .dot.muted   { background: rgba(127,127,127,0.4);    border-color: rgba(127,127,127,0.6); }
 .dot.pending { background: transparent;              border-color: var(--border); }
 
+/* v0.1.61 — Alle Firmen / global company-status matrix view. */
+.all-companies__header { margin-bottom: 1rem; }
+.all-companies__filters {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 0.75rem;
+}
+.all-companies__search {
+  font: inherit;
+  padding: 0.4rem 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: transparent;
+  color: var(--fg);
+  width: 280px;
+  max-width: 100%;
+}
+.all-companies__count { white-space: nowrap; }
+.all-companies__matrix tbody tr { cursor: default; }
+.all-companies__matrix tbody tr:hover { background: rgba(127,127,127,0.05); }
+.all-companies__matrix .matrix-company a {
+  color: inherit;
+  text-decoration: none;
+}
+.all-companies__matrix .matrix-company a:hover {
+  text-decoration: underline;
+}
+.all-companies__pager {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  justify-content: center;
+  margin-top: 1rem;
+  padding: 0.5rem 0;
+}
+.all-companies__pager button {
+  font: inherit;
+  padding: 0.35rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: transparent;
+  color: var(--fg);
+  cursor: pointer;
+}
+.all-companies__pager button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
 .warn {
   color: #92400e;
   background: rgba(234, 179, 8, 0.1);

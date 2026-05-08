@@ -144,6 +144,7 @@ function TopBar() {
         <NavItem to="/chat" label="Chat" />
         <NavItem to="/ingest" label="Import" />
         <NavItem to="/transactions" label="Vorgänge" />
+        <NavItem to="/alle-firmen" label="Alle Firmen" />
         <NavItem to="/companies" label="Firmen" />
         <NavItem to="/alerts" label="Meldungen" />
         <NavItem to="/settings" label="Einstellungen" />
