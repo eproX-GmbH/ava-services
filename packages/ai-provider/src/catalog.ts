@@ -58,6 +58,26 @@ export interface ModelCapabilities {
   embeddingDimensions?: number;
 }
 
+/**
+ * Quality tier — drives the multi-tenant persist-bus's "should this
+ * write overwrite the existing data?" decision. Higher = better.
+ *
+ *   4 = "S" — premium / frontier reasoning
+ *   3 = "A" — high (last-gen flagships, strong defaults, large local)
+ *   2 = "B" — mid (mini / haiku / flash variants, mid-size local)
+ *   1 = "C" — small / local-default (≤4 B params, free-tier baseline)
+ *
+ * REQUIRED on every entry. CI fails if a new entry omits it. See
+ * `/MODEL_TIERS.md` at repo root for the full rubric + current
+ * classifications. When you add a model, also update that doc.
+ *
+ * Embedding models still need a tier — set it from the chat model
+ * the embedding pairs with. Embeddings don't go through the
+ * persist-bus, so the value is informational only, but keeping
+ * every entry typed avoids special-cases in the comparison helper.
+ */
+export type ModelTier = 1 | 2 | 3 | 4;
+
 export interface CatalogEntry {
   provider: CatalogProvider;
   /** Tag/id passed to the AI SDK factory (e.g. "gpt-4o-mini", "llama3.2:3b"). */
@@ -76,6 +96,12 @@ export interface CatalogEntry {
    *  - high   — large / reasoning / research-tier models
    */
   costClass: "free" | "cheap" | "mid" | "high";
+  /**
+   * Quality tier for tier-aware persist. See ModelTier above and
+   * MODEL_TIERS.md. Required on every entry — TypeScript will reject
+   * a new model that omits it.
+   */
+  tier: ModelTier;
   /** True iff this is the recommended default for the provider+role. */
   recommended?: boolean;
   /** Approximate on-disk size for Ollama models (bytes). UX hint only. */
@@ -114,6 +140,7 @@ const OLLAMA_LLM: CatalogEntry[] = [
     role: "llm",
     capabilities: { tools: true, vision: true, contextWindow: 128_000 },
     costClass: "free",
+    tier: 2,
     approxBytes: 9_600_000_000,
   },
   {
@@ -123,6 +150,7 @@ const OLLAMA_LLM: CatalogEntry[] = [
     role: "llm",
     capabilities: { tools: true, vision: true, contextWindow: 128_000 },
     costClass: "free",
+    tier: 1,
     approxBytes: 7_200_000_000,
   },
   {
@@ -132,6 +160,7 @@ const OLLAMA_LLM: CatalogEntry[] = [
     role: "llm",
     capabilities: { tools: true, vision: true, contextWindow: 256_000 },
     costClass: "free",
+    tier: 3,
     approxBytes: 18_000_000_000,
   },
   {
@@ -141,6 +170,7 @@ const OLLAMA_LLM: CatalogEntry[] = [
     role: "llm",
     capabilities: { tools: true, vision: true, contextWindow: 256_000 },
     costClass: "free",
+    tier: 3,
     approxBytes: 20_000_000_000,
   },
   {
@@ -150,6 +180,7 @@ const OLLAMA_LLM: CatalogEntry[] = [
     role: "llm",
     capabilities: { tools: true, vision: false, contextWindow: 128_000 },
     costClass: "free",
+    tier: 1,
     approxBytes: 2_000_000_000,
   },
   {
@@ -159,6 +190,7 @@ const OLLAMA_LLM: CatalogEntry[] = [
     role: "llm",
     capabilities: { tools: true, vision: false, contextWindow: 32_000 },
     costClass: "free",
+    tier: 1,
     recommended: true,
     approxBytes: 1_900_000_000,
   },
@@ -169,6 +201,7 @@ const OLLAMA_LLM: CatalogEntry[] = [
     role: "llm",
     capabilities: { tools: true, vision: false, contextWindow: 32_000 },
     costClass: "free",
+    tier: 2,
     approxBytes: 4_700_000_000,
   },
   {
@@ -178,6 +211,7 @@ const OLLAMA_LLM: CatalogEntry[] = [
     role: "llm",
     capabilities: { tools: true, vision: false, contextWindow: 32_000 },
     costClass: "free",
+    tier: 3,
     approxBytes: 9_000_000_000,
   },
   {
@@ -187,6 +221,7 @@ const OLLAMA_LLM: CatalogEntry[] = [
     role: "llm",
     capabilities: { tools: true, vision: false, contextWindow: 128_000 },
     costClass: "free",
+    tier: 2,
     approxBytes: 7_100_000_000,
   },
   {
@@ -196,6 +231,7 @@ const OLLAMA_LLM: CatalogEntry[] = [
     role: "llm",
     capabilities: { tools: true, vision: false, contextWindow: 128_000 },
     costClass: "free",
+    tier: 2,
     approxBytes: 4_700_000_000,
   },
   {
@@ -207,6 +243,7 @@ const OLLAMA_LLM: CatalogEntry[] = [
     // so the agent picker can grey it out for tool-using roles.
     capabilities: { tools: false, vision: true, contextWindow: 128_000 },
     costClass: "free",
+    tier: 1,
     approxBytes: 3_300_000_000,
   },
 ];
@@ -224,6 +261,7 @@ const OLLAMA_EMBED: CatalogEntry[] = [
       embeddingDimensions: 768,
     },
     costClass: "free",
+    tier: 1,
     recommended: true,
     approxBytes: 600_000_000,
   },
@@ -239,6 +277,7 @@ const OLLAMA_EMBED: CatalogEntry[] = [
       embeddingDimensions: 768,
     },
     costClass: "free",
+    tier: 1,
     approxBytes: 280_000_000,
   },
 ];
@@ -257,6 +296,7 @@ const OPENAI_LLM: CatalogEntry[] = [
     role: "llm",
     capabilities: { tools: true, vision: true, contextWindow: 1_000_000 },
     costClass: "high",
+    tier: 4,
   },
   {
     provider: "openai",
@@ -265,6 +305,7 @@ const OPENAI_LLM: CatalogEntry[] = [
     role: "llm",
     capabilities: { tools: true, vision: true, contextWindow: 1_000_000 },
     costClass: "mid",
+    tier: 4,
   },
   {
     provider: "openai",
@@ -273,6 +314,7 @@ const OPENAI_LLM: CatalogEntry[] = [
     role: "llm",
     capabilities: { tools: true, vision: true, contextWindow: 400_000 },
     costClass: "cheap",
+    tier: 2,
     recommended: true,
   },
   {
@@ -282,6 +324,7 @@ const OPENAI_LLM: CatalogEntry[] = [
     role: "llm",
     capabilities: { tools: true, vision: true, contextWindow: 1_000_000 },
     costClass: "mid",
+    tier: 4,
   },
   {
     provider: "openai",
@@ -290,6 +333,7 @@ const OPENAI_LLM: CatalogEntry[] = [
     role: "llm",
     capabilities: { tools: true, vision: true, contextWindow: 400_000 },
     costClass: "cheap",
+    tier: 2,
   },
   // GPT-4 family — kept for users with prior keys/quotas pinned to it.
   {
@@ -299,6 +343,7 @@ const OPENAI_LLM: CatalogEntry[] = [
     role: "llm",
     capabilities: { tools: true, vision: true, contextWindow: 1_000_000 },
     costClass: "mid",
+    tier: 3,
   },
   {
     provider: "openai",
@@ -307,6 +352,7 @@ const OPENAI_LLM: CatalogEntry[] = [
     role: "llm",
     capabilities: { tools: true, vision: true, contextWindow: 1_000_000 },
     costClass: "cheap",
+    tier: 2,
   },
   {
     provider: "openai",
@@ -315,6 +361,7 @@ const OPENAI_LLM: CatalogEntry[] = [
     role: "llm",
     capabilities: { tools: true, vision: true, contextWindow: 128_000 },
     costClass: "mid",
+    tier: 3,
   },
   {
     provider: "openai",
@@ -323,6 +370,7 @@ const OPENAI_LLM: CatalogEntry[] = [
     role: "llm",
     capabilities: { tools: true, vision: true, contextWindow: 128_000 },
     costClass: "cheap",
+    tier: 2,
   },
   // Reasoning-tuned models — pricier but stronger on multi-step plans.
   {
@@ -332,6 +380,7 @@ const OPENAI_LLM: CatalogEntry[] = [
     role: "llm",
     capabilities: { tools: true, vision: true, contextWindow: 200_000 },
     costClass: "mid",
+    tier: 3,
   },
   {
     provider: "openai",
@@ -340,6 +389,7 @@ const OPENAI_LLM: CatalogEntry[] = [
     role: "llm",
     capabilities: { tools: true, vision: false, contextWindow: 200_000 },
     costClass: "mid",
+    tier: 3,
   },
 ];
 
@@ -356,6 +406,7 @@ const OPENAI_EMBED: CatalogEntry[] = [
       embeddingDimensions: 3072,
     },
     costClass: "mid",
+    tier: 3,
     // NOT recommended — global embed default is `embeddinggemma`
     // (local) so all users share a vector space. See header note.
   },
@@ -371,6 +422,7 @@ const OPENAI_EMBED: CatalogEntry[] = [
       embeddingDimensions: 1536,
     },
     costClass: "cheap",
+    tier: 2,
   },
 ];
 
@@ -388,6 +440,7 @@ const ANTHROPIC_LLM: CatalogEntry[] = [
     role: "llm",
     capabilities: { tools: true, vision: true, contextWindow: 200_000 },
     costClass: "mid",
+    tier: 3,
     recommended: true,
   },
   {
@@ -397,6 +450,7 @@ const ANTHROPIC_LLM: CatalogEntry[] = [
     role: "llm",
     capabilities: { tools: true, vision: true, contextWindow: 200_000 },
     costClass: "cheap",
+    tier: 2,
   },
   {
     provider: "anthropic",
@@ -405,6 +459,7 @@ const ANTHROPIC_LLM: CatalogEntry[] = [
     role: "llm",
     capabilities: { tools: true, vision: true, contextWindow: 200_000 },
     costClass: "high",
+    tier: 4,
   },
 ];
 
@@ -418,6 +473,7 @@ const GOOGLE_LLM: CatalogEntry[] = [
     role: "llm",
     capabilities: { tools: true, vision: true, contextWindow: 2_000_000 },
     costClass: "mid",
+    tier: 4,
     recommended: true,
   },
   {
@@ -427,6 +483,7 @@ const GOOGLE_LLM: CatalogEntry[] = [
     role: "llm",
     capabilities: { tools: true, vision: true, contextWindow: 1_000_000 },
     costClass: "cheap",
+    tier: 3,
   },
   {
     provider: "google",
@@ -435,6 +492,7 @@ const GOOGLE_LLM: CatalogEntry[] = [
     role: "llm",
     capabilities: { tools: true, vision: true, contextWindow: 1_000_000 },
     costClass: "cheap",
+    tier: 2,
   },
 ];
 
@@ -451,6 +509,7 @@ const GOOGLE_EMBED: CatalogEntry[] = [
       embeddingDimensions: 768,
     },
     costClass: "cheap",
+    tier: 2,
     // NOT recommended — see header note on global embed lock-in.
   },
 ];
@@ -465,6 +524,7 @@ const MISTRAL_LLM: CatalogEntry[] = [
     role: "llm",
     capabilities: { tools: true, vision: false, contextWindow: 128_000 },
     costClass: "mid",
+    tier: 3,
     recommended: true,
   },
   {
@@ -474,6 +534,7 @@ const MISTRAL_LLM: CatalogEntry[] = [
     role: "llm",
     capabilities: { tools: true, vision: false, contextWindow: 128_000 },
     costClass: "cheap",
+    tier: 2,
   },
   {
     provider: "mistral",
@@ -482,6 +543,7 @@ const MISTRAL_LLM: CatalogEntry[] = [
     role: "llm",
     capabilities: { tools: true, vision: false, contextWindow: 128_000 },
     costClass: "cheap",
+    tier: 1,
   },
   {
     provider: "mistral",
@@ -490,6 +552,7 @@ const MISTRAL_LLM: CatalogEntry[] = [
     role: "llm",
     capabilities: { tools: true, vision: true, contextWindow: 128_000 },
     costClass: "mid",
+    tier: 3,
   },
 ];
 
