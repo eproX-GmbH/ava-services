@@ -29,13 +29,15 @@ const UsageResponseShape = z
   .object({
     tier: z.enum(["free", "starter", "pro", "enterprise"]),
     used: z.number().int().nonnegative(),
-    limit: z.number().int().nonnegative(),
-    remaining: z.number().int().nonnegative(),
+    /** -1 sentinel = no enforcement (enterprise tier). Otherwise the
+     *  per-period quota. Clients render -1 as "∞". */
+    limit: z.number().int(),
+    /** Same -1 sentinel pattern; otherwise max(0, limit-used). */
+    remaining: z.number().int(),
     /** ISO-8601. null for free + enterprise (no rolling reset). */
     periodEnd: z.string().nullable(),
-    /** "lifetime" for free; "YYYY-MM" for paid tiers. The desktop
-     *  picks a German label ("Lebenszeit-Kontingent" vs the localized
-     *  month name) based on this. */
+    /** "lifetime" for free; "YYYY-MM" for paid tiers; "unlimited" for
+     *  enterprise. The desktop picks a German label based on this. */
     periodKey: z.string(),
   })
   .openapi("UsageSnapshot");

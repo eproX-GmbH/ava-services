@@ -39,16 +39,35 @@ const FREE_DEFAULT_LIMIT = 25;
 export interface UsageSnapshot {
   tier: BillingTier;
   used: number;
+  /** -1 sentinel = no enforcement (today: tier="enterprise"). Clients
+   *  render this as "Unbegrenzt" / ∞ and skip "X von Y" math. Numeric
+   *  for all other tiers. */
   limit: number;
   /** Defensive: never negative even if a manual quota cut goes below
    *  current usage. Clients show "Limit überschritten" but don't go
-   *  to negative integers. */
+   *  to negative integers. -1 sentinel propagates from `limit` for
+   *  enterprise (always shown as ∞). */
   remaining: number;
   /** ISO-8601. null for free + enterprise (no rolling reset). */
   periodEnd: string | null;
   /** "lifetime" | "YYYY-MM" — useful for the desktop's display
-   *  ("Monat März 2026" vs "Lebenszeit-Kontingent"). */
+   *  ("Monat März 2026" vs "Lebenszeit-Kontingent"). Always
+   *  "unlimited" for enterprise. */
   periodKey: string;
+}
+
+/** Sentinel for "no enforcement". Used in `limit` + `remaining` of
+ *  the snapshot for enterprise tenants. Picked -1 over Infinity
+ *  because it serializes cleanly through JSON (Infinity → null). */
+export const UNLIMITED = -1;
+
+/** True when this tier shouldn't be enforced — used by the M2
+ *  pre-import gate. Today: only "enterprise". The operator's own
+ *  tenant flips here via direct DB update + restart-free; there's
+ *  no "admin override" in JWT claims because we want the same code
+ *  path for paying enterprise customers. */
+export function isUnlimited(tier: BillingTier): boolean {
+  return tier === "enterprise";
 }
 
 /** Compute the right `periodKey` for a tier at a given moment.
@@ -192,8 +211,15 @@ export async function getUsageSnapshot(
     [tenantId, periodKey],
   );
   const used = Number(countRes.rows[0]?.used ?? 0);
-  const limit = billing.quotaLimit;
-  const remaining = Math.max(0, limit - used);
+
+  // Enterprise tier: stored quotaLimit is irrelevant. Surface UNLIMITED
+  // so clients render "∞" and skip the math entirely. This gives the
+  // operator a clean self-provisioning path: UPDATE TenantBilling SET
+  // tier='enterprise' WHERE tenantId=...; — no need to set quotaLimit
+  // to a huge number.
+  const limit = isUnlimited(billing.tier) ? UNLIMITED : billing.quotaLimit;
+  const remaining =
+    limit === UNLIMITED ? UNLIMITED : Math.max(0, limit - used);
 
   return {
     tier: billing.tier,
@@ -201,6 +227,6 @@ export async function getUsageSnapshot(
     limit,
     remaining,
     periodEnd: periodEnd ? periodEnd.toISOString() : null,
-    periodKey,
+    periodKey: isUnlimited(billing.tier) ? "unlimited" : periodKey,
   };
 }
