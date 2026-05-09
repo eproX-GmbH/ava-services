@@ -27,29 +27,37 @@
  * never set the class today. */
 @custom-variant dark (&:where(.dark, .dark *));
 
-@theme {
-  /* ---- Indigo (primary) — the "Corporate Trust" hero hue. */
-  --color-indigo-50:  #eef2ff;
-  --color-indigo-100: #e0e7ff;
-  --color-indigo-200: #c7d2fe;
-  --color-indigo-300: #a5b4fc;
-  --color-indigo-400: #818cf8;
-  --color-indigo-500: #6366f1;
-  --color-indigo-600: #4f46e5;   /* Primary */
-  --color-indigo-700: #4338ca;
-  --color-indigo-800: #3730a3;
-  --color-indigo-900: #312e81;
-  --color-indigo-950: #1e1b4b;
+  /* v0.1.68 — primary swapped from indigo/violet to the AVA brand
+   * aqua + a cyan partner for the gradient. The token *names*
+   * (`--color-indigo-*`, `--color-violet-*`) are deliberately kept
+   * so the entire downstream CSS keeps working without sweeping
+   * renames; only the hex values move. The headline is AVA's mark
+   * (#00c0a7); the gradient still has motion thanks to the cyan
+   * pairing, but everything reads as the brand family again. */
 
-  /* ---- Violet (secondary) — gradient partner with indigo. */
-  --color-violet-50:  #f5f3ff;
-  --color-violet-100: #ede9fe;
-  --color-violet-200: #ddd6fe;
-  --color-violet-300: #c4b5fd;
-  --color-violet-400: #a78bfa;
-  --color-violet-500: #8b5cf6;
-  --color-violet-600: #7c3aed;   /* Secondary */
-  --color-violet-700: #6d28d9;
+  /* ---- "indigo" alias = AVA aqua (primary hue, brand mark). */
+  --color-indigo-50:  #e6faf6;
+  --color-indigo-100: #b8f0e6;
+  --color-indigo-200: #7ee2cf;
+  --color-indigo-300: #3fd2b8;
+  --color-indigo-400: #14c8ad;
+  --color-indigo-500: #00c0a7;   /* AVA logo mark */
+  --color-indigo-600: #009f8a;   /* Primary 600 (interactive base) */
+  --color-indigo-700: #007e6d;
+  --color-indigo-800: #005d51;
+  --color-indigo-900: #003c34;
+  --color-indigo-950: #002721;
+
+  /* ---- "violet" alias = cyan (gradient partner, slightly bluer
+   * than aqua so the gradient reads as motion rather than flat). */
+  --color-violet-50:  #ecfeff;
+  --color-violet-100: #cffafe;
+  --color-violet-200: #a5f3fc;
+  --color-violet-300: #67e8f9;
+  --color-violet-400: #22d3ee;
+  --color-violet-500: #06b6d4;
+  --color-violet-600: #0891b2;   /* Secondary 600 (gradient end) */
+  --color-violet-700: #0e7490;
 
   /* ---- Slate (neutrals). */
   --color-slate-50:   #f8fafc;
@@ -68,19 +76,18 @@
   --color-emerald-500: #10b981;
   --color-emerald-600: #059669;
 
-  /* ---- Brand alias — keeps any lingering `bg-brand-500` working;
-   * remapped onto indigo so the AVA mark reads as Corporate Trust
-   * primary. */
-  --color-brand-50:  #eef2ff;
-  --color-brand-100: #e0e7ff;
-  --color-brand-200: #c7d2fe;
-  --color-brand-300: #a5b4fc;
-  --color-brand-400: #818cf8;
-  --color-brand-500: #4f46e5;
-  --color-brand-600: #4338ca;
-  --color-brand-700: #3730a3;
-  --color-brand-800: #312e81;
-  --color-brand-900: #1e1b4b;
+  /* ---- Brand alias — `bg-brand-500` etc. now resolves to the
+   * actual AVA aqua mark, identical to the primary ramp above. */
+  --color-brand-50:  #e6faf6;
+  --color-brand-100: #b8f0e6;
+  --color-brand-200: #7ee2cf;
+  --color-brand-300: #3fd2b8;
+  --color-brand-400: #14c8ad;
+  --color-brand-500: #00c0a7;
+  --color-brand-600: #009f8a;
+  --color-brand-700: #007e6d;
+  --color-brand-800: #005d51;
+  --color-brand-900: #003c34;
 
   /* ---- Surfaces (light). bg-0 = app canvas, bg-3 = popover. */
   --color-bg-0: #f8fafc;   /* slate-50 — canvas */
@@ -114,12 +121,14 @@
   --radius-xl: 16px;
   --radius-2xl: 20px;
 
-  /* ---- Colored shadows — THE signature element. */
-  --shadow-soft:    0 4px 20px -2px rgba(79, 70, 229, 0.10);
-  --shadow-soft-lg: 0 10px 25px -5px rgba(79, 70, 229, 0.15),
-                    0 8px 10px -6px rgba(79, 70, 229, 0.10);
-  --shadow-button:  0 4px 14px 0 rgba(79, 70, 229, 0.30);
-  --shadow-glow:    0 0 20px rgba(79, 70, 229, 0.50);
+  /* ---- Colored shadows — THE signature element. RGB tuned to the
+   * primary 600 (#009f8a) so cards/buttons cast an aqua glow that
+   * matches the gradient instead of fighting it. */
+  --shadow-soft:    0 4px 20px -2px rgba(0, 159, 138, 0.12);
+  --shadow-soft-lg: 0 10px 25px -5px rgba(0, 159, 138, 0.18),
+                    0 8px 10px -6px rgba(0, 159, 138, 0.10);
+  --shadow-button:  0 4px 14px 0 rgba(0, 159, 138, 0.32);
+  --shadow-glow:    0 0 20px rgba(0, 159, 138, 0.50);
 }
 
 /* ---- Legacy variables (8.l1 keeps them; 8.l8 deletes the unused). ----
@@ -226,7 +235,7 @@ button.primary:hover:not(:disabled) {
   border-color: transparent;
   color: #ffffff;
   transform: translateY(-1px);
-  box-shadow: 0 6px 20px 0 rgba(79, 70, 229, 0.45);
+  box-shadow: 0 6px 20px 0 rgba(0, 159, 138, 0.45);
 }
 
 button.link {
@@ -297,7 +306,7 @@ textarea:hover:not(:disabled, :focus) { border-color: var(--ctrl-border-hover); 
 input:focus, textarea:focus {
   border-color: var(--ctrl-border-focus);
   background: var(--ctrl-bg);
-  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.15);
+  box-shadow: 0 0 0 3px rgba(0, 192, 167, 0.15);
 }
 input:disabled, textarea:disabled { opacity: 0.5; cursor: not-allowed; }
 body {
@@ -345,14 +354,14 @@ body {
   left: -120px;
   width: 480px;
   height: 480px;
-  background: radial-gradient(circle, rgba(99, 102, 241, 0.35), transparent 70%);
+  background: radial-gradient(circle, rgba(0, 192, 167, 0.35), transparent 70%);
 }
 .app-shell::after {
   bottom: -160px;
   right: -160px;
   width: 560px;
   height: 560px;
-  background: radial-gradient(circle, rgba(124, 58, 237, 0.30), transparent 70%);
+  background: radial-gradient(circle, rgba(8, 145, 178, 0.30), transparent 70%);
   animation-delay: 2s;
 }
 @keyframes ava-float {
@@ -474,7 +483,7 @@ body {
   width: 240px;
   height: 240px;
   border-radius: 50%;
-  background: radial-gradient(circle, rgba(124, 58, 237, 0.18), transparent 70%);
+  background: radial-gradient(circle, rgba(8, 145, 178, 0.18), transparent 70%);
   filter: blur(40px);
   z-index: -1;
 }
@@ -935,7 +944,7 @@ code, pre { font-family: var(--font-mono); font-size: 12px; }
   border-radius: 50%;
   filter: blur(80px);
   opacity: 0.40;
-  background: radial-gradient(circle, rgba(99, 102, 241, 0.45), transparent 70%);
+  background: radial-gradient(circle, rgba(0, 192, 167, 0.45), transparent 70%);
   z-index: -1;
 }
 .first-run::after {
@@ -946,7 +955,7 @@ code, pre { font-family: var(--font-mono); font-size: 12px; }
   border-radius: 50%;
   filter: blur(80px);
   opacity: 0.35;
-  background: radial-gradient(circle, rgba(124, 58, 237, 0.45), transparent 70%);
+  background: radial-gradient(circle, rgba(8, 145, 178, 0.45), transparent 70%);
   z-index: -1;
 }
 .first-run__card {
@@ -1441,7 +1450,7 @@ code, pre { font-family: var(--font-mono); font-size: 12px; }
 .chat-composer:focus-within {
   border-color: var(--color-indigo-400);
   background: var(--color-bg-1);
-  box-shadow: 0 0 0 4px rgba(99, 102, 241, 0.15), var(--shadow-soft-lg);
+  box-shadow: 0 0 0 4px rgba(0, 192, 167, 0.15), var(--shadow-soft-lg);
 }
 .chat-composer.is-disabled { opacity: 0.6; }
 .chat-composer__textarea {
@@ -2926,12 +2935,12 @@ a.heartbeat-decision__company:hover {
   filter: blur(70px);
   opacity: 0.45;
   pointer-events: none;
-  background: radial-gradient(circle, rgba(99, 102, 241, 0.45), transparent 70%);
+  background: radial-gradient(circle, rgba(0, 192, 167, 0.45), transparent 70%);
   animation: ava-float 8s ease-in-out infinite alternate;
   z-index: 0;
 }
 .ct-blob--violet {
-  background: radial-gradient(circle, rgba(124, 58, 237, 0.45), transparent 70%);
+  background: radial-gradient(circle, rgba(8, 145, 178, 0.45), transparent 70%);
 }
 .ct-blob--emerald {
   background: radial-gradient(circle, rgba(16, 185, 129, 0.35), transparent 70%);
@@ -3074,7 +3083,7 @@ a.heartbeat-decision__company:hover {
   border-radius: 50%;
   filter: blur(80px);
   opacity: 0.45;
-  background: radial-gradient(circle, rgba(99, 102, 241, 0.45), transparent 70%);
+  background: radial-gradient(circle, rgba(0, 192, 167, 0.45), transparent 70%);
   z-index: -1;
 }
 .signin-shell::after {
@@ -3085,7 +3094,7 @@ a.heartbeat-decision__company:hover {
   border-radius: 50%;
   filter: blur(80px);
   opacity: 0.40;
-  background: radial-gradient(circle, rgba(124, 58, 237, 0.45), transparent 70%);
+  background: radial-gradient(circle, rgba(8, 145, 178, 0.45), transparent 70%);
   z-index: -1;
 }
 .signin__headline {
