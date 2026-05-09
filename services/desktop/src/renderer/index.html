@@ -1,9 +1,18 @@
 <!doctype html>
-<html lang="en" class="dark">
+<html lang="de">
   <head>
     <meta charset="UTF-8" />
+    <!--
+      v0.1.77 — added `ava-screenshot:` to img-src so the custom
+      Electron protocol the producer-screenshot panel uses can render.
+      Without it the CSP blocked every <img src="ava-screenshot://...">
+      load and the matrix drill-down showed only alt text.
+      Also dropped the hardcoded `class="dark"` on <html>: lib/theme.ts
+      manages it now, hardcoding caused a dark-then-light flash for
+      light-mode users.
+    -->
     <meta http-equiv="Content-Security-Policy"
-          content="default-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self' http://localhost:* http://127.0.0.1:* https://*; img-src 'self' data:; font-src 'self' data:;" />
+          content="default-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self' http://localhost:* http://127.0.0.1:* https://*; img-src 'self' data: ava-screenshot:; font-src 'self' data:;" />
     <title>AVA</title>
   </head>
   <body>

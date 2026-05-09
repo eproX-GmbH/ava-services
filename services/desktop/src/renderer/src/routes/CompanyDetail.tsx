@@ -297,10 +297,7 @@ export function CompanyDetail() {
       {/* ---- Hero ---------------------------------------------------------- */}
       <header className="company-hero">
         <h2 style={{ marginBottom: "0.25rem" }}>
-          {structured.data?.name ?? summary.data?.name ?? "Firma"}{" "}
-          <span className="muted">
-            <code>{id?.slice(0, 12)}…</code>
-          </span>
+          {structured.data?.name ?? summary.data?.name ?? "Firma"}
         </h2>
 
         {(structured.data?.corporatePurpose || profile.data?.profile) && (
