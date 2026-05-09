@@ -131,6 +131,56 @@
   --shadow-glow:    0 0 20px rgba(0, 159, 138, 0.50);
 }
 
+/* ---- Dark mode overrides (v0.1.72) ---------------------------------------
+ *
+ * Activated by `class="dark"` on <html> (see lib/theme.ts). Inverts
+ * surfaces + text + borders against a slate-900 canvas; brand aqua
+ * and cyan keep their hue so the gradient still reads as AVA. Shadows
+ * lose their colored glow (the soft halo doesn't contrast on a dark
+ * canvas) and switch to flat black drops with higher opacity. */
+:root.dark {
+  color-scheme: dark;
+
+  /* Surfaces (slate-900 canvas, slate-800 cards, slate-700 popovers). */
+  --color-bg-0: #0f172a;
+  --color-bg-1: #1e293b;
+  --color-bg-2: #1e293b;
+  --color-bg-3: #334155;
+  --color-border:        #334155;
+  --color-border-strong: #475569;
+
+  /* Text — slate-50 primary, slate-400 muted, slate-500 faint. */
+  --color-fg:       #f1f5f9;
+  --color-fg-muted: #94a3b8;
+  --color-fg-faint: #64748b;
+
+  /* Brand on dark — bump aqua a step lighter so it still pops on
+   * slate-900. Mark itself stays #00c0a7 (indigo-500) which already
+   * contrasts; only the interactive base (600) gets nudged. */
+  --color-indigo-600: #14c8ad;
+  --color-indigo-700: #00c0a7;
+
+  /* Shadows — drop the colored halo, raise opacity for visibility. */
+  --shadow-soft:    0 4px 20px -2px rgba(0, 0, 0, 0.45);
+  --shadow-soft-lg: 0 10px 25px -5px rgba(0, 0, 0, 0.55),
+                    0 8px 10px -6px rgba(0, 0, 0, 0.40);
+  --shadow-button:  0 4px 14px 0 rgba(0, 0, 0, 0.50);
+  --shadow-glow:    0 0 20px rgba(20, 200, 173, 0.45);
+}
+
+/* Legacy aliases need the override too, since `:root.dark` would
+ * otherwise inherit the original `:root` block's values for these. */
+:root.dark {
+  --fg:     var(--color-fg);
+  --muted:  var(--color-fg-muted);
+  --bg:     var(--color-bg-0);
+  --border: var(--color-border);
+
+  --ctrl-bg:        var(--color-bg-1);
+  --ctrl-bg-hover:  var(--color-bg-3);
+  --ctrl-bg-input:  #0f172a;
+}
+
 /* ---- Legacy variables (8.l1 keeps them; 8.l8 deletes the unused). ----
  *
  * The remaining route files still reference --fg / --bg / --accent etc.
@@ -1887,6 +1937,27 @@ code, pre { font-family: var(--font-mono); font-size: 12px; }
 }
 .alert-bell__btn:hover { background: var(--ctrl-bg-hover); }
 .alert-bell__btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* v0.1.72 — light/dark toggle. Same circular footprint as the alert
+ * bell so the topbar's right cluster reads as a row of equally-sized
+ * actions. The icon's fill flips when dark is active. */
+.topbar__theme-toggle {
+  width: 36px; height: 36px;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: transparent;
+  border: 0;
+  color: var(--fg);
+  border-radius: 50%;
+  cursor: pointer;
+  padding: 0;
+  transition: var(--ctrl-transition);
+}
+.topbar__theme-toggle:hover { background: var(--ctrl-bg-hover); }
+.topbar__theme-toggle:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.topbar__theme-toggle--dark { color: var(--color-indigo-500); }
 
 .alert-bell__badge {
   position: absolute;

@@ -1,11 +1,19 @@
 import type { PropsWithChildren } from "react";
 import { NavLink } from "react-router-dom";
 import { useEffect, useState } from "react";
-import { AlertCircle, Loader2, RefreshCw } from "lucide-react";
+import { AlertCircle, Loader2, RefreshCw, Lightbulb } from "lucide-react";
 import { AlertBell } from "./AlertBell";
 import { WatchChip } from "./WatchChip";
 import logoUrl from "../assets/logo-aqua.svg";
 import type { ExternalServiceStatus } from "../../../shared/types";
+import {
+  applyTheme,
+  getStoredMode,
+  resolveTheme,
+  setStoredMode,
+  watchSystemPreference,
+  type ThemeMode,
+} from "../lib/theme";
 
 // Top-level chrome for the routed app (Phase 8.l2).
 //
@@ -157,10 +165,71 @@ function TopBar() {
         <NavItem to="/whoami" label="Status" />
       </nav>
       <div className="topbar__spacer" />
+      <ThemeToggle />
       <WatchChip />
       <AlertBell />
       <UserBadge />
     </header>
+  );
+}
+
+/**
+ * Tri-state lightbulb toggle. Click cycles through
+ * `light` -> `dark` -> `system`. The icon is the same lucide
+ * `Lightbulb` in both modes; its `fill` changes so the active state
+ * is obvious. The `title` always names the next state so the user
+ * knows what one click will do.
+ */
+function ThemeToggle() {
+  const [mode, setMode] = useState<ThemeMode>(getStoredMode);
+  const [resolved, setResolved] = useState<"light" | "dark">(() =>
+    resolveTheme(getStoredMode()),
+  );
+
+  // Re-resolve on OS preference change while in `system` mode so the
+  // app follows along without a manual click.
+  useEffect(() => {
+    return watchSystemPreference(() => {
+      const next = resolveTheme("system");
+      setResolved(next);
+      applyTheme(next);
+    });
+  }, []);
+
+  const cycle = (): void => {
+    const next: ThemeMode =
+      mode === "light" ? "dark" : mode === "dark" ? "system" : "light";
+    setMode(next);
+    setStoredMode(next);
+    const r = resolveTheme(next);
+    setResolved(r);
+    applyTheme(r);
+  };
+
+  const label =
+    mode === "system"
+      ? `System (gerade ${resolved === "dark" ? "dunkel" : "hell"})`
+      : mode === "dark"
+        ? "Dunkel"
+        : "Hell";
+  const next =
+    mode === "light" ? "Dunkel" : mode === "dark" ? "System-Vorgabe" : "Hell";
+
+  return (
+    <button
+      type="button"
+      onClick={cycle}
+      className={`topbar__theme-toggle topbar__theme-toggle--${resolved}`}
+      title={`Modus: ${label}. Klicken für „${next}“.`}
+      aria-label={`Farbmodus umschalten: ${label}`}
+    >
+      <Lightbulb
+        className="ct-icon-sm"
+        aria-hidden="true"
+        fill={resolved === "dark" ? "currentColor" : "none"}
+        strokeWidth={resolved === "dark" ? 1.5 : 2}
+      />
+    </button>
   );
 }
 

@@ -28,7 +28,13 @@ import { Evaluations } from "./routes/Evaluations";
 import { BestMatchDetail } from "./routes/BestMatchDetail";
 import { ChatSession } from "./routes/ChatSession";
 import { Alerts } from "./routes/Alerts";
+import { bootstrapTheme } from "./lib/theme";
 import "./styles.css";
+
+// Apply the persisted (or system-resolved) theme BEFORE React renders,
+// so the first paint already matches the user's preference and we avoid
+// a light-mode flash on every launch.
+bootstrapTheme();
 
 // React Query is the only HTTP cache. Defaults err on the side of "fresh
 // is cheap, the gateway is fast" — short staleTime, refetch on focus stays
