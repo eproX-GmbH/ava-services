@@ -46,7 +46,18 @@ async function writeEntityProgressFromEvent(
        SET state = EXCLUDED.state,
            "errorMessage" = EXCLUDED."errorMessage",
            "updatedAt" = EXCLUDED."updatedAt"
-       WHERE EXCLUDED."updatedAt" > "EntityProgress"."updatedAt"`,
+       WHERE EXCLUDED."updatedAt" > "EntityProgress"."updatedAt"
+         /* v0.1.80 — never regress a terminal state. The
+          * company-evaluation producer publishes one in_progress per
+          * inbound slice (8 listeners). Both the in_progress event and
+          * the matching persist event ride different AMQP queues with
+          * different depths; a stale in_progress can land AFTER the
+          * sibling persist has already painted the cell completed,
+          * locking it on yellow forever. Refusing in_progress writes
+          * over an existing completed/failed/skipped row makes the
+          * progress channel idempotent regardless of arrival order. */
+         AND ("EntityProgress".state NOT IN ('completed', 'failed', 'skipped')
+              OR EXCLUDED.state IN ('completed', 'failed', 'skipped'))`,
       [
         payload.transactionId,
         payload.companyId,
