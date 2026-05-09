@@ -178,6 +178,16 @@ async function main() {
       "tsconfig.build.json",
       "src",
       "prisma",
+      // v0.1.74 — mirror `vendor/` so `file:./vendor/ai-provider`
+      // resolves to a local path inside the staging dir. Previously
+      // we relied on the rewrite-to-absolute-source-path trick below,
+      // which worked for company-profile + website but kept resolving
+      // to a stale registry tarball for company-contact in CI (no
+      // root cause confirmed; npm's file: + package-lock interaction
+      // is the prime suspect). Copying vendor side-steps the whole
+      // class of bugs because the file: dep now points at content
+      // that npm has direct, in-staging-tree access to.
+      "vendor",
     ]) {
       const from = join(srcDir, entry);
       if (existsSync(from)) {
@@ -226,9 +236,17 @@ async function main() {
       for (const [k, v] of Object.entries(pkg.dependencies)) {
         if (typeof v === "string" && v.startsWith("file:")) {
           const rel = v.slice("file:".length);
-          const abs = resolve(srcDir, rel);
-          pkg.dependencies[k] = `file:${abs}`;
-          const fileDepPkgPath = join(abs, "package.json");
+          // v0.1.74 — prefer the staging-local copy (we mirrored
+          // `vendor/` above). Falls back to the absolute source path
+          // for file: deps that point OUTSIDE the producer dir
+          // (e.g. company-evaluation's `file:../packages/ai-provider`
+          // which can't be mirrored from the standalone clone).
+          const stageCandidate = join(stageDir, rel);
+          const targetAbs = existsSync(stageCandidate)
+            ? stageCandidate
+            : resolve(srcDir, rel);
+          pkg.dependencies[k] = `file:${targetAbs}`;
+          const fileDepPkgPath = join(targetAbs, "package.json");
           if (existsSync(fileDepPkgPath)) {
             const fileDepPkg = JSON.parse(
               readFileSync(fileDepPkgPath, "utf8"),
