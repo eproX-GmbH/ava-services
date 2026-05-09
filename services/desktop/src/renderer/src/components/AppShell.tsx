@@ -1,9 +1,9 @@
 import type { PropsWithChildren } from "react";
 import { NavLink } from "react-router-dom";
 import { useEffect, useState } from "react";
+import { AlertCircle, Loader2, RefreshCw } from "lucide-react";
 import { AlertBell } from "./AlertBell";
 import { WatchChip } from "./WatchChip";
-import logoUrl from "../assets/logo-aqua.svg";
 import type { ExternalServiceStatus } from "../../../shared/types";
 
 // Top-level chrome for the routed app (Phase 8.l2).
@@ -100,7 +100,7 @@ function ExternalServiceBanner() {
 
   return (
     <div className="upstream-banner" role="status" aria-live="polite">
-      <span className="upstream-banner__dot" aria-hidden="true" />
+      <AlertCircle className="ct-icon-sm" aria-hidden="true" />
       <strong>Unternehmensregister.de nicht erreichbar.</strong>{" "}
       <span>
         Stamm-Daten und Publikationen sind pausiert, bis der Dienst wieder
@@ -115,7 +115,9 @@ function ExternalServiceBanner() {
         title="Sofort erneut prüfen"
         aria-busy={probing}
       >
-        {probing ? "Prüfe…" : "Erneut prüfen"}
+        {probing
+          ? <><Loader2 className="ct-icon-sm" style={{ animation: "ava-spin 1s linear infinite" }} aria-hidden="true" /> Prüfe…</>
+          : <><RefreshCw className="ct-icon-sm" aria-hidden="true" /> Erneut prüfen</>}
       </button>
       {stillDownAt !== null && !probing && (
         <span className="upstream-banner__toast" role="status">
@@ -137,10 +139,13 @@ function formatRelativeMinutes(ts: number): string {
 function TopBar() {
   return (
     <header className="topbar">
+      {/* Gradient text wordmark — replaces the legacy <img> SVG so the
+       * brand mark inherits the design system's primary gradient and
+       * scales perfectly with the surrounding text. */}
       <div className="topbar__brand" aria-label="AVA">
-        <img src={logoUrl} alt="" draggable={false} />
+        <span className="topbar__brand-mark ct-gradient-text">AVA</span>
       </div>
-      <nav className="topbar__nav">
+      <nav className="topbar__nav" aria-label="Hauptnavigation">
         <NavItem to="/chat" label="Chat" />
         <NavItem to="/ingest" label="Import" />
         <NavItem to="/transactions" label="Vorgänge" />

@@ -1084,7 +1084,16 @@ export function Chat() {
               </ul>
             </div>
           ) : (
-            <h1 className="chat-welcome">Womit fangen wir heute an?</h1>
+            <div className="chat-welcome-block">
+              <h1 className="chat-welcome">
+                Womit fangen wir <span className="ct-gradient-text">heute</span> an?
+              </h1>
+              <p className="chat-welcome__lede">
+                Frag mich nach Firmen, Vorgängen oder dem Status deiner
+                Indexierung. Ich bringe Antworten aus deinen lokalen Daten
+                und dem Gateway zusammen.
+              </p>
+            </div>
           )}
           {composer}
         </div>

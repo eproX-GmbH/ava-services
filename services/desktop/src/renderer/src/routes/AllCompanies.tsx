@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
+import { Search, ChevronLeft, ChevronRight, Building2 } from "lucide-react";
 import { gatewayFetch } from "../api/gateway";
 
 // v0.1.61 — global "all companies" matrix.
@@ -129,29 +130,37 @@ export function AllCompanies() {
     : 1;
 
   return (
-    <section className="all-companies">
-      <header className="all-companies__header">
-        <h2>Meine Firmen</h2>
-        <p className="muted small">
+    <section className="all-companies page">
+      <header className="ct-page-header all-companies__header">
+        <p className="ct-page-header__eyebrow">
+          <Building2 className="ct-icon-sm" aria-hidden="true" /> Portfolio
+        </p>
+        <h2 className="ct-page-header__title">
+          <span className="ct-gradient-text">Meine Firmen</span>
+        </h2>
+        <p className="ct-page-header__lede">
           Status jeder Firma, die du jemals importiert hast — über alle
-          Transaktionen hinweg. Eine Zelle = der jüngste Stand des
+          Transaktionen hinweg. Eine Zelle zeigt den jüngsten Stand des
           jeweiligen Schritts.
         </p>
       </header>
 
-      <div className="all-companies__filters">
-        <input
-          type="search"
-          placeholder="Firma suchen…"
-          value={searchInput}
-          onChange={(e) => setSearchInput(e.target.value)}
-          className="all-companies__search"
-          aria-label="Nach Firmenname suchen"
-        />
+      <div className="all-companies__filters ct-card" style={{ padding: "0.75rem 1rem" }}>
+        <div className="all-companies__search-wrap">
+          <Search className="ct-icon-sm all-companies__search-icon" aria-hidden="true" />
+          <input
+            type="search"
+            placeholder="Firma suchen…"
+            value={searchInput}
+            onChange={(e) => setSearchInput(e.target.value)}
+            className="all-companies__search"
+            aria-label="Nach Firmenname suchen"
+          />
+        </div>
         {matrix.data && (
-          <span className="muted small all-companies__count">
+          <span className="ct-pill all-companies__count">
             {matrix.data.count.toLocaleString("de-DE")} Firmen
-            {search ? ` · gefiltert nach „${search}"` : ""}
+            {search ? ` · „${search}"` : ""}
           </span>
         )}
       </div>
@@ -172,7 +181,7 @@ export function AllCompanies() {
       )}
 
       {matrix.data && matrix.data.companies.length > 0 && (
-        <>
+        <div className="ct-card all-companies__table-card" style={{ padding: 0, overflow: "hidden" }}>
           <table className="matrix all-companies__matrix">
             <thead>
               <tr>
@@ -218,7 +227,8 @@ export function AllCompanies() {
               onClick={() => setPage((p) => Math.max(1, p - 1))}
               disabled={page <= 1 || matrix.isFetching}
             >
-              ← Zurück
+              <ChevronLeft className="ct-icon-sm" aria-hidden="true" />
+              Zurück
             </button>
             <span className="muted">
               Seite {matrix.data.pageNumber} von {totalPages}
@@ -230,10 +240,11 @@ export function AllCompanies() {
               }
               disabled={page >= totalPages || matrix.isFetching}
             >
-              Weiter →
+              Weiter
+              <ChevronRight className="ct-icon-sm" aria-hidden="true" />
             </button>
           </footer>
-        </>
+        </div>
       )}
     </section>
   );

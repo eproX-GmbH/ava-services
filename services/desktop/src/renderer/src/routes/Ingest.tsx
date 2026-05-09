@@ -77,13 +77,18 @@ export function Ingest() {
   }
 
   return (
-    <section className="ingest">
-      <h2>Excel hochladen</h2>
-      <p className="muted">
-        Wähle eine .xlsx mit einer Zeile pro Firma. Die Pipeline gleicht jede
-        Zeile gegen die Stammdaten ab und startet anschließend die
-        Anreicherung über alle Dienste.
-      </p>
+    <section className="ingest page">
+      <header className="ct-page-header">
+        <p className="ct-page-header__eyebrow">Daten-Import</p>
+        <h2 className="ct-page-header__title">
+          Excel <span className="ct-gradient-text">hochladen</span>
+        </h2>
+        <p className="ct-page-header__lede">
+          Wähle eine .xlsx mit einer Zeile pro Firma. Die Pipeline gleicht
+          jede Zeile gegen die Stammdaten ab und startet anschließend die
+          Anreicherung über alle Dienste.
+        </p>
+      </header>
       <form onSubmit={onSubmit} className="form">
         <label className="field">
           <span>Datei</span>

@@ -388,20 +388,18 @@ body {
   gap: 0.6rem;
   padding-right: 1.5rem;
   user-select: none;
+}
+.topbar__brand-mark {
   font-weight: 800;
-  font-size: 18px;
-  letter-spacing: -0.02em;
-  /* Gradient text on the wordmark. */
-  background: linear-gradient(to right, var(--color-indigo-600), var(--color-violet-600));
-  -webkit-background-clip: text;
-          background-clip: text;
-  color: transparent;
+  font-size: 22px;
+  letter-spacing: -0.04em;
+  line-height: 1;
 }
-.topbar__brand img {
-  display: none;          /* swap to gradient text wordmark */
-}
-.topbar__brand::before {
-  content: "AVA";
+.topbar__brand img { display: none; }
+
+@keyframes ava-spin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
 }
 .topbar__nav {
   display: flex;
@@ -1237,12 +1235,27 @@ code, pre { font-family: var(--font-mono); font-size: 12px; }
   gap: 24px;
   padding: 0 16px 12vh;
 }
+.chat-welcome-block {
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.75rem;
+}
 .chat-welcome {
   text-align: center;
-  font-size: clamp(22px, 3.2vw, 32px);
-  font-weight: 500;
+  font-size: clamp(28px, 3.8vw, 44px);
+  font-weight: 800;
   margin: 0;
-  letter-spacing: -0.01em;
+  letter-spacing: -0.03em;
+  line-height: 1.1;
+}
+.chat-welcome__lede {
+  margin: 0;
+  max-width: 520px;
+  color: var(--color-fg-muted);
+  font-size: 15px;
+  line-height: 1.6;
 }
 
 /* Session-picker rail lives *under* the composer (and disclaimer) so it
@@ -2969,3 +2982,157 @@ a.heartbeat-decision__company:hover {
 .ct-icon-sm { width: 16px; height: 16px; }
 .ct-icon    { width: 20px; height: 20px; }
 .ct-icon-lg { width: 24px; height: 24px; }
+
+/* ---- Page-level shell + grid for Visual-DNA-refactored routes -------- */
+.page {
+  position: relative;
+  padding: 0.5rem 0 3rem;
+}
+.ct-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 1rem;
+}
+.ct-icon-tile--emerald {
+  background: var(--color-emerald-50);
+  color: var(--color-emerald-600);
+}
+.identity-card {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+}
+.identity-card__label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-fg-muted);
+  margin-bottom: 0.15rem;
+}
+.identity-card__value {
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--color-fg);
+  word-break: break-all;
+}
+
+/* ---- SignIn redesign --------------------------------------------------- */
+.signin-shell {
+  position: relative;
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem;
+  isolation: isolate;
+  background: var(--color-bg-0);
+  overflow: hidden;
+}
+.signin-shell::before {
+  content: "";
+  position: absolute;
+  top: -120px; left: -120px;
+  width: 480px; height: 480px;
+  border-radius: 50%;
+  filter: blur(80px);
+  opacity: 0.45;
+  background: radial-gradient(circle, rgba(99, 102, 241, 0.45), transparent 70%);
+  z-index: -1;
+}
+.signin-shell::after {
+  content: "";
+  position: absolute;
+  bottom: -160px; right: -120px;
+  width: 520px; height: 520px;
+  border-radius: 50%;
+  filter: blur(80px);
+  opacity: 0.40;
+  background: radial-gradient(circle, rgba(124, 58, 237, 0.45), transparent 70%);
+  z-index: -1;
+}
+.signin__headline {
+  margin: 0.75rem 0 0.5rem;
+  font-size: 36px;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  line-height: 1.1;
+}
+.signin__lede {
+  margin: 0 0 1.5rem;
+  color: var(--color-fg-muted);
+  line-height: 1.6;
+}
+.signin__cta {
+  display: inline-flex !important;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 12px 24px !important;
+  font-size: 15px;
+  border-radius: 999px !important;
+}
+.signin__hint {
+  margin-top: 1rem;
+  font-size: 13px;
+}
+
+/* ---- AllCompanies redesign ------------------------------------------- */
+.all-companies__filters {
+  display: flex !important;
+  align-items: center;
+  gap: 1rem;
+  margin: 1rem 0;
+  flex-wrap: wrap;
+}
+.all-companies__search-wrap {
+  position: relative;
+  flex: 1;
+  min-width: 280px;
+}
+.all-companies__search-icon {
+  position: absolute;
+  left: 14px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--color-fg-muted);
+  pointer-events: none;
+}
+.all-companies__search {
+  width: 100%;
+  padding-left: 38px !important;
+}
+.all-companies__table-card {
+  margin-bottom: 1rem;
+}
+.all-companies__matrix {
+  margin: 0;
+}
+.all-companies__matrix th {
+  background: var(--color-slate-50);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--color-fg-muted);
+  padding: 0.75rem 0.6rem;
+  border-bottom: 1px solid var(--color-border);
+}
+.all-companies__matrix td {
+  padding: 0.75rem 0.6rem;
+}
+.all-companies__matrix tbody tr {
+  transition: background 200ms ease-out;
+}
+.all-companies__pager {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.75rem 1rem;
+  margin-bottom: 1rem;
+}
+.all-companies__pager button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}

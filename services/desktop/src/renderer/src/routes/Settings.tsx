@@ -103,10 +103,17 @@ function SettingsHeader() {
   const channel = useConfigStore((s) => s.updateChannel);
   const isDev = useConfigStore((s) => s.isDev);
   return (
-    <header className="settings-header">
-      <h2>Einstellungen</h2>
+    <header className="settings-header ct-page-header">
+      <p className="ct-page-header__eyebrow">Konfiguration</p>
+      <h2 className="ct-page-header__title">
+        <span className="ct-gradient-text">Einstellungen</span>
+      </h2>
+      <p className="ct-page-header__lede">
+        Anbieter, Modelle, Integrationen und Datenpflege — alles, was die
+        Pipeline und der Agent zur Laufzeit erwarten.
+      </p>
       {ready && version && (
-        <p className="muted small">
+        <p className="muted small" style={{ marginTop: "0.5rem" }}>
           AVA v{version}
           {channel && channel !== "latest" ? ` · ${channel}` : ""}
           {isDev ? " · dev" : ""}

@@ -1,17 +1,16 @@
 import { useState } from "react";
-import logoUrl from "../assets/logo.svg";
+import { Loader2, LogIn, Sparkles } from "lucide-react";
 
-// Sign-in screen.
+// Sign-in screen — Corporate Trust hero card.
 //
 // Triggers the OIDC PKCE flow in the main process. Main opens the user's
 // system browser to Keycloak; this component just shows a button + a
 // running status hint. When auth completes, the main process pushes a
 // status update over IPC and `App` re-renders the gated routes.
 //
-// Brand: the AVA aqua wordmark (logo.svg) replaces the prior plain
-// "AVA" text headline so the desktop matches the Keycloak login form
-// branding 1:1. The SVG inlines its own fill (#00c0a7), so we don't
-// need extra colour rules here.
+// Visual: white card with colored shadow + violet soft blob behind it,
+// gradient AVA wordmark (replaces the legacy aqua SVG), gradient CTA.
+// Logic flow (signIn IPC, busy state, error surfacing) is unchanged.
 
 export function SignIn() {
   const [busy, setBusy] = useState(false);
@@ -30,25 +29,45 @@ export function SignIn() {
   }
 
   return (
-    <div className="signin">
-      <img
-        src={logoUrl}
-        alt="AVA"
-        className="signin__logo"
-        width={160}
-        draggable={false}
-      />
-      <p>Mit deinem AVA-Konto anmelden, um fortzufahren.</p>
-      <button onClick={onClick} disabled={busy} className="primary">
-        {busy ? "Warte auf Browser…" : "Anmelden"}
-      </button>
-      {busy && (
-        <p className="muted">
-          Dein Standard-Browser sollte sich geöffnet haben. Schließe die
-          Anmeldung dort ab und kehre zu diesem Fenster zurück.
+    <div className="signin-shell">
+      <div className="signin">
+        <span className="ct-pill" aria-hidden="true">
+          <Sparkles className="ct-icon-sm" />
+          Sicher anmelden
+        </span>
+        <h1 className="signin__headline">
+          Willkommen bei{" "}
+          <span className="ct-gradient-text">AVA</span>
+        </h1>
+        <p className="signin__lede">
+          Mit deinem AVA-Konto anmelden, um fortzufahren. Wir öffnen deinen
+          Standard-Browser für die sichere Authentifizierung.
         </p>
-      )}
-      {error && <p className="error">Anmeldung fehlgeschlagen: {error}</p>}
+        <button onClick={onClick} disabled={busy} className="primary signin__cta">
+          {busy ? (
+            <>
+              <Loader2 className="ct-icon" style={{ animation: "ava-spin 1s linear infinite" }} aria-hidden="true" />
+              Warte auf Browser…
+            </>
+          ) : (
+            <>
+              <LogIn className="ct-icon" aria-hidden="true" />
+              Anmelden
+            </>
+          )}
+        </button>
+        {busy && (
+          <p className="muted signin__hint">
+            Dein Standard-Browser sollte sich geöffnet haben. Schließe die
+            Anmeldung dort ab und kehre zu diesem Fenster zurück.
+          </p>
+        )}
+        {error && (
+          <p className="error signin__hint" role="alert">
+            Anmeldung fehlgeschlagen: {error}
+          </p>
+        )}
+      </div>
     </div>
   );
 }

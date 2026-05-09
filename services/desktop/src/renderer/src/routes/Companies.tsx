@@ -64,8 +64,17 @@ export function Companies() {
   const totalPages = list.data ? Math.max(1, Math.ceil(list.data.total / pageSize)) : 1;
 
   return (
-    <section>
-      <h2>Firmensuche</h2>
+    <section className="page">
+      <header className="ct-page-header">
+        <p className="ct-page-header__eyebrow">Stammdaten</p>
+        <h2 className="ct-page-header__title">
+          <span className="ct-gradient-text">Firmensuche</span>
+        </h2>
+        <p className="ct-page-header__lede">
+          Suche im gesamten Stammdaten-Bestand nach Firmenname, Standort
+          oder Branche. Treffer öffnen das vollständige Firmenprofil.
+        </p>
+      </header>
       <div className="toolbar">
         <input
           type="search"
