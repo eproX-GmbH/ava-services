@@ -1,85 +1,125 @@
-/* AVA design system — phase 8.l1.
+/* AVA design system — "Corporate Trust" refresh.
+ *
+ * Re-skin from the dark Aqua theme to a light, indigo/violet
+ * "Corporate Trust" palette: trustworthy yet vibrant, with colored
+ * shadows, gradient accents, soft blob backdrops, and Plus Jakarta
+ * Sans throughout.
+ *
+ * Strategy: the @theme tokens below are the SINGLE source of truth.
+ * Every legacy class that references `--bg`, `--fg`, `--border`,
+ * `--accent`, `--muted` (mapped at the bottom of this @theme
+ * declaration's :root block) instantly inherits the new look. The
+ * structural rules below (.panel, .matrix, .badge, etc.) keep their
+ * geometry; only the surface colors change.
  *
  * We import Tailwind v4's *theme* and *utilities* layers but NOT
- * *preflight*. Preflight is Tailwind's opinionated reset (resets
- * margins, list bullets, heading sizes, etc.) — turning it on now
- * would shift every legacy screen overnight. We'll opt in once the
- * primitives in 8.l4 land and routes are migrated route-by-route
- * (8.l5/6). Until then, the legacy CSS below is canonical and
- * Tailwind utilities live alongside it.
- *
- * The `@theme` block defines AVA's brand tokens. Tailwind v4 surfaces
- * each declared `--color-*`, `--font-*`, `--radius-*` etc. as
- * matching utility classes (e.g. `bg-brand-500`, `text-fg-muted`) AND
- * as plain CSS variables for use inside this file. Decisions:
- *   - Brand hue: #00c0a7 (the AVA "Aqua" logo mark).
- *   - Dark-first; light theme deferred to 8.l5.
- *   - Surface stack uses near-blacks with a green-leaning tint so the
- *     brand colour reads as part of the same family.
- *   - Radii bounded at 8px; we never go pill-shaped.
- *   - Type stack falls back to system fonts; Inter / JetBrains Mono
- *     get bundled in 8.l7.
+ * *preflight* — turning the reset on now would re-baseline every
+ * legacy screen. The token block exposes Tailwind v4 utilities for
+ * every declared `--color-*`, `--font-*`, `--radius-*`, `--shadow-*`,
+ * so new markup can use indigo/violet utility classes alongside
+ * legacy classes during the migration.
  */
 @import "tailwindcss/theme.css";
 @import "tailwindcss/utilities.css";
 
-/* Override the default `dark:` variant so it matches a `.dark` class
- * on <html> instead of the OS-level `prefers-color-scheme`. Lets us
- * stay dark-mode regardless of OS, and gives us a single toggle to
- * flip when the (deferred) light theme lands in 8.l5. */
+/* `dark:` variant points at `.dark` on <html>. Corporate Trust ships
+ * light-only; we keep the variant compiled for a future toggle but
+ * never set the class today. */
 @custom-variant dark (&:where(.dark, .dark *));
 
 @theme {
-  /* Brand */
-  --color-brand-50:  #e6faf6;
-  --color-brand-100: #b8f0e6;
-  --color-brand-200: #7ee2cf;
-  --color-brand-300: #3fd2b8;
-  --color-brand-400: #14c8ad;
-  --color-brand-500: #00c0a7;          /* logo mark */
-  --color-brand-600: #009f8a;
-  --color-brand-700: #007e6d;
-  --color-brand-800: #005d51;
-  --color-brand-900: #003c34;
+  /* ---- Indigo (primary) — the "Corporate Trust" hero hue. */
+  --color-indigo-50:  #eef2ff;
+  --color-indigo-100: #e0e7ff;
+  --color-indigo-200: #c7d2fe;
+  --color-indigo-300: #a5b4fc;
+  --color-indigo-400: #818cf8;
+  --color-indigo-500: #6366f1;
+  --color-indigo-600: #4f46e5;   /* Primary */
+  --color-indigo-700: #4338ca;
+  --color-indigo-800: #3730a3;
+  --color-indigo-900: #312e81;
+  --color-indigo-950: #1e1b4b;
 
-  /* Surface (dark-first). bg-0 = app background, bg-3 = popover.
-   *
-   * Dark grey rather than near-black — easier on the eyes for long
-   * data-care sessions and the aqua brand pops more against grey than
-   * black. Each step is ~9% lighter than the last (perceptual, not
-   * linear), with a faint green tint so the surfaces read as the same
-   * family as `--color-brand-*` instead of fighting it. */
-  --color-bg-0: #1a1d1c;   /* canvas */
-  --color-bg-1: #232726;   /* topbar, cards */
-  --color-bg-2: #2c302f;   /* elevated panels */
-  --color-bg-3: #363b39;   /* popovers, menus */
-  --color-border:        #383d3b;
-  --color-border-strong: #4a504d;
+  /* ---- Violet (secondary) — gradient partner with indigo. */
+  --color-violet-50:  #f5f3ff;
+  --color-violet-100: #ede9fe;
+  --color-violet-200: #ddd6fe;
+  --color-violet-300: #c4b5fd;
+  --color-violet-400: #a78bfa;
+  --color-violet-500: #8b5cf6;
+  --color-violet-600: #7c3aed;   /* Secondary */
+  --color-violet-700: #6d28d9;
 
-  --color-fg:       #e5e7e6;
-  --color-fg-muted: #9aa3a0;
-  --color-fg-faint: #6b7370;
+  /* ---- Slate (neutrals). */
+  --color-slate-50:   #f8fafc;
+  --color-slate-100:  #f1f5f9;
+  --color-slate-200:  #e2e8f0;
+  --color-slate-300:  #cbd5e1;
+  --color-slate-400:  #94a3b8;
+  --color-slate-500:  #64748b;
+  --color-slate-600:  #475569;
+  --color-slate-700:  #334155;
+  --color-slate-800:  #1e293b;
+  --color-slate-900:  #0f172a;
 
-  /* Semantic — muted ~60% saturation so they don't shout. */
-  --color-ok:   #4ade80;
-  --color-warn: #f6c66b;
-  --color-err:  #f47272;
+  /* ---- Emerald accent (success / OK). */
+  --color-emerald-50:  #ecfdf5;
+  --color-emerald-500: #10b981;
+  --color-emerald-600: #059669;
 
-  /* Type. Geist is Vercel's product-UI face — slightly geometric, very
-   * even rhythm at small sizes, pairs with Geist Mono for tabular /
-   * code cells. The "Variable" suffix is what @fontsource-variable/*
-   * registers via @font-face (loaded once in main.tsx). System
-   * fallbacks keep the UI legible if the woff2 hasn't streamed in by
-   * first paint. */
-  --font-sans: "Geist Variable", "Geist", -apple-system, BlinkMacSystemFont,
+  /* ---- Brand alias — keeps any lingering `bg-brand-500` working;
+   * remapped onto indigo so the AVA mark reads as Corporate Trust
+   * primary. */
+  --color-brand-50:  #eef2ff;
+  --color-brand-100: #e0e7ff;
+  --color-brand-200: #c7d2fe;
+  --color-brand-300: #a5b4fc;
+  --color-brand-400: #818cf8;
+  --color-brand-500: #4f46e5;
+  --color-brand-600: #4338ca;
+  --color-brand-700: #3730a3;
+  --color-brand-800: #312e81;
+  --color-brand-900: #1e1b4b;
+
+  /* ---- Surfaces (light). bg-0 = app canvas, bg-3 = popover. */
+  --color-bg-0: #f8fafc;   /* slate-50 — canvas */
+  --color-bg-1: #ffffff;   /* surface — cards, topbar */
+  --color-bg-2: #ffffff;   /* elevated panels (lift via shadow, not tone) */
+  --color-bg-3: #ffffff;   /* popovers, menus */
+  --color-border:        #e2e8f0;   /* slate-200 */
+  --color-border-strong: #cbd5e1;   /* slate-300 */
+
+  --color-fg:       #0f172a;   /* slate-900 */
+  --color-fg-muted: #64748b;   /* slate-500 */
+  --color-fg-faint: #94a3b8;   /* slate-400 */
+
+  /* ---- Semantic — desaturated tones for status pills. */
+  --color-ok:   #10b981;   /* emerald-500 */
+  --color-warn: #f59e0b;   /* amber-500 */
+  --color-err:  #ef4444;   /* red-500 */
+
+  /* ---- Type. Plus Jakarta Sans is the Corporate Trust display face;
+   *      Geist Mono stays for tabular / code cells. */
+  --font-sans: "Plus Jakarta Sans", -apple-system, BlinkMacSystemFont,
                "Segoe UI", system-ui, sans-serif;
   --font-mono: "Geist Mono Variable", "Geist Mono", "SF Mono",
                ui-monospace, "Menlo", "Consolas", monospace;
 
-  /* Radii — capped at 8px (Codex / Claude Code don't go higher). */
-  --radius-sm: 4px;
-  --radius-md: 6px;
-  --radius-lg: 8px;
+  /* ---- Radii — Corporate Trust uses bigger curves (12px cards,
+   *      8px inputs) to read as friendlier than the old 6px stack. */
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+  --radius-2xl: 20px;
+
+  /* ---- Colored shadows — THE signature element. */
+  --shadow-soft:    0 4px 20px -2px rgba(79, 70, 229, 0.10);
+  --shadow-soft-lg: 0 10px 25px -5px rgba(79, 70, 229, 0.15),
+                    0 8px 10px -6px rgba(79, 70, 229, 0.10);
+  --shadow-button:  0 4px 14px 0 rgba(79, 70, 229, 0.30);
+  --shadow-glow:    0 0 20px rgba(79, 70, 229, 0.50);
 }
 
 /* ---- Legacy variables (8.l1 keeps them; 8.l8 deletes the unused). ----
@@ -92,29 +132,52 @@
  */
 :root {
   font-family: var(--font-sans);
-  color-scheme: dark;
+  color-scheme: light;
   --fg:     var(--color-fg);
   --muted:  var(--color-fg-muted);
   --bg:     var(--color-bg-0);
   --border: var(--color-border);
-  --accent: var(--color-brand-500);
+  --accent: var(--color-indigo-600);
+  --accent-hover: var(--color-indigo-700);
   --error:  var(--color-err);
 
-  /* 8.l5 — control tokens shared by buttons, selects, and text inputs.
-   * Same palette the chat composer uses (subtle white-on-dark surfaces,
-   * 8 px radius, 120 ms transitions) so every control reads as part of
-   * one design system instead of route-by-route hand-styling. */
-  --ctrl-bg:            rgba(255, 255, 255, 0.06);
-  --ctrl-bg-hover:      rgba(255, 255, 255, 0.10);
-  --ctrl-bg-input:      rgba(255, 255, 255, 0.04);
-  --ctrl-border:        rgba(255, 255, 255, 0.12);
-  --ctrl-border-hover:  rgba(255, 255, 255, 0.20);
-  --ctrl-border-focus:  rgba(255, 255, 255, 0.30);
+  /* Control tokens — light Corporate Trust surface palette. White
+   * inputs with slate-200 borders, indigo focus ring. */
+  --ctrl-bg:            #ffffff;
+  --ctrl-bg-hover:      #f8fafc;
+  --ctrl-bg-input:      #ffffff;
+  --ctrl-border:        var(--color-border);
+  --ctrl-border-hover:  var(--color-border-strong);
+  --ctrl-border-focus:  var(--color-indigo-500);
   --ctrl-radius:        8px;
-  --ctrl-pad-y:         6px;
-  --ctrl-pad-x:         12px;
-  --ctrl-transition:    background 120ms ease-out, border-color 120ms ease-out,
-                        color 120ms ease-out, opacity 120ms ease-out;
+  --ctrl-pad-y:         8px;
+  --ctrl-pad-x:         14px;
+  --ctrl-transition:    background 200ms ease-out, border-color 200ms ease-out,
+                        color 200ms ease-out, box-shadow 200ms ease-out,
+                        transform 200ms ease-out, opacity 200ms ease-out;
+
+  /* Headlines line-height per spec. */
+  --line-tight: 1.1;
+  --line-body:  1.65;
+  --tracking-tight: -0.02em;
+}
+
+/* Plus Jakarta Sans baseline — applied at the document root so every
+ * legacy class inherits without further changes. */
+html, body { font-family: var(--font-sans); }
+body { line-height: var(--line-body); }
+h1, h2, h3, h4 { line-height: var(--line-tight); letter-spacing: var(--tracking-tight); }
+h1 { font-weight: 800; }
+h2 { font-weight: 700; }
+h3 { font-weight: 600; }
+
+/* prefers-reduced-motion — collapse all transitions/animations. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    transition-duration: 0.001ms !important;
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+  }
 }
 
 * { box-sizing: border-box; }
@@ -129,6 +192,7 @@
  */
 button {
   font: inherit;
+  font-weight: 500;
   padding: var(--ctrl-pad-y) var(--ctrl-pad-x);
   background: var(--ctrl-bg);
   color: var(--fg);
@@ -140,23 +204,29 @@ button {
 button:hover:not(:disabled) {
   background: var(--ctrl-bg-hover);
   border-color: var(--ctrl-border-hover);
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-soft);
 }
 button:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
+  outline: none;
+  box-shadow: 0 0 0 2px #ffffff, 0 0 0 4px var(--color-indigo-500);
 }
 button:disabled { opacity: 0.4; cursor: not-allowed; }
 
+/* Primary CTA — gradient indigo→violet, glowing colored shadow. */
 button.primary {
-  background: var(--accent);
-  color: var(--color-bg-0);
+  background: linear-gradient(to right, var(--color-indigo-600), var(--color-violet-600));
+  color: #ffffff;
   border-color: transparent;
-  font-weight: 500;
+  font-weight: 600;
+  box-shadow: var(--shadow-button);
 }
 button.primary:hover:not(:disabled) {
-  background: var(--color-brand-400, var(--accent));
+  background: linear-gradient(to right, var(--color-indigo-700), var(--color-violet-700));
   border-color: transparent;
-  color: var(--color-bg-0);
+  color: #ffffff;
+  transform: translateY(-1px);
+  box-shadow: 0 6px 20px 0 rgba(79, 70, 229, 0.45);
 }
 
 button.link {
@@ -166,10 +236,14 @@ button.link {
   padding: 4px 6px;
   text-decoration: underline;
   text-underline-offset: 2px;
+  font-weight: 500;
+  box-shadow: none;
 }
 button.link:hover:not(:disabled) {
   background: transparent;
-  color: var(--color-brand-400, var(--accent));
+  color: var(--accent-hover);
+  transform: none;
+  box-shadow: none;
 }
 button.link.bad { color: var(--error); }
 button.link.bad:hover:not(:disabled) { color: var(--error); opacity: 0.85; }
@@ -187,7 +261,7 @@ select {
   /* Custom chevron — keeps the chrome consistent across mac/win/linux,
    * since native <select> chevrons render very differently per platform.
    * Painted in the muted foreground tone so it sits quietly. */
-  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12' fill='none'><path d='M3 4.5l3 3 3-3' stroke='white' stroke-opacity='0.55' stroke-width='1.4' stroke-linecap='round' stroke-linejoin='round'/></svg>");
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12' fill='none'><path d='M3 4.5l3 3 3-3' stroke='%2364748b' stroke-width='1.4' stroke-linecap='round' stroke-linejoin='round'/></svg>");
   background-repeat: no-repeat;
   background-position: right 10px center;
   transition: var(--ctrl-transition);
@@ -217,12 +291,13 @@ textarea {
   outline: none;
   transition: var(--ctrl-transition);
 }
-input::placeholder, textarea::placeholder { color: rgba(255, 255, 255, 0.35); }
+input::placeholder, textarea::placeholder { color: var(--color-fg-faint); }
 input:hover:not(:disabled, :focus),
 textarea:hover:not(:disabled, :focus) { border-color: var(--ctrl-border-hover); }
 input:focus, textarea:focus {
   border-color: var(--ctrl-border-focus);
   background: var(--ctrl-bg);
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.15);
 }
 input:disabled, textarea:disabled { opacity: 0.5; cursor: not-allowed; }
 body {
@@ -243,55 +318,124 @@ body {
  * brand sits inside a fixed-width slot so the nav alignment doesn't
  * shift between routes.
  */
-.app-shell { display: flex; flex-direction: column; min-height: 100vh; }
-.app-shell__main { flex: 1; padding: 1rem 1.5rem; min-width: 0; }
+.app-shell {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  position: relative;
+  background: var(--color-bg-0);
+  /* Soft blob backdrop — atmospheric depth. The two large blurred
+   * gradient orbs sit in a fixed layer behind everything; pointer
+   * events fall through. */
+  isolation: isolate;
+}
+.app-shell::before,
+.app-shell::after {
+  content: "";
+  position: fixed;
+  z-index: -1;
+  pointer-events: none;
+  border-radius: 50%;
+  filter: blur(80px);
+  opacity: 0.35;
+  animation: ava-float 9s ease-in-out infinite alternate;
+}
+.app-shell::before {
+  top: -120px;
+  left: -120px;
+  width: 480px;
+  height: 480px;
+  background: radial-gradient(circle, rgba(99, 102, 241, 0.35), transparent 70%);
+}
+.app-shell::after {
+  bottom: -160px;
+  right: -160px;
+  width: 560px;
+  height: 560px;
+  background: radial-gradient(circle, rgba(124, 58, 237, 0.30), transparent 70%);
+  animation-delay: 2s;
+}
+@keyframes ava-float {
+  from { transform: translate3d(0, 0, 0); }
+  to   { transform: translate3d(20px, 30px, 0); }
+}
+.app-shell__main {
+  flex: 1;
+  padding: 1.5rem 2rem 3rem;
+  min-width: 0;
+  max-width: 1280px;
+  width: 100%;
+  margin: 0 auto;
+}
 
 .topbar {
-  height: 52px;
+  height: 64px;
   display: flex;
-  align-items: stretch;
+  align-items: center;
   gap: 0.5rem;
-  padding: 0 1rem;
-  background: var(--color-bg-1);
-  border-bottom: 1px solid var(--color-border);
-  position: sticky; top: 0; z-index: 20;
+  padding: 0 1.5rem;
+  background: rgba(255, 255, 255, 0.85);
+  backdrop-filter: saturate(180%) blur(18px);
+  -webkit-backdrop-filter: saturate(180%) blur(18px);
+  border-bottom: 1px solid rgba(226, 232, 240, 0.7);
+  position: sticky;
+  top: 0;
+  z-index: 20;
 }
 .topbar__brand {
-  display: flex; align-items: center;
-  padding-right: 1rem;
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding-right: 1.5rem;
   user-select: none;
+  font-weight: 800;
+  font-size: 18px;
+  letter-spacing: -0.02em;
+  /* Gradient text on the wordmark. */
+  background: linear-gradient(to right, var(--color-indigo-600), var(--color-violet-600));
+  -webkit-background-clip: text;
+          background-clip: text;
+  color: transparent;
 }
 .topbar__brand img {
-  display: block;
-  height: 18px;          /* tight, like Codex's logo lockup */
-  width: auto;
-  /* Viewbox is 347 x 182 ≈ 1.9:1; reinforce so browsers that ignore
-   * intrinsic SVG aspect-ratio don't fall back to 300×150. */
-  aspect-ratio: 347 / 182;
+  display: none;          /* swap to gradient text wordmark */
+}
+.topbar__brand::before {
+  content: "AVA";
 }
 .topbar__nav {
-  display: flex; align-items: stretch; gap: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
 }
 .topbar__link {
-  display: inline-flex; align-items: center;
-  padding: 0 0.85rem;
-  font-size: 13px; font-weight: 500;
+  display: inline-flex;
+  align-items: center;
+  padding: 0.5rem 0.9rem;
+  font-size: 14px;
+  font-weight: 500;
   color: var(--color-fg-muted);
   text-decoration: none;
-  border-bottom: 2px solid transparent;
-  margin-bottom: -1px;   /* overlap the bar's bottom border so the active
-                            underline merges with it */
-  transition: color 120ms ease-out, border-color 120ms ease-out;
+  border-radius: 999px;
+  transition: var(--ctrl-transition);
 }
-.topbar__link:hover { color: var(--color-fg); }
+.topbar__link:hover {
+  color: var(--color-indigo-700);
+  background: var(--color-indigo-50);
+}
 .topbar__link--active {
-  color: var(--color-fg);
-  border-bottom-color: var(--color-brand-500);
+  color: #ffffff;
+  background: linear-gradient(to right, var(--color-indigo-600), var(--color-violet-600));
+  box-shadow: var(--shadow-button);
+}
+.topbar__link--active:hover {
+  color: #ffffff;
+  background: linear-gradient(to right, var(--color-indigo-700), var(--color-violet-700));
 }
 .topbar__spacer { flex: 1; }
 .topbar__user {
   display: flex; align-items: center; gap: 0.4rem;
-  font-size: 12px;
+  font-size: 13px;
   color: var(--color-fg);
 }
 .topbar__user-tenant { color: var(--color-fg-muted); }
@@ -299,17 +443,42 @@ body {
 .topbar__user-actor  { color: var(--color-fg); }
 .topbar__signout {
   margin-left: 0.4rem;
-  background: none; border: 0; padding: 0; cursor: pointer;
-  font: inherit; font-size: 12px;
-  color: var(--color-brand-500);
-  text-decoration: underline; text-underline-offset: 2px;
+  background: none;
+  border: 0;
+  padding: 4px 10px;
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--color-fg-muted);
+  border-radius: 999px;
+  transition: var(--ctrl-transition);
 }
-.topbar__signout:hover { color: var(--color-brand-400); }
+.topbar__signout:hover {
+  color: var(--color-indigo-700);
+  background: var(--color-indigo-50);
+}
 .signin {
-  max-width: 360px;
+  max-width: 420px;
   margin: 6rem auto;
-  padding: 2rem;
+  padding: 2.5rem 2rem;
   text-align: center;
+  background: var(--color-bg-1);
+  border: 1px solid var(--color-border);
+  border-radius: 20px;
+  box-shadow: var(--shadow-soft-lg);
+  position: relative;
+}
+.signin::before {
+  content: "";
+  position: absolute;
+  inset: -20% -20% auto auto;
+  width: 240px;
+  height: 240px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(124, 58, 237, 0.18), transparent 70%);
+  filter: blur(40px);
+  z-index: -1;
 }
 /* AVA wordmark — sized to roughly the same optical weight as the
  * old <h1>AVA</h1> headline (32px tall), with breathing room above
@@ -328,7 +497,17 @@ body {
 .signin button.primary:disabled { cursor: progress; }
 /* Legacy `.nav` / `.main` rules removed — superseded by the
  * `.topbar` / `.app-shell__main` block above (8.l2). */
-.loading { padding: 2rem; color: var(--muted); }
+.loading {
+  padding: 4rem 2rem;
+  text-align: center;
+  color: var(--muted);
+  font-weight: 500;
+  background: linear-gradient(to right, var(--color-indigo-600), var(--color-violet-600));
+  -webkit-background-clip: text;
+          background-clip: text;
+  color: transparent;
+  font-size: 18px;
+}
 .error { color: var(--error); }
 .muted { color: var(--muted); font-size: 12px; }
 table { border-collapse: collapse; width: 100%; }
@@ -351,7 +530,7 @@ dt { color: var(--muted); }
   font-size: 12px;
 }
 @media (prefers-color-scheme: dark) {
-  .event-log pre { background: rgba(255, 255, 255, 0.06); }
+  .event-log pre { background: var(--color-slate-100); }
 }
 code, pre { font-family: var(--font-mono); font-size: 12px; }
 
@@ -479,8 +658,15 @@ code, pre { font-family: var(--font-mono); font-size: 12px; }
 }
 .panel {
   border: 1px solid var(--border);
-  border-radius: 6px;
-  padding: 1rem;
+  border-radius: 12px;
+  padding: 1.25rem;
+  background: var(--color-bg-1);
+  box-shadow: var(--shadow-soft);
+  transition: var(--ctrl-transition);
+}
+.panel:hover {
+  box-shadow: var(--shadow-soft-lg);
+  transform: translateY(-1px);
 }
 .panel h3 { margin-top: 0; }
 .form.compact { gap: 0.5rem; }
@@ -529,21 +715,22 @@ code, pre { font-family: var(--font-mono); font-size: 12px; }
   flex: 1;
   overflow-y: auto;
   border: 1px solid var(--border);
-  border-radius: 6px;
-  padding: 0.75rem;
+  border-radius: 16px;
+  padding: 1.25rem;
   margin-bottom: 0.75rem;
+  background: var(--color-bg-1);
+  box-shadow: var(--shadow-soft);
 }
 .msg { margin-bottom: 0.75rem; }
 .msg-role { font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; }
 .msg-body { white-space: pre-wrap; }
 .msg-user .msg-body { color: var(--fg); }
 .msg-assistant .msg-body {
-  background: rgba(37, 99, 235, 0.06);
-  padding: 0.5rem 0.75rem;
-  border-radius: 6px;
-}
-@media (prefers-color-scheme: dark) {
-  .msg-assistant .msg-body { background: rgba(96, 165, 250, 0.1); }
+  background: linear-gradient(135deg, var(--color-indigo-50), var(--color-violet-50));
+  padding: 0.85rem 1rem;
+  border-radius: 12px;
+  border: 1px solid var(--color-indigo-100);
+  box-shadow: var(--shadow-soft);
 }
 .chat-form { display: flex; gap: 0.5rem; align-items: flex-start; }
 .chat-form textarea { flex: 1; }
@@ -580,8 +767,8 @@ code, pre { font-family: var(--font-mono); font-size: 12px; }
   font-size: 13px;
 }
 .matrix tbody tr { cursor: pointer; }
-.matrix tbody tr:hover { background: rgba(127,127,127,0.08); }
-.matrix tbody tr.active { background: rgba(37, 99, 235, 0.08); }
+.matrix tbody tr:hover { background: var(--color-slate-50); }
+.matrix tbody tr.active { background: var(--color-indigo-50); }
 .matrix-cell { text-align: center !important; }
 .matrix-company {
   font-weight: 500;
@@ -1107,8 +1294,9 @@ code, pre { font-family: var(--font-mono); font-size: 12px; }
 .chat-attachment-chip {
   display: inline-flex; align-items: center; gap: 6px;
   padding: 4px 10px;
-  background: rgba(255, 255, 255, 0.06);
-  border: 1px solid var(--border);
+  background: var(--color-indigo-50);
+  border: 1px solid var(--color-indigo-100);
+  color: var(--color-indigo-700);
   border-radius: 999px;
   font-size: 12px;
   max-width: 100%;
@@ -1145,13 +1333,14 @@ code, pre { font-family: var(--font-mono); font-size: 12px; }
   white-space: pre-wrap; word-break: break-word;
   line-height: 1.55;
 }
-/* User: rounded grey bubble, right-aligned, max 75% column width. */
+/* User: rounded gradient bubble, right-aligned, max 75% column width. */
 .chat-msg-user .chat-content {
-  background: rgba(255, 255, 255, 0.09);
-  color: var(--fg);
+  background: linear-gradient(to right, var(--color-indigo-600), var(--color-violet-600));
+  color: #ffffff;
   border-radius: 18px;
   padding: 10px 16px;
   max-width: 75%;
+  box-shadow: var(--shadow-soft);
 }
 /* Assistant: plain prose, no bubble. Tool/system inherit the same. */
 .chat-msg-assistant .chat-content,
@@ -1169,17 +1358,19 @@ code, pre { font-family: var(--font-mono); font-size: 12px; }
 .chat-cursor { opacity: .4; animation: blink 1s steps(1) infinite; }
 .chat-company-link,
 .chat-link {
-  color: #7eb8ff;
+  color: var(--color-indigo-600);
   text-decoration: underline;
   text-underline-offset: 2px;
+  font-weight: 500;
 }
 .chat-company-link:hover,
-.chat-link:hover { color: #b3d4ff; }
+.chat-link:hover { color: var(--color-violet-600); }
 @keyframes blink { 50% { opacity: 0; } }
 .chat-error {
   padding: 8px 12px; border-radius: 8px;
-  background: rgba(220, 38, 38, 0.12);
-  color: #fca5a5; font-size: 13px;
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  color: #b91c1c; font-size: 13px;
   align-self: stretch;
 }
 
@@ -1190,15 +1381,17 @@ code, pre { font-family: var(--font-mono); font-size: 12px; }
 .chat-composer {
   display: flex; align-items: flex-end;
   gap: 4px;
-  background: rgba(255, 255, 255, 0.06);
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: var(--color-bg-1);
+  border: 1px solid var(--color-border);
   border-radius: 24px;
-  padding: 6px 6px 6px 8px;
-  transition: border-color 120ms, background 120ms;
+  padding: 6px 6px 6px 14px;
+  box-shadow: var(--shadow-soft);
+  transition: var(--ctrl-transition);
 }
 .chat-composer:focus-within {
-  border-color: rgba(255, 255, 255, 0.3);
-  background: rgba(255, 255, 255, 0.08);
+  border-color: var(--color-indigo-400);
+  background: var(--color-bg-1);
+  box-shadow: 0 0 0 4px rgba(99, 102, 241, 0.15), var(--shadow-soft-lg);
 }
 .chat-composer.is-disabled { opacity: 0.6; }
 .chat-composer__textarea {
@@ -1214,40 +1407,48 @@ code, pre { font-family: var(--font-mono); font-size: 12px; }
    * the inline style. */
   line-height: 1.4;
 }
-.chat-composer__textarea::placeholder { color: rgba(255, 255, 255, 0.4); }
+.chat-composer__textarea::placeholder { color: var(--color-fg-faint); }
 
 .chat-composer__icon-btn {
   flex-shrink: 0;
   width: 36px; height: 36px;
   display: inline-flex; align-items: center; justify-content: center;
   background: transparent;
-  color: var(--fg);
+  color: var(--color-fg-muted);
   border: 0; border-radius: 50%;
   cursor: pointer;
   padding: 0;
-  transition: background 120ms;
+  transition: var(--ctrl-transition);
 }
 .chat-composer__icon-btn:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.1);
+  background: var(--color-indigo-50);
+  color: var(--color-indigo-700);
+  transform: none;
+  box-shadow: none;
 }
 .chat-composer__icon-btn:disabled {
   opacity: 0.35;
   cursor: not-allowed;
 }
 .chat-composer__send {
-  background: #ffffff;
-  color: #000000;
+  background: linear-gradient(to right, var(--color-indigo-600), var(--color-violet-600));
+  color: #ffffff;
+  box-shadow: var(--shadow-button);
 }
-.chat-composer__send:hover:not(:disabled) { background: #e8e8e8; }
+.chat-composer__send:hover:not(:disabled) {
+  background: linear-gradient(to right, var(--color-indigo-700), var(--color-violet-700));
+  color: #ffffff;
+}
 .chat-composer__send:disabled {
-  background: rgba(255, 255, 255, 0.2);
-  color: rgba(0, 0, 0, 0.5);
+  background: var(--color-slate-200);
+  color: var(--color-fg-faint);
+  box-shadow: none;
 }
 
 .chat-disclaimer {
   text-align: center;
   font-size: 12px;
-  color: rgba(255, 255, 255, 0.5);
+  color: var(--color-fg-faint);
   padding: 8px 8px 0;
 }
 .chat-disclaimer .muted { color: inherit; }
@@ -1435,10 +1636,16 @@ code, pre { font-family: var(--font-mono); font-size: 12px; }
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
-  padding: 1rem 1.25rem;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.02);
+  padding: 1.25rem 1.5rem;
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  background: var(--color-bg-1);
+  box-shadow: var(--shadow-soft);
+  transition: var(--ctrl-transition);
+}
+.crm-card:hover {
+  box-shadow: var(--shadow-soft-lg);
+  transform: translateY(-1px);
 }
 .crm-card-header {
   display: flex;
@@ -1831,11 +2038,11 @@ a.heartbeat-decision__company:hover {
   text-transform: uppercase; letter-spacing: 0.03em;
   padding: 2px 8px;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--color-slate-100);
 }
 .heartbeat-decision__outcome--alerted    { background: rgba(0, 192, 167, 0.18); color: var(--accent); }
-.heartbeat-decision__outcome--duplicate  { background: rgba(255, 255, 255, 0.06); color: var(--muted); }
-.heartbeat-decision__outcome--not-worth  { background: rgba(255, 255, 255, 0.08); color: var(--muted); }
+.heartbeat-decision__outcome--duplicate  { background: var(--color-slate-100); color: var(--muted); }
+.heartbeat-decision__outcome--not-worth  { background: var(--color-slate-100); color: var(--muted); }
 .heartbeat-decision__outcome--judge-error { background: rgba(244, 114, 114, 0.16); color: var(--error); }
 .heartbeat-decision__summary {
   margin-top: 2px;
@@ -1870,14 +2077,14 @@ a.heartbeat-decision__company:hover {
 
 /* ---- Inline attachment disclosure inside user bubbles ----------------- */
 .chat-attachment-disclosure {
-  background: rgba(255, 255, 255, 0.06);
+  background: var(--color-slate-100);
   border: 1px solid var(--ctrl-border);
   border-radius: 12px;
   margin-bottom: 6px;
   overflow: hidden;
 }
 .chat-attachment-disclosure[open] {
-  background: rgba(255, 255, 255, 0.04);
+  background: var(--color-slate-50);
 }
 .chat-attachment-disclosure > summary {
   display: flex; align-items: center; gap: 8px;
@@ -1889,7 +2096,7 @@ a.heartbeat-decision__company:hover {
 }
 .chat-attachment-disclosure > summary::-webkit-details-marker { display: none; }
 .chat-attachment-disclosure > summary:hover {
-  background: rgba(255, 255, 255, 0.04);
+  background: var(--color-slate-50);
 }
 .chat-attachment-disclosure .chat-attachment-name {
   font-weight: 500;
@@ -2120,7 +2327,7 @@ a.heartbeat-decision__company:hover {
 .chat-composer__icon-btn[data-voice-state="model-missing"],
 .chat-composer__icon-btn[data-voice-state="binary-missing"],
 .chat-composer__icon-btn[data-voice-state="error"] {
-  color: rgba(255, 255, 255, 0.35);
+  color: var(--color-fg-faint);
 }
 
 /* ---- Topbar Watch chip (Phase 8.t2) ----------------------------------- */
@@ -2258,8 +2465,8 @@ a.heartbeat-decision__company:hover {
  * the composer surface ⌘D / Esc.
  */
 .chat-composer--recording {
-  border-color: rgba(255, 255, 255, 0.28);
-  background: rgba(255, 255, 255, 0.05);
+  border-color: var(--color-indigo-300);
+  background: var(--color-indigo-50);
 }
 .chat-composer__rec {
   flex: 1;
@@ -2362,11 +2569,11 @@ a.heartbeat-decision__company:hover {
   min-width: 220px;
   max-width: 320px;
   padding: 10px 14px;
-  background: rgba(28, 28, 30, 0.96);
-  color: rgba(255, 255, 255, 0.92);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: var(--color-bg-1);
+  color: var(--color-fg);
+  border: 1px solid var(--color-border);
   border-radius: 14px;
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+  box-shadow: var(--shadow-soft-lg);
   font: inherit;
   text-align: left;
   cursor: pointer;
@@ -2386,8 +2593,8 @@ a.heartbeat-decision__company:hover {
   justify-content: center;
   width: 36px; height: 36px;
   border-radius: 10px;
-  background: rgba(255, 255, 255, 0.05);
-  color: rgba(180, 220, 200, 0.95);
+  background: linear-gradient(135deg, var(--color-indigo-50), var(--color-violet-50));
+  color: var(--color-indigo-600);
   flex-shrink: 0;
 }
 .update-banner__body {
@@ -2407,11 +2614,11 @@ a.heartbeat-decision__company:hover {
 }
 .update-banner__sub {
   font-size: 12px;
-  color: rgba(255, 255, 255, 0.55);
+  color: var(--color-fg-muted);
   font-variant-numeric: tabular-nums;
 }
 .update-banner__chevron {
-  color: rgba(255, 255, 255, 0.5);
+  color: var(--color-fg-faint);
   font-size: 16px;
   flex-shrink: 0;
 }
@@ -2615,3 +2822,150 @@ a.heartbeat-decision__company:hover {
   font-size: 12px;
   color: var(--color-fg, #e5e7e6);
 }
+
+/* ─────────────────────────────────────────────────────────────────────
+ * Corporate Trust — Visual DNA utilities
+ * ─────────────────────────────────────────────────────────────────────
+ *
+ * These classes are the design-system primitives every page should
+ * reach for. They're class-based (not Tailwind utilities only) so
+ * they're stable across the migration and so the colored shadow
+ * signature can be applied with a single class.
+ *
+ *   .ct-gradient-text   — indigo→violet gradient on text (headlines)
+ *   .ct-card            — white card, 12px radius, colored shadow
+ *   .ct-card-lift       — same + hover translate -y-1 + bigger shadow
+ *   .ct-shadow-soft     — colored shadow (default card)
+ *   .ct-shadow-soft-lg  — colored shadow (hover card)
+ *   .ct-shadow-glow     — pulsing brand glow (badges)
+ *   .ct-blob            — large blurred gradient orb (decorative)
+ *   .ct-icon-tile       — 48px rounded indigo tile for feature icons
+ *   .ct-pill            — rounded-full badge slot
+ *   .ct-divider-soft    — slate-200 hairline with extra breathing room
+ *   .ct-page-header     — page hero block (gradient headline + lede)
+ *   .ct-isometric       — subtle 3D rotate transform for decorative cards
+ */
+.ct-gradient-text {
+  background: linear-gradient(to right, var(--color-indigo-600), var(--color-violet-600));
+  -webkit-background-clip: text;
+          background-clip: text;
+  color: transparent;
+  display: inline-block;
+}
+.ct-card {
+  background: var(--color-bg-1);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  padding: 1.5rem;
+  box-shadow: var(--shadow-soft);
+}
+.ct-card-lift {
+  transition: var(--ctrl-transition);
+}
+.ct-card-lift:hover {
+  box-shadow: var(--shadow-soft-lg);
+  transform: translateY(-2px);
+}
+.ct-shadow-soft    { box-shadow: var(--shadow-soft); }
+.ct-shadow-soft-lg { box-shadow: var(--shadow-soft-lg); }
+.ct-shadow-button  { box-shadow: var(--shadow-button); }
+.ct-shadow-glow    { box-shadow: var(--shadow-glow); }
+.ct-blob {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(70px);
+  opacity: 0.45;
+  pointer-events: none;
+  background: radial-gradient(circle, rgba(99, 102, 241, 0.45), transparent 70%);
+  animation: ava-float 8s ease-in-out infinite alternate;
+  z-index: 0;
+}
+.ct-blob--violet {
+  background: radial-gradient(circle, rgba(124, 58, 237, 0.45), transparent 70%);
+}
+.ct-blob--emerald {
+  background: radial-gradient(circle, rgba(16, 185, 129, 0.35), transparent 70%);
+}
+.ct-icon-tile {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
+  height: 48px;
+  border-radius: var(--radius-lg);
+  background: var(--color-indigo-50);
+  color: var(--color-indigo-600);
+  flex-shrink: 0;
+}
+.ct-icon-tile--lg {
+  width: 56px;
+  height: 56px;
+  border-radius: var(--radius-xl);
+}
+.ct-icon-tile--gradient {
+  background: linear-gradient(135deg, var(--color-indigo-600), var(--color-violet-600));
+  color: #ffffff;
+  box-shadow: var(--shadow-button);
+}
+.ct-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 500;
+  background: var(--color-indigo-50);
+  color: var(--color-indigo-700);
+  border: 1px solid var(--color-indigo-100);
+}
+.ct-pill--emerald {
+  background: var(--color-emerald-50);
+  color: var(--color-emerald-600);
+  border-color: rgba(16, 185, 129, 0.25);
+}
+.ct-divider-soft {
+  height: 1px;
+  background: var(--color-border);
+  margin: 1.5rem 0;
+}
+.ct-page-header {
+  position: relative;
+  margin-bottom: 2rem;
+}
+.ct-page-header__eyebrow {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-indigo-600);
+  margin: 0 0 0.5rem;
+}
+.ct-page-header__title {
+  margin: 0 0 0.5rem;
+  font-size: 32px;
+  font-weight: 800;
+  line-height: 1.1;
+  letter-spacing: -0.02em;
+  color: var(--color-fg);
+}
+.ct-page-header__lede {
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.6;
+  color: var(--color-fg-muted);
+  max-width: 640px;
+}
+.ct-isometric {
+  transform: perspective(1000px) rotateX(2deg) rotateY(-3deg);
+  transition: transform 500ms ease-out;
+}
+.ct-isometric:hover {
+  transform: perspective(1000px) rotateX(0deg) rotateY(0deg);
+}
+
+/* Lucide icons inherit currentColor by default; clamp to spec sizes
+ * via class so we don't have to repeat width/height per use site. */
+.ct-icon-sm { width: 16px; height: 16px; }
+.ct-icon    { width: 20px; height: 20px; }
+.ct-icon-lg { width: 24px; height: 24px; }
