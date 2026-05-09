@@ -53,9 +53,12 @@ export function Alerts() {
   return (
     <section className="alerts">
       <header className="alerts__header">
-        <div>
-          <h2>Meldungen</h2>
-          <p className="muted">
+        <div className="ct-page-header" style={{ marginBottom: 0, flex: 1 }}>
+          <p className="ct-page-header__eyebrow">Heartbeat</p>
+          <h2 className="ct-page-header__title">
+            <span className="ct-gradient-text">Meldungen</span>
+          </h2>
+          <p className="ct-page-header__lede">
             Alarmwürdige Vorgänge aus dem Heartbeat-Sweep — neueste zuerst.
           </p>
         </div>

@@ -2,11 +2,15 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { HashRouter, Route, Routes, Navigate } from "react-router-dom";
-// Variable woff2 fonts bundled locally — CSP `font-src 'self' data:` rules
-// out Google Fonts CDN, and shipping the variable axes lets us pick weights
-// (400/500/600/700) without separate files. Loaded once at app startup so
-// every route renders in Inter from first paint.
-import "@fontsource-variable/geist";
+// Plus Jakarta Sans — Corporate Trust display face. Bundled locally
+// (CSP `font-src 'self' data:` rules out Google Fonts CDN). The five
+// weights cover Regular/Medium/SemiBold/Bold/ExtraBold called for in
+// the design system. Geist Mono stays for tabular / code cells.
+import "@fontsource/plus-jakarta-sans/400.css";
+import "@fontsource/plus-jakarta-sans/500.css";
+import "@fontsource/plus-jakarta-sans/600.css";
+import "@fontsource/plus-jakarta-sans/700.css";
+import "@fontsource/plus-jakarta-sans/800.css";
 import "@fontsource-variable/geist-mono";
 import { App } from "./App";
 import { AppShell } from "./components/AppShell";

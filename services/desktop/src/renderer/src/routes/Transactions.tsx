@@ -34,8 +34,18 @@ export function Transactions() {
   });
 
   return (
-    <section>
-      <h2>Vorgänge</h2>
+    <section className="page">
+      <header className="ct-page-header">
+        <p className="ct-page-header__eyebrow">Pipeline</p>
+        <h2 className="ct-page-header__title">
+          <span className="ct-gradient-text">Vorgänge</span>
+        </h2>
+        <p className="ct-page-header__lede">
+          Alle Import-Vorgänge mit ihrem aktuellen Status. Jeder Vorgang
+          gruppiert die Firmen einer Excel-Datei oder eines manuellen
+          Imports.
+        </p>
+      </header>
       {q.isLoading && <p>Lädt…</p>}
       {q.error && <p className="error">Fehler: {(q.error as Error).message}</p>}
       {q.data && q.data.items.length === 0 && <p>Noch keine Vorgänge.</p>}
