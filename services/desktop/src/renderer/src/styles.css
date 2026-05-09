@@ -614,13 +614,20 @@ dt { color: var(--muted); }
 .event-log pre {
   margin: 0.25rem 0 0;
   padding: 0.5rem;
-  background: rgba(0, 0, 0, 0.04);
+  /* v0.1.79 — was a hard-coded rgba(0,0,0,0.04) that read fine in
+   * light mode but combined with no explicit text color in dark
+   * mode meant white text on near-white bg (the prior `prefers-color-scheme:
+   * dark` override actually made it WORSE: `--color-slate-100` is
+   * #f1f5f9, which is light not dark, so it inverted the wrong way).
+   * Now token-driven: `--color-bg-0` is the canvas (flips light/dark
+   * automatically) and we pin the text color so it doesn't inherit
+   * the page's foreground. */
+  background: var(--color-bg-0);
+  color: var(--color-fg);
+  border: 1px solid var(--color-border);
   border-radius: 4px;
   overflow-x: auto;
   font-size: 12px;
-}
-@media (prefers-color-scheme: dark) {
-  .event-log pre { background: var(--color-slate-100); }
 }
 code, pre { font-family: var(--font-mono); font-size: 12px; }
 
