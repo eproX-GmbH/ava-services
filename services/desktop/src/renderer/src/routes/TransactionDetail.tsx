@@ -312,15 +312,17 @@ export function TransactionDetail() {
   return (
     <section className={openCompanyId ? "tx-detail tx-detail--with-panel" : "tx-detail"}>
       <div className="tx-detail__main">
-        <h2>
-          {detail.data?.name ?? "Vorgang"}{" "}
-          <Link to={`/transactions/${id}/stream`} className="muted">
-            (Roh-Eventprotokoll)
-          </Link>{" "}
-          <Link to={`/transactions/${id}/evaluations`} className="muted">
-            (Bewertungen)
-          </Link>
-        </h2>
+        <header className="ct-page-header">
+          <p className="ct-page-header__eyebrow">Vorgang</p>
+          <h2 className="ct-page-header__title">
+            <span className="ct-gradient-text">{detail.data?.name ?? "Vorgang"}</span>
+          </h2>
+          <p className="ct-page-header__lede">
+            <Link to={`/transactions/${id}/stream`}>Roh-Eventprotokoll</Link>
+            {" · "}
+            <Link to={`/transactions/${id}/evaluations`}>Bewertungen</Link>
+          </p>
+        </header>
 
         {detail.isLoading && <p>Lädt…</p>}
         {detail.error && <p className="error">{(detail.error as Error).message}</p>}

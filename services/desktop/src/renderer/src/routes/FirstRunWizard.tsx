@@ -96,7 +96,9 @@ export function FirstRunWizard({
     return (
       <div className="first-run">
         <div className="first-run__card">
-          <h1>Lokale Modell-Laufzeit nicht verfügbar</h1>
+          <h1 className="first-run__title">
+            <span className="ct-gradient-text">Lokale Modell-Laufzeit</span> nicht verfügbar
+          </h1>
           <p className="bad">{status.errorMessage ?? "Unbekannter Fehler"}</p>
           <p className="muted">
             Installiere die App neu oder setze <code>OLLAMA_BIN</code> auf
@@ -113,7 +115,9 @@ export function FirstRunWizard({
     return (
       <div className="first-run">
         <div className="first-run__card">
-          <h1>Lokale Modell-Laufzeit wird gestartet…</h1>
+          <h1 className="first-run__title">
+            <span className="ct-gradient-text">Lokale Modell-Laufzeit</span> wird gestartet…
+          </h1>
           <p className="muted">
             Dauert beim ersten Start meist einige Sekunden.
           </p>
@@ -183,7 +187,9 @@ export function FirstRunWizard({
     return (
       <div className="first-run">
         <div className="first-run__card">
-          <h1>Cloud-Anbieter verwenden</h1>
+          <h1 className="first-run__title">
+            <span className="ct-gradient-text">Cloud-Anbieter</span> verwenden
+          </h1>
           {memoryWarning}
           <ChooseExternalProvider
             onCancel={() => setView("intro")}
@@ -265,7 +271,11 @@ export function FirstRunWizard({
   return (
     <div className="first-run">
       <div className="first-run__card">
-        <h1>{cloudOk ? "Fast bereit" : "Lokale Modelle herunterladen"}</h1>
+        <h1 className="first-run__title">
+          <span className="ct-gradient-text">
+            {cloudOk ? "Fast bereit" : "Lokale Modelle herunterladen"}
+          </span>
+        </h1>
         {memoryWarning}
         {cloudOk ? (
           <p className="muted">

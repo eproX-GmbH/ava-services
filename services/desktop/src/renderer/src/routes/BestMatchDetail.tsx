@@ -49,10 +49,14 @@ export function BestMatchDetail() {
   });
 
   return (
-    <section>
-      <h2>
-        Best-Match <code>{id?.slice(0, 8)}…</code>
-      </h2>
+    <section className="page">
+      <header className="ct-page-header">
+        <p className="ct-page-header__eyebrow">Best-Match</p>
+        <h2 className="ct-page-header__title">
+          <span className="ct-gradient-text">Best-Match</span>{" "}
+          <code style={{ fontWeight: 600, fontSize: "0.7em" }}>{id?.slice(0, 8)}…</code>
+        </h2>
+      </header>
       {q.isLoading && <p>Lädt…</p>}
       {q.error && <p className="error">{(q.error as Error).message}</p>}
       {q.data && (

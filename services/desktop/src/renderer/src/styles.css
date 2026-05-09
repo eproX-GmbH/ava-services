@@ -920,14 +920,51 @@ code, pre { font-family: var(--font-mono); font-size: 12px; }
    block the rest of the app. */
 .first-run {
   display: flex; align-items: center; justify-content: center;
-  min-height: 100vh; padding: 2rem; background: var(--bg, #0b0d12);
+  min-height: 100vh;
+  padding: 2rem;
+  background: var(--color-bg-0);
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+}
+.first-run::before {
+  content: "";
+  position: absolute;
+  top: -120px; left: -120px;
+  width: 480px; height: 480px;
+  border-radius: 50%;
+  filter: blur(80px);
+  opacity: 0.40;
+  background: radial-gradient(circle, rgba(99, 102, 241, 0.45), transparent 70%);
+  z-index: -1;
+}
+.first-run::after {
+  content: "";
+  position: absolute;
+  bottom: -160px; right: -120px;
+  width: 520px; height: 520px;
+  border-radius: 50%;
+  filter: blur(80px);
+  opacity: 0.35;
+  background: radial-gradient(circle, rgba(124, 58, 237, 0.45), transparent 70%);
+  z-index: -1;
 }
 .first-run__card {
-  max-width: 560px; width: 100%; padding: 2rem;
-  background: var(--surface, #11141b); border: 1px solid var(--border);
-  border-radius: 8px; color: var(--text);
+  max-width: 600px; width: 100%; padding: 2.5rem;
+  background: var(--color-bg-1);
+  border: 1px solid var(--color-border);
+  border-radius: 20px;
+  color: var(--color-fg);
+  box-shadow: var(--shadow-soft-lg);
 }
-.first-run__card h1 { margin: 0 0 0.75rem; font-size: 18px; }
+.first-run__card h1,
+.first-run__title {
+  margin: 0 0 0.75rem;
+  font-size: 28px;
+  font-weight: 800;
+  line-height: 1.1;
+  letter-spacing: -0.02em;
+}
 .first-run__list { list-style: none; padding: 0; margin: 1.5rem 0; display: flex; flex-direction: column; gap: 1rem; }
 .first-run__model { display: flex; flex-direction: column; gap: 0.4rem; }
 .first-run__model-head { display: flex; justify-content: space-between; align-items: baseline; gap: 1rem; font-size: 13px; }

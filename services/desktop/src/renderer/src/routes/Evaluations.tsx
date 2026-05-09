@@ -62,10 +62,16 @@ interface Page<T> {
 export function Evaluations() {
   const { id: transactionId } = useParams<{ id: string }>();
   return (
-    <section>
-      <h2>
-        Bewertungen · Vorgang <code>{transactionId?.slice(0, 8)}…</code>
-      </h2>
+    <section className="page">
+      <header className="ct-page-header">
+        <p className="ct-page-header__eyebrow">Audit</p>
+        <h2 className="ct-page-header__title">
+          <span className="ct-gradient-text">Bewertungen</span>{" "}
+          <span style={{ fontWeight: 600, fontSize: "0.7em", color: "var(--color-fg-muted)" }}>
+            · Vorgang <code>{transactionId?.slice(0, 8)}…</code>
+          </span>
+        </h2>
+      </header>
 
       <div className="grid-2">
         <BestMatchPanel transactionId={transactionId!} />

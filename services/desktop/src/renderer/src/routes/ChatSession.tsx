@@ -69,9 +69,13 @@ export function ChatSession() {
 
   return (
     <section className="chat">
-      <h2>
-        Chat-Sitzung <code>{sessionId?.slice(0, 8)}…</code>
-      </h2>
+      <header className="ct-page-header">
+        <p className="ct-page-header__eyebrow">Verlauf</p>
+        <h2 className="ct-page-header__title">
+          <span className="ct-gradient-text">Chat-Sitzung</span>{" "}
+          <code style={{ fontWeight: 600, fontSize: "0.7em" }}>{sessionId?.slice(0, 8)}…</code>
+        </h2>
+      </header>
       <div className="chat-scroll" ref={scrollRef}>
         {messages.isLoading && <p>Lädt…</p>}
         {messages.error && (
