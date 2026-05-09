@@ -387,7 +387,11 @@ body {
 .app-shell {
   display: flex;
   flex-direction: column;
-  min-height: 100vh;
+  /* v0.1.78 — lock to viewport so the topbar's height never pushes
+   * the document past 100vh. Combined with `overflow: auto` on
+   * `.app-shell__main`, only the route's content area scrolls;
+   * the topbar stays pinned without sticky tricks. */
+  height: 100vh;
   position: relative;
   background: var(--color-bg-0);
   /* Soft blob backdrop — atmospheric depth. The two large blurred
@@ -429,9 +433,21 @@ body {
   flex: 1;
   padding: 1.5rem 2rem 3rem;
   min-width: 0;
+  /* v0.1.78 — `min-height: 0` is required for the flex child to be
+   * allowed to shrink below its content height, which is what
+   * enables `overflow: auto` on a flex child to actually scroll
+   * instead of growing the parent. Topbar stays pinned by virtue of
+   * being a non-scrolling sibling.
+   *
+   * The 1280px max-width is preserved via an inner constraint
+   * (route content gets centered inside the scroll container). */
+  min-height: 0;
+  overflow: auto;
+}
+.app-shell__main > * {
   max-width: 1280px;
   width: 100%;
-  margin: 0 auto;
+  margin-inline: auto;
 }
 
 .topbar {
@@ -784,7 +800,11 @@ code, pre { font-family: var(--font-mono); font-size: 12px; }
 }
 
 /* Chat */
-.chat { display: flex; flex-direction: column; height: calc(100vh - 8rem); }
+/* v0.1.78 — fill the route's scroll container instead of subtracting
+ * topbar height from the viewport. Now that .app-shell__main owns
+ * scrolling, the chat just needs `height: 100%` and its own
+ * .chat-scroll handles the overflow. */
+.chat { display: flex; flex-direction: column; height: 100%; min-height: 0; }
 .chat-scroll {
   flex: 1;
   overflow-y: auto;
@@ -1124,6 +1144,17 @@ code, pre { font-family: var(--font-mono); font-size: 12px; }
   background: rgba(255,255,255,0.03);
 }
 .installed-models__name { flex: 1; font-size: 12px; }
+/* v0.1.78 — pin the disk-size column so the action buttons line up
+ * vertically across rows. Tabular-nums keeps single vs multi-digit
+ * sizes from drifting (593 MB vs 4.4 GB). */
+.installed-models__row > span.muted.small {
+  min-width: 5.5rem;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+/* Same min-width for the buttons that follow — same word-length
+ * gives them the same column. */
+.installed-models__row .link { min-width: 5.5rem; text-align: left; }
 
 /* Settings → Agent memory */
 .memory-list { list-style: none; padding: 0; margin: 0.5rem 0;
@@ -2101,6 +2132,14 @@ code, pre { font-family: var(--font-mono); font-size: 12px; }
 .alerts-prefs__actions {
   display: flex; gap: 12px; align-items: center;
   margin-top: 16px;
+}
+/* v0.1.78 — small muted text inherited a 1.6 line-height that pushed
+ * its visual baseline below the gradient button's center. Tightening
+ * the line-height aligns it with the buttons. */
+.alerts-prefs__actions > span.muted.small {
+  line-height: 1.2;
+  display: inline-flex;
+  align-items: center;
 }
 
 /* ---- Heartbeat decision log (Phase 8.f3 transparency) ----------------- */
@@ -3090,6 +3129,11 @@ a.heartbeat-decision__company:hover {
   text-transform: uppercase;
   color: var(--color-indigo-600);
   margin: 0 0 0.5rem;
+  /* v0.1.78 — center the leading lucide icon against the text
+   * baseline so it doesn't float a few pixels too high. */
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
 }
 .ct-page-header__title {
   margin: 0 0 0.5rem;
