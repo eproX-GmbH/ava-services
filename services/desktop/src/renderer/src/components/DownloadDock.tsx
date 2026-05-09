@@ -55,7 +55,7 @@ export function DownloadDock() {
         type="button"
         className={`dl-dock dl-dock--mini ${allDone ? "dl-dock--ok" : ""}`}
         onClick={() => setMinimized(false)}
-        aria-label={`${rows.length} Download${rows.length === 1 ? "" : "s"} — zum Aufklappen klicken`}
+        aria-label={`${rows.length} Download${rows.length === 1 ? "" : "s"}, zum Aufklappen klicken`}
         title={summariseTooltip(rows, aggregate)}
       >
         <ProgressRing pct={aggregate.pct} done={allDone} />
@@ -157,7 +157,7 @@ function DockRow({
               // if the next attempt also fails.
               void pullModelTracked(row.modelName).catch(() => undefined);
             }}
-            title="Erneut versuchen — setzt am unterbrochenen Stand fort"
+            title="Erneut versuchen, setzt am unterbrochenen Stand fort"
           >
             Erneut
           </button>
@@ -195,7 +195,7 @@ function DockRow({
             Verbinde erneut{attemptSuffix}
             {row.completed > 0 && row.total > 0 ? (
               <>
-                {" "}— pausiert bei {formatBytes(row.completed)} /{" "}
+                {" "}· pausiert bei {formatBytes(row.completed)} /{" "}
                 {formatBytes(row.total)}
               </>
             ) : null}
@@ -413,7 +413,7 @@ function formatBytes(n: number): string {
 }
 
 function formatDuration(sec: number): string {
-  if (!Number.isFinite(sec) || sec < 0) return "—";
+  if (!Number.isFinite(sec) || sec < 0) return "";
   if (sec < 60) return `${Math.round(sec)}s`;
   if (sec < 3600) {
     const m = Math.floor(sec / 60);

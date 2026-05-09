@@ -59,7 +59,7 @@ export function Alerts() {
             <span className="ct-gradient-text">Meldungen</span>
           </h2>
           <p className="ct-page-header__lede">
-            Alarmwürdige Vorgänge aus dem Heartbeat-Sweep — neueste zuerst.
+            Alarmwürdige Vorgänge aus dem Heartbeat-Sweep, neueste zuerst.
           </p>
         </div>
         <div className="alerts__toolbar">
@@ -189,7 +189,7 @@ function groupByDay(rows: Alert[]): Array<[string, Alert[]]> {
 
 function dayLabel(iso: string): string {
   const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "—";
+  if (Number.isNaN(d.getTime())) return "";
   const today = new Date();
   const startOfDay = (x: Date) =>
     new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();

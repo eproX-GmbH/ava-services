@@ -293,7 +293,7 @@ function ScreenshotsView({
               key={e.filename}
               className="shot-thumb"
               onClick={() => setLightboxIdx(idx)}
-              title={`${e.label} — ${formatHHMMSS(e.ts)} — ${formatBytes(e.size)}`}
+              title={`${e.label} · ${formatHHMMSS(e.ts)} · ${formatBytes(e.size)}`}
             >
               <img src={url} alt={e.label} loading="lazy" />
               <span className="shot-thumb__label">{e.label}</span>

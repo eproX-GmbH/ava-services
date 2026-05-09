@@ -112,7 +112,7 @@ export function WatchChip() {
 
           {bucket === "red" && (
             <div className="watch-chip__warn">
-              Limit fast erreicht — entferne oder pausiere einen Watch,
+              Limit fast erreicht: entferne oder pausiere einen Watch,
               bevor du weitere registrierst.
             </div>
           )}

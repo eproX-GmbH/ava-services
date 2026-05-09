@@ -176,7 +176,7 @@ export function buildImportTools(deps: {
       const att = deps.attachments.get(args.attachmentId);
       if (!att) {
         throw new Error(
-          `attachment "${args.attachmentId}" is not staged. Ask the user to re-attach the file — staged uploads expire after 30 minutes.`,
+          `attachment "${args.attachmentId}" is not staged. Ask the user to re-attach the file. Staged uploads expire after 30 minutes.`,
         );
       }
 
@@ -322,7 +322,7 @@ export function buildImportTools(deps: {
       done: number;
     }) => {
       const pct = r.total > 0 ? Math.round((r.done / r.total) * 100) : 0;
-      return `${r.done}/${r.total} done (${pct}%) — ${r.counts.failed} failed`;
+      return `${r.done}/${r.total} done (${pct}%), ${r.counts.failed} failed`;
     },
     run: async (args, ctx) => {
       const counts: Record<EntityState, number> = {

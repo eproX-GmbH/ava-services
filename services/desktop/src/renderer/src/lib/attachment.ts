@@ -99,7 +99,7 @@ export async function parseAttachment(
     workbook = XLSX.read(buf, { type: "array" });
   } catch (err) {
     throw new Error(
-      `Couldn't parse "${file.name}" — ${err instanceof Error ? err.message : "unknown format"}.`,
+      `Couldn't parse "${file.name}": ${err instanceof Error ? err.message : "unknown format"}.`,
     );
   }
 

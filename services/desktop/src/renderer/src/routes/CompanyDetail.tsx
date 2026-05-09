@@ -216,13 +216,13 @@ interface CompanyStateResponse {
 
 const TIER_LETTER: Record<number, string> = { 4: "S", 3: "A", 2: "B", 1: "C" };
 const TIER_LABEL: Record<number, string> = {
-  4: "Tier S — Frontier",
-  3: "Tier A — Strong cloud",
-  2: "Tier B — Solid cloud / large local",
-  1: "Tier C — Lokal / klein",
+  4: "Tier S · Frontier",
+  3: "Tier A · Strong cloud",
+  2: "Tier B · Solid cloud / large local",
+  1: "Tier C · Lokal / klein",
 };
 const TIER_DESCRIPTION =
-  "AVA klassifiziert jedes LLM in einen Tier S/A/B/C — siehe MODEL_TIERS.md. " +
+  "AVA klassifiziert jedes LLM in einen Tier S/A/B/C, siehe MODEL_TIERS.md. " +
   "Höhere Tiers liefern verlässlichere Daten; tiefe Tiers können halluzinieren.";
 const STAGE_LABEL: Record<string, string> = {
   "structured-content": "Stamm-Daten",
@@ -497,7 +497,7 @@ function DataQualityRow({
       <span className={`dot ${dotClass}`} aria-hidden="true" />
       <span>{label}</span>
       <span className="muted small">
-        {stage.llmModel ?? (stage.llmTier === null && stage.updatedAt ? "scrape" : "—")}
+        {stage.llmModel ?? (stage.llmTier === null && stage.updatedAt ? "scrape" : "")}
         {tierLetter ? ` · Tier ${tierLetter}` : ""}
       </span>
     </li>
@@ -616,7 +616,7 @@ function OverviewTab({
         <dl className="tx-summary" style={{ marginTop: "1rem" }}>
           <div>
             <dt>Gründungsjahr</dt>
-            <dd>{structured?.foundingYear ?? "—"}</dd>
+            <dd>{structured?.foundingYear ?? ""}</dd>
           </div>
           <div>
             <dt>Stammkapital</dt>
@@ -624,11 +624,11 @@ function OverviewTab({
           </div>
           <div>
             <dt>Rechtsform</dt>
-            <dd>{structured?.legalForm ?? "—"}</dd>
+            <dd>{structured?.legalForm ?? ""}</dd>
           </div>
           <div>
             <dt>SERP-Kategorie</dt>
-            <dd>{website?.companySerp?.category ?? "—"}</dd>
+            <dd>{website?.companySerp?.category ?? ""}</dd>
           </div>
         </dl>
       </article>
@@ -639,18 +639,18 @@ function OverviewTab({
         <p>
           {mapsUrl ? (
             <a href={mapsUrl} target="_blank" rel="noreferrer">
-              {street || "—"}
+              {street || ""}
               <br />
-              {cityLine || "—"}{" "}
+              {cityLine || ""}{" "}
               <span className="muted" style={{ fontSize: 12 }}>
                 (Karte ↗)
               </span>
             </a>
           ) : (
             <>
-              {street || "—"}
+              {street || ""}
               <br />
-              {cityLine || "—"}
+              {cityLine || ""}
             </>
           )}
         </p>
@@ -700,7 +700,7 @@ function AddressLink({
 }) {
   const text = parts.filter(Boolean).join(" ");
   const url = mapsHref(parts);
-  if (!text) return <>—</>;
+  if (!text) return <></>;
   if (!url) return <>{text}</>;
   return (
     <a href={url} target="_blank" rel="noreferrer">
@@ -769,12 +769,12 @@ function FinancialsTab({ pubs }: { pubs: Publication[] }) {
           <tbody>
             {[...pubs].reverse().map((p, i) => (
               <tr key={i}>
-                <td>{p.year ?? "—"}</td>
+                <td>{p.year ?? ""}</td>
                 <td>{fmtMoney(p.revenueVolume)}</td>
                 <td>{fmtMoney(p.salesVolume)}</td>
                 <td>{fmtMoney(p.totalAssetsVolume)}</td>
                 <td>
-                  {p.employeeCount != null ? numFmt.format(p.employeeCount) : "—"}
+                  {p.employeeCount != null ? numFmt.format(p.employeeCount) : ""}
                 </td>
               </tr>
             ))}
@@ -811,7 +811,7 @@ function PublicationCard({ pub }: { pub: Publication }) {
         }}
       >
         <h3 style={{ margin: 0 }}>
-          {pub.year ?? "—"}
+          {pub.year ?? ""}
           {pub.name && (
             <span className="muted" style={{ fontWeight: 400, marginLeft: "0.5rem" }}>
               {pub.name}
@@ -826,7 +826,7 @@ function PublicationCard({ pub }: { pub: Publication }) {
         <KpiTile label="Erlöse">{fmtMoney(pub.salesVolume)}</KpiTile>
         <KpiTile label="Bilanzsumme">{fmtMoney(pub.totalAssetsVolume)}</KpiTile>
         <KpiTile label="Mitarbeiter">
-          {pub.employeeCount != null ? numFmt.format(pub.employeeCount) : "—"}
+          {pub.employeeCount != null ? numFmt.format(pub.employeeCount) : ""}
         </KpiTile>
       </div>
 
@@ -1080,7 +1080,7 @@ function FactGroup({
         {facts.map((f, i) => (
           <li key={f.id ?? i} className="fact-row">
             <span className="fact-value">
-              {f.value ? <FactValue value={f.value} kind={kind} /> : "—"}
+              {f.value ? <FactValue value={f.value} kind={kind} /> : ""}
             </span>
             {f.normalized && f.normalized !== f.value && (
               <span className="muted fact-normalized">{f.normalized}</span>
@@ -1141,7 +1141,7 @@ function PersonCard({ facts }: { facts: Fact[] }) {
           {job && (
             <p className="muted" style={{ margin: "0.25rem 0 0" }}>
               {job.value}
-              {dept && ` — ${dept.value}`}
+              {dept && ` · ${dept.value}`}
             </p>
           )}
         </div>
@@ -1174,7 +1174,7 @@ function PersonCard({ facts }: { facts: Fact[] }) {
             <li key={f.id ?? i} className="fact-row">
               <span className="muted">{fieldLabel(f.field ?? "")}:</span>
               <span className="fact-value">
-                {f.value ? <FactValue value={f.value} kind={kindFor(f.field)} /> : "—"}
+                {f.value ? <FactValue value={f.value} kind={kindFor(f.field)} /> : ""}
               </span>
               <span className="fact-meta">
                 <StatusPill status={f.status} />
@@ -1262,15 +1262,15 @@ function InsightsTab({
         <dl className="tx-summary">
           <div>
             <dt>Branche</dt>
-            <dd>{website?.companySerp?.category ?? "—"}</dd>
+            <dd>{website?.companySerp?.category ?? ""}</dd>
           </div>
           <div>
             <dt>Firmenalter</dt>
-            <dd>{age != null ? `${age} Jahre am Markt` : "—"}</dd>
+            <dd>{age != null ? `${age} Jahre am Markt` : ""}</dd>
           </div>
           <div>
             <dt>Unternehmensgegenstand</dt>
-            <dd>{structured?.corporatePurpose ?? "—"}</dd>
+            <dd>{structured?.corporatePurpose ?? ""}</dd>
           </div>
         </dl>
       </article>
@@ -1281,14 +1281,14 @@ function InsightsTab({
           <dl className="tx-summary">
             <div>
               <dt>Letztes Berichtsjahr</dt>
-              <dd>{latest.year ?? "—"}</dd>
+              <dd>{latest.year ?? ""}</dd>
             </div>
             <div>
               <dt>Mitarbeiter</dt>
               <dd>
                 {latest.employeeCount != null
                   ? numFmt.format(latest.employeeCount)
-                  : "—"}
+                  : ""}
               </dd>
             </div>
             <div>
@@ -1335,7 +1335,7 @@ function topicLabel(t?: string | null): string {
     case "ALL":
       return "Gesamtüberblick";
     default:
-      return t ?? "—";
+      return t ?? "";
   }
 }
 

@@ -109,7 +109,7 @@ function SettingsHeader() {
         <span className="ct-gradient-text">Einstellungen</span>
       </h2>
       <p className="ct-page-header__lede">
-        Anbieter, Modelle, Integrationen und Datenpflege — alles, was die
+        Anbieter, Modelle, Integrationen und Datenpflege: alles, was die
         Pipeline und der Agent zur Laufzeit erwarten.
       </p>
       {ready && version && (
@@ -141,7 +141,7 @@ function UpdaterSection() {
       <h3>Updates</h3>
       <p className="muted small">
         AVA prüft beim Start und alle vier Stunden auf neue Versionen.
-        Du bestätigst jeden Download und jeden Neustart selbst — es gibt
+        Du bestätigst jeden Download und jeden Neustart selbst. Es gibt
         keine stillen Updates.
       </p>
       <ul className="kv">
@@ -419,7 +419,7 @@ function CrmSection() {
       <h3>CRM-Verbindungen</h3>
       <p className="muted small">
         Verknüpfe dein CRM mit AVA. Die OAuth-Tokens bleiben verschlüsselt
-        in deinem Betriebssystem-Schlüsselbund — niemals in der Cloud.
+        in deinem Betriebssystem-Schlüsselbund, niemals in der Cloud.
         Du kannst Verbindungen auch direkt im Chat herstellen, z. B.
         „Verbinde mein Salesforce-Konto“.
       </p>
@@ -665,7 +665,7 @@ function ProviderSection() {
 
       {activeEntry && (
         <p className="muted small">
-          {activeEntry.label} — Kontext{" "}
+          {activeEntry.label} · Kontext{" "}
           {formatContext(activeEntry.contextWindow)}
           {activeEntry.approxBytes
             ? ` · ${formatBytes(activeEntry.approxBytes)} auf der Festplatte`
@@ -689,7 +689,7 @@ function ProviderSection() {
       <h4>API-Schlüssel</h4>
       {!encryptionAvailable && (
         <p className="muted">
-          ⚠ OS-Schlüsselbund nicht verfügbar — Schlüssel werden unverschlüsselt
+          ⚠ OS-Schlüsselbund nicht verfügbar: Schlüssel werden unverschlüsselt
           im Benutzerdatenordner gespeichert. Cloud-Anbieter funktionieren
           weiterhin, dieser Modus eignet sich aber nur für Entwicklungs­zwecke.
         </p>
@@ -810,7 +810,7 @@ function InstalledModelsSection() {
               disabled={
                 pendingRepair === m.name || pendingDelete === m.name
               }
-              title="Löschen + erneut herunterladen. Behebt korrupte Layer aus einem unterbrochenen Download — hilfreich, wenn ein Modell die lokale Laufzeit immer wieder zum Absturz bringt."
+              title="Löschen + erneut herunterladen. Behebt korrupte Layer aus einem unterbrochenen Download. Hilfreich, wenn ein Modell die lokale Laufzeit immer wieder zum Absturz bringt."
             >
               {pendingRepair === m.name ? "Repariert…" : "reparieren"}
             </button>
@@ -919,7 +919,7 @@ function ApiKeyRow({ kind, hasKey }: ApiKeyRowProps) {
         type="password"
         placeholder={
           hasKey
-            ? "•••• gespeichert — neuen Schlüssel einfügen, um zu ersetzen"
+            ? "•••• gespeichert, neuen Schlüssel einfügen, um zu ersetzen"
             : "API-Schlüssel"
         }
         value={draft}
@@ -1072,7 +1072,7 @@ function ProfileSection() {
     <section className="provider-section alerts-prefs">
       <h3>Profil</h3>
       <p className="muted">
-        Wird in jeden Agenten-Turn als Lese-Kontext eingewoben — der
+        Wird in jeden Agenten-Turn als Lese-Kontext eingewoben. Der
         Agent passt Antworten daran an. Felder optional; was du
         ausfüllst, beeinflusst Tonfall, Filter und Priorisierung.
       </p>
@@ -1158,7 +1158,7 @@ function ProfileSection() {
           value={tone}
           onChange={(e) => setTone(e.target.value)}
         >
-          <option value="">— keine Vorgabe —</option>
+          <option value="">keine Vorgabe</option>
           <option value="neutral">Neutral</option>
           <option value="knapp">Knapp</option>
           <option value="ausführlich">Ausführlich</option>
@@ -1741,7 +1741,7 @@ function DecisionList({ tick }: { tick: AlertTickInfo }) {
   if (tick.skipped) {
     return (
       <p className="muted small heartbeat-tick__detail">
-        Tick übersprungen{tick.reason ? ` — ${tick.reason}` : ""}.
+        Tick übersprungen{tick.reason ? `: ${tick.reason}` : ""}.
       </p>
     );
   }
@@ -1749,7 +1749,7 @@ function DecisionList({ tick }: { tick: AlertTickInfo }) {
     return (
       <p className="muted small heartbeat-tick__detail">
         Keine neuen Kandidaten in diesem Sweep. Der Heartbeat fragt die
-        Quellen seit dem letzten Lauf ab — wenn nichts hereingekommen
+        Quellen seit dem letzten Lauf ab. Wenn nichts hereingekommen
         ist, gibt es nichts zu bewerten.
       </p>
     );
@@ -2187,14 +2187,14 @@ function FreshnessTickDetail({
   if (tick.skipped) {
     return (
       <p className="muted small heartbeat-tick__detail">
-        Übersprungen{tick.reason ? ` — ${tick.reason}` : ""}.
+        Übersprungen{tick.reason ? `: ${tick.reason}` : ""}.
       </p>
     );
   }
   if (tick.candidates.length === 0) {
     return (
       <p className="muted small heartbeat-tick__detail">
-        Keine veralteten Zellen — alles innerhalb der konfigurierten Cadence.
+        Keine veralteten Zellen. Alles innerhalb der konfigurierten Cadence.
       </p>
     );
   }
@@ -2345,7 +2345,7 @@ function GeneralMemorySection() {
                 className="link bad"
                 onClick={() => void onRemove(entry.id, entry.content)}
                 disabled={pendingId === entry.id}
-                title="Diesen Eintrag vergessen — der Agent ruft ihn nicht mehr ab"
+                title="Diesen Eintrag vergessen, der Agent ruft ihn nicht mehr ab"
               >
                 {pendingId === entry.id ? "Vergisst…" : "vergessen"}
               </button>

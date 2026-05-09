@@ -313,7 +313,7 @@ function deniedMessage(appName: string, isDev: boolean): string {
     base +
     `\n\nHinweis: Im Entwickler-Modus läuft AVA als generische ` +
     `Electron-Anwendung. Suche in den Systemeinstellungen daher nach ` +
-    `dem Eintrag „${appName}" — nicht nach „AVA". Sollte der ` +
+    `dem Eintrag „${appName}", nicht nach „AVA". Sollte der ` +
     `Eintrag fehlen, klicke auf „Systemeinstellungen öffnen" und ` +
     `versuche es danach erneut; macOS legt den Eintrag beim ersten ` +
     `Zugriff an.`

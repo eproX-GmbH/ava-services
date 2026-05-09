@@ -71,8 +71,8 @@ export function Transactions() {
                     )}
                   </Link>
                 </td>
-                <td>{t.startTime ? fmtDate(t.startTime) : "—"}</td>
-                <td>{t.companyCount ?? "—"}</td>
+                <td>{t.startTime ? fmtDate(t.startTime) : ""}</td>
+                <td>{t.companyCount ?? ""}</td>
                 <td>
                   <Link to={`/transactions/${t.id}/stream`}>Live →</Link>
                 </td>

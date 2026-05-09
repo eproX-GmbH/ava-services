@@ -203,7 +203,7 @@ export class AiSdkProvider extends EventEmitter implements LlmProvider {
       // either way the user has to re-save. Surface that explicitly
       // instead of letting the SDK fail with a generic 401.
       throw new Error(
-        `${labelFor(this.kind)} API key is unreadable — the OS keychain may have changed since it was saved. Open Whoami → API keys and re-enter the key.`,
+        `${labelFor(this.kind)} API key is unreadable. The OS keychain may have changed since it was saved. Open Whoami → API keys and re-enter the key.`,
       );
     }
     const baseURL =

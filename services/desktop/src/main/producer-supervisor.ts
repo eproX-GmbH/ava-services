@@ -195,7 +195,7 @@ export class ProducerSupervisor extends EventEmitter {
       // auth status changes.
       this.setState(
         "error",
-        `producer ${this.opts.config.name}: nicht angemeldet oder kein LLM-Provider konfiguriert — Producer wartet.`,
+        `producer ${this.opts.config.name}: nicht angemeldet oder kein LLM-Provider konfiguriert, Producer wartet.`,
       );
       return;
     }

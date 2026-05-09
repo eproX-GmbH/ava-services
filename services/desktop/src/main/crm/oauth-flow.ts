@@ -209,7 +209,7 @@ export async function runRefreshFlow(opts: {
 // =============================================================================
 
 const CALLBACK_HTML = `<!doctype html><meta charset="utf-8">
-<title>AVA — CRM verbunden</title>
+<title>AVA · CRM verbunden</title>
 <style>
   body{font:16px/1.5 -apple-system,system-ui,sans-serif;margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;background:#0b0d12;color:#e5e7eb}
   .card{text-align:center;padding:2.5rem 3rem;border:1px solid #1f2937;border-radius:12px;background:#111827}

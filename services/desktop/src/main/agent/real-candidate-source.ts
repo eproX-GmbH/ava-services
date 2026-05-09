@@ -296,7 +296,7 @@ function summarisePublication(companyName: string, p: PubRow): string {
 }
 
 function fmtMoney(v: VolumeShape): string {
-  if (v.value == null || !Number.isFinite(v.value)) return "—";
+  if (v.value == null || !Number.isFinite(v.value)) return "";
   const formatted = new Intl.NumberFormat("de-DE", {
     minimumFractionDigits: 0,
     maximumFractionDigits: 0,

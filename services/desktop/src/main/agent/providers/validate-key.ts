@@ -69,7 +69,7 @@ export async function validateApiKey(
     if (err instanceof Error && err.name === "AbortError") {
       return {
         ok: false,
-        reason: `Timed out after ${PROBE_TIMEOUT_MS / 1000}s — check your network.`,
+        reason: `Timed out after ${PROBE_TIMEOUT_MS / 1000}s. Check your network.`,
       };
     }
     return {
@@ -170,7 +170,7 @@ function interpretFallback(
   const msg = body?.error?.message;
   return {
     ok: false,
-    reason: `${label} returned HTTP ${res.status}${msg ? ` — ${msg}` : ""}.`,
+    reason: `${label} returned HTTP ${res.status}${msg ? `: ${msg}` : ""}.`,
   };
 }
 

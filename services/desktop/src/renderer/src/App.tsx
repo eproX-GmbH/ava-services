@@ -193,7 +193,7 @@ export function App({ children }: PropsWithChildren) {
           <strong>Konversationsspeicher deaktiviert.</strong>{" "}
           Der Agent funktioniert in dieser Sitzung, aber Verläufe werden nicht
           gespeichert. Verzeichnis <code>{memoryProbe.path}</code>
-          {memoryProbe.reason ? <> — {memoryProbe.reason}</> : null}.
+          {memoryProbe.reason ? <>: {memoryProbe.reason}</> : null}.
         </div>
       )}
       {children}

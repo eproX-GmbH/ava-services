@@ -334,7 +334,7 @@ export function TransactionDetail() {
             </div>
             <div>
               <dt>Firmen</dt>
-              <dd>{detail.data.companyCount ?? "—"}</dd>
+              <dd>{detail.data.companyCount ?? ""}</dd>
             </div>
           </dl>
         )}
@@ -382,7 +382,7 @@ export function TransactionDetail() {
                       </td>
                     ))}
                     <td className="muted">
-                      {row.lastActivityAt ? formatTime(row.lastActivityAt) : "—"}
+                      {row.lastActivityAt ? formatTime(row.lastActivityAt) : ""}
                     </td>
                   </tr>
                 ))}
@@ -418,7 +418,7 @@ export function TransactionDetail() {
                   <span className="timeline__stage">{STAGE_LABEL[s]}</span>
                   <span className="badge">{CELL_STATE_LABEL[cell.state]}</span>
                   <span className="muted timeline__time">
-                    {cell.updatedAt ? formatTime(cell.updatedAt) : "—"}
+                    {cell.updatedAt ? formatTime(cell.updatedAt) : ""}
                   </span>
                 </li>
               );
@@ -680,9 +680,9 @@ function formatTime(iso: string): string {
 // Map an upstream `service` field (as stamped by the gateway's errors fan-out)
 // onto the matrix-stage label. The gateway tags each error row with its stage
 // id (e.g. "companyProfile", "structuredContent"); fall back to the raw value
-// for forward-compat, or "—" if the upstream didn't set it.
+// for forward-compat, or "" if the upstream didn't set it.
 function stageLabelForService(service?: string): string {
-  if (!service) return "—";
+  if (!service) return "";
   const known = STAGE_LABEL[service as StageId];
   return known ?? service;
 }

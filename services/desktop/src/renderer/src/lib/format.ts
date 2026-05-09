@@ -64,7 +64,7 @@ function currencySymbol(c?: string | null): string {
  */
 export function fmtMoney(v: unknown): string {
   const n = numVal(v);
-  if (n == null) return "—";
+  if (n == null) return "";
   const cur =
     typeof v === "object" && v !== null && "currency" in v
       ? ((v as { currency?: string | null }).currency ?? null)
@@ -82,7 +82,7 @@ export function fmtMoney(v: unknown): string {
  * normalise everything to `26.000 €`.
  */
 export function fmtShareCapital(v: unknown): string {
-  if (v == null || v === "") return "—";
+  if (v == null || v === "") return "";
   // If we can extract a number, render via fmtMoney with EUR default.
   const n = numVal(v);
   if (n != null) {
@@ -113,13 +113,13 @@ export function fmtShareCapital(v: unknown): string {
 const CALENDAR_DATE_RE = /^(\d{4})-(\d{2})-(\d{2})(?:[T\s]00:00(?::00(?:\.0+)?)?Z?)?$/;
 
 export function fmtDate(v: unknown): string {
-  if (v == null || v === "") return "—";
+  if (v == null || v === "") return "";
   if (v instanceof Date) {
-    return Number.isNaN(v.getTime()) ? "—" : dateFmt.format(v);
+    return Number.isNaN(v.getTime()) ? "" : dateFmt.format(v);
   }
   if (typeof v === "number") {
     const d = new Date(v);
-    return Number.isNaN(d.getTime()) ? "—" : dateFmt.format(d);
+    return Number.isNaN(d.getTime()) ? "" : dateFmt.format(d);
   }
   if (typeof v === "string") {
     const m = CALENDAR_DATE_RE.exec(v);
@@ -128,7 +128,7 @@ export function fmtDate(v: unknown): string {
     if (!Number.isNaN(d.getTime())) return dateFmt.format(d);
     return v;
   }
-  return "—";
+  return "";
 }
 
 /** Format an ISO date range as `DD.MM.YYYY – DD.MM.YYYY`. */

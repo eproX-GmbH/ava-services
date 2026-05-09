@@ -112,7 +112,7 @@ export function Companies() {
                     {c.name ?? "(ohne Namen)"}
                   </Link>
                 </td>
-                <td>{c.location ?? <span className="muted">—</span>}</td>
+                <td>{c.location ?? <span className="muted"></span>}</td>
                 <td>
                   <code>{c.companyId.slice(0, 12)}…</code>
                 </td>

@@ -168,7 +168,7 @@ function defaultWarningFor(
     return {
       headline: "LinkedIn-Profil öffnen?",
       body:
-        "LinkedIn schränkt Konten ein, die häufig Profile aus externen Tools heraus öffnen — z. B. Such-Limits, ausgegraute Profile oder eine zeitweise Profil-Sperre. Öffne den Link nur, wenn du das Profil wirklich brauchst, und nicht in schneller Folge mehrere hintereinander.",
+        "LinkedIn schränkt Konten ein, die häufig Profile aus externen Tools heraus öffnen, etwa durch Such-Limits, ausgegraute Profile oder eine zeitweise Profil-Sperre. Öffne den Link nur, wenn du das Profil wirklich brauchst, und nicht in schneller Folge mehrere hintereinander.",
     };
   }
   return null;

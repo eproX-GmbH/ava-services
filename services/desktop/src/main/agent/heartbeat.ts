@@ -438,6 +438,6 @@ const defaultStubJudge: Judge = async (candidate) => {
     severity,
     headline: candidate.summary.slice(0, 120),
     rationale:
-      "(Demo-Eintrag — der echte LLM-Judge mit deutschem Prompt landet in 8.f2.)",
+      "(Demo-Eintrag, der echte LLM-Judge mit deutschem Prompt landet in 8.f2.)",
   };
 };

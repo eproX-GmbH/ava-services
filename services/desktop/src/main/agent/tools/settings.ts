@@ -106,7 +106,7 @@ export function buildSettingsTools(deps: SettingsToolDeps): Tool[] {
     preview: (r) => {
       const missing = HOSTED_KINDS.filter((k) => !r.hasKey[k]);
       const missingNote = missing.length > 0
-        ? ` — missing keys: ${missing.join(", ")}`
+        ? `, missing keys: ${missing.join(", ")}`
         : "";
       return `provider: ${r.kind}${r.ready ? "" : " (not ready)"}${missingNote}`;
     },
@@ -150,7 +150,7 @@ export function buildSettingsTools(deps: SettingsToolDeps): Tool[] {
     },
     preview: (r) =>
       `switched to ${r.kind}${r.model ? ` (${r.model})` : ""}${
-        r.ready ? "" : " — not ready"
+        r.ready ? "" : " (not ready)"
       }`,
   });
 
@@ -192,7 +192,7 @@ export function buildSettingsTools(deps: SettingsToolDeps): Tool[] {
     // and the key is longer; either way the preview itself never carries it.
     preview: (r) =>
       `${r.provider} key stored (${
-        r.encryptionAvailable ? "OS keychain" : "basic cipher — keychain unavailable"
+        r.encryptionAvailable ? "OS keychain" : "basic cipher, keychain unavailable"
       })`,
   });
 

@@ -391,7 +391,7 @@ export class AgentOrchestrator extends EventEmitter {
         this.kickRuntimeRecover();
         message =
           message +
-          " (The local runtime is being restarted automatically — try sending again in a few seconds.)";
+          " (The local runtime is being restarted automatically. Try sending again in a few seconds.)";
       }
       this.errorMessage = message;
       this.emitFrame({

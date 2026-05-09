@@ -90,11 +90,11 @@ export function BestMatchDetail() {
                       {r.companyId ? (
                         <code>{r.companyId.slice(0, 12)}…</code>
                       ) : (
-                        <span className="muted">—</span>
+                        <span className="muted"></span>
                       )}
                     </td>
-                    <td>{r.score?.toFixed(3) ?? "—"}</td>
-                    <td>{r.explanation ?? <span className="muted">—</span>}</td>
+                    <td>{r.score?.toFixed(3) ?? ""}</td>
+                    <td>{r.explanation ?? <span className="muted"></span>}</td>
                     <td>
                       <FeedbackPicker
                         bestMatchId={id!}
@@ -150,7 +150,7 @@ function FeedbackPicker({
         }}
         disabled={mut.isPending}
       >
-        <option value="">—</option>
+        <option value="">(keine)</option>
         {LABELS.map((l) => (
           <option key={l} value={l}>
             {LABEL_TEXT[l]}

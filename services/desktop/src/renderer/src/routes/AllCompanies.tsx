@@ -139,7 +139,7 @@ export function AllCompanies() {
           <span className="ct-gradient-text">Meine Firmen</span>
         </h2>
         <p className="ct-page-header__lede">
-          Status jeder Firma, die du jemals importiert hast — über alle
+          Status jeder Firma, die du jemals importiert hast, über alle
           Transaktionen hinweg. Eine Zelle zeigt den jüngsten Stand des
           jeweiligen Schritts.
         </p>
@@ -209,7 +209,7 @@ export function AllCompanies() {
                       <td key={p} className="matrix-cell">
                         <span
                           className={`dot ${STATE_DOT_CLASS[cell.state]}`}
-                          title={`${PRODUCER_LABEL[p]}: ${STATE_LABEL[cell.state]}${cell.updatedAt ? ` (${formatTime(cell.updatedAt)})` : ""}${cell.errorMessage ? ` — ${cell.errorMessage}` : ""}`}
+                          title={`${PRODUCER_LABEL[p]}: ${STATE_LABEL[cell.state]}${cell.updatedAt ? ` (${formatTime(cell.updatedAt)})` : ""}${cell.errorMessage ? `: ${cell.errorMessage}` : ""}`}
                           aria-label={`${PRODUCER_LABEL[p]}: ${STATE_LABEL[cell.state]}`}
                         />
                       </td>

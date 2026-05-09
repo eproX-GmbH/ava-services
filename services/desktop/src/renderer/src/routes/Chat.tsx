@@ -1200,12 +1200,12 @@ function VoiceMicButton({ onActivate }: { onActivate: () => void }) {
   const title = ready
     ? `Diktat starten (${macKey()}D zum Beenden)`
     : status.state === "downloading"
-      ? "Sprachmodell wird heruntergeladen — zu den Einstellungen"
+      ? "Sprachmodell wird heruntergeladen, zu den Einstellungen"
       : status.state === "model-missing"
-        ? "Sprachmodell installieren — zu den Einstellungen"
+        ? "Sprachmodell installieren, zu den Einstellungen"
         : status.state === "binary-missing"
-          ? "Whisper einrichten — zu den Einstellungen"
-          : "Sprachmodus einrichten — zu den Einstellungen";
+          ? "Whisper einrichten, zu den Einstellungen"
+          : "Sprachmodus einrichten, zu den Einstellungen";
   const onClick = () => {
     if (ready) onActivate();
     else navigate("/settings#voice-settings");

@@ -164,7 +164,7 @@ export function FirstRunWizard({
     }
     if (failures.length > 0) {
       setErrorMessage(
-        `${failures.length === 1 ? "1 Download fehlgeschlagen" : `${failures.length} Downloads fehlgeschlagen`} — über den „Erneut versuchen“-Button im Dock (unten rechts) erneut starten.`,
+        `${failures.length === 1 ? "1 Download fehlgeschlagen" : `${failures.length} Downloads fehlgeschlagen`}. Über den „Erneut versuchen“-Button im Dock (unten rechts) erneut starten.`,
       );
     }
     setRunning(false);
@@ -176,7 +176,7 @@ export function FirstRunWizard({
   const memoryWarning =
     memoryProbe && !memoryProbe.writable ? (
       <p className="warn">
-        Konversationsspeicher deaktiviert — konnte nicht in{" "}
+        Konversationsspeicher deaktiviert: konnte nicht in{" "}
         <code>{memoryProbe.path}</code> schreiben
         {memoryProbe.reason ? <> ({memoryProbe.reason})</> : null}. Der Agent
         funktioniert weiterhin, Verläufe überleben aber keinen Neustart.
@@ -222,7 +222,7 @@ export function FirstRunWizard({
             }}
           />
           <p className="muted small">
-            EmbeddingGemma (~600 MB) muss trotzdem heruntergeladen werden —
+            EmbeddingGemma (~600 MB) muss trotzdem heruntergeladen werden:
             jeder Anbieter nutzt einen eigenen Embedding-Raum. Wir halten
             deinen lokal, damit ein späterer LLM-Wechsel deine Indizes nicht
             entwertet.
@@ -361,7 +361,7 @@ export function FirstRunWizard({
               disabled={running}
               title="LLM-Download überspringen und einen Cloud-Anbieter (OpenAI, Anthropic, Google, Mistral) verwenden"
             >
-              Überspringen — Cloud-Anbieter verwenden
+              Überspringen, Cloud-Anbieter verwenden
             </button>
           )}
         </div>
@@ -573,7 +573,7 @@ function formatBytes(n: number): string {
 }
 
 function formatDuration(sec: number): string {
-  if (!Number.isFinite(sec) || sec < 0) return "—";
+  if (!Number.isFinite(sec) || sec < 0) return "";
   if (sec < 60) return `${Math.round(sec)}s`;
   if (sec < 3600) {
     const m = Math.floor(sec / 60);
