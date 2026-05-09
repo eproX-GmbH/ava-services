@@ -65,7 +65,7 @@ export function Companies() {
 
   return (
     <section>
-      <h2>Firmen</h2>
+      <h2>Firmensuche</h2>
       <div className="toolbar">
         <input
           type="search"

@@ -131,10 +131,10 @@ export function AllCompanies() {
   return (
     <section className="all-companies">
       <header className="all-companies__header">
-        <h2>Alle Firmen</h2>
+        <h2>Meine Firmen</h2>
         <p className="muted small">
-          Globaler Status jeder Firma, die du jemals importiert hast — über
-          alle Transaktionen hinweg. Eine Zelle = der jüngste Stand des
+          Status jeder Firma, die du jemals importiert hast — über alle
+          Transaktionen hinweg. Eine Zelle = der jüngste Stand des
           jeweiligen Schritts.
         </p>
       </header>

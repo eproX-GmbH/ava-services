@@ -36,6 +36,14 @@ v1.use("*", authMiddleware);
 v1.use("*", rateLimitMiddleware);
 v1.use("*", auditMiddleware);
 
+// v0.1.64 — Hono matches in registration order. The companies router
+// owns `/companies/{companyId}` (literal-vs-param matching is FIFO,
+// not "longest-literal-wins"), so it would catch `/companies/matrix`
+// with companyId="matrix" before the dedicated matrix router gets a
+// chance. Mounting matrix-router FIRST ensures the literal path
+// resolves correctly.
+v1.route("/", companiesMatrixRouter);
+
 // §4.1 Company reads (W6-W13).
 v1.route("/", companiesRouter);
 
@@ -76,10 +84,6 @@ v1.route("/", crmRouter);
 // via persist-bus side effect (lib/billing.ts) and the M3 Stripe
 // webhook; the desktop just reads.
 v1.route("/", usageRouter);
-
-// v0.1.61 — global per-tenant "all companies" matrix. Aggregates
-// EntityProgress per (companyId, producer) across all transactions.
-v1.route("/", companiesMatrixRouter);
 
 // v0.1.63 — F3 producer pre-check. /v1/companies/:id/state returns
 // per-stage ContentFreshness (updatedAt + llmTier). Producers query
