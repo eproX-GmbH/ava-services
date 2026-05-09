@@ -56,7 +56,15 @@ const PROBE_URL = "https://www.unternehmensregister.de/";
 // for the next tick. Frequent HEAD probes used to be the only signal,
 // so 60s made sense. Now they're a fallback / recovery detector.
 const PROBE_INTERVAL_MS = 15 * 60_000;
-const PROBE_TIMEOUT_MS = 10_000;
+// v0.1.82 — unternehmensregister.de is genuinely slow, often spending
+// 60+s rendering its homepage. The previous 10s timeout flagged the
+// upstream "unreachable" on every probe even when it was just being
+// itself. Bumped well past the user-reported threshold so a single
+// slow homepage doesn't pause the producers + show the banner. The
+// fast-path failure hook still catches actual ECONNRESET-class
+// errors from the producers' own Selenium runs, so we don't lose
+// real-failure detection by being more patient on the HEAD probe.
+const PROBE_TIMEOUT_MS = 90_000;
 
 /** Connection-level error patterns producers surface when the upstream
  *  is degraded mid-Selenium. Used by the log-buffer hook in main/index.ts
