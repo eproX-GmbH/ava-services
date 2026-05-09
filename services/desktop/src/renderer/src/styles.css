@@ -806,12 +806,9 @@ code, pre { font-family: var(--font-mono); font-size: 12px; }
   color: var(--fg);
 }
 
-/* Chat */
-/* v0.1.78 — fill the route's scroll container instead of subtracting
- * topbar height from the viewport. Now that .app-shell__main owns
- * scrolling, the chat just needs `height: 100%` and its own
- * .chat-scroll handles the overflow. */
-.chat { display: flex; flex-direction: column; height: 100%; min-height: 0; }
+/* Chat — see `.chat-route` below for the actual layout container.
+ * The legacy `.chat` class isn't used by the current markup; v0.1.81
+ * dropped the dead rule. */
 .chat-scroll {
   flex: 1;
   overflow-y: auto;
@@ -1373,7 +1370,16 @@ code, pre { font-family: var(--font-mono); font-size: 12px; }
 .chat-route {
   position: relative;
   display: flex; flex-direction: column;
-  height: calc(100vh - 80px);
+  /* v0.1.81 — fill the parent scroll container instead of guessing
+   * at viewport math. The previous `100vh - 80px` was tuned for the
+   * old topbar height + zero main padding; with the current 64px
+   * topbar plus 1.5rem/3rem main padding the chat-route ended up
+   * 56px taller than its container, forcing .app-shell__main itself
+   * to scroll. `height: 100%` + `min-height: 0` lets the chat fill
+   * exactly the available space and only .chat-scroll inside owns
+   * the message-log overflow. */
+  height: 100%;
+  min-height: 0;
   width: 100%;
   max-width: 760px;
   margin: 0 auto;
