@@ -12,6 +12,7 @@ import { Auth, type AuthStatus } from "./auth";
 import { OllamaSupervisor } from "./ollama-supervisor";
 import { PostgresSupervisor } from "./postgres-supervisor";
 import { ProducerSupervisor } from "./producer-supervisor";
+import { resumeStuckStages } from "./producer-resume";
 import {
   producerLogBuffer,
   type ProducerLogEvent,
@@ -135,6 +136,22 @@ const crmManager = new CrmManager({
   gatewayUrl: GATEWAY_URL,
 });
 
+// One-shot guard for the producer-resume sweep. Fires from whichever of
+// the two boot paths reaches "auth signed-in + producers spawning" first;
+// the loser of the race short-circuits.
+let resumeSweepDispatched = false;
+function maybeRunResumeSweep(): void {
+  if (resumeSweepDispatched) return;
+  if (!auth.getStatus().signedIn) return;
+  resumeSweepDispatched = true;
+  void resumeStuckStages({ gateway: gatewayClient }).catch((err) => {
+    console.warn(
+      "[producer-resume] sweep rejected:",
+      err instanceof Error ? err.message : err,
+    );
+  });
+}
+
 function broadcastAuthStatus(status: AuthStatus): void {
   for (const win of BrowserWindow.getAllWindows()) {
     win.webContents.send("auth-status:changed", status);
@@ -168,8 +185,17 @@ function broadcastAuthStatus(status: AuthStatus): void {
         );
       });
     }
+    // Resume stuck stages once per process (see producer-resume.ts).
+    // Fires either from the postgres.start() chain (silent-restore
+    // case where auth was signed-in before producers spawned) or
+    // from this branch (fresh sign-in via the auth UI). The guard
+    // ensures only one of those paths actually dispatches.
+    maybeRunResumeSweep();
   } else {
     cachedCredentials = null;
+    // Allow a future sign-in within the same process to re-run the
+    // sweep — stages might have gotten stuck while signed out.
+    resumeSweepDispatched = false;
     for (const p of producers) {
       void p.stop();
     }
@@ -1366,6 +1392,16 @@ app.whenReady().then(async () => {
               );
             });
           }
+        }
+        // Resume sweep for stages stuck in pending / in_progress from
+        // a prior crash, update, or mid-pipeline app close. Fires
+        // here for the silent-restore case (auth already signed-in
+        // when producers spawn). The auth-status branch fires it
+        // for the fresh-sign-in case. The one-shot guard inside
+        // maybeRunResumeSweep keeps it to a single dispatch per
+        // process. See producer-resume.ts for full rationale.
+        if (process.env.AVA_DISABLE_PRODUCERS !== "1") {
+          maybeRunResumeSweep();
         }
       })
       .catch((err) => {
