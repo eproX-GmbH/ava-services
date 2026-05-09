@@ -151,6 +151,14 @@ export interface PersistEvent<TResult = unknown> {
    * 1..4 = C..S — see /MODEL_TIERS.md.
    */
   llmTier?: ModelTier | null;
+  /**
+   * v0.1.65 — exact model id that produced this write
+   * (e.g. "gpt-4o", "qwen2.5:7b", "claude-sonnet-4-6"). Companion to
+   * `llmTier`: tier is the reliability bucket, model is the audit
+   * trail surfaced to users + the agent. Optional for the same
+   * reason as `llmTier` (legacy producers don't set it).
+   */
+  llmModel?: string | null;
 }
 
 type ApplyFn = (
@@ -224,19 +232,23 @@ async function readFreshness(
   };
 }
 
-/** Upsert the ContentFreshness row after a successful write. */
+/** Upsert the ContentFreshness row after a successful write.
+ *  v0.1.65: also stamps `llmModel` so CompanyDetail + the agent
+ *  context can surface "produced by gpt-4o on …". */
 async function recordFreshness(
   companyId: string,
   stage: ProducerName,
   llmTier: ModelTier | null,
+  llmModel: string | null,
 ): Promise<void> {
   await getGatewayPool().query(
-    `INSERT INTO "ContentFreshness" ("companyId", stage, "llmTier", "updatedAt")
-       VALUES ($1, $2, $3, NOW())
+    `INSERT INTO "ContentFreshness" ("companyId", stage, "llmTier", "llmModel", "updatedAt")
+       VALUES ($1, $2, $3, $4, NOW())
      ON CONFLICT ("companyId", stage) DO UPDATE SET
        "llmTier" = EXCLUDED."llmTier",
+       "llmModel" = EXCLUDED."llmModel",
        "updatedAt" = NOW()`,
-    [companyId, stage, llmTier],
+    [companyId, stage, llmTier, llmModel],
   );
 }
 
@@ -256,6 +268,7 @@ function withTierGate(stage: ProducerName, inner: ApplyFn): ApplyFn {
     const data = event.data as PersistEvent<{ companyId: string }> | undefined;
     const companyId = data?.result?.companyId;
     const incomingTier = (data?.llmTier ?? null) as ModelTier | null;
+    const incomingModel = (data?.llmModel ?? null) as string | null;
     const transactionId = (event as { transaction?: string }).transaction ?? "";
 
     if (!companyId) {
@@ -279,6 +292,12 @@ function withTierGate(stage: ProducerName, inner: ApplyFn): ApplyFn {
       // Surface the skip on the matrix the same way the in-process
       // skips do (e.g. structured-content services-gate). The user
       // sees "übersprungen" rather than a confusing red/green flicker.
+      //
+      // v0.1.65 — note: ContentFreshness is intentionally NOT touched
+      // on skip. The existing row (with its original llmTier + llmModel)
+      // stays as-is — that's the canonical provenance. F3 cascades from
+      // cached data inherit this naturally: a downstream producer's
+      // pre-check skip leaves the original model in place.
       await recordEntityProgress(
         stage,
         transactionId,
@@ -296,10 +315,14 @@ function withTierGate(stage: ProducerName, inner: ApplyFn): ApplyFn {
     // happened.
     await inner(pool, event, log);
     try {
+      // Non-LLM stages (structured-content, company-publication) clear
+      // both tier and model so the row is unambiguously "scrape-only".
+      const isLlm = STAGE_IS_LLM[stage];
       await recordFreshness(
         companyId,
         stage,
-        STAGE_IS_LLM[stage] ? incomingTier : null,
+        isLlm ? incomingTier : null,
+        isLlm ? incomingModel : null,
       );
     } catch (err) {
       // Best-effort: a freshness-write failure should never roll back

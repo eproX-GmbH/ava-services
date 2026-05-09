@@ -147,6 +147,13 @@ model ProxyCache {
 ///   null  — non-LLM stage OR pre-tier producer (legacy).
 ///           Treated as "downgrade-equivalent" by the comparison
 ///           helper; any tier-tagged producer can upgrade past it.
+///
+/// `llmModel` (v0.1.65) — exact model id that produced the write,
+/// e.g. "gpt-4o", "qwen2.5:7b", "claude-sonnet-4-6". The tier is the
+/// reliability bucket; the model id is the audit trail. Surfaced on
+/// CompanyDetail tooltips and to the agent's company-context tool so
+/// it can self-warn on low-tier sources. `null` for non-LLM stages
+/// and for legacy rows written before this column landed.
 model ContentFreshness {
   companyId String
   /// Producer name (= PRODUCER_NAMES). One stage per producer:
@@ -154,6 +161,7 @@ model ContentFreshness {
   /// "company-profile" | "company-contact" | "company-evaluation".
   stage     String
   llmTier   Int?
+  llmModel  String?
   updatedAt DateTime  @default(now())
 
   @@id([companyId, stage])

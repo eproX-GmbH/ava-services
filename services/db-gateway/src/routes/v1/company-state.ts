@@ -26,6 +26,10 @@ const StageStateShape = z
     /** 1..4 (C..S) — see /MODEL_TIERS.md. null for non-LLM stages
      *  OR untiered legacy writes. */
     llmTier: z.number().int().min(1).max(4).nullable(),
+    /** v0.1.65 — exact model id (e.g. "gpt-4o", "qwen2.5:7b").
+     *  null for non-LLM stages OR rows written before the column
+     *  landed. Surfaced on CompanyDetail tooltips + agent context. */
+    llmModel: z.string().nullable(),
   })
   .openapi("StageState");
 
@@ -77,9 +81,10 @@ companyStateRouter.openapi(stateRoute, async (c) => {
   const res = await getGatewayPool().query<{
     stage: string;
     llmTier: number | null;
+    llmModel: string | null;
     updatedAt: Date;
   }>(
-    `SELECT stage, "llmTier", "updatedAt"
+    `SELECT stage, "llmTier", "llmModel", "updatedAt"
        FROM "ContentFreshness"
       WHERE "companyId" = $1`,
     [companyId],
@@ -89,15 +94,16 @@ companyStateRouter.openapi(stateRoute, async (c) => {
   // index without optional-chaining. Missing rows surface as nulls.
   const stages: Record<
     string,
-    { updatedAt: string | null; llmTier: number | null }
+    { updatedAt: string | null; llmTier: number | null; llmModel: string | null }
   > = {};
   for (const stage of KNOWN_STAGES) {
-    stages[stage] = { updatedAt: null, llmTier: null };
+    stages[stage] = { updatedAt: null, llmTier: null, llmModel: null };
   }
   for (const row of res.rows) {
     stages[row.stage] = {
       updatedAt: row.updatedAt.toISOString(),
       llmTier: row.llmTier,
+      llmModel: row.llmModel,
     };
   }
 

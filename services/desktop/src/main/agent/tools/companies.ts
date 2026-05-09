@@ -204,6 +204,52 @@ export function buildCompanyTools(ctx: Ctx): Tool[] {
     preview: () => "structured content fetched",
   });
 
+  // v0.1.65 — per-stage LLM provenance for the agent's reliability
+  // hints. Returns one row per stage with `llmTier` (1..4 = C..S; null
+  // for non-LLM scrape stages) and `llmModel` (e.g. "gpt-4o",
+  // "qwen2.5:7b"; null on non-LLM or pre-tracking writes). The agent
+  // is expected to soft-warn when answering with data sourced from
+  // tier-B/C cells — see system-prompt update.
+  const dataQuality = defineTool({
+    name: "company_data_quality",
+    description:
+      "Get per-stage LLM provenance for a company: which model produced each cell, what tier (S/A/B/C reliability), and when. Use this to qualify your answer when the user asks about company facts — soft-warn on tier-B/C sources, especially Tier C (small local models can hallucinate).",
+    parameters: {
+      type: "object",
+      properties: { companyId: { type: "string" } },
+      required: ["companyId"],
+    },
+    schema: yup.object({ companyId: yup.string().trim().min(1).required() }),
+    run: async (args, c) =>
+      gateway.request<{
+        companyId: string;
+        stages: Record<
+          string,
+          {
+            updatedAt: string | null;
+            llmTier: number | null;
+            llmModel: string | null;
+          }
+        >;
+      }>(
+        `/v1/companies/${encodeURIComponent(args.companyId)}/state`,
+        { signal: c.signal },
+      ),
+    preview: (r) => {
+      const llmStages = Object.values(r.stages).filter(
+        (s) => s.llmTier != null,
+      );
+      if (llmStages.length === 0) return "no LLM data yet";
+      const worst = Math.min(
+        ...llmStages.map((s) => s.llmTier as number),
+      );
+      const letter = ({ 4: "S", 3: "A", 2: "B", 1: "C" } as const)[
+        worst as 1 | 2 | 3 | 4
+      ];
+      return `worst tier across ${llmStages.length} stages: ${letter}`;
+    },
+  });
+
   return [
     search,
     get,
@@ -213,5 +259,6 @@ export function buildCompanyTools(ctx: Ctx): Tool[] {
     publications,
     contacts,
     structuredContent,
+    dataQuality,
   ];
 }

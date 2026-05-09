@@ -178,31 +178,58 @@ export {
 import { CATALOG, type ModelTier } from "./catalog";
 
 /**
- * Resolve the tier of the currently-configured LLM. Reads the same
- * env vars `getLLM()` reads, then looks the (provider, model) tuple
- * up in the catalog.
+ * Default model id per provider — kept in sync with `getLLM()` above.
+ * Surfaced as a constant (rather than duplicated string literals)
+ * so `getCurrentModel()` can mirror the same fallback ladder when
+ * `LLM_MODEL` is unset, instead of returning `null` and losing the
+ * provenance trail for the very common "user runs with defaults" case.
+ *
+ * Keep entries in sync with the `model ?? "..."` fallbacks in `getLLM()`.
+ */
+const DEFAULT_LLM_MODEL: Record<string, string> = {
+  openai: "gpt-4o-mini",
+  anthropic: "claude-sonnet-4-6",
+  google: "gemini-2.5-pro",
+  mistral: "mistral-large-latest",
+  ollama: "qwen2.5:3b",
+};
+
+/**
+ * Resolve the (provider, model) tuple of the currently-active LLM.
+ * Mirrors `getLLM()`'s env reads + default ladder so producers can
+ * stamp persist events with the EXACT model that ran, even when the
+ * operator left `LLM_MODEL` unset and got a default.
+ *
+ * Returns `null` only when `LLM_PROVIDER` is unset (no LLM at all).
+ * In that case the producer is a non-LLM stage (Selenium-only) and
+ * shouldn't be calling this in the first place.
+ */
+export function getCurrentModel(): { provider: string; model: string } | null {
+  const provider = process.env.LLM_PROVIDER;
+  if (!provider) return null;
+  const model = process.env.LLM_MODEL ?? DEFAULT_LLM_MODEL[provider];
+  if (!model) return null;
+  return { provider, model };
+}
+
+/**
+ * Resolve the tier of the currently-active LLM. Now delegates to
+ * `getCurrentModel()` so the default-model case works (was previously
+ * returning `null` whenever `LLM_MODEL` was unset, even if the
+ * fallback default was catalogued).
  *
  * Returns `null` when:
- *   - LLM_PROVIDER is unset (no LLM configured at all)
- *   - LLM_MODEL is set but the model isn't in the catalog
+ *   - `LLM_PROVIDER` is unset
+ *   - the resolved model isn't in the catalog
  *
- * Producers should treat null as "downgrade-only" — don't overwrite
- * any existing data; equivalent to tier 0. The persist-bus enforces
- * this on the write side.
+ * Producers treat null as "downgrade-only" — don't overwrite existing
+ * data; equivalent to tier 0. The persist-bus enforces this on the
+ * write side.
  */
 export function getCurrentTier(): ModelTier | null {
-  const provider = process.env.LLM_PROVIDER;
-  const model = process.env.LLM_MODEL;
-  if (!provider || !model) return null;
-
-  // Catalog defaults: when LLM_MODEL isn't set we'd fall back to the
-  // provider's recommended; but for tier purposes we require an
-  // explicit model so the provenance trail is unambiguous. If the
-  // user runs with a default, getLLM() resolves it but we don't try
-  // to second-guess here — the persist event includes whichever
-  // model the LLM call actually used (caller can pass it in
-  // explicitly via tierForModel below).
-  return tierForModel(provider, model);
+  const active = getCurrentModel();
+  if (!active) return null;
+  return tierForModel(active.provider, active.model);
 }
 
 /** Tier lookup for an explicit (provider, model) tuple. Useful when

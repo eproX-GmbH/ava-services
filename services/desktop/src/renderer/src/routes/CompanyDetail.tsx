@@ -197,6 +197,49 @@ interface CompanyContact {
   companyFacts?: Fact[];
 }
 
+// v0.1.65 — per-stage LLM provenance.
+//
+// `llmTier` (1..4 → C/B/A/S, see /MODEL_TIERS.md) is the reliability
+// bucket the persist-bus uses for write/skip decisions. `llmModel` is
+// the exact model id ("gpt-4o", "qwen2.5:7b", …) — the audit trail.
+// Both null on non-LLM stages (structured-content, company-publication)
+// and on rows written before the column landed.
+interface StageState {
+  updatedAt: string | null;
+  llmTier: number | null;
+  llmModel: string | null;
+}
+interface CompanyStateResponse {
+  companyId: string;
+  stages: Record<string, StageState>;
+}
+
+const TIER_LETTER: Record<number, string> = { 4: "S", 3: "A", 2: "B", 1: "C" };
+const TIER_LABEL: Record<number, string> = {
+  4: "Tier S — Frontier",
+  3: "Tier A — Strong cloud",
+  2: "Tier B — Solid cloud / large local",
+  1: "Tier C — Lokal / klein",
+};
+const TIER_DESCRIPTION =
+  "AVA klassifiziert jedes LLM in einen Tier S/A/B/C — siehe MODEL_TIERS.md. " +
+  "Höhere Tiers liefern verlässlichere Daten; tiefe Tiers können halluzinieren.";
+const STAGE_LABEL: Record<string, string> = {
+  "structured-content": "Stamm-Daten",
+  "company-publication": "Publikationen",
+  website: "Website",
+  "company-profile": "Profil",
+  "company-contact": "Kontakt",
+  "company-evaluation": "Bewertung",
+};
+/** Map tier 1..4 onto the `.dot.<class>` palette. */
+const TIER_DOT: Record<number, string> = {
+  4: "ok",
+  3: "ok",
+  2: "warn",
+  1: "bad",
+};
+
 // ---- Page ------------------------------------------------------------------
 
 export function CompanyDetail() {
@@ -233,6 +276,15 @@ export function CompanyDetail() {
     "publications",
     id!,
     `/v1/companies/${id}/publications`,
+    !!id,
+  );
+  // v0.1.65 — per-stage LLM provenance for the "Datenqualität" banner
+  // and per-cell tooltips. One row per stage in ContentFreshness;
+  // tier (1..4 / null) + exact model id (gpt-4o, qwen2.5:7b, …) + freshness.
+  const stageState = useTabQuery<CompanyStateResponse>(
+    "state",
+    id!,
+    `/v1/companies/${id}/state`,
     !!id,
   );
 
@@ -296,6 +348,11 @@ export function CompanyDetail() {
         </div>
       </header>
 
+      {/* ---- Datenqualität (v0.1.65) ------------------------------------- */}
+      {stageState.data && (
+        <DataQualityBanner stages={stageState.data.stages} />
+      )}
+
       {/* ---- Deep-research strip ------------------------------------------ */}
       {website.data?.deepResearches && website.data.deepResearches.length > 0 && (
         <DeepResearchStrip items={website.data.deepResearches} />
@@ -342,6 +399,108 @@ function KpiTile({ label, children }: { label: string; children: React.ReactNode
       <div className="kpi-label">{label}</div>
       <div className="kpi-value">{children}</div>
     </div>
+  );
+}
+
+// ---- Datenqualität banner (v0.1.65) ---------------------------------------
+//
+// Surfaces per-stage LLM provenance: the tier (S/A/B/C) and exact
+// model id that produced each cell. Top line shows the *worst* tier
+// across all stages — that's the trustworthy signal for the page as a
+// whole ("this company's data is only as good as its weakest source").
+// Per-stage rows below give the model + freshness on hover.
+//
+// Rationale (recommended in the LLM-tracking design pass): a single
+// banner + hover tooltips beats inline pills next to every cell — keeps
+// the existing dense layout readable while making provenance one click
+// away. Hidden entirely when no LLM stage has run yet (all-null state).
+
+function DataQualityBanner({ stages }: { stages: Record<string, StageState> }) {
+  const llmStages = Object.entries(stages).filter(
+    ([, s]) => s.llmTier != null,
+  );
+  if (llmStages.length === 0) return null;
+
+  // Worst tier = lowest number. tier=null is filtered above.
+  const worstTier = Math.min(
+    ...llmStages.map(([, s]) => s.llmTier as number),
+  );
+  const worstStages = llmStages
+    .filter(([, s]) => s.llmTier === worstTier)
+    .map(([k]) => STAGE_LABEL[k] ?? k);
+
+  return (
+    <div
+      className="ct-card data-quality"
+      style={{
+        marginTop: "1rem",
+        padding: "0.75rem 1rem",
+        display: "flex",
+        flexDirection: "column",
+        gap: "0.5rem",
+      }}
+      title={TIER_DESCRIPTION}
+    >
+      <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+        <span
+          className={`dot ${TIER_DOT[worstTier]}`}
+          aria-hidden="true"
+          style={{ flex: "0 0 auto" }}
+        />
+        <strong>Datenqualität: {TIER_LABEL[worstTier]}</strong>
+        <span className="muted small">
+          · schwächste Quelle: {worstStages.join(", ")}
+        </span>
+      </div>
+      <ul
+        className="data-quality__stages"
+        style={{
+          listStyle: "none",
+          padding: 0,
+          margin: 0,
+          display: "flex",
+          flexWrap: "wrap",
+          gap: "0.5rem 1.25rem",
+        }}
+      >
+        {Object.entries(stages).map(([key, s]) => (
+          <DataQualityRow key={key} stageKey={key} stage={s} />
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function DataQualityRow({
+  stageKey,
+  stage,
+}: {
+  stageKey: string;
+  stage: StageState;
+}) {
+  const label = STAGE_LABEL[stageKey] ?? stageKey;
+  const tierLetter = stage.llmTier ? TIER_LETTER[stage.llmTier] : null;
+  const dotClass = stage.llmTier ? TIER_DOT[stage.llmTier] : "muted";
+  const updated = stage.updatedAt ? fmtDate(stage.updatedAt) : null;
+  const tooltip = [
+    label,
+    stage.llmModel ? `Modell: ${stage.llmModel}` : "kein Modell",
+    tierLetter ? `Tier ${tierLetter}` : "tier-frei",
+    updated ? `aktualisiert: ${updated}` : "noch nicht erzeugt",
+  ].join(" · ");
+
+  return (
+    <li
+      style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}
+      title={tooltip}
+    >
+      <span className={`dot ${dotClass}`} aria-hidden="true" />
+      <span>{label}</span>
+      <span className="muted small">
+        {stage.llmModel ?? (stage.llmTier === null && stage.updatedAt ? "scrape" : "—")}
+        {tierLetter ? ` · Tier ${tierLetter}` : ""}
+      </span>
+    </li>
   );
 }
 
