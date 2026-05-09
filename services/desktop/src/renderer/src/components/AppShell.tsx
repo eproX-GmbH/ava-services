@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { AlertCircle, Loader2, RefreshCw } from "lucide-react";
 import { AlertBell } from "./AlertBell";
 import { WatchChip } from "./WatchChip";
+import logoUrl from "../assets/logo-aqua.svg";
 import type { ExternalServiceStatus } from "../../../shared/types";
 
 // Top-level chrome for the routed app (Phase 8.l2).
@@ -139,11 +140,11 @@ function formatRelativeMinutes(ts: number): string {
 function TopBar() {
   return (
     <header className="topbar">
-      {/* Gradient text wordmark — replaces the legacy <img> SVG so the
-       * brand mark inherits the design system's primary gradient and
-       * scales perfectly with the surrounding text. */}
+      {/* v0.1.69 — restored the brand SVG. The gradient text wordmark
+       * dropped during the Corporate Trust refresh hid the actual logo.
+       * Height is pinned in CSS; the viewBox sets the aspect ratio. */}
       <div className="topbar__brand" aria-label="AVA">
-        <span className="topbar__brand-mark ct-gradient-text">AVA</span>
+        <img src={logoUrl} alt="" draggable={false} />
       </div>
       <nav className="topbar__nav" aria-label="Hauptnavigation">
         <NavItem to="/chat" label="Chat" />
