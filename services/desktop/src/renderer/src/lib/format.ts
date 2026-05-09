@@ -99,7 +99,19 @@ export function fmtShareCapital(v: unknown): string {
  * Format a date-ish value (ISO string, Date, epoch ms) as `DD.MM.YYYY`.
  * Returns `"—"` for nullish input and the original string when it
  * doesn't parse.
+ *
+ * v0.1.66 — calendar dates from upstream (births, fiscal years,
+ * register entries) come as `YYYY-MM-DD` or `YYYY-MM-DDT00:00:00Z`.
+ * Naive `new Date(iso)` parses as UTC, then `Intl.DateTimeFormat` in
+ * Berlin (UTC+1) shifts to the previous day at midnight (e.g. a
+ * birthday of 1998-12-08 renders as 07.12.1998). Cure: when the
+ * string looks like a calendar date, slice the YYYY-MM-DD prefix and
+ * format from those parts directly — no timezone conversion. Real
+ * timestamps (with explicit offsets / non-zero clocks) keep the
+ * locale-aware path.
  */
+const CALENDAR_DATE_RE = /^(\d{4})-(\d{2})-(\d{2})(?:[T\s]00:00(?::00(?:\.0+)?)?Z?)?$/;
+
 export function fmtDate(v: unknown): string {
   if (v == null || v === "") return "—";
   if (v instanceof Date) {
@@ -110,6 +122,8 @@ export function fmtDate(v: unknown): string {
     return Number.isNaN(d.getTime()) ? "—" : dateFmt.format(d);
   }
   if (typeof v === "string") {
+    const m = CALENDAR_DATE_RE.exec(v);
+    if (m) return `${m[3]}.${m[2]}.${m[1]}`;
     const d = new Date(v);
     if (!Number.isNaN(d.getTime())) return dateFmt.format(d);
     return v;
