@@ -236,17 +236,29 @@ async function main() {
       for (const [k, v] of Object.entries(pkg.dependencies)) {
         if (typeof v === "string" && v.startsWith("file:")) {
           const rel = v.slice("file:".length);
-          // v0.1.74 — prefer the staging-local copy (we mirrored
-          // `vendor/` above). Falls back to the absolute source path
-          // for file: deps that point OUTSIDE the producer dir
-          // (e.g. company-evaluation's `file:../packages/ai-provider`
-          // which can't be mirrored from the standalone clone).
+          // v0.1.76 — keep the original RELATIVE path when the staged
+          // copy exists. Rewriting to absolute caused npm 10 to flag a
+          // package.json-vs-lockfile mismatch (lockfile entries for
+          // file: deps store the relative path) and fall back to
+          // re-resolving from the registry — which silently grabbed an
+          // OLDER published @ava/ai-provider missing the v0.1.65
+          // helpers. Result: company-contact's tsc failed on
+          // getCurrentTier / getCurrentModel.
+          //
+          // For file: deps OUTSIDE the producer dir (only
+          // company-evaluation's `file:../packages/ai-provider`) the
+          // staged copy can't exist, so we still rewrite to the
+          // absolute source path as a fallback.
           const stageCandidate = join(stageDir, rel);
-          const targetAbs = existsSync(stageCandidate)
-            ? stageCandidate
-            : resolve(srcDir, rel);
-          pkg.dependencies[k] = `file:${targetAbs}`;
-          const fileDepPkgPath = join(targetAbs, "package.json");
+          let fileDepPkgPath;
+          if (existsSync(stageCandidate)) {
+            // Path stays exactly as the lockfile remembers it.
+            fileDepPkgPath = join(stageCandidate, "package.json");
+          } else {
+            const abs = resolve(srcDir, rel);
+            pkg.dependencies[k] = `file:${abs}`;
+            fileDepPkgPath = join(abs, "package.json");
+          }
           if (existsSync(fileDepPkgPath)) {
             const fileDepPkg = JSON.parse(
               readFileSync(fileDepPkgPath, "utf8"),
