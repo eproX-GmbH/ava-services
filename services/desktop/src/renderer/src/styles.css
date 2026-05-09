@@ -27,13 +27,20 @@
  * never set the class today. */
 @custom-variant dark (&:where(.dark, .dark *));
 
+@theme {
   /* v0.1.68 — primary swapped from indigo/violet to the AVA brand
    * aqua + a cyan partner for the gradient. The token *names*
    * (`--color-indigo-*`, `--color-violet-*`) are deliberately kept
    * so the entire downstream CSS keeps working without sweeping
    * renames; only the hex values move. The headline is AVA's mark
    * (#00c0a7); the gradient still has motion thanks to the cyan
-   * pairing, but everything reads as the brand family again. */
+   * pairing, but everything reads as the brand family again.
+   *
+   * v0.1.75 — restored the `@theme {` opening that the v0.1.68 edit
+   * accidentally dropped. Every release v0.1.69 → v0.1.74 silently
+   * failed at Tailwind's parse step in CI because of this; the
+   * `pnpm build:typecheck` script doesn't compile CSS, so the bug
+   * survived seven version bumps undetected. */
 
   /* ---- "indigo" alias = AVA aqua (primary hue, brand mark). */
   --color-indigo-50:  #e6faf6;
