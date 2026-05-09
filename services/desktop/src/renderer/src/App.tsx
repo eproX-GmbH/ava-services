@@ -1,5 +1,7 @@
 import { useEffect, useState, type PropsWithChildren } from "react";
 import { useNavigate } from "react-router-dom";
+import { useQueryClient } from "@tanstack/react-query";
+import { USAGE_QUERY_KEY } from "./api/usage";
 import { useConfigStore } from "./store/config";
 import { useAuthStore } from "./store/auth";
 import { useOllamaStore } from "./store/ollama";
@@ -49,6 +51,7 @@ export function App({ children }: PropsWithChildren) {
   const [memoryProbe, setMemoryProbe] = useState<MemoryProbe | null>(null);
 
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
 
   const setOllamaStatus = useOllamaStore((s) => s.setStatus);
   const setPullProgress = useOllamaStore((s) => s.setPullProgress);
@@ -114,6 +117,13 @@ export function App({ children }: PropsWithChildren) {
     const offFocus = window.api.alerts.onFocusAlerts(() => {
       navigate("/alerts");
     });
+    // M3 monetization — Stripe success redirect lands here via the
+    // `ava://billing/success` protocol → main → IPC. Invalidate the
+    // shared `["usage"]` query so Settings + topbar pill reflect the
+    // new tier immediately, without polling.
+    const offBilling = window.api.billing.onSuccess(() => {
+      void queryClient.invalidateQueries({ queryKey: USAGE_QUERY_KEY });
+    });
     return () => {
       offAuth();
       offOllama();
@@ -126,8 +136,9 @@ export function App({ children }: PropsWithChildren) {
       offProfile();
       offWatches();
       offFocus();
+      offBilling();
     };
-  }, [setConfig, setAuth, setOllamaStatus, setPullProgress, setPostgresStatus, navigate]);
+  }, [setConfig, setAuth, setOllamaStatus, setPullProgress, setPostgresStatus, navigate, queryClient]);
 
   if (!configReady || !authReady || !ollamaReady) {
     return <div className="loading">Lädt…</div>;

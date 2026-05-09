@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { AlertCircle, Loader2, RefreshCw, Lightbulb } from "lucide-react";
 import { AlertBell } from "./AlertBell";
 import { WatchChip } from "./WatchChip";
+import { UsageChip } from "./UsageChip";
 import logoUrl from "../assets/logo-aqua.svg";
 import type { ExternalServiceStatus } from "../../../shared/types";
 import {
@@ -166,6 +167,7 @@ function TopBar() {
       </nav>
       <div className="topbar__spacer" />
       <ThemeToggle />
+      <UsageChip />
       <WatchChip />
       <AlertBell />
       <UserBadge />

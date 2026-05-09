@@ -57,6 +57,7 @@ export async function gatewayFetch<T>(path: string, opts: GatewayOptions = {}): 
   const text = await res.text();
   const parsed = text ? safeParse(text) : undefined;
   if (!res.ok) {
+    maybeDispatchQuotaExceeded(res.status, parsed);
     throw new GatewayError(
       typeof parsed === "object" && parsed && "message" in parsed
         ? String((parsed as { message: unknown }).message)
@@ -115,6 +116,7 @@ export async function gatewayUpload<T>(
   const text = await res.text();
   const parsed = text ? safeParse(text) : undefined;
   if (!res.ok) {
+    maybeDispatchQuotaExceeded(res.status, parsed);
     throw new GatewayError(
       typeof parsed === "object" && parsed && "message" in parsed
         ? String((parsed as { message: unknown }).message)
@@ -124,6 +126,38 @@ export async function gatewayUpload<T>(
     );
   }
   return parsed as T;
+}
+
+// M2 — when the gateway refuses an import with the structured 402
+// `quota_exceeded` payload, fire a window event so any open modal /
+// CTA can react. The Ingest route listens for it; future surfaces
+// (CRM agent tools, etc.) can subscribe by name.
+export interface QuotaExceededDetail {
+  tier: string;
+  used: number;
+  limit: number;
+  neededCount: number;
+  upgradeUrl: string;
+}
+
+function maybeDispatchQuotaExceeded(status: number, parsed: unknown): void {
+  if (status !== 402) return;
+  if (
+    typeof parsed !== "object" ||
+    parsed === null ||
+    (parsed as { error?: unknown }).error !== "quota_exceeded"
+  ) {
+    return;
+  }
+  try {
+    window.dispatchEvent(
+      new CustomEvent<QuotaExceededDetail>("ava:quota-exceeded", {
+        detail: parsed as QuotaExceededDetail,
+      }),
+    );
+  } catch {
+    // Headless test envs without `window.dispatchEvent` — ignore.
+  }
 }
 
 function safeParse(s: string): unknown {

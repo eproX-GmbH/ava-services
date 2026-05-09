@@ -1,6 +1,9 @@
-import { useState, type FormEvent, type KeyboardEvent } from "react";
-import { useNavigate } from "react-router-dom";
-import { gatewayUpload, GatewayError } from "../api/gateway";
+import { useEffect, useState, type FormEvent, type KeyboardEvent } from "react";
+import { Link, useNavigate } from "react-router-dom";
+import { useQueryClient } from "@tanstack/react-query";
+import { gatewayFetch, gatewayUpload, GatewayError } from "../api/gateway";
+import { USAGE_QUERY_KEY, type UsageSnapshot } from "../api/usage";
+import { parseAttachment } from "../lib/attachment";
 
 // W1 — Upload company Excel.
 //
@@ -19,6 +22,7 @@ import { gatewayUpload, GatewayError } from "../api/gateway";
 
 export function Ingest() {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const [file, setFile] = useState<File | null>(null);
   const [companyHeaders, setCompanyHeaders] = useState<string[]>(["company"]);
   const [cityHeaders, setCityHeaders] = useState<string[]>(["city"]);
@@ -26,6 +30,39 @@ export function Ingest() {
   const [isFuzzy, setIsFuzzy] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // M2 — quota_exceeded message from the gateway (or our client gate).
+  // Rendered as an inline error block with an Upgrade CTA.
+  const [quotaError, setQuotaError] = useState<{
+    used: number;
+    limit: number;
+    needed: number;
+    tier: string;
+  } | null>(null);
+
+  // Listen for the structured 402 dispatched from api/gateway.ts so any
+  // import path (this form, future agent tools) surfaces a single
+  // upgrade CTA. Locally-detected quota issues set the same state
+  // synchronously below.
+  useEffect(() => {
+    function onQuota(ev: Event) {
+      const detail = (ev as CustomEvent).detail as {
+        used: number;
+        limit: number;
+        neededCount: number;
+        tier: string;
+      } | undefined;
+      if (!detail) return;
+      setQuotaError({
+        used: detail.used,
+        limit: detail.limit,
+        needed: detail.neededCount,
+        tier: detail.tier,
+      });
+    }
+    window.addEventListener("ava:quota-exceeded", onQuota as EventListener);
+    return () =>
+      window.removeEventListener("ava:quota-exceeded", onQuota as EventListener);
+  }, []);
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
@@ -43,6 +80,41 @@ export function Ingest() {
     }
     setBusy(true);
     setError(null);
+    setQuotaError(null);
+
+    // M2 — pre-import client gate. Parse the xlsx locally to count rows,
+    // then read the cached usage snapshot. If the import would push past
+    // the limit we refuse before the upload, saving the round-trip and
+    // showing the German error message earlier than the gateway 402.
+    let expectedCount = 0;
+    try {
+      const parsed = await parseAttachment(file);
+      expectedCount = parsed.sheets.reduce((sum, s) => sum + s.totalRows, 0);
+    } catch {
+      // Fall through — the gateway / master-data will reject malformed
+      // xlsx with its own 4xx and we'll surface that.
+    }
+    if (expectedCount > 0) {
+      try {
+        const snap = await queryClient.fetchQuery<UsageSnapshot>({
+          queryKey: USAGE_QUERY_KEY,
+          queryFn: () => gatewayFetch<UsageSnapshot>("/v1/usage"),
+          staleTime: 30_000,
+        });
+        if (snap.limit !== -1 && snap.used + expectedCount > snap.limit) {
+          setQuotaError({
+            used: snap.used,
+            limit: snap.limit,
+            needed: expectedCount,
+            tier: snap.tier,
+          });
+          setBusy(false);
+          return;
+        }
+      } catch {
+        // Snapshot fetch failed — fall through to the server gate.
+      }
+    }
 
     const form = new FormData();
     form.append("file", file);
@@ -57,6 +129,7 @@ export function Ingest() {
             city: cityHeaders,
             name: name || undefined,
             isFuzzy: String(isFuzzy),
+            ...(expectedCount > 0 ? { expectedCount: String(expectedCount) } : {}),
           },
           // Option D — BYO-key passthrough. Attach the user's active
           // provider key so master-data can forward it to the LLM
@@ -67,6 +140,13 @@ export function Ingest() {
       );
       navigate(`/transactions/${transactionId}/stream`);
     } catch (err) {
+      // gateway.ts already dispatched `ava:quota-exceeded` for 402 — the
+      // listener above set quotaError. Skip the generic error rendering
+      // in that case.
+      if (err instanceof GatewayError && err.status === 402) {
+        setBusy(false);
+        return;
+      }
       const msg =
         err instanceof GatewayError
           ? `gateway ${err.status}: ${err.message}`
@@ -136,6 +216,16 @@ export function Ingest() {
           {busy ? "Wird hochgeladen…" : "Import starten"}
         </button>
         {error && <p className="error">{error}</p>}
+        {quotaError && (
+          <div className="error" role="alert">
+            <strong>Kontingent überschritten.</strong>{" "}
+            Dieser Import würde {quotaError.needed}{" "}
+            {quotaError.needed === 1 ? "Firma" : "Firmen"} hinzufügen, aber
+            dein {quotaError.tier}-Tarif erlaubt nur {quotaError.limit} pro
+            Zyklus (bereits {quotaError.used} verbraucht).{" "}
+            <Link to="/settings#plan-section">In den Einstellungen upgraden →</Link>
+          </div>
+        )}
       </form>
     </section>
   );

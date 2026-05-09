@@ -5,6 +5,8 @@ import { callUpstreamBinary, callUpstreamBinaryExpectJson } from "../../lib/upst
 import { setTransactionName } from "../../lib/transaction-names";
 import { seedEntityProgressForTransaction } from "../../lib/entity-progress-seed";
 import { buildXlsx } from "../../lib/xlsx-mini";
+import { assertQuotaAvailable } from "../../lib/billing";
+import { getGatewayPool } from "../../lib/producer-pools";
 import {
   CompanyIngestBody,
   CompanyIngestResponseShape,
@@ -101,8 +103,18 @@ const importExcelRoute = createRoute({
 });
 
 importsRouter.openapi(importExcelRoute, async (c) => {
-  const { companyNameIdentifiers, city, name, isFuzzy, dryRun } =
+  const { companyNameIdentifiers, city, name, isFuzzy, dryRun, expectedCount } =
     c.req.valid("query");
+
+  // M2 — pre-import quota gate. Skips on dryRun (no usage debited).
+  // `expectedCount` is desktop-supplied; we fall back to 1 so a free-
+  // tier user already at quota can't sneak past with a missing param.
+  if (!dryRun) {
+    const auth = c.get("auth");
+    if (auth?.tenantId) {
+      await assertQuotaAvailable(getGatewayPool(), auth.tenantId, expectedCount ?? 1);
+    }
+  }
 
   // Pull the file out of the multipart form. Hono's parseBody returns a File
   // (Web API) for binary parts. We accept either field name `file` or the
@@ -233,6 +245,14 @@ const companyIngestRoute = createRoute({
 importsRouter.openapi(companyIngestRoute, async (c) => {
   const { name, city, transactionName, isFuzzy, dryRun } = c.req.valid("json");
 
+  // M2 — single-row ingest still costs one quota credit when not dry-run.
+  if (!dryRun) {
+    const auth = c.get("auth");
+    if (auth?.tenantId) {
+      await assertQuotaAvailable(getGatewayPool(), auth.tenantId, 1);
+    }
+  }
+
   const xlsx = buildXlsx({
     headers: [COMPANY_HEADER, CITY_HEADER],
     rows: [[name, city]],
@@ -338,6 +358,20 @@ const fromListIngestRoute = createRoute({
 
 importsRouter.openapi(fromListIngestRoute, async (c) => {
   const { companies, transactionName, isFuzzy, dryRun } = c.req.valid("json");
+
+  // M2 — quota gate sized to the JSON list length (atomic; no partial
+  // imports). Dry-run skips the gate so the user can still see the
+  // preview when over quota.
+  if (!dryRun) {
+    const auth = c.get("auth");
+    if (auth?.tenantId) {
+      await assertQuotaAvailable(
+        getGatewayPool(),
+        auth.tenantId,
+        companies.length,
+      );
+    }
+  }
 
   const xlsx = buildXlsx({
     headers: [COMPANY_HEADER, CITY_HEADER],

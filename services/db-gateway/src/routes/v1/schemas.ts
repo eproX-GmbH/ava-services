@@ -554,6 +554,12 @@ export const ImportExcelQuery = z.object({
   // v0.1.57 — dry-run preview for the desktop chat agent. Returns
   // ImportPreview JSON instead of starting a transaction.
   dryRun: z.coerce.boolean().optional().default(false),
+  // M2 — desktop counts the xlsx rows client-side and passes them so
+  // the pre-import quota gate is exact. Optional: when omitted the
+  // gate uses 1 (best-effort — a 0-row import won't push past quota
+  // anyway). Master-data, not the gateway, is the source of truth
+  // for the actual row count post-parse.
+  expectedCount: z.coerce.number().int().nonnegative().optional(),
 });
 
 export const ImportExcelResponseShape = z

@@ -525,6 +525,26 @@ const api = {
     },
   },
 
+  // M3 monetization (v0.1.73) — Stripe Checkout + Customer Portal.
+  // The renderer never sees Stripe URLs directly: main calls the
+  // gateway with the user's bearer token, gets back a one-shot URL,
+  // and shells it out via `shell.openExternal`. Renderer only needs
+  // to know "did it open OK" (resolves) or "what error" (rejects with
+  // the gateway's `message`).
+  billing: {
+    openCheckout: (tier: "starter" | "pro"): Promise<void> =>
+      ipcRenderer.invoke("billing:openCheckout", tier),
+    openPortal: (): Promise<void> => ipcRenderer.invoke("billing:openPortal"),
+    /** Fired by the `ava://billing/success` protocol handler so the
+     *  renderer can invalidate the `["usage"]` query and surface the
+     *  new tier without polling. */
+    onSuccess: (cb: () => void): (() => void) => {
+      const handler = () => cb();
+      ipcRenderer.on("billing:success", handler);
+      return () => ipcRenderer.removeListener("billing:success", handler);
+    },
+  },
+
   // Recent-interest signal (Phase 8.r4). Renderer pings on
   // CompanyDetail mounts + chat company-link clicks; the freshness
   // scheduler reads the resulting boost during scoring. Fire-and-

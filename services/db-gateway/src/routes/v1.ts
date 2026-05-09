@@ -13,6 +13,7 @@ import { proxyRouter } from "./v1/proxy";
 import { producersRouter } from "./v1/producers";
 import { crmRouter } from "./v1/crm";
 import { usageRouter } from "./v1/usage";
+import { billingRouter } from "./v1/billing";
 import { companiesMatrixRouter } from "./v1/companies-matrix";
 import { companyStateRouter } from "./v1/company-state";
 
@@ -84,6 +85,12 @@ v1.route("/", crmRouter);
 // via persist-bus side effect (lib/billing.ts) and the M3 Stripe
 // webhook; the desktop just reads.
 v1.route("/", usageRouter);
+
+// M3 monetization (v0.1.73) — Stripe Checkout + Customer Portal.
+// Webhook is mounted SEPARATELY at app-level (see index.ts) because
+// it's signature-authed, not JWT-authed, and the v1 chain would
+// reject it.
+v1.route("/", billingRouter);
 
 // v0.1.63 — F3 producer pre-check. /v1/companies/:id/state returns
 // per-stage ContentFreshness (updatedAt + llmTier). Producers query

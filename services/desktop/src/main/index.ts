@@ -29,6 +29,7 @@ import {
   type ExternalServiceStatus,
 } from "./external-service-monitor";
 import { CrmManager } from "./crm";
+import { initBilling } from "./billing";
 import type { CrmProvider, CrmStatus } from "./crm/types";
 import { scrubQuarantine } from "./scrub-quarantine";
 import { Updater, broadcastUpdateStatus } from "./updater";
@@ -941,6 +942,15 @@ app.whenReady().then(async () => {
   ipcMain.handle("auth:getAccessToken", () => auth.getAccessToken());
   ipcMain.handle("auth:signIn", () => auth.signIn());
   ipcMain.handle("auth:signOut", () => auth.signOut());
+
+  // M3 monetization — Stripe Checkout / Customer Portal IPC + the
+  // `ava://billing/*` protocol bridge. Registers its own ipcMain
+  // handlers for `billing:openCheckout` / `billing:openPortal` and
+  // wires `app.on('open-url')` for Stripe success/cancel redirects.
+  initBilling({
+    gatewayUrl: APP_CONFIG.gatewayUrl,
+    getAccessToken: () => auth.getAccessToken(),
+  });
 
   // Ollama supervisor IPC. The renderer drives:
   //   - getStatus on startup (then subscribes to `ollama-status:changed`)

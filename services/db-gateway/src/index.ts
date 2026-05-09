@@ -13,6 +13,7 @@ import { loadEnv } from "./lib/env";
 import { logger } from "./lib/logger";
 import { healthRouter } from "./routes/health";
 import { v1 } from "./routes/v1";
+import { billingWebhookRouter } from "./routes/v1/billing";
 
 const env = loadEnv();
 const app = new OpenAPIHono();
@@ -62,6 +63,11 @@ app.use(
 
 // Public routes — no auth.
 app.route("/health", healthRouter);
+
+// M3 — Stripe webhook. Mounted BEFORE the /v1 router so Hono's FIFO
+// route matching delivers `/v1/billing/webhook` here (signature-authed,
+// raw body) instead of the JWT-gated v1 chain.
+app.route("/", billingWebhookRouter);
 
 // Versioned API.
 app.route("/v1", v1);

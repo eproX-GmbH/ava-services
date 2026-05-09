@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { gatewayFetch } from "../api/gateway";
+import { useUsage, isUnlimited, type BillingTier } from "../api/usage";
 import { pullModelTracked, useOllamaStore } from "../store/ollama";
 import { useVoiceStore } from "../store/voice";
 import { useProfileStore } from "../store/profile";
@@ -76,6 +77,7 @@ export function Settings() {
   return (
     <section>
       <SettingsHeader />
+      <PlanSection />
       <ProviderSection />
       <ProfileSection />
       <VoiceSection />
@@ -2414,4 +2416,188 @@ function formatRelativeDate(ts: number): string {
   if (diffMs < day) return `vor ${Math.floor(diffMs / hr)} Std.`;
   if (diffMs < 7 * day) return `vor ${Math.floor(diffMs / day)} Tagen`;
   return new Date(ts).toLocaleDateString("de-DE");
+}
+
+// -- Plan & Abrechnung (M2/M3 monetization) ---------------------------------
+//
+// Shows the current tier, the per-period usage bar, and the two action
+// buttons (Upgrade for free/starter; Verwalten for any tenant with a
+// Stripe customer link). The IPC paths are non-blocking — main opens
+// the Stripe URL in the user's default browser; the renderer just
+// shows a loading state while the gateway round-trips.
+//
+// Section id `plan-section` is the deep-link target for the topbar
+// pill (`/settings#plan-section`).
+
+const TIER_LABELS: Record<BillingTier, string> = {
+  free: "Free",
+  starter: "Starter",
+  pro: "Pro",
+  enterprise: "Enterprise",
+};
+
+function PlanSection() {
+  const { data, isLoading, error, refetch } = useUsage();
+  const [busy, setBusy] = useState<"checkout-starter" | "checkout-pro" | "portal" | null>(
+    null,
+  );
+  const [opError, setOpError] = useState<string | null>(null);
+
+  async function openCheckout(tier: "starter" | "pro") {
+    setOpError(null);
+    setBusy(`checkout-${tier}`);
+    try {
+      await window.api.billing.openCheckout(tier);
+    } catch (e) {
+      setOpError((e as Error).message);
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function openPortal() {
+    setOpError(null);
+    setBusy("portal");
+    try {
+      await window.api.billing.openPortal();
+    } catch (e) {
+      setOpError((e as Error).message);
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  return (
+    <section id="plan-section" className="ct-card" style={{ marginBottom: "1.25rem" }}>
+      <header className="ct-card__header">
+        <h3>Plan &amp; Abrechnung</h3>
+        <p className="muted">Aktueller Tarif und Verbrauch im Abrechnungszyklus.</p>
+      </header>
+
+      {isLoading && <p className="muted">Lädt…</p>}
+      {error && (
+        <div className="error">
+          Verbrauch konnte nicht geladen werden.
+          <button type="button" onClick={() => void refetch()} style={{ marginLeft: 8 }}>
+            Erneut versuchen
+          </button>
+        </div>
+      )}
+
+      {data && (
+        <div style={{ display: "grid", gap: "0.75rem" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+            <span className={`badge badge--${data.tier}`}>{TIER_LABELS[data.tier]}</span>
+            {data.tier === "enterprise" && (
+              <span className="muted">unbegrenztes Kontingent</span>
+            )}
+          </div>
+
+          {!isUnlimited(data) && (
+            <div>
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  fontSize: "0.9rem",
+                }}
+              >
+                <strong>
+                  {data.used} von {data.limit} verbraucht
+                </strong>
+                {data.periodEnd && (
+                  <span className="muted">
+                    Erneuert sich am {fmtDateShort(data.periodEnd)}
+                  </span>
+                )}
+              </div>
+              <div
+                role="progressbar"
+                aria-valuemin={0}
+                aria-valuemax={data.limit}
+                aria-valuenow={data.used}
+                style={{
+                  height: 8,
+                  background: "var(--surface-2, #e5e7eb)",
+                  borderRadius: 4,
+                  overflow: "hidden",
+                  marginTop: 4,
+                }}
+              >
+                <div
+                  style={{
+                    width: `${Math.min(100, (data.used / Math.max(1, data.limit)) * 100)}%`,
+                    height: "100%",
+                    background:
+                      data.used >= data.limit
+                        ? "var(--danger, #dc2626)"
+                        : data.used / data.limit >= 0.8
+                          ? "var(--warn, #d97706)"
+                          : "var(--accent, #00c0a7)",
+                    transition: "width 200ms ease",
+                  }}
+                />
+              </div>
+              <small className="muted">
+                {data.periodKey === "lifetime"
+                  ? "Lebenszeit-Kontingent (Free-Tier)"
+                  : "Verbrauch im aktuellen Zyklus"}
+              </small>
+            </div>
+          )}
+
+          <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
+            {(data.tier === "free" || data.tier === "starter") && (
+              <>
+                {data.tier === "free" && (
+                  <button
+                    type="button"
+                    className="primary"
+                    disabled={busy !== null}
+                    onClick={() => void openCheckout("starter")}
+                  >
+                    {busy === "checkout-starter"
+                      ? "Wird geöffnet…"
+                      : "Auf Starter upgraden (49 €/Monat)"}
+                  </button>
+                )}
+                <button
+                  type="button"
+                  className="primary"
+                  disabled={busy !== null}
+                  onClick={() => void openCheckout("pro")}
+                >
+                  {busy === "checkout-pro"
+                    ? "Wird geöffnet…"
+                    : "Auf Pro upgraden (149 €/Monat)"}
+                </button>
+              </>
+            )}
+            <button
+              type="button"
+              disabled={busy !== null}
+              onClick={() => void openPortal()}
+              title="Stripe-Kundenportal öffnen (Rechnungen, Zahlungsmethoden, Kündigung)"
+            >
+              {busy === "portal" ? "Wird geöffnet…" : "Verwalten"}
+            </button>
+          </div>
+
+          {opError && <div className="error">{opError}</div>}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function fmtDateShort(iso: string): string {
+  try {
+    return new Date(iso).toLocaleDateString("de-DE", {
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+    });
+  } catch {
+    return iso;
+  }
 }

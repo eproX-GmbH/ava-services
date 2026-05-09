@@ -23,6 +23,7 @@
 
 import { Pool } from "pg";
 import type { Logger } from "pino";
+import { HTTPException } from "hono/http-exception";
 
 /** Tier values the gateway recognizes. Stripe webhooks (M3) will
  *  flip a tenant between these. Schema is `String` so adding a new
@@ -229,4 +230,39 @@ export async function getUsageSnapshot(
     periodEnd: periodEnd ? periodEnd.toISOString() : null,
     periodKey: isUnlimited(billing.tier) ? "unlimited" : periodKey,
   };
+}
+
+/** M2 — pre-import gate. Throws a structured `402 quota_exceeded`
+ *  HTTPException when `used + neededCount > limit`. Enterprise +
+ *  UNLIMITED short-circuit to a no-op return.
+ *
+ *  Returns the snapshot when the quota is OK so callers don't have
+ *  to round-trip through `getUsageSnapshot` a second time. */
+export async function assertQuotaAvailable(
+  pool: Pool,
+  tenantId: string,
+  neededCount: number,
+): Promise<UsageSnapshot> {
+  const snapshot = await getUsageSnapshot(pool, tenantId);
+  if (snapshot.limit === UNLIMITED) return snapshot;
+  const wouldUse = snapshot.used + Math.max(0, neededCount);
+  if (wouldUse <= snapshot.limit) return snapshot;
+  // Structured 402 — desktop's GatewayError surfaces `body` to the
+  // renderer, the Ingest 402 handler renders the German upgrade CTA.
+  throw new HTTPException(402, {
+    res: new Response(
+      JSON.stringify({
+        error: "quota_exceeded",
+        tier: snapshot.tier,
+        used: snapshot.used,
+        limit: snapshot.limit,
+        neededCount,
+        upgradeUrl: "ava://billing/upgrade",
+      }),
+      {
+        status: 402,
+        headers: { "content-type": "application/json" },
+      },
+    ),
+  });
 }
