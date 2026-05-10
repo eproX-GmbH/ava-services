@@ -3800,3 +3800,208 @@ a.heartbeat-decision__company:hover {
   85% { opacity: 1; }
   100% { opacity: 0.45; background: transparent; border-left-color: transparent; }
 }
+
+/* ---- LinkedIn-Beobachter (Phase L0) -----------------------------------
+ * Active-mode banner: amber tone, sits under the topbar (same slot as
+ * .upstream-banner). Active-mode banner is intentionally NOT red — the
+ * feature is functioning as designed, the banner is a "stay aware"
+ * reminder.
+ */
+.linkedin-active-banner {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 1rem;
+  font-size: 12px;
+  background: rgba(245, 158, 11, 0.12);
+  border-bottom: 1px solid var(--color-warn, #f59e0b);
+  color: var(--fg);
+}
+:root.dark .linkedin-active-banner {
+  background: rgba(245, 158, 11, 0.18);
+}
+.linkedin-active-banner__settings {
+  margin-left: 0.25rem;
+}
+.linkedin-active-banner__close {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--color-fg-muted);
+  border-radius: 4px;
+  cursor: pointer;
+}
+.linkedin-active-banner__close:hover {
+  background: rgba(245, 158, 11, 0.18);
+  color: var(--color-fg);
+}
+.linkedin-active-banner__confirm {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 12px;
+  background: var(--color-bg-1);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-soft-lg);
+  padding: 14px 16px;
+  width: 320px;
+  z-index: 30;
+  color: var(--color-fg);
+}
+.linkedin-active-banner__confirm-title {
+  margin: 0 0 6px;
+  font-weight: 600;
+  font-size: 13px;
+}
+.linkedin-active-banner__confirm-body {
+  margin: 0 0 12px;
+  font-size: 12px;
+  color: var(--color-fg-muted);
+  line-height: 1.5;
+}
+.linkedin-active-banner__confirm-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: stretch;
+}
+.linkedin-active-banner__confirm-actions button { text-align: left; }
+
+/* Consent modal — same overlay/panel pattern as ChatSearchModal but
+ * content-focused. */
+.linkedin-consent-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.55);
+  backdrop-filter: blur(2px);
+  z-index: 1000;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding-top: 8vh;
+}
+:root.dark .linkedin-consent-overlay {
+  background: rgba(0, 0, 0, 0.6);
+}
+.linkedin-consent-panel {
+  width: min(640px, calc(100vw - 32px));
+  max-height: 84vh;
+  overflow-y: auto;
+  background: var(--color-bg-1);
+  border: 1px solid var(--color-border);
+  border-radius: 14px;
+  box-shadow: 0 24px 60px rgba(15, 23, 42, 0.18);
+  padding: 1.25rem 1.5rem;
+  color: var(--color-fg);
+}
+:root.dark .linkedin-consent-panel {
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.45);
+}
+.linkedin-consent-header h3 {
+  margin: 0 0 0.25rem;
+}
+.linkedin-consent-list {
+  margin: 1rem 0;
+  padding-left: 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  font-size: 13px;
+  line-height: 1.55;
+}
+.linkedin-consent-check {
+  display: flex;
+  gap: 0.6rem;
+  align-items: flex-start;
+  padding: 0.75rem;
+  background: rgba(245, 158, 11, 0.08);
+  border: 1px solid var(--color-warn, #f59e0b);
+  border-radius: 8px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+.linkedin-consent-check input[type="checkbox"] {
+  margin-top: 0.2rem;
+  flex-shrink: 0;
+}
+.linkedin-consent-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.6rem;
+  margin-top: 1rem;
+}
+
+/* Settings section internals. */
+.linkedin-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  align-items: center;
+  margin: 0.5rem 0;
+}
+.linkedin-toggle,
+.linkedin-radio {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 13px;
+}
+.linkedin-radio { margin-right: 0.75rem; }
+.linkedin-fieldset {
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  padding: 0.75rem 1rem;
+  margin: 0.75rem 0;
+}
+.linkedin-fieldset[disabled] {
+  opacity: 0.55;
+}
+.linkedin-fieldset legend {
+  font-weight: 600;
+  font-size: 13px;
+  padding: 0 0.35rem;
+}
+.linkedin-number {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 13px;
+  margin: 0.5rem 0;
+}
+.linkedin-number input {
+  width: 5rem;
+}
+.linkedin-cloud-confirm {
+  margin: 0.6rem 0;
+  padding: 0.75rem;
+  background: rgba(245, 158, 11, 0.08);
+  border: 1px solid var(--color-warn, #f59e0b);
+  border-radius: 8px;
+  font-size: 13px;
+}
+.linkedin-cloud-confirm__actions {
+  display: flex;
+  gap: 0.6rem;
+  margin-top: 0.5rem;
+}
+.linkedin-killswitch {
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px dashed var(--color-border);
+}
+.linkedin-killswitch h4 {
+  margin: 0 0 0.35rem;
+  font-size: 14px;
+}
+.linkedin-killswitch button.bad {
+  background: rgba(244, 114, 114, 0.12);
+  border-color: var(--color-err, #f47272);
+  color: var(--color-err, #f47272);
+}

@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { LinkedInConsentModal } from "../components/LinkedInConsentModal";
+import { notifyLinkedInSettingsChanged } from "../components/LinkedInActiveBanner";
 import { gatewayFetch } from "../api/gateway";
 import { useUsage, isUnlimited, type BillingTier } from "../api/usage";
 import { pullModelTracked, useOllamaStore } from "../store/ollama";
@@ -20,6 +22,7 @@ import type {
   FreshnessStage,
   FreshnessTickInfo,
   HostedProviderKind,
+  LinkedInSettings,
   LlmProviderKind,
   NotificationPermissionStatus,
   ProviderCatalogEntry,
@@ -85,6 +88,7 @@ export function Settings() {
       <PostgresSection />
       <ProducersSection />
       <CrmSection />
+      <LinkedInSection />
       <AlertsSection />
       <FreshnessSection />
       <GeneralMemorySection />
@@ -535,6 +539,303 @@ function CrmCard({
 
       {errorMessage && <p className="crm-card-error">{errorMessage}</p>}
     </li>
+  );
+}
+
+// -- LinkedIn-Beobachter section (Phase L0) ----------------------------
+//
+// Master switch + consent modal + image-analysis controls + scan
+// schedule + kill-switch. Phase L0 ships scaffolding only — the
+// actual scrape lives in L2; the "Jetzt scannen" button is therefore
+// rendered as a disabled placeholder.
+
+function LinkedInSection() {
+  const [settings, setSettings] = useState<LinkedInSettings | null>(null);
+  const [consentOpen, setConsentOpen] = useState(false);
+  const [cloudConfirm, setCloudConfirm] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const refresh = async () => {
+    const s = await window.api.linkedin.getSettings();
+    setSettings(s);
+    notifyLinkedInSettingsChanged();
+  };
+
+  useEffect(() => {
+    void refresh();
+  }, []);
+
+  const update = async (
+    patch: Partial<LinkedInSettings>,
+  ): Promise<boolean> => {
+    setBusy(true);
+    setError(null);
+    try {
+      const result = await window.api.linkedin.updateSettings(patch);
+      if (result && typeof result === "object" && "error" in result) {
+        setError(result.error);
+        return false;
+      }
+      setSettings(result);
+      notifyLinkedInSettingsChanged();
+      return true;
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (!settings) {
+    return (
+      <section className="provider-section" id="linkedin-section">
+        <h3>LinkedIn-Beobachter</h3>
+        <p className="muted small">Lade…</p>
+      </section>
+    );
+  }
+
+  const onMasterToggle = async (next: boolean) => {
+    if (next) {
+      // Off → on: open the consent modal. The modal itself flips the
+      // switch via acceptConsent + updateSettings.
+      setConsentOpen(true);
+      return;
+    }
+    // On → off: just disable. Consent timestamp stays so the user can
+    // re-enable without re-reading; revokeConsent clears it explicitly.
+    await update({ enabled: false });
+  };
+
+  const onRevokeConsent = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      const next = await window.api.linkedin.revokeConsent();
+      setSettings(next);
+      notifyLinkedInSettingsChanged();
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const onKillSwitch = async () => {
+    const ok = window.confirm(
+      "Wirklich? Cookies, gespeicherte Beiträge und Signale werden gelöscht. Diese Aktion ist nicht rückgängig zu machen.",
+    );
+    if (!ok) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await window.api.linkedin.killSwitch();
+      await refresh();
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const enabled = settings.enabled;
+
+  return (
+    <section className="provider-section" id="linkedin-section">
+      <h3>
+        LinkedIn-Beobachter{" "}
+        <span className="ct-pill" style={{ marginLeft: "0.5rem" }}>BETA</span>
+      </h3>
+      <p className="muted small">
+        Diese Funktion liest im Hintergrund deinen LinkedIn-Feed, um
+        Vertriebssignale zu erkennen. Ihre Aktivierung verstößt gegen die
+        LinkedIn-Nutzungsbedingungen — LinkedIn kann dein Konto deshalb
+        sperren oder einschränken. Du bist als Verantwortliche/r für die
+        DSGVO-konforme Verarbeitung der dabei beobachteten personenbezogenen
+        Daten zuständig. Alle Daten bleiben ausschließlich auf diesem Gerät.{" "}
+        <a href="#/datenschutz/linkedin">Datenschutz-Hinweise</a>
+      </p>
+
+      {/* Master switch */}
+      <div className="linkedin-row">
+        <label className="linkedin-toggle">
+          <input
+            type="checkbox"
+            checked={enabled}
+            disabled={busy}
+            onChange={(e) => void onMasterToggle(e.target.checked)}
+          />
+          <span>LinkedIn-Beobachter aktivieren</span>
+        </label>
+        {enabled && settings.consentAcceptedAt && (
+          <span className="muted small">
+            Einwilligung erteilt am{" "}
+            {new Date(settings.consentAcceptedAt).toLocaleString("de-DE")} ·{" "}
+            <button
+              type="button"
+              className="link"
+              onClick={() => void onRevokeConsent()}
+              disabled={busy}
+            >
+              Einwilligung widerrufen
+            </button>
+          </span>
+        )}
+      </div>
+
+      {/* Image analysis controls */}
+      <fieldset className="linkedin-fieldset" disabled={!enabled || busy}>
+        <legend>Bildanalyse</legend>
+        <label className="linkedin-radio">
+          <input
+            type="radio"
+            name="linkedin-image-analysis"
+            checked={settings.imageAnalysis === "off"}
+            onChange={() => void update({ imageAnalysis: "off" })}
+          />
+          <span>Aus</span>
+        </label>
+        <label className="linkedin-radio">
+          <input
+            type="radio"
+            name="linkedin-image-analysis"
+            checked={settings.imageAnalysis === "local"}
+            onChange={() => void update({ imageAnalysis: "local" })}
+          />
+          <span>Nur lokales Modell (Standard)</span>
+        </label>
+        <label className="linkedin-radio">
+          <input
+            type="radio"
+            name="linkedin-image-analysis"
+            checked={settings.imageAnalysis === "cloud"}
+            onChange={() => {
+              if (settings.imageAnalysisCloudOptIn) {
+                void update({ imageAnalysis: "cloud" });
+              } else {
+                setCloudConfirm(true);
+              }
+            }}
+          />
+          <span>Lokal + Cloud-Anbieter erlauben</span>
+        </label>
+
+        {cloudConfirm && (
+          <div className="linkedin-cloud-confirm">
+            <p>
+              Cloud-Bildanalyse einschalten? Bilder werden an deinen
+              konfigurierten LLM-Provider gesendet — sie verlassen damit
+              dieses Gerät.
+            </p>
+            <div className="linkedin-cloud-confirm__actions">
+              <button
+                type="button"
+                className="primary"
+                onClick={async () => {
+                  const ok = await update({
+                    imageAnalysisCloudOptIn: true,
+                    imageAnalysis: "cloud",
+                  });
+                  if (ok) setCloudConfirm(false);
+                }}
+                disabled={busy}
+              >
+                Ja, Cloud-Bildanalyse aktivieren
+              </button>
+              <button
+                type="button"
+                className="link"
+                onClick={() => setCloudConfirm(false)}
+                disabled={busy}
+              >
+                Abbrechen
+              </button>
+            </div>
+          </div>
+        )}
+
+        {settings.imageAnalysisCloudOptIn && (
+          <p className="muted small">
+            <button
+              type="button"
+              className="link"
+              onClick={() =>
+                void update({
+                  imageAnalysisCloudOptIn: false,
+                  imageAnalysis:
+                    settings.imageAnalysis === "cloud"
+                      ? "local"
+                      : settings.imageAnalysis,
+                })
+              }
+              disabled={busy}
+            >
+              Cloud-Bildanalyse zurücknehmen
+            </button>
+          </p>
+        )}
+      </fieldset>
+
+      {/* Scan schedule */}
+      <fieldset className="linkedin-fieldset" disabled={!enabled || busy}>
+        <legend>Scan-Plan</legend>
+        <label className="linkedin-toggle">
+          <input
+            type="checkbox"
+            checked={settings.automaticScans}
+            onChange={(e) =>
+              void update({ automaticScans: e.target.checked })
+            }
+          />
+          <span>Automatische Hintergrund-Scans</span>
+        </label>
+        <label className="linkedin-number">
+          <span>Intervall (Stunden)</span>
+          <input
+            type="number"
+            min={1}
+            max={24}
+            step={1}
+            value={settings.scanIntervalHours}
+            disabled={!settings.automaticScans}
+            onChange={(e) => {
+              const n = Number(e.target.value);
+              if (Number.isFinite(n)) void update({ scanIntervalHours: n });
+            }}
+          />
+        </label>
+        <div className="linkedin-row">
+          <button type="button" disabled title="Wird mit Phase L2 verfügbar.">
+            Jetzt scannen
+          </button>
+          <span className="muted small">Wird mit Phase L2 verfügbar.</span>
+        </div>
+      </fieldset>
+
+      {/* Kill switch */}
+      <div className="linkedin-killswitch">
+        <h4>Alle Daten löschen</h4>
+        <p className="muted small">
+          Löscht den gesamten <code>linkedin/</code>-Ordner dieser
+          Installation: Cookies, gespeicherte Beiträge, abgeleitete Signale
+          und die Einstellungen oben. Der Beobachter wird damit deaktiviert.
+        </p>
+        <button
+          type="button"
+          className="bad"
+          onClick={() => void onKillSwitch()}
+          disabled={busy}
+        >
+          LinkedIn-Daten und -Einstellungen jetzt löschen
+        </button>
+      </div>
+
+      {error && <p className="crm-card-error">{error}</p>}
+
+      <LinkedInConsentModal
+        open={consentOpen}
+        onClose={() => setConsentOpen(false)}
+        onAccepted={() => {
+          setConsentOpen(false);
+          void refresh();
+        }}
+      />
+    </section>
   );
 }
 

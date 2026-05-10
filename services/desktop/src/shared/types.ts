@@ -912,3 +912,31 @@ export interface Watch {
  *  the cost ceiling governable; 8.t3 raises it per-tenant if the data
  *  warrants it. */
 export const WATCH_CAP_DEFAULT = 20;
+
+// ---- LinkedIn-Beobachter (Phase L0 — compliance scaffolding) -----------
+//
+// User-facing master switch + consent state for the upcoming LinkedIn
+// feed scanner. L0 ships UI + persisted state ONLY; no scraper code.
+// All data referenced here lives on the user's device — the gateway
+// never receives any of it. See services/desktop/src/main/linkedin/.
+
+export interface LinkedInSettings {
+  /** Master switch. Refuses to flip true unless consentAcceptedAt is set. */
+  enabled: boolean;
+  /** ms epoch the user accepted the consent modal. Cleared on revoke. */
+  consentAcceptedAt: number | null;
+  /** Pipeline lookahead (L4). "off" = no image analysis, "local" = local
+   *  vision model, "cloud" = forward to user's configured LLM provider.
+   *  "cloud" requires `imageAnalysisCloudOptIn === true`. */
+  imageAnalysis: "off" | "local" | "cloud";
+  /** Sticky opt-in for sending images to a cloud LLM. Distinct from
+   *  imageAnalysis so toggling local-only off then back on doesn't
+   *  silently re-enable cloud. */
+  imageAnalysisCloudOptIn: boolean;
+  /** When true the scraper will run on the schedule below. */
+  automaticScans: boolean;
+  /** 1..24 (clamped at the IPC validator). */
+  scanIntervalHours: number;
+  /** ms epoch of the last completed scan. L0: always null. */
+  lastScanAt: number | null;
+}

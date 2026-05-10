@@ -32,6 +32,7 @@ import type {
   ExternalServiceStatus,
   CrmProviderKind,
   CrmProviderStatus,
+  LinkedInSettings,
   UpdateStatus,
   ProviderCatalogEntry,
   ProviderConfig,
@@ -85,6 +86,7 @@ export type {
   ExternalServiceStatus,
   CrmProviderKind,
   CrmProviderStatus,
+  LinkedInSettings,
   UpdateStatus,
   ProviderCatalogEntry,
   ProviderConfig,
@@ -707,6 +709,25 @@ const api = {
       return () =>
         ipcRenderer.removeListener("freshness:prefs-changed", handler);
     },
+  },
+
+  /** LinkedIn-Beobachter (Phase L0). On/off + consent + kill-switch.
+   *  All persisted state lives on this device; the gateway never sees
+   *  any of it. Future phases will add cookies + scraped posts under
+   *  the same userData/linkedin/ tree. */
+  linkedin: {
+    getSettings: (): Promise<LinkedInSettings> =>
+      ipcRenderer.invoke("linkedin:settings:get"),
+    updateSettings: (
+      partial: Partial<LinkedInSettings>,
+    ): Promise<LinkedInSettings | { error: string }> =>
+      ipcRenderer.invoke("linkedin:settings:update", partial),
+    acceptConsent: (): Promise<LinkedInSettings> =>
+      ipcRenderer.invoke("linkedin:consent:accept"),
+    revokeConsent: (): Promise<LinkedInSettings> =>
+      ipcRenderer.invoke("linkedin:consent:revoke"),
+    killSwitch: (): Promise<{ ok: true }> =>
+      ipcRenderer.invoke("linkedin:killswitch"),
   },
 } as const;
 

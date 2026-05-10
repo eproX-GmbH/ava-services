@@ -30,6 +30,7 @@ import {
 } from "./external-service-monitor";
 import { CrmManager } from "./crm";
 import { initBilling } from "./billing";
+import { initLinkedIn } from "./linkedin";
 import type { CrmProvider, CrmStatus } from "./crm/types";
 import { scrubQuarantine } from "./scrub-quarantine";
 import { Updater, broadcastUpdateStatus } from "./updater";
@@ -951,6 +952,10 @@ app.whenReady().then(async () => {
     gatewayUrl: APP_CONFIG.gatewayUrl,
     getAccessToken: () => auth.getAccessToken(),
   });
+
+  // LinkedIn-Beobachter (Phase L0). Persistent settings + consent gate
+  // + kill-switch IPC. No scraper code here yet — that lands in L1+.
+  initLinkedIn();
 
   // Ollama supervisor IPC. The renderer drives:
   //   - getStatus on startup (then subscribes to `ollama-status:changed`)
