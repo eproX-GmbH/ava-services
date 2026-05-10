@@ -117,6 +117,26 @@ CREATE TABLE IF NOT EXISTS linkedin_scan_run (
   media_new       INTEGER NOT NULL DEFAULT 0,
   error_message   TEXT
 );
+
+-- Phase L3: text-topic extraction queue + result row.
+-- One row per linkedin_post; status drives the worker queue.
+CREATE TABLE IF NOT EXISTS linkedin_signal (
+  post_urn         TEXT PRIMARY KEY REFERENCES linkedin_post(post_urn),
+  status           TEXT NOT NULL,
+  extracted_at     TIMESTAMPTZ,
+  attempts         INTEGER NOT NULL DEFAULT 0,
+  last_error       TEXT,
+  llm_tier         INTEGER,
+  llm_model        TEXT,
+  signal_kind      TEXT,
+  signal_strength  INTEGER,
+  summary          TEXT,
+  topics           JSONB,
+  entities         JSONB
+);
+CREATE INDEX IF NOT EXISTS linkedin_signal_status ON linkedin_signal (status);
+CREATE INDEX IF NOT EXISTS linkedin_signal_kind ON linkedin_signal (signal_kind);
+CREATE INDEX IF NOT EXISTS linkedin_signal_strength ON linkedin_signal (signal_strength);
 `;
 
 async function initSchema(db: PGliteInstance): Promise<void> {
@@ -393,14 +413,267 @@ export async function feedCounts(
        (SELECT COALESCE(SUM(bytes), 0)::bigint FROM linkedin_media) AS media_bytes`,
   );
   const row = res.rows[0];
+  const sig = await signalCounts(db);
   return {
     posts: Number(row?.posts ?? 0),
     interactions: Number(row?.interactions ?? 0),
     actors: Number(row?.actors ?? 0),
     media: Number(row?.media ?? 0),
     mediaBytes: Number(row?.media_bytes ?? 0),
+    signalsExtracted: sig.extracted,
+    signalsPending: sig.pending,
+    signalsFailed: sig.failed,
+    signalsSkipped: sig.skipped,
   };
 }
+
+// ---- L3 signal queue + extraction results ------------------------------
+
+export type SignalStatus = "pending" | "extracted" | "failed" | "skipped";
+export type SignalKind =
+  | "personnel_change"
+  | "company_event"
+  | "factory_visit"
+  | "new_product"
+  | "partnership"
+  | "event_attendance"
+  | "hiring"
+  | "award"
+  | "press_mention"
+  | "none";
+
+export interface SignalEntities {
+  companies: string[];
+  people: string[];
+  locations?: string[];
+}
+
+export interface SignalPayload {
+  signal_kind: SignalKind;
+  signal_strength: number;
+  summary: string;
+  topics: string[];
+  entities: SignalEntities;
+}
+
+export interface SignalCounts {
+  pending: number;
+  extracted: number;
+  failed: number;
+  skipped: number;
+  total: number;
+}
+
+export interface SignalCandidatePost {
+  postUrn: string;
+  postKind: string | null;
+  text: string;
+  postedAt: Date | null;
+  postedAtRelative: string | null;
+  author: {
+    displayName: string;
+    headline: string | null;
+  };
+  surfacedInteractions: Array<{
+    actor: string;
+    kind: string;
+    commentText: string | null;
+  }>;
+}
+
+const MAX_ATTEMPTS = 3;
+
+export async function enqueueSignal(
+  db: PGliteInstance,
+  postUrn: string,
+): Promise<void> {
+  await db.query(
+    `INSERT INTO linkedin_signal (post_urn, status, attempts)
+     VALUES ($1, 'pending', 0)
+     ON CONFLICT (post_urn) DO NOTHING`,
+    [postUrn],
+  );
+}
+
+export async function nextPendingSignals(
+  db: PGliteInstance,
+  limit: number,
+): Promise<string[]> {
+  const res = await db.query<{ post_urn: string }>(
+    `SELECT post_urn FROM linkedin_signal
+      WHERE status = 'pending'
+         OR (status = 'failed' AND attempts < $2)
+      ORDER BY post_urn
+      LIMIT $1`,
+    [limit, MAX_ATTEMPTS],
+  );
+  return res.rows.map((r) => r.post_urn);
+}
+
+export async function loadSignalCandidate(
+  db: PGliteInstance,
+  postUrn: string,
+): Promise<SignalCandidatePost | null> {
+  const postRes = await db.query<{
+    post_urn: string;
+    post_kind: string | null;
+    text: string | null;
+    posted_at: string | null;
+    author_display_name: string;
+    author_headline: string | null;
+  }>(
+    `SELECT p.post_urn, p.post_kind, p.text, p.posted_at,
+            a.display_name AS author_display_name,
+            a.headline AS author_headline
+       FROM linkedin_post p
+       JOIN linkedin_actor a ON a.actor_urn = p.author_urn
+      WHERE p.post_urn = $1`,
+    [postUrn],
+  );
+  const r = postRes.rows[0];
+  if (!r) return null;
+  const intRes = await db.query<{
+    display_name: string;
+    kind: string;
+    comment_text: string | null;
+  }>(
+    `SELECT a.display_name, i.kind, i.comment_text
+       FROM linkedin_interaction i
+       JOIN linkedin_actor a ON a.actor_urn = i.actor_urn
+      WHERE i.post_urn = $1
+      ORDER BY i.scraped_at ASC
+      LIMIT 10`,
+    [postUrn],
+  );
+  return {
+    postUrn: r.post_urn,
+    postKind: r.post_kind,
+    text: r.text ?? "",
+    postedAt: r.posted_at ? new Date(r.posted_at) : null,
+    postedAtRelative: null,
+    author: {
+      displayName: r.author_display_name,
+      headline: r.author_headline,
+    },
+    surfacedInteractions: intRes.rows.map((row) => ({
+      actor: row.display_name,
+      kind: row.kind,
+      commentText: row.comment_text,
+    })),
+  };
+}
+
+export async function recordSignalSuccess(
+  db: PGliteInstance,
+  postUrn: string,
+  payload: SignalPayload,
+  llmTier: number | null,
+  llmModel: string | null,
+): Promise<void> {
+  await db.query(
+    `UPDATE linkedin_signal
+        SET status = 'extracted',
+            extracted_at = NOW(),
+            attempts = attempts + 1,
+            last_error = NULL,
+            llm_tier = $2,
+            llm_model = $3,
+            signal_kind = $4,
+            signal_strength = $5,
+            summary = $6,
+            topics = $7::jsonb,
+            entities = $8::jsonb
+      WHERE post_urn = $1`,
+    [
+      postUrn,
+      llmTier,
+      llmModel,
+      payload.signal_kind,
+      payload.signal_strength,
+      payload.summary,
+      JSON.stringify(payload.topics),
+      JSON.stringify(payload.entities),
+    ],
+  );
+}
+
+export async function recordSignalFailure(
+  db: PGliteInstance,
+  postUrn: string,
+  errorMessage: string,
+): Promise<void> {
+  const trimmed =
+    errorMessage.length > 500 ? errorMessage.slice(0, 500) : errorMessage;
+  await db.query(
+    `UPDATE linkedin_signal
+        SET attempts = attempts + 1,
+            last_error = $2,
+            status = CASE WHEN attempts + 1 >= $3 THEN 'failed' ELSE 'pending' END
+      WHERE post_urn = $1`,
+    [postUrn, trimmed, MAX_ATTEMPTS],
+  );
+}
+
+export async function recordSignalSkipped(
+  db: PGliteInstance,
+  postUrn: string,
+  reason: string,
+): Promise<void> {
+  const trimmed = reason.length > 500 ? reason.slice(0, 500) : reason;
+  await db.query(
+    `UPDATE linkedin_signal
+        SET status = 'skipped',
+            last_error = $2
+      WHERE post_urn = $1`,
+    [postUrn, trimmed],
+  );
+}
+
+/** When an LLM becomes available again, flip skipped rows back to pending
+ *  so the next drain re-processes them. Failed rows are left alone. */
+export async function resetSkippedToPending(
+  db: PGliteInstance,
+): Promise<number> {
+  const res = await db.query(
+    `UPDATE linkedin_signal
+        SET status = 'pending',
+            attempts = 0,
+            last_error = NULL
+      WHERE status = 'skipped'`,
+  );
+  return res.affectedRows ?? 0;
+}
+
+export async function signalCounts(
+  db: PGliteInstance,
+): Promise<SignalCounts> {
+  const res = await db.query<{
+    status: string;
+    n: number;
+  }>(
+    `SELECT status, COUNT(*)::int AS n
+       FROM linkedin_signal
+      GROUP BY status`,
+  );
+  const out: SignalCounts = {
+    pending: 0,
+    extracted: 0,
+    failed: 0,
+    skipped: 0,
+    total: 0,
+  };
+  for (const r of res.rows) {
+    const n = Number(r.n ?? 0);
+    out.total += n;
+    if (r.status === "pending") out.pending = n;
+    else if (r.status === "extracted") out.extracted = n;
+    else if (r.status === "failed") out.failed = n;
+    else if (r.status === "skipped") out.skipped = n;
+  }
+  return out;
+}
+
+// ---- Recent posts read --------------------------------------------------
 
 export async function recentPosts(
   db: PGliteInstance,

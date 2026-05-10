@@ -28,6 +28,7 @@ import { read as readSettings, write as writeSettings } from "./store";
 import { hasStoredSession } from "./session";
 import {
   closeDb,
+  enqueueSignal,
   feedCounts,
   finishScanRun,
   getDb,
@@ -38,6 +39,7 @@ import {
   upsertInteraction,
   upsertPost,
 } from "./db";
+import { drainQueue } from "./extractor";
 
 export interface ScanOptions {
   manual: boolean;
@@ -637,6 +639,9 @@ export async function runScan(opts: ScanOptions): Promise<LinkedInScanResult> {
             rawHtml: p.rawHtml,
           });
           if (wasNew) postsNew += 1;
+          // L3: queue for signal extraction. Idempotent — DO NOTHING on
+          // conflict — so re-scrapes don't reset already-extracted rows.
+          await enqueueSignal(db, p.postUrn);
 
           for (const surf of p.surfacedInteractions) {
             await upsertActor(db, surf.actor);
@@ -719,6 +724,17 @@ export async function runScan(opts: ScanOptions): Promise<LinkedInScanResult> {
 
   if (outcome === "success" || outcome === "cancelled") {
     writeSettings({ lastScanAt: Date.now() });
+  }
+
+  // L3: kick the signal extractor in the background. Fire-and-forget —
+  // the manual scan returns to the user as soon as scrape is done.
+  if (outcome === "success") {
+    void drainQueue().catch((err) => {
+      console.warn(
+        "[linkedin/scraper] post-scan drainQueue failed:",
+        err instanceof Error ? err.message : String(err),
+      );
+    });
   }
 
   return {

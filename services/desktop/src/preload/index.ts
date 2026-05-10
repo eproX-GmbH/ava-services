@@ -39,6 +39,7 @@ import type {
   LinkedInScanResult,
   LinkedInScanStatus,
   LinkedInSettings,
+  LinkedInSignalStatus,
   UpdateStatus,
   ProviderCatalogEntry,
   ProviderConfig,
@@ -102,6 +103,7 @@ export type {
   LinkedInScanStatus,
   LinkedInSessionMeta,
   LinkedInSettings,
+  LinkedInSignalStatus,
   UpdateStatus,
   ProviderCatalogEntry,
   ProviderConfig,
@@ -771,6 +773,16 @@ const api = {
         args?: { limit?: number; offset?: number; since?: number },
       ): Promise<LinkedInRecentPost[]> =>
         ipcRenderer.invoke("linkedin:feed:recent", args ?? {}),
+    },
+    /** L3 — text-topic extraction. The renderer polls `status` for
+     *  Settings telemetry; signal CONTENT does not surface yet (L6). */
+    signals: {
+      status: (): Promise<LinkedInSignalStatus> =>
+        ipcRenderer.invoke("linkedin:signals:status"),
+      run: (): Promise<LinkedInSignalStatus> =>
+        ipcRenderer.invoke("linkedin:signals:run"),
+      cancel: (): Promise<{ ok: true }> =>
+        ipcRenderer.invoke("linkedin:signals:cancel"),
     },
   },
 } as const;

@@ -26,6 +26,7 @@ import type {
   LinkedInFeedCounts,
   LinkedInScanStatus,
   LinkedInSettings,
+  LinkedInSignalStatus,
   LlmProviderKind,
   NotificationPermissionStatus,
   ProviderCatalogEntry,
@@ -609,6 +610,9 @@ function LinkedInSection() {
   const [scanStatus, setScanStatus] = useState<LinkedInScanStatus | null>(null);
   const [counts, setCounts] = useState<LinkedInFeedCounts | null>(null);
   const [scanError, setScanError] = useState<string | null>(null);
+  const [signalStatus, setSignalStatus] =
+    useState<LinkedInSignalStatus | null>(null);
+  const [signalError, setSignalError] = useState<string | null>(null);
 
   const refreshAuth = async () => {
     const a = await window.api.linkedin.auth.status();
@@ -636,14 +640,17 @@ function LinkedInSection() {
     let timer: ReturnType<typeof setTimeout> | null = null;
     const tick = async (): Promise<void> => {
       try {
-        const [s, c] = await Promise.all([
+        const [s, c, sig] = await Promise.all([
           window.api.linkedin.scan.status(),
           window.api.linkedin.feed.counts(),
+          window.api.linkedin.signals.status(),
         ]);
         if (cancelled) return;
         setScanStatus(s);
         setCounts(c);
-        const next = s.running ? 2000 : 30000;
+        setSignalStatus(sig);
+        // Faster polling while either scan or extraction is running.
+        const next = s.running || sig.running ? 2000 : 30000;
         timer = setTimeout(() => void tick(), next);
       } catch {
         if (cancelled) return;
@@ -756,6 +763,31 @@ function LinkedInSection() {
       await refreshAuth();
     } finally {
       setBusy(false);
+    }
+  };
+
+  const onRunSignals = async () => {
+    if (signalStatus?.running) {
+      try {
+        await window.api.linkedin.signals.cancel();
+      } catch {
+        // ignore
+      }
+      return;
+    }
+    setSignalError(null);
+    setSignalStatus((prev) => (prev ? { ...prev, running: true } : prev));
+    try {
+      const result = await window.api.linkedin.signals.run();
+      setSignalStatus(result);
+      // Force counts refresh so the "Erfasste Daten" line catches up.
+      const c = await window.api.linkedin.feed.counts();
+      setCounts(c);
+      if (result.lastError) setSignalError(result.lastError);
+    } catch (err) {
+      setSignalError(
+        err instanceof Error ? err.message : "Auswertung fehlgeschlagen.",
+      );
     }
   };
 
@@ -1064,6 +1096,70 @@ function LinkedInSection() {
             {counts.interactions.toLocaleString("de-DE")} Interaktionen ·{" "}
             {counts.media.toLocaleString("de-DE")} Medien (
             {formatBytesShort(counts.mediaBytes)})
+          </p>
+          <p className="muted small">
+            Auswertung:{" "}
+            {counts.signalsExtracted.toLocaleString("de-DE")} fertig ·{" "}
+            {counts.signalsPending.toLocaleString("de-DE")} ausstehend ·{" "}
+            {counts.signalsFailed.toLocaleString("de-DE")} fehlerhaft ·{" "}
+            {counts.signalsSkipped.toLocaleString("de-DE")} übersprungen
+            {counts.signalsSkipped > 0 ? " (kein LLM)" : ""}
+          </p>
+          <div className="linkedin-row">
+            <button
+              type="button"
+              onClick={() => void onRunSignals()}
+              disabled={
+                !enabled ||
+                (!signalStatus?.running &&
+                  (counts.signalsPending === 0 ||
+                    !!signalStatus?.lastError?.includes(
+                      "Kein LLM konfiguriert",
+                    )))
+              }
+              title={
+                !enabled
+                  ? "Beobachter aktivieren."
+                  : signalStatus?.running
+                    ? "Auswertung abbrechen."
+                    : "Auswertung jetzt ausführen."
+              }
+            >
+              {signalStatus?.running
+                ? "Werte aus… (Abbrechen)"
+                : "Auswertung jetzt ausführen"}
+            </button>
+            {signalStatus?.lastRunAt && !signalStatus.running && (
+              <span className="muted small">
+                Letzter Auswertungs-Lauf vor{" "}
+                {Math.max(
+                  1,
+                  Math.round(
+                    (Date.now() - signalStatus.lastRunAt) / 60000,
+                  ),
+                )}
+                {" Min"}
+              </span>
+            )}
+          </div>
+          {signalStatus?.lastError && (
+            <p className="muted small">
+              {signalStatus.lastError.includes("Kein LLM konfiguriert") ? (
+                <>
+                  Letzter Fehler: {signalStatus.lastError}{" "}
+                  <a href="#provider-section">
+                    Provider in Einstellungen wählen
+                  </a>
+                </>
+              ) : (
+                <>Letzter Fehler: {signalStatus.lastError}</>
+              )}
+            </p>
+          )}
+          {signalError && <p className="crm-card-error">{signalError}</p>}
+          <p className="muted small">
+            Wird mit Phase L6 sichtbar — die ausgewerteten Signale erhalten
+            in einem späteren Release eine eigene Ansicht.
           </p>
         </fieldset>
       )}

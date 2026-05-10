@@ -1025,6 +1025,22 @@ export interface LinkedInFeedCounts {
   media: number;
   /** Total bytes of stored media. */
   mediaBytes: number;
+  /** Phase L3: signal-extraction queue counts. */
+  signalsExtracted: number;
+  signalsPending: number;
+  signalsFailed: number;
+  signalsSkipped: number;
+}
+
+/** Phase L3: extraction worker status, polled by Settings. */
+export interface LinkedInSignalStatus {
+  running: boolean;
+  pending: number;
+  extracted: number;
+  failed: number;
+  skipped: number;
+  lastRunAt: number | null;
+  lastError: string | null;
 }
 
 /** Joined post + author shape returned by `feed:recent`. L6 surfaces

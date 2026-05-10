@@ -17,7 +17,16 @@ import type {
   LinkedInScanResult,
   LinkedInScanStatus,
   LinkedInSettings,
+  LinkedInSignalStatus,
 } from "../../shared/types";
+import {
+  attachProviders as attachExtractorProviders,
+  cancelDrain as cancelExtractorDrain,
+  drainQueue as drainSignalQueue,
+  statusSnapshot as signalStatusSnapshot,
+} from "./extractor";
+import type { LlmProviderManager } from "../agent/providers";
+import { ProviderConfigStore } from "../agent/providers";
 import { read, write, reset } from "./store";
 import {
   clearStoredSession,
@@ -45,8 +54,12 @@ function ensureFingerprint(): void {
   }
 }
 
-export function initLinkedIn(): void {
+export function initLinkedIn(opts?: { providers?: LlmProviderManager }): void {
   ensureFingerprint();
+
+  if (opts?.providers) {
+    attachExtractorProviders(opts.providers, ProviderConfigStore.shared());
+  }
 
   ipcMain.handle("linkedin:settings:get", (): LinkedInSettings => read());
 
@@ -162,6 +175,27 @@ export function initLinkedIn(): void {
       return await recentPosts(db, args ?? {});
     },
   );
+
+  // ---- L3 signal extraction surface -----------------------------------
+
+  ipcMain.handle(
+    "linkedin:signals:status",
+    async (): Promise<LinkedInSignalStatus> => {
+      return await signalStatusSnapshot();
+    },
+  );
+
+  ipcMain.handle(
+    "linkedin:signals:run",
+    async (): Promise<LinkedInSignalStatus> => {
+      return await drainSignalQueue({ limit: 100 });
+    },
+  );
+
+  ipcMain.handle("linkedin:signals:cancel", (): { ok: true } => {
+    cancelExtractorDrain();
+    return { ok: true };
+  });
 
   // Background scheduler — re-arms automatically on settings changes.
   startScheduler();
