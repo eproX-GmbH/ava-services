@@ -1681,24 +1681,26 @@ function ChatSidebar(props: {
             <PanelLeftClose size={18} />
           )}
         </button>
-        <button
-          type="button"
-          className="chat-sidebar__icon-btn"
-          onClick={props.onNew}
-          title="Neue Konversation"
-          aria-label="Neue Konversation"
-        >
-          <SquarePen size={18} />
-        </button>
-        <button
-          type="button"
-          className="chat-sidebar__icon-btn"
-          onClick={() => openChatSearch()}
-          title="In allen Chats suchen (⌘/Ctrl+K)"
-          aria-label="In allen Chats suchen"
-        >
-          <SearchCode size={18} />
-        </button>
+        <div className="chat-sidebar__header-right">
+          <button
+            type="button"
+            className="chat-sidebar__icon-btn"
+            onClick={props.onNew}
+            title="Neue Konversation"
+            aria-label="Neue Konversation"
+          >
+            <SquarePen size={18} />
+          </button>
+          <button
+            type="button"
+            className="chat-sidebar__icon-btn"
+            onClick={() => openChatSearch()}
+            title="In allen Chats suchen (⌘/Ctrl+K)"
+            aria-label="In allen Chats suchen"
+          >
+            <SearchCode size={18} />
+          </button>
+        </div>
       </div>
       {!props.collapsed && (
         <>

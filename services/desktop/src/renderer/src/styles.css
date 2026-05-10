@@ -462,6 +462,13 @@ body {
   width: 100%;
   margin-inline: auto;
 }
+/* The chat route owns its own width — let the sidebar paint flush
+ * against the left edge regardless of viewport width, and let the
+ * .chat-route__main re-establish a comfortable reading column on
+ * its own. */
+.app-shell__main > .chat-route {
+  max-width: none;
+}
 
 .topbar {
   height: 64px;
@@ -1469,6 +1476,15 @@ code, pre { font-family: var(--font-mono); font-size: 12px; }
   padding: 10px 10px;
   flex: 0 0 auto;
 }
+/* v0.1.88 — group the two right-side icons (new chat + search) so
+ * the collapse toggle sits alone on the left and the action pair
+ * sits together on the right. Previously space-between distributed
+ * all three evenly, which left an icon stranded in the middle. */
+.chat-sidebar__header-right {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
 .chat-sidebar--collapsed .chat-sidebar__header {
   flex-direction: column;
   justify-content: flex-start;
@@ -1622,6 +1638,15 @@ code, pre { font-family: var(--font-mono); font-size: 12px; }
   border-radius: 999px;
   font-size: 12px;
   max-width: 100%;
+}
+/* v0.1.88 — dark-mode override. The light-aqua tokens above stay
+ * frozen across themes (only 600/700 flip), so without this the chip
+ * stayed near-white on slate-900 and the filename + "6 Zeilen
+ * ANZEIGEN" went unreadable. */
+:root.dark .chat-attachment-chip {
+  background: rgba(0, 192, 167, 0.15);
+  border-color: rgba(0, 192, 167, 0.35);
+  color: var(--color-indigo-200);
 }
 .chat-attachment-icon { flex-shrink: 0; }
 .chat-attachment-name {
