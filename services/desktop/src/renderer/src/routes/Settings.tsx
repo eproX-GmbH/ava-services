@@ -3173,11 +3173,15 @@ function formatRelativeDate(ts: number): string {
 
 // -- Plan & Abrechnung (M2/M3 monetization) ---------------------------------
 //
-// Shows the current tier, the per-period usage bar, and the two action
-// buttons (Upgrade for free/starter; Verwalten for any tenant with a
-// Stripe customer link). The IPC paths are non-blocking — main opens
-// the Stripe URL in the user's default browser; the renderer just
-// shows a loading state while the gateway round-trips.
+// v0.1.101 — redesigned plan picker with side-by-side comparison cards.
+// Each card lists the differentiating features so the user sees what
+// the upgrade actually buys. The Pro card carries an "Empfohlen" badge.
+// CTAs adapt to the current tier:
+//   - free      → Starter + Pro + Enterprise contact, no Verwalten
+//                 (no Stripe customer yet)
+//   - starter   → Pro + Enterprise contact + Verwalten
+//   - pro       → Enterprise contact + Verwalten (cancellation via portal)
+//   - enterprise → section hidden entirely
 //
 // Section id `plan-section` is the deep-link target for the topbar
 // pill (`/settings#plan-section`).
@@ -3188,6 +3192,74 @@ const TIER_LABELS: Record<BillingTier, string> = {
   pro: "Pro",
   enterprise: "Enterprise",
 };
+
+interface PlanCard {
+  tier: BillingTier;
+  name: string;
+  price: string;
+  cadence: string | null;
+  quota: string;
+  features: string[];
+  recommended?: boolean;
+}
+
+const PLAN_CARDS: PlanCard[] = [
+  {
+    tier: "free",
+    name: "Free",
+    price: "0 €",
+    cadence: null,
+    quota: "25 Firmen Lebenszeit",
+    features: [
+      "Alle Funktionen",
+      "Lokal auf deinem Gerät",
+      "Community-Support",
+    ],
+  },
+  {
+    tier: "starter",
+    name: "Starter",
+    price: "49 €",
+    cadence: "/Monat",
+    quota: "500 Firmen pro Monat",
+    features: [
+      "Alle Funktionen",
+      "Lokal auf deinem Gerät",
+      "Vorrang-Support",
+      "Monatliche Abrechnung",
+    ],
+  },
+  {
+    tier: "pro",
+    name: "Pro",
+    price: "149 €",
+    cadence: "/Monat",
+    quota: "2 000 Firmen pro Monat",
+    features: [
+      "Alle Funktionen",
+      "Lokal auf deinem Gerät",
+      "Vorrang-Support",
+      "Früher Zugang zu Beta-Features",
+      "Monatliche Abrechnung",
+    ],
+    recommended: true,
+  },
+  {
+    tier: "enterprise",
+    name: "Enterprise",
+    price: "Auf Anfrage",
+    cadence: null,
+    quota: "Unbegrenzt",
+    features: [
+      "Alle Funktionen",
+      "Custom-Integrationen",
+      "SLA + dedizierter Support",
+      "Individuelle Vertragsgestaltung",
+    ],
+  },
+];
+
+const ENTERPRISE_CONTACT_URL = "https://eprox-gmbh.de/kontakt";
 
 function PlanSection() {
   const { data, isLoading, error, refetch } = useUsage();
@@ -3220,6 +3292,25 @@ function PlanSection() {
     }
   }
 
+  function openEnterpriseContact() {
+    void window.api.shell.openExternal(ENTERPRISE_CONTACT_URL).catch(() => {
+      // shell.openExternal exists across all Electron versions we ship,
+      // but if it ever doesn't (e.g. preload lag), surface a clear error.
+      setOpError("Konnte Kontakt-Seite nicht öffnen. Versuch's bitte direkt im Browser: " + ENTERPRISE_CONTACT_URL);
+    });
+  }
+
+  // Enterprise tenants don't see the section at all — they're managed
+  // out-of-band and there's nothing for them to do here.
+  if (data?.tier === "enterprise") {
+    return null;
+  }
+
+  const currentTier = data?.tier;
+  // Verwalten only makes sense once a Stripe customer exists. We use
+  // tier as a proxy — free has no customer; paid tiers always do.
+  const showManageButton = currentTier === "starter" || currentTier === "pro";
+
   return (
     <section id="plan-section" className="ct-card" style={{ marginBottom: "1.25rem" }}>
       <header className="ct-card__header">
@@ -3238,103 +3329,171 @@ function PlanSection() {
       )}
 
       {data && (
-        <div style={{ display: "grid", gap: "0.75rem" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
-            <span className={`badge badge--${data.tier}`}>{TIER_LABELS[data.tier]}</span>
-            {data.tier === "enterprise" && (
-              <span className="muted">unbegrenztes Kontingent</span>
+        <div style={{ display: "grid", gap: "1.25rem" }}>
+          {/* Current tier pill + usage bar */}
+          <div style={{ display: "grid", gap: "0.5rem" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+              <span className={`badge badge--${data.tier}`}>{TIER_LABELS[data.tier]}</span>
+              <span className="muted small">aktiver Tarif</span>
+            </div>
+
+            {!isUnlimited(data) && (
+              <div>
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    fontSize: "0.9rem",
+                  }}
+                >
+                  <strong>
+                    {data.used.toLocaleString("de-DE")} von {data.limit.toLocaleString("de-DE")} verbraucht
+                  </strong>
+                  {data.periodEnd && (
+                    <span className="muted">
+                      Erneuert sich am {fmtDateShort(data.periodEnd)}
+                    </span>
+                  )}
+                </div>
+                <div
+                  role="progressbar"
+                  aria-valuemin={0}
+                  aria-valuemax={data.limit}
+                  aria-valuenow={data.used}
+                  style={{
+                    height: 8,
+                    background: "var(--color-border)",
+                    borderRadius: 4,
+                    overflow: "hidden",
+                    marginTop: 4,
+                  }}
+                >
+                  <div
+                    style={{
+                      width: `${Math.min(100, (data.used / Math.max(1, data.limit)) * 100)}%`,
+                      height: "100%",
+                      background:
+                        data.used >= data.limit
+                          ? "var(--color-err)"
+                          : data.used / data.limit >= 0.8
+                            ? "var(--color-warn)"
+                            : "var(--color-indigo-500)",
+                      transition: "width 200ms ease",
+                    }}
+                  />
+                </div>
+                <small className="muted">
+                  {data.periodKey === "lifetime"
+                    ? "Lebenszeit-Kontingent (Free-Tier)"
+                    : "Verbrauch im aktuellen Zyklus"}
+                </small>
+              </div>
             )}
           </div>
 
-          {!isUnlimited(data) && (
-            <div>
-              <div
-                style={{
-                  display: "flex",
-                  justifyContent: "space-between",
-                  fontSize: "0.9rem",
-                }}
-              >
-                <strong>
-                  {data.used} von {data.limit} verbraucht
-                </strong>
-                {data.periodEnd && (
-                  <span className="muted">
-                    Erneuert sich am {fmtDateShort(data.periodEnd)}
-                  </span>
-                )}
-              </div>
-              <div
-                role="progressbar"
-                aria-valuemin={0}
-                aria-valuemax={data.limit}
-                aria-valuenow={data.used}
-                style={{
-                  height: 8,
-                  background: "var(--surface-2, #e5e7eb)",
-                  borderRadius: 4,
-                  overflow: "hidden",
-                  marginTop: 4,
-                }}
-              >
+          {/* Plan comparison cards */}
+          <div className="plan-grid">
+            {PLAN_CARDS.map((p) => {
+              const isCurrent = p.tier === currentTier;
+              const canCheckout =
+                (currentTier === "free" && (p.tier === "starter" || p.tier === "pro")) ||
+                (currentTier === "starter" && p.tier === "pro");
+              return (
                 <div
-                  style={{
-                    width: `${Math.min(100, (data.used / Math.max(1, data.limit)) * 100)}%`,
-                    height: "100%",
-                    background:
-                      data.used >= data.limit
-                        ? "var(--danger, #dc2626)"
-                        : data.used / data.limit >= 0.8
-                          ? "var(--warn, #d97706)"
-                          : "var(--accent, #00c0a7)",
-                    transition: "width 200ms ease",
-                  }}
-                />
-              </div>
-              <small className="muted">
-                {data.periodKey === "lifetime"
-                  ? "Lebenszeit-Kontingent (Free-Tier)"
-                  : "Verbrauch im aktuellen Zyklus"}
-              </small>
+                  key={p.tier}
+                  className={
+                    "plan-card" +
+                    (isCurrent ? " plan-card--current" : "") +
+                    (p.recommended ? " plan-card--recommended" : "")
+                  }
+                >
+                  {p.recommended && !isCurrent && (
+                    <span className="plan-card__badge">Empfohlen</span>
+                  )}
+                  {isCurrent && (
+                    <span className="plan-card__badge plan-card__badge--current">
+                      Aktueller Tarif
+                    </span>
+                  )}
+                  <div className="plan-card__name">{p.name}</div>
+                  <div className="plan-card__price">
+                    <span className="plan-card__price-amount">{p.price}</span>
+                    {p.cadence && (
+                      <span className="plan-card__price-cadence">{p.cadence}</span>
+                    )}
+                  </div>
+                  <div className="plan-card__quota muted">{p.quota}</div>
+                  <ul className="plan-card__features">
+                    {p.features.map((f) => (
+                      <li key={f}>{f}</li>
+                    ))}
+                  </ul>
+                  <div className="plan-card__cta">
+                    {isCurrent ? (
+                      <button type="button" disabled className="plan-card__cta-btn">
+                        Aktiv
+                      </button>
+                    ) : p.tier === "enterprise" ? (
+                      <button
+                        type="button"
+                        className="plan-card__cta-btn"
+                        onClick={openEnterpriseContact}
+                      >
+                        Anfrage senden
+                      </button>
+                    ) : canCheckout ? (
+                      <button
+                        type="button"
+                        className={
+                          "plan-card__cta-btn" +
+                          (p.recommended ? " plan-card__cta-btn--primary" : "")
+                        }
+                        disabled={busy !== null}
+                        onClick={() =>
+                          void openCheckout(p.tier as "starter" | "pro")
+                        }
+                      >
+                        {busy === `checkout-${p.tier}`
+                          ? "Wird geöffnet…"
+                          : "Upgraden"}
+                      </button>
+                    ) : (
+                      // Downgrade not supported in-app. starter-on-pro,
+                      // pro-on-starter etc. show no CTA so the user
+                      // doesn't get the wrong impression.
+                      <button
+                        type="button"
+                        disabled
+                        className="plan-card__cta-btn"
+                        title="Wechsel zu einem niedrigeren Tarif erfolgt über das Kunden-Portal."
+                      >
+                        Wechsel im Portal
+                      </button>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Manage subscription — only for paid tiers */}
+          {showManageButton && (
+            <div style={{ display: "flex", justifyContent: "flex-start" }}>
+              <button
+                type="button"
+                disabled={busy !== null}
+                onClick={() => void openPortal()}
+                title="Stripe-Kundenportal öffnen (Rechnungen, Zahlungsmethoden, Tarif-Wechsel, Kündigung)"
+              >
+                {busy === "portal" ? "Wird geöffnet…" : "Abonnement verwalten"}
+              </button>
             </div>
           )}
 
-          <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
-            {(data.tier === "free" || data.tier === "starter") && (
-              <>
-                {data.tier === "free" && (
-                  <button
-                    type="button"
-                    className="primary"
-                    disabled={busy !== null}
-                    onClick={() => void openCheckout("starter")}
-                  >
-                    {busy === "checkout-starter"
-                      ? "Wird geöffnet…"
-                      : "Auf Starter upgraden (49 €/Monat)"}
-                  </button>
-                )}
-                <button
-                  type="button"
-                  className="primary"
-                  disabled={busy !== null}
-                  onClick={() => void openCheckout("pro")}
-                >
-                  {busy === "checkout-pro"
-                    ? "Wird geöffnet…"
-                    : "Auf Pro upgraden (149 €/Monat)"}
-                </button>
-              </>
-            )}
-            <button
-              type="button"
-              disabled={busy !== null}
-              onClick={() => void openPortal()}
-              title="Stripe-Kundenportal öffnen (Rechnungen, Zahlungsmethoden, Kündigung)"
-            >
-              {busy === "portal" ? "Wird geöffnet…" : "Verwalten"}
-            </button>
-          </div>
+          <small className="muted">
+            Kündigung jederzeit über das Kunden-Portal möglich. Enterprise-
+            Wechsel laufen direkt über uns.
+          </small>
 
           {opError && <div className="error">{opError}</div>}
         </div>

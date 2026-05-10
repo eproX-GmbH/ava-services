@@ -570,6 +570,15 @@ const api = {
     },
   },
 
+  // v0.1.101 — generic shell.openExternal bridge for plain external
+  // links (Enterprise contact page, etc.). Constrained to http/https
+  // schemes main-side so the renderer can't shell out to arbitrary
+  // protocols.
+  shell: {
+    openExternal: (url: string): Promise<void> =>
+      ipcRenderer.invoke("shell:openExternal", url),
+  },
+
   // M3 monetization (v0.1.73) — Stripe Checkout + Customer Portal.
   // The renderer never sees Stripe URLs directly: main calls the
   // gateway with the user's bearer token, gets back a one-shot URL,

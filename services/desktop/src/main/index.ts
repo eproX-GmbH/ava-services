@@ -1112,6 +1112,29 @@ app.whenReady().then(async () => {
     getAccessToken: () => auth.getAccessToken(),
   });
 
+  // v0.1.101 — generic shell.openExternal bridge for plain http/https
+  // links (Enterprise contact page on Settings → Plan & Abrechnung).
+  // Refuses any other scheme so the renderer can't open arbitrary
+  // URIs (file:, javascript:, custom protocols, etc.) through this
+  // path — those should each have their own dedicated IPC.
+  ipcMain.handle("shell:openExternal", async (_e, url: string) => {
+    if (typeof url !== "string") {
+      throw new Error("shell:openExternal requires a string URL");
+    }
+    let parsed: URL;
+    try {
+      parsed = new URL(url);
+    } catch {
+      throw new Error("shell:openExternal: invalid URL");
+    }
+    if (parsed.protocol !== "https:" && parsed.protocol !== "http:") {
+      throw new Error(
+        `shell:openExternal: refused non-http(s) scheme '${parsed.protocol}'`,
+      );
+    }
+    await shell.openExternal(parsed.toString());
+  });
+
   // LinkedIn-Beobachter (Phase L0). Persistent settings + consent gate
   // + kill-switch IPC. No scraper code here yet — that lands in L1+.
   initLinkedIn({ providers, gateway: gatewayClient });
