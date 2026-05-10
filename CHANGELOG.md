@@ -7,6 +7,19 @@ The repo uses one rolling tag per desktop release (`v<major>.<minor>.<patch>`)
 on `main`. Submodules cut their own feature branches and are pinned via the
 desktop bundle; `pnpm fetch:producers` re-vendors them into the .dmg.
 
+## v0.1.109 — 2026-05-10
+
+- **LinkedIn-Beobachter: per-run screenshot capture.** Each scrape now
+  drops a timestamped folder under `userData/linkedin/runs/` with PNG
+  shots at every checkpoint (initial nav, auth check, feed loaded, each
+  scroll cycle, before extraction, error) plus a `run.json` sidecar
+  with outcome, postsSeen, url and userAgent. Retention is capped at
+  the last 10 runs; older folders are pruned on each new run.
+  Screenshot capture is best-effort and cannot break the scrape.
+  Settings panel gains a "Letzte Läufe" fieldset listing the most
+  recent runs with an "Ordner öffnen" button each. Debugging-
+  transparency only; scrape logic is unchanged.
+
 ## v0.1.108 — 2026-05-10
 
 - **Chat bubble.** User message bubble flipped from indigo→violet gradient to

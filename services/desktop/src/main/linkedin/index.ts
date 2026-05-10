@@ -8,7 +8,7 @@
 // device, encrypted via safeStorage, and L2's main-process scraper
 // will read them directly when constructing its Playwright context.
 
-import { app, BrowserWindow, ipcMain } from "electron";
+import { app, BrowserWindow, ipcMain, shell } from "electron";
 import type {
   LinkedInAuthStatus,
   LinkedInFeedCounts,
@@ -51,6 +51,7 @@ import {
   scanStatusSnapshot,
   shutdownScraper,
 } from "./scraper";
+import { listRecentRuns, type RunMetadata } from "./runs";
 import {
   dismissSignal,
   getDb,
@@ -191,6 +192,35 @@ export function initLinkedIn(opts?: {
     cancelActiveScan();
     return { ok: true };
   });
+
+  // v0.1.109: per-run diagnostic artefacts (screenshots + run.json).
+  ipcMain.handle(
+    "linkedin:runs:list",
+    async (): Promise<
+      Array<{ dir: string; startedAt: string; meta: RunMetadata | null }>
+    > => {
+      return listRecentRuns();
+    },
+  );
+
+  ipcMain.handle(
+    "linkedin:runs:openFolder",
+    async (_e, args: { dir: string }): Promise<{ ok: true } | { error: string }> => {
+      // Defence in depth: the renderer can only request to open a
+      // path it received from `linkedin:runs:list`. We still verify
+      // the path lives inside our runs root to make sure no other
+      // directory can be coaxed open via this handler.
+      const { join } = await import("node:path");
+      const root = join(app.getPath("userData"), "linkedin", "runs");
+      const target = args?.dir ?? "";
+      if (!target.startsWith(root)) {
+        return { error: "invalid path" };
+      }
+      const err = await shell.openPath(target);
+      if (err) return { error: err };
+      return { ok: true };
+    },
+  );
 
   ipcMain.handle(
     "linkedin:scan:status",

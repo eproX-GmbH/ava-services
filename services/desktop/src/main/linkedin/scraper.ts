@@ -41,6 +41,7 @@ import {
   upsertPost,
 } from "./db";
 import { drainQueue } from "./extractor";
+import { beginRun, type RunMetadata, type RunRecorder } from "./runs";
 import { buildStealthInjection } from "./stealth";
 
 export interface ScanOptions {
@@ -551,6 +552,12 @@ export async function runScan(opts: ScanOptions): Promise<LinkedInScanResult> {
   let outcome: LinkedInScanOutcome = "success";
   let errorMessage: string | undefined;
   let win: BrowserWindow | null = null;
+  // v0.1.109: per-run diagnostic recorder (screenshots + run.json).
+  // Screenshot failures are swallowed inside the recorder; the
+  // recorder itself never throws so the scrape path is unaffected.
+  const recorder: RunRecorder = beginRun({
+    userAgent: settings.fingerprint?.userAgent ?? null,
+  });
 
   try {
     const fp = settings.fingerprint;
@@ -647,8 +654,13 @@ export async function runScan(opts: ScanOptions): Promise<LinkedInScanResult> {
     }
     if (signal.aborted) throw new DOMException("aborted", "AbortError");
 
+    // v0.1.109: capture initial screenshot once we've landed on the
+    // feed URL, before any further interaction.
+    await recorder.capture(win, "01_initial");
+
     // Login redirect detection
     const url = win.webContents.getURL();
+    recorder.updateMeta({ url });
     if (/\/login|\/checkpoint\//.test(url)) {
       outcome = "login_required";
       // v0.1.99 — drop the stale session cookies the moment we know
@@ -661,9 +673,12 @@ export async function runScan(opts: ScanOptions): Promise<LinkedInScanResult> {
       // "Nicht verbunden" with a "Mit LinkedIn verbinden" button
       // visible immediately.
       clearStoredSession();
+      await recorder.capture(win, "02_after_auth_check");
     } else {
+      await recorder.capture(win, "02_after_auth_check");
       // Hydration delay
       await sleep(jitter(2000, 4000), signal);
+      await recorder.capture(win, "03_feed_loaded");
 
       // L7 aggressive-mode pre-feed dwell: 6-12s with a couple of
       // mouse-move events sprinkled in so the session looks like it
@@ -748,9 +763,13 @@ export async function runScan(opts: ScanOptions): Promise<LinkedInScanResult> {
             .catch(() => undefined);
         }
         await sleep(jitter(scrollMin, scrollMax), signal);
+        // v0.1.109: per-scroll diagnostic capture. Numbered from 1.
+        await recorder.capture(win, `04_scroll_${i + 1}`);
       }
       // Extra settle for lazy media
       await sleep(3000, signal);
+
+      await recorder.capture(win, "05_before_extraction");
 
       // Extract
       const raw = (await win.webContents.executeJavaScript(
@@ -850,6 +869,8 @@ export async function runScan(opts: ScanOptions): Promise<LinkedInScanResult> {
       errorMessage = msg;
       console.warn("[linkedin/scraper] scan failed:", msg);
     }
+    // v0.1.109: capture whatever the page looked like at failure.
+    await recorder.capture(win, "99_error");
   } finally {
     try {
       win?.destroy();
@@ -859,6 +880,19 @@ export async function runScan(opts: ScanOptions): Promise<LinkedInScanResult> {
     win = null;
     activeAbort = null;
     running = false;
+    // v0.1.109: finalise the run.json sidecar with all known fields.
+    // `no_posts` is a UI-only refinement so the "Letzte Läufe" panel
+    // can flag the 0-posts-seen case loudly.
+    const metaOutcome: RunMetadata["outcome"] =
+      outcome === "success" && postsSeen === 0 ? "no_posts" : outcome;
+    recorder.updateMeta({
+      outcome: metaOutcome,
+      postsSeen,
+      signalsLinked: postsNew,
+      errorMessage: errorMessage ?? null,
+      finishedAt: new Date().toISOString(),
+    });
+    recorder.finalize();
   }
 
   await finishScanRun(db, {

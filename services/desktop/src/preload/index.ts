@@ -40,6 +40,7 @@ import type {
   LinkedInLinkedSignal,
   LinkedInLinkerStatus,
   LinkedInRecentPost,
+  LinkedInRunListEntry,
   LinkedInScanResult,
   LinkedInScanStatus,
   LinkedInSettings,
@@ -788,6 +789,15 @@ const api = {
         ipcRenderer.invoke("linkedin:scan:cancel"),
       status: (): Promise<LinkedInScanStatus> =>
         ipcRenderer.invoke("linkedin:scan:status"),
+    },
+    /** v0.1.109 — per-run diagnostic artefacts. Each row points at a
+     *  folder full of screenshots + a `run.json`. Used by the "Letzte
+     *  Läufe" panel so the user can inspect what the scraper saw. */
+    runs: {
+      list: (): Promise<LinkedInRunListEntry[]> =>
+        ipcRenderer.invoke("linkedin:runs:list"),
+      openFolder: (dir: string): Promise<{ ok: true } | { error: string }> =>
+        ipcRenderer.invoke("linkedin:runs:openFolder", { dir }),
     },
     feed: {
       counts: (): Promise<LinkedInFeedCounts> =>

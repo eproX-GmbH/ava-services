@@ -25,6 +25,7 @@ import type {
   LinkedInAuthStatus,
   LinkedInFeedCounts,
   LinkedInImageAnalysisStatus,
+  LinkedInRunListEntry,
   LinkedInScanStatus,
   LinkedInSettings,
   LinkedInSignalStatus,
@@ -617,6 +618,17 @@ function LinkedInSection() {
   const [signalError, setSignalError] = useState<string | null>(null);
   const [imageStatus, setImageStatus] =
     useState<LinkedInImageAnalysisStatus | null>(null);
+  // v0.1.109: "Letzte Läufe" panel — per-run screenshot folders.
+  const [runs, setRuns] = useState<LinkedInRunListEntry[]>([]);
+
+  const refreshRuns = async (): Promise<void> => {
+    try {
+      const rows = await window.api.linkedin.runs.list();
+      setRuns(rows);
+    } catch {
+      // best effort — leave the list as-is on transient errors
+    }
+  };
 
   const refreshAuth = async () => {
     const a = await window.api.linkedin.auth.status();
@@ -655,6 +667,7 @@ function LinkedInSection() {
         setCounts(c);
         setSignalStatus(sig);
         setImageStatus(img);
+        void refreshRuns();
         // Faster polling while either scan or extraction is running.
         const next = s.running || sig.running ? 2000 : 30000;
         timer = setTimeout(() => void tick(), next);
@@ -1121,6 +1134,69 @@ function LinkedInSection() {
           Wahrscheinlichkeit reduziert, dass LinkedIn den Zugriff drosselt.
           Verlangsamt aber spürbar.
         </p>
+      </fieldset>
+
+      {/* v0.1.109 — per-run screenshot artefacts. */}
+      <fieldset className="linkedin-fieldset" disabled={!enabled}>
+        <legend>Letzte Läufe</legend>
+        <p className="muted small">
+          Jeder Scan legt einen Ordner mit Screenshots und einer
+          run.json ab. Praktisch, wenn ein Lauf 0 Beiträge gesehen
+          hat. Es werden die letzten 10 Läufe behalten, ältere werden
+          automatisch gelöscht.
+        </p>
+        {runs.length === 0 && (
+          <p className="muted small">Noch keine Läufe.</p>
+        )}
+        {runs.length > 0 && (
+          <ul className="linkedin-runs-list">
+            {runs.map((r) => {
+              const ts = r.meta?.startedAt
+                ? new Date(r.meta.startedAt).toLocaleString("de-DE")
+                : r.startedAt;
+              const outcome = r.meta?.outcome ?? "unbekannt";
+              const posts = r.meta?.postsSeen ?? 0;
+              const label =
+                outcome === "no_posts"
+                  ? "0 Beiträge"
+                  : outcome === "success"
+                    ? `${posts.toLocaleString("de-DE")} Beiträge`
+                    : outcome === "login_required"
+                      ? "Login nötig"
+                      : outcome === "network_error"
+                        ? "Netzwerkfehler"
+                        : outcome === "cancelled"
+                          ? "abgebrochen"
+                          : outcome === "error"
+                            ? "Fehler"
+                            : outcome === "running"
+                              ? "läuft"
+                              : "unbekannt";
+              return (
+                <li
+                  key={r.dir}
+                  className="linkedin-row"
+                  style={{ gap: 8, alignItems: "center" }}
+                >
+                  <span className="muted small" style={{ minWidth: 180 }}>
+                    {ts}
+                  </span>
+                  <span className="muted small" style={{ minWidth: 140 }}>
+                    {label}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      void window.api.linkedin.runs.openFolder(r.dir);
+                    }}
+                  >
+                    Ordner öffnen
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        )}
       </fieldset>
 
       {/* Erfasste Daten — counts row */}

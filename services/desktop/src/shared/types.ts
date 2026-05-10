@@ -1028,6 +1028,31 @@ export interface LinkedInScanResult {
   finishedAt: number | null;
 }
 
+/** v0.1.109 — sidecar metadata written alongside per-run screenshots.
+ *  Surfaced by `linkedin:runs:list` for the "Letzte Läufe" panel. */
+export interface LinkedInRunMeta {
+  startedAt: string;
+  finishedAt: string | null;
+  outcome:
+    | LinkedInScanOutcome
+    | "no_posts"
+    | "running";
+  postsSeen: number;
+  signalsLinked: number;
+  errorMessage: string | null;
+  userAgent: string | null;
+  url: string | null;
+}
+
+/** One row in the "Letzte Läufe" list. `meta` is null when `run.json`
+ *  is missing or unparseable (an older run, or a run that crashed
+ *  before it could write the sidecar). */
+export interface LinkedInRunListEntry {
+  dir: string;
+  startedAt: string;
+  meta: LinkedInRunMeta | null;
+}
+
 /** Status of the scan engine. Cheap to poll from the renderer. */
 export interface LinkedInScanStatus {
   running: boolean;
