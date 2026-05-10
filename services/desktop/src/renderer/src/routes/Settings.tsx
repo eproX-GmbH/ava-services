@@ -300,6 +300,7 @@ function ProducersSection() {
     ready: "bereit",
     error: "Fehler",
     stopping: "fährt herunter…",
+    not_installed: "nicht installiert",
   };
 
   // §8.v3 cosmetic — per-producer AMQP queue depth from the gateway.
@@ -335,7 +336,7 @@ function ProducersSection() {
             const tone =
               p.state === "ready"
                 ? "ok"
-                : p.state === "error"
+                : p.state === "error" || p.state === "not_installed"
                   ? "err"
                   : "muted";
             const depth = queueDepths.data?.producers?.[p.name];

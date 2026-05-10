@@ -219,6 +219,42 @@ async function main() {
       delete pkg.scripts["test:unit"];
       delete pkg.scripts["test:functional"];
     }
+
+    // v0.1.99 — strip the same lifecycle scripts from every staged
+    // file: vendor dep BEFORE npm install. Without this, npm runs
+    // `prepare: tsc` on the linked vendor, which rebuilds the
+    // vendor's dist from its (often stale) committed src. Across
+    // company-contact / company-profile / website the vendor src
+    // had drifted behind the committed dist after we synced new
+    // exports earlier; the rebuild silently dropped getCurrentTier /
+    // getCurrentModel and the producer's compute-worker failed to
+    // import them. Fix is independent of vendor freshness — never
+    // run prepare on linked file: deps. The committed dist is
+    // canonical.
+    const stagedVendorRoot = join(stageDir, "vendor");
+    if (existsSync(stagedVendorRoot)) {
+      try {
+        const vendorEntries = readdirSync(stagedVendorRoot, { withFileTypes: true });
+        for (const e of vendorEntries) {
+          if (!e.isDirectory()) continue;
+          const vendorPkgPath = join(stagedVendorRoot, e.name, "package.json");
+          if (!existsSync(vendorPkgPath)) continue;
+          const vendorPkg = JSON.parse(readFileSync(vendorPkgPath, "utf8"));
+          if (vendorPkg.scripts) {
+            delete vendorPkg.scripts.prepare;
+            delete vendorPkg.scripts.postinstall;
+            delete vendorPkg.scripts.preinstall;
+            delete vendorPkg.scripts.install;
+            writeFileSync(vendorPkgPath, JSON.stringify(vendorPkg, null, 2));
+          }
+        }
+      } catch (err) {
+        console.warn(
+          `[producers] failed to strip lifecycle scripts from staged vendor:`,
+          err instanceof Error ? err.message : String(err),
+        );
+      }
+    }
     // Resolve file: deps that pointed at workspace siblings — the
     // staging dir is outside the monorepo so `file:../packages/foo`
     // doesn't resolve. Rewrite them to the absolute workspace path

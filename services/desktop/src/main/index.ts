@@ -328,6 +328,13 @@ function makeDatabaseUrlGetter(
 }
 
 const producers: ProducerSupervisor[] = [];
+/** v0.1.99 — registered producers whose vendored bundle is missing.
+ *  Broadcast as state="not_installed" so Settings can show them. */
+const missingProducers: Array<{
+  name: string;
+  databaseName: string;
+  port: number;
+}> = [];
 
 function buildProducer(
   name: string,
@@ -447,6 +454,18 @@ function buildProducer(
         `[producers] ${entry.name} not vendored (looked at ${vendored}); skipping. ` +
           `Run \`pnpm fetch:producers\` to enable in dev.`,
       );
+      // v0.1.99 — surface the missing bundle in the Settings panel
+      // instead of silently going invisible. Previously a CI bundling
+      // failure produced an installed app where the affected producer
+      // had no entry at all in <ProducersSection>; users had no way to
+      // tell whether the producer was simply not running vs not even
+      // shipped. We push a sentinel "not_installed" status so the UI
+      // can render an actionable line.
+      missingProducers.push({
+        name: entry.name,
+        databaseName: entry.databaseName,
+        port: entry.port,
+      });
     }
   }
 }
@@ -459,6 +478,26 @@ function broadcastProducerStatus(status: ProducerStatus): void {
 for (const p of producers) {
   p.on("status", broadcastProducerStatus);
 }
+
+/** v0.1.99 — emit a "not_installed" stub for every producer that was
+ *  registered but couldn't find its vendored bundle. Re-emit on every
+ *  new BrowserWindow creation (the renderer may not exist yet at app
+ *  start). The store on the renderer side is a Map keyed by name, so
+ *  re-emitting is idempotent. */
+function broadcastMissingProducers(): void {
+  for (const m of missingProducers) {
+    broadcastProducerStatus({
+      name: m.name,
+      state: "not_installed",
+      port: null,
+      databaseName: m.databaseName,
+      pid: null,
+      errorMessage: null,
+      lastExitCode: null,
+    });
+  }
+}
+app.on("browser-window-created", () => broadcastMissingProducers());
 
 // v0.1.52 — pipe external-service status to (a) the renderer banner
 // and (b) producer auto-pause/resume. Only fires on transitions

@@ -79,7 +79,11 @@ export type ProducerSupervisorState =
   | "starting"
   | "ready"
   | "error"
-  | "stopping";
+  | "stopping"
+  /** v0.1.99 — producer registered in PRODUCER_REGISTRY but its
+   *  vendored bundle is missing on disk. Used to surface "X: nicht
+   *  installiert" in Settings instead of the producer being invisible. */
+  | "not_installed";
 
 export interface ProducerStatus {
   /** Stable name — matches resources/producers/<name>/. */

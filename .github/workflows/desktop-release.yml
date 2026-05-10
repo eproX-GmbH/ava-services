@@ -134,15 +134,20 @@ jobs:
         # bash on both jobs: PowerShell's `||` semantics differ for
         # exit-code propagation, and `mkdir -p` isn't a builtin.
         shell: bash
-        # Always create the resources/producers dir (even empty) so
-        # electron-builder's extraResources copy doesn't fail. If
-        # the SUBMODULES_PAT secret is configured the fetch
-        # populates company-profile/; otherwise we ship empty and
-        # the desktop's Settings panel reads "Keine Producer
-        # konfiguriert".
+        # v0.1.99 — used to swallow ANY non-zero exit from
+        # fetch-producers via `|| echo "skipped"`. That hid a long
+        # string of silently-broken builds where 4 of 6 producers
+        # vendored and the .dmg shipped without the rest. Now: we
+        # only soft-skip when the FIRST producer's source dir has
+        # no package.json (the genuine "no SUBMODULES_PAT, nothing
+        # to vendor" case). Any other failure halts CI.
         run: |
           mkdir -p resources/producers
-          pnpm fetch:producers || echo "skipped — submodules not checked out"
+          if [ ! -f ../../company-profile/package.json ]; then
+            echo "::warning::No producer submodules checked out — shipping .dmg without local producers."
+            exit 0
+          fi
+          pnpm fetch:producers
 
       # Compile main + preload + renderer into `services/desktop/out/`
       # so electron-builder's asar packer has something to bundle.
@@ -320,15 +325,20 @@ jobs:
         # bash on both jobs: PowerShell's `||` semantics differ for
         # exit-code propagation, and `mkdir -p` isn't a builtin.
         shell: bash
-        # Always create the resources/producers dir (even empty) so
-        # electron-builder's extraResources copy doesn't fail. If
-        # the SUBMODULES_PAT secret is configured the fetch
-        # populates company-profile/; otherwise we ship empty and
-        # the desktop's Settings panel reads "Keine Producer
-        # konfiguriert".
+        # v0.1.99 — used to swallow ANY non-zero exit from
+        # fetch-producers via `|| echo "skipped"`. That hid a long
+        # string of silently-broken builds where 4 of 6 producers
+        # vendored and the .dmg shipped without the rest. Now: we
+        # only soft-skip when the FIRST producer's source dir has
+        # no package.json (the genuine "no SUBMODULES_PAT, nothing
+        # to vendor" case). Any other failure halts CI.
         run: |
           mkdir -p resources/producers
-          pnpm fetch:producers || echo "skipped — submodules not checked out"
+          if [ ! -f ../../company-profile/package.json ]; then
+            echo "::warning::No producer submodules checked out — shipping .dmg without local producers."
+            exit 0
+          fi
+          pnpm fetch:producers
 
       - name: Build renderer + main bundles
         working-directory: services/desktop
