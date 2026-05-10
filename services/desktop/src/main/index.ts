@@ -33,8 +33,9 @@ import {
   ExternalServiceMonitor,
   UNTERNEHMENSREGISTER_DEPENDENT_PRODUCERS,
   UPSTREAM_FAILURE_PATTERNS,
-  type ExternalServiceStatus,
+  type ExternalServicesStatus,
 } from "./external-service-monitor";
+import { pickStructuredContentSource } from "./structured-content-source";
 import { CrmManager } from "./crm";
 import { initBilling } from "./billing";
 import { initLinkedIn } from "./linkedin";
@@ -193,7 +194,8 @@ function broadcastAuthStatus(status: AuthStatus): void {
       if (s !== "idle" && s !== "error") continue;
       if (
         UNTERNEHMENSREGISTER_DEPENDENT_PRODUCERS.has(p.getStatus().name) &&
-        externalServiceMonitor.getStatus().state === "unreachable"
+        externalServiceMonitor.getServiceStatus("unternehmensregister")
+          .state === "unreachable"
       ) {
         // Skip; monitor will start it when reachability flips.
         continue;
@@ -342,6 +344,25 @@ function buildProducer(
   databaseName: string,
   port: number,
 ): ProducerSupervisor {
+  // v0.1.105 — structured-content can scrape from either
+  // unternehmensregister.de or handelsregister.de. The picker reads
+  // the live reachability snapshot and returns a source id at each
+  // spawn so a flap doesn't pin a stale choice into the env. Session A
+  // always returns "unternehmensregister"; Session B will flip the
+  // body of pickStructuredContentSource() to prefer the fallback.
+  const extraEnvAsync =
+    name === "structured-content"
+      ? async (): Promise<Record<string, string>> => {
+          const snap = externalServiceMonitor.getStatus();
+          const source = pickStructuredContentSource({
+            unternehmensregister:
+              snap.services.unternehmensregister.state === "reachable",
+            handelsregister:
+              snap.services.handelsregister.state === "reachable",
+          });
+          return { AVA_STRUCTURED_CONTENT_SOURCE: source };
+        }
+      : undefined;
   return new ProducerSupervisor({
     config: { name, entry, databaseName, port },
     databaseUrl: makeDatabaseUrlGetter(name),
@@ -356,6 +377,7 @@ function buildProducer(
     // producer uses it to scope queue + binding key + downstream
     // publish routing.
     getUserId: async () => auth.getStatus().actorId ?? null,
+    extraEnvAsync,
   });
 }
 
@@ -504,24 +526,24 @@ app.on("browser-window-created", () => broadcastMissingProducers());
 // (reachable ⇄ unreachable), not on every probe, so a stable
 // "down for an hour" doesn't churn the UI.
 function broadcastExternalServiceStatus(
-  status: ExternalServiceStatus,
+  status: ExternalServicesStatus,
 ): void {
   for (const win of BrowserWindow.getAllWindows()) {
     win.webContents.send("external-service-status:changed", status);
   }
 }
-externalServiceMonitor.on("status", (status: ExternalServiceStatus) => {
+externalServiceMonitor.on("status", (status: ExternalServicesStatus) => {
   broadcastExternalServiceStatus(status);
   // Auto-pause / auto-resume the unternehmensregister-dependent
-  // producers. The auth-status branch above also gates first-start;
-  // this branch handles transitions while the user is already
-  // signed in. Best-effort: a producer in "starting" or already
-  // "ready" obeys the toggle; one in "error" gets a fresh start
-  // attempt when the site recovers.
+  // producers. v0.1.105: Session A still always uses unternehmensregister
+  // (the picker in structured-content-source.ts is hard-wired to it),
+  // so we still gate purely on its per-service state. Session B will
+  // change this to "pause only when both sources are unreachable".
+  const ur = status.services.unternehmensregister.state;
   for (const p of producers) {
     const name = p.getStatus().name;
     if (!UNTERNEHMENSREGISTER_DEPENDENT_PRODUCERS.has(name)) continue;
-    if (status.state === "unreachable") {
+    if (ur === "unreachable") {
       const s = p.getStatus().state;
       if (s !== "idle" && s !== "stopping") {
         console.log(
@@ -529,7 +551,7 @@ externalServiceMonitor.on("status", (status: ExternalServiceStatus) => {
         );
         void p.stop();
       }
-    } else if (status.state === "reachable") {
+    } else if (ur === "reachable") {
       const s = p.getStatus().state;
       if ((s === "idle" || s === "error") && auth.getStatus().signedIn) {
         console.log(
@@ -1195,7 +1217,13 @@ app.whenReady().then(async () => {
       UNTERNEHMENSREGISTER_DEPENDENT_PRODUCERS.has(event.producer) &&
       UPSTREAM_FAILURE_PATTERNS.some((re) => re.test(event.line.text))
     ) {
+      // Today both UR-dependent producers (structured-content +
+      // company-publication) hit unternehmensregister.de; attribute
+      // the failure to that service. Session B will need to refine
+      // this once structured-content can be picked to scrape
+      // handelsregister.de instead.
       externalServiceMonitor.reportUnreachable(
+        "unternehmensregister",
         `${event.producer}: ${event.line.text.slice(0, 200)}`,
       );
     }
