@@ -56,15 +56,24 @@ const PROBE_URL = "https://www.unternehmensregister.de/";
 // for the next tick. Frequent HEAD probes used to be the only signal,
 // so 60s made sense. Now they're a fallback / recovery detector.
 const PROBE_INTERVAL_MS = 15 * 60_000;
-// v0.1.82 — unternehmensregister.de is genuinely slow, often spending
-// 60+s rendering its homepage. The previous 10s timeout flagged the
-// upstream "unreachable" on every probe even when it was just being
-// itself. Bumped well past the user-reported threshold so a single
-// slow homepage doesn't pause the producers + show the banner. The
-// fast-path failure hook still catches actual ECONNRESET-class
-// errors from the producers' own Selenium runs, so we don't lose
-// real-failure detection by being more patient on the HEAD probe.
-const PROBE_TIMEOUT_MS = 90_000;
+// v0.1.82 / v0.1.102 — unternehmensregister.de is genuinely slow.
+// Chrome's user-perceived "this page is taking forever" threshold is
+// roughly 120s for slow connections. Match that so a one-off slow
+// render never flips us to unreachable.
+const PROBE_TIMEOUT_MS = 120_000;
+// v0.1.102 — hysteresis. One bad probe doesn't flip; we need
+// FAILED_PROBES_THRESHOLD consecutive failures. Recovery is still
+// instant (a single 200 flips back to reachable). Counter resets
+// on every successful probe.
+const FAILED_PROBES_THRESHOLD = 2;
+// v0.1.102 — cooldown for producer fast-path errors. A Selenium
+// error inside a producer fires `reportUnreachable()` to flip the
+// banner without waiting for the next 15-min probe. Useful when the
+// site is GENUINELY down. Less useful when a single Selenium tick
+// hit a transient ECONNRESET on an otherwise healthy site. If we
+// successfully probed within the cooldown window, ignore producer
+// errors and let the next scheduled probe make the call.
+const FAST_PATH_COOLDOWN_MS = 5 * 60_000;
 
 /** Connection-level error patterns producers surface when the upstream
  *  is degraded mid-Selenium. Used by the log-buffer hook in main/index.ts
@@ -97,6 +106,10 @@ export class ExternalServiceMonitor extends EventEmitter {
   };
   private timer: NodeJS.Timeout | null = null;
   private probeInFlight = false;
+  /** v0.1.102 — running count of consecutive failed probes. Resets
+   *  to 0 on any successful probe. We only flip state="unreachable"
+   *  once this hits FAILED_PROBES_THRESHOLD. */
+  private consecutiveFailures = 0;
 
   /** Idempotent. Kicks off an immediate probe + sets up the recurring
    *  timer. Call once at app boot from main/index.ts. */
@@ -142,6 +155,18 @@ export class ExternalServiceMonitor extends EventEmitter {
    * (no event emitted, since update() only emits on transition).
    */
   reportUnreachable(reason: string): void {
+    // v0.1.102 — fast-path cooldown. If we successfully probed
+    // recently, a single Selenium tick error is much more likely
+    // a transient hiccup than a real outage. Don't flip the banner;
+    // let the next scheduled probe decide. The error stays surfaced
+    // in the producer's own diagnostics either way.
+    if (
+      this.status.state === "reachable" &&
+      this.status.lastReachableAt !== null &&
+      Date.now() - this.status.lastReachableAt < FAST_PATH_COOLDOWN_MS
+    ) {
+      return;
+    }
     this.update({
       service: "unternehmensregister",
       state: "unreachable",
@@ -176,31 +201,54 @@ export class ExternalServiceMonitor extends EventEmitter {
         clearTimeout(timeout);
       }
       const latencyMs = Date.now() - startedAt;
-      // Treat anything < 500 as "site is up". 401/403/404 still mean
-      // their server answered. 5xx means their backend is sick.
-      const isUp = res.status > 0 && res.status < 500;
-      this.update({
-        service: "unternehmensregister",
-        state: isUp ? "reachable" : "unreachable",
-        url: PROBE_URL,
-        lastCheckedAt: Date.now(),
-        lastReachableAt: isUp ? Date.now() : this.status.lastReachableAt,
-        latencyMs: isUp ? latencyMs : null,
-        errorMessage: isUp ? null : `HTTP ${res.status}`,
-      });
+      // v0.1.102 — anything < 500 means the server answered: site is up.
+      // 405 (Method Not Allowed) shows up when CDNs reject HEAD; that's
+      // also a clear "site is up" signal. 5xx means their backend is
+      // sick (counts as down). The status range 0 happens for opaque
+      // redirects we asked not to follow with `redirect: "manual"`,
+      // which still proves the server replied.
+      const isUp = res.status === 0 || (res.status > 0 && res.status < 500);
+      if (isUp) {
+        this.consecutiveFailures = 0;
+        this.update({
+          service: "unternehmensregister",
+          state: "reachable",
+          url: PROBE_URL,
+          lastCheckedAt: Date.now(),
+          lastReachableAt: Date.now(),
+          latencyMs,
+          errorMessage: null,
+        });
+      } else {
+        this.handleFailure(`HTTP ${res.status}`);
+      }
     } catch (err) {
-      this.update({
-        service: "unternehmensregister",
-        state: "unreachable",
-        url: PROBE_URL,
-        lastCheckedAt: Date.now(),
-        lastReachableAt: this.status.lastReachableAt,
-        latencyMs: null,
-        errorMessage: err instanceof Error ? err.message : String(err),
-      });
+      this.handleFailure(err instanceof Error ? err.message : String(err));
     } finally {
       this.probeInFlight = false;
     }
+  }
+
+  /** v0.1.102 — hysteresis. Don't flip to unreachable until we've
+   *  seen FAILED_PROBES_THRESHOLD consecutive failures. While below
+   *  the threshold, we update lastCheckedAt + errorMessage but keep
+   *  the public state as the last known good (or "unknown" if we've
+   *  never succeeded). The renderer's banner only triggers on
+   *  state === "unreachable", so brief network blips don't surface. */
+  private handleFailure(reason: string): void {
+    this.consecutiveFailures += 1;
+    const flip = this.consecutiveFailures >= FAILED_PROBES_THRESHOLD;
+    this.update({
+      service: "unternehmensregister",
+      state: flip ? "unreachable" : this.status.state,
+      url: PROBE_URL,
+      lastCheckedAt: Date.now(),
+      lastReachableAt: this.status.lastReachableAt,
+      latencyMs: null,
+      errorMessage: flip
+        ? reason
+        : `${reason} (Versuch ${this.consecutiveFailures}/${FAILED_PROBES_THRESHOLD}, kein Banner)`,
+    });
   }
 
   private update(next: ExternalServiceStatus): void {
