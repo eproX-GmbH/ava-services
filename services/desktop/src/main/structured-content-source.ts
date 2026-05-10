@@ -30,16 +30,18 @@ export interface SourceReachability {
 /**
  * Pick which upstream the structured-content producer should scrape.
  *
- * Session A: always returns "unternehmensregister" — preserves today's
- * behavior. The reachability arg is accepted (and validated for shape)
- * so callers can already wire it through; flipping the picker in
- * Session B is a single-line change.
+ * Session B: prefer handelsregister.de — empirically more stable than
+ * unternehmensregister.de (anti-bot less aggressive, lower latency,
+ * fewer 5xx blips). Fall back to unternehmensregister when
+ * handelsregister is unreachable. If both are down the producer is
+ * auto-paused by main/index.ts anyway, so the default doesn't matter
+ * — we still return "handelsregister" so a recovery flap re-spawns
+ * with the preferred source on top.
  */
 export function pickStructuredContentSource(
-  _reachability: SourceReachability,
+  reachability: SourceReachability,
 ): StructuredContentSource {
-  // Session A: always return unternehmensregister (today's behavior).
-  // Session B will flip this to prefer handelsregister when
-  // unternehmensregister is down and handelsregister is reachable.
-  return "unternehmensregister";
+  if (reachability.handelsregister) return "handelsregister";
+  if (reachability.unternehmensregister) return "unternehmensregister";
+  return "handelsregister";
 }

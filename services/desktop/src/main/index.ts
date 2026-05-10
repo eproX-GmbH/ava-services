@@ -192,12 +192,21 @@ function broadcastAuthStatus(status: AuthStatus): void {
     for (const p of producers) {
       const s = p.getStatus().state;
       if (s !== "idle" && s !== "error") continue;
+      const pname = p.getStatus().name;
+      // v0.1.105 Session B — structured-content now has a fallback
+      // (handelsregister.de), so it only stays paused when BOTH
+      // upstreams are unreachable. company-publication still has
+      // only the unternehmensregister path, so it gates on UR alone.
+      const snap = externalServiceMonitor.getStatus();
+      const urDown = snap.services.unternehmensregister.state === "unreachable";
+      const hrDown = snap.services.handelsregister.state === "unreachable";
+      if (pname === "structured-content" && urDown && hrDown) {
+        continue;
+      }
       if (
-        UNTERNEHMENSREGISTER_DEPENDENT_PRODUCERS.has(p.getStatus().name) &&
-        externalServiceMonitor.getServiceStatus("unternehmensregister")
-          .state === "unreachable"
+        pname === "company-publication" &&
+        urDown
       ) {
-        // Skip; monitor will start it when reachability flips.
         continue;
       }
       void p.start().catch((err) => {
@@ -534,28 +543,44 @@ function broadcastExternalServiceStatus(
 }
 externalServiceMonitor.on("status", (status: ExternalServicesStatus) => {
   broadcastExternalServiceStatus(status);
-  // Auto-pause / auto-resume the unternehmensregister-dependent
-  // producers. v0.1.105: Session A still always uses unternehmensregister
-  // (the picker in structured-content-source.ts is hard-wired to it),
-  // so we still gate purely on its per-service state. Session B will
-  // change this to "pause only when both sources are unreachable".
+  // Auto-pause / auto-resume.
+  //
+  // v0.1.105 Session B — structured-content has a handelsregister.de
+  // fallback now, so it only pauses when BOTH upstreams are
+  // unreachable (anyReachable === false). company-publication still
+  // talks only to unternehmensregister.de and continues to gate
+  // on the UR per-service state.
+  //
+  // Resume is symmetric: structured-content resumes as soon as
+  // either upstream is reachable; company-publication resumes as
+  // soon as UR is reachable.
   const ur = status.services.unternehmensregister.state;
+  const hr = status.services.handelsregister.state;
+  const bothDown = ur === "unreachable" && hr === "unreachable";
   for (const p of producers) {
     const name = p.getStatus().name;
     if (!UNTERNEHMENSREGISTER_DEPENDENT_PRODUCERS.has(name)) continue;
-    if (ur === "unreachable") {
+
+    const pauseCondition =
+      name === "structured-content" ? bothDown : ur === "unreachable";
+    const resumeCondition =
+      name === "structured-content"
+        ? ur === "reachable" || hr === "reachable"
+        : ur === "reachable";
+
+    if (pauseCondition) {
       const s = p.getStatus().state;
       if (s !== "idle" && s !== "stopping") {
         console.log(
-          `[external-service] unternehmensregister down — pausing ${name}`,
+          `[external-service] upstreams down — pausing ${name}`,
         );
         void p.stop();
       }
-    } else if (ur === "reachable") {
+    } else if (resumeCondition) {
       const s = p.getStatus().state;
       if ((s === "idle" || s === "error") && auth.getStatus().signedIn) {
         console.log(
-          `[external-service] unternehmensregister back — resuming ${name}`,
+          `[external-service] upstream back — resuming ${name}`,
         );
         void p.start().catch((err) => {
           console.error(
@@ -1217,13 +1242,15 @@ app.whenReady().then(async () => {
       UNTERNEHMENSREGISTER_DEPENDENT_PRODUCERS.has(event.producer) &&
       UPSTREAM_FAILURE_PATTERNS.some((re) => re.test(event.line.text))
     ) {
-      // Today both UR-dependent producers (structured-content +
-      // company-publication) hit unternehmensregister.de; attribute
-      // the failure to that service. Session B will need to refine
-      // this once structured-content can be picked to scrape
-      // handelsregister.de instead.
+      // v0.1.105 Session B — structured-content may now be scraping
+      // handelsregister.de. Use the log line prefix it emits to
+      // attribute the failure correctly. company-publication still
+      // only hits unternehmensregister.
+      const hitsHandelsregister =
+        event.producer === "structured-content" &&
+        event.line.text.includes("[handelsregister]");
       externalServiceMonitor.reportUnreachable(
-        "unternehmensregister",
+        hitsHandelsregister ? "handelsregister" : "unternehmensregister",
         `${event.producer}: ${event.line.text.slice(0, 200)}`,
       );
     }
