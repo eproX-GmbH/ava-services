@@ -23,6 +23,8 @@ import type {
   FreshnessTickInfo,
   HostedProviderKind,
   LinkedInAuthStatus,
+  LinkedInFeedCounts,
+  LinkedInScanStatus,
   LinkedInSettings,
   LlmProviderKind,
   NotificationPermissionStatus,
@@ -550,6 +552,51 @@ function CrmCard({
 // actual scrape lives in L2; the "Jetzt scannen" button is therefore
 // rendered as a disabled placeholder.
 
+function formatBytesShort(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
+  if (bytes < 1024 * 1024 * 1024)
+    return `${(bytes / (1024 * 1024)).toFixed(bytes < 10 * 1024 * 1024 ? 1 : 0)} MB`;
+  return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
+}
+
+function formatRelativeMinutes(ms: number): string {
+  const diff = Date.now() - ms;
+  if (diff < 60_000) return "vor wenigen Sekunden";
+  const min = Math.round(diff / 60_000);
+  if (min < 60) return `vor ${min} Min`;
+  const h = Math.round(min / 60);
+  if (h < 24) return `vor ${h} Std`;
+  const d = Math.round(h / 24);
+  return `vor ${d} Tag${d === 1 ? "" : "en"}`;
+}
+
+function formatScanSummary(
+  run: import("../../../shared/types").LinkedInScanResult,
+): string {
+  const ts = run.finishedAt
+    ? `Letzter Scan ${formatRelativeMinutes(run.finishedAt)}`
+    : "Letzter Scan";
+  if (run.outcome === "login_required") {
+    return `${ts} · Sitzung abgelaufen.`;
+  }
+  if (run.outcome === "network_error") {
+    return `${ts} · Netzwerkfehler.`;
+  }
+  if (run.outcome === "cancelled") {
+    return `${ts} · abgebrochen.`;
+  }
+  if (run.outcome === "error") {
+    return `${ts} · Fehler${run.errorMessage ? ` (${run.errorMessage})` : ""}.`;
+  }
+  return (
+    `${ts} · ${run.postsSeen.toLocaleString("de-DE")} Beiträge gesehen, ` +
+    `${run.postsNew.toLocaleString("de-DE")} neu, ` +
+    `${run.interactionsNew.toLocaleString("de-DE")} Interaktionen, ` +
+    `${run.mediaNew.toLocaleString("de-DE")} Medien.`
+  );
+}
+
 function LinkedInSection() {
   const [settings, setSettings] = useState<LinkedInSettings | null>(null);
   const [auth, setAuth] = useState<LinkedInAuthStatus | null>(null);
@@ -559,6 +606,9 @@ function LinkedInSection() {
   const [loginInFlight, setLoginInFlight] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [scanStatus, setScanStatus] = useState<LinkedInScanStatus | null>(null);
+  const [counts, setCounts] = useState<LinkedInFeedCounts | null>(null);
+  const [scanError, setScanError] = useState<string | null>(null);
 
   const refreshAuth = async () => {
     const a = await window.api.linkedin.auth.status();
@@ -577,6 +627,34 @@ function LinkedInSection() {
 
   useEffect(() => {
     void refresh();
+  }, []);
+
+  // Poll scan status + counts. Faster cadence while a scan runs so
+  // the user sees the spinner flip back to "Jetzt scannen" promptly.
+  useEffect(() => {
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const tick = async (): Promise<void> => {
+      try {
+        const [s, c] = await Promise.all([
+          window.api.linkedin.scan.status(),
+          window.api.linkedin.feed.counts(),
+        ]);
+        if (cancelled) return;
+        setScanStatus(s);
+        setCounts(c);
+        const next = s.running ? 2000 : 30000;
+        timer = setTimeout(() => void tick(), next);
+      } catch {
+        if (cancelled) return;
+        timer = setTimeout(() => void tick(), 30000);
+      }
+    };
+    void tick();
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+    };
   }, []);
 
   const update = async (
@@ -678,6 +756,43 @@ function LinkedInSection() {
       await refreshAuth();
     } finally {
       setBusy(false);
+    }
+  };
+
+  const onScanNow = async () => {
+    if (scanStatus?.running) {
+      // Cancel an in-flight scan
+      try {
+        await window.api.linkedin.scan.cancel();
+      } catch {
+        // ignore
+      }
+      return;
+    }
+    setScanError(null);
+    setScanStatus((prev) => (prev ? { ...prev, running: true } : prev));
+    try {
+      const result = await window.api.linkedin.scan.run({ manual: true });
+      // Force a refresh so the polling tick picks up the new last-run
+      // immediately rather than after the next 2s/30s cycle.
+      const [s, c] = await Promise.all([
+        window.api.linkedin.scan.status(),
+        window.api.linkedin.feed.counts(),
+      ]);
+      setScanStatus(s);
+      setCounts(c);
+      if (result.outcome === "login_required") {
+        setScanError("LinkedIn-Sitzung abgelaufen. Bitte erneut verbinden.");
+        await refreshAuth();
+      } else if (result.outcome === "error") {
+        setScanError(result.errorMessage ?? "Scan fehlgeschlagen.");
+      } else if (result.outcome === "network_error") {
+        setScanError("Netzwerkfehler. Später erneut versuchen.");
+      }
+    } catch (err) {
+      setScanError(
+        err instanceof Error ? err.message : "Scan fehlgeschlagen.",
+      );
     }
   };
 
@@ -911,12 +1026,47 @@ function LinkedInSection() {
           />
         </label>
         <div className="linkedin-row">
-          <button type="button" disabled title="Wird mit Phase L2 verfügbar.">
-            Jetzt scannen
+          <button
+            type="button"
+            className="primary"
+            onClick={() => void onScanNow()}
+            disabled={!enabled || !connected || busy}
+            title={
+              !connected
+                ? "Erst mit LinkedIn verbinden."
+                : scanStatus?.running
+                  ? "Aktuellen Scan abbrechen."
+                  : "Feed jetzt scannen."
+            }
+          >
+            {scanStatus?.running ? "Scan läuft… (Abbrechen)" : "Jetzt scannen"}
           </button>
-          <span className="muted small">Wird mit Phase L2 verfügbar.</span>
+          {scanStatus?.lastRun && !scanStatus.running && (
+            <span className="muted small">
+              {formatScanSummary(scanStatus.lastRun)}
+            </span>
+          )}
+          {!scanStatus?.lastRun && !scanStatus?.running && (
+            <span className="muted small">Noch kein Scan ausgeführt.</span>
+          )}
         </div>
+        {scanError && <p className="crm-card-error">{scanError}</p>}
       </fieldset>
+
+      {/* Erfasste Daten — counts row */}
+      {counts && (
+        <fieldset className="linkedin-fieldset" disabled={!enabled}>
+          <legend>Erfasste Daten</legend>
+          <p className="muted small">
+            Insgesamt erfasst:{" "}
+            {counts.posts.toLocaleString("de-DE")} Beiträge ·{" "}
+            {counts.actors.toLocaleString("de-DE")} Personen ·{" "}
+            {counts.interactions.toLocaleString("de-DE")} Interaktionen ·{" "}
+            {counts.media.toLocaleString("de-DE")} Medien (
+            {formatBytesShort(counts.mediaBytes)})
+          </p>
+        </fieldset>
+      )}
 
       {/* Kill switch */}
       <div className="linkedin-killswitch">

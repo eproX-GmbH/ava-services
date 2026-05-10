@@ -983,3 +983,66 @@ export interface LinkedInAuthStatus {
   connected: boolean;
   meta: LinkedInSessionMeta | null;
 }
+
+// ---- LinkedIn-Beobachter Phase L2: scan + feed surface -------------------
+
+/** Outcome of one scan attempt. Matches the `outcome` column on
+ *  `linkedin_scan_run`. */
+export type LinkedInScanOutcome =
+  | "success"
+  | "login_required"
+  | "network_error"
+  | "cancelled"
+  | "error";
+
+/** Result returned from main when a scan finishes. */
+export interface LinkedInScanResult {
+  runId: string;
+  outcome: LinkedInScanOutcome;
+  postsSeen: number;
+  postsNew: number;
+  interactionsNew: number;
+  mediaNew: number;
+  errorMessage?: string;
+  /** ms epoch; null while running. */
+  finishedAt: number | null;
+}
+
+/** Status of the scan engine. Cheap to poll from the renderer. */
+export interface LinkedInScanStatus {
+  running: boolean;
+  /** Last finalised run, regardless of outcome. */
+  lastRun: LinkedInScanResult | null;
+  /** ms epoch convenience (mirrors lastRun?.finishedAt). */
+  lastRunAt: number | null;
+}
+
+/** Aggregate counts surfaced in Settings. */
+export interface LinkedInFeedCounts {
+  posts: number;
+  interactions: number;
+  actors: number;
+  media: number;
+  /** Total bytes of stored media. */
+  mediaBytes: number;
+}
+
+/** Joined post + author shape returned by `feed:recent`. L6 surfaces
+ *  this in the /linkedin route; L2 only ships it. */
+export interface LinkedInRecentPost {
+  postUrn: string;
+  postKind: string;
+  text: string;
+  permalink: string | null;
+  externalUrl: string | null;
+  postedAt: number | null;
+  scrapedAt: number;
+  author: {
+    actorUrn: string;
+    displayName: string;
+    headline: string | null;
+    profileUrl: string | null;
+  };
+  mediaCount: number;
+  interactionCount: number;
+}

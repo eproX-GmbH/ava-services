@@ -11,9 +11,15 @@
 // JSON is fine for L0.
 
 import { app } from "electron";
+import { EventEmitter } from "node:events";
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { LinkedInSettings } from "../../shared/types";
+
+/** Fired whenever settings change. The L2 scheduler subscribes so it
+ *  can re-arm its interval when `automaticScans` / `scanIntervalHours`
+ *  flip. Renderer is NOT a listener — it polls via IPC. */
+export const linkedInSettingsEvents = new EventEmitter();
 
 export const DEFAULT_LINKEDIN_SETTINGS: LinkedInSettings = {
   enabled: false,
@@ -59,6 +65,11 @@ export function write(partial: Partial<LinkedInSettings>): LinkedInSettings {
   const next: LinkedInSettings = { ...current, ...partial };
   ensureDir();
   writeFileSync(file(), JSON.stringify(next, null, 2), "utf8");
+  try {
+    linkedInSettingsEvents.emit("changed", next);
+  } catch {
+    // Listener errors must not corrupt the write.
+  }
   return next;
 }
 

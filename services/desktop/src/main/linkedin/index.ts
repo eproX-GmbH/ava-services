@@ -8,10 +8,14 @@
 // device, encrypted via safeStorage, and L2's main-process scraper
 // will read them directly when constructing its Playwright context.
 
-import { BrowserWindow, ipcMain } from "electron";
+import { app, BrowserWindow, ipcMain } from "electron";
 import type {
   LinkedInAuthStatus,
+  LinkedInFeedCounts,
   LinkedInLoginResult,
+  LinkedInRecentPost,
+  LinkedInScanResult,
+  LinkedInScanStatus,
   LinkedInSettings,
 } from "../../shared/types";
 import { read, write, reset } from "./store";
@@ -22,6 +26,15 @@ import {
 } from "./session";
 import { runLoginFlow } from "./login-window";
 import { generateFingerprint } from "./fingerprint";
+import {
+  cancelActiveScan,
+  feedCountsSnapshot,
+  runScan,
+  scanStatusSnapshot,
+  shutdownScraper,
+} from "./scraper";
+import { getDb, recentPosts } from "./db";
+import { startScheduler, stopScheduler } from "./scheduler";
 
 /** Generate + persist the fingerprint on first run if it's missing.
  *  Idempotent — safe to call on every boot. */
@@ -103,5 +116,59 @@ export function initLinkedIn(): void {
   ipcMain.handle("linkedin:auth:disconnect", (): { ok: true } => {
     clearStoredSession();
     return { ok: true };
+  });
+
+  // ---- L2 scan + feed surface ------------------------------------------
+
+  ipcMain.handle(
+    "linkedin:scan:run",
+    async (
+      _e,
+      args: { manual?: boolean; maxPosts?: number } | undefined,
+    ): Promise<LinkedInScanResult> => {
+      return await runScan({
+        manual: args?.manual === true,
+        maxPosts: args?.maxPosts,
+      });
+    },
+  );
+
+  ipcMain.handle("linkedin:scan:cancel", (): { ok: true } => {
+    cancelActiveScan();
+    return { ok: true };
+  });
+
+  ipcMain.handle(
+    "linkedin:scan:status",
+    async (): Promise<LinkedInScanStatus> => {
+      return await scanStatusSnapshot();
+    },
+  );
+
+  ipcMain.handle(
+    "linkedin:feed:counts",
+    async (): Promise<LinkedInFeedCounts> => {
+      return await feedCountsSnapshot();
+    },
+  );
+
+  ipcMain.handle(
+    "linkedin:feed:recent",
+    async (
+      _e,
+      args: { limit?: number; offset?: number; since?: number } | undefined,
+    ): Promise<LinkedInRecentPost[]> => {
+      const db = await getDb();
+      return await recentPosts(db, args ?? {});
+    },
+  );
+
+  // Background scheduler — re-arms automatically on settings changes.
+  startScheduler();
+
+  // Clean shutdown
+  app.on("before-quit", () => {
+    stopScheduler();
+    void shutdownScraper();
   });
 }

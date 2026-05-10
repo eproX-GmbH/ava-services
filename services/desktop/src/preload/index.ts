@@ -33,7 +33,11 @@ import type {
   CrmProviderKind,
   CrmProviderStatus,
   LinkedInAuthStatus,
+  LinkedInFeedCounts,
   LinkedInLoginResult,
+  LinkedInRecentPost,
+  LinkedInScanResult,
+  LinkedInScanStatus,
   LinkedInSettings,
   UpdateStatus,
   ProviderCatalogEntry,
@@ -89,8 +93,13 @@ export type {
   CrmProviderKind,
   CrmProviderStatus,
   LinkedInAuthStatus,
+  LinkedInFeedCounts,
   LinkedInFingerprint,
   LinkedInLoginResult,
+  LinkedInRecentPost,
+  LinkedInScanOutcome,
+  LinkedInScanResult,
+  LinkedInScanStatus,
   LinkedInSessionMeta,
   LinkedInSettings,
   UpdateStatus,
@@ -744,6 +753,24 @@ const api = {
         ipcRenderer.invoke("linkedin:auth:openLogin"),
       disconnect: (): Promise<{ ok: true }> =>
         ipcRenderer.invoke("linkedin:auth:disconnect"),
+    },
+    /** L2 — feed scraper. Cookies stay main-side; the renderer only
+     *  ever sees aggregate counts and post metadata. */
+    scan: {
+      run: (args?: { manual?: boolean; maxPosts?: number }): Promise<LinkedInScanResult> =>
+        ipcRenderer.invoke("linkedin:scan:run", args ?? { manual: true }),
+      cancel: (): Promise<{ ok: true }> =>
+        ipcRenderer.invoke("linkedin:scan:cancel"),
+      status: (): Promise<LinkedInScanStatus> =>
+        ipcRenderer.invoke("linkedin:scan:status"),
+    },
+    feed: {
+      counts: (): Promise<LinkedInFeedCounts> =>
+        ipcRenderer.invoke("linkedin:feed:counts"),
+      recent: (
+        args?: { limit?: number; offset?: number; since?: number },
+      ): Promise<LinkedInRecentPost[]> =>
+        ipcRenderer.invoke("linkedin:feed:recent", args ?? {}),
     },
   },
 } as const;
