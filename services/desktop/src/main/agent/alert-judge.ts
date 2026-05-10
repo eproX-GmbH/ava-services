@@ -109,7 +109,7 @@ export function buildLlmAlertJudge(
     if (!validated.worthAlerting) {
       // Carry the LLM's German "warum nicht?" through to the heartbeat
       // decision log so the Settings panel can show transparency
-      // ("Bericht von 2011, älter als 12 Monate" etc.).
+      // ("Bericht von 2011, älter als 4 Jahre" etc.).
       return notWorthAlerting(rationale || "Vom Modell nicht begründet.");
     }
 
@@ -157,7 +157,16 @@ function buildSystemPrompt(today: Date): string {
     "an die Analystin rechtfertigt.",
     "",
     "Alarmwürdig ist ein Punkt nur, wenn BEIDES gilt:",
-    "  (a) Der Punkt ist nicht älter als 12 Monate gegenüber heute.",
+    "  (a) Aktualitätsregel — kontextabhängig:",
+    "      - Jahresabschlüsse / offizielle Bundesanzeiger-Publikationen:",
+    "        bis zu 4 Jahre alt sind okay. Hintergrund: deutsche Firmen",
+    "        veröffentlichen ihren Abschluss oft erst 2-4 Jahre nach",
+    "        Bilanzstichtag. Ein Geschäftsjahr 2022 ist im Mai 2026 also",
+    "        immer noch das aktuellste, was öffentlich verfügbar sein kann.",
+    "        Nur Berichte 5 Jahre und älter gelten als zu alt.",
+    "      - Press / Web-Signale, Stellenanzeigen, C-Level-Wechsel,",
+    "        Insolvenzen: maximal 12 Monate alt. Hier kommt es auf",
+    "        zeitliche Nähe wirklich an.",
     "  (b) Er weist auf eine relevante Geschäftsentwicklung hin:",
     "      - Expansion / neue Standorte / Übernahmen / Verkäufe",
     "      - Umsatz- oder operative Ergebnis-Veränderung ≥ 15 % YoY",
@@ -169,7 +178,8 @@ function buildSystemPrompt(today: Date): string {
     "  - Routine-HRB-Updates ohne inhaltliche Folgen",
     "  - Marketing- und PR-Selbstdarstellung",
     "  - Firmenjubiläen, Sponsoring, Stellenanzeigen",
-    "  - Berichte / Daten älter als 12 Monate",
+    "  - Jahresabschlüsse 5 Jahre und älter (zu alt)",
+    "  - Press / Web-Signale älter als 12 Monate",
     "",
     "Severity:",
     "  - info   = nennenswert, aber nicht eilig",
@@ -189,7 +199,7 @@ function buildSystemPrompt(today: Date): string {
     "  - Wenn worthAlerting=false, setze severity und headline auf null.",
     "  - rationale MUSS in BEIDEN Fällen gesetzt sein. Bei worthAlerting=false",
     "    erkläre kurz, WARUM der Datenpunkt nicht alarmwürdig ist",
-    "    (z. B. 'Bericht von 2011, älter als 12 Monate' oder",
+    "    (z. B. 'Jahresabschluss 2019, älter als 5 Jahre' oder",
     "    'Reine Marketing-Meldung ohne Geschäftssubstanz'). Diese",
     "    Begründung wird der Analystin im Diagnostik-Log gezeigt.",
     "  - Keine zusätzlichen Felder. Keine Markdown-Codeblöcke.",

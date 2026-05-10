@@ -1183,9 +1183,10 @@ export function Chat() {
                 Womit fangen wir <span className="ct-gradient-text">heute</span> an?
               </h1>
               <p className="chat-welcome__lede">
-                Frag mich nach Firmen, Vorgängen oder dem Status deiner
-                Indexierung. Ich bringe Antworten aus deinen lokalen Daten
-                und dem Gateway zusammen.
+                Suche Informationen zu deinen Zielfirmen: Geschäftsdaten,
+                Ansprechpartner, Finanzkennzahlen, Website und aktuelle
+                Entwicklungen. Ich recherchiere für dich und bereite alles
+                so auf, dass du es direkt im Vertrieb nutzen kannst.
               </p>
             </div>
           )}
