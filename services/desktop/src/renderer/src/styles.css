@@ -3023,6 +3023,58 @@ a.heartbeat-decision__company:hover {
   font-style: italic;
 }
 
+/* v0.1.84 — dismissable upstream banner: X close + confirm popover. */
+.upstream-banner { position: relative; }
+.upstream-banner__close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  margin-left: 4px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--color-fg-muted);
+  border-radius: 4px;
+  cursor: pointer;
+}
+.upstream-banner__close:hover {
+  background: rgba(244, 114, 114, 0.15);
+  color: var(--color-fg);
+}
+.upstream-banner__confirm {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 12px;
+  background: var(--color-bg-1);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-soft-lg);
+  padding: 14px 16px;
+  width: 320px;
+  z-index: 30;
+  color: var(--color-fg);
+}
+.upstream-banner__confirm-title {
+  margin: 0 0 6px;
+  font-weight: 600;
+  font-size: 13px;
+}
+.upstream-banner__confirm-body {
+  margin: 0 0 12px;
+  font-size: 12px;
+  color: var(--color-fg-muted);
+  line-height: 1.5;
+}
+.upstream-banner__confirm-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: stretch;
+}
+.upstream-banner__confirm-actions button { text-align: left; }
+
 /* ---- v0.1.50 — DiagnosticsPanel (matrix drill-down logs + screenshots) ---
  *
  * Lives inside .drill-panel; inherits the panel's font + foreground.

@@ -204,11 +204,13 @@ export class ExternalServiceMonitor extends EventEmitter {
   }
 
   private update(next: ExternalServiceStatus): void {
-    const stateChanged = next.state !== this.status.state;
     this.status = next;
-    if (stateChanged) {
-      this.emit("status", { ...next });
-    }
+    // Emit on every probe completion, not only on state transitions.
+    // The renderer's dismissable banner needs to know "a new probe
+    // ran" so it can re-surface a previously-dismissed warning if the
+    // upstream is still unreachable. Compares lastCheckedAt against
+    // the dismissal timestamp.
+    this.emit("status", { ...next });
   }
 }
 

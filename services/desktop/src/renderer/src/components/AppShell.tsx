@@ -1,7 +1,7 @@
 import type { PropsWithChildren } from "react";
 import { NavLink } from "react-router-dom";
 import { useEffect, useState } from "react";
-import { AlertCircle, Loader2, RefreshCw, Lightbulb } from "lucide-react";
+import { AlertCircle, Loader2, RefreshCw, Lightbulb, X } from "lucide-react";
 import { AlertBell } from "./AlertBell";
 import { WatchChip } from "./WatchChip";
 import { UsageChip } from "./UsageChip";
@@ -51,6 +51,10 @@ export function AppShell({ children }: PropsWithChildren) {
 // probe of unternehmensregister.de). The Stamm + Publikation
 // producers auto-pause while this banner is up, so the matrix won't
 // accumulate red cells from work the scraper can't possibly do.
+/** localStorage keys for dismissable upstream banner state. */
+const BANNER_SUPPRESS_KEY = "ava.upstreamBanner.suppressed";
+const BANNER_DISMISSED_AT_KEY = "ava.upstreamBanner.dismissedAtCheckedAt";
+
 function ExternalServiceBanner() {
   const [status, setStatus] = useState<ExternalServiceStatus | null>(null);
   const [probing, setProbing] = useState(false);
@@ -58,6 +62,27 @@ function ExternalServiceBanner() {
    *  the user sees a "noch nicht erreichbar" toast instead of a silent
    *  click. Cleared after a few seconds or on next status change. */
   const [stillDownAt, setStillDownAt] = useState<number | null>(null);
+  /** Permanent suppression — user clicked "nie wieder anzeigen". */
+  const [suppressed, setSuppressed] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem(BANNER_SUPPRESS_KEY) === "true";
+    } catch {
+      return false;
+    }
+  });
+  /** Temporary dismissal — store the lastCheckedAt at time of dismiss.
+   *  Banner re-surfaces when the next probe completes (status carries
+   *  a newer lastCheckedAt). */
+  const [dismissedAt, setDismissedAt] = useState<number | null>(() => {
+    try {
+      const v = localStorage.getItem(BANNER_DISMISSED_AT_KEY);
+      return v ? Number(v) : null;
+    } catch {
+      return null;
+    }
+  });
+  /** Confirmation popover open. */
+  const [confirmOpen, setConfirmOpen] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -84,7 +109,32 @@ function ExternalServiceBanner() {
     return () => clearTimeout(id);
   }, [stillDownAt]);
 
+  // Clear temporary dismissal as soon as the upstream flips back to
+  // reachable — if it goes down again later, the banner should fire
+  // fresh, not stay hidden by stale dismissal state.
+  useEffect(() => {
+    if (status?.state === "reachable" && dismissedAt !== null) {
+      setDismissedAt(null);
+      try {
+        localStorage.removeItem(BANNER_DISMISSED_AT_KEY);
+      } catch {
+        /* ignore */
+      }
+    }
+  }, [status?.state, dismissedAt]);
+
   if (!status || status.state !== "unreachable") return null;
+  if (suppressed) return null;
+  // Temporary dismissal: banner stays hidden until a fresh probe
+  // produces a newer lastCheckedAt (the monitor emits status on every
+  // probe, not only on state transitions, so this fires reliably).
+  if (
+    dismissedAt !== null &&
+    status.lastCheckedAt !== null &&
+    status.lastCheckedAt <= dismissedAt
+  ) {
+    return null;
+  }
 
   const since = status.lastReachableAt
     ? formatRelativeMinutes(status.lastReachableAt)
@@ -133,6 +183,68 @@ function ExternalServiceBanner() {
         <span className="upstream-banner__toast" role="status">
           noch nicht erreichbar
         </span>
+      )}
+      <button
+        type="button"
+        className="upstream-banner__close"
+        onClick={() => setConfirmOpen((v) => !v)}
+        aria-label="Hinweis ausblenden"
+        title="Hinweis ausblenden"
+      >
+        <X className="ct-icon-sm" aria-hidden="true" />
+      </button>
+      {confirmOpen && (
+        <div className="upstream-banner__confirm" role="dialog">
+          <p className="upstream-banner__confirm-title">
+            Hinweis ausblenden?
+          </p>
+          <p className="upstream-banner__confirm-body">
+            Soll der Hinweis bei der nächsten Hintergrund-Prüfung erneut
+            erscheinen können, oder dauerhaft ausgeblendet bleiben?
+          </p>
+          <div className="upstream-banner__confirm-actions">
+            <button
+              type="button"
+              className="primary"
+              onClick={() => {
+                setDismissedAt(status.lastCheckedAt ?? Date.now());
+                try {
+                  localStorage.setItem(
+                    BANNER_DISMISSED_AT_KEY,
+                    String(status.lastCheckedAt ?? Date.now()),
+                  );
+                } catch {
+                  /* ignore */
+                }
+                setConfirmOpen(false);
+              }}
+            >
+              Bis zur nächsten Prüfung ausblenden
+            </button>
+            <button
+              type="button"
+              className="link bad"
+              onClick={() => {
+                setSuppressed(true);
+                try {
+                  localStorage.setItem(BANNER_SUPPRESS_KEY, "true");
+                } catch {
+                  /* ignore */
+                }
+                setConfirmOpen(false);
+              }}
+            >
+              Nie wieder anzeigen
+            </button>
+            <button
+              type="button"
+              className="link"
+              onClick={() => setConfirmOpen(false)}
+            >
+              Abbrechen
+            </button>
+          </div>
+        </div>
       )}
     </div>
   );
