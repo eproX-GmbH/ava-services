@@ -32,6 +32,8 @@ import type {
   ExternalServiceStatus,
   CrmProviderKind,
   CrmProviderStatus,
+  LinkedInAuthStatus,
+  LinkedInLoginResult,
   LinkedInSettings,
   UpdateStatus,
   ProviderCatalogEntry,
@@ -86,6 +88,10 @@ export type {
   ExternalServiceStatus,
   CrmProviderKind,
   CrmProviderStatus,
+  LinkedInAuthStatus,
+  LinkedInFingerprint,
+  LinkedInLoginResult,
+  LinkedInSessionMeta,
   LinkedInSettings,
   UpdateStatus,
   ProviderCatalogEntry,
@@ -728,6 +734,17 @@ const api = {
       ipcRenderer.invoke("linkedin:consent:revoke"),
     killSwitch: (): Promise<{ ok: true }> =>
       ipcRenderer.invoke("linkedin:killswitch"),
+    /** L1 — embedded-BrowserWindow login flow. The cookies captured
+     *  by `openLogin` never cross this bridge: only metadata
+     *  (capturedAt, earliestExpiresAt, memberUrn) is exposed. */
+    auth: {
+      status: (): Promise<LinkedInAuthStatus> =>
+        ipcRenderer.invoke("linkedin:auth:status"),
+      openLogin: (): Promise<LinkedInLoginResult> =>
+        ipcRenderer.invoke("linkedin:auth:openLogin"),
+      disconnect: (): Promise<{ ok: true }> =>
+        ipcRenderer.invoke("linkedin:auth:disconnect"),
+    },
   },
 } as const;
 

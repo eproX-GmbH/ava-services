@@ -939,4 +939,47 @@ export interface LinkedInSettings {
   scanIntervalHours: number;
   /** ms epoch of the last completed scan. L0: always null. */
   lastScanAt: number | null;
+  /** Stable per-install fingerprint (Phase L1). Generated once main-side
+   *  on first run and reused by the L2 Playwright context so we don't
+   *  fluctuate across Chrome major versions / random viewport sizes
+   *  every visit. Null when not yet generated. */
+  fingerprint?: LinkedInFingerprint | null;
+}
+
+/** Stable per-install fingerprint used to seed the Playwright context
+ *  in L2. Written once main-side; never changes thereafter unless the
+ *  user wipes via the kill-switch. */
+export interface LinkedInFingerprint {
+  userAgent: string;
+  viewport: { width: number; height: number };
+  /** IANA timezone, e.g. "Europe/Berlin". */
+  timezone: string;
+  /** BCP-47 locale tag, e.g. "de-DE". */
+  locale: string;
+}
+
+/** Metadata stored alongside the encrypted cookie blob (Phase L1).
+ *  Lives unencrypted at userData/linkedin/session.meta.json so the
+ *  renderer can show "Verbunden seit …" without crossing through
+ *  safeStorage (which is sync-only and main-only). */
+export interface LinkedInSessionMeta {
+  /** ms epoch when the cookies were captured. */
+  capturedAt: number;
+  /** ms epoch of the latest cookie's `expires`; null if all cookies
+   *  are session-only. li_at typically lives ~1 year. */
+  earliestExpiresAt: number | null;
+  /** Decoded best-effort from the `li_at` cookie payload — null when
+   *  decode fails. Surfaced as "Verbunden als …" in the UI. */
+  memberUrn: string | null;
+}
+
+/** Result of `linkedin.auth.openLogin`. */
+export type LinkedInLoginResult =
+  | { ok: true; meta: LinkedInSessionMeta }
+  | { ok: false; reason: "user_cancelled" | "no_cookies" | "timeout" };
+
+/** Result of `linkedin.auth.status`. */
+export interface LinkedInAuthStatus {
+  connected: boolean;
+  meta: LinkedInSessionMeta | null;
 }

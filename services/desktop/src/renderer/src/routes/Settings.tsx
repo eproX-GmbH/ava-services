@@ -22,6 +22,7 @@ import type {
   FreshnessStage,
   FreshnessTickInfo,
   HostedProviderKind,
+  LinkedInAuthStatus,
   LinkedInSettings,
   LlmProviderKind,
   NotificationPermissionStatus,
@@ -551,13 +552,25 @@ function CrmCard({
 
 function LinkedInSection() {
   const [settings, setSettings] = useState<LinkedInSettings | null>(null);
+  const [auth, setAuth] = useState<LinkedInAuthStatus | null>(null);
   const [consentOpen, setConsentOpen] = useState(false);
   const [cloudConfirm, setCloudConfirm] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [loginInFlight, setLoginInFlight] = useState(false);
+  const [authError, setAuthError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  const refreshAuth = async () => {
+    const a = await window.api.linkedin.auth.status();
+    setAuth(a);
+    notifyLinkedInSettingsChanged();
+  };
+
   const refresh = async () => {
-    const s = await window.api.linkedin.getSettings();
+    const [s] = await Promise.all([
+      window.api.linkedin.getSettings(),
+      refreshAuth(),
+    ]);
     setSettings(s);
     notifyLinkedInSettingsChanged();
   };
@@ -633,7 +646,44 @@ function LinkedInSection() {
     }
   };
 
+  const onConnectLinkedIn = async () => {
+    setLoginInFlight(true);
+    setAuthError(null);
+    try {
+      const result = await window.api.linkedin.auth.openLogin();
+      if (result.ok) {
+        await refreshAuth();
+      } else {
+        const reasonText: Record<typeof result.reason, string> = {
+          user_cancelled: "Anmeldung abgebrochen.",
+          no_cookies: "Anmeldung fehlgeschlagen — keine Sitzungs-Cookies erkannt.",
+          timeout: "Zeitüberschreitung. Bitte erneut versuchen.",
+        };
+        setAuthError(reasonText[result.reason]);
+      }
+    } catch (err) {
+      setAuthError(
+        err instanceof Error ? err.message : "Anmeldung fehlgeschlagen.",
+      );
+    } finally {
+      setLoginInFlight(false);
+    }
+  };
+
+  const onDisconnectLinkedIn = async () => {
+    setBusy(true);
+    setAuthError(null);
+    try {
+      await window.api.linkedin.auth.disconnect();
+      await refreshAuth();
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const enabled = settings.enabled;
+  const connected = auth?.connected === true;
+  const meta = auth?.meta ?? null;
 
   return (
     <section className="provider-section" id="linkedin-section">
@@ -677,6 +727,67 @@ function LinkedInSection() {
           </span>
         )}
       </div>
+
+      {/* Verbindung (Phase L1) */}
+      {enabled && (
+        <fieldset className="linkedin-fieldset" disabled={busy}>
+          <legend>Verbindung</legend>
+          {!connected && (
+            <>
+              <div className="linkedin-row">
+                <span className="linkedin-status-pill linkedin-status-pill--warn">
+                  Nicht verbunden
+                </span>
+              </div>
+              <p className="muted small">
+                Melde dich bei LinkedIn an, damit AVA deinen Feed lesen kann.
+                AVA öffnet dazu ein Fenster mit der echten LinkedIn-Login-Seite
+                — Passwort und 2FA-Code gibst du dort direkt ein. AVA sieht dein
+                Passwort nie.
+              </p>
+              <div className="linkedin-row">
+                <button
+                  type="button"
+                  className="primary"
+                  onClick={() => void onConnectLinkedIn()}
+                  disabled={loginInFlight || busy}
+                >
+                  {loginInFlight ? "Anmeldefenster offen…" : "Mit LinkedIn verbinden"}
+                </button>
+              </div>
+            </>
+          )}
+          {connected && meta && (
+            <>
+              <div className="linkedin-row">
+                <span className="linkedin-status-pill linkedin-status-pill--ok">
+                  Verbunden
+                </span>
+              </div>
+              <p className="muted small">
+                Verbunden seit {new Date(meta.capturedAt).toLocaleString("de-DE")}
+                {meta.memberUrn ? ` · ${meta.memberUrn}` : ""}. Cookies sind
+                verschlüsselt im Schlüsselbund deines Betriebssystems abgelegt.
+              </p>
+              <div className="linkedin-row">
+                <button
+                  type="button"
+                  onClick={() => void onDisconnectLinkedIn()}
+                  disabled={busy}
+                >
+                  Verbindung trennen
+                </button>
+              </div>
+              <p className="muted small">
+                Bei nächster Hintergrund-Aufgabe meldet AVA sich mit den
+                gespeicherten Cookies an. LinkedIn fordert gelegentlich eine
+                erneute Anmeldung — dann öffnet sich das Fenster wieder.
+              </p>
+            </>
+          )}
+          {authError && <p className="crm-card-error">{authError}</p>}
+        </fieldset>
+      )}
 
       {/* Image analysis controls */}
       <fieldset className="linkedin-fieldset" disabled={!enabled || busy}>

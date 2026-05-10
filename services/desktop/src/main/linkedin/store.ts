@@ -23,6 +23,7 @@ export const DEFAULT_LINKEDIN_SETTINGS: LinkedInSettings = {
   automaticScans: false,
   scanIntervalHours: 4,
   lastScanAt: null,
+  fingerprint: null,
 };
 
 function dir(): string {

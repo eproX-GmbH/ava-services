@@ -1,15 +1,40 @@
-// LinkedIn-Beobachter IPC surface (Phase L0).
+// LinkedIn-Beobachter IPC surface.
 //
-// Wires the renderer's settings panel + consent modal + kill-switch
-// to the on-disk store. Validates the consent gate so a malicious /
-// confused renderer can't flip `enabled: true` without the user
-// having accepted the modal first.
+// L0: master switch + consent + image-analysis controls + kill-switch.
+// L1: embedded-BrowserWindow login flow + encrypted cookie store +
+//     auth status + fingerprint scaffolding.
+// The renderer NEVER receives the raw cookies — only the metadata
+// (capturedAt, earliestExpiresAt, memberUrn). The cookies stay on this
+// device, encrypted via safeStorage, and L2's main-process scraper
+// will read them directly when constructing its Playwright context.
 
-import { ipcMain } from "electron";
-import type { LinkedInSettings } from "../../shared/types";
+import { BrowserWindow, ipcMain } from "electron";
+import type {
+  LinkedInAuthStatus,
+  LinkedInLoginResult,
+  LinkedInSettings,
+} from "../../shared/types";
 import { read, write, reset } from "./store";
+import {
+  clearStoredSession,
+  hasStoredSession,
+  readStoredMeta,
+} from "./session";
+import { runLoginFlow } from "./login-window";
+import { generateFingerprint } from "./fingerprint";
+
+/** Generate + persist the fingerprint on first run if it's missing.
+ *  Idempotent — safe to call on every boot. */
+function ensureFingerprint(): void {
+  const current = read();
+  if (!current.fingerprint) {
+    write({ fingerprint: generateFingerprint() });
+  }
+}
 
 export function initLinkedIn(): void {
+  ensureFingerprint();
+
   ipcMain.handle("linkedin:settings:get", (): LinkedInSettings => read());
 
   ipcMain.handle(
@@ -43,11 +68,40 @@ export function initLinkedIn(): void {
   });
 
   ipcMain.handle("linkedin:consent:revoke", (): LinkedInSettings => {
+    // Disconnecting consent also drops the stored session — leaving
+    // cookies on disk after the user revoked their explicit consent
+    // would violate the "data is here only because you said yes" promise.
+    clearStoredSession();
     return write({ consentAcceptedAt: null, enabled: false });
   });
 
   ipcMain.handle("linkedin:killswitch", (): { ok: true } => {
     reset();
+    // After reset() the fingerprint is gone too — regenerate so the
+    // settings file is consistent on the next read.
+    ensureFingerprint();
+    return { ok: true };
+  });
+
+  // ---- L1 auth surface --------------------------------------------------
+
+  ipcMain.handle("linkedin:auth:status", (): LinkedInAuthStatus => {
+    const meta = readStoredMeta();
+    return { connected: hasStoredSession() && meta !== null, meta };
+  });
+
+  ipcMain.handle("linkedin:auth:openLogin", async (event): Promise<LinkedInLoginResult> => {
+    // Prefer the BrowserWindow that owns the invoking webContents;
+    // fall back to the focused window so the modal binds to something
+    // sensible even when invoked from an unusual context.
+    const parent =
+      BrowserWindow.fromWebContents(event.sender) ??
+      BrowserWindow.getFocusedWindow();
+    return await runLoginFlow(parent);
+  });
+
+  ipcMain.handle("linkedin:auth:disconnect", (): { ok: true } => {
+    clearStoredSession();
     return { ok: true };
   });
 }

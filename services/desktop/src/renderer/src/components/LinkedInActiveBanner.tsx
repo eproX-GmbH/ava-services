@@ -14,13 +14,17 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { AlertTriangle, X } from "lucide-react";
-import type { LinkedInSettings } from "../../../shared/types";
+import type {
+  LinkedInAuthStatus,
+  LinkedInSettings,
+} from "../../../shared/types";
 
 const DISMISS_UNTIL_KEY = "ava.linkedinBanner.dismissedUntil";
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 export function LinkedInActiveBanner() {
   const [settings, setSettings] = useState<LinkedInSettings | null>(null);
+  const [auth, setAuth] = useState<LinkedInAuthStatus | null>(null);
   const [dismissedUntil, setDismissedUntil] = useState<number | null>(() => {
     try {
       const v = localStorage.getItem(DISMISS_UNTIL_KEY);
@@ -41,6 +45,9 @@ export function LinkedInActiveBanner() {
       void window.api.linkedin.getSettings().then((s) => {
         if (!cancelled) setSettings(s);
       });
+      void window.api.linkedin.auth.status().then((a) => {
+        if (!cancelled) setAuth(a);
+      });
     };
     refresh();
     const id = setInterval(refresh, 30_000);
@@ -59,11 +66,22 @@ export function LinkedInActiveBanner() {
   if (!settings || !settings.enabled) return null;
   if (dismissedUntil !== null && Date.now() < dismissedUntil) return null;
 
+  const notConnected = auth !== null && !auth.connected;
+
   return (
     <div className="linkedin-active-banner" role="status" aria-live="polite">
       <AlertTriangle className="ct-icon-sm" aria-hidden="true" />
-      <strong>LinkedIn-Beobachter ist aktiv.</strong>{" "}
-      <span>Konto-Risiko + DSGVO liegen bei dir.</span>
+      {notConnected ? (
+        <>
+          <strong>LinkedIn-Beobachter aktiv, aber nicht verbunden.</strong>{" "}
+          <span>Melde dich an, damit Signale erkannt werden.</span>
+        </>
+      ) : (
+        <>
+          <strong>LinkedIn-Beobachter ist aktiv.</strong>{" "}
+          <span>Konto-Risiko + DSGVO liegen bei dir.</span>
+        </>
+      )}
       <Link to="/settings#linkedin-section" className="link linkedin-active-banner__settings">
         Einstellungen
       </Link>
