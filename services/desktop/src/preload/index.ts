@@ -42,6 +42,9 @@ import type {
   LinkedInScanResult,
   LinkedInScanStatus,
   LinkedInSettings,
+  LinkedInSignalDetail,
+  LinkedInSignalListFilter,
+  LinkedInSignalListRow,
   LinkedInSignalStatus,
   UpdateStatus,
   ProviderCatalogEntry,
@@ -109,6 +112,9 @@ export type {
   LinkedInScanStatus,
   LinkedInSessionMeta,
   LinkedInSettings,
+  LinkedInSignalDetail,
+  LinkedInSignalListFilter,
+  LinkedInSignalListRow,
   LinkedInSignalStatus,
   UpdateStatus,
   ProviderCatalogEntry,
@@ -779,6 +785,24 @@ const api = {
         args?: { limit?: number; offset?: number; since?: number },
       ): Promise<LinkedInRecentPost[]> =>
         ipcRenderer.invoke("linkedin:feed:recent", args ?? {}),
+      /** L6 — broad filterable list for the /linkedin route + agent. */
+      listSignals: (
+        filter?: LinkedInSignalListFilter,
+      ): Promise<LinkedInSignalListRow[]> =>
+        ipcRenderer.invoke("linkedin:feed:listSignals", filter ?? {}),
+      /** L6 — single-signal detail for the expanded card view. */
+      signalDetail: (
+        postUrn: string,
+      ): Promise<LinkedInSignalDetail | null> =>
+        ipcRenderer.invoke("linkedin:feed:signalDetail", { postUrn }),
+      /** L6 — relative URL for a media file the route renders. */
+      mediaUrl: (relPath: string): string => {
+        const safe = relPath
+          .split("/")
+          .map((s) => encodeURIComponent(s))
+          .join("/");
+        return `ava-linkedin-media://${safe}`;
+      },
     },
     /** L3 — text-topic extraction. The renderer polls `status` for
      *  Settings telemetry; signal CONTENT does not surface yet (L6). */
@@ -789,6 +813,12 @@ const api = {
         ipcRenderer.invoke("linkedin:signals:run"),
       cancel: (): Promise<{ ok: true }> =>
         ipcRenderer.invoke("linkedin:signals:cancel"),
+      /** L6 — toggle dismissal on a single signal. */
+      dismiss: (
+        postUrn: string,
+        dismissed: boolean,
+      ): Promise<{ ok: true }> =>
+        ipcRenderer.invoke("linkedin:signals:dismiss", { postUrn, dismissed }),
     },
     /** L4 — vision-LLM image analysis. Telemetry only for now (no
      *  separate run/cancel — the existing signals.run/cancel covers

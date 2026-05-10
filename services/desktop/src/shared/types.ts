@@ -538,7 +538,8 @@ export type AlertKind =
   | "publication"      // company press / news item
   | "financial-delta"  // YoY revenue / profit swing
   | "profile-change"   // master-data fact changed (address, leadership, …)
-  | "evaluation-flag"; // an LLM evaluation flagged something noteworthy
+  | "evaluation-flag"  // an LLM evaluation flagged something noteworthy
+  | "linkedin-signal"; // L6: LinkedIn-Beobachter strong signal
 
 export interface Alert {
   id: string;
@@ -1085,6 +1086,98 @@ export interface LinkedInLinkedSignal {
   signalStrength: number | null;
   summary: string | null;
   matchedCompanies: Array<{ companyId: string; name: string }>;
+}
+
+/** Phase L6: filter shape for the /linkedin route + agent tool. */
+export interface LinkedInSignalListFilter {
+  kind?:
+    | "any"
+    | "personnel_change"
+    | "company_event"
+    | "factory_visit"
+    | "new_product"
+    | "partnership"
+    | "event_attendance"
+    | "hiring"
+    | "award"
+    | "press_mention"
+    | "none";
+  strengthMin?: number;
+  knownCompaniesOnly?: boolean;
+  includeDismissed?: boolean;
+  sinceDays?: number;
+  limit?: number;
+  offset?: number;
+}
+
+/** Phase L6: row shape for the filterable signal list. */
+export interface LinkedInSignalListRow {
+  postUrn: string;
+  postedAt: number | null;
+  scrapedAt: number;
+  text: string;
+  permalink: string | null;
+  externalUrl: string | null;
+  author: {
+    actorUrn: string;
+    displayName: string;
+    headline: string | null;
+    profileUrl: string | null;
+  };
+  signalKind: string | null;
+  signalStrength: number | null;
+  summary: string | null;
+  llmTier: number | null;
+  llmModel: string | null;
+  matchedCompanies: Array<{
+    companyId: string;
+    name: string;
+    sourceValue: string;
+  }>;
+  matchedContacts: Array<{
+    contactId: string;
+    display: string;
+    sourceValue: string;
+  }>;
+  detectedLogos: string[];
+  images: Array<{
+    mediaId: string;
+    relPath: string;
+    description: string | null;
+  }>;
+  dismissed: boolean;
+}
+
+/** Phase L6: full detail payload for the expanded card view. */
+export interface LinkedInSignalDetail extends LinkedInSignalListRow {
+  topics: string[];
+  entitiesRaw: { companies: string[]; people: string[]; locations?: string[] };
+  allLinks: Array<{
+    sourceKind: string;
+    sourceValue: string;
+    resolution: string;
+    masterCompanyId: string | null;
+    masterCompanyName: string | null;
+    contactId: string | null;
+    contactDisplay: string | null;
+    matchScore: number | null;
+    matchReason: string | null;
+  }>;
+  imageAnalyses: Array<{
+    mediaId: string;
+    description: string | null;
+    visibleText: string | null;
+    environment: string | null;
+    detectedLogos: string[];
+    detectedProducts: string[];
+  }>;
+  interactions: Array<{
+    actorUrn: string;
+    displayName: string;
+    headline: string | null;
+    kind: string;
+    commentText: string | null;
+  }>;
 }
 
 /** Phase L4: image-analysis worker status, polled by Settings. */

@@ -51,7 +51,15 @@ import {
   scanStatusSnapshot,
   shutdownScraper,
 } from "./scraper";
-import { getDb, recentPosts, signalsForCompany } from "./db";
+import {
+  dismissSignal,
+  getDb,
+  listSignals,
+  loadSignalDetail,
+  recentPosts,
+  signalsForCompany,
+  type SignalListFilter,
+} from "./db";
 import { startScheduler, stopScheduler } from "./scheduler";
 
 /** Generate + persist the fingerprint on first run if it's missing.
@@ -241,6 +249,36 @@ export function initLinkedIn(opts?: {
     "linkedin:linker:status",
     async (): Promise<LinkerStatus> => {
       return await linkerStatusSnapshot();
+    },
+  );
+
+  // ---- L6 surfacing surface -------------------------------------------
+
+  ipcMain.handle(
+    "linkedin:feed:listSignals",
+    async (_e, args: SignalListFilter | undefined) => {
+      const db = await getDb();
+      return await listSignals(db, args ?? {});
+    },
+  );
+
+  ipcMain.handle(
+    "linkedin:feed:signalDetail",
+    async (_e, args: { postUrn: string }) => {
+      const db = await getDb();
+      return await loadSignalDetail(db, args.postUrn);
+    },
+  );
+
+  ipcMain.handle(
+    "linkedin:signals:dismiss",
+    async (
+      _e,
+      args: { postUrn: string; dismissed: boolean },
+    ): Promise<{ ok: true }> => {
+      const db = await getDb();
+      await dismissSignal(db, args.postUrn, args.dismissed);
+      return { ok: true };
     },
   );
 

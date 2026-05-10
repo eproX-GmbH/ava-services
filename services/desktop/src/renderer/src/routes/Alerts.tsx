@@ -20,6 +20,7 @@ const KIND_LABEL: Record<AlertKind, string> = {
   "financial-delta": "Finanzkennzahl",
   "profile-change": "Profiländerung",
   "evaluation-flag": "Bewertungs-Flag",
+  "linkedin-signal": "LinkedIn-Signal",
 };
 
 const SEVERITY_LABEL: Record<AlertSeverity, string> = {

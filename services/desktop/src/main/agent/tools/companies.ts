@@ -2,6 +2,8 @@ import * as yup from "yup";
 import { defineTool } from "../define-tool";
 import type { GatewayClient } from "../gateway-client";
 import type { Tool } from "../types";
+import { getDb as getLinkedInDb, signalsForCompany } from "../../linkedin/db";
+import { read as readLinkedInSettings } from "../../linkedin/store";
 
 // Read-only company tools (Phase 8.b).
 //
@@ -250,6 +252,62 @@ export function buildCompanyTools(ctx: Ctx): Tool[] {
     },
   });
 
+  // L6 — agent-facing window into the LinkedIn-Beobachter signals for a
+  // company. Stays main-side (no gateway round-trip) because the data
+  // lives in the local linkedin DB. Returns nothing when the master
+  // switch is off so the tool degrades gracefully.
+  const linkedInSignals = defineTool({
+    name: "company_linkedin_signals",
+    description:
+      "Liefert die letzten LinkedIn-Signale für eine Firma. Zeigt Beitrag, Signal-Art, Stärke, gematchte Personen und kurze Zusammenfassung. Nutze das Tool, wenn der Nutzer fragt 'was tut sich bei <Firma> auf LinkedIn?' oder eine Status-Übersicht möchte.",
+    parameters: {
+      type: "object",
+      properties: {
+        companyId: { type: "string" },
+        limit: {
+          type: "integer",
+          description: "Max signals to return.",
+          minimum: 1,
+          maximum: 50,
+          default: 10,
+        },
+      },
+      required: ["companyId"],
+    },
+    schema: yup.object({
+      companyId: yup.string().trim().min(1).required(),
+      limit: yup.number().integer().min(1).max(50).default(10),
+    }),
+    run: async (args) => {
+      const settings = readLinkedInSettings();
+      if (!settings.enabled) {
+        return {
+          enabled: false,
+          items: [] as Array<Record<string, unknown>>,
+          note: "LinkedIn-Beobachter ist deaktiviert.",
+        };
+      }
+      const db = await getLinkedInDb();
+      const rows = await signalsForCompany(db, args.companyId, args.limit);
+      return {
+        enabled: true,
+        items: rows.map((r) => ({
+          postUrn: r.postUrn,
+          postedAt: r.postedAt,
+          authorName: r.authorDisplayName,
+          signalKind: r.signalKind,
+          signalStrength: r.signalStrength,
+          summary: r.summary,
+          permalink: r.permalink,
+        })),
+      };
+    },
+    preview: (r) => {
+      if (!r.enabled) return "linkedin disabled";
+      return `${r.items.length} linkedin signal${r.items.length === 1 ? "" : "s"}`;
+    },
+  });
+
   return [
     search,
     get,
@@ -260,5 +318,6 @@ export function buildCompanyTools(ctx: Ctx): Tool[] {
     contacts,
     structuredContent,
     dataQuality,
+    linkedInSignals,
   ];
 }

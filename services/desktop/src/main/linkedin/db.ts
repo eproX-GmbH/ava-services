@@ -14,7 +14,7 @@
 
 import { app } from "electron";
 import { mkdirSync } from "node:fs";
-import { join } from "node:path";
+import { join, sep } from "node:path";
 import type {
   LinkedInFeedCounts,
   LinkedInRecentPost,
@@ -193,6 +193,16 @@ CREATE TABLE IF NOT EXISTS linkedin_company_lookup_cache (
 );
 CREATE INDEX IF NOT EXISTS linkedin_company_lookup_cache_age
   ON linkedin_company_lookup_cache (cached_at);
+
+-- Phase L6: per-user dismissal of signals + heartbeat-evaluation cursor.
+-- dismissed_at hides the row from the default /linkedin list. The
+-- heartbeat-evaluation column tracks which signals have already been
+-- judged so we don't re-fire the same candidate every sweep.
+ALTER TABLE linkedin_signal ADD COLUMN IF NOT EXISTS dismissed_at TIMESTAMPTZ;
+ALTER TABLE linkedin_signal ADD COLUMN IF NOT EXISTS heartbeat_evaluated_at TIMESTAMPTZ;
+ALTER TABLE linkedin_signal ADD COLUMN IF NOT EXISTS heartbeat_alert_id TEXT;
+CREATE INDEX IF NOT EXISTS linkedin_signal_dismissed ON linkedin_signal (dismissed_at);
+CREATE INDEX IF NOT EXISTS linkedin_signal_heartbeat ON linkedin_signal (heartbeat_evaluated_at);
 `;
 
 async function initSchema(db: PGliteInstance): Promise<void> {
@@ -1446,6 +1456,627 @@ export async function recentLinkedSignals(
       matchedCompanies: matched,
     };
   });
+}
+
+// ---- L6 surfacing layer -------------------------------------------------
+
+export type SignalListSortableKind =
+  | "personnel_change"
+  | "company_event"
+  | "factory_visit"
+  | "new_product"
+  | "partnership"
+  | "event_attendance"
+  | "hiring"
+  | "award"
+  | "press_mention"
+  | "none";
+
+export interface SignalListFilter {
+  /** Signal kind, or "any" to match every kind including "none". */
+  kind?: SignalListSortableKind | "any";
+  /** Minimum strength 1..5 (default 1). */
+  strengthMin?: number;
+  /** Restrict to signals with at least one matched master company. */
+  knownCompaniesOnly?: boolean;
+  /** When false (default) hide rows with dismissed_at set. */
+  includeDismissed?: boolean;
+  /** Lookback window in days; default 14, max 90. */
+  sinceDays?: number;
+  /** Default 50, max 200. */
+  limit?: number;
+  offset?: number;
+}
+
+export interface SignalListEntityLink {
+  companyId: string;
+  name: string;
+  sourceValue: string;
+}
+
+export interface SignalListContactLink {
+  contactId: string;
+  display: string;
+  sourceValue: string;
+}
+
+export interface SignalListImage {
+  mediaId: string;
+  /** Path relative to userData/linkedin/media/, joined with '/' so the
+   *  custom protocol handler can resolve it back to disk. */
+  relPath: string;
+  description: string | null;
+}
+
+export interface SignalListRow {
+  postUrn: string;
+  postedAt: number | null;
+  scrapedAt: number;
+  text: string;
+  permalink: string | null;
+  externalUrl: string | null;
+  author: {
+    actorUrn: string;
+    displayName: string;
+    headline: string | null;
+    profileUrl: string | null;
+  };
+  signalKind: string | null;
+  signalStrength: number | null;
+  summary: string | null;
+  llmTier: number | null;
+  llmModel: string | null;
+  matchedCompanies: SignalListEntityLink[];
+  matchedContacts: SignalListContactLink[];
+  detectedLogos: string[];
+  images: SignalListImage[];
+  dismissed: boolean;
+}
+
+function mediaRoot(): string {
+  return join(app.getPath("userData"), "linkedin", "media");
+}
+
+/** Convert an absolute media path back to a "<postDir>/<file>" relative
+ *  path. Returns null if the row doesn't live under the media root (e.g.
+ *  a stale path from before the layout settled). */
+export function mediaRelPath(absPath: string): string | null {
+  const root = mediaRoot();
+  if (!absPath.startsWith(root + sep)) return null;
+  return absPath.slice(root.length + 1).split(sep).join("/");
+}
+
+export async function listSignals(
+  db: PGliteInstance,
+  filter: SignalListFilter,
+): Promise<SignalListRow[]> {
+  const limit = Math.min(Math.max(filter.limit ?? 50, 1), 200);
+  const offset = Math.max(filter.offset ?? 0, 0);
+  const sinceDays = Math.min(Math.max(filter.sinceDays ?? 14, 1), 90);
+  const strengthMin = Math.min(
+    Math.max(Math.round(filter.strengthMin ?? 1), 1),
+    5,
+  );
+  const includeDismissed = filter.includeDismissed === true;
+  const knownOnly = filter.knownCompaniesOnly === true;
+
+  const where: string[] = [
+    "s.status = 'extracted'",
+    `p.scraped_at >= NOW() - ($1::int * INTERVAL '1 day')`,
+    `COALESCE(s.signal_strength, 0) >= $2`,
+  ];
+  const params: unknown[] = [sinceDays, strengthMin];
+  if (!includeDismissed) where.push("s.dismissed_at IS NULL");
+  if (filter.kind && filter.kind !== "any") {
+    params.push(filter.kind);
+    where.push(`s.signal_kind = $${params.length}`);
+  }
+  if (knownOnly) {
+    where.push(`EXISTS (
+      SELECT 1 FROM linkedin_entity_link l
+       WHERE l.source_post_urn = p.post_urn
+         AND l.resolution = 'matched'
+         AND l.master_company_id IS NOT NULL
+    )`);
+  }
+  params.push(limit);
+  params.push(offset);
+  const limIdx = params.length - 1;
+  const offIdx = params.length;
+
+  const sql = `
+    SELECT p.post_urn, p.posted_at, p.scraped_at, p.text, p.permalink,
+           p.external_url,
+           a.actor_urn, a.display_name AS author_display_name,
+           a.headline AS author_headline, a.profile_url AS author_profile_url,
+           s.signal_kind, s.signal_strength, s.summary,
+           s.llm_tier, s.llm_model, s.dismissed_at
+      FROM linkedin_signal s
+      JOIN linkedin_post p  ON p.post_urn = s.post_urn
+      JOIN linkedin_actor a ON a.actor_urn = p.author_urn
+     WHERE ${where.join(" AND ")}
+     ORDER BY p.scraped_at DESC
+     LIMIT $${limIdx} OFFSET $${offIdx}
+  `;
+  const res = await db.query<{
+    post_urn: string;
+    posted_at: string | null;
+    scraped_at: string;
+    text: string | null;
+    permalink: string | null;
+    external_url: string | null;
+    actor_urn: string;
+    author_display_name: string;
+    author_headline: string | null;
+    author_profile_url: string | null;
+    signal_kind: string | null;
+    signal_strength: number | null;
+    summary: string | null;
+    llm_tier: number | null;
+    llm_model: string | null;
+    dismissed_at: string | null;
+  }>(sql, params);
+
+  if (res.rows.length === 0) return [];
+  const postUrns = res.rows.map((r) => r.post_urn);
+
+  // Side queries: matched companies, matched contacts, logos, images.
+  // Using ANY($1::text[]) keeps the round-trip count constant.
+  const linkRes = await db.query<{
+    source_post_urn: string;
+    source_kind: string;
+    source_value: string;
+    master_company_id: string | null;
+    master_company_name: string | null;
+    contact_id: string | null;
+    contact_display: string | null;
+  }>(
+    `SELECT source_post_urn, source_kind, source_value,
+            master_company_id, master_company_name,
+            contact_id, contact_display
+       FROM linkedin_entity_link
+      WHERE source_post_urn = ANY($1::text[])
+        AND resolution = 'matched'`,
+    [postUrns],
+  );
+  const companiesByPost = new Map<string, SignalListEntityLink[]>();
+  const contactsByPost = new Map<string, SignalListContactLink[]>();
+  for (const l of linkRes.rows) {
+    if (l.master_company_id && l.master_company_name) {
+      const arr = companiesByPost.get(l.source_post_urn) ?? [];
+      if (!arr.some((c) => c.companyId === l.master_company_id)) {
+        arr.push({
+          companyId: l.master_company_id,
+          name: l.master_company_name,
+          sourceValue: l.source_value,
+        });
+      }
+      companiesByPost.set(l.source_post_urn, arr);
+    }
+    if (l.contact_id && l.contact_display) {
+      const arr = contactsByPost.get(l.source_post_urn) ?? [];
+      if (!arr.some((c) => c.contactId === l.contact_id)) {
+        arr.push({
+          contactId: l.contact_id,
+          display: l.contact_display,
+          sourceValue: l.source_value,
+        });
+      }
+      contactsByPost.set(l.source_post_urn, arr);
+    }
+  }
+
+  const imgRes = await db.query<{
+    post_urn: string;
+    media_id: string;
+    local_path: string;
+    description: string | null;
+    detected_logos: unknown;
+  }>(
+    `SELECT m.post_urn, m.media_id, m.local_path,
+            ia.description, ia.detected_logos
+       FROM linkedin_media m
+       LEFT JOIN linkedin_image_analysis ia ON ia.media_id = m.media_id
+      WHERE m.post_urn = ANY($1::text[])
+        AND m.kind = 'image'
+      ORDER BY m.downloaded_at ASC`,
+    [postUrns],
+  );
+  const imagesByPost = new Map<string, SignalListImage[]>();
+  const logosByPost = new Map<string, Set<string>>();
+  for (const r of imgRes.rows) {
+    const rel = mediaRelPath(r.local_path);
+    if (rel) {
+      const arr = imagesByPost.get(r.post_urn) ?? [];
+      if (arr.length < 3) {
+        arr.push({
+          mediaId: r.media_id,
+          relPath: rel,
+          description: r.description,
+        });
+      }
+      imagesByPost.set(r.post_urn, arr);
+    }
+    if (r.detected_logos) {
+      try {
+        const arr =
+          typeof r.detected_logos === "string"
+            ? (JSON.parse(r.detected_logos) as unknown)
+            : r.detected_logos;
+        if (Array.isArray(arr)) {
+          const set = logosByPost.get(r.post_urn) ?? new Set<string>();
+          for (const item of arr) {
+            if (typeof item === "string" && item.trim()) set.add(item.trim());
+          }
+          logosByPost.set(r.post_urn, set);
+        }
+      } catch {
+        /* ignore */
+      }
+    }
+  }
+
+  return res.rows.map((r) => ({
+    postUrn: r.post_urn,
+    postedAt: r.posted_at ? new Date(r.posted_at).getTime() : null,
+    scrapedAt: new Date(r.scraped_at).getTime(),
+    text: r.text ?? "",
+    permalink: r.permalink,
+    externalUrl: r.external_url,
+    author: {
+      actorUrn: r.actor_urn,
+      displayName: r.author_display_name,
+      headline: r.author_headline,
+      profileUrl: r.author_profile_url,
+    },
+    signalKind: r.signal_kind,
+    signalStrength: r.signal_strength,
+    summary: r.summary,
+    llmTier: r.llm_tier,
+    llmModel: r.llm_model,
+    matchedCompanies: companiesByPost.get(r.post_urn) ?? [],
+    matchedContacts: contactsByPost.get(r.post_urn) ?? [],
+    detectedLogos: Array.from(logosByPost.get(r.post_urn) ?? []),
+    images: imagesByPost.get(r.post_urn) ?? [],
+    dismissed: r.dismissed_at !== null,
+  }));
+}
+
+export interface SignalDetailRow extends SignalListRow {
+  topics: string[];
+  entitiesRaw: SignalEntities;
+  allLinks: Array<{
+    sourceKind: string;
+    sourceValue: string;
+    resolution: string;
+    masterCompanyId: string | null;
+    masterCompanyName: string | null;
+    contactId: string | null;
+    contactDisplay: string | null;
+    matchScore: number | null;
+    matchReason: string | null;
+  }>;
+  imageAnalyses: Array<{
+    mediaId: string;
+    description: string | null;
+    visibleText: string | null;
+    environment: string | null;
+    detectedLogos: string[];
+    detectedProducts: string[];
+  }>;
+  interactions: Array<{
+    actorUrn: string;
+    displayName: string;
+    headline: string | null;
+    kind: string;
+    commentText: string | null;
+  }>;
+}
+
+export async function loadSignalDetail(
+  db: PGliteInstance,
+  postUrn: string,
+): Promise<SignalDetailRow | null> {
+  const list = await listSignals(db, {
+    includeDismissed: true,
+    sinceDays: 90,
+    strengthMin: 1,
+    limit: 1,
+    // Re-query directly so we don't paginate by accident; listSignals
+    // would only find it if it sits in the last 90 days. Detail view
+    // should show whatever the user clicked even if older.
+  });
+  // Fallback: if listSignals didn't pick it up (older than 90 days), do
+  // a direct fetch. This stays separate to keep the common path simple.
+  let head = list.find((r) => r.postUrn === postUrn);
+  if (!head) {
+    const direct = await db.query<{
+      post_urn: string;
+      posted_at: string | null;
+      scraped_at: string;
+      text: string | null;
+      permalink: string | null;
+      external_url: string | null;
+      actor_urn: string;
+      author_display_name: string;
+      author_headline: string | null;
+      author_profile_url: string | null;
+      signal_kind: string | null;
+      signal_strength: number | null;
+      summary: string | null;
+      llm_tier: number | null;
+      llm_model: string | null;
+      dismissed_at: string | null;
+    }>(
+      `SELECT p.post_urn, p.posted_at, p.scraped_at, p.text, p.permalink,
+              p.external_url,
+              a.actor_urn, a.display_name AS author_display_name,
+              a.headline AS author_headline, a.profile_url AS author_profile_url,
+              s.signal_kind, s.signal_strength, s.summary,
+              s.llm_tier, s.llm_model, s.dismissed_at
+         FROM linkedin_signal s
+         JOIN linkedin_post p  ON p.post_urn = s.post_urn
+         JOIN linkedin_actor a ON a.actor_urn = p.author_urn
+        WHERE s.post_urn = $1`,
+      [postUrn],
+    );
+    const r = direct.rows[0];
+    if (!r) return null;
+    head = {
+      postUrn: r.post_urn,
+      postedAt: r.posted_at ? new Date(r.posted_at).getTime() : null,
+      scrapedAt: new Date(r.scraped_at).getTime(),
+      text: r.text ?? "",
+      permalink: r.permalink,
+      externalUrl: r.external_url,
+      author: {
+        actorUrn: r.actor_urn,
+        displayName: r.author_display_name,
+        headline: r.author_headline,
+        profileUrl: r.author_profile_url,
+      },
+      signalKind: r.signal_kind,
+      signalStrength: r.signal_strength,
+      summary: r.summary,
+      llmTier: r.llm_tier,
+      llmModel: r.llm_model,
+      matchedCompanies: [],
+      matchedContacts: [],
+      detectedLogos: [],
+      images: [],
+      dismissed: r.dismissed_at !== null,
+    };
+  }
+
+  const sigRow = await db.query<{ topics: unknown; entities: unknown }>(
+    `SELECT topics, entities FROM linkedin_signal WHERE post_urn = $1`,
+    [postUrn],
+  );
+  const topicsRaw = sigRow.rows[0]?.topics;
+  const entitiesRaw = sigRow.rows[0]?.entities;
+  const topics: string[] = (() => {
+    try {
+      const v =
+        typeof topicsRaw === "string"
+          ? (JSON.parse(topicsRaw) as unknown)
+          : topicsRaw;
+      return Array.isArray(v) ? v.filter((s): s is string => typeof s === "string") : [];
+    } catch {
+      return [];
+    }
+  })();
+  const entities: SignalEntities = (() => {
+    try {
+      const v =
+        typeof entitiesRaw === "string"
+          ? (JSON.parse(entitiesRaw) as SignalEntities)
+          : (entitiesRaw as SignalEntities | null);
+      return v ?? { companies: [], people: [] };
+    } catch {
+      return { companies: [], people: [] };
+    }
+  })();
+
+  const links = await db.query<{
+    source_kind: string;
+    source_value: string;
+    resolution: string;
+    master_company_id: string | null;
+    master_company_name: string | null;
+    contact_id: string | null;
+    contact_display: string | null;
+    match_score: number | null;
+    match_reason: string | null;
+  }>(
+    `SELECT source_kind, source_value, resolution,
+            master_company_id, master_company_name,
+            contact_id, contact_display, match_score, match_reason
+       FROM linkedin_entity_link
+      WHERE source_post_urn = $1
+      ORDER BY resolved_at ASC`,
+    [postUrn],
+  );
+
+  const ia = await db.query<{
+    media_id: string;
+    description: string | null;
+    visible_text: string | null;
+    environment: string | null;
+    detected_logos: unknown;
+    detected_products: unknown;
+  }>(
+    `SELECT ia.media_id, ia.description, ia.visible_text, ia.environment,
+            ia.detected_logos, ia.detected_products
+       FROM linkedin_image_analysis ia
+       JOIN linkedin_media m ON m.media_id = ia.media_id
+      WHERE m.post_urn = $1
+        AND ia.status = 'analyzed'`,
+    [postUrn],
+  );
+  const ints = await db.query<{
+    actor_urn: string;
+    display_name: string;
+    headline: string | null;
+    kind: string;
+    comment_text: string | null;
+  }>(
+    `SELECT a.actor_urn, a.display_name, a.headline, i.kind, i.comment_text
+       FROM linkedin_interaction i
+       JOIN linkedin_actor a ON a.actor_urn = i.actor_urn
+      WHERE i.post_urn = $1
+      ORDER BY i.scraped_at ASC`,
+    [postUrn],
+  );
+
+  const parseStringArray = (raw: unknown): string[] => {
+    try {
+      const v = typeof raw === "string" ? (JSON.parse(raw) as unknown) : raw;
+      return Array.isArray(v)
+        ? v.filter((s): s is string => typeof s === "string")
+        : [];
+    } catch {
+      return [];
+    }
+  };
+
+  return {
+    ...head,
+    topics,
+    entitiesRaw: entities,
+    allLinks: links.rows.map((l) => ({
+      sourceKind: l.source_kind,
+      sourceValue: l.source_value,
+      resolution: l.resolution,
+      masterCompanyId: l.master_company_id,
+      masterCompanyName: l.master_company_name,
+      contactId: l.contact_id,
+      contactDisplay: l.contact_display,
+      matchScore: l.match_score,
+      matchReason: l.match_reason,
+    })),
+    imageAnalyses: ia.rows.map((r) => ({
+      mediaId: r.media_id,
+      description: r.description,
+      visibleText: r.visible_text,
+      environment: r.environment,
+      detectedLogos: parseStringArray(r.detected_logos),
+      detectedProducts: parseStringArray(r.detected_products),
+    })),
+    interactions: ints.rows.map((r) => ({
+      actorUrn: r.actor_urn,
+      displayName: r.display_name,
+      headline: r.headline,
+      kind: r.kind,
+      commentText: r.comment_text,
+    })),
+  };
+}
+
+export async function dismissSignal(
+  db: PGliteInstance,
+  postUrn: string,
+  dismissed: boolean,
+): Promise<void> {
+  if (dismissed) {
+    await db.query(
+      `UPDATE linkedin_signal SET dismissed_at = NOW() WHERE post_urn = $1`,
+      [postUrn],
+    );
+  } else {
+    await db.query(
+      `UPDATE linkedin_signal SET dismissed_at = NULL WHERE post_urn = $1`,
+      [postUrn],
+    );
+  }
+}
+
+export interface HeartbeatLinkedInCandidate {
+  postUrn: string;
+  postedAt: number | null;
+  text: string;
+  permalink: string | null;
+  signalKind: string;
+  signalStrength: number;
+  summary: string;
+  authorDisplayName: string;
+  authorHeadline: string | null;
+  companyId: string;
+  companyName: string;
+}
+
+export async function heartbeatCandidates(
+  db: PGliteInstance,
+  opts: { limit?: number; minStrength?: number } = {},
+): Promise<HeartbeatLinkedInCandidate[]> {
+  const limit = Math.min(Math.max(opts.limit ?? 20, 1), 100);
+  const minStrength = Math.min(Math.max(opts.minStrength ?? 4, 1), 5);
+  const res = await db.query<{
+    post_urn: string;
+    posted_at: string | null;
+    text: string | null;
+    permalink: string | null;
+    signal_kind: string | null;
+    signal_strength: number | null;
+    summary: string | null;
+    author_display_name: string;
+    author_headline: string | null;
+    master_company_id: string;
+    master_company_name: string;
+  }>(
+    `SELECT DISTINCT ON (s.post_urn, l.master_company_id)
+            s.post_urn, p.posted_at, p.text, p.permalink,
+            s.signal_kind, s.signal_strength, s.summary,
+            a.display_name AS author_display_name, a.headline AS author_headline,
+            l.master_company_id, l.master_company_name
+       FROM linkedin_signal s
+       JOIN linkedin_post   p ON p.post_urn = s.post_urn
+       JOIN linkedin_actor  a ON a.actor_urn = p.author_urn
+       JOIN linkedin_entity_link l ON l.source_post_urn = s.post_urn
+      WHERE s.status = 'extracted'
+        AND s.dismissed_at IS NULL
+        AND s.heartbeat_evaluated_at IS NULL
+        AND COALESCE(s.signal_strength, 0) >= $2
+        AND l.resolution = 'matched'
+        AND l.master_company_id IS NOT NULL
+      ORDER BY s.post_urn, l.master_company_id, p.scraped_at DESC
+      LIMIT $1`,
+    [limit, minStrength],
+  );
+  return res.rows
+    .filter(
+      (r) =>
+        r.signal_kind &&
+        r.signal_kind !== "none" &&
+        r.summary &&
+        r.master_company_name,
+    )
+    .map((r) => ({
+      postUrn: r.post_urn,
+      postedAt: r.posted_at ? new Date(r.posted_at).getTime() : null,
+      text: r.text ?? "",
+      permalink: r.permalink,
+      signalKind: r.signal_kind as string,
+      signalStrength: Number(r.signal_strength ?? 0),
+      summary: r.summary as string,
+      authorDisplayName: r.author_display_name,
+      authorHeadline: r.author_headline,
+      companyId: r.master_company_id,
+      companyName: r.master_company_name,
+    }));
+}
+
+export async function recordHeartbeatVerdict(
+  db: PGliteInstance,
+  postUrn: string,
+  alertId: string | null,
+): Promise<void> {
+  await db.query(
+    `UPDATE linkedin_signal
+        SET heartbeat_evaluated_at = NOW(),
+            heartbeat_alert_id = $2
+      WHERE post_urn = $1`,
+    [postUrn, alertId],
+  );
 }
 
 export async function imageAnalysisCounts(

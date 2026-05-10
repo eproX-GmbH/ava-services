@@ -302,6 +302,25 @@ function formatRelativeMinutes(ts: number): string {
 }
 
 function TopBar() {
+  // L6 — show the LinkedIn-Beobachter nav entry only when the master
+  // switch is on. We re-fetch on focus so a Settings flip is reflected
+  // without a full page reload.
+  const [linkedinEnabled, setLinkedinEnabled] = useState<boolean>(false);
+  useEffect(() => {
+    let cancelled = false;
+    const refresh = (): void => {
+      void window.api.linkedin.getSettings().then((s) => {
+        if (!cancelled) setLinkedinEnabled(s.enabled === true);
+      });
+    };
+    refresh();
+    const onFocus = () => refresh();
+    window.addEventListener("focus", onFocus);
+    return () => {
+      cancelled = true;
+      window.removeEventListener("focus", onFocus);
+    };
+  }, []);
   return (
     <header className="topbar">
       {/* v0.1.69 — restored the brand SVG. The gradient text wordmark
@@ -317,6 +336,7 @@ function TopBar() {
         <NavItem to="/alle-firmen" label="Meine Firmen" />
         <NavItem to="/companies" label="Firmensuche" />
         <NavItem to="/alerts" label="Meldungen" />
+        {linkedinEnabled && <NavItem to="/linkedin" label="Signale" />}
         <NavItem to="/settings" label="Einstellungen" />
         <NavItem to="/whoami" label="Status" />
       </nav>

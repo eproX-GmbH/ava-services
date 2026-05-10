@@ -22,6 +22,13 @@ import {
   pruneOldScreenshots,
   registerScreenshotProtocol,
 } from "./producer-screenshots";
+import { registerLinkedInMediaProtocol } from "./linkedin/media-protocol";
+import {
+  getDb as getLinkedInDb,
+  heartbeatCandidates as listLinkedInHeartbeatCandidates,
+  recordHeartbeatVerdict as recordLinkedInHeartbeatVerdict,
+} from "./linkedin/db";
+import { read as readLinkedInSettings } from "./linkedin/store";
 import {
   ExternalServiceMonitor,
   UNTERNEHMENSREGISTER_DEPENDENT_PRODUCERS,
@@ -67,6 +74,7 @@ import type {
   AgentStreamFrame,
   Alert,
   AlertPrefs,
+  AlertTickInfo,
   OllamaPullProgress,
   OllamaStatus,
   PostgresStatus,
@@ -111,6 +119,16 @@ const AUTH_CLIENT_ID = APP_CONFIG.authClientId;
 protocol.registerSchemesAsPrivileged([
   {
     scheme: "ava-screenshot",
+    privileges: {
+      standard: true,
+      secure: true,
+      supportFetchAPI: true,
+      bypassCSP: false,
+    },
+  },
+  // L6 — same shape, serves LinkedIn-Beobachter media thumbnails.
+  {
+    scheme: "ava-linkedin-media",
     privileges: {
       standard: true,
       secure: true,
@@ -587,11 +605,65 @@ const compositeCandidateSource = (() => {
   };
   return async (since: Date | null) => {
     const real = await realCandidateSource(since);
-    if (real.length > 0) return real;
+    // L6 — fold LinkedIn-Beobachter heartbeat candidates into the same
+    // sweep. Strength ≥ 4 + matched master company is the gating
+    // contract; the linkedin db marks each visited row so the next
+    // tick skips it. We never overwrite real publications even when
+    // they overlap: both kinds can fire in the same sweep.
+    const linkedin = await fetchLinkedInHeartbeatCandidates();
+    const merged = [...real, ...linkedin];
+    if (merged.length > 0) return merged;
     if (alerts.list().length > 0) return [];
     return demoOnce();
   };
 })();
+
+/** L6 helper — pulls LinkedIn-Beobachter signals that are ready for
+ *  heartbeat judging. Wraps the linkedin db helper, transforms each
+ *  row into a HeartbeatCandidate. The verdict is recorded post-tick
+ *  via `recordLinkedInHeartbeatVerdicts` (registered as a tick
+ *  listener once the heartbeat is built). */
+async function fetchLinkedInHeartbeatCandidates(): Promise<
+  Awaited<ReturnType<typeof realCandidateSource>>
+> {
+  try {
+    const settings = readLinkedInSettings();
+    if (!settings.enabled) return [];
+    const db = await getLinkedInDb();
+    const rows = await listLinkedInHeartbeatCandidates(db, {
+      limit: 20,
+      minStrength: 4,
+    });
+    return rows.map((r) => ({
+      kind: "linkedin-signal" as const,
+      companyId: r.companyId,
+      companyName: r.companyName,
+      sourceRef: `linkedin:${r.postUrn}:${r.companyId}`,
+      occurredAt: r.postedAt
+        ? new Date(r.postedAt).toISOString()
+        : new Date().toISOString(),
+      summary: r.summary,
+      payload: {
+        postUrn: r.postUrn,
+        permalink: r.permalink,
+        signalKind: r.signalKind,
+        signalStrength: r.signalStrength,
+        author: r.authorDisplayName,
+        authorHeadline: r.authorHeadline,
+        // Excerpt at 800 chars per spec — gives the judge enough text to
+        // apply the "reine Selbstdarstellung" filter without blowing
+        // the prompt budget.
+        text: r.text.length > 800 ? r.text.slice(0, 800) : r.text,
+      },
+    }));
+  } catch (err) {
+    console.warn(
+      "[heartbeat/linkedin] candidate fetch failed:",
+      err instanceof Error ? err.message : err,
+    );
+    return [];
+  }
+}
 // Watch store + executor (Phase 8.t2). Built BEFORE the heartbeat so
 // the executor can hook into the post-candidate slot. Storage probe
 // is non-fatal — like the other JSONL stores, the rest of the app
@@ -617,6 +689,49 @@ function broadcastWatchesChanged(): void {
 }
 watchStore.on("changed", () => broadcastWatchesChanged());
 
+/** L6 — after each heartbeat tick, mark every LinkedIn candidate that
+ *  reached the judge so the next sweep skips it. Includes alerted +
+ *  not-worth + judge-error outcomes; duplicates already advanced their
+ *  cursor on the prior tick. The alert store still drives dedup; the
+ *  cursor here is just a "we've evaluated this signal once" flag. */
+async function recordLinkedInTickVerdicts(info: AlertTickInfo): Promise<void> {
+  if (info.skipped) return;
+  const linkedinDecisions = info.decisions.filter(
+    (d) => d.kind === "linkedin-signal",
+  );
+  if (linkedinDecisions.length === 0) return;
+  let db;
+  try {
+    db = await getLinkedInDb();
+  } catch (err) {
+    console.warn(
+      "[heartbeat/linkedin] verdict recording skipped — db unavailable:",
+      err instanceof Error ? err.message : err,
+    );
+    return;
+  }
+  const alertList = alerts.list();
+  const alertBySourceRef = new Map(alertList.map((a) => [a.sourceRef, a.id]));
+  for (const d of linkedinDecisions) {
+    if (d.outcome === "duplicate" || d.outcome === "judge-error") continue;
+    // sourceRef format: linkedin:<postUrn>:<companyId>
+    const colon = d.sourceRef.indexOf(":");
+    if (colon < 0 || !d.sourceRef.startsWith("linkedin:")) continue;
+    const tail = d.sourceRef.slice("linkedin:".length);
+    const lastColon = tail.lastIndexOf(":");
+    const postUrn = lastColon > 0 ? tail.slice(0, lastColon) : tail;
+    const alertId = alertBySourceRef.get(d.sourceRef) ?? null;
+    try {
+      await recordLinkedInHeartbeatVerdict(db, postUrn, alertId);
+    } catch (err) {
+      console.warn(
+        `[heartbeat/linkedin] recordVerdict ${postUrn} failed:`,
+        err instanceof Error ? err.message : err,
+      );
+    }
+  }
+}
+
 const heartbeat = new Heartbeat({
   store: alerts,
   // 8.f3 — read cadence from persisted prefs (default 15 min). The
@@ -637,6 +752,9 @@ const heartbeat = new Heartbeat({
   // sourceRef for dedup, so the existing bell + /alerts surface
   // picks them up automatically.
   postCandidateHook: (candidates) => watchExecutor.evaluate(candidates),
+});
+heartbeat.on("tick", (info: AlertTickInfo) => {
+  void recordLinkedInTickVerdicts(info);
 });
 
 function broadcastAlertsChanged(): void {
@@ -865,6 +983,8 @@ app.whenReady().then(async () => {
   // a long-running install doesn't accumulate gigabytes of frames.
   registerScreenshotProtocol();
   void pruneOldScreenshots();
+  // L6 — same protocol pattern for LinkedIn media thumbnails.
+  registerLinkedInMediaProtocol();
 
   // v0.1.55 — clear `com.apple.quarantine` from this bundle. This
   // launch's process retains its quarantine flag (set by the kernel
