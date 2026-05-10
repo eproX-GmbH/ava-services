@@ -7,6 +7,27 @@ The repo uses one rolling tag per desktop release (`v<major>.<minor>.<patch>`)
 on `main`. Submodules cut their own feature branches and are pinned via the
 desktop bundle; `pnpm fetch:producers` re-vendors them into the .dmg.
 
+## v0.1.111 — 2026-05-10
+
+- **handelsregister.de scraper: JSF sidebar navigation.** The direct
+  URL `https://www.handelsregister.de/rp_web/erweiterte-suche.xhtml`
+  now returns HTTP 400 with a German security-session-end page, so
+  every handelsregister scrape was failing at step 2 of the flow.
+  The fix routes through the real navigation path:
+  1. Land on `welcome.xhtml`, dismiss the cookie banner.
+  2. Open the PrimeFaces sidebar via `#topbar-menu-button` if the
+     "Erweiterte Suche" link is not already visible (the sidebar
+     auto-opens on some loads, so we probe first).
+  3. Click the link, selected by `//a[contains(@onclick,
+     'erweiterteSucheLink')]` (XPath against the stable JSF param
+     value), with visible-text and `j_idt46` id fallbacks.
+  4. Wait for the `Registergericht` select to render — the JSF
+     post-back leaves the URL as `welcome.xhtml`, so URL is not a
+     usable readiness signal.
+  Form filling, results-row SI click, and XML capture are unchanged.
+  Submodule branch: `fix/handelsregister-sidebar-nav-v0.1.111` in
+  `structured-content`, pinned via the desktop bundle.
+
 ## v0.1.110 — 2026-05-10
 
 - **LinkedIn-Beobachter: anti-fingerprint hardening.** Earlier runs
