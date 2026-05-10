@@ -8,6 +8,13 @@ import {
   type ReactNode,
 } from "react";
 import { Link, useNavigate } from "react-router-dom";
+import {
+  PanelLeftClose,
+  PanelLeftOpen,
+  Search as SearchIcon,
+  SquarePen,
+  Trash2,
+} from "lucide-react";
 import { useOllamaStore } from "../store/ollama";
 import { useVoiceStore } from "../store/voice";
 import { useVoiceRecorder } from "../lib/recordVoice";
@@ -136,6 +143,37 @@ export function Chat() {
   const activeRequestIdRef = useRef<string | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const navigate = useNavigate();
+
+  // Sidebar collapse state — persists in localStorage. Default expanded.
+  const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(() => {
+    if (typeof window === "undefined") return false;
+    try {
+      return window.localStorage.getItem("ava.chatSidebar.collapsed") === "1";
+    } catch {
+      return false;
+    }
+  });
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(
+        "ava.chatSidebar.collapsed",
+        sidebarCollapsed ? "1" : "0",
+      );
+    } catch {
+      /* ignore */
+    }
+  }, [sidebarCollapsed]);
+  // Cmd/Ctrl+Shift+S toggles the sidebar.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === "s") {
+        e.preventDefault();
+        setSidebarCollapsed((c) => !c);
+      }
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, []);
 
   // Refresh the sessions list. Called on mount, after sending a turn
   // (so the latest conversation's mtime bubbles to the top), and after
@@ -803,7 +841,6 @@ export function Chat() {
   // long-form reading than chat shorthand). Tool activity rows and choice
   // cards keep their existing styling.
   const isEmpty = messages.length === 0 && !error && !thinking;
-  const layoutClass = isEmpty ? "chat-route chat-route--empty" : "chat-route chat-route--active";
   const statusLine =
     status === null
       ? "lädt…"
@@ -1031,28 +1068,30 @@ export function Chat() {
           </>
         )}
       </div>
-      {/* Session picker lives under the composer so it never crowds the
-          centered welcome heading in the empty state. */}
-      <div className="chat-sessions-rail">
-        <SessionPicker
-          conversations={conversations}
-          activeId={conversationId}
-          onSelect={(id) => void switchConversation(id)}
-          onNew={() => startNewConversation()}
-          onDelete={(id) => void handleDeleteConversation(id)}
-        />
-      </div>
     </div>
   );
 
   return (
     <div
-      className={`${layoutClass}${dragOver ? " chat-route--drag" : ""}`}
-      onDragEnter={handleDragEnter}
-      onDragLeave={handleDragLeave}
-      onDragOver={handleDragOver}
-      onDrop={handleDrop}
+      className={`chat-route${sidebarCollapsed ? " chat-route--sidebar-collapsed" : ""}${dragOver ? " chat-route--drag" : ""}`}
     >
+      <ChatSidebar
+        collapsed={sidebarCollapsed}
+        onToggle={() => setSidebarCollapsed((c) => !c)}
+        conversations={conversations}
+        activeId={conversationId}
+        onSelect={(id) => void switchConversation(id)}
+        onNew={() => startNewConversation()}
+        onDelete={(id) => void handleDeleteConversation(id)}
+        footer={status?.ready ? status.model : null}
+      />
+      <div
+        className={`chat-route__main ${isEmpty ? "chat-route__main--empty" : "chat-route__main--active"}`}
+        onDragEnter={handleDragEnter}
+        onDragLeave={handleDragLeave}
+        onDragOver={handleDragOver}
+        onDrop={handleDrop}
+      >
       {dragOver && (
         <div className="chat-drop-overlay" aria-hidden>
           <div className="chat-drop-overlay__inner">
@@ -1176,6 +1215,7 @@ export function Chat() {
           {composer}
         </>
       )}
+      </div>
     </div>
   );
 }
@@ -1540,58 +1580,117 @@ function AttachmentChip(props: {
   );
 }
 
-function SessionPicker(props: {
+function ChatSidebar(props: {
+  collapsed: boolean;
+  onToggle: () => void;
   conversations: ConversationListEntry[];
   activeId: string;
   onSelect: (id: string) => void;
   onNew: () => void;
   onDelete: (id: string) => void;
+  footer: string | null;
 }) {
-  // Native <select> on purpose — keeps the platform-native open/close
-  // affordance, avoids a dropdown library, and works fine with our
-  // typically-modest session counts (< few hundred). When we want
-  // search + per-row delete buttons in one popover, swap in a custom
-  // component then.
-  const activeKnown = props.conversations.some(
-    (c) => c.conversationId === props.activeId,
-  );
+  const [query, setQuery] = useState("");
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return props.conversations;
+    return props.conversations.filter((c) =>
+      labelFor(c).toLowerCase().includes(q),
+    );
+  }, [query, props.conversations]);
+
   return (
-    <div className="chat-sessions">
-      <select
-        className="chat-sessions__select"
-        value={activeKnown ? props.activeId : "__new__"}
-        onChange={(e) => {
-          const v = e.target.value;
-          if (v === "__new__") {
-            props.onNew();
-          } else {
-            props.onSelect(v);
-          }
-        }}
-        title="Konversation wechseln"
-      >
-        {!activeKnown && (
-          <option value="__new__">Neue Konversation (nicht gespeichert)</option>
-        )}
-        {props.conversations.map((c) => (
-          <option key={c.conversationId} value={c.conversationId}>
-            {labelFor(c)}
-          </option>
-        ))}
-        <option disabled>──────────</option>
-        <option value="__new__">+ Neue Konversation</option>
-      </select>
-      {activeKnown && (
+    <aside
+      className={`chat-sidebar${props.collapsed ? " chat-sidebar--collapsed" : ""}`}
+      aria-label="Konversationen"
+    >
+      <div className="chat-sidebar__header">
         <button
           type="button"
-          className="link bad chat-sessions__delete"
-          onClick={() => props.onDelete(props.activeId)}
-          title="Diese Konversation löschen"
+          className="chat-sidebar__icon-btn"
+          onClick={props.onToggle}
+          title={
+            props.collapsed
+              ? "Seitenleiste einblenden (⌘/Ctrl+Shift+S)"
+              : "Seitenleiste ausblenden (⌘/Ctrl+Shift+S)"
+          }
+          aria-label={
+            props.collapsed ? "Seitenleiste einblenden" : "Seitenleiste ausblenden"
+          }
         >
-          löschen
+          {props.collapsed ? (
+            <PanelLeftOpen size={18} />
+          ) : (
+            <PanelLeftClose size={18} />
+          )}
         </button>
+        <button
+          type="button"
+          className="chat-sidebar__icon-btn"
+          onClick={props.onNew}
+          title="Neue Konversation"
+          aria-label="Neue Konversation"
+        >
+          <SquarePen size={18} />
+        </button>
+      </div>
+      {!props.collapsed && (
+        <>
+          <div className="chat-sidebar__search">
+            <SearchIcon size={14} className="chat-sidebar__search-icon" />
+            <input
+              type="text"
+              placeholder="Chats suchen"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              aria-label="Konversationen durchsuchen"
+            />
+          </div>
+          <div className="chat-sidebar__list" role="listbox">
+            {filtered.length === 0 ? (
+              <div className="chat-sidebar__empty muted small">
+                {props.conversations.length === 0
+                  ? "Keine Konversationen"
+                  : "Keine Treffer"}
+              </div>
+            ) : (
+              filtered.map((c) => {
+                const isActive = c.conversationId === props.activeId;
+                return (
+                  <div
+                    key={c.conversationId}
+                    role="option"
+                    aria-selected={isActive}
+                    className={`chat-sidebar__row${isActive ? " chat-sidebar__row--active" : ""}`}
+                    onClick={() => props.onSelect(c.conversationId)}
+                    title={labelFor(c)}
+                  >
+                    <span className="chat-sidebar__row-label">
+                      {c.label || `(leer) ${c.conversationId.slice(0, 8)}`}
+                    </span>
+                    <button
+                      type="button"
+                      className="chat-sidebar__row-delete"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        props.onDelete(c.conversationId);
+                      }}
+                      title="Konversation löschen"
+                      aria-label="Konversation löschen"
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                  </div>
+                );
+              })
+            )}
+          </div>
+          <div className="chat-sidebar__footer muted small">
+            {props.footer ? props.footer : ""}
+          </div>
+        </>
       )}
-    </div>
+    </aside>
   );
 }
 

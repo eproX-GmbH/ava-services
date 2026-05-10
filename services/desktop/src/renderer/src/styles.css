@@ -1386,25 +1386,30 @@ code, pre { font-family: var(--font-mono); font-size: 12px; }
  */
 .chat-route {
   position: relative;
-  display: flex; flex-direction: column;
+  display: flex;
+  flex-direction: row;
   /* v0.1.81 — fill the parent scroll container instead of guessing
-   * at viewport math. The previous `100vh - 80px` was tuned for the
-   * old topbar height + zero main padding; with the current 64px
-   * topbar plus 1.5rem/3rem main padding the chat-route ended up
-   * 56px taller than its container, forcing .app-shell__main itself
-   * to scroll. `height: 100%` + `min-height: 0` lets the chat fill
-   * exactly the available space and only .chat-scroll inside owns
-   * the message-log overflow. */
+   * at viewport math. `height: 100%` + `min-height: 0` lets the chat
+   * fill exactly the available space and only .chat-scroll inside
+   * owns the message-log overflow. */
   height: 100%;
   min-height: 0;
+  width: 100%;
+}
+.chat-route__main {
+  position: relative;
+  display: flex; flex-direction: column;
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 100%;
   width: 100%;
   max-width: 760px;
   margin: 0 auto;
 }
-.chat-route--empty {
+.chat-route__main--empty {
   justify-content: center;
 }
-.chat-route--empty .chat-welcome-stack {
+.chat-route__main--empty .chat-welcome-stack {
   display: flex; flex-direction: column;
   gap: 24px;
   padding: 0 16px 12vh;
@@ -1432,29 +1437,148 @@ code, pre { font-family: var(--font-mono); font-size: 12px; }
   line-height: 1.6;
 }
 
-/* Session-picker rail lives *under* the composer (and disclaimer) so it
- * never visually competes with the centered welcome heading. Centered as
- * a single chip; chooses width by content. */
-.chat-sessions-rail {
-  display: flex; justify-content: center;
-  padding: 4px 16px 4px;
+/* ---- Chat sidebar (conversation list, ChatGPT-style) ----------------- */
+.chat-sidebar {
+  display: flex; flex-direction: column;
+  flex: 0 0 auto;
+  width: 268px;
+  height: 100%;
+  background: var(--color-bg-1);
+  border-right: 1px solid var(--color-border);
+  transition: width 200ms ease-out;
+  overflow: hidden;
 }
-.chat-sessions { display: inline-flex; align-items: center; gap: 8px; }
-.chat-sessions__select {
-  /* Pill variant of the global <select> — keep the chevron from the
-   * baseline (don't set the `background` shorthand), only override
-   * background-color, radius, and the muted resting state. */
-  background-color: transparent;
-  border-radius: 999px;
-  padding: 4px 28px 4px 12px;
-  font-size: 12px;
-  max-width: 280px;
-  opacity: 0.7;
+.chat-sidebar--collapsed {
+  width: 52px;
 }
-.chat-sessions__select:hover,
-.chat-sessions__select:focus { opacity: 1; }
-.chat-sessions__delete { font-size: 11px; opacity: 0.6; }
-.chat-sessions__delete:hover { opacity: 1; }
+.chat-sidebar__header {
+  display: flex; align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 10px 10px;
+  flex: 0 0 auto;
+}
+.chat-sidebar--collapsed .chat-sidebar__header {
+  flex-direction: column;
+  justify-content: flex-start;
+  gap: 4px;
+}
+.chat-sidebar__icon-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 32px; height: 32px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--fg);
+  cursor: pointer;
+  padding: 0;
+  transition: background 120ms ease, border-color 120ms ease;
+}
+.chat-sidebar__icon-btn:hover {
+  background: var(--color-slate-50);
+  border-color: var(--color-border);
+}
+:root.dark .chat-sidebar__icon-btn:hover {
+  background: var(--color-bg-3);
+}
+.chat-sidebar__search {
+  position: relative;
+  display: flex; align-items: center;
+  margin: 4px 10px 8px;
+  flex: 0 0 auto;
+}
+.chat-sidebar__search-icon {
+  position: absolute;
+  left: 9px;
+  color: var(--color-fg-muted);
+  pointer-events: none;
+}
+.chat-sidebar__search input {
+  width: 100%;
+  height: 32px;
+  padding: 0 10px 0 30px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-bg-1);
+  color: var(--fg);
+  font-size: 13px;
+  outline: none;
+}
+.chat-sidebar__search input:focus {
+  border-color: var(--ctrl-border-focus, var(--color-indigo-500));
+}
+.chat-sidebar__list {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 4px 6px;
+  display: flex; flex-direction: column;
+  gap: 2px;
+}
+.chat-sidebar__row {
+  display: flex; align-items: center;
+  gap: 6px;
+  padding: 7px 8px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--fg);
+  user-select: none;
+}
+.chat-sidebar__row:hover {
+  background: var(--color-slate-50);
+}
+:root.dark .chat-sidebar__row:hover {
+  background: var(--color-bg-3);
+}
+.chat-sidebar__row--active,
+.chat-sidebar__row--active:hover {
+  background: var(--color-indigo-50);
+}
+:root.dark .chat-sidebar__row--active,
+:root.dark .chat-sidebar__row--active:hover {
+  background: rgba(0, 192, 167, 0.15);
+}
+.chat-sidebar__row-label {
+  flex: 1 1 auto;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.chat-sidebar__row-delete {
+  flex: 0 0 auto;
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 24px; height: 24px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--color-fg-muted);
+  cursor: pointer;
+  padding: 0;
+  opacity: 0;
+  transition: opacity 120ms ease, background 120ms ease;
+}
+.chat-sidebar__row:hover .chat-sidebar__row-delete,
+.chat-sidebar__row--active .chat-sidebar__row-delete {
+  opacity: 1;
+}
+.chat-sidebar__row-delete:hover {
+  background: var(--color-bg-3);
+  color: var(--fg);
+}
+.chat-sidebar__empty {
+  padding: 12px 10px;
+  text-align: center;
+}
+.chat-sidebar__footer {
+  flex: 0 0 auto;
+  padding: 10px 12px;
+  border-top: 1px solid var(--color-border);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 
 /* 8.k10i — drag/drop spreadsheet attachments. */
 .chat-route--drag { /* visual cue handled by overlay; container stays put */ }
