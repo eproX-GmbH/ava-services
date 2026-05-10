@@ -2453,14 +2453,22 @@ a.heartbeat-decision__company:hover {
 
 /* ---- Inline attachment disclosure inside user bubbles ----------------- */
 .chat-attachment-disclosure {
-  background: var(--color-slate-100);
-  border: 1px solid var(--ctrl-border);
+  /* v0.1.89 — was hard-coded slate-100 background which was the
+   * frozen-light token AND inherited the parent's color. When the
+   * disclosure renders inside a user-message bubble (gradient bg +
+   * white text), the filename inherited white-on-near-white and
+   * went unreadable in BOTH modes. Pin background, foreground and
+   * border so the disclosure is a self-contained card regardless
+   * of what bubble it's nested in. */
+  background: var(--color-bg-1);
+  color: var(--color-fg);
+  border: 1px solid var(--color-border);
   border-radius: 12px;
   margin-bottom: 6px;
   overflow: hidden;
 }
 .chat-attachment-disclosure[open] {
-  background: var(--color-slate-50);
+  background: var(--color-bg-0);
 }
 .chat-attachment-disclosure > summary {
   display: flex; align-items: center; gap: 8px;
@@ -2472,7 +2480,7 @@ a.heartbeat-decision__company:hover {
 }
 .chat-attachment-disclosure > summary::-webkit-details-marker { display: none; }
 .chat-attachment-disclosure > summary:hover {
-  background: var(--color-slate-50);
+  background: var(--color-bg-0);
 }
 .chat-attachment-disclosure .chat-attachment-name {
   font-weight: 500;
