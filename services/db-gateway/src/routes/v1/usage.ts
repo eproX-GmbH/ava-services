@@ -39,6 +39,10 @@ const UsageResponseShape = z
     /** "lifetime" for free; "YYYY-MM" for paid tiers; "unlimited" for
      *  enterprise. The desktop picks a German label based on this. */
     periodKey: z.string(),
+    /** v0.1.103 — true when the user has scheduled cancellation but
+     *  the period hasn't ended yet. Desktop shows
+     *  "Kündigung zum X vorgemerkt" while this is true. */
+    cancelAtPeriodEnd: z.boolean(),
   })
   .openapi("UsageSnapshot");
 

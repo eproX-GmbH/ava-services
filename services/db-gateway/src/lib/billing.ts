@@ -55,6 +55,11 @@ export interface UsageSnapshot {
    *  ("Monat März 2026" vs "Lebenszeit-Kontingent"). Always
    *  "unlimited" for enterprise. */
   periodKey: string;
+  /** v0.1.103 — true when the user has scheduled cancellation but
+   *  the period hasn't ended yet. Mirrored from Stripe's
+   *  `cancel_at_period_end` via the subscription.updated webhook.
+   *  False for free / enterprise tenants (no Stripe subscription). */
+  cancelAtPeriodEnd: boolean;
 }
 
 /** Sentinel for "no enforcement". Used in `limit` + `remaining` of
@@ -104,6 +109,7 @@ async function ensureBillingRow(
   tier: BillingTier;
   quotaLimit: number;
   periodEnd: Date | null;
+  cancelAtPeriodEnd: boolean;
 }> {
   // Read first; only insert if missing. Avoids needless writes on
   // every event for established tenants.
@@ -111,8 +117,9 @@ async function ensureBillingRow(
     tier: string;
     quotaLimit: number;
     periodEnd: Date | null;
+    cancelAtPeriodEnd: boolean;
   }>(
-    `SELECT tier, "quotaLimit", "periodEnd"
+    `SELECT tier, "quotaLimit", "periodEnd", "cancelAtPeriodEnd"
        FROM "TenantBilling"
       WHERE "tenantId" = $1`,
     [tenantId],
@@ -123,6 +130,7 @@ async function ensureBillingRow(
       tier: row.tier as BillingTier,
       quotaLimit: row.quotaLimit,
       periodEnd: row.periodEnd,
+      cancelAtPeriodEnd: row.cancelAtPeriodEnd,
     };
   }
 
@@ -135,7 +143,12 @@ async function ensureBillingRow(
      ON CONFLICT ("tenantId") DO NOTHING`,
     [tenantId, FREE_DEFAULT_LIMIT],
   );
-  return { tier: "free", quotaLimit: FREE_DEFAULT_LIMIT, periodEnd: null };
+  return {
+    tier: "free",
+    quotaLimit: FREE_DEFAULT_LIMIT,
+    periodEnd: null,
+    cancelAtPeriodEnd: false,
+  };
 }
 
 /** Record a usage credit for a successful structured-content persist.
@@ -229,6 +242,7 @@ export async function getUsageSnapshot(
     remaining,
     periodEnd: periodEnd ? periodEnd.toISOString() : null,
     periodKey: isUnlimited(billing.tier) ? "unlimited" : periodKey,
+    cancelAtPeriodEnd: billing.cancelAtPeriodEnd,
   };
 }
 

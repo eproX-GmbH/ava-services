@@ -3335,7 +3335,38 @@ function PlanSection() {
             <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
               <span className={`badge badge--${data.tier}`}>{TIER_LABELS[data.tier]}</span>
               <span className="muted small">aktiver Tarif</span>
+              {data.cancelAtPeriodEnd && (
+                <span
+                  className="badge"
+                  style={{
+                    background: "rgba(245, 158, 11, 0.15)",
+                    color: "var(--color-warn)",
+                    border: "1px solid var(--color-warn)",
+                  }}
+                >
+                  Kündigung vorgemerkt
+                </span>
+              )}
             </div>
+            {data.cancelAtPeriodEnd && data.periodEnd && (
+              <div className="ct-card" style={{ padding: "0.75rem 1rem", borderColor: "var(--color-warn)" }}>
+                <strong>
+                  Kündigung zum {fmtDateShort(data.periodEnd)} vorgemerkt.
+                </strong>{" "}
+                Bis dahin nutzt du {TIER_LABELS[data.tier]} weiter; danach
+                wechselt dein Konto auf Free. Über{" "}
+                <button
+                  type="button"
+                  className="link"
+                  disabled={busy !== null}
+                  onClick={() => void openPortal()}
+                  style={{ display: "inline", padding: 0 }}
+                >
+                  Abonnement verwalten
+                </button>{" "}
+                kannst du die Kündigung jederzeit zurücknehmen.
+              </div>
+            )}
 
             {!isUnlimited(data) && (
               <div>

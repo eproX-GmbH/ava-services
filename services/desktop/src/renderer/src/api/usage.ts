@@ -24,6 +24,10 @@ export interface UsageSnapshot {
   periodEnd: string | null;
   /** "lifetime" | "YYYY-MM" | "unlimited" */
   periodKey: string;
+  /** v0.1.103 — true when the user has scheduled cancellation via the
+   *  Stripe portal but the period hasn't ended yet. UI shows
+   *  "Kündigung zum X vorgemerkt" + helper to take it back. */
+  cancelAtPeriodEnd: boolean;
 }
 
 export const USAGE_QUERY_KEY = ["usage"] as const;

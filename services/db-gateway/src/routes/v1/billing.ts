@@ -187,6 +187,7 @@ async function handleStripeEvent(event: Stripe.Event): Promise<void> {
       }
       const periodEndUnix = (sub as unknown as { current_period_end?: number }).current_period_end ?? null;
       const periodEnd = periodEndUnix ? new Date(periodEndUnix * 1000) : null;
+      const cancelAtPeriodEnd = (sub as unknown as { cancel_at_period_end?: boolean }).cancel_at_period_end === true;
       await upsertSubscriptionState({
         tenantId,
         customerId,
@@ -194,6 +195,7 @@ async function handleStripeEvent(event: Stripe.Event): Promise<void> {
         tier,
         quotaLimit: TIER_LIMITS[tier],
         periodEnd,
+        cancelAtPeriodEnd,
       });
       logger.info({ tenantId, tier, subscriptionId: sub.id }, "stripe subscription state synced");
       return;
@@ -266,18 +268,21 @@ async function upsertSubscriptionState(args: {
   tier: BillingTier;
   quotaLimit: number;
   periodEnd: Date | null;
+  cancelAtPeriodEnd: boolean;
 }): Promise<void> {
   await getGatewayPool().query(
     `INSERT INTO "TenantBilling"
        ("tenantId", tier, "quotaLimit", "stripeCustomerId",
-        "stripeSubscriptionId", "periodEnd", "updatedAt", "createdAt")
-     VALUES ($1, $2, $3, $4, $5, $6, NOW(), NOW())
+        "stripeSubscriptionId", "periodEnd", "cancelAtPeriodEnd",
+        "updatedAt", "createdAt")
+     VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), NOW())
      ON CONFLICT ("tenantId")
      DO UPDATE SET tier = EXCLUDED.tier,
                    "quotaLimit" = EXCLUDED."quotaLimit",
                    "stripeCustomerId" = EXCLUDED."stripeCustomerId",
                    "stripeSubscriptionId" = EXCLUDED."stripeSubscriptionId",
                    "periodEnd" = EXCLUDED."periodEnd",
+                   "cancelAtPeriodEnd" = EXCLUDED."cancelAtPeriodEnd",
                    "updatedAt" = NOW()`,
     [
       args.tenantId,
@@ -286,6 +291,7 @@ async function upsertSubscriptionState(args: {
       args.customerId,
       args.subscriptionId,
       args.periodEnd,
+      args.cancelAtPeriodEnd,
     ],
   );
 }
@@ -297,6 +303,7 @@ async function downgradeToFree(tenantId: string): Promise<void> {
             "quotaLimit" = 25,
             "stripeSubscriptionId" = NULL,
             "periodEnd" = NULL,
+            "cancelAtPeriodEnd" = FALSE,
             "updatedAt" = NOW()
       WHERE "tenantId" = $1`,
     [tenantId],

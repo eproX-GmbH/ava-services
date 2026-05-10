@@ -233,6 +233,10 @@ model TenantBilling {
   stripeSubscriptionId String?
   // Rolls over for paid tiers; null for free / enterprise.
   periodEnd            DateTime?
+  /// v0.1.103 — Stripe's `cancel_at_period_end` mirrored here so the
+  /// desktop can show "Kündigung zum X vorgemerkt" until period end.
+  /// Webhook flips this on every subscription.updated event.
+  cancelAtPeriodEnd    Boolean   @default(false)
   updatedAt            DateTime  @updatedAt
   createdAt            DateTime  @default(now())
 }
