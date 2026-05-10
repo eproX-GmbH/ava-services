@@ -1037,6 +1037,15 @@ export interface LinkedInFeedCounts {
     failed: number;
     skipped: number;
   };
+  /** Phase L5: entity-link counts. */
+  links: {
+    pendingPosts: number;
+    linkedPosts: number;
+    matched: number;
+    ambiguous: number;
+    unmatched: number;
+    knownCompanies: number;
+  };
 }
 
 /** Phase L3: extraction worker status, polled by Settings. */
@@ -1048,6 +1057,34 @@ export interface LinkedInSignalStatus {
   skipped: number;
   lastRunAt: number | null;
   lastError: string | null;
+}
+
+/** Phase L5: entity-linker worker status, polled by Settings. */
+export interface LinkedInLinkerStatus {
+  running: boolean;
+  pendingPosts: number;
+  linkedPosts: number;
+  knownCompanies: number;
+  matched: number;
+  ambiguous: number;
+  unmatched: number;
+  lastRunAt: number | null;
+  lastError: string | null;
+}
+
+/** Phase L5/L6: a signal joined with its matched master companies.
+ *  Used by `linkedin:linker:signalsForCompany`. */
+export interface LinkedInLinkedSignal {
+  postUrn: string;
+  postedAt: number | null;
+  scrapedAt: number;
+  text: string;
+  permalink: string | null;
+  authorDisplayName: string;
+  signalKind: string | null;
+  signalStrength: number | null;
+  summary: string | null;
+  matchedCompanies: Array<{ companyId: string; name: string }>;
 }
 
 /** Phase L4: image-analysis worker status, polled by Settings. */

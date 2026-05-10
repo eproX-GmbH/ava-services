@@ -36,6 +36,8 @@ import type {
   LinkedInFeedCounts,
   LinkedInLoginResult,
   LinkedInImageAnalysisStatus,
+  LinkedInLinkedSignal,
+  LinkedInLinkerStatus,
   LinkedInRecentPost,
   LinkedInScanResult,
   LinkedInScanStatus,
@@ -102,6 +104,8 @@ export type {
   LinkedInScanOutcome,
   LinkedInScanResult,
   LinkedInImageAnalysisStatus,
+  LinkedInLinkedSignal,
+  LinkedInLinkerStatus,
   LinkedInScanStatus,
   LinkedInSessionMeta,
   LinkedInSettings,
@@ -792,6 +796,18 @@ const api = {
     images: {
       status: (): Promise<LinkedInImageAnalysisStatus> =>
         ipcRenderer.invoke("linkedin:images:status"),
+    },
+    /** L5 — entity linking against master-data companies + contacts.
+     *  Telemetry only in Settings. signalsForCompany feeds L6. */
+    linker: {
+      status: (): Promise<LinkedInLinkerStatus> =>
+        ipcRenderer.invoke("linkedin:linker:status"),
+      signalsForCompany: (args: {
+        companyId: string;
+        limit?: number;
+        offset?: number;
+      }): Promise<LinkedInLinkedSignal[]> =>
+        ipcRenderer.invoke("linkedin:linker:signalsForCompany", args),
     },
   },
 } as const;

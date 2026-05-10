@@ -955,7 +955,7 @@ app.whenReady().then(async () => {
 
   // LinkedIn-Beobachter (Phase L0). Persistent settings + consent gate
   // + kill-switch IPC. No scraper code here yet — that lands in L1+.
-  initLinkedIn({ providers });
+  initLinkedIn({ providers, gateway: gatewayClient });
 
   // Ollama supervisor IPC. The renderer drives:
   //   - getStatus on startup (then subscribes to `ollama-status:changed`)

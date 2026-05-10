@@ -1155,6 +1155,22 @@ function LinkedInSection() {
               ) : null}
             </p>
           )}
+          {(counts.links.linkedPosts > 0 ||
+            counts.links.pendingPosts > 0 ||
+            counts.links.matched > 0 ||
+            counts.links.ambiguous > 0 ||
+            counts.links.unmatched > 0 ||
+            counts.links.knownCompanies > 0) && (
+            <p className="muted small">
+              Verknüpfungen:{" "}
+              {counts.links.linkedPosts.toLocaleString("de-DE")} Beiträge ·{" "}
+              {counts.links.matched.toLocaleString("de-DE")} Treffer ·{" "}
+              {counts.links.ambiguous.toLocaleString("de-DE")} mehrdeutig ·{" "}
+              {counts.links.unmatched.toLocaleString("de-DE")} ohne Treffer ·{" "}
+              {counts.links.knownCompanies.toLocaleString("de-DE")} bekannte
+              Firmen
+            </p>
+          )}
           <div className="linkedin-row">
             <button
               type="button"

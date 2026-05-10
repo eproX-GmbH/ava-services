@@ -38,6 +38,7 @@ import {
   resetSkippedImagesIfRunnable,
   type ImageAnalysisStatus,
 } from "./image-extractor";
+import { drainEntityLinks } from "./linker";
 
 export interface ExtractionStatus {
   running: boolean;
@@ -438,6 +439,30 @@ export async function drainQueue(opts?: {
         ) {
           console.warn(
             "[linkedin/extractor] image drain failed:",
+            err instanceof Error ? err.message : String(err),
+          );
+        }
+      }
+    }
+
+    // Phase 3 (L5): entity linking. Re-uses the same `running` flag — the
+    // linker module honours the abort signal and runs sequentially.
+    if (!signal.aborted) {
+      try {
+        await drainEntityLinks({
+          limit,
+          signal,
+          manual: opts?.manual === true,
+        });
+      } catch (err) {
+        if (
+          !(
+            err instanceof Error &&
+            (err.name === "AbortError" || err.message === "aborted")
+          )
+        ) {
+          console.warn(
+            "[linkedin/extractor] entity link drain failed:",
             err instanceof Error ? err.message : String(err),
           );
         }

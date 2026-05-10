@@ -156,6 +156,43 @@ CREATE TABLE IF NOT EXISTS linkedin_image_analysis (
 );
 CREATE INDEX IF NOT EXISTS linkedin_image_analysis_status ON linkedin_image_analysis (status);
 CREATE INDEX IF NOT EXISTS linkedin_image_analysis_environment ON linkedin_image_analysis (environment);
+
+-- Phase L5: entity-link results. One row per (post, source_value, source_kind);
+-- the same string can resolve once for 'signal_company' and again for 'logo'.
+ALTER TABLE linkedin_signal ADD COLUMN IF NOT EXISTS entities_linked_at TIMESTAMPTZ;
+CREATE INDEX IF NOT EXISTS linkedin_signal_linked_at
+  ON linkedin_signal (entities_linked_at);
+
+CREATE TABLE IF NOT EXISTS linkedin_entity_link (
+  link_id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  source_post_urn      TEXT NOT NULL REFERENCES linkedin_post(post_urn),
+  source_kind          TEXT NOT NULL,
+  source_value         TEXT NOT NULL,
+  resolution           TEXT NOT NULL,
+  match_score          REAL,
+  match_reason         TEXT,
+  master_company_id    TEXT,
+  master_company_name  TEXT,
+  contact_id           TEXT,
+  contact_display      TEXT,
+  actor_urn            TEXT,
+  alternates           JSONB,
+  resolved_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS linkedin_entity_link_post
+  ON linkedin_entity_link (source_post_urn);
+CREATE INDEX IF NOT EXISTS linkedin_entity_link_company
+  ON linkedin_entity_link (master_company_id);
+CREATE INDEX IF NOT EXISTS linkedin_entity_link_resolution
+  ON linkedin_entity_link (resolution);
+
+CREATE TABLE IF NOT EXISTS linkedin_company_lookup_cache (
+  query_norm           TEXT PRIMARY KEY,
+  cached_at            TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  hits                 JSONB NOT NULL
+);
+CREATE INDEX IF NOT EXISTS linkedin_company_lookup_cache_age
+  ON linkedin_company_lookup_cache (cached_at);
 `;
 
 async function initSchema(db: PGliteInstance): Promise<void> {
@@ -434,6 +471,7 @@ export async function feedCounts(
   const row = res.rows[0];
   const sig = await signalCounts(db);
   const img = await imageAnalysisCounts(db);
+  const links = await entityLinkStats(db);
   return {
     posts: Number(row?.posts ?? 0),
     interactions: Number(row?.interactions ?? 0),
@@ -449,6 +487,14 @@ export async function feedCounts(
       analyzed: img.analyzed,
       failed: img.failed,
       skipped: img.skipped,
+    },
+    links: {
+      pendingPosts: links.pendingPosts,
+      linkedPosts: links.linkedPosts,
+      matched: links.matched,
+      ambiguous: links.ambiguous,
+      unmatched: links.unmatched,
+      knownCompanies: links.knownCompanies,
     },
   };
 }
@@ -970,6 +1016,436 @@ export async function resetFailedImageAnalysesToPending(
       WHERE status = 'failed'`,
   );
   return res.affectedRows ?? 0;
+}
+
+// ---- L5 entity linking --------------------------------------------------
+
+export type EntityLinkSourceKind =
+  | "signal_company"
+  | "signal_person"
+  | "logo"
+  | "actor";
+
+export type EntityLinkResolution = "matched" | "ambiguous" | "unmatched";
+
+export interface EntityLinkAlternate {
+  companyId: string;
+  name: string;
+  score: number;
+}
+
+export interface EntityLinkInput {
+  sourceKind: EntityLinkSourceKind;
+  sourceValue: string;
+  resolution: EntityLinkResolution;
+  matchScore: number | null;
+  matchReason: string | null;
+  masterCompanyId: string | null;
+  masterCompanyName: string | null;
+  contactId: string | null;
+  contactDisplay: string | null;
+  actorUrn: string | null;
+  alternates: EntityLinkAlternate[] | null;
+}
+
+export interface EntityLinkStats {
+  pendingPosts: number;
+  linkedPosts: number;
+  matched: number;
+  ambiguous: number;
+  unmatched: number;
+  knownCompanies: number;
+}
+
+export interface LinkedSignalRow {
+  postUrn: string;
+  postedAt: number | null;
+  scrapedAt: number;
+  text: string;
+  permalink: string | null;
+  authorDisplayName: string;
+  signalKind: string | null;
+  signalStrength: number | null;
+  summary: string | null;
+  matchedCompanies: Array<{ companyId: string; name: string }>;
+}
+
+/** Pulls up to `limit` post URNs that have an extracted signal but no
+ *  entity-link pass yet. */
+export async function nextPendingEntityLinkPosts(
+  db: PGliteInstance,
+  limit: number,
+): Promise<string[]> {
+  const res = await db.query<{ post_urn: string }>(
+    `SELECT post_urn FROM linkedin_signal
+      WHERE status = 'extracted'
+        AND entities_linked_at IS NULL
+      ORDER BY post_urn
+      LIMIT $1`,
+    [limit],
+  );
+  return res.rows.map((r) => r.post_urn);
+}
+
+/** Re-link posts whose existing links contain at least one ambiguous OR
+ *  unmatched outcome. Sticky-matched posts are left alone. Used by
+ *  manual drains after the user imported new master-data companies. */
+export async function resetUnresolvedLinks(
+  db: PGliteInstance,
+): Promise<number> {
+  const res = await db.query(
+    `UPDATE linkedin_signal s
+        SET entities_linked_at = NULL
+      WHERE s.status = 'extracted'
+        AND s.entities_linked_at IS NOT NULL
+        AND EXISTS (
+          SELECT 1 FROM linkedin_entity_link l
+           WHERE l.source_post_urn = s.post_urn
+             AND l.resolution IN ('ambiguous', 'unmatched')
+        )`,
+  );
+  // Wipe the stale links for those posts so the linker writes fresh
+  // outcomes instead of stacking duplicates.
+  await db.query(
+    `DELETE FROM linkedin_entity_link
+      WHERE source_post_urn IN (
+        SELECT post_urn FROM linkedin_signal
+         WHERE entities_linked_at IS NULL
+           AND status = 'extracted'
+      )`,
+  );
+  return res.affectedRows ?? 0;
+}
+
+export async function recordEntityLinks(
+  db: PGliteInstance,
+  postUrn: string,
+  links: EntityLinkInput[],
+): Promise<void> {
+  // Linker also calls this with empty arrays — still stamp the timestamp
+  // so the post exits the queue.
+  for (const l of links) {
+    await db.query(
+      `INSERT INTO linkedin_entity_link
+         (source_post_urn, source_kind, source_value, resolution,
+          match_score, match_reason, master_company_id,
+          master_company_name, contact_id, contact_display, actor_urn,
+          alternates)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12::jsonb)`,
+      [
+        postUrn,
+        l.sourceKind,
+        l.sourceValue,
+        l.resolution,
+        l.matchScore,
+        l.matchReason,
+        l.masterCompanyId,
+        l.masterCompanyName,
+        l.contactId,
+        l.contactDisplay,
+        l.actorUrn,
+        l.alternates ? JSON.stringify(l.alternates) : null,
+      ],
+    );
+  }
+  await db.query(
+    `UPDATE linkedin_signal
+        SET entities_linked_at = NOW()
+      WHERE post_urn = $1`,
+    [postUrn],
+  );
+}
+
+export async function lookupCacheGet(
+  db: PGliteInstance,
+  queryNorm: string,
+): Promise<EntityLinkAlternate[] | null> {
+  const res = await db.query<{ hits: unknown }>(
+    `SELECT hits FROM linkedin_company_lookup_cache
+      WHERE query_norm = $1
+        AND cached_at > NOW() - INTERVAL '24 hours'`,
+    [queryNorm],
+  );
+  const r = res.rows[0];
+  if (!r) return null;
+  try {
+    const hits =
+      typeof r.hits === "string"
+        ? (JSON.parse(r.hits) as EntityLinkAlternate[])
+        : (r.hits as EntityLinkAlternate[]);
+    return Array.isArray(hits) ? hits : [];
+  } catch {
+    return null;
+  }
+}
+
+export async function lookupCachePut(
+  db: PGliteInstance,
+  queryNorm: string,
+  hits: EntityLinkAlternate[],
+): Promise<void> {
+  await db.query(
+    `INSERT INTO linkedin_company_lookup_cache (query_norm, hits)
+     VALUES ($1, $2::jsonb)
+     ON CONFLICT (query_norm) DO UPDATE SET
+       hits = EXCLUDED.hits,
+       cached_at = NOW()`,
+    [queryNorm, JSON.stringify(hits)],
+  );
+}
+
+export async function entityLinkStats(
+  db: PGliteInstance,
+): Promise<EntityLinkStats> {
+  const res = await db.query<{
+    pending_posts: number;
+    linked_posts: number;
+    matched: number;
+    ambiguous: number;
+    unmatched: number;
+    known_companies: number;
+  }>(
+    `SELECT
+       (SELECT COUNT(*)::int FROM linkedin_signal
+          WHERE status = 'extracted'
+            AND entities_linked_at IS NULL)                                AS pending_posts,
+       (SELECT COUNT(*)::int FROM linkedin_signal
+          WHERE entities_linked_at IS NOT NULL)                            AS linked_posts,
+       (SELECT COUNT(*)::int FROM linkedin_entity_link
+          WHERE resolution = 'matched')                                    AS matched,
+       (SELECT COUNT(*)::int FROM linkedin_entity_link
+          WHERE resolution = 'ambiguous')                                  AS ambiguous,
+       (SELECT COUNT(*)::int FROM linkedin_entity_link
+          WHERE resolution = 'unmatched')                                  AS unmatched,
+       (SELECT COUNT(DISTINCT master_company_id)::int FROM linkedin_entity_link
+          WHERE resolution = 'matched'
+            AND master_company_id IS NOT NULL)                             AS known_companies`,
+  );
+  const r = res.rows[0];
+  return {
+    pendingPosts: Number(r?.pending_posts ?? 0),
+    linkedPosts: Number(r?.linked_posts ?? 0),
+    matched: Number(r?.matched ?? 0),
+    ambiguous: Number(r?.ambiguous ?? 0),
+    unmatched: Number(r?.unmatched ?? 0),
+    knownCompanies: Number(r?.known_companies ?? 0),
+  };
+}
+
+/** Aggregate the post + signal + matched companies for the linker so we
+ *  don't fan out N queries. Returns null if the post or signal is
+ *  missing. */
+export interface EntityLinkCandidate {
+  postUrn: string;
+  signalCompanies: string[];
+  signalPeople: string[];
+  detectedLogos: string[];
+  surfacedActors: Array<{
+    actorUrn: string;
+    displayName: string;
+    profileUrl: string | null;
+  }>;
+}
+
+export async function loadEntityLinkCandidate(
+  db: PGliteInstance,
+  postUrn: string,
+): Promise<EntityLinkCandidate | null> {
+  const sigRes = await db.query<{ entities: unknown }>(
+    `SELECT entities FROM linkedin_signal WHERE post_urn = $1`,
+    [postUrn],
+  );
+  const sigRow = sigRes.rows[0];
+  if (!sigRow) return null;
+  const entities = (() => {
+    try {
+      const v =
+        typeof sigRow.entities === "string"
+          ? (JSON.parse(sigRow.entities) as SignalEntities)
+          : (sigRow.entities as SignalEntities | null);
+      return v ?? { companies: [], people: [] };
+    } catch {
+      return { companies: [] as string[], people: [] as string[] };
+    }
+  })();
+
+  const logoRes = await db.query<{ detected_logos: unknown }>(
+    `SELECT ia.detected_logos
+       FROM linkedin_image_analysis ia
+       JOIN linkedin_media m ON m.media_id = ia.media_id
+      WHERE m.post_urn = $1
+        AND ia.status = 'analyzed'`,
+    [postUrn],
+  );
+  const logos: string[] = [];
+  for (const r of logoRes.rows) {
+    try {
+      const arr =
+        typeof r.detected_logos === "string"
+          ? (JSON.parse(r.detected_logos) as unknown)
+          : r.detected_logos;
+      if (Array.isArray(arr)) {
+        for (const item of arr) {
+          if (typeof item === "string" && item.trim()) logos.push(item.trim());
+        }
+      }
+    } catch {
+      // ignore malformed
+    }
+  }
+
+  const actorRes = await db.query<{
+    actor_urn: string;
+    display_name: string;
+    profile_url: string | null;
+  }>(
+    `SELECT DISTINCT a.actor_urn, a.display_name, a.profile_url
+       FROM linkedin_interaction i
+       JOIN linkedin_actor a ON a.actor_urn = i.actor_urn
+      WHERE i.post_urn = $1
+        AND i.kind IN ('like', 'comment', 'share')`,
+    [postUrn],
+  );
+
+  return {
+    postUrn,
+    signalCompanies: Array.isArray(entities.companies)
+      ? entities.companies.filter((s): s is string => typeof s === "string")
+      : [],
+    signalPeople: Array.isArray(entities.people)
+      ? entities.people.filter((s): s is string => typeof s === "string")
+      : [],
+    detectedLogos: logos,
+    surfacedActors: actorRes.rows.map((r) => ({
+      actorUrn: r.actor_urn,
+      displayName: r.display_name,
+      profileUrl: r.profile_url,
+    })),
+  };
+}
+
+/** L6 read helper: signals that resolved to a given master companyId. */
+export async function signalsForCompany(
+  db: PGliteInstance,
+  companyId: string,
+  limit = 50,
+  offset = 0,
+): Promise<LinkedSignalRow[]> {
+  const lim = Math.min(Math.max(limit, 1), 500);
+  const off = Math.max(offset, 0);
+  const res = await db.query<{
+    post_urn: string;
+    posted_at: string | null;
+    scraped_at: string;
+    text: string | null;
+    permalink: string | null;
+    author_display_name: string;
+    signal_kind: string | null;
+    signal_strength: number | null;
+    summary: string | null;
+  }>(
+    `SELECT DISTINCT p.post_urn, p.posted_at, p.scraped_at,
+            p.text, p.permalink,
+            a.display_name AS author_display_name,
+            s.signal_kind, s.signal_strength, s.summary
+       FROM linkedin_entity_link l
+       JOIN linkedin_post   p ON p.post_urn = l.source_post_urn
+       JOIN linkedin_actor  a ON a.actor_urn = p.author_urn
+       JOIN linkedin_signal s ON s.post_urn = p.post_urn
+      WHERE l.master_company_id = $1
+        AND l.resolution = 'matched'
+      ORDER BY p.scraped_at DESC
+      LIMIT $2 OFFSET $3`,
+    [companyId, lim, off],
+  );
+  return res.rows.map((r) => ({
+    postUrn: r.post_urn,
+    postedAt: r.posted_at ? new Date(r.posted_at).getTime() : null,
+    scrapedAt: new Date(r.scraped_at).getTime(),
+    text: r.text ?? "",
+    permalink: r.permalink,
+    authorDisplayName: r.author_display_name,
+    signalKind: r.signal_kind,
+    signalStrength: r.signal_strength,
+    summary: r.summary,
+    matchedCompanies: [],
+  }));
+}
+
+export async function recentLinkedSignals(
+  db: PGliteInstance,
+  limit = 50,
+): Promise<LinkedSignalRow[]> {
+  const lim = Math.min(Math.max(limit, 1), 500);
+  const res = await db.query<{
+    post_urn: string;
+    posted_at: string | null;
+    scraped_at: string;
+    text: string | null;
+    permalink: string | null;
+    author_display_name: string;
+    signal_kind: string | null;
+    signal_strength: number | null;
+    summary: string | null;
+    matched: unknown;
+  }>(
+    `SELECT p.post_urn, p.posted_at, p.scraped_at,
+            p.text, p.permalink,
+            a.display_name AS author_display_name,
+            s.signal_kind, s.signal_strength, s.summary,
+            (SELECT COALESCE(jsonb_agg(DISTINCT jsonb_build_object(
+                       'companyId', l.master_company_id,
+                       'name', l.master_company_name)),
+                     '[]'::jsonb)
+               FROM linkedin_entity_link l
+              WHERE l.source_post_urn = p.post_urn
+                AND l.resolution = 'matched'
+                AND l.master_company_id IS NOT NULL) AS matched
+       FROM linkedin_signal s
+       JOIN linkedin_post   p ON p.post_urn = s.post_urn
+       JOIN linkedin_actor  a ON a.actor_urn = p.author_urn
+      WHERE s.entities_linked_at IS NOT NULL
+      ORDER BY p.scraped_at DESC
+      LIMIT $1`,
+    [lim],
+  );
+  return res.rows.map((r) => {
+    let matched: Array<{ companyId: string; name: string }> = [];
+    try {
+      const v =
+        typeof r.matched === "string"
+          ? (JSON.parse(r.matched) as Array<{
+              companyId: string | null;
+              name: string | null;
+            }>)
+          : (r.matched as Array<{
+              companyId: string | null;
+              name: string | null;
+            }> | null);
+      if (Array.isArray(v)) {
+        matched = v
+          .filter((m) => m && m.companyId && m.name)
+          .map((m) => ({
+            companyId: m.companyId as string,
+            name: m.name as string,
+          }));
+      }
+    } catch {
+      // ignore
+    }
+    return {
+      postUrn: r.post_urn,
+      postedAt: r.posted_at ? new Date(r.posted_at).getTime() : null,
+      scrapedAt: new Date(r.scraped_at).getTime(),
+      text: r.text ?? "",
+      permalink: r.permalink,
+      authorDisplayName: r.author_display_name,
+      signalKind: r.signal_kind,
+      signalStrength: r.signal_strength,
+      summary: r.summary,
+      matchedCompanies: matched,
+    };
+  });
 }
 
 export async function imageAnalysisCounts(

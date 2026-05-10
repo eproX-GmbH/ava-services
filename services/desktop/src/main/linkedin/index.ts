@@ -28,6 +28,12 @@ import {
   onLinkedInSettingsChanged,
   statusSnapshot as signalStatusSnapshot,
 } from "./extractor";
+import {
+  attachLinkerGateway,
+  linkerStatusSnapshot,
+  type LinkerStatus,
+} from "./linker";
+import type { GatewayClient } from "../agent/gateway-client";
 import type { LlmProviderManager } from "../agent/providers";
 import { ProviderConfigStore } from "../agent/providers";
 import { read, write, reset } from "./store";
@@ -45,7 +51,7 @@ import {
   scanStatusSnapshot,
   shutdownScraper,
 } from "./scraper";
-import { getDb, recentPosts } from "./db";
+import { getDb, recentPosts, signalsForCompany } from "./db";
 import { startScheduler, stopScheduler } from "./scheduler";
 
 /** Generate + persist the fingerprint on first run if it's missing.
@@ -57,11 +63,17 @@ function ensureFingerprint(): void {
   }
 }
 
-export function initLinkedIn(opts?: { providers?: LlmProviderManager }): void {
+export function initLinkedIn(opts?: {
+  providers?: LlmProviderManager;
+  gateway?: GatewayClient;
+}): void {
   ensureFingerprint();
 
   if (opts?.providers) {
     attachExtractorProviders(opts.providers, ProviderConfigStore.shared());
+  }
+  if (opts?.gateway) {
+    attachLinkerGateway(opts.gateway);
   }
 
   ipcMain.handle("linkedin:settings:get", (): LinkedInSettings => read());
@@ -220,6 +232,31 @@ export function initLinkedIn(opts?: { providers?: LlmProviderManager }): void {
     "linkedin:images:status",
     async (): Promise<LinkedInImageAnalysisStatus> => {
       return await imageAnalysisStatusSnapshot();
+    },
+  );
+
+  // ---- L5 entity-link surface -----------------------------------------
+
+  ipcMain.handle(
+    "linkedin:linker:status",
+    async (): Promise<LinkerStatus> => {
+      return await linkerStatusSnapshot();
+    },
+  );
+
+  ipcMain.handle(
+    "linkedin:linker:signalsForCompany",
+    async (
+      _e,
+      args: { companyId: string; limit?: number; offset?: number },
+    ) => {
+      const db = await getDb();
+      return await signalsForCompany(
+        db,
+        args.companyId,
+        args.limit,
+        args.offset,
+      );
     },
   );
 
