@@ -3660,6 +3660,24 @@ a.heartbeat-decision__company:hover {
   flex-shrink: 0;
 }
 
+/* Per-conversation hit count pill — sits between the title and the
+ * timestamp. Aqua-tinted so users can spot dense conversations at a
+ * glance without reading every excerpt. */
+.chat-search-row__count {
+  flex-shrink: 0;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 999px;
+  color: var(--color-indigo-700);
+  background: var(--color-indigo-50);
+  letter-spacing: 0.02em;
+}
+:root.dark .chat-search-row__count {
+  color: var(--color-indigo-200);
+  background: rgba(0, 192, 167, 0.18);
+}
+
 .chat-search-row__meta {
   display: flex;
   gap: 0.5rem;

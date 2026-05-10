@@ -232,11 +232,22 @@ function ResultsBody(props: {
   if (props.hits.length === 0) {
     return <div className="chat-search-empty muted">Keine Treffer.</div>;
   }
+  // Per-conversation hit counts so each row can show a "N Treffer"
+  // badge — lets users spot hot conversations at a glance without
+  // scanning every excerpt. O(n) precompute, O(1) lookup per row.
+  const countByConversation = new Map<string, number>();
+  for (const h of props.hits) {
+    countByConversation.set(
+      h.conversationId,
+      (countByConversation.get(h.conversationId) ?? 0) + 1,
+    );
+  }
   return (
     <>
       {props.hits.map((hit, idx) => {
         const isSelected = idx === props.selected;
         const roleLabel = hit.messageRole === "user" ? "Du" : "AVA";
+        const hitCount = countByConversation.get(hit.conversationId) ?? 1;
         return (
           <div
             key={`${hit.conversationId}:${hit.messageIndex}`}
@@ -253,6 +264,14 @@ function ResultsBody(props: {
               <span className="chat-search-row__title">
                 {hit.conversationLabel || `(leer) ${hit.conversationId.slice(0, 8)}`}
               </span>
+              {hitCount > 1 && (
+                <span
+                  className="chat-search-row__count"
+                  title={`${hitCount} Treffer in dieser Konversation`}
+                >
+                  {hitCount} Treffer
+                </span>
+              )}
               <span className="chat-search-row__time muted small">
                 {formatRelative(hit.conversationModifiedAt)}
               </span>
