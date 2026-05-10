@@ -25,7 +25,7 @@ import type {
   LinkedInScanResult,
 } from "../../shared/types";
 import { read as readSettings, write as writeSettings } from "./store";
-import { hasStoredSession } from "./session";
+import { clearStoredSession, hasStoredSession } from "./session";
 import {
   closeDb,
   enqueueImageAnalysis,
@@ -651,6 +651,16 @@ export async function runScan(opts: ScanOptions): Promise<LinkedInScanResult> {
     const url = win.webContents.getURL();
     if (/\/login|\/checkpoint\//.test(url)) {
       outcome = "login_required";
+      // v0.1.99 — drop the stale session cookies the moment we know
+      // they're invalid. Without this, hasStoredSession() keeps
+      // returning true (the cookie file is still on disk), so the
+      // Settings UI shows "Verbunden" and the only button visible is
+      // "Verbindung trennen". User has no way to reach the connect
+      // flow without first manually disconnecting. Clearing here lets
+      // the next auth-status refresh in the renderer flip the UI to
+      // "Nicht verbunden" with a "Mit LinkedIn verbinden" button
+      // visible immediately.
+      clearStoredSession();
     } else {
       // Hydration delay
       await sleep(jitter(2000, 4000), signal);

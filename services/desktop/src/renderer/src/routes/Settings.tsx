@@ -922,9 +922,18 @@ function LinkedInSection() {
                 {meta.memberUrn ? ` · ${meta.memberUrn}` : ""}. Cookies sind
                 verschlüsselt im Schlüsselbund deines Betriebssystems abgelegt.
               </p>
-              <div className="linkedin-row">
+              <div className="linkedin-row" style={{ gap: 8 }}>
                 <button
                   type="button"
+                  onClick={() => void onConnectLinkedIn()}
+                  disabled={loginInFlight || busy}
+                  title="Erneut über das Login-Fenster verbinden, ohne die aktuelle Sitzung vorher zu löschen"
+                >
+                  {loginInFlight ? "Anmeldefenster offen…" : "Verbindung erneuern"}
+                </button>
+                <button
+                  type="button"
+                  className="link bad"
                   onClick={() => void onDisconnectLinkedIn()}
                   disabled={busy}
                 >
@@ -934,7 +943,8 @@ function LinkedInSection() {
               <p className="muted small">
                 Bei nächster Hintergrund-Aufgabe meldet AVA sich mit den
                 gespeicherten Cookies an. LinkedIn fordert gelegentlich eine
-                erneute Anmeldung — dann öffnet sich das Fenster wieder.
+                erneute Anmeldung; klick dann auf „Verbindung erneuern", das
+                Login-Fenster öffnet sich wieder.
               </p>
             </>
           )}
