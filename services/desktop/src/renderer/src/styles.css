@@ -865,8 +865,11 @@ code, pre { font-family: var(--font-mono); font-size: 12px; }
   font-size: 13px;
 }
 .matrix tbody tr { cursor: pointer; }
-.matrix tbody tr:hover { background: var(--color-slate-50); }
-.matrix tbody tr.active { background: var(--color-indigo-50); }
+/* Token-driven hover/active so dark mode doesn't flash white. */
+.matrix tbody tr:hover { background: var(--color-bg-0); }
+.matrix tbody tr.active {
+  background: color-mix(in oklab, var(--color-indigo-500) 15%, var(--color-bg-0));
+}
 .matrix-cell { text-align: center !important; }
 .matrix-company {
   font-weight: 500;
@@ -3308,7 +3311,11 @@ a.heartbeat-decision__company:hover {
   margin: 0;
 }
 .all-companies__matrix th {
-  background: var(--color-slate-50);
+  /* Token-driven: --color-bg-0 is slate-50 in light, slate-900 in
+   * dark. Card body bg is --color-bg-1 (white / slate-800), so the
+   * thead always sits a notch tinted vs the body without locking
+   * to a single light hex. */
+  background: var(--color-bg-0);
   font-size: 12px;
   font-weight: 600;
   letter-spacing: 0.04em;
