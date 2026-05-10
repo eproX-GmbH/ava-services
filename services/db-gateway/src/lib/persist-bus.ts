@@ -36,6 +36,17 @@
 
 import { AMQPClient, type CloudEvent } from "@ava/event";
 import type pg from "pg";
+import { z } from "zod";
+
+// v0.1.106 — runtime schema for the keywords slice carried by the
+// company-profile persist event. Gateway is zod-based across its
+// route layer (see @hono/zod-openapi usage); the project's
+// "yup preferred, zod fallback" rule applies here as zod (yup is
+// not a current dep of services/db-gateway and we don't want to
+// bolt one on for a single inline validator).
+const companyProfileKeywordsSchema = z.object({
+  keywords: z.array(z.string()),
+});
 
 import { loadEnv } from "./env";
 import { logger } from "./logger";
@@ -404,9 +415,21 @@ interface CompanyProfileResult {
   profile: string;
   url: string;
   businessPurpose?: string;
+  /** v0.1.106 — keywords extracted by the local compute-worker. When
+   *  non-empty, the apply rebuilds the CompanyKeyword table for this
+   *  company (delete existing + insert new) inside the same
+   *  transaction as the CompanyProfile upsert so a partial failure
+   *  can't leave half a keyword set behind. */
+  keywords?: string[];
 }
 
-/** Apply a company-profile persist event with last-write-wins. */
+/** Apply a company-profile persist event with last-write-wins.
+ *
+ *  v0.1.106 — also persists the keywords slice into CompanyKeyword.
+ *  Validated with yup before touching the DB. The profile upsert and
+ *  the keywords rebuild run in a single transaction; on any error
+ *  inside this block the whole apply throws and the persist-bus's
+ *  outer catch records the failure (no partial writes). */
 const applyCompanyProfile: ApplyFn = async (pool, event, log) => {
   const data = event.data as PersistEvent<CompanyProfileResult> | undefined;
   if (!data) throw new Error("empty payload");
@@ -414,27 +437,85 @@ const applyCompanyProfile: ApplyFn = async (pool, event, log) => {
   if (!result?.companyId) throw new Error("missing result.companyId");
   if (!computedAt) throw new Error("missing computedAt");
 
-  const res = await pool.query(
-    `INSERT INTO "CompanyProfile" (id, profile, url, "updatedAt")
-     VALUES ($1, $2, $3, $4)
-     ON CONFLICT (id) DO UPDATE
-     SET profile = EXCLUDED.profile,
-         url = EXCLUDED.url,
-         "updatedAt" = EXCLUDED."updatedAt"
-     WHERE EXCLUDED."updatedAt" > "CompanyProfile"."updatedAt"`,
-    [result.companyId, result.profile, result.url, new Date(computedAt)],
-  );
-  log.info(
-    {
-      runId,
-      tenantId,
-      companyId: result.companyId,
-      rowCount: res.rowCount,
-    },
-    res.rowCount === 0
-      ? "company-profile persist skipped (existing row newer)"
-      : "company-profile persist ✓",
-  );
+  // v0.1.106 — validate keywords payload shape before touching SQL.
+  if (result.keywords !== undefined) {
+    const parsed = companyProfileKeywordsSchema.safeParse({
+      keywords: result.keywords,
+    });
+    if (!parsed.success) {
+      throw new Error(
+        `invalid keywords payload: ${parsed.error.message}`,
+      );
+    }
+  }
+
+  const updatedAt = new Date(computedAt);
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+
+    const res = await client.query(
+      `INSERT INTO "CompanyProfile" (id, profile, url, "updatedAt")
+       VALUES ($1, $2, $3, $4)
+       ON CONFLICT (id) DO UPDATE
+       SET profile = EXCLUDED.profile,
+           url = EXCLUDED.url,
+           "updatedAt" = EXCLUDED."updatedAt"
+       WHERE EXCLUDED."updatedAt" > "CompanyProfile"."updatedAt"`,
+      [result.companyId, result.profile, result.url, updatedAt],
+    );
+
+    // Only rebuild keywords when the profile write actually landed.
+    // If the existing CompanyProfile row was newer (rowCount === 0)
+    // the canonical keywords are whichever set was written alongside
+    // it — we mustn't clobber them with our stale extraction.
+    const wroteProfile = (res.rowCount ?? 0) > 0;
+    let keywordsWritten = 0;
+    if (
+      wroteProfile &&
+      Array.isArray(result.keywords) &&
+      result.keywords.length > 0
+    ) {
+      await client.query(
+        `DELETE FROM "CompanyKeyword" WHERE "companyId" = $1`,
+        [result.companyId],
+      );
+      // Deduplicate within the incoming set; the producer's LLM
+      // occasionally repeats a keyword and we don't want a UNIQUE
+      // constraint surprise.
+      const seen = new Set<string>();
+      for (const raw of result.keywords) {
+        const k = typeof raw === "string" ? raw.trim() : "";
+        if (!k || seen.has(k)) continue;
+        seen.add(k);
+        await client.query(
+          `INSERT INTO "CompanyKeyword" ("companyId", keyword, "createdAt", "updatedAt")
+           VALUES ($1, $2, NOW(), NOW())`,
+          [result.companyId, k],
+        );
+        keywordsWritten++;
+      }
+    }
+
+    await client.query("COMMIT");
+    log.info(
+      {
+        runId,
+        tenantId,
+        companyId: result.companyId,
+        rowCount: res.rowCount,
+        keywordsWritten,
+      },
+      res.rowCount === 0
+        ? "company-profile persist skipped (existing row newer)"
+        : "company-profile persist ✓",
+    );
+  } catch (err) {
+    await client.query("ROLLBACK").catch(() => {});
+    throw err;
+  } finally {
+    client.release();
+  }
 };
 
 /** `tenant.persist.structured-content.v1` payload — emitted by the
