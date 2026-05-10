@@ -1134,6 +1134,14 @@ app.whenReady().then(async () => {
   ipcMain.handle("agent:deleteConversation", (_e, conversationId: string) =>
     memory.delete(conversationId),
   );
+  // v0.1.85 — full-text search across every conversation file. Boring
+  // case-insensitive AND across whitespace-split terms, capped at
+  // limit/perChat. User + assistant only.
+  ipcMain.handle(
+    "agent:searchConversations",
+    (_e, args: { query: string; limit?: number; perChat?: number }) =>
+      memory.search(args.query, { limit: args.limit, perChat: args.perChat }),
+  );
 
   // General memory IPC (Phase 8.k10h). The agent reads/writes via the
   // `recall_memory` / `remember` tools; these handlers exist so a future

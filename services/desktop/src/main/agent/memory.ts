@@ -61,6 +61,22 @@ export interface MemoryProbeResult {
   path: string;
 }
 
+export interface SearchHit {
+  conversationId: string;
+  conversationLabel: string;
+  conversationModifiedAt: number;
+  messageIndex: number;
+  messageId: string;
+  messageRole: "user" | "assistant" | "tool" | "system";
+  excerpt: string;
+  matchOffsets: Array<[start: number, end: number]>;
+}
+
+export interface SearchOpts {
+  limit?: number;
+  perChat?: number;
+}
+
 export interface MemoryListEntry {
   conversationId: string;
   modifiedAt: number;
@@ -172,6 +188,101 @@ export class MemoryStore {
     }
   }
 
+  /**
+   * Full-text substring search across every conversation file. Case-
+   * insensitive, multi-word AND. User + assistant only — system and
+   * tool noise is excluded by default.
+   *
+   * Returns at most `opts.limit ?? 50` hits total, capped to
+   * `opts.perChat ?? 5` per conversation. Sorted by conversation
+   * modifiedAt desc, then messageIndex asc.
+   */
+  search(query: string, opts?: SearchOpts): SearchHit[] {
+    const limit = opts?.limit ?? 50;
+    const perChat = opts?.perChat ?? 5;
+    const q = query.trim();
+    if (!q) return [];
+    const terms = q
+      .toLowerCase()
+      .split(/\s+/)
+      .filter((t) => t.length > 0);
+    if (terms.length === 0) return [];
+    if (!this.writable || !existsSync(this.dir)) return [];
+
+    let files: string[];
+    try {
+      files = readdirSync(this.dir).filter((f) => f.endsWith(".md"));
+    } catch {
+      return [];
+    }
+
+    const fileEntries = files
+      .map((f) => {
+        const path = join(this.dir, f);
+        try {
+          const st = statSync(path);
+          return {
+            path,
+            conversationId: f.slice(0, -3),
+            modifiedAt: st.mtimeMs,
+          };
+        } catch {
+          return null;
+        }
+      })
+      .filter((e): e is { path: string; conversationId: string; modifiedAt: number } => !!e)
+      .sort((a, b) => b.modifiedAt - a.modifiedAt);
+
+    const hits: SearchHit[] = [];
+
+    outer: for (const fe of fileEntries) {
+      if (hits.length >= limit) break;
+      let raw: string;
+      try {
+        raw = readFileSync(fe.path, "utf8");
+      } catch {
+        continue;
+      }
+      let parsed: AgentMessage[];
+      try {
+        parsed = parseTranscript(raw);
+      } catch {
+        continue;
+      }
+      const label = peekFirstUserMessage(fe.path);
+      let perChatHits = 0;
+      for (let i = 0; i < parsed.length; i++) {
+        const m = parsed[i]!;
+        if (m.role !== "user" && m.role !== "assistant") continue;
+        const content = m.content || "";
+        if (!content) continue;
+        const lower = content.toLowerCase();
+        if (!terms.every((t) => lower.includes(t))) continue;
+
+        // Build excerpt centered on the first match.
+        const firstIdx = lower.indexOf(terms[0]!);
+        const excerptInfo = buildExcerpt(content, firstIdx, 140);
+        const offsets = collectMatchOffsets(excerptInfo.text, terms);
+
+        hits.push({
+          conversationId: fe.conversationId,
+          conversationLabel: label,
+          conversationModifiedAt: fe.modifiedAt,
+          messageIndex: i,
+          messageId: m.id,
+          messageRole: m.role,
+          excerpt: excerptInfo.text,
+          matchOffsets: offsets,
+        });
+        perChatHits++;
+        if (hits.length >= limit) break outer;
+        if (perChatHits >= perChat) break;
+      }
+    }
+
+    return hits;
+  }
+
   // ---- Write ---------------------------------------------------------------
 
   /**
@@ -254,6 +365,92 @@ function peekFirstUserMessage(path: string): string {
   } catch {
     return "";
   }
+}
+
+// ---- Search helpers --------------------------------------------------------
+
+/**
+ * Returns ~`window` chars of `content` centered on `matchIdx`, with `…`
+ * markers when truncated. Word-boundary-aware on the left side: snap to
+ * the next whitespace so we don't slice mid-word.
+ */
+function buildExcerpt(
+  content: string,
+  matchIdx: number,
+  windowSize: number,
+): { text: string } {
+  const collapsed = content.replace(/\s+/g, " ").trim();
+  if (collapsed.length <= windowSize) return { text: collapsed };
+
+  // Re-find the match in the collapsed string (whitespace squeeze may
+  // have shifted the index — search for the first ~10 chars after
+  // matchIdx in the original string).
+  const probe = content.slice(matchIdx, matchIdx + 10).replace(/\s+/g, " ").trim();
+  let center = 0;
+  if (probe) {
+    const found = collapsed.toLowerCase().indexOf(probe.toLowerCase());
+    if (found >= 0) center = found;
+  }
+
+  const half = Math.floor(windowSize / 2);
+  let start = Math.max(0, center - half);
+  let end = Math.min(collapsed.length, start + windowSize);
+  // Re-bias if we hit the right wall.
+  if (end - start < windowSize) {
+    start = Math.max(0, end - windowSize);
+  }
+
+  // Snap left to whitespace so we don't cut mid-word (only when not
+  // already at start).
+  if (start > 0) {
+    const ws = collapsed.indexOf(" ", start);
+    if (ws !== -1 && ws - start < 12) start = ws + 1;
+  }
+  if (end < collapsed.length) {
+    const ws = collapsed.lastIndexOf(" ", end);
+    if (ws > start && end - ws < 12) end = ws;
+  }
+
+  let text = collapsed.slice(start, end);
+  if (start > 0) text = "…" + text;
+  if (end < collapsed.length) text = text + "…";
+  return { text };
+}
+
+/**
+ * Find every (case-insensitive) occurrence of every term in `excerpt`.
+ * Returns merged, sorted, non-overlapping [start,end) ranges so the
+ * renderer can wrap each in a single <mark>.
+ */
+function collectMatchOffsets(
+  excerpt: string,
+  terms: string[],
+): Array<[number, number]> {
+  const lower = excerpt.toLowerCase();
+  const ranges: Array<[number, number]> = [];
+  for (const term of terms) {
+    if (!term) continue;
+    let from = 0;
+    while (from <= lower.length) {
+      const idx = lower.indexOf(term, from);
+      if (idx === -1) break;
+      ranges.push([idx, idx + term.length]);
+      from = idx + term.length;
+    }
+  }
+  if (ranges.length === 0) return [];
+  ranges.sort((a, b) => a[0] - b[0]);
+  // Merge overlaps.
+  const merged: Array<[number, number]> = [];
+  for (const r of ranges) {
+    const last = merged[merged.length - 1];
+    if (last && r[0] <= last[1]) {
+      last[1] = Math.max(last[1], r[1]);
+    } else {
+      merged.push([r[0], r[1]]);
+    }
+  }
+  return merged;
 }
 
 // ---- Format helpers --------------------------------------------------------

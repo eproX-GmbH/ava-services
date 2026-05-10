@@ -6,6 +6,7 @@ import type {
   AgentSendResult,
   AgentStatus,
   AgentStreamFrame,
+  ConversationSearchHit,
   Alert,
   AlertPrefs,
   AlertTickInfo,
@@ -44,6 +45,7 @@ export type {
   AgentSendResult,
   AgentStatus,
   AgentStreamFrame,
+  ConversationSearchHit,
   Alert,
   AlertCadenceMinutes,
   AlertCandidateDecision,
@@ -420,6 +422,18 @@ const api = {
     /** Phase 8.k10h — hard-delete a conversation file. */
     deleteConversation: (conversationId: string): Promise<boolean> =>
       ipcRenderer.invoke("agent:deleteConversation", conversationId),
+    /**
+     * v0.1.85 — full-text search across every conversation file.
+     * Case-insensitive, whitespace-split AND. User + assistant only.
+     * Returns at most `limit` hits, capped to `perChat` per
+     * conversation. Sorted by recency.
+     */
+    searchConversations: (args: {
+      query: string;
+      limit?: number;
+      perChat?: number;
+    }): Promise<ConversationSearchHit[]> =>
+      ipcRenderer.invoke("agent:searchConversations", args),
 
     // Attachment staging (Phase 8.e). Renderer parses the spreadsheet
     // client-side for the preview chip, then ships the raw bytes here

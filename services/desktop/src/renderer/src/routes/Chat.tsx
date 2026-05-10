@@ -12,9 +12,12 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   Search as SearchIcon,
+  SearchCode,
   SquarePen,
   Trash2,
 } from "lucide-react";
+import { openChatSearch } from "../components/AppShell";
+import { onChatSearchPick } from "../components/ChatSearchModal";
 import { useOllamaStore } from "../store/ollama";
 import { useVoiceStore } from "../store/voice";
 import { useVoiceRecorder } from "../lib/recordVoice";
@@ -163,6 +166,17 @@ export function Chat() {
       /* ignore */
     }
   }, [sidebarCollapsed]);
+
+  // v0.1.85 — pending search-pick scroll target. The ChatSearchModal
+  // (mounted in AppShell) dispatches `ava:chat-search-pick`; we capture
+  // the payload, switch conversations if needed, and let an effect
+  // below scroll to the matched message once it has rendered.
+  const [pendingPick, setPendingPick] = useState<{
+    conversationId: string;
+    messageId: string;
+    /** Bumped per pick so consecutive picks of the same hit re-fire. */
+    nonce: number;
+  } | null>(null);
   // Cmd/Ctrl+Shift+S toggles the sidebar.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -309,6 +323,25 @@ export function Chat() {
       mounted = false;
     };
   }, [refreshConversations, switchConversation]);
+
+  // v0.1.85 — react to chat-search picks. Switch conversation if the
+  // hit is in a different one; the scroll-to-message effect below
+  // fires once the new transcript has rendered.
+  useEffect(() => {
+    let nonce = 0;
+    const off = onChatSearchPick((payload) => {
+      nonce++;
+      setPendingPick({
+        conversationId: payload.conversationId,
+        messageId: payload.messageId,
+        nonce,
+      });
+      if (payload.conversationId !== conversationIdRef.current) {
+        void switchConversation(payload.conversationId);
+      }
+    });
+    return off;
+  }, [switchConversation]);
 
   const handleDeleteConversation = useCallback(
     async (id: string) => {
@@ -552,6 +585,28 @@ export function Chat() {
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
   }, [messages, thinking]);
+
+  // v0.1.85 — search-pick scroll + temporary highlight. Fires once the
+  // pending pick's conversation has finished loading (messages array
+  // contains the matched message id). The highlight class is removed
+  // after 2.5s so the bubble settles back to the standard treatment.
+  useEffect(() => {
+    if (!pendingPick) return;
+    if (pendingPick.conversationId !== conversationId) return;
+    const target = messages.find((m) => m.id === pendingPick.messageId);
+    if (!target) return;
+    const el = scrollRef.current?.querySelector<HTMLElement>(
+      `[data-message-id="${cssEscape(pendingPick.messageId)}"]`,
+    );
+    if (!el) return;
+    el.scrollIntoView({ block: "center", behavior: "smooth" });
+    el.classList.add("chat-msg--highlight");
+    const handle = window.setTimeout(() => {
+      el.classList.remove("chat-msg--highlight");
+    }, 2500);
+    setPendingPick(null);
+    return () => window.clearTimeout(handle);
+  }, [pendingPick, conversationId, messages]);
 
   // Composer textarea auto-grow (1 row → up to 5).
   //
@@ -1195,6 +1250,7 @@ export function Chat() {
               return (
                 <div
                   key={m.id}
+                  data-message-id={m.id}
                   className={`chat-msg chat-msg-${m.role}`}
                   aria-label={roleLabel(m.role)}
                 >
@@ -1633,6 +1689,15 @@ function ChatSidebar(props: {
         >
           <SquarePen size={18} />
         </button>
+        <button
+          type="button"
+          className="chat-sidebar__icon-btn"
+          onClick={() => openChatSearch()}
+          title="In allen Chats suchen (⌘/Ctrl+K)"
+          aria-label="In allen Chats suchen"
+        >
+          <SearchCode size={18} />
+        </button>
       </div>
       {!props.collapsed && (
         <>
@@ -1692,6 +1757,17 @@ function ChatSidebar(props: {
       )}
     </aside>
   );
+}
+
+/** Polyfill for CSS.escape. Conversation/message ids are UUIDs, so
+ *  the surface here is small — alphanumerics + dashes. We still run
+ *  it through the standard escape when available for safety against
+ *  future id formats. */
+function cssEscape(value: string): string {
+  if (typeof CSS !== "undefined" && typeof CSS.escape === "function") {
+    return CSS.escape(value);
+  }
+  return value.replace(/["\\]/g, "\\$&");
 }
 
 function labelFor(c: ConversationListEntry): string {

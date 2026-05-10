@@ -1,10 +1,15 @@
 import type { PropsWithChildren } from "react";
-import { NavLink } from "react-router-dom";
+import { NavLink, useNavigate, useLocation } from "react-router-dom";
 import { useEffect, useState } from "react";
 import { AlertCircle, Loader2, RefreshCw, Lightbulb, X } from "lucide-react";
 import { AlertBell } from "./AlertBell";
 import { WatchChip } from "./WatchChip";
 import { UsageChip } from "./UsageChip";
+import {
+  ChatSearchModal,
+  useChatSearchHotkey,
+  type ChatSearchPickPayload,
+} from "./ChatSearchModal";
 import logoUrl from "../assets/logo-aqua.svg";
 import type { ExternalServiceStatus } from "../../../shared/types";
 import {
@@ -34,12 +39,48 @@ import {
 //     class generation hiccup lands. The 8.l4 primitives pass will
 //     port the *contents* of the bar to utility classes; the bar
 //     skeleton stays in CSS.
+/** v0.1.85 — global event the sidebar search-icon dispatches to open
+ *  the chat-search modal without prop-drilling. The AppShell hosts the
+ *  modal state and listens for this event. */
+export const OPEN_CHAT_SEARCH_EVENT = "ava:open-chat-search";
+
+export function openChatSearch(): void {
+  window.dispatchEvent(new CustomEvent(OPEN_CHAT_SEARCH_EVENT));
+}
+
 export function AppShell({ children }: PropsWithChildren) {
+  const [searchOpen, setSearchOpen] = useState(false);
+  const navigate = useNavigate();
+  const location = useLocation();
+
+  useChatSearchHotkey(setSearchOpen);
+
+  // Sidebar's search-icon button fires a bus event so it doesn't have
+  // to know about the modal directly.
+  useEffect(() => {
+    const onOpen = () => setSearchOpen(true);
+    window.addEventListener(OPEN_CHAT_SEARCH_EVENT, onOpen);
+    return () => window.removeEventListener(OPEN_CHAT_SEARCH_EVENT, onOpen);
+  }, []);
+
+  // Before-pick hook: if we're not on /chat, route there so the chat
+  // route gets a chance to mount + listen for the pick event.
+  const onBeforePick = (_hit: { conversationId: string }): void => {
+    if (location.pathname !== "/chat") {
+      navigate("/chat");
+    }
+  };
+
   return (
     <div className="app-shell">
       <TopBar />
       <ExternalServiceBanner />
       <main className="app-shell__main">{children}</main>
+      <ChatSearchModal
+        open={searchOpen}
+        onClose={() => setSearchOpen(false)}
+        onBeforePick={onBeforePick as (h: ChatSearchPickPayload & { conversationId: string }) => void}
+      />
     </div>
   );
 }

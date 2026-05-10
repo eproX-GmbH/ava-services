@@ -330,6 +330,21 @@ export interface AgentMessage {
   createdAt: number;
 }
 
+/**
+ * v0.1.85 — one hit returned by `agent:searchConversations`. Coordinates
+ * are excerpt-relative; the renderer wraps each [start,end) in <mark>.
+ */
+export interface ConversationSearchHit {
+  conversationId: string;
+  conversationLabel: string;
+  conversationModifiedAt: number;
+  messageIndex: number;
+  messageId: string;
+  messageRole: "user" | "assistant" | "tool" | "system";
+  excerpt: string;
+  matchOffsets: Array<[number, number]>;
+}
+
 export interface AgentToolCall {
   id: string;
   name: string;

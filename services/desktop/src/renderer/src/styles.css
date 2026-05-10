@@ -3544,3 +3544,202 @@ a.heartbeat-decision__company:hover {
   align-items: center;
   gap: 0.35rem;
 }
+
+/* ---- Chat search modal (v0.1.85) ---------------------------------------
+ *
+ * Global Cmd/Ctrl+K full-text search across every conversation file.
+ * Mounted at the AppShell so it works on every route. Layout: 720px
+ * panel centered over a dimmed backdrop. */
+
+.chat-search-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.55);
+  backdrop-filter: blur(2px);
+  z-index: 1000;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding-top: 12vh;
+}
+
+:root.dark .chat-search-overlay {
+  background: rgba(0, 0, 0, 0.6);
+}
+
+.chat-search-panel {
+  width: min(720px, calc(100vw - 32px));
+  max-height: 70vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--color-bg-1);
+  border: 1px solid var(--color-border);
+  border-radius: 14px;
+  box-shadow: 0 24px 60px rgba(15, 23, 42, 0.18);
+  overflow: hidden;
+}
+
+:root.dark .chat-search-panel {
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.45);
+}
+
+.chat-search-input-row {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.85rem 1rem;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.chat-search-input-icon {
+  color: var(--color-fg-muted);
+  flex-shrink: 0;
+}
+
+.chat-search-input-row input {
+  flex: 1;
+  border: none;
+  outline: none;
+  background: transparent;
+  font: inherit;
+  font-size: 1.05rem;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  color: var(--color-fg);
+}
+
+.chat-search-input-row input::placeholder {
+  color: var(--color-fg-faint);
+}
+
+.chat-search-results {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0.35rem 0;
+}
+
+.chat-search-empty {
+  padding: 1.5rem 1rem;
+  text-align: center;
+  font-size: 0.92rem;
+}
+
+.chat-search-row {
+  padding: 0.6rem 1rem;
+  cursor: pointer;
+  border-left: 3px solid transparent;
+  transition: background 0.12s ease;
+}
+
+.chat-search-row--selected,
+.chat-search-row:hover {
+  background: rgba(0, 192, 167, 0.08);
+  border-left-color: var(--color-indigo-500);
+}
+
+:root.dark .chat-search-row--selected,
+:root.dark .chat-search-row:hover {
+  background: rgba(0, 192, 167, 0.14);
+}
+
+.chat-search-row__head {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  align-items: baseline;
+}
+
+.chat-search-row__title {
+  font-weight: 600;
+  color: var(--color-fg);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.chat-search-row__time {
+  flex-shrink: 0;
+}
+
+.chat-search-row__meta {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.25rem;
+  align-items: flex-start;
+}
+
+.chat-search-pill {
+  flex-shrink: 0;
+  display: inline-block;
+  padding: 0.05rem 0.45rem;
+  font-size: 0.72rem;
+  border-radius: 999px;
+  font-weight: 600;
+  background: var(--color-bg-3);
+  color: var(--color-fg-muted);
+}
+
+.chat-search-pill--user {
+  background: rgba(0, 192, 167, 0.15);
+  color: var(--color-indigo-700);
+}
+
+:root.dark .chat-search-pill--user {
+  color: var(--color-indigo-300);
+}
+
+.chat-search-pill--assistant {
+  background: rgba(8, 145, 178, 0.15);
+  color: var(--color-violet-700);
+}
+
+:root.dark .chat-search-pill--assistant {
+  color: var(--color-violet-300);
+}
+
+.chat-search-row__excerpt {
+  font-size: 0.88rem;
+  color: var(--color-fg-muted);
+  line-height: 1.4;
+  word-break: break-word;
+}
+
+.chat-search-row__excerpt mark {
+  background: rgba(0, 192, 167, 0.25);
+  color: var(--color-fg);
+  border-radius: 2px;
+  padding: 0 1px;
+}
+
+:root.dark .chat-search-row__excerpt mark {
+  background: rgba(0, 192, 167, 0.35);
+}
+
+.chat-search-hint {
+  padding: 0.55rem 1rem;
+  border-top: 1px solid var(--color-border);
+  text-align: center;
+  font-size: 0.78rem;
+}
+
+/* ---- Chat-message search-pick highlight (v0.1.85) ---------------------- */
+
+.chat-msg--highlight {
+  background: var(--color-indigo-50);
+  border-left: 2px solid var(--color-indigo-500);
+  border-radius: 8px;
+  padding-left: 0.5rem;
+  margin-left: -0.5rem;
+  animation: chat-msg-highlight-fade 2.5s ease-out forwards;
+}
+
+:root.dark .chat-msg--highlight {
+  background: rgba(0, 192, 167, 0.18);
+  border-left-color: var(--color-indigo-400);
+}
+
+@keyframes chat-msg-highlight-fade {
+  0% { opacity: 0.65; }
+  15% { opacity: 1; }
+  85% { opacity: 1; }
+  100% { opacity: 0.45; background: transparent; border-left-color: transparent; }
+}
