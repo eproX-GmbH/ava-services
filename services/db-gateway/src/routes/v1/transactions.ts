@@ -957,6 +957,79 @@ transactionsRouter.openapi(pipelineRoute, async (c) => {
   };
 
   type Cell = z.infer<typeof PipelineCellShape>;
+
+  // v0.1.106 — companyEvaluation is a DERIVED cell.
+  //
+  // Why: companyEvaluation has no compute of its own under the new
+  // localized pipeline — its compute-worker is a fan-in normaliser
+  // that re-emits per-slice persist events from 8 upstream signals.
+  // In practice only a subset of those signals actually fires under
+  // the current compute path (structured-content, company-profile,
+  // company-publication, website). The seed-EntityProgress path
+  // creates a `pending` row for company-evaluation up front; if any
+  // expected upstream completes but the evaluation slice flow stalls,
+  // the cell would stay yellow forever.
+  //
+  // Fix (variant c — surgical config change, no producer / schema
+  // edits): derive the companyEvaluation cell from its upstream set
+  // {structuredContent, companyPublication, website, companyProfile,
+  // companyContact}. Rule:
+  //   - If ANY upstream cell is in_progress  → in_progress
+  //   - Else if ALL upstreams in terminal    → completed
+  //     (failed/skipped on an upstream don't block evaluation —
+  //     evaluation can run with whichever slices arrived; the agent's
+  //     downstream consumers tolerate partial data)
+  //   - Else if at least one upstream completed → in_progress
+  //   - Else pending
+  // The recorded EntityProgress row from the gateway persist-bus is
+  // ignored here (still written for audit trail / SSE compatibility).
+  const EVAL_UPSTREAMS = [
+    "structuredContent",
+    "companyPublication",
+    "website",
+    "companyProfile",
+    "companyContact",
+  ] as const;
+  const deriveEvaluationCell = (companyId: string): Cell => {
+    const upstreams = EVAL_UPSTREAMS.map((s) =>
+      cellFromRow(byStage.get(s)?.get(companyId)),
+    );
+    if (upstreams.some((u) => u.state === "in_progress")) {
+      const ts = upstreams
+        .map((u) => u.updatedAt)
+        .filter((t): t is string => typeof t === "string");
+      return {
+        state: "in_progress",
+        updatedAt: ts.length > 0 ? ts.reduce((a, b) => (a > b ? a : b)) : null,
+        errorCount: 0,
+      };
+    }
+    const allTerminal = upstreams.every(
+      (u) =>
+        u.state === "completed" ||
+        u.state === "failed" ||
+        u.state === "skipped",
+    );
+    const anyCompleted = upstreams.some((u) => u.state === "completed");
+    const ts = upstreams
+      .map((u) => u.updatedAt)
+      .filter((t): t is string => typeof t === "string");
+    const lastTs =
+      ts.length > 0 ? ts.reduce((a, b) => (a > b ? a : b)) : null;
+    if (allTerminal && anyCompleted) {
+      return { state: "completed", updatedAt: lastTs, errorCount: 0 };
+    }
+    if (anyCompleted) {
+      return { state: "in_progress", updatedAt: lastTs, errorCount: 0 };
+    }
+    if (allTerminal) {
+      // Every upstream failed/skipped — evaluation has nothing to
+      // aggregate. Surface as skipped so the matrix is not stuck.
+      return { state: "skipped", updatedAt: lastTs, errorCount: 0 };
+    }
+    return { state: "pending", errorCount: 0 };
+  };
+
   const rows = Array.from(allCompanyIds).map((companyId) => {
     const cells: {
       masterData: Cell;
@@ -975,7 +1048,7 @@ transactionsRouter.openapi(pipelineRoute, async (c) => {
       website: cellFromRow(byStage.get("website")?.get(companyId)),
       companyProfile: cellFromRow(byStage.get("companyProfile")?.get(companyId)),
       companyContact: cellFromRow(byStage.get("companyContact")?.get(companyId)),
-      companyEvaluation: cellFromRow(byStage.get("companyEvaluation")?.get(companyId)),
+      companyEvaluation: deriveEvaluationCell(companyId),
     };
     // Most-recent activity across cells for sort order.
     const timestamps = Object.values(cells)
