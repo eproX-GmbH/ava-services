@@ -127,6 +127,10 @@ export interface ProducerSupervisorOptions {
   getUserId: () => Promise<string | null>;
   /** Extra env merged in after the supervisor's defaults. */
   extraEnv?: Record<string, string>;
+  /** v0.1.105 — dynamic extra env, evaluated at each spawn. Used for
+   *  values that depend on runtime state (e.g. the structured-content
+   *  upstream picker, which reads live reachability). */
+  extraEnvAsync?: () => Promise<Record<string, string>>;
 }
 
 export class ProducerSupervisor extends EventEmitter {
@@ -404,6 +408,7 @@ export class ProducerSupervisor extends EventEmitter {
       // run Selenium ignore this env var.
       AVA_SCREENSHOT_DIR: screenshotDirForProducer(this.opts.config.name),
       ...(this.opts.extraEnv ?? {}),
+      ...(this.opts.extraEnvAsync ? await this.opts.extraEnvAsync() : {}),
     };
   }
 

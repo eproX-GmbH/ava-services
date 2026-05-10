@@ -12,7 +12,11 @@ import {
   type ChatSearchPickPayload,
 } from "./ChatSearchModal";
 import logoUrl from "../assets/logo-aqua.svg";
-import type { ExternalServiceStatus } from "../../../shared/types";
+import type {
+  ExternalServiceId,
+  ExternalServiceStatus,
+  ExternalServicesStatus,
+} from "../../../shared/types";
 import {
   applyTheme,
   getStoredMode,
@@ -88,34 +92,83 @@ export function AppShell({ children }: PropsWithChildren) {
 }
 
 // v0.1.52 — slim banner under the topbar that surfaces upstream
-// reachability problems. Shows ONLY when state="unreachable" — when
-// reachable we render nothing so the chrome doesn't shift on every
-// boot. Driven by the main-process external-service-monitor (60s
-// probe of unternehmensregister.de). The Stamm + Publikation
-// producers auto-pause while this banner is up, so the matrix won't
-// accumulate red cells from work the scraper can't possibly do.
-/** localStorage keys for dismissable upstream banner state. */
-const BANNER_SUPPRESS_KEY = "ava.upstreamBanner.suppressed";
+// reachability problems. v0.1.105 — multi-source. The renderer used to
+// see a single ExternalServiceStatus; it now sees an aggregate keyed
+// by service id (unternehmensregister, handelsregister). The banner
+// shows ONLY when at least one service is unreachable — so on a
+// healthy boot it stays hidden and the chrome doesn't shift.
+//
+// Copy:
+//   - Some down: list each unreachable service by friendly name and
+//     note that strukturierte Inhalte können langsamer sein (we can
+//     fall back to the still-up source).
+//   - All down: structured-content producer is paused.
+//
+// Suppression (BANNER_SUPPRESS_KEY): keyed by the SET of unreachable
+// services so dismissing "unternehmensregister" doesn't silence a
+// future combined or different outage. The legacy single-bool key is
+// migrated on first render so existing users keep their preference.
+const BANNER_SUPPRESS_KEY = "ava.upstreamBanner.suppressedSignatures";
+const BANNER_SUPPRESS_LEGACY_KEY = "ava.upstreamBanner.suppressed";
 const BANNER_DISMISSED_AT_KEY = "ava.upstreamBanner.dismissedAtCheckedAt";
 
-function ExternalServiceBanner() {
-  const [status, setStatus] = useState<ExternalServiceStatus | null>(null);
-  const [probing, setProbing] = useState(false);
-  /** Tracks "we just probed but the upstream is still unreachable" so
-   *  the user sees a "noch nicht erreichbar" toast instead of a silent
-   *  click. Cleared after a few seconds or on next status change. */
-  const [stillDownAt, setStillDownAt] = useState<number | null>(null);
-  /** Permanent suppression — user clicked "nie wieder anzeigen". */
-  const [suppressed, setSuppressed] = useState<boolean>(() => {
-    try {
-      return localStorage.getItem(BANNER_SUPPRESS_KEY) === "true";
-    } catch {
-      return false;
+const SERVICE_LABELS: Record<ExternalServiceId, string> = {
+  unternehmensregister: "Unternehmensregister.de",
+  handelsregister: "Handelsregister.de",
+};
+
+/** Stable id for "this exact set of services is currently down".
+ *  Used as the suppression key so dismissing one combo doesn't
+ *  silence a different future combo. */
+function unreachableSignature(s: ExternalServicesStatus): string {
+  return Object.values(s.services)
+    .filter((svc) => svc.state === "unreachable")
+    .map((svc) => svc.service)
+    .sort()
+    .join(",");
+}
+
+function readSuppressedSignatures(): Set<string> {
+  try {
+    const raw = localStorage.getItem(BANNER_SUPPRESS_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw) as unknown;
+      if (Array.isArray(parsed)) {
+        return new Set(parsed.filter((v): v is string => typeof v === "string"));
+      }
     }
-  });
-  /** Temporary dismissal — store the lastCheckedAt at time of dismiss.
-   *  Banner re-surfaces when the next probe completes (status carries
-   *  a newer lastCheckedAt). */
+    // Legacy key migration: a "true" there meant "suppress everything
+    // unternehmensregister-related". Migrate as best-effort to the
+    // single-service signature so existing users don't regress.
+    if (localStorage.getItem(BANNER_SUPPRESS_LEGACY_KEY) === "true") {
+      return new Set(["unternehmensregister"]);
+    }
+  } catch {
+    /* ignore */
+  }
+  return new Set();
+}
+
+function writeSuppressedSignatures(set: Set<string>): void {
+  try {
+    localStorage.setItem(BANNER_SUPPRESS_KEY, JSON.stringify([...set]));
+  } catch {
+    /* ignore */
+  }
+}
+
+function ExternalServiceBanner() {
+  const [status, setStatus] = useState<ExternalServicesStatus | null>(null);
+  const [probing, setProbing] = useState(false);
+  /** "we just probed but it's still unreachable" toast. */
+  const [stillDownAt, setStillDownAt] = useState<number | null>(null);
+  /** Permanently-suppressed signatures (set of comma-joined service ids). */
+  const [suppressedSigs, setSuppressedSigs] = useState<Set<string>>(() =>
+    readSuppressedSignatures(),
+  );
+  /** Temporary dismissal — store the max lastCheckedAt across services
+   *  at time of dismiss. Banner re-surfaces when ANY service has a
+   *  newer lastCheckedAt (a probe ran since dismissal). */
   const [dismissedAt, setDismissedAt] = useState<number | null>(() => {
     try {
       const v = localStorage.getItem(BANNER_DISMISSED_AT_KEY);
@@ -124,7 +177,6 @@ function ExternalServiceBanner() {
       return null;
     }
   });
-  /** Confirmation popover open. */
   const [confirmOpen, setConfirmOpen] = useState(false);
 
   useEffect(() => {
@@ -135,7 +187,6 @@ function ExternalServiceBanner() {
     const off = window.api.externalService.onStatusChanged((s) => {
       if (!cancelled) {
         setStatus(s);
-        // Clear the toast on any external-driven status update.
         setStillDownAt(null);
       }
     });
@@ -145,18 +196,16 @@ function ExternalServiceBanner() {
     };
   }, []);
 
-  // Auto-dismiss the "still down" toast after 4s so it doesn't stick.
   useEffect(() => {
     if (stillDownAt === null) return;
     const id = setTimeout(() => setStillDownAt(null), 4000);
     return () => clearTimeout(id);
   }, [stillDownAt]);
 
-  // Clear temporary dismissal as soon as the upstream flips back to
-  // reachable — if it goes down again later, the banner should fire
-  // fresh, not stay hidden by stale dismissal state.
+  // Clear temporary dismissal as soon as everything is reachable
+  // again — a future outage should re-fire the banner fresh.
   useEffect(() => {
-    if (status?.state === "reachable" && dismissedAt !== null) {
+    if (status?.allReachable && dismissedAt !== null) {
       setDismissedAt(null);
       try {
         localStorage.removeItem(BANNER_DISMISSED_AT_KEY);
@@ -164,23 +213,54 @@ function ExternalServiceBanner() {
         /* ignore */
       }
     }
-  }, [status?.state, dismissedAt]);
+  }, [status?.allReachable, dismissedAt]);
 
-  if (!status || status.state !== "unreachable") return null;
-  if (suppressed) return null;
-  // Temporary dismissal: banner stays hidden until a fresh probe
-  // produces a newer lastCheckedAt (the monitor emits status on every
-  // probe, not only on state transitions, so this fires reliably).
+  if (!status) return null;
+
+  const unreachable: ExternalServiceStatus[] = Object.values(
+    status.services,
+  ).filter((s) => s.state === "unreachable");
+  if (unreachable.length === 0) return null;
+
+  const signature = unreachableSignature(status);
+  if (suppressedSigs.has(signature)) return null;
+
+  const maxLastCheckedAt = unreachable.reduce<number | null>(
+    (acc, svc) =>
+      svc.lastCheckedAt && (acc === null || svc.lastCheckedAt > acc)
+        ? svc.lastCheckedAt
+        : acc,
+    null,
+  );
+  // Temporary dismissal: hide until a fresh probe produces a newer
+  // lastCheckedAt across the unreachable set.
   if (
     dismissedAt !== null &&
-    status.lastCheckedAt !== null &&
-    status.lastCheckedAt <= dismissedAt
+    maxLastCheckedAt !== null &&
+    maxLastCheckedAt <= dismissedAt
   ) {
     return null;
   }
 
-  const since = status.lastReachableAt
-    ? formatRelativeMinutes(status.lastReachableAt)
+  const allDown = !status.anyReachable;
+  const headline = allDown
+    ? "Alle Quellen für strukturierte Inhalte nicht erreichbar."
+    : `${unreachable.map((s) => SERVICE_LABELS[s.service]).join(" und ")} nicht erreichbar.`;
+  const detail = allDown
+    ? "Der Producer für strukturierte Inhalte ist pausiert, bis mindestens eine Quelle wieder antwortet. Andere Stages laufen weiter normal."
+    : "Strukturierte Inhalte können langsamer sein, da auf die verbleibende Quelle ausgewichen wird. Andere Stages laufen weiter normal.";
+
+  // "letzter Erfolg vor X" — pick the freshest lastReachableAt across
+  // the unreachable services so the user gets the most useful hint.
+  const freshestLastReachable = unreachable.reduce<number | null>(
+    (acc, svc) =>
+      svc.lastReachableAt && (acc === null || svc.lastReachableAt > acc)
+        ? svc.lastReachableAt
+        : acc,
+    null,
+  );
+  const since = freshestLastReachable
+    ? formatRelativeMinutes(freshestLastReachable)
     : null;
 
   const onRetry = async () => {
@@ -188,14 +268,9 @@ function ExternalServiceBanner() {
     setProbing(true);
     try {
       const next = await window.api.externalService.probeNow();
-      // probeNow returns the latest status synchronously. If it's
-      // still unreachable, surface a brief "noch nicht erreichbar"
-      // toast next to the button so the click feels responsive.
-      if (next.state === "unreachable") {
+      if (!next.allReachable) {
         setStillDownAt(Date.now());
       }
-      // If it flipped to reachable the banner self-unmounts via
-      // onStatusChanged, no extra UI here.
     } finally {
       setProbing(false);
     }
@@ -204,11 +279,8 @@ function ExternalServiceBanner() {
   return (
     <div className="upstream-banner" role="status" aria-live="polite">
       <AlertCircle className="ct-icon-sm" aria-hidden="true" />
-      <strong>Unternehmensregister.de nicht erreichbar.</strong>{" "}
-      <span>
-        Stamm-Daten und Publikationen sind pausiert, bis der Dienst wieder
-        antwortet. Andere Stages laufen weiter normal.
-      </span>
+      <strong>{headline}</strong>{" "}
+      <span>{detail}</span>
       {since && <span className="upstream-banner__since">· {since}</span>}
       <button
         type="button"
@@ -243,18 +315,20 @@ function ExternalServiceBanner() {
           </p>
           <p className="upstream-banner__confirm-body">
             Soll der Hinweis bei der nächsten Hintergrund-Prüfung erneut
-            erscheinen können, oder dauerhaft ausgeblendet bleiben?
+            erscheinen können, oder dauerhaft für genau diese Kombination
+            ausgeblendet bleiben?
           </p>
           <div className="upstream-banner__confirm-actions">
             <button
               type="button"
               className="primary"
               onClick={() => {
-                setDismissedAt(status.lastCheckedAt ?? Date.now());
+                const at = maxLastCheckedAt ?? Date.now();
+                setDismissedAt(at);
                 try {
                   localStorage.setItem(
                     BANNER_DISMISSED_AT_KEY,
-                    String(status.lastCheckedAt ?? Date.now()),
+                    String(at),
                   );
                 } catch {
                   /* ignore */
@@ -268,16 +342,14 @@ function ExternalServiceBanner() {
               type="button"
               className="link bad"
               onClick={() => {
-                setSuppressed(true);
-                try {
-                  localStorage.setItem(BANNER_SUPPRESS_KEY, "true");
-                } catch {
-                  /* ignore */
-                }
+                const next = new Set(suppressedSigs);
+                next.add(signature);
+                setSuppressedSigs(next);
+                writeSuppressedSignatures(next);
                 setConfirmOpen(false);
               }}
             >
-              Nie wieder anzeigen
+              Nie wieder für diese Kombination
             </button>
             <button
               type="button"

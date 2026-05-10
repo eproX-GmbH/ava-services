@@ -30,6 +30,7 @@ import type {
   ProducerScreenshotEntry,
   ProducerStatus,
   ExternalServiceStatus,
+  ExternalServicesStatus,
   CrmProviderKind,
   CrmProviderStatus,
   LinkedInAuthStatus,
@@ -97,6 +98,7 @@ export type {
   ProducerScreenshotEntry,
   ProducerStatus,
   ExternalServiceStatus,
+  ExternalServicesStatus,
   CrmProviderKind,
   CrmProviderStatus,
   LinkedInAuthStatus,
@@ -301,16 +303,16 @@ const api = {
    *  to push events for transitions. Drives the under-topbar banner
    *  when the site is unreachable. */
   externalService: {
-    getStatus: (): Promise<ExternalServiceStatus> =>
+    getStatus: (): Promise<ExternalServicesStatus> =>
       ipcRenderer.invoke("external-service:getStatus"),
-    probeNow: (): Promise<ExternalServiceStatus> =>
+    probeNow: (): Promise<ExternalServicesStatus> =>
       ipcRenderer.invoke("external-service:probeNow"),
     onStatusChanged: (
-      cb: (status: ExternalServiceStatus) => void,
+      cb: (status: ExternalServicesStatus) => void,
     ): (() => void) => {
       const handler = (
         _e: Electron.IpcRendererEvent,
-        status: ExternalServiceStatus,
+        status: ExternalServicesStatus,
       ) => cb(status);
       ipcRenderer.on("external-service-status:changed", handler);
       return () =>

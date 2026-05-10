@@ -125,20 +125,30 @@ export interface ProducerLogEvent {
 // Mirrored from main/producer-screenshots.ts.
 
 // ---- External service reachability (v0.1.52) ------------------------------
-// Used by main/external-service-monitor.ts to surface upstream
-// (today: unternehmensregister.de) reachability to the renderer
-// banner + auto-pause/resume the producers that depend on it.
+// v0.1.105 — multi-source. Used by main/external-service-monitor.ts to
+// surface upstream reachability for both unternehmensregister.de and
+// handelsregister.de. The renderer banner + producer auto-pause / picker
+// in main/structured-content-source.ts all consume the aggregate.
 
 export type ExternalServiceState = "unknown" | "reachable" | "unreachable";
 
+export type ExternalServiceId = "unternehmensregister" | "handelsregister";
+
 export interface ExternalServiceStatus {
-  service: "unternehmensregister";
+  service: ExternalServiceId;
   state: ExternalServiceState;
   url: string;
   lastCheckedAt: number | null;
   lastReachableAt: number | null;
   latencyMs: number | null;
   errorMessage: string | null;
+  consecutiveFailures: number;
+}
+
+export interface ExternalServicesStatus {
+  services: Record<ExternalServiceId, ExternalServiceStatus>;
+  anyReachable: boolean;
+  allReachable: boolean;
 }
 
 export interface ProducerScreenshotEntry {
