@@ -2863,6 +2863,12 @@ a.heartbeat-decision__company:hover {
 .upstream-banner__retry {
   margin-left: auto;
   font-size: 12px;
+  /* Align the leading lucide icon with the text instead of letting
+   * it sit on the inline baseline (which left it floating ~2px
+   * high). */
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
 }
 .upstream-banner__retry[aria-busy="true"],
 .upstream-banner__retry:disabled {
