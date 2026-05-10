@@ -202,7 +202,10 @@ export function initLinkedIn(opts?: { providers?: LlmProviderManager }): void {
   ipcMain.handle(
     "linkedin:signals:run",
     async (): Promise<LinkedInSignalStatus> => {
-      return await drainSignalQueue({ limit: 100 });
+      // Manual nudge: also unsticks rows that hit MAX_ATTEMPTS so the
+      // user has a way to retry them after fixing (e.g.) a flaky
+      // network or a model that briefly returned bad JSON.
+      return await drainSignalQueue({ limit: 100, manual: true });
     },
   );
 

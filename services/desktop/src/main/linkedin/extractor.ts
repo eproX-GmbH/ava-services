@@ -20,6 +20,8 @@ import {
   loadSignalCandidate,
   nextPendingSignals,
   recordSignalFailure,
+  resetFailedSignalsToPending,
+  resetFailedImageAnalysesToPending,
   recordSignalSkipped,
   recordSignalSuccess,
   resetSkippedToPending,
@@ -320,6 +322,13 @@ function sleep(ms: number, signal?: AbortSignal): Promise<void> {
 export async function drainQueue(opts?: {
   limit?: number;
   signal?: AbortSignal;
+  /** Manual run from the Settings button. When true, exhausted-failed
+   *  rows (status='failed', attempts>=MAX_ATTEMPTS) get reset to
+   *  pending before the drain so the user can nudge stuck rows
+   *  without flipping settings. Background scan-tail + scheduled
+   *  drains do NOT pass manual=true; they only chew through the
+   *  legitimately-pending queue. */
+  manual?: boolean;
 }): Promise<ExtractionStatus> {
   if (running) {
     return await statusSnapshot();
@@ -340,6 +349,14 @@ export async function drainQueue(opts?: {
 
   try {
     const db = await getDb();
+    if (opts?.manual === true) {
+      // User explicitly asked for a re-run. Un-park exhausted-failed
+      // rows for both phases so the drain actually has something to
+      // re-evaluate. Each helper returns the row count for log
+      // purposes if needed; we don't surface it.
+      await resetFailedSignalsToPending(db);
+      await resetFailedImageAnalysesToPending(db);
+    }
     const llm = await resolveActiveLlm();
 
     if (!llm) {

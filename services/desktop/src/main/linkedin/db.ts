@@ -670,6 +670,25 @@ export async function resetSkippedToPending(
   return res.affectedRows ?? 0;
 }
 
+/** Manual nudge for stuck rows: flip exhausted-failed rows
+ *  (status='failed', attempts >= MAX_ATTEMPTS) back to pending so the
+ *  next drain re-tries them. Distinct from resetSkippedToPending() so
+ *  the user has to ASK for retries rather than getting auto-cycles on
+ *  every settings change. Wired into the manual "Auswertung jetzt
+ *  ausführen" button. */
+export async function resetFailedSignalsToPending(
+  db: PGliteInstance,
+): Promise<number> {
+  const res = await db.query(
+    `UPDATE linkedin_signal
+        SET status = 'pending',
+            attempts = 0,
+            last_error = NULL
+      WHERE status = 'failed'`,
+  );
+  return res.affectedRows ?? 0;
+}
+
 export async function signalCounts(
   db: PGliteInstance,
 ): Promise<SignalCounts> {
@@ -935,6 +954,20 @@ export async function resetSkippedImageAnalysesToPending(
             attempts = 0,
             last_error = NULL
       WHERE status = 'skipped'`,
+  );
+  return res.affectedRows ?? 0;
+}
+
+/** Manual-nudge counterpart to resetFailedSignalsToPending. */
+export async function resetFailedImageAnalysesToPending(
+  db: PGliteInstance,
+): Promise<number> {
+  const res = await db.query(
+    `UPDATE linkedin_image_analysis
+        SET status = 'pending',
+            attempts = 0,
+            last_error = NULL
+      WHERE status = 'failed'`,
   );
   return res.affectedRows ?? 0;
 }
