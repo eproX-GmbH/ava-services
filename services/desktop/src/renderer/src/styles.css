@@ -988,7 +988,13 @@ code, pre { font-family: var(--font-mono); font-size: 12px; }
   position: sticky;
   top: 1rem;
   align-self: start;
-  max-height: calc(100vh - 6rem);
+  /* v0.1.90 — was calc(100vh - 6rem) which made the panel ~40px
+   * taller than .app-shell__main's actual visible area (topbar 64px
+   * + main padding 1.5rem top + 3rem bottom + sticky offset 1rem ≈
+   * 9.5rem). The overflow forced .app-shell__main to scroll and the
+   * page-header shifted out of view, mimicking the chat 'header push'
+   * bug. Tightened to fit the real layout. */
+  max-height: calc(100vh - 9.5rem);
   overflow-y: auto;
 }
 .drill-panel header {
