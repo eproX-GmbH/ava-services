@@ -1696,9 +1696,11 @@ code, pre { font-family: var(--font-mono); font-size: 12px; }
   white-space: pre-wrap; word-break: break-word;
   line-height: 1.55;
 }
-/* User: rounded gradient bubble, right-aligned, max 75% column width. */
+/* User: rounded solid bubble, right-aligned, max 75% column width.
+ * Background is a deep teal that hits ~10.5:1 contrast with white text,
+ * comfortably above WCAG AA's 4.5:1 minimum for normal body copy. */
 .chat-msg-user .chat-content {
-  background: linear-gradient(to right, var(--color-indigo-600), var(--color-violet-600));
+  background: #0a3d36;
   color: #ffffff;
   border-radius: 18px;
   padding: 10px 16px;
