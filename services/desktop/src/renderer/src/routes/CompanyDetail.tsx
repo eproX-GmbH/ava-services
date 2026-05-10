@@ -345,11 +345,6 @@ export function CompanyDetail() {
         </div>
       </header>
 
-      {/* ---- Datenqualität (v0.1.65) ------------------------------------- */}
-      {stageState.data && (
-        <DataQualityBanner stages={stageState.data.stages} />
-      )}
-
       {/* ---- Deep-research strip ------------------------------------------ */}
       {website.data?.deepResearches && website.data.deepResearches.length > 0 && (
         <DeepResearchStrip items={website.data.deepResearches} />
@@ -371,6 +366,15 @@ export function CompanyDetail() {
       </nav>
 
       <div className="tab-body">
+        {/* v0.1.104 — per-tab tier pills replace the old top-of-page
+         *  Datenqualität banner. Each tab advertises ONLY the LLM-driven
+         *  stages whose data feeds it; non-LLM stages (structured-content,
+         *  publications) render no badge because there's no model
+         *  reliability story to tell. */}
+        <TabTierBadges
+          stages={stageState.data?.stages ?? null}
+          stageKeys={STAGES_FOR_TAB[tab]}
+        />
         {tab === "overview" && (
           <OverviewTab
             profile={profile.data}
@@ -390,6 +394,18 @@ export function CompanyDetail() {
   );
 }
 
+/** Map each tab to the LLM-driven stage keys whose data feeds it. Tabs
+ *  that surface only non-LLM data (structured-content, publications)
+ *  intentionally have empty arrays — no tier badge to show. */
+const STAGES_FOR_TAB: Record<TabKey, string[]> = {
+  overview: ["company-profile", "website"],
+  financials: [],
+  management: [],
+  contacts: ["company-contact"],
+  insights: ["website", "company-evaluation"],
+  jobs: ["website"],
+};
+
 function KpiTile({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="kpi-tile">
@@ -399,105 +415,89 @@ function KpiTile({ label, children }: { label: string; children: React.ReactNode
   );
 }
 
-// ---- Datenqualität banner (v0.1.65) ---------------------------------------
+// ---- Per-tab Tier-Badges (v0.1.104) ---------------------------------------
 //
-// Surfaces per-stage LLM provenance: the tier (S/A/B/C) and exact
-// model id that produced each cell. Top line shows the *worst* tier
-// across all stages — that's the trustworthy signal for the page as a
-// whole ("this company's data is only as good as its weakest source").
-// Per-stage rows below give the model + freshness on hover.
+// Replaces the old top-of-page "Datenqualität" banner with a compact pill
+// rendered inside each tab's body. Only LLM-driven stages get a badge —
+// the user only cares about provenance when an AI model produced the
+// numbers. Non-LLM scrape stages (structured-content, publications) are
+// silent.
 //
-// Rationale (recommended in the LLM-tracking design pass): a single
-// banner + hover tooltips beats inline pills next to every cell — keeps
-// the existing dense layout readable while making provenance one click
-// away. Hidden entirely when no LLM stage has run yet (all-null state).
+// Each pill is a small `Tier B · gpt-5-mini ⓘ` row, with the full
+// per-stage description in the native title attribute (hover popover).
 
-function DataQualityBanner({ stages }: { stages: Record<string, StageState> }) {
-  const llmStages = Object.entries(stages).filter(
-    ([, s]) => s.llmTier != null,
-  );
-  if (llmStages.length === 0) return null;
-
-  // Worst tier = lowest number. tier=null is filtered above.
-  const worstTier = Math.min(
-    ...llmStages.map(([, s]) => s.llmTier as number),
-  );
-  const worstStages = llmStages
-    .filter(([, s]) => s.llmTier === worstTier)
-    .map(([k]) => STAGE_LABEL[k] ?? k);
-
+function TabTierBadges({
+  stages,
+  stageKeys,
+}: {
+  stages: Record<string, StageState> | null;
+  stageKeys: string[];
+}) {
+  if (!stages || stageKeys.length === 0) return null;
+  const visible = stageKeys
+    .map((k) => ({ key: k, stage: stages[k] }))
+    .filter((x): x is { key: string; stage: StageState } =>
+      x.stage != null && x.stage.llmTier != null,
+    );
+  if (visible.length === 0) return null;
   return (
     <div
-      className="ct-card data-quality"
+      className="tab-tier-badges"
       style={{
-        marginTop: "1rem",
-        padding: "0.75rem 1rem",
         display: "flex",
-        flexDirection: "column",
-        gap: "0.5rem",
+        flexWrap: "wrap",
+        gap: "0.4rem",
+        marginBottom: "0.75rem",
       }}
-      title={TIER_DESCRIPTION}
     >
-      <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
-        <span
-          className={`dot ${TIER_DOT[worstTier]}`}
-          aria-hidden="true"
-          style={{ flex: "0 0 auto" }}
-        />
-        <strong>Datenqualität: {TIER_LABEL[worstTier]}</strong>
-        <span className="muted small">
-          · schwächste Quelle: {worstStages.join(", ")}
-        </span>
-      </div>
-      <ul
-        className="data-quality__stages"
-        style={{
-          listStyle: "none",
-          padding: 0,
-          margin: 0,
-          display: "flex",
-          flexWrap: "wrap",
-          gap: "0.5rem 1.25rem",
-        }}
-      >
-        {Object.entries(stages).map(([key, s]) => (
-          <DataQualityRow key={key} stageKey={key} stage={s} />
-        ))}
-      </ul>
+      {visible.map(({ key, stage }) => (
+        <TabTierPill key={key} stageKey={key} stage={stage} />
+      ))}
     </div>
   );
 }
 
-function DataQualityRow({
+function TabTierPill({
   stageKey,
   stage,
 }: {
   stageKey: string;
   stage: StageState;
 }) {
-  const label = STAGE_LABEL[stageKey] ?? stageKey;
-  const tierLetter = stage.llmTier ? TIER_LETTER[stage.llmTier] : null;
+  const stageLabel = STAGE_LABEL[stageKey] ?? stageKey;
+  const tierLetter = stage.llmTier ? TIER_LETTER[stage.llmTier] : "?";
+  const tierFull = stage.llmTier ? TIER_LABEL[stage.llmTier] : "Tier ?";
   const dotClass = stage.llmTier ? TIER_DOT[stage.llmTier] : "muted";
   const updated = stage.updatedAt ? fmtDate(stage.updatedAt) : null;
   const tooltip = [
-    label,
-    stage.llmModel ? `Modell: ${stage.llmModel}` : "kein Modell",
-    tierLetter ? `Tier ${tierLetter}` : "tier-frei",
-    updated ? `aktualisiert: ${updated}` : "noch nicht erzeugt",
-  ].join(" · ");
-
+    `${stageLabel} · ${tierFull}`,
+    stage.llmModel ? `Modell: ${stage.llmModel}` : null,
+    updated ? `aktualisiert: ${updated}` : null,
+    "",
+    TIER_DESCRIPTION,
+  ]
+    .filter(Boolean)
+    .join("\n");
   return (
-    <li
-      style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}
-      title={tooltip}
-    >
-      <span className={`dot ${dotClass}`} aria-hidden="true" />
-      <span>{label}</span>
-      <span className="muted small">
-        {stage.llmModel ?? (stage.llmTier === null && stage.updatedAt ? "scrape" : "")}
-        {tierLetter ? ` · Tier ${tierLetter}` : ""}
+    <span className="tab-tier-pill" title={tooltip}>
+      <span
+        className={`dot ${dotClass}`}
+        aria-hidden="true"
+        style={{ flex: "0 0 auto" }}
+      />
+      <span className="tab-tier-pill__stage">{stageLabel}</span>
+      <span className="tab-tier-pill__sep">·</span>
+      <span className="tab-tier-pill__tier">Tier {tierLetter}</span>
+      {stage.llmModel && (
+        <>
+          <span className="tab-tier-pill__sep">·</span>
+          <span className="tab-tier-pill__model">{stage.llmModel}</span>
+        </>
+      )}
+      <span className="tab-tier-pill__info" aria-hidden="true">
+        ⓘ
       </span>
-    </li>
+    </span>
   );
 }
 
