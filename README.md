@@ -12,7 +12,7 @@ Pro Firma teilt die Pipeline auf 6 spezialisierte Producer aus, die sich gegense
 
 | Producer | Eingabe | Ergebnis |
 |---|---|---|
-| `structured-content` | Name + Stadt | Stammdaten + Geschäftsführer + Sitz aus dem Unternehmensregister |
+| `structured-content` | Name + Stadt | Stammdaten + Geschäftsführer + Sitz aus dem Unternehmensregister (mit Handelsregister.de-Fallback) |
 | `company-publication` | Name + Stadt | Geschäftsberichte, Bekanntmachungen, Bilanzen |
 | `website` | Strukturdaten | Beste Treffer-Webseite |
 | `company-profile` | Webseite | Firmenprofil aus Webseiten-Inhalten |
@@ -50,17 +50,20 @@ Status pro Firma × pro Stage liegt live als Matrix in der App, mit Drilldown au
 ## Funktionen im Überblick
 
 - **Bulk-Import** aus Excel/CSV, Einzelimport per Name + Stadt, oder direkter Import aus dem verbundenen CRM
-- **AI-Chat** als primäre Bedienoberfläche — der Agent treibt Pipelines, beantwortet Recherchefragen über die eigene Datenbank und lernt durch ein persistentes Profil + Standing-Watches
+- **AI-Chat** als primäre Bedienoberfläche — der Agent treibt Pipelines, beantwortet Recherchefragen über die eigene Datenbank, stößt fehlende Anreicherungen proaktiv selbst an und lernt durch ein persistentes Profil + Standing-Watches
 - **CRM-Anbindung** per OAuth (Tokens liegen verschlüsselt im OS-Schlüsselbund)
 - **Voice-Mode** über bundled `whisper.cpp` mit Distil-Whisper-DE
 - **Heartbeat** scannt periodisch nach neuen Veröffentlichungen + Auffälligkeiten und meldet sie als Alerts in einer Bell + nativen OS-Push
 - **Standing-Watches** — der Nutzer formuliert wiederkehrende Kriterien („melde mir, wenn eine Firma eine Bilanz mit GuV-Gewinn > 1 Mio. veröffentlicht"), die Heartbeat-Auswertung wendet sie auf jeden Tick an
+- **LinkedIn-Beobachter** — opt-in Feed-Beobachtung über eingebettetes BrowserWindow, mit Vision-LLM-Bildanalyse und Entity-Linking auf Firmen im Bestand
+- **Multi-Source-Pipeline** — `structured-content` zieht primär aus dem Unternehmensregister, fällt bei Ausfall automatisch auf Handelsregister.de zurück; Status pro Quelle live im Whoami-Panel
+- **Abonnement & Quotas** — Stripe-Checkout + Customer-Portal, Tier-aware Pre-Checks vor jedem Import, sichtbare „Kündigung zum X vorgemerkt"-Hinweise
 - **OTA-Updates** via electron-updater + GitHub Releases
 - **Multi-Provider-LLM**: lokales Ollama (Standard) oder Bring-Your-Own-Key für OpenAI / Anthropic / Google / Mistral
 
 ## Status
 
-Aktuell Pre-1.0: die Architektur ist stabil, Featureflächen wachsen pro Release. Das Projekt befindet sich in einer aktiven Transition von einem reinen Cloud-Stack hin zur hier beschriebenen Compute-on-User-Architektur. Migrations-Status liegt in [`DECISIONS.md`](./DECISIONS.md) und [`INVENTORY.md`](./INVENTORY.md).
+Aktuell Pre-1.0 (Stand: v0.1.108). Die Architektur ist stabil, Featureflächen wachsen pro Release. Architektur-Entscheidungen liegen in [`DECISIONS.md`](./DECISIONS.md), eine vollständige Bestandsaufnahme in [`INVENTORY.md`](./INVENTORY.md), der detaillierte Datenfluss in [`DESKTOP_DATA_FLOW.md`](./DESKTOP_DATA_FLOW.md). Eine Release-Chronik führt [`CHANGELOG.md`](./CHANGELOG.md).
 
 ## Installation
 
