@@ -12,6 +12,7 @@ import { app, BrowserWindow, ipcMain } from "electron";
 import type {
   LinkedInAuthStatus,
   LinkedInFeedCounts,
+  LinkedInImageAnalysisStatus,
   LinkedInLoginResult,
   LinkedInRecentPost,
   LinkedInScanResult,
@@ -23,6 +24,8 @@ import {
   attachProviders as attachExtractorProviders,
   cancelDrain as cancelExtractorDrain,
   drainQueue as drainSignalQueue,
+  imageAnalysisStatusSnapshot,
+  onLinkedInSettingsChanged,
   statusSnapshot as signalStatusSnapshot,
 } from "./extractor";
 import type { LlmProviderManager } from "../agent/providers";
@@ -85,7 +88,18 @@ export function initLinkedIn(opts?: { providers?: LlmProviderManager }): void {
         next.scanIntervalHours = clamped;
       }
 
-      return write(next);
+      const result = write(next);
+      // L4: when imageAnalysis or cloud opt-in changes, give skipped
+      // image rows another chance and trigger a drain. The store-side
+      // listener handles provider/key changes; this handles the
+      // LinkedIn-specific settings the agent provider doesn't know about.
+      if (
+        partial.imageAnalysis !== undefined ||
+        partial.imageAnalysisCloudOptIn !== undefined
+      ) {
+        onLinkedInSettingsChanged();
+      }
+      return result;
     },
   );
 
@@ -196,6 +210,15 @@ export function initLinkedIn(opts?: { providers?: LlmProviderManager }): void {
     cancelExtractorDrain();
     return { ok: true };
   });
+
+  // ---- L4 image-analysis surface --------------------------------------
+
+  ipcMain.handle(
+    "linkedin:images:status",
+    async (): Promise<LinkedInImageAnalysisStatus> => {
+      return await imageAnalysisStatusSnapshot();
+    },
+  );
 
   // Background scheduler — re-arms automatically on settings changes.
   startScheduler();

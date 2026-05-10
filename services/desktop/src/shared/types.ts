@@ -1030,6 +1030,13 @@ export interface LinkedInFeedCounts {
   signalsPending: number;
   signalsFailed: number;
   signalsSkipped: number;
+  /** Phase L4: vision-LLM image-analysis queue counts. */
+  imageAnalyses: {
+    pending: number;
+    analyzed: number;
+    failed: number;
+    skipped: number;
+  };
 }
 
 /** Phase L3: extraction worker status, polled by Settings. */
@@ -1037,6 +1044,17 @@ export interface LinkedInSignalStatus {
   running: boolean;
   pending: number;
   extracted: number;
+  failed: number;
+  skipped: number;
+  lastRunAt: number | null;
+  lastError: string | null;
+}
+
+/** Phase L4: image-analysis worker status, polled by Settings. */
+export interface LinkedInImageAnalysisStatus {
+  running: boolean;
+  pending: number;
+  analyzed: number;
   failed: number;
   skipped: number;
   lastRunAt: number | null;

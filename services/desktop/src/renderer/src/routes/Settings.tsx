@@ -24,6 +24,7 @@ import type {
   HostedProviderKind,
   LinkedInAuthStatus,
   LinkedInFeedCounts,
+  LinkedInImageAnalysisStatus,
   LinkedInScanStatus,
   LinkedInSettings,
   LinkedInSignalStatus,
@@ -613,6 +614,8 @@ function LinkedInSection() {
   const [signalStatus, setSignalStatus] =
     useState<LinkedInSignalStatus | null>(null);
   const [signalError, setSignalError] = useState<string | null>(null);
+  const [imageStatus, setImageStatus] =
+    useState<LinkedInImageAnalysisStatus | null>(null);
 
   const refreshAuth = async () => {
     const a = await window.api.linkedin.auth.status();
@@ -640,15 +643,17 @@ function LinkedInSection() {
     let timer: ReturnType<typeof setTimeout> | null = null;
     const tick = async (): Promise<void> => {
       try {
-        const [s, c, sig] = await Promise.all([
+        const [s, c, sig, img] = await Promise.all([
           window.api.linkedin.scan.status(),
           window.api.linkedin.feed.counts(),
           window.api.linkedin.signals.status(),
+          window.api.linkedin.images.status(),
         ]);
         if (cancelled) return;
         setScanStatus(s);
         setCounts(c);
         setSignalStatus(sig);
+        setImageStatus(img);
         // Faster polling while either scan or extraction is running.
         const next = s.running || sig.running ? 2000 : 30000;
         timer = setTimeout(() => void tick(), next);
@@ -937,7 +942,11 @@ function LinkedInSection() {
       )}
 
       {/* Image analysis controls */}
-      <fieldset className="linkedin-fieldset" disabled={!enabled || busy}>
+      <fieldset
+        id="linkedin-image-analysis"
+        className="linkedin-fieldset"
+        disabled={!enabled || busy}
+      >
         <legend>Bildanalyse</legend>
         <label className="linkedin-radio">
           <input
@@ -1105,6 +1114,47 @@ function LinkedInSection() {
             {counts.signalsSkipped.toLocaleString("de-DE")} übersprungen
             {counts.signalsSkipped > 0 ? " (kein LLM)" : ""}
           </p>
+          {settings.imageAnalysis !== "off" && (
+            <p className="muted small">
+              Bildanalyse:{" "}
+              {counts.imageAnalyses.analyzed.toLocaleString("de-DE")}{" "}
+              analysiert ·{" "}
+              {counts.imageAnalyses.pending.toLocaleString("de-DE")}{" "}
+              ausstehend ·{" "}
+              {counts.imageAnalyses.failed.toLocaleString("de-DE")}{" "}
+              fehlerhaft ·{" "}
+              {counts.imageAnalyses.skipped.toLocaleString("de-DE")}{" "}
+              übersprungen
+              {imageStatus?.lastError &&
+              !imageStatus.running &&
+              counts.imageAnalyses.skipped > 0 ? (
+                <>
+                  {" — "}
+                  {imageStatus.lastError.includes("lokal eingeschränkt") ? (
+                    <>
+                      Bildanalyse ist auf lokal beschränkt. Wechsle das
+                      Modell auf einen lokalen Anbieter, oder{" "}
+                      <a href="#linkedin-image-analysis">
+                        erlaube Cloud-Analyse
+                      </a>
+                      .
+                    </>
+                  ) : imageStatus.lastError.includes(
+                      "unterstützt keine Bildanalyse",
+                    ) ? (
+                    <>
+                      Aktuelles Modell kennt keine Bildanalyse. Wechsle z. B.
+                      auf gpt-4o-mini, claude-haiku-4-5 oder lokal
+                      gemma4:e4b.{" "}
+                      <a href="#provider-section">Provider wählen</a>
+                    </>
+                  ) : (
+                    <>{imageStatus.lastError}</>
+                  )}
+                </>
+              ) : null}
+            </p>
+          )}
           <div className="linkedin-row">
             <button
               type="button"

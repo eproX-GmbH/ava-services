@@ -28,6 +28,7 @@ import { read as readSettings, write as writeSettings } from "./store";
 import { hasStoredSession } from "./session";
 import {
   closeDb,
+  enqueueImageAnalysis,
   enqueueSignal,
   feedCounts,
   finishScanRun,
@@ -683,6 +684,11 @@ export async function runScan(opts: ScanOptions): Promise<LinkedInScanResult> {
             bytes: dl.bytes,
           });
           if (inserted) mediaNew += 1;
+          // L4: enqueue for vision analysis. Images only — videos and
+          // documents have their own (future) lanes. Idempotent.
+          if (m.kind === "image") {
+            await enqueueImageAnalysis(db, dl.id);
+          }
         }
       }
     }

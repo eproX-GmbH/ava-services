@@ -29,6 +29,13 @@ import {
 } from "./db";
 import type { LlmProviderManager } from "../agent/providers";
 import type { ProviderConfigStore } from "../agent/providers/store";
+import {
+  attachImageProviders,
+  drainImageQueue,
+  imageStatusSnapshot,
+  resetSkippedImagesIfRunnable,
+  type ImageAnalysisStatus,
+} from "./image-extractor";
 
 export interface ExtractionStatus {
   running: boolean;
@@ -54,9 +61,12 @@ export function attachProviders(
 ): void {
   providersRef = providers;
   storeRef = store;
+  attachImageProviders(providers, store);
 
   // When the user changes their LLM provider/model OR a key appears, give
-  // skipped rows another chance and trigger a drain.
+  // skipped rows another chance and trigger a drain. Phase 2 (images)
+  // gets the same treatment — switching to a vision-capable model should
+  // resurrect skipped image rows so the next drain re-processes them.
   const onConfigChange = (): void => {
     void (async () => {
       try {
@@ -68,12 +78,23 @@ export function attachProviders(
           err instanceof Error ? err.message : String(err),
         );
       }
+      await resetSkippedImagesIfRunnable();
       void drainQueue().catch(() => undefined);
     })();
   };
 
   store.on("configChanged", onConfigChange);
   store.on("keyChanged", onConfigChange);
+}
+
+/** External hook for the LinkedIn settings IPC: when imageAnalysis flips
+ *  off → on (or local→cloud, etc.) we want to reset skipped rows and
+ *  re-trigger drain. Called from `linkedin:settings:update`. */
+export function onLinkedInSettingsChanged(): void {
+  void (async () => {
+    await resetSkippedImagesIfRunnable();
+    void drainQueue().catch(() => undefined);
+  })();
 }
 
 export function isDraining(): boolean {
@@ -384,6 +405,28 @@ export async function drainQueue(opts?: {
 
     lastError = firstError;
     lastRunAt = Date.now();
+
+    // Phase 2 (L4): vision-LLM image analysis. Same single-flight, same
+    // signal. The image worker handles all its own setting-gating + skip
+    // bookkeeping internally.
+    if (!signal.aborted) {
+      try {
+        await drainImageQueue({ limit, signal });
+      } catch (err) {
+        if (
+          !(
+            err instanceof Error &&
+            (err.name === "AbortError" || err.message === "aborted")
+          )
+        ) {
+          console.warn(
+            "[linkedin/extractor] image drain failed:",
+            err instanceof Error ? err.message : String(err),
+          );
+        }
+      }
+    }
+
     return await statusSnapshot();
   } catch (err) {
     lastError = err instanceof Error ? err.message : String(err);
@@ -393,4 +436,11 @@ export async function drainQueue(opts?: {
     activeAbort = null;
     running = false;
   }
+}
+
+/** L4: image-analysis status snapshot. The "running" flag is shared
+ *  with phase 1 (text) — both phases share the same single-flight
+ *  drain — so callers see "running" while either phase is active. */
+export async function imageAnalysisStatusSnapshot(): Promise<ImageAnalysisStatus> {
+  return await imageStatusSnapshot(running);
 }

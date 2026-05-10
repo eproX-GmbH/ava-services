@@ -246,6 +246,25 @@ export function tierForModel(
 }
 
 /**
+ * Vision-capability lookup for an explicit (provider, model) tuple.
+ *
+ * Used by the LinkedIn-Beobachter image-analysis worker (Phase L4) to
+ * decide whether the user's currently-active LLM can ingest images at
+ * all. Catalog entries already carry `capabilities.vision`; this helper
+ * is just the tier-lookup twin for callers that don't want to import
+ * the catalog directly.
+ *
+ * Returns false when the model is unknown — defensive rather than
+ * "let the provider 400 us with an opaque error".
+ */
+export function hasVision(provider: string, modelId: string): boolean {
+  const entry = CATALOG.find(
+    (e) => e.provider === provider && e.id === modelId,
+  );
+  return entry ? entry.capabilities.vision === true : false;
+}
+
+/**
  * Persist-bus decision: should the incoming write replace the
  * existing row?
  *

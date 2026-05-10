@@ -35,6 +35,7 @@ import type {
   LinkedInAuthStatus,
   LinkedInFeedCounts,
   LinkedInLoginResult,
+  LinkedInImageAnalysisStatus,
   LinkedInRecentPost,
   LinkedInScanResult,
   LinkedInScanStatus,
@@ -100,6 +101,7 @@ export type {
   LinkedInRecentPost,
   LinkedInScanOutcome,
   LinkedInScanResult,
+  LinkedInImageAnalysisStatus,
   LinkedInScanStatus,
   LinkedInSessionMeta,
   LinkedInSettings,
@@ -783,6 +785,13 @@ const api = {
         ipcRenderer.invoke("linkedin:signals:run"),
       cancel: (): Promise<{ ok: true }> =>
         ipcRenderer.invoke("linkedin:signals:cancel"),
+    },
+    /** L4 — vision-LLM image analysis. Telemetry only for now (no
+     *  separate run/cancel — the existing signals.run/cancel covers
+     *  both phases). Counts surface in feed.counts.imageAnalyses. */
+    images: {
+      status: (): Promise<LinkedInImageAnalysisStatus> =>
+        ipcRenderer.invoke("linkedin:images:status"),
     },
   },
 } as const;

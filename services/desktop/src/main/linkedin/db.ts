@@ -137,6 +137,25 @@ CREATE TABLE IF NOT EXISTS linkedin_signal (
 CREATE INDEX IF NOT EXISTS linkedin_signal_status ON linkedin_signal (status);
 CREATE INDEX IF NOT EXISTS linkedin_signal_kind ON linkedin_signal (signal_kind);
 CREATE INDEX IF NOT EXISTS linkedin_signal_strength ON linkedin_signal (signal_strength);
+
+-- Phase L4: vision-LLM image analysis queue + result row.
+-- One row per linkedin_media (kind='image' only); status drives the worker queue.
+CREATE TABLE IF NOT EXISTS linkedin_image_analysis (
+  media_id          TEXT PRIMARY KEY REFERENCES linkedin_media(media_id),
+  status            TEXT NOT NULL,
+  analyzed_at       TIMESTAMPTZ,
+  attempts          INTEGER NOT NULL DEFAULT 0,
+  last_error        TEXT,
+  llm_tier          INTEGER,
+  llm_model         TEXT,
+  description       TEXT,
+  visible_text      TEXT,
+  detected_logos    JSONB,
+  detected_products JSONB,
+  environment       TEXT
+);
+CREATE INDEX IF NOT EXISTS linkedin_image_analysis_status ON linkedin_image_analysis (status);
+CREATE INDEX IF NOT EXISTS linkedin_image_analysis_environment ON linkedin_image_analysis (environment);
 `;
 
 async function initSchema(db: PGliteInstance): Promise<void> {
@@ -414,6 +433,7 @@ export async function feedCounts(
   );
   const row = res.rows[0];
   const sig = await signalCounts(db);
+  const img = await imageAnalysisCounts(db);
   return {
     posts: Number(row?.posts ?? 0),
     interactions: Number(row?.interactions ?? 0),
@@ -424,6 +444,12 @@ export async function feedCounts(
     signalsPending: sig.pending,
     signalsFailed: sig.failed,
     signalsSkipped: sig.skipped,
+    imageAnalyses: {
+      pending: img.pending,
+      analyzed: img.analyzed,
+      failed: img.failed,
+      skipped: img.skipped,
+    },
   };
 }
 
@@ -741,4 +767,200 @@ export async function recentPosts(
     mediaCount: Number(r.media_count ?? 0),
     interactionCount: Number(r.interaction_count ?? 0),
   }));
+}
+
+// ---- L4 image-analysis queue + extraction results ----------------------
+
+export type ImageAnalysisStatusRow =
+  | "pending"
+  | "analyzed"
+  | "failed"
+  | "skipped";
+
+export type ImageEnvironment =
+  | "factory"
+  | "office"
+  | "trade_show"
+  | "conference"
+  | "outdoor"
+  | "studio"
+  | "other"
+  | "unknown";
+
+export interface ImageAnalysisPayload {
+  description: string;
+  visible_text: string;
+  detected_logos: string[];
+  detected_products: string[];
+  environment: ImageEnvironment;
+}
+
+export interface ImageAnalysisCounts {
+  pending: number;
+  analyzed: number;
+  failed: number;
+  skipped: number;
+  total: number;
+}
+
+export interface ImageAnalysisCandidate {
+  mediaId: string;
+  postUrn: string;
+  localPath: string;
+  bytes: number;
+  sourceUrl: string | null;
+}
+
+const IMAGE_MAX_ATTEMPTS = 3;
+
+/** Idempotent insert. Called by the scraper after each new image media row. */
+export async function enqueueImageAnalysis(
+  db: PGliteInstance,
+  mediaId: string,
+): Promise<void> {
+  await db.query(
+    `INSERT INTO linkedin_image_analysis (media_id, status, attempts)
+     VALUES ($1, 'pending', 0)
+     ON CONFLICT (media_id) DO NOTHING`,
+    [mediaId],
+  );
+}
+
+/** Pull the next batch of pending or retriable failed image rows,
+ *  joined to linkedin_media so the worker has the local path. */
+export async function nextPendingImageAnalyses(
+  db: PGliteInstance,
+  limit: number,
+): Promise<ImageAnalysisCandidate[]> {
+  const res = await db.query<{
+    media_id: string;
+    post_urn: string;
+    local_path: string;
+    bytes: number;
+    source_url: string | null;
+  }>(
+    `SELECT ia.media_id, m.post_urn, m.local_path, m.bytes, m.source_url
+       FROM linkedin_image_analysis ia
+       JOIN linkedin_media m ON m.media_id = ia.media_id
+      WHERE m.kind = 'image'
+        AND (ia.status = 'pending'
+             OR (ia.status = 'failed' AND ia.attempts < $2))
+      ORDER BY ia.media_id
+      LIMIT $1`,
+    [limit, IMAGE_MAX_ATTEMPTS],
+  );
+  return res.rows.map((r) => ({
+    mediaId: r.media_id,
+    postUrn: r.post_urn,
+    localPath: r.local_path,
+    bytes: Number(r.bytes ?? 0),
+    sourceUrl: r.source_url,
+  }));
+}
+
+export async function recordImageAnalysisSuccess(
+  db: PGliteInstance,
+  mediaId: string,
+  payload: ImageAnalysisPayload,
+  llmTier: number | null,
+  llmModel: string | null,
+): Promise<void> {
+  await db.query(
+    `UPDATE linkedin_image_analysis
+        SET status = 'analyzed',
+            analyzed_at = NOW(),
+            attempts = attempts + 1,
+            last_error = NULL,
+            llm_tier = $2,
+            llm_model = $3,
+            description = $4,
+            visible_text = $5,
+            detected_logos = $6::jsonb,
+            detected_products = $7::jsonb,
+            environment = $8
+      WHERE media_id = $1`,
+    [
+      mediaId,
+      llmTier,
+      llmModel,
+      payload.description,
+      payload.visible_text,
+      JSON.stringify(payload.detected_logos),
+      JSON.stringify(payload.detected_products),
+      payload.environment,
+    ],
+  );
+}
+
+export async function recordImageAnalysisFailure(
+  db: PGliteInstance,
+  mediaId: string,
+  errorMessage: string,
+): Promise<void> {
+  const trimmed =
+    errorMessage.length > 500 ? errorMessage.slice(0, 500) : errorMessage;
+  await db.query(
+    `UPDATE linkedin_image_analysis
+        SET attempts = attempts + 1,
+            last_error = $2,
+            status = CASE WHEN attempts + 1 >= $3 THEN 'failed' ELSE 'pending' END
+      WHERE media_id = $1`,
+    [mediaId, trimmed, IMAGE_MAX_ATTEMPTS],
+  );
+}
+
+export async function recordImageAnalysisSkipped(
+  db: PGliteInstance,
+  mediaId: string,
+  reason: string,
+): Promise<void> {
+  const trimmed = reason.length > 500 ? reason.slice(0, 500) : reason;
+  await db.query(
+    `UPDATE linkedin_image_analysis
+        SET status = 'skipped',
+            last_error = $2
+      WHERE media_id = $1`,
+    [mediaId, trimmed],
+  );
+}
+
+/** Re-eligibilise skipped rows when settings change. Mirrors the L3
+ *  `resetSkippedToPending`. Failed rows are left alone. */
+export async function resetSkippedImageAnalysesToPending(
+  db: PGliteInstance,
+): Promise<number> {
+  const res = await db.query(
+    `UPDATE linkedin_image_analysis
+        SET status = 'pending',
+            attempts = 0,
+            last_error = NULL
+      WHERE status = 'skipped'`,
+  );
+  return res.affectedRows ?? 0;
+}
+
+export async function imageAnalysisCounts(
+  db: PGliteInstance,
+): Promise<ImageAnalysisCounts> {
+  const res = await db.query<{ status: string; n: number }>(
+    `SELECT status, COUNT(*)::int AS n
+       FROM linkedin_image_analysis
+      GROUP BY status`,
+  );
+  const out: ImageAnalysisCounts = {
+    pending: 0,
+    analyzed: 0,
+    failed: 0,
+    skipped: 0,
+    total: 0,
+  };
+  for (const r of res.rows) {
+    const n = Number(r.n ?? 0);
+    out.total += n;
+    if (r.status === "pending") out.pending = n;
+    else if (r.status === "analyzed") out.analyzed = n;
+    else if (r.status === "failed") out.failed = n;
+    else if (r.status === "skipped") out.skipped = n;
+  }
+  return out;
 }
