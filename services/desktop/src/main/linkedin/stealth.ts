@@ -27,11 +27,24 @@
 
 import type { LinkedInFingerprint } from "../../shared/types";
 
+/** Chrome brand tuple matching the Chrome/124 UA. Kept in lockstep with
+ *  fingerprint.ts so userAgentData.brands does not contradict the UA
+ *  string. NO "Electron" / "HeadlessChrome" entries — those would
+ *  immediately flag the session. */
+const CHROME_BRANDS_124 = [
+  { brand: "Chromium", version: "124" },
+  { brand: "Google Chrome", version: "124" },
+  { brand: "Not-A.Brand", version: "99" },
+];
+
 /** Build the stealth-injection JS string for the given fingerprint.
  *  We inline the locale here so `navigator.languages` is stable per
  *  install and matches the Accept-Language header set on the session. */
 export function buildStealthInjection(fp: LinkedInFingerprint): string {
   const locale = JSON.stringify(fp.locale);
+  const brandsJson = JSON.stringify(CHROME_BRANDS_124);
+  const viewportW = JSON.stringify(fp.viewport.width);
+  const viewportH = JSON.stringify(fp.viewport.height);
   return `
 (function () {
   function safe(label, fn) {
@@ -48,6 +61,93 @@ export function buildStealthInjection(fp: LinkedInFingerprint): string {
       configurable: true,
       get: function () { return undefined; },
     });
+  });
+
+  // 1b) navigator.userAgentData — Electron's default brand list
+  // leaks "HeadlessChrome" / "Chromium" in a way LinkedIn keys on.
+  // We replace the high-entropy getter too so getHighEntropyValues()
+  // returns macOS-consistent data.
+  safe("userAgentData", function () {
+    var brands = ${brandsJson};
+    var high = {
+      brands: brands,
+      mobile: false,
+      platform: "macOS",
+      platformVersion: "10.15.7",
+      architecture: "x86",
+      bitness: "64",
+      model: "",
+      uaFullVersion: "124.0.6367.119",
+      fullVersionList: brands.map(function (b) {
+        return { brand: b.brand, version: b.version + ".0.0.0" };
+      }),
+      wow64: false,
+    };
+    var fake = {
+      brands: brands.slice(),
+      mobile: false,
+      platform: "macOS",
+      toJSON: function () { return { brands: brands.slice(), mobile: false, platform: "macOS" }; },
+      getHighEntropyValues: function (hints) {
+        var out = { brands: brands.slice(), mobile: false, platform: "macOS" };
+        (hints || []).forEach(function (h) {
+          if (h in high) out[h] = high[h];
+        });
+        return Promise.resolve(out);
+      },
+    };
+    Object.defineProperty(Navigator.prototype, "userAgentData", {
+      configurable: true,
+      get: function () { return fake; },
+    });
+  });
+
+  // 1c) navigator.platform — Electron may report "MacIntel" already,
+  // but pin it so any future Electron change doesn't drift.
+  safe("platform", function () {
+    Object.defineProperty(Navigator.prototype, "platform", {
+      configurable: true,
+      get: function () { return "MacIntel"; },
+    });
+  });
+
+  // 1d) navigator.hardwareConcurrency — Electron sometimes reports
+  // an unusual count. Pin to 8 (mainstream Mac).
+  safe("hardwareConcurrency", function () {
+    Object.defineProperty(Navigator.prototype, "hardwareConcurrency", {
+      configurable: true,
+      get: function () { return 8; },
+    });
+  });
+
+  // 1e) navigator.deviceMemory — bucketed real-world value.
+  safe("deviceMemory", function () {
+    Object.defineProperty(Navigator.prototype, "deviceMemory", {
+      configurable: true,
+      get: function () { return 8; },
+    });
+  });
+
+  // 1f) screen.* and window.outer* — 0x0 hidden windows leak. The
+  // window is now visible-but-transparent off-screen (item 1 of the
+  // hardening plan), so outerWidth/outerHeight on the real object
+  // should already be non-zero. We still pin to the fingerprint
+  // viewport here so the page sees stable values.
+  safe("screen", function () {
+    var w = ${viewportW};
+    var h = ${viewportH};
+    Object.defineProperty(Screen.prototype, "width", { configurable: true, get: function () { return w; } });
+    Object.defineProperty(Screen.prototype, "height", { configurable: true, get: function () { return h; } });
+    Object.defineProperty(Screen.prototype, "availWidth", { configurable: true, get: function () { return w; } });
+    Object.defineProperty(Screen.prototype, "availHeight", { configurable: true, get: function () { return h - 25; } });
+    Object.defineProperty(Screen.prototype, "colorDepth", { configurable: true, get: function () { return 24; } });
+    Object.defineProperty(Screen.prototype, "pixelDepth", { configurable: true, get: function () { return 24; } });
+  });
+  safe("outerSize", function () {
+    var w = ${viewportW};
+    var h = ${viewportH};
+    Object.defineProperty(window, "outerWidth", { configurable: true, get: function () { return w; } });
+    Object.defineProperty(window, "outerHeight", { configurable: true, get: function () { return h; } });
   });
 
   // 2) navigator.plugins / mimeTypes — three plausible entries.

@@ -561,10 +561,29 @@ export async function runScan(opts: ScanOptions): Promise<LinkedInScanResult> {
 
   try {
     const fp = settings.fingerprint;
+    // v0.1.110 hardening item 1: stop hiding the window like a bot.
+    // A `show: false` BrowserWindow has 0x0 outer dimensions and never
+    // paints — both signals are trivially detected by anti-bot JS. We
+    // instead create a real, visible window off-screen with full
+    // transparency and no taskbar entry, so the page sees a normal
+    // window from a fingerprint standpoint while the user sees nothing.
+    //
+    // Env override `AVA_LINKEDIN_DEBUG_WINDOW=1` shows the window in
+    // its natural position so a developer (or the user, when v0.1.110
+    // doesn't pan out) can watch the scrape live.
+    const debugWindow = process.env.AVA_LINKEDIN_DEBUG_WINDOW === "1";
     win = new BrowserWindow({
-      show: false,
+      show: true,
       width: fp.viewport.width,
       height: fp.viewport.height,
+      x: debugWindow ? undefined : -2000,
+      y: debugWindow ? undefined : -2000,
+      skipTaskbar: !debugWindow,
+      focusable: debugWindow,
+      // `frame: false` keeps the off-screen window from briefly
+      // flashing a title bar on creation. In debug mode we keep the
+      // frame so the developer can drag/close it.
+      frame: debugWindow,
       webPreferences: {
         partition: "persist:linkedin",
         contextIsolation: true,
@@ -573,6 +592,13 @@ export async function runScan(opts: ScanOptions): Promise<LinkedInScanResult> {
         offscreen: false,
       },
     });
+    if (!debugWindow) {
+      try {
+        win.setOpacity(0);
+      } catch {
+        // ignore
+      }
+    }
     win.webContents.setUserAgent(fp.userAgent);
     win.webContents.session.setUserAgent(fp.userAgent);
     win.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
@@ -615,12 +641,26 @@ export async function runScan(opts: ScanOptions): Promise<LinkedInScanResult> {
       );
     }
 
-    // L7: anti-detection JS must land BEFORE LinkedIn's scripts. We
-    // do that by first parking on about:blank, dom-ready'ing the
-    // override, THEN navigating to linkedin.com — so the moment
-    // LinkedIn's bundles start running, our overrides are already in
-    // place on the page's prototype chain.
+    // L7 / v0.1.110: anti-detection JS must land BEFORE LinkedIn's
+    // scripts run, on EVERY navigation (including the SPA-style
+    // route changes the homepage->/feed/ click triggers). We hook
+    // `did-start-navigation` to (re)inject the stealth payload into
+    // the renderer the moment a new document begins parsing, before
+    // any LinkedIn JS executes. The await on executeJavaScript is
+    // fire-and-forget — we don't gate navigation on it — but in
+    // practice Electron resolves it well before the page's scripts
+    // start to run.
     const stealthJs = buildStealthInjection(fp);
+    const reinjectStealth = (): void => {
+      win?.webContents
+        .executeJavaScript(stealthJs, false)
+        .catch(() => undefined);
+    };
+    win.webContents.on("did-start-navigation", reinjectStealth);
+    // Belt-and-braces: also inject on dom-ready so the override is
+    // present even if did-start-navigation lost a race against the
+    // first inline <script>.
+    win.webContents.on("dom-ready", reinjectStealth);
     await win.loadURL("about:blank");
     await win.webContents.executeJavaScript(stealthJs, false);
 
@@ -679,6 +719,40 @@ export async function runScan(opts: ScanOptions): Promise<LinkedInScanResult> {
       // Hydration delay
       await sleep(jitter(2000, 4000), signal);
       await recorder.capture(win, "03_feed_loaded");
+
+      // v0.1.110 hardening item 6: human warmup. Before the scroll
+      // loop starts we wait 2-4s, synthesize a couple of mouse moves
+      // and a tiny wheel nudge so anti-bot heuristics see "user
+      // arrived, glanced around, started reading" rather than the
+      // bot pattern of "page paints, scroll fires 300ms later".
+      await sleep(jitter(2000, 4000), signal);
+      try {
+        const cx = Math.floor(fp.viewport.width / 2);
+        const cy = Math.floor(fp.viewport.height / 2);
+        for (let m = 0; m < 2; m++) {
+          win.webContents.sendInputEvent({
+            type: "mouseMove",
+            x: cx + jitter(-200, 200),
+            y: cy + jitter(-200, 200),
+          } as unknown as Electron.MouseInputEvent);
+          await sleep(jitter(150, 350), signal);
+        }
+        win.webContents.sendInputEvent({
+          type: "mouseWheel",
+          x: cx,
+          y: cy,
+          deltaX: 0,
+          deltaY: -200,
+          wheelTicksX: 0,
+          wheelTicksY: -1,
+          phase: "began",
+          momentumPhase: "none",
+          canScroll: true,
+        } as unknown as Electron.MouseWheelInputEvent);
+      } catch {
+        // non-fatal
+      }
+      await sleep(jitter(900, 1400), signal);
 
       // L7 aggressive-mode pre-feed dwell: 6-12s with a couple of
       // mouse-move events sprinkled in so the session looks like it
@@ -742,13 +816,33 @@ export async function runScan(opts: ScanOptions): Promise<LinkedInScanResult> {
           }
         }
 
+        // v0.1.110 hardening item 3: trusted-input scroll with jitter.
+        // Untrusted JS scrolls (window.scrollBy) carry an `isTrusted=false`
+        // signal that anti-bot heuristics can flag, so we always try
+        // sendInputEvent first. The previous JS fallback has been
+        // removed; if the wheel event throws we retry with a simpler
+        // payload before giving up for the cycle.
+        const deltaY = -jitter(500, 850);
+        // ~30% of cycles, nudge the mouse to a random point first.
+        if (i > 0 && Math.random() < 0.3) {
+          try {
+            win.webContents.sendInputEvent({
+              type: "mouseMove",
+              x: viewportCenterX + jitter(-220, 220),
+              y: viewportCenterY + jitter(-220, 220),
+            } as unknown as Electron.MouseInputEvent);
+            await sleep(jitter(80, 220), signal);
+          } catch {
+            // ignore
+          }
+        }
         try {
           win.webContents.sendInputEvent({
             type: "mouseWheel",
-            x: viewportCenterX,
-            y: viewportCenterY,
+            x: viewportCenterX + jitter(-30, 30),
+            y: viewportCenterY + jitter(-30, 30),
             deltaX: 0,
-            deltaY: -800,
+            deltaY,
             wheelTicksX: 0,
             wheelTicksY: -1,
             phase: "began",
@@ -756,13 +850,23 @@ export async function runScan(opts: ScanOptions): Promise<LinkedInScanResult> {
             canScroll: true,
           } as unknown as Electron.MouseWheelInputEvent);
         } catch {
-          // some platforms reject some wheel fields — fall back to JS
-          // scroll, which is detectable but rarely punished.
-          await win.webContents
-            .executeJavaScript("window.scrollBy(0, 800)", true)
-            .catch(() => undefined);
+          try {
+            win.webContents.sendInputEvent({
+              type: "mouseWheel",
+              x: viewportCenterX,
+              y: viewportCenterY,
+              deltaX: 0,
+              deltaY,
+            } as unknown as Electron.MouseWheelInputEvent);
+          } catch {
+            // Both wheel attempts failed; skip the JS fallback —
+            // an untrusted scroll is worse than no scroll this cycle.
+          }
         }
-        await sleep(jitter(scrollMin, scrollMax), signal);
+        // Jitter between scrolls: random 400-1200ms on top of the
+        // existing scrollMin/scrollMax dwell, so consecutive scroll
+        // intervals never form an arithmetic series.
+        await sleep(jitter(scrollMin, scrollMax) + jitter(400, 1200), signal);
         // v0.1.109: per-scroll diagnostic capture. Numbered from 1.
         await recorder.capture(win, `04_scroll_${i + 1}`);
       }

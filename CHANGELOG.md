@@ -7,6 +7,35 @@ The repo uses one rolling tag per desktop release (`v<major>.<minor>.<patch>`)
 on `main`. Submodules cut their own feature branches and are pinned via the
 desktop bundle; `pnpm fetch:producers` re-vendors them into the .dmg.
 
+## v0.1.110 — 2026-05-10
+
+- **LinkedIn-Beobachter: anti-fingerprint hardening.** Earlier runs
+  hit a session kill mid-hydration: cookies passed the auth check, but
+  LinkedIn detected the headless-Electron fingerprint and re-rendered
+  the feed as the anonymous marketing page. This release closes six
+  classic detection holes.
+  - Hidden `show: false` window replaced with a visible, transparent,
+    off-screen window (`x/y = -2000`, `setOpacity(0)`, `skipTaskbar`,
+    `frame: false`). Real outer dimensions, real paint, invisible to
+    the user. Set `AVA_LINKEDIN_DEBUG_WINDOW=1` to show the window
+    normally for inspection.
+  - `navigator.userAgentData` now returns Chrome-124 brands (no
+    "Electron" / "HeadlessChrome"), with a matching high-entropy
+    payload and `platform: "macOS"`. `navigator.platform`,
+    `hardwareConcurrency`, `deviceMemory`, `screen.*` and
+    `window.outer*` are all pinned to plausible Mac values.
+  - Stealth overrides are re-injected on every `did-start-navigation`
+    and `dom-ready`, not just once on the initial `about:blank`, so
+    LinkedIn's in-app route changes never see a clean prototype.
+  - Scroll loop is fully `sendInputEvent`-based. The previous JS
+    `window.scrollBy` fallback is removed; if the wheel event fails
+    we skip the cycle rather than emit an untrusted scroll. Wheel
+    delta jitters between 500-850px, with an extra 400-1200ms random
+    delay between cycles and a 30% chance of a pre-scroll mouseMove.
+  - Pre-scroll human warmup: 2-4s wait, two mouseMoves, one small
+    wheel nudge, then another second before the main scroll loop
+    starts.
+
 ## v0.1.109 — 2026-05-10
 
 - **LinkedIn-Beobachter: per-run screenshot capture.** Each scrape now
