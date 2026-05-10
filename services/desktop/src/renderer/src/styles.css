@@ -444,6 +444,13 @@ body {
   min-height: 0;
   overflow: auto;
 }
+/* Chat route already pins its composer at the bottom; the generic
+ * 3rem bottom padding left dead air below the composer pill. Trim
+ * to a cosmetic margin when the route is .chat-route. :has() needs
+ * Chrome 105+ which Electron 31 covers. */
+.app-shell__main:has(> .chat-route) {
+  padding-bottom: 0.75rem;
+}
 .app-shell__main > * {
   max-width: 1280px;
   width: 100%;
