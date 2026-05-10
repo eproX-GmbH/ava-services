@@ -945,6 +945,11 @@ export interface LinkedInSettings {
    *  fluctuate across Chrome major versions / random viewport sizes
    *  every visit. Null when not yet generated. */
   fingerprint?: LinkedInFingerprint | null;
+  /** Phase L7 anti-detection opt-in. When true, scans dwell longer on
+   *  the feed before scrolling, take a multi-stage path through the
+   *  homepage, scroll more slowly, and pull fewer posts per run.
+   *  Default false. */
+  aggressiveMode?: boolean;
 }
 
 /** Stable per-install fingerprint used to seed the Playwright context

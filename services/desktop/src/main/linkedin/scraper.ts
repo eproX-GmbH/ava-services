@@ -41,6 +41,7 @@ import {
   upsertPost,
 } from "./db";
 import { drainQueue } from "./extractor";
+import { buildStealthInjection } from "./stealth";
 
 export interface ScanOptions {
   manual: boolean;
@@ -537,7 +538,11 @@ export async function runScan(opts: ScanOptions): Promise<LinkedInScanResult> {
   const signal = activeAbort.signal;
 
   const db = await getDb();
-  const runId = await startScanRun(db);
+  const aggressiveMode = settings.aggressiveMode === true;
+  const runId = await startScanRun(db, {
+    userAgent: settings.fingerprint?.userAgent ?? null,
+    aggressiveMode,
+  });
 
   let postsSeen = 0;
   let postsNew = 0;
@@ -565,8 +570,81 @@ export async function runScan(opts: ScanOptions): Promise<LinkedInScanResult> {
     win.webContents.session.setUserAgent(fp.userAgent);
     win.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
 
-    // Navigate
-    await win.loadURL("https://www.linkedin.com/feed/");
+    // L7: WebRTC IP leak prevention. The local IP would otherwise
+    // surface in ICE candidates and let LinkedIn correlate the
+    // session even after a UA rotation.
+    try {
+      const sess = win.webContents.session as Electron.Session & {
+        setWebRTCIPHandlingPolicy?: (p: string) => void;
+        setLocale?: (l: string) => void;
+      };
+      sess.setWebRTCIPHandlingPolicy?.(
+        "default_public_interface_only",
+      );
+      sess.setLocale?.(fp.locale);
+    } catch (err) {
+      // Older Electron may not expose these — non-fatal.
+      console.warn(
+        "[linkedin/scraper] webrtc/locale setup skipped:",
+        err instanceof Error ? err.message : String(err),
+      );
+    }
+
+    // L7: stable Accept-Language header on linkedin.com requests.
+    try {
+      const acceptLang = `${fp.locale}, en-US;q=0.9, en;q=0.8`;
+      win.webContents.session.webRequest.onBeforeSendHeaders(
+        { urls: ["*://*.linkedin.com/*"] },
+        (details, callback) => {
+          const headers = { ...details.requestHeaders };
+          headers["Accept-Language"] = acceptLang;
+          callback({ requestHeaders: headers });
+        },
+      );
+    } catch (err) {
+      console.warn(
+        "[linkedin/scraper] Accept-Language hook skipped:",
+        err instanceof Error ? err.message : String(err),
+      );
+    }
+
+    // L7: anti-detection JS must land BEFORE LinkedIn's scripts. We
+    // do that by first parking on about:blank, dom-ready'ing the
+    // override, THEN navigating to linkedin.com — so the moment
+    // LinkedIn's bundles start running, our overrides are already in
+    // place on the page's prototype chain.
+    const stealthJs = buildStealthInjection(fp);
+    await win.loadURL("about:blank");
+    await win.webContents.executeJavaScript(stealthJs, false);
+
+    // Multi-stage navigation in aggressive mode: land on the
+    // homepage, dwell, then click the Home/feed link instead of
+    // navigating directly to /feed/. Falls back to direct nav if
+    // the selector misses.
+    if (aggressiveMode) {
+      await win.loadURL("https://www.linkedin.com/");
+      if (signal.aborted) throw new DOMException("aborted", "AbortError");
+      await sleep(jitter(3000, 6000), signal);
+      const clicked = await win.webContents
+        .executeJavaScript(
+          `(() => {
+            var a = document.querySelector('a[href="/feed/"]') ||
+                    document.querySelector('a[href*="/feed/"]');
+            if (a) { a.click(); return true; }
+            return false;
+          })()`,
+          true,
+        )
+        .catch(() => false);
+      if (!clicked) {
+        await win.loadURL("https://www.linkedin.com/feed/");
+      } else {
+        // Give the SPA route a moment to settle.
+        await sleep(jitter(2000, 4000), signal);
+      }
+    } else {
+      await win.loadURL("https://www.linkedin.com/feed/");
+    }
     if (signal.aborted) throw new DOMException("aborted", "AbortError");
 
     // Login redirect detection
@@ -577,13 +655,68 @@ export async function runScan(opts: ScanOptions): Promise<LinkedInScanResult> {
       // Hydration delay
       await sleep(jitter(2000, 4000), signal);
 
-      // Scroll loop
+      // L7 aggressive-mode pre-feed dwell: 6-12s with a couple of
+      // mouse-move events sprinkled in so the session looks like it
+      // started reading the top of the feed before scrolling.
+      if (aggressiveMode) {
+        const dwellEnd = Date.now() + jitter(6000, 12000);
+        while (Date.now() < dwellEnd) {
+          if (signal.aborted) throw new DOMException("aborted", "AbortError");
+          await sleep(jitter(800, 1800), signal);
+          try {
+            win.webContents.sendInputEvent({
+              type: "mouseMove",
+              x: Math.floor(fp.viewport.width / 2) + jitter(-150, 150),
+              y: Math.floor(fp.viewport.height / 2) + jitter(-150, 150),
+            } as unknown as Electron.MouseInputEvent);
+          } catch {
+            // ignore — non-fatal
+          }
+        }
+      }
+
+      // Scroll loop. Aggressive mode scrolls fewer times and waits
+      // longer between scrolls; the bias is fewer posts per session,
+      // tighter pattern.
       const maxPosts = Math.max(1, Math.min(opts.maxPosts ?? 30, 200));
-      const scrolls = Math.ceil(maxPosts / 3) + 2;
+      const scrolls = aggressiveMode
+        ? Math.ceil(maxPosts / 4)
+        : Math.ceil(maxPosts / 3) + 2;
+      const scrollMin = aggressiveMode ? 4000 : 2500;
+      const scrollMax = aggressiveMode ? 9000 : 5500;
       const viewportCenterX = Math.floor(fp.viewport.width / 2);
       const viewportCenterY = Math.floor(fp.viewport.height / 2);
       for (let i = 0; i < scrolls; i++) {
         if (signal.aborted) throw new DOMException("aborted", "AbortError");
+
+        // L7: mouse-movement pre-roll. 3-5 small moves tracing a
+        // slight curve toward the viewport centre, 30-80ms apart.
+        // Skipped on the very first scroll — page just loaded, no
+        // mouse activity is also normal.
+        if (i > 0) {
+          const moves = 3 + Math.floor(Math.random() * 3);
+          const startX = viewportCenterX + jitter(-180, 180);
+          const startY = viewportCenterY + jitter(-180, 180);
+          const endX = viewportCenterX + jitter(-60, 60);
+          const endY = viewportCenterY + jitter(-60, 60);
+          for (let m = 0; m < moves; m++) {
+            if (signal.aborted) throw new DOMException("aborted", "AbortError");
+            const t = (m + 1) / (moves + 1);
+            // Tiny perpendicular curve so the path isn't a straight line.
+            const curve = Math.sin(t * Math.PI) * 25;
+            try {
+              win.webContents.sendInputEvent({
+                type: "mouseMove",
+                x: Math.round(startX + (endX - startX) * t + curve),
+                y: Math.round(startY + (endY - startY) * t + curve),
+              } as unknown as Electron.MouseInputEvent);
+            } catch {
+              // ignore
+            }
+            await sleep(jitter(30, 80), signal);
+          }
+        }
+
         try {
           win.webContents.sendInputEvent({
             type: "mouseWheel",
@@ -604,7 +737,7 @@ export async function runScan(opts: ScanOptions): Promise<LinkedInScanResult> {
             .executeJavaScript("window.scrollBy(0, 800)", true)
             .catch(() => undefined);
         }
-        await sleep(jitter(2500, 5500), signal);
+        await sleep(jitter(scrollMin, scrollMax), signal);
       }
       // Extra settle for lazy media
       await sleep(3000, signal);

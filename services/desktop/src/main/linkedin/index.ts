@@ -108,6 +108,13 @@ export function initLinkedIn(opts?: {
         next.scanIntervalHours = clamped;
       }
 
+      // L7: aggressiveMode is a plain boolean. Coerce non-booleans
+      // away so a stray null from the renderer doesn't poison the
+      // store.
+      if (partial.aggressiveMode !== undefined) {
+        next.aggressiveMode = partial.aggressiveMode === true;
+      }
+
       const result = write(next);
       // L4: when imageAnalysis or cloud opt-in changes, give skipped
       // image rows another chance and trigger a drain. The store-side

@@ -1092,6 +1092,24 @@ function LinkedInSection() {
           )}
         </div>
         {scanError && <p className="crm-card-error">{scanError}</p>}
+        <label
+          className="linkedin-toggle"
+          title="Längere Pausen zwischen Scrolls, mehrstufige Navigation über die Startseite, weniger Beiträge pro Lauf. Reduziert das Risiko, dass LinkedIn den Zugriff drosselt — verlangsamt aber jeden Hintergrund-Scan spürbar."
+        >
+          <input
+            type="checkbox"
+            checked={settings.aggressiveMode === true}
+            onChange={(e) =>
+              void update({ aggressiveMode: e.target.checked })
+            }
+          />
+          <span>Vorsichtsmodus für Hintergrund-Scans</span>
+        </label>
+        <p className="muted small">
+          Längere Pausen, langsameres Scrollen, weniger Beiträge pro Lauf.
+          Wahrscheinlichkeit reduziert, dass LinkedIn den Zugriff drosselt.
+          Verlangsamt aber spürbar.
+        </p>
       </fieldset>
 
       {/* Erfasste Daten — counts row */}

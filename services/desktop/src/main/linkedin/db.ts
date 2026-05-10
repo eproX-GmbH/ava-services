@@ -203,6 +203,11 @@ ALTER TABLE linkedin_signal ADD COLUMN IF NOT EXISTS heartbeat_evaluated_at TIME
 ALTER TABLE linkedin_signal ADD COLUMN IF NOT EXISTS heartbeat_alert_id TEXT;
 CREATE INDEX IF NOT EXISTS linkedin_signal_dismissed ON linkedin_signal (dismissed_at);
 CREATE INDEX IF NOT EXISTS linkedin_signal_heartbeat ON linkedin_signal (heartbeat_evaluated_at);
+
+-- Phase L7: scan-run telemetry. Useful for diagnosing later why a
+-- particular session got challenged.
+ALTER TABLE linkedin_scan_run ADD COLUMN IF NOT EXISTS user_agent TEXT;
+ALTER TABLE linkedin_scan_run ADD COLUMN IF NOT EXISTS aggressive_mode BOOLEAN;
 `;
 
 async function initSchema(db: PGliteInstance): Promise<void> {
@@ -372,11 +377,17 @@ export async function insertMedia(
 
 // ---- Scan-run book-keeping ----------------------------------------------
 
-/** Insert an in-flight scan-run row; returns its UUID. */
-export async function startScanRun(db: PGliteInstance): Promise<string> {
+/** Insert an in-flight scan-run row; returns its UUID. The L7
+ *  telemetry args are optional so older callers continue to compile. */
+export async function startScanRun(
+  db: PGliteInstance,
+  telemetry?: { userAgent?: string | null; aggressiveMode?: boolean | null },
+): Promise<string> {
   const res = await db.query<{ run_id: string }>(
-    `INSERT INTO linkedin_scan_run (started_at) VALUES (NOW())
+    `INSERT INTO linkedin_scan_run (started_at, user_agent, aggressive_mode)
+     VALUES (NOW(), $1, $2)
      RETURNING run_id::text`,
+    [telemetry?.userAgent ?? null, telemetry?.aggressiveMode ?? null],
   );
   const id = res.rows[0]?.run_id;
   if (!id) throw new Error("startScanRun: missing run_id");

@@ -98,10 +98,29 @@ function tierLetter(tier: number | null): string | null {
   return ({ 4: "S", 3: "A", 2: "B", 1: "C" } as const)[tier as 1 | 2 | 3 | 4] ?? null;
 }
 
+/** Single image we're previewing in the lightbox. null when closed. */
+interface LightboxImage {
+  src: string;
+  alt: string;
+  caption: string | null;
+}
+
 export function LinkedIn() {
   const queryClient = useQueryClient();
   const [filters, setFilters] = useState<FilterState>(loadFilters);
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+  const [lightbox, setLightbox] = useState<LightboxImage | null>(null);
+
+  // Esc closes the lightbox. Mounted at route level so it works
+  // regardless of which card opened the image.
+  useEffect(() => {
+    if (!lightbox) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setLightbox(null);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [lightbox]);
 
   useEffect(() => {
     saveFilters(filters);
@@ -282,10 +301,26 @@ export function LinkedIn() {
                   setExpanded((p) => ({ ...p, [row.postUrn]: !p[row.postUrn] }))
                 }
                 onDismissToggle={() => onDismissToggle(row.postUrn, row.dismissed)}
+                onOpenImage={(img) => setLightbox(img)}
               />
             ))}
           </div>
         </>
+      )}
+      {lightbox && (
+        <div
+          className="shot-lightbox"
+          onClick={() => setLightbox(null)}
+          role="dialog"
+          aria-label="Bildvorschau"
+        >
+          <img src={lightbox.src} alt={lightbox.alt} />
+          {lightbox.caption && (
+            <div className="shot-lightbox__caption muted">
+              {lightbox.caption}
+            </div>
+          )}
+        </div>
       )}
     </section>
   );
@@ -296,9 +331,10 @@ interface SignalCardProps {
   expanded: boolean;
   onToggleExpanded: () => void;
   onDismissToggle: () => void;
+  onOpenImage: (img: LightboxImage) => void;
 }
 
-function SignalCard({ row, expanded, onToggleExpanded, onDismissToggle }: SignalCardProps) {
+function SignalCard({ row, expanded, onToggleExpanded, onDismissToggle, onOpenImage }: SignalCardProps) {
   const kindKey = row.signalKind ?? "none";
   const kindLabel = SIGNAL_KIND_LABEL[kindKey] ?? kindKey;
   const kindTone = SIGNAL_KIND_TONE[kindKey] ?? "ct-pill--muted";
@@ -435,20 +471,44 @@ function SignalCard({ row, expanded, onToggleExpanded, onDismissToggle }: Signal
 
       {row.images.length > 0 && (
         <div style={{ display: "flex", gap: "0.4rem", marginTop: "0.6rem" }}>
-          {row.images.map((img) => (
-            <img
-              key={img.mediaId}
-              src={window.api.linkedin.feed.mediaUrl(img.relPath)}
-              alt={img.description ?? ""}
-              style={{
-                width: "100px",
-                height: "100px",
-                objectFit: "cover",
-                borderRadius: "4px",
-              }}
-              loading="lazy"
-            />
-          ))}
+          {row.images.map((img) => {
+            const src = window.api.linkedin.feed.mediaUrl(img.relPath);
+            const alt = img.description ?? "";
+            return (
+              <button
+                key={img.mediaId}
+                type="button"
+                onClick={() =>
+                  onOpenImage({
+                    src,
+                    alt,
+                    caption: img.description ?? null,
+                  })
+                }
+                title="Vergrößern"
+                style={{
+                  padding: 0,
+                  border: 0,
+                  background: "transparent",
+                  cursor: "zoom-in",
+                  borderRadius: "4px",
+                  overflow: "hidden",
+                }}
+              >
+                <img
+                  src={src}
+                  alt={alt}
+                  style={{
+                    width: "100px",
+                    height: "100px",
+                    objectFit: "cover",
+                    display: "block",
+                  }}
+                  loading="lazy"
+                />
+              </button>
+            );
+          })}
         </div>
       )}
 
