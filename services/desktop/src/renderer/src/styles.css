@@ -865,10 +865,17 @@ code, pre { font-family: var(--font-mono); font-size: 12px; }
   font-size: 13px;
 }
 .matrix tbody tr { cursor: pointer; }
-/* Token-driven hover/active so dark mode doesn't flash white. */
-.matrix tbody tr:hover { background: var(--color-bg-0); }
-.matrix tbody tr.active {
-  background: color-mix(in oklab, var(--color-indigo-500) 15%, var(--color-bg-0));
+/* Light mode: subtle slate-50 hover, aqua-50 active highlight
+ * (the original brand-aware design). */
+.matrix tbody tr:hover { background: var(--color-slate-50); }
+.matrix tbody tr.active { background: var(--color-indigo-50); }
+/* Dark mode override — explicit hand-picked values so we don't
+ * depend on color-mix or browser quirks. The active row sits one
+ * notch tinted vs the hover row so the selection reads even when
+ * the user mouses away. */
+:root.dark .matrix tbody tr:hover { background: var(--color-bg-3); }
+:root.dark .matrix tbody tr.active {
+  background: rgba(0, 192, 167, 0.15);
 }
 .matrix-cell { text-align: center !important; }
 .matrix-company {
