@@ -449,7 +449,13 @@ body {
  * to a cosmetic margin when the route is .chat-route. :has() needs
  * Chrome 105+ which Electron 31 covers. */
 .app-shell__main:has(> .chat-route) {
-  padding-bottom: 0.75rem;
+  /* v0.1.85 — sidebar must sit flush against the topbar / left edge /
+   * bottom edge. The generic .app-shell__main padding inset it on
+   * three sides; zero out all four so the chat-route container can
+   * paint edge-to-edge. .chat-route__main below re-establishes its
+   * own internal padding so the message log + composer keep
+   * comfortable breathing room. */
+  padding: 0;
 }
 .app-shell__main > * {
   max-width: 1280px;
@@ -1405,6 +1411,11 @@ code, pre { font-family: var(--font-mono); font-size: 12px; }
   width: 100%;
   max-width: 760px;
   margin: 0 auto;
+  /* v0.1.85 — restore the breathing room that the generic
+   * .app-shell__main padding used to provide before we zeroed it
+   * out for the chat route. Bottom kept tight so the composer hugs
+   * the window edge as the user requested in v0.1.78. */
+  padding: 1.5rem 2rem 0.75rem;
 }
 .chat-route__main--empty {
   justify-content: center;
