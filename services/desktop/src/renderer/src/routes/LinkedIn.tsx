@@ -343,11 +343,14 @@ function SignalCard({ row, expanded, onToggleExpanded, onDismissToggle, onOpenIm
   const truncated = text.length > 240;
   const visibleText = expanded || !truncated ? text : text.slice(0, 240) + "…";
 
-  const permalink =
-    row.permalink ??
-    (row.postUrn
-      ? `https://www.linkedin.com/feed/update/${encodeURIComponent(row.postUrn)}/`
-      : null);
+  // v0.1.113: LinkedIn's new DOM no longer exposes a usable permalink
+  // for most feed posts (the React permalink lives off-DOM, every <a>
+  // points at the placeholder /feed/ href). When `row.permalink` is
+  // null, fall back to the actor's profile URL so "Auf LinkedIn
+  // öffnen" at least lands the user on the right person/company page.
+  // Synthesising a /feed/update/<postKey>/ URL from the new postKey
+  // would produce a 404 — postKey is not a `urn:li:` activity URN.
+  const permalink = row.permalink ?? row.author.profileUrl ?? null;
 
   return (
     <article

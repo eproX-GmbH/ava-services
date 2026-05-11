@@ -7,6 +7,59 @@ The repo uses one rolling tag per desktop release (`v<major>.<minor>.<patch>`)
 on `main`. Submodules cut their own feature branches and are pinned via the
 desktop bundle; `pnpm fetch:producers` re-vendors them into the .dmg.
 
+## v0.1.113 — 2026-05-10
+
+- **LinkedIn-Beobachter: rewrite for the obfuscated-class DOM.**
+  v0.1.112's broadened selector list ran against a DOM dump and matched
+  exactly nothing: LinkedIn dropped `data-urn` from feed wrappers and
+  now ships hash-suffixed per-build CSS classes (`_3198bc31`,
+  `_9cb66104`, ...). The selectors that survive are role / componentkey
+  / data-testid attributes. This release:
+  - Replaces the 12-candidate wrapper list with a single primary
+    selector — `div[role="listitem"][componentkey^="expanded"][componentkey*="FeedType_"]`
+    — plus a sentinel check on `h2 span` containing "Feed post" so
+    composer cards, "Advertise on LinkedIn" promo cards, and the
+    "Letters" / suggestion carousel get skipped.
+  - Extracts a stable `postKey` (no `urn:li:` prefix) from the wrapper's
+    `componentkey` attribute via
+    `/^expanded(.+?)FeedType_[A-Z_]+$/`. Example componentkey
+    `expandedScdd...xWQFeedType_MAIN_FEED_RELEVANCE` yields postKey
+    `Scdd...xWQ`. **Schema rename**: this value still rides in the
+    existing `postUrn` field (DB column `post_urn` is unchanged) but is
+    additionally exposed as a sibling `postKey` alias for one release.
+    Downstream code that reads `postUrn` keeps working; new readers
+    should migrate to `postKey`.
+  - Body text uses
+    `p[componentkey^="feed-commentary_"] span[data-testid="expandable-text-box"]`
+    and strips the trailing "…more" / "…mehr anzeigen" button text.
+  - Actor link comes from `a[href*="/in/"]` or `a[href*="/company/"]`,
+    with first-vs-second-link logic for repost / attribution headers
+    ("X commented on this", "Y likes this", "Z reposted this", "follow")
+    so the real post author is picked, not the attributor.
+  - Permalink **may now be null** — most `<a href>` inside the new
+    feed DOM point at the placeholder `/feed/` href because LinkedIn
+    keeps the real URL in React state. Existing downstream types
+    already tolerate `string | null`. The "Letzte Signale" UI falls
+    back to the actor's profile URL when the row has no permalink (no
+    more synthetic `/feed/update/<urn>/` URLs — those would 404 with a
+    postKey).
+  - New record fields: `feedSlot` (`"feed"` | `"suggested"` |
+    `"promoted"`) and `attribution` (the verb + actor of an "X
+    commented on this" header, or null).
+  - Diagnostic `extractionDiagnostic.candidateCounts` in `run.json` is
+    re-keyed to match the new pipeline: `wrapper`,
+    `wrapper_with_sentinel`, `body_text_found`, `actor_link_found`,
+    `image_found`, `document_found`, `promoted`, `suggested`.
+    `finalCount` keeps its meaning — posts that passed all required-
+    field checks.
+  - Required-field policy relaxed for promoted and document-heavy
+    posts that lack a body: a post is accepted when postKey is
+    non-empty AND it has body text OR an image OR a document carousel
+    OR a video.
+  - If a fresh scrape still shows `postsSeen: 0`, users should send the
+    new `<runDir>/05_feed_html.html` plus `run.json` — the diagnostic
+    now reports the new candidate keys.
+
 ## v0.1.112 — 2026-05-10
 
 - **LinkedIn-Beobachter: extraction selector refresh.** v0.1.110

@@ -51,8 +51,19 @@ export interface ScanOptions {
   signal?: AbortSignal;
 }
 
+// v0.1.113 — LinkedIn dropped `data-urn` from feed wrappers and now
+// ships hash-suffixed per-build CSS classes. The new stable anchor is
+// `componentkey="expanded<POST_KEY>FeedType_..."` on a
+// `div[role="listitem"]`. We extract that POST_KEY substring and use
+// it as the dedup key. The DB column is still `post_urn` and the
+// in-memory field is still `postUrn` to minimise churn for one release;
+// the VALUE is now a postKey (no `urn:li:` prefix), and we keep
+// `postKey` as a sibling alias so downstream consumers can migrate at
+// their own pace.
 interface RawPostExtract {
   postUrn: string;
+  /** v0.1.113 alias for `postUrn` — same value, clearer name. */
+  postKey: string;
   postKind:
     | "text"
     | "image"
@@ -62,6 +73,9 @@ interface RawPostExtract {
     | "repost"
     | "event";
   postedAtRelative: string | null;
+  /** v0.1.113: most posts no longer expose a real permalink in the
+   *  DOM (LinkedIn keeps it in React state). null means "we couldn't
+   *  read one — render the actor profile URL as a fallback". */
   permalink: string | null;
   externalUrl: string | null;
   text: string;
@@ -72,6 +86,18 @@ interface RawPostExtract {
     headline: string | null;
     profileUrl: string | null;
   };
+  /** v0.1.113. `"feed"` = normal post; `"suggested"` = LinkedIn's
+   *  "Suggested" pill above the actor block; `"promoted"` =
+   *  Promoted/Sponsored ad card. */
+  feedSlot: "feed" | "suggested" | "promoted";
+  /** v0.1.113. Present when a "X commented on this" / "X likes this"
+   *  attribution header sits above the original post. The post itself
+   *  is still authored by `author`; this just surfaces who pulled it
+   *  into our feed. */
+  attribution: {
+    actor: string;
+    kind: "commented" | "liked" | "followed" | "reposted";
+  } | null;
   mediaUrls: Array<{ kind: "image" | "video" | "document"; url: string }>;
   surfacedInteractions: Array<{
     actor: {
@@ -83,6 +109,23 @@ interface RawPostExtract {
     kind: "like" | "comment" | "share";
     commentText: string | null;
   }>;
+}
+
+// v0.1.113 — exported so unit tests / future tooling can derive the
+// postKey from a componentkey string without re-implementing the regex.
+// Example input:
+//   expandedScddZhqpBnn5BII3yX2bgZ7KmXK3I7LDYgchkDgXxWQFeedType_MAIN_FEED_RELEVANCE
+// Example output:
+//   ScddZhqpBnn5BII3yX2bgZ7KmXK3I7LDYgchkDgXxWQ
+export const COMPONENTKEY_POSTKEY_REGEX =
+  /^expanded(.+?)FeedType_[A-Z_]+$/;
+
+export function postKeyFromComponentKey(
+  componentKey: string | null | undefined,
+): string | null {
+  if (!componentKey) return null;
+  const m = componentKey.match(COMPONENTKEY_POSTKEY_REGEX);
+  return m ? m[1] ?? null : null;
 }
 
 let running = false;
@@ -287,11 +330,24 @@ export function parseRelativeGerman(
 
 // ---- In-page extractor --------------------------------------------------
 //
-// SELECTOR-FRAGILE: update on next LinkedIn UI shift. The selectors
-// below match the feed DOM that LinkedIn was shipping at L2 build
-// time. They will silently produce empty arrays when LinkedIn ships
-// a renamed class; the scrape will still succeed (just empty) so we
-// don't crash, but downstream phases will report 0 new posts.
+// SELECTOR-FRAGILE: update on next LinkedIn UI shift.
+//
+// v0.1.113 rewrite. LinkedIn now ships hash-suffixed per-build CSS
+// classes (`_3198bc31`, `_9cb66104`, ...) and dropped `data-urn` from
+// feed wrappers entirely. The new stable anchors are:
+//
+//   - `role="listitem"` on the wrapper
+//   - `componentkey="expanded<POST_KEY>FeedType_..."` on the wrapper
+//   - `componentkey="feed-commentary_..."` on the body paragraph
+//   - `data-testid="expandable-text-box"` on the body span
+//   - `<h2><span class="e94a47cd">Feed post</span></h2>` sentinel that
+//     distinguishes a real post from a composer / promo / suggestion
+//     carousel card
+//
+// Permalinks: most `<a href>` inside posts point at the placeholder
+// `/feed/` href because LinkedIn keeps the real permalink in React
+// state, not the DOM. We therefore set permalink to null in most
+// cases — the renderer falls back to the actor profile URL.
 //
 // The function runs in the page context via `executeJavaScript`. It
 // receives no closure — everything must be inline.
@@ -305,260 +361,374 @@ const EXTRACTOR_SCRIPT = `
   function pickAttr(el, attr) {
     return el && el.getAttribute ? el.getAttribute(attr) : null;
   }
-  function urnFromHref(href) {
+  function urnFromProfileHref(href) {
+    // v0.1.113. Profile URLs survive — \`/in/<slug>\` is still the
+    // canonical link. We synthesise an actorUrn from the slug so the
+    // DB unique constraint keeps working.
     if (!href) return null;
-    var m = href.match(/in\\/([^/?#]+)/);
-    if (m) return "urn:li:profile:" + m[1];
+    var mIn = href.match(/in\\/([^/?#]+)/);
+    if (mIn) return "urn:li:profile:" + mIn[1];
+    var mCo = href.match(/company\\/([^/?#]+)/);
+    if (mCo) return "urn:li:company:" + mCo[1];
     return null;
   }
-  // v0.1.112: try a list of selector strings against \`root\`, return
-  // the first non-null match.
-  function firstMatch(root, selectors) {
-    if (!root) return null;
-    for (var i = 0; i < selectors.length; i++) {
-      try {
-        var el = root.querySelector(selectors[i]);
-        if (el) return el;
-      } catch (e) { /* invalid selector — ignore */ }
-    }
-    return null;
+  // Derive postKey from a componentkey value. See
+  // \`postKeyFromComponentKey\` in scraper.ts for the canonical regex —
+  // this is a JS twin that runs in-page.
+  function postKeyFromComponentKey(ck) {
+    if (!ck) return null;
+    var m = ck.match(/^expanded(.+?)FeedType_[A-Z_]+$/);
+    return m ? m[1] : null;
   }
-  // v0.1.112: derive a stable URN for a wrapper node. Order: data-urn,
-  // data-id, nested [data-urn] / [data-id], permalink href.
-  function urnForNode(node) {
-    var v = node.getAttribute("data-urn") || node.getAttribute("data-id");
-    if (v) return v;
-    var nested = node.querySelector("[data-urn], [data-id]");
-    if (nested) {
-      var nv = nested.getAttribute("data-urn") || nested.getAttribute("data-id");
-      if (nv) return nv;
-    }
-    var perma = node.querySelector('a[href*="/feed/update/"]');
-    if (perma) {
-      var href = perma.getAttribute("href") || "";
-      var m = href.match(/\\/feed\\/update\\/(urn:li:[^\\/?#]+)/);
-      if (m) return decodeURIComponent(m[1]);
-    }
-    return null;
-  }
-  function extractActor(scope) {
-    if (!scope) return null;
-    var link = scope.querySelector('a[href*="/in/"]');
-    var nameEl = firstMatch(scope, [
-      ".update-components-actor__title span[aria-hidden='true']",
-      ".update-components-actor__title",
-      ".update-components-actor__name",
-      ".feed-shared-actor__name span[aria-hidden='true']",
-      ".feed-shared-actor__name",
-      ".update-components-header__title",
-    ]);
-    var headlineEl = firstMatch(scope, [
-      ".update-components-actor__description",
-      ".feed-shared-actor__description",
-      ".update-components-header__sub-line",
-    ]);
-    var href = link ? link.getAttribute("href") : null;
-    var profileUrl = href ? new URL(href, location.origin).toString().split('?')[0] : null;
-    var actorUrn = urnFromHref(href);
-    var displayName = txt(nameEl) || txt(link);
+
+  // Build an actor record from a single anchor (\`a[href*="/in/"]\` or
+  // \`a[href*="/company/"]\`). The anchor wraps a few \`<p>\` elements;
+  // the first is typically the name, the second is the headline.
+  function actorFromLink(link) {
+    if (!link) return null;
+    var href = link.getAttribute("href") || null;
+    var profileUrl = href
+      ? new URL(href, location.origin).toString().split('?')[0]
+      : null;
+    var actorUrn = urnFromProfileHref(href);
+    // Prefer aria-label on the link itself (full name), fall back to
+    // the first <p> text, then the link's own text content.
+    var aria = link.getAttribute("aria-label") || "";
+    var ps = link.querySelectorAll("p");
+    var nameText = "";
+    var headlineText = "";
+    if (ps.length > 0) nameText = txt(ps[0]);
+    if (ps.length > 1) headlineText = txt(ps[1]);
+    var displayName = nameText || aria || txt(link) || "";
+    // Defensive: strip ARIA suffixes like ", profile" / ", company".
+    displayName = displayName.replace(/,\\s*(profile|company|page).*/i, "").trim();
     if (!displayName && !actorUrn) return null;
     return {
-      actorUrn: actorUrn || ("urn:li:anon:" + (profileUrl || displayName || Math.random())),
+      actorUrn:
+        actorUrn ||
+        "urn:li:anon:" + (profileUrl || displayName || String(Math.random())),
       displayName: displayName || "Unbekannt",
-      headline: txt(headlineEl) || null,
+      headline: headlineText || null,
       profileUrl: profileUrl,
     };
   }
 
-  // v0.1.112 — full candidate list. Order matters: most-specific first
-  // so the diagnostic counts are interpretable.
-  var WRAPPER_SELECTORS = [
-    // Newer wrappers (LinkedIn UI shift seen 2026-Q2)
-    'article[data-urn^="urn:li:activity:"]',
-    'article[data-id^="urn:li:activity:"]',
-    'li[data-urn^="urn:li:activity:"]',
-    'li[data-id^="urn:li:activity:"]',
-    // Older but still seen
-    'div.feed-shared-update-v2[data-urn]',
-    'div[data-urn^="urn:li:activity:"]',
-    'div[data-urn^="urn:li:share:"]',
-    'div[data-id^="urn:li:activity:"]',
-    'div[data-id^="urn:li:share:"]',
-    // Class-only fallbacks — derive URN from a nested element / permalink.
-    '.feed-shared-update-v2',
-    '.update-components-update-v2',
-    '.feed-update-v2',
-  ];
+  // v0.1.113 wrapper selector. We accept a single primary selector
+  // here, then verify the sentinel inside the loop. Promo / composer /
+  // suggestion-carousel cards lack the sentinel and get skipped.
+  var WRAPPER_SELECTOR =
+    'div[role="listitem"][componentkey^="expanded"][componentkey*="FeedType_"]';
 
-  var candidateCounts = {};
-  var seenWrappers = new Set();
-  var wrappers = [];
-  for (var si = 0; si < WRAPPER_SELECTORS.length; si++) {
-    var sel = WRAPPER_SELECTORS[si];
-    var hits = 0;
-    try {
-      var matched = document.querySelectorAll(sel);
-      hits = matched.length;
-      for (var mi = 0; mi < matched.length; mi++) {
-        var w = matched[mi];
-        if (!seenWrappers.has(w)) {
-          seenWrappers.add(w);
-          wrappers.push(w);
-        }
-      }
-    } catch (e) { /* ignore invalid */ }
-    candidateCounts[sel] = hits;
+  var candidateCounts = {
+    wrapper: 0,
+    wrapper_with_sentinel: 0,
+    body_text_found: 0,
+    actor_link_found: 0,
+    image_found: 0,
+    document_found: 0,
+    promoted: 0,
+    suggested: 0,
+  };
+
+  var wrappers;
+  try {
+    wrappers = document.querySelectorAll(WRAPPER_SELECTOR);
+  } catch (e) {
+    wrappers = [];
   }
+  candidateCounts.wrapper = wrappers.length;
 
   var posts = [];
-  wrappers.forEach(function (node) {
+
+  Array.prototype.forEach.call(wrappers, function (node) {
     try {
-      var postUrn = urnForNode(node);
-      if (!postUrn) return;
+      // ---- Sentinel check ------------------------------------------
+      // Real posts have <h2><span class="e94a47cd">Feed post</span></h2>.
+      // Promo cards / suggestion carousels lack it.
+      var sentinel = null;
+      var h2spans = node.querySelectorAll('h2 span');
+      for (var i = 0; i < h2spans.length; i++) {
+        var s = txt(h2spans[i]);
+        if (s === "Feed post" || s === "Feed-Beitrag") {
+          sentinel = h2spans[i];
+          break;
+        }
+      }
+      if (!sentinel) return;
+      candidateCounts.wrapper_with_sentinel += 1;
 
-      var actorScope = firstMatch(node, [
-        ".update-components-actor",
-        ".feed-shared-actor",
-        "[data-test-actor]",
-        ".update-components-header",
-      ]);
-      var author = extractActor(actorScope);
-      if (!author) return;
+      // ---- postKey -------------------------------------------------
+      var componentkey = node.getAttribute("componentkey") || "";
+      var postKey = postKeyFromComponentKey(componentkey);
+      if (!postKey) return;
 
-      var bodyEl = firstMatch(node, [
-        ".feed-shared-update-v2__commentary",
-        ".update-components-text",
-        ".feed-shared-text",
-        ".update-components-text-view",
-        "[data-test-commentary]",
-      ]);
+      // ---- Attribution header detection ----------------------------
+      // A <p> with verbatim "commented on this" / "likes this" /
+      // "reposted this" / "follow ..." somewhere up top. The original
+      // post's content sits below; the FIRST profile/company link
+      // belongs to the attributor, the SECOND belongs to the real
+      // post author.
+      var attribution = null;
+      var allParas = node.querySelectorAll("p");
+      for (var p = 0; p < allParas.length; p++) {
+        var pt = txt(allParas[p]);
+        if (!pt) continue;
+        var attrKind = null;
+        if (/commented on this$/i.test(pt) || /hat dies kommentiert$/i.test(pt))
+          attrKind = "commented";
+        else if (/likes this$/i.test(pt) || /gefällt das$/i.test(pt))
+          attrKind = "liked";
+        else if (/reposted this$/i.test(pt) || /hat dies erneut geteilt$/i.test(pt))
+          attrKind = "reposted";
+        else if (/\\bfollow(s|ing)?\\b/i.test(pt) || /\\bfolgt\\b/i.test(pt))
+          attrKind = "followed";
+        if (attrKind) {
+          var attrLink = allParas[p].querySelector('a[href*="/in/"], a[href*="/company/"]');
+          var attrName = attrLink ? txt(attrLink) : pt.split(/\\s/).slice(0, 2).join(" ");
+          attribution = { actor: attrName || "Unbekannt", kind: attrKind };
+          break;
+        }
+      }
+
+      // ---- "Suggested" pill ---------------------------------------
+      var suggestedPill = false;
+      for (var sp = 0; sp < allParas.length; sp++) {
+        var spt = txt(allParas[sp]);
+        if (spt === "Suggested" || spt === "Vorgeschlagen") {
+          suggestedPill = true;
+          break;
+        }
+      }
+
+      // ---- Promoted flag ------------------------------------------
+      // A <p> containing the exact text "Promoted" or "Sponsored"
+      // (Gesponsert in DE).
+      var promoted = false;
+      for (var pr = 0; pr < allParas.length; pr++) {
+        var prt = txt(allParas[pr]);
+        if (prt === "Promoted" || prt === "Sponsored" || prt === "Gesponsert") {
+          promoted = true;
+          break;
+        }
+      }
+
+      var feedSlot = promoted ? "promoted" : suggestedPill ? "suggested" : "feed";
+      if (feedSlot === "promoted") candidateCounts.promoted += 1;
+      if (feedSlot === "suggested") candidateCounts.suggested += 1;
+
+      // ---- Body text ----------------------------------------------
+      var bodyEl = node.querySelector(
+        'p[componentkey^="feed-commentary_"] span[data-testid="expandable-text-box"]'
+      );
+      if (!bodyEl) {
+        // Fallback: any data-testid="expandable-text-box" anywhere.
+        bodyEl = node.querySelector('[data-testid="expandable-text-box"]');
+      }
       var text = txt(bodyEl);
+      // Strip the trailing "…more" / "…mehr anzeigen" button text.
+      text = text
+        .replace(/…\\s*(more|mehr( anzeigen)?|weiterlesen)\\s*$/i, "")
+        .replace(/\\.\\.\\.\\s*(more|mehr( anzeigen)?|weiterlesen)\\s*$/i, "")
+        .trim();
+      if (text) candidateCounts.body_text_found += 1;
 
-      // Best-effort posted-at relative
-      var subEl = firstMatch(node, [
-        ".update-components-actor__sub-description",
-        ".update-components-actor__sub-description-link",
-        ".update-components-actor__description",
-        ".feed-shared-actor__description",
-        ".update-components-header__sub-line",
-      ]);
-      var postedAtRelative = txt(subEl) || null;
+      // ---- Actor link ---------------------------------------------
+      // Collect /in/ and /company/ links inside the post. If there's
+      // an attribution header, skip the FIRST one (it belongs to the
+      // attributor) and pick the second.
+      var profileLinks = node.querySelectorAll('a[href*="/in/"]');
+      var companyLinks = node.querySelectorAll('a[href*="/company/"]');
+      var actor = null;
+      var skipIndex = attribution ? 1 : 0;
+      if (profileLinks.length > skipIndex) {
+        actor = actorFromLink(profileLinks[skipIndex]);
+      }
+      if (!actor && companyLinks.length > skipIndex) {
+        actor = actorFromLink(companyLinks[skipIndex]);
+      }
+      // Last-ditch: any actor link at all.
+      if (!actor && profileLinks.length > 0) {
+        actor = actorFromLink(profileLinks[0]);
+      }
+      if (!actor && companyLinks.length > 0) {
+        actor = actorFromLink(companyLinks[0]);
+      }
+      if (actor) candidateCounts.actor_link_found += 1;
 
-      // Media
+      // ---- Posted-at relative -------------------------------------
+      // The relative-time <p> contains a globe SVG. We strip the SVG
+      // text and keep just the leading "3d • Edited •" prefix.
+      var postedAtRelative = null;
+      var globeSvg = node.querySelector(
+        'svg[id="globe-americas-small"], svg[id^="globe-"]'
+      );
+      if (globeSvg) {
+        var globePara = globeSvg.closest("p");
+        if (globePara) {
+          // Clone, remove SVGs, read text.
+          var cloned = globePara.cloneNode(true);
+          var svgs = cloned.querySelectorAll("svg");
+          for (var sv = 0; sv < svgs.length; sv++) svgs[sv].remove();
+          postedAtRelative = txt(cloned) || null;
+        }
+      }
+
+      // ---- Media: images ------------------------------------------
       var mediaUrls = [];
-      node.querySelectorAll(".update-components-image img[src]").forEach(function (img) {
-        var src = pickAttr(img, "src");
-        if (src && src.indexOf("http") === 0) {
+      var imageNodes = node.querySelectorAll('img[alt="View image"], img[alt="Bild anzeigen"]');
+      for (var ii = 0; ii < imageNodes.length; ii++) {
+        var fig = imageNodes[ii].closest("figure");
+        var src = pickAttr(imageNodes[ii], "src");
+        if (fig && src && src.indexOf("http") === 0) {
           mediaUrls.push({ kind: "image", url: src });
         }
-      });
-      node.querySelectorAll(".update-components-video video[src], .update-components-video source[src]").forEach(function (v) {
-        var src = pickAttr(v, "src");
-        if (src && src.indexOf("http") === 0) {
-          mediaUrls.push({ kind: "video", url: src });
-        }
-      });
-      node.querySelectorAll(".update-components-document a[href], .update-components-article a[href]").forEach(function (a) {
-        var href = pickAttr(a, "href");
-        if (href && href.indexOf("http") === 0) {
-          mediaUrls.push({ kind: "document", url: href });
-        }
-      });
+      }
+      if (mediaUrls.some(function (m) { return m.kind === "image"; })) {
+        candidateCounts.image_found += 1;
+      }
 
-      // Article/external link: the article card
+      // ---- Media: document slides (PDF carousel) ------------------
+      var docNodes = node.querySelectorAll('img[src*="feedshare-document-images"]');
+      var documentPages = 0;
+      for (var di = 0; di < docNodes.length; di++) {
+        var dsrc = pickAttr(docNodes[di], "src");
+        if (dsrc && dsrc.indexOf("http") === 0) {
+          mediaUrls.push({ kind: "document", url: dsrc });
+          documentPages += 1;
+        }
+      }
+      if (documentPages > 0) candidateCounts.document_found += 1;
+
+      // ---- Media: video -------------------------------------------
+      var videoEl = node.querySelector('video[src*="blob:"], video[src^="blob:"]');
+      var hasVideo = !!videoEl;
+      if (hasVideo) {
+        var posterImg = node.querySelector('.vjs-poster img, video[poster]');
+        var posterSrc = null;
+        if (posterImg) {
+          posterSrc =
+            pickAttr(posterImg, "src") || pickAttr(posterImg, "poster");
+        }
+        if (posterSrc && posterSrc.indexOf("http") === 0) {
+          mediaUrls.push({ kind: "video", url: posterSrc });
+        }
+      }
+
+      // ---- External / article link -------------------------------
       var externalUrl = null;
-      var articleLink = firstMatch(node, [
-        ".update-components-article a[href]",
-        ".feed-shared-article__link-container a[href]",
-        'a[href*="/pulse/"]',
-      ]);
+      var articleLink = node.querySelector('a[href*="/pulse/"], a[data-testid*="article"]');
       if (articleLink) {
-        var ah = pickAttr(articleLink, "href");
+        var ah = articleLink.getAttribute("href");
         if (ah && ah.indexOf("http") === 0) externalUrl = ah;
       }
 
-      // Permalink
+      // ---- Permalink (mostly null in the new DOM) ----------------
+      // We accept a permalink only if it's a real post URL, NOT the
+      // \`/feed/\` placeholder. Otherwise null; the renderer falls back
+      // to the actor profile URL.
       var permalink = null;
-      var permaCandidate = firstMatch(node, [
-        'a[href*="/feed/update/"]',
-        'a[href*="/posts/"]',
-      ]);
-      if (permaCandidate) {
-        var ph = pickAttr(permaCandidate, "href");
-        if (ph) permalink = new URL(ph, location.origin).toString().split('?')[0];
-      }
-      if (!permalink) {
-        permalink = "https://www.linkedin.com/feed/update/" + encodeURIComponent(postUrn) + "/";
+      var permaCandidates = node.querySelectorAll(
+        'a[href*="/feed/update/"], a[href*="/posts/"]'
+      );
+      for (var pc = 0; pc < permaCandidates.length; pc++) {
+        var ph = permaCandidates[pc].getAttribute("href");
+        if (!ph) continue;
+        if (ph === "/feed/" || ph === "https://www.linkedin.com/feed/") continue;
+        try {
+          permalink = new URL(ph, location.origin).toString().split('?')[0];
+          break;
+        } catch (e) { /* ignore */ }
       }
 
-      // Post kind
+      // ---- Post kind ---------------------------------------------
       var postKind = "text";
-      if (mediaUrls.some(function (m) { return m.kind === "video"; })) postKind = "video";
+      if (hasVideo) postKind = "video";
       else if (mediaUrls.some(function (m) { return m.kind === "image"; })) postKind = "image";
+      else if (documentPages > 0) postKind = "document";
       else if (externalUrl) postKind = "article";
-      else if (mediaUrls.some(function (m) { return m.kind === "document"; })) postKind = "document";
-      if (node.querySelector(".feed-shared-update-v2__update-content-wrapper .feed-shared-update-v2[data-urn]")) postKind = "repost";
+      if (attribution && attribution.kind === "reposted") postKind = "repost";
 
-      // Surfaced interactions: the "X liked / commented / reposted" header
+      // ---- Surfaced interactions (reactions / comments counts) ---
+      // The new DOM only exposes counts as plain text spans, not
+      // per-actor lists. We don't synthesise fake interactions from
+      // those — the surfacedInteractions array becomes whatever the
+      // attribution header gives us (commented/liked/etc.).
       var surfaced = [];
-      var headerWrapper = node.querySelector(".update-components-header__text-wrapper, .feed-shared-header");
-      if (headerWrapper) {
-        var headerText = txt(headerWrapper).toLowerCase();
-        var actorLink = headerWrapper.querySelector('a[href*="/in/"]');
-        if (actorLink) {
-          var headerActor = extractActor({
-            querySelector: function (sel) {
-              if (sel.indexOf('a[href*="/in/"]') >= 0) return actorLink;
-              return null;
-            },
-          });
-          if (!headerActor) {
-            var hHref = actorLink.getAttribute("href");
-            headerActor = {
-              actorUrn: urnFromHref(hHref) || "urn:li:anon:" + (hHref || ""),
-              displayName: txt(actorLink) || "Unbekannt",
-              headline: null,
-              profileUrl: hHref ? new URL(hHref, location.origin).toString().split('?')[0] : null,
-            };
-          }
-          var kind = "like";
-          if (/kommentier|comment/.test(headerText)) kind = "comment";
-          else if (/teilte|geteilt|share|reposted|repostet/.test(headerText)) kind = "share";
-          surfaced.push({ actor: headerActor, kind: kind, commentText: null });
+      if (attribution && attribution.actor) {
+        var attrProfileLink = profileLinks.length > 0 ? profileLinks[0] : null;
+        var attrActor = attrProfileLink
+          ? actorFromLink(attrProfileLink)
+          : null;
+        if (!attrActor) {
+          attrActor = {
+            actorUrn: "urn:li:anon:" + attribution.actor,
+            displayName: attribution.actor,
+            headline: null,
+            profileUrl: null,
+          };
         }
+        var mappedKind =
+          attribution.kind === "commented" ? "comment" :
+          attribution.kind === "reposted" ? "share" :
+          "like";
+        surfaced.push({ actor: attrActor, kind: mappedKind, commentText: null });
       }
 
-      // Cap raw HTML to 64 KB
+      // ---- Required-field policy (v0.1.113) ----------------------
+      // Accept if postKey AND (body OR image OR document OR video).
+      // Actor link is required EXCEPT for promoted posts where a
+      // company link in the second slot will do.
+      var hasBody = !!text;
+      var hasImage = mediaUrls.some(function (m) { return m.kind === "image"; });
+      var hasDocument = documentPages > 0;
+      var hasContent = hasBody || hasImage || hasDocument || hasVideo;
+      if (!hasContent) return;
+      if (!actor && !(feedSlot === "promoted" && companyLinks.length > 0)) return;
+      // Fallback synthetic actor for promoted-with-company case.
+      if (!actor) {
+        actor = actorFromLink(companyLinks[companyLinks.length - 1]) ||
+          {
+            actorUrn: "urn:li:anon:promoted-" + postKey,
+            displayName: "Gesponsert",
+            headline: null,
+            profileUrl: null,
+          };
+      }
+
+      // ---- Raw HTML (capped at 64 KB) ----------------------------
       var rawHtml = node.outerHTML || "";
       if (rawHtml.length > 64000) rawHtml = rawHtml.slice(0, 64000);
 
       posts.push({
-        postUrn: postUrn,
+        postUrn: postKey,
+        postKey: postKey,
         postKind: postKind,
         postedAtRelative: postedAtRelative,
         permalink: permalink,
         externalUrl: externalUrl,
         text: text,
         rawHtml: rawHtml,
-        author: author,
+        author: actor,
+        feedSlot: feedSlot,
+        attribution: attribution,
         mediaUrls: mediaUrls,
         surfacedInteractions: surfaced,
       });
     } catch (err) {
-      // swallow per-post extraction errors so one broken post doesn't
-      // sink the whole scrape
+      // Swallow per-post errors so one broken card doesn't sink the
+      // whole scrape.
     }
   });
 
-  // De-duplicate by postUrn (LinkedIn occasionally renders a card twice
-  // when surfacing reactions).
+  // De-duplicate by postKey.
   var seen = {};
   var dedup = [];
   posts.forEach(function (p) {
-    if (seen[p.postUrn]) return;
-    seen[p.postUrn] = true;
+    if (seen[p.postKey]) return;
+    seen[p.postKey] = true;
     dedup.push(p);
   });
+
   return {
     posts: dedup,
     diagnostic: {
