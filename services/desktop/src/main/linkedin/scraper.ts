@@ -311,15 +311,52 @@ const EXTRACTOR_SCRIPT = `
     if (m) return "urn:li:profile:" + m[1];
     return null;
   }
+  // v0.1.112: try a list of selector strings against \`root\`, return
+  // the first non-null match.
+  function firstMatch(root, selectors) {
+    if (!root) return null;
+    for (var i = 0; i < selectors.length; i++) {
+      try {
+        var el = root.querySelector(selectors[i]);
+        if (el) return el;
+      } catch (e) { /* invalid selector — ignore */ }
+    }
+    return null;
+  }
+  // v0.1.112: derive a stable URN for a wrapper node. Order: data-urn,
+  // data-id, nested [data-urn] / [data-id], permalink href.
+  function urnForNode(node) {
+    var v = node.getAttribute("data-urn") || node.getAttribute("data-id");
+    if (v) return v;
+    var nested = node.querySelector("[data-urn], [data-id]");
+    if (nested) {
+      var nv = nested.getAttribute("data-urn") || nested.getAttribute("data-id");
+      if (nv) return nv;
+    }
+    var perma = node.querySelector('a[href*="/feed/update/"]');
+    if (perma) {
+      var href = perma.getAttribute("href") || "";
+      var m = href.match(/\\/feed\\/update\\/(urn:li:[^\\/?#]+)/);
+      if (m) return decodeURIComponent(m[1]);
+    }
+    return null;
+  }
   function extractActor(scope) {
     if (!scope) return null;
     var link = scope.querySelector('a[href*="/in/"]');
-    var nameEl = scope.querySelector(
-      ".update-components-actor__title span[aria-hidden='true'], .update-components-actor__title, .update-components-actor__name"
-    );
-    var headlineEl = scope.querySelector(
-      ".update-components-actor__description"
-    );
+    var nameEl = firstMatch(scope, [
+      ".update-components-actor__title span[aria-hidden='true']",
+      ".update-components-actor__title",
+      ".update-components-actor__name",
+      ".feed-shared-actor__name span[aria-hidden='true']",
+      ".feed-shared-actor__name",
+      ".update-components-header__title",
+    ]);
+    var headlineEl = firstMatch(scope, [
+      ".update-components-actor__description",
+      ".feed-shared-actor__description",
+      ".update-components-header__sub-line",
+    ]);
     var href = link ? link.getAttribute("href") : null;
     var profileUrl = href ? new URL(href, location.origin).toString().split('?')[0] : null;
     var actorUrn = urnFromHref(href);
@@ -333,29 +370,78 @@ const EXTRACTOR_SCRIPT = `
     };
   }
 
-  var posts = [];
-  var nodes = document.querySelectorAll(
-    'div.feed-shared-update-v2[data-urn], div[data-urn^="urn:li:activity:"], div[data-urn^="urn:li:share:"]'
-  );
+  // v0.1.112 — full candidate list. Order matters: most-specific first
+  // so the diagnostic counts are interpretable.
+  var WRAPPER_SELECTORS = [
+    // Newer wrappers (LinkedIn UI shift seen 2026-Q2)
+    'article[data-urn^="urn:li:activity:"]',
+    'article[data-id^="urn:li:activity:"]',
+    'li[data-urn^="urn:li:activity:"]',
+    'li[data-id^="urn:li:activity:"]',
+    // Older but still seen
+    'div.feed-shared-update-v2[data-urn]',
+    'div[data-urn^="urn:li:activity:"]',
+    'div[data-urn^="urn:li:share:"]',
+    'div[data-id^="urn:li:activity:"]',
+    'div[data-id^="urn:li:share:"]',
+    // Class-only fallbacks — derive URN from a nested element / permalink.
+    '.feed-shared-update-v2',
+    '.update-components-update-v2',
+    '.feed-update-v2',
+  ];
 
-  nodes.forEach(function (node) {
+  var candidateCounts = {};
+  var seenWrappers = new Set();
+  var wrappers = [];
+  for (var si = 0; si < WRAPPER_SELECTORS.length; si++) {
+    var sel = WRAPPER_SELECTORS[si];
+    var hits = 0;
     try {
-      var postUrn = node.getAttribute("data-urn");
+      var matched = document.querySelectorAll(sel);
+      hits = matched.length;
+      for (var mi = 0; mi < matched.length; mi++) {
+        var w = matched[mi];
+        if (!seenWrappers.has(w)) {
+          seenWrappers.add(w);
+          wrappers.push(w);
+        }
+      }
+    } catch (e) { /* ignore invalid */ }
+    candidateCounts[sel] = hits;
+  }
+
+  var posts = [];
+  wrappers.forEach(function (node) {
+    try {
+      var postUrn = urnForNode(node);
       if (!postUrn) return;
 
-      var actorScope = node.querySelector(".update-components-actor");
+      var actorScope = firstMatch(node, [
+        ".update-components-actor",
+        ".feed-shared-actor",
+        "[data-test-actor]",
+        ".update-components-header",
+      ]);
       var author = extractActor(actorScope);
       if (!author) return;
 
-      var bodyEl = node.querySelector(
-        ".feed-shared-update-v2__commentary, .update-components-text"
-      );
+      var bodyEl = firstMatch(node, [
+        ".feed-shared-update-v2__commentary",
+        ".update-components-text",
+        ".feed-shared-text",
+        ".update-components-text-view",
+        "[data-test-commentary]",
+      ]);
       var text = txt(bodyEl);
 
       // Best-effort posted-at relative
-      var subEl = node.querySelector(
-        ".update-components-actor__sub-description, .update-components-actor__sub-description-link"
-      );
+      var subEl = firstMatch(node, [
+        ".update-components-actor__sub-description",
+        ".update-components-actor__sub-description-link",
+        ".update-components-actor__description",
+        ".feed-shared-actor__description",
+        ".update-components-header__sub-line",
+      ]);
       var postedAtRelative = txt(subEl) || null;
 
       // Media
@@ -381,7 +467,11 @@ const EXTRACTOR_SCRIPT = `
 
       // Article/external link: the article card
       var externalUrl = null;
-      var articleLink = node.querySelector(".update-components-article a[href], .feed-shared-article__link-container a[href]");
+      var articleLink = firstMatch(node, [
+        ".update-components-article a[href]",
+        ".feed-shared-article__link-container a[href]",
+        'a[href*="/pulse/"]',
+      ]);
       if (articleLink) {
         var ah = pickAttr(articleLink, "href");
         if (ah && ah.indexOf("http") === 0) externalUrl = ah;
@@ -389,7 +479,10 @@ const EXTRACTOR_SCRIPT = `
 
       // Permalink
       var permalink = null;
-      var permaCandidate = node.querySelector('a[href*="/feed/update/"]');
+      var permaCandidate = firstMatch(node, [
+        'a[href*="/feed/update/"]',
+        'a[href*="/posts/"]',
+      ]);
       if (permaCandidate) {
         var ph = pickAttr(permaCandidate, "href");
         if (ph) permalink = new URL(ph, location.origin).toString().split('?')[0];
@@ -466,7 +559,31 @@ const EXTRACTOR_SCRIPT = `
     seen[p.postUrn] = true;
     dedup.push(p);
   });
-  return dedup;
+  return {
+    posts: dedup,
+    diagnostic: {
+      candidateCounts: candidateCounts,
+      finalCount: dedup.length,
+    },
+  };
+})()
+`;
+
+// v0.1.112: small inline script that returns the feed container's
+// outerHTML capped to 2MB, so we can grep selector candidates offline
+// when extraction returns 0 posts. Wrapped in try/catch via the
+// caller; this script itself never throws.
+const FEED_HTML_DUMP_SCRIPT = `
+(function () {
+  try {
+    var el = document.querySelector('main[id="main"], main[role="main"], .scaffold-finite-scroll, .scaffold-layout__main');
+    var html = (el && el.outerHTML) ? el.outerHTML : document.body.outerHTML;
+    if (!html) return "";
+    if (html.length > 2000000) html = html.slice(0, 2000000);
+    return html;
+  } catch (e) {
+    return "";
+  }
 })()
 `;
 
@@ -875,12 +992,58 @@ export async function runScan(opts: ScanOptions): Promise<LinkedInScanResult> {
 
       await recorder.capture(win, "05_before_extraction");
 
-      // Extract
-      const raw = (await win.webContents.executeJavaScript(
+      // v0.1.112: dump the feed container's outerHTML (≤ 2MB) so we
+      // can diagnose selector drift offline when extraction returns 0
+      // posts. Best-effort — mirrors recorder.capture()'s contract.
+      try {
+        const feedHtml = (await win.webContents.executeJavaScript(
+          FEED_HTML_DUMP_SCRIPT,
+          true,
+        )) as string;
+        if (typeof feedHtml === "string" && feedHtml.length > 0) {
+          try {
+            writeFileSync(join(recorder.dir, "05_feed_html.html"), feedHtml);
+          } catch (err) {
+            console.warn(
+              "[linkedin/scraper] feed HTML write failed:",
+              err instanceof Error ? err.message : String(err),
+            );
+          }
+        }
+      } catch (err) {
+        console.warn(
+          "[linkedin/scraper] feed HTML dump failed:",
+          err instanceof Error ? err.message : String(err),
+        );
+      }
+
+      // Extract. v0.1.112: extractor now returns { posts, diagnostic }.
+      const extractResult = (await win.webContents.executeJavaScript(
         EXTRACTOR_SCRIPT,
         true,
-      )) as RawPostExtract[];
-      postsSeen = Array.isArray(raw) ? raw.length : 0;
+      )) as {
+        posts: RawPostExtract[];
+        diagnostic: {
+          candidateCounts: Record<string, number>;
+          finalCount: number;
+        };
+      };
+      const raw: RawPostExtract[] = Array.isArray(extractResult?.posts)
+        ? extractResult.posts
+        : [];
+      const diagnostic =
+        extractResult && typeof extractResult === "object"
+          ? extractResult.diagnostic ?? null
+          : null;
+      postsSeen = raw.length;
+
+      if (diagnostic) {
+        console.info(
+          "[linkedin/scraper] extraction diagnostic:",
+          JSON.stringify(diagnostic),
+        );
+        recorder.updateMeta({ extractionDiagnostic: diagnostic });
+      }
 
       const now = new Date();
 

@@ -7,6 +7,32 @@ The repo uses one rolling tag per desktop release (`v<major>.<minor>.<patch>`)
 on `main`. Submodules cut their own feature branches and are pinned via the
 desktop bundle; `pnpm fetch:producers` re-vendors them into the .dmg.
 
+## v0.1.112 — 2026-05-10
+
+- **LinkedIn-Beobachter: extraction selector refresh.** v0.1.110
+  anti-detection let the real feed render, but `postsSeen` stayed at
+  zero — LinkedIn had shipped a DOM/class rename and the three
+  hard-coded post-wrapper selectors no longer matched. This release:
+  - Broadens the post-wrapper match list to 12 candidates covering
+    `article` / `li` / `div` wrappers, the newer `data-id="urn:..."`
+    attribute, and class-only fallbacks (`.feed-shared-update-v2`,
+    `.update-components-update-v2`, `.feed-update-v2`). The URN is
+    resolved from `data-urn`, `data-id`, a nested `[data-urn]`, or
+    finally parsed out of a `/feed/update/<urn>/` permalink.
+  - Hedges every per-post sub-selector (actor scope, body, sub-line,
+    article link, permalink) against a candidate list and returns the
+    first non-null match.
+  - Dumps the feed container's `outerHTML` (capped at 2 MB) to
+    `<runDir>/05_feed_html.html` right before extraction, mirroring
+    the existing best-effort screenshot pattern, so selector drift
+    can be diagnosed offline from the run folder alone.
+  - Logs a `candidateCounts` / `finalCount` diagnostic via the
+    existing `console.info` channel and stashes the same object in
+    `run.json` under a new optional `extractionDiagnostic` field
+    (`LinkedInRunMeta` updated accordingly).
+  Downstream extractor shape (`postUrn`, `author`, `mediaUrls`, …)
+  is unchanged; only which selectors find each field was relaxed.
+
 ## v0.1.111 — 2026-05-10
 
 - **handelsregister.de scraper: JSF sidebar navigation.** The direct

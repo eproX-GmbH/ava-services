@@ -1042,6 +1042,14 @@ export interface LinkedInRunMeta {
   errorMessage: string | null;
   userAgent: string | null;
   url: string | null;
+  /** v0.1.112 — per-run extractor diagnostic. Records the per-candidate
+   *  match counts for the post wrapper selectors plus the final dedup
+   *  size, so we can tell offline which selector hit (or that all
+   *  selectors missed) after a 0-posts run. */
+  extractionDiagnostic?: {
+    candidateCounts: Record<string, number>;
+    finalCount: number;
+  } | null;
 }
 
 /** One row in the "Letzte Läufe" list. `meta` is null when `run.json`

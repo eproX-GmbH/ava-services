@@ -41,6 +41,12 @@ export interface RunMetadata {
   errorMessage: string | null;
   userAgent: string | null;
   url: string | null;
+  /** v0.1.112 — extractor selector diagnostic. Optional; present when
+   *  the scraper reached the extraction step. */
+  extractionDiagnostic?: {
+    candidateCounts: Record<string, number>;
+    finalCount: number;
+  } | null;
 }
 
 export interface RunRecorder {
