@@ -10,6 +10,9 @@ import type { FreshnessPrefsStore } from "../freshness-prefs-store";
 import type { UserProfileStore } from "../profile-store";
 import type { WatchStore } from "../watch-store";
 import type { CrmManager } from "../../crm";
+import type { OllamaSupervisor } from "../../ollama-supervisor";
+import type { WhisperSidecar } from "../../voice/whisper-sidecar";
+import type { Updater } from "../../updater";
 import { ToolRegistry } from "../tool-registry";
 import { buildCompanyTools } from "./companies";
 import { buildTransactionTools } from "./transactions";
@@ -24,6 +27,9 @@ import { buildProfileTools } from "./profile";
 import { buildWatchesTools } from "./watches";
 import { buildCrmTools } from "./crm";
 import { buildLinkedInTools } from "./linkedin";
+import { buildOllamaTools } from "./ollama";
+import { buildVoiceTools } from "./voice";
+import { buildUpdaterTools } from "./updater";
 
 // Tool factory.
 //
@@ -53,6 +59,12 @@ export function buildReadOnlyRegistry(deps: {
   profile: UserProfileStore;
   watches: WatchStore;
   crm: CrmManager;
+  /** Phase T2 — local-LLM management tools (`ollama_*`). */
+  ollama: OllamaSupervisor;
+  /** Phase T2 — voice / whisper.cpp setup tools (`voice_*`). */
+  whisper: WhisperSidecar;
+  /** Phase T2 — OTA updater tools (`updater_*`). */
+  updater: Updater;
   /** Bearer-token getter for CRM tools that POST through the gateway
    *  (Phase T1: `crm_enrich_now` pushes the live HubSpot payload to
    *  the gateway cache endpoint). Same source as `auth.getAccessToken()`. */
@@ -120,5 +132,11 @@ export function buildReadOnlyRegistry(deps: {
   }))
     registry.register(t);
   for (const t of buildLinkedInTools()) registry.register(t);
+  for (const t of buildOllamaTools({ ollama: deps.ollama }))
+    registry.register(t);
+  for (const t of buildVoiceTools({ whisper: deps.whisper }))
+    registry.register(t);
+  for (const t of buildUpdaterTools({ updater: deps.updater }))
+    registry.register(t);
   return registry;
 }

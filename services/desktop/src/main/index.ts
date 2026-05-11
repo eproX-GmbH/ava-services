@@ -982,6 +982,10 @@ const agentRegistry = buildReadOnlyRegistry({
   // `crm:enrich:run` IPC handler.
   getBearer: () => auth.getAccessToken(),
   gatewayUrl: GATEWAY_URL,
+  // Phase T2 — local LLM, voice setup, OTA updater self-service tools.
+  ollama,
+  whisper,
+  updater,
 });
 
 // Memory store (Phase 8.d). Probed once at boot — if the userData/agent/memory

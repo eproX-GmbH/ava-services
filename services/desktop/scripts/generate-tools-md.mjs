@@ -32,6 +32,9 @@ const GROUP_LABEL = {
   transactions: "Transaktionen",
   ui: "UI-Helfer",
   watches: "Watches",
+  ollama: "Ollama (lokale LLM)",
+  voice: "Spracherkennung",
+  updater: "App-Updates",
 };
 
 /**

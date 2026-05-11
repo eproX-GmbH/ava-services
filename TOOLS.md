@@ -5,7 +5,7 @@ NICHT direkt bearbeiten — die Quelle der Wahrheit ist `services/desktop/src/ma
 Lauf via `pnpm -F @ava/desktop tools:doc` (oder automatisch via `build:typecheck`).
 
 Stand: 2026-05-11
-Anzahl Tools: 73
+Anzahl Tools: 85
 
 ## Firmen (11)
 
@@ -680,3 +680,108 @@ Show a native OS notification. Use sparingly — only for events the user genuin
 _Parameter:_
 - `title: string` (required) — Bold first line.
 - `body: string` (required) — One short sentence.
+
+## Ollama (lokale LLM) (4)
+
+### `ollama_delete_model`
+
+_Datei:_ `services/desktop/src/main/agent/tools/ollama.ts`
+
+Löscht ein installiertes Ollama-Modell, um Speicherplatz freizugeben. Verwende das Tool nur, wenn der Nutzer ein konkretes Modell zum Löschen benennt. Setzt voraus, dass der Daemon bereit ist.
+
+_Parameter:_
+- `model: string` (required) — Modellname inklusive Tag, z. B. `qwen2.5:7b`.
+
+### `ollama_pull_model`
+
+_Datei:_ `services/desktop/src/main/agent/tools/ollama.ts`
+
+Lädt ein Ollama-Modell anhand seines Namens herunter (z. B. `qwen2.5:7b`, `llama3.2:3b`). Der Download läuft asynchron im Hintergrund weiter, das Tool kehrt sofort zurück, sobald der Transfer gestartet ist. Nutze danach `ollama_status`, um den Fortschritt zu prüfen. Setzt voraus, dass der Ollama-Daemon bereit ist.
+
+_Parameter:_
+- `model: string` (required) — Modellname inklusive Tag, z. B. `qwen2.5:7b`.
+
+### `ollama_restart`
+
+_Datei:_ `services/desktop/src/main/agent/tools/ollama.ts`
+
+Startet den lokalen Ollama-Daemon neu (Stop + Start). Nützlich, wenn der Daemon hängt, ein Modell-Pull fehlgeschlagen ist oder der Nutzer 'Ollama neu starten' verlangt.
+
+_Parameter:_ keine.
+
+### `ollama_status`
+
+_Datei:_ `services/desktop/src/main/agent/tools/ollama.ts`
+
+Liefert den Status des lokalen Ollama-Daemons: Zustand (idle / starting / ready / error), installierte Modelle und fehlende Pflichtmodelle. Nutze das Tool, wenn der Nutzer fragt, ob Ollama läuft, welche Modelle vorhanden sind oder warum die KI-Antworten ausbleiben.
+
+_Parameter:_ keine.
+
+## App-Updates (4)
+
+### `updater_check`
+
+_Datei:_ `services/desktop/src/main/agent/tools/updater.ts`
+
+Prüft bei GitHub Releases, ob eine neuere Version verfügbar ist. Nutze das Tool, wenn der Nutzer 'Update prüfen' oder 'gibt es eine neue Version' verlangt. Liefert anschließend den aktualisierten Status zurück. Funktioniert nur in der gepackten App; im Entwicklungsmodus passiert nichts.
+
+_Parameter:_ keine.
+
+### `updater_download`
+
+_Datei:_ `services/desktop/src/main/agent/tools/updater.ts`
+
+Lädt das verfügbare Update im Hintergrund herunter (.dmg auf macOS, .exe auf Windows). Setzt voraus, dass `updater_check` zuvor ein Update gemeldet hat. Der Download läuft asynchron; Fortschritt über `updater_status` abfragen. Installation passiert separat über `updater_install`.
+
+_Parameter:_ keine.
+
+### `updater_install`
+
+_Datei:_ `services/desktop/src/main/agent/tools/updater.ts`
+
+Installiert das heruntergeladene Update und startet die App neu. Setzt voraus, dass `updater_download` abgeschlossen ist (`updater_status` meldet `downloaded: true`). Achtung: der Aufruf beendet die App innerhalb weniger Sekunden, die Antwort kommt möglicherweise nicht mehr beim Nutzer an.
+
+_Parameter:_ keine.
+
+### `updater_status`
+
+_Datei:_ `services/desktop/src/main/agent/tools/updater.ts`
+
+Liefert den Status des Auto-Updaters: aktuelle Version, neueste bekannte Version, ob ein Update verfügbar ist und ob es bereits heruntergeladen wurde. Nutze das Tool, wenn der Nutzer fragt, ob ein Update verfügbar ist oder welche Version aktuell läuft.
+
+_Parameter:_ keine.
+
+## Spracherkennung (4)
+
+### `voice_delete_model`
+
+_Datei:_ `services/desktop/src/main/agent/tools/voice.ts`
+
+Löscht das heruntergeladene Sprachmodell, um Speicherplatz freizugeben. Der `model`-Parameter ist optional und wird derzeit ignoriert; die App löscht das aktive Modell. Nach dem Löschen muss `voice_download_model` aufgerufen werden, bevor Diktat wieder funktioniert.
+
+_Parameter:_
+- `model: string` — Optionaler Modellname. Derzeit ignoriert; die App löscht das aktive Modell.
+
+### `voice_download_model`
+
+_Datei:_ `services/desktop/src/main/agent/tools/voice.ts`
+
+Lädt das Standard-Sprachmodell für die Diktatfunktion herunter (mehrere hundert MB). Der `model`-Parameter ist optional und wird derzeit ignoriert; die App nutzt das per Umgebungsvariable konfigurierte Standardmodell. Nutze das Tool, wenn `voice_status` 'model-missing' meldet. Der Download läuft im Hintergrund weiter; Fortschritt über `voice_status` abfragen.
+
+_Parameter:_ keine.
+
+### `voice_install_binary`
+
+_Datei:_ `services/desktop/src/main/agent/tools/voice.ts`
+
+Installiert das whisper.cpp-Binary (über Homebrew auf macOS, via offiziellem Download auf Windows, Paketmanager-Hinweis auf Linux). Nutze das Tool, wenn der Nutzer die Spracherkennung erstmals einrichten möchte und `voice_status` 'binary-missing' meldet. Kann mehrere Minuten dauern.
+
+_Parameter:_ keine.
+
+### `voice_status`
+
+_Datei:_ `services/desktop/src/main/agent/tools/voice.ts`
+
+Liefert den Status der Spracherkennung: ist das whisper.cpp-Binary installiert, ist das Sprachmodell heruntergeladen, läuft ein Download. Nutze das Tool, wenn der Nutzer fragt, ob Diktat / Spracheingabe einsatzbereit ist.
+
+_Parameter:_ keine.
