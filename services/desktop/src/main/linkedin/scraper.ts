@@ -381,6 +381,26 @@ const EXTRACTOR_SCRIPT = `
     return m ? m[1] : null;
   }
 
+  // LinkedIn renders TWO anchors per actor with the same href: one
+  // around the avatar (figure/img only, empty textContent) and one
+  // around the info block (name + headline <p>s). querySelectorAll
+  // returns both in DOM order, which means \`profileLinks[0]\` is often
+  // the avatar — useless for name extraction. Dedupe by href and keep
+  // the anchor with the richest textContent.
+  function dedupeByHref(nodes) {
+    var byHref = new Map();
+    for (var i = 0; i < nodes.length; i++) {
+      var a = nodes[i];
+      var href = a.getAttribute("href") || "";
+      if (!href) continue;
+      var prev = byHref.get(href);
+      if (!prev || (a.textContent || "").length > (prev.textContent || "").length) {
+        byHref.set(href, a);
+      }
+    }
+    return Array.from(byHref.values());
+  }
+
   // Build an actor record from a single anchor (\`a[href*="/in/"]\` or
   // \`a[href*="/company/"]\`). The anchor wraps a few \`<p>\` elements;
   // the first is typically the name, the second is the headline.
@@ -402,6 +422,27 @@ const EXTRACTOR_SCRIPT = `
     var displayName = nameText || aria || txt(link) || "";
     // Defensive: strip ARIA suffixes like ", profile" / ", company".
     displayName = displayName.replace(/,\\s*(profile|company|page).*/i, "").trim();
+    // Fallback: parse the LinkedIn img-alt / svg-aria patterns. The
+    // avatar anchor wraps only a <figure>/<img>/<svg>, so all the
+    // text-based extractors above yield nothing. The alt text follows
+    // a small set of localised patterns we can recover.
+    if (!displayName) {
+      var imgAlt = "";
+      var img = link.querySelector("img[alt]");
+      if (img) imgAlt = img.getAttribute("alt") || "";
+      if (!imgAlt) {
+        var svgAria = link.querySelector("svg[aria-label]");
+        if (svgAria) imgAlt = svgAria.getAttribute("aria-label") || "";
+      }
+      // Patterns: "View Foo Bar's profile" / "View company: Foo GmbH" /
+      //           "Foto von Foo Bar anzeigen" / "Foo Bar anzeigen"
+      var m =
+        imgAlt.match(/^View\\s+(.+?)['\\u2019]s\\s+(?:profile|photo|page)\\s*$/i) ||
+        imgAlt.match(/^View\\s+company:\\s+(.+)$/i) ||
+        imgAlt.match(/^Foto\\s+von\\s+(.+?)\\s+anzeigen\\s*$/i) ||
+        imgAlt.match(/^(.+?)\\s+anzeigen\\s*$/i);
+      if (m && m[1]) displayName = m[1].trim();
+    }
     if (!displayName && !actorUrn) return null;
     return {
       actorUrn:
@@ -536,8 +577,8 @@ const EXTRACTOR_SCRIPT = `
       // Collect /in/ and /company/ links inside the post. If there's
       // an attribution header, skip the FIRST one (it belongs to the
       // attributor) and pick the second.
-      var profileLinks = node.querySelectorAll('a[href*="/in/"]');
-      var companyLinks = node.querySelectorAll('a[href*="/company/"]');
+      var profileLinks = dedupeByHref(node.querySelectorAll('a[href*="/in/"]'));
+      var companyLinks = dedupeByHref(node.querySelectorAll('a[href*="/company/"]'));
       var actor = null;
       var skipIndex = attribution ? 1 : 0;
       if (profileLinks.length > skipIndex) {

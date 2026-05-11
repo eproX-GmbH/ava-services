@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Activity, ExternalLink } from "lucide-react";
@@ -105,11 +105,148 @@ interface LightboxImage {
   caption: string | null;
 }
 
+// Session-only suppression key for the open-warning modal. We use
+// sessionStorage on purpose — the warning should come back the next
+// time the app launches, even if the user dismissed it last session.
+const OPEN_WARNING_SUPPRESS_KEY = "ava.linkedinOpenWarning.suppress";
+
+function useLinkedInOpenConfirm() {
+  const [pendingHref, setPendingHref] = useState<string | null>(null);
+
+  const openLinkedIn = useCallback((href: string) => {
+    if (!href) return;
+    let suppressed = false;
+    try {
+      suppressed = sessionStorage.getItem(OPEN_WARNING_SUPPRESS_KEY) === "1";
+    } catch {
+      // sessionStorage may be unavailable in obscure contexts — fail open.
+    }
+    if (suppressed) {
+      window.open(href, "_blank", "noreferrer,noopener");
+      return;
+    }
+    setPendingHref(href);
+  }, []);
+
+  const cancel = useCallback(() => setPendingHref(null), []);
+
+  const confirm = useCallback(
+    (suppressForSession: boolean) => {
+      if (suppressForSession) {
+        try {
+          sessionStorage.setItem(OPEN_WARNING_SUPPRESS_KEY, "1");
+        } catch {
+          // ignore
+        }
+      }
+      if (pendingHref) {
+        window.open(pendingHref, "_blank", "noreferrer,noopener");
+      }
+      setPendingHref(null);
+    },
+    [pendingHref],
+  );
+
+  return { pendingHref, openLinkedIn, cancel, confirm };
+}
+
+interface LinkedInOpenWarningModalProps {
+  href: string | null;
+  onCancel: () => void;
+  onConfirm: (suppressForSession: boolean) => void;
+}
+
+function LinkedInOpenWarningModal({
+  href,
+  onCancel,
+  onConfirm,
+}: LinkedInOpenWarningModalProps) {
+  const [suppress, setSuppress] = useState(false);
+  const confirmRef = useRef<HTMLButtonElement | null>(null);
+  const open = href !== null;
+
+  // Reset the checkbox each time the modal opens.
+  useEffect(() => {
+    if (open) setSuppress(false);
+  }, [open]);
+
+  // Focus the primary action on open so Enter confirms.
+  useEffect(() => {
+    if (open) confirmRef.current?.focus();
+  }, [open]);
+
+  // ESC closes the modal.
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onCancel();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open, onCancel]);
+
+  if (!open) return null;
+
+  return (
+    <div
+      className="linkedin-consent-overlay"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="linkedin-open-warning-title"
+      onMouseDown={(e) => {
+        if (e.target === e.currentTarget) onCancel();
+      }}
+    >
+      <div className="linkedin-consent-panel">
+        <header className="linkedin-consent-header">
+          <h3 id="linkedin-open-warning-title">LinkedIn-Link öffnen</h3>
+        </header>
+        <p>
+          Bevor wir den Link öffnen, ein kurzer Hinweis. LinkedIn wertet
+          ungewöhnliche Zugriffsmuster gelegentlich als verdächtig aus, etwa
+          wenn viele Beiträge in kurzer Folge über externe Tools angesteuert
+          werden. Im Normalfall passiert nichts, aber bei intensiver Nutzung
+          kann das Konto vorübergehend gedrosselt oder geprüft werden.
+        </p>
+        <p>
+          Wir empfehlen, Links bewusst und in moderatem Takt zu öffnen und
+          über AVA gefundene Inhalte vor allem als Anhaltspunkt zu nutzen.
+          Trotzdem öffnen?
+        </p>
+
+        <label className="linkedin-consent-check">
+          <input
+            type="checkbox"
+            checked={suppress}
+            onChange={(e) => setSuppress(e.target.checked)}
+          />
+          <span>Hinweis nicht mehr anzeigen (für diese Sitzung)</span>
+        </label>
+
+        <div className="linkedin-consent-actions">
+          <button type="button" className="link" onClick={onCancel}>
+            Abbrechen
+          </button>
+          <button
+            ref={confirmRef}
+            type="button"
+            className="primary"
+            onClick={() => onConfirm(suppress)}
+          >
+            LinkedIn öffnen
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function LinkedIn() {
   const queryClient = useQueryClient();
   const [filters, setFilters] = useState<FilterState>(loadFilters);
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [lightbox, setLightbox] = useState<LightboxImage | null>(null);
+  const openConfirm = useLinkedInOpenConfirm();
 
   // Esc closes the lightbox. Mounted at route level so it works
   // regardless of which card opened the image.
@@ -302,11 +439,17 @@ export function LinkedIn() {
                 }
                 onDismissToggle={() => onDismissToggle(row.postUrn, row.dismissed)}
                 onOpenImage={(img) => setLightbox(img)}
+                onOpenLinkedIn={openConfirm.openLinkedIn}
               />
             ))}
           </div>
         </>
       )}
+      <LinkedInOpenWarningModal
+        href={openConfirm.pendingHref}
+        onCancel={openConfirm.cancel}
+        onConfirm={openConfirm.confirm}
+      />
       {lightbox && (
         <div
           className="shot-lightbox"
@@ -332,9 +475,17 @@ interface SignalCardProps {
   onToggleExpanded: () => void;
   onDismissToggle: () => void;
   onOpenImage: (img: LightboxImage) => void;
+  onOpenLinkedIn: (href: string) => void;
 }
 
-function SignalCard({ row, expanded, onToggleExpanded, onDismissToggle, onOpenImage }: SignalCardProps) {
+function SignalCard({
+  row,
+  expanded,
+  onToggleExpanded,
+  onDismissToggle,
+  onOpenImage,
+  onOpenLinkedIn,
+}: SignalCardProps) {
   const kindKey = row.signalKind ?? "none";
   const kindLabel = SIGNAL_KIND_LABEL[kindKey] ?? kindKey;
   const kindTone = SIGNAL_KIND_TONE[kindKey] ?? "ct-pill--muted";
@@ -372,10 +523,12 @@ function SignalCard({ row, expanded, onToggleExpanded, onDismissToggle, onOpenIm
         {row.author.profileUrl ? (
           <a
             href={row.author.profileUrl}
-            target="_blank"
-            rel="noreferrer noopener"
             className="link"
             style={{ fontWeight: 600 }}
+            onClick={(e) => {
+              e.preventDefault();
+              onOpenLinkedIn(row.author.profileUrl as string);
+            }}
           >
             {row.author.displayName}
           </a>
@@ -544,14 +697,14 @@ function SignalCard({ row, expanded, onToggleExpanded, onDismissToggle, onOpenIm
         }}
       >
         {permalink && (
-          <a
-            href={permalink}
-            target="_blank"
-            rel="noreferrer noopener"
+          <button
+            type="button"
             className="link"
+            onClick={() => onOpenLinkedIn(permalink)}
+            style={{ background: "none", border: 0, padding: 0, cursor: "pointer" }}
           >
             Auf LinkedIn öffnen <ExternalLink className="ct-icon-sm" aria-hidden="true" />
-          </a>
+          </button>
         )}
         <button type="button" className="link" onClick={onDismissToggle}>
           {row.dismissed ? "Zurückholen" : "Verwerfen"}
