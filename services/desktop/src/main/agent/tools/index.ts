@@ -23,6 +23,7 @@ import { buildFreshnessTools } from "./freshness";
 import { buildProfileTools } from "./profile";
 import { buildWatchesTools } from "./watches";
 import { buildCrmTools } from "./crm";
+import { buildLinkedInTools } from "./linkedin";
 
 // Tool factory.
 //
@@ -52,6 +53,12 @@ export function buildReadOnlyRegistry(deps: {
   profile: UserProfileStore;
   watches: WatchStore;
   crm: CrmManager;
+  /** Bearer-token getter for CRM tools that POST through the gateway
+   *  (Phase T1: `crm_enrich_now` pushes the live HubSpot payload to
+   *  the gateway cache endpoint). Same source as `auth.getAccessToken()`. */
+  getBearer: () => Promise<string | null>;
+  /** Gateway base URL — needed by `crm_enrich_now` for the cache POST. */
+  gatewayUrl: string;
   /** Fired by the alerts tools after every mutation so the renderer's
    *  bell + /alerts list refresh live. main/index.ts wires this to the
    *  IPC `alerts:changed` broadcast. */
@@ -105,6 +112,13 @@ export function buildReadOnlyRegistry(deps: {
     onChanged: deps.onWatchesChanged,
   }))
     registry.register(t);
-  for (const t of buildCrmTools({ crm: deps.crm })) registry.register(t);
+  for (const t of buildCrmTools({
+    crm: deps.crm,
+    gateway: deps.gateway,
+    getBearer: deps.getBearer,
+    gatewayUrl: deps.gatewayUrl,
+  }))
+    registry.register(t);
+  for (const t of buildLinkedInTools()) registry.register(t);
   return registry;
 }

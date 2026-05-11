@@ -97,6 +97,15 @@ via `safeStorage`. The renderer's SSE wrapper uses
 `@microsoft/fetch-event-source` so the bearer token rides in the
 `Authorization` header rather than the query string.
 
+## Tooling notes
+
+- After touching anything under `src/main/agent/tools/*.ts`, run
+  `pnpm -F @ava/desktop tools:doc` to regenerate `TOOLS.md` at the repo
+  root and commit the result. `build:typecheck` runs the generator first
+  so the doc rarely lags, but the diff check is human-discipline today —
+  a CI gate can land later. The source of truth stays the TS files; the
+  doc is a read-only inventory the agent + reviewers consult.
+
 ## Known follow-ups
 
 - **Workstream C C4** — CRM section on CompanyDetail + Meine Firmen /

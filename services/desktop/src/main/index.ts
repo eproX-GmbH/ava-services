@@ -977,6 +977,11 @@ const agentRegistry = buildReadOnlyRegistry({
   onWatchesChanged: broadcastWatchesChanged,
   // v0.1.54 — CRM connect/disconnect/status tools.
   crm: crmManager,
+  // Phase T1 — `crm_enrich_now` posts to the gateway cache endpoint
+  // (HubSpot live enrichment). Reuses the same auth source as the
+  // `crm:enrich:run` IPC handler.
+  getBearer: () => auth.getAccessToken(),
+  gatewayUrl: GATEWAY_URL,
 });
 
 // Memory store (Phase 8.d). Probed once at boot — if the userData/agent/memory
