@@ -7,6 +7,94 @@ The repo uses one rolling tag per desktop release (`v<major>.<minor>.<patch>`)
 on `main`. Submodules cut their own feature branches and are pinned via the
 desktop bundle; `pnpm fetch:producers` re-vendors them into the .dmg.
 
+## v0.1.116 — 2026-05-11
+
+- **company-publication: FoxIO captcha solved by a deterministic
+  Selenium click first; LLM kept as fallback.** The "Ich bin ein
+  Mensch" widget on unternehmensregister.de loads its checkbox inside
+  an iframe. The LLM agent's DOM snapshot was the parent document
+  only, so it couldn't see the checkbox and gave up. Two changes:
+  (a) `tryDeterministicFoxClick` walks the top document and every
+  same-origin iframe, trying `#fox-captcha-checkbox`, generic
+  `input[type=checkbox]`, label-text xpath, and case-folded text
+  match — clicking the first hit. Cross-origin iframe access is
+  caught and skipped; `defaultContent()` is restored on every exit
+  path. On success the LLM is never invoked. (b) `snapshotDom` now
+  recursively inlines same-origin iframe content between
+  `<!--__AVA_IFRAME_BEGIN__ id=…-->` markers so the LLM fallback
+  also has a chance, and the click executor falls back to an
+  iframe-walk when a top-level selector misses.
+- **company-contact: Employment dedup + LLM role canonicalisation.**
+  The producer's `findFirst` keyed on `(personId, companyId, title,
+  startDate)`, so any LLM-rephrase of the title between runs
+  ("Vorstandsmitglied (Board member)" vs "Vorstandsmitglied (Board
+  Member)") created a fresh Employment row, while the loop above
+  marked the previous row `isCurrent=false` because its title didn't
+  exactly match the new one — producing the observed "2 current + 1
+  past, all same role" pattern. New behaviour: one Employment per
+  `(personId, companyId)`, multiple sources accumulate as
+  EmploymentSource rows. A new `canonicaliseEmploymentRole` LLM
+  pass takes all observations for the person+company and returns a
+  single canonical `{title, department, isCurrentlyEmployed,
+  confidence, reasoning}`. Confidence merges as
+  `max(existing, incoming, llm)` so it can't regress. `isCurrent`
+  only mutates when the LLM is certain.
+- **company-contact: Person dedup.** `personIdentityKey` now uses a
+  proper URL canonicaliser (lowercased host + lowercased path, no
+  trailing slash, no query, no fragment) so the same LinkedIn profile
+  with different spellings collapses to one keyspace.
+  `upsertPersonByIdentity` adds a fallback NFKD-normalized-fullName
+  match scoped to the company, so a Person observed once via website
+  (no URL → name-hash key) and once via Google (URL key) finds the
+  existing row instead of minting a new one. The new identityKey is
+  attached as an additional Fact on the existing Person.
+- **company-contact: snippet provenance restored.** Every
+  Observation row had `evidence: null` hardcoded, killing the audit
+  trail. `EmployeeCandidate` gained an `evidence?: string` field;
+  valueserp now copies `r.snippet` into the candidate (matched by
+  link → name-in-snippet → joined LinkedIn-domain fallback, capped
+  280 chars); the website_people path adds an `excerptForName(text,
+  fullName, 500)` helper that returns a 500-char window of the page
+  text around the matched name (or `undefined` when the name isn't
+  present, no fabrication). `buildPersonObservations` plumbs this
+  into the `evidence` column on `jobTitle`/`department`/
+  `employmentCompanyId` observations (identity-typed fields stay
+  null because a free-text snippet doesn't help audit them).
+- **CompanyDetail PersonCard cleanup.** Cards used to dump every
+  Fact row the producer emitted (3-6 ACTIVE + a tail of INACTIVE),
+  with mixed status pills interleaved. Now ACTIVE rows are grouped
+  by field — the highest-confidence row renders inline, sibling
+  variants collapse into a `+N Varianten` toggle. INACTIVE rows move
+  into a closed `<details>` "Historie (N)" disclosure. Inline status
+  pills are gone (every visible row is ACTIVE by definition; the
+  history is explicitly labelled).
+- **Tier pill tooltip reactivity.** Replaced the native `title=""`
+  popover (1.5 s hover delay, resets on jitter) with a CSS-driven
+  tooltip that appears instantly on `:hover` / `:focus-within` and
+  dismisses instantly on leave. `pointer-events: none` so the tooltip
+  can't steal hover from the trigger.
+- **Gateway: `CompanyKeyword` insert populates `normalizedKeyword`.**
+  v0.1.106's keyword-persist path forgot to populate the NOT-NULL
+  `normalizedKeyword` column, so every company-profile compute since
+  has been crashing on persist. Now normalises via
+  NFKD → strip combining marks → lowercase → collapse whitespace →
+  trim, with dedup keyed on the normalized form. Gateway redeploy
+  required to take effect (see `fly deploy -a ava-db-gateway`).
+- **Diagnostics: "Logs kopieren" button.** Right-aligned pill in the
+  Logs controls row. Three states with visual feedback: idle (copy
+  icon + label), copied (check icon + "Kopiert" in aqua, 1.6 s),
+  error (warning + "Fehlgeschlagen" in red, falls back to
+  hidden-textarea + execCommand if `navigator.clipboard` is
+  unavailable). Copies the currently visible lines (post filter +
+  stderr-only) as `ISO-timestamp [OUT|ERR] <line>` so the user can
+  paste into a bug report without losing context.
+- **TS hygiene.** Pre-existing implicit-any `ack` parameters in
+  `company-profile-transaction-handler.ts`,
+  `company-publication-transaction-handler.ts`, and
+  `upsert-company-publication-handler.ts` got annotated as a side
+  effect of the contact + publication patches. Producer builds are
+  now clean.
+
 ## v0.1.115 — 2026-05-11
 
 - **Handelsregister: capture SI XML when Chrome native-downloads it.**
