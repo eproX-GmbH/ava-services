@@ -3158,6 +3158,7 @@ a.heartbeat-decision__company:hover {
   display: flex;
   gap: 0.5rem;
   align-items: center;
+  flex-wrap: wrap;
 }
 .diagnostics__header select {
   flex: 0 0 auto;
@@ -3165,7 +3166,9 @@ a.heartbeat-decision__company:hover {
 .diagnostics__tabs {
   display: flex;
   gap: 0.25rem;
-  margin-left: auto;
+  /* Force the tabs onto a second row so they never overlap the producer
+   * dropdown to the right in narrow drill panels. */
+  flex-basis: 100%;
 }
 .diagnostics__tabs button {
   padding: 4px 12px;
