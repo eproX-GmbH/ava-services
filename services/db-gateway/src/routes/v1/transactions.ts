@@ -1235,13 +1235,17 @@ transactionsRouter.openapi(retryQueueRoute, async (c) => {
     firstFailureAt: Date | null;
     lastFailureAt: Date | null;
   }>(
+    // `nextRetryAt IS NULL` covers two cases: (a) failed rows from before
+    // v0.1.118 when the column didn't exist, and (b) producers that didn't
+    // populate it on a fresh failure. Treat NULL as "ripe now" so the
+    // ticker re-enrolls them on the next 10-min slot instead of leaving
+    // them stranded forever.
     `SELECT "transactionId", "companyId", producer, "attempts",
             "firstFailureAt", "lastFailureAt"
      FROM "EntityProgress"
      WHERE state = 'failed'
        AND "giveUpAt" IS NULL
-       AND "nextRetryAt" IS NOT NULL
-       AND "nextRetryAt" <= NOW()
+       AND ("nextRetryAt" IS NULL OR "nextRetryAt" <= NOW())
        AND "transactionId" = ANY($1)
      ORDER BY "attempts" ASC, "lastFailureAt" ASC NULLS FIRST
      LIMIT $2`,
