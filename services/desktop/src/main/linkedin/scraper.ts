@@ -18,7 +18,7 @@
 
 import { app, BrowserWindow, net } from "electron";
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, writeFileSync, promises as fsPromises } from "node:fs";
 import { extname, join } from "node:path";
 import type {
   LinkedInScanOutcome,
@@ -259,17 +259,20 @@ async function downloadMedia(
         const dir = join(mediaDir(), safePostDir);
         ensureDir(dir);
         const localPath = join(dir, id + ext);
-        try {
-          writeFileSync(localPath, buf);
-        } catch (err) {
-          console.warn(
-            "[linkedin/scraper] media write failed:",
-            err instanceof Error ? err.message : String(err),
-          );
-          resolve(null);
-          return;
-        }
-        resolve({ id, localPath, bytes: buf.length });
+        // Media payloads (post images, video posters) can be several
+        // hundred KB; write async so the main thread isn't blocked
+        // mid-scrape. Resolution waits for the write so the caller's
+        // bookkeeping still reflects disk state.
+        fsPromises.writeFile(localPath, buf).then(
+          () => resolve({ id, localPath, bytes: buf.length }),
+          (err: unknown) => {
+            console.warn(
+              "[linkedin/scraper] media write failed:",
+              err instanceof Error ? err.message : String(err),
+            );
+            resolve(null);
+          },
+        );
       });
       res.on("error", () => {
         signal.removeEventListener("abort", onAbort);
@@ -1218,14 +1221,17 @@ export async function runScan(opts: ScanOptions): Promise<LinkedInScanResult> {
           true,
         )) as string;
         if (typeof feedHtml === "string" && feedHtml.length > 0) {
-          try {
-            writeFileSync(join(recorder.dir, "05_feed_html.html"), feedHtml);
-          } catch (err) {
-            console.warn(
-              "[linkedin/scraper] feed HTML write failed:",
-              err instanceof Error ? err.message : String(err),
+          // Up to 2 MB on disk per scan — async write so the main
+          // process can keep servicing renderer IPC while the bytes
+          // flush. Failure is logged but non-fatal.
+          await fsPromises
+            .writeFile(join(recorder.dir, "05_feed_html.html"), feedHtml)
+            .catch((err: unknown) =>
+              console.warn(
+                "[linkedin/scraper] feed HTML write failed:",
+                err instanceof Error ? err.message : String(err),
+              ),
             );
-          }
         }
       } catch (err) {
         console.warn(

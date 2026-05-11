@@ -24,6 +24,7 @@ import {
   rmSync,
   statSync,
   writeFileSync,
+  promises as fsPromises,
 } from "node:fs";
 import { join } from "node:path";
 import type { LinkedInScanOutcome } from "../../shared/types";
@@ -197,14 +198,20 @@ export function beginRun(initial: {
   };
 
   const writeMeta = (): void => {
-    try {
-      writeFileSync(join(dir, "run.json"), JSON.stringify(meta, null, 2));
-    } catch (err) {
-      console.warn(
-        "[linkedin/runs] run.json write failed:",
-        err instanceof Error ? err.message : String(err),
+    // Fire-and-forget async write. run.json is small (~1 KB) but writing
+    // synchronously on the main thread alongside multi-MB PNG captures
+    // contributes to UI jank during a scan. Capture a snapshot of the
+    // current meta object so a later writeMeta call can't race-overwrite
+    // a write that's still in flight.
+    const snapshot = JSON.stringify(meta, null, 2);
+    void fsPromises
+      .writeFile(join(dir, "run.json"), snapshot)
+      .catch((err: unknown) =>
+        console.warn(
+          "[linkedin/runs] run.json write failed:",
+          err instanceof Error ? err.message : String(err),
+        ),
       );
-    }
   };
   writeMeta();
 
@@ -219,7 +226,12 @@ export function beginRun(initial: {
       if (!img) return;
       const buf = img.toPNG();
       if (!buf || buf.length === 0) return;
-      writeFileSync(join(dir, `${name}.png`), buf);
+      // Async write so the main thread isn't blocked while a multi-MB
+      // PNG hits disk — meaningful on macOS where capturePage() is
+      // already GPU-stalling. Yield to the event loop right after so
+      // any renderer IPC backed up behind this awaits actually run.
+      await fsPromises.writeFile(join(dir, `${name}.png`), buf);
+      await new Promise((resolve) => setImmediate(resolve));
     } catch (err) {
       console.warn(
         `[linkedin/runs] capture ${name} failed:`,
