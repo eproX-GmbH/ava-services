@@ -38,25 +38,42 @@ to `http://localhost:8080`, which matches `db-gateway`'s `.env.example`).
 Use `bash scripts/dev.sh` from the meta-repo root to start the gateway plus
 upstream services in another terminal.
 
-## Shipped surfaces (v0.1.108)
+## Shipped surfaces (v0.1.118)
 
 - **AI-Chat** (`/chat`) — primary interface. Agent has ~30 tools (company
   reads, imports, transactions, watches, alerts, freshness, CRM, profile,
-  memory). System prompt + tool definitions under `src/main/agent/`.
+  memory). System prompt + tool definitions under `src/main/agent/`. The
+  fan-out for open company questions includes `company_crm_summary` for
+  CRM-linked companies (cache-safe, 6h TTL).
 - **Companies / company detail** (`/companies`, `/companies/:id`) —
   per-tab tier pills, overview / financials / management / contacts /
-  insights / jobs tabs.
+  insights / jobs tabs. PersonCard collapses field-grouped Facts behind
+  a "+N Varianten" toggle; INACTIVE rows hide in a `<details>` history
+  disclosure. Tier pill tooltip is CSS-driven (no native delay).
 - **Transactions matrix** (`/transactions`, `/transactions/:id`) —
-  live pipeline grid via SSE bridge, drilldown to producer logs.
+  live pipeline grid via SSE bridge, drilldown to producer logs. Failed
+  cells show an "Nx" badge after the second attempt and a German retry-
+  status line in the tooltip ("Wartet auf erneuten Versuch in 8 Min" /
+  "Erneuter Versuch fällig" / "Aufgegeben nach 5 Versuchen"). The
+  retry-ticker auto-retries failed cells every 10 min, prioritising
+  lower attempt counts; user can disable via Settings → Meldungen.
 - **LinkedIn-Beobachter** (`/linkedin`) — opt-in feed monitoring with
-  vision-LLM image analysis. See `src/main/linkedin/`.
-- **Whoami / Status** (`/whoami`) — multi-source reachability panel,
-  active provider, build info.
+  vision-LLM image analysis. See `src/main/linkedin/`. Per-run
+  screenshot folder + `run.json` under `userData/linkedin/runs/`.
+  Open-link modal warns about LinkedIn flagging before navigating;
+  Sponsored posts skipped at extraction time.
+- **Whoami / Status** (`/whoami`) — multi-source reachability panel
+  (unternehmensregister.de + handelsregister.de), active provider,
+  build info.
 - **Settings** (`/settings`) — provider selection (Ollama / OpenAI /
   Anthropic / Google / Mistral), Stripe portal, voice setup, LinkedIn
-  controls, freshness preferences.
+  controls, freshness preferences, heartbeat auto-retry toggle.
 - **Ingest / First-run wizard** (`/ingest`, `/first-run`) — Excel + CSV
-  + single-company + CRM (HubSpot today) imports.
+  + single-company + CRM (HubSpot today; Salesforce + Dynamics stubbed)
+  imports. Confirmed matches persist a CompanyCrmLink so the agent can
+  pull CRM context on demand. Excel auto-detects typed CRM-ID columns
+  (`hubspot_id`, `hs_object_id`, `salesforce_id`, `sfdc_id`, `sf_id`,
+  `dynamics_id`, `msd_id`, `dataverse_id`, `d365_id`).
 - **Alerts + chat history** — bell dropdown + searchable chat archive.
 
 ## Packaging
@@ -82,6 +99,23 @@ via `safeStorage`. The renderer's SSE wrapper uses
 
 ## Known follow-ups
 
+- **Workstream C C4** — CRM section on CompanyDetail + Meine Firmen /
+  Vorgänge badges + manual "Mit CRM verknüpfen" button. Schema + API
+  are live (`CompanyCrmLink` / `CompanyCrmCache`); renderer surface
+  still missing.
+- **Desktop-side HubSpot live enrichment fetcher** — populates the
+  CRM cache via `POST /v1/companies/:id/crm/cache` using on-device
+  OAuth tokens. Required for `company_crm_summary` to return
+  non-empty data on first request.
+- **Renderer cache** — `useTabQuery` keeps a 404 response cached
+  after a producer finishes, so a freshly persisted profile only
+  appears after navigate-away-and-back or app restart. Plausibly
+  fixed by the same SSE bridge that solves M4.
+- **Workstream A publication accuracy** — numeric extraction
+  (Bilanzsumme / Umsatz / Gewinn) is unreliable on tabular layouts
+  and unit-scale prefixes (TEUR, Mio). Eval harness + structural
+  table extraction + tier-aware routing planned; awaiting ground-
+  truth examples.
 - Wire the renderer build into `build:typecheck` so CSS parse errors fail
   locally instead of silently in CI (v0.1.69–v0.1.74 cautionary tale).
 - OTA scrub-on-download — quarantine attribute removal on the downloaded
@@ -90,3 +124,7 @@ via `safeStorage`. The renderer's SSE wrapper uses
   website / profile / contact / evaluation / publication producers.
 - Matrix M4: full SSE bridge for live cell state changes (today some
   surfaces still poll).
+- Harden CI vendor step — don't silently skip on producer build failure.
+- Events-as-context for company-evaluation — LinkedIn signals,
+  publications, and CRM events feeding the embedding input. Parked
+  pending the M4 SSE work above.

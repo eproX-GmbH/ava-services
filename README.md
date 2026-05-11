@@ -63,7 +63,7 @@ Status pro Firma × pro Stage liegt live als Matrix in der App, mit Drilldown au
 
 ## Status
 
-Aktuell Pre-1.0 (Stand: v0.1.108). Die Architektur ist stabil, Featureflächen wachsen pro Release. Architektur-Entscheidungen liegen in [`DECISIONS.md`](./DECISIONS.md), eine vollständige Bestandsaufnahme in [`INVENTORY.md`](./INVENTORY.md), der detaillierte Datenfluss in [`DESKTOP_DATA_FLOW.md`](./DESKTOP_DATA_FLOW.md). Eine Release-Chronik führt [`CHANGELOG.md`](./CHANGELOG.md).
+Aktuell Pre-1.0 (Stand: v0.1.118). Die Architektur ist stabil, Featureflächen wachsen pro Release. Architektur-Entscheidungen liegen in [`DECISIONS.md`](./DECISIONS.md), eine vollständige Bestandsaufnahme in [`INVENTORY.md`](./INVENTORY.md), der detaillierte Datenfluss in [`DESKTOP_DATA_FLOW.md`](./DESKTOP_DATA_FLOW.md). Eine Release-Chronik führt [`CHANGELOG.md`](./CHANGELOG.md).
 
 ## Installation
 
