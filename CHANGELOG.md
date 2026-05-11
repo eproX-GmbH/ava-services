@@ -7,6 +7,49 @@ The repo uses one rolling tag per desktop release (`v<major>.<minor>.<patch>`)
 on `main`. Submodules cut their own feature branches and are pinned via the
 desktop bundle; `pnpm fetch:producers` re-vendors them into the .dmg.
 
+## v0.1.114 — 2026-05-11
+
+- **LinkedIn: Sponsored/Promoted posts dropped at the source.** Extractor
+  now bails out after detecting `feedSlot === "promoted"`, so ads never
+  reach the LLM, the DB, or the signals UI. The `candidateCounts.promoted`
+  diagnostic still increments so we can confirm the filter is firing.
+- **LinkedIn: one-shot purge of legacy Sponsored rows.** Idempotent
+  DELETE chain in `SCHEMA_SQL` drops `linkedin_post` rows whose author
+  is a company actor with the `"Unbekannt"` fallback display name (the
+  exact signature of sponsored ads that landed before the v0.1.113
+  filter). Cascades through `linkedin_signal` / `linkedin_interaction`
+  / `linkedin_media`. Runs every boot but is a no-op once cleaned.
+- **LinkedIn: actor names recovered from avatar markup.** Posts often
+  rendered as "Unbekannt" because the actor anchor list contained both
+  the avatar `<a>` (figure only, no text) and a separate info `<a>`
+  with the same `href`. New `dedupeByHref()` picks the anchor with the
+  richest text content per href, and an `img[alt]` / `svg[aria-label]`
+  fallback parses the common `"View <Name>'s profile"` / `"Foto von
+  <Name> anzeigen"` patterns before defaulting to `"Unbekannt"`.
+- **LinkedIn: confirmation modal before opening any link.** Clicking
+  the author name or "Auf LinkedIn öffnen" now opens a German-language
+  consent modal explaining that programmatic-style navigation can
+  occasionally raise LinkedIn account safety flags and recommending
+  moderate, deliberate use. Session-only "Hinweis nicht mehr anzeigen"
+  checkbox suppresses the modal for the rest of the session
+  (sessionStorage, not localStorage).
+- **Handelsregister: PrimeFaces selectOneMenu detection.** The scraper
+  threw "Registergericht select not found" because handelsregister.de
+  wraps native `<select>` in `ui-helper-hidden-accessible` (sr-only),
+  failing `isDisplayed()`. `waitVisible` swapped for `waitPresent` and
+  `selectByVisibleText` rewritten with three strategies: native select
+  via JS `dispatchEvent('change')`, PrimeFaces widget click flow
+  (trigger → panel item), keyboard fallback for autocompletes. Adds a
+  `hr_02b_form_visible` screenshot right after the form renders.
+- **Per-runId screenshot cleanup on restart.** Both `structured-content`
+  and `company-publication` producers now `fs.rm` the per-runId
+  screenshot directory in `setCurrentRunId(runId)`, so retries /
+  re-imports start from a clean directory and the matrix drill-down
+  only shows frames from the current attempt.
+- **Diagnostics tabs wrap to a second row.** Logs/Screenshots buttons
+  no longer overflow the producer dropdown to the right in narrow
+  drill panels.
+
 ## v0.1.113 — 2026-05-10
 
 - **LinkedIn-Beobachter: rewrite for the obfuscated-class DOM.**
