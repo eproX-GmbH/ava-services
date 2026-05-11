@@ -236,6 +236,95 @@ statt stillschweigend zu verschwinden. Sobald die fehlende Bedingung
 (CRM verbunden, Ollama läuft, …) erfüllt ist, wird das Skill beim
 nächsten Reload automatisch aktiv.
 
+## Import + Export (S5, v0.1.126)
+
+Skills werden als kleine Zip-Pakete ausgetauscht — zwischen
+Geräten desselben Nutzers oder zwischen Teammitgliedern.
+
+### Export
+
+- **Einzelnes Skill.** Klick auf *Exportieren* in der Skill-Karte
+  öffnet einen nativen Save-Dialog (`<skill-name>.zip` voreingestellt).
+  Inhalt: genau eine Datei `SKILL.md` mit den exakten Bytes, die in
+  `<userData>/skills/<name>/SKILL.md` liegen.
+- **Alle Skills.** Section-Knopf *Alle exportieren* erzeugt
+  `ava-skills-<YYYY-MM-DD>.zip` mit Layout
+  `<skill-name>/SKILL.md` pro Skill plus einer Top-Level-`MANIFEST.json`:
+  ```json
+  {
+    "exportedAt": "2026-05-11T12:34:56.000Z",
+    "skills": [
+      { "name": "outreach-draft-de", "b2bScope": "outreach",
+        "hash": "<sha256>", "exportedAt": "…" }
+    ]
+  }
+  ```
+  Das Manifest dient Forensik und Diff-Vergleichen — der Import
+  selbst nutzt es nicht (jede `SKILL.md` wird unabhängig geparst).
+  Workspace-Scope-Skills sind absichtlich nicht enthalten; deren
+  Quelle ist das Projekt-Repo.
+
+### Import
+
+Drei Einstiegspunkte gehen auf dieselbe Pipeline:
+
+1. **Importieren-Knopf** öffnet `dialog.showOpenDialog` für
+   `.zip` und `.md`.
+2. **Drag-and-Drop** einer Datei auf den Skills-Bereich.
+3. **SKILL.md einfügen** — kollabierbares Textfeld zum Einfügen
+   eines kompletten Frontmatter+Body-Strings.
+
+Der Import läuft *zweistufig*:
+
+- **Staging:** wir entpacken in ein temporäres Verzeichnis und
+  parsen jedes `SKILL.md` durch dieselben `parser` + `schema`-
+  Module wie der Loader. Defekte Frontmatter, ungültige
+  `b2b-scope`-Werte, oder Schema-Fehler landen als
+  `conflicts[]` im Rückgabewert — staging schreibt *nichts* in
+  `<userData>/skills/`.
+- **Commit:** im Staging-Dialog wählt der Nutzer pro Eintrag
+  *Importieren?* und entscheidet sich global zwischen
+  *Importieren + vertrauen* oder *Nur importieren, nicht vertrauen*.
+  Erst dann werden Dateien geschrieben.
+
+Pro Eintrag zeigt der Dialog:
+
+- Name, Bereich, Beschreibung, `allowed-tools`, Body-Größe und Hash.
+- Eine `action`-Label: `create` /
+  `overwrite-trusted` / `overwrite-modified` / `overwrite-untrusted`.
+- Bei Overwrites: Diff der `allowed-tools` gegen die zuletzt
+  freigegebene Tool-Liste (`previousAllowedTools`); neu
+  hinzugekommene Tools sind rot mit "← neu" markiert,
+  entfernte Tools mit Durchstreichungs-Pill. Wenn keine vorherige
+  Trust-Liste vorlag, sagen wir das explizit statt einen leeren
+  Diff zu zeigen.
+
+**Default-Selektion:**
+
+- `create` → Häkchen gesetzt.
+- `overwrite-trusted` *ohne* neue `allowed-tools` → Häkchen gesetzt.
+- Jeder andere Overwrite → Häkchen **nicht** gesetzt. Der Nutzer
+  muss aktiv zustimmen, bevor ein Skill mit breiteren
+  Berechtigungen oder von unbekanntem Trust-Status durchläuft.
+
+### Nur importieren, nicht vertrauen (sichere Default-Variante)
+
+Dieser sekundäre Commit-Pfad schreibt die Datei nach
+`<userData>/skills/<name>/SKILL.md` und **widerruft jeden
+vorhandenen Trust-Eintrag**. Resultat: das Skill landet im
+Inventar mit `trust: "untrusted"` und feuert nicht, bis der Nutzer
+es explizit über den Trust-Dialog prüft und freigibt. Empfohlen
+für Skills von weniger bekannten Teammitgliedern oder bei
+Versionssprüngen — der Re-Confirm-Trigger ist garantiert, selbst
+wenn die alte Version derselben Datei lokal mal getrustet war.
+
+### Re-Confirm-Banner
+
+Sobald mindestens ein Skill auf `trust: "modified"` steht, zeigt
+*Einstellungen → Skills* ein Banner *Vertrauensänderungen* mit
+einem *Alle prüfen*-Link, der die offenen Trust-Dialoge der
+betroffenen Skills nacheinander durchläuft.
+
 ## Rollout
 
 - **S1 (v0.1.121)** – Loader + Schema + Hot-Reload.
@@ -246,6 +335,8 @@ nächsten Reload automatisch aktiv.
   `<userData>/skills/` beim ersten Start.
 - **S3 (v0.1.124)** – Settings → Skills (read-only Inventar +
   Aktiv-Schalter + Body-Viewer; Gate-Skills bleiben sichtbar mit
-  deutscher Reason). Dieser Stand.
-- **S4** – In-App-Editor + Trust-Dialog + Save.
-- **S5** – Import / Export (zip drag-drop) + Re-Confirm-on-Change.
+  deutscher Reason).
+- **S4 (v0.1.125)** – In-App-Editor + Trust-Dialog + Save + Delete.
+- **S5 (v0.1.126)** – Import / Export (Zip + Drag-and-Drop + Paste)
+  + Re-Confirm-on-Change-Politur. Dieser Stand.
+- **S7** – Marketplace + Signing (post v0.2, offen).

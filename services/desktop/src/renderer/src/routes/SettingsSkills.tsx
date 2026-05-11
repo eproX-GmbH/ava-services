@@ -1,12 +1,17 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import type {
   SkillBody,
+  SkillImportCommit,
+  SkillImportConflict,
+  SkillImportResult,
+  SkillImportStagedEntry,
   SkillRow,
   SkillSavePayload,
 } from "../../../shared/types";
 import { SkillTrustDialog } from "../components/skills/SkillTrustDialog";
 import { SkillEditor } from "../components/skills/SkillEditor";
+import { SkillImportDialog } from "../components/skills/SkillImportDialog";
 
 // Settings → Skills (PLAN §2, S3 + S4).
 //
@@ -42,6 +47,22 @@ export function SettingsSkills() {
   const [editorTarget, setEditorTarget] = useState<
     { mode: "new" } | { mode: "edit"; name: string } | null
   >(null);
+  // S5 — import staging state. `pending` holds the result of a
+  // staging call until the user commits or cancels via the dialog.
+  // `trustQueue` drives the "Alle prüfen" walk-through across every
+  // `trust === "modified"` row.
+  const [pending, setPending] = useState<
+    {
+      stagingId: string;
+      staged: SkillImportStagedEntry[];
+      conflicts: SkillImportConflict[];
+    } | null
+  >(null);
+  const [markdownDraft, setMarkdownDraft] = useState("");
+  const [markdownOpen, setMarkdownOpen] = useState(false);
+  const [trustQueue, setTrustQueue] = useState<string[]>([]);
+  const dropAreaRef = useRef<HTMLDivElement | null>(null);
+  const [dragActive, setDragActive] = useState(false);
 
   const refresh = useCallback(async () => {
     try {
@@ -127,6 +148,209 @@ export function SettingsSkills() {
     [rows, trustName],
   );
 
+  const modifiedRows = useMemo(
+    () => (rows ?? []).filter((r) => r.trust === "modified"),
+    [rows],
+  );
+
+  const onExport = async (name: string) => {
+    setError(null);
+    try {
+      const res = await window.api.skills.export(name);
+      if (res.ok) {
+        setInfo(`Skill '${name}' nach ${res.path} exportiert.`);
+        return;
+      }
+      if ("cancelled" in res) return;
+      setError(res.error);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  };
+
+  const onExportAll = async () => {
+    setError(null);
+    try {
+      const res = await window.api.skills.exportAll();
+      if (res.ok) {
+        setInfo(`${res.count} Skill(s) nach ${res.path} exportiert.`);
+        return;
+      }
+      if ("cancelled" in res) return;
+      setError(res.error);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  };
+
+  const handleStagingResult = (res: SkillImportResult) => {
+    if (!res.ok) {
+      setError(res.error);
+      return;
+    }
+    if (res.staged.length === 0 && res.conflicts.length === 0) {
+      setError("Keine gültigen Skills im Paket gefunden.");
+      // Best-effort: cancel the empty staging dir.
+      void window.api.skills.cancelImport(res.stagingId).catch(() => {});
+      return;
+    }
+    setPending({
+      stagingId: res.stagingId,
+      staged: res.staged,
+      conflicts: res.conflicts,
+    });
+  };
+
+  const onPickImport = async () => {
+    setError(null);
+    try {
+      const picked = await window.api.skills.pickImportFile();
+      if ("cancelled" in picked) return;
+      await importFromPath(picked.path);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  };
+
+  const importFromPath = async (path: string) => {
+    setError(null);
+    setBusy(true);
+    try {
+      const isMd = /\.md$/i.test(path);
+      let res: SkillImportResult;
+      if (isMd) {
+        // .md drops: read via importMarkdown using a tiny file:// fetch.
+        // The renderer can't read arbitrary disk paths directly, so
+        // we route through importZip if it's a zip and ask the main
+        // process to read the markdown via a dedicated channel. To
+        // keep the surface small, we treat .md the same as .zip and
+        // let the main-side importZip path fail with a clear error,
+        // OR we fall back to reading it via the picker round-trip.
+        // Simpler: pipe it through importZip — adm-zip rejects a
+        // non-zip, but we'd rather support .md cleanly. Workaround:
+        // re-use importMarkdown if a renderer DataTransfer item is a
+        // text/markdown drop (handled in onDrop). For path-only flow
+        // .md drops go through importZip too; if that fails the user
+        // can paste instead. (Documented in SKILLS.md.)
+        res = await window.api.skills.importZip(path);
+      } else {
+        res = await window.api.skills.importZip(path);
+      }
+      handleStagingResult(res);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const onImportMarkdownPaste = async () => {
+    setError(null);
+    if (!markdownDraft.trim()) {
+      setError("SKILL.md-Body ist leer.");
+      return;
+    }
+    setBusy(true);
+    try {
+      const res = await window.api.skills.importMarkdown(markdownDraft);
+      handleStagingResult(res);
+      setMarkdownDraft("");
+      setMarkdownOpen(false);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const onCommitImport = async (commit: SkillImportCommit) => {
+    setError(null);
+    try {
+      const res = await window.api.skills.commitImport(commit);
+      if (!res.ok) {
+        setError(res.error);
+        return;
+      }
+      setPending(null);
+      setInfo(`${res.written.length} Skill(s) importiert.`);
+      await refresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  };
+
+  const onCancelImport = () => {
+    if (pending) {
+      void window.api.skills
+        .cancelImport(pending.stagingId)
+        .catch(() => {});
+    }
+    setPending(null);
+  };
+
+  const onCheckAllModified = () => {
+    if (modifiedRows.length === 0) return;
+    const queue = modifiedRows.map((r) => r.name);
+    const first = queue[0]!;
+    setTrustQueue(queue.slice(1));
+    setTrustName(first);
+  };
+
+  // Drag-and-drop wiring. Electron exposes `File.path` for dropped
+  // files in the renderer (sandbox: true does NOT strip it for
+  // user-initiated drops). Text drops are routed to importMarkdown.
+  const onDrop = async (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    setDragActive(false);
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      const f = e.dataTransfer.files[0]!;
+      // Electron-specific `path` field on a renderer File.
+      const path = (f as unknown as { path?: string }).path;
+      if (path) {
+        if (/\.md$/i.test(path)) {
+          // Read the markdown directly so a single SKILL.md drop
+          // doesn't have to go through adm-zip.
+          try {
+            const text = await f.text();
+            const res = await window.api.skills.importMarkdown(text);
+            handleStagingResult(res);
+          } catch (err) {
+            setError(err instanceof Error ? err.message : String(err));
+          }
+          return;
+        }
+        await importFromPath(path);
+        return;
+      }
+      // Fallback for non-Electron environments / sandboxed drops
+      // without a path: read text + import as markdown.
+      try {
+        const text = await f.text();
+        const res = await window.api.skills.importMarkdown(text);
+        handleStagingResult(res);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : String(err));
+      }
+      return;
+    }
+    const text = e.dataTransfer.getData("text/plain");
+    if (text && text.trim()) {
+      try {
+        const res = await window.api.skills.importMarkdown(text);
+        handleStagingResult(res);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : String(err));
+      }
+    }
+  };
+
+  const onDragOver = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "copy";
+    if (!dragActive) setDragActive(true);
+  };
+  const onDragLeave = () => setDragActive(false);
+
   return (
     <section className="provider-section" id="skills-list">
       <h3>Skills</h3>
@@ -138,13 +362,36 @@ export function SettingsSkills() {
         bevor der Agent sie aufruft.
       </p>
 
-      <div className="actions" style={{ margin: "0.5rem 0 1rem" }}>
+      <div className="actions" style={{ margin: "0.5rem 0 1rem", display: "flex", flexWrap: "wrap", gap: "0.5rem" }}>
         <button
           type="button"
           className="link"
           onClick={() => setEditorTarget({ mode: "new" })}
         >
           Neues Skill
+        </button>
+        <button
+          type="button"
+          className="link"
+          onClick={() => void onPickImport()}
+          disabled={busy}
+        >
+          Importieren
+        </button>
+        <button
+          type="button"
+          className="link"
+          onClick={() => void onExportAll()}
+          disabled={busy || (rows?.filter((r) => r.scope === "user").length ?? 0) === 0}
+        >
+          Alle exportieren
+        </button>
+        <button
+          type="button"
+          className="link"
+          onClick={() => setMarkdownOpen((v) => !v)}
+        >
+          {markdownOpen ? "Einfügen abbrechen" : "SKILL.md einfügen"}
         </button>
         <button
           type="button"
@@ -161,6 +408,107 @@ export function SettingsSkills() {
         >
           Skills-Ordner öffnen
         </button>
+      </div>
+
+      {modifiedRows.length > 0 && (
+        <div
+          style={{
+            margin: "0 0 0.75rem",
+            padding: "0.6rem 0.85rem",
+            background: "#fff5f5",
+            border: "1px solid #e0a0a0",
+            borderRadius: 4,
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            flexWrap: "wrap",
+            gap: "0.5rem",
+          }}
+        >
+          <span className="small">
+            <strong>Vertrauensänderungen:</strong>{" "}
+            {modifiedRows.length} Skill
+            {modifiedRows.length === 1 ? "" : "s"} wurde
+            {modifiedRows.length === 1 ? "" : "n"} seit der letzten
+            Freigabe geändert.
+          </span>
+          <button
+            type="button"
+            className="link"
+            onClick={onCheckAllModified}
+          >
+            Alle prüfen
+          </button>
+        </div>
+      )}
+
+      {markdownOpen && (
+        <div
+          style={{
+            margin: "0 0 1rem",
+            padding: "0.6rem 0.85rem",
+            background: "#fafafa",
+            border: "1px solid #ddd",
+            borderRadius: 4,
+          }}
+        >
+          <p className="small" style={{ margin: 0 }}>
+            SKILL.md-Inhalt einfügen:
+          </p>
+          <textarea
+            value={markdownDraft}
+            onChange={(e) => setMarkdownDraft(e.target.value)}
+            rows={8}
+            placeholder={"---\nname: mein-skill\n..."}
+            style={{
+              width: "100%",
+              marginTop: "0.4rem",
+              fontFamily: "monospace",
+              fontSize: "0.85rem",
+            }}
+          />
+          <div className="actions" style={{ marginTop: "0.4rem" }}>
+            <button
+              type="button"
+              className="link"
+              onClick={() => void onImportMarkdownPaste()}
+              disabled={busy || !markdownDraft.trim()}
+            >
+              Aus Text importieren
+            </button>
+            <button
+              type="button"
+              className="link"
+              onClick={() => {
+                setMarkdownDraft("");
+                setMarkdownOpen(false);
+              }}
+            >
+              Abbrechen
+            </button>
+          </div>
+        </div>
+      )}
+
+      <div
+        ref={dropAreaRef}
+        onDrop={(e) => void onDrop(e)}
+        onDragOver={onDragOver}
+        onDragLeave={onDragLeave}
+        style={{
+          border: `2px dashed ${dragActive ? "#3070d0" : "#cccccc"}`,
+          background: dragActive ? "#eef4ff" : "transparent",
+          borderRadius: 6,
+          padding: "0.6rem 0.85rem",
+          marginBottom: "1rem",
+          textAlign: "center",
+        }}
+      >
+        <span className="muted small">
+          {dragActive
+            ? "Datei hier loslassen, um zu importieren"
+            : "Skill-Paket (.zip) oder einzelne SKILL.md hierher ziehen"}
+        </span>
       </div>
 
       {error && <p className="error small">Fehler: {error}</p>}
@@ -187,6 +535,7 @@ export function SettingsSkills() {
                 setEditorTarget({ mode: "edit", name: row.name })
               }
               onDelete={() => void onDelete(row)}
+              onExport={() => void onExport(row.name)}
             />
           ))}
         </ul>
@@ -202,16 +551,42 @@ export function SettingsSkills() {
       {trustRow && (
         <SkillTrustDialog
           row={trustRow}
-          onClose={() => setTrustName(null)}
+          onClose={() => {
+            setTrustName(null);
+            // S5 — "Alle prüfen" walk-through: if the user dismisses
+            // a queued dialog (Ablehnen / Schließen), advance to the
+            // next modified row anyway so they can still skip through.
+            if (trustQueue.length > 0) {
+              const [next, ...rest] = trustQueue;
+              setTrustQueue(rest);
+              setTrustName(next ?? null);
+            }
+          }}
           onAccept={async () => {
             try {
               await window.api.skills.trust(trustRow.name);
-              setTrustName(null);
+              if (trustQueue.length > 0) {
+                const [next, ...rest] = trustQueue;
+                setTrustQueue(rest);
+                setTrustName(next ?? null);
+              } else {
+                setTrustName(null);
+              }
               await refresh();
             } catch (err) {
               setError(err instanceof Error ? err.message : String(err));
             }
           }}
+        />
+      )}
+
+      {pending && (
+        <SkillImportDialog
+          stagingId={pending.stagingId}
+          staged={pending.staged}
+          conflicts={pending.conflicts}
+          onCancel={onCancelImport}
+          onCommit={(commit) => void onCommitImport(commit)}
         />
       )}
 
@@ -254,8 +629,9 @@ function SkillsEmptyState({
   return (
     <div className="skills-empty">
       <p>
-        Noch keine Skills installiert. Lege eines per <em>Neues Skill</em> an
-        oder ziehe später (S5) ein Skill-Paket per Drag-and-Drop hierher.
+        Noch keine Skills installiert. Lege eines per <em>Neues Skill</em> an,
+        nutze <em>Importieren</em> für ein Skill-Paket oder ziehe ein{" "}
+        <code>.zip</code>/<code>SKILL.md</code> direkt hierher.
       </p>
       <div className="actions">
         <button type="button" className="link" onClick={onCreate}>
@@ -277,6 +653,7 @@ interface SkillCardProps {
   onTrust: () => void;
   onEdit: () => void;
   onDelete: () => void;
+  onExport: () => void;
 }
 
 function SkillCard({
@@ -287,6 +664,7 @@ function SkillCard({
   onTrust,
   onEdit,
   onDelete,
+  onExport,
 }: SkillCardProps) {
   const isWorkspace = row.scope === "workspace";
   return (
@@ -371,6 +749,9 @@ function SkillCard({
         </button>
         <button type="button" className="link" onClick={onOpenFile}>
           Datei öffnen
+        </button>
+        <button type="button" className="link" onClick={onExport}>
+          Exportieren
         </button>
         <button
           type="button"

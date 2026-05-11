@@ -889,6 +889,9 @@ importers:
       '@tanstack/react-query':
         specifier: ^5.40.0
         version: 5.100.5(react@18.3.1)
+      adm-zip:
+        specifier: ^0.5.16
+        version: 0.5.17
       ai:
         specifier: ^5.0.0
         version: 5.0.179(zod@3.25.76)
@@ -938,6 +941,9 @@ importers:
       '@electron/rebuild':
         specifier: ^4.0.4
         version: 4.0.4
+      '@types/adm-zip':
+        specifier: ^0.5.5
+        version: 0.5.8
       '@types/node':
         specifier: ^20.0.0
         version: 20.19.39
@@ -2526,6 +2532,9 @@ packages:
 
   '@tybys/wasm-util@0.10.1':
     resolution: {integrity: sha512-9tTaPJLSiejZKx+Bmog4uSubteqTvFrVrURwkmHixBo0G4seD0zUxp98E1DzUBJxLQ3NPwXrGKDiVjwx/DpPsg==}
+
+  '@types/adm-zip@0.5.8':
+    resolution: {integrity: sha512-RVVH7QvZYbN+ihqZ4kX/dMiowf6o+Jk1fNwiSdx0NahBJLU787zkULhGhJM8mf/obmLGmgdMM0bXsQTmyfbR7Q==}
 
   '@types/amqplib@0.10.8':
     resolution: {integrity: sha512-vtDp8Pk1wsE/AuQ8/Rgtm6KUZYqcnTgNvEHwzCkX8rL7AGsC6zqAfKAAJhUZXFhM/Pp++tbnUHiam/8vVpPztA==}
@@ -8665,6 +8674,10 @@ snapshots:
     dependencies:
       tslib: 2.8.1
     optional: true
+
+  '@types/adm-zip@0.5.8':
+    dependencies:
+      '@types/node': 20.19.39
 
   '@types/amqplib@0.10.8':
     dependencies:

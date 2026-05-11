@@ -146,8 +146,21 @@ buttons:
 
 Trust state lives in `<userData>/skills-trust.json` (atomic write).
 The orchestrator's `availableSkills()` filter gates on
-`enabled && gateSatisfied && trust === "trusted"`. Import/export +
-re-confirm via zip drag-drop land with S5.
+`enabled && gateSatisfied && trust === "trusted"`.
+
+**S5 (import/export + re-confirm) shipped in v0.1.126.** The Skills
+system is now feature-complete per PLANS.md §2 — the only remaining
+S-phase is S7 (marketplace), explicitly out of scope for v0.2. Skills
+ship as zips: per-skill *Exportieren* writes `<name>.zip` containing
+the raw `SKILL.md`; *Alle exportieren* bundles every user-scope skill
+into `ava-skills-<YYYY-MM-DD>.zip` with a top-level `MANIFEST.json`.
+Imports route through a staging dialog that diffs added/removed
+`allowed-tools` against the previously-trusted set. The commit step
+exposes two paths: *Importieren + vertrauen* (auto-trust against the
+on-disk hash) and the safer *Nur importieren* (write + revoke trust;
+the user must re-confirm via the trust dialog before the agent fires
+the skill). See `SKILLS.md` → *Import + Export* for the zip layout
+and the safety model.
 
 ## Tooling notes
 

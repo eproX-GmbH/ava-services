@@ -1348,3 +1348,90 @@ export type SkillSaveResult =
 export type SkillDeleteResult =
   | { ok: true }
   | { ok: false; error: string };
+
+// ---- Skills S5 — import / export -----------------------------------------
+//
+// PLAN §2.6 + §2.7. Single-skill export writes a one-file zip; the
+// "Alle exportieren" path bundles every user-scope skill + a top-level
+// MANIFEST.json. Import is a two-step flow: staging (parse + validate
+// + diff against trust store) and commit (copy from temp dir into
+// `<userData>/skills/<name>/` + optional auto-trust).
+
+/** What an import would do to a given skill name on disk. Used by the
+ *  staging UI to label each row + drive the default opt-in / opt-out. */
+export type SkillImportAction =
+  | "create"
+  | "overwrite-trusted"
+  | "overwrite-modified"
+  | "overwrite-untrusted";
+
+export interface SkillImportStagedEntry {
+  name: string;
+  description: string;
+  language: SkillLanguage;
+  b2bScope: SkillB2bScope;
+  allowedTools: string[];
+  requiresUserConfirm: boolean;
+  disableModelInvocation: boolean;
+  userInvocable: boolean;
+  body: string;
+  bodyLength: number;
+  bodyLines: number;
+  /** New hash that will end up on disk after the commit step. */
+  hash: string;
+  action: SkillImportAction;
+  /** Populated when `action !== "create"`: the allowed-tools the user
+   *  had previously approved for this skill, so the dialog can diff
+   *  added/removed tools. Undefined when no prior trust entry exists. */
+  previousAllowedTools?: string[];
+}
+
+export interface SkillImportConflict {
+  /** Name (or original filename / temp-dir entry) the importer tried
+   *  to parse. Empty when the file was malformed enough that no name
+   *  could be extracted. */
+  name: string;
+  /** German one-liner explaining why the entry was rejected. */
+  reason: string;
+}
+
+export type SkillImportResult =
+  | {
+      ok: true;
+      /** Opaque handle for the temp dir holding the staged SKILL.md
+       *  files. Pass back to `commitImport`. */
+      stagingId: string;
+      staged: SkillImportStagedEntry[];
+      conflicts: SkillImportConflict[];
+    }
+  | { ok: false; error: string };
+
+export interface SkillImportCommitEntry {
+  name: string;
+  /** "auto" = write file AND auto-trust with the new allowed-tools.
+   *  "deferred" = write file but leave trust untouched; the row stays
+   *  in `trust: "untrusted"` until the user opens the trust dialog. */
+  trust: "auto" | "deferred";
+}
+
+export interface SkillImportCommit {
+  stagingId: string;
+  staged: SkillImportCommitEntry[];
+}
+
+export type SkillImportCommitResult =
+  | { ok: true; written: string[] }
+  | { ok: false; error: string };
+
+export type SkillExportResult =
+  | { ok: true; path: string }
+  | { ok: false; error: string }
+  /** User cancelled the save dialog — UI surface treats it as a no-op,
+   *  no error toast. */
+  | { ok: false; cancelled: true };
+
+export type SkillExportAllResult =
+  | { ok: true; path: string; count: number }
+  | { ok: false; error: string }
+  | { ok: false; cancelled: true };
+

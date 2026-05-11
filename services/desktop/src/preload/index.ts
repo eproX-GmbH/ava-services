@@ -54,6 +54,11 @@ import type {
   ProviderConfigBundle,
   SkillBody,
   SkillDeleteResult,
+  SkillExportAllResult,
+  SkillExportResult,
+  SkillImportCommit,
+  SkillImportCommitResult,
+  SkillImportResult,
   SkillRow,
   SkillSavePayload,
   SkillSaveResult,
@@ -133,6 +138,15 @@ export type {
   SkillB2bScope,
   SkillBody,
   SkillDeleteResult,
+  SkillExportAllResult,
+  SkillExportResult,
+  SkillImportAction,
+  SkillImportCommit,
+  SkillImportCommitEntry,
+  SkillImportCommitResult,
+  SkillImportConflict,
+  SkillImportResult,
+  SkillImportStagedEntry,
   SkillLanguage,
   SkillRow,
   SkillSavePayload,
@@ -848,6 +862,27 @@ const api = {
       ipcRenderer.invoke("skills:trust", name),
     listAvailableTools: (): Promise<string[]> =>
       ipcRenderer.invoke("skills:listAvailableTools"),
+    // S5 — import / export. `export` + `exportAll` open native save
+    // dialogs main-side. `pickImportFile` returns either a path or a
+    // cancellation marker; the renderer then routes to `importZip`.
+    // Drag-and-drop sidesteps the picker by handing the renderer a
+    // `File` whose `.path` it ships straight into `importZip`.
+    export: (name: string): Promise<SkillExportResult> =>
+      ipcRenderer.invoke("skills:export", name),
+    exportAll: (): Promise<SkillExportAllResult> =>
+      ipcRenderer.invoke("skills:exportAll"),
+    pickImportFile: (): Promise<{ path: string } | { cancelled: true }> =>
+      ipcRenderer.invoke("skills:pickImportFile"),
+    importZip: (localPath: string): Promise<SkillImportResult> =>
+      ipcRenderer.invoke("skills:importZip", localPath),
+    importMarkdown: (body: string): Promise<SkillImportResult> =>
+      ipcRenderer.invoke("skills:importMarkdown", body),
+    commitImport: (
+      payload: SkillImportCommit,
+    ): Promise<SkillImportCommitResult> =>
+      ipcRenderer.invoke("skills:commitImport", payload),
+    cancelImport: (stagingId: string): Promise<void> =>
+      ipcRenderer.invoke("skills:cancelImport", stagingId),
   },
 
   linkedin: {

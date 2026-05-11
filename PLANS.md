@@ -179,17 +179,17 @@ What Anthropic's standard doesn't enforce, we will:
 
 ### 2.7 Implementation plan
 
-| Phase | Scope | Effort | Acceptance |
-|---|---|---|---|
-| **S1** | Loader + schema: discover, parse, validate, hash, store in memory. No UI yet | 1 release | `pnpm test` covers a fixture of valid + invalid skills; validation surfaces clear German errors |
-| **S2** | Agent integration: append skill descriptions to system prompt; handle `/skill-name` invocation; tool allowlist enforcement | 1 release | Test skill with `allowed-tools: [company_get]` cannot invoke `import_company`; refusal is logged |
-| **S3** | Settings → Skills list UI (read-only) | half release | User can see their installed skills, toggle, see the body |
-| **S4** | Skills editor (in-app markdown editor) + trust dialog + save | 1 release | User can author a skill end-to-end without leaving AVA |
-| **S5** | Import / export (zip drag-drop) + the re-confirm-on-change flow | half release | Team can share skills via zip; modifications trigger re-trust |
-| **S6** | Three starter skills shipped with the app | half release | "Outreach Draft DE", "Qualifying Fragebogen", "Wettbewerber-Übersicht" — discoverable on first launch |
-| **S7** (long-term) | Marketplace + signing | several releases | Out of v0.2 scope; revisit |
+| Phase | Scope | Effort | Acceptance | Status |
+|---|---|---|---|---|
+| **S1** | Loader + schema: discover, parse, validate, hash, store in memory. No UI yet | 1 release | `pnpm test` covers a fixture of valid + invalid skills; validation surfaces clear German errors | **DONE** (v0.1.121) |
+| **S2** | Agent integration: append skill descriptions to system prompt; handle `/skill-name` invocation; tool allowlist enforcement | 1 release | Test skill with `allowed-tools: [company_get]` cannot invoke `import_company`; refusal is logged | **DONE** (v0.1.122) |
+| **S6** | Three starter skills shipped with the app | half release | "Outreach Draft DE", "Qualifying Fragebogen", "Wettbewerber-Übersicht" — discoverable on first launch | **DONE** (v0.1.123) |
+| **S3** | Settings → Skills list UI (read-only) | half release | User can see their installed skills, toggle, see the body | **DONE** (v0.1.124) |
+| **S4** | Skills editor (in-app markdown editor) + trust dialog + save | 1 release | User can author a skill end-to-end without leaving AVA | **DONE** (v0.1.125) |
+| **S5** | Import / export (zip drag-drop) + the re-confirm-on-change flow | half release | Team can share skills via zip; modifications trigger re-trust | **DONE** (v0.1.126) |
+| **S7** (long-term) | Marketplace + signing | several releases | Out of v0.2 scope; revisit | Open |
 
-**Order:** S1 → S2 → S6 (starter skills validate the model end-to-end before building UI) → S3 → S4 → S5.
+**Order:** S1 → S2 → S6 (starter skills validate the model end-to-end before building UI) → S3 → S4 → S5. Completed end-to-end as of v0.1.126; the skills system is feature-complete relative to this plan. S7 (signed marketplace + community distribution) remains out of v0.2 scope and is the only deferred S-phase.
 
 ### 2.8 Doc commitments
 

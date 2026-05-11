@@ -7,6 +7,60 @@ The repo uses one rolling tag per desktop release (`v<major>.<minor>.<patch>`)
 on `main`. Submodules cut their own feature branches and are pinned via the
 desktop bundle; `pnpm fetch:producers` re-vendors them into the .dmg.
 
+## v0.1.126 — 2026-05-11
+
+- **[PLAN §2 S5] Skills-Import/Export + Re-Confirm-on-Change-Politur.**
+  Der Skills-Workflow ist damit feature-komplett gegenüber PLANS.md §2;
+  einzig S7 (Marketplace) bleibt offen, ist aber außerhalb des
+  v0.2-Scopes.
+  - **Export.** Jede Skill-Karte hat einen *Exportieren*-Knopf, der
+    ein `<name>.zip` mit dem rohen `SKILL.md` über Electrons nativen
+    Save-Dialog ablegt. Section-Button *Alle exportieren* bündelt alle
+    Nutzer-Skills (Workspace-Scope bleibt absichtlich außen vor — der
+    kanonische Ort sind die Repo-Dateien) in
+    `ava-skills-<YYYY-MM-DD>.zip` mit Layout `<name>/SKILL.md` und
+    einer Top-Level-`MANIFEST.json` (`{exportedAt, skills:[{name,
+    b2bScope, hash, exportedAt}, …]}`) für forensische Klarheit.
+  - **Import.** Drei Einstiege gehen auf dieselbe Pipeline: der
+    *Importieren*-Knopf (Open-Dialog für `.zip`/`.md`), Drag-and-Drop
+    auf den Skills-Abschnitt und ein einklappbares
+    *SKILL.md einfügen*-Textfeld. Der Import läuft zweistufig: zuerst
+    stagen wir das Paket in ein temporäres Verzeichnis, parsen +
+    validieren jedes `SKILL.md` durch dieselben `parser` + `schema`-
+    Module wie der Loader und liefern dem Renderer einen
+    `SkillImportResult` mit `staged[]` (inkl. `action`: `create` /
+    `overwrite-trusted` / `overwrite-modified` /
+    `overwrite-untrusted` und ggf. `previousAllowedTools`) plus einer
+    `conflicts[]`-Liste für YAML- oder Schema-Fehler. Erst beim Klick
+    auf den Commit-Button im Import-Dialog werden Dateien nach
+    `<userData>/skills/<name>/SKILL.md` geschrieben.
+  - **Vertrauensentscheidung beim Commit.** Zwei Wege:
+    *Alle importieren + vertrauen* (Auto-Trust gegen den on-disk
+    Hash) oder *Nur importieren, nicht vertrauen* — letzteres
+    schreibt die Datei und widerruft jeden vorhandenen Trust-Eintrag,
+    sodass eine teamintern geteilte "v2" zwingend erneut freigegeben
+    werden muss, selbst wenn "v1" früher mal freigegeben war.
+  - **UX-Politur für Re-Confirm.** Über der Skill-Liste erscheint ein
+    Banner *Vertrauensänderungen* wenn mindestens ein Skill auf
+    `trust: "modified"` steht; *Alle prüfen* führt durch die offenen
+    Trust-Dialoge in Folge. Default-Selektion im Import-Dialog ist
+    opt-in für `create` und opt-out für jeden Overwrite, der neue
+    `allowed-tools` mitbringt — der Nutzer muss aktiv zustimmen,
+    bevor breitere Berechtigungen durchrutschen können.
+  - **Neue IPC-Channels:** `skills:export`, `skills:exportAll`,
+    `skills:pickImportFile`, `skills:importZip`,
+    `skills:importMarkdown`, `skills:commitImport`,
+    `skills:cancelImport`. Staging-Verzeichnisse sind ephemer
+    (kein Cross-Restart-State) und werden nach Commit oder Cancel
+    wieder entfernt.
+  - **Neue Dependency:** `adm-zip` (klein, keine Native-Bindings).
+  - **Neuer Test:** `pnpm test:skills:import` deckt Export-Round-Trip
+    (Hash matches), gemischte Zips (valide + fehlerhafte
+    Frontmatter), Overwrite mit neuem allowed-tool (Diff +
+    previousAllowedTools), Markdown-Direkt-Import, Commit-Schreiben
+    in tmp-Verzeichnisse und den Re-Confirm-Loophole-Closer beim
+    `deferred`-Commit ab.
+
 ## v0.1.125 — 2026-05-11
 
 - **[PLAN §2 S4] In-App-Skill-Editor + Trust-Dialog + Delete.** Skills

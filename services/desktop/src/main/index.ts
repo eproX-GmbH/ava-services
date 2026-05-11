@@ -1,6 +1,7 @@
 import {
   app,
   BrowserWindow,
+  dialog,
   ipcMain,
   protocol,
   session,
@@ -49,6 +50,12 @@ import {
   SkillsPrefsStore,
   SkillsTrustStore,
   saveSkillToDisk,
+  exportSkillToZipFile,
+  exportAllSkillsToZipFile,
+  stageImportZip,
+  stageImportMarkdown,
+  commitImport,
+  discardImportStaging,
 } from "./skills";
 import type {
   SkillRow,
@@ -56,6 +63,11 @@ import type {
   SkillSavePayload,
   SkillSaveResult,
   SkillDeleteResult,
+  SkillExportResult,
+  SkillExportAllResult,
+  SkillImportResult,
+  SkillImportCommit,
+  SkillImportCommitResult,
 } from "../shared/types";
 import type { CrmProvider, CrmStatus } from "./crm/types";
 import { scrubQuarantine } from "./scrub-quarantine";
@@ -1511,6 +1523,154 @@ app.whenReady().then(async () => {
         .list()
         .map((t) => t.name)
         .sort((a, b) => a.localeCompare(b));
+    },
+  );
+
+  // ---- Skills IPC (S5 — import / export) --------------------------------
+
+  function focusedWindow(): BrowserWindow | null {
+    return (
+      BrowserWindow.getFocusedWindow() ??
+      BrowserWindow.getAllWindows()[0] ??
+      null
+    );
+  }
+
+  ipcMain.handle(
+    "skills:export",
+    async (_e, name: string): Promise<SkillExportResult> => {
+      if (typeof name !== "string" || !name) {
+        return { ok: false, error: "skills:export erwartet einen Namen" };
+      }
+      const target = skillStore?.get(name);
+      if (!target) {
+        return { ok: false, error: `Skill '${name}' nicht gefunden.` };
+      }
+      const parent = focusedWindow();
+      const res = await dialog.showSaveDialog(parent ?? undefined as never, {
+        title: "Skill exportieren",
+        defaultPath: `${name}.zip`,
+        filters: [{ name: "Skill-Paket", extensions: ["zip"] }],
+      });
+      if (res.canceled || !res.filePath) {
+        return { ok: false, cancelled: true };
+      }
+      return exportSkillToZipFile(target, res.filePath);
+    },
+  );
+
+  ipcMain.handle(
+    "skills:exportAll",
+    async (): Promise<SkillExportAllResult> => {
+      const all = skillStore?.list() ?? [];
+      const today = new Date().toISOString().slice(0, 10);
+      const parent = focusedWindow();
+      const res = await dialog.showSaveDialog(parent ?? undefined as never, {
+        title: "Alle Skills exportieren",
+        defaultPath: `ava-skills-${today}.zip`,
+        filters: [{ name: "Skill-Paket", extensions: ["zip"] }],
+      });
+      if (res.canceled || !res.filePath) {
+        return { ok: false, cancelled: true };
+      }
+      return exportAllSkillsToZipFile(all, res.filePath);
+    },
+  );
+
+  ipcMain.handle(
+    "skills:importZip",
+    async (_e, localPath: string): Promise<SkillImportResult> => {
+      if (typeof localPath !== "string" || !localPath) {
+        return { ok: false, error: "skills:importZip erwartet einen Dateipfad" };
+      }
+      try {
+        return await stageImportZip(localPath, {
+          userSkillsDir: join(app.getPath("userData"), "skills"),
+          trustStore: skillsTrust,
+        });
+      } catch (err) {
+        return {
+          ok: false,
+          error: err instanceof Error ? err.message : String(err),
+        };
+      }
+    },
+  );
+
+  ipcMain.handle(
+    "skills:importMarkdown",
+    async (_e, body: string): Promise<SkillImportResult> => {
+      if (typeof body !== "string") {
+        return {
+          ok: false,
+          error: "skills:importMarkdown erwartet einen Body-String",
+        };
+      }
+      try {
+        return await stageImportMarkdown(body, {
+          userSkillsDir: join(app.getPath("userData"), "skills"),
+          trustStore: skillsTrust,
+        });
+      } catch (err) {
+        return {
+          ok: false,
+          error: err instanceof Error ? err.message : String(err),
+        };
+      }
+    },
+  );
+
+  ipcMain.handle(
+    "skills:commitImport",
+    async (
+      _e,
+      payload: SkillImportCommit,
+    ): Promise<SkillImportCommitResult> => {
+      if (!payload || typeof payload !== "object") {
+        return {
+          ok: false,
+          error: "skills:commitImport erwartet ein Payload-Objekt",
+        };
+      }
+      const res = commitImport(payload, {
+        userSkillsDir: join(app.getPath("userData"), "skills"),
+        trustStore: skillsTrust,
+      });
+      if (skillStore && res.ok) {
+        await skillStore.reload().catch(() => {});
+      }
+      return res;
+    },
+  );
+
+  ipcMain.handle(
+    "skills:cancelImport",
+    (_e, stagingId: string): void => {
+      if (typeof stagingId === "string" && stagingId) {
+        discardImportStaging(stagingId);
+      }
+    },
+  );
+
+  /** Open-file dialog wrapper so the renderer can stay browser-shaped
+   *  and not need raw fs paths. Returns the path on accept, null on
+   *  cancel. Filters to .zip and .md so the user can't pick noise. */
+  ipcMain.handle(
+    "skills:pickImportFile",
+    async (): Promise<{ path: string } | { cancelled: true }> => {
+      const parent = focusedWindow();
+      const res = await dialog.showOpenDialog(parent ?? undefined as never, {
+        title: "Skill-Paket importieren",
+        properties: ["openFile"],
+        filters: [
+          { name: "Skill-Paket", extensions: ["zip", "md"] },
+          { name: "Alle Dateien", extensions: ["*"] },
+        ],
+      });
+      if (res.canceled || res.filePaths.length === 0) {
+        return { cancelled: true };
+      }
+      return { path: res.filePaths[0]! };
     },
   );
 

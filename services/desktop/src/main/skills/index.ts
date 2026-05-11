@@ -42,6 +42,18 @@ export type { TrustEntry, TrustState } from "./trust-store";
 export { buildSkillFile, saveSkillToDisk } from "./save";
 export type { SkillSavePayload, BuildResult, SaveResult } from "./save";
 export {
+  exportSkillToZipFile,
+  exportAllSkillsToZipFile,
+  stageImportZip,
+  stageImportMarkdown,
+  commitImport,
+  discardImportStaging,
+} from "./import-export";
+export type {
+  ImportStagingDeps,
+  ExportAllManifestEntry,
+} from "./import-export";
+export {
   parseSlashInvocation,
   renderSkillBody,
   checkSkillAllowlist,
