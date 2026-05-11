@@ -14,6 +14,13 @@ import { UiBridge, type PendingChoice } from "./ui-bridge";
 import type { LlmProviderManager, LlmStreamToolCall } from "./providers";
 import type { Conversation, Tool, ToolContext } from "./types";
 import type { MemoryStore } from "./memory";
+import type { LoadedSkill, SkillStore } from "../skills";
+import {
+  autoActivateSkill,
+  checkSkillAllowlist,
+  parseSlashInvocation,
+  renderSkillBody,
+} from "../skills";
 
 // Agent orchestrator (Phase 8.a).
 //
@@ -77,6 +84,16 @@ export interface AgentOrchestratorOptions {
    * (and a future stateless mode) can omit it.
    */
   profileStore?: { get: () => import("../../shared/types").UserProfile };
+  /**
+   * S2 — User-authored skills store. When set, the orchestrator:
+   *   - appends a "Verfügbare Skills" block to the system prompt
+   *   - resolves `/skill-name [args]` on the first line of a user
+   *     message into an injected user-role message with the body
+   *   - auto-activates one skill per turn via crude keyword match
+   *     against the description; with or without explicit invocation,
+   *     the active skill's `allowedTools` is hard-enforced in runTool.
+   */
+  skillStore?: SkillStore;
 }
 
 export interface AgentOrchestratorEvents {
@@ -105,6 +122,11 @@ export class AgentOrchestrator extends EventEmitter {
   private readonly profileStore:
     | { get: () => import("../../shared/types").UserProfile }
     | undefined;
+  private skillStore: SkillStore | undefined;
+  /** Active skill for the in-flight turn (set in send(), read in
+   *  runTool() for the allowlist gate + in buildSystemPrompt() for
+   *  the active-skill hint). null when no skill is active. */
+  private activeSkill: LoadedSkill | null = null;
   /** Coalesce concurrent recovery attempts — multiple in-flight turns
    *  hitting the same crash should only kick one restart. */
   private runtimeRecoverInFlight: Promise<void> | null = null;
@@ -129,11 +151,19 @@ export class AgentOrchestrator extends EventEmitter {
     this.memoryError = opts.memoryError ?? null;
     this.runtimeRecover = opts.runtimeRecover;
     this.profileStore = opts.profileStore;
+    this.skillStore = opts.skillStore;
 
     // Re-emit status when the active provider moves so the renderer's
     // Chat tab can re-enable the input the moment the model is ready.
     // Covers both Ollama lifecycle transitions and OpenAI key changes.
     this.providers.onStatusChanged(() => this.emit("status", this.getStatus()));
+  }
+
+  /** S2 — late-binding for the SkillStore, because `initSkills(app)` can
+   *  only run after `app.whenReady()` while the orchestrator is
+   *  constructed eagerly at module top. */
+  setSkillStore(store: SkillStore): void {
+    this.skillStore = store;
   }
 
   // ---- Public surface -------------------------------------------------------
@@ -181,6 +211,40 @@ export class AgentOrchestrator extends EventEmitter {
       createdAt: Date.now(),
     };
     this.appendMessage(convo, userMessage);
+
+    // S2 — resolve the active skill for this turn. Explicit /name wins
+    // (and injects the rendered body as an additional user-role
+    // message); otherwise we try the crude description-keyword
+    // auto-activation against the last user message.
+    this.activeSkill = null;
+    const skills = this.skillStore?.list() ?? [];
+    const slash = parseSlashInvocation(input.message);
+    if (slash) {
+      const target = skills.find((s) => s.name === slash.name);
+      if (target && target.userInvocable !== false) {
+        this.activeSkill = target;
+        const rendered = renderSkillBody(target, slash.rawArgs);
+        const injected: AgentMessage = {
+          id: randomUUID(),
+          role: "user",
+          content: `### Skill: ${target.name}\n\n${rendered}`,
+          createdAt: Date.now(),
+        };
+        this.appendMessage(convo, injected);
+        console.log(
+          `[agent] skill invoked: ${target.name} (allowed-tools: [${target.allowedTools.join(", ")}])`,
+        );
+      }
+    }
+    if (!this.activeSkill && skills.length > 0) {
+      const auto = autoActivateSkill(skills, input.message);
+      if (auto) {
+        this.activeSkill = auto;
+        console.log(
+          `[agent] skill auto-activated: ${auto.name} (allowed-tools: [${auto.allowedTools.join(", ")}])`,
+        );
+      }
+    }
 
     this.inFlightRequestId = requestId;
     this.errorMessage = null;
@@ -281,6 +345,10 @@ export class AgentOrchestrator extends EventEmitter {
           content: buildSystemPrompt(
             this.registry,
             this.profileStore?.get() ?? null,
+            {
+              skills: this.skillStore?.list() ?? [],
+              activeSkill: this.activeSkill,
+            },
           ),
           createdAt: 0,
         };
@@ -486,6 +554,21 @@ export class AgentOrchestrator extends EventEmitter {
     requestId: string,
     conversationId: string,
   ): Promise<{ ok: boolean; content: string; preview: string }> {
+    // S2 — enforced skill tool-allowlist. Runs BEFORE the registry
+    // lookup so a refusal message is consistent regardless of whether
+    // the tool name is real.
+    const guard = checkSkillAllowlist(this.activeSkill, call.name);
+    if (!guard.ok) {
+      console.warn(
+        `[skills] tool-call refused: skill=${this.activeSkill?.name} tool=${call.name}`,
+      );
+      return {
+        ok: false,
+        content: JSON.stringify({ error: guard.message }),
+        preview: guard.message,
+      };
+    }
+
     const tool: Tool | undefined = this.registry.get(call.name);
     if (!tool) {
       const msg = `unknown tool: ${call.name}`;

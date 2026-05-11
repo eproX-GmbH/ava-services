@@ -107,8 +107,10 @@ and `<repo>/.ava/skills/<name>/`. Format reference + frontmatter
 table lives in [`SKILLS.md`](../../SKILLS.md) at the repo root.
 
 S1 (loader + schema + hot-reload) shipped in v0.1.121. S2 (agent
-integration: description-match, `/skill-name` invocation, tool
-allowlist enforcement) is the next step — see `PLANS.md` §2.
+integration: system-prompt block, `/skill-name` invocation,
+enforced tool allowlist, `metadata.ava.requires` gate evaluator
+against CRM + Ollama) shipped in v0.1.122 — see `PLANS.md` §2 and
+the Tool-Allowlist + `/skill-name` sections in [`SKILLS.md`](../../SKILLS.md).
 
 ## Tooling notes
 
@@ -125,9 +127,11 @@ allowlist enforcement) is the next step — see `PLANS.md` §2.
   setup + diagnostics + canonical CRM-OAuth flow as agent tools.
   Plan in [`PLANS.md`](../../PLANS.md) §1. Phase T1 (LinkedIn + CRM
   family) shipped in v0.1.119; T2 next.
-- **Skills system (S2-S6)** — agent integration, UI, editor, import.
-  S1 (loader + schema) landed in v0.1.121; see
-  [`SKILLS.md`](../../SKILLS.md) and [`PLANS.md`](../../PLANS.md) §2.
+- **Skills system (S3-S6)** — Settings UI, in-app editor, zip
+  import/export, starter skills. S1 (loader + schema, v0.1.121) and
+  S2 (agent integration + enforced allowlist + gates, v0.1.122) are
+  landed; see [`SKILLS.md`](../../SKILLS.md) and
+  [`PLANS.md`](../../PLANS.md) §2.
 - **Renderer cache** — `useTabQuery` keeps a 404 response cached
   after a producer finishes, so a freshly persisted profile only
   appears after navigate-away-and-back or app restart. Plausibly

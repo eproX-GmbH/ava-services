@@ -10,6 +10,7 @@ import { createHash } from "node:crypto";
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { parseSkillFile, SkillParseError } from "./parser";
+import { denyAllGates, type GateEvaluator } from "./gate";
 import {
   frontmatterSchema,
   type B2bScope,
@@ -41,6 +42,10 @@ export interface LoadedSkill {
 export interface LoadOptions {
   userDir: string | null;
   workspaceDir: string | null;
+  /** S2 — gate evaluator. Skills whose `metadata.ava.requires` block is
+   *  unsatisfied are skipped silently (German log). Defaults to
+   *  `denyAllGates` (any requires-entry → skip), matching S1 behaviour. */
+  evaluateGate?: GateEvaluator;
 }
 
 export interface LoadResult {
@@ -81,22 +86,17 @@ function findSkillFiles(dir: string): string[] {
   return out;
 }
 
-// TODO(S2): real gate evaluation. For now we only check presence of
-// keys and log "[skills] gate not satisfied: …" when any requires
-// entry is set, since the gate-evaluator (CRM connected? Ollama
-// installed? Tier ≥ Pro?) is not wired yet.
-function gateSatisfied(skill: LoadedSkill): boolean {
+function gateSatisfied(skill: LoadedSkill, evaluate: GateEvaluator): boolean {
+  if (evaluate(skill)) return true;
   const req = skill.metadata?.ava?.requires;
-  if (!req) return true;
   const unmet: string[] = [];
-  for (const [k, v] of Object.entries(req)) {
-    if (v) unmet.push(`${k}=${v}`);
+  if (req) {
+    for (const [k, v] of Object.entries(req)) {
+      if (v) unmet.push(`${k}=${v}`);
+    }
   }
-  if (unmet.length === 0) return true;
   console.warn(
-    `[skills] gate not satisfied: ${skill.name} verlangt ${unmet.join(
-      ", ",
-    )} (S2 wertet Gates aus; aktuell wird das Skill übersprungen)`,
+    `[skills] gate not satisfied: ${skill.name} verlangt ${unmet.join(", ") || "(unbekannt)"} — Skill wird übersprungen`,
   );
   return false;
 }
@@ -105,6 +105,7 @@ async function loadOne(
   path: string,
   scope: SkillScope,
   errors: LoadResult["errors"],
+  evaluate: GateEvaluator,
 ): Promise<LoadedSkill | null> {
   let raw: string;
   try {
@@ -163,12 +164,13 @@ async function loadOne(
     scope,
   };
 
-  if (!gateSatisfied(skill)) return null;
+  if (!gateSatisfied(skill, evaluate)) return null;
   return skill;
 }
 
 export async function loadSkills(opts: LoadOptions): Promise<LoadResult> {
   const errors: LoadResult["errors"] = [];
+  const evaluate = opts.evaluateGate ?? denyAllGates;
   const userPaths = opts.userDir ? findSkillFiles(opts.userDir) : [];
   const workspacePaths = opts.workspaceDir
     ? findSkillFiles(opts.workspaceDir)
@@ -176,12 +178,12 @@ export async function loadSkills(opts: LoadOptions): Promise<LoadResult> {
 
   const userSkills: LoadedSkill[] = [];
   for (const p of userPaths) {
-    const s = await loadOne(p, "user", errors);
+    const s = await loadOne(p, "user", errors, evaluate);
     if (s) userSkills.push(s);
   }
   const workspaceSkills: LoadedSkill[] = [];
   for (const p of workspacePaths) {
-    const s = await loadOne(p, "workspace", errors);
+    const s = await loadOne(p, "workspace", errors, evaluate);
     if (s) workspaceSkills.push(s);
   }
 

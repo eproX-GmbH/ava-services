@@ -43,7 +43,7 @@ import {
 } from "./crm/fetch-enrichment";
 import { initBilling } from "./billing";
 import { initLinkedIn } from "./linkedin";
-import { initSkills } from "./skills";
+import { initSkills, buildGateEvaluator } from "./skills";
 import type { CrmProvider, CrmStatus } from "./crm/types";
 import { scrubQuarantine } from "./scrub-quarantine";
 import { Updater, broadcastUpdateStatus } from "./updater";
@@ -1220,15 +1220,53 @@ app.whenReady().then(async () => {
   // + kill-switch IPC. No scraper code here yet — that lands in L1+.
   initLinkedIn({ providers, gateway: gatewayClient });
 
-  // Skills loader (PLAN §2, S1). Discovers SKILL.md files in
+  // Skills loader (PLAN §2, S1+S2). Discovers SKILL.md files in
   // userData/skills/ and <repo>/.ava/skills/, validates frontmatter,
-  // and hot-reloads on save. No agent integration yet (lands in S2),
-  // no IPC surface yet (lands in S3).
-  await initSkills(app).catch((err: unknown) => {
+  // evaluates `metadata.ava.requires` against the live CRM + Ollama
+  // managers, hot-reloads on save, and surfaces the loaded skills
+  // to the agent orchestrator (system-prompt block + /name
+  // invocation + enforced tool allowlist).
+  //
+  // CRM connect/disconnect does NOT auto-trigger a skill reload yet —
+  // S2-followup: `crmManager.on("status", () => skillStore.reload())`.
+  const skillGate = buildGateEvaluator({
+    isCrmConnected: (provider) => {
+      if (provider === "any") {
+        return crmManager
+          .getAllStatuses()
+          .some((s: CrmStatus) => s.connected);
+      }
+      // Provider names line up with CrmProvider strings ("hubspot",
+      // "salesforce", "dynamics"). Anything unknown is treated as
+      // not connected.
+      if (
+        provider === "hubspot" ||
+        provider === "salesforce" ||
+        provider === "dynamics"
+      ) {
+        return crmManager.getStatus(provider).connected;
+      }
+      return false;
+    },
+    ollamaState: () => {
+      const st = ollama.getStatus();
+      return {
+        installed: st.host !== null || st.installed.length > 0,
+        running: st.state === "ready",
+      };
+    },
+  });
+  const skillStore = await initSkills(app, {
+    evaluateGate: skillGate,
+  }).catch((err: unknown) => {
     console.error(
       `[skills] Initialisierung fehlgeschlagen: ${err instanceof Error ? err.message : String(err)}`,
     );
+    return null;
   });
+  if (skillStore) {
+    agent.setSkillStore(skillStore);
+  }
 
   // Ollama supervisor IPC. The renderer drives:
   //   - getStatus on startup (then subscribes to `ollama-status:changed`)

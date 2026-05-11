@@ -7,6 +7,54 @@ The repo uses one rolling tag per desktop release (`v<major>.<minor>.<patch>`)
 on `main`. Submodules cut their own feature branches and are pinned via the
 desktop bundle; `pnpm fetch:producers` re-vendors them into the .dmg.
 
+## v0.1.122 — 2026-05-11
+
+- **[PLAN §2 S2] Skills agent-integration landed.** The skills loaded in
+  S1 are now wired into the chat agent.
+  - **System-prompt block:** every turn appends a "Verfügbare Skills"
+    list (name + b2b-scope + description) for skills with
+    `disable-model-invocation: false`, plus the PLAN §2.4-rule-3
+    out-of-scope refusal instruction whenever any skill is loaded.
+  - **`/skill-name [args]` invocation:** the orchestrator detects a
+    kebab-case slash command on the first line of a user message
+    and injects the rendered body (with `$ARGUMENTS` and
+    `${arg-name}` substitution) as an additional user-role message
+    before the LLM is called.
+  - **Enforced tool allowlist (the S2 acceptance criterion).** When a
+    skill is active (explicit `/name` OR auto-activation), `runTool`
+    checks `call.name` against `allowedTools` BEFORE invoking the
+    tool. Empty list = pure-prose skill, refuse all tools. Non-empty
+    list = refuse anything not in it. Refusals fold into the normal
+    `ok: false` tool-result shape so the LLM sees the German refusal
+    message and can adjust. Pure helpers live in
+    `services/desktop/src/main/skills/allowlist.ts` and are covered
+    by `pnpm -F @ava/desktop test:skills:agent`.
+  - **Auto-activation:** a crude description-keyword overlap match
+    against the last user message picks at most one skill per turn.
+    Two distinct keyword hits (>= 4 chars) required; the skill with
+    the most hits wins (first-loaded breaks ties).
+    `disable-model-invocation` blocks auto-activation.
+    TODO(S2-followup): semantic match.
+  - **`metadata.ava.requires` gate evaluator** (replacing the S1
+    "any-requires -> skip" placeholder). Recognises:
+    `crm: hubspot | salesforce | dynamics | any` against
+    `crmManager.getStatus(provider).connected`; `ollama: installed |
+    running` against `ollamaSupervisor.getStatus()`. `tier:` is
+    accepted but always satisfied (no tier system yet). Unknown keys
+    log a German warn and treat the gate as satisfied. The evaluator
+    is injected into `initSkills(app, { evaluateGate })` from
+    `main/index.ts` so the skills module stays decoupled.
+  - **Reload follow-up:** `SkillStore.reload()` re-evaluates gates,
+    so a future `crmManager.on("status", () => skillStore.reload())`
+    can be wired without touching the skills module. Not auto-wired
+    in S2 — keep one moving part per release.
+- New script: `pnpm -F @ava/desktop test:skills:agent` exercises the
+  allowlist, slash parser, body renderer, auto-activation heuristic,
+  and gate evaluator as pure functions (no LLM spin-up).
+- Doc updates: `SKILLS.md` gains "Tool-Allowlist",
+  "`metadata.ava.requires`", "`/skill-name`-Aufrufe", and
+  "Auto-Aktivierung" sections.
+
 ## v0.1.121 — 2026-05-11
 
 - **[PLAN §2 S1] Skills loader landed.** AVA now reads user-authored

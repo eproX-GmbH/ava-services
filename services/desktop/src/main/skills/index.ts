@@ -12,6 +12,7 @@ import type { App } from "electron";
 import { existsSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { SkillStore } from "./store";
+import type { GateEvaluator } from "./gate";
 
 export { SkillStore } from "./store";
 export type { LoadedSkill, SkillScope } from "./loader";
@@ -21,6 +22,15 @@ export type {
   SkillArgument,
   SkillMetadata,
 } from "./schema";
+export { buildGateEvaluator, denyAllGates } from "./gate";
+export type { GateEvaluator, GateDeps } from "./gate";
+export {
+  parseSlashInvocation,
+  renderSkillBody,
+  checkSkillAllowlist,
+  autoActivateSkill,
+} from "./allowlist";
+export type { SlashInvocation, AllowlistCheck } from "./allowlist";
 
 export interface InitSkillsOptions {
   /** Override userData path — used by the test script with fixtures. */
@@ -29,6 +39,9 @@ export interface InitSkillsOptions {
   workspaceDir?: string | null;
   /** Skip starting fs.watch (test script). */
   watch?: boolean;
+  /** S2 — gate evaluator (CRM connected? Ollama running?). When omitted,
+   *  the loader denies every `metadata.ava.requires` block (S1 behaviour). */
+  evaluateGate?: GateEvaluator;
 }
 
 export async function initSkills(
@@ -58,7 +71,7 @@ export async function initSkills(
     workspaceDir = existsSync(candidate) ? candidate : null;
   }
 
-  const store = new SkillStore(userDir, workspaceDir);
+  const store = new SkillStore(userDir, workspaceDir, opts.evaluateGate);
   await store.reload();
 
   const userCount = store.list().filter((s) => s.scope === "user").length;

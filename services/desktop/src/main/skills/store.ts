@@ -11,6 +11,7 @@
 import { EventEmitter } from "node:events";
 import { existsSync, type FSWatcher, watch } from "node:fs";
 import { loadSkills, type LoadedSkill, type LoadResult } from "./loader";
+import type { GateEvaluator } from "./gate";
 
 export type SkillStoreEvent = "changed";
 
@@ -23,6 +24,7 @@ export class SkillStore extends EventEmitter {
   constructor(
     private readonly userDir: string | null,
     private readonly workspaceDir: string | null,
+    private readonly evaluateGate?: GateEvaluator,
   ) {
     super();
   }
@@ -43,6 +45,7 @@ export class SkillStore extends EventEmitter {
     const result = await loadSkills({
       userDir: this.userDir,
       workspaceDir: this.workspaceDir,
+      evaluateGate: this.evaluateGate,
     });
     this.skills = result.skills;
     this.errors = result.errors;
