@@ -16,6 +16,7 @@ import { usageRouter } from "./v1/usage";
 import { billingRouter } from "./v1/billing";
 import { companiesMatrixRouter } from "./v1/companies-matrix";
 import { companyStateRouter } from "./v1/company-state";
+import { companiesCrmRouter } from "./v1/companies-crm";
 
 // /v1 router.
 //
@@ -44,6 +45,12 @@ v1.use("*", auditMiddleware);
 // chance. Mounting matrix-router FIRST ensures the literal path
 // resolves correctly.
 v1.route("/", companiesMatrixRouter);
+
+// Workstream C — /companies/:id/crm reads. Must mount BEFORE the
+// generic companiesRouter so its `/companies/{companyId}` glob
+// doesn't swallow the more-specific `/companies/{id}/crm[/...]`
+// paths (same FIFO rationale as companiesMatrixRouter above).
+v1.route("/", companiesCrmRouter);
 
 // §4.1 Company reads (W6-W13).
 v1.route("/", companiesRouter);

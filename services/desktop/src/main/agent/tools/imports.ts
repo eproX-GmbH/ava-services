@@ -6,7 +6,10 @@ import type { GatewayClient } from "../gateway-client";
 import type { AttachmentStore } from "../attachment-store";
 import type { CrmManager } from "../../crm";
 import type { CrmProvider } from "../../crm/types";
-import { fetchCompaniesFromCrm } from "../../crm/fetch-companies";
+import {
+  fetchCompaniesFromCrm,
+  type CompanyForImport,
+} from "../../crm/fetch-companies";
 
 // v0.1.57 — dry-run preview envelope returned by master-data when the
 // import tools are called with `dryRun: true`. Mirrors the shape in
@@ -456,6 +459,20 @@ export function buildImportTools(deps: {
           description:
             "Preview match results WITHOUT creating a transaction. Returns `{dryRun: true, matched, unmatched}` so you can confirm with the user before committing. Default false (starts the transaction immediately).",
         },
+        crm: {
+          type: "object",
+          description:
+            "Optional CRM-side identifier for this row. When set on a commit (dryRun=false), the gateway binds the resulting master-data companyId to the given external id (CompanyCrmLink). Set this when the user is importing this specific company from a connected CRM (e.g. 'add HubSpot company 12345').",
+          required: ["type", "externalId"],
+          properties: {
+            type: {
+              type: "string",
+              enum: ["hubspot", "salesforce", "dynamics"],
+            },
+            externalId: { type: "string" },
+            displayName: { type: "string" },
+          },
+        },
       },
     },
     schema: yup
@@ -465,6 +482,18 @@ export function buildImportTools(deps: {
         transactionName: yup.string().optional(),
         isFuzzy: yup.boolean().optional(),
         dryRun: yup.boolean().optional(),
+        crm: yup
+          .object({
+            type: yup
+              .string()
+              .required()
+              .oneOf(["hubspot", "salesforce", "dynamics"]),
+            externalId: yup.string().required().min(1),
+            displayName: yup.string().optional(),
+          })
+          .noUnknown(true)
+          .optional()
+          .default(undefined),
       })
       .noUnknown(true),
     preview: (r: {
@@ -487,6 +516,7 @@ export function buildImportTools(deps: {
           : {}),
         ...(args.isFuzzy !== undefined ? { isFuzzy: args.isFuzzy } : {}),
         ...(args.dryRun ? { dryRun: true } : {}),
+        ...(args.crm ? { crm: args.crm } : {}),
       };
       // The gateway returns ImportPreview for dryRun=true, the legacy
       // {transactionId} otherwise. Use a permissive type and branch
@@ -627,14 +657,14 @@ export function buildImportTools(deps: {
 
       // Either the agent supplied an explicit companies list (e.g.
       // post-dryRun confirmation), or we page the CRM ourselves.
-      let companies: { name: string; city: string }[];
+      let companies: CompanyForImport[];
       let skipped = 0;
       let total = 0;
       if (args.companies && args.companies.length > 0) {
         ctx.log(
           `import_companies_from_crm: provider=${provider} explicit=${args.companies.length}${args.dryRun ? " [dryRun]" : ""}`,
         );
-        companies = args.companies as { name: string; city: string }[];
+        companies = args.companies as CompanyForImport[];
         total = companies.length;
       } else {
         ctx.log(
@@ -659,12 +689,31 @@ export function buildImportTools(deps: {
         );
       }
 
+      // Workstream C — when the source provider has the CRM-side ids
+      // attached to each row (HubSpot today via `crmExternalId`),
+      // forward them as `crm: {type, externalId, displayName}` so the
+      // gateway can persist a CompanyCrmLink for each matched company.
+      const wireCompanies = companies.map((co) => {
+        if (!co.crmExternalId) return { name: co.name, city: co.city };
+        return {
+          name: co.name,
+          city: co.city,
+          crm: {
+            type: provider,
+            externalId: co.crmExternalId,
+            ...(co.crmDisplayName
+              ? { displayName: co.crmDisplayName }
+              : {}),
+          },
+        };
+      });
+
       const response = await deps.gateway.request<
         { transactionId: string; companyCount: number } | ImportPreview
       >("/v1/imports/from-list", {
         method: "POST",
         body: {
-          companies,
+          companies: wireCompanies,
           ...(args.transactionName
             ? { transactionName: args.transactionName }
             : {}),

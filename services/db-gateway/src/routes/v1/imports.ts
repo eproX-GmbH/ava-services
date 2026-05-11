@@ -7,6 +7,17 @@ import { seedEntityProgressForTransaction } from "../../lib/entity-progress-seed
 import { buildXlsx } from "../../lib/xlsx-mini";
 import { assertQuotaAvailable } from "../../lib/billing";
 import { getGatewayPool } from "../../lib/producer-pools";
+import { logger } from "../../lib/logger";
+import {
+  parseXlsxFirstSheet,
+  buildRowMappings,
+  detectCrmColumns,
+} from "../../lib/xlsx-read";
+import {
+  upsertCrmLink,
+  toCrmType,
+  type ConfirmedSource,
+} from "../../lib/crm-links";
 import {
   CompanyIngestBody,
   CompanyIngestResponseShape,
@@ -161,6 +172,38 @@ importsRouter.openapi(importExcelRoute, async (c) => {
     return c.json(body as object, 200);
   }
 
+  // Workstream C — peek at the xlsx headers; if any typed CRM-id
+  // columns are present, pre-run a dry-run to resolve master-data
+  // companyIds so we can persist CompanyCrmLink rows after commit.
+  // Skipped entirely when no CRM headers are detected (the common
+  // case — most uploads don't carry CRM ids), so the standard upload
+  // path stays a single upstream call.
+  let rowMappings: ReturnType<typeof buildRowMappings> = [];
+  let hasCrmColumns = false;
+  try {
+    const sheet = parseXlsxFirstSheet(bytes);
+    if (sheet) {
+      const hits = detectCrmColumns(sheet);
+      hasCrmColumns = hits.length > 0;
+      if (hasCrmColumns) {
+        rowMappings = buildRowMappings(sheet, companyNameIdentifiers, city);
+      }
+    }
+  } catch (err) {
+    logger.warn({ err }, "imports/excel: xlsx peek failed (continuing without CRM detection)");
+  }
+
+  const preMatchById = hasCrmColumns
+    ? await resolveCompanyIdsViaDryRunRaw(
+        c,
+        bytes,
+        companyNameIdentifiers,
+        city,
+        name ?? "",
+        String(isFuzzy),
+      )
+    : new Map<string, string>();
+
   const { headers } = await callUpstreamBinary(
     c,
     "masterData",
@@ -193,8 +236,79 @@ importsRouter.openapi(importExcelRoute, async (c) => {
   // Best-effort: failures are logged + swallowed inside the helper.
   await seedEntityProgressForTransaction(c, transactionId);
 
+  if (hasCrmColumns && rowMappings.length > 0 && preMatchById.size > 0) {
+    const auth = c.get("auth");
+    if (auth?.tenantId) {
+      for (const row of rowMappings) {
+        const companyId = preMatchById.get(mappingKey(row.name, row.location));
+        if (!companyId) continue;
+        for (const link of row.crmLinks) {
+          try {
+            await upsertCrmLink(getGatewayPool(), {
+              tenantId: auth.tenantId,
+              companyId,
+              crmType: link.crmType,
+              crmExternalId: link.externalId,
+              confirmedSource: "EXACT_MATCH",
+            });
+          } catch (err) {
+            logger.warn(
+              { err, companyId, crmType: link.crmType, externalId: link.externalId },
+              "imports/excel: upsertCrmLink failed (continuing)",
+            );
+          }
+        }
+      }
+    }
+  }
+
   return c.json({ transactionId }, 202);
 });
+
+/**
+ * Dry-run preview against master-data using a raw xlsx blob the user
+ * uploaded. Returns a map keyed by `mappingKey(name, location)` →
+ * companyId. Same shape + semantics as
+ * `resolveCompanyIdsViaDryRun`, but used by the binary upload path
+ * where the xlsx is the user's own and the query params have to
+ * mirror the actual upload.
+ */
+async function resolveCompanyIdsViaDryRunRaw(
+  c: Parameters<typeof callUpstreamBinaryExpectJson>[0],
+  bytes: Uint8Array,
+  companyNameIdentifiers: string[],
+  city: string[],
+  name: string,
+  isFuzzy: string,
+): Promise<Map<string, string>> {
+  try {
+    const { body } = await callUpstreamBinaryExpectJson(
+      c,
+      "masterData",
+      "/api/v1/data-care",
+      bytes,
+      {
+        contentType: "application/octet-stream",
+        query: {
+          companyNameIdentifiers,
+          city,
+          ...(name ? { name } : {}),
+          isFuzzy,
+          dryRun: "true",
+        },
+      },
+    );
+    const preview = body as MasterDataPreview;
+    const out = new Map<string, string>();
+    for (const m of preview.matched ?? []) {
+      out.set(mappingKey(m.name, m.location), m.companyId);
+    }
+    return out;
+  } catch (err) {
+    logger.warn({ err }, "imports/excel: pre-commit dry-run failed (skipping CRM link persistence)");
+    return new Map();
+  }
+}
 
 // ---- POST /v1/companies (Phase 8.h) ----------------------------------------
 //
@@ -243,7 +357,7 @@ const companyIngestRoute = createRoute({
 });
 
 importsRouter.openapi(companyIngestRoute, async (c) => {
-  const { name, city, transactionName, isFuzzy, dryRun } = c.req.valid("json");
+  const { name, city, transactionName, isFuzzy, dryRun, crm } = c.req.valid("json");
 
   // M2 — single-row ingest still costs one quota credit when not dry-run.
   if (!dryRun) {
@@ -281,6 +395,19 @@ importsRouter.openapi(companyIngestRoute, async (c) => {
     return c.json(body as object, 200);
   }
 
+  // Workstream C — single-row sibling of the from-list flow. When the
+  // caller named a source CRM, resolve the resulting companyId via a
+  // dry-run preview before commit so we can persist the link with
+  // confirmedSource=SINGLE_IMPORT.
+  const preMatchById = crm
+    ? await resolveCompanyIdsViaDryRun(
+        c,
+        xlsx,
+        effectiveTxName,
+        String(isFuzzy ?? false),
+      )
+    : new Map<string, string>();
+
   const { headers } = await callUpstreamBinary(
     c,
     "masterData",
@@ -310,6 +437,29 @@ importsRouter.openapi(companyIngestRoute, async (c) => {
   setTransactionName(transactionId, effectiveTxName);
   // §8.v3 — same matrix-seeding rationale as the bulk endpoint above.
   await seedEntityProgressForTransaction(c, transactionId);
+
+  if (crm) {
+    const auth = c.get("auth");
+    const companyId = preMatchById.get(mappingKey(name, city));
+    const crmType = toCrmType(crm.type);
+    if (auth?.tenantId && companyId && crmType) {
+      try {
+        await upsertCrmLink(getGatewayPool(), {
+          tenantId: auth.tenantId,
+          companyId,
+          crmType,
+          crmExternalId: crm.externalId,
+          crmDisplayName: crm.displayName ?? null,
+          confirmedSource: "SINGLE_IMPORT",
+        });
+      } catch (err) {
+        logger.warn(
+          { err, companyId, crmType },
+          "single-ingest: upsertCrmLink failed (continuing)",
+        );
+      }
+    }
+  }
   return c.json({ transactionId }, 202);
 });
 
@@ -402,6 +552,23 @@ importsRouter.openapi(fromListIngestRoute, async (c) => {
     return c.json(body as object, 200);
   }
 
+  // Workstream C — when any row carries a `crm` payload, resolve the
+  // master-data companyId for each via a dry-run preview BEFORE
+  // committing the actual import. Matched rows get persisted as
+  // CompanyCrmLink entries. Rows that come back unmatched here are
+  // skipped for linking on this pass (master-data will create new
+  // companyIds on the commit but the response doesn't echo them — a
+  // future backfill pass can pick those up).
+  const hasCrm = companies.some((row) => row.crm);
+  const preMatchById = hasCrm
+    ? await resolveCompanyIdsViaDryRun(
+        c,
+        xlsx,
+        effectiveTxName,
+        String(isFuzzy ?? false),
+      )
+    : new Map<string, string>();
+
   const { headers } = await callUpstreamBinary(
     c,
     "masterData",
@@ -427,8 +594,101 @@ importsRouter.openapi(fromListIngestRoute, async (c) => {
   }
   setTransactionName(transactionId, effectiveTxName);
   await seedEntityProgressForTransaction(c, transactionId);
+
+  // Persist CRM links for rows we resolved a companyId for.
+  if (hasCrm) {
+    const auth = c.get("auth");
+    if (auth?.tenantId) {
+      const source: ConfirmedSource = "EXACT_MATCH";
+      for (const row of companies) {
+        if (!row.crm) continue;
+        const key = mappingKey(row.name, row.city);
+        const companyId = preMatchById.get(key);
+        if (!companyId) continue;
+        const crmType = toCrmType(row.crm.type);
+        if (!crmType) continue;
+        try {
+          await upsertCrmLink(getGatewayPool(), {
+            tenantId: auth.tenantId,
+            companyId,
+            crmType,
+            crmExternalId: row.crm.externalId,
+            crmDisplayName: row.crm.displayName ?? null,
+            confirmedSource: source,
+          });
+        } catch (err) {
+          logger.warn(
+            { err, companyId, crmType, externalId: row.crm.externalId },
+            "from-list: upsertCrmLink failed (continuing)",
+          );
+        }
+      }
+    }
+  }
+
   return c.json(
     { transactionId, companyCount: companies.length },
     202,
   );
 });
+
+// =============================================================================
+// Workstream C helpers
+// =============================================================================
+
+/** Key used to look up name+city → companyId in the dry-run result. */
+function mappingKey(name: string, city: string): string {
+  return `${name.trim().toLowerCase()}|${city.trim().toLowerCase()}`;
+}
+
+interface MasterDataPreview {
+  matched?: Array<{
+    name: string;
+    location: string;
+    companyId: string;
+  }>;
+}
+
+/**
+ * Run a dry-run preview against master-data and index its matched
+ * rows by `mappingKey(name, location)`. Used to resolve master-data
+ * companyIds before committing an import, so we can persist
+ * CompanyCrmLink rows for matched companies in one pass.
+ *
+ * Returns an empty map on any upstream failure — CRM linking is a
+ * best-effort side effect, not gate of the import.
+ */
+async function resolveCompanyIdsViaDryRun(
+  c: Parameters<typeof callUpstreamBinaryExpectJson>[0],
+  xlsx: Uint8Array,
+  effectiveTxName: string,
+  isFuzzy: string,
+): Promise<Map<string, string>> {
+  try {
+    const { body } = await callUpstreamBinaryExpectJson(
+      c,
+      "masterData",
+      "/api/v1/data-care",
+      xlsx,
+      {
+        contentType: "application/octet-stream",
+        query: {
+          companyNameIdentifiers: COMPANY_HEADER,
+          city: CITY_HEADER,
+          name: effectiveTxName,
+          isFuzzy,
+          dryRun: "true",
+        },
+      },
+    );
+    const preview = body as MasterDataPreview;
+    const out = new Map<string, string>();
+    for (const m of preview.matched ?? []) {
+      out.set(mappingKey(m.name, m.location), m.companyId);
+    }
+    return out;
+  } catch (err) {
+    logger.warn({ err }, "resolveCompanyIdsViaDryRun: pre-commit dry-run failed");
+    return new Map();
+  }
+}

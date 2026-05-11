@@ -581,6 +581,20 @@ export const ImportExcelResponseShape = z
 // `name` and `city` are the canonical xlsx columns; `transactionName`
 // becomes the optional `name` query param the bulk endpoint accepts.
 
+/** Workstream C — optional CRM-side identifier captured alongside one
+ *  import row. When set on commit (dryRun=false), the gateway persists a
+ *  CompanyCrmLink row binding the master-data companyId resolved by
+ *  master-data's matcher to this external id. Used by:
+ *    - /v1/imports/from-list  — agent fetched the row from a CRM
+ *    - /v1/companies          — agent explicitly identified the source CRM
+ *  Excel uploads detect this via typed header names; the binary path
+ *  doesn't carry the field through. */
+export const CrmLinkInput = z.object({
+  type: z.enum(["hubspot", "salesforce", "dynamics"]),
+  externalId: z.string().min(1).max(200),
+  displayName: z.string().max(500).optional(),
+});
+
 export const CompanyIngestBody = z
   .object({
     /** Company name as it should appear in the xlsx `company` column. */
@@ -597,6 +611,8 @@ export const CompanyIngestBody = z
     /** v0.1.57 — dry-run preview. Returns ImportPreview JSON instead of
      *  starting a transaction. */
     dryRun: z.boolean().optional().default(false),
+    /** Workstream C — optional CRM source identifier for this row. */
+    crm: CrmLinkInput.optional(),
   })
   .openapi("CompanyIngest");
 
@@ -627,6 +643,8 @@ export const FromListIngestBody = z
         z.object({
           name: z.string().min(1).max(500),
           city: z.string().min(1).max(200),
+          /** Workstream C — optional CRM source identifier. */
+          crm: CrmLinkInput.optional(),
         }),
       )
       .min(1)

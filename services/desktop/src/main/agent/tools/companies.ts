@@ -308,6 +308,81 @@ export function buildCompanyTools(ctx: Ctx): Tool[] {
     },
   });
 
+  // Workstream C — CRM-context fan-out.
+  //
+  // Wraps GET /v1/companies/:id/crm/details. Returns enriched payloads
+  // for every CRM the company is linked to. Cheap when the cache row
+  // is < 6h old (DB-only); a stale cache or `refresh=true` triggers a
+  // fresh CRM-side fetch in the gateway (HubSpot today; Salesforce /
+  // Dynamics surface `notConfigured: true`).
+  //
+  // Companies with no CRM links return `{ details: [] }` — the agent
+  // should treat that as "no CRM context to report" and omit the
+  // CRM-Kontext subsection from its summary.
+  const crmSummary = defineTool({
+    name: "company_crm_summary",
+    description:
+      "Pulls CRM-side context for an AVA company: open deals, recent contacts, " +
+      "last activity. Use this when the user asks for an overview / status of a " +
+      "specific company they've imported from a CRM (HubSpot today). Returns " +
+      "empty when the company has no CRM link. Cheap to call when cached " +
+      "(no CRM API hit for up to 6h); safe to include in the default fan-out " +
+      "for open company questions without burning quota.",
+    parameters: {
+      type: "object",
+      required: ["companyId"],
+      properties: {
+        companyId: { type: "string", description: "AVA master-data companyId." },
+        refresh: {
+          type: "boolean",
+          description:
+            "Force a fresh CRM-side fetch even if a cached payload < 6h old exists. Default false.",
+        },
+      },
+    },
+    schema: yup
+      .object({
+        companyId: yup.string().trim().min(1).required(),
+        refresh: yup.boolean().optional(),
+      })
+      .noUnknown(true),
+    preview: (r: {
+      details?: Array<{
+        crmType?: string;
+        deals?: unknown[];
+        contacts?: unknown[];
+        notConfigured?: boolean;
+      }>;
+    }) => {
+      const details = r.details ?? [];
+      if (details.length === 0) return "no CRM link";
+      const dealCount = details.reduce(
+        (n, d) => n + (Array.isArray(d.deals) ? d.deals.length : 0),
+        0,
+      );
+      const contactCount = details.reduce(
+        (n, d) => n + (Array.isArray(d.contacts) ? d.contacts.length : 0),
+        0,
+      );
+      return `${dealCount} deals · ${contactCount} contacts across ${details.length} CRM(s)`;
+    },
+    run: async (args, c) =>
+      gateway.request<{
+        details: Array<{
+          crmType: string;
+          fetchedAt: string;
+          notConfigured?: boolean;
+          contacts?: unknown[];
+          deals?: unknown[];
+          notes?: unknown[];
+          lastActivity?: string | null;
+        }>;
+      }>(
+        `/v1/companies/${encodeURIComponent(args.companyId)}/crm/details`,
+        { query: { refresh: args.refresh ? "true" : "false" }, signal: c.signal },
+      ),
+  });
+
   return [
     search,
     get,
@@ -319,5 +394,6 @@ export function buildCompanyTools(ctx: Ctx): Tool[] {
     structuredContent,
     dataQuality,
     linkedInSignals,
+    crmSummary,
   ];
 }

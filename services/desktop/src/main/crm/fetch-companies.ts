@@ -19,6 +19,13 @@ import type { CrmProvider } from "./types";
 export interface CompanyForImport {
   name: string;
   city: string;
+  /** Workstream C — CRM-side identifier we'll persist as a
+   *  CompanyCrmLink once master-data resolves the AVA companyId.
+   *  HubSpot: `hs_object_id` (the company object's primary key).
+   *  null for providers where we don't yet have an id available. */
+  crmExternalId?: string;
+  /** Display name captured at fetch-time for the eventual UI badge. */
+  crmDisplayName?: string;
 }
 
 export interface FetchCompaniesResult {
@@ -134,7 +141,14 @@ async function fetchHubSpot(
         skipped += 1;
         continue;
       }
-      out.push({ name, city });
+      out.push({
+        name,
+        city,
+        // hs_object_id IS the company id in HubSpot's CRM v3 API
+        // (the top-level `id` field on each result).
+        crmExternalId: row.id,
+        crmDisplayName: name,
+      });
       if (out.length >= maxCompanies) break;
     }
 
