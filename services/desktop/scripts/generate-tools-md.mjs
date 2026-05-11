@@ -35,6 +35,9 @@ const GROUP_LABEL = {
   ollama: "Ollama (lokale LLM)",
   voice: "Spracherkennung",
   updater: "App-Updates",
+  reachability: "Erreichbarkeit (externe Quellen)",
+  producers: "Producer (Hintergrund-Services)",
+  "chat-history": "Chat-Verlauf",
 };
 
 /**

@@ -950,6 +950,22 @@ whisper.on("installLog", (line: string) => {
   }
 });
 
+// Memory store (Phase 8.d). Probed once at boot — if the userData/agent/memory
+// directory isn't writable (read-only volume, sandbox glitch, …) we surface
+// the reason via AgentStatus.memoryError so the FirstRunWizard can flag it,
+// and we run the orchestrator without the on-disk mirror. Conversations
+// still work in-memory for the lifetime of the process.
+//
+// v0.1.110 / Phase T3 — declared here (was lower in the file) so the
+// chat_history_* agent tools below get the same instance.
+const memory = new MemoryStore();
+const memoryProbe = memory.probe();
+if (!memoryProbe.writable) {
+  console.warn(
+    `[memory] probe failed at ${memoryProbe.path}: ${memoryProbe.reason}`,
+  );
+}
+
 const agentRegistry = buildReadOnlyRegistry({
   gateway: gatewayClient,
   providers,
@@ -986,20 +1002,12 @@ const agentRegistry = buildReadOnlyRegistry({
   ollama,
   whisper,
   updater,
+  // Phase T3 — reachability + producer diagnostics + chat-history tools.
+  externalServiceMonitor,
+  producers,
+  producerLogBuffer,
+  memory,
 });
-
-// Memory store (Phase 8.d). Probed once at boot — if the userData/agent/memory
-// directory isn't writable (read-only volume, sandbox glitch, …) we surface
-// the reason via AgentStatus.memoryError so the FirstRunWizard can flag it,
-// and we run the orchestrator without the on-disk mirror. Conversations
-// still work in-memory for the lifetime of the process.
-const memory = new MemoryStore();
-const memoryProbe = memory.probe();
-if (!memoryProbe.writable) {
-  console.warn(
-    `[memory] probe failed at ${memoryProbe.path}: ${memoryProbe.reason}`,
-  );
-}
 const agent = new AgentOrchestrator({
   providers,
   registry: agentRegistry,

@@ -13,6 +13,10 @@ import type { CrmManager } from "../../crm";
 import type { OllamaSupervisor } from "../../ollama-supervisor";
 import type { WhisperSidecar } from "../../voice/whisper-sidecar";
 import type { Updater } from "../../updater";
+import type { ExternalServiceMonitor } from "../../external-service-monitor";
+import type { ProducerSupervisor } from "../../producer-supervisor";
+import type { ProducerLogLine } from "../../../shared/types";
+import type { MemoryStore } from "../memory";
 import { ToolRegistry } from "../tool-registry";
 import { buildCompanyTools } from "./companies";
 import { buildTransactionTools } from "./transactions";
@@ -30,6 +34,9 @@ import { buildLinkedInTools } from "./linkedin";
 import { buildOllamaTools } from "./ollama";
 import { buildVoiceTools } from "./voice";
 import { buildUpdaterTools } from "./updater";
+import { buildReachabilityTools } from "./reachability";
+import { buildProducerTools } from "./producers";
+import { buildChatHistoryTools } from "./chat-history";
 
 // Tool factory.
 //
@@ -65,6 +72,17 @@ export function buildReadOnlyRegistry(deps: {
   whisper: WhisperSidecar;
   /** Phase T2 — OTA updater tools (`updater_*`). */
   updater: Updater;
+  /** Phase T3 — reachability monitor tools (`reachability_*`). */
+  externalServiceMonitor: ExternalServiceMonitor;
+  /** Phase T3 — producer-supervisor diagnostics tools (`producers_*`). */
+  producers: ProducerSupervisor[];
+  /** Phase T3 — producer log ring-buffer (`producers_logs_tail`). */
+  producerLogBuffer: {
+    tail: (producer: string, limit?: number) => ProducerLogLine[];
+  };
+  /** Phase T3 — chat-history tools (`chat_history_*`). Uses the same
+   *  MemoryStore the `agent:listConversations` IPC handler reads. */
+  memory: MemoryStore;
   /** Bearer-token getter for CRM tools that POST through the gateway
    *  (Phase T1: `crm_enrich_now` pushes the live HubSpot payload to
    *  the gateway cache endpoint). Same source as `auth.getAccessToken()`. */
@@ -137,6 +155,15 @@ export function buildReadOnlyRegistry(deps: {
   for (const t of buildVoiceTools({ whisper: deps.whisper }))
     registry.register(t);
   for (const t of buildUpdaterTools({ updater: deps.updater }))
+    registry.register(t);
+  for (const t of buildReachabilityTools({ monitor: deps.externalServiceMonitor }))
+    registry.register(t);
+  for (const t of buildProducerTools({
+    producers: deps.producers,
+    logBuffer: deps.producerLogBuffer,
+  }))
+    registry.register(t);
+  for (const t of buildChatHistoryTools({ memory: deps.memory }))
     registry.register(t);
   return registry;
 }

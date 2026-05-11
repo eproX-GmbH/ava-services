@@ -5,7 +5,7 @@ NICHT direkt bearbeiten — die Quelle der Wahrheit ist `services/desktop/src/ma
 Lauf via `pnpm -F @ava/desktop tools:doc` (oder automatisch via `build:typecheck`).
 
 Stand: 2026-05-11
-Anzahl Tools: 85
+Anzahl Tools: 92
 
 ## Firmen (11)
 
@@ -681,6 +681,34 @@ _Parameter:_
 - `title: string` (required) — Bold first line.
 - `body: string` (required) — One short sentence.
 
+## Chat-Verlauf (3)
+
+### `chat_history_delete`
+
+_Datei:_ `services/desktop/src/main/agent/tools/chat-history.ts`
+
+Löscht eine frühere Chat-Sitzung dauerhaft anhand ihrer ID. Nutze das Tool nur, wenn der Nutzer es ausdrücklich verlangt („lösch den Chat von gestern“). Die Aktion ist nicht umkehrbar. Bestätige vorher kurz, welche Sitzung du löschst.
+
+_Parameter:_
+- `conversationId: string` (required) — Die ID der zu löschenden Konversation aus `chat_history_list`.
+
+### `chat_history_list`
+
+_Datei:_ `services/desktop/src/main/agent/tools/chat-history.ts`
+
+Listet vergangene Chat-Sitzungen (Konversationen) sortiert nach Aktualität, neueste zuerst. Pro Eintrag: konversationsId, Label (erste Nutzer-Zeile, gekürzt), Zeitpunkt der letzten Änderung und Dateigröße. Nutze das Tool, wenn der Nutzer einen früheren Chat öffnen oder den Verlauf einsehen will. Anschließend `chat_history_load` mit der gewünschten ID aufrufen.
+
+_Parameter:_
+- `limit: integer` — Maximale Anzahl Einträge. Default 20.
+
+### `chat_history_load`
+
+_Datei:_ `services/desktop/src/main/agent/tools/chat-history.ts`
+
+Lädt das Transkript einer früheren Chat-Sitzung anhand ihrer ID. Liefert die Nachrichtenliste mit Rolle (user / assistant / tool / system) und Inhalt. Nutze das Tool, nachdem `chat_history_list` die passende konversationsId geliefert hat. Unbekannte oder nicht lesbare IDs ergeben eine leere Nachrichtenliste.
+
+_Parameter:_ keine.
+
 ## Ollama (lokale LLM) (4)
 
 ### `ollama_delete_model`
@@ -714,6 +742,42 @@ _Parameter:_ keine.
 _Datei:_ `services/desktop/src/main/agent/tools/ollama.ts`
 
 Liefert den Status des lokalen Ollama-Daemons: Zustand (idle / starting / ready / error), installierte Modelle und fehlende Pflichtmodelle. Nutze das Tool, wenn der Nutzer fragt, ob Ollama läuft, welche Modelle vorhanden sind oder warum die KI-Antworten ausbleiben.
+
+_Parameter:_ keine.
+
+## Producer (Hintergrund-Services) (2)
+
+### `producers_logs_tail`
+
+_Datei:_ `services/desktop/src/main/agent/tools/producers.ts`
+
+Liest die jüngsten Logzeilen eines Producers aus dem Ring-Puffer. Nutze das Tool, wenn der Nutzer den Grund für einen Fehlerzustand sehen will (z. B. „was sagt structured-content?“). Liefert eine begrenzte Anzahl Zeilen mit Zeitstempel und stdout/stderr-Kanal.
+
+_Parameter:_ keine.
+
+### `producers_status`
+
+_Datei:_ `services/desktop/src/main/agent/tools/producers.ts`
+
+Liefert den Status aller lokal laufenden Producer (z. B. company-profile, structured-content, company-publication, master-data). Pro Producer: Name, Zustand (idle / migrating / starting / ready / error / stopping / not_installed), TCP-Port, PID, letzte Fehlermeldung. Nutze das Tool, wenn der Nutzer fragt, ob ein Producer läuft oder warum eine Verarbeitungs-Stage hängt.
+
+_Parameter:_ keine.
+
+## Erreichbarkeit (externe Quellen) (2)
+
+### `reachability_probe_now`
+
+_Datei:_ `services/desktop/src/main/agent/tools/reachability.ts`
+
+Erzwingt sofort eine neue HEAD-Probe gegen alle externen Quellen (unternehmensregister.de, handelsregister.de) und liefert den aktualisierten Status zurück. Nutze das Tool, wenn der Nutzer „prüf jetzt mal nach“ verlangt oder wissen will, ob ein zuvor gemeldeter Ausfall vorbei ist. Eine Probe kann bis zu 120 s dauern.
+
+_Parameter:_ keine.
+
+### `reachability_status`
+
+_Datei:_ `services/desktop/src/main/agent/tools/reachability.ts`
+
+Liefert den aktuellen Erreichbarkeits-Status der externen Quellen (unternehmensregister.de, handelsregister.de). Pro Quelle Status (reachable / unreachable / unknown), Zeitpunkt der letzten Prüfung, Latenz und Fehlerursache. Nutze das Tool, wenn der Nutzer fragt, ob eine der Quellen gerade erreichbar ist oder warum Producer hängen.
 
 _Parameter:_ keine.
 
