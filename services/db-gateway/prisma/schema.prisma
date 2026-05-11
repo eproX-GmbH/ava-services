@@ -64,15 +64,15 @@ model EntityProgress {
 /// the customer once a few months of data are accumulated and we
 /// know what cardinality looks like.
 model ProxyAudit {
-  id          BigInt   @id @default(autoincrement())
-  proxy       String   // 'valueserp' (room for more later)
-  tenantId    String
-  actorId     String
-  qHash       String   // sha256(canonicalized request body)
-  status      Int      // upstream HTTP status (or 429 for our own rate-limit)
-  latencyMs   Int      // 0 if denied at the rate-limit gate
-  cacheHit    Boolean  @default(false)
-  createdAt   DateTime @default(now())
+  id        BigInt   @id @default(autoincrement())
+  proxy     String // 'valueserp' (room for more later)
+  tenantId  String
+  actorId   String
+  qHash     String // sha256(canonicalized request body)
+  status    Int // upstream HTTP status (or 429 for our own rate-limit)
+  latencyMs Int // 0 if denied at the rate-limit gate
+  cacheHit  Boolean  @default(false)
+  createdAt DateTime @default(now())
 
   // Counter-window queries: WHERE proxy=$1 AND tenantId=$2 AND createdAt > NOW() - $window
   @@index([proxy, tenantId, createdAt])
@@ -90,18 +90,18 @@ model ProxyAudit {
 /// later). Keyed on (tenantId, proxy); a tenant can have separate
 /// override rows per upstream when more proxies are added.
 model ProxyQuotaOverride {
-  tenantId    String
-  proxy       String
-  enabled     Boolean  @default(true)
-  perMinute   Int?
-  perHour     Int?
-  perDay      Int?
-  perMonth    Int?
+  tenantId  String
+  proxy     String
+  enabled   Boolean  @default(true)
+  perMinute Int?
+  perHour   Int?
+  perDay    Int?
+  perMonth  Int?
   // Free-text reason field — populated when the operator flips
   // `enabled` so future-them remembers why ("billed dispute 2026-06").
-  note        String?
-  updatedAt   DateTime @updatedAt
-  createdAt   DateTime @default(now())
+  note      String?
+  updatedAt DateTime @updatedAt
+  createdAt DateTime @default(now())
 
   @@id([tenantId, proxy])
 }
@@ -119,11 +119,11 @@ model ProxyQuotaOverride {
 /// now we just let rows accumulate; at a few KB per row, even years
 /// of cache fits in a tiny table.
 model ProxyCache {
-  cacheKey    String   @id // sha256(proxy + canonicalized params)
-  proxy       String
-  responseJson String   // upstream response body verbatim
-  expiresAt   DateTime
-  createdAt   DateTime @default(now())
+  cacheKey     String   @id // sha256(proxy + canonicalized params)
+  proxy        String
+  responseJson String // upstream response body verbatim
+  expiresAt    DateTime
+  createdAt    DateTime @default(now())
 
   @@index([expiresAt])
   @@index([proxy, createdAt])
@@ -162,7 +162,7 @@ model ContentFreshness {
   stage     String
   llmTier   Int?
   llmModel  String?
-  updatedAt DateTime  @default(now())
+  updatedAt DateTime @default(now())
 
   @@id([companyId, stage])
   // Per-company lookups (matrix view + producer pre-check in F3).
@@ -188,23 +188,23 @@ model ContentFreshness {
 /// every deploy, and read access is co-located with EntityProgress
 /// which is the natural pairing for "matrix drilldown" UX.
 model WebsiteJudgment {
-  companyId             String    @id
+  companyId            String   @id
   /// Non-null when LLM picked a candidate. null = "no match" verdict
   /// (LLM rejected all results) or "no SERP candidates" (empty page-1).
-  matchIndex            Int?
+  matchIndex           Int?
   /// "high" | "medium" | "low". null when matchIndex is null.
-  confidence            String?
+  confidence           String?
   /// LLM's German-language explanation (≤200 chars at the source).
-  reasoning             String?
+  reasoning            String?
   /// How many post-sponsor-strip candidates the LLM considered. Useful
   /// for distinguishing "company has no public site" (0 candidates)
   /// from "LLM rejected several" (>0 candidates + matchIndex null).
-  candidatesConsidered  Int
+  candidatesConsidered Int
   /// Last time this row was written. Persist-bus updates on each
   /// successful website persist; same `last-write-wins` semantics as
   /// the Website / CompanySerp tables in the producer DB.
-  judgedAt              DateTime  @default(now())
-  updatedAt             DateTime  @updatedAt
+  judgedAt             DateTime @default(now())
+  updatedAt            DateTime @updatedAt
 }
 
 /// Per-tenant billing state (M1 of monetization plan).
@@ -270,6 +270,66 @@ model UsageEntry {
   @@id([tenantId, periodKey, companyId])
   // Counter window for /v1/usage: count(*) where (tenantId, periodKey).
   @@index([tenantId, periodKey])
+}
+
+/// Workstream C — CRM linkage. Binds an AVA master-data companyId to
+/// its counterpart in a connected CRM (HubSpot today; Salesforce +
+/// Dynamics schema-ready, API stubbed). Written by the import paths
+/// (Excel typed-header detection, HubSpot bulk import, single
+/// `import_company` with explicit `crm` arg) and the future
+/// "manuell verknüpfen" UI. Read by `GET /v1/companies/:id/crm`
+/// and `GET /v1/companies/:id/crm/details`, which power the chat
+/// agent's `company_crm_summary` tool.
+///
+/// Last-write-wins on (tenantId, companyId, crmType): re-importing
+/// or re-confirming the same company under the same CRM replaces
+/// the external id + display name. Tenant-scoped — one tenant's
+/// HubSpot id never collides with another's.
+model CompanyCrmLink {
+  id              String          @id @default(cuid())
+  tenantId        String
+  companyId       String
+  crmType         CrmType
+  crmExternalId   String
+  crmDisplayName  String?
+  confirmedAt     DateTime        @default(now())
+  confirmedSource ConfirmedSource
+  lastSyncedAt    DateTime?
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  @@unique([tenantId, companyId, crmType])
+  @@index([tenantId, crmType, crmExternalId])
+}
+
+enum CrmType {
+  HUBSPOT
+  SALESFORCE
+  DYNAMICS
+}
+
+enum ConfirmedSource {
+  EXACT_MATCH // dry-run matchingType='direct'
+  USER_CONFIRMED // user picked via ask_user_choice
+  MANUAL_LINK // user clicked "Mit CRM verknüpfen" in UI
+  SINGLE_IMPORT // import_company tool was called with explicit crm arg
+}
+
+/// JSON cache for enriched CRM payloads (contacts, deals, notes,
+/// lastActivity). The read path serves cached rows when
+/// `fetchedAt < 6h` ago; `refresh=true` or a stale row triggers a
+/// fresh CRM call and overwrites this row. Single row per
+/// (tenantId, companyId, crmType); no history is kept.
+model CompanyCrmCache {
+  id        String   @id @default(cuid())
+  tenantId  String
+  companyId String
+  crmType   CrmType
+  payload   Json
+  fetchedAt DateTime @default(now())
+
+  @@unique([tenantId, companyId, crmType])
+  @@index([fetchedAt])
 }
 
 /// Append-only audit log. One row per gateway request after successful auth.
