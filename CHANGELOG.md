@@ -7,6 +7,61 @@ The repo uses one rolling tag per desktop release (`v<major>.<minor>.<patch>`)
 on `main`. Submodules cut their own feature branches and are pinned via the
 desktop bundle; `pnpm fetch:producers` re-vendors them into the .dmg.
 
+## v0.1.117 — 2026-05-11
+
+- **Handelsregister: wait for the "Bitte warten Sie" overlay before
+  clicking SI; JS-click fallback when click is intercepted.** The
+  blocking JSF overlay that handelsregister.de shows during long
+  post-back cycles was intercepting the SI click silently — Selenium
+  found the link, `.click()` threw "element click intercepted", the
+  retry loop quietly tried the next locator, and after ~12 minutes
+  the slowest locator timed out with a generic
+  `Could not click "SI" (Strukturierter Inhalt) link on result row`.
+  Fix: new `waitForOverlayGone` polls for visible elements containing
+  the German strings "Bitte warten Sie" or "Anfrage wird bearbeitet"
+  AND for the PrimeFaces `.ui-blockui-content` pattern; called once
+  before locating SI (xlong timeout), once at the top of each retry,
+  and once more after the SI click to give the XML-prep round-trip
+  time to finish before the Path A/C download poll starts. New
+  `clickSafelyWithJsFallback` dispatches a real mousedown/mouseup/
+  click sequence via `dispatchEvent` when the normal Selenium click
+  trips the overlay-interception guard, and as a last resort sets
+  `window.location.href` if the link didn't navigate on its own.
+  Two extra permissive locators added to the SI-locator chain to
+  cover `<a><span>SI</span></a>` nested-text markup variants.
+- **Contact DB: relaxed the legacy `@@unique([personId, companyId,
+  title, startDate])` Employment constraint.** The runtime
+  reconciler in v0.1.116 keys upserts on `(personId, companyId)`
+  only — the historical unique index occasionally forced the new
+  upsert into a fallback branch when an existing row already had a
+  sibling title for the same person+company. Schema updated;
+  migration `20260511120000_relax_employment_unique` adds
+  `DROP INDEX IF EXISTS "Employment_personId_companyId_title_startDate_key"`.
+  Applied to prod `ava_company_contact` inside the same transaction
+  that registered the migration in `_prisma_migrations`.
+- **Contact DB: one-shot cleanup of legacy duplicates** (applied to
+  prod simultaneously; commit log only, no schema change). Three
+  atomic passes against `ava_company_contact`:
+  - **Pass 1** collapsed 41 duplicate Employment rows across 27
+    `(personId, companyId)` groups. Highest-confidence row wins;
+    EmploymentSource rows reassigned to winner; `isCurrent=true`
+    lifted from losers to winner when any loser was current.
+  - **Pass 2** merged 1 duplicate Person (Joyce Marvin Rafflenbeul —
+    newer dup merged into older canonical, FK rewrites for Fact /
+    FactObservationLink / Observation / SignalEvent / Employment
+    with conflict-safe delete-or-update semantics on the canonical
+    side).
+  - **Pass 1 redo** collapsed 1 additional Employment that surfaced
+    post-merge.
+  - **Pass 3** demoted 40 redundant ACTIVE Facts on `department`
+    and `jobTitle` to INACTIVE across 30 `(personId, field)` groups.
+  Final counts: Persons 99→98, Employments 140→98 (−30 %),
+  EmploymentSource 367→367 (all reassigned, none lost), Active
+  Facts 671→627.
+- **db-gateway redeployed (v52, fra).** The v0.1.116 fixes that
+  needed gateway code — `CompanyKeyword.normalizedKeyword` insert,
+  retry-state `EntityProgress` writes — are now live in production.
+
 ## v0.1.116 — 2026-05-11
 
 - **company-publication: FoxIO captcha solved by a deterministic
