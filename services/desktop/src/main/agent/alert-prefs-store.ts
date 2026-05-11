@@ -41,6 +41,10 @@ const DEFAULT_PREFS: AlertPrefs = {
     endMinute: 7 * 60, // 07:00 (next day)
     silenceWeekends: true,
   },
+  // v0.1.118 — auto-retry is on by default. The user can flip it off
+  // in Settings → Heartbeat if a producer chain is misbehaving and
+  // they want to stop the retry loop while they investigate.
+  autoRetryEnabled: true,
 };
 
 export interface AlertPrefsStoreEvents {
@@ -99,6 +103,8 @@ export class AlertPrefsStore extends EventEmitter {
       pushSeverityThreshold:
         patch.pushSeverityThreshold ?? current.pushSeverityThreshold,
       quietHours: { ...current.quietHours, ...(patch.quietHours ?? {}) },
+      autoRetryEnabled:
+        patch.autoRetryEnabled ?? current.autoRetryEnabled,
     });
     this.cache = merged;
     try {
@@ -139,6 +145,9 @@ export class AlertPrefsStore extends EventEmitter {
         endMinute,
         silenceWeekends: qhIn.silenceWeekends !== false,
       },
+      // v0.1.118 — default true. Only treat an explicit `false` as off
+      // so the existing prefs file (without this field) reads as on.
+      autoRetryEnabled: input.autoRetryEnabled !== false,
     };
   }
 }

@@ -614,6 +614,10 @@ export interface AlertPrefs {
   /** Push only fires when alert.severity >= this threshold. */
   pushSeverityThreshold: AlertSeverity;
   quietHours: QuietHoursConfig;
+  /** v0.1.118 — auto-retry failed producer cells in the background.
+   *  Defaults to `true`. Gated behind the heartbeat: if cadence is 0
+   *  the auto-retry tick doesn't run either. */
+  autoRetryEnabled: boolean;
 }
 
 /**

@@ -57,6 +57,7 @@ import {
   GatewayClient,
   GeneralMemoryStore,
   Heartbeat,
+  RetryTicker,
   LlmProviderManager,
   MemoryStore,
   buildLlmAlertJudge,
@@ -841,6 +842,17 @@ const heartbeat = new Heartbeat({
 });
 heartbeat.on("tick", (info: AlertTickInfo) => {
   void recordLinkedInTickVerdicts(info);
+});
+
+// v0.1.118 — heartbeat-driven auto-retry. Polls the gateway every
+// ~10 min for failed producer cells whose `nextRetryAt` has matured
+// and re-fires the per-stage retry endpoint. Independent of the alert
+// judge so a slow LLM tick can't starve it. Gated behind
+// `alertPrefs.autoRetryEnabled` (default on) and `cadenceMinutes > 0`
+// — both checked on every tick, so Settings changes apply live.
+const retryTicker = new RetryTicker({
+  gateway: gatewayClient,
+  alertPrefs,
 });
 
 function broadcastAlertsChanged(): void {
@@ -1673,6 +1685,12 @@ app.whenReady().then(async () => {
     );
   }
 
+  // Auto-retry ticker — same gating as the alert-judge heartbeat (the
+  // tick is a no-op when prefs disable it, but starting the timer is
+  // still cheap and we want a Settings flip to take effect without
+  // waiting for an app restart).
+  retryTicker.start();
+
   // Heartbeat begins ticking once the app + IPC are wired. Stopping
   // happens on `before-quit` below.
   heartbeat.start();
@@ -1706,6 +1724,7 @@ app.on("before-quit", () => {
   whisper.cancelDownload();
   freshness.stop();
   heartbeat.stop();
+  retryTicker.stop();
   agent.dispose();
   providers.dispose();
   updater.stop();

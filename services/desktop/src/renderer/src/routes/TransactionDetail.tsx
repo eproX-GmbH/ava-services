@@ -34,6 +34,12 @@ interface PipelineCell {
   state: CellState;
   updatedAt?: string | null;
   errorCount: number;
+  // v0.1.118 — heartbeat-driven auto-retry counters. Undefined on
+  // derived cells (masterData, companyEvaluation) and on pre-v0.1.118
+  // rows; treat as "no retry state" in that case.
+  attempts?: number;
+  nextRetryAt?: string | null;
+  giveUpAt?: string | null;
 }
 
 interface PipelineRow {
@@ -648,10 +654,63 @@ function RetryStagePicker({
 
 function CellDot({ cell }: { cell: PipelineCell }) {
   const cls = stateClass(cell.state);
-  const title = `${CELL_STATE_LABEL[cell.state]}${cell.updatedAt ? ` · ${formatTime(cell.updatedAt)}` : ""}${
-    cell.errorCount ? ` · ${cell.errorCount} Fehler` : ""
-  }`;
-  return <span className={`dot ${cls}`} title={title} aria-label={title} />;
+  // v0.1.118 — derive a retry-status label for failed cells. The
+  // heartbeat-driven orchestrator (Settings → Meldungen) walks rows
+  // whose nextRetryAt has matured every ~10 min; we surface where
+  // that row sits in the cycle so the user knows whether to wait or
+  // intervene manually.
+  let retryLabel = "";
+  let badge: string | null = null;
+  if (cell.state === "failed") {
+    if (cell.giveUpAt) {
+      retryLabel =
+        "Aufgegeben nach 5 Versuchen (manueller Retry möglich)";
+    } else if (cell.nextRetryAt) {
+      const nextAt = new Date(cell.nextRetryAt).getTime();
+      const now = Date.now();
+      if (nextAt <= now) {
+        retryLabel = "Erneuter Versuch fällig";
+      } else {
+        retryLabel = `Wartet auf erneuten Versuch in ${formatRetryDelta(
+          nextAt - now,
+        )}`;
+      }
+    } else {
+      retryLabel = "Fehlgeschlagen";
+    }
+    // Small attempt-count badge — only after the second failure so the
+    // matrix isn't noisy on first-time hiccups.
+    if (typeof cell.attempts === "number" && cell.attempts >= 2) {
+      badge = `${cell.attempts}×`;
+    }
+  }
+  const title = [
+    CELL_STATE_LABEL[cell.state],
+    cell.updatedAt ? formatTime(cell.updatedAt) : null,
+    cell.errorCount ? `${cell.errorCount} Fehler` : null,
+    retryLabel || null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+  return (
+    <span className="cell-dot" title={title} aria-label={title}>
+      <span className={`dot ${cls}`} />
+      {badge && <span className="cell-dot__badge">{badge}</span>}
+    </span>
+  );
+}
+
+/** Compact German label for a time-delta (ms). Used in the cell
+ *  tooltip ("in 8 Min", "in 2 Std"). Falls back to a coarse unit so
+ *  the tooltip stays a single line. */
+function formatRetryDelta(ms: number): string {
+  if (ms <= 0) return "Kürze";
+  const mins = Math.round(ms / 60_000);
+  if (mins < 60) return `${mins} Min`;
+  const hours = Math.round(mins / 60);
+  if (hours < 24) return `${hours} Std`;
+  const days = Math.round(hours / 24);
+  return `${days} Tag${days === 1 ? "" : "en"}`;
 }
 
 function stateClass(state: CellState): string {

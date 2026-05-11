@@ -751,6 +751,12 @@ export const PipelineCellShape = z
     state: PipelineCellState,
     updatedAt: z.string().nullable().optional(),
     errorCount: z.number().int().nonnegative().default(0),
+    // v0.1.118 — heartbeat-driven auto-retry counters. All nullable
+    // because pre-v0.1.118 transactions don't have them, and derived
+    // cells (master-data, companyEvaluation) never have them either.
+    attempts: z.number().int().nonnegative().optional(),
+    nextRetryAt: z.string().nullable().optional(),
+    giveUpAt: z.string().nullable().optional(),
   })
   .openapi("PipelineCell");
 
@@ -850,3 +856,28 @@ export const ComparisonShape = z
     updatedAt: z.string(),
   })
   .openapi("Comparison");
+
+// ---- Heartbeat retry queue (v0.1.118) -------------------------------------
+//
+// `GET /v1/transactions/retry-queue/pending` returns rows the heartbeat
+// orchestrator should re-pick: state='failed', not given-up, and
+// `nextRetryAt` already past. Each item carries enough info for the
+// orchestrator to fire a `POST .../retry` without a second read.
+
+export const RetryQueueItem = z
+  .object({
+    transactionId: z.string(),
+    companyId: z.string(),
+    /** Producer name as it appears in EntityProgress.producer (kebab). */
+    producer: z.string(),
+    attempts: z.number().int().nonnegative(),
+    firstFailureAt: z.string().nullable(),
+    lastFailureAt: z.string().nullable(),
+  })
+  .openapi("RetryQueueItem");
+
+export const RetryQueueResponse = z
+  .object({
+    items: z.array(RetryQueueItem),
+  })
+  .openapi("RetryQueueResponse");

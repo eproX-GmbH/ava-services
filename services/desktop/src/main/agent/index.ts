@@ -27,6 +27,8 @@ export type {
 export { AlertsStore } from "./alerts-store";
 export type { AlertsProbeResult, AlertCreateInput } from "./alerts-store";
 export { Heartbeat } from "./heartbeat";
+export { RetryTicker } from "./retry-tick";
+export type { RetryTickOptions } from "./retry-tick";
 export type {
   HeartbeatCandidate,
   HeartbeatOptions,

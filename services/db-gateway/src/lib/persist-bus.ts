@@ -56,6 +56,54 @@ import { transactionProgressBus } from "./event-bus";
 import { recordUsage } from "./billing";
 import { tierShouldWrite, type ModelTier } from "./tier";
 
+// ---- Retry backoff schedule (v0.1.118) ------------------------------------
+//
+// Drives the heartbeat-driven auto-retry loop. The SQL in
+// recordEntityProgress hard-codes these arrays inline (so the whole
+// transition is one atomic UPDATE); these exported constants exist for:
+//   - the producer-pools registry test
+//   - operator visibility ("where do I tune the backoff?")
+//   - the eventual /v1/retry-queue/pending endpoint if it wants to
+//     compute "in N seconds" labels without re-querying the row
+//
+// Slow producers are the ones gated by an external scrape with strict
+// rate limits or that already burn an LLM tier credit per attempt:
+// structured-content (handelsregister.de), company-publication
+// (bundesanzeiger), website (valueserp + LLM judge). One retry every 5
+// minutes is the sane lower bound — anything tighter would risk a
+// captcha-storm.
+//
+// Fast producers piggy-back on already-fetched data and have no
+// external rate limit beyond the LLM provider's own throughput.
+//
+// To tune: edit these arrays AND the matching CASE expressions in the
+// SQL UPSERT below (they have to agree because the SQL runs inside the
+// gateway-bound DB, not the desktop). Tests assert the two stay in
+// sync.
+export const MAX_RETRY_ATTEMPTS = 5;
+export const RETRY_BACKOFF_SECONDS = {
+  slow: [300, 1800, 7200, 28800, 86400] as const,
+  fast: [60, 300, 900, 3600, 14400] as const,
+};
+const SLOW_PRODUCERS: ReadonlySet<ProducerName> = new Set([
+  "structured-content",
+  "company-publication",
+  "website",
+]);
+/** Seconds until the next retry for (producer, attemptIndex). attemptIndex
+ *  is the 1-based count of failures (the first failure uses [0]). Clamped
+ *  to the last entry once attempts >= MAX_RETRY_ATTEMPTS. */
+export function backoffSecondsFor(
+  producer: ProducerName,
+  attemptIndex: number,
+): number {
+  const table = SLOW_PRODUCERS.has(producer)
+    ? RETRY_BACKOFF_SECONDS.slow
+    : RETRY_BACKOFF_SECONDS.fast;
+  const idx = Math.min(Math.max(attemptIndex, 1), table.length) - 1;
+  return table[idx];
+}
+
 /**
  * Side-effect of every persist event: record per-company processing
  * state in the gateway's audit DB. The chat agent's `import_status`
@@ -117,15 +165,95 @@ async function recordEntityProgress(
   }
   try {
     const pool = getGatewayPool();
+    // v0.1.118 — atomic retry-counter transition.
+    //
+    // Doing the read-modify-write inside the SQL keeps two concurrent
+    // persist events from racing on the attempts counter. The backoff
+    // lookup is expressed as a pair of constant arrays indexed by the
+    // *new* attempts value (clamped to [1..MAX_RETRY_ATTEMPTS]) so we
+    // never need a second round trip to apply the correct delay.
+    //
+    // The outer last-write-wins guard (EXCLUDED.updatedAt > existing)
+    // still applies — an out-of-order replay doesn't move the row
+    // backwards.
+    //
+    // Backoff seconds (see RETRY_BACKOFF_SECONDS in this file):
+    //   slow producers: 300, 1800, 7200, 28800, 86400
+    //   fast producers:  60,  300,  900,  3600, 14400
+    //
+    // `giveUpAt` is set only when BOTH conditions hold after the
+    // current failure: new attempts >= MAX_RETRY_ATTEMPTS (5), and
+    // the run is older than 24 h. Either alone keeps the row
+    // retry-eligible — that's what gives a one-off hiccup unlimited
+    // retries within an hour, while a persistent failure eventually
+    // stops consuming heartbeat slots.
     await pool.query(
       `INSERT INTO "EntityProgress"
          ("transactionId", "companyId", producer, state, "errorMessage",
-          "updatedAt", "createdAt")
-       VALUES ($1, $2, $3, $4, $5, NOW(), NOW())
+          "updatedAt", "createdAt",
+          "attempts", "firstFailureAt", "lastFailureAt",
+          "nextRetryAt", "giveUpAt")
+       VALUES (
+         $1, $2, $3, $4, $5, NOW(), NOW(),
+         CASE WHEN $4 = 'failed' THEN 1 ELSE 0 END,
+         CASE WHEN $4 = 'failed' THEN NOW() ELSE NULL END,
+         CASE WHEN $4 = 'failed' THEN NOW() ELSE NULL END,
+         CASE WHEN $4 = 'failed' THEN
+           NOW() + (
+             (CASE WHEN $3 IN ('structured-content',
+                               'company-publication',
+                               'website')
+                   THEN (ARRAY[300, 1800, 7200, 28800, 86400])[1]
+                   ELSE (ARRAY[60, 300, 900, 3600, 14400])[1]
+              END) * INTERVAL '1 second'
+           )
+           ELSE NULL END,
+         NULL
+       )
        ON CONFLICT ("transactionId", "companyId", producer) DO UPDATE
        SET state = EXCLUDED.state,
            "errorMessage" = EXCLUDED."errorMessage",
-           "updatedAt" = EXCLUDED."updatedAt"
+           "updatedAt" = EXCLUDED."updatedAt",
+           "attempts" = CASE
+             WHEN EXCLUDED.state = 'failed'
+               THEN "EntityProgress"."attempts" + 1
+             WHEN EXCLUDED.state IN ('completed', 'skipped') THEN 0
+             ELSE "EntityProgress"."attempts"
+           END,
+           "firstFailureAt" = CASE
+             WHEN EXCLUDED.state = 'failed'
+               THEN COALESCE("EntityProgress"."firstFailureAt", NOW())
+             WHEN EXCLUDED.state IN ('completed', 'skipped') THEN NULL
+             ELSE "EntityProgress"."firstFailureAt"
+           END,
+           "lastFailureAt" = CASE
+             WHEN EXCLUDED.state = 'failed' THEN NOW()
+             WHEN EXCLUDED.state IN ('completed', 'skipped') THEN NULL
+             ELSE "EntityProgress"."lastFailureAt"
+           END,
+           "nextRetryAt" = CASE
+             WHEN EXCLUDED.state = 'failed' THEN NOW() + (
+               (CASE WHEN $3 IN ('structured-content',
+                                 'company-publication',
+                                 'website')
+                     THEN (ARRAY[300, 1800, 7200, 28800, 86400])[
+                       LEAST("EntityProgress"."attempts" + 1, 5)]
+                     ELSE (ARRAY[60, 300, 900, 3600, 14400])[
+                       LEAST("EntityProgress"."attempts" + 1, 5)]
+                END) * INTERVAL '1 second'
+             )
+             WHEN EXCLUDED.state IN ('completed', 'skipped') THEN NULL
+             ELSE "EntityProgress"."nextRetryAt"
+           END,
+           "giveUpAt" = CASE
+             WHEN EXCLUDED.state = 'failed'
+               AND "EntityProgress"."attempts" + 1 >= 5
+               AND COALESCE("EntityProgress"."firstFailureAt", NOW())
+                   < NOW() - INTERVAL '24 hours'
+               THEN NOW()
+             WHEN EXCLUDED.state IN ('completed', 'skipped') THEN NULL
+             ELSE "EntityProgress"."giveUpAt"
+           END
        WHERE EXCLUDED."updatedAt" > "EntityProgress"."updatedAt"`,
       [transactionId, companyId, producer, state, truncated],
     );

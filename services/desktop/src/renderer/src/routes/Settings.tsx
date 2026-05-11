@@ -2411,6 +2411,24 @@ function AlertsSection() {
       </div>
 
       <div className="alerts-prefs__row">
+        <label className="alerts-prefs__check">
+          <input
+            type="checkbox"
+            checked={prefs.autoRetryEnabled}
+            onChange={(e) =>
+              void patch({ autoRetryEnabled: e.target.checked })
+            }
+          />
+          <span>Fehlgeschlagene Schritte automatisch erneut versuchen</span>
+        </label>
+        <p className="muted small">
+          Wenn aktiv, prüft der Heartbeat alle 10 Minuten die Matrix
+          und startet rote Zellen neu. Nach fünf Versuchen über 24 Stunden
+          hinweg wird die Zelle aufgegeben (manueller Retry bleibt möglich).
+        </p>
+      </div>
+
+      <div className="alerts-prefs__row">
         <label className="alerts-prefs__label" htmlFor="alerts-severity">
           Schweregrad-Schwelle für Push
         </label>

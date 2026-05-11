@@ -27,6 +27,8 @@ import {
   PipelineShape,
   PipelineStage,
   ProcessingErrorShape,
+  RetryQueueItem,
+  RetryQueueResponse,
   RetryStage,
   RetryStageBody,
   RetryStageResultShape,
@@ -931,6 +933,72 @@ transactionsRouter.openapi(pipelineRoute, async (c) => {
 
   const unavailableStages = fanOut.filter((f) => !f.available).map((f) => f.stage);
 
+  // v0.1.118 — fetch retry counters for every (companyId, producer) row
+  // tied to this transaction. Single SELECT, results indexed by
+  // (producer, companyId) for O(1) cell-build lookup below. Best-effort:
+  // a failure here just leaves the new fields undefined on cells (the
+  // renderer treats undefined as pre-v0.1.118 / no retry state).
+  type RetryRow = {
+    producer: string;
+    companyId: string;
+    attempts: number;
+    nextRetryAt: Date | null;
+    giveUpAt: Date | null;
+  };
+  const retryByKey = new Map<
+    string,
+    { attempts: number; nextRetryAt: string | null; giveUpAt: string | null }
+  >();
+  try {
+    const pool = getGatewayPool();
+    const res = await pool.query<RetryRow>(
+      `SELECT producer, "companyId", "attempts", "nextRetryAt", "giveUpAt"
+       FROM "EntityProgress"
+       WHERE "transactionId" = $1`,
+      [transactionId],
+    );
+    for (const r of res.rows) {
+      retryByKey.set(`${r.producer}:${r.companyId}`, {
+        attempts: r.attempts ?? 0,
+        nextRetryAt: r.nextRetryAt ? r.nextRetryAt.toISOString() : null,
+        giveUpAt: r.giveUpAt ? r.giveUpAt.toISOString() : null,
+      });
+    }
+  } catch (err) {
+    logger.warn(
+      { err, transactionId },
+      "pipeline: retry-counters fetch failed — falling back to undefined",
+    );
+  }
+
+  /** Map a stage id (camelCase, as used by the matrix) to the producer
+   *  name (kebab) we use as the EntityProgress.producer key. Only
+   *  stages with a real producer have retry counters; derived cells
+   *  (masterData, companyEvaluation) get no augmentation. */
+  const STAGE_TO_PRODUCER_NAME: Partial<Record<string, string>> = {
+    structuredContent: "structured-content",
+    companyPublication: "company-publication",
+    website: "website",
+    companyProfile: "company-profile",
+    companyContact: "company-contact",
+  };
+  const attachRetry = (
+    stage: string,
+    companyId: string,
+    cell: z.infer<typeof PipelineCellShape>,
+  ): z.infer<typeof PipelineCellShape> => {
+    const producerName = STAGE_TO_PRODUCER_NAME[stage];
+    if (!producerName) return cell;
+    const r = retryByKey.get(`${producerName}:${companyId}`);
+    if (!r) return cell;
+    return {
+      ...cell,
+      attempts: r.attempts,
+      nextRetryAt: r.nextRetryAt,
+      giveUpAt: r.giveUpAt,
+    };
+  };
+
   // stage -> Map<companyId, EntityRow> for O(1) lookup when projecting cells.
   const byStage = new Map<string, Map<string, EntityRow>>();
   for (const f of fanOut) {
@@ -1043,11 +1111,31 @@ transactionsRouter.openapi(pipelineRoute, async (c) => {
       // master-data is derived: appearing in any downstream stage proves its
       // upstream upsert event fanned out successfully for this company.
       masterData: { state: "completed" as CellState, errorCount: 0 },
-      structuredContent: cellFromRow(byStage.get("structuredContent")?.get(companyId)),
-      companyPublication: cellFromRow(byStage.get("companyPublication")?.get(companyId)),
-      website: cellFromRow(byStage.get("website")?.get(companyId)),
-      companyProfile: cellFromRow(byStage.get("companyProfile")?.get(companyId)),
-      companyContact: cellFromRow(byStage.get("companyContact")?.get(companyId)),
+      structuredContent: attachRetry(
+        "structuredContent",
+        companyId,
+        cellFromRow(byStage.get("structuredContent")?.get(companyId)),
+      ),
+      companyPublication: attachRetry(
+        "companyPublication",
+        companyId,
+        cellFromRow(byStage.get("companyPublication")?.get(companyId)),
+      ),
+      website: attachRetry(
+        "website",
+        companyId,
+        cellFromRow(byStage.get("website")?.get(companyId)),
+      ),
+      companyProfile: attachRetry(
+        "companyProfile",
+        companyId,
+        cellFromRow(byStage.get("companyProfile")?.get(companyId)),
+      ),
+      companyContact: attachRetry(
+        "companyContact",
+        companyId,
+        cellFromRow(byStage.get("companyContact")?.get(companyId)),
+      ),
       companyEvaluation: deriveEvaluationCell(companyId),
     };
     // Most-recent activity across cells for sort order.
@@ -1079,6 +1167,95 @@ transactionsRouter.openapi(pipelineRoute, async (c) => {
     },
     200,
   );
+});
+
+// ---- GET /v1/transactions/retry-queue/pending ------------------------------
+//
+// v0.1.118 — heartbeat-driven auto-retry. The desktop's heartbeat tick
+// polls this endpoint every ~10 minutes, sees which (transaction,
+// company, producer) tuples have ripened past their `nextRetryAt`, and
+// fires the existing per-stage retry endpoint for each. Priority order:
+// fewer-attempts-first (so a one-off hiccup re-runs fast), then oldest-
+// failure-first within the same attempt count.
+//
+// Tenant scoping: we don't have a tenantId column on EntityProgress
+// (it inherits from the persist event chain, where tenantId comes from
+// the upstream transaction). For now we filter via the caller's
+// transactions-list — same ownership semantics as everywhere else —
+// and let the caller hand back any rows for transactions it doesn't
+// own. The MVP is single-user / per-machine so a cross-tenant leak
+// would require both an attacker on the machine and a colliding
+// transactionId; defensive scoping can land alongside multi-tenant
+// hardening.
+
+const RetryQueuePendingQuery = z.object({
+  limit: z.coerce.number().int().min(1).max(100).default(20),
+});
+
+const retryQueueRoute = createRoute({
+  method: "get",
+  path: "/transactions/retry-queue/pending",
+  tags: [tag],
+  summary: "List failed producer cells due for auto-retry (v0.1.118)",
+  description: [
+    "Returns up to `limit` rows where state='failed', `giveUpAt` IS NULL,",
+    "and `nextRetryAt` <= NOW(). Ordered by attempts ASC then",
+    "`lastFailureAt` ASC so a fresh failure beats a chronic one. Filtered",
+    "to the caller's owned transactions.",
+  ].join("\n"),
+  request: { query: RetryQueuePendingQuery },
+  responses: {
+    200: {
+      content: { "application/json": { schema: RetryQueueResponse } },
+      description: "rows due for retry",
+    },
+    ...errorResponses,
+  },
+});
+
+transactionsRouter.openapi(retryQueueRoute, async (c) => {
+  const { limit } = c.req.valid("query");
+  const myTxns = await getMyTransactions(c);
+  const myIds = Array.from(
+    new Set(
+      myTxns
+        .map((t) => t.id ?? t.transactionId)
+        .filter((id): id is string => typeof id === "string" && id.length > 0),
+    ),
+  );
+  if (myIds.length === 0) {
+    return c.json({ items: [] }, 200);
+  }
+  const pool = getGatewayPool();
+  const res = await pool.query<{
+    transactionId: string;
+    companyId: string;
+    producer: string;
+    attempts: number;
+    firstFailureAt: Date | null;
+    lastFailureAt: Date | null;
+  }>(
+    `SELECT "transactionId", "companyId", producer, "attempts",
+            "firstFailureAt", "lastFailureAt"
+     FROM "EntityProgress"
+     WHERE state = 'failed'
+       AND "giveUpAt" IS NULL
+       AND "nextRetryAt" IS NOT NULL
+       AND "nextRetryAt" <= NOW()
+       AND "transactionId" = ANY($1)
+     ORDER BY "attempts" ASC, "lastFailureAt" ASC NULLS FIRST
+     LIMIT $2`,
+    [myIds, limit],
+  );
+  const items: z.infer<typeof RetryQueueItem>[] = res.rows.map((r) => ({
+    transactionId: r.transactionId,
+    companyId: r.companyId,
+    producer: r.producer,
+    attempts: r.attempts ?? 0,
+    firstFailureAt: r.firstFailureAt ? r.firstFailureAt.toISOString() : null,
+    lastFailureAt: r.lastFailureAt ? r.lastFailureAt.toISOString() : null,
+  }));
+  return c.json({ items }, 200);
 });
 
 // ---- POST /v1/transactions/:tid/entities/:cid/retry ------------------------

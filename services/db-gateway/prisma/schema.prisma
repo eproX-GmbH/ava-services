@@ -42,6 +42,29 @@ model EntityProgress {
   updatedAt     DateTime
   createdAt     DateTime @default(now())
 
+  /// v0.1.118 — heartbeat-driven auto-retry counters.
+  ///
+  /// `attempts` is the cumulative count of `state='failed'` transitions.
+  /// Reset to 0 whenever a non-failed terminal state lands so a flake
+  /// followed by success doesn't keep penalising the row.
+  /// `firstFailureAt` is the wall-clock of the first failure in the
+  /// current run of failures (cleared alongside `attempts`).
+  /// `lastFailureAt` mirrors `updatedAt` but stays put across non-failed
+  /// transitions; the orchestrator's "fewer-attempts-first" tie-breaker
+  /// orders by it.
+  /// `nextRetryAt` is the earliest moment the heartbeat orchestrator
+  /// may re-pick the row. Set to NOW() + backoff(producer, attempts)
+  /// on every failure.
+  /// `giveUpAt` is set when `attempts >= MAX` AND the run is older
+  /// than 24h; the orchestrator stops picking rows with a non-null
+  /// `giveUpAt`. Manual retry clears it (the normal `in_progress` →
+  /// terminal cycle resets every column).
+  attempts       Int       @default(0)
+  firstFailureAt DateTime?
+  lastFailureAt  DateTime?
+  nextRetryAt    DateTime?
+  giveUpAt       DateTime?
+
   @@id([transactionId, companyId, producer])
   @@index([transactionId])
 }
