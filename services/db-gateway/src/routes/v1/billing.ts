@@ -35,9 +35,21 @@ import type { BillingTier } from "../../lib/billing";
 export const billingRouter = new OpenAPIHono();
 
 const CheckoutBody = z.object({ tier: z.enum(["starter", "pro"]) });
+// Response can be one of two shapes:
+//  (a) Checkout URL — tenant has no existing subscription, the
+//      renderer opens this in the system browser to complete payment.
+//  (b) In-place upgrade — tenant already has an active or
+//      cancel-at-period-end subscription; the gateway updated its
+//      items directly via Stripe Subscriptions API. The renderer
+//      should refresh the usage snapshot; no URL to open.
+// Both shapes share `sessionId` (empty string for the in-place case)
+// so the existing renderer type narrows cleanly. New `upgraded` flag
+// signals the in-place path so the renderer can show a confirmation
+// toast instead of opening a browser tab.
 const CheckoutResponse = z.object({
-  url: z.string().url(),
+  url: z.string(),  // empty string when upgraded=true
   sessionId: z.string(),
+  upgraded: z.boolean().optional(),
 });
 const PortalResponse = z.object({ url: z.string().url() });
 
@@ -69,6 +81,61 @@ billingRouter.openapi(checkoutRoute, async (c) => {
   const stripe = getStripe();
   const existing = await readStripeCustomerId(auth.tenantId);
 
+  // Pre-v0.1.118: every checkout call minted a NEW Subscription, even
+  // when the customer already had an active or cancel-at-period-end
+  // one. Result: a tenant who "upgraded" Starter → Pro by hitting our
+  // checkout button ended up with TWO active Stripe subscriptions
+  // running in parallel until the old one's period actually expired.
+  //
+  // Fix: when the tenant already has a usable subscription, update its
+  // items in-place (with prorations) instead of opening Checkout. The
+  // existing webhook handler on `customer.subscription.updated` will
+  // pick up the tier change and update TenantBilling. Cancellation
+  // requests still go through the Customer Portal — this path is
+  // strictly for tier-switch / re-activation.
+  if (existing) {
+    const existingSub = await findUsableSubscription(stripe, existing);
+    if (existingSub) {
+      const currentItem = existingSub.items.data[0];
+      const currentPrice = currentItem?.price?.id ?? null;
+      // No-op: same price + not cancelling. Surface a clear error so
+      // the renderer can show "Du bist bereits auf diesem Tarif".
+      if (currentPrice === priceId && !existingSub.cancel_at_period_end) {
+        throw new HTTPException(409, {
+          message: "already on this tier",
+        });
+      }
+      const updated = await stripe.subscriptions.update(existingSub.id, {
+        items: [{ id: currentItem.id, price: priceId }],
+        // Prorate upgrades + downgrades on the same billing cycle.
+        // Stripe credits unused time on the old plan and charges the
+        // pro-rated new plan amount on the next invoice.
+        proration_behavior: "create_prorations",
+        // Clear any scheduled cancellation — the tenant explicitly
+        // chose a new plan, so they're not cancelling anymore.
+        cancel_at_period_end: false,
+        metadata: { tenantId: auth.tenantId },
+      });
+      logger.info(
+        {
+          tenantId: auth.tenantId,
+          subscriptionId: existingSub.id,
+          fromPrice: currentPrice,
+          toPrice: priceId,
+          cancelAtPeriodEndCleared: existingSub.cancel_at_period_end,
+        },
+        "stripe subscription updated in place (no Checkout)",
+      );
+      // The renderer expects a CheckoutResponse-shaped object; pack
+      // upgraded=true with empty url + sub id as the session id.
+      return c.json(
+        { url: "", sessionId: updated.id, upgraded: true },
+        200,
+      );
+    }
+  }
+
+  // No existing subscription → original Checkout path.
   const params: Stripe.Checkout.SessionCreateParams = {
     mode: "subscription",
     line_items: [{ price: priceId, quantity: 1 }],
@@ -85,6 +152,42 @@ billingRouter.openapi(checkoutRoute, async (c) => {
   const session = await stripe.checkout.sessions.create(params);
   return c.json({ url: session.url ?? "", sessionId: session.id }, 200);
 });
+
+/**
+ * Pick the most relevant existing subscription for a Stripe customer
+ * so we can in-place upgrade rather than minting a duplicate.
+ * Preference order:
+ *   1. status='active'
+ *   2. status='trialing'
+ *   3. status='past_due'  (treat as "ours to upgrade" — Stripe lets us)
+ *   4. status='active' WITH cancel_at_period_end=true (scheduled cancel)
+ * We deliberately ignore status='canceled' and status='incomplete' —
+ * those are dead/abandoned subscriptions that shouldn't be reanimated
+ * (Checkout will replace them).
+ */
+async function findUsableSubscription(
+  stripe: ReturnType<typeof getStripe>,
+  customerId: string,
+): Promise<Stripe.Subscription | null> {
+  const all = await stripe.subscriptions.list({
+    customer: customerId,
+    status: "all",
+    limit: 20,
+    expand: ["data.items.data.price"],
+  });
+  const score = (s: Stripe.Subscription): number => {
+    if (s.status === "active" && !s.cancel_at_period_end) return 100;
+    if (s.status === "trialing") return 90;
+    if (s.status === "past_due") return 80;
+    if (s.status === "active" && s.cancel_at_period_end) return 70;
+    return 0;  // canceled / incomplete / unpaid / paused
+  };
+  const candidates = all.data
+    .map((s) => ({ s, score: score(s) }))
+    .filter((x) => x.score > 0)
+    .sort((a, b) => b.score - a.score || b.s.created - a.s.created);
+  return candidates[0]?.s ?? null;
+}
 
 const portalRoute = createRoute({
   method: "post",

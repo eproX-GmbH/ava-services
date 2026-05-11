@@ -37,14 +37,28 @@ export function initBilling(d: BillingDeps): void {
   ipcMain.handle(
     "billing:openCheckout",
     async (_e, tier: "starter" | "pro") => {
-      const url = await fetchBillingUrl("/v1/billing/checkout", { tier });
-      await shell.openExternal(url);
+      const result = await fetchBilling("/v1/billing/checkout", { tier });
+      if (result.upgraded) {
+        // In-place subscription upgrade — no Checkout to open. The
+        // gateway's webhook handler will pick up the
+        // customer.subscription.updated event and rewrite TenantBilling;
+        // the renderer just needs to re-pull /v1/usage. Reuse the
+        // same channel the protocol callback uses so PlanSection
+        // refreshes immediately without polling.
+        for (const win of BrowserWindow.getAllWindows()) {
+          win.webContents.send("billing:success");
+        }
+        return;
+      }
+      if (!result.url) throw new Error("gateway response missing url");
+      await shell.openExternal(result.url);
     },
   );
 
   ipcMain.handle("billing:openPortal", async () => {
-    const url = await fetchBillingUrl("/v1/billing/portal", {});
-    await shell.openExternal(url);
+    const result = await fetchBilling("/v1/billing/portal", {});
+    if (!result.url) throw new Error("gateway response missing url");
+    await shell.openExternal(result.url);
   });
 
   // ---- Custom protocol ----------------------------------------------------
@@ -71,10 +85,18 @@ export function initBilling(d: BillingDeps): void {
   });
 }
 
-async function fetchBillingUrl(
+interface BillingResponse {
+  url?: string;
+  sessionId?: string;
+  /** When true, the gateway updated the existing subscription in
+   *  place — no URL to open, just refresh the usage snapshot. */
+  upgraded?: boolean;
+}
+
+async function fetchBilling(
   path: string,
   body: Record<string, unknown>,
-): Promise<string> {
+): Promise<BillingResponse> {
   if (!deps) throw new Error("billing not initialized");
   const token = await deps.getAccessToken();
   if (!token) throw new Error("not signed in");
@@ -91,15 +113,18 @@ async function fetchBillingUrl(
   let parsed: unknown = undefined;
   try { parsed = text ? JSON.parse(text) : undefined; } catch { /* ignore */ }
   if (!res.ok) {
+    // Specific 409: tenant clicked the tier they're already on. Surface
+    // a friendly German error so the renderer can show it directly.
+    if (res.status === 409) {
+      throw new Error("Du bist bereits auf diesem Tarif.");
+    }
     const msg =
       typeof parsed === "object" && parsed && "message" in parsed
         ? String((parsed as { message: unknown }).message)
         : `gateway ${res.status}`;
     throw new Error(msg);
   }
-  const u = (parsed as { url?: string } | undefined)?.url;
-  if (!u) throw new Error("gateway response missing url");
-  return u;
+  return (parsed as BillingResponse | undefined) ?? {};
 }
 
 function handleAvaUrl(raw: string): void {
