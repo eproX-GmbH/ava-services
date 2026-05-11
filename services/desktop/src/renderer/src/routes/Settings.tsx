@@ -833,8 +833,15 @@ function LinkedInSection() {
       setScanStatus(s);
       setCounts(c);
       if (result.outcome === "login_required") {
-        setScanError("LinkedIn-Sitzung abgelaufen. Bitte erneut verbinden.");
+        setScanError("LinkedIn-Sitzung abgelaufen. Anmeldefenster wird geöffnet …");
         await refreshAuth();
+        // Auto-trigger the same handler the "Verbindung erneuern" /
+        // "Mit LinkedIn verbinden" button uses so the user doesn't
+        // have to hunt for the button. Guarded against double-firing
+        // by onConnectLinkedIn's own setLoginInFlight gate.
+        if (!loginInFlight) {
+          void onConnectLinkedIn();
+        }
       } else if (result.outcome === "error") {
         setScanError(result.errorMessage ?? "Scan fehlgeschlagen.");
       } else if (result.outcome === "network_error") {
