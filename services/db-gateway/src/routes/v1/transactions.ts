@@ -1324,6 +1324,36 @@ transactionsRouter.openapi(retryRoute, async (c) => {
       state: "in_progress" as never,
       updatedAt: new Date().toISOString(),
     });
+    // Also flip the persisted EntityProgress row to in_progress so a
+    // matrix snapshot fetch on remount (no SSE subscription yet) shows
+    // the correct yellow dot instead of the prior run's red. Without
+    // this, the user leaves /transactions, comes back, and sees the
+    // stale failed state until the producer's terminal event lands.
+    // Conflict-update only when the existing row is in a terminal
+    // state — never overwrite a fresher in_progress from a concurrent
+    // producer at handler entry.
+    try {
+      const pool = getGatewayPool();
+      await pool.query(
+        `INSERT INTO "EntityProgress"
+           ("transactionId", "companyId", producer, state, "errorMessage",
+            "updatedAt", "createdAt")
+         VALUES ($1, $2, $3, 'in_progress', NULL, NOW(), NOW())
+         ON CONFLICT ("transactionId", "companyId", producer) DO UPDATE
+         SET state = 'in_progress',
+             "errorMessage" = NULL,
+             "updatedAt" = NOW()
+         WHERE "EntityProgress".state IN ('completed', 'failed', 'skipped', 'pending')`,
+        [transactionId, companyId, STAGE_TO_SERVICE[stage]],
+      );
+    } catch (err) {
+      // Non-fatal: SSE event above already nudged any subscribed
+      // client. The next persist event will rewrite the row anyway.
+      logger.warn(
+        { err: err instanceof Error ? err.message : String(err) },
+        "retry endpoint failed to persist in_progress",
+      );
+    }
   }
 
   return c.json(

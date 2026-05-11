@@ -109,7 +109,13 @@ const LOG_TAIL_LIMIT = 1000;
 
 function LogsView({ producer, runId }: { producer: string; runId: string }) {
   const [lines, setLines] = useState<ProducerLogLine[]>([]);
-  const [filter, setFilter] = useState<string>(runId);
+  // Filter starts empty so the user sees the full producer stream by
+  // default. The runId is offered as a placeholder hint — they can
+  // type it (or paste it) when they want to narrow to this run.
+  // Previously this defaulted to runId, which silently hid every line
+  // that didn't carry the runId substring (Selenium / Chromium output,
+  // most internal log lines) and made the panel look empty on remount.
+  const [filter, setFilter] = useState<string>("");
   const [stderrOnly, setStderrOnly] = useState<boolean>(false);
   const [autoScroll, setAutoScroll] = useState<boolean>(true);
   const scrollerRef = useRef<HTMLDivElement | null>(null);
@@ -168,7 +174,7 @@ function LogsView({ producer, runId }: { producer: string; runId: string }) {
           type="search"
           value={filter}
           onChange={(e) => setFilter(e.target.value)}
-          placeholder="Filter (z. B. runId, Fehlertext)"
+          placeholder={runId ? `Filter (z. B. „${runId.slice(0, 24)}…")` : "Filter (z. B. runId, Fehlertext)"}
           spellCheck={false}
         />
         <label className="muted">
