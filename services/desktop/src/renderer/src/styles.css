@@ -3194,6 +3194,46 @@ a.heartbeat-decision__company:hover {
   gap: 0.25rem;
   white-space: nowrap;
 }
+/* Logs "Logs kopieren" pill. Sits at the right end of the controls
+ * row and swaps content on success/error. The "copied" state borrows
+ * the aqua brand colour so the affirmation reads cleanly on both
+ * light and dark backgrounds. */
+.diagnostics__copy {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+  padding: 4px 10px;
+  font-size: 12px;
+  font: inherit;
+  font-size: 12px;
+  line-height: 1;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--fg);
+  cursor: pointer;
+  transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease;
+}
+.diagnostics__copy:hover:not(:disabled) {
+  border-color: var(--color-indigo-600);
+  color: var(--color-indigo-600);
+}
+.diagnostics__copy:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.diagnostics__copy--copied,
+.diagnostics__copy--copied:disabled {
+  opacity: 1;
+  background: color-mix(in srgb, var(--color-indigo-600) 16%, transparent);
+  border-color: var(--color-indigo-600);
+  color: var(--color-indigo-600);
+}
+.diagnostics__copy--error {
+  border-color: #dc2626;
+  color: #dc2626;
+}
 .diagnostics__log-stream {
   height: 320px;
   overflow-y: auto;

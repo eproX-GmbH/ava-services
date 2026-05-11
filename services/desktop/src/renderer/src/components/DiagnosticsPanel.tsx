@@ -118,6 +118,9 @@ function LogsView({ producer, runId }: { producer: string; runId: string }) {
   const [filter, setFilter] = useState<string>("");
   const [stderrOnly, setStderrOnly] = useState<boolean>(false);
   const [autoScroll, setAutoScroll] = useState<boolean>(true);
+  // Copy-button state: "idle" → "copied" briefly after success →
+  // back to "idle"; "error" if the clipboard write throws.
+  const [copyState, setCopyState] = useState<"idle" | "copied" | "error">("idle");
   const scrollerRef = useRef<HTMLDivElement | null>(null);
 
   // Backfill on producer change, then subscribe to the live tail.
@@ -167,6 +170,42 @@ function LogsView({ producer, runId }: { producer: string; runId: string }) {
     });
   }, [lines, filter, stderrOnly]);
 
+  // Copies the CURRENTLY VISIBLE lines (post filter / stderr-only) to
+  // the clipboard. Falls back to the legacy execCommand path when the
+  // async Clipboard API isn't available — Electron renderers can
+  // refuse navigator.clipboard.writeText under some packaging configs
+  // even though it works in dev. Resets the "copied" feedback after
+  // 1.6 s.
+  const onCopy = async (): Promise<void> => {
+    if (filtered.length === 0) return;
+    const payload = filtered
+      .map((l) => {
+        const ts = new Date(l.ts).toISOString();
+        const stream = l.stream === "stderr" ? "ERR" : "OUT";
+        return `${ts} [${stream}] ${l.text}`;
+      })
+      .join("\n");
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(payload);
+      } else {
+        const ta = document.createElement("textarea");
+        ta.value = payload;
+        ta.style.position = "fixed";
+        ta.style.opacity = "0";
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand("copy");
+        document.body.removeChild(ta);
+      }
+      setCopyState("copied");
+      window.setTimeout(() => setCopyState("idle"), 1600);
+    } catch {
+      setCopyState("error");
+      window.setTimeout(() => setCopyState("idle"), 2200);
+    }
+  };
+
   return (
     <div className="diagnostics__logs">
       <div className="diagnostics__controls">
@@ -196,6 +235,32 @@ function LogsView({ producer, runId }: { producer: string; runId: string }) {
         <span className="muted">
           {filtered.length} / {lines.length}
         </span>
+        <button
+          type="button"
+          className={`diagnostics__copy diagnostics__copy--${copyState}`}
+          onClick={() => void onCopy()}
+          disabled={filtered.length === 0 || copyState === "copied"}
+          title={
+            filtered.length === 0
+              ? "Keine Zeilen zum Kopieren"
+              : `${filtered.length} Zeile${filtered.length === 1 ? "" : "n"} kopieren`
+          }
+          aria-live="polite"
+        >
+          {copyState === "copied" ? (
+            <>
+              <CheckIcon /> Kopiert
+            </>
+          ) : copyState === "error" ? (
+            <>
+              <span aria-hidden="true">⚠</span> Fehlgeschlagen
+            </>
+          ) : (
+            <>
+              <CopyIcon /> Logs kopieren
+            </>
+          )}
+        </button>
       </div>
       <div
         className="diagnostics__log-stream"
@@ -349,4 +414,47 @@ function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
   return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+}
+
+// ---- Inline SVG icons ------------------------------------------------------
+//
+// 14x14 viewBox, currentColor so the icons pick up the button's text colour
+// in light/dark mode without theme coupling. Inline instead of pulling a new
+// icon dep for two glyphs.
+
+function CopyIcon() {
+  return (
+    <svg
+      width="14"
+      height="14"
+      viewBox="0 0 14 14"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.4"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <rect x="3.5" y="3.5" width="7" height="8.5" rx="1.2" />
+      <path d="M5.5 3.5V2.5a1 1 0 0 1 1-1h5a1 1 0 0 1 1 1v7a1 1 0 0 1-1 1h-1" />
+    </svg>
+  );
+}
+
+function CheckIcon() {
+  return (
+    <svg
+      width="14"
+      height="14"
+      viewBox="0 0 14 14"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M2.5 7.5l3 3 6-7" />
+    </svg>
+  );
 }

@@ -482,16 +482,32 @@ const applyCompanyProfile: ApplyFn = async (pool, event, log) => {
       );
       // Deduplicate within the incoming set; the producer's LLM
       // occasionally repeats a keyword and we don't want a UNIQUE
-      // constraint surprise.
+      // constraint surprise. Dedupe is keyed on the *normalized*
+      // form so "Stahlbetonbau" and "stahlbetonbau " collapse.
+      // normalizedKeyword is a NOT-NULL column on CompanyKeyword
+      // (the schema was created with the constraint; v0.1.106's
+      // keyword-persist path forgot to populate it). Normalization:
+      // NFKD → strip combining marks → lowercase → collapse
+      // whitespace → trim.
+      const normalize = (s: string): string =>
+        s
+          .normalize("NFKD")
+          .replace(/\p{M}+/gu, "")
+          .toLowerCase()
+          .replace(/\s+/g, " ")
+          .trim();
       const seen = new Set<string>();
       for (const raw of result.keywords) {
         const k = typeof raw === "string" ? raw.trim() : "";
-        if (!k || seen.has(k)) continue;
-        seen.add(k);
+        if (!k) continue;
+        const normalized = normalize(k);
+        if (!normalized || seen.has(normalized)) continue;
+        seen.add(normalized);
         await client.query(
-          `INSERT INTO "CompanyKeyword" ("companyId", keyword, "createdAt", "updatedAt")
-           VALUES ($1, $2, NOW(), NOW())`,
-          [result.companyId, k],
+          `INSERT INTO "CompanyKeyword"
+             ("companyId", keyword, "normalizedKeyword", "createdAt", "updatedAt")
+           VALUES ($1, $2, $3, NOW(), NOW())`,
+          [result.companyId, k, normalized],
         );
         keywordsWritten++;
       }
