@@ -348,6 +348,49 @@ const api = {
       ipcRenderer.on("crm-status:changed", handler);
       return () => ipcRenderer.removeListener("crm-status:changed", handler);
     },
+
+    /** C4 — pass-through to /v1/companies/:id/crm. Returned shape:
+     *  `{ links: Array<{ crmType, crmExternalId, crmDisplayName, ... }> }`. */
+    listLinks: (companyId: string): Promise<unknown> =>
+      ipcRenderer.invoke("crm:list:links", { companyId }),
+    /** C4 — pass-through to /v1/companies/:id/crm/details. Returned shape:
+     *  `{ details: Array<{ crmType, fetchedAt, notConfigured?, contacts?, deals?, ... }> }`. */
+    fetchDetails: (
+      companyId: string,
+      opts?: { refresh?: boolean },
+    ): Promise<unknown> =>
+      ipcRenderer.invoke("crm:details:fetch", {
+        companyId,
+        refresh: opts?.refresh ?? false,
+      }),
+    /** C4 — run a HubSpot live enrichment fetch on this device and push
+     *  the resulting payload to the gateway cache. Caller passes the
+     *  AVA companyId + the CRM-side external id (HubSpot company id). */
+    enrich: (
+      args: { companyId: string; crmExternalId: string; crmType?: CrmProviderKind },
+    ): Promise<{ ok: true; fetchedAt: string } | { ok: false; error: string }> =>
+      ipcRenderer.invoke("crm:enrich:run", args),
+    /** C4 — HubSpot company search for the manual-link picker dialog. */
+    searchHubspotCompanies: (args: {
+      query: string;
+      limit?: number;
+    }): Promise<{
+      items: Array<{
+        id: string;
+        name: string | null;
+        domain: string | null;
+        city: string | null;
+      }>;
+      error?: string;
+    }> => ipcRenderer.invoke("crm:hubspot:searchCompanies", args),
+    /** C4 — create or replace a manual CompanyCrmLink. */
+    linkManually: (args: {
+      companyId: string;
+      crmType: "HUBSPOT" | "SALESFORCE" | "DYNAMICS";
+      crmExternalId: string;
+      crmDisplayName?: string | null;
+    }): Promise<{ ok: true } | { ok: false; error: string }> =>
+      ipcRenderer.invoke("crm:linkManually", args),
   },
 
   // Agent (Phase 8). Renderer initiates a turn with `send`, then watches

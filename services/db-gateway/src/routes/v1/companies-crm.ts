@@ -27,8 +27,10 @@ import { getGatewayPool } from "../../lib/producer-pools";
 import {
   getCrmCache,
   listCrmLinks,
+  listCrmLinksForCompanies,
   markCrmLinkSynced,
   putCrmCache,
+  upsertCrmLink,
   type CrmType,
 } from "../../lib/crm-links";
 
@@ -286,4 +288,120 @@ companiesCrmRouter.openapi(cachePushRoute, async (c) => {
     "company-crm-cache: push stored",
   );
   return c.body(null, 204);
+});
+
+// =============================================================================
+// POST /v1/companies/:companyId/crm/links — manual link from picker UI
+// =============================================================================
+//
+// Workstream C4 — the renderer's "Mit CRM verknüpfen" dialog calls this
+// after the user picks a row from the CRM-side search results. The
+// payload is upserted under the same uniqueness key (tenantId, companyId,
+// crmType) used by the importer, so re-linking the same company simply
+// replaces the external id.
+
+const ManualLinkBody = z
+  .object({
+    crmType: z.enum(["HUBSPOT", "SALESFORCE", "DYNAMICS"]),
+    crmExternalId: z.string().min(1),
+    crmDisplayName: z.string().nullable().optional(),
+  })
+  .openapi("CompanyCrmManualLinkBody");
+
+const manualLinkRoute = createRoute({
+  method: "post",
+  path: "/companies/{companyId}/crm/links",
+  tags: [tag],
+  summary: "Create or replace a manual CRM link for a company",
+  request: {
+    params: CompanyIdParam,
+    body: { content: { "application/json": { schema: ManualLinkBody } }, required: true },
+  },
+  responses: { 204: { description: "linked" } },
+});
+
+companiesCrmRouter.openapi(manualLinkRoute, async (c) => {
+  const { companyId } = c.req.valid("param");
+  const body = c.req.valid("json");
+  const auth = c.get("auth");
+  if (!auth) throw new HTTPException(401, { message: "unauthenticated" });
+  await upsertCrmLink(getGatewayPool(), {
+    tenantId: auth.tenantId,
+    companyId,
+    crmType: body.crmType as CrmType,
+    crmExternalId: body.crmExternalId,
+    crmDisplayName: body.crmDisplayName ?? null,
+    confirmedSource: "MANUAL_LINK",
+  });
+  logger.info(
+    { tenantId: auth.tenantId, companyId, crmType: body.crmType },
+    "company-crm-link: manual link stored",
+  );
+  return c.body(null, 204);
+});
+
+// =============================================================================
+// POST /v1/companies/crm-links/batch — bulk lookup for list views
+// =============================================================================
+//
+// Workstream C4 — Meine-Firmen / Vorgänge surface a small CRM badge
+// next to each company name. Issuing one /crm call per row would N+1
+// the gateway; the batch endpoint resolves all known links in one
+// SELECT.
+
+const BatchLinksBody = z
+  .object({
+    companyIds: z.array(z.string().min(1)).max(500),
+  })
+  .openapi("CompanyCrmBatchLinksBody");
+
+const BatchLinkShape = z.object({
+  crmType: z.enum(["HUBSPOT", "SALESFORCE", "DYNAMICS"]),
+  crmDisplayName: z.string().nullable(),
+});
+
+const BatchLinksResponse = z
+  .object({
+    links: z.record(z.string(), z.array(BatchLinkShape)),
+  })
+  .openapi("CompanyCrmBatchLinksResponse");
+
+const batchLinksRoute = createRoute({
+  method: "post",
+  path: "/companies/crm-links/batch",
+  tags: [tag],
+  summary: "Resolve CRM-link summaries for a batch of companies",
+  request: {
+    body: {
+      content: { "application/json": { schema: BatchLinksBody } },
+      required: true,
+    },
+  },
+  responses: {
+    200: {
+      content: { "application/json": { schema: BatchLinksResponse } },
+      description: "links keyed by companyId",
+    },
+  },
+});
+
+companiesCrmRouter.openapi(batchLinksRoute, async (c) => {
+  const body = c.req.valid("json");
+  const auth = c.get("auth");
+  if (!auth) throw new HTTPException(401, { message: "unauthenticated" });
+  if (body.companyIds.length === 0) {
+    return c.json({ links: {} }, 200);
+  }
+  const rows = await listCrmLinksForCompanies(getGatewayPool(), {
+    tenantId: auth.tenantId,
+    companyIds: body.companyIds,
+  });
+  const out: Record<string, Array<{ crmType: CrmType; crmDisplayName: string | null }>> = {};
+  for (const row of rows) {
+    (out[row.companyId] ||= []).push({
+      crmType: row.crmType,
+      crmDisplayName: row.crmDisplayName,
+    });
+  }
+  return c.json({ links: out }, 200);
 });

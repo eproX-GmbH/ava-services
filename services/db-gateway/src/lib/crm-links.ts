@@ -120,6 +120,30 @@ export async function listCrmLinks(
   return res.rows;
 }
 
+/**
+ * Bulk variant of listCrmLinks for list views (Meine Firmen / Vorgänge).
+ * Returns flat rows with companyId so the caller can group client-side.
+ * Empty when none of the ids have any CRM links.
+ */
+export async function listCrmLinksForCompanies(
+  pool: Pool,
+  args: { tenantId: string; companyIds: string[] },
+): Promise<Array<{ companyId: string; crmType: CrmType; crmDisplayName: string | null }>> {
+  if (args.companyIds.length === 0) return [];
+  const res = await pool.query<{
+    companyId: string;
+    crmType: CrmType;
+    crmDisplayName: string | null;
+  }>(
+    `SELECT "companyId", "crmType", "crmDisplayName"
+       FROM "CompanyCrmLink"
+      WHERE "tenantId" = $1 AND "companyId" = ANY($2::text[])
+      ORDER BY "companyId", "crmType"`,
+    [args.tenantId, args.companyIds],
+  );
+  return res.rows;
+}
+
 /** Stamp lastSyncedAt after a successful CRM-side fetch. */
 export async function markCrmLinkSynced(
   pool: Pool,

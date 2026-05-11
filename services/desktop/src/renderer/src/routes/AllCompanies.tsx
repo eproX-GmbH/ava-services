@@ -1,8 +1,9 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { Search, ChevronLeft, ChevronRight, Building2 } from "lucide-react";
 import { gatewayFetch } from "../api/gateway";
+import { CrmBadgeRow } from "../components/CrmBadge";
 
 // v0.1.61 — global "all companies" matrix.
 //
@@ -129,6 +130,30 @@ export function AllCompanies() {
     ? Math.max(1, Math.ceil(matrix.data.count / matrix.data.pageSize))
     : 1;
 
+  // Workstream C4 — CRM badge fan-out. One POST resolves all visible
+  // rows' CompanyCrmLink summaries; rows without any link get no
+  // badge, so an empty response is the common case for tenants who
+  // never imported from a CRM.
+  const companyIds = useMemo(
+    () => (matrix.data?.companies ?? []).map((r) => r.companyId),
+    [matrix.data],
+  );
+  const crmLinks = useQuery({
+    queryKey: ["crm-links-batch", companyIds],
+    enabled: companyIds.length > 0,
+    queryFn: () =>
+      gatewayFetch<{
+        links: Record<
+          string,
+          Array<{ crmType: "HUBSPOT" | "SALESFORCE" | "DYNAMICS"; crmDisplayName: string | null }>
+        >;
+      }>(`/v1/companies/crm-links/batch`, {
+        method: "POST",
+        body: { companyIds },
+      }),
+    staleTime: 60_000,
+  });
+
   return (
     <section className="all-companies page">
       <header className="ct-page-header all-companies__header">
@@ -197,6 +222,9 @@ export function AllCompanies() {
                 <tr key={row.companyId}>
                   <td className="matrix-company">
                     <Link to={`/companies/${row.companyId}`}>{row.name}</Link>
+                    <CrmBadgeRow
+                      links={crmLinks.data?.links[row.companyId] ?? []}
+                    />
                     <div className="muted small">{row.location}</div>
                   </td>
                   {PRODUCERS.map((p) => {

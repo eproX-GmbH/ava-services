@@ -37,6 +37,10 @@ import {
 } from "./external-service-monitor";
 import { pickStructuredContentSource } from "./structured-content-source";
 import { CrmManager } from "./crm";
+import {
+  runCrmEnrichment,
+  searchHubspotCompanies,
+} from "./crm/fetch-enrichment";
 import { initBilling } from "./billing";
 import { initLinkedIn } from "./linkedin";
 import type { CrmProvider, CrmStatus } from "./crm/types";
@@ -1314,6 +1318,118 @@ app.whenReady().then(async () => {
       return crmManager.getStatus(provider);
     },
   );
+
+  // Workstream C4 — CRM linkage UI surface.
+  //
+  // `crm:list:links`    → thin pass-through over GET /v1/companies/:id/crm
+  // `crm:details:fetch` → thin pass-through over GET /v1/companies/:id/crm/details
+  // `crm:enrich:run`    → on-device HubSpot fetch + POST to /crm/cache
+  // `crm:hubspot:searchCompanies` / `crm:linkManually` → manual-link picker.
+  ipcMain.handle(
+    "crm:list:links",
+    async (
+      _e,
+      args: { companyId: string },
+    ): Promise<unknown> => {
+      const bearer = await auth.getAccessToken();
+      if (!bearer) throw new Error("nicht angemeldet");
+      const url = `${GATEWAY_URL.replace(/\/+$/, "")}/v1/companies/${encodeURIComponent(args.companyId)}/crm`;
+      const res = await fetch(url, {
+        headers: { authorization: `Bearer ${bearer}` },
+      });
+      if (!res.ok) {
+        const body = await res.text().catch(() => "");
+        throw new Error(`gateway ${res.status} ${body.slice(0, 200)}`);
+      }
+      return res.json();
+    },
+  );
+  ipcMain.handle(
+    "crm:details:fetch",
+    async (
+      _e,
+      args: { companyId: string; refresh?: boolean },
+    ): Promise<unknown> => {
+      const bearer = await auth.getAccessToken();
+      if (!bearer) throw new Error("nicht angemeldet");
+      const qs = args.refresh ? "?refresh=true" : "?refresh=false";
+      const url = `${GATEWAY_URL.replace(/\/+$/, "")}/v1/companies/${encodeURIComponent(args.companyId)}/crm/details${qs}`;
+      const res = await fetch(url, {
+        headers: { authorization: `Bearer ${bearer}` },
+      });
+      if (!res.ok) {
+        const body = await res.text().catch(() => "");
+        throw new Error(`gateway ${res.status} ${body.slice(0, 200)}`);
+      }
+      return res.json();
+    },
+  );
+  ipcMain.handle(
+    "crm:enrich:run",
+    async (
+      _e,
+      args: {
+        companyId: string;
+        crmExternalId: string;
+        crmType?: CrmProvider;
+      },
+    ) => {
+      return runCrmEnrichment(crmManager, args, {
+        gatewayUrl: GATEWAY_URL,
+        getBearer: () => auth.getAccessToken(),
+      });
+    },
+  );
+  ipcMain.handle(
+    "crm:hubspot:searchCompanies",
+    async (_e, args: { query: string; limit?: number }) => {
+      try {
+        return await searchHubspotCompanies(crmManager, args);
+      } catch (err) {
+        return {
+          items: [],
+          error: err instanceof Error ? err.message : String(err),
+        };
+      }
+    },
+  );
+  ipcMain.handle(
+    "crm:linkManually",
+    async (
+      _e,
+      args: {
+        companyId: string;
+        crmType: "HUBSPOT" | "SALESFORCE" | "DYNAMICS";
+        crmExternalId: string;
+        crmDisplayName?: string | null;
+      },
+    ): Promise<{ ok: true } | { ok: false; error: string }> => {
+      const bearer = await auth.getAccessToken();
+      if (!bearer) return { ok: false, error: "nicht angemeldet" };
+      const url = `${GATEWAY_URL.replace(/\/+$/, "")}/v1/companies/${encodeURIComponent(args.companyId)}/crm/links`;
+      const res = await fetch(url, {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${bearer}`,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          crmType: args.crmType,
+          crmExternalId: args.crmExternalId,
+          crmDisplayName: args.crmDisplayName ?? null,
+        }),
+      });
+      if (!res.ok) {
+        const body = await res.text().catch(() => "");
+        return {
+          ok: false,
+          error: `gateway ${res.status} ${body.slice(0, 200)}`,
+        };
+      }
+      return { ok: true };
+    },
+  );
+
   ipcMain.handle("ollama:restart", () => ollama.restart());
 
   // Agent IPC. Stream frames arrive via `agent:stream`; the renderer is

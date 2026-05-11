@@ -4,6 +4,7 @@ import { Link, useParams } from "react-router-dom";
 import { gatewayFetch, gatewaySSE } from "../api/gateway";
 import { fmtDate } from "../lib/format";
 import { DiagnosticsPanel } from "../components/DiagnosticsPanel";
+import { CrmBadgeRow } from "../components/CrmBadge";
 
 // W3 — pipeline matrix view.
 //
@@ -192,7 +193,27 @@ export function TransactionDetail() {
     // Names are slow-changing master-data; 5 min keeps the cache warm
     // while the user clicks through the matrix without forcing fresh
     // round-trips on every focus.
+    // (CRM-link badge fan-out below uses the same id set.)
     staleTime: 5 * 60_000,
+  });
+
+  // Workstream C4 — CRM badges next to each company name. One POST
+  // resolves every visible row's CompanyCrmLink summary; tenants
+  // who never imported from a CRM see no badges (empty response).
+  const crmLinks = useQuery({
+    queryKey: ["crm-links-batch", companyIds],
+    enabled: companyIds.length > 0,
+    queryFn: () =>
+      gatewayFetch<{
+        links: Record<
+          string,
+          Array<{ crmType: "HUBSPOT" | "SALESFORCE" | "DYNAMICS"; crmDisplayName: string | null }>
+        >;
+      }>(`/v1/companies/crm-links/batch`, {
+        method: "POST",
+        body: { companyIds },
+      }),
+    staleTime: 60_000,
   });
 
   const nameFor = (cid: string): string =>
@@ -381,7 +402,12 @@ export function TransactionDetail() {
                     className={openCompanyId === row.companyId ? "active" : ""}
                     onClick={() => setOpenCompanyId(row.companyId)}
                   >
-                    <td className="matrix-company">{nameFor(row.companyId)}</td>
+                    <td className="matrix-company">
+                      {nameFor(row.companyId)}
+                      <CrmBadgeRow
+                        links={crmLinks.data?.links[row.companyId] ?? []}
+                      />
+                    </td>
                     {stages.map((s) => (
                       <td key={s} className="matrix-cell">
                         <CellDot cell={row.cells[s]} />

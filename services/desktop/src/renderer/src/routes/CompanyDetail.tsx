@@ -16,6 +16,7 @@ import {
   looksLikePhone,
 } from "../lib/format";
 import { ExternalLink } from "../components/ExternalLink";
+import { CompanyCrmPanel } from "../components/CompanyCrmPanel";
 import {
   GlobeIcon,
   LinkedInIcon,
@@ -377,6 +378,8 @@ export function CompanyDetail() {
         />
         {tab === "overview" && (
           <OverviewTab
+            companyId={id!}
+            companyName={structured.data?.name ?? summary.data?.name ?? ""}
             profile={profile.data}
             structured={structured.data}
             website={website.data}
@@ -584,10 +587,14 @@ function DeepResearchStrip({ items }: { items: DeepResearch[] }) {
 // ---- Tabs ------------------------------------------------------------------
 
 function OverviewTab({
+  companyId,
+  companyName,
   profile,
   structured,
   website,
 }: {
+  companyId: string;
+  companyName: string;
   profile?: CompanyProfile;
   structured?: StructuredContent;
   website?: Website;
@@ -696,6 +703,12 @@ function OverviewTab({
           </>
         )}
       </article>
+
+      {/* Workstream C4 — CRM linkage. Spans both columns of the
+       *  grid-2 layout so deals + contacts have horizontal room. */}
+      {companyId && (
+        <CompanyCrmPanel companyId={companyId} companyName={companyName} />
+      )}
     </div>
   );
 }
