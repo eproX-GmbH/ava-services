@@ -125,7 +125,7 @@ requires-user-confirm: true        # if a tool has side-effects (sending mail, p
 disable-model-invocation: false    # default false (auto-activates via description match)
 user-invocable: true               # default true (typing /outreach-draft works)
 arguments:                         # optional — values the user can pass via `/skill arg1 arg2`
-  - name: companyId
+  - name: company-id                # kebab-case enforced by the loader schema; reference as ${company-id} in body
     description: AVA companyId of the target firm
     required: true
 ---
