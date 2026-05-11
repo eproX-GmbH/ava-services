@@ -4507,11 +4507,54 @@ a.heartbeat-decision__company:hover {
   background: var(--color-bg-1);
   border-radius: 10px;
   box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.35);
-  max-width: 720px;
-  width: calc(100vw - 2rem);
+  max-width: min(96vw, 1400px);
+  width: 100%;
   max-height: calc(100vh - 4rem);
   display: flex;
   flex-direction: column;
+}
+
+/* Form-field layout inside skill modals — each label/fieldset is a
+   block-level flex column so the field name, control and helper text
+   stack cleanly instead of flowing inline (which overlapped at the
+   narrower two-column width). */
+.skill-modal .form-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  margin-bottom: 0.9rem;
+  min-width: 0;
+}
+
+.skill-modal .form-field > span,
+.skill-modal .form-field > legend {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-fg-muted);
+  letter-spacing: 0.02em;
+  padding: 0;
+}
+
+.skill-modal .form-field > input,
+.skill-modal .form-field > select,
+.skill-modal .form-field > textarea {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+.skill-modal .form-field .muted.small,
+.skill-modal .form-field > span.muted {
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--color-fg-faint);
+  letter-spacing: normal;
+}
+
+.skill-modal fieldset.form-field {
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  padding: 0.6rem 0.75rem;
 }
 
 .skill-modal__head {

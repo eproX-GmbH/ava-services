@@ -236,7 +236,7 @@ export function SkillEditor({ target, onClose, onSaved }: SkillEditorProps) {
       <div className="skill-modal__backdrop" onClick={busy ? undefined : onClose} />
       <div
         className="skill-modal__panel"
-        style={{ width: "min(95vw, 1100px)", maxHeight: "90vh" }}
+        style={{ maxHeight: "90vh" }}
       >
         <header className="skill-modal__head">
           <h4>

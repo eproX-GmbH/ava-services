@@ -7,6 +7,22 @@ The repo uses one rolling tag per desktop release (`v<major>.<minor>.<patch>`)
 on `main`. Submodules cut their own feature branches and are pinned via the
 desktop bundle; `pnpm fetch:producers` re-vendors them into the .dmg.
 
+## v0.1.127 — 2026-05-11
+
+- **Skill-Editor-Modal: Layout-Fix.** Im S4-Editor überlappten Labels,
+  Eingabefelder und Hilfetexte (zum Beispiel „Nur Kleinbuchstaben…"
+  lief in das nächste „Beschreibung"-Label), weil die `<label
+  class="form-field">`-Wrapper keine CSS-Regel hatten und Inhalte
+  inline statt block flossen. Neue `.skill-modal .form-field`-Regeln
+  in `styles.css` setzen jedes Feld auf `flex-direction: column` mit
+  klarem Gap, vereinheitlichen Label-Typografie und sorgen für
+  `min-width: 0`, damit lange Beschreibungstexte den Grid-Spalten
+  nicht den Boden ausziehen. Gleichzeitig wächst der Modal-Panel-
+  Max-Width von 720px auf `min(96vw, 1400px)` (das alte CSS-Limit
+  überschrieb den inline gesetzten 1100px-Wert) — bei breiten
+  Displays haben Metadaten- und Body-Spalten jetzt deutlich mehr
+  Luft.
+
 ## v0.1.126 — 2026-05-11
 
 - **[PLAN §2 S5] Skills-Import/Export + Re-Confirm-on-Change-Politur.**
