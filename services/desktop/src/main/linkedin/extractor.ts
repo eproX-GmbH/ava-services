@@ -190,7 +190,18 @@ const SIGNAL_SCHEMA = yup
   .object({
     signal_kind: yup.string().oneOf(SIGNAL_KINDS).required(),
     signal_strength: yup.number().integer().min(1).max(5).required(),
-    summary: yup.string().max(240).required(),
+    // LLMs ignorieren das 240-Zeichen-Limit aus dem Prompt regelmäßig.
+    // Statt den gesamten Signal-Datensatz wegen ein paar Zeichen zu
+    // verwerfen, kürzen wir hier weich (240 minus '…').
+    summary: yup
+      .string()
+      .transform((v: unknown) => {
+        if (typeof v !== "string") return v;
+        const trimmed = v.trim();
+        if (trimmed.length <= 240) return trimmed;
+        return trimmed.slice(0, 239).replace(/\s+\S*$/, "").trimEnd() + "…";
+      })
+      .required(),
     topics: yup.array().of(yup.string().max(40)).min(0).max(5).required(),
     entities: yup
       .object({

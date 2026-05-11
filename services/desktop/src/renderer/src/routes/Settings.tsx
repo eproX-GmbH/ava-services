@@ -1337,10 +1337,6 @@ function LinkedInSection() {
             </p>
           )}
           {signalError && <p className="crm-card-error">{signalError}</p>}
-          <p className="muted small">
-            Wird mit Phase L6 sichtbar — die ausgewerteten Signale erhalten
-            in einem späteren Release eine eigene Ansicht.
-          </p>
         </fieldset>
       )}
 

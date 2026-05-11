@@ -7,6 +7,19 @@ The repo uses one rolling tag per desktop release (`v<major>.<minor>.<patch>`)
 on `main`. Submodules cut their own feature branches and are pinned via the
 desktop bundle; `pnpm fetch:producers` re-vendors them into the .dmg.
 
+## v0.1.129 — 2026-05-11
+
+- **LinkedIn-Signal-Auswertung: Summary weich kürzen statt verwerfen.**
+  Der yup-Schema-Check für `summary` warf jeden Signal-Datensatz weg,
+  sobald das LLM über 240 Zeichen lieferte ("summary must be at most
+  240 characters" in der Settings-Leiste). Stattdessen kürzen wir
+  jetzt vor der Validierung weich auf 240 minus '…' und schneiden an
+  der letzten Wortgrenze ab. Resultat: das Signal landet im Store,
+  auch wenn das Modell den Prompt-Hinweis ignoriert hat.
+- **Veralteter Platzhalter raus.** Der „Wird mit Phase L6 sichtbar"-
+  Hinweis unter dem Auswertungs-Knopf war seit der Alerts-/Signals-
+  Ansicht überholt — entfernt.
+
 ## v0.1.128 — 2026-05-11
 
 - **Slash-Befehls-Palette im Chat.** Tippt man `/` ins Chat-Eingabefeld,
