@@ -38,9 +38,9 @@ to `http://localhost:8080`, which matches `db-gateway`'s `.env.example`).
 Use `bash scripts/dev.sh` from the meta-repo root to start the gateway plus
 upstream services in another terminal.
 
-## Shipped surfaces (v0.1.119)
+## Shipped surfaces (v0.1.120)
 
-- **AI-Chat** (`/chat`) — primary interface. Agent has 73 tools (full
+- **AI-Chat** (`/chat`) — primary interface. Agent has 92 tools (full
   inventory in [`TOOLS.md`](../../TOOLS.md), auto-generated from the
   TS sources). System prompt + tool definitions under `src/main/agent/`.
   The fan-out for open company questions includes `company_crm_summary`

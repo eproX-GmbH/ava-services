@@ -7,6 +7,42 @@ The repo uses one rolling tag per desktop release (`v<major>.<minor>.<patch>`)
 on `main`. Submodules cut their own feature branches and are pinned via the
 desktop bundle; `pnpm fetch:producers` re-vendors them into the .dmg.
 
+## v0.1.120 — 2026-05-11
+
+- **[PLAN T1-T5] Tool-coverage audit landed.** The chat agent now
+  exposes 92 tools across 19 files (up from 61), covering every IPC
+  channel the UI uses. New tool families:
+  - **T1 — LinkedIn + CRM-link family** (d9dfaa2): `linkedin_status`,
+    `linkedin_connect`, `linkedin_disconnect`, `linkedin_scan_now`,
+    `linkedin_cancel_run`, `crm_list_links_for_company`,
+    `crm_fetch_details_raw`, `crm_enrich_now`,
+    `crm_search_hubspot_companies`, `crm_link_manual`.
+  - **T2 — Ollama / voice / updater** (95704be): `ollama_status`,
+    `ollama_pull_model`, `ollama_restart`, `ollama_delete_model`,
+    `voice_status`, `voice_install_binary`, `voice_download_model`,
+    `voice_delete_model`, `updater_status`, `updater_check`,
+    `updater_download`, `updater_install`.
+  - **T3 — Reachability + producers + chat history** (857156b):
+    `reachability_status`, `producer_status`, `producer_restart`,
+    `producer_tail_logs`, `chat_history_search`, `chat_history_open`,
+    `chat_history_delete`.
+  - **T4 — CRM connect/disconnect UX polish** (51db0e2):
+    `connect_crm`/`disconnect_crm` now share the canonical
+    `CrmManager` path with Settings UI (always did), but error
+    messages from Salesforce/Dynamics translate cleanly to German
+    ("noch nicht freigeschaltet") and the system prompt nudges the
+    agent toward `import_companies_from_crm` or `crm_link_manual`
+    after a successful HubSpot connect.
+  - **T5 — Auto-generated TOOLS.md.** `pnpm -F @ava/desktop tools:doc`
+    walks `src/main/agent/tools/*.ts`, extracts `defineTool({...})`
+    blocks via brace-balanced parsing, and writes a flat inventory
+    at the repo root. `build:typecheck` runs the generator first so
+    the doc rarely lags. Source of truth stays the TS files.
+
+  All new tools are gated by the same `b2b-scope` enum + system-
+  prompt guardrails the rest of the agent follows. The skills-system
+  S-track (PLANS.md §2) is next.
+
 ## v0.1.119 — 2026-05-11
 
 - **[WORKSTREAM C] C4 UI surface for CRM links + desktop-side
