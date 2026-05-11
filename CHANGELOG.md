@@ -7,6 +7,34 @@ The repo uses one rolling tag per desktop release (`v<major>.<minor>.<patch>`)
 on `main`. Submodules cut their own feature branches and are pinned via the
 desktop bundle; `pnpm fetch:producers` re-vendors them into the .dmg.
 
+## v0.1.123 — 2026-05-11
+
+- **[PLAN §2 S6] Drei Starter-Skills out-of-the-box.** Beim ersten
+  Start kopiert `vendorBundledSkills()` die mitgelieferten Skills
+  aus `resources/skills/<name>/SKILL.md` nach
+  `<userData>/skills/<name>/SKILL.md` — no-overwrite, damit
+  spätere Updates Nutzer-Edits nicht zerstören. Der Loader scannt
+  danach wie gewohnt das User-Verzeichnis. Bundled:
+  - `outreach-draft-de` (`b2b-scope: outreach`,
+    `requires-user-confirm: true`, nur Read-Tools; der Nutzer
+    versendet selbst aus dem eigenen Mail-Client).
+  - `qualifying-fragebogen` (`b2b-scope: qualifying`,
+    `requires-user-confirm: false`, BANT/MEDDIC-Fragebogen mit
+    Empfehlungszeile am Ende).
+  - `wettbewerber-uebersicht` (`b2b-scope: competitive`,
+    vergleichende Tabelle plus kurze Einordnung; fragt nach
+    Wettbewerber-Namen, falls keine übergeben wurden).
+- **Packaging.** `electron-builder.yml` zieht `resources/skills/**`
+  über `extraResources` in den Bundle (gleiches Muster wie für
+  `resources/ollama` und `resources/whisper`). Pfad-Auflösung in
+  `initSkills()`: dev = `app.getAppPath()/resources/skills`,
+  packaged = `process.resourcesPath/skills`.
+- **Smoke-Test.** Neues `pnpm test:skills:bundled` lädt die
+  gebündelten Skills über den realen Loader und prüft Frontmatter,
+  `b2b-scope` und Read-Tool-Charakter der Allowlist. Fängt
+  Frontmatter-Regressions ab, wenn jemand eine bundled SKILL.md
+  editiert.
+
 ## v0.1.122 — 2026-05-11
 
 - **[PLAN §2 S2] Skills agent-integration landed.** The skills loaded in

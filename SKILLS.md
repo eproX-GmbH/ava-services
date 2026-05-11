@@ -155,13 +155,28 @@ Match landet später.
 Skills mit `disable-model-invocation: true` werden bei der Auto-
 Aktivierung übersprungen, nur `/name` startet sie noch.
 
+## Starter-Skills (S6, v0.1.123)
+
+AVA bringt drei Starter-Skills mit, die beim ersten Start vom
+gebündelten `resources/skills/` nach `<userData>/skills/<name>/SKILL.md`
+kopiert werden. Die Kopie ist no-overwrite: liegt schon eine Datei am
+Zielort, lässt AVA sie unangetastet. Wer eine bundled Variante zurück
+will, löscht die Datei aus `<userData>/skills/` und startet neu.
+
+| Skill | `b2b-scope` | `allowed-tools` | Beschreibung |
+|---|---|---|---|
+| `outreach-draft-de` | `outreach` | `company_get`, `company_profile`, `company_contacts`, `company_crm_summary`, `company_publications` | Verfasst einen Erstkontakt-Entwurf auf Deutsch an einen Geschäftsführer oder Entscheider eines mittelständischen Unternehmens. Aktiviert auf Erstkontakt, Outreach, Cold Email, Erstansprache, Anschreiben. Setzt `requires-user-confirm: true` und ruft keine Versand-Tools auf — der Nutzer prüft und versendet selbst. |
+| `qualifying-fragebogen` | `qualifying` | `company_get`, `company_profile`, `company_financials`, `company_contacts`, `company_publications`, `company_crm_summary` | Füllt einen strukturierten Qualifying-Fragebogen (BANT- bzw. MEDDIC-Flavor) für eine Firma aus. Read-only Diagnostik, schließt mit einer Empfehlung `weiterverfolgen | beobachten | überspringen`. |
+| `wettbewerber-uebersicht` | `competitive` | `company_get`, `company_profile`, `company_financials`, `company_publications`, `company_search` | Erstellt eine vergleichende Tabelle zwischen einer Ankerfirma und einer Liste namentlich genannter Mitbewerber. Wenn keine Wettbewerber genannt sind, fragt das Skill zuerst nach. |
+
 ## Rollout
 
 - **S1 (v0.1.121)** – Loader + Schema + Hot-Reload.
 - **S2 (v0.1.122)** – Agent-Integration: System-Prompt-Block,
   `/skill-name`-Invocation, erzwungene Tool-Allowlist, Gate-Evaluator
-  für `metadata.ava.requires` (dieser Stand).
+  für `metadata.ava.requires`.
+- **S6 (v0.1.123)** – Drei Starter-Skills gebündelt + auto-vendor in
+  `<userData>/skills/` beim ersten Start (dieser Stand).
 - **S3** – Settings → Skills (read-only).
 - **S4** – In-App-Editor + Trust-Dialog + Save.
 - **S5** – Import / Export (zip drag-drop) + Re-Confirm-on-Change.
-- **S6** – Drei Starter-Skills out-of-the-box.

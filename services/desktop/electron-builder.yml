@@ -66,6 +66,14 @@ extraResources:
     to: producers
     filter:
       - "**/*"
+  # S6 — Starter skills shipped with the app. Vendored on first
+  # launch into `<userData>/skills/<name>/SKILL.md` by
+  # `vendorBundledSkills()` in src/main/skills/index.ts. The copy is
+  # no-overwrite so user edits survive upgrades.
+  - from: resources/skills
+    to: skills
+    filter:
+      - "**/*"
 
 mac:
   target:

@@ -9,7 +9,13 @@
 // with S3 (Settings → Skills UI).
 
 import type { App } from "electron";
-import { existsSync, mkdirSync } from "node:fs";
+import {
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  statSync,
+} from "node:fs";
 import { join } from "node:path";
 import { SkillStore } from "./store";
 import type { GateEvaluator } from "./gate";
@@ -42,6 +48,66 @@ export interface InitSkillsOptions {
   /** S2 — gate evaluator (CRM connected? Ollama running?). When omitted,
    *  the loader denies every `metadata.ava.requires` block (S1 behaviour). */
   evaluateGate?: GateEvaluator;
+  /** S6 — override the bundled-skills source directory. Used by tests
+   *  to point at `resources/skills/` directly. In normal init this is
+   *  derived from `app.isPackaged` and skipped if `app` is null. */
+  bundledDir?: string | null;
+}
+
+/**
+ * S6 — Copy bundled `SKILL.md` files from the desktop's `resources/skills/`
+ * tree into `<userData>/skills/<name>/SKILL.md`, but only if the target
+ * file does not yet exist. Never overwrites — the user can edit or
+ * delete a bundled skill and we must not clobber their changes on
+ * upgrade. Errors are logged in German and otherwise swallowed so a
+ * single bad copy can't break startup.
+ */
+export function vendorBundledSkills(
+  bundledDir: string,
+  userDir: string,
+): void {
+  if (!existsSync(bundledDir)) {
+    console.log(
+      `[skills] kein gebündeltes Skill-Verzeichnis unter ${bundledDir} — übersprungen`,
+    );
+    return;
+  }
+  let entries: string[];
+  try {
+    entries = readdirSync(bundledDir);
+  } catch (err) {
+    console.warn(
+      `[skills] gebündeltes Skill-Verzeichnis nicht lesbar: ${bundledDir} (${
+        err instanceof Error ? err.message : String(err)
+      })`,
+    );
+    return;
+  }
+  for (const entry of entries) {
+    const src = join(bundledDir, entry, "SKILL.md");
+    let st;
+    try {
+      st = statSync(join(bundledDir, entry));
+    } catch {
+      continue;
+    }
+    if (!st.isDirectory()) continue;
+    if (!existsSync(src)) continue;
+    const targetDir = join(userDir, entry);
+    const target = join(targetDir, "SKILL.md");
+    if (existsSync(target)) continue;
+    try {
+      mkdirSync(targetDir, { recursive: true });
+      copyFileSync(src, target);
+      console.log(`[skills] vendored bundled skill '${entry}' → ${target}`);
+    } catch (err) {
+      console.warn(
+        `[skills] Vendor-Kopie fehlgeschlagen für '${entry}': ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+    }
+  }
 }
 
 export async function initSkills(
@@ -61,6 +127,32 @@ export async function initSkills(
     }
   } else {
     userDir = null;
+  }
+
+  // S6 — Vendor the bundled starter skills into userDir BEFORE the
+  // loader scans the dir. The copy is no-overwrite (per-file
+  // existence check) so user edits survive upgrades. Skipped if the
+  // caller passed an explicit userDir override (tests) unless they
+  // also passed an explicit bundledDir.
+  let bundledDir: string | null = null;
+  if (opts.bundledDir !== undefined) {
+    bundledDir = opts.bundledDir;
+  } else if (app && opts.userDir === undefined) {
+    bundledDir = app.isPackaged
+      ? join(process.resourcesPath, "skills")
+      : join(app.getAppPath(), "resources", "skills");
+  }
+  if (bundledDir && userDir) {
+    try {
+      mkdirSync(userDir, { recursive: true });
+      vendorBundledSkills(bundledDir, userDir);
+    } catch (err) {
+      console.warn(
+        `[skills] Vendor-Schritt fehlgeschlagen: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+    }
   }
 
   let workspaceDir: string | null;
