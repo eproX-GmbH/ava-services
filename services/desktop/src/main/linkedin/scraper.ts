@@ -556,6 +556,12 @@ const EXTRACTOR_SCRIPT = `
       var feedSlot = promoted ? "promoted" : suggestedPill ? "suggested" : "feed";
       if (feedSlot === "promoted") candidateCounts.promoted += 1;
       if (feedSlot === "suggested") candidateCounts.suggested += 1;
+      // Sponsored/Promoted ads are LinkedIn-ranked outbound noise; they
+      // never carry useful B2B signal for our users. Drop them before
+      // any further extraction so they don't burn LLM quota downstream.
+      // They still get counted in candidateCounts.promoted for the
+      // diagnostic, so we can confirm the filter is firing.
+      if (feedSlot === "promoted") return;
 
       // ---- Body text ----------------------------------------------
       var bodyEl = node.querySelector(
