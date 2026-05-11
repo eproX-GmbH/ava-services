@@ -1108,13 +1108,42 @@ function PersonCard({ facts }: { facts: Fact[] }) {
   const find = (field: string) => facts.find((f) => f.field === field);
   const name = find("fullName")?.value ?? "Unbekannte Person";
   const job = facts.find((f) => f.field === "jobTitle" && f.status === "ACTIVE");
-  const dept = find("department");
+  const dept = facts.find((f) => f.field === "department" && f.status === "ACTIVE");
   const xing = find("xingUrl");
   const linkedin = find("linkedinUrl");
 
-  const display = facts.filter(
+  // The producer emits one "Fact" row per observation, so a person
+  // typically has 3-6 ACTIVE rows + a tail of INACTIVE history. Dumping
+  // them all flooded the card. New treatment:
+  //   1. Hide the identity-meta fields (name, identityKey, employmentCompanyId).
+  //   2. Collapse ACTIVE rows by `field` — show the highest-confidence
+  //      one inline. Sibling variants (e.g. two Abteilungs the
+  //      reconciler couldn't merge) get bundled into one row with a
+  //      "+N Varianten" disclosure.
+  //   3. Move INACTIVE history into a <details> "Historie (N)" block.
+  const visibleFacts = facts.filter(
     (f) => !["fullName", "identityKey", "employmentCompanyId"].includes(f.field ?? ""),
   );
+  const activeFacts = visibleFacts.filter((f) => f.status === "ACTIVE");
+  const inactiveFacts = visibleFacts.filter((f) => f.status !== "ACTIVE");
+
+  const activeGroups = (() => {
+    const groups = new Map<string, Fact[]>();
+    for (const f of activeFacts) {
+      const key = f.field ?? "_other";
+      const arr = groups.get(key) ?? [];
+      arr.push(f);
+      groups.set(key, arr);
+    }
+    // Within a group, sort by confidence desc so the inline-shown
+    // representative is the most-confident one.
+    for (const arr of groups.values()) {
+      arr.sort((a, b) => (b.confidence ?? 0) - (a.confidence ?? 0));
+    }
+    // Iteration order = insertion order = source order, which keeps
+    // the layout stable across renders.
+    return Array.from(groups.entries());
+  })();
 
   // Map a fact `field` → the link kind so contact rows on a person card
   // also dial / open mail / open maps / open URL with the right icon
@@ -1176,23 +1205,91 @@ function PersonCard({ facts }: { facts: Fact[] }) {
           )}
         </div>
       </div>
-      {display.length > 0 && (
+      {activeGroups.length > 0 && (
         <ul className="list" style={{ marginTop: "0.75rem" }}>
-          {display.map((f, i) => (
-            <li key={f.id ?? i} className="fact-row">
-              <span className="muted">{fieldLabel(f.field ?? "")}:</span>
-              <span className="fact-value">
-                {f.value ? <FactValue value={f.value} kind={kindFor(f.field)} /> : ""}
-              </span>
-              <span className="fact-meta">
-                <StatusPill status={f.status} />
-                <ConfidenceBar confidence={f.confidence} />
-              </span>
-            </li>
-          ))}
+          {activeGroups.map(([field, group]) => {
+            const primary = group[0];
+            if (!primary) return null;
+            const variants = group.slice(1);
+            return (
+              <li key={field} className="fact-row">
+                <span className="muted">{fieldLabel(field)}:</span>
+                <span className="fact-value">
+                  {primary.value ? (
+                    <FactValue value={primary.value} kind={kindFor(field)} />
+                  ) : (
+                    ""
+                  )}
+                  {variants.length > 0 && (
+                    <PersonCardVariants
+                      variants={variants}
+                      kind={kindFor(field)}
+                    />
+                  )}
+                </span>
+                <span className="fact-meta">
+                  <ConfidenceBar confidence={primary.confidence} />
+                </span>
+              </li>
+            );
+          })}
         </ul>
       )}
+      {inactiveFacts.length > 0 && (
+        <details className="person-card__history">
+          <summary className="muted">
+            Historie ({inactiveFacts.length})
+          </summary>
+          <ul className="list" style={{ marginTop: "0.5rem" }}>
+            {inactiveFacts.map((f, i) => (
+              <li key={f.id ?? `inactive-${i}`} className="fact-row">
+                <span className="muted">{fieldLabel(f.field ?? "")}:</span>
+                <span className="fact-value">
+                  {f.value ? <FactValue value={f.value} kind={kindFor(f.field)} /> : ""}
+                </span>
+                <span className="fact-meta">
+                  <ConfidenceBar confidence={f.confidence} />
+                </span>
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
     </article>
+  );
+}
+
+function PersonCardVariants({
+  variants,
+  kind,
+}: {
+  variants: Fact[];
+  kind: "phone" | "email" | "address" | "url" | undefined;
+}) {
+  const [open, setOpen] = useState(false);
+  if (variants.length === 0) return null;
+  return (
+    <span className="fact-variants">
+      <button
+        type="button"
+        className="link fact-variants__toggle"
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+      >
+        {open
+          ? "weniger"
+          : `+${variants.length} Variante${variants.length === 1 ? "" : "n"}`}
+      </button>
+      {open && (
+        <span className="fact-variants__list">
+          {variants.map((v, i) => (
+            <span key={v.id ?? i} className="fact-variants__item">
+              {v.value ? <FactValue value={v.value} kind={kind} /> : ""}
+            </span>
+          ))}
+        </span>
+      )}
+    </span>
   );
 }
 
