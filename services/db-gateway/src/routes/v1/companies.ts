@@ -3,6 +3,7 @@ import { HTTPException } from "hono/http-exception";
 import { requireScope } from "../../middleware/auth";
 import { callUpstream } from "../../lib/upstream";
 import { getProducerPool } from "../../lib/producer-pools";
+import { logger } from "../../lib/logger";
 import {
   CompanyContactShape,
   CompanyIdParam,
@@ -166,6 +167,12 @@ const profileRoute = createRoute({
 companiesRouter.openapi(profileRoute, async (c) => {
   const { companyId } = c.req.valid("param");
   const pool = getProducerPool("company-profile");
+  // CompanyProfile.businessPurpose lives in the joined
+  // CompanyBusinessPurpose table (1:N via businessPurposeId FK), not
+  // as a column on CompanyProfile itself. Pre-fix this query
+  // referenced a non-existent "businessPurpose" column on the parent
+  // and threw 500 on every call. LEFT JOIN so rows without a linked
+  // business purpose still return (the FK is nullable in prod).
   const profileRow = await pool.query<{
     id: string;
     profile: string;
@@ -174,8 +181,11 @@ companiesRouter.openapi(profileRoute, async (c) => {
     createdAt: Date;
     updatedAt: Date;
   }>(
-    `SELECT id, profile, url, "businessPurpose", "createdAt", "updatedAt"
-     FROM "CompanyProfile" WHERE id = $1 LIMIT 1`,
+    `SELECT cp.id, cp.profile, cp.url, cbp."businessPurpose" AS "businessPurpose",
+            cp."createdAt", cp."updatedAt"
+     FROM "CompanyProfile" cp
+     LEFT JOIN "CompanyBusinessPurpose" cbp ON cbp.id = cp."businessPurposeId"
+     WHERE cp.id = $1 LIMIT 1`,
     [companyId],
   );
   if (profileRow.rowCount === 0) {
@@ -501,49 +511,70 @@ const contactsRoute = createRoute({
 // companyId here and return the same shape the legacy upstream did.
 companiesRouter.openapi(contactsRoute, async (c) => {
   const { companyId } = c.req.valid("param");
-  const pool = getProducerPool("company-contact");
+  try {
+    const pool = getProducerPool("company-contact");
 
-  const companyRes = await pool.query<{
-    id: string;
-    name: string | null;
-    websiteUrl: string | null;
-    createdAt: Date;
-    updatedAt: Date;
-  }>(
-    `SELECT id, name, "websiteUrl", "createdAt", "updatedAt"
-     FROM "Company" WHERE id = $1 LIMIT 1`,
-    [companyId],
-  );
-  if (companyRes.rowCount === 0) {
-    throw new HTTPException(404, { message: "not_found" });
+    const companyRes = await pool.query<{
+      id: string;
+      name: string | null;
+      websiteUrl: string | null;
+      createdAt: Date;
+      updatedAt: Date;
+    }>(
+      `SELECT id, name, "websiteUrl", "createdAt", "updatedAt"
+       FROM "Company" WHERE id = $1 LIMIT 1`,
+      [companyId],
+    );
+    if (companyRes.rowCount === 0) {
+      throw new HTTPException(404, { message: "not_found" });
+    }
+    const company = companyRes.rows[0];
+
+    // Pull the four child collections in parallel. Each is a
+    // tenant-scoped, opaque-shape JSON blob from the renderer's
+    // perspective (CompanyContactShape declares them as
+    // record<string, unknown>[]) — we just SELECT * and pass through.
+    const [facts, observations, signals, employments] = await Promise.all([
+      pool.query(`SELECT * FROM "Fact" WHERE "companyId" = $1`, [companyId]),
+      pool.query(`SELECT * FROM "Observation" WHERE "companyId" = $1`, [companyId]),
+      pool.query(`SELECT * FROM "SignalEvent" WHERE "companyId" = $1`, [companyId]),
+      pool.query(`SELECT * FROM "Employment" WHERE "companyId" = $1`, [companyId]),
+    ]);
+
+    return c.json(
+      {
+        id: company.id,
+        companyName: company.name,
+        websiteUrl: company.websiteUrl,
+        companyFacts: facts.rows as Array<Record<string, unknown>>,
+        companyObservations: observations.rows as Array<Record<string, unknown>>,
+        companySignals: signals.rows as Array<Record<string, unknown>>,
+        employments: employments.rows as Array<Record<string, unknown>>,
+        createdAt: company.createdAt.toISOString(),
+        updatedAt: company.updatedAt.toISOString(),
+      },
+      200,
+    );
+  } catch (err) {
+    // Re-throw HTTPExceptions (404 etc.) untouched. Anything else gets
+    // logged with full detail so prod 500s aren't a black box; we've
+    // hit two column-drift bugs (CompanyProfile.businessPurpose,
+    // unknown contacts failure) without log visibility. Until we wire
+    // proper structured logging across every route, an explicit catch
+    // on the user-facing query routes is the smallest patch that buys
+    // us forensics.
+    if (err instanceof HTTPException) throw err;
+    logger.error(
+      {
+        companyId,
+        route: "/v1/companies/:companyId/contacts",
+        err: err instanceof Error ? err.message : String(err),
+        stack: err instanceof Error ? err.stack : undefined,
+      },
+      "contacts route 500",
+    );
+    throw err;
   }
-  const company = companyRes.rows[0];
-
-  // Pull the four child collections in parallel. Each is a
-  // tenant-scoped, opaque-shape JSON blob from the renderer's
-  // perspective (CompanyContactShape declares them as
-  // record<string, unknown>[]) — we just SELECT * and pass through.
-  const [facts, observations, signals, employments] = await Promise.all([
-    pool.query(`SELECT * FROM "Fact" WHERE "companyId" = $1`, [companyId]),
-    pool.query(`SELECT * FROM "Observation" WHERE "companyId" = $1`, [companyId]),
-    pool.query(`SELECT * FROM "SignalEvent" WHERE "companyId" = $1`, [companyId]),
-    pool.query(`SELECT * FROM "Employment" WHERE "companyId" = $1`, [companyId]),
-  ]);
-
-  return c.json(
-    {
-      id: company.id,
-      companyName: company.name,
-      websiteUrl: company.websiteUrl,
-      companyFacts: facts.rows as Array<Record<string, unknown>>,
-      companyObservations: observations.rows as Array<Record<string, unknown>>,
-      companySignals: signals.rows as Array<Record<string, unknown>>,
-      employments: employments.rows as Array<Record<string, unknown>>,
-      createdAt: company.createdAt.toISOString(),
-      updatedAt: company.updatedAt.toISOString(),
-    },
-    200,
-  );
 });
 
 // ---- GET /v1/companies/:companyId/structured-content -----------------------
