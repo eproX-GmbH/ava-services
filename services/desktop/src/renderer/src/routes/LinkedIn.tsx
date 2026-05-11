@@ -202,11 +202,11 @@ function LinkedInOpenWarningModal({
           <h3 id="linkedin-open-warning-title">LinkedIn-Link öffnen</h3>
         </header>
         <p>
-          Bevor wir den Link öffnen, ein kurzer Hinweis. LinkedIn wertet
-          ungewöhnliche Zugriffsmuster gelegentlich als verdächtig aus, etwa
-          wenn viele Beiträge in kurzer Folge über externe Tools angesteuert
-          werden. Im Normalfall passiert nichts, aber bei intensiver Nutzung
-          kann das Konto vorübergehend gedrosselt oder geprüft werden.
+          LinkedIn wertet ungewöhnliche Zugriffsmuster gelegentlich als
+          verdächtig aus, etwa wenn viele Beiträge in kurzer Folge über
+          externe Tools angesteuert werden. Im Normalfall passiert nichts,
+          aber bei intensiver Nutzung kann das Konto vorübergehend
+          gedrosselt oder geprüft werden.
         </p>
         <p>
           Wir empfehlen, Links bewusst und in moderatem Takt zu öffnen und
