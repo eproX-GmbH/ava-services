@@ -7,6 +7,43 @@ The repo uses one rolling tag per desktop release (`v<major>.<minor>.<patch>`)
 on `main`. Submodules cut their own feature branches and are pinned via the
 desktop bundle; `pnpm fetch:producers` re-vendors them into the .dmg.
 
+## v0.1.119 — 2026-05-11
+
+- **[WORKSTREAM C] C4 UI surface for CRM links + desktop-side
+  HubSpot live enrichment fetcher.** Closes out the user-facing
+  half of the CRM linkage feature whose backend shipped in v0.1.118.
+  CompanyDetail Overview tab gains a new "CRM" panel: empty state
+  ("Diese Firma ist mit keinem CRM verknüpft." + "Mit CRM verknüpfen"
+  button); linked state shows per-CRM sub-cards with display name,
+  provenance, last sync time, "Aktualisieren" button, "Im CRM
+  öffnen" link, and a compact summary (`N Deals · M Kontakte ·
+  letzte Aktivität vor X`) plus Top-Kontakte + Aktive Deals lists.
+  Auto-fires the on-device fetcher when cache is empty.
+  AllCompanies + TransactionDetail rows gain inline `HS` / `SF` /
+  `MS` badges (batch-fetched via new `POST /v1/companies/crm-links/batch`
+  to avoid N+1). Manual link picker modal pre-populates with the AVA
+  company name and live-searches HubSpot's `/companies/search` API.
+  New gateway routes: `POST /v1/companies/:id/crm/links` (manual
+  link create/update) and `POST /v1/companies/crm-links/batch`
+  (bulk link summary). New IPC surface: `window.api.crm.{listLinks,
+  fetchDetails, enrich, searchHubspotCompanies, linkManually}`.
+  Salesforce + Dynamics tabs in the picker are disabled with "noch
+  nicht eingerichtet" placeholders.
+- **Docs: `PLANS.md` published.** Living planning document with two
+  workstreams: (1) tool-coverage audit identifying ~25 IPC channels
+  reachable only via UI clicks (LinkedIn family, CRM family, Ollama,
+  voice, updater, diagnostics) with a phased plan T1-T5 to expose
+  them as chat-agent tools; (2) user-authored skills system modelled
+  on the AgentSkills standard (Anthropic / OpenClaw) with
+  AVA-specific guardrails for B2B-sales scope: enforced tool
+  allowlist (not just pre-approval), `b2b-scope` enum frontmatter,
+  out-of-scope hard refusal in the system prompt, no shell
+  injection, trust dialog on import + re-confirm on disk-change,
+  `metadata.ava.requires` for env/binary/tier gating, hot-reload
+  watcher. Phased plan S1-S7 with three starter skills (Outreach
+  Draft DE, Qualifying Fragebogen, Wettbewerber-Übersicht) shipped
+  in S6 ahead of the editor UI to validate the model end-to-end.
+
 ## v0.1.118 — 2026-05-11
 
 - **Heartbeat-driven auto-retry of failed producer cells.** Six new

@@ -77,7 +77,7 @@ Identified by diffing the set of `ipcMain.handle` channels against the set of re
 
 ## 2. User-authored skills system
 
-**Principle:** the user (and eventually their team) can write markdown files that the agent reads as personas, workflow templates, or domain knowledge. Modelled on Anthropic's Agent Skills standard (the "SKILL.md" format), narrowed by AVA's B2B-sales scope and our guardrail philosophy.
+**Principle:** the user (and eventually their team) can write markdown files that the agent reads as personas, workflow templates, or domain knowledge. Modelled on the **AgentSkills standard** (Anthropic's `SKILL.md` format), as also adopted by [OpenClaw](https://github.com/openclaw/openclaw) — narrowed by AVA's B2B-sales scope and our guardrail philosophy.
 
 ### 2.1 Why
 
@@ -101,6 +101,9 @@ Forcing every user into the same prompt loses leverage. A skill is a first-class
 | `paths:` glob | Skip (no project-file context in AVA) | Doesn't map cleanly to AVA's data model |
 | Shell injection `` !`cmd` `` | Skip entirely | Footgun for non-developer users; we don't need it |
 | Sub-skills | Skip | Anthropic doesn't have them either; flat is fine |
+| `metadata.<vendor>.requires` for env/binary/config gating (OpenClaw extension) | Yes — adapt as `metadata.ava.requires` | Lets a skill declare "requires HubSpot connected" / "requires Ollama installed" / "requires Tier ≥ Pro". Skipped at load-time if gate fails; cleaner than runtime "tool not available" errors |
+| Hot-reload watcher on `SKILL.md` files (OpenClaw extension) | Yes | Skill author edits → reload on save without restarting AVA. Trivial with `chokidar` |
+| Deterministic token-cost accounting (~195 base + ~97 per skill, per OpenClaw's observation) | Yes — track + log | Enforces the 12k/20k prompt budget mentioned in §Cross-cutting |
 
 ### 2.3 Frontmatter contract (proposal)
 
