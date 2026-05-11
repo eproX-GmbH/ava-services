@@ -527,7 +527,7 @@ _Parameter:_ keine.
 
 _Datei:_ `services/desktop/src/main/agent/tools/crm.ts`
 
-Start the interactive OAuth flow to connect a CRM. Opens the system browser to the provider's login page and waits for the redirect. Microsoft Dynamics requires `orgUrl` (e.g. 'contoso.crm4.dynamics.com'). The user must complete sign-in in the browser; this tool resolves once tokens are persisted.
+Startet den interaktiven OAuth-Flow für ein CRM. Öffnet den System-Browser zur Login-Seite des Anbieters und wartet auf die Weiterleitung. Heute voll unterstützt: HubSpot. Salesforce + Microsoft Dynamics 365 sind verdrahtet, brauchen aber operatorseitige OAuth-App-Registrierung (siehe Anwender-Hinweise) - der Tool-Call schlägt sonst mit einer klaren Fehlermeldung fehl. Microsoft Dynamics erwartet `orgUrl` (z. B. 'contoso.crm4.dynamics.com'). Nach erfolgreicher Verbindung kann der Nutzer mit `import_companies_from_crm` direkt importieren oder einzelne AVA-Firmen via `crm_link_manual` an CRM-Datensätze knüpfen.
 
 _Parameter:_ keine.
 
@@ -588,7 +588,7 @@ _Parameter:_ keine.
 
 _Datei:_ `services/desktop/src/main/agent/tools/crm.ts`
 
-Forget OAuth tokens for a CRM provider. The user can re-connect later via `connect_crm` or the Settings panel.
+Verwirft die OAuth-Tokens für einen CRM-Anbieter. Bestehende CompanyCrmLink-Einträge bleiben erhalten (nur das Token wird vergessen); der Nutzer kann sich später via `connect_crm` oder im Settings-Panel wieder anmelden.
 
 _Parameter:_ keine.
 

@@ -86,19 +86,19 @@ export function buildCrmTools(deps: CrmToolDeps): Tool[] {
   const connectTool = defineTool({
     name: "connect_crm",
     description:
-      "Start the interactive OAuth flow to connect a CRM. Opens the system browser to the provider's login page and waits for the redirect. Microsoft Dynamics requires `orgUrl` (e.g. 'contoso.crm4.dynamics.com'). The user must complete sign-in in the browser; this tool resolves once tokens are persisted.",
+      "Startet den interaktiven OAuth-Flow für ein CRM. Öffnet den System-Browser zur Login-Seite des Anbieters und wartet auf die Weiterleitung. Heute voll unterstützt: HubSpot. Salesforce + Microsoft Dynamics 365 sind verdrahtet, brauchen aber operatorseitige OAuth-App-Registrierung (siehe Anwender-Hinweise) - der Tool-Call schlägt sonst mit einer klaren Fehlermeldung fehl. Microsoft Dynamics erwartet `orgUrl` (z. B. 'contoso.crm4.dynamics.com'). Nach erfolgreicher Verbindung kann der Nutzer mit `import_companies_from_crm` direkt importieren oder einzelne AVA-Firmen via `crm_link_manual` an CRM-Datensätze knüpfen.",
     parameters: {
       type: "object",
       properties: {
         provider: {
           type: "string",
           enum: [...PROVIDERS],
-          description: "Which CRM to connect.",
+          description: "Welches CRM verbunden werden soll.",
         },
         orgUrl: {
           type: "string",
           description:
-            "Microsoft Dynamics org URL (host or full URL). Required for Dynamics; ignored otherwise.",
+            "Microsoft Dynamics Org-URL (Host oder vollständige URL). Pflicht für Dynamics, sonst ignoriert.",
         },
       },
       required: ["provider"],
@@ -114,19 +114,35 @@ export function buildCrmTools(deps: CrmToolDeps): Tool[] {
           "Microsoft Dynamics 365 benötigt eine Org-URL (z. B. contoso.crm4.dynamics.com).",
         );
       }
-      await crm.connect(provider, { orgUrl: args.orgUrl });
+      try {
+        await crm.connect(provider, { orgUrl: args.orgUrl });
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        // Operatorseitig fehlende OAuth-App registriert in der
+        // upstream-Antwort ein 503 / "not configured". Übersetz das
+        // für den Nutzer in eine handlungsleitende Empfehlung statt
+        // den rohen Gateway-Fehler durchzureichen.
+        const notConfigured =
+          /not.{0,3}configured|nicht.{0,3}eingerichtet|503/i.test(msg);
+        if (notConfigured && provider !== "hubspot") {
+          throw new Error(
+            `${PROVIDER_LABELS[provider]} ist noch nicht freigeschaltet. Heute funktioniert nur HubSpot. Sobald ${PROVIDER_LABELS[provider]} aktiviert ist, probier es bitte erneut.`,
+          );
+        }
+        throw err;
+      }
       return crm.getStatus(provider);
     },
     preview: (r) =>
       r.connected
-        ? `connected ${PROVIDER_LABELS[r.provider]} as ${r.account ?? "?"}`
-        : `${PROVIDER_LABELS[r.provider]}: ${r.lastError ?? "connection failed"}`,
+        ? `${PROVIDER_LABELS[r.provider]} verbunden als ${r.account ?? "?"}`
+        : `${PROVIDER_LABELS[r.provider]}: ${r.lastError ?? "Verbindung fehlgeschlagen"}`,
   });
 
   const disconnectTool = defineTool({
     name: "disconnect_crm",
     description:
-      "Forget OAuth tokens for a CRM provider. The user can re-connect later via `connect_crm` or the Settings panel.",
+      "Verwirft die OAuth-Tokens für einen CRM-Anbieter. Bestehende CompanyCrmLink-Einträge bleiben erhalten (nur das Token wird vergessen); der Nutzer kann sich später via `connect_crm` oder im Settings-Panel wieder anmelden.",
     parameters: {
       type: "object",
       properties: {
