@@ -7,6 +7,44 @@ The repo uses one rolling tag per desktop release (`v<major>.<minor>.<patch>`)
 on `main`. Submodules cut their own feature branches and are pinned via the
 desktop bundle; `pnpm fetch:producers` re-vendors them into the .dmg.
 
+## v0.1.121 — 2026-05-11
+
+- **[PLAN §2 S1] Skills loader landed.** AVA now reads user-authored
+  `SKILL.md` files at launch from `<userData>/skills/<name>/SKILL.md`
+  and `<repo>/.ava/skills/<name>/SKILL.md` (workspace, only if the
+  directory exists). New module: `services/desktop/src/main/skills/`
+  (`schema.ts`, `parser.ts`, `loader.ts`, `store.ts`, `index.ts`).
+  - **Schema (yup):** frontmatter contract from PLANS.md §2.3.
+    Required: `name` (kebab-case), `description`, `b2b-scope`
+    (enum: `outreach | qualifying | competitive | data-extraction
+    | internal`). Optional with safe defaults: `language` (`de`),
+    `allowed-tools` (`[]` — pure-prose skill, no tools fire),
+    `requires-user-confirm` (`true`), `disable-model-invocation`
+    (`false`), `user-invocable` (`true`), `arguments` (`[]`),
+    `metadata.ava.requires` (gating block; S1 only parses + logs,
+    S2 wires the evaluator).
+  - **Parser:** YAML frontmatter (via the `yaml` lib) + markdown body.
+  - **Loader:** discovers, validates, hashes (sha256 of raw bytes).
+    Validation failures and unsatisfied gates are skip-loaded with a
+    German `[skills] '<path>' übersprungen: …` log. Name conflicts
+    resolve user-scope wins, with a warning.
+  - **Store:** singleton `SkillStore extends EventEmitter` with
+    `list()` / `get(name)` / `reload()`. Watches both skills dirs via
+    `fs.watch({ recursive: true })` (200 ms debounce) so editing a
+    `SKILL.md` hot-reloads without restarting AVA. No chokidar dep.
+  - **Wired into `app.whenReady`** alongside the other supervisors.
+    Logs `[skills] loaded N skills (M user, K workspace)` on init.
+    No IPC / `window.api` surface yet — that lands in S3.
+  - **Fixtures + smoke test:** six fixtures under
+    `src/main/skills/__fixtures__/` (two valid, four invalid /
+    gated). New `pnpm -F @ava/desktop test:skills` script invokes
+    the loader through the workspace-hoisted `tsx` ESM loader and
+    asserts the expected outcomes.
+- **New dep:** `yaml ^2.x` in `services/desktop`. No other deps added.
+- **Docs.** New `SKILLS.md` at the repo root: user-facing frontmatter
+  reference + scope values + minimal example + trust-dialog note.
+  `services/desktop/README.md` gets a "Skills" sub-section.
+
 ## v0.1.120 — 2026-05-11
 
 - **[PLAN T1-T5] Tool-coverage audit landed.** The chat agent now

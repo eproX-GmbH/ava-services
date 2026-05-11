@@ -1,6 +1,6 @@
 {
   "name": "@ava/desktop",
-  "version": "0.1.120",
+  "version": "0.1.121",
   "private": true,
   "description": "AVA Electron desktop app — replaces user-interface/ Next.js. Talks to db-gateway only.",
   "author": {
@@ -27,6 +27,7 @@
     "_build:typecheck_note": "tools:doc runs first so TOOLS.md stays in sync. If TOOLS.md changes after running `pnpm -F @ava/desktop tools:doc`, commit it — a CI drift-check can land later.",
     "build:typecheck": "node scripts/generate-tools-md.mjs && tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json && node scripts/check-german.mjs",
     "lint:german": "node scripts/check-german.mjs",
+    "test:skills": "node scripts/test-skills-loader.mjs",
     "audit:bundle": "node scripts/check-bundle-secrets.mjs",
     "preview": "electron-vite preview",
     "package:mac": "pnpm fetch:ollama --platform=darwin-arm64 && pnpm fetch:whisper --platform=darwin-arm64 && electron-vite build && electron-builder --mac --arm64",
@@ -54,6 +55,7 @@
     "react-router-dom": "^6.23.0",
     "tailwindcss": "^4",
     "xlsx": "^0.18.5",
+    "yaml": "^2.9.0",
     "yup": "^1.7.1",
     "zod": "^3.25.76",
     "zustand": "^4.5.0"

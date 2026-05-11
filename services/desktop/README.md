@@ -99,6 +99,17 @@ via `safeStorage`. The renderer's SSE wrapper uses
 `@microsoft/fetch-event-source` so the bearer token rides in the
 `Authorization` header rather than the query string.
 
+## Skills
+
+User-authored `SKILL.md` files extend the chat agent with personas
+and workflow templates. AVA looks under `<userData>/skills/<name>/`
+and `<repo>/.ava/skills/<name>/`. Format reference + frontmatter
+table lives in [`SKILLS.md`](../../SKILLS.md) at the repo root.
+
+S1 (loader + schema + hot-reload) shipped in v0.1.121. S2 (agent
+integration: description-match, `/skill-name` invocation, tool
+allowlist enforcement) is the next step — see `PLANS.md` §2.
+
 ## Tooling notes
 
 - After touching anything under `src/main/agent/tools/*.ts`, run
@@ -114,9 +125,9 @@ via `safeStorage`. The renderer's SSE wrapper uses
   setup + diagnostics + canonical CRM-OAuth flow as agent tools.
   Plan in [`PLANS.md`](../../PLANS.md) §1. Phase T1 (LinkedIn + CRM
   family) shipped in v0.1.119; T2 next.
-- **Skills system (S1-S6)** — user-authored SKILL.md skills modelled
-  on the AgentSkills standard with B2B-scope guardrails. Plan in
-  [`PLANS.md`](../../PLANS.md) §2.
+- **Skills system (S2-S6)** — agent integration, UI, editor, import.
+  S1 (loader + schema) landed in v0.1.121; see
+  [`SKILLS.md`](../../SKILLS.md) and [`PLANS.md`](../../PLANS.md) §2.
 - **Renderer cache** — `useTabQuery` keeps a 404 response cached
   after a producer finishes, so a freshly persisted profile only
   appears after navigate-away-and-back or app restart. Plausibly

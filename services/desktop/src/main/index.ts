@@ -43,6 +43,7 @@ import {
 } from "./crm/fetch-enrichment";
 import { initBilling } from "./billing";
 import { initLinkedIn } from "./linkedin";
+import { initSkills } from "./skills";
 import type { CrmProvider, CrmStatus } from "./crm/types";
 import { scrubQuarantine } from "./scrub-quarantine";
 import { Updater, broadcastUpdateStatus } from "./updater";
@@ -1218,6 +1219,16 @@ app.whenReady().then(async () => {
   // LinkedIn-Beobachter (Phase L0). Persistent settings + consent gate
   // + kill-switch IPC. No scraper code here yet — that lands in L1+.
   initLinkedIn({ providers, gateway: gatewayClient });
+
+  // Skills loader (PLAN §2, S1). Discovers SKILL.md files in
+  // userData/skills/ and <repo>/.ava/skills/, validates frontmatter,
+  // and hot-reloads on save. No agent integration yet (lands in S2),
+  // no IPC surface yet (lands in S3).
+  await initSkills(app).catch((err: unknown) => {
+    console.error(
+      `[skills] Initialisierung fehlgeschlagen: ${err instanceof Error ? err.message : String(err)}`,
+    );
+  });
 
   // Ollama supervisor IPC. The renderer drives:
   //   - getStatus on startup (then subscribes to `ollama-status:changed`)
