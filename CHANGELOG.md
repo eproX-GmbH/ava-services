@@ -7,6 +7,25 @@ The repo uses one rolling tag per desktop release (`v<major>.<minor>.<patch>`)
 on `main`. Submodules cut their own feature branches and are pinned via the
 desktop bundle; `pnpm fetch:producers` re-vendors them into the .dmg.
 
+## v0.1.128 — 2026-05-11
+
+- **Slash-Befehls-Palette im Chat.** Tippt man `/` ins Chat-Eingabefeld,
+  öffnet sich über dem Composer ein Popover mit allen verfügbaren
+  Skills (aktiviert, vertraut, Gate erfüllt, user-invocable) sowie den
+  registrierten Agent-Tools. Auswahl per Pfeiltasten + Enter/Tab oder
+  Klick fügt `/<name>` plus Leerzeichen in den Composer ein; Escape
+  schließt die Palette, ohne den Text zu verwerfen. Gesendete
+  User-Bubbles rendern das führende `/<name>` als Aqua-Pill, damit der
+  Skill-Aufruf im Verlauf auf einen Blick erkennbar ist. Die
+  orchestrator-seitige `/skill-name`-Verarbeitung aus S2 bleibt
+  unverändert; Tool-Namen werden als Hinweis eingefügt, den das LLM
+  in der nächsten Turn aufgreift. Neue Datei
+  `components/chat/SlashPalette.tsx`, in `ChatSession.tsx` und
+  `Chat.tsx` (UserBubbleContent) verdrahtet. Die IPC
+  `skills:listAvailableTools` liefert jetzt
+  `{ name, description }[]` statt nur `string[]`; SkillEditor mappt
+  weiterhin auf Namen.
+
 ## v0.1.127 — 2026-05-11
 
 - **Skill-Editor-Modal: Layout-Fix.** Im S4-Editor überlappten Labels,

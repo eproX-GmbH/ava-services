@@ -47,6 +47,8 @@ upstream services in another terminal.
   for CRM-linked companies (cache-safe, 6h TTL). LinkedIn-Beobachter
   setup + CRM linkage are now also drivable from chat
   (`linkedin_connect`, `crm_link_manual`, `crm_enrich_now`, etc.).
+  Tippe `/` im Chat-Eingabefeld, um eine Palette mit verfügbaren
+  Skills und Tools zu öffnen.
 - **Companies / company detail** (`/companies`, `/companies/:id`) —
   per-tab tier pills, overview / financials / management / contacts /
   insights / jobs tabs. PersonCard collapses field-grouped Facts behind

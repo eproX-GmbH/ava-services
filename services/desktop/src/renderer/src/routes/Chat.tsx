@@ -35,6 +35,22 @@ import type {
   AgentStreamFrame,
   ProviderConfigBundle,
 } from "../../../shared/types";
+import {
+  SlashPalette,
+  type SlashPaletteHandle,
+} from "../components/chat/SlashPalette";
+
+/** Same detection rule as in `ChatSession.tsx` — keep them in sync.
+ *  Palette stays open while the user is still typing the command name
+ *  (no whitespace or newline after the slash word). */
+function detectSlashOpen(text: string): { open: boolean; query: string } {
+  if (!text.startsWith("/")) return { open: false, query: "" };
+  if (text.includes("\n")) return { open: false, query: "" };
+  if (/^\/[^\s]*\s/.test(text)) return { open: false, query: "" };
+  return { open: true, query: text.slice(1).toLowerCase() };
+}
+
+const LEADING_SLASH_RE = /^\/([a-z][a-z0-9-]*)(\s|$)/;
 
 interface ConversationListEntry {
   conversationId: string;
@@ -131,6 +147,12 @@ export function Chat() {
   const dragDepthRef = useRef(0);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const composerTextareaRef = useRef<HTMLTextAreaElement | null>(null);
+  // Slash-command palette state. `dismissed` lets Escape close the
+  // palette without forcing the user to delete the slash they typed.
+  const slashPaletteRef = useRef<SlashPaletteHandle | null>(null);
+  const [slashDismissed, setSlashDismissed] = useState(false);
+  const slashDetect = useMemo(() => detectSlashOpen(input), [input]);
+  const slashOpen = slashDetect.open && !slashDismissed;
   // 8.k10h — sessions list + active id. The id is state (not just a
   // ref) because the dropdown reads it as the selected option. Ref
   // mirror is kept in sync so async stream handlers can observe the
@@ -1006,12 +1028,57 @@ export function Chat() {
           />
         ) : (
           <>
+            <SlashPalette
+              ref={slashPaletteRef}
+              open={slashOpen}
+              query={slashDetect.query}
+              onSelect={(cmd) => {
+                setInput("/" + cmd.name + " ");
+                setSlashDismissed(false);
+                setTimeout(() => {
+                  const el = composerTextareaRef.current;
+                  if (el) {
+                    el.focus();
+                    const len = el.value.length;
+                    el.setSelectionRange(len, len);
+                  }
+                }, 0);
+              }}
+              onClose={() => setSlashDismissed(true)}
+              anchorRef={composerTextareaRef}
+            />
             <textarea
               ref={composerTextareaRef}
               className="chat-composer__textarea"
               value={input}
-              onChange={(e) => setInput(e.target.value)}
+              onChange={(e) => {
+                setInput(e.target.value);
+                setSlashDismissed(false);
+              }}
               onKeyDown={(e) => {
+                if (slashOpen) {
+                  if (e.key === "ArrowDown") {
+                    e.preventDefault();
+                    slashPaletteRef.current?.moveDown();
+                    return;
+                  }
+                  if (e.key === "ArrowUp") {
+                    e.preventDefault();
+                    slashPaletteRef.current?.moveUp();
+                    return;
+                  }
+                  if (e.key === "Enter" || e.key === "Tab") {
+                    if (slashPaletteRef.current?.select()) {
+                      e.preventDefault();
+                      return;
+                    }
+                  }
+                  if (e.key === "Escape") {
+                    e.preventDefault();
+                    setSlashDismissed(true);
+                    return;
+                  }
+                }
                 if (e.key === "Enter" && !e.shiftKey) {
                   e.preventDefault();
                   void handleSend();
@@ -1815,7 +1882,7 @@ const LINK_RE = /\[([^\]]+)\]\((company:[^)]+|https?:\/\/[^)\s]+)\)/g;
 function UserBubbleContent({ content }: { content: string }) {
   const split = useMemo(() => splitAttachmentBlocks(content), [content]);
   if (split.attachments.length === 0) {
-    return <>{renderChatContent(content)}</>;
+    return <>{renderUserBubbleText(content)}</>;
   }
   return (
     <>
@@ -1824,9 +1891,31 @@ function UserBubbleContent({ content }: { content: string }) {
       ))}
       {split.typed.trim().length > 0 && (
         <div className="chat-attachment-typed">
-          {renderChatContent(split.typed)}
+          {renderUserBubbleText(split.typed)}
         </div>
       )}
+    </>
+  );
+}
+
+// If the user message's first line starts with `/<name>`, render that
+// token as a pill so the bubble visually matches the composer. The
+// rest of the content (incl. line 2+) goes through `renderChatContent`
+// as usual.
+function renderUserBubbleText(text: string): ReactNode {
+  if (!text.startsWith("/")) return renderChatContent(text);
+  const newlineIdx = text.indexOf("\n");
+  const firstLine = newlineIdx >= 0 ? text.slice(0, newlineIdx) : text;
+  const rest = newlineIdx >= 0 ? text.slice(newlineIdx) : "";
+  const match = LEADING_SLASH_RE.exec(firstLine);
+  if (!match) return renderChatContent(text);
+  const name = match[1];
+  const after = firstLine.slice(match[0].length);
+  return (
+    <>
+      <span className="slash-cmd-pill">/{name}</span>
+      {match[2] === " " ? " " : ""}
+      {renderChatContent(after + rest)}
     </>
   );
 }

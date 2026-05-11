@@ -1518,11 +1518,11 @@ app.whenReady().then(async () => {
 
   ipcMain.handle(
     "skills:listAvailableTools",
-    (): string[] => {
+    (): { name: string; description: string }[] => {
       return agentRegistry
         .list()
-        .map((t) => t.name)
-        .sort((a, b) => a.localeCompare(b));
+        .map((t) => ({ name: t.name, description: t.description }))
+        .sort((a, b) => a.name.localeCompare(b.name));
     },
   );
 

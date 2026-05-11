@@ -123,7 +123,7 @@ export function SkillEditor({ target, onClose, onSaved }: SkillEditorProps) {
     void window.api.skills
       .listAvailableTools()
       .then((tools) => {
-        if (!cancelled) setAvailableTools(tools);
+        if (!cancelled) setAvailableTools(tools.map((t) => t.name));
       })
       .catch(() => {
         if (!cancelled) setAvailableTools([]);

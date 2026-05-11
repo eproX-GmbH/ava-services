@@ -860,7 +860,7 @@ const api = {
       ipcRenderer.invoke("skills:delete", name),
     trust: (name: string): Promise<void> =>
       ipcRenderer.invoke("skills:trust", name),
-    listAvailableTools: (): Promise<string[]> =>
+    listAvailableTools: (): Promise<{ name: string; description: string }[]> =>
       ipcRenderer.invoke("skills:listAvailableTools"),
     // S5 — import / export. `export` + `exportAll` open native save
     // dialogs main-side. `pickImportFile` returns either a path or a
