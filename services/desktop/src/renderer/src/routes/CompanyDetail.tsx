@@ -469,17 +469,18 @@ function TabTierPill({
   const tierFull = stage.llmTier ? TIER_LABEL[stage.llmTier] : "Tier ?";
   const dotClass = stage.llmTier ? TIER_DOT[stage.llmTier] : "muted";
   const updated = stage.updatedAt ? fmtDate(stage.updatedAt) : null;
-  const tooltip = [
+  // Tooltip lines kept as an array so the CSS-driven popover can
+  // render them with proper line breaks instead of relying on \n in
+  // a native title attribute. The browser-native title path had a
+  // ~1.5s hover delay and reset on any mouse jitter, which the user
+  // experienced as "not reactive enough".
+  const tooltipLines = [
     `${stageLabel} · ${tierFull}`,
     stage.llmModel ? `Modell: ${stage.llmModel}` : null,
     updated ? `aktualisiert: ${updated}` : null,
-    "",
-    TIER_DESCRIPTION,
-  ]
-    .filter(Boolean)
-    .join("\n");
+  ].filter((line): line is string => Boolean(line));
   return (
-    <span className="tab-tier-pill" title={tooltip}>
+    <span className="tab-tier-pill">
       <span
         className={`dot ${dotClass}`}
         aria-hidden="true"
@@ -496,6 +497,16 @@ function TabTierPill({
       )}
       <span className="tab-tier-pill__info" aria-hidden="true">
         ⓘ
+      </span>
+      <span className="tab-tier-pill__tooltip" role="tooltip">
+        {tooltipLines.map((line, i) => (
+          <span key={i} className="tab-tier-pill__tooltip-line">
+            {line}
+          </span>
+        ))}
+        <span className="tab-tier-pill__tooltip-line tab-tier-pill__tooltip-line--desc">
+          {TIER_DESCRIPTION}
+        </span>
       </span>
     </span>
   );

@@ -4253,6 +4253,7 @@ a.heartbeat-decision__company:hover {
   border: 1px solid var(--color-border);
   color: var(--color-fg-muted);
   cursor: help;
+  position: relative;
 }
 .tab-tier-pill__stage {
   font-weight: 600;
@@ -4272,4 +4273,48 @@ a.heartbeat-decision__company:hover {
   font-size: 11px;
   opacity: 0.6;
   margin-left: 2px;
+}
+/* CSS-driven tooltip — appears instantly on hover, no 1.5s native
+ * title delay, no reset on mouse jitter. pointer-events: none so the
+ * tooltip itself never steals hover from the trigger. The trigger's
+ * :hover bubbles through the rest of the pill via the flex
+ * arrangement. */
+.tab-tier-pill__tooltip {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 0;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 240px;
+  max-width: 360px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--color-bg-2, #1f2723);
+  border: 1px solid var(--color-border);
+  box-shadow: var(--shadow-soft);
+  color: var(--color-fg);
+  font-size: 12px;
+  line-height: 1.45;
+  white-space: normal;
+  pointer-events: none;
+  opacity: 0;
+  transform: translateY(2px);
+  transition: opacity 80ms ease-out, transform 80ms ease-out;
+}
+.tab-tier-pill:hover .tab-tier-pill__tooltip,
+.tab-tier-pill:focus-within .tab-tier-pill__tooltip {
+  opacity: 1;
+  transform: translateY(0);
+}
+.tab-tier-pill__tooltip-line {
+  display: block;
+}
+.tab-tier-pill__tooltip-line--desc {
+  margin-top: 4px;
+  padding-top: 6px;
+  border-top: 1px solid var(--color-border);
+  color: var(--color-fg-muted);
+  font-size: 11px;
 }
