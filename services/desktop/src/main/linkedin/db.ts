@@ -208,6 +208,45 @@ CREATE INDEX IF NOT EXISTS linkedin_signal_heartbeat ON linkedin_signal (heartbe
 -- particular session got challenged.
 ALTER TABLE linkedin_scan_run ADD COLUMN IF NOT EXISTS user_agent TEXT;
 ALTER TABLE linkedin_scan_run ADD COLUMN IF NOT EXISTS aggressive_mode BOOLEAN;
+
+-- Cleanup of legacy Sponsored/Promoted posts that landed before the
+-- extractor learned to filter them out. The strongest post-hoc signal
+-- we have is "author is a company AND its display name was never
+-- successfully extracted" — that's the exact shape sponsored ads have
+-- in our store (company actor + the v0.1.113 'Unbekannt' fallback
+-- because LinkedIn renders the ad's author block differently from an
+-- organic post). Legit company posts get a real display_name.
+--
+-- Runs every boot but is a no-op once the rows are gone; cheap.
+-- Cascade deletes through signals, media, and interactions so we don't
+-- leave dangling FK rows.
+DELETE FROM linkedin_signal
+WHERE post_urn IN (
+  SELECT p.post_urn FROM linkedin_post p
+  JOIN linkedin_actor a ON a.actor_urn = p.author_urn
+  WHERE a.display_name = 'Unbekannt'
+    AND a.actor_urn LIKE 'urn:li:company:%'
+);
+DELETE FROM linkedin_interaction
+WHERE post_urn IN (
+  SELECT p.post_urn FROM linkedin_post p
+  JOIN linkedin_actor a ON a.actor_urn = p.author_urn
+  WHERE a.display_name = 'Unbekannt'
+    AND a.actor_urn LIKE 'urn:li:company:%'
+);
+DELETE FROM linkedin_media
+WHERE post_urn IN (
+  SELECT p.post_urn FROM linkedin_post p
+  JOIN linkedin_actor a ON a.actor_urn = p.author_urn
+  WHERE a.display_name = 'Unbekannt'
+    AND a.actor_urn LIKE 'urn:li:company:%'
+);
+DELETE FROM linkedin_post
+WHERE author_urn IN (
+  SELECT actor_urn FROM linkedin_actor
+  WHERE display_name = 'Unbekannt'
+    AND actor_urn LIKE 'urn:li:company:%'
+);
 `;
 
 async function initSchema(db: PGliteInstance): Promise<void> {
