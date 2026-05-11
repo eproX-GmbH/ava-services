@@ -7,6 +7,63 @@ The repo uses one rolling tag per desktop release (`v<major>.<minor>.<patch>`)
 on `main`. Submodules cut their own feature branches and are pinned via the
 desktop bundle; `pnpm fetch:producers` re-vendors them into the .dmg.
 
+## v0.1.115 — 2026-05-11
+
+- **Handelsregister: capture SI XML when Chrome native-downloads it.**
+  Some handelsregister.de deployments serve the SI link with
+  `Content-Disposition: attachment` instead of opening a new tab or
+  exposing an interceptable URL, so the file lands in Chrome's
+  download dir and the prior Path A / Path B sniffers both missed it
+  with "no new tab, no rp-download URL". `di.ts` now pre-configures
+  Chrome to download into `AVA_HR_DOWNLOAD_DIR` (defaults to a
+  tmpdir-scoped folder) with no prompt + safe-browsing disabled for
+  XML. The webdriver snapshots the dir before the SI click and a new
+  Path C polls for a new `.xml` that has no `.crdownload` sibling and
+  has been stable ≥ 200 ms, picks the most recent, reads it, unlinks
+  it. Path B kept as last-resort fallback. New `hr_06_after_download`
+  screenshot fires after the click so we have a frame to inspect
+  when nothing appears.
+- **Matrix cell no longer sticks red during a running retry.** The
+  retry endpoint already broadcast an optimistic `in_progress` SSE
+  event, but never persisted it — a snapshot fetch on remount kept
+  reading the prior run's `failed` row and the dot reverted to red
+  even while the producer was still scraping. Retry handler now also
+  upserts `EntityProgress` to `in_progress`, conditionally so it
+  never overwrites a fresher state from the producer at handler
+  entry.
+- **Diagnostics Logs tab no longer appears empty on remount.** The
+  log filter input defaulted to the runId, which silently hid every
+  Selenium/Chromium internal line that didn't carry the runId
+  substring. Filter starts empty now; the runId moves to the input
+  placeholder as a copy-paste hint.
+- **LinkedIn scan no longer freezes the UI.** Three blocking-IO
+  sources converted from sync to async: 15× screenshot PNG writes
+  per scan (each 100 KB–2 MB), the periodic `run.json` rewrite
+  (~3 per scan), the up-to-2 MB feed-HTML dump, and the media
+  downloads. Each capture call now also yields to the event loop
+  via `setImmediate` so renderer IPC queued behind the await
+  actually runs. Combined, this removes 15–20 main-thread stalls per
+  scan that totalled ~1–3 seconds of UI freeze on macOS.
+- **LinkedIn: auto-open the login window when a session expires
+  mid-scan.** A manual scan returning `outcome: "login_required"`
+  now fires the same handler the "Verbindung erneuern" /
+  "Mit LinkedIn verbinden" buttons use, so the LinkedIn login window
+  pops up immediately after the error banner instead of making the
+  user hunt for a button. Guarded against double-firing via the
+  existing `loginInFlight` state. Banner copy updated to match:
+  „LinkedIn-Sitzung abgelaufen. Anmeldefenster wird geöffnet …".
+- **LinkedIn open-link modal: drop the filler opening sentence.**
+  "Bevor wir den Link öffnen, ein kurzer Hinweis." removed; the
+  paragraph now leads directly with the LinkedIn-flagging warning.
+- **Stammkapital displayed at correct magnitude.** Postgres
+  `NUMERIC(_,3)` columns serialize via node-pg as strings like
+  `"37500.000"`, which the renderer's `numVal()` was treating as
+  German thousands notation — turning 37.500 € into 37.500.000 €.
+  The thousands-vs-decimal heuristic is tightened so only strict
+  `\d{1,3}(\.\d{3})+` groups are collapsed; trailing `.000` decimal
+  scale is preserved as a decimal point. Affects every money
+  formatter that goes through `numVal()`.
+
 ## v0.1.114 — 2026-05-11
 
 - **LinkedIn: Sponsored/Promoted posts dropped at the source.** Extractor
