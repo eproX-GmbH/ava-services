@@ -38,13 +38,15 @@ to `http://localhost:8080`, which matches `db-gateway`'s `.env.example`).
 Use `bash scripts/dev.sh` from the meta-repo root to start the gateway plus
 upstream services in another terminal.
 
-## Shipped surfaces (v0.1.118)
+## Shipped surfaces (v0.1.119)
 
-- **AI-Chat** (`/chat`) — primary interface. Agent has ~30 tools (company
-  reads, imports, transactions, watches, alerts, freshness, CRM, profile,
-  memory). System prompt + tool definitions under `src/main/agent/`. The
-  fan-out for open company questions includes `company_crm_summary` for
-  CRM-linked companies (cache-safe, 6h TTL).
+- **AI-Chat** (`/chat`) — primary interface. Agent has 73 tools (full
+  inventory in [`TOOLS.md`](../../TOOLS.md), auto-generated from the
+  TS sources). System prompt + tool definitions under `src/main/agent/`.
+  The fan-out for open company questions includes `company_crm_summary`
+  for CRM-linked companies (cache-safe, 6h TTL). LinkedIn-Beobachter
+  setup + CRM linkage are now also drivable from chat
+  (`linkedin_connect`, `crm_link_manual`, `crm_enrich_now`, etc.).
 - **Companies / company detail** (`/companies`, `/companies/:id`) —
   per-tab tier pills, overview / financials / management / contacts /
   insights / jobs tabs. PersonCard collapses field-grouped Facts behind
@@ -108,14 +110,13 @@ via `safeStorage`. The renderer's SSE wrapper uses
 
 ## Known follow-ups
 
-- **Workstream C C4** — CRM section on CompanyDetail + Meine Firmen /
-  Vorgänge badges + manual "Mit CRM verknüpfen" button. Schema + API
-  are live (`CompanyCrmLink` / `CompanyCrmCache`); renderer surface
-  still missing.
-- **Desktop-side HubSpot live enrichment fetcher** — populates the
-  CRM cache via `POST /v1/companies/:id/crm/cache` using on-device
-  OAuth tokens. Required for `company_crm_summary` to return
-  non-empty data on first request.
+- **Tool-coverage Phases T2-T4** — exposing Ollama / voice / updater
+  setup + diagnostics + canonical CRM-OAuth flow as agent tools.
+  Plan in [`PLANS.md`](../../PLANS.md) §1. Phase T1 (LinkedIn + CRM
+  family) shipped in v0.1.119; T2 next.
+- **Skills system (S1-S6)** — user-authored SKILL.md skills modelled
+  on the AgentSkills standard with B2B-scope guardrails. Plan in
+  [`PLANS.md`](../../PLANS.md) §2.
 - **Renderer cache** — `useTabQuery` keeps a 404 response cached
   after a producer finishes, so a freshly persisted profile only
   appears after navigate-away-and-back or app restart. Plausibly
