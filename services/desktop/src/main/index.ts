@@ -47,8 +47,16 @@ import {
   initSkills,
   buildGateEvaluator,
   SkillsPrefsStore,
+  SkillsTrustStore,
+  saveSkillToDisk,
 } from "./skills";
-import type { SkillRow, SkillBody } from "../shared/types";
+import type {
+  SkillRow,
+  SkillBody,
+  SkillSavePayload,
+  SkillSaveResult,
+  SkillDeleteResult,
+} from "../shared/types";
 import type { CrmProvider, CrmStatus } from "./crm/types";
 import { scrubQuarantine } from "./scrub-quarantine";
 import { Updater, broadcastUpdateStatus } from "./updater";
@@ -1261,8 +1269,14 @@ app.whenReady().then(async () => {
       };
     },
   });
+  // S4 — single SkillsTrustStore instance shared between the loader's
+  // trust evaluator and the IPC `skills:trust` handler. Must be
+  // constructed before `initSkills` so the bundled-starter vendor
+  // hook can auto-trust on first install.
+  const skillsTrust = new SkillsTrustStore();
   const skillStore = await initSkills(app, {
     evaluateGate: skillGate,
+    trustStore: skillsTrust,
   }).catch((err: unknown) => {
     console.error(
       `[skills] Initialisierung fehlgeschlagen: ${err instanceof Error ? err.message : String(err)}`,
@@ -1296,6 +1310,8 @@ app.whenReady().then(async () => {
       enabled: skillsPrefs.isEnabled(s.name),
       gateSatisfied: s.gateSatisfied,
       gateReason: s.gateReason,
+      trust: s.trust,
+      previouslyTrustedAllowedTools: s.previouslyTrustedAllowedTools.slice(),
     };
   }
 
@@ -1308,6 +1324,24 @@ app.whenReady().then(async () => {
     skillStore.on("changed", broadcastSkillsChanged);
   }
   skillsPrefs.on("changed", broadcastSkillsChanged);
+  // S4 — trust changes (accept, revoke after a save, after a delete)
+  // also propagate so the Settings row's trust pill updates live.
+  skillsTrust.on("changed", () => {
+    // A trust change can re-classify an existing LoadedSkill (its
+    // `trust` field comes from the evaluator that closes over the
+    // trust store). The cleanest way to make the renderer see the
+    // new state is to reload the store — cheap, and matches the
+    // S1 hot-reload pattern.
+    if (skillStore) {
+      void skillStore.reload().catch((err) => {
+        console.warn(
+          `[skills] Reload nach Trust-Änderung fehlgeschlagen: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      });
+    } else {
+      broadcastSkillsChanged();
+    }
+  });
 
   // ---- Skills IPC (S3) ----------------------------------------------------
   ipcMain.handle("skills:list", (): SkillRow[] => {
@@ -1355,6 +1389,128 @@ app.whenReady().then(async () => {
       } catch (err) {
         return { error: err instanceof Error ? err.message : String(err) };
       }
+    },
+  );
+
+  // ---- Skills IPC (S4 — editor, trust, delete, tool list) ---------------
+
+  // Node helpers used by the S4 IPC handlers below. Pulled in via
+  // require like the rest of main/index.ts to avoid adding top-level
+  // imports for narrow-use stdlib calls.
+  const { readFileSync, existsSync: existsSyncFs, rmSync } =
+    require("node:fs") as typeof import("node:fs");
+  const { createHash } = require("node:crypto") as typeof import("node:crypto");
+  const nodePath = require("node:path") as typeof import("node:path");
+
+  ipcMain.handle(
+    "skills:save",
+    async (_e, payload: SkillSavePayload): Promise<SkillSaveResult> => {
+      if (!payload || typeof payload !== "object") {
+        return { ok: false, error: "skills:save erwartet ein Payload-Objekt" };
+      }
+      const userDir = join(app.getPath("userData"), "skills");
+      try {
+        const res = await saveSkillToDisk(userDir, payload);
+        if (!res.ok || !res.name || !res.path) {
+          return { ok: false, error: res.error ?? "Unbekannter Fehler" };
+        }
+        // Auto-trust the freshly authored content: the user just wrote
+        // it, so by definition they trust it. We hash the on-disk file
+        // (not the payload) so the value matches what the loader sees
+        // on the next scan.
+        try {
+          const written = readFileSync(res.path, "utf8");
+          const hash = createHash("sha256").update(written, "utf8").digest("hex");
+          skillsTrust.trust(
+            res.name,
+            hash,
+            payload.frontmatter["allowed-tools"] ?? [],
+          );
+        } catch (err) {
+          console.warn(
+            `[skills] Auto-Trust nach Save fehlgeschlagen: ${err instanceof Error ? err.message : String(err)}`,
+          );
+        }
+        if (skillStore) {
+          await skillStore.reload();
+        }
+        return { ok: true, name: res.name };
+      } catch (err) {
+        return {
+          ok: false,
+          error: err instanceof Error ? err.message : String(err),
+        };
+      }
+    },
+  );
+
+  ipcMain.handle(
+    "skills:delete",
+    async (_e, name: string): Promise<SkillDeleteResult> => {
+      if (typeof name !== "string" || !name) {
+        return { ok: false, error: "skills:delete erwartet einen Namen" };
+      }
+      // Refuse to touch workspace-scope skills — those live in the
+      // user's project repo and we don't want to silently delete
+      // committed files.
+      const target = skillStore?.get(name);
+      if (target && target.scope === "workspace") {
+        return {
+          ok: false,
+          error:
+            "Workspace-Skills werden im Projekt-Repo verwaltet und können hier nicht gelöscht werden.",
+        };
+      }
+      const userDir = join(app.getPath("userData"), "skills");
+      const skillDir = join(userDir, name);
+      try {
+        // Bounds check: refuse anything that resolves outside userDir
+        // (defence against path-traversal via crafted names).
+        const resolved = nodePath.resolve(skillDir);
+        const root = nodePath.resolve(userDir);
+        if (!resolved.startsWith(root + nodePath.sep)) {
+          return {
+            ok: false,
+            error: "Ungültiger Skill-Name (Pfad-Traversal abgewiesen).",
+          };
+        }
+        if (!existsSyncFs(skillDir)) {
+          // Already gone — clear trust state anyway.
+          skillsTrust.revoke(name);
+          if (skillStore) await skillStore.reload();
+          return { ok: true };
+        }
+        rmSync(skillDir, { recursive: true, force: true });
+        skillsTrust.revoke(name);
+        if (skillStore) await skillStore.reload();
+        return { ok: true };
+      } catch (err) {
+        return {
+          ok: false,
+          error: err instanceof Error ? err.message : String(err),
+        };
+      }
+    },
+  );
+
+  ipcMain.handle("skills:trust", async (_e, name: string): Promise<void> => {
+    if (typeof name !== "string" || !name) {
+      throw new Error("skills:trust erwartet einen Namen");
+    }
+    const target = skillStore?.get(name);
+    if (!target) return;
+    skillsTrust.trust(name, target.hash, target.allowedTools);
+    // changed-listener above re-reloads the store so the row's
+    // `trust` field flips to "trusted" without a manual refresh.
+  });
+
+  ipcMain.handle(
+    "skills:listAvailableTools",
+    (): string[] => {
+      return agentRegistry
+        .list()
+        .map((t) => t.name)
+        .sort((a, b) => a.localeCompare(b));
     },
   );
 

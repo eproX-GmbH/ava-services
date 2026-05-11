@@ -9,16 +9,21 @@
 // with S3 (Settings → Skills UI).
 
 import type { App } from "electron";
+import { createHash } from "node:crypto";
 import {
   copyFileSync,
   existsSync,
   mkdirSync,
+  readFileSync,
   readdirSync,
   statSync,
 } from "node:fs";
 import { join } from "node:path";
 import { SkillStore } from "./store";
 import type { GateEvaluator } from "./gate";
+import type { TrustEvaluator } from "./loader";
+import { parseSkillFile } from "./parser";
+import { SkillsTrustStore } from "./trust-store";
 
 export { SkillStore } from "./store";
 export type { LoadedSkill, SkillScope } from "./loader";
@@ -32,6 +37,10 @@ export { buildGateEvaluator, denyAllGates } from "./gate";
 export type { GateEvaluator, GateDeps, GateResult } from "./gate";
 export { SkillsPrefsStore } from "./skills-prefs-store";
 export type { SkillsPrefs } from "./skills-prefs-store";
+export { SkillsTrustStore } from "./trust-store";
+export type { TrustEntry, TrustState } from "./trust-store";
+export { buildSkillFile, saveSkillToDisk } from "./save";
+export type { SkillSavePayload, BuildResult, SaveResult } from "./save";
 export {
   parseSlashInvocation,
   renderSkillBody,
@@ -54,6 +63,11 @@ export interface InitSkillsOptions {
    *  to point at `resources/skills/` directly. In normal init this is
    *  derived from `app.isPackaged` and skipped if `app` is null. */
   bundledDir?: string | null;
+  /** S4 — pre-built trust store (so the orchestrator + IPC layer
+   *  share the same instance). When omitted, `initSkills` creates a
+   *  fresh `SkillsTrustStore`. Test scripts pass an in-temp-dir
+   *  instance. */
+  trustStore?: SkillsTrustStore | null;
 }
 
 /**
@@ -67,6 +81,7 @@ export interface InitSkillsOptions {
 export function vendorBundledSkills(
   bundledDir: string,
   userDir: string,
+  trustStore?: SkillsTrustStore | null,
 ): void {
   if (!existsSync(bundledDir)) {
     console.log(
@@ -102,6 +117,42 @@ export function vendorBundledSkills(
       mkdirSync(targetDir, { recursive: true });
       copyFileSync(src, target);
       console.log(`[skills] vendored bundled skill '${entry}' → ${target}`);
+      // S4 — auto-trust the vendored copy by its initial content
+      // hash. The user implicitly trusts whatever ships with the
+      // app; on the next launch the trust store has the entry and
+      // the loader marks the skill `"trusted"` straight away.
+      if (trustStore) {
+        try {
+          const raw = readFileSync(target, "utf8");
+          const hash = createHash("sha256")
+            .update(raw, "utf8")
+            .digest("hex");
+          let allowedTools: string[] = [];
+          try {
+            const parsed = parseSkillFile(raw);
+            if (parsed.frontmatter && typeof parsed.frontmatter === "object") {
+              const fm = parsed.frontmatter as Record<string, unknown>;
+              const list = fm["allowed-tools"];
+              if (Array.isArray(list)) {
+                allowedTools = list.filter(
+                  (t): t is string => typeof t === "string",
+                );
+              }
+            }
+          } catch {
+            // best-effort; trust the file even if allowedTools couldn't
+            // be parsed (the loader will surface the schema error on
+            // next reload).
+          }
+          trustStore.trust(entry, hash, allowedTools);
+        } catch (err) {
+          console.warn(
+            `[skills] Auto-Trust für '${entry}' fehlgeschlagen: ${
+              err instanceof Error ? err.message : String(err)
+            }`,
+          );
+        }
+      }
     } catch (err) {
       console.warn(
         `[skills] Vendor-Kopie fehlgeschlagen für '${entry}': ${
@@ -144,10 +195,30 @@ export async function initSkills(
       ? join(process.resourcesPath, "skills")
       : join(app.getAppPath(), "resources", "skills");
   }
+  // S4 — trust store needs to exist before vendoring so the
+  // bundled-starter auto-trust hook can write entries during the
+  // copy. Callers can pass their own (so the IPC layer shares the
+  // instance with the renderer); we fall back to a default-path one
+  // (which requires `app` to be present for `userData` resolution).
+  // Test scripts that pass `app: null` AND don't supply a trustStore
+  // get a tmp-path one rooted in userDir so the loader still has
+  // something to consult.
+  let trustStore: SkillsTrustStore | null;
+  if (opts.trustStore !== undefined) {
+    trustStore = opts.trustStore;
+  } else if (app) {
+    trustStore = new SkillsTrustStore();
+  } else {
+    // Test runs without `app` AND without an explicit trustStore
+    // fall back to a no-op evaluator (everything trusted). Matches
+    // pre-S4 behaviour of the S1/S2/S3 loader/agent/bundled tests.
+    trustStore = null;
+  }
+
   if (bundledDir && userDir) {
     try {
       mkdirSync(userDir, { recursive: true });
-      vendorBundledSkills(bundledDir, userDir);
+      vendorBundledSkills(bundledDir, userDir, trustStore);
     } catch (err) {
       console.warn(
         `[skills] Vendor-Schritt fehlgeschlagen: ${
@@ -165,7 +236,38 @@ export async function initSkills(
     workspaceDir = existsSync(candidate) ? candidate : null;
   }
 
-  const store = new SkillStore(userDir, workspaceDir, opts.evaluateGate);
+  // S4 — trust evaluator. Looks up the in-memory trust store for
+  // each (name, hash). First-seen → "untrusted"; entry exists with
+  // matching hash → "trusted"; entry exists with mismatched hash →
+  // "modified", and we carry the previously-approved allowed-tools
+  // so the dialog can show a diff.
+  const evaluateTrust: TrustEvaluator = (name, hash) => {
+    if (!trustStore) {
+      // No trust store configured (caller ran with `app: null` and
+      // no `trustStore` override) → fall back to "everything is
+      // trusted", matching S1/S2/S3 behaviour for tests that pre-date
+      // S4.
+      return { trust: "trusted", previouslyTrustedAllowedTools: [] };
+    }
+    const entry = trustStore.getEntry(name);
+    if (!entry) {
+      return { trust: "untrusted", previouslyTrustedAllowedTools: [] };
+    }
+    if (entry.hash === hash) {
+      return { trust: "trusted", previouslyTrustedAllowedTools: [] };
+    }
+    return {
+      trust: "modified",
+      previouslyTrustedAllowedTools: entry.allowedTools ?? [],
+    };
+  };
+
+  const store = new SkillStore(
+    userDir,
+    workspaceDir,
+    opts.evaluateGate,
+    evaluateTrust,
+  );
   await store.reload();
 
   const userCount = store.list().filter((s) => s.scope === "user").length;

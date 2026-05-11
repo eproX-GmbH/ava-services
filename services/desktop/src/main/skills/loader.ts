@@ -21,6 +21,17 @@ import {
 
 export type SkillScope = "user" | "workspace";
 
+/**
+ * S4 — Trust state. Drives the orchestrator gate (only `"trusted"`
+ * skills auto-activate or fire on /name) and the Settings → Skills
+ * row banner that prompts re-confirmation.
+ *
+ *  - "trusted":   on-disk hash matches the stored trust entry.
+ *  - "untrusted": first-seen skill with no trust-store entry.
+ *  - "modified":  trust entry exists but the on-disk hash differs.
+ */
+export type SkillTrust = "trusted" | "untrusted" | "modified";
+
 export interface LoadedSkill {
   id: string;
   name: string;
@@ -45,6 +56,15 @@ export interface LoadedSkill {
   /** German one-liner when `gateSatisfied === false`, e.g.
    *  "HubSpot ist nicht verbunden". Null when satisfied. */
   gateReason: string | null;
+  /** S4 — trust state vs. the user's trust store. The orchestrator
+   *  refuses to auto-activate or `/name`-invoke anything that isn't
+   *  `"trusted"`. Always `"trusted"` if no trust evaluator was
+   *  provided to the loader (back-compat for tests). */
+  trust: SkillTrust;
+  /** S4 — when `trust === "modified"`, the list of allowed-tools the
+   *  user previously approved. Lets the trust dialog diff against
+   *  the new on-disk list. Empty array when no diff available. */
+  previouslyTrustedAllowedTools: string[];
 }
 
 export interface LoadOptions {
@@ -54,7 +74,21 @@ export interface LoadOptions {
    *  unsatisfied are skipped silently (German log). Defaults to
    *  `denyAllGates` (any requires-entry → skip), matching S1 behaviour. */
   evaluateGate?: GateEvaluator;
+  /** S4 — trust evaluator. When omitted, all skills get
+   *  `trust: "trusted"` (back-compat for S1/S2/S3 test scripts). */
+  evaluateTrust?: TrustEvaluator;
 }
+
+export interface TrustEvaluation {
+  trust: SkillTrust;
+  /** When `trust === "modified"`, the prior approved tool list. */
+  previouslyTrustedAllowedTools: string[];
+}
+
+export type TrustEvaluator = (
+  name: string,
+  hash: string,
+) => TrustEvaluation;
 
 export interface LoadResult {
   skills: LoadedSkill[];
@@ -118,6 +152,7 @@ async function loadOne(
   scope: SkillScope,
   errors: LoadResult["errors"],
   evaluate: GateEvaluator,
+  evaluateTrust: TrustEvaluator,
 ): Promise<LoadedSkill | null> {
   let raw: string;
   try {
@@ -176,17 +211,34 @@ async function loadOne(
     scope,
     gateSatisfied: true,
     gateReason: null,
+    trust: "trusted",
+    previouslyTrustedAllowedTools: [],
   };
 
   const gate = evaluateGate(skill, evaluate);
   skill.gateSatisfied = gate.ok;
   skill.gateReason = gate.reason;
+
+  const trust = evaluateTrust(validated.name, hash);
+  skill.trust = trust.trust;
+  skill.previouslyTrustedAllowedTools = trust.previouslyTrustedAllowedTools;
+  if (trust.trust !== "trusted") {
+    console.log(
+      `[skills] '${validated.name}' Vertrauensstatus: ${trust.trust} (bleibt sichtbar, aktiviert sich aber nicht)`,
+    );
+  }
   return skill;
 }
+
+const trustAllAsTrusted: TrustEvaluator = () => ({
+  trust: "trusted",
+  previouslyTrustedAllowedTools: [],
+});
 
 export async function loadSkills(opts: LoadOptions): Promise<LoadResult> {
   const errors: LoadResult["errors"] = [];
   const evaluate = opts.evaluateGate ?? denyAllGates;
+  const evaluateTrust = opts.evaluateTrust ?? trustAllAsTrusted;
   const userPaths = opts.userDir ? findSkillFiles(opts.userDir) : [];
   const workspacePaths = opts.workspaceDir
     ? findSkillFiles(opts.workspaceDir)
@@ -194,12 +246,12 @@ export async function loadSkills(opts: LoadOptions): Promise<LoadResult> {
 
   const userSkills: LoadedSkill[] = [];
   for (const p of userPaths) {
-    const s = await loadOne(p, "user", errors, evaluate);
+    const s = await loadOne(p, "user", errors, evaluate, evaluateTrust);
     if (s) userSkills.push(s);
   }
   const workspaceSkills: LoadedSkill[] = [];
   for (const p of workspacePaths) {
-    const s = await loadOne(p, "workspace", errors, evaluate);
+    const s = await loadOne(p, "workspace", errors, evaluate, evaluateTrust);
     if (s) workspaceSkills.push(s);
   }
 

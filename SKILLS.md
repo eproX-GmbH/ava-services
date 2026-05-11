@@ -63,11 +63,54 @@ Laden mit einer deutschen Fehlermeldung im Log abgewiesen.
 
 - **Hot-reload:** Speichern einer `SKILL.md` löst einen Reload aus
   (200 ms Debounce). Kein App-Neustart nötig.
-- **Trust-Dialog:** S4 wird einen Import-Bestätigungsdialog liefern
-  (Liste der `allowed-tools`, `b2b-scope`, Body-Länge), sowie das
-  Re-Confirm-on-Change-Verhalten aus PLAN §2.4 Regel 6. **In S1 liest
-  AVA `SKILL.md`-Dateien einfach von der Platte.** Wer fremde Skills
-  installiert, sollte sie bis dahin manuell prüfen.
+- **Vertrauensmodell (ab S4, v0.1.125):** Jedes geladene Skill bekommt
+  einen Trust-Status auf Basis von `<userData>/skills-trust.json`:
+  - **trusted** — gespeicherter Hash matcht den Inhalt auf der Platte.
+    Das Skill darf auto-aktivieren und über `/name` feuern.
+  - **untrusted** — Skill ist neu, kein Trust-Eintrag vorhanden.
+    Bleibt in der Liste sichtbar (mit gelbem Pill *Vertrauen
+    erforderlich*), wird aber vom Orchestrator ignoriert, bis der
+    Nutzer in *Einstellungen → Skills* freigibt.
+  - **modified** — Eintrag existiert, aber der On-Disk-Hash hat sich
+    geändert. Der Trust-Dialog vergleicht die neue `allowed-tools`-
+    Liste gegen die zuletzt freigegebene Version und markiert neu
+    hinzugefügte Tools rot ("← neu"). Verhindert, dass ein vermeintlich
+    sicheres Skill nachträglich erweitert wird, ohne dass der Nutzer
+    es bemerkt (PLAN §2.4 Regel 6).
+- **Auto-Trust für Starter-Skills:** Die drei mitgelieferten Skills
+  (S6) werden beim ersten Vendor-Schritt automatisch getrusted, damit
+  der First-Run nicht von einem Freigabe-Dialog unterbrochen wird.
+- **Trust-Dialog:** In der Skill-Zeile erscheint *Vertrauen prüfen*
+  (oder *Erneut prüfen* bei `modified`). Der Dialog listet Name,
+  Bereich, Quelle, Beschreibung, `allowed-tools` (chiparray), Flags
+  und Hash. *Vertrauen + aktivieren* schreibt den aktuellen Hash in
+  den Store.
+
+## Skill erstellen (S4, v0.1.125)
+
+In *Einstellungen → Skills* → *Neues Skill* öffnet sich ein Editor:
+
+- Links: Frontmatter-Formular (Name, Beschreibung, Sprache,
+  `b2b-scope`, `allowed-tools` als Chip-Multi-Select mit Suche, Flags,
+  Argumente).
+- Rechts: `<textarea>` für den Markdown-Body, optional mit
+  Vorschau-Umschalter (rendert mit `react-markdown`). Zeichen- und
+  Zeilenzähler unten.
+- *Speichern* validiert clientseitig (kebab-case-Name,
+  ≤500-Zeichen-Description, vollständige Argumente), schickt das
+  Payload an die IPC-Funktion `skills:save`, dort wird **noch einmal**
+  serverseitig gegen das gleiche `yup`-Schema validiert (Defence in
+  Depth), in YAML serialisiert und unter
+  `<userData>/skills/<name>/SKILL.md` abgelegt. Frisch geschriebene
+  Skills werden automatisch getrusted — der Nutzer hat sie ja gerade
+  selbst verfasst.
+
+Bestehende Skills lassen sich per *Bearbeiten* öffnen; ein
+Umbenennen-Flow erkennt, wenn `frontmatter.name` geändert wurde, und
+bietet an, die alte Datei zu löschen. *Löschen* entfernt das
+Skill-Verzeichnis und revoked den Trust-Eintrag. Workspace-Skills
+(`<repo>/.ava/skills/`) lassen sich aus der UI nicht löschen — die
+gehören ins Projekt-Repo des Nutzers.
 
 ## Validierungs-Fehler
 

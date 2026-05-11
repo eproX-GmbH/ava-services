@@ -10,7 +10,12 @@
 
 import { EventEmitter } from "node:events";
 import { existsSync, type FSWatcher, watch } from "node:fs";
-import { loadSkills, type LoadedSkill, type LoadResult } from "./loader";
+import {
+  loadSkills,
+  type LoadedSkill,
+  type LoadResult,
+  type TrustEvaluator,
+} from "./loader";
 import type { GateEvaluator } from "./gate";
 
 export type SkillStoreEvent = "changed";
@@ -25,6 +30,7 @@ export class SkillStore extends EventEmitter {
     private readonly userDir: string | null,
     private readonly workspaceDir: string | null,
     private readonly evaluateGate?: GateEvaluator,
+    private readonly evaluateTrust?: TrustEvaluator,
   ) {
     super();
   }
@@ -46,6 +52,7 @@ export class SkillStore extends EventEmitter {
       userDir: this.userDir,
       workspaceDir: this.workspaceDir,
       evaluateGate: this.evaluateGate,
+      evaluateTrust: this.evaluateTrust,
     });
     this.skills = result.skills;
     this.errors = result.errors;

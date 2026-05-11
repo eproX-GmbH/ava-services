@@ -1302,6 +1302,12 @@ export interface SkillRow {
   gateSatisfied: boolean;
   /** German one-liner explaining a failed gate. Null when satisfied. */
   gateReason: string | null;
+  /** S4 — trust state. Skills that aren't `"trusted"` stay in the
+   *  list but don't fire; the Settings UI prompts for re-confirm. */
+  trust: "trusted" | "untrusted" | "modified";
+  /** S4 — for `trust === "modified"`, the allowed-tools the user
+   *  previously approved. Empty array for `"trusted"`/`"untrusted"`. */
+  previouslyTrustedAllowedTools: string[];
 }
 
 export interface SkillBody {
@@ -1309,3 +1315,36 @@ export interface SkillBody {
   sourcePath: string;
   hash: string;
 }
+
+// ---- Skills S4 — editor + trust ------------------------------------------
+
+export interface SkillArgumentPayload {
+  name: string;
+  description: string;
+  required: boolean;
+}
+
+export interface SkillFrontmatterPayload {
+  name: string;
+  description: string;
+  language: SkillLanguage;
+  "b2b-scope": SkillB2bScope;
+  "allowed-tools": string[];
+  "requires-user-confirm": boolean;
+  "disable-model-invocation": boolean;
+  "user-invocable": boolean;
+  arguments: SkillArgumentPayload[];
+}
+
+export interface SkillSavePayload {
+  frontmatter: SkillFrontmatterPayload;
+  body: string;
+}
+
+export type SkillSaveResult =
+  | { ok: true; name: string }
+  | { ok: false; error: string };
+
+export type SkillDeleteResult =
+  | { ok: true }
+  | { ok: false; error: string };

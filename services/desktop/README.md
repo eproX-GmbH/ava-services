@@ -126,8 +126,28 @@ version delete the file and relaunch.
 (persisted in `<userData>/skills-prefs.json`), and opens the raw
 markdown body in a modal. Gate-failing skills (`metadata.ava.requires`)
 stay visible with a German "Voraussetzung fehlt: …" reason instead of
-disappearing silently. In-app editor + zip import/export land with
-S4/S5.
+disappearing silently.
+
+**S4 (editor + trust dialog + delete, v0.1.125)** ships in-app
+authoring + a trust model. Skills are **untrusted by default** and
+require explicit acceptance in *Einstellungen → Skills* before they
+fire. Modified skills (on-disk hash differs from the stored trust
+entry) automatically re-prompt for re-confirmation — the trust dialog
+diffs `allowed-tools` against the previously-approved set and flags
+newly added tools in red. The three bundled starter skills are
+auto-trusted at vendor time so first-launch UX stays unchanged. New
+buttons:
+- *Neues Skill* — opens the in-app editor (frontmatter form + body
+  textarea with markdown preview + tool chip multi-select).
+- *Bearbeiten* — pre-populates the editor from disk; rename triggers a
+  delete-the-old-file prompt.
+- *Löschen* — removes the skill's directory under `<userData>/skills/`.
+  Workspace-scope skills can't be deleted from the UI.
+
+Trust state lives in `<userData>/skills-trust.json` (atomic write).
+The orchestrator's `availableSkills()` filter gates on
+`enabled && gateSatisfied && trust === "trusted"`. Import/export +
+re-confirm via zip drag-drop land with S5.
 
 ## Tooling notes
 
@@ -144,13 +164,13 @@ S4/S5.
   setup + diagnostics + canonical CRM-OAuth flow as agent tools.
   Plan in [`PLANS.md`](../../PLANS.md) §1. Phase T1 (LinkedIn + CRM
   family) shipped in v0.1.119; T2 next.
-- **Skills system (S4-S5)** — in-app editor, zip
-  import/export. S1 (loader + schema, v0.1.121), S2 (agent
-  integration + enforced allowlist + gates, v0.1.122), S6
-  (three starter skills bundled + auto-vendored on first launch,
-  v0.1.123) and S3 (Settings → Skills list UI + toggle + body
-  viewer, v0.1.124) are landed; see [`SKILLS.md`](../../SKILLS.md)
-  and
+- **Skills system (S5)** — zip import/export + drag-drop re-confirm
+  flow. S1 (loader + schema, v0.1.121), S2 (agent integration +
+  enforced allowlist + gates, v0.1.122), S6 (three starter skills
+  bundled + auto-vendored on first launch, v0.1.123), S3 (Settings →
+  Skills list UI + toggle + body viewer, v0.1.124) and S4 (in-app
+  editor + trust dialog + delete + auto-trust bundled, v0.1.125) are
+  landed; see [`SKILLS.md`](../../SKILLS.md) and
   [`PLANS.md`](../../PLANS.md) §2.
 - **Renderer cache** — `useTabQuery` keeps a 404 response cached
   after a producer finishes, so a freshly persisted profile only

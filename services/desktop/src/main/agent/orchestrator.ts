@@ -189,6 +189,10 @@ export class AgentOrchestrator extends EventEmitter {
     const all = this.skillStore?.list() ?? [];
     return all.filter((s) => {
       if (!s.gateSatisfied) return false;
+      // S4 — only trusted skills fire. Untrusted/modified ones stay
+      // in the list so the Settings UI can prompt for re-confirm,
+      // but they're invisible to the agent.
+      if (s.trust !== "trusted") return false;
       if (this.skillsPrefs && !this.skillsPrefs.isEnabled(s.name)) {
         return false;
       }

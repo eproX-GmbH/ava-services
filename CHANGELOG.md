@@ -7,6 +7,51 @@ The repo uses one rolling tag per desktop release (`v<major>.<minor>.<patch>`)
 on `main`. Submodules cut their own feature branches and are pinned via the
 desktop bundle; `pnpm fetch:producers` re-vendors them into the .dmg.
 
+## v0.1.125 — 2026-05-11
+
+- **[PLAN §2 S4] In-App-Skill-Editor + Trust-Dialog + Delete.** Skills
+  können jetzt vollständig in AVA verfasst, bearbeitet und gelöscht
+  werden — *Einstellungen → Skills* zeigt zusätzlich zur S3-Liste die
+  Buttons *Neues Skill*, *Bearbeiten* und *Löschen*. Der Editor ist
+  ein zweispaltiges Modal: links das Frontmatter-Formular
+  (kebab-case-validierter Name, ≤500-Zeichen-Description,
+  `b2b-scope`-Dropdown, `allowed-tools`-Chip-Multi-Select mit
+  Filter-Suche über die Live-Tool-Registry, Flags, repeatable
+  Argumente), rechts ein `<textarea>` für den Markdown-Body mit
+  optionaler `react-markdown`-Vorschau und Zeichen-/Zeilenzähler.
+  Speichern validiert clientseitig, anschließend nochmals serverseitig
+  via `yup` (Defence in Depth), schreibt YAML-Frontmatter +
+  Markdown-Body in `<userData>/skills/<name>/SKILL.md` und triggert
+  einen Loader-Reload.
+- **Vertrauensmodell für Skills (PLAN §2.4 Regel 5+6).** Jedes
+  Skill bekommt einen Trust-Status (`trusted` / `untrusted` /
+  `modified`) auf Basis von `<userData>/skills-trust.json`. Der
+  Orchestrator-Filter `availableSkills()` gating-t zusätzlich auf
+  `trust === "trusted"` — nicht-getrustete Skills bleiben in der
+  Liste sichtbar (mit gelbem/roten Pill in der UI), feuern aber weder
+  per Auto-Aktivierung noch per `/name`. Modified-Skills lösen einen
+  Re-Confirm-Dialog aus, der die neuen `allowed-tools` gegen die
+  zuletzt freigegebene Version vergleicht und neu hinzugefügte Tools
+  rot markiert ("← neu"). Verhindert, dass ein Teammitglied
+  nachträglich Tools zu einem vermeintlich sicheren Skill ergänzt,
+  ohne dass der Nutzer es bemerkt.
+- **Auto-Trust für Starter-Skills.** Beim Vendor-Schritt der drei
+  mitgelieferten Skills (S6) wird der initiale Content-Hash direkt in
+  den Trust-Store geschrieben, sodass der First-Run nicht von einem
+  Freigabe-Dialog unterbrochen wird. Frisch im Editor angelegte
+  Skills werden ebenfalls automatisch getrusted — der Nutzer hat sie
+  selbst verfasst.
+- **Neue IPC-Surface:** `window.api.skills.save(payload)`,
+  `delete(name)`, `trust(name)` und `listAvailableTools()`.
+  Trust-Store-Änderungen lösen ein `skills:changed`-Broadcast aus,
+  damit die Settings-UI den Pill live updaten kann.
+- **Neue Tests:** `pnpm test:skills:trust` (TrustStore-Round-Trip +
+  Auto-Trust beim Vendor + End-to-End Loader-Reload nach
+  trust()/Edit) und `pnpm test:skills:save` (pure
+  `buildSkillFile`-Round-Trip + `saveSkillToDisk` + serverseitige
+  Validierung). Beide laufen via `tsx` gegen den TS-Source, ohne den
+  Electron-Lifecycle anzufassen.
+
 ## v0.1.124 — 2026-05-11
 
 - **[PLAN §2 S3] Settings → Skills list UI + Toggle + Body-Viewer.**

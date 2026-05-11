@@ -1,6 +1,6 @@
 {
   "name": "@ava/desktop",
-  "version": "0.1.124",
+  "version": "0.1.125",
   "private": true,
   "description": "AVA Electron desktop app — replaces user-interface/ Next.js. Talks to db-gateway only.",
   "author": {
@@ -31,6 +31,8 @@
     "test:skills:agent": "node scripts/test-skills-agent.mjs",
     "test:skills:bundled": "node scripts/test-skills-bundled.mjs",
     "test:skills:prefs": "node scripts/test-skills-prefs.mjs",
+    "test:skills:trust": "node scripts/test-skills-trust.mjs",
+    "test:skills:save": "node scripts/test-skills-save.mjs",
     "audit:bundle": "node scripts/check-bundle-secrets.mjs",
     "preview": "electron-vite preview",
     "package:mac": "pnpm fetch:ollama --platform=darwin-arm64 && pnpm fetch:whisper --platform=darwin-arm64 && electron-vite build && electron-builder --mac --arm64",

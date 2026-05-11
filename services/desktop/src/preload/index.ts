@@ -53,7 +53,10 @@ import type {
   ProviderConfig,
   ProviderConfigBundle,
   SkillBody,
+  SkillDeleteResult,
   SkillRow,
+  SkillSavePayload,
+  SkillSaveResult,
 } from "../shared/types";
 export type {
   AgentChoiceAnswer,
@@ -129,8 +132,11 @@ export type {
   QuietHoursConfig,
   SkillB2bScope,
   SkillBody,
+  SkillDeleteResult,
   SkillLanguage,
   SkillRow,
+  SkillSavePayload,
+  SkillSaveResult,
   SkillScope,
 } from "../shared/types";
 
@@ -827,6 +833,21 @@ const api = {
       ipcRenderer.on("skills:changed", handler);
       return () => ipcRenderer.removeListener("skills:changed", handler);
     },
+    // S4 — author + manage skills in-app. `save()` runs server-side
+    // schema validation and writes to <userData>/skills/<name>/SKILL.md
+    // (auto-trusted on save). `trust()` flips a row from
+    // untrusted/modified → trusted after the user accepts the dialog.
+    // `delete()` removes a user-scope skill; workspace skills are
+    // refused. `listAvailableTools()` powers the editor's chip
+    // multi-select.
+    save: (payload: SkillSavePayload): Promise<SkillSaveResult> =>
+      ipcRenderer.invoke("skills:save", payload),
+    delete: (name: string): Promise<SkillDeleteResult> =>
+      ipcRenderer.invoke("skills:delete", name),
+    trust: (name: string): Promise<void> =>
+      ipcRenderer.invoke("skills:trust", name),
+    listAvailableTools: (): Promise<string[]> =>
+      ipcRenderer.invoke("skills:listAvailableTools"),
   },
 
   linkedin: {
