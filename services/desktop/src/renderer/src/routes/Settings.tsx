@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { LinkedInConsentModal } from "../components/LinkedInConsentModal";
+import { SettingsSkills } from "./SettingsSkills";
 import { notifyLinkedInSettingsChanged } from "../components/LinkedInActiveBanner";
 import { gatewayFetch } from "../api/gateway";
 import { useUsage, isUnlimited, type BillingTier } from "../api/usage";
@@ -97,6 +98,7 @@ export function Settings() {
       <LinkedInSection />
       <AlertsSection />
       <FreshnessSection />
+      <SettingsSkills />
       <GeneralMemorySection />
     </section>
   );

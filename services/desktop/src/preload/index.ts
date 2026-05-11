@@ -52,6 +52,8 @@ import type {
   ProviderCatalogEntry,
   ProviderConfig,
   ProviderConfigBundle,
+  SkillBody,
+  SkillRow,
 } from "../shared/types";
 export type {
   AgentChoiceAnswer,
@@ -125,6 +127,11 @@ export type {
   ProviderConfigBundle,
   ProviderStatusSnapshot,
   QuietHoursConfig,
+  SkillB2bScope,
+  SkillBody,
+  SkillLanguage,
+  SkillRow,
+  SkillScope,
 } from "../shared/types";
 
 // Preload bridge.
@@ -799,6 +806,29 @@ const api = {
    *  All persisted state lives on this device; the gateway never sees
    *  any of it. Future phases will add cookies + scraped posts under
    *  the same userData/linkedin/ tree. */
+  // User-authored skills (PLAN §2, S3). Settings panel reads `list()`
+  // on mount and subscribes to `onChanged` so file-watcher reloads
+  // refresh the UI. `getBody(name)` powers the read-only markdown
+  // viewer. `setEnabled` persists in `<userData>/skills-prefs.json`
+  // and the orchestrator skips disabled skills on the next turn.
+  skills: {
+    list: (): Promise<SkillRow[]> => ipcRenderer.invoke("skills:list"),
+    getBody: (name: string): Promise<SkillBody | null> =>
+      ipcRenderer.invoke("skills:getBody", name),
+    setEnabled: (name: string, enabled: boolean): Promise<void> =>
+      ipcRenderer.invoke("skills:setEnabled", { name, enabled }),
+    reload: (): Promise<void> => ipcRenderer.invoke("skills:reload"),
+    /** Opens a directory or file in Finder/Explorer. Without a path,
+     *  opens the user-scope skills directory. */
+    openPath: (target?: string): Promise<{ ok: true } | { error: string }> =>
+      ipcRenderer.invoke("skills:openSourceDir", target),
+    onChanged: (cb: () => void): (() => void) => {
+      const handler = () => cb();
+      ipcRenderer.on("skills:changed", handler);
+      return () => ipcRenderer.removeListener("skills:changed", handler);
+    },
+  },
+
   linkedin: {
     getSettings: (): Promise<LinkedInSettings> =>
       ipcRenderer.invoke("linkedin:settings:get"),

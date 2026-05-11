@@ -29,7 +29,9 @@ export type {
   SkillMetadata,
 } from "./schema";
 export { buildGateEvaluator, denyAllGates } from "./gate";
-export type { GateEvaluator, GateDeps } from "./gate";
+export type { GateEvaluator, GateDeps, GateResult } from "./gate";
+export { SkillsPrefsStore } from "./skills-prefs-store";
+export type { SkillsPrefs } from "./skills-prefs-store";
 export {
   parseSlashInvocation,
   renderSkillBody,

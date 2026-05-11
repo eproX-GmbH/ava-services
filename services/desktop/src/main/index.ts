@@ -43,7 +43,12 @@ import {
 } from "./crm/fetch-enrichment";
 import { initBilling } from "./billing";
 import { initLinkedIn } from "./linkedin";
-import { initSkills, buildGateEvaluator } from "./skills";
+import {
+  initSkills,
+  buildGateEvaluator,
+  SkillsPrefsStore,
+} from "./skills";
+import type { SkillRow, SkillBody } from "../shared/types";
 import type { CrmProvider, CrmStatus } from "./crm/types";
 import { scrubQuarantine } from "./scrub-quarantine";
 import { Updater, broadcastUpdateStatus } from "./updater";
@@ -1264,9 +1269,94 @@ app.whenReady().then(async () => {
     );
     return null;
   });
+  // S3 — per-user enabled-state for skills. Wire BEFORE the SkillStore
+  // hook-up so the orchestrator's availableSkills() filter has the
+  // prefs in hand on the first turn.
+  const skillsPrefs = new SkillsPrefsStore();
+  agent.setSkillsPrefs(skillsPrefs);
   if (skillStore) {
     agent.setSkillStore(skillStore);
   }
+
+  /** S3 — project a LoadedSkill + prefs/gate state down to the
+   *  renderer-facing SkillRow shape. */
+  function toSkillRow(s: import("./skills").LoadedSkill): SkillRow {
+    return {
+      name: s.name,
+      description: s.description,
+      language: s.language,
+      b2bScope: s.b2bScope,
+      allowedTools: s.allowedTools.slice(),
+      requiresUserConfirm: s.requiresUserConfirm,
+      disableModelInvocation: s.disableModelInvocation,
+      userInvocable: s.userInvocable,
+      scope: s.scope,
+      sourcePath: s.sourcePath,
+      hash: s.hash,
+      enabled: skillsPrefs.isEnabled(s.name),
+      gateSatisfied: s.gateSatisfied,
+      gateReason: s.gateReason,
+    };
+  }
+
+  function broadcastSkillsChanged(): void {
+    for (const win of BrowserWindow.getAllWindows()) {
+      win.webContents.send("skills:changed");
+    }
+  }
+  if (skillStore) {
+    skillStore.on("changed", broadcastSkillsChanged);
+  }
+  skillsPrefs.on("changed", broadcastSkillsChanged);
+
+  // ---- Skills IPC (S3) ----------------------------------------------------
+  ipcMain.handle("skills:list", (): SkillRow[] => {
+    const all = skillStore?.list() ?? [];
+    const rows = all.map(toSkillRow);
+    rows.sort((a, b) => a.name.localeCompare(b.name, "de"));
+    return rows;
+  });
+  ipcMain.handle(
+    "skills:getBody",
+    (_e, name: string): SkillBody | null => {
+      const s = skillStore?.get(name);
+      if (!s) return null;
+      return { body: s.body, sourcePath: s.sourcePath, hash: s.hash };
+    },
+  );
+  ipcMain.handle(
+    "skills:setEnabled",
+    (_e, args: { name: string; enabled: boolean }): void => {
+      if (!args || typeof args.name !== "string") {
+        throw new Error("skills:setEnabled erwartet { name, enabled }");
+      }
+      skillsPrefs.setEnabled(args.name, args.enabled !== false);
+    },
+  );
+  ipcMain.handle("skills:reload", async (): Promise<void> => {
+    if (!skillStore) return;
+    await skillStore.reload();
+  });
+  ipcMain.handle(
+    "skills:openSourceDir",
+    async (
+      _e,
+      target?: string,
+    ): Promise<{ ok: true } | { error: string }> => {
+      // No argument → user-scope skills directory.
+      const path =
+        typeof target === "string" && target.length > 0
+          ? target
+          : join(app.getPath("userData"), "skills");
+      try {
+        const err = await shell.openPath(path);
+        if (err) return { error: err };
+        return { ok: true };
+      } catch (err) {
+        return { error: err instanceof Error ? err.message : String(err) };
+      }
+    },
+  );
 
   // Ollama supervisor IPC. The renderer drives:
   //   - getStatus on startup (then subscribes to `ollama-status:changed`)

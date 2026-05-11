@@ -14,7 +14,7 @@ import { UiBridge, type PendingChoice } from "./ui-bridge";
 import type { LlmProviderManager, LlmStreamToolCall } from "./providers";
 import type { Conversation, Tool, ToolContext } from "./types";
 import type { MemoryStore } from "./memory";
-import type { LoadedSkill, SkillStore } from "../skills";
+import type { LoadedSkill, SkillStore, SkillsPrefsStore } from "../skills";
 import {
   autoActivateSkill,
   checkSkillAllowlist,
@@ -94,6 +94,13 @@ export interface AgentOrchestratorOptions {
    *     the active skill's `allowedTools` is hard-enforced in runTool.
    */
   skillStore?: SkillStore;
+  /**
+   * S3 — per-user enabled/disabled state for skills. The orchestrator
+   * filters the SkillStore output through this before exposing skills
+   * to system-prompt assembly, `/name` resolution, or auto-activation.
+   * Optional so test harnesses can skip it entirely.
+   */
+  skillsPrefs?: SkillsPrefsStore;
 }
 
 export interface AgentOrchestratorEvents {
@@ -123,6 +130,7 @@ export class AgentOrchestrator extends EventEmitter {
     | { get: () => import("../../shared/types").UserProfile }
     | undefined;
   private skillStore: SkillStore | undefined;
+  private skillsPrefs: SkillsPrefsStore | undefined;
   /** Active skill for the in-flight turn (set in send(), read in
    *  runTool() for the allowlist gate + in buildSystemPrompt() for
    *  the active-skill hint). null when no skill is active. */
@@ -152,6 +160,7 @@ export class AgentOrchestrator extends EventEmitter {
     this.runtimeRecover = opts.runtimeRecover;
     this.profileStore = opts.profileStore;
     this.skillStore = opts.skillStore;
+    this.skillsPrefs = opts.skillsPrefs;
 
     // Re-emit status when the active provider moves so the renderer's
     // Chat tab can re-enable the input the moment the model is ready.
@@ -164,6 +173,27 @@ export class AgentOrchestrator extends EventEmitter {
    *  constructed eagerly at module top. */
   setSkillStore(store: SkillStore): void {
     this.skillStore = store;
+  }
+
+  /** S3 — late-binding for the SkillsPrefsStore (same lifecycle reason
+   *  as `setSkillStore`: the store reads userData which isn't valid
+   *  until `app.whenReady()`). */
+  setSkillsPrefs(prefs: SkillsPrefsStore): void {
+    this.skillsPrefs = prefs;
+  }
+
+  /** S3 — Skills available to the orchestrator this turn: loaded,
+   *  gate-satisfied, and not user-disabled. Used for system-prompt
+   *  assembly, `/name` resolution, and auto-activation. */
+  private availableSkills(): LoadedSkill[] {
+    const all = this.skillStore?.list() ?? [];
+    return all.filter((s) => {
+      if (!s.gateSatisfied) return false;
+      if (this.skillsPrefs && !this.skillsPrefs.isEnabled(s.name)) {
+        return false;
+      }
+      return true;
+    });
   }
 
   // ---- Public surface -------------------------------------------------------
@@ -217,7 +247,7 @@ export class AgentOrchestrator extends EventEmitter {
     // message); otherwise we try the crude description-keyword
     // auto-activation against the last user message.
     this.activeSkill = null;
-    const skills = this.skillStore?.list() ?? [];
+    const skills = this.availableSkills();
     const slash = parseSlashInvocation(input.message);
     if (slash) {
       const target = skills.find((s) => s.name === slash.name);
@@ -346,7 +376,7 @@ export class AgentOrchestrator extends EventEmitter {
             this.registry,
             this.profileStore?.get() ?? null,
             {
-              skills: this.skillStore?.list() ?? [],
+              skills: this.availableSkills(),
               activeSkill: this.activeSkill,
             },
           ),

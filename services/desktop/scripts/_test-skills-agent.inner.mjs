@@ -207,30 +207,40 @@ console.log("[test:skills:agent] Gate-Evaluator");
   });
 
   const noReq = mkSkill({ name: "no-req" });
-  assert(evalGate(noReq) === true, "Ohne requires-Block -> erlaubt");
+  assert(evalGate(noReq).ok === true, "Ohne requires-Block -> erlaubt");
 
   const wantsHubspot = mkSkill({
     name: "needs-hs",
     metadata: { ava: { requires: { crm: "hubspot" } } },
   });
-  assert(evalGate(wantsHubspot) === true, "HubSpot verbunden -> erlaubt");
+  assert(evalGate(wantsHubspot).ok === true, "HubSpot verbunden -> erlaubt");
 
   const wantsSalesforce = mkSkill({
     name: "needs-sf",
     metadata: { ava: { requires: { crm: "salesforce" } } },
   });
+  const sfRes = evalGate(wantsSalesforce);
   assert(
-    evalGate(wantsSalesforce) === false,
+    sfRes.ok === false,
     "Salesforce nicht verbunden -> blockiert",
+  );
+  assert(
+    typeof sfRes.reason === "string" && sfRes.reason.includes("Salesforce"),
+    "Salesforce-Reason erwähnt Salesforce",
   );
 
   const wantsRunning = mkSkill({
     name: "needs-running",
     metadata: { ava: { requires: { ollama: "running" } } },
   });
+  const runRes = evalGate(wantsRunning);
   assert(
-    evalGate(wantsRunning) === false,
+    runRes.ok === false,
     "Ollama nicht running -> blockiert",
+  );
+  assert(
+    typeof runRes.reason === "string" && runRes.reason.includes("Ollama"),
+    "Ollama-Reason erwähnt Ollama",
   );
 
   const wantsInstalled = mkSkill({
@@ -238,7 +248,7 @@ console.log("[test:skills:agent] Gate-Evaluator");
     metadata: { ava: { requires: { ollama: "installed" } } },
   });
   assert(
-    evalGate(wantsInstalled) === true,
+    evalGate(wantsInstalled).ok === true,
     "Ollama installiert -> erlaubt",
   );
 
@@ -246,7 +256,7 @@ console.log("[test:skills:agent] Gate-Evaluator");
     name: "needs-tier",
     metadata: { ava: { requires: { tier: "pro" } } },
   });
-  assert(evalGate(wantsTier) === true, "Tier-Gate ist (noch) immer erfüllt");
+  assert(evalGate(wantsTier).ok === true, "Tier-Gate ist (noch) immer erfüllt");
 }
 
 if (failures.length > 0) {

@@ -4372,3 +4372,189 @@ a.heartbeat-decision__company:hover {
   color: var(--color-fg-muted);
   font-size: 11px;
 }
+
+/* -- Settings → Skills (PLAN §2 S3) ------------------------------- */
+
+.skills-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.75rem;
+}
+
+.skill-card {
+  border: 1px solid var(--color-border, #e2e8f0);
+  border-radius: 8px;
+  padding: 0.85rem 1rem;
+  background: var(--color-bg-1);
+}
+
+.skill-card__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.skill-card__title {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.skill-card__title strong {
+  font-family: var(--font-mono, monospace);
+}
+
+.skill-pill {
+  display: inline-block;
+  padding: 0.1rem 0.5rem;
+  border-radius: 999px;
+  font-size: 11px;
+  line-height: 1.6;
+  background: var(--color-bg-2);
+  border: 1px solid var(--color-border, #e2e8f0);
+  color: var(--color-fg-muted);
+}
+
+.skill-pill--scope {
+  background: var(--color-indigo-50, #e6faf6);
+  color: var(--color-indigo-800, #005d51);
+  border-color: transparent;
+}
+
+.skill-card__toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 13px;
+  color: var(--color-fg-muted);
+}
+
+.skill-card__desc {
+  margin: 0.55rem 0 0.4rem;
+  color: var(--color-fg);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.skill-status {
+  margin: 0.3rem 0 0.5rem;
+  font-size: 12px;
+  display: inline-block;
+  padding: 0.15rem 0.55rem;
+  border-radius: 4px;
+}
+
+.skill-status--ok {
+  color: var(--color-indigo-800, #005d51);
+  background: var(--color-indigo-50, #e6faf6);
+}
+
+.skill-status--muted {
+  color: var(--color-fg-muted);
+  background: var(--color-bg-2);
+}
+
+.skill-status--warn {
+  color: #92400e;
+  background: #fef3c7;
+}
+
+.skill-status--info {
+  color: #0c4a6e;
+  background: #e0f2fe;
+}
+
+.skill-card__actions {
+  display: flex;
+  gap: 0.75rem;
+  margin-top: 0.25rem;
+}
+
+.skills-empty {
+  border: 1px dashed var(--color-border, #e2e8f0);
+  border-radius: 8px;
+  padding: 1rem;
+  color: var(--color-fg-muted);
+  font-size: 13px;
+}
+
+.skills-empty p {
+  margin: 0 0 0.5rem;
+}
+
+.skill-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.skill-modal__backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.45);
+}
+
+.skill-modal__panel {
+  position: relative;
+  background: var(--color-bg-1);
+  border-radius: 10px;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.35);
+  max-width: 720px;
+  width: calc(100vw - 2rem);
+  max-height: calc(100vh - 4rem);
+  display: flex;
+  flex-direction: column;
+}
+
+.skill-modal__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.85rem 1.1rem;
+  border-bottom: 1px solid var(--color-border, #e2e8f0);
+}
+
+.skill-modal__head h4 {
+  margin: 0;
+  font-family: var(--font-mono, monospace);
+}
+
+.skill-modal__body {
+  padding: 1rem 1.25rem;
+  overflow: auto;
+}
+
+.skill-modal__markdown h1,
+.skill-modal__markdown h2,
+.skill-modal__markdown h3 {
+  margin-top: 1rem;
+}
+
+.skill-modal__markdown code {
+  background: var(--color-bg-2);
+  padding: 0.1rem 0.3rem;
+  border-radius: 3px;
+  font-size: 12px;
+}
+
+.skill-modal__markdown pre {
+  background: var(--color-bg-2);
+  padding: 0.75rem;
+  border-radius: 6px;
+  overflow: auto;
+}
+
+.skill-modal__foot {
+  padding: 0.6rem 1.1rem;
+  border-top: 1px solid var(--color-border, #e2e8f0);
+  font-family: var(--font-mono, monospace);
+  font-size: 11px;
+}

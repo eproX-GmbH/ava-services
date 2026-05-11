@@ -169,6 +169,30 @@ will, löscht die Datei aus `<userData>/skills/` und startet neu.
 | `qualifying-fragebogen` | `qualifying` | `company_get`, `company_profile`, `company_financials`, `company_contacts`, `company_publications`, `company_crm_summary` | Füllt einen strukturierten Qualifying-Fragebogen (BANT- bzw. MEDDIC-Flavor) für eine Firma aus. Read-only Diagnostik, schließt mit einer Empfehlung `weiterverfolgen | beobachten | überspringen`. |
 | `wettbewerber-uebersicht` | `competitive` | `company_get`, `company_profile`, `company_financials`, `company_publications`, `company_search` | Erstellt eine vergleichende Tabelle zwischen einer Ankerfirma und einer Liste namentlich genannter Mitbewerber. Wenn keine Wettbewerber genannt sind, fragt das Skill zuerst nach. |
 
+## Verwaltung in der App (S3, v0.1.124)
+
+Unter **Einstellungen → Skills** listet AVA jedes erkannte Skill mit
+`b2b-scope`-Pille und Herkunfts-Pille (Nutzer / Workspace). Pro
+Skill:
+
+- **Aktiv-Schalter.** Setzt den Skill-Namen in
+  `<userData>/skills-prefs.json` auf die `disabled`-Liste. Der
+  Orchestrator filtert deaktivierte Skills aus System-Prompt,
+  `/skill-name`-Auflösung und Auto-Aktivierung — sie bleiben nur
+  in der Liste sichtbar.
+- **Anzeigen.** Öffnet den Markdown-Body in einem Modal (read-only).
+  Ein In-App-Editor folgt mit S4.
+- **Datei öffnen.** Shellt den `sourcePath` per `shell.openPath`
+  raus, sodass Power-User bis S4 direkt auf der Platte editieren
+  können. Hot-Reload greift sofort.
+- **Aktualisieren.** Erzwingt einen `SkillStore.reload()`.
+
+Skills mit nicht erfüllten Gates (`metadata.ava.requires`) tauchen
+ab S3 mit einem deutlichen "Voraussetzung fehlt: …"-Hinweis auf,
+statt stillschweigend zu verschwinden. Sobald die fehlende Bedingung
+(CRM verbunden, Ollama läuft, …) erfüllt ist, wird das Skill beim
+nächsten Reload automatisch aktiv.
+
 ## Rollout
 
 - **S1 (v0.1.121)** – Loader + Schema + Hot-Reload.
@@ -176,7 +200,9 @@ will, löscht die Datei aus `<userData>/skills/` und startet neu.
   `/skill-name`-Invocation, erzwungene Tool-Allowlist, Gate-Evaluator
   für `metadata.ava.requires`.
 - **S6 (v0.1.123)** – Drei Starter-Skills gebündelt + auto-vendor in
-  `<userData>/skills/` beim ersten Start (dieser Stand).
-- **S3** – Settings → Skills (read-only).
+  `<userData>/skills/` beim ersten Start.
+- **S3 (v0.1.124)** – Settings → Skills (read-only Inventar +
+  Aktiv-Schalter + Body-Viewer; Gate-Skills bleiben sichtbar mit
+  deutscher Reason). Dieser Stand.
 - **S4** – In-App-Editor + Trust-Dialog + Save.
 - **S5** – Import / Export (zip drag-drop) + Re-Confirm-on-Change.

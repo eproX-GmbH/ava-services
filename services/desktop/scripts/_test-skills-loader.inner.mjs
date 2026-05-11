@@ -33,7 +33,11 @@ const errors = store.getErrors();
 console.log(`[test:skills] geladen: ${names.join(", ") || "(keine)"}`);
 console.log(`[test:skills] Fehler: ${errors.length}`);
 
-assert(skills.length === 2, `genau 2 Skills geladen (war: ${skills.length})`);
+// S3 — gate-failing skills are now KEPT in the list (with
+// `gateSatisfied: false`) so the Settings UI can show a reason
+// instead of hiding the skill silently. Validation failures still
+// drop the row entirely.
+assert(skills.length === 3, `genau 3 Skills geladen (war: ${skills.length})`);
 assert(
   names.includes("outreach-draft"),
   "outreach-draft (valid-outreach) wurde geladen",
@@ -43,6 +47,21 @@ assert(
   "qualifying-deep (valid-full) wurde geladen",
 );
 assert(
+  names.includes("hubspot-enrich"),
+  "hubspot-enrich (gated) bleibt sichtbar (gateSatisfied: false)",
+);
+const hubspot = store.get("hubspot-enrich");
+if (hubspot) {
+  assert(
+    hubspot.gateSatisfied === false,
+    "hubspot-enrich.gateSatisfied === false",
+  );
+  assert(
+    typeof hubspot.gateReason === "string" && hubspot.gateReason.length > 0,
+    "hubspot-enrich.gateReason ist gesetzt",
+  );
+}
+assert(
   !names.includes("missing-scope"),
   "missing-scope wurde NICHT geladen",
 );
@@ -50,10 +69,6 @@ assert(!names.includes("bad-scope"), "bad-scope wurde NICHT geladen");
 assert(
   !names.includes("broken-yaml"),
   "broken-yaml wurde NICHT geladen",
-);
-assert(
-  !names.includes("hubspot-enrich"),
-  "hubspot-enrich (gated) wurde NICHT geladen",
 );
 
 const outreach = store.get("outreach-draft");

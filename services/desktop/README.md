@@ -120,6 +120,15 @@ file exists in `<userData>/skills/<name>/`, AVA never touches it
 again on upgrade, so local edits survive. To re-pull the shipped
 version delete the file and relaunch.
 
+**Settings → Skills (S3, v0.1.124):** read-only inventory under
+*Einstellungen → Skills*. Lists every loaded skill with its
+`b2b-scope` + scope-source pill, lets the user toggle each on or off
+(persisted in `<userData>/skills-prefs.json`), and opens the raw
+markdown body in a modal. Gate-failing skills (`metadata.ava.requires`)
+stay visible with a German "Voraussetzung fehlt: …" reason instead of
+disappearing silently. In-app editor + zip import/export land with
+S4/S5.
+
 ## Tooling notes
 
 - After touching anything under `src/main/agent/tools/*.ts`, run
@@ -135,11 +144,13 @@ version delete the file and relaunch.
   setup + diagnostics + canonical CRM-OAuth flow as agent tools.
   Plan in [`PLANS.md`](../../PLANS.md) §1. Phase T1 (LinkedIn + CRM
   family) shipped in v0.1.119; T2 next.
-- **Skills system (S3-S5)** — Settings UI, in-app editor, zip
+- **Skills system (S4-S5)** — in-app editor, zip
   import/export. S1 (loader + schema, v0.1.121), S2 (agent
-  integration + enforced allowlist + gates, v0.1.122) and S6
+  integration + enforced allowlist + gates, v0.1.122), S6
   (three starter skills bundled + auto-vendored on first launch,
-  v0.1.123) are landed; see [`SKILLS.md`](../../SKILLS.md) and
+  v0.1.123) and S3 (Settings → Skills list UI + toggle + body
+  viewer, v0.1.124) are landed; see [`SKILLS.md`](../../SKILLS.md)
+  and
   [`PLANS.md`](../../PLANS.md) §2.
 - **Renderer cache** — `useTabQuery` keeps a 404 response cached
   after a producer finishes, so a freshly persisted profile only

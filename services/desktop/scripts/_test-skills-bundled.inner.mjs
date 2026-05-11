@@ -30,7 +30,7 @@ const store = await initSkills(null, {
   // Permissive gate evaluator: bundled skills declare no `requires`
   // today, but if any get added later we don't want a smoke-test
   // false-negative just because CRM/Ollama aren't running on CI.
-  evaluateGate: () => true,
+  evaluateGate: () => ({ ok: true, reason: null }),
 });
 
 const skills = store.list();

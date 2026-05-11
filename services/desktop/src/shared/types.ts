@@ -1266,3 +1266,46 @@ export interface LinkedInRecentPost {
   mediaCount: number;
   interactionCount: number;
 }
+
+// ---- Skills (PLAN §2, S3) -------------------------------------------------
+//
+// `SkillRow` is the renderer-facing projection of a `LoadedSkill` plus
+// per-user enabled-state and gate-evaluation results. Surfaced via
+// `window.api.skills.list()`. Gate-failing skills are still listed so
+// the Settings UI can show "Voraussetzung fehlt: …" instead of hiding
+// the skill silently.
+
+export type SkillB2bScope =
+  | "outreach"
+  | "qualifying"
+  | "competitive"
+  | "data-extraction"
+  | "internal";
+
+export type SkillLanguage = "de" | "en";
+
+export type SkillScope = "user" | "workspace";
+
+export interface SkillRow {
+  name: string;
+  description: string;
+  language: SkillLanguage;
+  b2bScope: SkillB2bScope;
+  allowedTools: string[];
+  requiresUserConfirm: boolean;
+  disableModelInvocation: boolean;
+  userInvocable: boolean;
+  scope: SkillScope;
+  sourcePath: string;
+  hash: string;
+  enabled: boolean;
+  gateSatisfied: boolean;
+  /** German one-liner explaining a failed gate. Null when satisfied. */
+  gateReason: string | null;
+}
+
+export interface SkillBody {
+  body: string;
+  sourcePath: string;
+  hash: string;
+}

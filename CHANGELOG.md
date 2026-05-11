@@ -7,6 +7,32 @@ The repo uses one rolling tag per desktop release (`v<major>.<minor>.<patch>`)
 on `main`. Submodules cut their own feature branches and are pinned via the
 desktop bundle; `pnpm fetch:producers` re-vendors them into the .dmg.
 
+## v0.1.124 — 2026-05-11
+
+- **[PLAN §2 S3] Settings → Skills list UI + Toggle + Body-Viewer.**
+  Neuer Abschnitt unter Einstellungen, der den vom Loader erkannten
+  Skill-Bestand auflistet (Nutzer + Workspace), pro Skill einen
+  Aktiv-Schalter bietet und den Markdown-Body in einem Modal anzeigt.
+  Per-Nutzer-Status persistiert in `<userData>/skills-prefs.json` als
+  `{ disabled: string[] }`; der Orchestrator filtert deaktivierte
+  Skills sowohl aus dem System-Prompt-Block als auch aus der
+  `/skill-name`-Auflösung und der Auto-Aktivierung.
+- **Gate-Skills bleiben sichtbar.** Skills mit nicht erfüllten
+  `metadata.ava.requires`-Bedingungen werden ab S3 NICHT mehr
+  silent verworfen, sondern als `gateSatisfied: false` plus
+  deutscher `gateReason` ("HubSpot ist nicht verbunden",
+  "Ollama läuft nicht", …) im Loader behalten. Der Orchestrator
+  überspringt sie weiterhin, aber die Settings-UI kann jetzt
+  klar erklären, warum ein Skill inaktiv ist.
+- **IPC.** Neue `window.api.skills.*`-Surface: `list()`,
+  `getBody(name)`, `setEnabled(name, enabled)`, `reload()`,
+  `openPath(target?)`, `onChanged(cb)`. Datei-Watcher feuert
+  weiterhin den Store-Reload und broadcastet `skills:changed`,
+  damit Edits ohne App-Neustart sichtbar werden.
+- **Tests.** Neues `pnpm test:skills:prefs` deckt
+  `SkillsPrefsStore` (Roundtrip + Persistenz + Event) sowie
+  `SkillStore.get().body` und das neue Gate-Surface ab.
+
 ## v0.1.123 — 2026-05-11
 
 - **[PLAN §2 S6] Drei Starter-Skills out-of-the-box.** Beim ersten

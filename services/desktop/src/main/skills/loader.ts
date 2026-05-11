@@ -37,6 +37,14 @@ export interface LoadedSkill {
   hash: string;
   sourcePath: string;
   scope: SkillScope;
+  /** S3 — gate evaluation result. Gate-failing skills are still loaded
+   *  but flagged unavailable so the Settings UI can show a reason
+   *  instead of hiding the skill. The orchestrator must check this
+   *  flag before letting the skill auto-activate or fire on `/name`. */
+  gateSatisfied: boolean;
+  /** German one-liner when `gateSatisfied === false`, e.g.
+   *  "HubSpot ist nicht verbunden". Null when satisfied. */
+  gateReason: string | null;
 }
 
 export interface LoadOptions {
@@ -86,8 +94,12 @@ function findSkillFiles(dir: string): string[] {
   return out;
 }
 
-function gateSatisfied(skill: LoadedSkill, evaluate: GateEvaluator): boolean {
-  if (evaluate(skill)) return true;
+function evaluateGate(
+  skill: LoadedSkill,
+  evaluate: GateEvaluator,
+): { ok: boolean; reason: string | null } {
+  const res = evaluate(skill);
+  if (res.ok) return { ok: true, reason: null };
   const req = skill.metadata?.ava?.requires;
   const unmet: string[] = [];
   if (req) {
@@ -96,9 +108,9 @@ function gateSatisfied(skill: LoadedSkill, evaluate: GateEvaluator): boolean {
     }
   }
   console.warn(
-    `[skills] gate not satisfied: ${skill.name} verlangt ${unmet.join(", ") || "(unbekannt)"} — Skill wird übersprungen`,
+    `[skills] gate not satisfied: ${skill.name} verlangt ${unmet.join(", ") || "(unbekannt)"} — ${res.reason ?? "Voraussetzung fehlt"} (Skill bleibt sichtbar, aber inaktiv)`,
   );
-  return false;
+  return { ok: false, reason: res.reason ?? "Voraussetzung fehlt" };
 }
 
 async function loadOne(
@@ -162,9 +174,13 @@ async function loadOne(
     hash,
     sourcePath: path,
     scope,
+    gateSatisfied: true,
+    gateReason: null,
   };
 
-  if (!gateSatisfied(skill, evaluate)) return null;
+  const gate = evaluateGate(skill, evaluate);
+  skill.gateSatisfied = gate.ok;
+  skill.gateReason = gate.reason;
   return skill;
 }
 
