@@ -7,6 +7,80 @@ The repo uses one rolling tag per desktop release (`v<major>.<minor>.<patch>`)
 on `main`. Submodules cut their own feature branches and are pinned via the
 desktop bundle; `pnpm fetch:producers` re-vendors them into the .dmg.
 
+## v0.1.118 — 2026-05-11
+
+- **Heartbeat-driven auto-retry of failed producer cells.** Six new
+  columns on `EntityProgress` track cumulative failure counts +
+  backoff state: `attempts`, `firstFailureAt`, `lastFailureAt`,
+  `nextRetryAt`, `giveUpAt`. `recordEntityProgress` atomically
+  resets counters on completed/skipped and advances them on failed.
+  Backoff per attempt N (slow producers — structured-content,
+  company-publication, website): 5min/30min/2h/8h/24h. Fast
+  producers (profile, contact, evaluation): 1min/5min/15min/1h/4h.
+  After 5 attempts AND >24h since first failure, the row gets
+  `giveUpAt` stamped and is taken off the auto-retry queue (manual
+  retry still works). New `RetryTicker` in the desktop main process
+  polls `GET /v1/transactions/retry-queue/pending` every 10 min,
+  dispatches retries with 200-400ms stagger so the producer queues
+  don't spike. Disabled by un-checking "Fehlgeschlagene Schritte
+  automatisch erneut versuchen" in Settings → Meldungen, or by
+  setting Heartbeat-Frequenz to 0. TransactionDetail cells now show
+  a "Nx" badge after the second failure and a German retry-status
+  line in the tooltip ("Wartet auf erneuten Versuch in 8 Min" /
+  "Erneuter Versuch fällig" / "Aufgegeben nach 5 Versuchen").
+  Triage order: lower `attempts` wins — a one-off hiccup gets
+  retried fast, persistent failures are deprioritised so user
+  attention isn't burned.
+- **[WORKSTREAM C] CRM-to-AVA company linkage (C1+C2+C3).** New
+  gateway tables `CompanyCrmLink` and `CompanyCrmCache` with
+  `(tenantId, companyId, crmType)` unique key (HubSpot / Salesforce
+  / Dynamics). Persist sites: HubSpot bulk import (exact match =
+  `EXACT_MATCH`, ambiguous-then-confirmed = `USER_CONFIRMED`,
+  unmatched-new = `EXACT_MATCH`); Excel import with typed headers
+  (`hubspot_id` / `hs_object_id` / `salesforce_id` / `sfdc_id` /
+  `sf_id` / `dynamics_id` / `msd_id` / `dataverse_id` / `d365_id`);
+  `import_company` tool with explicit `crm` arg = `SINGLE_IMPORT`.
+  Last-write-wins on conflict. Multi-CRM concurrent links per AVA
+  company supported (one row per crmType). Read API:
+  `GET /v1/companies/:id/crm` (cheap, DB only),
+  `GET /v1/companies/:id/crm/details?refresh=false` (6h TTL cache;
+  Salesforce/Dynamics return `notConfigured:true` stub).
+  `POST /v1/companies/:id/crm/cache` is the desktop-side
+  populate-cache endpoint for HubSpot enrichment (per-user OAuth
+  tokens stay on-device). New chat-agent tool `company_crm_summary`
+  wired into the open-question fan-out (cache-safe, no quota burn).
+  Prompt teaches the agent to render "CRM-Kontext (HubSpot /
+  Salesforce / Microsoft Dynamics)" subsections with deal count +
+  contact count + last activity + top 2-3 contact names.
+- **Stripe: in-place subscription upgrades (no more duplicate subs).**
+  `/v1/billing/checkout` now detects an existing usable subscription
+  (active, trialing, past_due, or active-with-cancel-at-period-end)
+  and calls `stripe.subscriptions.update` with
+  `proration_behavior:create_prorations` + clears
+  `cancel_at_period_end` instead of minting a new subscription. Same
+  Tier → 409 with "Du bist bereits auf diesem Tarif." The renderer
+  skips `shell.openExternal` and fires the existing `billing:success`
+  IPC so the usage snapshot refreshes immediately. Fixes the bug
+  where subscribing to a higher tier after cancelling the lower one
+  left both running in parallel until the period ended.
+- **Gateway: `/companies/:id/profile` no longer 500s on column
+  drift.** Pre-fix the route queried `"businessPurpose"` directly
+  on `CompanyProfile` — that column lives on a joined
+  `CompanyBusinessPurpose` table via `businessPurposeId` FK. Switched
+  to LEFT JOIN; companies without a linked purpose return null
+  unchanged. Also wrapped the `/contacts` handler in a try/catch
+  that logs `err.message + stack` on anything that's not a planned
+  HTTPException, so the next prod 500 surfaces a real reason in
+  `fly logs`.
+- **Contact producer: malformed socials no longer kill the whole
+  compute.** `analyzePageWithOpenAI` was throwing
+  `"company.socials[0].url is a required field"` whenever the LLM
+  returned a bare host (`linkedin.com/foo`) or null URL. Schema
+  relaxed to nullable; new `coerceSocialUrl` helper adds `https://`
+  when scheme is missing, rejects strings without a real hostname,
+  and silently drops unusable entries. Socials are enrichment, not
+  load-bearing.
+
 ## v0.1.117 — 2026-05-11
 
 - **Handelsregister: wait for the "Bitte warten Sie" overlay before
