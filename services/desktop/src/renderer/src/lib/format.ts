@@ -29,14 +29,24 @@ export function numVal(v: unknown): number | null {
     return typeof n === "number" && Number.isFinite(n) ? n : null;
   }
   if (typeof v === "string") {
-    // Strip everything except digits, signs, dots and commas; treat
-    // commas as thousand separators OR the decimal mark depending on
-    // their position relative to the last dot.
+    // Strip everything except digits, signs, dots and commas.
     const trimmed = v.replace(/[^\d.,-]/g, "");
     if (!trimmed) return null;
-    // German users routinely write "26.000" (twenty-six thousand) —
-    // collapse dots, accept comma as decimal.
-    const normalised = trimmed.replace(/\./g, "").replace(",", ".");
+    // German format with explicit decimal comma — e.g. "26.000,50".
+    // Dots are thousand seps, comma is the decimal mark.
+    if (trimmed.includes(",")) {
+      const n = Number(trimmed.replace(/\./g, "").replace(",", "."));
+      return Number.isFinite(n) ? n : null;
+    }
+    // No comma. Dot is ambiguous: German "26.000" (thousand sep) vs.
+    // US / Postgres-NUMERIC "37500.000" (decimal with trailing zeros
+    // — node-pg serialises NUMERIC(_,3) like this). Treat dots as a
+    // thousands separator ONLY when every dot-separated group after
+    // the first has exactly 3 digits AND the first group is 1-3
+    // digits, i.e. /^-?\d{1,3}(\.\d{3})+$/. Anything else (including
+    // "37500.000" — first group is 5 digits) is a decimal point.
+    const looksLikeGermanThousands = /^-?\d{1,3}(\.\d{3})+$/.test(trimmed);
+    const normalised = looksLikeGermanThousands ? trimmed.replace(/\./g, "") : trimmed;
     const n = Number(normalised);
     return Number.isFinite(n) ? n : null;
   }
