@@ -7,6 +7,38 @@ The repo uses one rolling tag per desktop release (`v<major>.<minor>.<patch>`)
 on `main`. Submodules cut their own feature branches and are pinned via the
 desktop bundle; `pnpm fetch:producers` re-vendors them into the .dmg.
 
+## v0.1.135 — 2026-05-11
+
+- **Whisper-Transkription auf macOS reparieren.** Auf
+  Endnutzer-Macs scheiterte `voice:transcribe` mit
+  „whisper-cli exited -1: …`whisper/darwin-arm64/../lib/libwhisper.1.dylib`
+  (no such file)…" — `scripts/fetch-whisper.mjs` legte die brew-
+  Dylibs neben das Binary statt in den Pfad, den die RPATH-Suche
+  (`@loader_path/../lib`) erwartet. Drei zusammenhängende Fixes:
+  - Dylibs liegen jetzt unter `resources/whisper/lib/` und werden
+    von beiden Architekturen geteilt (mac packt nur arm64).
+  - Auch die `ggml`-Brew-Formel-Dylibs werden mitkopiert; im
+    Binary und in `libwhisper.1.dylib` patcht `install_name_tool`
+    die absoluten Brew-Pfade (`/usr/local/opt/ggml/lib/...`) auf
+    `@rpath/...`, damit das Bundle auf einem Mac ohne brew lädt.
+  - Stale Dylibs, die ältere Script-Versionen versehentlich in
+    den Arch-Ordner legten, werden bei jedem Re-Fetch entfernt,
+    sodass beide Pfade nicht parallel existieren.
+  Wird beim nächsten CI-DMG-Build wirksam.
+- **Audio-Aufnahme-Linie im Dark-Mode lesbar.** Das Waveform-
+  Canvas zeichnete bisher hartcodiert in Weiß. Im Dark-Mode kollidiert
+  das mit dem aufgehellten Aufnahme-Pillback. Lösung: der Canvas
+  liest sein Zeichenfarbe per `getComputedStyle` aus `currentColor`,
+  und `.chat-composer--recording` hinterlegt für jeden Mode einen
+  passenden Akzent (Brand-700 hell, Brand-300 dunkel) plus einen
+  dunkleren Surface-Background im Dark-Mode.
+- **Permanentes Contingent-Banner.** Sobald `/v1/usage` `used >= limit`
+  meldet, erscheint unter dem Topbar ein roter Hinweis mit
+  „Tarif upgraden"-Button, der zur Settings → Plan-Abrechnung-
+  Sektion führt (`/settings#plan-section`). Der kleine Topbar-Chip
+  (`UsageChip`, 80–99 %-Warnung) bleibt erhalten — der Banner kommt
+  erst beim tatsächlich überschrittenen Kontingent.
+
 ## v0.1.134 — 2026-05-11
 
 - **„Mit CRM verknüpfen"-Flicker behoben.** Beim Klick auf den

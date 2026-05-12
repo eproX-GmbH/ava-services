@@ -1468,12 +1468,15 @@ function Waveform({
     ctx.clearRect(0, 0, cssWidth, cssHeight);
 
     // Base dotted track (the "ahead" empty area in ChatGPT's UI).
+    // Pull the live foreground colour from CSS (`.chat-composer--recording`
+    // sets `color` per theme), so the bars/dots stay readable in both
+    // light + dark mode. Falls back to white for legacy/no-CSS paths.
+    const liveColor =
+      getComputedStyle(canvas).color || "rgba(255, 255, 255, 1)";
+    const trackColor = withAlpha(liveColor, active ? 0.34 : 0.2);
     const dotR = 1.4;
     const dotGap = 5;
     const trackY = cssHeight / 2;
-    const trackColor = active
-      ? "rgba(255, 255, 255, 0.28)"
-      : "rgba(255, 255, 255, 0.16)";
     ctx.fillStyle = trackColor;
     for (let x = 2; x < cssWidth - 4; x += dotGap) {
       ctx.beginPath();
@@ -1491,7 +1494,7 @@ function Waveform({
     const minBar = 4; // visible even when silence
     const maxBar = cssHeight - 4;
     const rightEdge = cssWidth - 4;
-    ctx.fillStyle = active ? "#ffffff" : "rgba(255, 255, 255, 0.55)";
+    ctx.fillStyle = active ? liveColor : withAlpha(liveColor, 0.6);
     for (let i = 0; i < slice.length; i++) {
       const v = Math.min(1, Math.max(0, slice[i]!));
       // sqrt curve gives quiet sounds a more visible bar.
@@ -1515,6 +1518,20 @@ function Waveform({
     }
   }, [levels, active]);
   return <canvas className="chat-composer__waveform" ref={ref} />;
+}
+
+/**
+ * Parse an `rgb(r, g, b)` / `rgba(r, g, b, a)` colour string and
+ * return a new `rgba(...)` with the given alpha. Falls back to
+ * white-with-alpha if the input isn't an rgb form (e.g. a named
+ * colour from a browser quirk).
+ */
+function withAlpha(rgbColor: string, alpha: number): string {
+  const m = rgbColor.match(
+    /rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*(?:,\s*[\d.]+)?\s*\)/,
+  );
+  if (!m) return `rgba(255, 255, 255, ${alpha})`;
+  return `rgba(${m[1]}, ${m[2]}, ${m[3]}, ${alpha})`;
 }
 
 function CloseIcon() {

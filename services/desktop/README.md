@@ -38,9 +38,9 @@ to `http://localhost:8080`, which matches `db-gateway`'s `.env.example`).
 Use `bash scripts/dev.sh` from the meta-repo root to start the gateway plus
 upstream services in another terminal.
 
-## Shipped surfaces (v0.1.120)
+## Shipped surfaces (v0.1.135)
 
-- **AI-Chat** (`/chat`) — primary interface. Agent has 92 tools (full
+- **AI-Chat** (`/chat`) — primary interface. Agent has 94 tools (full
   inventory in [`TOOLS.md`](../../TOOLS.md), auto-generated from the
   TS sources). System prompt + tool definitions under `src/main/agent/`.
   The fan-out for open company questions includes `company_crm_summary`
@@ -77,8 +77,14 @@ upstream services in another terminal.
   (unternehmensregister.de + handelsregister.de), active provider,
   build info.
 - **Settings** (`/settings`) — provider selection (Ollama / OpenAI /
-  Anthropic / Google / Mistral), Stripe portal, voice setup, LinkedIn
-  controls, freshness preferences, heartbeat auto-retry toggle.
+  Anthropic API-Key / Anthropic Subscription-OAuth / Google / Mistral),
+  Stripe portal, voice setup, LinkedIn controls, freshness preferences,
+  heartbeat auto-retry toggle, Skills-Verwaltung (Liste + Editor +
+  Trust-Dialog + Import/Export).
+- **Contingent-Banner** — sobald `/v1/usage` `used >= limit` meldet,
+  steht permanent ein roter Hinweis unter dem Topbar mit Link zu
+  Settings → Plan & Abrechnung, damit der Nutzer den Tarif upgraden
+  oder das Periodenende abwarten kann.
 - **First-run wizard** (`/first-run`) — bei der Erstinbetriebnahme wählt
   der Nutzer zwischen drei gleichwertigen Wegen: lokales Modell über
   Ollama, eigener API-Schlüssel (OpenAI/Anthropic/Google/Mistral) oder

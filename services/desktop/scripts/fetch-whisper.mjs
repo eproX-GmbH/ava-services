@@ -97,7 +97,15 @@ async function main() {
     if (existsSync(outBin)) {
       const sz = statSync(outBin).size;
       if (sz > 0) {
-        console.log(`[whisper] ${target.id}: ${exeName} already present (${sz} B), skipping`);
+        console.log(`[whisper] ${target.id}: ${exeName} already present (${sz} B)`);
+        // Even if the binary is cached, re-run the dylib placement step
+        // on macOS — earlier versions of this script copied the dylibs
+        // next to the binary, but the binary's rpath looks at `../lib/`.
+        // This block fixes existing checkouts in place.
+        if (target.source === "brew") {
+          await placeMacDylibs(target.formula, outDir);
+          await cleanupMisplacedDylibs(outDir);
+        }
         continue;
       }
     }
@@ -147,20 +155,145 @@ async function fetchViaBrew(formula, outDir, exeName) {
   }
   const fs = await import("node:fs/promises");
   await fs.copyFile(srcBin, join(outDir, exeName));
-  // Also copy any shared libraries the binary links to. On macOS the
-  // Homebrew formula is mostly self-contained, but `libwhisper.dylib`
-  // sometimes lives next to the binary in lib/; copy if present so the
-  // packaged .app doesn't break on a user without brew.
-  const libDir = join(prefix, "lib");
+  await placeMacDylibs(formula, outDir);
+  await cleanupMisplacedDylibs(outDir);
+}
+
+/**
+ * Copy brew's dylibs into `<outDir>/../lib/`. The whisper-cli binary
+ * has LC_RPATH=`@loader_path/../lib` so it looks there.
+ *
+ * Also copies the dependent `ggml` formula's dylibs into the same
+ * directory and runs `install_name_tool` to rewrite the absolute
+ * brew paths (`/usr/local/opt/ggml/lib/libggml.0.dylib`,
+ * `/opt/homebrew/opt/ggml/lib/...`) to `@rpath/libggml.0.dylib`,
+ * so the bundle works on a user without brew at all.
+ */
+async function placeMacDylibs(formula, outDir) {
+  const prefix = (await runCmdCapture("brew", ["--prefix", formula])).trim();
+  const fs = await import("node:fs/promises");
+  // The whisper formula depends on the `ggml` formula. Copy its
+  // dylibs alongside libwhisper so dyld can resolve them via @rpath.
+  let ggmlPrefix = null;
   try {
-    const entries = await fs.readdir(libDir);
-    for (const name of entries) {
-      if (name.endsWith(".dylib")) {
-        await fs.copyFile(join(libDir, name), join(outDir, name));
+    ggmlPrefix = (await runCmdCapture("brew", ["--prefix", "ggml"])).trim();
+  } catch {
+    /* ggml not present as a separate formula on this brew version —
+       libwhisper may be self-contained. Continue. */
+  }
+  // Also copy any shared libraries the binary links to. The Homebrew
+  // whisper-cli binary on macOS has LC_RPATH set to
+  // `@loader_path/../lib`, so it looks for libwhisper.1.dylib + ggml
+  // dylibs at `<binary-dir>/../lib/`. With our layout
+  // (`resources/whisper/<arch>/whisper-cli`), that resolves to
+  // `resources/whisper/lib/`. Earlier versions of this script copied
+  // the dylibs next to the binary, which produced the
+  // "dyld: tried `…/whisper/darwin-arm64/../lib/libwhisper.1.dylib`
+  // (no such file)" failure that surfaced as
+  // "whisper-cli exited -1" in `voice:transcribe` (v0.1.134-).
+  const dstLibDir = resolve(outDir, "..", "lib");
+  await fs.mkdir(dstLibDir, { recursive: true });
+
+  await copyDylibsFromBrew(join(prefix, "lib"), dstLibDir);
+  if (ggmlPrefix) {
+    await copyDylibsFromBrew(join(ggmlPrefix, "lib"), dstLibDir);
+  }
+  console.log(`[whisper] ${outDir}: copied dylibs to ${dstLibDir}`);
+
+  // Rewrite absolute brew paths in the binary + every copied dylib
+  // to @rpath so dyld resolves them inside the .app bundle.
+  const binaryPath = join(outDir, "whisper-cli");
+  if (existsSync(binaryPath)) {
+    await rewriteBrewPathsToRpath(binaryPath, [prefix, ggmlPrefix].filter(Boolean));
+  }
+  for (const name of await fs.readdir(dstLibDir)) {
+    if (!name.endsWith(".dylib")) continue;
+    const dylibPath = join(dstLibDir, name);
+    const stat = await fs.lstat(dylibPath);
+    if (stat.isSymbolicLink()) continue;
+    await rewriteBrewPathsToRpath(dylibPath, [prefix, ggmlPrefix].filter(Boolean));
+  }
+  console.log(`[whisper] ${outDir}: rewrote brew paths to @rpath`);
+}
+
+async function copyDylibsFromBrew(srcLibDir, dstLibDir) {
+  const fs = await import("node:fs/promises");
+  try {
+    const entries = await fs.readdir(srcLibDir, { withFileTypes: true });
+    for (const e of entries) {
+      if (!e.name.endsWith(".dylib")) continue;
+      const src = join(srcLibDir, e.name);
+      const dst = join(dstLibDir, e.name);
+      if (e.isSymbolicLink()) {
+        const target = await fs.readlink(src);
+        try {
+          await fs.unlink(dst);
+        } catch {
+          /* not present */
+        }
+        await fs.symlink(target, dst);
+      } else {
+        await fs.copyFile(src, dst);
+        // Make writable so install_name_tool can mutate.
+        await fs.chmod(dst, 0o644);
       }
     }
-  } catch {
-    /* lib dir missing — fine, the binary is statically linked */
+  } catch (err) {
+    if (err && err.code !== "ENOENT") throw err;
+  }
+}
+
+/**
+ * For each `LC_LOAD_DYLIB` entry that starts with one of `brewPrefixes`,
+ * rewrite it to `@rpath/<basename>`. Also rewrites the binary's own
+ * `LC_ID_DYLIB` if present.
+ */
+async function rewriteBrewPathsToRpath(target, brewPrefixes) {
+  const linked = (await runCmdCapture("otool", ["-L", target]))
+    .split("\n")
+    .map((l) => l.trim())
+    .filter((l) => l && !l.endsWith(":"));
+  for (const line of linked) {
+    const m = line.match(/^(\S+)\s/);
+    if (!m) continue;
+    const oldPath = m[1];
+    if (oldPath.startsWith("@rpath/") || oldPath.startsWith("@loader_path/")) continue;
+    const isBrew = brewPrefixes.some((p) => oldPath.startsWith(p + "/"));
+    if (!isBrew) continue;
+    const base = oldPath.split("/").pop();
+    const newPath = `@rpath/${base}`;
+    await runCmd("install_name_tool", ["-change", oldPath, newPath, target]);
+  }
+  // Self-id (`-id`) — rewrite if it points at a brew path so other
+  // dylibs that load this one via the new @rpath still resolve.
+  const idLine = (await runCmdCapture("otool", ["-D", target]))
+    .split("\n")
+    .map((l) => l.trim())
+    .filter((l) => l && !l.endsWith(":"))[0];
+  if (idLine && brewPrefixes.some((p) => idLine.startsWith(p + "/"))) {
+    const base = idLine.split("/").pop();
+    await runCmd("install_name_tool", ["-id", `@rpath/${base}`, target]);
+  }
+}
+
+/**
+ * Old versions of this script copied dylibs into the arch dir next
+ * to the binary. The new layout puts them in `<outDir>/../lib/`. To
+ * keep existing checkouts clean (and avoid confusing both paths
+ * being populated), prune any `.dylib` files left at the arch level.
+ */
+async function cleanupMisplacedDylibs(outDir) {
+  const fs = await import("node:fs/promises");
+  try {
+    const entries = await fs.readdir(outDir, { withFileTypes: true });
+    for (const e of entries) {
+      if (!e.name.endsWith(".dylib")) continue;
+      const stale = join(outDir, e.name);
+      await fs.unlink(stale);
+      console.log(`[whisper] ${outDir}: removed stale ${e.name}`);
+    }
+  } catch (err) {
+    if (err && err.code !== "ENOENT") throw err;
   }
 }
 

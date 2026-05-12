@@ -3026,6 +3026,17 @@ a.heartbeat-decision__company:hover {
 .chat-composer--recording {
   border-color: var(--color-indigo-300);
   background: var(--color-indigo-50);
+  /* The waveform canvas reads `color` via `currentColor` to keep
+   * its bars + dots visible on both light + dark surfaces. */
+  color: var(--color-brand-700);
+}
+:root.dark .chat-composer--recording {
+  /* In dark mode the light-teal canvas would otherwise blend with
+   * the white-coded waveform from earlier builds. Switch to a darker
+   * surface and tell the canvas to draw in light brand-aqua. */
+  background: var(--color-bg-2);
+  border-color: var(--color-brand-700);
+  color: var(--color-brand-300);
 }
 .chat-composer__rec {
   flex: 1;
@@ -4019,6 +4030,48 @@ a.heartbeat-decision__company:hover {
  * feature is functioning as designed, the banner is a "stay aware"
  * reminder.
  */
+/* Permanent quota-reached banner — sits between the topbar and the
+ * other system banners. Red because new imports are getting refused
+ * server-side until the user upgrades. */
+.quota-banner {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.55rem 1rem;
+  font-size: 12.5px;
+  background: rgba(239, 68, 68, 0.12);
+  border-bottom: 1px solid var(--color-err, #ef4444);
+  color: var(--fg);
+}
+:root.dark .quota-banner {
+  background: rgba(239, 68, 68, 0.18);
+}
+.quota-banner__icon {
+  display: inline-flex;
+  align-items: center;
+  color: var(--color-err, #ef4444);
+}
+.quota-banner__msg {
+  margin: 0;
+  flex: 1;
+  min-width: 0;
+}
+.quota-banner__cta {
+  flex-shrink: 0;
+  padding: 4px 12px;
+  border-radius: 6px;
+  background: var(--color-err, #ef4444);
+  color: #ffffff;
+  text-decoration: none;
+  font-weight: 500;
+  font-size: 12px;
+}
+.quota-banner__cta:hover {
+  background: #dc2626;
+  text-decoration: none;
+}
+
 .linkedin-active-banner {
   position: relative;
   display: flex;

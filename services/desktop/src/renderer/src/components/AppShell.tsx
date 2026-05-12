@@ -5,6 +5,7 @@ import { AlertCircle, Loader2, RefreshCw, Lightbulb, X } from "lucide-react";
 import { AlertBell } from "./AlertBell";
 import { WatchChip } from "./WatchChip";
 import { UsageChip } from "./UsageChip";
+import { QuotaExhaustedBanner } from "./QuotaExhaustedBanner";
 import { LinkedInActiveBanner } from "./LinkedInActiveBanner";
 import {
   ChatSearchModal,
@@ -79,6 +80,7 @@ export function AppShell({ children }: PropsWithChildren) {
   return (
     <div className="app-shell">
       <TopBar />
+      <QuotaExhaustedBanner />
       <ExternalServiceBanner />
       <LinkedInActiveBanner />
       <main className="app-shell__main">{children}</main>
