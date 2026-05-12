@@ -81,21 +81,27 @@ export const authMiddleware = createMiddleware(async (c, next) => {
   // jose refuses to decode unverified payloads, so do it manually and
   // validate immediately after.
   //
-  // v0.1.148 hotfix — Accept both `tenant` and `tenant_id` claim names.
-  // The Keycloak realm currently emits `tenant_id` (matches the
-  // desktop's `auth.ts:249` consumer); the gateway middleware was the
-  // outlier reading only `tenant` and 401-ing every authenticated
-  // request with `malformed_token`. Treat them as aliases until the
-  // realm config is unified.
+  // v0.1.149 — Three-tier claim lookup:
+  //   1. `tenant`     — original design (gateway-internal expectation).
+  //   2. `tenant_id`  — what the desktop's auth.ts reads (and what most
+  //                     Keycloak realms with a custom mapper emit).
+  //   3. `sub`        — fallback to the Keycloak user UUID when neither
+  //                     tenant claim exists. The realm config in prod
+  //                     ships no tenant mapper at all, so without this
+  //                     fallback every authenticated request 401s
+  //                     with "tenant claim missing". The user's
+  //                     existing TenantBilling row (`8bb1c1fa-…`) is
+  //                     already keyed by their `sub`, so this fallback
+  //                     matches the data on disk.
   const [, payloadB64] = token.split(".");
   let tenantId: string;
   try {
     const payload = JSON.parse(
       Buffer.from(payloadB64, "base64url").toString("utf8"),
-    ) as { tenant?: unknown; tenant_id?: unknown };
-    const raw = payload.tenant ?? payload.tenant_id;
+    ) as { tenant?: unknown; tenant_id?: unknown; sub?: unknown };
+    const raw = payload.tenant ?? payload.tenant_id ?? payload.sub;
     if (typeof raw !== "string" || raw.length === 0) {
-      throw new Error("tenant claim missing");
+      throw new Error("no tenant or sub claim");
     }
     tenantId = raw;
   } catch (err) {
