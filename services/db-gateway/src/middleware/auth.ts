@@ -7,6 +7,7 @@ import {
   type JWTVerifyGetKey,
 } from "jose";
 import { loadEnv } from "../lib/env";
+import { logger } from "../lib/logger";
 
 // Auth context populated after successful JWT verification.
 // Downstream handlers read this via c.get(...).
@@ -141,6 +142,14 @@ export const authMiddleware = createMiddleware(async (c, next) => {
     if (typeof payload.sub !== "string") throw new Error("sub claim missing");
     const scopes =
       typeof payload.scope === "string" ? payload.scope.split(/\s+/).filter(Boolean) : [];
+    // v0.1.149 — Temporary diagnostic: log every authenticated request's
+    // tenantId + sub so we can correlate to the data on disk. Remove once
+    // the cross-UUID puzzle (TenantBilling row 8bb1c1fa-… vs Transaction
+    // userId 7cd31493-…) is resolved.
+    logger.info(
+      { tenantId, sub: payload.sub, path: c.req.path },
+      "auth: verified",
+    );
     c.set("auth", { tenantId, actorId: payload.sub, scopes });
   } catch (err) {
     const message = err instanceof Error ? err.message : "verification_failed";
