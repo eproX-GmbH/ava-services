@@ -46,10 +46,12 @@ import {
   rmSync,
   readFileSync,
   writeFileSync,
+  statSync,
 } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const DESKTOP_ROOT = resolve(__dirname, "..");
@@ -128,6 +130,18 @@ async function main() {
     const srcDir = join(REPO_ROOT, target.workspaceDir);
     const dstDir = join(RESOURCES_ROOT, target.name);
     const sentinel = join(dstDir, "node_modules", ".package-lock.json");
+    // v0.1.164 — content-aware skip. Pre-v0.1.164 used the bare
+    // presence of `node_modules/.package-lock.json` as "already
+    // vendored, skip". CI re-runs that picked up an updated producer
+    // submodule (esp. the vendored @ava/ai-provider's OAuth-token
+    // branch from v0.1.145) silently SKIPPED the rebuild and shipped
+    // stale `dist/index.js` to users. Hash the producer source +
+    // vendor tree + package.json; store the digest alongside the
+    // sentinel. Skip only when the recorded digest matches the
+    // current source. Local devs benefit too: a `git pull` that
+    // touches a producer triggers a fresh vendor on the next run.
+    const sourceFingerprint = computeSourceFingerprint(srcDir);
+    const fingerprintFile = join(dstDir, ".vendor-fingerprint");
 
     // Submodule may not be checked out (e.g. CI without
     // SUBMODULES_PAT, or the submodule wasn't added to the workflow's
@@ -143,9 +157,26 @@ async function main() {
       continue;
     }
 
-    if (existsSync(sentinel)) {
-      console.log(`[producers] ${target.name}: already vendored, skipping`);
-      continue;
+    if (existsSync(sentinel) && existsSync(fingerprintFile)) {
+      const recorded = readFileSync(fingerprintFile, "utf8").trim();
+      if (recorded === sourceFingerprint) {
+        console.log(
+          `[producers] ${target.name}: already vendored, fingerprint matches → skipping`,
+        );
+        continue;
+      }
+      console.log(
+        `[producers] ${target.name}: fingerprint mismatch (was ${recorded.slice(0, 8)}, now ${sourceFingerprint.slice(0, 8)}) → re-vendoring`,
+      );
+      rmSync(dstDir, { recursive: true, force: true });
+    } else if (existsSync(sentinel)) {
+      // Sentinel present but no fingerprint file → built by a pre-
+      // v0.1.164 version of this script. Force re-vendor once to
+      // record the current fingerprint, then future runs cache.
+      console.log(
+        `[producers] ${target.name}: legacy sentinel without fingerprint → re-vendoring once`,
+      );
+      rmSync(dstDir, { recursive: true, force: true });
     }
 
     // Build OUTSIDE the workspace. The producers' tsconfigs don't set
@@ -538,7 +569,82 @@ module.exports = require("../generated/prisma-client");
       rmSync(npmrc, { force: true });
     }
 
+    // v0.1.164 — record the source fingerprint so subsequent runs
+    // can skip when nothing changed AND re-build when source moves.
+    writeFileSync(fingerprintFile, sourceFingerprint, "utf8");
+
     console.log(`[producers] ${target.name}: done → ${dstDir}`);
+  }
+}
+
+/**
+ * v0.1.164 — Compute a stable digest over the producer's source tree
+ * + its vendored deps. We walk src/, vendor/, package.json,
+ * tsconfig*.json, package-lock.json (and the submodule's git HEAD if
+ * present) and hash the concatenated path+size+mtime tuples. Cheap
+ * enough on a few thousand files; deterministic across CI runs as
+ * long as the working tree doesn't change.
+ *
+ * NOT a perfect content hash — we hash mtimes not file bytes — but
+ * that's fine for "did anything change since last vendor" because
+ * git checkout updates mtimes and a submodule bump rewrites every
+ * touched file. False-negatives (unchanged content, new mtime) just
+ * trigger an extra rebuild; false-positives (changed content, same
+ * mtime + size) require a malicious actor and are out of scope.
+ */
+function computeSourceFingerprint(srcDir) {
+  const ROOTS = ["src", "vendor", "prisma", "generated"];
+  const TOP_FILES = [
+    "package.json",
+    "package-lock.json",
+    "tsconfig.json",
+    "tsconfig.build.json",
+  ];
+  const hash = createHash("sha256");
+  for (const f of TOP_FILES) {
+    const p = join(srcDir, f);
+    if (!existsSync(p)) continue;
+    const s = statSync(p);
+    hash.update(`${f}|${s.size}|${s.mtimeMs.toFixed(0)}\n`);
+  }
+  for (const root of ROOTS) {
+    const dir = join(srcDir, root);
+    if (!existsSync(dir)) continue;
+    walkSorted(dir, dir, hash);
+  }
+  return hash.digest("hex");
+}
+
+function walkSorted(rel, absRoot, hash) {
+  const stack = [rel];
+  while (stack.length > 0) {
+    const dir = stack.pop();
+    let entries;
+    try {
+      entries = readdirSync(dir, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+    // Sort for deterministic iteration order across filesystems.
+    entries.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+    for (const ent of entries) {
+      const full = join(dir, ent.name);
+      // Skip node_modules — it's regenerated by `npm install` and its
+      // mtimes are basically random per CI run; including it makes
+      // the fingerprint useless for caching.
+      if (ent.name === "node_modules") continue;
+      if (ent.isDirectory()) {
+        stack.push(full);
+      } else if (ent.isFile()) {
+        try {
+          const s = statSync(full);
+          const relPath = full.slice(absRoot.length + 1);
+          hash.update(`${relPath}|${s.size}|${s.mtimeMs.toFixed(0)}\n`);
+        } catch {
+          // unreadable — skip
+        }
+      }
+    }
   }
 }
 
