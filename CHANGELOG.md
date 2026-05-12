@@ -7,6 +7,26 @@ The repo uses one rolling tag per desktop release (`v<major>.<minor>.<patch>`)
 on `main`. Submodules cut their own feature branches and are pinned via the
 desktop bundle; `pnpm fetch:producers` re-vendors them into the .dmg.
 
+## v0.1.142 — 2026-05-12
+
+- **Anthropic-OAuth-Chat: Claude-Code-System-Prompt-Marker einfügen.**
+  Nach erfolgreichem Token-Tausch (v0.1.138) scheiterte der erste
+  Chat-Turn mit „Failed after 3 attempts. Last error: Error". Ursache:
+  Anthropics OAuth-Subscription-Endpoint auf `/v1/messages` validiert,
+  dass die erste System-Message den Claude-Code-Marker enthält („You
+  are Claude Code, Anthropic's official CLI for Claude."). Fehlt der
+  Marker, kommt ein leerer 4xx-Response zurück, den die Vercel-AI-SDK
+  als nicht-retryable Error mit leerem Message-Body verpackt — daher
+  die wenig hilfreiche „Last error: Error"-Anzeige.
+  - `bearerFetch`-Interceptor in `packages/ai-provider/src/runtime.ts`
+    parst jetzt den Outgoing-Body bei jedem POST auf `/v1/messages`,
+    fügt den Marker als erste System-Text-Message ein (string-Form:
+    Prefix mit `\n\n`, Array-Form: `unshift({type:"text",text:MARKER})`),
+    serialisiert neu und schickt los.
+  - Idempotent: Marker wird nur ergänzt, wenn nicht schon vorhanden.
+  - Verifiziert gegen opencode-anthropic-auth-Plugin-Konvention (siehe
+    deepwiki-Recherche).
+
 ## v0.1.141 — 2026-05-11
 
 - **Agent-native Diagramme im Chat (Path-2 Fence-Extractor).** Phasen

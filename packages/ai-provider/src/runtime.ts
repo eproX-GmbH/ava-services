@@ -126,6 +126,49 @@ export function createLLM(opts: CreateLLMOptions): LanguageModel {
             headers.set("anthropic-beta", "oauth-2025-04-20");
           }
           next.headers = headers;
+          // v0.1.142 — Anthropic's OAuth-subscription endpoint
+          // validates that the request comes from Claude Code: the
+          // first system message MUST contain the marker
+          // "You are Claude Code, Anthropic's official CLI for Claude."
+          // Without it, /v1/messages returns an empty 400/403 response
+          // that surfaces in the AI SDK as
+          // "Failed after 3 attempts. Last error: Error" — no body, no
+          // useful detail. Inject the marker as the FIRST system
+          // message regardless of how the upstream caller composed it.
+          // Verified against opencode-anthropic-auth (deepwiki notes).
+          const url = typeof input === "string"
+            ? input
+            : input instanceof URL
+              ? input.toString()
+              : input.url;
+          if (
+            url.includes("/v1/messages") &&
+            typeof next.body === "string"
+          ) {
+            try {
+              const parsed = JSON.parse(next.body) as {
+                system?: string | Array<{ type: string; text: string }>;
+                [k: string]: unknown;
+              };
+              const MARKER =
+                "You are Claude Code, Anthropic's official CLI for Claude.";
+              if (typeof parsed.system === "string") {
+                if (!parsed.system.startsWith(MARKER)) {
+                  parsed.system = MARKER + "\n\n" + parsed.system;
+                }
+              } else if (Array.isArray(parsed.system)) {
+                const firstText = parsed.system[0]?.text;
+                if (typeof firstText !== "string" || !firstText.startsWith(MARKER)) {
+                  parsed.system.unshift({ type: "text", text: MARKER });
+                }
+              } else {
+                parsed.system = MARKER;
+              }
+              next.body = JSON.stringify(parsed);
+            } catch {
+              /* body not JSON / not parseable — let the SDK handle it */
+            }
+          }
           return fetchBase(input, next);
         };
         const client = createAnthropic({
