@@ -7,6 +7,25 @@ The repo uses one rolling tag per desktop release (`v<major>.<minor>.<patch>`)
 on `main`. Submodules cut their own feature branches and are pinned via the
 desktop bundle; `pnpm fetch:producers` re-vendors them into the .dmg.
 
+## v0.1.139 — 2026-05-11
+
+- **Settings: Sidebar-Tab-Shell (U1 des UX-Redesigns).** Die 3.9k-zeilige
+  `Settings.tsx` ist jetzt ein dünner Shell mit fünf Tabs in der linken
+  Spalte: **Konto** (Plan & Abrechnung, Profil & Memory, Anker für
+  Erscheinung), **Modelle** (LLM-Provider, Spracherkennung),
+  **Datenquellen** (LinkedIn, CRM, Freshness, Meldungen/Heartbeat),
+  **Skills** und **System** (Updates, lokale Postgres, lokale Producer).
+  Tab-Pfade: `/settings/:tab`; Default ist `konto`, der zuletzt gewählte
+  Tab wird in `localStorage["ava.settings.tab"]` gemerkt. Unter 900 px
+  klappt die Sidebar in eine horizontale Tab-Leiste. Bestehende
+  Deep-Links (`/settings#plan-section`, `#voice-settings`,
+  `#linkedin-section`, …) funktionieren unverändert weiter — ein Shim
+  mapt den Hash auf den richtigen Tab, navigiert dorthin und scrollt den
+  Anker per `scrollIntoView` ins Bild, sobald der Tab-Inhalt gerendert
+  ist. Reines Routing-/Layout-Refactoring: keine Sektion wurde inhaltlich
+  angefasst (das macht U2). Ein `SettingsSearch`-Stub für U3 ist bereits
+  oberhalb der Sidebar eingehängt, aber per CSS verborgen.
+
 ## v0.1.138 — 2026-05-11
 
 - **Anthropic-OAuth Token-Tausch (zweiter Anlauf): JSON + state-Feld.**

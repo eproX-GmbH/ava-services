@@ -57,6 +57,7 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
               <Route path="/chat" element={<Chat />} />
               <Route path="/whoami" element={<Whoami />} />
               <Route path="/settings" element={<Settings />} />
+              <Route path="/settings/:tab" element={<Settings />} />
               <Route path="/ingest" element={<Ingest />} />
               <Route path="/alerts" element={<Alerts />} />
               <Route path="/linkedin" element={<LinkedIn />} />

@@ -1,8 +1,14 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link, useLocation } from "react-router-dom";
+import { Link, NavLink, useLocation, useNavigate, useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { LinkedInConsentModal } from "../components/LinkedInConsentModal";
 import { SettingsSkills } from "./SettingsSkills";
+import { SettingsSearch } from "./settings/SettingsSearch";
+import { KontoTab } from "./settings/KontoTab";
+import { ModelleTab } from "./settings/ModelleTab";
+import { DatenquellenTab } from "./settings/DatenquellenTab";
+import { SkillsTab } from "./settings/SkillsTab";
+import { SystemTab } from "./settings/SystemTab";
 import { notifyLinkedInSettingsChanged } from "../components/LinkedInActiveBanner";
 import { gatewayFetch } from "../api/gateway";
 import { useUsage, isUnlimited, type BillingTier } from "../api/usage";
@@ -75,18 +81,129 @@ const PROVIDER_KEY_DOCS: Record<HostedProviderKind, string> = {
   mistral: "https://console.mistral.ai/api-keys",
 };
 
+// -- Settings tab shell (U1) ------------------------------------------
+//
+// The Settings route is a left-sidebar tab shell. Each tab renders a
+// curated subset of the section components below. Tab is driven by the
+// `:tab` URL segment (`/settings/konto`, `/settings/modelle`, …).
+//
+// Backwards-compat: legacy deep links (`/settings#voice-settings`,
+// `/settings#plan-section`, etc.) still work — on mount we map the
+// hash to the right tab, navigate-replace into it, then scroll the
+// anchor into view once the tab content has painted.
+
+export const SETTINGS_TABS = [
+  { id: "konto",        label: "Konto" },
+  { id: "modelle",      label: "Modelle" },
+  { id: "datenquellen", label: "Datenquellen" },
+  { id: "skills",       label: "Skills" },
+  { id: "system",       label: "System" },
+] as const;
+export type SettingsTabId = (typeof SETTINGS_TABS)[number]["id"];
+const SETTINGS_TAB_IDS: readonly SettingsTabId[] =
+  SETTINGS_TABS.map((t) => t.id);
+
+// Map legacy `/settings#…` anchors to their new tab. The shim below
+// rewrites the URL once on mount so existing call sites (UsageChip,
+// QuotaExhaustedBanner, LinkedInActiveBanner, Chat mic button, …) keep
+// working without touching them.
+export const SETTINGS_ANCHOR_TO_TAB: Record<string, SettingsTabId> = {
+  "plan-section":            "konto",
+  "profile-bio":             "konto",
+  "profile-role":            "konto",
+  "profile-industries":      "konto",
+  "profile-geographies":     "konto",
+  "profile-topics":          "konto",
+  "profile-tone":            "konto",
+  "general-memory":          "konto",
+  "erscheinung":             "konto",
+  "provider-section":        "modelle",
+  "voice-settings":          "modelle",
+  "installed-models":        "modelle",
+  "linkedin-section":        "datenquellen",
+  "linkedin-image-analysis": "datenquellen",
+  "crm-connections":         "datenquellen",
+  "alerts-cadence":          "datenquellen",
+  "alerts-severity":         "datenquellen",
+  "freshness-section":       "datenquellen",
+  "updates":                 "system",
+  "local-services":          "system",
+  "local-producers":         "system",
+};
+
+const SETTINGS_TAB_STORAGE_KEY = "ava.settings.tab";
+
+function readStoredTab(): SettingsTabId | null {
+  try {
+    const v = window.localStorage.getItem(SETTINGS_TAB_STORAGE_KEY);
+    if (v && (SETTINGS_TAB_IDS as readonly string[]).includes(v)) {
+      return v as SettingsTabId;
+    }
+  } catch {
+    // localStorage unavailable — fine, fall back to default.
+  }
+  return null;
+}
+
+function writeStoredTab(tab: SettingsTabId): void {
+  try {
+    window.localStorage.setItem(SETTINGS_TAB_STORAGE_KEY, tab);
+  } catch {
+    // ignore
+  }
+}
+
 export function Settings() {
-  // Scroll-to-section via hash. The chat composer's mic button
-  // navigates to `/settings#voice-settings` when whisper isn't ready;
-  // HashRouter doesn't auto-handle the inner fragment, so we look up
-  // the matching id ourselves and scroll it into view.
-  const { hash } = useLocation();
+  const params = useParams<{ tab?: string }>();
+  const { hash, pathname } = useLocation();
+  const navigate = useNavigate();
+
+  // Resolve the active tab.
+  //
+  // Priority order:
+  //   a) explicit URL segment (`/settings/modelle`)
+  //   b) legacy anchor redirect (`/settings#voice-settings` → modelle)
+  //   c) localStorage last-selected
+  //   d) hard default: konto
+  const urlTab =
+    params.tab && (SETTINGS_TAB_IDS as readonly string[]).includes(params.tab)
+      ? (params.tab as SettingsTabId)
+      : null;
+
+  useEffect(() => {
+    if (urlTab) return;
+    // (b) legacy anchor → tab.
+    if (hash && hash.length > 1) {
+      const anchor = hash.slice(1);
+      const mapped = SETTINGS_ANCHOR_TO_TAB[anchor];
+      if (mapped) {
+        navigate(`/settings/${mapped}${hash}`, { replace: true });
+        return;
+      }
+    }
+    // (c) restore last visited.
+    const stored = readStoredTab();
+    if (stored) {
+      navigate(`/settings/${stored}${hash || ""}`, { replace: true });
+      return;
+    }
+    // (d) default tab.
+    navigate(`/settings/konto${hash || ""}`, { replace: true });
+  }, [urlTab, hash, navigate, pathname]);
+
+  const activeTab: SettingsTabId = urlTab ?? "konto";
+
+  // Persist tab selection.
+  useEffect(() => {
+    if (urlTab) writeStoredTab(urlTab);
+  }, [urlTab]);
+
+  // Honour anchor deep-link AFTER the tab content has mounted. Two RAFs
+  // give the section components their first paint before we measure —
+  // otherwise we scroll to a phantom 0 px offset on first mount.
   useEffect(() => {
     if (!hash || hash.length <= 1) return;
     const id = hash.slice(1);
-    // Two RAFs gives the section components their first paint before
-    // we measure — otherwise we scroll to a phantom 0 px offset on
-    // first mount.
     requestAnimationFrame(() => {
       requestAnimationFrame(() => {
         document
@@ -94,24 +211,37 @@ export function Settings() {
           ?.scrollIntoView({ behavior: "smooth", block: "start" });
       });
     });
-  }, [hash]);
+  }, [hash, activeTab]);
+
   return (
-    <section>
-      <SettingsHeader />
-      <PlanSection />
-      <ProviderSection />
-      <ProfileSection />
-      <VoiceSection />
-      <UpdaterSection />
-      <PostgresSection />
-      <ProducersSection />
-      <CrmSection />
-      <LinkedInSection />
-      <AlertsSection />
-      <FreshnessSection />
-      <SettingsSkills />
-      <GeneralMemorySection />
-    </section>
+    <div className="settings-shell">
+      <aside className="settings-shell__sidebar" aria-label="Einstellungen">
+        <SettingsSearch />
+        <nav className="settings-shell__nav">
+          {SETTINGS_TABS.map((t) => (
+            <NavLink
+              key={t.id}
+              to={`/settings/${t.id}`}
+              className={() =>
+                "settings-shell__tab" +
+                (t.id === activeTab ? " settings-shell__tab--active" : "")
+              }
+              end={false}
+            >
+              {t.label}
+            </NavLink>
+          ))}
+        </nav>
+      </aside>
+      <section className="settings-shell__content">
+        <SettingsHeader />
+        {activeTab === "konto"        && <KontoTab />}
+        {activeTab === "modelle"      && <ModelleTab />}
+        {activeTab === "datenquellen" && <DatenquellenTab />}
+        {activeTab === "skills"       && <SkillsTab />}
+        {activeTab === "system"       && <SystemTab />}
+      </section>
+    </div>
   );
 }
 
@@ -122,7 +252,7 @@ export function Settings() {
 // mount). When config isn't ready yet we render the title alone so
 // the layout doesn't jump on slow boots.
 
-function SettingsHeader() {
+export function SettingsHeader() {
   const ready = useConfigStore((s) => s.ready);
   const version = useConfigStore((s) => s.appVersion);
   const channel = useConfigStore((s) => s.updateChannel);
@@ -154,7 +284,7 @@ function SettingsHeader() {
 // available → downloading → ready) plus action buttons. The user
 // always confirms downloads + installs — no silent updates.
 
-function UpdaterSection() {
+export function UpdaterSection() {
   const status = useUpdaterStore((s) => s.status);
 
   const onCheck = () => void window.api.updater.check();
@@ -229,7 +359,7 @@ function UpdaterSection() {
 // degraded case, a clear error string they can quote when filing a
 // bug report.
 
-function PostgresSection() {
+export function PostgresSection() {
   const status = usePostgresStore((s) => s.status);
 
   const stateLabel: Record<typeof status.state, string> = {
@@ -303,7 +433,7 @@ interface QueueInfo {
   consumers: number;
 }
 
-function ProducersSection() {
+export function ProducersSection() {
   const byName = useProducersStore((s) => s.byName);
   const list = Object.values(byName);
 
@@ -425,7 +555,7 @@ const CRM_PROVIDER_LABELS: Record<
   },
 };
 
-function CrmSection() {
+export function CrmSection() {
   const qc = useQueryClient();
   const list = useQuery({
     queryKey: ["crm", "list"],
@@ -614,7 +744,7 @@ function formatScanSummary(
   );
 }
 
-function LinkedInSection() {
+export function LinkedInSection() {
   const [settings, setSettings] = useState<LinkedInSettings | null>(null);
   const [auth, setAuth] = useState<LinkedInAuthStatus | null>(null);
   const [consentOpen, setConsentOpen] = useState(false);
@@ -1385,7 +1515,7 @@ function LinkedInSection() {
 
 // -- Provider section -------------------------------------------------
 
-function ProviderSection() {
+export function ProviderSection() {
   const qc = useQueryClient();
 
   const cfg = useQuery<ProviderConfigBundle>({
@@ -2097,7 +2227,7 @@ interface GeneralMemoryEntry {
 // explicit user surface; the gate exists for agent-inferred updates
 // in chat, not for here.
 
-function ProfileSection() {
+export function ProfileSection() {
   const profile = useProfileStore((s) => s.profile);
   const ready = useProfileStore((s) => s.ready);
   const save = useProfileStore((s) => s.save);
@@ -2322,7 +2452,7 @@ function ProfileSection() {
 //   - Disk path + size when installed
 //   - Download / cancel / remove buttons depending on state
 
-function VoiceSection() {
+export function VoiceSection() {
   const ready = useVoiceStore((s) => s.ready);
   const status = useVoiceStore((s) => s.status);
   const bytesPerSec = useVoiceStore((s) => s.bytesPerSec);
@@ -2578,7 +2708,7 @@ const SEVERITY_OPTIONS: Array<{ value: AlertSeverity; label: string }> = [
   { value: "urgent", label: "Nur Dringend" },
 ];
 
-function AlertsSection() {
+export function AlertsSection() {
   const [prefs, setPrefs] = useState<AlertPrefs | null>(null);
   const [permission, setPermission] =
     useState<NotificationPermissionStatus | null>(null);
@@ -3014,7 +3144,7 @@ const FRESHNESS_STAGES: Array<{
   },
 ];
 
-function FreshnessSection() {
+export function FreshnessSection() {
   const [prefs, setPrefs] = useState<FreshnessPrefs | null>(null);
   const [recent, setRecent] = useState<FreshnessTickInfo[]>([]);
   const [busy, setBusy] = useState(false);
@@ -3406,7 +3536,7 @@ function formatFreshnessTickTime(iso: string): string {
   return d.toLocaleString("de-DE");
 }
 
-function GeneralMemorySection() {
+export function GeneralMemorySection() {
   const qc = useQueryClient();
   const [pendingId, setPendingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -3642,7 +3772,7 @@ const PLAN_CARDS: PlanCard[] = [
 
 const ENTERPRISE_CONTACT_URL = "https://eprox-gmbh.de/kontakt";
 
-function PlanSection() {
+export function PlanSection() {
   const { data, isLoading, error, refetch } = useUsage();
   const [busy, setBusy] = useState<"checkout-starter" | "checkout-pro" | "portal" | null>(
     null,
