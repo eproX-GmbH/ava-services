@@ -141,7 +141,7 @@ export async function runAnthropicOAuth(opts?: {
       // Code-Exchange in der Main-Task-Queue — wir halten das
       // BrowserWindow bis dahin offen, falls Anthropic eine Folge-
       // Navigation auslöst (sieht man manchmal nach 200-Antworten).
-      exchangeCodeForToken({ code, verifier: pkce.verifier })
+      exchangeCodeForToken({ code, verifier: pkce.verifier, state })
         .then((token) => finish({ ok: true, token }))
         .catch((err: unknown) => {
           const status = (err as { status?: number } | null)?.status;

@@ -7,6 +7,17 @@ The repo uses one rolling tag per desktop release (`v<major>.<minor>.<patch>`)
 on `main`. Submodules cut their own feature branches and are pinned via the
 desktop bundle; `pnpm fetch:producers` re-vendors them into the .dmg.
 
+## v0.1.138 — 2026-05-11
+
+- **Anthropic-OAuth Token-Tausch (zweiter Anlauf): JSON + state-Feld.**
+  v0.1.133 sendete JSON ohne `state` → 400. v0.1.136 switchte zu
+  form-urlencoded → ebenfalls 400. Der wirklich-funktionierende
+  Mix (verifiziert gegen changjonathanc/ben-vargas/opencode-Anthropic-
+  Implementierungen): JSON-Body MIT `state`-Feld zusätzlich zu
+  `code`/`code_verifier`/`grant_type`/`client_id`/`redirect_uri`. State
+  wird vom Authorize-Redirect bis hierher durchgereicht (war im PKCE-
+  Flow bereits vorhanden, aber nicht in den Body gewandert).
+
 ## v0.1.137 — 2026-05-11
 
 - **Q-Track: Deferred-processing-Quota.** Importe werden jetzt

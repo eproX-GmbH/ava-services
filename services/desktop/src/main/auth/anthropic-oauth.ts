@@ -110,28 +110,30 @@ export function buildAuthorizationUrl(pkce: PkceParams): string {
 export async function exchangeCodeForToken(args: {
   code: string;
   verifier: string;
+  state: string;
 }): Promise<TokenResult> {
-  // Anthropic's token endpoint follows the OAuth 2.0 spec:
-  // application/x-www-form-urlencoded body, not JSON. An earlier
-  // draft of this code sent JSON and got HTTP 400 "Invalid request
-  // format" back ("invalid_request_error" error type).
+  // Anthropic's token endpoint expects a JSON body — confirmed against
+  // multiple working third-party PKCE implementations (changjonathanc
+  // gist, ben-vargas gist, opencode-anthropic-auth, anomalyco). An
+  // earlier v0.1.136 draft switched to application/x-www-form-urlencoded
+  // assuming OAuth 2.0 spec defaults — that also got HTTP 400.
   //
-  // Some Anthropic OAuth requests received via the Claude Code path
-  // also need to split out the code's optional `#state=…` fragment,
-  // and HubSpot-style providers expect the `redirect_uri` to match
-  // the original authorize call EXACTLY (no normalisation).
-  const body = new URLSearchParams({
+  // The body MUST include `state` (the same value passed in the
+  // authorize URL). Omitting it produces the same 400 "Invalid request
+  // format" response that bit us on v0.1.133–135.
+  const body = JSON.stringify({
     grant_type: "authorization_code",
     code: args.code,
+    state: args.state,
     redirect_uri: ANTHROPIC_OAUTH_REDIRECT_URI,
     client_id: ANTHROPIC_OAUTH_CLIENT_ID,
     code_verifier: args.verifier,
-  }).toString();
+  });
 
   const resp = await fetch(ANTHROPIC_OAUTH_TOKEN_URL, {
     method: "POST",
     headers: {
-      "Content-Type": "application/x-www-form-urlencoded",
+      "Content-Type": "application/json",
       Accept: "application/json",
     },
     body,
