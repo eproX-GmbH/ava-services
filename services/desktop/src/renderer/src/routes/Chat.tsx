@@ -18,6 +18,8 @@ import {
 } from "lucide-react";
 import { openChatSearch } from "../components/AppShell";
 import { onChatSearchPick } from "../components/ChatSearchModal";
+import { ChartBlock } from "../components/ChartBlock";
+import { chartFenceState } from "../lib/chart-spec";
 import { useOllamaStore } from "../store/ollama";
 import { useVoiceStore } from "../store/voice";
 import { useVoiceRecorder } from "../lib/recordVoice";
@@ -2061,8 +2063,62 @@ function AttachmentDisclosure({ block }: { block: AttachmentBlock }) {
   );
 }
 
+// Chart-Fence-Extractor — siehe PLANS_chart_skill.md §4.2/§4.3.
+//
+// `renderChatContent` ist der zentrale Bubble-Renderer (kein react-markdown).
+// Wir verarbeiten daher ```chart-Fences VOR dem Link-Tokenizer und splicen
+// React-Nodes (`ChartBlock`) inline ein. Restliche Segmente laufen wie zuvor
+// durch `renderTextSegment` (extrahierte Variante der ursprünglichen
+// Schleife) und der Tokenizer sieht NIEMALS JSON-Inhalt eines Charts.
+//
+// Streaming: ein offener Fence ohne Close → Platzhalter, Rest wird nicht
+// weiter tokenisiert (nächster Stream-Frame ersetzt den Platzhalter).
+
+const CHART_FENCE_RE = /```chart\s*\n([\s\S]*?)\n```/g;
+const CHART_OPEN_RE = /```chart\b/;
+
 function renderChatContent(text: string): ReactNode {
   if (!text) return null;
+  const nodes: ReactNode[] = [];
+  let segKey = 0;
+
+  // 1) Vollständige ```chart-Fences einsammeln.
+  CHART_FENCE_RE.lastIndex = 0;
+  let cursor = 0;
+  let match: RegExpExecArray | null;
+  while ((match = CHART_FENCE_RE.exec(text)) !== null) {
+    const before = text.slice(cursor, match.index);
+    if (before) nodes.push(...renderTextSegment(before, `seg-${segKey++}`));
+    const raw = match[1] ?? "";
+    nodes.push(<ChartBlock key={`chart-${segKey++}`} raw={raw} />);
+    cursor = match.index + match[0].length;
+  }
+
+  const trailing = text.slice(cursor);
+
+  // 2) Trailing-Slice: kann offener Fence (Streaming) oder normaler Text sein.
+  if (trailing) {
+    const state = chartFenceState(trailing);
+    if (state === "open") {
+      // Inhalt bis zum Öffner normal rendern; alles ab dem Öffner → Platzhalter.
+      const openerAt = trailing.search(CHART_OPEN_RE);
+      const head = openerAt > 0 ? trailing.slice(0, openerAt) : "";
+      if (head) nodes.push(...renderTextSegment(head, `seg-${segKey++}`));
+      nodes.push(
+        <div key={`ph-${segKey++}`} className="chart-placeholder">
+          Diagramm wird gerendert…
+        </div>,
+      );
+    } else {
+      nodes.push(...renderTextSegment(trailing, `seg-${segKey++}`));
+    }
+  }
+
+  return nodes;
+}
+
+function renderTextSegment(text: string, prefix: string): ReactNode[] {
+  if (!text) return [];
   const nodes: ReactNode[] = [];
   let cursor = 0;
   let key = 0;
@@ -2074,8 +2130,8 @@ function renderChatContent(text: string): ReactNode {
     // that unreliable, so we split here.
     const parts = raw.split("\n");
     for (let i = 0; i < parts.length; i++) {
-      if (i > 0) nodes.push(<br key={`br-${key++}`} />);
-      if (parts[i]) nodes.push(<span key={`t-${key++}`}>{parts[i]}</span>);
+      if (i > 0) nodes.push(<br key={`${prefix}-br-${key++}`} />);
+      if (parts[i]) nodes.push(<span key={`${prefix}-t-${key++}`}>{parts[i]}</span>);
     }
   };
 
@@ -2094,7 +2150,7 @@ function renderChatContent(text: string): ReactNode {
       if (companyId) {
         nodes.push(
           <Link
-            key={`co-${key++}`}
+            key={`${prefix}-co-${key++}`}
             to={`/companies/${encodeURIComponent(companyId)}`}
             className="chat-company-link"
             title={`Firma ${companyId} öffnen`}
@@ -2118,7 +2174,7 @@ function renderChatContent(text: string): ReactNode {
     } else {
       nodes.push(
         <a
-          key={`a-${key++}`}
+          key={`${prefix}-a-${key++}`}
           href={target}
           target="_blank"
           rel="noopener noreferrer"

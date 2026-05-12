@@ -4919,3 +4919,75 @@ a.heartbeat-decision__company:hover {
   color: #14c8ad;
   border: 1px solid rgba(20, 200, 173, 0.3);
 }
+
+/* v0.1.141 — Agent-native Diagramme im Chat. */
+.chat-chart {
+  position: relative;
+  width: 100%;
+  margin: 0.75rem 0;
+}
+.chat-chart svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+.chat-chart-title {
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: 0.25rem;
+  color: var(--color-fg, inherit);
+}
+.chat-chart-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 0.25rem;
+  font-size: 11px;
+  color: var(--color-fg-muted, #94a3b8);
+}
+.chat-chart-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.chat-chart-legend-swatch {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+}
+.chat-chart-tooltip {
+  position: absolute;
+  transform: translate(-50%, -120%);
+  background: var(--color-bg, #1f2937);
+  color: var(--color-fg, #f8fafc);
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  pointer-events: none;
+  border: 1px solid var(--color-border, rgba(148, 163, 184, 0.25));
+  white-space: nowrap;
+}
+.chart-fallback {
+  border: 1px dashed var(--color-border-muted, rgba(148, 163, 184, 0.4));
+  padding: 0.5rem;
+  border-radius: 6px;
+  margin: 0.5rem 0;
+}
+.chart-fallback .hint {
+  font-size: 12px;
+  color: var(--color-fg-muted, #94a3b8);
+  margin-bottom: 0.25rem;
+}
+.chart-fallback pre {
+  font-size: 11px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  margin: 0;
+}
+.chart-placeholder {
+  font-size: 12px;
+  color: var(--color-fg-muted, #94a3b8);
+  padding: 0.5rem;
+  font-style: italic;
+}

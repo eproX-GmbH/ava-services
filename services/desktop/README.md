@@ -38,7 +38,7 @@ to `http://localhost:8080`, which matches `db-gateway`'s `.env.example`).
 Use `bash scripts/dev.sh` from the meta-repo root to start the gateway plus
 upstream services in another terminal.
 
-## Shipped surfaces (v0.1.135)
+## Shipped surfaces (v0.1.141)
 
 - **AI-Chat** (`/chat`) — primary interface. Agent has 94 tools (full
   inventory in [`TOOLS.md`](../../TOOLS.md), auto-generated from the
@@ -55,7 +55,13 @@ upstream services in another terminal.
   („Mit Claude.ai verbinden") direkt aus AVA — kein Terminal mehr
   nötig. Der bisherige `claude setup-token`-Paste-Pfad bleibt als
   Advanced-Fallback erreichbar. Details in
-  [`ANTHROPIC_AUTH.md`](../../ANTHROPIC_AUTH.md).
+  [`ANTHROPIC_AUTH.md`](../../ANTHROPIC_AUTH.md). Seit v0.1.141 darf der
+  Agent zusätzlich Diagramme inline im Chat emittieren — ein eng
+  validiertes ```chart-Markdown-Fence wird zu einem SVG-Diagramm
+  (bar / hbar / line / area / pie / scatter). Ungültige Specs fallen
+  auf eine Roh-JSON-Vorschau zurück; der Nutzer sieht nie ein kaputtes
+  Diagramm. Test-Suite: `pnpm test:chart`. Spec-Details in
+  [`PLANS_chart_skill.md`](../../PLANS_chart_skill.md).
 - **Companies / company detail** (`/companies`, `/companies/:id`) —
   per-tab tier pills, overview / financials / management / contacts /
   insights / jobs tabs. PersonCard collapses field-grouped Facts behind

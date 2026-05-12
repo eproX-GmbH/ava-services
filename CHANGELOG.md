@@ -7,6 +7,41 @@ The repo uses one rolling tag per desktop release (`v<major>.<minor>.<patch>`)
 on `main`. Submodules cut their own feature branches and are pinned via the
 desktop bundle; `pnpm fetch:producers` re-vendors them into the .dmg.
 
+## v0.1.141 — 2026-05-11
+
+- **Agent-native Diagramme im Chat (Path-2 Fence-Extractor).** Phasen
+  C1–C5 von `PLANS_chart_skill.md`. Der Agent darf in seine Antwort
+  einen ```chart-markdown-Fence mit einem eng validierten JSON-Spec
+  einbetten, wenn Daten als Diagramm verständlicher sind. Sechs
+  Diagrammtypen (`bar` / `hbar` / `line` / `area` / `pie` / `scatter`)
+  werden als reines SVG gerendert (kein Vega-Lite, kein Chart.js;
+  keine neuen npm-Dependencies). Theme-aware: die fünf Serien-Farben
+  kommen aus CSS Custom Properties (`--color-brand-500`, `--color-cyan-600`,
+  `--color-amber-500`, `--color-fg-muted`, `--color-indigo-300`) mit
+  Hex-Fallbacks; gelesen via `getComputedStyle` analog zum Audio-
+  Waveform-Fix in v0.1.135.
+  - Spec-Schema (`yup`) erzwingt harte Caps (≤ 5 Serien × ≤ 100 Punkte
+    × 8 KB roher Spec), endliche y-Werte, eindeutige Serien-Namen,
+    `noUnknown()` gegen HTML-Smuggling, `pie`: genau eine Serie ≤ 6
+    Segmente, `scatter`: numerische x-Achse.
+  - Ungültige Specs fallen auf eine `chart-fallback`-Vorschau zurück
+    (Roh-JSON in `<pre>`); Render-Time-Exceptions fängt eine eigene
+    `ChartErrorBoundary` ab. Der Nutzer sieht NIE ein kaputtes
+    Diagramm.
+  - Streaming-sicher: ein offener Fence ohne schließendes ``` rendert
+    bis zur Öffnung normalen Text und danach einen `chart-placeholder`
+    („Diagramm wird gerendert…“); der nächste Stream-Frame ersetzt ihn.
+  - Integration ohne `react-markdown`-Swap: der bestehende
+    `renderChatContent` extrahiert die Fences vor dem Link-Tokenizer,
+    spliced `<ChartBlock>`-Nodes inline ein und füttert die Segmente
+    dazwischen unverändert in den vorhandenen Tokenizer (Company-
+    Links + externe Links).
+  - System-Prompt: neuer Block `CHART_INSTRUCTIONS` lehrt Wann/Welche/
+    Wie mit drei konkreten Beispielen (bar / line / hbar). Hardcoded
+    de-DE-Locale, EUR-only.
+  - Test-Skript `pnpm -F @ava/desktop test:chart` deckt 6 valid +
+    6 invalid Fixtures plus den 8-KB-Cap-Pfad ab.
+
 ## v0.1.140 — 2026-05-11
 
 - **Finanz-Volumina ausgeblendet (Umsatz/Erlöse/Bilanzsumme).** Die

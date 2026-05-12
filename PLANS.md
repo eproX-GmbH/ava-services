@@ -328,6 +328,18 @@ denied → park); a script-style smoke test in
 
 ---
 
+## 5. Agent-native charts (v0.1.141)
+
+Detailed spec lives in [`PLANS_chart_skill.md`](./PLANS_chart_skill.md);
+landed as Phases C1–C5 (Path-2 fence-extractor inside `renderChatContent`,
+no `react-markdown` swap). Six pure-SVG chart kinds (`bar` / `hbar` /
+`line` / `area` / `pie` / `scatter`), tight `yup` schema, theme-aware
+palette, streaming-safe placeholder, `ChartErrorBoundary` for render-time
+throws, text-table fallback for any invalid spec. Test harness:
+`pnpm -F @ava/desktop test:chart`.
+
+---
+
 ## Cross-cutting
 
 Both workstreams above share one anchor: **the system prompt**. Adding tools (Section 1) and adding skills (Section 2) both extend it. To avoid prompt bloat:
