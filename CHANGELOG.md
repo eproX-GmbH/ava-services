@@ -7,6 +7,17 @@ The repo uses one rolling tag per desktop release (`v<major>.<minor>.<patch>`)
 on `main`. Submodules cut their own feature branches and are pinned via the
 desktop bundle; `pnpm fetch:producers` re-vendors them into the .dmg.
 
+## v0.1.136 — 2026-05-11
+
+- **Anthropic-Subscription-OAuth: Token-Tausch geht jetzt durch.**
+  Beim ersten echten Smoke-Test des Ein-Klick-Logins (v0.1.133) gab
+  Anthropics Token-Endpoint HTTP 400 zurück mit
+  `{"error":{"type":"invalid_request_error","message":"Invalid
+  request format"}}`. Ursache: wir haben den Code-Tausch-Body als
+  JSON gesendet, der Endpoint folgt aber dem OAuth-2.0-Standard und
+  erwartet `application/x-www-form-urlencoded`. Umgestellt — der
+  Flow sollte jetzt durchgehen.
+
 ## v0.1.135 — 2026-05-11
 
 - **Whisper-Transkription auf macOS reparieren.** Auf

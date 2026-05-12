@@ -111,18 +111,27 @@ export async function exchangeCodeForToken(args: {
   code: string;
   verifier: string;
 }): Promise<TokenResult> {
-  const body = JSON.stringify({
+  // Anthropic's token endpoint follows the OAuth 2.0 spec:
+  // application/x-www-form-urlencoded body, not JSON. An earlier
+  // draft of this code sent JSON and got HTTP 400 "Invalid request
+  // format" back ("invalid_request_error" error type).
+  //
+  // Some Anthropic OAuth requests received via the Claude Code path
+  // also need to split out the code's optional `#state=…` fragment,
+  // and HubSpot-style providers expect the `redirect_uri` to match
+  // the original authorize call EXACTLY (no normalisation).
+  const body = new URLSearchParams({
     grant_type: "authorization_code",
     code: args.code,
     redirect_uri: ANTHROPIC_OAUTH_REDIRECT_URI,
     client_id: ANTHROPIC_OAUTH_CLIENT_ID,
     code_verifier: args.verifier,
-  });
+  }).toString();
 
   const resp = await fetch(ANTHROPIC_OAUTH_TOKEN_URL, {
     method: "POST",
     headers: {
-      "Content-Type": "application/json",
+      "Content-Type": "application/x-www-form-urlencoded",
       Accept: "application/json",
     },
     body,
