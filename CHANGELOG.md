@@ -7,6 +7,24 @@ The repo uses one rolling tag per desktop release (`v<major>.<minor>.<patch>`)
 on `main`. Submodules cut their own feature branches and are pinned via the
 desktop bundle; `pnpm fetch:producers` re-vendors them into the .dmg.
 
+## v0.1.134 — 2026-05-11
+
+- **„Mit CRM verknüpfen"-Flicker behoben.** Beim Klick auf den
+  Verknüpfen-Button flackerte die ganze CompanyDetail-Seite —
+  Ursache war eine Re-Render-Schleife im CompanyCrmPanel:
+  - **`autoEnriched`-State als Schreib-UND-Dep im Auto-Enrich-Effect.**
+    Klassischer React-Footgun: jedes `setAutoEnriched(...)` löste den
+    Effect erneut aus. Auf `useRef`-Tracking umgestellt, sodass der
+    Tracker außerhalb der Reactivity-Schleife lebt. Effect-Deps sind
+    jetzt nur noch `[links.data, details.data, companyId]`.
+  - **`detailsByCrm` aus Deps entfernt** — es ist nur ein
+    Memo-Wrapper um `details.data`, sodass beides in den Deps
+    gleichzeitig zu Double-Triggering führte.
+  - **Picker-Callbacks im Parent in `useCallback` gewickelt** —
+    vorher waren `onClose` / `onLinked` Inline-Arrows, die bei jedem
+    Parent-Re-Render eine neue Ref bekamen und den Esc-Listener des
+    Pickers in einer Cleanup-Re-Add-Schleife thrashen ließen.
+
 ## v0.1.133 — 2026-05-11
 
 - **Ein-Klick-Login mit Claude.ai-Abo.** Die Subscription-Karte im

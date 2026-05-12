@@ -18,7 +18,7 @@
 // re-read /details once. Salesforce/Dynamics return notConfigured:true
 // and render a static hint.
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { CrmLinkPicker } from "./CrmLinkPicker";
 
@@ -126,7 +126,9 @@ export function CompanyCrmPanel({ companyId, companyName }: Props) {
   const [pickerOpen, setPickerOpen] = useState(false);
   // Track which CRMs we've already auto-triggered an enrichment for in
   // this mount, so a notConfigured: true / empty cache doesn't loop.
-  const [autoEnriched, setAutoEnriched] = useState<Record<string, boolean>>({});
+  // Kept as a ref (not state) so toggling it doesn't put the auto-enrich
+  // effect's dependency array into a self-firing cycle.
+  const autoEnrichedRef = useRef<Record<string, boolean>>({});
 
   const links = useQuery({
     queryKey: ["crm-links", companyId],
@@ -160,11 +162,15 @@ export function CompanyCrmPanel({ companyId, companyName }: Props) {
 
   // Auto-trigger enrichment when a HubSpot link is present but the
   // cached payload looks empty (no contacts / no deals / no lastActivity).
+  //
+  // Deps deliberately exclude `autoEnrichedRef.current` (a ref, not
+  // reactive) and `detailsByCrm` (derived from details.data, included
+  // transitively). queryClient is a stable singleton from React Query.
   useEffect(() => {
     if (!links.data) return;
     for (const link of links.data) {
       if (link.crmType !== "HUBSPOT") continue;
-      if (autoEnriched[link.crmType]) continue;
+      if (autoEnrichedRef.current[link.crmType]) continue;
       const detail = detailsByCrm.HUBSPOT;
       const isEmpty =
         !detail ||
@@ -173,7 +179,10 @@ export function CompanyCrmPanel({ companyId, companyName }: Props) {
           (detail.deals?.length ?? 0) === 0 &&
           !detail.lastActivity);
       if (!isEmpty) continue;
-      setAutoEnriched((prev) => ({ ...prev, [link.crmType]: true }));
+      autoEnrichedRef.current = {
+        ...autoEnrichedRef.current,
+        [link.crmType]: true,
+      };
       void (async () => {
         const res = await window.api.crm.enrich({
           companyId,
@@ -187,7 +196,8 @@ export function CompanyCrmPanel({ companyId, companyName }: Props) {
         }
       })();
     }
-  }, [links.data, detailsByCrm, autoEnriched, companyId, queryClient]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [links.data, details.data, companyId]);
 
   async function refreshOne(link: CrmLinkRow) {
     if (link.crmType !== "HUBSPOT") return;
@@ -205,6 +215,8 @@ export function CompanyCrmPanel({ companyId, companyName }: Props) {
       });
     }
   }
+
+  const closePicker = useCallback(() => setPickerOpen(false), []);
 
   function openInCrm(link: CrmLinkRow) {
     if (link.crmType !== "HUBSPOT") return;
@@ -270,8 +282,8 @@ export function CompanyCrmPanel({ companyId, companyName }: Props) {
         open={pickerOpen}
         companyId={companyId}
         defaultQuery={companyName}
-        onClose={() => setPickerOpen(false)}
-        onLinked={() => setPickerOpen(false)}
+        onClose={closePicker}
+        onLinked={closePicker}
       />
     </article>
   );
