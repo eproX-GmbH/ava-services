@@ -2031,6 +2031,13 @@ app.whenReady().then(async () => {
   // Phase 8.k10h — load a specific conversation's transcript so the
   // renderer can replay it on session-switch. Returns [] for unknown
   // ids / parse failures (consistent with MemoryStore.load semantics).
+  // v0.1.151 — still-open choice/text prompts for a conversation.
+  // The renderer calls this on mount / conversation switch to re-paint
+  // any prompt cards whose original stream frame was missed (Chat
+  // wasn't mounted, or the user navigated away mid-prompt).
+  ipcMain.handle("agent:getPendingPrompts", (_e, conversationId: string) =>
+    agent.getPendingPrompts(conversationId),
+  );
   ipcMain.handle("agent:loadConversation", (_e, conversationId: string) =>
     memory.load(conversationId),
   );

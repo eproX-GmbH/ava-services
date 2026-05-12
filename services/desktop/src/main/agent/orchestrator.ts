@@ -2,6 +2,7 @@ import { EventEmitter } from "node:events";
 import { randomUUID } from "node:crypto";
 import type {
   AgentMessage,
+  AgentPendingPrompt,
   AgentSendInput,
   AgentSendResult,
   AgentStatus,
@@ -140,6 +141,11 @@ export class AgentOrchestrator extends EventEmitter {
   private runtimeRecoverInFlight: Promise<void> | null = null;
 
   private inFlightRequestId: string | null = null;
+  // v0.1.151 — paired with inFlightRequestId so the renderer can ask
+  // "is the busy turn for THIS conversation?" after a route remount.
+  // Set in send(), cleared in the runLoop().finally so it never lingers
+  // past the actual stream lifetime.
+  private inFlightConversationId: string | null = null;
   private currentAbort: AbortController | null = null;
   private errorMessage: string | null = null;
   /**
@@ -212,9 +218,54 @@ export class AgentOrchestrator extends EventEmitter {
       // active provider is ollama. For OpenAI we leave it null.
       ollamaHost: null,
       inFlightRequestId: this.inFlightRequestId,
+      inFlightConversationId: this.inFlightConversationId,
       errorMessage: this.errorMessage ?? provider.errorMessage,
       memoryError: this.memoryError,
     };
+  }
+
+  /**
+   * v0.1.151 — list still-open prompts for a conversation. The
+   * orchestrator holds pending prompts in `pendingChoices` as long as
+   * the originating tool is awaiting an answer; when the Chat
+   * component remounts (e.g. after navigating away during a turn) it
+   * reads this and re-injects the cards into its message list.
+   *
+   * Without it: stream frames fire once, the unmounted renderer
+   * misses them, and the user comes back to a chat that's still
+   * "busy" but with no actionable prompt on screen — a soft hang.
+   */
+  getPendingPrompts(conversationId: string): AgentPendingPrompt[] {
+    const out: AgentPendingPrompt[] = [];
+    for (const [choiceId, entry] of this.pendingChoices) {
+      if (entry.conversationId !== conversationId) continue;
+      if (entry.prompt.kind === "choice-request") {
+        out.push({
+          kind: "choice-request",
+          conversationId: entry.conversationId,
+          requestId: entry.requestId,
+          choiceId,
+          prompt: entry.prompt.prompt,
+          options: entry.prompt.options,
+        });
+      } else {
+        out.push({
+          kind: "text-request",
+          conversationId: entry.conversationId,
+          requestId: entry.requestId,
+          choiceId,
+          prompt: entry.prompt.prompt,
+          ...(entry.prompt.placeholder !== undefined
+            ? { placeholder: entry.prompt.placeholder }
+            : {}),
+          ...(entry.prompt.defaultValue !== undefined
+            ? { defaultValue: entry.prompt.defaultValue }
+            : {}),
+          ...(entry.prompt.optional ? { optional: true } : {}),
+        });
+      }
+    }
+    return out;
   }
 
   /**
@@ -303,6 +354,7 @@ export class AgentOrchestrator extends EventEmitter {
     }
 
     this.inFlightRequestId = requestId;
+    this.inFlightConversationId = convo.id;
     this.errorMessage = null;
     this.emit("status", this.getStatus());
 
@@ -321,6 +373,7 @@ export class AgentOrchestrator extends EventEmitter {
       signal: abort.signal,
     }).finally(() => {
       this.inFlightRequestId = null;
+      this.inFlightConversationId = null;
       this.currentAbort = null;
       this.emit("status", this.getStatus());
     });

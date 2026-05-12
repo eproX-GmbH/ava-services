@@ -291,26 +291,87 @@ export function Chat() {
     return out;
   }, []);
 
-  // Switch to a specific conversation: abort any in-flight turn,
-  // load its transcript from disk, replay into UiMessages.
+  // Switch to a specific conversation: load its transcript from disk,
+  // replay into UiMessages, and — v0.1.151 — adopt any in-flight turn
+  // and re-paint any still-open prompt cards.
+  //
+  // We deliberately DO NOT abort the in-flight turn on switch any more.
+  // Earlier behavior aborted on every switch, but that conflated two
+  // very different cases:
+  //   - "user switched conversations" → they probably want the OTHER
+  //     conversation to keep running and to see its prompts when they
+  //     come back.
+  //   - "user explicitly cancelled" → use the Stop button.
+  // The renderer now scopes all UI state to the displayed conversation
+  // (frame filter via conversationIdRef, inFlight derived from
+  // status.inFlightConversationId === current), so leaving the other
+  // turn alone is the right call.
   const switchConversation = useCallback(
     async (id: string) => {
-      if (activeRequestIdRef.current) {
-        try {
-          await window.api.agent.abort(activeRequestIdRef.current);
-        } catch {
-          /* best effort */
-        }
-        activeRequestIdRef.current = null;
-      }
       setError(null);
       setThinking(false);
       setConversationId(id);
+      conversationIdRef.current = id;
       try {
-        const history = await window.api.agent.loadConversation(id);
-        setMessages(replayConversation(history));
+        const [history, pending, status] = await Promise.all([
+          window.api.agent.loadConversation(id),
+          window.api.agent.getPendingPrompts(id),
+          window.api.agent.getStatus(),
+        ]);
+        const replayed = replayConversation(history);
+        // Inject any still-open prompts as UiMessage rows so the user
+        // sees the agent's outstanding question instead of silence.
+        for (const p of pending) {
+          if (p.kind === "choice-request") {
+            replayed.push({
+              id: `ch-${p.choiceId}`,
+              role: "tool",
+              content: "",
+              choice: {
+                choiceId: p.choiceId,
+                prompt: p.prompt,
+                options: p.options,
+              },
+            });
+          } else {
+            replayed.push({
+              id: `tx-${p.choiceId}`,
+              role: "tool",
+              content: "",
+              textPrompt: {
+                choiceId: p.choiceId,
+                prompt: p.prompt,
+                ...(p.placeholder !== undefined
+                  ? { placeholder: p.placeholder }
+                  : {}),
+                ...(p.defaultValue !== undefined
+                  ? { defaultValue: p.defaultValue }
+                  : {}),
+                ...(p.optional ? { optional: true } : {}),
+              },
+            });
+          }
+        }
+        setMessages(replayed);
+        // Adopt the in-flight turn if it's for THIS conversation. The
+        // stream-frame filter (further down) checks activeRequestIdRef
+        // before accepting frames; without this adoption step, a turn
+        // that started in another mount drops every frame on the floor.
+        if (
+          status.inFlightRequestId &&
+          status.inFlightConversationId === id
+        ) {
+          activeRequestIdRef.current = status.inFlightRequestId;
+          // The agent is busy but hasn't streamed a visible delta yet —
+          // surface the "thinking" indicator so the chat doesn't look
+          // frozen between the user's last message and the next frame.
+          setThinking(true);
+        } else {
+          activeRequestIdRef.current = null;
+        }
       } catch {
         setMessages([]);
+        activeRequestIdRef.current = null;
       }
     },
     [replayConversation],
@@ -320,12 +381,17 @@ export function Chat() {
   // first user message lands (the orchestrator's appendMessage path
   // does that), so the dropdown only shows it after the first send.
   const startNewConversation = useCallback(() => {
+    // v0.1.151 — abort whatever's running so the orchestrator's
+    // single-slot doesn't reject the first send into the new
+    // conversation. Use the ref OR the status — adopted turns may
+    // not have populated the ref yet.
     if (activeRequestIdRef.current) {
       void window.api.agent.abort(activeRequestIdRef.current);
       activeRequestIdRef.current = null;
     }
     const id = newConversationId();
     setConversationId(id);
+    conversationIdRef.current = id;
     setMessages([]);
     setError(null);
     setThinking(false);
@@ -439,7 +505,25 @@ export function Chat() {
   // previous send can never poison the current turn.
   useEffect(() => {
     const unsub = window.api.agent.onStream((frame: AgentStreamFrame) => {
-      if (frame.requestId !== activeRequestIdRef.current) return;
+      // v0.1.151 — accept frames if EITHER (a) the activeRequestIdRef
+      // matches (the locally-initiated turn) OR (b) the frame is
+      // addressed to the conversation currently on screen (an adopted
+      // turn that started in a different mount). Without (b) the
+      // adoption path would still drop every delta because the ref
+      // hadn't been updated yet at the moment the frame fired.
+      const matchesActive =
+        activeRequestIdRef.current !== null &&
+        frame.requestId === activeRequestIdRef.current;
+      const matchesConversation =
+        "conversationId" in frame &&
+        frame.conversationId === conversationIdRef.current;
+      if (!matchesActive && !matchesConversation) return;
+      // Late-binding: if we accepted via (b) and the ref is empty,
+      // remember the requestId so the Stop button has something to
+      // abort with and subsequent frames take the fast path through (a).
+      if (matchesConversation && activeRequestIdRef.current === null) {
+        activeRequestIdRef.current = frame.requestId;
+      }
 
       // The "thinking…" indicator is shown whenever the agent is busy but
       // not producing visible output. We clear it on `token` (the agent
@@ -667,8 +751,18 @@ export function Chat() {
     el.style.overflowY = el.scrollHeight > maxHeight ? "auto" : "hidden";
   }, [input]);
 
+  // v0.1.151 — inFlight is conversation-scoped. Without the conversation
+  // check, the Stop button stayed lit while the user was viewing
+  // conversation B even though it was conversation A that was busy.
+  // We also no longer OR with `activeRequestIdRef.current` directly:
+  // the ref is mirrored from `status.inFlightRequestId` on adoption,
+  // so the status check alone is authoritative. If no in-flight turn
+  // belongs to THIS conversation, the button reads as Send — which is
+  // exactly the "no recoverable state → show send not stop" property
+  // the user asked for.
   const inFlight =
-    activeRequestIdRef.current !== null || !!status?.inFlightRequestId;
+    !!status?.inFlightRequestId &&
+    status?.inFlightConversationId === conversationId;
   const canSend = useMemo(
     () =>
       !!status?.ready &&
@@ -883,7 +977,13 @@ export function Chat() {
     // frame lands. The frame still resets activeRequestIdRef and
     // marks any pending message as not-pending.
     setThinking(false);
-    void window.api.agent.abort(activeRequestIdRef.current ?? undefined);
+    // v0.1.151 — fall back to the status's inFlightRequestId when the
+    // local ref is empty (we may not have adopted yet — e.g. the user
+    // hit Stop before the first frame landed). The orchestrator
+    // accepts undefined too and aborts whatever's running.
+    const id =
+      activeRequestIdRef.current ?? status?.inFlightRequestId ?? undefined;
+    void window.api.agent.abort(id);
   }
 
   function handlePickChoice(choiceId: string, value: string) {

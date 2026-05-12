@@ -26,6 +26,27 @@ export interface PendingChoice {
   reject: (err: Error) => void;
   /** For abort cleanup: which request initiated the prompt. */
   requestId: string;
+  /**
+   * v0.1.151 — full frame payload kept alongside the resolver so the
+   * orchestrator can replay still-open prompts on
+   * `agent:getPendingPrompts`. Without this, navigating away from the
+   * chat while a prompt is on screen loses the card entirely — the
+   * stream frame fires once and is gone.
+   */
+  conversationId: string;
+  prompt:
+    | {
+        kind: "choice-request";
+        prompt: string;
+        options: AgentChoiceOption[];
+      }
+    | {
+        kind: "text-request";
+        prompt: string;
+        placeholder?: string;
+        defaultValue?: string;
+        optional?: boolean;
+      };
 }
 
 export interface UiBridgeDeps {
@@ -69,6 +90,8 @@ export class UiBridge {
 
       this.deps.pending.set(choiceId, {
         requestId: this.requestId,
+        conversationId: this.conversationId,
+        prompt: { kind: "choice-request", prompt, options },
         resolve: (value) => {
           signal.removeEventListener("abort", onAbort);
           resolve(value);
@@ -124,6 +147,14 @@ export class UiBridge {
 
       this.deps.pending.set(choiceId, {
         requestId: this.requestId,
+        conversationId: this.conversationId,
+        prompt: {
+          kind: "text-request",
+          prompt,
+          ...(opts.placeholder ? { placeholder: opts.placeholder } : {}),
+          ...(opts.defaultValue ? { defaultValue: opts.defaultValue } : {}),
+          ...(opts.optional ? { optional: true } : {}),
+        },
         resolve: (value) => {
           signal.removeEventListener("abort", onAbort);
           resolve(value);

@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer } from "electron";
 import type {
   AgentChoiceAnswer,
   AgentMessage,
+  AgentPendingPrompt,
   AgentSendInput,
   AgentSendResult,
   AgentStatus,
@@ -67,6 +68,7 @@ export type {
   AgentChoiceAnswer,
   AgentChoiceOption,
   AgentMessage,
+  AgentPendingPrompt,
   AgentSendInput,
   AgentSendResult,
   AgentStatus,
@@ -567,6 +569,15 @@ const api = {
      */
     loadConversation: (conversationId: string): Promise<AgentMessage[]> =>
       ipcRenderer.invoke("agent:loadConversation", conversationId),
+    /**
+     * v0.1.151 — still-open choice/text prompts for a conversation,
+     * surfaced so the renderer can re-paint prompt cards after a
+     * route remount. Empty array when there's nothing pending.
+     */
+    getPendingPrompts: (
+      conversationId: string,
+    ): Promise<AgentPendingPrompt[]> =>
+      ipcRenderer.invoke("agent:getPendingPrompts", conversationId),
     /** Phase 8.k10h — hard-delete a conversation file. */
     deleteConversation: (conversationId: string): Promise<boolean> =>
       ipcRenderer.invoke("agent:deleteConversation", conversationId),

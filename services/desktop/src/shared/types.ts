@@ -313,6 +313,15 @@ export interface AgentStatus {
   ollamaHost: string | null;
   /** Set while a send is being processed (single-slot in 8.a). */
   inFlightRequestId: string | null;
+  /**
+   * v0.1.151 — conversationId of the currently-streaming turn. Pairs
+   * with `inFlightRequestId` so the renderer can tell "is the busy turn
+   * MINE?" after a route remount. Without this, navigating away during
+   * a stream and back leaves the Send/Stop button confused: status says
+   * "something is in flight" but the renderer can't tell whether it's
+   * for the conversation currently on screen.
+   */
+  inFlightConversationId: string | null;
   /** Last error message, if the orchestrator is in a sticky-error state. */
   errorMessage: string | null;
   /**
@@ -449,6 +458,37 @@ export interface AgentChoiceAnswer {
   choiceId: string;
   value: string;
 }
+
+/**
+ * v0.1.151 — A still-open prompt (choice or text) for a given
+ * conversation. Returned by `agent:getPendingPrompts` so the renderer
+ * can replay the prompt cards after a route remount; the original
+ * `choice-request` / `text-request` stream frame fires once and is
+ * lost if the Chat component wasn't mounted at the time.
+ *
+ * Shape is intentionally close to the matching stream frames so the
+ * renderer's existing card-rendering branch can consume both
+ * uniformly.
+ */
+export type AgentPendingPrompt =
+  | {
+      kind: "choice-request";
+      conversationId: string;
+      requestId: string;
+      choiceId: string;
+      prompt: string;
+      options: AgentChoiceOption[];
+    }
+  | {
+      kind: "text-request";
+      conversationId: string;
+      requestId: string;
+      choiceId: string;
+      prompt: string;
+      placeholder?: string;
+      defaultValue?: string;
+      optional?: boolean;
+    };
 
 // ---- Provider switch (Phase 8.j + 8.k) -------------------------------------
 //
