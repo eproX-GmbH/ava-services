@@ -1246,6 +1246,20 @@ app.whenReady().then(async () => {
     await shell.openExternal(parsed.toString());
   });
 
+  // v0.1.155 — reveal-in-Finder + open-dir bridge for the
+  // silent-OTA-failure banner. We don't enforce a scheme here because
+  // file-system paths aren't URLs; we DO restrict to absolute paths
+  // so the renderer can't trick main into opening relative paths from
+  // CWD. file:// schemes are blocked at the openExternal layer above.
+  ipcMain.handle("shell:showItemInFolder", (_e, path: string) => {
+    if (typeof path !== "string" || !path.startsWith("/")) return;
+    shell.showItemInFolder(path);
+  });
+  ipcMain.handle("shell:openPath", async (_e, path: string) => {
+    if (typeof path !== "string" || !path.startsWith("/")) return;
+    await shell.openPath(path);
+  });
+
   // LinkedIn-Beobachter (Phase L0). Persistent settings + consent gate
   // + kill-switch IPC. No scraper code here yet — that lands in L1+.
   initLinkedIn({ providers, gateway: gatewayClient });
@@ -1704,6 +1718,14 @@ app.whenReady().then(async () => {
   ipcMain.handle("updater:check", () => updater.check());
   ipcMain.handle("updater:download", () => updater.download());
   ipcMain.handle("updater:install", () => updater.installAndRelaunch());
+  // v0.1.155 — diagnostics for silent OTA failures. The renderer's
+  // Settings panel calls getDiagnostics when the user clicks
+  // "Update-Logs zeigen" and dismissSilentFailure when they
+  // acknowledge the banner.
+  ipcMain.handle("updater:getDiagnostics", () => updater.getDiagnostics());
+  ipcMain.handle("updater:dismissSilentFailure", () =>
+    updater.dismissSilentFailure(),
+  );
 
   // Producer supervisors (8.v1.1). Renderer reads the snapshot list
   // on mount and subscribes to `producer-status:changed` for diffs.
@@ -2371,7 +2393,11 @@ app.whenReady().then(async () => {
 
   // Auto-updater. No-op in dev. In packaged builds: checks GitHub
   // Releases on launch + every 4h while the app is open.
-  updater.start();
+  // v0.1.155 — start() became async because it reads a "previous-boot
+  // install-attempted" marker before kicking the first check. We
+  // intentionally fire-and-forget: the await would block the rest of
+  // app.whenReady, and the marker read is best-effort.
+  void updater.start();
 
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) createMainWindow();

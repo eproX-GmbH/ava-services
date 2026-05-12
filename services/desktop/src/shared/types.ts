@@ -62,6 +62,33 @@ export interface UpdateStatus {
   progress: UpdateProgress | null;
   /** Set when state === "error". */
   errorMessage: string | null;
+  /**
+   * v0.1.155 — Set when the previous boot tried to install an update
+   * but the running version on this boot is unchanged. Carries the
+   * version that DID NOT install, so the renderer can show
+   *   "Update auf vX.Y.Z konnte nicht installiert werden — Logs ansehen?"
+   * The flag is cleared after the user dismisses it or once the
+   * update successfully lands. See Updater.detectSilentInstallFailure.
+   */
+  silentInstallFailedFromVersion: string | null;
+}
+
+/**
+ * v0.1.155 — File paths the user can share with us when an OTA install
+ * fails silently. Squirrel.Mac writes to its own log files which
+ * neither electron-updater nor we can intercept post-quitAndInstall —
+ * surfacing the paths from the Settings panel ("Update-Logs zeigen")
+ * is the most reliable way to get an actionable error out of the user.
+ */
+export interface UpdateDiagnostics {
+  /** Active platform — only `darwin` has Squirrel logs. */
+  platform: NodeJS.Platform;
+  /** Existing log files we can find. Empty when nothing's been logged
+   *  yet (no install attempt) or on platforms without Squirrel. */
+  logs: { path: string; sizeBytes: number; mtimeMs: number }[];
+  /** Persistent "install attempted" marker, if any. The renderer can
+   *  surface this for "your last install attempt targeted vX.Y.Z". */
+  lastInstallAttempt: { version: string; at: string } | null;
 }
 
 // ---- Local producers (8.v1.1) ---------------------------------------------

@@ -112,3 +112,20 @@ export async function scrubQuarantine(): Promise<void> {
     scrubPath(pendingUpdatePath()),
   ]);
 }
+
+/**
+ * v0.1.155 — Strip quarantine from a single explicit file path. Used
+ * from updater.ts's `update-downloaded` handler against
+ * `UpdateInfo.downloadedFile`, the only timing where we know the
+ * artifact is on disk AND Squirrel hasn't touched it yet.
+ *
+ * The earlier scrubQuarantine() call ran against directory paths that
+ * frequently didn't yet contain the artifact at the timing we invoked
+ * it (pre-quitAndInstall — by which point electron-updater had already
+ * staged the file in a sibling location we weren't covering).
+ */
+export async function scrubPathExplicit(path: string): Promise<void> {
+  if (process.platform !== "darwin") return;
+  if (!app.isPackaged) return;
+  await scrubPath(path);
+}

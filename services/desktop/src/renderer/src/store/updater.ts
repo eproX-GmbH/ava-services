@@ -15,6 +15,7 @@ const INITIAL: UpdateStatus = {
   latestVersion: null,
   progress: null,
   errorMessage: null,
+  silentInstallFailedFromVersion: null,
 };
 
 interface UpdaterState {

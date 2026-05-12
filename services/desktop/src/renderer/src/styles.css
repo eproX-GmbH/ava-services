@@ -3351,6 +3351,44 @@ a.heartbeat-decision__company:hover {
   transform-origin: 50% 50%;
 }
 
+/* v0.1.155 — silent OTA-install failure variant. Same dock position
+   as the regular banner but warning-tinted so the user can tell it
+   apart from a routine "Update available" pill. Used by
+   SilentFailureBanner in UpdateBanner.tsx. The component is a div,
+   not a button (clicks fan out to two distinct sub-buttons inside),
+   so we re-declare the layout the .update-banner button selector
+   would otherwise miss. */
+.update-banner--failure {
+  background: rgba(244, 114, 114, 0.14);
+  border: 1px solid rgba(244, 114, 114, 0.55);
+  color: var(--color-fg);
+  cursor: default;
+}
+/* The failure variant is a <div>, not a <button>, so the base
+ * .update-banner:hover transform would feel wrong (the whole banner
+ * isn't clickable — its two child buttons are). Suppress it. */
+.update-banner--failure:hover {
+  transform: none;
+  box-shadow: var(--shadow-soft-lg);
+}
+.update-banner--failure .update-banner__icon { color: var(--color-err, #f47272); }
+.update-banner__actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  margin-left: 0.25rem;
+}
+.update-banner__dismiss {
+  background: none;
+  border: none;
+  color: var(--color-fg-faint);
+  font-size: 16px;
+  line-height: 1;
+  padding: 0 0.25rem;
+  cursor: pointer;
+}
+.update-banner__dismiss:hover { color: var(--color-fg); }
+
 /* ---- v0.1.52 — upstream-reachability banner -----------------------------
  * Slim row under the topbar that appears when an external upstream
  * (today: only unternehmensregister.de) is unreachable. Uses the

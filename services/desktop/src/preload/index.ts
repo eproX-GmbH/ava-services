@@ -49,6 +49,7 @@ import type {
   LinkedInSignalListFilter,
   LinkedInSignalListRow,
   LinkedInSignalStatus,
+  UpdateDiagnostics,
   UpdateStatus,
   ProviderCatalogEntry,
   ProviderConfig,
@@ -131,6 +132,7 @@ export type {
   LinkedInSignalListFilter,
   LinkedInSignalListRow,
   LinkedInSignalStatus,
+  UpdateDiagnostics,
   UpdateStatus,
   ProviderCatalogEntry,
   ProviderConfig,
@@ -263,6 +265,21 @@ const api = {
     check: (): Promise<void> => ipcRenderer.invoke("updater:check"),
     download: (): Promise<void> => ipcRenderer.invoke("updater:download"),
     install: (): Promise<void> => ipcRenderer.invoke("updater:install"),
+    /**
+     * v0.1.155 — Settings-panel diagnostic. Returns the platform's
+     * OTA log file paths (Squirrel + electron-updater) so the user can
+     * attach them when reporting a silent install failure.
+     */
+    getDiagnostics: (): Promise<UpdateDiagnostics> =>
+      ipcRenderer.invoke("updater:getDiagnostics"),
+    /**
+     * v0.1.155 — Acknowledge the "previous install attempt didn't
+     * apply" banner. Clears the in-memory flag; the on-disk
+     * pending-install marker is left alone so a subsequent
+     * getDiagnostics() still reports the attempted version.
+     */
+    dismissSilentFailure: (): Promise<void> =>
+      ipcRenderer.invoke("updater:dismissSilentFailure"),
     onStatusChanged: (cb: (status: UpdateStatus) => void): (() => void) => {
       const handler = (_e: Electron.IpcRendererEvent, status: UpdateStatus) =>
         cb(status);
@@ -718,6 +735,20 @@ const api = {
   shell: {
     openExternal: (url: string): Promise<void> =>
       ipcRenderer.invoke("shell:openExternal", url),
+    /**
+     * v0.1.155 — reveal a file in Finder/Explorer (selects the file
+     * inside its containing directory). Used by the silent-OTA-failure
+     * banner so the user can drag the Squirrel log into a bug report.
+     */
+    showItemInFolder: (path: string): Promise<void> =>
+      ipcRenderer.invoke("shell:showItemInFolder", path),
+    /**
+     * v0.1.155 — open a directory in Finder/Explorer. Same use case as
+     * showItemInFolder but for the fallback path when no specific log
+     * file exists yet.
+     */
+    openPath: (path: string): Promise<void> =>
+      ipcRenderer.invoke("shell:openPath", path),
   },
 
   // M3 monetization (v0.1.73) — Stripe Checkout + Customer Portal.

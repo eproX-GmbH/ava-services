@@ -1,56 +1,94 @@
 import { autoUpdater, type UpdateInfo, type ProgressInfo } from "electron-updater";
 import { app, BrowserWindow } from "electron";
 import { EventEmitter } from "node:events";
+import { promises as fs } from "node:fs";
+import { existsSync, statSync } from "node:fs";
+import { homedir } from "node:os";
+import { join } from "node:path";
 import type {
+  UpdateDiagnostics,
   UpdateProgress,
   UpdateState,
   UpdateStatus,
 } from "../shared/types";
-import { scrubQuarantine } from "./scrub-quarantine";
+import { scrubQuarantine, scrubPathExplicit } from "./scrub-quarantine";
 
 // Auto-update via electron-updater (Phase 8.u4 — finally landed in
-// 8.v1.5).
-//
-// Talks to the GitHub Releases feed configured in
-// `electron-builder.yml`'s `publish:` block. On launch we ask
-// GitHub for the latest tag matching `vX.Y.Z`; if it's newer than
-// the installed `app.getVersion()` we download it in the
-// background and surface a "Restart to update" prompt to the
-// renderer. The user always sees + confirms the download — no
-// silent autorun.
-//
-// Auth / signing inheritance:
-//   - macOS: the .dmg shipped to the user is already signed +
-//     notarised by our Developer ID Application cert. The
-//     downloaded update inherits that trust chain; macOS
-//     verifies the signature before swapping the app in.
-//   - Windows: deferred (Windows builds are CI-disabled in v0.1.24)
+// 8.v1.5; substantially reworked in v0.1.155 after silent-install
+// failures on the user's machine).
 //
 // Lifecycle:
-//   1. App boots, Updater.start() runs once on app.whenReady
+//   1. App boots, Updater.start() runs once on app.whenReady. At this
+//      point we also check whether the PREVIOUS boot tried to install
+//      an update that didn't actually take — if so we surface a
+//      silent-install-failed flag the renderer can show.
 //   2. autoUpdater.checkForUpdates() — async, non-blocking
-//   3. event 'update-available' → setState("downloading")
-//   4. event 'download-progress' → emit progress to renderer
-//   5. event 'update-downloaded' → setState("ready") + IPC
-//      'updater-status:changed'
+//   3. event 'update-available' → setState("available")
+//   4. user clicks Download → autoUpdater.downloadUpdate() →
+//      'download-progress' frames, then 'update-downloaded'
+//   5. event 'update-downloaded' → setState("ready") AND scrub
+//      quarantine on the EXACT downloaded artifact (info.downloadedFile).
+//      Doing it here, before the user clicks install, is the only
+//      timing that guarantees the .zip is on disk + the scrub
+//      completes before Squirrel.Mac touches it.
 //   6. User clicks "Update installieren" → IPC 'updater:install'
-//      → autoUpdater.quitAndInstall() relaunches with new version
+//      → write "expected version" marker → autoUpdater.quitAndInstall()
+//      → app relaunches. Next boot compares running version to
+//      the marker; mismatch ⇒ silent failure surfaced to the user.
 //
-// Errors are non-fatal: the user keeps the running version. We
-// log the error message + push a status snapshot the renderer can
-// surface in the Settings panel.
+// What changed in v0.1.155 vs. the v0.1.57 attempt:
+//   - Scrub timing moved from pre-quitAndInstall to update-downloaded.
+//     Earlier the scrub ran on a directory path that often didn't yet
+//     contain the artifact; now we scrub the exact file electron-updater
+//     reports.
+//   - autoInstallOnAppQuit flipped to true. Belt-and-suspenders: if
+//     quitAndInstall fails to spawn Squirrel cleanly, the next normal
+//     Cmd-Q will retry. The user previously had no fallback.
+//   - Silent-install detection: a pending-install marker on disk +
+//     boot-time version compare turns "it didn't work and I don't
+//     know why" into a visible UI signal.
 
 const CHECK_INTERVAL_MS = 4 * 60 * 60 * 1000; // 4h re-check while open
+
+/** Persistent marker we write right before quitAndInstall. Read on
+ *  next boot to detect a silent failure (running version unchanged
+ *  despite the install attempt). Path is under userData so it survives
+ *  the .app swap and is per-installation. */
+function pendingInstallMarkerPath(): string {
+  return join(app.getPath("userData"), "pending-install.json");
+}
+
+/** Squirrel.Mac log directory. ShipIt writes stderr/stdout logs here
+ *  on macOS; surfacing the path is our best diagnostic when an install
+ *  fails after the parent process is already dead. */
+function squirrelLogDir(): string {
+  // Squirrel.Mac's per-app cache dir. The appId is fixed in
+  // electron-builder.yml.
+  return join(homedir(), "Library", "Caches", "com.ava.desktop.ShipIt");
+}
+
+/** electron-log's default location for electron-updater's own logs. */
+function electronUpdaterLogPath(): string {
+  // electron-updater pipes through electron-log; on macOS the file is
+  // under <userData>/logs/. We surface this so the user can attach it
+  // even when Squirrel itself didn't get far enough to log.
+  return join(app.getPath("userData"), "logs", "main.log");
+}
 
 export class Updater extends EventEmitter {
   private state: UpdateState = "idle";
   private latestVersion: string | null = null;
   private progress: UpdateProgress | null = null;
   private errorMessage: string | null = null;
+  private silentInstallFailedFromVersion: string | null = null;
   private interval: NodeJS.Timeout | null = null;
   private started = false;
+  /** Path electron-updater reports on `update-downloaded`. We hold
+   *  onto it so the manual install path can re-scrub if needed and so
+   *  we can include it in diagnostics. */
+  private downloadedFilePath: string | null = null;
 
-  start(): void {
+  async start(): Promise<void> {
     if (this.started) return;
     this.started = true;
 
@@ -62,24 +100,22 @@ export class Updater extends EventEmitter {
     }
 
     // Inject the build-time-baked GH_TOKEN so electron-updater can
-    // talk to the private repo's releases.atom feed. AVA_RELEASE_TOKEN
-    // gets replaced at compile time by electron-vite's `define` block
-    // (services/desktop/electron.vite.config.ts) with the contents of
-    // the build-host's SUBMODULES_PAT or GH_TOKEN env var. Empty
-    // string in dev / unconfigured CI; the updater then 404's exactly
-    // like before (harmless).
+    // talk to the private repo's releases.atom feed. See
+    // electron.vite.config.ts's `define` block for the source.
     const bakedToken = process.env.AVA_RELEASE_TOKEN;
     if (bakedToken && !process.env.GH_TOKEN) {
       process.env.GH_TOKEN = bakedToken;
     }
 
-    // Don't auto-download — we surface the prompt and the user
-    // confirms. Avoids surprising "where did my disk space go"
-    // behaviour for slow connections.
+    // v0.1.155 — autoInstallOnAppQuit flipped to true. The previous
+    // value of false meant quitAndInstall() was the ONLY install
+    // trigger; if Squirrel.Mac couldn't complete the swap in that
+    // narrow window, the user was stuck on the old version with no
+    // fallback. With true, the next normal Cmd-Q reattempts. We still
+    // keep autoDownload=false so the user explicitly opts into the
+    // download — only the install side becomes more forgiving.
     autoUpdater.autoDownload = false;
-    autoUpdater.autoInstallOnAppQuit = false;
-    // Keep electron-updater's logger going to console; we already
-    // tag main-process output with `[component]` prefixes elsewhere.
+    autoUpdater.autoInstallOnAppQuit = true;
     autoUpdater.logger = {
       info: (m: unknown) => console.log("[updater]", m),
       warn: (m: unknown) => console.warn("[updater]", m),
@@ -107,14 +143,38 @@ export class Updater extends EventEmitter {
       };
       this.emit("status", this.snapshot());
     });
-    autoUpdater.on("update-downloaded", (info: UpdateInfo) => {
-      this.latestVersion = info.version;
-      this.setState("ready");
-    });
+    autoUpdater.on(
+      "update-downloaded",
+      (info: UpdateInfo & { downloadedFile?: string }) => {
+        this.latestVersion = info.version;
+        // v0.1.155 — scrub quarantine on the EXACT artifact path
+        // electron-updater reports, the moment it lands. This is the
+        // only timing where (a) the file definitely exists, and (b)
+        // Squirrel hasn't touched it yet. The earlier scrub-before-
+        // quitAndInstall was racing the user's click and frequently
+        // ran on a stale or wrong path.
+        const filePath = info.downloadedFile ?? null;
+        this.downloadedFilePath = filePath;
+        if (filePath) {
+          void scrubPathExplicit(filePath).catch((err) => {
+            console.warn(
+              "[updater] update-downloaded scrub failed:",
+              (err as Error).message,
+            );
+          });
+        }
+        this.setState("ready");
+      },
+    );
     autoUpdater.on("error", (err: Error) => {
       this.errorMessage = err.message;
       this.setState("error");
     });
+
+    // v0.1.155 — surface a previous boot's silent install failure
+    // BEFORE we kick the next check, so the renderer paints the
+    // banner immediately. Doesn't block startup.
+    await this.detectSilentInstallFailure();
 
     void this.check();
     this.interval = setInterval(() => void this.check(), CHECK_INTERVAL_MS);
@@ -127,10 +187,6 @@ export class Updater extends EventEmitter {
     }
   }
 
-  /**
-   * Manual check trigger from the Settings panel — same path as the
-   * scheduled interval, but the renderer can call it on demand.
-   */
   async check(): Promise<void> {
     if (!app.isPackaged) return;
     try {
@@ -141,10 +197,6 @@ export class Updater extends EventEmitter {
     }
   }
 
-  /**
-   * Download the available update. No-op if state is anything other
-   * than `available`.
-   */
   async download(): Promise<void> {
     if (this.state !== "available") return;
     this.setState("downloading");
@@ -162,16 +214,26 @@ export class Updater extends EventEmitter {
    */
   installAndRelaunch(): void {
     if (this.state !== "ready") return;
-    // Flip to "installing" + push the status BEFORE quitAndInstall so
-    // the renderer can show a "wird installiert…" indicator. Squirrel
-    // takes ~10–30 s on a 300 MB .zip to swap the bundle and relaunch;
-    // without this the pill goes silent and the user wonders if the
-    // click did anything.
     this.setState("installing");
-    // v0.1.55 — last-chance quarantine scrub on the running bundle.
-    // The boot-time scrub in main/index.ts is the primary fix; this
-    // is belt-and-suspenders for the same-launch upgrade path.
-    void scrubQuarantine().finally(() => {
+    // v0.1.155 — write the "intent to install" marker BEFORE handing
+    // off to Squirrel. On next boot we compare app.getVersion() to
+    // this marker; mismatch ⇒ Squirrel silently failed and the user
+    // sees a "Update auf X.Y.Z konnte nicht installiert werden"
+    // banner. Without this the failure is completely invisible.
+    void this.writePendingInstallMarker(this.latestVersion).catch((err) => {
+      console.warn(
+        "[updater] failed to write pending-install marker:",
+        (err as Error).message,
+      );
+    });
+    // Re-scrub the broad cache directories AND the specific downloaded
+    // file. Cheap; covers the cases where Squirrel may have copied the
+    // artifact to a sibling path since the update-downloaded event.
+    const file = this.downloadedFilePath;
+    void Promise.all([
+      scrubQuarantine(),
+      file ? scrubPathExplicit(file) : Promise.resolve(),
+    ]).finally(() => {
       // Defer quitAndInstall so the IPC push has a tick to land in
       // the renderer before the main process tears down.
       setTimeout(() => autoUpdater.quitAndInstall(false, true), 100);
@@ -182,6 +244,117 @@ export class Updater extends EventEmitter {
     return this.snapshot();
   }
 
+  /**
+   * v0.1.155 — surfaced log paths the user can attach when reporting
+   * an OTA failure. The data is intentionally just metadata (path +
+   * size + mtime); we don't ship log contents over IPC by default,
+   * the renderer opens the file via shell.showItemInFolder.
+   */
+  async getDiagnostics(): Promise<UpdateDiagnostics> {
+    const candidates: string[] = [];
+    if (process.platform === "darwin") {
+      const dir = squirrelLogDir();
+      if (existsSync(dir)) {
+        try {
+          for (const name of await fs.readdir(dir)) {
+            if (name.endsWith(".log") || name.endsWith(".txt")) {
+              candidates.push(join(dir, name));
+            }
+          }
+        } catch {
+          /* ignore — directory unreadable */
+        }
+      }
+    }
+    candidates.push(electronUpdaterLogPath());
+
+    const logs: UpdateDiagnostics["logs"] = [];
+    for (const p of candidates) {
+      if (!existsSync(p)) continue;
+      try {
+        const st = statSync(p);
+        if (!st.isFile()) continue;
+        logs.push({ path: p, sizeBytes: st.size, mtimeMs: st.mtimeMs });
+      } catch {
+        /* skip unreadable */
+      }
+    }
+    const marker = await this.readPendingInstallMarker();
+    return {
+      platform: process.platform,
+      logs,
+      lastInstallAttempt: marker,
+    };
+  }
+
+  /** Renderer-driven dismissal of the silent-failure banner. */
+  dismissSilentFailure(): void {
+    if (this.silentInstallFailedFromVersion === null) return;
+    this.silentInstallFailedFromVersion = null;
+    this.emit("status", this.snapshot());
+  }
+
+  // ---- Internal ------------------------------------------------------------
+
+  private async writePendingInstallMarker(
+    targetVersion: string | null,
+  ): Promise<void> {
+    if (!targetVersion) return;
+    const payload = {
+      version: targetVersion,
+      at: new Date().toISOString(),
+    };
+    await fs.mkdir(app.getPath("userData"), { recursive: true });
+    await fs.writeFile(
+      pendingInstallMarkerPath(),
+      JSON.stringify(payload),
+      "utf8",
+    );
+  }
+
+  private async readPendingInstallMarker(): Promise<
+    { version: string; at: string } | null
+  > {
+    const path = pendingInstallMarkerPath();
+    if (!existsSync(path)) return null;
+    try {
+      const raw = await fs.readFile(path, "utf8");
+      const parsed = JSON.parse(raw) as { version?: unknown; at?: unknown };
+      if (typeof parsed.version !== "string" || typeof parsed.at !== "string") {
+        return null;
+      }
+      return { version: parsed.version, at: parsed.at };
+    } catch {
+      return null;
+    }
+  }
+
+  private async clearPendingInstallMarker(): Promise<void> {
+    await fs.unlink(pendingInstallMarkerPath()).catch(() => undefined);
+  }
+
+  private async detectSilentInstallFailure(): Promise<void> {
+    const marker = await this.readPendingInstallMarker();
+    if (!marker) return;
+    const running = app.getVersion();
+    if (running === marker.version) {
+      // The install succeeded — running version matches the intent.
+      // Clear the marker so we don't fire on subsequent boots.
+      await this.clearPendingInstallMarker();
+      return;
+    }
+    // Running version differs from the install intent → Squirrel
+    // silently failed. Surface to the renderer; do NOT clear the
+    // marker yet — clearing it on dismiss lets the user re-trigger
+    // the diagnostic if they Cmd-Q before reading the banner.
+    console.warn(
+      `[updater] silent install failure detected: intent=${marker.version} running=${running}`,
+    );
+    this.silentInstallFailedFromVersion = marker.version;
+    // Emit so a Settings panel already mounted picks it up.
+    this.emit("status", this.snapshot());
+  }
+
   private snapshot(): UpdateStatus {
     return {
       state: this.state,
@@ -189,6 +362,7 @@ export class Updater extends EventEmitter {
       latestVersion: this.latestVersion,
       progress: this.progress,
       errorMessage: this.errorMessage,
+      silentInstallFailedFromVersion: this.silentInstallFailedFromVersion,
     };
   }
 
