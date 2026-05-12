@@ -80,14 +80,24 @@ export const authMiddleware = createMiddleware(async (c, next) => {
   // context (and, in static-PEM mode, to pick the verification key).
   // jose refuses to decode unverified payloads, so do it manually and
   // validate immediately after.
+  //
+  // v0.1.148 hotfix — Accept both `tenant` and `tenant_id` claim names.
+  // The Keycloak realm currently emits `tenant_id` (matches the
+  // desktop's `auth.ts:249` consumer); the gateway middleware was the
+  // outlier reading only `tenant` and 401-ing every authenticated
+  // request with `malformed_token`. Treat them as aliases until the
+  // realm config is unified.
   const [, payloadB64] = token.split(".");
   let tenantId: string;
   try {
     const payload = JSON.parse(
       Buffer.from(payloadB64, "base64url").toString("utf8"),
-    ) as { tenant?: unknown };
-    if (typeof payload.tenant !== "string") throw new Error("tenant claim missing");
-    tenantId = payload.tenant;
+    ) as { tenant?: unknown; tenant_id?: unknown };
+    const raw = payload.tenant ?? payload.tenant_id;
+    if (typeof raw !== "string" || raw.length === 0) {
+      throw new Error("tenant claim missing");
+    }
+    tenantId = raw;
   } catch {
     return c.json({ error: "malformed_token" }, 401);
   }
