@@ -2740,6 +2740,18 @@ export function AlertsSection() {
   // Bootstrapped on mount, refreshed after every "Jetzt auslösen" or
   // when an `alerts:changed` push lands. Capped at 10 main-side.
   const [recent, setRecent] = useState<AlertTickInfo[]>([]);
+  // v0.1.160 — Heartbeat scheduling status. Tells us when the next
+  // sweep is scheduled even before any sweep has produced a history
+  // entry. Refreshed on mount, on every `alerts:changed` push, and
+  // every 30 s so the "nächster Sweep in X min"-Anzeige stays accurate.
+  const [hbStatus, setHbStatus] = useState<{
+    running: boolean;
+    intervalMs: number;
+    nextScheduledAt: string | null;
+    lastTickAt: string | null;
+    inflight: boolean;
+    historyCount: number;
+  } | null>(null);
 
   // Bootstrap + subscribe to main-side prefs changes so two windows
   // (or the heartbeat itself) can't drift out of sync.
@@ -2747,6 +2759,7 @@ export function AlertsSection() {
     void window.api.alerts.getPrefs().then(setPrefs);
     void window.api.alerts.getNotificationPermission().then(setPermission);
     void window.api.alerts.recentTicks().then(setRecent);
+    void window.api.alerts.heartbeatStatus().then(setHbStatus);
     const offPrefs = window.api.alerts.onPrefsChanged(setPrefs);
     const offChanged = window.api.alerts.onChanged(() => {
       // The store fires `alerts:changed` after every persisted alert.
@@ -2754,10 +2767,17 @@ export function AlertsSection() {
       // tick" — refetch the history so the panel stays current even
       // when ticks fire on schedule (not just from this button).
       void window.api.alerts.recentTicks().then(setRecent);
+      void window.api.alerts.heartbeatStatus().then(setHbStatus);
     });
+    // Poll the schedule every 30 s so the "nächster Sweep planmäßig"
+    // line ticks down without a manual refresh. Cheap (single IPC).
+    const poll = window.setInterval(() => {
+      void window.api.alerts.heartbeatStatus().then(setHbStatus);
+    }, 30_000);
     return () => {
       offPrefs();
       offChanged();
+      window.clearInterval(poll);
     };
   }, []);
 
@@ -2955,7 +2975,7 @@ export function AlertsSection() {
 
       {error && <p className="error small">{error}</p>}
 
-      <HeartbeatHistory recent={recent} />
+      <HeartbeatHistory recent={recent} status={hbStatus} />
     </section>
   );
 }
@@ -2975,15 +2995,38 @@ const OUTCOME_LABEL: Record<AlertCandidateDecision["outcome"], string> = {
   "judge-error": "Fehler",
 };
 
-function HeartbeatHistory({ recent }: { recent: AlertTickInfo[] }) {
+function HeartbeatHistory({
+  recent,
+  status,
+}: {
+  recent: AlertTickInfo[];
+  status: {
+    running: boolean;
+    intervalMs: number;
+    nextScheduledAt: string | null;
+    lastTickAt: string | null;
+    inflight: boolean;
+    historyCount: number;
+  } | null;
+}) {
   const [openIdx, setOpenIdx] = useState<number | null>(0);
+
+  // v0.1.160 — scheduler banner. Always visible above the history list
+  // so the user can see the cadence + next scheduled run, even when no
+  // sweeps have produced rows yet (e.g. fresh app start, before the
+  // first tick lands). Recent-tick history is in-memory, restart-loss
+  // is by design — this banner is what tells the user "the scheduler
+  // IS running, you just haven't been around for a sweep yet".
+  const scheduleLine = formatScheduleLine(status);
 
   if (recent.length === 0) {
     return (
       <div className="heartbeat-history heartbeat-history--empty">
         <p className="muted small">
-          Noch kein Heartbeat in dieser Sitzung gelaufen. Die Liste füllt
-          sich, sobald der erste Sweep ausgeführt wurde.
+          {scheduleLine}
+          <br />
+          Noch kein Sweep in dieser Sitzung abgeschlossen. Die Liste
+          füllt sich, sobald der erste Sweep durchgelaufen ist.
         </p>
       </div>
     );
@@ -2992,6 +3035,7 @@ function HeartbeatHistory({ recent }: { recent: AlertTickInfo[] }) {
   return (
     <div className="heartbeat-history">
       <h4 className="heartbeat-history__title">Letzte Heartbeats</h4>
+      <p className="muted small heartbeat-history__schedule">{scheduleLine}</p>
       <ul className="heartbeat-history__list">
         {recent.map((tick, idx) => {
           const open = openIdx === idx;
@@ -3086,6 +3130,53 @@ function summariseTick(t: AlertTickInfo): string {
     );
   }
   if (t.duplicates > 0) parts.push(`${t.duplicates} Duplikat(e)`);
+  return parts.join(" · ");
+}
+
+/**
+ * v0.1.160 — One-line summary of the heartbeat scheduler state for the
+ * Settings panel. Renders three pieces of info:
+ *   "Sweep läuft alle 15 min · nächster planmäßig 14:32 (in 8 min) ·
+ *    letzter Sweep 14:17"
+ * Falls cleanly back to "Scheduler pausiert" when intervalMs = 0,
+ * "Sweep läuft gerade" when inflight is true, etc.
+ */
+function formatScheduleLine(
+  status: {
+    running: boolean;
+    intervalMs: number;
+    nextScheduledAt: string | null;
+    lastTickAt: string | null;
+    inflight: boolean;
+  } | null,
+): string {
+  if (!status) return "Lade Heartbeat-Status…";
+  if (!status.running) return "Heartbeat ist pausiert (Cadence = 0).";
+  const cadenceMin = Math.round(status.intervalMs / 60_000);
+  const parts: string[] = [`Sweep läuft alle ${cadenceMin} min`];
+  if (status.inflight) {
+    parts.push("Sweep läuft gerade…");
+  } else if (status.nextScheduledAt) {
+    const next = new Date(status.nextScheduledAt);
+    const diffMs = next.getTime() - Date.now();
+    const minLeft = Math.max(0, Math.round(diffMs / 60_000));
+    const hhmm = next.toLocaleTimeString("de-DE", {
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+    parts.push(
+      minLeft < 1
+        ? `nächster planmäßig ${hhmm} (gleich)`
+        : `nächster planmäßig ${hhmm} (in ${minLeft} min)`,
+    );
+  }
+  if (status.lastTickAt) {
+    const lastHhmm = new Date(status.lastTickAt).toLocaleTimeString("de-DE", {
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+    parts.push(`letzter Sweep ${lastHhmm}`);
+  }
   return parts.join(" · ");
 }
 

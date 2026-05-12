@@ -2615,6 +2615,9 @@ code, pre { font-family: var(--font-mono); font-size: 12px; }
   text-transform: uppercase; letter-spacing: 0.04em;
 }
 .heartbeat-history--empty { padding: 8px 0 0; border: 0; }
+/* v0.1.160 — scheduler one-liner above the tick list. Same muted-small
+ * treatment the empty-state inherits, so visual weight stays low. */
+.heartbeat-history__schedule { margin: 0 0 10px; }
 .heartbeat-history__list {
   list-style: none; padding: 0; margin: 0;
   display: flex; flex-direction: column; gap: 6px;

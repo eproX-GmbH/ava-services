@@ -106,6 +106,13 @@ export type TickInfo = AlertTickInfo;
 
 const DEFAULT_INTERVAL_MS = 15 * 60_000;
 const JITTER = 0.2; // ±20 %
+/** v0.1.160 — delay before the FIRST tick after `start()`. Short enough
+ *  that the user sees activity within seconds of opening the app,
+ *  long enough that the LLM provider + producers + AMQP have settled
+ *  past their own cold-start. Without this, the next tick was 15 min
+ *  out from app boot — users frequently restarted (OTAs etc.) and
+ *  never saw a sweep before quitting. */
+const INITIAL_TICK_DELAY_MS = 10_000;
 /** Cap on the per-tick decision history kept in memory. ~10 ticks worth
  *  of context is plenty for the user to inspect why nothing came
  *  through; older ticks fall off. */
@@ -129,6 +136,12 @@ export class Heartbeat extends EventEmitter {
   private inflight = false;
   private lastTickAt: Date | null = null;
   private stopped = false;
+  /** v0.1.160 — wallclock at which the currently-scheduled timer is set
+   *  to fire. Exposed via getStatus() so the UI can render
+   *  "nächster Sweep planmäßig HH:MM" even when no history exists yet
+   *  (e.g. immediately after app start, before the first tick). null
+   *  while paused (intervalMs=0) or stopped. */
+  private nextScheduledAt: Date | null = null;
   /** Most-recent ticks with full per-candidate decisions, newest first.
    *  Capped at MAX_HISTORY so a long-running session doesn't grow this
    *  array unbounded. Lives in memory only — restart-loss is fine
@@ -146,11 +159,14 @@ export class Heartbeat extends EventEmitter {
     this.onTick = options.onTick;
   }
 
-  /** Begin the periodic loop. Idempotent. */
+  /** Begin the periodic loop. Idempotent.
+   *  v0.1.160: fires an initial tick after INITIAL_TICK_DELAY_MS
+   *  (10 s) instead of waiting a full interval. Without this, a user
+   *  who restarts AVA never sees a sweep before quitting again. */
   start(): void {
     this.stopped = false;
     if (this.timer || this.intervalMs === 0) return;
-    this.scheduleNext();
+    this.scheduleInitialTick();
   }
 
   stop(): void {
@@ -159,6 +175,7 @@ export class Heartbeat extends EventEmitter {
       clearTimeout(this.timer);
       this.timer = null;
     }
+    this.nextScheduledAt = null;
   }
 
   /**
@@ -172,6 +189,7 @@ export class Heartbeat extends EventEmitter {
       clearTimeout(this.timer);
       this.timer = null;
     }
+    this.nextScheduledAt = null;
     if (!this.stopped && intervalMs > 0) this.scheduleNext();
   }
 
@@ -194,13 +212,34 @@ export class Heartbeat extends EventEmitter {
   // ---- Internal -----------------------------------------------------------
 
   private scheduleNext(): void {
-    if (this.stopped || this.intervalMs === 0) return;
+    if (this.stopped || this.intervalMs === 0) {
+      this.nextScheduledAt = null;
+      return;
+    }
     const jitter = 1 + (Math.random() * 2 - 1) * JITTER;
     const delay = Math.max(1_000, Math.round(this.intervalMs * jitter));
+    this.nextScheduledAt = new Date(Date.now() + delay);
     this.timer = setTimeout(() => {
       this.timer = null;
+      this.nextScheduledAt = null;
       void this.runTick().finally(() => this.scheduleNext());
     }, delay);
+  }
+
+  /** v0.1.160 — short-delay first tick so the UI shows activity within
+   *  seconds of app start. After the initial tick lands, the normal
+   *  cadence kicks in via `scheduleNext()` in the .finally below. */
+  private scheduleInitialTick(): void {
+    if (this.stopped || this.intervalMs === 0) {
+      this.nextScheduledAt = null;
+      return;
+    }
+    this.nextScheduledAt = new Date(Date.now() + INITIAL_TICK_DELAY_MS);
+    this.timer = setTimeout(() => {
+      this.timer = null;
+      this.nextScheduledAt = null;
+      void this.runTick().finally(() => this.scheduleNext());
+    }, INITIAL_TICK_DELAY_MS);
   }
 
   private async runTick(): Promise<TickInfo> {
@@ -351,6 +390,32 @@ export class Heartbeat extends EventEmitter {
    */
   getRecentTicks(): TickInfo[] {
     return this.history.slice();
+  }
+
+  /** v0.1.160 — scheduling snapshot for the Settings panel. Lets the
+   *  UI render "nächster Sweep planmäßig 14:32 · Sweep läuft alle 15 min"
+   *  even when the history is empty (fresh app boot before the first
+   *  tick has fired). Restart-loss of history is intentional; this
+   *  status restores enough context for the user to know the scheduler
+   *  IS running. */
+  getStatus(): {
+    running: boolean;
+    intervalMs: number;
+    nextScheduledAt: string | null;
+    lastTickAt: string | null;
+    inflight: boolean;
+    historyCount: number;
+  } {
+    return {
+      running: !this.stopped && this.intervalMs > 0,
+      intervalMs: this.intervalMs,
+      nextScheduledAt: this.nextScheduledAt
+        ? this.nextScheduledAt.toISOString()
+        : null,
+      lastTickAt: this.lastTickAt ? this.lastTickAt.toISOString() : null,
+      inflight: this.inflight,
+      historyCount: this.history.length,
+    };
   }
 }
 

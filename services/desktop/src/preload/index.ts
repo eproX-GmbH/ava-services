@@ -691,6 +691,19 @@ const api = {
      */
     recentTicks: (): Promise<AlertTickInfo[]> =>
       ipcRenderer.invoke("alerts:recentTicks"),
+    /**
+     * v0.1.160 — scheduler snapshot. Lets the Settings panel render
+     * "nächster Sweep planmäßig HH:MM" even when the in-memory tick
+     * history is empty (fresh app boot before the first sweep).
+     */
+    heartbeatStatus: (): Promise<{
+      running: boolean;
+      intervalMs: number;
+      nextScheduledAt: string | null;
+      lastTickAt: string | null;
+      inflight: boolean;
+      historyCount: number;
+    }> => ipcRenderer.invoke("alerts:heartbeatStatus"),
     /** Subscribe to mutation events. Caller receives a void payload —
      *  refetch via `list()` / `unreadCount()` to get the current state. */
     onChanged: (cb: () => void): (() => void) => {

@@ -2125,6 +2125,11 @@ app.whenReady().then(async () => {
   // per-candidate decisions so the Settings panel can show the user
   // what was weighed and why nothing was promoted on a given run.
   ipcMain.handle("alerts:recentTicks", () => heartbeat.getRecentTicks());
+  // v0.1.160 — scheduling status (next-scheduled / running / cadence).
+  // The Settings panel renders "nächster Sweep planmäßig HH:MM" from
+  // this so users can see the scheduler is alive even before the
+  // first tick has produced a history entry.
+  ipcMain.handle("alerts:heartbeatStatus", () => heartbeat.getStatus());
 
   // Freshness scheduler IPC (Phase 8.r1). Read-only + manual trigger;
   // the chat tools surface (8.r3) layers on top. `triggerNow` returns
