@@ -129,3 +129,28 @@ export async function scrubPathExplicit(path: string): Promise<void> {
   if (!app.isPackaged) return;
   await scrubPath(path);
 }
+
+/**
+ * v0.1.162 — Targeted scrub for the bundled whisper resources tree.
+ * Called proactively at boot (alongside the main bundle scrub) and
+ * reactively from the whisper-sidecar when transcribe crashes with a
+ * native-crash signature ("main + <addr>") — the typical sign that
+ * `dlopen()` of a sibling libwhisper.dylib failed because of
+ * quarantine that library-validation refuses to remove.
+ *
+ * `xattr -dr` on the directory walks every file. Signed dylibs with
+ * hardened-runtime + library-validation refuse the xattr removal on
+ * THEMSELVES (returns EPERM), but they don't NEED to be scrubbed —
+ * what matters is that NO file in the tree has com.apple.quarantine
+ * when `dlopen` walks the directory. xattr's recursive scrub clears
+ * the unsigned siblings + parent dirs; the signed dylib stays signed
+ * with whatever xattrs were sealed at codesign time, which are NOT
+ * quarantine.
+ */
+export async function scrubWhisperBundle(): Promise<void> {
+  if (process.platform !== "darwin") return;
+  if (!app.isPackaged) return;
+  // Packaged path: <bundle>/Contents/Resources/whisper/
+  const packaged = join(process.resourcesPath, "whisper");
+  await scrubPath(packaged);
+}

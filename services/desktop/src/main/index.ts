@@ -70,7 +70,7 @@ import type {
   SkillImportCommitResult,
 } from "../shared/types";
 import type { CrmProvider, CrmStatus } from "./crm/types";
-import { scrubQuarantine } from "./scrub-quarantine";
+import { scrubQuarantine, scrubWhisperBundle } from "./scrub-quarantine";
 import { Updater, broadcastUpdateStatus } from "./updater";
 import {
   AgentOrchestrator,
@@ -1149,6 +1149,13 @@ app.whenReady().then(async () => {
   // ShipIt tripping on hardened-runtime dylibs. See
   // ./scrub-quarantine.ts for the full root-cause analysis.
   void scrubQuarantine();
+  // v0.1.162 — additionally scrub the whisper resources subtree so a
+  // freshly-installed bundle's libwhisper.* siblings don't fail
+  // dlopen() inside whisper-cli with a native crash. The main bundle
+  // scrub above already covers .app/Contents/Resources, but doing the
+  // whisper subtree explicitly + first lets the sidecar boot cleanly
+  // even if the broader scrub is mid-walk.
+  void scrubWhisperBundle();
 
   // v0.1.52 — start the external-service reachability monitor. First
   // probe runs synchronously inside start(); the recurring 60s

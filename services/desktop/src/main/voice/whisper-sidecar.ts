@@ -633,11 +633,43 @@ export class WhisperSidecar extends EventEmitter {
         threads,
       ];
 
-      const { stdout, stderr, exitCode } = await runWithCapture(
+      let { stdout, stderr, exitCode } = await runWithCapture(
         this.binaryPath,
         args,
         90_000,
       );
+
+      // v0.1.162 — Self-heal for native crashes of whisper-cli (exit
+      // code -1 with a backtrace in stderr like "main + 2364 | dyld
+      // start"). Almost always caused by `dlopen()` of a sibling
+      // libwhisper.dylib failing because of com.apple.quarantine on
+      // the bundle. Scrub the whisper resources tree and retry once.
+      // If the second attempt also crashes, surface the original
+      // error — the user sees a useful message + we don't loop.
+      const looksLikeNativeCrash =
+        exitCode !== 0 &&
+        (exitCode === -1 ||
+          /\bmain\s*\+\s*\d+/i.test(stderr) ||
+          /dyld\s+\S+\s+start/i.test(stderr));
+      if (looksLikeNativeCrash) {
+        try {
+          const { scrubWhisperBundle } = await import("../scrub-quarantine");
+          await scrubWhisperBundle();
+          ({ stdout, stderr, exitCode } = await runWithCapture(
+            this.binaryPath,
+            args,
+            90_000,
+          ));
+        } catch (err) {
+          // Self-heal itself failed; fall through to the standard
+          // error path below with the original whisper-cli stderr.
+          console.warn(
+            "[whisper] self-heal scrub failed:",
+            err instanceof Error ? err.message : err,
+          );
+        }
+      }
+
       if (exitCode !== 0) {
         const tail = stderr.split(/\r?\n/).slice(-3).join(" | ").trim();
         throw new Error(
