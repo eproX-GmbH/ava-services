@@ -21,7 +21,6 @@ import { useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 
 interface Props {
-  open: boolean;
   companyId: string;
   defaultQuery: string;
   onClose: () => void;
@@ -38,55 +37,56 @@ interface HubspotHit {
 }
 
 export function CrmLinkPicker({
-  open,
   companyId,
   defaultQuery,
   onClose,
   onLinked,
 }: Props) {
+  // v0.1.153 — Picker is now conditionally MOUNTED by the parent
+  // rather than always-rendered with an `open` toggle. That removes
+  // the need for a reset-on-open effect (the picker's first render
+  // IS the open state) and prevents the flash of stale state from
+  // a previous session.
   const [crmKind, setCrmKind] = useState<CrmKind>("HUBSPOT");
   const [query, setQuery] = useState(defaultQuery);
   const [results, setResults] = useState<HubspotHit[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [searching, setSearching] = useState(false);
+  // v0.1.153 — Initial value `true` so the panel renders the "Suche…"
+  // hint from the first paint instead of flashing "Keine Treffer." for
+  // 250 ms while the initial debounced search is still scheduled.
+  // The auto-search effect below clears it via runSearch when the
+  // request completes (or sets it false if the query is too short).
+  const [searching, setSearching] = useState(true);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const queryClient = useQueryClient();
 
-  // Re-initialise every time the modal opens.
-  useEffect(() => {
-    if (!open) return;
-    setQuery(defaultQuery);
-    setResults([]);
-    setSelectedId(null);
-    setError(null);
-    setBusy(false);
-    setCrmKind("HUBSPOT");
-  }, [open, defaultQuery]);
-
   // Esc to dismiss.
   useEffect(() => {
-    if (!open) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [open, onClose]);
+  }, [onClose]);
 
   // Debounced auto-search whenever the query changes. The picker only
   // exercises HubSpot today; other CRMs short-circuit before this fires.
   useEffect(() => {
-    if (!open) return;
     if (crmKind !== "HUBSPOT") return;
     if (debounceRef.current) clearTimeout(debounceRef.current);
     const q = query.trim();
     if (q.length < 2) {
       setResults([]);
       setSelectedId(null);
+      setSearching(false);
       return;
     }
+    // Flip into "searching" SYNCHRONOUSLY so the panel doesn't flash
+    // "Keine Treffer." during the 250 ms debounce window. runSearch
+    // will set it again (idempotent) and clear it on completion.
+    setSearching(true);
     debounceRef.current = setTimeout(() => {
       void runSearch(q);
     }, 250);
@@ -94,7 +94,7 @@ export function CrmLinkPicker({
       if (debounceRef.current) clearTimeout(debounceRef.current);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, query, crmKind]);
+  }, [query, crmKind]);
 
   async function runSearch(q: string) {
     setSearching(true);
@@ -142,8 +142,6 @@ export function CrmLinkPicker({
     }
   }
 
-  if (!open) return null;
-
   return (
     <div
       className="linkedin-consent-overlay"
@@ -153,6 +151,13 @@ export function CrmLinkPicker({
       onMouseDown={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
+      // v0.1.153 — The shared overlay class top-anchors the panel
+      // (align-items: flex-start + padding-top: 8vh) because the
+      // LinkedIn consent modal is a long-form scroll. The CRM picker
+      // is a compact dialog and the off-center placement looked
+      // broken — vertical-center for this instance, leaving the
+      // shared class behaviour for LinkedIn unchanged.
+      style={{ alignItems: "center", paddingTop: 0 }}
     >
       <div
         className="linkedin-consent-panel"

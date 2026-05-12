@@ -294,13 +294,21 @@ export function CompanyCrmPanel({ companyId, companyName }: Props) {
         </div>
       )}
 
-      <CrmLinkPicker
-        open={pickerOpen}
-        companyId={companyId}
-        defaultQuery={companyName}
-        onClose={closePicker}
-        onLinked={closePicker}
-      />
+      {/* v0.1.153 — Conditional-mount instead of always-rendered with an
+          `open` prop. Earlier shape kept the picker mounted across
+          open/close cycles, which meant the next open painted with
+          stale results+selection for one frame BEFORE the reset effect
+          ran — visible as a flicker. Conditional mount makes the
+          reset effect's first-render state the only state the user
+          ever sees. */}
+      {pickerOpen && (
+        <CrmLinkPicker
+          companyId={companyId}
+          defaultQuery={companyName}
+          onClose={closePicker}
+          onLinked={closePicker}
+        />
+      )}
     </article>
   );
 }
