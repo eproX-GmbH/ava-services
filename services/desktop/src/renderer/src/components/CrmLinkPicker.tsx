@@ -183,10 +183,10 @@ export function CrmLinkPicker({
           >
             <option value="HUBSPOT">HubSpot</option>
             <option value="SALESFORCE" disabled>
-              Salesforce (noch nicht eingerichtet)
+              Salesforce (demnächst verfügbar)
             </option>
             <option value="DYNAMICS" disabled>
-              Microsoft Dynamics (noch nicht eingerichtet)
+              Microsoft Dynamics (demnächst verfügbar)
             </option>
           </select>
         </div>

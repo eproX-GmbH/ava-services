@@ -531,27 +531,41 @@ export function ProducersSection() {
 // `connect_crm` / `disconnect_crm` tools — same end state, just a
 // different entry point.
 
+// v0.1.158 — `comingSoon` gates Salesforce + Dynamics. The
+// gateway-side OAuth-Proxies sind verdrahtet, aber bis wir auf der
+// Operatorseite die echten OAuth-Apps registriert + getestet haben,
+// soll der Renderer den Connect-Versuch gar nicht erst zulassen.
+// Der Connect-Button wird gegen einen disabled "Demnächst verfügbar"
+// ausgetauscht. HubSpot bleibt unverändert frei.
 const CRM_PROVIDER_LABELS: Record<
   "salesforce" | "hubspot" | "dynamics",
-  { label: string; helper: string; requiresOrgUrl: boolean }
+  {
+    label: string;
+    helper: string;
+    requiresOrgUrl: boolean;
+    comingSoon: boolean;
+  }
 > = {
   salesforce: {
     label: "Salesforce",
     helper:
-      "Verbindung über OAuth (PKCE). Du wirst zu login.salesforce.com weitergeleitet.",
+      "OAuth-Integration ist verdrahtet, wird in den nächsten Wochen freigeschaltet. Wenn du Salesforce einsetzt, gib uns gerne kurz Bescheid, dann priorisieren wir dich für die Beta-Phase.",
     requiresOrgUrl: false,
+    comingSoon: true,
   },
   hubspot: {
     label: "HubSpot",
     helper:
       "Verbindung über OAuth. Es werden CRM-Lese- und Schreibrechte für Kontakte, Firmen und Deals angefragt.",
     requiresOrgUrl: false,
+    comingSoon: false,
   },
   dynamics: {
     label: "Microsoft Dynamics 365",
     helper:
-      "Verbindung über Microsoft Identity. Bitte gib zuerst die Org-URL deiner Dynamics-Instanz an (z. B. contoso.crm4.dynamics.com).",
+      "Microsoft-Identity-Integration ist verdrahtet, wird in den nächsten Wochen freigeschaltet. Wenn du Dynamics einsetzt, gib uns gerne kurz Bescheid, dann priorisieren wir dich für die Beta-Phase.",
     requiresOrgUrl: true,
+    comingSoon: true,
   },
 };
 
@@ -577,7 +591,8 @@ export function CrmSection() {
         Verknüpfe dein CRM mit AVA. Die OAuth-Tokens bleiben verschlüsselt
         in deinem Betriebssystem-Schlüsselbund, niemals in der Cloud.
         Du kannst Verbindungen auch direkt im Chat herstellen, z. B.
-        „Verbinde mein Salesforce-Konto“.
+        „Verbinde mein HubSpot-Konto“. Salesforce und Microsoft Dynamics
+        sind verdrahtet und folgen in den nächsten Wochen.
       </p>
       {list.isLoading ? (
         <p className="muted small">Lade…</p>
@@ -651,8 +666,15 @@ function CrmCard({
         </div>
         <div className="crm-card-actions">
           {status.connected ? (
+            // Disconnect bleibt auch bei comingSoon erreichbar, damit ein
+            // Pilot-User, der via Test-OAuth-App schon verbunden ist,
+            // nicht hängenbleibt.
             <button onClick={() => void onDisconnect()} disabled={busy}>
               {busy ? "Trenne…" : "Verbindung trennen"}
+            </button>
+          ) : meta.comingSoon ? (
+            <button disabled aria-disabled="true">
+              Demnächst verfügbar
             </button>
           ) : (
             <button onClick={() => void onConnect()} disabled={!canConnect}>
@@ -676,7 +698,7 @@ function CrmCard({
         <p className="crm-card-helper">{meta.helper}</p>
       )}
 
-      {meta.requiresOrgUrl && !status.connected && (
+      {meta.requiresOrgUrl && !status.connected && !meta.comingSoon && (
         <input
           type="text"
           className="crm-card-orginput"

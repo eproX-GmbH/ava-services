@@ -86,7 +86,7 @@ export function buildCrmTools(deps: CrmToolDeps): Tool[] {
   const connectTool = defineTool({
     name: "connect_crm",
     description:
-      "Startet den interaktiven OAuth-Flow für ein CRM. Öffnet den System-Browser zur Login-Seite des Anbieters und wartet auf die Weiterleitung. Heute voll unterstützt: HubSpot. Salesforce + Microsoft Dynamics 365 sind verdrahtet, brauchen aber operatorseitige OAuth-App-Registrierung (siehe Anwender-Hinweise) - der Tool-Call schlägt sonst mit einer klaren Fehlermeldung fehl. Microsoft Dynamics erwartet `orgUrl` (z. B. 'contoso.crm4.dynamics.com'). Nach erfolgreicher Verbindung kann der Nutzer mit `import_companies_from_crm` direkt importieren oder einzelne AVA-Firmen via `crm_link_manual` an CRM-Datensätze knüpfen.",
+      "Startet den interaktiven OAuth-Flow für ein CRM. Öffnet den System-Browser zur Login-Seite des Anbieters und wartet auf die Weiterleitung. AKTUELL VERFÜGBAR: nur HubSpot. Salesforce und Microsoft Dynamics 365 sind als Optionen sichtbar, aber für Nutzer noch gesperrt (\"Demnächst verfügbar\"); der Tool-Call lehnt sie mit einer klaren Meldung ab. Nach erfolgreicher HubSpot-Verbindung kann der Nutzer mit `import_companies_from_crm` direkt importieren oder einzelne AVA-Firmen via `crm_link_manual` an CRM-Datensätze knüpfen.",
     parameters: {
       type: "object",
       properties: {
@@ -109,9 +109,15 @@ export function buildCrmTools(deps: CrmToolDeps): Tool[] {
     }),
     run: async (args) => {
       const provider = args.provider as CrmProvider;
-      if (provider === "dynamics" && !args.orgUrl) {
+      // v0.1.158 — Salesforce + Dynamics sind in der UI gegen einen
+      // "Demnächst verfügbar"-Button getauscht. Wir lehnen den
+      // Tool-Call hier symmetrisch ab, damit der Agent nicht über
+      // den Chat-Pfad eine OAuth-Session auslöst, die der Renderer
+      // aus gutem Grund nicht anbietet (operatorseitige OAuth-App
+      // ist noch nicht registriert + getestet).
+      if (provider === "salesforce" || provider === "dynamics") {
         throw new Error(
-          "Microsoft Dynamics 365 benötigt eine Org-URL (z. B. contoso.crm4.dynamics.com).",
+          `${PROVIDER_LABELS[provider]} ist noch nicht freigeschaltet. Heute funktioniert nur HubSpot; ${PROVIDER_LABELS[provider]} folgt in den nächsten Wochen. Bitte den Nutzer kurz informieren und HubSpot als sofort verfügbare Alternative anbieten.`,
         );
       }
       try {
