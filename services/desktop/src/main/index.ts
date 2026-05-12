@@ -1795,6 +1795,15 @@ app.whenReady().then(async () => {
       return crmManager.getStatus(provider);
     },
   );
+  // v0.1.153 — see CrmManager.getExternalUrl rationale.
+  ipcMain.handle(
+    "crm:getExternalUrl",
+    (
+      _e,
+      args: { provider: CrmProvider; externalId: string },
+    ): Promise<string | null> =>
+      crmManager.getExternalUrl(args.provider, args.externalId),
+  );
 
   // Workstream C4 — CRM linkage UI surface.
   //

@@ -218,12 +218,28 @@ export function CompanyCrmPanel({ companyId, companyName }: Props) {
 
   const closePicker = useCallback(() => setPickerOpen(false), []);
 
-  function openInCrm(link: CrmLinkRow) {
+  async function openInCrm(link: CrmLinkRow) {
     if (link.crmType !== "HUBSPOT") return;
-    // The portal id isn't on the link row; HubSpot's UI tolerates the
-    // 0-placeholder + redirects to the user's portal after auth.
-    const url = `https://app.hubspot.com/contacts/0/company/${encodeURIComponent(link.crmExternalId)}`;
-    void window.api.shell.openExternal(url);
+    // v0.1.153 — Ask main to build the URL. It reads the portal id
+    // from the stored OAuth tokens and slots it into the path. The
+    // older "use 0 as a placeholder, HubSpot will redirect" trick
+    // looked clean on paper but in practice bounced users through a
+    // login-redirect loop — especially with multiple HubSpot sessions
+    // in the browser, where `/contacts/0/...` can't disambiguate.
+    const url = await window.api.crm.getExternalUrl(
+      "hubspot",
+      link.crmExternalId,
+    );
+    if (url) {
+      void window.api.shell.openExternal(url);
+      return;
+    }
+    // Fallback: stored tokens are too old to have hubId (the field
+    // was added later). Reconnecting HubSpot via Settings re-runs the
+    // OAuth dance and persists hub_id. Until then, drop the user on
+    // HubSpot's home — they navigate manually rather than getting
+    // bounced through a redirect loop.
+    void window.api.shell.openExternal("https://app.hubspot.com/");
   }
 
   return (

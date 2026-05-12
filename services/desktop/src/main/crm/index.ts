@@ -158,6 +158,101 @@ export class CrmManager extends EventEmitter {
     this.emit("status", this.getStatus(provider));
   }
 
+  /**
+   * v0.1.153 — Build the deep-link URL that opens a record inside the
+   * provider's own UI (the "Open in CRM" button on the company panel).
+   *
+   * Why this lives here, not in the renderer: each provider needs a
+   * different per-tenant value baked into the path —
+   *   - HubSpot: the portal id (a.k.a. `hub_id`). Without it the link
+   *     hits the magic `/contacts/0/...` placeholder, which is meant
+   *     to auto-redirect after login but in practice bounces users
+   *     through a login-redirect loop (especially when the browser
+   *     has multiple HubSpot sessions, or the session is fresh and
+   *     the `hub_id=0` fallback can't pick a portal). Reported by
+   *     the user as "login redirect loop on Open-in-HubSpot".
+   *   - Salesforce: the `instance_url` (per-org subdomain).
+   *   - Dynamics: the org URL.
+   * All three are already stored on `tokens.extra` from the OAuth
+   * exchange (see services/db-gateway/src/routes/v1/crm.ts) — we just
+   * need to project them into the right path shape.
+   *
+   * Returns null if we don't have enough info (provider not connected,
+   * or the stored token predates this field). Caller falls back to a
+   * generic provider URL in that case.
+   */
+  async getExternalUrl(
+    provider: CrmProvider,
+    externalId: string,
+  ): Promise<string | null> {
+    const rec = this.records.get(provider);
+    if (!rec) return null;
+    const safeId = encodeURIComponent(externalId);
+    switch (provider) {
+      case "hubspot": {
+        // HubSpot's OAuth token endpoint does NOT return `hub_id`
+        // directly (only access_token / refresh_token / expires_in).
+        // The portal id has to be fetched from the metadata endpoint
+        // GET /oauth/v1/access-tokens/{token} — which is exactly what
+        // we do here on first call, then persist so subsequent opens
+        // are cheap. The earlier gateway-side `extraFields: { hub_id:
+        // "hubId" }` mapping was a no-op because the field is just
+        // not in the exchange response.
+        let hubId = rec.tokens.extra?.["hubId"];
+        if (!hubId) {
+          hubId = (await this.fetchHubspotPortalId(rec.tokens.accessToken)) ??
+            undefined;
+          if (hubId) {
+            // Persist so we don't pay the metadata roundtrip on every
+            // "Open in CRM" click. Idempotent on token refresh
+            // because hub_id is a stable per-portal identifier.
+            const nextExtra = { ...(rec.tokens.extra ?? {}), hubId };
+            rec.tokens = { ...rec.tokens, extra: nextExtra };
+            await saveTokens(provider, rec.account, rec.tokens);
+          }
+        }
+        if (!hubId) return null;
+        return `https://app.hubspot.com/contacts/${encodeURIComponent(hubId)}/company/${safeId}`;
+      }
+      case "salesforce": {
+        const instance = rec.tokens.extra?.["instanceUrl"];
+        if (!instance) return null;
+        // Salesforce's record-detail URL uses the 18-char id directly.
+        return `${instance.replace(/\/$/, "")}/lightning/r/Account/${safeId}/view`;
+      }
+      case "dynamics": {
+        const org = rec.tokens.extra?.["orgUrl"];
+        if (!org) return null;
+        return `${org.replace(/\/$/, "")}/main.aspx?etn=account&pagetype=entityrecord&id=${safeId}`;
+      }
+    }
+  }
+
+  /**
+   * v0.1.153 — Pull the HubSpot portal id (hub_id) for a given access
+   * token. HubSpot's `/oauth/v1/access-tokens/{token}` returns metadata
+   * including `hub_id` and `user` — the only authoritative source for
+   * the portal id post-exchange. Returns null on any failure (network,
+   * revoked token, parse) so the caller can degrade gracefully to a
+   * portal-agnostic fallback URL.
+   */
+  private async fetchHubspotPortalId(
+    accessToken: string,
+  ): Promise<string | null> {
+    try {
+      const res = await fetch(
+        `https://api.hubapi.com/oauth/v1/access-tokens/${encodeURIComponent(accessToken)}`,
+      );
+      if (!res.ok) return null;
+      const body = (await res.json()) as { hub_id?: unknown };
+      if (typeof body.hub_id === "number") return String(body.hub_id);
+      if (typeof body.hub_id === "string") return body.hub_id;
+      return null;
+    } catch {
+      return null;
+    }
+  }
+
   /** Returns a token guaranteed valid for at least REFRESH_LEAD_MS.
    *  Handles refresh + persistence transparently; Phase 2/3 callers
    *  treat this as "give me a fresh bearer for the CRM API". */

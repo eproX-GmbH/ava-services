@@ -367,6 +367,19 @@ const api = {
       ipcRenderer.invoke("crm:connect", { provider, orgUrl: opts?.orgUrl }),
     disconnect: (provider: CrmProviderKind): Promise<CrmProviderStatus> =>
       ipcRenderer.invoke("crm:disconnect", provider),
+    /**
+     * v0.1.153 — Build the deep-link URL that opens an external record
+     * in the provider's UI. Returns null when the provider isn't
+     * connected, or when the stored tokens predate the per-tenant
+     * field this URL shape needs (HubSpot portal id, Salesforce
+     * instance URL, Dynamics org URL). Caller falls back to a
+     * generic provider home page in that case.
+     */
+    getExternalUrl: (
+      provider: CrmProviderKind,
+      externalId: string,
+    ): Promise<string | null> =>
+      ipcRenderer.invoke("crm:getExternalUrl", { provider, externalId }),
     onStatusChanged: (
       cb: (status: CrmProviderStatus) => void,
     ): (() => void) => {
