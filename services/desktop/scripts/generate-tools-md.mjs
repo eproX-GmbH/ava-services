@@ -16,7 +16,10 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const DESKTOP_ROOT = dirname(HERE);
 const REPO_ROOT = join(DESKTOP_ROOT, "..", "..");
 const TOOLS_DIR = join(DESKTOP_ROOT, "src", "main", "agent", "tools");
-const OUT_PATH = join(REPO_ROOT, "TOOLS.md");
+// v0.1.157 — root-level .md files moved under /docs to declutter the
+// repository root. README.md stays at root; everything else lives in
+// docs/ so the GitHub landing page focuses on the README.
+const OUT_PATH = join(REPO_ROOT, "docs", "TOOLS.md");
 
 const GROUP_LABEL = {
   alerts: "Meldungen / Alerts",

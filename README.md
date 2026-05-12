@@ -68,7 +68,7 @@ Status pro Firma × pro Stage liegt live als Matrix in der App, mit Drilldown au
 
 ## Status & Service Health
 
-Aktuell Pre-1.0 (Stand: **v0.1.155**). Die Architektur ist stabil, Featureflächen wachsen pro Release.
+Aktuell Pre-1.0 (Stand: **v0.1.156**). Die Architektur ist stabil, Featureflächen wachsen pro Release.
 
 Die Badges oben zeigen den Live-Status der Cloud-Komponenten:
 
@@ -80,45 +80,32 @@ Die Badges oben zeigen den Live-Status der Cloud-Komponenten:
 
 Die schwere Pipeline-Logik (Producer, LLM, Scraping) läuft auf der Maschine des Nutzers und ist deshalb nicht zentral „status-bar"-fähig — Ausfälle sind lokal sichtbar im Whoami-Panel der Desktop-App.
 
-Tiefere Dokumentation: [`DECISIONS.md`](./DECISIONS.md) (D1–D11-Architekturentscheidungen), [`INVENTORY.md`](./INVENTORY.md) (Bestandsaufnahme), [`DESKTOP_DATA_FLOW.md`](./DESKTOP_DATA_FLOW.md) (Workflows W1–W25, SSE-Bridge, IPC-Verträge), [`CHANGELOG.md`](./CHANGELOG.md) (Release-Chronik), [`PLANS.md`](./PLANS.md) (technische Feature-Pläne).
+Tiefere Dokumentation unter [`docs/`](./docs/): [`DECISIONS.md`](./docs/DECISIONS.md) (D1–D11-Architekturentscheidungen), [`INVENTORY.md`](./docs/INVENTORY.md) (Bestandsaufnahme), [`DESKTOP_DATA_FLOW.md`](./docs/DESKTOP_DATA_FLOW.md) (Workflows W1–W25, SSE-Bridge, IPC-Verträge), [`CHANGELOG.md`](./docs/CHANGELOG.md) (Release-Chronik), [`PLANS.md`](./docs/PLANS.md) (technische Feature-Pläne).
 
 ## Roadmap
 
-Was bereits drin ist und was als Nächstes kommt. Wird mit jeder Release-Runde aktualisiert (Stand: v0.1.155).
+Wohin sich AVA entwickelt. Granulare Tickets liegen im Tracker — hier nur die strategischen Linien, die AVA zur dem machen sollen, was es sein will.
 
-### Bereits geliefert ✓
+### Was AVA heute schon ist
 
-- **AI-Chat als primäre Bedienoberfläche** mit Tool-Use, Skills, persistentem Profil und Voice-Mode
-- **Multi-Provider-LLM** — lokale Runtime als Standard, BYO-Key für gängige Hosted-Provider (inkl. aktueller Frontier-Modelle, v0.1.156); Producer übernehmen den Schlüssel des Nutzers transparent
-- **CRM-Integration HubSpot** — OAuth, Live-Enrichment auf Knopfdruck, manuelle Verknüpfung, Deep-Link in die HubSpot-UI
-- **Bulk-Import** aus Excel/CSV inkl. Fuzzy-Match mit Dry-Run-Preview vor Commit
-- **Re-Extraktion einzelner Stages** — `retry_stage`-Tool im Chat schickt eine bereits importierte Firma erneut durch einen ausgewählten Producer (Profile / Website / Publication / Evaluation / Contact), ohne Re-Import
-- **Skills mit Trust-Modell** — nutzer-eigene Markdown-Workflows mit signaturbasiertem Vertrauensgate (Erst-Zustimmung, Re-Confirm bei Modifikation)
-- **Tier-aware Persist (Wave 1)** — die Persist-Bus entscheidet anhand der Quality-Tier des schreibenden LLMs, ob eine bestehende Zelle überschrieben werden darf
-- **Heartbeat & Standing-Watches** — periodischer Scan auf neue Bekanntmachungen + nutzer-formulierte Trigger-Kriterien
-- **Producer-Selfheal** — Auto-Restart bei Crash, Quota-Aware Parking statt harter Ablehnung
-- **Abonnement & Quotas** über externen Payment-Provider mit Tier-aware Pre-Checks
-- **OTA-Updates mit Fehlerdiagnose** — automatische Erkennung still gescheiterter Installationen und direkte Verknüpfung zu Log-Dateien (v0.1.155)
+- Eine **lokal-laufende KI-Assistenz** für deutsche B2B-Recherche, die Excel-Importe, Handelsregister-Abfragen, Webseiten-Crawls und LLM-Bewertungen automatisch zu Firmenprofilen verdichtet
+- Ein **Chat-Agent** mit Tool-Use, eigenen Skills und Voice-Mode als primäre Bedienoberfläche
+- **HubSpot-integriert** mit Live-Enrichment auf Knopfdruck und Heartbeat-getriebenen Alerts bei neuen Veröffentlichungen
+- **Modellneutral** — lokales LLM als Standard, BYO-Key für gängige Hosted-Provider (Opus 4.7, GPT-5.5, Gemini 3.1 Pro, …)
 
-### In Arbeit / als Nächstes
+### Wohin wir wollen
 
-| Bereich | Was kommt |
-|---|---|
-| **Importe** | Nachträgliche Bearbeitung unmatchter Firmen nach dem Commit (kein zweiter Import nötig) |
-| **Bekanntmachungen** | Automatische numerische Extraktion (Bilanzkennzahlen, GuV, Umsatz) aus Veröffentlichungstexten |
-| **Globale Live-Matrix** | Status aller laufenden Pipelines in einer Übersicht statt nur pro Transaktion |
-| **CRM-Erweiterung Desktop** | Salesforce + Microsoft-Dynamics in der Desktop-UI freischalten (Gateway-OAuth-Proxies sind bereits live); bidirektionaler Sync mit Schreibschutz-Gates |
-| **Skills-Marketplace** | Auffindbarkeit + Sharing für die nutzer-eigenen Workflows (Trust-Modell selbst läuft schon) |
-| **Sichtbarkeit Quotas** | Per-Zeile „parked"-Pille in der Transaktions-Matrix, damit Quota-Stopper sofort sichtbar sind |
+**Universelle CRM-Anbindung.** HubSpot war Anfang — Salesforce und Microsoft Dynamics folgen, und perspektivisch wird der Schreibpfad bidirektional. AVA soll der intelligente Recherche-Layer über *deinem* CRM sein, nicht ein Parallelsystem, in das du zusätzlich pflegst.
 
-### Forschungs- & Stretch-Themen
+**Strukturiertes Wissen aus unstrukturierten Quellen.** Die Veröffentlichungen im Unternehmensregister enthalten Bilanzen, GuV, Umsatzentwicklung — heute als Text. Wir machen daraus quantitative Zeitreihen, Branchen-Benchmarks und vergleichbare Kennzahlen.
 
-- **Events-as-Context** — laufende Producer-Ergebnisse als Live-Kontext für den Chat-Agenten, statt nur DB-Snapshots
-- **LLM-Judgment-Cache** — wiederverwendbare Bewertungen über Sessions hinweg, damit gleiche Fragen nicht jedes Mal neu durch den LLM laufen
-- **Tier-aware Persist Wave 2** — Plan-Tier-abhängige Vollständigkeit von Firmenprofilen (Light-Tier sieht andere Felder als Pro)
-- **CRM Phase 1.5 + 2** — strukturierter Schreibpfad zurück ins CRM mit Diff-Preview
+**Geteilte Recherche-Workflows.** Das Skills-System hat heute schon ein Trust-Modell. Als Nächstes: ein Marketplace, in dem Branchenexperten ihre Recherche-Templates für andere AVA-Nutzer veröffentlichen — vom „Solvenz-Check für Mittelstand" bis zum „Familienunternehmer-Nachfolge-Scan".
 
-> Lücken oder Wünsche? [info@eprox-gmbh.de](mailto:info@eprox-gmbh.de) — die Roadmap ist nicht in Stein gemeißelt.
+**Mehr Märkte.** AVA ist heute auf deutsche Handelsregister-Daten optimiert. Österreichische und schweizer Quellen sind der naheliegende nächste Schritt; weiter draußen liegen die anderen EU-DACH-Registerstandards.
+
+**Vom Single-Seat zum Team.** Heute läuft AVA als persönliche Recherche-Assistenz. Geteilte Standing-Watches, geteilte CRM-Verknüpfungen, ein gemeinsames Recherche-Archiv für Teams stehen auf der mittelfristigen Karte.
+
+> Konkrete Wünsche, Lücken, Branchenanforderungen? [info@eprox-gmbh.de](mailto:info@eprox-gmbh.de) — die Roadmap wird mit jeder Nutzer-Rückmeldung schärfer.
 
 ## Installation
 
@@ -148,9 +135,8 @@ ava-services/
 ├── packages/
 │   ├── ai-provider/         # Einheitliches LLM-Provider-Interface
 │   └── events/              # Event-Schema-Builder + Message-Broker-Client
-├── DECISIONS.md             # Ratifizierte D1–D11-Architekturentscheidungen
-├── DESKTOP_DATA_FLOW.md     # Workflows W1–W25, SSE-Bridge, IPC-Verträge
-└── INVENTORY.md             # Vollständige Bestandsaufnahme der Services
+└── docs/                    # Architektur-Docs, Pläne, Tools-Referenz,
+                             # CHANGELOG; siehe `docs/README.md` für Index
 ```
 
 ## Build aus dem Quelltext

@@ -68,7 +68,7 @@ export interface ModelCapabilities {
  *   1 = "C" — small / local-default (≤4 B params, free-tier baseline)
  *
  * REQUIRED on every entry. CI fails if a new entry omits it. See
- * `/MODEL_TIERS.md` at repo root for the full rubric + current
+ * `/docs/MODEL_TIERS.md` for the full rubric + current
  * classifications. When you add a model, also update that doc.
  *
  * Embedding models still need a tier — set it from the chat model
@@ -98,7 +98,7 @@ export interface CatalogEntry {
   costClass: "free" | "cheap" | "mid" | "high";
   /**
    * Quality tier for tier-aware persist. See ModelTier above and
-   * MODEL_TIERS.md. Required on every entry — TypeScript will reject
+   * docs/MODEL_TIERS.md. Required on every entry — TypeScript will reject
    * a new model that omits it.
    */
   tier: ModelTier;
