@@ -7,6 +7,27 @@ The repo uses one rolling tag per desktop release (`v<major>.<minor>.<patch>`)
 on `main`. Submodules cut their own feature branches and are pinned via the
 desktop bundle; `pnpm fetch:producers` re-vendors them into the .dmg.
 
+## v0.1.137 — 2026-05-11
+
+- **Q-Track: Deferred-processing-Quota.** Importe werden jetzt
+  vorbehaltlos akzeptiert. Sobald eine Firma das aktuelle Kontingent
+  überschreiten würde, wird sie in `ParkedCompany` (im db-gateway,
+  tenant-scoped) geparkt statt verworfen. Ein Resume-Worker im Gateway
+  spielt geparkte Firmen automatisch nach (a) einem Stripe-Tier-Wechsel
+  oder (b) einem 5-Minuten-Cron-Tick wieder in die Producer-Pipeline
+  ein — solange Quota-Headroom existiert.
+  - Neuer interner HMAC-Channel zwischen Gateway und Master-Data:
+    `POST /internal/quota/try-reserve`, `…/quota/park`,
+    `…/quota/parked-batch`, `…/quota/parked-count`,
+    `DELETE …/quota/parked/:tenantId/:germanCompanyId` (Gateway), und
+    `POST /internal/companies/republish-triggers` (Master-Data).
+  - `INTERNAL_HMAC_SECRET` muss auf BEIDEN Apps gesetzt sein.
+  - Renderer-Banner kennt jetzt drei Varianten (erschöpft + geparkt,
+    erschöpft ohne geparkt, headroom + geparkt). `parkedCount` wird
+    über `GET /v1/usage` zurückgegeben.
+  - Master-Data-Schema unverändert — Park-State lebt ausschließlich
+    im Gateway (Master-Data bleibt tenant-agnostisch).
+
 ## v0.1.136 — 2026-05-11
 
 - **Anthropic-Subscription-OAuth: Token-Tausch geht jetzt durch.**

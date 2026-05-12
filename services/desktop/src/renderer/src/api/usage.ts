@@ -28,6 +28,10 @@ export interface UsageSnapshot {
    *  Stripe portal but the period hasn't ended yet. UI shows
    *  "Kündigung zum X vorgemerkt" + helper to take it back. */
   cancelAtPeriodEnd: boolean;
+  /** Q-track v0.1.137 — number of companies parked in
+   *  `ParkedCompany` for this tenant, waiting on quota headroom.
+   *  Surfaces in the QuotaExhaustedBanner + per-row matrix pill. */
+  parkedCount: number;
 }
 
 export const USAGE_QUERY_KEY = ["usage"] as const;

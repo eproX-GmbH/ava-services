@@ -301,6 +301,14 @@ async function handleStripeEvent(event: Stripe.Event): Promise<void> {
         cancelAtPeriodEnd,
       });
       logger.info({ tenantId, tier, subscriptionId: sub.id }, "stripe subscription state synced");
+      // Q-track v0.1.137 — Tier flip may have created fresh headroom.
+      // Fire-and-forget the resume-worker; it dedupes via in-flight set.
+      try {
+        const { resumeParkedForTenant } = await import("../../lib/quota-resume-worker");
+        resumeParkedForTenant(tenantId);
+      } catch (err) {
+        logger.warn({ err: err instanceof Error ? err.message : String(err) }, "resume-worker hook failed");
+      }
       return;
     }
     case "customer.subscription.deleted": {

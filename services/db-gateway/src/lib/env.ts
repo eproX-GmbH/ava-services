@@ -110,6 +110,14 @@ const schema = z.object({
   DYNAMICS_CLIENT_ID: z.string().optional(),
   DYNAMICS_CLIENT_SECRET: z.string().optional(),
 
+  // Q-track v0.1.137 — Shared HMAC secret for the gateway ↔ master-data
+  // internal channel (`/internal/*` routes on both apps). Same value
+  // MUST be set on `ava-db-gateway` and `ava-master-data` Fly secrets.
+  // Optional at boot so dev-only mode (no master-data peer running)
+  // still spins up; the internal-auth middleware fails closed when a
+  // request arrives without it configured.
+  INTERNAL_HMAC_SECRET: z.string().optional(),
+
   LOG_LEVEL: z.enum(["fatal", "error", "warn", "info", "debug", "trace"]).default("info"),
 
   // CORS allow-list, prod only. Comma-separated origins; the literal

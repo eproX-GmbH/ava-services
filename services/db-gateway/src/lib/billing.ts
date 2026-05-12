@@ -21,7 +21,7 @@
 // vs "did we already bill this company?" decisions co-located. M2 +
 // M3 will add `enforceQuota()` and `applyStripeWebhook()` here too.
 
-import { Pool } from "pg";
+import { Pool, type PoolClient } from "pg";
 import type { Logger } from "pino";
 import { HTTPException } from "hono/http-exception";
 
@@ -60,6 +60,11 @@ export interface UsageSnapshot {
    *  `cancel_at_period_end` via the subscription.updated webhook.
    *  False for free / enterprise tenants (no Stripe subscription). */
   cancelAtPeriodEnd: boolean;
+  /** Q-track v0.1.137 — count of `ParkedCompany` rows waiting on
+   *  quota headroom. Drives the desktop's QuotaExhaustedBanner
+   *  variant + the per-row "Wartet aufs Kontingent" pill in the
+   *  TransactionDetail matrix. Always 0 for enterprise tenants. */
+  parkedCount: number;
 }
 
 /** Sentinel for "no enforcement". Used in `limit` + `remaining` of
@@ -97,6 +102,61 @@ export function periodKeyFor(tier: BillingTier, now: Date = new Date()): string 
 export function periodEndFor(tier: BillingTier, now: Date = new Date()): Date | null {
   if (tier === "free" || tier === "enterprise") return null;
   return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1));
+}
+
+/** Shape of the billing-row decision input. Exported alongside
+ *  `ensureBillingRowForQuota` so the internal-quota route can re-use
+ *  the same lazy-create logic from within an explicit transaction. */
+export interface BillingRowSnapshot {
+  tier: BillingTier;
+  quotaLimit: number;
+  periodEnd: Date | null;
+  cancelAtPeriodEnd: boolean;
+}
+
+/** Q-track v0.1.137 — Same lazy-create-or-read as `ensureBillingRow`
+ *  but takes an explicit `PoolClient` so the caller can wrap it in a
+ *  `BEGIN…COMMIT` and `SELECT FOR UPDATE` the row to serialize the
+ *  try-reserve decision. Issues a row-level lock at the end so concurrent
+ *  reservations on the same tenant queue up cleanly. */
+export async function ensureBillingRowForQuota(
+  client: PoolClient,
+  tenantId: string,
+): Promise<BillingRowSnapshot> {
+  const existing = await client.query<{
+    tier: string;
+    quotaLimit: number;
+    periodEnd: Date | null;
+    cancelAtPeriodEnd: boolean;
+  }>(
+    `SELECT tier, "quotaLimit", "periodEnd", "cancelAtPeriodEnd"
+       FROM "TenantBilling"
+      WHERE "tenantId" = $1
+      FOR UPDATE`,
+    [tenantId],
+  );
+  if (existing.rowCount && existing.rowCount > 0) {
+    const row = existing.rows[0]!;
+    return {
+      tier: row.tier as BillingTier,
+      quotaLimit: row.quotaLimit,
+      periodEnd: row.periodEnd,
+      cancelAtPeriodEnd: row.cancelAtPeriodEnd,
+    };
+  }
+  await client.query(
+    `INSERT INTO "TenantBilling"
+       ("tenantId", tier, "quotaLimit", "updatedAt", "createdAt")
+     VALUES ($1, 'free', $2, NOW(), NOW())
+     ON CONFLICT ("tenantId") DO NOTHING`,
+    [tenantId, FREE_DEFAULT_LIMIT],
+  );
+  return {
+    tier: "free",
+    quotaLimit: FREE_DEFAULT_LIMIT,
+    periodEnd: null,
+    cancelAtPeriodEnd: false,
+  };
 }
 
 /** Look up or lazily-create a `TenantBilling` row. Lazy create gives
@@ -226,6 +286,16 @@ export async function getUsageSnapshot(
   );
   const used = Number(countRes.rows[0]?.used ?? 0);
 
+  // Q-track v0.1.137 — parked-row count surfaced alongside `used`. The
+  // desktop banner + matrix overlay both need this; cheap COUNT(*)
+  // against the (tenantId, parkedAt) index. Always 0 for enterprise
+  // tenants because the import path doesn't park on unlimited tiers.
+  const parkedRes = await pool.query<{ parked: string }>(
+    `SELECT COUNT(*)::text AS parked FROM "ParkedCompany" WHERE "tenantId" = $1`,
+    [tenantId],
+  );
+  const parkedCount = Number(parkedRes.rows[0]?.parked ?? 0);
+
   // Enterprise tier: stored quotaLimit is irrelevant. Surface UNLIMITED
   // so clients render "∞" and skip the math entirely. This gives the
   // operator a clean self-provisioning path: UPDATE TenantBilling SET
@@ -243,6 +313,7 @@ export async function getUsageSnapshot(
     periodEnd: periodEnd ? periodEnd.toISOString() : null,
     periodKey: isUnlimited(billing.tier) ? "unlimited" : periodKey,
     cancelAtPeriodEnd: billing.cancelAtPeriodEnd,
+    parkedCount,
   };
 }
 

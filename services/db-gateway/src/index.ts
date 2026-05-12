@@ -14,6 +14,8 @@ import { logger } from "./lib/logger";
 import { healthRouter } from "./routes/health";
 import { v1 } from "./routes/v1";
 import { billingWebhookRouter } from "./routes/v1/billing";
+import { internalQuotaRouter } from "./routes/internal-quota";
+import { startQuotaResumeCron } from "./lib/quota-resume-worker";
 
 const env = loadEnv();
 const app = new OpenAPIHono();
@@ -69,6 +71,12 @@ app.route("/health", healthRouter);
 // raw body) instead of the JWT-gated v1 chain.
 app.route("/", billingWebhookRouter);
 
+// Q-track v0.1.137 — Internal HMAC-authed surface for the gateway ↔
+// master-data quota / park-state channel. Mounted OUTSIDE /v1 so it
+// bypasses the JWT auth + audit chain (the peer is a service, not a
+// user). HMAC middleware lives on the router itself.
+app.route("/internal", internalQuotaRouter);
+
 // Versioned API.
 app.route("/v1", v1);
 
@@ -92,3 +100,8 @@ import("./lib/persist-bus")
   .catch((err) => {
     logger.error({ err }, "persist-bus failed to start");
   });
+
+// Q-track v0.1.137 — Resume-worker 5-min cron tick. Scans for tenants
+// with parked rows + headroom and asks master-data to replay producer
+// triggers in batches. Stripe webhook trigger lives inside billing.ts.
+startQuotaResumeCron();

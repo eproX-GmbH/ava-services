@@ -5,7 +5,6 @@ import { callUpstreamBinary, callUpstreamBinaryExpectJson } from "../../lib/upst
 import { setTransactionName } from "../../lib/transaction-names";
 import { seedEntityProgressForTransaction } from "../../lib/entity-progress-seed";
 import { buildXlsx } from "../../lib/xlsx-mini";
-import { assertQuotaAvailable } from "../../lib/billing";
 import { getGatewayPool } from "../../lib/producer-pools";
 import { logger } from "../../lib/logger";
 import {
@@ -117,15 +116,15 @@ importsRouter.openapi(importExcelRoute, async (c) => {
   const { companyNameIdentifiers, city, name, isFuzzy, dryRun, expectedCount } =
     c.req.valid("query");
 
-  // M2 — pre-import quota gate. Skips on dryRun (no usage debited).
-  // `expectedCount` is desktop-supplied; we fall back to 1 so a free-
-  // tier user already at quota can't sneak past with a missing param.
-  if (!dryRun) {
-    const auth = c.get("auth");
-    if (auth?.tenantId) {
-      await assertQuotaAvailable(getGatewayPool(), auth.tenantId, expectedCount ?? 1);
-    }
-  }
+  // Q-track v0.1.137 — Imports now ACCEPT UNCONDITIONALLY. The per-
+  // company producer-trigger publish in master-data is the new quota
+  // gate: each company calls `POST /internal/quota/try-reserve`; over-
+  // quota companies get parked in `ParkedCompany` for the resume-worker.
+  // No 402 from this endpoint anymore — that flow is dead.
+  //
+  // `expectedCount` stays in the request schema for backwards-compat
+  // (older desktops still send it) but is informational only.
+  void expectedCount;
 
   // Pull the file out of the multipart form. Hono's parseBody returns a File
   // (Web API) for binary parts. We accept either field name `file` or the
@@ -359,13 +358,8 @@ const companyIngestRoute = createRoute({
 importsRouter.openapi(companyIngestRoute, async (c) => {
   const { name, city, transactionName, isFuzzy, dryRun, crm } = c.req.valid("json");
 
-  // M2 — single-row ingest still costs one quota credit when not dry-run.
-  if (!dryRun) {
-    const auth = c.get("auth");
-    if (auth?.tenantId) {
-      await assertQuotaAvailable(getGatewayPool(), auth.tenantId, 1);
-    }
-  }
+  // Q-track v0.1.137 — Single-row ingest accepts unconditionally.
+  // Quota gating moved to master-data's per-company publish step.
 
   const xlsx = buildXlsx({
     headers: [COMPANY_HEADER, CITY_HEADER],
@@ -509,19 +503,8 @@ const fromListIngestRoute = createRoute({
 importsRouter.openapi(fromListIngestRoute, async (c) => {
   const { companies, transactionName, isFuzzy, dryRun } = c.req.valid("json");
 
-  // M2 — quota gate sized to the JSON list length (atomic; no partial
-  // imports). Dry-run skips the gate so the user can still see the
-  // preview when over quota.
-  if (!dryRun) {
-    const auth = c.get("auth");
-    if (auth?.tenantId) {
-      await assertQuotaAvailable(
-        getGatewayPool(),
-        auth.tenantId,
-        companies.length,
-      );
-    }
-  }
+  // Q-track v0.1.137 — From-list ingest accepts unconditionally too.
+  // Over-quota rows park in master-data's per-company publish step.
 
   const xlsx = buildXlsx({
     headers: [COMPANY_HEADER, CITY_HEADER],

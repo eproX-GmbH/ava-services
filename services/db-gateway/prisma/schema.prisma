@@ -295,6 +295,37 @@ model UsageEntry {
   @@index([tenantId, periodKey])
 }
 
+/// Q-track v0.1.137 — Deferred-processing quota.
+///
+/// One row per (tenantId, germanCompanyId) — composite PK so a parked
+/// company stays parked exactly once even when two imports race to
+/// park the same id. Inserted by `POST /internal/quota/park` when a
+/// per-company `try-reserve` denies further work; consumed by the
+/// resume-worker which fetches batches via `/internal/quota/parked-
+/// batch`, replays the producer-trigger publishes through master-data,
+/// then deletes the row on success.
+///
+/// `transactionId` carries the original import's transaction id so the
+/// renderer's matrix view can label the parked row with the right
+/// drilldown context. Nullable because the master-data emit path
+/// (germany/events/...) creates a fresh transactionId per call; we set
+/// whichever one was in scope at park time.
+///
+/// Park-state lives in the gateway (not master-data) because the
+/// gateway is the tenant-scoped layer of the system — master-data's
+/// `GermanCompany` table is global (HRB-sourced, tenant-agnostic) and
+/// adding a per-tenant flag there would break the compute-locality
+/// invariant. See PLANS.md §4.
+model ParkedCompany {
+  tenantId        String
+  germanCompanyId String
+  transactionId   String?
+  parkedAt        DateTime @default(now())
+
+  @@id([tenantId, germanCompanyId])
+  @@index([tenantId, parkedAt])
+}
+
 /// Workstream C — CRM linkage. Binds an AVA master-data companyId to
 /// its counterpart in a connected CRM (HubSpot today; Salesforce +
 /// Dynamics schema-ready, API stubbed). Written by the import paths

@@ -259,6 +259,75 @@ Spezifikationsvorgabe war ein neuer `LLMProvider`-Wert `"anthropic-subscription"
 
 ---
 
+## 4. Deferred-processing quota (Q-track)
+
+**Status:** Shipped in v0.1.137 (2026-05-11). M12 (per-row matrix
+parked-pill) deferred to a follow-up task.
+
+**Problem:** Pre-v0.1.137 the gateway's `assertQuotaAvailable` rejected
+imports with a 402 the moment they would exceed the tenant's quota
+(`used + neededCount > limit`). A free-tier user at 24/25 importing
+10 companies got all 10 refused. Worse, the user couldn't even see the
+match/preview UX for the 9 they weren't entitled to — the gate ran
+before any work happened.
+
+**Fix:** Imports now accept unconditionally. The quota gate moves down
+to the per-company producer-trigger publish in master-data:
+
+- Each company calls the gateway's new
+  `POST /internal/quota/try-reserve` (HMAC-authed). The endpoint locks
+  the `TenantBilling` row, recomputes `used + parkedCount + count`,
+  and grants when it fits under `limit`.
+- On grant: master-data fires the per-company upsert events through
+  the new `publishCompanyProducerTriggers` helper, which lifts the
+  inline publish-pair from the two call sites
+  (`upload-companies-excel-command.ts` ~line 404 onwards, and
+  `emit-german-company-upsert-events-command.ts` ~line 138 onwards).
+- On deny: master-data calls `POST /internal/quota/park` to record a
+  `ParkedCompany` row keyed by `(tenantId, germanCompanyId)`. The
+  resume-worker replays parked rows.
+
+**Park-state location:** Gateway DB (new `ParkedCompany` table). NOT
+master-data. Reason: master-data's `GermanCompany` table is global
+(HRB-sourced lookup, tenant-agnostic); adding a per-tenant flag there
+would break the compute-locality invariant. The gateway already hosts
+every other tenant-scoped table (`TenantBilling`, `UsageEntry`,
+`EntityProgress`), so it's the natural home.
+
+**Resume triggers:**
+1. **Stripe webhook** — after `upsertSubscriptionState` flips the
+   tier, `lib/billing.ts` fires `resumeParkedForTenant(tenantId)`.
+2. **5-min cron** in `lib/quota-resume-worker.ts`. Two concerns:
+   - Roll expired `periodEnd` forward for paid tiers so resumed rows
+     fall under the new period.
+   - Scan `ParkedCompany` for distinct tenantIds; fire the resume for
+     each. Master-data's `try-reserve` per row decides what fits.
+
+**Throttle:** in-memory `Set<string>` of in-flight tenants in the
+gateway, plus 200ms inter-batch delay and a 50-iteration cap per
+trigger. Batch size 20.
+
+**Internal HMAC channel:**
+- Header `X-Internal-Signature: hex(hmac-sha256(secret, body))`.
+- Same `INTERNAL_HMAC_SECRET` on both apps (Fly secret).
+- Gateway: `/internal/*` mounted in `index.ts` at app-level, HMAC
+  middleware at `middleware/internal-auth.ts`.
+- Master-data: HMAC middleware lives at
+  `web/api/middlewares/request/internal-auth.ts`, mounted via the new
+  `beforeAuth` hook in `onRequest` so it runs before the JWT chain.
+
+**Renderer:**
+- `UsageSnapshot` carries a new `parkedCount: number` field.
+- `QuotaExhaustedBanner` has three variants now: exhausted+parked,
+  exhausted+empty-park, headroom+parked.
+- TransactionDetail per-row pill is M12, deferred.
+
+**Tests:** Jest for the master-data helper (granted → publishes,
+denied → park); a script-style smoke test in
+`services/db-gateway/scripts/test-quota-resume.mjs`.
+
+---
+
 ## Cross-cutting
 
 Both workstreams above share one anchor: **the system prompt**. Adding tools (Section 1) and adding skills (Section 2) both extend it. To avoid prompt bloat:
