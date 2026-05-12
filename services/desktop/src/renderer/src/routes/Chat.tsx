@@ -8,6 +8,8 @@ import {
   type ReactNode,
 } from "react";
 import { Link, useNavigate } from "react-router-dom";
+import ReactMarkdown from "react-markdown";
+import type { Components } from "react-markdown";
 import {
   PanelLeftClose,
   PanelLeftOpen,
@@ -1874,23 +1876,20 @@ function formatRelative(ms: number): string {
   return `vor ${Math.round(diff / 86_400_000)} Tagen`;
 }
 
-// Minimal markdown-link renderer for chat bubbles. Two link forms
-// are recognised:
-//   `[Label](company:<companyId>)` → <Link to="/companies/:id">Label</Link>
-//     The agent is instructed (see prompts.ts) to always wrap company
-//     mentions in this form so the user can jump to the detail page.
-//   `[Label](http://…)` / `[Label](https://…)`
-//     → external <a target="_blank">. We don't open these in the same
-//     window because the renderer is hash-routed and replacing location
-//     would tear down the chat session.
+// Markdown renderer for chat bubbles. The agent emits real markdown
+// (bold, italic, lists, headings, fenced code, inline code, paragraphs)
+// plus two link forms that need special routing:
+//   `[Label](company:<companyId>)` → in-app <Link to="/companies/:id">
+//     The agent is instructed (see prompts.ts) to wrap company mentions
+//     in this form so the user can jump to the detail page.
+//   `[Label](http(s)://…)` → external open via window.api.shell.openExternal.
+//     The renderer is hash-routed and replacing location would tear down
+//     the chat session, so we never let the browser navigate the URL.
 //
-// Everything else is plain text, including stray brackets that don't
-// match either pattern. Newlines are preserved as <br />. We do NOT
-// support full markdown (bold/italics/lists/headings) — the agent's
-// output is conversational German prose; over-rendering invites edge
-// cases. If we ever need richer formatting, swap this out for
-// react-markdown with a custom anchor renderer.
-const LINK_RE = /\[([^\]]+)\]\((company:[^)]+|https?:\/\/[^)\s]+)\)/g;
+// Chart fences (```chart …) are intercepted twice: once by the pre-pass
+// `CHART_FENCE_RE` extractor below (so streaming placeholders still work)
+// and again by the `code` component override (belt-and-suspenders in case
+// the pre-pass misses a fence — defensive against ever changing the regex).
 
 // User-bubble content. Live sends look like `📎 filename` + the user's
 // note (composed in handleSend), but on transcript replay the full
@@ -2088,7 +2087,7 @@ function renderChatContent(text: string): ReactNode {
   let match: RegExpExecArray | null;
   while ((match = CHART_FENCE_RE.exec(text)) !== null) {
     const before = text.slice(cursor, match.index);
-    if (before) nodes.push(...renderTextSegment(before, `seg-${segKey++}`));
+    if (before) nodes.push(renderTextSegment(before, `seg-${segKey++}`));
     const raw = match[1] ?? "";
     nodes.push(<ChartBlock key={`chart-${segKey++}`} raw={raw} />);
     cursor = match.index + match[0].length;
@@ -2103,91 +2102,96 @@ function renderChatContent(text: string): ReactNode {
       // Inhalt bis zum Öffner normal rendern; alles ab dem Öffner → Platzhalter.
       const openerAt = trailing.search(CHART_OPEN_RE);
       const head = openerAt > 0 ? trailing.slice(0, openerAt) : "";
-      if (head) nodes.push(...renderTextSegment(head, `seg-${segKey++}`));
+      if (head) nodes.push(renderTextSegment(head, `seg-${segKey++}`));
       nodes.push(
         <div key={`ph-${segKey++}`} className="chart-placeholder">
           Diagramm wird gerendert…
         </div>,
       );
     } else {
-      nodes.push(...renderTextSegment(trailing, `seg-${segKey++}`));
+      nodes.push(renderTextSegment(trailing, `seg-${segKey++}`));
     }
   }
 
   return nodes;
 }
 
-function renderTextSegment(text: string, prefix: string): ReactNode[] {
-  if (!text) return [];
-  const nodes: ReactNode[] = [];
-  let cursor = 0;
-  let key = 0;
-
-  const pushText = (raw: string) => {
-    if (!raw) return;
-    // Preserve line breaks. A naive `whitespace: pre-wrap` on the
-    // container would also work, but interleaving link nodes makes
-    // that unreliable, so we split here.
-    const parts = raw.split("\n");
-    for (let i = 0; i < parts.length; i++) {
-      if (i > 0) nodes.push(<br key={`${prefix}-br-${key++}`} />);
-      if (parts[i]) nodes.push(<span key={`${prefix}-t-${key++}`}>{parts[i]}</span>);
-    }
-  };
-
-  // Reset regex state — `lastIndex` survives across invocations on
-  // global regexes, which would skip matches on rerenders if shared.
-  LINK_RE.lastIndex = 0;
-  let match: RegExpExecArray | null;
-  while ((match = LINK_RE.exec(text)) !== null) {
-    const whole = match[0];
-    const label = match[1] ?? "";
-    const target = match[2] ?? "";
-    const start = match.index;
-    pushText(text.slice(cursor, start));
+// react-markdown custom components. Memoised at module scope so the
+// component object is referentially stable across renders (cheap perf
+// nicety — react-markdown re-walks the tree on every render anyway).
+const MARKDOWN_COMPONENTS: Components = {
+  a({ href, children, ...rest }) {
+    const target = typeof href === "string" ? href : "";
     if (target.startsWith("company:")) {
       const companyId = target.slice("company:".length).trim();
       if (companyId) {
-        nodes.push(
+        return (
           <Link
-            key={`${prefix}-co-${key++}`}
             to={`/companies/${encodeURIComponent(companyId)}`}
             className="chat-company-link"
             title={`Firma ${companyId} öffnen`}
             // Phase 8.r4 — interest signal. CompanyDetail will also
             // ping on mount, but recording here too means the scheduler
-            // sees the click even if the user never lands on the page
-            // (e.g. ⌘+click that opens elsewhere later).
+            // sees the click even if the user never lands on the page.
             onClick={() => {
               void window.api.interest.record(companyId);
             }}
           >
-            {label}
-          </Link>,
+            {children}
+          </Link>
         );
-      } else {
-        // Malformed `company:` link — fall back to literal text so the
-        // user can at least see something went wrong, instead of a
-        // silently-disappearing token.
-        pushText(whole);
       }
-    } else {
-      nodes.push(
+      // Malformed `company:` link — render the label as plain text so
+      // the user at least sees something, instead of a silent disappear.
+      return <>{children}</>;
+    }
+    if (/^https?:\/\//i.test(target)) {
+      return (
         <a
-          key={`${prefix}-a-${key++}`}
           href={target}
-          target="_blank"
-          rel="noopener noreferrer"
           className="chat-link"
+          onClick={(e) => {
+            e.preventDefault();
+            void window.api.shell.openExternal(target);
+          }}
+          {...rest}
         >
-          {label}
-        </a>,
+          {children}
+        </a>
       );
     }
-    cursor = start + whole.length;
-  }
-  pushText(text.slice(cursor));
-  return nodes;
+    return (
+      <a href={target} {...rest}>
+        {children}
+      </a>
+    );
+  },
+  code({ className, children, ...rest }) {
+    // Belt-and-suspenders chart-fence catch. The pre-pass extractor in
+    // `renderChatContent` already pulls complete ```chart fences out
+    // before markdown ever sees the text; this branch only fires if a
+    // chart fence somehow leaks through (regex drift, edge whitespace).
+    if (className === "language-chart") {
+      const raw = String(children ?? "").replace(/\n$/, "");
+      return <ChartBlock raw={raw} />;
+    }
+    // Default behaviour — inline `code` or fenced block. react-markdown
+    // hands us the inner text; styling is in styles.css.
+    return (
+      <code className={className} {...rest}>
+        {children}
+      </code>
+    );
+  },
+};
+
+function renderTextSegment(text: string, prefix: string): ReactNode {
+  if (!text) return null;
+  return (
+    <ReactMarkdown key={prefix} components={MARKDOWN_COMPONENTS}>
+      {text}
+    </ReactMarkdown>
+  );
 }
 
 function roleLabel(role: AgentMessage["role"]): string {

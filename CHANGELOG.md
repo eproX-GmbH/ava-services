@@ -7,6 +7,36 @@ The repo uses one rolling tag per desktop release (`v<major>.<minor>.<patch>`)
 on `main`. Submodules cut their own feature branches and are pinned via the
 desktop bundle; `pnpm fetch:producers` re-vendors them into the .dmg.
 
+## v0.1.146 — 2026-05-12
+
+- **Chat-Bubble: volles Markdown-Rendering (Path 1).** Die
+  Assistant-Bubble lief seit v0.1.141 noch über einen handgerollten
+  Link-Tokenizer (Path 2, Kompromiss-Stand) und hat `**fett**`,
+  Listen, Überschriften und Fenced-Code als Roh-Quelltext angezeigt.
+  Mit v0.1.146 ersetzt `react-markdown` (bereits Workspace-Dep) den
+  Tokenizer in `renderChatContent`. Bold/Italic/Listen/Headings/
+  Inline-Code/Fenced-Code/Blockquote rendern jetzt korrekt. Die zwei
+  Spezialfälle, die heute schon funktionieren, bleiben:
+  `[Label](company:<id>)` → `<Link to="/companies/:id">` mit
+  Interest-Signal, und `[Label](https://…)` → `window.api.shell.
+  openExternal(url)` (kein Hash-Routen-Tear-Down). Beides hängt jetzt
+  als `components.a`-Override an react-markdown. ```chart-Fences
+  laufen weiterhin über den Pre-Pass-Extractor (Streaming-Platzhalter
+  unverändert) und zusätzlich als `components.code`-Branch als
+  Belt-and-Suspenders. User-Bubbles bleiben unverändert (Slash-Pill
+  greift dort, Markdown im Nutzereintrag wäre Regression).
+  CSS-Ergänzungen unter `.chat-msg-assistant .chat-content` (p, ul/ol,
+  h1–h4, code, pre, blockquote) — minimal, scoped, ohne Typografie-
+  Grundlagen zu verschieben. `remark-gfm` ist nicht installiert; die
+  ReactMarkdown-Defaults decken Bold/Italic/Listen/Headings/Code ab
+  (Tabellen + Task-Lists bleiben out-of-scope bis GFM nachgezogen
+  wird).
+- **Windows-CI wieder aktiv.** Der `.exe`-Build im
+  `desktop-release.yml`-Workflow war während des Q-Track-Refactor-
+  Sprints auf `if: false` gestellt und liegt jetzt wieder im
+  Release-Pfad — Windows-Artefakte fallen mit dem nächsten Tag wieder
+  in den Release.
+
 ## v0.1.145 — 2026-05-12
 
 - **Anthropic-Subscription-OAuth jetzt auch in den lokalen Producern.**

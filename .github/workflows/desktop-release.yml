@@ -255,7 +255,10 @@ jobs:
   # ---------------------------------------------------------------------------
   build-windows:
     name: Build Windows (unsigned, x64)
-    if: false
+    # v0.1.146 — Windows-Build wieder aktiviert. Hatte zwischenzeitlich
+    # `if: false` während des Q-track-Refactor-Sturms, damit ein
+    # Windows-Build nicht jeden Release blockt. Pipeline ist jetzt
+    # wieder stabil; Windows .exe begleitet jeden Tag.
     runs-on: windows-2022
     steps:
       - uses: actions/checkout@v4

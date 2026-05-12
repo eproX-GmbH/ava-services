@@ -61,7 +61,11 @@ upstream services in another terminal.
   (bar / hbar / line / area / pie / scatter). Ungültige Specs fallen
   auf eine Roh-JSON-Vorschau zurück; der Nutzer sieht nie ein kaputtes
   Diagramm. Test-Suite: `pnpm test:chart`. Spec-Details in
-  [`PLANS_chart_skill.md`](../../PLANS_chart_skill.md).
+  [`PLANS_chart_skill.md`](../../PLANS_chart_skill.md). Seit v0.1.146
+  rendert die Assistant-Bubble vollständig Markdown (Bold, Italic,
+  Listen, Überschriften, Inline-Code, Fenced-Code, Blockquote) via
+  `react-markdown` — die agent-typische Prosa erscheint nicht mehr als
+  Rohtext, und die Company-/External-Link-Routen bleiben erhalten.
 - **Companies / company detail** (`/companies`, `/companies/:id`) —
   per-tab tier pills, overview / financials / management / contacts /
   insights / jobs tabs. PersonCard collapses field-grouped Facts behind
