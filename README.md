@@ -89,9 +89,12 @@ Was bereits drin ist und was als Nächstes kommt. Wird mit jeder Release-Runde a
 ### Bereits geliefert ✓
 
 - **AI-Chat als primäre Bedienoberfläche** mit Tool-Use, Skills, persistentem Profil und Voice-Mode
-- **Multi-Provider-LLM** — lokale Runtime als Standard, BYO-Key für gängige Hosted-Provider; Producer übernehmen den Schlüssel des Nutzers transparent
+- **Multi-Provider-LLM** — lokale Runtime als Standard, BYO-Key für gängige Hosted-Provider (inkl. aktueller Frontier-Modelle, v0.1.156); Producer übernehmen den Schlüssel des Nutzers transparent
 - **CRM-Integration HubSpot** — OAuth, Live-Enrichment auf Knopfdruck, manuelle Verknüpfung, Deep-Link in die HubSpot-UI
 - **Bulk-Import** aus Excel/CSV inkl. Fuzzy-Match mit Dry-Run-Preview vor Commit
+- **Re-Extraktion einzelner Stages** — `retry_stage`-Tool im Chat schickt eine bereits importierte Firma erneut durch einen ausgewählten Producer (Profile / Website / Publication / Evaluation / Contact), ohne Re-Import
+- **Skills mit Trust-Modell** — nutzer-eigene Markdown-Workflows mit signaturbasiertem Vertrauensgate (Erst-Zustimmung, Re-Confirm bei Modifikation)
+- **Tier-aware Persist (Wave 1)** — die Persist-Bus entscheidet anhand der Quality-Tier des schreibenden LLMs, ob eine bestehende Zelle überschrieben werden darf
 - **Heartbeat & Standing-Watches** — periodischer Scan auf neue Bekanntmachungen + nutzer-formulierte Trigger-Kriterien
 - **Producer-Selfheal** — Auto-Restart bei Crash, Quota-Aware Parking statt harter Ablehnung
 - **Abonnement & Quotas** über externen Payment-Provider mit Tier-aware Pre-Checks
@@ -103,17 +106,16 @@ Was bereits drin ist und was als Nächstes kommt. Wird mit jeder Release-Runde a
 |---|---|
 | **Importe** | Nachträgliche Bearbeitung unmatchter Firmen nach dem Commit (kein zweiter Import nötig) |
 | **Bekanntmachungen** | Automatische numerische Extraktion (Bilanzkennzahlen, GuV, Umsatz) aus Veröffentlichungstexten |
-| **Re-Extraktion** | Existierende Firmen erneut durch beliebige Producer schicken ohne Re-Import |
 | **Globale Live-Matrix** | Status aller laufenden Pipelines in einer Übersicht statt nur pro Transaktion |
-| **CRM-Erweiterung** | Salesforce + Microsoft-Dynamics-OAuth aktivieren; bidirektionaler Sync mit Schreibschutz-Gates |
-| **Skills-System** | Marketplace + Trust-Modell für nutzer-eigene Markdown-Workflows |
+| **CRM-Erweiterung Desktop** | Salesforce + Microsoft-Dynamics in der Desktop-UI freischalten (Gateway-OAuth-Proxies sind bereits live); bidirektionaler Sync mit Schreibschutz-Gates |
+| **Skills-Marketplace** | Auffindbarkeit + Sharing für die nutzer-eigenen Workflows (Trust-Modell selbst läuft schon) |
 | **Sichtbarkeit Quotas** | Per-Zeile „parked"-Pille in der Transaktions-Matrix, damit Quota-Stopper sofort sichtbar sind |
-| **Datenmodell** | Tier-aware Persist Wave 2 — Vollständigkeit von Firmenprofilen abhängig vom Plan-Tier |
 
 ### Forschungs- & Stretch-Themen
 
 - **Events-as-Context** — laufende Producer-Ergebnisse als Live-Kontext für den Chat-Agenten, statt nur DB-Snapshots
 - **LLM-Judgment-Cache** — wiederverwendbare Bewertungen über Sessions hinweg, damit gleiche Fragen nicht jedes Mal neu durch den LLM laufen
+- **Tier-aware Persist Wave 2** — Plan-Tier-abhängige Vollständigkeit von Firmenprofilen (Light-Tier sieht andere Felder als Pro)
 - **CRM Phase 1.5 + 2** — strukturierter Schreibpfad zurück ins CRM mit Diff-Preview
 
 > Lücken oder Wünsche? [info@eprox-gmbh.de](mailto:info@eprox-gmbh.de) — die Roadmap ist nicht in Stein gemeißelt.
