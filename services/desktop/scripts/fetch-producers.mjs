@@ -381,18 +381,27 @@ async function main() {
       { cwd: stageDir },
     );
 
-    // 4. Build into stage/dist.
-    console.log(`[producers] ${target.name}: npm run build…`);
-    runSyncStrict("npm", ["run", "build"], { cwd: stageDir });
-
-    // 5a. Generate Prisma client BEFORE prune. The producer's
-    //     schema.prisma sets `output = "../generated/prisma-client"`,
-    //     which is what tsc-alias rewrote `@prisma/client` imports
-    //     to. Generation needs the prisma CLI which is a devDep —
-    //     after prune --omit=dev it's gone, so we must run this
-    //     before pruning.
+    // 4a. Generate the Prisma client BEFORE the TypeScript build.
+    //     The producer's tsconfig has `paths: {"@prisma/client":
+    //     ["generated/prisma-client"]}` so tsc resolves imports of
+    //     `@prisma/client` against the generated dir — which doesn't
+    //     exist yet. macOS happened to dodge this because
+    //     `@prisma/client`'s own postinstall hook can auto-run
+    //     `prisma generate` if it finds schema.prisma, but on Windows
+    //     CI that hook is unreliable (different shell, different exec
+    //     bits) and tsc fails with "Module '@prisma/client' has no
+    //     exported member …". Running prisma generate up-front fixes
+    //     the order regardless of platform-specific install hooks.
+    //
+    //     We still need to keep the prisma CLI around BEFORE prune
+    //     --omit=dev (it's a devDep), so generation stays in this
+    //     pre-prune window.
     console.log(`[producers] ${target.name}: prisma generate…`);
     runSyncStrict("npx", ["prisma", "generate"], { cwd: stageDir });
+
+    // 4b. Build into stage/dist.
+    console.log(`[producers] ${target.name}: npm run build…`);
+    runSyncStrict("npm", ["run", "build"], { cwd: stageDir });
 
     // 5a2. Rebuild native modules against Electron's Node ABI.
     //      Producers ship native deps (node-expat, sharp, etc.).
