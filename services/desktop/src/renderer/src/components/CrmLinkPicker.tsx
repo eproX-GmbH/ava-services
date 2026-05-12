@@ -144,20 +144,13 @@ export function CrmLinkPicker({
 
   return (
     <div
-      className="linkedin-consent-overlay"
+      className="linkedin-consent-overlay linkedin-consent-overlay--centered"
       role="dialog"
       aria-modal="true"
       aria-labelledby="crm-link-picker-title"
       onMouseDown={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
-      // v0.1.153 — The shared overlay class top-anchors the panel
-      // (align-items: flex-start + padding-top: 8vh) because the
-      // LinkedIn consent modal is a long-form scroll. The CRM picker
-      // is a compact dialog and the off-center placement looked
-      // broken — vertical-center for this instance, leaving the
-      // shared class behaviour for LinkedIn unchanged.
-      style={{ alignItems: "center", paddingTop: 0 }}
     >
       <div
         className="linkedin-consent-panel"

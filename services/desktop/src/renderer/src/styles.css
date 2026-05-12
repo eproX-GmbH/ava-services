@@ -4342,6 +4342,18 @@ a.heartbeat-decision__company:hover {
 :root.dark .linkedin-consent-overlay {
   background: rgba(0, 0, 0, 0.6);
 }
+/* v0.1.159 — modifier for dialogs that should be vertically centered
+ * (e.g. CRM-Link-Picker) instead of top-anchored like the LinkedIn
+ * consent modal. Grid + place-items=center is the bulletproof way to
+ * center a single child both axes — flex/align-items had a stubborn
+ * "panel sitzt am unteren Bildschirmrand" failure mode on certain
+ * Electron renders that I never fully tracked down. */
+.linkedin-consent-overlay--centered {
+  display: grid;
+  place-items: center;
+  align-items: unset;
+  padding-top: 0;
+}
 .linkedin-consent-panel {
   width: min(640px, calc(100vw - 32px));
   max-height: 84vh;
