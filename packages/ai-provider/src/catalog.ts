@@ -285,10 +285,29 @@ const OLLAMA_EMBED: CatalogEntry[] = [
 // ---- OpenAI ----------------------------------------------------------------
 
 const OPENAI_LLM: CatalogEntry[] = [
-  // GPT-5 family — current generation. Pick gpt-5.4-mini as the default
-  // recommendation: it follows multi-step tool plans far more reliably
-  // than 4o-mini and stays cheap. Step up to gpt-5.4 for tricky agent
-  // turns, gpt-5.4-pro for analyst-grade reasoning.
+  // GPT-5 family — current generation as of May 2026. We keep
+  // `gpt-5.4-mini` as the default recommendation: it follows multi-step
+  // tool plans more reliably than 4o-mini and stays cheap. Step up to
+  // gpt-5.4 for tricky agent turns, gpt-5.5 / 5.5-pro for analyst-grade
+  // reasoning. The 5.5 line is OpenAI's current frontier.
+  {
+    provider: "openai",
+    id: "gpt-5.5-pro",
+    label: "GPT-5.5 Pro (frontier)",
+    role: "llm",
+    capabilities: { tools: true, vision: true, contextWindow: 1_000_000 },
+    costClass: "high",
+    tier: 4,
+  },
+  {
+    provider: "openai",
+    id: "gpt-5.5",
+    label: "GPT-5.5",
+    role: "llm",
+    capabilities: { tools: true, vision: true, contextWindow: 1_000_000 },
+    costClass: "mid",
+    tier: 4,
+  },
   {
     provider: "openai",
     id: "gpt-5.4-pro",
@@ -319,10 +338,28 @@ const OPENAI_LLM: CatalogEntry[] = [
   },
   {
     provider: "openai",
+    id: "gpt-5.4-nano",
+    label: "GPT-5.4 nano",
+    role: "llm",
+    capabilities: { tools: true, vision: true, contextWindow: 400_000 },
+    costClass: "cheap",
+    tier: 1,
+  },
+  {
+    provider: "openai",
+    id: "gpt-5-pro",
+    label: "GPT-5 Pro",
+    role: "llm",
+    capabilities: { tools: true, vision: true, contextWindow: 400_000 },
+    costClass: "high",
+    tier: 4,
+  },
+  {
+    provider: "openai",
     id: "gpt-5",
     label: "GPT-5",
     role: "llm",
-    capabilities: { tools: true, vision: true, contextWindow: 1_000_000 },
+    capabilities: { tools: true, vision: true, contextWindow: 400_000 },
     costClass: "mid",
     tier: 4,
   },
@@ -334,6 +371,15 @@ const OPENAI_LLM: CatalogEntry[] = [
     capabilities: { tools: true, vision: true, contextWindow: 400_000 },
     costClass: "cheap",
     tier: 2,
+  },
+  {
+    provider: "openai",
+    id: "gpt-5-nano",
+    label: "GPT-5 nano",
+    role: "llm",
+    capabilities: { tools: true, vision: true, contextWindow: 400_000 },
+    costClass: "cheap",
+    tier: 1,
   },
   // GPT-4 family — kept for users with prior keys/quotas pinned to it.
   {
@@ -356,6 +402,15 @@ const OPENAI_LLM: CatalogEntry[] = [
   },
   {
     provider: "openai",
+    id: "gpt-4.1-nano",
+    label: "GPT-4.1 nano",
+    role: "llm",
+    capabilities: { tools: true, vision: true, contextWindow: 1_000_000 },
+    costClass: "cheap",
+    tier: 1,
+  },
+  {
+    provider: "openai",
     id: "gpt-4o",
     label: "GPT-4o",
     role: "llm",
@@ -373,6 +428,15 @@ const OPENAI_LLM: CatalogEntry[] = [
     tier: 2,
   },
   // Reasoning-tuned models — pricier but stronger on multi-step plans.
+  {
+    provider: "openai",
+    id: "o3",
+    label: "o3 (reasoning)",
+    role: "llm",
+    capabilities: { tools: true, vision: false, contextWindow: 200_000 },
+    costClass: "high",
+    tier: 4,
+  },
   {
     provider: "openai",
     id: "o4-mini",
@@ -432,13 +496,34 @@ const OPENAI_EMBED: CatalogEntry[] = [
 // pairing but isn't in our @ai-sdk lineup. Anthropic appears in the LLM
 // list only.
 
+// Anthropic frontier as of May 2026: Opus 4.7 is the most capable
+// generally-available model, with a step-change in agentic coding
+// over Opus 4.6. Sonnet 4.6 stays our cost-balanced default
+// (`recommended`) because Opus pricing is 5x Sonnet ($5/$25 vs $3/$15
+// per MTok) and Sonnet covers most agentic workloads here. Users on
+// research-grade tasks switch to Opus 4.7 explicitly.
+//
+// Context windows: 4.6+ models ship with a 1M-token window
+// (previously 200k on Sonnet 4.5 / Opus 4.5). Haiku 4.5 stays at 200k.
+//
+// Order = display order in the picker. Current models first, then
+// the legacy ladder (still callable; some users have keys pinned).
 const ANTHROPIC_LLM: CatalogEntry[] = [
+  {
+    provider: "anthropic",
+    id: "claude-opus-4-7",
+    label: "Claude Opus 4.7 (frontier)",
+    role: "llm",
+    capabilities: { tools: true, vision: true, contextWindow: 1_000_000 },
+    costClass: "high",
+    tier: 4,
+  },
   {
     provider: "anthropic",
     id: "claude-sonnet-4-6",
     label: "Claude Sonnet 4.6",
     role: "llm",
-    capabilities: { tools: true, vision: true, contextWindow: 200_000 },
+    capabilities: { tools: true, vision: true, contextWindow: 1_000_000 },
     costClass: "mid",
     tier: 3,
     recommended: true,
@@ -452,10 +537,40 @@ const ANTHROPIC_LLM: CatalogEntry[] = [
     costClass: "cheap",
     tier: 2,
   },
+  // Legacy frontier — still listed by Anthropic, still callable.
+  // Keep them so users with provisioned-throughput pinning don't lose
+  // their model when we ship a release.
+  {
+    provider: "anthropic",
+    id: "claude-opus-4-6",
+    label: "Claude Opus 4.6 (legacy)",
+    role: "llm",
+    capabilities: { tools: true, vision: true, contextWindow: 1_000_000 },
+    costClass: "high",
+    tier: 4,
+  },
+  {
+    provider: "anthropic",
+    id: "claude-sonnet-4-5",
+    label: "Claude Sonnet 4.5 (legacy)",
+    role: "llm",
+    capabilities: { tools: true, vision: true, contextWindow: 200_000 },
+    costClass: "mid",
+    tier: 3,
+  },
+  {
+    provider: "anthropic",
+    id: "claude-opus-4-5",
+    label: "Claude Opus 4.5 (legacy)",
+    role: "llm",
+    capabilities: { tools: true, vision: true, contextWindow: 200_000 },
+    costClass: "high",
+    tier: 4,
+  },
   {
     provider: "anthropic",
     id: "claude-opus-4-1",
-    label: "Claude Opus 4.1",
+    label: "Claude Opus 4.1 (legacy)",
     role: "llm",
     capabilities: { tools: true, vision: true, contextWindow: 200_000 },
     costClass: "high",
@@ -465,7 +580,49 @@ const ANTHROPIC_LLM: CatalogEntry[] = [
 
 // ---- Google Gemini ---------------------------------------------------------
 
+// Gemini 3.x is Google's current frontier (May 2026). Pro variants
+// are still preview-tagged in the API — we ship them as selectable
+// but DO NOT recommend a preview model as the default. 2.5 Pro stays
+// `recommended` because it's the stable flagship with the highest
+// real-world reliability for German extraction tasks. Users who want
+// the bleeding-edge can flip to a 3.x preview from the picker.
 const GOOGLE_LLM: CatalogEntry[] = [
+  {
+    provider: "google",
+    id: "gemini-3.1-pro-preview",
+    label: "Gemini 3.1 Pro (preview, frontier)",
+    role: "llm",
+    capabilities: { tools: true, vision: true, contextWindow: 1_000_000 },
+    costClass: "high",
+    tier: 4,
+  },
+  {
+    provider: "google",
+    id: "gemini-3-pro-preview",
+    label: "Gemini 3 Pro (preview)",
+    role: "llm",
+    capabilities: { tools: true, vision: true, contextWindow: 1_000_000 },
+    costClass: "high",
+    tier: 4,
+  },
+  {
+    provider: "google",
+    id: "gemini-3-flash-preview",
+    label: "Gemini 3 Flash (preview)",
+    role: "llm",
+    capabilities: { tools: true, vision: true, contextWindow: 1_000_000 },
+    costClass: "mid",
+    tier: 3,
+  },
+  {
+    provider: "google",
+    id: "gemini-3.1-flash-lite",
+    label: "Gemini 3.1 Flash-Lite",
+    role: "llm",
+    capabilities: { tools: true, vision: true, contextWindow: 1_000_000 },
+    costClass: "cheap",
+    tier: 2,
+  },
   {
     provider: "google",
     id: "gemini-2.5-pro",
@@ -487,8 +644,17 @@ const GOOGLE_LLM: CatalogEntry[] = [
   },
   {
     provider: "google",
+    id: "gemini-2.5-flash-lite",
+    label: "Gemini 2.5 Flash-Lite",
+    role: "llm",
+    capabilities: { tools: true, vision: true, contextWindow: 1_000_000 },
+    costClass: "cheap",
+    tier: 2,
+  },
+  {
+    provider: "google",
     id: "gemini-2.0-flash",
-    label: "Gemini 2.0 Flash",
+    label: "Gemini 2.0 Flash (legacy)",
     role: "llm",
     capabilities: { tools: true, vision: true, contextWindow: 1_000_000 },
     costClass: "cheap",
@@ -516,41 +682,85 @@ const GOOGLE_EMBED: CatalogEntry[] = [
 
 // ---- Mistral ---------------------------------------------------------------
 
+// Mistral 2026 generation: Large 3 is the flagship open-weight
+// general-purpose model; Medium 3.5 is the frontier multimodal
+// optimized for agentic + coding; Small 4 is a hybrid instruct +
+// reasoning model. All three got native vision in this generation
+// (previously only Pixtral). Context windows expanded to 262k.
 const MISTRAL_LLM: CatalogEntry[] = [
   {
     provider: "mistral",
     id: "mistral-large-latest",
-    label: "Mistral Large",
+    label: "Mistral Large 3",
     role: "llm",
-    capabilities: { tools: true, vision: false, contextWindow: 128_000 },
+    capabilities: { tools: true, vision: true, contextWindow: 262_000 },
     costClass: "mid",
     tier: 3,
     recommended: true,
   },
   {
     provider: "mistral",
-    id: "mistral-small-latest",
-    label: "Mistral Small",
+    id: "mistral-medium-latest",
+    label: "Mistral Medium 3.5 (frontier multimodal)",
     role: "llm",
-    capabilities: { tools: true, vision: false, contextWindow: 128_000 },
+    capabilities: { tools: true, vision: true, contextWindow: 262_000 },
+    costClass: "mid",
+    tier: 3,
+  },
+  {
+    provider: "mistral",
+    id: "mistral-small-latest",
+    label: "Mistral Small 4",
+    role: "llm",
+    capabilities: { tools: true, vision: true, contextWindow: 262_000 },
     costClass: "cheap",
     tier: 2,
   },
   {
     provider: "mistral",
     id: "ministral-8b-latest",
-    label: "Ministral 8B",
+    label: "Ministral 3 8B",
     role: "llm",
-    capabilities: { tools: true, vision: false, contextWindow: 128_000 },
+    capabilities: { tools: true, vision: true, contextWindow: 262_000 },
+    costClass: "cheap",
+    tier: 1,
+  },
+  {
+    provider: "mistral",
+    id: "ministral-3b-latest",
+    label: "Ministral 3 3B",
+    role: "llm",
+    capabilities: { tools: true, vision: true, contextWindow: 262_000 },
     costClass: "cheap",
     tier: 1,
   },
   {
     provider: "mistral",
     id: "pixtral-large-latest",
-    label: "Pixtral Large (vision)",
+    label: "Pixtral Large (legacy vision)",
     role: "llm",
     capabilities: { tools: true, vision: true, contextWindow: 128_000 },
+    costClass: "mid",
+    tier: 3,
+  },
+  // Code specialists. Useful for the agent's code-writing turns
+  // (e.g. xlsx-transformation snippets) and for users who want to
+  // route those specifically.
+  {
+    provider: "mistral",
+    id: "codestral-latest",
+    label: "Codestral (code completion)",
+    role: "llm",
+    capabilities: { tools: true, vision: false, contextWindow: 262_000 },
+    costClass: "cheap",
+    tier: 2,
+  },
+  {
+    provider: "mistral",
+    id: "devstral-medium-latest",
+    label: "Devstral 2 (frontier code agent)",
+    role: "llm",
+    capabilities: { tools: true, vision: false, contextWindow: 262_000 },
     costClass: "mid",
     tier: 3,
   },
