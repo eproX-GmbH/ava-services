@@ -86,6 +86,18 @@ export interface AgentOrchestratorOptions {
    */
   profileStore?: { get: () => import("../../shared/types").UserProfile };
   /**
+   * v0.1.161 — General-memory store. When set, the orchestrator injects
+   * the most recent N entries into the system prompt under
+   * "Langzeitgedächtnis" so the agent ALWAYS sees them, not only when
+   * it remembers to call `recall_memory`. The tool stays available for
+   * targeted lookups, but the auto-inject closes the failure mode
+   * where the agent answers "Ich weiß nichts über dich" despite the
+   * store containing entries.
+   */
+  generalMemoryStore?: {
+    list: () => import("./general-memory").GeneralMemoryEntry[];
+  };
+  /**
    * S2 — User-authored skills store. When set, the orchestrator:
    *   - appends a "Verfügbare Skills" block to the system prompt
    *   - resolves `/skill-name [args]` on the first line of a user
@@ -130,6 +142,10 @@ export class AgentOrchestrator extends EventEmitter {
   private readonly profileStore:
     | { get: () => import("../../shared/types").UserProfile }
     | undefined;
+  // v0.1.161 — see AgentOrchestratorOptions.generalMemoryStore.
+  private readonly generalMemoryStore:
+    | { list: () => import("./general-memory").GeneralMemoryEntry[] }
+    | undefined;
   private skillStore: SkillStore | undefined;
   private skillsPrefs: SkillsPrefsStore | undefined;
   /** Active skill for the in-flight turn (set in send(), read in
@@ -165,6 +181,7 @@ export class AgentOrchestrator extends EventEmitter {
     this.memoryError = opts.memoryError ?? null;
     this.runtimeRecover = opts.runtimeRecover;
     this.profileStore = opts.profileStore;
+    this.generalMemoryStore = opts.generalMemoryStore;
     this.skillStore = opts.skillStore;
     this.skillsPrefs = opts.skillsPrefs;
 
@@ -457,6 +474,14 @@ export class AgentOrchestrator extends EventEmitter {
             {
               skills: this.availableSkills(),
               activeSkill: this.activeSkill,
+              // v0.1.161 — fold the long-term memory entries into the
+              // system prompt so the agent ALWAYS sees them, not only
+              // when it remembers to call `recall_memory`. Capped at
+              // 30 entries to keep the prompt manageable; the tool
+              // stays available for targeted lookups beyond the cap.
+              rememberedFacts: this.generalMemoryStore
+                ? this.generalMemoryStore.list().slice(0, 30)
+                : [],
             },
           ),
           createdAt: 0,

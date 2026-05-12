@@ -1054,6 +1054,12 @@ const agent = new AgentOrchestrator({
   // 8.t1 — system-prompt builder reads profile on every turn so every
   // response is biased by the user's lens.
   profileStore: userProfile,
+  // v0.1.161 — fold the long-term memory entries into the system
+  // prompt on every turn. Previously the agent could only reach them
+  // via `recall_memory`-tool-use; the auto-inject closes the failure
+  // mode where it answered "I don't know anything about you" despite
+  // the store containing entries.
+  generalMemoryStore: generalMemory,
 });
 
 alertPrefs.on("changed", (next: AlertPrefs) => {

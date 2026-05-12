@@ -1,6 +1,7 @@
 import type { ToolRegistry } from "./tool-registry";
 import type { UserProfile } from "../../shared/types";
 import type { LoadedSkill } from "../skills";
+import type { GeneralMemoryEntry } from "./general-memory";
 
 // System-Prompt-Builder.
 //
@@ -29,6 +30,11 @@ export interface PromptSkillContext {
    *  turn. Surfaces as a one-line hint so the LLM knows which
    *  prose/allowlist scope it's operating under. */
   activeSkill?: LoadedSkill | null;
+  /** v0.1.161 — Long-term memory entries, newest first, capped by the
+   *  orchestrator. Rendered into a dedicated "Langzeitgedächtnis"
+   *  block so the agent ALWAYS sees stored facts about the user,
+   *  not only when it remembers to call `recall_memory`. */
+  rememberedFacts?: GeneralMemoryEntry[];
 }
 
 export function buildSystemPrompt(
@@ -676,8 +682,19 @@ export function buildSystemPrompt(
   // every behaviour rule is read with the user's lens already in
   // mind. Empty profile + not-yet-skipped → nudge block; non-empty
   // profile → profile block. Both empty + skipped → nothing.
+  //
+  // v0.1.161 — Langzeitgedächtnis (general-memory) joins as a third
+  // up-top block. The nudge block is SUPPRESSED when memory entries
+  // exist so the agent doesn't keep asking for a profile while the
+  // user already told it things about themselves.
   const profileBlock = renderProfileBlock(profile);
-  const nudgeBlock = renderNudgeBlock(profile);
+  const rememberedBlock = renderRememberedFactsBlock(
+    skillContext?.rememberedFacts ?? [],
+  );
+  const hasRememberedFacts = (skillContext?.rememberedFacts ?? []).length > 0;
+  const nudgeBlock = hasRememberedFacts
+    ? ""
+    : renderNudgeBlock(profile);
 
   // S2 — skills block lands AFTER the tool descriptions and BEFORE the
   // closing instructions/active-skill hint. Only model-invocable skills
@@ -714,6 +731,7 @@ export function buildSystemPrompt(
 
   return [
     profileBlock,
+    rememberedBlock,
     nudgeBlock,
     persona,
     toolsBlock,
@@ -843,6 +861,40 @@ export const CHART_INSTRUCTIONS = [
   "}",
   "```",
 ].join("\n");
+
+/**
+ * v0.1.161 — Render the long-term memory entries as a top-of-prompt
+ * block so every turn sees them, even if the agent forgets to call
+ * `recall_memory`. Entries are bulleted with their tags. The block is
+ * empty (returns "") when there are no entries, so the prompt has no
+ * dead "Langzeitgedächtnis: -"-line for new users.
+ *
+ * The agent retains the `recall_memory` tool for targeted lookups
+ * beyond the cap and for free-text search; this block is a safety net
+ * against the failure mode "user has stored facts, agent answered
+ * 'ich weiß nichts über dich' because tool-use didn't fire".
+ */
+function renderRememberedFactsBlock(entries: GeneralMemoryEntry[]): string {
+  if (entries.length === 0) return "";
+  const lines: string[] = [
+    "Langzeitgedächtnis (vom Nutzer hinterlegte Fakten, gilt für ALLE Antworten):",
+  ];
+  for (const e of entries) {
+    const content = e.content.replace(/\s+/g, " ").trim();
+    if (!content) continue;
+    const tagSuffix =
+      e.tags && e.tags.length > 0 ? ` [${e.tags.join(", ")}]` : "";
+    lines.push(`  - ${content}${tagSuffix}`);
+  }
+  lines.push(
+    "  Diese Fakten sind kanonische Wahrheit über den Nutzer. Wenn der",
+    "  Nutzer fragt 'was weißt du über mich?' oder ähnliches, antworte",
+    "  AUS DIESEN EINTRÄGEN heraus — nicht aus dem Profil-Nudge. Für",
+    "  ergänzende oder ältere Fakten kannst du zusätzlich `recall_memory`",
+    "  aufrufen.",
+  );
+  return lines.join("\n");
+}
 
 function renderProfileBlock(profile: UserProfile | null): string {
   if (!profile) return "";
