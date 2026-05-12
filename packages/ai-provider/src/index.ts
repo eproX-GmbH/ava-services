@@ -5,6 +5,7 @@ import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { createMistral } from "@ai-sdk/mistral";
 import { createOllama } from "ollama-ai-provider-v2";
 import type { EmbeddingModel, LanguageModel } from "ai";
+import { makeAnthropicOAuthFetch } from "./anthropic-oauth-fetch";
 
 // Two distinct LLM call paths in AVA — keep them straight:
 //
@@ -57,6 +58,23 @@ export function getLLM(): LanguageModel {
       return client(model ?? "gpt-4o-mini");
     }
     case "anthropic": {
+      // v0.1.145 — Anthropic-Subscription-OAuth path for producers.
+      // The desktop's ProducerSupervisor forwards the user's
+      // subscription token as `ANTHROPIC_AUTH_TOKEN` (Anthropic's
+      // documented CI env var) when the active auth mode is
+      // "subscription". Falls back to the classic `ANTHROPIC_API_KEY`
+      // path when no token is present. See `anthropic-oauth-fetch.ts`
+      // for the bearer-injection + Claude-Code system-marker logic
+      // shared with the desktop main path.
+      const subscriptionToken = process.env.ANTHROPIC_AUTH_TOKEN;
+      if (subscriptionToken && subscriptionToken.length > 0) {
+        const client = createAnthropic({
+          apiKey: "oauth-placeholder",
+          headers: { "x-api-key": "" },
+          fetch: makeAnthropicOAuthFetch(globalThis.fetch, subscriptionToken),
+        });
+        return client(model ?? "claude-sonnet-4-6");
+      }
       const client = createAnthropic({
         apiKey: requireEnv("ANTHROPIC_API_KEY"),
       });

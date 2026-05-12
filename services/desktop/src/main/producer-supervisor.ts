@@ -94,6 +94,7 @@ export interface ProducerSupervisorOptions {
     model?: string;
     openaiApiKey?: string;
     anthropicApiKey?: string;
+    anthropicSubscriptionToken?: string;
     googleApiKey?: string;
     mistralApiKey?: string;
     ollamaUrl?: string;
@@ -398,6 +399,12 @@ export class ProducerSupervisor extends EventEmitter {
       ...(llm.openaiApiKey ? { OPENAI_API_KEY: llm.openaiApiKey } : {}),
       ...(llm.anthropicApiKey
         ? { ANTHROPIC_API_KEY: llm.anthropicApiKey }
+        : {}),
+      // v0.1.145 — Anthropic-Subscription-OAuth token. The producer's
+      // @ava/ai-provider getLLM() reads this env and applies the
+      // shared bearer-fetch wrapper from `anthropic-oauth-fetch.ts`.
+      ...(llm.anthropicSubscriptionToken
+        ? { ANTHROPIC_AUTH_TOKEN: llm.anthropicSubscriptionToken }
         : {}),
       ...(llm.googleApiKey ? { GOOGLE_API_KEY: llm.googleApiKey } : {}),
       ...(llm.mistralApiKey ? { MISTRAL_API_KEY: llm.mistralApiKey } : {}),

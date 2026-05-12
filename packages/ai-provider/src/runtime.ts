@@ -22,6 +22,7 @@ import { createMistral } from "@ai-sdk/mistral";
 import { createOllama } from "ollama-ai-provider-v2";
 import type { EmbeddingModel, LanguageModel } from "ai";
 import type { CatalogProvider } from "./catalog";
+import { makeAnthropicOAuthFetch } from "./anthropic-oauth-fetch";
 
 // Force Node's undici-based fetch instead of Electron's Chromium-net
 // global fetch when we're inside an Electron main process. Chromium's
@@ -104,89 +105,19 @@ export function createLLM(opts: CreateLLMOptions): LanguageModel {
     case "anthropic": {
       const subscriptionToken = opts.anthropicSubscriptionToken;
       if (subscriptionToken && subscriptionToken.length > 0) {
-        // Phase A1 — Claude Pro/Max-Abo OAuth path. The SDK's standard
-        // `apiKey` slot wires the `x-api-key` header; we want
-        // `Authorization: Bearer …` instead, so we pass a placeholder
-        // apiKey (the SDK's `loadApiKey` throws on missing/non-string)
-        // and use a fetch override to strip `x-api-key` and inject the
-        // bearer + OAuth beta header on every outgoing request. This
-        // sidesteps the SDK's hard requirement of an apiKey at
-        // construction without forking the package.
-        //
-        // `anthropic-beta: oauth-2025-04-20` is the public flag for
-        // OAuth-authenticated inference calls, documented at
-        // https://code.claude.com/docs/en/authentication.
-        const fetchBase = preferredFetch ?? fetch;
-        const bearerFetch: typeof fetch = (input, init) => {
-          const next: RequestInit = { ...(init ?? {}) };
-          const headers = new Headers(next.headers ?? {});
-          headers.delete("x-api-key");
-          headers.set("authorization", `Bearer ${subscriptionToken}`);
-          if (!headers.has("anthropic-beta")) {
-            headers.set("anthropic-beta", "oauth-2025-04-20");
-          }
-          next.headers = headers;
-          // v0.1.142 — Anthropic's OAuth-subscription endpoint
-          // validates that the request comes from Claude Code: the
-          // first system message MUST contain the marker
-          // "You are Claude Code, Anthropic's official CLI for Claude."
-          // Without it, /v1/messages returns an empty 400/403 response
-          // that surfaces in the AI SDK as
-          // "Failed after 3 attempts. Last error: Error" — no body, no
-          // useful detail. Inject the marker as the FIRST system
-          // message regardless of how the upstream caller composed it.
-          // Verified against opencode-anthropic-auth (deepwiki notes).
-          const url = typeof input === "string"
-            ? input
-            : input instanceof URL
-              ? input.toString()
-              : input.url;
-          if (
-            url.includes("/v1/messages") &&
-            typeof next.body === "string"
-          ) {
-            try {
-              const parsed = JSON.parse(next.body) as {
-                system?: string | Array<{ type: string; text: string }>;
-                [k: string]: unknown;
-              };
-              const MARKER =
-                "You are Claude Code, Anthropic's official CLI for Claude.";
-              if (typeof parsed.system === "string") {
-                if (!parsed.system.startsWith(MARKER)) {
-                  parsed.system = MARKER + "\n\n" + parsed.system;
-                }
-              } else if (Array.isArray(parsed.system)) {
-                const firstText = parsed.system[0]?.text;
-                if (typeof firstText !== "string" || !firstText.startsWith(MARKER)) {
-                  parsed.system.unshift({ type: "text", text: MARKER });
-                }
-              } else {
-                parsed.system = MARKER;
-              }
-              next.body = JSON.stringify(parsed);
-            } catch {
-              /* body not JSON / not parseable — let the SDK handle it */
-            }
-          }
-          return fetchBase(input, next);
-        };
+        // Phase A1 — Claude Pro/Max-Abo OAuth path. See
+        // `anthropic-oauth-fetch.ts` for the full wrapper rationale
+        // (bearer injection + Claude-Code system-marker on
+        // /v1/messages). We pass a placeholder apiKey because the SDK
+        // refuses to construct without one; the fetch wrapper strips
+        // any x-api-key the SDK would otherwise emit.
         const client = createAnthropic({
-          // Placeholder — never reaches the wire (overridden by
-          // bearerFetch above). Empty string would still pass
-          // loadApiKey's typeof check, but a non-empty placeholder is
-          // friendlier for any future error-log path that prints the
-          // header.
           apiKey: "oauth-placeholder",
-          headers: {
-            // Belt-and-suspenders: the fetch wrapper already strips
-            // x-api-key, but if a future SDK refactor moves header
-            // composition into a path the wrapper can't see, the empty
-            // override here still gives the user a no-op rather than a
-            // leaked placeholder.
-            "x-api-key": "",
-          },
-          fetch: bearerFetch,
+          headers: { "x-api-key": "" },
+          fetch: makeAnthropicOAuthFetch(
+            preferredFetch ?? fetch,
+            subscriptionToken,
+          ),
         });
         return client(opts.model);
       }

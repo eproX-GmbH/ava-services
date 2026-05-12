@@ -7,6 +7,38 @@ The repo uses one rolling tag per desktop release (`v<major>.<minor>.<patch>`)
 on `main`. Submodules cut their own feature branches and are pinned via the
 desktop bundle; `pnpm fetch:producers` re-vendors them into the .dmg.
 
+## v0.1.145 — 2026-05-12
+
+- **Anthropic-Subscription-OAuth jetzt auch in den lokalen Producern.**
+  In v0.1.142 hat der Chat-Agent den OAuth-Bearer-Pfad bekommen,
+  v0.1.144 hat die Producer-Statusmeldung ehrlich gemacht („wird vom
+  lokalen Producer noch nicht unterstützt"). Mit v0.1.145 ziehen die
+  sechs Producer-Subprozesse (`company-profile`, `company-contact`,
+  `company-evaluation`, `company-publication`, `structured-content`,
+  `website`) nach: wer in den Einstellungen auf Anthropic-Subscription
+  steht, kann jetzt auch die Producer-Pipeline gegen seinen Pro/Max-
+  Abo-Kontingent laufen lassen — ohne API-Key-Fallback.
+- **Geteilter Bearer-Fetch-Wrapper.** Neue Datei
+  `packages/ai-provider/src/anthropic-oauth-fetch.ts` (Export:
+  `makeAnthropicOAuthFetch` + `CLAUDE_CODE_MARKER`) bündelt die
+  Header-Umschrift (`Authorization: Bearer …`, `anthropic-beta:
+  oauth-2025-04-20`, kein `x-api-key`) und den Claude-Code-System-
+  Marker, der von Anthropic auf jeden POST nach `/v1/messages`
+  verlangt wird. Wird sowohl vom Desktop-Main (`runtime.ts`,
+  opts-basiert) als auch vom Producer-Pfad (`index.ts`, env-basiert)
+  benutzt. Producer lesen das Token aus `ANTHROPIC_AUTH_TOKEN`
+  (Anthropic-Standard-CI-Env-Var), das der Supervisor aus dem
+  Keychain in den Subprozess durchreicht.
+- **Manager + Supervisor.** `LlmProviderManager.getProducerLlmEnv()`
+  liefert jetzt zusätzlich `anthropicSubscriptionToken`; der
+  Supervisor mappt das auf `ANTHROPIC_AUTH_TOKEN` in der Spawn-Env.
+  Der v0.1.144-Blocker-Text für Subscription-Mode entfällt — nur
+  noch ein Hinweis bei fehlendem Token bzw. fehlendem API-Schlüssel.
+- **Neuer Test.** `pnpm -F @ava/desktop test:anthropic-oauth-fetch`
+  prüft den geteilten Wrapper: Header-Setzen, x-api-key-Strippen,
+  Marker-Voranstellen (String- + Array-Form), Idempotenz, kein
+  Body-Rewrite auf Nicht-/v1/messages-Pfaden.
+
 ## v0.1.144 — 2026-05-12
 
 - **Producer-Fehlermeldung präziser: Subscription-Auth-Blocker

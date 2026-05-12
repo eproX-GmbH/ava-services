@@ -470,6 +470,7 @@ export class LlmProviderManager extends EventEmitter {
     model?: string;
     openaiApiKey?: string;
     anthropicApiKey?: string;
+    anthropicSubscriptionToken?: string;
     googleApiKey?: string;
     mistralApiKey?: string;
     ollamaUrl?: string;
@@ -488,18 +489,18 @@ export class LlmProviderManager extends EventEmitter {
       // needed for the pilot.
       return env;
     }
-    // Phase A1 — see `getActiveUserLlm`: subscription mode isn't
-    // plumbed through the producer env yet. The vendored producer
-    // bundles have a stale `@ava/ai-provider` snapshot that only
-    // knows the x-api-key path; an OAuth bearer token can't masquerade
-    // as an API key. Return null + surface a precise reason via
-    // `getProducerLlmBlockerReason()` below so the supervisor's
-    // error state tells the user what to do.
+    // v0.1.145 — Anthropic-Subscription-OAuth: read the OAuth token
+    // from the keychain and pass it through. The producer reads it
+    // as `ANTHROPIC_AUTH_TOKEN` and applies the shared bearer-fetch
+    // wrapper (same code path as the desktop chat agent).
     if (
       kind === "anthropic" &&
       (cfg.anthropicAuthMode ?? "api-key") === "subscription"
     ) {
-      return null;
+      const token = await this.store.getAnthropicSubscriptionToken();
+      if (!token) return null;
+      env.anthropicSubscriptionToken = token;
+      return env;
     }
     const key = await this.store.getKey(kind as HostedProviderKind);
     if (!key) return null;
@@ -522,16 +523,19 @@ export class LlmProviderManager extends EventEmitter {
     const cfg = this.store.getConfig();
     const kind = cfg.kind;
     if (kind === "ollama") return null;
+    // v0.1.145 — subscription mode is no longer a blocker (the token
+    // now plumbs through as ANTHROPIC_AUTH_TOKEN). Missing token is a
+    // blocker for the subscription path, same way a missing API key
+    // is for the api-key path.
     if (
       kind === "anthropic" &&
       (cfg.anthropicAuthMode ?? "api-key") === "subscription"
     ) {
-      return (
-        "Anthropic-Subscription-Login wird von den lokalen Producern noch nicht unterstützt. " +
-        "Stelle in Einstellungen → Modelle → LLM-Provider entweder auf einen API-Schlüssel um " +
-        "(Anthropic, OpenAI, Google, Mistral) oder auf Ollama. Die Subscription-OAuth bleibt für " +
-        "den Chat-Agenten aktiv."
-      );
+      const token = await this.store.getAnthropicSubscriptionToken();
+      if (!token) {
+        return `Kein Anthropic-Subscription-Token hinterlegt. Token in Einstellungen → Modelle → LLM-Provider eintragen oder auf Ollama wechseln.`;
+      }
+      return null;
     }
     const key = await this.store.getKey(kind as HostedProviderKind);
     if (!key) {
