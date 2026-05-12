@@ -33,6 +33,10 @@ Quelle: <https://code.claude.com/docs/en/authentication>.
 
 ## Token in AVA hinterlegen
 
+- **Empfohlen beim Erststart:** der First-Run-Wizard zeigt drei
+  gleichwertige Karten an (lokales Modell / eigener API-Schlüssel /
+  Claude.ai-Abo). Die dritte Karte öffnet ein Token-Feld inline und
+  validiert direkt gegen Anthropic.
 - **Settings → Anbieter → „Claude.ai Pro/Max-Abo"** öffnen, Token in
   das Token-Feld einfügen, „Speichern" klicken.
 - Alternativ aus dem Chat heraus:

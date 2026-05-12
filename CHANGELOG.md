@@ -7,6 +7,31 @@ The repo uses one rolling tag per desktop release (`v<major>.<minor>.<patch>`)
 on `main`. Submodules cut their own feature branches and are pinned via the
 desktop bundle; `pnpm fetch:producers` re-vendors them into the .dmg.
 
+## v0.1.132 — 2026-05-11
+
+- **First-Run-Wizard mit dreigleichgewichtiger Anbieterwahl.** Der
+  Chooser-Schritt zeigt jetzt drei nebeneinanderliegende Karten statt
+  einer Dropdown-Liste: „Lokales Modell (Ollama)", „Eigener
+  API-Schlüssel" (OpenAI/Anthropic/Google/Mistral) und „Claude.ai
+  Pro/Max-Abo (Subscription-Token)". Jede Karte erklärt den jeweiligen
+  Trade-off, listet einen Vorteils-Bullet und verlinkt die passende
+  externe Dokumentation (Ollama-Bibliothek, Provider-Console für die
+  Schlüsselerzeugung, Anthropic-Doku zu `claude setup-token` und
+  ANTHROPIC_AUTH.md zum „Extra Usage"-Caveat). Auf Breiten ≥ 1100 px
+  läuft das in drei Spalten, darunter stapeln die Karten.
+- **Subscription-Token im Onboarding.** Die in v0.1.131 eingeführte
+  Anthropic-OAuth-Token-Authentifizierung ist jetzt direkt aus dem
+  First-Run-Flow erreichbar — kein Umweg mehr über Settings nach dem
+  Start. Inkonklusive Probes (Anthropic restringiert `/v1/models` für
+  OAuth-Token) werden als gelber Hinweis angezeigt; gespeichert wird
+  trotzdem, der erste Chat-Turn klärt die Echtheit.
+- **Settings → Anbieter** bekommt unter jedem API-Schlüssel-Feld einen
+  „Wo bekomme ich einen Schlüssel?"-Link, der die Provider-Console im
+  Systembrowser öffnet (gleiche URLs wie im Wizard).
+- **Docs.** `services/desktop/README.md` erwähnt die 3-Wege-Wahl;
+  `ANTHROPIC_AUTH.md` weist auf den Wizard als empfohlenen Einstieg
+  hin.
+
 ## v0.1.131 — 2026-05-11
 
 - **Anthropic-Subscription-Token-Auth.** Wer ein Claude-Pro-, Max-,

@@ -39,6 +39,7 @@ interface MemoryProbe {
 }
 
 type ViewState = "intro" | "chooser";
+type ChooserSubForm = null | "apiKey" | "subscription";
 
 const PROVIDER_LABEL: Record<HostedProviderKind, string> = {
   openai: "OpenAI",
@@ -46,6 +47,30 @@ const PROVIDER_LABEL: Record<HostedProviderKind, string> = {
   google: "Google",
   mistral: "Mistral",
 };
+
+const PROVIDER_KEY_DOCS: Record<HostedProviderKind, string> = {
+  openai: "https://platform.openai.com/api-keys",
+  anthropic: "https://console.anthropic.com/settings/keys",
+  google: "https://aistudio.google.com/app/apikey",
+  mistral: "https://console.mistral.ai/api-keys",
+};
+
+const PROVIDER_KEY_DOC_LABEL: Record<HostedProviderKind, string> = {
+  openai: "OpenAI-Schlüssel erstellen",
+  anthropic: "Anthropic-Schlüssel erstellen",
+  google: "Google Gemini-Schlüssel erstellen",
+  mistral: "Mistral-Schlüssel erstellen",
+};
+
+const OLLAMA_LIBRARY_URL = "https://ollama.com/library";
+const ANTHROPIC_TOKEN_DOCS_URL =
+  "https://code.claude.com/docs/en/authentication#generate-a-long-lived-token";
+const ANTHROPIC_AUTH_DOC_URL =
+  "https://github.com/eproX-GmbH/ava-services/blob/main/ANTHROPIC_AUTH.md";
+
+function openExternal(url: string): void {
+  void window.api.shell.openExternal(url);
+}
 
 export function FirstRunWizard({
   memoryProbe,
@@ -184,42 +209,33 @@ export function FirstRunWizard({
     ) : null;
 
   if (view === "chooser") {
+    const onCloudDone = async () => {
+      const next = await window.api.agent.getProviderConfig();
+      setConfig(next);
+      onProviderConfigChanged?.(next);
+      const stillNeeded = status.missing.filter((m) => m.role !== "llm");
+      for (const m of stillNeeded) {
+        void pullModelTracked(m.name).catch(() => undefined);
+      }
+      onPathChosen?.();
+      setView("intro");
+    };
     return (
       <div className="first-run">
-        <div className="first-run__card">
+        <div className="first-run__card first-run__card--wide">
           <h1 className="first-run__title">
-            <span className="ct-gradient-text">Cloud-Anbieter</span> verwenden
+            <span className="ct-gradient-text">Wie soll AVA dein Modell beziehen?</span>
           </h1>
+          <p className="muted">
+            Drei gleichwertige Wege. Du kannst die Wahl später in
+            Einstellungen → Anbieter jederzeit ändern.
+          </p>
           {memoryWarning}
-          <ChooseExternalProvider
-            onCancel={() => setView("intro")}
-            onDone={async () => {
-              // Refresh the bundle so usingHostedLlm flips and the next
-              // render filters the LLM out of the missing list.
-              const next = await window.api.agent.getProviderConfig();
-              setConfig(next);
-              onProviderConfigChanged?.(next);
-              // Kick off any still-required pulls (the embedding model)
-              // so they run in the dock while the user explores the app.
-              // We deliberately do this BEFORE onPathChosen() so the
-              // dock has a "Queued" row to render the moment the gate
-              // flips — otherwise the user sees a blank routed app for
-              // a few seconds while Ollama resolves the manifest.
-              const stillNeeded = status.missing.filter((m) => m.role !== "llm");
-              for (const m of stillNeeded) {
-                // Fire-and-forget — the dock subscribes to the same
-                // store and reports progress + final state. We don't
-                // surface errors here because by this point the user
-                // is already in the routed app; failures show up in
-                // the dock row.
-                void pullModelTracked(m.name).catch(() => undefined);
-              }
-              // The user has committed to the cloud path — tell App.tsx
-              // it can drop into the routed app while the embedding
-              // download (still required) finishes in the dock.
-              onPathChosen?.();
-              setView("intro");
-            }}
+          <ProviderChooserGrid
+            onPickLocal={() => setView("intro")}
+            onApiKeyDone={onCloudDone}
+            onSubscriptionDone={onCloudDone}
+            onBack={() => setView("intro")}
           />
           <p className="muted small">
             EmbeddingGemma (~600 MB) muss trotzdem heruntergeladen werden:
@@ -359,9 +375,9 @@ export function FirstRunWizard({
               className="link"
               onClick={() => setView("chooser")}
               disabled={running}
-              title="LLM-Download überspringen und einen Cloud-Anbieter (OpenAI, Anthropic, Google, Mistral) verwenden"
+              title="Stattdessen einen Cloud-Anbieter (eigener Schlüssel oder Claude-Abo) wählen"
             >
-              Überspringen, Cloud-Anbieter verwenden
+              Stattdessen Cloud-Anbieter wählen
             </button>
           )}
         </div>
@@ -372,7 +388,184 @@ export function FirstRunWizard({
 
 // -- Chooser sub-view -------------------------------------------------
 
-function ChooseExternalProvider({
+function ProviderChooserGrid({
+  onPickLocal,
+  onApiKeyDone,
+  onSubscriptionDone,
+  onBack,
+}: {
+  onPickLocal: () => void;
+  onApiKeyDone: () => Promise<void> | void;
+  onSubscriptionDone: () => Promise<void> | void;
+  onBack: () => void;
+}) {
+  const [active, setActive] = useState<ChooserSubForm>(null);
+
+  // When a card's primary button is clicked we expand the matching
+  // sub-form inline below the grid and scroll it into view so the
+  // user doesn't have to hunt for the next field on a tall screen.
+  useEffect(() => {
+    if (active === null) return;
+    requestAnimationFrame(() => {
+      document
+        .getElementById("first-run-subform")
+        ?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    });
+  }, [active]);
+
+  return (
+    <>
+      <div className="first-run__chooser-grid">
+        <div
+          className={`first-run__option-card${active === null ? "" : ""}`}
+        >
+          <div className="first-run__option-glyph" aria-hidden="true">
+            ◉
+          </div>
+          <h3 className="first-run__option-title">Lokales Modell</h3>
+          <p className="first-run__option-sub">
+            Läuft komplett auf deinem Rechner. Keine API-Kosten, kein Konto,
+            deine Daten bleiben lokal.
+          </p>
+          <ul className="first-run__option-list">
+            <li>Ca. 4-8 GB Festplatte pro Modell</li>
+            <li>Standard: qwen2.5:3b (klein, schnell, ~2 GB)</li>
+            <li>Beste Wahl für DSGVO-sensible Recherche</li>
+          </ul>
+          <div className="first-run__option-docs">
+            <button
+              type="button"
+              className="link small"
+              onClick={() => openExternal(OLLAMA_LIBRARY_URL)}
+            >
+              Welche Modelle gibt es?
+            </button>
+          </div>
+          <button
+            type="button"
+            className="first-run__option-cta"
+            onClick={() => {
+              setActive(null);
+              onPickLocal();
+            }}
+          >
+            Modelle herunterladen
+          </button>
+        </div>
+
+        <div className="first-run__option-card">
+          <div className="first-run__option-glyph" aria-hidden="true">
+            ⌘
+          </div>
+          <h3 className="first-run__option-title">Eigener API-Schlüssel</h3>
+          <p className="first-run__option-sub">
+            Bezahle pro Token-Verbrauch direkt bei OpenAI, Anthropic, Google
+            oder Mistral. Schnellster Cloud-Pfad.
+          </p>
+          <div className="first-run__option-docs">
+            {(Object.keys(PROVIDER_KEY_DOCS) as HostedProviderKind[]).map(
+              (k) => (
+                <button
+                  key={k}
+                  type="button"
+                  className="link small"
+                  onClick={() => openExternal(PROVIDER_KEY_DOCS[k])}
+                >
+                  {PROVIDER_KEY_DOC_LABEL[k]}
+                </button>
+              ),
+            )}
+          </div>
+          <button
+            type="button"
+            className="first-run__option-cta"
+            onClick={() => setActive("apiKey")}
+          >
+            Schlüssel hinterlegen
+          </button>
+        </div>
+
+        <div className="first-run__option-card">
+          <div className="first-run__option-glyph" aria-hidden="true">
+            ✦
+          </div>
+          <h3 className="first-run__option-title">Claude.ai Pro/Max-Abo</h3>
+          <p className="first-run__option-sub">
+            Du hast schon ein Claude-Abo? Nutze dein Pro/Max-Kontingent —
+            keine zusätzlichen API-Kosten.
+          </p>
+          <ul className="first-run__option-list">
+            <li>Funktioniert mit Pro, Max, Team oder Enterprise</li>
+            <li>
+              Token-Erzeugung über die offizielle Claude-Code-CLI, 1 Jahr
+              gültig
+            </li>
+            <li>
+              Anthropic-Drittapp-Caveat: kann als „Extra Usage" abgerechnet
+              werden — siehe Anleitung
+            </li>
+          </ul>
+          <div className="first-run__option-docs">
+            <button
+              type="button"
+              className="link small"
+              onClick={() => openExternal(ANTHROPIC_TOKEN_DOCS_URL)}
+            >
+              So bekommst du deinen Token (Anthropic-Doku)
+            </button>
+            <button
+              type="button"
+              className="link small"
+              onClick={() => openExternal(ANTHROPIC_AUTH_DOC_URL)}
+            >
+              Was bedeutet „Extra Usage"?
+            </button>
+          </div>
+          <button
+            type="button"
+            className="first-run__option-cta"
+            onClick={() => setActive("subscription")}
+          >
+            Token hinterlegen
+          </button>
+        </div>
+      </div>
+
+      {active && (
+        <div id="first-run-subform" className="first-run__subform">
+          {active === "apiKey" && (
+            <ApiKeySubForm
+              onCancel={() => setActive(null)}
+              onDone={async () => {
+                setActive(null);
+                await onApiKeyDone();
+              }}
+            />
+          )}
+          {active === "subscription" && (
+            <SubscriptionTokenSubForm
+              onCancel={() => setActive(null)}
+              onDone={async () => {
+                setActive(null);
+                await onSubscriptionDone();
+              }}
+            />
+          )}
+        </div>
+      )}
+
+      {!active && (
+        <div className="first-run__actions">
+          <button type="button" className="link" onClick={onBack}>
+            Zurück
+          </button>
+        </div>
+      )}
+    </>
+  );
+}
+
+function ApiKeySubForm({
   onCancel,
   onDone,
 }: {
@@ -382,9 +575,6 @@ function ChooseExternalProvider({
   const [kind, setKind] = useState<HostedProviderKind>("openai");
   const [apiKey, setApiKey] = useState("");
   const [busy, setBusy] = useState(false);
-  // null = no probe yet, otherwise the result of the most recent probe
-  // for the current `(kind, apiKey)` pair. Cleared on edit so we don't
-  // let stale "ok" states bleed into a new key.
   const [result, setResult] = useState<ApiKeyValidation | null>(null);
 
   const onTest = async () => {
@@ -394,9 +584,6 @@ function ChooseExternalProvider({
       const res = await window.api.agent.validateApiKey({ kind, apiKey });
       setResult(res);
       if (res.ok) {
-        // Persist + flip to the chosen provider only after a green probe.
-        // setApiKey throws if the key store is broken — surface that as
-        // a probe failure so the user sees a single error surface.
         await window.api.agent.setApiKey({ kind, apiKey });
         await window.api.agent.setProvider({ kind });
         await onDone();
@@ -413,6 +600,7 @@ function ChooseExternalProvider({
 
   return (
     <div className="first-run__chooser">
+      <h3 className="first-run__subform-title">API-Schlüssel hinterlegen</h3>
       <label className="field">
         <span>Anbieter</span>
         <select
@@ -451,14 +639,136 @@ function ChooseExternalProvider({
           disabled={busy}
         />
       </label>
-      {result?.ok === false && (
-        <p className="bad">{result.reason}</p>
-      )}
+      <p className="muted small">
+        <button
+          type="button"
+          className="link small"
+          onClick={() => openExternal(PROVIDER_KEY_DOCS[kind])}
+        >
+          Wo bekomme ich einen Schlüssel für {PROVIDER_LABEL[kind]}?
+        </button>
+      </p>
+      {result?.ok === false && <p className="bad">{result.reason}</p>}
       <div className="first-run__actions">
         <button
           type="button"
           onClick={onTest}
           disabled={busy || apiKey.trim().length === 0}
+        >
+          {busy ? "Teste…" : "Testen & fortfahren"}
+        </button>
+        <button
+          type="button"
+          className="link"
+          onClick={onCancel}
+          disabled={busy}
+        >
+          Zurück
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function SubscriptionTokenSubForm({
+  onCancel,
+  onDone,
+}: {
+  onCancel: () => void;
+  onDone: () => Promise<void> | void;
+}) {
+  const [token, setToken] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [hint, setHint] = useState<{
+    kind: "warn" | "error";
+    text: string;
+  } | null>(null);
+
+  const onTest = async () => {
+    setBusy(true);
+    setHint(null);
+    try {
+      const probe =
+        await window.api.agent.validateAnthropicSubscriptionToken({ token });
+      // Soft-confirm path: an inconclusive probe still lets us save —
+      // Anthropic intentionally restricts /v1/models for OAuth tokens,
+      // so a 401 here is not a hard rejection. The user gets a yellow
+      // hint and we continue.
+      if (!probe.ok) {
+        setHint({
+          kind: "warn",
+          text: `Probe nicht eindeutig — wir speichern den Token, der erste Chat-Turn klärt es. (${probe.reason})`,
+        });
+      }
+      await window.api.agent.setAnthropicSubscriptionToken({ token });
+      await window.api.agent.setProvider({
+        kind: "anthropic",
+      });
+      // setProvider above doesn't carry the auth mode; the IPC for that
+      // is `setAnthropicAuthMode`. If the manager already infers
+      // subscription when a token exists, this is a no-op; we still
+      // call it explicitly so the active mode is unambiguous.
+      try {
+        await window.api.agent.setAnthropicAuthMode({ mode: "subscription" });
+      } catch {
+        // Non-fatal — older builds may not need this call.
+      }
+      await onDone();
+    } catch (err) {
+      setHint({
+        kind: "error",
+        text: err instanceof Error ? err.message : String(err),
+      });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="first-run__chooser">
+      <h3 className="first-run__subform-title">
+        Claude-Subscription-Token hinterlegen
+      </h3>
+      <p className="muted small">
+        Erzeuge den Token mit <code>claude setup-token</code> aus der
+        offiziellen Claude-Code-CLI. Der Token beginnt mit{" "}
+        <code>sk-ant-oat01-…</code> und ist ein Jahr gültig.
+      </p>
+      <p>
+        <button
+          type="button"
+          className="link small"
+          onClick={() => openExternal(ANTHROPIC_TOKEN_DOCS_URL)}
+        >
+          Anleitung: Token erzeugen (Anthropic-Doku)
+        </button>
+      </p>
+      <label className="field">
+        <span>Subscription-Token</span>
+        <textarea
+          className="first-run__token-input"
+          value={token}
+          onChange={(e) => {
+            setToken(e.target.value);
+            setHint(null);
+          }}
+          placeholder="sk-ant-oat01-…"
+          autoComplete="off"
+          spellCheck={false}
+          disabled={busy}
+          rows={4}
+        />
+      </label>
+      {hint && (
+        <p className={hint.kind === "warn" ? "warn small" : "bad small"}>
+          {hint.text}
+        </p>
+      )}
+      <div className="first-run__actions">
+        <button
+          type="button"
+          onClick={onTest}
+          disabled={busy || token.trim().length === 0}
         >
           {busy ? "Teste…" : "Testen & fortfahren"}
         </button>

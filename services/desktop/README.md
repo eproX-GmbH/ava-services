@@ -76,6 +76,11 @@ upstream services in another terminal.
 - **Settings** (`/settings`) — provider selection (Ollama / OpenAI /
   Anthropic / Google / Mistral), Stripe portal, voice setup, LinkedIn
   controls, freshness preferences, heartbeat auto-retry toggle.
+- **First-run wizard** (`/first-run`) — bei der Erstinbetriebnahme wählt
+  der Nutzer zwischen drei gleichwertigen Wegen: lokales Modell über
+  Ollama, eigener API-Schlüssel (OpenAI/Anthropic/Google/Mistral) oder
+  Claude.ai-Pro/Max-Subscription-Token. Jede Option verlinkt die
+  passende Anbieter-Doku direkt aus dem Wizard.
 - **Ingest / First-run wizard** (`/ingest`, `/first-run`) — Excel + CSV
   + single-company + CRM (HubSpot today; Salesforce + Dynamics stubbed)
   imports. Confirmed matches persist a CompanyCrmLink so the agent can

@@ -74,6 +74,8 @@ const ALLOW_SUBSTRINGS = [
   "companyContact", "companyEvaluation", "masterData",
   "structured-content", "company-publication", "company-profile",
   "company-contact", "company-evaluation", "master-data",
+  // Anthropic-Policy-Begriff, der in der UI zitiert wird.
+  "Extra Usage",
 ];
 
 // Regexes that strip out things we never want to scan: comments, import

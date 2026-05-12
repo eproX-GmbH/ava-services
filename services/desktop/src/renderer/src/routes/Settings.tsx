@@ -64,6 +64,17 @@ const HOSTED_KINDS: HostedProviderKind[] = [
   "mistral",
 ];
 
+// v0.1.132 — surface "Wo bekomme ich einen Schlüssel?" inline beneath
+// each provider's API-key input. Same URLs as the FirstRunWizard cards
+// so users see consistent docs whether they land here first-run or
+// after using AVA for a while.
+const PROVIDER_KEY_DOCS: Record<HostedProviderKind, string> = {
+  openai: "https://platform.openai.com/api-keys",
+  anthropic: "https://console.anthropic.com/settings/keys",
+  google: "https://aistudio.google.com/app/apikey",
+  mistral: "https://console.mistral.ai/api-keys",
+};
+
 export function Settings() {
   // Scroll-to-section via hash. The chat composer's mic button
   // navigates to `/settings#voice-settings` when whisper isn't ready;
@@ -1993,6 +2004,16 @@ function ApiKeyRow({ kind, hasKey }: ApiKeyRowProps) {
           {((save.error || clear.error) as Error).message}
         </span>
       )}
+      <a
+        className="muted small api-key-doc-link"
+        href={PROVIDER_KEY_DOCS[kind]}
+        onClick={(e) => {
+          e.preventDefault();
+          void window.api.shell.openExternal(PROVIDER_KEY_DOCS[kind]);
+        }}
+      >
+        Wo bekomme ich einen Schlüssel?
+      </a>
     </div>
   );
 }
