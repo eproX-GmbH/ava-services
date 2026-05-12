@@ -7,6 +7,29 @@ The repo uses one rolling tag per desktop release (`v<major>.<minor>.<patch>`)
 on `main`. Submodules cut their own feature branches and are pinned via the
 desktop bundle; `pnpm fetch:producers` re-vendors them into the .dmg.
 
+## v0.1.140 — 2026-05-11
+
+- **Finanz-Volumina ausgeblendet (Umsatz/Erlöse/Bilanzsumme).** Die
+  Producer-seitige LLM-Numeric-Extraktion wurde im Januar 2026
+  deaktiviert, weil das Modell Finanzzahlen halluziniert hat
+  (Workstream A pendant). Im Renderer waren die Felder + Graphen +
+  Tabellenspalten aber noch sichtbar und zeigten nur leere oder
+  veraltete Werte. Drei Surfaces aufgeräumt:
+  - **CompanyDetail → Financials**: drei Charts (Umsatz/Erlöse/
+    Bilanzsumme) raus, nur Mitarbeiter-Chart bleibt. Jahresübersicht-
+    Tabelle reduziert auf Spalten Jahr + Mitarbeiter.
+  - **PublicationCard**: KPI-Tiles für Umsatz/Erlöse/Bilanzsumme raus.
+    Mitarbeiter-Tile bleibt (kommt aus einem deterministischen
+    Extraktor). KPI-Grid aus dem `StateOfAffairs`-Pfad (Topic, Bullets,
+    Risiken, KPIs) bleibt unverändert sichtbar.
+  - **CompanyDetail → Aktuelle Finanzen**: Umsatz/Erlöse/Bilanzsumme-
+    `<dl>`-Einträge raus.
+  - **Evaluations → Themen-Picker**: `sales`/`profits`/`totalAssets`
+    aus den auswählbaren Topic-Chips entfernt (über `VISIBLE_TOPICS`-
+    Allowlist). Wire-Identifier bleiben im Type, falls Workstream A
+    den Regex-first/LLM-fallback ausgebaut hat und die Felder wieder
+    aktiviert werden.
+
 ## v0.1.139 — 2026-05-11
 
 - **Settings: Sidebar-Tab-Shell (U1 des UX-Redesigns).** Die 3.9k-zeilige

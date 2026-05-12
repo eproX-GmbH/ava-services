@@ -737,26 +737,19 @@ function FinancialsTab({ pubs }: { pubs: Publication[] }) {
 
   // Build per-series rows for the four mini bar-charts. Each series is
   // skipped if every value is missing.
+  // v0.1.140 — Umsatz / Erlöse / Bilanzsumme aus dem Producer
+  // wurden im Januar abgeschaltet (callMetrics block in
+  // company-publication/src/infrastructure/openai/index.ts), weil
+  // das LLM Finanzzahlen halluziniert hat. Im Frontend zeigen wir
+  // sie deshalb nicht mehr an — nur Mitarbeiter-Werte + KPI-/
+  // Lagebericht-Aggregate aus dem StateOfAffairs-Pfad. Bilanzsumme
+  // wieder einzublenden setzt voraus, dass Workstream A (numerische
+  // Extraktion) den Regex-first/LLM-fallback ausgebaut hat.
   const series: Array<{
     title: string;
     format: "eur" | "num";
     data: Array<{ year: number | null; value: number | null }>;
   }> = [
-    {
-      title: "Umsatz",
-      format: "eur",
-      data: pubs.map((p) => ({ year: p.year ?? null, value: numVal(p.revenueVolume) })),
-    },
-    {
-      title: "Erlöse",
-      format: "eur",
-      data: pubs.map((p) => ({ year: p.year ?? null, value: numVal(p.salesVolume) })),
-    },
-    {
-      title: "Bilanzsumme",
-      format: "eur",
-      data: pubs.map((p) => ({ year: p.year ?? null, value: numVal(p.totalAssetsVolume) })),
-    },
     {
       title: "Mitarbeiter",
       format: "num",
@@ -781,9 +774,6 @@ function FinancialsTab({ pubs }: { pubs: Publication[] }) {
           <thead>
             <tr>
               <th>Jahr</th>
-              <th>Umsatz</th>
-              <th>Erlöse</th>
-              <th>Bilanzsumme</th>
               <th>Mitarbeiter</th>
             </tr>
           </thead>
@@ -791,9 +781,6 @@ function FinancialsTab({ pubs }: { pubs: Publication[] }) {
             {[...pubs].reverse().map((p, i) => (
               <tr key={i}>
                 <td>{p.year ?? ""}</td>
-                <td>{fmtMoney(p.revenueVolume)}</td>
-                <td>{fmtMoney(p.salesVolume)}</td>
-                <td>{fmtMoney(p.totalAssetsVolume)}</td>
                 <td>
                   {p.employeeCount != null ? numFmt.format(p.employeeCount) : ""}
                 </td>
@@ -842,14 +829,15 @@ function PublicationCard({ pub }: { pub: Publication }) {
         {period && <span className="muted">{period}</span>}
       </header>
 
-      <div className="kpi-grid">
-        <KpiTile label="Umsatz">{fmtMoney(pub.revenueVolume)}</KpiTile>
-        <KpiTile label="Erlöse">{fmtMoney(pub.salesVolume)}</KpiTile>
-        <KpiTile label="Bilanzsumme">{fmtMoney(pub.totalAssetsVolume)}</KpiTile>
-        <KpiTile label="Mitarbeiter">
-          {pub.employeeCount != null ? numFmt.format(pub.employeeCount) : ""}
-        </KpiTile>
-      </div>
+      {/* Finanz-KPI-Tiles (Umsatz/Erlöse/Bilanzsumme) wurden ausgeblendet
+          weil das LLM in der Numeric-Extraktion zu oft halluziniert hat
+          (Producer-Side seit Jan 2026 deaktiviert). Mitarbeiterzahl bleibt
+          — kommt aus einem separaten, deterministischen Extraktor. */}
+      {pub.employeeCount != null && (
+        <div className="kpi-grid">
+          <KpiTile label="Mitarbeiter">{numFmt.format(pub.employeeCount)}</KpiTile>
+        </div>
+      )}
 
       {soa?.isRelevant ? (
         <div style={{ marginTop: "1rem" }}>
@@ -1409,18 +1397,11 @@ function InsightsTab({
                   : ""}
               </dd>
             </div>
-            <div>
-              <dt>Umsatz</dt>
-              <dd>{fmtMoney(latest.revenueVolume)}</dd>
-            </div>
-            <div>
-              <dt>Erlöse</dt>
-              <dd>{fmtMoney(latest.salesVolume)}</dd>
-            </div>
-            <div>
-              <dt>Bilanzsumme</dt>
-              <dd>{fmtMoney(latest.totalAssetsVolume)}</dd>
-            </div>
+            {/* Finanz-Volumina (Umsatz/Erlöse/Bilanzsumme) ausgeblendet:
+                Producer-Side ist die LLM-Numeric-Extraktion seit Jan 2026
+                deaktiviert wegen Halluzinations-Drift. Sobald Workstream A
+                den Regex-first/LLM-fallback Pfad gebaut hat, wieder
+                einblenden. */}
           </dl>
         ) : (
           <p className="muted">Noch keine Veröffentlichungen.</p>

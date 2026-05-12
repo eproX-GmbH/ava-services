@@ -12,6 +12,12 @@ import { fmtDate } from "../lib/format";
 // IDs scoped to it). Keeping this on one screen mirrors the analyst's
 // mental model: pick a transaction, then explore its evaluations.
 
+// Wire-level topic identifiers — match the gateway API vocabulary.
+// `sales`, `profits`, `totalAssets` are kept for backwards
+// compatibility with stored evaluations but hidden from the picker
+// (`VISIBLE_TOPICS` below) because the producer-side LLM numeric
+// extraction was disabled in Jan 2026 (hallucination drift) and
+// these axes would always be empty for new evaluations.
 const TOPICS = [
   "keywords",
   "companyProfile",
@@ -24,6 +30,15 @@ const TOPICS = [
   "stateOfAffairs",
 ] as const;
 type Topic = (typeof TOPICS)[number];
+
+const VISIBLE_TOPICS: readonly Topic[] = [
+  "keywords",
+  "companyProfile",
+  "businessPurpose",
+  "serpCategory",
+  "employees",
+  "stateOfAffairs",
+];
 
 // Display labels for the topic chips. The wire identifiers stay
 // English (they're the gateway's API vocabulary), but the chip face
@@ -200,7 +215,7 @@ function BestMatchCreateForm({
       <div className="field">
         <span>Themen (≥ 1)</span>
         <div className="chips selectable">
-          {TOPICS.map((t) => (
+          {VISIBLE_TOPICS.map((t) => (
             <button
               key={t}
               type="button"
