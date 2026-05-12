@@ -1587,10 +1587,31 @@ function AnthropicSubscriptionCard({
   const [draft, setDraft] = useState("");
   const [hint, setHint] = useState<string | null>(null);
   const [hintKind, setHintKind] = useState<"ok" | "warn" | "error">("ok");
+  // Phase A6 — Standardpfad ist der In-App-OAuth-Login. Der Paste-Flow
+  // bleibt als Advanced-Klappe darunter verfügbar.
+  const [showManual, setShowManual] = useState(false);
   useEffect(() => {
     setDraft("");
     setHint(null);
   }, [hasToken]);
+
+  const connect = useMutation({
+    mutationFn: async () => {
+      const result = await window.api.agent.connectAnthropicSubscription();
+      if (!result.ok) {
+        throw new Error(result.error);
+      }
+    },
+    onSuccess: () => {
+      setHint("Mit Claude.ai verbunden.");
+      setHintKind("ok");
+      qc.invalidateQueries({ queryKey: ["agent", "providerConfig"] });
+    },
+    onError: (err) => {
+      setHint(err instanceof Error ? err.message : String(err));
+      setHintKind("error");
+    },
+  });
 
   const save = useMutation({
     mutationFn: async (token: string) => {
@@ -1659,36 +1680,21 @@ function AnthropicSubscriptionCard({
       <p className="muted small">
         Verbinde dein Claude-Abo, statt Anthropic-Api-Credits zu
         verbrauchen. Du brauchst ein Pro-, Max-, Team- oder
-        Enterprise-Abo. Token wird mit dem CLI-Befehl{" "}
-        <code>claude setup-token</code> erzeugt (siehe Anleitung).
-      </p>
-
-      <p>
-        <button type="button" className="link" onClick={onOpenDocs}>
-          So bekommst du deinen Token
-        </button>
+        Enterprise-Abo. Beim Klick öffnet AVA ein Anmeldefenster bei
+        claude.ai — kein Terminal nötig.
       </p>
 
       <div className="api-key-row">
-        <span className="api-key-label">Token</span>
-        <input
-          type="password"
-          placeholder={
-            hasToken
-              ? "•••• gespeichert, neuen Token einfügen, um zu ersetzen"
-              : "sk-ant-oat01-…"
-          }
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          autoComplete="off"
-          spellCheck={false}
-        />
         <button
           type="button"
-          onClick={() => save.mutate(draft)}
-          disabled={draft.length === 0 || save.isPending}
+          onClick={() => connect.mutate()}
+          disabled={connect.isPending}
         >
-          {save.isPending ? "Speichert…" : "Speichern"}
+          {connect.isPending
+            ? "Öffne Anmeldung…"
+            : hasToken
+              ? "Neu verbinden"
+              : "Mit Claude.ai verbinden"}
         </button>
         {hasToken && (
           <button
@@ -1702,6 +1708,54 @@ function AnthropicSubscriptionCard({
           </button>
         )}
       </div>
+
+      <p className="muted small">
+        <button
+          type="button"
+          className="link small"
+          onClick={() => setShowManual((v) => !v)}
+        >
+          {showManual
+            ? "Advanced ausblenden"
+            : "Advanced: Token manuell einfügen"}
+        </button>
+      </p>
+
+      {showManual && (
+        <div className="provider-card__advanced">
+          <p className="muted small">
+            Falls der In-App-Login nicht klappt: Token mit dem CLI
+            <code>claude setup-token</code> erzeugen und hier einfügen.
+          </p>
+          <p>
+            <button type="button" className="link" onClick={onOpenDocs}>
+              So bekommst du deinen Token
+            </button>
+          </p>
+          <div className="api-key-row">
+            <span className="api-key-label">Token</span>
+            <input
+              type="password"
+              placeholder={
+                hasToken
+                  ? "•••• gespeichert, neuen Token einfügen, um zu ersetzen"
+                  : "sk-ant-oat01-…"
+              }
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              autoComplete="off"
+              spellCheck={false}
+            />
+            <button
+              type="button"
+              onClick={() => save.mutate(draft)}
+              disabled={draft.length === 0 || save.isPending}
+            >
+              {save.isPending ? "Speichert…" : "Speichern"}
+            </button>
+          </div>
+        </div>
+      )}
 
       <p className="muted small">
         Status:{" "}

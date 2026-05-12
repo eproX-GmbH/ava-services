@@ -230,11 +230,32 @@ Spezifikationsvorgabe war ein neuer `LLMProvider`-Wert `"anthropic-subscription"
   - `CHANGELOG.md` v0.1.131-Eintrag.
 - **A5 — Smoke-Test.** ✅
   - `scripts/test-anthropic-subscription.mjs` exerziert Round-Trip + Keychain-Isolation gegen einen `electron`-Stub im CJS-Require-Cache.
+- **A6 — In-App-OAuth-Flow.** ✅ (v0.1.133)
+  - `src/main/auth/anthropic-oauth.ts`: PKCE-Helfer (`generatePkce`,
+    `buildAuthorizationUrl`, `exchangeCodeForToken`) gegen denselben
+    öffentlichen `client_id` wie `claude setup-token`.
+  - `src/main/auth/anthropic-oauth-flow.ts`: orchestriert ein
+    Electron-`BrowserWindow` (Partition `persist:anthropic-oauth`,
+    sandboxed renderer), fängt den Redirect auf
+    `console.anthropic.com/oauth/code/callback` per
+    `will-redirect`/`will-navigate` ab, prüft den State, tauscht den
+    Code gegen ein Access-Token und cleant Window + Timer bei
+    Abbruch/Timeout/Fehler.
+  - IPC: `agent:connectAnthropicSubscription` ruft den Flow auf,
+    persistiert über die bestehende Subscription-Token-Pipeline und
+    flippt den Auth-Modus auf `"subscription"`.
+  - UI: First-Run-Wizard-Karte 3 + Settings-Karte zeigen primär „Mit
+    Claude.ai verbinden". Der Paste-Flow bleibt als
+    Advanced-Disclosure darunter.
+  - Smoke-Test: `scripts/test-anthropic-oauth.mjs` testet die reinen
+    Helfer (Verifier-Länge, sha256-Round-Trip, URL-Parameter). Der
+    Live-Round-Trip braucht ein echtes Anthropic-Konto und bleibt
+    manuelles QA.
 
 ### 3.4 Bewusste Begrenzungen
 
 - Producer-Subprocesse (company-publication etc.) laufen weiterhin env-getrieben über `@ava/ai-provider/getLLM`. Im Subscription-Modus reicht der Desktop-Manager kein Credential durch (`getProducerLlmEnv` returnt `null` für anthropic+subscription); der Producer fällt entweder auf seine env-baked LLM zurück oder verbleibt im wait-for-config-Zustand. Das ist akzeptabel, weil A1 ausdrücklich nur den in-process Chat-Agent ans Abokontingent koppelt — eine spätere Phase könnte den Token via Header mit-shippen, sobald die Producer-Architektur einen sicheren in-process Header-Slot anbietet.
-- Anthropics OAuth-via-Browser-Flow (PKCE in eigenem Fenster) bleibt bewusst aus. Anthropic dokumentiert ihn explizit nur für Claude Code; AVA bleibt beim user-pasted-token-Workflow.
+- ~~Anthropics OAuth-via-Browser-Flow (PKCE in eigenem Fenster) bleibt bewusst aus. Anthropic dokumentiert ihn explizit nur für Claude Code; AVA bleibt beim user-pasted-token-Workflow.~~ → seit v0.1.133 (Phase A6) implementiert: AVA öffnet ein eigenes `BrowserWindow`, läuft denselben PKCE-Flow mit dem öffentlichen Claude-Code-`client_id` und fängt den Code per Redirect-Interception ab. Der Paste-Flow bleibt als Advanced-Fallback erhalten, weil ein In-App-Window in SSO-Setups gelegentlich nicht weiterkommt.
 
 ---
 

@@ -49,9 +49,12 @@ upstream services in another terminal.
   (`linkedin_connect`, `crm_link_manual`, `crm_enrich_now`, etc.).
   Tippe `/` im Chat-Eingabefeld, um eine Palette mit verfügbaren
   Skills und Tools zu öffnen. Anthropic kann wahlweise per Api-Key
-  (klassisch) oder per Subscription-OAuth-Token aus
-  `claude setup-token` angesprochen werden — Letzteres verbraucht das
-  Claude.ai-Pro/Max-Abo statt Api-Credits. Details in
+  (klassisch) oder per Subscription-OAuth-Token angesprochen werden —
+  Letzteres verbraucht das Claude.ai-Pro/Max-Abo statt Api-Credits.
+  Seit v0.1.133 läuft die Subscription-Anmeldung als Ein-Klick-Flow
+  („Mit Claude.ai verbinden") direkt aus AVA — kein Terminal mehr
+  nötig. Der bisherige `claude setup-token`-Paste-Pfad bleibt als
+  Advanced-Fallback erreichbar. Details in
   [`ANTHROPIC_AUTH.md`](../../ANTHROPIC_AUTH.md).
 - **Companies / company detail** (`/companies`, `/companies/:id`) —
   per-tab tier pills, overview / financials / management / contacts /

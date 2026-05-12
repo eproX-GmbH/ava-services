@@ -17,9 +17,32 @@ Wer ein laufendes Claude.ai-Abo besitzt, möchte typischerweise nicht
 zusätzlich Api-Credits dazukaufen. Der Subscription-Token routet alle
 Anthropic-Aufrufe aus AVA gegen das vorhandene Abokontingent.
 
-## So bekommst du den Token
+## Empfohlen: In-App-Anmeldung (v0.1.133+)
 
-Anthropic stellt einen offiziellen CLI-Befehl bereit:
+Seit v0.1.133 gibt es einen Ein-Klick-Login direkt aus AVA — kein
+Terminal nötig.
+
+- **First-Run-Wizard:** die dritte Karte „Claude.ai Pro/Max-Abo" trägt
+  jetzt den Button „Mit Claude.ai verbinden". Klick öffnet ein
+  Anmeldefenster bei claude.ai, AVA fängt das Token nach
+  erfolgreichem Login automatisch ab und speichert es verschlüsselt.
+- **Settings → Anbieter → „Claude.ai Pro/Max-Abo":** identischer
+  Button „Mit Claude.ai verbinden" (bzw. „Neu verbinden", wenn schon
+  ein Token vorhanden ist).
+
+Unter der Haube läuft der OAuth-PKCE-Flow, den auch Anthropics
+`claude setup-token` benutzt — derselbe öffentliche Client, dieselben
+Endpunkte, derselbe `user:inference`-Scope. Der Code-Verifier bleibt
+im Main-Process, der Code wird per Redirect-Interception auf der
+Anthropic-eigenen `console.anthropic.com/oauth/code/callback`-URL
+abgefangen, gegen ein Bearer-Token getauscht und in
+`anthropic-subscription.enc` abgelegt.
+
+## Fallback: Token manuell einfügen
+
+Falls der In-App-Login nicht klappt (z. B. weil die Anmeldung in einem
+Unternehmens-SSO hängenbleibt), bleibt der bisherige Paste-Flow
+erreichbar:
 
 ```sh
 npm install -g @anthropic-ai/claude-code   # einmalig
@@ -31,14 +54,12 @@ gibt am Ende einen Token aus, der mit `sk-ant-oat01-…` beginnt. Der
 Token lebt ein Jahr und ist auf Inference (Chat-Completions) beschränkt.
 Quelle: <https://code.claude.com/docs/en/authentication>.
 
-## Token in AVA hinterlegen
+Diesen Token kannst du dann hinterlegen:
 
-- **Empfohlen beim Erststart:** der First-Run-Wizard zeigt drei
-  gleichwertige Karten an (lokales Modell / eigener API-Schlüssel /
-  Claude.ai-Abo). Die dritte Karte öffnet ein Token-Feld inline und
-  validiert direkt gegen Anthropic.
-- **Settings → Anbieter → „Claude.ai Pro/Max-Abo"** öffnen, Token in
-  das Token-Feld einfügen, „Speichern" klicken.
+- **Settings → Anbieter → „Claude.ai Pro/Max-Abo" → „Advanced: Token
+  manuell einfügen"** ausklappen, Token einfügen, „Speichern" klicken.
+- **First-Run-Wizard:** auf der Subscription-Karte „Stattdessen Token
+  manuell einfügen" wählen.
 - Alternativ aus dem Chat heraus:
   `settings_set_anthropic_subscription_token` mit dem Tokenwert
   aufrufen. Der Agent verifiziert ihn am Anthropic-Modell-Endpoint und

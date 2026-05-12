@@ -7,6 +7,31 @@ The repo uses one rolling tag per desktop release (`v<major>.<minor>.<patch>`)
 on `main`. Submodules cut their own feature branches and are pinned via the
 desktop bundle; `pnpm fetch:producers` re-vendors them into the .dmg.
 
+## v0.1.133 — 2026-05-11
+
+- **Ein-Klick-Login mit Claude.ai-Abo.** Die Subscription-Karte im
+  First-Run-Wizard sowie die Settings-Karte „Claude.ai Pro/Max-Abo"
+  tragen jetzt primär den Button „Mit Claude.ai verbinden". Klick
+  öffnet ein internes Electron-`BrowserWindow` mit Anthropics
+  OAuth-Authorize-Endpoint; AVA fängt den Redirect serverseitig ab,
+  tauscht den Code per PKCE gegen ein Access-Token (derselbe Flow wie
+  `claude setup-token`, derselbe öffentliche `client_id`) und legt
+  den Token verschlüsselt in `anthropic-subscription.enc` ab — ohne
+  dass der Nutzer das Terminal anfasst.
+- **Paste-Flow als Advanced-Fallback.** Wer den In-App-Login nicht
+  nutzen kann (z. B. wegen Unternehmens-SSO), klappt in beiden
+  Surfaces „Advanced: Token manuell einfügen" auf und bekommt
+  unverändert das `sk-ant-oat01-…`-Textfeld.
+- **Robustheit.** Der OAuth-Flow hat einen 5-Minuten-Timeout,
+  räumt sein `BrowserWindow` + die Session-Partition bei Abbruch oder
+  Fehlerlade auf, validiert den `state`-Round-Trip gegen CSRF und
+  übersetzt Anthropic-HTTP-Codes (401/403/5xx, Netzwerk, Timeout) in
+  deutsche Fehlertexte direkt in der Karte.
+- **Smoke-Test.** `pnpm -F @ava/desktop test:anthropic-oauth` prüft
+  die PKCE-Helfer (Verifier-Länge, SHA-256-Round-Trip, URL-Parameter,
+  `code=true`-Marker). Der Live-OAuth-Round-Trip braucht ein echtes
+  Claude-Konto und bleibt manuelles QA.
+
 ## v0.1.132 — 2026-05-11
 
 - **First-Run-Wizard mit dreigleichgewichtiger Anbieterwahl.** Der

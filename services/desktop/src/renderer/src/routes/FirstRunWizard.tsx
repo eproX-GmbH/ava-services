@@ -526,7 +526,7 @@ function ProviderChooserGrid({
             className="first-run__option-cta"
             onClick={() => setActive("subscription")}
           >
-            Token hinterlegen
+            Mit Claude.ai verbinden
           </button>
         </div>
       </div>
@@ -683,6 +683,30 @@ function SubscriptionTokenSubForm({
     kind: "warn" | "error";
     text: string;
   } | null>(null);
+  // Phase A6 — Standard-Pfad ist der In-App-OAuth-Login. Der Paste-
+  // Flow bleibt als „Advanced"-Klappe darunter erreichbar.
+  const [showManual, setShowManual] = useState(false);
+  const [oauthBusy, setOauthBusy] = useState(false);
+
+  const onConnect = async (): Promise<void> => {
+    setOauthBusy(true);
+    setHint(null);
+    try {
+      const result = await window.api.agent.connectAnthropicSubscription();
+      if (result.ok) {
+        await onDone();
+        return;
+      }
+      setHint({ kind: "error", text: result.error });
+    } catch (err) {
+      setHint({
+        kind: "error",
+        text: err instanceof Error ? err.message : String(err),
+      });
+    } finally {
+      setOauthBusy(false);
+    }
+  };
 
   const onTest = async () => {
     setBusy(true);
@@ -724,41 +748,18 @@ function SubscriptionTokenSubForm({
     }
   };
 
+  const busyAny = busy || oauthBusy;
+
   return (
     <div className="first-run__chooser">
       <h3 className="first-run__subform-title">
-        Claude-Subscription-Token hinterlegen
+        Mit Claude.ai-Abo verbinden
       </h3>
       <p className="muted small">
-        Erzeuge den Token mit <code>claude setup-token</code> aus der
-        offiziellen Claude-Code-CLI. Der Token beginnt mit{" "}
-        <code>sk-ant-oat01-…</code> und ist ein Jahr gültig.
+        Wir öffnen ein Anmeldefenster bei claude.ai. Nach erfolgreichem
+        Login leitet Anthropic zurück, AVA fängt das Token ab und legt
+        es verschlüsselt im Schlüsselbund ab — kein Terminal nötig.
       </p>
-      <p>
-        <button
-          type="button"
-          className="link small"
-          onClick={() => openExternal(ANTHROPIC_TOKEN_DOCS_URL)}
-        >
-          Anleitung: Token erzeugen (Anthropic-Doku)
-        </button>
-      </p>
-      <label className="field">
-        <span>Subscription-Token</span>
-        <textarea
-          className="first-run__token-input"
-          value={token}
-          onChange={(e) => {
-            setToken(e.target.value);
-            setHint(null);
-          }}
-          placeholder="sk-ant-oat01-…"
-          autoComplete="off"
-          spellCheck={false}
-          disabled={busy}
-          rows={4}
-        />
-      </label>
       {hint && (
         <p className={hint.kind === "warn" ? "warn small" : "bad small"}>
           {hint.text}
@@ -767,20 +768,76 @@ function SubscriptionTokenSubForm({
       <div className="first-run__actions">
         <button
           type="button"
-          onClick={onTest}
-          disabled={busy || token.trim().length === 0}
+          onClick={() => void onConnect()}
+          disabled={busyAny}
         >
-          {busy ? "Teste…" : "Testen & fortfahren"}
+          {oauthBusy ? "Öffne Anmeldung…" : "Mit Claude.ai verbinden"}
         </button>
         <button
           type="button"
           className="link"
           onClick={onCancel}
-          disabled={busy}
+          disabled={busyAny}
         >
           Zurück
         </button>
       </div>
+      <p className="muted small">
+        <button
+          type="button"
+          className="link small"
+          onClick={() => setShowManual((v) => !v)}
+          disabled={busyAny}
+        >
+          {showManual
+            ? "Manuellen Token-Pfad ausblenden"
+            : "Stattdessen Token manuell einfügen"}
+        </button>
+      </p>
+
+      {showManual && (
+        <div className="first-run__advanced">
+          <p className="muted small">
+            Erzeuge den Token mit <code>claude setup-token</code> aus
+            der offiziellen Claude-Code-CLI. Der Token beginnt mit{" "}
+            <code>sk-ant-oat01-…</code> und ist ein Jahr gültig.
+          </p>
+          <p>
+            <button
+              type="button"
+              className="link small"
+              onClick={() => openExternal(ANTHROPIC_TOKEN_DOCS_URL)}
+            >
+              Anleitung: Token erzeugen (Anthropic-Doku)
+            </button>
+          </p>
+          <label className="field">
+            <span>Subscription-Token</span>
+            <textarea
+              className="first-run__token-input"
+              value={token}
+              onChange={(e) => {
+                setToken(e.target.value);
+                setHint(null);
+              }}
+              placeholder="sk-ant-oat01-…"
+              autoComplete="off"
+              spellCheck={false}
+              disabled={busyAny}
+              rows={4}
+            />
+          </label>
+          <div className="first-run__actions">
+            <button
+              type="button"
+              onClick={onTest}
+              disabled={busyAny || token.trim().length === 0}
+            >
+              {busy ? "Teste…" : "Token speichern & fortfahren"}
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

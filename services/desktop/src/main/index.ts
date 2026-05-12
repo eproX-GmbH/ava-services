@@ -1983,6 +1983,41 @@ app.whenReady().then(async () => {
       providers.setAnthropicAuthMode(args.mode),
   );
 
+  // Phase A6 — In-App-OAuth-Flow. Öffnet das Anthropic-Login in einem
+  // dedizierten Electron-Fenster, fängt den Redirect ab, tauscht Code
+  // gegen Access-Token und persistiert ihn über die bestehende
+  // Subscription-Token-Pipeline. Renderer bekommt nur `{ ok, error? }`
+  // — der Token verlässt den Main-Process nicht.
+  ipcMain.handle(
+    "agent:connectAnthropicSubscription",
+    async (event): Promise<{ ok: true } | { ok: false; error: string }> => {
+      try {
+        const parent =
+          BrowserWindow.fromWebContents(event.sender) ??
+          BrowserWindow.getFocusedWindow() ??
+          BrowserWindow.getAllWindows()[0] ??
+          null;
+        const { runAnthropicOAuth } = await import(
+          "./auth/anthropic-oauth-flow"
+        );
+        const token = await runAnthropicOAuth({ parent });
+        providers.setAnthropicSubscriptionToken(token.accessToken);
+        try {
+          providers.setProvider("anthropic");
+        } catch {
+          // Falls der Manager nicht switchen kann (z. B. weil eine
+          // andere Pre-Condition fehlt), bleibt der Token gespeichert
+          // und der Auth-Modus auf "subscription" — das reicht für die
+          // Settings-Karte, die danach „Verbunden" zeigt.
+        }
+        return { ok: true };
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        return { ok: false, error: message };
+      }
+    },
+  );
+
   // Memory IPC (Phase 8.d). The probe is cached on the MemoryStore — these
   // handlers are read-only views; mutations happen implicitly as the
   // orchestrator appends messages.

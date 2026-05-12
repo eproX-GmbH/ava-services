@@ -525,6 +525,18 @@ const api = {
     clearAnthropicSubscriptionToken: (): Promise<void> =>
       ipcRenderer.invoke("agent:clearAnthropicSubscriptionToken"),
     /**
+     * Phase A6 — Ein-Klick-OAuth-Login gegen Claude.ai. Öffnet ein
+     * Electron-`BrowserWindow` mit dem Anthropic-Authorize-Endpunkt,
+     * fängt den Redirect ab, tauscht den Code gegen einen Access-Token
+     * und persistiert ihn (gleiche Pipeline wie der Paste-Flow). Bei
+     * Erfolg ist der aktive Auth-Modus anschließend `"subscription"`.
+     * Fehler kommen als `{ ok: false, error }` zurück — der UI-Layer
+     * blendet sie inline ein und bietet den Paste-Flow als Fallback.
+     */
+    connectAnthropicSubscription: (): Promise<
+      { ok: true } | { ok: false; error: string }
+    > => ipcRenderer.invoke("agent:connectAnthropicSubscription"),
+    /**
      * Phase A1 — flip between Anthropic auth modes without changing
      * credentials. Throws when the requested mode has no credential.
      */
