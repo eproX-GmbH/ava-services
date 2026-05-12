@@ -15,7 +15,9 @@
 
 import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
 import { HTTPException } from "hono/http-exception";
-import type Stripe from "stripe";
+// v0.1.158 — non-type-only because the stale-customer probe needs
+// Stripe.errors.StripeInvalidRequestError at runtime.
+import Stripe from "stripe";
 import { getStripe, getStripeWebhookSecret } from "../../lib/stripe-client";
 import { getGatewayPool } from "../../lib/producer-pools";
 import { logger } from "../../lib/logger";
@@ -79,7 +81,32 @@ billingRouter.openapi(checkoutRoute, async (c) => {
   }
 
   const stripe = getStripe();
-  const existing = await readStripeCustomerId(auth.tenantId);
+  let existing = await readStripeCustomerId(auth.tenantId);
+
+  // v0.1.158 — defend against a stale `stripeCustomerId`. The most
+  // common path that triggers this: STRIPE_SECRET_KEY was rotated
+  // from a test-mode key to a live-mode key. Test and live customers
+  // live in entirely separate namespaces, so the DB-stored id no
+  // longer resolves and EVERY operation that passes it (subscriptions
+  // list, checkout-session create with `customer`, …) returns 400
+  // `resource_missing` and the desktop user sees `gateway 500`.
+  //
+  // Resolution: probe the customer once; if Stripe says "missing",
+  // wipe the column and fall through to the fresh-customer path
+  // (Checkout creates a brand-new customer, the webhook persists the
+  // new id). Surface a single log line so the operator can spot the
+  // rotation aftermath in the gateway log.
+  if (existing) {
+    const stillValid = await stripeCustomerExists(stripe, existing);
+    if (!stillValid) {
+      logger.warn(
+        { tenantId: auth.tenantId, staleCustomerId: existing },
+        "stale stripeCustomerId — wiping and falling through to fresh-customer checkout",
+      );
+      await clearStripeCustomerId(auth.tenantId);
+      existing = null;
+    }
+  }
 
   // Pre-v0.1.118: every checkout call minted a NEW Subscription, even
   // when the customer already had an active or cancel-at-period-end
@@ -341,6 +368,48 @@ async function handleStripeEvent(event: Stripe.Event): Promise<void> {
 }
 
 // ---- DB helpers --------------------------------------------------------------
+
+/**
+ * v0.1.158 — probe whether a customer id still exists in the
+ * current Stripe mode. Returns false for the specific
+ * `StripeInvalidRequestError` with `code: resource_missing` on
+ * `param: customer`. Any OTHER error (auth, network, rate limit)
+ * bubbles up — we deliberately don't want to silently "the customer
+ * is gone" on a transient failure that would lose the in-place
+ * upgrade path.
+ */
+async function stripeCustomerExists(
+  stripe: ReturnType<typeof getStripe>,
+  customerId: string,
+): Promise<boolean> {
+  try {
+    const c = await stripe.customers.retrieve(customerId);
+    // `retrieve` returns a DeletedCustomer when the id was deleted in
+    // Stripe (rare but possible via dashboard). Treat as missing.
+    if ((c as Stripe.Customer | Stripe.DeletedCustomer).deleted) return false;
+    return true;
+  } catch (err) {
+    if (
+      err instanceof Stripe.errors.StripeInvalidRequestError &&
+      err.code === "resource_missing" &&
+      err.param === "id"
+    ) {
+      return false;
+    }
+    throw err;
+  }
+}
+
+async function clearStripeCustomerId(tenantId: string): Promise<void> {
+  await getGatewayPool().query(
+    `UPDATE "TenantBilling"
+       SET "stripeCustomerId" = NULL,
+           "stripeSubscriptionId" = NULL,
+           "updatedAt" = NOW()
+     WHERE "tenantId" = $1`,
+    [tenantId],
+  );
+}
 
 async function readStripeCustomerId(tenantId: string): Promise<string | null> {
   const res = await getGatewayPool().query<{ stripeCustomerId: string | null }>(
