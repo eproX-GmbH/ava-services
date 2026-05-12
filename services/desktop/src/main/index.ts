@@ -1755,6 +1755,13 @@ app.whenReady().then(async () => {
     (_e, args: { producer: string; limit?: number }) =>
       producerLogBuffer.tail(args.producer, args.limit ?? 500),
   );
+  // v0.1.163 — on-disk log file path per producer so renderer / chat
+  // tools can point the user at the file for `tail -f` from Terminal.
+  ipcMain.handle(
+    "producers:logs:filePath",
+    (_e, args: { producer: string }) =>
+      producerLogBuffer.filePath(args.producer),
+  );
   producerLogBuffer.on("line", (event: ProducerLogEvent) => {
     for (const win of BrowserWindow.getAllWindows()) {
       win.webContents.send("producer-log:line", event);

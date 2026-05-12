@@ -16,6 +16,14 @@
 // unbounded. 5000 lines/producer × 6 producers ≈ 3 MB peak.
 
 import { EventEmitter } from "node:events";
+import { app } from "electron";
+import {
+  createWriteStream,
+  existsSync,
+  mkdirSync,
+  type WriteStream,
+} from "node:fs";
+import { join } from "node:path";
 
 const MAX_LINES_PER_PRODUCER = 5000;
 
@@ -37,6 +45,50 @@ export interface ProducerLogEvent {
 class ProducerLogBuffer extends EventEmitter {
   private buffers: Map<string, ProducerLogLine[]> = new Map();
   private nextId = 1;
+  // v0.1.163 — Per-producer append-only log file. Mirrors every line
+  // the in-memory ring sees. Lives under
+  // `<userData>/producer-logs/<name>.log` so users can `tail -f` from
+  // a regular Terminal without launching AVA from the shell or going
+  // through DevTools.
+  private fileStreams: Map<string, WriteStream> = new Map();
+  /** Resolved lazily on first push so unit tests that import this
+   *  module without Electron's `app` ready don't blow up. */
+  private fileLogDirCached: string | null = null;
+
+  private fileLogDir(): string | null {
+    if (this.fileLogDirCached) return this.fileLogDirCached;
+    try {
+      const dir = join(app.getPath("userData"), "producer-logs");
+      if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
+      this.fileLogDirCached = dir;
+      return dir;
+    } catch {
+      // userData not available (test harness) — silently disable file
+      // logging; the in-memory ring still works.
+      return null;
+    }
+  }
+
+  private fileStream(producer: string): WriteStream | null {
+    const cached = this.fileStreams.get(producer);
+    if (cached) return cached;
+    const dir = this.fileLogDir();
+    if (!dir) return null;
+    try {
+      // Append flag so the previous session's tail stays accessible
+      // (useful for diagnosing a crash that happened just before a
+      // restart). A boot-time session marker keeps things scannable.
+      const path = join(dir, `${producer}.log`);
+      const stream = createWriteStream(path, { flags: "a" });
+      stream.write(
+        `\n--- [${new Date().toISOString()}] session start (AVA pid=${process.pid}) ---\n`,
+      );
+      this.fileStreams.set(producer, stream);
+      return stream;
+    } catch {
+      return null;
+    }
+  }
 
   push(producer: string, stream: "stdout" | "stderr", raw: string): void {
     if (!raw) return;
@@ -44,6 +96,7 @@ class ProducerLogBuffer extends EventEmitter {
     // in a single Buffer. Split so the renderer can scroll one line
     // at a time and the filter input matches per-line.
     const lines = raw.split(/\r?\n/);
+    const fileTarget = this.fileStream(producer);
     for (const line of lines) {
       if (!line) continue;
       const entry: ProducerLogLine = {
@@ -64,8 +117,25 @@ class ProducerLogBuffer extends EventEmitter {
         // and we're not in a tight loop.
         buf.splice(0, buf.length - MAX_LINES_PER_PRODUCER);
       }
+      // v0.1.163 — file mirror. ISO-prefixed line so `tail -f` users
+      // can correlate with other logs. We tag the stream so stderr
+      // bursts are visually distinct in plaintext.
+      if (fileTarget) {
+        const ts = new Date(entry.ts).toISOString();
+        const tag = stream === "stderr" ? "ERR" : "OUT";
+        fileTarget.write(`${ts} ${tag} ${line}\n`);
+      }
       this.emit("line", { producer, line: entry } satisfies ProducerLogEvent);
     }
+  }
+
+  /** v0.1.163 — Path of the on-disk log for `producer`, or null if
+   *  the file mirror is disabled. Renderer surfaces this so the
+   *  "Show in Finder" affordance has a target. */
+  filePath(producer: string): string | null {
+    const dir = this.fileLogDir();
+    if (!dir) return null;
+    return join(dir, `${producer}.log`);
   }
 
   /**
