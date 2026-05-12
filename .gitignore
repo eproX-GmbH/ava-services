@@ -6,3 +6,6 @@ dist/
 .env.dev
 *.log
 .DS_Store
+
+# Local DB audit dumps (created by ad-hoc maintenance scripts)
+.db-backups/
