@@ -268,6 +268,28 @@ export class AgentOrchestrator extends EventEmitter {
         console.log(
           `[agent] skill invoked: ${target.name} (allowed-tools: [${target.allowedTools.join(", ")}])`,
         );
+      } else if (this.registry.get(slash.name)) {
+        // No matching skill, but the slash names a REGISTERED TOOL.
+        // Nudge the model to invoke that tool instead of treating the
+        // slash like an unknown CLI command. The user's message stays as
+        // is so the tool still sees any args it might need.
+        const argsHint = slash.rawArgs.trim()
+          ? ` mit den Argumenten: ${slash.rawArgs.trim()}`
+          : "";
+        const injected: AgentMessage = {
+          id: randomUUID(),
+          role: "user",
+          content:
+            `Hinweis: Der Nutzer hat per Slash-Palette das Tool ` +
+            `\`${slash.name}\`${argsHint} ausgewählt. Rufe dieses Tool als ` +
+            `nächsten Schritt auf. Frag den Nutzer kurz nach fehlenden ` +
+            `Pflicht-Argumenten, bevor du das Tool aufrufst, falls die ` +
+            `nicht aus dem bisherigen Verlauf hervorgehen. Antworte NICHT ` +
+            `mit "Unbekannter Befehl" oder ähnlichem.`,
+          createdAt: Date.now(),
+        };
+        this.appendMessage(convo, injected);
+        console.log(`[agent] tool nudged via slash: ${slash.name}`);
       }
     }
     if (!this.activeSkill && skills.length > 0) {

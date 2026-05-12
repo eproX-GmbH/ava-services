@@ -7,6 +7,25 @@ The repo uses one rolling tag per desktop release (`v<major>.<minor>.<patch>`)
 on `main`. Submodules cut their own feature branches and are pinned via the
 desktop bundle; `pnpm fetch:producers` re-vendors them into the .dmg.
 
+## v0.1.130 — 2026-05-11
+
+- **Slash-Tools nicht mehr als „Unbekannter Befehl" abgewiesen.** Die
+  Slash-Palette aus v0.1.128 fügt `/<tool-name>` in den Composer ein,
+  aber das LLM behandelte den Aufruf wie ein Unix-Kommando und
+  antwortete „Unknown command: /company_search". Zwei Bauteile fixen
+  das jetzt zusammen:
+  - **Orchestrator-Hinweis-Injection.** Wenn `parseSlashInvocation`
+    einen Namen liefert, der KEINEM Skill, aber EINEM registrierten
+    Tool entspricht, hängen wir eine zusätzliche User-Nachricht an
+    den Turn: „Der Nutzer hat per Slash-Palette das Tool `<name>`
+    ausgewählt — rufe es als nächsten Schritt auf, frag nur nach
+    fehlenden Pflicht-Argumenten. Antworte NICHT mit Unbekannter
+    Befehl o. Ä."
+  - **System-Prompt-Block.** Im Tool-Nutzung-Abschnitt ein neuer
+    Bulletpoint, der die Slash-Palette-Semantik dokumentiert (Skills
+    → Body wird injiziert, Tools → Aufruf-Hinweis), damit das Modell
+    schon ohne den Spezial-Inject weiß, was `/name` bedeutet.
+
 ## v0.1.129 — 2026-05-11
 
 - **LinkedIn-Signal-Auswertung: Summary weich kürzen statt verwerfen.**
