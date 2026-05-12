@@ -7,6 +7,44 @@ The repo uses one rolling tag per desktop release (`v<major>.<minor>.<patch>`)
 on `main`. Submodules cut their own feature branches and are pinned via the
 desktop bundle; `pnpm fetch:producers` re-vendors them into the .dmg.
 
+## v0.1.131 — 2026-05-11
+
+- **Anthropic-Subscription-Token-Auth.** Wer ein Claude-Pro-, Max-,
+  Team- oder Enterprise-Abo hat, kann ab jetzt seinen mit
+  `claude setup-token` erzeugten OAuth-Token in AVA hinterlegen statt
+  zusätzlich Anthropic-Api-Credits zu kaufen. Der Token wird per
+  `Authorization: Bearer …` (plus `anthropic-beta: oauth-2025-04-20`)
+  an `api.anthropic.com` geschickt und konsumiert das Abo-Kontingent.
+  - **Speicherort:** parallel zum klassischen Api-Schlüssel im
+    OS-Schlüsselbund (`anthropic-subscription.enc` neben
+    `anthropic.enc`) — beide Credentials können nebeneinander
+    bestehen, der „aktive" Modus steht in `provider.json`
+    (`anthropicAuthMode`).
+  - **Settings-Karte:** „Claude.ai Pro/Max-Abo" unter
+    Settings → Anbieter → Api-Schlüssel. Anleitung-Button öffnet die
+    Anthropic-Docs im Systembrowser. Sind Schlüssel und Token beide
+    da, erscheint ein Umschalter, der den aktiven Auth-Modus flippt
+    ohne Credentials zu löschen.
+  - **Chat-Agent:** zwei neue Tools
+    `settings_set_anthropic_subscription_token` und
+    `settings_clear_anthropic_subscription_token`. System-Prompt im
+    Self-Service-Block ergänzt; das Modell weiß jetzt, wie es den
+    Nutzer durch die Token-Erzeugung führt, und wiederholt den Token
+    nie in der Antwort.
+  - **Probe:** `validateAnthropicSubscriptionToken` testet gegen
+    `GET /v1/models` mit Bearer-Header und retried mit OAuth-Beta-Tag
+    bei 401. Inconclusive 401s blockieren das Speichern nicht — die
+    UI fragt soft, der erste echte Chat-Turn klärt es.
+  - **Drittapp-Caveat:** AVA dokumentiert in `ANTHROPIC_AUTH.md`, dass
+    Anthropic Subscription-Nutzung aus Drittapps als „Extra Usage"
+    abrechnen kann. Wer das Risiko nicht möchte, bleibt beim
+    Api-Schlüssel.
+  - **Doku:** `ANTHROPIC_AUTH.md` (root) als zentrale Referenz,
+    Bullet im Desktop-README mit Verweis, PLANS.md §3 mit
+    Phasen-Auflistung A1–A5.
+  - **Smoke-Test:** `pnpm test:anthropic-subscription` exerziert
+    Round-Trip + Keychain-Isolation gegen einen Electron-Stub.
+
 ## v0.1.130 — 2026-05-11
 
 - **Slash-Tools nicht mehr als „Unbekannter Befehl" abgewiesen.** Die

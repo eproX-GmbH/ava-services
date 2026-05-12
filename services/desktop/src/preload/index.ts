@@ -501,6 +501,38 @@ const api = {
     clearApiKey: (args: { kind: HostedProviderKind }): Promise<void> =>
       ipcRenderer.invoke("agent:clearApiKey", args),
 
+    /**
+     * Phase A1 — store the user's Anthropic OAuth subscription token
+     * (produced by Anthropic's `claude setup-token` CLI). Encrypted at
+     * rest in a separate keychain blob so the API-key entry stays
+     * untouched. Saving also flips the active Anthropic auth mode to
+     * `"subscription"`.
+     */
+    setAnthropicSubscriptionToken: (args: { token: string }): Promise<void> =>
+      ipcRenderer.invoke("agent:setAnthropicSubscriptionToken", args),
+    /**
+     * Phase A1 — probe the Bearer-auth path against
+     * `https://api.anthropic.com/v1/models`. Returns `{ ok: false,
+     * reason }` with a human-readable reason on failure. Inconclusive
+     * 401s (Anthropic may restrict the model-list endpoint to API
+     * keys) come back as `{ ok: false }` too — the UI then offers
+     * "trotzdem speichern".
+     */
+    validateAnthropicSubscriptionToken: (args: {
+      token: string;
+    }): Promise<ApiKeyValidation> =>
+      ipcRenderer.invoke("agent:validateAnthropicSubscriptionToken", args),
+    clearAnthropicSubscriptionToken: (): Promise<void> =>
+      ipcRenderer.invoke("agent:clearAnthropicSubscriptionToken"),
+    /**
+     * Phase A1 — flip between Anthropic auth modes without changing
+     * credentials. Throws when the requested mode has no credential.
+     */
+    setAnthropicAuthMode: (args: {
+      mode: "api-key" | "subscription";
+    }): Promise<ProviderConfig> =>
+      ipcRenderer.invoke("agent:setAnthropicAuthMode", args),
+
     // Memory (Phase 8.d). The probe is the FirstRunWizard's signal that
     // transcripts will (or won't) survive a restart; `listConversations`
     // backs the Chat session dropdown (8.k10h).

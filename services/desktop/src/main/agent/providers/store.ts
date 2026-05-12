@@ -10,10 +10,20 @@ import {
 import { join } from "node:path";
 import { app, safeStorage } from "electron";
 import type {
+  AnthropicAuthMode,
   HostedProviderKind,
   LlmProviderKind,
   ProviderConfig,
 } from "../../../shared/types";
+
+/**
+ * Filename for the Anthropic subscription OAuth token (Phase A1).
+ * Lives next to the `<provider>.enc` blobs but is treated separately
+ * because it is NOT a HostedProviderKind — it's a parallel credential
+ * for the existing `anthropic` provider. Stored encrypted via
+ * safeStorage just like the other `.enc` files.
+ */
+const ANTHROPIC_SUBSCRIPTION_FILENAME = "anthropic-subscription.enc";
 
 // Provider config persistence (Phase 8.j, expanded in 8.k1).
 //
@@ -78,6 +88,7 @@ const DEFAULT_CONFIG: ProviderConfig = {
     google: "",
     mistral: "",
   },
+  anthropicAuthMode: "api-key",
 };
 
 export type { ProviderConfig };
@@ -86,6 +97,8 @@ export interface ProviderConfigStoreEvents {
   configChanged: (cfg: ProviderConfig) => void;
   /** Fires for any provider's key being set/cleared. Listener can re-check via `hasKey`. */
   keyChanged: (kind: HostedProviderKind) => void;
+  /** Fires when the Anthropic subscription token is set/cleared. */
+  anthropicSubscriptionTokenChanged: () => void;
 }
 
 export declare interface ProviderConfigStore {
@@ -134,6 +147,7 @@ export class ProviderConfigStore extends EventEmitter {
   setConfig(partial: {
     kind?: LlmProviderKind;
     models?: Partial<Record<LlmProviderKind, string>>;
+    anthropicAuthMode?: AnthropicAuthMode;
   }): ProviderConfig {
     const next: ProviderConfig = cloneConfig(this.cached);
     if (partial.kind) {
@@ -147,6 +161,17 @@ export class ProviderConfigStore extends EventEmitter {
         if (!ALL_KINDS.includes(k as LlmProviderKind)) continue;
         next.models[k as LlmProviderKind] = v ?? "";
       }
+    }
+    if (partial.anthropicAuthMode !== undefined) {
+      if (
+        partial.anthropicAuthMode !== "api-key" &&
+        partial.anthropicAuthMode !== "subscription"
+      ) {
+        throw new Error(
+          `unknown anthropicAuthMode: ${String(partial.anthropicAuthMode)}`,
+        );
+      }
+      next.anthropicAuthMode = partial.anthropicAuthMode;
     }
     this.writeConfigAtomic(next);
     this.cached = next;
@@ -260,6 +285,74 @@ export class ProviderConfigStore extends EventEmitter {
     return HOSTED_KINDS;
   }
 
+  // ---- Anthropic subscription token (Phase A1) -----------------------------
+
+  private anthropicSubscriptionPath(): string {
+    return join(this.dir, ANTHROPIC_SUBSCRIPTION_FILENAME);
+  }
+
+  /** True iff `anthropic-subscription.enc` exists on disk. */
+  hasAnthropicSubscriptionToken(): boolean {
+    return existsSync(this.anthropicSubscriptionPath());
+  }
+
+  /**
+   * Decrypt and return the Anthropic OAuth subscription token, or null
+   * if missing / undecryptable. Mirrors `getKey()` semantics: a broken
+   * blob is unlinked and the change emitted so the UI can recover.
+   */
+  async getAnthropicSubscriptionToken(): Promise<string | null> {
+    const path = this.anthropicSubscriptionPath();
+    if (!existsSync(path)) return null;
+    try {
+      const buf = readFileSync(path);
+      return safeStorage.decryptString(buf);
+    } catch (err) {
+      console.warn(
+        "[provider-store] failed to decrypt anthropic-subscription token — removing broken blob:",
+        err,
+      );
+      try {
+        unlinkSync(path);
+      } catch (unlinkErr) {
+        console.warn(
+          "[provider-store] could not unlink broken anthropic-subscription.enc:",
+          unlinkErr,
+        );
+      }
+      this.emit("anthropicSubscriptionTokenChanged");
+      return null;
+    }
+  }
+
+  setAnthropicSubscriptionToken(plaintext: string): void {
+    const trimmed = plaintext.trim();
+    if (!trimmed) throw new Error("anthropic subscription token is empty");
+    if (!safeStorage.isEncryptionAvailable()) {
+      console.warn(
+        "[provider-store] safeStorage encryption not available — falling back to basic cipher (anthropic-subscription)",
+      );
+    }
+    const enc = safeStorage.encryptString(trimmed);
+    writeFileSync(this.anthropicSubscriptionPath(), enc, { mode: 0o600 });
+    this.emit("anthropicSubscriptionTokenChanged");
+  }
+
+  clearAnthropicSubscriptionToken(): void {
+    const path = this.anthropicSubscriptionPath();
+    if (existsSync(path)) {
+      try {
+        unlinkSync(path);
+      } catch (err) {
+        console.warn(
+          "[provider-store] clearAnthropicSubscriptionToken unlink failed:",
+          err,
+        );
+      }
+    }
+    this.emit("anthropicSubscriptionTokenChanged");
+  }
+
   // ---- Disk I/O -------------------------------------------------------------
 
   private keyPath(kind: HostedProviderKind): string {
@@ -274,6 +367,7 @@ export class ProviderConfigStore extends EventEmitter {
         // 8.j legacy fields — read once, then dropped on next write.
         ollamaModel?: string | null;
         openaiModel?: string;
+        anthropicAuthMode?: AnthropicAuthMode;
       };
       const kind: LlmProviderKind = ALL_KINDS.includes(
         parsed.kind as LlmProviderKind,
@@ -297,7 +391,11 @@ export class ProviderConfigStore extends EventEmitter {
           if (typeof v === "string") models[k] = v;
         }
       }
-      return { kind, models };
+      const anthropicAuthMode: AnthropicAuthMode =
+        parsed.anthropicAuthMode === "subscription"
+          ? "subscription"
+          : "api-key";
+      return { kind, models, anthropicAuthMode };
     } catch (err) {
       console.warn("[provider-store] failed to read provider.json:", err);
       return cloneConfig(DEFAULT_CONFIG);
@@ -314,5 +412,9 @@ export class ProviderConfigStore extends EventEmitter {
 }
 
 function cloneConfig(cfg: ProviderConfig): ProviderConfig {
-  return { kind: cfg.kind, models: { ...cfg.models } };
+  return {
+    kind: cfg.kind,
+    models: { ...cfg.models },
+    anthropicAuthMode: cfg.anthropicAuthMode ?? "api-key",
+  };
 }

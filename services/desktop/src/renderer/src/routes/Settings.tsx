@@ -1424,6 +1424,13 @@ function ProviderSection() {
   if (!cfg.data || !models.data) return null;
 
   const { config, status, hasKey, encryptionAvailable } = cfg.data;
+  const hasAnthropicSubscriptionToken =
+    cfg.data.hasAnthropicSubscriptionToken;
+  // Phase A1 — the dropdown's "kein Schlüssel" gate should fall when
+  // a subscription token is stored, since either credential lets the
+  // Anthropic provider run.
+  const anthropicHasAnyCredential =
+    hasKey.anthropic || hasAnthropicSubscriptionToken;
   const activeKind = config.kind;
   const activeModelId = config.models[activeKind] || "";
   const modelsByKind = groupBy(models.data, (m) => m.provider);
@@ -1459,16 +1466,20 @@ function ProviderSection() {
             }}
             disabled={setProvider.isPending}
           >
-            {(Object.keys(PROVIDER_LABEL) as LlmProviderKind[]).map((k) => (
-              <option
-                key={k}
-                value={k}
-                disabled={k !== "ollama" && !hasKey[k]}
-              >
-                {PROVIDER_LABEL[k]}
-                {k !== "ollama" && !hasKey[k] ? " (kein Schlüssel)" : ""}
-              </option>
-            ))}
+            {(Object.keys(PROVIDER_LABEL) as LlmProviderKind[]).map((k) => {
+              const hasCred =
+                k === "ollama"
+                  ? true
+                  : k === "anthropic"
+                    ? anthropicHasAnyCredential
+                    : hasKey[k];
+              return (
+                <option key={k} value={k} disabled={!hasCred}>
+                  {PROVIDER_LABEL[k]}
+                  {!hasCred ? " (kein Schlüssel)" : ""}
+                </option>
+              );
+            })}
           </select>
         </label>
 
@@ -1535,7 +1546,203 @@ function ProviderSection() {
           <ApiKeyRow key={kind} kind={kind} hasKey={hasKey[kind]} />
         ))}
       </div>
+
+      <AnthropicSubscriptionCard
+        hasToken={hasAnthropicSubscriptionToken}
+        hasAnthropicApiKey={hasKey.anthropic}
+        anthropicAuthMode={config.anthropicAuthMode ?? "api-key"}
+        activeKind={activeKind}
+      />
     </section>
+  );
+}
+
+// -- Phase A1 — Claude.ai Pro/Max-Abo card ----------------------------
+
+interface AnthropicSubscriptionCardProps {
+  hasToken: boolean;
+  hasAnthropicApiKey: boolean;
+  anthropicAuthMode: "api-key" | "subscription";
+  activeKind: LlmProviderKind;
+}
+
+function AnthropicSubscriptionCard({
+  hasToken,
+  hasAnthropicApiKey,
+  anthropicAuthMode,
+  activeKind,
+}: AnthropicSubscriptionCardProps) {
+  const qc = useQueryClient();
+  const [draft, setDraft] = useState("");
+  const [hint, setHint] = useState<string | null>(null);
+  const [hintKind, setHintKind] = useState<"ok" | "warn" | "error">("ok");
+  useEffect(() => {
+    setDraft("");
+    setHint(null);
+  }, [hasToken]);
+
+  const save = useMutation({
+    mutationFn: async (token: string) => {
+      // Probe first; on a soft failure offer to save anyway.
+      const probe = await window.api.agent.validateAnthropicSubscriptionToken(
+        { token },
+      );
+      if (!probe.ok) {
+        const proceed = window.confirm(
+          `${probe.reason}\n\nTrotzdem speichern? Der erste Chat-Turn deckt einen ungültigen Token sonst erst beim ersten Aufruf auf.`,
+        );
+        if (!proceed) {
+          throw new Error(probe.reason);
+        }
+      }
+      await window.api.agent.setAnthropicSubscriptionToken({ token });
+      return probe.ok;
+    },
+    onSuccess: (probeOk) => {
+      setHint(
+        probeOk
+          ? "Token gespeichert und gegen Anthropic verifiziert."
+          : "Token gespeichert (Verifikation am Modell-Endpoint ausgestanden — der erste Chat-Turn klärt es).",
+      );
+      setHintKind(probeOk ? "ok" : "warn");
+      qc.invalidateQueries({ queryKey: ["agent", "providerConfig"] });
+    },
+    onError: (err) => {
+      setHint(err instanceof Error ? err.message : String(err));
+      setHintKind("error");
+    },
+  });
+
+  const clear = useMutation({
+    mutationFn: () => window.api.agent.clearAnthropicSubscriptionToken(),
+    onSuccess: () => {
+      setHint("Token entfernt.");
+      setHintKind("ok");
+      qc.invalidateQueries({ queryKey: ["agent", "providerConfig"] });
+    },
+  });
+
+  const switchMode = useMutation({
+    mutationFn: (mode: "api-key" | "subscription") =>
+      window.api.agent.setAnthropicAuthMode({ mode }),
+    onSuccess: () =>
+      qc.invalidateQueries({ queryKey: ["agent", "providerConfig"] }),
+    onError: (err) => {
+      setHint(err instanceof Error ? err.message : String(err));
+      setHintKind("error");
+    },
+  });
+
+  const onOpenDocs = (): void => {
+    void window.api.shell.openExternal(
+      "https://code.claude.com/docs/en/authentication#generate-a-long-lived-token",
+    );
+  };
+
+  const subscriptionActive =
+    activeKind === "anthropic" && anthropicAuthMode === "subscription";
+
+  return (
+    <div className="provider-card anthropic-subscription-card">
+      <h4>Claude.ai Pro/Max-Abo</h4>
+      <p className="muted small">
+        Verbinde dein Claude-Abo, statt Anthropic-Api-Credits zu
+        verbrauchen. Du brauchst ein Pro-, Max-, Team- oder
+        Enterprise-Abo. Token wird mit dem CLI-Befehl{" "}
+        <code>claude setup-token</code> erzeugt (siehe Anleitung).
+      </p>
+
+      <p>
+        <button type="button" className="link" onClick={onOpenDocs}>
+          So bekommst du deinen Token
+        </button>
+      </p>
+
+      <div className="api-key-row">
+        <span className="api-key-label">Token</span>
+        <input
+          type="password"
+          placeholder={
+            hasToken
+              ? "•••• gespeichert, neuen Token einfügen, um zu ersetzen"
+              : "sk-ant-oat01-…"
+          }
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          autoComplete="off"
+          spellCheck={false}
+        />
+        <button
+          type="button"
+          onClick={() => save.mutate(draft)}
+          disabled={draft.length === 0 || save.isPending}
+        >
+          {save.isPending ? "Speichert…" : "Speichern"}
+        </button>
+        {hasToken && (
+          <button
+            type="button"
+            className="link"
+            onClick={() => clear.mutate()}
+            disabled={clear.isPending}
+            title="Gespeicherten Subscription-Token entfernen"
+          >
+            {clear.isPending ? "Entfernt…" : "Löschen"}
+          </button>
+        )}
+      </div>
+
+      <p className="muted small">
+        Status:{" "}
+        {hasToken ? (
+          <span className="badge ok">
+            {subscriptionActive
+              ? "Verbunden (aktiver Auth-Modus)"
+              : "Verbunden"}
+          </span>
+        ) : (
+          <span className="badge warn">Nicht verbunden</span>
+        )}
+        {hasToken && hasAnthropicApiKey && (
+          <>
+            {" · "}
+            <button
+              type="button"
+              className="link"
+              onClick={() =>
+                switchMode.mutate(
+                  subscriptionActive ? "api-key" : "subscription",
+                )
+              }
+              disabled={switchMode.isPending}
+            >
+              {subscriptionActive
+                ? "auf Api-Key umschalten"
+                : "auf Subscription umschalten"}
+            </button>
+          </>
+        )}
+      </p>
+
+      {hint && (
+        <p
+          className={
+            hintKind === "ok"
+              ? "muted small ok"
+              : hintKind === "warn"
+                ? "muted small warn"
+                : "error small"
+          }
+        >
+          {hint}
+        </p>
+      )}
+
+      <p className="muted small">
+        ⓘ Drittapp-Hinweis: AVA nutzt deinen Token gegenüber Anthropic.
+        Mögliche „Extra Usage“-Abrechnung laut Anthropic-Policy.
+      </p>
+    </div>
   );
 }
 

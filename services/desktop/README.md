@@ -48,7 +48,11 @@ upstream services in another terminal.
   setup + CRM linkage are now also drivable from chat
   (`linkedin_connect`, `crm_link_manual`, `crm_enrich_now`, etc.).
   Tippe `/` im Chat-Eingabefeld, um eine Palette mit verfügbaren
-  Skills und Tools zu öffnen.
+  Skills und Tools zu öffnen. Anthropic kann wahlweise per Api-Key
+  (klassisch) oder per Subscription-OAuth-Token aus
+  `claude setup-token` angesprochen werden — Letzteres verbraucht das
+  Claude.ai-Pro/Max-Abo statt Api-Credits. Details in
+  [`ANTHROPIC_AUTH.md`](../../ANTHROPIC_AUTH.md).
 - **Companies / company detail** (`/companies`, `/companies/:id`) —
   per-tab tier pills, overview / financials / management / contacts /
   insights / jobs tabs. PersonCard collapses field-grouped Facts behind

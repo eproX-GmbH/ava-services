@@ -1962,6 +1962,27 @@ app.whenReady().then(async () => {
     },
   );
 
+  // ---- Phase A1 — Anthropic subscription auth ---------------------------
+  ipcMain.handle(
+    "agent:setAnthropicSubscriptionToken",
+    (_e, args: { token: string }) => {
+      providers.setAnthropicSubscriptionToken(args.token);
+    },
+  );
+  ipcMain.handle(
+    "agent:validateAnthropicSubscriptionToken",
+    (_e, args: { token: string }) =>
+      providers.validateAnthropicSubscriptionToken(args.token),
+  );
+  ipcMain.handle("agent:clearAnthropicSubscriptionToken", () => {
+    providers.clearAnthropicSubscriptionToken();
+  });
+  ipcMain.handle(
+    "agent:setAnthropicAuthMode",
+    (_e, args: { mode: "api-key" | "subscription" }) =>
+      providers.setAnthropicAuthMode(args.mode),
+  );
+
   // Memory IPC (Phase 8.d). The probe is cached on the MemoryStore — these
   // handlers are read-only views; mutations happen implicitly as the
   // orchestrator appends messages.

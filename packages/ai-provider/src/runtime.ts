@@ -55,9 +55,19 @@ export interface CreateLLMOptions {
   model: string;
   /**
    * API key. Required for hosted providers. Ignored for `ollama` (the
-   * local server has no auth in our deployment).
+   * local server has no auth in our deployment). Mutually exclusive
+   * with `anthropicSubscriptionToken` when `provider === "anthropic"`.
    */
   apiKey?: string;
+  /**
+   * Phase A1 — Anthropic OAuth subscription token, produced by
+   * Anthropic's `claude setup-token` CLI. When set and
+   * `provider === "anthropic"`, the runtime sends
+   * `Authorization: Bearer <token>` instead of `x-api-key`, consuming
+   * the user's Claude Pro/Max-Abo quota instead of API credits.
+   * Ignored for every other provider.
+   */
+  anthropicSubscriptionToken?: string;
   /**
    * Override the provider base URL. Used for self-hosted Ollama on a
    * non-default port, or a hypothetical OpenAI-compatible endpoint.
@@ -92,6 +102,51 @@ export function createLLM(opts: CreateLLMOptions): LanguageModel {
       return client(opts.model);
     }
     case "anthropic": {
+      const subscriptionToken = opts.anthropicSubscriptionToken;
+      if (subscriptionToken && subscriptionToken.length > 0) {
+        // Phase A1 — Claude Pro/Max-Abo OAuth path. The SDK's standard
+        // `apiKey` slot wires the `x-api-key` header; we want
+        // `Authorization: Bearer …` instead, so we pass a placeholder
+        // apiKey (the SDK's `loadApiKey` throws on missing/non-string)
+        // and use a fetch override to strip `x-api-key` and inject the
+        // bearer + OAuth beta header on every outgoing request. This
+        // sidesteps the SDK's hard requirement of an apiKey at
+        // construction without forking the package.
+        //
+        // `anthropic-beta: oauth-2025-04-20` is the public flag for
+        // OAuth-authenticated inference calls, documented at
+        // https://code.claude.com/docs/en/authentication.
+        const fetchBase = preferredFetch ?? fetch;
+        const bearerFetch: typeof fetch = (input, init) => {
+          const next: RequestInit = { ...(init ?? {}) };
+          const headers = new Headers(next.headers ?? {});
+          headers.delete("x-api-key");
+          headers.set("authorization", `Bearer ${subscriptionToken}`);
+          if (!headers.has("anthropic-beta")) {
+            headers.set("anthropic-beta", "oauth-2025-04-20");
+          }
+          next.headers = headers;
+          return fetchBase(input, next);
+        };
+        const client = createAnthropic({
+          // Placeholder — never reaches the wire (overridden by
+          // bearerFetch above). Empty string would still pass
+          // loadApiKey's typeof check, but a non-empty placeholder is
+          // friendlier for any future error-log path that prints the
+          // header.
+          apiKey: "oauth-placeholder",
+          headers: {
+            // Belt-and-suspenders: the fetch wrapper already strips
+            // x-api-key, but if a future SDK refactor moves header
+            // composition into a path the wrapper can't see, the empty
+            // override here still gives the user a no-op rather than a
+            // leaked placeholder.
+            "x-api-key": "",
+          },
+          fetch: bearerFetch,
+        });
+        return client(opts.model);
+      }
       const client = createAnthropic({
         apiKey: requireKey(opts, "ANTHROPIC_API_KEY"),
         fetch: preferredFetch,

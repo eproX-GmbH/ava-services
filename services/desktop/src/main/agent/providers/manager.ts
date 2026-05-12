@@ -4,8 +4,13 @@ import type { CatalogEntry, CatalogProvider } from "@ava/ai-provider";
 import type { OllamaSupervisor } from "../../ollama-supervisor";
 import { AiSdkProvider } from "./ai-sdk-provider";
 import { ProviderConfigStore } from "./store";
-import { validateApiKey, type KeyValidation } from "./validate-key";
+import {
+  probeAnthropicSubscription,
+  validateApiKey,
+  type KeyValidation,
+} from "./validate-key";
 import type {
+  AnthropicAuthMode,
   HostedProviderKind,
   LlmProviderKind,
   ProviderCatalogEntry,
@@ -79,6 +84,24 @@ export class LlmProviderManager extends EventEmitter {
           return () => this.store.off("keyChanged", handler);
         },
         ...(kind === "ollama" ? { supervisor } : {}),
+        // Phase A1 — Anthropic-only auth-mode resolvers. Other kinds
+        // pass them through as undefined and fall back to the legacy
+        // api-key path.
+        ...(kind === "anthropic"
+          ? {
+              getAnthropicAuthMode: () =>
+                this.store.getConfig().anthropicAuthMode ?? "api-key",
+              getAnthropicSubscriptionToken: () =>
+                this.store.getAnthropicSubscriptionToken(),
+              hasStoredAnthropicSubscriptionToken: () =>
+                this.store.hasAnthropicSubscriptionToken(),
+              onAnthropicSubscriptionTokenChanged: (cb: () => void) => {
+                this.store.on("anthropicSubscriptionTokenChanged", cb);
+                return () =>
+                  this.store.off("anthropicSubscriptionTokenChanged", cb);
+              },
+            }
+          : {}),
       });
 
     this.providers = {
@@ -96,6 +119,9 @@ export class LlmProviderManager extends EventEmitter {
     }
     this.store.on("configChanged", () => this.recompute());
     this.store.on("keyChanged", () => this.recompute());
+    this.store.on("anthropicSubscriptionTokenChanged", () =>
+      this.recompute(),
+    );
   }
 
   // ---- Public surface -------------------------------------------------------
@@ -128,6 +154,18 @@ export class LlmProviderManager extends EventEmitter {
     const config = this.store.getConfig();
     const kind = config.kind;
     if (!kind || kind === "ollama") return null;
+    // Phase A1 — BYO-key passthrough to producer subprocesses runs
+    // against env-driven @ava/ai-provider. Subscription mode isn't
+    // (yet) plumbed through the env shape, so when Anthropic is active
+    // in subscription mode we behave as if no key were set — producers
+    // fall back to their env-baked LLM. The chat agent (in-process)
+    // keeps using the OAuth token correctly via streamChat above.
+    if (
+      kind === "anthropic" &&
+      (config.anthropicAuthMode ?? "api-key") === "subscription"
+    ) {
+      return null;
+    }
     const key = await this.store.getKey(kind as HostedProviderKind);
     if (!key) return null;
     const model = config.models?.[kind] || undefined;
@@ -143,12 +181,15 @@ export class LlmProviderManager extends EventEmitter {
     config: ProviderConfig;
     status: LlmProviderStatus;
     hasKey: Record<LlmProviderKind, boolean>;
+    hasAnthropicSubscriptionToken: boolean;
     encryptionAvailable: boolean;
   } {
     return {
       config: this.getConfig(),
       status: this.getStatus(),
       hasKey: this.store.hasAllKeys(),
+      hasAnthropicSubscriptionToken:
+        this.store.hasAnthropicSubscriptionToken(),
       encryptionAvailable: this.store.isEncryptionAvailable(),
     };
   }
@@ -168,7 +209,25 @@ export class LlmProviderManager extends EventEmitter {
     kind: LlmProviderKind,
     overrides?: { model?: string },
   ): ProviderConfig {
-    if (kind !== "ollama" && !this.store.hasKey(kind as HostedProviderKind)) {
+    if (kind === "anthropic") {
+      // Phase A1 — either auth mode counts. The active mode is whatever
+      // the user last saved (the store flips `anthropicAuthMode` when
+      // either credential is set). We pick the available one if the
+      // currently-configured mode has no credential yet.
+      const hasKey = this.store.hasKey("anthropic");
+      const hasToken = this.store.hasAnthropicSubscriptionToken();
+      if (!hasKey && !hasToken) {
+        throw new Error(
+          `Anthropic credential is not set. Save an API key or a subscription token first via Settings → Provider or the chat tool.`,
+        );
+      }
+      const mode = this.store.getConfig().anthropicAuthMode ?? "api-key";
+      if (mode === "subscription" && !hasToken) {
+        this.store.setConfig({ anthropicAuthMode: "api-key" });
+      } else if (mode === "api-key" && !hasKey) {
+        this.store.setConfig({ anthropicAuthMode: "subscription" });
+      }
+    } else if (kind !== "ollama" && !this.store.hasKey(kind as HostedProviderKind)) {
       throw new Error(
         `${labelFor(kind)} API key is not set. Save it first via the Settings → Provider tab or the chat tool.`,
       );
@@ -192,6 +251,12 @@ export class LlmProviderManager extends EventEmitter {
 
   setApiKey(kind: HostedProviderKind, plaintext: string): void {
     this.store.setKey(kind, plaintext);
+    // Phase A1 — match the subscription-side "most recently saved
+    // wins" UX. Saving the Anthropic API key flips the active auth
+    // mode back to "api-key".
+    if (kind === "anthropic") {
+      this.store.setConfig({ anthropicAuthMode: "api-key" });
+    }
   }
 
   /**
@@ -215,8 +280,125 @@ export class LlmProviderManager extends EventEmitter {
     const cfg = this.store.getConfig();
     this.store.clearKey(kind);
     if (cfg.kind === kind) {
+      // Phase A1 — for Anthropic, if a subscription token is still
+      // around, prefer keeping the user on Anthropic via subscription
+      // rather than dropping all the way back to Ollama.
+      if (
+        kind === "anthropic" &&
+        this.store.hasAnthropicSubscriptionToken()
+      ) {
+        this.store.setConfig({ anthropicAuthMode: "subscription" });
+        return;
+      }
       this.store.setConfig({ kind: "ollama" });
     }
+  }
+
+  // ---- Anthropic subscription token (Phase A1) -----------------------------
+
+  hasAnthropicSubscriptionToken(): boolean {
+    return this.store.hasAnthropicSubscriptionToken();
+  }
+
+  getAnthropicSubscriptionToken(): Promise<string | null> {
+    return this.store.getAnthropicSubscriptionToken();
+  }
+
+  /**
+   * Validate a candidate Anthropic OAuth subscription token. Same
+   * contract as `validateApiKey` but probes the Bearer-auth path. Does
+   * NOT persist — callers decide what to do with the result.
+   */
+  validateAnthropicSubscriptionToken(token: string): Promise<KeyValidation> {
+    const trimmed = token.trim();
+    if (trimmed.length === 0) {
+      return Promise.resolve({ ok: false, reason: "Token ist leer." });
+    }
+    if (trimmed.length < 30) {
+      return Promise.resolve({
+        ok: false,
+        reason: "Token wirkt zu kurz (erwartet ≥ 30 Zeichen).",
+      });
+    }
+    if (!/^sk-ant-oat01-/i.test(trimmed)) {
+      return Promise.resolve({
+        ok: false,
+        reason:
+          "Token sollte mit 'sk-ant-oat01-' beginnen (vom `claude setup-token`-CLI erzeugt).",
+      });
+    }
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 4_000);
+    return probeAnthropicSubscription(trimmed, ctrl.signal)
+      .catch((err: unknown) => {
+        if (err instanceof Error && err.name === "AbortError") {
+          return {
+            ok: false as const,
+            reason: "Zeitüberschreitung nach 4 s. Netzwerk prüfen.",
+          };
+        }
+        return {
+          ok: false as const,
+          reason: `Netzwerkfehler: ${err instanceof Error ? err.message : String(err)}`,
+        };
+      })
+      .finally(() => clearTimeout(timer));
+  }
+
+  /**
+   * Persist a candidate Anthropic subscription token. Mirrors
+   * `setApiKey` semantics but writes into the parallel
+   * `anthropic-subscription.enc` blob so the API-key entry stays
+   * untouched.
+   */
+  setAnthropicSubscriptionToken(plaintext: string): void {
+    const trimmed = plaintext.trim();
+    if (trimmed.length === 0) throw new Error("Token ist leer.");
+    if (trimmed.length < 30) {
+      throw new Error("Token wirkt zu kurz.");
+    }
+    if (!/^sk-ant-oat01-/i.test(trimmed)) {
+      throw new Error(
+        "Token sollte mit 'sk-ant-oat01-' beginnen (vom `claude setup-token`-CLI erzeugt).",
+      );
+    }
+    this.store.setAnthropicSubscriptionToken(trimmed);
+    // Saving a token also flips the active Anthropic auth mode to
+    // "subscription" — matches the "whichever was most recently saved
+    // wins" UX contract.
+    this.store.setConfig({ anthropicAuthMode: "subscription" });
+  }
+
+  clearAnthropicSubscriptionToken(): void {
+    this.store.clearAnthropicSubscriptionToken();
+    // If subscription was the active anthropic auth mode, demote to
+    // api-key. If the api-key isn't set either, the existing
+    // `clearApiKey` demote-to-ollama rule already keeps the agent
+    // usable — but we don't touch `kind` here, only the auth mode.
+    const cfg = this.store.getConfig();
+    if (cfg.anthropicAuthMode === "subscription") {
+      this.store.setConfig({ anthropicAuthMode: "api-key" });
+    }
+  }
+
+  /**
+   * Phase A1 — flip between Anthropic API-key and subscription auth
+   * without changing keys. Used by the Settings UI when the user wants
+   * to deactivate one credential without deleting it. Throws when the
+   * requested mode has no credential on disk.
+   */
+  setAnthropicAuthMode(mode: AnthropicAuthMode): ProviderConfig {
+    if (mode === "subscription" && !this.store.hasAnthropicSubscriptionToken()) {
+      throw new Error(
+        "Subscription-Token ist nicht gespeichert. Erst über Settings → Anbieter speichern.",
+      );
+    }
+    if (mode === "api-key" && !this.store.hasKey("anthropic")) {
+      throw new Error(
+        "Anthropic-API-Schlüssel ist nicht gespeichert. Erst über Settings → Anbieter speichern.",
+      );
+    }
+    return this.store.setConfig({ anthropicAuthMode: mode });
   }
 
   isEncryptionAvailable(): boolean {
@@ -305,6 +487,15 @@ export class LlmProviderManager extends EventEmitter {
       // Ollama supervisor's default port. No explicit override
       // needed for the pilot.
       return env;
+    }
+    // Phase A1 — see `getActiveUserLlm`: subscription mode isn't
+    // plumbed through the producer env yet. Return null so the
+    // supervisor treats the producer as "wait for config".
+    if (
+      kind === "anthropic" &&
+      (cfg.anthropicAuthMode ?? "api-key") === "subscription"
+    ) {
+      return null;
     }
     const key = await this.store.getKey(kind as HostedProviderKind);
     if (!key) return null;

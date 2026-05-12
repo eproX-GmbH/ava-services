@@ -85,6 +85,31 @@ export interface AiSdkProviderOptions {
    * iff `kind === "ollama"`. Ignored otherwise.
    */
   supervisor?: OllamaSupervisor;
+  /**
+   * Phase A1 — Anthropic-only auth-mode resolver. Returns "api-key"
+   * (default) or "subscription". When "subscription", the provider
+   * pulls the OAuth token via `getAnthropicSubscriptionToken` instead
+   * of `getApiKey` and forwards it to `createLLM` as
+   * `anthropicSubscriptionToken`. Optional for non-Anthropic kinds.
+   */
+  getAnthropicAuthMode?: () => "api-key" | "subscription";
+  /**
+   * Phase A1 — Anthropic-only OAuth token resolver. Mirrors
+   * `getApiKey` semantics. Required iff `kind === "anthropic"`
+   * and the auth-mode resolver may return "subscription".
+   */
+  getAnthropicSubscriptionToken?: () => Promise<string | null>;
+  /**
+   * Phase A1 — sync "is the OAuth token file present?" check.
+   * Drives the status flag when the active Anthropic auth mode is
+   * "subscription". Optional for non-Anthropic kinds.
+   */
+  hasStoredAnthropicSubscriptionToken?: () => boolean;
+  /**
+   * Phase A1 — subscribe to subscription-token store mutations
+   * (set / clear). Returns an unsubscribe handle.
+   */
+  onAnthropicSubscriptionTokenChanged?: (cb: () => void) => () => void;
 }
 
 export class AiSdkProvider extends EventEmitter implements LlmProvider {
@@ -95,6 +120,10 @@ export class AiSdkProvider extends EventEmitter implements LlmProvider {
   private readonly supervisor?: OllamaSupervisor;
   private readonly unsubscribeKey: () => void;
   private readonly unsubscribeOllama?: () => void;
+  private readonly unsubscribeSubscriptionToken?: () => void;
+  private readonly getAnthropicAuthMode?: () => "api-key" | "subscription";
+  private readonly getAnthropicSubscriptionToken?: () => Promise<string | null>;
+  private readonly hasStoredAnthropicSubscriptionToken?: () => boolean;
 
   constructor(opts: AiSdkProviderOptions) {
     super();
@@ -103,6 +132,10 @@ export class AiSdkProvider extends EventEmitter implements LlmProvider {
     this.getApiKey = opts.getApiKey;
     this.hasStoredKey = opts.hasStoredKey;
     this.supervisor = opts.supervisor;
+    this.getAnthropicAuthMode = opts.getAnthropicAuthMode;
+    this.getAnthropicSubscriptionToken = opts.getAnthropicSubscriptionToken;
+    this.hasStoredAnthropicSubscriptionToken =
+      opts.hasStoredAnthropicSubscriptionToken;
 
     this.unsubscribeKey = opts.onKeyChanged(() => {
       // The flag is recomputed sync each time getStatus() runs, so we
@@ -110,6 +143,13 @@ export class AiSdkProvider extends EventEmitter implements LlmProvider {
       // file appears or disappears.
       this.emit("status", this.getStatus());
     });
+
+    if (opts.onAnthropicSubscriptionTokenChanged) {
+      this.unsubscribeSubscriptionToken =
+        opts.onAnthropicSubscriptionTokenChanged(() => {
+          this.emit("status", this.getStatus());
+        });
+    }
 
     if (this.kind === "ollama" && opts.supervisor) {
       const handler = (): void => {
@@ -137,6 +177,7 @@ export class AiSdkProvider extends EventEmitter implements LlmProvider {
   dispose(): void {
     this.unsubscribeKey();
     this.unsubscribeOllama?.();
+    this.unsubscribeSubscriptionToken?.();
     this.removeAllListeners();
   }
 
@@ -169,13 +210,28 @@ export class AiSdkProvider extends EventEmitter implements LlmProvider {
 
   private hostedStatus(): LlmProviderStatus {
     const model = this.getModel() || null;
-    const hasKey = this.hasStoredKey();
+    // Phase A1 — for anthropic, the credential we need depends on the
+    // active auth mode. Subscription mode looks at the OAuth token blob
+    // instead of `anthropic.enc`. Other hosted providers behave exactly
+    // as before.
+    const authMode =
+      this.kind === "anthropic" && this.getAnthropicAuthMode
+        ? this.getAnthropicAuthMode()
+        : "api-key";
+    const hasCredential =
+      this.kind === "anthropic" && authMode === "subscription"
+        ? (this.hasStoredAnthropicSubscriptionToken?.() ?? false)
+        : this.hasStoredKey();
+    const credLabel =
+      this.kind === "anthropic" && authMode === "subscription"
+        ? `${labelFor(this.kind)} subscription token not set.`
+        : `${labelFor(this.kind)} API key not set.`;
     return {
       kind: this.kind,
       model,
-      ready: hasKey && model !== null,
-      errorMessage: !hasKey
-        ? `${labelFor(this.kind)} API key not set.`
+      ready: hasCredential && model !== null,
+      errorMessage: !hasCredential
+        ? credLabel
         : !model
           ? `No model selected for ${labelFor(this.kind)}.`
           : null,
@@ -195,16 +251,30 @@ export class AiSdkProvider extends EventEmitter implements LlmProvider {
     // Build the AI SDK LanguageModel. We construct fresh per call rather
     // than caching: keys can rotate between turns and Ollama's base URL
     // can shift if the supervisor restarts on a different port.
-    const apiKey = (await this.getApiKey()) ?? undefined;
-    if (this.kind !== "ollama" && !apiKey && this.hasStoredKey()) {
-      // The key file exists on disk (so status reports "ready") but
-      // safeStorage couldn't decrypt it. The OS keychain may have been
-      // rotated or the encrypted blob written by a different binary —
-      // either way the user has to re-save. Surface that explicitly
-      // instead of letting the SDK fail with a generic 401.
-      throw new Error(
-        `${labelFor(this.kind)} API key is unreadable. The OS keychain may have changed since it was saved. Open Whoami → API keys and re-enter the key.`,
-      );
+    const authMode =
+      this.kind === "anthropic" && this.getAnthropicAuthMode
+        ? this.getAnthropicAuthMode()
+        : "api-key";
+    let apiKey: string | undefined;
+    let anthropicSubscriptionToken: string | undefined;
+    if (this.kind === "anthropic" && authMode === "subscription") {
+      anthropicSubscriptionToken =
+        (await this.getAnthropicSubscriptionToken?.()) ?? undefined;
+      if (
+        !anthropicSubscriptionToken &&
+        this.hasStoredAnthropicSubscriptionToken?.()
+      ) {
+        throw new Error(
+          `${labelFor(this.kind)} subscription token is unreadable. The OS keychain may have changed since it was saved. Open Whoami → API keys and re-enter the token.`,
+        );
+      }
+    } else {
+      apiKey = (await this.getApiKey()) ?? undefined;
+      if (this.kind !== "ollama" && !apiKey && this.hasStoredKey()) {
+        throw new Error(
+          `${labelFor(this.kind)} API key is unreadable. The OS keychain may have changed since it was saved. Open Whoami → API keys and re-enter the key.`,
+        );
+      }
     }
     const baseURL =
       this.kind === "ollama"
@@ -215,14 +285,17 @@ export class AiSdkProvider extends EventEmitter implements LlmProvider {
     // the key reached this layer intact and which model the SDK is
     // about to talk to. Never logs the full key.
     if (this.kind !== "ollama") {
-      const k = apiKey ?? "";
+      const k = anthropicSubscriptionToken ?? apiKey ?? "";
       const masked =
         k.length > 8 ? `${k.slice(0, 4)}…${k.slice(-4)}` : `len=${k.length}`;
       const ascii = /^[\x20-\x7E]*$/.test(k);
       const hasWS = /\s/.test(k);
+      const credKind = anthropicSubscriptionToken
+        ? "oauth-bearer"
+        : "api-key";
       // eslint-disable-next-line no-console
       console.log(
-        `[${this.kind}] outgoing call → model=${status.model} key=${masked} keyLen=${k.length} ascii=${ascii} hasWhitespace=${hasWS}`,
+        `[${this.kind}] outgoing call → model=${status.model} cred=${credKind} key=${masked} keyLen=${k.length} ascii=${ascii} hasWhitespace=${hasWS}`,
       );
     }
     const model = createLLM({
@@ -230,6 +303,9 @@ export class AiSdkProvider extends EventEmitter implements LlmProvider {
       model: status.model,
       apiKey,
       baseURL,
+      ...(anthropicSubscriptionToken
+        ? { anthropicSubscriptionToken }
+        : {}),
     });
 
     const tools = req.tools ? buildToolSet(req.tools) : undefined;

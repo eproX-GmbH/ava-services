@@ -4,8 +4,8 @@ Auto-generiert von `services/desktop/scripts/generate-tools-md.mjs`.
 NICHT direkt bearbeiten — die Quelle der Wahrheit ist `services/desktop/src/main/agent/tools/*.ts`.
 Lauf via `pnpm -F @ava/desktop tools:doc` (oder automatisch via `build:typecheck`).
 
-Stand: 2026-05-11
-Anzahl Tools: 92
+Stand: 2026-05-12
+Anzahl Tools: 94
 
 ## Firmen (11)
 
@@ -487,7 +487,15 @@ _Parameter:_
 - `content: string` (required) — The fact to remember, written as a self-contained sentence. Future-you will read this without conversation context, so don't say "the company we just discussed" — name it.
 - `tags: array` — Optional short tags for grouping (e.g. "preference", "company:acme"). Lowercase, no spaces.
 
-## Einstellungen (4)
+## Einstellungen (6)
+
+### `settings_clear_anthropic_subscription_token`
+
+_Datei:_ `services/desktop/src/main/agent/tools/settings.ts`
+
+Entfernt den gespeicherten Anthropic-Subscription-OAuth-Token. Falls Subscription der aktive Anthropic-Auth-Modus war, wird auf 'api-key' zurückgeschaltet (sofern ein Api-Schlüssel hinterlegt ist) oder der aktive Provider auf Ollama gewechselt.
+
+_Parameter:_ keine.
 
 ### `settings_clear_api_key`
 
@@ -502,6 +510,14 @@ _Parameter:_ keine.
 _Datei:_ `services/desktop/src/main/agent/tools/settings.ts`
 
 Read the active LLM provider configuration plus per-provider key presence. Use this BEFORE proposing a switch so you can confirm what's currently set and which providers are usable.
+
+_Parameter:_ keine.
+
+### `settings_set_anthropic_subscription_token`
+
+_Datei:_ `services/desktop/src/main/agent/tools/settings.ts`
+
+Speichert einen Claude.ai-Subscription-OAuth-Token (vom `claude setup-token`-CLI erzeugt). Nutzt das Pro/Max-Abo des Nutzers statt Api-Credits. Der Token wird verschlüsselt im OS-Schlüsselbund abgelegt; gleichzeitig wird der Anthropic-Auth-Modus auf 'subscription' geschaltet. Niemals den Token in der Antwort wiedergeben.
 
 _Parameter:_ keine.
 

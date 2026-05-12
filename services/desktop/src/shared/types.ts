@@ -472,6 +472,23 @@ export type LlmProviderKind =
 /** Subset that requires an API key — used by the key-storage UIs. */
 export type HostedProviderKind = Exclude<LlmProviderKind, "ollama">;
 
+/**
+ * Authentication mode for the Anthropic provider.
+ *
+ *   - "api-key":      x-api-key header, classic API-Credits billing.
+ *   - "subscription": Authorization: Bearer <oauth-token>, consumes the
+ *                     user's Claude Pro/Max-Abo quota instead of API
+ *                     credits. Token is generated outside AVA via
+ *                     Anthropic's `claude setup-token` CLI. The token
+ *                     is keychain-stored separately from the API key so
+ *                     both auth modes can coexist on disk; only the one
+ *                     selected here is actually sent.
+ *
+ * Only meaningful when `kind === "anthropic"`. For all other providers
+ * this field is ignored by the runtime.
+ */
+export type AnthropicAuthMode = "api-key" | "subscription";
+
 export interface ProviderConfig {
   /** Currently active provider for new turns. */
   kind: LlmProviderKind;
@@ -481,6 +498,12 @@ export interface ProviderConfig {
    * means "use catalog recommendation".
    */
   models: Record<LlmProviderKind, string>;
+  /**
+   * Which credential AVA uses when `kind === "anthropic"`. Default
+   * "api-key" keeps existing installs unchanged. Persisted next to
+   * `kind` + `models` in `provider.json`.
+   */
+  anthropicAuthMode?: AnthropicAuthMode;
 }
 
 export interface ProviderStatusSnapshot {
@@ -495,6 +518,12 @@ export interface ProviderConfigBundle {
   status: ProviderStatusSnapshot;
   /** Per-provider key presence. ollama is always `true` (no key needed). */
   hasKey: Record<LlmProviderKind, boolean>;
+  /**
+   * Separate from `hasKey.anthropic` because the subscription OAuth
+   * token is keychain-stored in its own `.enc` blob (so both auth modes
+   * can coexist on disk). True iff `anthropic-subscription.enc` exists.
+   */
+  hasAnthropicSubscriptionToken: boolean;
   encryptionAvailable: boolean;
 }
 

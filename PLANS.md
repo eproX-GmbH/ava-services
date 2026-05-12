@@ -199,6 +199,45 @@ What Anthropic's standard doesn't enforce, we will:
 
 ---
 
+## 3. Anthropic-Subscription-Auth (A-Track)
+
+### 3.1 Why
+
+AVA-Nutzer mit aktivem Claude-Pro-/Max-/Team-/Enterprise-Abo wollen ihr Abokontingent verbrauchen statt zusätzliche Anthropic-Api-Credits kaufen zu müssen. Anthropic dokumentiert dafür `claude setup-token` als offiziellen Weg, einen ein-Jahr-gültigen OAuth-Token zu erzeugen, der per `Authorization: Bearer …` an `api.anthropic.com` geht. AVA spricht denselben Endpunkt; was sich ändert, ist das Authentifizierungs-Header-Paar.
+
+### 3.2 Design-Entscheidung — Auth-Modus statt neuer Provider-Kind
+
+Spezifikationsvorgabe war ein neuer `LLMProvider`-Wert `"anthropic-subscription"`. Während der Implementation hat sich gezeigt, dass diese Variante den Modell-Katalog (`packages/ai-provider/src/catalog.ts`), die `recommendedFor`-/`tierForModel`-/`hasVision`-Helfer und sechs Stellen mit erschöpfenden Switches (manager, store, settings-tool, FirstRunWizard, Settings-Dropdown, prompts) doppeln würde — ohne dass am Wire-Verhalten etwas Neues ginge: dieselben `claude-sonnet-*`- und `claude-haiku-*`-Modelle, derselbe Endpunkt, nur ein anderes Header-Paar. Stattdessen ist `anthropic-subscription` als **Auth-Modus des `anthropic`-Providers** implementiert (`AnthropicAuthMode = "api-key" | "subscription"` in `ProviderConfig`). Beide Credentials liegen parallel im Schlüsselbund (`anthropic.enc` vs. `anthropic-subscription.enc`); das Settings-UI zeigt zwei getrennte Karten und einen Umschalter, wenn beide hinterlegt sind. Funktional erfüllt das die Spec-Vorgaben (separate Karte, separate Validierung, separate Tools, coexistierende Credentials, „zuletzt gespeichert gewinnt") — der Unterschied ist rein interner Natur.
+
+### 3.3 Phasen
+
+- **A1 — Provider-Adapter (`anthropic-subscription`).** ✅
+  - `AnthropicAuthMode` + Token-Spalte im Store.
+  - `createLLM`-Branch in `packages/ai-provider/src/runtime.ts`: bei gesetztem `anthropicSubscriptionToken` Bearer-Fetch-Wrapper, der `x-api-key` rausreißt und `Authorization: Bearer` + `anthropic-beta: oauth-2025-04-20` setzt.
+  - `probeAnthropicSubscription` in `validate-key.ts`: probiert `GET /v1/models`, retried mit Beta-Header bei 401, akzeptiert ein „inconclusive 401" als nicht-blockierend.
+  - `LlmProviderManager.setAnthropicSubscriptionToken / clearAnthropicSubscriptionToken / setAnthropicAuthMode`.
+- **A2 — Settings-UI.** ✅
+  - Neue Karte „Claude.ai Pro/Max-Abo" unterhalb der Api-Schlüssel-Liste.
+  - Button öffnet die Anthropic-CLI-Doku im Systembrowser.
+  - „Speichern" probt, fragt bei inconclusiv Soft-Confirm, speichert.
+  - Provider-Dropdown akzeptiert Anthropic auch wenn nur der Subscription-Token vorhanden ist.
+- **A3 — Chat-Agent-Tools.** ✅
+  - `settings_set_anthropic_subscription_token` + `settings_clear_anthropic_subscription_token`.
+  - System-Prompt im „Self-Service-Einstellungen"-Block ergänzt um die Anthropic-Abo-Variante (incl. Drittapp-Caveat).
+- **A4 — Docs.** ✅
+  - `ANTHROPIC_AUTH.md` (root) deckt Wofür, Token-Erzeugung, Drittapp-Risiko, Wechsel, Lebensdauer ab.
+  - `services/desktop/README.md` ergänzt um Subscription-Bullet mit Verweis.
+  - `CHANGELOG.md` v0.1.131-Eintrag.
+- **A5 — Smoke-Test.** ✅
+  - `scripts/test-anthropic-subscription.mjs` exerziert Round-Trip + Keychain-Isolation gegen einen `electron`-Stub im CJS-Require-Cache.
+
+### 3.4 Bewusste Begrenzungen
+
+- Producer-Subprocesse (company-publication etc.) laufen weiterhin env-getrieben über `@ava/ai-provider/getLLM`. Im Subscription-Modus reicht der Desktop-Manager kein Credential durch (`getProducerLlmEnv` returnt `null` für anthropic+subscription); der Producer fällt entweder auf seine env-baked LLM zurück oder verbleibt im wait-for-config-Zustand. Das ist akzeptabel, weil A1 ausdrücklich nur den in-process Chat-Agent ans Abokontingent koppelt — eine spätere Phase könnte den Token via Header mit-shippen, sobald die Producer-Architektur einen sicheren in-process Header-Slot anbietet.
+- Anthropics OAuth-via-Browser-Flow (PKCE in eigenem Fenster) bleibt bewusst aus. Anthropic dokumentiert ihn explizit nur für Claude Code; AVA bleibt beim user-pasted-token-Workflow.
+
+---
+
 ## Cross-cutting
 
 Both workstreams above share one anchor: **the system prompt**. Adding tools (Section 1) and adding skills (Section 2) both extend it. To avoid prompt bloat:

@@ -135,6 +135,59 @@ async function probeGoogle(
   return interpretFallback(res, "Google", body);
 }
 
+/**
+ * Phase A1 — validate an Anthropic OAuth subscription token (produced
+ * by Anthropic's `claude setup-token` CLI). Same endpoint as
+ * `probeAnthropic` but the header changes from `x-api-key` to
+ * `Authorization: Bearer …`, exactly as documented at
+ * https://code.claude.com/docs/en/authentication.
+ *
+ * Anthropic's `/v1/models` endpoint historically rejects OAuth tokens
+ * with 401 unless an `anthropic-beta` opt-in header accompanies them.
+ * We try first WITHOUT the beta header (covers future endpoint
+ * relaxations) and retry once WITH it on 401 — the `oauth-2025-04-20`
+ * value is the public flag from the OAuth docs. If both fail we
+ * surface "inconclusive" rather than a hard reject so the user can
+ * still persist a legit-looking token — the first real chat turn will
+ * then either work or fail with a clearer 401.
+ */
+export async function probeAnthropicSubscription(
+  token: string,
+  signal: AbortSignal,
+): Promise<KeyValidation> {
+  const baseHeaders: Record<string, string> = {
+    authorization: `Bearer ${token}`,
+    "anthropic-version": "2023-06-01",
+  };
+  const res = await probeFetch("https://api.anthropic.com/v1/models", {
+    method: "GET",
+    headers: baseHeaders,
+    signal,
+  });
+  if (res.ok) return { ok: true };
+  if (res.status === 401 || res.status === 403) {
+    const oauthHeaders: Record<string, string> = {
+      ...baseHeaders,
+      "anthropic-beta": "oauth-2025-04-20",
+    };
+    const res2 = await probeFetch("https://api.anthropic.com/v1/models", {
+      method: "GET",
+      headers: oauthHeaders,
+      signal,
+    });
+    if (res2.ok) return { ok: true };
+    if (res2.status === 401 || res2.status === 403) {
+      return {
+        ok: false,
+        reason:
+          "Konnte den Subscription-Token nicht am Modell-Endpoint verifizieren (HTTP 401). Speichern ist trotzdem möglich; der erste Chat-Turn klärt es endgültig.",
+      };
+    }
+    return interpretFallback(res2, "Anthropic", await safeReadJson(res2));
+  }
+  return interpretFallback(res, "Anthropic", await safeReadJson(res));
+}
+
 // Mistral: `GET /v1/models`, Bearer auth, identical contract to OpenAI's.
 async function probeMistral(
   apiKey: string,
