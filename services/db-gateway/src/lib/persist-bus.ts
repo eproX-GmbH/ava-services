@@ -1129,6 +1129,14 @@ const applyCompanyPublication: ApplyFn = async (pool, event, log) => {
         // string and we accept it; if it's not a valid enum value
         // the INSERT throws and the per-publication catch falls
         // through. Fields the LLM omits get DB defaults.
+        // The Topic Postgres enum was created with UPPERCASE values
+        // (NOTHING/ECONOMIC_STATE/FORECAST/ALL) but the producer +
+        // LLM schema emit lowercase variants. Normalize here so the
+        // INSERT doesn't throw `invalid input value for enum "Topic"`
+        // and roll back the whole publication (which silently swallowed
+        // KPIs + Lagebericht on every persist run since v0.1.0).
+        const normalisedTopic = String(pub.stateOfAffairs.topic ?? "nothing")
+          .toUpperCase();
         const aggRes = await client.query<{ id: number }>(
           `INSERT INTO "StateOfAffairsAggregate"
              ("isRelevant", topic, bullets, guidance, "risksOpportunities",
@@ -1137,7 +1145,7 @@ const applyCompanyPublication: ApplyFn = async (pool, event, log) => {
            RETURNING id`,
           [
             pub.stateOfAffairs.isRelevant ?? false,
-            pub.stateOfAffairs.topic ?? "NOTHING",
+            normalisedTopic,
             pub.stateOfAffairs.bullets ?? [],
             pub.stateOfAffairs.guidance ?? [],
             pub.stateOfAffairs.risksOpportunities ?? [],
@@ -1426,6 +1434,9 @@ const applyCompanyEvaluation: ApplyFn = async (pool, event, log) => {
         [companyId],
       );
       for (const soa of result.stateOfAffairs) {
+        // Topic enum is uppercase in Postgres but producer emits
+        // lowercase — same fix as the per-publication-aggregate path.
+        const normalisedTopic = String(soa.topic ?? "nothing").toUpperCase();
         const aggRes = await client.query<{ id: number }>(
           `INSERT INTO "StateOfAffairsAggregate"
              ("companyId", "isRelevant", topic, year,
@@ -1436,7 +1447,7 @@ const applyCompanyEvaluation: ApplyFn = async (pool, event, log) => {
           [
             companyId,
             soa.isRelevant,
-            soa.topic,
+            normalisedTopic,
             soa.year,
             soa.bullets,
             soa.guidance,
