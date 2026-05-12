@@ -5,9 +5,15 @@
 // process lifetime. Kept small intentionally — no SQL templating or
 // anything fancy; consumers run their own raw queries.
 //
-// Each pool is sized small (max 4) to stay under the cluster's
-// pgbouncer limit (~50 today, ~5 producers + gateway audit
-// + ~headroom for parallel writes).
+// Each pool is sized small (max 2) to stay under Postgres'
+// max_connections=100 cap. Math: 2 gateway instances × (6 producer
+// pools + 1 gateway pool) × 2 = 28 connections worst case, leaves
+// ~60 slots for the producer apps themselves, master-data, pgbouncer
+// internal, and SUPERUSER reservations.
+//
+// Idle connections are reaped aggressively (5s) so a single
+// burst from the retry-ticker doesn't keep slots warm for half a
+// minute when the chat tool surfaces also need them.
 
 import pg from "pg";
 import { logger } from "./logger";
@@ -26,8 +32,8 @@ export function getProducerPool(producer: ProducerName): pg.Pool {
   }
   pool = new pg.Pool({
     connectionString: url,
-    max: 4,
-    idleTimeoutMillis: 30_000,
+    max: 2,
+    idleTimeoutMillis: 5_000,
   });
   pool.on("error", (err) =>
     logger.error({ err, producer }, "pg pool error"),
@@ -49,8 +55,8 @@ export function getGatewayPool(): pg.Pool {
   const env = loadEnv();
   gatewayPool = new pg.Pool({
     connectionString: env.DATABASE_URL,
-    max: 4,
-    idleTimeoutMillis: 30_000,
+    max: 2,
+    idleTimeoutMillis: 5_000,
   });
   gatewayPool.on("error", (err) =>
     logger.error({ err, db: "gateway-audit" }, "pg pool error"),
