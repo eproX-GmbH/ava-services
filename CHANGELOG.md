@@ -7,6 +7,26 @@ The repo uses one rolling tag per desktop release (`v<major>.<minor>.<patch>`)
 on `main`. Submodules cut their own feature branches and are pinned via the
 desktop bundle; `pnpm fetch:producers` re-vendors them into the .dmg.
 
+## v0.1.144 — 2026-05-12
+
+- **Producer-Fehlermeldung präziser: Subscription-Auth-Blocker
+  benennen.** Wer in Settings → Modelle auf Anthropic-Subscription-
+  OAuth steht (v0.1.131+), sah unter *System → Lokale Producer-Dienste*
+  für alle 6 Producer eine generische Meldung „nicht angemeldet oder
+  kein LLM-Provider konfiguriert" — irreführend, weil der Nutzer ja
+  angemeldet ist und der Chat funktioniert. Tatsächliche Ursache: die
+  vendored Producer-Bundles enthalten einen Snapshot von
+  `@ava/ai-provider`, der nur den klassischen `x-api-key`-Pfad kennt;
+  OAuth-Token können nicht im Producer feuern, ohne dass das Bundle
+  neu vendoriert wird. Bis dieser größere Refactor durch ist, zeigt
+  die Status-Zeile jetzt direkt: „Anthropic-Subscription-Login wird
+  von den lokalen Producern noch nicht unterstützt. Stelle in
+  Einstellungen → Modelle → LLM-Provider entweder auf einen
+  API-Schlüssel oder auf Ollama um. Die Subscription-OAuth bleibt
+  für den Chat-Agenten aktiv." Neue Manager-Methode
+  `getProducerLlmBlockerReason()` + neue Supervisor-Option
+  `llmConfigBlockerReason`.
+
 ## v0.1.143 — 2026-05-12
 
 - **Skill-Auto-Activation: weniger trigger-happy bei generischen

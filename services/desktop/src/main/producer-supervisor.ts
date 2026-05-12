@@ -99,6 +99,13 @@ export interface ProducerSupervisorOptions {
     ollamaUrl?: string;
   } | null>;
   /**
+   * When `llmConfig()` returns null, this returns a German one-liner
+   * naming the specific blocker (e.g. "Subscription-Login wird vom
+   * lokalen Producer noch nicht unterstützt — wechsle auf API-Key").
+   * Optional — falls back to the generic message if unset.
+   */
+  llmConfigBlockerReason?: () => Promise<string | null>;
+  /**
    * Provider for the gateway Bearer token the producer subprocess
    * uses to call gateway-mediated endpoints (today: /v1/proxy/* —
    * operator-paid valueserp for website + company-contact). Same
@@ -194,13 +201,17 @@ export class ProducerSupervisor extends EventEmitter {
     const env = await this.buildEnv();
     if (!env) {
       // Either AMQP URL, DATABASE URL, or LLM provider config is
-      // missing — user not signed in or no LLM key. Skip producer
-      // spawn entirely; main/index.ts restarts the supervisor when
-      // auth status changes.
-      this.setState(
-        "error",
-        `producer ${this.opts.config.name}: nicht angemeldet oder kein LLM-Provider konfiguriert, Producer wartet.`,
-      );
+      // missing — user not signed in, no LLM key, or the user is on
+      // an auth-mode the local producer doesn't yet support (e.g.
+      // Anthropic-Subscription-OAuth). Skip producer spawn entirely;
+      // main/index.ts restarts the supervisor when auth/config flips.
+      const specific = this.opts.llmConfigBlockerReason
+        ? await this.opts.llmConfigBlockerReason().catch(() => null)
+        : null;
+      const message = specific
+        ? `producer ${this.opts.config.name}: ${specific}`
+        : `producer ${this.opts.config.name}: nicht angemeldet oder kein LLM-Provider konfiguriert, Producer wartet.`;
+      this.setState("error", message);
       return;
     }
 

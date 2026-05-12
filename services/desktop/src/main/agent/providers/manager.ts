@@ -489,8 +489,12 @@ export class LlmProviderManager extends EventEmitter {
       return env;
     }
     // Phase A1 — see `getActiveUserLlm`: subscription mode isn't
-    // plumbed through the producer env yet. Return null so the
-    // supervisor treats the producer as "wait for config".
+    // plumbed through the producer env yet. The vendored producer
+    // bundles have a stale `@ava/ai-provider` snapshot that only
+    // knows the x-api-key path; an OAuth bearer token can't masquerade
+    // as an API key. Return null + surface a precise reason via
+    // `getProducerLlmBlockerReason()` below so the supervisor's
+    // error state tells the user what to do.
     if (
       kind === "anthropic" &&
       (cfg.anthropicAuthMode ?? "api-key") === "subscription"
@@ -504,6 +508,36 @@ export class LlmProviderManager extends EventEmitter {
     else if (kind === "google") env.googleApiKey = key;
     else if (kind === "mistral") env.mistralApiKey = key;
     return env;
+  }
+
+  /**
+   * If `getProducerLlmEnv()` returns null, this returns a German
+   * one-liner explaining why so the producer-supervisor can show a
+   * useful status to the user (instead of the generic "nicht
+   * angemeldet"-Hinweis that pre-v0.1.144 displayed).
+   *
+   * Returns null when env IS available (no blocker).
+   */
+  async getProducerLlmBlockerReason(): Promise<string | null> {
+    const cfg = this.store.getConfig();
+    const kind = cfg.kind;
+    if (kind === "ollama") return null;
+    if (
+      kind === "anthropic" &&
+      (cfg.anthropicAuthMode ?? "api-key") === "subscription"
+    ) {
+      return (
+        "Anthropic-Subscription-Login wird von den lokalen Producern noch nicht unterstützt. " +
+        "Stelle in Einstellungen → Modelle → LLM-Provider entweder auf einen API-Schlüssel um " +
+        "(Anthropic, OpenAI, Google, Mistral) oder auf Ollama. Die Subscription-OAuth bleibt für " +
+        "den Chat-Agenten aktiv."
+      );
+    }
+    const key = await this.store.getKey(kind as HostedProviderKind);
+    if (!key) {
+      return `Kein API-Schlüssel für „${kind}" hinterlegt. Schlüssel in Einstellungen → Modelle → LLM-Provider eintragen oder auf Ollama wechseln.`;
+    }
+    return null;
   }
 
   // ---- Internal -------------------------------------------------------------

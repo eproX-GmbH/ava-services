@@ -409,6 +409,11 @@ function buildProducer(
     amqpUrl: fetchAmqpUrl,
     jwksUri: `${APP_CONFIG.authIssuer}/protocol/openid-connect/certs`,
     llmConfig: () => providers.getProducerLlmEnv(),
+    // v0.1.144 — surface a precise reason (e.g. "Subscription-OAuth
+    // wird vom lokalen Producer noch nicht unterstützt — wechsle …")
+    // instead of the generic "nicht angemeldet"-Hinweis when llmConfig
+    // returns null.
+    llmConfigBlockerReason: () => providers.getProducerLlmBlockerReason(),
     // Bearer for producer→gateway calls (e.g. valueserp proxy).
     // Captured at spawn; see ProducerSupervisorOptions.getAccessToken.
     getAccessToken: () => auth.getAccessToken(),
