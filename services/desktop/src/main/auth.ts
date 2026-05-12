@@ -94,6 +94,14 @@ export class Auth extends EventEmitter {
   private discovery: DiscoveryDoc | null = null;
   private refreshTimer: NodeJS.Timeout | null = null;
   private inFlight: Promise<void> | null = null;
+  // v0.1.151 — id_token kept in-process for RP-Initiated Logout
+  // (OIDC 1.0 §5). Passed back to Keycloak's end_session_endpoint as
+  // `id_token_hint` so it (a) skips the "are you sure?" confirmation
+  // page and (b) actually terminates the realm SSO session — the only
+  // way to make the next sign-in show the account selector instead of
+  // silently re-using the cached identity. Not exposed on AuthStatus
+  // because no renderer code legitimately needs it.
+  private idToken: string | null = null;
 
   constructor(
     private readonly issuer: string,
@@ -134,11 +142,66 @@ export class Auth extends EventEmitter {
   async signOut(): Promise<void> {
     if (this.refreshTimer) clearTimeout(this.refreshTimer);
     this.refreshTimer = null;
+
+    // v0.1.151 — capture before wipe. The id_token is the only thing
+    // Keycloak accepts as proof-of-prior-session on the logout endpoint
+    // (the access token isn't sufficient — it represents authorization,
+    // not authentication). Without `id_token_hint` Keycloak prompts the
+    // user "are you sure you want to log out?" on logout, which breaks
+    // the unattended-logout UX.
+    const idTokenHint = this.idToken;
+    // Discovery may or may not be cached at this point — load it before
+    // we tear down state so the end_session_endpoint URL is available.
+    let endSessionEndpoint: string | undefined;
+    try {
+      const disc = await this.ensureDiscovery();
+      endSessionEndpoint = disc.end_session_endpoint;
+    } catch (err) {
+      // Discovery failure here is non-fatal — we still wipe local state
+      // below. The remote session will time out on its own.
+      console.warn(
+        "auth: end_session discovery failed:",
+        (err as Error).message,
+      );
+    }
+
     await this.clearRefreshToken();
+    this.idToken = null;
     this.setStatus(SIGNED_OUT);
-    // We deliberately don't navigate to end_session_endpoint — Keycloak
-    // sessions in the system browser are intentionally separate from app
-    // state. The user can clear them from the browser if they care.
+
+    // v0.1.151 — RP-Initiated Logout (OIDC 1.0 §5). Without this the
+    // realm SSO cookie in the system browser survives sign-out, and
+    // the NEXT sign-in silently re-uses the same identity (Keycloak
+    // sees the cookie, skips the login screen, hands back a new code
+    // for the SAME `sub`). That blocks account-switching, which is
+    // exactly what the user reported.
+    //
+    // We deliberately do NOT pass `post_logout_redirect_uri`: that
+    // would require an extra entry in the Keycloak client config
+    // (`Valid post logout redirect URIs`), and we don't have anywhere
+    // useful to redirect to from a native app anyway. Without it
+    // Keycloak shows its built-in "You are logged out" page in the
+    // browser, which is the right final state — the next time the
+    // user clicks sign-in, the app pops a fresh browser tab and
+    // Keycloak shows the login form because the SSO cookie is gone.
+    if (endSessionEndpoint) {
+      const params = new URLSearchParams({
+        client_id: this.clientId,
+      });
+      if (idTokenHint) params.set("id_token_hint", idTokenHint);
+      const url = `${endSessionEndpoint}?${params.toString()}`;
+      try {
+        await shell.openExternal(url);
+      } catch (err) {
+        // openExternal failure is non-fatal: local state is already
+        // wiped, so the worst case is a stale realm-side cookie that
+        // the user can clear from the browser if they care.
+        console.warn(
+          "auth: openExternal(end_session) failed:",
+          (err as Error).message,
+        );
+      }
+    }
   }
 
   /** Returns a token guaranteed-valid for at least REFRESH_LEAD_MS. The
@@ -245,6 +308,13 @@ export class Auth extends EventEmitter {
 
   private async applyTokens(tokens: TokenResponse): Promise<void> {
     const expiresAt = Date.now() + tokens.expires_in * 1000;
+    // v0.1.151 — cache the id_token for the eventual RP-initiated
+    // logout. Keycloak returns a new id_token on every refresh, so
+    // overwriting here keeps the cached hint fresh; on the rare path
+    // where a refresh response omits it (some IdPs only mint id_tokens
+    // on the initial auth_code exchange), keep the previously-stored
+    // value rather than wiping it.
+    if (tokens.id_token) this.idToken = tokens.id_token;
     const claims = decodeJwtPayload(tokens.access_token);
     const tenantId = (claims["tenant_id"] as string | undefined) ?? null;
     const actorId = (claims["sub"] as string | undefined) ?? null;
