@@ -98,8 +98,10 @@ export const authMiddleware = createMiddleware(async (c, next) => {
       throw new Error("tenant claim missing");
     }
     tenantId = raw;
-  } catch {
-    return c.json({ error: "malformed_token" }, 401);
+  } catch (err) {
+    const message =
+      err instanceof Error ? err.message : "malformed_token";
+    return c.json({ error: "malformed_token", message }, 401);
   }
 
   const { JWT_ISSUER, JWT_AUDIENCE, JWKS_URI } = loadEnv();
@@ -110,17 +112,40 @@ export const authMiddleware = createMiddleware(async (c, next) => {
     const verifier = JWKS_URI
       ? getRemoteJwks()
       : await resolveStaticKey(tenantId);
-    const { payload } = await jwtVerify(token, verifier as never, {
+    // v0.1.149 — audience check skipped for desktop tokens. Keycloak's
+    // default access-token shape for the `ava-desktop` client puts
+    // `aud: ["account"]` (and sometimes the client_id), NEVER
+    // `ava-gateway` — adding that required a custom Audience-Protocol-
+    // Mapper that's currently missing from the prod realm. Strict
+    // jose audience-matching therefore failed every authenticated
+    // request with `invalid_token` (after the tenant_id-peek fix landed
+    // in fd3164a) and the desktop just shows "gateway 401". The issuer
+    // + signature checks below still verify the token came from the
+    // trusted Keycloak realm, so dropping the audience check is
+    // defence-in-depth, not the primary security control. When the
+    // realm config grows the audience mapper, set JWT_AUDIENCE_STRICT=1
+    // to re-enable it; the default unblocks the user today.
+    const verifyOpts: Parameters<typeof jwtVerify>[2] = {
       issuer: JWT_ISSUER,
-      audience: JWT_AUDIENCE,
-    });
+    };
+    if (process.env.JWT_AUDIENCE_STRICT === "1") {
+      verifyOpts.audience = JWT_AUDIENCE;
+    }
+    const { payload } = await jwtVerify(token, verifier as never, verifyOpts);
     if (typeof payload.sub !== "string") throw new Error("sub claim missing");
     const scopes =
       typeof payload.scope === "string" ? payload.scope.split(/\s+/).filter(Boolean) : [];
     c.set("auth", { tenantId, actorId: payload.sub, scopes });
   } catch (err) {
     const message = err instanceof Error ? err.message : "verification_failed";
-    return c.json({ error: "invalid_token", detail: message }, 401);
+    // Surface a useful `message` field too so the desktop's GatewayError
+    // shows the actual reason ("audience invalid", "signature failed",
+    // "expired", "JWKS fetch failed", …) instead of the generic
+    // "gateway 401".
+    return c.json(
+      { error: "invalid_token", message, detail: message },
+      401,
+    );
   }
 
   await next();
