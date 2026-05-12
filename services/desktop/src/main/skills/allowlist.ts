@@ -103,6 +103,24 @@ const STOPWORDS = new Set([
   "aktiviere",
   "schreibt",
   "bittet",
+  // v0.1.143 — generic B2B-research terms that ALL skills share in
+  // their descriptions. Allowing them as keywords caused
+  // `wettbewerber-uebersicht` to auto-activate on the generic prompt
+  // "generelle Übersicht über meine Firmen" (übersicht + firmen = 2
+  // hits → threshold met), which then blocked transactions_list via
+  // the skill's allowed-tools list. Removing them keeps the skill's
+  // discriminating terms ("wettbewerber", "konkurrenz", "vergleich",
+  // "marktumfeld", "mitbewerber" …) doing the actual matching.
+  "übersicht",
+  "firma",
+  "firmen",
+  "unternehmen",
+  "unternehmens",
+  "company",
+  "companies",
+  "anfragen",
+  "anfrage",
+  "liste",
 ]);
 
 function keywordsOf(description: string): string[] {

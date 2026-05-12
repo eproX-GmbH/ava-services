@@ -13,7 +13,7 @@ allowed-tools:
   - company_crm_summary
   - company_publications
 requires-user-confirm: true
-disable-model-invocation: false
+disable-model-invocation: true
 user-invocable: true
 arguments:
   - name: company-id

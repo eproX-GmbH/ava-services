@@ -7,6 +7,31 @@ The repo uses one rolling tag per desktop release (`v<major>.<minor>.<patch>`)
 on `main`. Submodules cut their own feature branches and are pinned via the
 desktop bundle; `pnpm fetch:producers` re-vendors them into the .dmg.
 
+## v0.1.143 — 2026-05-12
+
+- **Skill-Auto-Activation: weniger trigger-happy bei generischen
+  B2B-Fragen.** Eine harmlose Anfrage wie „Gib mir eine generelle
+  Übersicht über meine Firmen" hat den `wettbewerber-uebersicht`-
+  Starter-Skill aktiviert (über die Tokens „übersicht" + „firmen"),
+  was dann den allowed-tools-Filter griffen ließ und z. B.
+  `transactions_list` blockierte. Zwei zusammenhängende Fixes:
+  - **Stopwords-Liste erweitert** in `services/desktop/src/main/
+    skills/allowlist.ts`: `übersicht`, `firma`, `firmen`,
+    `unternehmen`, `unternehmens`, `company`, `companies`,
+    `anfragen`, `anfrage`, `liste` zählen jetzt nicht mehr als
+    Skill-Matching-Keywords. Diskriminierende Begriffe
+    („wettbewerber", „konkurrenz", „vergleich", „marktumfeld",
+    „mitbewerber" …) bleiben unverändert wirksam.
+  - **Starter-Skills** (`outreach-draft-de`, `qualifying-fragebogen`,
+    `wettbewerber-uebersicht`): `disable-model-invocation: true` als
+    Default. Sie tauchen weiterhin in der Slash-Palette auf
+    (`/wettbewerber-uebersicht …`), feuern aber nicht mehr per
+    Auto-Aktivierung. Greift nur für FRISCHE Installationen — bereits
+    vorhandene Nutzer-Kopien bleiben unverändert. Vorhandene
+    Installationen heilt die erweiterte Stopwords-Liste; alternativ
+    in *Einstellungen → Skills → Bearbeiten* den Flag „Nur explizit
+    aufrufen" setzen.
+
 ## v0.1.142 — 2026-05-12
 
 - **Anthropic-OAuth-Chat: Claude-Code-System-Prompt-Marker einfügen.**
