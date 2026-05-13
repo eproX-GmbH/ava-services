@@ -117,20 +117,61 @@ export function FirstRunWizard({
     };
   }, []);
 
+  // v0.1.169 — moved up so the Ollama-error escape branch (which now
+  // renders the chooser) can also surface it without forward-ref errors.
+  const memoryWarning =
+    memoryProbe && !memoryProbe.writable ? (
+      <p className="warn">
+        Konversationsspeicher deaktiviert: konnte nicht in{" "}
+        <code>{memoryProbe.path}</code> schreiben
+        {memoryProbe.reason ? <> ({memoryProbe.reason})</> : null}. Der Agent
+        funktioniert weiterhin, Verläufe überleben aber keinen Neustart.
+      </p>
+    ) : null;
+
   if (status.state === "error") {
+    // v0.1.169 — Escape-hatch via ProviderChooserGrid. Pre-v0.1.169
+    // this branch showed a dead-end "install again" screen with no
+    // way out, locking Windows users whose bundled Ollama binary
+    // wasn't extractable into a permanent modal. Now: same diagnostic
+    // info at the top, then the standard three-card chooser so the
+    // user can route AVA through a hosted LLM (BYO-Key or Claude Pro
+    // OAuth) and proceed without ever fixing Ollama. The chooser's
+    // `onApiKeyDone` / `onSubscriptionDone` callbacks set
+    // `usingHostedLlm`, which trips App.tsx's escape clause and lets
+    // the app boot normally.
+    const onCloudDone = async () => {
+      const next = await window.api.agent.getProviderConfig();
+      setConfig(next);
+      onProviderConfigChanged?.(next);
+      onPathChosen?.();
+    };
     return (
       <div className="first-run">
-        <div className="first-run__card">
+        <div className="first-run__card first-run__card--wide">
           <h1 className="first-run__title">
             <span className="ct-gradient-text">Lokale Modell-Laufzeit</span> nicht verfügbar
           </h1>
           <p className="bad">{status.errorMessage ?? "Unbekannter Fehler"}</p>
           <p className="muted">
-            Installiere die App neu oder setze <code>OLLAMA_BIN</code> auf
-            eine funktionierende Ollama-Binary, falls du eine Entwickler-
-            Version verwendest. Die App bleibt deaktiviert, bis das behoben
-            ist.
+            Kein Problem — AVA läuft auch ohne lokale Modell-Laufzeit.
+            Wähle unten einen Hosted-Anbieter (eigener API-Key oder
+            Claude-Pro-/Max-Abo) und du kannst direkt loslegen. Die
+            lokale Laufzeit kannst du jederzeit später unter
+            Einstellungen → Anbieter nachrüsten oder reparieren.
           </p>
+          {memoryWarning}
+          <ProviderChooserGrid
+            // Local path stays disabled — the runtime that backs it
+            // is exactly what's broken. The chooser's helper hides
+            // the "local" card when `disableLocal` is set.
+            onPickLocal={() => undefined}
+            disableLocal
+            onApiKeyDone={onCloudDone}
+            onSubscriptionDone={onCloudDone}
+            onBack={() => undefined}
+            hideBack
+          />
         </div>
       </div>
     );
@@ -198,15 +239,9 @@ export function FirstRunWizard({
   // Memory-dir probe failure is non-blocking — we still let the user
   // download models and use the app. We just flag that transcripts won't
   // persist so they aren't surprised after a restart.
-  const memoryWarning =
-    memoryProbe && !memoryProbe.writable ? (
-      <p className="warn">
-        Konversationsspeicher deaktiviert: konnte nicht in{" "}
-        <code>{memoryProbe.path}</code> schreiben
-        {memoryProbe.reason ? <> ({memoryProbe.reason})</> : null}. Der Agent
-        funktioniert weiterhin, Verläufe überleben aber keinen Neustart.
-      </p>
-    ) : null;
+  // v0.1.169 — declared above the error-branch return so the
+  // escape-hatch chooser can also render this warning if it applies.
+  // (Already moved further up — see top of function.)
 
   if (view === "chooser") {
     const onCloudDone = async () => {
@@ -393,11 +428,21 @@ function ProviderChooserGrid({
   onApiKeyDone,
   onSubscriptionDone,
   onBack,
+  /** v0.1.169 — hide the "Local" card entirely. Used by the
+   *  Ollama-error escape-hatch path where local is exactly what's
+   *  broken; showing it would invite the user to pick the same
+   *  dead-end again. */
+  disableLocal = false,
+  /** v0.1.169 — hide the "back" affordance when there's nowhere to
+   *  go back to (e.g. error-state landing, no prior view). */
+  hideBack = false,
 }: {
   onPickLocal: () => void;
   onApiKeyDone: () => Promise<void> | void;
   onSubscriptionDone: () => Promise<void> | void;
   onBack: () => void;
+  disableLocal?: boolean;
+  hideBack?: boolean;
 }) {
   const [active, setActive] = useState<ChooserSubForm>(null);
 
@@ -416,6 +461,7 @@ function ProviderChooserGrid({
   return (
     <>
       <div className="first-run__chooser-grid">
+        {!disableLocal && (
         <div
           className={`first-run__option-card${active === null ? "" : ""}`}
         >
@@ -452,6 +498,7 @@ function ProviderChooserGrid({
             Modelle herunterladen
           </button>
         </div>
+        )}
 
         <div className="first-run__option-card">
           <div className="first-run__option-glyph" aria-hidden="true">
@@ -554,7 +601,7 @@ function ProviderChooserGrid({
         </div>
       )}
 
-      {!active && (
+      {!active && !hideBack && (
         <div className="first-run__actions">
           <button type="button" className="link" onClick={onBack}>
             Zurück

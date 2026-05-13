@@ -169,10 +169,20 @@ export function App({ children }: PropsWithChildren) {
   // `state==="starting"` cases stay hard-modal because there's literally
   // nothing useful the user can do in the routed app while the runtime
   // is missing.
+  //
+  // v0.1.169 — `!usingHostedLlm` escape clause. Without it, a Windows
+  // user who hit "Ollama binary not found" on first launch was stuck
+  // in the wizard forever — even after entering an API key in the
+  // wizard's chooser, the supervisor stayed in "error" and the gate
+  // re-fired. Now: if the user has a working hosted LLM configured,
+  // the broken local runtime is irrelevant and the app boots normally.
+  // The Whoami / Settings panel still surfaces the supervisor error
+  // for users who want to fix it later.
   const supervisorHardBlock =
-    ollamaStatus.state === "error" ||
-    ollamaStatus.state === "starting" ||
-    ollamaStatus.state === "idle";
+    !usingHostedLlm &&
+    (ollamaStatus.state === "error" ||
+      ollamaStatus.state === "starting" ||
+      ollamaStatus.state === "idle");
   // Show the wizard whenever there's still a *blocking* missing model and
   // the user hasn't yet acknowledged the choice screen this session.
   // We deliberately don't gate on `!usingHostedLlm` here — a returning
