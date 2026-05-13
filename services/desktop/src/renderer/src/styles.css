@@ -2341,6 +2341,14 @@ code, pre { font-family: var(--font-mono); font-size: 12px; }
   margin-left: 0.25rem;
   white-space: nowrap;
 }
+/* v0.1.168 — feature-Subtext spans the full row, lands on the next
+ * grid row by occupying all four columns. Kept muted-small so it
+ * doesn't compete with the input. */
+.api-key-row .api-key-features {
+  grid-column: 1 / -1;
+  margin: 4px 0 0;
+  line-height: 1.4;
+}
 
 /* ---- Meldungen / `/alerts` (Phase 8.f1) --------------------------------- */
 .alerts {

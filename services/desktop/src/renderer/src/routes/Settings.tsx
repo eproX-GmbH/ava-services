@@ -63,6 +63,35 @@ const PROVIDER_LABEL: Record<LlmProviderKind, string> = {
   mistral: "Mistral",
 };
 
+/**
+ * v0.1.168 — Was jeder Anbieter konkret in AVA freischaltet. Wird als
+ * Sub-Text unter der API-Key-Zeile gerendert, damit Nutzer beim
+ * Konfigurieren sehen, welche Producer-Features auf welchen Schlüssel
+ * angewiesen sind. OpenAI bekommt einen längeren Hinweis weil das
+ * `website`-Producer Producer-Features wirklich exklusiv über
+ * OpenAI's Responses-API laufen lässt (Deep Research, Google-Maps-
+ * Entity-Resolution); ohne den Schlüssel schaltet sich der Producer
+ * nicht aus — er überspringt nur die OpenAI-only-Calls (seit v0.1.167).
+ */
+const PROVIDER_FEATURES: Record<HostedProviderKind, string> = {
+  openai:
+    "Schaltet im website-Producer Deep Research (o4-mini-deep-research) " +
+    "sowie Google-Maps-Entity-Resolution + Quellen-Discovery (gpt-5-mini) " +
+    "frei. Ohne Schlüssel bootet der Producer trotzdem, aber diese " +
+    "spezifischen Calls werden zur Laufzeit übersprungen.",
+  anthropic:
+    "Wird als Chat-LLM und in allen LLM-getriebenen Producer-Stages " +
+    "(Profile, Contact, Evaluation, Publications) verwendet. Mit " +
+    "Claude-Pro/Max-Abo via OAuth: keine API-Kosten, dafür Quota " +
+    "des Abos.",
+  google:
+    "Wird als Chat-LLM und in allen LLM-getriebenen Producer-Stages " +
+    "verwendet (z. B. Gemini 2.5 Pro für anspruchsvolle Recherche).",
+  mistral:
+    "Wird als Chat-LLM und in allen LLM-getriebenen Producer-Stages " +
+    "verwendet (z. B. Mistral Large 3 für deutschsprachige Inhalte).",
+};
+
 const HOSTED_KINDS: HostedProviderKind[] = [
   "openai",
   "anthropic",
@@ -2220,6 +2249,10 @@ function ApiKeyRow({ kind, hasKey }: ApiKeyRowProps) {
       >
         Wo bekomme ich einen Schlüssel?
       </a>
+      {/* v0.1.168 — was dieser Schlüssel in AVA konkret freischaltet. */}
+      <p className="muted small api-key-features">
+        {PROVIDER_FEATURES[kind]}
+      </p>
     </div>
   );
 }
