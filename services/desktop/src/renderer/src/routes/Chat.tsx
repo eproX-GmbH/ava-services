@@ -1438,7 +1438,7 @@ export function Chat() {
               );
             })}
             {thinking && <ThinkingRow />}
-            {error && <div className="chat-error">{error}</div>}
+            {error && <ChatErrorBanner message={error} onCleared={() => setError(null)} />}
           </div>
           {composer}
         </>
@@ -2320,6 +2320,91 @@ function ThinkingRow() {
           <span className="activity-thinking">denkt nach…</span>
         </div>
       </div>
+    </div>
+  );
+}
+
+// v0.1.165 — wrapper around the chat error line. When the message
+// matches a known Anthropic-subscription-auth failure ("Invalid
+// authentication credentials", 401 on api.anthropic.com), surface a
+// dedicated banner with a "Anthropic neu autorisieren"-button that
+// triggers the existing OAuth flow. The user asked for the auth
+// window to open automatically on 401; we open it on a single click
+// rather than fully unattended so an unexpected expiry mid-typing
+// doesn't yank focus to the browser without warning.
+function isAnthropicAuthError(message: string): boolean {
+  // Phrases Anthropic's API returns + AI-SDK error shapes that wrap
+  // them. We match conservatively — wrong-positives just show a
+  // re-auth button that does nothing useful, which is far less
+  // painful than missing a real 401.
+  return (
+    /Invalid authentication credentials/i.test(message) ||
+    /authentication.*failed/i.test(message) ||
+    /\b401\b.*anthropic/i.test(message) ||
+    /anthropic.*\b401\b/i.test(message) ||
+    /unauthorized.*anthropic/i.test(message)
+  );
+}
+
+function ChatErrorBanner({
+  message,
+  onCleared,
+}: {
+  message: string;
+  onCleared: () => void;
+}) {
+  const isAuth = isAnthropicAuthError(message);
+  const [busy, setBusy] = useState(false);
+  const [reauthError, setReauthError] = useState<string | null>(null);
+
+  if (!isAuth) {
+    return <div className="chat-error">{message}</div>;
+  }
+
+  const onReauth = async () => {
+    setBusy(true);
+    setReauthError(null);
+    try {
+      const result = await window.api.agent.connectAnthropicSubscription();
+      if (result.ok) {
+        onCleared();
+      } else {
+        setReauthError(result.error ?? "Autorisierung fehlgeschlagen.");
+      }
+    } catch (err) {
+      setReauthError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="chat-error chat-error--auth">
+      <div className="chat-error__title">
+        Anthropic-Sitzung abgelaufen
+      </div>
+      <div className="chat-error__body">
+        Dein Anthropic-Subscription-Token ist nicht mehr gültig. Klick
+        auf den Button, dann öffnet sich Claude im Browser zur erneuten
+        Autorisierung. Nach erfolgreicher Anmeldung kannst du deine
+        Frage einfach noch einmal abschicken.
+      </div>
+      <div className="chat-error__actions">
+        <button
+          type="button"
+          className="primary"
+          onClick={() => void onReauth()}
+          disabled={busy}
+        >
+          {busy ? "Browser geöffnet…" : "Anthropic neu autorisieren"}
+        </button>
+        <button type="button" className="link" onClick={onCleared} disabled={busy}>
+          Hinweis schließen
+        </button>
+      </div>
+      {reauthError && (
+        <div className="chat-error__detail">Fehler: {reauthError}</div>
+      )}
     </div>
   );
 }

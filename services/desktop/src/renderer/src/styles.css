@@ -1907,6 +1907,15 @@ code, pre { font-family: var(--font-mono); font-size: 12px; }
   color: #b91c1c; font-size: 13px;
   align-self: stretch;
 }
+/* v0.1.165 — structured auth-error banner (Anthropic subscription expired). */
+.chat-error--auth {
+  display: flex; flex-direction: column; gap: 8px;
+  padding: 12px 14px;
+}
+.chat-error__title { font-weight: 600; }
+.chat-error__body { color: #7f1d1d; }
+.chat-error__actions { display: flex; gap: 8px; align-items: center; }
+.chat-error__detail { color: #7f1d1d; font-size: 12px; }
 
 /* Composer pill — the centerpiece. */
 .chat-composer-wrap {
