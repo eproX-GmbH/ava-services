@@ -543,6 +543,19 @@ export function ProducersSection() {
                 {p.errorMessage && (
                   <div className="error small">{p.errorMessage}</div>
                 )}
+                {/* v0.1.170 — soft warnings about reduced capabilities
+                    even though the producer is `ready`. E.g. website
+                    booted without an OpenAI-Key → Deep Research /
+                    Google-Maps-Entity-Resolution unavailable. */}
+                {p.featureWarnings && p.featureWarnings.length > 0 && (
+                  <div className="producer-feature-warnings">
+                    {p.featureWarnings.map((w) => (
+                      <span key={w} className="producer-feature-warning">
+                        ⚠ {w}
+                      </span>
+                    ))}
+                  </div>
+                )}
               </li>
             );
           })}

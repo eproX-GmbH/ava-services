@@ -811,9 +811,36 @@ export function buildImportTools(deps: {
         companyName: yup.string().optional(),
       })
       .noUnknown(true),
-    preview: (r: { ok: boolean; stage: string; dispatched: { ok: boolean }[] }) => {
+    preview: (r: {
+      ok: boolean;
+      stage: string;
+      dispatched: {
+        ok: boolean;
+        error?: string;
+        body?: unknown;
+      }[];
+    }) => {
       const total = r.dispatched.length;
       const okCount = r.dispatched.filter((d) => d.ok).length;
+      // v0.1.170 — pattern-match the dispatch errors for the
+      // OPENAI_API_KEY-missing case. Without this hint, the
+      // user just sees "retry website → 0/1 dispatched" with no
+      // clue why; with it, the activity row reads
+      // "Deep Research / Google-Maps deaktiviert — OpenAI-Key fehlt".
+      const errorBlobs = r.dispatched
+        .map((d) =>
+          typeof d.error === "string"
+            ? d.error
+            : typeof d.body === "string"
+              ? d.body
+              : d.body
+                ? JSON.stringify(d.body)
+                : "",
+        )
+        .join(" | ");
+      if (/OPENAI_API_KEY ist nicht konfiguriert/i.test(errorBlobs)) {
+        return `retry ${r.stage} → OpenAI-Key fehlt (Deep Research / Google-Maps-Entity-Resolution deaktiviert)`;
+      }
       return r.ok
         ? `retry ${r.stage} → ${okCount}/${total} dispatched`
         : `retry ${r.stage} → FAILED (${okCount}/${total})`;

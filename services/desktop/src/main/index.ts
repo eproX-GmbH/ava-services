@@ -561,6 +561,7 @@ function broadcastMissingProducers(): void {
       pid: null,
       errorMessage: null,
       lastExitCode: null,
+      featureWarnings: [],
     });
   }
 }

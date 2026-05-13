@@ -126,6 +126,15 @@ export interface ProducerStatus {
   errorMessage: string | null;
   /** Most recent exit code observed; null if never exited. */
   lastExitCode: number | null;
+  /**
+   * v0.1.170 — soft warnings about reduced functionality even though
+   * the producer itself is `ready`. Example: `website` boots without
+   * an OpenAI-Key but Deep Research / Google-Maps-Entity-Resolution
+   * stay unavailable at call time. The Settings panel renders these
+   * as small "feature deaktiviert"-tags next to the status dot.
+   * Empty when the producer is at full capacity.
+   */
+  featureWarnings: string[];
 }
 
 // ---- Producer logs (v0.1.50) ----------------------------------------------

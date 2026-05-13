@@ -146,6 +146,15 @@ export class ProducerSupervisor extends EventEmitter {
   private state: ProducerSupervisorState = "idle";
   private errorMessage: string | null = null;
   private exitCode: number | null = null;
+  /**
+   * v0.1.170 — last LLM config we applied at spawn time. Captured here
+   * so getStatus() can derive `featureWarnings` (e.g. "Deep Research
+   * deaktiviert" when website was started without an OpenAI key). Null
+   * until the first successful spawn.
+   */
+  private lastLlmConfig:
+    | { openaiApiKey?: string; anthropicSubscriptionToken?: string; anthropicApiKey?: string; googleApiKey?: string; mistralApiKey?: string }
+    | null = null;
 
   constructor(private readonly opts: ProducerSupervisorOptions) {
     super();
@@ -162,7 +171,31 @@ export class ProducerSupervisor extends EventEmitter {
       pid: this.child?.pid ?? null,
       errorMessage: this.errorMessage,
       lastExitCode: this.exitCode,
+      featureWarnings: this.computeFeatureWarnings(),
     };
+  }
+
+  /**
+   * v0.1.170 — translate the active LLM config + producer name into
+   * the list of degraded-feature warnings the renderer surfaces.
+   * Today only `website` has an OpenAI-specific reduced-mode (Deep
+   * Research + Google-Maps-Entity-Resolution skip when OPENAI_API_KEY
+   * isn't set); the function is structured so other producer-specific
+   * notes can be added later without touching the renderer.
+   */
+  private computeFeatureWarnings(): string[] {
+    if (this.state !== "ready") return [];
+    if (!this.lastLlmConfig) return [];
+    const warnings: string[] = [];
+    if (
+      this.opts.config.name === "website" &&
+      !this.lastLlmConfig.openaiApiKey
+    ) {
+      warnings.push(
+        "Deep Research & Google-Maps-Entity-Resolution deaktiviert (OpenAI-Key fehlt)",
+      );
+    }
+    return warnings;
   }
 
   private setState(next: ProducerSupervisorState, errorMessage?: string): void {
@@ -352,6 +385,17 @@ export class ProducerSupervisor extends EventEmitter {
     if (!databaseUrl) return null;
     const llm = await this.opts.llmConfig();
     if (!llm) return null;
+    // v0.1.170 — remember the active config so getStatus() can compute
+    // featureWarnings based on which provider keys are absent.
+    this.lastLlmConfig = {
+      ...(llm.openaiApiKey ? { openaiApiKey: llm.openaiApiKey } : {}),
+      ...(llm.anthropicApiKey ? { anthropicApiKey: llm.anthropicApiKey } : {}),
+      ...(llm.anthropicSubscriptionToken
+        ? { anthropicSubscriptionToken: llm.anthropicSubscriptionToken }
+        : {}),
+      ...(llm.googleApiKey ? { googleApiKey: llm.googleApiKey } : {}),
+      ...(llm.mistralApiKey ? { mistralApiKey: llm.mistralApiKey } : {}),
+    };
     // Bearer token for the producer's outbound gateway calls (today
     // only the valueserp proxy). Captured once at spawn — see
     // ProducerSupervisorOptions.getAccessToken docstring for the
