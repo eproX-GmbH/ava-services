@@ -633,10 +633,28 @@ export class WhisperSidecar extends EventEmitter {
         threads,
       ];
 
+      // v0.1.177 — point libggml at our bundled `libexec/` directory
+      // so `ggml_backend_load_best()` finds the CPU / Metal / BLAS
+      // backend plugins. ggml v0.10+ refactored backends out of the
+      // main libggml.dylib into standalone Mach-O bundles loaded via
+      // dlopen() at init time. Without GGML_BACKEND_PATH ggml falls
+      // back to a brew-baked default (`/opt/homebrew/Cellar/ggml/
+      // X.Y.Z/libexec`) that doesn't exist on user machines and
+      // whisper-cli crashes early when it tries to actually run
+      // inference (--help works fine because no backend is needed).
+      // See scripts/fetch-whisper.mjs's `copyBackendPluginsFromBrew`
+      // for the build-time side.
+      const ggmlBackendPath = this.resolveGgmlBackendPath();
+      const spawnEnv: NodeJS.ProcessEnv = {
+        ...process.env,
+        ...(ggmlBackendPath ? { GGML_BACKEND_PATH: ggmlBackendPath } : {}),
+      };
+
       let { stdout, stderr, exitCode } = await runWithCapture(
         this.binaryPath,
         args,
         90_000,
+        spawnEnv,
       );
 
       // v0.1.162 — Self-heal for native crashes of whisper-cli (exit
@@ -659,6 +677,7 @@ export class WhisperSidecar extends EventEmitter {
             this.binaryPath,
             args,
             90_000,
+            spawnEnv,
           ));
         } catch (err) {
           // Self-heal itself failed; fall through to the standard
@@ -740,6 +759,52 @@ export class WhisperSidecar extends EventEmitter {
    * When NOTHING is found we still return the FIRST candidate path so
    * the error message points the user at a fixable location.
    */
+  /**
+   * v0.1.177 — Resolve the bundled CPU-backend plugin for ggml.
+   *
+   * ggml >= 0.10 refactored compute backends out of libggml.dylib into
+   * separately-loaded Mach-O bundles (`libggml-cpu.so`, `libggml-blas.so`,
+   * `libggml-metal.so`). The walker in libggml has a hardcoded default
+   * search-path baked in at Homebrew-build-time
+   * (e.g. `/opt/homebrew/Cellar/ggml/X.Y.Z/libexec/`) that does NOT
+   * exist on a user's machine without brew — which is the common case.
+   *
+   * `GGML_BACKEND_PATH` is read as a SINGLE-FILE override (verified by
+   * inspecting libggml.0.dylib strings + reproducing the user crash).
+   * Setting it to our bundled libggml-cpu.so guarantees a working CPU
+   * backend regardless of the user's brew state. The other plugins
+   * (BLAS / Metal) would be nice-to-have for perf but require either
+   * a binary patch of the hardcoded path or building whisper.cpp from
+   * source with `GGML_BACKEND_DL=OFF`. CPU-only inference on M1/M2 for
+   * the base / small whisper models is still near-real-time, so this
+   * is an acceptable trade-off for v0.1.177 — full multi-backend
+   * support tracked for v0.1.178+ via source-build in CI.
+   *
+   * Path is derived from `this.binaryPath` so it works for both
+   * packaged (`<bundle>/Contents/Resources/whisper/<arch>/whisper-cli`
+   * → `<bundle>/Contents/Resources/whisper/libexec/libggml-cpu.so`)
+   * and dev (`<repo>/services/desktop/resources/whisper/<arch>/whisper-cli`
+   * → `<repo>/services/desktop/resources/whisper/libexec/libggml-cpu.so`)
+   * builds.
+   *
+   * Returns null when:
+   *   - binaryPath is unresolved (sidecar not yet booted)
+   *   - the plugin file doesn't exist (e.g. macOS bundle without the
+   *     fetch:whisper libexec copy, or non-macOS host where the path
+   *     is N/A)
+   *   - binaryPath is a brew install on PATH (we shouldn't override
+   *     ggml's own configured path in that case)
+   */
+  private resolveGgmlBackendPath(): string | null {
+    if (!this.binaryPath) return null;
+    if (process.platform !== "darwin") return null;
+    // <bin>/../../libexec/libggml-cpu.so
+    const libexecDir = join(dirname(dirname(this.binaryPath)), "libexec");
+    const cpuPlugin = join(libexecDir, "libggml-cpu.so");
+    if (!existsSync(cpuPlugin)) return null;
+    return cpuPlugin;
+  }
+
   private resolveBinary(): string | null {
     const platformId = currentPlatformId();
     if (!platformId) return null;
@@ -855,9 +920,13 @@ async function runWithCapture(
   cmd: string,
   args: string[],
   timeoutMs: number,
+  env?: NodeJS.ProcessEnv,
 ): Promise<{ stdout: string; stderr: string; exitCode: number }> {
   return new Promise((resolveRun, rejectRun) => {
-    const child = spawn(cmd, args, { stdio: ["ignore", "pipe", "pipe"] });
+    const child = spawn(cmd, args, {
+      stdio: ["ignore", "pipe", "pipe"],
+      ...(env ? { env } : {}),
+    });
     let stdout = "";
     let stderr = "";
     const timer = setTimeout(() => {

@@ -114,6 +114,9 @@ async function main() {
         // on macOS — earlier versions of this script copied the dylibs
         // next to the binary, but the binary's rpath looks at `../lib/`.
         // This block fixes existing checkouts in place.
+        // v0.1.177 — also re-runs placeMacDylibs to copy the new
+        // ggml backend plugins (libexec/*.so) into existing caches
+        // without forcing a full re-fetch.
         if (target.source === "brew") {
           await placeMacDylibs(target.formula, outDir);
           await cleanupMisplacedDylibs(outDir);
@@ -175,11 +178,28 @@ async function fetchViaBrew(formula, outDir, exeName) {
  * Copy brew's dylibs into `<outDir>/../lib/`. The whisper-cli binary
  * has LC_RPATH=`@loader_path/../lib` so it looks there.
  *
- * Also copies the dependent `ggml` formula's dylibs into the same
- * directory and runs `install_name_tool` to rewrite the absolute
- * brew paths (`/usr/local/opt/ggml/lib/libggml.0.dylib`,
- * `/opt/homebrew/opt/ggml/lib/...`) to `@rpath/libggml.0.dylib`,
- * so the bundle works on a user without brew at all.
+ * Also copies:
+ *   - the dependent `ggml` formula's `.dylib` files into the same
+ *     `lib/` directory, and runs `install_name_tool` to rewrite
+ *     absolute brew paths (`/usr/local/opt/ggml/lib/libggml.0.dylib`,
+ *     `/opt/homebrew/opt/ggml/lib/...`) to `@rpath/libggml.0.dylib`,
+ *     so the bundle works on a user without brew at all.
+ *
+ *   - v0.1.177 — ggml's `libexec/*.so` backend plugins (e.g.
+ *     `libggml-cpu.so`, `libggml-metal.so`, `libggml-blas.so`)
+ *     into `<outDir>/../libexec/`. ggml v0.10+ refactored
+ *     architecture-specific backends out of `libggml.dylib` into
+ *     standalone Mach-O bundles loaded via `dlopen()` at runtime.
+ *     Without these, `ggml_backend_load_best()` finds nothing,
+ *     `whisper_init_from_file_with_params_no_state` fails to
+ *     initialize a compute backend, and whisper-cli crashes early
+ *     with the "main + N | dyld start +N" stack signature the user
+ *     was hitting on v0.1.176.
+ *
+ *     The runtime path is communicated via the `GGML_BACKEND_PATH`
+ *     env var (see whisper-sidecar.ts), since the brew-baked
+ *     default path (`/opt/homebrew/Cellar/ggml/X.Y.Z/libexec` or
+ *     `/usr/local/Cellar/...`) doesn't exist on a clean install.
  */
 async function placeMacDylibs(formula, outDir) {
   const prefix = (await runCmdCapture("brew", ["--prefix", formula])).trim();
@@ -212,6 +232,18 @@ async function placeMacDylibs(formula, outDir) {
   }
   console.log(`[whisper] ${outDir}: copied dylibs to ${dstLibDir}`);
 
+  // v0.1.177 — ggml backend plugins live under `<ggml>/libexec/`
+  // as Mach-O bundles with `.so` extension. Copy them to a sibling
+  // `libexec/` of outDir; the spawn-site sets
+  // `GGML_BACKEND_PATH=<resources>/whisper/libexec` so libggml's
+  // dlopen finds them at runtime.
+  if (ggmlPrefix) {
+    const dstLibexecDir = resolve(outDir, "..", "libexec");
+    await fs.mkdir(dstLibexecDir, { recursive: true });
+    await copyBackendPluginsFromBrew(join(ggmlPrefix, "libexec"), dstLibexecDir);
+    console.log(`[whisper] ${outDir}: copied ggml backend plugins to ${dstLibexecDir}`);
+  }
+
   // Rewrite absolute brew paths in the binary + every copied dylib
   // to @rpath so dyld resolves them inside the .app bundle.
   const binaryPath = join(outDir, "whisper-cli");
@@ -225,7 +257,71 @@ async function placeMacDylibs(formula, outDir) {
     if (stat.isSymbolicLink()) continue;
     await rewriteBrewPathsToRpath(dylibPath, [prefix, ggmlPrefix].filter(Boolean));
   }
+  // v0.1.177 — same rpath rewrite for the libexec/*.so backend
+  // plugins. Each plugin links back to libggml + libggml-base in
+  // ../lib/; without rewriting, dlopen() at runtime would fail with
+  // the same "tried '<brew>/lib/libggml...' (no such file)" message
+  // libggml itself was hitting before this commit.
+  const dstLibexecDir = resolve(outDir, "..", "libexec");
+  if (existsSync(dstLibexecDir)) {
+    for (const name of await fs.readdir(dstLibexecDir)) {
+      if (!name.endsWith(".so") && !name.endsWith(".dylib")) continue;
+      const pluginPath = join(dstLibexecDir, name);
+      const stat = await fs.lstat(pluginPath);
+      if (stat.isSymbolicLink()) continue;
+      await rewriteBrewPathsToRpath(pluginPath, [prefix, ggmlPrefix].filter(Boolean));
+    }
+  }
   console.log(`[whisper] ${outDir}: rewrote brew paths to @rpath`);
+}
+
+/**
+ * v0.1.177 — Copy ggml's backend-plugin Mach-O bundles
+ * (`libggml-cpu.so`, `libggml-metal.so`, `libggml-blas.so`, ...) from
+ * `<brew>/libexec/` to our bundle's `libexec/`. Unlike `.dylib`s these
+ * are loaded explicitly via `dlopen()` from libggml's
+ * `ggml_backend_load_best()` walker; the runtime search path is
+ * provided via `GGML_BACKEND_PATH` env var at spawn-time.
+ *
+ * Idempotent: skips if a plugin of the same name is already present.
+ */
+async function copyBackendPluginsFromBrew(srcLibexecDir, dstLibexecDir) {
+  const fs = await import("node:fs/promises");
+  try {
+    const entries = await fs.readdir(srcLibexecDir, { withFileTypes: true });
+    let copied = 0;
+    for (const e of entries) {
+      if (!e.isFile() && !e.isSymbolicLink()) continue;
+      // ggml's libexec contains `.so` plugins on macOS too (ggml's
+      // upstream uses CMake's MODULE library type which writes .so
+      // even on Apple; the actual Mach-O magic is correct).
+      if (!e.name.endsWith(".so") && !e.name.endsWith(".dylib")) continue;
+      const src = join(srcLibexecDir, e.name);
+      const dst = join(dstLibexecDir, e.name);
+      if (e.isSymbolicLink()) {
+        const target = await fs.readlink(src);
+        try {
+          await fs.unlink(dst);
+        } catch {
+          /* not present */
+        }
+        await fs.symlink(target, dst);
+      } else {
+        await fs.copyFile(src, dst);
+        await fs.chmod(dst, 0o644);
+      }
+      copied++;
+    }
+    console.log(`[whisper] copied ${copied} ggml backend plugins from ${srcLibexecDir}`);
+  } catch (err) {
+    if (err && err.code === "ENOENT") {
+      console.warn(
+        `[whisper] ${srcLibexecDir} not found -- ggml may be <0.10 or not yet using plugin-based backends. Skipping.`,
+      );
+      return;
+    }
+    throw err;
+  }
 }
 
 async function copyDylibsFromBrew(srcLibDir, dstLibDir) {
