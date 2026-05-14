@@ -57,14 +57,26 @@ const RESOURCES_ROOT = resolve(__dirname, "..", "resources", "whisper");
 //   - macOS:   upstream ships NO darwin assets — only an iOS xcframework.
 //              Use Homebrew on the runner (`brew install whisper-cpp`)
 //              and copy the resulting `whisper-cli` into resources/.
-//              The runtime arch follows the runner's arch — that's why
-//              v0.1.0 pilots arm64 only. darwin-x64 needs an Intel
-//              Homebrew or an explicit cross-compile (Phase 8.u3).
+//              The runtime arch follows the runner's arch:
+//                - darwin-arm64 → must run on an arm64 macOS host
+//                                 (CI: macos-14 / macos-15)
+//                - darwin-x64   → must run on an Intel macOS host
+//                                 (CI: macos-13, the last Intel runner
+//                                 GitHub Actions still offers; v0.1.174
+//                                 added Intel support per user feedback)
+//              Cross-arch bottle fetch (download an x64 bottle on an
+//              arm64 runner) is brittle across brew versions, so we
+//              keep one-arch-per-runner.
 //   - Linux:   upstream also ships no Linux asset. Not in the v0.1.0
 //              build matrix; AppImage is opt-in for later.
 const TARGETS = [
   {
     id: "darwin-arm64",
+    source: "brew",
+    formula: "whisper-cpp",
+  },
+  {
+    id: "darwin-x64",
     source: "brew",
     formula: "whisper-cpp",
   },

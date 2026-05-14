@@ -43,19 +43,9 @@ permissions:
   contents: write   # Needed to upload release assets.
 
 jobs:
-  build-mac:
-    name: Build & sign macOS (${{ matrix.arch }})
+  build-mac-arm64:
+    name: Build & sign macOS (arm64)
     runs-on: macos-14
-    strategy:
-      fail-fast: false
-      matrix:
-        # arm64 only for v0.1.0 pilot. darwin-x64 needs an Intel
-        # Homebrew or an explicit cross-compile of whisper-cpp; the
-        # macos-14 runner is arm64 and `brew install whisper-cpp`
-        # there only produces an arm64 binary. Track in 8.u3 for the
-        # next release once we have an x64 strategy that doesn't
-        # double the runner cost.
-        arch: [arm64]
     steps:
       - uses: actions/checkout@v4
         with:
@@ -116,11 +106,11 @@ jobs:
       # before electron-builder hits `extraResources`.
       - name: Fetch Ollama binary
         working-directory: services/desktop
-        run: pnpm fetch:ollama --platform=darwin-${{ matrix.arch }}
+        run: pnpm fetch:ollama --platform=darwin-arm64
 
       - name: Fetch whisper-cli binary
         working-directory: services/desktop
-        run: pnpm fetch:whisper --platform=darwin-${{ matrix.arch }}
+        run: pnpm fetch:whisper --platform=darwin-arm64
 
       # Vendor local producer subprocesses (Phase 8.v1.2). If the
       # SUBMODULES_PAT secret is not configured, the submodule
@@ -171,7 +161,7 @@ jobs:
           p12-file-base64: ${{ secrets.MAC_CERTIFICATE_P12_BASE64 }}
           p12-password: ${{ secrets.MAC_CERTIFICATE_PASSWORD }}
 
-      - name: Build, sign, notarize, and publish (macOS ${{ matrix.arch }})
+      - name: Build, sign, notarize, and publish (macOS arm64)
         working-directory: services/desktop
         env:
           # Notarization credentials — electron-builder's notarytool
@@ -220,7 +210,7 @@ jobs:
           # picked up automatically by notarytool from process.env.
           pnpm exec electron-builder \
             --mac \
-            --${{ matrix.arch }} \
+            --arm64 \
             --publish always \
             --config.mac.notarize.teamId="$APPLE_TEAM_ID"
 
@@ -228,15 +218,211 @@ jobs:
         working-directory: services/desktop
         run: node scripts/check-bundle-secrets.mjs
 
-      # electron-builder's `--publish always` creates the GitHub
-      # Release as a draft on first upload, regardless of whether the
-      # job ultimately succeeds. If a later step fails (notarize,
-      # publish, audit) and we retry the tag, the next run uploads
-      # fresh artifacts but never promotes the draft — so users keep
-      # seeing the prior tag as Latest while the new one sits hidden.
-      # Flip draft=false + mark Latest at the end of a green build only.
-      # Idempotent: re-running against an already-public release is a
-      # no-op.
+      # v0.1.174 — upload the arm64 `latest-mac.yml` as a workflow
+      # artifact so the subsequent build-mac-x64 job can merge its
+      # own manifest into ours. Without this, the x64 job's --publish
+      # would overwrite this file with x64-only entries and break OTA
+      # for arm64 users (the larger user base).
+      #
+      # Path layout: electron-builder writes to
+      # `services/desktop/release/<version>/latest-mac.yml`. The
+      # working-directory mismatch between this step and the
+      # electron-builder step is intentional — uses the repo-rooted
+      # path so the workflow YAML reads cleanly.
+      - name: Upload arm64 manifest as workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: latest-mac-arm64-yml
+          path: services/desktop/release/*/latest-mac.yml
+          if-no-files-found: error
+          retention-days: 7
+
+  # ---------------------------------------------------------------------------
+  # v0.1.174 — Intel-Mac (darwin-x64) build.
+  #
+  # Runs on macos-13, the last Intel runner GitHub Actions still
+  # offers. `brew install whisper-cpp` here resolves the x64 bottle
+  # natively, so the same fetch-whisper script works without
+  # cross-arch heroics.
+  #
+  # Sequencing: this job `needs: build-mac-arm64` so the arm64
+  # manifest is already on the Release when we touch it. The job
+  # downloads arm64's manifest as a workflow artifact, runs its own
+  # electron-builder with `--publish never`, manually uploads the
+  # x64 artifacts to the Release, and finally writes a merged
+  # `latest-mac.yml` (union of arm64 + x64 file entries) so both
+  # arches' OTA paths work.
+  #
+  # If the macos-13 runner pool is eventually retired (announced
+  # by GitHub), the fallback is cross-arch bottle fetch on macos-14
+  # via `brew fetch --bottle-tag=ventura` — but that's brittle across
+  # brew versions, so we stay native-per-runner while we can.
+  # ---------------------------------------------------------------------------
+  build-mac-x64:
+    name: Build & sign macOS (x64)
+    needs: build-mac-arm64
+    runs-on: macos-13
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref_name }}
+
+      - name: Init producer submodules
+        shell: bash
+        env:
+          SUBMODULES_PAT: ${{ secrets.SUBMODULES_PAT }}
+        run: |
+          if [ -z "$SUBMODULES_PAT" ]; then
+            echo "SUBMODULES_PAT not set — skipping submodule fetch."
+            exit 0
+          fi
+          git config --global url."https://x-access-token:${SUBMODULES_PAT}@github.com/".insteadOf "https://github.com/"
+          for sub in company-profile structured-content company-publication company-evaluation company-contact website; do
+            git submodule update --init --depth=1 -- "$sub" \
+              && echo "✓ $sub" \
+              || echo "✗ $sub (skipped)"
+          done
+
+      - uses: pnpm/action-setup@v3
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install workspace dependencies
+        run: pnpm install --filter "@ava/desktop..." --frozen-lockfile
+
+      - name: Validate version tag matches package.json
+        working-directory: services/desktop
+        env:
+          GITHUB_REF_NAME: ${{ github.event.inputs.tag || github.ref_name }}
+        run: node scripts/validate-version-tag.mjs
+
+      - name: Fetch Ollama binary (darwin-x64)
+        working-directory: services/desktop
+        run: pnpm fetch:ollama --platform=darwin-x64
+
+      - name: Fetch whisper-cli binary (darwin-x64)
+        working-directory: services/desktop
+        run: pnpm fetch:whisper --platform=darwin-x64
+
+      - name: Vendor producer subprocesses
+        working-directory: services/desktop
+        shell: bash
+        run: |
+          mkdir -p resources/producers
+          if [ ! -f ../../company-profile/package.json ]; then
+            echo "::warning::No producer submodules checked out — shipping .dmg without local producers."
+            exit 0
+          fi
+          pnpm fetch:producers
+
+      - name: Build renderer + main bundles
+        working-directory: services/desktop
+        env:
+          AVA_RELEASE_TOKEN: ${{ secrets.SUBMODULES_PAT }}
+        run: pnpm build
+
+      - name: Import macOS code-signing certificate
+        uses: apple-actions/import-codesign-certs@v3
+        with:
+          p12-file-base64: ${{ secrets.MAC_CERTIFICATE_P12_BASE64 }}
+          p12-password: ${{ secrets.MAC_CERTIFICATE_PASSWORD }}
+
+      - name: Build, sign, notarize (x64, no publish yet)
+        working-directory: services/desktop
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          # Same ulimit prep as the arm64 job — readDirectoryAndSign
+          # walks the full vendored-producer tree and EMFILE's on the
+          # default macos-13 ulimit of 256.
+          sudo sysctl -w kern.maxfiles=524288 || true
+          sudo sysctl -w kern.maxfilesperproc=524288 || true
+          ulimit -n 524288 || ulimit -n 65536 || ulimit -n 24576
+          echo "effective ulimit -n: $(ulimit -n)"
+
+          # --publish never: produce artifacts locally; we upload to
+          # the release manually below after merging the manifest. If
+          # we used --publish always here, the per-job latest-mac.yml
+          # would overwrite the arm64 job's, breaking arm64 OTA.
+          pnpm exec electron-builder \
+            --mac \
+            --x64 \
+            --publish never \
+            --config.mac.notarize.teamId="$APPLE_TEAM_ID"
+
+      - name: Audit bundle for secret leaks
+        working-directory: services/desktop
+        run: node scripts/check-bundle-secrets.mjs
+
+      - name: Download arm64 manifest artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: latest-mac-arm64-yml
+          path: /tmp/arm64-manifest/
+
+      - name: Merge manifests and upload x64 artifacts to release
+        working-directory: services/desktop
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          TAG="${{ github.event.inputs.tag || github.ref_name }}"
+          VERSION="${TAG#v}"
+          RELEASE_DIR="release/${VERSION}"
+
+          # `actions/download-artifact` flattens the upload-artifact
+          # path glob, so the downloaded file lands at
+          # /tmp/arm64-manifest/latest-mac.yml regardless of the
+          # release/<version>/ prefix from the source.
+          ARM_YML="/tmp/arm64-manifest/latest-mac.yml"
+          if [ ! -f "$ARM_YML" ]; then
+            # Fallback: artifact-zip may preserve one level of prefix
+            ARM_YML="$(find /tmp/arm64-manifest -name latest-mac.yml | head -1)"
+          fi
+          if [ -z "$ARM_YML" ] || [ ! -f "$ARM_YML" ]; then
+            echo "::error::arm64 manifest not found after download"
+            ls -laR /tmp/arm64-manifest
+            exit 1
+          fi
+          echo "arm64 manifest: $ARM_YML"
+
+          X64_YML="$RELEASE_DIR/latest-mac.yml"
+          if [ ! -f "$X64_YML" ]; then
+            echo "::error::x64 manifest missing — electron-builder didn't produce it"
+            ls -laR "$RELEASE_DIR"
+            exit 1
+          fi
+
+          # Merge straight into the release dir so the final upload
+          # uses the canonical `latest-mac.yml` filename (gh release
+          # upload takes the basename of the source path).
+          node scripts/merge-mac-manifest.mjs "$ARM_YML" "$X64_YML" "$RELEASE_DIR/latest-mac.yml"
+
+          # Upload x64 artifacts + the merged manifest. --clobber lets
+          # us re-run the tag without manual cleanup if a transient
+          # failure forces a retry. The artifactName template in
+          # electron-builder.yml gives us symmetric naming:
+          # AVA-<v>-x64.dmg / -x64-mac.zip.
+          gh release upload "$TAG" \
+            "$RELEASE_DIR/AVA-${VERSION}-x64.dmg" \
+            "$RELEASE_DIR/AVA-${VERSION}-x64.dmg.blockmap" \
+            "$RELEASE_DIR/AVA-${VERSION}-x64-mac.zip" \
+            "$RELEASE_DIR/AVA-${VERSION}-x64-mac.zip.blockmap" \
+            "$RELEASE_DIR/latest-mac.yml" \
+            --clobber \
+            --repo "${{ github.repository }}"
+
+      # The "Latest" promotion moves from the arm64 job (v0.1.0-0.1.173)
+      # to here — only after BOTH arches have artifacts on the release.
+      # An Intel user opening github.com/eproX-GmbH/ava-services/releases/latest
+      # before this step would otherwise see "no .dmg for my arch".
       - name: Promote release to Latest
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

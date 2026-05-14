@@ -76,19 +76,28 @@ extraResources:
       - "**/*"
 
 mac:
+  # v0.1.174 — explicit artifactName so both arches get the same naming
+  # convention (default would suffix arm64 only, leaving x64 unsuffixed,
+  # which makes the manifest-merge script in `scripts/merge-mac-manifest.mjs`
+  # awkward and the Intel user's download in the GitHub Release UI
+  # ambiguous). Now both arches produce `AVA-<version>-<arch>.dmg` and
+  # `AVA-<version>-<arch>-mac.zip`.
+  artifactName: ${productName}-${version}-${arch}.${ext}
   target:
     - target: dmg
-      # v0.1.0: arm64 only. darwin-x64 deferred until we ship an Intel
-      # whisper-cpp binary (the macos-14 CI runner is arm64). See
-      # `.github/workflows/desktop-release.yml` build-mac matrix.
-      arch: [arm64]
+      # v0.1.174 — added x64. Built on macos-13 in CI (the last Intel
+      # runner GitHub Actions offers). Each arch builds in its own job
+      # (separate Whisper Homebrew bottle per native arch); the
+      # `latest-mac.yml` manifest is merged in a post-step so OTA
+      # works for both.
+      arch: [arm64, x64]
     # electron-updater on macOS uses the `.zip` artifact (not `.dmg`)
     # for OTA: the `.dmg` is the first-install installer; the `.zip`
     # is what auto-update downloads + unpacks in place. Without `zip`
     # here the updater fails with "ZIP file not provided" right after
     # the user accepts the version pill (surfaced on the v0.1.28 OTA).
     - target: zip
-      arch: [arm64]
+      arch: [arm64, x64]
   category: public.app-category.business
   # Icon source: `resources/icon.icns` — multi-resolution (16…1024)
   # built from /Users/mac/Desktop/Repos/ava-v2/public/ios via
