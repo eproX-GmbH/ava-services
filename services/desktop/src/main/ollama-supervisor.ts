@@ -1,8 +1,8 @@
 import { spawn, type ChildProcessByStdio } from "node:child_process";
 import type { Readable } from "node:stream";
 import { EventEmitter } from "node:events";
-import { existsSync, mkdirSync } from "node:fs";
-import { join } from "node:path";
+import { existsSync, mkdirSync, readdirSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { app } from "electron";
 import type {
   OllamaInstalledModel,
@@ -158,10 +158,15 @@ export class OllamaSupervisor extends EventEmitter {
 
     const bin = this.resolveBinaryPath();
     if (!bin) {
-      this.setState(
-        "error",
-        "Ollama binary not found. Reinstall the app or set OLLAMA_BIN.",
-      );
+      // v0.1.171 — verbose diagnostic instead of the previous one-liner.
+      // Surfaces the exact paths checked + parent-dir contents so the
+      // user (or we via bug report) can tell apart the typical causes:
+      //   - Antivirus quarantined the unsigned binary (Defender,
+      //     Bitdefender, Avast typical on old Windows)
+      //   - Installer was interrupted mid-extract (sleep/disk-full)
+      //   - SmartScreen blocked the unrecognized publisher
+      //   - User runs from a manually-unzipped copy without `Resources`
+      this.setState("error", this.diagnoseMissingBinary());
       return;
     }
 
@@ -627,6 +632,85 @@ export class OllamaSupervisor extends EventEmitter {
 
     // Last resort in dev: rely on a system-installed `ollama` on PATH.
     return "ollama";
+  }
+
+  /**
+   * v0.1.171 — build a user-actionable error message when the
+   * Ollama binary can't be resolved. The previous one-liner ("not
+   * found. Reinstall…") gave the user nothing to forward to support
+   * and no way for us to tell apart the typical Windows failure
+   * modes. This walks the expected paths, listing what's actually on
+   * disk + adding a platform-specific hint about the most likely cause.
+   *
+   * Returned as a single string with newlines so the existing
+   * `errorMessage` IPC channel doesn't need a shape change. The
+   * FirstRunWizard's `<p className="bad">` preserves whitespace via
+   * the white-space rule on `.first-run__card`.
+   */
+  private diagnoseMissingBinary(): string {
+    const platformDir = `${process.platform}-${process.arch}`;
+    const exe = process.platform === "win32" ? "ollama.exe" : "ollama";
+    const paths: { label: string; full: string }[] = [];
+    if (process.env.OLLAMA_BIN) {
+      paths.push({ label: "OLLAMA_BIN env", full: process.env.OLLAMA_BIN });
+    }
+    if (app.isPackaged && process.resourcesPath) {
+      paths.push({
+        label: "packaged",
+        full: join(process.resourcesPath, "ollama", platformDir, exe),
+      });
+    }
+    paths.push({
+      label: "dev",
+      full: join(app.getAppPath(), "resources", "ollama", platformDir, exe),
+    });
+    const lines: string[] = [
+      "Ollama binary not found. Reinstall the app or set OLLAMA_BIN.",
+      "",
+      "Geprüfte Pfade:",
+    ];
+    for (const p of paths) {
+      const exists = existsSync(p.full);
+      const parent = dirname(p.full);
+      const parentExists = existsSync(parent);
+      let parentContents = "";
+      if (parentExists) {
+        try {
+          const entries = readdirSync(parent).slice(0, 10);
+          parentContents = entries.length > 0 ? ` [${entries.join(", ")}]` : " [empty]";
+        } catch {
+          parentContents = " [unreadable]";
+        }
+      }
+      lines.push(
+        `  • ${p.label}: ${p.full} → ${exists ? "OK" : "FEHLT"}` +
+          (exists ? "" : ` (parent ${parentExists ? "existiert" : "fehlt"}${parentContents})`),
+      );
+    }
+    lines.push("");
+    if (process.platform === "win32") {
+      lines.push(
+        "Wahrscheinliche Ursachen auf Windows:",
+        "  1. Antivirus / Windows Defender hat die unsignierte ollama.exe",
+        "     in Quarantäne verschoben. Prüfe deinen AV-Schutz-Logs.",
+        "  2. SmartScreen hat den Installer beim ersten Run als",
+        "     „unerkannter Publisher\" blockiert und der Install ist",
+        "     unvollständig durchgelaufen. AVA neu installieren und",
+        "     beim Warndialog auf „Trotzdem ausführen\" klicken.",
+        "  3. Installer wurde mid-extract unterbrochen (Energiesparmodus,",
+        "     volle Festplatte). Restliche Files prüfen oder neu installieren.",
+      );
+    } else if (process.platform === "darwin") {
+      lines.push(
+        "Wahrscheinliche Ursachen auf macOS:",
+        "  1. Gatekeeper hat den Install blockiert (rechte Maustaste auf",
+        "     AVA.app → „Öffnen\" beim ersten Start).",
+        "  2. xattr com.apple.quarantine auf der ollama-Binary verhindert",
+        "     den Start. Im Terminal: xattr -dr com.apple.quarantine",
+        "     /Applications/AVA.app/Contents/Resources/ollama",
+      );
+    }
+    return lines.join("\n");
   }
 
   /**
