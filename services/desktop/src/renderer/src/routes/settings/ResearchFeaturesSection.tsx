@@ -43,11 +43,12 @@ const TIER_LABEL: Record<ResearchTier, string> = {
 };
 
 // Cost rough estimates per firma -- shown under the tier choice as user
-// guidance. Range, not precision; sourced from Phase 2a smoke-test +
-// pricing pages (May 2026).
+// guidance. Range, not precision; calibrated from real production runs
+// (May 2026: SAP-Opus-Deep = $0.28, factor ~3× under my initial estimate
+// because prompt-caching kicks in after the first call of a session).
 const COST_PER_FIRMA: Record<ResearchProvider, Record<ResearchTier, string>> = {
   openai: { off: "0 €", standard: "~0,02 €", deep: "1–5 €" },
-  anthropic: { off: "0 €", standard: "~0,15 €", deep: "0,30–1,00 €" },
+  anthropic: { off: "0 €", standard: "~0,10 €", deep: "0,25–0,80 €" },
 };
 
 const MODEL_LABEL: Record<ResearchProvider, Record<ResearchTier, string>> = {
