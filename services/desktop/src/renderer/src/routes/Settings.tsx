@@ -1748,16 +1748,26 @@ export function ProviderSection() {
       )}
       <div className="api-keys">
         {HOSTED_KINDS.map((kind) => (
-          <ApiKeyRow key={kind} kind={kind} hasKey={hasKey[kind]} />
+          <ApiKeyCard
+            key={kind}
+            kind={kind}
+            hasKey={hasKey[kind]}
+            // Anthropic gets the Claude.ai-Abo-Block nested inside its
+            // own card (v0.1.175). Forwarding through the prop keeps
+            // the wiring shallow and lets the unused subscription IPC
+            // refs stay tree-shaken for non-Anthropic providers.
+            anthropicSubscription={
+              kind === "anthropic"
+                ? {
+                    hasToken: hasAnthropicSubscriptionToken,
+                    anthropicAuthMode: config.anthropicAuthMode ?? "api-key",
+                    activeKind,
+                  }
+                : undefined
+            }
+          />
         ))}
       </div>
-
-      <AnthropicSubscriptionCard
-        hasToken={hasAnthropicSubscriptionToken}
-        hasAnthropicApiKey={hasKey.anthropic}
-        anthropicAuthMode={config.anthropicAuthMode ?? "api-key"}
-        activeKind={activeKind}
-      />
     </section>
   );
 }
@@ -1771,7 +1781,15 @@ interface AnthropicSubscriptionCardProps {
   activeKind: LlmProviderKind;
 }
 
-function AnthropicSubscriptionCard({
+/**
+ * v0.1.175 — Claude.ai Pro/Max-Abo affordance, rendered as the lower
+ * half of the Anthropic `ApiKeyCard` (separated from the API-Key input
+ * row by a `oder`-divider). Previously this was a standalone
+ * `AnthropicSubscriptionCard` shown beneath the API-Schlüssel grid,
+ * which left users guessing whether it was a second auth method for
+ * Anthropic or an unrelated affordance.
+ */
+function AnthropicSubscriptionContent({
   hasToken,
   hasAnthropicApiKey,
   anthropicAuthMode,
@@ -1869,16 +1887,19 @@ function AnthropicSubscriptionCard({
     activeKind === "anthropic" && anthropicAuthMode === "subscription";
 
   return (
-    <div className="provider-card anthropic-subscription-card">
-      <h4>Claude.ai Pro/Max-Abo</h4>
-      <p className="muted small">
-        Verbinde dein Claude-Abo, statt Anthropic-Api-Credits zu
-        verbrauchen. Du brauchst ein Pro-, Max-, Team- oder
-        Enterprise-Abo. Beim Klick öffnet AVA ein Anmeldefenster bei
-        claude.ai — kein Terminal nötig.
-      </p>
+    <div className="provider-key-card__sub">
+      <div>
+        <div className="provider-key-card__sub-title">
+          Mit Claude.ai Pro/Max-Abo verbinden
+        </div>
+        <p className="muted small">
+          Statt Anthropic-API-Credits zu verbrauchen, dein Pro-, Max-,
+          Team- oder Enterprise-Abo nutzen. AVA öffnet beim Klick ein
+          Anmeldefenster bei claude.ai — kein Terminal nötig.
+        </p>
+      </div>
 
-      <div className="api-key-row">
+      <div className="provider-key-card__sub-actions">
         <button
           type="button"
           onClick={() => connect.mutate()}
@@ -1901,29 +1922,43 @@ function AnthropicSubscriptionCard({
             {clear.isPending ? "Entfernt…" : "Löschen"}
           </button>
         )}
-      </div>
-
-      <p className="muted small">
+        {hasToken && hasAnthropicApiKey && (
+          <button
+            type="button"
+            className="link"
+            onClick={() =>
+              switchMode.mutate(
+                subscriptionActive ? "api-key" : "subscription",
+              )
+            }
+            disabled={switchMode.isPending}
+            title={
+              subscriptionActive
+                ? "Anthropic-Calls statt über das Abo über deinen API-Key abrechnen."
+                : "Anthropic-Calls über dein Pro/Max-Abo statt deinen API-Key abrechnen."
+            }
+          >
+            {subscriptionActive
+              ? "→ auf API-Key umschalten"
+              : "→ auf Abo umschalten"}
+          </button>
+        )}
         <button
           type="button"
-          className="link small"
+          className="link"
           onClick={() => setShowManual((v) => !v)}
         >
-          {showManual
-            ? "Advanced ausblenden"
-            : "Advanced: Token manuell einfügen"}
+          {showManual ? "Advanced ausblenden" : "Advanced: Token manuell einfügen"}
         </button>
-      </p>
+      </div>
 
       {showManual && (
-        <div className="provider-card__advanced">
+        <div className="provider-key-card__advanced">
           <p className="muted small">
-            Falls der In-App-Login nicht klappt: Token mit dem CLI
-            <code>claude setup-token</code> erzeugen und hier einfügen.
-          </p>
-          <p>
+            Falls der In-App-Login nicht klappt: Token mit dem CLI{" "}
+            <code>claude setup-token</code> erzeugen und hier einfügen.{" "}
             <button type="button" className="link" onClick={onOpenDocs}>
-              So bekommst du deinen Token
+              Anleitung ↗
             </button>
           </p>
           <div className="api-key-row">
@@ -1950,38 +1985,6 @@ function AnthropicSubscriptionCard({
           </div>
         </div>
       )}
-
-      <p className="muted small">
-        Status:{" "}
-        {hasToken ? (
-          <span className="badge ok">
-            {subscriptionActive
-              ? "Verbunden (aktiver Auth-Modus)"
-              : "Verbunden"}
-          </span>
-        ) : (
-          <span className="badge warn">Nicht verbunden</span>
-        )}
-        {hasToken && hasAnthropicApiKey && (
-          <>
-            {" · "}
-            <button
-              type="button"
-              className="link"
-              onClick={() =>
-                switchMode.mutate(
-                  subscriptionActive ? "api-key" : "subscription",
-                )
-              }
-              disabled={switchMode.isPending}
-            >
-              {subscriptionActive
-                ? "auf Api-Key umschalten"
-                : "auf Subscription umschalten"}
-            </button>
-          </>
-        )}
-      </p>
 
       {hint && (
         <p
@@ -2194,12 +2197,35 @@ interface ApiKeyRowProps {
   hasKey: boolean;
 }
 
-function ApiKeyRow({ kind, hasKey }: ApiKeyRowProps) {
+/**
+ * v0.1.175 — Provider-Key-Card.
+ *
+ * Replaces the v0.1.168 floating-row + floating-description layout that
+ * made it ambiguous which description belonged to which provider. Each
+ * provider now renders as a bordered card containing header + input +
+ * description + doc-link in a fixed vertical rhythm.
+ *
+ * For Anthropic specifically, the card also nests the Claude.ai
+ * Pro/Max-Abo affordance (`<AnthropicSubscriptionContent />`) below a
+ * divider so the user sees both auth methods for the same provider in
+ * one visual unit.
+ */
+function ApiKeyCard({
+  kind,
+  hasKey,
+  // Anthropic-only props (forwarded into the nested subscription
+  // content). Undefined for non-Anthropic providers; rendered iff kind
+  // === "anthropic".
+  anthropicSubscription,
+}: ApiKeyRowProps & {
+  anthropicSubscription?: {
+    hasToken: boolean;
+    anthropicAuthMode: "api-key" | "subscription";
+    activeKind: LlmProviderKind;
+  };
+}) {
   const qc = useQueryClient();
   const [draft, setDraft] = useState("");
-  // Reset the input whenever the persisted "has key" flips, so a
-  // successful save clears the field without us having to manage a
-  // separate post-save state machine.
   useEffect(() => setDraft(""), [hasKey]);
 
   const save = useMutation({
@@ -2214,58 +2240,97 @@ function ApiKeyRow({ kind, hasKey }: ApiKeyRowProps) {
       qc.invalidateQueries({ queryKey: ["agent", "providerConfig"] }),
   });
 
+  // Status badge: per provider, what's currently active.
+  // Anthropic is special — it can be "active via API-Key" OR "active via
+  // Pro/Max-Abo". For the other three, "gespeichert" = key present.
+  const statusBadge = (() => {
+    if (kind === "anthropic" && anthropicSubscription) {
+      const { hasToken, anthropicAuthMode } = anthropicSubscription;
+      if (anthropicAuthMode === "subscription" && hasToken) {
+        return <span className="badge ok">Pro/Max-Abo aktiv</span>;
+      }
+      if (hasKey) return <span className="badge ok">API-Key gespeichert</span>;
+      if (hasToken) return <span className="badge ok">Pro/Max-Abo verbunden</span>;
+      return null;
+    }
+    return hasKey ? <span className="badge ok">gespeichert</span> : null;
+  })();
+
   return (
-    <div className="api-key-row">
-      <span className="api-key-label">{PROVIDER_LABEL[kind]}</span>
-      <input
-        type="password"
-        placeholder={
-          hasKey
-            ? "•••• gespeichert, neuen Schlüssel einfügen, um zu ersetzen"
-            : "API-Schlüssel"
-        }
-        value={draft}
-        onChange={(e) => setDraft(e.target.value)}
-        autoComplete="off"
-        spellCheck={false}
-      />
-      <button
-        type="button"
-        onClick={() => save.mutate(draft)}
-        disabled={draft.length === 0 || save.isPending}
-      >
-        {save.isPending ? "Speichert…" : "Speichern"}
-      </button>
-      {hasKey && (
+    <div className="provider-key-card">
+      <div className="provider-key-card__header">
+        <span className="provider-key-card__title">{PROVIDER_LABEL[kind]}</span>
+        {statusBadge}
+      </div>
+
+      <div className="provider-key-card__input-row">
+        <input
+          type="password"
+          placeholder={
+            hasKey
+              ? "•••• gespeichert, neuen Schlüssel einfügen, um zu ersetzen"
+              : "API-Schlüssel"
+          }
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          autoComplete="off"
+          spellCheck={false}
+        />
         <button
           type="button"
-          className="link"
-          onClick={() => clear.mutate()}
-          disabled={clear.isPending}
-          title="Gespeicherten Schlüssel für diesen Anbieter entfernen"
+          onClick={() => save.mutate(draft)}
+          disabled={draft.length === 0 || save.isPending}
         >
-          {clear.isPending ? "Entfernt…" : "entfernen"}
+          {save.isPending ? "Speichert…" : "Speichern"}
         </button>
-      )}
-      {(save.error || clear.error) && (
-        <span className="error">
-          {((save.error || clear.error) as Error).message}
-        </span>
-      )}
-      <a
-        className="muted small api-key-doc-link"
-        href={PROVIDER_KEY_DOCS[kind]}
-        onClick={(e) => {
-          e.preventDefault();
-          void window.api.shell.openExternal(PROVIDER_KEY_DOCS[kind]);
-        }}
-      >
-        Wo bekomme ich einen Schlüssel?
-      </a>
-      {/* v0.1.168 — was dieser Schlüssel in AVA konkret freischaltet. */}
-      <p className="muted small api-key-features">
+        {hasKey ? (
+          <button
+            type="button"
+            className="link"
+            onClick={() => clear.mutate()}
+            disabled={clear.isPending}
+            title="Gespeicherten Schlüssel für diesen Anbieter entfernen"
+          >
+            {clear.isPending ? "Entfernt…" : "entfernen"}
+          </button>
+        ) : (
+          <span />
+        )}
+      </div>
+
+      <p className="provider-key-card__description">
         {PROVIDER_FEATURES[kind]}
       </p>
+
+      <div className="provider-key-card__footer">
+        <a
+          className="provider-key-card__docs-link"
+          href={PROVIDER_KEY_DOCS[kind]}
+          onClick={(e) => {
+            e.preventDefault();
+            void window.api.shell.openExternal(PROVIDER_KEY_DOCS[kind]);
+          }}
+        >
+          Wo bekomme ich einen Schlüssel? →
+        </a>
+        {(save.error || clear.error) && (
+          <p className="provider-key-card__error">
+            {((save.error || clear.error) as Error).message}
+          </p>
+        )}
+      </div>
+
+      {kind === "anthropic" && anthropicSubscription && (
+        <>
+          <div className="provider-key-card__divider">oder</div>
+          <AnthropicSubscriptionContent
+            hasToken={anthropicSubscription.hasToken}
+            hasAnthropicApiKey={hasKey}
+            anthropicAuthMode={anthropicSubscription.anthropicAuthMode}
+            activeKind={anthropicSubscription.activeKind}
+          />
+        </>
+      )}
     </div>
   );
 }
