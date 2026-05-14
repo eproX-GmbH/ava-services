@@ -1540,3 +1540,87 @@ export type SkillExportAllResult =
   | { ok: false; error: string }
   | { ok: false; cancelled: true };
 
+// ---- Research Features (v0.1.172, Settings Phase A) ------------------------
+//
+// Per-feature configuration for the two cloud-LLM enrichment pipelines in
+// the `website` producer (Deep Research / Tenders+Expansion+Procurement,
+// and Job-Postings). Each feature is independent: separate tier, separate
+// provider, separate API key. The factory in `website/src/infrastructure/
+// research/index.ts` reads its 6 RESEARCH_* env vars from these settings.
+//
+// Decision recorded with user 2026-05-14:
+//   - Strict tiers (no cascade): deep means deep, never the standard
+//     model as a cheap pre-pass. Predictable per-firma cost.
+//   - Default: both features OFF. Activation requires explicit user
+//     action in Settings (since the costs are visible — €0.10 to €5/firma).
+//   - Anthropic must be API-Key (sk-ant-api03-...), NOT OAuth subscription
+//     -- ToS-confirmed (only Claude Code may use OAuth tokens).
+
+export type ResearchTier = "off" | "standard" | "deep";
+export type ResearchProvider = "openai" | "anthropic";
+export type ResearchFeature = "expansionTenders" | "jobPostings";
+
+/**
+ * Reference to an API key. Can be:
+ *   • `"global:openai"` / `"global:anthropic"` — pointer to the existing
+ *     ProviderConfigStore key (the "Allgemeine Modell-Konfiguration"
+ *     key from the chat-agent settings). When the user picks "Übernehmen
+ *     aus Allgemeine Modell-Konfiguration", the feature stays bound to
+ *     that key by reference -- updates there propagate here.
+ *   • `"<uuid>"` — a research-store-owned key, stored encrypted at
+ *     userData/research/keys/<uuid>.enc with metadata in keys/<uuid>.meta.json.
+ *   • `null` — feature has no key bound yet (tier must be "off" in this case).
+ */
+export type ResearchKeyId = string;
+
+export interface ResearchFeatureConfig {
+  tier: ResearchTier;
+  provider: ResearchProvider | null;
+  keyId: ResearchKeyId | null;
+}
+
+export interface ResearchFeaturesConfig {
+  expansionTenders: ResearchFeatureConfig;
+  jobPostings: ResearchFeatureConfig;
+}
+
+export interface ResearchKeyMeta {
+  id: string;
+  provider: ResearchProvider;
+  label: string;
+  createdAt: number;
+  lastUsedAt: number | null;
+  lastProbeOk: boolean | null;
+  lastProbeAt: number | null;
+  /** Last 4 chars of the key for UI display ("sk-ant-…aB9c"). Plaintext
+   *  beyond this never leaves the main process. */
+  keyHint: string;
+}
+
+/** Pseudo-meta for the two "global:*" pointer ids -- synthesized on the
+ *  fly from ProviderConfigStore state so the renderer can render them in
+ *  the same Übernehmen-Dropdown as research-store-owned keys. */
+export interface ResearchGlobalKeyAvailability {
+  openai: boolean;
+  anthropic: boolean;
+}
+
+/**
+ * Single bundle the renderer asks for on Settings-section mount. Avoids
+ * a fan-out of 4-5 IPCs; mirrors the `agent:getProviderConfig` pattern.
+ */
+export interface ResearchSettingsBundle {
+  config: ResearchFeaturesConfig;
+  keys: ResearchKeyMeta[];
+  globals: ResearchGlobalKeyAvailability;
+  /** True iff safeStorage.isEncryptionAvailable(). Renderer shows a
+   *  warning chip if false (basic cipher fallback on Linux without
+   *  libsecret/kwallet). */
+  encryptionAvailable: boolean;
+}
+
+/** Probe-result shape for the Settings "Test"-button (Phase G). */
+export type ResearchKeyProbeResult =
+  | { ok: true; latencyMs: number }
+  | { ok: false; error: string };
+

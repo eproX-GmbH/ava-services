@@ -44,6 +44,8 @@ import {
 } from "./crm/fetch-enrichment";
 import { initBilling } from "./billing";
 import { initLinkedIn } from "./linkedin";
+import { ResearchFeaturesStore } from "./research/store";
+import { ProviderConfigStore } from "./agent/providers/store";
 import {
   initSkills,
   buildGateEvaluator,
@@ -2045,6 +2047,139 @@ app.whenReady().then(async () => {
   // gegen Access-Token und persistiert ihn über die bestehende
   // Subscription-Token-Pipeline. Renderer bekommt nur `{ ok, error? }`
   // — der Token verlässt den Main-Process nicht.
+  // ---- v0.1.172 Settings Phase A — Research Features --------------------
+  // Per-feature config + key registry for the website producer's two
+  // research pipelines (Deep Research / Tenders+Expansion, Job-Postings).
+  // See src/main/research/store.ts for the persistence layout.
+  const researchStore = ResearchFeaturesStore.shared();
+
+  function researchBundle() {
+    const pcs = ProviderConfigStore.shared();
+    return {
+      config: researchStore.getConfig(),
+      keys: researchStore.listKeys(),
+      globals: {
+        openai: pcs.hasKey("openai"),
+        anthropic: pcs.hasKey("anthropic"),
+      },
+      encryptionAvailable: pcs.isEncryptionAvailable(),
+    };
+  }
+
+  ipcMain.handle("research:getBundle", () => researchBundle());
+
+  ipcMain.handle(
+    "research:setFeatureConfig",
+    (_e, args: {
+      feature: "expansionTenders" | "jobPostings";
+      partial: {
+        tier?: "off" | "standard" | "deep";
+        provider?: "openai" | "anthropic" | null;
+        keyId?: string | null;
+      };
+    }) => {
+      researchStore.setFeatureConfig(args.feature, args.partial);
+      return researchBundle();
+    },
+  );
+
+  ipcMain.handle(
+    "research:createKey",
+    (_e, args: { provider: "openai" | "anthropic"; label: string; plaintext: string }) => {
+      const id = researchStore.createKey(args);
+      return { id, bundle: researchBundle() };
+    },
+  );
+
+  ipcMain.handle("research:deleteKey", (_e, args: { keyId: string }) => {
+    const { detachedFeatures } = researchStore.deleteKey(args.keyId);
+    return { detachedFeatures, bundle: researchBundle() };
+  });
+
+  // Probe handler (Phase G) — does a 1-token round-trip against the
+  // provider so we can give green/red feedback in the Settings UI.
+  // Plaintext key never leaves this process.
+  ipcMain.handle(
+    "research:probeKey",
+    async (_e, args: { keyId: string }): Promise<{
+      ok: boolean;
+      latencyMs?: number;
+      error?: string;
+    }> => {
+      const plaintext = await researchStore.__getPlaintextKeyForProbe(args.keyId);
+      if (!plaintext) {
+        return { ok: false, error: "Key not found or undecryptable" };
+      }
+      // Provider deduction: global:* aliases are obvious; for uuid we
+      // need to read the meta.
+      const allKeys = researchStore.listKeys();
+      let provider: "openai" | "anthropic" | null = null;
+      if (args.keyId === "global:openai") provider = "openai";
+      else if (args.keyId === "global:anthropic") provider = "anthropic";
+      else provider = allKeys.find((k) => k.id === args.keyId)?.provider ?? null;
+
+      if (!provider) {
+        return { ok: false, error: "Unknown provider for keyId" };
+      }
+
+      const t0 = Date.now();
+      try {
+        if (provider === "openai") {
+          // /v1/models is the cheapest authenticated endpoint -- list of
+          // available models, ~$0 cost. Verifies the key works.
+          const resp = await fetch("https://api.openai.com/v1/models", {
+            headers: { authorization: `Bearer ${plaintext}` },
+          });
+          if (!resp.ok) {
+            const txt = (await resp.text()).slice(0, 200);
+            researchStore.markProbeResult(args.keyId, false);
+            return { ok: false, error: `OpenAI ${resp.status}: ${txt}` };
+          }
+        } else {
+          // Anthropic has no "list models" endpoint without consuming
+          // credits. A 1-token ping with max_tokens=1 is the minimum
+          // viable probe (costs ~$0.0001).
+          const resp = await fetch("https://api.anthropic.com/v1/messages", {
+            method: "POST",
+            headers: {
+              "content-type": "application/json",
+              "x-api-key": plaintext,
+              "anthropic-version": "2023-06-01",
+            },
+            body: JSON.stringify({
+              model: "claude-haiku-4-5",
+              max_tokens: 1,
+              messages: [{ role: "user", content: "hi" }],
+            }),
+          });
+          if (!resp.ok) {
+            const txt = (await resp.text()).slice(0, 200);
+            researchStore.markProbeResult(args.keyId, false);
+            return { ok: false, error: `Anthropic ${resp.status}: ${txt}` };
+          }
+        }
+        const latencyMs = Date.now() - t0;
+        researchStore.markProbeResult(args.keyId, true);
+        return { ok: true, latencyMs };
+      } catch (err) {
+        researchStore.markProbeResult(args.keyId, false);
+        return { ok: false, error: err instanceof Error ? err.message : String(err) };
+      }
+    },
+  );
+
+  // Push bundle updates to all renderer windows when config/keys change.
+  // Keeps Settings UI live-synced if another window (or future CLI tool)
+  // mutates it.
+  const broadcastResearchBundle = () => {
+    const bundle = researchBundle();
+    for (const win of BrowserWindow.getAllWindows()) {
+      win.webContents.send("research:bundleChanged", bundle);
+    }
+  };
+  researchStore.on("configChanged", broadcastResearchBundle);
+  researchStore.on("keysChanged", broadcastResearchBundle);
+
   ipcMain.handle(
     "agent:connectAnthropicSubscription",
     async (event): Promise<{ ok: true } | { ok: false; error: string }> => {

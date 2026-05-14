@@ -64,6 +64,11 @@ import type {
   SkillRow,
   SkillSavePayload,
   SkillSaveResult,
+  ResearchSettingsBundle,
+  ResearchFeature,
+  ResearchTier,
+  ResearchProvider,
+  ResearchKeyProbeResult,
 } from "../shared/types";
 export type {
   AgentChoiceAnswer,
@@ -1100,6 +1105,46 @@ const api = {
         offset?: number;
       }): Promise<LinkedInLinkedSignal[]> =>
         ipcRenderer.invoke("linkedin:linker:signalsForCompany", args),
+    },
+  },
+  /** v0.1.172 Settings Phase A — Research Features ("Erweiterte
+   *  Recherche-Funktionen" section in Settings). Per-feature provider
+   *  + tier + API-key config for the website producer's two cloud-LLM
+   *  enrichment pipelines. */
+  research: {
+    getBundle: (): Promise<ResearchSettingsBundle> =>
+      ipcRenderer.invoke("research:getBundle"),
+    setFeatureConfig: (args: {
+      feature: ResearchFeature;
+      partial: {
+        tier?: ResearchTier;
+        provider?: ResearchProvider | null;
+        keyId?: string | null;
+      };
+    }): Promise<ResearchSettingsBundle> =>
+      ipcRenderer.invoke("research:setFeatureConfig", args),
+    createKey: (args: {
+      provider: ResearchProvider;
+      label: string;
+      plaintext: string;
+    }): Promise<{ id: string; bundle: ResearchSettingsBundle }> =>
+      ipcRenderer.invoke("research:createKey", args),
+    deleteKey: (
+      keyId: string,
+    ): Promise<{
+      detachedFeatures: ResearchFeature[];
+      bundle: ResearchSettingsBundle;
+    }> => ipcRenderer.invoke("research:deleteKey", { keyId }),
+    probeKey: (keyId: string): Promise<ResearchKeyProbeResult> =>
+      ipcRenderer.invoke("research:probeKey", { keyId }),
+    /** Push notification: main fires this when config/keys change so the
+     *  Settings panel stays live-synced (also covers another window
+     *  mutating the same store). */
+    onBundleChanged: (handler: (bundle: ResearchSettingsBundle) => void) => {
+      const listener = (_: unknown, bundle: ResearchSettingsBundle) =>
+        handler(bundle);
+      ipcRenderer.on("research:bundleChanged", listener);
+      return () => ipcRenderer.removeListener("research:bundleChanged", listener);
     },
   },
 } as const;
