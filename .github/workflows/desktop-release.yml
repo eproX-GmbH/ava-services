@@ -239,11 +239,25 @@ jobs:
 
   # ---------------------------------------------------------------------------
   # v0.1.174 — Intel-Mac (darwin-x64) build.
+  # v0.1.178 — switched from macos-13 (Intel) to macos-14 (arm64)
+  #            with cross-arch bottle fetch.
   #
-  # Runs on macos-13, the last Intel runner GitHub Actions still
-  # offers. `brew install whisper-cpp` here resolves the x64 bottle
-  # natively, so the same fetch-whisper script works without
-  # cross-arch heroics.
+  # Original plan ran this on macos-13 so `brew install whisper-cpp`
+  # would resolve the x64 bottle natively. GitHub effectively retired
+  # the macos-13 runner pool in early 2026 -- v0.1.174 / .175 / .176
+  # all sat 30-45 min in queue without ever getting a runner. The
+  # cross-arch path:
+  #   1. runs-on: macos-14 (arm64, plentiful capacity)
+  #   2. fetch-whisper.mjs uses `brew fetch --bottle-tag=sonoma`
+  #      (Intel macOS 14 bottle) to download the Intel-x64 binaries
+  #      directly from Homebrew's CDN
+  #   3. tarballs are extracted manually; rewriteBrewPathsToRpath
+  #      patches both the `/usr/local/...` and
+  #      `@@HOMEBREW_PREFIX@@/...` placeholder forms of dylib
+  #      references to @rpath
+  #   4. libomp.dylib is co-bundled (libggml-cpu.so transitive dep)
+  # All Mach-O tools (codesign, install_name_tool, otool) operate on
+  # binary metadata and don't care which CPU they're running on.
   #
   # Sequencing: this job `needs: build-mac-arm64` so the arm64
   # manifest is already on the Release when we touch it. The job
@@ -252,16 +266,11 @@ jobs:
   # x64 artifacts to the Release, and finally writes a merged
   # `latest-mac.yml` (union of arm64 + x64 file entries) so both
   # arches' OTA paths work.
-  #
-  # If the macos-13 runner pool is eventually retired (announced
-  # by GitHub), the fallback is cross-arch bottle fetch on macos-14
-  # via `brew fetch --bottle-tag=ventura` — but that's brittle across
-  # brew versions, so we stay native-per-runner while we can.
   # ---------------------------------------------------------------------------
   build-mac-x64:
-    name: Build & sign macOS (x64)
+    name: Build & sign macOS (x64, cross-built on arm64)
     needs: build-mac-arm64
-    runs-on: macos-13
+    runs-on: macos-14
     steps:
       - uses: actions/checkout@v4
         with:

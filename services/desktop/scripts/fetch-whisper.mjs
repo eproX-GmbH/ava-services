@@ -55,18 +55,26 @@ const RESOURCES_ROOT = resolve(__dirname, "..", "resources", "whisper");
 //
 //   - Windows: upstream ships `whisper-bin-x64.zip` from v1.8.0+.
 //   - macOS:   upstream ships NO darwin assets — only an iOS xcframework.
-//              Use Homebrew on the runner (`brew install whisper-cpp`)
-//              and copy the resulting `whisper-cli` into resources/.
-//              The runtime arch follows the runner's arch:
-//                - darwin-arm64 → must run on an arm64 macOS host
-//                                 (CI: macos-14 / macos-15)
-//                - darwin-x64   → must run on an Intel macOS host
-//                                 (CI: macos-13, the last Intel runner
-//                                 GitHub Actions still offers; v0.1.174
-//                                 added Intel support per user feedback)
-//              Cross-arch bottle fetch (download an x64 bottle on an
-//              arm64 runner) is brittle across brew versions, so we
-//              keep one-arch-per-runner.
+//              We use Homebrew bottles for both arches:
+//
+//                - darwin-arm64 → native arm64 brew install on the
+//                                 runner (macos-14 / macos-15).
+//                - darwin-x64   → for v0.1.0…v0.1.173 we relied on
+//                                 the macos-13 (Intel) runner. As of
+//                                 May 2026 GitHub has phased out
+//                                 macos-13 runner capacity so badly
+//                                 that x64 jobs queue indefinitely
+//                                 (v0.1.174…v0.1.176 each sat for
+//                                 30-45 min without a runner). v0.1.178
+//                                 switched to a cross-arch bottle
+//                                 fetch: run on macos-14 (arm64)
+//                                 and pull the Intel `sonoma`-tagged
+//                                 bottle of whisper-cpp + ggml
+//                                 directly from Homebrew's CDN, then
+//                                 extract the tarball manually into
+//                                 the same layout `placeMacDylibs`
+//                                 already expects.
+//
 //   - Linux:   upstream also ships no Linux asset. Not in the v0.1.0
 //              build matrix; AppImage is opt-in for later.
 const TARGETS = [
@@ -77,8 +85,12 @@ const TARGETS = [
   },
   {
     id: "darwin-x64",
-    source: "brew",
+    source: "brew-cross",
     formula: "whisper-cpp",
+    /** Intel macOS 14 (Sonoma) -- the only Intel bottle Homebrew
+     *  currently builds for whisper-cpp / ggml. Binaries are still
+     *  forward-compatible to Intel users on macOS 13 (Ventura). */
+    bottleTag: "sonoma",
   },
   {
     id: "win32-x64",
@@ -120,6 +132,9 @@ async function main() {
         if (target.source === "brew") {
           await placeMacDylibs(target.formula, outDir);
           await cleanupMisplacedDylibs(outDir);
+        } else if (target.source === "brew-cross") {
+          await placeCrossBrewArtifacts(target, outDir);
+          await cleanupMisplacedDylibs(outDir);
         }
         continue;
       }
@@ -129,6 +144,8 @@ async function main() {
 
     if (target.source === "brew") {
       await fetchViaBrew(target.formula, outDir, exeName);
+    } else if (target.source === "brew-cross") {
+      await fetchViaCrossBrew(target, outDir, exeName);
     } else {
       const url = `https://github.com/ggerganov/whisper.cpp/releases/download/${VERSION}/${target.asset}`;
       console.log(`[whisper] ${target.id}: downloading ${url}`);
@@ -172,6 +189,213 @@ async function fetchViaBrew(formula, outDir, exeName) {
   await fs.copyFile(srcBin, join(outDir, exeName));
   await placeMacDylibs(formula, outDir);
   await cleanupMisplacedDylibs(outDir);
+}
+
+/**
+ * v0.1.178 — Cross-arch acquisition for `darwin-x64` when running on
+ * an arm64 host (the macos-13 GitHub runner pool was effectively
+ * retired in early 2026; x64 jobs there queue indefinitely without
+ * ever getting assigned). We pull the Intel Homebrew bottle of the
+ * formula AND its `ggml` dependency directly from Homebrew's CDN,
+ * extract the tarballs into a temp dir that mirrors brew's `prefix`
+ * layout, and reuse the existing `placeCrossBrewArtifacts` logic.
+ *
+ * Steps:
+ *   1. `brew fetch --bottle-tag=<tag> <formula>` for whisper-cpp + ggml
+ *      → downloads the bottle tarball into Homebrew's cache without
+ *        installing it.
+ *   2. `brew --cache --bottle-tag=<tag> <formula>` → returns the
+ *      absolute path of that cached tarball.
+ *   3. Extract each tarball into `/tmp/ava-cross-brew/<random>/`.
+ *      The tarball top-level is `<formula>/<version>/{bin,lib,libexec}`,
+ *      which matches what `brew --prefix` would return for an installed
+ *      formula. We hand those extracted paths into `placeCrossBrewArtifacts`
+ *      which is otherwise identical to `placeMacDylibs`.
+ *
+ * Cross-arch concerns:
+ *   - The resulting whisper-cli + dylibs are Intel Mach-O. `codesign`,
+ *     `install_name_tool`, and `otool` all operate on Mach-O metadata
+ *     independent of the host CPU and Just Work on an arm64 runner.
+ *   - The whisper-cli binary doesn't *run* on the arm64 host (different
+ *     ISA), so we can't verify the bundle locally — verification
+ *     happens on the Intel user's machine after install.
+ */
+async function fetchViaCrossBrew(target, outDir, exeName) {
+  const { formula, bottleTag } = target;
+  // ggml is the direct dependency of whisper-cpp; libomp is a
+  // transitive runtime dep of `libggml-cpu.so` (the CPU backend
+  // plugin uses OpenMP for parallel math). Both must ship with us.
+  const dependencyFormulas = ["ggml", "libomp"];
+  const tmpRoot = `/tmp/ava-cross-brew-${process.pid}-${Date.now()}`;
+  await mkdir(tmpRoot, { recursive: true });
+
+  // Download Intel bottles (no install)
+  console.log(`[whisper] ${target.id}: fetching ${formula} (bottle-tag=${bottleTag})`);
+  await runCmd("brew", ["fetch", `--bottle-tag=${bottleTag}`, formula]);
+  for (const dep of dependencyFormulas) {
+    console.log(`[whisper] ${target.id}: fetching ${dep} (bottle-tag=${bottleTag})`);
+    await runCmd("brew", ["fetch", `--bottle-tag=${bottleTag}`, dep]);
+  }
+
+  // Resolve cached tarball paths
+  const whisperTar = (
+    await runCmdCapture("brew", ["--cache", `--bottle-tag=${bottleTag}`, formula])
+  ).trim();
+  const depTars = {};
+  for (const dep of dependencyFormulas) {
+    depTars[dep] = (
+      await runCmdCapture("brew", ["--cache", `--bottle-tag=${bottleTag}`, dep])
+    ).trim();
+  }
+  if (!existsSync(whisperTar)) {
+    throw new Error(`bottle cache resolve failed: whisper=${whisperTar}`);
+  }
+  for (const [dep, path] of Object.entries(depTars)) {
+    if (!existsSync(path)) {
+      throw new Error(`bottle cache resolve failed: ${dep}=${path}`);
+    }
+  }
+
+  // Extract into the temp root. Tarball top-level is `<formula>/<version>/...`
+  // which our existing logic treats as the brew prefix.
+  console.log(`[whisper] ${target.id}: extracting bottles to ${tmpRoot}`);
+  await runCmd("tar", ["xzf", whisperTar, "-C", tmpRoot]);
+  for (const path of Object.values(depTars)) {
+    await runCmd("tar", ["xzf", path, "-C", tmpRoot]);
+  }
+
+  // Resolve the per-formula extracted prefixes.
+  const fs = await import("node:fs/promises");
+  const whisperPrefix = await firstSubdir(join(tmpRoot, formula), fs);
+  const ggmlPrefix = await firstSubdir(join(tmpRoot, "ggml"), fs);
+  const libompPrefix = await firstSubdir(join(tmpRoot, "libomp"), fs);
+  if (!whisperPrefix || !ggmlPrefix || !libompPrefix) {
+    throw new Error(
+      `cross-brew extract layout unexpected: ` +
+        `whisperPrefix=${whisperPrefix} ggmlPrefix=${ggmlPrefix} libompPrefix=${libompPrefix}`,
+    );
+  }
+
+  // Copy the Intel whisper-cli binary into outDir.
+  const srcBin = join(whisperPrefix, "bin", exeName);
+  if (!existsSync(srcBin)) {
+    throw new Error(`whisper-cli not found in extracted bottle at ${srcBin}`);
+  }
+  await fs.copyFile(srcBin, join(outDir, exeName));
+
+  // Reuse the dylib + libexec placement logic, but with our extracted
+  // prefixes instead of brew's installed ones.
+  await placeCrossBrewArtifacts({ whisperPrefix, ggmlPrefix, libompPrefix }, outDir);
+  await cleanupMisplacedDylibs(outDir);
+
+  // Cleanup temp extract (best-effort).
+  try {
+    await fs.rm(tmpRoot, { recursive: true, force: true });
+  } catch {
+    /* ignore — tmp will be GC'd eventually */
+  }
+}
+
+/**
+ * Walks `dir` and returns the first sub-entry that's a directory.
+ * Bottle tarballs unpack to `<formula>/<version>/`; this helps us
+ * navigate to the version dir without hard-coding the version
+ * (which varies as Homebrew bumps).
+ */
+async function firstSubdir(dir, fs) {
+  if (!existsSync(dir)) return null;
+  const entries = await fs.readdir(dir, { withFileTypes: true });
+  const sub = entries.find((e) => e.isDirectory());
+  return sub ? join(dir, sub.name) : null;
+}
+
+/**
+ * v0.1.178 — cross-arch variant of placeMacDylibs. Takes already-
+ * resolved prefix paths (from extracted bottle tarballs) instead of
+ * calling `brew --prefix` on a locally-installed formula. Logic is
+ * otherwise identical: copy libwhisper + libggml dylibs into
+ * `<outDir>/../lib/`, copy ggml's libexec backend plugins into
+ * `<outDir>/../libexec/`, rewrite absolute brew paths to @rpath.
+ *
+ * Idempotent across re-runs against an existing cached binary —
+ * called from the cache-skip branch in main() as well.
+ */
+async function placeCrossBrewArtifacts(prefixes, outDir) {
+  const { whisperPrefix, ggmlPrefix, libompPrefix } = prefixes;
+  const fs = await import("node:fs/promises");
+  const dstLibDir = resolve(outDir, "..", "lib");
+  await fs.mkdir(dstLibDir, { recursive: true });
+
+  await copyDylibsFromBrew(join(whisperPrefix, "lib"), dstLibDir);
+  await copyDylibsFromBrew(join(ggmlPrefix, "lib"), dstLibDir);
+  if (libompPrefix) {
+    await copyDylibsFromBrew(join(libompPrefix, "lib"), dstLibDir);
+  }
+  console.log(`[whisper] ${outDir}: copied cross-brew dylibs to ${dstLibDir}`);
+
+  const dstLibexecDir = resolve(outDir, "..", "libexec");
+  await fs.mkdir(dstLibexecDir, { recursive: true });
+  await copyBackendPluginsFromBrew(join(ggmlPrefix, "libexec"), dstLibexecDir);
+
+  // Rewrite absolute brew paths. The bottle was built against the
+  // formula's INSTALL prefix and the LC_LOAD_DYLIB strings embedded
+  // in each Mach-O reference either:
+  //   - the Cellar/opt path (e.g. `/usr/local/opt/ggml/lib/libggml.dylib`)
+  //     when the bottle is built with --keep-prefix
+  //   - the Homebrew placeholder `@@HOMEBREW_PREFIX@@/opt/.../...`
+  //     when the bottle is "relocatable" -- the placeholder gets
+  //     literally written to the binary and brew rewrites it during
+  //     `install`. Our cross-fetch + tar-extract DOES NOT install,
+  //     so the placeholder stays. We need to strip it ourselves.
+  //
+  // Both forms are listed below; rewriteBrewPathsToRpath does
+  // startsWith(prefix + "/") on each, picks whichever matches, and
+  // rewrites to @rpath/<basename>.
+  const possiblePrefixes = [
+    whisperPrefix,
+    ggmlPrefix,
+    libompPrefix,
+    // Cellar / opt paths (Intel + arm64 brew)
+    "/usr/local/Cellar/whisper-cpp",
+    "/usr/local/Cellar/ggml",
+    "/usr/local/Cellar/libomp",
+    "/usr/local/opt/whisper-cpp",
+    "/usr/local/opt/ggml",
+    "/usr/local/opt/libomp",
+    "/opt/homebrew/Cellar/whisper-cpp",
+    "/opt/homebrew/Cellar/ggml",
+    "/opt/homebrew/Cellar/libomp",
+    "/opt/homebrew/opt/whisper-cpp",
+    "/opt/homebrew/opt/ggml",
+    "/opt/homebrew/opt/libomp",
+    // Bottle placeholders (relocatable bottle path inside Mach-O)
+    "@@HOMEBREW_PREFIX@@/opt/whisper-cpp",
+    "@@HOMEBREW_PREFIX@@/opt/ggml",
+    "@@HOMEBREW_PREFIX@@/opt/libomp",
+    "@@HOMEBREW_CELLAR@@/whisper-cpp",
+    "@@HOMEBREW_CELLAR@@/ggml",
+    "@@HOMEBREW_CELLAR@@/libomp",
+  ].filter(Boolean);
+
+  const binaryPath = join(outDir, "whisper-cli");
+  if (existsSync(binaryPath)) {
+    await rewriteBrewPathsToRpath(binaryPath, possiblePrefixes);
+  }
+  for (const name of await fs.readdir(dstLibDir)) {
+    if (!name.endsWith(".dylib")) continue;
+    const dylibPath = join(dstLibDir, name);
+    const stat = await fs.lstat(dylibPath);
+    if (stat.isSymbolicLink()) continue;
+    await rewriteBrewPathsToRpath(dylibPath, possiblePrefixes);
+  }
+  for (const name of await fs.readdir(dstLibexecDir).catch(() => [])) {
+    if (!name.endsWith(".so") && !name.endsWith(".dylib")) continue;
+    const pluginPath = join(dstLibexecDir, name);
+    const stat = await fs.lstat(pluginPath);
+    if (stat.isSymbolicLink()) continue;
+    await rewriteBrewPathsToRpath(pluginPath, possiblePrefixes);
+  }
+  console.log(`[whisper] ${outDir}: rewrote brew paths to @rpath (cross-brew)`);
 }
 
 /**
