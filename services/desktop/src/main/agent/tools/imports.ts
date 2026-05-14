@@ -203,8 +203,104 @@ export function buildImportTools(deps: {
       if (args.isFuzzy !== undefined) query.isFuzzy = args.isFuzzy;
       if (args.dryRun) query.dryRun = true;
 
+      // v0.1.179 — Pre-import research-cost gate (chat side).
+      // Mirrors the Ingest UI's confirmation modal but via the
+      // existing `askChoice` pattern. Skipped on dryRun (the model
+      // is still negotiating the column mapping; no AMQP fan-out
+      // happens for previews).
+      let useSkipMode = false;
+      if (!args.dryRun) {
+        // Lazy import keeps the symbol off the cold-load path for
+        // sessions that never trigger an import.
+        const { ResearchFeaturesStore } = await import("../../research/store");
+        const { estimateImportCost, FEATURE_LABEL, formatEuroRange } =
+          await import("../../../shared/research-cost");
+        const store = ResearchFeaturesStore.shared();
+        const estimate = estimateImportCost(store.getConfig(), totalRows);
+        if (estimate) {
+          const lines: string[] = [
+            `Du startest einen Import von ${totalRows.toLocaleString("de-DE")} Firmen.`,
+            "",
+            "Folgende kostenpflichtige Anreicherungen sind aktiv:",
+            ...estimate.perFeature.map(
+              (p) =>
+                `  • ${FEATURE_LABEL[p.feature]} (${p.provider === "openai" ? "OpenAI" : "Anthropic"} ${p.tier === "deep" ? "Deep Research" : "Standard"}): ${formatEuroRange(p.perFirma, { perFirma: true })} je Firma → ${formatEuroRange(p.total)} total`,
+            ),
+            "",
+            `Gesamtschätzung: ${formatEuroRange(estimate.total)}. Diese Kosten werden direkt deinen API-Konten belastet.`,
+          ];
+          const choice = await ctx.ui.askChoice(
+            lines.join("\n"),
+            [
+              { value: "with", label: "Mit Anreicherung importieren" },
+              { value: "without", label: "Ohne Anreicherung (diesmal)" },
+              { value: "cancel", label: "Abbrechen" },
+            ],
+            ctx.signal,
+          );
+          if (choice === "cancel") {
+            return {
+              filename: att.filename,
+              rows: totalRows,
+              cancelled: true,
+            } as never;
+          }
+          useSkipMode = choice === "without";
+        }
+      }
+
+      // v0.1.179 — Begin skip-mode BEFORE the POST so the website
+      // producer cycles to tier=off with the new env vars in place
+      // by the time the website stage runs for the first company.
+      // The snapshot is attached to the transactionId returned by
+      // the POST, which the user can later release by viewing the
+      // transaction stream (auto-restore via TransactionStream.tsx)
+      // or by manually flipping in Settings.
+      let skipSnapshotKey: string | null = null;
+      if (useSkipMode) {
+        const { ResearchFeaturesStore } = await import("../../research/store");
+        const store = ResearchFeaturesStore.shared();
+        skipSnapshotKey = store.beginSkipMode();
+        ctx.log(
+          `import_excel: skip-mode active (snapshot=${skipSnapshotKey}). Awaiting website producer reboot…`,
+        );
+        // Mirror the IPC's wait-loop, but inline since we have direct
+        // access to the producers array? No — we're in a tool, no
+        // direct ProducerSupervisor reference. Use the same 250ms
+        // poll the IPC uses, capped at 30s.
+        const deadline = Date.now() + 30_000;
+        let ready = false;
+        while (Date.now() < deadline) {
+          // The tool has no direct supervisor handle; we approximate
+          // ready-state by waiting a fixed conservative window. The
+          // supervisor's debounced restart fires ~500ms after the
+          // config change and a fresh website spawn typically takes
+          // 8-12s. 15s is a comfortable overshoot.
+          await new Promise((r) => setTimeout(r, 250));
+          if (Date.now() - (deadline - 30_000) > 15_000) {
+            ready = true;
+            break;
+          }
+        }
+        if (!ready) {
+          ctx.log("import_excel: producer reboot timeout, aborting skip-mode");
+          // Restore so user isn't stuck at off
+          if (skipSnapshotKey) {
+            store.attachSkipSnapshotToTransaction(
+              skipSnapshotKey,
+              `abort-${skipSnapshotKey}`,
+            );
+            store.endSkipModeForTransaction(`abort-${skipSnapshotKey}`);
+          }
+          throw new Error(
+            "Konnte den Website-Producer nicht rechtzeitig neu starten. Anreicherung wurde nicht deaktiviert; bitte erneut versuchen oder Anreicherung in Settings manuell deaktivieren.",
+          );
+        }
+        ctx.log("import_excel: producer ready, proceeding with import");
+      }
+
       ctx.log(
-        `import_excel: ${att.filename} (${totalRows} rows)${args.dryRun ? " [dryRun]" : ""} → POST /v1/imports/excel`,
+        `import_excel: ${att.filename} (${totalRows} rows)${args.dryRun ? " [dryRun]" : ""}${useSkipMode ? " [SKIP-MODE]" : ""} → POST /v1/imports/excel`,
       );
 
       const response = await deps.gateway.request<
@@ -219,6 +315,18 @@ export function buildImportTools(deps: {
         // master-data forwards them as AMQP headers to the producers.
         attachUserLlm: true,
       });
+
+      // v0.1.179 — Attach the skip-mode snapshot to the transaction
+      // ID so auto-restore can find it when the user later watches
+      // the stream (or via the 30-min idle timer in TransactionStream).
+      if (skipSnapshotKey && !args.dryRun) {
+        const realTx = (response as { transactionId: string }).transactionId;
+        const { ResearchFeaturesStore } = await import("../../research/store");
+        ResearchFeaturesStore.shared().attachSkipSnapshotToTransaction(
+          skipSnapshotKey,
+          realTx,
+        );
+      }
 
       if (args.dryRun) {
         // Don't discard the attachment — the agent will likely call us
@@ -708,6 +816,61 @@ export function buildImportTools(deps: {
         };
       });
 
+      // v0.1.179 — Same research-cost gate as import_excel, just over
+      // the CRM-fetched list instead of the xlsx parse. Skipped on
+      // dryRun. See import_excel above for the rationale.
+      let useSkipMode = false;
+      let skipSnapshotKey: string | null = null;
+      if (!args.dryRun) {
+        const { ResearchFeaturesStore } = await import("../../research/store");
+        const { estimateImportCost, FEATURE_LABEL, formatEuroRange } =
+          await import("../../../shared/research-cost");
+        const store = ResearchFeaturesStore.shared();
+        const estimate = estimateImportCost(store.getConfig(), companies.length);
+        if (estimate) {
+          const lines: string[] = [
+            `Du importierst ${companies.length.toLocaleString("de-DE")} Firmen aus ${provider}.`,
+            "",
+            "Folgende kostenpflichtige Anreicherungen sind aktiv:",
+            ...estimate.perFeature.map(
+              (p) =>
+                `  • ${FEATURE_LABEL[p.feature]} (${p.provider === "openai" ? "OpenAI" : "Anthropic"} ${p.tier === "deep" ? "Deep Research" : "Standard"}): ${formatEuroRange(p.perFirma, { perFirma: true })} je Firma → ${formatEuroRange(p.total)} total`,
+            ),
+            "",
+            `Gesamtschätzung: ${formatEuroRange(estimate.total)}.`,
+          ];
+          const choice = await ctx.ui.askChoice(
+            lines.join("\n"),
+            [
+              { value: "with", label: "Mit Anreicherung importieren" },
+              { value: "without", label: "Ohne Anreicherung (diesmal)" },
+              { value: "cancel", label: "Abbrechen" },
+            ],
+            ctx.signal,
+          );
+          if (choice === "cancel") {
+            return {
+              provider,
+              cancelled: true,
+              skipped,
+              total,
+            } as never;
+          }
+          useSkipMode = choice === "without";
+        }
+
+        if (useSkipMode) {
+          skipSnapshotKey = store.beginSkipMode();
+          ctx.log(
+            `import_from_crm: skip-mode active (snapshot=${skipSnapshotKey}). Awaiting website producer reboot (~15s)…`,
+          );
+          // Fixed conservative wait — see import_excel above for the
+          // rationale (no direct ProducerSupervisor handle in this scope).
+          await new Promise((r) => setTimeout(r, 15_000));
+          ctx.log("import_from_crm: producer reboot window elapsed");
+        }
+      }
+
       const response = await deps.gateway.request<
         { transactionId: string; companyCount: number } | ImportPreview
       >("/v1/imports/from-list", {
@@ -724,6 +887,17 @@ export function buildImportTools(deps: {
         signal: ctx.signal,
         attachUserLlm: true,
       });
+
+      // v0.1.179 — Attach skip-mode snapshot to the new transaction
+      // so auto-restore can find it.
+      if (skipSnapshotKey && !args.dryRun) {
+        const realTx = (response as { transactionId: string }).transactionId;
+        const { ResearchFeaturesStore } = await import("../../research/store");
+        ResearchFeaturesStore.shared().attachSkipSnapshotToTransaction(
+          skipSnapshotKey,
+          realTx,
+        );
+      }
 
       if (args.dryRun) {
         return {

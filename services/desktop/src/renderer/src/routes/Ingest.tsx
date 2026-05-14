@@ -4,6 +4,13 @@ import { useQueryClient } from "@tanstack/react-query";
 import { gatewayFetch, gatewayUpload, GatewayError } from "../api/gateway";
 import { USAGE_QUERY_KEY, type UsageSnapshot } from "../api/usage";
 import { parseAttachment } from "../lib/attachment";
+import {
+  ImportConfirmDialog,
+  runImportWithSkipMode,
+  type ImportConfirmChoice,
+} from "../components/ImportConfirmDialog";
+import { estimateImportCost } from "../../../shared/research-cost";
+import type { ResearchSettingsBundle } from "../../../shared/types";
 
 // W1 — Upload company Excel.
 //
@@ -38,6 +45,27 @@ export function Ingest() {
     needed: number;
     tier: string;
   } | null>(null);
+
+  // v0.1.179 — Pre-import gate state. When the user submits and at
+  // least one research feature is active, we show the confirm dialog
+  // instead of POSTing immediately. The promise resolver lets us
+  // `await` the user's choice from inside `onSubmit`.
+  const [pendingConfirm, setPendingConfirm] = useState<{
+    companyCount: number;
+    bundle: ResearchSettingsBundle;
+    blockSkip: boolean;
+    resolve: (c: ImportConfirmChoice) => void;
+  } | null>(null);
+
+  function askForResearchConfirm(args: {
+    companyCount: number;
+    bundle: ResearchSettingsBundle;
+    blockSkip: boolean;
+  }): Promise<ImportConfirmChoice> {
+    return new Promise((resolve) => {
+      setPendingConfirm({ ...args, resolve });
+    });
+  }
 
   // Listen for the structured 402 dispatched from api/gateway.ts so any
   // import path (this form, future agent tools) surfaces a single
@@ -116,28 +144,55 @@ export function Ingest() {
       }
     }
 
+    // v0.1.179 — Pre-import research gate. If at least one research
+    // feature is active, show the confirmation modal. The user picks
+    // mit/ohne/abbrechen; on "ohne" we route through skip-mode so
+    // the producer cycles to tier=off before the actual POST.
+    const researchBundle = await window.api.research.getBundle();
+    const researchEstimate =
+      expectedCount > 0
+        ? estimateImportCost(researchBundle.config, expectedCount)
+        : null;
+
+    let useSkipMode = false;
+    if (researchEstimate) {
+      const blockSkip = (await window.api.research.hasPendingSkipMode()).pending;
+      const choice = await askForResearchConfirm({
+        companyCount: expectedCount,
+        bundle: researchBundle,
+        blockSkip,
+      });
+      setPendingConfirm(null);
+      if (choice === "cancel") {
+        setBusy(false);
+        return;
+      }
+      useSkipMode = choice === "skip-research";
+    }
+
     const form = new FormData();
     form.append("file", file);
 
-    try {
-      const { transactionId } = await gatewayUpload<{ transactionId: string }>(
-        "/v1/imports/excel",
-        form,
-        {
-          query: {
-            companyNameIdentifiers: companyHeaders,
-            city: cityHeaders,
-            name: name || undefined,
-            isFuzzy: String(isFuzzy),
-            ...(expectedCount > 0 ? { expectedCount: String(expectedCount) } : {}),
-          },
-          // Option D — BYO-key passthrough. Attach the user's active
-          // provider key so master-data can forward it to the LLM
-          // producers via AMQP headers. Producer falls back to env
-          // when the user hasn't configured a provider yet.
-          attachUserLlm: true,
+    const doPost = (): Promise<{ transactionId: string }> =>
+      gatewayUpload<{ transactionId: string }>("/v1/imports/excel", form, {
+        query: {
+          companyNameIdentifiers: companyHeaders,
+          city: cityHeaders,
+          name: name || undefined,
+          isFuzzy: String(isFuzzy),
+          ...(expectedCount > 0 ? { expectedCount: String(expectedCount) } : {}),
         },
-      );
+        // Option D — BYO-key passthrough. Attach the user's active
+        // provider key so master-data can forward it to the LLM
+        // producers via AMQP headers. Producer falls back to env
+        // when the user hasn't configured a provider yet.
+        attachUserLlm: true,
+      });
+
+    try {
+      const { transactionId } = useSkipMode
+        ? await runImportWithSkipMode(doPost)
+        : await doPost();
       navigate(`/transactions/${transactionId}/stream`);
     } catch (err) {
       // gateway.ts already dispatched `ava:quota-exceeded` for 402 — the
@@ -227,6 +282,17 @@ export function Ingest() {
           </div>
         )}
       </form>
+      {/* v0.1.179 — Pre-import research-cost confirmation. Mounted
+       *  conditionally; the resolver hooked in `askForResearchConfirm`
+       *  awaits the user's button click. */}
+      {pendingConfirm && (
+        <ImportConfirmDialog
+          companyCount={pendingConfirm.companyCount}
+          bundle={pendingConfirm.bundle}
+          blockSkip={pendingConfirm.blockSkip}
+          onResolve={pendingConfirm.resolve}
+        />
+      )}
     </section>
   );
 }

@@ -90,6 +90,18 @@ export class ResearchFeaturesStore extends EventEmitter {
   private readonly keysDir: string;
   private readonly configPath: string;
   private cached: ResearchFeaturesConfig;
+  /**
+   * v0.1.179 — pre-import skip-mode snapshots. When the user picks
+   * "Ohne Anreicherung" in the import confirmation, we snapshot the
+   * current config, flip both features to off, run the import, and
+   * restore the snapshot when the transaction completes. Keys are
+   * either a transient `snap:<uuid>` (between snapshot creation and
+   * transactionId attachment) or `tx:<transactionId>` (waiting for
+   * the matching transaction to finish). Map lives only in memory;
+   * if AVA crashes mid-import, the user's saved config stays at off
+   * which is the fail-safe outcome (no surprise spending).
+   */
+  private pendingRestores: Map<string, ResearchFeaturesConfig> = new Map();
 
   private constructor() {
     super();
@@ -390,6 +402,90 @@ export class ResearchFeaturesStore extends EventEmitter {
     } catch (err) {
       console.warn(`[research-store] markProbeResult write failed for ${keyId}:`, err);
     }
+  }
+
+  // ---- v0.1.179 — pre-import skip mode -------------------------------------
+
+  /**
+   * Snapshot the current per-feature config and flip both features
+   * to `tier=off`. Returns a snapshot key the caller stores. The
+   * supervisor's debounced restart will fire ~500ms later; the
+   * caller is responsible for awaiting producer-ready before
+   * starting the import (see `research:waitWebsiteReady` IPC).
+   */
+  beginSkipMode(): string {
+    const key = `snap:${randomUUID()}`;
+    this.pendingRestores.set(key, cloneConfig(this.cached));
+    // Flip both features off in one atomic-feeling write. Two
+    // setFeatureConfig calls each emit configChanged; the supervisor's
+    // debounce coalesces them into one restart.
+    if (this.cached.expansionTenders.tier !== "off") {
+      this.setFeatureConfig("expansionTenders", { tier: "off" });
+    }
+    if (this.cached.jobPostings.tier !== "off") {
+      this.setFeatureConfig("jobPostings", { tier: "off" });
+    }
+    console.info(
+      `[research-store] beginSkipMode → ${key} (saved config, flipped to off)`,
+    );
+    return key;
+  }
+
+  /**
+   * After `beginSkipMode` returns and the import POST returns a
+   * transactionId, attach the snapshot to that transactionId so the
+   * auto-restore on completion can find it.
+   */
+  attachSkipSnapshotToTransaction(snapshotKey: string, transactionId: string): boolean {
+    const snap = this.pendingRestores.get(snapshotKey);
+    if (!snap) {
+      console.warn(`[research-store] attachSkipSnapshot: key ${snapshotKey} not found`);
+      return false;
+    }
+    this.pendingRestores.delete(snapshotKey);
+    this.pendingRestores.set(`tx:${transactionId}`, snap);
+    console.info(
+      `[research-store] attachSkipSnapshot ${snapshotKey} → tx:${transactionId}`,
+    );
+    return true;
+  }
+
+  /**
+   * Restore the snapshot taken when a skip-mode import started.
+   * Called from the renderer when the transaction stream reports
+   * completion. Idempotent — repeated calls for the same tx-id are
+   * no-ops.
+   */
+  endSkipModeForTransaction(transactionId: string): boolean {
+    const key = `tx:${transactionId}`;
+    const snap = this.pendingRestores.get(key);
+    if (!snap) return false;
+    this.pendingRestores.delete(key);
+    // Restore each feature. setFeatureConfig validates so we can't
+    // restore into an inconsistent state.
+    for (const f of ["expansionTenders", "jobPostings"] as const) {
+      const v = snap[f];
+      if (v.tier === "off") {
+        this.setFeatureConfig(f, { tier: "off" });
+      } else if (v.provider && v.keyId) {
+        this.setFeatureConfig(f, {
+          tier: v.tier,
+          provider: v.provider,
+          keyId: v.keyId,
+        });
+      }
+    }
+    console.info(
+      `[research-store] endSkipMode tx:${transactionId} (restored config)`,
+    );
+    return true;
+  }
+
+  /** True if there's a pending skip-mode for any transaction. UI uses
+   *  this to lock out concurrent imports while a skip is in flight,
+   *  avoiding the restore-the-wrong-config race. */
+  hasPendingSkipMode(): boolean {
+    return this.pendingRestores.size > 0;
   }
 
   // ---- Internals -----------------------------------------------------------

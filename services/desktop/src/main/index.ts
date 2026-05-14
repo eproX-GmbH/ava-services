@@ -2198,6 +2198,75 @@ app.whenReady().then(async () => {
     },
   );
 
+  // v0.1.179 — Pre-import skip-mode IPCs. The renderer (or chat-tool)
+  // calls these around an import POST so the user can opt out of
+  // expensive research features for that batch without permanently
+  // toggling them off.
+  //
+  // Flow:
+  //   1. research:beginSkipMode      → snapshot + flip to off
+  //   2. research:waitWebsiteReady   → block until producer reboots
+  //   3. (caller does the import POST, captures transactionId)
+  //   4. research:attachSkipToTransaction(snap, tx)
+  //   5. (TransactionStream observes completion)
+  //   6. research:endSkipModeForTransaction(tx) → restore snapshot
+  //
+  // If anything between 2 and 6 fails, the user's saved config stays
+  // at off -- fail-safe to not-spending. They can re-enable in
+  // Settings.
+  ipcMain.handle("research:beginSkipMode", () => {
+    return { snapshotKey: researchStore.beginSkipMode() };
+  });
+
+  ipcMain.handle(
+    "research:waitWebsiteReady",
+    async (_e, args?: { timeoutMs?: number }) => {
+      const timeoutMs = args?.timeoutMs ?? 30_000;
+      const website = producers.find((p) => p.getStatus().name === "website");
+      if (!website) {
+        return { ready: false, reason: "website producer not registered" };
+      }
+      const deadline = Date.now() + timeoutMs;
+      while (Date.now() < deadline) {
+        const s = website.getStatus().state;
+        if (s === "ready") return { ready: true };
+        if (s === "error") {
+          return {
+            ready: false,
+            reason: website.getStatus().errorMessage ?? "producer in error state",
+          };
+        }
+        // Poll every 250ms — tight enough for the typical 5-15s
+        // restart cycle, loose enough to not burn CPU.
+        await new Promise((r) => setTimeout(r, 250));
+      }
+      return { ready: false, reason: `timeout after ${timeoutMs}ms` };
+    },
+  );
+
+  ipcMain.handle(
+    "research:attachSkipToTransaction",
+    (_e, args: { snapshotKey: string; transactionId: string }) => {
+      return {
+        ok: researchStore.attachSkipSnapshotToTransaction(
+          args.snapshotKey,
+          args.transactionId,
+        ),
+      };
+    },
+  );
+
+  ipcMain.handle(
+    "research:endSkipModeForTransaction",
+    (_e, args: { transactionId: string }) => {
+      return { ok: researchStore.endSkipModeForTransaction(args.transactionId) };
+    },
+  );
+
+  ipcMain.handle("research:hasPendingSkipMode", () => {
+    return { pending: researchStore.hasPendingSkipMode() };
+  });
+
   // Push bundle updates to all renderer windows when config/keys change.
   // Keeps Settings UI live-synced if another window (or future CLI tool)
   // mutates it.

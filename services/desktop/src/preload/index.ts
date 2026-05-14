@@ -1146,6 +1146,31 @@ const api = {
       ipcRenderer.on("research:bundleChanged", listener);
       return () => ipcRenderer.removeListener("research:bundleChanged", listener);
     },
+    /** v0.1.179 — pre-import skip-mode. See main/index.ts handlers
+     *  for the full lifecycle. The renderer calls these around the
+     *  import POST when the user picked "Ohne Anreicherung". */
+    beginSkipMode: (): Promise<{ snapshotKey: string }> =>
+      ipcRenderer.invoke("research:beginSkipMode"),
+    waitWebsiteReady: (
+      timeoutMs?: number,
+    ): Promise<{ ready: boolean; reason?: string }> =>
+      ipcRenderer.invoke("research:waitWebsiteReady", { timeoutMs }),
+    attachSkipToTransaction: (
+      snapshotKey: string,
+      transactionId: string,
+    ): Promise<{ ok: boolean }> =>
+      ipcRenderer.invoke("research:attachSkipToTransaction", {
+        snapshotKey,
+        transactionId,
+      }),
+    endSkipModeForTransaction: (
+      transactionId: string,
+    ): Promise<{ ok: boolean }> =>
+      ipcRenderer.invoke("research:endSkipModeForTransaction", {
+        transactionId,
+      }),
+    hasPendingSkipMode: (): Promise<{ pending: boolean }> =>
+      ipcRenderer.invoke("research:hasPendingSkipMode"),
   },
 } as const;
 
