@@ -178,24 +178,21 @@ export class ProducerSupervisor extends EventEmitter {
   /**
    * v0.1.170 — translate the active LLM config + producer name into
    * the list of degraded-feature warnings the renderer surfaces.
-   * Today only `website` has an OpenAI-specific reduced-mode (Deep
-   * Research + Google-Maps-Entity-Resolution skip when OPENAI_API_KEY
-   * isn't set); the function is structured so other producer-specific
-   * notes can be added later without touching the renderer.
+   *
+   * v0.1.172 Phase F update: the old "Deep Research deaktiviert
+   * (OpenAI-Key fehlt)"-warning is gone. With per-feature Settings
+   * the user has explicit control over both pipelines, and the
+   * `expansionTenders=off, jobPostings=off`-state is the documented
+   * default — not a degradation. Warnings only fire when something
+   * is _wrong_ (e.g. configured but unreachable), not when something
+   * is intentionally inactive.
+   *
+   * The hook stays in place; per-producer warnings can be added
+   * here as they emerge without touching the renderer.
    */
   private computeFeatureWarnings(): string[] {
     if (this.state !== "ready") return [];
-    if (!this.lastLlmConfig) return [];
-    const warnings: string[] = [];
-    if (
-      this.opts.config.name === "website" &&
-      !this.lastLlmConfig.openaiApiKey
-    ) {
-      warnings.push(
-        "Deep Research & Google-Maps-Entity-Resolution deaktiviert (OpenAI-Key fehlt)",
-      );
-    }
-    return warnings;
+    return [];
   }
 
   private setState(next: ProducerSupervisorState, errorMessage?: string): void {

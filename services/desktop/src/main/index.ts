@@ -404,7 +404,37 @@ function buildProducer(
           });
           return { AVA_STRUCTURED_CONTENT_SOURCE: source };
         }
-      : undefined;
+      : name === "website"
+        ? // v0.1.172 Phase D — Research Features per-feature env vars.
+          // Read tier/provider/key for both research pipelines from the
+          // ResearchFeaturesStore and project them into the producer's env.
+          // The website-side factory in infrastructure/research/index.ts
+          // reads exactly these 6 vars (3 per feature). Unset feature
+          // (tier=off) falls back to the legacy OPENAI_API_KEY path the
+          // factory implements, so existing installs without Settings
+          // migration keep working.
+          async (): Promise<Record<string, string>> => {
+            const store = ResearchFeaturesStore.shared();
+            const env: Record<string, string> = {};
+            const expansion = await store.resolveFeature("expansionTenders");
+            if (expansion) {
+              env.RESEARCH_EXPANSION_TIER = expansion.tier;
+              env.RESEARCH_EXPANSION_PROVIDER = expansion.provider;
+              env.RESEARCH_EXPANSION_API_KEY = expansion.apiKey;
+            } else {
+              env.RESEARCH_EXPANSION_TIER = "off";
+            }
+            const jobs = await store.resolveFeature("jobPostings");
+            if (jobs) {
+              env.RESEARCH_JOBS_TIER = jobs.tier;
+              env.RESEARCH_JOBS_PROVIDER = jobs.provider;
+              env.RESEARCH_JOBS_API_KEY = jobs.apiKey;
+            } else {
+              env.RESEARCH_JOBS_TIER = "off";
+            }
+            return env;
+          }
+        : undefined;
   return new ProducerSupervisor({
     config: { name, entry, databaseName, port },
     databaseUrl: makeDatabaseUrlGetter(name),
@@ -2179,6 +2209,44 @@ app.whenReady().then(async () => {
   };
   researchStore.on("configChanged", broadcastResearchBundle);
   researchStore.on("keysChanged", broadcastResearchBundle);
+
+  // v0.1.172 Phase D — Restart-on-Change. When the user mutates a
+  // research feature in Settings, the website producer needs to
+  // re-spawn so its `extraEnvAsync` callback picks up the fresh
+  // RESEARCH_* env vars. We only cycle on configChanged (not
+  // keysChanged) because key probes / metadata writes don't affect
+  // what the supervisor sends to the producer; only the per-feature
+  // {tier, provider, keyId} triple does.
+  //
+  // Coalesce rapid edits (e.g. user typing in a key field that
+  // auto-saves) into a single restart by debouncing 500ms.
+  let researchRestartTimer: NodeJS.Timeout | null = null;
+  researchStore.on("configChanged", () => {
+    if (researchRestartTimer) clearTimeout(researchRestartTimer);
+    researchRestartTimer = setTimeout(() => {
+      researchRestartTimer = null;
+      const website = producers.find((p) => p.getStatus().name === "website");
+      if (!website) return;
+      const s = website.getStatus().state;
+      if (s === "idle" || s === "stopping") return;
+      console.info(
+        "[research-store] config changed — cycling website producer to pick up new RESEARCH_* env",
+      );
+      void (async () => {
+        try {
+          await website.stop();
+        } catch (err) {
+          console.warn("[research-store] website.stop() rejected:", err);
+        }
+        if (!auth.getStatus().signedIn) return;
+        try {
+          await website.start();
+        } catch (err) {
+          console.error("[research-store] website.start() rejected after restart:", err);
+        }
+      })();
+    }, 500);
+  });
 
   ipcMain.handle(
     "agent:connectAnthropicSubscription",
