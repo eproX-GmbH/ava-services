@@ -369,6 +369,36 @@ export class LlmProviderManager extends EventEmitter {
     this.store.setConfig({ anthropicAuthMode: "subscription" });
   }
 
+  /**
+   * v0.1.181 — full-record setter used by the In-App-OAuth flow
+   * (button "Mit Claude.ai verbinden"). Unlike the plain-string
+   * variant above (paste-flow with long-lived `sk-ant-oat01-` token),
+   * the In-App-OAuth response carries a short-lived access_token +
+   * refresh_token + expires_in. All three need to be persisted so
+   * the AnthropicTokenRefresher can later swap a near-expired
+   * access_token for a fresh one without user interaction.
+   */
+  setAnthropicSubscriptionRecord(args: {
+    accessToken: string;
+    refreshToken?: string;
+    expiresIn?: number;
+  }): void {
+    const accessToken = args.accessToken.trim();
+    if (accessToken.length === 0) {
+      throw new Error("Access-Token ist leer.");
+    }
+    const expiresAt =
+      typeof args.expiresIn === "number" && args.expiresIn > 0
+        ? Date.now() + args.expiresIn * 1000
+        : 0;
+    this.store.setAnthropicSubscriptionRecord({
+      accessToken,
+      refreshToken: args.refreshToken,
+      expiresAt,
+    });
+    this.store.setConfig({ anthropicAuthMode: "subscription" });
+  }
+
   clearAnthropicSubscriptionToken(): void {
     this.store.clearAnthropicSubscriptionToken();
     // If subscription was the active anthropic auth mode, demote to

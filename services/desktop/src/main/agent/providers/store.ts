@@ -93,6 +93,26 @@ const DEFAULT_CONFIG: ProviderConfig = {
 
 export type { ProviderConfig };
 
+/**
+ * v0.1.181 — Full Anthropic-Subscription record. Stored encrypted
+ * (JSON envelope inside the `.enc` file). The refresher needs all
+ * three fields to decide if + how to refresh.
+ */
+export interface AnthropicSubscriptionRecord {
+  /** Bearer token sent in `x-api-key` / `Authorization: Bearer …`. */
+  accessToken: string;
+  /** Optional — when present, the TokenRefresher can swap a near-
+   *  expired access_token for a fresh one via the OAuth refresh
+   *  endpoint. Missing on the legacy raw-string format and on the
+   *  Advanced/manual-paste flow (claude setup-token long-lived
+   *  tokens have no refresh_token at all). */
+  refreshToken?: string;
+  /** Epoch milliseconds. `0` means "unknown / non-refreshable"
+   *  (legacy or manual-paste). Refresher skips records with
+   *  expiresAt === 0. */
+  expiresAt: number;
+}
+
 export interface ProviderConfigStoreEvents {
   configChanged: (cfg: ProviderConfig) => void;
   /** Fires for any provider's key being set/cleared. Listener can re-check via `hasKey`. */
@@ -286,6 +306,18 @@ export class ProviderConfigStore extends EventEmitter {
   }
 
   // ---- Anthropic subscription token (Phase A1) -----------------------------
+  //
+  // v0.1.181 — Storage format upgraded from raw `<access_token>` string
+  // to a JSON envelope:
+  //
+  //   { "accessToken": "...", "refreshToken": "...", "expiresAt": <epoch_ms> }
+  //
+  // We need the refresh_token + expiry to drive the background refresher
+  // (see `TokenRefresher` in main/index.ts). Backward-compat: when the
+  // stored payload doesn't parse as JSON (legacy plain-string), treat it
+  // as `{ accessToken: <plaintext>, refreshToken: undefined, expiresAt: 0 }`.
+  // The first In-App-OAuth reconnect after the upgrade rewrites the file
+  // to the new envelope.
 
   private anthropicSubscriptionPath(): string {
     return join(this.dir, ANTHROPIC_SUBSCRIPTION_FILENAME);
@@ -297,16 +329,50 @@ export class ProviderConfigStore extends EventEmitter {
   }
 
   /**
-   * Decrypt and return the Anthropic OAuth subscription token, or null
-   * if missing / undecryptable. Mirrors `getKey()` semantics: a broken
-   * blob is unlinked and the change emitted so the UI can recover.
+   * Decrypt and return ONLY the access_token. Backward-compat shim;
+   * existing call sites (producer-supervisor env, manager) only need the
+   * access_token for outgoing API calls. Use
+   * `getAnthropicSubscriptionRecord()` when you need the full record
+   * (refresher).
    */
   async getAnthropicSubscriptionToken(): Promise<string | null> {
+    const record = await this.getAnthropicSubscriptionRecord();
+    return record?.accessToken ?? null;
+  }
+
+  /**
+   * v0.1.181 — full record incl. refresh_token + expiresAt. The
+   * TokenRefresher consumes this to decide when to refresh and what to
+   * pass into `refreshAccessToken()`.
+   */
+  async getAnthropicSubscriptionRecord(): Promise<AnthropicSubscriptionRecord | null> {
     const path = this.anthropicSubscriptionPath();
     if (!existsSync(path)) return null;
     try {
       const buf = readFileSync(path);
-      return safeStorage.decryptString(buf);
+      const plaintext = safeStorage.decryptString(buf);
+      // Try JSON envelope first (v0.1.181+). Fall through to legacy
+      // raw-string on parse failure.
+      try {
+        const parsed = JSON.parse(plaintext) as Partial<AnthropicSubscriptionRecord>;
+        if (typeof parsed.accessToken === "string" && parsed.accessToken.length > 0) {
+          return {
+            accessToken: parsed.accessToken,
+            refreshToken:
+              typeof parsed.refreshToken === "string" && parsed.refreshToken.length > 0
+                ? parsed.refreshToken
+                : undefined,
+            expiresAt:
+              typeof parsed.expiresAt === "number" && Number.isFinite(parsed.expiresAt)
+                ? parsed.expiresAt
+                : 0,
+          };
+        }
+      } catch {
+        /* fall through — legacy raw-string format */
+      }
+      // Legacy: file content is the access_token verbatim.
+      return { accessToken: plaintext, refreshToken: undefined, expiresAt: 0 };
     } catch (err) {
       console.warn(
         "[provider-store] failed to decrypt anthropic-subscription token — removing broken blob:",
@@ -325,15 +391,41 @@ export class ProviderConfigStore extends EventEmitter {
     }
   }
 
+  /**
+   * Legacy entry point — kept for the "Advanced: Token manuell einfügen"
+   * paste flow which only knows the access_token. Stores it in the new
+   * envelope with no refresh_token + expiresAt=0 so the refresher
+   * recognizes it as "non-refreshable" and skips it.
+   */
   setAnthropicSubscriptionToken(plaintext: string): void {
     const trimmed = plaintext.trim();
     if (!trimmed) throw new Error("anthropic subscription token is empty");
+    this.setAnthropicSubscriptionRecord({
+      accessToken: trimmed,
+      refreshToken: undefined,
+      expiresAt: 0,
+    });
+  }
+
+  /**
+   * v0.1.181 — full-record write. Called by the In-App-OAuth flow handler
+   * after a successful exchange OR refresh.
+   */
+  setAnthropicSubscriptionRecord(record: AnthropicSubscriptionRecord): void {
+    if (!record.accessToken || record.accessToken.trim() === "") {
+      throw new Error("anthropic subscription accessToken is empty");
+    }
     if (!safeStorage.isEncryptionAvailable()) {
       console.warn(
         "[provider-store] safeStorage encryption not available — falling back to basic cipher (anthropic-subscription)",
       );
     }
-    const enc = safeStorage.encryptString(trimmed);
+    const envelope = JSON.stringify({
+      accessToken: record.accessToken,
+      refreshToken: record.refreshToken,
+      expiresAt: record.expiresAt,
+    });
+    const enc = safeStorage.encryptString(envelope);
     writeFileSync(this.anthropicSubscriptionPath(), enc, { mode: 0o600 });
     this.emit("anthropicSubscriptionTokenChanged");
   }

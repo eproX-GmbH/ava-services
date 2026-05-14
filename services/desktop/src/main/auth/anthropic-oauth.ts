@@ -185,3 +185,85 @@ export async function exchangeCodeForToken(args: {
   }
   return out;
 }
+
+/**
+ * v0.1.181 — Tauscht einen Refresh-Token gegen ein frisches
+ * Access-Token (+ ggf. einen rotierten Refresh-Token, wenn der
+ * Server `refresh_token` im Response liefert).
+ *
+ * Anthropic's In-App-OAuth-Flow vergibt Access-Tokens mit kurzer
+ * TTL (typisch 1-8 h). Ohne aktiven Refresh läuft jeder Producer
+ * spätestens nach einer Stunde mit "Invalid authentication
+ * credentials" gegen die Wand. Diese Funktion ist die zweite
+ * Halbzeit des PKCE-Flows: gleicher Token-Endpoint, gleicher
+ * Client-ID, aber `grant_type=refresh_token` statt
+ * `authorization_code`.
+ *
+ * Wird vom `TokenRefresher` im Main-Process aufgerufen, sobald
+ * der gespeicherte `expiresAt` unter einen Schwellenwert (Default
+ * 15 min Restzeit) fällt.
+ */
+export async function refreshAccessToken(args: {
+  refreshToken: string;
+}): Promise<TokenResult> {
+  const body = JSON.stringify({
+    grant_type: "refresh_token",
+    refresh_token: args.refreshToken,
+    client_id: ANTHROPIC_OAUTH_CLIENT_ID,
+  });
+
+  const resp = await fetch(ANTHROPIC_OAUTH_TOKEN_URL, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Accept: "application/json",
+    },
+    body,
+  });
+
+  if (!resp.ok) {
+    let detail = "";
+    try {
+      detail = await resp.text();
+    } catch {
+      detail = "<kein Antwort-Body>";
+    }
+    const err = new Error(
+      `Anthropic-Refresh-Endpoint antwortete mit HTTP ${resp.status}: ${detail}`,
+    );
+    (err as Error & { status?: number }).status = resp.status;
+    throw err;
+  }
+
+  const json = (await resp.json()) as {
+    access_token?: unknown;
+    refresh_token?: unknown;
+    expires_in?: unknown;
+    scope?: unknown;
+    token_type?: unknown;
+  };
+
+  if (typeof json.access_token !== "string" || json.access_token.length < 10) {
+    throw new Error(
+      "Anthropic-Refresh-Antwort enthielt kein gültiges `access_token`.",
+    );
+  }
+
+  const out: TokenResult = { accessToken: json.access_token };
+  // Some OAuth servers rotate refresh_tokens (new one comes back in the
+  // response); some keep the same one (no refresh_token field). Handle
+  // both -- the caller decides whether to overwrite or keep the old one.
+  if (typeof json.refresh_token === "string") {
+    out.refreshToken = json.refresh_token;
+  }
+  if (typeof json.expires_in === "number") {
+    out.expiresIn = json.expires_in;
+  }
+  if (typeof json.scope === "string") {
+    out.scope = json.scope;
+  }
+  if (typeof json.token_type === "string") {
+    out.tokenType = json.token_type;
+  }
+  return out;
+}

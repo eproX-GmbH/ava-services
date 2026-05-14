@@ -1195,6 +1195,22 @@ app.whenReady().then(async () => {
   // interval kicks in after.
   externalServiceMonitor.start();
 
+  // v0.1.181 — background OAuth refresh for the Anthropic In-App
+  // subscription token. Without this, the access_token expires after
+  // ~1h and every producer's LLM call returns "Invalid authentication
+  // credentials" until the user manually clicks "Neu verbinden" in
+  // Settings. The refresher silently swaps for a fresh access_token
+  // ~15 min before expiry using the stored refresh_token. The first
+  // tick runs synchronously inside start() so a long-stale token
+  // gets refreshed at boot before any producer-spawn.
+  const { AnthropicTokenRefresher } = await import("./auth/token-refresher");
+  const { ProviderConfigStore } = await import("./agent/providers/store");
+  const anthropicTokenRefresher = new AnthropicTokenRefresher(
+    ProviderConfigStore.shared(),
+  );
+  anthropicTokenRefresher.start();
+  app.on("before-quit", () => anthropicTokenRefresher.stop());
+
   // v0.1.54 — hydrate persisted CRM tokens from disk + start
   // broadcasting status changes to the renderer. Failures here are
   // non-fatal: a corrupt/encrypted-unavailable record just leaves
@@ -2330,7 +2346,16 @@ app.whenReady().then(async () => {
           "./auth/anthropic-oauth-flow"
         );
         const token = await runAnthropicOAuth({ parent });
-        providers.setAnthropicSubscriptionToken(token.accessToken);
+        // v0.1.181 — save the full record (access + refresh +
+        // expires_in) so the background refresher can keep the
+        // access_token fresh without user interaction. Falls back
+        // to plain-token behavior if the server didn't return
+        // refresh_token / expires_in.
+        providers.setAnthropicSubscriptionRecord({
+          accessToken: token.accessToken,
+          refreshToken: token.refreshToken,
+          expiresIn: token.expiresIn,
+        });
         try {
           providers.setProvider("anthropic");
         } catch {
