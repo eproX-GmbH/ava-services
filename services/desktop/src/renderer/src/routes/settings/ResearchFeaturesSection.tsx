@@ -226,36 +226,16 @@ function FeatureCard({
   };
 
   return (
-    <div
-      className="api-key-row"
-      style={{
-        flexDirection: "column",
-        alignItems: "stretch",
-        gap: 8,
-        padding: 12,
-        border: "1px solid var(--border-color, #ddd)",
-        borderRadius: 6,
-        marginBottom: 12,
-      }}
-    >
+    <div className="research-feature-card">
       <div>
-        <strong>{meta.title}</strong>
-        <p className="muted small" style={{ margin: "2px 0 0" }}>
-          {meta.subtitle}
-        </p>
+        <h4 className="research-feature-card__title">{meta.title}</h4>
+        <p className="research-feature-card__subtitle">{meta.subtitle}</p>
       </div>
 
-      <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+      <div className="research-feature-card__row">
+        <span className="research-feature-card__label">Modus</span>
         {(["off", "standard", "deep"] as ResearchTier[]).map((tier) => (
-          <label
-            key={tier}
-            style={{
-              display: "inline-flex",
-              alignItems: "center",
-              gap: 4,
-              cursor: "pointer",
-            }}
-          >
+          <label key={tier} className="research-feature-card__tier-choice">
             <input
               type="radio"
               name={`tier-${feature}`}
@@ -269,10 +249,8 @@ function FeatureCard({
 
       {cfg.tier !== "off" && cfg.provider && (
         <>
-          <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-            <span className="api-key-label" style={{ minWidth: 90 }}>
-              Anbieter
-            </span>
+          <div className="research-feature-card__row">
+            <span className="research-feature-card__label">Anbieter</span>
             <select
               value={cfg.provider}
               onChange={(e) => onProviderChange(e.target.value as ResearchProvider)}
@@ -280,7 +258,7 @@ function FeatureCard({
               <option value="openai">OpenAI</option>
               <option value="anthropic">Anthropic</option>
             </select>
-            <span className="muted small">
+            <span className="research-feature-card__model-hint">
               Modell: {MODEL_LABEL[cfg.provider][cfg.tier]}
             </span>
           </div>
@@ -293,9 +271,11 @@ function FeatureCard({
             onCreateKey={() => onCreateKey(cfg.provider!)}
           />
 
-          <p className="muted small" style={{ margin: 0 }}>
-            Geschätzte Kosten: {COST_PER_FIRMA[cfg.provider][cfg.tier]} je Firma
-            (wird direkt deinem {cfg.provider === "openai" ? "OpenAI" : "Anthropic"}-Konto belastet).
+          <p className="research-feature-card__cost">
+            Geschätzte Kosten:{" "}
+            <strong>{COST_PER_FIRMA[cfg.provider][cfg.tier]} je Firma</strong>{" "}
+            (wird direkt deinem{" "}
+            {cfg.provider === "openai" ? "OpenAI" : "Anthropic"}-Konto belastet).
           </p>
         </>
       )}
@@ -346,10 +326,8 @@ function KeyPicker({
   const probe = useProbeKey();
 
   return (
-    <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-      <span className="api-key-label" style={{ minWidth: 90 }}>
-        Schlüssel
-      </span>
+    <div className="research-feature-card__row">
+      <span className="research-feature-card__label">Schlüssel</span>
       <select
         value={cfg.keyId ?? ""}
         onChange={(e) => onChange(e.target.value)}
@@ -393,9 +371,7 @@ function KeyPicker({
         <span className="error small">{probe.data.error}</span>
       )}
       {sharingNote && (
-        <span className="muted small" style={{ flexBasis: "100%" }}>
-          {sharingNote}
-        </span>
+        <p className="research-feature-card__sharing">{sharingNote}</p>
       )}
     </div>
   );

@@ -2445,6 +2445,79 @@ code, pre { font-family: var(--font-mono); font-size: 12px; }
 }
 .provider-key-card__advanced p { margin: 0; }
 
+/* ---- v0.1.176 — Research-Feature-Card --------------------------------
+ *
+ * Settings → Erweiterte Recherche-Funktionen → per-feature card.
+ *
+ * Previously inherited from `.api-key-row` (grid:130px/1fr/auto/auto)
+ * which forced every child into a narrow grid cell and caused
+ * "Findet öffentliche Tender, …" + "Geschätzte Kosten: …" to wrap
+ * inside a 130px column. Now an explicit flex-column stack with
+ * full-width children and inner horizontal sub-rows.
+ */
+.research-feature-card {
+  border: 1px solid var(--border, var(--ctrl-border));
+  border-radius: 8px;
+  padding: 14px 16px;
+  background: var(--bg-elevated, transparent);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.research-feature-card:last-child { margin-bottom: 0; }
+.research-feature-card__title {
+  font-weight: 600;
+  font-size: 14px;
+  margin: 0;
+}
+.research-feature-card__subtitle {
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--muted);
+  margin: 2px 0 0;
+}
+/* Horizontal row of label + controls. Wraps on narrow widths. */
+.research-feature-card__row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.research-feature-card__label {
+  color: var(--muted);
+  font-size: 13px;
+  min-width: 78px;
+}
+.research-feature-card__tier-choice {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  font-size: 13px;
+}
+.research-feature-card__model-hint {
+  color: var(--muted);
+  font-size: 12px;
+}
+.research-feature-card__sharing {
+  font-size: 12px;
+  color: var(--muted);
+  margin: 0;
+  flex-basis: 100%;
+}
+.research-feature-card__cost {
+  font-size: 12.5px;
+  color: var(--muted);
+  margin: 0;
+  padding-top: 4px;
+  border-top: 1px dashed var(--border, var(--ctrl-border));
+}
+.research-feature-card__cost strong {
+  color: inherit;
+  font-weight: 600;
+}
+
 /* ---- Meldungen / `/alerts` (Phase 8.f1) --------------------------------- */
 .alerts {
   max-width: 880px; margin: 0 auto;
