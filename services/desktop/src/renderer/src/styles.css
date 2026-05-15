@@ -1440,17 +1440,65 @@ code, pre { font-family: var(--font-mono); font-size: 12px; }
 }
 .kpi-grid {
   display: grid; gap: 0.75rem;
-  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
   margin-top: 1rem;
 }
 .kpi-tile {
+  position: relative;            /* anchor for .kpi-cat-dot */
   border: 1px solid rgba(127,127,127,0.2);
   border-radius: 6px;
   padding: 0.6rem 0.75rem;
   background: rgba(127,127,127,0.04);
+  overflow: hidden;              /* clip stray children, not the wrapping label */
+  min-width: 0;                  /* let labels wrap inside the grid track */
 }
-.kpi-label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; }
+.kpi-label {
+  font-size: 11px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  /* v0.1.196 — long single tokens like RECHNUNGSABGRENZUNGSPOSTEN
+     were overflowing into the neighbouring tile. `overflow-wrap:
+     anywhere` is the modern, well-supported recipe to break inside
+     a long word when needed but still prefer space-breaks. The
+     padding-right reserves space for the category dot in the
+     top-right corner. */
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  padding-right: 14px;
+}
 .kpi-value { font-weight: 600; margin-top: 0.15rem; }
+
+/* v0.1.196 — category dot anchored to the top-right of each KPI tile.
+   The colour comes from the matching .kpi-cat-<category> class set
+   inline by the renderer. Sits on top of the label's reserved
+   padding-right so it never clips into the text. */
+.kpi-cat-dot {
+  position: absolute;
+  top: 0.55rem;
+  right: 0.6rem;
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  pointer-events: none;
+}
+.kpi-cat-guv        { background: #16a34a; }   /* P&L — green   */
+.kpi-cat-aktiva     { background: #2563eb; }   /* assets — blue */
+.kpi-cat-passiva    { background: #f97316; }   /* equity+debt — orange */
+.kpi-cat-bilanzsumme{ background: #a855f7; }   /* totals — purple */
+.kpi-cat-sonstiges  { background: #6b7280; }   /* other — grey  */
+
+.kpi-cat-legend {
+  display: flex; flex-wrap: wrap; gap: 0.75rem;
+  font-size: 11px; color: var(--muted);
+  margin-top: 0.25rem;
+}
+.kpi-cat-legend > span {
+  display: inline-flex; align-items: center; gap: 0.35rem;
+}
+.kpi-cat-legend .kpi-cat-dot {
+  position: static; /* override the absolute-positioning rule */
+  display: inline-block;
+}
 
 .bar-chart { display: grid; gap: 0.4rem; }
 .bar-row {

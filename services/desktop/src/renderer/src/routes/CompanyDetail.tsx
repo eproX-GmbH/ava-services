@@ -768,27 +768,35 @@ function FinancialsTab({ pubs }: { pubs: Publication[] }) {
           </article>
         ))}
 
-      <article className="panel" style={{ gridColumn: "1 / -1" }}>
-        <h3>Jahresübersicht</h3>
-        <table className="matrix">
-          <thead>
-            <tr>
-              <th>Jahr</th>
-              <th>Mitarbeiter</th>
-            </tr>
-          </thead>
-          <tbody>
-            {[...pubs].reverse().map((p, i) => (
-              <tr key={i}>
-                <td>{p.year ?? ""}</td>
-                <td>
-                  {p.employeeCount != null ? numFmt.format(p.employeeCount) : ""}
-                </td>
+      {/* v0.1.196 — hide the whole Jahresübersicht/Mitarbeiter table
+          when no publication has an employee count. Empty rows look
+          like extraction failed; if we genuinely have nothing, just
+          don't show the table. */}
+      {pubs.some((p) => p.employeeCount != null) && (
+        <article className="panel" style={{ gridColumn: "1 / -1" }}>
+          <h3>Jahresübersicht</h3>
+          <table className="matrix">
+            <thead>
+              <tr>
+                <th>Jahr</th>
+                <th>Mitarbeiter</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
-      </article>
+            </thead>
+            <tbody>
+              {[...pubs].reverse().map((p, i) => (
+                <tr key={i}>
+                  <td>{p.year ?? ""}</td>
+                  <td>
+                    {p.employeeCount != null
+                      ? numFmt.format(p.employeeCount)
+                      : ""}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </article>
+      )}
 
       {/* Per-publication detail: each year's KPIs, period, and full
           stateOfAffairs aggregate. Reverse-chronological so the latest
@@ -855,18 +863,31 @@ function PublicationCard({ pub }: { pub: Publication }) {
           {soa.kpis && soa.kpis.length > 0 && (
             <>
               <h4>KPIs</h4>
+              {/* v0.1.196 — group KPIs by Bilanz-Kategorie (GuV / Aktiva /
+                  Passiva / Bilanzsumme / Sonstiges) with a colour-coded dot
+                  in the top-right of each tile. Sort order matches the
+                  legend below so visually related numbers cluster. */}
+              <KpiCategoryLegend />
               <div className="kpi-grid">
-                {soa.kpis.map((k, i) => (
-                  <div key={i} className="kpi-tile">
-                    <div className="kpi-label">{k.name}</div>
-                    <div className="kpi-value">{k.value}</div>
-                    {k.period && (
-                      <div className="muted" style={{ fontSize: 11 }}>
-                        {k.period}
-                      </div>
-                    )}
-                  </div>
-                ))}
+                {sortKpisByCategory(soa.kpis).map((k, i) => {
+                  const cat = kpiCategory(k.name);
+                  return (
+                    <div key={i} className="kpi-tile">
+                      <span
+                        className={`kpi-cat-dot kpi-cat-${cat}`}
+                        title={kpiCategoryLabel(cat)}
+                        aria-label={kpiCategoryLabel(cat)}
+                      />
+                      <div className="kpi-label">{k.name}</div>
+                      <div className="kpi-value">{k.value}</div>
+                      {k.period && (
+                        <div className="muted" style={{ fontSize: 11 }}>
+                          {k.period}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             </>
           )}
@@ -1312,6 +1333,111 @@ function ConfidenceBar({ confidence }: { confidence?: number }) {
         {pct}%
       </span>
     </span>
+  );
+}
+
+// v0.1.196 — KPI categorisation for the Jahresberichte panel.
+//
+// The publication producer's LLM returns a flat `kpis: [{name, value,
+// period}]` array per publication. Visually it helps to group them by
+// Bilanz-Kategorie so the user can scan "everything on the Aktiva
+// side", "everything on the Passiva side", etc. Each tile gets a
+// small coloured dot in the top-right; tiles are sorted by category
+// in this fixed order so the same KPI category always appears in the
+// same spot.
+//
+// The taxonomy is intentionally coarse (5 buckets) so most LLM names
+// fall cleanly into one bucket without arguing over edge cases like
+// "Rechnungsabgrenzungsposten" (which can technically be ARAP or
+// PRAP). Unmatched names land in "sonstiges" with a grey dot.
+type KpiCategory =
+  | "guv"
+  | "aktiva"
+  | "passiva"
+  | "bilanzsumme"
+  | "sonstiges";
+
+function kpiCategory(name: string): KpiCategory {
+  const n = (name || "").toUpperCase();
+  // Bilanzsumme + Aktiva/Passiva-Summen — check first so they don't
+  // get misrouted by the "SUMME PASSIVA"-includes-PASSIV match below.
+  if (/BILANZSUMME|SUMME\s+AKTIVA|SUMME\s+PASSIVA|GESAMTKAPITAL/.test(n))
+    return "bilanzsumme";
+  // GuV: Jahresergebnis, Umsatz, Erlöse. Exclude "GEWINNVORTRAG"
+  // (that's equity → passiva).
+  if (
+    /JAHRES(ÜBERSCHUSS|FEHLBETRAG|ERGEBNIS)|UMSATZ|ERLÖSE?|BETRIEBSERGEBNIS|ABSCHREIBUNGEN|MATERIAL(?:AUFWAND|KOSTEN)|PERSONAL(?:AUFWAND|KOSTEN)/.test(
+      n,
+    )
+  )
+    return "guv";
+  // Passiva (right side of balance sheet): equity components,
+  // provisions, liabilities.
+  if (
+    /EIGENKAPITAL|GEZEICHNETES\s+KAPITAL|KAPITALR[ÜU]CKLAGE|GEWINNR[ÜU]CKLAGE|GEWINNVORTRAG|VERLUSTVORTRAG|R[ÜU]CKSTELLUNG|VERBINDLICHKEIT|ANLEIHE|DARLEHEN|GENUSSRECHTSKAPITAL|SONDERPOSTEN|FREMDKAPITAL/.test(
+      n,
+    )
+  )
+    return "passiva";
+  // Aktiva (left side): fixed assets, current assets, cash, inventory.
+  if (
+    /SACHANLAGE|IMMATERIELLE(?:N)?\s+VERMÖGEN|ANLAGEVERMÖGEN|FINANZANLAGEN|UMLAUFVERMÖGEN|FORDERUNG|KASSENBESTAND|GUTHABEN|BUNDESBANK|SCHECKS|VORR[ÄA]TE|WERTPAPIERE|BETEILIGUNG|GRUNDST[ÜU]CK/.test(
+      n,
+    )
+  )
+    return "aktiva";
+  // Default for everything we don't recognise (ARAP/PRAP, etc.).
+  return "sonstiges";
+}
+
+function kpiCategoryLabel(cat: KpiCategory): string {
+  switch (cat) {
+    case "guv":
+      return "GuV (Gewinn & Verlust)";
+    case "aktiva":
+      return "Aktiva (Vermögen)";
+    case "passiva":
+      return "Passiva (Eigen- & Fremdkapital)";
+    case "bilanzsumme":
+      return "Bilanzsumme";
+    case "sonstiges":
+      return "Sonstiges";
+  }
+}
+
+const KPI_CATEGORY_ORDER: KpiCategory[] = [
+  "bilanzsumme",
+  "aktiva",
+  "passiva",
+  "guv",
+  "sonstiges",
+];
+
+function sortKpisByCategory<T extends { name: string }>(kpis: T[]): T[] {
+  // Stable sort by (category-index, original-position). Within a
+  // category we preserve the LLM's natural order — the model usually
+  // walks down the Bilanz so leaves things in a sensible reading
+  // sequence.
+  return kpis
+    .map((k, idx) => ({
+      kpi: k,
+      catIdx: KPI_CATEGORY_ORDER.indexOf(kpiCategory(k.name)),
+      idx,
+    }))
+    .sort((a, b) => a.catIdx - b.catIdx || a.idx - b.idx)
+    .map((x) => x.kpi);
+}
+
+function KpiCategoryLegend(): JSX.Element {
+  return (
+    <div className="kpi-cat-legend">
+      {KPI_CATEGORY_ORDER.map((cat) => (
+        <span key={cat}>
+          <span className={`kpi-cat-dot kpi-cat-${cat}`} />
+          {kpiCategoryLabel(cat)}
+        </span>
+      ))}
+    </div>
   );
 }
 
