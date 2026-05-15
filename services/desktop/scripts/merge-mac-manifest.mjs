@@ -60,10 +60,64 @@ if (arm.version !== x64.version) {
 const armFiles = Array.isArray(arm.files) ? arm.files : [];
 const x64Files = Array.isArray(x64.files) ? x64.files : [];
 
+// v0.1.195 — filter each per-arch manifest STRICTLY to its own arch
+// before merging.
+//
+// Background bug:
+//   `electron-builder --mac --arm64 --publish always` writes a
+//   `latest-mac.yml` whose `files:` array contains entries for BOTH
+//   `*-arm64.{zip,dmg}` AND `*-x64.{zip,dmg}` — even though only
+//   arm64 was actually built in that job. The x64 entries have
+//   bogus sha512 + size values (presumably derived from an empty
+//   placeholder or a metadata template). Symmetrically the x64
+//   job's yml contains arm64 entries with bogus hashes.
+//
+//   Pre-v0.1.195 the merge below de-duped `seenUrls` while
+//   iterating arm first, then x64 — so the arm-emitted bogus x64
+//   entry won, overriding the x64-emitted real one. Downstream
+//   electron-updater clients computed the local download's hash,
+//   compared to the bogus manifest hash, and failed with:
+//
+//     "sha512 checksum mismatch, expected <bogus>, got <real>"
+//
+//   For v0.1.190 the size in the manifest was 370344259 but the
+//   actual x64.zip on GitHub was 370093753 — confirming the
+//   manifest hash was never derived from the file on disk.
+//
+// Fix: keep ONLY arm64 entries from arm yml, and ONLY x64 entries
+// from x64 yml. Each per-arch build is authoritative for the files
+// it actually produces; cross-arch entries are always bogus and
+// must be discarded.
+function archOfUrl(url) {
+  if (!url) return null;
+  if (/-arm64\./i.test(url)) return "arm64";
+  if (/-x64\./i.test(url)) return "x64";
+  return null;
+}
+
 const seenUrls = new Set();
 const mergedFiles = [];
+// Pass 1: arm64 entries from arm yml.
+for (const f of armFiles) {
+  if (!f || typeof f.url !== "string") continue;
+  if (archOfUrl(f.url) !== "arm64") continue;
+  if (seenUrls.has(f.url)) continue;
+  seenUrls.add(f.url);
+  mergedFiles.push(f);
+}
+// Pass 2: x64 entries from x64 yml.
+for (const f of x64Files) {
+  if (!f || typeof f.url !== "string") continue;
+  if (archOfUrl(f.url) !== "x64") continue;
+  if (seenUrls.has(f.url)) continue;
+  seenUrls.add(f.url);
+  mergedFiles.push(f);
+}
+// Pass 3: defensive — anything left that we couldn't classify by
+// arch (universal builds, future targets, etc.). Skip if duplicated.
 for (const f of [...armFiles, ...x64Files]) {
   if (!f || typeof f.url !== "string") continue;
+  if (archOfUrl(f.url) !== null) continue; // already handled above
   if (seenUrls.has(f.url)) continue;
   seenUrls.add(f.url);
   mergedFiles.push(f);
