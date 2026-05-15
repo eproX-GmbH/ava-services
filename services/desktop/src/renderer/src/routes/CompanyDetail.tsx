@@ -156,6 +156,10 @@ interface KpiItem {
   name: string;
   value: string;
   period?: string | null;
+  // v0.1.197 — LLM-assigned Bilanz-Kategorie. NULL on rows extracted
+  // before the categoriser shipped; the renderer's legacy
+  // name-heuristic kicks in as a back-compat fallback for those.
+  category?: string | null;
 }
 interface StateOfAffairs {
   topic?: string | null;
@@ -870,7 +874,7 @@ function PublicationCard({ pub }: { pub: Publication }) {
               <KpiCategoryLegend />
               <div className="kpi-grid">
                 {sortKpisByCategory(soa.kpis).map((k, i) => {
-                  const cat = kpiCategory(k.name);
+                  const cat = resolveKpiCategory(k);
                   return (
                     <div key={i} className="kpi-tile">
                       <span
@@ -1357,7 +1361,29 @@ type KpiCategory =
   | "bilanzsumme"
   | "sonstiges";
 
-function kpiCategory(name: string): KpiCategory {
+/**
+ * v0.1.197 — prefer the LLM-assigned category on the KPI object;
+ * fall back to a name-heuristic only when the producer didn't fill
+ * it (legacy rows extracted before v0.1.197). The heuristic is
+ * intentionally narrow — it only catches the most obvious names so
+ * unrecognised legacy KPIs land in "sonstiges" rather than being
+ * mis-categorised.
+ */
+function resolveKpiCategory(kpi: { name: string; category?: string | null }): KpiCategory {
+  const assigned = (kpi.category ?? "").toLowerCase();
+  if (
+    assigned === "bilanzsumme" ||
+    assigned === "aktiva" ||
+    assigned === "passiva" ||
+    assigned === "guv" ||
+    assigned === "sonstiges"
+  ) {
+    return assigned;
+  }
+  return kpiCategoryHeuristic(kpi.name);
+}
+
+function kpiCategoryHeuristic(name: string): KpiCategory {
   const n = (name || "").toUpperCase();
   // Bilanzsumme + Aktiva/Passiva-Summen — check first so they don't
   // get misrouted by the "SUMME PASSIVA"-includes-PASSIV match below.
@@ -1413,7 +1439,9 @@ const KPI_CATEGORY_ORDER: KpiCategory[] = [
   "sonstiges",
 ];
 
-function sortKpisByCategory<T extends { name: string }>(kpis: T[]): T[] {
+function sortKpisByCategory<T extends { name: string; category?: string | null }>(
+  kpis: T[],
+): T[] {
   // Stable sort by (category-index, original-position). Within a
   // category we preserve the LLM's natural order — the model usually
   // walks down the Bilanz so leaves things in a sensible reading
@@ -1421,7 +1449,7 @@ function sortKpisByCategory<T extends { name: string }>(kpis: T[]): T[] {
   return kpis
     .map((k, idx) => ({
       kpi: k,
-      catIdx: KPI_CATEGORY_ORDER.indexOf(kpiCategory(k.name)),
+      catIdx: KPI_CATEGORY_ORDER.indexOf(resolveKpiCategory(k)),
       idx,
     }))
     .sort((a, b) => a.catIdx - b.catIdx || a.idx - b.idx)

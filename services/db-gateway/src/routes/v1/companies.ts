@@ -417,7 +417,14 @@ companiesRouter.openapi(publicationsRoute, async (c) => {
     .filter((id): id is number => id !== null);
   const kpisByAggregate = new Map<
     number,
-    Array<{ name: string; value: string; period: string | null }>
+    Array<{
+      name: string;
+      value: string;
+      period: string | null;
+      // v0.1.197 — LLM-assigned Bilanz-Kategorie. NULL on rows
+      // persisted before the categoriser shipped.
+      category: string | null;
+    }>
   >();
   if (aggregateIds.length > 0) {
     const kpiRes = await pool.query<{
@@ -425,8 +432,9 @@ companiesRouter.openapi(publicationsRoute, async (c) => {
       name: string;
       value: string;
       period: string | null;
+      category: string | null;
     }>(
-      `SELECT "aggregateId", name, value, period
+      `SELECT "aggregateId", name, value, period, category
        FROM "StateOfAffairsKPI"
        WHERE "aggregateId" = ANY($1::int[])`,
       [aggregateIds],
@@ -437,7 +445,12 @@ companiesRouter.openapi(publicationsRoute, async (c) => {
         arr = [];
         kpisByAggregate.set(row.aggregateId, arr);
       }
-      arr.push({ name: row.name, value: row.value, period: row.period });
+      arr.push({
+        name: row.name,
+        value: row.value,
+        period: row.period,
+        category: row.category,
+      });
     }
   }
 

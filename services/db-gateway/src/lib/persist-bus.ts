@@ -1009,7 +1009,16 @@ interface CompanyPublicationsResult {
       topic?: string;
       bullets?: string[];
       guidance?: string[];
-      kpis?: Array<{ name: string; value: string; period?: string }>;
+      // v0.1.197 — `category` is the LLM-assigned Bilanz-Kategorie
+      // (bilanzsumme | aktiva | passiva | guv | sonstiges).
+      // Optional on the wire so producers built against the older
+      // contract still round-trip cleanly.
+      kpis?: Array<{
+        name: string;
+        value: string;
+        period?: string;
+        category?: string;
+      }>;
       risksOpportunities?: string[];
       isRelevant?: boolean;
     };
@@ -1154,11 +1163,22 @@ const applyCompanyPublication: ApplyFn = async (pool, event, log) => {
         );
         const aggregateId = aggRes.rows[0].id;
         for (const kpi of pub.stateOfAffairs.kpis ?? []) {
+          // v0.1.197 — accept the LLM-assigned `category` if the
+          // producer emitted it. Producers pre-v0.1.197 don't include
+          // the field; we write NULL and the desktop falls back to its
+          // legacy name-heuristic. Future migrations can backfill
+          // category from the heuristic if we want a clean DB later.
           await client.query(
             `INSERT INTO "StateOfAffairsKPI"
-               (name, value, period, "aggregateId", "createdAt", "updatedAt")
-             VALUES ($1, $2, $3, $4, NOW(), NOW())`,
-            [kpi.name, kpi.value, kpi.period ?? null, aggregateId],
+               (name, value, period, category, "aggregateId", "createdAt", "updatedAt")
+             VALUES ($1, $2, $3, $4, $5, NOW(), NOW())`,
+            [
+              kpi.name,
+              kpi.value,
+              kpi.period ?? null,
+              kpi.category ?? null,
+              aggregateId,
+            ],
           );
         }
       }

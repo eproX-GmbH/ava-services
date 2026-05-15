@@ -173,6 +173,10 @@ const StateOfAffairsShape = z
             name: z.string(),
             value: z.string(),
             period: z.string().nullable().optional(),
+            // v0.1.197 — LLM-assigned Bilanz-Kategorie. NULL on
+            // legacy rows (pre-v0.1.197); the desktop falls back
+            // to a name-heuristic for those.
+            category: z.string().nullable().optional(),
           })
           .passthrough(),
       )
