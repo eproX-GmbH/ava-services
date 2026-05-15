@@ -504,6 +504,15 @@ export class LlmProviderManager extends EventEmitter {
     googleApiKey?: string;
     mistralApiKey?: string;
     ollamaUrl?: string;
+    /** v0.1.183 — EMBED_PROVIDER to set on the producer env. Anthropic
+     *  and Mistral have no embedding models of their own, so we cascade
+     *  to whichever auxiliary embedder the user has configured: Google
+     *  (if a key exists), then Ollama (always available if the bundled
+     *  supervisor is running). Returned `undefined` means "let the
+     *  producer default to its own EMBED_PROVIDER=openai" (which then
+     *  requires OPENAI_API_KEY to also be set, otherwise getEmbedder()
+     *  returns null and vector-search degrades gracefully). */
+    embedProvider?: "openai" | "google" | "ollama";
   } | null> {
     const cfg = this.store.getConfig();
     const kind = cfg.kind;
@@ -512,6 +521,39 @@ export class LlmProviderManager extends EventEmitter {
       provider: kind,
       model: model || undefined,
     };
+
+    // v0.1.183 — pick an embed-provider that works for the active LLM
+    // configuration. Order:
+    //   1. If LLM is openai      → openai (text-embedding-3-large)
+    //   2. If LLM is google      → google (text-embedding-004)
+    //   3. If LLM is ollama      → ollama (embeddinggemma, local)
+    //   4. If LLM is anthropic/mistral (no native embeddings):
+    //        a. Google key configured? → google
+    //        b. Otherwise              → ollama (assumes bundled
+    //                                    Ollama is running with the
+    //                                    embeddinggemma model)
+    // The producer's getEmbedder() returns null when the chosen
+    // provider's key is also missing -- functions degrade
+    // gracefully rather than crash at boot.
+    const hasOpenAiKey = this.store.hasKey("openai");
+    const hasGoogleKey = this.store.hasKey("google");
+    if (kind === "openai") {
+      env.embedProvider = hasOpenAiKey ? "openai" : undefined;
+    } else if (kind === "google") {
+      env.embedProvider = hasGoogleKey ? "google" : undefined;
+    } else if (kind === "ollama") {
+      env.embedProvider = "ollama";
+    } else if (hasGoogleKey) {
+      // anthropic / mistral + auxiliary Google key
+      env.embedProvider = "google";
+    } else {
+      // anthropic / mistral, no Google → assume Ollama is around.
+      // getEmbedder() will succeed if Ollama+embeddinggemma is
+      // reachable; otherwise it'll fail at first embed call rather
+      // than at producer boot (which is the v0.1.183 goal).
+      env.embedProvider = "ollama";
+    }
+
     if (kind === "ollama") {
       // The producer's @ava/ai-provider getLLM defaults Ollama to
       // http://localhost:11434/api which matches the bundled
@@ -530,6 +572,14 @@ export class LlmProviderManager extends EventEmitter {
       const token = await this.store.getAnthropicSubscriptionToken();
       if (!token) return null;
       env.anthropicSubscriptionToken = token;
+      // v0.1.183 — also surface the Google key (if present) so the
+      // producer's getEmbedder can resolve to text-embedding-004.
+      // Without this, EMBED_PROVIDER=google is set but the key
+      // would be missing → null embedder.
+      if (env.embedProvider === "google") {
+        const gkey = await this.store.getKey("google");
+        if (gkey) env.googleApiKey = gkey;
+      }
       return env;
     }
     const key = await this.store.getKey(kind as HostedProviderKind);
@@ -538,6 +588,18 @@ export class LlmProviderManager extends EventEmitter {
     else if (kind === "anthropic") env.anthropicApiKey = key;
     else if (kind === "google") env.googleApiKey = key;
     else if (kind === "mistral") env.mistralApiKey = key;
+
+    // v0.1.183 — same as the subscription branch above: surface the
+    // auxiliary Google key for embed-provider=google use when the
+    // LLM provider is anthropic/mistral (api-key mode).
+    if (
+      env.embedProvider === "google" &&
+      kind !== "google" &&
+      !env.googleApiKey
+    ) {
+      const gkey = await this.store.getKey("google");
+      if (gkey) env.googleApiKey = gkey;
+    }
     return env;
   }
 

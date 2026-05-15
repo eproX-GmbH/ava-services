@@ -107,23 +107,50 @@ export function getLLM(): LanguageModel {
   }
 }
 
-export function getEmbedder(): EmbeddingModel<string> {
+/**
+ * v0.1.183 — null-safe embedder factory.
+ *
+ * Returns null when the configured EMBED_PROVIDER can't be instantiated
+ * because its key is missing (or, for ollama, when the host is
+ * unreachable -- not detected here, deferred to the call site). Consumers
+ * MUST treat null as "embeddings unavailable" and degrade gracefully
+ * (skip vector search, NACK AMQP messages with a clear reason, etc.).
+ *
+ * Why this is null-able instead of throwing:
+ *   - Anthropic and Mistral have NO embedding models. If the user
+ *     picked Anthropic as their LLM provider and no auxiliary
+ *     embedder (Google API key, Ollama embeddinggemma) is configured,
+ *     the producer should still boot. Pre-v0.1.183 the `requireEnv`
+ *     calls below threw at process start, killing the company-
+ *     evaluation producer permanently for any user without an OpenAI
+ *     key. The website / company-profile / company-contact producers
+ *     don't use embeddings at all but they import this same factory
+ *     transitively via DI -- so the throw cascaded.
+ *
+ * Default EMBED_PROVIDER stays "openai" so existing OpenAI-using
+ * installs see no behavior change. The producer-supervisor in the
+ * desktop-app sets EMBED_PROVIDER explicitly based on the user's
+ * configured LLM provider + auxiliary keys (see Phase 2 wiring).
+ */
+export function getEmbedder(): EmbeddingModel<string> | null {
   const provider = (process.env.EMBED_PROVIDER ?? "openai") as EmbedProvider;
   const model = process.env.EMBED_MODEL;
 
   switch (provider) {
     case "openai": {
+      const apiKey = process.env.OPENAI_API_KEY;
+      if (!apiKey || apiKey.length === 0) return null;
       const client = createOpenAI({
-        apiKey: requireEnv("OPENAI_API_KEY"),
+        apiKey,
         project: process.env.OPENAI_PROJECT_KEY,
         organization: process.env.OPENAI_ORGANIZATION_KEY,
       });
       return client.textEmbeddingModel(model ?? "text-embedding-3-large");
     }
     case "google": {
-      const client = createGoogleGenerativeAI({
-        apiKey: requireEnv("GOOGLE_API_KEY"),
-      });
+      const apiKey = process.env.GOOGLE_API_KEY;
+      if (!apiKey || apiKey.length === 0) return null;
+      const client = createGoogleGenerativeAI({ apiKey });
       return client.textEmbeddingModel(model ?? "text-embedding-004");
     }
     case "ollama": {
@@ -133,7 +160,11 @@ export function getEmbedder(): EmbeddingModel<string> {
       return client.textEmbeddingModel(model ?? "embeddinggemma");
     }
     default:
-      throw new Error(`Unknown EMBED_PROVIDER: ${String(provider)}`);
+      // Unknown provider: log + return null instead of crashing.
+      console.warn(
+        `[ai-provider] getEmbedder: unknown EMBED_PROVIDER=${String(provider)} -- returning null`,
+      );
+      return null;
   }
 }
 
