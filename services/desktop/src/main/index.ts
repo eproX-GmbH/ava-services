@@ -434,7 +434,27 @@ function buildProducer(
             }
             return env;
           }
-        : undefined;
+        : name === "company-evaluation"
+          ? // v0.1.184 — embeddinggemma is THE mandatory embedder for
+            // company-evaluation (single embedding model across all
+            // users so vector search in the central MPG works
+            // consistently). Hardcoded here regardless of which LLM
+            // provider the user picked for completions. The producer's
+            // ai-provider then resolves to Ollama+embeddinggemma at
+            // boot. embeddinggemma is in REQUIRED_MODELS so the Ollama
+            // supervisor auto-pulls it; Settings UI also locks the
+            // model from manual deletion.
+            //
+            // Output is 768d; the producer pads to 3072d before
+            // pgvector insert (see padTo3072 in
+            // company-evaluation/src/infrastructure/openai/universal-profiles.ts)
+            // so the existing pgvector(3072) columns stay write-
+            // compatible without a schema migration.
+            async (): Promise<Record<string, string>> => ({
+              EMBED_PROVIDER: "ollama",
+              EMBED_MODEL: "embeddinggemma:latest",
+            })
+          : undefined;
   return new ProducerSupervisor({
     config: { name, entry, databaseName, port },
     databaseUrl: makeDatabaseUrlGetter(name),

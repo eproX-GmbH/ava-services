@@ -2104,42 +2104,65 @@ function InstalledModelsSection() {
       </h4>
       {error && <p className="error small">{error}</p>}
       <ul className="installed-models">
-        {installed.map((m) => (
-          <li key={m.name} className="installed-models__row">
-            <code className="installed-models__name">{m.name}</code>
-            <span className="muted small">{formatBytesGB(m.size ?? 0)}</span>
-            <button
-              type="button"
-              className="link"
-              onClick={() => void onRepair(m.name)}
-              disabled={
-                pendingRepair === m.name || pendingDelete === m.name
-              }
-              title="Löschen + erneut herunterladen. Behebt korrupte Layer aus einem unterbrochenen Download. Hilfreich, wenn ein Modell die lokale Laufzeit immer wieder zum Absturz bringt."
-            >
-              {pendingRepair === m.name ? "Repariert…" : "reparieren"}
-            </button>
-            <button
-              type="button"
-              className="link bad"
-              onClick={() => {
-                if (
-                  window.confirm(
-                    `„${m.name}" von der Festplatte löschen? Du kannst es später von dieser Seite oder im Chat erneut herunterladen.`,
-                  )
-                ) {
-                  void onDelete(m.name);
-                }
-              }}
-              disabled={
-                pendingDelete === m.name || pendingRepair === m.name
-              }
-              title="Modell von der Festplatte entfernen, um Speicherplatz freizugeben"
-            >
-              {pendingDelete === m.name ? "Löscht…" : "löschen"}
-            </button>
-          </li>
-        ))}
+        {installed.map((m) => {
+          // v0.1.184 — embeddinggemma is the mandatory embedder for the
+          // company-evaluation producer. The pgvector column is global
+          // (Fly.io Postgres) and dim-locked, so every desktop client
+          // must produce vectors with the same model. Deleting it would
+          // break the vector-index path entirely; the Ollama supervisor
+          // would also force-reinstall it on next boot. Lock both
+          // "reparieren" and "löschen" with a tooltip explaining why.
+          const isMandatoryEmbedder =
+            normaliseOllamaTag(m.name) ===
+            normaliseOllamaTag("embeddinggemma:latest");
+          return (
+            <li key={m.name} className="installed-models__row">
+              <code className="installed-models__name">{m.name}</code>
+              <span className="muted small">{formatBytesGB(m.size ?? 0)}</span>
+              {isMandatoryEmbedder ? (
+                <span
+                  className="muted small"
+                  title="Pflichtmodell — wird vom Bewertungs-Service für die globale Vektorsuche genutzt und kann nicht entfernt werden."
+                >
+                  Pflichtmodell
+                </span>
+              ) : (
+                <>
+                  <button
+                    type="button"
+                    className="link"
+                    onClick={() => void onRepair(m.name)}
+                    disabled={
+                      pendingRepair === m.name || pendingDelete === m.name
+                    }
+                    title="Löschen + erneut herunterladen. Behebt korrupte Layer aus einem unterbrochenen Download. Hilfreich, wenn ein Modell die lokale Laufzeit immer wieder zum Absturz bringt."
+                  >
+                    {pendingRepair === m.name ? "Repariert…" : "reparieren"}
+                  </button>
+                  <button
+                    type="button"
+                    className="link bad"
+                    onClick={() => {
+                      if (
+                        window.confirm(
+                          `„${m.name}" von der Festplatte löschen? Du kannst es später von dieser Seite oder im Chat erneut herunterladen.`,
+                        )
+                      ) {
+                        void onDelete(m.name);
+                      }
+                    }}
+                    disabled={
+                      pendingDelete === m.name || pendingRepair === m.name
+                    }
+                    title="Modell von der Festplatte entfernen, um Speicherplatz freizugeben"
+                  >
+                    {pendingDelete === m.name ? "Löscht…" : "löschen"}
+                  </button>
+                </>
+              )}
+            </li>
+          );
+        })}
       </ul>
     </>
   );

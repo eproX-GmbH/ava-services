@@ -98,12 +98,6 @@ export interface ProducerSupervisorOptions {
     googleApiKey?: string;
     mistralApiKey?: string;
     ollamaUrl?: string;
-    /** v0.1.183 — chosen embed-provider (openai/google/ollama). Set
-     *  by the LlmProviderManager based on the user's active LLM
-     *  provider + auxiliary keys. The producer's @ava/ai-provider
-     *  reads `EMBED_PROVIDER` env; null means "let it default to
-     *  openai which then degrades gracefully if no key is set". */
-    embedProvider?: "openai" | "google" | "ollama";
   } | null>;
   /**
    * When `llmConfig()` returns null, this returns a German one-liner
@@ -456,16 +450,10 @@ export class ProducerSupervisor extends EventEmitter {
       ...(llm.googleApiKey ? { GOOGLE_API_KEY: llm.googleApiKey } : {}),
       ...(llm.mistralApiKey ? { MISTRAL_API_KEY: llm.mistralApiKey } : {}),
       ...(llm.ollamaUrl ? { OLLAMA_URL: llm.ollamaUrl } : {}),
-      // v0.1.183 — embed-provider selection. The company-evaluation
-      // producer's getEmbedder() reads this env to pick which AI-SDK
-      // embedding model to instantiate. See manager.getProducerLlmEnv()
-      // for the cascade logic. If unset, the producer's @ava/ai-provider
-      // defaults to "openai" which requires OPENAI_API_KEY -- which
-      // we may NOT have set when the user is on anthropic-only. The
-      // explicit override here ensures the producer picks a usable
-      // embedder OR returns null (graceful skip) instead of crashing
-      // at boot.
-      ...(llm.embedProvider ? { EMBED_PROVIDER: llm.embedProvider } : {}),
+      // v0.1.184 — EMBED_PROVIDER / EMBED_MODEL are set per-producer
+      // via the extraEnvAsync hook in index.ts (currently only
+      // company-evaluation cares, hardcoded to ollama + embeddinggemma).
+      // The user-level LLM choice no longer influences embeddings.
       // Gateway URL + Bearer for /v1/proxy/* calls (operator-paid
       // valueserp etc.). Same gateway the desktop main itself uses.
       GATEWAY_URL: process.env.GATEWAY_URL ?? "https://ava-db-gateway.fly.dev",
