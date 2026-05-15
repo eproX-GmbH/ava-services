@@ -177,4 +177,88 @@ export class AnthropicTokenRefresher {
       this.refreshInFlight = false;
     }
   }
+
+  /**
+   * v0.1.192 — reactive on-demand refresh.
+   *
+   * `tick()` is conservative: it only refreshes when the access-token
+   * is <15 min from expiry. That's right for the scheduled poll but
+   * wrong when a producer just hit a 401 — by then the token is
+   * already dead and waiting for the next scheduled tick is too late.
+   * Call this when an LLM provider rejected our credentials and we
+   * want to attempt recovery immediately.
+   *
+   * Returns a structured result so the caller can decide how to react:
+   *   - "refreshed"          — new token landed; producers should cycle
+   *                            to pick up the new env.
+   *   - "no_refresh_token"   — legacy record (pre-v0.1.181) without a
+   *                            refresh_token. Only recovery path is
+   *                            the user re-doing the OAuth flow.
+   *   - "revoked"            — refresh_token itself was rejected (400 /
+   *                            401). User has to re-authenticate.
+   *   - "transient"          — network / 5xx. Caller may retry; the
+   *                            scheduled tick will also retry on its
+   *                            own interval.
+   *   - "no_record"          — no subscription token stored at all
+   *                            (api-key user, or fully signed out).
+   *                            Caller likely shouldn't have called us.
+   */
+  async refreshNow(): Promise<
+    | { status: "refreshed" }
+    | { status: "no_refresh_token" }
+    | { status: "revoked"; error: string }
+    | { status: "transient"; error: string }
+    | { status: "no_record" }
+  > {
+    if (this.refreshInFlight) {
+      // A scheduled tick is already running. Wait briefly so we don't
+      // double-refresh, then fall through to a fresh check. The tick's
+      // own conservative gate (<15 min remaining) means it might have
+      // skipped — in that case we still want to force a refresh.
+      await new Promise((r) => setTimeout(r, 250));
+    }
+    this.refreshInFlight = true;
+    try {
+      const record = await this.store.getAnthropicSubscriptionRecord();
+      if (!record) return { status: "no_record" };
+      if (!record.refreshToken) return { status: "no_refresh_token" };
+
+      try {
+        const refreshed = await refreshAccessToken({
+          refreshToken: record.refreshToken,
+        });
+        const newExpiresAt =
+          refreshed.expiresIn != null
+            ? Date.now() + refreshed.expiresIn * 1000
+            : Date.now() + 60 * 60 * 1000;
+        this.store.setAnthropicSubscriptionRecord({
+          accessToken: refreshed.accessToken,
+          refreshToken: refreshed.refreshToken ?? record.refreshToken,
+          expiresAt: newExpiresAt,
+        });
+        this.lastError = null;
+        this.lastSuccessAt = Date.now();
+        console.info(
+          `[anthropic-refresh] forced refresh OK, new expiry in ${Math.round((newExpiresAt - Date.now()) / 1000)}s`,
+        );
+        return { status: "refreshed" };
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        const status = (err as Error & { status?: number }).status;
+        this.lastError = msg;
+        if (status === 400 || status === 401) {
+          console.warn(
+            `[anthropic-refresh] forced refresh rejected (HTTP ${status}): ${msg}`,
+          );
+          return { status: "revoked", error: msg };
+        }
+        console.warn(
+          `[anthropic-refresh] forced refresh transient failure: ${msg}`,
+        );
+        return { status: "transient", error: msg };
+      }
+    } finally {
+      this.refreshInFlight = false;
+    }
+  }
 }

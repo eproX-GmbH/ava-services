@@ -45,6 +45,13 @@ import type {
 const HEALTH_TIMEOUT_MS = 30_000;
 const HEALTH_POLL_MS = 500;
 const STOP_TIMEOUT_MS = 10_000;
+/**
+ * v0.1.192 — minimum gap between consecutive `authError` emits from a
+ * single producer. A stale Anthropic token surfaces the same 401 on
+ * every redelivered AMQP message; without the debounce a packed queue
+ * would fire dozens of refresh attempts per second.
+ */
+const AUTH_ERROR_DEBOUNCE_MS = 30_000;
 
 export interface ProducerConfig {
   /** Stable identifier — also the resources/producers/<name>/ subdir. */
@@ -156,8 +163,66 @@ export class ProducerSupervisor extends EventEmitter {
     | { openaiApiKey?: string; anthropicSubscriptionToken?: string; anthropicApiKey?: string; googleApiKey?: string; mistralApiKey?: string }
     | null = null;
 
+  /**
+   * v0.1.192 — debounce for the auth-error stderr watcher. We emit at
+   * most one `authError` per producer per AUTH_ERROR_DEBOUNCE_MS so a
+   * crashloop on a stale token (every redelivered AMQP message logs
+   * the same 401) doesn't fire dozens of refresh attempts back-to-back.
+   */
+  private lastAuthErrorAt = 0;
+
   constructor(private readonly opts: ProducerSupervisorOptions) {
     super();
+  }
+
+  /**
+   * v0.1.192 — scan producer stdio for credential-rejection patterns
+   * and emit a single `authError` event per debounce window.
+   *
+   * Matched patterns (all case-insensitive):
+   *   - "Invalid authentication credentials" — Anthropic's literal
+   *     401 body for OAuth bearers and API keys.
+   *   - "authentication_error"               — Anthropic SDK wrapper
+   *     classification.
+   *   - "Incorrect API key"                  — OpenAI's wording.
+   *
+   * The desktop main listens via `supervisor.on("authError")` and
+   * forces an immediate token-refresh + cycles all producers when it
+   * fires. See main/index.ts.
+   */
+  private detectAuthErrorPattern(text: string): void {
+    if (
+      !/invalid authentication credentials/i.test(text) &&
+      !/authentication_error/i.test(text) &&
+      !/incorrect api key/i.test(text)
+    ) {
+      return;
+    }
+    const now = Date.now();
+    if (now - this.lastAuthErrorAt < AUTH_ERROR_DEBOUNCE_MS) return;
+    this.lastAuthErrorAt = now;
+    // Best-effort provider hint: we don't actually parse the message,
+    // but `lastLlmConfig` tells us which provider the producer was
+    // spawned with. The main process uses this to refresh the right
+    // credential source.
+    const provider = this.inferProviderFromConfig();
+    console.warn(
+      `[producer:${this.opts.config.name}] auth-error pattern detected (provider=${provider ?? "unknown"})`,
+    );
+    this.emit("authError", {
+      producerName: this.opts.config.name,
+      provider,
+    });
+  }
+
+  private inferProviderFromConfig(): string | null {
+    const c = this.lastLlmConfig;
+    if (!c) return null;
+    if (c.anthropicSubscriptionToken || c.anthropicApiKey) return "anthropic";
+    if (c.openaiApiKey) return "openai";
+    if (c.googleApiKey) return "google";
+    if (c.mistralApiKey) return "mistral";
+    return null;
   }
 
   // ---- Status ---------------------------------------------------------------
@@ -293,11 +358,13 @@ export class ProducerSupervisor extends EventEmitter {
       const text = b.toString().trimEnd();
       console.log(`[${tag}] ${text}`);
       producerLogBuffer.push(this.opts.config.name, "stdout", text);
+      this.detectAuthErrorPattern(text);
     });
     this.child.stderr.on("data", (b: Buffer) => {
       const text = b.toString().trimEnd();
       console.warn(`[${tag}:err] ${text}`);
       producerLogBuffer.push(this.opts.config.name, "stderr", text);
+      this.detectAuthErrorPattern(text);
     });
     this.child.on("exit", (code, signal) => {
       const wasRunning = this.state === "ready" || this.state === "starting";

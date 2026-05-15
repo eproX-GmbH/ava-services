@@ -1291,6 +1291,149 @@ app.whenReady().then(async () => {
     scheduleCredentialCycle("configChanged"),
   );
 
+  // v0.1.192 — reactive on-401 recovery.
+  //
+  // The scheduled refresher (v0.1.181) handles the happy path: tick
+  // every 5 min, refresh when <15 min remain. But it misses three
+  // cases the user just hit in production:
+  //
+  //   1. Legacy login without refresh_token (record from before
+  //      v0.1.181) — tick early-returns at the `!refreshToken` gate.
+  //   2. App was suspended (laptop closed) past the token expiry —
+  //      by the time we wake up, the token is dead and producers
+  //      hold the stale env from spawn time.
+  //   3. Server-side early revocation (clock skew, manual logout in
+  //      another tab) — the access_token died before our `expiresAt`
+  //      would have triggered a tick.
+  //
+  // In all three the producer hits a 401 on its next LLM call. We
+  // watch the producer's stdio for the credential-rejection patterns
+  // emitted in those cases (`Invalid authentication credentials` for
+  // Anthropic, `authentication_error` for the SDK wrappers,
+  // `Incorrect API key` for OpenAI) and:
+  //
+  //   - try a forced refresh via tokenRefresher.refreshNow();
+  //   - on "refreshed" → schedule a credential cycle so the producer
+  //     re-spawns with the new env;
+  //   - on "no_refresh_token" / "revoked" → surface an OS notification
+  //     pointing the user at Settings → Modelle → Anthropic so they
+  //     can re-connect manually. We don't auto-cycle in those cases
+  //     because cycling would just hit the same 401 again.
+  //   - on "transient" → leave it to the next scheduled tick (or a
+  //     subsequent producer error) to retry.
+  //
+  // Debounce lives inside ProducerSupervisor (30 s per producer); the
+  // global authRecoveryInFlight flag below prevents two producers
+  // hitting auth-failures simultaneously from racing on the refresh.
+  let authRecoveryInFlight = false;
+  async function handleProducerAuthError(args: {
+    producerName: string;
+    provider: string | null;
+  }): Promise<void> {
+    if (authRecoveryInFlight) return;
+    if (args.provider !== "anthropic") {
+      // Only the Anthropic OAuth path has an auto-refreshable
+      // credential today. OpenAI / Google / Mistral keys can't be
+      // self-healed — surface a clear UI hint instead.
+      console.warn(
+        `[providers] producer ${args.producerName} signalled auth failure for provider=${args.provider}; no auto-refresh available, user must update the key in Settings.`,
+      );
+      void notifyUserAuthExpired(args.provider);
+      return;
+    }
+    authRecoveryInFlight = true;
+    try {
+      console.info(
+        `[providers] producer ${args.producerName} signalled Anthropic auth failure; attempting forced token refresh`,
+      );
+      const result = await anthropicTokenRefresher.refreshNow();
+      switch (result.status) {
+        case "refreshed":
+          // The setAnthropicSubscriptionRecord() call inside the
+          // refresher will have already fired the
+          // anthropicSubscriptionTokenChanged event, which routes
+          // through scheduleCredentialCycle() — so we don't have to
+          // cycle here, the existing path handles it.
+          console.info(
+            `[providers] forced refresh succeeded for ${args.producerName}; producers will cycle automatically`,
+          );
+          return;
+        case "no_refresh_token":
+          console.warn(
+            `[providers] forced refresh skipped: legacy OAuth record without refresh_token. User must re-connect.`,
+          );
+          void notifyUserAuthExpired("anthropic");
+          return;
+        case "revoked":
+          console.warn(
+            `[providers] forced refresh rejected by Anthropic (revoked). User must re-connect: ${result.error}`,
+          );
+          void notifyUserAuthExpired("anthropic");
+          return;
+        case "transient":
+          console.warn(
+            `[providers] forced refresh transient failure: ${result.error}. Will retry on next scheduled tick.`,
+          );
+          return;
+        case "no_record":
+          // No subscription token at all — the user is on an api-key
+          // path that hit 401 anyway. Treat like a revoked key.
+          void notifyUserAuthExpired("anthropic");
+          return;
+      }
+    } finally {
+      authRecoveryInFlight = false;
+    }
+  }
+
+  function notifyUserAuthExpired(provider: string | null): void {
+    const label =
+      provider === "anthropic"
+        ? "Anthropic"
+        : provider === "openai"
+          ? "OpenAI"
+          : provider === "google"
+            ? "Google"
+            : provider === "mistral"
+              ? "Mistral"
+              : "LLM-Provider";
+    const body =
+      provider === "anthropic"
+        ? `${label}-Anmeldung abgelaufen. In den Einstellungen → Modelle → ${label} bitte neu verbinden.`
+        : `${label}-API-Key wird nicht mehr akzeptiert. In den Einstellungen → Modelle → ${label} bitte neuen Key eintragen.`;
+    try {
+      const { Notification } = require("electron") as typeof import("electron");
+      if (Notification.isSupported()) {
+        new Notification({
+          title: "AVA: Anmeldung erforderlich",
+          body,
+        }).show();
+      }
+    } catch (err) {
+      console.warn("[providers] failed to show auth-expired notification:", err);
+    }
+    // Also broadcast to any open windows so the renderer can show an
+    // in-app banner / Settings nudge. Renderer-side handler is best-
+    // effort; falling back to the OS notification covers the
+    // app-in-background case.
+    for (const win of BrowserWindow.getAllWindows()) {
+      try {
+        win.webContents.send("providers:authExpired", { provider });
+      } catch {
+        /* window may already be destroyed; ignore */
+      }
+    }
+  }
+
+  for (const p of producers) {
+    p.on(
+      "authError",
+      (args: { producerName: string; provider: string | null }) => {
+        void handleProducerAuthError(args);
+      },
+    );
+  }
+
   // v0.1.54 — hydrate persisted CRM tokens from disk + start
   // broadcasting status changes to the renderer. Failures here are
   // non-fatal: a corrupt/encrypted-unavailable record just leaves
