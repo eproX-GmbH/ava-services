@@ -617,7 +617,7 @@ function OverviewTab({
         <h3>Firmenprofil</h3>
         {profile?.profile ? (
           <div className="markdown">
-            <ReactMarkdown>{profile.profile}</ReactMarkdown>
+            <ReactMarkdown>{normaliseProfileMarkdown(profile.profile)}</ReactMarkdown>
           </div>
         ) : (
           <p className="muted">Noch kein Profil.</p>
@@ -1313,6 +1313,45 @@ function ConfidenceBar({ confidence }: { confidence?: number }) {
       </span>
     </span>
   );
+}
+
+/**
+ * v0.1.189 — paragraph-break the four standard Firmenprofil sections.
+ *
+ * The company-profile producer's LLM prompt asks for one Markdown
+ * paragraph per section ("**Leistungen/Produkte:** …",
+ * "**Anwendungsfälle:** …", "**Besonderheiten/USPs/Zertifikate:** …",
+ * "**Tätigkeitsschwerpunkt:** …"). Pre-v0.1.189 the prompt did NOT
+ * enforce a blank line between sections, so models often returned
+ * one long flow paragraph. ReactMarkdown then renders it as a single
+ * `<p>` and the bold labels disappear into the prose.
+ *
+ * This normaliser injects a blank line in front of each labelled
+ * section after the first, so old profiles render with the same
+ * layout as new ones. We match conservatively (only the four known
+ * labels) so unrelated bold spans inside the prose aren't broken.
+ */
+function normaliseProfileMarkdown(raw: string): string {
+  if (!raw) return raw;
+  // Labels we treat as section starts. Trailing colon may be inside
+  // or outside the bold span (the prompt evolved across versions);
+  // match both.
+  const labels = [
+    "Leistungen/Produkte",
+    "Anwendungsfälle",
+    "Besonderheiten/USPs/Zertifikate",
+    "Tätigkeitsschwerpunkt",
+  ];
+  const pattern = new RegExp(
+    "(?:^|\\s)(\\*\\*(?:" +
+      labels.map((l) => l.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|") +
+      ")(?::?\\*\\*|\\*\\*:))",
+    "g",
+  );
+  // Replace each occurrence with two newlines + the matched bold
+  // label. Trim leading newlines that would render as an empty first
+  // paragraph.
+  return raw.replace(pattern, "\n\n$1").replace(/^\n+/, "");
 }
 
 function fieldLabel(field: string): string {
