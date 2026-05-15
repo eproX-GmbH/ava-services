@@ -10,6 +10,7 @@ import type {
   AgentToolCall,
 } from "../../shared/types";
 import { ToolRegistry } from "./tool-registry";
+import { selectToolsForTurn } from "./tool-selection";
 import { buildSystemPrompt } from "./prompts";
 import { UiBridge, type PendingChoice } from "./ui-bridge";
 import type { LlmProviderManager, LlmStreamToolCall } from "./providers";
@@ -319,6 +320,12 @@ export class AgentOrchestrator extends EventEmitter {
     // message); otherwise we try the crude description-keyword
     // auto-activation against the last user message.
     this.activeSkill = null;
+    // v0.1.186 — tool-slimming. When a slash invocation names a
+    // registered TOOL (not a skill), we force it into this turn's
+    // tool selection even if it isn't in DEFAULT_RESEARCH_TOOLS.
+    // This keeps the slash palette as the universal escape-hatch
+    // for tools we hid behind the default to save tokens.
+    let slashNudgedTool: string | null = null;
     const skills = this.availableSkills();
     const slash = parseSlashInvocation(input.message);
     if (slash) {
@@ -341,6 +348,7 @@ export class AgentOrchestrator extends EventEmitter {
         // Nudge the model to invoke that tool instead of treating the
         // slash like an unknown CLI command. The user's message stays as
         // is so the tool still sees any args it might need.
+        slashNudgedTool = slash.name;
         const argsHint = slash.rawArgs.trim()
           ? ` mit den Argumenten: ${slash.rawArgs.trim()}`
           : "";
@@ -388,6 +396,7 @@ export class AgentOrchestrator extends EventEmitter {
       conversation: convo,
       provider,
       signal: abort.signal,
+      slashNudgedTool,
     }).finally(() => {
       this.inFlightRequestId = null;
       this.inFlightConversationId = null;
@@ -457,8 +466,13 @@ export class AgentOrchestrator extends EventEmitter {
     conversation: Conversation;
     provider: import("./providers").LlmProvider;
     signal: AbortSignal;
+    /** v0.1.186 — tool name nudged via slash palette (`/tool_name`)
+     *  on the user's last message. Forced into the turn's tool
+     *  selection so the slash palette remains an escape-hatch for
+     *  tools we hid behind the research default. */
+    slashNudgedTool?: string | null;
   }): Promise<void> {
-    const { requestId, conversation, provider, signal } = args;
+    const { requestId, conversation, provider, signal, slashNudgedTool } = args;
 
     try {
       for (let step = 0; step < STEP_BUDGET; step++) {
@@ -492,10 +506,22 @@ export class AgentOrchestrator extends EventEmitter {
         let assistantContent = "";
         let collectedToolCalls: LlmStreamToolCall[] | undefined;
 
+        // v0.1.186 — tool-slimming. Skill-bound when a skill is
+        // active; curated research default otherwise. Slash-nudged
+        // tool (when user typed /tool_name and it matched a tool
+        // rather than a skill) is force-added so the palette stays
+        // an escape-hatch for hidden tools.
+        const turnTools =
+          this.registry.size() > 0
+            ? selectToolsForTurn({
+                registry: this.registry,
+                activeSkill: this.activeSkill,
+                extraToolNames: slashNudgedTool ? [slashNudgedTool] : undefined,
+              })
+            : undefined;
         for await (const frame of provider.streamChat({
           messages,
-          tools:
-            this.registry.size() > 0 ? this.registry.toOllamaTools() : undefined,
+          tools: turnTools,
           signal,
         })) {
           if (frame.errorMessage) {

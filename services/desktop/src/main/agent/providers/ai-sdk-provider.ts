@@ -422,12 +422,13 @@ export class AiSdkProvider extends EventEmitter implements LlmProvider {
               cause: err instanceof Error ? (err as { cause?: unknown }).cause : undefined,
               stack: err instanceof Error ? err.stack : undefined,
             });
-            const msg =
+            const rawMsg =
               err instanceof Error
                 ? err.message
                 : typeof err === "string"
                   ? err
                   : "ai-sdk stream error";
+            const msg = humanizeProviderError(this.kind, rawMsg);
             yield { done: true, errorMessage: msg };
             return;
           }
@@ -582,6 +583,97 @@ function buildToolSet(specs: OllamaToolSpec[]): ToolSet {
     });
   }
   return out;
+}
+
+/**
+ * v0.1.186 — translate provider error strings into actionable German
+ * for the chat UI. The renderer currently surfaces `errorMessage` as
+ * a plain inline error bubble; raw Anthropic / OpenAI messages are
+ * English, very long, and bury the actionable bit ("you're rate
+ * limited, wait 30 s") under SDK boilerplate.
+ *
+ * We pattern-match on common cases and leave anything we don't
+ * recognise untouched so unknown errors still surface verbatim.
+ *
+ * Recognised buckets:
+ *   - Rate-limit (HTTP 429 / "rate limit" / "exceed your org's …"):
+ *     tell the user we hit the per-minute input-token cap and what
+ *     to do (warten / Tier upgraden).
+ *   - Auth / 401 / invalid key: tell them to re-enter the key in
+ *     Settings — we don't echo the key.
+ *   - Quota / 402 / "insufficient_quota": tell them billing is the
+ *     issue (kein Tier-Wechsel, sondern Guthaben).
+ */
+function humanizeProviderError(kind: LlmProviderKind, raw: string): string {
+  const lower = raw.toLowerCase();
+  const label = labelFor(kind);
+
+  // Rate-limit (both Anthropic "exceed your organization's rate limit"
+  // and OpenAI "rate_limit_exceeded" / "429").
+  if (
+    lower.includes("rate limit") ||
+    lower.includes("rate_limit") ||
+    lower.includes("429") ||
+    lower.includes("too many requests")
+  ) {
+    // Try to surface the specific numeric limit if Anthropic gave one.
+    const tokenLimitMatch = raw.match(
+      /rate limit of\s+([\d.,]+)\s+input tokens per minute/i,
+    );
+    const limitDetail = tokenLimitMatch
+      ? ` (Limit: ${tokenLimitMatch[1]} Eingabe-Tokens pro Minute)`
+      : "";
+    return (
+      `${label}: Anfrage-Limit pro Minute überschritten${limitDetail}. ` +
+      `Bitte 30–60 Sekunden warten und erneut versuchen. ` +
+      `Falls das häufig passiert, kannst du in deinem ${label}-Konto ` +
+      `den Tier (Guthaben aufladen) erhöhen, um das Limit anzuheben.`
+    );
+  }
+
+  // Auth / invalid key.
+  if (
+    lower.includes("401") ||
+    lower.includes("invalid_api_key") ||
+    lower.includes("authentication") ||
+    lower.includes("unauthorized") ||
+    lower.includes("invalid authentication")
+  ) {
+    return (
+      `${label}: Authentifizierung fehlgeschlagen. ` +
+      `Bitte API-Key in den Einstellungen prüfen und ggf. neu eintragen.`
+    );
+  }
+
+  // Quota / billing.
+  if (
+    lower.includes("insufficient_quota") ||
+    lower.includes("billing") ||
+    lower.includes("402") ||
+    lower.includes("payment required") ||
+    lower.includes("purchase credits")
+  ) {
+    return (
+      `${label}: Kein Guthaben mehr auf dem API-Konto. ` +
+      `Bitte im ${label}-Konto Guthaben aufladen, dann erneut versuchen.`
+    );
+  }
+
+  // Model not found / wrong model id.
+  if (
+    lower.includes("model_not_found") ||
+    lower.includes("does not exist") ||
+    (lower.includes("model") && lower.includes("not found"))
+  ) {
+    return (
+      `${label}: Das gewählte Modell ist mit deinem Konto nicht verfügbar. ` +
+      `Bitte in den Einstellungen ein anderes Modell wählen.`
+    );
+  }
+
+  // Fall-through: prefix with the provider label so it's clear who
+  // failed, but otherwise pass the raw message through.
+  return `${label}: ${raw}`;
 }
 
 function labelFor(kind: LlmProviderKind): string {
