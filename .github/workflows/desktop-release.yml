@@ -101,6 +101,18 @@ jobs:
           GITHUB_REF_NAME: ${{ github.event.inputs.tag || github.ref_name }}
         run: node scripts/validate-version-tag.mjs
 
+      # v0.1.193 — guard against stale vendored @ava/ai-provider copies
+      # in producer submodules. v0.1.191 was a real production bug where
+      # company-contact and company-profile shipped with a pre-v0.1.145
+      # ai-provider that lacked the ANTHROPIC_AUTH_TOKEN OAuth path; both
+      # producers crashed at boot for every claude.ai-login user. The
+      # script byte-compares each producer's `vendor/ai-provider/dist/
+      # index.js` against the workspace canonical and fails the build on
+      # any drift, with a per-producer diff in the log.
+      - name: Check vendored ai-provider matches workspace
+        shell: bash
+        run: bash scripts/check-vendor-drift.sh
+
       # Pulls Ollama + whisper-cli release artifacts into
       # `services/desktop/resources/{ollama,whisper}/<platform>/`
       # before electron-builder hits `extraResources`.
@@ -310,6 +322,18 @@ jobs:
           GITHUB_REF_NAME: ${{ github.event.inputs.tag || github.ref_name }}
         run: node scripts/validate-version-tag.mjs
 
+      # v0.1.193 — guard against stale vendored @ava/ai-provider copies
+      # in producer submodules. v0.1.191 was a real production bug where
+      # company-contact and company-profile shipped with a pre-v0.1.145
+      # ai-provider that lacked the ANTHROPIC_AUTH_TOKEN OAuth path; both
+      # producers crashed at boot for every claude.ai-login user. The
+      # script byte-compares each producer's `vendor/ai-provider/dist/
+      # index.js` against the workspace canonical and fails the build on
+      # any drift, with a per-producer diff in the log.
+      - name: Check vendored ai-provider matches workspace
+        shell: bash
+        run: bash scripts/check-vendor-drift.sh
+
       - name: Fetch Ollama binary (darwin-x64)
         working-directory: services/desktop
         run: pnpm fetch:ollama --platform=darwin-x64
@@ -514,6 +538,18 @@ jobs:
         env:
           GITHUB_REF_NAME: ${{ github.event.inputs.tag || github.ref_name }}
         run: node scripts/validate-version-tag.mjs
+
+      # v0.1.193 — guard against stale vendored @ava/ai-provider copies
+      # in producer submodules. v0.1.191 was a real production bug where
+      # company-contact and company-profile shipped with a pre-v0.1.145
+      # ai-provider that lacked the ANTHROPIC_AUTH_TOKEN OAuth path; both
+      # producers crashed at boot for every claude.ai-login user. The
+      # script byte-compares each producer's `vendor/ai-provider/dist/
+      # index.js` against the workspace canonical and fails the build on
+      # any drift, with a per-producer diff in the log.
+      - name: Check vendored ai-provider matches workspace
+        shell: bash
+        run: bash scripts/check-vendor-drift.sh
 
       - name: Fetch Ollama binary
         working-directory: services/desktop

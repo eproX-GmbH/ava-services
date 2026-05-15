@@ -1369,6 +1369,67 @@ transactionsRouter.openapi(retryRoute, async (c) => {
   const userId = c.get("auth").actorId;
   const targets = RETRY_DISPATCH[stage];
   const requestSource = c.req.url;
+
+  // v0.1.193 — force-overwrite on manual retry.
+  //
+  // tierShouldWrite() in @ava/ai-provider refuses re-writes from the
+  // persist-bus for ≤30-day-old non-LLM stages and same-or-lower-tier
+  // LLM stages. That's right for involuntary re-runs (a dispatch storm
+  // shouldn't reprocess every Bundesanzeiger PDF on the planet) but
+  // wrong for explicit user action: clicking "Erneut versuchen" must
+  // do exactly that, regardless of how fresh the cache row is.
+  //
+  // Solution: before we publish the retry trigger, clear the
+  // ContentFreshness rows for every producer the retry targets. The
+  // gate then sees `existingAgeMs = Infinity` and waves the next
+  // persist through. Side-effect: the previous llmTier/llmModel
+  // provenance is lost for those rows — that's intentional, since the
+  // upcoming retry will overwrite them anyway and the user's
+  // explicit "do it again" supersedes the cached audit trail.
+  const producersToClear = new Set<string>();
+  for (const t of targets) {
+    if (t.kind === "gateway") {
+      producersToClear.add(t.producer);
+    } else {
+      // upstream targets carry a camelCase `stage`; map it back to
+      // the kebab-case producer name used in ContentFreshness.stage.
+      const mapped = STAGE_TO_SERVICE[t.stage as z.infer<typeof RetryStage>];
+      if (mapped) producersToClear.add(mapped);
+    }
+  }
+  if (producersToClear.size > 0) {
+    try {
+      const pool = getGatewayPool();
+      const res = await pool.query(
+        `DELETE FROM "ContentFreshness"
+         WHERE "companyId" = $1 AND stage = ANY($2::text[])`,
+        [companyId, Array.from(producersToClear)],
+      );
+      logger.info(
+        {
+          companyId,
+          stages: Array.from(producersToClear),
+          rowsDeleted: res.rowCount ?? 0,
+          requestId: c.get("requestId"),
+        },
+        "retry: cleared ContentFreshness rows to force-overwrite on next persist",
+      );
+    } catch (err) {
+      // Best-effort: a freshness clear failure is not fatal. The
+      // user's retry will dispatch anyway; worst case the tier-gate
+      // skips again and we end up where we started. Logging it loud
+      // so we notice if this becomes a chronic issue.
+      logger.warn(
+        {
+          err: err instanceof Error ? err.message : String(err),
+          companyId,
+          stages: Array.from(producersToClear),
+        },
+        "retry: ContentFreshness clear failed; tier-gate may skip the upcoming persist",
+      );
+    }
+  }
+
   const dispatched = await Promise.all(
     targets.map(async (target) => {
       const producerStage = target.stage;
