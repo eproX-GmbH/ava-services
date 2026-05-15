@@ -73,9 +73,12 @@ export function buildProfileTools(deps: ProfileToolDeps): Tool[] {
             "Free-text 2-3 sentences describing the user's context. Capped at 300 chars upstream.",
         },
         role: {
-          type: ["string", "null"],
+          // v0.1.187 — single string type (Gemini rejects union types
+          // like ["string", "null"] in function declarations). Pass
+          // empty string to clear; omit the field for "no change".
+          type: "string",
           description:
-            "Job role / function (e.g. 'B2B-Vertrieb', 'Investment-Analyst'). Pass empty string or null to clear.",
+            "Job role / function (e.g. 'B2B-Vertrieb', 'Investment-Analyst'). Pass empty string to clear; omit to leave unchanged.",
         },
         industries: {
           type: "array",
@@ -96,10 +99,18 @@ export function buildProfileTools(deps: ProfileToolDeps): Tool[] {
             "Recurring topics the user cares about ('Geschäftsführer-Wechsel', 'M&A', 'Finanzkennzahlen').",
         },
         tone: {
-          type: ["string", "null"],
-          enum: ["neutral", "knapp", "ausführlich", null],
+          // v0.1.187 — Google Gemini's function-declaration validator
+          // rejects `enum` on union types like `["string", "null"]`
+          // ("enum: only allowed for STRING type"). We drop the
+          // explicit nullable union here and keep the field as a
+          // plain enum of strings — the property is optional anyway,
+          // so the model expresses "no preference" by omitting the
+          // field rather than by passing null. The yup schema below
+          // still accepts null for back-compat when callers pass it.
+          type: "string",
+          enum: ["neutral", "knapp", "ausführlich"],
           description:
-            "How verbose the agent should be. Null = no preference, default behaviour.",
+            "How verbose the agent should be. Omit the field for 'no preference / default behaviour'.",
         },
         profileSkipped: {
           type: "boolean",
@@ -148,13 +159,18 @@ export function buildProfileTools(deps: ProfileToolDeps): Tool[] {
             "The fields you'd like to set. Same shape as `profile_set`.",
           properties: {
             bio: { type: "string" },
-            role: { type: ["string", "null"] },
+            // v0.1.187 — single string type for Gemini compat.
+            // Empty string clears; omit for "no change".
+            role: { type: "string" },
             industries: { type: "array", items: { type: "string" } },
             geographies: { type: "array", items: { type: "string" } },
             topics: { type: "array", items: { type: "string" } },
             tone: {
-              type: ["string", "null"],
-              enum: ["neutral", "knapp", "ausführlich", null],
+              // v0.1.187 — see profile_set.tone above. Plain string
+              // enum so Google Gemini accepts the schema; omit the
+              // field for "no change".
+              type: "string",
+              enum: ["neutral", "knapp", "ausführlich"],
             },
           },
         },
