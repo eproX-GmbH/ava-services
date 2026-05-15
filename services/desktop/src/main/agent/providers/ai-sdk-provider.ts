@@ -310,10 +310,66 @@ export class AiSdkProvider extends EventEmitter implements LlmProvider {
 
     const tools = req.tools ? buildToolSet(req.tools) : undefined;
 
+    // v0.1.185 — Anthropic prompt-caching.
+    //
+    // Without caching, every turn re-bills the full system prompt
+    // (~13 k tokens) + tool schemas (~12 k tokens). Tier-1 users hit
+    // the 30 k/min input-token rate-limit on the first multi-tool
+    // turn, and a 5-turn session costs ~$0.60.
+    //
+    // We mark the system message and the LAST tool with
+    // `cacheControl: { type: "ephemeral" }`. Anthropic caches
+    // everything UP TO the marker, so a single marker on the last
+    // tool covers the whole tools array; a separate marker on the
+    // system message keeps the prompt block cacheable on its own
+    // when the tool set changes between turns.
+    //
+    // Cache TTL is 5 min by default. First request after a stable
+    // prefix costs 1.25× (cache write); every subsequent hit within
+    // 5 min costs 0.1×. For multi-turn sessions that's a 60–80 %
+    // input-token discount, and rate-limit counters drop with it.
+    //
+    // The `providerOptions.anthropic` namespace is ignored by other
+    // providers (OpenAI / Ollama / Google), so leaving the markers
+    // in place for those is a no-op. OpenAI does its own automatic
+    // caching ≥1024 tokens regardless.
+    const modelMessages = toModelMessages(req.messages);
+    const cachedMessages = modelMessages.map((m) => {
+      if (m.role === "system") {
+        return {
+          ...m,
+          providerOptions: {
+            anthropic: { cacheControl: { type: "ephemeral" as const } },
+          },
+        };
+      }
+      return m;
+    });
+    let cachedTools = tools;
+    if (cachedTools && this.kind === "anthropic") {
+      const keys = Object.keys(cachedTools);
+      const lastKey = keys.length > 0 ? keys[keys.length - 1] : null;
+      if (lastKey) {
+        const lastTool = cachedTools[lastKey];
+        if (lastTool) {
+          const withCache = {
+            ...lastTool,
+            providerOptions: {
+              anthropic: { cacheControl: { type: "ephemeral" as const } },
+            },
+          } as typeof lastTool;
+          cachedTools = {
+            ...cachedTools,
+            [lastKey]: withCache,
+          } as ToolSet;
+        }
+      }
+    }
+
     const result = streamText({
       model,
-      messages: toModelMessages(req.messages),
-      ...(tools ? { tools } : {}),
+      messages: cachedMessages,
+      ...(cachedTools ? { tools: cachedTools } : {}),
       // Stop after a single assistant turn — we run the ReAct loop
       // ourselves so the orchestrator can interleave UI prompts /
       // user-confirmation flows between tool calls.

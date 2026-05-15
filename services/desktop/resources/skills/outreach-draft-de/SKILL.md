@@ -103,12 +103,28 @@ Marketing-Adjektive wie „innovativ" oder „führend".
 <Body>
 
 Mit freundlichen Grüßen
-<Platzhalter Absendername>
+<Absendername>
 
 **Bezugspunkt:** <ein Satz, der genau benennt, worauf sich der Entwurf
 stützt, inkl. Datum oder Quelle, z. B. „Jahresabschluss-Veröffentlichung
 vom 12.03.2026">
 ```
+
+### Absendername auflösen
+
+Den Absendernamen ziehst du in dieser Reihenfolge:
+
+1. Aus dem Block „Langzeitgedächtnis" oben im System-Prompt, falls dort
+   ein voller Name des Nutzers hinterlegt ist („Ich heiße …",
+   „Mein Name ist …", „Absender: …", „Joyce Müller" o. ä.).
+2. Aus dem „Nutzer-Profil"-Block, falls in der `Bio` ein Name steht.
+3. Nur wenn beides nichts liefert: schreibe wörtlich `[Ihr Name]` als
+   sichtbaren Platzhalter, damit der Nutzer beim Übernehmen in den
+   Mail-Client einen klaren Edit-Punkt sieht.
+
+Erfinde NIE einen Namen. Wenn du dir bei der Schreibweise (z. B.
+Diakritika, Doppelnamen) nicht sicher bist, nimm exakt die Form aus
+dem Gedächtnis-Eintrag.
 
 ## Wichtige Hinweise
 
