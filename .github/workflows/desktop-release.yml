@@ -110,8 +110,7 @@ jobs:
       # index.js` against the workspace canonical and fails the build on
       # any drift, with a per-producer diff in the log.
       - name: Check vendored ai-provider matches workspace
-        shell: bash
-        run: bash scripts/check-vendor-drift.sh
+        run: node scripts/check-vendor-drift.mjs
 
       # Pulls Ollama + whisper-cli release artifacts into
       # `services/desktop/resources/{ollama,whisper}/<platform>/`
@@ -331,8 +330,7 @@ jobs:
       # index.js` against the workspace canonical and fails the build on
       # any drift, with a per-producer diff in the log.
       - name: Check vendored ai-provider matches workspace
-        shell: bash
-        run: bash scripts/check-vendor-drift.sh
+        run: node scripts/check-vendor-drift.mjs
 
       - name: Fetch Ollama binary (darwin-x64)
         working-directory: services/desktop
@@ -548,8 +546,7 @@ jobs:
       # index.js` against the workspace canonical and fails the build on
       # any drift, with a per-producer diff in the log.
       - name: Check vendored ai-provider matches workspace
-        shell: bash
-        run: bash scripts/check-vendor-drift.sh
+        run: node scripts/check-vendor-drift.mjs
 
       - name: Fetch Ollama binary
         working-directory: services/desktop
