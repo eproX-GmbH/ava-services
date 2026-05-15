@@ -1205,11 +1205,71 @@ app.whenReady().then(async () => {
   // gets refreshed at boot before any producer-spawn.
   const { AnthropicTokenRefresher } = await import("./auth/token-refresher");
   const { ProviderConfigStore } = await import("./agent/providers/store");
+  const providerConfigStore = ProviderConfigStore.shared();
   const anthropicTokenRefresher = new AnthropicTokenRefresher(
-    ProviderConfigStore.shared(),
+    providerConfigStore,
   );
   anthropicTokenRefresher.start();
   app.on("before-quit", () => anthropicTokenRefresher.stop());
+
+  // v0.1.182 — cycle ALL producers when the user's LLM credentials
+  // change (api-key or subscription token), debounced to coalesce
+  // rapid edits. Without this, a "Neu verbinden" click or an
+  // auto-refresh from the AnthropicTokenRefresher saves the new
+  // token to disk but the running producer subprocesses keep using
+  // the OLD env var that was captured at spawn time. Result for the
+  // user was a sticky "Invalid authentication credentials" loop --
+  // the new token sits unused until manual app restart.
+  //
+  // Why ALL producers, not just website: every LLM-driven producer
+  // (company-profile, company-contact, company-evaluation,
+  // company-publication, website) reads ANTHROPIC_AUTH_TOKEN /
+  // ANTHROPIC_API_KEY / etc. at spawn. They all need a fresh env to
+  // pick up a renewed credential. The cycle takes ~10-15s; AMQP
+  // re-queues any in-flight messages, so the only user-visible
+  // effect is a brief stall.
+  let credCycleTimer: NodeJS.Timeout | null = null;
+  function scheduleCredentialCycle(reason: string): void {
+    if (credCycleTimer) clearTimeout(credCycleTimer);
+    credCycleTimer = setTimeout(() => {
+      credCycleTimer = null;
+      console.info(
+        `[providers] credentials changed (${reason}) — cycling producers to pick up new env`,
+      );
+      for (const p of producers) {
+        const s = p.getStatus().state;
+        if (s === "idle" || s === "stopping") continue;
+        void (async () => {
+          const name = p.getStatus().name;
+          try {
+            await p.stop();
+          } catch (err) {
+            console.warn(`[providers] ${name}.stop() rejected:`, err);
+            return;
+          }
+          if (!auth.getStatus().signedIn) return;
+          try {
+            await p.start();
+          } catch (err) {
+            console.error(`[providers] ${name}.start() rejected after restart:`, err);
+          }
+        })();
+      }
+    }, 500);
+  }
+  providerConfigStore.on("keyChanged", (kind) =>
+    scheduleCredentialCycle(`keyChanged(${kind})`),
+  );
+  providerConfigStore.on("anthropicSubscriptionTokenChanged", () =>
+    scheduleCredentialCycle("anthropicSubscriptionTokenChanged"),
+  );
+  // configChanged covers anthropicAuthMode flips ("auf API-Key umschalten"
+  // / "auf Abo umschalten") which change which env var the producer
+  // resolves at spawn time. Provider-kind / model-id changes also need
+  // a cycle.
+  providerConfigStore.on("configChanged", () =>
+    scheduleCredentialCycle("configChanged"),
+  );
 
   // v0.1.54 — hydrate persisted CRM tokens from disk + start
   // broadcasting status changes to the renderer. Failures here are
