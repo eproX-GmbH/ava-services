@@ -176,6 +176,59 @@ export class ProducerSupervisor extends EventEmitter {
   }
 
   /**
+   * v0.1.201 — opt-in audit-event channel from producer subprocesses.
+   *
+   * Convention: a producer can emit a single line of stdout/stderr
+   * matching `__AVA_AUDIT__<json-payload>__/AVA_AUDIT__` and the
+   * supervisor forwards the parsed payload as an `auditEvent` event
+   * on its own EventEmitter surface. main/index.ts subscribes and
+   * writes the entry to the local PGlite-backed audit store.
+   *
+   * Why a stdout marker and not a new AMQP topic:
+   *   - producers already log heavily to stdout; adding a structured
+   *     line costs nothing
+   *   - no extra AMQP plumbing, no cloud round-trip — fully local
+   *   - failure-mode is graceful: a non-AVA developer running the
+   *     producer standalone just sees the marker line in their logs
+   *
+   * Producer-side helper (recommended, not yet shipped to producers):
+   *   function auditEmit(event) {
+   *     console.log(`__AVA_AUDIT__${JSON.stringify(event)}__/AVA_AUDIT__`);
+   *   }
+   *
+   * The payload must be a single line of JSON matching AuditEventInput
+   * (see shared/types.ts). Malformed lines are silently dropped.
+   */
+  private detectAuditMarker(text: string): void {
+    // Cheap pre-check before regex'ing the whole buffer
+    if (!text.includes("__AVA_AUDIT__")) return;
+    const re = /__AVA_AUDIT__(.+?)__\/AVA_AUDIT__/g;
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(text)) !== null) {
+      const captured = m[1];
+      if (!captured) continue;
+      try {
+        const payload = JSON.parse(captured) as Record<string, unknown>;
+        if (
+          typeof payload.category !== "string" ||
+          typeof payload.action !== "string" ||
+          typeof payload.summary !== "string"
+        ) {
+          continue;
+        }
+        // Default actor to the producer name so emitters can keep
+        // their payload minimal.
+        if (!payload.actorType) payload.actorType = "producer";
+        if (!payload.actorId) payload.actorId = this.opts.config.name;
+        this.emit("auditEvent", payload);
+      } catch {
+        // Bad JSON — ignore. Producer logs surface the line anyway,
+        // so debugging is possible from the Producer-Status panel.
+      }
+    }
+  }
+
+  /**
    * v0.1.192 — scan producer stdio for credential-rejection patterns
    * and emit a single `authError` event per debounce window.
    *
@@ -359,12 +412,14 @@ export class ProducerSupervisor extends EventEmitter {
       console.log(`[${tag}] ${text}`);
       producerLogBuffer.push(this.opts.config.name, "stdout", text);
       this.detectAuthErrorPattern(text);
+      this.detectAuditMarker(text);
     });
     this.child.stderr.on("data", (b: Buffer) => {
       const text = b.toString().trimEnd();
       console.warn(`[${tag}:err] ${text}`);
       producerLogBuffer.push(this.opts.config.name, "stderr", text);
       this.detectAuthErrorPattern(text);
+      this.detectAuditMarker(text);
     });
     this.child.on("exit", (code, signal) => {
       const wasRunning = this.state === "ready" || this.state === "starting";

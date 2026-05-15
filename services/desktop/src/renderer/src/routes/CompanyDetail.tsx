@@ -873,7 +873,7 @@ function PublicationCard({ pub }: { pub: Publication }) {
                   legend below so visually related numbers cluster. */}
               <KpiCategoryLegend />
               <div className="kpi-grid">
-                {sortKpisByCategory(soa.kpis).map((k, i) => {
+                {sortKpisByCategory(filterKpisToYear(soa.kpis, pub.year ?? null)).map((k, i) => {
                   const cat = resolveKpiCategory(k);
                   return (
                     <div key={i} className="kpi-tile">
@@ -1438,6 +1438,34 @@ const KPI_CATEGORY_ORDER: KpiCategory[] = [
   "guv",
   "sonstiges",
 ];
+
+/**
+ * v0.1.201 — drop KPI entries that belong to a different fiscal year
+ * than the surrounding Jahresabschluss block. German Jahresabschlüsse
+ * always include a prior-year comparison column (e.g. the 2024 report
+ * lists both 31.12.2024 and 31.12.2023 figures), so without this
+ * filter the user sees their 2023 numbers twice: once in the 2023
+ * card and again in the 2024 card.
+ *
+ * We extract the first 4-digit year from the KPI's `period` string
+ * and keep only those that match the publication's `year`. Defensive
+ * fall-throughs:
+ *   - publication has no year context → keep everything
+ *   - KPI has no period string → keep (assume current year)
+ *   - period doesn't contain a 4-digit year → keep
+ */
+function filterKpisToYear<T extends { period?: string | null }>(
+  kpis: T[],
+  pubYear: number | null,
+): T[] {
+  if (pubYear == null) return kpis;
+  return kpis.filter((k) => {
+    if (!k.period) return true;
+    const m = String(k.period).match(/(?:19|20)\d{2}/);
+    if (!m) return true;
+    return parseInt(m[0], 10) === pubYear;
+  });
+}
 
 function sortKpisByCategory<T extends { name: string; category?: string | null }>(
   kpis: T[],

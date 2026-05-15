@@ -992,6 +992,78 @@ heartbeat.on("tick", (info: AlertTickInfo) => {
   });
 });
 
+// v0.1.201 — Auth + Updater audit emits. Wired as additional
+// EventEmitter listeners (the existing broadcast handlers are
+// untouched). Each event we log is a clear user-visible state
+// transition that belongs in the trail.
+let lastAuthSignedIn = false;
+auth.on("status", (status: AuthStatus) => {
+  if (status.signedIn !== lastAuthSignedIn) {
+    audit({
+      actorType: "user",
+      actorId: status.actorId ?? null,
+      category: "auth",
+      action: status.signedIn ? "user.signed_in" : "user.signed_out",
+      severity: "info",
+      subjectType: null,
+      subjectId: null,
+      summary: status.signedIn
+        ? `Angemeldet${status.actorId ? ` (${status.actorId})` : ""}`
+        : "Abgemeldet",
+      metadata: {
+        actorId: status.actorId ?? null,
+        tenantId: status.tenantId ?? null,
+      },
+    });
+    lastAuthSignedIn = status.signedIn;
+  }
+});
+let lastUpdaterState: string | null = null;
+updater.on("status", (s: UpdateStatus) => {
+  // Only state TRANSITIONS get audited, not progress ticks. The
+  // download-progress events fire dozens of times during a single
+  // download; we'd flood the log without adding signal.
+  if (s.state !== lastUpdaterState) {
+    audit({
+      actorType: "system",
+      actorId: "updater",
+      category: "update",
+      action: `updater.state.${s.state}`,
+      severity: s.state === "error" ? "error" : "info",
+      subjectType: null,
+      subjectId: null,
+      summary: updaterStateSummary(s),
+      metadata: {
+        state: s.state,
+        currentVersion: s.currentVersion,
+        latestVersion: s.latestVersion ?? null,
+        error: s.errorMessage ?? null,
+      },
+    });
+    lastUpdaterState = s.state;
+  }
+});
+function updaterStateSummary(s: UpdateStatus): string {
+  switch (s.state) {
+    case "checking":
+      return "Update-Prüfung läuft";
+    case "available":
+      return `Update verfügbar: v${s.latestVersion ?? "?"}`;
+    case "up-to-date":
+      return "App ist aktuell";
+    case "downloading":
+      return `Update wird heruntergeladen${s.latestVersion ? ` (v${s.latestVersion})` : ""}`;
+    case "ready":
+      return `Update bereit zur Installation${s.latestVersion ? ` (v${s.latestVersion})` : ""}`;
+    case "installing":
+      return "Update wird installiert (Neustart)";
+    case "error":
+      return `Update-Fehler: ${s.errorMessage ?? "unbekannt"}`;
+    default:
+      return `Updater-Status: ${s.state}`;
+  }
+}
+
 // v0.1.118 — heartbeat-driven auto-retry. Polls the gateway every
 // ~10 min for failed producer cells whose `nextRetryAt` has matured
 // and re-fires the per-stage retry endpoint. Independent of the alert
@@ -1562,6 +1634,38 @@ app.whenReady().then(async () => {
         void handleProducerAuthError(args);
       },
     );
+    // v0.1.201 — producer-emitted audit events arrive via the
+    // stdout `__AVA_AUDIT__…` marker convention (see
+    // producer-supervisor.ts → detectAuditMarker). The supervisor
+    // already filled in actorType/actorId defaults; we just have
+    // to coerce the payload back into the canonical shape and
+    // append.
+    p.on("auditEvent", (payload: Record<string, unknown>) => {
+      try {
+        audit({
+          actorType: (payload.actorType as AuditEventInput["actorType"]) ??
+            "producer",
+          actorId:
+            typeof payload.actorId === "string" ? payload.actorId : null,
+          category: payload.category as AuditEventInput["category"],
+          action: String(payload.action),
+          severity:
+            (payload.severity as AuditEventInput["severity"]) ?? "info",
+          subjectType:
+            (payload.subjectType as AuditEventInput["subjectType"]) ?? null,
+          subjectId:
+            typeof payload.subjectId === "string" ? payload.subjectId : null,
+          summary: String(payload.summary),
+          metadata:
+            (payload.metadata as Record<string, unknown> | undefined) ?? {},
+        });
+      } catch (err) {
+        console.warn(
+          `[audit] producer ${p.getStatus().name} emitted invalid payload:`,
+          err,
+        );
+      }
+    });
     // v0.1.200 — audit producer lifecycle, but only the user-
     // relevant transitions (entered error / recovered to ready).
     // The starting/stopping/idle churn is high-frequency noise
@@ -1608,9 +1712,40 @@ app.whenReady().then(async () => {
   // broadcasting status changes to the renderer. Failures here are
   // non-fatal: a corrupt/encrypted-unavailable record just leaves
   // the provider as "not connected" until the user re-runs OAuth.
+  // v0.1.201 — audit CRM lifecycle. crmManager.on("status") fires
+  // once per provider whose state changed. We only audit the
+  // "connected" <-> "disconnected" boundary (transitions), not every
+  // refresh tick: those would be noise. Track last-seen-state per
+  // provider.
+  const lastCrmConnected = new Map<string, boolean>();
   crmManager.on("status", (status: CrmStatus) => {
     for (const win of BrowserWindow.getAllWindows()) {
       win.webContents.send("crm-status:changed", status);
+    }
+    try {
+      const prev = lastCrmConnected.get(status.provider) ?? false;
+      if (status.connected !== prev) {
+        audit({
+          actorType: "user",
+          actorId: null,
+          category: "crm",
+          action: status.connected ? "crm.connected" : "crm.disconnected",
+          severity: "info",
+          subjectType: null,
+          subjectId: status.provider,
+          summary: status.connected
+            ? `CRM verbunden: ${status.provider}${status.account ? ` (${status.account})` : ""}`
+            : `CRM getrennt: ${status.provider}`,
+          metadata: {
+            provider: status.provider,
+            account: status.account ?? null,
+            lastError: status.lastError ?? null,
+          },
+        });
+        lastCrmConnected.set(status.provider, status.connected);
+      }
+    } catch (err) {
+      console.warn("[audit] crm-status hook failed:", err);
     }
   });
   await crmManager.hydrate().catch((err: unknown) => {
