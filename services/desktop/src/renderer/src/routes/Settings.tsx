@@ -9,6 +9,7 @@ import { ModelleTab } from "./settings/ModelleTab";
 import { DatenquellenTab } from "./settings/DatenquellenTab";
 import { SkillsTab } from "./settings/SkillsTab";
 import { SystemTab } from "./settings/SystemTab";
+import { VerlaufTab } from "./settings/VerlaufTab";
 import { notifyLinkedInSettingsChanged } from "../components/LinkedInActiveBanner";
 import { gatewayFetch } from "../api/gateway";
 import { useUsage, isUnlimited, type BillingTier } from "../api/usage";
@@ -126,6 +127,7 @@ export const SETTINGS_TABS = [
   { id: "modelle",      label: "Modelle" },
   { id: "datenquellen", label: "Datenquellen" },
   { id: "skills",       label: "Skills" },
+  { id: "verlauf",      label: "Verlauf" },
   { id: "system",       label: "System" },
 ] as const;
 export type SettingsTabId = (typeof SETTINGS_TABS)[number]["id"];
@@ -268,6 +270,7 @@ export function Settings() {
         {activeTab === "modelle"      && <ModelleTab />}
         {activeTab === "datenquellen" && <DatenquellenTab />}
         {activeTab === "skills"       && <SkillsTab />}
+        {activeTab === "verlauf"      && <VerlaufTab />}
         {activeTab === "system"       && <SystemTab />}
       </section>
     </div>

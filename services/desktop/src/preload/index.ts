@@ -822,6 +822,29 @@ const api = {
   // the explicit user surface). `clear` wipes back to defaults. The
   // `onChanged` push is fired by main after every successful write so
   // the panel + every other window mirror re-syncs.
+  // v0.1.200 — Audit-Trail. Local-first, privacy-first: data lives
+  // in an embedded PGlite under userData/pglite/audit/ and never
+  // syncs anywhere. The renderer's Verlauf-Tab calls `list` for
+  // paginated queries and subscribes to `onInserted` for live-tail.
+  audit: {
+    list: (
+      query: import("../shared/types").AuditListQuery,
+    ): Promise<import("../shared/types").AuditListResponse> =>
+      ipcRenderer.invoke("audit:list", query),
+    purgeAll: (): Promise<{ removed: number }> =>
+      ipcRenderer.invoke("audit:purgeAll"),
+    onInserted: (
+      cb: (event: import("../shared/types").AuditEvent) => void,
+    ): (() => void) => {
+      const handler = (
+        _e: Electron.IpcRendererEvent,
+        event: import("../shared/types").AuditEvent,
+      ) => cb(event);
+      ipcRenderer.on("audit:inserted", handler);
+      return () => ipcRenderer.removeListener("audit:inserted", handler);
+    },
+  },
+
   profile: {
     get: (): Promise<UserProfile> => ipcRenderer.invoke("profile:get"),
     set: (patch: Partial<UserProfile>): Promise<UserProfile> =>

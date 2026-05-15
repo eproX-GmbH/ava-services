@@ -74,6 +74,9 @@ import type {
 import type { CrmProvider, CrmStatus } from "./crm/types";
 import { scrubQuarantine, scrubWhisperBundle } from "./scrub-quarantine";
 import { Updater, broadcastUpdateStatus } from "./updater";
+// v0.1.200 — Audit-Trail. Local-first PGlite store, see audit-store.ts.
+import { AuditStore } from "./audit/audit-store";
+import type { AuditEventInput } from "./audit/audit-types";
 import {
   AgentOrchestrator,
   AlertPrefsStore,
@@ -932,6 +935,63 @@ heartbeat.on("tick", (info: AlertTickInfo) => {
   void recordLinkedInTickVerdicts(info);
 });
 
+// v0.1.200 — Audit-Trail store. Privacy-first: an embedded PGlite
+// instance under userData/pglite/audit/ that NEVER syncs to any
+// cloud DB. Every emit-site in main/ pipes through `audit()` below;
+// AMQP-ferried events from producers + the gateway land here too.
+//
+// The store starts lazily on first append() — keeps app boot fast.
+// Daily retention purge fires once on startup + every 24 h while the
+// app is running.
+const auditStore = new AuditStore();
+let auditPurgeTimer: NodeJS.Timeout | null = null;
+function audit(input: AuditEventInput): void {
+  // Fire-and-forget; the renderer subscribes to `audit:inserted` for
+  // live updates, and the IPC `audit:list` query happens on demand.
+  // A failed insert just gets logged — no caller blocks on it.
+  void auditStore.append(input).catch((err) => {
+    console.warn("[audit] append failed:", err);
+  });
+}
+auditStore.on("inserted", (event) => {
+  // Live-broadcast to every open BrowserWindow so the Verlauf-Tab's
+  // SSE-equivalent (IPC live stream) can prepend new events without
+  // re-querying. The renderer filters client-side.
+  for (const win of BrowserWindow.getAllWindows()) {
+    try {
+      win.webContents.send("audit:inserted", event);
+    } catch {
+      /* destroyed window — ignore */
+    }
+  }
+});
+// Heartbeat → audit. The tick itself is a routine event; we log
+// only at info severity so a year of ticks fits comfortably under
+// the retention TTL.
+heartbeat.on("tick", (info: AlertTickInfo) => {
+  audit({
+    actorType: "scheduler",
+    actorId: "heartbeat",
+    category: "scheduler",
+    action: "heartbeat.tick",
+    severity: "info",
+    subjectType: null,
+    subjectId: null,
+    summary: info.skipped
+      ? `Heartbeat-Tick übersprungen${info.reason ? `: ${info.reason}` : ""}`
+      : `Heartbeat-Tick: ${info.candidatesSeen} Kandidat(en) geprüft, ${info.alertsCreated} Alert(s) neu, ${info.duplicates} Duplikate`,
+    metadata: {
+      candidatesSeen: info.candidatesSeen,
+      alertsCreated: info.alertsCreated,
+      duplicates: info.duplicates,
+      skipped: info.skipped,
+      reason: info.reason ?? null,
+      startedAt: info.startedAt,
+      finishedAt: info.finishedAt,
+    },
+  });
+});
+
 // v0.1.118 — heartbeat-driven auto-retry. Polls the gateway every
 // ~10 min for failed producer cells whose `nextRetryAt` has matured
 // and re-fires the per-stage retry endpoint. Independent of the alert
@@ -1256,6 +1316,17 @@ app.whenReady().then(async () => {
       console.info(
         `[providers] credentials changed (${reason}) — cycling producers to pick up new env`,
       );
+      audit({
+        actorType: "system",
+        actorId: "credential-cycle",
+        category: "auth",
+        action: "producers.cycle.scheduled",
+        severity: "info",
+        subjectType: null,
+        subjectId: null,
+        summary: `Producer-Cycle wegen Credential-Änderung (${reason})`,
+        metadata: { reason },
+      });
       for (const p of producers) {
         const s = p.getStatus().state;
         if (s === "idle" || s === "stopping") continue;
@@ -1277,12 +1348,34 @@ app.whenReady().then(async () => {
       }
     }, 500);
   }
-  providerConfigStore.on("keyChanged", (kind) =>
-    scheduleCredentialCycle(`keyChanged(${kind})`),
-  );
-  providerConfigStore.on("anthropicSubscriptionTokenChanged", () =>
-    scheduleCredentialCycle("anthropicSubscriptionTokenChanged"),
-  );
+  providerConfigStore.on("keyChanged", (kind) => {
+    scheduleCredentialCycle(`keyChanged(${kind})`);
+    audit({
+      actorType: "user",
+      actorId: null,
+      category: "auth",
+      action: "credential.key.changed",
+      severity: "info",
+      subjectType: "credential",
+      subjectId: kind,
+      summary: `API-Key für ${kind} aktualisiert`,
+      metadata: { provider: kind },
+    });
+  });
+  providerConfigStore.on("anthropicSubscriptionTokenChanged", () => {
+    scheduleCredentialCycle("anthropicSubscriptionTokenChanged");
+    audit({
+      actorType: "user",
+      actorId: null,
+      category: "auth",
+      action: "credential.subscription.changed",
+      severity: "info",
+      subjectType: "credential",
+      subjectId: "anthropic-subscription",
+      summary: "Anthropic-Subscription-Token aktualisiert",
+      metadata: { provider: "anthropic", authMode: "subscription" },
+    });
+  });
   // configChanged covers anthropicAuthMode flips ("auf API-Key umschalten"
   // / "auf Abo umschalten") which change which env var the producer
   // resolves at spawn time. Provider-kind / model-id changes also need
@@ -1331,6 +1424,17 @@ app.whenReady().then(async () => {
     provider: string | null;
   }): Promise<void> {
     if (authRecoveryInFlight) return;
+    audit({
+      actorType: "producer",
+      actorId: args.producerName,
+      category: "auth",
+      action: "credential.rejected",
+      severity: "warning",
+      subjectType: "credential",
+      subjectId: args.provider,
+      summary: `Producer ${args.producerName} meldet abgelehnten ${args.provider ?? "LLM-"}Credential`,
+      metadata: { producer: args.producerName, provider: args.provider },
+    });
     if (args.provider !== "anthropic") {
       // Only the Anthropic OAuth path has an auto-refreshable
       // credential today. OpenAI / Google / Mistral keys can't be
@@ -1347,6 +1451,32 @@ app.whenReady().then(async () => {
         `[providers] producer ${args.producerName} signalled Anthropic auth failure; attempting forced token refresh`,
       );
       const result = await anthropicTokenRefresher.refreshNow();
+      audit({
+        actorType: "system",
+        actorId: "token-refresher",
+        category: "auth",
+        action: `token.refresh.${result.status}`,
+        severity: result.status === "refreshed" ? "info" : "warning",
+        subjectType: "credential",
+        subjectId: "anthropic-subscription",
+        summary:
+          result.status === "refreshed"
+            ? "Anthropic-OAuth-Token erneuert (reaktiv nach 401)"
+            : result.status === "no_refresh_token"
+              ? "Anthropic-Token-Refresh übersprungen (Legacy-Login ohne refresh_token)"
+              : result.status === "revoked"
+                ? "Anthropic-Token-Refresh abgelehnt (revoked, Neu-Anmeldung erforderlich)"
+                : result.status === "transient"
+                  ? "Anthropic-Token-Refresh transient fehlgeschlagen (Retry geplant)"
+                  : "Anthropic-Token-Refresh übersprungen (kein Record)",
+        metadata: {
+          trigger: "producer-401",
+          producer: args.producerName,
+          ...(result.status === "revoked" || result.status === "transient"
+            ? { error: (result as { error?: string }).error ?? null }
+            : {}),
+        },
+      });
       switch (result.status) {
         case "refreshed":
           // The setAnthropicSubscriptionRecord() call inside the
@@ -1432,6 +1562,46 @@ app.whenReady().then(async () => {
         void handleProducerAuthError(args);
       },
     );
+    // v0.1.200 — audit producer lifecycle, but only the user-
+    // relevant transitions (entered error / recovered to ready).
+    // The starting/stopping/idle churn is high-frequency noise
+    // that already lives in the Producer-Status-Panel; keeping
+    // it out of the audit log saves TTL space for actual signal.
+    let prevState: string | null = null;
+    p.on("status", (status: ProducerStatus) => {
+      const cur = status.state;
+      const wasErrored = prevState === "error";
+      if (cur === "error" && prevState !== "error") {
+        audit({
+          actorType: "producer",
+          actorId: status.name,
+          category: "producer",
+          action: "producer.error",
+          severity: "error",
+          subjectType: null,
+          subjectId: null,
+          summary: `Producer ${status.name} fehlerhaft: ${status.errorMessage ?? "unbekannte Ursache"}`,
+          metadata: {
+            producer: status.name,
+            errorMessage: status.errorMessage,
+            lastExitCode: status.lastExitCode,
+          },
+        });
+      } else if (cur === "ready" && wasErrored) {
+        audit({
+          actorType: "producer",
+          actorId: status.name,
+          category: "producer",
+          action: "producer.recovered",
+          severity: "info",
+          subjectType: null,
+          subjectId: null,
+          summary: `Producer ${status.name} wieder bereit (nach Fehler)`,
+          metadata: { producer: status.name },
+        });
+      }
+      prevState = cur;
+    });
   }
 
   // v0.1.54 — hydrate persisted CRM tokens from disk + start
@@ -2703,6 +2873,61 @@ app.whenReady().then(async () => {
     userProfile.set(patch),
   );
   ipcMain.handle("profile:clear", () => userProfile.clear());
+
+  // v0.1.200 — Audit-Trail IPC.
+  //
+  // Renderer calls (audit:list) → query the local PGlite-backed
+  // store. Audit-store auto-starts on first append; the list
+  // handler also triggers start() so a fresh install with zero
+  // events still answers with an empty page rather than a
+  // not-started error.
+  //
+  // Live-tail is the `audit:inserted` event broadcast we wire on
+  // the store's "inserted" emit (see above near auditStore
+  // construction); the renderer subscribes via ipcRenderer.on.
+  ipcMain.handle("audit:list", async (_e, query) => {
+    return auditStore.list(query ?? {});
+  });
+  ipcMain.handle("audit:purgeAll", async () => {
+    const removed = await auditStore.purgeAll();
+    audit({
+      actorType: "user",
+      actorId: null,
+      category: "auth", // closest match — destructive op
+      action: "audit.purge.all",
+      severity: "warning",
+      subjectType: null,
+      subjectId: null,
+      summary: `Audit-Trail manuell geleert (${removed} Einträge entfernt)`,
+      metadata: { removed },
+    });
+    return { removed };
+  });
+  // Retention sweep: once on app start, then every 24 h. The store
+  // lazy-loads on first call so we don't pay startup cost when the
+  // user never opens the Verlauf-Tab.
+  const RETENTION_INTERVAL_MS = 24 * 60 * 60 * 1000;
+  void auditStore
+    .purgeExpired()
+    .then((n) => {
+      if (n > 0)
+        console.info(`[audit] startup retention sweep removed ${n} expired event(s)`);
+    })
+    .catch((err) =>
+      console.warn("[audit] startup retention sweep failed:", err),
+    );
+  if (auditPurgeTimer) clearInterval(auditPurgeTimer);
+  auditPurgeTimer = setInterval(() => {
+    void auditStore
+      .purgeExpired()
+      .then((n) => {
+        if (n > 0)
+          console.info(`[audit] daily retention sweep removed ${n} expired event(s)`);
+      })
+      .catch((err) =>
+        console.warn("[audit] daily retention sweep failed:", err),
+      );
+  }, RETENTION_INTERVAL_MS);
 
   // Watches IPC (Phase 8.t2). Read-only views + remove / pause /
   // resume mutations for the Settings panel + topbar chip popover.

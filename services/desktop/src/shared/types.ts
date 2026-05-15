@@ -1624,3 +1624,63 @@ export type ResearchKeyProbeResult =
   | { ok: true; latencyMs: number }
   | { ok: false; error: string };
 
+
+// v0.1.200 — Audit-Trail (local-first, privacy-first). The renderer
+// reads via IPC; main writes to embedded PGlite. Types declared here
+// so preload + renderer share the contract without importing main-
+// only code (which would pull electron into the renderer bundle).
+//
+// Main-side `audit-store.ts` re-imports these from this file so
+// there is only one source of truth.
+export type AuditActorType = "user" | "producer" | "scheduler" | "system";
+export type AuditCategory =
+  | "producer"
+  | "linkedin"
+  | "crm"
+  | "auth"
+  | "import"
+  | "watch"
+  | "scheduler"
+  | "billing"
+  | "update"
+  | "agent";
+export type AuditSeverity = "info" | "warning" | "error";
+export type AuditSubjectType =
+  | "company"
+  | "transaction"
+  | "person"
+  | "credential"
+  | null;
+export interface AuditEvent {
+  id: string;
+  timestamp: string;
+  actorType: AuditActorType;
+  actorId: string | null;
+  category: AuditCategory;
+  action: string;
+  severity: AuditSeverity;
+  subjectType: AuditSubjectType;
+  subjectId: string | null;
+  summary: string;
+  metadata: Record<string, unknown>;
+}
+export type AuditEventInput = Omit<AuditEvent, "id" | "timestamp"> & {
+  timestamp?: string;
+};
+export interface AuditListQuery {
+  since?: string;
+  until?: string;
+  categories?: AuditCategory[];
+  severities?: AuditSeverity[];
+  actorTypes?: AuditActorType[];
+  search?: string;
+  subjectType?: AuditSubjectType;
+  subjectId?: string | null;
+  pageSize?: number;
+  pageToken?: string | null;
+}
+export interface AuditListResponse {
+  events: AuditEvent[];
+  nextPageToken: string | null;
+  totalEstimate: number;
+}
