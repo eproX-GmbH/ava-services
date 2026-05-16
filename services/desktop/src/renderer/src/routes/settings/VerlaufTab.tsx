@@ -221,6 +221,21 @@ export function VerlaufTab(): JSX.Element {
       return next;
     });
   };
+  // v0.1.203 — bulk select-all / clear-all helpers for the
+  // category + severity groups. A single click on the group's
+  // header checkbox flips between "everything selected" and
+  // "nothing selected"; intermediate states show as
+  // indeterminate via the inline ref-callback below.
+  const allCategoriesSelected = categories.size === ALL_CATEGORIES.length;
+  const allSeveritiesSelected = severities.size === ALL_SEVERITIES.length;
+  const noCategoriesSelected = categories.size === 0;
+  const noSeveritiesSelected = severities.size === 0;
+  const toggleAllCategories = (): void => {
+    setCategories(allCategoriesSelected ? new Set() : new Set(ALL_CATEGORIES));
+  };
+  const toggleAllSeverities = (): void => {
+    setSeverities(allSeveritiesSelected ? new Set() : new Set(ALL_SEVERITIES));
+  };
 
   return (
     <section className="provider-section" id="audit-trail">
@@ -262,7 +277,29 @@ export function VerlaufTab(): JSX.Element {
           </div>
 
           <div className="audit-filter-group">
-            <label className="audit-filter-label">Kategorie</label>
+            <div className="audit-filter-label-row">
+              <label className="audit-filter-label">Kategorie</label>
+              <label
+                className="audit-filter-check audit-filter-check--all"
+                title={
+                  allCategoriesSelected
+                    ? "Alle abwählen"
+                    : "Alle auswählen"
+                }
+              >
+                <input
+                  type="checkbox"
+                  checked={allCategoriesSelected}
+                  ref={(el) => {
+                    if (el)
+                      el.indeterminate =
+                        !allCategoriesSelected && !noCategoriesSelected;
+                  }}
+                  onChange={toggleAllCategories}
+                />
+                Alle
+              </label>
+            </div>
             {ALL_CATEGORIES.map((cat) => (
               <label key={cat} className="audit-filter-check">
                 <input
@@ -277,7 +314,29 @@ export function VerlaufTab(): JSX.Element {
           </div>
 
           <div className="audit-filter-group">
-            <label className="audit-filter-label">Schwere</label>
+            <div className="audit-filter-label-row">
+              <label className="audit-filter-label">Schwere</label>
+              <label
+                className="audit-filter-check audit-filter-check--all"
+                title={
+                  allSeveritiesSelected
+                    ? "Alle abwählen"
+                    : "Alle auswählen"
+                }
+              >
+                <input
+                  type="checkbox"
+                  checked={allSeveritiesSelected}
+                  ref={(el) => {
+                    if (el)
+                      el.indeterminate =
+                        !allSeveritiesSelected && !noSeveritiesSelected;
+                  }}
+                  onChange={toggleAllSeverities}
+                />
+                Alle
+              </label>
+            </div>
             {ALL_SEVERITIES.map((sev) => (
               <label key={sev} className="audit-filter-check">
                 <input
@@ -395,10 +454,15 @@ function AuditEventRow({
           })}
         </span>
         <span className={`audit-sev-dot audit-sev-${event.severity}`} />
-        <span className={`audit-cat-badge audit-cat-${event.category}`}>
+        <span
+          className={`audit-cat-badge audit-cat-${event.category}`}
+          title={CATEGORY_LABEL[event.category]}
+        >
           {CATEGORY_LABEL[event.category]}
         </span>
-        <span className="audit-event-summary">{event.summary}</span>
+        <span className="audit-event-summary" title={event.summary}>
+          {event.summary}
+        </span>
       </button>
       {expanded && (
         <div className="audit-event-detail">

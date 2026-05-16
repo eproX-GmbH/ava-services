@@ -5393,6 +5393,17 @@ a.heartbeat-decision__company:hover {
   font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em;
   color: var(--muted); font-weight: 600;
 }
+/* v0.1.203 — header row for a filter group: the group label on the
+   left, an "Alle" select-all/deselect-all checkbox on the right.
+   The checkbox uses the `indeterminate` HTML property when only
+   some boxes below are ticked (set via a ref callback). */
+.audit-filter-label-row {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 0.5rem;
+}
+.audit-filter-check--all {
+  font-size: 11px; color: var(--muted);
+}
 .audit-filter-check {
   display: inline-flex; align-items: center; gap: 0.4rem;
   font-size: 12px; cursor: pointer;
@@ -5410,7 +5421,14 @@ a.heartbeat-decision__company:hover {
 }
 .audit-event-row {
   display: grid;
-  grid-template-columns: 130px 12px 100px 1fr;
+  /* v0.1.203 — widened the badge column (100 → 150 px) and gave the
+     summary column an explicit `minmax(0, 1fr)` so it can shrink
+     inside the grid track instead of pushing the badge to wrap.
+     The badge itself is set up below with `white-space: nowrap +
+     text-overflow: ellipsis` so very long category names truncate
+     cleanly with "…" rather than wrapping or overlapping the
+     summary text. */
+  grid-template-columns: 130px 12px 150px minmax(0, 1fr);
   align-items: center;
   gap: 0.5rem;
   width: 100%;
@@ -5424,7 +5442,16 @@ a.heartbeat-decision__company:hover {
   font-variant-numeric: tabular-nums; font-size: 11px;
   color: var(--muted);
 }
-.audit-event-summary { font-size: 13px; }
+.audit-event-summary {
+  font-size: 13px;
+  /* v0.1.203 — single-line, ellipsis-truncated. Full text remains
+     in the title attribute (set inline on the element) so hover
+     reveals the complete summary. */
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
 .audit-event-detail {
   padding: 0.5rem 0.75rem 0.85rem 138px;
   background: rgba(127,127,127,0.04);
@@ -5445,6 +5472,13 @@ a.heartbeat-decision__company:hover {
 /* Category badges + dots (10 categories, kept in sync with audit-types.ts) */
 .audit-cat-badge {
   display: inline-block;
+  /* v0.1.203 — single-line, truncate on overflow. Tightened the
+     horizontal padding a notch so longer labels like
+     HINTERGRUND-JOBS or AUTHENTIFIZIERUNG fit the 150 px column. */
+  max-width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
   font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em;
   padding: 0.15rem 0.5rem; border-radius: 999px;
   background: rgba(127,127,127,0.1);
