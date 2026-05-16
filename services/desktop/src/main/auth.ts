@@ -254,7 +254,22 @@ export class Auth extends EventEmitter {
   private async ensureDiscovery(): Promise<DiscoveryDoc> {
     if (this.discovery) return this.discovery;
     const url = `${this.issuer.replace(/\/$/, "")}/.well-known/openid-configuration`;
-    const res = await fetch(url);
+    // v0.1.204 — harden the first network call. The bare `fetch(url)`
+    // failed silently on a tester's older Intel Mac with "TypeError:
+    // fetch failed", which is undici's generic surface and hides the
+    // real cause (DNS / TLS / connection-refused / IPv6-only network /
+    // proxy / cold-start). The renderer then displayed only the
+    // wrapped IPC error and we couldn't tell what was wrong.
+    //
+    //   - 10s timeout per attempt (prev: no timeout → hung forever
+    //     when the network silently dropped packets).
+    //   - Three attempts with backoff (250ms, 1s) to absorb a Fly
+    //     cold-start or a single packet loss.
+    //   - Surface the cause chain on final failure so the renderer
+    //     shows a useful message (e.g. "DNS lookup failed" /
+    //     "self-signed cert" / "operation timed out") instead of
+    //     undici's opaque "fetch failed".
+    const res = await fetchWithRetry(url, {}, { retries: 3, timeoutMs: 10_000 });
     if (!res.ok) throw new Error(`discovery failed: ${res.status} ${url}`);
     this.discovery = (await res.json()) as DiscoveryDoc;
     return this.discovery;
@@ -555,4 +570,93 @@ function parseScopes(scope: unknown): string[] {
   if (typeof scope === "string") return scope.split(/\s+/).filter(Boolean);
   if (Array.isArray(scope)) return scope.filter((s): s is string => typeof s === "string");
   return [];
+}
+
+// v0.1.204 — diagnostic-friendly fetch wrapper for the OAuth flow.
+//
+// Three behaviours bundled in one helper:
+//
+//   1. Per-attempt AbortSignal.timeout so a silently-dropping
+//      network doesn't hang the auth flow forever. The previous
+//      `await fetch(url)` had no timeout; on a tester's older
+//      Intel Mac it stalled until the user closed the window.
+//
+//   2. Retries with exponential-ish backoff (250 ms, 1 s). Covers
+//      a Fly machine cold-start (~1-2 s wakeup), a single dropped
+//      packet, or undici's stale-connection edge case.
+//
+//   3. Cause-chain stringification on final failure. undici wraps
+//      the real reason (DNS lookup failure, TLS handshake reject,
+//      ECONNREFUSED, …) in a `.cause` chain that doesn't surface
+//      in `Error.message`. We walk the chain and concatenate the
+//      messages so the renderer's error toast actually shows the
+//      root cause — "DNS-Auflösung fehlgeschlagen" beats the
+//      opaque "TypeError: fetch failed".
+//
+// Backoff defaults are tuned for an OAuth-discovery first call;
+// callers that need different semantics can override.
+
+interface RetryOpts {
+  retries: number;
+  timeoutMs: number;
+}
+
+async function fetchWithRetry(
+  url: string,
+  init: RequestInit = {},
+  opts: RetryOpts,
+): Promise<Response> {
+  const delays = [250, 1000];
+  let lastErr: unknown = null;
+  for (let attempt = 0; attempt < opts.retries; attempt++) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), opts.timeoutMs);
+    try {
+      const res = await fetch(url, { ...init, signal: controller.signal });
+      clearTimeout(timeout);
+      // Don't retry on a 4xx/5xx response — the caller handles
+      // those. Retry only network-level errors (caught below).
+      return res;
+    } catch (err) {
+      clearTimeout(timeout);
+      lastErr = err;
+      // Abort = timeout for our purposes; treat like a transient
+      // network failure and retry.
+      const isLastAttempt = attempt === opts.retries - 1;
+      if (isLastAttempt) break;
+      const delay = delays[attempt] ?? delays[delays.length - 1] ?? 1000;
+      await new Promise((r) => setTimeout(r, delay));
+    }
+  }
+  throw new Error(
+    `fetch ${url} failed after ${opts.retries} attempt(s): ${stringifyErrorCauseChain(lastErr)}`,
+  );
+}
+
+/**
+ * Walk an Error's `.cause` chain and concatenate the messages.
+ * Node's undici puts the real reason ("getaddrinfo ENOTFOUND ...",
+ * "Hostname/IP does not match certificate's altnames", etc.) in
+ * `err.cause`, but `String(err)` only shows the outermost wrapper.
+ * This helper makes the user-facing error message diagnose-ably
+ * specific.
+ */
+function stringifyErrorCauseChain(err: unknown): string {
+  const parts: string[] = [];
+  let cur: unknown = err;
+  let depth = 0;
+  while (cur && depth < 8) {
+    if (cur instanceof Error) {
+      parts.push(cur.name === "Error" ? cur.message : `${cur.name}: ${cur.message}`);
+      cur = (cur as { cause?: unknown }).cause;
+    } else if (typeof cur === "string") {
+      parts.push(cur);
+      cur = null;
+    } else {
+      parts.push(String(cur));
+      cur = null;
+    }
+    depth += 1;
+  }
+  return parts.length > 0 ? parts.join(" ← caused by ") : "unknown";
 }
