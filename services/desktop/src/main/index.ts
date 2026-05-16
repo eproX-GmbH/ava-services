@@ -1491,6 +1491,128 @@ app.whenReady().then(async () => {
   // global authRecoveryInFlight flag below prevents two producers
   // hitting auth-failures simultaneously from racing on the refresh.
   let authRecoveryInFlight = false;
+
+  // v0.1.205 — auth-blocked state machine.
+  //
+  // When refreshNow() returns a non-recoverable status (revoked /
+  // no_refresh_token / no_record) we STOP all producers and pause
+  // the retry-ticker — otherwise the heartbeat-driven retry-ticker
+  // keeps re-firing the same failed cell every 5–10 min, the
+  // producer hits the same 401 with the same stale token, and the
+  // user wastes hours of LLM credit on a crashloop they can't
+  // diagnose. Real-world example: company-profile crashlooped on a
+  // single message for 12 h, producing 30+ "Invalid authentication
+  // credentials" log lines / each firing wasted retries / quota.
+  //
+  // Producers resume automatically once the user updates credentials
+  // (any of keyChanged / anthropicSubscriptionTokenChanged /
+  // configChanged unblocks + the existing scheduleCredentialCycle
+  // path restarts them).
+  //
+  // Transient failures (network / 5xx) DON'T block immediately; we
+  // count them and only block after 3 consecutive failures within
+  // 30 minutes. This avoids overreacting to a single flaky network
+  // moment while still catching the "refresh-tries-but-can't-reach-
+  // Anthropic-for-hours" case.
+  const TRANSIENT_FAILURE_THRESHOLD = 3;
+  const TRANSIENT_FAILURE_WINDOW_MS = 30 * 60 * 1000;
+  let authBlocked = false;
+  let authBlockedReason: string | null = null;
+  let transientFailures: number[] = []; // timestamps within the window
+
+  function blockAuth(reason: string): void {
+    if (authBlocked) return;
+    authBlocked = true;
+    authBlockedReason = reason;
+    console.warn(
+      `[providers] AUTH BLOCKED (${reason}) — stopping all producers and pausing retry-ticker until the user re-authenticates`,
+    );
+    audit({
+      actorType: "system",
+      actorId: "auth-guard",
+      category: "auth",
+      action: "auth.blocked",
+      severity: "error",
+      subjectType: "credential",
+      subjectId: "anthropic-subscription",
+      summary: `Producer-Verarbeitung pausiert: ${reason}`,
+      metadata: { reason, transientFailureCount: transientFailures.length },
+    });
+    // Stop the retry-ticker so the heartbeat doesn't keep refiring
+    // failed cells against the stale token.
+    try {
+      retryTicker.stop();
+    } catch (err) {
+      console.warn("[providers] retryTicker.stop() failed:", err);
+    }
+    // Stop every running producer. They'll re-spawn through the
+    // existing scheduleCredentialCycle() path once a credential
+    // change fires.
+    for (const p of producers) {
+      const s = p.getStatus().state;
+      if (s === "idle" || s === "stopping" || s === "error") continue;
+      void p.stop().catch((err) => {
+        console.warn(`[providers] stop(${p.getStatus().name}) rejected:`, err);
+      });
+    }
+    notifyUserAuthExpired("anthropic");
+  }
+
+  function unblockAuth(trigger: string): void {
+    if (!authBlocked) return;
+    authBlocked = false;
+    const prevReason = authBlockedReason;
+    authBlockedReason = null;
+    transientFailures = [];
+    console.info(
+      `[providers] auth unblocked (${trigger}, was: ${prevReason}); retry-ticker resuming`,
+    );
+    audit({
+      actorType: "system",
+      actorId: "auth-guard",
+      category: "auth",
+      action: "auth.unblocked",
+      severity: "info",
+      subjectType: "credential",
+      subjectId: "anthropic-subscription",
+      summary: `Producer-Verarbeitung freigegeben (${trigger})`,
+      metadata: { trigger, previousReason: prevReason },
+    });
+    try {
+      retryTicker.start();
+    } catch (err) {
+      console.warn("[providers] retryTicker.start() failed:", err);
+    }
+    // Producers re-spawn via the scheduleCredentialCycle() path —
+    // the same event that called us also fires that. No double-
+    // cycle needed here.
+  }
+
+  function recordTransientFailure(): boolean {
+    const now = Date.now();
+    transientFailures = transientFailures.filter(
+      (t) => now - t < TRANSIENT_FAILURE_WINDOW_MS,
+    );
+    transientFailures.push(now);
+    return transientFailures.length >= TRANSIENT_FAILURE_THRESHOLD;
+  }
+
+  // Register the unblock-on-credential-change listeners as a SECOND
+  // subscription (the original providerConfigStore.on(...) calls
+  // above already drive scheduleCredentialCycle; this just adds an
+  // unblock pass for the auth-blocked path). Order matters: this
+  // runs AFTER scheduleCredentialCycle's listener, so by the time
+  // unblockAuth fires retryTicker.start(), producers are already
+  // queued to restart with fresh env.
+  providerConfigStore.on("keyChanged", (kind) =>
+    unblockAuth(`keyChanged(${kind})`),
+  );
+  providerConfigStore.on("anthropicSubscriptionTokenChanged", () =>
+    unblockAuth("anthropicSubscriptionTokenChanged"),
+  );
+  providerConfigStore.on("configChanged", () =>
+    unblockAuth("configChanged"),
+  );
   async function handleProducerAuthError(args: {
     producerName: string;
     provider: string | null;
@@ -1551,11 +1673,13 @@ app.whenReady().then(async () => {
       });
       switch (result.status) {
         case "refreshed":
+          // Reset the transient-failure tally — we've recovered.
           // The setAnthropicSubscriptionRecord() call inside the
-          // refresher will have already fired the
+          // refresher already fired the
           // anthropicSubscriptionTokenChanged event, which routes
-          // through scheduleCredentialCycle() — so we don't have to
-          // cycle here, the existing path handles it.
+          // through scheduleCredentialCycle() — we don't cycle
+          // here.
+          transientFailures = [];
           console.info(
             `[providers] forced refresh succeeded for ${args.producerName}; producers will cycle automatically`,
           );
@@ -1564,23 +1688,32 @@ app.whenReady().then(async () => {
           console.warn(
             `[providers] forced refresh skipped: legacy OAuth record without refresh_token. User must re-connect.`,
           );
-          void notifyUserAuthExpired("anthropic");
+          // v0.1.205 — non-recoverable: block until user re-logs.
+          blockAuth("legacy OAuth login ohne refresh_token");
           return;
         case "revoked":
           console.warn(
             `[providers] forced refresh rejected by Anthropic (revoked). User must re-connect: ${result.error}`,
           );
-          void notifyUserAuthExpired("anthropic");
+          blockAuth("Anthropic-Refresh-Token revoked");
           return;
         case "transient":
+          // v0.1.205 — count transient failures; block after N in
+          // the rolling window so a sustained outage doesn't
+          // crashloop producers for hours.
           console.warn(
             `[providers] forced refresh transient failure: ${result.error}. Will retry on next scheduled tick.`,
           );
+          if (recordTransientFailure()) {
+            blockAuth(
+              `${TRANSIENT_FAILURE_THRESHOLD} aufeinanderfolgende transiente Refresh-Fehler — Netzwerk oder Anthropic unerreichbar`,
+            );
+          }
           return;
         case "no_record":
           // No subscription token at all — the user is on an api-key
-          // path that hit 401 anyway. Treat like a revoked key.
-          void notifyUserAuthExpired("anthropic");
+          // path that hit 401 anyway. Block too.
+          blockAuth("kein Anthropic-Subscription-Record vorhanden");
           return;
       }
     } finally {
