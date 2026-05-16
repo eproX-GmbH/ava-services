@@ -58,6 +58,13 @@ function formatY(v: number, format: ChartFormat): string {
         style: "percent",
         maximumFractionDigits: 2,
       }).format(v);
+    case "int":
+      // v0.1.207 — discrete counts (Mitarbeiter, Publikationen, …).
+      // No decimals, round to nearest integer just in case the
+      // gridline math produced a fractional intermediate.
+      return new Intl.NumberFormat("de-DE", {
+        maximumFractionDigits: 0,
+      }).format(Math.round(v));
     case "num":
     default:
       return new Intl.NumberFormat("de-DE").format(v);
@@ -200,6 +207,70 @@ function gridlines(min: number, max: number, format: ChartFormat) {
   return lines;
 }
 
+// v0.1.207 — "nice number" axis ticks for integer-only data.
+//
+// When the underlying data is discrete (Mitarbeiter, Publikationen,
+// Anzeigen, …) the renderer's old gridline math produced fractional
+// labels — e.g. "81,52 Mitarbeiter" on a 0..163 axis with 5 ticks.
+// We pick a step from {1, 2, 5, 10, 20, 50, 100, 200, …} that gives
+// roughly the desired tick count, then snap min/max to multiples
+// of that step so every label is a whole number.
+//
+// Called by renderBar / renderLineOrArea when:
+//   - explicit `format: "int"`, OR
+//   - implicit: format is "num" AND every data point is an integer
+//     (rounded to within 1e-9 to avoid float-noise false-negatives)
+//
+// Returns gridlines pre-formatted as integers; callers use these
+// instead of the generic gridlines() helper.
+function integerGridlines(min: number, max: number) {
+  // Ensure non-negative range (counts are ≥0 in practice but
+  // negatives wouldn't break this either).
+  const lo = Math.floor(min);
+  const hi = Math.ceil(max);
+  const range = Math.max(1, hi - lo);
+  const targetSteps = 4;
+  const roughStep = range / targetSteps;
+  // Snap roughStep up to the next "nice" integer.
+  const niceSteps = [1, 2, 5, 10, 20, 25, 50, 100, 200, 250, 500, 1000];
+  let step = niceSteps[niceSteps.length - 1] ?? 1;
+  for (const s of niceSteps) {
+    if (s >= roughStep) {
+      step = s;
+      break;
+    }
+  }
+  // For ranges larger than the largest nice step, expand by powers
+  // of 10 (10_000, 50_000, …). Keeps the algorithm robust for any
+  // count we might plot.
+  while (step < roughStep) step *= 10;
+
+  const snappedMin = Math.floor(lo / step) * step;
+  const snappedMax = Math.ceil(hi / step) * step;
+
+  const lines: { y: number; label: string }[] = [];
+  for (let v = snappedMin; v <= snappedMax; v += step) {
+    lines.push({ y: v, label: formatY(v, "int") });
+  }
+  return { lines, snappedMin, snappedMax };
+}
+
+/**
+ * Detect whether the underlying data is integer-only so the renderer
+ * can pick integer-friendly axis ticks even when the LLM forgot the
+ * `format: "int"` hint.
+ */
+function isIntegerOnlyData(spec: ChartSpec): boolean {
+  for (const s of spec.series) {
+    for (const p of s.data) {
+      const v = p.y as number;
+      if (!Number.isFinite(v)) return false;
+      if (Math.abs(v - Math.round(v)) > 1e-9) return false;
+    }
+  }
+  return true;
+}
+
 function axisTextColor() {
   return "var(--color-fg-muted, #94a3b8)";
 }
@@ -219,11 +290,24 @@ function renderBar(
 ) {
   const innerW = WIDTH - PAD_LEFT - PAD_RIGHT;
   const innerH = HEIGHT - PAD_TOP - PAD_BOTTOM;
-  const { min, max } = yRange(spec);
+  let { min, max } = yRange(spec);
   const seriesCount = spec.series.length;
   // x-Kategorien aus der ersten Serie ziehen; weitere Serien werden gruppiert
   const categories = (spec.series[0]?.data ?? []).map((p) => p.x);
-  const gridLines = gridlines(min, max, format);
+  // v0.1.207 — switch to integer gridlines when the data is whole-
+  // number-only OR the LLM tagged the chart with `format: "int"`.
+  // Snaps min/max to multiples of the picked step, so the axis
+  // labels are all integers AND the bar heights stay correct.
+  const useIntGrid = format === "int" || (format === "num" && isIntegerOnlyData(spec));
+  let gridLines: { y: number; label: string }[];
+  if (useIntGrid) {
+    const intGrid = integerGridlines(min, max);
+    gridLines = intGrid.lines;
+    min = intGrid.snappedMin;
+    max = intGrid.snappedMax;
+  } else {
+    gridLines = gridlines(min, max, format);
+  }
 
   if (!horizontal) {
     const groupW = innerW / categories.length;
@@ -379,8 +463,19 @@ function renderLineOrArea(
 ) {
   const innerW = WIDTH - PAD_LEFT - PAD_RIGHT;
   const innerH = HEIGHT - PAD_TOP - PAD_BOTTOM;
-  const { min, max } = yRange(spec);
-  const gridLines = gridlines(min, max, format);
+  let { min, max } = yRange(spec);
+  // v0.1.207 — same integer-friendly gridline logic as renderBar.
+  const useIntGrid =
+    format === "int" || (format === "num" && isIntegerOnlyData(spec));
+  let gridLines: { y: number; label: string }[];
+  if (useIntGrid) {
+    const intGrid = integerGridlines(min, max);
+    gridLines = intGrid.lines;
+    min = intGrid.snappedMin;
+    max = intGrid.snappedMax;
+  } else {
+    gridLines = gridlines(min, max, format);
+  }
   // x-Achse: gemeinsame Kategorien aus erster Serie (Index-basiert).
   const categories = (spec.series[0]?.data ?? []).map((p) => p.x);
   const xCount = Math.max(1, categories.length - 1);

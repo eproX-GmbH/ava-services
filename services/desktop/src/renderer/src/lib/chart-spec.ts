@@ -10,7 +10,20 @@
 import * as yup from "yup";
 
 export type ChartKind = "bar" | "hbar" | "line" | "area" | "pie" | "scatter";
-export type ChartFormat = "eur" | "num" | "pct" | "date" | "shortdate";
+// v0.1.207 — `int` is the discrete-count format. Same display as `num`
+// but the renderer forces integer-only Y-axis ticks (no "81,52" /
+// "163,04" labels on an employee-count chart). The LLM is instructed
+// to pick it for whole-number quantities (Mitarbeiter, Stellenanzeigen,
+// Publikationen, …) where a fractional axis is nonsensical. Renderer
+// also auto-detects integer-only data when `num` is specified, so old
+// specs still display reasonably.
+export type ChartFormat =
+  | "eur"
+  | "num"
+  | "int"
+  | "pct"
+  | "date"
+  | "shortdate";
 
 /** Hartes Limit auf die rohe Spec-Größe (vor JSON.parse, damit Zip-Bombs
  *  im String-Inhalt nichts ausrichten können). */
@@ -55,7 +68,7 @@ export const chartSpecSchema = yup
     yLabel: yup.string().max(60).optional(),
     format: yup
       .mixed<ChartFormat>()
-      .oneOf(["eur", "num", "pct", "date", "shortdate"])
+      .oneOf(["eur", "num", "int", "pct", "date", "shortdate"])
       .default("num"),
     series: yup.array().of(series).min(1).max(5).required(),
     annotations: yup
