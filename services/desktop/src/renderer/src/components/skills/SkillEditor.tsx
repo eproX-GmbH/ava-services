@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import type {
   SkillArgumentPayload,
   SkillB2bScope,
@@ -523,7 +524,7 @@ export function SkillEditor({ target, onClose, onSaved }: SkillEditorProps) {
                     padding: "0.6rem",
                   }}
                 >
-                  <ReactMarkdown>{body}</ReactMarkdown>
+                  <ReactMarkdown remarkPlugins={[remarkGfm]}>{body}</ReactMarkdown>
                 </div>
               ) : (
                 <textarea

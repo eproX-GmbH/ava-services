@@ -1426,6 +1426,61 @@ code, pre { font-family: var(--font-mono); font-size: 12px; }
   border-left: 2px solid var(--color-border-strong);
   color: var(--color-fg-muted);
 }
+/* v0.1.206 — GFM tables (via remark-gfm). Used in chat answers
+   where the LLM emits a `| col | col |` table for KPI dumps
+   ("Finanzielle Eckdaten 2022–2024" etc.). Without these rules
+   the table renders as a single squashed run with no cell
+   borders. */
+.markdown table,
+.chat-msg table {
+  border-collapse: collapse;
+  margin: 0.6rem 0;
+  font-size: 13px;
+  width: auto;
+  max-width: 100%;
+  overflow-x: auto;
+  display: block; /* allow horizontal scroll on narrow viewports */
+}
+.markdown thead,
+.chat-msg thead {
+  background: rgba(127, 127, 127, 0.08);
+}
+.markdown th,
+.markdown td,
+.chat-msg th,
+.chat-msg td {
+  border: 1px solid var(--color-border, rgba(127, 127, 127, 0.25));
+  padding: 0.35rem 0.6rem;
+  text-align: left;
+  vertical-align: top;
+  white-space: nowrap;
+}
+.markdown th,
+.chat-msg th {
+  font-weight: 600;
+}
+/* Numerical cells lean right via `align="right"` attribute that
+   remark-gfm preserves from `|---:|` syntax */
+.markdown td[align="right"],
+.chat-msg td[align="right"],
+.markdown th[align="right"],
+.chat-msg th[align="right"] {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.markdown td[align="center"],
+.chat-msg td[align="center"],
+.markdown th[align="center"],
+.chat-msg th[align="center"] {
+  text-align: center;
+}
+/* GFM strikethrough + task-lists need no extra styles; defaults
+   from browser are fine. */
+.markdown del,
+.chat-msg del {
+  color: var(--color-fg-muted, #888);
+}
+
 .markdown hr {
   border: 0;
   border-top: 1px solid var(--color-border);

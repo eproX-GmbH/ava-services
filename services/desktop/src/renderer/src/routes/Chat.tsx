@@ -9,6 +9,10 @@ import {
 } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import ReactMarkdown from "react-markdown";
+// v0.1.206 — GitHub-Flavored-Markdown plugin so tables, task lists,
+// strikethrough, and autolinks render as HTML elements instead of
+// surviving as raw `|...|` / `[x]` text in the chat bubbles.
+import remarkGfm from "remark-gfm";
 import type { Components } from "react-markdown";
 import {
   PanelLeftClose,
@@ -2288,7 +2292,11 @@ const MARKDOWN_COMPONENTS: Components = {
 function renderTextSegment(text: string, prefix: string): ReactNode {
   if (!text) return null;
   return (
-    <ReactMarkdown key={prefix} components={MARKDOWN_COMPONENTS}>
+    <ReactMarkdown
+      key={prefix}
+      components={MARKDOWN_COMPONENTS}
+      remarkPlugins={[remarkGfm]}
+    >
       {text}
     </ReactMarkdown>
   );

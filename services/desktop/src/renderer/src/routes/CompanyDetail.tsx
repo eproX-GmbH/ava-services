@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useParams } from "react-router-dom";
 import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import { gatewayFetch, GatewayError } from "../api/gateway";
 import {
   fmtMoney,
@@ -621,7 +622,9 @@ function OverviewTab({
         <h3>Firmenprofil</h3>
         {profile?.profile ? (
           <div className="markdown">
-            <ReactMarkdown>{normaliseProfileMarkdown(profile.profile)}</ReactMarkdown>
+            <ReactMarkdown remarkPlugins={[remarkGfm]}>
+              {normaliseProfileMarkdown(profile.profile)}
+            </ReactMarkdown>
           </div>
         ) : (
           <p className="muted">Noch kein Profil.</p>

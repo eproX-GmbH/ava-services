@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import type {
   SkillBody,
   SkillImportCommit,
@@ -865,7 +866,7 @@ function SkillMarkdown({ markdown }: { markdown: string }) {
   const safe = useMemo(() => markdown, [markdown]);
   return (
     <div className="skill-modal__markdown">
-      <ReactMarkdown>{safe}</ReactMarkdown>
+      <ReactMarkdown remarkPlugins={[remarkGfm]}>{safe}</ReactMarkdown>
     </div>
   );
 }
