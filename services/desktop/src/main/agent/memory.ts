@@ -538,11 +538,22 @@ function parseTranscript(raw: string): AgentMessage[] {
   while (i < lines.length) {
     const line = lines[i] ?? "";
     if (line.startsWith("## ")) {
-      flush();
+      // v0.1.208 — Only treat a `## …` line as a message-boundary header
+      // when it actually parses as our structured `## <role> · <id> · <iso>`
+      // form. Assistant content frequently contains plain markdown
+      // subheadings (`## Profil`, `## Entwicklung: Bilanzsumme …`), and
+      // earlier we flushed on every `## ` prefix → content after the
+      // first markdown heading (including ```chart fences) was silently
+      // dropped on reload. Treating un-parseable `## ` lines as ordinary
+      // content keeps charts and tables intact across reloads.
       const header = parseHeader(line);
-      if (header) cur = { header, content: [], calls: [] };
-      i++;
-      continue;
+      if (header) {
+        flush();
+        cur = { header, content: [], calls: [] };
+        i++;
+        continue;
+      }
+      // Fall through: pass the line into the current message's content.
     }
     if (cur) {
       // Tool-call fenced block?

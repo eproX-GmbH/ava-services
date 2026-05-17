@@ -288,11 +288,23 @@ export class Auth extends EventEmitter {
       redirect_uri: redirectUri,
       code_verifier: verifier,
     });
-    const res = await fetch(disc.token_endpoint, {
-      method: "POST",
-      headers: { "content-type": "application/x-www-form-urlencoded" },
-      body: body.toString(),
-    });
+    // v0.1.208 — same hardening as `ensureDiscovery` (v0.1.204). The
+    // bare `fetch()` had no timeout; on a background-wake the macOS
+    // networking stack can be sluggish for a few seconds (App Nap /
+    // suspended sockets / IPv6 fallback). The browser-side OAuth flow
+    // completed fine (separate process), the loopback callback fired
+    // fine (in-process), but this POST hung forever → the renderer's
+    // "Anmelden" button spun without ever resolving. Wrap with the
+    // same retry+timeout helper that surfaces the cause chain.
+    const res = await fetchWithRetry(
+      disc.token_endpoint,
+      {
+        method: "POST",
+        headers: { "content-type": "application/x-www-form-urlencoded" },
+        body: body.toString(),
+      },
+      { retries: 3, timeoutMs: 10_000 },
+    );
     if (!res.ok) {
       const text = await res.text().catch(() => "");
       throw new Error(`token exchange failed: ${res.status} ${text.slice(0, 200)}`);
@@ -308,11 +320,18 @@ export class Auth extends EventEmitter {
       client_id: this.clientId,
       refresh_token: refreshToken,
     });
-    const res = await fetch(disc.token_endpoint, {
-      method: "POST",
-      headers: { "content-type": "application/x-www-form-urlencoded" },
-      body: body.toString(),
-    });
+    // v0.1.208 — see exchangeAuthorizationCode. Refresh-token exchange
+    // runs on a timer AND on background-wake, both of which are the
+    // exact moments where the bare fetch could hang.
+    const res = await fetchWithRetry(
+      disc.token_endpoint,
+      {
+        method: "POST",
+        headers: { "content-type": "application/x-www-form-urlencoded" },
+        body: body.toString(),
+      },
+      { retries: 3, timeoutMs: 10_000 },
+    );
     if (!res.ok) {
       const text = await res.text().catch(() => "");
       throw new Error(`refresh failed: ${res.status} ${text.slice(0, 200)}`);
