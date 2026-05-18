@@ -23,6 +23,7 @@ import { useProducersStore } from "../store/producers";
 import { useConfigStore } from "../store/config";
 import { useUpdaterStore } from "../store/updater";
 import { humanizeUpdaterError } from "../lib/updater-error";
+import { classifyProducerError } from "../lib/producer-error";
 import type {
   AlertCadenceMinutes,
   AlertCandidateDecision,
@@ -572,9 +573,35 @@ export function ProducersSection() {
                     </code>
                   </>
                 )}
-                {p.errorMessage && (
-                  <div className="error small">{p.errorMessage}</div>
-                )}
+                {p.errorMessage && (() => {
+                  // v0.1.218 — Producer-Fehler in eine handvoll
+                  // Kategorien klassifizieren und mit Action-Hint
+                  // rendern. Rohtext bleibt unter einem
+                  // <details>-Toggle erreichbar.
+                  const cat = classifyProducerError(p.errorMessage);
+                  if (!cat) return null;
+                  return (
+                    <div
+                      className={
+                        "producer-error producer-error--" +
+                        (cat.transient ? "transient" : "blocker")
+                      }
+                    >
+                      <p className="producer-error__text">{cat.friendly}</p>
+                      {cat.hint && (
+                        <p className="producer-error__hint">→ {cat.hint}</p>
+                      )}
+                      {cat.category !== "unknown" && (
+                        <details className="producer-error__details">
+                          <summary>Original-Fehlermeldung</summary>
+                          <pre className="producer-error__pre">
+                            {p.errorMessage}
+                          </pre>
+                        </details>
+                      )}
+                    </div>
+                  );
+                })()}
                 {/* v0.1.170 — soft warnings about reduced capabilities
                     even though the producer is `ready`. E.g. website
                     booted without an OpenAI-Key → Deep Research /

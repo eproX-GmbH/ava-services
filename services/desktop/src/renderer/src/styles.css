@@ -5875,3 +5875,64 @@ a.heartbeat-decision__company:hover {
     border-color: rgba(251, 191, 36, 0.28);
   }
 }
+
+/* ----- v0.1.218 — Producer-Fehler strukturiert dargestellt -------------- */
+
+.producer-error {
+  margin-top: 0.5rem;
+  padding: 0.625rem 0.875rem;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  line-height: 1.45;
+}
+
+.producer-error--transient {
+  background: rgba(59, 130, 246, 0.08);
+  border: 1px solid rgba(59, 130, 246, 0.22);
+}
+
+.producer-error--blocker {
+  background: rgba(220, 38, 38, 0.08);
+  border: 1px solid rgba(220, 38, 38, 0.25);
+}
+
+.producer-error__text {
+  margin: 0;
+  font-weight: 500;
+}
+
+.producer-error__hint {
+  margin: 0.3rem 0 0;
+  opacity: 0.85;
+}
+
+.producer-error__details {
+  margin-top: 0.45rem;
+  font-size: 0.78rem;
+}
+
+.producer-error__details summary {
+  cursor: pointer;
+  opacity: 0.6;
+  user-select: none;
+}
+
+.producer-error__details summary:hover { opacity: 1; }
+
+.producer-error__pre {
+  margin: 0.35rem 0 0;
+  padding: 0.5rem 0.7rem;
+  background: rgba(0, 0, 0, 0.06);
+  border-radius: 4px;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 0.72rem;
+  line-height: 1.4;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 160px;
+  overflow: auto;
+}
+
+@media (prefers-color-scheme: dark) {
+  .producer-error__pre { background: rgba(255, 255, 255, 0.05); }
+}
