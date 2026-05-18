@@ -1092,22 +1092,23 @@ const applyCompanyPublication: ApplyFn = async (pool, event, log) => {
 
       const publicationId = parentRes.rows[0].id;
 
-      // Replace-all child rows. The inverse of NULL = "no row" —
-      // wipe-then-insert lets the persisted state cleanly mirror
-      // whatever the compute produced.
-      for (const child of [
-        "SalesVolume",
-        "RevenueVolume",
-        "TotalAssetsVolume",
-        "StateOfAffairsAggregate",
-      ]) {
+      // v0.1.218 — Per-Feld konditionaler Delete-then-Insert. Vorher
+      // wurden alle vier Child-Tabellen unconditional gewipt, BEVOR
+      // der konditionale Insert lief. Folge: Wenn ein Producer-Re-Run
+      // nur die Volumes lieferte (LLM-Lagebericht hat z. B. nichts neues
+      // gefunden, `pub.stateOfAffairs === undefined`), wurde der
+      // bestehende StateOfAffairsAggregate inklusive KPIs gelöscht und
+      // nicht ersetzt → Datenverlust.
+      //
+      // Neue Semantik: für jedes Feld gilt "Replace-all" NUR wenn das
+      // Feld im Event tatsächlich gesetzt ist. Felder, die der Producer
+      // diesmal nicht produziert hat, bleiben unangetastet — frühere
+      // Werte überleben den Re-Run.
+      if (pub.salesVolume) {
         await client.query(
-          `DELETE FROM "${child}" WHERE "companyPublicationId" = $1`,
+          `DELETE FROM "SalesVolume" WHERE "companyPublicationId" = $1`,
           [publicationId],
         );
-      }
-
-      if (pub.salesVolume) {
         await client.query(
           `INSERT INTO "SalesVolume"
              (value, currency, "companyPublicationId", "createdAt", "updatedAt")
@@ -1117,6 +1118,10 @@ const applyCompanyPublication: ApplyFn = async (pool, event, log) => {
       }
       if (pub.revenueVolume) {
         await client.query(
+          `DELETE FROM "RevenueVolume" WHERE "companyPublicationId" = $1`,
+          [publicationId],
+        );
+        await client.query(
           `INSERT INTO "RevenueVolume"
              (value, currency, "companyPublicationId", "createdAt", "updatedAt")
            VALUES ($1, $2, $3, NOW(), NOW())`,
@@ -1125,6 +1130,10 @@ const applyCompanyPublication: ApplyFn = async (pool, event, log) => {
       }
       if (pub.totalAssets) {
         await client.query(
+          `DELETE FROM "TotalAssetsVolume" WHERE "companyPublicationId" = $1`,
+          [publicationId],
+        );
+        await client.query(
           `INSERT INTO "TotalAssetsVolume"
              (value, currency, "companyPublicationId", "createdAt", "updatedAt")
            VALUES ($1, $2, $3, NOW(), NOW())`,
@@ -1132,6 +1141,15 @@ const applyCompanyPublication: ApplyFn = async (pool, event, log) => {
         );
       }
       if (pub.stateOfAffairs) {
+        // StateOfAffairsAggregate + StateOfAffairsKPI (children über
+        // FK CASCADE bzw. expliziten DELETE per aggregateId). Wir
+        // löschen den Aggregate-Row; je nach Schema wird der KPI-
+        // Subtable CASCADE-gelöscht. Falls die FK kein ON DELETE
+        // CASCADE hat: defensive expliziter Wipe darunter.
+        await client.query(
+          `DELETE FROM "StateOfAffairsAggregate" WHERE "companyPublicationId" = $1`,
+          [publicationId],
+        );
         // StateOfAffairsAggregate has typed columns + a separate
         // StateOfAffairsKPI child table. Topic is a Postgres enum
         // (Topic) — we cast through ::text so the LLM can emit any
