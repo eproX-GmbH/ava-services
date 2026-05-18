@@ -48,7 +48,13 @@ import { scrubQuarantine, scrubPathExplicit } from "./scrub-quarantine";
 //     boot-time version compare turns "it didn't work and I don't
 //     know why" into a visible UI signal.
 
-const CHECK_INTERVAL_MS = 4 * 60 * 60 * 1000; // 4h re-check while open
+// v0.1.230 — auf 15 Min runter. Vorher 4h, was bei aktiver
+// Entwicklungs-Phase (mehrere Releases pro Tag) den Banner faktisch
+// unsichtbar machte: Nutzer schließen die App tags öfter, kommen
+// nie an die 4h-Marke. 15 Min ist nah genug am „während ich arbeite"-
+// Fenster, dass mindestens eine Release-Welle pro Sitzung den Popup
+// triggert.
+const CHECK_INTERVAL_MS = 15 * 60 * 1000;
 
 /** Persistent marker we write right before quitAndInstall. Read on
  *  next boot to detect a silent failure (running version unchanged
@@ -124,13 +130,20 @@ export class Updater extends EventEmitter {
     };
 
     autoUpdater.on("checking-for-update", () => {
+      console.info("[updater] check started");
       this.setState("checking");
     });
     autoUpdater.on("update-available", (info: UpdateInfo) => {
+      console.info(
+        `[updater] update-available: current=${app.getVersion()} → latest=${info.version}`,
+      );
       this.latestVersion = info.version;
       this.setState("available");
     });
     autoUpdater.on("update-not-available", (info: UpdateInfo) => {
+      console.info(
+        `[updater] up-to-date: running v${app.getVersion()} (server reports latest=${info.version})`,
+      );
       this.latestVersion = info.version;
       this.setState("up-to-date");
     });
@@ -167,6 +180,9 @@ export class Updater extends EventEmitter {
       },
     );
     autoUpdater.on("error", (err: Error) => {
+      console.warn(
+        `[updater] error in autoUpdater pipeline: ${err.message}`,
+      );
       this.errorMessage = err.message;
       this.setState("error");
     });
@@ -188,11 +204,18 @@ export class Updater extends EventEmitter {
   }
 
   async check(): Promise<void> {
-    if (!app.isPackaged) return;
+    if (!app.isPackaged) {
+      console.info(
+        "[updater] check() skipped — app.isPackaged is false (dev mode).",
+      );
+      return;
+    }
     try {
       await autoUpdater.checkForUpdates();
     } catch (err) {
-      this.errorMessage = err instanceof Error ? err.message : String(err);
+      const msg = err instanceof Error ? err.message : String(err);
+      console.warn(`[updater] check() threw: ${msg}`);
+      this.errorMessage = msg;
       this.setState("error");
     }
   }
@@ -367,6 +390,9 @@ export class Updater extends EventEmitter {
   }
 
   private setState(next: UpdateState): void {
+    if (this.state !== next) {
+      console.info(`[updater] state: ${this.state} → ${next}`);
+    }
     this.state = next;
     if (next !== "error") this.errorMessage = null;
     this.emit("status", this.snapshot());
