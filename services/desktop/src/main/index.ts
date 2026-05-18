@@ -11,6 +11,10 @@ import {
 import { join } from "node:path";
 import { Auth, type AuthStatus } from "./auth";
 import { OllamaSupervisor } from "./ollama-supervisor";
+import {
+  OllamaBinaryUpdater,
+  PINNED_OLLAMA_VERSION,
+} from "./ollama-binary-updater";
 import { PostgresSupervisor } from "./postgres-supervisor";
 import { ProducerSupervisor } from "./producer-supervisor";
 import { resumeStuckStages } from "./producer-resume";
@@ -313,6 +317,22 @@ auth.on("status", broadcastAuthStatus);
 // Disabled by setting AVA_DISABLE_OLLAMA=1 — used in CI / mock-gateway dev
 // where there's nothing to run locally.
 const ollama = new OllamaSupervisor();
+// v0.1.220 — Runtime-Self-Update für die Ollama-Binary. Trennt das
+// Lifecycle des Supervisors (Subprozess hochfahren / Modelle pullen)
+// vom Binary-Update (Download neuer Ollama-Version in <userData>/
+// ollama-managed/). Supervisor liest die Binary-Pfad neu auf jedem
+// start(), darum genügt es, ihn nach erfolgreichem Update neu zu
+// starten — App-Restart nicht nötig.
+const ollamaUpdater = new OllamaBinaryUpdater();
+ollamaUpdater.on("state", (s) => {
+  for (const win of BrowserWindow.getAllWindows()) {
+    try {
+      win.webContents.send("ollama-updater:state", s);
+    } catch {
+      /* destroyed window */
+    }
+  }
+});
 
 function broadcastOllamaStatus(status: OllamaStatus): void {
   for (const win of BrowserWindow.getAllWindows()) {
@@ -2529,6 +2549,49 @@ app.whenReady().then(async () => {
   ipcMain.handle("ollama:deleteModel", (_e, modelName: string) =>
     ollama.deleteModel(modelName),
   );
+
+  // v0.1.220 — Ollama-Binary Self-Update.
+  //
+  // Flow:
+  //   1. Renderer ruft `ollama:updateBinary` (z. B. nach 412-Fehler
+  //      bei pullModel).
+  //   2. OllamaBinaryUpdater lädt die gepinnte Ollama-Version aus den
+  //      GitHub-Releases und legt sie unter <userData>/ollama-managed/
+  //      ab. Progress via `ollama-updater:state`-Events.
+  //   3. Auf state=ready: Supervisor stoppen, neu starten — der
+  //      resolveBinaryPath findet jetzt die Managed-Variante zuerst.
+  //   4. Renderer kann den fehlgeschlagenen Pull erneut anstoßen.
+  ipcMain.handle("ollama:updateBinary", async () => {
+    await ollamaUpdater.update();
+    const final = ollamaUpdater.getState();
+    if (final.state === "ready") {
+      // Supervisor sauber durchstarten, damit der neue Binary-Pfad
+      // greift. stop()+start() statt restart() weil die start()-Logik
+      // den Pfad neu auflöst — ein in-place reload wäre fragiler.
+      try {
+        await ollama.stop();
+      } catch (err) {
+        console.warn(
+          "[ollama-updater] stop() failed during binary swap:",
+          err instanceof Error ? err.message : err,
+        );
+      }
+      try {
+        await ollama.start();
+      } catch (err) {
+        console.warn(
+          "[ollama-updater] start() after swap failed:",
+          err instanceof Error ? err.message : err,
+        );
+      }
+    }
+    return final;
+  });
+  ipcMain.handle("ollama:getUpdaterState", () => ollamaUpdater.getState());
+  ipcMain.handle("ollama:getManagedVersion", () =>
+    ollamaUpdater.getManagedVersion(),
+  );
+  ipcMain.handle("ollama:getPinnedVersion", () => PINNED_OLLAMA_VERSION);
 
   // Postgres supervisor IPC (8.v1.0). Renderer reads getStatus on
   // mount and subscribes to `postgres-status:changed`. No restart /

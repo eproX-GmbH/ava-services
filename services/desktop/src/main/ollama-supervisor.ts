@@ -616,6 +616,15 @@ export class OllamaSupervisor extends EventEmitter {
     const fromEnv = process.env.OLLAMA_BIN;
     if (fromEnv && existsSync(fromEnv)) return fromEnv;
 
+    // v0.1.220 — Managed-Binary-Pfad ZUERST: der OllamaBinaryUpdater
+    // legt aktualisierte Versionen unter <userData>/ollama-managed/<v>/
+    // ab. Wenn dort eine Binary liegt, nutzen wir die. Damit kann der
+    // Nutzer Ollama via "Aktualisieren"-Button frisch holen, ohne dass
+    // wir die App neu installieren müssen. Fällt durch auf gebundelte
+    // Binary, wenn das Managed-Verzeichnis leer ist.
+    const managed = this.resolveManagedBinaryPath();
+    if (managed) return managed;
+
     const platformDir = `${process.platform}-${process.arch}`; // e.g. "darwin-arm64"
     const exe = process.platform === "win32" ? "ollama.exe" : "ollama";
 
@@ -632,6 +641,38 @@ export class OllamaSupervisor extends EventEmitter {
 
     // Last resort in dev: rely on a system-installed `ollama` on PATH.
     return "ollama";
+  }
+
+  /**
+   * v0.1.220 — gespiegelter Lookup zum `OllamaBinaryUpdater`. Wir
+   * importieren bewusst NICHT die Updater-Klasse, um die
+   * Supervisor-Datei nicht mit Electron-spezifischen Side-Effects zu
+   * verschmutzen; stattdessen reproduzieren wir die Verzeichnisstruktur
+   * lokal. Single Source of Truth ist `managedRoot()` im Updater —
+   * wenn sich der Pfad jemals ändert, müssen beide Stellen angepasst
+   * werden (CI würde via Pfad-Mismatch sofort failen).
+   */
+  private resolveManagedBinaryPath(): string | null {
+    try {
+      const root = join(app.getPath("userData"), "ollama-managed");
+      if (!existsSync(root)) return null;
+      const exe = process.platform === "win32" ? "ollama.exe" : "ollama";
+      // Höchste Version aus dem Verzeichnis. Lexikographisch ist OK
+      // für das `v0.24.0`-Schema; wenn Ollama jemals auf semver-mit-
+      // Pre-Release umstellt, hier eine echte Semver-Sortierung
+      // einbauen.
+      const candidates = readdirSync(root)
+        .filter((d) => d.startsWith("v"))
+        .sort()
+        .reverse();
+      for (const v of candidates) {
+        const p = join(root, v, exe);
+        if (existsSync(p)) return p;
+      }
+      return null;
+    } catch {
+      return null;
+    }
   }
 
   /**

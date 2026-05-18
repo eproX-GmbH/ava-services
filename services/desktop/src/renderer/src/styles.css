@@ -6162,3 +6162,43 @@ a.heartbeat-decision__company:hover {
   background: rgba(8, 145, 178, 0.1);
   border-color: rgba(8, 145, 178, 0.4);
 }
+
+/* ----- v0.1.220 — DownloadDock Error+Updater-Sub-UI ---------------------- */
+
+.dl-dock__row-error {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  margin-top: 0.25rem;
+}
+
+.dl-dock__row-error-details {
+  margin-top: 0.2rem;
+  font-size: 0.72rem;
+  opacity: 0.7;
+}
+
+.dl-dock__row-error-details summary {
+  cursor: pointer;
+  user-select: none;
+}
+
+.dl-dock__row-error-details pre {
+  margin: 0.3rem 0 0;
+  padding: 0.4rem 0.6rem;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 4px;
+  font-size: 0.7rem;
+  line-height: 1.4;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 120px;
+  overflow: auto;
+}
+
+.dl-dock__updater {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  margin-top: 0.25rem;
+}

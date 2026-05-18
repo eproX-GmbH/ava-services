@@ -1,6 +1,23 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { pullModelTracked, useOllamaStore } from "../store/ollama";
+import { classifyOllamaPullError } from "../lib/ollama-pull-error";
 import type { OllamaPullProgress } from "../../../shared/types";
+
+// v0.1.220 — Status des Self-Updaters, geteilt vom OllamaUpdater.
+type UpdaterState =
+  | "idle"
+  | "checking"
+  | "downloading"
+  | "installing"
+  | "ready"
+  | "error";
+
+interface UpdaterFrame {
+  state: UpdaterState;
+  percent?: number;
+  bytesPerSec?: number;
+  message?: string;
+}
 
 // Download Dock (Phase 8.k10c).
 //
@@ -202,11 +219,43 @@ function DockRow({
             …
           </span>
         )}
-        {row.kind === "failed" && (
-          <span className="bad">
-            Fehlgeschlagen{attemptSuffix}: {row.errorMessage ?? row.status ?? "Unbekannter Fehler"}
-          </span>
-        )}
+        {row.kind === "failed" && (() => {
+          // v0.1.220 — Pull-Fehler humanisiert + bei
+          // Version-Mismatch (alte Ollama-Binary) zusätzlich den
+          // Self-Update-Knopf einblenden. Die rohe Meldung bleibt
+          // unter <details> erreichbar.
+          const cat = classifyOllamaPullError(row.errorMessage ?? row.status ?? "");
+          if (!cat) {
+            return (
+              <span className="bad">
+                Fehlgeschlagen{attemptSuffix}: {row.errorMessage ?? "Unbekannter Fehler"}
+              </span>
+            );
+          }
+          return (
+            <div className="dl-dock__row-error">
+              <span className="bad">
+                Fehlgeschlagen{attemptSuffix}: {cat.friendly}
+              </span>
+              {cat.hint && (
+                <span className="muted small">{cat.hint}</span>
+              )}
+              {cat.category === "version-mismatch" && (
+                <OllamaUpdateAffordance
+                  onSuccessRetry={() =>
+                    void pullModelTracked(row.modelName).catch(() => undefined)
+                  }
+                />
+              )}
+              {cat.category !== "unknown" && row.errorMessage && (
+                <details className="dl-dock__row-error-details">
+                  <summary>Original-Fehlermeldung</summary>
+                  <pre>{row.errorMessage}</pre>
+                </details>
+              )}
+            </div>
+          );
+        })()}
         {row.kind === "done" && <span>Fertig ✓</span>}
         {row.kind === "active" && (
           <>
@@ -423,4 +472,92 @@ function formatDuration(sec: number): string {
   const h = Math.floor(sec / 3600);
   const m = Math.round((sec % 3600) / 60);
   return m === 0 ? `${h}h` : `${h}h ${m}m`;
+}
+
+// v0.1.220 — Inline-Komponente für den "Ollama jetzt aktualisieren"-Knopf
+// im Download-Dock. Subscriben auf den OllamaUpdater-Status und
+// rendern je nach State entsprechend.
+function OllamaUpdateAffordance({
+  onSuccessRetry,
+}: {
+  onSuccessRetry: () => void;
+}) {
+  const [updater, setUpdater] = useState<UpdaterFrame>({ state: "idle" });
+
+  useEffect(() => {
+    let cancelled = false;
+    void window.api.ollama.getUpdaterState().then((s) => {
+      if (!cancelled) setUpdater(s as UpdaterFrame);
+    });
+    const off = window.api.ollama.onUpdaterState((s) => {
+      setUpdater(s as UpdaterFrame);
+    });
+    return () => {
+      cancelled = true;
+      off();
+    };
+  }, []);
+
+  const trigger = async (): Promise<void> => {
+    const result = await window.api.ollama.updateBinary();
+    if (result.state === "ready") {
+      // Wenig später nochmal versuchen, der Supervisor braucht ein paar
+      // Sekunden um mit der neuen Binary frisch zu starten.
+      setTimeout(onSuccessRetry, 1500);
+    }
+  };
+
+  if (updater.state === "downloading") {
+    const pct = updater.percent ?? 0;
+    const speed = updater.bytesPerSec ?? 0;
+    return (
+      <div className="dl-dock__updater">
+        <span className="muted small">
+          Lade Ollama herunter… {pct}%
+          {speed > 0 ? ` · ${formatBytes(speed)}/s` : ""}
+        </span>
+      </div>
+    );
+  }
+  if (updater.state === "checking" || updater.state === "installing") {
+    return (
+      <span className="muted small">
+        {updater.state === "checking"
+          ? "Prüfe Update…"
+          : "Installiere neue Version…"}
+      </span>
+    );
+  }
+  if (updater.state === "ready") {
+    return (
+      <span className="muted small">
+        Ollama aktualisiert. Versuche den Download in Kürze erneut…
+      </span>
+    );
+  }
+  if (updater.state === "error") {
+    return (
+      <div className="dl-dock__updater">
+        <span className="bad small">
+          Update fehlgeschlagen: {updater.message ?? "Unbekannter Fehler"}
+        </span>
+        <button
+          type="button"
+          className="dl-dock__retry-btn"
+          onClick={() => void trigger()}
+        >
+          Erneut versuchen
+        </button>
+      </div>
+    );
+  }
+  return (
+    <button
+      type="button"
+      className="dl-dock__retry-btn"
+      onClick={() => void trigger()}
+    >
+      Ollama jetzt aktualisieren
+    </button>
+  );
 }

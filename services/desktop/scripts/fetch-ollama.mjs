@@ -34,7 +34,11 @@ import { spawn } from "node:child_process";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 
-const VERSION = process.env.OLLAMA_VERSION ?? "v0.3.14";
+// v0.1.220 — Upstream-Schema-Wechsel von v0.3.x auf v0.5.x+. Wir
+// landen ab hier auf der modernen Linie. v0.24.0 ist die aktuelle
+// Release (Stand Mai 2026) und unterstützt qwen3 / qwen3.5 / qwen3.6.
+// Alte v0.3.14-Binaries lehnen das qwen3-Manifest mit HTTP 412 ab.
+const VERSION = process.env.OLLAMA_VERSION ?? "v0.24.0";
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const RESOURCES_ROOT = resolve(__dirname, "..", "resources", "ollama");
 

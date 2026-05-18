@@ -240,6 +240,58 @@ const api = {
       ipcRenderer.on("ollama-pull:progress", handler);
       return () => ipcRenderer.removeListener("ollama-pull:progress", handler);
     },
+    /**
+     * v0.1.220 — Triggert den Self-Updater für die gebündelte
+     * Ollama-Binary. Resolved auf den finalen Status (ready/error).
+     * Während des Downloads kommen Progress-Frames über
+     * `onUpdaterState`. Bei `ready` startet der Supervisor automatisch
+     * mit der neuen Binary neu — kein App-Restart nötig.
+     */
+    updateBinary: (): Promise<{
+      state: "ready" | "error";
+      version?: string;
+      path?: string;
+      message?: string;
+    }> => ipcRenderer.invoke("ollama:updateBinary"),
+    /** Snapshot des Updater-States (für UI-Mount). */
+    getUpdaterState: (): Promise<{
+      state: "idle" | "checking" | "downloading" | "installing" | "ready" | "error";
+      percent?: number;
+      bytesPerSec?: number;
+      version?: string;
+      path?: string;
+      message?: string;
+    }> => ipcRenderer.invoke("ollama:getUpdaterState"),
+    /** Aktuell installierte Managed-Version, oder null wenn nur die
+     *  Bundled-Variante genutzt wird. */
+    getManagedVersion: (): Promise<string | null> =>
+      ipcRenderer.invoke("ollama:getManagedVersion"),
+    /** Welche Ollama-Version AVA als Ziel des Self-Updaters pinnt. */
+    getPinnedVersion: (): Promise<string> =>
+      ipcRenderer.invoke("ollama:getPinnedVersion"),
+    /** Updater-Status live mitlesen (Download-Progress, Errors). */
+    onUpdaterState: (
+      cb: (s: {
+        state:
+          | "idle"
+          | "checking"
+          | "downloading"
+          | "installing"
+          | "ready"
+          | "error";
+        percent?: number;
+        bytesPerSec?: number;
+        version?: string;
+        path?: string;
+        message?: string;
+      }) => void,
+    ): (() => void) => {
+      const handler = (_e: Electron.IpcRendererEvent, s: unknown) =>
+        cb(s as Parameters<typeof cb>[0]);
+      ipcRenderer.on("ollama-updater:state", handler);
+      return () =>
+        ipcRenderer.removeListener("ollama-updater:state", handler);
+    },
   },
 
   // Postgres (Phase 8.v1.0) — bundled local DB substrate. Same shape
