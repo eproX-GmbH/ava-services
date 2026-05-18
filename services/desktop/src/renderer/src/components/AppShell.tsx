@@ -342,7 +342,7 @@ function ExternalServiceBanner() {
             </button>
             <button
               type="button"
-              className="link bad"
+              className="link bad is-inline"
               onClick={() => {
                 const next = new Set(suppressedSigs);
                 next.add(signature);

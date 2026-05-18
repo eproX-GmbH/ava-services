@@ -2975,7 +2975,11 @@ function DownloadBar({
         {progress.total ? ` / ${fmtBytes(progress.total)}` : ""}
         {bytesPerSec > 0 && ` · ${fmtBytes(bytesPerSec)}/s`}
         {" · "}
-        <button type="button" className="link bad" onClick={onCancel}>
+        <button
+          type="button"
+          className="link bad is-inline"
+          onClick={onCancel}
+        >
           Abbrechen
         </button>
       </div>
@@ -3726,7 +3730,7 @@ export function FreshnessSection() {
                 <code>{id.length > 16 ? id.slice(0, 14) + "…" : id}</code>
                 <button
                   type="button"
-                  className="link bad"
+                  className="link bad is-inline"
                   onClick={() => onUnpin(id)}
                   title="Entfernen"
                 >

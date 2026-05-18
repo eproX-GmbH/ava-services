@@ -314,6 +314,25 @@ button.link:hover:not(:disabled) {
 button.link.bad { color: var(--error); }
 button.link.bad:hover:not(:disabled) { color: var(--error); opacity: 0.85; }
 
+/* v0.1.228 — Destruktive Link-Buttons gehören an den rechten Rand
+ * ihrer Action-Gruppe (Konvention für „Eintrag entfernen / trennen /
+ * verwerfen").
+ *
+ * Drei Properties decken die drei häufigen Parent-Typen ab:
+ *   - flex-row:    margin-left: auto      → Button rechts in der Zeile
+ *   - flex-column: align-self: flex-end   → Button rechts in der Spalte
+ *   - grid:        justify-self: end      → Button rechts in der Zelle
+ * Jede Property ist im falschen Kontext ein No-Op, also unschädlich.
+ *
+ * Spezialfall: wenn der Button mitten im Fließtext steht (Pin-Chip-
+ * Remover „×", Inline-„Abbrechen" im Download-Progress, Confirm-
+ * Dialog-Action-Stacks), opt-out via `.is-inline`. */
+button.link.bad:not(.is-inline) {
+  margin-left: auto;
+  align-self: flex-end;
+  justify-self: end;
+}
+
 select {
   font: inherit;
   padding: var(--ctrl-pad-y) calc(var(--ctrl-pad-x) + 18px) var(--ctrl-pad-y) var(--ctrl-pad-x);
@@ -1308,8 +1327,17 @@ code, pre { font-family: var(--font-mono); font-size: 12px; }
 }
 .memory-list__content { font-size: 13px; line-height: 1.4; word-break: break-word; }
 .memory-list__meta {
-  grid-column: 1 / -1;
+  /* v0.1.228 — Meta-Zeile spannte vorher 1/-1, dadurch landete der
+   * „vergessen"-Button in einer extra Zeile darunter (col 1 row 3).
+   * Beschränken wir das auf col 1, dann darf der Button in col 2
+   * row 1 sitzen. */
+  grid-column: 1;
   display: flex; flex-wrap: wrap; gap: 0.4rem; align-items: center;
+}
+.memory-list__row > .link.bad {
+  /* Button in rechte Spalte, oberste Zeile, oben-bündig. */
+  grid-row: 1; grid-column: 2;
+  align-self: start;
 }
 .memory-list__tag {
   font-size: 10px; padding: 1px 6px; border-radius: 8px;
