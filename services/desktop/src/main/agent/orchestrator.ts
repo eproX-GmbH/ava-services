@@ -115,6 +115,19 @@ export interface AgentOrchestratorOptions {
    * Optional so test harnesses can skip it entirely.
    */
   skillsPrefs?: SkillsPrefsStore;
+  /**
+   * v0.1.210 — Callback, das nach jedem fertigen LLM-Turn die
+   * Token-Usage in den lokalen UsageStore schreibt. Fire-and-forget;
+   * Fehler werden vom Callback selbst verschluckt. `conversationId`
+   * wird durchgereicht, damit der Store den Call der richtigen
+   * Conversation zuordnet (Drill-down im Verbrauchs-Tab später).
+   */
+  onUsage?: (args: {
+    provider: import("../../shared/types").LlmProviderKind;
+    model: string;
+    conversationId: string;
+    usage: import("./providers/types").LlmUsageSnapshot;
+  }) => void;
 }
 
 export interface AgentOrchestratorEvents {
@@ -149,6 +162,10 @@ export class AgentOrchestrator extends EventEmitter {
     | undefined;
   private skillStore: SkillStore | undefined;
   private skillsPrefs: SkillsPrefsStore | undefined;
+  /** v0.1.210 — Usage-Sink. Wird vom Provider-Wrapper aufgerufen,
+   *  sobald ein Turn beendet ist und der Provider Token-Counts
+   *  geliefert hat. */
+  private readonly onUsage?: AgentOrchestratorOptions["onUsage"];
   /** Active skill for the in-flight turn (set in send(), read in
    *  runTool() for the allowlist gate + in buildSystemPrompt() for
    *  the active-skill hint). null when no skill is active. */
@@ -185,6 +202,7 @@ export class AgentOrchestrator extends EventEmitter {
     this.generalMemoryStore = opts.generalMemoryStore;
     this.skillStore = opts.skillStore;
     this.skillsPrefs = opts.skillsPrefs;
+    this.onUsage = opts.onUsage;
 
     // Re-emit status when the active provider moves so the renderer's
     // Chat tab can re-enable the input the moment the model is ready.
@@ -539,6 +557,22 @@ export class AgentOrchestrator extends EventEmitter {
           }
           if (frame.toolCalls && frame.toolCalls.length > 0) {
             collectedToolCalls = frame.toolCalls;
+          }
+          // v0.1.210 — Usage einer fertigen Turn (kommt nur auf done-Frame).
+          // Fire-and-forget — schluckt Fehler intern, der Chat-Loop läuft
+          // weiter, egal ob der Store gerade aufnimmt oder nicht.
+          if (frame.usage && this.onUsage) {
+            try {
+              const status = provider.getStatus();
+              this.onUsage({
+                provider: status.kind,
+                model: status.model ?? "",
+                conversationId: conversation.id,
+                usage: frame.usage,
+              });
+            } catch (err) {
+              console.warn("[usage] forward to store failed:", err);
+            }
           }
         }
 

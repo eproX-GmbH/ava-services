@@ -294,6 +294,25 @@ function renderBar(
   const seriesCount = spec.series.length;
   // x-Kategorien aus der ersten Serie ziehen; weitere Serien werden gruppiert
   const categories = (spec.series[0]?.data ?? []).map((p) => p.x);
+  // v0.1.210 — Stapelung. Bei `stacked: true` (Default false) addieren
+  // wir alle Serien pro Kategorie und zeichnen einen einzigen Balken,
+  // gestapelt nach Serie. Max muss dann die SUMME pro Kategorie sein,
+  // nicht das Einzel-Max. Aktuell nur für vertikales Bar-Diagramm
+  // implementiert; hbar bleibt gruppiert (Use-Case rar).
+  const stacked = !!spec.stacked && !horizontal;
+  if (stacked) {
+    let sumMax = 0;
+    for (let ci = 0; ci < categories.length; ci++) {
+      let sum = 0;
+      for (const s of spec.series) {
+        const v = (s.data[ci]?.y as number) ?? 0;
+        if (Number.isFinite(v) && v > 0) sum += v;
+      }
+      if (sum > sumMax) sumMax = sum;
+    }
+    if (sumMax > 0) max = sumMax;
+    if (min > 0) min = 0; // Gestapelte Bars starten visuell immer bei 0.
+  }
   // v0.1.207 — switch to integer gridlines when the data is whole-
   // number-only OR the LLM tagged the chart with `format: "int"`.
   // Snaps min/max to multiples of the picked step, so the axis
@@ -307,6 +326,83 @@ function renderBar(
     max = intGrid.snappedMax;
   } else {
     gridLines = gridlines(min, max, format);
+  }
+
+  if (stacked) {
+    const groupW = innerW / categories.length;
+    const barW = groupW * 0.7;
+    return (
+      <>
+        {gridLines.map((g, i) => {
+          const y =
+            PAD_TOP + innerH - ((g.y - min) / (max - min || 1)) * innerH;
+          return (
+            <g key={`grid-${i}`}>
+              <line
+                x1={PAD_LEFT}
+                x2={WIDTH - PAD_RIGHT}
+                y1={y}
+                y2={y}
+                stroke={gridColor()}
+                strokeWidth={1}
+              />
+              <text
+                x={PAD_LEFT - 6}
+                y={y + 4}
+                fontSize={10}
+                textAnchor="end"
+                fill={axisTextColor()}
+              >
+                {g.label}
+              </text>
+            </g>
+          );
+        })}
+        {categories.map((c, ci) => {
+          // Pro Kategorie: kumulierte Höhe von unten nach oben.
+          let cumulative = 0;
+          const x = PAD_LEFT + ci * groupW + (groupW - barW) / 2;
+          return (
+            <g key={`stack-${ci}`}>
+              {spec.series.map((s, si) => {
+                const v = (s.data[ci]?.y as number) ?? 0;
+                if (!Number.isFinite(v) || v <= 0) return null;
+                const h = (v / (max - min || 1)) * innerH;
+                const y = PAD_TOP + innerH - (cumulative + v - min) / (max - min || 1) * innerH;
+                cumulative += v;
+                const label = `${s.name}: ${formatY(v, format)} (${formatX(c, format)})`;
+                return (
+                  <rect
+                    key={`sb-${ci}-${si}`}
+                    x={x}
+                    y={y}
+                    width={barW}
+                    height={Math.max(1, h)}
+                    fill={colorAt(palette, si)}
+                    onMouseEnter={() => setHover({ x: x + barW / 2, y, label })}
+                  />
+                );
+              })}
+            </g>
+          );
+        })}
+        {categories.map((c, ci) => {
+          const cx = PAD_LEFT + ci * groupW + groupW / 2;
+          return (
+            <text
+              key={`xl-${ci}`}
+              x={cx}
+              y={HEIGHT - PAD_BOTTOM + 16}
+              fontSize={10}
+              textAnchor="middle"
+              fill={axisTextColor()}
+            >
+              {truncate(String(formatX(c, format)))}
+            </text>
+          );
+        })}
+      </>
+    );
   }
 
   if (!horizontal) {

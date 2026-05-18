@@ -5636,3 +5636,123 @@ a.heartbeat-decision__company:hover {
 }
 
 .tier-banner__link:hover { text-decoration: none; }
+
+/* ----- v0.1.210 — Verbrauchs-Tab ----------------------------------------- */
+
+.verbrauch-tab { display: flex; flex-direction: column; gap: 1.25rem; }
+
+.verbrauch-tab__header h3 { margin: 0 0 0.25rem; }
+
+.verbrauch-tab__controls {
+  display: flex;
+  gap: 1rem;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.verbrauch-tab__range,
+.verbrauch-tab__unit {
+  display: inline-flex;
+  gap: 0.25rem;
+  background: var(--surface-2, rgba(0,0,0,0.04));
+  border-radius: 8px;
+  padding: 0.25rem;
+}
+
+.verbrauch-tab__pill {
+  border: 0;
+  background: transparent;
+  padding: 0.4rem 0.9rem;
+  font-size: 0.85rem;
+  border-radius: 6px;
+  cursor: pointer;
+  color: inherit;
+}
+
+.verbrauch-tab__pill--active {
+  background: var(--surface, rgba(0,0,0,0.08));
+  font-weight: 600;
+}
+
+.verbrauch-tab__summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 0.75rem;
+}
+
+.verbrauch-tab__stat {
+  padding: 0.875rem 1rem;
+  border-radius: 8px;
+  background: var(--surface-2, rgba(0,0,0,0.04));
+}
+
+.verbrauch-tab__stat-label {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  opacity: 0.65;
+}
+
+.verbrauch-tab__stat-value {
+  font-size: 1.4rem;
+  font-weight: 600;
+  margin: 0.25rem 0;
+}
+
+.verbrauch-tab__stat-hint {
+  font-size: 0.7rem;
+  opacity: 0.6;
+}
+
+.verbrauch-tab__oauth-note {
+  padding: 0.75rem 1rem;
+  border-radius: 8px;
+  background: rgba(59, 130, 246, 0.08);
+  border: 1px solid rgba(59, 130, 246, 0.25);
+  font-size: 0.875rem;
+  line-height: 1.5;
+}
+
+.verbrauch-tab__chart {
+  padding: 1rem;
+  border-radius: 8px;
+  background: var(--surface-2, rgba(0,0,0,0.02));
+}
+
+.verbrauch-tab__table-wrap h4 { margin: 0 0 0.5rem; }
+
+.verbrauch-tab__table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.875rem;
+}
+
+.verbrauch-tab__table th,
+.verbrauch-tab__table td {
+  padding: 0.5rem 0.75rem;
+  text-align: left;
+  border-bottom: 1px solid var(--border, rgba(0,0,0,0.08));
+}
+
+.verbrauch-tab__table th {
+  font-weight: 600;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  opacity: 0.7;
+}
+
+.verbrauch-tab__table td:not(:first-child),
+.verbrauch-tab__table th:not(:first-child) {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.verbrauch-tab__danger {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--border, rgba(0,0,0,0.08));
+}

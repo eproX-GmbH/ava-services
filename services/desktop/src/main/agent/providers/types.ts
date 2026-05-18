@@ -29,11 +29,46 @@ export interface LlmStreamToolCall {
   };
 }
 
+/**
+ * v0.1.210 — Token-Usage-Snapshot eines fertigen LLM-Turns.
+ *
+ * Vom Provider auf der `done`-Frame emittiert. Orchestrator harvested
+ * den Wert und schreibt ihn in den UsageStore (Settings → Verbrauch).
+ *
+ * Alle Felder optional, weil unterschiedliche Provider unterschiedlich
+ * viel preisgeben:
+ *   - Anthropic: alle Felder + Cache-Splits via Provider-Metadata
+ *   - OpenAI: input/output, kein Cache-Split
+ *   - Google: input/output
+ *   - Mistral: input/output
+ *   - Ollama: meist nur output, je nach Build
+ *
+ * `quotaSnapshot` ist der provider-agnostische Rate-Limit-/Quota-Header-
+ * Schnappschuss. Anthropic-`anthropic-ratelimit-*`, OpenAI-`x-ratelimit-*`
+ * usw. landen alle hier rein.
+ */
+export interface LlmUsageSnapshot {
+  inputTokens?: number;
+  outputTokens?: number;
+  cacheReadTokens?: number;
+  cacheWriteTokens?: number;
+  quotaSnapshot?: {
+    inputTokensRemaining?: number;
+    outputTokensRemaining?: number;
+    requestsRemaining?: number;
+    resetAt?: string;
+    raw?: Record<string, string>;
+  };
+}
+
 export interface LlmStreamFrame {
   contentDelta?: string;
   toolCalls?: LlmStreamToolCall[];
   done: boolean;
   errorMessage?: string;
+  /** v0.1.210 — gesetzt auf dem terminalen Frame (done=true), falls
+   *  der Provider Usage-Daten zurückgeliefert hat. */
+  usage?: LlmUsageSnapshot;
 }
 
 /**

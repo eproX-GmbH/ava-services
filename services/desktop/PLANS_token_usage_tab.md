@@ -247,13 +247,21 @@ export const SETTINGS_TABS = [
 - [ ] Preis-Tabelle in einer eigenen kleinen Settings-Sektion sichtbar machen („Welche Modelle kosten was?")
 - [ ] Topbar-Pill bei „auffälligem" Verbrauch (z.B. >5x Median letzter 7 Tage)
 
-## 10 — Offene Entscheidungen (User-Input nötig)
+## 10 — Entscheidungen (locked 2026-05-18)
 
-1. **Token vs. USD im Default-View**: Welche Einheit ist Default? Vorschlag: USD (das ist das, was Nutzer interessiert). User-Toggle bleibt.
-2. **Retention**: 6 Monate ok, oder lieber 12? Plattendruck ist gering.
-3. **Producer-Capture Reihenfolge**: P3 erst nach P1+P2 (= Tab existiert und zeigt Chat-only), oder parallel? Vorschlag: erst P1+P2 liefern (Tab existiert, zeigt was), dann P3 als Aufstockung — so kommt früher Wert.
-4. **Stacked-bar in ChatChart vs. eigene Komponente**: 9.3 (a) (mit Schema-Erweiterung) oder (b) (lokale Inline-Komponente)?
-5. **Anthropic-OAuth-Quota**: Können wir aus dem Response-Header rauslesen, wie viel vom Abo-Quota noch übrig ist? Wenn ja: zusätzliche „Im Abo verbleibend"-Anzeige. Wenn nein: stille Annahme.
+1. **Default-Einheit: Token** (USD ist eine Schätzung — Tokens sind die harte Größe). USD bleibt als zuschaltbarer Toggle pro Diagramm.
+2. **Retention: 12 Monate.** Plattenwachstum bleibt gering, dafür haben wir einen Jahresvergleich.
+3. **Phasen sequentiell:** P1 + P2 zuerst ausliefern (Foundation + UI zeigt Chat-only). P3 (Producer-Capture) als nächstes Release danach. P4 + P5 erst nach Nutzer-Feedback.
+4. **Stacked-Bar als chart-spec-Erweiterung** (`stacked?: boolean`, Default `false`). Damit kann der Agent das auch selbst im Chat emittieren, nicht nur der Verbrauchs-Tab.
+5. **Provider-agnostische Quota-Erfassung:** Jede UsageEvent-Zeile bekommt ein optionales `quotaSnapshot`-JSON-Blob, in das die Provider-spezifischen Rate-Limit-/Abo-Header eingelegt werden:
+   - Anthropic-API-Key: `inputTokensRemaining`, `outputTokensRemaining`, `requestsRemaining`, `resetAt`
+   - Anthropic-OAuth-Abo: zusätzlich Abo-Window-Felder, falls Anthropic sie in den Headern surface't (z. B. `anthropic-priority-input-tokens-*`)
+   - OpenAI: `x-ratelimit-remaining-tokens` / `-requests` / `-reset` (eigenes Schema)
+   - Mistral: `ratelimit-remaining-*`
+   - Google: meist nichts → Blob bleibt leer
+   - Ollama: lokal → kein Snapshot
+
+   UI rendert „X % verbleibend"-Anzeigen NUR, wenn die Felder im Snapshot vorhanden sind. Damit ist die OAuth-Abo-Visibilität ein Use-Case dieses Mechanismus, kein Sonderpfad — und neue Provider plugen ohne Schema-Änderung an.
 
 ## 11 — Risiken
 

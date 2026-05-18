@@ -15,6 +15,7 @@ import type {
   LlmStreamFrame,
   LlmStreamRequest,
   LlmStreamToolCall,
+  LlmUsageSnapshot,
 } from "./types";
 
 // AiSdkProvider (Phase 8.k1).
@@ -381,6 +382,11 @@ export class AiSdkProvider extends EventEmitter implements LlmProvider {
     // accumulates argument fragments per tool-call into a single event,
     // so this is effectively just "collect until finish".
     const collected: LlmStreamToolCall[] = [];
+    // v0.1.210 — Usage wird vom AI-SDK auf `finish` mitgeliefert
+    // (`totalUsage` / `usage`). Wir sammeln es hier und yielden es
+    // auf dem terminalen Frame, damit der Orchestrator es in den
+    // UsageStore schreiben kann.
+    let collectedUsage: LlmUsageSnapshot | undefined;
 
     try {
       for await (const part of result.fullStream as AsyncIterable<
@@ -434,9 +440,23 @@ export class AiSdkProvider extends EventEmitter implements LlmProvider {
           }
           case "finish":
           case "abort": {
+            // v0.1.210 — Usage-Snapshot aus dem finish-Frame ziehen.
+            // Schema je nach AI-SDK-Version etwas variant; wir lesen
+            // defensiv beides (`totalUsage` neu, `usage` alt).
+            const finishPart = part as unknown as {
+              totalUsage?: Record<string, unknown>;
+              usage?: Record<string, unknown>;
+              providerMetadata?: Record<string, Record<string, unknown>>;
+              response?: { headers?: Record<string, string> };
+            };
+            collectedUsage = extractUsageFromFinish(
+              this.kind,
+              finishPart,
+            );
             yield {
               done: true,
               ...(collected.length > 0 ? { toolCalls: collected } : {}),
+              ...(collectedUsage ? { usage: collectedUsage } : {}),
             };
             return;
           }
@@ -473,6 +493,7 @@ export class AiSdkProvider extends EventEmitter implements LlmProvider {
     yield {
       done: true,
       ...(collected.length > 0 ? { toolCalls: collected } : {}),
+      ...(collectedUsage ? { usage: collectedUsage } : {}),
     };
   }
 
@@ -709,4 +730,128 @@ function labelFor(kind: LlmProviderKind): string {
     case "mistral":
       return "Mistral";
   }
+}
+
+// ---- v0.1.210 — Usage-Extraktor -------------------------------------------
+//
+// Liest aus dem AI-SDK-finish-Part:
+//   - totalUsage / usage: { inputTokens, outputTokens, ... }
+//   - providerMetadata.anthropic: { cacheCreationInputTokens, cacheReadInputTokens }
+//   - response.headers: rate-limit-Header pro Provider
+//
+// Provider-spezifische Header werden in `quotaSnapshot` aggregiert. UI
+// rendert nur, was tatsächlich gesetzt wurde.
+
+function extractUsageFromFinish(
+  kind: LlmProviderKind,
+  part: {
+    totalUsage?: Record<string, unknown>;
+    usage?: Record<string, unknown>;
+    providerMetadata?: Record<string, Record<string, unknown>>;
+    response?: { headers?: Record<string, string> };
+  },
+): LlmUsageSnapshot | undefined {
+  const u = (part.totalUsage ?? part.usage ?? {}) as Record<string, unknown>;
+  const num = (v: unknown): number | undefined =>
+    typeof v === "number" && Number.isFinite(v) ? v : undefined;
+  const inputTokens =
+    num(u.inputTokens) ?? num(u.promptTokens) ?? num(u.input_tokens);
+  const outputTokens =
+    num(u.outputTokens) ?? num(u.completionTokens) ?? num(u.output_tokens);
+  // Anthropic-Cache: in providerMetadata.anthropic. AI-SDK 5 mappt das
+  // teilweise auch nach totalUsage.cachedInputTokens / nicht-standard.
+  const anth = part.providerMetadata?.anthropic ?? {};
+  const cacheReadTokens =
+    num((anth as Record<string, unknown>).cacheReadInputTokens) ??
+    num(u.cachedInputTokens);
+  const cacheWriteTokens = num(
+    (anth as Record<string, unknown>).cacheCreationInputTokens,
+  );
+  const quotaSnapshot = headersToQuotaSnapshot(kind, part.response?.headers);
+
+  const empty =
+    inputTokens == null &&
+    outputTokens == null &&
+    cacheReadTokens == null &&
+    cacheWriteTokens == null &&
+    !quotaSnapshot;
+  if (empty) return undefined;
+  return {
+    ...(inputTokens != null ? { inputTokens } : {}),
+    ...(outputTokens != null ? { outputTokens } : {}),
+    ...(cacheReadTokens != null ? { cacheReadTokens } : {}),
+    ...(cacheWriteTokens != null ? { cacheWriteTokens } : {}),
+    ...(quotaSnapshot ? { quotaSnapshot } : {}),
+  };
+}
+
+/**
+ * Pro Provider die Rate-Limit-Header in eine getypte QuotaSnapshot
+ * mappen. Was wir kennen, kommt in die strukturierten Felder; den Rest
+ * legen wir als `raw` ab — die UI kann selber entscheiden was sie
+ * davon rendert.
+ */
+function headersToQuotaSnapshot(
+  kind: LlmProviderKind,
+  headers: Record<string, string> | undefined,
+): NonNullable<LlmUsageSnapshot["quotaSnapshot"]> | undefined {
+  if (!headers || Object.keys(headers).length === 0) return undefined;
+  const lower: Record<string, string> = {};
+  for (const [k, v] of Object.entries(headers)) lower[k.toLowerCase()] = v;
+  const out: NonNullable<LlmUsageSnapshot["quotaSnapshot"]> = {};
+  const num = (k: string): number | undefined => {
+    const v = lower[k];
+    if (v == null) return undefined;
+    const n = parseInt(v, 10);
+    return Number.isFinite(n) ? n : undefined;
+  };
+  const raw: Record<string, string> = {};
+
+  if (kind === "anthropic") {
+    const i = num("anthropic-ratelimit-input-tokens-remaining");
+    const o = num("anthropic-ratelimit-output-tokens-remaining");
+    const r = num("anthropic-ratelimit-requests-remaining");
+    if (i != null) out.inputTokensRemaining = i;
+    if (o != null) out.outputTokensRemaining = o;
+    if (r != null) out.requestsRemaining = r;
+    const reset = lower["anthropic-ratelimit-input-tokens-reset"];
+    if (reset) out.resetAt = reset;
+    // Anthropic-OAuth-Abo-Priority-Window (falls Anthropic ihn jemals
+    // surface't — Stand 2026-05 inkonsistent dokumentiert). Wir
+    // legen alle anthropic-Header zusätzlich roh ab.
+    for (const [k, v] of Object.entries(lower)) {
+      if (k.startsWith("anthropic-ratelimit-")) raw[k] = v;
+    }
+  } else if (kind === "openai") {
+    const i = num("x-ratelimit-remaining-tokens");
+    const r = num("x-ratelimit-remaining-requests");
+    if (i != null) out.inputTokensRemaining = i;
+    if (r != null) out.requestsRemaining = r;
+    const reset = lower["x-ratelimit-reset-tokens"];
+    if (reset) out.resetAt = reset;
+    for (const [k, v] of Object.entries(lower)) {
+      if (k.startsWith("x-ratelimit-")) raw[k] = v;
+    }
+  } else if (kind === "mistral") {
+    const i = num("ratelimit-remaining-tokens");
+    const r = num("ratelimit-remaining-requests");
+    if (i != null) out.inputTokensRemaining = i;
+    if (r != null) out.requestsRemaining = r;
+    const reset = lower["ratelimit-reset"];
+    if (reset) out.resetAt = reset;
+    for (const [k, v] of Object.entries(lower)) {
+      if (k.startsWith("ratelimit-")) raw[k] = v;
+    }
+  }
+  // Google + Ollama: aktuell keine zuverlässigen Rate-Limit-Header.
+
+  const empty =
+    out.inputTokensRemaining == null &&
+    out.outputTokensRemaining == null &&
+    out.requestsRemaining == null &&
+    out.resetAt == null &&
+    Object.keys(raw).length === 0;
+  if (empty) return undefined;
+  if (Object.keys(raw).length > 0) out.raw = raw;
+  return out;
 }

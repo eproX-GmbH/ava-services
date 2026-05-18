@@ -845,6 +845,22 @@ const api = {
     },
   },
 
+  // v0.1.210 — Token-Verbrauch. Lokal, privat. UI: Settings →
+  // Verbrauch. `daily(days)` ist der primäre Datenpfad fürs Diagramm;
+  // `list` für Drill-down auf einzelne Calls.
+  usage: {
+    daily: (
+      days: number,
+    ): Promise<import("../shared/types").UsageDailyBucket[]> =>
+      ipcRenderer.invoke("usage:daily", days),
+    list: (
+      query: import("../shared/types").UsageListQuery,
+    ): Promise<import("../shared/types").UsageListResponse> =>
+      ipcRenderer.invoke("usage:list", query),
+    purgeAll: (): Promise<{ removed: number }> =>
+      ipcRenderer.invoke("usage:purgeAll"),
+  },
+
   profile: {
     get: (): Promise<UserProfile> => ipcRenderer.invoke("profile:get"),
     set: (patch: Partial<UserProfile>): Promise<UserProfile> =>

@@ -213,6 +213,16 @@ export {
   type ModelTier,
 } from "./catalog";
 
+// v0.1.210 — Modell-Preise für den Verbrauchs-Tab (Settings →
+// "Verbrauch"). USD-Schätzungen pro 1 Mio. Tokens; Stand siehe
+// `pricing.ts`. Tokens sind die harte Größe, USD nur Schätzung.
+export {
+  PRICING,
+  findPricing,
+  estimateUsd,
+  type ModelPricing,
+} from "./pricing";
+
 // ---- Tier-aware persist (v0.1.62) ----------------------------------------
 //
 // The multi-tenant persist-bus needs to compare "the LLM that produced

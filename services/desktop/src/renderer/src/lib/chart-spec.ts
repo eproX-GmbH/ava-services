@@ -70,6 +70,12 @@ export const chartSpecSchema = yup
       .mixed<ChartFormat>()
       .oneOf(["eur", "num", "int", "pct", "date", "shortdate"])
       .default("num"),
+    // v0.1.210 — Stapelung für mehrere Serien. Default `false`
+    // (alte Specs gruppieren weiter Side-by-side). Nur für `bar`
+    // und `hbar` sinnvoll — andere Kinds ignorieren das Feld.
+    // Verbrauchs-Tab nutzt das für „Tokens pro Tag, gestapelt
+    // nach Modell".
+    stacked: yup.boolean().default(false),
     series: yup.array().of(series).min(1).max(5).required(),
     annotations: yup
       .array()

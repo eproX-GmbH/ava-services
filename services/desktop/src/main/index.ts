@@ -76,6 +76,8 @@ import { scrubQuarantine, scrubWhisperBundle } from "./scrub-quarantine";
 import { Updater, broadcastUpdateStatus } from "./updater";
 // v0.1.200 — Audit-Trail. Local-first PGlite store, see audit-store.ts.
 import { AuditStore } from "./audit/audit-store";
+import { UsageStore } from "./usage/usage-store";
+import { estimateUsd } from "@ava/ai-provider";
 import type { AuditEventInput } from "./audit/audit-types";
 import {
   AgentOrchestrator,
@@ -944,6 +946,11 @@ heartbeat.on("tick", (info: AlertTickInfo) => {
 // Daily retention purge fires once on startup + every 24 h while the
 // app is running.
 const auditStore = new AuditStore();
+// v0.1.210 — Token-Verbrauch lokal (PGlite). Wie der Audit-Store
+// lazy gestartet, lokal-only. Daily-Purge fired auf App-Start +
+// alle 24h. Settings → Verbrauch liest hieraus.
+const usageStore = new UsageStore();
+let usagePurgeTimer: NodeJS.Timeout | null = null;
 let auditPurgeTimer: NodeJS.Timeout | null = null;
 function audit(input: AuditEventInput): void {
   // Fire-and-forget; the renderer subscribes to `audit:inserted` for
@@ -1245,6 +1252,61 @@ const agent = new AgentOrchestrator({
   // mode where it answered "I don't know anything about you" despite
   // the store containing entries.
   generalMemoryStore: generalMemory,
+  // v0.1.210 — Sink für Token-Usage pro Chat-Turn. USD-Schätzung
+  // läuft hier durch (Anthropic-OAuth-Subscription → USD=null, weil
+  // keine API-Kosten anfallen; Ollama → USD=null, weil lokal). Fire-
+  // and-forget; jeder Fehler wird intern gefangen, damit der Chat
+  // niemals an einem Logging-Issue scheitert.
+  onUsage: ({ provider, model, conversationId, usage }) => {
+    try {
+      const inputTokens = usage.inputTokens ?? 0;
+      const outputTokens = usage.outputTokens ?? 0;
+      const cacheReadTokens = usage.cacheReadTokens ?? 0;
+      const cacheWriteTokens = usage.cacheWriteTokens ?? 0;
+      // USD nur schätzen, wenn:
+      //   - kein Ollama (lokal, $0)
+      //   - kein Anthropic-OAuth-Abo (Kosten gehen gegen Abo-Quota,
+      //     nicht gegen API-Guthaben)
+      let estimatedUsd: number | null = 0;
+      if (provider === "ollama") {
+        estimatedUsd = 0;
+      } else if (
+        provider === "anthropic" &&
+        (providers.getConfig().anthropicAuthMode ?? "api-key") ===
+          "subscription"
+      ) {
+        estimatedUsd = null;
+      } else {
+        estimatedUsd = estimateUsd({
+          provider,
+          model,
+          inputTokens,
+          outputTokens,
+          cacheReadTokens,
+          cacheWriteTokens,
+        });
+      }
+      void usageStore
+        .record({
+          provider,
+          model,
+          source: { kind: "chat", conversationId },
+          inputTokens,
+          outputTokens,
+          cacheReadTokens,
+          cacheWriteTokens,
+          estimatedUsd,
+          ...(usage.quotaSnapshot
+            ? { quotaSnapshot: usage.quotaSnapshot }
+            : {}),
+        })
+        .catch((err) => {
+          console.warn("[usage] record failed:", err);
+        });
+    } catch (err) {
+      console.warn("[usage] onUsage handler crashed:", err);
+    }
+  },
 });
 
 alertPrefs.on("changed", (next: AlertPrefs) => {
@@ -3198,6 +3260,57 @@ app.whenReady().then(async () => {
       })
       .catch((err) =>
         console.warn("[audit] daily retention sweep failed:", err),
+      );
+  }, RETENTION_INTERVAL_MS);
+
+  // v0.1.210 — Token-Verbrauchs-IPC.
+  //
+  // - usage:daily(days)    → Aggregat für Stacked-Bar + Source-Donut
+  // - usage:list(query)    → Drill-down-Liste (Pagination)
+  // - usage:purgeAll()     → Settings-Knopf "Verbrauchsdaten löschen"
+  //
+  // Daily-Purge auf App-Start + alle 24h analog Audit-Store.
+  ipcMain.handle("usage:daily", async (_e, days: number) => {
+    const d = Number.isFinite(days) && days > 0 ? Math.min(days, 365) : 7;
+    return usageStore.daily(d);
+  });
+  ipcMain.handle("usage:list", async (_e, query) => {
+    return usageStore.list(query ?? {});
+  });
+  ipcMain.handle("usage:purgeAll", async () => {
+    const removed = await usageStore.purgeAll();
+    audit({
+      actorType: "user",
+      actorId: null,
+      category: "auth",
+      action: "usage.purge.all",
+      severity: "warning",
+      subjectType: null,
+      subjectId: null,
+      summary: `Verbrauchsdaten manuell geleert (${removed} Einträge entfernt)`,
+      metadata: { removed },
+    });
+    return { removed };
+  });
+  void usageStore
+    .purgeExpired()
+    .then((n) => {
+      if (n > 0)
+        console.info(`[usage] startup retention sweep removed ${n} expired event(s)`);
+    })
+    .catch((err) =>
+      console.warn("[usage] startup retention sweep failed:", err),
+    );
+  if (usagePurgeTimer) clearInterval(usagePurgeTimer);
+  usagePurgeTimer = setInterval(() => {
+    void usageStore
+      .purgeExpired()
+      .then((n) => {
+        if (n > 0)
+          console.info(`[usage] daily retention sweep removed ${n} expired event(s)`);
+      })
+      .catch((err) =>
+        console.warn("[usage] daily retention sweep failed:", err),
       );
   }, RETENTION_INTERVAL_MS);
 

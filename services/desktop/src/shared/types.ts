@@ -1729,3 +1729,114 @@ export interface AuditListResponse {
   nextPageToken: string | null;
   totalEstimate: number;
 }
+
+// ---- v0.1.210 Token-Verbrauch (lokal, PGlite) ------------------------------
+//
+// Lokaler Audit für LLM-Calls: Wie viele Tokens hat welcher Provider in
+// welchem Modell für welche Quelle gekostet? Daten verlassen die Maschine
+// nicht (eigene PGlite-DB unter <userData>/pglite/usage/). UI: Settings
+// → "Verbrauch"-Tab. Pricing ist eine Schätzung (Anbieter ändern Preise);
+// Tokens sind die harte Größe.
+
+/** Wer hat den Call gemacht? Source ist ein gelabelter Diskriminator,
+ *  damit Filter/Aggregation per "kind" gehen, statt String-Matching. */
+export type UsageSource =
+  | { kind: "chat"; conversationId: string | null }
+  | { kind: "producer"; name: string }    // "profile" | "contact" | "website" | …
+  | { kind: "watch" }
+  | { kind: "alert-judge" }
+  | { kind: "other"; label: string };
+
+/** Provider-agnostischer Rate-Limit-/Quota-Schnappschuss. Jeder Provider
+ *  liefert andere Header — wir parken alles in dieser typisierten Box
+ *  und die UI rendert nur, was tatsächlich befüllt ist.
+ *
+ *  Anthropic-API-Key: nutzt die `anthropic-ratelimit-*-tokens-remaining`-
+ *  Header. Anthropic-OAuth-Abo: zusätzlich (wenn Anthropic die surfacet)
+ *  die priority-window-Felder. OpenAI: `x-ratelimit-remaining-tokens` /
+ *  `-requests` / `-reset`. Mistral: ähnliches Pattern. Google: liefert
+ *  meist nichts → Snapshot bleibt leer. */
+export interface QuotaSnapshot {
+  inputTokensRemaining?: number;
+  outputTokensRemaining?: number;
+  requestsRemaining?: number;
+  /** ISO-8601 — wann das Bucket zurückgesetzt wird. */
+  resetAt?: string;
+  /** Provider-spezifisches Rohmaterial (Header-Werte als Strings),
+   *  falls die UI später noch was zeigen will, was wir oben nicht
+   *  typisiert haben. */
+  raw?: Record<string, string>;
+}
+
+/** Eine Zeile pro LLM-Call. */
+export interface UsageEvent {
+  id: string;
+  /** ISO-8601 */
+  timestamp: string;
+  provider: LlmProviderKind;
+  model: string;
+  source: UsageSource;
+  inputTokens: number;
+  outputTokens: number;
+  /** Anthropic-Prompt-Caching: Cache-Read = günstigster Pfad, Cache-Write
+   *  = teurster Pfad (auch teurer als normales Input). Andere Provider
+   *  haben oft keine Caching-Buchhaltung → bleibt 0. */
+  cacheReadTokens: number;
+  cacheWriteTokens: number;
+  /** Schätzung in USD. NULL bei Anthropic-OAuth-Abo (keine API-Kosten,
+   *  Abo-Quota), bei Ollama (lokal, $0) und wenn das Modell nicht in
+   *  der Preistabelle steht. */
+  estimatedUsd: number | null;
+  /** Provider-agnostischer Rate-Limit-/Quota-Schnappschuss. Optional;
+   *  fehlt z. B. bei Producer-Markern (die haben den Header nie gesehen). */
+  quotaSnapshot?: QuotaSnapshot;
+  /** Freitext-Metadaten für Diagnose (z. B. finish_reason). */
+  metadata?: Record<string, unknown>;
+}
+
+/** Eingabe-Variante: id + timestamp werden vom Store gesetzt. */
+export type UsageEventInput = Omit<UsageEvent, "id" | "timestamp"> & {
+  timestamp?: string;
+};
+
+export interface UsageListQuery {
+  since?: string;
+  until?: string;
+  providers?: LlmProviderKind[];
+  models?: string[];
+  /** kind-Filter — z. B. `["chat"]` oder `["producer"]`. */
+  sourceKinds?: UsageSource["kind"][];
+  pageSize?: number;
+  pageToken?: string | null;
+}
+
+export interface UsageListResponse {
+  events: UsageEvent[];
+  nextPageToken: string | null;
+  totalEstimate: number;
+}
+
+/** Aggregat pro Tag, gruppiert nach Modell UND nach Quelle.
+ *  `day` ist UTC-`YYYY-MM-DD`. */
+export interface UsageDailyBucket {
+  day: string;
+  byModel: Array<{
+    provider: LlmProviderKind;
+    model: string;
+    inputTokens: number;
+    outputTokens: number;
+    cacheReadTokens: number;
+    cacheWriteTokens: number;
+    estimatedUsd: number | null;
+    calls: number;
+  }>;
+  bySource: Array<{
+    sourceKey: string;             // serialisiert: "chat" | "producer:profile" | …
+    inputTokens: number;
+    outputTokens: number;
+    cacheReadTokens: number;
+    cacheWriteTokens: number;
+    estimatedUsd: number | null;
+    calls: number;
+  }>;
+}

@@ -11,6 +11,7 @@ import { DatenquellenTab } from "./settings/DatenquellenTab";
 import { SkillsTab } from "./settings/SkillsTab";
 import { SystemTab } from "./settings/SystemTab";
 import { VerlaufTab } from "./settings/VerlaufTab";
+import { VerbrauchTab } from "./settings/VerbrauchTab";
 import { notifyLinkedInSettingsChanged } from "../components/LinkedInActiveBanner";
 import { gatewayFetch } from "../api/gateway";
 import { useUsage, isUnlimited, type BillingTier } from "../api/usage";
@@ -127,6 +128,7 @@ const PROVIDER_KEY_DOCS: Record<HostedProviderKind, string> = {
 export const SETTINGS_TABS = [
   { id: "konto",        label: "Konto" },
   { id: "modelle",      label: "Modelle" },
+  { id: "verbrauch",    label: "Verbrauch" },
   { id: "datenquellen", label: "Datenquellen" },
   { id: "skills",       label: "Skills" },
   { id: "verlauf",      label: "Verlauf" },
@@ -270,6 +272,7 @@ export function Settings() {
         <SettingsHeader />
         {activeTab === "konto"        && <KontoTab />}
         {activeTab === "modelle"      && <ModelleTab />}
+        {activeTab === "verbrauch"    && <VerbrauchTab />}
         {activeTab === "datenquellen" && <DatenquellenTab />}
         {activeTab === "skills"       && <SkillsTab />}
         {activeTab === "verlauf"      && <VerlaufTab />}
