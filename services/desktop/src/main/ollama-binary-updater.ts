@@ -62,6 +62,13 @@ export const OLLAMA_FLOOR_VERSION = "v0.24.0";
 const LATEST_LOOKUP_CACHE_TTL_MS = 60 * 60 * 1000;
 let cachedLatestTag: { tag: string; fetchedAt: number } | null = null;
 
+// v0.1.223 — Wie viele alte Managed-Versionen wir nach einem
+// erfolgreichen Update aufheben. Jede Version frisst ~200-400 MB
+// (extrahierte macOS-App, Windows-Zip kleiner). 1 Behalter = aktuelle
+// + 1 vorherige als Rollback-Sicherheit. Nach 3-4 Updates wären sonst
+// schnell mehrere GB im UserData-Verzeichnis.
+const KEEP_OLD_MANAGED_VERSIONS = 1;
+
 interface PlatformTarget {
   assetName: string;
   /** Pfad innerhalb des entpackten Archivs, an dem die tatsächliche
@@ -266,6 +273,20 @@ export class OllamaBinaryUpdater extends EventEmitter {
       }
       writeFileSync(join(versionDir, ".installed"), new Date().toISOString());
 
+      // v0.1.223 — Alte Managed-Versionen aufräumen (keep current +
+      // KEEP_OLD_MANAGED_VERSIONS als Fallback). Wir machen das NACH
+      // dem .installed-Marker, damit ein Crash mittendrin den neuen
+      // Eintrag nicht versehentlich löschen kann.
+      try {
+        this.cleanupOldVersions(version);
+      } catch (err) {
+        // Cleanup ist nice-to-have, nicht kritisch.
+        console.warn(
+          "[ollama-updater] cleanup of old versions failed:",
+          err instanceof Error ? err.message : err,
+        );
+      }
+
       this.setState({ state: "ready", version, path: finalBinary });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
@@ -281,6 +302,70 @@ export class OllamaBinaryUpdater extends EventEmitter {
         /* ignore */
       }
     }
+  }
+
+  /**
+   * v0.1.223 — Alte Managed-Versionen aufräumen.
+   *
+   * Behält:
+   *   - `keepVersion` (typisch: was wir gerade installiert haben)
+   *   - bis zu KEEP_OLD_MANAGED_VERSIONS weitere höchste Versionen
+   *     (Rollback-Sicherheit, falls die neueste Probleme macht)
+   *
+   * Defensiv:
+   *   - Wir löschen nur Verzeichnisse, die mit `v` anfangen und einen
+   *     `.installed`-Marker tragen. Beides muss zutreffen.
+   *   - Das verhindert, dass wir versehentlich vom User dort
+   *     abgelegte Dateien (z. B. manuelle Backups) wegmachen.
+   *
+   * Returns: Array der gelöschten Versions-Tags (für Tests/Logging).
+   */
+  cleanupOldVersions(keepVersion?: string): string[] {
+    const root = managedRoot();
+    if (!existsSync(root)) return [];
+
+    let entries: string[];
+    try {
+      entries = readdirSync(root).filter((d) => d.startsWith("v"));
+    } catch {
+      return [];
+    }
+
+    // Nur Einträge mit `.installed`-Marker behandeln. Alles andere
+    // ignorieren wir (manuell angelegte Test-Dateien etc.).
+    const known = entries.filter((d) =>
+      existsSync(join(root, d, ".installed")),
+    );
+
+    // Höchste Versionen zuerst (Semver-Sortierung).
+    const sorted = [...known].sort((a, b) => compareVersions(b, a));
+
+    // Die ersten N + ggf. keepVersion behalten.
+    const keepSet = new Set<string>();
+    for (let i = 0; i < Math.min(sorted.length, KEEP_OLD_MANAGED_VERSIONS + 1); i++) {
+      const entry = sorted[i];
+      if (entry) keepSet.add(entry);
+    }
+    if (keepVersion) keepSet.add(keepVersion);
+
+    const removed: string[] = [];
+    for (const v of sorted) {
+      if (keepSet.has(v)) continue;
+      const dir = join(root, v);
+      try {
+        rmSync(dir, { recursive: true, force: true });
+        removed.push(v);
+        console.info(
+          `[ollama-updater] removed old managed version ${v} from ${dir}`,
+        );
+      } catch (err) {
+        console.warn(
+          `[ollama-updater] failed to remove ${v}:`,
+          err instanceof Error ? err.message : err,
+        );
+      }
+    }
+    return removed;
   }
 
   /**
