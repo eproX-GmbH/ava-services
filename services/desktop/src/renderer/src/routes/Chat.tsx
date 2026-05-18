@@ -280,11 +280,25 @@ export function Chat() {
           // Best-effort preview from the stored JSON content.
           const text = (m.content ?? "").trim();
           const preview = text.length > 80 ? text.slice(0, 77) + "…" : text;
+          // v0.1.229 — Status aus dem Tool-Result rekonstruieren.
+          // `runTool` im Orchestrator schreibt bei Erfolg `JSON.stringify(result)`
+          // und bei Fehler `JSON.stringify({error: "..."})`. Wenn wir
+          // einen `error`-Top-Level-Key sehen, war's ein Fehler — sonst
+          // success.
+          //
+          // Ohne diesen Check waren ursprünglich fehlgeschlagene Tool-
+          // Calls beim Reload als grüne Häkchen markiert, was den
+          // Verlauf in der UI verfälschte.
           const cur = out[idx]!;
           if (cur.activity) {
+            const isError = looksLikeToolError(text);
             out[idx] = {
               ...cur,
-              activity: { ...cur.activity, preview: preview || undefined },
+              activity: {
+                ...cur.activity,
+                preview: preview || undefined,
+                status: isError ? "error" : "done",
+              },
             };
           }
         }
@@ -2415,4 +2429,36 @@ function ChatErrorBanner({
       )}
     </div>
   );
+}
+
+/**
+ * v0.1.229 — Heuristik: war das Tool-Result ein Fehler?
+ *
+ * Konvention im Orchestrator (`runTool`):
+ *   - Erfolg → `JSON.stringify(toolReturnValue)`
+ *   - Fehler → `JSON.stringify({ error: "<message>" })`
+ *
+ * Wir parsen das tolerant. Wenn JSON valide ist und ein Top-Level
+ * `error`-Key existiert (String), behandeln wir es als Fehler. Das
+ * deckt auch den v0.1.227-Anti-Loop-Refuse-Fall ab, der dieselbe
+ * Shape nutzt.
+ *
+ * Fallback für ältere Transcripts ohne JSON-Shape: schauen ob der
+ * Text mit `error:` startet. Selten, aber sicher.
+ */
+function looksLikeToolError(content: string): boolean {
+  if (!content) return false;
+  const trimmed = content.trim();
+  if (trimmed.startsWith("{")) {
+    try {
+      const parsed = JSON.parse(trimmed) as Record<string, unknown>;
+      if (typeof parsed.error === "string" && parsed.error.length > 0) {
+        return true;
+      }
+    } catch {
+      /* fall through */
+    }
+  }
+  if (/^error:/i.test(trimmed)) return true;
+  return false;
 }
