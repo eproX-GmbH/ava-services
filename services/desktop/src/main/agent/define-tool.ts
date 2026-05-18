@@ -1,5 +1,6 @@
 import * as yup from "yup";
 import type { Tool, ToolContext } from "./types";
+import { normaliseToolArgs } from "./tool-arg-normalizer";
 
 // Helper for declaring a tool from a yup schema + JSON Schema.
 //
@@ -32,8 +33,22 @@ export function defineTool<TArgs, TResult>(
     description: spec.description,
     parameters: spec.parameters,
     parseArgs: (raw) => {
+      // v0.1.227 — Zentrale Argument-Normalisierung VOR der Validierung.
+      // Repariert die häufigsten LLM-Misformatierungen (JSON-Strings
+      // statt Objects, Single-Values statt Arrays, "true"/"yes" statt
+      // Boolean, etc.). Greift schweigend; bei Misserfolg fallen wir
+      // auf den Original-Wert zurück und yup wirft normale Fehler.
+      const { args: normalized, appliedFixes } = normaliseToolArgs(
+        raw,
+        spec.schema,
+      );
+      if (appliedFixes.length > 0) {
+        console.info(
+          `[tool:${spec.name}] arg-normalizer fixed: ${appliedFixes.join(", ")}`,
+        );
+      }
       try {
-        return spec.schema.validateSync(raw, {
+        return spec.schema.validateSync(normalized, {
           abortEarly: false,
           stripUnknown: true,
         });

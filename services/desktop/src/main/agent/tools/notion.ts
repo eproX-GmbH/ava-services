@@ -3,57 +3,12 @@ import { defineTool } from "../define-tool";
 import type { Tool } from "../types";
 import type { KnowledgeManager } from "../../knowledge/manager";
 
-// v0.1.226 — Defensive Coercion für LLM-Tool-Calls.
-//
-// Beobachtet bei mehreren Modell-Familien (Claude Sonnet 4, Gemma 4,
-// Mistral): das LLM packt strukturierte Tool-Argumente gelegentlich
-// in einen JSON-Stringify, statt sie als Objekt zu schicken. Yup
-// lehnt das mit „properties must be a object type, but the final
-// value was: '{…}'" ab.
-//
-// Tolerant-Parser: wenn das Argument als String reinkommt, versuchen
-// wir es zu parsen. Klappt es, weiterreichen als Objekt; klappt es
-// nicht, geben wir den String unverändert weiter — yup wirft dann
-// wieder seinen normalen "must be object"-Fehler, der dem Agent
-// klarer signalisiert, was schief lief.
-function coerceJsonObject() {
-  return yup
-    .object()
-    .nullable()
-    .transform((value, originalValue) => {
-      if (typeof originalValue === "string") {
-        const s = originalValue.trim();
-        if (s.length === 0) return null;
-        try {
-          const parsed = JSON.parse(s);
-          if (typeof parsed === "object" && parsed !== null) return parsed;
-        } catch {
-          /* fall through; yup wird gleich werfen */
-        }
-      }
-      return value;
-    });
-}
-
-/** Same idea für Array-Argumente (z. B. `sorts` in query_database). */
-function coerceJsonArray() {
-  return yup
-    .array()
-    .nullable()
-    .transform((value, originalValue) => {
-      if (typeof originalValue === "string") {
-        const s = originalValue.trim();
-        if (s.length === 0) return null;
-        try {
-          const parsed = JSON.parse(s);
-          if (Array.isArray(parsed)) return parsed;
-        } catch {
-          /* fall through */
-        }
-      }
-      return value;
-    });
-}
+// v0.1.227 — Die in v0.1.226 hier eingebauten lokalen
+// `coerceJsonObject` / `coerceJsonArray`-Helpers sind weg. Der zentrale
+// Tool-Arg-Normalizer (`tool-arg-normalizer.ts`) macht das jetzt für
+// ALLE Tools gleichzeitig. Wenn das Notion-Tool wieder einen
+// LLM-Misformat-Trick sieht, ist es nicht mehr ein Notion-spezifisches
+// Problem.
 
 // v0.1.225 — Notion-Chat-Tools (Phase 2).
 //
@@ -262,11 +217,8 @@ export function buildNotionTools(deps: {
     },
     schema: yup.object({
       databaseId: yup.string().required(),
-      // v0.1.226 — `filter` / `sorts` werden vom LLM gelegentlich als
-      // JSON-Strings statt als strukturierte Werte geschickt. Tolerant
-      // parsen + dann validieren.
-      filter: coerceJsonObject().optional(),
-      sorts: coerceJsonArray().optional(),
+      filter: yup.object().optional(),
+      sorts: yup.array().optional(),
       pageSize: yup.number().integer().min(1).max(100).optional(),
     }),
     run: async (args) => {
@@ -331,9 +283,7 @@ export function buildNotionTools(deps: {
     schema: yup.object({
       parentId: yup.string().required(),
       title: yup.string().optional(),
-      // v0.1.226 — siehe coerceJsonObject(): LLM kann das auch als
-      // JSON-String schicken; wir parsen das tolerant.
-      properties: coerceJsonObject().optional(),
+      properties: yup.object().optional(),
       content: yup.string().optional(),
     }),
     run: async (args) => {
@@ -373,8 +323,7 @@ export function buildNotionTools(deps: {
     },
     schema: yup.object({
       pageId: yup.string().required(),
-      // v0.1.226 — tolerantes Object-Parsing (siehe coerceJsonObject).
-      properties: coerceJsonObject().optional(),
+      properties: yup.object().optional(),
       appendContent: yup.string().optional(),
     }),
     run: async (args) => {

@@ -492,6 +492,16 @@ export class AgentOrchestrator extends EventEmitter {
   }): Promise<void> {
     const { requestId, conversation, provider, signal, slashNudgedTool } = args;
 
+    // v0.1.227 — Tracking pro Turn für den Anti-Loop-Wächter unten:
+    // wie oft kam dieselbe (Tool-Name + serialisierte Args)-Kombi vor,
+    // und wie oft davon endete sie mit Fehler. Reset bei jedem
+    // neuen runLoop-Aufruf, damit Wiederholungen zwischen Turns
+    // erlaubt sind, aber innerhalb eines Turns nicht entgleiten.
+    const toolCallSignatures = new Map<
+      string,
+      { count: number; failures: number }
+    >();
+
     try {
       for (let step = 0; step < STEP_BUDGET; step++) {
         // Build the message log we'll send. The system prompt is rebuilt
@@ -610,12 +620,59 @@ export class AgentOrchestrator extends EventEmitter {
             conversationId: conversation.id,
             toolCall: call,
           });
+
+          // v0.1.227 — Anti-Loop-Wächter. Wenn das LLM denselben
+          // Tool-Call mit denselben Args dreimal hintereinander
+          // schickt UND mindestens zweimal davon mit Validation- oder
+          // Tool-Fehler endete, brechen wir hart ab. Verhindert den
+          // klassischen „LLM dreht im Kreis, weil es seinen Misformat
+          // nicht erkennt"-Fall, der das Step-Budget aufressen würde.
+          const callSignature = `${call.name}::${stableStringify(call.args)}`;
+          const sigState = toolCallSignatures.get(callSignature) ?? {
+            count: 0,
+            failures: 0,
+          };
+          sigState.count += 1;
+          if (sigState.count >= 3 && sigState.failures >= 2) {
+            const refusal = {
+              ok: false,
+              content: JSON.stringify({
+                error:
+                  `Tool '${call.name}' wurde dreimal mit identischen Argumenten ` +
+                  `aufgerufen und ist mindestens zweimal gescheitert. Ich breche ` +
+                  `den Versuch ab. Bitte ändere die Argumente oder frag den Nutzer ` +
+                  `um Hilfe statt es erneut mit derselben Variante zu versuchen.`,
+              }),
+              preview: "anti-loop: 3× identical failing tool call",
+            };
+            this.appendMessage(conversation, {
+              id: randomUUID(),
+              role: "tool",
+              content: refusal.content,
+              toolCallId: call.id,
+              createdAt: Date.now(),
+            });
+            this.emitFrame({
+              kind: "tool-result",
+              requestId,
+              conversationId: conversation.id,
+              toolCallId: call.id,
+              ok: false,
+              preview: refusal.preview,
+            });
+            toolCallSignatures.set(callSignature, sigState);
+            continue;
+          }
+
           const result = await this.runTool(
             call,
             signal,
             requestId,
             conversation.id,
           );
+          if (!result.ok) sigState.failures += 1;
+          toolCallSignatures.set(callSignature, sigState);
+
           this.appendMessage(conversation, {
             id: randomUUID(),
             role: "tool",
@@ -840,4 +897,26 @@ function humaniseRunnerError(raw: string): string {
     return "The configured model isn't installed. Open the first-run wizard or run `ollama pull <model>`.";
   }
   return raw;
+}
+
+/**
+ * v0.1.227 — Deterministischer JSON-Stringify für den Anti-Loop-
+ * Wächter. Object-Keys werden sortiert, damit `{a:1, b:2}` und
+ * `{b:2, a:1}` denselben Hash haben. Sonst würde das LLM mit
+ * neu-sortierten Argumenten den Wächter umgehen.
+ */
+function stableStringify(v: unknown): string {
+  if (v === null || typeof v !== "object") return JSON.stringify(v);
+  if (Array.isArray(v)) {
+    return "[" + v.map(stableStringify).join(",") + "]";
+  }
+  const obj = v as Record<string, unknown>;
+  const keys = Object.keys(obj).sort();
+  return (
+    "{" +
+    keys
+      .map((k) => JSON.stringify(k) + ":" + stableStringify(obj[k]))
+      .join(",") +
+    "}"
+  );
 }
