@@ -6202,3 +6202,89 @@ a.heartbeat-decision__company:hover {
   gap: 0.3rem;
   margin-top: 0.25rem;
 }
+
+/* ----- v0.1.222 — Ollama-Update-Banner (unten links) ---------------------
+ *
+ * Optisch parallel zur AppUpdate-Bubble (UpdateBanner.tsx, unten rechts).
+ * Wir positionieren das hier links damit die beiden sich auf einem
+ * frisch installierten Rechner nicht stapeln, wenn beides gleichzeitig
+ * verfügbar ist.
+ */
+
+.ollama-update-banner {
+  position: fixed;
+  left: 1rem;
+  bottom: 1rem;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.6rem 0.85rem;
+  background: rgba(20, 22, 26, 0.96);
+  color: #f8fafc;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  font-size: 12.5px;
+  max-width: 360px;
+}
+
+.ollama-update-banner__icon {
+  font-size: 18px;
+  line-height: 1;
+  flex-shrink: 0;
+  opacity: 0.85;
+}
+
+.ollama-update-banner__body {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.ollama-update-banner__title {
+  font-weight: 600;
+  font-size: 13px;
+}
+
+.ollama-update-banner__sub {
+  font-size: 11.5px;
+  opacity: 0.7;
+  font-variant-numeric: tabular-nums;
+}
+
+.ollama-update-banner__actions {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  margin-left: auto;
+}
+
+.ollama-update-banner__cta {
+  padding: 0.3rem 0.7rem;
+  font-size: 11.5px;
+  background: rgba(255, 255, 255, 0.1);
+  color: inherit;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 5px;
+  cursor: pointer;
+}
+
+.ollama-update-banner__cta:hover {
+  background: rgba(255, 255, 255, 0.16);
+}
+
+.ollama-update-banner__dismiss {
+  background: transparent;
+  color: inherit;
+  border: 0;
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 0.3rem;
+  opacity: 0.55;
+}
+
+.ollama-update-banner__dismiss:hover {
+  opacity: 1;
+}

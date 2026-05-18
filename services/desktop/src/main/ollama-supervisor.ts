@@ -295,6 +295,43 @@ export class OllamaSupervisor extends EventEmitter {
   }
 
   /**
+   * v0.1.222 — Fragt den laufenden Ollama-Server nach seiner Version
+   * (`GET /api/version` → `{ version: "0.24.0" }`). Wird vom UI für
+   * die Anzeige "Installiert: vX.Y.Z" und den Boot-Hint "Neuere
+   * Version verfügbar" verwendet.
+   *
+   * Returns `null` wenn:
+   *   - Supervisor ist nicht ready (kein laufender Server)
+   *   - Endpoint timeoutet (2s) oder antwortet komisch
+   *
+   * Wir prefixen die Antwort mit `v`, damit die Vergleichslogik im
+   * Updater (die mit dem `v`-Prefix arbeitet) konsistent ist.
+   */
+  async getInstalledVersion(): Promise<string | null> {
+    if (this.state !== "ready") return null;
+    try {
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), 2_000);
+      try {
+        const res = await fetch(`${this.baseUrl()}/api/version`, {
+          signal: ctrl.signal,
+        });
+        if (!res.ok) return null;
+        const body = (await res.json()) as { version?: unknown };
+        if (typeof body.version !== "string") return null;
+        const tag = body.version.startsWith("v")
+          ? body.version
+          : `v${body.version}`;
+        return tag;
+      } finally {
+        clearTimeout(timer);
+      }
+    } catch {
+      return null;
+    }
+  }
+
+  /**
    * One-shot health probe with a short timeout — used to detect a pre-running
    * Ollama (e.g. dev-mode Docker container) before we try to spawn our own.
    * Distinct from {@link waitUntilReady} which polls during boot.

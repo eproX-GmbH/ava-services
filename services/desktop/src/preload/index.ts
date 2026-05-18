@@ -278,6 +278,11 @@ const api = {
      *  intern erneut auf. */
     getResolvedTargetVersion: (): Promise<string | null> =>
       ipcRenderer.invoke("ollama:getResolvedTargetVersion"),
+    /** v0.1.222 — Welche Ollama-Version läuft gerade?
+     *  Frischer GET /api/version-Aufruf gegen den laufenden Server.
+     *  Null wenn der Supervisor nicht ready ist. */
+    getInstalledVersion: (): Promise<string | null> =>
+      ipcRenderer.invoke("ollama:getInstalledVersion"),
     /** Updater-Status live mitlesen (Download-Progress, Errors). */
     onUpdaterState: (
       cb: (s: {

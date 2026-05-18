@@ -16,6 +16,7 @@ import { SignIn } from "./routes/SignIn";
 import { FirstRunWizard } from "./routes/FirstRunWizard";
 import { DownloadDock } from "./components/DownloadDock";
 import { UpdateBanner } from "./components/UpdateBanner";
+import { OllamaUpdateBanner } from "./components/OllamaUpdateBanner";
 import type { LlmProviderKind } from "../../shared/types";
 
 interface MemoryProbe {
@@ -219,6 +220,7 @@ export function App({ children }: PropsWithChildren) {
       )}
       {children}
       <DownloadDock />
+      <OllamaUpdateBanner />
     </>
   );
 }

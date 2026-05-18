@@ -2606,6 +2606,10 @@ app.whenReady().then(async () => {
   ipcMain.handle("ollama:getResolvedTargetVersion", () =>
     ollamaUpdater.peekResolvedTargetVersion(),
   );
+  // v0.1.222 — Welche Ollama-Version läuft gerade?
+  ipcMain.handle("ollama:getInstalledVersion", () =>
+    ollama.getInstalledVersion(),
+  );
 
   // Postgres supervisor IPC (8.v1.0). Renderer reads getStatus on
   // mount and subscribes to `postgres-status:changed`. No restart /
