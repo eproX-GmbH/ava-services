@@ -1710,10 +1710,15 @@ export function ProviderSection() {
                   : k === "anthropic"
                     ? anthropicHasAnyCredential
                     : hasKey[k];
+              // v0.1.216 — Bei Anthropic ohne Credential heißt das
+              // jetzt "kein Abo verknüpft" statt "kein Schlüssel",
+              // weil die API-Key-Anmeldung eingestellt wurde.
+              const missingSuffix =
+                k === "anthropic" ? " (kein Abo verknüpft)" : " (kein Schlüssel)";
               return (
                 <option key={k} value={k} disabled={!hasCred}>
                   {PROVIDER_LABEL[k]}
-                  {!hasCred ? " (kein Schlüssel)" : ""}
+                  {!hasCred ? missingSuffix : ""}
                 </option>
               );
             })}
