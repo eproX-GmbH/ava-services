@@ -36,10 +36,31 @@ import { pipeline } from "node:stream/promises";
 import { spawn } from "node:child_process";
 import { app } from "electron";
 
-// Letzte bekannte stabile Ollama-Version, die qwen3 + qwen3.5 + qwen3.6
-// vollständig unterstützt. Anpassen, wenn wir gezielter pinnen wollen;
-// `getLatestVersion()` unten gleicht das beim Update gegen GitHub ab.
-export const PINNED_OLLAMA_VERSION = "v0.24.0";
+// v0.1.221 — Floor-Version statt fixer Pin.
+//
+// Bedeutet: AVA installiert beim Update IMMER mindestens diese Version,
+// kann aber auch eine NEUERE installieren, wenn Upstream eine
+// veröffentlicht hat. Beim Klick auf "Aktualisieren" fragt der
+// Updater GitHub `/repos/ollama/ollama/releases/latest` ab und nimmt
+// `max(floor, latest)`. So bekommen Nutzer automatisch neue Ollama-
+// Versionen, sobald Upstream sie released — ohne dass wir AVA-seitig
+// für jeden Bump ein Release machen müssen.
+//
+// Wozu der Floor: Schutz gegen seltsame Antworten von GitHub (z. B. ein
+// zurückgezogenes Release das niedriger ist als unsere bekannte
+// Mindest-Kompatibilität). qwen3 / qwen3.5 / qwen3.6 brauchen ≥ v0.24.0;
+// alles darunter ist für uns funktional unbrauchbar.
+//
+// Wann den Floor bumpen: nur wenn wir wissen, dass eine Version unter X
+// definitiv nicht mehr funktioniert (z. B. Ollama macht erneut einen
+// Breaking Change wie damals v0.3→v0.5). Routine-Bumps sind nicht
+// nötig — der Latest-Lookup macht das automatisch.
+export const OLLAMA_FLOOR_VERSION = "v0.24.0";
+
+// 1-Stunden-Cache für den GitHub-Latest-Lookup. Wenn der User
+// klick-happy ist, hämmern wir nicht die API. Reset bei App-Restart.
+const LATEST_LOOKUP_CACHE_TTL_MS = 60 * 60 * 1000;
+let cachedLatestTag: { tag: string; fetchedAt: number } | null = null;
 
 interface PlatformTarget {
   assetName: string;
@@ -86,8 +107,15 @@ function targetForHost(): PlatformTarget | null {
 export type OllamaUpdaterState =
   | { state: "idle" }
   | { state: "checking" }
-  | { state: "downloading"; percent: number; bytesPerSec: number }
-  | { state: "installing" }
+  | {
+      state: "downloading";
+      percent: number;
+      bytesPerSec: number;
+      /** v0.1.221 — Welche Version aktuell heruntergeladen wird. UI
+       *  zeigt das mit, damit der User Bescheid weiß. */
+      targetVersion?: string;
+    }
+  | { state: "installing"; targetVersion?: string }
   | { state: "ready"; version: string; path: string }
   | { state: "error"; message: string };
 
@@ -145,13 +173,21 @@ export class OllamaBinaryUpdater extends EventEmitter {
   }
 
   /**
-   * Lädt die gepinnte Ollama-Version herunter und legt sie unter
-   * `<userData>/ollama-managed/<version>/` ab. Bestehende Managed-
-   * Versionen werden NICHT gelöscht — das macht ein späterer Cleanup-
-   * Pfad. Auf Erfolg: state="ready" mit Pfad + Version. Auf Fehler:
-   * state="error".
+   * Lädt eine Ollama-Binary herunter und legt sie unter
+   * `<userData>/ollama-managed/<version>/` ab.
+   *
+   * v0.1.221 — Version-Resolution-Strategie:
+   *   - Caller gibt nichts an → wir fragen GitHub nach dem neuesten
+   *     stable Release. Floor-Version dient als Schutz: wir nehmen
+   *     `max(floor, latest)`. Bei GitHub-Down fallen wir auf den
+   *     Floor zurück.
+   *   - Caller gibt explizite Version an → wir nehmen die. Power-
+   *     User-Pfad (Settings „bestimmte Version installieren").
+   *
+   * Bestehende Managed-Versionen werden NICHT gelöscht — Disk-
+   * Aufräumung als späterer Featuretopf.
    */
-  async update(version: string = PINNED_OLLAMA_VERSION): Promise<void> {
+  async update(explicitVersion?: string): Promise<void> {
     const target = targetForHost();
     if (!target) {
       this.setState({
@@ -164,6 +200,25 @@ export class OllamaBinaryUpdater extends EventEmitter {
     }
 
     this.setState({ state: "checking" });
+
+    let version: string;
+    if (explicitVersion) {
+      version = explicitVersion;
+    } else {
+      try {
+        version = await this.resolveTargetVersion();
+      } catch (err) {
+        // GitHub nicht erreichbar → degradieren auf Floor. User
+        // bekommt wenigstens eine funktionierende Version, AVA
+        // läuft. Fehler wird geloggt, aber nicht eskaliert.
+        console.warn(
+          "[ollama-updater] latest-version-lookup failed, falling back to floor:",
+          err instanceof Error ? err.message : err,
+        );
+        version = OLLAMA_FLOOR_VERSION;
+      }
+    }
+
     const versionDir = join(managedRoot(), version);
     const finalBinary = join(versionDir, target.exeName);
 
@@ -181,9 +236,14 @@ export class OllamaBinaryUpdater extends EventEmitter {
     const url = `https://github.com/ollama/ollama/releases/download/${version}/${target.assetName}`;
 
     try {
-      this.setState({ state: "downloading", percent: 0, bytesPerSec: 0 });
-      await this.downloadWithProgress(url, archivePath);
-      this.setState({ state: "installing" });
+      this.setState({
+        state: "downloading",
+        percent: 0,
+        bytesPerSec: 0,
+        targetVersion: version,
+      });
+      await this.downloadWithProgress(url, archivePath, version);
+      this.setState({ state: "installing", targetVersion: version });
       await target.extract(archivePath, versionDir);
       // Inner-Binary an die Standard-Position verschieben + +x setzen.
       const innerAbs = join(versionDir, target.innerBinaryPath);
@@ -223,7 +283,39 @@ export class OllamaBinaryUpdater extends EventEmitter {
     }
   }
 
-  private async downloadWithProgress(url: string, dest: string): Promise<void> {
+  /**
+   * v0.1.221 — Resolved-Version-Strategie: GitHub fragen + Floor
+   * anwenden. Mit 1-Stunden-Cache, damit GitHub nicht bei jedem Klick
+   * angerufen wird.
+   */
+  private async resolveTargetVersion(): Promise<string> {
+    const latest = await fetchLatestOllamaTag();
+    // semver-ähnliches Vergleich: höhere von beiden gewinnt.
+    return compareVersions(latest, OLLAMA_FLOOR_VERSION) >= 0
+      ? latest
+      : OLLAMA_FLOOR_VERSION;
+  }
+
+  /**
+   * Gibt — falls bekannt — die Version zurück, die ein Update gerade
+   * installieren würde. Nutzt den Cache; wenn der Cache leer ist und
+   * GitHub nicht erreichbar war, gibt `null` zurück. Nur zur UI-
+   * Anzeige gedacht (z. B. Settings-Tab: „Neueste verfügbare Version:
+   * v0.27.1"). Wirft NIE.
+   */
+  async peekResolvedTargetVersion(): Promise<string | null> {
+    try {
+      return await this.resolveTargetVersion();
+    } catch {
+      return null;
+    }
+  }
+
+  private async downloadWithProgress(
+    url: string,
+    dest: string,
+    targetVersion: string,
+  ): Promise<void> {
     const res = await fetch(url, { redirect: "follow" });
     if (!res.ok) {
       throw new Error(`Download fehlgeschlagen: HTTP ${res.status} bei ${url}`);
@@ -249,7 +341,12 @@ export class OllamaBinaryUpdater extends EventEmitter {
         const elapsedSec = Math.max(1, (now - startTime) / 1000);
         const bytesPerSec = received / elapsedSec;
         const percent = total > 0 ? Math.round((received / total) * 100) : 0;
-        this.setState({ state: "downloading", percent, bytesPerSec });
+        this.setState({
+          state: "downloading",
+          percent,
+          bytesPerSec,
+          targetVersion,
+        });
         lastEmit = now;
       }
     });
@@ -301,14 +398,83 @@ function runCmd(cmd: string, args: string[]): Promise<void> {
   });
 }
 
-// Lint-only Re-Export — gibt dem Renderer/Settings-Tab Zugriff auf den
-// pinned-Wert, ohne dass er den File importieren muss.
-export function pinnedOllamaVersion(): string {
-  return PINNED_OLLAMA_VERSION;
+/**
+ * v0.1.221 — Holt den Tag-Namen des aktuellsten stable Releases von
+ * GitHub. `/releases/latest` liefert nur Non-Draft, Non-Prerelease, also
+ * keine zusätzliche Filterung nötig.
+ *
+ * Mit 1-Stunden-Cache, damit zufällige Klick-Bursts nicht das GitHub-
+ * Anonymous-Rate-Limit (60 req/h) anknabbern.
+ */
+async function fetchLatestOllamaTag(): Promise<string> {
+  const now = Date.now();
+  if (
+    cachedLatestTag &&
+    now - cachedLatestTag.fetchedAt < LATEST_LOOKUP_CACHE_TTL_MS
+  ) {
+    return cachedLatestTag.tag;
+  }
+
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 8_000);
+  try {
+    const res = await fetch(
+      "https://api.github.com/repos/ollama/ollama/releases/latest",
+      {
+        headers: {
+          accept: "application/vnd.github+json",
+          "x-github-api-version": "2022-11-28",
+        },
+        signal: ctrl.signal,
+      },
+    );
+    if (!res.ok) {
+      throw new Error(`GitHub responded HTTP ${res.status}`);
+    }
+    const body = (await res.json()) as { tag_name?: unknown };
+    const tag = typeof body.tag_name === "string" ? body.tag_name : null;
+    if (!tag || !/^v\d/.test(tag)) {
+      throw new Error(`Unexpected tag_name in GitHub response: ${tag}`);
+    }
+    cachedLatestTag = { tag, fetchedAt: now };
+    return tag;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
+/**
+ * Sehr leichter Semver-Vergleich für die Form `vMAJOR.MINOR.PATCH`. Gibt
+ * 1 zurück wenn `a > b`, -1 wenn `a < b`, 0 wenn gleich. Pre-release-Tags
+ * werden ignoriert (sollten bei `releases/latest` eh nie kommen).
+ */
+function compareVersions(a: string, b: string): number {
+  const parse = (v: string): number[] =>
+    v
+      .replace(/^v/, "")
+      .split("-")[0]!
+      .split(".")
+      .map((n) => parseInt(n, 10))
+      .map((n) => (Number.isFinite(n) ? n : 0));
+  const aa = parse(a);
+  const bb = parse(b);
+  for (let i = 0; i < Math.max(aa.length, bb.length); i++) {
+    const x = aa[i] ?? 0;
+    const y = bb[i] ?? 0;
+    if (x > y) return 1;
+    if (x < y) return -1;
+  }
+  return 0;
+}
+
+// Backward-compat-Alias. Wir hatten `PINNED_OLLAMA_VERSION` in v0.1.220
+// exportiert und im main/index.ts via Re-Export aus diesem Modul geholt.
+// v0.1.221 verschiebt die Semantik: das ist jetzt der FLOOR. Der alte
+// Name bleibt erhalten damit der Import-Pfad nicht bricht.
+export const PINNED_OLLAMA_VERSION = OLLAMA_FLOOR_VERSION;
+
 // Re-export für unit tests + die Supervisor-Patch-Stelle.
-export { managedRoot, targetForHost };
+export { managedRoot, targetForHost, fetchLatestOllamaTag, compareVersions };
 
 // Avoid TS unused-warning when `readFileSync` is imported only for symmetry.
 void readFileSync;

@@ -266,9 +266,18 @@ const api = {
      *  Bundled-Variante genutzt wird. */
     getManagedVersion: (): Promise<string | null> =>
       ipcRenderer.invoke("ollama:getManagedVersion"),
-    /** Welche Ollama-Version AVA als Ziel des Self-Updaters pinnt. */
+    /** Welche Ollama-Version AVA als FLOOR (Mindestversion) führt.
+     *  Wird verwendet, wenn GitHub nicht erreichbar ist; sonst liefert
+     *  `getResolvedTargetVersion` den höheren Wert aus dem Upstream-
+     *  Latest-Lookup. */
     getPinnedVersion: (): Promise<string> =>
       ipcRenderer.invoke("ollama:getPinnedVersion"),
+    /** v0.1.221 — Welche Version würde das Update gerade installieren?
+     *  Liefert `max(floor, upstream-latest)`. Null bei GitHub-Down ohne
+     *  Cache. Nur zur UI-Anzeige; Update selbst löst die Version
+     *  intern erneut auf. */
+    getResolvedTargetVersion: (): Promise<string | null> =>
+      ipcRenderer.invoke("ollama:getResolvedTargetVersion"),
     /** Updater-Status live mitlesen (Download-Progress, Errors). */
     onUpdaterState: (
       cb: (s: {

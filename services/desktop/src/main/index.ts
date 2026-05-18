@@ -2591,7 +2591,21 @@ app.whenReady().then(async () => {
   ipcMain.handle("ollama:getManagedVersion", () =>
     ollamaUpdater.getManagedVersion(),
   );
+  // v0.1.221 — was "getPinnedVersion": liefert jetzt die FLOOR-Version,
+  // also die Mindest-Kompatibilität. Floor wird nur installiert, wenn
+  // GitHub für das aktuelle Latest nicht erreichbar ist oder Upstream
+  // eine niedrigere Version als Latest meldet (Schutz vor zurückgezogenen
+  // Releases). Name bleibt aus Backward-Compat erhalten; semantisch ist
+  // es der Floor.
   ipcMain.handle("ollama:getPinnedVersion", () => PINNED_OLLAMA_VERSION);
+  // v0.1.221 — Welche Ollama-Version würde das Update gerade
+  // installieren? Antwortet mit dem Resolved-Wert (max(floor, latest)
+  // aus dem GitHub-Cache). Null wenn der GitHub-Lookup noch nicht
+  // gemacht wurde oder fehlschlug. Settings-UI nutzt das zur Anzeige
+  // „Neueste verfügbare: v0.27.1".
+  ipcMain.handle("ollama:getResolvedTargetVersion", () =>
+    ollamaUpdater.peekResolvedTargetVersion(),
+  );
 
   // Postgres supervisor IPC (8.v1.0). Renderer reads getStatus on
   // mount and subscribes to `postgres-status:changed`. No restart /

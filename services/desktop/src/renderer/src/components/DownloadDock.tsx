@@ -17,6 +17,10 @@ interface UpdaterFrame {
   percent?: number;
   bytesPerSec?: number;
   message?: string;
+  /** v0.1.221 — Version, die gerade heruntergeladen / installiert wird. */
+  targetVersion?: string;
+  /** v0.1.221 — Version, die erfolgreich installiert wurde (state=ready). */
+  version?: string;
 }
 
 // Download Dock (Phase 8.k10c).
@@ -510,28 +514,41 @@ function OllamaUpdateAffordance({
   if (updater.state === "downloading") {
     const pct = updater.percent ?? 0;
     const speed = updater.bytesPerSec ?? 0;
+    const versionLabel = updater.targetVersion
+      ? ` ${updater.targetVersion}`
+      : "";
     return (
       <div className="dl-dock__updater">
         <span className="muted small">
-          Lade Ollama herunter… {pct}%
+          Lade Ollama{versionLabel} herunter… {pct}%
           {speed > 0 ? ` · ${formatBytes(speed)}/s` : ""}
         </span>
       </div>
     );
   }
-  if (updater.state === "checking" || updater.state === "installing") {
+  if (updater.state === "checking") {
     return (
       <span className="muted small">
-        {updater.state === "checking"
-          ? "Prüfe Update…"
-          : "Installiere neue Version…"}
+        Prüfe neueste Ollama-Version…
+      </span>
+    );
+  }
+  if (updater.state === "installing") {
+    const versionLabel = updater.targetVersion
+      ? ` ${updater.targetVersion}`
+      : "";
+    return (
+      <span className="muted small">
+        Installiere Ollama{versionLabel}…
       </span>
     );
   }
   if (updater.state === "ready") {
+    const versionLabel = updater.version ? ` ${updater.version}` : "";
     return (
       <span className="muted small">
-        Ollama aktualisiert. Versuche den Download in Kürze erneut…
+        Ollama{versionLabel} installiert. Versuche den Download in Kürze
+        erneut…
       </span>
     );
   }
