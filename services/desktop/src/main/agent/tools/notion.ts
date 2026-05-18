@@ -3,6 +3,58 @@ import { defineTool } from "../define-tool";
 import type { Tool } from "../types";
 import type { KnowledgeManager } from "../../knowledge/manager";
 
+// v0.1.226 — Defensive Coercion für LLM-Tool-Calls.
+//
+// Beobachtet bei mehreren Modell-Familien (Claude Sonnet 4, Gemma 4,
+// Mistral): das LLM packt strukturierte Tool-Argumente gelegentlich
+// in einen JSON-Stringify, statt sie als Objekt zu schicken. Yup
+// lehnt das mit „properties must be a object type, but the final
+// value was: '{…}'" ab.
+//
+// Tolerant-Parser: wenn das Argument als String reinkommt, versuchen
+// wir es zu parsen. Klappt es, weiterreichen als Objekt; klappt es
+// nicht, geben wir den String unverändert weiter — yup wirft dann
+// wieder seinen normalen "must be object"-Fehler, der dem Agent
+// klarer signalisiert, was schief lief.
+function coerceJsonObject() {
+  return yup
+    .object()
+    .nullable()
+    .transform((value, originalValue) => {
+      if (typeof originalValue === "string") {
+        const s = originalValue.trim();
+        if (s.length === 0) return null;
+        try {
+          const parsed = JSON.parse(s);
+          if (typeof parsed === "object" && parsed !== null) return parsed;
+        } catch {
+          /* fall through; yup wird gleich werfen */
+        }
+      }
+      return value;
+    });
+}
+
+/** Same idea für Array-Argumente (z. B. `sorts` in query_database). */
+function coerceJsonArray() {
+  return yup
+    .array()
+    .nullable()
+    .transform((value, originalValue) => {
+      if (typeof originalValue === "string") {
+        const s = originalValue.trim();
+        if (s.length === 0) return null;
+        try {
+          const parsed = JSON.parse(s);
+          if (Array.isArray(parsed)) return parsed;
+        } catch {
+          /* fall through */
+        }
+      }
+      return value;
+    });
+}
+
 // v0.1.225 — Notion-Chat-Tools (Phase 2).
 //
 // 8 Tools — der Connect-Flow ist bewusst zweistufig (`notion_connect_start`
@@ -210,8 +262,11 @@ export function buildNotionTools(deps: {
     },
     schema: yup.object({
       databaseId: yup.string().required(),
-      filter: yup.mixed().optional(),
-      sorts: yup.array().optional(),
+      // v0.1.226 — `filter` / `sorts` werden vom LLM gelegentlich als
+      // JSON-Strings statt als strukturierte Werte geschickt. Tolerant
+      // parsen + dann validieren.
+      filter: coerceJsonObject().optional(),
+      sorts: coerceJsonArray().optional(),
       pageSize: yup.number().integer().min(1).max(100).optional(),
     }),
     run: async (args) => {
@@ -250,7 +305,7 @@ export function buildNotionTools(deps: {
   const createPage = defineTool({
     name: "notion_create_page",
     description:
-      "Create a new Notion page. If the parent is a database, properties must match the database schema (call notion_introspect_database first to learn the property names + types). If the parent is a page, only `title` and `content` apply. `content` accepts Markdown (paragraphs, headings #/##/###, bullet/numbered lists, [ ]/[x] to-dos, > quotes, ```code blocks```, ---). Returns the created page ID + URL.",
+      "Create a new Notion page. If the parent is a database, properties must match the database schema (call notion_introspect_database first to learn the property names + types). If the parent is a page, only `title` and `content` apply. `content` accepts Markdown (paragraphs, headings #/##/###, bullet/numbered lists, [ ]/[x] to-dos, > quotes, ```code blocks```, ---). Returns the created page ID + URL.\n\nProperty values: pass FLAT values keyed by property name. Examples: { 'Name': 'Eclat GmbH', 'Status': 'Lead', 'Tags': ['b2b'], 'Erstkontakt': '2026-05-18' }. DO NOT wrap in Notion-API objects. DO NOT JSON.stringify the whole properties object.",
     parameters: {
       type: "object",
       properties: {
@@ -276,7 +331,9 @@ export function buildNotionTools(deps: {
     schema: yup.object({
       parentId: yup.string().required(),
       title: yup.string().optional(),
-      properties: yup.object().optional(),
+      // v0.1.226 — siehe coerceJsonObject(): LLM kann das auch als
+      // JSON-String schicken; wir parsen das tolerant.
+      properties: coerceJsonObject().optional(),
       content: yup.string().optional(),
     }),
     run: async (args) => {
@@ -296,7 +353,7 @@ export function buildNotionTools(deps: {
   const updatePage = defineTool({
     name: "notion_update_page",
     description:
-      "Update an existing Notion page: patch property values and/or append Markdown content to the bottom. Property names must match the actual database schema (use notion_introspect_database if unsure). `replaceContent` is not yet supported in this version.",
+      "Update an existing Notion page: patch property values and/or append Markdown content to the bottom. Property names must match the actual database schema (use notion_introspect_database if unsure). `replaceContent` is not yet supported in this version.\n\nProperty values: pass FLAT values keyed by property name. Examples: { 'Status': 'Aktiv', 'Hotness': 'Cold', 'Follow-Up': '2026-07-16', 'Tags': ['lead', 'b2b'], 'Score': 42, 'Active': true }. DO NOT wrap in Notion-API objects like { 'Status': { 'status': { 'name': 'Aktiv' } } } — AVA does that mapping internally. DO NOT JSON.stringify the whole properties object — pass it as a real JSON object.",
     parameters: {
       type: "object",
       properties: {
@@ -316,7 +373,8 @@ export function buildNotionTools(deps: {
     },
     schema: yup.object({
       pageId: yup.string().required(),
-      properties: yup.object().optional(),
+      // v0.1.226 — tolerantes Object-Parsing (siehe coerceJsonObject).
+      properties: coerceJsonObject().optional(),
       appendContent: yup.string().optional(),
     }),
     run: async (args) => {

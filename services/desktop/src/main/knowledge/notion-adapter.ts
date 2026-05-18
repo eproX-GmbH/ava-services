@@ -589,6 +589,23 @@ function propertiesToApi(
 }
 
 function valueToApi(value: unknown, def: NotionPropertyDef): unknown {
+  // v0.1.226 — LLMs schicken Property-Werte in zwei Formen:
+  //   (a) flach: "Disqualifiziert" / 42 / true / "2026-07-16"
+  //   (b) Notion-Raw: { status: { name: "Disqualifiziert" } } / { number: 42 }
+  //
+  // (b) hat das Modell vermutlich aus der Notion-API-Doku gelernt und
+  // bei einigen Modell-Familien ist es die Default-Wahl. Wir
+  // akzeptieren beides — wenn der Wert schon ein Objekt mit dem
+  // Typ-Schlüssel ist, reichen wir ihn unverändert weiter.
+  if (
+    value &&
+    typeof value === "object" &&
+    !Array.isArray(value) &&
+    def.type in (value as Record<string, unknown>)
+  ) {
+    return value;
+  }
+
   switch (def.type) {
     case "title":
       return {
@@ -619,6 +636,7 @@ function valueToApi(value: unknown, def: NotionPropertyDef): unknown {
         })),
       };
     case "date":
+      if (value === null || value === undefined) return { date: null };
       if (typeof value === "string") return { date: { start: value } };
       if (
         value &&
