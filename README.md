@@ -152,6 +152,24 @@ pnpm package:mac      # produziert Installationspaket in dist/
 
 Detaillierte Release- + Signatur-Schritte: `.github/workflows/desktop-release.yml`.
 
+## Vendor-Sync für `@ava/ai-provider`
+
+Die vier Producer-Submodule tragen jeweils eine eingebaute Kopie von
+`@ava/ai-provider` unter `<producer>/vendor/ai-provider/`. Sobald du
+am Workspace-Paket etwas änderst, müssen die vendorierten Kopien
+nachgezogen werden — sonst schlägt der CI-Drift-Check beim nächsten
+Release-Build fehl.
+
+```bash
+pnpm vendor:sync          # baut canonical + rsync't in jedes Producer-
+                          # Submodul + committet + pushed dort
+pnpm vendor:check         # nur prüfen, nichts ändern (read-only)
+```
+
+Ein Pre-Push-Hook (eingecheckt unter `.githooks/pre-push`,
+aktiviert durch `pnpm install` via `postinstall`) blockt Pushes
+mit Drift mit klarer Anweisung.
+
 ## Lizenz
 
 Internes Projekt der eproX GmbH. Externe Beiträge derzeit nicht vorgesehen.

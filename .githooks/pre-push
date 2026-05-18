@@ -1,0 +1,40 @@
+#!/usr/bin/env bash
+#
+# v0.1.213 — Pre-Push-Hook: blockt Pushes, wenn die vendorierten
+# `@ava/ai-provider`-Kopien in den Producer-Submodulen vom Workspace-
+# Paket abweichen. Der CI-Drift-Check würde dasselbe Resultat liefern,
+# aber erst nach Tag-Push + ~2 Minuten Build-Wartezeit. Lokal sparen
+# wir den Roundtrip.
+#
+# Aktiviert über `git config core.hooksPath .githooks` — das setzt
+# `scripts/install-githooks.mjs` einmal pro Clone (postinstall).
+#
+# Bei Drift: Push abbrechen mit klarer Anweisung. Kein Auto-Fix —
+# das soll der Entwickler bewusst über `pnpm vendor:sync` anstoßen,
+# weil dort Submodul-Pushes passieren.
+
+set -e
+
+# Nur prüfen, wenn das ai-provider-Paket überhaupt im Tree liegt. Auf
+# einem frischen Klon ohne `pnpm install` ist `dist/` weg — dann
+# überspringen wir den Check (CI baut eh nochmal).
+if [ ! -d "packages/ai-provider/dist" ]; then
+  exit 0
+fi
+
+# Wir nutzen den existierenden Check (v0.1.199, Node-basiert,
+# Line-Ending-tolerant). Der Check exitet 1 bei Drift.
+if ! node scripts/check-vendor-drift.mjs >/dev/null 2>&1; then
+  echo ""
+  echo "  ✗ vendor-drift: producer submodules out of sync with"
+  echo "    packages/ai-provider/."
+  echo ""
+  echo "  Push blocked. Fix:"
+  echo ""
+  echo "    pnpm vendor:sync"
+  echo ""
+  echo "  Then 'git add <producer>' + commit the submodule pointer"
+  echo "  bumps in this parent repo and push again."
+  echo ""
+  exit 1
+fi

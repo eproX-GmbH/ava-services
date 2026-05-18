@@ -23,7 +23,10 @@
     "dev:all:dev": "bash scripts/dev-all.sh dev",
     "dev:all:hybrid": "bash scripts/dev-all.sh hybrid",
     "dev:stop": "bash scripts/dev-stop.sh",
-    "dev:check": "bash scripts/dev-stop.sh --check"
+    "dev:check": "bash scripts/dev-stop.sh --check",
+    "vendor:sync": "node scripts/vendor-sync.mjs",
+    "vendor:check": "node scripts/check-vendor-drift.mjs",
+    "postinstall": "node scripts/install-githooks.mjs"
   },
   "pnpm": {
     "overrides": {
