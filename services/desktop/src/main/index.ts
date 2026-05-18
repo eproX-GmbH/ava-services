@@ -211,6 +211,38 @@ function maybeRunResumeSweep(): void {
   });
 }
 
+// v0.1.218 — Periodischer Resume-Sweep, läuft alle 15 Min. solange
+// die App offen ist + ein Nutzer angemeldet ist. Vorher nur einmal
+// beim Boot — wenn ein Producer mid-Session crashte und in_progress
+// hängen blieb, bekam der Nutzer den Stuck-Status erst beim
+// nächsten App-Neustart frei. Der 60s-recent-update-Guard in
+// `resumeStuckStages` verhindert Doppel-Trigger laufender Stages.
+//
+// 15 Min. Intervall ist Kompromiss: lang genug, dass typische
+// Producer-Stage-Laufzeiten (Sekunden bis ~5 Min.) durch sind und
+// kein False-Positive feuert; kurz genug, dass ein Crash maximal
+// 15 Min. „stuck-Pille" auf der Matrix sichtbar bleibt.
+const PERIODIC_RESUME_INTERVAL_MS = 15 * 60 * 1000;
+let periodicResumeTimer: NodeJS.Timeout | null = null;
+function startPeriodicResumeSweep(): void {
+  if (periodicResumeTimer) return;
+  periodicResumeTimer = setInterval(() => {
+    if (!auth.getStatus().signedIn) return;
+    void resumeStuckStages({ gateway: gatewayClient }).catch((err) => {
+      console.warn(
+        "[producer-resume] periodic sweep rejected:",
+        err instanceof Error ? err.message : err,
+      );
+    });
+  }, PERIODIC_RESUME_INTERVAL_MS);
+}
+function stopPeriodicResumeSweep(): void {
+  if (periodicResumeTimer) {
+    clearInterval(periodicResumeTimer);
+    periodicResumeTimer = null;
+  }
+}
+
 function broadcastAuthStatus(status: AuthStatus): void {
   for (const win of BrowserWindow.getAllWindows()) {
     win.webContents.send("auth-status:changed", status);
@@ -260,11 +292,16 @@ function broadcastAuthStatus(status: AuthStatus): void {
     // from this branch (fresh sign-in via the auth UI). The guard
     // ensures only one of those paths actually dispatches.
     maybeRunResumeSweep();
+    // v0.1.218 — danach läuft der Sweep alle 15 Min. weiter, damit
+    // mid-Session-Crashes (STRUKTUR/PUBLIKATION Stage stuck in
+    // in_progress) ohne App-Neustart frei werden.
+    startPeriodicResumeSweep();
   } else {
     cachedCredentials = null;
     // Allow a future sign-in within the same process to re-run the
     // sweep — stages might have gotten stuck while signed out.
     resumeSweepDispatched = false;
+    stopPeriodicResumeSweep();
     for (const p of producers) {
       void p.stop();
     }
