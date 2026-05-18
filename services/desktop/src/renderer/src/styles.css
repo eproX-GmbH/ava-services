@@ -1245,6 +1245,11 @@ code, pre { font-family: var(--font-mono); font-size: 12px; }
 .dl-dock--max {
   width: 360px; max-width: calc(100vw - 2rem);
   background: rgba(20, 22, 26, 0.96);
+  /* v0.1.214 — Im Light-Mode erbt das Dock sonst `--color-fg`
+   * (slate-900, dunkel) → unleserlich auf dem dunklen Popover.
+   * Selbe Logik wie beim Chart-Tooltip: dieses Element ist ein
+   * eigenständiges dunkles Popover, also explizit helle Schrift. */
+  color: #f8fafc;
   border: 1px solid rgba(255,255,255,0.10);
   border-radius: 8px;
   box-shadow: 0 8px 24px rgba(0,0,0,0.4);
@@ -1358,7 +1363,9 @@ code, pre { font-family: var(--font-mono); font-size: 12px; }
   cursor: pointer;
   display: flex; align-items: center; justify-content: center;
   position: fixed; right: 1rem; bottom: 1rem;
-  color: inherit;
+  /* v0.1.214 — siehe .dl-dock--max: nicht von der Page erben, sonst
+   * im Light-Mode dunkle Zahl auf dunklem Kreis. */
+  color: #f8fafc;
 }
 .dl-dock--mini:hover { transform: scale(1.04); }
 .dl-dock__ring { position: absolute; inset: 0; }
