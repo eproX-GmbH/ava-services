@@ -9,8 +9,10 @@ import {
   validateApiKey,
   type KeyValidation,
 } from "./validate-key";
+import { detectAnthropicTier } from "./anthropic-tier";
 import type {
   AnthropicAuthMode,
+  AnthropicTierInfo,
   HostedProviderKind,
   LlmProviderKind,
   ProviderCatalogEntry,
@@ -183,6 +185,10 @@ export class LlmProviderManager extends EventEmitter {
     hasKey: Record<LlmProviderKind, boolean>;
     hasAnthropicSubscriptionToken: boolean;
     encryptionAvailable: boolean;
+    /** v0.1.209 — Letzter Tier-Schnappschuss; `null` wenn nie ermittelt
+     *  oder Anthropic-Key entfernt. Renderer zeigt einen Hinweis-Banner
+     *  bei `tierLabel === "tier-1"`. */
+    anthropicTierInfo: AnthropicTierInfo | null;
   } {
     return {
       config: this.getConfig(),
@@ -191,6 +197,7 @@ export class LlmProviderManager extends EventEmitter {
       hasAnthropicSubscriptionToken:
         this.store.hasAnthropicSubscriptionToken(),
       encryptionAvailable: this.store.isEncryptionAvailable(),
+      anthropicTierInfo: this.store.getAnthropicTierInfo(),
     };
   }
 
@@ -249,13 +256,27 @@ export class LlmProviderManager extends EventEmitter {
     return this.store.setConfig({ models: { [kind]: model } });
   }
 
-  setApiKey(kind: HostedProviderKind, plaintext: string): void {
+  async setApiKey(kind: HostedProviderKind, plaintext: string): Promise<void> {
     this.store.setKey(kind, plaintext);
     // Phase A1 — match the subscription-side "most recently saved
     // wins" UX. Saving the Anthropic API key flips the active auth
     // mode back to "api-key".
     if (kind === "anthropic") {
       this.store.setConfig({ anthropicAuthMode: "api-key" });
+      // v0.1.209 — Direkt nach dem Speichern den Anthropic-Tier
+      // ermitteln und persistieren. Das macht den IPC-Roundtrip um
+      // ~0.3–1s länger (ein /v1/messages-Probe-Call), schadet aber
+      // niemandem: setApiKey wird selten und nur interaktiv genutzt.
+      // Im Gegenzug hat der Renderer den Tier-Stand sofort verfügbar
+      // (kein zweiter Roundtrip, kein flackernder Banner).
+      try {
+        const tier = await detectAnthropicTier(plaintext);
+        this.store.setAnthropicTierInfo(tier);
+      } catch {
+        // Bewusst geschluckt: Tier-Detection ist nice-to-have, der
+        // Key ist bereits gespeichert. Banner bleibt aus.
+        this.store.setAnthropicTierInfo(null);
+      }
     }
   }
 

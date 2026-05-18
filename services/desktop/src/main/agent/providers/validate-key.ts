@@ -1,4 +1,8 @@
-import type { HostedProviderKind } from "../../../shared/types";
+import type {
+  AnthropicTierInfo,
+  HostedProviderKind,
+} from "../../../shared/types";
+import { detectAnthropicTier } from "./anthropic-tier";
 
 // Use Node's undici fetch instead of Electron's Chromium-net global
 // fetch — same reasoning as packages/ai-provider/src/runtime.ts.
@@ -40,7 +44,9 @@ try {
 const PROBE_TIMEOUT_MS = 4_000;
 
 export type KeyValidation =
-  | { ok: true }
+  /** v0.1.209 — Anthropic-Probe hängt einen TierInfo-Schnappschuss
+   *  mit dran, sobald ablesbar. Andere Provider liefern das Feld nie. */
+  | { ok: true; tierInfo?: AnthropicTierInfo }
   | { ok: false, reason: string };
 
 export async function validateApiKey(
@@ -99,6 +105,14 @@ async function probeOpenAI(
 // Anthropic: `GET /v1/models` was added in 2024 and is auth-checked.
 // Requires the `anthropic-version` header — without it the endpoint
 // 400s on shape, not auth, which would falsely accept invalid keys.
+//
+// v0.1.209 — Wenn die Auth-Probe durchläuft, hängen wir einen
+// Tier-Detektor-Call dran (`detectAnthropicTier`), der per kleinem
+// `/v1/messages`-Request die Rate-Limit-Header ausliest. So weiß die
+// UI direkt nach dem Key-Speichern, ob der Nutzer auf Tier 1
+// festhängt, und kann einen freundlichen Upgrade-Hinweis zeigen.
+// Schlägt der Tier-Probe-Call fehl, persistieren wir kein TierInfo —
+// das Banner bleibt aus, der Key wird trotzdem gespeichert.
 async function probeAnthropic(
   apiKey: string,
   signal: AbortSignal,
@@ -111,7 +125,10 @@ async function probeAnthropic(
     },
     signal,
   });
-  return interpret(res, "Anthropic");
+  const base = await interpret(res, "Anthropic");
+  if (!base.ok) return base;
+  const tierInfo = await detectAnthropicTier(apiKey, signal);
+  return tierInfo ? { ok: true, tierInfo } : base;
 }
 
 // Google: the public Generative Language API takes the key as a query

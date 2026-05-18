@@ -11,6 +11,7 @@ import { join } from "node:path";
 import { app, safeStorage } from "electron";
 import type {
   AnthropicAuthMode,
+  AnthropicTierInfo,
   HostedProviderKind,
   LlmProviderKind,
   ProviderConfig,
@@ -297,7 +298,73 @@ export class ProviderConfigStore extends EventEmitter {
         console.warn(`[provider-store] clearKey unlink failed (${kind}):`, err);
       }
     }
+    // v0.1.209 — TierInfo wegwerfen, wenn der Anthropic-Key entfernt wird.
+    // Sonst zeigen wir nach `Schlüssel entfernen` weiterhin den alten
+    // Tier-Banner, was verwirrt.
+    if (kind === "anthropic") {
+      this.setAnthropicTierInfo(null);
+    }
     this.emit("keyChanged", kind);
+  }
+
+  // ---- v0.1.209 — Anthropic-Tier-Info (Plaintext-JSON) ----------------------
+  //
+  // Liegt unverschlüsselt als `anthropic-tier.json` im Agent-Dir
+  // (keine geheimen Daten — nur drei Integers und ein Zeitstempel).
+  // Atomar geschrieben analog zu `provider.json`. Existiert die Datei
+  // nicht oder ist sie korrupt, geben wir `null` zurück und der
+  // Banner bleibt aus.
+
+  private tierInfoPath(): string {
+    return join(this.dir, "anthropic-tier.json");
+  }
+
+  getAnthropicTierInfo(): AnthropicTierInfo | null {
+    const path = this.tierInfoPath();
+    if (!existsSync(path)) return null;
+    try {
+      const raw = readFileSync(path, "utf8");
+      const parsed = JSON.parse(raw) as Partial<AnthropicTierInfo>;
+      if (
+        typeof parsed.inputTokensPerMinute !== "number" ||
+        typeof parsed.detectedAt !== "number" ||
+        (parsed.tierLabel !== "tier-1" &&
+          parsed.tierLabel !== "tier-2" &&
+          parsed.tierLabel !== "tier-3+")
+      ) {
+        return null;
+      }
+      return {
+        inputTokensPerMinute: parsed.inputTokensPerMinute,
+        outputTokensPerMinute: parsed.outputTokensPerMinute ?? 0,
+        requestsPerMinute: parsed.requestsPerMinute ?? 0,
+        tierLabel: parsed.tierLabel,
+        detectedAt: parsed.detectedAt,
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  setAnthropicTierInfo(info: AnthropicTierInfo | null): void {
+    const path = this.tierInfoPath();
+    if (info == null) {
+      if (existsSync(path)) {
+        try {
+          unlinkSync(path);
+        } catch (err) {
+          console.warn("[provider-store] tier-info unlink failed:", err);
+        }
+      }
+      return;
+    }
+    const tmp = `${path}.tmp`;
+    try {
+      writeFileSync(tmp, JSON.stringify(info, null, 2), { mode: 0o600 });
+      renameSync(tmp, path);
+    } catch (err) {
+      console.warn("[provider-store] tier-info write failed:", err);
+    }
   }
 
   /** All hosted providers we track, in stable order — for fan-out loops. */

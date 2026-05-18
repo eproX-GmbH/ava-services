@@ -623,9 +623,29 @@ function humanizeProviderError(kind: LlmProviderKind, raw: string): string {
     const limitDetail = tokenLimitMatch
       ? ` (Limit: ${tokenLimitMatch[1]} Eingabe-Tokens pro Minute)`
       : "";
+    // v0.1.209 — `retry-after`-Wert aus der Fehlermeldung extrahieren,
+    // falls vorhanden. Anthropic schreibt das in den Body als
+    // `Please retry after 23 seconds` o. Ä.
+    const retryMatch = raw.match(/retry[- ]?after[: ]+(\d+)\s*(seconds|s)\b/i);
+    const retryDetail = retryMatch
+      ? ` Anthropic empfiehlt ${retryMatch[1]} Sekunden Wartezeit.`
+      : " Bitte 30–60 Sekunden warten und erneut versuchen.";
+
+    // v0.1.209 — Anthropic-spezifisch: direkter Deeplink zur Console-
+    // Limits-Seite + Tier-2-Erklärung. Für andere Provider bleibt der
+    // generische Hinweis.
+    if (kind === "anthropic") {
+      return (
+        `Anthropic: Minutenlimit erreicht${limitDetail}.${retryDetail}\n\n` +
+        `Anthropics Standard-Tier (Tier 1) liegt bei 30 000 Input-Tokens ` +
+        `pro Minute — bei längeren Recherchen knapp. Tier 2 verdoppelt ` +
+        `das Limit und schaltet automatisch frei, sobald 5 USD über ` +
+        `die API verbraucht oder vorab eingezahlt wurden. ` +
+        `Status prüfen: https://console.anthropic.com/settings/limits`
+      );
+    }
     return (
-      `${label}: Anfrage-Limit pro Minute überschritten${limitDetail}. ` +
-      `Bitte 30–60 Sekunden warten und erneut versuchen. ` +
+      `${label}: Anfrage-Limit pro Minute überschritten${limitDetail}.${retryDetail} ` +
       `Falls das häufig passiert, kannst du in deinem ${label}-Konto ` +
       `den Tier (Guthaben aufladen) erhöhen, um das Limit anzuheben.`
     );

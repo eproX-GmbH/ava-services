@@ -2709,8 +2709,12 @@ app.whenReady().then(async () => {
   );
   ipcMain.handle(
     "agent:setApiKey",
-    (_e, args: { kind: HostedProviderKind; apiKey: string }) => {
-      providers.setApiKey(args.kind, args.apiKey);
+    async (_e, args: { kind: HostedProviderKind; apiKey: string }) => {
+      // v0.1.209 — setApiKey ist async geworden, weil bei Anthropic
+      // ein Tier-Detection-Call drangehängt wird. IPC handler awaitet,
+      // damit der Renderer's invalidateQueries danach den frischen
+      // TierInfo direkt sieht (kein Flackern, kein zweiter Roundtrip).
+      await providers.setApiKey(args.kind, args.apiKey);
     },
   );
   // Phase 8.k10b — cheap probe ("is this key valid") used by the

@@ -180,7 +180,7 @@ export function buildSettingsTools(deps: SettingsToolDeps): Tool[] {
     run: async (args) => {
       const provider = args.provider as HostedProviderKind;
       validateApiKey(provider, args.apiKey);
-      providers.setApiKey(provider, args.apiKey);
+      await providers.setApiKey(provider, args.apiKey);
       return {
         ok: true,
         provider,

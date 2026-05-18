@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Link, NavLink, useLocation, useNavigate, useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { LinkedInConsentModal } from "../components/LinkedInConsentModal";
+import { AnthropicTierBanner } from "../components/AnthropicTierBanner";
 import { SettingsSkills } from "./SettingsSkills";
 import { SettingsSearch } from "./settings/SettingsSearch";
 import { KontoTab } from "./settings/KontoTab";
@@ -26,6 +27,7 @@ import type {
   AlertPrefs,
   AlertSeverity,
   AlertTickInfo,
+  AnthropicTierInfo,
   FreshnessPrefs,
   FreshnessStage,
   FreshnessTickInfo,
@@ -1768,6 +1770,16 @@ export function ProviderSection() {
                   }
                 : undefined
             }
+            // v0.1.209 — Anthropic-Tier-Info wird unter der Karte als
+            // Banner gerendert (siehe AnthropicTierBanner). Wir geben
+            // den Schnappschuss durch, statt im ApiKeyCard erneut
+            // einen Query zu starten, damit die Daten konsistent zur
+            // Rest-Card sind.
+            anthropicTierInfo={
+              kind === "anthropic"
+                ? (cfg.data.anthropicTierInfo ?? null)
+                : null
+            }
           />
         ))}
       </div>
@@ -2243,12 +2255,16 @@ function ApiKeyCard({
   // content). Undefined for non-Anthropic providers; rendered iff kind
   // === "anthropic".
   anthropicSubscription,
+  // v0.1.209 — Anthropic-Tier-Schnappschuss (für den Tier-1-Hinweis-
+  // banner). Null bei Non-Anthropic-Providern oder wenn nicht ermittelt.
+  anthropicTierInfo,
 }: ApiKeyRowProps & {
   anthropicSubscription?: {
     hasToken: boolean;
     anthropicAuthMode: "api-key" | "subscription";
     activeKind: LlmProviderKind;
   };
+  anthropicTierInfo?: AnthropicTierInfo | null;
 }) {
   const qc = useQueryClient();
   const [draft, setDraft] = useState("");
@@ -2356,6 +2372,15 @@ function ApiKeyCard({
             activeKind={anthropicSubscription.activeKind}
           />
         </>
+      )}
+
+      {/* v0.1.209 — Tier-1-Hinweisbanner. Erscheint nur wenn der
+          Anthropic-Key gespeichert und der ermittelte Tier auf
+          tier-1 fällt. Bei Tier 2/3+ oder unbekanntem Tier (z. B.
+          weil der Probe-Call netzwerkbedingt scheiterte) bleibt
+          es ruhig. */}
+      {kind === "anthropic" && hasKey && (
+        <AnthropicTierBanner tier={anthropicTierInfo} />
       )}
     </div>
   );

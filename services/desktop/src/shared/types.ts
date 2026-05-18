@@ -601,6 +601,48 @@ export interface ProviderConfigBundle {
    */
   hasAnthropicSubscriptionToken: boolean;
   encryptionAvailable: boolean;
+  /**
+   * v0.1.209 — Letzter bekannter Tier-Schnappschuss aus den Anthropic-
+   * Rate-Limit-Headern. Wird beim Key-Eintragen erfasst und persistiert,
+   * damit Renderer den Tier-Stand auch ohne aktiven Probe-Call kennt
+   * (Banner unter ApiKeyCard, Onboarding-Wizard). Null wenn nie ermittelt
+   * (z. B. weil der Probe-Call netzwerkbedingt scheiterte) oder wenn der
+   * Anthropic-Key nicht gesetzt ist.
+   */
+  anthropicTierInfo?: AnthropicTierInfo | null;
+}
+
+/**
+ * v0.1.209 — TPM/RPM-Schnappschuss aus den Anthropic-`/v1/messages`-
+ * Rate-Limit-Headern. Wird beim Key-Validate erfasst und im
+ * Provider-Store persistiert. Renderer zeigt einen Hinweis-Banner bei
+ * Tier 1, damit Nicht-Tech-Nutzer den Upgrade-Pfad finden, bevor sie
+ * im ersten Chat in eine 429 laufen.
+ */
+export interface AnthropicTierInfo {
+  /** Maximum Input-Tokens pro Minute aus dem
+   *  `anthropic-ratelimit-input-tokens-limit`-Header. */
+  inputTokensPerMinute: number;
+  /** Maximum Output-Tokens pro Minute aus dem
+   *  `anthropic-ratelimit-output-tokens-limit`-Header. */
+  outputTokensPerMinute: number;
+  /** Maximum Requests pro Minute aus dem
+   *  `anthropic-ratelimit-requests-limit`-Header. */
+  requestsPerMinute: number;
+  /**
+   * Heuristische Tier-Klassifikation auf Basis der TPM-Werte. Anthropic
+   * dokumentiert die genauen Schwellen nicht offiziell — wir nutzen
+   * Industrie-Beobachtungen (Stand 2026-05):
+   *   - tier-1   bei input TPM ≤ 50 000 (Default für neue Accounts)
+   *   - tier-2   bei input TPM ≤ 100 000
+   *   - tier-3+  darüber
+   *
+   * Banner wird NUR für tier-1 angezeigt; tier-2 / tier-3+ gelten als
+   * komfortabel für typische AVA-Recherchen.
+   */
+  tierLabel: "tier-1" | "tier-2" | "tier-3+";
+  /** epoch ms — letzter Probe-Zeitpunkt. */
+  detectedAt: number;
 }
 
 /**
@@ -635,7 +677,10 @@ export interface ProviderCatalogEntry {
  * parsing it. See validate-key.ts for the per-provider probes.
  */
 export type ApiKeyValidation =
-  | { ok: true }
+  /** v0.1.209 — Anthropic-Probe hängt einen `tierInfo`-Schnappschuss
+   *  mit dran, sobald die TPM/RPM-Limits aus `/v1/messages`-Antwort
+   *  ablesbar waren. Andere Provider liefern das Feld nie. */
+  | { ok: true; tierInfo?: AnthropicTierInfo }
   | { ok: false; reason: string };
 
 // ---- Heartbeat alerts (Phase 8.f1) -----------------------------------------

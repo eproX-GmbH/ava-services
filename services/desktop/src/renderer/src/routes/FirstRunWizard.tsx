@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { pullModelTracked, useOllamaStore } from "../store/ollama";
+import { AnthropicTierBanner } from "../components/AnthropicTierBanner";
 import type {
   ApiKeyValidation,
   HostedProviderKind,
@@ -633,6 +634,14 @@ function ApiKeySubForm({
       if (res.ok) {
         await window.api.agent.setApiKey({ kind, apiKey });
         await window.api.agent.setProvider({ kind });
+        // v0.1.209 — Wenn der Anthropic-Probe Tier-1 ergeben hat,
+        // pausieren wir hier und zeigen den Hinweisbanner. Der Nutzer
+        // muss "Verstanden" klicken, bevor wir den Wizard
+        // schließen — sonst sieht er den Tipp nie und rennt im
+        // ersten Chat-Turn in eine 429.
+        if (res.tierInfo && res.tierInfo.tierLabel === "tier-1") {
+          return; // bleibt mit gesetztem `result` stehen, Button-Bar unten zeigt "Weiter"
+        }
         await onDone();
       }
     } catch (err) {
@@ -696,14 +705,27 @@ function ApiKeySubForm({
         </button>
       </p>
       {result?.ok === false && <p className="bad">{result.reason}</p>}
+      {/* v0.1.209 — Tier-1-Banner direkt unter dem Test-Button.
+          Erscheint nur bei Anthropic-Tier-1 (validate liefert dann
+          tierInfo). Bei Tier 2 / Tier 3+ oder nicht-Anthropic
+          Providern wird das auto-Advance unverändert ausgeführt. */}
+      {result?.ok === true && result.tierInfo?.tierLabel === "tier-1" && (
+        <AnthropicTierBanner tier={result.tierInfo} />
+      )}
       <div className="first-run__actions">
-        <button
-          type="button"
-          onClick={onTest}
-          disabled={busy || apiKey.trim().length === 0}
-        >
-          {busy ? "Teste…" : "Testen & fortfahren"}
-        </button>
+        {result?.ok === true && result.tierInfo?.tierLabel === "tier-1" ? (
+          <button type="button" onClick={() => void onDone()}>
+            Verstanden, weiter
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={onTest}
+            disabled={busy || apiKey.trim().length === 0}
+          >
+            {busy ? "Teste…" : "Testen & fortfahren"}
+          </button>
+        )}
         <button
           type="button"
           className="link"

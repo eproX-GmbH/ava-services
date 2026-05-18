@@ -5582,3 +5582,57 @@ a.heartbeat-decision__company:hover {
   0%, 100% { opacity: 1;   transform: scale(1);   }
   50%      { opacity: 0.4; transform: scale(0.8); }
 }
+
+/* ----- v0.1.209 — Anthropic-Tier-Hinweisbanner ---------------------------
+ *
+ * Erscheint unter der Anthropic-Key-Card in Settings (und im
+ * FirstRunWizard nach erfolgreichem Key-Test), wenn der Account auf
+ * Tier 1 festhängt. Visuell als sanft-warnender Container ohne
+ * harten roten Rand — der Schlüssel funktioniert ja, wir wollen nur
+ * vor der unbequemen Rate-Limit-Standard-Config warnen.
+ */
+
+.tier-banner {
+  margin-top: 0.875rem;
+  padding: 0.875rem 1rem;
+  border-radius: 8px;
+  font-size: 0.875rem;
+  line-height: 1.5;
+}
+
+.tier-banner--warn {
+  background: rgba(217, 119, 6, 0.08);
+  border: 1px solid rgba(217, 119, 6, 0.30);
+  color: #92400e;
+}
+
+@media (prefers-color-scheme: dark) {
+  .tier-banner--warn {
+    background: rgba(251, 191, 36, 0.08);
+    border: 1px solid rgba(251, 191, 36, 0.28);
+    color: #fbbf24;
+  }
+}
+
+.tier-banner__title {
+  margin: 0 0 0.5rem;
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+
+.tier-banner__body {
+  margin: 0 0 0.5rem;
+}
+
+.tier-banner__body:last-of-type { margin-bottom: 0.75rem; }
+
+.tier-banner__actions { margin: 0; }
+
+.tier-banner__link {
+  color: inherit;
+  font-weight: 600;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.tier-banner__link:hover { text-decoration: none; }
