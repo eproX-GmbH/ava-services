@@ -5389,17 +5389,25 @@ a.heartbeat-decision__company:hover {
   height: 10px;
   border-radius: 2px;
 }
+/* v0.1.213 — Chart-Tooltip ist ein eigenständiges Popover und nutzt
+ * bewusst NICHT die Theme-Variablen. `--color-fg` ist in der
+ * Light-Theme dunkel — kombiniert mit dem dunklen Tooltip-Hintergrund
+ * ergab das einen Balken ohne lesbare Schrift (Screenshot v0.1.212).
+ * Wir hardcoden die Farbkombination: dunkles Popover mit hellem Text,
+ * Konvention für Chart-Tooltips (Recharts, Plotly, …) und kontrastiert
+ * sowohl auf hellem als auch dunklem Page-Background. */
 .chat-chart-tooltip {
   position: absolute;
   transform: translate(-50%, -120%);
-  background: var(--color-bg, #1f2937);
-  color: var(--color-fg, #f8fafc);
+  background: rgba(15, 23, 42, 0.95);
+  color: #f8fafc;
   padding: 4px 8px;
   border-radius: 4px;
   font-size: 11px;
   pointer-events: none;
-  border: 1px solid var(--color-border, rgba(148, 163, 184, 0.25));
+  border: 1px solid rgba(148, 163, 184, 0.25);
   white-space: nowrap;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
 }
 .chart-fallback {
   border: 1px dashed var(--color-border-muted, rgba(148, 163, 184, 0.4));
