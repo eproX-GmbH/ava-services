@@ -152,6 +152,18 @@ export function VerbrauchTab() {
           <div className="verbrauch-tab__chart">
             {chartSpec ? (
               <ChartBlock raw={JSON.stringify(chartSpec)} />
+            ) : (daily.data ?? []).length === 1 ? (
+              // v0.1.215 — Edge-Case "frischer Tab, erst ein Tag
+              // Daten": chart-spec verlangt mind. 2 Datenpunkte
+              // (sonst ist ein Verlauf-Plot Unsinn). Wir zeigen die
+              // Summary-Zahlen oben schon, hier nur kurz
+              // erklärt, wann das Diagramm aufpoppt.
+              <p className="muted">
+                Erst ein Tag mit Daten erfasst — das Diagramm braucht
+                mindestens zwei Tage, um eine Entwicklung zu zeigen.
+                Sobald morgen die ersten Anfragen laufen, erscheint
+                hier der Verlauf. Die Summe oben zählt schon mit.
+              </p>
             ) : (
               <p className="muted">
                 Noch keine Daten im gewählten Zeitraum. Schreib ein paar
@@ -256,12 +268,19 @@ function summarize(buckets: UsageDailyBucket[]): DailySummary {
 }
 
 /** Baut die Spec für den gestapelten Tages-Balken. Stapeln nach
- *  Modell (alle Modelle eines Tages addieren sich zu einem Balken). */
+ *  Modell (alle Modelle eines Tages addieren sich zu einem Balken).
+ *
+ *  v0.1.215 — Wir geben null zurück, wenn weniger als 2 Tage Daten da
+ *  sind. Das chart-spec-Schema verlangt min(2) Datenpunkte pro Serie;
+ *  vorher schlug die Validierung mit der rohen yup-Meldung
+ *  "series[0].data field must have at least 2 items" durch — der
+ *  Tab muss diesen Frühstand selbst abfangen und einen freundlichen
+ *  Hinweis zeigen ("Erst ab dem zweiten Tag sinnvoll plottbar"). */
 function buildStackedChartSpec(
   buckets: UsageDailyBucket[],
   unit: Unit,
 ): Record<string, unknown> | null {
-  if (buckets.length === 0) return null;
+  if (buckets.length < 2) return null;
 
   // Alle Modelle einsammeln (in Reihenfolge der ersten Sichtung →
   // stabile Farben über die Tage).
