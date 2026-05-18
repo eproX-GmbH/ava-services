@@ -1840,3 +1840,36 @@ export interface UsageDailyBucket {
     calls: number;
   }>;
 }
+
+// ---- v0.1.224 Knowledge-Integrationen (Notion, Obsidian, …) ----------------
+//
+// Wissensquellen, die der Nutzer mit AVA verbindet, um daraus zu lesen
+// und hineinzuschreiben. Bewusst eigene Klasse parallel zu CRM —
+// Notion/Obsidian sind keine CRMs (auch wenn man sie so nutzen kann),
+// sondern allgemeine Wissens-Backends.
+//
+// Phase 1 (v0.1.224): Framework-Skelett + Token-Redaktion.
+// Phase 2: Notion-Adapter mit PAT-Auth + 7 Chat-Tools.
+// Phase 3: Obsidian-Adapter (Local-REST-API-Plugin-Pfad).
+
+export type KnowledgeProviderKind = "notion" | "obsidian";
+
+export interface KnowledgeProviderStatus {
+  kind: KnowledgeProviderKind;
+  connected: boolean;
+  /** Anzeigename aus dem externen System (Notion-Workspace-Name,
+   *  Obsidian-Vault-Name). null wenn noch nicht ermittelt. */
+  displayName: string | null;
+  errorMessage: string | null;
+  /** ISO-8601 — letzter erfolgreicher Schema-/Capability-Refresh.
+   *  null wenn noch nie. */
+  lastSyncAt: string | null;
+}
+
+export interface KnowledgeProvidersSnapshot {
+  providers: KnowledgeProviderStatus[];
+  /** Settings → Wissensquellen-Tab rendert eine Warnung, wenn der
+   *  OS-Keychain nicht verfügbar ist (Linux ohne libsecret); dann
+   *  würden Tokens unverschlüsselt abgelegt. */
+  encryptionAvailable: boolean;
+}

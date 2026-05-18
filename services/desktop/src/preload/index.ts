@@ -927,6 +927,26 @@ const api = {
       ipcRenderer.invoke("usage:purgeAll"),
   },
 
+  // v0.1.224 — Knowledge-Integrationen (Notion, Obsidian, …).
+  // Phase 1: nur Snapshot-Read + Live-Updates. Connect/Disconnect
+  // kommt mit dem konkreten Adapter (P2 Notion).
+  knowledge: {
+    getSnapshot: (): Promise<
+      import("../shared/types").KnowledgeProvidersSnapshot
+    > => ipcRenderer.invoke("knowledge:getSnapshot"),
+    onSnapshotChanged: (
+      cb: (snapshot: import("../shared/types").KnowledgeProvidersSnapshot) => void,
+    ): (() => void) => {
+      const handler = (
+        _e: Electron.IpcRendererEvent,
+        snapshot: import("../shared/types").KnowledgeProvidersSnapshot,
+      ) => cb(snapshot);
+      ipcRenderer.on("knowledge:snapshotChanged", handler);
+      return () =>
+        ipcRenderer.removeListener("knowledge:snapshotChanged", handler);
+    },
+  },
+
   profile: {
     get: (): Promise<UserProfile> => ipcRenderer.invoke("profile:get"),
     set: (patch: Partial<UserProfile>): Promise<UserProfile> =>

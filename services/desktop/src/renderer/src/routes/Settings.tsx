@@ -12,6 +12,7 @@ import { SkillsTab } from "./settings/SkillsTab";
 import { SystemTab } from "./settings/SystemTab";
 import { VerlaufTab } from "./settings/VerlaufTab";
 import { VerbrauchTab } from "./settings/VerbrauchTab";
+import { WissensquellenTab } from "./settings/WissensquellenTab";
 import { notifyLinkedInSettingsChanged } from "../components/LinkedInActiveBanner";
 import { gatewayFetch } from "../api/gateway";
 import { useUsage, isUnlimited, type BillingTier } from "../api/usage";
@@ -128,13 +129,14 @@ const PROVIDER_KEY_DOCS: Record<HostedProviderKind, string> = {
 // anchor into view once the tab content has painted.
 
 export const SETTINGS_TABS = [
-  { id: "konto",        label: "Konto" },
-  { id: "modelle",      label: "Modelle" },
-  { id: "verbrauch",    label: "Verbrauch" },
-  { id: "datenquellen", label: "Datenquellen" },
-  { id: "skills",       label: "Skills" },
-  { id: "verlauf",      label: "Verlauf" },
-  { id: "system",       label: "System" },
+  { id: "konto",         label: "Konto" },
+  { id: "modelle",       label: "Modelle" },
+  { id: "verbrauch",     label: "Verbrauch" },
+  { id: "datenquellen",  label: "Datenquellen" },
+  { id: "wissensquellen", label: "Wissensquellen" },
+  { id: "skills",        label: "Skills" },
+  { id: "verlauf",       label: "Verlauf" },
+  { id: "system",        label: "System" },
 ] as const;
 export type SettingsTabId = (typeof SETTINGS_TABS)[number]["id"];
 const SETTINGS_TAB_IDS: readonly SettingsTabId[] =
@@ -272,13 +274,14 @@ export function Settings() {
       </aside>
       <section className="settings-shell__content">
         <SettingsHeader />
-        {activeTab === "konto"        && <KontoTab />}
-        {activeTab === "modelle"      && <ModelleTab />}
-        {activeTab === "verbrauch"    && <VerbrauchTab />}
-        {activeTab === "datenquellen" && <DatenquellenTab />}
-        {activeTab === "skills"       && <SkillsTab />}
-        {activeTab === "verlauf"      && <VerlaufTab />}
-        {activeTab === "system"       && <SystemTab />}
+        {activeTab === "konto"          && <KontoTab />}
+        {activeTab === "modelle"        && <ModelleTab />}
+        {activeTab === "verbrauch"      && <VerbrauchTab />}
+        {activeTab === "datenquellen"   && <DatenquellenTab />}
+        {activeTab === "wissensquellen" && <WissensquellenTab />}
+        {activeTab === "skills"         && <SkillsTab />}
+        {activeTab === "verlauf"        && <VerlaufTab />}
+        {activeTab === "system"         && <SystemTab />}
       </section>
     </div>
   );

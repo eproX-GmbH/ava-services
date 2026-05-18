@@ -11,6 +11,32 @@ import {
 import { join } from "node:path";
 import { app } from "electron";
 import type { AgentMessage } from "../../shared/types";
+import { redactSensitiveTokens } from "../knowledge/redaction";
+
+/**
+ * v0.1.224 — Sensitive-Token-Schutz für Transcript-Persistence.
+ *
+ * Vor jedem Disk-Write läuft die `content`-Fläche der Message durch
+ * die Pattern-Matcher in `knowledge/redaction.ts`. Wenn der User
+ * im Chat einen Token paste'd (z. B. `secret_abcdef…` für Notion
+ * oder `sk-…` für OpenAI), wird der Token-Wert mit
+ * `[redacted: <label>]` ersetzt — der Original-Token landet
+ * NICHT auf Disk.
+ *
+ * Bewusst keine Logik um den Token-Wert „abzufangen" hier: die
+ * Connect-Tools (v0.1.224 P2+) machen das selbst über
+ * `extractAndRedactToken()` im selben Modul.
+ */
+function sanitiseForDisk(message: AgentMessage): AgentMessage {
+  if (!message.content || message.content.length === 0) return message;
+  const { redacted, matches } = redactSensitiveTokens(message.content);
+  if (matches.length === 0) return message;
+  // Soft-log was wir redacted haben (kein Token-Wert im Log!).
+  console.info(
+    `[memory] redacted ${matches.length} sensitive token(s) before persist: ${matches.join(", ")}`,
+  );
+  return { ...message, content: redacted };
+}
 
 // MemoryStore (Phase 8.d).
 //
@@ -315,7 +341,18 @@ export class MemoryStore {
     try {
       this.ensureConversation(conversationId);
       const path = this.fileFor(conversationId);
-      appendFileSync(path, formatMessage(message));
+      // v0.1.224 — Sensitive-Token-Redaktion VOR dem Disk-Write.
+      // Wenn der User im Chat einen Notion-/Anthropic-/OpenAI-/…-
+      // Token paste'd, ersetzen wir den Token-Wert durch einen
+      // `[redacted: <label>]`-Marker. Im Transcript-File steht
+      // damit nie ein echter Token im Klartext.
+      //
+      // Tool-Results (z. B. Notion-API-Response) laufen
+      // NICHT durch diesen Hook, weil Provider-Responses keine
+      // User-Geheimnisse enthalten. User- + Assistant-Content
+      // schon. Wir redacten beides defensiv.
+      const safe = sanitiseForDisk(message);
+      appendFileSync(path, formatMessage(safe));
     } catch (err) {
       console.warn("[memory] append failed:", err);
     }

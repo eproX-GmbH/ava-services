@@ -81,6 +81,9 @@ import { Updater, broadcastUpdateStatus } from "./updater";
 // v0.1.200 — Audit-Trail. Local-first PGlite store, see audit-store.ts.
 import { AuditStore } from "./audit/audit-store";
 import { UsageStore } from "./usage/usage-store";
+// v0.1.224 — Knowledge-Integrations-Framework (Phase 1). Konkrete
+// Adapter (Notion, Obsidian) folgen in P2/P3.
+import { KnowledgeProviderStore } from "./knowledge/store";
 import { estimateUsd } from "@ava/ai-provider";
 import type { AuditEventInput } from "./audit/audit-types";
 import {
@@ -3439,6 +3442,24 @@ app.whenReady().then(async () => {
         console.warn("[usage] daily retention sweep failed:", err),
       );
   }, RETENTION_INTERVAL_MS);
+
+  // v0.1.224 — Knowledge-Integrations IPC (Phase 1: read-only Status).
+  //
+  // P1 ist Foundation: das Framework existiert, aber noch keine
+  // Adapter sind angeschlossen. Renderer kann den Snapshot abfragen,
+  // sieht "alle Provider disconnected". Connect/disconnect-IPCs kommen
+  // mit P2 (Notion-Adapter), wenn es überhaupt etwas zu verbinden gibt.
+  const knowledgeStore = KnowledgeProviderStore.shared();
+  ipcMain.handle("knowledge:getSnapshot", () => knowledgeStore.snapshot());
+  knowledgeStore.on("statusChanged", () => {
+    for (const win of BrowserWindow.getAllWindows()) {
+      try {
+        win.webContents.send("knowledge:snapshotChanged", knowledgeStore.snapshot());
+      } catch {
+        /* destroyed window */
+      }
+    }
+  });
 
   // Watches IPC (Phase 8.t2). Read-only views + remove / pause /
   // resume mutations for the Settings panel + topbar chip popover.

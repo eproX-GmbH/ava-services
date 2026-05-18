@@ -1,7 +1,24 @@
 # Knowledge-Integrationen (Notion, Obsidian) + Self-Authoring Skills
 
-> Status: Plan · Geplant für eine Serie an Releases ab v0.1.220
+> Status: P1 ausgeliefert (v0.1.224) · P2-P6 ausstehend
 > Related: `PLANS_chart_skill.md`, `PLANS_token_usage_tab.md`, bestehende `skills/`, `agent/tools/watches.ts`, `crm/`-Modul
+
+## Entscheidungen (festgezurrt)
+
+1. **Notion-Auth: PAT** (kein OAuth-Marketplace).
+2. **Obsidian: nur Plugin-Pfad** (kein Filesystem-Fallback in Phase 1).
+3. **Self-Authoring Skills: User-Confirmation per Skill** (kein Auto-Trust).
+4. **Kein paralleler Notion-OAuth-Approval-Anstoß.**
+
+## Ausgeliefert
+
+### v0.1.224 — Phase 1 ✓
+- Token-Redaktion vor Disk-Write in `MemoryStore.append()` (`knowledge/redaction.ts`).
+- Pattern-Bibliothek: Notion (legacy + neu), Anthropic (Sub + API), OpenAI (proj/svcacct/std), Google, Mistral, GitHub (PAT + fine-grained), Slack, HubSpot.
+- `KnowledgeAdapter`-Interface (`main/knowledge/types.ts`).
+- `KnowledgeProviderStore` mit safeStorage-Tokens + atomic Status-JSON (`main/knowledge/store.ts`).
+- IPC `knowledge:getSnapshot` + Live-Event `knowledge:snapshotChanged`.
+- Settings → Wissensquellen-Tab (Placeholder mit Provider-Liste, „noch nicht verbunden"-Status).
 
 ## 1 — Motivation
 
