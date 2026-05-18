@@ -37,6 +37,8 @@ import { buildUpdaterTools } from "./updater";
 import { buildReachabilityTools } from "./reachability";
 import { buildProducerTools } from "./producers";
 import { buildChatHistoryTools } from "./chat-history";
+import { buildNotionTools } from "./notion";
+import type { KnowledgeManager } from "../../knowledge/manager";
 
 // Tool factory.
 //
@@ -102,6 +104,8 @@ export function buildReadOnlyRegistry(deps: {
   /** Fired by the watch tools after every mutation so the topbar chip
    *  + Settings panel re-sync. */
   onWatchesChanged: () => void;
+  /** v0.1.225 — Knowledge-Integrations (Notion in P2, Obsidian in P3). */
+  knowledge: KnowledgeManager;
 }): ToolRegistry {
   const registry = new ToolRegistry();
   const ctx = { gateway: deps.gateway };
@@ -112,6 +116,8 @@ export function buildReadOnlyRegistry(deps: {
   for (const t of buildSettingsTools({ providers: deps.providers }))
     registry.register(t);
   for (const t of buildMemoryTools({ generalMemory: deps.generalMemory }))
+    registry.register(t);
+  for (const t of buildNotionTools({ knowledge: deps.knowledge }))
     registry.register(t);
   for (const t of buildImportTools({
     gateway: deps.gateway,

@@ -28,14 +28,84 @@ import { redactSensitiveTokens } from "../knowledge/redaction";
  * `extractAndRedactToken()` im selben Modul.
  */
 function sanitiseForDisk(message: AgentMessage): AgentMessage {
-  if (!message.content || message.content.length === 0) return message;
-  const { redacted, matches } = redactSensitiveTokens(message.content);
-  if (matches.length === 0) return message;
-  // Soft-log was wir redacted haben (kein Token-Wert im Log!).
-  console.info(
-    `[memory] redacted ${matches.length} sensitive token(s) before persist: ${matches.join(", ")}`,
-  );
-  return { ...message, content: redacted };
+  const allMatches: string[] = [];
+  let next: AgentMessage = message;
+
+  // 1) Inhalts-Text.
+  if (next.content && next.content.length > 0) {
+    const r = redactSensitiveTokens(next.content);
+    if (r.matches.length > 0) {
+      allMatches.push(...r.matches);
+      next = { ...next, content: r.redacted };
+    }
+  }
+
+  // 2) Tool-Call-Argumente.
+  //
+  // Wenn das LLM einen Token in ein Tool-Argument durchreicht (z. B.
+  // `notion_connect({ token: "ntn_…" })`), würde der Token sonst als
+  // JSON-Stringified-Args ins Transcript landen. Wir walken die Args
+  // rekursiv und redacten jeden String. Tool-Call-IDs + Tool-Namen
+  // bleiben unangetastet.
+  if (next.toolCalls && next.toolCalls.length > 0) {
+    let toolCallsTouched = false;
+    const redactedCalls = next.toolCalls.map((tc) => {
+      const r = redactInValue(tc.args, allMatches);
+      if (!r.changed) return tc;
+      toolCallsTouched = true;
+      return { ...tc, args: r.value as Record<string, unknown> };
+    });
+    if (toolCallsTouched) {
+      next = { ...next, toolCalls: redactedCalls };
+    }
+  }
+
+  if (allMatches.length > 0) {
+    // Soft-log was wir redacted haben (kein Token-Wert im Log!).
+    console.info(
+      `[memory] redacted ${allMatches.length} sensitive token(s) before persist: ${allMatches.join(", ")}`,
+    );
+  }
+  return next;
+}
+
+/**
+ * v0.1.225 — Rekursiver Redactor für unbekannt-getypte Tool-Call-
+ * Argumente. Wir treffen auf Objects/Arrays/Strings; alles andere
+ * (numbers, booleans, null) lassen wir durch.
+ */
+function redactInValue(
+  v: unknown,
+  matchesSink: string[],
+): { value: unknown; changed: boolean } {
+  if (typeof v === "string") {
+    const r = redactSensitiveTokens(v);
+    if (r.matches.length > 0) {
+      matchesSink.push(...r.matches);
+      return { value: r.redacted, changed: true };
+    }
+    return { value: v, changed: false };
+  }
+  if (Array.isArray(v)) {
+    let changed = false;
+    const out = v.map((item) => {
+      const r = redactInValue(item, matchesSink);
+      if (r.changed) changed = true;
+      return r.value;
+    });
+    return { value: changed ? out : v, changed };
+  }
+  if (v && typeof v === "object") {
+    let changed = false;
+    const out: Record<string, unknown> = {};
+    for (const [k, val] of Object.entries(v as Record<string, unknown>)) {
+      const r = redactInValue(val, matchesSink);
+      if (r.changed) changed = true;
+      out[k] = r.value;
+    }
+    return { value: changed ? out : v, changed };
+  }
+  return { value: v, changed: false };
 }
 
 // MemoryStore (Phase 8.d).

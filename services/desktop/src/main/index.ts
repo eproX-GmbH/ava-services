@@ -84,6 +84,7 @@ import { UsageStore } from "./usage/usage-store";
 // v0.1.224 — Knowledge-Integrations-Framework (Phase 1). Konkrete
 // Adapter (Notion, Obsidian) folgen in P2/P3.
 import { KnowledgeProviderStore } from "./knowledge/store";
+import { KnowledgeManager } from "./knowledge/manager";
 import { estimateUsd } from "@ava/ai-provider";
 import type { AuditEventInput } from "./audit/audit-types";
 import {
@@ -1249,6 +1250,11 @@ if (!memoryProbe.writable) {
   );
 }
 
+// v0.1.225 — Knowledge-Manager als Singleton früh konstruieren, damit
+// sowohl die Chat-Tool-Registry (unten) als auch die IPC-Handler
+// (registerIpc-Aufruf später) dieselbe Instanz teilen.
+const knowledgeManager = KnowledgeManager.shared();
+
 const agentRegistry = buildReadOnlyRegistry({
   gateway: gatewayClient,
   providers,
@@ -1290,6 +1296,7 @@ const agentRegistry = buildReadOnlyRegistry({
   producers,
   producerLogBuffer,
   memory,
+  knowledge: knowledgeManager,
 });
 const agent = new AgentOrchestrator({
   providers,
@@ -3450,6 +3457,8 @@ app.whenReady().then(async () => {
   // sieht "alle Provider disconnected". Connect/disconnect-IPCs kommen
   // mit P2 (Notion-Adapter), wenn es überhaupt etwas zu verbinden gibt.
   const knowledgeStore = KnowledgeProviderStore.shared();
+  // Singleton — `knowledgeManager` wurde oben bereits angelegt.
+  const knowledge = knowledgeManager;
   ipcMain.handle("knowledge:getSnapshot", () => knowledgeStore.snapshot());
   knowledgeStore.on("statusChanged", () => {
     for (const win of BrowserWindow.getAllWindows()) {
@@ -3460,6 +3469,30 @@ app.whenReady().then(async () => {
       }
     }
   });
+  // v0.1.225 — P2 Notion: Connect/Disconnect/List-Databases via IPC.
+  ipcMain.handle(
+    "knowledge:connect",
+    async (
+      _e,
+      args: { kind: import("../shared/types").KnowledgeProviderKind; token: string },
+    ) => {
+      await knowledge.connect(args.kind, args.token);
+      return knowledgeStore.snapshot();
+    },
+  );
+  ipcMain.handle(
+    "knowledge:disconnect",
+    async (
+      _e,
+      args: { kind: import("../shared/types").KnowledgeProviderKind },
+    ) => {
+      await knowledge.disconnect(args.kind);
+      return knowledgeStore.snapshot();
+    },
+  );
+  ipcMain.handle("knowledge:listNotionDatabases", () =>
+    knowledge.listNotionDatabases(),
+  );
 
   // Watches IPC (Phase 8.t2). Read-only views + remove / pause /
   // resume mutations for the Settings panel + topbar chip popover.

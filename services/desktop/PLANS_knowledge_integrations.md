@@ -20,6 +20,17 @@
 - IPC `knowledge:getSnapshot` + Live-Event `knowledge:snapshotChanged`.
 - Settings → Wissensquellen-Tab (Placeholder mit Provider-Liste, „noch nicht verbunden"-Status).
 
+### v0.1.225 — Phase 2 (Notion) ✓
+- Tool-Call-Argumente werden jetzt ebenfalls redacted (rekursiver Walk in `sanitiseForDisk`) — Tokens via `notion_connect_save_token({token: "ntn_…"})` landen nicht im Transcript.
+- `NotionAdapter` (hand-rolled gegen Notion-REST-API, kein SDK): search, getItem, updateItem, createItem, introspectSchema, listDatabases, queryDatabase.
+- Markdown ↔ Notion-Block-Konverter: paragraph / heading_1-3 / bulleted_list_item / numbered_list_item / to_do / quote / code / divider. Komplexere Block-Typen erscheinen als `[type-Block]`-Placeholder.
+- Property-Konverter: title / rich_text / select / multi_select / date / number / checkbox / url / email / phone_number / status / people.
+- `KnowledgeManager` (Singleton, Routing pro Provider-Kind).
+- 10 Chat-Tools: `notion_connect_start`, `notion_connect_save_token`, `notion_disconnect`, `notion_search`, `notion_list_databases`, `notion_introspect_database`, `notion_query_database`, `notion_get_page`, `notion_create_page`, `notion_update_page`.
+- IPC `knowledge:connect` / `knowledge:disconnect` / `knowledge:listNotionDatabases`.
+- Settings → Wissensquellen-Tab funktional: Verbinden-Form mit 5-Schritt-Anleitung + Token-Input, Trennen-Button, Status-Anzeige.
+- Notion-API-Errors humanisiert: 401 → "Token ungültig", 403 → "AVA hat keinen Zugriff (Page → Connections)", 404, 429 (Rate-Limit).
+
 ## 1 — Motivation
 
 Viele AVA-Nutzer nutzen **Notion** oder **Obsidian** als faktisches CRM, obwohl es definitorisch keine sind. Heute kann AVA mit ihnen nicht reden — der Workflow „setz mir Firma X im Notion-CRM auf den 20.5. zur Nachfass-Erinnerung" ist nicht möglich.

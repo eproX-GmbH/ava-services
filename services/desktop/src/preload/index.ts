@@ -945,6 +945,24 @@ const api = {
       return () =>
         ipcRenderer.removeListener("knowledge:snapshotChanged", handler);
     },
+    /** v0.1.225 — Knowledge-Provider verbinden. PAT-Token wandert
+     *  durch IPC (Renderer → Main) und landet im OS-Keychain. Wirft
+     *  bei ungültigem Token oder Netzwerkfehler. */
+    connect: (args: {
+      kind: import("../shared/types").KnowledgeProviderKind;
+      token: string;
+    }): Promise<import("../shared/types").KnowledgeProvidersSnapshot> =>
+      ipcRenderer.invoke("knowledge:connect", args),
+    /** Token aus Keychain löschen + Status-Reset. */
+    disconnect: (args: {
+      kind: import("../shared/types").KnowledgeProviderKind;
+    }): Promise<import("../shared/types").KnowledgeProvidersSnapshot> =>
+      ipcRenderer.invoke("knowledge:disconnect", args),
+    /** Liste aller Notion-Datenbanken, auf die die Integration
+     *  Zugriff hat. Nur sinnvoll wenn Notion-Provider connected ist. */
+    listNotionDatabases: (): Promise<
+      Array<{ id: string; title: string; url: string }>
+    > => ipcRenderer.invoke("knowledge:listNotionDatabases"),
   },
 
   profile: {
