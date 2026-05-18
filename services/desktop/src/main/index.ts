@@ -2772,10 +2772,18 @@ app.whenReady().then(async () => {
   ipcMain.handle(
     "agent:setApiKey",
     async (_e, args: { kind: HostedProviderKind; apiKey: string }) => {
-      // v0.1.209 — setApiKey ist async geworden, weil bei Anthropic
-      // ein Tier-Detection-Call drangehängt wird. IPC handler awaitet,
-      // damit der Renderer's invalidateQueries danach den frischen
-      // TierInfo direkt sieht (kein Flackern, kein zweiter Roundtrip).
+      // v0.1.216 — Anthropic-API-Key-Pfad eingestellt. UI versteckt
+      // den Input bereits (Settings/FirstRunWizard); wir blockieren
+      // hier zusätzlich, damit weder ein stale Renderer noch ein
+      // direkter ipcRenderer.invoke vorbeikommt. Manager wirft
+      // ebenfalls als letzter Layer.
+      if (args.kind === "anthropic") {
+        throw new Error(
+          "Anthropic-API-Key-Anmeldung wird nicht mehr unterstützt. " +
+            "Bitte über das Pro/Max-Abo anmelden (Einstellungen → " +
+            "Modelle → Anthropic).",
+        );
+      }
       await providers.setApiKey(args.kind, args.apiKey);
     },
   );

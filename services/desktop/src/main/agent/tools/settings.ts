@@ -39,6 +39,16 @@ const HOSTED_KINDS: readonly HostedProviderKind[] = [
   "mistral",
 ];
 
+// v0.1.216 — Provider, für die der Chat-Agent neue API-Keys speichern
+// darf. Anthropic ist hier raus: API-Key-Anmeldung wurde wegen zu
+// hoher API-Kosten eingestellt, Anmeldung läuft ausschließlich über
+// das Pro/Max-Abo. Das Clear-Tool kennt weiterhin alle vier Kinds
+// (Bestandsnutzer müssen ihre Anthropic-Keys über den Chat oder die
+// Settings entfernen können).
+const SETTABLE_KEY_KINDS: readonly HostedProviderKind[] = HOSTED_KINDS.filter(
+  (k) => k !== "anthropic",
+);
+
 /**
  * Per-vendor key-format hint. Kept loose on purpose — vendors rotate
  * formats and we'd rather store an unrecognised-but-valid key than
@@ -157,14 +167,15 @@ export function buildSettingsTools(deps: SettingsToolDeps): Tool[] {
   const setKey = defineTool({
     name: "settings_set_api_key",
     description:
-      "Store the user's API key for a hosted provider. Encrypted at rest via the OS keychain (safeStorage). Call this BEFORE switching to that provider. Never echo the key back in your reply.",
+      "Store the user's API key for a hosted provider. Encrypted at rest via the OS keychain (safeStorage). Call this BEFORE switching to that provider. Never echo the key back in your reply. NOTE: Anthropic is intentionally NOT supported here — the user should connect via the Pro/Max subscription (Settings → Modelle → Anthropic).",
     parameters: {
       type: "object",
       properties: {
         provider: {
           type: "string",
-          enum: [...HOSTED_KINDS],
-          description: "Hosted provider to store the key for.",
+          enum: [...SETTABLE_KEY_KINDS],
+          description:
+            "Hosted provider to store the key for. Anthropic is excluded — use the subscription flow instead.",
         },
         apiKey: {
           type: "string",
@@ -174,7 +185,7 @@ export function buildSettingsTools(deps: SettingsToolDeps): Tool[] {
       required: ["provider", "apiKey"],
     },
     schema: yup.object({
-      provider: yup.string().oneOf([...HOSTED_KINDS]).required(),
+      provider: yup.string().oneOf([...SETTABLE_KEY_KINDS]).required(),
       apiKey: yup.string().trim().min(16, "API key looks too short").required(),
     }),
     run: async (args) => {

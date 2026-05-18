@@ -667,11 +667,16 @@ function ApiKeySubForm({
           }}
           disabled={busy}
         >
-          {(Object.keys(PROVIDER_LABEL) as HostedProviderKind[]).map((k) => (
-            <option key={k} value={k}>
-              {PROVIDER_LABEL[k]}
-            </option>
-          ))}
+          {/* v0.1.216 — Anthropic-API-Key-Pfad entfernt. Anmeldung
+              läuft jetzt ausschließlich über das Pro/Max-Abo (siehe
+              SubscriptionTokenSubForm im selben Wizard). */}
+          {(Object.keys(PROVIDER_LABEL) as HostedProviderKind[])
+            .filter((k) => k !== "anthropic")
+            .map((k) => (
+              <option key={k} value={k}>
+                {PROVIDER_LABEL[k]}
+              </option>
+            ))}
         </select>
       </label>
       <label className="field">

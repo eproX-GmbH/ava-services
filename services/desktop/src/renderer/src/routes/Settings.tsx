@@ -2325,6 +2325,15 @@ function ApiKeyCard({
     return hasKey ? <span className="badge ok">gespeichert</span> : null;
   })();
 
+  // v0.1.216 — Bei Anthropic ist der API-Key-Pfad deaktiviert (Nutzer
+  // bemängelten zu hohe API-Kosten gegenüber OpenAI). Die Eingabe wird
+  // komplett ausgeblendet; einzig die Pro/Max-Abo-Anmeldung bleibt.
+  // Existierende gespeicherte Keys werden NICHT automatisch
+  // gelöscht — wir zeigen einen Deprecation-Hinweis mit einem
+  // Klick zum Entfernen, damit Nutzer mit laufenden Sessions nicht
+  // mitten in der Arbeit umkonfiguriert werden müssen.
+  const anthropicKeyDisabled = kind === "anthropic";
+
   return (
     <div className="provider-key-card">
       <div className="provider-key-card__header">
@@ -2332,66 +2341,123 @@ function ApiKeyCard({
         {statusBadge}
       </div>
 
-      <div className="provider-key-card__input-row">
-        <input
-          type="password"
-          placeholder={
-            hasKey
-              ? "•••• gespeichert, neuen Schlüssel einfügen, um zu ersetzen"
-              : "API-Schlüssel"
-          }
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          autoComplete="off"
-          spellCheck={false}
-        />
-        <button
-          type="button"
-          onClick={() => save.mutate(draft)}
-          disabled={draft.length === 0 || save.isPending}
-        >
-          {save.isPending ? "Speichert…" : "Speichern"}
-        </button>
-        {hasKey ? (
-          <button
-            type="button"
-            className="link"
-            onClick={() => clear.mutate()}
-            disabled={clear.isPending}
-            title="Gespeicherten Schlüssel für diesen Anbieter entfernen"
-          >
-            {clear.isPending ? "Entfernt…" : "entfernen"}
-          </button>
-        ) : (
-          <span />
-        )}
-      </div>
+      {!anthropicKeyDisabled && (
+        <>
+          <div className="provider-key-card__input-row">
+            <input
+              type="password"
+              placeholder={
+                hasKey
+                  ? "•••• gespeichert, neuen Schlüssel einfügen, um zu ersetzen"
+                  : "API-Schlüssel"
+              }
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              autoComplete="off"
+              spellCheck={false}
+            />
+            <button
+              type="button"
+              onClick={() => save.mutate(draft)}
+              disabled={draft.length === 0 || save.isPending}
+            >
+              {save.isPending ? "Speichert…" : "Speichern"}
+            </button>
+            {hasKey ? (
+              <button
+                type="button"
+                className="link"
+                onClick={() => clear.mutate()}
+                disabled={clear.isPending}
+                title="Gespeicherten Schlüssel für diesen Anbieter entfernen"
+              >
+                {clear.isPending ? "Entfernt…" : "entfernen"}
+              </button>
+            ) : (
+              <span />
+            )}
+          </div>
 
-      <p className="provider-key-card__description">
-        {PROVIDER_FEATURES[kind]}
-      </p>
-
-      <div className="provider-key-card__footer">
-        <a
-          className="provider-key-card__docs-link"
-          href={PROVIDER_KEY_DOCS[kind]}
-          onClick={(e) => {
-            e.preventDefault();
-            void window.api.shell.openExternal(PROVIDER_KEY_DOCS[kind]);
-          }}
-        >
-          Wo bekomme ich einen Schlüssel? →
-        </a>
-        {(save.error || clear.error) && (
-          <p className="provider-key-card__error">
-            {((save.error || clear.error) as Error).message}
+          <p className="provider-key-card__description">
+            {PROVIDER_FEATURES[kind]}
           </p>
-        )}
-      </div>
+
+          <div className="provider-key-card__footer">
+            <a
+              className="provider-key-card__docs-link"
+              href={PROVIDER_KEY_DOCS[kind]}
+              onClick={(e) => {
+                e.preventDefault();
+                void window.api.shell.openExternal(PROVIDER_KEY_DOCS[kind]);
+              }}
+            >
+              Wo bekomme ich einen Schlüssel? →
+            </a>
+            {(save.error || clear.error) && (
+              <p className="provider-key-card__error">
+                {((save.error || clear.error) as Error).message}
+              </p>
+            )}
+          </div>
+        </>
+      )}
+
+      {/* v0.1.216 — Anthropic-API-Key-Pfad eingestellt. Bei aktuell
+          gespeichertem Key: Deprecation-Hinweis + Ein-Klick-
+          Entfernung. Bei leerem Slot: nur eine kurze Erläuterung,
+          dass die Anmeldung jetzt ausschließlich über das Pro/Max-
+          Abo läuft (Abo-Block kommt darunter). */}
+      {anthropicKeyDisabled && (
+        <div className="provider-key-card__deprecation">
+          {hasKey ? (
+            <>
+              <p className="provider-key-card__deprecation-title">
+                ⚠️ API-Key-Anmeldung wird nicht mehr unterstützt
+              </p>
+              <p>
+                Du hast noch einen Anthropic-API-Key hinterlegt. Nach
+                Rückmeldung mehrerer Nutzer waren die API-Kosten für
+                den AVA-Use-Case deutlich höher als gleichwertige
+                OpenAI-Modelle. Wir empfehlen den Wechsel auf das
+                Pro/Max-Abo (siehe unten) — dort sind die Kosten
+                fix und Anthropic priorisiert eingeloggte Nutzer.
+              </p>
+              <p>
+                Dein gespeicherter Schlüssel funktioniert weiter, bis
+                du ihn entfernst.
+              </p>
+              <button
+                type="button"
+                onClick={() => clear.mutate()}
+                disabled={clear.isPending}
+              >
+                {clear.isPending
+                  ? "Entfernt…"
+                  : "Gespeicherten Schlüssel entfernen"}
+              </button>
+              {clear.error && (
+                <p className="provider-key-card__error">
+                  {(clear.error as Error).message}
+                </p>
+              )}
+            </>
+          ) : (
+            <p>
+              Anthropic-Anmeldung läuft ausschließlich über das
+              Pro/Max-Abo. Für reine API-Key-Nutzung empfehlen wir
+              OpenAI — bessere Preise pro Token für AVAs typische
+              Anfragen.
+            </p>
+          )}
+        </div>
+      )}
 
       {kind === "anthropic" && anthropicSubscription && (
         <>
-          <div className="provider-key-card__divider">oder</div>
+          {/* v0.1.216 — "oder"-Divider macht nur Sinn, wenn der API-
+              Key-Pfad oben tatsächlich sichtbar ist. Seit der API-Key-
+              Eingabe für Anthropic eingestellt wurde, ist die Abo-
+              Anmeldung der einzige Pfad — Divider entfällt. */}
           <AnthropicSubscriptionContent
             hasToken={anthropicSubscription.hasToken}
             hasAnthropicApiKey={hasKey}
@@ -2401,11 +2467,9 @@ function ApiKeyCard({
         </>
       )}
 
-      {/* v0.1.209 — Tier-1-Hinweisbanner. Erscheint nur wenn der
-          Anthropic-Key gespeichert und der ermittelte Tier auf
-          tier-1 fällt. Bei Tier 2/3+ oder unbekanntem Tier (z. B.
-          weil der Probe-Call netzwerkbedingt scheiterte) bleibt
-          es ruhig. */}
+      {/* v0.1.209 — Tier-1-Hinweisbanner. v0.1.216: bleibt für
+          Restbestand-Nutzer mit noch gespeichertem API-Key
+          sichtbar; neue Keys können nicht mehr hinterlegt werden. */}
       {kind === "anthropic" && hasKey && (
         <AnthropicTierBanner tier={anthropicTierInfo} />
       )}

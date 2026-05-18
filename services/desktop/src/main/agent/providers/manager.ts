@@ -9,7 +9,12 @@ import {
   validateApiKey,
   type KeyValidation,
 } from "./validate-key";
-import { detectAnthropicTier } from "./anthropic-tier";
+// v0.1.216 — detectAnthropicTier wird nicht mehr aufgerufen, seit
+// der API-Key-Pfad entfernt ist. Import bleibt für den Moment
+// auskommentiert — wenn wir die Entscheidung jemals revertieren,
+// einfach wieder einkommentieren und den Tier-Probe-Call in
+// setApiKey wieder anhängen.
+// import { detectAnthropicTier } from "./anthropic-tier";
 import type {
   AnthropicAuthMode,
   AnthropicTierInfo,
@@ -257,27 +262,20 @@ export class LlmProviderManager extends EventEmitter {
   }
 
   async setApiKey(kind: HostedProviderKind, plaintext: string): Promise<void> {
+    // v0.1.216 — Anthropic-API-Key-Pfad eingestellt. Defense in depth:
+    // selbst wenn ein veralteter Renderer-Build oder ein Chat-Tool den
+    // Call doch absetzt, halten wir hier hart. UI ist primärer Schutz
+    // (`Settings.tsx`, `FirstRunWizard.tsx`).
+    if (kind === "anthropic") {
+      throw new Error(
+        "Anthropic-API-Key-Anmeldung wird nicht mehr unterstützt. " +
+          "Bitte über das Pro/Max-Abo (Einstellungen → Modelle → Anthropic) " +
+          "anmelden.",
+      );
+    }
     this.store.setKey(kind, plaintext);
     // Phase A1 — match the subscription-side "most recently saved
-    // wins" UX. Saving the Anthropic API key flips the active auth
-    // mode back to "api-key".
-    if (kind === "anthropic") {
-      this.store.setConfig({ anthropicAuthMode: "api-key" });
-      // v0.1.209 — Direkt nach dem Speichern den Anthropic-Tier
-      // ermitteln und persistieren. Das macht den IPC-Roundtrip um
-      // ~0.3–1s länger (ein /v1/messages-Probe-Call), schadet aber
-      // niemandem: setApiKey wird selten und nur interaktiv genutzt.
-      // Im Gegenzug hat der Renderer den Tier-Stand sofort verfügbar
-      // (kein zweiter Roundtrip, kein flackernder Banner).
-      try {
-        const tier = await detectAnthropicTier(plaintext);
-        this.store.setAnthropicTierInfo(tier);
-      } catch {
-        // Bewusst geschluckt: Tier-Detection ist nice-to-have, der
-        // Key ist bereits gespeichert. Banner bleibt aus.
-        this.store.setAnthropicTierInfo(null);
-      }
-    }
+    // wins" UX. Anthropic-Spezialpfad ist oben abgefangen.
   }
 
   /**

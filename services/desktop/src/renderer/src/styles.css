@@ -5834,3 +5834,44 @@ a.heartbeat-decision__company:hover {
 @media (prefers-color-scheme: dark) {
   .updater-notice__pre { background: rgba(255, 255, 255, 0.05); }
 }
+
+/* ----- v0.1.216 — Anthropic-API-Key Deprecation-Hinweis ------------------
+ *
+ * Erscheint anstelle des Eingabe-Felds in der Anthropic-Karte.
+ * Existierende gespeicherte Keys werden NICHT auto-gelöscht — der
+ * Block bietet einen Ein-Klick-Button, damit Bestandsnutzer
+ * kontrolliert wechseln können.
+ */
+
+.provider-key-card__deprecation {
+  margin: 0.75rem 0;
+  padding: 0.875rem 1rem;
+  border-radius: 8px;
+  background: rgba(217, 119, 6, 0.08);
+  border: 1px solid rgba(217, 119, 6, 0.25);
+  font-size: 0.875rem;
+  line-height: 1.5;
+}
+
+.provider-key-card__deprecation p {
+  margin: 0 0 0.5rem;
+}
+
+.provider-key-card__deprecation p:last-of-type {
+  margin-bottom: 0.75rem;
+}
+
+.provider-key-card__deprecation-title {
+  font-weight: 600;
+}
+
+.provider-key-card__deprecation button {
+  margin-top: 0.25rem;
+}
+
+@media (prefers-color-scheme: dark) {
+  .provider-key-card__deprecation {
+    background: rgba(251, 191, 36, 0.08);
+    border-color: rgba(251, 191, 36, 0.28);
+  }
+}
