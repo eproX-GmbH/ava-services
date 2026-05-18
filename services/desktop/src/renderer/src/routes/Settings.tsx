@@ -22,6 +22,7 @@ import { usePostgresStore } from "../store/postgres";
 import { useProducersStore } from "../store/producers";
 import { useConfigStore } from "../store/config";
 import { useUpdaterStore } from "../store/updater";
+import { humanizeUpdaterError } from "../lib/updater-error";
 import type {
   AlertCadenceMinutes,
   AlertCandidateDecision,
@@ -354,11 +355,34 @@ export function UpdaterSection() {
             {(status.progress.bytesPerSec / 1024 / 1024).toFixed(1)} MB/s)
           </li>
         )}
-        {status.errorMessage && (
-          <li className="error">
-            <span className="muted">Fehler:</span> {status.errorMessage}
-          </li>
-        )}
+        {status.errorMessage && (() => {
+          // v0.1.211 — Updater-Fehler vorher humanisieren. Der häufigste
+          // Fall (Klick „Jetzt nach Updates suchen" während der CI-Build
+          // gerade läuft) ist KEIN Fehlerzustand, sondern ein
+          // „nochmal in 5 Min"-Hinweis. Stack-Traces und HTTP-Header-
+          // Dumps wandern hinter ein optionales Details-Toggle.
+          const humanized = humanizeUpdaterError(status.errorMessage);
+          if (!humanized) return null;
+          return (
+            <li
+              className={
+                humanized.transient
+                  ? "updater-notice updater-notice--info"
+                  : "updater-notice updater-notice--error"
+              }
+            >
+              <p className="updater-notice__text">{humanized.friendly}</p>
+              {humanized.technical && (
+                <details className="updater-notice__details">
+                  <summary>Technische Details</summary>
+                  <pre className="updater-notice__pre">
+                    {humanized.technical}
+                  </pre>
+                </details>
+              )}
+            </li>
+          );
+        })()}
       </ul>
       <div className="actions">
         {(status.state === "idle" ||
