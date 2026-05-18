@@ -96,11 +96,15 @@ export function getLLM(): LanguageModel {
       const client = createOllama({
         baseURL: process.env.OLLAMA_URL ?? "http://localhost:11434/api",
       });
-      // Default = qwen2.5:3b. Native tool calling, 32K context, ~1.9 GB
-      // on disk, ~3 GB resident — fits 8 GB M1 alongside embedder +
-      // Electron without OOM-killing the runner. See catalog.ts for the
-      // full local model lineup; users with 16+ GB can upgrade to 7B.
-      return client(model ?? "qwen2.5:3b");
+      // v0.1.219 — Default = qwen3:8b. Vorher qwen2.5:3b (M1-safe),
+      // aber 3B-Modelle scheitern bei AVAs Tool-Call-Häufigkeit zu
+      // oft (Halluzination, "<tool_call>"-Text statt echtem Call).
+      // 8B braucht 16 GB RAM und ist die Untergrenze, ab der Qwen3
+      // den agentischen Use-Case stabil bedient. Wer auf 8 GB RAM
+      // bleibt, kommt mit Cloud-Anbietern besser weg — das Onboarding
+      // führt aktiv durch diese Wahl. Siehe catalog.ts für die
+      // vollständige Modell-Liste.
+      return client(model ?? "qwen3:8b");
     }
     default:
       throw new Error(`Unknown LLM_PROVIDER: ${String(provider)}`);
@@ -250,7 +254,9 @@ const DEFAULT_LLM_MODEL: Record<string, string> = {
   anthropic: "claude-sonnet-4-6",
   google: "gemini-2.5-pro",
   mistral: "mistral-large-latest",
-  ollama: "qwen2.5:3b",
+  // v0.1.219 — qwen3:8b ersetzt das alte qwen2.5:3b. Siehe Kommentar
+  // in getLLM() für die Begründung (3B war für Tool-Calls zu schwach).
+  ollama: "qwen3:8b",
 };
 
 /**

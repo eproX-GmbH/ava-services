@@ -830,7 +830,7 @@ function humaniseRunnerError(raw: string): string {
       "doesn't support tool calls.",
       "Fix: open the Whoami tab, click 'repair' next to the model to",
       "wipe + re-download cleanly, or 'delete' and pull a smaller tag",
-      "(qwen2.5:3b is the M1-safe default).",
+      "(Qwen 3 8B is the entry-level default; needs 16 GB RAM).",
       "You can also add a hosted provider key (OpenAI / Anthropic / …)",
       "to bypass local inference entirely.",
     ].join(" ");

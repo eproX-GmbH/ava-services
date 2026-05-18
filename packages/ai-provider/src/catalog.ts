@@ -110,33 +110,46 @@ export interface CatalogEntry {
 
 // ---- Ollama (local) --------------------------------------------------------
 //
-// Default = `gemma4:e4b` (Gemma 4 Effective-4B, released April 2026).
-// Apache 2.0, native tool/function calling + structured JSON, image +
-// audio + document OCR, 128K context. ~9.6 GB on disk, comfortable on
-// 16 GB RAM.
+// v0.1.219 — Lineup neu kuratiert. Wir bieten 6 lokale Modelle in
+// drei klar gestaffelten Klassen an. Alte Mini-Modelle (qwen2.5:3b,
+// llama3.2:3b, gemma4:e2b, gemma3:4b) sind raus — Tester-Feedback
+// auf einem M4 Max ergab: kleine Modelle (≤8B) machen bei AVAs
+// Tool-Call-Häufigkeit zu viele Fehler (Halluzination der
+// Speicher-Operationen, "<tool_call>"-Text statt echtem Call,
+// unvollständige Antworten). Mistral Nemo 12B raus, weil dessen
+// trainierte Output-Disziplin (sehr knapp) zu unserem Chat-Format
+// (ausführliche Erklärungen für Endnutzer) nicht passt.
 //
-// Why Gemma 4 over Qwen 2.5 / Llama 3.2:
-//   - Tool calling is a first-class feature (we send tools[] on every
-//     turn — the 8.b orchestrator depends on this working).
-//   - OCR + chart/document parsing is built in. Replaces a separate
-//     vision-model hop for the future "import a screenshot of a
-//     spreadsheet" agent flow (8.e).
-//   - 128K context (E2B/E4B) / 256K (26B/31B) — fits long company
-//     dossiers without summary truncation.
-//   - Apache 2.0 — no Llama-style "you can't compete with us" clause
-//     and no Gemma-specific use restrictions like Gemma 2/3 had.
+// Default-Empfehlung (`recommended: true`) ist bewusst ENTFERNT
+// von allen lokalen Einträgen: das Onboarding zwingt zur aktiven
+// Wahl, weil selbst die besseren lokalen Modelle qualitativ unter
+// Cloud-Optionen liegen. Wer trotzdem lokal will, weiß was er tut
+// und braucht das Wissen über RAM-Anforderungen.
 //
-// Hardware sizing (for the 8.k9 hardware-aware picker):
-//   - E2B (~7.2 GB): 8 GB RAM laptops, tight.
-//   - E4B (~9.6 GB): 16 GB RAM, default — best speed/quality trade-off.
-//   - 26B MoE (~18 GB on disk, ~4 B active): 24+ GB unified memory.
-//   - 31B dense (~20 GB): 48+ GB or a 24 GB+ GPU.
+// Hardware-Staffelung:
+//   - Qwen 3 8B (~5.2 GB) — Einstieg ab 16 GB RAM
+//   - Gemma 4 E4B (~9.6 GB) — 16-24 GB RAM, multimodal + OCR
+//   - Qwen 3 14B (~9.3 GB) — 16+ GB RAM, stärker bei komplexen Recherchen
+//   - Gemma 4 26B MoE (~18 GB) — 24+ GB unified memory
+//   - Qwen 3 30B-A3B MoE (~19 GB) — Sweet Spot für M-Series ≥32 GB,
+//     dank 3.3 B aktiver Parameter schnell trotz Gesamtgröße
+//   - Llama 3.3 70B (~42 GB Q4_K_M) — Workstation-Klasse ≥48 GB RAM
 
 const OLLAMA_LLM: CatalogEntry[] = [
   {
     provider: "ollama",
+    id: "qwen3:8b",
+    label: "Qwen 3 8B (lokal, ab 16 GB RAM)",
+    role: "llm",
+    capabilities: { tools: true, vision: false, contextWindow: 40_000 },
+    costClass: "free",
+    tier: 2,
+    approxBytes: 5_200_000_000,
+  },
+  {
+    provider: "ollama",
     id: "gemma4:e4b",
-    label: "Gemma 4 E4B (local, multimodal + OCR — needs ≥24 GB RAM)",
+    label: "Gemma 4 E4B (lokal, 16-24 GB RAM, multimodal + OCR)",
     role: "llm",
     capabilities: { tools: true, vision: true, contextWindow: 128_000 },
     costClass: "free",
@@ -145,18 +158,18 @@ const OLLAMA_LLM: CatalogEntry[] = [
   },
   {
     provider: "ollama",
-    id: "gemma4:e2b",
-    label: "Gemma 4 E2B (local, 8 GB RAM)",
+    id: "qwen3:14b",
+    label: "Qwen 3 14B (lokal, 16+ GB RAM — stark bei komplexen Recherchen)",
     role: "llm",
-    capabilities: { tools: true, vision: true, contextWindow: 128_000 },
+    capabilities: { tools: true, vision: false, contextWindow: 40_000 },
     costClass: "free",
-    tier: 1,
-    approxBytes: 7_200_000_000,
+    tier: 3,
+    approxBytes: 9_300_000_000,
   },
   {
     provider: "ollama",
     id: "gemma4:26b",
-    label: "Gemma 4 26B MoE (local, needs ≥24 GB RAM)",
+    label: "Gemma 4 26B MoE (lokal, ≥24 GB unified memory)",
     role: "llm",
     capabilities: { tools: true, vision: true, contextWindow: 256_000 },
     costClass: "free",
@@ -165,86 +178,25 @@ const OLLAMA_LLM: CatalogEntry[] = [
   },
   {
     provider: "ollama",
-    id: "gemma4:31b",
-    label: "Gemma 4 31B (local, needs ≥48 GB RAM or GPU)",
+    id: "qwen3:30b",
+    label: "Qwen 3 30B-A3B MoE (lokal, Sweet Spot M-Series ≥32 GB)",
     role: "llm",
-    capabilities: { tools: true, vision: true, contextWindow: 256_000 },
+    // Qwen3-30B-A3B-Instruct: 30.5B total, 3.3B aktiv (MoE), 256K
+    // natives Context-Window, native tool-calling.
+    capabilities: { tools: true, vision: false, contextWindow: 256_000 },
     costClass: "free",
     tier: 3,
-    approxBytes: 20_000_000_000,
+    approxBytes: 19_000_000_000,
   },
   {
     provider: "ollama",
-    id: "llama3.2:3b",
-    label: "Llama 3.2 3B (local)",
+    id: "llama3.3:70b",
+    label: "Llama 3.3 70B (lokal, Workstation ≥48 GB RAM)",
     role: "llm",
     capabilities: { tools: true, vision: false, contextWindow: 128_000 },
     costClass: "free",
-    tier: 1,
-    approxBytes: 2_000_000_000,
-  },
-  {
-    provider: "ollama",
-    id: "qwen2.5:3b",
-    label: "Qwen 2.5 3B (local, default — tool calling, 8 GB RAM)",
-    role: "llm",
-    capabilities: { tools: true, vision: false, contextWindow: 32_000 },
-    costClass: "free",
-    tier: 1,
-    recommended: true,
-    approxBytes: 1_900_000_000,
-  },
-  {
-    provider: "ollama",
-    id: "qwen2.5:7b",
-    label: "Qwen 2.5 7B (local, tool calling — needs ≥16 GB RAM)",
-    role: "llm",
-    capabilities: { tools: true, vision: false, contextWindow: 32_000 },
-    costClass: "free",
-    tier: 2,
-    approxBytes: 4_700_000_000,
-  },
-  {
-    provider: "ollama",
-    id: "qwen2.5:14b",
-    label: "Qwen 2.5 14B (local, needs ≥16GB RAM)",
-    role: "llm",
-    capabilities: { tools: true, vision: false, contextWindow: 32_000 },
-    costClass: "free",
-    tier: 3,
-    approxBytes: 9_000_000_000,
-  },
-  {
-    provider: "ollama",
-    id: "mistral-nemo:12b",
-    label: "Mistral Nemo 12B (local)",
-    role: "llm",
-    capabilities: { tools: true, vision: false, contextWindow: 128_000 },
-    costClass: "free",
-    tier: 2,
-    approxBytes: 7_100_000_000,
-  },
-  {
-    provider: "ollama",
-    id: "llama3.1:8b",
-    label: "Llama 3.1 8B (local)",
-    role: "llm",
-    capabilities: { tools: true, vision: false, contextWindow: 128_000 },
-    costClass: "free",
-    tier: 2,
-    approxBytes: 4_700_000_000,
-  },
-  {
-    provider: "ollama",
-    id: "gemma3:4b",
-    label: "Gemma 3 4B (local, no tool calls)",
-    role: "llm",
-    // gemma3 famously doesn't honour tools[] — keep it visible but flag
-    // so the agent picker can grey it out for tool-using roles.
-    capabilities: { tools: false, vision: true, contextWindow: 128_000 },
-    costClass: "free",
-    tier: 1,
-    approxBytes: 3_300_000_000,
+    tier: 4,
+    approxBytes: 42_000_000_000,
   },
 ];
 

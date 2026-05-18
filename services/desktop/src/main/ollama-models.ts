@@ -16,36 +16,30 @@ import type { OllamaModelSpec, OllamaInstalledModel } from "../shared/types";
 // installed-but-not-required models, and users may roll back. Old tags get
 // pruned by a future "Free space" UI, not silently.
 
-// LLM choice: `qwen2.5:3b` (Qwen 2.5 3B Instruct, ~1.9 GB on disk).
+// LLM choice: `qwen3:8b` (Qwen 3 8B Instruct, ~5.2 GB on disk).
 //
-// Why Qwen 2.5 3B as the universal default (downgraded from 7B in
-// 8.k10g after M1 OOM reports):
-//   - Resource fit. The 7B variant is ~4.7 GB on disk and pushes
-//     ~6 GB resident with tools[]. On 8 GB M1 / M2 MacBook Air machines
-//     — the most common dev hardware — that crosses the OS swap
-//     threshold and the runner gets killed mid-generation
-//     ("llama runner process has terminated"). 3B is ~1.9 GB on disk,
-//     ~3 GB resident, comfortably fits 8 GB unified memory alongside
-//     embedder + Electron.
-//   - Native tool/function calling — same first-class Qwen 2.5
-//     family that the orchestrator targets, just smaller weights.
-//     Quality is meaningfully lower than 7B for multi-step plans
-//     but the alternative is a crashing app, which is the worse UX.
-//   - 32K context — unchanged from the 7B variant.
+// v0.1.219 — Hochgezogen von `qwen2.5:3b` nach Tester-Feedback auf
+// einem M4 Max: kleine Modelle (≤3B) scheitern bei AVAs Tool-Call-
+// Häufigkeit zu oft. Qwen 3 8B ist die Untergrenze für stabilen
+// agentischen Use-Case (siehe externen Reviews + Qwen3-Release-Notes,
+// April 2025).
 //
-// Users with 16+ GB should manually upgrade to `qwen2.5:7b` from the
-// model picker (8.g Settings → Agent) or the 8.k9 hardware-aware
-// recommendation (planned) for visibly better answers. Users with
-// 24+ GB can pick `qwen2.5:14b` or `gemma4:e4b`. Users who want
-// headline quality without local cost flip to a hosted provider via
-// the FirstRunWizard skip flow.
+// Resource fit: ~5.2 GB auf Disk, ~8 GB resident → braucht ≥16 GB
+// unified memory. Auf 8 GB MacBook Airs würde der Runner OOM-killed
+// werden. Für solche Geräte führt das Onboarding aktiv zu
+// Cloud-Anbietern (Anthropic Pro/Max-Abo oder API-Key). Es gibt
+// keinen lokalen "M1-safe"-Default mehr — die alte 3B-Krücke
+// produzierte mehr Frust als Nutzen.
 //
-// Hardware sizing — see catalog.ts in @ava/ai-provider.
+// Wer mehr Power will: Settings → Modelle → Picker (gemma4:e4b,
+// qwen3:14b, gemma4:26b, qwen3:30b, llama3.3:70b je nach RAM).
+//
+// Hardware sizing — siehe catalog.ts in @ava/ai-provider.
 export const REQUIRED_MODELS: OllamaModelSpec[] = [
   {
-    name: "qwen2.5:3b",
+    name: "qwen3:8b",
     role: "llm",
-    approxBytes: 1_900_000_000,
+    approxBytes: 5_200_000_000,
   },
   {
     name: "embeddinggemma:latest",

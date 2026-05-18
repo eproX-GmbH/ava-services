@@ -94,7 +94,12 @@ export function FirstRunWizard({
   const pullRate = useOllamaStore((s) => s.pullRate);
   const [running, setRunning] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [view, setView] = useState<ViewState>("intro");
+  // v0.1.219 — Default-View ist jetzt der Chooser. Vorher landeten
+  // Erstnutzer direkt in der „lokale Modelle herunterladen"-Maske,
+  // wodurch der Default-Pfad lokal war (was auf Standard-Hardware zu
+  // schlechter Qualität führte). Neue Reihenfolge: aktive Wahl
+  // zwischen Abo (prominent) → API → Lokal (kollabiert).
+  const [view, setView] = useState<ViewState>("chooser");
   const [config, setConfig] = useState<ProviderConfigBundle | null>(null);
 
   // Read the persisted provider config once on mount so we know whether
@@ -165,7 +170,7 @@ export function FirstRunWizard({
           <ProviderChooserGrid
             // Local path stays disabled — the runtime that backs it
             // is exactly what's broken. The chooser's helper hides
-            // the "local" card when `disableLocal` is set.
+            // the "local" section when `disableLocal` is set.
             onPickLocal={() => undefined}
             disableLocal
             onApiKeyDone={onCloudDone}
@@ -256,28 +261,52 @@ export function FirstRunWizard({
       onPathChosen?.();
       setView("intro");
     };
+    // v0.1.219 — User wählt im Local-Section ein konkretes Modell. Wir
+    // setzen Provider+Model, kicken Pull an, wechseln in die Intro-
+    // View, damit der Nutzer den Download-Fortschritt sieht.
+    const onPickLocalModel = async (modelId: string) => {
+      try {
+        // setProvider akzeptiert "model" als override und schreibt
+        // beides atomar in den Store.
+        await window.api.agent.setProvider({ kind: "ollama", model: modelId });
+        const next = await window.api.agent.getProviderConfig();
+        setConfig(next);
+        onProviderConfigChanged?.(next);
+        // Pull anstoßen — fire-and-forget, der DownloadDock zeigt
+        // Fortschritt. Embedding wird in der Intro-View auch
+        // gestartet (über visibleMissing/onDownloadAll), aber sicher
+        // ist sicher.
+        void pullModelTracked(modelId).catch(() => undefined);
+        setView("intro");
+      } catch (err) {
+        setErrorMessage(err instanceof Error ? err.message : String(err));
+      }
+    };
     return (
       <div className="first-run">
         <div className="first-run__card first-run__card--wide">
           <h1 className="first-run__title">
-            <span className="ct-gradient-text">Wie soll AVA dein Modell beziehen?</span>
+            <span className="ct-gradient-text">Wie startest du mit AVA?</span>
           </h1>
           <p className="muted">
-            Drei gleichwertige Wege. Du kannst die Wahl später in
-            Einstellungen → Anbieter jederzeit ändern.
+            Wir empfehlen das Claude-Abo — beste Qualität, fixe Kosten.
+            Eigene API-Keys oder lokales Hosting sind weitere Wege. Du
+            kannst die Wahl später in Einstellungen → Modelle jederzeit
+            ändern.
           </p>
           {memoryWarning}
           <ProviderChooserGrid
-            onPickLocal={() => setView("intro")}
+            onPickLocal={onPickLocalModel}
             onApiKeyDone={onCloudDone}
             onSubscriptionDone={onCloudDone}
             onBack={() => setView("intro")}
+            hideBack
           />
           <p className="muted small">
-            EmbeddingGemma (~600 MB) muss trotzdem heruntergeladen werden:
-            jeder Anbieter nutzt einen eigenen Embedding-Raum. Wir halten
-            deinen lokal, damit ein späterer LLM-Wechsel deine Indizes nicht
-            entwertet.
+            EmbeddingGemma (~600 MB) muss in jedem Fall heruntergeladen
+            werden — jeder Anbieter nutzt einen eigenen Embedding-Raum.
+            Wir halten deinen lokal, damit ein späterer LLM-Wechsel
+            deine Indizes nicht entwertet.
           </p>
         </div>
       </div>
@@ -424,6 +453,64 @@ export function FirstRunWizard({
 
 // -- Chooser sub-view -------------------------------------------------
 
+// v0.1.219 — Kuratierte Liste lokaler Modelle für den Wizard. Sync
+// zum Katalog in `@ava/ai-provider/catalog.ts` (manuell gehalten, weil
+// der Renderer das Pricing-/Catalog-Modul nicht importieren kann ohne
+// einen IPC-Roundtrip; für die Wizard-UI ist eine handgepflegte Kopie
+// pragmatischer und stabiler).
+interface LocalModelOption {
+  id: string;
+  label: string;
+  sizeBytes: number;
+  ramGb: string;
+  note: string;
+}
+
+const LOCAL_MODEL_OPTIONS: LocalModelOption[] = [
+  {
+    id: "qwen3:8b",
+    label: "Qwen 3 8B",
+    sizeBytes: 5_200_000_000,
+    ramGb: "ab 16 GB",
+    note: "Einstieg. Tool-Calls stabil, deutsche Sprache solide.",
+  },
+  {
+    id: "gemma4:e4b",
+    label: "Gemma 4 E4B",
+    sizeBytes: 9_600_000_000,
+    ramGb: "16–24 GB",
+    note: "Multimodal (Bilder + OCR), 128 K Context.",
+  },
+  {
+    id: "qwen3:14b",
+    label: "Qwen 3 14B",
+    sizeBytes: 9_300_000_000,
+    ramGb: "ab 16 GB",
+    note: "Stärker bei mehrstufigen Recherchen als 8B.",
+  },
+  {
+    id: "gemma4:26b",
+    label: "Gemma 4 26B MoE",
+    sizeBytes: 18_000_000_000,
+    ramGb: "ab 24 GB",
+    note: "Multimodal, 256 K Context. Schnell trotz Größe (MoE).",
+  },
+  {
+    id: "qwen3:30b",
+    label: "Qwen 3 30B-A3B MoE",
+    sizeBytes: 19_000_000_000,
+    ramGb: "ab 32 GB",
+    note: "Sweet Spot für M-Series. 3,3 B aktive Parameter → schnell.",
+  },
+  {
+    id: "llama3.3:70b",
+    label: "Llama 3.3 70B (Q4)",
+    sizeBytes: 42_000_000_000,
+    ramGb: "ab 48 GB",
+    note: "Workstation-Klasse. Höchste lokale Qualität.",
+  },
+];
+
 function ProviderChooserGrid({
   onPickLocal,
   onApiKeyDone,
@@ -438,7 +525,10 @@ function ProviderChooserGrid({
    *  go back to (e.g. error-state landing, no prior view). */
   hideBack = false,
 }: {
-  onPickLocal: () => void;
+  /** v0.1.219 — bekommt jetzt die User-gewählte Modell-Id mit. Vorher
+   *  parameterlos, weil der lokale Pfad immer denselben Default
+   *  herunterlud. */
+  onPickLocal: (modelId: string) => void;
   onApiKeyDone: () => Promise<void> | void;
   onSubscriptionDone: () => Promise<void> | void;
   onBack: () => void;
@@ -461,105 +551,32 @@ function ProviderChooserGrid({
 
   return (
     <>
-      <div className="first-run__chooser-grid">
-        {!disableLocal && (
-        <div
-          className={`first-run__option-card${active === null ? "" : ""}`}
-        >
-          <div className="first-run__option-glyph" aria-hidden="true">
-            ◉
-          </div>
-          <h3 className="first-run__option-title">Lokales Modell</h3>
-          <p className="first-run__option-sub">
-            Läuft komplett auf deinem Rechner. Keine API-Kosten, kein Konto,
-            deine Daten bleiben lokal.
-          </p>
-          <ul className="first-run__option-list">
-            <li>Ca. 4-8 GB Festplatte pro Modell</li>
-            <li>Standard: qwen2.5:3b (klein, schnell, ~2 GB)</li>
-            <li>Beste Wahl für DSGVO-sensible Recherche</li>
-          </ul>
-          <div className="first-run__option-docs">
-            <button
-              type="button"
-              className="link small"
-              onClick={() => openExternal(OLLAMA_LIBRARY_URL)}
-            >
-              Welche Modelle gibt es?
-            </button>
-          </div>
-          <button
-            type="button"
-            className="first-run__option-cta"
-            onClick={() => {
-              setActive(null);
-              onPickLocal();
-            }}
-          >
-            Modelle herunterladen
-          </button>
-        </div>
-        )}
+      {/* v0.1.219 — Drei klar abgesetzte Sektionen statt 3-spaltiger
+          gleichberechtigter Grid. Reihenfolge nach Empfehlung:
+          1. Hero: Claude Pro/Max-Abo (beste Qualität / fixe Kosten)
+          2. Sekundär: API-Key OpenAI/Google/Mistral
+          3. Tertiär kollabiert: Lokale Modelle (mit Sysreq-Warnung)
+       */}
 
-        <div className="first-run__option-card">
-          <div className="first-run__option-glyph" aria-hidden="true">
-            ⌘
-          </div>
-          <h3 className="first-run__option-title">Eigener API-Schlüssel</h3>
-          <p className="first-run__option-sub">
-            Bezahle pro Token-Verbrauch direkt bei OpenAI, Anthropic, Google
-            oder Mistral. Schnellster Cloud-Pfad.
+      {/* Sektion 1 — Anthropic Pro/Max-Abo (Hero) */}
+      <div className="first-run__hero">
+        <div className="first-run__hero-glyph" aria-hidden="true">✦</div>
+        <div className="first-run__hero-body">
+          <h3 className="first-run__hero-title">
+            Mit Claude Pro/Max-Abo verbinden
+          </h3>
+          <p className="first-run__hero-sub">
+            Beste Qualität, fixe monatliche Kosten — keine API-Abrechnung.
+            Funktioniert mit Pro, Max, Team und Enterprise. Wir empfehlen
+            diesen Weg für die meisten Nutzer.
           </p>
-          <div className="first-run__option-docs">
-            {(Object.keys(PROVIDER_KEY_DOCS) as HostedProviderKind[]).map(
-              (k) => (
-                <button
-                  key={k}
-                  type="button"
-                  className="link small"
-                  onClick={() => openExternal(PROVIDER_KEY_DOCS[k])}
-                >
-                  {PROVIDER_KEY_DOC_LABEL[k]}
-                </button>
-              ),
-            )}
-          </div>
-          <button
-            type="button"
-            className="first-run__option-cta"
-            onClick={() => setActive("apiKey")}
-          >
-            Schlüssel hinterlegen
-          </button>
-        </div>
-
-        <div className="first-run__option-card">
-          <div className="first-run__option-glyph" aria-hidden="true">
-            ✦
-          </div>
-          <h3 className="first-run__option-title">Claude.ai Pro/Max-Abo</h3>
-          <p className="first-run__option-sub">
-            Du hast schon ein Claude-Abo? Nutze dein Pro/Max-Kontingent —
-            keine zusätzlichen API-Kosten.
-          </p>
-          <ul className="first-run__option-list">
-            <li>Funktioniert mit Pro, Max, Team oder Enterprise</li>
-            <li>
-              Token-Erzeugung über die offizielle Claude-Code-CLI, 1 Jahr
-              gültig
-            </li>
-            <li>
-              Anthropic-Drittapp-Caveat: kann als „Extra Usage" abgerechnet
-              werden — siehe Anleitung
-            </li>
-          </ul>
-          <div className="first-run__option-docs">
+          <div className="first-run__hero-docs">
             <button
               type="button"
               className="link small"
               onClick={() => openExternal(ANTHROPIC_TOKEN_DOCS_URL)}
             >
-              So bekommst du deinen Token (Anthropic-Doku)
+              So funktioniert die Anmeldung
             </button>
             <button
               type="button"
@@ -571,13 +588,112 @@ function ProviderChooserGrid({
           </div>
           <button
             type="button"
-            className="first-run__option-cta"
+            className="first-run__hero-cta"
             onClick={() => setActive("subscription")}
           >
-            Mit Claude.ai verbinden
+            Mit Claude verbinden →
           </button>
         </div>
       </div>
+
+      {/* Sektion 2 — API-Key bei externem Provider */}
+      <div className="first-run__option-card">
+        <div className="first-run__option-glyph" aria-hidden="true">⌘</div>
+        <h3 className="first-run__option-title">
+          Eigener API-Schlüssel (OpenAI, Google, Mistral)
+        </h3>
+        <p className="first-run__option-sub">
+          Bezahle direkt beim Anbieter nach Token-Verbrauch. Schnell
+          eingerichtet, gut kontrollierbar. Anthropic-API-Keys sind
+          ausgeschlossen — deren Pro-Abo (oben) ist preislich
+          deutlich attraktiver.
+        </p>
+        <div className="first-run__option-docs">
+          {(Object.keys(PROVIDER_KEY_DOCS) as HostedProviderKind[])
+            .filter((k) => k !== "anthropic")
+            .map((k) => (
+              <button
+                key={k}
+                type="button"
+                className="link small"
+                onClick={() => openExternal(PROVIDER_KEY_DOCS[k])}
+              >
+                {PROVIDER_KEY_DOC_LABEL[k]}
+              </button>
+            ))}
+        </div>
+        <button
+          type="button"
+          className="first-run__option-cta"
+          onClick={() => setActive("apiKey")}
+        >
+          Schlüssel hinterlegen
+        </button>
+      </div>
+
+      {/* Sektion 3 — Lokal hosten (kollabiert, mit Modell-Liste) */}
+      {!disableLocal && (
+        <details className="first-run__local">
+          <summary className="first-run__local-summary">
+            <span className="first-run__local-glyph" aria-hidden="true">◉</span>
+            <span className="first-run__local-title">
+              Lokal hosten (für Fortgeschrittene)
+            </span>
+            <span className="first-run__local-hint">
+              Daten bleiben offline, dafür höhere Hardware-Anforderungen
+              und merklich schwächere Qualität als Cloud-Optionen
+            </span>
+          </summary>
+          <div className="first-run__local-body">
+            <p className="muted small">
+              AVA lädt die Modelle einmalig über Ollama auf deinen
+              Rechner. Wähle ein Modell entsprechend deines verfügbaren
+              Arbeitsspeichers — selbst die größeren erreichen
+              <strong> nicht </strong>die Qualität von Claude Pro oder
+              GPT-4o, vor allem bei mehrstufigen Tool-Calls.
+            </p>
+            <ul className="first-run__local-models">
+              {LOCAL_MODEL_OPTIONS.map((m) => (
+                <li key={m.id} className="first-run__local-model">
+                  <div className="first-run__local-model-head">
+                    <span className="first-run__local-model-name">
+                      {m.label}
+                    </span>
+                    <span className="first-run__local-model-ram">
+                      {m.ramGb} RAM
+                    </span>
+                  </div>
+                  <p className="first-run__local-model-note">{m.note}</p>
+                  <div className="first-run__local-model-foot">
+                    <span className="muted small">
+                      Download: {formatBytes(m.sizeBytes)}
+                    </span>
+                    <button
+                      type="button"
+                      className="first-run__local-model-cta"
+                      onClick={() => onPickLocal(m.id)}
+                    >
+                      {m.label} wählen
+                    </button>
+                  </div>
+                </li>
+              ))}
+            </ul>
+            <p className="muted small">
+              Nach der Wahl startet der Download im Hintergrund (siehe
+              Mini-Fenster unten rechts). Du kannst dein Modell jederzeit
+              unter Einstellungen → Modelle wechseln.
+            </p>
+            <button
+              type="button"
+              className="link small"
+              onClick={() => openExternal(OLLAMA_LIBRARY_URL)}
+            >
+              Vollständige Ollama-Bibliothek ansehen →
+            </button>
+          </div>
+        </details>
+      )}
 
       {active && (
         <div id="first-run-subform" className="first-run__subform">
