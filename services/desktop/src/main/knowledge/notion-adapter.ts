@@ -496,8 +496,15 @@ export class NotionAdapter implements KnowledgeAdapter {
     try {
       // v0.1.247 — getDatabaseSchema liest aus /v1/data_sources/{id}
       // wenn die DB migriert ist. Sonst sind die properties leer.
+      // v0.1.249 — Bei Multi-Data-Source-DBs ist `parent: {database_id}`
+      // mehrdeutig — Notion entscheidet selbst in welche Data Source
+      // die Page geschrieben wird. Wir nutzen direkt die data_source_id
+      // wenn vorhanden, damit die Page in der erwarteten Data Source
+      // landet (= der Data Source, deren Schema wir oben gelesen haben).
       const schema = await this.getDatabaseSchema(parent);
-      parentSpec = { database_id: parent };
+      parentSpec = schema.dataSourceId
+        ? { data_source_id: schema.dataSourceId }
+        : { database_id: parent };
       propsForApi = propertiesToApi(
         content.properties ?? {},
         schema.properties,
@@ -942,8 +949,9 @@ export class NotionAdapter implements KnowledgeAdapter {
 
 interface NotionParent {
   database_id?: string;
+  data_source_id?: string;
   page_id?: string;
-  type?: "database_id" | "page_id" | "workspace";
+  type?: "database_id" | "data_source_id" | "page_id" | "workspace";
 }
 
 interface NotionPage {
