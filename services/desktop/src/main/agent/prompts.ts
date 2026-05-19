@@ -35,6 +35,20 @@ export interface PromptSkillContext {
    *  block so the agent ALWAYS sees stored facts about the user,
    *  not only when it remembers to call `recall_memory`. */
   rememberedFacts?: GeneralMemoryEntry[];
+  /**
+   * v0.1.241 — Names of the tools that are ACTUALLY available to the
+   * LLM this turn (core + lazy-loaded + skill + slash). When provided,
+   * the "Verfügbare Tools" text block lists only these — mirroring
+   * the `tools[]` JSON-Schema array the orchestrator builds via
+   * `selectToolsForTurn`. Until v0.1.240 this block silently included
+   * ALL 120 registered tools as plain text in the prompt, even though
+   * only ~6 were exposed structurally — a ~10k-token leak that ate
+   * most of v0.1.240's savings.
+   *
+   * If undefined, falls back to listing every registered tool (the
+   * old behaviour) so unit tests / boot diagnostics don't break.
+   */
+  availableToolNames?: ReadonlySet<string>;
 }
 
 export function buildSystemPrompt(
@@ -758,11 +772,17 @@ export function buildSystemPrompt(
     "     beobachten oder später nachfragen.“",
   ].join("\n");
 
-  // 8.a: registry is empty so the tools section is a no-op. Once tools land
-  // we list them here in addition to surfacing them via the /api/chat
-  // `tools[]` field — Ollama's small models follow tool calls more reliably
-  // when the system prompt also names them.
-  const toolNames = registry.list().map((t) => `- ${t.name}: ${t.description}`);
+  // 8.a + v0.1.241: small models follow tool calls more reliably when the
+  // system prompt also names the tools, in addition to surfacing them via
+  // the `tools[]` field. CRITICAL: list ONLY the tools actually exposed to
+  // this turn (core + lazy-loaded + skill + slash), not the whole 120-tool
+  // registry. Until v0.1.241 this was a ~10k-token leak per turn that
+  // negated most of the lazy-tool-loading work.
+  const filterToAvailable = skillContext?.availableToolNames;
+  const toolNames = registry
+    .list()
+    .filter((t) => (filterToAvailable ? filterToAvailable.has(t.name) : true))
+    .map((t) => `- ${t.name}: ${t.description}`);
   const toolsBlock =
     toolNames.length === 0
       ? ""

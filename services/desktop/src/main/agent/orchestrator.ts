@@ -587,6 +587,22 @@ export class AgentOrchestrator extends EventEmitter {
 
     try {
       for (let step = 0; step < STEP_BUDGET; step++) {
+        // v0.1.241 — Compute the available-tool-name set ONCE here so
+        // both buildSystemPrompt() (for the text "Verfügbare Tools"
+        // block) and selectToolsForTurn() (for the structured tools[]
+        // array) operate on the same scope. Until v0.1.240 the system
+        // prompt silently included ALL 120 registered tools as plain
+        // text, even though only ~6 were exposed structurally — a
+        // ~10k-token leak per turn.
+        const availableToolNames = new Set<string>(ALWAYS_ON_CORE_TOOL_NAMES);
+        if (conversation.loadedToolNames) {
+          for (const n of conversation.loadedToolNames) availableToolNames.add(n);
+        }
+        if (this.activeSkill) {
+          for (const n of this.activeSkill.allowedTools) availableToolNames.add(n);
+        }
+        if (slashNudgedTool) availableToolNames.add(slashNudgedTool);
+
         // Build the message log we'll send. The system prompt is rebuilt
         // every turn so a tool registered mid-session would show up — cheap
         // because the registry is small.
@@ -607,6 +623,7 @@ export class AgentOrchestrator extends EventEmitter {
               rememberedFacts: this.generalMemoryStore
                 ? this.generalMemoryStore.list().slice(0, 30)
                 : [],
+              availableToolNames,
             },
           ),
           createdAt: 0,
