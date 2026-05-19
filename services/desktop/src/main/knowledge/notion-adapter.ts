@@ -40,7 +40,14 @@ import type {
 import { KnowledgeProviderStore } from "./store";
 
 const NOTION_API_BASE = "https://api.notion.com";
-const NOTION_VERSION = "2022-06-28";
+// v0.1.247 — Notion hat in 2025-09-03 die API zwischen Databases und
+// Data Sources gesplittet. Sobald eine Database mehr als eine Data
+// Source hat (z. B. ein Wiki oder eine migrierte CRM-DB), schlägt der
+// alte /v1/databases/{id}/query-Endpoint mit `notion-version:
+// 2022-06-28` fehl, selbst bei korrekter Filter-Form. Wir wechseln auf
+// 2025-09-03 und routen Queries durch das neue
+// /v1/data_sources/{ds_id}/query.
+const NOTION_VERSION = "2025-09-03";
 
 // Undici-fetch wenn verfügbar (Konsistenz mit anderen Stellen im
 // Codebase wo Chromium-net-Edge-Cases relevant sind).
@@ -236,12 +243,12 @@ export class NotionAdapter implements KnowledgeAdapter {
           `/v1/pages/${encodeURIComponent(id)}`,
         );
         if (page.parent.type === "database_id" && page.parent.database_id) {
-          const db = await this.request<NotionDatabase>(
-            `/v1/databases/${encodeURIComponent(page.parent.database_id)}`,
-          );
+          // v0.1.247 — Schema seit Notion-Migration aus der Data
+          // Source statt direkt aus der Database lesen.
+          const schema = await this.getDatabaseSchema(page.parent.database_id);
           canonicalPatchProperties = {};
           for (const [k, v] of Object.entries(patch.properties)) {
-            const canonical = resolvePropertyName(k, db.properties) ?? k;
+            const canonical = resolvePropertyName(k, schema.properties) ?? k;
             canonicalPatchProperties[canonical] = v;
             if (canonical !== k) nameRemap[k] = canonical;
           }
@@ -487,14 +494,13 @@ export class NotionAdapter implements KnowledgeAdapter {
     let parentSpec: NotionParent;
     let propsForApi: Record<string, unknown> = {};
     try {
-      const db = await this.request<NotionDatabase>(
-        `/v1/databases/${encodeURIComponent(parent)}`,
-      );
+      // v0.1.247 — getDatabaseSchema liest aus /v1/data_sources/{id}
+      // wenn die DB migriert ist. Sonst sind die properties leer.
+      const schema = await this.getDatabaseSchema(parent);
       parentSpec = { database_id: parent };
-      // Properties müssen ans Database-Schema angepasst werden.
       propsForApi = propertiesToApi(
         content.properties ?? {},
-        db.properties,
+        schema.properties,
         content.title,
       );
     } catch {
@@ -532,10 +538,10 @@ export class NotionAdapter implements KnowledgeAdapter {
           "Nutze `notion_list_databases` zuerst.",
       );
     }
-    const db = await this.request<NotionDatabase>(
-      `/v1/databases/${encodeURIComponent(containerId)}`,
-    );
-    const props: KnowledgeSchemaProperty[] = Object.values(db.properties).map(
+    // v0.1.247 — getDatabaseSchema routet automatisch durch
+    // /v1/data_sources/{id} wenn die DB migriert ist.
+    const schema = await this.getDatabaseSchema(containerId);
+    const props: KnowledgeSchemaProperty[] = Object.values(schema.properties).map(
       (p) => ({
         name: p.name,
         type: p.type,
@@ -552,8 +558,8 @@ export class NotionAdapter implements KnowledgeAdapter {
       }),
     );
     return {
-      containerId: db.id,
-      containerTitle: extractDatabaseTitle(db),
+      containerId,
+      containerTitle: schema.containerTitle,
       properties: props,
     };
   }
@@ -596,22 +602,22 @@ export class NotionAdapter implements KnowledgeAdapter {
     // Call abschicken.
     const originalFilter = opts?.filter;
     let normalisedFilter: unknown = originalFilter ?? undefined;
-    let schemaForError: NotionDatabase | null = null;
-    if (normalisedFilter) {
-      try {
-        const db = await this.request<NotionDatabase>(
-          `/v1/databases/${encodeURIComponent(databaseId)}`,
-        );
-        schemaForError = db;
-        normalisedFilter = repairNotionFilter(normalisedFilter, db.properties);
-      } catch (err) {
-        // Schema-Read fehlgeschlagen → wir lassen den Filter durch,
-        // Notion antwortet ggf. mit 400. Sieht der Agent dann.
-        console.warn(
-          "[notion-adapter] filter pre-flight schema read failed:",
-          err instanceof Error ? err.message : err,
-        );
+    let schemaForError: Record<string, NotionPropertyDef> | null = null;
+    let dataSourceId: string | null = null;
+    try {
+      const schema = await this.getDatabaseSchema(databaseId);
+      schemaForError = schema.properties;
+      dataSourceId = schema.dataSourceId;
+      if (normalisedFilter) {
+        normalisedFilter = repairNotionFilter(normalisedFilter, schema.properties);
       }
+    } catch (err) {
+      // Schema-Read fehlgeschlagen → wir lassen den Filter durch,
+      // Notion antwortet ggf. mit 400. Sieht der Agent dann.
+      console.warn(
+        "[notion-adapter] filter pre-flight schema read failed:",
+        err instanceof Error ? err.message : err,
+      );
     }
     // v0.1.246 — Empty-Object-Filter (`{}`) auslassen. Das ist Notion-
     // ungültig (er erwartet entweder einen Property-Filter ODER `and`/
@@ -639,9 +645,20 @@ export class NotionAdapter implements KnowledgeAdapter {
     }
     if (normalisedFilter) body.filter = normalisedFilter;
     if (opts?.sorts) body.sorts = opts.sorts;
+    // v0.1.247 — Routing: wenn die Database eine Data Source hat
+    // (Notion 2025-09-03+), nutzen wir den neuen Endpoint
+    // /v1/data_sources/{ds_id}/query. Sonst fallback auf den alten
+    // /v1/databases/{id}/query für legacy single-data-source DBs.
+    const queryPath = dataSourceId
+      ? `/v1/data_sources/${encodeURIComponent(dataSourceId)}/query`
+      : `/v1/databases/${encodeURIComponent(databaseId)}/query`;
+    console.info(
+      `[notion-adapter] queryDatabase path=${queryPath} ` +
+        `dataSourceId=${dataSourceId ?? "(legacy)"}`,
+    );
     try {
       const res = await this.request<NotionSearchResponse>(
-        `/v1/databases/${encodeURIComponent(databaseId)}/query`,
+        queryPath,
         "POST",
         body,
       );
@@ -669,7 +686,7 @@ export class NotionAdapter implements KnowledgeAdapter {
         // "or should be defined / and should be defined"-Body.
         let schemaHint = "";
         if (schemaForError) {
-          const properties = Object.values(schemaForError.properties).map(
+          const properties = Object.values(schemaForError).map(
             (p) => `${p.name} (${p.type})`,
           );
           schemaHint =
@@ -702,6 +719,69 @@ export class NotionAdapter implements KnowledgeAdapter {
   }
 
   // ---- internals -----------------------------------------------------------
+
+  /**
+   * v0.1.247 — Pro Database-ID die zugehörige Data-Source-ID auflösen
+   * und für die Lebenszeit des Prozesses cachen. Notion antwortet
+   * seit 2025-09-03 mit einem `data_sources[]`-Array; wir nehmen die
+   * erste Quelle (in der Praxis hat die Mehrheit der DBs nur eine).
+   *
+   * Returns null wenn die Database keine Data Sources hat — dann ist
+   * die DB legacy single-data-source und der alte
+   * /v1/databases/{id}-Pfad weiter benutzbar.
+   */
+  private readonly dataSourceIdByDb = new Map<string, string | null>();
+  private async resolveDataSourceId(
+    databaseId: string,
+  ): Promise<string | null> {
+    if (this.dataSourceIdByDb.has(databaseId)) {
+      return this.dataSourceIdByDb.get(databaseId) ?? null;
+    }
+    const db = await this.request<NotionDatabase>(
+      `/v1/databases/${encodeURIComponent(databaseId)}`,
+    );
+    const first = db.data_sources?.[0]?.id ?? null;
+    this.dataSourceIdByDb.set(databaseId, first);
+    return first;
+  }
+
+  /**
+   * v0.1.247 — Property-Schema einer Database holen. Routet
+   * automatisch durch das neue /v1/data_sources/{id}-Modell falls
+   * vorhanden, sonst fallback auf die alte legacy-Form am
+   * Database-Objekt.
+   */
+  private async getDatabaseSchema(
+    databaseId: string,
+  ): Promise<{
+    properties: Record<string, NotionPropertyDef>;
+    dataSourceId: string | null;
+    /** Title des Containers (Database-Titel oder Data-Source-Titel). */
+    containerTitle: string;
+  }> {
+    const dsId = await this.resolveDataSourceId(databaseId);
+    if (dsId) {
+      const ds = await this.request<NotionDataSource>(
+        `/v1/data_sources/${encodeURIComponent(dsId)}`,
+      );
+      const title = (ds.title ?? [])
+        .map((t) => t.plain_text ?? "")
+        .join("");
+      return {
+        properties: ds.properties,
+        dataSourceId: dsId,
+        containerTitle: title || "(ohne Titel)",
+      };
+    }
+    const db = await this.request<NotionDatabase>(
+      `/v1/databases/${encodeURIComponent(databaseId)}`,
+    );
+    return {
+      properties: db.properties ?? {},
+      dataSourceId: null,
+      containerTitle: extractDatabaseTitle(db),
+    };
+  }
 
   private async ensureToken(): Promise<string> {
     if (this.cachedToken) return this.cachedToken;
@@ -742,9 +822,12 @@ export class NotionAdapter implements KnowledgeAdapter {
       }
       return { propsForApi: {}, warnings: [] };
     }
-    const db = await this.request<NotionDatabase>(
-      `/v1/databases/${encodeURIComponent(page.parent.database_id)}`,
-    );
+    // v0.1.247 — getDatabaseSchema liest seit der Migration aus
+    // /v1/data_sources/{id} statt /v1/databases/{id}. Sonst sehen wir
+    // bei den (Mehrheits-)DBs die Properties gar nicht und droppen
+    // alle Patches als "Property nicht im DB-Schema".
+    const schema = await this.getDatabaseSchema(page.parent.database_id);
+    const dbProperties = schema.properties;
 
     // v0.1.231 — Detailliertes Mapping mit Warnungen statt stillem
     // Skip von unbekannten Property-Namen. Wir validieren auch
@@ -758,11 +841,11 @@ export class NotionAdapter implements KnowledgeAdapter {
     // sonst false negatives, weil convertPropertiesForPatch das
     // Update silently dropped.
     const warnings: string[] = [];
-    const knownNames = Object.keys(db.properties);
+    const knownNames = Object.keys(dbProperties);
     const propsForApi: Record<string, unknown> = {};
     for (const [name, value] of Object.entries(properties)) {
-      const matched = resolvePropertyName(name, db.properties);
-      const def = matched ? db.properties[matched] : undefined;
+      const matched = resolvePropertyName(name, dbProperties);
+      const def = matched ? dbProperties[matched] : undefined;
       if (!matched || !def) {
         warnings.push(
           `Property "${name}" nicht im DB-Schema (existierende: ${knownNames.join(", ")})`,
@@ -831,7 +914,23 @@ interface NotionDatabase {
   id: string;
   url?: string;
   title?: NotionRichText[];
+  /**
+   * Vor 2025-09-03 lebten Properties direkt am Database-Objekt. Mit
+   * dem neuen Modell ziehen Properties auf die Data Sources um; das
+   * Database-Objekt liefert nur noch `data_sources: [{id, name}]`.
+   * Bei legacy single-data-source Databases ist `properties` weiter
+   * gefüllt — wir prüfen also beide Pfade.
+   */
+  properties?: Record<string, NotionPropertyDef>;
+  data_sources?: Array<{ id: string; name: string }>;
+}
+
+interface NotionDataSource {
+  object: "data_source";
+  id: string;
   properties: Record<string, NotionPropertyDef>;
+  title?: NotionRichText[];
+  url?: string;
 }
 
 interface NotionPropertyDef {
