@@ -9,20 +9,20 @@ import { ChartBlock } from "../../components/ChartBlock";
 // v0.1.210 — Settings → Verbrauch.
 //
 // Lokal-only, privat. Liest aus `window.api.usage.daily(days)` —
-// PGlite im Mainprozess. Default-Einheit: Tokens (Nutzer-Entscheidung,
-// USD-Schätzung ist sekundär). Default-Zeitraum: 7 Tage.
+// PGlite im Mainprozess. Default-Zeitraum: 7 Tage.
 //
-// Aktuell zeigen wir nur Chat-Calls — Producer-Capture kommt in P3
-// (v0.1.211). Bis dahin steht ein dezenter Hinweis am Kopf, dass
-// Hintergrund-Producer noch nicht erfasst werden.
+// v0.1.245 — USD-Schätzung komplett entfernt. Sie war systematisch
+// daneben (Faktor ~7 gegenüber dem echten OpenAI-Dashboard) und ohne
+// die echten Abrechnungsgrundlagen der Provider (Prompt-Caching-
+// Raten, Free-Tier-Toleranzen, etc.) nicht seriös zu rekonstruieren.
+// Die Token-Schätzung bleibt — Token-Werte sind deterministisch und
+// providerunabhängig nachvollziehbar.
 
 type RangeOption = 7 | 30 | 90;
-type Unit = "tokens" | "usd";
 
 export function VerbrauchTab() {
   const qc = useQueryClient();
   const [rangeDays, setRangeDays] = useState<RangeOption>(7);
-  const [unit, setUnit] = useState<Unit>("tokens");
 
   const daily = useQuery<UsageDailyBucket[]>({
     queryKey: ["usage", "daily", rangeDays],
@@ -37,16 +37,7 @@ export function VerbrauchTab() {
 
   const summary = useMemo(() => summarize(daily.data ?? []), [daily.data]);
   const chartSpec = useMemo(
-    () => buildStackedChartSpec(daily.data ?? [], unit),
-    [daily.data, unit],
-  );
-  const hasOAuthEvents = useMemo(
-    () =>
-      (daily.data ?? []).some((d) =>
-        d.byModel.some(
-          (m) => m.estimatedUsd === null && m.provider === "anthropic",
-        ),
-      ),
+    () => buildStackedChartSpec(daily.data ?? []),
     [daily.data],
   );
 
@@ -77,28 +68,6 @@ export function VerbrauchTab() {
             </button>
           ))}
         </div>
-        <div className="verbrauch-tab__unit">
-          <button
-            type="button"
-            onClick={() => setUnit("tokens")}
-            className={
-              "verbrauch-tab__pill" +
-              (unit === "tokens" ? " verbrauch-tab__pill--active" : "")
-            }
-          >
-            Tokens
-          </button>
-          <button
-            type="button"
-            onClick={() => setUnit("usd")}
-            className={
-              "verbrauch-tab__pill" +
-              (unit === "usd" ? " verbrauch-tab__pill--active" : "")
-            }
-          >
-            USD (Schätzung)
-          </button>
-        </div>
       </div>
 
       {daily.isLoading && <p className="muted">Lädt…</p>}
@@ -126,56 +95,7 @@ export function VerbrauchTab() {
               value={summary.cacheReadTokens.toLocaleString("de-DE")}
               hint="Anthropic Prompt-Caching"
             />
-            <SummaryStat
-              label="Kosten (Schätzung)"
-              value={
-                summary.estimatedUsd === null
-                  ? "Im Abo enthalten"
-                  : formatUsd(summary.estimatedUsd)
-              }
-              hint={
-                summary.estimatedUsd === null
-                  ? "Anthropic Pro/Max-Abo aktiv — keine API-Kosten"
-                  : "Stand 2026-05; tatsächliche Abrechnung kann abweichen"
-              }
-            />
           </div>
-
-          {hasOAuthEvents && (
-            <div className="verbrauch-tab__oauth-note">
-              <svg
-                className="verbrauch-tab__oauth-note-icon"
-                viewBox="0 0 16 16"
-                width="16"
-                height="16"
-                aria-hidden="true"
-              >
-                <circle
-                  cx="8"
-                  cy="8"
-                  r="7"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="1.5"
-                />
-                <line
-                  x1="8"
-                  y1="7"
-                  x2="8"
-                  y2="11.5"
-                  stroke="currentColor"
-                  strokeWidth="1.5"
-                  strokeLinecap="round"
-                />
-                <circle cx="8" cy="4.6" r="0.9" fill="currentColor" />
-              </svg>
-              <span>
-                Mindestens ein Anthropic-Call läuft über dein Pro/Max-Abo
-                (OAuth). Diese Tokens zählen gegen dein Abo-Quota statt
-                gegen API-Guthaben — daher keine USD-Schätzung.
-              </span>
-            </div>
-          )}
 
           <div className="verbrauch-tab__chart">
             {chartSpec ? (
@@ -200,7 +120,7 @@ export function VerbrauchTab() {
             )}
           </div>
 
-          <TopModelsTable buckets={daily.data ?? []} unit={unit} />
+          <TopModelsTable buckets={daily.data ?? []} />
 
           <div className="verbrauch-tab__danger">
             <button
@@ -257,10 +177,6 @@ interface DailySummary {
   outputTokens: number;
   cacheReadTokens: number;
   cacheWriteTokens: number;
-  /** null = wenigstens ein Anthropic-OAuth-Call dabei → USD nicht
-   *  aussagekräftig. Wir setzen dann null statt 0, damit das UI
-   *  „Im Abo enthalten" zeigen kann. */
-  estimatedUsd: number | null;
 }
 
 function summarize(buckets: UsageDailyBucket[]): DailySummary {
@@ -269,8 +185,6 @@ function summarize(buckets: UsageDailyBucket[]): DailySummary {
   let outputTokens = 0;
   let cacheReadTokens = 0;
   let cacheWriteTokens = 0;
-  let usd = 0;
-  let oauthSeen = false;
   for (const b of buckets) {
     for (const m of b.byModel) {
       calls += m.calls;
@@ -278,21 +192,9 @@ function summarize(buckets: UsageDailyBucket[]): DailySummary {
       outputTokens += m.outputTokens;
       cacheReadTokens += m.cacheReadTokens;
       cacheWriteTokens += m.cacheWriteTokens;
-      if (m.estimatedUsd === null) {
-        oauthSeen = true;
-      } else {
-        usd += m.estimatedUsd;
-      }
     }
   }
-  return {
-    calls,
-    inputTokens,
-    outputTokens,
-    cacheReadTokens,
-    cacheWriteTokens,
-    estimatedUsd: oauthSeen && usd === 0 ? null : usd,
-  };
+  return { calls, inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens };
 }
 
 /** Baut die Spec für den gestapelten Tages-Balken. Stapeln nach
@@ -306,7 +208,6 @@ function summarize(buckets: UsageDailyBucket[]): DailySummary {
  *  Hinweis zeigen ("Erst ab dem zweiten Tag sinnvoll plottbar"). */
 function buildStackedChartSpec(
   buckets: UsageDailyBucket[],
-  unit: Unit,
 ): Record<string, unknown> | null {
   if (buckets.length < 2) return null;
 
@@ -325,8 +226,6 @@ function buildStackedChartSpec(
   }
   if (modelOrder.length === 0) return null;
 
-  // Pro Modell eine Serie mit einem Datenpunkt pro Tag (0 wenn Modell
-  // an dem Tag nicht aktiv war — Stack-Renderer überspringt 0).
   const series = modelOrder.map((modelKey) => ({
     name: prettyModelLabel(modelKey),
     data: buckets.map((b) => {
@@ -334,9 +233,7 @@ function buildStackedChartSpec(
         (m) => `${m.provider}:${m.model}` === modelKey,
       );
       const y = entry
-        ? unit === "tokens"
-          ? entry.inputTokens + entry.outputTokens + entry.cacheReadTokens + entry.cacheWriteTokens
-          : entry.estimatedUsd ?? 0
+        ? entry.inputTokens + entry.outputTokens + entry.cacheReadTokens + entry.cacheWriteTokens
         : 0;
       return { x: shortDay(b.day), y };
     }),
@@ -344,15 +241,12 @@ function buildStackedChartSpec(
 
   return {
     kind: "bar",
-    title:
-      unit === "tokens"
-        ? "Tokens pro Tag (gestapelt nach Modell)"
-        : "USD pro Tag (Schätzung, gestapelt nach Modell)",
+    title: "Tokens pro Tag (gestapelt nach Modell)",
     xLabel: "Tag",
-    yLabel: unit === "tokens" ? "Tokens" : "USD",
-    format: unit === "tokens" ? "int" : "eur",
+    yLabel: "Tokens",
+    format: "int",
     stacked: true,
-    series: series.slice(0, 5), // chart-spec max 5 Serien
+    series: series.slice(0, 5),
   };
 }
 
@@ -378,15 +272,6 @@ function prettyModelLabel(modelKey: string): string {
   return `${providerShort[provider] ?? provider} · ${trimmed}`;
 }
 
-function formatUsd(v: number): string {
-  if (v < 0.01) return `<$0,01`;
-  return v.toLocaleString("de-DE", {
-    style: "currency",
-    currency: "USD",
-    maximumFractionDigits: 2,
-  });
-}
-
 interface ModelRowAggregate {
   provider: LlmProviderKind;
   model: string;
@@ -394,16 +279,9 @@ interface ModelRowAggregate {
   inputTokens: number;
   outputTokens: number;
   cacheReadTokens: number;
-  estimatedUsd: number | null;
 }
 
-function TopModelsTable({
-  buckets,
-  unit,
-}: {
-  buckets: UsageDailyBucket[];
-  unit: Unit;
-}) {
+function TopModelsTable({ buckets }: { buckets: UsageDailyBucket[] }) {
   const rows = useMemo<ModelRowAggregate[]>(() => {
     const map = new Map<string, ModelRowAggregate>();
     for (const b of buckets) {
@@ -418,18 +296,12 @@ function TopModelsTable({
             inputTokens: m.inputTokens,
             outputTokens: m.outputTokens,
             cacheReadTokens: m.cacheReadTokens,
-            estimatedUsd: m.estimatedUsd,
           });
         } else {
           cur.calls += m.calls;
           cur.inputTokens += m.inputTokens;
           cur.outputTokens += m.outputTokens;
           cur.cacheReadTokens += m.cacheReadTokens;
-          if (cur.estimatedUsd === null || m.estimatedUsd === null) {
-            cur.estimatedUsd = null;
-          } else {
-            cur.estimatedUsd += m.estimatedUsd;
-          }
         }
       }
     }
@@ -452,7 +324,7 @@ function TopModelsTable({
             <th>Input</th>
             <th>Output</th>
             <th>Cache-Read</th>
-            <th>{unit === "tokens" ? "Tokens gesamt" : "USD (Schätzung)"}</th>
+            <th>Tokens gesamt</th>
           </tr>
         </thead>
         <tbody>
@@ -464,15 +336,11 @@ function TopModelsTable({
               <td>{r.outputTokens.toLocaleString("de-DE")}</td>
               <td>{r.cacheReadTokens.toLocaleString("de-DE")}</td>
               <td>
-                {unit === "tokens"
-                  ? (
-                      r.inputTokens +
-                      r.outputTokens +
-                      r.cacheReadTokens
-                    ).toLocaleString("de-DE")
-                  : r.estimatedUsd === null
-                    ? "Abo"
-                    : formatUsd(r.estimatedUsd)}
+                {(
+                  r.inputTokens +
+                  r.outputTokens +
+                  r.cacheReadTokens
+                ).toLocaleString("de-DE")}
               </td>
             </tr>
           ))}

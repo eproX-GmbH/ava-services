@@ -219,13 +219,48 @@ export class NotionAdapter implements KnowledgeAdapter {
       }
     }
 
+    // v0.1.245 — Property-Namen früh auf canonical Schema-Namen mappen,
+    // damit Snapshot, Patch und Verify alle DIE GLEICHEN Keys benutzen.
+    // Sonst läuft (snapshot, verify) mit Nutzer-Namen ("Follow-Up"),
+    // patch mit Schema-Namen ("Follow-Up (Datum)") und der Verify-Step
+    // schlägt false-negative an, obwohl Notion korrekt geschrieben hat.
+    let canonicalPatchProperties: Record<string, unknown> | undefined;
+    let nameRemap: Record<string, string> = {};
+    if (patch.properties && Object.keys(patch.properties).length > 0) {
+      // Schema für die Property-Namen-Auflösung holen. (Das gleiche
+      // Schema wird unten in convertPropertiesForPatch nochmal gelesen
+      // — das ist OK, Notion antwortet schnell und der Request ist
+      // billig.)
+      try {
+        const page = await this.request<NotionPage>(
+          `/v1/pages/${encodeURIComponent(id)}`,
+        );
+        if (page.parent.type === "database_id" && page.parent.database_id) {
+          const db = await this.request<NotionDatabase>(
+            `/v1/databases/${encodeURIComponent(page.parent.database_id)}`,
+          );
+          canonicalPatchProperties = {};
+          for (const [k, v] of Object.entries(patch.properties)) {
+            const canonical = resolvePropertyName(k, db.properties) ?? k;
+            canonicalPatchProperties[canonical] = v;
+            if (canonical !== k) nameRemap[k] = canonical;
+          }
+        }
+      } catch {
+        // Schema-Read scheitert → wir lassen patch.properties unverändert.
+        // convertPropertiesForPatch fängt das später nochmal auf.
+      }
+    }
+    const effectivePatchProperties =
+      canonicalPatchProperties ?? patch.properties;
+
     // v0.1.231 — Snapshot vor dem PATCH machen, damit wir hinterher
     // den Schreib-Erfolg verifizieren können. Sonst geben wir
     // fälschlich Erfolg zurück, wenn Notion still no-opt
     // (Property-Name unbekannt, Status-Option existiert nicht, RO-
     // Integration etc.).
-    const beforeProps = patch.properties
-      ? await this.snapshotProperties(id, Object.keys(patch.properties))
+    const beforeProps = effectivePatchProperties
+      ? await this.snapshotProperties(id, Object.keys(effectivePatchProperties))
       : null;
     let propertyConversionWarnings: string[] = [];
     let droppedProperties: string[] = [];
@@ -237,20 +272,26 @@ export class NotionAdapter implements KnowledgeAdapter {
     // hat manchmal falsch alarmiert oder (schlimmer) Erfolg vorgegaukelt.
     // Jetzt nehmen wir die PATCH-Antwort als autoritative Quelle.
     let patchResponse: NotionPage | null = null;
-    if (patch.properties && Object.keys(patch.properties).length > 0) {
-      const conversion = await this.convertPropertiesForPatch(id, patch.properties);
+    if (
+      effectivePatchProperties &&
+      Object.keys(effectivePatchProperties).length > 0
+    ) {
+      const conversion = await this.convertPropertiesForPatch(
+        id,
+        effectivePatchProperties,
+      );
       propertyConversionWarnings = conversion.warnings;
       // Welche der angefragten Properties wurden vom Schema-Mapper
       // gedroppt? (Property-Name nicht im DB-Schema.) Diese müssen
       // wir DEM AGENT EXPLIZIT melden, sonst hält er einen Drop für
       // einen Erfolg.
-      droppedProperties = Object.keys(patch.properties).filter(
+      droppedProperties = Object.keys(effectivePatchProperties).filter(
         (name) => !(name in conversion.propsForApi),
       );
       if (Object.keys(conversion.propsForApi).length === 0) {
         throw new Error(
           `Keine der angefragten Properties konnte auf das Datenbank-Schema gemappt werden. ` +
-            `Angefragt: ${Object.keys(patch.properties).join(", ")}. ` +
+            `Angefragt: ${Object.keys(effectivePatchProperties).join(", ")}. ` +
             `Nutze \`notion_introspect_database\` um die exakten Property-Namen zu sehen.` +
             (propertyConversionWarnings.length > 0
               ? ` Details: ${propertyConversionWarnings.join("; ")}`
@@ -282,7 +323,7 @@ export class NotionAdapter implements KnowledgeAdapter {
     // Werte WIRKLICH in Notion gelandet sind. Wenn nicht, werfen
     // wir einen handfesten Fehler — sonst behauptet das Tool
     // Erfolg, obwohl in Notion nichts geändert wurde.
-    if (patch.properties && beforeProps) {
+    if (effectivePatchProperties && beforeProps) {
       // v0.1.237 — Autoritative Quelle ist die PATCH-Antwort selbst,
       // nicht ein nachgelagertes getItem(). Falls patch.properties leer
       // war (kein PATCH gefeuert), nutzen wir das Snapshot wieder
@@ -291,7 +332,7 @@ export class NotionAdapter implements KnowledgeAdapter {
         ? simplifyProperties(patchResponse.properties)
         : beforeProps;
       const failures = this.verifyPatchedProperties(
-        patch.properties,
+        effectivePatchProperties,
         beforeProps,
         afterProps,
       );
@@ -330,6 +371,18 @@ export class NotionAdapter implements KnowledgeAdapter {
     if (droppedProperties.length > 0) {
       allWarnings.push(
         `Diese Properties wurden NICHT geupdated, weil sie nicht im DB-Schema existieren: ${droppedProperties.join(", ")}. Tipp: erst notion_introspect_database aufrufen, um die korrekten Spaltennamen zu sehen.`,
+      );
+    }
+    // v0.1.245 — Fuzzy-Remap-Hinweise so der Agent die exakten
+    // Schema-Namen lernt.
+    const remappedEntries = Object.entries(nameRemap);
+    if (remappedEntries.length > 0) {
+      allWarnings.push(
+        `Property-Namen via Fuzzy-Match korrigiert: ` +
+          remappedEntries
+            .map(([from, to]) => `"${from}" → "${to}"`)
+            .join(", ") +
+          `. Beim nächsten Mal bitte die exakten Schema-Namen verwenden.`,
       );
     }
     if (propertyConversionWarnings.length > 0) {
@@ -654,22 +707,34 @@ export class NotionAdapter implements KnowledgeAdapter {
     // Select/Status/Multi-Select Options gegen das Schema und warnen,
     // wenn der angefragte Optionsname nicht existiert (Notion würde
     // den Call sonst still no-opten).
+    //
+    // v0.1.245 — Property-Namen werden via resolvePropertyName fuzzy
+    // gematcht: LLMs schicken "Follow-Up" obwohl die Property
+    // "Follow-Up (Datum)" heisst; der Verify-After-Step erkennt
+    // sonst false negatives, weil convertPropertiesForPatch das
+    // Update silently dropped.
     const warnings: string[] = [];
     const knownNames = Object.keys(db.properties);
     const propsForApi: Record<string, unknown> = {};
     for (const [name, value] of Object.entries(properties)) {
-      const def = db.properties[name];
-      if (!def) {
+      const matched = resolvePropertyName(name, db.properties);
+      const def = matched ? db.properties[matched] : undefined;
+      if (!matched || !def) {
         warnings.push(
           `Property "${name}" nicht im DB-Schema (existierende: ${knownNames.join(", ")})`,
         );
         continue;
       }
+      if (matched !== name) {
+        warnings.push(
+          `Property "${name}" → "${matched}" (fuzzy-gematcht; bitte zukünftig den exakten Schema-Namen verwenden)`,
+        );
+      }
       // Option-Validation für Select/Status/Multi-Select.
       const optionCheck = checkOptionMatch(value, def);
       if (optionCheck) warnings.push(optionCheck);
 
-      propsForApi[name] = valueToApi(value, def);
+      propsForApi[matched] = valueToApi(value, def);
     }
     return { propsForApi, warnings };
   }
@@ -1297,6 +1362,25 @@ function formatValueForError(v: unknown): string {
 // schicken. Was wir nicht sicher reparieren können, lassen wir
 // durch — Notion antwortet dann mit 400 und unser Error-Wrapper
 // hängt das Schema dran, damit der Agent self-healen kann.
+const KNOWN_NOTION_TYPES: ReadonlySet<string> = new Set([
+  "title",
+  "rich_text",
+  "select",
+  "multi_select",
+  "status",
+  "date",
+  "number",
+  "checkbox",
+  "url",
+  "email",
+  "phone_number",
+  "people",
+  "files",
+  "formula",
+  "relation",
+  "rollup",
+]);
+
 function repairNotionFilter(
   filter: unknown,
   schema: Record<string, NotionPropertyDef>,
@@ -1320,6 +1404,8 @@ function repairNotionFilter(
     const keys = Object.keys(obj);
     if (keys.length === 1) {
       const k = keys[0]!;
+      // Variante (a1): key ist ein Property-Name → wrap as
+      // {property: name, ...inner}
       const matched = resolvePropertyName(k, schema);
       if (matched) {
         const inner = obj[k] as Record<string, unknown> | undefined;
@@ -1329,6 +1415,55 @@ function repairNotionFilter(
             schema,
           );
         }
+      }
+      // Variante (a2): key ist ein Type-Name (z. B. "title", "rich_text")
+      // ohne dass es eine Property mit diesem Namen gibt. Der häufigste
+      // LLM-Fehler bei Title-Filter: `{title: {contains: "X"}}`.
+      // Wir finden die Property dieses Typs im Schema und wrappen damit.
+      if (KNOWN_NOTION_TYPES.has(k)) {
+        const propsOfType = Object.values(schema).filter(
+          (d) => d.type === k,
+        );
+        if (propsOfType.length === 1) {
+          const propName = propsOfType[0]!.name;
+          const innerValue = obj[k];
+          console.info(
+            `[notion-adapter] repairFilter: top-level type "${k}" -> wrapped with property "${propName}"`,
+          );
+          return { property: propName, [k]: innerValue };
+        }
+        if (propsOfType.length > 1) {
+          // Mehrere Properties des gleichen Typs (z. B. zwei
+          // rich_text-Felder). Wir können nicht raten welches
+          // gemeint ist — der Notion-400 hilft dem Agent mehr als
+          // ein falscher Wrap.
+          console.info(
+            `[notion-adapter] repairFilter: ambiguous top-level type "${k}" (${propsOfType.length} candidates), leaving as is`,
+          );
+        }
+      }
+    }
+    // Letzte Rettung: nur Operator-Keys (`{contains: "X"}`,
+    // `{equals: "X"}`). Wenn das Schema eine eindeutige Title-
+    // Property hat, defaulten wir auf Title-Contains.
+    const operatorKeys = new Set([
+      "equals",
+      "does_not_equal",
+      "contains",
+      "does_not_contain",
+      "starts_with",
+      "ends_with",
+      "is_empty",
+      "is_not_empty",
+    ]);
+    const objKeys = Object.keys(obj);
+    if (objKeys.length > 0 && objKeys.every((k) => operatorKeys.has(k))) {
+      const titleProp = Object.values(schema).find((d) => d.type === "title");
+      if (titleProp) {
+        console.info(
+          `[notion-adapter] repairFilter: bare operators wrapped as title-filter on "${titleProp.name}"`,
+        );
+        return { property: titleProp.name, title: { ...obj } };
       }
     }
     return filter;
@@ -1350,26 +1485,8 @@ function repairNotionFilter(
   // Beispiel: {property:"Name", title:{...}} aber "Name" ist
   // rich_text → wir mappen das nach {property:"Name", rich_text:{...}}.
   const expectedWrapper = def.type;
-  const wrongWrappers = [
-    "title",
-    "rich_text",
-    "select",
-    "multi_select",
-    "status",
-    "date",
-    "number",
-    "checkbox",
-    "url",
-    "email",
-    "phone_number",
-    "people",
-    "files",
-    "formula",
-    "relation",
-    "rollup",
-  ];
   let foundWrapper: string | null = null;
-  for (const w of wrongWrappers) {
+  for (const w of KNOWN_NOTION_TYPES) {
     if (w in fixed && w !== "property") {
       foundWrapper = w;
       break;
@@ -1386,14 +1503,43 @@ function repairNotionFilter(
   return fixed;
 }
 
-function resolvePropertyName(
+// v0.1.245 — Fuzzy property-name resolution. LLMs senden gerne
+// "Follow-Up" obwohl die Property eigentlich "Follow-Up (Datum)"
+// heisst. Wir matchen tolerant:
+//   1. exakter Match
+//   2. case-insensitiv
+//   3. ignore Klammer-Suffixe ("X (Y)" matched "X")
+//   4. ignore Sonderzeichen + Whitespace
+//   5. Prefix-Match (one direction)
+// Erster Treffer gewinnt. Gleichstand → null statt zu raten.
+export function resolvePropertyName(
   candidate: string,
   schema: Record<string, NotionPropertyDef>,
 ): string | null {
   if (candidate in schema) return candidate;
-  const lower = candidate.toLowerCase();
-  for (const name of Object.keys(schema)) {
-    if (name.toLowerCase() === lower) return name;
+  const names = Object.keys(schema);
+  const cLower = candidate.toLowerCase();
+  // case-insensitiv exakt
+  for (const n of names) {
+    if (n.toLowerCase() === cLower) return n;
   }
+  const normalize = (s: string) =>
+    s
+      .toLowerCase()
+      .replace(/\([^)]*\)/g, "") // Klammer-Suffixe weg
+      .replace(/[^a-z0-9äöüß]/gi, "") // Sonderzeichen + Whitespace
+      .trim();
+  const cNorm = normalize(candidate);
+  if (!cNorm) return null;
+  // exakter normalisierter Match (ignore parens + special chars)
+  for (const n of names) {
+    if (normalize(n) === cNorm) return n;
+  }
+  // Prefix-Match: Schema "Follow-Up (Datum)" vs Agent-Input "Follow-Up"
+  const prefixMatches = names.filter((n) => normalize(n).startsWith(cNorm));
+  if (prefixMatches.length === 1) return prefixMatches[0]!;
+  // Reverse Prefix-Match: Agent-Input "Follow-Up Datum" vs Schema "Follow-Up"
+  const reverseMatches = names.filter((n) => cNorm.startsWith(normalize(n)));
+  if (reverseMatches.length === 1) return reverseMatches[0]!;
   return null;
 }
