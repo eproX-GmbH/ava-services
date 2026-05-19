@@ -1255,6 +1255,14 @@ if (!memoryProbe.writable) {
 // (registerIpc-Aufruf später) dieselbe Instanz teilen.
 const knowledgeManager = KnowledgeManager.shared();
 
+// v0.1.236 — Skill-Store + Trust-Store werden weiter unten konstruiert
+// (initSkills ist async). Die Registry braucht die Referenzen JETZT,
+// also reichen wir Lazy-Getter rein, die zum Tool-Aufruf-Zeitpunkt die
+// aktuelle Instanz auflösen.
+let _skillStoreRef: import("./skills").SkillStore | null = null;
+let _skillsTrustRef: SkillsTrustStore | null = null;
+const skillsUserDir = join(app.getPath("userData"), "skills");
+
 const agentRegistry = buildReadOnlyRegistry({
   gateway: gatewayClient,
   providers,
@@ -1297,6 +1305,12 @@ const agentRegistry = buildReadOnlyRegistry({
   producerLogBuffer,
   memory,
   knowledge: knowledgeManager,
+  // v0.1.236 — Skill-Self-Authoring-Tools. Stores werden weiter unten
+  // im Boot zugewiesen; bis dahin liefern die Getter null und die
+  // skill_*-Tools melden „Skills-Store nicht initialisiert".
+  getSkillStore: () => _skillStoreRef,
+  getSkillsTrust: () => _skillsTrustRef,
+  skillsUserDir,
 });
 const agent = new AgentOrchestrator({
   providers,
@@ -2157,6 +2171,7 @@ app.whenReady().then(async () => {
   // constructed before `initSkills` so the bundled-starter vendor
   // hook can auto-trust on first install.
   const skillsTrust = new SkillsTrustStore();
+  _skillsTrustRef = skillsTrust;
   const skillStore = await initSkills(app, {
     evaluateGate: skillGate,
     trustStore: skillsTrust,
@@ -2166,6 +2181,8 @@ app.whenReady().then(async () => {
     );
     return null;
   });
+  // v0.1.236 — backfill the lazy ref used by the skill_*-tools.
+  _skillStoreRef = skillStore;
   // S3 — per-user enabled-state for skills. Wire BEFORE the SkillStore
   // hook-up so the orchestrator's availableSkills() filter has the
   // prefs in hand on the first turn.

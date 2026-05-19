@@ -39,7 +39,10 @@ import { buildProducerTools } from "./producers";
 import { buildChatHistoryTools } from "./chat-history";
 import { buildNotionTools } from "./notion";
 import { buildObsidianTools } from "./obsidian";
+import { buildSkillsTools } from "./skills";
 import type { KnowledgeManager } from "../../knowledge/manager";
+import type { SkillStore } from "../../skills/store";
+import type { SkillsTrustStore } from "../../skills/trust-store";
 
 // Tool factory.
 //
@@ -107,6 +110,12 @@ export function buildReadOnlyRegistry(deps: {
   onWatchesChanged: () => void;
   /** v0.1.225 — Knowledge-Integrations (Notion in P2, Obsidian in P3). */
   knowledge: KnowledgeManager;
+  /** v0.1.236 — Self-Authoring Skills (Knowledge P4). Lazy-Getter weil
+   *  die SkillStore-Instanz erst nach dem Registry-Build im Boot
+   *  konstruiert wird (initSkills ist async). */
+  getSkillStore: () => SkillStore | null;
+  getSkillsTrust: () => SkillsTrustStore | null;
+  skillsUserDir: string;
 }): ToolRegistry {
   const registry = new ToolRegistry();
   const ctx = { gateway: deps.gateway };
@@ -173,6 +182,13 @@ export function buildReadOnlyRegistry(deps: {
   }))
     registry.register(t);
   for (const t of buildChatHistoryTools({ memory: deps.memory }))
+    registry.register(t);
+  for (const t of buildSkillsTools({
+    getSkillStore: deps.getSkillStore,
+    getTrustStore: deps.getSkillsTrust,
+    userDir: deps.skillsUserDir,
+    availableTools: () => registry.list().map((tool) => tool.name),
+  }))
     registry.register(t);
   return registry;
 }
