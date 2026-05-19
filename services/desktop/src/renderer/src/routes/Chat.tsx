@@ -1771,8 +1771,23 @@ function ActivityRow(props: {
   preview?: string;
 }) {
   const [open, setOpen] = useState(false);
+  const [errorOpen, setErrorOpen] = useState(false);
   const argSummary = summarizeArgs(props.args);
   const hasArgs = argSummary.length > 0;
+  // v0.1.246 — Bei Fehler-Status den Preview in einen ausklappbaren
+  // <pre>-Block schieben. Standard-Anzeige bleibt kurz (erste 100
+  // Zeichen, einzeilig); Klick auf "Fehler anzeigen" expandiert den
+  // VOLLEN Text. Vorher wurde die ganze Notion-400-Validation-Story
+  // einzeilig + auf Span-Breite getrimmt — der User sah weder den
+  // gesendeten Filter noch den Schema-Hint, weil beides am
+  // span-Overflow weggeschnitten war.
+  const isError = props.status === "error";
+  const fullPreview = props.preview ?? "";
+  const shortPreview =
+    isError && fullPreview.length > 100
+      ? fullPreview.slice(0, 100) + "…"
+      : fullPreview;
+  const errorTooLongForInline = isError && fullPreview.length > 100;
   return (
     <div className={`activity activity-${props.status}`}>
       <div className="activity-marker">
@@ -1797,11 +1812,28 @@ function ActivityRow(props: {
               {open ? "Argumente ausblenden" : "Argumente"}
             </button>
           )}
-          {props.preview && (
-            <span className="activity-preview">{props.preview}</span>
+          {errorTooLongForInline && (
+            <button
+              type="button"
+              className="activity-args-toggle"
+              onClick={() => setErrorOpen((v) => !v)}
+              aria-expanded={errorOpen}
+            >
+              {errorOpen ? "Fehler ausblenden" : "Fehler anzeigen"}
+            </button>
+          )}
+          {fullPreview && (
+            <span className="activity-preview">
+              {errorTooLongForInline ? shortPreview : fullPreview}
+            </span>
           )}
         </div>
         {hasArgs && open && <pre className="activity-args">{argSummary}</pre>}
+        {errorTooLongForInline && errorOpen && (
+          <pre className="activity-args activity-error-detail">
+            {fullPreview}
+          </pre>
+        )}
       </div>
     </div>
   );

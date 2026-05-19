@@ -2270,6 +2270,13 @@ code, pre { font-family: var(--font-mono); font-size: 12px; }
   font-size: 11px;
   white-space: pre-wrap; word-break: break-all;
   color: var(--fg);
+  max-height: 400px;
+  overflow-y: auto;
+}
+.activity-error-detail {
+  background: rgba(220, 38, 38, 0.08);
+  color: var(--fg);
+  border-left: 2px solid rgba(220, 38, 38, 0.5);
 }
 .activity-thinking {
   color: var(--muted); font-style: italic; font-size: 13px;

@@ -202,7 +202,7 @@ export function buildNotionTools(deps: {
   const queryDatabase = defineTool({
     name: "notion_query_database",
     description:
-      "Run a structured query against a Notion database. Returns matching rows with simplified properties. Use this — NOT notion_search — when you need to find a specific row by its title or other property to then update it.\n\nFinding a row by name (most common case): call introspect_database first to learn the exact name of the title-property, then filter on that. Example for a title-property called 'Name': filter = { property: 'Name', title: { equals: 'Kerstin Komarnicki' } }. The 'equals' is exact-match; use 'contains' for fuzzy. Other useful filter shapes: { property: 'Status', status: { equals: 'Lead' } }, { property: 'Created', date: { on_or_after: '2026-01-01' } }. See https://developers.notion.com/reference/post-database-query-filter for the full spec.\n\nWithout filters returns the most recently edited rows.",
+      "Run a structured query against a Notion database. Returns matching rows with simplified properties. Use this — NOT notion_search — when you need to find a specific row by its title or other property to then update it.\n\nFINDING A ROW BY NAME (most common case): call notion_introspect_database FIRST to learn the exact name of the title-property. Then filter on that property. Required filter shape: {\"property\": \"<exact-name>\", \"<type>\": {\"contains\": \"<wert>\"}}. The wrapper key after `property` MUST match the property's actual type: `title` for title-fields, `rich_text` for text-fields, `select`/`status`/`multi_select` for option-fields, `date` for date-fields, `number` for numbers, `checkbox` for booleans.\n\nWORKING EXAMPLES (assume schema has title-property called 'Name'):\n  - Find by title-contains:   {\"property\":\"Name\",\"title\":{\"contains\":\"Kerstin\"}}\n  - Find by title-equals:     {\"property\":\"Name\",\"title\":{\"equals\":\"Kerstin Komarnicki\"}}\n  - Filter on status field:   {\"property\":\"Status\",\"status\":{\"equals\":\"Lead\"}}\n  - Filter on date:           {\"property\":\"Created\",\"date\":{\"on_or_after\":\"2026-01-01\"}}\n  - Combine with AND:         {\"and\":[ <filter1>, <filter2> ]}\n  - Combine with OR:          {\"or\":[ <filter1>, <filter2> ]}\n\nDO NOT SEND:\n  - Empty filter `{}` — that's invalid in Notion; just omit the parameter to get all rows.\n  - Type-wrapper without `property`: `{\"title\":{\"contains\":\"X\"}}` is missing the property name.\n  - Stringified JSON for the filter — pass a real object.\n\nIf Notion still returns 400, the error response contains the actual property list of the database — read it, pick the correct property + wrapper, and retry. See https://developers.notion.com/reference/post-database-query-filter for the full spec.\n\nWithout `filter`, returns the most recently edited rows.",
     parameters: {
       type: "object",
       properties: {
@@ -247,6 +247,17 @@ export function buildNotionTools(deps: {
       let normalisedFilter = args.filter as unknown;
       if (Array.isArray(normalisedFilter)) {
         normalisedFilter = { and: normalisedFilter };
+      }
+      // v0.1.246 — Empty-Object-Filter weg, das ist Notion-ungültig.
+      // Wenn der Agent wirklich keinen Filter wollte, soll er das
+      // Argument einfach weglassen.
+      if (
+        normalisedFilter &&
+        typeof normalisedFilter === "object" &&
+        !Array.isArray(normalisedFilter) &&
+        Object.keys(normalisedFilter as Record<string, unknown>).length === 0
+      ) {
+        normalisedFilter = undefined;
       }
       const items = await km.queryNotionDatabase(args.databaseId, {
         filter: normalisedFilter,

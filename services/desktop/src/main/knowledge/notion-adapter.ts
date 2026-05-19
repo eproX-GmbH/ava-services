@@ -594,7 +594,8 @@ export class NotionAdapter implements KnowledgeAdapter {
     // Anti-Loop-Guard schiesst ihn ab. Wir lesen das Schema vorab
     // und korrigieren die häufigsten Misformate, bevor wir den
     // Call abschicken.
-    let normalisedFilter: unknown = opts?.filter ?? undefined;
+    const originalFilter = opts?.filter;
+    let normalisedFilter: unknown = originalFilter ?? undefined;
     let schemaForError: NotionDatabase | null = null;
     if (normalisedFilter) {
       try {
@@ -611,6 +612,30 @@ export class NotionAdapter implements KnowledgeAdapter {
           err instanceof Error ? err.message : err,
         );
       }
+    }
+    // v0.1.246 — Empty-Object-Filter (`{}`) auslassen. Das ist Notion-
+    // ungültig (er erwartet entweder einen Property-Filter ODER `and`/
+    // `or`), aber semantisch eindeutig "kein Filter". Vorher landete
+    // das Empty-Object im Request-Body und Notion antwortete mit
+    // verwirrendem 400.
+    if (
+      normalisedFilter &&
+      typeof normalisedFilter === "object" &&
+      !Array.isArray(normalisedFilter) &&
+      Object.keys(normalisedFilter as Record<string, unknown>).length === 0
+    ) {
+      console.info(
+        "[notion-adapter] queryDatabase: dropping empty {} filter",
+      );
+      normalisedFilter = undefined;
+    }
+    // v0.1.246 — Diagnostisches Log: was hat der Agent original geschickt,
+    // was haben wir daraus gemacht. Auf stderr, damit der User es im
+    // Main-Process-Log sieht falls eine spätere Anfrage trotzdem 400 wirft.
+    if (originalFilter !== undefined) {
+      console.info(
+        `[notion-adapter] queryDatabase filter: original=${JSON.stringify(originalFilter).slice(0, 400)} | repaired=${JSON.stringify(normalisedFilter ?? null).slice(0, 400)}`,
+      );
     }
     if (normalisedFilter) body.filter = normalisedFilter;
     if (opts?.sorts) body.sorts = opts.sorts;
@@ -637,20 +662,39 @@ export class NotionAdapter implements KnowledgeAdapter {
       // der Agent nur „Notion API 400: validation_error" und kann nicht
       // self-healen, weil er die Property-Typen nicht kennt.
       if (err instanceof NotionApiError && err.status === 400) {
+        // v0.1.246 — Schema-Hint + Filter-Diagnose AN DEN ANFANG, damit
+        // sie auch bei truncation der Error-Message sichtbar bleiben.
+        // Vorher kam alles ans Ende und wurde von der 200-Byte-Truncation
+        // weggeschnitten — der Agent sah nur Notions verwirrenden
+        // "or should be defined / and should be defined"-Body.
         let schemaHint = "";
         if (schemaForError) {
           const properties = Object.values(schemaForError.properties).map(
             (p) => `${p.name} (${p.type})`,
           );
           schemaHint =
-            ` Verfügbare Properties dieser Database: ${properties.join(", ")}. ` +
-            `Tipp: Filter-Property-Wrapper muss zum tatsächlichen Typ passen ` +
-            `(z. B. {property: "Name", title: {contains: "X"}} nur wenn Name vom Typ "title" ist; ` +
-            `bei rich_text {property: "Name", rich_text: {contains: "X"}}).`;
+            `Verfügbare Properties: ${properties.join(", ")}. ` +
+            `Beispiel-Filter für Title-Match: ` +
+            `{"property":"<title-prop>","title":{"contains":"<wert>"}}. ` +
+            `Für rich_text/select/status den passenden Wrapper. `;
         }
+        const sentFilterStr = JSON.stringify(
+          normalisedFilter ?? null,
+        ).slice(0, 300);
+        const originalFilterStr = JSON.stringify(originalFilter ?? null).slice(
+          0,
+          300,
+        );
+        console.warn(
+          `[notion-adapter] queryDatabase 400 ` +
+            `original=${originalFilterStr} ` +
+            `repaired=${sentFilterStr} ` +
+            `body=${err.body.slice(0, 500)}`,
+        );
         throw new NotionApiError(
           err.status,
-          `${err.body}${schemaHint} | Gesendeter Filter: ${JSON.stringify(normalisedFilter ?? null).slice(0, 400)}`,
+          `${schemaHint}Gesendeter Filter: ${sentFilterStr}. ` +
+            `Notion-Originalfehler: ${err.body}`,
         );
       }
       throw err;
@@ -858,8 +902,13 @@ interface NotionUserMeResponse {
 }
 
 class NotionApiError extends Error {
+  // v0.1.246 — Truncation auf 1500 Zeichen erhöht. Notions
+  // validation_error-Bodies sind mehrzeilig (alle möglichen Discriminator-
+  // Alternativen werden aufgelistet); plus unser Schema-Hint mit der
+  // Property-Liste passt nicht in 200 Zeichen. Wenn der Hint nicht im
+  // sichtbaren Text steht, kann der Agent nicht self-healen.
   constructor(public status: number, public body: string) {
-    super(`Notion API ${status}: ${body.slice(0, 200)}`);
+    super(`Notion API ${status}: ${body.slice(0, 1500)}`);
   }
 }
 
