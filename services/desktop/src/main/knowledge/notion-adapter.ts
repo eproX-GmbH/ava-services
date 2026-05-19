@@ -567,21 +567,44 @@ export class NotionAdapter implements KnowledgeAdapter {
   async listDatabases(): Promise<
     Array<{ id: string; title: string; url: string }>
   > {
+    // v0.1.248 — Search-Endpoint hat mit notion-version 2025-09-03+
+    // den filter-value "database" verloren. Stattdessen suchen wir
+    // jetzt nach "data_source"-Objekten und mappen deren
+    // parent.database_id zurück auf die enthaltende Database, damit
+    // alle nachgelagerten Tool-Calls (introspect, query, update)
+    // weiter mit Database-IDs arbeiten können.
     const res = await this.request<NotionSearchResponse>(
       "/v1/search",
       "POST",
       {
-        filter: { value: "database", property: "object" },
+        filter: { value: "data_source", property: "object" },
         page_size: 100,
       },
     );
-    return (res.results ?? [])
-      .filter((r): r is NotionDatabase => r.object === "database")
-      .map((db) => ({
-        id: db.id,
-        title: extractDatabaseTitle(db),
-        url: db.url ?? "",
-      }));
+    const dataSources = (res.results ?? []).filter(
+      (r): r is NotionDataSourceSearchResult =>
+        (r as { object?: string }).object === "data_source",
+    );
+    // Dedupe nach database_id — bei mehreren Data Sources pro
+    // Database behalten wir die erste (für den User ist es DIE
+    // Database, das Multi-DS-Detail interessiert ihn nicht).
+    const seenDbIds = new Set<string>();
+    const out: Array<{ id: string; title: string; url: string }> = [];
+    for (const ds of dataSources) {
+      const dbId = ds.parent?.database_id;
+      if (!dbId || seenDbIds.has(dbId)) continue;
+      seenDbIds.add(dbId);
+      const title = (ds.title ?? [])
+        .map((t) => t.plain_text ?? "")
+        .join("")
+        .trim();
+      out.push({
+        id: dbId,
+        title: title || "(ohne Titel)",
+        url: ds.url ?? "",
+      });
+    }
+    return out;
   }
 
   async queryDatabase(
@@ -737,12 +760,36 @@ export class NotionAdapter implements KnowledgeAdapter {
     if (this.dataSourceIdByDb.has(databaseId)) {
       return this.dataSourceIdByDb.get(databaseId) ?? null;
     }
-    const db = await this.request<NotionDatabase>(
-      `/v1/databases/${encodeURIComponent(databaseId)}`,
-    );
-    const first = db.data_sources?.[0]?.id ?? null;
-    this.dataSourceIdByDb.set(databaseId, first);
-    return first;
+    try {
+      const db = await this.request<NotionDatabase>(
+        `/v1/databases/${encodeURIComponent(databaseId)}`,
+      );
+      const first = db.data_sources?.[0]?.id ?? null;
+      this.dataSourceIdByDb.set(databaseId, first);
+      return first;
+    } catch (err) {
+      // v0.1.248 — Sicherheitsnetz: wenn der Agent statt einer
+      // Database-ID versehentlich eine Data-Source-ID übergibt
+      // (z. B. weil er die ID aus einem Notion-Link kopiert hat),
+      // versuchen wir GET /v1/data_sources/{id}. Klappt das,
+      // behandeln wir die ID als Data-Source-ID und mappen sie auf
+      // sich selbst (databaseId-Pfad wird nicht benutzt).
+      if (err instanceof NotionApiError && err.status === 404) {
+        try {
+          await this.request<NotionDataSource>(
+            `/v1/data_sources/${encodeURIComponent(databaseId)}`,
+          );
+          // Caller hat eine Data-Source-ID übergeben; resolveDataSourceId
+          // returns sie unverändert, getDatabaseSchema benutzt den
+          // gleichen Pfad.
+          this.dataSourceIdByDb.set(databaseId, databaseId);
+          return databaseId;
+        } catch {
+          /* fall through */
+        }
+      }
+      throw err;
+    }
   }
 
   /**
@@ -933,6 +980,22 @@ interface NotionDataSource {
   url?: string;
 }
 
+/** v0.1.248 — Shape eines data_source-Eintrags in /v1/search-Results
+ *  (kürzer als das volle /v1/data_sources/{id}-Objekt; insb. ohne
+ *  properties). Hauptzweck: parent.database_id rauszuziehen, um die
+ *  bisherige Database-ID-zentrierte Tool-API beibehalten zu können. */
+interface NotionDataSourceSearchResult {
+  object: "data_source";
+  id: string;
+  title?: NotionRichText[];
+  url?: string;
+  parent?: {
+    type?: "database_id" | "data_source_id";
+    database_id?: string;
+    data_source_id?: string;
+  };
+}
+
 interface NotionPropertyDef {
   id: string;
   name: string;
@@ -989,7 +1052,10 @@ interface NotionBlocksResponse {
 }
 
 interface NotionSearchResponse {
-  results?: Array<NotionPage | NotionDatabase>;
+  // v0.1.248 — Search-Results enthalten seit 2025-09-03 auch
+  // data_source-Objekte (mit object: "data_source"). NotionPage und
+  // NotionDatabase sind unverändert für Legacy-Pfade.
+  results?: Array<NotionPage | NotionDatabase | NotionDataSourceSearchResult>;
   next_cursor?: string | null;
 }
 
@@ -1362,12 +1428,31 @@ function richTextToString(rt: NotionRichText[] | undefined): string {
 }
 
 function searchResultToHit(
-  r: NotionPage | NotionDatabase,
+  r: NotionPage | NotionDatabase | NotionDataSourceSearchResult,
 ): KnowledgeSearchHit {
   if (r.object === "database") {
     return {
       id: r.id,
       title: extractDatabaseTitle(r),
+      type: "database",
+      url: r.url,
+    };
+  }
+  if (r.object === "data_source") {
+    // v0.1.248 — Data Sources verhalten sich aus Agent-Sicht wie
+    // Databases (sie sind die queryable Container für Properties).
+    // Wir mappen die ID auf die enthaltende Database, damit alle
+    // weiteren Tool-Calls (introspect/query/update) konsistent
+    // database-IDs benutzen. Wenn parent.database_id fehlt (sollte
+    // nicht vorkommen), fallback auf die data_source-ID selbst.
+    const dbId = r.parent?.database_id ?? r.id;
+    const title = (r.title ?? [])
+      .map((t) => t.plain_text ?? "")
+      .join("")
+      .trim();
+    return {
+      id: dbId,
+      title: title || "(ohne Titel)",
       type: "database",
       url: r.url,
     };
