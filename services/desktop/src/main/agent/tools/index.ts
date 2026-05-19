@@ -38,6 +38,7 @@ import { buildReachabilityTools } from "./reachability";
 import { buildProducerTools } from "./producers";
 import { buildChatHistoryTools } from "./chat-history";
 import { buildNotionTools } from "./notion";
+import { buildObsidianTools } from "./obsidian";
 import type { KnowledgeManager } from "../../knowledge/manager";
 
 // Tool factory.
@@ -118,6 +119,8 @@ export function buildReadOnlyRegistry(deps: {
   for (const t of buildMemoryTools({ generalMemory: deps.generalMemory }))
     registry.register(t);
   for (const t of buildNotionTools({ knowledge: deps.knowledge }))
+    registry.register(t);
+  for (const t of buildObsidianTools({ knowledge: deps.knowledge }))
     registry.register(t);
   for (const t of buildImportTools({
     gateway: deps.gateway,

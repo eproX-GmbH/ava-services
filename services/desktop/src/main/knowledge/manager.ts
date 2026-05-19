@@ -22,6 +22,7 @@ import type {
   KnowledgeUpdate,
 } from "./types";
 import { NotionAdapter } from "./notion-adapter";
+import { ObsidianAdapter } from "./obsidian-adapter";
 import { KnowledgeProviderStore } from "./store";
 
 export interface KnowledgeManagerEvents {
@@ -48,11 +49,15 @@ export class KnowledgeManager extends EventEmitter {
 
   private constructor() {
     super();
-    // P2: Notion-Adapter registrieren. P3 wird hier den Obsidian-
-    // Adapter ergänzen.
+    // P2: Notion-Adapter.
     const notion = new NotionAdapter();
     notion.attach();
     this.adapters.set("notion", notion);
+
+    // P3: Obsidian-Adapter (Local-REST-API-Plugin).
+    const obsidian = new ObsidianAdapter();
+    obsidian.attach();
+    this.adapters.set("obsidian", obsidian);
 
     // Status-Mutationen vom Store nach außen tunneln.
     this.store.on("statusChanged", (kind) => {
@@ -154,5 +159,18 @@ export class KnowledgeManager extends EventEmitter {
       throw new Error("Notion-Adapter nicht initialisiert.");
     }
     return adapter.queryDatabase(databaseId, opts);
+  }
+
+  /** v0.1.235 — Obsidian-Folder-Listing. Nicht im KnowledgeAdapter-
+   *  Interface (Notion hat kein Äquivalent — dort gibt es DBs, keine
+   *  Ordner-Hierarchie), darum dieser direkte Pfad. */
+  async listObsidianFolder(
+    folder: string | null,
+  ): Promise<Array<{ path: string; isFolder: boolean }>> {
+    const adapter = this.getAdapter("obsidian");
+    if (!(adapter instanceof ObsidianAdapter)) {
+      throw new Error("Obsidian-Adapter nicht initialisiert.");
+    }
+    return adapter.listFolder(folder);
   }
 }

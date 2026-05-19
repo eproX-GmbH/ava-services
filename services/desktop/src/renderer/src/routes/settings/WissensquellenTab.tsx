@@ -156,8 +156,15 @@ function ProviderCard({
         </p>
       )}
 
-      {supported && connecting && (
+      {supported && connecting && status.kind === "notion" && (
         <NotionConnectForm
+          kind={status.kind}
+          onCancel={onCancelConnect}
+          onConnected={onSnapshotChanged}
+        />
+      )}
+      {supported && connecting && status.kind === "obsidian" && (
+        <ObsidianConnectForm
           kind={status.kind}
           onCancel={onCancelConnect}
           onConnected={onSnapshotChanged}
@@ -275,4 +282,117 @@ const PROVIDER_META: Record<KnowledgeProviderKind, { name: string; descr: string
 };
 
 /** Provider mit funktionierender Connect-UI in dieser Version. */
-const SUPPORTED_PROVIDERS: KnowledgeProviderKind[] = ["notion"];
+const SUPPORTED_PROVIDERS: KnowledgeProviderKind[] = ["notion", "obsidian"];
+
+// v0.1.235 — Obsidian-Connect-Form. Im Gegensatz zu Notion (1 Token)
+// braucht Obsidian zwei Werte: Base-URL des Local-REST-API-Plugins +
+// API-Key. Wir serialisieren beide als JSON-Envelope in den
+// gemeinsamen `knowledge:connect`-IPC, der Adapter parsed das wieder.
+function ObsidianConnectForm({
+  kind,
+  onCancel,
+  onConnected,
+}: {
+  kind: KnowledgeProviderKind;
+  onCancel: () => void;
+  onConnected: (s: KnowledgeProvidersSnapshot) => void;
+}) {
+  const [baseUrl, setBaseUrl] = useState("http://127.0.0.1:27123");
+  const [apiKey, setApiKey] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const onSubmit = async (): Promise<void> => {
+    if (apiKey.trim().length === 0) {
+      setError("API-Key fehlt.");
+      return;
+    }
+    if (!/^https?:\/\//i.test(baseUrl.trim())) {
+      setError("Base-URL muss mit http:// oder https:// beginnen.");
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      const envelope = JSON.stringify({
+        apiKey: apiKey.trim(),
+        baseUrl: baseUrl.trim(),
+      });
+      const next = await window.api.knowledge.connect({
+        kind,
+        token: envelope,
+      });
+      onConnected(next);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="wissensquellen-connect">
+      <ol className="wissensquellen-steps">
+        <li>
+          Öffne Obsidian → Settings → Community plugins. Falls nötig,
+          schalte „Restricted mode" aus.
+        </li>
+        <li>
+          Klick „Browse", suche <strong>Local REST API</strong>{" "}
+          (Autor: coddingtonbear), installiere + aktiviere.
+        </li>
+        <li>
+          Im Plugin-Setting findest du den <em>API-Key</em> und zwei
+          Ports: <code>HTTP (27123)</code> und <code>HTTPS (27124)</code>.
+        </li>
+        <li>
+          Empfehlung: <strong>HTTP</strong> nutzen (Port 27123). HTTPS
+          hat ein selbst-signiertes Zertifikat und braucht zusätzlichen
+          Aufwand. Für lokalen Verkehr auf 127.0.0.1 reicht HTTP.
+        </li>
+        <li>API-Key kopieren und unten einfügen.</li>
+      </ol>
+      <label className="field">
+        <span>Base-URL</span>
+        <input
+          type="text"
+          value={baseUrl}
+          onChange={(e) => setBaseUrl(e.target.value)}
+          spellCheck={false}
+          autoComplete="off"
+          disabled={busy}
+        />
+      </label>
+      <label className="field">
+        <span>API-Key</span>
+        <input
+          type="password"
+          value={apiKey}
+          onChange={(e) => setApiKey(e.target.value)}
+          autoComplete="off"
+          spellCheck={false}
+          disabled={busy}
+          placeholder="aus Plugin-Settings kopieren"
+        />
+      </label>
+      {error && <p className="error small">{error}</p>}
+      <div className="actions">
+        <button
+          type="button"
+          onClick={() => void onSubmit()}
+          disabled={busy || apiKey.trim().length === 0}
+        >
+          {busy ? "Verbinde…" : "Verbinden"}
+        </button>
+        <button
+          type="button"
+          className="link"
+          onClick={onCancel}
+          disabled={busy}
+        >
+          Abbrechen
+        </button>
+      </div>
+    </div>
+  );
+}

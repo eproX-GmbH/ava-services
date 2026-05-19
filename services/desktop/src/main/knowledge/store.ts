@@ -199,6 +199,73 @@ export class KnowledgeProviderStore extends EventEmitter {
     return existsSync(this.tokenPath(kind));
   }
 
+  // ---- v0.1.235 — Obsidian-spezifische Credentials --------------------------
+  //
+  // Obsidian's Local-REST-API-Plugin braucht ZWEI Werte: API-Key
+  // (Bearer-Token) und Base-URL (typisch http://127.0.0.1:27123). Wir
+  // serialisieren beide als JSON in den encrypted Slot. Backward-compat
+  // beim Lesen: ein reiner String-Token bekommt eine Default-Base-URL
+  // (sollte aber nie auftreten, weil setObsidianCredentials immer
+  // zusammen geschrieben wird).
+
+  setObsidianCredentials(creds: {
+    apiKey: string;
+    baseUrl: string;
+  }): void {
+    const trimmedKey = creds.apiKey.trim();
+    const trimmedUrl = creds.baseUrl.trim().replace(/\/+$/, "");
+    if (trimmedKey.length === 0) {
+      throw new Error("Obsidian-API-Key ist leer.");
+    }
+    if (!/^https?:\/\//i.test(trimmedUrl)) {
+      throw new Error(
+        "Obsidian Base-URL muss mit http:// oder https:// beginnen (z. B. http://127.0.0.1:27123).",
+      );
+    }
+    if (!this.isEncryptionAvailable()) {
+      throw new Error(
+        "OS-Schlüsselbund nicht verfügbar — Obsidian-Credentials werden nur verschlüsselt akzeptiert.",
+      );
+    }
+    const envelope = JSON.stringify({
+      apiKey: trimmedKey,
+      baseUrl: trimmedUrl,
+    });
+    const enc = safeStorage.encryptString(envelope);
+    writeFileSync(this.tokenPath("obsidian"), enc, { mode: 0o600 });
+    this.emit("tokenChanged", "obsidian");
+  }
+
+  async getObsidianCredentials(): Promise<{
+    apiKey: string;
+    baseUrl: string;
+  } | null> {
+    const path = this.tokenPath("obsidian");
+    if (!existsSync(path)) return null;
+    try {
+      const buf = readFileSync(path);
+      if (!this.isEncryptionAvailable()) return null;
+      const raw = safeStorage.decryptString(buf);
+      const parsed = JSON.parse(raw) as Partial<{
+        apiKey: string;
+        baseUrl: string;
+      }>;
+      if (
+        typeof parsed.apiKey === "string" &&
+        typeof parsed.baseUrl === "string"
+      ) {
+        return { apiKey: parsed.apiKey, baseUrl: parsed.baseUrl };
+      }
+      return null;
+    } catch (err) {
+      console.warn(
+        "[knowledge-store] decrypt obsidian creds failed:",
+        err instanceof Error ? err.message : err,
+      );
+      return null;
+    }
+  }
+
   clearToken(kind: KnowledgeProviderKind): void {
     const path = this.tokenPath(kind);
     if (existsSync(path)) {
