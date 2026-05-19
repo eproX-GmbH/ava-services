@@ -159,6 +159,25 @@ export function buildMetaTools(deps: MetaToolDeps): Tool[] {
             "Keine Treffer. Versuch's mit anderen Stichwörtern (z. B. einzelne Worte statt Phrasen). Oder die gesuchte Funktion existiert noch nicht als Tool — dann sag dem Nutzer das offen.",
         };
       }
+      // v0.1.244 — Bundle-Hint. Wenn die Treffer aus einem bekannten
+      // Workflow stammen, hängen wir die volle Bundle-Liste dran. So
+      // lädt der Agent in EINEM tool_load die ganze Gruppe statt
+      // unter-spezifisch nur die ersten 2 Treffer. Lazy-Loading bringt
+      // sonst eine Regression: für „Firma X" lädt der Agent nur
+      // company_search + company_crm_summary und verpasst die
+      // restlichen 4 Recherche-Tools.
+      const bundle = detectBundle(hits, args.query);
+      if (bundle) {
+        return {
+          hits,
+          suggestedBundle: bundle,
+          bundleHint:
+            `TIPP: Statt nur die Top-Treffer zu laden, ruf direkt ` +
+            `tool_load([${bundle.tools.map((t) => `"${t}"`).join(", ")}]) ` +
+            `für den vollen ${bundle.label}-Bundle. Das spart Roundtrips ` +
+            `und ermöglicht den parallelen Fan-Out.`,
+        };
+      }
       return { hits };
     },
     preview: (r) => {
@@ -231,3 +250,114 @@ export const ALWAYS_ON_CORE_TOOL_NAMES: ReadonlySet<string> = new Set<string>([
   "ask_user_choice",
   "ask_user_text",
 ]);
+
+// v0.1.244 — Tool-Bundles. Wenn `tool_search` Treffer aus einer
+// bekannten Workflow-Gruppe liefert, hängt es einen Bundle-Hint an
+// das Result, sodass der Agent in EINEM tool_load die ganze Gruppe
+// holt statt unter-spezifisch nur die ersten 2 Treffer. Verhindert
+// die Lazy-Loading-Regression beim Fan-Out für Firmen-Recherche.
+//
+// Match-Logik: wenn min. 2 der Top-Treffer zu einem Bundle gehören,
+// gilt der Bundle als detected. Plus Query-Hint-Matches.
+interface ToolBundle {
+  label: string;
+  tools: readonly string[];
+  /** Lowercase query terms that strongly suggest this bundle even
+   *  before we look at the hits. */
+  queryHints: readonly string[];
+}
+
+const KNOWN_BUNDLES: readonly ToolBundle[] = [
+  {
+    label: "Firmen-Recherche",
+    tools: [
+      "company_search",
+      "company_get",
+      "company_profile",
+      "company_publications",
+      "company_contacts",
+      "company_crm_summary",
+    ],
+    queryHints: ["firma", "firmen", "company", "übersicht", "recherche"],
+  },
+  {
+    label: "Notion-CRM-Update",
+    tools: [
+      "notion_list_databases",
+      "notion_introspect_database",
+      "notion_query_database",
+      "notion_update_page",
+    ],
+    queryHints: ["notion", "crm update", "datenbank"],
+  },
+  {
+    label: "Notion-Read",
+    tools: ["notion_search", "notion_list_databases", "notion_get_page"],
+    queryHints: ["notion search", "notion lesen"],
+  },
+  {
+    label: "Obsidian-Notes",
+    tools: [
+      "obsidian_list_notes",
+      "obsidian_search",
+      "obsidian_get_note",
+      "obsidian_create_note",
+      "obsidian_append_to_note",
+      "obsidian_replace_note",
+    ],
+    queryHints: ["obsidian", "vault", "markdown note"],
+  },
+  {
+    label: "Meldungen / Alerts",
+    tools: [
+      "alerts_list",
+      "alerts_dismiss",
+      "alerts_dismiss_all",
+      "alerts_purge",
+      "alerts_trigger_heartbeat",
+      "alerts_get_prefs",
+      "alerts_set_prefs",
+    ],
+    queryHints: ["alert", "meldung", "benachrichtigung", "heartbeat"],
+  },
+  {
+    label: "Import / Bulk",
+    tools: [
+      "import_excel",
+      "import_company",
+      "import_companies_from_crm",
+      "import_status",
+    ],
+    queryHints: ["import", "excel", "csv", "bulk"],
+  },
+  {
+    label: "Watches",
+    tools: [
+      "watch_register",
+      "watch_list",
+      "watch_remove",
+      "watch_pause",
+      "watch_resume",
+    ],
+    queryHints: ["watch", "beobachten", "wiederkehrend"],
+  },
+];
+
+function detectBundle(
+  hits: ReadonlyArray<{ name: string }>,
+  query: string,
+): ToolBundle | null {
+  const hitNames = new Set(hits.map((h) => h.name));
+  const q = query.toLowerCase();
+  let best: { bundle: ToolBundle; score: number } | null = null;
+  for (const bundle of KNOWN_BUNDLES) {
+    const hitMatches = bundle.tools.filter((t) => hitNames.has(t)).length;
+    if (hitMatches < 2) continue;
+    const queryMatch = bundle.queryHints.some((h) => q.includes(h)) ? 5 : 0;
+    const score = hitMatches * 2 + queryMatch;
+    if (!best || score > best.score) {
+      best = { bundle, score };
+    }
+  }
+  return best?.bundle ?? null;
+}

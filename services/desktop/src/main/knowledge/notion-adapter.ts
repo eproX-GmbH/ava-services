@@ -532,24 +532,76 @@ export class NotionAdapter implements KnowledgeAdapter {
     const body: Record<string, unknown> = {
       page_size: Math.min(opts?.pageSize ?? 25, 100),
     };
-    if (opts?.filter) body.filter = opts.filter;
+    // v0.1.244 — Filter-Auto-Repair. LLMs schicken den Notion-Filter
+    // oft in falscher Form: Property-Typ-Wrapper passt nicht zum
+    // tatsächlichen Schema (z. B. `{property: "Name", title: ...}`
+    // obwohl "Name" ein `rich_text`-Feld ist), oder die Property-
+    // Namen-Casing weicht ab. Notion antwortet dann mit 400 +
+    // validation_error, der Agent retried 3× identisch und der
+    // Anti-Loop-Guard schiesst ihn ab. Wir lesen das Schema vorab
+    // und korrigieren die häufigsten Misformate, bevor wir den
+    // Call abschicken.
+    let normalisedFilter: unknown = opts?.filter ?? undefined;
+    let schemaForError: NotionDatabase | null = null;
+    if (normalisedFilter) {
+      try {
+        const db = await this.request<NotionDatabase>(
+          `/v1/databases/${encodeURIComponent(databaseId)}`,
+        );
+        schemaForError = db;
+        normalisedFilter = repairNotionFilter(normalisedFilter, db.properties);
+      } catch (err) {
+        // Schema-Read fehlgeschlagen → wir lassen den Filter durch,
+        // Notion antwortet ggf. mit 400. Sieht der Agent dann.
+        console.warn(
+          "[notion-adapter] filter pre-flight schema read failed:",
+          err instanceof Error ? err.message : err,
+        );
+      }
+    }
+    if (normalisedFilter) body.filter = normalisedFilter;
     if (opts?.sorts) body.sorts = opts.sorts;
-    const res = await this.request<NotionSearchResponse>(
-      `/v1/databases/${encodeURIComponent(databaseId)}/query`,
-      "POST",
-      body,
-    );
-    return (res.results ?? [])
-      .filter((r): r is NotionPage => r.object === "page")
-      .map((page) => ({
-        id: page.id,
-        title: extractTitle(page),
-        content: "",
-        properties: simplifyProperties(page.properties),
-        createdAt: page.created_time,
-        updatedAt: page.last_edited_time,
-        url: page.url,
-      }));
+    try {
+      const res = await this.request<NotionSearchResponse>(
+        `/v1/databases/${encodeURIComponent(databaseId)}/query`,
+        "POST",
+        body,
+      );
+      return (res.results ?? [])
+        .filter((r): r is NotionPage => r.object === "page")
+        .map((page) => ({
+          id: page.id,
+          title: extractTitle(page),
+          content: "",
+          properties: simplifyProperties(page.properties),
+          createdAt: page.created_time,
+          updatedAt: page.last_edited_time,
+          url: page.url,
+        }));
+    } catch (err) {
+      // v0.1.244 — Wenn Notion immer noch 400 antwortet, hängen wir
+      // die Schema-Übersicht an die Fehler-Meldung dran. Sonst sieht
+      // der Agent nur „Notion API 400: validation_error" und kann nicht
+      // self-healen, weil er die Property-Typen nicht kennt.
+      if (err instanceof NotionApiError && err.status === 400) {
+        let schemaHint = "";
+        if (schemaForError) {
+          const properties = Object.values(schemaForError.properties).map(
+            (p) => `${p.name} (${p.type})`,
+          );
+          schemaHint =
+            ` Verfügbare Properties dieser Database: ${properties.join(", ")}. ` +
+            `Tipp: Filter-Property-Wrapper muss zum tatsächlichen Typ passen ` +
+            `(z. B. {property: "Name", title: {contains: "X"}} nur wenn Name vom Typ "title" ist; ` +
+            `bei rich_text {property: "Name", rich_text: {contains: "X"}}).`;
+        }
+        throw new NotionApiError(
+          err.status,
+          `${err.body}${schemaHint} | Gesendeter Filter: ${JSON.stringify(normalisedFilter ?? null).slice(0, 400)}`,
+        );
+      }
+      throw err;
+    }
   }
 
   // ---- internals -----------------------------------------------------------
@@ -1229,4 +1281,119 @@ function formatValueForError(v: unknown): string {
   if (Array.isArray(v)) return `[${v.map(formatValueForError).join(", ")}]`;
   if (typeof v === "object") return JSON.stringify(v);
   return String(v);
+}
+
+// ---- v0.1.244 — Notion-Filter Auto-Repair -----------------------------------
+//
+// LLMs schicken den Filter regelmäßig in falscher Form:
+//   - Property-Typ-Wrapper passt nicht zum echten DB-Schema
+//     (z. B. {property:"Name", title:{contains:"X"}} obwohl "Name"
+//     ein rich_text-Feld ist — Notion antwortet mit 400 +
+//     validation_error.)
+//   - Property-Namen-Casing weicht ab ("status" vs "Status").
+//   - Alte Form ohne `property`-Key: {Name:{equals:"X"}}.
+//
+// Wir korrigieren die häufigsten Misformate, bevor wir den Call
+// schicken. Was wir nicht sicher reparieren können, lassen wir
+// durch — Notion antwortet dann mit 400 und unser Error-Wrapper
+// hängt das Schema dran, damit der Agent self-healen kann.
+function repairNotionFilter(
+  filter: unknown,
+  schema: Record<string, NotionPropertyDef>,
+): unknown {
+  if (filter === null || typeof filter !== "object") return filter;
+  // Composite-Wrapper unverändert tiefer rekursieren.
+  const obj = filter as Record<string, unknown>;
+  if (Array.isArray(obj.and) || Array.isArray(obj.or)) {
+    const key = Array.isArray(obj.and) ? "and" : "or";
+    const arr = obj[key] as unknown[];
+    return {
+      ...obj,
+      [key]: arr.map((f) => repairNotionFilter(f, schema)),
+    };
+  }
+  // Variante (a): Agent schickt `{Name: {equals: "X"}}` ohne
+  // `property`-Wrapper. Notion verlangt {property, <type>:...}.
+  // Wir versuchen das umzubauen, wenn EIN Key ein bekannter
+  // Property-Name ist.
+  if (typeof obj.property !== "string") {
+    const keys = Object.keys(obj);
+    if (keys.length === 1) {
+      const k = keys[0]!;
+      const matched = resolvePropertyName(k, schema);
+      if (matched) {
+        const inner = obj[k] as Record<string, unknown> | undefined;
+        if (inner && typeof inner === "object") {
+          return repairNotionFilter(
+            { property: matched, ...inner },
+            schema,
+          );
+        }
+      }
+    }
+    return filter;
+  }
+  // Variante (b): Property gibts, aber Casing weicht ab → auf
+  // den echten Schema-Namen mappen.
+  const matched = resolvePropertyName(obj.property as string, schema);
+  if (!matched) {
+    // Property gibt's nicht im Schema → unverändert lassen, Notion
+    // antwortet mit klarem 400.
+    return filter;
+  }
+  const def = schema[matched]!;
+  const fixed: Record<string, unknown> = {
+    ...obj,
+    property: matched,
+  };
+  // Variante (c): Typ-Wrapper passt nicht zum echten Schema-Typ.
+  // Beispiel: {property:"Name", title:{...}} aber "Name" ist
+  // rich_text → wir mappen das nach {property:"Name", rich_text:{...}}.
+  const expectedWrapper = def.type;
+  const wrongWrappers = [
+    "title",
+    "rich_text",
+    "select",
+    "multi_select",
+    "status",
+    "date",
+    "number",
+    "checkbox",
+    "url",
+    "email",
+    "phone_number",
+    "people",
+    "files",
+    "formula",
+    "relation",
+    "rollup",
+  ];
+  let foundWrapper: string | null = null;
+  for (const w of wrongWrappers) {
+    if (w in fixed && w !== "property") {
+      foundWrapper = w;
+      break;
+    }
+  }
+  if (foundWrapper && foundWrapper !== expectedWrapper) {
+    const innerValue = fixed[foundWrapper];
+    delete fixed[foundWrapper];
+    fixed[expectedWrapper] = innerValue;
+    console.info(
+      `[notion-adapter] repairFilter: ${matched} wrapper "${foundWrapper}" -> "${expectedWrapper}"`,
+    );
+  }
+  return fixed;
+}
+
+function resolvePropertyName(
+  candidate: string,
+  schema: Record<string, NotionPropertyDef>,
+): string | null {
+  if (candidate in schema) return candidate;
+  const lower = candidate.toLowerCase();
+  for (const name of Object.keys(schema)) {
+    if (name.toLowerCase() === lower) return name;
+  }
+  return null;
 }
