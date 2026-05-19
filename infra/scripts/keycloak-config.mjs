@@ -53,6 +53,29 @@ const config = {
   realm: "ava",
   clientId: "ava-desktop",
   loginTheme: "ava",
+  // -------------------------------------------------------------------
+  // In-App-Registration clients (added with the desktop sign-up flow).
+  //
+  // `ava-registrar`     — confidential service-account client used by the
+  //                       gateway to call the Keycloak Admin API and
+  //                       create new users. Needs role
+  //                       `realm-management/manage-users`.
+  //
+  // `ava-registration`  — public client with ONLY direct-access-grants
+  //                       enabled. Used by the gateway IMMEDIATELY after
+  //                       user creation to ROPC-exchange the freshly-
+  //                       set password for a token-set, so the new
+  //                       user is signed in without a browser detour.
+  //                       Standard flow is OFF on purpose — this
+  //                       client must not show up in normal logins.
+  //
+  // The script will (idempotently) create both clients if missing,
+  // print the registrar's secret on first run so the operator can
+  // copy it into fly secrets, and warn on subsequent runs that the
+  // existing secret is preserved.
+  // -------------------------------------------------------------------
+  registrarClientId: "ava-registrar",
+  registrationClientId: "ava-registration",
   // Custom client scopes added on top of OIDC defaults. Each is
   // created once if missing, then attached as a *default* client
   // scope on `ava-desktop` so every issued token includes the
@@ -244,6 +267,13 @@ async function main() {
     }
   }
 
+  // ---- In-App-Registration: registrar + registration clients --------------
+  //
+  // Both are idempotent: if missing, create with the desired shape;
+  // if present, PATCH the shape but keep the registrar's secret.
+  await ensureRegistrarClient(token);
+  await ensureRegistrationClient(token);
+
   console.log("> done.");
   console.log("");
   console.log("Verify:");
@@ -254,6 +284,162 @@ async function main() {
   console.log(
     "page with a 'Register' link below the sign-in button.",
   );
+}
+
+// ---- Registrar (service-account, confidential) -----------------------------
+//
+// Creates the `ava-registrar` client + binds the `manage-users`
+// service-account role from the realm-management client. Prints the
+// generated secret on FIRST run so the operator can put it into
+// fly secrets — on later runs we leave the existing secret in place
+// (rotating it would silently break the gateway's create-user calls).
+
+async function ensureRegistrarClient(token) {
+  console.log(`> ensuring confidential client "${config.registrarClientId}"`);
+  const existing = await api(
+    token,
+    "GET",
+    `/realms/${config.realm}/clients?clientId=${encodeURIComponent(config.registrarClientId)}`,
+  );
+  let registrar;
+  if (Array.isArray(existing) && existing.length > 0) {
+    registrar = existing[0];
+    console.log(`  - already exists; preserving secret`);
+    await api(token, "PUT", `/realms/${config.realm}/clients/${registrar.id}`, {
+      ...registrar,
+      enabled: true,
+      publicClient: false,
+      standardFlowEnabled: false,
+      implicitFlowEnabled: false,
+      directAccessGrantsEnabled: false,
+      serviceAccountsEnabled: true,
+      redirectUris: [],
+      webOrigins: [],
+    });
+  } else {
+    await api(token, "POST", `/realms/${config.realm}/clients`, {
+      clientId: config.registrarClientId,
+      enabled: true,
+      publicClient: false,
+      standardFlowEnabled: false,
+      implicitFlowEnabled: false,
+      directAccessGrantsEnabled: false,
+      serviceAccountsEnabled: true,
+      redirectUris: [],
+      webOrigins: [],
+    });
+    const refreshed = await api(
+      token,
+      "GET",
+      `/realms/${config.realm}/clients?clientId=${encodeURIComponent(config.registrarClientId)}`,
+    );
+    registrar = refreshed[0];
+    console.log(`  - created`);
+  }
+
+  // Bind `realm-management/manage-users` to the service account.
+  const realmMgmt = await api(
+    token,
+    "GET",
+    `/realms/${config.realm}/clients?clientId=realm-management`,
+  );
+  if (!realmMgmt || realmMgmt.length === 0) {
+    throw new Error(
+      "realm-management client not found — is this really a Keycloak realm?",
+    );
+  }
+  const realmMgmtId = realmMgmt[0].id;
+  const sa = await api(
+    token,
+    "GET",
+    `/realms/${config.realm}/clients/${registrar.id}/service-account-user`,
+  );
+  if (!sa || !sa.id) {
+    throw new Error(
+      `service-account user not found on ${config.registrarClientId} — serviceAccountsEnabled may not have applied yet`,
+    );
+  }
+  const manageUsersRole = await api(
+    token,
+    "GET",
+    `/realms/${config.realm}/clients/${realmMgmtId}/roles/manage-users`,
+  );
+  // POST is idempotent here (already-assigned → 204, otherwise 204
+  // and the role is bound). Wrap in try/catch defensively because
+  // some Keycloak versions return 409 instead of 204 for duplicates.
+  try {
+    await api(
+      token,
+      "POST",
+      `/realms/${config.realm}/users/${sa.id}/role-mappings/clients/${realmMgmtId}`,
+      [
+        {
+          id: manageUsersRole.id,
+          name: manageUsersRole.name,
+          composite: manageUsersRole.composite,
+          clientRole: true,
+          containerId: realmMgmtId,
+        },
+      ],
+    );
+    console.log(`  - role manage-users bound to service-account`);
+  } catch (err) {
+    if (String(err.message).includes("409")) {
+      console.log(`  - role manage-users already bound`);
+    } else {
+      throw err;
+    }
+  }
+
+  // Read the client secret + print it on FIRST run.
+  const secretDoc = await api(
+    token,
+    "GET",
+    `/realms/${config.realm}/clients/${registrar.id}/client-secret`,
+  );
+  console.log(`  - secret: ${secretDoc.value}`);
+  console.log(
+    `    (copy this into fly secrets for db-gateway: KEYCLOAK_REGISTRAR_CLIENT_SECRET=...)`,
+  );
+}
+
+// ---- Registration (ROPC-only public client) --------------------------------
+//
+// Public, NO standard flow, NO service accounts, ONLY direct-access-
+// grants. The gateway uses this client_id to ROPC-exchange the
+// freshly-set password for a token-set right after creating the user
+// — sole purpose. By keeping it separate from `ava-desktop` we avoid
+// enabling direct-access-grants on the main login client.
+
+async function ensureRegistrationClient(token) {
+  console.log(`> ensuring public client "${config.registrationClientId}"`);
+  const existing = await api(
+    token,
+    "GET",
+    `/realms/${config.realm}/clients?clientId=${encodeURIComponent(config.registrationClientId)}`,
+  );
+  const desired = {
+    clientId: config.registrationClientId,
+    enabled: true,
+    publicClient: true,
+    standardFlowEnabled: false,
+    implicitFlowEnabled: false,
+    directAccessGrantsEnabled: true,
+    serviceAccountsEnabled: false,
+    redirectUris: [],
+    webOrigins: [],
+  };
+  if (Array.isArray(existing) && existing.length > 0) {
+    const c = existing[0];
+    await api(token, "PUT", `/realms/${config.realm}/clients/${c.id}`, {
+      ...c,
+      ...desired,
+    });
+    console.log(`  - already exists; patched to desired shape`);
+  } else {
+    await api(token, "POST", `/realms/${config.realm}/clients`, desired);
+    console.log(`  - created`);
+  }
 }
 
 main().catch((err) => {

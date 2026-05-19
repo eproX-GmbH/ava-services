@@ -185,7 +185,7 @@ protocol.registerSchemesAsPrivileged([
   },
 ]);
 
-const auth = new Auth(AUTH_ISSUER, AUTH_CLIENT_ID);
+const auth = new Auth(AUTH_ISSUER, AUTH_CLIENT_ID, GATEWAY_URL);
 
 // v0.1.52 — external-service reachability monitor. Probes
 // unternehmensregister.de every 60s. Used to (a) broadcast a banner
@@ -2079,6 +2079,46 @@ app.whenReady().then(async () => {
   ipcMain.handle("auth:getAccessToken", () => auth.getAccessToken());
   ipcMain.handle("auth:signIn", () => auth.signIn());
   ipcMain.handle("auth:signOut", () => auth.signOut());
+  // In-App-Registration. Renderer passes the validated form payload;
+  // main proxies to the gateway + adopts the returned tokens. Errors
+  // from `auth.registerAccount()` are RegistrationError instances —
+  // ipcMain forwards them as plain Errors to the renderer, so the
+  // form serialises the .code / .message via try/catch on the
+  // invoke() promise. We re-shape into { ok, code, message } so the
+  // renderer doesn't have to dig through stringified Error.toString.
+  ipcMain.handle(
+    "auth:register",
+    async (
+      _e,
+      input: {
+        firstName: string;
+        lastName: string;
+        email: string;
+        password: string;
+        acceptTerms: true;
+      },
+    ): Promise<
+      | { ok: true }
+      | { ok: false; code: string; message: string }
+    > => {
+      try {
+        await auth.registerAccount(input);
+        return { ok: true };
+      } catch (err) {
+        // RegistrationError carries a code; any other thrown shape is
+        // a programming bug we still want to surface gracefully.
+        const code =
+          err && typeof err === "object" && "code" in err
+            ? String((err as { code: unknown }).code)
+            : "server_error";
+        const message =
+          err instanceof Error
+            ? err.message
+            : "Unbekannter Fehler beim Anlegen des Kontos.";
+        return { ok: false, code, message };
+      }
+    },
+  );
 
   // M3 monetization — Stripe Checkout / Customer Portal IPC + the
   // `ava://billing/*` protocol bridge. Registers its own ipcMain

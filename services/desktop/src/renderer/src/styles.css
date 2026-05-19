@@ -4255,6 +4255,111 @@ a.heartbeat-decision__company:hover {
   font-size: 13px;
 }
 
+/* ---- In-App-Registration -------------------------------------------- */
+/* SignIn welcome-card: "Konto erstellen"-Sekundärlink unter dem
+ * Anmelden-Button. Bewusst kleiner und ohne CTA-Gewicht, damit der
+ * primäre Login-Flow visuell der Hauptpfad bleibt.
+ */
+.signin__signup-prompt {
+  margin-top: 1.25rem;
+  font-size: 14px;
+  color: var(--color-fg-muted);
+}
+.signin__signup-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  background: none;
+  border: none;
+  padding: 0;
+  font-weight: 600;
+  cursor: pointer;
+  color: var(--color-accent-1, #00c0a7);
+}
+.signin__signup-link:hover:not(:disabled) { text-decoration: underline; }
+.signin__signup-link:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* Sign-Up-Form: gleicher Card-Container wie SignIn, aber breiter +
+ * Form-Grid für Vorname/Nachname nebeneinander auf Desktop.
+ */
+.signup { max-width: 480px; width: 100%; }
+.signup__grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.75rem;
+}
+@media (max-width: 520px) {
+  .signup__grid { grid-template-columns: 1fr; }
+}
+.signup .field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  margin-bottom: 0.75rem;
+  text-align: left;
+}
+.signup .field > span {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-fg-muted);
+}
+.signup .field input[type="text"],
+.signup .field input[type="email"],
+.signup .field input[type="password"] {
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--color-border-1, #d4d4d8);
+  background: var(--color-bg-1, #fff);
+  font-size: 14px;
+}
+.signup .field input:focus {
+  outline: 2px solid var(--color-accent-1, #00c0a7);
+  outline-offset: 1px;
+}
+.signup .field__error {
+  font-size: 12px;
+  color: #c0392b;
+  margin-top: 2px;
+}
+.signup__terms {
+  display: flex;
+  gap: 0.5rem;
+  align-items: flex-start;
+  margin: 0.5rem 0 1rem;
+  font-size: 13px;
+  text-align: left;
+  color: var(--color-fg-muted);
+  line-height: 1.4;
+}
+.signup__terms input[type="checkbox"] {
+  margin-top: 2px;
+  flex-shrink: 0;
+}
+.signup__terms a {
+  color: var(--color-accent-1, #00c0a7);
+  text-decoration: underline;
+}
+.signup__back {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  background: none;
+  border: none;
+  padding: 0;
+  margin-top: 0.75rem;
+  font-size: 13px;
+  cursor: pointer;
+  color: var(--color-fg-muted);
+}
+.signup__back:hover:not(:disabled) { color: var(--color-fg, #0a1f2a); }
+.signup__back:disabled { opacity: 0.5; cursor: not-allowed; }
+.signup__impressum {
+  margin-top: 1.25rem;
+  font-size: 12px;
+  text-align: center;
+}
+.signup__impressum a { text-decoration: underline; }
+
 /* ---- AllCompanies redesign ------------------------------------------- */
 .all-companies__filters {
   display: flex !important;

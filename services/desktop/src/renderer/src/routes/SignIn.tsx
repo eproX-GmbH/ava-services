@@ -1,18 +1,30 @@
 import { useState } from "react";
-import { Loader2, LogIn, Sparkles } from "lucide-react";
+import { Loader2, LogIn, Sparkles, UserPlus } from "lucide-react";
+import { SignUpForm } from "./SignUpForm";
 
 // Sign-in screen — Corporate Trust hero card.
 //
-// Triggers the OIDC PKCE flow in the main process. Main opens the user's
-// system browser to Keycloak; this component just shows a button + a
-// running status hint. When auth completes, the main process pushes a
-// status update over IPC and `App` re-renders the gated routes.
+// Container for two views:
+//   1. "welcome"  — original Anmelden-CTA + small "Konto erstellen"-Link.
+//                   Anmelden triggers the OIDC PKCE flow (system browser).
+//   2. "signup"   — in-app registration form (SignUpForm).
+//                   On success the form does nothing visible; main pushes
+//                   a signed-in status update and App re-renders the gated
+//                   routes, replacing this screen entirely.
 //
-// Visual: white card with colored shadow + violet soft blob behind it,
-// gradient AVA wordmark (replaces the legacy aqua SVG), gradient CTA.
-// Logic flow (signIn IPC, busy state, error surfacing) is unchanged.
+// We intentionally don't lift this into a router — the user can't be on
+// any other route while signed out, and a one-component-with-mode keeps
+// the boot path simple.
 
 export function SignIn() {
+  const [view, setView] = useState<"welcome" | "signup">("welcome");
+  if (view === "signup") {
+    return <SignUpForm onBackToSignIn={() => setView("welcome")} />;
+  }
+  return <WelcomeCard onStartSignUp={() => setView("signup")} />;
+}
+
+function WelcomeCard({ onStartSignUp }: { onStartSignUp: () => void }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -67,6 +79,18 @@ export function SignIn() {
             Anmeldung fehlgeschlagen: {error}
           </p>
         )}
+        <p className="signin__signup-prompt">
+          Noch kein Konto?{" "}
+          <button
+            type="button"
+            className="link signin__signup-link"
+            onClick={onStartSignUp}
+            disabled={busy}
+          >
+            <UserPlus className="ct-icon-sm" aria-hidden="true" />
+            Konto erstellen
+          </button>
+        </p>
       </div>
     </div>
   );

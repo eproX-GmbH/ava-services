@@ -14,6 +14,7 @@ import { logger } from "./lib/logger";
 import { healthRouter } from "./routes/health";
 import { v1 } from "./routes/v1";
 import { billingWebhookRouter } from "./routes/v1/billing";
+import { publicAuthRouter } from "./routes/v1/auth";
 import { internalQuotaRouter } from "./routes/internal-quota";
 import { startQuotaResumeCron } from "./lib/quota-resume-worker";
 
@@ -70,6 +71,11 @@ app.route("/health", healthRouter);
 // route matching delivers `/v1/billing/webhook` here (signature-authed,
 // raw body) instead of the JWT-gated v1 chain.
 app.route("/", billingWebhookRouter);
+
+// Self-serve registration. Mounted BEFORE /v1 so anonymous calls
+// reach the handler (the /v1 chain requires a Bearer token). See
+// routes/v1/auth.ts — implements POST /v1/auth/register.
+app.route("/", publicAuthRouter);
 
 // Q-track v0.1.137 — Internal HMAC-authed surface for the gateway ↔
 // master-data quota / park-state channel. Mounted OUTSIDE /v1 so it

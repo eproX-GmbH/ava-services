@@ -184,6 +184,33 @@ const api = {
       ipcRenderer.invoke("auth:getAccessToken"),
     signIn: (): Promise<void> => ipcRenderer.invoke("auth:signIn"),
     signOut: (): Promise<void> => ipcRenderer.invoke("auth:signOut"),
+    /**
+     * In-App-Registration. Submit a validated sign-up payload; the
+     * main process talks to the gateway, which creates the user in
+     * Keycloak and immediately exchanges the password for tokens.
+     * Returns `{ ok: true }` on success — at that point the existing
+     * `onStatusChanged` listener has already fired with signedIn=true,
+     * so the renderer can just route to the main view.
+     *
+     * Returns `{ ok: false, code, message }` on any failure. Codes:
+     *   - email_taken          → highlight email field
+     *   - weak_password        → highlight password field
+     *   - invalid_input        → generic form error
+     *   - rate_limited         → "zu viele Versuche, später erneut"
+     *   - registration_disabled→ operator-side config missing
+     *   - keycloak_error       → upstream IdP error
+     *   - network_error        → no connection
+     *   - server_error         → unknown
+     * The `message` field is German and safe to render verbatim.
+     */
+    register: (input: {
+      firstName: string;
+      lastName: string;
+      email: string;
+      password: string;
+      acceptTerms: true;
+    }): Promise<{ ok: true } | { ok: false; code: string; message: string }> =>
+      ipcRenderer.invoke("auth:register", input),
     /** Subscribe to status changes (login / logout / silent refresh). */
     onStatusChanged: (cb: (status: AuthStatus) => void): (() => void) => {
       const handler = (_e: Electron.IpcRendererEvent, status: AuthStatus) =>

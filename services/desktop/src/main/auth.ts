@@ -61,6 +61,29 @@ interface TokenResponse {
   id_token?: string;
 }
 
+/** Discriminator codes for `registerAccount()` failures. Match the
+ *  gateway's `error` field on POST /v1/auth/register response. */
+export type RegistrationErrorCode =
+  | "email_taken"
+  | "weak_password"
+  | "invalid_input"
+  | "rate_limited"
+  | "registration_disabled"
+  | "keycloak_error"
+  | "network_error"
+  | "server_error";
+
+export class RegistrationError extends Error {
+  constructor(
+    public readonly code: RegistrationErrorCode,
+    message: string,
+    public readonly cause?: Error,
+  ) {
+    super(message);
+    this.name = "RegistrationError";
+  }
+}
+
 // Refresh ahead of expiry by this much so requests in flight don't trip a
 // stale token. 60 s comfortably covers the slowest gateway round-trip
 // (file uploads at §5.1) without burning refresh calls.
@@ -106,6 +129,7 @@ export class Auth extends EventEmitter {
   constructor(
     private readonly issuer: string,
     private readonly clientId: string,
+    private readonly gatewayUrl: string,
     private readonly scopes: string[] = APP_SCOPES,
   ) {
     super();
@@ -137,6 +161,91 @@ export class Auth extends EventEmitter {
       this.inFlight = null;
     });
     return this.inFlight;
+  }
+
+  /**
+   * In-App-Registration entry point.
+   *
+   * Talks to the gateway's `POST /v1/auth/register` endpoint, which
+   * (a) creates the user via the Keycloak Admin API and (b) ROPC-
+   * exchanges the just-set password for a token-set. Both steps run
+   * server-side; the desktop never speaks to the Keycloak Admin API
+   * directly.
+   *
+   * On success, the tokens go through the SAME `applyTokens()` path
+   * as a normal OIDC sign-in, so persistence + scheduled-refresh +
+   * status-event are all reused for free. The user is signed in the
+   * moment this resolves.
+   *
+   * Errors come back as a typed code (`email_taken`, `weak_password`,
+   * etc.) so the renderer can highlight the offending form field.
+   * Non-2xx responses we don't recognise become `RegistrationError`
+   * with a code of `server_error` — the form renders a generic
+   * banner in that case.
+   */
+  async registerAccount(input: {
+    firstName: string;
+    lastName: string;
+    email: string;
+    password: string;
+    acceptTerms: true;
+  }): Promise<void> {
+    const url = `${this.gatewayUrl.replace(/\/+$/, "")}/v1/auth/register`;
+    let res: Response;
+    try {
+      res = await fetchWithRetry(
+        url,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(input),
+        },
+        // Registration is a single, user-blocking action; retries on
+        // a 4xx would be pointless (the server already rejected). We
+        // only auto-retry on transport errors (timeout / disconnect).
+        { retries: 2, timeoutMs: 15_000 },
+      );
+    } catch (err) {
+      throw new RegistrationError(
+        "network_error",
+        "Verbindung zum Server fehlgeschlagen. Bitte Netzwerk prüfen und erneut versuchen.",
+        err instanceof Error ? err : undefined,
+      );
+    }
+    if (res.status === 201) {
+      const data = (await res.json()) as {
+        accessToken: string;
+        refreshToken: string;
+        idToken?: string;
+        expiresIn: number;
+        refreshExpiresIn?: number;
+        tokenType: string;
+      };
+      // Adapt the gateway's camelCase shape to the OIDC-style snake_case
+      // applyTokens() expects (it was originally fed the Keycloak token
+      // endpoint response directly).
+      await this.applyTokens({
+        access_token: data.accessToken,
+        refresh_token: data.refreshToken,
+        id_token: data.idToken,
+        expires_in: data.expiresIn,
+        token_type: data.tokenType,
+      });
+      return;
+    }
+    // Non-2xx — surface the gateway's structured error so the form
+    // can field-target the message.
+    let parsed: { error?: string; message?: string } | null = null;
+    try {
+      parsed = (await res.json()) as { error?: string; message?: string };
+    } catch {
+      /* body may be empty or non-JSON */
+    }
+    const code = (parsed?.error ?? "server_error") as RegistrationErrorCode;
+    const message =
+      parsed?.message ??
+      "Konto konnte nicht angelegt werden. Bitte später erneut versuchen.";
+    throw new RegistrationError(code, message);
   }
 
   async signOut(): Promise<void> {

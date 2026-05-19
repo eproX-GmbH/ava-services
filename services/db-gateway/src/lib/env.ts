@@ -125,6 +125,30 @@ const schema = z.object({
   // file:// renderer load. In dev (NODE_ENV !== "production") the
   // gateway mirrors the request Origin so any localhost port works.
   GATEWAY_ALLOWED_ORIGINS: z.string().optional(),
+
+  // -------------------------------------------------------------------
+  // In-App-Registration (POST /v1/auth/register). Adds two Keycloak
+  // clients on top of the existing `ava-desktop` PKCE login client:
+  //
+  //   1. `ava-registrar` — confidential client with service-account
+  //      role `realm-management/manage-users`. Used by the gateway to
+  //      call the Keycloak Admin API and create the new user.
+  //
+  //   2. `ava-registration` — public client with ONLY direct-access-
+  //      grants enabled. Used by the gateway immediately after user
+  //      creation to mint a token via Resource-Owner-Password-Credentials
+  //      grant, so the new user is logged in without a browser detour.
+  //
+  // The realm's authorization URL is the same as JWKS_URI's parent
+  // (e.g. https://.../realms/ava). We accept it directly as
+  // KEYCLOAK_REALM_URL to avoid prying the URL apart from JWKS_URI at
+  // call sites. All three must be present for /v1/auth/register to
+  // serve; absent → the endpoint returns 503 "registration disabled".
+  // -------------------------------------------------------------------
+  KEYCLOAK_REALM_URL: z.string().url().optional(),
+  KEYCLOAK_REGISTRAR_CLIENT_ID: z.string().optional(),
+  KEYCLOAK_REGISTRAR_CLIENT_SECRET: z.string().optional(),
+  KEYCLOAK_REGISTRATION_CLIENT_ID: z.string().optional(),
 });
 
 export type Env = z.infer<typeof schema>;
