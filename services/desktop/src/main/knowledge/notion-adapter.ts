@@ -164,10 +164,30 @@ export class NotionAdapter implements KnowledgeAdapter {
           "stattdessen `appendContent` nutzen oder die Seite manuell leeren.",
       );
     }
+    // v0.1.231 — Snapshot vor dem PATCH machen, damit wir hinterher
+    // den Schreib-Erfolg verifizieren können. Sonst geben wir
+    // fälschlich Erfolg zurück, wenn Notion still no-opt
+    // (Property-Name unbekannt, Status-Option existiert nicht, RO-
+    // Integration etc.).
+    const beforeProps = patch.properties
+      ? await this.snapshotProperties(id, Object.keys(patch.properties))
+      : null;
+    let propertyConversionWarnings: string[] = [];
     if (patch.properties && Object.keys(patch.properties).length > 0) {
-      const propsForApi = await this.convertPropertiesForPatch(id, patch.properties);
+      const conversion = await this.convertPropertiesForPatch(id, patch.properties);
+      propertyConversionWarnings = conversion.warnings;
+      if (Object.keys(conversion.propsForApi).length === 0) {
+        throw new Error(
+          `Keine der angefragten Properties konnte auf das Datenbank-Schema gemappt werden. ` +
+            `Angefragt: ${Object.keys(patch.properties).join(", ")}. ` +
+            `Nutze \`notion_introspect_database\` um die exakten Property-Namen zu sehen.` +
+            (propertyConversionWarnings.length > 0
+              ? ` Details: ${propertyConversionWarnings.join("; ")}`
+              : ""),
+        );
+      }
       await this.request(`/v1/pages/${encodeURIComponent(id)}`, "PATCH", {
-        properties: propsForApi,
+        properties: conversion.propsForApi,
       });
     }
     if (patch.appendContent && patch.appendContent.trim().length > 0) {
@@ -178,7 +198,111 @@ export class NotionAdapter implements KnowledgeAdapter {
         { children },
       );
     }
-    return this.getItem(id);
+    const fresh = await this.getItem(id);
+
+    // v0.1.231 — Verify-After: Vergleichen ob die angeforderten
+    // Werte WIRKLICH in Notion gelandet sind. Wenn nicht, werfen
+    // wir einen handfesten Fehler — sonst behauptet das Tool
+    // Erfolg, obwohl in Notion nichts geändert wurde.
+    if (patch.properties && beforeProps) {
+      const failures = this.verifyPatchedProperties(
+        patch.properties,
+        beforeProps,
+        fresh.properties ?? {},
+      );
+      if (failures.length > 0) {
+        const warningSuffix =
+          propertyConversionWarnings.length > 0
+            ? ` Schema-Mapping-Warnungen: ${propertyConversionWarnings.join("; ")}.`
+            : "";
+        throw new Error(
+          `Notion hat den Update-Call akzeptiert, aber die folgenden Properties wurden NICHT übernommen: ` +
+            failures.join("; ") +
+            `. Mögliche Ursachen: (1) Property-Name passt nicht exakt zur DB-Spalte, ` +
+            `(2) bei Select/Status: gewählte Option existiert nicht im Schema, ` +
+            `(3) Integration hat keine Update-Rechte auf dieser Seite (Notion → Page → Connections prüfen).` +
+            warningSuffix,
+        );
+      }
+    }
+    return fresh;
+  }
+
+  /**
+   * v0.1.231 — Liest die aktuellen Werte der angefragten Properties,
+   * damit wir nach dem PATCH vergleichen können. Verwendet die
+   * simplifyPropertyValue-Form (flat values), die auch das gewohnte
+   * `KnowledgeItem.properties`-Format liefert.
+   */
+  private async snapshotProperties(
+    pageId: string,
+    propertyNames: string[],
+  ): Promise<Record<string, unknown>> {
+    const page = await this.request<NotionPage>(
+      `/v1/pages/${encodeURIComponent(pageId)}`,
+    );
+    const out: Record<string, unknown> = {};
+    for (const name of propertyNames) {
+      const p = page.properties[name];
+      out[name] = p ? simplifyPropertyValue(p) : undefined;
+    }
+    return out;
+  }
+
+  /**
+   * v0.1.231 — Vergleicht angefragte vs. tatsächliche Werte nach
+   * dem PATCH. Returnt eine Liste der Property-Namen die NICHT
+   * geändert wurden (entweder weil sie identisch zum Pre-Wert
+   * blieben oder weil der neue Wert nicht zum angefragten passt).
+   *
+   * Property-Vergleich ist tolerant: Strings werden case-insensitive
+   * verglichen (Notion kann z. B. Status-Namen normalisieren), Datums-
+   * Strings werden als ISO-Prefix gematcht.
+   */
+  private verifyPatchedProperties(
+    requested: Record<string, unknown>,
+    before: Record<string, unknown>,
+    after: Record<string, unknown>,
+  ): string[] {
+    const failures: string[] = [];
+    for (const [name, requestedValue] of Object.entries(requested)) {
+      const beforeValue = before[name];
+      const afterValue = after[name];
+
+      // Property existiert gar nicht in After → ignorieren (kann sein
+      // dass der Name nicht zum Schema passte; das wurde oben bei
+      // empty propsForApi schon abgefangen, hier wäre es ein
+      // teilweiser Mismatch).
+      if (afterValue === undefined) {
+        failures.push(
+          `"${name}" (Property nicht im Schema; angefragt: ${formatValueForError(requestedValue)})`,
+        );
+        continue;
+      }
+
+      // Wenn der Wert vorher === nachher ist UND wir wollten ihn
+      // ändern auf etwas Anderes → Fehlschlag.
+      if (
+        deepEqual(beforeValue, afterValue) &&
+        !valuesMatch(requestedValue, afterValue)
+      ) {
+        failures.push(
+          `"${name}" (unverändert; angefragt: ${formatValueForError(requestedValue)}, ` +
+            `tatsächlich: ${formatValueForError(afterValue)})`,
+        );
+        continue;
+      }
+
+      // Wenn er sich zwar geändert hat, aber NICHT auf den
+      // angefragten Wert → auch Fehlschlag.
+      if (!valuesMatch(requestedValue, afterValue)) {
+        failures.push(
+          `"${name}" (verfehltes Ziel; angefragt: ${formatValueForError(requestedValue)}, ` +
+            `nach Update: ${formatValueForError(afterValue)})`,
+        );
+      }
+    }
+    return failures;
   }
 
   async createItem(
@@ -333,7 +457,10 @@ export class NotionAdapter implements KnowledgeAdapter {
   private async convertPropertiesForPatch(
     pageId: string,
     properties: Record<string, unknown>,
-  ): Promise<Record<string, unknown>> {
+  ): Promise<{
+    propsForApi: Record<string, unknown>;
+    warnings: string[];
+  }> {
     // Bei Patches müssen wir das DB-Schema des Parents kennen.
     const page = await this.request<NotionPage>(
       `/v1/pages/${encodeURIComponent(pageId)}`,
@@ -343,17 +470,43 @@ export class NotionAdapter implements KnowledgeAdapter {
       const title = properties["title"];
       if (typeof title === "string") {
         return {
-          title: {
-            title: [{ type: "text", text: { content: title } }],
+          propsForApi: {
+            title: {
+              title: [{ type: "text", text: { content: title } }],
+            },
           },
+          warnings: [],
         };
       }
-      return {};
+      return { propsForApi: {}, warnings: [] };
     }
     const db = await this.request<NotionDatabase>(
       `/v1/databases/${encodeURIComponent(page.parent.database_id)}`,
     );
-    return propertiesToApi(properties, db.properties);
+
+    // v0.1.231 — Detailliertes Mapping mit Warnungen statt stillem
+    // Skip von unbekannten Property-Namen. Wir validieren auch
+    // Select/Status/Multi-Select Options gegen das Schema und warnen,
+    // wenn der angefragte Optionsname nicht existiert (Notion würde
+    // den Call sonst still no-opten).
+    const warnings: string[] = [];
+    const knownNames = Object.keys(db.properties);
+    const propsForApi: Record<string, unknown> = {};
+    for (const [name, value] of Object.entries(properties)) {
+      const def = db.properties[name];
+      if (!def) {
+        warnings.push(
+          `Property "${name}" nicht im DB-Schema (existierende: ${knownNames.join(", ")})`,
+        );
+        continue;
+      }
+      // Option-Validation für Select/Status/Multi-Select.
+      const optionCheck = checkOptionMatch(value, def);
+      if (optionCheck) warnings.push(optionCheck);
+
+      propsForApi[name] = valueToApi(value, def);
+    }
+    return { propsForApi, warnings };
   }
 
   private async request<T>(
@@ -847,4 +1000,120 @@ function searchResultToHit(
     type: "page",
     url: r.url,
   };
+}
+
+// ---- v0.1.231 — Verify-After Helpers ---------------------------------------
+
+/**
+ * Check ob ein angefragter Select/Status/Multi-Select-Wert in den
+ * schema-bekannten Optionen vorhanden ist. Returns null wenn OK, sonst
+ * eine Warning-Message für den Caller.
+ */
+function checkOptionMatch(
+  value: unknown,
+  def: NotionPropertyDef,
+): string | null {
+  if (def.type === "select") {
+    const options = def.select?.options.map((o) => o.name) ?? [];
+    if (options.length === 0) return null;
+    const v = typeof value === "string" ? value : null;
+    if (v && !options.includes(v)) {
+      return `Select "${def.name}": Option "${v}" existiert nicht im Schema (verfügbar: ${options.join(", ")})`;
+    }
+  } else if (def.type === "status") {
+    const options = def.status?.options.map((o) => o.name) ?? [];
+    if (options.length === 0) return null;
+    const v = typeof value === "string" ? value : null;
+    if (v && !options.includes(v)) {
+      return `Status "${def.name}": Option "${v}" existiert nicht im Schema (verfügbar: ${options.join(", ")})`;
+    }
+  } else if (def.type === "multi_select") {
+    const options = def.multi_select?.options.map((o) => o.name) ?? [];
+    if (options.length === 0) return null;
+    const arr = Array.isArray(value) ? value : [value];
+    const missing = arr.filter(
+      (v) => typeof v === "string" && !options.includes(v),
+    );
+    if (missing.length > 0) {
+      return `Multi-Select "${def.name}": Options ${missing.map((m) => `"${m}"`).join(", ")} existieren nicht im Schema (verfügbar: ${options.join(", ")})`;
+    }
+  }
+  return null;
+}
+
+function deepEqual(a: unknown, b: unknown): boolean {
+  if (a === b) return true;
+  if (a == null || b == null) return a === b;
+  if (typeof a !== typeof b) return false;
+  if (typeof a === "object") {
+    if (Array.isArray(a)) {
+      if (!Array.isArray(b) || a.length !== b.length) return false;
+      return a.every((x, i) => deepEqual(x, b[i]));
+    }
+    const ao = a as Record<string, unknown>;
+    const bo = b as Record<string, unknown>;
+    const ka = Object.keys(ao).sort();
+    const kb = Object.keys(bo).sort();
+    if (ka.length !== kb.length) return false;
+    if (!ka.every((k, i) => k === kb[i])) return false;
+    return ka.every((k) => deepEqual(ao[k], bo[k]));
+  }
+  return false;
+}
+
+/**
+ * Toleranter Vergleich angefragter vs. tatsächlicher Property-Werte.
+ * Notion normalisiert Strings teilweise (Whitespace, Case bei Status-
+ * Options); für Daten reicht uns der ISO-Datum-Prefix-Match.
+ */
+function valuesMatch(requested: unknown, actual: unknown): boolean {
+  if (requested === actual) return true;
+  if (requested == null || actual == null) return requested === actual;
+
+  if (typeof requested === "string" && typeof actual === "string") {
+    return requested.trim().toLowerCase() === actual.trim().toLowerCase();
+  }
+  if (typeof requested === "boolean" && typeof actual === "boolean") {
+    return requested === actual;
+  }
+  if (typeof requested === "number" && typeof actual === "number") {
+    return Math.abs(requested - actual) < 1e-9;
+  }
+  // Array-Vergleich für multi_select.
+  if (Array.isArray(requested) && Array.isArray(actual)) {
+    if (requested.length !== actual.length) return false;
+    const req = [...requested]
+      .map((v) => String(v).trim().toLowerCase())
+      .sort();
+    const act = [...actual]
+      .map((v) => String(v).trim().toLowerCase())
+      .sort();
+    return req.every((v, i) => v === act[i]);
+  }
+  // Date: angefragt z. B. "2026-07-16", tatsächlich "2026-07-16" oder
+  // `{start: "2026-07-16"}` (kommt aus simplifyPropertyValue für
+  // range-Daten als String, bei start-only als String).
+  if (typeof requested === "string" && /^\d{4}-\d{2}-\d{2}/.test(requested)) {
+    if (typeof actual === "string")
+      return actual.startsWith(requested.slice(0, 10));
+    if (
+      actual &&
+      typeof actual === "object" &&
+      "start" in actual &&
+      typeof (actual as { start: unknown }).start === "string"
+    ) {
+      return (actual as { start: string }).start.startsWith(
+        requested.slice(0, 10),
+      );
+    }
+  }
+  return deepEqual(requested, actual);
+}
+
+function formatValueForError(v: unknown): string {
+  if (v === null || v === undefined) return "null";
+  if (typeof v === "string") return `"${v}"`;
+  if (Array.isArray(v)) return `[${v.map(formatValueForError).join(", ")}]`;
+  if (typeof v === "object") return JSON.stringify(v);
+  return String(v);
 }
