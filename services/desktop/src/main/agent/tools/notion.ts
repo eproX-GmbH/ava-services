@@ -118,29 +118,34 @@ export function buildNotionTools(deps: {
   const search = defineTool({
     name: "notion_search",
     description:
-      "Workspace-wide fuzzy search across all pages and databases AVA's Notion integration has been granted access to. Returns up to 25 hits with id, title, type (page/database), and URL. Use this when the user references something by name and you need to find the matching object ID.",
+      "Workspace-wide fuzzy search across all pages and databases AVA's Notion integration has been granted access to. Returns up to 25 hits with id, title, type (page/database), and URL.\n\nUse this for general discovery (\"was hat der User schon in Notion?\"), NOT for finding a specific database row by name to update it. For that, use notion_list_databases + notion_query_database with a title-filter — search returns workspace-wide hits including sub-pages, notes, and linked-view shadows that can look like the row you want but aren't.",
     parameters: {
       type: "object",
       properties: {
         query: {
           type: "string",
           description:
-            "Search string. Notion does fuzzy title + content matching.",
+            "Search string. Notion does fuzzy title + content matching. Empty string returns most-recent items.",
         },
         limit: {
           type: "integer",
           description: "Max number of results (default 25, max 100).",
         },
       },
-      required: ["query"],
+      required: [],
     },
     schema: yup.object({
-      query: yup.string().required(),
+      // v0.1.233 — query optional gemacht. LLM ruft `notion_search` häufig
+      // ohne Argument auf weil es denkt, das sei eine "discover-state"-
+      // Operation. Notion's /v1/search akzeptiert leeren Query und liefert
+      // dann jüngste Items zurück — das ist ein sinnvoller Default statt
+      // einem nervigen "query is required"-Yup-Fehler.
+      query: yup.string().optional(),
       limit: yup.number().integer().min(1).max(100).optional(),
     }),
     run: async (args) => {
       const limit = args.limit ?? 25;
-      const hits = await km.search("notion", args.query, { limit });
+      const hits = await km.search("notion", args.query ?? "", { limit });
       return { hits };
     },
     preview: (r) =>
@@ -177,7 +182,11 @@ export function buildNotionTools(deps: {
       required: ["databaseId"],
     },
     schema: yup.object({
-      databaseId: yup.string().required(),
+      databaseId: yup
+        .string()
+        .required(
+          "databaseId fehlt. Erst notion_list_databases aufrufen und dann diese ID hier übergeben.",
+        ),
     }),
     run: async (args) => {
       const schema = await km.introspectSchema("notion", args.databaseId);
@@ -216,14 +225,31 @@ export function buildNotionTools(deps: {
       required: ["databaseId"],
     },
     schema: yup.object({
-      databaseId: yup.string().required(),
+      databaseId: yup
+        .string()
+        .required(
+          "databaseId fehlt. Erst notion_list_databases aufrufen um die richtige Datenbank-ID zu finden, dann diese hier übergeben.",
+        ),
       filter: yup.object().optional(),
       sorts: yup.array().optional(),
       pageSize: yup.number().integer().min(1).max(100).optional(),
     }),
     run: async (args) => {
+      // v0.1.233 — Filter-Shape defensiv normalisieren. Das LLM
+      // schickt manchmal:
+      //   - Array von Property-Filtern → Notion will `{and: [...]}` als Wrapper
+      //   - Plattes Property-Filter aber ohne `property`-Key (z. B.
+      //     `{Status: {equals: "Lead"}}`) → ungültig
+      // Wir wrappen Arrays auto in `{and: ...}`. Andere Misformate
+      // gehen unverändert durch und Notion antwortet mit ihrem
+      // normalen Validation-Error, den der Agent dann self-healen
+      // kann.
+      let normalisedFilter = args.filter as unknown;
+      if (Array.isArray(normalisedFilter)) {
+        normalisedFilter = { and: normalisedFilter };
+      }
       const items = await km.queryNotionDatabase(args.databaseId, {
-        filter: args.filter,
+        filter: normalisedFilter,
         sorts: args.sorts,
         pageSize: args.pageSize,
       });
@@ -243,7 +269,13 @@ export function buildNotionTools(deps: {
       },
       required: ["pageId"],
     },
-    schema: yup.object({ pageId: yup.string().required() }),
+    schema: yup.object({
+      pageId: yup
+        .string()
+        .required(
+          "pageId fehlt. Erst notion_search oder notion_query_database benutzen, um eine Page-ID zu bekommen.",
+        ),
+    }),
     run: async (args) => {
       const item = await km.getItem("notion", args.pageId);
       return { item };
