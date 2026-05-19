@@ -17,6 +17,10 @@ import { normaliseToolArgs } from "./tool-arg-normalizer";
 export interface DefineToolArgs<TArgs, TResult> {
   name: string;
   description: string;
+  /** v0.1.240 — Lazy-Tool-Loading teaser (≤ ~30 tokens). */
+  summary?: string;
+  /** v0.1.240 — Optional grouping bucket for `tool_search`. */
+  category?: string;
   parameters: Record<string, unknown>;
   /** yup schema enforced before run(). Validation errors surface to the model. */
   schema: yup.Schema<TArgs>;
@@ -31,6 +35,8 @@ export function defineTool<TArgs, TResult>(
   return {
     name: spec.name,
     description: spec.description,
+    ...(spec.summary !== undefined ? { summary: spec.summary } : {}),
+    ...(spec.category !== undefined ? { category: spec.category } : {}),
     parameters: spec.parameters,
     parseArgs: (raw) => {
       // v0.1.227 — Zentrale Argument-Normalisierung VOR der Validierung.

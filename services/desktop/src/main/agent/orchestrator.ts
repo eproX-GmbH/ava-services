@@ -11,6 +11,8 @@ import type {
 } from "../../shared/types";
 import { ToolRegistry } from "./tool-registry";
 import { selectToolsForTurn } from "./tool-selection";
+import { buildMetaTools, ALWAYS_ON_CORE_TOOL_NAMES } from "./tools/meta";
+import type { ConversationToolLoadState } from "./tools/meta";
 import { buildSystemPrompt } from "./prompts";
 import { UiBridge, type PendingChoice } from "./ui-bridge";
 import type { LlmProviderManager, LlmStreamToolCall } from "./providers";
@@ -204,10 +206,84 @@ export class AgentOrchestrator extends EventEmitter {
     this.skillsPrefs = opts.skillsPrefs;
     this.onUsage = opts.onUsage;
 
+    // v0.1.240 — Register the meta-tools (tool_search + tool_load).
+    // We do this here (not in tools/index.ts) because the meta-tools
+    // need access to the active conversation's load-state, which only
+    // the orchestrator tracks. The closure captured below resolves at
+    // call-time via `currentLoadState()`.
+    for (const t of buildMetaTools({
+      registry: this.registry,
+      coreToolNames: ALWAYS_ON_CORE_TOOL_NAMES,
+      currentLoadState: () => this.currentLoadState(),
+    })) {
+      this.registry.register(t);
+    }
+
     // Re-emit status when the active provider moves so the renderer's
     // Chat tab can re-enable the input the moment the model is ready.
     // Covers both Ollama lifecycle transitions and OpenAI key changes.
     this.providers.onStatusChanged(() => this.emit("status", this.getStatus()));
+  }
+
+  /**
+   * Snapshot accessor for the meta-tools (`tool_search` / `tool_load`).
+   * Reads/writes go straight against the currently-processed
+   * conversation's `loadedToolNames` set. We assume the orchestrator
+   * handles one input at a time — the in-flight conversation id is
+   * set in `send()` and cleared in the runLoop's finally, so any
+   * meta-tool call between those points hits the right convo.
+   *
+   * If a meta-tool is somehow invoked outside an in-flight turn (race
+   * condition during shutdown, future test harness), we return a
+   * no-op state instead of throwing — the meta-tool's response will
+   * say "nothing happened" and the agent can recover.
+   */
+  private currentLoadState(): ConversationToolLoadState {
+    const noop: ConversationToolLoadState = {
+      getLoaded: () => new Set<string>(),
+      load: (names) => ({
+        loaded: [],
+        alreadyLoaded: [],
+        unknown: names.slice(),
+      }),
+    };
+    const convoId = this.inFlightConversationId;
+    if (!convoId) return noop;
+    const convo = this.conversations.get(convoId);
+    if (!convo) return noop;
+    return {
+      getLoaded: () => convo.loadedToolNames ?? new Set<string>(),
+      load: (names) => {
+        if (!convo.loadedToolNames) convo.loadedToolNames = new Set<string>();
+        const loaded: string[] = [];
+        const alreadyLoaded: string[] = [];
+        const unknown: string[] = [];
+        for (const name of names) {
+          if (!this.registry.get(name)) {
+            unknown.push(name);
+            continue;
+          }
+          if (ALWAYS_ON_CORE_TOOL_NAMES.has(name)) {
+            // It's already in the context — treat as "alreadyLoaded"
+            // so the agent doesn't get a misleading "loaded" signal.
+            alreadyLoaded.push(name);
+            continue;
+          }
+          if (convo.loadedToolNames.has(name)) {
+            alreadyLoaded.push(name);
+            continue;
+          }
+          convo.loadedToolNames.add(name);
+          loaded.push(name);
+        }
+        if (loaded.length > 0) {
+          console.log(
+            `[agent] tool_load: convo=${convoId} loaded=${loaded.join(",")}`,
+          );
+        }
+        return { loaded, alreadyLoaded, unknown };
+      },
+    };
   }
 
   /** S2 — late-binding for the SkillStore, because `initSkills(app)` can
@@ -350,6 +426,11 @@ export class AgentOrchestrator extends EventEmitter {
       const target = skills.find((s) => s.name === slash.name);
       if (target && target.userInvocable !== false) {
         this.activeSkill = target;
+        // v0.1.240 — Skills bring their declared tool surface with
+        // them. We push allowed-tools into the conversation's
+        // loaded-set so future turns retain them even after the
+        // skill stops being "active".
+        this.markToolsLoaded(convo, target.allowedTools);
         const rendered = renderSkillBody(target, slash.rawArgs);
         const injected: AgentMessage = {
           id: randomUUID(),
@@ -390,6 +471,8 @@ export class AgentOrchestrator extends EventEmitter {
       const auto = autoActivateSkill(skills, input.message);
       if (auto) {
         this.activeSkill = auto;
+        // v0.1.240 — same auto-load behaviour as explicit /skill invocations.
+        this.markToolsLoaded(convo, auto.allowedTools);
         console.log(
           `[agent] skill auto-activated: ${auto.name} (allowed-tools: [${auto.allowedTools.join(", ")}])`,
         );
@@ -544,6 +627,10 @@ export class AgentOrchestrator extends EventEmitter {
             ? selectToolsForTurn({
                 registry: this.registry,
                 activeSkill: this.activeSkill,
+                // v0.1.240 — accumulated lazy-loaded tools from
+                // tool_load + skill auto-loads. Survives across turns
+                // within the same conversation.
+                loadedToolNames: conversation.loadedToolNames,
                 extraToolNames: slashNudgedTool ? [slashNudgedTool] : undefined,
               })
             : undefined;
@@ -768,6 +855,22 @@ export class AgentOrchestrator extends EventEmitter {
   private appendMessage(convo: Conversation, message: AgentMessage): void {
     convo.messages.push(message);
     this.memory?.append(convo.id, message);
+  }
+
+  /** v0.1.240 — Add tool names to a conversation's lazy-load set.
+   *  Used by skill activation (sync, before the turn). The meta-tool
+   *  load path goes through `currentLoadState()` instead. */
+  private markToolsLoaded(
+    convo: Conversation,
+    names: readonly string[],
+  ): void {
+    if (names.length === 0) return;
+    if (!convo.loadedToolNames) convo.loadedToolNames = new Set<string>();
+    for (const name of names) {
+      // Filter to actually-registered tools to avoid silently keeping
+      // ghosts in the set if a skill declares a typo'd tool.
+      if (this.registry.get(name)) convo.loadedToolNames.add(name);
+    }
   }
 
   /**

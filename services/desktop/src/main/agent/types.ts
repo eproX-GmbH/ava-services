@@ -29,6 +29,19 @@ export interface OllamaToolSpec {
 export interface Tool<TArgs = unknown, TResult = unknown> {
   name: string;
   description: string;
+  /**
+   * Optional one-line teaser (≤ ~30 tokens) used by the `tool_search`
+   * meta-tool. If unset, the tool-selector falls back to the first
+   * sentence of `description`. Keep it crisp — this is what the model
+   * sees when deciding "is this tool worth loading?"
+   */
+  summary?: string;
+  /**
+   * Optional bucket-tag for grouping (`notion`, `crm`, `voice`, …).
+   * `tool_search` surfaces it next to the name so the model can
+   * cluster related tools and decide whether to load a category-batch.
+   */
+  category?: string;
   /** JSON Schema, surfaced to the model via /api/chat `tools[]`. */
   parameters: Record<string, unknown>;
   /** Throw on invalid args; orchestrator catches and emits an error frame. */
@@ -54,4 +67,19 @@ export interface ToolContext {
 export interface Conversation {
   id: string;
   messages: AgentMessage[];
+  /**
+   * Lazy-Tool-Loading (v0.1.240):
+   *
+   * Conversations start with only a tiny always-on core of tools
+   * (tool_search, tool_load, skill_search/get, ask_user_*). Anything
+   * else the agent needs has to be discovered via `tool_search` and
+   * pulled in via `tool_load`. Those tool-names accumulate in this
+   * set and stay loaded for the rest of the conversation — saves
+   * the agent from re-searching for the same tools mid-flow.
+   *
+   * Skills automatically add their `allowed-tools` here on
+   * activation, so a skill that promises to update Notion has the
+   * Notion tools available without a separate tool_load round-trip.
+   */
+  loadedToolNames?: Set<string>;
 }
