@@ -198,7 +198,12 @@ export class NotionAdapter implements KnowledgeAdapter {
       const requestedNames = Object.keys(patch.properties);
       const onlyTitleRequested =
         requestedNames.length === 1 && requestedNames[0] === "title";
-      if (preflight.parent.type !== "database_id" && !onlyTitleRequested) {
+      // v0.1.250 — parent.type kann "database_id" ODER "data_source_id"
+      // sein; beide sind valide Database-Row-Indikatoren in 2025-09-03+.
+      const isDatabaseRow =
+        preflight.parent.type === "database_id" ||
+        preflight.parent.type === "data_source_id";
+      if (!isDatabaseRow && !onlyTitleRequested) {
         // Hilfreiche Diagnose: was IST die Page eigentlich?
         let parentHint = "";
         if (
@@ -242,13 +247,24 @@ export class NotionAdapter implements KnowledgeAdapter {
         const page = await this.request<NotionPage>(
           `/v1/pages/${encodeURIComponent(id)}`,
         );
-        if (page.parent.type === "database_id" && page.parent.database_id) {
-          // v0.1.247 — Schema seit Notion-Migration aus der Data
-          // Source statt direkt aus der Database lesen.
+        // v0.1.250 — Schema aus der zur Page gehörenden Data Source
+        // lesen. parent.type kann "database_id" ODER "data_source_id"
+        // sein; in beiden Fällen kommen wir an die richtige Property-
+        // Liste.
+        let pageDbProperties: Record<string, NotionPropertyDef> | null = null;
+        if (page.parent.type === "data_source_id" && page.parent.data_source_id) {
+          const ds = await this.request<NotionDataSource>(
+            `/v1/data_sources/${encodeURIComponent(page.parent.data_source_id)}`,
+          );
+          pageDbProperties = ds.properties;
+        } else if (page.parent.database_id) {
           const schema = await this.getDatabaseSchema(page.parent.database_id);
+          pageDbProperties = schema.properties;
+        }
+        if (pageDbProperties) {
           canonicalPatchProperties = {};
           for (const [k, v] of Object.entries(patch.properties)) {
-            const canonical = resolvePropertyName(k, schema.properties) ?? k;
+            const canonical = resolvePropertyName(k, pageDbProperties) ?? k;
             canonicalPatchProperties[canonical] = v;
             if (canonical !== k) nameRemap[k] = canonical;
           }
@@ -305,8 +321,14 @@ export class NotionAdapter implements KnowledgeAdapter {
               : ""),
         );
       }
+      // v0.1.250 — Vollständiges PATCH-Body-Logging für Diagnose. Bei
+      // einem stillen No-Op (Notion antwortet 200 OK aber Werte
+      // ändern sich nicht) brauchen wir das, um zu sehen WAS wir
+      // exakt gesendet haben. JSON.stringify nur einmal hier, nicht
+      // pro Property.
+      const patchBody = { properties: conversion.propsForApi };
       console.info(
-        `[notion-adapter] PATCH /v1/pages/${id} properties=${Object.keys(conversion.propsForApi).join(",")}` +
+        `[notion-adapter] PATCH /v1/pages/${id} body=${JSON.stringify(patchBody).slice(0, 800)}` +
           (propertyConversionWarnings.length > 0
             ? ` warnings=[${propertyConversionWarnings.join(" | ")}]`
             : ""),
@@ -314,7 +336,15 @@ export class NotionAdapter implements KnowledgeAdapter {
       patchResponse = await this.request<NotionPage>(
         `/v1/pages/${encodeURIComponent(id)}`,
         "PATCH",
-        { properties: conversion.propsForApi },
+        patchBody,
+      );
+      // v0.1.250 — PATCH-Response auch loggen, damit wir bei einem
+      // No-Op sehen ob Notion serverseitig wirklich nichts geändert
+      // hat oder nur die Response stale ist.
+      console.info(
+        `[notion-adapter] PATCH response page=${id} ` +
+          `last_edited_time=${patchResponse.last_edited_time} ` +
+          `properties=${JSON.stringify(simplifyProperties(patchResponse.properties)).slice(0, 600)}`,
       );
     }
     if (patch.appendContent && patch.appendContent.trim().length > 0) {
@@ -861,7 +891,14 @@ export class NotionAdapter implements KnowledgeAdapter {
     const page = await this.request<NotionPage>(
       `/v1/pages/${encodeURIComponent(pageId)}`,
     );
-    if (page.parent.type !== "database_id" || !page.parent.database_id) {
+    // v0.1.250 — Mit notion-version 2025-09-03+ kann page.parent.type
+    // sowohl "database_id" als auch "data_source_id" sein. Beide
+    // bedeuten: die Page ist eine Database-Zeile mit Properties.
+    // Vorher (vor 2025-09-03) gab es nur "database_id".
+    const isDatabaseRow =
+      (page.parent.type === "database_id" && page.parent.database_id) ||
+      (page.parent.type === "data_source_id" && page.parent.data_source_id);
+    if (!isDatabaseRow) {
       // Page-im-Page-Hierarchie: nur Title-Patch wird unterstützt.
       const title = properties["title"];
       if (typeof title === "string") {
@@ -876,12 +913,21 @@ export class NotionAdapter implements KnowledgeAdapter {
       }
       return { propsForApi: {}, warnings: [] };
     }
-    // v0.1.247 — getDatabaseSchema liest seit der Migration aus
-    // /v1/data_sources/{id} statt /v1/databases/{id}. Sonst sehen wir
-    // bei den (Mehrheits-)DBs die Properties gar nicht und droppen
-    // alle Patches als "Property nicht im DB-Schema".
-    const schema = await this.getDatabaseSchema(page.parent.database_id);
-    const dbProperties = schema.properties;
+    // Schema-Lookup: wenn parent.type === "data_source_id", die
+    // data_source direkt benutzen. Sonst (database_id) → über
+    // getDatabaseSchema, das die data_sources auflöst.
+    let dbProperties: Record<string, NotionPropertyDef>;
+    if (page.parent.type === "data_source_id" && page.parent.data_source_id) {
+      const ds = await this.request<NotionDataSource>(
+        `/v1/data_sources/${encodeURIComponent(page.parent.data_source_id)}`,
+      );
+      dbProperties = ds.properties;
+    } else if (page.parent.database_id) {
+      const schema = await this.getDatabaseSchema(page.parent.database_id);
+      dbProperties = schema.properties;
+    } else {
+      return { propsForApi: {}, warnings: [] };
+    }
 
     // v0.1.231 — Detailliertes Mapping mit Warnungen statt stillem
     // Skip von unbekannten Property-Namen. Wir validieren auch
@@ -915,7 +961,15 @@ export class NotionAdapter implements KnowledgeAdapter {
       const optionCheck = checkOptionMatch(value, def);
       if (optionCheck) warnings.push(optionCheck);
 
-      propsForApi[matched] = valueToApi(value, def);
+      // v0.1.250 — Properties per ID statt per Name in den PATCH-Body
+      // schreiben. Notion akzeptiert laut Doku beide Formen, aber bei
+      // Multi-Data-Source-DBs hat sich gezeigt, dass name-basierte
+      // Patches mit notion-version 2025-09-03 manchmal still no-opten,
+      // während property-ID-basierte zuverlässig durchgehen. Die ID
+      // steht in def.id (aus der Schema-Response). Fallback auf den
+      // matched-Namen, falls die ID nicht da sein sollte (defensiv).
+      const apiKey = def.id || matched;
+      propsForApi[apiKey] = valueToApi(value, def);
     }
     return { propsForApi, warnings };
   }
@@ -960,7 +1014,12 @@ interface NotionPage {
   url?: string;
   created_time: string;
   last_edited_time: string;
-  parent: NotionParent & { type: "database_id" | "page_id" | "workspace" };
+  // v0.1.250 — In Notion API 2025-09-03+ kann eine Database-Row als
+  // parent.type sowohl "database_id" als auch "data_source_id" haben
+  // (für Pages in migrierten Multi-Data-Source-DBs).
+  parent: NotionParent & {
+    type: "database_id" | "data_source_id" | "page_id" | "workspace";
+  };
   properties: Record<string, NotionPropertyValue>;
 }
 
