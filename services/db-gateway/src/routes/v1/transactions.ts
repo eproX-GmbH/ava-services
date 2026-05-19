@@ -1308,6 +1308,16 @@ const RETRY_DISPATCH: Record<z.infer<typeof RetryStage>, RetryTarget[]> = {
   companyPublication: [{ kind: "upstream", upstream: "masterData", stage: "companyPublication" }],
   // Structured-content drives website. Now gateway-side via retry-publish.
   website: [{ kind: "gateway", producer: "structured-content", stage: "website" }],
+  // v0.1.243 — Stellenanzeigen + Ausschreibungen sind Sub-Pipelines des
+  // Website-Producers, die im AMQP-Compute-Worker mit-laufen (siehe
+  // resources/producers/website/dist/application/integration-events/v1/
+  // compute-worker.js ab v0.1.243). Wir re-triggern sie über denselben
+  // structured-content-Republish wie `website` — der Producer macht
+  // intern alles in einem Schritt. Eventuell-Optimierung: separates
+  // Event nur für jobs / deep-research, dann ist ein gezielter
+  // Refresh möglich ohne komplettes SERP+Website-Crawl.
+  deepResearch: [{ kind: "gateway", producer: "structured-content", stage: "website" }],
+  jobPostings: [{ kind: "gateway", producer: "structured-content", stage: "website" }],
   // company-profile is fed by website (url-based) AND structured-content
   // (business-purpose-based). Republish both inputs so company-profile
   // re-runs and idempotently merges.
@@ -1616,6 +1626,12 @@ const STAGE_TO_SERVICE: Record<z.infer<typeof RetryStage>, string> = {
   companyProfile: "company-profile",
   companyContact: "company-contact",
   companyEvaluation: "company-evaluation",
+  // v0.1.243 — beide Stages laufen IM Website-Producer; das
+  // ContentFreshness-Clear muss den Website-Producer-Slice
+  // invalidieren, damit das tier-Gate beim nächsten Persist die
+  // frischen Werte durchlässt.
+  deepResearch: "website",
+  jobPostings: "website",
 };
 
 // ---- Per-request cache + ownership helpers ---------------------------------

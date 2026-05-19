@@ -956,6 +956,12 @@ export function buildImportTools(deps: {
             "companyProfile",
             "companyContact",
             "companyEvaluation",
+            // v0.1.243 — Sub-Pipelines des Website-Producers.
+            // `deepResearch` umfasst Ausschreibungen + Expansion +
+            // Beschaffung, `jobPostings` deckt Stellenanzeigen ab.
+            // Beide retriggern intern den vollen Website-Chain.
+            "deepResearch",
+            "jobPostings",
           ],
           description:
             "Which stage to re-run. `companyEvaluation` fans out across all 5 evaluation producers in parallel.",
@@ -981,6 +987,8 @@ export function buildImportTools(deps: {
             "companyProfile",
             "companyContact",
             "companyEvaluation",
+            "deepResearch",
+            "jobPostings",
           ]),
         companyName: yup.string().optional(),
       })

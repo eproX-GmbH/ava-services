@@ -820,6 +820,14 @@ export const RetryStage = z.enum([
   "companyProfile",
   "companyContact",
   "companyEvaluation",
+  // v0.1.243 — Sub-Pipelines des Website-Producers, die bislang nicht
+  // via Retry erreichbar waren. Beide triggern den vollen
+  // structured-content -> website chain neu (inkl. SERP-Crawl), weil
+  // der website-Producer Stellenanzeigen + Ausschreibungen heute
+  // direkt im AMQP-Compute-Pfad mit-feuert. Wenn wir später feinere
+  // Granularität wollen, kommen eigene Events ins @ava/event-Package.
+  "deepResearch",
+  "jobPostings",
 ]);
 
 export const RetryStageBody = z
