@@ -71,6 +71,67 @@ function formatY(v: number, format: ChartFormat): string {
   }
 }
 
+/**
+ * v0.1.234 — Kompakte Achsen-Labels für die Y-Achse.
+ *
+ * `formatY` liefert die volle Zahl mit deutscher Tausender-Trennung
+ * — gut im Tooltip, aber auf der Y-Achse stehlen Labels wie
+ * „103.255.000 €" zu viel Platz weg (Chart wurde links abgeschnitten,
+ * statt „1.000.000" sah man nur ".000.000").
+ *
+ * Diese Funktion staffelt nach SI-/DE-Konvention:
+ *   0–999            → roh ("42", "999")
+ *   ≥ 1.000          → "1 Tsd." – "999 Tsd."
+ *   ≥ 1.000.000      → "1 Mio." – "999 Mio."
+ *   ≥ 1.000.000.000  → "1 Mrd." – "999 Mrd."
+ *   ≥ 1e12           → "1 Bln." (Billion im dt. System = 10¹²)
+ *
+ * Eine Nachkommastelle bei Bedarf — bei "nice" Gridline-Werten
+ * (100.000, 500.000, 1.000.000) wird trotzdem ohne NK gerendert,
+ * weil Intl.NumberFormat trailing zeros nicht ausgibt.
+ *
+ * EUR + INT + NUM gehen alle durch denselben Compactor. PCT bleibt
+ * wie formatY (Prozente werden eh selten im Mio.-Bereich).
+ */
+function formatYAxisLabel(v: number, format: ChartFormat): string {
+  if (format === "pct" || format === "date" || format === "shortdate") {
+    return formatY(v, format);
+  }
+  return formatCompactDe(v, format);
+}
+
+function formatCompactDe(v: number, format: ChartFormat): string {
+  if (!Number.isFinite(v)) return "—";
+  const sign = v < 0 ? "-" : "";
+  const abs = Math.abs(v);
+  const currencySuffix = format === "eur" ? " €" : "";
+
+  const units: Array<{ factor: number; suffix: string }> = [
+    { factor: 1e12, suffix: " Bln." },
+    { factor: 1e9, suffix: " Mrd." },
+    { factor: 1e6, suffix: " Mio." },
+    { factor: 1e3, suffix: " Tsd." },
+  ];
+  for (const u of units) {
+    if (abs >= u.factor) {
+      const scaled = abs / u.factor;
+      const formatted = new Intl.NumberFormat("de-DE", {
+        maximumFractionDigits: 1,
+      }).format(scaled);
+      return sign + formatted + u.suffix + currencySuffix;
+    }
+  }
+  // Unter 1.000 — kein Suffix, ggf. Integer-Round.
+  const fractionDigits = format === "int" ? 0 : abs >= 100 ? 0 : 1;
+  return (
+    sign +
+    new Intl.NumberFormat("de-DE", {
+      maximumFractionDigits: fractionDigits,
+    }).format(abs) +
+    currencySuffix
+  );
+}
+
 function formatX(x: number | string, format: ChartFormat): string {
   if (typeof x === "number") {
     if (format === "date") {
@@ -202,7 +263,9 @@ function gridlines(min: number, max: number, format: ChartFormat) {
   const steps = 4;
   for (let i = 0; i <= steps; i++) {
     const v = min + ((max - min) * i) / steps;
-    lines.push({ y: v, label: formatY(v, format) });
+    // v0.1.234 — kompakte Y-Achsen-Labels (siehe formatYAxisLabel).
+    // Tooltip-Werte nutzen weiter `formatY` mit voller Präzision.
+    lines.push({ y: v, label: formatYAxisLabel(v, format) });
   }
   return lines;
 }
@@ -250,7 +313,8 @@ function integerGridlines(min: number, max: number) {
 
   const lines: { y: number; label: string }[] = [];
   for (let v = snappedMin; v <= snappedMax; v += step) {
-    lines.push({ y: v, label: formatY(v, "int") });
+    // v0.1.234 — kompakte Y-Achsen-Labels.
+    lines.push({ y: v, label: formatYAxisLabel(v, "int") });
   }
   return { lines, snappedMin, snappedMax };
 }

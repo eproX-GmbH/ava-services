@@ -143,9 +143,37 @@ export function VerbrauchTab() {
 
           {hasOAuthEvents && (
             <div className="verbrauch-tab__oauth-note">
-              ℹ️ Mindestens ein Anthropic-Call läuft über dein Pro/Max-Abo
-              (OAuth). Diese Tokens zählen gegen dein Abo-Quota statt
-              gegen API-Guthaben — daher keine USD-Schätzung.
+              <svg
+                className="verbrauch-tab__oauth-note-icon"
+                viewBox="0 0 16 16"
+                width="16"
+                height="16"
+                aria-hidden="true"
+              >
+                <circle
+                  cx="8"
+                  cy="8"
+                  r="7"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.5"
+                />
+                <line
+                  x1="8"
+                  y1="7"
+                  x2="8"
+                  y2="11.5"
+                  stroke="currentColor"
+                  strokeWidth="1.5"
+                  strokeLinecap="round"
+                />
+                <circle cx="8" cy="4.6" r="0.9" fill="currentColor" />
+              </svg>
+              <span>
+                Mindestens ein Anthropic-Call läuft über dein Pro/Max-Abo
+                (OAuth). Diese Tokens zählen gegen dein Abo-Quota statt
+                gegen API-Guthaben — daher keine USD-Schätzung.
+              </span>
             </div>
           )}
 
