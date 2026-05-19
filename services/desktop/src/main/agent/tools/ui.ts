@@ -12,7 +12,7 @@ export function buildUiTools(): Tool[] {
   const askUser = defineTool({
     name: "ask_user_choice",
     description:
-      "Ask the user to pick one option. Use when a search returns multiple plausible matches and you cannot reasonably guess. Returns the picked option's `value` string.",
+      "Ask the user to pick one option. ONLY use when (a) a search/list tool already returned multiple plausible matches, AND (b) you genuinely cannot pick automatically (e.g. two companies with the same name in different cities, two databases with similar names). DO NOT use this to ask the user for information they already provided in the current message, and DO NOT use it as a shortcut around exploring with read-only tools first — if the answer is in `notion_introspect_database`, `notion_list_databases`, `company_search`, etc., call those tools INSTEAD of asking. Returns the picked option's `value` string.",
     parameters: {
       type: "object",
       properties: {
@@ -131,7 +131,7 @@ export function buildUiTools(): Tool[] {
   const askText = defineTool({
     name: "ask_user_text",
     description:
-      "Ask the user for a free-form line of text (e.g. a transaction name, a custom keyword). Renders as a small input field in the chat with optional default value and 'Überspringen' button. Returns the typed string — empty string means the user skipped an optional prompt. Prefer `ask_user_choice` whenever the answer set is finite.",
+      "Ask the user for a free-form line of text. STRICT use-cases ONLY: (a) a transaction label / custom keyword / display name the user hasn't given yet, (b) a piece of context that NO tool can produce and that wasn't in the user's message. DO NOT use this to (1) re-ask for information already present in the user's last message, (2) confirm a Notion database / field name / status option / row id — those are all discoverable via `notion_list_databases` + `notion_introspect_database` + `notion_query_database`, (3) elicit a 'safer-sounding' synonym for a value the user already named (just attempt the write — the verify-after on write tools will flag mismatches with a clear error and you can correct from there), (4) ask the user to disambiguate company names — that's `company_search` + `ask_user_choice`. Renders as a small input field with optional default and 'Überspringen' button. Returns the typed string — empty means skipped. Prefer `ask_user_choice` whenever the answer set is finite.",
     parameters: {
       type: "object",
       properties: {
