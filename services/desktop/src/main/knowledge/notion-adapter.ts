@@ -228,9 +228,25 @@ export class NotionAdapter implements KnowledgeAdapter {
       ? await this.snapshotProperties(id, Object.keys(patch.properties))
       : null;
     let propertyConversionWarnings: string[] = [];
+    let droppedProperties: string[] = [];
+    // v0.1.237 — Notions PATCH /v1/pages/:id-Antwort enthält das volle
+    // Page-Objekt mit den ECHTEN Post-Write-Properties. Vorher haben
+    // wir das Ergebnis verworfen und stattdessen direkt danach getItem()
+    // aufgerufen — das läuft aber durch Notions eventually-consistent
+    // Cache und kann den OLD-State zurückgeben. Resultat: verify-after
+    // hat manchmal falsch alarmiert oder (schlimmer) Erfolg vorgegaukelt.
+    // Jetzt nehmen wir die PATCH-Antwort als autoritative Quelle.
+    let patchResponse: NotionPage | null = null;
     if (patch.properties && Object.keys(patch.properties).length > 0) {
       const conversion = await this.convertPropertiesForPatch(id, patch.properties);
       propertyConversionWarnings = conversion.warnings;
+      // Welche der angefragten Properties wurden vom Schema-Mapper
+      // gedroppt? (Property-Name nicht im DB-Schema.) Diese müssen
+      // wir DEM AGENT EXPLIZIT melden, sonst hält er einen Drop für
+      // einen Erfolg.
+      droppedProperties = Object.keys(patch.properties).filter(
+        (name) => !(name in conversion.propsForApi),
+      );
       if (Object.keys(conversion.propsForApi).length === 0) {
         throw new Error(
           `Keine der angefragten Properties konnte auf das Datenbank-Schema gemappt werden. ` +
@@ -247,9 +263,11 @@ export class NotionAdapter implements KnowledgeAdapter {
             ? ` warnings=[${propertyConversionWarnings.join(" | ")}]`
             : ""),
       );
-      await this.request(`/v1/pages/${encodeURIComponent(id)}`, "PATCH", {
-        properties: conversion.propsForApi,
-      });
+      patchResponse = await this.request<NotionPage>(
+        `/v1/pages/${encodeURIComponent(id)}`,
+        "PATCH",
+        { properties: conversion.propsForApi },
+      );
     }
     if (patch.appendContent && patch.appendContent.trim().length > 0) {
       const children = markdownToBlocks(patch.appendContent);
@@ -259,17 +277,23 @@ export class NotionAdapter implements KnowledgeAdapter {
         { children },
       );
     }
-    const fresh = await this.getItem(id);
 
     // v0.1.231 — Verify-After: Vergleichen ob die angeforderten
     // Werte WIRKLICH in Notion gelandet sind. Wenn nicht, werfen
     // wir einen handfesten Fehler — sonst behauptet das Tool
     // Erfolg, obwohl in Notion nichts geändert wurde.
     if (patch.properties && beforeProps) {
+      // v0.1.237 — Autoritative Quelle ist die PATCH-Antwort selbst,
+      // nicht ein nachgelagertes getItem(). Falls patch.properties leer
+      // war (kein PATCH gefeuert), nutzen wir das Snapshot wieder
+      // (kein verify nötig).
+      const afterProps = patchResponse
+        ? simplifyProperties(patchResponse.properties)
+        : beforeProps;
       const failures = this.verifyPatchedProperties(
         patch.properties,
         beforeProps,
-        fresh.properties ?? {},
+        afterProps,
       );
       if (failures.length > 0) {
         const warningSuffix =
@@ -280,11 +304,39 @@ export class NotionAdapter implements KnowledgeAdapter {
           `Notion hat den Update-Call akzeptiert, aber die folgenden Properties wurden NICHT übernommen: ` +
             failures.join("; ") +
             `. Mögliche Ursachen: (1) Property-Name passt nicht exakt zur DB-Spalte, ` +
-            `(2) bei Select/Status: gewählte Option existiert nicht im Schema, ` +
+            `(2) bei Select/Status: gewählte Option existiert nicht im Schema (Tipp: erst notion_introspect_database aufrufen, um die exakten Options zu sehen — Notion ist case-sensitive), ` +
             `(3) Integration hat keine Update-Rechte auf dieser Seite (Notion → Page → Connections prüfen).` +
             warningSuffix,
         );
       }
+    }
+
+    // v0.1.237 — Body via separater getItem() weil PATCH-Antwort
+    // nur die Properties + Metadaten, nicht den Block-Tree liefert.
+    // Properties dann mit der PATCH-Antwort überschreiben, damit der
+    // Agent NICHT versehentlich stale Cache-Werte sieht.
+    const fresh = await this.getItem(id);
+    if (patchResponse) {
+      fresh.properties = simplifyProperties(patchResponse.properties);
+      fresh.updatedAt = patchResponse.last_edited_time;
+    }
+
+    // v0.1.237 — Auch ohne Verify-Fail kann es Warnungen geben (z. B.
+    // gedroppte Properties wegen Name-Mismatch, oder Select-Optionen,
+    // die zwar via Notions Auto-Create durchgingen, aber dem User
+    // vielleicht gar nicht so geplant waren). Die hängen wir an das
+    // Item dran, sodass das Tool sie an den Agent zurückreicht.
+    const allWarnings: string[] = [];
+    if (droppedProperties.length > 0) {
+      allWarnings.push(
+        `Diese Properties wurden NICHT geupdated, weil sie nicht im DB-Schema existieren: ${droppedProperties.join(", ")}. Tipp: erst notion_introspect_database aufrufen, um die korrekten Spaltennamen zu sehen.`,
+      );
+    }
+    if (propertyConversionWarnings.length > 0) {
+      allWarnings.push(...propertyConversionWarnings);
+    }
+    if (allWarnings.length > 0) {
+      fresh.warnings = allWarnings;
     }
     return fresh;
   }

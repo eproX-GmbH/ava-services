@@ -51,6 +51,13 @@ export interface KnowledgeItem {
   createdAt?: string;
   updatedAt?: string;
   url?: string;
+  /** v0.1.237 — Nicht-fatale Schema-Mapping-Warnungen aus dem letzten
+   *  Adapter-Call, z. B. „Property 'Aktion' nicht im DB-Schema" oder
+   *  „Status-Option 'X' existiert nicht". Bei `updateItem` setzt der
+   *  Adapter das, wenn einzelne Properties stillschweigend gedropped
+   *  wurden — der Agent sieht so, dass nicht ALLES wie gewünscht
+   *  reinging, auch wenn der Gesamt-Call durchlief. */
+  warnings?: string[];
 }
 
 export interface KnowledgeContent {

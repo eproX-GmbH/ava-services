@@ -363,11 +363,21 @@ export function buildNotionTools(deps: {
         properties: args.properties as Record<string, unknown> | undefined,
         appendContent: args.appendContent,
       });
-      return { item };
+      // v0.1.237 — Warnings (z. B. „Property nicht im Schema") aus dem
+      // Adapter aufs Top-Level heben, damit der Agent sie nicht im
+      // verschachtelten Item übersieht. Ohne Warnings bleibt das Feld
+      // weg, damit der Erfolgs-Pfad nicht verrauscht wird.
+      const itemTyped = item as { warnings?: string[] };
+      const warnings = itemTyped.warnings;
+      const out: { item: typeof item; warnings?: string[] } = { item };
+      if (warnings && warnings.length > 0) out.warnings = warnings;
+      return out;
     },
     preview: (r) => {
       const item = r.item as { title?: string };
-      return `Notion-Seite aktualisiert: ${item?.title ?? "?"}`;
+      const warnings = r.warnings as string[] | undefined;
+      const suffix = warnings && warnings.length > 0 ? ` (${warnings.length} Warnung${warnings.length === 1 ? "" : "en"})` : "";
+      return `Notion-Seite aktualisiert: ${item?.title ?? "?"}${suffix}`;
     },
   });
 
