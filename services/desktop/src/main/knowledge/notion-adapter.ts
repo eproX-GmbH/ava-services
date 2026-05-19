@@ -164,6 +164,61 @@ export class NotionAdapter implements KnowledgeAdapter {
           "stattdessen `appendContent` nutzen oder die Seite manuell leeren.",
       );
     }
+
+    // v0.1.232 — Pre-Flight-Check für die Page-Struktur.
+    //
+    // Hintergrund: Notion-Search liefert workspace-weit alles, was zum
+    // Query passt — auch Sub-Pages, Notizen, Linked-Database-Views.
+    // Wenn der Agent versehentlich eine SUB-PAGE updated statt der
+    // echten Database-Row, scheint der Call zu funktionieren (200 OK,
+    // Page existiert), aber der CRM-Eintrag bleibt unverändert weil
+    // die Sub-Page ein eigenständiges Objekt ist.
+    //
+    // Wir holen die Page einmal vorab, schauen auf parent.type, und
+    // werfen bei Mismatch (parent nicht database_id + Non-Title-
+    // Properties angefragt) einen klaren Fehler mit Parent-Kontext
+    // damit der Agent self-healen oder den Nutzer informieren kann.
+    if (patch.properties && Object.keys(patch.properties).length > 0) {
+      const preflight = await this.request<NotionPage>(
+        `/v1/pages/${encodeURIComponent(id)}`,
+      );
+      console.info(
+        `[notion-adapter] updateItem pre-flight: pageId=${id} ` +
+          `parent.type=${preflight.parent.type} ` +
+          `database_id=${preflight.parent.database_id ?? "—"} ` +
+          `url=${preflight.url ?? "—"}`,
+      );
+      const requestedNames = Object.keys(patch.properties);
+      const onlyTitleRequested =
+        requestedNames.length === 1 && requestedNames[0] === "title";
+      if (preflight.parent.type !== "database_id" && !onlyTitleRequested) {
+        // Hilfreiche Diagnose: was IST die Page eigentlich?
+        let parentHint = "";
+        if (
+          preflight.parent.type === "page_id" &&
+          preflight.parent.page_id
+        ) {
+          try {
+            const parent = await this.request<NotionPage>(
+              `/v1/pages/${encodeURIComponent(preflight.parent.page_id)}`,
+            );
+            parentHint = ` Diese Page liegt UNTER einer anderen Page (Eltern-Titel: "${extractTitle(parent)}"), nicht in einer Database.`;
+          } catch {
+            parentHint = ` Diese Page liegt unter einer Page-Hierarchie, nicht in einer Database.`;
+          }
+        } else if (preflight.parent.type === "workspace") {
+          parentHint = ` Diese Page liegt direkt im Workspace, nicht in einer Database.`;
+        }
+        throw new Error(
+          `Die angegebene Page (id=${id}) ist KEINE Database-Zeile — ` +
+            `Properties wie ${requestedNames.join(", ")} können hier nicht gesetzt werden.${parentHint} ` +
+            `Notion-Search liefert manchmal Sub-Pages oder Notizen mit demselben Titel zurück, statt der echten DB-Zeile. ` +
+            `Bitte stattdessen \`notion_query_database\` mit dem passenden Filter nutzen, ` +
+            `um die korrekte Zeile zu finden. Die Page-URL des aktuellen Targets: ${preflight.url ?? "?"}`,
+        );
+      }
+    }
+
     // v0.1.231 — Snapshot vor dem PATCH machen, damit wir hinterher
     // den Schreib-Erfolg verifizieren können. Sonst geben wir
     // fälschlich Erfolg zurück, wenn Notion still no-opt
@@ -186,6 +241,12 @@ export class NotionAdapter implements KnowledgeAdapter {
               : ""),
         );
       }
+      console.info(
+        `[notion-adapter] PATCH /v1/pages/${id} properties=${Object.keys(conversion.propsForApi).join(",")}` +
+          (propertyConversionWarnings.length > 0
+            ? ` warnings=[${propertyConversionWarnings.join(" | ")}]`
+            : ""),
+      );
       await this.request(`/v1/pages/${encodeURIComponent(id)}`, "PATCH", {
         properties: conversion.propsForApi,
       });

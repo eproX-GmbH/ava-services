@@ -193,7 +193,7 @@ export function buildNotionTools(deps: {
   const queryDatabase = defineTool({
     name: "notion_query_database",
     description:
-      "Run a structured query against a Notion database. Returns matching rows with simplified properties. Use filter + sorts only if you've already introspected the schema. Without filters, returns the most recently edited rows.",
+      "Run a structured query against a Notion database. Returns matching rows with simplified properties. Use this — NOT notion_search — when you need to find a specific row by its title or other property to then update it.\n\nFinding a row by name (most common case): call introspect_database first to learn the exact name of the title-property, then filter on that. Example for a title-property called 'Name': filter = { property: 'Name', title: { equals: 'Kerstin Komarnicki' } }. The 'equals' is exact-match; use 'contains' for fuzzy. Other useful filter shapes: { property: 'Status', status: { equals: 'Lead' } }, { property: 'Created', date: { on_or_after: '2026-01-01' } }. See https://developers.notion.com/reference/post-database-query-filter for the full spec.\n\nWithout filters returns the most recently edited rows.",
     parameters: {
       type: "object",
       properties: {
@@ -303,7 +303,7 @@ export function buildNotionTools(deps: {
   const updatePage = defineTool({
     name: "notion_update_page",
     description:
-      "Update an existing Notion page: patch property values and/or append Markdown content to the bottom. Property names must match the actual database schema (use notion_introspect_database if unsure). `replaceContent` is not yet supported in this version.\n\nProperty values: pass FLAT values keyed by property name. Examples: { 'Status': 'Aktiv', 'Hotness': 'Cold', 'Follow-Up': '2026-07-16', 'Tags': ['lead', 'b2b'], 'Score': 42, 'Active': true }. DO NOT wrap in Notion-API objects like { 'Status': { 'status': { 'name': 'Aktiv' } } } — AVA does that mapping internally. DO NOT JSON.stringify the whole properties object — pass it as a real JSON object.",
+      "Update an existing Notion page: patch property values and/or append Markdown content to the bottom. Property names must match the actual database schema (use notion_introspect_database if unsure). `replaceContent` is not yet supported in this version.\n\nIMPORTANT — finding the right pageId: when the user wants to update a CRM-style database row by name (\"set Status of Kerstin Komarnicki to Disqualifiziert\"), DO NOT use notion_search to find the page. notion_search returns workspace-wide results including sub-pages, notes, and linked-database-views — you can end up updating the wrong page that happens to share a title. Instead: (1) notion_list_databases to find the target DB, (2) notion_query_database with a title-filter to get the actual row's pageId, then (3) notion_update_page on THAT id. If you do call notion_update_page on a page that turns out not to be a database row, the tool will throw a clear error and you should switch to the query_database flow.\n\nProperty values: pass FLAT values keyed by property name. Examples: { 'Status': 'Aktiv', 'Hotness': 'Cold', 'Follow-Up': '2026-07-16', 'Tags': ['lead', 'b2b'], 'Score': 42, 'Active': true }. DO NOT wrap in Notion-API objects like { 'Status': { 'status': { 'name': 'Aktiv' } } } — AVA does that mapping internally. DO NOT JSON.stringify the whole properties object — pass it as a real JSON object.",
     parameters: {
       type: "object",
       properties: {
