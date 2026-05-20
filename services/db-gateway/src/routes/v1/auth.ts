@@ -1,6 +1,5 @@
-import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
+import { OpenAPIHono, z } from "@hono/zod-openapi";
 import { logger } from "../../lib/logger";
-import { ErrorShape } from "./schemas";
 import {
   createUser,
   KeycloakAdminError,
@@ -12,105 +11,69 @@ import { takeRegistrationSlot } from "../../lib/auth-rate-limit";
 // In-App-Registration endpoint (POST /v1/auth/register).
 //
 // Unauthenticated by design — the user doesn't have an account yet.
-// Mounted at app level (not under the /v1 auth middleware) so the
+// Mounted at app level (NOT under the /v1 auth middleware) so the
 // Bearer-token chain doesn't reject anonymous calls. See index.ts.
 //
-// Flow:
-//   1. Validate input (zod). Bad payload → 400 invalid_input.
-//   2. Rate-limit per IP (5 req / hour / pod). Over → 429.
-//   3. Create the user via Keycloak Admin API. 409 → email_taken.
-//   4. Exchange email+password for an OIDC token-set via ROPC against
-//      the `ava-registration` public client.
-//   5. Return tokens. Desktop adopts them via the existing
-//      applyTokens() path → user is signed in.
-//
-// When the operator hasn't configured the registration secrets, the
-// route returns 503 "registration disabled" — deployments that don't
-// want self-serve sign-up can simply not set the env vars.
+// v0.1.253 — uses plain `.post()` (like the Stripe webhook router) instead
+// of `.openapi()`. The `.openapi()` registration path collides with the
+// /v1 router's auth middleware in Hono's matching order: even though
+// publicAuthRouter is mounted FIRST at "/" in index.ts, an OpenAPIHono
+// route registered via `.openapi()` ends up in the regexp-router pool
+// which has lower priority than the v1 trie router. Result before this
+// fix: requests to /v1/auth/register returned `401 missing_bearer_token`
+// from the auth middleware, never reaching this handler. The webhook
+// router (`billingWebhookRouter`) uses `.post()` directly and works —
+// so we mirror that pattern here.
 
-const tag = "auth";
-
-export const RegisterBody = z
-  .object({
-    firstName: z
-      .string()
-      .min(1, "Vorname fehlt")
-      .max(80, "Vorname zu lang"),
-    lastName: z
-      .string()
-      .min(1, "Nachname fehlt")
-      .max(80, "Nachname zu lang"),
-    email: z.string().email("Bitte eine gültige E-Mail-Adresse angeben"),
-    password: z
-      .string()
-      .min(8, "Passwort muss mindestens 8 Zeichen haben")
-      .max(128, "Passwort zu lang"),
-    // Pflicht-Checkbox: der Client darf hier nur literal `true`
-    // schicken. Schickt er `false` oder lässt er das Feld weg, lehnen
-    // wir die Anfrage als invalid_input ab.
-    acceptTerms: z.literal(true, {
-      errorMap: () => ({
-        message: "AGB und Datenschutzerklärung müssen akzeptiert werden",
-      }),
+const RegisterBody = z.object({
+  firstName: z.string().min(1, "Vorname fehlt").max(80, "Vorname zu lang"),
+  lastName: z.string().min(1, "Nachname fehlt").max(80, "Nachname zu lang"),
+  email: z.string().email("Bitte eine gültige E-Mail-Adresse angeben"),
+  password: z
+    .string()
+    .min(8, "Passwort muss mindestens 8 Zeichen haben")
+    .max(128, "Passwort zu lang"),
+  // Pflicht-Checkbox: der Client darf hier nur literal `true` schicken.
+  // Schickt er `false` oder lässt er das Feld weg, lehnen wir die
+  // Anfrage als invalid_input ab.
+  acceptTerms: z.literal(true, {
+    errorMap: () => ({
+      message: "AGB und Datenschutzerklärung müssen akzeptiert werden",
     }),
-  })
-  .openapi("RegisterBody");
-
-const RegisterResponse = z
-  .object({
-    accessToken: z.string(),
-    refreshToken: z.string(),
-    idToken: z.string().optional(),
-    expiresIn: z.number(),
-    refreshExpiresIn: z.number().optional(),
-    tokenType: z.string(),
-  })
-  .openapi("RegisterResponse");
-
-const registerRoute = createRoute({
-  method: "post",
-  path: "/v1/auth/register",
-  tags: [tag],
-  summary: "Self-serve user registration (creates Keycloak user + returns tokens)",
-  request: {
-    body: {
-      required: true,
-      content: { "application/json": { schema: RegisterBody } },
-    },
-  },
-  responses: {
-    201: {
-      content: { "application/json": { schema: RegisterResponse } },
-      description: "user created, signed-in tokens returned",
-    },
-    400: {
-      content: { "application/json": { schema: ErrorShape } },
-      description: "invalid input or weak password",
-    },
-    409: {
-      content: { "application/json": { schema: ErrorShape } },
-      description: "email already registered",
-    },
-    429: {
-      content: { "application/json": { schema: ErrorShape } },
-      description: "rate limited",
-    },
-    502: {
-      content: { "application/json": { schema: ErrorShape } },
-      description: "Keycloak unreachable / misconfigured",
-    },
-    503: {
-      content: { "application/json": { schema: ErrorShape } },
-      description: "self-serve registration disabled",
-    },
-  },
+  }),
 });
 
 export const publicAuthRouter = new OpenAPIHono();
 
-publicAuthRouter.openapi(registerRoute, async (c) => {
+publicAuthRouter.post("/v1/auth/register", async (c) => {
+  // Manuelle Body-Parse + zod-Validierung (kein c.req.valid("json")
+  // mehr, weil das nur mit .openapi()-Routes funktioniert).
+  let rawBody: unknown;
+  try {
+    rawBody = await c.req.json();
+  } catch {
+    return c.json(
+      {
+        error: "invalid_input",
+        message: "Request-Body muss valides JSON sein.",
+      },
+      400,
+    );
+  }
+  const parsed = RegisterBody.safeParse(rawBody);
+  if (!parsed.success) {
+    const firstIssue = parsed.error.issues[0];
+    return c.json(
+      {
+        error: "invalid_input",
+        message: firstIssue?.message ?? "Eingabe ist ungültig.",
+        detail: { issues: parsed.error.issues },
+      },
+      400,
+    );
+  }
+  const body = parsed.data;
   const ip = pickClientIp(c.req.raw);
-  const body = c.req.valid("json");
 
   // Rate-limit BEFORE Keycloak so a flood doesn't burn admin-token
   // capacity. Bad-payloads have already failed zod above this line, so
@@ -171,8 +134,6 @@ publicAuthRouter.openapi(registerRoute, async (c) => {
       );
     }
     if (err instanceof KeycloakAdminError) {
-      // Map the structured error kind to the HTTP status + a German
-      // message the renderer can show directly.
       switch (err.errorKind) {
         case "email_taken":
           return c.json(
