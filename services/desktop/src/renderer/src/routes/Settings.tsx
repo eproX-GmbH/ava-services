@@ -47,7 +47,9 @@ import type {
   NotificationPermissionStatus,
   ProviderCatalogEntry,
   ProviderConfigBundle,
+  Watch,
 } from "../../../shared/types";
+import { WATCH_CAP_DEFAULT } from "../../../shared/types";
 
 // Settings route (Phase 8.g).
 //
@@ -165,6 +167,7 @@ export const SETTINGS_ANCHOR_TO_TAB: Record<string, SettingsTabId> = {
   "alerts-cadence":          "datenquellen",
   "alerts-severity":         "datenquellen",
   "freshness-section":       "datenquellen",
+  "watches-section":         "datenquellen",
   "updates":                 "system",
   "local-services":          "system",
   "local-producers":         "system",
@@ -3753,6 +3756,199 @@ export function FreshnessSection() {
       <FreshnessHistory recent={recent} />
     </section>
   );
+}
+
+// v0.1.256 — Standing Watches Settings-UI. Anlegen geht weiter nur
+// per Chat (das `watch_register`-Tool nutzt einen propose-and-confirm-
+// Dialog, der hier nicht repliziert wird). Hier kann der Nutzer die
+// aktiven Watches einsehen, pausieren/aktivieren und löschen.
+export function WatchesSection() {
+  const [watches, setWatches] = useState<Watch[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [busyId, setBusyId] = useState<string | null>(null);
+
+  useEffect(() => {
+    void window.api.watches.list().then(setWatches);
+    const off = window.api.watches.onChanged(setWatches);
+    return () => off();
+  }, []);
+
+  const onToggle = async (id: string, enabled: boolean) => {
+    setBusyId(id);
+    setError(null);
+    try {
+      await window.api.watches.setEnabled(id, enabled);
+      // Push refresh — onChanged Listener fängt's normalerweise schon
+      // ab, aber bei langsamen Roundtrips ist der explizite Fetch
+      // zuverlässiger als Promise-Race.
+      setWatches(await window.api.watches.list());
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const onRemove = async (id: string) => {
+    if (
+      !window.confirm(
+        "Diesen Watch wirklich löschen? Treffer-Historie geht verloren.",
+      )
+    ) {
+      return;
+    }
+    setBusyId(id);
+    setError(null);
+    try {
+      await window.api.watches.remove(id);
+      setWatches(await window.api.watches.list());
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  if (!watches) {
+    return (
+      <section
+        id="watches-section"
+        className="provider-section alerts-prefs"
+      >
+        <h3>Watches</h3>
+        <p className="muted">Lädt…</p>
+      </section>
+    );
+  }
+
+  const active = watches.filter((w) => w.enabled).length;
+  return (
+    <section id="watches-section" className="provider-section alerts-prefs">
+      <h3>Watches</h3>
+      <p className="muted">
+        Wiederkehrende Beobachtungen, die der Heartbeat im Hintergrund
+        gegen frische Kandidaten prüft. Treffer landen automatisch in{" "}
+        <Link to="/alerts">Meldungen</Link>. Neue Watches anlegen geht
+        nur über den Chat — z. B. „Beobachte wöchentlich Geschäfts-
+        führungswechsel bei meinen wichtigsten Firmen".
+      </p>
+      <p className="muted small">
+        {active} von {watches.length} aktiv · maximal {WATCH_CAP_DEFAULT}.
+      </p>
+
+      {error && <p className="error small">{error}</p>}
+
+      {watches.length === 0 ? (
+        <p className="muted">
+          Noch keine Watches registriert. Frag im Chat z. B.
+          „<em>Beobachte wöchentlich, ob bei [Firma] ein
+          Wechsel auf C-Level passiert</em>".
+        </p>
+      ) : (
+        <ul className="watches-list">
+          {watches.map((w) => (
+            <WatchRow
+              key={w.id}
+              watch={w}
+              busy={busyId === w.id}
+              onToggle={(enabled) => void onToggle(w.id, enabled)}
+              onRemove={() => void onRemove(w.id)}
+            />
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
+
+function WatchRow({
+  watch,
+  busy,
+  onToggle,
+  onRemove,
+}: {
+  watch: Watch;
+  busy: boolean;
+  onToggle: (enabled: boolean) => void;
+  onRemove: () => void;
+}) {
+  const hitsCount = watch.hits.length;
+  const lastHit = watch.hits[0]?.at;
+  const cadenceLabel =
+    watch.cadence === "daily"
+      ? "täglich"
+      : watch.cadence === "weekly"
+        ? "wöchentlich"
+        : "monatlich";
+  const topics =
+    watch.trigger.topics && watch.trigger.topics.length > 0
+      ? watch.trigger.topics.join(", ")
+      : null;
+  const companies = watch.trigger.companyIds?.length ?? 0;
+
+  return (
+    <li className={"watches-list__row" + (watch.enabled ? "" : " is-paused")}>
+      <div className="watches-list__main">
+        <div className="watches-list__prompt">{watch.prompt}</div>
+        <div className="watches-list__rubric muted small">
+          Rubrik: {watch.trigger.rubric}
+        </div>
+        <div className="watches-list__meta muted small">
+          {cadenceLabel}
+          {companies > 0 && (
+            <>
+              {" · "}
+              {companies} Firma{companies === 1 ? "" : "n"}
+            </>
+          )}
+          {topics && (
+            <>
+              {" · "}
+              Topics: {topics}
+            </>
+          )}
+          {" · "}
+          {hitsCount === 0
+            ? "noch kein Treffer"
+            : `${hitsCount} Treffer${lastHit ? " (zuletzt " + formatDateShort(lastHit) + ")" : ""}`}
+          {watch.lastCheckedAt && (
+            <>
+              {" · "}
+              zuletzt geprüft {formatDateShort(watch.lastCheckedAt)}
+            </>
+          )}
+        </div>
+      </div>
+      <div className="watches-list__actions">
+        <button
+          type="button"
+          className="link"
+          onClick={() => onToggle(!watch.enabled)}
+          disabled={busy}
+        >
+          {watch.enabled ? "Pausieren" : "Aktivieren"}
+        </button>
+        <button
+          type="button"
+          className="link bad is-inline"
+          onClick={onRemove}
+          disabled={busy}
+        >
+          Löschen
+        </button>
+      </div>
+    </li>
+  );
+}
+
+function formatDateShort(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  return d.toLocaleDateString("de-DE", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+  });
 }
 
 function FreshnessHistory({ recent }: { recent: FreshnessTickInfo[] }) {
