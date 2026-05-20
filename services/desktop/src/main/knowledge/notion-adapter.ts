@@ -961,15 +961,16 @@ export class NotionAdapter implements KnowledgeAdapter {
       const optionCheck = checkOptionMatch(value, def);
       if (optionCheck) warnings.push(optionCheck);
 
-      // v0.1.250 — Properties per ID statt per Name in den PATCH-Body
-      // schreiben. Notion akzeptiert laut Doku beide Formen, aber bei
-      // Multi-Data-Source-DBs hat sich gezeigt, dass name-basierte
-      // Patches mit notion-version 2025-09-03 manchmal still no-opten,
-      // während property-ID-basierte zuverlässig durchgehen. Die ID
-      // steht in def.id (aus der Schema-Response). Fallback auf den
-      // matched-Namen, falls die ID nicht da sein sollte (defensiv).
-      const apiKey = def.id || matched;
-      propsForApi[apiKey] = valueToApi(value, def);
+      // v0.1.251 — Properties per NAME statt ID in den PATCH-Body
+      // schreiben. v0.1.250 hat IDs probiert, aber Notion liefert
+      // diese IDs in der Response URL-encoded zurück (z. B. "n%3EW%3C"
+      // statt "n>W<"). Wenn man die URL-encoded Form als Key zurück-
+      // schickt, ignoriert Notions PATCH-Endpoint sie silently (200 OK
+      // aber kein Schreibvorgang) — genau das No-Op-Symptom das wir
+      // gesehen haben. Empirisch verifiziert: name-basierter PATCH mit
+      // notion-version 2025-09-03 funktioniert sofort gegen dieselbe
+      // DB die zuvor No-Ops zeigte.
+      propsForApi[matched] = valueToApi(value, def);
     }
     return { propsForApi, warnings };
   }

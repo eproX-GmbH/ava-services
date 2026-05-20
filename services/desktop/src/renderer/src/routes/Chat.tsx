@@ -122,7 +122,9 @@ function newConversationId(): string {
   return `c-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
-/** Compact one-line summary of tool args, capped to keep the timeline tidy. */
+/** Compact one-line summary of tool args, capped to keep the timeline tidy.
+ *  Used as the toggle's collapsed label — NOT the expanded view (see
+ *  `formatArgsFull` for that, which returns the full pretty-printed JSON). */
 function summarizeArgs(args: unknown): string {
   if (args === undefined || args === null) return "";
   if (typeof args !== "object") return String(args);
@@ -130,6 +132,20 @@ function summarizeArgs(args: unknown): string {
     const json = JSON.stringify(args);
     if (json.length <= 80) return json;
     return json.slice(0, 77) + "…";
+  } catch {
+    return "";
+  }
+}
+
+/** v0.1.251 — Full pretty-printed JSON of tool args for the expanded
+ *  view. Vorher zeigte das ausgeklappte „Argumente" denselben 80-Zeichen-
+ *  Truncate wie der collapsed-State — damit konnte man bei Bug-Reports
+ *  nicht sehen, was der Agent wirklich geschickt hat. */
+function formatArgsFull(args: unknown): string {
+  if (args === undefined || args === null) return "";
+  if (typeof args !== "object") return String(args);
+  try {
+    return JSON.stringify(args, null, 2);
   } catch {
     return "";
   }
@@ -1773,6 +1789,7 @@ function ActivityRow(props: {
   const [open, setOpen] = useState(false);
   const [errorOpen, setErrorOpen] = useState(false);
   const argSummary = summarizeArgs(props.args);
+  const argFull = formatArgsFull(props.args);
   const hasArgs = argSummary.length > 0;
   // v0.1.246 — Bei Fehler-Status den Preview in einen ausklappbaren
   // <pre>-Block schieben. Standard-Anzeige bleibt kurz (erste 100
@@ -1828,7 +1845,7 @@ function ActivityRow(props: {
             </span>
           )}
         </div>
-        {hasArgs && open && <pre className="activity-args">{argSummary}</pre>}
+        {hasArgs && open && <pre className="activity-args">{argFull}</pre>}
         {errorTooLongForInline && errorOpen && (
           <pre className="activity-args activity-error-detail">
             {fullPreview}
