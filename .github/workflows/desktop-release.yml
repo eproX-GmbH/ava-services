@@ -142,6 +142,13 @@ jobs:
         # only soft-skip when the FIRST producer's source dir has
         # no package.json (the genuine "no SUBMODULES_PAT, nothing
         # to vendor" case). Any other failure halts CI.
+        env:
+          # v0.1.252 — Producer-.npmrc-Dateien nutzen jetzt
+          # `_authToken=${NPM_TOKEN}` statt einen committed
+          # GitLab-PAT. Damit liegt der Token NIE im Git und kann
+          # rotiert werden, ohne dass alle Submodules neu pushen
+          # müssen.
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           mkdir -p resources/producers
           if [ ! -f ../../company-profile/package.json ]; then
@@ -343,6 +350,8 @@ jobs:
       - name: Vendor producer subprocesses
         working-directory: services/desktop
         shell: bash
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           mkdir -p resources/producers
           if [ ! -f ../../company-profile/package.json ]; then
@@ -568,6 +577,13 @@ jobs:
         # only soft-skip when the FIRST producer's source dir has
         # no package.json (the genuine "no SUBMODULES_PAT, nothing
         # to vendor" case). Any other failure halts CI.
+        env:
+          # v0.1.252 — Producer-.npmrc-Dateien nutzen jetzt
+          # `_authToken=${NPM_TOKEN}` statt einen committed
+          # GitLab-PAT. Damit liegt der Token NIE im Git und kann
+          # rotiert werden, ohne dass alle Submodules neu pushen
+          # müssen.
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           mkdir -p resources/producers
           if [ ! -f ../../company-profile/package.json ]; then
