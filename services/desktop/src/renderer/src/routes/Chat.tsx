@@ -91,6 +91,9 @@ interface UiMessage {
   id: string;
   role: AgentMessage["role"];
   content: string;
+  /** v0.1.257 — Bilder, die diese Message mitgeschickt hat (nur USER).
+   *  Lokal-only — bei Conversation-Reload nicht persistiert. */
+  images?: Array<{ base64: string; mimeType: string; filename?: string }>;
   pending?: boolean;
   /** Inline tool-action row. When set, the message is rendered as a
    *  timeline step instead of a chat bubble. */
@@ -141,6 +144,25 @@ function summarizeArgs(args: unknown): string {
  *  view. Vorher zeigte das ausgeklappte „Argumente" denselben 80-Zeichen-
  *  Truncate wie der collapsed-State — damit konnte man bei Bug-Reports
  *  nicht sehen, was der Agent wirklich geschickt hat. */
+/** v0.1.257 — File → base64 (ohne `data:` Prefix), für Bild-Anhänge. */
+function fileToBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = reader.result;
+      if (typeof result !== "string") {
+        reject(new Error("FileReader lieferte keinen String."));
+        return;
+      }
+      // result ist `data:image/png;base64,XXXX` — wir wollen nur den base64-Teil
+      const idx = result.indexOf(",");
+      resolve(idx >= 0 ? result.slice(idx + 1) : result);
+    };
+    reader.onerror = () => reject(reader.error ?? new Error("FileReader failed"));
+    reader.readAsDataURL(file);
+  });
+}
+
 function formatArgsFull(args: unknown): string {
   if (args === undefined || args === null) return "";
   if (typeof args !== "object") return String(args);
@@ -163,6 +185,13 @@ export function Chat() {
   // 8.k10i — attached spreadsheets pending the next Send. Cleared on
   // submit (the metadata is folded into the outgoing user message).
   const [attachments, setAttachments] = useState<SpreadsheetAttachment[]>([]);
+  // v0.1.257 — Bild-Anhänge an den nächsten user-turn. Werden im Chat als
+  // Vorschau-Chip angezeigt, beim Send als `images: AgentMessageImage[]`
+  // an `agent.send` mitgegeben. Nur sinnvoll wenn `status.supportsImages`
+  // true ist; der Renderer warnt, falls das Modell keine Bilder kann.
+  const [pendingImages, setPendingImages] = useState<
+    Array<{ id: string; base64: string; mimeType: string; filename: string }>
+  >([]);
   const [dragOver, setDragOver] = useState(false);
   // Counter rather than boolean: child elements fire dragenter/dragleave
   // as the cursor crosses each, so a single state would flicker. We
@@ -831,11 +860,40 @@ export function Chat() {
   // chat shouldn't blow up the whole drop.
   const ingestFiles = useCallback(async (files: File[]) => {
     if (files.length === 0) return;
-    const accepted = files.filter(isSupportedAttachment);
-    const rejected = files.length - accepted.length;
-    if (rejected > 0 && accepted.length === 0) {
+    // v0.1.257 — Bilder separat behandeln (gehen in pendingImages, nicht
+    // in attachments). Vision-Gate liegt am Modell, nicht am Drop —
+    // wir zeigen die Bilder im Composer + warnen UI-seitig, falls
+    // !supportsImages. Das gibt dem User die Chance, das Modell vorher
+    // zu wechseln, ohne dass der Drop verloren geht.
+    const imageFiles = files.filter((f) => f.type.startsWith("image/"));
+    const nonImage = files.filter((f) => !f.type.startsWith("image/"));
+    if (imageFiles.length > 0) {
+      const next: typeof pendingImages = [];
+      for (const f of imageFiles) {
+        if (f.size > 5 * 1024 * 1024) {
+          setError(
+            `Bild "${f.name}" ist größer als 5 MB — Provider lehnen das oft ab. Bitte zuerst skalieren.`,
+          );
+          continue;
+        }
+        const base64 = await fileToBase64(f);
+        next.push({
+          id: `img-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+          base64,
+          mimeType: f.type || "image/png",
+          filename: f.name,
+        });
+      }
+      if (next.length > 0) {
+        setPendingImages((prev) => [...prev, ...next]);
+      }
+    }
+    if (nonImage.length === 0) return;
+    const accepted = nonImage.filter(isSupportedAttachment);
+    const rejected = nonImage.length - accepted.length;
+    if (rejected > 0 && accepted.length === 0 && imageFiles.length === 0) {
       setError(
-        `Nicht unterstützter Dateityp. Bitte .xlsx-, .xls-, .csv- oder .tsv-Dateien ablegen.`,
+        `Nicht unterstützter Dateityp. Bitte .xlsx-, .xls-, .csv-, .tsv-Dateien oder Bilder (PNG/JPEG) ablegen.`,
       );
       return;
     }
@@ -843,7 +901,7 @@ export function Chat() {
       setError(
         `${rejected} nicht unterstützte ${rejected === 1 ? "Datei" : "Dateien"} übersprungen.`,
       );
-    } else {
+    } else if (imageFiles.length === 0) {
       setError(null);
     }
     const parsed: SpreadsheetAttachment[] = [];
@@ -858,6 +916,29 @@ export function Chat() {
       setAttachments((prev) => [...prev, ...parsed]);
     }
   }, []);
+
+  const removePendingImage = useCallback((id: string) => {
+    setPendingImages((prev) => prev.filter((img) => img.id !== id));
+  }, []);
+
+  // v0.1.257 — Paste-Handler für die Composer-Textarea. Greift Bilder
+  // aus der Zwischenablage (Cmd+V nach Screenshot), routet sie durch
+  // ingestFiles. Andere Paste-Aktionen (Text) bleiben unberührt.
+  const handlePaste = useCallback(
+    (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+      const items = Array.from(e.clipboardData?.items ?? []);
+      const imageItems = items.filter((it) => it.type.startsWith("image/"));
+      if (imageItems.length === 0) return; // Default-Paste (Text) durchlassen
+      e.preventDefault();
+      const files: File[] = [];
+      for (const it of imageItems) {
+        const f = it.getAsFile();
+        if (f) files.push(f);
+      }
+      if (files.length > 0) void ingestFiles(files);
+    },
+    [ingestFiles],
+  );
 
   const handleFileInput = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -978,18 +1059,44 @@ export function Chat() {
       : typed;
     setInput("");
     const sentAttachments = stagedAttachments;
+    const sentImages = pendingImages;
     setAttachments([]);
+    setPendingImages([]);
     setError(null);
     const userId = `u-${Date.now().toString(36)}`;
     setMessages((prev) => [
       ...prev,
-      { id: userId, role: "user", content: visible },
+      {
+        id: userId,
+        role: "user",
+        content: visible,
+        // v0.1.257 — Bilder werden lokal im UI-Bubble eingebettet, damit
+        // der User SOFORT sieht was gesendet wurde, ohne dass main den
+        // Echo zurückspielt.
+        images:
+          sentImages.length > 0
+            ? sentImages.map((img) => ({
+                base64: img.base64,
+                mimeType: img.mimeType,
+                filename: img.filename,
+              }))
+            : undefined,
+      },
     ]);
     setThinking(true);
     try {
       const { requestId } = await window.api.agent.send({
         conversationId: id,
         message: composed,
+        ...(sentImages.length > 0
+          ? {
+              images: sentImages.map((img) => ({
+                base64: img.base64,
+                mimeType: img.mimeType,
+                filename: img.filename,
+              })),
+            }
+          : {}),
       });
       activeRequestIdRef.current = requestId;
       // Surface the (possibly newly-created) conversation in the
@@ -1001,6 +1108,7 @@ export function Chat() {
       setThinking(false);
       // Restore the attachments so the user can retry without re-dropping.
       setAttachments(sentAttachments);
+      setPendingImages(sentImages);
       setError(err instanceof Error ? err.message : String(err));
     }
   }
@@ -1142,6 +1250,35 @@ export function Chat() {
           ))}
         </div>
       )}
+      {pendingImages.length > 0 && !isRecording && (
+        <div className="chat-images">
+          {!status?.supportsImages && (
+            <div className="chat-images__warn">
+              Aktuelles Modell unterstützt keine Bilder. Wechsle in den
+              Einstellungen zu einem Vision-Modell (z. B. Claude Sonnet,
+              GPT-4o, Gemini, llava), sonst werden die Anhänge ignoriert.
+            </div>
+          )}
+          <div className="chat-images__grid">
+            {pendingImages.map((img) => (
+              <div key={img.id} className="chat-image-chip" title={img.filename}>
+                <img
+                  src={`data:${img.mimeType};base64,${img.base64}`}
+                  alt={img.filename}
+                />
+                <button
+                  type="button"
+                  onClick={() => removePendingImage(img.id)}
+                  aria-label={`${img.filename} entfernen`}
+                  className="chat-image-chip__remove"
+                >
+                  ×
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
       <div
         className={`chat-composer${status?.ready ? "" : " is-disabled"}${isRecording ? " chat-composer--recording" : ""}`}
       >
@@ -1222,9 +1359,10 @@ export function Chat() {
                   void handleSend();
                 }
               }}
+              onPaste={handlePaste}
               placeholder={
                 status?.ready
-                  ? attachments.length > 0
+                  ? attachments.length > 0 || pendingImages.length > 0
                     ? "Notiz hinzufügen (oder direkt senden)…"
                     : "Frag AVA…"
                   : "Warte auf das lokale Modell…"
@@ -1236,7 +1374,7 @@ export function Chat() {
               ref={fileInputRef}
               type="file"
               multiple
-              accept=".xlsx,.xls,.csv,.tsv"
+              accept=".xlsx,.xls,.csv,.tsv,image/png,image/jpeg,image/webp,image/gif"
               style={{ display: "none" }}
               onChange={handleFileInput}
             />
@@ -1462,7 +1600,21 @@ export function Chat() {
                 >
                   <div className="chat-content">
                     {m.role === "user" ? (
-                      <UserBubbleContent content={m.content} />
+                      <>
+                        <UserBubbleContent content={m.content} />
+                        {m.images && m.images.length > 0 && (
+                          <div className="chat-msg-images">
+                            {m.images.map((img, idx) => (
+                              <img
+                                key={idx}
+                                src={`data:${img.mimeType};base64,${img.base64}`}
+                                alt={img.filename ?? `Bild ${idx + 1}`}
+                                className="chat-msg-image"
+                              />
+                            ))}
+                          </div>
+                        )}
+                      </>
                     ) : (
                       renderChatContent(m.content)
                     )}

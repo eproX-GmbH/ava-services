@@ -29,6 +29,7 @@ import { BestMatchDetail } from "./routes/BestMatchDetail";
 import { ChatSession } from "./routes/ChatSession";
 import { Alerts } from "./routes/Alerts";
 import { LinkedIn } from "./routes/LinkedIn";
+import { TriageInbox } from "./routes/TriageInbox";
 import { bootstrapTheme } from "./lib/theme";
 import "./styles.css";
 
@@ -61,6 +62,7 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
               <Route path="/ingest" element={<Ingest />} />
               <Route path="/alerts" element={<Alerts />} />
               <Route path="/linkedin" element={<LinkedIn />} />
+              <Route path="/inbox" element={<TriageInbox />} />
               <Route path="/transactions" element={<Transactions />} />
               <Route path="/transactions/:id" element={<TransactionDetail />} />
               <Route path="/transactions/:id/stream" element={<TransactionStream />} />

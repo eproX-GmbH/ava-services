@@ -341,6 +341,28 @@ const KNOWN_BUNDLES: readonly ToolBundle[] = [
     ],
     queryHints: ["watch", "beobachten", "wiederkehrend"],
   },
+  {
+    label: "Mail",
+    tools: [
+      "mail_list_inbox",
+      "mail_get_message",
+      "mail_send",
+      "mail_reply",
+      "mail_mark_read",
+      "mail_archive",
+      "mail_allowlist_add",
+    ],
+    queryHints: [
+      "mail",
+      "email",
+      "e-mail",
+      "postfach",
+      "inbox",
+      "schreib an",
+      "antworte auf",
+      "triage",
+    ],
+  },
 ];
 
 function detectBundle(

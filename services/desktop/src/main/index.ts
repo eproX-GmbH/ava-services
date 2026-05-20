@@ -48,6 +48,13 @@ import {
 } from "./crm/fetch-enrichment";
 import { initBilling } from "./billing";
 import { initLinkedIn } from "./linkedin";
+import { MailSupervisor } from "./mail/supervisor";
+import type {
+  MailAccount,
+  MailAllowlistEntry,
+  MailCredentialsPayload,
+  MailSnapshot,
+} from "../shared/types";
 import { ResearchFeaturesStore } from "./research/store";
 import { ProviderConfigStore } from "./agent/providers/store";
 import {
@@ -930,6 +937,22 @@ function broadcastWatchesChanged(): void {
 }
 watchStore.on("changed", () => broadcastWatchesChanged());
 
+// ---------------------------------------------------------------------------
+// Mail-Supervisor (Phase 9.m — v0.1.257).
+// ---------------------------------------------------------------------------
+//
+// AVAs dedizierter Mail-Account. Single-Instance-Singleton; bleibt auch
+// "leer" instanziert (kein Konto konfiguriert), damit Settings → Datenquellen
+// die Konfiguration nachreichen kann. ProviderConfigStore wird lazy nach
+// dem app.whenReady() in den Boot-Sequenz unten attached (siehe weiter unten).
+let mailSupervisor: MailSupervisor | null = null;
+
+function broadcastMailSnapshot(snapshot: MailSnapshot): void {
+  for (const win of BrowserWindow.getAllWindows()) {
+    win.webContents.send("mail:snapshot", snapshot);
+  }
+}
+
 /** L6 — after each heartbeat tick, mark every LinkedIn candidate that
  *  reached the judge so the next sweep skips it. Includes alerted +
  *  not-worth + judge-error outcomes; duplicates already advanced their
@@ -1311,6 +1334,11 @@ const agentRegistry = buildReadOnlyRegistry({
   getSkillStore: () => _skillStoreRef,
   getSkillsTrust: () => _skillsTrustRef,
   skillsUserDir,
+  // v0.1.257 — Mail-Supervisor (Phase 9.m). Wird erst nach
+  // ProviderConfigStore.shared() unten in der Boot-Sequenz instanziiert;
+  // bis dahin liefert der Getter null und die Mail-Tools sind nicht
+  // registriert.
+  getMailSupervisor: () => mailSupervisor,
 });
 const agent = new AgentOrchestrator({
   providers,
@@ -1506,6 +1534,26 @@ app.whenReady().then(async () => {
   );
   anthropicTokenRefresher.start();
   app.on("before-quit", () => anthropicTokenRefresher.stop());
+
+  // v0.1.257 — Mail-Supervisor (Phase 9.m). Braucht providers + Provider-
+  // Config-Store, beide jetzt verfügbar. start() lädt das Konto aus dem
+  // Store; wenn keins konfiguriert → idle, keine IMAP-Connection.
+  mailSupervisor = new MailSupervisor({
+    providers,
+    providerStore: providerConfigStore,
+  });
+  mailSupervisor.on("snapshot", broadcastMailSnapshot);
+  try {
+    await mailSupervisor.start();
+  } catch (err) {
+    console.warn(
+      "[mail/supervisor] start fehlgeschlagen:",
+      err instanceof Error ? err.message : String(err),
+    );
+  }
+  app.on("before-quit", () => {
+    void mailSupervisor?.stop();
+  });
 
   // v0.1.182 — cycle ALL producers when the user's LLM credentials
   // change (api-key or subscription token), debounced to coalesce
@@ -3565,6 +3613,121 @@ app.whenReady().then(async () => {
     "watches:setEnabled",
     (_e, args: { id: string; enabled: boolean }): boolean =>
       watchStore.setEnabled(args.id, args.enabled),
+  );
+
+  // ---- Mail IPC (Phase 9.m — v0.1.257) ---------------------------------
+  // Renderer → main: Konto konfigurieren, Test-Connect, Allowlist-CRUD,
+  // Snapshot lesen, Aktionen auf einzelne Mails (mark-read, archive).
+  // main → Renderer: `mail:snapshot` push bei jeder relevanten Änderung
+  // (siehe broadcastMailSnapshot oben).
+  ipcMain.handle("mail:snapshot", async (): Promise<MailSnapshot> => {
+    if (!mailSupervisor) {
+      return {
+        account: null,
+        connectionState: "disconnected",
+        unreadCount: 0,
+        messages: [],
+        allowlist: [],
+      };
+    }
+    return mailSupervisor.snapshot();
+  });
+  ipcMain.handle(
+    "mail:configure",
+    async (
+      _e,
+      args: { account: MailAccount; credentials: MailCredentialsPayload },
+    ): Promise<{ ok: true } | { error: string }> => {
+      if (!mailSupervisor) return { error: "Mail-Supervisor nicht bereit." };
+      try {
+        await mailSupervisor.configureAccount(args.account, args.credentials);
+        return { ok: true };
+      } catch (err) {
+        return {
+          error: err instanceof Error ? err.message : String(err),
+        };
+      }
+    },
+  );
+  ipcMain.handle(
+    "mail:testConnection",
+    async (
+      _e,
+      args: { account: MailAccount; credentials: MailCredentialsPayload },
+    ): Promise<{ imap: boolean; smtp: boolean } | { error: string }> => {
+      if (!mailSupervisor) return { error: "Mail-Supervisor nicht bereit." };
+      try {
+        const r = await mailSupervisor.testConnection(
+          args.account,
+          args.credentials,
+        );
+        return r;
+      } catch (err) {
+        return {
+          error: err instanceof Error ? err.message : String(err),
+        };
+      }
+    },
+  );
+  ipcMain.handle(
+    "mail:deleteAccount",
+    async (): Promise<{ ok: true }> => {
+      if (!mailSupervisor) return { ok: true };
+      await mailSupervisor.deleteAccount();
+      return { ok: true };
+    },
+  );
+  ipcMain.handle(
+    "mail:allowlist:add",
+    async (
+      _e,
+      args: { pattern: string; label: string },
+    ): Promise<MailAllowlistEntry | { error: string }> => {
+      if (!mailSupervisor) return { error: "Mail-Supervisor nicht bereit." };
+      try {
+        return await mailSupervisor.getStore().addAllowlistEntry({
+          pattern: args.pattern,
+          label: args.label,
+          source: "user",
+        });
+      } catch (err) {
+        return { error: err instanceof Error ? err.message : String(err) };
+      }
+    },
+  );
+  ipcMain.handle(
+    "mail:allowlist:remove",
+    async (_e, id: string): Promise<{ ok: true }> => {
+      if (!mailSupervisor) return { ok: true };
+      await mailSupervisor.getStore().removeAllowlistEntry(id);
+      return { ok: true };
+    },
+  );
+  ipcMain.handle(
+    "mail:markRead",
+    async (
+      _e,
+      args: { messageId: string; read?: boolean },
+    ): Promise<{ ok: true }> => {
+      if (!mailSupervisor) return { ok: true };
+      await mailSupervisor.getStore().markRead(args.messageId, args.read ?? true);
+      return { ok: true };
+    },
+  );
+  ipcMain.handle(
+    "mail:archive",
+    async (_e, messageId: string): Promise<{ ok: true }> => {
+      if (!mailSupervisor) return { ok: true };
+      await mailSupervisor.getStore().archive(messageId);
+      return { ok: true };
+    },
+  );
+  ipcMain.handle(
+    "mail:getMessage",
+    async (_e, messageId: string) => {
+      if (!mailSupervisor) return null;
+      return mailSupervisor.getStore().getMessage(messageId);
+    },
   );
 
   // Voice / whisper sidecar IPC (Phase 8.n1). The download path is

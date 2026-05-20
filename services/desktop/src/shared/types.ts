@@ -367,6 +367,11 @@ export interface AgentStatus {
    * knows transcripts won't survive a restart.
    */
   memoryError: string | null;
+  /** v0.1.257 — Vision-Fähigkeit des aktiven Modells. Renderer nutzt das,
+   *  um Bild-Paste/Drop im Chat freizugeben bzw. einen Hinweis "Modell
+   *  versteht keine Bilder" anzuzeigen. Wird main-seitig aus dem
+   *  `@ava/ai-provider`-Catalog gelesen. */
+  supportsImages: boolean;
 }
 
 /**
@@ -387,6 +392,28 @@ export interface AgentMessage {
   toolCallId?: string;
   /** Wall-clock ms since epoch — for log ordering and UI timestamps. */
   createdAt: number;
+  /**
+   * v0.1.257 — Bild-Anhänge an USER-Messages. Werden beim Provider-Call
+   * in das Multipart-Format der AI-SDK konvertiert (`type: "image"`).
+   * Funktioniert nur, wenn das aktive Modell Vision unterstützt
+   * (`catalog.capabilities.vision === true`); für Text-Modelle filtert
+   * der Provider die Bilder raus und gibt eine Warnung aus.
+   *
+   * Keine Persistierung: Bilder leben nur im laufenden Turn. Wer Bild-
+   * Bezugsdaten dauerhaft braucht, soll sie über Mail-Anhänge oder
+   * Skills speichern.
+   */
+  images?: AgentMessageImage[];
+}
+
+/** Inline-Bild als base64. mimeType ist immer `image/<format>`
+ *  (z. B. `image/png`, `image/jpeg`). */
+export interface AgentMessageImage {
+  /** base64 ohne `data:`-Prefix. */
+  base64: string;
+  mimeType: string;
+  /** Optionaler Originaldateiname für UI-Display. */
+  filename?: string;
 }
 
 /**
@@ -417,6 +444,10 @@ export interface AgentSendInput {
   conversationId: string;
   /** User-typed text. */
   message: string;
+  /** v0.1.257 — Optionale Bild-Anhänge, vom Renderer per Paste/Drop
+   *  eingehängt. Werden in den ersten user-AgentMessage des Turns
+   *  übernommen. Nur sinnvoll bei Vision-Modellen. */
+  images?: AgentMessageImage[];
 }
 
 export interface AgentSendResult {
@@ -1872,4 +1903,173 @@ export interface KnowledgeProvidersSnapshot {
    *  OS-Keychain nicht verfügbar ist (Linux ohne libsecret); dann
    *  würden Tokens unverschlüsselt abgelegt. */
   encryptionAvailable: boolean;
+}
+
+// ---------------------------------------------------------------------------
+// Mail-Integration (Phase 9.m — v0.1.257+)
+// ---------------------------------------------------------------------------
+//
+// Ein einziges dediziertes AVA-Email-Konto, konfiguriert vom Nutzer. AVA
+// liest eingehende Mails (IMAP IDLE + 15min-Fallback-Poll), klassifiziert
+// sie und entscheidet auf Basis einer Sender-Allowlist, ob sie autonom
+// handeln darf. Compute-Locality: IMAP-Verbindung läuft im main-process,
+// LLM-Klassifikation via getLLM() (User-Provider, kein Gateway).
+//
+// Sicherheitsmodell:
+//   - `trusted`: Absender match in Allowlist (exact oder *@domain). AVA
+//                darf Tool-Calls autonom ausführen (reply, CRM-Update, …).
+//   - `known`:   Absender wurde manuell vom User bestätigt (z. B. via
+//                "Markieren als trusted"-Button), aber nicht in Allowlist.
+//                AVA fragt vor jeder Aktion via ask_user_choice nach.
+//   - `unknown`: neuer/nicht vertrauter Absender. AVA zeigt nur in der
+//                Triage-Inbox an, keine autonomen Tool-Calls.
+//
+// Spoofing-Schutz: From-vs-Return-Path-Mismatch oder fehlende SPF/DKIM
+// degradieren `trusted` automatisch zu `unknown`.
+
+/** Vertrauensstufe einer eingehenden Mail. */
+export type MailTrustLevel = "trusted" | "known" | "unknown";
+
+/** IMAP/SMTP-Connection-Profil. Eine Row im PGlite-Store. */
+export interface MailAccount {
+  /** AVAs eigene Adresse (z. B. "ava@firma.de"). */
+  address: string;
+  /** Anzeigename für ausgehende Mails (z. B. "AVA — Assistenz"). */
+  displayName: string;
+  imap: {
+    host: string;
+    port: number;
+    secure: boolean; // true = TLS direkt, false = STARTTLS
+    user: string;
+  };
+  smtp: {
+    host: string;
+    port: number;
+    secure: boolean;
+    user: string;
+  };
+  /** Master-Schalter: AVA darf überhaupt auf Mails antworten. Default false. */
+  outboundEnabled: boolean;
+  /** Poll-Intervall in Minuten (Fallback wenn IMAP IDLE nicht supported).
+   *  Default 15. Wird ignoriert, wenn IDLE läuft. */
+  pollIntervalMinutes: number;
+  /** ISO — letzter erfolgreicher Sync. */
+  lastSyncAt: string | null;
+  /** ISO — letzter Verbindungsfehler. null wenn aktuell ok. */
+  lastErrorAt: string | null;
+  lastErrorMessage: string | null;
+}
+
+/** Allowlist-Eintrag. Match-Regel:
+ *  - `pattern` "max@kunde.de"  → exakte Adresse
+ *  - `pattern` "*@kunde.de"    → ganze Domain
+ */
+export interface MailAllowlistEntry {
+  id: string;
+  pattern: string;
+  label: string; // freier Anzeigename, z. B. "Max Mustermann" oder "Kunde XY"
+  addedAt: string; // ISO
+  /** Wer hat den Eintrag erstellt — "user" (manuell in Settings) oder
+   *  "agent" (AVA hat via mail_allowlist_add nach ask_user_choice). */
+  source: "user" | "agent";
+}
+
+/** Ein Anhang einer Mail. BLOBs ≤ 10 MB werden inline in PGlite gespeichert,
+ *  größere unter `cachePath` auf dem Filesystem. */
+export interface MailAttachment {
+  id: string;
+  messageId: string;
+  filename: string;
+  mimeType: string;
+  sizeBytes: number;
+  /** Extrahierter Text — nur für PDFs/Text-Dateien. null wenn nicht extrahierbar. */
+  extractedText: string | null;
+  /** base64-encoded Bild — nur wenn MIME image/* und Bild ≤ 5 MB. null sonst.
+   *  Wird in `AgentMessage`-Image-Parts referenziert, wenn das aktive Modell
+   *  Vision unterstützt. */
+  imageBase64: string | null;
+  /** Pfad im OS-Cache, wenn Größe > Inline-Limit. Optional. */
+  cachePath: string | null;
+}
+
+/** AVAs LLM-Klassifikation einer eingehenden Mail. */
+export interface MailClassification {
+  /** Grobe Kategorie für Triage-UI-Filter und Skill-Routing. */
+  category:
+    | "task" // konkrete Anfrage/Aufgabe
+    | "info" // FYI, Newsletter, Auto-Reply
+    | "appointment" // Terminanfrage, Kalender
+    | "crm-relevant" // Kontaktdaten, Status-Update
+    | "spam"
+    | "phishing"
+    | "unclear";
+  /** 1-2 Sätze — was will der Absender? */
+  summary: string;
+  /** AVA-Vorschlag: Antworten, archivieren, weiterleiten, ignorieren. */
+  suggestedAction: "reply" | "archive" | "forward" | "ignore" | "ask-user";
+  /** Heuristik: enthält Mail Prompt-Injection-Muster? 0..1. */
+  injectionRisk: number;
+  /** Optional — wenn `category === "crm-relevant"`: Kandidaten-Notion-Items. */
+  crmCandidates?: Array<{ pageId: string; title: string }>;
+}
+
+/** Eine eingegangene oder gesendete Mail. */
+export interface MailMessage {
+  id: string;
+  /** IMAP-UID + Folder als stabile Referenz auf das Original. null bei
+   *  selbst-gesendeten, die noch nicht in Sent erschienen sind. */
+  imapUid: number | null;
+  folder: string;
+  direction: "inbound" | "outbound";
+  /** Header-Felder. */
+  from: { address: string; name: string | null };
+  to: Array<{ address: string; name: string | null }>;
+  cc: Array<{ address: string; name: string | null }>;
+  subject: string;
+  /** ISO — Mail-Datum aus Header. */
+  date: string;
+  /** Plain-Text-Body. HTML wird beim Empfang über `mailparser` zu Plain. */
+  bodyText: string;
+  /** Original-HTML — nur für Render im Triage-Detail. null wenn nur Plain. */
+  bodyHtml: string | null;
+  /** SPF/DKIM-Header-Auswertung. */
+  authResults: {
+    spf: "pass" | "fail" | "neutral" | "none";
+    dkim: "pass" | "fail" | "neutral" | "none";
+    fromMatchesReturnPath: boolean;
+  };
+  trustLevel: MailTrustLevel;
+  /** AVA-Klassifikation. null wenn noch nicht klassifiziert (z. B. outbound
+   *  oder noch in der Pipeline). */
+  classification: MailClassification | null;
+  attachments: MailAttachment[];
+  /** Wurde dem User in Triage-Inbox bereits gezeigt? */
+  readByUser: boolean;
+  archivedAt: string | null;
+  /** Für `mail_reply` — Message-ID-Header für Threading. */
+  messageIdHeader: string | null;
+  inReplyTo: string | null;
+}
+
+/** IMAP+SMTP-Passwörter. Werden über IPC vom Renderer an main übergeben
+ *  und dort sofort via safeStorage verschlüsselt; landen NIE in PGlite
+ *  oder in einer unverschlüsselten Datei. */
+export interface MailCredentialsPayload {
+  imapPassword: string;
+  smtpPassword: string;
+}
+
+/** Snapshot für IPC `mail:list`. */
+export interface MailSnapshot {
+  account: MailAccount | null;
+  connectionState:
+    | "connecting"
+    | "connected"
+    | "idling"
+    | "polling"
+    | "disconnected"
+    | "error";
+  unreadCount: number;
+  messages: MailMessage[];
+  allowlist: MailAllowlistEntry[];
 }

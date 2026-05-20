@@ -16,6 +16,11 @@ import type {
   FreshnessTickInfo,
   UserProfile,
   Watch,
+  MailAccount,
+  MailAllowlistEntry,
+  MailCredentialsPayload,
+  MailMessage,
+  MailSnapshot,
   VoiceModelDownloadProgress,
   VoiceStatus,
   AuthStatus,
@@ -907,6 +912,45 @@ const api = {
         cb(snapshot);
       ipcRenderer.on("watches:changed", handler);
       return () => ipcRenderer.removeListener("watches:changed", handler);
+    },
+  },
+
+  // v0.1.257 — Mail (Phase 9.m). Settings → Datenquellen konfiguriert
+  // den Account; TriageInbox-Route liest snapshot + abonniert push-Updates.
+  mail: {
+    snapshot: (): Promise<MailSnapshot> => ipcRenderer.invoke("mail:snapshot"),
+    configure: (
+      account: MailAccount,
+      credentials: MailCredentialsPayload,
+    ): Promise<{ ok: true } | { error: string }> =>
+      ipcRenderer.invoke("mail:configure", { account, credentials }),
+    testConnection: (
+      account: MailAccount,
+      credentials: MailCredentialsPayload,
+    ): Promise<{ imap: boolean; smtp: boolean } | { error: string }> =>
+      ipcRenderer.invoke("mail:testConnection", { account, credentials }),
+    deleteAccount: (): Promise<{ ok: true }> =>
+      ipcRenderer.invoke("mail:deleteAccount"),
+    addAllowlistEntry: (
+      pattern: string,
+      label: string,
+    ): Promise<MailAllowlistEntry | { error: string }> =>
+      ipcRenderer.invoke("mail:allowlist:add", { pattern, label }),
+    removeAllowlistEntry: (id: string): Promise<{ ok: true }> =>
+      ipcRenderer.invoke("mail:allowlist:remove", id),
+    markRead: (messageId: string, read = true): Promise<{ ok: true }> =>
+      ipcRenderer.invoke("mail:markRead", { messageId, read }),
+    archive: (messageId: string): Promise<{ ok: true }> =>
+      ipcRenderer.invoke("mail:archive", messageId),
+    getMessage: (messageId: string): Promise<MailMessage | null> =>
+      ipcRenderer.invoke("mail:getMessage", messageId),
+    onSnapshot: (cb: (snapshot: MailSnapshot) => void): (() => void) => {
+      const handler = (
+        _e: Electron.IpcRendererEvent,
+        snapshot: MailSnapshot,
+      ): void => cb(snapshot);
+      ipcRenderer.on("mail:snapshot", handler);
+      return () => ipcRenderer.removeListener("mail:snapshot", handler);
     },
   },
 

@@ -40,6 +40,8 @@ import { buildChatHistoryTools } from "./chat-history";
 import { buildNotionTools } from "./notion";
 import { buildObsidianTools } from "./obsidian";
 import { buildSkillsTools } from "./skills";
+import { buildMailTools } from "./mail";
+import type { MailSupervisor } from "../../mail/supervisor";
 import type { KnowledgeManager } from "../../knowledge/manager";
 import type { SkillStore } from "../../skills/store";
 import type { SkillsTrustStore } from "../../skills/trust-store";
@@ -116,6 +118,11 @@ export function buildReadOnlyRegistry(deps: {
   getSkillStore: () => SkillStore | null;
   getSkillsTrust: () => SkillsTrustStore | null;
   skillsUserDir: string;
+  /** v0.1.257 — Mail-Supervisor für die Mail-Tools (Phase 9.m). Lazy-Getter
+   *  weil der Supervisor möglicherweise erst nach dem Registry-Build
+   *  hochfährt (Konto nicht konfiguriert → Supervisor steht idle). Wenn
+   *  null, melden die Mail-Tools "Mail-Konto nicht konfiguriert". */
+  getMailSupervisor: () => MailSupervisor | null;
 }): ToolRegistry {
   const registry = new ToolRegistry();
   const ctx = { gateway: deps.gateway };
@@ -160,6 +167,14 @@ export function buildReadOnlyRegistry(deps: {
     onChanged: deps.onWatchesChanged,
   }))
     registry.register(t);
+  // Mail-Tools nur registrieren, wenn ein Supervisor verfügbar ist —
+  // sonst würden sie alle "kein Konto"-Errors zurückgeben und nur Tokens
+  // im Tool-Listing kosten. Lazy-Check über getMailSupervisor.
+  const mailSupervisorAtBuild = deps.getMailSupervisor();
+  if (mailSupervisorAtBuild) {
+    for (const t of buildMailTools({ supervisor: mailSupervisorAtBuild }))
+      registry.register(t);
+  }
   for (const t of buildCrmTools({
     crm: deps.crm,
     gateway: deps.gateway,

@@ -1,5 +1,6 @@
 import { EventEmitter } from "node:events";
 import { randomUUID } from "node:crypto";
+import { hasVision } from "@ava/ai-provider";
 import type {
   AgentMessage,
   AgentPendingPrompt,
@@ -333,6 +334,13 @@ export class AgentOrchestrator extends EventEmitter {
       inFlightConversationId: this.inFlightConversationId,
       errorMessage: this.errorMessage ?? provider.errorMessage,
       memoryError: this.memoryError,
+      // v0.1.257 — Vision-Capability für Bild-Anhänge im Chat. False wenn
+      // kein Modell konfiguriert oder das Modell laut Catalog keine
+      // Bilder kann (z. B. Ollama-llama3.1, Anthropic Haiku-Text-only).
+      supportsImages:
+        provider.ready && provider.model
+          ? hasVision(provider.kind, provider.model)
+          : false,
     };
   }
 
@@ -406,6 +414,9 @@ export class AgentOrchestrator extends EventEmitter {
       role: "user",
       content: input.message,
       createdAt: Date.now(),
+      ...(input.images && input.images.length > 0
+        ? { images: input.images }
+        : {}),
     };
     this.appendMessage(convo, userMessage);
 

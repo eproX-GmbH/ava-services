@@ -533,6 +533,28 @@ function toModelMessages(messages: AgentMessage[]): ModelMessage[] {
       return { role: "system", content: m.content };
     }
     if (m.role === "user") {
+      // v0.1.257 — wenn der Turn Bilder enthält, Multipart-Content. Die
+      // AI-SDK normalisiert das pro-Provider (Anthropic → image_url,
+      // OpenAI → image_url, Google → inlineData, …). Provider ohne
+      // Vision lassen die Bilder im SDK-Adapter durchrutschen und
+      // ignorieren sie — wir gaten zusätzlich im Renderer (D13).
+      if (m.images && m.images.length > 0) {
+        const parts: Array<
+          | { type: "text"; text: string }
+          | { type: "image"; image: string; mediaType?: string }
+        > = [];
+        if (m.content && m.content.length > 0) {
+          parts.push({ type: "text", text: m.content });
+        }
+        for (const img of m.images) {
+          parts.push({
+            type: "image",
+            image: `data:${img.mimeType};base64,${img.base64}`,
+            mediaType: img.mimeType,
+          });
+        }
+        return { role: "user", content: parts };
+      }
       return { role: "user", content: m.content };
     }
     // assistant

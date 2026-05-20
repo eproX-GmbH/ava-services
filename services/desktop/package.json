@@ -1,6 +1,6 @@
 {
   "name": "@ava/desktop",
-  "version": "0.1.256",
+  "version": "0.1.257",
   "private": true,
   "description": "AVA Electron desktop app — replaces user-interface/ Next.js. Talks to db-gateway only.",
   "author": {
@@ -58,7 +58,11 @@
     "adm-zip": "^0.5.16",
     "ai": "^5.0.0",
     "electron-updater": "^6.8.3",
+    "imapflow": "^1.0.171",
     "lucide-react": "^1.14.0",
+    "mailparser": "^3.7.1",
+    "nodemailer": "^6.9.16",
+    "pdf-parse": "^1.1.1",
     "pg": "^8.20.0",
     "pg-gateway": "0.3.0-beta.4",
     "react": "^18.3.0",
@@ -76,7 +80,10 @@
   "devDependencies": {
     "@electron/rebuild": "^4.0.4",
     "@types/adm-zip": "^0.5.5",
+    "@types/mailparser": "^3.4.4",
     "@types/node": "^20.0.0",
+    "@types/nodemailer": "^6.4.16",
+    "@types/pdf-parse": "^1.1.4",
     "@types/react": "^18.3.0",
     "@types/react-dom": "^18.3.0",
     "@vitejs/plugin-react": "^4.3.0",

@@ -6519,3 +6519,152 @@ a.heartbeat-decision__company:hover {
   font-family: var(--font-mono, ui-monospace, monospace);
   font-size: 0.85rem;
 }
+
+/* ---------------------------------------------------------------------------
+   Mail-Integration (Phase 9.m — v0.1.257)
+   --------------------------------------------------------------------------- */
+
+.mail-form fieldset {
+  border: 1px solid var(--border, #d0d4d9);
+  border-radius: 6px;
+  padding: 10px 14px;
+  margin: 10px 0;
+}
+.mail-form legend { padding: 0 6px; font-weight: 600; font-size: 0.85rem; }
+.mail-form__row { display: flex; gap: 12px; flex-wrap: wrap; margin: 6px 0; }
+.mail-form__row label { flex: 1; min-width: 180px; display: flex; flex-direction: column; gap: 4px; }
+.mail-form__row label span { font-size: 0.8rem; color: var(--muted, #6b7280); }
+.mail-form__row input[type="text"],
+.mail-form__row input[type="email"],
+.mail-form__row input[type="password"],
+.mail-form__row input[type="number"] {
+  padding: 6px 8px; border: 1px solid var(--border, #d0d4d9); border-radius: 4px;
+}
+.mail-form__checkbox { flex-direction: row !important; align-items: center; min-width: 80px; }
+.mail-form__checkbox input { margin-right: 6px; }
+.mail-form__actions { display: flex; gap: 8px; margin-top: 12px; }
+.mail-form__error { color: #b91c1c; margin: 8px 0; }
+.mail-form__ok { color: #047857; margin: 8px 0; }
+
+.mail-account-summary { display: flex; justify-content: space-between; gap: 12px; padding: 10px 0; }
+.mail-account-summary__actions { display: flex; gap: 6px; align-items: flex-start; }
+
+.pill { display: inline-block; padding: 1px 8px; border-radius: 10px; font-size: 0.75rem; font-weight: 600; }
+.pill--connected, .pill--idling { background: #d1fae5; color: #047857; }
+.pill--polling { background: #fef3c7; color: #92400e; }
+.pill--connecting { background: #e5e7eb; color: #374151; }
+.pill--disconnected, .pill--error { background: #fee2e2; color: #b91c1c; }
+.warn { color: #92400e; font-weight: 600; }
+
+.mail-allowlist { margin-top: 16px; }
+.mail-allowlist h4 { margin-bottom: 4px; }
+.mail-allowlist__form { display: flex; gap: 8px; margin: 8px 0; }
+.mail-allowlist__form input { flex: 1; padding: 6px 8px; border: 1px solid var(--border, #d0d4d9); border-radius: 4px; }
+.mail-allowlist__list { list-style: none; padding: 0; }
+.mail-allowlist__list li {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 6px 8px; border-bottom: 1px solid var(--border, #e5e7eb);
+}
+.mail-allowlist__list code { background: rgba(0,0,0,0.06); padding: 1px 6px; border-radius: 3px; }
+
+/* Triage-Inbox-Route */
+.triage-inbox { display: flex; flex-direction: column; height: 100%; }
+.triage-inbox--empty { padding: 40px; }
+.triage-inbox__header { padding: 12px 20px; border-bottom: 1px solid var(--border, #e5e7eb); }
+.triage-inbox__filters { display: flex; gap: 6px; margin-top: 8px; }
+.triage-inbox__filters button {
+  padding: 4px 10px; border: 1px solid var(--border, #d0d4d9); background: transparent;
+  border-radius: 4px; cursor: pointer; font-size: 0.85rem;
+}
+.triage-inbox__filters button.active { background: #00c0a7; color: #0a1f2a; border-color: #00c0a7; }
+.triage-inbox__split { display: grid; grid-template-columns: 380px 1fr; flex: 1; overflow: hidden; }
+.triage-inbox__list { list-style: none; padding: 0; margin: 0; overflow-y: auto; border-right: 1px solid var(--border, #e5e7eb); }
+.triage-inbox__detail { padding: 20px; overflow-y: auto; }
+
+.triage-row {
+  padding: 10px 14px; border-bottom: 1px solid var(--border, #f1f3f5);
+  cursor: pointer; transition: background 0.1s;
+}
+.triage-row:hover { background: rgba(0,0,0,0.03); }
+.triage-row.is-selected { background: rgba(0,192,167,0.10); }
+.triage-row.is-unread { font-weight: 600; }
+.triage-row__top { display: flex; gap: 8px; align-items: center; font-size: 0.85rem; }
+.triage-row__from { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.triage-row__date { font-size: 0.75rem; }
+.triage-row__subject { margin-top: 2px; }
+.triage-row__summary { font-size: 0.8rem; margin-top: 2px; font-weight: normal; }
+.triage-row__warn { color: #b91c1c; font-size: 0.8rem; margin-top: 4px; }
+
+.trust-badge {
+  font-size: 0.7rem; padding: 1px 6px; border-radius: 8px; font-weight: 600;
+  text-transform: uppercase; letter-spacing: 0.02em;
+}
+.trust-badge--trusted { background: #d1fae5; color: #047857; }
+.trust-badge--known { background: #fef3c7; color: #92400e; }
+.trust-badge--unknown { background: #e5e7eb; color: #374151; }
+
+.category {
+  display: inline-block; padding: 1px 6px; border-radius: 4px; font-size: 0.75rem;
+  background: #e5e7eb; color: #374151;
+}
+.category--task { background: #dbeafe; color: #1e40af; }
+.category--appointment { background: #fef3c7; color: #92400e; }
+.category--crm-relevant { background: #ede9fe; color: #5b21b6; }
+.category--spam, .category--phishing { background: #fee2e2; color: #b91c1c; }
+
+.triage-detail__classification {
+  background: rgba(0,192,167,0.06); padding: 10px 14px; border-radius: 6px; margin: 12px 0;
+  font-size: 0.85rem;
+}
+.triage-detail__classification > div { margin: 4px 0; }
+.triage-detail__risk { color: #b91c1c; font-weight: 600; }
+.triage-detail__body pre {
+  white-space: pre-wrap; word-break: break-word;
+  font-family: inherit; font-size: 0.9rem; line-height: 1.5;
+  background: rgba(0,0,0,0.02); padding: 12px; border-radius: 4px;
+}
+.triage-detail__attachments ul { list-style: none; padding: 0; }
+.triage-detail__attachments li { margin: 6px 0; }
+.triage-detail__actions { display: flex; gap: 8px; margin-top: 16px; }
+
+@media (prefers-color-scheme: dark) {
+  .pill--connected, .pill--idling { background: rgba(0,192,167,0.18); color: #6ee7d6; }
+  .pill--polling { background: rgba(252,211,77,0.18); color: #fcd34d; }
+  .pill--connecting { background: rgba(229,231,235,0.10); color: #e5e7eb; }
+  .pill--disconnected, .pill--error { background: rgba(239,68,68,0.18); color: #fca5a5; }
+  .trust-badge--trusted { background: rgba(0,192,167,0.18); color: #6ee7d6; }
+  .trust-badge--known { background: rgba(252,211,77,0.18); color: #fcd34d; }
+  .trust-badge--unknown { background: rgba(229,231,235,0.10); color: #e5e7eb; }
+  .triage-detail__classification { background: rgba(0,192,167,0.10); }
+  .triage-detail__body pre { background: rgba(255,255,255,0.04); }
+  .mail-allowlist__list code { background: rgba(255,255,255,0.08); }
+}
+
+/* Bild-Anhänge im Chat (v0.1.257) */
+.chat-images { padding: 8px 0; }
+.chat-images__warn {
+  background: #fef3c7; color: #92400e; padding: 8px 12px; border-radius: 6px;
+  font-size: 0.85rem; margin-bottom: 8px;
+}
+.chat-images__grid { display: flex; gap: 8px; flex-wrap: wrap; }
+.chat-image-chip {
+  position: relative; width: 80px; height: 80px;
+  border-radius: 6px; overflow: hidden; border: 1px solid var(--border, #d0d4d9);
+}
+.chat-image-chip img { width: 100%; height: 100%; object-fit: cover; }
+.chat-image-chip__remove {
+  position: absolute; top: 2px; right: 2px; width: 22px; height: 22px;
+  border-radius: 50%; border: none; background: rgba(0,0,0,0.65); color: white;
+  font-size: 16px; line-height: 1; cursor: pointer; display: grid; place-items: center;
+}
+.chat-image-chip__remove:hover { background: #b91c1c; }
+
+.chat-msg-images { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 6px; }
+.chat-msg-image {
+  max-width: 240px; max-height: 240px; border-radius: 8px;
+  border: 1px solid var(--border, #d0d4d9); cursor: zoom-in;
+}
+
+@media (prefers-color-scheme: dark) {
+  .chat-images__warn { background: rgba(252,211,77,0.18); color: #fcd34d; }
+}
