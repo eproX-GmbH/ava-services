@@ -280,9 +280,21 @@ export class MailStore extends EventEmitter {
   ): Promise<MailMessage> {
     await this.start();
     const pg = this.requirePg();
+    // v0.1.262 Hotfix — Idempotenz via natürlicher IMAP-Identität.
+    // Wenn diese Mail (folder + uid) schon mal gespeichert wurde, deren
+    // existierende ID weiterverwenden statt einer neuen UUID. Sonst
+    // hätten wir bei jedem Reconnect/Re-Fetch Duplikate.
+    if (input.imapUid != null) {
+      const existing = await this.findByImapUid(input.folder, input.imapUid);
+      if (existing) return existing;
+    }
     const message: MailMessage = {
       ...input,
-      id: input.id ?? randomUUID(),
+      // WICHTIG: `||` statt `??` — der IMAP-Client liefert `id: ""` als
+      // Platzhalter (nicht null/undefined), der Nullish-Coalescing-Operator
+      // würde den Empty-String durchlassen und alle Mails kollidierten
+      // auf id="" via ON CONFLICT (id) DO NOTHING.
+      id: input.id || randomUUID(),
       readByUser: input.readByUser ?? false,
       archivedAt: input.archivedAt ?? null,
     };
@@ -583,6 +595,31 @@ export class MailStore extends EventEmitter {
       CREATE INDEX IF NOT EXISTS mail_attachments_message_idx
         ON mail_attachments (message_id);
     `);
+
+    // v0.1.262 Hotfix — Bestehende Rows mit id='' reparieren. Tritt auf
+    // bei Stores die unter v0.1.257-v0.1.261 angelegt wurden, wo
+    // input.id ?? randomUUID() den Empty-String durchgelassen hat.
+    // Anhänge müssen auf die neue ID umgemappt werden, sonst werden
+    // sie waisen.
+    // Da `id` PRIMARY KEY ist, kann es höchstens EINE Row mit id='' geben.
+    const broken = await pg.query<{ n: string | number }>(
+      `SELECT COUNT(*)::text AS n FROM mail_messages WHERE id = ''`,
+    );
+    const brokenCount =
+      typeof broken.rows[0]?.n === "string"
+        ? parseInt(broken.rows[0].n, 10)
+        : Number(broken.rows[0]?.n ?? 0);
+    if (brokenCount > 0) {
+      const newId = randomUUID();
+      await pg.query(`UPDATE mail_messages SET id = $1 WHERE id = ''`, [newId]);
+      await pg.query(
+        `UPDATE mail_attachments SET message_id = $1 WHERE message_id = ''`,
+        [newId],
+      );
+      console.log(
+        `[mail/store] Migration: defekte Mail-Row mit leerer ID auf ${newId} umbenannt.`,
+      );
+    }
   }
 }
 
