@@ -395,24 +395,66 @@ export class NotionAdapter implements KnowledgeAdapter {
     // nur die Properties + Metadaten, nicht den Block-Tree liefert.
     // Properties dann mit der PATCH-Antwort überschreiben, damit der
     // Agent NICHT versehentlich stale Cache-Werte sieht.
+    //
+    // v0.1.255 — Wir CAPTUREN den fresh-GET-Stand BEVOR wir mit der
+    // PATCH-Response überschreiben. Das ist Ground-Truth: wenn der
+    // fresh-GET die NEUEN Werte zeigt, hat Notion persistiert; wenn
+    // er die ALTEN Werte zeigt obwohl die PATCH-Response die neuen
+    // zurückgegeben hat, hat Notion einen No-Op gemacht (bekanntes
+    // Symptom bei Multi-Data-Source-DBs).
     const fresh = await this.getItem(id);
+    const freshGetProperties = fresh.properties
+      ? { ...fresh.properties }
+      : undefined;
     if (patchResponse) {
       fresh.properties = simplifyProperties(patchResponse.properties);
       fresh.updatedAt = patchResponse.last_edited_time;
       // v0.1.254 — Voll-Diagnose IMMER ans Tool-Result hängen, sobald
-      // wir tatsächlich gePATCHt haben. So sieht der Agent (und der
-      // User via expand-Argumente) ohne Mainprozess-Log was wir an
-      // Notion geschickt haben und was Notion geantwortet hat. Bei
-      // einem silent-no-op zeigt patchResponseLastEditedTime ob Notion
-      // serverseitig wirklich etwas geändert hat — wenn der Timestamp
-      // identisch zum Pre-PATCH-Stand ist, hat Notion serverseitig
-      // nichts geschrieben (egal was die Response-Properties zeigen).
+      // wir tatsächlich gePATCHt haben.
+      // v0.1.255 — Plus freshGetProperties (Ground-Truth) und ein
+      // explizites silent-no-op-Flag wenn PATCH-Response und Fresh-GET
+      // unterschiedliche Werte zeigen.
+      const patchResponseProperties = simplifyProperties(
+        patchResponse.properties,
+      );
+      // Silent-no-op-Detektion: pro Property die wir patchen wollten,
+      // checken ob der fresh-GET-Wert dem patchResponse-Wert
+      // entspricht. Wenn nicht (fresh zeigt alt, response zeigt neu),
+      // ist's ein serverseitiger No-Op.
+      const noOpDetected: string[] = [];
+      if (effectivePatchProperties && freshGetProperties) {
+        for (const key of Object.keys(effectivePatchProperties)) {
+          const responseVal = patchResponseProperties[key];
+          const freshVal = freshGetProperties[key];
+          if (
+            responseVal !== undefined &&
+            freshVal !== undefined &&
+            !deepEqual(responseVal, freshVal)
+          ) {
+            noOpDetected.push(key);
+          }
+        }
+      }
       fresh.diagnostics = {
         patchBodySent: lastPatchBody ?? undefined,
         patchResponseLastEditedTime: patchResponse.last_edited_time,
-        patchResponseProperties: simplifyProperties(patchResponse.properties),
+        patchResponseProperties,
         notionVersion: NOTION_VERSION,
       };
+      if (noOpDetected.length > 0) {
+        // Wenn der fresh-GET die alten Werte zeigt, ist die Page
+        // serverseitig NICHT gepatched. Wir setzen fresh.properties
+        // zurück auf die Ground-Truth und werfen einen klaren Fehler.
+        fresh.properties = freshGetProperties;
+        throw new Error(
+          `Notion hat HTTP 200 geliefert, aber serverseitig nichts gespeichert. ` +
+            `Properties die nicht persistiert wurden: ${noOpDetected.join(", ")}. ` +
+            `Das ist ein bekanntes Notion-Verhalten bei Multi-Data-Source-DBs. ` +
+            `Sent body: ${JSON.stringify(lastPatchBody).slice(0, 400)}. ` +
+            `PATCH-Response sagt: ${JSON.stringify(patchResponseProperties).slice(0, 400)}. ` +
+            `Fresh-GET sagt: ${JSON.stringify(freshGetProperties).slice(0, 400)}.`,
+        );
+      }
     }
 
     // v0.1.237 — Auch ohne Verify-Fail kann es Warnungen geben (z. B.
@@ -1006,6 +1048,20 @@ export class NotionAdapter implements KnowledgeAdapter {
     if (body !== undefined) {
       headers["content-type"] = "application/json";
       init.body = JSON.stringify(body);
+    }
+    // v0.1.255 — Bei PATCH/POST mit Body knapp loggen welche Request
+    // wir abschicken (Methode + Path + Body-Bytes + Token-Länge +
+    // Token-Prefix). Token-Prefix nur die ersten 6 Zeichen + Länge,
+    // sodass im Log NICHT der ganze Token landet aber wir Token-Drift
+    // (z. B. cached alter Token) erkennen können.
+    if (method !== "GET") {
+      const tokenInfo = token
+        ? `${token.slice(0, 8)}...(len=${token.length})`
+        : "(no token)";
+      const bodyBytes = init.body ? (init.body as string).length : 0;
+      console.info(
+        `[notion-adapter] ${method} ${path} bodyBytes=${bodyBytes} token=${tokenInfo} notion-version=${NOTION_VERSION}`,
+      );
     }
     const res = await nfetch(url, init);
     if (!res.ok) {
