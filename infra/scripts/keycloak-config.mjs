@@ -429,17 +429,72 @@ async function ensureRegistrationClient(token) {
     redirectUris: [],
     webOrigins: [],
   };
+  let registrationClient;
   if (Array.isArray(existing) && existing.length > 0) {
-    const c = existing[0];
-    await api(token, "PUT", `/realms/${config.realm}/clients/${c.id}`, {
-      ...c,
+    registrationClient = existing[0];
+    await api(token, "PUT", `/realms/${config.realm}/clients/${registrationClient.id}`, {
+      ...registrationClient,
       ...desired,
     });
     console.log(`  - already exists; patched to desired shape`);
   } else {
     await api(token, "POST", `/realms/${config.realm}/clients`, desired);
+    const refreshed = await api(
+      token,
+      "GET",
+      `/realms/${config.realm}/clients?clientId=${encodeURIComponent(config.registrationClientId)}`,
+    );
+    registrationClient = refreshed[0];
     console.log(`  - created`);
   }
+
+  // Scope-Mirror: alle default- + optional-client-scopes vom
+  // ava-desktop-Client auch an ava-registration anhängen. Sonst
+  // schlägt der ROPC-Token-Grant mit `invalid_scope` fehl, sobald die
+  // Desktop-App ihren APP_SCOPES-Set anfragt (openid + profile + email
+  // + die custom AVA-Scopes). Wir mirrorn beide Listen, damit der
+  // Token aus dem Registration-Flow exakt dieselben Scopes hat wie
+  // ein Token aus dem regulären OIDC-Login.
+  console.log(`  - mirroring scopes from ${config.clientId}`);
+  const desktopClients = await api(
+    token,
+    "GET",
+    `/realms/${config.realm}/clients?clientId=${encodeURIComponent(config.clientId)}`,
+  );
+  if (!Array.isArray(desktopClients) || desktopClients.length === 0) {
+    console.warn(
+      `  - WARN: ${config.clientId} not found; skipping scope mirror`,
+    );
+    return;
+  }
+  const desktopId = desktopClients[0].id;
+  const defaultScopes = await api(
+    token,
+    "GET",
+    `/realms/${config.realm}/clients/${desktopId}/default-client-scopes`,
+  );
+  const optionalScopes = await api(
+    token,
+    "GET",
+    `/realms/${config.realm}/clients/${desktopId}/optional-client-scopes`,
+  );
+  for (const scope of defaultScopes ?? []) {
+    await api(
+      token,
+      "PUT",
+      `/realms/${config.realm}/clients/${registrationClient.id}/default-client-scopes/${scope.id}`,
+    );
+  }
+  for (const scope of optionalScopes ?? []) {
+    await api(
+      token,
+      "PUT",
+      `/realms/${config.realm}/clients/${registrationClient.id}/optional-client-scopes/${scope.id}`,
+    );
+  }
+  console.log(
+    `    → mirrored ${defaultScopes?.length ?? 0} default + ${optionalScopes?.length ?? 0} optional scopes`,
+  );
 }
 
 main().catch((err) => {
