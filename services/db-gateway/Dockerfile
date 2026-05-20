@@ -8,9 +8,14 @@ COPY package*.json ./
 COPY .npmrc ./
 COPY prisma ./prisma
 COPY prisma-company-contact ./prisma-company-contact
-RUN npm ci --quiet
-# Strip the npmrc (with the gitlab token) from the image — runtime
-# never needs it. `npm prune` later doesn't touch dotfiles.
+# v0.1.252 — NPM_TOKEN per BuildKit-Secret-Mount injizieren statt im
+# .npmrc committen. Der Secret ist NUR während dieses RUN-Step
+# verfügbar (als env-var); er landet weder in einer Layer noch im
+# fertigen Image. fly deploy muss `--build-secret npm_token=<glpat-...>`
+# durchreichen, sonst schlägt `npm ci` mit 401 fehl.
+RUN --mount=type=secret,id=npm_token,env=NPM_TOKEN npm ci --quiet
+# Strip the .npmrc from the image — runtime never needs it.
+# `npm prune` later doesn't touch dotfiles.
 RUN rm -f .npmrc
 
 COPY tsconfig.json ./
