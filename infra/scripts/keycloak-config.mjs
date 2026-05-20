@@ -113,7 +113,14 @@ const config = {
     enabled: true,
     publicClient: true,
     standardFlowEnabled: true,
-    directAccessGrantsEnabled: false,
+    // v0.1.253 — Direct Access Grants (ROPC) auf ava-desktop ENABLED.
+    // Genutzt vom Backend (db-gateway) NACH erfolgreicher Registrierung,
+    // um aus email+passwort einen Token-Set zu generieren — so dass der
+    // neu angelegte User direkt eingeloggt ist, ohne den OIDC-Browser-
+    // Round-Trip. Trust-Surface: minimal, weil der Token DIESES Mal
+    // genau die Identität bekommt, die die Desktop-App ohnehin gerade
+    // im Sign-Up-Form gesammelt hat.
+    directAccessGrantsEnabled: true,
     serviceAccountsEnabled: false,
     redirectUris: ["http://127.0.0.1:*", "http://localhost:*"],
     webOrigins: [],

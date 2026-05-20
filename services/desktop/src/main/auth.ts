@@ -294,8 +294,20 @@ export class Auth extends EventEmitter {
     // user clicks sign-in, the app pops a fresh browser tab and
     // Keycloak shows the login form because the SSO cookie is gone.
     if (endSessionEndpoint) {
+      // v0.1.253 — Wenn der id_token aus dem Registration-Flow stammt
+      // (ROPC gegen ava-registration), hat er azp=ava-registration.
+      // Keycloak's RP-Initiated-Logout verlangt dass client_id zum
+      // azp des id_token passt — sonst "Ungültiger Parameter:
+      // id_token_hint". Wir decoden den id_token kurz, ziehen den
+      // azp raus und benutzen DEN als client_id. Fallback auf
+      // this.clientId, wenn kein id_token vorhanden (für ältere
+      // Sessions bevor wir id_tokens gecacht haben).
+      const azpFromIdToken = idTokenHint
+        ? (decodeJwtPayload(idTokenHint)["azp"] as string | undefined)
+        : undefined;
+      const effectiveClientId = azpFromIdToken ?? this.clientId;
       const params = new URLSearchParams({
-        client_id: this.clientId,
+        client_id: effectiveClientId,
       });
       if (idTokenHint) params.set("id_token_hint", idTokenHint);
       const url = `${endSessionEndpoint}?${params.toString()}`;
