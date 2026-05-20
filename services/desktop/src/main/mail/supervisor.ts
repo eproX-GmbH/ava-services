@@ -157,7 +157,7 @@ export class MailSupervisor extends EventEmitter {
     // Hack: Wir bauen einen direkten ImapFlow-Probe statt ImapClient.start().
     let imapOk = false;
     try {
-      const { ImapFlow } = (await import("imapflow")) as {
+      const { ImapFlow } = (await import("imapflow")) as unknown as {
         ImapFlow: new (opts: Record<string, unknown>) => {
           connect: () => Promise<void>;
           logout: () => Promise<void>;

@@ -167,14 +167,13 @@ export function buildReadOnlyRegistry(deps: {
     onChanged: deps.onWatchesChanged,
   }))
     registry.register(t);
-  // Mail-Tools nur registrieren, wenn ein Supervisor verfügbar ist —
-  // sonst würden sie alle "kein Konto"-Errors zurückgeben und nur Tokens
-  // im Tool-Listing kosten. Lazy-Check über getMailSupervisor.
-  const mailSupervisorAtBuild = deps.getMailSupervisor();
-  if (mailSupervisorAtBuild) {
-    for (const t of buildMailTools({ supervisor: mailSupervisorAtBuild }))
-      registry.register(t);
-  }
+  // v0.1.261 Hotfix — Mail-Tools UNKONDITIONAL registrieren mit Lazy-
+  // Getter. buildReadOnlyRegistry läuft VOR der MailSupervisor-Instan-
+  // ziierung in main/index.ts, d.h. getMailSupervisor() würde hier
+  // immer null liefern → Tools wären nie registriert. Jetzt registrieren
+  // wir die Tools immer und prüfen Verfügbarkeit beim run().
+  for (const t of buildMailTools({ getSupervisor: deps.getMailSupervisor }))
+    registry.register(t);
   for (const t of buildCrmTools({
     crm: deps.crm,
     gateway: deps.gateway,

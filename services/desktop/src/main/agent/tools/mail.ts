@@ -29,7 +29,24 @@ import type {
 } from "../../../shared/types";
 
 export interface MailToolDeps {
-  supervisor: MailSupervisor;
+  /** Lazy-Getter weil der Supervisor erst nach buildReadOnlyRegistry()
+   *  in der Boot-Sequenz instanziiert wird. Tools werden trotzdem schon
+   *  zur Registry-Zeit registriert, damit der Agent sie kennt — beim
+   *  ersten run() prüft jedes Tool die Verfügbarkeit. */
+  getSupervisor: () => MailSupervisor | null;
+}
+
+function requireSupervisor(
+  deps: MailToolDeps,
+): MailSupervisor | { error: string } {
+  const sup = deps.getSupervisor();
+  if (!sup) {
+    return {
+      error:
+        "Mail-Supervisor noch nicht initialisiert. Konto in Einstellungen → Datenquellen → Mail-Konto konfigurieren.",
+    };
+  }
+  return sup;
 }
 
 export function buildMailTools(deps: MailToolDeps): Tool[] {
@@ -57,9 +74,13 @@ export function buildMailTools(deps: MailToolDeps): Tool[] {
         includeArchived: yup.boolean().optional(),
       })
       .noUnknown(true),
-    preview: (r: { count: number }) => `${r.count} Mails`,
+    preview: (r: { count: number; error?: string }) =>
+      r.error ? `Fehler: ${r.error}` : `${r.count} Mails`,
     run: async (args) => {
-      const store = deps.supervisor.getStore();
+      const supOrErr = requireSupervisor(deps);
+      if ("error" in supOrErr) return { count: 0, error: supOrErr.error };
+      const sup = supOrErr;
+      const store = sup.getStore();
       const messages = await store.listInbox({
         limit: args.limit ?? 25,
         includeArchived: args.includeArchived ?? false,
@@ -89,7 +110,10 @@ export function buildMailTools(deps: MailToolDeps): Tool[] {
     preview: (r: { subject?: string; error?: string }) =>
       r.error ? `Fehler: ${r.error}` : r.subject ? `Mail: ${r.subject}` : "Mail",
     run: async (args) => {
-      const store = deps.supervisor.getStore();
+      const supOrErr = requireSupervisor(deps);
+      if ("error" in supOrErr) return { error: supOrErr.error };
+      const sup = supOrErr;
+      const store = sup.getStore();
       const msg = await store.getMessage(args.messageId);
       if (!msg) return { error: "Mail nicht gefunden." };
       // Auto-mark-read beim Lesen ist UX-Standard.
@@ -148,12 +172,17 @@ export function buildMailTools(deps: MailToolDeps): Tool[] {
         text: yup.string().min(1).max(100_000).required(),
       })
       .noUnknown(true),
-    preview: (r: { sent: boolean; to?: string[] }) =>
+    preview: (r: { sent: boolean; to?: string[]; error?: string }) =>
       r.sent
         ? `Mail gesendet an ${(r.to ?? []).join(", ")}`
-        : "Mail nicht gesendet",
+        : r.error
+          ? `Fehler: ${r.error}`
+          : "Mail nicht gesendet",
     run: async (args, ctx) => {
-      const account = await deps.supervisor.getStore().getAccount();
+      const supOrErr = requireSupervisor(deps);
+      if ("error" in supOrErr) return { sent: false, error: supOrErr.error };
+      const sup = supOrErr;
+      const account = await sup.getStore().getAccount();
       if (!account) return { sent: false, error: "Kein Mail-Konto konfiguriert." };
       if (!account.outboundEnabled) {
         return {
@@ -163,7 +192,7 @@ export function buildMailTools(deps: MailToolDeps): Tool[] {
         };
       }
 
-      const allowlist = await deps.supervisor.getStore().listAllowlist();
+      const allowlist = await sup.getStore().listAllowlist();
       const recipients = [...args.to, ...(args.cc ?? [])];
       const untrusted = recipients.filter(
         (addr) => !isInAllowlist(addr, allowlist),
@@ -187,7 +216,7 @@ export function buildMailTools(deps: MailToolDeps): Tool[] {
 
       try {
         // v0.1.260 — sendAndSync spiegelt die Mail auch in den Sent-Folder
-        const result = await deps.supervisor.sendAndSync({
+        const result = await sup.sendAndSync({
           to: args.to,
           cc: args.cc,
           subject: args.subject,
@@ -228,10 +257,13 @@ export function buildMailTools(deps: MailToolDeps): Tool[] {
         text: yup.string().min(1).max(100_000).required(),
       })
       .noUnknown(true),
-    preview: (r: { sent: boolean }) =>
-      r.sent ? "Antwort gesendet" : "Antwort nicht gesendet",
+    preview: (r: { sent: boolean; error?: string }) =>
+      r.sent ? "Antwort gesendet" : r.error ? `Fehler: ${r.error}` : "Antwort nicht gesendet",
     run: async (args, ctx) => {
-      const store = deps.supervisor.getStore();
+      const supOrErr = requireSupervisor(deps);
+      if ("error" in supOrErr) return { sent: false, error: supOrErr.error };
+      const sup = supOrErr;
+      const store = sup.getStore();
       const source = await store.getMessage(args.messageId);
       if (!source) return { sent: false, error: "Quellmail nicht gefunden." };
 
@@ -263,7 +295,7 @@ export function buildMailTools(deps: MailToolDeps): Tool[] {
 
       try {
         // v0.1.260 — sendAndSync auch hier für Sent-Folder-Spiegelung
-        const result = await deps.supervisor.sendAndSync({
+        const result = await sup.sendAndSync({
           to: [source.from.address],
           subject,
           text: args.text,
@@ -319,12 +351,17 @@ export function buildMailTools(deps: MailToolDeps): Tool[] {
         text: yup.string().max(50_000).optional(),
       })
       .noUnknown(true),
-    preview: (r: { sent: boolean; to?: string[] }) =>
+    preview: (r: { sent: boolean; to?: string[]; error?: string }) =>
       r.sent
         ? `Mail weitergeleitet an ${(r.to ?? []).join(", ")}`
-        : "Weiterleitung nicht versendet",
+        : r.error
+          ? `Fehler: ${r.error}`
+          : "Weiterleitung nicht versendet",
     run: async (args, ctx) => {
-      const store = deps.supervisor.getStore();
+      const supOrErr = requireSupervisor(deps);
+      if ("error" in supOrErr) return { sent: false, error: supOrErr.error };
+      const sup = supOrErr;
+      const store = sup.getStore();
       const source = await store.getMessage(args.messageId);
       if (!source) return { sent: false, error: "Quellmail nicht gefunden." };
 
@@ -360,7 +397,7 @@ export function buildMailTools(deps: MailToolDeps): Tool[] {
       const references = source.messageIdHeader ? [source.messageIdHeader] : [];
 
       try {
-        const result = await deps.supervisor.sendAndSync({
+        const result = await sup.sendAndSync({
           to: args.to,
           subject,
           text: body,
@@ -399,9 +436,13 @@ export function buildMailTools(deps: MailToolDeps): Tool[] {
         read: yup.boolean().optional(),
       })
       .noUnknown(true),
-    preview: () => "Mail markiert",
+    preview: (r: { ok: boolean; error?: string }) =>
+      r.ok ? "Mail markiert" : `Fehler: ${r.error ?? "unbekannt"}`,
     run: async (args) => {
-      await deps.supervisor.getStore().markRead(args.messageId, args.read ?? true);
+      const supOrErr = requireSupervisor(deps);
+      if ("error" in supOrErr) return { ok: false, error: supOrErr.error };
+      const sup = supOrErr;
+      await sup.getStore().markRead(args.messageId, args.read ?? true);
       return { ok: true };
     },
   });
@@ -419,10 +460,17 @@ export function buildMailTools(deps: MailToolDeps): Tool[] {
     schema: yup
       .object({ messageId: yup.string().required() })
       .noUnknown(true),
-    preview: (r: { ok: boolean; moved?: boolean }) =>
-      r.moved ? "Mail in Archive-Folder verschoben" : "Mail archiviert (intern)",
+    preview: (r: { ok: boolean; moved?: boolean; error?: string }) =>
+      !r.ok
+        ? `Fehler: ${r.error ?? "unbekannt"}`
+        : r.moved
+          ? "Mail in Archive-Folder verschoben"
+          : "Mail archiviert (intern)",
     run: async (args) => {
-      const { moved } = await deps.supervisor.archiveMessage(args.messageId);
+      const supOrErr = requireSupervisor(deps);
+      if ("error" in supOrErr) return { ok: false, error: supOrErr.error };
+      const sup = supOrErr;
+      const { moved } = await sup.archiveMessage(args.messageId);
       return { ok: true, moved };
     },
   });
@@ -453,9 +501,16 @@ export function buildMailTools(deps: MailToolDeps): Tool[] {
         label: yup.string().trim().min(1).max(120).required(),
       })
       .noUnknown(true),
-    preview: (r: { added: boolean; pattern?: string }) =>
-      r.added ? `Allowlist erweitert: ${r.pattern}` : "Nicht hinzugefügt",
+    preview: (r: { added: boolean; pattern?: string; error?: string }) =>
+      r.added
+        ? `Allowlist erweitert: ${r.pattern}`
+        : r.error
+          ? `Fehler: ${r.error}`
+          : "Nicht hinzugefügt",
     run: async (args, ctx) => {
+      const supOrErr = requireSupervisor(deps);
+      if ("error" in supOrErr) return { added: false, error: supOrErr.error };
+      const sup = supOrErr;
       const value = await ctx.ui.askChoice(
         `Soll ich folgenden Absender zur Mail-Allowlist hinzufügen?\n\nPattern: ${args.pattern}\nLabel: ${args.label}\n\nDanach darf ich autonom auf Mails von dieser Adresse antworten und sie als 'trusted' behandeln.`,
         [
@@ -473,7 +528,7 @@ export function buildMailTools(deps: MailToolDeps): Tool[] {
         ctx.signal,
       );
       if (value !== "add") return { added: false };
-      const entry = await deps.supervisor.getStore().addAllowlistEntry({
+      const entry = await sup.getStore().addAllowlistEntry({
         pattern: args.pattern,
         label: args.label,
         source: "agent",

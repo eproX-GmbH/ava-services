@@ -63,11 +63,29 @@ export type AllowlistCheck =
   | { ok: true }
   | { ok: false; message: string };
 
+/** v0.1.261 — Meta-Tools, die NIE durch die Skill-Allowlist blockiert
+ *  werden dürfen, weil sonst kein Bootstrap mehr möglich ist (z. B.
+ *  Skill aktiv → tool_search liefert "verboten" → AVA kann das richtige
+ *  Werkzeug nicht mal finden). Spiegelt ALWAYS_ON_CORE_TOOL_NAMES aus
+ *  tools/meta.ts — bewusst hier hardcoded statt importiert, weil
+ *  allowlist.ts dependency-free bleiben soll (Test-Imports via tsx). */
+const SKILL_ALLOWLIST_BYPASS = new Set<string>([
+  "tool_search",
+  "tool_load",
+  "skill_search",
+  "skill_get",
+  "ask_user_choice",
+  "ask_user_text",
+]);
+
 export function checkSkillAllowlist(
   skill: LoadedSkill | null,
   toolName: string,
 ): AllowlistCheck {
   if (!skill) return { ok: true };
+  // Bootstrap-Meta-Tools dürfen IMMER durch — ohne sie kann AVA bei
+  // aktivem Skill weder andere Tools laden noch nachfragen.
+  if (SKILL_ALLOWLIST_BYPASS.has(toolName)) return { ok: true };
   if (skill.allowedTools.length === 0) {
     return {
       ok: false,

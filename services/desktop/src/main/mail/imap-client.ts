@@ -197,7 +197,7 @@ export class ImapClient extends EventEmitter {
 
   private async connect(): Promise<void> {
     this.setState("connecting");
-    const { ImapFlow } = (await import("imapflow")) as {
+    const { ImapFlow } = (await import("imapflow")) as unknown as {
       ImapFlow: new (opts: Record<string, unknown>) => ImapFlowType;
     };
     const { account, password } = this.opts;
