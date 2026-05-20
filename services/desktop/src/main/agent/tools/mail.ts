@@ -185,10 +185,9 @@ export function buildMailTools(deps: MailToolDeps): Tool[] {
         if (value !== "send") return { sent: false, declined: true };
       }
 
-      const smtp = deps.supervisor.getSmtp();
-      if (!smtp) return { sent: false, error: "SMTP nicht initialisiert." };
       try {
-        const result = await smtp.send({
+        // v0.1.260 — sendAndSync spiegelt die Mail auch in den Sent-Folder
+        const result = await deps.supervisor.sendAndSync({
           to: args.to,
           cc: args.cc,
           subject: args.subject,
@@ -257,16 +256,14 @@ export function buildMailTools(deps: MailToolDeps): Tool[] {
         if (value !== "send") return { sent: false, declined: true };
       }
 
-      const smtp = deps.supervisor.getSmtp();
-      if (!smtp) return { sent: false, error: "SMTP nicht initialisiert." };
-
       const subject = /^re:/i.test(source.subject)
         ? source.subject
         : `Re: ${source.subject}`;
       const references = source.messageIdHeader ? [source.messageIdHeader] : [];
 
       try {
-        const result = await smtp.send({
+        // v0.1.260 — sendAndSync auch hier für Sent-Folder-Spiegelung
+        const result = await deps.supervisor.sendAndSync({
           to: [source.from.address],
           subject,
           text: args.text,
@@ -289,6 +286,101 @@ export function buildMailTools(deps: MailToolDeps): Tool[] {
   });
 
   // ----- mail_mark_read -----------------------------------------------------
+  // ----- mail_forward ------------------------------------------------------
+  const forward = defineTool({
+    name: "mail_forward",
+    description:
+      "Leitet eine Mail an einen anderen Empfänger weiter. Original-Mail wird als Quote im Body angehängt (englisch: 'Forwarded message'-Block). SICHERHEITSGATE: Wenn ALLE Empfänger in Allowlist sind, sendet AVA autonom; sonst Pflicht-Rückfrage via ask_user_choice. Beachtet outboundEnabled-Master-Schalter. Threading via References-Header.",
+    parameters: {
+      type: "object",
+      required: ["messageId", "to"],
+      properties: {
+        messageId: { type: "string", description: "ID der weiterzuleitenden Mail." },
+        to: {
+          type: "array",
+          items: { type: "string", description: "Empfänger-E-Mail." },
+          description: "Empfängerliste (mindestens einer).",
+        },
+        text: {
+          type: "string",
+          description:
+            "Optionaler Begleittext, wird vor dem Forward-Quote eingefügt.",
+        },
+      },
+    },
+    schema: yup
+      .object({
+        messageId: yup.string().required(),
+        to: yup
+          .array()
+          .of(yup.string().email().required())
+          .min(1)
+          .required(),
+        text: yup.string().max(50_000).optional(),
+      })
+      .noUnknown(true),
+    preview: (r: { sent: boolean; to?: string[] }) =>
+      r.sent
+        ? `Mail weitergeleitet an ${(r.to ?? []).join(", ")}`
+        : "Weiterleitung nicht versendet",
+    run: async (args, ctx) => {
+      const store = deps.supervisor.getStore();
+      const source = await store.getMessage(args.messageId);
+      if (!source) return { sent: false, error: "Quellmail nicht gefunden." };
+
+      const account = await store.getAccount();
+      if (!account?.outboundEnabled) {
+        return {
+          sent: false,
+          error: "Mail-Outbound ist deaktiviert (Settings → Datenquellen → Mail).",
+        };
+      }
+
+      const allowlist = await store.listAllowlist();
+      const untrusted = args.to.filter((addr) => !isInAllowlist(addr, allowlist));
+      if (untrusted.length > 0) {
+        const value = await ctx.ui.askChoice(
+          `Soll ich folgende Mail weiterleiten?\n\nAn: ${args.to.join(", ")}\nNicht in Allowlist: ${untrusted.join(", ")}\n\nOriginal: ${source.from.address} · ${source.subject}\n${(args.text ?? "").slice(0, 800)}`,
+          [
+            { value: "send", label: "Weiterleiten", description: "Mail wird verschickt" },
+            { value: "cancel", label: "Abbrechen" },
+          ],
+          ctx.signal,
+        );
+        if (value !== "send") return { sent: false, declined: true };
+      }
+
+      const subject = /^fwd:|^wg:/i.test(source.subject)
+        ? source.subject
+        : `Fwd: ${source.subject}`;
+
+      // Forward-Body: optionaler Begleittext + Quote-Block
+      const quote = buildForwardQuote(source);
+      const body = args.text ? `${args.text}\n\n${quote}` : quote;
+      const references = source.messageIdHeader ? [source.messageIdHeader] : [];
+
+      try {
+        const result = await deps.supervisor.sendAndSync({
+          to: args.to,
+          subject,
+          text: body,
+          references,
+        });
+        return {
+          sent: true,
+          to: args.to,
+          accepted: result.accepted,
+          rejected: result.rejected,
+        };
+      } catch (err) {
+        return {
+          sent: false,
+          error: err instanceof Error ? err.message : String(err),
+        };
+      }
+    },
+  });
+
   const markRead = defineTool({
     name: "mail_mark_read",
     description:
@@ -318,7 +410,7 @@ export function buildMailTools(deps: MailToolDeps): Tool[] {
   const archive = defineTool({
     name: "mail_archive",
     description:
-      "Archiviert eine Mail — sie verschwindet aus der Triage-Inbox, bleibt aber im Verlauf abrufbar. Reversibel via Triage-UI. Auf dem IMAP-Server wird die Mail NICHT verschoben (V2 kann später ein Archive-Folder-Move ergänzen).",
+      "Archiviert eine Mail. Verschiebt die Mail physisch in den Archive-Folder des IMAP-Servers (RFC-6154 \\Archive oder Heuristik: Archive/Archiv/All Mail) UND setzt das interne archived_at-Flag. Wenn der Server keinen Archive-Folder hat, bleibt es bei der Flag-only-Archivierung (Mail verschwindet trotzdem aus der Triage-Inbox).",
     parameters: {
       type: "object",
       required: ["messageId"],
@@ -327,10 +419,11 @@ export function buildMailTools(deps: MailToolDeps): Tool[] {
     schema: yup
       .object({ messageId: yup.string().required() })
       .noUnknown(true),
-    preview: () => "Mail archiviert",
+    preview: (r: { ok: boolean; moved?: boolean }) =>
+      r.moved ? "Mail in Archive-Folder verschoben" : "Mail archiviert (intern)",
     run: async (args) => {
-      await deps.supervisor.getStore().archive(args.messageId);
-      return { ok: true };
+      const { moved } = await deps.supervisor.archiveMessage(args.messageId);
+      return { ok: true, moved };
     },
   });
 
@@ -389,7 +482,35 @@ export function buildMailTools(deps: MailToolDeps): Tool[] {
     },
   });
 
-  return [listInbox, getMessage, send, reply, markRead, archive, allowlistAdd];
+  return [
+    listInbox,
+    getMessage,
+    send,
+    reply,
+    forward,
+    markRead,
+    archive,
+    allowlistAdd,
+  ];
+}
+
+/** v0.1.260 — baut den Forward-Quote-Block. Bewusst englischsprachiges
+ *  Header-Format ("Forwarded message"), weil Mail-Clients (Outlook,
+ *  Apple Mail, Thunderbird) das Pattern erkennen und schöner darstellen. */
+function buildForwardQuote(source: import("../../../shared/types").MailMessage): string {
+  const fromLine = source.from.name
+    ? `${source.from.name} <${source.from.address}>`
+    : source.from.address;
+  const toLine = source.to.map((r) => r.address).join(", ");
+  const header = [
+    "---------- Forwarded message ----------",
+    `From: ${fromLine}`,
+    `Date: ${source.date}`,
+    `Subject: ${source.subject}`,
+    `To: ${toLine}`,
+    "",
+  ].join("\n");
+  return `${header}${source.bodyText}`;
 }
 
 function summarizeMessage(m: MailMessage): {

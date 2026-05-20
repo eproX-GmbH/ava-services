@@ -12,6 +12,7 @@ allowed-tools:
   - mail_get_message
   - mail_send
   - mail_reply
+  - mail_forward
   - mail_mark_read
   - mail_archive
   - mail_allowlist_add

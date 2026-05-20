@@ -34,6 +34,23 @@ const TEXT_MIMES = new Set([
   "text/tab-separated-values",
 ]);
 
+// v0.1.260 — Office-Dokumente. Word via mammoth, Excel via xlsx (das
+// bereits in deps ist für Spreadsheet-Imports im Chat). Wir extrahieren
+// reinen Text — kein Formatting, keine Bilder aus Word. Für Excel
+// pro Sheet: Header + erste ~200 Zeilen als CSV. Reicht für die meisten
+// Mail-Anhänge (Angebote, Listen, Reports); Riesen-Workbooks landen
+// dadurch deutlich knapper im LLM-Kontext.
+const DOCX_MIMES = new Set([
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  // Manche Mail-Clients setzen den älteren Typ:
+  "application/msword",
+]);
+const XLSX_MIMES = new Set([
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  "application/vnd.ms-excel",
+]);
+const EXCEL_ROW_CAP = 200;
+
 interface ExtractOptions {
   /** Vorläufige Message-ID. Wird vom Store überschrieben — der Aufrufer
    *  kann hier auch "pending" reinstecken. */
@@ -60,6 +77,22 @@ export async function extractAttachment(
   // PDF → Text
   if (mimeType === "application/pdf" && content) {
     extractedText = await tryExtractPdfText(content);
+  }
+  // Word → Text
+  else if (
+    (DOCX_MIMES.has(mimeType) ||
+      /\.docx?$/i.test(filename)) &&
+    content
+  ) {
+    extractedText = await tryExtractDocxText(content);
+  }
+  // Excel → CSV-artige Text-Darstellung
+  else if (
+    (XLSX_MIMES.has(mimeType) ||
+      /\.xlsx?$/i.test(filename)) &&
+    content
+  ) {
+    extractedText = await tryExtractXlsxText(content);
   }
   // Text-Dateien
   else if (TEXT_MIMES.has(mimeType) && content) {
@@ -91,6 +124,63 @@ export async function extractAttachment(
     imageBase64,
     cachePath,
   };
+}
+
+/** DOCX → Plain-Text via mammoth. Behält Absatz-Struktur grob bei
+ *  (mammoth's `extractRawText` ersetzt Tabs/Newlines sinnvoll). */
+async function tryExtractDocxText(buf: Buffer): Promise<string | null> {
+  try {
+    const mod = (await import("mammoth")) as unknown as {
+      extractRawText: (input: { buffer: Buffer }) => Promise<{ value: string }>;
+    };
+    const result = await mod.extractRawText({ buffer: buf });
+    return (result.value ?? "").slice(0, 500_000);
+  } catch {
+    return null;
+  }
+}
+
+/** XLSX → eine CSV-Tabelle pro Sheet, gekapselt mit `=== Sheet "<name>" ===`-
+ *  Trennern. Pro Sheet max EXCEL_ROW_CAP Zeilen; bei mehr werden die letzten
+ *  Zeilen ersetzt durch "[…N weitere Zeilen]". */
+async function tryExtractXlsxText(buf: Buffer): Promise<string | null> {
+  try {
+    const xlsx = (await import("xlsx")) as unknown as {
+      read: (data: Buffer, opts: { type: string }) => {
+        SheetNames: string[];
+        Sheets: Record<
+          string,
+          Record<string, unknown> & { "!ref"?: string }
+        >;
+      };
+      utils: {
+        sheet_to_csv: (
+          ws: Record<string, unknown>,
+          opts?: { FS?: string; blankrows?: boolean },
+        ) => string;
+      };
+    };
+    const wb = xlsx.read(buf, { type: "buffer" });
+    const blocks: string[] = [];
+    for (const name of wb.SheetNames) {
+      const ws = wb.Sheets[name];
+      if (!ws) continue;
+      const csv = xlsx.utils.sheet_to_csv(ws, { FS: ";", blankrows: false });
+      const lines = csv.split(/\r?\n/);
+      const truncated =
+        lines.length > EXCEL_ROW_CAP
+          ? [
+              ...lines.slice(0, EXCEL_ROW_CAP),
+              `[…${lines.length - EXCEL_ROW_CAP} weitere Zeilen]`,
+            ]
+          : lines;
+      blocks.push(`=== Sheet "${name}" ===\n${truncated.join("\n")}`);
+    }
+    if (blocks.length === 0) return null;
+    return blocks.join("\n\n").slice(0, 500_000);
+  } catch {
+    return null;
+  }
 }
 
 async function tryExtractPdfText(buf: Buffer): Promise<string | null> {

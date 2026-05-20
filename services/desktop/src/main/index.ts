@@ -3716,10 +3716,10 @@ app.whenReady().then(async () => {
   );
   ipcMain.handle(
     "mail:archive",
-    async (_e, messageId: string): Promise<{ ok: true }> => {
-      if (!mailSupervisor) return { ok: true };
-      await mailSupervisor.getStore().archive(messageId);
-      return { ok: true };
+    async (_e, messageId: string): Promise<{ ok: true; moved: boolean }> => {
+      if (!mailSupervisor) return { ok: true, moved: false };
+      const { moved } = await mailSupervisor.archiveMessage(messageId);
+      return { ok: true, moved };
     },
   );
   ipcMain.handle(

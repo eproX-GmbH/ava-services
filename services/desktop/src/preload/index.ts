@@ -940,7 +940,7 @@ const api = {
       ipcRenderer.invoke("mail:allowlist:remove", id),
     markRead: (messageId: string, read = true): Promise<{ ok: true }> =>
       ipcRenderer.invoke("mail:markRead", { messageId, read }),
-    archive: (messageId: string): Promise<{ ok: true }> =>
+    archive: (messageId: string): Promise<{ ok: true; moved: boolean }> =>
       ipcRenderer.invoke("mail:archive", messageId),
     getMessage: (messageId: string): Promise<MailMessage | null> =>
       ipcRenderer.invoke("mail:getMessage", messageId),

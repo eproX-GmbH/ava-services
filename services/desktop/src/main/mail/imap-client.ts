@@ -69,6 +69,10 @@ export class ImapClient extends EventEmitter {
   private reconnectAttempt = 0;
   private fallbackTimer: NodeJS.Timeout | null = null;
   private idleSupported = false;
+  /** v0.1.260 — gecachte Folder-Pfade für Sent + Archive (per
+   *  RFC-6154-Match oder Namens-Heuristik). null = kein passender
+   *  Folder verfügbar (z. B. minimalistisch konfigurierter Server). */
+  private folderCache = new Map<"sent" | "archive", string | null>();
 
   constructor(private readonly opts: ImapClientOptions) {
     super();
@@ -76,6 +80,97 @@ export class ImapClient extends EventEmitter {
 
   getState(): ImapConnectionState {
     return this.state;
+  }
+
+  /** v0.1.260 — gibt den (gecachten) Mailbox-Pfad für eine semantische
+   *  Rolle zurück. \\Sent / \\Archive sind die RFC-6154 special-use-Flags;
+   *  bekanntermaßen pflegen nicht alle Server die, also fallback auf
+   *  übliche Folder-Namen pro Sprache. Liefert null wenn nichts passt. */
+  async findFolder(role: "sent" | "archive"): Promise<string | null> {
+    if (!this.client) return null;
+    const cached = this.folderCache.get(role);
+    if (cached !== undefined) return cached;
+    let resolved: string | null = null;
+    try {
+      const list = (await this.client.list()) as Array<{
+        path: string;
+        specialUse?: string;
+        flags?: Set<string> | string[];
+      }>;
+      const specialUseTag = role === "sent" ? "\\Sent" : "\\Archive";
+      // 1. RFC 6154 special-use-Match
+      for (const m of list) {
+        const su = m.specialUse;
+        const flags = Array.isArray(m.flags)
+          ? m.flags
+          : m.flags
+            ? Array.from(m.flags)
+            : [];
+        if (su === specialUseTag || flags.includes(specialUseTag)) {
+          resolved = m.path;
+          break;
+        }
+      }
+      // 2. Name-Heuristik (de + en)
+      if (!resolved) {
+        const candidates =
+          role === "sent"
+            ? [
+                "Sent",
+                "Gesendet",
+                "Gesendete Elemente",
+                "Sent Items",
+                "Sent Messages",
+                "INBOX.Sent",
+                "INBOX/Sent",
+              ]
+            : ["Archive", "Archiv", "All Mail", "Alle Nachrichten", "INBOX.Archive"];
+        const byPath = new Map(list.map((m) => [m.path.toLowerCase(), m.path]));
+        for (const c of candidates) {
+          const hit = byPath.get(c.toLowerCase());
+          if (hit) {
+            resolved = hit;
+            break;
+          }
+        }
+      }
+    } catch (err) {
+      this.emit("error", err instanceof Error ? err : new Error(String(err)));
+    }
+    this.folderCache.set(role, resolved);
+    return resolved;
+  }
+
+  /** v0.1.260 — Outbound-Sent-Sync. Hängt die soeben gesendete Mail
+   *  (raw RFC822) an den Sent-Folder. Idempotent: bei Fehler still
+   *  schlucken — Mail ist gesendet, nur die IMAP-Spiegelung fehlt. */
+  async appendToSent(rawMessage: Buffer | string): Promise<void> {
+    if (!this.client) return;
+    const sent = await this.findFolder("sent");
+    if (!sent) return;
+    try {
+      await this.client.append(sent, rawMessage, ["\\Seen"]);
+    } catch (err) {
+      this.emit("error", err instanceof Error ? err : new Error(String(err)));
+    }
+  }
+
+  /** v0.1.260 — verschiebt eine Mail (per IMAP-UID, INBOX-Source) in
+   *  den Archive-Folder. Liefert true wenn verschoben, false wenn kein
+   *  Archive-Folder verfügbar (Caller fällt auf Flag-only zurück). */
+  async moveToArchive(uid: number): Promise<boolean> {
+    if (!this.client) return false;
+    const archive = await this.findFolder("archive");
+    if (!archive) return false;
+    try {
+      // imapflow MOVE braucht den aktuell geöffneten Mailbox-Context.
+      // Wir gehen davon aus, dass INBOX offen ist (Standard nach connect).
+      await this.client.messageMove(`${uid}`, archive, { uid: true });
+      return true;
+    } catch (err) {
+      this.emit("error", err instanceof Error ? err : new Error(String(err)));
+      return false;
+    }
   }
 
   async start(): Promise<void> {
@@ -154,6 +249,7 @@ export class ImapClient extends EventEmitter {
 
   private scheduleReconnect(): void {
     if (this.stopping) return;
+    this.folderCache.clear(); // Server-Layout könnte sich geändert haben
     const delay =
       RECONNECT_BACKOFF_MS[
         Math.min(this.reconnectAttempt, RECONNECT_BACKOFF_MS.length - 1)

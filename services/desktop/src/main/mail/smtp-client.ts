@@ -33,6 +33,9 @@ export interface SmtpSendResult {
   messageId: string;
   accepted: string[];
   rejected: string[];
+  /** v0.1.260 — Roh-RFC822 der gesendeten Mail, damit der Supervisor
+   *  sie via `ImapClient.appendToSent` in den Sent-Folder spiegeln kann. */
+  rawMessage?: Buffer;
 }
 
 export class SmtpClient {
@@ -83,11 +86,48 @@ export class SmtpClient {
       attachments: input.attachments,
     };
     const info = await t.sendMail(mail);
+    // nodemailer info.raw ist nur gesetzt, wenn man `streamTransport` oder
+    // `jsonTransport` nutzt. Für echten SMTP-Versand bauen wir das RFC822
+    // separat (für die Sent-Folder-Spiegelung). Wir machen das nur, wenn
+    // ein Sent-Sync gewünscht wird (Caller-Entscheidung).
     return {
       messageId: info.messageId ?? "",
       accepted: (info.accepted ?? []).map(String),
       rejected: (info.rejected ?? []).map(String),
     };
+  }
+
+  /** v0.1.260 — baut RFC822 für die Sent-Folder-Spiegelung. Wir nutzen
+   *  nodemailers eingebauten MimeBuilder, indem wir einen Stream-Trans-
+   *  port-Roundtrip erzwingen. Separater Call, damit der eigentliche
+   *  Send-Pfad bei großen Mails nicht doppelt serialisiert. */
+  async buildRaw(input: SmtpSendInput): Promise<Buffer> {
+    const nm = (await import("nodemailer")) as unknown as {
+      createTransport: (opts: Record<string, unknown>) => Transporter;
+    };
+    const streamTransport = nm.createTransport({
+      streamTransport: true,
+      buffer: true,
+      newline: "unix",
+    });
+    const from = this.opts.account.displayName
+      ? `"${this.opts.account.displayName}" <${this.opts.account.address}>`
+      : this.opts.account.address;
+    const info = (await streamTransport.sendMail({
+      from,
+      to: input.to,
+      cc: input.cc,
+      bcc: input.bcc,
+      subject: input.subject,
+      text: input.text,
+      html: input.html,
+      inReplyTo: input.inReplyTo,
+      references: input.references,
+      attachments: input.attachments,
+    })) as { message: Buffer | string };
+    return Buffer.isBuffer(info.message)
+      ? info.message
+      : Buffer.from(info.message, "utf8");
   }
 
   async close(): Promise<void> {

@@ -29,7 +29,7 @@ import type {
 import { MailStore } from "./store";
 import { MailCredentialsManager } from "./credentials";
 import { ImapClient, type ImapConnectionState } from "./imap-client";
-import { SmtpClient } from "./smtp-client";
+import { SmtpClient, type SmtpSendInput, type SmtpSendResult } from "./smtp-client";
 import { TrustEngine } from "./trust-engine";
 import { classifyMail, attachClassifierProviders } from "./classifier";
 
@@ -225,6 +225,44 @@ export class MailSupervisor extends EventEmitter {
 
   getSmtp(): SmtpClient | null {
     return this.smtp;
+  }
+
+  /** v0.1.260 — Wrapper für SMTP-send, der direkt anschließend per
+   *  IMAP APPEND die Sent-Mail in den Sent-Folder spiegelt. Caller in
+   *  den Mail-Tools nutzen ausschließlich diese Methode statt
+   *  smtp.send direkt, damit die Sent-Folder-Spiegelung garantiert
+   *  ist. Sync-Fehler sind nicht-fatal — Mail ist gesendet. */
+  async sendAndSync(input: SmtpSendInput): Promise<SmtpSendResult> {
+    if (!this.smtp) throw new Error("SMTP nicht initialisiert.");
+    const result = await this.smtp.send(input);
+    if (this.imap) {
+      // Best-effort: RFC822 bauen + an Sent appenden. Fehler werden
+      // im ImapClient als Event emittiert, brechen den Send nicht.
+      try {
+        const raw = await this.smtp.buildRaw(input);
+        await this.imap.appendToSent(raw);
+      } catch (err) {
+        console.warn(
+          "[mail/supervisor] Sent-Sync fehlgeschlagen:",
+          err instanceof Error ? err.message : String(err),
+        );
+      }
+    }
+    return result;
+  }
+
+  /** v0.1.260 — Archiviert eine Mail: zuerst IMAP-Move in den
+   *  Archive-Folder versuchen, dann (egal ob Move klappte) das
+   *  archived_at-Flag im Store setzen. So bleibt die Triage-UI auch
+   *  konsistent, wenn der Server keinen Archive-Folder hat. */
+  async archiveMessage(messageId: string): Promise<{ moved: boolean }> {
+    const msg = await this.store.getMessage(messageId);
+    let moved = false;
+    if (msg && this.imap && msg.imapUid != null && msg.folder === "INBOX") {
+      moved = await this.imap.moveToArchive(msg.imapUid);
+    }
+    await this.store.archive(messageId);
+    return { moved };
   }
 
   // ---- intern ----
