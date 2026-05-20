@@ -58,6 +58,17 @@ export interface KnowledgeItem {
    *  wurden — der Agent sieht so, dass nicht ALLES wie gewünscht
    *  reinging, auch wenn der Gesamt-Call durchlief. */
   warnings?: string[];
+  /** v0.1.254 — Optional: vollständige Diagnose-Daten aus dem letzten
+   *  PATCH-Aufruf. Wird gesetzt, wenn `updateItem` einen `verify-after-
+   *  Mismatch` erkennt ODER wenn die Tool-Beschreibung die Diagnose
+   *  explizit anfordert. Hilft beim Debuggen „silent no-op"-Fällen,
+   *  wo Notion HTTP 200 antwortet aber serverseitig nichts ändert. */
+  diagnostics?: {
+    patchBodySent?: unknown;
+    patchResponseLastEditedTime?: string;
+    patchResponseProperties?: Record<string, unknown>;
+    notionVersion?: string;
+  };
 }
 
 export interface KnowledgeContent {

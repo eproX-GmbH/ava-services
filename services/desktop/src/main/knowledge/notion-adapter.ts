@@ -295,6 +295,7 @@ export class NotionAdapter implements KnowledgeAdapter {
     // hat manchmal falsch alarmiert oder (schlimmer) Erfolg vorgegaukelt.
     // Jetzt nehmen wir die PATCH-Antwort als autoritative Quelle.
     let patchResponse: NotionPage | null = null;
+    let lastPatchBody: { properties: Record<string, unknown> } | null = null;
     if (
       effectivePatchProperties &&
       Object.keys(effectivePatchProperties).length > 0
@@ -327,6 +328,7 @@ export class NotionAdapter implements KnowledgeAdapter {
       // exakt gesendet haben. JSON.stringify nur einmal hier, nicht
       // pro Property.
       const patchBody = { properties: conversion.propsForApi };
+      lastPatchBody = patchBody;
       console.info(
         `[notion-adapter] PATCH /v1/pages/${id} body=${JSON.stringify(patchBody).slice(0, 800)}` +
           (propertyConversionWarnings.length > 0
@@ -397,6 +399,20 @@ export class NotionAdapter implements KnowledgeAdapter {
     if (patchResponse) {
       fresh.properties = simplifyProperties(patchResponse.properties);
       fresh.updatedAt = patchResponse.last_edited_time;
+      // v0.1.254 — Voll-Diagnose IMMER ans Tool-Result hängen, sobald
+      // wir tatsächlich gePATCHt haben. So sieht der Agent (und der
+      // User via expand-Argumente) ohne Mainprozess-Log was wir an
+      // Notion geschickt haben und was Notion geantwortet hat. Bei
+      // einem silent-no-op zeigt patchResponseLastEditedTime ob Notion
+      // serverseitig wirklich etwas geändert hat — wenn der Timestamp
+      // identisch zum Pre-PATCH-Stand ist, hat Notion serverseitig
+      // nichts geschrieben (egal was die Response-Properties zeigen).
+      fresh.diagnostics = {
+        patchBodySent: lastPatchBody ?? undefined,
+        patchResponseLastEditedTime: patchResponse.last_edited_time,
+        patchResponseProperties: simplifyProperties(patchResponse.properties),
+        notionVersion: NOTION_VERSION,
+      };
     }
 
     // v0.1.237 — Auch ohne Verify-Fail kann es Warnungen geben (z. B.

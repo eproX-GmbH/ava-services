@@ -376,18 +376,36 @@ export function buildNotionTools(deps: {
       });
       // v0.1.237 — Warnings (z. B. „Property nicht im Schema") aus dem
       // Adapter aufs Top-Level heben, damit der Agent sie nicht im
-      // verschachtelten Item übersieht. Ohne Warnings bleibt das Feld
-      // weg, damit der Erfolgs-Pfad nicht verrauscht wird.
-      const itemTyped = item as { warnings?: string[] };
-      const warnings = itemTyped.warnings;
-      const out: { item: typeof item; warnings?: string[] } = { item };
-      if (warnings && warnings.length > 0) out.warnings = warnings;
+      // verschachtelten Item übersieht.
+      // v0.1.254 — Diagnostics auch hochheben (patchBodySent +
+      // patchResponseLastEditedTime + patchResponseProperties), damit
+      // der Agent bei silent-no-op-Symptomen direkt sehen kann was wir
+      // an Notion geschickt und was Notion zurückgegeben hat, ohne im
+      // Mainprozess-Log zu graben.
+      const itemTyped = item as {
+        warnings?: string[];
+        diagnostics?: Record<string, unknown>;
+      };
+      const out: {
+        item: typeof item;
+        warnings?: string[];
+        diagnostics?: Record<string, unknown>;
+      } = { item };
+      if (itemTyped.warnings && itemTyped.warnings.length > 0) {
+        out.warnings = itemTyped.warnings;
+      }
+      if (itemTyped.diagnostics) {
+        out.diagnostics = itemTyped.diagnostics;
+      }
       return out;
     },
     preview: (r) => {
       const item = r.item as { title?: string };
       const warnings = r.warnings as string[] | undefined;
-      const suffix = warnings && warnings.length > 0 ? ` (${warnings.length} Warnung${warnings.length === 1 ? "" : "en"})` : "";
+      const suffix =
+        warnings && warnings.length > 0
+          ? ` (${warnings.length} Warnung${warnings.length === 1 ? "" : "en"})`
+          : "";
       return `Notion-Seite aktualisiert: ${item?.title ?? "?"}${suffix}`;
     },
   });
