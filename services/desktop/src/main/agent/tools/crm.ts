@@ -1240,7 +1240,8 @@ export function buildCrmTools(deps: CrmToolDeps): Tool[] {
   const createCompanyTool = defineTool({
     name: "crm_create_hubspot_company",
     description:
-      "Legt eine NEUE Company in HubSpot an. Propose-and-Confirm via ask_user_choice. PFLICHT VORHER: crm_search_hubspot_companies aufrufen, um Dubletten zu erkennen — wenn schon eine Company mit dem Namen oder der Domain existiert, dem Nutzer das TRANSPARENT zeigen und nachfragen (Update statt Create? oder ist das ein anderer Account?). Mindestens `name` ist Pflicht; alle weiteren Properties (domain, industry, lifecyclestage, …) sind optional und werden 1:1 ans HubSpot-API gereicht. Bei enum-Feldern den value, nicht das label.",
+      "Legt eine NEUE Company in HubSpot an. Propose-and-Confirm via ask_user_choice. PFLICHT VORHER: crm_search_hubspot_companies aufrufen, um Dubletten zu erkennen — wenn schon eine Company mit dem Namen oder der Domain existiert, dem Nutzer das TRANSPARENT zeigen und nachfragen (Update statt Create? oder ist das ein anderer Account?). Mindestens `name` ist Pflicht; alle weiteren Properties (domain, industry, lifecyclestage, …) sind optional und werden 1:1 ans HubSpot-API gereicht. Bei enum-Feldern den value, nicht das label.\n\n" +
+      "Wenn der Nutzer ein Pendant zu einer bereits in AVA bekannten Firma anlegt (Standard-Use-Case), IMMER auch `linkToAvaCompanyId` mitgeben — dann wird die HubSpot-Verknüpfung in einem Schritt mit angelegt, der Nutzer muss nichts manuell in der Firmenseite nachziehen. AVA-companyId vorher via `company_search` auflösen.",
     parameters: {
       type: "object",
       required: ["name"],
@@ -1260,6 +1261,11 @@ export function buildCrmTools(deps: CrmToolDeps): Tool[] {
             "Zusätzliche HubSpot-Properties (Property-Name → String-Wert). Schema vorher via crm_introspect_hubspot_company auf einer bestehenden Company lesen, um Property-Namen + Enum-Optionen zu kennen.",
           additionalProperties: { type: "string" },
         },
+        linkToAvaCompanyId: {
+          type: "string",
+          description:
+            "Optionale AVA-Master-Data-companyId. Wenn gesetzt, wird nach dem erfolgreichen Create automatisch eine HUBSPOT-Verknüpfung zu dieser AVA-Firma angelegt (entspricht crm_link_manual). Vorher via company_search auflösen.",
+        },
         rationale: {
           type: "string",
           description: "Begründung (1 Satz) für den Confirm-Dialog.",
@@ -1271,12 +1277,20 @@ export function buildCrmTools(deps: CrmToolDeps): Tool[] {
         name: yup.string().trim().min(1).max(500).required(),
         domain: yup.string().trim().max(500).optional(),
         properties: yup.object().optional(),
+        linkToAvaCompanyId: yup.string().trim().optional(),
         rationale: yup.string().trim().max(500).optional(),
       })
       .noUnknown(true),
-    preview: (r: { applied: boolean; id?: string; error?: string }) =>
+    preview: (r: {
+      applied: boolean;
+      id?: string;
+      linked?: boolean;
+      error?: string;
+    }) =>
       r.applied
-        ? `Company angelegt (${r.id})`
+        ? r.linked
+          ? `Company angelegt + verknüpft (${r.id})`
+          : `Company angelegt (${r.id})`
         : r.error
           ? `Fehler: ${r.error}`
           : "Company nicht angelegt",
@@ -1294,8 +1308,11 @@ export function buildCrmTools(deps: CrmToolDeps): Tool[] {
       const rationaleBlock = args.rationale
         ? `\n\nBegründung: ${args.rationale}`
         : "";
+      const linkHint = args.linkToAvaCompanyId
+        ? `\n\nVerknüpft danach automatisch mit AVA-Firma ${args.linkToAvaCompanyId}.`
+        : "";
       const value = await ctx.ui.askChoice(
-        `Ich möchte folgende NEUE Company in HubSpot anlegen:\n\n${propLines}${rationaleBlock}\n\nFalls die Firma bereits existiert, sag bitte Bescheid — sonst gibt es ein Duplikat.`,
+        `Ich möchte folgende NEUE Company in HubSpot anlegen:\n\n${propLines}${rationaleBlock}${linkHint}\n\nFalls die Firma bereits existiert, sag bitte Bescheid — sonst gibt es ein Duplikat.`,
         [
           {
             value: "create",
@@ -1307,18 +1324,54 @@ export function buildCrmTools(deps: CrmToolDeps): Tool[] {
         ctx.signal,
       );
       if (value !== "create") return { applied: false };
+      let createdId: string;
       try {
         const result = await createHubspotObject(crm, {
           objectType: "companies",
           properties: props,
         });
-        return { applied: true, id: result.id };
+        createdId = result.id;
       } catch (err) {
         return {
           applied: false,
           error: err instanceof Error ? err.message : String(err),
         };
       }
+
+      // v0.1.271 — Auto-Link, wenn AVA-companyId bekannt ist. Bewusst NICHT
+      // mit eigenem Confirm — der Nutzer hat dem Create zugestimmt und der
+      // Link ist die intuitive Folgeaktion (sonst hängt die neue HubSpot-
+      // Firma orphan im AVA-Detail). Sollte das Linking scheitern (z. B.
+      // weil die companyId nicht existiert), wird das im Tool-Result
+      // surfaced — die HubSpot-Firma bleibt bestehen, kein Rollback.
+      let linked = false;
+      let linkError: string | null = null;
+      if (args.linkToAvaCompanyId) {
+        try {
+          await gateway.request(
+            `/v1/companies/${encodeURIComponent(args.linkToAvaCompanyId)}/crm/links`,
+            {
+              method: "POST",
+              body: {
+                crmType: "HUBSPOT" as CrmLinkType,
+                crmExternalId: createdId,
+                crmDisplayName: args.name,
+              },
+              signal: ctx.signal,
+            },
+          );
+          linked = true;
+        } catch (err) {
+          linkError = err instanceof Error ? err.message : String(err);
+        }
+      }
+
+      return {
+        applied: true,
+        id: createdId,
+        linked,
+        ...(linkError ? { linkError } : {}),
+      };
     },
   });
 

@@ -198,17 +198,35 @@ Workflow:
 2. **Pflicht: `name`.** Domain dringend empfohlen — HubSpot
    dedupliziert intern auch per Domain, und ohne Domain ist die
    Company später schlechter mit Contacts/Deals zu verknüpfen.
-3. **Weitere Properties** als `properties`-Map: industry,
+3. **AVA-companyId vorher auflösen.** Wenn der Nutzer von einer
+   bereits in AVA bekannten Firma spricht (Standard-Use-Case —
+   „leg ACME auch in HubSpot an"), VOR dem Create `company_search`
+   mit dem Namen aufrufen → AVA-master-data-companyId. Die wird im
+   nächsten Schritt mitgegeben, damit AVA die HubSpot-Verknüpfung
+   in einem Rutsch herstellt.
+
+   Wenn die Firma in AVA noch gar nicht existiert (selten — meistens
+   ist der Anlass für den HubSpot-Create die schon vorhandene
+   AVA-Firma): den Schritt überspringen.
+4. **Weitere Properties** als `properties`-Map: industry,
    lifecyclestage, city, country, etc. Bei enum-Feldern (industry,
    lifecyclestage) NICHT raten, sondern vorher
    `crm_introspect_hubspot_company` auf einer beliebigen
    existierenden Company aufrufen, um die Enum-Optionen + interne
    Namen zu kennen. Beispiel: industry="MANUFACTURING" (value), nicht
    "Manufacturing" (label).
-4. **`crm_create_hubspot_company` aufrufen.** Tool macht eigenen
-   Confirm-Dialog mit der vollständigen Property-Liste — keine
-   doppelte Rückfrage. Returnt die neue companyId.
-5. **Folgeaktionen** (optional): Wenn der Nutzer Contacts oder Deals
+5. **`crm_create_hubspot_company` aufrufen** mit `linkToAvaCompanyId`
+   wenn aus Schritt 3 eine AVA-companyId verfügbar ist. Tool macht
+   eigenen Confirm-Dialog mit der vollständigen Property-Liste + dem
+   Hinweis auf die automatische Verknüpfung — keine doppelte
+   Rückfrage. Returnt die neue HubSpot-companyId und ob das Linking
+   geklappt hat (`linked: true|false`).
+
+   Wenn `linked: false` mit `linkError` zurückkommt: das HubSpot-
+   Objekt EXISTIERT trotzdem, aber die AVA-Seite hat den Link nicht.
+   Dem Nutzer das transparent zeigen + anbieten, mit
+   `crm_link_manual` manuell nachzuziehen.
+6. **Folgeaktionen** (optional): Wenn der Nutzer Contacts oder Deals
    für die neue Firma erwähnt hat, kannst du die direkt nachziehen
    mit `crm_associate_hubspot_objects` (bestehende Records) oder dem
    Nutzer anbieten.
