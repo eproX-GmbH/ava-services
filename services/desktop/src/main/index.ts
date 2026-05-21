@@ -508,6 +508,23 @@ function buildProducer(
             } else {
               env.RESEARCH_JOBS_TIER = "off";
             }
+            // v0.1.270 — wenn das Haupt-LLM nicht OpenAI ist (also kein
+            // OPENAI_API_KEY in llmConfig steckt), aber Research auf
+            // OpenAI läuft, projizieren wir den ersten verfügbaren
+            // Research-OpenAI-Key zusätzlich als OPENAI_API_KEY. Dadurch
+            // wird im Producer das `openaiInstance` in di.ts non-null,
+            // shared-Client-Reuse funktioniert und der Boot-Log meldet
+            // keinen scheinbaren Fehler mehr. Außer producer-supervisor
+            // setzt es schon aus dem Haupt-LLM (dann bleibt's so).
+            const fallbackOpenaiKey =
+              expansion && expansion.provider === "openai"
+                ? expansion.apiKey
+                : jobs && jobs.provider === "openai"
+                  ? jobs.apiKey
+                  : null;
+            if (fallbackOpenaiKey) {
+              env.OPENAI_API_KEY = fallbackOpenaiKey;
+            }
             return env;
           }
         : name === "company-evaluation"
