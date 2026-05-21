@@ -32,6 +32,9 @@ import {
   listHubspotAssociations,
   associateHubspotObjects,
   disassociateHubspotObjects,
+  createHubspotObject,
+  listHubspotTasks,
+  listHubspotNotesForObject,
   type HubspotObjectType,
 } from "../../crm/write-objects";
 
@@ -692,6 +695,19 @@ export function buildCrmTools(deps: CrmToolDeps): Tool[] {
     "Deal",
     "ID aus crm_search_hubspot_deals oder direkt aus HubSpot-URL.",
   );
+  // v0.1.266 — Notes + Tasks bekommen denselben introspect+update-Pfad,
+  // damit "ändere die Task-Priorität auf HIGH" / "korrigiere den Note-Body"
+  // funktioniert. Die Tool-Namen folgen demselben Schema: _note / _task.
+  const notePair = buildIntrospectUpdate(
+    "notes",
+    "Note",
+    "noteId aus crm_list_hubspot_notes_for_object oder dem create-Result.",
+  );
+  const taskPair = buildIntrospectUpdate(
+    "tasks",
+    "Task",
+    "taskId aus crm_list_hubspot_tasks oder dem create-Result.",
+  );
 
   // Search-Tools für Contacts + Deals
   const searchContactsTool = defineTool({
@@ -755,7 +771,15 @@ export function buildCrmTools(deps: CrmToolDeps): Tool[] {
   // v0.1.265 — Association-Tools (Phase H3). HubSpot v4 Associations:
   // Contact↔Company, Deal↔Company, Contact↔Deal mit default-Typ.
   // Custom-Association-Types sind out-of-scope für V1.
-  const OBJECT_TYPE_VALUES = ["companies", "contacts", "deals"] as const;
+  // v0.1.266: notes + tasks dazu (für Engagement-Listings + Updates).
+  const OBJECT_TYPE_VALUES = [
+    "companies",
+    "contacts",
+    "deals",
+    "notes",
+    "tasks",
+  ] as const;
+  const ASSOC_TARGET_VALUES = ["companies", "contacts", "deals"] as const;
 
   const listAssociationsTool = defineTool({
     name: "crm_list_hubspot_associations",
@@ -767,22 +791,22 @@ export function buildCrmTools(deps: CrmToolDeps): Tool[] {
       properties: {
         fromObjectType: {
           type: "string",
-          enum: [...OBJECT_TYPE_VALUES],
+          enum: [...ASSOC_TARGET_VALUES],
           description: "Object-Type des Ausgangs-Records.",
         },
         fromObjectId: { type: "string", description: "HubSpot-ID des Ausgangs-Records." },
         toObjectType: {
           type: "string",
-          enum: [...OBJECT_TYPE_VALUES],
+          enum: [...ASSOC_TARGET_VALUES],
           description: "Object-Type der Zielobjekte.",
         },
       },
     },
     schema: yup
       .object({
-        fromObjectType: yup.string().oneOf([...OBJECT_TYPE_VALUES]).required(),
+        fromObjectType: yup.string().oneOf([...ASSOC_TARGET_VALUES]).required(),
         fromObjectId: yup.string().trim().min(1).required(),
-        toObjectType: yup.string().oneOf([...OBJECT_TYPE_VALUES]).required(),
+        toObjectType: yup.string().oneOf([...ASSOC_TARGET_VALUES]).required(),
       })
       .noUnknown(true),
     preview: (r: { associations: unknown[] }) => `${r.associations.length} Verknüpfungen`,
@@ -814,9 +838,9 @@ export function buildCrmTools(deps: CrmToolDeps): Tool[] {
     },
     schema: yup
       .object({
-        fromObjectType: yup.string().oneOf([...OBJECT_TYPE_VALUES]).required(),
+        fromObjectType: yup.string().oneOf([...ASSOC_TARGET_VALUES]).required(),
         fromObjectId: yup.string().trim().min(1).required(),
-        toObjectType: yup.string().oneOf([...OBJECT_TYPE_VALUES]).required(),
+        toObjectType: yup.string().oneOf([...ASSOC_TARGET_VALUES]).required(),
         toObjectId: yup.string().trim().min(1).required(),
         rationale: yup.string().trim().max(500).optional(),
       })
@@ -863,9 +887,9 @@ export function buildCrmTools(deps: CrmToolDeps): Tool[] {
     },
     schema: yup
       .object({
-        fromObjectType: yup.string().oneOf([...OBJECT_TYPE_VALUES]).required(),
+        fromObjectType: yup.string().oneOf([...ASSOC_TARGET_VALUES]).required(),
         fromObjectId: yup.string().trim().min(1).required(),
-        toObjectType: yup.string().oneOf([...OBJECT_TYPE_VALUES]).required(),
+        toObjectType: yup.string().oneOf([...ASSOC_TARGET_VALUES]).required(),
         toObjectId: yup.string().trim().min(1).required(),
         rationale: yup.string().trim().max(500).optional(),
       })
@@ -895,6 +919,319 @@ export function buildCrmTools(deps: CrmToolDeps): Tool[] {
     },
   });
 
+  // v0.1.266 — Notes (Phase H4). Create ist der primäre Use-Case.
+  const TASK_STATUS_VALUES = [
+    "NOT_STARTED",
+    "IN_PROGRESS",
+    "COMPLETED",
+    "WAITING",
+    "DEFERRED",
+  ] as const;
+  const TASK_PRIORITY_VALUES = ["LOW", "MEDIUM", "HIGH"] as const;
+  const TASK_TYPE_VALUES = ["EMAIL", "CALL", "TODO"] as const;
+
+  const createNoteTool = defineTool({
+    name: "crm_create_hubspot_note",
+    description:
+      "Legt eine neue Notiz in HubSpot an und verknüpft sie SOFORT mit mindestens einem Company/Contact/Deal — sonst ist die Notiz in der UI quasi unauffindbar. PROPOSE-AND-CONFIRM via ask_user_choice. Body kann Plain-Text oder einfaches HTML enthalten. Zeitstempel wird auf 'jetzt' gesetzt, wenn nicht überschrieben.",
+    parameters: {
+      type: "object",
+      required: ["body", "associations"],
+      properties: {
+        body: {
+          type: "string",
+          description: "Notiz-Text. Plain oder einfaches HTML (HubSpot rendert).",
+        },
+        associations: {
+          type: "array",
+          minItems: 1,
+          description:
+            "Mindestens 1 Verknüpfung. Reihenfolge irrelevant. Format: {objectType: 'companies'|'contacts'|'deals', objectId: '...'}",
+          items: {
+            type: "object",
+            required: ["objectType", "objectId"],
+            properties: {
+              objectType: { type: "string", enum: [...ASSOC_TARGET_VALUES] },
+              objectId: { type: "string" },
+            },
+          },
+        },
+        timestamp: {
+          type: "string",
+          description:
+            "Optional. ISO-Timestamp. Wenn weggelassen: jetzt.",
+        },
+      },
+    },
+    schema: yup
+      .object({
+        body: yup.string().trim().min(1).max(50_000).required(),
+        associations: yup
+          .array()
+          .of(
+            yup
+              .object({
+                objectType: yup
+                  .string()
+                  .oneOf([...ASSOC_TARGET_VALUES])
+                  .required(),
+                objectId: yup.string().trim().min(1).required(),
+              })
+              .required(),
+          )
+          .min(1)
+          .required(),
+        timestamp: yup.string().trim().optional(),
+      })
+      .noUnknown(true),
+    preview: (r: { applied: boolean; id?: string }) =>
+      r.applied ? `Notiz erstellt (${r.id})` : "Notiz verworfen",
+    run: async (args, ctx) => {
+      const summary = args.associations
+        .map((a) => `${a.objectType.replace(/s$/, "")} ${a.objectId}`)
+        .join(", ");
+      const value = await ctx.ui.askChoice(
+        `Ich möchte folgende Notiz in HubSpot anlegen:\n\n${args.body.slice(0, 1500)}${args.body.length > 1500 ? "\n\n[…gekürzt]" : ""}\n\nVerknüpft mit: ${summary}`,
+        [
+          { value: "create", label: "Anlegen", description: "POST wird gesendet" },
+          { value: "cancel", label: "Verwerfen" },
+        ],
+        ctx.signal,
+      );
+      if (value !== "create") return { applied: false };
+      const result = await createHubspotObject(crm, {
+        objectType: "notes",
+        properties: {
+          hs_note_body: args.body,
+          hs_timestamp: args.timestamp ?? new Date().toISOString(),
+        },
+        associations: args.associations.map((a) => ({
+          toObjectType: a.objectType as HubspotObjectType,
+          toObjectId: a.objectId,
+        })),
+      });
+      return { applied: true, id: result.id };
+    },
+  });
+
+  const createTaskTool = defineTool({
+    name: "crm_create_hubspot_task",
+    description:
+      "Legt eine neue Aufgabe in HubSpot an und verknüpft sie SOFORT mit Company/Contact/Deal. PROPOSE-AND-CONFIRM. Optional sind Fälligkeit, Priorität, Owner, Typ (EMAIL/CALL/TODO). Status startet immer auf NOT_STARTED.",
+    parameters: {
+      type: "object",
+      required: ["subject", "associations"],
+      properties: {
+        subject: { type: "string", description: "Aufgaben-Titel (z. B. 'Max anrufen')." },
+        body: { type: "string", description: "Optionaler längerer Beschreibungs-Text." },
+        dueAt: {
+          type: "string",
+          description: "Optional ISO-Timestamp der Fälligkeit. Wenn weggelassen: keine.",
+        },
+        priority: {
+          type: "string",
+          enum: [...TASK_PRIORITY_VALUES],
+          description: "Default MEDIUM.",
+        },
+        type: {
+          type: "string",
+          enum: [...TASK_TYPE_VALUES],
+          description: "Aufgabe-Typ. Default TODO.",
+        },
+        ownerId: {
+          type: "string",
+          description:
+            "HubSpot-Owner-ID (numerisch). Aus crm_list_hubspot_owners.",
+        },
+        associations: {
+          type: "array",
+          minItems: 1,
+          items: {
+            type: "object",
+            required: ["objectType", "objectId"],
+            properties: {
+              objectType: { type: "string", enum: [...ASSOC_TARGET_VALUES] },
+              objectId: { type: "string" },
+            },
+          },
+        },
+      },
+    },
+    schema: yup
+      .object({
+        subject: yup.string().trim().min(1).max(500).required(),
+        body: yup.string().trim().max(10_000).optional(),
+        dueAt: yup.string().trim().optional(),
+        priority: yup.string().oneOf([...TASK_PRIORITY_VALUES]).optional(),
+        type: yup.string().oneOf([...TASK_TYPE_VALUES]).optional(),
+        ownerId: yup.string().trim().optional(),
+        associations: yup
+          .array()
+          .of(
+            yup
+              .object({
+                objectType: yup
+                  .string()
+                  .oneOf([...ASSOC_TARGET_VALUES])
+                  .required(),
+                objectId: yup.string().trim().min(1).required(),
+              })
+              .required(),
+          )
+          .min(1)
+          .required(),
+      })
+      .noUnknown(true),
+    preview: (r: { applied: boolean; id?: string }) =>
+      r.applied ? `Aufgabe erstellt (${r.id})` : "Aufgabe verworfen",
+    run: async (args, ctx) => {
+      const summary = args.associations
+        .map((a) => `${a.objectType.replace(/s$/, "")} ${a.objectId}`)
+        .join(", ");
+      const meta = [
+        args.dueAt ? `Fällig: ${args.dueAt}` : null,
+        args.priority ? `Priorität: ${args.priority}` : null,
+        args.type ? `Typ: ${args.type}` : null,
+        args.ownerId ? `Owner: ${args.ownerId}` : null,
+      ]
+        .filter(Boolean)
+        .join(" · ");
+      const value = await ctx.ui.askChoice(
+        `Ich möchte folgende Aufgabe in HubSpot anlegen:\n\n${args.subject}${args.body ? `\n\n${args.body.slice(0, 800)}` : ""}\n${meta ? `\n${meta}` : ""}\n\nVerknüpft mit: ${summary}`,
+        [
+          { value: "create", label: "Anlegen", description: "POST wird gesendet" },
+          { value: "cancel", label: "Verwerfen" },
+        ],
+        ctx.signal,
+      );
+      if (value !== "create") return { applied: false };
+      const properties: Record<string, string> = {
+        hs_task_subject: args.subject,
+        hs_task_status: "NOT_STARTED",
+        hs_task_priority: args.priority ?? "MEDIUM",
+        hs_task_type: args.type ?? "TODO",
+      };
+      if (args.body) properties.hs_task_body = args.body;
+      if (args.dueAt) properties.hs_timestamp = args.dueAt;
+      if (args.ownerId) properties.hubspot_owner_id = args.ownerId;
+      const result = await createHubspotObject(crm, {
+        objectType: "tasks",
+        properties,
+        associations: args.associations.map((a) => ({
+          toObjectType: a.objectType as HubspotObjectType,
+          toObjectId: a.objectId,
+        })),
+      });
+      return { applied: true, id: result.id };
+    },
+  });
+
+  const listTasksTool = defineTool({
+    name: "crm_list_hubspot_tasks",
+    description:
+      "Listet HubSpot-Tasks mit Filtern: ownerId (z. B. der angemeldete User), statuses (Liste aus NOT_STARTED/IN_PROGRESS/COMPLETED/WAITING/DEFERRED), dueBy (ISO-Timestamp). Sortiert aufsteigend nach Fälligkeit. Returns id, subject, status, priority, type, ownerId, dueAt, completedAt. Nutze ownerId+statuses=[NOT_STARTED,IN_PROGRESS] für 'meine offenen Aufgaben'.",
+    parameters: {
+      type: "object",
+      properties: {
+        ownerId: { type: "string" },
+        statuses: {
+          type: "array",
+          items: { type: "string", enum: [...TASK_STATUS_VALUES] },
+        },
+        dueBy: { type: "string", description: "ISO-Timestamp." },
+        limit: { type: "integer", description: "Max Treffer (1-200). Default 50." },
+      },
+    },
+    schema: yup
+      .object({
+        ownerId: yup.string().trim().optional(),
+        statuses: yup
+          .array()
+          .of(yup.string().oneOf([...TASK_STATUS_VALUES]).required())
+          .optional(),
+        dueBy: yup.string().trim().optional(),
+        limit: yup.number().integer().min(1).max(200).optional(),
+      })
+      .noUnknown(true),
+    preview: (r: { items: unknown[] }) => `${r.items.length} Tasks`,
+    run: async (args) =>
+      listHubspotTasks(crm, {
+        ownerId: args.ownerId,
+        statuses: args.statuses,
+        dueBy: args.dueBy,
+        limit: args.limit,
+      }),
+  });
+
+  const listNotesForObjectTool = defineTool({
+    name: "crm_list_hubspot_notes_for_object",
+    description:
+      "Listet die Notizen, die mit einem bestimmten HubSpot-Record (Company/Contact/Deal) verknüpft sind. Neueste zuerst. Returns id, body (Plain-Text), createdAt, ownerId.",
+    parameters: {
+      type: "object",
+      required: ["objectType", "objectId"],
+      properties: {
+        objectType: { type: "string", enum: [...ASSOC_TARGET_VALUES] },
+        objectId: { type: "string" },
+        limit: { type: "integer", description: "Max Treffer (1-100). Default 25." },
+      },
+    },
+    schema: yup
+      .object({
+        objectType: yup.string().oneOf([...ASSOC_TARGET_VALUES]).required(),
+        objectId: yup.string().trim().min(1).required(),
+        limit: yup.number().integer().min(1).max(100).optional(),
+      })
+      .noUnknown(true),
+    preview: (r: { items: unknown[] }) => `${r.items.length} Notizen`,
+    run: async (args) =>
+      listHubspotNotesForObject(crm, {
+        objectType: args.objectType as HubspotObjectType,
+        objectId: args.objectId,
+        limit: args.limit,
+      }),
+  });
+
+  // v0.1.266 — Convenience: Task als erledigt markieren ohne den langen
+  // introspect+update-Pfad. Wenn der Nutzer "hak Aufgabe X ab" sagt, soll
+  // AVA das in einem Tool-Call lösen, nicht in dreien.
+  const completeTaskTool = defineTool({
+    name: "crm_complete_hubspot_task",
+    description:
+      "Markiert eine HubSpot-Task als erledigt: setzt hs_task_status=COMPLETED und hs_task_completion_date=jetzt (oder den vom Nutzer genannten Zeitpunkt). Direkt, ohne weiteren Confirm — Erledigung ist trivial reversibel (auf NOT_STARTED/IN_PROGRESS zurücksetzen).",
+    parameters: {
+      type: "object",
+      required: ["taskId"],
+      properties: {
+        taskId: { type: "string" },
+        completedAt: {
+          type: "string",
+          description: "Optional ISO-Timestamp. Default: jetzt.",
+        },
+      },
+    },
+    schema: yup
+      .object({
+        taskId: yup.string().trim().min(1).required(),
+        completedAt: yup.string().trim().optional(),
+      })
+      .noUnknown(true),
+    preview: (r: { ok: boolean }) =>
+      r.ok ? "Aufgabe erledigt" : "Konnte nicht abgehakt werden",
+    run: async (args) => {
+      const completedAt = args.completedAt ?? new Date().toISOString();
+      const result = await updateHubspotObject(crm, {
+        objectType: "tasks",
+        objectId: args.taskId,
+        properties: {
+          hs_task_status: "COMPLETED",
+          hs_task_completion_date: completedAt,
+        },
+      });
+      return { ok: result.ok, diff: result.diff, notApplied: result.notApplied };
+    },
+  });
+
   return [
     statusTool,
     connectTool,
@@ -910,12 +1247,21 @@ export function buildCrmTools(deps: CrmToolDeps): Tool[] {
     contactPair.update,
     dealPair.introspect,
     dealPair.update,
+    notePair.introspect,
+    notePair.update,
+    taskPair.introspect,
+    taskPair.update,
     searchContactsTool,
     searchDealsTool,
     listOwnersTool,
     listAssociationsTool,
     associateTool,
     disassociateTool,
+    createNoteTool,
+    createTaskTool,
+    listTasksTool,
+    listNotesForObjectTool,
+    completeTaskTool,
   ];
 }
 
@@ -923,4 +1269,6 @@ const OBJECT_LABEL: Record<HubspotObjectType, string> = {
   companies: "Company",
   contacts: "Contact",
   deals: "Deal",
+  notes: "Note",
+  tasks: "Task",
 };

@@ -20,7 +20,12 @@ import type { CrmManager } from ".";
 
 const HUBSPOT_API = "https://api.hubapi.com";
 
-export type HubspotObjectType = "companies" | "contacts" | "deals";
+export type HubspotObjectType =
+  | "companies"
+  | "contacts"
+  | "deals"
+  | "notes"
+  | "tasks";
 
 // ---- Property-Schema (introspect) ----------------------------------------
 
@@ -62,7 +67,9 @@ function isUserEditableProperty(
   if (p.calculated) return false;
   if (p.modificationMetadata?.readOnlyValue) return false;
   if (p.hidden) return false;
-  // Whitelist sinnvoller hs_*-Properties pro Object-Type
+  // Whitelist sinnvoller hs_*-Properties pro Object-Type. Notes + Tasks
+  // sind primär hs_*-driven (das ist der HubSpot-Engagement-Style), also
+  // sind die Whitelists hier großzügig.
   const HS_WHITELIST: Record<HubspotObjectType, Set<string>> = {
     companies: new Set(["hs_lead_status"]),
     contacts: new Set([
@@ -81,6 +88,20 @@ function isUserEditableProperty(
       "hs_arr",
       "hs_mrr",
       "hs_tcv",
+    ]),
+    notes: new Set([
+      "hs_note_body",
+      "hs_timestamp",
+      "hs_attachment_ids",
+    ]),
+    tasks: new Set([
+      "hs_task_subject",
+      "hs_task_body",
+      "hs_task_status",
+      "hs_task_priority",
+      "hs_task_type",
+      "hs_task_completion_date",
+      "hs_timestamp",
     ]),
   };
   if (p.name.startsWith("hs_") && !HS_WHITELIST[objectType].has(p.name)) {
@@ -401,6 +422,251 @@ export async function listHubspotOwners(
     lastName: trimOrNull(o.lastName),
     archived: o.archived ?? false,
   }));
+}
+
+// ---- Create (Notes / Tasks etc.) -----------------------------------------
+//
+// Create-Pfad ist NEU in v0.1.266 — bisher waren alle Tools update-only
+// (bewusst, weil Create-from-Chat schwer rückgängig zu machen ist).
+// Für Notes und Tasks ist Create aber der Haupt-Use-Case: "schreib mir
+// eine Notiz zu ACME" / "leg mir eine Aufgabe an". Update bleibt zusätz-
+// lich verfügbar (Status setzen, Task-Body anpassen).
+//
+// Associations werden inline beim Create mitgegeben — das ist HubSpot-
+// Standard für Notes/Tasks, weil ein verwaister Note ohne Bezug zu
+// Company/Contact/Deal in der UI quasi unauffindbar wird.
+
+export interface CreateInput {
+  objectType: HubspotObjectType;
+  properties: Record<string, string>;
+  /** Inline-Associations zum Zeitpunkt der Anlage. Default-Type pro
+   *  Object-Type wird automatisch gewählt (Notes/Tasks ↔ Companies =
+   *  202, ↔ Contacts = 200/204, ↔ Deals = 214). HubSpot selbst nimmt
+   *  den richtigen Default wenn man die associationCategory leer
+   *  lässt — wir nutzen deshalb HUBSPOT_DEFINED + den entsprechenden
+   *  default-typeId. */
+  associations?: Array<{
+    toObjectType: HubspotObjectType;
+    toObjectId: string;
+  }>;
+}
+
+export interface CreateResult {
+  id: string;
+  /** Voll-Object wie HubSpot zurückgibt (für UI-Preview). */
+  raw: Record<string, unknown>;
+}
+
+/** Default-Association-Type-IDs für Notes/Tasks → Companies/Contacts/Deals.
+ *  Aus HubSpot's Association-Type-Catalog (v4) — stabil dokumentiert,
+ *  hier hardcoded weil ein Live-Lookup pro Create zu teuer wäre. */
+const NOTE_TASK_DEFAULT_TYPE_IDS: Record<HubspotObjectType, number | null> = {
+  companies: 190, // note→company, task→company
+  contacts: 202, // note→contact, task→contact
+  deals: 214, // note→deal, task→deal
+  notes: null,
+  tasks: null,
+};
+
+export async function createHubspotObject(
+  crm: CrmManager,
+  input: CreateInput,
+): Promise<CreateResult> {
+  const accessToken = await crm.getAccessToken("hubspot");
+  if (!accessToken) throw new Error("HubSpot ist nicht verbunden.");
+
+  const body: Record<string, unknown> = {
+    properties: input.properties,
+  };
+
+  if (input.associations && input.associations.length > 0) {
+    body.associations = input.associations.map((a) => {
+      const typeId = NOTE_TASK_DEFAULT_TYPE_IDS[a.toObjectType];
+      if (typeId == null) {
+        throw new Error(
+          `Keine Default-Association-Type-ID für ${a.toObjectType} bekannt.`,
+        );
+      }
+      return {
+        to: { id: a.toObjectId },
+        types: [
+          {
+            associationCategory: "HUBSPOT_DEFINED",
+            associationTypeId: typeId,
+          },
+        ],
+      };
+    });
+  }
+
+  const json = (await hubspotFetch(
+    accessToken,
+    `${HUBSPOT_API}/crm/v3/objects/${input.objectType}`,
+    {
+      method: "POST",
+      body: JSON.stringify(body),
+    },
+  )) as { id: string } & Record<string, unknown>;
+
+  return { id: json.id, raw: json };
+}
+
+// ---- Engagement-Listings (Notes/Tasks per Filter) ------------------------
+
+export interface TaskListEntry {
+  id: string;
+  subject: string | null;
+  status: string | null; // NOT_STARTED, IN_PROGRESS, COMPLETED, WAITING, DEFERRED
+  priority: string | null; // LOW, MEDIUM, HIGH
+  type: string | null; // EMAIL, CALL, TODO
+  ownerId: string | null;
+  dueAt: string | null;
+  completedAt: string | null;
+}
+
+export interface ListTasksFilter {
+  ownerId?: string;
+  statuses?: string[];
+  /** ISO-Timestamp — nur Tasks deren hs_timestamp ≤ dueBy. */
+  dueBy?: string;
+  limit?: number;
+}
+
+export async function listHubspotTasks(
+  crm: CrmManager,
+  filter: ListTasksFilter,
+): Promise<{ items: TaskListEntry[] }> {
+  const accessToken = await crm.getAccessToken("hubspot");
+  if (!accessToken) throw new Error("HubSpot ist nicht verbunden.");
+  const limit = Math.max(1, Math.min(filter.limit ?? 50, 200));
+
+  const filterGroups: Array<{ filters: Array<Record<string, unknown>> }> = [];
+  const baseFilters: Array<Record<string, unknown>> = [];
+  if (filter.ownerId) {
+    baseFilters.push({
+      propertyName: "hubspot_owner_id",
+      operator: "EQ",
+      value: filter.ownerId,
+    });
+  }
+  if (filter.dueBy) {
+    baseFilters.push({
+      propertyName: "hs_timestamp",
+      operator: "LTE",
+      value: filter.dueBy,
+    });
+  }
+  if (filter.statuses && filter.statuses.length > 0) {
+    // HubSpot Search erlaubt IN-Operator
+    baseFilters.push({
+      propertyName: "hs_task_status",
+      operator: "IN",
+      values: filter.statuses,
+    });
+  }
+  if (baseFilters.length > 0) {
+    filterGroups.push({ filters: baseFilters });
+  }
+
+  const json = (await hubspotFetch(
+    accessToken,
+    `${HUBSPOT_API}/crm/v3/objects/tasks/search`,
+    {
+      method: "POST",
+      body: JSON.stringify({
+        filterGroups,
+        properties: [
+          "hs_task_subject",
+          "hs_task_status",
+          "hs_task_priority",
+          "hs_task_type",
+          "hs_timestamp",
+          "hs_task_completion_date",
+          "hubspot_owner_id",
+        ],
+        sorts: [{ propertyName: "hs_timestamp", direction: "ASCENDING" }],
+        limit,
+      }),
+    },
+  )) as {
+    results?: Array<{
+      id: string;
+      properties: Record<string, string | null | undefined>;
+    }>;
+  };
+
+  return {
+    items: (json.results ?? []).map((r) => ({
+      id: r.id,
+      subject: trimOrNull(r.properties.hs_task_subject),
+      status: trimOrNull(r.properties.hs_task_status),
+      priority: trimOrNull(r.properties.hs_task_priority),
+      type: trimOrNull(r.properties.hs_task_type),
+      ownerId: trimOrNull(r.properties.hubspot_owner_id),
+      dueAt: trimOrNull(r.properties.hs_timestamp),
+      completedAt: trimOrNull(r.properties.hs_task_completion_date),
+    })),
+  };
+}
+
+export interface NoteListEntry {
+  id: string;
+  body: string | null;
+  createdAt: string | null;
+  ownerId: string | null;
+}
+
+export async function listHubspotNotesForObject(
+  crm: CrmManager,
+  args: {
+    objectType: HubspotObjectType;
+    objectId: string;
+    limit?: number;
+  },
+): Promise<{ items: NoteListEntry[] }> {
+  // Vorgehen: erst Associations Object → notes auflisten, dann Notes-IDs
+  // per batch-read holen. Direktes Such-Filter über Associations gibt's
+  // bei HubSpot nicht.
+  const accessToken = await crm.getAccessToken("hubspot");
+  if (!accessToken) throw new Error("HubSpot ist nicht verbunden.");
+  const limit = Math.max(1, Math.min(args.limit ?? 25, 100));
+
+  const assoc = await listHubspotAssociations(crm, {
+    fromObjectType: args.objectType,
+    fromObjectId: args.objectId,
+    toObjectType: "notes",
+  });
+  const noteIds = assoc.associations.slice(0, limit).map((a) => a.toObjectId);
+  if (noteIds.length === 0) return { items: [] };
+
+  const json = (await hubspotFetch(
+    accessToken,
+    `${HUBSPOT_API}/crm/v3/objects/notes/batch/read`,
+    {
+      method: "POST",
+      body: JSON.stringify({
+        inputs: noteIds.map((id) => ({ id })),
+        properties: ["hs_note_body", "hs_timestamp", "hubspot_owner_id"],
+      }),
+    },
+  )) as {
+    results?: Array<{
+      id: string;
+      properties: Record<string, string | null | undefined>;
+    }>;
+  };
+
+  return {
+    items: (json.results ?? [])
+      .map((r) => ({
+        id: r.id,
+        body: trimOrNull(r.properties.hs_note_body),
+        createdAt: trimOrNull(r.properties.hs_timestamp),
+        ownerId: trimOrNull(r.properties.hubspot_owner_id),
+      }))
+      // Neueste zuerst
+      .sort((a, b) => (b.createdAt ?? "").localeCompare(a.createdAt ?? "")),
+  };
 }
 
 // ---- Associations (HubSpot v4) -------------------------------------------

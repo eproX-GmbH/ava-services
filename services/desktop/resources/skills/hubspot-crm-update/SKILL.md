@@ -26,6 +26,15 @@ allowed-tools:
   - crm_list_hubspot_associations
   - crm_associate_hubspot_objects
   - crm_disassociate_hubspot_objects
+  - crm_introspect_hubspot_note
+  - crm_update_hubspot_note
+  - crm_introspect_hubspot_task
+  - crm_update_hubspot_task
+  - crm_create_hubspot_note
+  - crm_create_hubspot_task
+  - crm_list_hubspot_tasks
+  - crm_list_hubspot_notes_for_object
+  - crm_complete_hubspot_task
   - ask_user_choice
 requires-user-confirm: false
 disable-model-invocation: false
@@ -169,6 +178,71 @@ braucht ("decision maker" vs "influencer"), das transparent sagen.
 `disassociate` ist destruktiv im Sinne von "Beziehung weg" — die
 Records selbst bleiben aber erhalten. Trotzdem im Confirm-Dialog
 deutlich machen, was geht.
+
+### Notizen + Aufgaben (Engagements)
+
+Beide sind erste-Klasse-HubSpot-Objekte und teilen den Engagement-
+Workflow: ohne Verknüpfung zu einer Company/Contact/Deal werden sie
+in der HubSpot-UI quasi unauffindbar.
+
+#### Notiz anlegen
+
+Use-Cases: „schreib eine Notiz zu ACME, dass das Gespräch verschoben
+wurde", „leg bei Max einen Hinweis ab: hat Interesse an Modul X",
+„Notiz zum Deal: Kunde will Pilotphase".
+
+Workflow:
+1. Object-IDs auflösen (Company/Contact/Deal) — siehe Schritt 2
+   oben.
+2. `crm_create_hubspot_note` mit `body` + `associations` (Pflicht,
+   mindestens eine — sonst ist die Notiz später nicht zu finden).
+3. Tool macht eigenen Confirm-Dialog. Bei Bestätigung wird gepostet,
+   die noteId zurückgegeben.
+
+Notizen können nachträglich bearbeitet werden via
+`crm_update_hubspot_note` (z. B. wenn der Nutzer einen Typo
+korrigieren will). Das Update-Tool hat den Standard-Diff-Confirm.
+
+#### Aufgabe anlegen
+
+Use-Cases: „leg mir eine Aufgabe an: morgen Max anrufen",
+„Erinnerung in HubSpot: nach 14 Tagen nachhaken bei ACME",
+„To-Do für mich: Vertragsentwurf an Lisa schicken bis Freitag".
+
+Workflow:
+1. Object-IDs auflösen + ggf. Owner-ID per `crm_list_hubspot_owners`
+   wenn der Nutzer einen anderen Owner als sich selbst meint.
+2. `crm_create_hubspot_task` mit `subject` (Pflicht), `body` (lang),
+   `dueAt` (ISO-Timestamp — der Nutzer sagt meistens „morgen" /
+   „nächste Woche" / „in 14 Tagen"; konvertiere das selbst), `priority`
+   (LOW/MEDIUM/HIGH, Default MEDIUM), `type` (EMAIL/CALL/TODO,
+   Default TODO), `ownerId`, `associations`.
+
+Status startet immer auf `NOT_STARTED`. Wenn der Nutzer eine Aufgabe
+direkt als „erledigt" anlegen will (selten, aber kommt vor — z. B.
+„dokumentiere rückwirkend, dass wir letzte Woche telefoniert haben"),
+nutze nach dem Create direkt `crm_complete_hubspot_task` mit der
+zurückgegebenen taskId.
+
+#### Aufgaben listen / abhaken
+
+`crm_list_hubspot_tasks` mit Filtern:
+- `ownerId` → meistens „meine offenen Aufgaben"-Anfrage
+- `statuses` → `["NOT_STARTED", "IN_PROGRESS"]` für offene
+- `dueBy` → ISO-Timestamp z. B. heute-Mitternacht für „was ist
+  überfällig oder fällt heute an"
+
+`crm_complete_hubspot_task` ist die Schnellabkürzung statt
+introspect+update. Direkt, ohne Rückfrage — Abhaken ist trivial
+reversibel.
+
+#### Notizen einer Company/Contact/Deal lesen
+
+`crm_list_hubspot_notes_for_object` mit `objectType` + `objectId`.
+Neueste zuerst. Nutze das wenn der Nutzer fragt „was haben wir mit
+ACME zuletzt besprochen" — und ergänze ggf. mit
+`crm_list_hubspot_tasks` (offene Aufgaben zu dem Account) für ein
+vollständiges Bild.
 
 ## Was NICHT tun
 
