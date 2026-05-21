@@ -23,6 +23,10 @@ import {
   runCrmEnrichment,
   searchHubspotCompanies,
 } from "../../crm/fetch-enrichment";
+import {
+  introspectHubspotCompany,
+  updateHubspotCompany,
+} from "../../crm/write-companies";
 
 const PROVIDERS: readonly CrmProvider[] = ["salesforce", "hubspot", "dynamics"];
 
@@ -424,6 +428,134 @@ export function buildCrmTools(deps: CrmToolDeps): Tool[] {
         : `Verknüpfung fehlgeschlagen: ${(r as { error?: string }).error ?? "?"}`,
   });
 
+  // v0.1.263 — HubSpot Company-Write-Tools (Phase H). Analog zu den
+  // Notion-CRM-Update-Tools v0.1.244+ — introspect zuerst, dann update
+  // mit propose-and-confirm + Fresh-GET-Verify gegen No-Ops.
+  const introspectHubspotTool = defineTool({
+    name: "crm_introspect_hubspot_company",
+    description:
+      "Liest das Property-Schema einer HubSpot-Company UND die aktuellen Werte. Nutze das als STEP 2 vor `crm_update_hubspot_company`, sobald du via `crm_list_links_for_company` oder `crm_search_hubspot_companies` die HubSpot-companyId hast. Returned: für jedes editierbare Feld den Property-Namen, Label, Type (string/number/date/enumeration/bool), enum-Optionen (wenn enumeration), die Beschreibung und den aktuell gespeicherten Wert. Read-only-Felder (hs_object_id, calculated etc.) sind rausgefiltert. Wähle aus der Liste das Feld(er), das der Nutzer ändern will, mappe ggf. Label→value bei Enum-Feldern und übergib das Map an `crm_update_hubspot_company`.",
+    parameters: {
+      type: "object",
+      required: ["companyId"],
+      properties: {
+        companyId: {
+          type: "string",
+          description:
+            "HubSpot-companyId (NICHT die AVA-Master-Data-companyId). Aus `crm_list_links_for_company` oder `crm_search_hubspot_companies`.",
+        },
+      },
+    },
+    schema: yup
+      .object({ companyId: yup.string().trim().min(1).required() })
+      .noUnknown(true),
+    preview: (r: { schema: unknown[]; companyId: string }) =>
+      `HubSpot ${r.companyId}: ${r.schema.length} editierbare Felder`,
+    run: async (args) => {
+      const result = await introspectHubspotCompany(crm, args.companyId);
+      return result;
+    },
+  });
+
+  const updateHubspotTool = defineTool({
+    name: "crm_update_hubspot_company",
+    description:
+      "Aktualisiert eine oder mehrere Properties einer HubSpot-Company. PFLICHT: vorher `crm_introspect_hubspot_company` aufrufen, um Property-Namen + Typen + Enum-Optionen zu kennen. PROPOSE-AND-CONFIRM: das Tool zeigt dem Nutzer den geplanten Diff (Vorher → Nachher) via ask_user_choice; nur bei Confirm geht der PATCH ans HubSpot-API.\n\nNach dem PATCH macht das Tool einen Fresh-GET zur Verifikation: HubSpot kann (wie Notion) HTTP 200 zurückgeben, ohne den Wert wirklich zu speichern (z. B. wenn das Pipeline-Stage zur Lifecycle-Stage nicht passt oder ein Validation-Workflow zugreift). In dem Fall wird das Tool mit `ok: false` und der Liste betroffener Properties returned — verwerfen NICHT.\n\nProperty-Namen sind die HubSpot-internen Namen (`industry`, `lifecyclestage`, NICHT 'Industry'/'Lifecycle Stage'). Bei enum-Feldern den `value` aus den Schema-Optionen verwenden, nicht das `label`. Empty-String löscht das Feld.",
+    parameters: {
+      type: "object",
+      required: ["companyId", "properties"],
+      properties: {
+        companyId: {
+          type: "string",
+          description: "HubSpot-companyId.",
+        },
+        properties: {
+          type: "object",
+          description:
+            "Property-Name → neuer Wert (alles Strings; HubSpot konvertiert intern). Beispiel: {\"lifecyclestage\": \"customer\", \"industry\": \"MANUFACTURING\"}.",
+          additionalProperties: { type: "string" },
+        },
+        rationale: {
+          type: "string",
+          description:
+            "Kurze Begründung (1 Satz), warum diese Änderung — wird dem Nutzer im Confirm-Dialog gezeigt.",
+        },
+      },
+    },
+    schema: yup
+      .object({
+        companyId: yup.string().trim().min(1).required(),
+        properties: yup
+          .object()
+          .test("at-least-one", "Mindestens eine Property setzen.", (v) =>
+            v ? Object.keys(v).length > 0 : false,
+          )
+          .required(),
+        rationale: yup.string().trim().max(500).optional(),
+      })
+      .noUnknown(true),
+    preview: (r: { applied: boolean; ok?: boolean; notApplied?: string[] }) =>
+      !r.applied
+        ? "Update verworfen"
+        : r.ok
+          ? "HubSpot aktualisiert"
+          : `Teilweise nicht übernommen: ${(r.notApplied ?? []).join(", ")}`,
+    run: async (args, ctx) => {
+      // Erst Introspect+Aktuelle-Werte holen, damit der Diff im
+      // Confirm-Dialog sinnvoll ist.
+      const intro = await introspectHubspotCompany(crm, args.companyId);
+      const schemaByName = new Map(intro.schema.map((p) => [p.name, p]));
+      const draftLines: string[] = [];
+      for (const [name, newVal] of Object.entries(args.properties)) {
+        const schema = schemaByName.get(name);
+        const current = intro.currentValues[name] ?? null;
+        const label = schema?.label ?? name;
+        const newDisplay =
+          schema?.type === "enumeration"
+            ? (schema.options.find((o) => o.value === newVal)?.label ?? newVal)
+            : newVal;
+        const oldDisplay =
+          schema?.type === "enumeration"
+            ? (schema.options.find((o) => o.value === current)?.label ??
+              current ??
+              "(leer)")
+            : (current ?? "(leer)");
+        draftLines.push(`  ${label} (${name}): ${oldDisplay} → ${newDisplay}`);
+      }
+      const rationaleBlock = args.rationale
+        ? `\n\nBegründung: ${args.rationale}`
+        : "";
+      const value = await ctx.ui.askChoice(
+        `Ich möchte folgende Änderungen in HubSpot vornehmen (Company ${args.companyId}):\n\n${draftLines.join("\n")}${rationaleBlock}`,
+        [
+          {
+            value: "apply",
+            label: "Übernehmen",
+            description: "PATCH wird an HubSpot gesendet",
+          },
+          {
+            value: "cancel",
+            label: "Verwerfen",
+            description: "Nichts ändert sich",
+          },
+        ],
+        ctx.signal,
+      );
+      if (value !== "apply") return { applied: false };
+
+      const result = await updateHubspotCompany(crm, {
+        companyId: args.companyId,
+        properties: args.properties as Record<string, string>,
+      });
+      return {
+        applied: true,
+        ok: result.ok,
+        diff: result.diff,
+        notApplied: result.notApplied,
+      };
+    },
+  });
+
   return [
     statusTool,
     connectTool,
@@ -433,5 +565,7 @@ export function buildCrmTools(deps: CrmToolDeps): Tool[] {
     enrichNowTool,
     searchHubspotTool,
     linkManualTool,
+    introspectHubspotTool,
+    updateHubspotTool,
   ];
 }

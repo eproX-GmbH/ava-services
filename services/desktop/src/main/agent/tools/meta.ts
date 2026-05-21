@@ -291,6 +291,26 @@ const KNOWN_BUNDLES: readonly ToolBundle[] = [
     queryHints: ["notion", "crm update", "datenbank"],
   },
   {
+    label: "HubSpot-CRM-Update",
+    tools: [
+      "crm_status",
+      "company_search",
+      "crm_list_links_for_company",
+      "crm_search_hubspot_companies",
+      "crm_introspect_hubspot_company",
+      "crm_update_hubspot_company",
+    ],
+    queryHints: [
+      "hubspot",
+      "lifecycle",
+      "lifecyclestage",
+      "owner",
+      "crm aktualisieren",
+      "crm ändern",
+      "crm update",
+    ],
+  },
+  {
     label: "Notion-Read",
     tools: ["notion_search", "notion_list_databases", "notion_get_page"],
     queryHints: ["notion search", "notion lesen"],
