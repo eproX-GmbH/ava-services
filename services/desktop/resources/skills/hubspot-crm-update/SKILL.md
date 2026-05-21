@@ -30,6 +30,7 @@ allowed-tools:
   - crm_update_hubspot_note
   - crm_introspect_hubspot_task
   - crm_update_hubspot_task
+  - crm_create_hubspot_company
   - crm_create_hubspot_note
   - crm_create_hubspot_task
   - crm_list_hubspot_tasks
@@ -179,6 +180,39 @@ braucht ("decision maker" vs "influencer"), das transparent sagen.
 Records selbst bleiben aber erhalten. Trotzdem im Confirm-Dialog
 deutlich machen, was geht.
 
+### Neue Company anlegen
+
+Use-Cases: „leg in HubSpot die Firma ACME GmbH an", „nimm
+beispiel.de neu auf", „füge Kunde XY zum CRM hinzu".
+
+Workflow:
+1. **Dublettencheck zuerst.** `crm_search_hubspot_companies` mit
+   Name UND Domain. Wenn ein plausibler Treffer existiert:
+   - Bei sehr klaren Übereinstimmungen (gleicher Name oder gleiche
+     Domain) dem Nutzer das transparent zeigen und EINMAL nachfragen
+     („Diese Firma existiert schon — soll ich sie aktualisieren oder
+     wirklich eine zweite anlegen?"). Default-Empfehlung: Update,
+     nicht Create.
+   - Bei nur entfernten Treffern (z. B. nur ähnlicher Name, andere
+     Domain): dem Nutzer das kurz erwähnen, dann anlegen.
+2. **Pflicht: `name`.** Domain dringend empfohlen — HubSpot
+   dedupliziert intern auch per Domain, und ohne Domain ist die
+   Company später schlechter mit Contacts/Deals zu verknüpfen.
+3. **Weitere Properties** als `properties`-Map: industry,
+   lifecyclestage, city, country, etc. Bei enum-Feldern (industry,
+   lifecyclestage) NICHT raten, sondern vorher
+   `crm_introspect_hubspot_company` auf einer beliebigen
+   existierenden Company aufrufen, um die Enum-Optionen + interne
+   Namen zu kennen. Beispiel: industry="MANUFACTURING" (value), nicht
+   "Manufacturing" (label).
+4. **`crm_create_hubspot_company` aufrufen.** Tool macht eigenen
+   Confirm-Dialog mit der vollständigen Property-Liste — keine
+   doppelte Rückfrage. Returnt die neue companyId.
+5. **Folgeaktionen** (optional): Wenn der Nutzer Contacts oder Deals
+   für die neue Firma erwähnt hat, kannst du die direkt nachziehen
+   mit `crm_associate_hubspot_objects` (bestehende Records) oder dem
+   Nutzer anbieten.
+
 ### Notizen + Aufgaben (Engagements)
 
 Beide sind erste-Klasse-HubSpot-Objekte und teilen den Engagement-
@@ -246,8 +280,14 @@ vollständiges Bild.
 
 ## Was NICHT tun
 
-- Niemals Companies, Contacts oder Deals in HubSpot neu anlegen
-  (es gibt kein Create-Tool — bewusst).
+- Companies: nur über `crm_create_hubspot_company` mit vorherigem
+  Dublettencheck anlegen. Niemals blind eine neue Company POSTen
+  wenn schon eine mit demselben Namen oder derselben Domain
+  existiert.
+- Contacts und Deals: weiterhin kein Create-Tool — bewusst weg-
+  gelassen, weil Contacts ohne Owner/Email-Validierung und Deals
+  ohne Pipeline-Routing typischerweise Müll-Records erzeugen. Wenn
+  der Nutzer das braucht, transparent sagen.
 - Niemals read-only-Felder überschreiben (z. B. `hs_object_id`,
   `createdate`, `lastmodifieddate`) — das Introspect-Tool filtert die
   raus, aber HubSpot gibt 403 wenn du es versuchst.

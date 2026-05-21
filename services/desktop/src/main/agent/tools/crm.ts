@@ -1232,6 +1232,96 @@ export function buildCrmTools(deps: CrmToolDeps): Tool[] {
     },
   });
 
+  // v0.1.269 — Company-Create (Phase H5). Bisher waren Companies/
+  // Contacts/Deals nur update-able; Create war bewusst weggelassen
+  // weil "blind eine neue Firma anlegen" ohne Duplikat-Check Risiko
+  // birgt. Mit Propose-and-Confirm + automatischer Dublettensuche
+  // (crm_search_hubspot_companies) ist es jetzt sicher genug.
+  const createCompanyTool = defineTool({
+    name: "crm_create_hubspot_company",
+    description:
+      "Legt eine NEUE Company in HubSpot an. Propose-and-Confirm via ask_user_choice. PFLICHT VORHER: crm_search_hubspot_companies aufrufen, um Dubletten zu erkennen — wenn schon eine Company mit dem Namen oder der Domain existiert, dem Nutzer das TRANSPARENT zeigen und nachfragen (Update statt Create? oder ist das ein anderer Account?). Mindestens `name` ist Pflicht; alle weiteren Properties (domain, industry, lifecyclestage, …) sind optional und werden 1:1 ans HubSpot-API gereicht. Bei enum-Feldern den value, nicht das label.",
+    parameters: {
+      type: "object",
+      required: ["name"],
+      properties: {
+        name: {
+          type: "string",
+          description: "Firmenname (Pflicht).",
+        },
+        domain: {
+          type: "string",
+          description:
+            "Primäre Website-Domain (ohne https://, z. B. 'kunde.de'). Optional aber dringend empfohlen — HubSpot dedupliziert intern auch per Domain.",
+        },
+        properties: {
+          type: "object",
+          description:
+            "Zusätzliche HubSpot-Properties (Property-Name → String-Wert). Schema vorher via crm_introspect_hubspot_company auf einer bestehenden Company lesen, um Property-Namen + Enum-Optionen zu kennen.",
+          additionalProperties: { type: "string" },
+        },
+        rationale: {
+          type: "string",
+          description: "Begründung (1 Satz) für den Confirm-Dialog.",
+        },
+      },
+    },
+    schema: yup
+      .object({
+        name: yup.string().trim().min(1).max(500).required(),
+        domain: yup.string().trim().max(500).optional(),
+        properties: yup.object().optional(),
+        rationale: yup.string().trim().max(500).optional(),
+      })
+      .noUnknown(true),
+    preview: (r: { applied: boolean; id?: string; error?: string }) =>
+      r.applied
+        ? `Company angelegt (${r.id})`
+        : r.error
+          ? `Fehler: ${r.error}`
+          : "Company nicht angelegt",
+    run: async (args, ctx) => {
+      const extraProps = (args.properties ?? {}) as Record<string, string>;
+      const props: Record<string, string> = { name: args.name };
+      if (args.domain) props.domain = args.domain;
+      for (const [k, v] of Object.entries(extraProps)) {
+        if (k === "name" || k === "domain") continue; // schon gesetzt
+        props[k] = v;
+      }
+      const propLines = Object.entries(props)
+        .map(([k, v]) => `  ${k}: ${v}`)
+        .join("\n");
+      const rationaleBlock = args.rationale
+        ? `\n\nBegründung: ${args.rationale}`
+        : "";
+      const value = await ctx.ui.askChoice(
+        `Ich möchte folgende NEUE Company in HubSpot anlegen:\n\n${propLines}${rationaleBlock}\n\nFalls die Firma bereits existiert, sag bitte Bescheid — sonst gibt es ein Duplikat.`,
+        [
+          {
+            value: "create",
+            label: "Anlegen",
+            description: "POST wird ans HubSpot-API gesendet",
+          },
+          { value: "cancel", label: "Verwerfen" },
+        ],
+        ctx.signal,
+      );
+      if (value !== "create") return { applied: false };
+      try {
+        const result = await createHubspotObject(crm, {
+          objectType: "companies",
+          properties: props,
+        });
+        return { applied: true, id: result.id };
+      } catch (err) {
+        return {
+          applied: false,
+          error: err instanceof Error ? err.message : String(err),
+        };
+      }
+    },
+  });
+
   return [
     statusTool,
     connectTool,
@@ -1257,6 +1347,7 @@ export function buildCrmTools(deps: CrmToolDeps): Tool[] {
     listAssociationsTool,
     associateTool,
     disassociateTool,
+    createCompanyTool,
     createNoteTool,
     createTaskTool,
     listTasksTool,
