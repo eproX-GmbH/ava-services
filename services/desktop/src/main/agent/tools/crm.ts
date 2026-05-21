@@ -62,6 +62,20 @@ export interface CrmToolDeps {
 const CRM_LINK_TYPES = ["HUBSPOT", "SALESFORCE", "DYNAMICS"] as const;
 type CrmLinkType = (typeof CRM_LINK_TYPES)[number];
 
+// v0.1.285 — Modul-Scope, weil buildIntrospectUpdate die Map im
+// Template-String referenziert und mehrfach VOR der Deklaration der
+// inneren Const (so wie sie in v0.1.283 platziert war) aufgerufen
+// wurde. TDZ-Crash beim App-Start in v0.1.284 ("Cannot access
+// 'SINGULAR' before initialization"). Jetzt sicher zugänglich für
+// alle Aufrufer.
+const SINGULAR: Record<HubspotObjectType, string> = {
+  companies: "company",
+  contacts: "contact",
+  deals: "deal",
+  notes: "note",
+  tasks: "task",
+};
+
 export function buildCrmTools(deps: CrmToolDeps): Tool[] {
   const { crm, gateway, getBearer, gatewayUrl } = deps;
 
@@ -796,18 +810,11 @@ export function buildCrmTools(deps: CrmToolDeps): Tool[] {
   ] as const;
   const ASSOC_TARGET_VALUES = ["companies", "contacts", "deals"] as const;
 
-  // v0.1.283 — Sauberer Plural→Singular-Mapping. Vorher hieß es
-  // `objectType.replace(/s$/, "")` — was für "companies" → "companie"
-  // produziert hat (statt "company"). Resultat: das delete-Tool hieß
-  // tatsächlich crm_delete_hubspot_companie, die Skill-Allowlist
-  // erwartete aber crm_delete_hubspot_company → Tool unaufrufbar.
-  const SINGULAR: Record<HubspotObjectType, string> = {
-    companies: "company",
-    contacts: "contact",
-    deals: "deal",
-    notes: "note",
-    tasks: "task",
-  };
+  // SINGULAR ist auf Modul-Scope hochgezogen (siehe oben in dieser
+  // Datei). Vorher lebte es hier im buildCrmTools-Scope, wurde aber
+  // von buildIntrospectUpdate vor der Deklaration referenziert →
+  // ReferenceError "Cannot access 'SINGULAR' before initialization"
+  // beim App-Start (v0.1.283 Crash-Loop).
 
   const listAssociationsTool = defineTool({
     name: "crm_list_hubspot_associations",
