@@ -17,6 +17,7 @@ import {
   readFileSync,
   readdirSync,
   statSync,
+  writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
 import { SkillStore } from "./store";
@@ -124,10 +125,99 @@ export function vendorBundledSkills(
     if (!existsSync(src)) continue;
     const targetDir = join(userDir, entry);
     const target = join(targetDir, "SKILL.md");
-    if (existsSync(target)) continue;
+    // v0.1.281 — Sidecar-File `.vendored-hash` mit dem Content-Hash der
+    // ZULETZT vendored-Version. Auf nachfolgenden Boots erlaubt es uns
+    // zu unterscheiden:
+    //   - User hat das File nicht angefasst (current-hash == sidecar-hash)
+    //     → wir DÜRFEN mit der neuen Built-in-Version überschreiben.
+    //   - User hat editiert (current-hash != sidecar-hash)
+    //     → respektieren, NICHT überschreiben.
+    // Vorher (v0.1.280 und älter) wurde NIE überschrieben, sobald das
+    // Target einmal existierte — damit klebten Built-in-Skill-Updates
+    // hartnäckig im userData und neue Releases haben den Effekt nicht
+    // bekommen (Bug-Report v0.1.279: HubSpot-Create-Tool angeblich
+    // nicht im Skill, obwohl Build seit v0.1.269 dabei war).
+    const sidecar = join(targetDir, ".vendored-hash");
+    const bundledRaw = (() => {
+      try {
+        return readFileSync(src, "utf8");
+      } catch {
+        return null;
+      }
+    })();
+    if (bundledRaw == null) continue;
+    const bundledHash = createHash("sha256")
+      .update(bundledRaw, "utf8")
+      .digest("hex");
+
+    let shouldWrite = false;
+    if (!existsSync(target)) {
+      shouldWrite = true;
+    } else {
+      try {
+        const currentRaw = readFileSync(target, "utf8");
+        const currentHash = createHash("sha256")
+          .update(currentRaw, "utf8")
+          .digest("hex");
+        if (currentHash === bundledHash) {
+          // Bereits identisch — kein Write, aber Sidecar synchron halten
+          if (!existsSync(sidecar)) {
+            try {
+              writeFileSync(sidecar, bundledHash, { mode: 0o644 });
+            } catch {
+              /* Sidecar ist optional */
+            }
+          }
+          continue;
+        }
+        const sidecarHash = existsSync(sidecar)
+          ? readFileSync(sidecar, "utf8").trim()
+          : null;
+        if (sidecarHash != null && sidecarHash === currentHash) {
+          // User hat NICHT editiert (current matched last-vendored).
+          // → Safe overwrite mit neuer Built-in-Version.
+          shouldWrite = true;
+        } else if (sidecarHash == null) {
+          // Legacy: vor v0.1.281 vendorisiert, kein Sidecar. Wir
+          // KÖNNEN nicht sicher unterscheiden ob User editiert hat —
+          // pragmatischer Kompromiss: aktuelle Datei als
+          // .legacy-backup-<timestamp> sichern, dann mit neuer
+          // Built-in-Version überschreiben. Future-Runs nutzen
+          // sidecar-Logik und werden user-edit-respektierend.
+          try {
+            const ts = new Date().toISOString().replace(/[:.]/g, "-");
+            const backup = join(targetDir, `SKILL.md.legacy-backup-${ts}`);
+            copyFileSync(target, backup);
+            console.log(
+              `[skills] legacy skill '${entry}' gesichert nach ${backup}, wird mit Built-in-Version aktualisiert`,
+            );
+          } catch (err) {
+            console.warn(
+              `[skills] legacy-backup für '${entry}' fehlgeschlagen, force-update trotzdem: ${
+                err instanceof Error ? err.message : String(err)
+              }`,
+            );
+          }
+          shouldWrite = true;
+        } else {
+          // current != sidecar → User hat editiert. Respektieren.
+          shouldWrite = false;
+        }
+      } catch {
+        shouldWrite = false;
+      }
+    }
+
+    if (!shouldWrite) continue;
+
     try {
       mkdirSync(targetDir, { recursive: true });
       copyFileSync(src, target);
+      try {
+        writeFileSync(sidecar, bundledHash, { mode: 0o644 });
+      } catch {
+        /* Sidecar-Write nicht kritisch; nächster Lauf macht's evtl. */
+      }
       console.log(`[skills] vendored bundled skill '${entry}' → ${target}`);
       // S4 — auto-trust the vendored copy by its initial content
       // hash. The user implicitly trusts whatever ships with the
@@ -135,13 +225,9 @@ export function vendorBundledSkills(
       // the loader marks the skill `"trusted"` straight away.
       if (trustStore) {
         try {
-          const raw = readFileSync(target, "utf8");
-          const hash = createHash("sha256")
-            .update(raw, "utf8")
-            .digest("hex");
           let allowedTools: string[] = [];
           try {
-            const parsed = parseSkillFile(raw);
+            const parsed = parseSkillFile(bundledRaw);
             if (parsed.frontmatter && typeof parsed.frontmatter === "object") {
               const fm = parsed.frontmatter as Record<string, unknown>;
               const list = fm["allowed-tools"];
@@ -156,7 +242,7 @@ export function vendorBundledSkills(
             // be parsed (the loader will surface the schema error on
             // next reload).
           }
-          trustStore.trust(entry, hash, allowedTools);
+          trustStore.trust(entry, bundledHash, allowedTools);
         } catch (err) {
           console.warn(
             `[skills] Auto-Trust für '${entry}' fehlgeschlagen: ${
