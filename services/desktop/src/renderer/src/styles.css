@@ -6755,17 +6755,32 @@ a.heartbeat-decision__company:hover {
   .topbar__submenu-item--focused { background: rgba(0,192,167,0.18); }
 }
 
-/* Settings-Tab Hover-Popover (v0.1.280) */
+/* Settings-Tab Hover-Popover (v0.1.280, gefixt v0.1.286) */
 .settings-shell__tab-wrap { position: relative; }
 .settings-shell__tab--has-sub {
   display: flex !important; justify-content: space-between; align-items: center;
 }
 .settings-shell__chev { opacity: 0.5; font-size: 1rem; }
 .settings-shell__sub-popover {
-  position: absolute; top: 0; left: 100%; margin-left: 4px;
-  background: var(--surface, #fff); border: 1px solid var(--border, #d0d4d9);
-  border-radius: 6px; box-shadow: 0 6px 16px rgba(0,0,0,0.14);
-  min-width: 220px; padding: 4px; z-index: 1000;
+  position: absolute; top: 0; left: 100%;
+  /* v0.1.286 — KEINE margin-left mehr. Vorher 4px Gap → Maus fiel beim
+     Übergang vom Tab zum Popover in eine Dead-Zone, das löste
+     mouseLeave aus und Popover ging zu. Stattdessen padding-left=10px
+     auf den Container — visueller Versatz bleibt erhalten, aber die
+     ganze Fläche ist hover-bar (Maus bleibt im Wrapper). */
+  padding: 4px 4px 4px 10px;
+  /* v0.1.286 — Hartes Opaque-Background statt --surface-Variable. Im
+     manuellen Dark-Mode (html.dark) ist --surface oft transparent/
+     rgba — Resultat war ein „Durchblick" auf den Tab-Bar-Header
+     hinter dem Popover. */
+  background: #ffffff;
+  border: 1px solid var(--border, #d0d4d9);
+  border-radius: 6px;
+  box-shadow: 0 6px 16px rgba(0,0,0,0.14);
+  min-width: 220px;
+  /* v0.1.286 — z-index hochgezogen für den Fall, dass ein Banner /
+     Overlay drüber kommen will. */
+  z-index: 2000;
   display: flex; flex-direction: column;
 }
 .settings-shell__sub-item {
@@ -6780,14 +6795,26 @@ a.heartbeat-decision__company:hover {
   background: rgba(0,192,167,0.18); font-weight: 600;
 }
 
-@media (prefers-color-scheme: dark) {
-  .settings-shell__sub-popover {
-    background: #1f2937; border-color: rgba(255,255,255,0.10);
-    box-shadow: 0 6px 18px rgba(0,0,0,0.45);
-  }
-  .settings-shell__sub-item { color: #e5e7eb; }
-  .settings-shell__sub-item:hover { background: rgba(0,192,167,0.18); }
+/* v0.1.286 — Dark-Mode an html.dark statt prefers-color-scheme.
+   Der Tri-State-Toggle in lib/theme.ts setzt root.classList.add('dark'),
+   OS-Preference reflektiert nur der "system"-Mode des Toggles. */
+html.dark .settings-shell__sub-popover {
+  background: #1f2937;
+  border-color: rgba(255,255,255,0.12);
+  box-shadow: 0 6px 18px rgba(0,0,0,0.45);
 }
+html.dark .settings-shell__sub-item { color: #e5e7eb; }
+html.dark .settings-shell__sub-item:hover { background: rgba(0,192,167,0.18); }
+
+/* Ditto für das Top-Nav-Submenü aus v0.1.276 — gleicher Bug,
+   gleiche Klassen-basierte Lösung. */
+html.dark .topbar__submenu {
+  background: #1f2937;
+  border-color: rgba(255,255,255,0.12);
+}
+html.dark .topbar__submenu-item { color: #e5e7eb; }
+html.dark .topbar__submenu-item:hover,
+html.dark .topbar__submenu-item--focused { background: rgba(0,192,167,0.18); }
 
 /* ===========================================================================
    Triage-Inbox v2 (v0.1.282) — Outlook-orientiertes Layout
