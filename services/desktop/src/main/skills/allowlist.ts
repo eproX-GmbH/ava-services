@@ -63,19 +63,33 @@ export type AllowlistCheck =
   | { ok: true }
   | { ok: false; message: string };
 
-/** v0.1.261 — Meta-Tools, die NIE durch die Skill-Allowlist blockiert
- *  werden dürfen, weil sonst kein Bootstrap mehr möglich ist (z. B.
- *  Skill aktiv → tool_search liefert "verboten" → AVA kann das richtige
- *  Werkzeug nicht mal finden). Spiegelt ALWAYS_ON_CORE_TOOL_NAMES aus
- *  tools/meta.ts — bewusst hier hardcoded statt importiert, weil
- *  allowlist.ts dependency-free bleiben soll (Test-Imports via tsx). */
+/** v0.1.261 — Tools, die NIE durch die Skill-Allowlist blockiert
+ *  werden dürfen. Zwei Kategorien:
+ *
+ *  (a) Meta/Bootstrap: ohne die kann AVA bei aktivem Skill nicht mal
+ *      andere Tools entdecken oder nachfragen.
+ *
+ *  (b) Cross-cutting Utilities (v0.1.272+): Operationen, die der Nutzer
+ *      parallel zur Skill-Hauptaktion auslösen kann ("schreib mir die
+ *      Mail UND merk dir meine Adresse"). Der aktive Skill weiß nicht
+ *      vorher, welche Side-Asks der Nutzer einstreut — also lassen wir
+ *      sie generell durch.
+ *
+ *  Spiegelt ALWAYS_ON_CORE_TOOL_NAMES + Memory-Tools aus tools/. Bewusst
+ *  hier hardcoded statt importiert, weil allowlist.ts dependency-free
+ *  bleiben soll (Test-Imports via tsx).
+ */
 const SKILL_ALLOWLIST_BYPASS = new Set<string>([
+  // (a) Bootstrap
   "tool_search",
   "tool_load",
   "skill_search",
   "skill_get",
   "ask_user_choice",
   "ask_user_text",
+  // (b) Cross-cutting Utilities — Memory
+  "remember",
+  "recall_memory",
 ]);
 
 export function checkSkillAllowlist(
