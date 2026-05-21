@@ -42,7 +42,21 @@ disable-model-invocation: false
 user-invocable: true
 ---
 
-# HubSpot-CRM-Update (festes 4-Schritt-Playbook)
+# HubSpot-CRM-Update + Create (festes 4-Schritt-Playbook)
+
+**Verfügbare Schreib-Operationen** — KEINE davon ist "nicht verfügbar",
+auch wenn der Skill-Name "Update" sagt:
+
+- Companies: search · introspect · **update** · **CREATE** (`crm_create_hubspot_company`) · associate / disassociate
+- Contacts:  search · introspect · update · associate
+- Deals:     search · introspect · update · associate
+- Engagements: **create note** (`crm_create_hubspot_note`), **create task**
+  (`crm_create_hubspot_task`), list, update, complete task
+
+Wenn du nicht sicher bist, ob ein Tool für deinen Use-Case existiert,
+ruf `tool_search` mit passenden Keywords auf — nicht raten, nicht
+„kann ich nicht" antworten ohne vorher zu suchen.
+
 
 Du arbeitest mit HubSpot — Companies, Contacts oder Deals. Halte dich
 strikt an die Reihenfolge. Frag den Nutzer NICHT zurück, solange du

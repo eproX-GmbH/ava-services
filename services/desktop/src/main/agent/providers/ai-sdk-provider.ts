@@ -515,78 +515,105 @@ export class AiSdkProvider extends EventEmitter implements LlmProvider {
  *    that some vendors (OpenAI) historically returned.
  */
 function toModelMessages(messages: AgentMessage[]): ModelMessage[] {
-  return messages.map((m): ModelMessage => {
-    if (m.role === "tool") {
-      return {
-        role: "tool",
-        content: [
-          {
-            type: "tool-result",
-            toolCallId: m.toolCallId ?? "",
-            toolName: extractToolNameFromContent(m.content),
-            output: { type: "text", value: m.content },
-          },
-        ],
-      };
-    }
-    if (m.role === "system") {
-      return { role: "system", content: m.content };
-    }
-    if (m.role === "user") {
-      // v0.1.257 — wenn der Turn Bilder enthält, Multipart-Content. Die
-      // AI-SDK normalisiert das pro-Provider (Anthropic → image_url,
-      // OpenAI → image_url, Google → inlineData, …). Provider ohne
-      // Vision lassen die Bilder im SDK-Adapter durchrutschen und
-      // ignorieren sie — wir gaten zusätzlich im Renderer (D13).
-      if (m.images && m.images.length > 0) {
-        const parts: Array<
-          | { type: "text"; text: string }
-          | { type: "image"; image: string; mediaType?: string }
-        > = [];
-        if (m.content && m.content.length > 0) {
-          parts.push({ type: "text", text: m.content });
-        }
-        for (const img of m.images) {
-          parts.push({
-            type: "image",
-            image: `data:${img.mimeType};base64,${img.base64}`,
-            mediaType: img.mimeType,
-          });
-        }
-        return { role: "user", content: parts };
+  // v0.1.277 — Anti-corruption pass. Anthropic ist strikt: jeder text-
+  // Content-Block muss non-empty sein, sonst lehnt das API mit
+  // "messages: text content blocks must be non-empty" ab und der
+  // ganze Turn schlägt fehl. Quellen für leere Texte in unserer History:
+  //   - Abort mitten im Stream (assistantContent="" + ggf. toolCalls)
+  //   - Tool-Result, dessen run() {} oder null returnt
+  //   - Defekte alte Transcripts aus früheren Versionen
+  // Strategie: (a) No-Op-Assistant-Turns rauswerfen, (b) für alle anderen
+  // einen Platzhalter einsetzen damit Anthropic nicht 400t.
+  const PLACEHOLDER = "[leer]";
+  const safe = (s: string | null | undefined): string => {
+    if (typeof s !== "string") return PLACEHOLDER;
+    return s.trim().length > 0 ? s : PLACEHOLDER;
+  };
+
+  return messages
+    .filter((m) => {
+      if (m.role !== "assistant") return true;
+      const hasContent =
+        typeof m.content === "string" && m.content.trim().length > 0;
+      const hasTools = m.toolCalls && m.toolCalls.length > 0;
+      // Komplett leere Assistant-Messages (kein Text, keine Tools) sind
+      // No-Op-Turns aus abgebrochenen Streams — raus damit.
+      return hasContent || hasTools;
+    })
+    .map((m): ModelMessage => {
+      if (m.role === "tool") {
+        return {
+          role: "tool",
+          content: [
+            {
+              type: "tool-result",
+              toolCallId: m.toolCallId ?? "",
+              toolName: extractToolNameFromContent(m.content),
+              output: { type: "text", value: safe(m.content) },
+            },
+          ],
+        };
       }
-      return { role: "user", content: m.content };
-    }
-    // assistant
-    if (!m.toolCalls || m.toolCalls.length === 0) {
-      return { role: "assistant", content: m.content };
-    }
-    const parts: Array<
-      | { type: "text"; text: string }
-      | {
-          type: "tool-call";
-          toolCallId: string;
-          toolName: string;
-          input: Record<string, unknown>;
+      if (m.role === "system") {
+        return { role: "system", content: safe(m.content) };
+      }
+      if (m.role === "user") {
+        // v0.1.257 — wenn der Turn Bilder enthält, Multipart-Content. Die
+        // AI-SDK normalisiert das pro-Provider (Anthropic → image_url,
+        // OpenAI → image_url, Google → inlineData, …). Provider ohne
+        // Vision lassen die Bilder im SDK-Adapter durchrutschen und
+        // ignorieren sie — wir gaten zusätzlich im Renderer (D13).
+        if (m.images && m.images.length > 0) {
+          const parts: Array<
+            | { type: "text"; text: string }
+            | { type: "image"; image: string; mediaType?: string }
+          > = [];
+          if (m.content && m.content.trim().length > 0) {
+            parts.push({ type: "text", text: m.content });
+          }
+          for (const img of m.images) {
+            parts.push({
+              type: "image",
+              image: `data:${img.mimeType};base64,${img.base64}`,
+              mediaType: img.mimeType,
+            });
+          }
+          // Wenn kein text-Part UND keine Images (theoretisch unmöglich
+          // weil images.length > 0 hier), kein leerer Content.
+          return { role: "user", content: parts };
         }
-    > = [];
-    if (m.content && m.content.length > 0) {
-      parts.push({ type: "text", text: m.content });
-    }
-    for (const tc of m.toolCalls) {
-      const input =
-        typeof tc.args === "string"
-          ? safeJsonParseObject(tc.args)
-          : ((tc.args ?? {}) as Record<string, unknown>);
-      parts.push({
-        type: "tool-call",
-        toolCallId: tc.id,
-        toolName: tc.name,
-        input,
-      });
-    }
-    return { role: "assistant", content: parts };
-  });
+        return { role: "user", content: safe(m.content) };
+      }
+      // assistant
+      if (!m.toolCalls || m.toolCalls.length === 0) {
+        return { role: "assistant", content: safe(m.content) };
+      }
+      const parts: Array<
+        | { type: "text"; text: string }
+        | {
+            type: "tool-call";
+            toolCallId: string;
+            toolName: string;
+            input: Record<string, unknown>;
+          }
+      > = [];
+      if (m.content && m.content.trim().length > 0) {
+        parts.push({ type: "text", text: m.content });
+      }
+      for (const tc of m.toolCalls) {
+        const input =
+          typeof tc.args === "string"
+            ? safeJsonParseObject(tc.args)
+            : ((tc.args ?? {}) as Record<string, unknown>);
+        parts.push({
+          type: "tool-call",
+          toolCallId: tc.id,
+          toolName: tc.name,
+          input,
+        });
+      }
+      return { role: "assistant", content: parts };
+    });
 }
 
 function safeJsonParseObject(raw: string): Record<string, unknown> {
