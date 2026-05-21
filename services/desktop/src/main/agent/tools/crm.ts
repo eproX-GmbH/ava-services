@@ -591,8 +591,8 @@ export function buildCrmTools(deps: CrmToolDeps): Tool[] {
     idParamHint: string,
   ): { introspect: Tool; update: Tool } => {
     const introspect = defineTool({
-      name: `crm_introspect_hubspot_${objectType.replace(/s$/, "")}`,
-      description: `Liest das Property-Schema einer HubSpot-${objectLabel} UND die aktuellen Werte. Nutze das vor crm_update_hubspot_${objectType.replace(/s$/, "")}, sobald du die HubSpot-${objectLabel}-ID hast (${idParamHint}). Returned: für jedes editierbare Feld den Property-Namen, Label, Type, enum-Optionen (mit label + value), Beschreibung und aktueller Wert. Read-only/system-Felder sind rausgefiltert.`,
+      name: `crm_introspect_hubspot_${SINGULAR[objectType]}`,
+      description: `Liest das Property-Schema einer HubSpot-${objectLabel} UND die aktuellen Werte. Nutze das vor crm_update_hubspot_${SINGULAR[objectType]}, sobald du die HubSpot-${objectLabel}-ID hast (${idParamHint}). Returned: für jedes editierbare Feld den Property-Namen, Label, Type, enum-Optionen (mit label + value), Beschreibung und aktueller Wert. Read-only/system-Felder sind rausgefiltert.`,
       parameters: {
         type: "object",
         required: ["objectId"],
@@ -615,8 +615,8 @@ export function buildCrmTools(deps: CrmToolDeps): Tool[] {
     });
 
     const update = defineTool({
-      name: `crm_update_hubspot_${objectType.replace(/s$/, "")}`,
-      description: `Aktualisiert eine oder mehrere Properties einer HubSpot-${objectLabel}. PFLICHT: vorher crm_introspect_hubspot_${objectType.replace(/s$/, "")} aufrufen. PROPOSE-AND-CONFIRM: Tool zeigt Diff via ask_user_choice. Fresh-GET-Verify nach PATCH (HubSpot kann HTTP 200 liefern ohne zu speichern, z. B. bei Workflow-Validation). Property-Namen = HubSpot-interne Namen; bei enums den value statt label.`,
+      name: `crm_update_hubspot_${SINGULAR[objectType]}`,
+      description: `Aktualisiert eine oder mehrere Properties einer HubSpot-${objectLabel}. PFLICHT: vorher crm_introspect_hubspot_${SINGULAR[objectType]} aufrufen. PROPOSE-AND-CONFIRM: Tool zeigt Diff via ask_user_choice. Fresh-GET-Verify nach PATCH (HubSpot kann HTTP 200 liefern ohne zu speichern, z. B. bei Workflow-Validation). Property-Namen = HubSpot-interne Namen; bei enums den value statt label.`,
       parameters: {
         type: "object",
         required: ["objectId", "properties"],
@@ -795,6 +795,19 @@ export function buildCrmTools(deps: CrmToolDeps): Tool[] {
     "tasks",
   ] as const;
   const ASSOC_TARGET_VALUES = ["companies", "contacts", "deals"] as const;
+
+  // v0.1.283 — Sauberer Plural→Singular-Mapping. Vorher hieß es
+  // `objectType.replace(/s$/, "")` — was für "companies" → "companie"
+  // produziert hat (statt "company"). Resultat: das delete-Tool hieß
+  // tatsächlich crm_delete_hubspot_companie, die Skill-Allowlist
+  // erwartete aber crm_delete_hubspot_company → Tool unaufrufbar.
+  const SINGULAR: Record<HubspotObjectType, string> = {
+    companies: "company",
+    contacts: "contact",
+    deals: "deal",
+    notes: "note",
+    tasks: "task",
+  };
 
   const listAssociationsTool = defineTool({
     name: "crm_list_hubspot_associations",
@@ -1663,7 +1676,7 @@ export function buildCrmTools(deps: CrmToolDeps): Tool[] {
   // löscht.
   const buildDeleteTool = (objectType: HubspotObjectType, label: string): Tool => {
     return defineTool({
-      name: `crm_delete_hubspot_${objectType.replace(/s$/, "")}`,
+      name: `crm_delete_hubspot_${SINGULAR[objectType]}`,
       description: `Löscht (= archiviert) einen HubSpot-${label}. PROPOSE-AND-CONFIRM via ask_user_choice mit Record-Vorschau. HubSpot stellt den Record 90 Tage lang wieder her — danach endgültig weg. Bei Companies/Contacts/Deals werden Verknüpfungen automatisch gelöst, die verbundenen Records selbst bleiben erhalten.`,
       parameters: {
         type: "object",

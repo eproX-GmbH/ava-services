@@ -457,15 +457,41 @@ export interface CreateResult {
   raw: Record<string, unknown>;
 }
 
-/** Default-Association-Type-IDs für Notes/Tasks → Companies/Contacts/Deals.
- *  Aus HubSpot's Association-Type-Catalog (v4) — stabil dokumentiert,
- *  hier hardcoded weil ein Live-Lookup pro Create zu teuer wäre. */
-const NOTE_TASK_DEFAULT_TYPE_IDS: Record<HubspotObjectType, number | null> = {
-  companies: 190, // note→company, task→company
-  contacts: 202, // note→contact, task→contact
-  deals: 214, // note→deal, task→deal
-  notes: null,
-  tasks: null,
+/** Default-Association-Type-IDs aus HubSpot v4 — DIRECTIONAL (from→to).
+ *  Aus dem stabil dokumentierten HUBSPOT_DEFINED-Catalog hardcoded,
+ *  Live-Lookup pro Create wäre zu teuer.
+ *
+ *  v0.1.283 — vorher hatten wir nur NOTE_TASK_DEFAULT_TYPE_IDS, das
+ *  fälschlich auch für Contact→Company-Inline-Assoc beim Contact-Create
+ *  genommen wurde. Resultat: HubSpot warf "invalid from object type 0-1
+ *  for associations to be created. expected: 0-46. For definition 0-190".
+ *  Type 190 ist Note→Company (FROM=note), nicht Contact→Company. Jetzt
+ *  korrekt directional getrennt. */
+const DEFAULT_ASSOC_TYPE_ID: Partial<
+  Record<HubspotObjectType, Partial<Record<HubspotObjectType, number>>>
+> = {
+  contacts: {
+    companies: 1, // contact_to_company (primary)
+    deals: 3, // contact_to_deal
+  },
+  companies: {
+    contacts: 2, // company_to_contact
+    deals: 5, // company_to_deal
+  },
+  deals: {
+    contacts: 4, // deal_to_contact
+    companies: 6, // deal_to_company
+  },
+  notes: {
+    companies: 190, // note_to_company
+    contacts: 202, // note_to_contact
+    deals: 214, // note_to_deal
+  },
+  tasks: {
+    companies: 192, // task_to_company
+    contacts: 204, // task_to_contact
+    deals: 216, // task_to_deal
+  },
 };
 
 export async function createHubspotObject(
@@ -481,10 +507,11 @@ export async function createHubspotObject(
 
   if (input.associations && input.associations.length > 0) {
     body.associations = input.associations.map((a) => {
-      const typeId = NOTE_TASK_DEFAULT_TYPE_IDS[a.toObjectType];
+      const typeId =
+        DEFAULT_ASSOC_TYPE_ID[input.objectType]?.[a.toObjectType];
       if (typeId == null) {
         throw new Error(
-          `Keine Default-Association-Type-ID für ${a.toObjectType} bekannt.`,
+          `Keine Default-Association-Type-ID für ${input.objectType} → ${a.toObjectType} bekannt.`,
         );
       }
       return {

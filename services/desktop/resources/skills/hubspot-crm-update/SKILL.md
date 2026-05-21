@@ -173,6 +173,32 @@ Status=COMPLETED + completion_date.
 
 **Update/Delete**: wie üblich.
 
+## HubSpot Auto-Magic (vorsicht: Side-Effects)
+
+HubSpot legt bei einem Contact-Create AUTOMATISCH eine Company an, wenn
+die E-Mail-Domain (`kluck@herbst.de` → `herbst.de`) zu keiner bestehenden
+Company passt. Selbst wenn du beim Contact-Create eine
+`linkToHubspotCompanyId` angibst, kann HubSpot zusätzlich eine zweite
+Company aus der E-Mail-Domain erzeugen.
+
+Vorgehensweise um das zu vermeiden:
+
+1. **Vor jedem Contact-Create**: `crm_search_hubspot_companies` mit der
+   E-Mail-Domain (z. B. "herbst.de"). Wenn keine Company da ist und du
+   eine andere Company für den Contact verknüpfen willst (z. B. der
+   Contact arbeitet als Externer für einen Kunden), warne den Nutzer
+   transparent: "HubSpot wird vermutlich automatisch eine zweite
+   Company aus der E-Mail-Domain anlegen. Soll ich die hinterher
+   löschen?"
+2. **Nach jedem Contact-Create**: `crm_search_hubspot_companies` mit
+   der E-Mail-Domain erneut prüfen. Wenn eine neue Company aufgetaucht
+   ist (die du nicht erwartet hast), dem Nutzer das melden und
+   `crm_delete_hubspot_company` anbieten.
+
+Best-Case-Vermeidung: wenn der Contact zur bekannten Company gehört,
+empfiehlt sich oft eine Contact-Search NACH dem Create, um zu
+verifizieren dass NUR die intended Company verknüpft ist (nicht zwei).
+
 ## Spezialfälle
 
 ### Owner ändern

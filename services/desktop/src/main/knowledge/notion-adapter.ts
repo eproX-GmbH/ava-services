@@ -623,7 +623,63 @@ export class NotionAdapter implements KnowledgeAdapter {
       "POST",
       body,
     );
-    return this.getItem(created.id);
+
+    // v0.1.283 — Verify-after analog v0.1.255 updateItem-Fix. Notion
+    // hat in der Vergangenheit silent no-op'd auf Property-Writes (HTTP
+    // 200 zurück, aber serverseitig keine Werte gespeichert). Beim
+    // Create ist das genauso möglich: Page wird angelegt, aber alle
+    // properties bleiben leer. Fresh-GET, Property-für-Property Vergleich
+    // gegen das was wir intended haben — wenn Diskrepanz, throw mit
+    // Diagnose statt fake-Erfolg an den Agenten weiterzureichen.
+    const fresh = await this.getItem(created.id);
+    const intendedProps = content.properties ?? {};
+    const intendedKeys = Object.keys(intendedProps);
+    if (intendedKeys.length > 0) {
+      const freshProps = (fresh.properties ?? {}) as Record<string, unknown>;
+      const notApplied: string[] = [];
+      for (const key of intendedKeys) {
+        const got = freshProps[key];
+        // Pragmatischer "leer"-Check: null/undefined/empty-string/empty-array
+        // gelten als "nicht angekommen".
+        const isEmpty =
+          got == null ||
+          got === "" ||
+          (Array.isArray(got) && got.length === 0);
+        if (isEmpty) notApplied.push(key);
+      }
+      if (notApplied.length === intendedKeys.length) {
+        throw Object.assign(
+          new Error(
+            `Notion hat die Seite angelegt (id=${created.id}), aber KEINE Properties persistiert. ` +
+              `Property-Map-Issue oder Schema-Mismatch — die intended Werte (${intendedKeys.join(", ")}) ` +
+              `kommen alle als leer zurück. Häufige Ursachen: Property-Namen passen nicht exakt zum DB-Schema ` +
+              `(Groß-/Kleinschreibung, Umlaute), oder die Werte hatten ein falsches Format. ` +
+              `Bitte notion_introspect_database neu lesen und die EXAKTEN Property-Namen + Typen verwenden.`,
+          ),
+          {
+            code: "notion_create_silent_noop",
+            createdId: created.id,
+            intendedKeys,
+            notApplied,
+          },
+        );
+      }
+      if (notApplied.length > 0) {
+        // Teilweise no-op — page erstellt, einige Properties drin, andere
+        // nicht. Wir geben das fresh-Item zurück (damit der Agent die
+        // page-id weiter benutzen kann) und hängen die Diagnose an.
+        const itemWithWarn = fresh as KnowledgeItem & {
+          warnings?: string[];
+        };
+        itemWithWarn.warnings = [
+          ...(itemWithWarn.warnings ?? []),
+          `Properties teilweise nicht persistiert: ${notApplied.join(", ")}. ` +
+            `Bitte notion_update_page mit page-id ${created.id} und korrigierten Werten nachziehen.`,
+        ];
+        return itemWithWarn;
+      }
+    }
+    return fresh;
   }
 
   async introspectSchema(containerId?: string | null): Promise<KnowledgeSchema> {
