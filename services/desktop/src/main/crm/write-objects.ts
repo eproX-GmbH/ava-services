@@ -1,0 +1,450 @@
+// v0.1.264 — HubSpot Object Write-Pfade (Phase H, generalisiert).
+//
+// Ersetzt write-companies.ts. Die ursprüngliche Implementierung war
+// hartcoded für "companies"; jetzt parametrisiert über objectType
+// ("companies" | "contacts" | "deals"), weil die HubSpot-API-Pfade
+// und Schema-Behandlung für alle drei Object-Types nahezu identisch
+// sind:
+//
+//   /crm/v3/properties/{objectType}      → Schema
+//   /crm/v3/objects/{objectType}/{id}    → GET/PATCH
+//
+// Backward-compat: die alten introspectHubspotCompany /
+// updateHubspotCompany-Wrapper bleiben als dünne Funktionen erhalten
+// damit existierende Imports nicht brechen.
+//
+// Compute-Locality: HubSpot-API direkt vom main-process, kein
+// Gateway-Hop. Access-Token aus CrmManager.
+
+import type { CrmManager } from ".";
+
+const HUBSPOT_API = "https://api.hubapi.com";
+
+export type HubspotObjectType = "companies" | "contacts" | "deals";
+
+// ---- Property-Schema (introspect) ----------------------------------------
+
+export interface HubspotPropertyOption {
+  label: string;
+  value: string;
+  description?: string;
+}
+
+export interface HubspotPropertySchema {
+  name: string;
+  label: string;
+  type: string;
+  fieldType: string;
+  description: string | null;
+  options: HubspotPropertyOption[];
+  readOnlyValue: boolean;
+  hidden: boolean;
+}
+
+export interface IntrospectResult {
+  objectType: HubspotObjectType;
+  objectId: string;
+  currentValues: Record<string, string | null>;
+  schema: HubspotPropertySchema[];
+}
+
+/** Filter für read-only / system-properties. Pro objectType etwas
+ *  großzügiger bei `hs_*`-Properties die für Sales-Workflows nützlich sind. */
+function isUserEditableProperty(
+  objectType: HubspotObjectType,
+  p: {
+    name: string;
+    calculated?: boolean;
+    hidden?: boolean;
+    modificationMetadata?: { readOnlyValue?: boolean };
+  },
+): boolean {
+  if (p.calculated) return false;
+  if (p.modificationMetadata?.readOnlyValue) return false;
+  if (p.hidden) return false;
+  // Whitelist sinnvoller hs_*-Properties pro Object-Type
+  const HS_WHITELIST: Record<HubspotObjectType, Set<string>> = {
+    companies: new Set(["hs_lead_status"]),
+    contacts: new Set([
+      "hs_lead_status",
+      "hs_persona",
+      "hs_buying_role",
+      "hs_marketable_status",
+      "hs_marketable_reason_id",
+    ]),
+    deals: new Set([
+      "hs_deal_stage_probability",
+      "hs_priority",
+      "hs_forecast_amount",
+      "hs_forecast_probability",
+      "hs_acv",
+      "hs_arr",
+      "hs_mrr",
+      "hs_tcv",
+    ]),
+  };
+  if (p.name.startsWith("hs_") && !HS_WHITELIST[objectType].has(p.name)) {
+    return false;
+  }
+  return true;
+}
+
+export async function introspectHubspotObject(
+  crm: CrmManager,
+  objectType: HubspotObjectType,
+  objectId: string,
+): Promise<IntrospectResult> {
+  const accessToken = await crm.getAccessToken("hubspot");
+  if (!accessToken) {
+    throw new Error(
+      "HubSpot ist nicht verbunden. Bitte zuerst in den Einstellungen verbinden.",
+    );
+  }
+
+  // 1. Schema
+  const schemaJson = (await hubspotFetch(
+    accessToken,
+    `${HUBSPOT_API}/crm/v3/properties/${objectType}`,
+  )) as {
+    results?: Array<{
+      name: string;
+      label: string;
+      type: string;
+      fieldType: string;
+      description?: string | null;
+      options?: Array<{ label: string; value: string; description?: string; hidden?: boolean }>;
+      modificationMetadata?: { readOnlyValue?: boolean };
+      hidden?: boolean;
+      calculated?: boolean;
+    }>;
+  };
+
+  const schema: HubspotPropertySchema[] = (schemaJson.results ?? [])
+    .filter((p) => isUserEditableProperty(objectType, p))
+    .map((p) => ({
+      name: p.name,
+      label: p.label,
+      type: p.type,
+      fieldType: p.fieldType,
+      description: (p.description ?? "").trim() || null,
+      options: (p.options ?? [])
+        .filter((o) => !o.hidden)
+        .map((o) => ({
+          label: o.label,
+          value: o.value,
+          ...(o.description ? { description: o.description } : {}),
+        })),
+      readOnlyValue: p.modificationMetadata?.readOnlyValue ?? false,
+      hidden: p.hidden ?? false,
+    }));
+
+  // 2. Aktuelle Werte (Batches von 100 Property-Namen wegen URL-Länge)
+  const writableNames = schema.map((p) => p.name);
+  const currentValues: Record<string, string | null> = {};
+  for (let i = 0; i < writableNames.length; i += 100) {
+    const slice = writableNames.slice(i, i + 100);
+    const url = new URL(
+      `${HUBSPOT_API}/crm/v3/objects/${objectType}/${encodeURIComponent(objectId)}`,
+    );
+    url.searchParams.set("properties", slice.join(","));
+    const json = (await hubspotFetch(accessToken, url.toString())) as {
+      properties?: Record<string, string | null>;
+    };
+    for (const [k, v] of Object.entries(json.properties ?? {})) {
+      currentValues[k] = v ?? null;
+    }
+  }
+
+  return { objectType, objectId, currentValues, schema };
+}
+
+// ---- Update (PATCH + Verify-after) ---------------------------------------
+
+export interface UpdateInput {
+  objectType: HubspotObjectType;
+  objectId: string;
+  properties: Record<string, string>;
+}
+
+export interface UpdateResult {
+  ok: boolean;
+  objectType: HubspotObjectType;
+  objectId: string;
+  diff: Array<{
+    name: string;
+    before: string | null;
+    after: string | null;
+    applied: boolean;
+  }>;
+  notApplied: string[];
+}
+
+export async function updateHubspotObject(
+  crm: CrmManager,
+  input: UpdateInput,
+): Promise<UpdateResult> {
+  const accessToken = await crm.getAccessToken("hubspot");
+  if (!accessToken) throw new Error("HubSpot ist nicht verbunden.");
+
+  const propsToTouch = Object.keys(input.properties);
+  if (propsToTouch.length === 0) {
+    return {
+      ok: true,
+      objectType: input.objectType,
+      objectId: input.objectId,
+      diff: [],
+      notApplied: [],
+    };
+  }
+
+  const objectUrl = `${HUBSPOT_API}/crm/v3/objects/${input.objectType}/${encodeURIComponent(input.objectId)}`;
+
+  // 1. Vorher-Snapshot
+  const beforeUrl = new URL(objectUrl);
+  beforeUrl.searchParams.set("properties", propsToTouch.join(","));
+  const beforeJson = (await hubspotFetch(accessToken, beforeUrl.toString())) as {
+    properties?: Record<string, string | null>;
+  };
+  const before = beforeJson.properties ?? {};
+
+  // 2. PATCH
+  await hubspotFetch(accessToken, objectUrl, {
+    method: "PATCH",
+    body: JSON.stringify({ properties: input.properties }),
+  });
+
+  // 3. Fresh-GET (Ground-Truth gegen No-Op-Bugs — Notion-Lesson v0.1.255)
+  const afterUrl = new URL(objectUrl);
+  afterUrl.searchParams.set("properties", propsToTouch.join(","));
+  const afterJson = (await hubspotFetch(accessToken, afterUrl.toString())) as {
+    properties?: Record<string, string | null>;
+  };
+  const after = afterJson.properties ?? {};
+
+  // 4. Diff
+  const diff: UpdateResult["diff"] = [];
+  const notApplied: string[] = [];
+  for (const [name, intended] of Object.entries(input.properties)) {
+    const beforeVal = before[name] ?? null;
+    const afterVal = after[name] ?? null;
+    const applied = normalize(afterVal) === normalize(intended);
+    diff.push({ name, before: beforeVal, after: afterVal, applied });
+    if (!applied) notApplied.push(name);
+  }
+
+  return {
+    ok: notApplied.length === 0,
+    objectType: input.objectType,
+    objectId: input.objectId,
+    diff,
+    notApplied,
+  };
+}
+
+function normalize(v: string | null): string {
+  if (v == null) return "";
+  return String(v).trim();
+}
+
+// ---- Backward-compat-Wrapper für die v0.1.263-API ------------------------
+
+export async function introspectHubspotCompany(
+  crm: CrmManager,
+  companyId: string,
+): Promise<IntrospectResult & { companyId: string }> {
+  const result = await introspectHubspotObject(crm, "companies", companyId);
+  return { ...result, companyId };
+}
+
+export async function updateHubspotCompany(
+  crm: CrmManager,
+  input: { companyId: string; properties: Record<string, string> },
+): Promise<UpdateResult & { companyId: string }> {
+  const result = await updateHubspotObject(crm, {
+    objectType: "companies",
+    objectId: input.companyId,
+    properties: input.properties,
+  });
+  return { ...result, companyId: input.companyId };
+}
+
+// ---- Search (Contacts + Deals) -------------------------------------------
+
+export interface ContactSearchResult {
+  items: Array<{
+    id: string;
+    firstName: string | null;
+    lastName: string | null;
+    email: string | null;
+    jobTitle: string | null;
+    company: string | null;
+  }>;
+}
+
+export async function searchHubspotContacts(
+  crm: CrmManager,
+  args: { query: string; limit?: number },
+): Promise<ContactSearchResult> {
+  const accessToken = await crm.getAccessToken("hubspot");
+  if (!accessToken) throw new Error("HubSpot ist nicht verbunden.");
+  const limit = Math.max(1, Math.min(args.limit ?? 25, 100));
+  const json = (await hubspotFetch(
+    accessToken,
+    `${HUBSPOT_API}/crm/v3/objects/contacts/search`,
+    {
+      method: "POST",
+      body: JSON.stringify({
+        query: args.query,
+        properties: ["firstname", "lastname", "email", "jobtitle", "company"],
+        limit,
+      }),
+    },
+  )) as {
+    results?: Array<{
+      id: string;
+      properties: Record<string, string | null | undefined>;
+    }>;
+  };
+  return {
+    items: (json.results ?? []).map((r) => ({
+      id: r.id,
+      firstName: trimOrNull(r.properties.firstname),
+      lastName: trimOrNull(r.properties.lastname),
+      email: trimOrNull(r.properties.email),
+      jobTitle: trimOrNull(r.properties.jobtitle),
+      company: trimOrNull(r.properties.company),
+    })),
+  };
+}
+
+export interface DealSearchResult {
+  items: Array<{
+    id: string;
+    name: string | null;
+    amount: string | null;
+    stage: string | null;
+    pipeline: string | null;
+    closeDate: string | null;
+  }>;
+}
+
+export async function searchHubspotDeals(
+  crm: CrmManager,
+  args: { query: string; limit?: number },
+): Promise<DealSearchResult> {
+  const accessToken = await crm.getAccessToken("hubspot");
+  if (!accessToken) throw new Error("HubSpot ist nicht verbunden.");
+  const limit = Math.max(1, Math.min(args.limit ?? 25, 100));
+  const json = (await hubspotFetch(
+    accessToken,
+    `${HUBSPOT_API}/crm/v3/objects/deals/search`,
+    {
+      method: "POST",
+      body: JSON.stringify({
+        query: args.query,
+        properties: ["dealname", "amount", "dealstage", "pipeline", "closedate"],
+        limit,
+      }),
+    },
+  )) as {
+    results?: Array<{
+      id: string;
+      properties: Record<string, string | null | undefined>;
+    }>;
+  };
+  return {
+    items: (json.results ?? []).map((r) => ({
+      id: r.id,
+      name: trimOrNull(r.properties.dealname),
+      amount: trimOrNull(r.properties.amount),
+      stage: trimOrNull(r.properties.dealstage),
+      pipeline: trimOrNull(r.properties.pipeline),
+      closeDate: trimOrNull(r.properties.closedate),
+    })),
+  };
+}
+
+// ---- Owners --------------------------------------------------------------
+
+export interface HubspotOwner {
+  id: string;
+  email: string | null;
+  firstName: string | null;
+  lastName: string | null;
+  archived: boolean;
+}
+
+/** Liefert alle aktiven Owner des Portals. HubSpot-Owner-Listen sind
+ *  typischerweise klein (Team-Größen), wir lassen die Pagination weg
+ *  und holen die ersten 500 — bei Bedarf erweiterbar. */
+export async function listHubspotOwners(
+  crm: CrmManager,
+): Promise<HubspotOwner[]> {
+  const accessToken = await crm.getAccessToken("hubspot");
+  if (!accessToken) throw new Error("HubSpot ist nicht verbunden.");
+  const url = new URL(`${HUBSPOT_API}/crm/v3/owners`);
+  url.searchParams.set("limit", "500");
+  url.searchParams.set("archived", "false");
+  const json = (await hubspotFetch(accessToken, url.toString())) as {
+    results?: Array<{
+      id: string;
+      email?: string | null;
+      firstName?: string | null;
+      lastName?: string | null;
+      archived?: boolean;
+    }>;
+  };
+  return (json.results ?? []).map((o) => ({
+    id: o.id,
+    email: trimOrNull(o.email),
+    firstName: trimOrNull(o.firstName),
+    lastName: trimOrNull(o.lastName),
+    archived: o.archived ?? false,
+  }));
+}
+
+// ---- HTTP-Helper ---------------------------------------------------------
+
+function trimOrNull(v: unknown): string | null {
+  if (v == null) return null;
+  const s = String(v).trim();
+  return s.length > 0 ? s : null;
+}
+
+async function hubspotFetch(
+  accessToken: string,
+  url: string,
+  init?: RequestInit,
+): Promise<unknown> {
+  const res = await fetch(url, {
+    ...init,
+    headers: {
+      authorization: `Bearer ${accessToken}`,
+      "content-type": "application/json",
+      accept: "application/json",
+      ...(init?.headers ?? {}),
+    },
+  });
+  if (!res.ok) {
+    const body = await res.text().catch(() => "");
+    if (res.status === 401) {
+      throw new Error(
+        "HubSpot hat die Anmeldung abgelehnt (401). Bitte Verbindung erneut herstellen.",
+      );
+    }
+    if (res.status === 403) {
+      throw new Error(
+        "HubSpot lehnt den Schreibzugriff ab (403). Möglicherweise fehlt ein OAuth-Scope — bitte Verbindung trennen und neu autorisieren.",
+      );
+    }
+    throw new Error(`HubSpot API-Fehler ${res.status}: ${body.slice(0, 400)}`);
+  }
+  if (res.status === 204) return null;
+  const text = await res.text();
+  if (!text) return null;
+  try {
+    return JSON.parse(text);
+  } catch {
+    return text;
+  }
+}

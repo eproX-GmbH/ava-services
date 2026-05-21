@@ -24,9 +24,13 @@ import {
   searchHubspotCompanies,
 } from "../../crm/fetch-enrichment";
 import {
-  introspectHubspotCompany,
-  updateHubspotCompany,
-} from "../../crm/write-companies";
+  introspectHubspotObject,
+  updateHubspotObject,
+  searchHubspotContacts,
+  searchHubspotDeals,
+  listHubspotOwners,
+  type HubspotObjectType,
+} from "../../crm/write-objects";
 
 const PROVIDERS: readonly CrmProvider[] = ["salesforce", "hubspot", "dynamics"];
 
@@ -452,8 +456,8 @@ export function buildCrmTools(deps: CrmToolDeps): Tool[] {
     preview: (r: { schema: unknown[]; companyId: string }) =>
       `HubSpot ${r.companyId}: ${r.schema.length} editierbare Felder`,
     run: async (args) => {
-      const result = await introspectHubspotCompany(crm, args.companyId);
-      return result;
+      const result = await introspectHubspotObject(crm, "companies", args.companyId);
+      return { ...result, companyId: args.companyId };
     },
   });
 
@@ -503,7 +507,7 @@ export function buildCrmTools(deps: CrmToolDeps): Tool[] {
     run: async (args, ctx) => {
       // Erst Introspect+Aktuelle-Werte holen, damit der Diff im
       // Confirm-Dialog sinnvoll ist.
-      const intro = await introspectHubspotCompany(crm, args.companyId);
+      const intro = await introspectHubspotObject(crm, "companies", args.companyId);
       const schemaByName = new Map(intro.schema.map((p) => [p.name, p]));
       const draftLines: string[] = [];
       for (const [name, newVal] of Object.entries(args.properties)) {
@@ -543,8 +547,9 @@ export function buildCrmTools(deps: CrmToolDeps): Tool[] {
       );
       if (value !== "apply") return { applied: false };
 
-      const result = await updateHubspotCompany(crm, {
-        companyId: args.companyId,
+      const result = await updateHubspotObject(crm, {
+        objectType: "companies",
+        objectId: args.companyId,
         properties: args.properties as Record<string, string>,
       });
       return {
@@ -553,6 +558,194 @@ export function buildCrmTools(deps: CrmToolDeps): Tool[] {
         diff: result.diff,
         notApplied: result.notApplied,
       };
+    },
+  });
+
+  // v0.1.264 — Contact + Deal Updates analog Company (Phase H, Iteration 2).
+  // Eine Helper-Funktion baut introspect+update-Paare pro object-type, weil
+  // die Tool-Bodies identisch bis auf den objectType-Parameter sind.
+  const buildIntrospectUpdate = (
+    objectType: HubspotObjectType,
+    objectLabel: string,
+    idParamHint: string,
+  ): { introspect: Tool; update: Tool } => {
+    const introspect = defineTool({
+      name: `crm_introspect_hubspot_${objectType.replace(/s$/, "")}`,
+      description: `Liest das Property-Schema einer HubSpot-${objectLabel} UND die aktuellen Werte. Nutze das vor crm_update_hubspot_${objectType.replace(/s$/, "")}, sobald du die HubSpot-${objectLabel}-ID hast (${idParamHint}). Returned: für jedes editierbare Feld den Property-Namen, Label, Type, enum-Optionen (mit label + value), Beschreibung und aktueller Wert. Read-only/system-Felder sind rausgefiltert.`,
+      parameters: {
+        type: "object",
+        required: ["objectId"],
+        properties: {
+          objectId: {
+            type: "string",
+            description: `HubSpot-${objectLabel}-ID. ${idParamHint}`,
+          },
+        },
+      },
+      schema: yup
+        .object({ objectId: yup.string().trim().min(1).required() })
+        .noUnknown(true),
+      preview: (r: { schema: unknown[]; objectId: string }) =>
+        `HubSpot ${objectLabel} ${r.objectId}: ${r.schema.length} editierbare Felder`,
+      run: async (args) => {
+        const result = await introspectHubspotObject(crm, objectType, args.objectId);
+        return result;
+      },
+    });
+
+    const update = defineTool({
+      name: `crm_update_hubspot_${objectType.replace(/s$/, "")}`,
+      description: `Aktualisiert eine oder mehrere Properties einer HubSpot-${objectLabel}. PFLICHT: vorher crm_introspect_hubspot_${objectType.replace(/s$/, "")} aufrufen. PROPOSE-AND-CONFIRM: Tool zeigt Diff via ask_user_choice. Fresh-GET-Verify nach PATCH (HubSpot kann HTTP 200 liefern ohne zu speichern, z. B. bei Workflow-Validation). Property-Namen = HubSpot-interne Namen; bei enums den value statt label.`,
+      parameters: {
+        type: "object",
+        required: ["objectId", "properties"],
+        properties: {
+          objectId: { type: "string", description: `HubSpot-${objectLabel}-ID.` },
+          properties: {
+            type: "object",
+            description: "Property-Name → neuer Wert (Strings). Empty-String löscht.",
+            additionalProperties: { type: "string" },
+          },
+          rationale: {
+            type: "string",
+            description: "Begründung (1 Satz) — wird im Confirm-Dialog gezeigt.",
+          },
+        },
+      },
+      schema: yup
+        .object({
+          objectId: yup.string().trim().min(1).required(),
+          properties: yup
+            .object()
+            .test("at-least-one", "Mindestens eine Property setzen.", (v) =>
+              v ? Object.keys(v).length > 0 : false,
+            )
+            .required(),
+          rationale: yup.string().trim().max(500).optional(),
+        })
+        .noUnknown(true),
+      preview: (r: { applied: boolean; ok?: boolean; notApplied?: string[] }) =>
+        !r.applied
+          ? "Update verworfen"
+          : r.ok
+            ? `HubSpot ${objectLabel} aktualisiert`
+            : `Teilweise nicht übernommen: ${(r.notApplied ?? []).join(", ")}`,
+      run: async (args, ctx) => {
+        const intro = await introspectHubspotObject(crm, objectType, args.objectId);
+        const schemaByName = new Map(intro.schema.map((p) => [p.name, p]));
+        const draftLines: string[] = [];
+        for (const [name, newVal] of Object.entries(args.properties)) {
+          const schema = schemaByName.get(name);
+          const current = intro.currentValues[name] ?? null;
+          const label = schema?.label ?? name;
+          const newDisplay =
+            schema?.type === "enumeration"
+              ? (schema.options.find((o) => o.value === newVal)?.label ?? newVal)
+              : newVal;
+          const oldDisplay =
+            schema?.type === "enumeration"
+              ? (schema.options.find((o) => o.value === current)?.label ??
+                current ??
+                "(leer)")
+              : (current ?? "(leer)");
+          draftLines.push(`  ${label} (${name}): ${oldDisplay} → ${newDisplay}`);
+        }
+        const rationaleBlock = args.rationale
+          ? `\n\nBegründung: ${args.rationale}`
+          : "";
+        const value = await ctx.ui.askChoice(
+          `Ich möchte folgende Änderungen in HubSpot vornehmen (${objectLabel} ${args.objectId}):\n\n${draftLines.join("\n")}${rationaleBlock}`,
+          [
+            { value: "apply", label: "Übernehmen", description: "PATCH wird gesendet" },
+            { value: "cancel", label: "Verwerfen" },
+          ],
+          ctx.signal,
+        );
+        if (value !== "apply") return { applied: false };
+
+        const result = await updateHubspotObject(crm, {
+          objectType,
+          objectId: args.objectId,
+          properties: args.properties as Record<string, string>,
+        });
+        return {
+          applied: true,
+          ok: result.ok,
+          diff: result.diff,
+          notApplied: result.notApplied,
+        };
+      },
+    });
+    return { introspect, update };
+  };
+
+  const contactPair = buildIntrospectUpdate(
+    "contacts",
+    "Contact",
+    "ID aus crm_search_hubspot_contacts oder direkt aus HubSpot-URL.",
+  );
+  const dealPair = buildIntrospectUpdate(
+    "deals",
+    "Deal",
+    "ID aus crm_search_hubspot_deals oder direkt aus HubSpot-URL.",
+  );
+
+  // Search-Tools für Contacts + Deals
+  const searchContactsTool = defineTool({
+    name: "crm_search_hubspot_contacts",
+    description:
+      "Sucht HubSpot-Contacts nach Name oder E-Mail-Adresse. Returns bis zu 25 Treffer mit id, firstName, lastName, email, jobTitle, company. Nutze das, um die contactId für crm_update_hubspot_contact aufzulösen.",
+    parameters: {
+      type: "object",
+      required: ["query"],
+      properties: {
+        query: { type: "string", description: "Name, Vorname, oder E-Mail." },
+        limit: { type: "integer", description: "Max Treffer (1-100). Default 25." },
+      },
+    },
+    schema: yup
+      .object({
+        query: yup.string().trim().min(1).required(),
+        limit: yup.number().integer().min(1).max(100).optional(),
+      })
+      .noUnknown(true),
+    preview: (r: { items: { id: string }[] }) => `${r.items.length} Contacts`,
+    run: async (args) => searchHubspotContacts(crm, args),
+  });
+
+  const searchDealsTool = defineTool({
+    name: "crm_search_hubspot_deals",
+    description:
+      "Sucht HubSpot-Deals nach Name (dealname). Returns bis zu 25 Treffer mit id, name, amount, stage, pipeline, closeDate. Nutze das, um die dealId für crm_update_hubspot_deal aufzulösen.",
+    parameters: {
+      type: "object",
+      required: ["query"],
+      properties: {
+        query: { type: "string", description: "Deal-Name (teilweise)." },
+        limit: { type: "integer", description: "Max Treffer (1-100). Default 25." },
+      },
+    },
+    schema: yup
+      .object({
+        query: yup.string().trim().min(1).required(),
+        limit: yup.number().integer().min(1).max(100).optional(),
+      })
+      .noUnknown(true),
+    preview: (r: { items: { id: string }[] }) => `${r.items.length} Deals`,
+    run: async (args) => searchHubspotDeals(crm, args),
+  });
+
+  // Owner-Lookup — Voraussetzung für "Owner ändern auf <Name>"-Workflows
+  const listOwnersTool = defineTool({
+    name: "crm_list_hubspot_owners",
+    description:
+      "Listet alle aktiven HubSpot-Owner des Portals (id + email + firstName + lastName). Nutze das, BEVOR du ein hubspot_owner_id-Feld setzen willst — der Nutzer sagt meistens den Namen, HubSpot erwartet die numerische Owner-ID. Mappe Name/E-Mail aus der Liste auf die id.",
+    parameters: { type: "object", properties: {} },
+    schema: yup.object({}).noUnknown(true),
+    preview: (r: { length: number }) => `${r.length} HubSpot-Owner`,
+    run: async () => {
+      const owners = await listHubspotOwners(crm);
+      return { length: owners.length, owners };
     },
   });
 
@@ -567,5 +760,12 @@ export function buildCrmTools(deps: CrmToolDeps): Tool[] {
     linkManualTool,
     introspectHubspotTool,
     updateHubspotTool,
+    contactPair.introspect,
+    contactPair.update,
+    dealPair.introspect,
+    dealPair.update,
+    searchContactsTool,
+    searchDealsTool,
+    listOwnersTool,
   ];
 }
