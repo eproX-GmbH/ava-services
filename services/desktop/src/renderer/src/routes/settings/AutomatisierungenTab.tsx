@@ -3,24 +3,20 @@ import {
   AlertsSection,
   WatchesSection,
 } from "../Settings";
+import { SchedulerSection } from "./SchedulerSection";
 
-// v0.1.273 — Automatisierungen-Tab.
+// v0.1.273+ — Automatisierungen-Tab.
 //
-// Sammelt alle "AVA arbeitet im Hintergrund für mich"-Funktionen, die
-// bisher überfüllend in DatenquellenTab hingen:
+// Sammelt alle "AVA arbeitet im Hintergrund für mich"-Funktionen:
 //   - Watches (LLM-Rubrics gegen Heartbeat-Kandidaten)
-//   - Scheduler-Jobs (wiederkehrende Mails, etc.) — Phase 2
+//   - Scheduler-Jobs (wiederkehrende Mails — v0.1.274)
 //   - Freshness-Scheduler (Datenrefresh-Cadences)
 //   - Alerts / Heartbeat-Trigger
-//
-// DatenquellenTab behält die "Quellen-Verbindungen" — LinkedIn, CRM,
-// Mail-Konto. Sauberere Trennung: WAS reinkommt vs WAS automatisch
-// passiert.
 export function AutomatisierungenTab() {
   return (
     <>
       <WatchesSection />
-      {/* SchedulerSection kommt mit Phase 2 (v0.1.274). */}
+      <SchedulerSection />
       <FreshnessSection />
       <AlertsSection />
     </>

@@ -3832,6 +3832,107 @@ app.whenReady().then(async () => {
       return { ok: true };
     },
   );
+  // v0.1.274 — Direkter Create-Path aus Settings-UI. Form-Submit IST der
+  // Confirm; keine ask_user_choice-Schleife wie beim Agent-Tool. Selbe
+  // Validierung (Allowlist, Outbound-Schalter, Limits) wird hier
+  // serverseitig nochmal erzwungen.
+  ipcMain.handle(
+    "scheduler:createMailLoop",
+    async (
+      _e,
+      args: {
+        label: string;
+        to: string[];
+        cc?: string[];
+        subject: string;
+        text: string;
+        intervalMinutes: number;
+        firstRunImmediately?: boolean;
+        expiresInHours?: number;
+        runsCap?: number;
+      },
+    ): Promise<
+      | { ok: true; jobId: string; nextRunAt: string; expiresAt: string }
+      | { ok: false; error: string }
+    > => {
+      if (!scheduledJobsSupervisor) {
+        return { ok: false, error: "Scheduler ist noch nicht bereit." };
+      }
+      if (!mailSupervisor) {
+        return {
+          ok: false,
+          error: "Mail-Supervisor nicht bereit — Konto in Datenquellen konfigurieren.",
+        };
+      }
+      const account = await mailSupervisor.getStore().getAccount();
+      if (!account) return { ok: false, error: "Kein Mail-Konto konfiguriert." };
+      if (!account.outboundEnabled) {
+        return {
+          ok: false,
+          error:
+            "Mail-Outbound ist deaktiviert (Datenquellen → Mail-Konto). Bitte erst freischalten.",
+        };
+      }
+      const allowlist = await mailSupervisor.getStore().listAllowlist();
+      const recipients = [...args.to, ...(args.cc ?? [])];
+      const untrusted = recipients.filter((r) => {
+        const addr = r.toLowerCase().trim();
+        if (!addr.includes("@")) return true;
+        const [, domain] = addr.split("@");
+        for (const entry of allowlist) {
+          const p = entry.pattern.toLowerCase().trim();
+          if (p === addr) return false;
+          if (p.startsWith("*@")) {
+            const pd = p.slice(2);
+            if (pd.startsWith("*.")) {
+              const root = pd.slice(2);
+              if (domain === root || domain?.endsWith(`.${root}`)) return false;
+            } else if (domain === pd) {
+              return false;
+            }
+          }
+        }
+        return true;
+      });
+      if (untrusted.length > 0) {
+        return {
+          ok: false,
+          error: `Empfänger nicht in Allowlist: ${untrusted.join(", ")}. Bitte erst in Mail-Konto-Sektion freischalten.`,
+        };
+      }
+      const expiresInHours = args.expiresInHours ?? 24;
+      const expiresAt = new Date(
+        Date.now() + expiresInHours * 60 * 60 * 1000,
+      ).toISOString();
+      try {
+        const job = await scheduledJobsSupervisor.createMailLoop({
+          label: args.label,
+          payload: {
+            to: args.to,
+            ...(args.cc && args.cc.length > 0 ? { cc: args.cc } : {}),
+            subject: args.subject,
+            text: args.text,
+          },
+          intervalMinutes: args.intervalMinutes,
+          firstRunImmediately: args.firstRunImmediately ?? false,
+          expiresAt,
+          runsCap: args.runsCap,
+          source: "user",
+        });
+        return {
+          ok: true,
+          jobId: job.id,
+          nextRunAt: job.nextRunAt,
+          expiresAt: job.expiresAt,
+        };
+      } catch (err) {
+        return {
+          ok: false,
+          error: err instanceof Error ? err.message : String(err),
+        };
+      }
+    },
+  );
 
   // Voice / whisper sidecar IPC (Phase 8.n1). The download path is
   // long-running but resolves only when the GGUF lands on disk; the

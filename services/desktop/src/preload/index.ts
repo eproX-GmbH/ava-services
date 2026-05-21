@@ -967,6 +967,20 @@ const api = {
       ipcRenderer.invoke("scheduler:pause", jobId),
     resume: (jobId: string): Promise<{ ok: true }> =>
       ipcRenderer.invoke("scheduler:resume", jobId),
+    createMailLoop: (args: {
+      label: string;
+      to: string[];
+      cc?: string[];
+      subject: string;
+      text: string;
+      intervalMinutes: number;
+      firstRunImmediately?: boolean;
+      expiresInHours?: number;
+      runsCap?: number;
+    }): Promise<
+      | { ok: true; jobId: string; nextRunAt: string; expiresAt: string }
+      | { ok: false; error: string }
+    > => ipcRenderer.invoke("scheduler:createMailLoop", args),
     onJobsChanged: (cb: (jobs: ScheduledJob[]) => void): (() => void) => {
       const handler = (
         _e: Electron.IpcRendererEvent,

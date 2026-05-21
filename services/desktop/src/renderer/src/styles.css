@@ -6668,3 +6668,54 @@ a.heartbeat-decision__company:hover {
 @media (prefers-color-scheme: dark) {
   .chat-images__warn { background: rgba(252,211,77,0.18); color: #fcd34d; }
 }
+
+/* Scheduler-Jobs UI (v0.1.274) */
+.scheduler-list { list-style: none; padding: 0; margin: 8px 0; }
+.scheduler-row {
+  display: flex; gap: 12px; align-items: flex-start;
+  padding: 10px 12px; border: 1px solid var(--border, #e5e7eb);
+  border-radius: 6px; margin: 6px 0;
+}
+.scheduler-row--paused, .scheduler-row--expired,
+.scheduler-row--completed, .scheduler-row--cancelled { opacity: 0.6; }
+.scheduler-row__main { flex: 1; min-width: 0; }
+.scheduler-row__header { display: flex; gap: 8px; align-items: center; }
+.scheduler-row__meta { font-size: 0.85rem; margin-top: 4px; }
+.scheduler-row__error {
+  color: #b91c1c; font-size: 0.85rem; margin-top: 4px;
+}
+.scheduler-row__actions { display: flex; gap: 6px; flex-shrink: 0; }
+.pill--active { background: #d1fae5; color: #047857; }
+.pill--paused { background: #fef3c7; color: #92400e; }
+.pill--expired, .pill--cancelled, .pill--completed {
+  background: #e5e7eb; color: #374151;
+}
+
+.scheduler-create { margin-top: 12px; }
+.scheduler-form {
+  border: 1px solid var(--border, #d0d4d9); border-radius: 8px;
+  padding: 14px 16px; margin-top: 8px;
+}
+.scheduler-form h4 { margin: 0 0 4px; }
+.scheduler-form label {
+  display: flex; flex-direction: column; gap: 4px; margin: 8px 0;
+}
+.scheduler-form label > span { font-size: 0.85rem; color: var(--muted, #6b7280); }
+.scheduler-form input, .scheduler-form textarea {
+  padding: 6px 8px; border: 1px solid var(--border, #d0d4d9);
+  border-radius: 4px; font: inherit;
+}
+.scheduler-form__row { display: flex; gap: 12px; flex-wrap: wrap; }
+.scheduler-form__row label { flex: 1; min-width: 140px; }
+.scheduler-form__checkbox { flex-direction: row !important; align-items: center; }
+.scheduler-form__checkbox input { margin-right: 6px; }
+.scheduler-form__error { color: #b91c1c; margin: 8px 0; }
+.scheduler-form__actions { display: flex; gap: 8px; margin-top: 12px; }
+
+@media (prefers-color-scheme: dark) {
+  .pill--active { background: rgba(0,192,167,0.18); color: #6ee7d6; }
+  .pill--paused { background: rgba(252,211,77,0.18); color: #fcd34d; }
+  .pill--expired, .pill--cancelled, .pill--completed {
+    background: rgba(229,231,235,0.08); color: #9ca3af;
+  }
+}
