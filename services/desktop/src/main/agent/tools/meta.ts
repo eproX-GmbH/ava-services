@@ -306,6 +306,9 @@ const KNOWN_BUNDLES: readonly ToolBundle[] = [
       "crm_update_hubspot_contact",
       "crm_introspect_hubspot_deal",
       "crm_update_hubspot_deal",
+      "crm_list_hubspot_associations",
+      "crm_associate_hubspot_objects",
+      "crm_disassociate_hubspot_objects",
     ],
     queryHints: [
       "hubspot",
@@ -321,6 +324,10 @@ const KNOWN_BUNDLES: readonly ToolBundle[] = [
       "crm aktualisieren",
       "crm ändern",
       "crm update",
+      "verknüpfen",
+      "verknüpfung",
+      "zuordnen",
+      "association",
     ],
   },
   {

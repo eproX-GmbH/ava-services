@@ -23,6 +23,9 @@ allowed-tools:
   - crm_update_hubspot_contact
   - crm_introspect_hubspot_deal
   - crm_update_hubspot_deal
+  - crm_list_hubspot_associations
+  - crm_associate_hubspot_objects
+  - crm_disassociate_hubspot_objects
   - ask_user_choice
 requires-user-confirm: false
 disable-model-invocation: false
@@ -138,6 +141,34 @@ NIEMALS ohne `ask_user_choice` raten. Disambiguierungs-Felder:
 - Companies: Name + Domain + City
 - Contacts:  Name + E-Mail + Company
 - Deals:     Name + Stage + Amount + CloseDate
+
+### Verknüpfungen (Associations)
+
+Wenn der Nutzer Records zueinander in Beziehung setzen oder eine
+Beziehung lösen will (z. B. "verknüpfe Max Mustermann mit ACME GmbH",
+"hänge den Deal an die Firma", "entferne Person X von Company Y"):
+
+1. Beide Object-IDs auflösen (siehe Schritt 2 oben — pro Typ das
+   passende Search-Tool, ggf. mit `ask_user_choice` bei Mehrdeutigkeit).
+2. Vor dem Associate ggf. `crm_list_hubspot_associations` prüfen, ob
+   die Verknüpfung bereits existiert. Dann dem Nutzer das transparent
+   sagen und nicht doppelt ausführen.
+3. `crm_associate_hubspot_objects` zum Verknüpfen (Default-Type),
+   `crm_disassociate_hubspot_objects` zum Lösen. Beide Tools haben
+   eingebauten Confirm-Gate — keine doppelte Rückfrage.
+
+Standard-Beziehungstypen, die das Default-Association funktionieren:
+- Company ↔ Contact
+- Company ↔ Deal
+- Contact ↔ Deal
+
+Custom-Association-Types (von Sales-Ops konfiguriert) sind nicht
+unterstützt — wenn der Nutzer einen spezifischen Beziehungstyp
+braucht ("decision maker" vs "influencer"), das transparent sagen.
+
+`disassociate` ist destruktiv im Sinne von "Beziehung weg" — die
+Records selbst bleiben aber erhalten. Trotzdem im Confirm-Dialog
+deutlich machen, was geht.
 
 ## Was NICHT tun
 

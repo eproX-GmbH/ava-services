@@ -403,6 +403,87 @@ export async function listHubspotOwners(
   }));
 }
 
+// ---- Associations (HubSpot v4) -------------------------------------------
+//
+// HubSpot v4 Associations: jede Verknüpfung zwischen zwei Object-Records
+// hat genau einen Association-Type. Die häufigsten sind "default"
+// (Company→Contact: primary contact, Company→Deal: primary deal,
+// Contact→Deal: deal-contact-relation). Für Standard-CRM-Workflows
+// reicht der default-Typ — Custom-Association-Types lassen wir bewusst
+// weg, weil die UX dafür eine eigene Schema-Introspection bräuchte.
+//
+// Endpoints:
+//   GET    /crm/v4/objects/{from}/{fromId}/associations/{to}
+//   PUT    /crm/v4/objects/{from}/{fromId}/associations/default/{to}/{toId}
+//   DELETE /crm/v4/objects/{from}/{fromId}/associations/{to}/{toId}
+
+export interface AssociationEntry {
+  toObjectId: string;
+  /** v4-Antworten geben einen Array von Association-Type-Records;
+   *  wir konsolidieren auf die labels. Leer wenn nur "default". */
+  associationTypeLabels: string[];
+}
+
+export async function listHubspotAssociations(
+  crm: CrmManager,
+  args: {
+    fromObjectType: HubspotObjectType;
+    fromObjectId: string;
+    toObjectType: HubspotObjectType;
+  },
+): Promise<{ associations: AssociationEntry[] }> {
+  const accessToken = await crm.getAccessToken("hubspot");
+  if (!accessToken) throw new Error("HubSpot ist nicht verbunden.");
+  const url = `${HUBSPOT_API}/crm/v4/objects/${args.fromObjectType}/${encodeURIComponent(args.fromObjectId)}/associations/${args.toObjectType}`;
+  const json = (await hubspotFetch(accessToken, url)) as {
+    results?: Array<{
+      toObjectId: number | string;
+      associationTypes?: Array<{ label?: string | null; typeId?: number; category?: string }>;
+    }>;
+  };
+  return {
+    associations: (json.results ?? []).map((r) => ({
+      toObjectId: String(r.toObjectId),
+      associationTypeLabels: (r.associationTypes ?? [])
+        .map((t) => t.label)
+        .filter((l): l is string => !!l && l.length > 0),
+    })),
+  };
+}
+
+export async function associateHubspotObjects(
+  crm: CrmManager,
+  args: {
+    fromObjectType: HubspotObjectType;
+    fromObjectId: string;
+    toObjectType: HubspotObjectType;
+    toObjectId: string;
+  },
+): Promise<{ ok: true }> {
+  const accessToken = await crm.getAccessToken("hubspot");
+  if (!accessToken) throw new Error("HubSpot ist nicht verbunden.");
+  const url = `${HUBSPOT_API}/crm/v4/objects/${args.fromObjectType}/${encodeURIComponent(args.fromObjectId)}/associations/default/${args.toObjectType}/${encodeURIComponent(args.toObjectId)}`;
+  // PUT mit leerem Body — HubSpot v4 erwartet das exakt so für default-Type
+  await hubspotFetch(accessToken, url, { method: "PUT" });
+  return { ok: true };
+}
+
+export async function disassociateHubspotObjects(
+  crm: CrmManager,
+  args: {
+    fromObjectType: HubspotObjectType;
+    fromObjectId: string;
+    toObjectType: HubspotObjectType;
+    toObjectId: string;
+  },
+): Promise<{ ok: true }> {
+  const accessToken = await crm.getAccessToken("hubspot");
+  if (!accessToken) throw new Error("HubSpot ist nicht verbunden.");
+  const url = `${HUBSPOT_API}/crm/v4/objects/${args.fromObjectType}/${encodeURIComponent(args.fromObjectId)}/associations/${args.toObjectType}/${encodeURIComponent(args.toObjectId)}`;
+  await hubspotFetch(accessToken, url, { method: "DELETE" });
+  return { ok: true };
+}
+
 // ---- HTTP-Helper ---------------------------------------------------------
 
 function trimOrNull(v: unknown): string | null {

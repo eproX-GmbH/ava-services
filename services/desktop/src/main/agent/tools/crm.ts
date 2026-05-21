@@ -29,6 +29,9 @@ import {
   searchHubspotContacts,
   searchHubspotDeals,
   listHubspotOwners,
+  listHubspotAssociations,
+  associateHubspotObjects,
+  disassociateHubspotObjects,
   type HubspotObjectType,
 } from "../../crm/write-objects";
 
@@ -749,6 +752,149 @@ export function buildCrmTools(deps: CrmToolDeps): Tool[] {
     },
   });
 
+  // v0.1.265 — Association-Tools (Phase H3). HubSpot v4 Associations:
+  // Contact↔Company, Deal↔Company, Contact↔Deal mit default-Typ.
+  // Custom-Association-Types sind out-of-scope für V1.
+  const OBJECT_TYPE_VALUES = ["companies", "contacts", "deals"] as const;
+
+  const listAssociationsTool = defineTool({
+    name: "crm_list_hubspot_associations",
+    description:
+      "Listet die Verknüpfungen eines HubSpot-Records zu einem anderen Object-Type. Beispiele: alle Contacts einer Company, alle Deals einer Company, alle Deals eines Contacts. Returned: Liste mit toObjectId + association-type-Labels. Read-only — keine Schreibänderung.",
+    parameters: {
+      type: "object",
+      required: ["fromObjectType", "fromObjectId", "toObjectType"],
+      properties: {
+        fromObjectType: {
+          type: "string",
+          enum: [...OBJECT_TYPE_VALUES],
+          description: "Object-Type des Ausgangs-Records.",
+        },
+        fromObjectId: { type: "string", description: "HubSpot-ID des Ausgangs-Records." },
+        toObjectType: {
+          type: "string",
+          enum: [...OBJECT_TYPE_VALUES],
+          description: "Object-Type der Zielobjekte.",
+        },
+      },
+    },
+    schema: yup
+      .object({
+        fromObjectType: yup.string().oneOf([...OBJECT_TYPE_VALUES]).required(),
+        fromObjectId: yup.string().trim().min(1).required(),
+        toObjectType: yup.string().oneOf([...OBJECT_TYPE_VALUES]).required(),
+      })
+      .noUnknown(true),
+    preview: (r: { associations: unknown[] }) => `${r.associations.length} Verknüpfungen`,
+    run: async (args) =>
+      listHubspotAssociations(crm, {
+        fromObjectType: args.fromObjectType as HubspotObjectType,
+        fromObjectId: args.fromObjectId,
+        toObjectType: args.toObjectType as HubspotObjectType,
+      }),
+  });
+
+  const associateTool = defineTool({
+    name: "crm_associate_hubspot_objects",
+    description:
+      "Verknüpft zwei HubSpot-Records (Contact↔Company, Deal↔Company, Contact↔Deal) mit dem Default-Association-Type. PROPOSE-AND-CONFIRM: zeigt den Nutzer via ask_user_choice was verknüpft werden soll. Idempotent: bestehende Verknüpfung wird nicht doppelt erstellt. Custom-Association-Types werden NICHT unterstützt — V1 setzt immer den default.",
+    parameters: {
+      type: "object",
+      required: ["fromObjectType", "fromObjectId", "toObjectType", "toObjectId"],
+      properties: {
+        fromObjectType: { type: "string", enum: [...OBJECT_TYPE_VALUES] },
+        fromObjectId: { type: "string" },
+        toObjectType: { type: "string", enum: [...OBJECT_TYPE_VALUES] },
+        toObjectId: { type: "string" },
+        rationale: {
+          type: "string",
+          description: "Begründung (1 Satz) für den Confirm-Dialog.",
+        },
+      },
+    },
+    schema: yup
+      .object({
+        fromObjectType: yup.string().oneOf([...OBJECT_TYPE_VALUES]).required(),
+        fromObjectId: yup.string().trim().min(1).required(),
+        toObjectType: yup.string().oneOf([...OBJECT_TYPE_VALUES]).required(),
+        toObjectId: yup.string().trim().min(1).required(),
+        rationale: yup.string().trim().max(500).optional(),
+      })
+      .noUnknown(true),
+    preview: (r: { applied: boolean }) =>
+      r.applied ? "Verknüpfung erstellt" : "Verknüpfung verworfen",
+    run: async (args, ctx) => {
+      const fromLabel = OBJECT_LABEL[args.fromObjectType as HubspotObjectType];
+      const toLabel = OBJECT_LABEL[args.toObjectType as HubspotObjectType];
+      const rationaleBlock = args.rationale ? `\n\nBegründung: ${args.rationale}` : "";
+      const value = await ctx.ui.askChoice(
+        `Soll ich folgende Verknüpfung in HubSpot erstellen?\n\n${fromLabel} ${args.fromObjectId}\n↔ ${toLabel} ${args.toObjectId}${rationaleBlock}`,
+        [
+          { value: "apply", label: "Verknüpfen", description: "PUT wird gesendet" },
+          { value: "cancel", label: "Verwerfen" },
+        ],
+        ctx.signal,
+      );
+      if (value !== "apply") return { applied: false };
+      await associateHubspotObjects(crm, {
+        fromObjectType: args.fromObjectType as HubspotObjectType,
+        fromObjectId: args.fromObjectId,
+        toObjectType: args.toObjectType as HubspotObjectType,
+        toObjectId: args.toObjectId,
+      });
+      return { applied: true };
+    },
+  });
+
+  const disassociateTool = defineTool({
+    name: "crm_disassociate_hubspot_objects",
+    description:
+      "Entfernt eine bestehende Verknüpfung zwischen zwei HubSpot-Records. PROPOSE-AND-CONFIRM via ask_user_choice. DESTRUCTIVE: die Records selbst bleiben erhalten, nur die Beziehung wird gelöscht. Wenn die Verknüpfung gar nicht existiert hat, returnt HubSpot 204 OK — Tool meldet trotzdem applied:true.",
+    parameters: {
+      type: "object",
+      required: ["fromObjectType", "fromObjectId", "toObjectType", "toObjectId"],
+      properties: {
+        fromObjectType: { type: "string", enum: [...OBJECT_TYPE_VALUES] },
+        fromObjectId: { type: "string" },
+        toObjectType: { type: "string", enum: [...OBJECT_TYPE_VALUES] },
+        toObjectId: { type: "string" },
+        rationale: { type: "string" },
+      },
+    },
+    schema: yup
+      .object({
+        fromObjectType: yup.string().oneOf([...OBJECT_TYPE_VALUES]).required(),
+        fromObjectId: yup.string().trim().min(1).required(),
+        toObjectType: yup.string().oneOf([...OBJECT_TYPE_VALUES]).required(),
+        toObjectId: yup.string().trim().min(1).required(),
+        rationale: yup.string().trim().max(500).optional(),
+      })
+      .noUnknown(true),
+    preview: (r: { applied: boolean }) =>
+      r.applied ? "Verknüpfung entfernt" : "Aktion verworfen",
+    run: async (args, ctx) => {
+      const fromLabel = OBJECT_LABEL[args.fromObjectType as HubspotObjectType];
+      const toLabel = OBJECT_LABEL[args.toObjectType as HubspotObjectType];
+      const rationaleBlock = args.rationale ? `\n\nBegründung: ${args.rationale}` : "";
+      const value = await ctx.ui.askChoice(
+        `Soll ich folgende Verknüpfung in HubSpot ENTFERNEN?\n\n${fromLabel} ${args.fromObjectId}\n↔ ${toLabel} ${args.toObjectId}${rationaleBlock}\n\nDie Records selbst bleiben erhalten — nur die Beziehung wird gelöst.`,
+        [
+          { value: "apply", label: "Entfernen", description: "DELETE wird gesendet" },
+          { value: "cancel", label: "Verwerfen" },
+        ],
+        ctx.signal,
+      );
+      if (value !== "apply") return { applied: false };
+      await disassociateHubspotObjects(crm, {
+        fromObjectType: args.fromObjectType as HubspotObjectType,
+        fromObjectId: args.fromObjectId,
+        toObjectType: args.toObjectType as HubspotObjectType,
+        toObjectId: args.toObjectId,
+      });
+      return { applied: true };
+    },
+  });
+
   return [
     statusTool,
     connectTool,
@@ -767,5 +913,14 @@ export function buildCrmTools(deps: CrmToolDeps): Tool[] {
     searchContactsTool,
     searchDealsTool,
     listOwnersTool,
+    listAssociationsTool,
+    associateTool,
+    disassociateTool,
   ];
 }
+
+const OBJECT_LABEL: Record<HubspotObjectType, string> = {
+  companies: "Company",
+  contacts: "Contact",
+  deals: "Deal",
+};
