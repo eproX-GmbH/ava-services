@@ -8,6 +8,7 @@ import { SettingsSearch } from "./settings/SettingsSearch";
 import { KontoTab } from "./settings/KontoTab";
 import { ModelleTab } from "./settings/ModelleTab";
 import { DatenquellenTab } from "./settings/DatenquellenTab";
+import { AutomatisierungenTab } from "./settings/AutomatisierungenTab";
 import { SkillsTab } from "./settings/SkillsTab";
 import { SystemTab } from "./settings/SystemTab";
 import { VerlaufTab } from "./settings/VerlaufTab";
@@ -131,14 +132,15 @@ const PROVIDER_KEY_DOCS: Record<HostedProviderKind, string> = {
 // anchor into view once the tab content has painted.
 
 export const SETTINGS_TABS = [
-  { id: "konto",         label: "Konto" },
-  { id: "modelle",       label: "Modelle" },
-  { id: "verbrauch",     label: "Verbrauch" },
-  { id: "datenquellen",  label: "Datenquellen" },
-  { id: "wissensquellen", label: "Wissensquellen" },
-  { id: "skills",        label: "Skills" },
-  { id: "verlauf",       label: "Verlauf" },
-  { id: "system",        label: "System" },
+  { id: "konto",            label: "Konto" },
+  { id: "modelle",          label: "Modelle" },
+  { id: "verbrauch",        label: "Verbrauch" },
+  { id: "datenquellen",     label: "Datenquellen" },
+  { id: "automatisierungen", label: "Automatisierungen" },
+  { id: "wissensquellen",   label: "Wissensquellen" },
+  { id: "skills",           label: "Skills" },
+  { id: "verlauf",          label: "Verlauf" },
+  { id: "system",           label: "System" },
 ] as const;
 export type SettingsTabId = (typeof SETTINGS_TABS)[number]["id"];
 const SETTINGS_TAB_IDS: readonly SettingsTabId[] =
@@ -164,10 +166,15 @@ export const SETTINGS_ANCHOR_TO_TAB: Record<string, SettingsTabId> = {
   "linkedin-section":        "datenquellen",
   "linkedin-image-analysis": "datenquellen",
   "crm-connections":         "datenquellen",
-  "alerts-cadence":          "datenquellen",
-  "alerts-severity":         "datenquellen",
-  "freshness-section":       "datenquellen",
-  "watches-section":         "datenquellen",
+  "mail-account-section":    "datenquellen",
+  // v0.1.273 — Watches/Freshness/Alerts in neuen "Automatisierungen"-Tab
+  // umgezogen. Bestehende Deep-Links (z. B. WatchChip → watches-section)
+  // funktionieren weiter dank dieses Mappings.
+  "alerts-cadence":          "automatisierungen",
+  "alerts-severity":         "automatisierungen",
+  "freshness-section":       "automatisierungen",
+  "watches-section":         "automatisierungen",
+  "scheduler-section":       "automatisierungen",
   "updates":                 "system",
   "local-services":          "system",
   "local-producers":         "system",
@@ -281,6 +288,7 @@ export function Settings() {
         {activeTab === "modelle"        && <ModelleTab />}
         {activeTab === "verbrauch"      && <VerbrauchTab />}
         {activeTab === "datenquellen"   && <DatenquellenTab />}
+        {activeTab === "automatisierungen" && <AutomatisierungenTab />}
         {activeTab === "wissensquellen" && <WissensquellenTab />}
         {activeTab === "skills"         && <SkillsTab />}
         {activeTab === "verlauf"        && <VerlaufTab />}
