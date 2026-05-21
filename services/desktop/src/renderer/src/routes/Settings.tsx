@@ -3830,15 +3830,16 @@ export function WatchesSection() {
   }
 
   const active = watches.filter((w) => w.enabled).length;
+  const atCap = active >= WATCH_CAP_DEFAULT;
   return (
     <section id="watches-section" className="provider-section alerts-prefs">
       <h3>Watches</h3>
       <p className="muted">
         Wiederkehrende Beobachtungen, die der Heartbeat im Hintergrund
         gegen frische Kandidaten prüft. Treffer landen automatisch in{" "}
-        <Link to="/alerts">Meldungen</Link>. Neue Watches anlegen geht
-        nur über den Chat — z. B. „Beobachte wöchentlich Geschäfts-
-        führungswechsel bei meinen wichtigsten Firmen".
+        <Link to="/alerts">Meldungen</Link>. Du kannst Watches hier
+        anlegen oder im Chat („Beobachte wöchentlich Geschäftsführungs-
+        wechsel bei meinen wichtigsten Firmen").
       </p>
       <p className="muted small">
         {active} von {watches.length} aktiv · maximal {WATCH_CAP_DEFAULT}.
@@ -3847,11 +3848,7 @@ export function WatchesSection() {
       {error && <p className="error small">{error}</p>}
 
       {watches.length === 0 ? (
-        <p className="muted">
-          Noch keine Watches registriert. Frag im Chat z. B.
-          „<em>Beobachte wöchentlich, ob bei [Firma] ein
-          Wechsel auf C-Level passiert</em>".
-        </p>
+        <p className="muted">Noch keine Watches registriert.</p>
       ) : (
         <ul className="watches-list">
           {watches.map((w) => (
@@ -3865,6 +3862,8 @@ export function WatchesSection() {
           ))}
         </ul>
       )}
+
+      <WatchesCreateForm atCap={atCap} />
     </section>
   );
 }
@@ -3946,6 +3945,188 @@ function WatchRow({
         </button>
       </div>
     </li>
+  );
+}
+
+// v0.1.275 — Inline-Create-Form für Watches. Direkter Pfad ohne
+// Chat/propose-and-confirm (das Formular IST der Confirm). Topics +
+// CompanyIds sind in V1 freitext-Eingaben (Komma-getrennt) — bei
+// CompanyIds würde ein company-Picker mit search-as-you-type besser
+// passen, das kann eine Folge-Iteration nachziehen.
+const WATCH_TOPIC_VALUES = [
+  "publication",
+  "financial-delta",
+  "profile-change",
+  "evaluation-flag",
+] as const;
+const WATCH_TOPIC_LABELS: Record<(typeof WATCH_TOPIC_VALUES)[number], string> = {
+  publication: "Publikationen",
+  "financial-delta": "Finanz-Delta",
+  "profile-change": "Profil-Änderung",
+  "evaluation-flag": "Evaluations-Flag",
+};
+
+function WatchesCreateForm({ atCap }: { atCap: boolean }) {
+  const [open, setOpen] = useState(false);
+  const [prompt, setPrompt] = useState("");
+  const [rubric, setRubric] = useState("");
+  const [cadence, setCadence] = useState<"daily" | "weekly" | "monthly">("weekly");
+  const [companyIds, setCompanyIds] = useState("");
+  const [selectedTopics, setSelectedTopics] = useState<Set<string>>(new Set());
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const reset = () => {
+    setPrompt("");
+    setRubric("");
+    setCadence("weekly");
+    setCompanyIds("");
+    setSelectedTopics(new Set());
+    setError(null);
+  };
+
+  const onSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSubmitting(true);
+    setError(null);
+    try {
+      const cIds = companyIds
+        .split(/[,;\n]/)
+        .map((s) => s.trim())
+        .filter((s) => s.length > 0);
+      const topics = Array.from(selectedTopics);
+      const r = await window.api.watches.create({
+        prompt: prompt.trim(),
+        rubric: rubric.trim(),
+        cadence,
+        ...(cIds.length > 0 ? { companyIds: cIds } : {}),
+        ...(topics.length > 0 ? { topics } : {}),
+      });
+      if (!r.ok) {
+        setError(r.error);
+        return;
+      }
+      reset();
+      setOpen(false);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  if (!open) {
+    return (
+      <div className="scheduler-create">
+        <button
+          type="button"
+          onClick={() => setOpen(true)}
+          disabled={atCap}
+          title={atCap ? "Maximalanzahl Watches erreicht" : ""}
+        >
+          + Neuen Watch anlegen
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <form className="scheduler-form" onSubmit={onSubmit}>
+      <h4>Neuen Watch anlegen</h4>
+      <p className="muted">
+        Der Heartbeat-Loop prüft alle Kandidaten gegen deine Rubric. Bei
+        Treffer landet eine Meldung in <Link to="/alerts">Meldungen</Link>.
+      </p>
+      <label>
+        <span>Worüber willst du benachrichtigt werden? (frei formuliert)</span>
+        <input
+          type="text"
+          required
+          maxLength={500}
+          value={prompt}
+          onChange={(e) => setPrompt(e.target.value)}
+          placeholder="z. B. wenn bei meinen Firmen Geschäftsführer wechseln"
+        />
+      </label>
+      <label>
+        <span>Rubric (1-Satz-Kriterium für den LLM-Judge — konkret und beobachtbar)</span>
+        <input
+          type="text"
+          required
+          maxLength={500}
+          value={rubric}
+          onChange={(e) => setRubric(e.target.value)}
+          placeholder="z. B. Wechsel auf C-Level (Geschäftsführung, Vorstand)"
+        />
+      </label>
+      <div className="scheduler-form__row">
+        <label>
+          <span>Cadence</span>
+          <select
+            value={cadence}
+            onChange={(e) =>
+              setCadence(e.target.value as "daily" | "weekly" | "monthly")
+            }
+          >
+            <option value="daily">täglich</option>
+            <option value="weekly">wöchentlich</option>
+            <option value="monthly">monatlich</option>
+          </select>
+        </label>
+        <label style={{ flex: 2 }}>
+          <span>Topics (optional — nur diese Kandidaten-Arten prüfen)</span>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 4 }}>
+            {WATCH_TOPIC_VALUES.map((t) => (
+              <label
+                key={t}
+                style={{ display: "inline-flex", alignItems: "center", gap: 4 }}
+              >
+                <input
+                  type="checkbox"
+                  checked={selectedTopics.has(t)}
+                  onChange={(e) => {
+                    const next = new Set(selectedTopics);
+                    if (e.target.checked) next.add(t);
+                    else next.delete(t);
+                    setSelectedTopics(next);
+                  }}
+                />
+                <span style={{ fontSize: "0.85rem" }}>{WATCH_TOPIC_LABELS[t]}</span>
+              </label>
+            ))}
+          </div>
+        </label>
+      </div>
+      <label>
+        <span>Company-IDs (optional, Komma-getrennt — nur diese Firmen beobachten)</span>
+        <input
+          type="text"
+          value={companyIds}
+          onChange={(e) => setCompanyIds(e.target.value)}
+          placeholder="<companyId-1>, <companyId-2>"
+        />
+        <span className="muted" style={{ fontSize: "0.75rem" }}>
+          IDs aus „Meine Firmen" kopieren (oder via Chat „Beobachte ACME …" anlegen,
+          dann erkennt AVA die Firma automatisch).
+        </span>
+      </label>
+      {error && <div className="scheduler-form__error">Fehler: {error}</div>}
+      <div className="scheduler-form__actions">
+        <button type="submit" disabled={submitting} className="primary">
+          Watch starten
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            reset();
+            setOpen(false);
+          }}
+          disabled={submitting}
+        >
+          Abbrechen
+        </button>
+      </div>
+    </form>
   );
 }
 

@@ -908,6 +908,14 @@ const api = {
       ipcRenderer.invoke("watches:remove", id),
     setEnabled: (id: string, enabled: boolean): Promise<boolean> =>
       ipcRenderer.invoke("watches:setEnabled", { id, enabled }),
+    create: (args: {
+      prompt: string;
+      rubric: string;
+      cadence: "daily" | "weekly" | "monthly";
+      companyIds?: string[];
+      topics?: string[];
+    }): Promise<{ ok: true; watch: Watch } | { ok: false; error: string }> =>
+      ipcRenderer.invoke("watches:create", args),
     onChanged: (cb: (snapshot: Watch[]) => void): (() => void) => {
       const handler = (_e: Electron.IpcRendererEvent, snapshot: Watch[]) =>
         cb(snapshot);

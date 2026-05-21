@@ -3687,6 +3687,47 @@ app.whenReady().then(async () => {
     (_e, args: { id: string; enabled: boolean }): boolean =>
       watchStore.setEnabled(args.id, args.enabled),
   );
+  // v0.1.275 — Direkter Create-Path aus Settings-UI (Phase 3). UI-
+  // Form-Submit ist der Confirm; der Agent-Pfad (watch_register-Tool)
+  // bleibt mit ask_user_choice. Cap-Check + Validierung erfolgt im
+  // WatchStore.add, das wirft mit deutschsprachiger Message.
+  ipcMain.handle(
+    "watches:create",
+    async (
+      _e,
+      args: {
+        prompt: string;
+        rubric: string;
+        cadence: "daily" | "weekly" | "monthly";
+        companyIds?: string[];
+        topics?: string[];
+      },
+    ): Promise<{ ok: true; watch: Watch } | { ok: false; error: string }> => {
+      try {
+        const trigger: import("../shared/types").WatchTrigger = {
+          rubric: args.rubric.trim(),
+          ...(args.companyIds && args.companyIds.length > 0
+            ? { companyIds: args.companyIds }
+            : {}),
+          ...(args.topics && args.topics.length > 0
+            ? { topics: args.topics as import("../shared/types").AlertKind[] }
+            : {}),
+        };
+        const watch = watchStore.add({
+          prompt: args.prompt.trim(),
+          trigger,
+          cadence: args.cadence,
+        });
+        broadcastWatchesChanged();
+        return { ok: true, watch };
+      } catch (err) {
+        return {
+          ok: false,
+          error: err instanceof Error ? err.message : String(err),
+        };
+      }
+    },
+  );
 
   // ---- Mail IPC (Phase 9.m — v0.1.257) ---------------------------------
   // Renderer → main: Konto konfigurieren, Test-Connect, Allowlist-CRUD,
