@@ -1,5 +1,5 @@
 import { autoUpdater, type UpdateInfo, type ProgressInfo } from "electron-updater";
-import { app, BrowserWindow } from "electron";
+import { app, BrowserWindow, Notification } from "electron";
 import { EventEmitter } from "node:events";
 import { promises as fs } from "node:fs";
 import { existsSync, statSync } from "node:fs";
@@ -84,6 +84,10 @@ function electronUpdaterLogPath(): string {
 export class Updater extends EventEmitter {
   private state: UpdateState = "idle";
   private latestVersion: string | null = null;
+  /** v0.1.279 — Dedup-Cursor für die native OS-Notification. Wenn der
+   *  15min-Check zum dritten Mal dieselbe Version meldet, soll der User
+   *  nicht erneut angepiept werden. */
+  private lastNotifiedVersion: string | null = null;
   private progress: UpdateProgress | null = null;
   private errorMessage: string | null = null;
   private silentInstallFailedFromVersion: string | null = null;
@@ -113,14 +117,16 @@ export class Updater extends EventEmitter {
       process.env.GH_TOKEN = bakedToken;
     }
 
-    // v0.1.155 — autoInstallOnAppQuit flipped to true. The previous
-    // value of false meant quitAndInstall() was the ONLY install
-    // trigger; if Squirrel.Mac couldn't complete the swap in that
-    // narrow window, the user was stuck on the old version with no
-    // fallback. With true, the next normal Cmd-Q reattempts. We still
-    // keep autoDownload=false so the user explicitly opts into the
-    // download — only the install side becomes more forgiving.
-    autoUpdater.autoDownload = false;
+    // v0.1.279 — autoDownload=true. Vorher false (User musste explizit
+    // "Download" klicken); mit aktiven Release-Wellen mehrfach pro Tag
+    // hat das den Updater faktisch nutzlos gemacht, weil die meisten
+    // Nutzer den Banner nicht bewusst angesehen haben. Jetzt: Update
+    // wird im Hintergrund gezogen; der Nutzer muss nur noch den
+    // Neustart bestätigen ("Neu starten, um zu aktualisieren").
+    // autoInstallOnAppQuit bleibt true als Sicherheitsnetz: wenn der
+    // Nutzer die App regulär schließt ohne neu zu starten, holt der
+    // nächste Cmd-Q die Installation nach.
+    autoUpdater.autoDownload = true;
     autoUpdater.autoInstallOnAppQuit = true;
     autoUpdater.logger = {
       info: (m: unknown) => console.log("[updater]", m),
@@ -139,6 +145,27 @@ export class Updater extends EventEmitter {
       );
       this.latestVersion = info.version;
       this.setState("available");
+      // v0.1.279 — native OS-Notification. Mit autoDownload=true springt
+      // der State direkt weiter zu "downloading", aber die OS-Bubble bleibt
+      // sichtbar auch wenn AVA im Hintergrund läuft. Dedupliziert pro
+      // Version damit der User nicht alle 15min angepiept wird.
+      if (this.lastNotifiedVersion !== info.version) {
+        this.lastNotifiedVersion = info.version;
+        try {
+          new Notification({
+            title: `AVA-Update v${info.version} verfügbar`,
+            body: 'Wird im Hintergrund heruntergeladen. Klick auf AVA, sobald „Neu starten" angezeigt wird.',
+            silent: false,
+          }).show();
+        } catch (err) {
+          // Notifications nicht freigegeben oder Plattform-Quirk — kein
+          // Drama, in-app banner zeigt es eh auch.
+          console.warn(
+            "[updater] OS-Notification fehlgeschlagen:",
+            err instanceof Error ? err.message : String(err),
+          );
+        }
+      }
     });
     autoUpdater.on("update-not-available", (info: UpdateInfo) => {
       console.info(
@@ -160,6 +187,23 @@ export class Updater extends EventEmitter {
       "update-downloaded",
       (info: UpdateInfo & { downloadedFile?: string }) => {
         this.latestVersion = info.version;
+        // v0.1.279 — zweite OS-Notification: jetzt ist Action gefragt.
+        // "Klick → Neustart" geht zwar nicht direkt aus der Notification
+        // (Electron-Notifications haben keine Actions auf macOS ohne
+        // app-bundled Helper), aber der Body sagt dem User wohin er
+        // klicken soll.
+        try {
+          new Notification({
+            title: `AVA-Update v${info.version} bereit`,
+            body: 'Klick auf das AVA-Icon und dann auf „Neu starten, um zu aktualisieren".',
+            silent: false,
+          }).show();
+        } catch (err) {
+          console.warn(
+            "[updater] update-downloaded OS-Notification fehlgeschlagen:",
+            err instanceof Error ? err.message : String(err),
+          );
+        }
         // v0.1.155 — scrub quarantine on the EXACT artifact path
         // electron-updater reports, the moment it lands. This is the
         // only timing where (a) the file definitely exists, and (b)

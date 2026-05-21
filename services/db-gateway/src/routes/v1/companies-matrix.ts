@@ -126,6 +126,20 @@ companiesMatrixRouter.openapi(matrixRoute, async (c) => {
   const companyIds = upstream.companies.map((c) => c.companyId);
 
   // ---- 2. gateway: latest per-stage state for those companies ----
+  //
+  // v0.1.279 — Terminal-State-Preference. Vorher: ORDER BY updatedAt DESC.
+  // Problem: ein stuck "in_progress"-Eintrag (z. B. abgebrochener Producer-
+  // Run, Race in der persist-bus) ließ die Stage-Pille permanent gelb,
+  // obwohl historisch schon ein "completed" da war. Dieselbe Firma sah
+  // in der Transactions-Detail-Ansicht (die per-Transaction state-aware
+  // rechnet) komplett grün aus — Mismatch zwischen den beiden Views.
+  //
+  // Neue Reihenfolge: terminale States (completed/failed/skipped) gewinnen
+  // gegen non-terminale (in_progress/pending), sekundär updatedAt DESC.
+  // Heißt: wenn eine Firma jemals einen Producer komplett durchlaufen
+  // hat, sieht man das in der Matrix, auch wenn ein späterer Re-Run
+  // mittendrin abgewürgt wurde. "Aktuelle Re-Run-Progress"-Info gehört
+  // zur Transactions-Ansicht, nicht zum Globale-Firmen-Überblick.
   let stageRows: Array<{
     companyId: string;
     producer: string;
@@ -140,7 +154,16 @@ companiesMatrixRouter.openapi(matrixRoute, async (c) => {
          "companyId", producer, state, "errorMessage", "updatedAt"
        FROM "EntityProgress"
        WHERE "companyId" = ANY($1::text[])
-       ORDER BY "companyId", producer, "updatedAt" DESC`,
+       ORDER BY "companyId", producer,
+         CASE state
+           WHEN 'completed'   THEN 0
+           WHEN 'failed'      THEN 1
+           WHEN 'skipped'     THEN 2
+           WHEN 'in_progress' THEN 3
+           WHEN 'pending'     THEN 4
+           ELSE 5
+         END,
+         "updatedAt" DESC`,
       [companyIds],
     );
     stageRows = res.rows as typeof stageRows;
@@ -169,14 +192,12 @@ companiesMatrixRouter.openapi(matrixRoute, async (c) => {
   }
 
   const companies = upstream.companies.map((co) => {
-    const stages: Record<
-      string,
-      {
-        state: "pending" | "in_progress" | "completed" | "failed" | "skipped";
-        updatedAt: string | null;
-        errorMessage: string | null;
-      }
-    > = {};
+    type StageCell = {
+      state: "pending" | "in_progress" | "completed" | "failed" | "skipped";
+      updatedAt: string | null;
+      errorMessage: string | null;
+    };
+    const stages: Record<string, StageCell> = {};
     const found = byCompany.get(co.companyId) ?? new Map();
     for (const producer of PRODUCER_NAMES) {
       const row = found.get(producer);
@@ -200,6 +221,67 @@ companiesMatrixRouter.openapi(matrixRoute, async (c) => {
         };
       }
     }
+
+    // v0.1.279 — companyEvaluation aus Upstreams DERIVEN, statt den
+    // rohen EntityProgress-Status zu nehmen. Sonst sahen Firmen, deren
+    // 5 Upstream-Producer alle completed sind, in der Matrix gelb aus
+    // (evaluation-Producer wurde noch nicht oder unsauber gefahren),
+    // während die Transactions-Detail-Ansicht denselben Datenstand als
+    // grün rendert (dort gibt es schon die identische Ableitung —
+    // siehe deriveEvaluationCell in transactions.ts). Wir spiegeln die
+    // Logik 1:1: alle Upstreams terminal + mind. eines completed →
+    // companyEvaluation completed.
+    if (stages["companyEvaluation"]) {
+      const upstreamNames = [
+        "structuredContent",
+        "companyPublication",
+        "website",
+        "companyProfile",
+        "companyContact",
+      ] as const;
+      const upstreams = upstreamNames
+        .map((n) => stages[n])
+        .filter((c): c is StageCell => Boolean(c));
+      const allTerminal =
+        upstreams.length === upstreamNames.length &&
+        upstreams.every(
+          (u) =>
+            u.state === "completed" ||
+            u.state === "failed" ||
+            u.state === "skipped",
+        );
+      const anyInProgress = upstreams.some((u) => u.state === "in_progress");
+      const anyCompleted = upstreams.some((u) => u.state === "completed");
+      const ts = upstreams
+        .map((u) => u.updatedAt)
+        .filter((t): t is string => typeof t === "string");
+      const lastTs =
+        ts.length > 0 ? ts.reduce((a, b) => (a > b ? a : b)) : null;
+      // Nur ableiten, wenn die rohe Bewertungs-Zelle NICHT schon "completed"
+      // ist — sonst respektieren wir den persistierten Erfolg.
+      if (stages["companyEvaluation"].state !== "completed") {
+        if (anyInProgress) {
+          stages["companyEvaluation"] = {
+            state: "in_progress",
+            updatedAt: lastTs,
+            errorMessage: null,
+          };
+        } else if (allTerminal && anyCompleted) {
+          stages["companyEvaluation"] = {
+            state: "completed",
+            updatedAt: lastTs,
+            errorMessage: null,
+          };
+        } else if (allTerminal) {
+          stages["companyEvaluation"] = {
+            state: "skipped",
+            updatedAt: lastTs,
+            errorMessage: null,
+          };
+        }
+      }
+    }
+
     return {
       companyId: co.companyId,
       name: co.name,
