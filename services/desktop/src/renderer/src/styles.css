@@ -6754,3 +6754,37 @@ a.heartbeat-decision__company:hover {
   .topbar__submenu-item:hover,
   .topbar__submenu-item--focused { background: rgba(0,192,167,0.18); }
 }
+
+/* Settings-Tab Hover-Popover (v0.1.280) */
+.settings-shell__tab-wrap { position: relative; }
+.settings-shell__tab--has-sub {
+  display: flex !important; justify-content: space-between; align-items: center;
+}
+.settings-shell__chev { opacity: 0.5; font-size: 1rem; }
+.settings-shell__sub-popover {
+  position: absolute; top: 0; left: 100%; margin-left: 4px;
+  background: var(--surface, #fff); border: 1px solid var(--border, #d0d4d9);
+  border-radius: 6px; box-shadow: 0 6px 16px rgba(0,0,0,0.14);
+  min-width: 220px; padding: 4px; z-index: 1000;
+  display: flex; flex-direction: column;
+}
+.settings-shell__sub-item {
+  display: block; padding: 6px 12px; border-radius: 4px;
+  text-decoration: none; color: var(--fg, #1f2937);
+  font-size: 0.88rem; white-space: nowrap;
+}
+.settings-shell__sub-item:hover {
+  background: rgba(0,192,167,0.10);
+}
+.settings-shell__sub-item.active {
+  background: rgba(0,192,167,0.18); font-weight: 600;
+}
+
+@media (prefers-color-scheme: dark) {
+  .settings-shell__sub-popover {
+    background: #1f2937; border-color: rgba(255,255,255,0.10);
+    box-shadow: 0 6px 18px rgba(0,0,0,0.45);
+  }
+  .settings-shell__sub-item { color: #e5e7eb; }
+  .settings-shell__sub-item:hover { background: rgba(0,192,167,0.18); }
+}

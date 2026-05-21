@@ -430,21 +430,7 @@ function TopBar() {
           ]}
         />
         {linkedinEnabled && <NavItem to="/linkedin" label="Signale" />}
-        <NavItem
-          to="/settings"
-          label="Einstellungen"
-          subItems={[
-            { to: "/settings/konto", label: "Konto" },
-            { to: "/settings/modelle", label: "Modelle" },
-            { to: "/settings/verbrauch", label: "Verbrauch" },
-            { to: "/settings/datenquellen", label: "Datenquellen" },
-            { to: "/settings/automatisierungen", label: "Automatisierungen" },
-            { to: "/settings/wissensquellen", label: "Wissensquellen" },
-            { to: "/settings/skills", label: "Skills" },
-            { to: "/settings/verlauf", label: "Verlauf" },
-            { to: "/settings/system", label: "System" },
-          ]}
-        />
+        <NavItem to="/settings" label="Einstellungen" />
         <NavItem to="/whoami" label="Status" />
       </nav>
       <div className="topbar__spacer" />

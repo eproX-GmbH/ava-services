@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, NavLink, useLocation, useNavigate, useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { LinkedInConsentModal } from "../components/LinkedInConsentModal";
@@ -150,6 +150,54 @@ const SETTINGS_TAB_IDS: readonly SettingsTabId[] =
 // rewrites the URL once on mount so existing call sites (UsageChip,
 // QuotaExhaustedBanner, LinkedInActiveBanner, Chat mic button, …) keep
 // working without touching them.
+/** v0.1.280 — Sub-Section-Tree pro Settings-Tab. Wird in der Sidebar
+ *  als Hover-Popover gerendert; Klick navigiert per Anchor-Hash direkt
+ *  in die Section. */
+export const SETTINGS_TAB_SUB_ITEMS: Record<
+  SettingsTabId,
+  Array<{ anchor: string; label: string }>
+> = {
+  konto: [
+    { anchor: "profile-bio", label: "Profil" },
+    { anchor: "profile-role", label: "Rolle" },
+    { anchor: "profile-industries", label: "Branchen" },
+    { anchor: "profile-geographies", label: "Regionen" },
+    { anchor: "profile-topics", label: "Themen" },
+    { anchor: "profile-tone", label: "Tonalität" },
+    { anchor: "general-memory", label: "Langzeitgedächtnis" },
+    { anchor: "plan-section", label: "Plan & Verbrauch" },
+    { anchor: "erscheinung", label: "Erscheinung" },
+  ],
+  modelle: [
+    { anchor: "provider-section", label: "Agent-Anbieter & Schlüssel" },
+    { anchor: "research-features", label: "Research-Features" },
+    { anchor: "voice-settings", label: "Voice / Whisper" },
+    { anchor: "installed-models", label: "Installierte Modelle" },
+    { anchor: "ollama-version", label: "Ollama-Version" },
+  ],
+  verbrauch: [],
+  datenquellen: [
+    { anchor: "linkedin-section", label: "LinkedIn" },
+    { anchor: "linkedin-image-analysis", label: "LinkedIn-Bildanalyse" },
+    { anchor: "crm-connections", label: "CRM-Verbindungen" },
+    { anchor: "mail-account-section", label: "Mail-Konto" },
+  ],
+  automatisierungen: [
+    { anchor: "watches-section", label: "Watches" },
+    { anchor: "scheduler-section", label: "Wiederkehrende Aufgaben" },
+    { anchor: "freshness-section", label: "Datenrefresh" },
+    { anchor: "alerts-cadence", label: "Alerts / Heartbeat" },
+  ],
+  wissensquellen: [],
+  skills: [],
+  verlauf: [{ anchor: "audit-trail", label: "Audit-Trail" }],
+  system: [
+    { anchor: "updates", label: "App-Updates" },
+    { anchor: "local-services", label: "Lokale Dienste" },
+    { anchor: "local-producers", label: "Lokale Producer" },
+  ],
+};
+
 export const SETTINGS_ANCHOR_TO_TAB: Record<string, SettingsTabId> = {
   "plan-section":            "konto",
   "profile-bio":             "konto",
@@ -167,6 +215,9 @@ export const SETTINGS_ANCHOR_TO_TAB: Record<string, SettingsTabId> = {
   "linkedin-image-analysis": "datenquellen",
   "crm-connections":         "datenquellen",
   "mail-account-section":    "datenquellen",
+  "audit-trail":             "verlauf",
+  "research-features":       "modelle",
+  "ollama-version":          "modelle",
   // v0.1.273 — Watches/Freshness/Alerts in neuen "Automatisierungen"-Tab
   // umgezogen. Bestehende Deep-Links (z. B. WatchChip → watches-section)
   // funktionieren weiter dank dieses Mappings.
@@ -268,17 +319,13 @@ export function Settings() {
         <SettingsSearch />
         <nav className="settings-shell__nav">
           {SETTINGS_TABS.map((t) => (
-            <NavLink
+            <SettingsTabLink
               key={t.id}
-              to={`/settings/${t.id}`}
-              className={() =>
-                "settings-shell__tab" +
-                (t.id === activeTab ? " settings-shell__tab--active" : "")
-              }
-              end={false}
-            >
-              {t.label}
-            </NavLink>
+              tabId={t.id}
+              label={t.label}
+              active={t.id === activeTab}
+              subItems={SETTINGS_TAB_SUB_ITEMS[t.id]}
+            />
           ))}
         </nav>
       </aside>
@@ -300,6 +347,96 @@ export function Settings() {
 
 // -- Settings header with version pill --------------------------------
 //
+/**
+ * v0.1.280 — Settings-Tab-Link mit Hover-Popover.
+ *
+ * Sidebar-Tab in der Settings-Linksspalte. Bei Hover öffnet ein Flyout
+ * nach rechts mit den Sub-Sections aus SETTINGS_TAB_SUB_ITEMS. Klick
+ * auf Top-Item navigiert zur Tab-Wurzel; Klick auf Sub-Item zur Tab-
+ * Wurzel + Anchor (Settings.tsx scrollt dann beim Mount in die
+ * Section dank des hash-Watchers).
+ */
+function SettingsTabLink({
+  tabId,
+  label,
+  active,
+  subItems,
+}: {
+  tabId: SettingsTabId;
+  label: string;
+  active: boolean;
+  subItems: Array<{ anchor: string; label: string }>;
+}) {
+  const [open, setOpen] = useState(false);
+  const openTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const cancelTimers = () => {
+    if (openTimer.current) {
+      clearTimeout(openTimer.current);
+      openTimer.current = null;
+    }
+    if (closeTimer.current) {
+      clearTimeout(closeTimer.current);
+      closeTimer.current = null;
+    }
+  };
+  const scheduleOpen = () => {
+    cancelTimers();
+    if (subItems.length === 0) return; // kein Popover wenn keine Sub-Items
+    openTimer.current = setTimeout(() => setOpen(true), 100);
+  };
+  const scheduleClose = () => {
+    cancelTimers();
+    closeTimer.current = setTimeout(() => setOpen(false), 180);
+  };
+
+  useEffect(() => () => cancelTimers(), []);
+
+  return (
+    <div
+      className="settings-shell__tab-wrap"
+      onMouseEnter={scheduleOpen}
+      onMouseLeave={scheduleClose}
+    >
+      <NavLink
+        to={`/settings/${tabId}`}
+        className={() =>
+          "settings-shell__tab" +
+          (active ? " settings-shell__tab--active" : "") +
+          (subItems.length > 0 ? " settings-shell__tab--has-sub" : "")
+        }
+        end={false}
+      >
+        <span>{label}</span>
+        {subItems.length > 0 && (
+          <span className="settings-shell__chev" aria-hidden>
+            ›
+          </span>
+        )}
+      </NavLink>
+      {open && subItems.length > 0 && (
+        <div
+          className="settings-shell__sub-popover"
+          role="menu"
+          aria-label={`${label} Untermenü`}
+        >
+          {subItems.map((item) => (
+            <NavLink
+              key={item.anchor}
+              to={`/settings/${tabId}#${item.anchor}`}
+              role="menuitem"
+              className="settings-shell__sub-item"
+              onClick={() => setOpen(false)}
+            >
+              {item.label}
+            </NavLink>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // Tiny "AVA v0.1.x · channel" line under the page title. Pulls from
 // useConfigStore which mirrors `app:getConfig` (filled at App.tsx
 // mount). When config isn't ready yet we render the title alone so
