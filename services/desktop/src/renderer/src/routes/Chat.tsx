@@ -7,7 +7,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import ReactMarkdown from "react-markdown";
 // v0.1.206 — GitHub-Flavored-Markdown plugin so tables, task lists,
 // strikethrough, and autolinks render as HTML elements instead of
@@ -460,11 +460,38 @@ export function Chat() {
     setThinking(false);
   }, []);
 
+  // v0.1.282 — Wenn die Chat-Route mit einem `prefill`-State aufgerufen
+  // wird (z. B. von Triage-Inbox "Im Chat öffnen"), starten wir IMMER
+  // eine neue Conversation und packen den Text in den Composer. Damit
+  // landet die Mail nicht in einem ggf. laufenden Chat-Verlauf, wo der
+  // Kontext untergeht. Mehrzeilige Texte werden 1:1 übernommen.
+  const location = useLocation();
+  const prefillFromLocationStateRef = useRef(false);
+  useEffect(() => {
+    const state = location.state as { prefill?: string } | null;
+    const prefill = typeof state?.prefill === "string" ? state.prefill : null;
+    if (!prefill || prefillFromLocationStateRef.current) return;
+    prefillFromLocationStateRef.current = true;
+    startNewConversation();
+    setInput(prefill);
+    // Konsumiert — bei React-Router-Navigation zur selben Route mit
+    // anderem state würden wir sonst doppelt prefillen.
+    window.history.replaceState({}, "");
+    // Fokus aufs Textfeld setzen, der User soll direkt tippen können.
+    setTimeout(() => composerTextareaRef.current?.focus(), 50);
+  }, [location.state, startNewConversation]);
+
   // Mount: list sessions, auto-load the most recent. If there are no
   // saved sessions, mint a fresh id so the textarea is immediately usable.
   useEffect(() => {
     let mounted = true;
     void (async () => {
+      // v0.1.282 — Wenn wir mit prefill kommen, NICHT die letzte
+      // Conversation laden. startNewConversation hat die Routing
+      // schon übernommen, sonst würden wir den Composer-Inhalt
+      // direkt überschreiben.
+      const state = location.state as { prefill?: string } | null;
+      if (typeof state?.prefill === "string") return;
       const list = await refreshConversations();
       if (!mounted) return;
       if (list.length > 0) {

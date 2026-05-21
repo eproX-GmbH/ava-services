@@ -1,22 +1,33 @@
-// v0.1.257 — Triage-Inbox-Route (Phase 9.m).
+// v0.1.282 — Triage-Inbox-Route v2 (Outlook-orientiertes Layout).
 //
-// Zeigt eingehende Mails aus AVAs dediziertem Konto als sortierbare
-// Liste mit Trust-Badge (trusted/known/unknown), AVAs Klassifikation,
-// und Per-Mail-Aktionen (Detail öffnen, archivieren, als trusted
-// markieren via Allowlist-Add).
+// Layout-Struktur:
+//   - Toolbar oben (Filter, Account-Status, Unread-Counter)
+//   - Hauptbereich: Master-Detail (Liste links, Mail-Pane rechts)
+//   - Liste: kompakte Outlook-Zeilen mit Absender + Zeit, Betreff,
+//     Snippet + Trust/Kategorie-Badges. Ungelesen fett.
+//   - Detail: Toolbar mit Aktionen (Archivieren, Im Chat öffnen,
+//     trusted-markieren) + sauberer Header (Absender, Betreff, Meta)
+//     + AVA-Klassifikation als kleine Info-Karte + Body als
+//     Plain-Text (gerendert mit pre-wrap für Zeilen-Treue).
 //
-// Layout: Master-Detail. Links die Liste, rechts der ausgewählte
-// Mail-Body inkl. Anhänge. Snapshot wird bei jeder Änderung im main-
-// Process gepusht (`mail:snapshot`), kein Polling.
+// "Im Chat öffnen" startet einen NEUEN Chat mit prefill aus der Mail
+// (Absender + Subject + Body-Quote), damit der Kontext nicht verloren
+// geht. Mehrzeiligkeit wird via newline-Pass durch React-Router-state
+// erhalten.
 
 import { useEffect, useMemo, useState } from "react";
-import { Link } from "react-router-dom";
-import type {
-  MailMessage,
-  MailSnapshot,
-} from "../../../shared/types";
+import { Link, useNavigate } from "react-router-dom";
+import type { MailMessage, MailSnapshot } from "../../../shared/types";
 
 type Filter = "all" | "unread" | "trusted" | "known" | "unknown";
+
+const FILTER_LABELS: Array<[Filter, string]> = [
+  ["unread", "Ungelesen"],
+  ["all", "Alle"],
+  ["trusted", "Trusted"],
+  ["known", "Bekannt"],
+  ["unknown", "Unbekannt"],
+];
 
 export function TriageInbox(): JSX.Element {
   const [snapshot, setSnapshot] = useState<MailSnapshot | null>(null);
@@ -48,110 +59,170 @@ export function TriageInbox(): JSX.Element {
     });
   }, [messages, filter]);
 
+  // Counts pro Filter — kleine Hilfe für die Tab-Pillen.
+  const counts = useMemo(() => {
+    const c = { all: messages.length, unread: 0, trusted: 0, known: 0, unknown: 0 };
+    for (const m of messages) {
+      if (!m.readByUser) c.unread += 1;
+      if (m.trustLevel === "trusted") c.trusted += 1;
+      else if (m.trustLevel === "known") c.known += 1;
+      else c.unknown += 1;
+    }
+    return c;
+  }, [messages]);
+
   if (!snapshot) {
     return (
-      <div className="triage-inbox">
-        <p className="muted">Lädt…</p>
+      <div className="triage">
+        <div className="triage__empty">
+          <p className="muted">Lädt…</p>
+        </div>
       </div>
     );
   }
 
   if (!snapshot.account) {
     return (
-      <div className="triage-inbox triage-inbox--empty">
-        <h2>Triage-Inbox</h2>
-        <p>Du hast noch kein Mail-Konto konfiguriert.</p>
-        <p>
-          <Link to="/settings/datenquellen#mail-account-section">
-            → Mail-Konto in Einstellungen hinzufügen
-          </Link>
-        </p>
+      <div className="triage">
+        <div className="triage__empty">
+          <h2>Triage-Inbox</h2>
+          <p>Du hast noch kein Mail-Konto konfiguriert.</p>
+          <p>
+            <Link to="/settings/datenquellen#mail-account-section">
+              → Mail-Konto in Einstellungen hinzufügen
+            </Link>
+          </p>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="triage-inbox">
-      <header className="triage-inbox__header">
-        <h2>Triage-Inbox</h2>
-        <div className="triage-inbox__meta muted">
-          {snapshot.account.address} · {snapshot.connectionState}
-          {snapshot.unreadCount > 0 && <> · {snapshot.unreadCount} ungelesen</>}
+    <div className="triage">
+      <header className="triage__toolbar">
+        <div className="triage__toolbar-left">
+          <h2 className="triage__title">Postfach</h2>
+          <span className="triage__account">{snapshot.account.address}</span>
+          <ConnectionPill state={snapshot.connectionState} />
         </div>
-        <div className="triage-inbox__filters">
-          {(
-            [
-              ["unread", "Ungelesen"],
-              ["all", "Alle"],
-              ["trusted", "Trusted"],
-              ["known", "Bekannt"],
-              ["unknown", "Unbekannt"],
-            ] as Array<[Filter, string]>
-          ).map(([key, label]) => (
-            <button
-              key={key}
-              type="button"
-              className={filter === key ? "active" : ""}
-              onClick={() => setFilter(key)}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
+        <nav className="triage__filters" aria-label="Filter">
+          {FILTER_LABELS.map(([key, label]) => {
+            const count =
+              key === "all"
+                ? counts.all
+                : key === "unread"
+                  ? counts.unread
+                  : key === "trusted"
+                    ? counts.trusted
+                    : key === "known"
+                      ? counts.known
+                      : counts.unknown;
+            return (
+              <button
+                key={key}
+                type="button"
+                className={
+                  "triage__filter" +
+                  (filter === key ? " triage__filter--active" : "")
+                }
+                onClick={() => setFilter(key)}
+              >
+                {label}
+                <span className="triage__filter-count">{count}</span>
+              </button>
+            );
+          })}
+        </nav>
       </header>
 
-      <div className="triage-inbox__split">
-        <ul className="triage-inbox__list">
+      <div className="triage__main">
+        <ul className="triage__list" role="listbox">
           {filtered.length === 0 && (
-            <li className="muted">Keine Mails in diesem Filter.</li>
+            <li className="triage__list-empty muted">
+              Keine Mails in diesem Filter.
+            </li>
           )}
           {filtered.map((m) => (
-            <li
+            <MessageRow
               key={m.id}
-              className={`triage-row triage-row--${m.trustLevel} ${
-                selectedId === m.id ? "is-selected" : ""
-              } ${m.readByUser ? "" : "is-unread"}`}
-              onClick={() => setSelectedId(m.id)}
-            >
-              <div className="triage-row__top">
-                <TrustBadge level={m.trustLevel} />
-                <span className="triage-row__from">
-                  {m.from.name ?? m.from.address}
-                </span>
-                <span className="triage-row__date muted">
-                  {formatDate(m.date)}
-                </span>
-              </div>
-              <div className="triage-row__subject">{m.subject || "(kein Betreff)"}</div>
-              {m.classification && (
-                <div className="triage-row__summary muted">
-                  <span className={`category category--${m.classification.category}`}>
-                    {m.classification.category}
-                  </span>{" "}
-                  · {m.classification.summary}
-                </div>
-              )}
-              {m.classification && m.classification.injectionRisk >= 0.5 && (
-                <div className="triage-row__warn">
-                  ⚠ Prompt-Injection-Verdacht ({Math.round(m.classification.injectionRisk * 100)}%)
-                </div>
-              )}
-            </li>
+              message={m}
+              selected={selectedId === m.id}
+              onSelect={() => setSelectedId(m.id)}
+            />
           ))}
         </ul>
 
-        <div className="triage-inbox__detail">
-          {detail ? <MessageDetail message={detail} /> : (
-            <p className="muted">Wähle links eine Mail aus.</p>
+        <section className="triage__detail" aria-label="Mail-Detail">
+          {detail ? (
+            <MessageDetail message={detail} />
+          ) : (
+            <div className="triage__detail-empty">
+              <p className="muted">Wähle links eine Mail aus.</p>
+            </div>
           )}
-        </div>
+        </section>
       </div>
     </div>
   );
 }
 
+function MessageRow({
+  message,
+  selected,
+  onSelect,
+}: {
+  message: MailMessage;
+  selected: boolean;
+  onSelect: () => void;
+}): JSX.Element {
+  const senderName = message.from.name ?? message.from.address;
+  const cls = message.classification;
+  return (
+    <li
+      className={
+        "triage__row" +
+        (selected ? " triage__row--selected" : "") +
+        (!message.readByUser ? " triage__row--unread" : "")
+      }
+      onClick={onSelect}
+      role="option"
+      aria-selected={selected}
+    >
+      <div className="triage__row-line1">
+        <span className="triage__row-sender">{senderName}</span>
+        <span className="triage__row-date">{formatDate(message.date)}</span>
+      </div>
+      <div className="triage__row-subject">
+        {message.subject || "(kein Betreff)"}
+      </div>
+      <div className="triage__row-meta">
+        <TrustBadge level={message.trustLevel} compact />
+        {cls && (
+          <span className={`triage__category triage__category--${cls.category}`}>
+            {categoryLabel(cls.category)}
+          </span>
+        )}
+        {message.attachments.length > 0 && (
+          <span className="triage__row-attach" title="Mit Anhang">
+            📎 {message.attachments.length}
+          </span>
+        )}
+        {cls && cls.injectionRisk >= 0.5 && (
+          <span className="triage__row-warn" title="Prompt-Injection-Verdacht">
+            ⚠ {Math.round(cls.injectionRisk * 100)}%
+          </span>
+        )}
+      </div>
+      {cls?.summary && (
+        <div className="triage__row-snippet">{cls.summary}</div>
+      )}
+    </li>
+  );
+}
+
 function MessageDetail({ message }: { message: MailMessage }): JSX.Element {
   const [busy, setBusy] = useState(false);
+  const navigate = useNavigate();
 
   const onArchive = async (): Promise<void> => {
     setBusy(true);
@@ -165,7 +236,12 @@ function MessageDetail({ message }: { message: MailMessage }): JSX.Element {
   const onAddAllowlist = async (): Promise<void> => {
     const pattern = message.from.address;
     const label = message.from.name ?? message.from.address;
-    if (!window.confirm(`Absender ${pattern} zur Allowlist hinzufügen? AVA darf danach autonom an diesen Absender antworten.`)) return;
+    if (
+      !window.confirm(
+        `Absender ${pattern} zur Allowlist hinzufügen? AVA darf danach autonom an diesen Absender antworten.`,
+      )
+    )
+      return;
     setBusy(true);
     try {
       await window.api.mail.addAllowlistEntry(pattern, label);
@@ -174,42 +250,103 @@ function MessageDetail({ message }: { message: MailMessage }): JSX.Element {
     }
   };
 
+  const onOpenInChat = (): void => {
+    // v0.1.282 — Statt nur zum Chat zu navigieren bauen wir einen
+    // Prefill-Block mit Kontext aus der Mail (Absender, Betreff,
+    // Body-Quote). Chat.tsx liest location.state.prefill, startet einen
+    // neuen Chat und füllt den Composer. Mehrzeilige Bodies bleiben
+    // mehrzeilig.
+    const senderName = message.from.name ?? message.from.address;
+    const lines = [
+      `Mail von ${senderName} <${message.from.address}> vom ${new Date(
+        message.date,
+      ).toLocaleString("de-DE")}`,
+      `Betreff: ${message.subject || "(kein Betreff)"}`,
+      "",
+      "Inhalt:",
+      message.bodyText.trim() || "(leer)",
+      "",
+      "Bitte hilf mir damit weiter.",
+    ];
+    const prefill = lines.join("\n");
+    navigate("/chat", { state: { prefill } });
+  };
+
+  const cls = message.classification;
   return (
     <article className="triage-detail">
-      <header>
-        <div className="triage-detail__from">
+      <div className="triage-detail__toolbar">
+        <button
+          type="button"
+          onClick={onOpenInChat}
+          disabled={busy}
+          className="triage-detail__btn triage-detail__btn--primary"
+        >
+          Im Chat öffnen
+        </button>
+        {message.trustLevel !== "trusted" && (
+          <button
+            type="button"
+            onClick={onAddAllowlist}
+            disabled={busy}
+            className="triage-detail__btn"
+          >
+            Absender als trusted
+          </button>
+        )}
+        <button
+          type="button"
+          onClick={onArchive}
+          disabled={busy}
+          className="triage-detail__btn"
+        >
+          Archivieren
+        </button>
+      </div>
+
+      <header className="triage-detail__header">
+        <h3 className="triage-detail__subject">
+          {message.subject || "(kein Betreff)"}
+        </h3>
+        <div className="triage-detail__sender-line">
           <TrustBadge level={message.trustLevel} />
-          <strong>{message.from.name ?? message.from.address}</strong>{" "}
-          <span className="muted">&lt;{message.from.address}&gt;</span>
+          <div className="triage-detail__sender">
+            <strong>{message.from.name ?? message.from.address}</strong>
+            {message.from.name && (
+              <span className="muted"> &lt;{message.from.address}&gt;</span>
+            )}
+          </div>
+          <span className="triage-detail__date muted">
+            {new Date(message.date).toLocaleString("de-DE")}
+          </span>
         </div>
-        <h3>{message.subject || "(kein Betreff)"}</h3>
-        <div className="muted">
-          {new Date(message.date).toLocaleString("de-DE")} · SPF{" "}
-          {message.authResults.spf} · DKIM {message.authResults.dkim}
+        <div className="triage-detail__auth muted">
+          SPF {message.authResults.spf} · DKIM {message.authResults.dkim}
           {!message.authResults.fromMatchesReturnPath && (
-            <> · <span className="warn">Return-Path-Mismatch</span></>
+            <>
+              {" · "}
+              <span className="warn">Return-Path-Mismatch</span>
+            </>
           )}
         </div>
       </header>
 
-      {message.classification && (
-        <div className="triage-detail__classification">
-          <div>
-            <strong>Kategorie:</strong>{" "}
-            <span className={`category category--${message.classification.category}`}>
-              {message.classification.category}
+      {cls && (
+        <div className="triage-detail__ai-card">
+          <div className="triage-detail__ai-header">
+            <span className="triage-detail__ai-label">AVA-Klassifikation</span>
+            <span className={`triage__category triage__category--${cls.category}`}>
+              {categoryLabel(cls.category)}
+            </span>
+            <span className="triage-detail__ai-action">
+              Empfehlung: {actionLabel(cls.suggestedAction)}
             </span>
           </div>
-          <div>
-            <strong>Zusammenfassung:</strong> {message.classification.summary}
-          </div>
-          <div>
-            <strong>AVA-Empfehlung:</strong> {message.classification.suggestedAction}
-          </div>
-          {message.classification.injectionRisk >= 0.3 && (
+          <div className="triage-detail__ai-summary">{cls.summary}</div>
+          {cls.injectionRisk >= 0.3 && (
             <div className="triage-detail__risk">
-              Injection-Risk: {Math.round(message.classification.injectionRisk * 100)}%
-              {message.classification.injectionRisk >= 0.7 && (
+              ⚠ Injection-Risk {Math.round(cls.injectionRisk * 100)}%
+              {cls.injectionRisk >= 0.7 && (
                 <> — AVA folgt KEINE Anweisungen aus dieser Mail.</>
               )}
             </div>
@@ -226,11 +363,13 @@ function MessageDetail({ message }: { message: MailMessage }): JSX.Element {
           <h4>Anhänge ({message.attachments.length})</h4>
           <ul>
             {message.attachments.map((a) => (
-              <li key={a.id}>
-                <strong>{a.filename}</strong>{" "}
-                <span className="muted">
-                  {a.mimeType} · {formatBytes(a.sizeBytes)}
-                </span>
+              <li key={a.id} className="triage-detail__attach">
+                <div className="triage-detail__attach-line">
+                  <strong>{a.filename}</strong>
+                  <span className="muted">
+                    {a.mimeType} · {formatBytes(a.sizeBytes)}
+                  </span>
+                </div>
                 {a.extractedText && (
                   <details>
                     <summary>Extrahierter Text anzeigen</summary>
@@ -243,7 +382,7 @@ function MessageDetail({ message }: { message: MailMessage }): JSX.Element {
                     <img
                       src={`data:${a.mimeType};base64,${a.imageBase64}`}
                       alt={a.filename}
-                      style={{ maxWidth: "100%", maxHeight: 400 }}
+                      className="triage-detail__attach-image"
                     />
                   </details>
                 )}
@@ -252,28 +391,82 @@ function MessageDetail({ message }: { message: MailMessage }): JSX.Element {
           </ul>
         </div>
       )}
-
-      <footer className="triage-detail__actions">
-        {message.trustLevel !== "trusted" && (
-          <button type="button" onClick={onAddAllowlist} disabled={busy}>
-            Absender als trusted markieren
-          </button>
-        )}
-        <button type="button" onClick={onArchive} disabled={busy}>
-          Archivieren
-        </button>
-        <Link to="/chat" className="button">
-          Im Chat öffnen
-        </Link>
-      </footer>
     </article>
   );
 }
 
-function TrustBadge({ level }: { level: MailMessage["trustLevel"] }): JSX.Element {
+function TrustBadge({
+  level,
+  compact,
+}: {
+  level: MailMessage["trustLevel"];
+  compact?: boolean;
+}): JSX.Element {
   const label =
     level === "trusted" ? "trusted" : level === "known" ? "bekannt" : "unbekannt";
-  return <span className={`trust-badge trust-badge--${level}`}>{label}</span>;
+  return (
+    <span
+      className={`trust-badge trust-badge--${level}${compact ? " trust-badge--compact" : ""}`}
+    >
+      {label}
+    </span>
+  );
+}
+
+function ConnectionPill({
+  state,
+}: {
+  state: MailSnapshot["connectionState"];
+}): JSX.Element {
+  const label =
+    state === "connecting"
+      ? "verbinde…"
+      : state === "connected"
+        ? "verbunden"
+        : state === "idling"
+          ? "IDLE"
+          : state === "polling"
+            ? "Polling"
+            : state === "disconnected"
+              ? "getrennt"
+              : "Fehler";
+  return <span className={`pill pill--${state}`}>{label}</span>;
+}
+
+function categoryLabel(c: string): string {
+  switch (c) {
+    case "task":
+      return "Aufgabe";
+    case "info":
+      return "Info";
+    case "appointment":
+      return "Termin";
+    case "crm-relevant":
+      return "CRM";
+    case "spam":
+      return "Spam";
+    case "phishing":
+      return "Phishing";
+    default:
+      return "Unklar";
+  }
+}
+
+function actionLabel(a: string): string {
+  switch (a) {
+    case "reply":
+      return "Antworten";
+    case "archive":
+      return "Archivieren";
+    case "forward":
+      return "Weiterleiten";
+    case "ignore":
+      return "Ignorieren";
+    case "ask-user":
+      return "Rückfrage";
+    default:
+      return a;
+  }
 }
 
 function formatDate(iso: string): string {
@@ -281,6 +474,15 @@ function formatDate(iso: string): string {
   const today = new Date();
   if (d.toDateString() === today.toDateString()) {
     return d.toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" });
+  }
+  // gestern?
+  const yesterday = new Date(today);
+  yesterday.setDate(today.getDate() - 1);
+  if (d.toDateString() === yesterday.toDateString()) return "Gestern";
+  // diese Woche → Wochentag-Kurz
+  const diffDays = Math.floor((today.getTime() - d.getTime()) / 86_400_000);
+  if (diffDays < 7) {
+    return d.toLocaleDateString("de-DE", { weekday: "short" });
   }
   return d.toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit" });
 }

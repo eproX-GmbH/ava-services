@@ -6788,3 +6788,266 @@ a.heartbeat-decision__company:hover {
   .settings-shell__sub-item { color: #e5e7eb; }
   .settings-shell__sub-item:hover { background: rgba(0,192,167,0.18); }
 }
+
+/* ===========================================================================
+   Triage-Inbox v2 (v0.1.282) — Outlook-orientiertes Layout
+   =========================================================================== */
+.triage {
+  display: flex; flex-direction: column; height: 100%;
+  background: var(--surface-alt, #f8fafc);
+}
+.triage__empty {
+  padding: 48px 32px; max-width: 480px;
+}
+.triage__empty h2 { margin-bottom: 8px; }
+
+/* Top-Toolbar */
+.triage__toolbar {
+  display: flex; flex-wrap: wrap; gap: 16px; align-items: center;
+  padding: 12px 20px; border-bottom: 1px solid var(--border, #e5e7eb);
+  background: var(--surface, #fff);
+}
+.triage__toolbar-left { display: flex; gap: 12px; align-items: center; flex: 1; min-width: 240px; }
+.triage__title { margin: 0; font-size: 1.15rem; font-weight: 600; }
+.triage__account { color: var(--muted, #6b7280); font-size: 0.85rem; }
+.triage__filters { display: flex; gap: 4px; flex-wrap: wrap; }
+.triage__filter {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 5px 11px; border-radius: 14px;
+  border: 1px solid var(--border, #d0d4d9); background: transparent;
+  font-size: 0.85rem; cursor: pointer; color: inherit;
+  transition: background 0.1s, border-color 0.1s;
+}
+.triage__filter:hover { background: rgba(0,0,0,0.04); }
+.triage__filter--active {
+  background: #00c0a7; color: #0a1f2a; border-color: #00c0a7;
+}
+.triage__filter-count {
+  font-size: 0.72rem; padding: 1px 6px; border-radius: 9px;
+  background: rgba(0,0,0,0.08); font-variant-numeric: tabular-nums;
+}
+.triage__filter--active .triage__filter-count { background: rgba(10,31,42,0.18); }
+
+/* Master-Detail */
+.triage__main {
+  display: grid; grid-template-columns: minmax(320px, 380px) 1fr;
+  flex: 1; min-height: 0; overflow: hidden;
+}
+
+/* Liste */
+.triage__list {
+  list-style: none; padding: 0; margin: 0;
+  overflow-y: auto; border-right: 1px solid var(--border, #e5e7eb);
+  background: var(--surface, #fff);
+}
+.triage__list-empty {
+  padding: 24px 20px; font-size: 0.9rem;
+}
+.triage__row {
+  padding: 10px 14px 12px; border-bottom: 1px solid var(--border, #f1f3f5);
+  cursor: pointer; transition: background 0.08s;
+  border-left: 3px solid transparent;
+}
+.triage__row:hover { background: rgba(0,192,167,0.04); }
+.triage__row--selected {
+  background: rgba(0,192,167,0.10) !important;
+  border-left-color: #00c0a7;
+}
+.triage__row--unread .triage__row-sender,
+.triage__row--unread .triage__row-subject {
+  font-weight: 600;
+}
+.triage__row--unread .triage__row-sender::before {
+  content: ""; display: inline-block; width: 7px; height: 7px;
+  background: #00c0a7; border-radius: 50%;
+  margin-right: 6px; vertical-align: middle;
+}
+
+.triage__row-line1 {
+  display: flex; justify-content: space-between; align-items: baseline;
+  gap: 10px;
+}
+.triage__row-sender {
+  flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-size: 0.92rem;
+}
+.triage__row-date {
+  font-size: 0.78rem; color: var(--muted, #6b7280);
+  flex-shrink: 0; font-variant-numeric: tabular-nums;
+}
+.triage__row-subject {
+  margin-top: 2px; font-size: 0.9rem;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.triage__row-meta {
+  display: flex; gap: 6px; align-items: center; flex-wrap: wrap;
+  margin-top: 6px;
+}
+.triage__row-attach,
+.triage__row-warn {
+  font-size: 0.72rem; padding: 1px 6px; border-radius: 4px;
+}
+.triage__row-attach { color: var(--muted, #6b7280); }
+.triage__row-warn { color: #b91c1c; background: rgba(185,28,28,0.10); }
+.triage__row-snippet {
+  margin-top: 5px; font-size: 0.82rem; color: var(--muted, #6b7280);
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* Category-Badges */
+.triage__category {
+  display: inline-block; padding: 1px 7px; border-radius: 4px;
+  font-size: 0.7rem; font-weight: 600; text-transform: uppercase;
+  letter-spacing: 0.02em;
+  background: #e5e7eb; color: #374151;
+}
+.triage__category--task { background: #dbeafe; color: #1e40af; }
+.triage__category--appointment { background: #fef3c7; color: #92400e; }
+.triage__category--crm-relevant { background: #ede9fe; color: #5b21b6; }
+.triage__category--spam, .triage__category--phishing { background: #fee2e2; color: #b91c1c; }
+
+/* Detail-Pane */
+.triage__detail {
+  display: flex; flex-direction: column; min-height: 0; overflow: hidden;
+  background: var(--surface, #fff);
+}
+.triage__detail-empty {
+  flex: 1; display: grid; place-items: center; padding: 32px;
+}
+
+.triage-detail {
+  display: flex; flex-direction: column; height: 100%; overflow: hidden;
+}
+.triage-detail__toolbar {
+  display: flex; gap: 8px; flex-wrap: wrap;
+  padding: 10px 20px; border-bottom: 1px solid var(--border, #e5e7eb);
+  background: var(--surface-alt, #f8fafc);
+}
+.triage-detail__btn {
+  padding: 6px 14px; border-radius: 5px;
+  border: 1px solid var(--border, #d0d4d9); background: var(--surface, #fff);
+  font-size: 0.85rem; cursor: pointer; color: inherit;
+}
+.triage-detail__btn:hover:not(:disabled) {
+  background: rgba(0,0,0,0.04); border-color: var(--border-hover, #9ca3af);
+}
+.triage-detail__btn--primary {
+  background: #00c0a7; color: #0a1f2a; border-color: #00c0a7;
+}
+.triage-detail__btn--primary:hover:not(:disabled) {
+  background: #00a896; border-color: #00a896;
+}
+
+.triage-detail__header {
+  padding: 18px 24px 14px;
+  border-bottom: 1px solid var(--border, #f1f3f5);
+}
+.triage-detail__subject {
+  margin: 0 0 10px; font-size: 1.15rem; font-weight: 600;
+  line-height: 1.35;
+}
+.triage-detail__sender-line {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  margin-bottom: 4px;
+}
+.triage-detail__sender { font-size: 0.9rem; }
+.triage-detail__date {
+  font-size: 0.82rem; margin-left: auto;
+  font-variant-numeric: tabular-nums;
+}
+.triage-detail__auth {
+  font-size: 0.78rem; margin-top: 4px;
+}
+
+/* AI-Karte */
+.triage-detail__ai-card {
+  margin: 14px 24px; padding: 12px 16px;
+  background: rgba(0,192,167,0.06); border-left: 3px solid #00c0a7;
+  border-radius: 4px;
+}
+.triage-detail__ai-header {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  margin-bottom: 6px;
+}
+.triage-detail__ai-label {
+  font-size: 0.72rem; font-weight: 600; text-transform: uppercase;
+  letter-spacing: 0.04em; color: #00a896;
+}
+.triage-detail__ai-action {
+  font-size: 0.82rem; color: var(--muted, #6b7280); margin-left: auto;
+}
+.triage-detail__ai-summary {
+  font-size: 0.92rem; line-height: 1.45;
+}
+.triage-detail__risk {
+  margin-top: 8px; color: #b91c1c; font-size: 0.85rem; font-weight: 500;
+}
+
+/* Body */
+.triage-detail__body {
+  flex: 1; overflow-y: auto;
+  padding: 16px 24px 24px;
+}
+.triage-detail__body pre {
+  white-space: pre-wrap; word-break: break-word;
+  font-family: inherit; font-size: 0.92rem; line-height: 1.55;
+  margin: 0;
+}
+
+/* Anhänge */
+.triage-detail__attachments {
+  padding: 14px 24px 24px; border-top: 1px solid var(--border, #f1f3f5);
+}
+.triage-detail__attachments h4 {
+  margin: 0 0 10px; font-size: 0.9rem;
+}
+.triage-detail__attachments ul {
+  list-style: none; padding: 0; margin: 0;
+  display: flex; flex-direction: column; gap: 8px;
+}
+.triage-detail__attach {
+  padding: 10px 12px; background: rgba(0,0,0,0.03); border-radius: 5px;
+}
+.triage-detail__attach-line {
+  display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap;
+}
+.triage-detail__attach details { margin-top: 8px; }
+.triage-detail__attach details summary {
+  cursor: pointer; font-size: 0.82rem; color: #00a896;
+}
+.triage-detail__attach-image {
+  max-width: 100%; max-height: 480px; border-radius: 4px; margin-top: 8px;
+}
+.triage-detail__attach pre {
+  white-space: pre-wrap; word-break: break-word;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 0.78rem; max-height: 320px; overflow: auto;
+  padding: 10px; background: rgba(0,0,0,0.02); border-radius: 4px;
+  margin: 8px 0 0;
+}
+
+/* Trust-Badge — Outlook-style schlicht */
+.trust-badge--compact {
+  font-size: 0.66rem; padding: 1px 5px; letter-spacing: 0;
+  text-transform: none;
+}
+
+@media (prefers-color-scheme: dark) {
+  .triage { background: #0b1015; }
+  .triage__toolbar, .triage__list, .triage__detail { background: #111827; }
+  .triage__filter:hover { background: rgba(255,255,255,0.06); }
+  .triage__row:hover { background: rgba(0,192,167,0.10); }
+  .triage__row-attach { color: #9ca3af; }
+  .triage__category { background: rgba(255,255,255,0.08); color: #e5e7eb; }
+  .triage__category--task { background: rgba(59,130,246,0.18); color: #93c5fd; }
+  .triage__category--appointment { background: rgba(252,211,77,0.18); color: #fcd34d; }
+  .triage__category--crm-relevant { background: rgba(167,139,250,0.18); color: #c4b5fd; }
+  .triage__category--spam, .triage__category--phishing { background: rgba(239,68,68,0.18); color: #fca5a5; }
+  .triage-detail__toolbar { background: #0f172a; }
+  .triage-detail__btn { background: #1f2937; }
+  .triage-detail__btn:hover:not(:disabled) { background: #374151; }
+  .triage-detail__ai-card { background: rgba(0,192,167,0.10); }
+  .triage-detail__attach { background: rgba(255,255,255,0.04); }
+  .triage-detail__attach pre { background: rgba(0,0,0,0.20); }
+}
