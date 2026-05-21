@@ -21,6 +21,7 @@ import type {
   MailCredentialsPayload,
   MailMessage,
   MailSnapshot,
+  ScheduledJob,
   VoiceModelDownloadProgress,
   VoiceStatus,
   AuthStatus,
@@ -951,6 +952,28 @@ const api = {
       ): void => cb(snapshot);
       ipcRenderer.on("mail:snapshot", handler);
       return () => ipcRenderer.removeListener("mail:snapshot", handler);
+    },
+  },
+
+  // v0.1.267 — Scheduler (Phase S). Wiederkehrende Aktionen, aktuell
+  // einziger kind: mail-send. Anlegen erfolgt via Agent-Tool im Chat
+  // (mit propose-and-confirm); list/cancel/pause/resume kann der Renderer
+  // direkt aufrufen für eine künftige Settings-Sektion.
+  scheduler: {
+    list: (): Promise<ScheduledJob[]> => ipcRenderer.invoke("scheduler:list"),
+    cancel: (jobId: string): Promise<{ ok: true }> =>
+      ipcRenderer.invoke("scheduler:cancel", jobId),
+    pause: (jobId: string): Promise<{ ok: true }> =>
+      ipcRenderer.invoke("scheduler:pause", jobId),
+    resume: (jobId: string): Promise<{ ok: true }> =>
+      ipcRenderer.invoke("scheduler:resume", jobId),
+    onJobsChanged: (cb: (jobs: ScheduledJob[]) => void): (() => void) => {
+      const handler = (
+        _e: Electron.IpcRendererEvent,
+        jobs: ScheduledJob[],
+      ): void => cb(jobs);
+      ipcRenderer.on("scheduler:jobs-changed", handler);
+      return () => ipcRenderer.removeListener("scheduler:jobs-changed", handler);
     },
   },
 

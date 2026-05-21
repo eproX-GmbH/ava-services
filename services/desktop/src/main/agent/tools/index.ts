@@ -41,7 +41,9 @@ import { buildNotionTools } from "./notion";
 import { buildObsidianTools } from "./obsidian";
 import { buildSkillsTools } from "./skills";
 import { buildMailTools } from "./mail";
+import { buildSchedulerTools } from "./scheduler";
 import type { MailSupervisor } from "../../mail/supervisor";
+import type { ScheduledJobsSupervisor } from "../../scheduler/supervisor";
 import type { KnowledgeManager } from "../../knowledge/manager";
 import type { SkillStore } from "../../skills/store";
 import type { SkillsTrustStore } from "../../skills/trust-store";
@@ -123,6 +125,9 @@ export function buildReadOnlyRegistry(deps: {
    *  hochfährt (Konto nicht konfiguriert → Supervisor steht idle). Wenn
    *  null, melden die Mail-Tools "Mail-Konto nicht konfiguriert". */
   getMailSupervisor: () => MailSupervisor | null;
+  /** v0.1.267 — ScheduledJobsSupervisor für wiederkehrende Aktionen
+   *  (Phase S). Lazy-Getter analog Mail. */
+  getScheduledJobsSupervisor: () => ScheduledJobsSupervisor | null;
 }): ToolRegistry {
   const registry = new ToolRegistry();
   const ctx = { gateway: deps.gateway };
@@ -173,6 +178,12 @@ export function buildReadOnlyRegistry(deps: {
   // immer null liefern → Tools wären nie registriert. Jetzt registrieren
   // wir die Tools immer und prüfen Verfügbarkeit beim run().
   for (const t of buildMailTools({ getSupervisor: deps.getMailSupervisor }))
+    registry.register(t);
+  // v0.1.267 — Scheduler-Tools, gleiche Lazy-Getter-Logik.
+  for (const t of buildSchedulerTools({
+    getSupervisor: deps.getScheduledJobsSupervisor,
+    getMailSupervisor: deps.getMailSupervisor,
+  }))
     registry.register(t);
   for (const t of buildCrmTools({
     crm: deps.crm,

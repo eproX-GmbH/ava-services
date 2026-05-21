@@ -401,6 +401,27 @@ const KNOWN_BUNDLES: readonly ToolBundle[] = [
     queryHints: ["watch", "beobachten", "wiederkehrend"],
   },
   {
+    label: "Scheduler",
+    tools: ["schedule_mail_loop", "schedule_list", "schedule_cancel"],
+    queryHints: [
+      "alle",
+      "minuten",
+      "stündlich",
+      "stunde",
+      "wiederkehrend",
+      "wiederholen",
+      "regelmäßig",
+      "scheduler",
+      "schedule",
+      "automatisch",
+      "loop",
+      "bis ich stopp",
+      "bis ich sage",
+      "erinnere mich alle",
+      "erinnerung alle",
+    ],
+  },
+  {
     label: "Mail",
     tools: [
       "mail_list_inbox",

@@ -49,6 +49,9 @@ import {
 import { initBilling } from "./billing";
 import { initLinkedIn } from "./linkedin";
 import { MailSupervisor } from "./mail/supervisor";
+import { ScheduledJobsStore } from "./scheduler/store";
+import { ScheduledJobsSupervisor } from "./scheduler/supervisor";
+import type { ScheduledJob } from "../shared/types";
 import type {
   MailAccount,
   MailAllowlistEntry,
@@ -946,6 +949,7 @@ watchStore.on("changed", () => broadcastWatchesChanged());
 // die Konfiguration nachreichen kann. ProviderConfigStore wird lazy nach
 // dem app.whenReady() in den Boot-Sequenz unten attached (siehe weiter unten).
 let mailSupervisor: MailSupervisor | null = null;
+let scheduledJobsSupervisor: ScheduledJobsSupervisor | null = null;
 
 function broadcastMailSnapshot(snapshot: MailSnapshot): void {
   for (const win of BrowserWindow.getAllWindows()) {
@@ -1339,6 +1343,8 @@ const agentRegistry = buildReadOnlyRegistry({
   // bis dahin liefert der Getter null und die Mail-Tools sind nicht
   // registriert.
   getMailSupervisor: () => mailSupervisor,
+  // v0.1.267 — ScheduledJobs-Supervisor (Phase S). Analog Lazy-Pattern.
+  getScheduledJobsSupervisor: () => scheduledJobsSupervisor,
 });
 const agent = new AgentOrchestrator({
   providers,
@@ -1554,6 +1560,56 @@ app.whenReady().then(async () => {
   app.on("before-quit", () => {
     void mailSupervisor?.stop();
   });
+
+  // v0.1.267 — ScheduledJobs-Supervisor (Phase S). Eigener PGlite-Store
+  // unter userData/pglite/scheduler. Beim Boot werden alle active-Jobs
+  // aus der DB gelesen und Timer neu armiert (Persistenz übersteht
+  // App-Restart). Aktuell einziger registrierter Executor: mail-send
+  // — ruft mailSupervisor.sendAndSync() pro fire-Event.
+  const scheduledJobsStore = new ScheduledJobsStore();
+  scheduledJobsSupervisor = new ScheduledJobsSupervisor(scheduledJobsStore);
+  scheduledJobsSupervisor.registerExecutor("mail-send", async (job) => {
+    if (!mailSupervisor) {
+      throw new Error("Mail-Supervisor nicht bereit.");
+    }
+    const account = await mailSupervisor.getStore().getAccount();
+    if (!account) throw new Error("Kein Mail-Konto konfiguriert.");
+    if (!account.outboundEnabled) {
+      throw new Error("Mail-Outbound ist deaktiviert.");
+    }
+    await mailSupervisor.sendAndSync({
+      to: job.payload.to,
+      cc: job.payload.cc,
+      subject: job.payload.subject,
+      text: job.payload.text,
+    });
+  });
+  scheduledJobsSupervisor.on("changed", () => {
+    void broadcastScheduledJobsChanged();
+  });
+  try {
+    await scheduledJobsSupervisor.start();
+  } catch (err) {
+    console.warn(
+      "[scheduler] start fehlgeschlagen:",
+      err instanceof Error ? err.message : String(err),
+    );
+  }
+  app.on("before-quit", () => {
+    void scheduledJobsSupervisor?.stop();
+  });
+
+  async function broadcastScheduledJobsChanged(): Promise<void> {
+    if (!scheduledJobsSupervisor) return;
+    try {
+      const jobs = await scheduledJobsSupervisor.store.list();
+      for (const win of BrowserWindow.getAllWindows()) {
+        win.webContents.send("scheduler:jobs-changed", jobs);
+      }
+    } catch {
+      /* store nicht ready */
+    }
+  }
 
   // v0.1.182 — cycle ALL producers when the user's LLM credentials
   // change (api-key or subscription token), debounced to coalesce
@@ -3727,6 +3783,36 @@ app.whenReady().then(async () => {
     async (_e, messageId: string) => {
       if (!mailSupervisor) return null;
       return mailSupervisor.getStore().getMessage(messageId);
+    },
+  );
+
+  // ---- Scheduler IPC (Phase S — v0.1.267) -------------------------------
+  ipcMain.handle("scheduler:list", async (): Promise<ScheduledJob[]> => {
+    if (!scheduledJobsSupervisor) return [];
+    return scheduledJobsSupervisor.store.list();
+  });
+  ipcMain.handle(
+    "scheduler:cancel",
+    async (_e, jobId: string): Promise<{ ok: true }> => {
+      if (!scheduledJobsSupervisor) return { ok: true };
+      await scheduledJobsSupervisor.cancel(jobId);
+      return { ok: true };
+    },
+  );
+  ipcMain.handle(
+    "scheduler:pause",
+    async (_e, jobId: string): Promise<{ ok: true }> => {
+      if (!scheduledJobsSupervisor) return { ok: true };
+      await scheduledJobsSupervisor.pause(jobId);
+      return { ok: true };
+    },
+  );
+  ipcMain.handle(
+    "scheduler:resume",
+    async (_e, jobId: string): Promise<{ ok: true }> => {
+      if (!scheduledJobsSupervisor) return { ok: true };
+      await scheduledJobsSupervisor.resume(jobId);
+      return { ok: true };
     },
   );
 

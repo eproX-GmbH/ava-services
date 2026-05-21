@@ -2073,3 +2073,63 @@ export interface MailSnapshot {
   messages: MailMessage[];
   allowlist: MailAllowlistEntry[];
 }
+
+// ---------------------------------------------------------------------------
+// Scheduled Jobs (Phase S — v0.1.267+)
+// ---------------------------------------------------------------------------
+//
+// Generischer Scheduler für wiederkehrende Agent-getriggerte Aktionen.
+// AVA kann via schedule_*-Tools Jobs anlegen, die alle N Minuten eine
+// vordefinierte Aktion ausführen. Initial einziger Job-Type: mail-send.
+//
+// Sicherheits-Constraints:
+//   - Min Intervall 1 min
+//   - Max 10 gleichzeitige aktive Jobs pro App
+//   - Auto-Expire nach Default 24h, max 7 Tage
+//   - Runs-Cap 1000 pro Job
+//   - Mail-Send-Empfänger müssen in der Mail-Allowlist stehen
+//
+// Persistenz: PGlite, überlebt App-Restart. Supervisor armiert beim
+// Boot alle aktiven Jobs neu.
+
+export type ScheduledJobKind = "mail-send";
+
+export type ScheduledJobStatus = "active" | "paused" | "expired" | "completed" | "cancelled";
+
+export interface ScheduledMailSendPayload {
+  to: string[];
+  cc?: string[];
+  subject: string;
+  text: string;
+}
+
+export interface ScheduledJob {
+  id: string;
+  kind: ScheduledJobKind;
+  /** Menschenlesbare Beschreibung — wird im Cancel-Confirm und in der
+   *  Settings-Liste angezeigt. */
+  label: string;
+  payload: ScheduledMailSendPayload;
+  intervalMinutes: number;
+  /** ISO — wann der nächste Run fällt. */
+  nextRunAt: string;
+  /** ISO — wann der Job automatisch endet. */
+  expiresAt: string;
+  /** Zähler — wie oft schon ausgeführt. Stoppt bei runsCap. */
+  runsCompleted: number;
+  runsCap: number;
+  status: ScheduledJobStatus;
+  /** ISO — wann erstellt. */
+  createdAt: string;
+  /** Letzter Run-Fehler (null wenn alles ok oder noch nichts gelaufen). */
+  lastError: string | null;
+  /** Wer hat den Job erstellt (für Audit). */
+  source: "agent" | "user";
+}
+
+export interface ScheduledJobsSnapshot {
+  jobs: ScheduledJob[];
+  /** Anzahl aktiver Jobs vs Cap (für UI-Anzeige). */
+  activeCount: number;
+  cap: number;
+}
