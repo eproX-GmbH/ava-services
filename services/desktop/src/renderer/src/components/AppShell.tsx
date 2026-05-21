@@ -1,6 +1,6 @@
 import type { PropsWithChildren } from "react";
 import { NavLink, useNavigate, useLocation } from "react-router-dom";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { AlertCircle, Loader2, RefreshCw, Lightbulb, X } from "lucide-react";
 import { AlertBell } from "./AlertBell";
 import { WatchChip } from "./WatchChip";
@@ -405,13 +405,46 @@ function TopBar() {
       </div>
       <nav className="topbar__nav" aria-label="Hauptnavigation">
         <NavItem to="/chat" label="Chat" />
-        <NavItem to="/ingest" label="Import" />
-        <NavItem to="/transactions" label="Vorgänge" />
-        <NavItem to="/alle-firmen" label="Meine Firmen" />
-        <NavItem to="/companies" label="Firmensuche" />
-        <NavItem to="/alerts" label="Meldungen" />
+        <NavItem
+          to="/transactions"
+          label="Vorgänge"
+          subItems={[
+            { to: "/transactions", label: "Alle Vorgänge" },
+            { to: "/ingest", label: "Importieren" },
+          ]}
+        />
+        <NavItem
+          to="/alle-firmen"
+          label="Firmen"
+          subItems={[
+            { to: "/alle-firmen", label: "Meine Firmen" },
+            { to: "/companies", label: "Firmensuche" },
+          ]}
+        />
+        <NavItem
+          to="/alerts"
+          label="Meldungen"
+          subItems={[
+            { to: "/alerts", label: "Aktive Meldungen" },
+            { to: "/inbox", label: "Mail-Triage" },
+          ]}
+        />
         {linkedinEnabled && <NavItem to="/linkedin" label="Signale" />}
-        <NavItem to="/settings" label="Einstellungen" />
+        <NavItem
+          to="/settings"
+          label="Einstellungen"
+          subItems={[
+            { to: "/settings/konto", label: "Konto" },
+            { to: "/settings/modelle", label: "Modelle" },
+            { to: "/settings/verbrauch", label: "Verbrauch" },
+            { to: "/settings/datenquellen", label: "Datenquellen" },
+            { to: "/settings/automatisierungen", label: "Automatisierungen" },
+            { to: "/settings/wissensquellen", label: "Wissensquellen" },
+            { to: "/settings/skills", label: "Skills" },
+            { to: "/settings/verlauf", label: "Verlauf" },
+            { to: "/settings/system", label: "System" },
+          ]}
+        />
         <NavItem to="/whoami" label="Status" />
       </nav>
       <div className="topbar__spacer" />
@@ -484,16 +517,200 @@ function ThemeToggle() {
   );
 }
 
-function NavItem({ to, label }: { to: string; label: string }) {
-  return (
-    <NavLink
-      to={to}
-      className={({ isActive }) =>
-        "topbar__link" + (isActive ? " topbar__link--active" : "")
+interface NavSubItem {
+  to: string;
+  label: string;
+}
+
+function NavItem({
+  to,
+  label,
+  subItems,
+}: {
+  to: string;
+  label: string;
+  subItems?: NavSubItem[];
+}) {
+  // Top-Item ohne Sub-Menü: einfacher Link.
+  if (!subItems || subItems.length === 0) {
+    return (
+      <NavLink
+        to={to}
+        className={({ isActive }) =>
+          "topbar__link" + (isActive ? " topbar__link--active" : "")
+        }
+      >
+        {label}
+      </NavLink>
+    );
+  }
+  return <NavItemWithSubMenu to={to} label={label} subItems={subItems} />;
+}
+
+/**
+ * v0.1.276 — Top-Nav-Item mit Hover-Dropdown.
+ *
+ * Verhalten:
+ *   - Hover öffnet das Sub-Menü mit kurzer Verzögerung (verhindert
+ *     Flicker beim schnellen Vorbeiziehen).
+ *   - Klick aufs Top-Item navigiert zur Default-Route (`to`).
+ *   - Sub-Items sind eigene Links, schließen das Menü beim Klick.
+ *   - Esc schließt. Click-Outside schließt.
+ *   - Keyboard: Tab fokussiert; Pfeil-runter öffnet, Pfeil hoch/runter
+ *     wechselt zwischen Sub-Items, Enter aktiviert, Esc schließt.
+ */
+function NavItemWithSubMenu({
+  to,
+  label,
+  subItems,
+}: {
+  to: string;
+  label: string;
+  subItems: NavSubItem[];
+}) {
+  const [open, setOpen] = useState(false);
+  const [activeIndex, setActiveIndex] = useState(-1);
+  const wrapperRef = useRef<HTMLDivElement | null>(null);
+  const itemRefs = useRef<Array<HTMLAnchorElement | null>>([]);
+  const openTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const cancelTimers = (): void => {
+    if (openTimer.current) {
+      clearTimeout(openTimer.current);
+      openTimer.current = null;
+    }
+    if (closeTimer.current) {
+      clearTimeout(closeTimer.current);
+      closeTimer.current = null;
+    }
+  };
+
+  const scheduleOpen = (): void => {
+    cancelTimers();
+    openTimer.current = setTimeout(() => setOpen(true), 80);
+  };
+
+  const scheduleClose = (): void => {
+    cancelTimers();
+    closeTimer.current = setTimeout(() => {
+      setOpen(false);
+      setActiveIndex(-1);
+    }, 150);
+  };
+
+  // Click-outside + Esc
+  useEffect(() => {
+    if (!open) return;
+    const onDocClick = (ev: MouseEvent): void => {
+      if (
+        wrapperRef.current &&
+        !wrapperRef.current.contains(ev.target as Node)
+      ) {
+        setOpen(false);
+        setActiveIndex(-1);
       }
+    };
+    const onKey = (ev: KeyboardEvent): void => {
+      if (ev.key === "Escape") {
+        setOpen(false);
+        setActiveIndex(-1);
+      }
+    };
+    document.addEventListener("mousedown", onDocClick, true);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDocClick, true);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+
+  // Cleanup Timer beim Unmount
+  useEffect(() => () => cancelTimers(), []);
+
+  const onTopKeyDown = (ev: React.KeyboardEvent<HTMLAnchorElement>): void => {
+    if (ev.key === "ArrowDown") {
+      ev.preventDefault();
+      setOpen(true);
+      setActiveIndex(0);
+      itemRefs.current[0]?.focus();
+    }
+  };
+
+  const onItemKeyDown = (
+    ev: React.KeyboardEvent<HTMLAnchorElement>,
+    idx: number,
+  ): void => {
+    if (ev.key === "ArrowDown") {
+      ev.preventDefault();
+      const next = (idx + 1) % subItems.length;
+      setActiveIndex(next);
+      itemRefs.current[next]?.focus();
+    } else if (ev.key === "ArrowUp") {
+      ev.preventDefault();
+      const next = (idx - 1 + subItems.length) % subItems.length;
+      setActiveIndex(next);
+      itemRefs.current[next]?.focus();
+    } else if (ev.key === "Escape") {
+      setOpen(false);
+      setActiveIndex(-1);
+    }
+  };
+
+  return (
+    <div
+      className="topbar__menu"
+      ref={wrapperRef}
+      onMouseEnter={scheduleOpen}
+      onMouseLeave={scheduleClose}
     >
-      {label}
-    </NavLink>
+      <NavLink
+        to={to}
+        className={({ isActive }) =>
+          "topbar__link topbar__link--has-sub" +
+          (isActive ? " topbar__link--active" : "")
+        }
+        aria-haspopup="menu"
+        aria-expanded={open}
+        onKeyDown={onTopKeyDown}
+        onFocus={() => setOpen(true)}
+      >
+        {label}
+        <span className="topbar__chev" aria-hidden>
+          ▾
+        </span>
+      </NavLink>
+      {open && (
+        <div
+          className="topbar__submenu"
+          role="menu"
+          aria-label={`${label} Untermenü`}
+        >
+          {subItems.map((item, idx) => (
+            <NavLink
+              key={item.to}
+              to={item.to}
+              role="menuitem"
+              ref={(el) => {
+                itemRefs.current[idx] = el;
+              }}
+              className={({ isActive }) =>
+                "topbar__submenu-item" +
+                (isActive ? " topbar__submenu-item--active" : "") +
+                (activeIndex === idx ? " topbar__submenu-item--focused" : "")
+              }
+              onClick={() => {
+                setOpen(false);
+                setActiveIndex(-1);
+              }}
+              onKeyDown={(ev) => onItemKeyDown(ev, idx)}
+            >
+              {item.label}
+            </NavLink>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
 
