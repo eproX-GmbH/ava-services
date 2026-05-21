@@ -511,6 +511,60 @@ export async function createHubspotObject(
   return { id: json.id, raw: json };
 }
 
+// ---- Delete (soft, archive in HubSpot-Terminologie) ----------------------
+//
+// HubSpot's DELETE-Endpoint ist ein soft-delete: der Record geht für
+// 90 Tage in einen "archived"-Zustand und kann via Admin-UI wieder-
+// hergestellt werden. Danach endgültig weg. Vorab im Confirm-Dialog
+// genau das so kommunizieren.
+
+export interface DeleteResult {
+  ok: true;
+  objectType: HubspotObjectType;
+  objectId: string;
+}
+
+export async function deleteHubspotObject(
+  crm: CrmManager,
+  args: { objectType: HubspotObjectType; objectId: string },
+): Promise<DeleteResult> {
+  const accessToken = await crm.getAccessToken("hubspot");
+  if (!accessToken) throw new Error("HubSpot ist nicht verbunden.");
+  const url = `${HUBSPOT_API}/crm/v3/objects/${args.objectType}/${encodeURIComponent(args.objectId)}`;
+  await hubspotFetch(accessToken, url, { method: "DELETE" });
+  return { ok: true, objectType: args.objectType, objectId: args.objectId };
+}
+
+/** Read-only-Vorschau für den Delete-Confirm-Dialog. Pro Object-Type
+ *  zeigen wir Felder, die der User beim Löschen "wiedererkennt".
+ *  Liefert null wenn nicht gefunden (z. B. schon gelöscht). */
+export async function previewHubspotObject(
+  crm: CrmManager,
+  args: { objectType: HubspotObjectType; objectId: string },
+): Promise<Record<string, string | null> | null> {
+  const accessToken = await crm.getAccessToken("hubspot");
+  if (!accessToken) throw new Error("HubSpot ist nicht verbunden.");
+  const PREVIEW_PROPS: Record<HubspotObjectType, string[]> = {
+    companies: ["name", "domain", "city", "industry", "lifecyclestage"],
+    contacts: ["firstname", "lastname", "email", "company", "jobtitle"],
+    deals: ["dealname", "amount", "dealstage", "pipeline", "closedate"],
+    notes: ["hs_note_body", "hs_timestamp"],
+    tasks: ["hs_task_subject", "hs_task_status", "hs_task_priority", "hs_timestamp"],
+  };
+  const url = new URL(
+    `${HUBSPOT_API}/crm/v3/objects/${args.objectType}/${encodeURIComponent(args.objectId)}`,
+  );
+  url.searchParams.set("properties", PREVIEW_PROPS[args.objectType].join(","));
+  try {
+    const json = (await hubspotFetch(accessToken, url.toString())) as {
+      properties?: Record<string, string | null>;
+    };
+    return json.properties ?? {};
+  } catch {
+    return null;
+  }
+}
+
 // ---- Engagement-Listings (Notes/Tasks per Filter) ------------------------
 
 export interface TaskListEntry {

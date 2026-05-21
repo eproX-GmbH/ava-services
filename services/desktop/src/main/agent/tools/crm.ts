@@ -33,6 +33,8 @@ import {
   associateHubspotObjects,
   disassociateHubspotObjects,
   createHubspotObject,
+  deleteHubspotObject,
+  previewHubspotObject,
   listHubspotTasks,
   listHubspotNotesForObject,
   type HubspotObjectType,
@@ -411,6 +413,16 @@ export function buildCrmTools(deps: CrmToolDeps): Tool[] {
       crmDisplayName: yup.string().trim().optional(),
     }),
     run: async (args, c) => {
+      // v0.1.278 — Confirm-Gate dazu (User-Wunsch: alle Writes bestätigen).
+      const value = await c.ui.askChoice(
+        `Soll ich folgende CRM-Verknüpfung anlegen?\n\nAVA-Firma: ${args.companyId}\n↔ ${args.crmType} ${args.crmExternalId}${args.crmDisplayName ? ` (${args.crmDisplayName})` : ""}`,
+        [
+          { value: "link", label: "Verknüpfen", description: "POST wird gesendet" },
+          { value: "cancel", label: "Verwerfen" },
+        ],
+        c.signal,
+      );
+      if (value !== "link") return { applied: false as const };
       try {
         await gateway.request(
           `/v1/companies/${encodeURIComponent(args.companyId)}/crm/links`,
@@ -424,18 +436,21 @@ export function buildCrmTools(deps: CrmToolDeps): Tool[] {
             signal: c.signal,
           },
         );
-        return { ok: true as const };
+        return { applied: true as const, ok: true as const };
       } catch (err) {
         return {
+          applied: true as const,
           ok: false as const,
           error: err instanceof Error ? err.message : String(err),
         };
       }
     },
     preview: (r) =>
-      r.ok
-        ? "CRM-Verknüpfung angelegt"
-        : `Verknüpfung fehlgeschlagen: ${(r as { error?: string }).error ?? "?"}`,
+      !r.applied
+        ? "Verknüpfung verworfen"
+        : r.ok
+          ? "CRM-Verknüpfung angelegt"
+          : `Verknüpfung fehlgeschlagen: ${(r as { error?: string }).error ?? "?"}`,
   });
 
   // v0.1.263 — HubSpot Company-Write-Tools (Phase H). Analog zu den
@@ -1198,7 +1213,7 @@ export function buildCrmTools(deps: CrmToolDeps): Tool[] {
   const completeTaskTool = defineTool({
     name: "crm_complete_hubspot_task",
     description:
-      "Markiert eine HubSpot-Task als erledigt: setzt hs_task_status=COMPLETED und hs_task_completion_date=jetzt (oder den vom Nutzer genannten Zeitpunkt). Direkt, ohne weiteren Confirm — Erledigung ist trivial reversibel (auf NOT_STARTED/IN_PROGRESS zurücksetzen).",
+      "Markiert eine HubSpot-Task als erledigt: setzt hs_task_status=COMPLETED und hs_task_completion_date=jetzt (oder den vom Nutzer genannten Zeitpunkt). PROPOSE-AND-CONFIRM via ask_user_choice — wie alle Schreib-Operationen.",
     parameters: {
       type: "object",
       required: ["taskId"],
@@ -1216,10 +1231,30 @@ export function buildCrmTools(deps: CrmToolDeps): Tool[] {
         completedAt: yup.string().trim().optional(),
       })
       .noUnknown(true),
-    preview: (r: { ok: boolean }) =>
-      r.ok ? "Aufgabe erledigt" : "Konnte nicht abgehakt werden",
-    run: async (args) => {
+    preview: (r: { applied: boolean; ok?: boolean; error?: string }) =>
+      !r.applied
+        ? "Nicht abgehakt"
+        : r.ok
+          ? "Aufgabe erledigt"
+          : `Fehler: ${r.error ?? "?"}`,
+    run: async (args, ctx) => {
+      // v0.1.278 — Confirm-Gate dazu (User-Wunsch: alle CRUD-Ops bestätigen).
+      const preview = await previewHubspotObject(crm, {
+        objectType: "tasks",
+        objectId: args.taskId,
+      });
+      const subject =
+        (preview && preview.hs_task_subject) ?? `Task ${args.taskId}`;
       const completedAt = args.completedAt ?? new Date().toISOString();
+      const value = await ctx.ui.askChoice(
+        `Soll ich folgende Aufgabe in HubSpot als erledigt markieren?\n\n${subject}\nID: ${args.taskId}\nAbschluss-Zeitpunkt: ${completedAt}`,
+        [
+          { value: "complete", label: "Erledigt", description: "PATCH wird gesendet" },
+          { value: "cancel", label: "Abbrechen" },
+        ],
+        ctx.signal,
+      );
+      if (value !== "complete") return { applied: false };
       const result = await updateHubspotObject(crm, {
         objectType: "tasks",
         objectId: args.taskId,
@@ -1228,7 +1263,12 @@ export function buildCrmTools(deps: CrmToolDeps): Tool[] {
           hs_task_completion_date: completedAt,
         },
       });
-      return { ok: result.ok, diff: result.diff, notApplied: result.notApplied };
+      return {
+        applied: true,
+        ok: result.ok,
+        diff: result.diff,
+        notApplied: result.notApplied,
+      };
     },
   });
 
@@ -1375,6 +1415,322 @@ export function buildCrmTools(deps: CrmToolDeps): Tool[] {
     },
   });
 
+  // v0.1.278 — Contact-Create. Pflicht: email (HubSpots Dedup-Key).
+  // Optional: firstname, lastname, jobtitle, phone, sowie weitere
+  // Custom-Properties via properties-Map. linkToHubspotCompanyId für
+  // Inline-Association in einem Tool-Call.
+  const createContactTool = defineTool({
+    name: "crm_create_hubspot_contact",
+    description:
+      "Legt einen NEUEN Contact in HubSpot an. PROPOSE-AND-CONFIRM via ask_user_choice. PFLICHT vorher: crm_search_hubspot_contacts mit der email — wenn schon ein Contact mit dieser email existiert, dem Nutzer das transparent zeigen und Update statt Create vorschlagen. Pflichtfeld ist `email` (HubSpots Dedup-Key). Empfohlen: firstname, lastname. Optional: linkToHubspotCompanyId für Inline-Verknüpfung zur Company.",
+    parameters: {
+      type: "object",
+      required: ["email"],
+      properties: {
+        email: { type: "string", description: "E-Mail (Pflicht, HubSpots Dedup-Key)." },
+        firstname: { type: "string" },
+        lastname: { type: "string" },
+        jobtitle: { type: "string" },
+        phone: { type: "string" },
+        properties: {
+          type: "object",
+          description: "Zusätzliche HubSpot-Properties (Name → String).",
+          additionalProperties: { type: "string" },
+        },
+        linkToHubspotCompanyId: {
+          type: "string",
+          description: "Optionale HubSpot-companyId; Contact wird inline mit der Company verknüpft.",
+        },
+        rationale: { type: "string" },
+      },
+    },
+    schema: yup
+      .object({
+        email: yup.string().email().required(),
+        firstname: yup.string().trim().max(500).optional(),
+        lastname: yup.string().trim().max(500).optional(),
+        jobtitle: yup.string().trim().max(500).optional(),
+        phone: yup.string().trim().max(500).optional(),
+        properties: yup.object().optional(),
+        linkToHubspotCompanyId: yup.string().trim().optional(),
+        rationale: yup.string().trim().max(500).optional(),
+      })
+      .noUnknown(true),
+    preview: (r: { applied: boolean; id?: string; linked?: boolean; error?: string }) =>
+      r.applied
+        ? r.linked
+          ? `Contact angelegt + verknüpft (${r.id})`
+          : `Contact angelegt (${r.id})`
+        : r.error
+          ? `Fehler: ${r.error}`
+          : "Contact nicht angelegt",
+    run: async (args, ctx) => {
+      const props: Record<string, string> = { email: args.email };
+      if (args.firstname) props.firstname = args.firstname;
+      if (args.lastname) props.lastname = args.lastname;
+      if (args.jobtitle) props.jobtitle = args.jobtitle;
+      if (args.phone) props.phone = args.phone;
+      for (const [k, v] of Object.entries(
+        (args.properties ?? {}) as Record<string, string>,
+      )) {
+        if (k in props) continue;
+        props[k] = v;
+      }
+      const propLines = Object.entries(props)
+        .map(([k, v]) => `  ${k}: ${v}`)
+        .join("\n");
+      const linkHint = args.linkToHubspotCompanyId
+        ? `\n\nVerknüpft mit Company ${args.linkToHubspotCompanyId}.`
+        : "";
+      const rationaleBlock = args.rationale
+        ? `\n\nBegründung: ${args.rationale}`
+        : "";
+      const value = await ctx.ui.askChoice(
+        `Ich möchte folgenden NEUEN Contact in HubSpot anlegen:\n\n${propLines}${linkHint}${rationaleBlock}\n\nFalls dieser Contact bereits existiert (gleiche E-Mail), sag Bescheid — sonst gibt es ein Duplikat.`,
+        [
+          { value: "create", label: "Anlegen", description: "POST wird gesendet" },
+          { value: "cancel", label: "Verwerfen" },
+        ],
+        ctx.signal,
+      );
+      if (value !== "create") return { applied: false };
+      let createdId: string;
+      try {
+        const r = await createHubspotObject(crm, {
+          objectType: "contacts",
+          properties: props,
+          ...(args.linkToHubspotCompanyId
+            ? {
+                associations: [
+                  {
+                    toObjectType: "companies" as HubspotObjectType,
+                    toObjectId: args.linkToHubspotCompanyId,
+                  },
+                ],
+              }
+            : {}),
+        });
+        createdId = r.id;
+      } catch (err) {
+        return {
+          applied: false,
+          error: err instanceof Error ? err.message : String(err),
+        };
+      }
+      return {
+        applied: true,
+        id: createdId,
+        linked: Boolean(args.linkToHubspotCompanyId),
+      };
+    },
+  });
+
+  // v0.1.278 — Deal-Create. Trickier: dealstage ist an pipeline gekoppelt,
+  // also empfehlen wir IMMER vorher introspect zu lesen. Pflicht-Association
+  // zu mindestens einer Company oder einem Contact, sonst hängen Deals
+  // orphan im CRM.
+  const createDealTool = defineTool({
+    name: "crm_create_hubspot_deal",
+    description:
+      "Legt einen NEUEN Deal in HubSpot an. PROPOSE-AND-CONFIRM via ask_user_choice. PFLICHT vorher: crm_introspect_hubspot_deal auf einem existierenden Deal aufrufen, um pipeline + dealstage-Optionen zu kennen (dealstage ist an pipeline gekoppelt — falsche Kombination wird silently rejected). Pflichtfelder: dealname, pipeline, dealstage. Mindestens eine Association (Company oder Contact) ist Pflicht, sonst orphan deal. Optional: amount, closedate (ISO), dealtype, hubspot_owner_id, weitere Properties.",
+    parameters: {
+      type: "object",
+      required: ["dealname", "pipeline", "dealstage", "associations"],
+      properties: {
+        dealname: { type: "string" },
+        pipeline: { type: "string", description: "Pipeline-Internal-Name aus dem Schema." },
+        dealstage: {
+          type: "string",
+          description:
+            "Stage-Internal-Name. MUSS zur pipeline passen — vorher via crm_introspect_hubspot_deal die gültigen Kombinationen prüfen.",
+        },
+        amount: { type: "string", description: "Geldbetrag als String (HubSpot konvertiert)." },
+        closedate: { type: "string", description: "ISO-Date (z. B. 2026-12-31)." },
+        dealtype: { type: "string" },
+        hubspot_owner_id: {
+          type: "string",
+          description: "Owner-ID (numerisch). Aus crm_list_hubspot_owners.",
+        },
+        properties: {
+          type: "object",
+          description: "Weitere HubSpot-Properties (Name → String).",
+          additionalProperties: { type: "string" },
+        },
+        associations: {
+          type: "array",
+          minItems: 1,
+          description: "Pflicht: mind. 1 Verknüpfung zu Company oder Contact.",
+          items: {
+            type: "object",
+            required: ["objectType", "objectId"],
+            properties: {
+              objectType: { type: "string", enum: ["companies", "contacts"] },
+              objectId: { type: "string" },
+            },
+          },
+        },
+        rationale: { type: "string" },
+      },
+    },
+    schema: yup
+      .object({
+        dealname: yup.string().trim().min(1).max(500).required(),
+        pipeline: yup.string().trim().min(1).required(),
+        dealstage: yup.string().trim().min(1).required(),
+        amount: yup.string().trim().optional(),
+        closedate: yup.string().trim().optional(),
+        dealtype: yup.string().trim().optional(),
+        hubspot_owner_id: yup.string().trim().optional(),
+        properties: yup.object().optional(),
+        associations: yup
+          .array()
+          .of(
+            yup
+              .object({
+                objectType: yup.string().oneOf(["companies", "contacts"]).required(),
+                objectId: yup.string().trim().min(1).required(),
+              })
+              .required(),
+          )
+          .min(1)
+          .required(),
+        rationale: yup.string().trim().max(500).optional(),
+      })
+      .noUnknown(true),
+    preview: (r: { applied: boolean; id?: string; error?: string }) =>
+      r.applied
+        ? `Deal angelegt (${r.id})`
+        : r.error
+          ? `Fehler: ${r.error}`
+          : "Deal nicht angelegt",
+    run: async (args, ctx) => {
+      const props: Record<string, string> = {
+        dealname: args.dealname,
+        pipeline: args.pipeline,
+        dealstage: args.dealstage,
+      };
+      if (args.amount) props.amount = args.amount;
+      if (args.closedate) props.closedate = args.closedate;
+      if (args.dealtype) props.dealtype = args.dealtype;
+      if (args.hubspot_owner_id) props.hubspot_owner_id = args.hubspot_owner_id;
+      for (const [k, v] of Object.entries(
+        (args.properties ?? {}) as Record<string, string>,
+      )) {
+        if (k in props) continue;
+        props[k] = v;
+      }
+      const propLines = Object.entries(props)
+        .map(([k, v]) => `  ${k}: ${v}`)
+        .join("\n");
+      const assocLine = args.associations
+        .map((a) => `${a.objectType.replace(/s$/, "")} ${a.objectId}`)
+        .join(", ");
+      const rationaleBlock = args.rationale
+        ? `\n\nBegründung: ${args.rationale}`
+        : "";
+      const value = await ctx.ui.askChoice(
+        `Ich möchte folgenden NEUEN Deal in HubSpot anlegen:\n\n${propLines}\n\nVerknüpft mit: ${assocLine}${rationaleBlock}`,
+        [
+          { value: "create", label: "Anlegen", description: "POST wird gesendet" },
+          { value: "cancel", label: "Verwerfen" },
+        ],
+        ctx.signal,
+      );
+      if (value !== "create") return { applied: false };
+      try {
+        const result = await createHubspotObject(crm, {
+          objectType: "deals",
+          properties: props,
+          associations: args.associations.map((a) => ({
+            toObjectType: a.objectType as HubspotObjectType,
+            toObjectId: a.objectId,
+          })),
+        });
+        return { applied: true, id: result.id };
+      } catch (err) {
+        return {
+          applied: false,
+          error: err instanceof Error ? err.message : String(err),
+        };
+      }
+    },
+  });
+
+  // v0.1.278 — Delete-Tools (Phase 2). HubSpot's DELETE ist ein soft-
+  // delete: Record landet für 90 Tage im "archived"-Zustand, wieder-
+  // herstellbar via Admin-UI. Danach endgültig weg. Confirm zeigt eine
+  // Record-Vorschau damit der User nicht versehentlich den falschen
+  // löscht.
+  const buildDeleteTool = (objectType: HubspotObjectType, label: string): Tool => {
+    return defineTool({
+      name: `crm_delete_hubspot_${objectType.replace(/s$/, "")}`,
+      description: `Löscht (= archiviert) einen HubSpot-${label}. PROPOSE-AND-CONFIRM via ask_user_choice mit Record-Vorschau. HubSpot stellt den Record 90 Tage lang wieder her — danach endgültig weg. Bei Companies/Contacts/Deals werden Verknüpfungen automatisch gelöst, die verbundenen Records selbst bleiben erhalten.`,
+      parameters: {
+        type: "object",
+        required: ["objectId"],
+        properties: {
+          objectId: { type: "string" },
+          rationale: { type: "string", description: "Begründung (1 Satz)." },
+        },
+      },
+      schema: yup
+        .object({
+          objectId: yup.string().trim().min(1).required(),
+          rationale: yup.string().trim().max(500).optional(),
+        })
+        .noUnknown(true),
+      preview: (r: { applied: boolean; error?: string }) =>
+        r.applied
+          ? `${label} gelöscht`
+          : r.error
+            ? `Fehler: ${r.error}`
+            : "Nicht gelöscht",
+      run: async (args, ctx) => {
+        const preview = await previewHubspotObject(crm, {
+          objectType,
+          objectId: args.objectId,
+        });
+        if (!preview) {
+          return {
+            applied: false,
+            error: `${label} ${args.objectId} nicht gefunden — möglicherweise schon gelöscht.`,
+          };
+        }
+        const summary = Object.entries(preview)
+          .filter(([, v]) => v != null && v !== "")
+          .map(([k, v]) => `  ${k}: ${v}`)
+          .join("\n");
+        const rationaleBlock = args.rationale
+          ? `\n\nBegründung: ${args.rationale}`
+          : "";
+        const value = await ctx.ui.askChoice(
+          `Soll ich folgenden ${label} in HubSpot LÖSCHEN?\n\nID: ${args.objectId}\n${summary}${rationaleBlock}\n\nHubSpot archiviert den Record 90 Tage lang — bis dahin kannst du ihn im HubSpot-Admin wiederherstellen.`,
+          [
+            { value: "delete", label: "Löschen", description: "DELETE wird gesendet" },
+            { value: "cancel", label: "Behalten" },
+          ],
+          ctx.signal,
+        );
+        if (value !== "delete") return { applied: false };
+        try {
+          await deleteHubspotObject(crm, { objectType, objectId: args.objectId });
+          return { applied: true };
+        } catch (err) {
+          return {
+            applied: false,
+            error: err instanceof Error ? err.message : String(err),
+          };
+        }
+      },
+    });
+  };
+
+  const deleteCompanyTool = buildDeleteTool("companies", "Company");
+  const deleteContactTool = buildDeleteTool("contacts", "Contact");
+  const deleteDealTool = buildDeleteTool("deals", "Deal");
+  const deleteNoteTool = buildDeleteTool("notes", "Note");
+  const deleteTaskTool = buildDeleteTool("tasks", "Task");
+
   return [
     statusTool,
     connectTool,
@@ -1401,8 +1757,15 @@ export function buildCrmTools(deps: CrmToolDeps): Tool[] {
     associateTool,
     disassociateTool,
     createCompanyTool,
+    createContactTool,
+    createDealTool,
     createNoteTool,
     createTaskTool,
+    deleteCompanyTool,
+    deleteContactTool,
+    deleteDealTool,
+    deleteNoteTool,
+    deleteTaskTool,
     listTasksTool,
     listNotesForObjectTool,
     completeTaskTool,
