@@ -22,6 +22,8 @@ import type {
   MailMessage,
   MailSnapshot,
   ScheduledJob,
+  SelfCorrectionListQuery,
+  SelfCorrectionListResponse,
   VoiceModelDownloadProgress,
   VoiceStatus,
   AuthStatus,
@@ -967,6 +969,17 @@ const api = {
   // einziger kind: mail-send. Anlegen erfolgt via Agent-Tool im Chat
   // (mit propose-and-confirm); list/cancel/pause/resume kann der Renderer
   // direkt aufrufen für eine künftige Settings-Sektion.
+  selfCorrections: {
+    list: (
+      query?: SelfCorrectionListQuery,
+    ): Promise<SelfCorrectionListResponse> =>
+      ipcRenderer.invoke("self-corrections:list", query),
+    delete: (id: string): Promise<{ ok: true }> =>
+      ipcRenderer.invoke("self-corrections:delete", id),
+    deleteAll: (): Promise<{ ok: true }> =>
+      ipcRenderer.invoke("self-corrections:deleteAll"),
+  },
+
   scheduler: {
     list: (): Promise<ScheduledJob[]> => ipcRenderer.invoke("scheduler:list"),
     cancel: (jobId: string): Promise<{ ok: true }> =>

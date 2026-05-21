@@ -22,6 +22,7 @@ import type {
   AuditEvent,
   AuditListQuery,
   AuditSeverity,
+  SelfCorrectionEvent,
 } from "../../../../shared/types";
 
 const ALL_CATEGORIES: AuditCategory[] = [
@@ -70,6 +71,15 @@ type TimeRangeId = (typeof TIME_RANGES)[number]["id"];
 const PAGE_SIZE = 50;
 
 export function VerlaufTab(): JSX.Element {
+  return (
+    <>
+      <SelfCorrectionsSection />
+      <AuditTrailSection />
+    </>
+  );
+}
+
+function AuditTrailSection(): JSX.Element {
   // Filter state
   const [categories, setCategories] = useState<Set<AuditCategory>>(
     new Set(ALL_CATEGORIES),
@@ -499,5 +509,169 @@ function AuditEventRow({
         </div>
       )}
     </li>
+  );
+}
+
+
+// v0.1.284 — Self-Corrections-Sektion.
+//
+// Listet AVAs gemeldete Workarounds nach Tool-Fehlern. Daten kommen aus
+// dem lokalen self_corrections-Store. Auto-Hide wenn leer (kein Lärm
+// für Nutzer ohne Vorkommen). Export-Button serialisiert die Liste
+// als JSON ins Clipboard für Bug-Reports.
+function SelfCorrectionsSection(): JSX.Element | null {
+  const [items, setItems] = useState<SelfCorrectionEvent[]>([]);
+  const [total, setTotal] = useState(0);
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+
+  const refresh = useCallback(async () => {
+    const res = await window.api.selfCorrections.list({ page: 1, pageSize: 50 });
+    setItems(res.items);
+    setTotal(res.total);
+  }, []);
+
+  useEffect(() => {
+    void refresh();
+    // Live-Refresh alle 30s — der Store hat keinen push-Channel, ist
+    // aber selten genug betroffen dass Polling im Tab-Lifecycle OK ist.
+    const t = setInterval(() => void refresh(), 30_000);
+    return () => clearInterval(t);
+  }, [refresh]);
+
+  if (total === 0) return null;
+
+  const onDelete = async (id: string): Promise<void> => {
+    await window.api.selfCorrections.delete(id);
+    await refresh();
+  };
+  const onDeleteAll = async (): Promise<void> => {
+    if (
+      !window.confirm(
+        `Alle ${total} Selbstkorrektur-Meldungen löschen? Damit gehen die Hinweise auf Tool-Probleme verloren — sicher?`,
+      )
+    )
+      return;
+    await window.api.selfCorrections.deleteAll();
+    await refresh();
+  };
+  const onExport = async (): Promise<void> => {
+    const text = JSON.stringify(items, null, 2);
+    try {
+      await navigator.clipboard.writeText(text);
+      window.alert("In die Zwischenablage kopiert.");
+    } catch {
+      window.alert("Konnte nicht kopieren — bitte Console-Log nutzen.");
+      console.log(text);
+    }
+  };
+
+  const toggle = (id: string): void => {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  // Aggregat-Statistik pro Tool — was kommt am häufigsten vor.
+  const byTool = new Map<string, number>();
+  for (const e of items) {
+    byTool.set(e.attemptedTool, (byTool.get(e.attemptedTool) ?? 0) + 1);
+  }
+  const topTools = Array.from(byTool.entries())
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 5);
+
+  return (
+    <section
+      className="provider-section"
+      id="self-corrections"
+      style={{ marginBottom: "1.25rem" }}
+    >
+      <header style={{ marginBottom: "0.75rem" }}>
+        <h3>Selbstkorrekturen (Tool-Workarounds)</h3>
+        <p className="muted small" style={{ margin: 0 }}>
+          AVA meldet hier, wenn sie nach einem Tool-Fehler einen Workaround
+          gefunden hat. Pattern, die hier oft auftauchen, gehören als
+          Code-Fix in den Tool/Skill — eine wiederkehrende Meldung ist
+          ein Hinweis für mich als Entwickler. Alles bleibt lokal.
+          Aktuell: <strong>{total}</strong> Meldung{total === 1 ? "" : "en"}.
+        </p>
+      </header>
+
+      {topTools.length > 0 && (
+        <div className="self-corrections__stats">
+          <span className="muted small">Top-Tools mit Workaround:</span>
+          {topTools.map(([tool, count]) => (
+            <span key={tool} className="self-corrections__stat">
+              <code>{tool}</code> · {count}
+            </span>
+          ))}
+        </div>
+      )}
+
+      <div style={{ display: "flex", gap: 8, margin: "8px 0 12px" }}>
+        <button type="button" onClick={onExport}>
+          Als JSON kopieren
+        </button>
+        <button type="button" onClick={onDeleteAll} className="danger">
+          Alle löschen
+        </button>
+      </div>
+
+      <ul className="self-corrections__list">
+        {items.map((e) => (
+          <li key={e.id} className="self-corrections__row">
+            <div
+              className="self-corrections__head"
+              onClick={() => toggle(e.id)}
+              style={{ cursor: "pointer" }}
+            >
+              <code className="self-corrections__tool">{e.attemptedTool}</code>
+              <span className="muted small">
+                {new Date(e.timestamp).toLocaleString("de-DE")}
+              </span>
+              <span className="self-corrections__caret" aria-hidden>
+                {expanded.has(e.id) ? "▾" : "▸"}
+              </span>
+            </div>
+            <div className="self-corrections__short">{e.failedReason}</div>
+            {expanded.has(e.id) && (
+              <div className="self-corrections__detail">
+                <div>
+                  <strong>Workaround:</strong> {e.workaround}
+                </div>
+                {e.suggestedCodeFix && (
+                  <div style={{ marginTop: 4 }}>
+                    <strong>Fix-Vorschlag:</strong> {e.suggestedCodeFix}
+                  </div>
+                )}
+                {e.rawErrorPreview && (
+                  <details style={{ marginTop: 6 }}>
+                    <summary>Original-Fehler</summary>
+                    <pre className="self-corrections__raw">
+                      {e.rawErrorPreview}
+                    </pre>
+                  </details>
+                )}
+                {e.conversationId && (
+                  <div className="muted small" style={{ marginTop: 4 }}>
+                    Conversation: <code>{e.conversationId}</code>
+                  </div>
+                )}
+                <button
+                  type="button"
+                  onClick={() => void onDelete(e.id)}
+                  style={{ marginTop: 8 }}
+                >
+                  Eintrag löschen
+                </button>
+              </div>
+            )}
+          </li>
+        ))}
+      </ul>
+    </section>
   );
 }

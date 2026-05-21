@@ -42,8 +42,10 @@ import { buildObsidianTools } from "./obsidian";
 import { buildSkillsTools } from "./skills";
 import { buildMailTools } from "./mail";
 import { buildSchedulerTools } from "./scheduler";
+import { buildSelfCorrectionTools } from "./self-correction";
 import type { MailSupervisor } from "../../mail/supervisor";
 import type { ScheduledJobsSupervisor } from "../../scheduler/supervisor";
+import type { SelfCorrectionsStore } from "../self-corrections-store";
 import type { KnowledgeManager } from "../../knowledge/manager";
 import type { SkillStore } from "../../skills/store";
 import type { SkillsTrustStore } from "../../skills/trust-store";
@@ -128,6 +130,10 @@ export function buildReadOnlyRegistry(deps: {
   /** v0.1.267 — ScheduledJobsSupervisor für wiederkehrende Aktionen
    *  (Phase S). Lazy-Getter analog Mail. */
   getScheduledJobsSupervisor: () => ScheduledJobsSupervisor | null;
+  /** v0.1.284 — Self-Correction-Reporting-Store. */
+  selfCorrectionsStore: SelfCorrectionsStore;
+  /** Aktive Conversation-ID, vom Orchestrator gesetzt. */
+  getActiveConversationId: () => string | null;
 }): ToolRegistry {
   const registry = new ToolRegistry();
   const ctx = { gateway: deps.gateway };
@@ -183,6 +189,12 @@ export function buildReadOnlyRegistry(deps: {
   for (const t of buildSchedulerTools({
     getSupervisor: deps.getScheduledJobsSupervisor,
     getMailSupervisor: deps.getMailSupervisor,
+  }))
+    registry.register(t);
+  // v0.1.284 — Self-Correction-Reporting (always-on Telemetrie).
+  for (const t of buildSelfCorrectionTools({
+    store: deps.selfCorrectionsStore,
+    getActiveConversationId: deps.getActiveConversationId,
   }))
     registry.register(t);
   for (const t of buildCrmTools({

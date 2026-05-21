@@ -2133,3 +2133,58 @@ export interface ScheduledJobsSnapshot {
   activeCount: number;
   cap: number;
 }
+
+// ---------------------------------------------------------------------------
+// Self-Corrections (v0.1.284) — Feedback-Loop Agent → Entwickler
+// ---------------------------------------------------------------------------
+//
+// Wenn AVA in einer Konversation einen Tool-Error trifft und einen
+// Workaround findet (z. B. "create-with-inline-assoc failed → ohne assoc
+// + separat assoziieren"), schreibt sie diesen Vorgang via
+// `report_self_correction`-Tool in die lokale `self_corrections`-DB.
+// Damit haben Entwickler eine Daten-getriebene Quelle, welche Tools/
+// Skills strukturell ein Problem haben — statt jeden Bug einzeln im
+// Chat-Transcript suchen zu müssen.
+
+export interface SelfCorrectionEvent {
+  id: string;
+  /** ISO timestamp wann der Workaround gemeldet wurde. */
+  timestamp: string;
+  /** Konversation in der das passierte (optional). */
+  conversationId: string | null;
+  /** Welches Tool ursprünglich gefailed hat. */
+  attemptedTool: string;
+  /** Was genau der Fehler war (1-3 Sätze, vom Agent zusammengefasst). */
+  failedReason: string;
+  /** Welcher Workaround hat geklappt (1-3 Sätze). */
+  workaround: string;
+  /** Optional: Vorschlag wo im Code der Fix sitzen sollte. */
+  suggestedCodeFix: string | null;
+  /** Optional: gekürzte Original-Fehler-Message (max ~400 Zeichen). */
+  rawErrorPreview: string | null;
+}
+
+export type SelfCorrectionEventInput = Omit<
+  SelfCorrectionEvent,
+  "id" | "timestamp"
+> & {
+  conversationId?: string | null;
+  suggestedCodeFix?: string | null;
+  rawErrorPreview?: string | null;
+};
+
+export interface SelfCorrectionListQuery {
+  page?: number;
+  pageSize?: number;
+  /** ISO: nur Events seit diesem Zeitpunkt. */
+  since?: string;
+  /** Filter nach attemptedTool. */
+  attemptedTool?: string;
+}
+
+export interface SelfCorrectionListResponse {
+  total: number;
+  page: number;
+  pageSize: number;
+  items: SelfCorrectionEvent[];
+}

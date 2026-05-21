@@ -51,6 +51,7 @@ import { initLinkedIn } from "./linkedin";
 import { MailSupervisor } from "./mail/supervisor";
 import { ScheduledJobsStore } from "./scheduler/store";
 import { ScheduledJobsSupervisor } from "./scheduler/supervisor";
+import { SelfCorrectionsStore } from "./agent/self-corrections-store";
 import type { ScheduledJob } from "../shared/types";
 import type {
   MailAccount,
@@ -1307,6 +1308,10 @@ let _skillStoreRef: import("./skills").SkillStore | null = null;
 let _skillsTrustRef: SkillsTrustStore | null = null;
 const skillsUserDir = join(app.getPath("userData"), "skills");
 
+// v0.1.284 — Self-Correction-Feedback-Store. Lokal, kein Cloud-Upload.
+// Wird unten im Boot via .start() initialisiert.
+const selfCorrectionsStore = new SelfCorrectionsStore();
+
 const agentRegistry = buildReadOnlyRegistry({
   gateway: gatewayClient,
   providers,
@@ -1362,6 +1367,9 @@ const agentRegistry = buildReadOnlyRegistry({
   getMailSupervisor: () => mailSupervisor,
   // v0.1.267 — ScheduledJobs-Supervisor (Phase S). Analog Lazy-Pattern.
   getScheduledJobsSupervisor: () => scheduledJobsSupervisor,
+  // v0.1.284 — Self-Correction-Reporting (always-on Telemetrie).
+  selfCorrectionsStore,
+  getActiveConversationId: () => agent.getStatus().inFlightConversationId,
 });
 const agent = new AgentOrchestrator({
   providers,
@@ -1576,6 +1584,24 @@ app.whenReady().then(async () => {
   }
   app.on("before-quit", () => {
     void mailSupervisor?.stop();
+  });
+
+  // v0.1.284 — Self-Corrections-Store starten + 24h-Retention-Tick.
+  try {
+    await selfCorrectionsStore.start();
+    void selfCorrectionsStore.purgeOlderThanRetention();
+    setInterval(
+      () => void selfCorrectionsStore.purgeOlderThanRetention(),
+      24 * 60 * 60 * 1000,
+    );
+  } catch (err) {
+    console.warn(
+      "[self-corrections] start fehlgeschlagen:",
+      err instanceof Error ? err.message : String(err),
+    );
+  }
+  app.on("before-quit", () => {
+    void selfCorrectionsStore.stop();
   });
 
   // v0.1.267 — ScheduledJobs-Supervisor (Phase S). Eigener PGlite-Store
@@ -3841,6 +3867,31 @@ app.whenReady().then(async () => {
     async (_e, messageId: string) => {
       if (!mailSupervisor) return null;
       return mailSupervisor.getStore().getMessage(messageId);
+    },
+  );
+
+  // ---- Self-Corrections IPC (v0.1.284) ----------------------------------
+  ipcMain.handle(
+    "self-corrections:list",
+    async (
+      _e,
+      query?: import("../shared/types").SelfCorrectionListQuery,
+    ): Promise<import("../shared/types").SelfCorrectionListResponse> => {
+      return selfCorrectionsStore.list(query ?? {});
+    },
+  );
+  ipcMain.handle(
+    "self-corrections:delete",
+    async (_e, id: string): Promise<{ ok: true }> => {
+      await selfCorrectionsStore.deleteOne(id);
+      return { ok: true };
+    },
+  );
+  ipcMain.handle(
+    "self-corrections:deleteAll",
+    async (): Promise<{ ok: true }> => {
+      await selfCorrectionsStore.deleteAll();
+      return { ok: true };
     },
   );
 

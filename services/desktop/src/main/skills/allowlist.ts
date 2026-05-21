@@ -90,6 +90,10 @@ const SKILL_ALLOWLIST_BYPASS = new Set<string>([
   // (b) Cross-cutting Utilities — Memory
   "remember",
   "recall_memory",
+  // (b) Cross-cutting Utilities — Self-Correction-Reporting (v0.1.284).
+  // Soll vom Agent IMMER aufrufbar sein, damit der Feedback-Loop nicht
+  // skill-abhängig bricht.
+  "report_self_correction",
 ]);
 
 export function checkSkillAllowlist(
