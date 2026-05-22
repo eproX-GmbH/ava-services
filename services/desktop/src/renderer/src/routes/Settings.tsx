@@ -421,7 +421,14 @@ function SettingsTabLink({
           aria-label={`${label} Untermenü`}
         >
           {subItems.map((item) => (
-            <NavLink
+            // v0.1.290 — bewusst Link statt NavLink. NavLink ignoriert
+            // den #hash beim Active-Matching, also matchen ALLE Sub-Items
+            // (alle `/settings/konto#X`) auf der aktuellen Route
+            // `/settings/konto` → react-router setzt auf jedem Item die
+            // `active`-Klasse, und das Popover sah aus, als wären alle
+            // 9 Punkte gleichzeitig gehovert/aktiv. Sub-Items sind reine
+            // Anchor-Sprünge im selben Tab, kein eigener Route-Zustand.
+            <Link
               key={item.anchor}
               to={`/settings/${tabId}#${item.anchor}`}
               role="menuitem"
@@ -429,7 +436,7 @@ function SettingsTabLink({
               onClick={() => setOpen(false)}
             >
               {item.label}
-            </NavLink>
+            </Link>
           ))}
         </div>
       )}
