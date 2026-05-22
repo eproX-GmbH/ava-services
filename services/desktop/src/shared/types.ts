@@ -1950,6 +1950,15 @@ export interface MailAccount {
   };
   /** Master-Schalter: AVA darf überhaupt auf Mails antworten. Default false. */
   outboundEnabled: boolean;
+  /**
+   * v0.1.299 — Auto-Triage: AVA reagiert vollautonom auf eingehende
+   * trusted Mails (recherchiert, antwortet, macht CRM-Updates) ohne
+   * User-Eingriff. Voraussetzungen: outboundEnabled=true UND der
+   * Absender muss in der Allowlist sein. Default off — explizites
+   * Opt-in, weil das Risiko-Profil deutlich höher ist als der
+   * bisherige Pull-Modus (User triggert).
+   */
+  autoTriageEnabled?: boolean;
   /** Poll-Intervall in Minuten (Fallback wenn IMAP IDLE nicht supported).
    *  Default 15. Wird ignoriert, wenn IDLE läuft. */
   pollIntervalMinutes: number;

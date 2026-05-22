@@ -81,6 +81,9 @@ interface AccountRow {
   imap_json: string;
   smtp_json: string;
   outbound_enabled: boolean;
+  // v0.1.299 — Optional, weil ältere Tables die Spalte noch nicht haben
+  // (siehe applySchema unten — ALTER TABLE ADD COLUMN IF NOT EXISTS).
+  auto_triage_enabled?: boolean | null;
   poll_interval_minutes: number | string;
   last_sync_at: string | null;
   last_error_at: string | null;
@@ -175,14 +178,16 @@ export class MailStore extends EventEmitter {
     await pg.query(
       `INSERT INTO mail_account
          (address, display_name, imap_json, smtp_json, outbound_enabled,
+          auto_triage_enabled,
           poll_interval_minutes, last_sync_at, last_error_at, last_error_message)
-       VALUES ($1, $2, $3::jsonb, $4::jsonb, $5, $6, $7, $8, $9)`,
+       VALUES ($1, $2, $3::jsonb, $4::jsonb, $5, $6, $7, $8, $9, $10)`,
       [
         account.address,
         account.displayName,
         JSON.stringify(account.imap),
         JSON.stringify(account.smtp),
         account.outboundEnabled,
+        account.autoTriageEnabled === true,
         account.pollIntervalMinutes,
         account.lastSyncAt,
         account.lastErrorAt,
@@ -499,6 +504,84 @@ export class MailStore extends EventEmitter {
     return res.rows.map(rowToAttachment);
   }
 
+  /**
+   * v0.1.299 — Per-Thread Auto-Reply-Quota.
+   *
+   * Reserviert ein Auto-Reply-Slot für einen Thread. Returnt
+   * { allowed: true } wenn die Quota frei ist (= AVA darf antworten),
+   * { allowed: false, reason } sonst. Wenn allowed=true wird der
+   * Counter SOFORT hochgezählt (auch wenn der Agent dann doch nichts
+   * sendet — dann ist es ein „wasted slot", aber das ist sicherer als
+   * race-conditions zwischen Trigger und Reply).
+   *
+   * Limits:
+   *   - max 5 Auto-Replies pro Thread insgesamt
+   *   - max 1 Auto-Reply alle 5 Minuten pro Thread (Cooldown)
+   *
+   * threadKey: normalisierte Form von (Subject ohne "Re:" + Sender-Address).
+   */
+  async checkAndReserveAutoReplyQuota(threadKey: string): Promise<{
+    allowed: boolean;
+    reason?: string;
+    replyCount?: number;
+  }> {
+    const pg = this.requirePg();
+    const now = new Date();
+    const existing = await pg.query<{
+      reply_count: number;
+      last_reply_at: string;
+      first_reply_at: string;
+    }>(
+      `SELECT reply_count, last_reply_at, first_reply_at
+       FROM mail_auto_reply_log
+       WHERE thread_key = $1`,
+      [threadKey],
+    );
+    if (existing.rows.length > 0) {
+      const row = existing.rows[0]!;
+      const count =
+        typeof row.reply_count === "number"
+          ? row.reply_count
+          : Number(row.reply_count);
+      if (count >= 5) {
+        return {
+          allowed: false,
+          reason: `Auto-Reply-Limit (5) für diesen Thread erreicht`,
+          replyCount: count,
+        };
+      }
+      const lastAt = new Date(row.last_reply_at).getTime();
+      const cooldownMs = 5 * 60 * 1000;
+      if (now.getTime() - lastAt < cooldownMs) {
+        const remainingMin = Math.ceil(
+          (cooldownMs - (now.getTime() - lastAt)) / 60000,
+        );
+        return {
+          allowed: false,
+          reason: `Cooldown aktiv — nächste Auto-Reply in ${remainingMin}min`,
+          replyCount: count,
+        };
+      }
+      // Quota frei — hochzählen.
+      await pg.query(
+        `UPDATE mail_auto_reply_log
+         SET reply_count = reply_count + 1,
+             last_reply_at = $2
+         WHERE thread_key = $1`,
+        [threadKey, now.toISOString()],
+      );
+      return { allowed: true, replyCount: count + 1 };
+    }
+    // Erstes Reply für diesen Thread.
+    await pg.query(
+      `INSERT INTO mail_auto_reply_log
+         (thread_key, reply_count, first_reply_at, last_reply_at)
+       VALUES ($1, 1, $2, $2)`,
+      [threadKey, now.toISOString()],
+    );
+    return { allowed: true, replyCount: 1 };
+  }
+
   // ---------------- Snapshot (für IPC) ----------------
 
   async snapshot(): Promise<MailSnapshot> {
@@ -541,6 +624,11 @@ export class MailStore extends EventEmitter {
         last_error_at          TIMESTAMPTZ,
         last_error_message     TEXT
       );
+      -- v0.1.299 — Migration: auto_triage_enabled hinzufügen, wenn das
+      -- Schema schon mit v0.1.282 erzeugt wurde. IF NOT EXISTS macht
+      -- den ALTER idempotent.
+      ALTER TABLE mail_account
+        ADD COLUMN IF NOT EXISTS auto_triage_enabled BOOLEAN NOT NULL DEFAULT FALSE;
 
       CREATE TABLE IF NOT EXISTS mail_allowlist (
         id        TEXT PRIMARY KEY,
@@ -594,6 +682,18 @@ export class MailStore extends EventEmitter {
       );
       CREATE INDEX IF NOT EXISTS mail_attachments_message_idx
         ON mail_attachments (message_id);
+
+      -- v0.1.299 — Per-Thread Auto-Reply-Counter für den Loop-Guard.
+      -- Wenn AVA im Auto-Triage-Modus auf eine Mail antwortet, könnte
+      -- die Reply selbst eine Reply auslösen (Ping-Pong). Wir tracken
+      -- pro Thread die Anzahl Auto-Replies und stoppen bei N=5 oder
+      -- Cooldown unter 5min.
+      CREATE TABLE IF NOT EXISTS mail_auto_reply_log (
+        thread_key      TEXT PRIMARY KEY,
+        reply_count     INTEGER NOT NULL DEFAULT 0,
+        last_reply_at   TIMESTAMPTZ NOT NULL,
+        first_reply_at  TIMESTAMPTZ NOT NULL
+      );
     `);
 
     // v0.1.262 Hotfix — Bestehende Rows mit id='' reparieren. Tritt auf
@@ -634,6 +734,7 @@ function rowToAccount(row: AccountRow): MailAccount {
     imap: parseJson(row.imap_json) as MailAccount["imap"],
     smtp: parseJson(row.smtp_json) as MailAccount["smtp"],
     outboundEnabled: row.outbound_enabled,
+    autoTriageEnabled: row.auto_triage_enabled === true,
     pollIntervalMinutes: Number(row.poll_interval_minutes),
     lastSyncAt: row.last_sync_at,
     lastErrorAt: row.last_error_at,

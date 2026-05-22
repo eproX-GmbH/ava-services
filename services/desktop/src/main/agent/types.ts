@@ -58,6 +58,14 @@ export interface ToolContext {
   log: (msg: string) => void;
   /** Per-request UI roundtrip surface (askChoice / navigate / notify). */
   ui: import("./ui-bridge").UiBridge;
+  /**
+   * v0.1.299 — Auto-Triage-Modus. Wenn true, sind ask_user_choice und
+   * ask_user_text deaktiviert (kein User im Chat). Tools die normal
+   * via ask_user_* einen Confirm holen würden, müssen in dem Modus
+   * entweder selbst entscheiden ODER hart fehlerwerfen statt zu
+   * blocken.
+   */
+  autonomousMode?: boolean;
 }
 
 /**
@@ -82,4 +90,22 @@ export interface Conversation {
    * Notion tools available without a separate tool_load round-trip.
    */
   loadedToolNames?: Set<string>;
+  /**
+   * v0.1.299 — Auto-Triage-Modus.
+   *
+   * Wird gesetzt wenn die Conversation NICHT vom User per Chat-Eingabe,
+   * sondern vom MailAgentBridge bei einer eingehenden trusted Mail
+   * gestartet wurde. Effekte:
+   *   - ask_user_choice / ask_user_text werfen sofort, statt zu blocken
+   *     (kein User da, der antworten könnte)
+   *   - System-Prompt-Block mit Hinweis "handle direkt, kein zurückfragen"
+   *   - UI zeigt 🤖 Auto-Badge in der Sidebar
+   */
+  autonomousMode?: boolean;
+  /**
+   * v0.1.299 — bei autonomousMode=true: Pointer auf die Quell-Mail
+   * (Message-ID in PGlite mail_messages). Wird für UI-Backlink + Per-
+   * Thread-Reply-Counter benutzt.
+   */
+  sourceMailId?: string;
 }

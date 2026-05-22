@@ -49,6 +49,17 @@ export interface PromptSkillContext {
    * old behaviour) so unit tests / boot diagnostics don't break.
    */
   availableToolNames?: ReadonlySet<string>;
+  /**
+   * v0.1.299 — Auto-Triage-Modus. Wenn true, sind die Standard-
+   * Verhaltensregeln um zwei harte Anweisungen erweitert:
+   *   1. ask_user_choice / ask_user_text sind NICHT erlaubt — kein
+   *      User am Chat. Bei Unsicherheit selbst entscheiden.
+   *   2. Die Konversation wurde durch eine eingehende Mail ausgelöst,
+   *      Erwartung ist eine konkrete Antwort an den Absender (Reply)
+   *      ODER eine konkrete Action (CRM-Update, Notion-Eintrag, …)
+   *      bevor der Loop endet.
+   */
+  autonomousMode?: boolean;
 }
 
 export function buildSystemPrompt(
@@ -456,6 +467,46 @@ export function buildSystemPrompt(
     ? `[Aktives Skill: ${skillContext.activeSkill.name}]`
     : "";
 
+  // v0.1.299 — Auto-Triage-Modus: Diese Konversation wurde NICHT vom
+  // User getippt, sondern automatisch durch eine eingehende trusted
+  // Mail ausgelöst. Es gibt keinen User im Chat, der ask_user_*
+  // beantworten könnte. Der Agent muss selbst eine Entscheidung
+  // treffen und entweder antworten (mail_reply), eine andere Action
+  // durchziehen (CRM-Update, Notion-Eintrag) oder explizit beenden
+  // mit Begründung.
+  const autonomousBlock = skillContext?.autonomousMode
+    ? [
+        "## ⚠ Auto-Triage-Modus aktiv",
+        "",
+        "Diese Konversation wurde AUTOMATISCH durch eine eingehende",
+        "trusted Mail ausgelöst. Es ist KEIN User da, der mitliest oder",
+        "antwortet. Verhaltensregeln für diesen Modus:",
+        "",
+        "1. ask_user_choice / ask_user_text SIND NICHT ERLAUBT. Die",
+        "   Tools werfen sofort einen Fehler. Triff Entscheidungen",
+        "   selbst, anhand der vorliegenden Daten + Tool-Outputs.",
+        "",
+        "2. Du wirst NICHT um Bestätigung gefragt, wenn du eine Mail",
+        "   sendest oder ein CRM-Update machst. mail_reply geht direkt",
+        "   raus an die trusted Absender-Adresse.",
+        "",
+        "3. Ziel: konkrete Antwort an den Absender ODER konkrete Action",
+        "   (CRM-Update, Notion-Eintrag, Termin-Vorschlag) ABSCHLIESSEN.",
+        "   Beende den Loop nicht mit „Ich warte auf User-Input“ — es",
+        "   gibt keinen User-Input mehr in dieser Session.",
+        "",
+        "4. Bei Unsicherheit: trotzdem antworten. Schreib offen wenn du",
+        "   etwas nicht weißt, statt zu warten. Der User kann später",
+        "   einen Folge-Auftrag geben, falls die Antwort daneben war.",
+        "",
+        "5. Reply-Loop-Schutz: NICHT auf eine Mail antworten, die",
+        "   selbst eine Reply auf eine deiner Mails ist. Wenn der",
+        "   Mail-Subject mit Re: Re: Re: anfängt oder du selbst",
+        "   schon mehrfach in diesem Thread geschrieben hast, halte",
+        "   inne und beende mit kurzer Notiz 'Ping-Pong erkannt'.",
+      ].join("\n")
+    : "";
+
   return [
     profileBlock,
     rememberedBlock,
@@ -466,6 +517,7 @@ export function buildSystemPrompt(
     skillsRefusalBlock,
     CHART_INSTRUCTIONS,
     activeSkillHint,
+    autonomousBlock,
   ]
     .filter((s) => s.length > 0)
     .join("\n\n");

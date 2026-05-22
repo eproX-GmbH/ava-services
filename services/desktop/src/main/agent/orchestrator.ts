@@ -519,6 +519,142 @@ export class AgentOrchestrator extends EventEmitter {
     return { requestId };
   }
 
+  /**
+   * v0.1.299 — Externer Trigger für eine Auto-Triage-Conversation
+   * (z. B. von MailAgentBridge bei eingehender trusted Mail).
+   *
+   * Unterscheidet sich von `send()` durch:
+   *   - eigene Conversation pro Trigger (kein Re-Use vorhandener IDs)
+   *   - kein User-Message-Append; die Mail wird als initialMessage
+   *     gesetzt
+   *   - autonomousMode=true im Conversation-Meta → System-Prompt
+   *     bekommt den Auto-Triage-Block
+   *   - skill wird FORCE-aktiviert (kein keyword-auto-activate)
+   *
+   * Returnt null wenn LLM nicht ready ist. Wenn der Orchestrator
+   * gerade einen anderen Request abarbeitet, wird der Trigger gequeuet
+   * und nach Beendigung sequenziell abgearbeitet.
+   */
+  startAutonomousConversation(input: {
+    skillName: string;
+    initialMessage: string;
+    sourceMailId: string;
+  }): { conversationId: string; requestId: string } | null {
+    const status = this.getStatus();
+    if (!status.ready) {
+      console.warn(
+        "[orchestrator] autonomous trigger refused: LLM not ready",
+      );
+      return null;
+    }
+    // Queue wenn busy. Drain im finally-Block des aktuellen runLoop.
+    if (this.inFlightRequestId !== null) {
+      this.pendingAutonomousQueue.push(input);
+      // Cap die Queue auf 20 — falls 100 Mails reinkommen während AVA
+      // aus ist, wollen wir nicht ewig nachholen. Älteste verwerfen.
+      if (this.pendingAutonomousQueue.length > 20) {
+        this.pendingAutonomousQueue.shift();
+      }
+      console.log(
+        `[orchestrator] queued autonomous trigger (was busy, queue=${this.pendingAutonomousQueue.length})`,
+      );
+      return null;
+    }
+    return this.runAutonomousNow(input);
+  }
+
+  private pendingAutonomousQueue: Array<{
+    skillName: string;
+    initialMessage: string;
+    sourceMailId: string;
+  }> = [];
+
+  private runAutonomousNow(input: {
+    skillName: string;
+    initialMessage: string;
+    sourceMailId: string;
+  }): { conversationId: string; requestId: string } {
+    const conversationId = randomUUID();
+    const convo: Conversation = {
+      id: conversationId,
+      messages: [],
+      autonomousMode: true,
+      sourceMailId: input.sourceMailId,
+      loadedToolNames: new Set(),
+    };
+    this.conversations.set(conversationId, convo);
+    this.memory?.ensureConversation(conversationId);
+
+    // Force-activate skill — kein auto-activate-Heuristik, weil die
+    // initialMessage ein roher Mail-Body ist, der die Keyword-Matcher
+    // unzuverlässig macht.
+    const skills = this.availableSkills();
+    const skill = skills.find((s) => s.name === input.skillName);
+    if (skill) {
+      this.activeSkill = skill;
+      this.markToolsLoaded(convo, skill.allowedTools);
+      console.log(
+        `[orchestrator] autonomous: skill force-activated '${skill.name}' for conv ${conversationId}`,
+      );
+    } else {
+      this.activeSkill = null;
+      console.warn(
+        `[orchestrator] autonomous: skill '${input.skillName}' not found — running without skill`,
+      );
+    }
+
+    // Mail-Content als user-role-Message (so sieht der Agent das wie
+    // einen User-Prompt). Im System-Prompt steht zusätzlich, dass das
+    // ein Auto-Trigger ist.
+    const initial: AgentMessage = {
+      id: randomUUID(),
+      role: "user",
+      content: input.initialMessage,
+      createdAt: Date.now(),
+    };
+    this.appendMessage(convo, initial);
+
+    const requestId = randomUUID();
+    this.inFlightRequestId = requestId;
+    this.inFlightConversationId = convo.id;
+    this.errorMessage = null;
+    this.emit("status", this.getStatus());
+
+    const abort = new AbortController();
+    this.currentAbort = abort;
+    const provider = this.providers.activeProvider();
+
+    void this.runLoop({
+      requestId,
+      conversation: convo,
+      provider,
+      signal: abort.signal,
+      slashNudgedTool: null,
+    }).finally(() => {
+      this.inFlightRequestId = null;
+      this.inFlightConversationId = null;
+      this.currentAbort = null;
+      this.emit("status", this.getStatus());
+      // Drain Queue: wenn weitere Trigger anstehen, sequenziell starten.
+      // Kleine Pause damit User-Input dazwischen-greifen kann.
+      const next = this.pendingAutonomousQueue.shift();
+      if (next) {
+        setTimeout(() => {
+          if (this.inFlightRequestId === null) {
+            this.runAutonomousNow(next);
+          } else {
+            // User hat in der Zwischenzeit einen send() gestartet —
+            // wieder vorne in die Queue, wird beim nächsten finally
+            // erneut versucht.
+            this.pendingAutonomousQueue.unshift(next);
+          }
+        }, 250);
+      }
+    });
+
+    return { conversationId, requestId };
+  }
+
   /** Aborts the in-flight request, if any. No-op when idle. */
   abort(requestId?: string): void {
     if (this.currentAbort === null) return;
@@ -635,6 +771,10 @@ export class AgentOrchestrator extends EventEmitter {
                 ? this.generalMemoryStore.list().slice(0, 30)
                 : [],
               availableToolNames,
+              // v0.1.299 — Auto-Triage-Modus aktiviert ein zusätzliches
+              // Verhaltens-Block im System-Prompt (kein ask_user_*,
+              // direkt handeln, Reply-Loop-Schutz).
+              autonomousMode: conversation.autonomousMode === true,
             },
           ),
           createdAt: 0,
@@ -784,6 +924,7 @@ export class AgentOrchestrator extends EventEmitter {
             signal,
             requestId,
             conversation.id,
+            conversation.autonomousMode === true,
           );
           if (!result.ok) sigState.failures += 1;
           toolCallSignatures.set(callSignature, sigState);
@@ -935,7 +1076,32 @@ export class AgentOrchestrator extends EventEmitter {
     signal: AbortSignal,
     requestId: string,
     conversationId: string,
+    autonomousMode: boolean = false,
   ): Promise<{ ok: boolean; content: string; preview: string }> {
+    // v0.1.299 — Im Auto-Triage-Modus die ask_user_*-Tools hart
+    // sperren BEVOR wir in Allowlist/Repair-Logik einsteigen. Sonst
+    // würde der Agent in pendingChoices warten und nie zurückkehren
+    // (kein User da, der antwortet).
+    if (
+      autonomousMode &&
+      (call.name === "ask_user_choice" || call.name === "ask_user_text")
+    ) {
+      const msg =
+        `Du bist im Auto-Triage-Modus (eingehende trusted Mail). ` +
+        `${call.name} ist in diesem Modus NICHT erlaubt — es gibt keinen ` +
+        `User, der antworten könnte. Triff die Entscheidung selbst anhand ` +
+        `der vorliegenden Daten und Tool-Outputs. Wenn dir wirklich Infos ` +
+        `fehlen, antworte trotzdem mit dem was du weißt und merk an, was ` +
+        `unklar war — der User kann später nachjustieren.`;
+      console.warn(
+        `[orchestrator] auto-triage: blocked '${call.name}' (no user available)`,
+      );
+      return {
+        ok: false,
+        content: JSON.stringify({ error: msg }),
+        preview: `${call.name} blockiert (Auto-Modus)`,
+      };
+    }
     // v0.1.293 — Singular-Hallu Auto-Repair. LLMs erfinden gerne
     // naive Singulare wie `companie` (von `companies`), `notese`
     // (von `notes`) etc. Wenn der Tool-Name nicht existiert, aber
@@ -974,11 +1140,17 @@ export class AgentOrchestrator extends EventEmitter {
       { emit: (f) => this.emitFrame(f), pending: this.pendingChoices },
       requestId,
       conversationId,
+      autonomousMode,
     );
     const ctx: ToolContext = {
       signal,
       log: (m) => console.log(`[agent:tool:${call.name}] ${m}`),
       ui,
+      // v0.1.299 — Tools können den Flag prüfen, z. B. um Confirm-Gates
+      // zu skippen (mail_send sendet im Auto-Modus direkt auch an
+      // nicht-trusted Empfänger NICHT — sondern wirft hart) oder um
+      // ihren Default-Pfad zu wählen.
+      autonomousMode,
     };
     try {
       const parsed = tool.parseArgs(call.args);

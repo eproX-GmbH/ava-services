@@ -35,6 +35,9 @@ interface FormState {
   smtpUser: string;
   smtpPassword: string;
   outboundEnabled: boolean;
+  // v0.1.299 — Auto-Triage für eingehende trusted Mails (siehe Toggle
+  // im Form). Default off, explizites Opt-in.
+  autoTriageEnabled: boolean;
   pollIntervalMinutes: number;
 }
 
@@ -52,6 +55,7 @@ const EMPTY_FORM: FormState = {
   smtpUser: "",
   smtpPassword: "",
   outboundEnabled: false,
+  autoTriageEnabled: false,
   pollIntervalMinutes: 15,
 };
 
@@ -89,6 +93,7 @@ export function MailAccountSection(): JSX.Element {
       smtpUser: a.smtp.user,
       smtpPassword: "",
       outboundEnabled: a.outboundEnabled,
+      autoTriageEnabled: a.autoTriageEnabled === true,
       pollIntervalMinutes: a.pollIntervalMinutes,
     });
   }, [snapshot, editing]);
@@ -109,6 +114,7 @@ export function MailAccountSection(): JSX.Element {
       user: form.smtpUser.trim() || form.address.trim(),
     },
     outboundEnabled: form.outboundEnabled,
+    autoTriageEnabled: form.autoTriageEnabled,
     pollIntervalMinutes: form.pollIntervalMinutes,
     lastSyncAt: snapshot?.account?.lastSyncAt ?? null,
     lastErrorAt: snapshot?.account?.lastErrorAt ?? null,
@@ -344,6 +350,29 @@ export function MailAccountSection(): JSX.Element {
               <span>
                 <strong>AVA darf Mails verschicken</strong> (Kill-Switch).
                 Wenn deaktiviert, lehnt AVA jeden Versand ab — auch an Allowlist-Adressen.
+              </span>
+            </label>
+          </div>
+          {/* v0.1.299 — Auto-Triage-Toggle. Nur sinnvoll wenn Versand
+              überhaupt erlaubt ist; im UI dimmen wir das Feld wenn
+              outboundEnabled aus ist. */}
+          <div className="mail-form__row">
+            <label className="mail-form__checkbox">
+              <input
+                type="checkbox"
+                checked={form.autoTriageEnabled ?? false}
+                disabled={!form.outboundEnabled}
+                onChange={(e) =>
+                  setForm({ ...form, autoTriageEnabled: e.target.checked })
+                }
+              />
+              <span>
+                <strong>Auto-Triage für trusted Mails</strong> (vollautonom).
+                Bei eingehenden Mails von Allowlist-Sendern startet AVA
+                automatisch eine Chat-Session und antwortet OHNE Rückfrage.
+                Limits: max 5 Auto-Replies pro Thread, Cooldown 5min.
+                Nicht-Allowlist-Mails bleiben unverändert manuell.
+                Setzt aktivierten Versand voraus.
               </span>
             </label>
           </div>

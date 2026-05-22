@@ -59,6 +59,15 @@ export class UiBridge {
     private readonly deps: UiBridgeDeps,
     private readonly requestId: string,
     private readonly conversationId: string,
+    /**
+     * v0.1.299 — Auto-Triage-Modus. Wenn true, werfen askChoice +
+     * askText sofort statt zu blocken. Tools die intern via askChoice
+     * einen Confirm holen (mail_send für non-allowlist Empfänger,
+     * crm_delete_*, notion_delete_page) erhalten so einen klaren
+     * Error und können dem Agent zurückmelden „dieser Pfad geht im
+     * Auto-Modus nicht — wähl einen anderen oder beende".
+     */
+    private readonly autonomousMode: boolean = false,
   ) {}
 
   async askChoice(
@@ -66,6 +75,13 @@ export class UiBridge {
     options: AgentChoiceOption[],
     signal: AbortSignal,
   ): Promise<string> {
+    if (this.autonomousMode) {
+      throw new Error(
+        "askChoice ist im Auto-Triage-Modus nicht erlaubt (kein User da, " +
+          "der antworten könnte). Triff die Entscheidung selbst oder " +
+          "wähle einen Pfad ohne User-Confirm.",
+      );
+    }
     if (options.length === 0) {
       throw new Error("askChoice requires at least one option");
     }
@@ -130,6 +146,13 @@ export class UiBridge {
     },
     signal: AbortSignal,
   ): Promise<string> {
+    if (this.autonomousMode) {
+      throw new Error(
+        "askText ist im Auto-Triage-Modus nicht erlaubt. Triff die " +
+          "Entscheidung selbst oder beende die Konversation mit einer " +
+          "Notiz, was unklar war.",
+      );
+    }
     const choiceId = randomUUID();
     return new Promise<string>((resolve, reject) => {
       const onAbort = () => {

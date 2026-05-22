@@ -1582,6 +1582,23 @@ app.whenReady().then(async () => {
       err instanceof Error ? err.message : String(err),
     );
   }
+  // v0.1.299 — Auto-Triage-Bridge. Lauscht auf messageFinalized-Events
+  // und startet bei trusted Mails eine autonome Agent-Session. Toggle
+  // im Mail-Account-Setting (autoTriageEnabled) — default off.
+  try {
+    const { MailAgentBridge } = await import("./mail/agent-bridge");
+    const bridge = new MailAgentBridge({
+      supervisor: mailSupervisor,
+      store: mailSupervisor.getStore(),
+      orchestrator: agent,
+    });
+    bridge.start();
+  } catch (err) {
+    console.warn(
+      "[mail-agent-bridge] start fehlgeschlagen:",
+      err instanceof Error ? err.message : String(err),
+    );
+  }
   app.on("before-quit", () => {
     void mailSupervisor?.stop();
   });
