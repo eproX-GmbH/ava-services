@@ -131,6 +131,15 @@ export class KnowledgeManager extends EventEmitter {
     return this.getAdapter(kind).createItem(parent, content);
   }
 
+  // v0.1.293 — Soft-Delete. Bei Notion: archived=true (30-Tage-Trash).
+  // Bei Obsidian: wirft (nicht implementiert in P3).
+  async deleteItem(
+    kind: KnowledgeProviderKind,
+    id: string,
+  ): Promise<void> {
+    return this.getAdapter(kind).deleteItem(id);
+  }
+
   async introspectSchema(
     kind: KnowledgeProviderKind,
     containerId?: string | null,

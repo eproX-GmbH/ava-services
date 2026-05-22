@@ -141,4 +141,11 @@ export interface KnowledgeAdapter {
   /** Schema-Introspection. Bei Notion: zeigt Database-Properties.
    *  Bei Obsidian: scannt Frontmatter-Felder im Vault. */
   introspectSchema(containerId?: string | null): Promise<KnowledgeSchema>;
+
+  /** v0.1.293 — Item löschen (Provider-spezifisch).
+   *    - Notion: PATCH /v1/pages/:id { archived: true } — soft-delete,
+   *      30 Tage im Notion-Trash wiederherstellbar.
+   *    - Obsidian: nicht implementiert (P3+).
+   */
+  deleteItem(id: string): Promise<void>;
 }

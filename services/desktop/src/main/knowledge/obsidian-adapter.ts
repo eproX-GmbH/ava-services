@@ -261,6 +261,15 @@ export class ObsidianAdapter implements KnowledgeAdapter {
    * Schema zurück, das dem Caller klarmacht, dass Schema-Introspection
    * hier konzeptionell nicht greift.
    */
+  /** v0.1.293 — Obsidian-Delete würde eine Datei aus dem Vault entfernen.
+   *  Sicherheitskritisch + nicht reversibel ohne Vault-Backup. P3+. */
+  async deleteItem(_id: string): Promise<void> {
+    throw new Error(
+      "Obsidian-Adapter unterstützt deleteItem in dieser Version noch nicht. " +
+        "Bitte die Notiz manuell im Vault löschen.",
+    );
+  }
+
   async introspectSchema(
     containerId?: string | null,
   ): Promise<KnowledgeSchema> {

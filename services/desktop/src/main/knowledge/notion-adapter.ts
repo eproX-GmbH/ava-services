@@ -693,6 +693,47 @@ export class NotionAdapter implements KnowledgeAdapter {
     return fresh;
   }
 
+  /**
+   * v0.1.293 — Soft-Delete (Archive) einer Notion-Page.
+   *
+   * Notion-API hat KEIN DELETE-Verb auf /v1/pages — stattdessen
+   * `PATCH /v1/pages/:id { archived: true }`. Die Page landet damit
+   * im Notion-Trash und kann 30 Tage lang von einem User-Mitglied
+   * (nicht: der Integration!) wiederhergestellt werden.
+   *
+   * Achtung: gleiche Berechtigungssemantik wie updateItem — die
+   * Integration muss auf der DATENBANK verbunden sein, nicht nur
+   * auf der einzelnen Page. Sonst kommt HTTP 200 OK + keine
+   * Änderung zurück. Wir verify-aftern hier mit einem Fresh-GET
+   * auf `archived: true`.
+   */
+  async deleteItem(id: string): Promise<void> {
+    const response = await this.request<NotionPage>(
+      `/v1/pages/${encodeURIComponent(id)}`,
+      "PATCH",
+      { archived: true },
+    );
+    console.info(
+      `[notion-adapter] DELETE (archive) page=${id} ` +
+        `response.archived=${response.archived ?? false} ` +
+        `last_edited_time=${response.last_edited_time}`,
+    );
+    // Verify-after: Notion antwortet bei fehlender DB-Connection mit
+    // 200 OK + unverändertem state. Wir holen den Stand frisch ab.
+    const fresh = await this.request<NotionPage>(
+      `/v1/pages/${encodeURIComponent(id)}`,
+    );
+    if (!fresh.archived) {
+      throw new Error(
+        `Notion hat den Archive-Call akzeptiert (HTTP 200), aber die Page ` +
+          `${id} ist nicht archiviert. HÄUFIGSTE URSACHE: Die Integration ` +
+          `ist nur auf der einzelnen Page verbunden, nicht auf der ` +
+          `DATENBANK. Fix: In Notion die Datenbank öffnen → ⋯ → Connections ` +
+          `→ "AVA" verbinden. Danach erneut versuchen.`,
+      );
+    }
+  }
+
   async introspectSchema(containerId?: string | null): Promise<KnowledgeSchema> {
     if (!containerId) {
       throw new Error(
@@ -1023,9 +1064,40 @@ export class NotionAdapter implements KnowledgeAdapter {
     const isDatabaseRow =
       (page.parent.type === "database_id" && page.parent.database_id) ||
       (page.parent.type === "data_source_id" && page.parent.data_source_id);
+    // v0.1.293 — Diagnose-Log, damit man bei künftigem "silent no-op"-
+    // Verhalten direkt sieht WAS für eine Page das überhaupt ist.
+    console.info(
+      `[notion-adapter] convertPropertiesForPatch pageId=${pageId} ` +
+        `parent.type=${page.parent.type} ` +
+        `database_id=${page.parent.database_id ?? "—"} ` +
+        `data_source_id=${page.parent.data_source_id ?? "—"} ` +
+        `isDatabaseRow=${isDatabaseRow} ` +
+        `requestedProps=[${Object.keys(properties).join(", ")}]`,
+    );
     if (!isDatabaseRow) {
       // Page-im-Page-Hierarchie: nur Title-Patch wird unterstützt.
       const title = properties["title"];
+      const nonTitleKeys = Object.keys(properties).filter((k) => k !== "title");
+      // v0.1.293 — Wenn der Caller DB-Properties patchen wollte, aber die
+      // Page gar keine DB-Row ist, dann WIRD das stillschweigend gedropped.
+      // Real-Run-Symptom (conventic, Mai 2026): notion_create_page legt eine
+      // leere Page an (Bug B3 v0.1.283), Agent ruft notion_update_page mit
+      // {Name, Company, Status, …} darauf — convertPropertiesForPatch sieht
+      // parent.type="page_id" (weil die Page-Erstellung als sub-page unter
+      // einer normalen Page gelandet ist statt als DB-Row), dropped alle
+      // Properties außer title. Tool meldet "aktualisiert", aber 0 Felder
+      // gesetzt. Jetzt: harter Fehler mit konkreter Korrekturanweisung.
+      if (nonTitleKeys.length > 0) {
+        throw new Error(
+          `Page ${pageId} ist KEINE Database-Row (parent.type=${page.parent.type}). ` +
+            `Property-Updates funktionieren nur bei DB-Rows. ` +
+            `Angefragte Properties [${nonTitleKeys.join(", ")}] können hier ` +
+            `nicht gesetzt werden. ` +
+            `WAHRSCHEINLICHE URSACHE: Du hast eine pageId von notion_search statt ` +
+            `von notion_query_database. Such die Row nochmal über ` +
+            `notion_query_database mit title-Filter und nimm DIE pageId.`,
+        );
+      }
       if (typeof title === "string") {
         return {
           propsForApi: {
@@ -1161,6 +1233,8 @@ interface NotionPage {
     type: "database_id" | "data_source_id" | "page_id" | "workspace";
   };
   properties: Record<string, NotionPropertyValue>;
+  /** v0.1.293 — Soft-delete-Flag. true heißt: in Notion-Trash. */
+  archived?: boolean;
 }
 
 interface NotionDatabase {

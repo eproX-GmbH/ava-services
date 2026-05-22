@@ -936,6 +936,20 @@ export class AgentOrchestrator extends EventEmitter {
     requestId: string,
     conversationId: string,
   ): Promise<{ ok: boolean; content: string; preview: string }> {
+    // v0.1.293 — Singular-Hallu Auto-Repair. LLMs erfinden gerne
+    // naive Singulare wie `companie` (von `companies`), `notese`
+    // (von `notes`) etc. Wenn der Tool-Name nicht existiert, aber
+    // ein offensichtlich-gemeinter Name existiert, nutzen wir den
+    // stattdessen — und loggen den Repair, damit der Agent es bei
+    // der nächsten Erwähnung selbst lernt.
+    const repaired = this.maybeRepairToolName(call.name);
+    if (repaired && repaired !== call.name) {
+      console.warn(
+        `[orchestrator] tool-name auto-repaired: '${call.name}' → '${repaired}' ` +
+          `(LLM-Singular-Hallu)`,
+      );
+      call = { ...call, name: repaired };
+    }
     // S2 — enforced skill tool-allowlist. Runs BEFORE the registry
     // lookup so a refusal message is consistent regardless of whether
     // the tool name is real.
@@ -982,6 +996,41 @@ export class AgentOrchestrator extends EventEmitter {
         preview: `error: ${msg}`,
       };
     }
+  }
+
+  /**
+   * v0.1.293 — Auto-Repair für naive LLM-Singular-Hallus auf
+   * Tool-Namen. Real-Run (conventic, Mai 2026): LLM ruft
+   * `crm_delete_hubspot_companie` weil es `companies` naiv durch
+   * "drop trailing s" singularisiert. Korrekter Tool-Name ist
+   * `crm_delete_hubspot_company` (siehe SINGULAR-Map in tools/crm.ts).
+   *
+   * Strategie: simple Suffix-Substitutionen probieren; wenn das
+   * Ergebnis in der Registry liegt, returnen wir den repairten
+   * Namen. Sonst null (= keine Reparatur möglich, original wird
+   * unverändert weitergereicht).
+   */
+  private maybeRepairToolName(name: string): string | null {
+    if (this.registry.get(name)) return null; // existiert bereits
+    // Bekannte LLM-Pluralization-Falten. Suffix-basiert, damit es
+    // sowohl auf `crm_delete_hubspot_companie` als auch auf
+    // hypothetische künftige Tool-Familien greift.
+    const REPAIRS: Array<[RegExp, string]> = [
+      [/companie$/, "company"], // companies → companie statt company
+      [/notese$/, "note"], // notes → notese (selten, aber gesehen)
+      [/deale$/, "deal"], // deals → deale
+      [/taske$/, "task"], // tasks → taske
+      [/contacte$/, "contact"], // contacts → contacte
+    ];
+    for (const [pattern, replacement] of REPAIRS) {
+      if (pattern.test(name)) {
+        const candidate = name.replace(pattern, replacement);
+        if (this.registry.get(candidate)) {
+          return candidate;
+        }
+      }
+    }
+    return null;
   }
 }
 

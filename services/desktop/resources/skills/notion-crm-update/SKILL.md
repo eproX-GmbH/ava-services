@@ -11,7 +11,10 @@ allowed-tools:
   - notion_list_databases
   - notion_introspect_database
   - notion_query_database
+  - notion_get_page
+  - notion_create_page
   - notion_update_page
+  - notion_delete_page
   - ask_user_choice
 requires-user-confirm: false
 disable-model-invocation: false
@@ -126,3 +129,33 @@ Wenn `notion_update_page` Warnings zurückgibt (z. B. „Follow-Up" wurde
 auf „Follow-Up (Datum)" fuzzy-gemappt), zitiere die Warnings einzeilig
 am Ende des Berichts, damit der Nutzer es beim nächsten Mal direkt
 exakt schreiben kann.
+
+## Löschen / Archivieren von Pages
+
+`notion_delete_page` archiviert eine Page in Notion (soft-delete, 30-
+Tage-Trash). Nutze es für:
+- stale leere Pages aufräumen (z. B. nach einem fehlgeschlagenen Create)
+- Test-Pages oder Dubletten entfernen
+- expliziten Lösch-Auftrag vom Nutzer („Lösche die alte Zeile X")
+
+Das Tool hat ein Propose-and-Confirm-Gate: es zeigt dem Nutzer Titel +
+Properties-Vorschau und fragt explizit nach. Du musst NICHT vorher
+nochmal `ask_user_choice` aufrufen — das Tool erledigt das selbst.
+
+ABER: Bei CRM-Rows mit echten Daten frag den Nutzer im Chat ZUSÄTZLICH
+nach, ob er sicher ist. Der Confirm-Dialog vom Tool zeigt zwar
+Properties an, ist aber bewusst kurz und ersetzt keine inhaltliche
+Rückfrage bei wertvollen Daten.
+
+## Fehlerdiagnose bei „HTTP 200 aber nichts gespeichert"
+
+Wenn `notion_update_page` oder `notion_delete_page` einen Fehler wirft,
+der „HTTP 200" oder „NICHT übernommen" enthält: Sag dem Nutzer ohne
+Umschweife, dass die AVA-Integration nur auf der einzelnen Page
+verbunden ist, NICHT auf der Datenbank. Gib die exakte Klick-Anleitung:
+
+> Bitte in Notion die Datenbank öffnen (nicht die Row) → oben rechts ⋯
+> → Connections → AVA verbinden. Danach versuche ich es erneut.
+
+Probiere NICHT, das Problem durch Property-Variation oder Retry zu
+umgehen — das ist eine Berechtigung, kein Mapping-Bug.

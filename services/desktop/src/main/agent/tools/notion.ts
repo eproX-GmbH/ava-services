@@ -410,6 +410,96 @@ export function buildNotionTools(deps: {
     },
   });
 
+  // v0.1.293 — Soft-Delete einer Notion-Page. Notion-API kennt kein
+  // DELETE-Verb auf Pages; stattdessen `PATCH { archived: true }` →
+  // Page landet im 30-Tage-Trash, von einem User (nicht der Integration)
+  // wiederherstellbar. PROPOSE-AND-CONFIRM via ask_user_choice mit
+  // Page-Vorschau, damit der User nicht versehentlich die falsche
+  // löscht (mehrere Pages können denselben Titel haben — gerade bei
+  // CRM-Setups mit "Herbst Datentechnik GmbH" + Dubletten).
+  const deletePage = defineTool({
+    name: "notion_delete_page",
+    description:
+      "Archiviert (= soft-delete) eine Notion-Page. PROPOSE-AND-CONFIRM via ask_user_choice mit Page-Vorschau (Titel + Properties). Notion stellt die Page 30 Tage lang im Trash bereit; ein User-Mitglied (nicht die Integration) kann sie dort wiederherstellen.\n\nBerechtigungs-Gotcha: gleiche Semantik wie notion_update_page — die Integration muss auf der DATENBANK verbunden sein, nicht nur auf der einzelnen Page. Sonst kommt HTTP 200 + keine Änderung zurück. Tool detected das per Verify-After und gibt eine klare Fehlermeldung mit Klick-Pfad.\n\nNutze für: stale leere Pages aufräumen (z. B. nach einem create-no-op), falsche Dubletten löschen, Test-Pages räumen. NICHT für CRM-Rows mit Daten — frag den User vorher explizit zur Bestätigung.",
+    parameters: {
+      type: "object",
+      required: ["pageId"],
+      properties: {
+        pageId: { type: "string" },
+        rationale: {
+          type: "string",
+          description: "Begründung, warum diese Page gelöscht werden soll (1 Satz).",
+        },
+      },
+    },
+    schema: yup
+      .object({
+        pageId: yup.string().trim().min(1).required(),
+        rationale: yup.string().trim().max(500).optional(),
+      })
+      .noUnknown(true),
+    preview: (r: { applied: boolean; error?: string }) =>
+      r.applied
+        ? "Notion-Page archiviert"
+        : r.error
+          ? `Fehler: ${r.error}`
+          : "Nicht archiviert",
+    run: async (args, ctx) => {
+      // Page laden für die Vorschau im Confirm-Dialog.
+      let preview: { title: string; url?: string; props: string };
+      try {
+        const item = await km.getItem("notion", args.pageId);
+        const sampleProps = Object.entries(item.properties ?? {})
+          .slice(0, 6)
+          .map(([k, v]) => `  ${k}: ${formatPreviewValue(v)}`)
+          .join("\n");
+        preview = {
+          title: item.title || "(ohne Titel)",
+          url: item.url,
+          props: sampleProps || "  (keine Properties)",
+        };
+      } catch (err) {
+        return {
+          applied: false,
+          error:
+            `Page ${args.pageId} nicht ladbar — möglicherweise schon archiviert ` +
+            `oder falsche ID. Details: ${err instanceof Error ? err.message : String(err)}`,
+        };
+      }
+      const rationaleBlock = args.rationale
+        ? `\n\nBegründung: ${args.rationale}`
+        : "";
+      const value = await ctx.ui.askChoice(
+        `Soll ich folgende Notion-Page ARCHIVIEREN?\n\n` +
+          `Titel: ${preview.title}\n` +
+          `ID: ${args.pageId}\n` +
+          (preview.url ? `URL: ${preview.url}\n` : "") +
+          `\nProperties (Auszug):\n${preview.props}${rationaleBlock}\n\n` +
+          `Notion hält die Page 30 Tage lang im Trash — bis dahin kann sie ` +
+          `ein User-Mitglied wiederherstellen.`,
+        [
+          {
+            value: "archive",
+            label: "Archivieren",
+            description: "PATCH archived=true wird gesendet",
+          },
+          { value: "cancel", label: "Behalten" },
+        ],
+        ctx.signal,
+      );
+      if (value !== "archive") return { applied: false };
+      try {
+        await km.deleteItem("notion", args.pageId);
+        return { applied: true };
+      } catch (err) {
+        return {
+          applied: false,
+          error: err instanceof Error ? err.message : String(err),
+        };
+      }
+    },
+  });
+
   return [
     connectStart,
     connectSaveToken,
@@ -421,5 +511,16 @@ export function buildNotionTools(deps: {
     getPage,
     createPage,
     updatePage,
+    deletePage,
   ];
+}
+
+// v0.1.293 — Mini-Helper für die Page-Vorschau im Confirm-Dialog.
+// Hält Werte auf ~40 Zeichen, damit der Dialog nicht explodiert.
+function formatPreviewValue(v: unknown): string {
+  if (v === null || v === undefined) return "—";
+  if (Array.isArray(v)) return v.slice(0, 3).map(String).join(", ");
+  if (typeof v === "object") return JSON.stringify(v).slice(0, 60);
+  const s = String(v);
+  return s.length > 60 ? s.slice(0, 57) + "…" : s;
 }

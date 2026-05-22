@@ -290,9 +290,12 @@ const KNOWN_BUNDLES: readonly ToolBundle[] = [
       "notion_list_databases",
       "notion_introspect_database",
       "notion_query_database",
+      "notion_get_page",
+      "notion_create_page",
       "notion_update_page",
+      "notion_delete_page",
     ],
-    queryHints: ["notion", "crm update", "datenbank"],
+    queryHints: ["notion", "crm update", "datenbank", "löschen"],
   },
   {
     label: "HubSpot-CRM-Update",
