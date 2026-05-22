@@ -201,11 +201,24 @@ export class ObsidianAdapter implements KnowledgeAdapter {
     id: string,
     patch: KnowledgeUpdate,
   ): Promise<KnowledgeItem> {
+    // v0.1.296 — Phase 4: Frontmatter-Patch via Local-REST-API.
+    // Verwendet PATCH /vault/{path} mit den plugin-spezifischen Headers
+    // Operation/Target-Type/Target. Pro Frontmatter-Key ein Call (das
+    // Plugin akzeptiert pro PATCH nur EIN Target). Verify-After durch
+    // Re-Read der frontmatter aus dem JSON-Envelope.
+    let frontmatterWarnings: string[] = [];
+    let frontmatterDiagnostics:
+      | {
+          requested: Record<string, unknown>;
+          before?: Record<string, unknown>;
+          after?: Record<string, unknown>;
+          patchedKeys: string[];
+        }
+      | undefined;
     if (patch.properties && Object.keys(patch.properties).length > 0) {
-      throw new Error(
-        "Frontmatter-Updates sind in Phase 3 noch nicht unterstützt. " +
-          "Bitte stattdessen `appendContent` oder `replaceContent` nutzen.",
-      );
+      const verifyResult = await this.patchFrontmatter(id, patch.properties);
+      frontmatterWarnings = verifyResult.warnings;
+      frontmatterDiagnostics = verifyResult.diagnostics;
     }
     if (patch.appendContent && patch.appendContent.trim().length > 0) {
       // POST /vault/{path} mit Markdown-Body hängt an. Plugin
@@ -229,7 +242,125 @@ export class ObsidianAdapter implements KnowledgeAdapter {
         },
       );
     }
-    return this.getItem(id);
+    const item = await this.getItem(id);
+    // v0.1.296 — Warnings + Diagnostics ans Item heben, damit der Tool-
+    // Wrapper sie auf Top-Level für den Agent sichtbar machen kann.
+    if (frontmatterWarnings.length > 0 || frontmatterDiagnostics) {
+      const enriched = item as KnowledgeItem & {
+        warnings?: string[];
+        diagnostics?: unknown;
+      };
+      if (frontmatterWarnings.length > 0) {
+        enriched.warnings = frontmatterWarnings;
+      }
+      if (frontmatterDiagnostics) {
+        enriched.diagnostics = frontmatterDiagnostics;
+      }
+    }
+    return item;
+  }
+
+  /**
+   * v0.1.296 — Frontmatter-Patch via Local-REST-API.
+   *
+   * Local-REST-API hat einen PATCH-Endpoint mit speziellen Headers:
+   *   PATCH /vault/{path}
+   *   Operation: replace
+   *   Target-Type: frontmatter
+   *   Target: <key-name>             // URL-encoded
+   *   Content-Type: application/json
+   *   Body: JSON-encoded value
+   *
+   * Das Plugin nimmt pro PATCH GENAU EIN Target — wir loopen also über
+   * alle requested Keys. Wenn ein Key noch nicht im Frontmatter
+   * existiert, legt das Plugin ihn an (Create-Target-If-Missing: true
+   * ist Default in den Plugin-Versionen die wir unterstützen).
+   *
+   * Verify-After: GET zurücklesen, requested vs. tatsächlich
+   * vergleichen. Klassischer Notion-Bug-Klon: Plugin kann 200 OK
+   * antworten ohne zu schreiben (z. B. wenn Vault-Pfad case-sensitive
+   * abweicht oder API-Key nur Read-Scope hat).
+   */
+  private async patchFrontmatter(
+    pageId: string,
+    properties: Record<string, unknown>,
+  ): Promise<{
+    warnings: string[];
+    diagnostics: {
+      requested: Record<string, unknown>;
+      before?: Record<string, unknown>;
+      after?: Record<string, unknown>;
+      patchedKeys: string[];
+    };
+  }> {
+    const warnings: string[] = [];
+    // Snapshot vorher.
+    const before = await this.getItem(pageId);
+    const beforeFm = (before.properties ?? {}) as Record<string, unknown>;
+    const patchedKeys: string[] = [];
+    for (const [key, value] of Object.entries(properties)) {
+      // Target-Header muss URL-encoded sein, weil Header-Werte
+      // bestimmte Sonderzeichen (Komma, Doppelpunkt, etc.) nicht
+      // tragen können. Plugin macht URL-decode wieder rückgängig.
+      const encodedTarget = encodeURIComponent(key);
+      console.info(
+        `[obsidian-adapter] PATCH frontmatter path=${pageId} key=${key} ` +
+          `value=${JSON.stringify(value).slice(0, 200)}`,
+      );
+      try {
+        await this.request(
+          `/vault/${encodePath(pageId)}`,
+          "PATCH",
+          // Wert wird vom Plugin als JSON erwartet — also explizit
+          // stringify (auch für Strings: "Aktiv" wird zu "\"Aktiv\"").
+          JSON.stringify(value),
+          {
+            operation: "replace",
+            "target-type": "frontmatter",
+            target: encodedTarget,
+            "content-type": "application/json",
+            // v0.1.296 — neue Keys anlegen falls noch nicht da. Default
+            // ist plugin-version-abhängig; explizit setzen ist sicherer.
+            "create-target-if-missing": "true",
+          },
+        );
+        patchedKeys.push(key);
+      } catch (err) {
+        warnings.push(
+          `Frontmatter-Key "${key}" konnte nicht gesetzt werden: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
+    }
+    // Verify-After.
+    const after = await this.getItem(pageId);
+    const afterFm = (after.properties ?? {}) as Record<string, unknown>;
+    const failures: string[] = [];
+    for (const [key, requested] of Object.entries(properties)) {
+      const actual = afterFm[key];
+      if (!frontmatterValuesMatch(requested, actual)) {
+        failures.push(
+          `"${key}" (angefragt: ${formatValueForError(requested)}, tatsächlich: ${formatValueForError(actual)})`,
+        );
+      }
+    }
+    const diagnostics = {
+      requested: properties,
+      before: beforeFm,
+      after: afterFm,
+      patchedKeys,
+    };
+    if (failures.length > 0) {
+      throw new Error(
+        `Obsidian hat den Frontmatter-PATCH akzeptiert (HTTP 200), aber ` +
+          `folgende Keys wurden nicht übernommen: ${failures.join("; ")}. ` +
+          `Mögliche Ursachen: ` +
+          `(a) API-Key hat nur Read-Scope — in Plugin-Settings checken; ` +
+          `(b) Vault-Pfad case-sensitive vertippt; ` +
+          `(c) Local-REST-API-Version zu alt (PATCH /vault wurde später ergänzt, mindestens v3.x nötig).` +
+          (warnings.length > 0 ? ` Hinweise: ${warnings.join("; ")}.` : ""),
+      );
+    }
+    return { warnings, diagnostics };
   }
 
   async createItem(
@@ -261,13 +392,52 @@ export class ObsidianAdapter implements KnowledgeAdapter {
    * Schema zurück, das dem Caller klarmacht, dass Schema-Introspection
    * hier konzeptionell nicht greift.
    */
-  /** v0.1.293 — Obsidian-Delete würde eine Datei aus dem Vault entfernen.
-   *  Sicherheitskritisch + nicht reversibel ohne Vault-Backup. P3+. */
-  async deleteItem(_id: string): Promise<void> {
-    throw new Error(
-      "Obsidian-Adapter unterstützt deleteItem in dieser Version noch nicht. " +
-        "Bitte die Notiz manuell im Vault löschen.",
-    );
+  /**
+   * v0.1.296 — Note aus dem Vault löschen via DELETE /vault/{path}.
+   *
+   * Achtung: Obsidian Local-REST-API hat KEIN Trash-Konzept — die
+   * Datei ist nach DELETE weg (außer der User hat einen separaten
+   * Obsidian-Trash-Plugin aktiv, der File-Operations watcht, oder
+   * sein OS hat einen Filesystem-Papierkorb der das automatisch
+   * abfängt — Mac/Finder-Trash funktioniert NICHT, weil das Plugin
+   * direkt fs.unlink macht). Confirm-Gate im Tool-Layer ist deshalb
+   * Pflicht.
+   *
+   * Verify-After: Anschließend GET → 404 erwartet. Bei 200 (Datei
+   * existiert noch) werfen wir, damit der Caller den User auf
+   * Plugin-Permission-Probleme hinweisen kann.
+   */
+  async deleteItem(id: string): Promise<void> {
+    console.info(`[obsidian-adapter] DELETE /vault/${id}`);
+    await this.request(`/vault/${encodePath(id)}`, "DELETE");
+    // Verify-After.
+    let stillExists = false;
+    try {
+      await this.request<unknown>(`/vault/${encodePath(id)}`, "GET", undefined, {
+        accept: "application/vnd.olrapi.note+json",
+      });
+      stillExists = true;
+    } catch (err) {
+      if (err instanceof ObsidianApiError && err.status === 404) {
+        // Perfekt — Datei ist weg.
+        return;
+      }
+      // Anderer Fehler (Network etc.) — wir wissen nicht, ob's gelöscht
+      // wurde. Best-effort: laufen lassen, der DELETE-Call war erfolgreich.
+      console.warn(
+        `[obsidian-adapter] DELETE verify-after probe failed (non-404): ${err instanceof Error ? err.message : String(err)}`,
+      );
+      return;
+    }
+    if (stillExists) {
+      throw new Error(
+        `Obsidian hat den DELETE-Call akzeptiert (HTTP 200), aber die Datei ` +
+          `"${id}" existiert immer noch. Mögliche Ursachen: ` +
+          `(a) API-Key hat keinen Write-Scope — Plugin-Settings prüfen; ` +
+          `(b) Plugin-Version zu alt für DELETE; ` +
+          `(c) Vault-Permission-Konflikt (read-only Datei).`,
+      );
+    }
   }
 
   async introspectSchema(
@@ -426,4 +596,52 @@ function encodePath(path: string): string {
     .split("/")
     .map((seg) => encodeURIComponent(seg))
     .join("/");
+}
+
+/**
+ * v0.1.296 — Tolerant value-match für Frontmatter-Verify-After. YAML
+ * round-trips können String-Werte als String zurückgeben, Booleans als
+ * Bool, Datums-Strings unverändert. Wir behandeln:
+ *   - String case-insensitive + trim
+ *   - Number toleranz
+ *   - Array order-insensitive
+ *   - sonst deepEqual
+ */
+function frontmatterValuesMatch(
+  requested: unknown,
+  actual: unknown,
+): boolean {
+  if (requested === actual) return true;
+  if (requested == null || actual == null) return requested === actual;
+  if (typeof requested === "string" && typeof actual === "string") {
+    return requested.trim().toLowerCase() === actual.trim().toLowerCase();
+  }
+  if (typeof requested === "number" && typeof actual === "number") {
+    return Math.abs(requested - actual) < 1e-9;
+  }
+  if (typeof requested === "boolean" && typeof actual === "boolean") {
+    return requested === actual;
+  }
+  if (Array.isArray(requested) && Array.isArray(actual)) {
+    if (requested.length !== actual.length) return false;
+    const req = [...requested].map((v) => String(v).trim().toLowerCase()).sort();
+    const act = [...actual].map((v) => String(v).trim().toLowerCase()).sort();
+    return req.every((v, i) => v === act[i]);
+  }
+  // Fallback: JSON-Vergleich. Cheap-and-good-enough für nested objects.
+  try {
+    return JSON.stringify(requested) === JSON.stringify(actual);
+  } catch {
+    return false;
+  }
+}
+
+function formatValueForError(v: unknown): string {
+  if (v === null || v === undefined) return "—";
+  if (typeof v === "string") return `"${v}"`;
+  try {
+    return JSON.stringify(v);
+  } catch {
+    return String(v);
+  }
 }

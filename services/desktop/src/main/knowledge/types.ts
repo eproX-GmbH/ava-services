@@ -62,13 +62,12 @@ export interface KnowledgeItem {
    *  PATCH-Aufruf. Wird gesetzt, wenn `updateItem` einen `verify-after-
    *  Mismatch` erkennt ODER wenn die Tool-Beschreibung die Diagnose
    *  explizit anfordert. Hilft beim Debuggen „silent no-op"-Fällen,
-   *  wo Notion HTTP 200 antwortet aber serverseitig nichts ändert. */
-  diagnostics?: {
-    patchBodySent?: unknown;
-    patchResponseLastEditedTime?: string;
-    patchResponseProperties?: Record<string, unknown>;
-    notionVersion?: string;
-  };
+   *  wo Notion HTTP 200 antwortet aber serverseitig nichts ändert.
+   *  v0.1.296 — Shape pro Adapter unterschiedlich (Notion vs. Obsidian
+   *  haben verschiedene Field-Sets). Wir tippen als offene Map; jeder
+   *  Adapter dokumentiert seine Keys via Kommentar oben am Aufrufer.
+   */
+  diagnostics?: Record<string, unknown>;
 }
 
 export interface KnowledgeContent {

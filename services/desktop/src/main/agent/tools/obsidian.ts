@@ -313,6 +313,161 @@ export function buildObsidianTools(deps: {
     },
   });
 
+  // v0.1.296 — Frontmatter-Patch. Schreibt YAML-Header-Felder einer
+  // Note in-place; Body bleibt unverändert. Use-Case: Obsidian-als-CRM,
+  // wo Status/Stage/Owner/Datums-Felder im Frontmatter liegen.
+  //
+  // Properties müssen als FLATE Werte rein, NICHT als YAML-String. Der
+  // Adapter macht die Type-Korrekturen (String → "Aktiv", Bool → true,
+  // Array → ["b2b", "lead"], Date-String → "2026-07-16"). Pro Key
+  // schickt der Adapter einen PATCH-Call ans Plugin; Verify-After durch
+  // Re-Read des Frontmatters.
+  const updateFrontmatter = defineTool({
+    name: "obsidian_update_frontmatter",
+    description:
+      "Update YAML-frontmatter fields of an Obsidian note. Body content stays untouched. Use this when the user wants to change a CRM-style field that lives in the YAML header (Status, Stage, Owner, Follow-Up, Tags, …).\n\nPlaybook for CRM-style requests ('setze Status von X-Note auf Aktiv', 'Follow-Up von Beckmann auf 2026'):\n  1. obsidian_search ODER obsidian_list_notes — finde die Note. Lieber `list_notes` mit Folder-Pfad als Workspace-Suche, weil letzteres auch Body-Treffer einbezieht.\n  2. obsidian_get_note — lies das aktuelle Frontmatter, damit du die EXAKTEN Key-Namen (case-sensitive!) und das aktuelle Wert-Schema (string vs. array vs. bool) siehst.\n  3. obsidian_update_frontmatter mit den geänderten Keys.\n\nProperty values: pass FLAT values. Examples: { 'Status': 'Aktiv', 'Stage': 'Lead', 'Follow-Up': '2026-07-16', 'Tags': ['b2b','lead'], 'Hotness': 'Cold' }. NICHT als YAML-String wrappen.\n\nIF VERIFY-AFTER FAILS mit 'nicht übernommen': Der API-Key hat vermutlich nur Read-Scope. User-Anweisung: 'Bitte in Obsidian → Settings → Local REST API prüfen, ob der genutzte API-Key Write-Berechtigung hat. Falls nein, einen neuen Key mit vollem Scope erzeugen und in AVA neu hinterlegen.' NICHT durch Property-Variation retryen — Berechtigungsfrage.",
+    parameters: {
+      type: "object",
+      properties: {
+        path: { type: "string" },
+        properties: {
+          type: "object",
+          description:
+            "Map of frontmatter-key → new value. Keys not listed remain unchanged.",
+        },
+      },
+      required: ["path", "properties"],
+    },
+    schema: yup.object({
+      path: yup.string().trim().required("path fehlt."),
+      properties: yup.object().required("properties fehlt."),
+    }),
+    run: async (args) => {
+      const item = await km.updateItem("obsidian", args.path, {
+        properties: args.properties as Record<string, unknown> | undefined,
+      });
+      // Warnings + Diagnostics aus dem Adapter aufs Top-Level heben.
+      const itemTyped = item as {
+        warnings?: string[];
+        diagnostics?: Record<string, unknown>;
+      };
+      const out: {
+        item: typeof item;
+        warnings?: string[];
+        diagnostics?: Record<string, unknown>;
+      } = { item };
+      if (itemTyped.warnings && itemTyped.warnings.length > 0) {
+        out.warnings = itemTyped.warnings;
+      }
+      if (itemTyped.diagnostics) {
+        out.diagnostics = itemTyped.diagnostics;
+      }
+      return out;
+    },
+    preview: (r) => {
+      const item = r.item as { title?: string };
+      const warnings = r.warnings as string[] | undefined;
+      const suffix =
+        warnings && warnings.length > 0
+          ? ` (${warnings.length} Warnung${warnings.length === 1 ? "" : "en"})`
+          : "";
+      return `Obsidian-Frontmatter aktualisiert: ${item?.title ?? "?"}${suffix}`;
+    },
+  });
+
+  // v0.1.296 — Delete-Tool mit Propose-and-Confirm. Obsidian löscht
+  // DIREKT (kein Trash via REST-API), deshalb Pflicht-Gate mit
+  // Vorschau (Path, Frontmatter-Auszug, erste 3 Body-Zeilen).
+  const deleteNote = defineTool({
+    name: "obsidian_delete_note",
+    description:
+      "Löscht eine Obsidian-Note PERMANENT (kein Vault-Trash via REST-API). PROPOSE-AND-CONFIRM via ask_user_choice mit Path + Frontmatter-Vorschau + erste 3 Body-Zeilen. Bei explizitem User-Wunsch oder zum Aufräumen von Test/Stale-Notes.\n\nACHTUNG: Im Gegensatz zu Notion gibt es KEIN Soft-Delete — die Datei ist nach DELETE weg (es sei denn ein Backup-System wie Obsidian Sync / iCloud / Git-Repo fängt es ab). Frag den User bei Unsicherheit IMMER vor dem Aufruf — nicht erst der Confirm-Dialog vom Tool.\n\nIF VERIFY-AFTER MELDET 'existiert immer noch': API-Key hat keinen Write-Scope. Gleiche Diagnose wie bei update_frontmatter.",
+    parameters: {
+      type: "object",
+      properties: {
+        path: { type: "string" },
+        rationale: {
+          type: "string",
+          description: "Begründung warum diese Note gelöscht werden soll (1 Satz).",
+        },
+      },
+      required: ["path"],
+    },
+    schema: yup
+      .object({
+        path: yup.string().trim().required("path fehlt."),
+        rationale: yup.string().trim().max(500).optional(),
+      })
+      .noUnknown(true),
+    preview: (r: { applied: boolean; error?: string }) =>
+      r.applied
+        ? "Obsidian-Note gelöscht"
+        : r.error
+          ? `Fehler: ${r.error}`
+          : "Nicht gelöscht",
+    run: async (args, ctx) => {
+      // Note laden für Confirm-Vorschau.
+      let preview: { title: string; fm: string; bodyHead: string };
+      try {
+        const item = await km.getItem("obsidian", args.path);
+        const fmEntries = Object.entries(item.properties ?? {})
+          .slice(0, 5)
+          .map(([k, v]) => `  ${k}: ${formatPreviewValue(v)}`)
+          .join("\n");
+        const body = item.content ?? "";
+        const bodyHead = body
+          .split("\n")
+          .slice(0, 3)
+          .map((l) => "  " + (l.length > 80 ? l.slice(0, 77) + "…" : l))
+          .join("\n");
+        preview = {
+          title: item.title || args.path,
+          fm: fmEntries || "  (keine Frontmatter-Felder)",
+          bodyHead: bodyHead || "  (leerer Body)",
+        };
+      } catch (err) {
+        return {
+          applied: false,
+          error:
+            `Note "${args.path}" nicht ladbar — möglicherweise schon ` +
+            `gelöscht oder falscher Pfad. Details: ${err instanceof Error ? err.message : String(err)}`,
+        };
+      }
+      const rationaleBlock = args.rationale
+        ? `\n\nBegründung: ${args.rationale}`
+        : "";
+      const value = await ctx.ui.askChoice(
+        `Soll ich folgende Obsidian-Note PERMANENT LÖSCHEN?\n\n` +
+          `Pfad: ${args.path}\n` +
+          `Titel: ${preview.title}\n\n` +
+          `Frontmatter (Auszug):\n${preview.fm}\n\n` +
+          `Body-Anfang:\n${preview.bodyHead}${rationaleBlock}\n\n` +
+          `⚠ ACHTUNG: Obsidian REST-API hat keinen Trash — die Datei ist ` +
+          `nach DELETE weg, außer ein externes Backup (Obsidian Sync, ` +
+          `iCloud, Git) fängt es ab.`,
+        [
+          {
+            value: "delete",
+            label: "Löschen",
+            description: "DELETE wird gesendet",
+          },
+          { value: "cancel", label: "Behalten" },
+        ],
+        ctx.signal,
+      );
+      if (value !== "delete") return { applied: false };
+      try {
+        await km.deleteItem("obsidian", args.path);
+        return { applied: true };
+      } catch (err) {
+        return {
+          applied: false,
+          error: err instanceof Error ? err.message : String(err),
+        };
+      }
+    },
+  });
+
   return [
     connectStart,
     connectSaveCredentials,
@@ -323,5 +478,18 @@ export function buildObsidianTools(deps: {
     createNote,
     appendToNote,
     replaceNote,
+    updateFrontmatter,
+    deleteNote,
   ];
+}
+
+// v0.1.296 — Lokaler Mini-Helper für die Delete-Confirm-Vorschau.
+// (Spiegelt formatPreviewValue aus notion.ts; bewusst dupliziert
+// statt geteilt, weil beide Tools eigentlich unabhängig sind.)
+function formatPreviewValue(v: unknown): string {
+  if (v === null || v === undefined) return "—";
+  if (Array.isArray(v)) return v.slice(0, 3).map(String).join(", ");
+  if (typeof v === "object") return JSON.stringify(v).slice(0, 60);
+  const s = String(v);
+  return s.length > 60 ? s.slice(0, 57) + "…" : s;
 }

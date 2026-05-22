@@ -298,6 +298,30 @@ const KNOWN_BUNDLES: readonly ToolBundle[] = [
     queryHints: ["notion", "crm update", "datenbank", "löschen"],
   },
   {
+    // v0.1.296 — Obsidian-CRM-Bundle: Frontmatter-Patch + Delete + Read.
+    // Aktiviert wenn der User über Vault/Frontmatter/Obsidian-Notes
+    // spricht. Get-Tool ist im Bundle, weil der Skill-Playbook
+    // explizit vor jedem update einen get_note vorsieht (Key-Namen +
+    // Werte-Typ lernen).
+    label: "Obsidian-CRM-Update",
+    tools: [
+      "obsidian_search",
+      "obsidian_list_notes",
+      "obsidian_get_note",
+      "obsidian_create_note",
+      "obsidian_update_frontmatter",
+      "obsidian_append_to_note",
+      "obsidian_delete_note",
+    ],
+    queryHints: [
+      "obsidian",
+      "vault",
+      "frontmatter",
+      "notiz aktualisieren",
+      "obsidian crm",
+    ],
+  },
+  {
     label: "HubSpot-CRM-Update",
     tools: [
       "crm_status",
