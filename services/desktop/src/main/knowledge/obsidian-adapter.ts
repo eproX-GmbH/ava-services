@@ -343,8 +343,11 @@ export class ObsidianAdapter implements KnowledgeAdapter {
         );
       }
     }
+    // v0.1.297 — Defensive Kopie. Wenn der Caller die properties-Map
+    // nach dem Call mutiert, soll unser Diagnostics-Snapshot stabil
+    // bleiben.
     const diagnostics = {
-      requested: properties,
+      requested: { ...properties },
       before: beforeFm,
       after: afterFm,
       patchedKeys,
@@ -469,6 +472,122 @@ export class ObsidianAdapter implements KnowledgeAdapter {
       const fullPath = p + stripped + (isFolder ? "/" : "");
       return { path: fullPath, isFolder };
     });
+  }
+
+  /**
+   * v0.1.297 — Folder-Schema-Introspection.
+   *
+   * Obsidian-Vaults haben kein zentrales Schema, aber in der Praxis
+   * folgen Notizen INNERHALB EINES ORDNERS einer Konvention (z. B.
+   * `CRM/*.md` haben alle die Felder Name, Status, Stage, Follow-Up).
+   * Wir scannen bis zu `sampleSize` Notes im Ordner parallel, sammeln
+   * deren Frontmatter-Keys ein, inferieren Werte-Typen und liefern
+   * pro Key ein paar Beispiel-Werte zurück.
+   *
+   * Damit hat der Agent vor dem `update_frontmatter` eine Notion-
+   * artige Schema-Übersicht: welche Keys existieren überhaupt, was
+   * sind ihre Typen, was sind übliche Werte. Statt vorher eine
+   * zufällige Note zu laden und zu raten.
+   */
+  async introspectFolder(
+    folder: string,
+    opts?: { sampleSize?: number },
+  ): Promise<{
+    folder: string;
+    notesScanned: number;
+    keys: Array<{
+      name: string;
+      types: string[];
+      occurrences: number;
+      sampleValues: unknown[];
+    }>;
+  }> {
+    const sampleSize = Math.min(Math.max(opts?.sampleSize ?? 20, 1), 50);
+    const entries = await this.listFolder(folder);
+    const noteEntries = entries
+      .filter((e) => !e.isFolder && /\.md$/i.test(e.path))
+      .slice(0, sampleSize);
+    if (noteEntries.length === 0) {
+      return { folder, notesScanned: 0, keys: [] };
+    }
+    // Parallel laden — getItem ist read-only und der Plugin-Server kann
+    // gut parallele GETs. Bei 20 Notes mit ~10ms RTT sind das 20 Calls
+    // statt 20×10 = 200ms sequential.
+    const items = await Promise.all(
+      noteEntries.map((e) =>
+        this.getItem(e.path).catch(() => null),
+      ),
+    );
+    const keyAgg = new Map<
+      string,
+      { types: Set<string>; occurrences: number; sampleValues: unknown[] }
+    >();
+    for (const item of items) {
+      if (!item || !item.properties) continue;
+      for (const [key, value] of Object.entries(item.properties)) {
+        if (!keyAgg.has(key)) {
+          keyAgg.set(key, {
+            types: new Set(),
+            occurrences: 0,
+            sampleValues: [],
+          });
+        }
+        const agg = keyAgg.get(key)!;
+        agg.occurrences += 1;
+        agg.types.add(inferFrontmatterType(value));
+        // bis zu 3 unique sample-Werte sammeln
+        if (
+          agg.sampleValues.length < 3 &&
+          !agg.sampleValues.some((v) => deepEqualSimple(v, value))
+        ) {
+          agg.sampleValues.push(value);
+        }
+      }
+    }
+    const keys = Array.from(keyAgg.entries())
+      .map(([name, agg]) => ({
+        name,
+        types: Array.from(agg.types).sort(),
+        occurrences: agg.occurrences,
+        sampleValues: agg.sampleValues,
+      }))
+      // Sortiere nach Häufigkeit absteigend — die wichtigsten Keys oben.
+      .sort((a, b) => b.occurrences - a.occurrences);
+    return {
+      folder,
+      notesScanned: items.filter((i) => i !== null).length,
+      keys,
+    };
+  }
+
+  /**
+   * v0.1.297 — Tag-Endpoints des Plugins.
+   * GET /tags                     → alle Tags im Vault + count
+   * GET /tags/{tagname}           → Notes mit einem Tag
+   */
+  async listTags(): Promise<Array<{ tag: string; count: number }>> {
+    type Resp = { tags?: Array<{ tag: string; count: number }> };
+    const res = await this.request<Resp>("/tags/");
+    return res.tags ?? [];
+  }
+
+  async searchByTag(tag: string): Promise<KnowledgeSearchHit[]> {
+    // Tag mit oder ohne führendes # akzeptieren — der Plugin-Endpoint
+    // erwartet kein #-Prefix im Pfad-Segment.
+    const cleanTag = tag.startsWith("#") ? tag.slice(1) : tag;
+    type Resp = {
+      files?: Array<{ path: string; title?: string; matches?: unknown[] }>;
+    };
+    const res = await this.request<Resp>(
+      `/tags/${encodeURIComponent(cleanTag)}/`,
+    );
+    const files = res.files ?? [];
+    return files.map((f) => ({
+      id: f.path,
+      title: f.title ?? pathToTitle(f.path),
+      snippet: undefined,
+      url: undefined,
+    }));
   }
 
   // ---- internals -----------------------------------------------------------
@@ -614,6 +733,16 @@ function frontmatterValuesMatch(
   if (requested === actual) return true;
   if (requested == null || actual == null) return requested === actual;
   if (typeof requested === "string" && typeof actual === "string") {
+    // v0.1.297 — Date-Prefix-Match: Wenn der User "2026-07-16" setzt
+    // und YAML das als Datum interpretiert, kommt es evtl. mit
+    // Timezone-Suffix zurück ("2026-07-16T00:00:00.000Z"). Toleriere
+    // das wenn die ersten 10 Zeichen (YYYY-MM-DD) übereinstimmen.
+    if (
+      /^\d{4}-\d{2}-\d{2}/.test(requested) &&
+      actual.startsWith(requested.slice(0, 10))
+    ) {
+      return true;
+    }
     return requested.trim().toLowerCase() === actual.trim().toLowerCase();
   }
   if (typeof requested === "number" && typeof actual === "number") {
@@ -631,6 +760,34 @@ function frontmatterValuesMatch(
   // Fallback: JSON-Vergleich. Cheap-and-good-enough für nested objects.
   try {
     return JSON.stringify(requested) === JSON.stringify(actual);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * v0.1.297 — Cheap type-inference für Frontmatter-Werte. Returnt einen
+ * Stringnamen ("string", "number", "boolean", "array", "object",
+ * "null", "date"), den der Agent im Schema-Hint zeigen kann.
+ */
+function inferFrontmatterType(v: unknown): string {
+  if (v === null) return "null";
+  if (Array.isArray(v)) return "array";
+  if (typeof v === "string") {
+    if (/^\d{4}-\d{2}-\d{2}/.test(v)) return "date";
+    return "string";
+  }
+  if (typeof v === "number") return "number";
+  if (typeof v === "boolean") return "boolean";
+  if (v instanceof Date) return "date";
+  return typeof v; // "object", "undefined", "function" (last unlikely)
+}
+
+/** v0.1.297 — strict equality + JSON-fallback. Reicht für Sample-Dedup. */
+function deepEqualSimple(a: unknown, b: unknown): boolean {
+  if (a === b) return true;
+  try {
+    return JSON.stringify(a) === JSON.stringify(b);
   } catch {
     return false;
   }

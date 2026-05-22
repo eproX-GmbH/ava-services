@@ -11,6 +11,9 @@ b2b-scope: internal
 allowed-tools:
   - obsidian_search
   - obsidian_list_notes
+  - obsidian_introspect_folder
+  - obsidian_list_tags
+  - obsidian_search_by_tag
   - obsidian_get_note
   - obsidian_create_note
   - obsidian_update_frontmatter
@@ -40,15 +43,32 @@ per Tool auflösen kannst.
 - Mehrere Treffer mit demselben Titel → `ask_user_choice` mit Path
   + Auszug aus dem Frontmatter, damit der User die richtige aussucht.
 
-## 2. Frontmatter lesen
+## 2. Frontmatter-Konvention lernen (Ordner-Schema)
 
-`obsidian_get_note` mit dem Pfad. Du brauchst das, um:
-- die EXAKTEN Key-Namen zu sehen (Obsidian ist case-sensitive,
-  und Konvention im Vault kann „Status", „status" oder „Lead-Status"
-  sein),
-- den Werte-Typ zu erkennen (string vs. array vs. boolean vs. date),
-- existierende Tags / Multi-Select-Werte zu kennen, falls du nur
-  ein Tag *hinzufügen* sollst statt komplett zu überschreiben.
+Bevor du eine einzelne Note öffnest, mach dir die Ordner-Konvention
+klar — Obsidian hat kein zentrales Schema, aber Notes innerhalb eines
+Ordners folgen üblicherweise dem gleichen Frontmatter-Muster.
+
+`obsidian_introspect_folder` mit `folder=<ordner>` aufrufen — das
+sampled bis zu 20 Notes parallel und aggregiert:
+- alle Frontmatter-Keys + wie oft sie vorkommen,
+- inferierte Typen (string / number / boolean / array / date),
+- 3 Beispiel-Werte pro Key.
+
+So weißt du sofort: gibt's das Feld „Status" überhaupt? Heißt es
+„Stage" oder „Pipeline-Stage"? Sind Tags ein Array oder ein
+kommaseparierter String? Erspart dir mehrere `get_note`-Roundtrips.
+
+Wenn du danach noch konkret ein Beispiel der aktuellen Werte einer
+spezifischen Note brauchst (z. B. für ein Update, das nur einen Wert
+in einem Array hinzufügt), nutze zusätzlich `obsidian_get_note`.
+
+## Tag-basierte Filterung
+
+Wenn der User mit Tags arbeitet („zeig mir alle #lead-Notes"):
+`obsidian_search_by_tag` mit dem Tag-Namen (mit oder ohne `#`-Prefix).
+Wenn du nicht weißt welche Tags es gibt: `obsidian_list_tags` listet
+alle Tags im Vault mit der jeweiligen Count.
 
 ## 3. Frontmatter patchen
 

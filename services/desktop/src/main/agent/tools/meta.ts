@@ -307,6 +307,9 @@ const KNOWN_BUNDLES: readonly ToolBundle[] = [
     tools: [
       "obsidian_search",
       "obsidian_list_notes",
+      "obsidian_introspect_folder",
+      "obsidian_list_tags",
+      "obsidian_search_by_tag",
       "obsidian_get_note",
       "obsidian_create_note",
       "obsidian_update_frontmatter",
@@ -319,6 +322,7 @@ const KNOWN_BUNDLES: readonly ToolBundle[] = [
       "frontmatter",
       "notiz aktualisieren",
       "obsidian crm",
+      "tag",
     ],
   },
   {

@@ -468,6 +468,97 @@ export function buildObsidianTools(deps: {
     },
   });
 
+  // v0.1.297 — Folder-Schema-Introspection. Aggregiert die Frontmatter-
+  // Konvention eines Ordners (z. B. CRM/) damit der Agent vor einem
+  // update_frontmatter weiss, welche Keys es gibt und was übliche Werte
+  // sind. Notion-Äquivalent: introspect_database.
+  const introspectFolder = defineTool({
+    name: "obsidian_introspect_folder",
+    description:
+      "Sampled bis zu 20 Notes (Default) in einem Vault-Ordner und gibt eine aggregierte Übersicht der Frontmatter-Konvention zurück: welche YAML-Keys gibt es überhaupt, was sind ihre Werte-Typen (string/number/boolean/array/date), wie oft kommen sie vor, was sind beispielhafte Werte. Nutze das VOR obsidian_update_frontmatter sobald du den Zielordner kennst, damit du die exakten Key-Namen (case-sensitive!) und die passenden Wert-Typen siehst. Vault-Schema gibt's konzeptionell nicht — das ist die nächstbeste Approximation.\n\nSonst-Strategie: Wenn du keinen Ordner kennst, frag den User. Heuristik für CRM: Ordner-Namen mit 'CRM', 'Kontakte', 'Pipeline', 'Deals' sind plausibel — wenn ein einzelner offensichtlich passt, nimm den ohne nachzufragen.",
+    parameters: {
+      type: "object",
+      properties: {
+        folder: {
+          type: "string",
+          description:
+            "Vault-relativer Ordner-Pfad ohne führenden Slash. Beispiel: 'CRM' oder 'Projekte/2026'.",
+        },
+        sampleSize: {
+          type: "number",
+          description:
+            "Wie viele Notes maximal sampeln (Default 20, Min 1, Max 50). Größer = präzisere Aggregation, aber mehr Latenz.",
+        },
+      },
+      required: ["folder"],
+    },
+    schema: yup.object({
+      folder: yup.string().trim().required("folder fehlt."),
+      sampleSize: yup.number().integer().min(1).max(50).optional(),
+    }),
+    run: async (args) => {
+      return km.introspectObsidianFolder(args.folder, {
+        sampleSize: args.sampleSize,
+      });
+    },
+    preview: (r) => {
+      const summary = r as {
+        folder?: string;
+        notesScanned?: number;
+        keys?: Array<unknown>;
+      };
+      return `Obsidian-Ordner '${summary.folder ?? "?"}' introspected: ${summary.notesScanned ?? 0} Notes, ${summary.keys?.length ?? 0} Keys`;
+    },
+  });
+
+  // v0.1.297 — Tag-Listing.
+  const listTags = defineTool({
+    name: "obsidian_list_tags",
+    description:
+      "Listet alle Tags im Vault mit der jeweiligen Anzahl Notes. Nutze das, wenn der User nach Tag-Strukturen fragt ('welche Tags hab ich überhaupt?') oder als Vorbereitung für eine Tag-basierte Filterung.",
+    parameters: { type: "object", properties: {} },
+    schema: yup.object({}),
+    run: async () => {
+      const tags = await km.listObsidianTags();
+      return { tags };
+    },
+    preview: (r) => {
+      const tags = (r as { tags?: Array<unknown> }).tags ?? [];
+      return `Obsidian-Vault: ${tags.length} Tag${tags.length === 1 ? "" : "s"}`;
+    },
+  });
+
+  // v0.1.297 — Tag-Suche. Schneller + zielsicherer als obsidian_search,
+  // wenn der User Tag-basiert filtern will ('alle #lead-Notes').
+  const searchByTag = defineTool({
+    name: "obsidian_search_by_tag",
+    description:
+      "Listet alle Notes mit einem bestimmten Tag. Tag mit oder ohne führendes # akzeptiert. Schneller + zielsicherer als obsidian_search, wenn der User Tag-basiert filtern will ('zeig mir alle #lead-Notes', 'welche Notes haben #b2b?'). Falls du nicht sicher bist welche Tags es überhaupt gibt: erst obsidian_list_tags.",
+    parameters: {
+      type: "object",
+      properties: {
+        tag: {
+          type: "string",
+          description:
+            "Tag-Name mit oder ohne führendes #. Beispiele: 'lead', '#lead', 'b2b/customer'.",
+        },
+      },
+      required: ["tag"],
+    },
+    schema: yup.object({
+      tag: yup.string().trim().required("tag fehlt."),
+    }),
+    run: async (args) => {
+      const hits = await km.searchObsidianByTag(args.tag);
+      return { tag: args.tag, hits };
+    },
+    preview: (r) => {
+      const hits = (r as { hits?: Array<unknown> }).hits ?? [];
+      const tag = (r as { tag?: string }).tag ?? "?";
+      return `${hits.length} Note${hits.length === 1 ? "" : "s"} mit Tag '${tag}'`;
+    },
+  });
+
   return [
     connectStart,
     connectSaveCredentials,
@@ -480,6 +571,9 @@ export function buildObsidianTools(deps: {
     replaceNote,
     updateFrontmatter,
     deleteNote,
+    introspectFolder,
+    listTags,
+    searchByTag,
   ];
 }
 

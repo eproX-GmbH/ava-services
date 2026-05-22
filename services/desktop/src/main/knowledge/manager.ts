@@ -182,4 +182,35 @@ export class KnowledgeManager extends EventEmitter {
     }
     return adapter.listFolder(folder);
   }
+
+  /** v0.1.297 — Obsidian Folder-Schema-Introspection. Sampled bis zu N
+   *  Notes im Ordner und aggregiert Frontmatter-Keys + Sample-Werte. */
+  async introspectObsidianFolder(
+    folder: string,
+    opts?: { sampleSize?: number },
+  ) {
+    const adapter = this.getAdapter("obsidian");
+    if (!(adapter instanceof ObsidianAdapter)) {
+      throw new Error("Obsidian-Adapter nicht initialisiert.");
+    }
+    return adapter.introspectFolder(folder, opts);
+  }
+
+  /** v0.1.297 — Alle Tags im Vault. */
+  async listObsidianTags() {
+    const adapter = this.getAdapter("obsidian");
+    if (!(adapter instanceof ObsidianAdapter)) {
+      throw new Error("Obsidian-Adapter nicht initialisiert.");
+    }
+    return adapter.listTags();
+  }
+
+  /** v0.1.297 — Notes mit einem bestimmten Tag suchen. */
+  async searchObsidianByTag(tag: string) {
+    const adapter = this.getAdapter("obsidian");
+    if (!(adapter instanceof ObsidianAdapter)) {
+      throw new Error("Obsidian-Adapter nicht initialisiert.");
+    }
+    return adapter.searchByTag(tag);
+  }
 }
