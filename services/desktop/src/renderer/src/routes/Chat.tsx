@@ -920,7 +920,7 @@ export function Chat() {
     const rejected = nonImage.length - accepted.length;
     if (rejected > 0 && accepted.length === 0 && imageFiles.length === 0) {
       setError(
-        `Nicht unterstützter Dateityp. Bitte .xlsx-, .xls-, .csv-, .tsv-Dateien oder Bilder (PNG/JPEG) ablegen.`,
+        `Nicht unterstützter Dateityp. Bitte .xlsx-, .xls-, .csv-, .tsv-, .pdf-Dateien oder Bilder (PNG/JPEG) ablegen.`,
       );
       return;
     }
@@ -1401,7 +1401,7 @@ export function Chat() {
               ref={fileInputRef}
               type="file"
               multiple
-              accept=".xlsx,.xls,.csv,.tsv,image/png,image/jpeg,image/webp,image/gif"
+              accept=".xlsx,.xls,.csv,.tsv,.pdf,application/pdf,image/png,image/jpeg,image/webp,image/gif"
               style={{ display: "none" }}
               onChange={handleFileInput}
             />

@@ -4170,6 +4170,50 @@ app.whenReady().then(async () => {
     attachments.discard(id),
   );
 
+  // v0.1.301 — PDF-Text-Extraction über pdf-parse (existiert schon als
+  // dep, wird auch im Mail-Pfad genutzt). Renderer kann pdf-parse nicht
+  // direkt nutzen (Node-Bindings), deshalb dieser IPC-Roundtrip.
+  // Returnt extrahierten Text + Seitenzahl + Filename für den Chip.
+  ipcMain.handle(
+    "agent:extractPdfText",
+    async (
+      _e,
+      input: { filename: string; bytes: Uint8Array },
+    ): Promise<{
+      text: string;
+      numPages: number;
+      filename: string;
+      truncated: boolean;
+    }> => {
+      const u8 =
+        input.bytes instanceof Uint8Array
+          ? new Uint8Array(input.bytes)
+          : new Uint8Array(input.bytes as ArrayBufferLike);
+      const buf = Buffer.from(u8);
+      // Lazy-import wie im Mail-Attachment-Pfad — pdf-parse hat Top-
+      // Level-Side-Effects (öffnet ein Test-PDF), die wir nur lazy
+      // tolerieren wollen.
+      const mod = (await import("pdf-parse")) as unknown as {
+        default: (data: Buffer) => Promise<{ text: string; numpages: number }>;
+      };
+      try {
+        const result = await mod.default(buf);
+        const TEXT_CAP = 200_000; // ~50k tokens, hoch genug für Verträge
+        const text = result.text ?? "";
+        return {
+          text: text.slice(0, TEXT_CAP),
+          numPages: result.numpages ?? 0,
+          filename: input.filename,
+          truncated: text.length > TEXT_CAP,
+        };
+      } catch (err) {
+        throw new Error(
+          `PDF "${input.filename}" konnte nicht gelesen werden: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
+    },
+  );
+
   // DEV ONLY — bypass OIDC entirely for UI testing against a mock gateway.
   // Set AVA_DEV_AUTH_BYPASS=1 alongside GATEWAY_URL to skip Keycloak.
   // The resolver in shared/config.ts force-disables this in packaged

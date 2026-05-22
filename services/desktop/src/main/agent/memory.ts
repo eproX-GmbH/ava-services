@@ -10,8 +10,28 @@ import {
 } from "node:fs";
 import { join } from "node:path";
 import { app } from "electron";
-import type { AgentMessage } from "../../shared/types";
+import type { AgentMessage, AgentMessageImage } from "../../shared/types";
 import { redactSensitiveTokens } from "../knowledge/redaction";
+
+// v0.1.301 — Mapping MIME → Datei-Extension. Wir nutzen nur die typischen
+// Vision-Modell-akzeptierten Formate; alles andere fällt auf `.bin` zurück
+// (kommt in der Praxis nicht vor, weil der Composer das vorher filtert).
+const MIME_TO_EXT: Record<string, string> = {
+  "image/png": "png",
+  "image/jpeg": "jpg",
+  "image/jpg": "jpg",
+  "image/gif": "gif",
+  "image/webp": "webp",
+  "image/bmp": "bmp",
+};
+const EXT_TO_MIME: Record<string, string> = {
+  png: "image/png",
+  jpg: "image/jpeg",
+  jpeg: "image/jpeg",
+  gif: "image/gif",
+  webp: "image/webp",
+  bmp: "image/bmp",
+};
 
 /**
  * v0.1.224 — Sensitive-Token-Schutz für Transcript-Persistence.
@@ -278,7 +298,14 @@ export class MemoryStore {
     if (!existsSync(path)) return [];
     try {
       const raw = readFileSync(path, "utf8");
-      return parseTranscript(raw);
+      // v0.1.301 — Image-Resolver callback durchreichen, damit
+      // parseTranscript die `image-attachment`-Fences zurück in
+      // AgentMessageImage[] auflösen kann. Pure-Functions in dieser
+      // Datei haben keinen Zugriff auf die Store-Instanz, deshalb
+      // injected wir den Loader als Closure.
+      return parseTranscript(raw, (relPath, mime, filename) =>
+        this.loadImage(relPath, mime, filename),
+      );
     } catch {
       return [];
     }
@@ -422,9 +449,83 @@ export class MemoryStore {
       // User-Geheimnisse enthalten. User- + Assistant-Content
       // schon. Wir redacten beides defensiv.
       const safe = sanitiseForDisk(message);
-      appendFileSync(path, formatMessage(safe));
+      // v0.1.301 — Bilder als separate Datei auf Disk schreiben und
+      // im Markdown nur eine Referenz hinterlegen. Vorher: images
+      // wurden in der Memory-Speicherung komplett verschluckt → beim
+      // Reload waren die Bilder weg.
+      const imageRefs = this.persistImages(conversationId, safe);
+      appendFileSync(path, formatMessage(safe, imageRefs));
     } catch (err) {
       console.warn("[memory] append failed:", err);
+    }
+  }
+
+  /**
+   * v0.1.301 — Schreibt die base64-Bilder einer Message in einen
+   * pro-Conversation-Ordner und gibt Referenz-Tripel (filename,
+   * mimeType, relPath) zurück, die in formatMessage als markdown-
+   * fence eingebaut werden.
+   *
+   * Pfad: <dir>/images/<conversationId>/<message-id>-<idx>.<ext>
+   *
+   * Bei IO-Fehlern: bestes Bemühen — wir loggen und überspringen das
+   * Bild, der Rest der Message wird trotzdem persistiert.
+   */
+  private persistImages(
+    conversationId: string,
+    message: AgentMessage,
+  ): Array<{ filename: string; mimeType: string; relPath: string }> {
+    if (!message.images || message.images.length === 0) return [];
+    const safeConv = conversationId.replace(/[^a-zA-Z0-9_-]/g, "_");
+    const dir = join(this.dir, "images", safeConv);
+    try {
+      if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
+    } catch (err) {
+      console.warn("[memory] mkdir images dir failed:", err);
+      return [];
+    }
+    const out: Array<{ filename: string; mimeType: string; relPath: string }> = [];
+    message.images.forEach((img, idx) => {
+      const ext = MIME_TO_EXT[img.mimeType.toLowerCase()] ?? "bin";
+      const fileName = `${message.id}-${idx}.${ext}`;
+      const fullPath = join(dir, fileName);
+      try {
+        writeFileSync(fullPath, Buffer.from(img.base64, "base64"), {
+          mode: 0o600,
+        });
+        out.push({
+          filename: img.filename ?? fileName,
+          mimeType: img.mimeType,
+          relPath: `images/${safeConv}/${fileName}`,
+        });
+      } catch (err) {
+        console.warn(`[memory] write image ${fileName} failed:`, err);
+      }
+    });
+    return out;
+  }
+
+  /**
+   * v0.1.301 — Liest eine Image-Referenz vom Disk zurück in ein
+   * AgentMessageImage. Wird beim parseTranscript() aufgerufen sobald
+   * eine `image-attachment`-Fence entdeckt wird. Bei IO-Fehlern
+   * (Datei gelöscht, Permission, …) returnen wir null und die Message
+   * landet ohne dieses Bild beim Renderer.
+   */
+  loadImage(relPath: string, hintMime?: string, filename?: string): AgentMessageImage | null {
+    try {
+      const fullPath = join(this.dir, relPath);
+      const buf = readFileSync(fullPath);
+      const ext = relPath.split(".").pop()?.toLowerCase() ?? "";
+      const mimeType = hintMime ?? EXT_TO_MIME[ext] ?? "image/png";
+      return {
+        base64: buf.toString("base64"),
+        mimeType,
+        filename: filename ?? relPath.split("/").pop() ?? "image",
+      };
+    } catch (err) {
+      console.warn(`[memory] loadImage(${relPath}) failed:`, err);
+      return null;
     }
   }
 
@@ -562,7 +663,10 @@ function collectMatchOffsets(
 
 // ---- Format helpers --------------------------------------------------------
 
-function formatMessage(m: AgentMessage): string {
+function formatMessage(
+  m: AgentMessage,
+  imageRefs: Array<{ filename: string; mimeType: string; relPath: string }> = [],
+): string {
   const iso = new Date(m.createdAt || Date.now()).toISOString();
   const lines: string[] = [];
   // Header line carries everything a parser needs to round-trip.
@@ -580,6 +684,20 @@ function formatMessage(m: AgentMessage): string {
     for (const tc of m.toolCalls) {
       lines.push(`\`\`\`toolcall ${tc.id}`);
       lines.push(`${tc.name}(${JSON.stringify(tc.args ?? {})})`);
+      lines.push("```");
+    }
+  }
+  // v0.1.301 — Image-Referenzen als eigene Fence. Eine Fence pro Bild.
+  // Inhalt der Fence: <mime> · <relPath> · <filename>. Reihenfolge
+  // matched message.images[idx], damit parseTranscript stabil
+  // rekonstruieren kann.
+  if (imageRefs.length > 0) {
+    lines.push("");
+    for (const ref of imageRefs) {
+      lines.push(`\`\`\`image-attachment`);
+      lines.push(`mime: ${ref.mimeType}`);
+      lines.push(`path: ${ref.relPath}`);
+      lines.push(`filename: ${ref.filename}`);
       lines.push("```");
     }
   }
@@ -613,8 +731,16 @@ function parseHeader(line: string): ParsedHeader | null {
 /**
  * Parses a transcript into AgentMessage[]. Lenient: skips malformed
  * sections, swallows unknown fenced-block kinds, ignores frontmatter.
+ *
+ * v0.1.301 — `imageResolver` ist optional. Wenn gesetzt, werden
+ * `image-attachment`-Fences zu AgentMessageImage[] aufgelöst und an
+ * die Message gehängt. Im Search-Pfad (parseTranscript ohne Resolver)
+ * werden Image-Fences einfach übersprungen.
  */
-function parseTranscript(raw: string): AgentMessage[] {
+function parseTranscript(
+  raw: string,
+  imageResolver?: (relPath: string, mime: string, filename: string) => AgentMessageImage | null,
+): AgentMessage[] {
   const lines = raw.split(/\r?\n/);
   // Skip frontmatter block at the very top.
   let i = 0;
@@ -625,8 +751,12 @@ function parseTranscript(raw: string): AgentMessage[] {
   }
 
   const out: AgentMessage[] = [];
-  let cur: { header: ParsedHeader; content: string[]; calls: AgentMessage["toolCalls"] } | null =
-    null;
+  let cur: {
+    header: ParsedHeader;
+    content: string[];
+    calls: AgentMessage["toolCalls"];
+    images: AgentMessageImage[];
+  } | null = null;
 
   const flush = (): void => {
     if (!cur) return;
@@ -638,6 +768,7 @@ function parseTranscript(raw: string): AgentMessage[] {
       createdAt: cur.header.createdAt,
       ...(cur.header.toolCallId ? { toolCallId: cur.header.toolCallId } : {}),
       ...(cur.calls && cur.calls.length > 0 ? { toolCalls: cur.calls } : {}),
+      ...(cur.images.length > 0 ? { images: cur.images } : {}),
     });
     cur = null;
   };
@@ -656,7 +787,7 @@ function parseTranscript(raw: string): AgentMessage[] {
       const header = parseHeader(line);
       if (header) {
         flush();
-        cur = { header, content: [], calls: [] };
+        cur = { header, content: [], calls: [], images: [] };
         i++;
         continue;
       }
@@ -685,6 +816,38 @@ function parseTranscript(raw: string): AgentMessage[] {
             args = m[2] ?? {};
           }
           cur.calls!.push({ id: callId, name: m[1]!.trim(), args });
+        }
+        continue;
+      }
+      // v0.1.301 — Image-Attachment-Fence. Body hat drei key:value-
+      // Zeilen (mime, path, filename). Wenn ein Resolver verfügbar
+      // ist, base64-laden + an Message anhängen; sonst still skippen
+      // (z. B. im Search-Pfad ohne Image-Read).
+      if (line.trim() === "```image-attachment") {
+        i++;
+        const body: string[] = [];
+        while (i < lines.length && lines[i] !== "```") {
+          body.push(lines[i] ?? "");
+          i++;
+        }
+        if (i < lines.length) i++;
+        if (imageResolver) {
+          const meta: Record<string, string> = {};
+          for (const bl of body) {
+            const sep = bl.indexOf(":");
+            if (sep > 0) {
+              const k = bl.slice(0, sep).trim();
+              const v = bl.slice(sep + 1).trim();
+              meta[k] = v;
+            }
+          }
+          const relPath = meta["path"];
+          const mime = meta["mime"] ?? "image/png";
+          const filename = meta["filename"] ?? "image";
+          if (relPath) {
+            const img = imageResolver(relPath, mime, filename);
+            if (img) cur.images.push(img);
+          }
         }
         continue;
       }

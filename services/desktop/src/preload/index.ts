@@ -743,6 +743,20 @@ const api = {
     discardAttachment: (id: string): Promise<boolean> =>
       ipcRenderer.invoke("agent:discardAttachment", id),
 
+    // v0.1.301 — PDF-Text-Extract. Renderer schickt die Bytes + den
+    // Filename rein, main parsed mit pdf-parse und gibt extrahierten
+    // Text + numPages zurück. Verwendet vom Composer beim Drop einer
+    // .pdf-Datei.
+    extractPdfText: (input: {
+      filename: string;
+      bytes: Uint8Array;
+    }): Promise<{
+      text: string;
+      numPages: number;
+      filename: string;
+      truncated: boolean;
+    }> => ipcRenderer.invoke("agent:extractPdfText", input),
+
     // General memory (Phase 8.k10h). Long-term facts the agent can
     // look up via the `recall_memory` tool. The renderer surface here
     // is for a future Settings → Memory pane to let the user audit /

@@ -77,8 +77,9 @@ const ATTACHMENT_SAMPLE_ROWS = 5;
 export const ATTACHMENT_MAX_BYTES = 25 * 1024 * 1024; // 25 MB
 
 /** Recognised extensions. We match by extension first, then fall back
- *  to letting SheetJS try (it'll throw on garbage). */
-const SUPPORTED_EXT = [".xlsx", ".xls", ".csv", ".tsv"] as const;
+ *  to letting SheetJS try (it'll throw on garbage). v0.1.301 — .pdf
+ *  hinzugefügt, parsing geht über IPC ans main (pdf-parse). */
+const SUPPORTED_EXT = [".xlsx", ".xls", ".csv", ".tsv", ".pdf"] as const;
 
 export function isSupportedAttachment(file: File): boolean {
   const name = file.name.toLowerCase();
@@ -92,6 +93,13 @@ export async function parseAttachment(
     throw new Error(
       `File too large (${formatBytes(file.size)}). Max ${formatBytes(ATTACHMENT_MAX_BYTES)}.`,
     );
+  }
+  // v0.1.301 — PDF-Pfad: Text-Extract via IPC ans main (pdf-parse),
+  // dann als Single-Sheet-Pseudoschätzung in die SpreadsheetAttachment-
+  // Struktur einkleiden, damit composePromptWithAttachments sie ohne
+  // Refactor weiterreichen kann.
+  if (file.name.toLowerCase().endsWith(".pdf")) {
+    return parsePdfAttachment(file);
   }
   const buf = await file.arrayBuffer();
   let workbook: XLSX.WorkBook;
@@ -175,6 +183,17 @@ export function renderAttachmentForPrompt(
   );
   for (const sheet of attachment.sheets) {
     lines.push("");
+    // v0.1.301 — PDF-Spezialform: ein „Sheet" mit Header
+    // "__pdf_text__" enthält den vollen extrahierten PDF-Text als
+    // einzige Sample-Zeile. Rendern wir als Plain-Text-Block, NICHT
+    // als CSV-Sample (das würde den Text bei 80 Zeichen abschneiden).
+    if (sheet.headers.length === 1 && sheet.headers[0] === "__pdf_text__") {
+      lines.push(`PDF "${attachment.filename}" (${sheet.totalRows} Seite${sheet.totalRows === 1 ? "" : "n"}):`);
+      lines.push("```");
+      lines.push(sheet.sampleRows[0]?.[0] ?? "(leer)");
+      lines.push("```");
+      continue;
+    }
     lines.push(`Sheet "${sheet.name}" (${sheet.totalRows} data row${sheet.totalRows === 1 ? "" : "s"}):`);
     if (sheet.headers.length === 0) {
       lines.push("(empty sheet)");
@@ -204,6 +223,64 @@ export function composePromptWithAttachments(
   if (attachments.length === 0) return userText;
   const blocks = attachments.map(renderAttachmentForPrompt);
   return [...blocks, "", userText].join("\n");
+}
+
+// ---- PDF-Pfad (v0.1.301) ---------------------------------------------------
+//
+// Renderer kann pdf-parse (Node-only) nicht direkt nutzen → IPC ans
+// main, das gibt extrahierten Text + numPages zurück. Wir packen das
+// dann in die bestehende SpreadsheetAttachment-Form: ein „Sheet" pro
+// PDF mit einem Header-Eintrag „PDF-Inhalt" und sample-row = der
+// extrahierte Text (oder ersten N Zeichen). composePromptWith
+// Attachments rendert das als normalen Attachment-Block.
+
+async function parsePdfAttachment(file: File): Promise<SpreadsheetAttachment> {
+  const buf = await file.arrayBuffer();
+  const u8 = new Uint8Array(buf);
+  // window.api.agent kommt aus dem preload-Bridge; wenn AVA in einer
+  // Test-Umgebung ohne main läuft, fällt das clean auf einen Fehler.
+  const ipc = (window as unknown as {
+    api?: {
+      agent?: {
+        extractPdfText?: (input: {
+          filename: string;
+          bytes: Uint8Array;
+        }) => Promise<{
+          text: string;
+          numPages: number;
+          filename: string;
+          truncated: boolean;
+        }>;
+      };
+    };
+  }).api?.agent?.extractPdfText;
+  if (!ipc) {
+    throw new Error(
+      `PDF-Parsing benötigt die Desktop-Bridge. Bitte AVA neu starten — wenn das Problem bleibt, melden.`,
+    );
+  }
+  const result = await ipc({ filename: file.name, bytes: u8 });
+  // Token-Limit-Schutz: das Render-Format unten cap't die Sample-Zeile
+  // bei 80 Zeichen — für PDFs nicht sinnvoll, weil dann der Agent
+  // nichts sieht. Stattdessen renderPdfAttachment unten via Override.
+  const pdfText = result.text || "(kein extrahierbarer Text — vermutlich Scan-PDF)";
+  return {
+    id: makeAttachmentId(),
+    filename: file.name,
+    sizeBytes: file.size,
+    bytes: u8,
+    sheets: [
+      {
+        name: `PDF-Inhalt (${result.numPages} Seite${result.numPages === 1 ? "" : "n"})`,
+        headers: ["__pdf_text__"], // Marker — rendert anders, siehe renderAttachmentForPrompt
+        sampleRows: [[pdfText]],
+        totalRows: result.numPages,
+      },
+    ],
+    warning: result.truncated
+      ? `PDF-Text auf 200k Zeichen gekürzt — bei langen Verträgen ggf. nicht der vollständige Inhalt.`
+      : undefined,
+  };
 }
 
 // ---- Helpers ---------------------------------------------------------------
