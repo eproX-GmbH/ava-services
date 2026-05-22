@@ -2300,6 +2300,12 @@ code, pre { font-family: var(--font-mono); font-size: 12px; }
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
+  /* v0.1.287 — z-index hochziehen damit das Hover-Popover (absolutes
+     Child) aus dem Sidebar-Stacking-Context die Content-Section
+     überlagert. Vorher lag .ct-page-header (im content-Grid-Cell)
+     visuell über dem Popover, weil ohne explizites z-index die DOM-
+     Reihenfolge entscheidet und content-Cell nach sidebar-Cell kommt. */
+  z-index: 100;
 }
 .settings-shell__search {
   display: none; /* U3 enables this. */
@@ -6778,8 +6784,10 @@ a.heartbeat-decision__company:hover {
   border-radius: 6px;
   box-shadow: 0 6px 16px rgba(0,0,0,0.14);
   min-width: 220px;
-  /* v0.1.286 — z-index hochgezogen für den Fall, dass ein Banner /
-     Overlay drüber kommen will. */
+  /* v0.1.286 — z-index hochgezogen. v0.1.287 — Sidebar selbst hat
+     jetzt z-index 100, das Popover braucht hier nur lokal über den
+     anderen Sidebar-Kindern liegen. Trotzdem hoch lassen für künftige
+     Stacking-Context-Falten. */
   z-index: 2000;
   display: flex; flex-direction: column;
 }
