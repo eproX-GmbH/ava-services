@@ -381,11 +381,19 @@ export class NotionAdapter implements KnowledgeAdapter {
             ? ` Schema-Mapping-Warnungen: ${propertyConversionWarnings.join("; ")}.`
             : "";
         throw new Error(
-          `Notion hat den Update-Call akzeptiert, aber die folgenden Properties wurden NICHT übernommen: ` +
+          `Notion hat den Update-Call akzeptiert (HTTP 200), aber die folgenden ` +
+            `Properties wurden NICHT übernommen: ` +
             failures.join("; ") +
-            `. Mögliche Ursachen: (1) Property-Name passt nicht exakt zur DB-Spalte, ` +
-            `(2) bei Select/Status: gewählte Option existiert nicht im Schema (Tipp: erst notion_introspect_database aufrufen, um die exakten Options zu sehen — Notion ist case-sensitive), ` +
-            `(3) Integration hat keine Update-Rechte auf dieser Seite (Notion → Page → Connections prüfen).` +
+            `. HÄUFIGSTE URSACHE — bitte ZUERST prüfen: Die Integration ist ` +
+            `nur auf der EINZELNEN Page verbunden, nicht auf der DATENBANK. ` +
+            `Notion liefert in diesem Fall 200 OK + alte Werte zurück, ohne zu ` +
+            `schreiben. Fix: In Notion die DATENBANK öffnen (nicht die Row) → ` +
+            `oben rechts ⋯ → Connections → "AVA" verbinden. ` +
+            `Weitere mögliche Ursachen: ` +
+            `(a) Property-Name passt nicht exakt zur DB-Spalte; ` +
+            `(b) bei Select/Status: gewählte Option existiert nicht im Schema ` +
+            `(Notion ist case-sensitive, erst notion_introspect_database aufrufen); ` +
+            `(c) Property ist read-only (formula, rollup, created_time, …).` +
             warningSuffix,
         );
       }
@@ -449,7 +457,10 @@ export class NotionAdapter implements KnowledgeAdapter {
         throw new Error(
           `Notion hat HTTP 200 geliefert, aber serverseitig nichts gespeichert. ` +
             `Properties die nicht persistiert wurden: ${noOpDetected.join(", ")}. ` +
-            `Das ist ein bekanntes Notion-Verhalten bei Multi-Data-Source-DBs. ` +
+            `HÄUFIGSTE URSACHE: Die Integration ist nur auf der einzelnen Page ` +
+            `verbunden, nicht auf der DATENBANK. Fix: In Notion die Datenbank ` +
+            `öffnen → ⋯ → Connections → "AVA" verbinden. ` +
+            `(Auch möglich: Multi-Data-Source-DB mit Property-Name-Konflikt.) ` +
             `Sent body: ${JSON.stringify(lastPatchBody).slice(0, 400)}. ` +
             `PATCH-Response sagt: ${JSON.stringify(patchResponseProperties).slice(0, 400)}. ` +
             `Fresh-GET sagt: ${JSON.stringify(freshGetProperties).slice(0, 400)}.`,
