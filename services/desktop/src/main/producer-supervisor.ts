@@ -1,4 +1,10 @@
-import { spawn, type ChildProcessByStdio } from "node:child_process";
+import {
+  spawn,
+  execFile,
+  type ChildProcessByStdio,
+} from "node:child_process";
+import { promisify } from "node:util";
+import net from "node:net";
 import { producerLogBuffer } from "./producer-log-buffer";
 import { screenshotDirForProducer } from "./producer-screenshots";
 import type { Readable } from "node:stream";
@@ -381,6 +387,24 @@ export class ProducerSupervisor extends EventEmitter {
       return;
     }
 
+    // v0.1.294 — Boot-Port-Cleanup. Real-Run zeigt: nach einem
+    // unsauberen AVA-Exit (Crash, kill -9) bleiben Producer-Subprozesse
+    // hängen und besetzen ihre Ports (51010-51060). Beim nächsten Boot
+    // wirft jedes Producer-child eine fette EADDRINUSE-Trace ins Log.
+    // Der Producer überlebt das zwar (siehe uncaughtException-Handler
+    // in den Submodulen), aber 6 Stack-Traces auf jedem Boot sind
+    // verwirrend für den Operator und maskieren echte Probleme.
+    //
+    // Strategie: vor spawn die 3 Ports (PORT, +100 Liveness, +101
+    // Readiness) auf "listening" prüfen. Wenn belegt → via `lsof`
+    // (macOS/Linux) den belegenden Prozess identifizieren und SIGKILLn.
+    // Nur stale orphans, niemals andere AVA-Producer (würden bei
+    // sauberem Restart eh nicht laufen).
+    await this.cleanupStalePorts([
+      this.opts.config.port,
+      this.opts.config.port + 100,
+      this.opts.config.port + 101,
+    ]);
     try {
       this.child = spawn(process.execPath, [entryPath], {
         cwd: producerDir,
@@ -659,10 +683,93 @@ export class ProducerSupervisor extends EventEmitter {
     if (existsSync(dev)) return dev;
     return null;
   }
+
+  /**
+   * v0.1.294 — Boot-Port-Cleanup. Prüft pro Port ob etwas listent;
+   * wenn ja, identifiziert via `lsof` den PID und schickt SIGKILL.
+   *
+   * Best-effort: jede Fehlerquelle (lsof nicht installiert, Berechtigung,
+   * unbekanntes OS) ist still — wir wollen den Producer-Start NIEMALS
+   * blockieren, nur sauberer machen. Bei Failure spawnen wir normal
+   * und der Producer wirft sein EADDRINUSE wie bisher (kept-alive).
+   *
+   * Windows: aktuell unsupported (lsof gibt's nicht). Auf Windows
+   * skippt der Cleanup-Pfad still und wir verhalten uns wie früher.
+   * Wenn das Symptom dort auftritt → separater Task mit netstat.
+   */
+  private async cleanupStalePorts(ports: number[]): Promise<void> {
+    if (process.platform === "win32") return; // nur POSIX
+    for (const port of ports) {
+      try {
+        const listening = await isPortListening(port);
+        if (!listening) continue;
+        const pids = await findPidsOnPort(port);
+        // Filtere unseren eigenen Prozess + Parent raus, damit wir uns
+        // nicht selbst killen. Sollte nicht passieren (wir sind kein
+        // listener auf diesen Ports), aber paranoid ist gut.
+        const ownPid = process.pid;
+        const safe = pids.filter((p) => p !== ownPid && p > 0);
+        if (safe.length === 0) continue;
+        console.warn(
+          `[producer-supervisor:${this.opts.config.name}] stale process(es) on port ${port}: ${safe.join(",")} — sending SIGKILL`,
+        );
+        for (const pid of safe) {
+          try {
+            process.kill(pid, "SIGKILL");
+          } catch {
+            // Schon weg, oder keine Berechtigung — egal, weiter.
+          }
+        }
+        // Kurz warten, damit der TCP-Socket frei wird. Ohne Wait
+        // läuft spawn manchmal in TIME_WAIT-Reuse-Probleme.
+        await sleep(150);
+      } catch {
+        // Cleanup ist immer best-effort.
+      }
+    }
+  }
 }
 
 // ---- Helpers ----------------------------------------------------------------
 
 function sleep(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
+}
+
+/** Listet etwas auf 127.0.0.1:port? Schneller TCP-connect-Probe. */
+function isPortListening(port: number): Promise<boolean> {
+  return new Promise((resolve) => {
+    const socket = new net.Socket();
+    const finish = (listening: boolean) => {
+      socket.destroy();
+      resolve(listening);
+    };
+    socket.setTimeout(200);
+    socket.once("connect", () => finish(true));
+    socket.once("timeout", () => finish(false));
+    socket.once("error", () => finish(false));
+    socket.connect(port, "127.0.0.1");
+  });
+}
+
+/** PIDs die auf `port` listenen (TCP, IPv4+IPv6 zusammen). Best-effort. */
+async function findPidsOnPort(port: number): Promise<number[]> {
+  try {
+    const execFileP = promisify(execFile);
+    // -t: terse output (nur PIDs, eine pro Zeile)
+    // -i: nur Internet-Sockets
+    // -nP: keine DNS-/Service-Lookups (schneller)
+    const { stdout } = await execFileP("lsof", [
+      "-t",
+      "-nP",
+      `-iTCP:${port}`,
+      "-sTCP:LISTEN",
+    ]);
+    return stdout
+      .split("\n")
+      .map((s) => Number(s.trim()))
+      .filter((n) => Number.isFinite(n) && n > 0);
+  } catch {
+    return [];
+  }
 }
