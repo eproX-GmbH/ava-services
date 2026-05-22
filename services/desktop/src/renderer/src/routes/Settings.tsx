@@ -4704,7 +4704,7 @@ const PLAN_CARDS: PlanCard[] = [
   },
 ];
 
-const ENTERPRISE_CONTACT_URL = "https://eprox-gmbh.de/kontakt";
+const ENTERPRISE_CONTACT_URL = "https://ava.bi/kontakt";
 
 export function PlanSection() {
   const { data, isLoading, error, refetch } = useUsage();
