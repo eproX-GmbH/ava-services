@@ -5802,12 +5802,16 @@ a.heartbeat-decision__company:hover {
   color: #92400e;
 }
 
-@media (prefers-color-scheme: dark) {
-  .tier-banner--warn {
-    background: rgba(251, 191, 36, 0.08);
-    border: 1px solid rgba(251, 191, 36, 0.28);
-    color: #fbbf24;
-  }
+/* v0.1.298 — Dark-Mode an html.dark statt prefers-color-scheme.
+   AVA hat einen Tri-State-Theme-Toggle (lib/theme.ts) der bewusst
+   html.dark setzt; prefers-color-scheme würde stattdessen die OS-
+   Preference lesen und mit dem App-Theme kollidieren (Real-Run-Bug:
+   Light-App auf Dark-OS = dunkle Mail-Triage-Farben auf hellem
+   Chrome, Text unlesbar). */
+html.dark .tier-banner--warn {
+  background: rgba(251, 191, 36, 0.08);
+  border: 1px solid rgba(251, 191, 36, 0.28);
+  color: #fbbf24;
 }
 
 .tier-banner__title {
@@ -6022,9 +6026,7 @@ a.heartbeat-decision__company:hover {
   overflow: auto;
 }
 
-@media (prefers-color-scheme: dark) {
-  .updater-notice__pre { background: rgba(255, 255, 255, 0.05); }
-}
+html.dark .updater-notice__pre { background: rgba(255, 255, 255, 0.05); }
 
 /* ----- v0.1.216 — Anthropic-API-Key Deprecation-Hinweis ------------------
  *
@@ -6060,11 +6062,9 @@ a.heartbeat-decision__company:hover {
   margin-top: 0.25rem;
 }
 
-@media (prefers-color-scheme: dark) {
-  .provider-key-card__deprecation {
-    background: rgba(251, 191, 36, 0.08);
-    border-color: rgba(251, 191, 36, 0.28);
-  }
+html.dark .provider-key-card__deprecation {
+  background: rgba(251, 191, 36, 0.08);
+  border-color: rgba(251, 191, 36, 0.28);
 }
 
 /* ----- v0.1.218 — Producer-Fehler strukturiert dargestellt -------------- */
@@ -6124,9 +6124,7 @@ a.heartbeat-decision__company:hover {
   overflow: auto;
 }
 
-@media (prefers-color-scheme: dark) {
-  .producer-error__pre { background: rgba(255, 255, 255, 0.05); }
-}
+html.dark .producer-error__pre { background: rgba(255, 255, 255, 0.05); }
 
 /* ----- v0.1.219 — Onboarding-Wizard Layout-Overhaul ---------------------
  *
@@ -6516,9 +6514,7 @@ a.heartbeat-decision__company:hover {
   border-radius: 3px;
 }
 
-@media (prefers-color-scheme: dark) {
-  .wissensquellen-steps code { background: rgba(255, 255, 255, 0.08); }
-}
+html.dark .wissensquellen-steps code { background: rgba(255, 255, 255, 0.08); }
 
 .wissensquellen-connect input[type="password"] {
   width: 100%;
@@ -6633,18 +6629,18 @@ a.heartbeat-decision__company:hover {
 .triage-detail__attachments li { margin: 6px 0; }
 .triage-detail__actions { display: flex; gap: 8px; margin-top: 16px; }
 
-@media (prefers-color-scheme: dark) {
-  .pill--connected, .pill--idling { background: rgba(0,192,167,0.18); color: #6ee7d6; }
-  .pill--polling { background: rgba(252,211,77,0.18); color: #fcd34d; }
-  .pill--connecting { background: rgba(229,231,235,0.10); color: #e5e7eb; }
-  .pill--disconnected, .pill--error { background: rgba(239,68,68,0.18); color: #fca5a5; }
-  .trust-badge--trusted { background: rgba(0,192,167,0.18); color: #6ee7d6; }
-  .trust-badge--known { background: rgba(252,211,77,0.18); color: #fcd34d; }
-  .trust-badge--unknown { background: rgba(229,231,235,0.10); color: #e5e7eb; }
-  .triage-detail__classification { background: rgba(0,192,167,0.10); }
-  .triage-detail__body pre { background: rgba(255,255,255,0.04); }
-  .mail-allowlist__list code { background: rgba(255,255,255,0.08); }
-}
+html.dark .pill--connected,
+html.dark .pill--idling { background: rgba(0,192,167,0.18); color: #6ee7d6; }
+html.dark .pill--polling { background: rgba(252,211,77,0.18); color: #fcd34d; }
+html.dark .pill--connecting { background: rgba(229,231,235,0.10); color: #e5e7eb; }
+html.dark .pill--disconnected,
+html.dark .pill--error { background: rgba(239,68,68,0.18); color: #fca5a5; }
+html.dark .trust-badge--trusted { background: rgba(0,192,167,0.18); color: #6ee7d6; }
+html.dark .trust-badge--known { background: rgba(252,211,77,0.18); color: #fcd34d; }
+html.dark .trust-badge--unknown { background: rgba(229,231,235,0.10); color: #e5e7eb; }
+html.dark .triage-detail__classification { background: rgba(0,192,167,0.10); }
+html.dark .triage-detail__body pre { background: rgba(255,255,255,0.04); }
+html.dark .mail-allowlist__list code { background: rgba(255,255,255,0.08); }
 
 /* Bild-Anhänge im Chat (v0.1.257) */
 .chat-images { padding: 8px 0; }
@@ -6671,9 +6667,7 @@ a.heartbeat-decision__company:hover {
   border: 1px solid var(--border, #d0d4d9); cursor: zoom-in;
 }
 
-@media (prefers-color-scheme: dark) {
-  .chat-images__warn { background: rgba(252,211,77,0.18); color: #fcd34d; }
-}
+html.dark .chat-images__warn { background: rgba(252,211,77,0.18); color: #fcd34d; }
 
 /* Scheduler-Jobs UI (v0.1.274) */
 .scheduler-list { list-style: none; padding: 0; margin: 8px 0; }
@@ -6718,12 +6712,12 @@ a.heartbeat-decision__company:hover {
 .scheduler-form__error { color: #b91c1c; margin: 8px 0; }
 .scheduler-form__actions { display: flex; gap: 8px; margin-top: 12px; }
 
-@media (prefers-color-scheme: dark) {
-  .pill--active { background: rgba(0,192,167,0.18); color: #6ee7d6; }
-  .pill--paused { background: rgba(252,211,77,0.18); color: #fcd34d; }
-  .pill--expired, .pill--cancelled, .pill--completed {
-    background: rgba(229,231,235,0.08); color: #9ca3af;
-  }
+html.dark .pill--active { background: rgba(0,192,167,0.18); color: #6ee7d6; }
+html.dark .pill--paused { background: rgba(252,211,77,0.18); color: #fcd34d; }
+html.dark .pill--expired,
+html.dark .pill--cancelled,
+html.dark .pill--completed {
+  background: rgba(229,231,235,0.08); color: #9ca3af;
 }
 
 /* Top-Nav Sub-Menüs (v0.1.276) */
@@ -6751,15 +6745,13 @@ a.heartbeat-decision__company:hover {
   background: rgba(0,192,167,0.18); font-weight: 600;
 }
 
-@media (prefers-color-scheme: dark) {
-  .topbar__submenu {
-    background: #1f2937; border-color: rgba(255,255,255,0.10);
-    box-shadow: 0 4px 16px rgba(0,0,0,0.4);
-  }
-  .topbar__submenu-item { color: #e5e7eb; }
-  .topbar__submenu-item:hover,
-  .topbar__submenu-item--focused { background: rgba(0,192,167,0.18); }
+html.dark .topbar__submenu {
+  background: #1f2937; border-color: rgba(255,255,255,0.10);
+  box-shadow: 0 4px 16px rgba(0,0,0,0.4);
 }
+html.dark .topbar__submenu-item { color: #e5e7eb; }
+html.dark .topbar__submenu-item:hover,
+html.dark .topbar__submenu-item--focused { background: rgba(0,192,167,0.18); }
 
 /* Settings-Tab Hover-Popover (v0.1.280, gefixt v0.1.286) */
 .settings-shell__tab-wrap { position: relative; }
@@ -7068,24 +7060,25 @@ html.dark .topbar__submenu-item--focused { background: rgba(0,192,167,0.18); }
   text-transform: none;
 }
 
-@media (prefers-color-scheme: dark) {
-  .triage { background: #0b1015; }
-  .triage__toolbar, .triage__list, .triage__detail { background: #111827; }
-  .triage__filter:hover { background: rgba(255,255,255,0.06); }
-  .triage__row:hover { background: rgba(0,192,167,0.10); }
-  .triage__row-attach { color: #9ca3af; }
-  .triage__category { background: rgba(255,255,255,0.08); color: #e5e7eb; }
-  .triage__category--task { background: rgba(59,130,246,0.18); color: #93c5fd; }
-  .triage__category--appointment { background: rgba(252,211,77,0.18); color: #fcd34d; }
-  .triage__category--crm-relevant { background: rgba(167,139,250,0.18); color: #c4b5fd; }
-  .triage__category--spam, .triage__category--phishing { background: rgba(239,68,68,0.18); color: #fca5a5; }
-  .triage-detail__toolbar { background: #0f172a; }
-  .triage-detail__btn { background: #1f2937; }
-  .triage-detail__btn:hover:not(:disabled) { background: #374151; }
-  .triage-detail__ai-card { background: rgba(0,192,167,0.10); }
-  .triage-detail__attach { background: rgba(255,255,255,0.04); }
-  .triage-detail__attach pre { background: rgba(0,0,0,0.20); }
-}
+html.dark .triage { background: #0b1015; }
+html.dark .triage__toolbar,
+html.dark .triage__list,
+html.dark .triage__detail { background: #111827; }
+html.dark .triage__filter:hover { background: rgba(255,255,255,0.06); }
+html.dark .triage__row:hover { background: rgba(0,192,167,0.10); }
+html.dark .triage__row-attach { color: #9ca3af; }
+html.dark .triage__category { background: rgba(255,255,255,0.08); color: #e5e7eb; }
+html.dark .triage__category--task { background: rgba(59,130,246,0.18); color: #93c5fd; }
+html.dark .triage__category--appointment { background: rgba(252,211,77,0.18); color: #fcd34d; }
+html.dark .triage__category--crm-relevant { background: rgba(167,139,250,0.18); color: #c4b5fd; }
+html.dark .triage__category--spam,
+html.dark .triage__category--phishing { background: rgba(239,68,68,0.18); color: #fca5a5; }
+html.dark .triage-detail__toolbar { background: #0f172a; }
+html.dark .triage-detail__btn { background: #1f2937; }
+html.dark .triage-detail__btn:hover:not(:disabled) { background: #374151; }
+html.dark .triage-detail__ai-card { background: rgba(0,192,167,0.10); }
+html.dark .triage-detail__attach { background: rgba(255,255,255,0.04); }
+html.dark .triage-detail__attach pre { background: rgba(0,0,0,0.20); }
 
 /* Self-Corrections-Section (v0.1.284) */
 .self-corrections__stats {
@@ -7128,8 +7121,6 @@ html.dark .topbar__submenu-item--focused { background: rgba(0,192,167,0.18); }
   font-size: 0.78rem; max-height: 200px; overflow: auto;
   margin: 4px 0 0;
 }
-@media (prefers-color-scheme: dark) {
-  .self-corrections__row { background: rgba(255,255,255,0.04); }
-  .self-corrections__raw { background: rgba(255,255,255,0.06); }
-  .self-corrections__stat { background: rgba(0,192,167,0.15); }
-}
+html.dark .self-corrections__row { background: rgba(255,255,255,0.04); }
+html.dark .self-corrections__raw { background: rgba(255,255,255,0.06); }
+html.dark .self-corrections__stat { background: rgba(0,192,167,0.15); }
