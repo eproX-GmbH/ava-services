@@ -41,6 +41,19 @@ export class MailAgentBridge {
   private readonly store: MailStore;
   private readonly orchestrator: AgentOrchestrator;
   private bound = false;
+  /**
+   * v0.1.304 — Dedup-Set über Mail-IDs die wir schon getriggert haben.
+   * Vorher: nur messageFinalized → wenn classifyMail null returnt
+   * (z. B. weil Anthropic-Subscription kein API-Key hat, oder LLM
+   * temporär down), feuerte das Event nie und der Bridge sah die
+   * Mail nicht.
+   *
+   * Jetzt: messageFinalized triggert SOFORT, messageUpdated triggert
+   * mit 5s-Delay als Fallback. Der erste, der durchkommt, gewinnt.
+   * Im Speicher gehalten — bei App-Restart fängt der Counter wieder
+   * von vorne an, was OK ist (Quota im DB-Store fängt Loops).
+   */
+  private readonly triggeredMailIds = new Set<string>();
 
   constructor(opts: MailAgentBridgeOptions) {
     this.supervisor = opts.supervisor;
@@ -52,54 +65,93 @@ export class MailAgentBridge {
     if (this.bound) return;
     this.bound = true;
     this.supervisor.on("messageFinalized", (msg) => {
-      void this.maybeTrigger(msg);
+      console.log(
+        `[mail-agent-bridge] event 'messageFinalized' from=${msg.from.address} subject=${JSON.stringify(msg.subject).slice(0, 80)}`,
+      );
+      void this.maybeTrigger(msg, "finalized");
     });
-    console.log("[mail-agent-bridge] started, listening for finalized mails");
+    // v0.1.304 — Fallback-Pfad. Wenn classifyMail null returnt (kein
+    // LLM-API-Key bei Subscription-OAuth, LLM-Outage, …) feuert
+    // messageFinalized nie. messageUpdated wird vom STORE emittiert
+    // (nicht vom Supervisor!) wann immer eine Message geschrieben wird
+    // — bei recordMessage, updateTrustLevel, updateClassification etc.
+    // Wir lauschen dort und triggern mit 5s Delay — falls in der
+    // Zwischenzeit messageFinalized doch noch kam, blockiert das
+    // Dedup-Set.
+    this.store.on("messageUpdated", (msg: MailMessage) => {
+      setTimeout(() => {
+        if (this.triggeredMailIds.has(msg.id)) return;
+        void this.maybeTrigger(msg, "updated-fallback");
+      }, 5000);
+    });
+    console.log(
+      "[mail-agent-bridge] started — listening on messageFinalized + messageUpdated (fallback)",
+    );
   }
 
-  private async maybeTrigger(msg: MailMessage): Promise<void> {
+  private async maybeTrigger(
+    msg: MailMessage,
+    source: "finalized" | "updated-fallback",
+  ): Promise<void> {
+    // v0.1.304 — Dedup-Check zuerst. Wenn der finalized-Pfad schon
+    // erfolgreich getriggert hat, soll der updated-Fallback ignorieren.
+    if (this.triggeredMailIds.has(msg.id)) {
+      console.log(
+        `[mail-agent-bridge] skip ${msg.id} (${source}): already triggered`,
+      );
+      return;
+    }
     try {
       // (1) Account-Toggle aktiv?
       const account = await this.store.getAccount();
-      if (!account?.autoTriageEnabled) return;
+      if (!account?.autoTriageEnabled) {
+        console.log(
+          `[mail-agent-bridge] skip ${msg.id} (${source}): autoTriageEnabled=false`,
+        );
+        return;
+      }
       if (!account.outboundEnabled) {
-        // Auto-Triage ohne outboundEnabled wäre nutzlos — AVA dürfte
-        // nicht mal antworten. Defensiv im Bridge, obwohl die UI das
-        // schon disabled hat.
+        console.log(
+          `[mail-agent-bridge] skip ${msg.id} (${source}): outboundEnabled=false`,
+        );
         return;
       }
 
       // (2) Trust-Level prüfen.
       if (msg.trustLevel !== "trusted") {
         console.log(
-          `[mail-agent-bridge] skip ${msg.id}: trustLevel=${msg.trustLevel} (need 'trusted')`,
+          `[mail-agent-bridge] skip ${msg.id} (${source}): trustLevel=${msg.trustLevel} (need 'trusted')`,
         );
         return;
       }
 
-      // (3) Klassifikation. Spam/phishing/nichtklassifiziert raus.
+      // (3) Klassifikation. v0.1.304: Wenn classification fehlt (LLM
+      // nicht verfügbar / Subscription-mode ohne API-Key / temporärer
+      // LLM-Fehler), gehen wir TROTZDEM weiter — das war vorher das
+      // stille No-Op-Problem. Stattdessen: nur spam/phishing/
+      // injection-risk explizit blocken, alles andere durchwinken.
       const cls = msg.classification;
-      if (!cls) {
+      if (cls) {
+        if (cls.category === "spam" || cls.category === "phishing") {
+          console.log(
+            `[mail-agent-bridge] skip ${msg.id} (${source}): category=${cls.category}`,
+          );
+          return;
+        }
+        if (cls.injectionRisk >= 0.7) {
+          console.warn(
+            `[mail-agent-bridge] skip ${msg.id} (${source}): injectionRisk=${cls.injectionRisk}`,
+          );
+          return;
+        }
+      } else {
+        // v0.1.304 — Keine Klassifikation? Trotzdem triggern.
+        // Trust=trusted ist die wichtigste Hürde, die Allowlist hat
+        // der User selbst gesetzt; spam/phishing bei einem manuell-
+        // freigegebenen Absender ist sehr selten.
         console.log(
-          `[mail-agent-bridge] skip ${msg.id}: classification missing — race condition?`,
+          `[mail-agent-bridge] ${msg.id} (${source}): no classification — proceeding anyway (trust=trusted)`,
         );
-        return;
-      }
-      if (cls.category === "spam" || cls.category === "phishing") {
-        console.log(
-          `[mail-agent-bridge] skip ${msg.id}: category=${cls.category}`,
-        );
-        return;
-      }
-
-      // (4) Injection-Risk-Check (zusätzliche Belt-and-Suspenders;
-      // der Trust-Engine downgraded normalerweise auf "unknown" bei
-      // hohem Risk, aber doppelt hält besser).
-      if (cls.injectionRisk >= 0.7) {
-        console.warn(
-          `[mail-agent-bridge] skip ${msg.id}: injectionRisk=${cls.injectionRisk}`,
-        );
-        return;
       }
 
       // (5) Reply-Loop-Schutz: Subject mit zu vielen "Re: Re: Re:"?
@@ -122,9 +174,13 @@ export class MailAgentBridge {
         return;
       }
 
+      // v0.1.304 — JETZT als "getriggert" markieren, sobald alle Gates
+      // grün sind. Vor dem orchestrator-Call, damit ein paralleler
+      // updated-Fallback NICHT nochmal versucht.
+      this.triggeredMailIds.add(msg.id);
       console.log(
         `[mail-agent-bridge] triggering autonomous session for mail ${msg.id} ` +
-          `(thread=${threadKey}, replyCount=${quota.replyCount})`,
+          `(source=${source}, thread=${threadKey}, replyCount=${quota.replyCount})`,
       );
 
       // Mail-Inhalt als initialer User-Prompt formatieren. Klar
