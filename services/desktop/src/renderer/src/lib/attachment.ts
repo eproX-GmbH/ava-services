@@ -94,10 +94,11 @@ export async function parseAttachment(
       `File too large (${formatBytes(file.size)}). Max ${formatBytes(ATTACHMENT_MAX_BYTES)}.`,
     );
   }
-  // v0.1.301 — PDF-Pfad: Text-Extract via IPC ans main (pdf-parse),
-  // dann als Single-Sheet-Pseudoschätzung in die SpreadsheetAttachment-
-  // Struktur einkleiden, damit composePromptWithAttachments sie ohne
-  // Refactor weiterreichen kann.
+  // v0.1.301 — PDF-Pfad: Text-Extract via IPC ans main (pdf-parse).
+  // v0.1.302 — Erweitert um Scan-Detection: bei Text < 100 Zeichen
+  // throwt parsePdfAttachment einen ScanPdfDetected-Error mit den
+  // Original-Bytes. Der Chat.tsx-ingest-Pfad fängt den ab, fragt den
+  // User nach dem Page-Cap, und rendert dann via pdfjs-dist.
   if (file.name.toLowerCase().endsWith(".pdf")) {
     return parsePdfAttachment(file);
   }
@@ -234,6 +235,32 @@ export function composePromptWithAttachments(
 // extrahierte Text (oder ersten N Zeichen). composePromptWith
 // Attachments rendert das als normalen Attachment-Block.
 
+/**
+ * v0.1.302 — Spezial-Error, der signalisiert: pdf-parse hat keinen
+ * (oder zu wenig) Text gefunden. Der Caller (Chat.tsx) fängt das,
+ * fragt den User wie viele Seiten als Bilder gerendert werden sollen,
+ * und routet dann an renderPdfPagesToImages.
+ *
+ * Trägt die Original-Bytes mit, damit der Caller nicht nochmal lesen
+ * muss.
+ */
+export class ScanPdfDetectedError extends Error {
+  constructor(
+    public readonly filename: string,
+    public readonly bytes: Uint8Array,
+    public readonly numPages: number,
+  ) {
+    super(
+      `PDF "${filename}" hat keinen extrahierbaren Text (${numPages} Seite${numPages === 1 ? "" : "n"}). Vermutlich Scan-PDF.`,
+    );
+    this.name = "ScanPdfDetectedError";
+  }
+}
+
+/** Unter diesem Threshold gilt eine PDF als Scan-PDF und wir geben dem
+ *  User die Option, die Seiten als Bilder ans Vision-LLM zu schicken. */
+const SCAN_PDF_TEXT_THRESHOLD = 100;
+
 async function parsePdfAttachment(file: File): Promise<SpreadsheetAttachment> {
   const buf = await file.arrayBuffer();
   const u8 = new Uint8Array(buf);
@@ -260,10 +287,17 @@ async function parsePdfAttachment(file: File): Promise<SpreadsheetAttachment> {
     );
   }
   const result = await ipc({ filename: file.name, bytes: u8 });
+  const textLen = (result.text ?? "").trim().length;
+  // v0.1.302 — Scan-Detection. Wenn das PDF mindestens eine Seite hat
+  // aber pdf-parse fast nichts zurückgibt, ist's mit hoher Wahrscheinlich-
+  // keit ein Scan ohne OCR-Layer. Wir signalisieren das mit einem
+  // spezifischen Error, den der Caller abfangen + den User fragen kann.
+  if (textLen < SCAN_PDF_TEXT_THRESHOLD && result.numPages > 0) {
+    throw new ScanPdfDetectedError(file.name, u8, result.numPages);
+  }
   // Token-Limit-Schutz: das Render-Format unten cap't die Sample-Zeile
   // bei 80 Zeichen — für PDFs nicht sinnvoll, weil dann der Agent
   // nichts sieht. Stattdessen renderPdfAttachment unten via Override.
-  const pdfText = result.text || "(kein extrahierbarer Text — vermutlich Scan-PDF)";
   return {
     id: makeAttachmentId(),
     filename: file.name,
@@ -273,7 +307,7 @@ async function parsePdfAttachment(file: File): Promise<SpreadsheetAttachment> {
       {
         name: `PDF-Inhalt (${result.numPages} Seite${result.numPages === 1 ? "" : "n"})`,
         headers: ["__pdf_text__"], // Marker — rendert anders, siehe renderAttachmentForPrompt
-        sampleRows: [[pdfText]],
+        sampleRows: [[result.text]],
         totalRows: result.numPages,
       },
     ],

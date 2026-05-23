@@ -6642,6 +6642,45 @@ html.dark .triage-detail__classification { background: rgba(0,192,167,0.10); }
 html.dark .triage-detail__body pre { background: rgba(255,255,255,0.04); }
 html.dark .mail-allowlist__list code { background: rgba(255,255,255,0.08); }
 
+/* Scan-PDF-Promptkarte (v0.1.302) */
+.scan-pdf-prompt {
+  margin: 8px 0;
+  padding: 12px 14px;
+  border: 1px solid var(--border, #d0d4d9);
+  border-radius: 8px;
+  background: rgba(252, 211, 77, 0.10);
+}
+.scan-pdf-prompt__head { font-size: 0.92rem; margin-bottom: 6px; }
+.scan-pdf-prompt__hint {
+  font-size: 0.8rem; color: var(--muted, #6b7280); margin-bottom: 10px;
+}
+.scan-pdf-prompt__buttons {
+  display: flex; gap: 6px; flex-wrap: wrap;
+}
+.scan-pdf-prompt__buttons button {
+  padding: 5px 10px; border: 1px solid var(--border, #d0d4d9);
+  border-radius: 5px; background: var(--surface, #fff); cursor: pointer;
+  font-size: 0.85rem;
+}
+.scan-pdf-prompt__buttons button:hover:not(:disabled) {
+  background: rgba(0, 192, 167, 0.08);
+}
+.scan-pdf-prompt__buttons button:disabled {
+  opacity: 0.6; cursor: wait;
+}
+.scan-pdf-prompt__busy {
+  margin-top: 8px; font-size: 0.85rem; color: var(--muted, #6b7280);
+}
+html.dark .scan-pdf-prompt {
+  background: rgba(252, 211, 77, 0.10);
+  border-color: rgba(252, 211, 77, 0.30);
+}
+html.dark .scan-pdf-prompt__buttons button {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.15);
+  color: #e5e7eb;
+}
+
 /* Bild-Anhänge im Chat (v0.1.257) */
 .chat-images { padding: 8px 0; }
 .chat-images__warn {

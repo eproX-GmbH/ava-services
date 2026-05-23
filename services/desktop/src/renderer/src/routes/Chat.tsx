@@ -34,8 +34,10 @@ import {
   formatBytes,
   isSupportedAttachment,
   parseAttachment,
+  ScanPdfDetectedError,
   type SpreadsheetAttachment,
 } from "../lib/attachment";
+import { renderPdfPagesToImages } from "../lib/pdf-to-images";
 import type {
   AgentChoiceOption,
   AgentMessage,
@@ -936,6 +938,18 @@ export function Chat() {
       try {
         parsed.push(await parseAttachment(f));
       } catch (err) {
+        // v0.1.302 — Scan-PDF erkannt → User fragen wie viele Seiten
+        // als Bilder gerendert + ans Vision-LLM geschickt werden sollen.
+        // Wir machen das hier inline (nicht via Modal-Refactor),
+        // weil die Frage nur in diesem Pfad relevant ist.
+        if (err instanceof ScanPdfDetectedError) {
+          setScanPdfPending({
+            filename: err.filename,
+            bytes: err.bytes,
+            numPages: err.numPages,
+          });
+          continue;
+        }
         setError(err instanceof Error ? err.message : String(err));
       }
     }
@@ -943,6 +957,57 @@ export function Chat() {
       setAttachments((prev) => [...prev, ...parsed]);
     }
   }, []);
+
+  // v0.1.302 — State + Handler für das Scan-PDF-Modal. Trigger:
+  // parsePdfAttachment hat ScanPdfDetectedError geworfen. User sieht
+  // eine kleine Karte und wählt 5/10/20/Alle oder Abbrechen.
+  const [scanPdfPending, setScanPdfPending] = useState<{
+    filename: string;
+    bytes: Uint8Array;
+    numPages: number;
+  } | null>(null);
+  const [scanPdfBusy, setScanPdfBusy] = useState(false);
+
+  const handleScanPdfChoice = useCallback(
+    async (cap: number | "cancel") => {
+      if (!scanPdfPending) return;
+      if (cap === "cancel") {
+        setScanPdfPending(null);
+        return;
+      }
+      setScanPdfBusy(true);
+      try {
+        const pages = await renderPdfPagesToImages(
+          scanPdfPending.bytes,
+          scanPdfPending.filename,
+          { maxPages: cap },
+        );
+        if (pages.length === 0) {
+          setError(
+            `PDF "${scanPdfPending.filename}" konnte nicht gerendert werden — möglicherweise verschlüsselt oder beschädigt.`,
+          );
+        } else {
+          setPendingImages((prev) => [
+            ...prev,
+            ...pages.map((p) => ({
+              id: `pdfpage-${Date.now()}-${p.pageNumber}-${Math.random().toString(36).slice(2, 6)}`,
+              base64: p.base64,
+              mimeType: p.mimeType,
+              filename: p.filename,
+            })),
+          ]);
+        }
+      } catch (err) {
+        setError(
+          `PDF-Render fehlgeschlagen: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      } finally {
+        setScanPdfBusy(false);
+        setScanPdfPending(null);
+      }
+    },
+    [scanPdfPending],
+  );
 
   const removePendingImage = useCallback((id: string) => {
     setPendingImages((prev) => prev.filter((img) => img.id !== id));
@@ -1275,6 +1340,63 @@ export function Chat() {
               />
             </div>
           ))}
+        </div>
+      )}
+      {scanPdfPending && (
+        <div className="scan-pdf-prompt">
+          <div className="scan-pdf-prompt__head">
+            <strong>{scanPdfPending.filename}</strong> ist ein Scan-PDF
+            ({scanPdfPending.numPages} Seite
+            {scanPdfPending.numPages === 1 ? "" : "n"}). Damit das LLM
+            es lesen kann, rendere ich die Seiten als Bilder.
+          </div>
+          <div className="scan-pdf-prompt__hint">
+            Achtung: Seiten als Bilder kosten mehr Vision-Tokens als
+            normaler Text. Wähle wie viele Seiten gerendert werden
+            sollen — der Rest wird ignoriert.
+          </div>
+          <div className="scan-pdf-prompt__buttons">
+            <button
+              type="button"
+              disabled={scanPdfBusy}
+              onClick={() => handleScanPdfChoice(5)}
+            >
+              5 Seiten (~7.5k Tokens)
+            </button>
+            <button
+              type="button"
+              disabled={scanPdfBusy}
+              onClick={() => handleScanPdfChoice(10)}
+            >
+              10 Seiten (~15k)
+            </button>
+            <button
+              type="button"
+              disabled={scanPdfBusy}
+              onClick={() => handleScanPdfChoice(20)}
+            >
+              20 Seiten (~30k)
+            </button>
+            <button
+              type="button"
+              disabled={scanPdfBusy}
+              onClick={() =>
+                handleScanPdfChoice(scanPdfPending.numPages)
+              }
+            >
+              Alle ({scanPdfPending.numPages})
+            </button>
+            <button
+              type="button"
+              disabled={scanPdfBusy}
+              onClick={() => handleScanPdfChoice("cancel")}
+            >
+              Abbrechen
+            </button>
+          </div>
+          {scanPdfBusy && (
+            <div className="scan-pdf-prompt__busy">Seiten rendern…</div>
+          )}
         </div>
       )}
       {pendingImages.length > 0 && !isRecording && (
