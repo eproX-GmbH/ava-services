@@ -220,6 +220,14 @@ export function App({ children }: PropsWithChildren) {
       )}
       {children}
       <DownloadDock />
+      {/* v0.1.303 — UpdateBanner war bisher nur im First-Run-Pfad
+          gemountet (oben). Nach abgeschlossenem Setup fehlte er, daher
+          sah der User nie das „Neu starten, um zu aktualisieren"-
+          Popup obwohl der Updater-State-Machine korrekt auf `ready`
+          stand. Hier nachgezogen, damit der Banner im Normal-Betrieb
+          unten rechts erscheint sobald ein Update fertig
+          heruntergeladen ist. */}
+      <UpdateBanner />
       <OllamaUpdateBanner />
     </>
   );
