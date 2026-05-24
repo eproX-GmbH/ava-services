@@ -108,6 +108,38 @@ export class ScheduledJobsSupervisor extends EventEmitter {
     return job;
   }
 
+  /**
+   * v0.1.305 — Erinnerung anlegen. Einmalig (runsCap=1) oder
+   * wiederkehrend (intervalMinutes>0 + runsCap>1).
+   * `firstRunAt` = die ISO-Uhrzeit zu der der Reminder feuern soll.
+   */
+  async createReminder(input: {
+    label: string;
+    payload: {
+      prompt: string;
+      companyId?: string;
+      companyName?: string;
+    };
+    firstRunAt: string;
+    intervalMinutes: number;
+    expiresAt: string;
+    runsCap: number;
+    source: "agent" | "user";
+  }): Promise<ScheduledJob> {
+    const job = await this.store.create({
+      kind: "reminder",
+      label: input.label,
+      payload: input.payload,
+      intervalMinutes: input.intervalMinutes,
+      firstRunAt: input.firstRunAt,
+      expiresAt: input.expiresAt,
+      runsCap: input.runsCap,
+      source: input.source,
+    });
+    this.scheduleNextRun(job);
+    return job;
+  }
+
   async cancel(id: string): Promise<void> {
     const t = this.timers.get(id);
     if (t) {

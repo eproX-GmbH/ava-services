@@ -256,7 +256,175 @@ export function buildSchedulerTools(deps: SchedulerToolDeps): Tool[] {
     },
   });
 
-  return [listTool, mailLoopTool, cancelTool];
+  // v0.1.305 — Reminder-Tool. Anders als schedule_mail_loop ist das
+  // ein One-Shot per Default (runsCap=1) und braucht keinen Mail-
+  // Account. Triggert bei Fälligkeit einen Alert unter „Meldungen"
+  // + OS-Notification.
+  const reminderTool = defineTool({
+    name: "schedule_reminder",
+    description:
+      `Erinnerung zu einer bestimmten Uhrzeit (Datum + Zeit). Bei Fälligkeit erstellt AVA eine Meldung unter "Meldungen" mit Headline=label und Body=prompt, plus eine OS-Notification. Use-Case: "Erinnere mich am 28. Mai 14:00, Sascha Kluck anzurufen, Tel +49 174 ...". Standard ist einmalig (runsCap=1). Wenn der User explizit "jeden Montag", "wöchentlich", "täglich" sagt → recurring via intervalMinutes + runsCap >1.\n\n` +
+      `WICHTIG: prompt ist die KOMPLETTE Reminder-Botschaft die der User später sehen wird — inkl. Kontext (Name, Telefon, Hintergrund) den der User dir gerade gegeben hat. Schreib sie so, dass der User in 2 Wochen ohne dich nochmal kontaktieren zu müssen alles weiß. Maximal 500 Zeichen.\n\n` +
+      `dueAt: ISO-8601-Datetime in Lokalzeit (z. B. "2026-05-28T14:00:00"). Muss in der Zukunft liegen, max 1 Jahr voraus. ` +
+      `Tool fragt SELBST via ask_user_choice nach Bestätigung. Cancel via schedule_cancel.`,
+    parameters: {
+      type: "object",
+      required: ["label", "dueAt", "prompt"],
+      properties: {
+        label: {
+          type: "string",
+          description:
+            "Kurztitel für die Meldungs-Liste (≤120 Zeichen). Beispiel: 'Anruf Sascha Kluck'.",
+        },
+        dueAt: {
+          type: "string",
+          description:
+            "ISO-8601-Datetime, lokale Zeit. Beispiel: '2026-05-28T14:00:00'. Muss in der Zukunft liegen, max 365 Tage voraus.",
+        },
+        prompt: {
+          type: "string",
+          description:
+            "Vollständige Reminder-Botschaft. Schreib alles rein was der User dann braucht: Name, Telefonnummer, Anlass, eventuell Kontext. ≤500 Zeichen.",
+        },
+        intervalMinutes: {
+          type: "integer",
+          description:
+            "OPTIONAL für recurring. Min 1, sonst leer. Beispiel: 10080 = wöchentlich.",
+        },
+        runsCap: {
+          type: "integer",
+          description:
+            "OPTIONAL. Max Anzahl Auslösungen. Default 1 (einmaliger Reminder). Bei recurring auf z. B. 12 setzen.",
+        },
+        companyId: {
+          type: "string",
+          description:
+            "OPTIONAL — wenn die Erinnerung an eine konkrete Firma hängt (für Deep-Link in der Meldungs-Liste).",
+        },
+        companyName: {
+          type: "string",
+          description:
+            "OPTIONAL — Firmenname für die Meldungs-Anzeige.",
+        },
+      },
+    },
+    schema: yup
+      .object({
+        label: yup.string().trim().min(1).max(120).required(),
+        dueAt: yup.string().trim().required(),
+        prompt: yup.string().trim().min(1).max(500).required(),
+        intervalMinutes: yup.number().integer().min(1).optional(),
+        runsCap: yup.number().integer().min(1).max(MAX_RUNS_CAP).optional(),
+        companyId: yup.string().trim().optional(),
+        companyName: yup.string().trim().optional(),
+      })
+      .noUnknown(true),
+    preview: (r: { applied: boolean; jobId?: string; error?: string }) =>
+      r.applied
+        ? `Reminder geplant (${r.jobId})`
+        : r.error
+          ? `Fehler: ${r.error}`
+          : "Reminder nicht geplant",
+    run: async (args, ctx) => {
+      const supOrErr = requireSched(deps);
+      if ("error" in supOrErr) return { applied: false, error: supOrErr.error };
+      const sup = supOrErr;
+
+      const dueMs = Date.parse(args.dueAt);
+      if (!Number.isFinite(dueMs)) {
+        return {
+          applied: false,
+          error: `dueAt "${args.dueAt}" konnte nicht als ISO-Datum geparst werden.`,
+        };
+      }
+      const now = Date.now();
+      if (dueMs <= now + 30_000) {
+        return {
+          applied: false,
+          error: `dueAt liegt in der Vergangenheit oder unter 30s in der Zukunft.`,
+        };
+      }
+      const maxFutureMs = 365 * 24 * 60 * 60 * 1000;
+      if (dueMs > now + maxFutureMs) {
+        return {
+          applied: false,
+          error: `dueAt liegt mehr als 1 Jahr in der Zukunft — bitte näher planen.`,
+        };
+      }
+
+      const recurring = (args.runsCap ?? 1) > 1;
+      const intervalMinutes = recurring ? args.intervalMinutes ?? 0 : 0;
+      if (recurring && intervalMinutes < 1) {
+        return {
+          applied: false,
+          error: `runsCap > 1 verlangt intervalMinutes >= 1 (recurring).`,
+        };
+      }
+      const runsCap = args.runsCap ?? 1;
+
+      const dueDate = new Date(dueMs);
+      const formatted = dueDate.toLocaleString("de-DE", {
+        weekday: "short",
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+      });
+
+      const draft =
+        `Reminder anlegen?\n\n` +
+        `Label: ${args.label}\n` +
+        `Wann: ${formatted}\n` +
+        `${recurring ? `Wiederholung: alle ${intervalMinutes} min, max ${runsCap}× total\n` : `Einmalig (one-shot)\n`}` +
+        `${args.companyName ? `Firma: ${args.companyName}\n` : ""}` +
+        `\nBotschaft:\n${args.prompt}`;
+
+      const value = await ctx.ui.askChoice(
+        draft,
+        [
+          { value: "create", label: "Reminder anlegen" },
+          { value: "cancel", label: "Verwerfen" },
+        ],
+        ctx.signal,
+      );
+      if (value !== "create") return { applied: false };
+
+      // expiresAt: bei recurring 1y voraus, bei one-shot 1d nach dueAt
+      const expiresAt = recurring
+        ? new Date(now + maxFutureMs).toISOString()
+        : new Date(dueMs + 24 * 60 * 60 * 1000).toISOString();
+
+      try {
+        const job = await sup.createReminder({
+          label: args.label,
+          payload: {
+            prompt: args.prompt,
+            ...(args.companyId ? { companyId: args.companyId } : {}),
+            ...(args.companyName ? { companyName: args.companyName } : {}),
+          },
+          firstRunAt: dueDate.toISOString(),
+          intervalMinutes,
+          expiresAt,
+          runsCap,
+          source: "agent",
+        });
+        return {
+          applied: true,
+          jobId: job.id,
+          dueAt: job.nextRunAt,
+          recurring,
+        };
+      } catch (err) {
+        return {
+          applied: false,
+          error: err instanceof Error ? err.message : String(err),
+        };
+      }
+    },
+  });
+
+  return [listTool, mailLoopTool, cancelTool, reminderTool];
 }
 
 function isInAllowlist(

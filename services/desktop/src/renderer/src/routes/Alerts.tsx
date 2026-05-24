@@ -21,6 +21,7 @@ const KIND_LABEL: Record<AlertKind, string> = {
   "profile-change": "Profiländerung",
   "evaluation-flag": "Bewertungs-Flag",
   "linkedin-signal": "LinkedIn-Signal",
+  reminder: "Erinnerung",
 };
 
 const SEVERITY_LABEL: Record<AlertSeverity, string> = {

@@ -734,13 +734,19 @@ export type AlertKind =
   | "financial-delta"  // YoY revenue / profit swing
   | "profile-change"   // master-data fact changed (address, leadership, …)
   | "evaluation-flag"  // an LLM evaluation flagged something noteworthy
-  | "linkedin-signal"; // L6: LinkedIn-Beobachter strong signal
+  | "linkedin-signal"  // L6: LinkedIn-Beobachter strong signal
+  | "reminder";        // v0.1.305: User-Reminder, vom ScheduledJob ausgelöst
 
 export interface Alert {
   id: string;
   tenantId: string | null;
+  /** v0.1.305 — bei kind="reminder" optional, weil nicht jede
+   *  Erinnerung an eine Firma gekoppelt sein muss. Bei anderen
+   *  Kinds bleibt das de-facto required (Heartbeat-Quellen haben
+   *  immer eine Firma). */
   companyId: string;
-  /** Denormalised so the list view works even when offline. */
+  /** Denormalised so the list view works even when offline. Bei
+   *  Reminder ohne Firma: leerer String. */
   companyName: string;
   kind: AlertKind;
   severity: AlertSeverity;
@@ -2101,7 +2107,7 @@ export interface MailSnapshot {
 // Persistenz: PGlite, überlebt App-Restart. Supervisor armiert beim
 // Boot alle aktiven Jobs neu.
 
-export type ScheduledJobKind = "mail-send";
+export type ScheduledJobKind = "mail-send" | "reminder";
 
 export type ScheduledJobStatus = "active" | "paused" | "expired" | "completed" | "cancelled";
 
@@ -2112,13 +2118,42 @@ export interface ScheduledMailSendPayload {
   text: string;
 }
 
+/**
+ * v0.1.305 — Reminder-Job. Wird vom Scheduled-Jobs-Supervisor zum
+ * `dueAt`-Zeitpunkt (= nextRunAt) gefeuert. Bei Auslösung wird ein
+ * Alert mit kind="reminder" angelegt (sichtbar unter „Meldungen")
+ * und eine OS-Notification gezeigt.
+ *
+ * `prompt` ist die Reminder-Nachricht selbst, die der User später
+ * in der Meldungsliste lesen wird — formuliert als kompakter Text
+ * mit allen relevanten Infos (Name, Telefonnummer, Kontext).
+ *
+ * Recurring: wenn intervalMinutes>0 UND runsCap>1, läuft der
+ * Reminder mehrfach. Einmalig: runsCap=1, intervalMinutes
+ * irrelevant (Job wechselt direkt auf "completed").
+ */
+export interface ScheduledReminderPayload {
+  prompt: string;
+  /** Optional: an welche Firma die Erinnerung gekoppelt ist (für
+   *  Deep-Link zur Company-Detail-Seite aus der Meldungs-Liste). */
+  companyId?: string;
+  companyName?: string;
+}
+
+export type ScheduledJobPayload =
+  | ScheduledMailSendPayload
+  | ScheduledReminderPayload;
+
 export interface ScheduledJob {
   id: string;
   kind: ScheduledJobKind;
   /** Menschenlesbare Beschreibung — wird im Cancel-Confirm und in der
    *  Settings-Liste angezeigt. */
   label: string;
-  payload: ScheduledMailSendPayload;
+  /** v0.1.305 — Union-Payload. Executor narrowt per `kind`-Check
+   *  oder Cast. Store persistiert als JSONB, kein Type-Check beim
+   *  Lesen. */
+  payload: ScheduledJobPayload;
   intervalMinutes: number;
   /** ISO — wann der nächste Run fällt. */
   nextRunAt: string;

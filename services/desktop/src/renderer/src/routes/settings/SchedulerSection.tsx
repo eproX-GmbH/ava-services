@@ -122,12 +122,24 @@ function JobRow({ job }: { job: ScheduledJob }): JSX.Element {
           )}
           · Auto-Stop {formatRelative(job.expiresAt)}
         </div>
-        <div className="muted scheduler-row__meta">
-          → {job.payload.to.join(", ")}
-          {job.payload.cc && job.payload.cc.length > 0 ? ` (CC: ${job.payload.cc.join(", ")})` : ""}
-          {" · Betreff: "}
-          <em>{job.payload.subject}</em>
-        </div>
+        {/* v0.1.305 — Payload-Render abhängig von kind. mail-send zeigt
+            Empfänger + Betreff, reminder zeigt die Reminder-Botschaft. */}
+        {job.kind === "mail-send" && "to" in job.payload && (
+          <div className="muted scheduler-row__meta">
+            → {job.payload.to.join(", ")}
+            {job.payload.cc && job.payload.cc.length > 0
+              ? ` (CC: ${job.payload.cc.join(", ")})`
+              : ""}
+            {" · Betreff: "}
+            <em>{job.payload.subject}</em>
+          </div>
+        )}
+        {job.kind === "reminder" && "prompt" in job.payload && (
+          <div className="muted scheduler-row__meta">
+            {job.payload.companyName ? `Firma: ${job.payload.companyName} · ` : ""}
+            <em>{job.payload.prompt.slice(0, 140)}{job.payload.prompt.length > 140 ? "…" : ""}</em>
+          </div>
+        )}
         {job.lastError && (
           <div className="scheduler-row__error">
             Letzter Fehler: {job.lastError}

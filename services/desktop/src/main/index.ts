@@ -52,7 +52,11 @@ import { MailSupervisor } from "./mail/supervisor";
 import { ScheduledJobsStore } from "./scheduler/store";
 import { ScheduledJobsSupervisor } from "./scheduler/supervisor";
 import { SelfCorrectionsStore } from "./agent/self-corrections-store";
-import type { ScheduledJob } from "../shared/types";
+import type {
+  ScheduledJob,
+  ScheduledMailSendPayload,
+  ScheduledReminderPayload,
+} from "../shared/types";
 import type {
   MailAccount,
   MailAllowlistEntry,
@@ -1637,12 +1641,52 @@ app.whenReady().then(async () => {
     if (!account.outboundEnabled) {
       throw new Error("Mail-Outbound ist deaktiviert.");
     }
+    // v0.1.305 — Payload-Type ist jetzt Union (mail-send|reminder).
+    // Cast nach kind-Check; supervisor garantiert kind="mail-send"
+    // hier wegen registerExecutor("mail-send", …).
+    const payload = job.payload as ScheduledMailSendPayload;
     await mailSupervisor.sendAndSync({
-      to: job.payload.to,
-      cc: job.payload.cc,
-      subject: job.payload.subject,
-      text: job.payload.text,
+      to: payload.to,
+      cc: payload.cc,
+      subject: payload.subject,
+      text: payload.text,
     });
+  });
+
+  // v0.1.305 — Reminder-Executor. Wird zur dueAt-Zeit gefeuert,
+  // legt einen Alert mit kind="reminder" an und löst eine OS-
+  // Notification aus (falls aktiviert + Quiet-Hours nicht aktiv).
+  // Der Alert landet automatisch in der Meldungs-Liste der UI.
+  scheduledJobsSupervisor.registerExecutor("reminder", async (job) => {
+    const payload = job.payload as ScheduledReminderPayload;
+    // sourceRef macht den Alert idempotent gegen Re-Fires durch
+    // setTimeout-Cap-Re-Schedules. Pro Job + Run-Index 1 Alert.
+    const sourceRef = `reminder:${job.id}:${job.runsCompleted}`;
+    const alert = alerts.add({
+      tenantId: null,
+      companyId: payload.companyId ?? "",
+      companyName: payload.companyName ?? "",
+      kind: "reminder",
+      severity: "warn",
+      headline: job.label.slice(0, 120),
+      rationale: payload.prompt.slice(0, 500),
+      sourceRef,
+    });
+    if (alert) {
+      console.log(
+        `[reminder-executor] alert created (job=${job.id}, alert=${alert.id})`,
+      );
+      // OS-Notification + Renderer-Broadcast via dieselbe Pipeline,
+      // die der Heartbeat nutzt.
+      broadcastAlertsChanged();
+      notifications.notifyForAlert(alert);
+    } else {
+      // Dedup: sourceRef hat schon einen Alert — kann passieren wenn
+      // setTimeout den Job 2x feuert nach Schlaf/Wake. Best-effort log.
+      console.log(
+        `[reminder-executor] alert already exists for ${sourceRef} (dedup)`,
+      );
+    }
   });
   scheduledJobsSupervisor.on("changed", () => {
     void broadcastScheduledJobsChanged();

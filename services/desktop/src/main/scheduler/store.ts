@@ -14,6 +14,7 @@ import { app } from "electron";
 import type {
   ScheduledJob,
   ScheduledJobKind,
+  ScheduledJobPayload,
   ScheduledJobStatus,
   ScheduledMailSendPayload,
 } from "../../shared/types";
@@ -103,7 +104,9 @@ export class ScheduledJobsStore extends EventEmitter {
   async create(input: {
     kind: ScheduledJobKind;
     label: string;
-    payload: ScheduledMailSendPayload;
+    /** v0.1.305 — Union-Payload (mail-send oder reminder). Persistiert
+     *  als JSONB, Schema-Check erfolgt im jeweiligen Executor. */
+    payload: ScheduledJobPayload;
     intervalMinutes: number;
     firstRunAt: string;
     expiresAt: string;
@@ -273,10 +276,13 @@ function defaultDataRoot(): string {
 
 function rowToJob(row: JobRow): ScheduledJob {
   const payloadRaw = row.payload_json as unknown;
+  // v0.1.305 — Payload kann mail-send ODER reminder sein. Hier nur
+  // strukturell zurückgeben; der jeweilige Executor narrowt anhand
+  // von job.kind.
   const payload =
     typeof payloadRaw === "string"
-      ? (JSON.parse(payloadRaw) as ScheduledMailSendPayload)
-      : (payloadRaw as ScheduledMailSendPayload);
+      ? (JSON.parse(payloadRaw) as ScheduledJobPayload)
+      : (payloadRaw as ScheduledJobPayload);
   return {
     id: row.id,
     kind: row.kind as ScheduledJobKind,
