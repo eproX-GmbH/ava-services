@@ -1292,16 +1292,135 @@ export function buildCrmTools(deps: CrmToolDeps): Tool[] {
     },
   });
 
+  // v0.1.311 — Helper: AVA-Companydaten → HubSpot-Property-Map.
+  //
+  // Real-Run-Problem: Agent ruft crm_create_hubspot_company mit nur
+  // `name` auf → HubSpot legt eine quasi-leere Firma an und reichert
+  // selbst mit oft falschen Daten an. Wir machen deshalb die
+  // Anreicherung INTRA-TOOL: bei gegebener linkToAvaCompanyId
+  // fetcht das Tool die AVA-Daten + baut die Property-Map.
+  //
+  // Returnt:
+  //   { props: Record<string, string>, hasData: boolean, sources: string[] }
+  // - props: HubSpot-ready Properties (name + domain + …)
+  // - hasData: true wenn substantielle AVA-Daten gefunden, false wenn
+  //   die Firma vermutlich noch nicht durch die Pipeline lief
+  // - sources: Liste der AVA-Endpoints aus denen Daten kamen
+  //   (für Confirm-Dialog-Transparenz)
+  async function gatherAvaCompanyDataForHubspot(
+    avaCompanyId: string,
+    signal: AbortSignal,
+  ): Promise<{
+    props: Record<string, string>;
+    hasData: boolean;
+    sources: string[];
+  }> {
+    const props: Record<string, string> = {};
+    const sources: string[] = [];
+    const get = async <T = unknown>(path: string): Promise<T | null> => {
+      try {
+        return await gateway.request<T>(path, { signal });
+      } catch {
+        return null;
+      }
+    };
+    // Base-Record (legalName, adresse, etc.)
+    const base = await get<{
+      legalName?: string;
+      city?: string;
+      postcode?: string;
+      street?: string;
+      countryCode?: string;
+      foundationYear?: number;
+      hrbNumber?: string;
+    }>(`/v1/companies/${encodeURIComponent(avaCompanyId)}`);
+    if (base) {
+      sources.push("base");
+      if (base.legalName) props.name = base.legalName;
+      if (base.city) props.city = base.city;
+      if (base.postcode) props.zip = base.postcode;
+      if (base.street) props.address = base.street;
+      if (base.countryCode) props.country = base.countryCode;
+      if (base.foundationYear)
+        props.founded_year = String(base.foundationYear);
+    }
+    // Website / Domain
+    const website = await get<{
+      url?: string;
+      homepageUrl?: string;
+      description?: string;
+    }>(`/v1/companies/${encodeURIComponent(avaCompanyId)}/website`);
+    if (website && (website.url || website.homepageUrl)) {
+      sources.push("website");
+      const url = website.url ?? website.homepageUrl ?? "";
+      props.website = url;
+      try {
+        const u = new URL(url);
+        props.domain = u.hostname.replace(/^www\./, "");
+      } catch {
+        // ignore — Agent hat ggf. einen unsauberen URL
+      }
+      if (website.description) {
+        props.description = website.description.slice(0, 1000);
+      }
+    }
+    // Profile (Headcount, Branche, Summary)
+    const profile = await get<{
+      companyProfile?: string;
+      headcount?: number | string;
+      industry?: string;
+      businessPurpose?: string;
+    }>(`/v1/companies/${encodeURIComponent(avaCompanyId)}/profile`);
+    if (profile) {
+      sources.push("profile");
+      if (profile.headcount) {
+        props.numberofemployees = String(profile.headcount);
+      }
+      if (profile.industry) {
+        props.industry = profile.industry;
+      }
+      // Wenn description noch nicht von Website kam: companyProfile als
+      // Fallback nehmen (LLM-erzeugte Zusammenfassung).
+      if (!props.description && profile.companyProfile) {
+        props.description = String(profile.companyProfile).slice(0, 1000);
+      }
+    }
+    // Latest financial publication für Umsatz/EK-Snapshot
+    const pubs = await get<{ items?: Array<Record<string, unknown>> }>(
+      `/v1/companies/${encodeURIComponent(avaCompanyId)}/publications`,
+    );
+    const latestPub = pubs?.items?.[0] as
+      | { year?: number; sales?: { value?: number } }
+      | undefined;
+    if (latestPub?.sales?.value) {
+      sources.push("publications");
+      props.annualrevenue = String(latestPub.sales.value);
+    }
+    // hasData: substantiell wenn mindestens website ODER profile da war.
+    const hasData =
+      sources.includes("website") ||
+      sources.includes("profile") ||
+      sources.includes("publications");
+    return { props, hasData, sources };
+  }
+
   // v0.1.269 — Company-Create (Phase H5). Bisher waren Companies/
   // Contacts/Deals nur update-able; Create war bewusst weggelassen
   // weil "blind eine neue Firma anlegen" ohne Duplikat-Check Risiko
   // birgt. Mit Propose-and-Confirm + automatischer Dublettensuche
   // (crm_search_hubspot_companies) ist es jetzt sicher genug.
+  //
+  // v0.1.311 — Anreicherung intra-Tool. Wenn linkToAvaCompanyId
+  // gegeben ist UND der Agent keine eigenen `properties` mitgibt,
+  // fetcht das Tool selbst die AVA-Daten + baut die Property-Map.
+  // Vorher: Agent schickte nur `name` → HubSpot ratet rest falsch.
   const createCompanyTool = defineTool({
     name: "crm_create_hubspot_company",
     description:
       "Legt eine NEUE Company in HubSpot an. Propose-and-Confirm via ask_user_choice. PFLICHT VORHER: crm_search_hubspot_companies aufrufen, um Dubletten zu erkennen — wenn schon eine Company mit dem Namen oder der Domain existiert, dem Nutzer das TRANSPARENT zeigen und nachfragen (Update statt Create? oder ist das ein anderer Account?). Mindestens `name` ist Pflicht; alle weiteren Properties (domain, industry, lifecyclestage, …) sind optional und werden 1:1 ans HubSpot-API gereicht. Bei enum-Feldern den value, nicht das label.\n\n" +
-      "Wenn der Nutzer ein Pendant zu einer bereits in AVA bekannten Firma anlegt (Standard-Use-Case), IMMER auch `linkToAvaCompanyId` mitgeben — dann wird die HubSpot-Verknüpfung in einem Schritt mit angelegt, der Nutzer muss nichts manuell in der Firmenseite nachziehen. AVA-companyId vorher via `company_search` auflösen.",
+      "Wenn der Nutzer ein Pendant zu einer bereits in AVA bekannten Firma anlegt (Standard-Use-Case), IMMER auch `linkToAvaCompanyId` mitgeben — dann wird die HubSpot-Verknüpfung in einem Schritt mit angelegt, der Nutzer muss nichts manuell in der Firmenseite nachziehen. AVA-companyId vorher via `company_search` auflösen.\n\n" +
+      "v0.1.311 — AUTO-ANREICHERUNG: Wenn `linkToAvaCompanyId` gegeben ist, fetcht das Tool SELBST die AVA-Companydaten (legalName, Adresse, Website, Domain, Headcount, Branche, Beschreibung, Umsatz aus Pubs) und befüllt die HubSpot-Properties automatisch. Du musst die Properties also NICHT selbst zusammenklauben — gib einfach name + linkToAvaCompanyId mit, der Rest passiert automatisch. Du musst eigene Properties NUR mitgeben, wenn du etwas Konkretes ergänzen oder überschreiben willst (deine Werte gewinnen gegen die AVA-Daten).\n\n" +
+      "WENN AVA NOCH KEINE DATEN HAT (Pipeline noch nicht gelaufen), bricht das Tool mit klarer Fehlermeldung ab. Reaktion: dem User sagen, dass die Firma zuerst in AVA recherchiert werden muss (Tab 'Firmen' → Firma → 'neu recherchieren'). Erst danach in HubSpot anlegen. Workaround für Notfälle: OHNE linkToAvaCompanyId aufrufen — dann landet nur Name (+ ggf. explizite Domain/Properties) in HubSpot, der User muss den Rest manuell pflegen.",
     parameters: {
       type: "object",
       required: ["name"],
@@ -1358,9 +1477,46 @@ export function buildCrmTools(deps: CrmToolDeps): Tool[] {
       const extraProps = (args.properties ?? {}) as Record<string, string>;
       const props: Record<string, string> = { name: args.name };
       if (args.domain) props.domain = args.domain;
+      // v0.1.311 — Auto-Anreicherung: wenn der Agent linkToAvaCompanyId
+      // mitgibt aber keine `properties` explizit befüllt, holen wir die
+      // AVA-Companydaten und befüllen die HubSpot-Property-Map automatisch.
+      // Verhindert das "HubSpot wird nur mit Name angelegt"-Antipattern.
+      let avaSources: string[] = [];
+      let avaHasData = true; // default true wenn Anreicherung nicht angefordert
+      if (args.linkToAvaCompanyId) {
+        const enrich = await gatherAvaCompanyDataForHubspot(
+          args.linkToAvaCompanyId,
+          ctx.signal,
+        );
+        avaSources = enrich.sources;
+        avaHasData = enrich.hasData;
+        // AVA-Daten fließen NUR ein, wenn der Agent sie nicht explizit
+        // überschrieben hat. Agent-Werte gewinnen (explicit > implicit).
+        for (const [k, v] of Object.entries(enrich.props)) {
+          if (k === "name") continue; // Original-Name-Param hat Vorrang
+          if (props[k] !== undefined) continue;
+          if (extraProps[k] !== undefined) continue;
+          props[k] = v;
+        }
+        // Wenn die Firma noch nicht durch die Pipeline lief, BRECHEN
+        // wir mit klarem Hinweis ab — sonst landet wieder eine leere
+        // Firma in HubSpot.
+        if (!avaHasData) {
+          return {
+            applied: false,
+            error:
+              `Firma ${args.linkToAvaCompanyId} ist in AVA noch nicht durch die Recherche-Pipeline gelaufen ` +
+              `(keine Profile-, Website- oder Publikationsdaten verfügbar). Bitte zuerst die ` +
+              `Recherche anstoßen (z. B. via "Firma neu recherchieren") und dann erneut versuchen. ` +
+              `Wenn du die Firma TROTZDEM ohne AVA-Anreicherung in HubSpot anlegen willst, ` +
+              `ruf crm_create_hubspot_company OHNE linkToAvaCompanyId auf — dann gibt es nur ` +
+              `Name + Domain (was du explizit mitgibst).`,
+          };
+        }
+      }
       for (const [k, v] of Object.entries(extraProps)) {
         if (k === "name" || k === "domain") continue; // schon gesetzt
-        props[k] = v;
+        props[k] = v; // explicit Agent-properties gewinnen
       }
       const propLines = Object.entries(props)
         .map(([k, v]) => `  ${k}: ${v}`)
@@ -1369,7 +1525,11 @@ export function buildCrmTools(deps: CrmToolDeps): Tool[] {
         ? `\n\nBegründung: ${args.rationale}`
         : "";
       const linkHint = args.linkToAvaCompanyId
-        ? `\n\nVerknüpft danach automatisch mit AVA-Firma ${args.linkToAvaCompanyId}.`
+        ? `\n\nVerknüpft danach automatisch mit AVA-Firma ${args.linkToAvaCompanyId}.${
+            avaSources.length > 0
+              ? `\nAVA-Daten verwendet aus: ${avaSources.join(", ")}.`
+              : ""
+          }`
         : "";
       const value = await ctx.ui.askChoice(
         `Ich möchte folgende NEUE Company in HubSpot anlegen:\n\n${propLines}${rationaleBlock}${linkHint}\n\nFalls die Firma bereits existiert, sag bitte Bescheid — sonst gibt es ein Duplikat.`,
@@ -1676,6 +1836,128 @@ export function buildCrmTools(deps: CrmToolDeps): Tool[] {
     },
   });
 
+  // v0.1.311 — Enrich-Tool: existierende HubSpot-Company mit AVA-
+  // Daten anreichern. Spiegelt den Auto-Anreicherungs-Pfad aus
+  // crm_create_hubspot_company, aber für UPDATE statt CREATE.
+  // Use-Case: User hat eine HubSpot-Firma die schon existiert
+  // (manuell angelegt oder ohne Daten erzeugt) und will die Felder
+  // mit den neuen AVA-Erkenntnissen aktualisieren.
+  const enrichCompanyFromAvaTool = defineTool({
+    name: "crm_enrich_hubspot_company_from_ava",
+    description:
+      "Aktualisiert eine BESTEHENDE HubSpot-Company mit Daten aus AVA. Holt AVA-Daten (legalName, Adresse, Website, Domain, Headcount, Branche, Beschreibung, Umsatz aus letzter Publikation), baut den Diff gegen die aktuellen HubSpot-Werte und zeigt im Confirm-Dialog WAS geändert wird. Nur Felder mit echtem Wert in AVA + Unterschied gegen HubSpot werden vorgeschlagen. Use-Case: 'Reicher die HubSpot-Firma Strategic IT mit den neuesten AVA-Daten an.'\n\nVoraussetzung: AVA-Pipeline ist für die Firma gelaufen (sonst sagt das Tool das klar). HubSpot-companyId vorher z. B. via crm_search_hubspot_companies oder crm_list_links_for_company auflösen.",
+    parameters: {
+      type: "object",
+      required: ["hubspotCompanyId", "avaCompanyId"],
+      properties: {
+        hubspotCompanyId: {
+          type: "string",
+          description:
+            "HubSpot-companyId der zu aktualisierenden Firma.",
+        },
+        avaCompanyId: {
+          type: "string",
+          description:
+            "AVA-companyId der Quell-Firma (vorher via company_search auflösen).",
+        },
+        rationale: {
+          type: "string",
+          description: "Kurze Begründung (1 Satz) für den Confirm-Dialog.",
+        },
+      },
+    },
+    schema: yup
+      .object({
+        hubspotCompanyId: yup.string().trim().min(1).required(),
+        avaCompanyId: yup.string().trim().min(1).required(),
+        rationale: yup.string().trim().max(500).optional(),
+      })
+      .noUnknown(true),
+    preview: (r: {
+      applied: boolean;
+      changedFields?: number;
+      error?: string;
+    }) =>
+      r.applied
+        ? `${r.changedFields ?? 0} Felder in HubSpot aktualisiert`
+        : r.error
+          ? `Fehler: ${r.error}`
+          : "Anreicherung verworfen",
+    run: async (args, ctx) => {
+      // 1. AVA-Daten holen
+      const enrich = await gatherAvaCompanyDataForHubspot(
+        args.avaCompanyId,
+        ctx.signal,
+      );
+      if (!enrich.hasData) {
+        return {
+          applied: false,
+          error:
+            `Firma ${args.avaCompanyId} ist in AVA noch nicht durch die ` +
+            `Recherche-Pipeline gelaufen. Bitte zuerst recherchieren lassen, ` +
+            `dann erneut versuchen.`,
+        };
+      }
+      // 2. Aktuelle HubSpot-Werte holen für Diff
+      const intro = await introspectHubspotObject(
+        crm,
+        "companies",
+        args.hubspotCompanyId,
+      );
+      // 3. Diff: nur Felder die in HubSpot fehlen ODER abweichen
+      const toUpdate: Record<string, string> = {};
+      const diffLines: string[] = [];
+      const schemaByName = new Map(intro.schema.map((p) => [p.name, p]));
+      for (const [name, newVal] of Object.entries(enrich.props)) {
+        const current = intro.currentValues[name];
+        if (current === newVal) continue; // identisch
+        if (current && String(current).trim() === String(newVal).trim()) continue;
+        toUpdate[name] = newVal;
+        const label = schemaByName.get(name)?.label ?? name;
+        const oldDisplay = current ? String(current) : "(leer)";
+        diffLines.push(`  ${label} (${name}): ${oldDisplay} → ${newVal}`);
+      }
+      if (Object.keys(toUpdate).length === 0) {
+        return {
+          applied: false,
+          changedFields: 0,
+          error:
+            "Keine Änderungen — HubSpot-Felder sind bereits identisch zu " +
+            "den AVA-Daten (oder AVA hat keine zusätzlichen Felder).",
+        };
+      }
+      const rationaleBlock = args.rationale
+        ? `\n\nBegründung: ${args.rationale}`
+        : "";
+      const value = await ctx.ui.askChoice(
+        `Ich möchte die HubSpot-Company ${args.hubspotCompanyId} mit AVA-Daten anreichern:\n\n${diffLines.join("\n")}${rationaleBlock}\n\nAVA-Quellen: ${enrich.sources.join(", ")}.`,
+        [
+          {
+            value: "apply",
+            label: "Übernehmen",
+            description: "PATCH wird an HubSpot gesendet",
+          },
+          { value: "cancel", label: "Verwerfen" },
+        ],
+        ctx.signal,
+      );
+      if (value !== "apply") return { applied: false, changedFields: 0 };
+      try {
+        await updateHubspotObject(crm, {
+          objectType: "companies",
+          objectId: args.hubspotCompanyId,
+          properties: toUpdate,
+        });
+        return { applied: true, changedFields: Object.keys(toUpdate).length };
+      } catch (err) {
+        return {
+          applied: false,
+          error: err instanceof Error ? err.message : String(err),
+        };
+      }
+    },
+  });
+
   // v0.1.278 — Delete-Tools (Phase 2). HubSpot's DELETE ist ein soft-
   // delete: Record landet für 90 Tage im "archived"-Zustand, wieder-
   // herstellbar via Admin-UI. Danach endgültig weg. Confirm zeigt eine
@@ -1777,6 +2059,7 @@ export function buildCrmTools(deps: CrmToolDeps): Tool[] {
     associateTool,
     disassociateTool,
     createCompanyTool,
+    enrichCompanyFromAvaTool,
     createContactTool,
     createDealTool,
     createNoteTool,

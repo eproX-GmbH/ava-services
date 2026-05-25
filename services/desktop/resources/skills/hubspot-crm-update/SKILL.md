@@ -20,7 +20,9 @@ allowed-tools:
   - crm_introspect_hubspot_company
   - crm_update_hubspot_company
   - crm_create_hubspot_company
+  - crm_enrich_hubspot_company_from_ava
   - crm_delete_hubspot_company
+  - company_search
   - crm_introspect_hubspot_contact
   - crm_update_hubspot_contact
   - crm_create_hubspot_contact
@@ -111,15 +113,32 @@ ich nicht" antworten ohne vorher zu suchen.
 ### Companies
 
 **Create** (`crm_create_hubspot_company`):
-- Pflicht: `name`. Domain dringend empfohlen (Dedup).
-- Standardmäßig IMMER `linkToAvaCompanyId` mitgeben, wenn die Firma
-  schon in AVA existiert — Tool legt dann in einem Schritt auch die
-  AVA↔HubSpot-Verknüpfung an.
+- Pflicht: `name`. Standardflow ist mit `linkToAvaCompanyId` —
+  vorher via `company_search` auflösen.
+- **v0.1.311 AUTO-ANREICHERUNG**: Mit `linkToAvaCompanyId` fetcht das
+  Tool SELBST die AVA-Daten (legalName, Adresse, Website, Domain,
+  Headcount, Branche, Beschreibung, Umsatz) und befüllt die HubSpot-
+  Properties automatisch. Du brauchst KEINE eigenen `properties` mehr
+  zu sammeln, es sei denn du willst etwas Konkretes überschreiben.
+- Wenn die Firma in AVA noch NICHT recherchiert ist, bricht das Tool
+  mit klarer Fehlermeldung ab. Reaktion an den User: "Die Firma muss
+  zuerst in AVA recherchiert werden (Tab 'Firmen' → Firma → 'neu
+  recherchieren'). Möchtest du sie trotzdem als leere Karteileiche
+  anlegen?" — bei explizitem Ja: `linkToAvaCompanyId` weglassen.
 - Vorher Dublettencheck mit `crm_search_hubspot_companies` (Name UND
   Domain).
 
-**Update** (`crm_update_hubspot_company`): Property-Map mit HubSpot-
-internen Namen. Enum-Werte als `value`. Tool macht Fresh-GET-Verify.
+**Update** (`crm_update_hubspot_company`): Generisch — Property-Map
+mit HubSpot-internen Namen. Enum-Werte als `value`. Tool macht
+Fresh-GET-Verify. Nutze das wenn der User einzelne Felder ändern
+will ("setze Lifecycle Stage auf customer").
+
+**Anreichern mit AVA-Daten** (`crm_enrich_hubspot_company_from_ava`):
+Use-Case: "Reicher die HubSpot-Firma X mit den neuesten AVA-Daten an"
+oder "Synchronisiere die HubSpot-Daten mit AVA". Tool macht
+intern Diff (nur Felder die abweichen + AVA-Daten hat) und zeigt
+das im Confirm-Dialog. Du brauchst keine Properties zu sammeln,
+nur `hubspotCompanyId` + `avaCompanyId` mitgeben.
 
 **Delete** (`crm_delete_hubspot_company`): Soft-delete (90 Tage
 wiederherstellbar). Vorher Vorschau zeigen, Confirm-Dialog vom Tool.
