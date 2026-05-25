@@ -4518,8 +4518,17 @@ app.on("before-quit", (e) => {
         /* ignore */
       }
     }
-    // postgres + ollama-shutdown sind best-effort, im Update-Pfad
-    // räumt der neue Installer ohnehin auf.
+    // v0.1.316 — Ollama MUSS hart sterben, sonst hält der Subprozess
+    // <App>/Contents/Resources/ollama/... offen und Squirrel/ShipIt
+    // (Mac) bzw. NSIS (Win) blockt beim Bundle-/Folder-Replace. Real-
+    // Run-Log v0.1.311→0.1.312 zeigte exakt das: Proxy wird geschlossen,
+    // ShipIt startet, aber der Update-Pfad bleibt einfach hängen.
+    try {
+      ollama.forceKill();
+    } catch {
+      /* ignore */
+    }
+    // postgres ist in-process PGlite, kein externer Prozess; async ok.
     void postgres.stop().catch(() => undefined);
     setTimeout(() => app.exit(0), 200);
     return;

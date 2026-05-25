@@ -288,6 +288,33 @@ export class OllamaSupervisor extends EventEmitter {
     }
   }
 
+  /**
+   * v0.1.316 — Synchroner Hard-Kill für den Update-Install-Pfad.
+   * Springt direkt zu SIGKILL bzw. taskkill /F /T, ohne SIGTERM-Grace.
+   * Notwendig damit Squirrel.Mac (ShipIt) bzw. NSIS das App-Bundle
+   * atomar ersetzen können — der Ollama-Subprozess hält sonst File-
+   * Handles auf `/Applications/AVA.app/Contents/Resources/ollama/...`
+   * (Mac) bzw. `Resources\ollama\...` (Win) und das Replace blockiert
+   * → "Update hängt" Real-Run-Symptom.
+   */
+  forceKill(): void {
+    const child = this.child;
+    if (!child) return;
+    this.child = null;
+    try {
+      if (process.platform === "win32" && child.pid) {
+        spawn("taskkill", ["/F", "/T", "/PID", String(child.pid)], {
+          stdio: "ignore",
+          detached: true,
+        }).on("error", () => undefined);
+      } else {
+        child.kill("SIGKILL");
+      }
+    } catch {
+      /* already gone */
+    }
+  }
+
   // ---- HTTP helpers ---------------------------------------------------------
 
   private baseUrl(): string {
