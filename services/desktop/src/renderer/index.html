@@ -11,8 +11,15 @@
       manages it now, hardcoding caused a dark-then-light flash for
       light-mode users.
     -->
+    <!--
+      v0.1.319 — frame-src für Google-Maps-Embed (Standort-Karte unter
+      der Adresse auf der CompanyDetail-Seite). Ohne explizite frame-src
+      greift default-src 'self' und das Iframe bleibt leer. www.google.com
+      kommt rein weil maps.google.com je nach Land auf www.google.com/maps
+      redirected.
+    -->
     <meta http-equiv="Content-Security-Policy"
-          content="default-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self' http://localhost:* http://127.0.0.1:* https://*; img-src 'self' data: ava-screenshot: ava-linkedin-media:; font-src 'self' data:;" />
+          content="default-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self' http://localhost:* http://127.0.0.1:* https://*; img-src 'self' data: ava-screenshot: ava-linkedin-media:; font-src 'self' data:; frame-src https://www.google.com https://maps.google.com;" />
     <title>AVA</title>
   </head>
   <body>

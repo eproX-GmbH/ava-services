@@ -13,6 +13,7 @@ import {
   telHref,
   mailHref,
   mapsHref,
+  mapsEmbedUrl,
   looksLikeEmail,
   looksLikePhone,
 } from "../lib/format";
@@ -615,6 +616,7 @@ function OverviewTab({
     .filter(Boolean)
     .join(" ");
   const mapsUrl = mapsHref([street, cityLine]);
+  const mapsEmbed = mapsEmbedUrl([street, cityLine]);
 
   return (
     <div className="grid-2">
@@ -676,6 +678,26 @@ function OverviewTab({
             </>
           )}
         </p>
+        {mapsEmbed && (
+          // v0.1.319 — Google-Maps Basic-Embed direkt unter der Adresse.
+          // Kein API-Key (output=embed-Endpunkt). loading="lazy" damit
+          // der Iframe nicht beim ersten Render der Page lädt, sondern
+          // erst wenn er in den Viewport scrollt.
+          <iframe
+            title="Standort auf Google Maps"
+            src={mapsEmbed}
+            loading="lazy"
+            referrerPolicy="no-referrer-when-downgrade"
+            style={{
+              width: "100%",
+              height: 220,
+              border: "1px solid var(--border)",
+              borderRadius: 6,
+              marginTop: 4,
+              marginBottom: 8,
+            }}
+          />
+        )}
         {website?.companySerp?.phone && (
           <>
             <h4>Telefon</h4>

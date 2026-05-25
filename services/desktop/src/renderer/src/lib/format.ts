@@ -177,6 +177,21 @@ export function mapsHref(parts: Array<string | null | undefined>): string | null
   return `https://www.google.com/maps/search/?api=1&query=${q}`;
 }
 
+/**
+ * v0.1.319 — Embed-Variante derselben Adresse. Nutzt den unauthentifizierten
+ * `maps.google.com/maps?output=embed`-Endpunkt — kein API-Key nötig, das Iframe
+ * lädt direkt im User-Browser (Compute-Locality-Regel: User-Compute). Returnt
+ * null wenn keine Adress-Teile da sind, damit Caller die Karte weglassen können.
+ */
+export function mapsEmbedUrl(
+  parts: Array<string | null | undefined>,
+): string | null {
+  const cleaned = parts.map((p) => p?.trim()).filter(Boolean);
+  if (cleaned.length === 0) return null;
+  const q = encodeURIComponent(cleaned.join(", "));
+  return `https://maps.google.com/maps?q=${q}&output=embed`;
+}
+
 // Conservative regex; we treat any string containing an `@` flanked by
 // non-whitespace as an email-ish, and anything that looks like a phone
 // number (5+ digits, optional +, spaces / dashes / parens) as a phone.
