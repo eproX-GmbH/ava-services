@@ -4407,7 +4407,14 @@ app.on("window-all-closed", () => {
 // Best-effort graceful shutdown of the child process on quit. Electron
 // gives us a small window before SIGKILL — `stop()` issues SIGTERM and
 // returns immediately, the OS handles the rest.
-app.on("before-quit", () => {
+//
+// v0.1.308 — Auf Windows MÜSSEN die Child-Producers wirklich tot sein
+// bevor wir aussteigen, sonst halten sie .exe-Handles im Install-Dir
+// und der Uninstaller/Updater scheitert mit "Datei in Verwendung".
+// Wir gewähren bis zu 4s, dann gehen wir trotzdem. macOS/Linux müssen
+// das nicht warten — dort räumt der Process-Group-Tree von selbst auf.
+let quitInProgress = false;
+app.on("before-quit", (e) => {
   whisper.cancelDownload();
   freshness.stop();
   heartbeat.stop();
@@ -4417,8 +4424,21 @@ app.on("before-quit", () => {
   updater.stop();
   externalServiceMonitor.stop();
   void ollama.stop();
-  // Producers go down before Postgres so their final commits
-  // succeed against the still-running PGlite instance.
+  if (process.platform === "win32" && !quitInProgress) {
+    // Erst alle stop()-Promises sammeln, mit Deadline awaiten, dann
+    // app.quit() erneut feuern (mit quitInProgress=true, damit dieser
+    // Handler nicht in eine Schleife läuft).
+    e.preventDefault();
+    quitInProgress = true;
+    const deadline = new Promise<void>((r) => setTimeout(r, 4000));
+    const stops = Promise.all(producers.map((p) => p.stop().catch(() => undefined)));
+    void Promise.race([stops, deadline]).then(() => {
+      void postgres.stop();
+      app.quit();
+    });
+    return;
+  }
+  // Non-Windows: fire-and-forget, OS räumt den Prozess-Tree auf.
   for (const p of producers) {
     void p.stop();
   }

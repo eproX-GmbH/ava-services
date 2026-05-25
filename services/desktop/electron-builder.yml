@@ -149,6 +149,14 @@ win:
   # ship unsigned; users see SmartScreen's "unrecognized publisher"
   # warning on first launch and must click "More info → Run anyway".
   # Acceptable for the initial B2B rollout; revisit OV cert later.
+
+# v0.1.308 — Custom NSIS-Include forciert taskkill /F /T auf AVA.exe
+# + ollama.exe bevor der Installer entpackt. Real-Run-Bug:
+# Subprocesses halten Datei-Handles, Schreibversuch auf
+# "Uninstall AVA.exe" failed. Mit dem Include sind alle AVA-Children
+# garantiert tot wenn das Entpacken läuft.
+nsis:
+  include: resources/installer.nsh
 linux:
   target:
     - target: AppImage

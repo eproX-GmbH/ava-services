@@ -488,7 +488,21 @@ export class ProducerSupervisor extends EventEmitter {
       const timer = setTimeout(() => {
         if (this.child) {
           try {
-            this.child.kill("SIGKILL");
+            // v0.1.308 — Auf Windows tree-kill via taskkill /F /T. SIGKILL
+            // an einen Electron-Renderer-Helper killt nur ihn selbst,
+            // nicht seine Grandchildren (Selenium, Chrome, ffmpeg, …).
+            // Folge: Zombie-Prozesse halten .exe-Handles, Installer
+            // schlägt mit "Datei in Verwendung" fehl (Real-Run-Bug:
+            // "Entpacken: Fehler beim Schreiben der Datei Uninstall
+            // AVA.exe").
+            if (process.platform === "win32" && this.child.pid) {
+              spawn("taskkill", ["/F", "/T", "/PID", String(this.child.pid)], {
+                stdio: "ignore",
+                detached: true,
+              }).on("error", () => undefined);
+            } else {
+              this.child.kill("SIGKILL");
+            }
           } catch {
             /* already gone */
           }
@@ -501,7 +515,17 @@ export class ProducerSupervisor extends EventEmitter {
         resolveStop();
       });
       try {
-        child.kill("SIGTERM");
+        // v0.1.308 — Auch hier auf Windows tree-kill, weil SIGTERM
+        // dort eh nicht graceful ist (CTRL_BREAK_EVENT würde gehen,
+        // aber unsere Producer würden das gar nicht abfangen).
+        if (process.platform === "win32" && child.pid) {
+          spawn("taskkill", ["/T", "/PID", String(child.pid)], {
+            stdio: "ignore",
+            detached: true,
+          }).on("error", () => undefined);
+        } else {
+          child.kill("SIGTERM");
+        }
       } catch {
         /* exit listener cleans up */
       }
