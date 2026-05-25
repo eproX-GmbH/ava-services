@@ -524,10 +524,19 @@ export function buildCrmTools(deps: CrmToolDeps): Tool[] {
     schema: yup
       .object({
         companyId: yup.string().trim().min(1).required(),
+        // v0.1.320 — `yup.object()` ohne `.shape({...})` wird vom globalen
+        // `stripUnknown: true` (siehe define-tool.ts) leergeräumt — yup
+        // sieht keine bekannten Keys, also strippt es alle. Ergebnis: {}.
+        // Der Folge-`.test("at-least-one")` schlug dann immer fehl, auch
+        // wenn der Agent korrekt Properties mitschickte. Mit `yup.mixed`
+        // ist die Open-Map-Semantik korrekt. Validation prüft manuell.
         properties: yup
-          .object()
+          .mixed<Record<string, string>>()
+          .test("is-object", "properties muss ein Objekt sein", (v) =>
+            v != null && typeof v === "object" && !Array.isArray(v),
+          )
           .test("at-least-one", "Mindestens eine Property setzen.", (v) =>
-            v ? Object.keys(v).length > 0 : false,
+            v != null && Object.keys(v as Record<string, unknown>).length > 0,
           )
           .required(),
         rationale: yup.string().trim().max(500).optional(),
@@ -650,10 +659,14 @@ export function buildCrmTools(deps: CrmToolDeps): Tool[] {
       schema: yup
         .object({
           objectId: yup.string().trim().min(1).required(),
+          // v0.1.320 — siehe Kommentar in crm_update_hubspot_company.
           properties: yup
-            .object()
+            .mixed<Record<string, string>>()
+            .test("is-object", "properties muss ein Objekt sein", (v) =>
+              v != null && typeof v === "object" && !Array.isArray(v),
+            )
             .test("at-least-one", "Mindestens eine Property setzen.", (v) =>
-              v ? Object.keys(v).length > 0 : false,
+              v != null && Object.keys(v as Record<string, unknown>).length > 0,
             )
             .required(),
           rationale: yup.string().trim().max(500).optional(),
@@ -1314,13 +1327,31 @@ export function buildCrmTools(deps: CrmToolDeps): Tool[] {
     props: Record<string, string>;
     hasData: boolean;
     sources: string[];
+    /** v0.1.320 — pro Endpoint protokollieren ob er Daten lieferte,
+     *  Fehler warf oder leer war. Wandert in den Confirm-Dialog +
+     *  in den "keine Änderungen"-Fehler damit der User+Agent sehen
+     *  WARUM nichts ankam (vorher silent null → frustrierende
+     *  "AVA hat keine Daten"-Meldung bei stiller Gateway-Latenz). */
+    diagnostics: Array<{ endpoint: string; ok: boolean; reason?: string }>;
   }> {
     const props: Record<string, string> = {};
     const sources: string[] = [];
-    const get = async <T = unknown>(path: string): Promise<T | null> => {
+    const diagnostics: Array<{ endpoint: string; ok: boolean; reason?: string }> = [];
+    const get = async <T = unknown>(
+      label: string,
+      path: string,
+    ): Promise<T | null> => {
       try {
-        return await gateway.request<T>(path, { signal });
-      } catch {
+        const res = await gateway.request<T>(path, { signal });
+        if (res == null || (typeof res === "object" && Object.keys(res as object).length === 0)) {
+          diagnostics.push({ endpoint: label, ok: false, reason: "leer" });
+          return null;
+        }
+        diagnostics.push({ endpoint: label, ok: true });
+        return res;
+      } catch (err) {
+        const reason = err instanceof Error ? err.message.slice(0, 80) : String(err).slice(0, 80);
+        diagnostics.push({ endpoint: label, ok: false, reason });
         return null;
       }
     };
@@ -1333,7 +1364,7 @@ export function buildCrmTools(deps: CrmToolDeps): Tool[] {
       countryCode?: string;
       foundationYear?: number;
       hrbNumber?: string;
-    }>(`/v1/companies/${encodeURIComponent(avaCompanyId)}`);
+    }>("base", `/v1/companies/${encodeURIComponent(avaCompanyId)}`);
     if (base) {
       sources.push("base");
       if (base.legalName) props.name = base.legalName;
@@ -1349,7 +1380,7 @@ export function buildCrmTools(deps: CrmToolDeps): Tool[] {
       url?: string;
       homepageUrl?: string;
       description?: string;
-    }>(`/v1/companies/${encodeURIComponent(avaCompanyId)}/website`);
+    }>("website", `/v1/companies/${encodeURIComponent(avaCompanyId)}/website`);
     if (website && (website.url || website.homepageUrl)) {
       sources.push("website");
       const url = website.url ?? website.homepageUrl ?? "";
@@ -1370,7 +1401,7 @@ export function buildCrmTools(deps: CrmToolDeps): Tool[] {
       headcount?: number | string;
       industry?: string;
       businessPurpose?: string;
-    }>(`/v1/companies/${encodeURIComponent(avaCompanyId)}/profile`);
+    }>("profile", `/v1/companies/${encodeURIComponent(avaCompanyId)}/profile`);
     if (profile) {
       sources.push("profile");
       if (profile.headcount) {
@@ -1387,6 +1418,7 @@ export function buildCrmTools(deps: CrmToolDeps): Tool[] {
     }
     // Latest financial publication für Umsatz/EK-Snapshot
     const pubs = await get<{ items?: Array<Record<string, unknown>> }>(
+      "publications",
       `/v1/companies/${encodeURIComponent(avaCompanyId)}/publications`,
     );
     const latestPub = pubs?.items?.[0] as
@@ -1396,12 +1428,56 @@ export function buildCrmTools(deps: CrmToolDeps): Tool[] {
       sources.push("publications");
       props.annualrevenue = String(latestPub.sales.value);
     }
-    // hasData: substantiell wenn mindestens website ODER profile da war.
+    // v0.1.320 — Keywords als Description-Fallback. Wenn weder Website
+    // noch Profile eine description geliefert haben, aber AVA Keywords
+    // extrahiert hat, daraus eine kurze "Beschreibung" zusammensetzen.
+    // Besser eine Keyword-Liste als gar nichts in HubSpot.
+    if (!props.description) {
+      const kw = await get<{ items?: Array<{ keyword?: string }> }>(
+        "keywords",
+        `/v1/companies/${encodeURIComponent(avaCompanyId)}/keywords`,
+      );
+      const list = (kw?.items ?? [])
+        .map((k) => k?.keyword)
+        .filter((s): s is string => typeof s === "string" && s.length > 0)
+        .slice(0, 20);
+      if (list.length > 0) {
+        sources.push("keywords");
+        props.description = `Schwerpunkte: ${list.join(", ")}`.slice(0, 1000);
+      }
+    }
+    // v0.1.320 — Telefon aus den ersten verfuegbaren Contact-Phones.
+    // Workphone bevorzugt, sonst irgendeine Nummer. HubSpot's `phone`
+    // ist auf Company-Ebene zentral fuer Outreach.
+    if (!props.phone) {
+      const contacts = await get<{
+        items?: Array<{
+          workPhones?: string[];
+          phones?: string[];
+        }>;
+      }>(
+        "contacts",
+        `/v1/companies/${encodeURIComponent(avaCompanyId)}/contacts`,
+      );
+      const phone =
+        contacts?.items
+          ?.flatMap((c) => [...(c.workPhones ?? []), ...(c.phones ?? [])])
+          .find((p) => typeof p === "string" && p.trim().length >= 5);
+      if (phone) {
+        sources.push("contacts");
+        props.phone = phone.trim();
+      }
+    }
+    // hasData: substantiell wenn mindestens EINE der Side-Quellen
+    // (alles außer base) was geliefert hat. Base allein ist nur
+    // Stammdaten — die hatte HubSpot ohnehin meist schon.
     const hasData =
       sources.includes("website") ||
       sources.includes("profile") ||
-      sources.includes("publications");
-    return { props, hasData, sources };
+      sources.includes("publications") ||
+      sources.includes("keywords") ||
+      sources.includes("contacts");
+    return { props, hasData, sources, diagnostics };
   }
 
   // v0.1.269 — Company-Create (Phase H5). Bisher waren Companies/
@@ -1890,12 +1966,21 @@ export function buildCrmTools(deps: CrmToolDeps): Tool[] {
         ctx.signal,
       );
       if (!enrich.hasData) {
+        // v0.1.320 — Diagnostik im Fehler mitsenden, damit Agent + User
+        // genau sehen welche Endpoints leer waren bzw. mit welchem
+        // Fehler. Vorher war das "ist nicht durch die Pipeline gelaufen"
+        // generisch und führte zu Frust ("aber die Daten sind doch da!").
+        const diagSummary = enrich.diagnostics
+          .map((d) => `${d.endpoint}=${d.ok ? "ok" : `LEER (${d.reason ?? "?"})`}`)
+          .join(", ");
         return {
           applied: false,
           error:
-            `Firma ${args.avaCompanyId} ist in AVA noch nicht durch die ` +
-            `Recherche-Pipeline gelaufen. Bitte zuerst recherchieren lassen, ` +
-            `dann erneut versuchen.`,
+            `Keine ergänzbaren AVA-Daten für Firma ${args.avaCompanyId} gefunden. ` +
+            `Endpoint-Status: ${diagSummary}. ` +
+            `Wenn alle Endpoints "LEER" zeigen: Firma wahrscheinlich noch nicht durch ` +
+            `die Recherche-Pipeline. Sonst: einzelne Producer haben gefehlt — ggf. ` +
+            `re-run, dann erneut versuchen.`,
         };
       }
       // 2. Aktuelle HubSpot-Werte holen für Diff
@@ -1918,12 +2003,21 @@ export function buildCrmTools(deps: CrmToolDeps): Tool[] {
         diffLines.push(`  ${label} (${name}): ${oldDisplay} → ${newVal}`);
       }
       if (Object.keys(toUpdate).length === 0) {
+        // v0.1.320 — Auch hier Diagnostik im Fehler. Wenn nichts geupdatet
+        // wird, möchte der Agent (und der User) wissen: lag es daran dass
+        // die HubSpot-Felder schon befüllt waren, oder hat AVA von Anfang
+        // an keine Daten für diese Felder geliefert?
+        const gatheredFields = Object.keys(enrich.props);
+        const detail =
+          gatheredFields.length === 0
+            ? "AVA hat KEINE Properties geliefert obwohl Endpoints geantwortet haben — vermutlich gibt's diese Felder noch nicht in den Producer-Ergebnissen."
+            : `AVA hat geliefert: ${gatheredFields.join(", ")}. Diese Felder sind in HubSpot bereits identisch.`;
         return {
           applied: false,
           changedFields: 0,
-          error:
-            "Keine Änderungen — HubSpot-Felder sind bereits identisch zu " +
-            "den AVA-Daten (oder AVA hat keine zusätzlichen Felder).",
+          gatheredFields,
+          sources: enrich.sources,
+          error: `Keine Änderungen. ${detail}`,
         };
       }
       const rationaleBlock = args.rationale

@@ -140,6 +140,21 @@ intern Diff (nur Felder die abweichen + AVA-Daten hat) und zeigt
 das im Confirm-Dialog. Du brauchst keine Properties zu sammeln,
 nur `hubspotCompanyId` + `avaCompanyId` mitgeben.
 
+WICHTIG: Du musst NICHT vorher `company_get`, `company_profile`,
+`company_publications` etc. aufrufen. Das Tool fetcht alle nötigen
+Endpoints SELBST (base, website, profile, publications, keywords,
+contacts) und mapt sie auf HubSpot-Property-Namen. Pre-Fetching durch
+den Agent ist Token-Verschwendung und kann zu falschen Erwartungen
+führen ("Daten sind doch da, warum behauptet das Tool 'keine Daten'?").
+Vertraue dem Tool, ruf es direkt mit den beiden IDs auf.
+
+Wenn das Tool "Keine Änderungen" oder "Keine ergänzbaren AVA-Daten"
+zurückgibt: die Fehlermeldung enthält jetzt Diagnostik (welche
+Endpoints leer waren, mit Fehler-Reason). Schau dir die an bevor du
+manuell sammelst — meistens fehlen einzelne Producer-Outputs, dann
+hilft `producer_rerun_stage` (falls verfügbar) statt manuelles
+Property-Bauen.
+
 **Delete** (`crm_delete_hubspot_company`): Soft-delete (90 Tage
 wiederherstellbar). Vorher Vorschau zeigen, Confirm-Dialog vom Tool.
 Verknüpfte Contacts/Deals bleiben erhalten, nur disassoziiert.
