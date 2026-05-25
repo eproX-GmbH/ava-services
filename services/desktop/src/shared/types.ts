@@ -1954,15 +1954,18 @@ export interface MailAccount {
     secure: boolean;
     user: string;
   };
-  /** Master-Schalter: AVA darf überhaupt auf Mails antworten. Default false. */
+  /** Master-Schalter: AVA darf überhaupt auf Mails antworten.
+   *  v0.1.318: Default TRUE (war FALSE). User-Mental-Model ist
+   *  "Whitelist == Auto-Antwort", drei separate Toggles waren zu viel.
+   *  Bleibt als Kill-Switch erhalten falls jemand AVA temporär stumm
+   *  drehen will. */
   outboundEnabled: boolean;
   /**
    * v0.1.299 — Auto-Triage: AVA reagiert vollautonom auf eingehende
    * trusted Mails (recherchiert, antwortet, macht CRM-Updates) ohne
    * User-Eingriff. Voraussetzungen: outboundEnabled=true UND der
-   * Absender muss in der Allowlist sein. Default off — explizites
-   * Opt-in, weil das Risiko-Profil deutlich höher ist als der
-   * bisherige Pull-Modus (User triggert).
+   * Absender muss in der Allowlist sein.
+   * v0.1.318: Default TRUE (war FALSE). Siehe outboundEnabled-Kommentar.
    */
   autoTriageEnabled?: boolean;
   /** Poll-Intervall in Minuten (Fallback wenn IMAP IDLE nicht supported).

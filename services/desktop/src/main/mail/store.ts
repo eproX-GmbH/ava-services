@@ -186,8 +186,12 @@ export class MailStore extends EventEmitter {
         account.displayName,
         JSON.stringify(account.imap),
         JSON.stringify(account.smtp),
-        account.outboundEnabled,
-        account.autoTriageEnabled === true,
+        // v0.1.318 — Beide Toggles defaulten auf TRUE wenn nicht
+        // explizit gesetzt. Vorher wurde `autoTriageEnabled === true`
+        // genutzt, was undefined zu FALSE machte → User legte ein
+        // Konto an und Auto-Antwort war stumm aus.
+        account.outboundEnabled !== false,
+        account.autoTriageEnabled !== false,
         account.pollIntervalMinutes,
         account.lastSyncAt,
         account.lastErrorAt,
@@ -618,7 +622,7 @@ export class MailStore extends EventEmitter {
         display_name           TEXT NOT NULL,
         imap_json              JSONB NOT NULL,
         smtp_json              JSONB NOT NULL,
-        outbound_enabled       BOOLEAN NOT NULL DEFAULT FALSE,
+        outbound_enabled       BOOLEAN NOT NULL DEFAULT TRUE,
         poll_interval_minutes  INTEGER NOT NULL DEFAULT 15,
         last_sync_at           TIMESTAMPTZ,
         last_error_at          TIMESTAMPTZ,
@@ -628,7 +632,31 @@ export class MailStore extends EventEmitter {
       -- Schema schon mit v0.1.282 erzeugt wurde. IF NOT EXISTS macht
       -- den ALTER idempotent.
       ALTER TABLE mail_account
-        ADD COLUMN IF NOT EXISTS auto_triage_enabled BOOLEAN NOT NULL DEFAULT FALSE;
+        ADD COLUMN IF NOT EXISTS auto_triage_enabled BOOLEAN NOT NULL DEFAULT TRUE;
+      -- v0.1.318 — Defaults von outbound + auto_triage auf TRUE gesetzt.
+      -- Hintergrund: der User erwartet "Whitelist == AVA antwortet
+      -- automatisch", drei separate Sicherheits-Toggles waren zu viel
+      -- Reibung. Outbound bleibt als Kill-Switch (UI), aber Default an.
+      -- Auto-Migration für bereits angelegte Konten, sonst hilft das
+      -- neue Default nichts: einmalig ON setzen wenn auto_triage_enabled
+      -- noch nie aktiv war. Marker via mail_migration_log damit's nicht
+      -- bei jedem Boot toggled (User kann manuell wieder abdrehen).
+      CREATE TABLE IF NOT EXISTS mail_migration_log (
+        migration_id TEXT PRIMARY KEY,
+        applied_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+      DO $$
+      BEGIN
+        IF NOT EXISTS (
+          SELECT 1 FROM mail_migration_log WHERE migration_id = 'v0.1.318_default_auto_triage_on'
+        ) THEN
+          UPDATE mail_account
+             SET auto_triage_enabled = TRUE,
+                 outbound_enabled    = TRUE
+           WHERE auto_triage_enabled = FALSE OR outbound_enabled = FALSE;
+          INSERT INTO mail_migration_log (migration_id) VALUES ('v0.1.318_default_auto_triage_on');
+        END IF;
+      END $$;
 
       CREATE TABLE IF NOT EXISTS mail_allowlist (
         id        TEXT PRIMARY KEY,

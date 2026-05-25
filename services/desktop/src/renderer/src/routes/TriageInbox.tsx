@@ -104,6 +104,10 @@ export function TriageInbox(): JSX.Element {
           <h2 className="triage__title">Postfach</h2>
           <span className="triage__account">{snapshot.account.address}</span>
           <ConnectionPill state={snapshot.connectionState} />
+          <AutoTriagePill
+            autoTriageEnabled={snapshot.account.autoTriageEnabled !== false}
+            outboundEnabled={snapshot.account.outboundEnabled !== false}
+          />
         </div>
         <nav className="triage__filters" aria-label="Filter">
           {FILTER_LABELS.map(([key, label]) => {
@@ -420,6 +424,43 @@ function TrustBadge({
     >
       {label}
     </span>
+  );
+}
+
+/**
+ * v0.1.318 — Surface ob trusted-Sender Mails automatisch von AVA
+ * bearbeitet werden. Vorher war das ein verstecktes Setting; Real-Run
+ * zeigte dass User erwartet "Whitelist == Auto-Antwort" und es selbst
+ * dann nicht funktionierte wenn Sender whitelisted war, weil die
+ * Toggles defaultmäßig OFF standen.
+ */
+function AutoTriagePill({
+  autoTriageEnabled,
+  outboundEnabled,
+}: {
+  autoTriageEnabled: boolean;
+  outboundEnabled: boolean;
+}): JSX.Element {
+  const active = autoTriageEnabled && outboundEnabled;
+  if (active) {
+    return (
+      <span
+        className="pill pill--connected"
+        title="AVA liest eingehende Mails von vertrauten Absendern automatisch und antwortet selbst. In Einstellungen → Datenquellen → Mail kannst du das abschalten."
+      >
+        Auto-Antwort aktiv
+      </span>
+    );
+  }
+  return (
+    <Link
+      to="/settings/datenquellen#mail-account-section"
+      className="pill pill--error"
+      style={{ textDecoration: "none" }}
+      title="Auto-Antwort ist abgeschaltet. Klicken um zu den Mail-Einstellungen zu gehen."
+    >
+      Auto-Antwort aus
+    </Link>
   );
 }
 
