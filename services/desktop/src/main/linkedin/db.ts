@@ -1645,7 +1645,14 @@ export async function listSignals(
       JOIN linkedin_post p  ON p.post_urn = s.post_urn
       JOIN linkedin_actor a ON a.actor_urn = p.author_urn
      WHERE ${where.join(" AND ")}
-     ORDER BY p.scraped_at DESC
+     -- v0.1.317 — sortiere primaer nach posted_at (wann LinkedIn den
+     -- Post live geschaltet hat) statt nach scraped_at (wann WIR ihn
+     -- gesehen haben). User-Intuition "neueste zuerst" meint die
+     -- Post-Zeit; scraped_at konnte ältere Posts oben listen wenn wir
+     -- sie spaeter rescraped haben. NULLS LAST damit Eintraege ohne
+     -- posted_at nicht das Listing dominieren, Tie-Break per
+     -- scraped_at DESC.
+     ORDER BY p.posted_at DESC NULLS LAST, p.scraped_at DESC
      LIMIT $${limIdx} OFFSET $${offIdx}
   `;
   const res = await db.query<{

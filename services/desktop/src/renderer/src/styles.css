@@ -4052,7 +4052,18 @@ a.heartbeat-decision__company:hover {
 .shot-lightbox__caption {
   margin-top: 0.75rem;
   font-size: 12px;
-  color: var(--color-fg, #e5e7e6);
+  /* v0.1.317 — Lightbox-Backdrop ist IMMER rgba(0,0,0,0.85) egal in
+   * welchem Theme, also darf die Caption NICHT auf var(--color-fg)
+   * mappen. Im Light-Mode war --color-fg dunkel → dunkler Text auf
+   * dunklem Backdrop, unlesbar. Hardgecodet auf nahweiß; das ist auf
+   * dem dunklen Backdrop in beiden Themes ok. `.muted` würde dazu
+   * Opacity drüberlegen — auch ok weil Basis hell. */
+  color: rgba(255, 255, 255, 0.92);
+}
+.shot-lightbox__caption.muted {
+  /* `.muted` global drückt auf var(--color-muted) — auf dem dunklen
+   * Backdrop wieder zu dunkel. Override mit fixem Light-Grey. */
+  color: rgba(255, 255, 255, 0.72);
 }
 
 /* ─────────────────────────────────────────────────────────────────────
