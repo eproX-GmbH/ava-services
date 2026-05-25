@@ -1116,19 +1116,40 @@ export class AgentOrchestrator extends EventEmitter {
       );
       call = { ...call, name: repaired };
     }
-    // S2 — enforced skill tool-allowlist. Runs BEFORE the registry
-    // lookup so a refusal message is consistent regardless of whether
-    // the tool name is real.
-    const guard = checkSkillAllowlist(this.activeSkill, call.name);
-    if (!guard.ok) {
-      console.warn(
-        `[skills] tool-call refused: skill=${this.activeSkill?.name} tool=${call.name}`,
-      );
-      return {
-        ok: false,
-        content: JSON.stringify({ error: guard.message }),
-        preview: guard.message,
-      };
+    // S2 — skill tool-allowlist. Ursprünglich hart erzwungen, seit
+    // v0.1.312 NUR noch im autonomen Modus (Cron / Auto-Triage). In
+    // interaktiven Chat-Sessions ist der User anwesend und kann jede
+    // Aktion explizit verantworten — eine Skill-Sandbox, die selbst
+    // nach User-Confirm noch blockt, ist dort kafkaesk (real beobachtet
+    // bei `scheduled-mail-loop` der `mail_send`/`mail_reply`
+    // blockierte, obwohl der User explizit "send anyway" geklickt
+    // hatte). Allowed-tools bleiben relevant für:
+    //   - Anthropic-Tool-Surface-Pruning (siehe markToolsLoaded oben),
+    //     damit der Skill ein fokussiertes Tool-Set sieht.
+    //   - Autonome Sessions, wo niemand "send anyway" klicken kann.
+    if (autonomousMode) {
+      const guard = checkSkillAllowlist(this.activeSkill, call.name);
+      if (!guard.ok) {
+        console.warn(
+          `[skills] tool-call refused (autonomous): skill=${this.activeSkill?.name} tool=${call.name}`,
+        );
+        return {
+          ok: false,
+          content: JSON.stringify({ error: guard.message }),
+          preview: guard.message,
+        };
+      }
+    } else if (this.activeSkill) {
+      const guard = checkSkillAllowlist(this.activeSkill, call.name);
+      if (!guard.ok) {
+        // Nicht blocken — nur loggen, damit wir im Telemetry sehen
+        // welche Skills regelmäßig "leaken". Wenn ein Skill in
+        // interaktiven Sessions ständig out-of-scope-Tools braucht,
+        // ist die allowed-tools-Liste zu eng.
+        console.info(
+          `[skills] tool-call allowed despite allowlist (interactive): skill=${this.activeSkill.name} tool=${call.name}`,
+        );
+      }
     }
 
     const tool: Tool | undefined = this.registry.get(call.name);

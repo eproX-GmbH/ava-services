@@ -4,8 +4,8 @@ Auto-generiert von `services/desktop/scripts/generate-tools-md.mjs`.
 NICHT direkt bearbeiten — die Quelle der Wahrheit ist `services/desktop/src/main/agent/tools/*.ts`.
 Lauf via `pnpm -F @ava/desktop tools:doc` (oder automatisch via `build:typecheck`).
 
-Stand: 2026-05-12
-Anzahl Tools: 94
+Stand: 2026-05-25
+Anzahl Tools: 159
 
 ## Firmen (11)
 
@@ -155,7 +155,7 @@ Re-run a single processing stage for one company inside an existing transaction.
 _Parameter:_
 - `transactionId: string` (required)
 - `companyId: string` (required)
-- `stage: string (enum: structuredContent, companyPublication, website, companyProfile, companyContact, companyEvaluation)` (required) — Which stage to re-run. `companyEvaluation` fans out across all 5 evaluation producers in parallel.
+- `stage: string (enum: structuredContent, companyPublication, website, companyProfile, companyContact, companyEvaluation, deepResearch, jobPostings)` (required) — Which stage to re-run. `companyEvaluation` fans out across all 5 evaluation producers in parallel.
 - `companyName: string` — Optional — some upstream stages re-resolve by name (helps when the row's stored name had a typo).
 
 ## Transaktionen (5)
@@ -525,7 +525,7 @@ _Parameter:_ keine.
 
 _Datei:_ `services/desktop/src/main/agent/tools/settings.ts`
 
-Store the user's API key for a hosted provider. Encrypted at rest via the OS keychain (safeStorage). Call this BEFORE switching to that provider. Never echo the key back in your reply.
+Store the user's API key for a hosted provider. Encrypted at rest via the OS keychain (safeStorage). Call this BEFORE switching to that provider. Never echo the key back in your reply. NOTE: Anthropic is intentionally NOT supported here — the user should connect via the Pro/Max subscription (Settings → Modelle → Anthropic).
 
 _Parameter:_ keine.
 
@@ -537,15 +537,126 @@ Switch the active LLM provider. `kind` is one of 'ollama', 'openai', 'anthropic'
 
 _Parameter:_ keine.
 
-## CRM (8)
+## CRM (28)
 
 ### `connect_crm`
 
 _Datei:_ `services/desktop/src/main/agent/tools/crm.ts`
 
-Startet den interaktiven OAuth-Flow für ein CRM. Öffnet den System-Browser zur Login-Seite des Anbieters und wartet auf die Weiterleitung. Heute voll unterstützt: HubSpot. Salesforce + Microsoft Dynamics 365 sind verdrahtet, brauchen aber operatorseitige OAuth-App-Registrierung (siehe Anwender-Hinweise) - der Tool-Call schlägt sonst mit einer klaren Fehlermeldung fehl. Microsoft Dynamics erwartet `orgUrl` (z. B. 'contoso.crm4.dynamics.com'). Nach erfolgreicher Verbindung kann der Nutzer mit `import_companies_from_crm` direkt importieren oder einzelne AVA-Firmen via `crm_link_manual` an CRM-Datensätze knüpfen.
+Startet den interaktiven OAuth-Flow für ein CRM. Öffnet den System-Browser zur Login-Seite des Anbieters und wartet auf die Weiterleitung. AKTUELL VERFÜGBAR: nur HubSpot. Salesforce und Microsoft Dynamics 365 sind als Optionen sichtbar, aber für Nutzer noch gesperrt ("Demnächst verfügbar"); der Tool-Call lehnt sie mit einer klaren Meldung ab. Nach erfolgreicher HubSpot-Verbindung kann der Nutzer mit `import_companies_from_crm` direkt importieren oder einzelne AVA-Firmen via `crm_link_manual` an CRM-Datensätze knüpfen.
 
 _Parameter:_ keine.
+
+### `crm_associate_hubspot_objects`
+
+_Datei:_ `services/desktop/src/main/agent/tools/crm.ts`
+
+Verknüpft zwei HubSpot-Records (Contact↔Company, Deal↔Company, Contact↔Deal) mit dem Default-Association-Type. PROPOSE-AND-CONFIRM: zeigt den Nutzer via ask_user_choice was verknüpft werden soll. Idempotent: bestehende Verknüpfung wird nicht doppelt erstellt. Custom-Association-Types werden NICHT unterstützt — V1 setzt immer den default.
+
+_Parameter:_ keine.
+
+### `crm_complete_hubspot_task`
+
+_Datei:_ `services/desktop/src/main/agent/tools/crm.ts`
+
+Markiert eine HubSpot-Task als erledigt: setzt hs_task_status=COMPLETED und hs_task_completion_date=jetzt (oder den vom Nutzer genannten Zeitpunkt). PROPOSE-AND-CONFIRM via ask_user_choice — wie alle Schreib-Operationen.
+
+_Parameter:_ keine.
+
+### `crm_create_hubspot_company`
+
+_Datei:_ `services/desktop/src/main/agent/tools/crm.ts`
+
+Legt eine NEUE Company in HubSpot an. Propose-and-Confirm via ask_user_choice. PFLICHT VORHER: crm_search_hubspot_companies aufrufen, um Dubletten zu erkennen — wenn schon eine Company mit dem Namen oder der Domain existiert, dem Nutzer das TRANSPARENT zeigen und nachfragen (Update statt Create? oder ist das ein anderer Account?). Mindestens `name` ist Pflicht; alle weiteren Properties (domain, industry, lifecyclestage, …) sind optional und werden 1:1 ans HubSpot-API gereicht. Bei enum-Feldern den value, nicht das label.
+
+Wenn der Nutzer ein Pendant zu einer bereits in AVA bekannten Firma anlegt (Standard-Use-Case), IMMER auch `linkToAvaCompanyId` mitgeben — dann wird die HubSpot-Verknüpfung in einem Schritt mit angelegt, der Nutzer muss nichts manuell in der Firmenseite nachziehen. AVA-companyId vorher via `company_search` auflösen.
+
+v0.1.311 — AUTO-ANREICHERUNG: Wenn `linkToAvaCompanyId` gegeben ist, fetcht das Tool SELBST die AVA-Companydaten (legalName, Adresse, Website, Domain, Headcount, Branche, Beschreibung, Umsatz aus Pubs) und befüllt die HubSpot-Properties automatisch. Du musst die Properties also NICHT selbst zusammenklauben — gib einfach name + linkToAvaCompanyId mit, der Rest passiert automatisch. Du musst eigene Properties NUR mitgeben, wenn du etwas Konkretes ergänzen oder überschreiben willst (deine Werte gewinnen gegen die AVA-Daten).
+
+WENN AVA NOCH KEINE DATEN HAT (Pipeline noch nicht gelaufen), bricht das Tool mit klarer Fehlermeldung ab. Reaktion: dem User sagen, dass die Firma zuerst in AVA recherchiert werden muss (Tab 'Firmen' → Firma → 'neu recherchieren'). Erst danach in HubSpot anlegen. Workaround für Notfälle: OHNE linkToAvaCompanyId aufrufen — dann landet nur Name (+ ggf. explizite Domain/Properties) in HubSpot, der User muss den Rest manuell pflegen.
+
+_Parameter:_ keine.
+
+### `crm_create_hubspot_contact`
+
+_Datei:_ `services/desktop/src/main/agent/tools/crm.ts`
+
+Legt einen NEUEN Contact in HubSpot an. PROPOSE-AND-CONFIRM via ask_user_choice. PFLICHT vorher: crm_search_hubspot_contacts mit der email — wenn schon ein Contact mit dieser email existiert, dem Nutzer das transparent zeigen und Update statt Create vorschlagen. Pflichtfeld ist `email` (HubSpots Dedup-Key). Empfohlen: firstname, lastname. Optional: linkToHubspotCompanyId für Inline-Verknüpfung zur Company.
+
+_Parameter:_
+- `email: string` (required) — E-Mail (Pflicht, HubSpots Dedup-Key).
+- `firstname: string`
+- `lastname: string`
+- `jobtitle: string`
+- `phone: string`
+- `properties: object` — Zusätzliche HubSpot-Properties (Name → String).
+- `linkToHubspotCompanyId: string` — Optionale HubSpot-companyId; Contact wird inline mit der Company verknüpft.
+- `rationale: string`
+
+### `crm_create_hubspot_deal`
+
+_Datei:_ `services/desktop/src/main/agent/tools/crm.ts`
+
+Legt einen NEUEN Deal in HubSpot an. PROPOSE-AND-CONFIRM via ask_user_choice. PFLICHT vorher: crm_introspect_hubspot_deal auf einem existierenden Deal aufrufen, um pipeline + dealstage-Optionen zu kennen (dealstage ist an pipeline gekoppelt — falsche Kombination wird silently rejected). Pflichtfelder: dealname, pipeline, dealstage. Mindestens eine Association (Company oder Contact) ist Pflicht, sonst orphan deal. Optional: amount, closedate (ISO), dealtype, hubspot_owner_id, weitere Properties.
+
+_Parameter:_
+- `dealname: string` (required)
+- `pipeline: string` (required) — Pipeline-Internal-Name aus dem Schema.
+- `dealstage: string` (required) — Stage-Internal-Name. MUSS zur pipeline passen — vorher via crm_introspect_hubspot_deal die gültigen Kombinationen prüfen.
+- `amount: string` — Geldbetrag als String (HubSpot konvertiert).
+- `closedate: string` — ISO-Date (z. B. 2026-12-31).
+- `dealtype: string`
+- `hubspot_owner_id: string` — Owner-ID (numerisch). Aus crm_list_hubspot_owners.
+- `properties: object` — Weitere HubSpot-Properties (Name → String).
+- `associations: array` (required) — Pflicht: mind. 1 Verknüpfung zu Company oder Contact.
+- `rationale: string`
+
+### `crm_create_hubspot_note`
+
+_Datei:_ `services/desktop/src/main/agent/tools/crm.ts`
+
+Legt eine neue Notiz in HubSpot an und verknüpft sie SOFORT mit mindestens einem Company/Contact/Deal — sonst ist die Notiz in der UI quasi unauffindbar. PROPOSE-AND-CONFIRM via ask_user_choice. Body kann Plain-Text oder einfaches HTML enthalten. Zeitstempel wird auf 'jetzt' gesetzt, wenn nicht überschrieben.
+
+_Parameter:_ keine.
+
+### `crm_create_hubspot_task`
+
+_Datei:_ `services/desktop/src/main/agent/tools/crm.ts`
+
+Legt eine neue Aufgabe in HubSpot an und verknüpft sie SOFORT mit Company/Contact/Deal. PROPOSE-AND-CONFIRM. Optional sind Fälligkeit, Priorität, Owner, Typ (EMAIL/CALL/TODO). Status startet immer auf NOT_STARTED.
+
+_Parameter:_ keine.
+
+### `crm_delete_hubspot_${SINGULAR[objectType]}`
+
+_Datei:_ `services/desktop/src/main/agent/tools/crm.ts`
+
+Löscht (= archiviert) einen HubSpot-${label}. PROPOSE-AND-CONFIRM via ask_user_choice mit Record-Vorschau. HubSpot stellt den Record 90 Tage lang wieder her — danach endgültig weg. Bei Companies/Contacts/Deals werden Verknüpfungen automatisch gelöst, die verbundenen Records selbst bleiben erhalten.
+
+_Parameter:_
+- `objectId: string` (required)
+- `rationale: string` — Begründung (1 Satz).
+
+### `crm_disassociate_hubspot_objects`
+
+_Datei:_ `services/desktop/src/main/agent/tools/crm.ts`
+
+Entfernt eine bestehende Verknüpfung zwischen zwei HubSpot-Records. PROPOSE-AND-CONFIRM via ask_user_choice. DESTRUCTIVE: die Records selbst bleiben erhalten, nur die Beziehung wird gelöscht. Wenn die Verknüpfung gar nicht existiert hat, returnt HubSpot 204 OK — Tool meldet trotzdem applied:true.
+
+_Parameter:_ keine.
+
+### `crm_enrich_hubspot_company_from_ava`
+
+_Datei:_ `services/desktop/src/main/agent/tools/crm.ts`
+
+Aktualisiert eine BESTEHENDE HubSpot-Company mit Daten aus AVA. Holt AVA-Daten (legalName, Adresse, Website, Domain, Headcount, Branche, Beschreibung, Umsatz aus letzter Publikation), baut den Diff gegen die aktuellen HubSpot-Werte und zeigt im Confirm-Dialog WAS geändert wird. Nur Felder mit echtem Wert in AVA + Unterschied gegen HubSpot werden vorgeschlagen. Use-Case: 'Reicher die HubSpot-Firma Strategic IT mit den neuesten AVA-Daten an.'
+
+Voraussetzung: AVA-Pipeline ist für die Firma gelaufen (sonst sagt das Tool das klar). HubSpot-companyId vorher z. B. via crm_search_hubspot_companies oder crm_list_links_for_company auflösen.
+
+_Parameter:_
+- `hubspotCompanyId: string` (required) — HubSpot-companyId der zu aktualisierenden Firma.
+- `avaCompanyId: string` (required) — AVA-companyId der Quell-Firma (vorher via company_search auflösen).
+- `rationale: string` — Kurze Begründung (1 Satz) für den Confirm-Dialog.
 
 ### `crm_enrich_now`
 
@@ -565,11 +676,60 @@ _Parameter:_
 - `companyId: string` (required) — AVA Master-Data companyId.
 - `refresh: boolean` — true = Cache ignorieren und neu beim CRM anfragen. Default false.
 
+### `crm_introspect_hubspot_${SINGULAR[objectType]}`
+
+_Datei:_ `services/desktop/src/main/agent/tools/crm.ts`
+
+Liest das Property-Schema einer HubSpot-${objectLabel} UND die aktuellen Werte. Nutze das vor crm_update_hubspot_${SINGULAR[objectType]}, sobald du die HubSpot-${objectLabel}-ID hast (${idParamHint}). Returned: für jedes editierbare Feld den Property-Namen, Label, Type, enum-Optionen (mit label + value), Beschreibung und aktueller Wert. Read-only/system-Felder sind rausgefiltert.
+
+_Parameter:_ keine.
+
+### `crm_introspect_hubspot_company`
+
+_Datei:_ `services/desktop/src/main/agent/tools/crm.ts`
+
+Liest das Property-Schema einer HubSpot-Company UND die aktuellen Werte. Nutze das als STEP 2 vor `crm_update_hubspot_company`, sobald du via `crm_list_links_for_company` oder `crm_search_hubspot_companies` die HubSpot-companyId hast. Returned: für jedes editierbare Feld den Property-Namen, Label, Type (string/number/date/enumeration/bool), enum-Optionen (wenn enumeration), die Beschreibung und den aktuell gespeicherten Wert. Read-only-Felder (hs_object_id, calculated etc.) sind rausgefiltert. Wähle aus der Liste das Feld(er), das der Nutzer ändern will, mappe ggf. Label→value bei Enum-Feldern und übergib das Map an `crm_update_hubspot_company`.
+
+_Parameter:_
+- `companyId: string` (required) — HubSpot-companyId (NICHT die AVA-Master-Data-companyId). Aus `crm_list_links_for_company` oder `crm_search_hubspot_companies`.
+
 ### `crm_link_manual`
 
 _Datei:_ `services/desktop/src/main/agent/tools/crm.ts`
 
 Verknüpft eine AVA-Firma manuell mit einem CRM-Datensatz, z. B. wenn der Nutzer sagt 'verknüpfe ACME mit HubSpot 12345'. Anzeigename ist optional, hilft aber bei späterer Identifikation. Setzt voraus, dass die Verknüpfung im CRM existiert (prüfe ggf. vorher mit `crm_search_hubspot_companies`).
+
+_Parameter:_ keine.
+
+### `crm_list_hubspot_associations`
+
+_Datei:_ `services/desktop/src/main/agent/tools/crm.ts`
+
+Listet die Verknüpfungen eines HubSpot-Records zu einem anderen Object-Type. Beispiele: alle Contacts einer Company, alle Deals einer Company, alle Deals eines Contacts. Returned: Liste mit toObjectId + association-type-Labels. Read-only — keine Schreibänderung.
+
+_Parameter:_ keine.
+
+### `crm_list_hubspot_notes_for_object`
+
+_Datei:_ `services/desktop/src/main/agent/tools/crm.ts`
+
+Listet die Notizen, die mit einem bestimmten HubSpot-Record (Company/Contact/Deal) verknüpft sind. Neueste zuerst. Returns id, body (Plain-Text), createdAt, ownerId.
+
+_Parameter:_ keine.
+
+### `crm_list_hubspot_owners`
+
+_Datei:_ `services/desktop/src/main/agent/tools/crm.ts`
+
+Listet alle aktiven HubSpot-Owner des Portals (id + email + firstName + lastName). Nutze das, BEVOR du ein hubspot_owner_id-Feld setzen willst — der Nutzer sagt meistens den Namen, HubSpot erwartet die numerische Owner-ID. Mappe Name/E-Mail aus der Liste auf die id.
+
+_Parameter:_ keine.
+
+### `crm_list_hubspot_tasks`
+
+_Datei:_ `services/desktop/src/main/agent/tools/crm.ts`
+
+Listet HubSpot-Tasks mit Filtern: ownerId (z. B. der angemeldete User), statuses (Liste aus NOT_STARTED/IN_PROGRESS/COMPLETED/WAITING/DEFERRED), dueBy (ISO-Timestamp). Sortiert aufsteigend nach Fälligkeit. Returns id, subject, status, priority, type, ownerId, dueAt, completedAt. Nutze ownerId+statuses=[NOT_STARTED,IN_PROGRESS] für 'meine offenen Aufgaben'.
 
 _Parameter:_ keine.
 
@@ -592,11 +752,51 @@ _Parameter:_
 - `query: string` (required) — Suchbegriff (Name oder Domain).
 - `limit: integer` (default: 25) — Maximale Treffer (1 bis 100).
 
+### `crm_search_hubspot_contacts`
+
+_Datei:_ `services/desktop/src/main/agent/tools/crm.ts`
+
+Sucht HubSpot-Contacts nach Name oder E-Mail-Adresse. Returns bis zu 25 Treffer mit id, firstName, lastName, email, jobTitle, company. Nutze das, um die contactId für crm_update_hubspot_contact aufzulösen.
+
+_Parameter:_
+- `query: string` (required) — Name, Vorname, oder E-Mail.
+- `limit: integer` — Max Treffer (1-100). Default 25.
+
+### `crm_search_hubspot_deals`
+
+_Datei:_ `services/desktop/src/main/agent/tools/crm.ts`
+
+Sucht HubSpot-Deals nach Name (dealname). Returns bis zu 25 Treffer mit id, name, amount, stage, pipeline, closeDate. Nutze das, um die dealId für crm_update_hubspot_deal aufzulösen.
+
+_Parameter:_
+- `query: string` (required) — Deal-Name (teilweise).
+- `limit: integer` — Max Treffer (1-100). Default 25.
+
 ### `crm_status`
 
 _Datei:_ `services/desktop/src/main/agent/tools/crm.ts`
 
 Read CRM connection status. Without `provider`, returns the status of all supported CRMs (Salesforce, HubSpot, Microsoft Dynamics 365). Includes connected account label and last refresh timestamp; never returns tokens.
+
+_Parameter:_ keine.
+
+### `crm_update_hubspot_${SINGULAR[objectType]}`
+
+_Datei:_ `services/desktop/src/main/agent/tools/crm.ts`
+
+Aktualisiert eine oder mehrere Properties einer HubSpot-${objectLabel}. PFLICHT: vorher crm_introspect_hubspot_${SINGULAR[objectType]} aufrufen. PROPOSE-AND-CONFIRM: Tool zeigt Diff via ask_user_choice. Fresh-GET-Verify nach PATCH (HubSpot kann HTTP 200 liefern ohne zu speichern, z. B. bei Workflow-Validation). Property-Namen = HubSpot-interne Namen; bei enums den value statt label.
+
+_Parameter:_ keine.
+
+### `crm_update_hubspot_company`
+
+_Datei:_ `services/desktop/src/main/agent/tools/crm.ts`
+
+Aktualisiert eine oder mehrere Properties einer HubSpot-Company. PFLICHT: vorher `crm_introspect_hubspot_company` aufrufen, um Property-Namen + Typen + Enum-Optionen zu kennen. PROPOSE-AND-CONFIRM: das Tool zeigt dem Nutzer den geplanten Diff (Vorher → Nachher) via ask_user_choice; nur bei Confirm geht der PATCH ans HubSpot-API.
+
+Nach dem PATCH macht das Tool einen Fresh-GET zur Verifikation: HubSpot kann (wie Notion) HTTP 200 zurückgeben, ohne den Wert wirklich zu speichern (z. B. wenn das Pipeline-Stage zur Lifecycle-Stage nicht passt oder ein Validation-Workflow zugreift). In dem Fall wird das Tool mit `ok: false` und der Liste betroffener Properties returned — verwerfen NICHT.
+
+Property-Namen sind die HubSpot-internen Namen (`industry`, `lifecyclestage`, NICHT 'Industry'/'Lifecycle Stage'). Bei enum-Feldern den `value` aus den Schema-Optionen verwenden, nicht das `label`. Empty-String löscht das Feld.
 
 _Parameter:_ keine.
 
@@ -664,7 +864,7 @@ _Parameter:_ keine.
 
 _Datei:_ `services/desktop/src/main/agent/tools/ui.ts`
 
-Ask the user to pick one option. Use when a search returns multiple plausible matches and you cannot reasonably guess. Returns the picked option's `value` string.
+Ask the user to pick one option. ONLY use when (a) a search/list tool already returned multiple plausible matches, AND (b) you genuinely cannot pick automatically (e.g. two companies with the same name in different cities, two databases with similar names). DO NOT use this to ask the user for information they already provided in the current message, and DO NOT use it as a shortcut around exploring with read-only tools first — if the answer is in `notion_introspect_database`, `notion_list_databases`, `company_search`, etc., call those tools INSTEAD of asking. Returns the picked option's `value` string.
 
 _Parameter:_
 - `prompt: string` (required) — Short question shown above the buttons.
@@ -674,7 +874,7 @@ _Parameter:_
 
 _Datei:_ `services/desktop/src/main/agent/tools/ui.ts`
 
-Ask the user for a free-form line of text (e.g. a transaction name, a custom keyword). Renders as a small input field in the chat with optional default value and 'Überspringen' button. Returns the typed string — empty string means the user skipped an optional prompt. Prefer `ask_user_choice` whenever the answer set is finite.
+Ask the user for a free-form line of text. STRICT use-cases ONLY: (a) a transaction label / custom keyword / display name the user hasn't given yet, (b) a piece of context that NO tool can produce and that wasn't in the user's message. DO NOT use this to (1) re-ask for information already present in the user's last message, (2) confirm a Notion database / field name / status option / row id — those are all discoverable via `notion_list_databases` + `notion_introspect_database` + `notion_query_database`, (3) elicit a 'safer-sounding' synonym for a value the user already named (just attempt the write — the verify-after on write tools will flag mismatches with a clear error and you can correct from there), (4) ask the user to disambiguate company names — that's `company_search` + `ask_user_choice`. Renders as a small input field with optional default and 'Überspringen' button. Returns the typed string — empty means skipped. Prefer `ask_user_choice` whenever the answer set is finite.
 
 _Parameter:_ keine.
 
@@ -724,6 +924,396 @@ _Datei:_ `services/desktop/src/main/agent/tools/chat-history.ts`
 Lädt das Transkript einer früheren Chat-Sitzung anhand ihrer ID. Liefert die Nachrichtenliste mit Rolle (user / assistant / tool / system) und Inhalt. Nutze das Tool, nachdem `chat_history_list` die passende konversationsId geliefert hat. Unbekannte oder nicht lesbare IDs ergeben eine leere Nachrichtenliste.
 
 _Parameter:_ keine.
+
+## mail (8)
+
+### `mail_allowlist_add`
+
+_Datei:_ `services/desktop/src/main/agent/tools/mail.ts`
+
+Fügt einen Absender (oder Domain-Wildcard *@kunde.de) der Mail-Allowlist hinzu. AVA darf danach autonom an diesen Absender antworten und auf seine Mails als 'trusted' reagieren. SICHERHEIT: IMMER propose-and-confirm via ask_user_choice — der Nutzer muss explizit zustimmen, weil diese Aktion die Angriffsfläche vergrößert. Niemals autonom ausführen, auch nicht 'auf Bitte des Nutzers'.
+
+_Parameter:_ keine.
+
+### `mail_archive`
+
+_Datei:_ `services/desktop/src/main/agent/tools/mail.ts`
+
+Archiviert eine Mail. Verschiebt die Mail physisch in den Archive-Folder des IMAP-Servers (RFC-6154 \Archive oder Heuristik: Archive/Archiv/All Mail) UND setzt das interne archived_at-Flag. Wenn der Server keinen Archive-Folder hat, bleibt es bei der Flag-only-Archivierung (Mail verschwindet trotzdem aus der Triage-Inbox).
+
+_Parameter:_
+- `messageId: string` (required)
+
+### `mail_forward`
+
+_Datei:_ `services/desktop/src/main/agent/tools/mail.ts`
+
+Leitet eine Mail an einen anderen Empfänger weiter. Original-Mail wird als Quote im Body angehängt (englisch: 'Forwarded message'-Block). SICHERHEITSGATE: Wenn ALLE Empfänger in Allowlist sind, sendet AVA autonom; sonst Pflicht-Rückfrage via ask_user_choice. Beachtet outboundEnabled-Master-Schalter. Threading via References-Header.
+
+_Parameter:_
+- `messageId: string` (required) — ID der weiterzuleitenden Mail.
+- `to: array` (required) — Empfängerliste (mindestens einer).
+- `text: string` — Optionaler Begleittext, wird vor dem Forward-Quote eingefügt.
+
+### `mail_get_message`
+
+_Datei:_ `services/desktop/src/main/agent/tools/mail.ts`
+
+Liefert die vollständige Mail inklusive Body-Text und Anhangs-Texten (PDFs werden extrahiert). Bilder sind als base64 enthalten, wenn das aktive Modell Vision unterstützt. Nutze das, nachdem du `mail_list_inbox` aufgerufen hast und der Nutzer mehr Details zu einer bestimmten Mail braucht oder du auf Basis des Inhalts handeln willst.
+
+_Parameter:_
+- `messageId: string` (required) — Die id aus mail_list_inbox.
+
+### `mail_list_inbox`
+
+_Datei:_ `services/desktop/src/main/agent/tools/mail.ts`
+
+Listet die letzten eingegangenen Mails aus AVAs dediziertem Mail-Konto mit Absender, Betreff, Datum, Trust-Level (trusted/known/unknown) und AVAs Klassifikation (category, summary, suggestedAction). Standardmäßig nur ungelesene + nicht archivierte; mit `includeArchived: true` auch archivierte. Nutze das, wenn der Nutzer fragt 'was ist heute reingekommen', 'gibt es neue Mails', oder bevor du `mail_get_message` aufrufst um die richtige Mail-ID zu finden.
+
+_Parameter:_
+- `limit: integer` — Wie viele Mails maximal zurückgeben (Default 25, max 100).
+- `includeArchived: boolean` — Wenn true, auch archivierte Mails listen. Default false.
+
+### `mail_mark_read`
+
+_Datei:_ `services/desktop/src/main/agent/tools/mail.ts`
+
+Markiert eine Mail als gelesen (oder ungelesen, wenn `read: false`). Nutze das, wenn der Nutzer 'auf gelesen setzen' sagt oder du nach einer Triage-Aktion (Antwort, Archivierung) den unread-Counter aufräumen willst.
+
+_Parameter:_
+- `messageId: string` (required)
+- `read: boolean` — Default true.
+
+### `mail_reply`
+
+_Datei:_ `services/desktop/src/main/agent/tools/mail.ts`
+
+Antwortet auf eine bestimmte Mail. SICHERHEITSGATE: Wenn die Quellmail trustLevel 'trusted' hat, sendet AVA autonom; bei 'known' oder 'unknown' Pflicht-Rückfrage per ask_user_choice. Hängt die korrekten Threading-Header (In-Reply-To, References) an. Adressiert die From-Adresse der Quellmail; Re:-Präfix wird auto-prepended, wenn der Betreff es noch nicht hat.
+
+_Parameter:_
+- `messageId: string` (required) — Die ID der Quellmail.
+- `text: string` (required) — Plain-Text-Antwort.
+
+### `mail_send`
+
+_Datei:_ `services/desktop/src/main/agent/tools/mail.ts`
+
+Verschickt eine neue Mail von AVAs Konto. SICHERHEITSGATE: Wenn ALLE Empfänger in der Allowlist stehen, sendet AVA autonom. Wenn auch nur ein Empfänger nicht in der Allowlist ist, fragt das Tool den Nutzer per ask_user_choice. Outbound-Master-Schalter (`mail_account.outboundEnabled`) muss true sein, sonst lehnt das Tool ab. Threading via `inReplyTo` möglich, für Replies aber `mail_reply` bevorzugen.
+
+_Parameter:_
+- `to: array` (required) — Empfängerliste (mindestens einer).
+- `cc: array`
+- `subject: string` (required)
+- `text: string` (required) — Plain-Text-Body. Markdown wird NICHT konvertiert.
+
+## meta (2)
+
+### `tool_load`
+
+_Datei:_ `services/desktop/src/main/agent/tools/meta.ts`
+
+Bring one or more tools into your live tool-list. The loaded tools are usable starting with the NEXT step of the current answer cycle — you can call `tool_load` and then immediately invoke the freshly-loaded tool in the same user turn. Tools stay loaded for the rest of this conversation, so you only need to load them once. Unknown names are reported back — don't retry blindly, do another `tool_search` with corrected keywords. Already-loaded tools and core tools are silently ignored (no-op).
+
+_Parameter:_
+- `names: array` (required) — Tool names to load (as returned by `tool_search`). Pass several at once when you need a whole group (e.g. all notion_* tools for a CRM workflow).
+
+### `tool_search`
+
+_Datei:_ `services/desktop/src/main/agent/tools/meta.ts`
+
+Search the full tool catalogue by keyword. Returns the top matches with a short summary per tool. Use this when you need a capability (e.g. "Notion update", "LinkedIn scrape", "voice transcribe") that isn't in your current tool list. After picking results, call `tool_load` with their names to bring them into your context — they'll be available starting NEXT turn. Already-loaded tools are excluded from the result so you don't waste a load on something already present. Query is case-insensitive, multi-word, scored highest on name then summary then full description.
+
+_Parameter:_ keine.
+
+## notion (11)
+
+### `notion_connect_save_token`
+
+_Datei:_ `services/desktop/src/main/agent/tools/notion.ts`
+
+Persist the Notion Personal Access Token the user just pasted in chat, then validate it by making a /v1/users/me call. The token is stored encrypted in the OS keychain. Returns the workspace display name on success or a structured error message on failure (most common: 401 invalid token, 403 integration not added to any pages yet). Never echo the token back in your reply.
+
+_Parameter:_
+- `token: string` (required) — The Notion Personal Access Token, exactly as the user pasted it. Starts with ntn_ or secret_.
+
+### `notion_connect_start`
+
+_Datei:_ `services/desktop/src/main/agent/tools/notion.ts`
+
+Begin connecting AVA to a Notion workspace. Returns the step-by-step instructions for the user to create a Personal Access Token (PAT) and share their workspace with the AVA integration. ALWAYS call this FIRST when the user asks to connect Notion — don't paraphrase the steps from memory, return them verbatim from this tool. After the user sends back their token, call `notion_connect_save_token` with the token string.
+
+_Parameter:_ keine.
+
+### `notion_create_page`
+
+_Datei:_ `services/desktop/src/main/agent/tools/notion.ts`
+
+Create a new Notion page. If the parent is a database, properties must match the database schema (call notion_introspect_database first to learn the property names + types). If the parent is a page, only `title` and `content` apply. `content` accepts Markdown (paragraphs, headings #/##/###, bullet/numbered lists, [ ]/[x] to-dos, > quotes, ```code blocks```, ---). Returns the created page ID + URL.
+
+Property values: pass FLAT values keyed by property name. Examples: { 'Name': 'Eclat GmbH', 'Status': 'Lead', 'Tags': ['b2b'], 'Erstkontakt': '2026-05-18' }. DO NOT wrap in Notion-API objects. DO NOT JSON.stringify the whole properties object.
+
+_Parameter:_
+- `parentId: string` (required) — Database ID or Page ID under which to create the new page.
+- `title: string`
+- `properties: object` — Database-property values, keyed by the EXACT property name from the schema. Strings for title/rich_text/select/status, arrays for multi_select, ISO 8601 for date, numbers for number, booleans for checkbox.
+- `content: string` — Markdown body content. Optional; can be added later via notion_update_page.
+
+### `notion_delete_page`
+
+_Datei:_ `services/desktop/src/main/agent/tools/notion.ts`
+
+Archiviert (= soft-delete) eine Notion-Page. PROPOSE-AND-CONFIRM via ask_user_choice mit Page-Vorschau (Titel + Properties). Notion stellt die Page 30 Tage lang im Trash bereit; ein User-Mitglied (nicht die Integration) kann sie dort wiederherstellen.
+
+Berechtigungs-Gotcha: gleiche Semantik wie notion_update_page — die Integration muss auf der DATENBANK verbunden sein, nicht nur auf der einzelnen Page. Sonst kommt HTTP 200 + keine Änderung zurück. Tool detected das per Verify-After und gibt eine klare Fehlermeldung mit Klick-Pfad.
+
+Nutze für: stale leere Pages aufräumen (z. B. nach einem create-no-op), falsche Dubletten löschen, Test-Pages räumen. NICHT für CRM-Rows mit Daten — frag den User vorher explizit zur Bestätigung.
+
+_Parameter:_
+- `pageId: string` (required)
+- `rationale: string` — Begründung, warum diese Page gelöscht werden soll (1 Satz).
+
+### `notion_disconnect`
+
+_Datei:_ `services/desktop/src/main/agent/tools/notion.ts`
+
+Disconnect Notion. Clears the stored token from the OS keychain. The user will need to re-do the connect flow to reconnect.
+
+_Parameter:_ keine.
+
+### `notion_get_page`
+
+_Datei:_ `services/desktop/src/main/agent/tools/notion.ts`
+
+Load a single Notion page (or database row): its title, properties, and content body converted to Markdown. The page ID comes from notion_search or notion_query_database.
+
+_Parameter:_
+- `pageId: string` (required)
+
+### `notion_introspect_database`
+
+_Datei:_ `services/desktop/src/main/agent/tools/notion.ts`
+
+Inspect the property schema of a specific Notion database — what columns it has, what type each is (title/select/multi_select/date/number/checkbox/status/…), and the available options for select-like columns. ALWAYS call this BEFORE notion_create_page OR notion_update_page targeting a database, so you can map the user's natural-language values ("Status auf erledigt") to the actual property name + the actual option name ("Verloren" or "Abgeschlossen" or whatever the schema actually offers). NEVER ask the user via ask_user_text what the field name or status option is — this tool returns that information directly.
+
+_Parameter:_
+- `databaseId: string` (required) — The Notion database ID (UUID or hyphenated UUID).
+
+### `notion_list_databases`
+
+_Datei:_ `services/desktop/src/main/agent/tools/notion.ts`
+
+List all Notion databases the integration has access to. Returns id + title + URL per entry. ALWAYS call this as STEP 1 when the user wants to read OR modify anything in their Notion CRM — do not ask the user 'which database' first. Pick the most CRM-shaped result automatically (by title); only fall back to ask_user_choice if there are two equally plausible candidates. If you've already called this in the current turn / earlier, you may reuse the result; do not call it twice in a row.
+
+_Parameter:_ keine.
+
+### `notion_query_database`
+
+_Datei:_ `services/desktop/src/main/agent/tools/notion.ts`
+
+Run a structured query against a Notion database. Returns matching rows with simplified properties. Use this — NOT notion_search — when you need to find a specific row by its title or other property to then update it.
+
+FINDING A ROW BY NAME (most common case): call notion_introspect_database FIRST to learn the exact name of the title-property. Then filter on that property. Required filter shape: {"property": "<exact-name>", "<type>": {"contains": "<wert>"}}. The wrapper key after `property` MUST match the property's actual type: `title` for title-fields, `rich_text` for text-fields, `select`/`status`/`multi_select` for option-fields, `date` for date-fields, `number` for numbers, `checkbox` for booleans.
+
+WORKING EXAMPLES (assume schema has title-property called 'Name'):
+  - Find by title-contains:   {"property":"Name","title":{"contains":"Kerstin"}}
+  - Find by title-equals:     {"property":"Name","title":{"equals":"Kerstin Komarnicki"}}
+  - Filter on status field:   {"property":"Status","status":{"equals":"Lead"}}
+  - Filter on date:           {"property":"Created","date":{"on_or_after":"2026-01-01"}}
+  - Combine with AND:         {"and":[ <filter1>, <filter2> ]}
+  - Combine with OR:          {"or":[ <filter1>, <filter2> ]}
+
+DO NOT SEND:
+  - Empty filter `{}` — that's invalid in Notion; just omit the parameter to get all rows.
+  - Type-wrapper without `property`: `{"title":{"contains":"X"}}` is missing the property name.
+  - Stringified JSON for the filter — pass a real object.
+
+If Notion still returns 400, the error response contains the actual property list of the database — read it, pick the correct property + wrapper, and retry. See https://developers.notion.com/reference/post-database-query-filter for the full spec.
+
+Without `filter`, returns the most recently edited rows.
+
+_Parameter:_ keine.
+
+### `notion_search`
+
+_Datei:_ `services/desktop/src/main/agent/tools/notion.ts`
+
+Workspace-wide fuzzy search across all pages and databases AVA's Notion integration has been granted access to. Returns up to 25 hits with id, title, type (page/database), and URL.
+
+Use this for general discovery ("was hat der User schon in Notion?"), NOT for finding a specific database row by name to update it. For that, use notion_list_databases + notion_query_database with a title-filter — search returns workspace-wide hits including sub-pages, notes, and linked-view shadows that can look like the row you want but aren't.
+
+_Parameter:_
+- `query: string` — Search string. Notion does fuzzy title + content matching. Empty string returns most-recent items.
+- `limit: integer` — Max number of results (default 25, max 100).
+
+### `notion_update_page`
+
+_Datei:_ `services/desktop/src/main/agent/tools/notion.ts`
+
+Update an existing Notion page: patch property values and/or append Markdown content to the bottom. `replaceContent` is not yet supported in this version.
+
+MANDATORY PLAYBOOK when the user asks to change something in their Notion CRM ("setze Status von ESIS auf erledigt", "Follow-Up von Beckmann auf 2026"):
+  1. notion_list_databases — find the target DB. Pick the most CRM-shaped one automatically (by title); only ask the user when two are equally plausible.
+  2. notion_introspect_database — read the EXACT property names + the available Status/Select OPTIONS. You need this to map the user's word ("erledigt") to the actual option name ("Verloren" / "Disqualifiziert" / etc.).
+  3. notion_query_database — find the row by title-filter (the person or company the user named).
+  4. notion_update_page on THAT pageId with the mapped values.
+
+DO NOT, under any circumstances, ask the user via ask_user_text for: which database, which field, which status option, which row, or to spell out a value they already gave you in plain German. ALL of that is discoverable via the four tools above. The only acceptable user-question during this flow is a single ask_user_choice when an option-name truly cannot be inferred from the schema (e.g. user says "hat sich erledigt" and the Status field offers both "Verloren" AND "Abgeschlossen" as plausible mappings — show those two options).
+
+Finding the right pageId: DO NOT use notion_search for CRM-row lookups. It returns workspace-wide results including sub-pages, notes, and linked-database-views, so you can end up updating the wrong page that happens to share a title. Use notion_query_database with a title-filter instead. If you accidentally call notion_update_page on a non-row page, the tool throws a clear error and you should switch to the query_database flow.
+
+Property values: pass FLAT values keyed by property name. Examples: { 'Status': 'Aktiv', 'Hotness': 'Cold', 'Follow-Up': '2026-07-16', 'Tags': ['lead', 'b2b'], 'Score': 42, 'Active': true }. DO NOT wrap in Notion-API objects like { 'Status': { 'status': { 'name': 'Aktiv' } } } — AVA does that mapping internally. DO NOT JSON.stringify the whole properties object — pass it as a real JSON object.
+
+The tool has verify-after built in: if a property update silently no-ops or hits an invalid option, you get back a structured German error you can correct from. Lean on that instead of asking the user first.
+
+IF THE ERROR MENTIONS "HTTP 200 aber serverseitig nichts gespeichert" OR "NICHT übernommen": Sag dem User UNMISSVERSTÄNDLICH, dass die Notion-Integration vermutlich nur auf der einzelnen Page verbunden ist, nicht auf der gesamten Datenbank. Schreibvorgänge erfordern Database-Level-Connection. Anleitung an den User: 'Bitte in Notion die Datenbank öffnen (nicht die Row) → oben rechts ⋯ → Connections → AVA verbinden. Danach nochmal versuchen.' Probiere NICHT, das durch Property-Name-Variation oder Retry zu umgehen — das ist eine Berechtigungsfrage, kein Mapping-Bug.
+
+_Parameter:_
+- `pageId: string` (required)
+- `properties: object` — Partial map of property name → new value. Properties not listed remain unchanged.
+- `appendContent: string` — Markdown to append at the end of the page body. Existing content stays put.
+
+## obsidian (14)
+
+### `obsidian_append_to_note`
+
+_Datei:_ `services/desktop/src/main/agent/tools/obsidian.ts`
+
+Append Markdown content to the end of an existing Obsidian note. Existing content stays untouched. To replace the whole note instead, use obsidian_replace_note.
+
+_Parameter:_
+- `path: string` (required) — Vault-relative path to the note (with .md).
+- `content: string` (required) — Markdown to append at the end.
+
+### `obsidian_connect_save_credentials`
+
+_Datei:_ `services/desktop/src/main/agent/tools/obsidian.ts`
+
+Persist the Obsidian Local-REST-API credentials and validate them by hitting the / endpoint. Stores baseUrl + apiKey encrypted in the OS keychain. Returns ok+vault-name on success, or a structured error.
+
+_Parameter:_ keine.
+
+### `obsidian_connect_start`
+
+_Datei:_ `services/desktop/src/main/agent/tools/obsidian.ts`
+
+Begin connecting AVA to an Obsidian vault. Returns step-by-step instructions for the user to install the 'Local REST API' community plugin, copy the API key + port, and send both back. ALWAYS call this FIRST when the user asks to connect Obsidian — don't paraphrase the steps from memory.
+
+_Parameter:_ keine.
+
+### `obsidian_create_note`
+
+_Datei:_ `services/desktop/src/main/agent/tools/obsidian.ts`
+
+Create a new Obsidian note. Title becomes the filename (auto-appended .md). Optional folder parameter places it in a sub-folder; omit for vault root. Content is Markdown. Returns the new note's path + content.
+
+_Parameter:_
+- `title: string` (required) — Title of the note. Used as filename. Slashes / backslashes will be replaced with spaces.
+- `folder: string` — Optional vault-relative folder to place the note in. Empty = vault root.
+- `content: string` — Markdown body of the note. Can include YAML frontmatter at the top if needed.
+
+### `obsidian_delete_note`
+
+_Datei:_ `services/desktop/src/main/agent/tools/obsidian.ts`
+
+Löscht eine Obsidian-Note PERMANENT (kein Vault-Trash via REST-API). PROPOSE-AND-CONFIRM via ask_user_choice mit Path + Frontmatter-Vorschau + erste 3 Body-Zeilen. Bei explizitem User-Wunsch oder zum Aufräumen von Test/Stale-Notes.
+
+ACHTUNG: Im Gegensatz zu Notion gibt es KEIN Soft-Delete — die Datei ist nach DELETE weg (es sei denn ein Backup-System wie Obsidian Sync / iCloud / Git-Repo fängt es ab). Frag den User bei Unsicherheit IMMER vor dem Aufruf — nicht erst der Confirm-Dialog vom Tool.
+
+IF VERIFY-AFTER MELDET 'existiert immer noch': API-Key hat keinen Write-Scope. Gleiche Diagnose wie bei update_frontmatter.
+
+_Parameter:_
+- `path: string` (required)
+- `rationale: string` — Begründung warum diese Note gelöscht werden soll (1 Satz).
+
+### `obsidian_disconnect`
+
+_Datei:_ `services/desktop/src/main/agent/tools/obsidian.ts`
+
+Disconnect Obsidian. Clears the stored API key + base URL from the OS keychain. The user will need to re-do the connect flow to reconnect.
+
+_Parameter:_ keine.
+
+### `obsidian_get_note`
+
+_Datei:_ `services/desktop/src/main/agent/tools/obsidian.ts`
+
+Load a single Obsidian note by its vault-relative path. Returns the markdown content + frontmatter + timestamps. Path uses forward slashes and includes the .md extension (e.g., 'Daily Notes/2026-05-19.md').
+
+_Parameter:_ keine.
+
+### `obsidian_introspect_folder`
+
+_Datei:_ `services/desktop/src/main/agent/tools/obsidian.ts`
+
+Sampled bis zu 20 Notes (Default) in einem Vault-Ordner und gibt eine aggregierte Übersicht der Frontmatter-Konvention zurück: welche YAML-Keys gibt es überhaupt, was sind ihre Werte-Typen (string/number/boolean/array/date), wie oft kommen sie vor, was sind beispielhafte Werte. Nutze das VOR obsidian_update_frontmatter sobald du den Zielordner kennst, damit du die exakten Key-Namen (case-sensitive!) und die passenden Wert-Typen siehst. Vault-Schema gibt's konzeptionell nicht — das ist die nächstbeste Approximation.
+
+Sonst-Strategie: Wenn du keinen Ordner kennst, frag den User. Heuristik für CRM: Ordner-Namen mit 'CRM', 'Kontakte', 'Pipeline', 'Deals' sind plausibel — wenn ein einzelner offensichtlich passt, nimm den ohne nachzufragen.
+
+_Parameter:_ keine.
+
+### `obsidian_list_notes`
+
+_Datei:_ `services/desktop/src/main/agent/tools/obsidian.ts`
+
+List files + sub-folders in a vault folder. Returns entries with `path` and `isFolder`. Pass an empty `folder` to list the vault root. Use this when the user wants to know what's in a specific folder.
+
+_Parameter:_
+- `folder: string` — Vault-relative folder path. Empty string or omitted = vault root. Forward slashes only.
+
+### `obsidian_list_tags`
+
+_Datei:_ `services/desktop/src/main/agent/tools/obsidian.ts`
+
+Listet alle Tags im Vault mit der jeweiligen Anzahl Notes. Nutze das, wenn der User nach Tag-Strukturen fragt ('welche Tags hab ich überhaupt?') oder als Vorbereitung für eine Tag-basierte Filterung.
+
+_Parameter:_ keine.
+
+### `obsidian_replace_note`
+
+_Datei:_ `services/desktop/src/main/agent/tools/obsidian.ts`
+
+Replace the ENTIRE content of an Obsidian note with new Markdown. Existing content is deleted. Use append_to_note instead if you want to add to existing content.
+
+_Parameter:_
+- `path: string` (required)
+- `content: string` (required)
+
+### `obsidian_search`
+
+_Datei:_ `services/desktop/src/main/agent/tools/obsidian.ts`
+
+Full-text search across the Obsidian vault. Returns up to 25 hits with file path (id), title, and a short context snippet. Use when the user references a note by content or topic.
+
+_Parameter:_
+- `query: string` (required) — Search string. Plugin does substring matching.
+- `limit: integer` — Max number of results (default 25, max 100).
+
+### `obsidian_search_by_tag`
+
+_Datei:_ `services/desktop/src/main/agent/tools/obsidian.ts`
+
+Listet alle Notes mit einem bestimmten Tag. Tag mit oder ohne führendes # akzeptiert. Schneller + zielsicherer als obsidian_search, wenn der User Tag-basiert filtern will ('zeig mir alle #lead-Notes', 'welche Notes haben #b2b?'). Falls du nicht sicher bist welche Tags es überhaupt gibt: erst obsidian_list_tags.
+
+_Parameter:_ keine.
+
+### `obsidian_update_frontmatter`
+
+_Datei:_ `services/desktop/src/main/agent/tools/obsidian.ts`
+
+Update YAML-frontmatter fields of an Obsidian note. Body content stays untouched. Use this when the user wants to change a CRM-style field that lives in the YAML header (Status, Stage, Owner, Follow-Up, Tags, …).
+
+Playbook for CRM-style requests ('setze Status von X-Note auf Aktiv', 'Follow-Up von Beckmann auf 2026'):
+  1. obsidian_search ODER obsidian_list_notes — finde die Note. Lieber `list_notes` mit Folder-Pfad als Workspace-Suche, weil letzteres auch Body-Treffer einbezieht.
+  2. obsidian_get_note — lies das aktuelle Frontmatter, damit du die EXAKTEN Key-Namen (case-sensitive!) und das aktuelle Wert-Schema (string vs. array vs. bool) siehst.
+  3. obsidian_update_frontmatter mit den geänderten Keys.
+
+Property values: pass FLAT values. Examples: { 'Status': 'Aktiv', 'Stage': 'Lead', 'Follow-Up': '2026-07-16', 'Tags': ['b2b','lead'], 'Hotness': 'Cold' }. NICHT als YAML-String wrappen.
+
+IF VERIFY-AFTER FAILS mit 'nicht übernommen': Der API-Key hat vermutlich nur Read-Scope. User-Anweisung: 'Bitte in Obsidian → Settings → Local REST API prüfen, ob der genutzte API-Key Write-Berechtigung hat. Falls nein, einen neuen Key mit vollem Scope erzeugen und in AVA neu hinterlegen.' NICHT durch Property-Variation retryen — Berechtigungsfrage.
+
+_Parameter:_
+- `path: string` (required)
+- `properties: object` (required) — Map of frontmatter-key → new value. Keys not listed remain unchanged.
 
 ## Ollama (lokale LLM) (4)
 
@@ -796,6 +1386,128 @@ _Datei:_ `services/desktop/src/main/agent/tools/reachability.ts`
 Liefert den aktuellen Erreichbarkeits-Status der externen Quellen (unternehmensregister.de, handelsregister.de). Pro Quelle Status (reachable / unreachable / unknown), Zeitpunkt der letzten Prüfung, Latenz und Fehlerursache. Nutze das Tool, wenn der Nutzer fragt, ob eine der Quellen gerade erreichbar ist oder warum Producer hängen.
 
 _Parameter:_ keine.
+
+## scheduler (4)
+
+### `schedule_cancel`
+
+_Datei:_ `services/desktop/src/main/agent/tools/scheduler.ts`
+
+Stoppt einen wiederkehrenden Job sofort. Idempotent — ein bereits gestoppter Job bleibt gestoppt. Kein Confirm-Gate, weil trivial reversibel (Job kann neu erstellt werden). Nutze `schedule_list` zuerst, wenn du die id nicht hast.
+
+_Parameter:_
+- `jobId: string` (required)
+
+### `schedule_list`
+
+_Datei:_ `services/desktop/src/main/agent/tools/scheduler.ts`
+
+Listet alle wiederkehrenden Jobs, die AVA aktuell für den Nutzer geplant hat (active, paused, expired, completed, cancelled). Zeigt pro Job: id, label, kind, intervalMinutes, nextRunAt, expiresAt, runsCompleted, runsCap, status, lastError. Nutze das, wenn der Nutzer fragt 'was hast du gerade alles laufen' oder bevor du `schedule_cancel` aufrufst, um die richtige id zu finden.
+
+_Parameter:_ keine.
+
+### `schedule_mail_loop`
+
+_Datei:_ `services/desktop/src/main/agent/tools/scheduler.ts`
+
+Plant eine wiederkehrende Mail an einen oder mehrere Empfänger. Tool fragt SELBST via ask_user_choice nach Bestätigung. Sicherheits-Regeln:
+- Min Intervall ${MIN_INTERVAL_MINUTES} min
+- Max Laufzeit ${MAX_LIFETIME_MS / 1000 / 60 / 60 / 24} Tage (Default 24h)
+- Max ${MAX_RUNS_CAP} Runs pro Job
+- Max ${ACTIVE_JOB_CAP} parallele Jobs
+- ALLE Empfänger müssen in der Mail-Allowlist stehen (sonst hätten wir einen Spam-Loop-Vektor)
+- outboundEnabled-Master-Schalter im Mail-Konto muss true sein
+
+Wenn die erste Mail SOFORT raus soll: `firstRunImmediately: true`. Sonst läuft der erste Send nach `intervalMinutes`. Per Default expiriert der Job nach 24h — der User kann via `expiresInHours` (max 168 = 7 Tage) verlängern.
+
+Stoppen: `schedule_cancel` mit der id aus diesem Tool oder via `schedule_list`. Bei "stopp"/"stop"/"abbrechen"/"hör auf" vom User SOFORT cancel aufrufen.
+
+_Parameter:_ keine.
+
+### `schedule_reminder`
+
+_Datei:_ `services/desktop/src/main/agent/tools/scheduler.ts`
+
+Erinnerung zu einer bestimmten Uhrzeit (Datum + Zeit). Bei Fälligkeit erstellt AVA eine Meldung unter "Meldungen" mit Headline=label und Body=prompt, plus eine OS-Notification. Use-Case: "Erinnere mich am 28. Mai 14:00, Sascha Kluck anzurufen, Tel +49 174 ...". Standard ist einmalig (runsCap=1). Wenn der User explizit "jeden Montag", "wöchentlich", "täglich" sagt → recurring via intervalMinutes + runsCap >1.
+
+WICHTIG: prompt ist die KOMPLETTE Reminder-Botschaft die der User später sehen wird — inkl. Kontext (Name, Telefon, Hintergrund) den der User dir gerade gegeben hat. Schreib sie so, dass der User in 2 Wochen ohne dich nochmal kontaktieren zu müssen alles weiß. Maximal 500 Zeichen.
+
+dueAt: ISO-8601-Datetime in Lokalzeit (z. B. "2026-05-28T14:00:00"). Muss in der Zukunft liegen, max 1 Jahr voraus. Tool fragt SELBST via ask_user_choice nach Bestätigung. Cancel via schedule_cancel.
+
+_Parameter:_ keine.
+
+## self-correction (1)
+
+### `report_self_correction`
+
+_Datei:_ `services/desktop/src/main/agent/tools/self-correction.ts`
+
+Meldet einen gefundenen Workaround nach einem Tool-Error an die lokale Telemetrie. Nutze das IMMER, wenn du in dieser Konversation:
+  (a) ein Tool aufgerufen hast, das mit Fehler returnte,
+  (b) danach einen alternativen Weg gefunden hast, der zum Erfolg führte.
+
+Beispiel: crm_create_hubspot_contact mit inline-Assoc failed wegen falscher Type-ID → ohne Assoc anlegen + danach crm_associate_hubspot_objects funktioniert. Das ist genau der Fall den der Entwickler sehen will, um die Type-ID-Tabelle im Code zu fixen.
+
+Felder kompakt halten, Telemetrie nicht zum Roman ausbauen. Felder:
+  - attemptedTool: Name des Tools das gefailed hat (z. B. 'crm_create_hubspot_contact')
+  - failedReason: 1-3 Sätze WAS schief lief
+  - workaround: 1-3 Sätze WIE du es trotzdem hingekriegt hast
+  - suggestedCodeFix (optional): wo im Code vermutlich der eigentliche Fix sitzen müsste
+  - rawErrorPreview (optional): die Original-Fehler-Message (max 400 Zeichen, gekürzt)
+
+Die Daten bleiben LOKAL auf der Maschine des Nutzers (kein Cloud-Upload) und werden in Settings → Verlauf → Selbstkorrekturen sichtbar.
+
+_Parameter:_
+- `attemptedTool: string` (required)
+- `failedReason: string` (required)
+- `workaround: string` (required)
+- `suggestedCodeFix: string`
+- `rawErrorPreview: string`
+
+## skills (5)
+
+### `skill_create`
+
+_Datei:_ `services/desktop/src/main/agent/tools/skills.ts`
+
+Create a new skill OR overwrite an existing user-scope skill. ALWAYS prompts the user for inline confirmation via a Ja/Nein dialog BEFORE writing — the user sees the proposed frontmatter + body preview. Use when the user says 'merk dir das als Skill', 'leg dafür einen Skill an', or after they've taught you a procedure you'd want to re-use. Workspace-scope skills can NOT be overwritten here.
+
+_Parameter:_ keine.
+
+### `skill_delete`
+
+_Datei:_ `services/desktop/src/main/agent/tools/skills.ts`
+
+Delete a user-scope skill after explicit user confirmation. Workspace-scope skills cannot be deleted from here. Trust state is cleared along with the file.
+
+_Parameter:_
+- `name: string` (required) — Kebab-case name of the skill.
+
+### `skill_get`
+
+_Datei:_ `services/desktop/src/main/agent/tools/skills.ts`
+
+Load the full content of one skill — frontmatter + markdown body. Use BEFORE proposing an update so you have the exact existing body to diff against.
+
+_Parameter:_
+- `name: string` (required) — Kebab-case name of the skill (as returned by skill_list).
+
+### `skill_list`
+
+_Datei:_ `services/desktop/src/main/agent/tools/skills.ts`
+
+List all skills available to AVA (user-scope + workspace-scope). Returns name, description, language, b2b-scope, enabled-state and trust-state. Use this when the user asks 'welche Skills hast du?' or before suggesting to create a new one (avoid duplicates).
+
+_Parameter:_ keine.
+
+### `skill_search`
+
+_Datei:_ `services/desktop/src/main/agent/tools/skills.ts`
+
+Substring-search across skill names + descriptions + bodies. Returns up to 10 hits sorted by relevance. Use this at the start of EVERY turn where the user asks AVA to do something repeatable ('mach mir ein …', 'wie immer …', 'analysiere das Profil') — there might already be a skill for it.
+
+_Parameter:_
+- `query: string` (required) — Search term (case-insensitive).
 
 ## App-Updates (4)
 
