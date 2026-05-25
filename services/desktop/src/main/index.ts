@@ -3,6 +3,7 @@ import {
   BrowserWindow,
   dialog,
   ipcMain,
+  powerMonitor,
   protocol,
   session,
   shell,
@@ -1605,6 +1606,44 @@ app.whenReady().then(async () => {
   }
   app.on("before-quit", () => {
     void mailSupervisor?.stop();
+  });
+
+  // v0.1.307 — Sleep/Wake-Handler. macOS-Sleep-Cycles lassen TCP-Sockets
+  // (IMAP-IDLE, AMQP) in einem stuck-state zurück; beim Wake versucht
+  // AVA close()/reconnect, hängt im Kernel-IORWLock und friert für
+  // 60+ Sekunden. Real-Run-Hang-Report aus User-Logs zeigt genau dieses
+  // Pattern (uv_close → __close_nocancel → IORWLockRead blocked).
+  //
+  // Strategy:
+  //   suspend: Sockets PROAKTIV stoppen damit das System sie sauber
+  //            schließen kann während es noch funktioniert.
+  //   resume:  Mit 3s Grace-Period (damit macOS Netzwerk neu hochkommt)
+  //            alle Services neu starten.
+  //
+  // Wir machen das best-effort — wenn .stop() langsam ist, blockiert
+  // das den powerMonitor-Callback. macOS gibt aber nur ~2s vor dem
+  // Sleep; deshalb fire-and-forget mit setImmediate.
+  powerMonitor.on("suspend", () => {
+    console.log("[power] suspend — proactively stopping network supervisors");
+    setImmediate(() => {
+      void mailSupervisor?.stop().catch((err) => {
+        console.warn(
+          "[power] suspend: mailSupervisor.stop failed:",
+          err instanceof Error ? err.message : String(err),
+        );
+      });
+    });
+  });
+  powerMonitor.on("resume", () => {
+    console.log("[power] resume — re-arming services in 3s");
+    setTimeout(() => {
+      void mailSupervisor?.start().catch((err) => {
+        console.warn(
+          "[power] resume: mailSupervisor.start failed:",
+          err instanceof Error ? err.message : String(err),
+        );
+      });
+    }, 3000);
   });
 
   // v0.1.284 — Self-Corrections-Store starten + 24h-Retention-Tick.
