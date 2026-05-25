@@ -257,7 +257,17 @@ function MessageDetail({ message }: { message: MailMessage }): JSX.Element {
     // neuen Chat und füllt den Composer. Mehrzeilige Bodies bleiben
     // mehrzeilig.
     const senderName = message.from.name ?? message.from.address;
+    // v0.1.309 — Prefix mit /mail-triage damit der Skill garantiert
+    // aktiviert wird. Vorher wurde der Skill via Auto-Activate-Keyword-
+    // Match gewählt — Mail-spezifische Kontext-Wörter haben aber auch
+    // bei scheduled-mail-loop oder anderen Mail-Skills gehittet und
+    // mal den falschen Skill aktiviert. Das blockte z. B. mail_reply,
+    // weil scheduled-mail-loop eine schmalere Allowlist hat.
+    // /mail-triage ist eine explizite Slash-Invocation die der
+    // Orchestrator force-aktiviert.
     const lines = [
+      `/mail-triage`,
+      ``,
       `Mail von ${senderName} <${message.from.address}> vom ${new Date(
         message.date,
       ).toLocaleString("de-DE")}`,

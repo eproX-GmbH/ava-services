@@ -910,7 +910,13 @@ export async function runScan(opts: ScanOptions): Promise<LinkedInScanResult> {
     // doesn't pan out) can watch the scrape live.
     const debugWindow = process.env.AVA_LINKEDIN_DEBUG_WINDOW === "1";
     win = new BrowserWindow({
-      show: true,
+      // v0.1.309 — show: false initial, dann showInactive() weiter unten.
+      // Mit show:true bringt macOS die AVA-App jedes Mal kurz in den
+      // Vordergrund, wenn der Scheduler einen Scan triggert (NSWindow
+      // aktiviert die App). Seit v0.1.306 (Fokus-Gate raus + Initial-
+      // Tick) lief der Scheduler dann auch wirklich → User sieht das
+      // "AVA kommt in den Vordergrund"-Symptom alle paar Stunden.
+      show: false,
       width: fp.viewport.width,
       height: fp.viewport.height,
       x: debugWindow ? undefined : -2000,
@@ -935,6 +941,20 @@ export async function runScan(opts: ScanOptions): Promise<LinkedInScanResult> {
       } catch {
         // ignore
       }
+      // v0.1.309 — showInactive() statt show:true im Constructor.
+      // Lässt das Fenster im Memory paintet damit Bot-Detection nicht
+      // anschlägt (siehe v0.1.110-Kommentar oben), bringt aber die
+      // AVA-App NICHT in den Vordergrund. Schlüsselt das Pop-to-Front-
+      // Symptom raus, das User seit v0.1.306 sehen wenn der Scheduler
+      // einen Hintergrund-Scan triggert.
+      try {
+        win.showInactive();
+      } catch {
+        // ignore
+      }
+    } else {
+      // Debug-Modus: User WILL das Fenster sehen.
+      win.show();
     }
     win.webContents.setUserAgent(fp.userAgent);
     win.webContents.session.setUserAgent(fp.userAgent);
