@@ -24,7 +24,10 @@ import type {
   LinkedInScanOutcome,
   LinkedInScanResult,
 } from "../../shared/types";
-import { read as readSettings, write as writeSettings } from "./store";
+import {
+  read as readSettings,
+  writeAsync as writeSettingsAsync,
+} from "./store";
 import { clearStoredSession, hasStoredSession } from "./session";
 import {
   closeDb,
@@ -909,6 +912,17 @@ export async function runScan(opts: ScanOptions): Promise<LinkedInScanResult> {
     // its natural position so a developer (or the user, when v0.1.110
     // doesn't pan out) can watch the scrape live.
     const debugWindow = process.env.AVA_LINKEDIN_DEBUG_WINDOW === "1";
+    // v0.1.313 — Vor der BrowserWindow-Erstellung den Event-Loop einmal
+    // drainen. `new BrowserWindow()` ist synchron auf dem Main-Thread
+    // und blockiert für 100–400ms (Chromium-Render-Process-Spawn). Wenn
+    // der Scheduler-Tick mitten in einem User-Klick einschlägt, fühlt
+    // sich AVA für genau diesen Moment "random eingefroren" an. Mit
+    // dem setImmediate-Yield kriegen pending IPC-Handler + UI-Updates
+    // noch eine Runde, bevor wir den Main-Loop für den Window-Spawn
+    // blockieren. Behebt den Hang nicht komplett (Chromium-Spawn ist
+    // unvermeidbar sync), reduziert aber das "Klick wird verschluckt"-
+    // Gefühl deutlich.
+    await new Promise<void>((resolve) => setImmediate(resolve));
     win = new BrowserWindow({
       // v0.1.309 — show: false initial, dann showInactive() weiter unten.
       // Mit show:true bringt macOS die AVA-App jedes Mal kurz in den
@@ -1416,7 +1430,10 @@ export async function runScan(opts: ScanOptions): Promise<LinkedInScanResult> {
   });
 
   if (outcome === "success" || outcome === "cancelled") {
-    writeSettings({ lastScanAt: Date.now() });
+    // v0.1.313 — async damit der Main-Loop nicht 10–50ms blockt
+    // (war einer der "UI hängt random für 1–2s"-Trigger nach jedem
+    // Hintergrund-Scan).
+    void writeSettingsAsync({ lastScanAt: Date.now() });
   }
 
   // L3: kick the signal extractor in the background. Fire-and-forget —

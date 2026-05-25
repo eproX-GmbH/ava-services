@@ -12,7 +12,14 @@
 
 import { app } from "electron";
 import { EventEmitter } from "node:events";
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+  promises as fsPromises,
+} from "node:fs";
 import { join } from "node:path";
 import type { LinkedInSettings } from "../../shared/types";
 
@@ -61,6 +68,14 @@ export function read(): LinkedInSettings {
   }
 }
 
+/**
+ * v0.1.313 — Sync-Pfad bleibt für Aufrufer die ihn brauchen (z. B.
+ * UI-IPC, das auf den fertigen Zustand wartet), aber der Scraper
+ * benutzt jetzt writeAsync (siehe unten) für `lastScanAt`-Updates am
+ * Ende eines Scans. Der vorherige `writeFileSync` dort hat den Main-
+ * Loop für 10–50ms blockiert — direkt nach dem Scan war das einer der
+ * "AVA hängt random für 1–2 Sekunden"-Trigger.
+ */
 export function write(partial: Partial<LinkedInSettings>): LinkedInSettings {
   const current = read();
   const next: LinkedInSettings = { ...current, ...partial };
@@ -70,6 +85,38 @@ export function write(partial: Partial<LinkedInSettings>): LinkedInSettings {
     linkedInSettingsEvents.emit("changed", next);
   } catch {
     // Listener errors must not corrupt the write.
+  }
+  return next;
+}
+
+/**
+ * Non-blocking variant für Hintergrund-Pfade (Scan-Completion etc.).
+ * Im Fehlerfall fällt das write leise weg — Settings-Verlust hier ist
+ * unkritisch (nur `lastScanAt`), und der nächste Schreibvorgang
+ * persistiert sowieso wieder den Zustand.
+ */
+export async function writeAsync(
+  partial: Partial<LinkedInSettings>,
+): Promise<LinkedInSettings> {
+  const current = read();
+  const next: LinkedInSettings = { ...current, ...partial };
+  ensureDir();
+  try {
+    await fsPromises.writeFile(
+      file(),
+      JSON.stringify(next, null, 2),
+      "utf8",
+    );
+  } catch (err) {
+    console.warn(
+      "[linkedin] settings writeAsync failed:",
+      err instanceof Error ? err.message : String(err),
+    );
+  }
+  try {
+    linkedInSettingsEvents.emit("changed", next);
+  } catch {
+    // ignore
   }
   return next;
 }

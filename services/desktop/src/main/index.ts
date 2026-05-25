@@ -49,6 +49,7 @@ import {
 } from "./crm/fetch-enrichment";
 import { initBilling } from "./billing";
 import { initLinkedIn } from "./linkedin";
+import { startScheduler as startLinkedInScheduler, stopScheduler as stopLinkedInScheduler } from "./linkedin/scheduler";
 import { MailSupervisor } from "./mail/supervisor";
 import { ScheduledJobsStore } from "./scheduler/store";
 import { ScheduledJobsSupervisor } from "./scheduler/supervisor";
@@ -1623,25 +1624,75 @@ app.whenReady().then(async () => {
   // Wir machen das best-effort — wenn .stop() langsam ist, blockiert
   // das den powerMonitor-Callback. macOS gibt aber nur ~2s vor dem
   // Sleep; deshalb fire-and-forget mit setImmediate.
+  //
+  // v0.1.313 — Erweitert. Bisher wurde nur der mailSupervisor pausiert.
+  // Real-Run-Reports zeigen, dass auch ANDERE Hintergrund-Services nach
+  // dem Wake hängen (warmer Mac, "AVA reagiert nicht"):
+  //   - ExternalServiceMonitor: 15-Min-Probes auf unternehmensregister,
+  //     mit 120s fetch-Timeout. Stale Socket nach Wake = bis zu 2 min
+  //     blockierte Probe.
+  //   - ScheduledJobsSupervisor: Timer feuern in stale-Cloud-Connections.
+  //   - LinkedIn-Scheduler: Tick mitten im Wake = BrowserWindow-Spawn
+  //     auf einem System, das gerade Strom-management macht. UI-Freeze.
+  //   - Updater: setInterval feuert in stale GitHub-Connection.
+  // Lösung: ALLE proaktiv pausieren auf suspend, mit 3s Grace nach
+  // resume neu starten. Jeder Aufruf separat best-effort, damit ein
+  // hängender stop() nicht die anderen blockiert.
   powerMonitor.on("suspend", () => {
-    console.log("[power] suspend — proactively stopping network supervisors");
+    console.log("[power] suspend — proactively stopping background services");
     setImmediate(() => {
       void mailSupervisor?.stop().catch((err) => {
-        console.warn(
-          "[power] suspend: mailSupervisor.stop failed:",
-          err instanceof Error ? err.message : String(err),
-        );
+        console.warn("[power] suspend: mailSupervisor.stop failed:", err instanceof Error ? err.message : String(err));
       });
+    });
+    setImmediate(() => {
+      try {
+        externalServiceMonitor.stop();
+      } catch (err) {
+        console.warn("[power] suspend: externalServiceMonitor.stop failed:", err instanceof Error ? err.message : String(err));
+      }
+    });
+    setImmediate(() => {
+      try {
+        stopLinkedInScheduler();
+      } catch (err) {
+        console.warn("[power] suspend: linkedinScheduler.stop failed:", err instanceof Error ? err.message : String(err));
+      }
+    });
+    setImmediate(() => {
+      void scheduledJobsSupervisor?.stop().catch((err) => {
+        console.warn("[power] suspend: scheduledJobsSupervisor.stop failed:", err instanceof Error ? err.message : String(err));
+      });
+    });
+    setImmediate(() => {
+      try {
+        updater.stop();
+      } catch (err) {
+        console.warn("[power] suspend: updater.stop failed:", err instanceof Error ? err.message : String(err));
+      }
     });
   });
   powerMonitor.on("resume", () => {
     console.log("[power] resume — re-arming services in 3s");
     setTimeout(() => {
       void mailSupervisor?.start().catch((err) => {
-        console.warn(
-          "[power] resume: mailSupervisor.start failed:",
-          err instanceof Error ? err.message : String(err),
-        );
+        console.warn("[power] resume: mailSupervisor.start failed:", err instanceof Error ? err.message : String(err));
+      });
+      try {
+        externalServiceMonitor.start();
+      } catch (err) {
+        console.warn("[power] resume: externalServiceMonitor.start failed:", err instanceof Error ? err.message : String(err));
+      }
+      try {
+        startLinkedInScheduler();
+      } catch (err) {
+        console.warn("[power] resume: linkedinScheduler.start failed:", err instanceof Error ? err.message : String(err));
+      }
+      void scheduledJobsSupervisor?.start().catch((err) => {
+        console.warn("[power] resume: scheduledJobsSupervisor.start failed:", err instanceof Error ? err.message : String(err));
+      });
+      void updater.start().catch((err) => {
+        console.warn("[power] resume: updater.start failed:", err instanceof Error ? err.message : String(err));
       });
     }, 3000);
   });
