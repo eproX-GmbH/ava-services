@@ -170,6 +170,121 @@ function jitter(min: number, max: number): number {
   return Math.floor(min + Math.random() * (max - min));
 }
 
+/**
+ * v0.1.315 — Cross-platform Wheel-Scroll.
+ *
+ * Windows: WM_MOUSEWHEEL liest `wheelTicksY`. Chromium normalisiert
+ * intern auf deltaY = wheelTicksY * 100. macOS-only Felder (phase,
+ * momentumPhase, canScroll) verwirft Chromium auf Windows; in einigen
+ * Versionen schlucken sie sogar den ganzen Event. Deshalb auf Windows
+ * NUR die universellen Felder schicken.
+ *
+ * macOS: Trackpad-Pipeline erwartet phase/momentumPhase. Ohne diese
+ * Felder sieht der Event "unecht" aus und kann auf manchen
+ * macOS-Versionen anders gehandhabt werden (Smooth-Scroll-Animation
+ * springt). Behalten wir hier bei.
+ *
+ * `deltaY < 0` = nach unten scrollen (Chromium-Konvention; gleiche
+ * Richtung auf beiden Plattformen).
+ */
+function sendScrollWheel(
+  win: BrowserWindow,
+  x: number,
+  y: number,
+  deltaY: number,
+): void {
+  const ticks = Math.max(1, Math.min(5, Math.round(Math.abs(deltaY) / 100)));
+  const sign = deltaY < 0 ? -1 : 1;
+  const payload: Record<string, unknown> = {
+    type: "mouseWheel",
+    x,
+    y,
+    deltaX: 0,
+    deltaY,
+    wheelTicksX: 0,
+    wheelTicksY: ticks * sign,
+  };
+  if (process.platform === "darwin") {
+    payload.phase = "began";
+    payload.momentumPhase = "none";
+    payload.canScroll = true;
+  }
+  try {
+    win.webContents.sendInputEvent(
+      payload as unknown as Electron.MouseWheelInputEvent,
+    );
+  } catch {
+    // Minimal-Fallback: nur deltaY.
+    try {
+      win.webContents.sendInputEvent({
+        type: "mouseWheel",
+        x,
+        y,
+        deltaX: 0,
+        deltaY,
+      } as unknown as Electron.MouseWheelInputEvent);
+    } catch {
+      /* both failed — JS fallback im Caller-Pfad greift */
+    }
+  }
+}
+
+/**
+ * Liest die aktuelle Scroll-Position. Wir prüfen mehrere Container,
+ * weil LinkedIn nicht das window scrollt sondern einen inneren
+ * Scaffold-Container. Null bei Fehler — Caller behandelt das als
+ * "nicht verifizierbar, kein Fallback".
+ */
+async function readScrollPosition(win: BrowserWindow): Promise<number | null> {
+  try {
+    const result = (await win.webContents.executeJavaScript(
+      `(function() {
+        var candidates = [
+          window.scrollY,
+          document.scrollingElement ? document.scrollingElement.scrollTop : 0,
+          document.documentElement ? document.documentElement.scrollTop : 0,
+        ];
+        var main = document.querySelector('main[id="main"], main[role="main"], .scaffold-finite-scroll, .scaffold-layout__main');
+        if (main) candidates.push(main.scrollTop);
+        return Math.max.apply(null, candidates.filter(function(v){ return typeof v === 'number'; }));
+      })()`,
+      false,
+    )) as number;
+    return typeof result === "number" ? result : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * JS-Fallback wenn `sendInputEvent` keinen Scroll auslöst (Windows
+ * Layered-Window mit Opacity 0, off-screen Position, anti-bot dropt
+ * den Event etc.). Scrollt das window UND den main-Scaffold-Container,
+ * weil LinkedIn je nach Layout das eine oder andere benutzt.
+ *
+ * deltaY > 0 = nach unten.
+ */
+async function jsScrollFallback(
+  win: BrowserWindow,
+  deltaY: number,
+): Promise<void> {
+  try {
+    await win.webContents.executeJavaScript(
+      `(function() {
+        try { window.scrollBy({ top: ${deltaY}, behavior: 'auto' }); } catch(e) {}
+        try {
+          var main = document.querySelector('main[id="main"], main[role="main"], .scaffold-finite-scroll, .scaffold-layout__main');
+          if (main && typeof main.scrollBy === 'function') main.scrollBy({ top: ${deltaY}, behavior: 'auto' });
+          else if (main) main.scrollTop = (main.scrollTop || 0) + ${deltaY};
+        } catch(e) {}
+      })()`,
+      false,
+    );
+  } catch {
+    /* nothing else to try */
+  }
+}
+
 function isAbortError(err: unknown): boolean {
   return (
     err instanceof Error &&
@@ -1108,18 +1223,7 @@ export async function runScan(opts: ScanOptions): Promise<LinkedInScanResult> {
           } as unknown as Electron.MouseInputEvent);
           await sleep(jitter(150, 350), signal);
         }
-        win.webContents.sendInputEvent({
-          type: "mouseWheel",
-          x: cx,
-          y: cy,
-          deltaX: 0,
-          deltaY: -200,
-          wheelTicksX: 0,
-          wheelTicksY: -1,
-          phase: "began",
-          momentumPhase: "none",
-          canScroll: true,
-        } as unknown as Electron.MouseWheelInputEvent);
+        sendScrollWheel(win, cx, cy, -200);
       } catch {
         // non-fatal
       }
@@ -1187,12 +1291,22 @@ export async function runScan(opts: ScanOptions): Promise<LinkedInScanResult> {
           }
         }
 
-        // v0.1.110 hardening item 3: trusted-input scroll with jitter.
-        // Untrusted JS scrolls (window.scrollBy) carry an `isTrusted=false`
-        // signal that anti-bot heuristics can flag, so we always try
-        // sendInputEvent first. The previous JS fallback has been
-        // removed; if the wheel event throws we retry with a simpler
-        // payload before giving up for the cycle.
+        // v0.1.315 — Cross-platform scroll. Vorher waren die Wheel-
+        // Events mit macOS-only Feldern (phase, momentumPhase,
+        // canScroll) plus widersprüchlichen Werten (deltaY in Pixeln
+        // UND wheelTicksY: -1) instrumentiert. Auf Windows hat
+        // Chromium die Events teilweise verworfen → Real-Run-Reports
+        // zeigten "alle Screenshots zeigen den ersten Post, kein
+        // Scroll feststellbar".
+        //
+        // Neuer Pfad: sendScrollWheel() liefert platform-korrekte
+        // Wheel-Events, und nach dem Wheel verifizieren wir per JS
+        // dass die Scroll-Position sich tatsächlich verändert hat.
+        // Wenn nicht (Windows-Edge-Case, off-screen Window, Layered
+        // Window mit Opacity 0, anti-bot dropt das Event): fallback
+        // auf window.scrollBy(). Ja, das ist isTrusted=false — aber
+        // gar nicht scrollen ist anti-bot-mäßig viel schlimmer (kein
+        // einziger neuer Post je geladen).
         const deltaY = -jitter(500, 850);
         // ~30% of cycles, nudge the mouse to a random point first.
         if (i > 0 && Math.random() < 0.3) {
@@ -1207,32 +1321,24 @@ export async function runScan(opts: ScanOptions): Promise<LinkedInScanResult> {
             // ignore
           }
         }
-        try {
-          win.webContents.sendInputEvent({
-            type: "mouseWheel",
-            x: viewportCenterX + jitter(-30, 30),
-            y: viewportCenterY + jitter(-30, 30),
-            deltaX: 0,
-            deltaY,
-            wheelTicksX: 0,
-            wheelTicksY: -1,
-            phase: "began",
-            momentumPhase: "none",
-            canScroll: true,
-          } as unknown as Electron.MouseWheelInputEvent);
-        } catch {
-          try {
-            win.webContents.sendInputEvent({
-              type: "mouseWheel",
-              x: viewportCenterX,
-              y: viewportCenterY,
-              deltaX: 0,
-              deltaY,
-            } as unknown as Electron.MouseWheelInputEvent);
-          } catch {
-            // Both wheel attempts failed; skip the JS fallback —
-            // an untrusted scroll is worse than no scroll this cycle.
-          }
+        const scrollBefore = await readScrollPosition(win);
+        sendScrollWheel(
+          win,
+          viewportCenterX + jitter(-30, 30),
+          viewportCenterY + jitter(-30, 30),
+          deltaY,
+        );
+        // Kurzer Settle damit der Wheel-Event durchlaufen kann, dann
+        // verifizieren ob er tatsächlich gescrollt hat.
+        await sleep(250, signal);
+        const scrollAfter = await readScrollPosition(win);
+        if (scrollBefore !== null && scrollAfter !== null && scrollAfter <= scrollBefore + 5) {
+          // Wheel hat nichts bewegt → JS-Fallback. Akzeptierter
+          // anti-bot Trade-Off (siehe Header-Kommentar oben).
+          console.warn(
+            `[linkedin/scraper] wheel-scroll ineffective (pos ${scrollBefore}→${scrollAfter}), using JS fallback`,
+          );
+          await jsScrollFallback(win, -deltaY);
         }
         // Jitter between scrolls: random 400-1200ms on top of the
         // existing scrollMin/scrollMax dwell, so consecutive scroll
