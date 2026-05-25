@@ -97,6 +97,16 @@ export class Updater extends EventEmitter {
    *  onto it so the manual install path can re-scrub if needed and so
    *  we can include it in diagnostics. */
   private downloadedFilePath: string | null = null;
+  /** v0.1.314 — true zwischen `installAndRelaunch()` und dem realen
+   *  Prozessende. Der globale before-quit-Handler liest das Flag und
+   *  überspringt sein 4s-Producer-Grace, damit NSIS auf Windows nicht
+   *  in den "AVA kann nicht geschlossen werden"-Dialog läuft. */
+  private installing = false;
+
+  /** Public read-only Getter für den before-quit-Handler. */
+  isInstallingUpdate(): boolean {
+    return this.installing;
+  }
 
   async start(): Promise<void> {
     if (this.started) return;
@@ -282,6 +292,7 @@ export class Updater extends EventEmitter {
   installAndRelaunch(): void {
     if (this.state !== "ready") return;
     this.setState("installing");
+    this.installing = true;
     // v0.1.155 — write the "intent to install" marker BEFORE handing
     // off to Squirrel. On next boot we compare app.getVersion() to
     // this marker; mismatch ⇒ Squirrel silently failed and the user

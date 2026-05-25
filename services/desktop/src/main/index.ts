@@ -1694,6 +1694,34 @@ app.whenReady().then(async () => {
       void updater.start().catch((err) => {
         console.warn("[power] resume: updater.start failed:", err instanceof Error ? err.message : String(err));
       });
+      // v0.1.314 — Renderer-Repaint anstoßen. Nach macOS-Sleep verliert
+      // die WebContents ihre GPU-Kontext-Verbindung; das Fenster zeigt
+      // dann eingefrorene Pixel auch wenn die App selbst wieder läuft.
+      // `invalidate()` zwingt einen vollständigen Repaint. Plus IPC-Ping
+      // an den Renderer, damit React-Side-Stores (z. B. WebSocket-
+      // Reconnects, Polling-Intervalle) sich selbst neu aufsetzen
+      // können. Renderer ignoriert das Event wenn er es nicht
+      // behandelt — fail-safe.
+      try {
+        for (const w of BrowserWindow.getAllWindows()) {
+          if (w.isDestroyed()) continue;
+          try {
+            w.webContents.invalidate();
+          } catch {
+            /* invalidate is best-effort */
+          }
+          try {
+            w.webContents.send("power:resumed");
+          } catch {
+            /* ipc send is best-effort */
+          }
+        }
+      } catch (err) {
+        console.warn(
+          "[power] resume: renderer kick failed:",
+          err instanceof Error ? err.message : String(err),
+        );
+      }
     }, 3000);
   });
 
@@ -4475,6 +4503,27 @@ app.on("before-quit", (e) => {
   updater.stop();
   externalServiceMonitor.stop();
   void ollama.stop();
+  // v0.1.314 — Update-Install-Pfad: NSIS hat den Quit gefeuert. Hier
+  // dürfen wir KEINEN graceful Stop machen, weil NSIS bereits versucht
+  // .exe-Dateien zu überschreiben, und jeder gehaltene Handle führt
+  // zum "AVA kann nicht geschlossen werden"-Dialog. Stattdessen alle
+  // Producer SOFORT hart killen und nach 200ms hart raus mit
+  // app.exit(0) — der spart das gracefule before-quit-Reentry.
+  if (updater.isInstallingUpdate()) {
+    console.log("[quit] update-install path — force-killing all subprocesses");
+    for (const p of producers) {
+      try {
+        p.forceKill();
+      } catch {
+        /* ignore */
+      }
+    }
+    // postgres + ollama-shutdown sind best-effort, im Update-Pfad
+    // räumt der neue Installer ohnehin auf.
+    void postgres.stop().catch(() => undefined);
+    setTimeout(() => app.exit(0), 200);
+    return;
+  }
   if (process.platform === "win32" && !quitInProgress) {
     // Erst alle stop()-Promises sammeln, mit Deadline awaiten, dann
     // app.quit() erneut feuern (mit quitInProgress=true, damit dieser

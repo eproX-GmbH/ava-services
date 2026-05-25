@@ -683,6 +683,33 @@ export class ProducerSupervisor extends EventEmitter {
     this.child = null;
   }
 
+  /**
+   * v0.1.314 — Synchroner Hard-Kill für den Update-Install-Pfad.
+   * Springt direkt zu `taskkill /F /T` (Windows) bzw. SIGKILL (Unix),
+   * ohne SIGTERM-Grace und ohne auf das exit-Event zu warten. Notwendig
+   * damit NSIS auf Windows nicht in den "AVA kann nicht geschlossen
+   * werden"-Dialog läuft — der reguläre async stop()-Pfad braucht bis
+   * zu 10s, während NSIS bereits versucht, die .exe zu überschreiben.
+   */
+  forceKill(): void {
+    const child = this.child;
+    if (!child) return;
+    this.child = null;
+    try {
+      if (process.platform === "win32" && child.pid) {
+        spawn("taskkill", ["/F", "/T", "/PID", String(child.pid)], {
+          stdio: "ignore",
+          detached: true,
+        }).on("error", () => undefined);
+      } else {
+        child.kill("SIGKILL");
+      }
+    } catch {
+      /* already gone */
+    }
+    this.setState("idle");
+  }
+
   // ---- Path resolution ------------------------------------------------------
 
   private resolveProducerDir(): string | null {
