@@ -8,6 +8,7 @@ description: >
 language: de
 b2b-scope: internal
 allowed-tools:
+  # Mail-Tools (Kern)
   - mail_list_inbox
   - mail_get_message
   - mail_send
@@ -17,6 +18,65 @@ allowed-tools:
   - mail_archive
   - mail_allowlist_add
   - ask_user_choice
+  # v0.1.325 — Firmen-Recherche-Tools (read-only). Mail-Mode muss
+  # Anfragen wie "Schick mir Kennzahlen zu X GmbH" beantworten können,
+  # exakt wie der interaktive Chat. Vorher haben die Tools gefehlt im
+  # Skill-Tool-Surface → Agent halluzinierte "kein Zugriff im Triage-
+  # Modus" und schickte Ausreden-Mails statt Recherche-Ergebnisse.
+  - company_search
+  - company_get
+  - company_profile
+  - company_publications
+  - company_contacts
+  - company_keywords
+  - company_website
+  - company_structured_content
+  - company_data_quality
+  - company_linkedin_signals
+  - company_crm_summary
+  # CRM (HubSpot) — Read + Update für CRM-Anreicherung im Mail-Flow
+  - crm_search_hubspot_companies
+  - crm_search_hubspot_contacts
+  - crm_search_hubspot_deals
+  - crm_list_links_for_company
+  - crm_introspect_hubspot_company
+  - crm_introspect_hubspot_contact
+  - crm_introspect_hubspot_deal
+  - crm_update_hubspot_company
+  - crm_update_hubspot_contact
+  - crm_update_hubspot_deal
+  - crm_enrich_hubspot_company_from_ava
+  - crm_create_hubspot_company
+  - crm_create_hubspot_contact
+  - crm_create_hubspot_deal
+  - crm_create_hubspot_note
+  - crm_create_hubspot_task
+  - crm_list_hubspot_tasks
+  - crm_list_hubspot_notes
+  - crm_complete_hubspot_task
+  - crm_link_hubspot_objects
+  - crm_hubspot_owners
+  # Notion + Obsidian — gleiche Use-Cases wie im Chat
+  - notion_list_databases
+  - notion_introspect_database
+  - notion_query_database
+  - notion_create_page
+  - notion_update_page
+  - notion_search
+  - obsidian_list_folders
+  - obsidian_introspect_folder
+  - obsidian_get_note
+  - obsidian_create_note
+  - obsidian_update_frontmatter
+  - obsidian_list_tags
+  - obsidian_search_by_tag
+  # Meta — Agent kann weitere Tools nachladen wenn nötig
+  - tool_search
+  - tool_load
+  - skill_search
+  - skill_get
+  - remember
+  - recall_memory
 requires-user-confirm: false
 disable-model-invocation: false
 user-invocable: true
@@ -28,6 +88,27 @@ Du arbeitest mit AVAs dediziertem Mail-Konto. Der Nutzer hat dir einen
 eigenen IMAP/SMTP-Zugang eingerichtet; du sollst Mails sichten, klassifi-
 zieren, beantworten oder archivieren — IMMER innerhalb des
 Trust-Modells.
+
+## Wichtig: voller Tool-Zugriff wie im Chat (v0.1.325)
+
+Wenn eine eingehende Mail von einem trusted Sender eine inhaltliche
+Anfrage enthält („Schick mir Kennzahlen zu X GmbH", „Übersicht zu Y",
+„Reicher die HubSpot-Firma Z an", „Trag in Notion ein, dass ..."),
+behandle das wie eine Chat-Frage:
+
+1. Identifiziere die Firma per `company_search` (oder den Notion-/
+   HubSpot-Match per `crm_search_*` / `notion_query_database`).
+2. Hole die nötigen Daten per `company_profile`, `company_publications`,
+   `company_contacts`, `crm_introspect_*`, `notion_*` etc.
+3. Schicke die Antwort als Mail per `mail_reply` zurück, klar
+   formatiert (Listen, Tabellen-artige Plain-Text-Strukturen, kurze
+   Zusammenfassungen).
+
+SAGE NIEMALS „im Mail-Modus habe ich keinen Zugriff auf Recherche-Tools"
+oder „bitte starte einen Chat dafür". Das ist eine Halluzination — der
+Mail-Modus hat exakt denselben Tool-Katalog wie der interaktive Chat.
+Wenn ein spezifisches Tool nicht in deinem Surface ist, lade es per
+`tool_search` + `tool_load` nach.
 
 ## Trust-Modell verstehen
 
