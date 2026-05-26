@@ -635,6 +635,31 @@ export class AgentOrchestrator extends EventEmitter {
       this.inFlightConversationId = null;
       this.currentAbort = null;
       this.emit("status", this.getStatus());
+      // v0.1.321 — User-Follow-ups ("Sonstiges"-Pfad) haben Vorrang vor
+      // autonomen Triggern. Wenn der User waehrend eines Tool-Confirms
+      // "Sonstiges" + Freitext gewaehlt hat, ist sein Wunsch der naechste
+      // Sprechakt — nicht ein eventuell wartender Cron/Mail-Trigger.
+      const followUp = this.pendingFollowUpQueue.shift();
+      if (followUp) {
+        setTimeout(() => {
+          if (this.inFlightRequestId === null) {
+            try {
+              this.send({
+                conversationId: followUp.conversationId,
+                message: followUp.message,
+              });
+            } catch (err) {
+              console.warn(
+                "[orchestrator] follow-up send failed:",
+                err instanceof Error ? err.message : String(err),
+              );
+            }
+          } else {
+            this.pendingFollowUpQueue.unshift(followUp);
+          }
+        }, 250);
+        return;
+      }
       // Drain Queue: wenn weitere Trigger anstehen, sequenziell starten.
       // Kleine Pause damit User-Input dazwischen-greifen kann.
       const next = this.pendingAutonomousQueue.shift();
@@ -681,18 +706,51 @@ export class AgentOrchestrator extends EventEmitter {
     const entry = this.pendingChoices.get(choiceId);
     if (!entry) return;
     this.pendingChoices.delete(choiceId);
+    // v0.1.321 — "Sonstiges"-Pfad: User hat eine eigene Antwort getippt
+    // statt einer der Tool-Optionen. Sentinel-Prefix `__user_other__:`
+    // signalisiert das. Tool-side bekommt nur den nackten Sentinel
+    // ohne Freitext zurueck — die meisten Tools haben `value !== "apply"`-
+    // Checks, fallen also brav in den "verworfen"-Branch. Den Freitext
+    // selbst injizieren wir als naechste User-Message in die Conversation
+    // (queue-basiert, weil das aktuelle inFlightRequest noch laeuft).
+    const USER_OTHER_PREFIX = "__user_other__:";
+    let resolvedValue = value;
+    let followUpText: string | null = null;
+    if (value.startsWith(USER_OTHER_PREFIX)) {
+      const text = value.slice(USER_OTHER_PREFIX.length).trim();
+      if (text.length > 0) followUpText = text;
+      resolvedValue = "__user_other__";
+    }
     // Emit a resolved frame so the renderer can collapse the ChoiceCard
     // into a static "you picked X" message, even on a different window.
+    // Wir senden den ECHTEN Wert (inkl. Freitext) damit das UI das
+    // "Du hast geantwortet: ..."-Label richtig anzeigen kann.
     const conv = this.findConversationForRequest(entry.requestId);
     this.emitFrame({
       kind: "choice-resolved",
       requestId: entry.requestId,
       conversationId: conv,
       choiceId,
-      value,
+      value: followUpText ?? resolvedValue,
     });
-    entry.resolve(value);
+    entry.resolve(resolvedValue);
+    if (followUpText) {
+      this.pendingFollowUpQueue.push({
+        conversationId: entry.conversationId,
+        message: followUpText,
+      });
+    }
   }
+
+  /**
+   * v0.1.321 — Queue fuer User-Sonstiges-Follow-ups. Wird im
+   * runLoop-finally gedraint, gleiche Mechanik wie pendingAutonomousQueue.
+   * Liegt separat damit User-Inputs Vorrang vor autonomen Triggern haben.
+   */
+  private pendingFollowUpQueue: Array<{
+    conversationId: string;
+    message: string;
+  }> = [];
 
   private findConversationForRequest(_requestId: string): string {
     // We don't currently index by requestId. The renderer doesn't strictly

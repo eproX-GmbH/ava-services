@@ -1700,35 +1700,14 @@ export function Chat() {
                 );
               }
               if (m.choice) {
-                const picked = m.choice.answeredValue;
                 return (
-                  <div key={m.id} className="chat-msg chat-msg-choice">
-                    <div className="chat-choice">
-                      <div className="chat-choice-prompt">{m.choice.prompt}</div>
-                      <div className="chat-choice-options">
-                        {m.choice.options.map((opt) => {
-                          const isPicked = picked === opt.value;
-                          return (
-                            <button
-                              key={opt.value}
-                              className={`chat-choice-option${isPicked ? " picked" : ""}`}
-                              disabled={picked !== undefined}
-                              onClick={() =>
-                                handlePickChoice(m.choice!.choiceId, opt.value)
-                              }
-                            >
-                              <span className="chat-choice-label">{opt.label}</span>
-                              {opt.description && (
-                                <span className="chat-choice-desc">
-                                  {opt.description}
-                                </span>
-                              )}
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  </div>
+                  <ChoiceCardWithOther
+                    key={m.id}
+                    choice={m.choice}
+                    onPick={(value) =>
+                      handlePickChoice(m.choice!.choiceId, value)
+                    }
+                  />
                 );
               }
               if (m.textPrompt) {
@@ -2015,6 +1994,149 @@ function StopIcon() {
 }
 
 // ---- Inline components ----------------------------------------------------
+
+/**
+ * v0.1.321 — ChoiceCard mit immer-vorhandenem "Sonstiges"-Button.
+ * Auf Klick wird der Button-Row durch ein Inline-Textfeld ersetzt; bei
+ * Submit wird der Wert mit Sentinel-Prefix `__user_other__:` an
+ * `answerChoice` geschickt. Main-Side erkennt den Prefix, beendet das
+ * Tool-Choice mit Cancel-Sentinel und injiziert den Freitext als
+ * nächste User-Message in die Conversation.
+ *
+ * Begründung: User soll bei jedem Confirm-Dialog die Option haben "ich
+ * will eigentlich was anderes" zu sagen, ohne die ganze Conversation
+ * abbrechen und neu starten zu müssen. Speziell bei Multi-Step-Tools
+ * (HubSpot-Update, Mail-Send, Schedule-Create) ist die feste Auswahl
+ * "Übernehmen / Verwerfen" zu eng.
+ */
+function ChoiceCardWithOther(props: {
+  choice: {
+    choiceId: string;
+    prompt: string;
+    options: Array<{
+      value: string;
+      label: string;
+      description?: string;
+    }>;
+    answeredValue?: string;
+  };
+  onPick: (value: string) => void;
+}) {
+  const { choice, onPick } = props;
+  const picked = choice.answeredValue;
+  const [otherMode, setOtherMode] = useState(false);
+  const [otherText, setOtherText] = useState("");
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (otherMode) inputRef.current?.focus();
+  }, [otherMode]);
+
+  function submitOther(): void {
+    const t = otherText.trim();
+    if (t.length === 0) return;
+    onPick(`__user_other__:${t}`);
+  }
+
+  // Wenn schon beantwortet: nur statisch anzeigen, kein Editier-State.
+  if (picked !== undefined) {
+    return (
+      <div className="chat-msg chat-msg-choice">
+        <div className="chat-choice">
+          <div className="chat-choice-prompt">{choice.prompt}</div>
+          <div className="chat-choice-options">
+            {choice.options.map((opt) => (
+              <button
+                key={opt.value}
+                className={`chat-choice-option${picked === opt.value ? " picked" : ""}`}
+                disabled
+              >
+                <span className="chat-choice-label">{opt.label}</span>
+                {opt.description && (
+                  <span className="chat-choice-desc">{opt.description}</span>
+                )}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="chat-msg chat-msg-choice">
+      <div className="chat-choice">
+        <div className="chat-choice-prompt">{choice.prompt}</div>
+        {otherMode ? (
+          <div className="chat-choice-other">
+            <input
+              ref={inputRef}
+              type="text"
+              value={otherText}
+              onChange={(e) => setOtherText(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") submitOther();
+                if (e.key === "Escape") {
+                  setOtherMode(false);
+                  setOtherText("");
+                }
+              }}
+              placeholder="Was möchtest du stattdessen?"
+              className="chat-choice-other-input"
+            />
+            <div className="chat-choice-other-actions">
+              <button
+                type="button"
+                className="chat-choice-other-submit"
+                onClick={submitOther}
+                disabled={otherText.trim().length === 0}
+              >
+                Senden
+              </button>
+              <button
+                type="button"
+                className="chat-choice-other-cancel"
+                onClick={() => {
+                  setOtherMode(false);
+                  setOtherText("");
+                }}
+              >
+                Zurück
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="chat-choice-options">
+            {choice.options.map((opt) => (
+              <button
+                key={opt.value}
+                className="chat-choice-option"
+                onClick={() => onPick(opt.value)}
+              >
+                <span className="chat-choice-label">{opt.label}</span>
+                {opt.description && (
+                  <span className="chat-choice-desc">{opt.description}</span>
+                )}
+              </button>
+            ))}
+            <button
+              type="button"
+              className="chat-choice-option chat-choice-option--other"
+              onClick={() => setOtherMode(true)}
+              title="Etwas anderes als die vorgeschlagenen Optionen"
+            >
+              <span className="chat-choice-label">Sonstiges …</span>
+              <span className="chat-choice-desc">
+                Eigene Antwort eingeben — AVA übernimmt den Text als neue
+                Anweisung
+              </span>
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
 
 function TextPromptCard(props: {
   prompt: {

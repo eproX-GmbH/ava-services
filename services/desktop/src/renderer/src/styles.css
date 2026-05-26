@@ -2170,6 +2170,62 @@ code, pre { font-family: var(--font-mono); font-size: 12px; }
 .chat-choice-label { font-weight: 600; }
 .chat-choice-desc { font-size: 12px; color: var(--muted); }
 
+/* v0.1.321 — Sonstiges-Button + Inline-Textfeld. Visuell als
+ * "abgesetzte" Option, damit klar ist: das ist nicht eine der vom
+ * Tool vorgeschlagenen Antworten, sondern ein Escape-Hatch. */
+.chat-choice-option--other {
+  border-style: dashed;
+  opacity: 0.85;
+}
+.chat-choice-option--other:hover:not(:disabled) {
+  opacity: 1;
+}
+.chat-choice-other {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 8px;
+}
+.chat-choice-other-input {
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--ctrl-bg);
+  color: var(--color-fg);
+  font-size: 14px;
+}
+.chat-choice-other-input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+.chat-choice-other-actions {
+  display: flex;
+  gap: 8px;
+}
+.chat-choice-other-submit,
+.chat-choice-other-cancel {
+  padding: 8px 14px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--ctrl-bg);
+  color: var(--color-fg);
+  font-size: 13px;
+  cursor: pointer;
+}
+.chat-choice-other-submit {
+  border-color: var(--accent);
+  background: rgba(0, 192, 167, 0.12);
+  font-weight: 600;
+}
+.chat-choice-other-submit:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.chat-choice-other-cancel:hover {
+  background: var(--ctrl-bg-hover);
+}
+
 /* ---- Activity timeline (chat) ------------------------------------------- */
 /*
  * Each tool call becomes a row in chronological order: a status marker on
