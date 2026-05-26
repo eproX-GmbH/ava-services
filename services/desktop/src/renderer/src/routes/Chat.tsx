@@ -1050,10 +1050,58 @@ export function Chat() {
   }, []);
 
   const handleDragLeave = useCallback((e: React.DragEvent) => {
+    // v0.1.324 — Symmetrie zu handleDragEnter: NUR decrementen wenn
+    // "Files" im dataTransfer-Types. Vorher fiel der Counter ins
+    // Negative (Math.max clampte auf 0) wenn nicht-File-Drags am
+    // Element vorbeizogen. Auf Windows besonders aufgefallen.
+    if (!Array.from(e.dataTransfer.types).includes("Files")) return;
     e.preventDefault();
     dragDepthRef.current = Math.max(0, dragDepthRef.current - 1);
     if (dragDepthRef.current === 0) setDragOver(false);
   }, []);
+
+  // v0.1.324 — Defensive Reset für Drag-State. Real-Run-Reports
+  // "Chat hängt sich auf, Input nicht klickbar, Scroll geht nicht"
+  // sehen aus wie ein stuck Overlay. Reset auf:
+  //   - Window-Blur (User hat Fenster verlassen; OS-Dialog kam dazwischen;
+  //     drag-cancel fires nicht zuverlässig auf Windows)
+  //   - ESC-Taste (universeller Escape-Hatch für alles was hängt)
+  //   - Mouse-Leave aus dem Window
+  useEffect(() => {
+    const reset = (): void => {
+      if (dragDepthRef.current !== 0 || dragOver) {
+        dragDepthRef.current = 0;
+        setDragOver(false);
+      }
+    };
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key === "Escape") reset();
+    };
+    window.addEventListener("blur", reset);
+    window.addEventListener("mouseleave", reset);
+    window.addEventListener("keydown", onKey);
+    document.addEventListener("dragend", reset);
+    return () => {
+      window.removeEventListener("blur", reset);
+      window.removeEventListener("mouseleave", reset);
+      window.removeEventListener("keydown", onKey);
+      document.removeEventListener("dragend", reset);
+    };
+  }, [dragOver]);
+
+  // v0.1.324 — Watchdog: clear stuck `thinking` Indicator nach 90s
+  // ohne Frames. Real-Run zeigt: wenn ein Stream serverseitig hängt
+  // und nie `done`/`error` schickt, bleibt der Indicator. Stört keine
+  // korrekten Flows weil ein gesunder Turn IMMER innerhalb 90s ein
+  // Frame liefert (Anthropic/Ollama Streaming).
+  useEffect(() => {
+    if (!thinking) return;
+    const t = setTimeout(() => {
+      console.warn("[chat] thinking watchdog fired — clearing stuck indicator");
+      setThinking(false);
+    }, 90_000);
+    return () => clearTimeout(t);
+  }, [thinking]);
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
     if (!Array.from(e.dataTransfer.types).includes("Files")) return;

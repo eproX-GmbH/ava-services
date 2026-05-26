@@ -88,6 +88,42 @@ export function attachProviders(
 
   store.on("configChanged", onConfigChange);
   store.on("keyChanged", onConfigChange);
+
+  // v0.1.324 — Real-Run-Report (Windows): "LinkedIn-Scraper läuft,
+  // Screenshots zeigen Scroll, aber keine Signale sichtbar". Ursache:
+  // wenn `drainQueue()` direkt nach dem Scrape feuert während Ollama
+  // auf Windows noch hochfährt (langsamere Disk-IO, längere Boot-Zeit),
+  // findet resolveActiveLlm() keinen ready Provider → alle pending
+  // Posts werden als `skipped` markiert. configChanged/keyChanged
+  // greift erst wenn der User selbst was in den Settings ändert.
+  // Lösung: auf den `status`-Event vom LlmProviderManager hören. Wenn
+  // der Provider von "not-ready" auf "ready" wechselt, automatisch
+  // skipped → pending zurücksetzen und drainen.
+  let wasReady = providers.getStatus().ready;
+  providers.on("status", (s) => {
+    const nowReady = s.ready;
+    if (!wasReady && nowReady) {
+      console.info(
+        "[linkedin/extractor] provider became ready — re-arming skipped signals",
+      );
+      onConfigChange();
+    }
+    wasReady = nowReady;
+  });
+
+  // v0.1.324 — Boot-Drain. Wenn die letzte AVA-Session Posts gescrapt
+  // hat ohne LLM (z. B. Ollama war noch nicht installiert, oder API-
+  // Key noch nicht hinterlegt), liegen die als `skipped` in der DB.
+  // Beim nächsten Boot mit konfiguriertem LLM müssen die nachgeholt
+  // werden. Wir warten kurz damit der Provider stabil ist.
+  setTimeout(() => {
+    if (providers.getStatus().ready) {
+      console.info(
+        "[linkedin/extractor] boot-drain — re-arming any leftover skipped signals",
+      );
+      onConfigChange();
+    }
+  }, 5_000);
 }
 
 /** External hook for the LinkedIn settings IPC: when imageAnalysis flips
