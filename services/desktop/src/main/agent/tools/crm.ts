@@ -530,8 +530,26 @@ export function buildCrmTools(deps: CrmToolDeps): Tool[] {
         // Der Folge-`.test("at-least-one")` schlug dann immer fehl, auch
         // wenn der Agent korrekt Properties mitschickte. Mit `yup.mixed`
         // ist die Open-Map-Semantik korrekt. Validation prüft manuell.
+        // v0.1.323 — `.transform()` ergänzt: wenn der LLM `properties`
+        // als JSON-String schickt (passiert mit Claude/Anthropic
+        // gelegentlich), wird es vor den Tests geparst. Der zentrale
+        // tool-arg-normalizer kann das nicht, weil er bei `mixed`-Schemas
+        // bewusst nicht eingreift.
         properties: yup
           .mixed<Record<string, string>>()
+          .transform((v) => {
+            if (typeof v === "string") {
+              const trimmed = v.trim();
+              if (trimmed.startsWith("{")) {
+                try {
+                  return JSON.parse(trimmed);
+                } catch {
+                  /* keep as-is so test produces the right error */
+                }
+              }
+            }
+            return v;
+          })
           .test("is-object", "properties muss ein Objekt sein", (v) =>
             v != null && typeof v === "object" && !Array.isArray(v),
           )
@@ -659,9 +677,22 @@ export function buildCrmTools(deps: CrmToolDeps): Tool[] {
       schema: yup
         .object({
           objectId: yup.string().trim().min(1).required(),
-          // v0.1.320 — siehe Kommentar in crm_update_hubspot_company.
+          // v0.1.320 + v0.1.323 — siehe crm_update_hubspot_company.
           properties: yup
             .mixed<Record<string, string>>()
+            .transform((v) => {
+              if (typeof v === "string") {
+                const trimmed = v.trim();
+                if (trimmed.startsWith("{")) {
+                  try {
+                    return JSON.parse(trimmed);
+                  } catch {
+                    /* keep as-is */
+                  }
+                }
+              }
+              return v;
+            })
             .test("is-object", "properties muss ein Objekt sein", (v) =>
               v != null && typeof v === "object" && !Array.isArray(v),
             )
