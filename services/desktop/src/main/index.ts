@@ -10,6 +10,7 @@ import {
   systemPreferences,
 } from "electron";
 import { join } from "node:path";
+import { spawn as spawnChild } from "node:child_process";
 import { Auth, type AuthStatus } from "./auth";
 import { OllamaSupervisor } from "./ollama-supervisor";
 import {
@@ -3013,7 +3014,73 @@ app.whenReady().then(async () => {
   ipcMain.handle("updater:getStatus", () => updater.getStatus());
   ipcMain.handle("updater:check", () => updater.check());
   ipcMain.handle("updater:download", () => updater.download());
-  ipcMain.handle("updater:install", () => updater.installAndRelaunch());
+  // v0.1.322 — Install-Pfad härter machen. Real-Run-Crash (Stackshot
+  // v0.1.316 → next) zeigt: AVA hängt 70s in einer V8/JIT-Schleife
+  // während Squirrel.Mac via ReactiveObjC einen Callback auf den
+  // Main-Thread dispatcht. Mein v0.1.314-Fix im before-quit-Handler
+  // kommt nie zum Zug, weil das setTimeout(..., 200) auf einer wedged
+  // Event-Loop nicht feuert. Daher: alle Subprozesse JETZT hart killen
+  // (BEVOR quitAndInstall die JS-Loop-Schleife auslöst), und einen
+  // Backstop-Timer setzen der notfalls process.exit(0) ruft.
+  //
+  // process.exit ist Node-Primitiv, läuft NICHT durch die V8-Event-
+  // Loop sondern direkt _exit(). Selbst wenn JS in einer Endlosschleife
+  // hängt, kommt der Timer durch — solange der libuv-Timer-Thread
+  // noch lebt (was er bei einer JIT-Schleife sehr wohl tut; nur die
+  // Main-Event-Loop ist blockiert).
+  //
+  // Wait — libuv-Timer feuern AUCH erst beim Event-Loop-Tick. Hmm.
+  // Plan B: setImmediate funktioniert auch nicht. Wirklicher Fallback:
+  // spawn ein detached Child mit Sleep+kill der parent-PID via SIGKILL.
+  // Das ist OS-Level, läuft auch wenn JS hängt.
+  ipcMain.handle("updater:install", () => {
+    console.log("[updater:install] pre-kill subprocesses + arm backstop");
+    // Synchron alle Subprozesse hart killen (bevor Squirrel den
+    // Main-Thread in den JIT-Loop schickt).
+    for (const p of producers) {
+      try {
+        p.forceKill();
+      } catch (err) {
+        console.warn("[updater:install] producer.forceKill failed:", err instanceof Error ? err.message : String(err));
+      }
+    }
+    try {
+      ollama.forceKill();
+    } catch (err) {
+      console.warn("[updater:install] ollama.forceKill failed:", err instanceof Error ? err.message : String(err));
+    }
+    // Backstop: detached child process der nach 10s den Eltern (AVA)
+    // mit SIGKILL umbringt falls Squirrel das nicht selbst schafft.
+    // Läuft auf OS-Ebene, unabhängig von der hängenden JS-Loop.
+    const parentPid = process.pid;
+    try {
+      const sh =
+        process.platform === "win32"
+          ? spawnChild(
+              "cmd.exe",
+              [
+                "/c",
+                `timeout /t 10 /nobreak >nul & taskkill /F /PID ${parentPid}`,
+              ],
+              { detached: true, stdio: "ignore" },
+            )
+          : spawnChild(
+              "/bin/sh",
+              [
+                "-c",
+                `sleep 10 && kill -0 ${parentPid} 2>/dev/null && kill -9 ${parentPid}`,
+              ],
+              { detached: true, stdio: "ignore" },
+            );
+      sh.unref();
+      console.log(`[updater:install] backstop armed (pid=${parentPid}, T+10s)`);
+    } catch (err) {
+      console.warn("[updater:install] backstop spawn failed:", err instanceof Error ? err.message : String(err));
+    }
+    // Jetzt regulär quitAndInstall — ShipIt wird spawned, AVA SOLL
+    // sauber terminieren. Wenn nicht: Backstop killt nach 10s.
+    return updater.installAndRelaunch();
+  });
   // v0.1.155 — diagnostics for silent OTA failures. The renderer's
   // Settings panel calls getDiagnostics when the user clicks
   // "Update-Logs zeigen" and dismissSilentFailure when they
