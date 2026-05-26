@@ -1749,9 +1749,12 @@ export function LinkedInSection() {
               {signalStatus.lastError.includes("Kein LLM konfiguriert") ? (
                 <>
                   Letzter Fehler: {signalStatus.lastError}{" "}
-                  <a href="#provider-section">
-                    Provider in Einstellungen wählen
-                  </a>
+                  {/* v0.1.326 — vorher <a href="#provider-section"> ins
+                      Nichts; "provider-section" existiert in Settings
+                      gar nicht, Keys werden unter /whoami konfiguriert.
+                      Mit React Router <Link> wird sauber zur richtigen
+                      Route navigiert. */}
+                  <Link to="/whoami">Provider in Status wählen</Link>
                 </>
               ) : (
                 <>Letzter Fehler: {signalStatus.lastError}</>

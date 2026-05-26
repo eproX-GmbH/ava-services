@@ -191,11 +191,27 @@ interface ResolvedLlm {
   model: string;
   apiKey: string | null;
   baseURL?: string;
+  /** v0.1.326 — OAuth-Bearer-Token für Anthropic-Subscription-Mode.
+   *  Wird statt apiKey von createLLM benutzt wenn gesetzt. */
+  anthropicSubscriptionToken?: string;
 }
 
 /** Resolve the user's currently-active LLM the same way the chat agent
  *  does. Returns null when nothing is configured (no key + ollama not
- *  ready / no model). */
+ *  ready / no model).
+ *
+ *  v0.1.326 — Anthropic-OAuth-Subscription-Pfad zusätzlich gehandhabt.
+ *  Vorher hat die Funktion stur `storeRef.getKey(kind)` geprüft und
+ *  null zurückgegeben, wenn kein API-Key da war. User mit Claude-Abo
+ *  (Subscription-Modus) haben aber per Definition KEINEN API-Key — der
+ *  Auth läuft über einen OAuth-Token, der separat gespeichert ist.
+ *  Folge: Extractor meldete "Kein LLM konfiguriert" obwohl der Chat
+ *  mit demselben Provider einwandfrei lief. Jetzt: wenn `status.ready`
+ *  true ist (Provider hat sich selbst als ready gemeldet, inkl. OAuth-
+ *  Resolve), genügt das — wir geben apiKey=null durch wie bei Ollama,
+ *  der LLM-Caller (siehe llm.ts) holt sich den OAuth-Token selbst über
+ *  den Manager.
+ */
 async function resolveActiveLlm(): Promise<ResolvedLlm | null> {
   if (!providersRef || !storeRef) return null;
   const status = providersRef.getStatus();
@@ -203,6 +219,27 @@ async function resolveActiveLlm(): Promise<ResolvedLlm | null> {
   const kind = status.kind;
   if (kind === "ollama") {
     return { provider: "ollama", model: status.model, apiKey: null };
+  }
+  // Anthropic-Subscription: kein API-Key nötig, Auth via OAuth-Token.
+  // Wir holen den Token hier und reichen ihn als anthropicSubscriptionToken
+  // an callLlm weiter (createLLM weiß damit umzugehen — siehe
+  // ai-sdk-provider.ts in der Chat-Pipeline).
+  if (kind === "anthropic") {
+    const cfg = storeRef.getConfig?.();
+    const isSubscription =
+      (cfg?.anthropicAuthMode ?? "api-key") === "subscription";
+    if (isSubscription) {
+      const token = await storeRef.getAnthropicSubscriptionToken();
+      if (token) {
+        return {
+          provider: "anthropic",
+          model: status.model,
+          apiKey: null,
+          anthropicSubscriptionToken: token,
+        };
+      }
+      return null; // Subscription-Modus aber kein Token gespeichert
+    }
   }
   const key = await storeRef.getKey(kind);
   if (!key) return null;
@@ -336,6 +373,13 @@ async function callLlm(
     model: llm.model,
     apiKey: llm.apiKey ?? undefined,
     baseURL: llm.baseURL,
+    // v0.1.326 — OAuth-Subscription-Token mitschicken wenn der User
+    // im Subscription-Mode ist (Claude-Abo statt API-Key). Ohne das
+    // hat createLLM zwar einen "anthropic"-Provider, kann aber den
+    // Bearer-Header nicht setzen → 401.
+    ...(llm.anthropicSubscriptionToken
+      ? { anthropicSubscriptionToken: llm.anthropicSubscriptionToken }
+      : {}),
   });
   const result = await generateText({
     model,
