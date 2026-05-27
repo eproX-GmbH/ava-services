@@ -1014,8 +1014,13 @@ export async function runScan(opts: ScanOptions): Promise<LinkedInScanResult> {
     userAgent: settings.fingerprint?.userAgent ?? null,
   });
 
+  console.log("[linkedin/scraper] scan-run start: getting DB + creating BrowserWindow");
   try {
     const fp = settings.fingerprint;
+    // v0.1.329 — Granulare Logs für die Boot-Phase damit Real-Run-
+    // Hangs ("AVA hängt direkt nach tick (initial)") besser
+    // verortbar werden.
+    console.log("[linkedin/scraper] step 1/5: creating off-screen BrowserWindow");
     // v0.1.110 hardening item 1: stop hiding the window like a bot.
     // A `show: false` BrowserWindow has 0x0 outer dimensions and never
     // paints — both signals are trivially detected by anti-bot JS. We
@@ -1147,8 +1152,10 @@ export async function runScan(opts: ScanOptions): Promise<LinkedInScanResult> {
     // present even if did-start-navigation lost a race against the
     // first inline <script>.
     win.webContents.on("dom-ready", reinjectStealth);
+    console.log("[linkedin/scraper] step 2/5: loading about:blank + stealth");
     await win.loadURL("about:blank");
     await win.webContents.executeJavaScript(stealthJs, false);
+    console.log("[linkedin/scraper] step 3/5: navigating to LinkedIn feed");
 
     // Multi-stage navigation in aggressive mode: land on the
     // homepage, dwell, then click the Home/feed link instead of
@@ -1179,10 +1186,12 @@ export async function runScan(opts: ScanOptions): Promise<LinkedInScanResult> {
       await win.loadURL("https://www.linkedin.com/feed/");
     }
     if (signal.aborted) throw new DOMException("aborted", "AbortError");
+    console.log("[linkedin/scraper] step 4/5: landed on feed, capturing initial screenshot");
 
     // v0.1.109: capture initial screenshot once we've landed on the
     // feed URL, before any further interaction.
     await recorder.capture(win, "01_initial");
+    console.log("[linkedin/scraper] step 5/5: initial screenshot done, starting scroll loop");
 
     // Login redirect detection
     const url = win.webContents.getURL();

@@ -111,19 +111,19 @@ export function attachProviders(
     wasReady = nowReady;
   });
 
-  // v0.1.324 — Boot-Drain. Wenn die letzte AVA-Session Posts gescrapt
-  // hat ohne LLM (z. B. Ollama war noch nicht installiert, oder API-
-  // Key noch nicht hinterlegt), liegen die als `skipped` in der DB.
-  // Beim nächsten Boot mit konfiguriertem LLM müssen die nachgeholt
-  // werden. Wir warten kurz damit der Provider stabil ist.
-  setTimeout(() => {
-    if (providers.getStatus().ready) {
-      console.info(
-        "[linkedin/extractor] boot-drain — re-arming any leftover skipped signals",
-      );
-      onConfigChange();
-    }
-  }, 5_000);
+  // v0.1.324 → v0.1.329 — Boot-Drain entfernt. Real-Run-Report (User
+  // mit 194 'kein LLM'-skipped Posts auf v0.1.326): direkt nach dem
+  // LinkedIn-Scheduler-Initial-Tick haengt AVA komplett. Verdacht:
+  // 194 parallel angestossene LLM-Calls + gleichzeitig anlaufender
+  // Scraper saettigen Main-Process/Anthropic-Rate-Limits.
+  //
+  // Auto-Rearm bei provider 'status'-Change (oben) bleibt drin -
+  // wenn der User in den Whoami-Settings sein LLM aktiviert, werden
+  // die skipped Posts trotzdem nachgeholt. Wir verlieren nur den
+  // 'Boot startet automatisch eine alte Queue'-Komfort.
+  //
+  // Wer skipped Posts manuell nachholen will: 'LinkedIn-Auswertung
+  // jetzt ausfuehren'-Button im Settings → Verlauf.
 }
 
 /** External hook for the LinkedIn settings IPC: when imageAnalysis flips
