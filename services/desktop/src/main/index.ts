@@ -3033,6 +3033,15 @@ app.whenReady().then(async () => {
   // Plan B: setImmediate funktioniert auch nicht. Wirklicher Fallback:
   // spawn ein detached Child mit Sleep+kill der parent-PID via SIGKILL.
   // Das ist OS-Level, läuft auch wenn JS hängt.
+  // v0.1.327 — Wake-Health-Heartbeat. Renderer kann nach dem
+  // power:resumed-Event diesen Endpoint pingen um zu pruefen ob der
+  // Main-Process gesund antwortet. Wenn der Renderer keinen pong
+  // innerhalb seines Timeouts kriegt, macht er einen window.location.
+  // reload() um aus einem moeglichen Frozen-UI-State auszubrechen.
+  // Antwortet IMMER synchron mit pong + Zeitstempel; jede Latenz hier
+  // ist diagnostisch wertvoll (Renderer kann das loggen).
+  ipcMain.handle("app:ping", () => ({ pong: true, at: Date.now() }));
+
   ipcMain.handle("updater:install", () => {
     console.log("[updater:install] pre-kill subprocesses + arm backstop");
     // Synchron alle Subprozesse hart killen (bevor Squirrel den

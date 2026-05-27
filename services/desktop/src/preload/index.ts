@@ -184,6 +184,21 @@ export type {
 const api = {
   getConfig: (): Promise<AppConfig> => ipcRenderer.invoke("app:getConfig"),
 
+  /** v0.1.327 — Health-Heartbeat fuer den Wake-Recovery-Pfad.
+   *  Renderer ruft das nach `power:resumed`; bleibt der Promise
+   *  haengen, ist der Main-Process wedged → window.location.reload().
+   */
+  ping: (): Promise<{ pong: boolean; at: number }> =>
+    ipcRenderer.invoke("app:ping"),
+
+  /** v0.1.327 — Subscribe zum `power:resumed`-Frame vom Main-Process.
+   *  Returnt eine unsubscribe-Funktion. */
+  onPowerResumed: (handler: () => void): (() => void) => {
+    const wrapped = (): void => handler();
+    ipcRenderer.on("power:resumed", wrapped);
+    return () => ipcRenderer.off("power:resumed", wrapped);
+  },
+
   // Auth.
   auth: {
     getStatus: (): Promise<AuthStatus> => ipcRenderer.invoke("auth:getStatus"),

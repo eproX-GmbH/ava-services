@@ -69,6 +69,43 @@ export function AppShell({ children }: PropsWithChildren) {
     return () => window.removeEventListener(OPEN_CHAT_SEARCH_EVENT, onOpen);
   }, []);
 
+  // v0.1.327 — Wake-Recovery. Real-Run-Reports: nach macOS-Sleep+Wake
+  // bleibt die UI manchmal frozen ("AVA reagiert nicht"). Strategie:
+  // wenn der Main-Process uns das `power:resumed`-Frame schickt,
+  // probieren wir 3s spaeter einen IPC-Heartbeat-Roundtrip. Wenn
+  // innerhalb von 5s keine pong kommt, ist die Renderer-Pipeline
+  // wahrscheinlich wedged → hard reload via window.location.reload().
+  //
+  // Trade-off: ein laufender Chat-Stream geht verloren. In der Praxis
+  // ist das im Schlaf-Wake-Fall fast nie relevant — der Stream ist
+  // beim Sleep ohnehin abgebrochen.
+  useEffect(() => {
+    if (!window.api?.onPowerResumed) return;
+    const unsubscribe = window.api.onPowerResumed(() => {
+      console.log("[wake-recovery] power:resumed received — probing main process");
+      setTimeout(() => {
+        const start = Date.now();
+        const timeout = new Promise<"timeout">((resolve) =>
+          setTimeout(() => resolve("timeout"), 5_000),
+        );
+        const ping = window.api.ping().then(() => "ok" as const);
+        void Promise.race([ping, timeout]).then((result) => {
+          if (result === "timeout") {
+            console.warn(
+              "[wake-recovery] no pong after 5s — main wedged, hard-reloading renderer",
+            );
+            window.location.reload();
+          } else {
+            console.log(
+              `[wake-recovery] pong received in ${Date.now() - start}ms — UI healthy`,
+            );
+          }
+        });
+      }, 3_000);
+    });
+    return unsubscribe;
+  }, []);
+
   // Before-pick hook: if we're not on /chat, route there so the chat
   // route gets a chance to mount + listen for the pick event.
   const onBeforePick = (_hit: { conversationId: string }): void => {
