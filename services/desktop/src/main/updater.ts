@@ -1,5 +1,5 @@
 import { autoUpdater, type UpdateInfo, type ProgressInfo } from "electron-updater";
-import { app, BrowserWindow, Notification } from "electron";
+import { app, BrowserWindow, Notification, dialog } from "electron";
 import { EventEmitter } from "node:events";
 import { promises as fs } from "node:fs";
 import { existsSync, statSync } from "node:fs";
@@ -304,17 +304,44 @@ export class Updater extends EventEmitter {
         (err as Error).message,
       );
     });
-    // Re-scrub the broad cache directories AND the specific downloaded
-    // file. Cheap; covers the cases where Squirrel may have copied the
-    // artifact to a sibling path since the update-downloaded event.
-    const file = this.downloadedFilePath;
-    void Promise.all([
-      scrubQuarantine(),
-      file ? scrubPathExplicit(file) : Promise.resolve(),
-    ]).finally(() => {
-      // Defer quitAndInstall so the IPC push has a tick to land in
-      // the renderer before the main process tears down.
-      setTimeout(() => autoUpdater.quitAndInstall(false, true), 100);
+    // v0.1.328 — scrubPathExplicit(downloadedFile) entfernt. Real-Run-
+    // Log (User v0.1.320 → v0.1.326) zeigt Race:
+    //   1. installAndRelaunch ruft scrubPathExplicit auf den
+    //      downloadedFile (xattr -d in Library/Caches/...ShipIt/update.X)
+    //   2. Squirrel.Mac startet PARALLEL den Copy aus genau diesem
+    //      Cache → ShipIt sieht "flatbuffers.js doesn't exist" und
+    //      bricht ab
+    //   3. Retry 2 Minuten später klappt (kein paralleler xattr mehr)
+    // scrubQuarantine über den BROADEN Cache-Ordner ist beim
+    // update-downloaded-Event bereits gelaufen — der explicit-scrub
+    // hier ist redundant und schädlich. Nur scrubQuarantine
+    // beibehalten.
+    //
+    // v0.1.328 — Plus: Native-Dialog VOR quitAndInstall. Der Install-
+    // Pfad dauert auf macOS realistisch 1–3 Minuten (ShipIt wartet auf
+    // Parent-Exit + Copy + Re-Launch). Ohne Dialog sieht der User ein
+    // eingefrorenes Window und denkt AVA ist abgestürzt → Force-Quit.
+    // Wir zeigen einen non-blocking Hinweis BEVOR wir uns abschießen,
+    // damit klar ist: das ist ein Update-Vorgang, nicht ein Crash.
+    void scrubQuarantine().finally(() => {
+      const wins = BrowserWindow.getAllWindows().filter((w) => !w.isDestroyed());
+      const parent = wins[0];
+      void dialog
+        .showMessageBox(parent ?? undefined as never, {
+          type: "info",
+          title: "AVA-Update wird installiert",
+          message: `Update auf v${this.latestVersion ?? "neue Version"} wird jetzt installiert.`,
+          detail:
+            "Das kann 1–3 Minuten dauern. Bitte warte — AVA schliesst sich automatisch und startet danach von selbst wieder. Das Fenster kann währenddessen unresponsive wirken, bitte NICHT Beenden erzwingen.",
+          buttons: ["OK, installieren"],
+          defaultId: 0,
+        })
+        .catch(() => undefined)
+        .finally(() => {
+          // Defer quitAndInstall so the IPC push has a tick to land in
+          // the renderer before the main process tears down.
+          setTimeout(() => autoUpdater.quitAndInstall(false, true), 100);
+        });
     });
   }
 
