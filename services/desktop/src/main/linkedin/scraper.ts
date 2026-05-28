@@ -46,6 +46,10 @@ import {
 import { drainQueue } from "./extractor";
 import { beginRun, type RunMetadata, type RunRecorder } from "./runs";
 import { buildStealthInjection } from "./stealth";
+import {
+  getScraperWindow,
+  resetScraperWindowForNextScan,
+} from "./scraper-window";
 
 export interface ScanOptions {
   manual: boolean;
@@ -1014,148 +1018,25 @@ export async function runScan(opts: ScanOptions): Promise<LinkedInScanResult> {
     userAgent: settings.fingerprint?.userAgent ?? null,
   });
 
-  console.log("[linkedin/scraper] scan-run start: getting DB + creating BrowserWindow");
+  console.log("[linkedin/scraper] scan-run start: getting persistent window + DB");
   try {
     const fp = settings.fingerprint;
-    // v0.1.329 — Granulare Logs für die Boot-Phase damit Real-Run-
-    // Hangs ("AVA hängt direkt nach tick (initial)") besser
-    // verortbar werden.
-    console.log("[linkedin/scraper] step 1/5: creating off-screen BrowserWindow");
-    // v0.1.110 hardening item 1: stop hiding the window like a bot.
-    // A `show: false` BrowserWindow has 0x0 outer dimensions and never
-    // paints — both signals are trivially detected by anti-bot JS. We
-    // instead create a real, visible window off-screen with full
-    // transparency and no taskbar entry, so the page sees a normal
-    // window from a fingerprint standpoint while the user sees nothing.
-    //
-    // Env override `AVA_LINKEDIN_DEBUG_WINDOW=1` shows the window in
-    // its natural position so a developer (or the user, when v0.1.110
-    // doesn't pan out) can watch the scrape live.
-    const debugWindow = process.env.AVA_LINKEDIN_DEBUG_WINDOW === "1";
-    // v0.1.313 — Vor der BrowserWindow-Erstellung den Event-Loop einmal
-    // drainen. `new BrowserWindow()` ist synchron auf dem Main-Thread
-    // und blockiert für 100–400ms (Chromium-Render-Process-Spawn). Wenn
-    // der Scheduler-Tick mitten in einem User-Klick einschlägt, fühlt
-    // sich AVA für genau diesen Moment "random eingefroren" an. Mit
-    // dem setImmediate-Yield kriegen pending IPC-Handler + UI-Updates
-    // noch eine Runde, bevor wir den Main-Loop für den Window-Spawn
-    // blockieren. Behebt den Hang nicht komplett (Chromium-Spawn ist
-    // unvermeidbar sync), reduziert aber das "Klick wird verschluckt"-
-    // Gefühl deutlich.
-    await new Promise<void>((resolve) => setImmediate(resolve));
-    win = new BrowserWindow({
-      // v0.1.309 — show: false initial, dann showInactive() weiter unten.
-      // Mit show:true bringt macOS die AVA-App jedes Mal kurz in den
-      // Vordergrund, wenn der Scheduler einen Scan triggert (NSWindow
-      // aktiviert die App). Seit v0.1.306 (Fokus-Gate raus + Initial-
-      // Tick) lief der Scheduler dann auch wirklich → User sieht das
-      // "AVA kommt in den Vordergrund"-Symptom alle paar Stunden.
-      show: false,
-      width: fp.viewport.width,
-      height: fp.viewport.height,
-      x: debugWindow ? undefined : -2000,
-      y: debugWindow ? undefined : -2000,
-      skipTaskbar: !debugWindow,
-      focusable: debugWindow,
-      // `frame: false` keeps the off-screen window from briefly
-      // flashing a title bar on creation. In debug mode we keep the
-      // frame so the developer can drag/close it.
-      frame: debugWindow,
-      webPreferences: {
-        partition: "persist:linkedin",
-        contextIsolation: true,
-        nodeIntegration: false,
-        sandbox: true,
-        offscreen: false,
-      },
-    });
-    if (!debugWindow) {
-      try {
-        win.setOpacity(0);
-      } catch {
-        // ignore
-      }
-      // v0.1.309 — showInactive() statt show:true im Constructor.
-      // Lässt das Fenster im Memory paintet damit Bot-Detection nicht
-      // anschlägt (siehe v0.1.110-Kommentar oben), bringt aber die
-      // AVA-App NICHT in den Vordergrund. Schlüsselt das Pop-to-Front-
-      // Symptom raus, das User seit v0.1.306 sehen wenn der Scheduler
-      // einen Hintergrund-Scan triggert.
-      try {
-        win.showInactive();
-      } catch {
-        // ignore
-      }
-    } else {
-      // Debug-Modus: User WILL das Fenster sehen.
-      win.show();
-    }
-    win.webContents.setUserAgent(fp.userAgent);
-    win.webContents.session.setUserAgent(fp.userAgent);
-    win.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
-
-    // L7: WebRTC IP leak prevention. The local IP would otherwise
-    // surface in ICE candidates and let LinkedIn correlate the
-    // session even after a UA rotation.
-    try {
-      const sess = win.webContents.session as Electron.Session & {
-        setWebRTCIPHandlingPolicy?: (p: string) => void;
-        setLocale?: (l: string) => void;
-      };
-      sess.setWebRTCIPHandlingPolicy?.(
-        "default_public_interface_only",
-      );
-      sess.setLocale?.(fp.locale);
-    } catch (err) {
-      // Older Electron may not expose these — non-fatal.
-      console.warn(
-        "[linkedin/scraper] webrtc/locale setup skipped:",
-        err instanceof Error ? err.message : String(err),
-      );
-    }
-
-    // L7: stable Accept-Language header on linkedin.com requests.
-    try {
-      const acceptLang = `${fp.locale}, en-US;q=0.9, en;q=0.8`;
-      win.webContents.session.webRequest.onBeforeSendHeaders(
-        { urls: ["*://*.linkedin.com/*"] },
-        (details, callback) => {
-          const headers = { ...details.requestHeaders };
-          headers["Accept-Language"] = acceptLang;
-          callback({ requestHeaders: headers });
-        },
-      );
-    } catch (err) {
-      console.warn(
-        "[linkedin/scraper] Accept-Language hook skipped:",
-        err instanceof Error ? err.message : String(err),
-      );
-    }
-
-    // L7 / v0.1.110: anti-detection JS must land BEFORE LinkedIn's
-    // scripts run, on EVERY navigation (including the SPA-style
-    // route changes the homepage->/feed/ click triggers). We hook
-    // `did-start-navigation` to (re)inject the stealth payload into
-    // the renderer the moment a new document begins parsing, before
-    // any LinkedIn JS executes. The await on executeJavaScript is
-    // fire-and-forget — we don't gate navigation on it — but in
-    // practice Electron resolves it well before the page's scripts
-    // start to run.
-    const stealthJs = buildStealthInjection(fp);
-    const reinjectStealth = (): void => {
-      win?.webContents
-        .executeJavaScript(stealthJs, false)
-        .catch(() => undefined);
-    };
-    win.webContents.on("did-start-navigation", reinjectStealth);
-    // Belt-and-braces: also inject on dom-ready so the override is
-    // present even if did-start-navigation lost a race against the
-    // first inline <script>.
-    win.webContents.on("dom-ready", reinjectStealth);
-    console.log("[linkedin/scraper] step 2/5: loading about:blank + stealth");
-    await win.loadURL("about:blank");
-    await win.webContents.executeJavaScript(stealthJs, false);
+    // v0.1.330 — Persistent BrowserWindow statt fresh-per-scan.
+    // Window-Konstruktion + One-Time-Setup laufen jetzt EINMAL im
+    // Pre-Warm (siehe scraper-window.ts). Hier holen wir nur die
+    // bereits warme Instanz — 0ms Main-Thread-Block, kein User-
+    // sichtbarer Hang mehr.
+    console.log("[linkedin/scraper] step 1/5: acquiring pre-warmed window");
+    win = await getScraperWindow();
+    // State-Reset zwischen Scans: localStorage/sessionStorage clear,
+    // scroll=0, Navigation auf about:blank. Cookies bleiben (LinkedIn-
+    // Auth muss bestehen wie bei einem echten User der angemeldet ist).
+    console.log("[linkedin/scraper] step 2/5: resetting page state");
+    await resetScraperWindowForNextScan();
     console.log("[linkedin/scraper] step 3/5: navigating to LinkedIn feed");
+    // Stealth-Inject läuft jetzt zentral in scraper-window.ts beim
+    // Pre-Warm (did-start-navigation + dom-ready Listener sind dort
+    // angemeldet, einmal pro App-Lifetime).
 
     // Multi-stage navigation in aggressive mode: land on the
     // homepage, dwell, then click the Home/feed link instead of
@@ -1511,10 +1392,17 @@ export async function runScan(opts: ScanOptions): Promise<LinkedInScanResult> {
     // v0.1.109: capture whatever the page looked like at failure.
     await recorder.capture(win, "99_error");
   } finally {
-    try {
-      win?.destroy();
-    } catch {
-      // ignore
+    // v0.1.330 — NICHT mehr destroy()! Das persistent Window bleibt
+    // für den nächsten Scan warm. Wir navigieren nur auf about:blank
+    // um die LinkedIn-Page zu entladen und Memory freizugeben.
+    // Cleanup-Pfad bei App-Quit ist destroyScraperWindow() im
+    // before-quit Hook.
+    if (win && !win.isDestroyed()) {
+      try {
+        void win.loadURL("about:blank").catch(() => undefined);
+      } catch {
+        /* ignore */
+      }
     }
     win = null;
     activeAbort = null;

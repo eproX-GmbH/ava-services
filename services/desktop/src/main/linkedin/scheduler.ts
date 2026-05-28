@@ -23,6 +23,7 @@
 import { BrowserWindow } from "electron";
 import { isScanRunning, runScan } from "./scraper";
 import { linkedInSettingsEvents, read as readSettings } from "./store";
+import { prewarmScraperWindow } from "./scraper-window";
 
 let timer: NodeJS.Timeout | null = null;
 let initialTickHandle: NodeJS.Timeout | null = null;
@@ -139,6 +140,21 @@ function arm(opts?: { runInitial?: boolean }): void {
 }
 
 export function startScheduler(): void {
+  // v0.1.330 — Pre-Warm das persistent Scraper-BrowserWindow. Per
+  // setImmediate aus dem kritischen Boot-Pfad raus, +500ms delay damit
+  // andere Boot-Aktivitaeten (DB-Init, Producer-Spawn, IMAP-Connect)
+  // erst durchkommen. Ergebnis: das ~200ms BrowserWindow-Konstruktor-
+  // Block faellt EINMAL in eine Phase wo der User es nicht sieht
+  // (Boot ist eh „lade...") und NIE wieder pro Scan.
+  setTimeout(() => {
+    if (!readSettings().enabled) return;
+    void prewarmScraperWindow().catch((err) => {
+      console.warn(
+        "[linkedin/scheduler] pre-warm failed (non-fatal, will lazy-init):",
+        err instanceof Error ? err.message : String(err),
+      );
+    });
+  }, 500);
   arm({ runInitial: true });
   linkedInSettingsEvents.on("changed", () => {
     // v0.1.310 — Nur re-armen wenn sich SCHEDULE-relevante Settings

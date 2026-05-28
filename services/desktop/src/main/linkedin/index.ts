@@ -62,6 +62,7 @@ import {
   type SignalListFilter,
 } from "./db";
 import { startScheduler, stopScheduler } from "./scheduler";
+import { destroyScraperWindow } from "./scraper-window";
 
 /** Generate + persist the fingerprint on first run if it's missing.
  *  Idempotent — safe to call on every boot. */
@@ -342,5 +343,7 @@ export function initLinkedIn(opts?: {
   app.on("before-quit", () => {
     stopScheduler();
     void shutdownScraper();
+    // v0.1.330 — persistent Scraper-Window aufraeumen
+    destroyScraperWindow();
   });
 }
