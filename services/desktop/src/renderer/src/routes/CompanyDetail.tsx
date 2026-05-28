@@ -15,8 +15,11 @@ import {
   mapsHref,
   mapsEmbedUrl,
   looksLikeEmail,
+  // v0.1.331 — NACE-Parser für die Branchen-Anzeige unter Stammkapital.
+  // Imported separately because import-list lives in lib/format.
   looksLikePhone,
 } from "../lib/format";
+import { parseNaceFromProfile } from "../../../shared/nace-divisions";
 import { ExternalLink } from "../components/ExternalLink";
 import { CompanyCrmPanel } from "../components/CompanyCrmPanel";
 import {
@@ -650,10 +653,21 @@ function OverviewTab({
             <dt>Rechtsform</dt>
             <dd>{structured?.legalForm ?? ""}</dd>
           </div>
-          <div>
-            <dt>SERP-Kategorie</dt>
-            <dd>{website?.companySerp?.category ?? ""}</dd>
-          </div>
+          {/* v0.1.331 — SERP-Kategorie entfernt (Daten kommen seit
+              v0.1.59 nicht mehr aus dem website-Producer, weil der
+              LLM-Judge-Pfad keine places-category mehr liefert).
+              Stattdessen Branche aus dem NACE-Block im Firmenprofil
+              (klassifiziert vom company-profile-Producer LLM). */}
+          {(() => {
+            const nace = parseNaceFromProfile(profile?.profile);
+            if (!nace) return null;
+            return (
+              <div>
+                <dt>Branche</dt>
+                <dd title={`NACE ${nace.code} (WZ 2008)`}>{nace.name}</dd>
+              </div>
+            );
+          })()}
         </dl>
       </article>
 
