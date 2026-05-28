@@ -19,7 +19,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import type { MailMessage, MailSnapshot } from "../../../shared/types";
 
-type Filter = "all" | "unread" | "trusted" | "known" | "unknown";
+type Filter = "all" | "unread" | "trusted" | "known" | "unknown" | "archived";
 
 const FILTER_LABELS: Array<[Filter, string]> = [
   ["unread", "Ungelesen"],
@@ -27,10 +27,15 @@ const FILTER_LABELS: Array<[Filter, string]> = [
   ["trusted", "Trusted"],
   ["known", "Bekannt"],
   ["unknown", "Unbekannt"],
+  // v0.1.332 — Archiv-Tab. Archivierte Mails sind sonst nirgends mehr
+  // sichtbar; User hatten keine Möglichkeit nachträglich nachzuschauen
+  // was schon archiviert wurde.
+  ["archived", "Archiviert"],
 ];
 
 export function TriageInbox(): JSX.Element {
   const [snapshot, setSnapshot] = useState<MailSnapshot | null>(null);
+  const [archived, setArchived] = useState<MailMessage[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [detail, setDetail] = useState<MailMessage | null>(null);
   const [filter, setFilter] = useState<Filter>("unread");
@@ -40,6 +45,15 @@ export function TriageInbox(): JSX.Element {
     const off = window.api.mail.onSnapshot(setSnapshot);
     return () => off();
   }, []);
+
+  // v0.1.332 — Archiv-Liste on-demand laden wenn der User auf den
+  // Archiviert-Tab klickt. Reload on filter-Wechsel UND immer wenn
+  // sich der Snapshot ändert (sonst sieht der User eine veraltete
+  // Liste nachdem er gerade eine Mail archiviert hat).
+  useEffect(() => {
+    if (filter !== "archived") return;
+    void window.api.mail.listArchived().then(setArchived);
+  }, [filter, snapshot]);
 
   useEffect(() => {
     if (!selectedId) {
@@ -52,16 +66,18 @@ export function TriageInbox(): JSX.Element {
   const messages = snapshot?.messages ?? [];
 
   const filtered = useMemo(() => {
+    // v0.1.332 — Archivierter-Tab nutzt die separate listArchived-Quelle.
+    if (filter === "archived") return archived;
     return messages.filter((m) => {
       if (filter === "all") return true;
       if (filter === "unread") return !m.readByUser;
       return m.trustLevel === filter;
     });
-  }, [messages, filter]);
+  }, [messages, filter, archived]);
 
   // Counts pro Filter — kleine Hilfe für die Tab-Pillen.
   const counts = useMemo(() => {
-    const c = { all: messages.length, unread: 0, trusted: 0, known: 0, unknown: 0 };
+    const c = { all: messages.length, unread: 0, trusted: 0, known: 0, unknown: 0, archived: archived.length };
     for (const m of messages) {
       if (!m.readByUser) c.unread += 1;
       if (m.trustLevel === "trusted") c.trusted += 1;
@@ -69,7 +85,7 @@ export function TriageInbox(): JSX.Element {
       else c.unknown += 1;
     }
     return c;
-  }, [messages]);
+  }, [messages, archived.length]);
 
   if (!snapshot) {
     return (
@@ -120,7 +136,9 @@ export function TriageInbox(): JSX.Element {
                     ? counts.trusted
                     : key === "known"
                       ? counts.known
-                      : counts.unknown;
+                      : key === "archived"
+                        ? counts.archived
+                        : counts.unknown;
             return (
               <button
                 key={key}

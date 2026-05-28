@@ -514,6 +514,14 @@ export function buildSystemPrompt(
         "   Mail-Subject mit Re: Re: Re: anfängt oder du selbst",
         "   schon mehrfach in diesem Thread geschrieben hast, halte",
         "   inne und beende mit kurzer Notiz 'Ping-Pong erkannt'.",
+        "",
+        "6. NACH einer erfolgreichen mail_reply: rufe SOFORT mail_archive",
+        "   mit der ursprünglichen Mail-ID auf (die ID findest du im",
+        "   ersten User-Block dieser Session unter 'Mail-ID:'). Das",
+        "   verschiebt die Mail aus der Triage-Inbox in den Archiv-",
+        "   Ordner. Damit weiss der User dass die Mail erledigt ist und",
+        "   du wirst beim nächsten IMAP-Sync nicht erneut auf dieselbe",
+        "   Mail antworten (Multiple-Replies-Bug).",
       ].join("\n")
     : "";
 

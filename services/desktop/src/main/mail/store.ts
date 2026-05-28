@@ -409,6 +409,45 @@ export class MailStore extends EventEmitter {
     if (message) this.emit("messageUpdated", message);
   }
 
+  /**
+   * v0.1.332 — Persistenter Trigger-Marker. Wird vom MailAgentBridge
+   * geschrieben sobald eine Mail dem Orchestrator übergeben wurde.
+   * Überlebt App-Restarts (im Gegensatz zum RAM-Set).
+   */
+  async markMailTriggered(messageId: string): Promise<void> {
+    await this.start();
+    const pg = this.requirePg();
+    await pg.query(
+      `INSERT INTO mail_triggered (message_id) VALUES ($1)
+       ON CONFLICT (message_id) DO NOTHING`,
+      [messageId],
+    );
+  }
+
+  /** Prüft ob eine Mail-ID bereits getriggert wurde (DB-persistent). */
+  async wasMailTriggered(messageId: string): Promise<boolean> {
+    await this.start();
+    const pg = this.requirePg();
+    const res = await pg.query<{ message_id: string }>(
+      `SELECT message_id FROM mail_triggered WHERE message_id = $1 LIMIT 1`,
+      [messageId],
+    );
+    return res.rows.length > 0;
+  }
+
+  /**
+   * v0.1.332 — Liste archivierter Mails für die Triage-UI ("Archiviert"-
+   * Tab). Standard-snapshot enthält keine archivierten — die werden
+   * absichtlich versteckt. Mit dieser Methode kann die UI sie auf
+   * Anfrage abrufen.
+   */
+  async listArchived(limit = 200): Promise<MailMessage[]> {
+    await this.start();
+    return this.listInbox({ includeArchived: true, limit }).then((all) =>
+      all.filter((m) => m.archivedAt !== null),
+    );
+  }
+
   async getMessage(id: string): Promise<MailMessage | null> {
     await this.start();
     const pg = this.requirePg();
@@ -697,6 +736,17 @@ export class MailStore extends EventEmitter {
         ON mail_messages (folder, imap_uid);
       CREATE INDEX IF NOT EXISTS mail_messages_direction_archived_idx
         ON mail_messages (direction, archived_at);
+
+      -- v0.1.332 — Persistenter Marker dass AVA eine bestimmte Mail
+      -- bereits dem Agent zur autonomen Bearbeitung übergeben hat.
+      -- Vorher war das nur ein RAM-Set (agent-bridge.ts) → App-Restart
+      -- machte den Counter wieder leer, und beim nächsten IMAP-Sync
+      -- wurden Mails erneut gegen den Agenten geworfen. Folge: der
+      -- User bekam zwei, drei, vier Antworten auf dieselbe Mail.
+      CREATE TABLE IF NOT EXISTS mail_triggered (
+        message_id    TEXT PRIMARY KEY,
+        triggered_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
 
       CREATE TABLE IF NOT EXISTS mail_attachments (
         id              TEXT PRIMARY KEY,

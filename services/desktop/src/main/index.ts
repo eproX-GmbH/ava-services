@@ -4117,6 +4117,11 @@ app.whenReady().then(async () => {
       return { ok: true, moved };
     },
   );
+  // v0.1.332 — Archiv-Liste für die Triage-UI ("Archiviert"-Tab).
+  ipcMain.handle("mail:listArchived", async () => {
+    if (!mailSupervisor) return [];
+    return await mailSupervisor.getStore().listArchived(500);
+  });
   ipcMain.handle(
     "mail:getMessage",
     async (_e, messageId: string) => {

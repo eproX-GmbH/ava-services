@@ -982,6 +982,9 @@ const api = {
       ipcRenderer.invoke("mail:markRead", { messageId, read }),
     archive: (messageId: string): Promise<{ ok: true; moved: boolean }> =>
       ipcRenderer.invoke("mail:archive", messageId),
+    /** v0.1.332 — Liste archivierter Mails für den "Archiviert"-Tab. */
+    listArchived: (): Promise<MailMessage[]> =>
+      ipcRenderer.invoke("mail:listArchived"),
     getMessage: (messageId: string): Promise<MailMessage | null> =>
       ipcRenderer.invoke("mail:getMessage", messageId),
     onSnapshot: (cb: (snapshot: MailSnapshot) => void): (() => void) => {

@@ -101,6 +101,28 @@ export class MailAgentBridge {
       );
       return;
     }
+    // v0.1.332 — Archivierte Mails NIE triggern. Der User hat sie
+    // bewusst auf "erledigt" gesetzt; messageUpdated feuert beim
+    // Archivieren selbst und löste vorher noch eine Antwort aus
+    // ("Ping-Pong" aus Sicht des Users der dachte er hätte abgewählt).
+    if (msg.archivedAt) {
+      console.log(
+        `[mail-agent-bridge] skip ${msg.id} (${source}): already archived`,
+      );
+      this.triggeredMailIds.add(msg.id);
+      return;
+    }
+    // v0.1.332 — Persistenter Dedup-Check gegen die DB. Vorher war der
+    // triggeredMailIds-Set rein im RAM → App-Restart hieß "jeder
+    // gefinalizte Mail-Sync triggert die alten Mails erneut" → User
+    // bekam mehrfache Antworten auf dieselbe ursprüngliche Mail.
+    if (await this.store.wasMailTriggered(msg.id)) {
+      this.triggeredMailIds.add(msg.id); // RAM-Cache synchen
+      console.log(
+        `[mail-agent-bridge] skip ${msg.id} (${source}): already triggered (DB-marker)`,
+      );
+      return;
+    }
     try {
       // (1) Account-Toggle aktiv?
       const account = await this.store.getAccount();
@@ -177,7 +199,10 @@ export class MailAgentBridge {
       // v0.1.304 — JETZT als "getriggert" markieren, sobald alle Gates
       // grün sind. Vor dem orchestrator-Call, damit ein paralleler
       // updated-Fallback NICHT nochmal versucht.
+      // v0.1.332 — Zusätzlich in der DB persistieren, damit App-Restarts
+      // den Marker nicht verlieren.
       this.triggeredMailIds.add(msg.id);
+      await this.store.markMailTriggered(msg.id);
       console.log(
         `[mail-agent-bridge] triggering autonomous session for mail ${msg.id} ` +
           `(source=${source}, thread=${threadKey}, replyCount=${quota.replyCount})`,
