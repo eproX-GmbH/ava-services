@@ -324,24 +324,66 @@ export class Updater extends EventEmitter {
     // Wir zeigen einen non-blocking Hinweis BEVOR wir uns abschießen,
     // damit klar ist: das ist ein Update-Vorgang, nicht ein Crash.
     void scrubQuarantine().finally(() => {
-      const wins = BrowserWindow.getAllWindows().filter((w) => !w.isDestroyed());
-      const parent = wins[0];
-      void dialog
-        .showMessageBox(parent ?? undefined as never, {
-          type: "info",
-          title: "AVA-Update wird installiert",
-          message: `Update auf v${this.latestVersion ?? "neue Version"} wird jetzt installiert.`,
-          detail:
-            "Das kann 1–3 Minuten dauern. Bitte warte — AVA schliesst sich automatisch und startet danach von selbst wieder. Das Fenster kann währenddessen unresponsive wirken, bitte NICHT Beenden erzwingen.",
-          buttons: ["OK, installieren"],
-          defaultId: 0,
-        })
-        .catch(() => undefined)
-        .finally(() => {
-          // Defer quitAndInstall so the IPC push has a tick to land in
-          // the renderer before the main process tears down.
-          setTimeout(() => autoUpdater.quitAndInstall(false, true), 100);
+      // v0.1.333 — Den Dialog NUR an ein sichtbares, on-screen Fenster
+      // haengen. Vorher haben wir blind wins[0] genommen — seit v0.1.330
+      // ist das aber das persistent LinkedIn-Scraper-Window (off-screen
+      // bei -2000,-2000 mit Opacity 0). Sheet wurde auf dem unsichtbaren
+      // Fenster gerendert → User sah nichts → konnte nichts klicken →
+      // quitAndInstall feuerte nie → kein ShipIt → AVA hing fuer immer.
+      const wins = BrowserWindow.getAllWindows()
+        .filter((w) => !w.isDestroyed())
+        .filter((w) => {
+          // Nur Fenster mit positiven Bounds + sichtbarer Opacity.
+          // setOpacity(0)-Fenster (Scraper) fallen raus.
+          try {
+            const b = w.getBounds();
+            if (b.x < -100 || b.y < -100) return false; // off-screen
+            if (typeof w.getOpacity === "function" && w.getOpacity() < 0.1) return false;
+            return w.isVisible();
+          } catch {
+            return false;
+          }
         });
+      const parent = wins[0];
+
+      // v0.1.333 — Backstop: feuer quitAndInstall AUF JEDEN FALL nach 8s,
+      // egal ob der Dialog antwortet oder nicht. Wenn der Dialog gar nicht
+      // sichtbar ist (z. B. Fenster wurde gerade zerstoert oder versteckt
+      // unter Edge-Cases), darf das Update nicht stehen bleiben. Ohne
+      // diese Sicherung haengt AVA in showMessageBox bis der User force-
+      // quittet.
+      let installed = false;
+      const triggerInstall = (): void => {
+        if (installed) return;
+        installed = true;
+        setTimeout(() => autoUpdater.quitAndInstall(false, true), 100);
+      };
+      setTimeout(triggerInstall, 8000);
+
+      const dialogPromise = parent
+        ? dialog.showMessageBox(parent, {
+            type: "info",
+            title: "AVA-Update wird installiert",
+            message: `Update auf v${this.latestVersion ?? "neue Version"} wird jetzt installiert.`,
+            detail:
+              "Das kann 1–3 Minuten dauern. Bitte warte — AVA schliesst sich automatisch und startet danach von selbst wieder. Das Fenster kann währenddessen unresponsive wirken, bitte NICHT Beenden erzwingen.",
+            buttons: ["OK, installieren"],
+            defaultId: 0,
+          })
+        : dialog.showMessageBox({
+            // Kein sichtbares Parent-Fenster da: floating Window (statt
+            // Sheet) - hat dann eine eigene Title-Bar und kann immer
+            // angeklickt werden.
+            type: "info",
+            title: "AVA-Update wird installiert",
+            message: `Update auf v${this.latestVersion ?? "neue Version"} wird jetzt installiert.`,
+            detail:
+              "Das kann 1–3 Minuten dauern. AVA schliesst sich automatisch und startet danach von selbst wieder.",
+            buttons: ["OK, installieren"],
+            defaultId: 0,
+          });
+
+      void dialogPromise.catch(() => undefined).finally(triggerInstall);
     });
   }
 
