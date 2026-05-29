@@ -253,6 +253,23 @@ export const ALWAYS_ON_CORE_TOOL_NAMES: ReadonlySet<string> = new Set<string>([
   // aufrufbar sein, damit der Agent es nicht "vergisst", wenn ein Skill
   // mit allowed-tools-Liste aktiv ist.
   "report_self_correction",
+  // v0.1.334 — Firmen-Daten-Recherche-Core. Die SOUL.md verpflichtet
+  // den Agent dazu, BEI JEDER firmenspezifischen Frage einen Tool-Call
+  // zu machen BEVOR er textlich antwortet. Wenn diese Tools nicht
+  // sofort im Tool-Surface sind, muss der Agent erst tool_search +
+  // tool_load durchlaufen — zusätzliche Friction, die in der Praxis
+  // dazu führt, dass er den Daten-Pfad überspringt und halluziniert.
+  // Always-on macht die Datenabfrage zum 1-Hop-Pfad.
+  //
+  // Token-Kosten: ca. +3-5k pro Turn (Schemas der 6 Tools). Bei
+  // Anthropic-Subscription (User-Setup) irrelevant. Bei API-Abrechnung
+  // ist der Trade-off zugunsten "weniger Halluzinationen" klar.
+  "company_search",
+  "company_get",
+  "company_profile",
+  "company_publications",
+  "company_contacts",
+  "crm_search_hubspot_companies",
 ]);
 
 // v0.1.244 — Tool-Bundles. Wenn `tool_search` Treffer aus einer

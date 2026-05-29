@@ -2,6 +2,7 @@ import type { ToolRegistry } from "./tool-registry";
 import type { UserProfile } from "../../shared/types";
 import type { LoadedSkill } from "../skills";
 import type { GeneralMemoryEntry } from "./general-memory";
+import { SOUL } from "./soul";
 
 // System-Prompt-Builder.
 //
@@ -526,6 +527,11 @@ export function buildSystemPrompt(
     : "";
 
   return [
+    // v0.1.334 — SOUL.md GANZ VORNE. Identitäts-Anker, wird vor allem
+    // anderen gelesen + bleibt bei Context-Compaction stabil im Fokus.
+    // Enthält genau eine harte Regel: keine Antwort über eine Firma
+    // ohne Daten-Tool-Call. Siehe agent/soul.ts.
+    SOUL,
     profileBlock,
     rememberedBlock,
     nudgeBlock,
