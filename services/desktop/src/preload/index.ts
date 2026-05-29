@@ -192,12 +192,25 @@ const api = {
     ipcRenderer.invoke("app:ping"),
 
   /** v0.1.327 — Subscribe zum `power:resumed`-Frame vom Main-Process.
-   *  Returnt eine unsubscribe-Funktion. */
-  onPowerResumed: (handler: () => void): (() => void) => {
-    const wrapped = (): void => handler();
+   *  Returnt eine unsubscribe-Funktion. v0.1.335: handler bekommt
+   *  jetzt die wake-nonce uebergeben — der Renderer MUSS sie via
+   *  acknowledgeWake() zurueckmelden, sonst force-reloaded Main den
+   *  Window nach 6 Sekunden. */
+  onPowerResumed: (
+    handler: (payload: { nonce: string }) => void,
+  ): (() => void) => {
+    const wrapped = (
+      _e: Electron.IpcRendererEvent,
+      payload: { nonce: string } | undefined,
+    ): void => handler(payload ?? { nonce: "legacy" });
     ipcRenderer.on("power:resumed", wrapped);
     return () => ipcRenderer.off("power:resumed", wrapped);
   },
+  /** v0.1.335 — Renderer-Ack zurueck an Main: "ich lebe und habe das
+   *  Resume-Event verarbeitet". Ohne diesen Aufruf force-reloaded
+   *  Main den Window nach 6 Sekunden. */
+  acknowledgeWake: (nonce: string): Promise<void> =>
+    ipcRenderer.invoke("power:ack", { nonce }),
 
   // Auth.
   auth: {

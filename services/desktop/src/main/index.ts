@@ -1695,35 +1695,98 @@ app.whenReady().then(async () => {
       void updater.start().catch((err) => {
         console.warn("[power] resume: updater.start failed:", err instanceof Error ? err.message : String(err));
       });
-      // v0.1.314 — Renderer-Repaint anstoßen. Nach macOS-Sleep verliert
-      // die WebContents ihre GPU-Kontext-Verbindung; das Fenster zeigt
-      // dann eingefrorene Pixel auch wenn die App selbst wieder läuft.
-      // `invalidate()` zwingt einen vollständigen Repaint. Plus IPC-Ping
-      // an den Renderer, damit React-Side-Stores (z. B. WebSocket-
-      // Reconnects, Polling-Intervalle) sich selbst neu aufsetzen
-      // können. Renderer ignoriert das Event wenn er es nicht
-      // behandelt — fail-safe.
-      try {
-        for (const w of BrowserWindow.getAllWindows()) {
-          if (w.isDestroyed()) continue;
+      // v0.1.335 — Renderer-Wake-Recovery komplett umgebaut.
+      //
+      // Vorher (v0.1.327): Renderer empfaengt `power:resumed`, wartet
+      // 3s, pinged Main, bei Timeout `window.location.reload()`. Das
+      // funktioniert NUR wenn der Renderer-Process gesund genug ist um
+      // das IPC-Event zu verarbeiten. Bei V8-Wake-Deadlock auf macOS
+      // hangt aber genau das in der wedged Event-Loop -> Recovery
+      // greift nicht. Real-Run-Reports v0.1.327 ff. zeigen dass das
+      // Wake-Hang weiter auftrat trotz aller Patches.
+      //
+      // Neue Strategie: MAIN-driven Force-Reload. Main schickt
+      // power:resumed UND erwartet ein power:ack zurueck innerhalb
+      // 6 Sekunden. Wenn KEIN ack ankommt -> der Renderer ist wedged
+      // -> Main triggert webContents.reloadIgnoringCache() von SEINER
+      // Seite aus. Das geht durch die Renderer-Loop hindurch weil
+      // Electron Cross-Process IPC ist.
+      const onScreenWindows = BrowserWindow.getAllWindows().filter((w) => {
+        if (w.isDestroyed()) return false;
+        // v0.1.335 — Off-Screen Scraper-Window (LinkedIn, seit v0.1.330)
+        // ist headless, hat keine UI, braucht keinen Reload und ein
+        // reload waere disruptiv (Session-Zustand weg). Filter raus.
+        try {
+          const b = w.getBounds();
+          if (b.x < -100 || b.y < -100) return false;
+          if (typeof w.getOpacity === "function" && w.getOpacity() < 0.1) return false;
+          return true;
+        } catch {
+          return false;
+        }
+      });
+      console.log(
+        `[power] resume: kicking ${onScreenWindows.length} on-screen window(s) (skipping headless)`,
+      );
+      // Repaint + Soft-Notify (haendigt React-Stores die Chance fuer
+      // Self-Recovery wenn der Renderer GESUND ist).
+      const wakeNonce = `wake-${Date.now()}`;
+      for (const w of onScreenWindows) {
+        try {
+          w.webContents.invalidate();
+        } catch {
+          /* best-effort */
+        }
+        try {
+          w.webContents.send("power:resumed", { nonce: wakeNonce });
+        } catch {
+          /* best-effort */
+        }
+      }
+      // Backstop: wenn KEIN Renderer innerhalb 6s mit einem ack auf
+      // diese nonce antwortet, ist der Renderer wedged -> Force-Reload.
+      // Wir verfolgen acks via globaler Map (siehe IPC-Handler unten).
+      pendingWakeAcks.set(wakeNonce, new Set(onScreenWindows.map((w) => w.id)));
+      setTimeout(() => {
+        const pending = pendingWakeAcks.get(wakeNonce);
+        pendingWakeAcks.delete(wakeNonce);
+        if (!pending || pending.size === 0) {
+          console.log(`[power] resume: all windows ack'd nonce=${wakeNonce}`);
+          return;
+        }
+        console.warn(
+          `[power] resume: ${pending.size} window(s) DID NOT ack within 6s -> force-reloading`,
+        );
+        for (const winId of pending) {
+          const w = BrowserWindow.fromId(winId);
+          if (!w || w.isDestroyed()) continue;
           try {
-            w.webContents.invalidate();
-          } catch {
-            /* invalidate is best-effort */
-          }
-          try {
-            w.webContents.send("power:resumed");
-          } catch {
-            /* ipc send is best-effort */
+            w.webContents.reloadIgnoringCache();
+            console.log(`[power] resume: reloaded window ${winId}`);
+          } catch (err) {
+            console.warn(
+              `[power] resume: reload window ${winId} failed:`,
+              err instanceof Error ? err.message : String(err),
+            );
           }
         }
-      } catch (err) {
-        console.warn(
-          "[power] resume: renderer kick failed:",
-          err instanceof Error ? err.message : String(err),
-        );
-      }
+      }, 6000);
     }, 3000);
+  });
+
+  // v0.1.335 — Track pending Wake-Acks: pro Resume-Event eine nonce,
+  // die zugehoerigen Window-IDs muessen alle innerhalb 6s acken.
+  // Renderer-Code (AppShell.tsx) ruft window.api.acknowledgeWake(nonce)
+  // im power:resumed-Handler auf.
+  const pendingWakeAcks = new Map<string, Set<number>>();
+  ipcMain.handle("power:ack", (e, { nonce }: { nonce: string }) => {
+    const pending = pendingWakeAcks.get(nonce);
+    if (pending) {
+      pending.delete(e.sender.id);
+      console.log(
+        `[power] ack received for nonce=${nonce} from window=${e.sender.id} (${pending.size} remaining)`,
+      );
+    }
   });
 
   // v0.1.284 — Self-Corrections-Store starten + 24h-Retention-Tick.

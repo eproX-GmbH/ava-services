@@ -69,39 +69,32 @@ export function AppShell({ children }: PropsWithChildren) {
     return () => window.removeEventListener(OPEN_CHAT_SEARCH_EVENT, onOpen);
   }, []);
 
-  // v0.1.327 — Wake-Recovery. Real-Run-Reports: nach macOS-Sleep+Wake
-  // bleibt die UI manchmal frozen ("AVA reagiert nicht"). Strategie:
-  // wenn der Main-Process uns das `power:resumed`-Frame schickt,
-  // probieren wir 3s spaeter einen IPC-Heartbeat-Roundtrip. Wenn
-  // innerhalb von 5s keine pong kommt, ist die Renderer-Pipeline
-  // wahrscheinlich wedged → hard reload via window.location.reload().
+  // v0.1.335 — Wake-Recovery komplett umgebaut.
   //
-  // Trade-off: ein laufender Chat-Stream geht verloren. In der Praxis
-  // ist das im Schlaf-Wake-Fall fast nie relevant — der Stream ist
-  // beim Sleep ohnehin abgebrochen.
+  // Vorher (v0.1.327): Renderer wartet auf `power:resumed`, pinged
+  // Main mit 3s+5s Timeout, bei Timeout reload. Funktionierte aber
+  // NUR wenn die Renderer-Event-Loop gesund war — bei V8-Wake-
+  // Deadlock auf macOS war der Handler nicht erreichbar und kein
+  // Reload feuerte.
+  //
+  // Neu: zwei-stufige Recovery, Main-driven.
+  //   (a) Wenn Renderer GESUND: power:resumed-Handler feuert,
+  //       sendet sofort ack an Main. Main weiss "ok, Renderer lebt".
+  //   (b) Wenn Renderer WEDGED: ack kommt nie an. Main triggert
+  //       nach 6 Sekunden webContents.reloadIgnoringCache() von SEINER
+  //       Seite aus — das umgeht die kaputte Renderer-Event-Loop.
+  //
+  // Hier in (a): Ack so frueh wie moeglich, KEINE Verzoegerungen,
+  // damit Main weiss dass wir leben.
   useEffect(() => {
     if (!window.api?.onPowerResumed) return;
-    const unsubscribe = window.api.onPowerResumed(() => {
-      console.log("[wake-recovery] power:resumed received — probing main process");
-      setTimeout(() => {
-        const start = Date.now();
-        const timeout = new Promise<"timeout">((resolve) =>
-          setTimeout(() => resolve("timeout"), 5_000),
-        );
-        const ping = window.api.ping().then(() => "ok" as const);
-        void Promise.race([ping, timeout]).then((result) => {
-          if (result === "timeout") {
-            console.warn(
-              "[wake-recovery] no pong after 5s — main wedged, hard-reloading renderer",
-            );
-            window.location.reload();
-          } else {
-            console.log(
-              `[wake-recovery] pong received in ${Date.now() - start}ms — UI healthy`,
-            );
-          }
-        });
-      }, 3_000);
+    const unsubscribe = window.api.onPowerResumed((payload) => {
+      console.log(
+        `[wake-recovery] power:resumed received (nonce=${payload.nonce}) — acking immediately`,
+      );
+      void window.api.acknowledgeWake?.(payload.nonce).catch((err) => {
+        console.warn("[wake-recovery] ack failed:", err);
+      });
     });
     return unsubscribe;
   }, []);
