@@ -18,6 +18,7 @@ import "./file-logger-init";
 import { join } from "node:path";
 import { spawn as spawnChild } from "node:child_process";
 import { logRendererLine, getMainLogPath, getLogDir } from "./file-logger";
+import { startWatchdog } from "./watchdog";
 import { Auth, type AuthStatus } from "./auth";
 import { OllamaSupervisor } from "./ollama-supervisor";
 import {
@@ -1799,6 +1800,14 @@ app.whenReady().then(async () => {
       }, 6000);
     }, 3000);
   });
+
+  // v0.1.341 — external watchdog sidecar. The wake-hang was proven to be
+  // a MAIN-process JS busy-spin (pid alive + STAT=R, 100% of samples in
+  // one JIT'd JS stack), so no in-process recovery can fire. This detached
+  // Node sidecar watches the heartbeat file from OUTSIDE main's frozen
+  // event loop and force-relaunches AVA if the heartbeat stops advancing
+  // while the machine is awake. See main/watchdog.ts.
+  startWatchdog();
 
   // v0.1.335 — Track pending Wake-Acks: pro Resume-Event eine nonce,
   // die zugehoerigen Window-IDs muessen alle innerhalb 6s acken.
