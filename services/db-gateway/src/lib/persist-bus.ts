@@ -764,24 +764,33 @@ const applyStructuredContent: ApplyFn = async (pool, event, log) => {
     // Replace-all children: simpler than computing the diff, and
     // the legacy producer did the same (ManagingDirector has no
     // stable per-row key beyond the autoincrement id).
-    await client.query(
-      `DELETE FROM "ManagingDirector" WHERE "companyId" = $1`,
-      [result.companyId],
-    );
-    for (const md of result.managingDirectors ?? []) {
+    //
+    // Data-loss guard: only wipe-and-reinsert when this run actually
+    // carries directors. A successful re-scrape that returns an empty
+    // list (e.g. a KG/OHG without natural-person Geschäftsführer, or a
+    // transient parsing miss) must NOT clear directors stored by an
+    // earlier run — otherwise we'd silently drop existing data. The next
+    // non-empty scrape still overwrites authoritatively.
+    if (Array.isArray(result.managingDirectors) && result.managingDirectors.length > 0) {
       await client.query(
-        `INSERT INTO "ManagingDirector"
-           ("firstName", "lastName", "birthDay", city, "companyId",
-            "createdAt", "updatedAt")
-         VALUES ($1, $2, $3, $4, $5, NOW(), NOW())`,
-        [
-          md.firstName,
-          md.lastName,
-          md.birthDay ? new Date(md.birthDay) : null,
-          md.city ?? null,
-          result.companyId,
-        ],
+        `DELETE FROM "ManagingDirector" WHERE "companyId" = $1`,
+        [result.companyId],
       );
+      for (const md of result.managingDirectors) {
+        await client.query(
+          `INSERT INTO "ManagingDirector"
+             ("firstName", "lastName", "birthDay", city, "companyId",
+              "createdAt", "updatedAt")
+           VALUES ($1, $2, $3, $4, $5, NOW(), NOW())`,
+          [
+            md.firstName,
+            md.lastName,
+            md.birthDay ? new Date(md.birthDay) : null,
+            md.city ?? null,
+            result.companyId,
+          ],
+        );
+      }
     }
 
     await client.query("COMMIT");
@@ -1375,8 +1384,13 @@ const applyCompanyEvaluation: ApplyFn = async (pool, event, log) => {
     );
     void parentInsert;
 
-    // ---- managingDirectors: replace-all when the field is present.
-    if (result.managingDirectors) {
+    // ---- managingDirectors: replace-all, but ONLY when the slice carries
+    //      a NON-EMPTY list. A present-but-empty `[]` must never trigger the
+    //      DELETE — otherwise a successful-but-data-less run (e.g. a partial
+    //      scrape that still reports "ok" and emits `[]`) would wipe the
+    //      previously-stored rows and insert nothing → silent data loss.
+    //      Same class of bug as the v0.1.218 applyCompanyPublication fix.
+    if (Array.isArray(result.managingDirectors) && result.managingDirectors.length > 0) {
       await client.query(
         `DELETE FROM "ManagingDirector" WHERE "companyId" = $1`,
         [companyId],
@@ -1399,9 +1413,18 @@ const applyCompanyEvaluation: ApplyFn = async (pool, event, log) => {
     }
 
     // ---- keyFigures: parent row 1:1 with EvaluationData, four
-    //      child figure tables. Replace all four when keyFigures is
-    //      present on the slice.
-    if (result.keyFigures) {
+    //      child figure tables. Replace all four — but ONLY when the slice
+    //      actually carries at least one figure. A keyFigures object whose
+    //      four lists are all empty must not wipe the existing figures
+    //      (same data-loss guard as the lists above).
+    const kf = result.keyFigures;
+    const kfHasData =
+      !!kf &&
+      ((Array.isArray(kf.sales) && kf.sales.length > 0) ||
+        (Array.isArray(kf.totalAssets) && kf.totalAssets.length > 0) ||
+        (Array.isArray(kf.profits) && kf.profits.length > 0) ||
+        (Array.isArray(kf.employees) && kf.employees.length > 0));
+    if (kfHasData) {
       // Ensure parent KeyFigures row exists; PK is (companyId).
       const kfRes = await client.query<{ id: number }>(
         `INSERT INTO "KeyFigures" ("companyId", "createdAt", "updatedAt")
@@ -1429,7 +1452,7 @@ const applyCompanyEvaluation: ApplyFn = async (pool, event, log) => {
         `DELETE FROM "EmployeesFigure" WHERE "keyFiguresId" = $1`,
         [keyFiguresId],
       );
-      for (const f of result.keyFigures.sales ?? []) {
+      for (const f of kf!.sales ?? []) {
         await client.query(
           `INSERT INTO "SalesFigure"
              (value, currency, year, "keyFiguresId", "createdAt", "updatedAt")
@@ -1437,7 +1460,7 @@ const applyCompanyEvaluation: ApplyFn = async (pool, event, log) => {
           [f.value, f.currency, f.year, keyFiguresId],
         );
       }
-      for (const f of result.keyFigures.totalAssets ?? []) {
+      for (const f of kf!.totalAssets ?? []) {
         await client.query(
           `INSERT INTO "TotalAssetsFigure"
              (value, currency, year, "keyFiguresId", "createdAt", "updatedAt")
@@ -1445,7 +1468,7 @@ const applyCompanyEvaluation: ApplyFn = async (pool, event, log) => {
           [f.value, f.currency, f.year, keyFiguresId],
         );
       }
-      for (const f of result.keyFigures.profits ?? []) {
+      for (const f of kf!.profits ?? []) {
         await client.query(
           `INSERT INTO "ProfitFigure"
              (value, currency, year, "keyFiguresId", "createdAt", "updatedAt")
@@ -1453,7 +1476,7 @@ const applyCompanyEvaluation: ApplyFn = async (pool, event, log) => {
           [f.value, f.currency, f.year, keyFiguresId],
         );
       }
-      for (const f of result.keyFigures.employees ?? []) {
+      for (const f of kf!.employees ?? []) {
         await client.query(
           `INSERT INTO "EmployeesFigure"
              (value, year, "keyFiguresId", "createdAt", "updatedAt")
@@ -1464,8 +1487,8 @@ const applyCompanyEvaluation: ApplyFn = async (pool, event, log) => {
     }
 
     // ---- stateOfAffairs: list keyed by (companyId, year). Replace-all
-    //      when the slice carries the field.
-    if (result.stateOfAffairs) {
+    //      only when the slice carries a NON-EMPTY list (data-loss guard).
+    if (Array.isArray(result.stateOfAffairs) && result.stateOfAffairs.length > 0) {
       // Drop existing aggregates for this company; KPI rows cascade.
       await client.query(
         `DELETE FROM "StateOfAffairsAggregate" WHERE "companyId" = $1`,
@@ -1504,8 +1527,9 @@ const applyCompanyEvaluation: ApplyFn = async (pool, event, log) => {
       }
     }
 
-    // ---- deepResearches: replace-all by companyId.
-    if (result.deepResearches) {
+    // ---- deepResearches: replace-all by companyId, only on a NON-EMPTY
+    //      list (data-loss guard).
+    if (Array.isArray(result.deepResearches) && result.deepResearches.length > 0) {
       await client.query(
         `DELETE FROM "DeepResearch" WHERE "companyId" = $1`,
         [companyId],
@@ -1533,8 +1557,9 @@ const applyCompanyEvaluation: ApplyFn = async (pool, event, log) => {
       }
     }
 
-    // ---- jobPostings: replace-all by companyId.
-    if (result.jobPostings) {
+    // ---- jobPostings: replace-all by companyId, only on a NON-EMPTY
+    //      list (data-loss guard).
+    if (Array.isArray(result.jobPostings) && result.jobPostings.length > 0) {
       await client.query(
         `DELETE FROM "JobPosting" WHERE "companyId" = $1`,
         [companyId],
@@ -1564,8 +1589,9 @@ const applyCompanyEvaluation: ApplyFn = async (pool, event, log) => {
     }
 
     // ---- contacts: replace-all by companyId, plus their employments
-    //      child rows (cascade-delete handles those).
-    if (result.contacts) {
+    //      child rows (cascade-delete handles those). Only on a NON-EMPTY
+    //      list (data-loss guard).
+    if (Array.isArray(result.contacts) && result.contacts.length > 0) {
       await client.query(
         `DELETE FROM "Contact" WHERE "companyId" = $1`,
         [companyId],
