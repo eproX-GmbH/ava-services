@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Search, ChevronLeft, ChevronRight, Building2 } from "lucide-react";
 import { gatewayFetch } from "../api/gateway";
 import { CrmBadgeRow } from "../components/CrmBadge";
+import { DiagnosticsPanel } from "../components/DiagnosticsPanel";
 
 // v0.1.61 — global "all companies" matrix.
 //
@@ -95,6 +96,12 @@ export function AllCompanies() {
   const [page, setPage] = useState(1);
   const [searchInput, setSearchInput] = useState("");
   const [search, setSearch] = useState("");
+  // v0.1.337 — drill-down panel. Clicking a row opens a side panel with
+  // the per-company processing log (pipeline timeline + per-stage errors +
+  // live producer diagnostics), mirroring the Vorgänge detail view. The
+  // matrix payload already carries everything except the live producer
+  // logs (those come over IPC via DiagnosticsPanel), so no extra fetch.
+  const [openCompanyId, setOpenCompanyId] = useState<string | null>(null);
 
   // Debounce the search box — 300ms after the last keystroke we issue
   // the query. Keeps the typing experience snappy without thrashing
@@ -154,8 +161,31 @@ export function AllCompanies() {
     staleTime: 60_000,
   });
 
+  // Resolve the row backing the open drill-panel from the current page.
+  // If the open company scrolled off (page/search change, poll refetch
+  // dropping it), close the panel so we never show a stale ghost.
+  const openRow = useMemo(
+    () =>
+      (matrix.data?.companies ?? []).find(
+        (c) => c.companyId === openCompanyId,
+      ) ?? null,
+    [matrix.data, openCompanyId],
+  );
+  useEffect(() => {
+    if (openCompanyId && matrix.data && !openRow) {
+      setOpenCompanyId(null);
+    }
+  }, [openCompanyId, matrix.data, openRow]);
+
   return (
-    <section className="all-companies page">
+    <section
+      className={
+        openCompanyId
+          ? "all-companies page all-companies--with-panel"
+          : "all-companies page"
+      }
+    >
+      <div className="all-companies__main">
       <header className="ct-page-header all-companies__header">
         <p className="ct-page-header__eyebrow">
           <Building2 className="ct-icon-sm" aria-hidden="true" /> Portfolio
@@ -219,9 +249,27 @@ export function AllCompanies() {
             </thead>
             <tbody>
               {matrix.data.companies.map((row) => (
-                <tr key={row.companyId}>
+                <tr
+                  key={row.companyId}
+                  className={openCompanyId === row.companyId ? "active" : ""}
+                  onClick={() => setOpenCompanyId(row.companyId)}
+                  role="button"
+                  tabIndex={0}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      setOpenCompanyId(row.companyId);
+                    }
+                  }}
+                  aria-label={`Verarbeitungslog für ${row.name} öffnen`}
+                >
                   <td className="matrix-company">
-                    <Link to={`/companies/${row.companyId}`}>{row.name}</Link>
+                    <Link
+                      to={`/companies/${row.companyId}`}
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      {row.name}
+                    </Link>
                     <CrmBadgeRow
                       links={crmLinks.data?.links[row.companyId] ?? []}
                     />
@@ -273,6 +321,108 @@ export function AllCompanies() {
             </button>
           </footer>
         </div>
+      )}
+      </div>
+
+      {openCompanyId && openRow && (
+        <aside className="drill-panel">
+          <header>
+            <h3>{openRow.name}</h3>
+            <button
+              type="button"
+              className="link"
+              onClick={() => setOpenCompanyId(null)}
+              aria-label="Log schließen"
+            >
+              ×
+            </button>
+          </header>
+          <p>
+            <Link to={`/companies/${openCompanyId}`}>
+              Firmendetails öffnen →
+            </Link>
+          </p>
+
+          <h4>Pipeline-Verlauf</h4>
+          <ol className="timeline">
+            {PRODUCERS.map((p) => {
+              const cell = openRow.stages[p] ?? {
+                state: "pending" as const,
+                updatedAt: null,
+                errorMessage: null,
+              };
+              return (
+                <li key={p} className={`timeline__item state-${cell.state}`}>
+                  <span className="timeline__stage">{PRODUCER_LABEL[p]}</span>
+                  <span className={`badge ${STATE_DOT_CLASS[cell.state]}`}>
+                    {STATE_LABEL[cell.state]}
+                  </span>
+                  <span className="muted timeline__time">
+                    {cell.updatedAt ? formatTime(cell.updatedAt) : ""}
+                  </span>
+                </li>
+              );
+            })}
+          </ol>
+
+          {(() => {
+            // Per-stage error messages carried in the matrix payload — the
+            // latest failure reason for each producer that ended in `failed`.
+            // (Full historical error logs are transaction-scoped and live in
+            // the Vorgänge detail; here we surface the most recent reason.)
+            const failures = PRODUCERS.map((p) => ({
+              producer: p,
+              cell: openRow.stages[p],
+            })).filter(
+              (x) => x.cell && (x.cell.state === "failed" || x.cell.errorMessage),
+            );
+            return (
+              <>
+                <h4>Fehler ({failures.length})</h4>
+                {failures.length === 0 ? (
+                  <p className="muted">Keine Fehler. ✓</p>
+                ) : (
+                  <ul className="event-log">
+                    {failures.map(({ producer, cell }) => (
+                      <li key={producer}>
+                        <strong>{PRODUCER_LABEL[producer]}</strong>{" "}
+                        <span className="muted">
+                          {cell!.updatedAt ? formatTime(cell!.updatedAt) : ""}
+                        </span>
+                        <pre>
+                          {cell!.errorMessage ?? "(kein Grund angegeben)"}
+                        </pre>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </>
+            );
+          })()}
+
+          {/* Live local producer logs + Selenium screenshots. The buffer is
+              global per producer (not company-scoped on disk), so we
+              pre-seed the filter with this company's id to surface the
+              relevant lines; the user can widen it via the panel's
+              "show all" toggle. Defaults to the most interesting producer
+              (a failed stage first, else structured-content). */}
+          {(() => {
+            const interesting =
+              PRODUCERS.find((p) => openRow.stages[p]?.state === "failed") ??
+              PRODUCERS.find((p) => openRow.stages[p]?.state === "in_progress") ??
+              PRODUCERS[0];
+            return (
+              <>
+                <h4>Diagnose</h4>
+                <DiagnosticsPanel
+                  runId={openCompanyId}
+                  producers={[...PRODUCERS]}
+                  initialProducer={interesting}
+                />
+              </>
+            );
+          })()}
+        </aside>
       )}
     </section>
   );

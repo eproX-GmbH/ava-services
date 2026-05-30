@@ -958,8 +958,23 @@ code, pre { font-family: var(--font-mono); font-size: 12px; }
   max-width: 100%;
 }
 .all-companies__count { white-space: nowrap; }
-.all-companies__matrix tbody tr { cursor: default; }
+/* Rows are clickable — opening the per-company log drill-panel. */
+.all-companies__matrix tbody tr { cursor: pointer; }
 .all-companies__matrix tbody tr:hover { background: rgba(127,127,127,0.05); }
+.all-companies__matrix tbody tr.active { background: rgba(127,127,127,0.10); }
+
+/* Two-column layout when the log drill-panel is open. Mirrors the
+   Vorgänge detail (.tx-detail--with-panel). Collapses on narrow widths. */
+.all-companies--with-panel {
+  display: grid;
+  grid-template-columns: 1fr 360px;
+  gap: 1rem;
+  align-items: start;
+}
+@media (max-width: 1100px) {
+  .all-companies--with-panel { grid-template-columns: 1fr; }
+}
+.all-companies__main { min-width: 0; }
 .all-companies__matrix .matrix-company a {
   color: inherit;
   text-decoration: none;
