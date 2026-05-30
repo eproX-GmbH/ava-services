@@ -345,6 +345,38 @@ export class Auth extends EventEmitter {
     return this.status.accessToken;
   }
 
+  /**
+   * v0.1.338 — unconditionally exchange the refresh token for a fresh
+   * access token, ignoring the REFRESH_LEAD_MS window.
+   *
+   * Why this exists separately from `getAccessToken()`: the reactive
+   * gateway-401 recovery path (producer's captured
+   * `PRODUCER_GATEWAY_TOKEN` was rejected by the gateway) can't rely on
+   * the lead-time gate. The token may have been rejected for a reason
+   * that doesn't show up in our local `expiresAt` — server-side
+   * revocation, clock skew, or simply that the producer captured an
+   * older token than the one main currently holds. In all of those a
+   * lead-time-gated `getAccessToken()` would early-return the SAME
+   * stale/rejected token and the producer cycle would loop on 401.
+   *
+   * Returns the fresh access token, or null when we can't refresh
+   * (signed out / no refresh token on disk / exchange failed). On a
+   * hard failure it leaves the existing session intact rather than
+   * forcing a sign-out — the caller decides how to surface it.
+   */
+  async forceRefresh(): Promise<string | null> {
+    if (!this.status.signedIn) return null;
+    const refreshToken = await this.loadRefreshToken();
+    if (!refreshToken) return this.status.accessToken ?? null;
+    try {
+      await this.exchangeRefreshToken(refreshToken);
+    } catch (err) {
+      console.warn("auth: forced refresh failed:", (err as Error).message);
+      return null;
+    }
+    return this.status.accessToken;
+  }
+
   // ---------------------------------------------------------------------------
   // Internals
   // ---------------------------------------------------------------------------

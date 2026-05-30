@@ -1489,6 +1489,19 @@ const api = {
     hasPendingSkipMode: (): Promise<{ pending: boolean }> =>
       ipcRenderer.invoke("research:hasPendingSkipMode"),
   },
+
+  /** Diagnostics (file logger, v0.1.338). The renderer mirrors its own
+   *  console.* + window error/unhandledrejection breadcrumbs into the
+   *  persistent main-process log file via `logToFile` (fire-and-forget,
+   *  one-way send). `getLogPaths` backs a "reveal log" affordance in
+   *  Settings → Diagnose so the user can attach the file after a
+   *  wake-hang. See main/file-logger.ts for the rationale. */
+  diag: {
+    logToFile: (level: string, line: string): void =>
+      ipcRenderer.send("log:renderer", { level, line }),
+    getLogPaths: (): Promise<{ mainLog: string; logDir: string }> =>
+      ipcRenderer.invoke("diag:getLogPaths"),
+  },
 } as const;
 
 contextBridge.exposeInMainWorld("api", api);

@@ -177,6 +177,17 @@ export class ProducerSupervisor extends EventEmitter {
    */
   private lastAuthErrorAt = 0;
 
+  /**
+   * v0.1.338 — separate debounce for the GATEWAY-token auth-error
+   * watcher (distinct from the LLM-provider one above). The website +
+   * company-contact producers call the operator-paid gateway proxy
+   * (`/v1/proxy/valueserp`) with `PRODUCER_GATEWAY_TOKEN`, a 15-min
+   * Keycloak access token captured at spawn. When it expires the
+   * gateway returns 401 on every redelivered AMQP message; this
+   * debounce caps how often we ask main to force-refresh + cycle.
+   */
+  private lastGatewayAuthErrorAt = 0;
+
   constructor(private readonly opts: ProducerSupervisorOptions) {
     super();
   }
@@ -249,16 +260,19 @@ export class ProducerSupervisor extends EventEmitter {
    * forces an immediate token-refresh + cycles all producers when it
    * fires. See main/index.ts.
    */
-  private detectAuthErrorPattern(text: string): void {
+  private detectAuthErrorPattern(text: string): boolean {
     if (
       !/invalid authentication credentials/i.test(text) &&
       !/authentication_error/i.test(text) &&
       !/incorrect api key/i.test(text)
     ) {
-      return;
+      return false;
     }
     const now = Date.now();
-    if (now - this.lastAuthErrorAt < AUTH_ERROR_DEBOUNCE_MS) return;
+    // Even when debounced we still report a match so the caller skips
+    // the gateway-401 detector for this chunk (a single line shouldn't
+    // route to both recovery paths).
+    if (now - this.lastAuthErrorAt < AUTH_ERROR_DEBOUNCE_MS) return true;
     this.lastAuthErrorAt = now;
     // Best-effort provider hint: we don't actually parse the message,
     // but `lastLlmConfig` tells us which provider the producer was
@@ -271,6 +285,45 @@ export class ProducerSupervisor extends EventEmitter {
     this.emit("authError", {
       producerName: this.opts.config.name,
       provider,
+    });
+    return true;
+  }
+
+  /**
+   * v0.1.338 — detect a GATEWAY-token rejection (distinct from the
+   * LLM-provider auth errors above).
+   *
+   * The website + company-contact producers call the operator-paid
+   * gateway proxy (`/v1/proxy/valueserp`, `/v1/proxy/*`) carrying
+   * `PRODUCER_GATEWAY_TOKEN` — a 15-min Keycloak access token captured
+   * at spawn. When it expires the proxy call 401s and axios surfaces
+   * the generic `Request failed with status code 401`. None of the
+   * LLM-provider patterns match it, so before this hook the producer
+   * had ZERO recovery: it 401'd on every redelivered message until the
+   * next unrelated credential cycle happened to re-spawn it with a
+   * fresh token.
+   *
+   * We only treat a bare axios 401 as a gateway-token failure — the
+   * caller has already ruled out the LLM-provider patterns (which the
+   * SDKs surface with their own distinctive strings). main listens via
+   * `gatewayAuthError` and force-refreshes the Keycloak token + cycles
+   * producers so they re-spawn with a fresh `PRODUCER_GATEWAY_TOKEN`.
+   */
+  private detectGatewayAuthError(text: string): void {
+    if (
+      !/request failed with status code 401/i.test(text) &&
+      !/\bstatus(?:\s*code)?[:\s]*401\b/i.test(text)
+    ) {
+      return;
+    }
+    const now = Date.now();
+    if (now - this.lastGatewayAuthErrorAt < AUTH_ERROR_DEBOUNCE_MS) return;
+    this.lastGatewayAuthErrorAt = now;
+    console.warn(
+      `[producer:${this.opts.config.name}] gateway-token 401 detected — requesting forced token refresh + cycle`,
+    );
+    this.emit("gatewayAuthError", {
+      producerName: this.opts.config.name,
     });
   }
 
@@ -435,14 +488,17 @@ export class ProducerSupervisor extends EventEmitter {
       const text = b.toString().trimEnd();
       console.log(`[${tag}] ${text}`);
       producerLogBuffer.push(this.opts.config.name, "stdout", text);
-      this.detectAuthErrorPattern(text);
+      // LLM-provider 401 and gateway-token 401 are mutually exclusive
+      // per chunk — only run the gateway detector when the LLM patterns
+      // didn't match, so a single line never fires both recovery paths.
+      if (!this.detectAuthErrorPattern(text)) this.detectGatewayAuthError(text);
       this.detectAuditMarker(text);
     });
     this.child.stderr.on("data", (b: Buffer) => {
       const text = b.toString().trimEnd();
       console.warn(`[${tag}:err] ${text}`);
       producerLogBuffer.push(this.opts.config.name, "stderr", text);
-      this.detectAuthErrorPattern(text);
+      if (!this.detectAuthErrorPattern(text)) this.detectGatewayAuthError(text);
       this.detectAuditMarker(text);
     });
     this.child.on("exit", (code, signal) => {

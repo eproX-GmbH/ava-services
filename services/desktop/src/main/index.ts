@@ -9,8 +9,15 @@ import {
   shell,
   systemPreferences,
 } from "electron";
+// Side-effect import — MUST be first. Installs the persistent file logger
+// (mirrors every main-process console.* + uncaught errors into a rotated
+// file under ~/Library/Logs/AVA/) before any other module loads or logs.
+// Captures boot AND the post-wake `[power] resume` / updater path even on
+// a normal Finder/Dock launch, where stdout is otherwise discarded.
+import "./file-logger-init";
 import { join } from "node:path";
 import { spawn as spawnChild } from "node:child_process";
+import { logRendererLine, getMainLogPath, getLogDir } from "./file-logger";
 import { Auth, type AuthStatus } from "./auth";
 import { OllamaSupervisor } from "./ollama-supervisor";
 import {
@@ -1789,6 +1796,28 @@ app.whenReady().then(async () => {
     }
   });
 
+  // Renderer console-mirror. The renderer patches its console + window
+  // error handlers (see renderer/src/main.tsx) and forwards lines here so
+  // pre-wedge renderer breadcrumbs land in the same persistent file as
+  // the main-process logs. `on` (fire-and-forget) keeps it cheap and
+  // never blocks the renderer. Defensive truncation caps a runaway line.
+  ipcMain.on(
+    "log:renderer",
+    (_e, payload: { level?: string; line?: string }) => {
+      const line = String(payload?.line ?? "");
+      if (!line) return;
+      logRendererLine(payload?.level ?? "log", line.slice(0, 8192));
+    },
+  );
+
+  // Lets the renderer (Settings → Diagnose) reveal the log file so the
+  // user can attach it to a bug report. Reuses the existing
+  // shell:showItemInFolder handler on the renderer side.
+  ipcMain.handle("diag:getLogPaths", () => ({
+    mainLog: getMainLogPath(),
+    logDir: getLogDir(),
+  }));
+
   // v0.1.284 — Self-Corrections-Store starten + 24h-Retention-Tick.
   try {
     await selfCorrectionsStore.start();
@@ -2025,6 +2054,12 @@ app.whenReady().then(async () => {
   // hitting auth-failures simultaneously from racing on the refresh.
   let authRecoveryInFlight = false;
 
+  // v0.1.338 — separate in-flight guard for the GATEWAY-token recovery
+  // path (handleProducerGatewayAuthError). Distinct from
+  // authRecoveryInFlight so an LLM-credential refresh and a gateway-token
+  // refresh triggered close together don't block each other.
+  let gatewayAuthRecoveryInFlight = false;
+
   // v0.1.205 — auth-blocked state machine.
   //
   // When refreshNow() returns a non-recoverable status (revoked /
@@ -2254,6 +2289,79 @@ app.whenReady().then(async () => {
     }
   }
 
+  // v0.1.338 — reactive recovery for a rejected GATEWAY token.
+  //
+  // The website + company-contact producers carry PRODUCER_GATEWAY_TOKEN
+  // (a 15-min Keycloak access token, captured at spawn) on their
+  // operator-paid `/v1/proxy/*` calls. When it expires the gateway 401s
+  // every redelivered message and — unlike the LLM-provider 401 path —
+  // there was no recovery: the producer just looped on 401 until some
+  // unrelated credential cycle happened to re-spawn it.
+  //
+  // The supervisor's `detectGatewayAuthError` watcher now fires
+  // `gatewayAuthError` for that case. We respond by force-refreshing the
+  // Keycloak access token (ignoring the lead-time window — the producer's
+  // captured token can be stale even when main's local expiresAt still
+  // looks valid) and scheduling a credential cycle so every producer
+  // re-spawns with a fresh PRODUCER_GATEWAY_TOKEN via buildEnv().
+  async function handleProducerGatewayAuthError(args: {
+    producerName: string;
+  }): Promise<void> {
+    if (gatewayAuthRecoveryInFlight) return;
+    if (!auth.getStatus().signedIn) {
+      console.warn(
+        `[providers] producer ${args.producerName} hit gateway-401 but user is signed out — skipping refresh.`,
+      );
+      return;
+    }
+    gatewayAuthRecoveryInFlight = true;
+    audit({
+      actorType: "producer",
+      actorId: args.producerName,
+      category: "auth",
+      action: "credential.rejected",
+      severity: "warning",
+      subjectType: "credential",
+      subjectId: "gateway-token",
+      summary: `Producer ${args.producerName} meldet abgelehntes Gateway-Token (401)`,
+      metadata: { producer: args.producerName, credential: "gateway-token" },
+    });
+    try {
+      console.info(
+        `[providers] producer ${args.producerName} signalled gateway-401; forcing Keycloak token refresh`,
+      );
+      const fresh = await auth.forceRefresh();
+      audit({
+        actorType: "system",
+        actorId: "token-refresher",
+        category: "auth",
+        action: fresh ? "token.refresh.refreshed" : "token.refresh.failed",
+        severity: fresh ? "info" : "warning",
+        subjectType: "credential",
+        subjectId: "gateway-token",
+        summary: fresh
+          ? "Keycloak-Access-Token erneuert (reaktiv nach Gateway-401)"
+          : "Keycloak-Token-Refresh nach Gateway-401 fehlgeschlagen",
+        metadata: { trigger: "producer-gateway-401", producer: args.producerName },
+      });
+      if (!fresh) {
+        // Couldn't refresh (no refresh token / exchange failed). Cycling
+        // would just re-inject the same rejected token — skip it and let
+        // the supervisor's 30s debounce retry on the next 401.
+        console.warn(
+          `[providers] forced refresh after gateway-401 failed for ${args.producerName}; not cycling (would re-hit 401).`,
+        );
+        return;
+      }
+      // Fresh token in hand — cycle producers so they re-spawn with the
+      // new PRODUCER_GATEWAY_TOKEN. scheduleCredentialCycle is debounced
+      // (500ms) and idempotent.
+      scheduleCredentialCycle(`gateway-401(${args.producerName})`);
+    } finally {
+      gatewayAuthRecoveryInFlight = false;
+    }
+  }
+
   function notifyUserAuthExpired(provider: string | null): void {
     const label =
       provider === "anthropic"
@@ -2300,6 +2408,10 @@ app.whenReady().then(async () => {
         void handleProducerAuthError(args);
       },
     );
+    // v0.1.338 — gateway-token (PRODUCER_GATEWAY_TOKEN) 401 recovery.
+    p.on("gatewayAuthError", (args: { producerName: string }) => {
+      void handleProducerGatewayAuthError(args);
+    });
     // v0.1.201 — producer-emitted audit events arrive via the
     // stdout `__AVA_AUDIT__…` marker convention (see
     // producer-supervisor.ts → detectAuditMarker). The supervisor

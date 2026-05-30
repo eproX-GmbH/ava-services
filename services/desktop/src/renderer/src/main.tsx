@@ -31,7 +31,14 @@ import { Alerts } from "./routes/Alerts";
 import { LinkedIn } from "./routes/LinkedIn";
 import { TriageInbox } from "./routes/TriageInbox";
 import { bootstrapTheme } from "./lib/theme";
+import { initRendererLogger } from "./lib/renderer-logger";
 import "./styles.css";
+
+// Mirror renderer console.* + window error/unhandledrejection into the
+// persistent main-process log file (~/Library/Logs/AVA/ava-main.log).
+// Installed FIRST so a wake-hang's final breadcrumbs survive a reload /
+// force-quit. See lib/renderer-logger.ts + main/file-logger.ts.
+initRendererLogger();
 
 // Apply the persisted (or system-resolved) theme BEFORE React renders,
 // so the first paint already matches the user's preference and we avoid

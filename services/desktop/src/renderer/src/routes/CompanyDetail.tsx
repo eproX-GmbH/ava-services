@@ -398,7 +398,11 @@ export function CompanyDetail() {
         {tab === "management" && <ManagementTab structured={structured.data} />}
         {tab === "contacts" && <ContactsTab id={id!} />}
         {tab === "insights" && (
-          <InsightsTab structured={structured.data} website={website.data} latest={latest} />
+          <InsightsTab
+            structured={structured.data}
+            profile={profile.data}
+            latest={latest}
+          />
         )}
         {tab === "jobs" && <JobsTab jobs={website.data?.jobPostings ?? []} />}
       </div>
@@ -1608,13 +1612,18 @@ function groupBy<T>(items: T[], key: (item: T) => string): Record<string, T[]> {
 
 function InsightsTab({
   structured,
-  website,
+  profile,
   latest,
 }: {
   structured?: StructuredContent;
-  website?: Website;
+  profile?: CompanyProfile;
   latest?: Publication;
 }) {
+  // Branche kommt aus dem NACE-Block im Firmenprofil (klassifiziert vom
+  // company-profile-Producer LLM) — dieselbe Quelle wie der Übersicht-Tab.
+  // Früher las dieser Tab fälschlich website.companySerp.category (= null
+  // seit v0.1.59, da der LLM-Judge-Pfad keine places-category mehr liefert).
+  const nace = parseNaceFromProfile(profile?.profile);
   const founding = structured?.foundingYear
     ? Number(structured.foundingYear)
     : null;
@@ -1628,7 +1637,9 @@ function InsightsTab({
         <dl className="tx-summary">
           <div>
             <dt>Branche</dt>
-            <dd>{website?.companySerp?.category ?? ""}</dd>
+            <dd title={nace ? `NACE ${nace.code} (WZ 2008)` : undefined}>
+              {nace?.name ?? ""}
+            </dd>
           </div>
           <div>
             <dt>Firmenalter</dt>
