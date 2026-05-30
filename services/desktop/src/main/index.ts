@@ -1679,6 +1679,19 @@ app.whenReady().then(async () => {
         console.warn("[power] suspend: updater.stop failed:", err instanceof Error ? err.message : String(err));
       }
     });
+    // v0.1.340 — auch den in-process PGlite/pg-gateway-Socket-Server
+    // proaktiv schließen. Real-Run-Log zeigt: Main-Prozess friert nach
+    // Wake komplett ein (kein `[power] resume`-Log mehr). Der pg-gateway
+    // ist der einzige offene TCP-Socket in Main, der bisher NICHT vor
+    // dem Sleep geschlossen wurde — stale Socket + WASM-Engine (PGlite)
+    // ist der wahrscheinlichste Wedge-Punkt. Schließen wie die anderen
+    // Sockets; resume startet ihn mit der 3s-Grace neu. stop() flusht
+    // die PGlite-Instanzen sauber auf Platte.
+    setImmediate(() => {
+      void postgres.stop().catch((err) => {
+        console.warn("[power] suspend: postgres.stop failed:", err instanceof Error ? err.message : String(err));
+      });
+    });
   });
   powerMonitor.on("resume", () => {
     console.log("[power] resume — re-arming services in 3s");
@@ -1701,6 +1714,12 @@ app.whenReady().then(async () => {
       });
       void updater.start().catch((err) => {
         console.warn("[power] resume: updater.start failed:", err instanceof Error ? err.message : String(err));
+      });
+      // v0.1.340 — pg-gateway/PGlite nach Wake neu starten (auf suspend
+      // proaktiv geschlossen, s.o.). start() ist idempotent — wenn er nie
+      // gestoppt wurde (suspend-stop noch in-flight), ist es ein No-Op.
+      void postgres.start().catch((err) => {
+        console.warn("[power] resume: postgres.start failed:", err instanceof Error ? err.message : String(err));
       });
       // v0.1.335 — Renderer-Wake-Recovery komplett umgebaut.
       //

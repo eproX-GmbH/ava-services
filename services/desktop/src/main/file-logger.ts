@@ -30,9 +30,11 @@ import {
   createWriteStream,
   existsSync,
   mkdirSync,
+  readFileSync,
   renameSync,
   statSync,
   unlinkSync,
+  writeFileSync,
   type WriteStream,
 } from "node:fs";
 import { join } from "node:path";
@@ -42,9 +44,28 @@ const MAX_FILES = 5; // keep ava-main.log + .1 … .4
 
 const BASENAME = "ava-main.log";
 
+// v0.1.340 — main-process liveness heartbeat.
+//
+// The macOS V8-Wake-Deadlock wedges the MAIN process so hard that not
+// even the `[power] resume` log line gets written (confirmed in a real
+// incident: the log ends at `[power] suspend` and goes silent — no
+// resume, no crash, no new pid). When the whole JS event loop is frozen
+// the file logger can't capture anything, because logging IS JS.
+//
+// The heartbeat is the workaround: a 2s timer truncates a tiny dedicated
+// file with the current ISO timestamp + pid. When the event loop wedges,
+// the timer stops firing, so the file's last value pinpoints the EXACT
+// second main froze. On the next boot we read the previous instance's
+// last heartbeat and log it — so the freeze timestamp lands in the new
+// session's log even though the frozen instance couldn't write it.
+const HEARTBEAT_BASENAME = "ava-heartbeat.txt";
+const HEARTBEAT_INTERVAL_MS = 2_000;
+
 let stream: WriteStream | null = null;
 let logDir = "";
 let logPath = "";
+let heartbeatPath = "";
+let heartbeatTimer: NodeJS.Timeout | null = null;
 let bytesWritten = 0;
 let initialized = false;
 
@@ -193,6 +214,39 @@ export function initFileLogger(): void {
     "INFO ",
     `=== file-logger started: AVA v${app.getVersion()} pid=${process.pid} platform=${process.platform} arch=${process.arch} ===`,
   );
+
+  // Heartbeat. Read the PREVIOUS instance's last heartbeat first and log
+  // it — if that instance wedged (V8-wake-deadlock), this is the only
+  // record of the second it stopped ticking, surfaced into THIS boot's
+  // log. Then start our own 2s tick.
+  heartbeatPath = join(logDir, HEARTBEAT_BASENAME);
+  try {
+    if (existsSync(heartbeatPath)) {
+      const prev = readFileSync(heartbeatPath, "utf8").trim();
+      if (prev) {
+        writeLine(
+          "INFO ",
+          `[heartbeat] previous instance last alive at: ${prev}`,
+        );
+      }
+    }
+  } catch {
+    /* ignore */
+  }
+  const tick = (): void => {
+    try {
+      writeFileSync(
+        heartbeatPath,
+        `${ts()} pid=${process.pid} v${app.getVersion()}\n`,
+      );
+    } catch {
+      /* best-effort — must never throw */
+    }
+  };
+  tick();
+  heartbeatTimer = setInterval(tick, HEARTBEAT_INTERVAL_MS);
+  // Don't keep the event loop alive on quit just for the heartbeat.
+  if (typeof heartbeatTimer.unref === "function") heartbeatTimer.unref();
 }
 
 /**
@@ -211,4 +265,8 @@ export function getLogDir(): string {
 
 export function getMainLogPath(): string {
   return logPath;
+}
+
+export function getHeartbeatPath(): string {
+  return heartbeatPath;
 }
