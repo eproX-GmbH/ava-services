@@ -310,24 +310,24 @@ export function CompanyDetail() {
           {structured.data?.name ?? summary.data?.name ?? "Firma"}
         </h2>
 
-        {(structured.data?.corporatePurpose || profile.data?.profile) && (
-          <p className="muted" style={{ maxWidth: "60ch" }}>
-            {(structured.data?.corporatePurpose ?? profile.data?.profile ?? "")
-              .slice(0, 240)}
-            {(structured.data?.corporatePurpose ?? profile.data?.profile ?? "")
-              .length > 240 && "…"}
-          </p>
-        )}
-
-        {profile.data?.keywords && profile.data.keywords.length > 0 && (
+        {/* Unter dem Namen primär die Keywords als Chips. Nur wenn KEINE
+            Keywords vorhanden sind, fällt der Hero auf den Geschäftszweck
+            (corporatePurpose) zurück — bewusst NICHT auf den Profiltext,
+            der ist zu lang/roh für den Hero und lebt im Profil-Tab. */}
+        {profile.data?.keywords && profile.data.keywords.length > 0 ? (
           <ul className="chips" style={{ marginTop: "0.5rem" }}>
-            {profile.data.keywords.slice(0, 8).map((k) => (
+            {profile.data.keywords.slice(0, 12).map((k) => (
               <li key={k} className="chip">
                 {k}
               </li>
             ))}
           </ul>
-        )}
+        ) : structured.data?.corporatePurpose ? (
+          <p className="muted" style={{ maxWidth: "60ch" }}>
+            {structured.data.corporatePurpose.slice(0, 240)}
+            {structured.data.corporatePurpose.length > 240 && "…"}
+          </p>
+        ) : null}
 
         <div className="kpi-grid">
           <KpiTile label="Standort">
