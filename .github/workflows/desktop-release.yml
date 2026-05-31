@@ -179,6 +179,21 @@ jobs:
           p12-file-base64: ${{ secrets.MAC_CERTIFICATE_P12_BASE64 }}
           p12-password: ${{ secrets.MAC_CERTIFICATE_PASSWORD }}
 
+      # Disable Spotlight on the runner before packaging. electron-builder
+      # mounts the .dmg volume to lay out the disk image, then runs
+      # `hdiutil detach` — but macOS's `mds`/`mdworker` (Spotlight) eagerly
+      # indexes any freshly-mounted volume and keeps an open handle, so the
+      # detach intermittently fails with `hdiutil detach: exit code 16`
+      # ("Resource busy") even after electron-builder's 5 retries (this
+      # killed the v0.1.341 arm64 publish AFTER a successful notarization).
+      # Turning Spotlight off for the job removes the holder. Best-effort —
+      # never fail the build over this.
+      - name: Disable Spotlight (avoid hdiutil detach "Resource busy")
+        run: |
+          sudo mdutil -a -i off || true
+          sudo mdutil -a -d off || true
+          sudo launchctl bootout system /System/Library/LaunchDaemons/com.apple.metadata.mds.plist 2>/dev/null || true
+
       - name: Build, sign, notarize, and publish (macOS arm64)
         working-directory: services/desktop
         env:
@@ -371,6 +386,15 @@ jobs:
         with:
           p12-file-base64: ${{ secrets.MAC_CERTIFICATE_P12_BASE64 }}
           p12-password: ${{ secrets.MAC_CERTIFICATE_PASSWORD }}
+
+      # Same hdiutil-detach hardening as the arm64 job above — this job
+      # also builds a .dmg and is just as exposed to the Spotlight
+      # "Resource busy" detach flake.
+      - name: Disable Spotlight (avoid hdiutil detach "Resource busy")
+        run: |
+          sudo mdutil -a -i off || true
+          sudo mdutil -a -d off || true
+          sudo launchctl bootout system /System/Library/LaunchDaemons/com.apple.metadata.mds.plist 2>/dev/null || true
 
       - name: Build, sign, notarize (x64, no publish yet)
         working-directory: services/desktop
