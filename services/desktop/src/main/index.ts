@@ -3261,36 +3261,81 @@ app.whenReady().then(async () => {
     } catch (err) {
       console.warn("[updater:install] ollama.forceKill failed:", err instanceof Error ? err.message : String(err));
     }
-    // Backstop: detached child process der nach 10s den Eltern (AVA)
-    // mit SIGKILL umbringt falls Squirrel das nicht selbst schafft.
-    // Läuft auf OS-Ebene, unabhängig von der hängenden JS-Loop.
+    // Backstop: detached child process der den Eltern (AVA) mit SIGKILL
+    // umbringt, falls Squirrel das nicht selbst schafft (V8/JIT-Spin auf
+    // dem Main-Thread → kein sauberes Quit). Läuft auf OS-Ebene,
+    // unabhängig von der hängenden JS-Loop.
+    //
+    // v0.1.343 — STAGING-GATED statt blindem 10s-Timeout. Real-Run-Bug:
+    // Squirrel.Mac lädt+entpackt das Update IN-PROCESS (über den von
+    // electron-updater gehosteten lokalen Proxy) in
+    // `~/Library/Caches/com.ava.desktop.ShipIt/update.<X>/AVA.app`. Das
+    // ~1 GB-Bundle braucht real >10s; der alte `sleep 10 && kill -9`
+    // tötete den Prozess MITTEN im Entpacken → unvollständige
+    // `update.<X>/AVA.app` → ShipIt "Failed to copy bundle … no such
+    // file" → Update scheitert (siehe ShipIt_stderr.log).
+    //
+    // Neu: der Backstop pollt, bis die gestagete `AVA.app` vollständig
+    // (Executable + _CodeSignature vorhanden) UND größenstabil (2× du
+    // identisch → Extraktion fertig) ist, und killt erst DANN. Quittiert
+    // AVA vorher sauber (kill -0 schlägt fehl), beenden wir uns ohne Kill.
+    // Absolute Obergrenze 120s, damit eine WIRKLICH tote App (der Spin,
+    // der den Backstop überhaupt nötig macht) nicht ewig hängt — gibt
+    // auch langsamen Laptops genug Zeit fürs Entpacken.
     const parentPid = process.pid;
+    const CEIL_S = 120;
     try {
+      const macScript = [
+        `PID=${parentPid}`,
+        `CACHE="$HOME/Library/Caches/com.ava.desktop.ShipIt"`,
+        `ST="$CACHE/ShipItState.plist"`,
+        `start=$(date +%s); last=-1; stable=0`,
+        `while :; do`,
+        `  kill -0 $PID 2>/dev/null || exit 0`,
+        `  now=$(date +%s)`,
+        `  app=$(/usr/bin/plutil -extract updateBundleURL raw -o - "$ST" 2>/dev/null | sed -e "s|^file://||" -e "s|/$||")`,
+        `  [ -z "$app" ] && app=$(ls -dt "$CACHE"/update.*/AVA.app 2>/dev/null | head -1)`,
+        `  ready=0`,
+        `  if [ -n "$app" ] && [ -x "$app/Contents/MacOS/AVA" ] && [ -f "$app/Contents/_CodeSignature/CodeResources" ]; then`,
+        `    sz=$(/usr/bin/du -s "$app" 2>/dev/null | cut -f1)`,
+        `    if [ "$sz" = "$last" ]; then stable=$((stable+1)); else stable=0; fi`,
+        `    last="$sz"`,
+        `    [ $stable -ge 2 ] && ready=1`,
+        `  fi`,
+        `  if [ $ready -eq 1 ] || [ $(( now - start )) -ge ${CEIL_S} ]; then`,
+        `    kill -0 $PID 2>/dev/null && kill -9 $PID`,
+        `    exit 0`,
+        `  fi`,
+        `  sleep 2`,
+        `done`,
+      ].join("\n");
       const sh =
         process.platform === "win32"
           ? spawnChild(
               "cmd.exe",
               [
+                // Windows nutzt NSIS (kein in-process-Extract wie
+                // Squirrel.Mac), aber ein längeres Fenster ist strikt
+                // sicherer für langsame Maschinen.
                 "/c",
-                `timeout /t 10 /nobreak >nul & taskkill /F /PID ${parentPid}`,
+                `timeout /t ${CEIL_S} /nobreak >nul & taskkill /F /PID ${parentPid}`,
               ],
               { detached: true, stdio: "ignore" },
             )
-          : spawnChild(
-              "/bin/sh",
-              [
-                "-c",
-                `sleep 10 && kill -0 ${parentPid} 2>/dev/null && kill -9 ${parentPid}`,
-              ],
-              { detached: true, stdio: "ignore" },
-            );
+          : spawnChild("/bin/sh", ["-c", macScript], {
+              detached: true,
+              stdio: "ignore",
+            });
       sh.unref();
-      console.log(`[updater:install] backstop armed (pid=${parentPid}, T+10s)`);
+      console.log(
+        `[updater:install] backstop armed (pid=${parentPid}, staging-gated, ceiling ${CEIL_S}s)`,
+      );
     } catch (err) {
       console.warn("[updater:install] backstop spawn failed:", err instanceof Error ? err.message : String(err));
     }
     // Jetzt regulär quitAndInstall — ShipIt wird spawned, AVA SOLL
-    // sauber terminieren. Wenn nicht: Backstop killt nach 10s.
+    // sauber terminieren. Wenn nicht: Backstop killt, sobald das Staging
+    // fertig ist (spätestens nach der 120s-Obergrenze).
     return updater.installAndRelaunch();
   });
   // v0.1.155 — diagnostics for silent OTA failures. The renderer's
