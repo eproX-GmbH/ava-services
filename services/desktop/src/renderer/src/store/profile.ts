@@ -15,6 +15,7 @@ const INITIAL: UserProfile = {
   geographies: [],
   topics: [],
   tone: null,
+  signalInterests: "",
   profileSkipped: false,
   updatedAt: null,
 };

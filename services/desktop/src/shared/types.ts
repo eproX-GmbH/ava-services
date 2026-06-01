@@ -1040,6 +1040,13 @@ export interface UserProfile {
   geographies: string[];
   topics: string[];
   tone: UserProfileTone | null;
+  /** v0.1.344 — Freitext: was für den Nutzer auf LinkedIn ZUSÄTZLICH
+   *  ein starkes Signal ist (z. B. Wettbewerbsaktivität, Werksbesuche
+   *  bei Lieferanten). Wird verbatim als zusätzlicher Stärke-Block in
+   *  den LinkedIn-Signal-Extractor-Prompt eingewoben — rein additiv,
+   *  kann die Signalstärke nur erhöhen. Leer = heutiges Verhalten.
+   *  ~600 Zeichen Cap. Fließt NICHT automatisch in den Chat-Agent. */
+  signalInterests: string;
   /** True iff the user explicitly skipped the first-run nudge. The
    *  agent must NOT re-prompt unless the user says "lass uns mein
    *  Profil mal aktualisieren" or similar. */
@@ -1370,6 +1377,8 @@ export interface LinkedInSignalListRow {
   signalKind: string | null;
   signalStrength: number | null;
   summary: string | null;
+  /** v0.1.344 — matched user-defined LinkedIn relevance criteria (chips). */
+  matchedInterests: string[];
   llmTier: number | null;
   llmModel: string | null;
   matchedCompanies: Array<{

@@ -573,6 +573,31 @@ function SignalCard({
         </p>
       )}
 
+      {/* v0.1.344 — gematchte nutzerdefinierte Relevanz-Kriterien aus dem
+          Profil. Erklärt, WARUM dieses Signal (mit-)hochbewertet wurde. */}
+      {row.matchedInterests.length > 0 && (
+        <div
+          style={{
+            display: "flex",
+            flexWrap: "wrap",
+            alignItems: "center",
+            gap: "0.4rem",
+            marginTop: "0.5rem",
+          }}
+        >
+          <span className="muted small">Passt zu deinem Interesse:</span>
+          {row.matchedInterests.map((interest) => (
+            <span
+              key={interest}
+              className="ct-pill ct-pill--accent"
+              title="Nutzerdefiniertes Relevanz-Kriterium aus deinem Profil"
+            >
+              {interest}
+            </span>
+          ))}
+        </div>
+      )}
+
       {row.matchedCompanies.length > 0 && (
         <div
           style={{

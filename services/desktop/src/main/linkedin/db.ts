@@ -209,6 +209,11 @@ CREATE INDEX IF NOT EXISTS linkedin_signal_heartbeat ON linkedin_signal (heartbe
 ALTER TABLE linkedin_scan_run ADD COLUMN IF NOT EXISTS user_agent TEXT;
 ALTER TABLE linkedin_scan_run ADD COLUMN IF NOT EXISTS aggressive_mode BOOLEAN;
 
+-- v0.1.344: which user-defined relevance criteria (UserProfile.
+-- signalInterests) the extractor matched for this post. JSON array of
+-- short German keywords; surfaced as chips in the /linkedin signal card.
+ALTER TABLE linkedin_signal ADD COLUMN IF NOT EXISTS matched_interests JSONB;
+
 -- Cleanup of legacy Sponsored/Promoted posts that landed before the
 -- extractor learned to filter them out. The strongest post-hoc signal
 -- we have is "author is a company AND its display name was never
@@ -585,6 +590,8 @@ export interface SignalPayload {
   signal_strength: number;
   summary: string;
   topics: string[];
+  /** v0.1.344 — matched user-defined relevance criteria (may be []). */
+  matched_interests: string[];
   entities: SignalEntities;
 }
 
@@ -714,7 +721,8 @@ export async function recordSignalSuccess(
             signal_strength = $5,
             summary = $6,
             topics = $7::jsonb,
-            entities = $8::jsonb
+            entities = $8::jsonb,
+            matched_interests = $9::jsonb
       WHERE post_urn = $1`,
     [
       postUrn,
@@ -725,6 +733,7 @@ export async function recordSignalSuccess(
       payload.summary,
       JSON.stringify(payload.topics),
       JSON.stringify(payload.entities),
+      JSON.stringify(payload.matched_interests ?? []),
     ],
   );
 }
@@ -1574,6 +1583,8 @@ export interface SignalListRow {
   signalKind: string | null;
   signalStrength: number | null;
   summary: string | null;
+  /** v0.1.344 — matched user-defined relevance criteria (may be []). */
+  matchedInterests: string[];
   llmTier: number | null;
   llmModel: string | null;
   matchedCompanies: SignalListEntityLink[];
@@ -1594,6 +1605,25 @@ export function mediaRelPath(absPath: string): string | null {
   const root = mediaRoot();
   if (!absPath.startsWith(root + sep)) return null;
   return absPath.slice(root.length + 1).split(sep).join("/");
+}
+
+/** v0.1.344 — parse a JSONB column (string or already-parsed array) into
+ *  a clean string[]. Tolerates null / malformed input → []. */
+function parseJsonStringArray(v: unknown): string[] {
+  let arr: unknown = v;
+  if (typeof v === "string") {
+    try {
+      arr = JSON.parse(v);
+    } catch {
+      return [];
+    }
+  }
+  if (!Array.isArray(arr)) return [];
+  const out: string[] = [];
+  for (const item of arr) {
+    if (typeof item === "string" && item.trim()) out.push(item.trim());
+  }
+  return out;
 }
 
 export async function listSignals(
@@ -1640,6 +1670,7 @@ export async function listSignals(
            a.actor_urn, a.display_name AS author_display_name,
            a.headline AS author_headline, a.profile_url AS author_profile_url,
            s.signal_kind, s.signal_strength, s.summary,
+           s.matched_interests,
            s.llm_tier, s.llm_model, s.dismissed_at
       FROM linkedin_signal s
       JOIN linkedin_post p  ON p.post_urn = s.post_urn
@@ -1669,6 +1700,7 @@ export async function listSignals(
     signal_kind: string | null;
     signal_strength: number | null;
     summary: string | null;
+    matched_interests: unknown;
     llm_tier: number | null;
     llm_model: string | null;
     dismissed_at: string | null;
@@ -1789,6 +1821,7 @@ export async function listSignals(
     signalKind: r.signal_kind,
     signalStrength: r.signal_strength,
     summary: r.summary,
+    matchedInterests: parseJsonStringArray(r.matched_interests),
     llmTier: r.llm_tier,
     llmModel: r.llm_model,
     matchedCompanies: companiesByPost.get(r.post_urn) ?? [],
@@ -1861,6 +1894,7 @@ export async function loadSignalDetail(
       signal_kind: string | null;
       signal_strength: number | null;
       summary: string | null;
+      matched_interests: unknown;
       llm_tier: number | null;
       llm_model: string | null;
       dismissed_at: string | null;
@@ -1870,6 +1904,7 @@ export async function loadSignalDetail(
               a.actor_urn, a.display_name AS author_display_name,
               a.headline AS author_headline, a.profile_url AS author_profile_url,
               s.signal_kind, s.signal_strength, s.summary,
+              s.matched_interests,
               s.llm_tier, s.llm_model, s.dismissed_at
          FROM linkedin_signal s
          JOIN linkedin_post p  ON p.post_urn = s.post_urn
@@ -1895,6 +1930,7 @@ export async function loadSignalDetail(
       signalKind: r.signal_kind,
       signalStrength: r.signal_strength,
       summary: r.summary,
+      matchedInterests: parseJsonStringArray(r.matched_interests),
       llmTier: r.llm_tier,
       llmModel: r.llm_model,
       matchedCompanies: [],

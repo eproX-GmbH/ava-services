@@ -76,11 +76,19 @@ function ensureFingerprint(): void {
 export function initLinkedIn(opts?: {
   providers?: LlmProviderManager;
   gateway?: GatewayClient;
+  /** v0.1.344 — live getter for the user's free-text LinkedIn
+   *  signal-interests (UserProfile.signalInterests), woven into the
+   *  signal-extractor prompt as additional strength criteria. */
+  signalInterests?: () => string;
 }): void {
   ensureFingerprint();
 
   if (opts?.providers) {
-    attachExtractorProviders(opts.providers, ProviderConfigStore.shared());
+    attachExtractorProviders(
+      opts.providers,
+      ProviderConfigStore.shared(),
+      opts.signalInterests,
+    );
   }
   if (opts?.gateway) {
     attachLinkerGateway(opts.gateway);

@@ -2710,6 +2710,9 @@ export function ProfileSection() {
   );
   const [topics, setTopics] = useState(profile.topics.join(", "));
   const [tone, setTone] = useState<string>(profile.tone ?? "");
+  const [signalInterests, setSignalInterests] = useState(
+    profile.signalInterests,
+  );
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -2724,6 +2727,7 @@ export function ProfileSection() {
     setGeographies(profile.geographies.join(", "));
     setTopics(profile.topics.join(", "));
     setTone(profile.tone ?? "");
+    setSignalInterests(profile.signalInterests);
   }, [profile]);
 
   if (!ready) {
@@ -2754,6 +2758,7 @@ export function ProfileSection() {
           tone === "neutral" || tone === "knapp" || tone === "ausführlich"
             ? tone
             : null,
+        signalInterests: signalInterests.trim(),
         // Saving via the panel always implies the user is engaging
         // with the profile — clear the skip flag so the agent
         // doesn't keep avoiding profile suggestions.
@@ -2879,6 +2884,31 @@ export function ProfileSection() {
           <option value="knapp">Knapp</option>
           <option value="ausführlich">Ausführlich</option>
         </select>
+      </div>
+
+      {/* v0.1.344 — LinkedIn-Signal-Interessen. Freitext, der ZUSÄTZLICH
+          die Signalstärke erhöht, wenn ein Beitrag dazu passt. */}
+      <div className="alerts-prefs__row">
+        <label
+          className="alerts-prefs__label"
+          htmlFor="profile-signal-interests"
+        >
+          Relevant auf LinkedIn (zusätzliche Signal-Kriterien)
+        </label>
+        <textarea
+          id="profile-signal-interests"
+          rows={3}
+          maxLength={600}
+          value={signalInterests}
+          onChange={(e) => setSignalInterests(e.target.value)}
+          placeholder="z. B. „Wettbewerbsaktivität von Firma X/Y; jemand aus meiner Branche berichtet von Werksbesuchen oder Investitionen; neue Förderprogramme im Maschinenbau."
+          style={{ width: "100%", resize: "vertical" }}
+        />
+        <p className="muted small">
+          Erhöht die Signalstärke neuer LinkedIn-Beiträge, die dazu
+          passen, und zeigt den Treffer als Chip an. Wirkt ab dem
+          nächsten Scan. {signalInterests.length} / 600
+        </p>
       </div>
 
       <div className="alerts-prefs__actions">

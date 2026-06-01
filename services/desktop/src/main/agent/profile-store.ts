@@ -29,6 +29,7 @@ const DEFAULT_PROFILE: UserProfile = {
   geographies: [],
   topics: [],
   tone: null,
+  signalInterests: "",
   profileSkipped: false,
   updatedAt: null,
 };
@@ -45,6 +46,9 @@ const BIO_CAP = 300;
 /** Hard cap per structured-field array so a runaway agent can't write
  *  100 industries. */
 const ARRAY_CAP = 12;
+/** Cap for the free-text LinkedIn signal-interests field (v0.1.344).
+ *  Woven verbatim into the extractor prompt, so bound token spend. */
+const SIGNAL_INTERESTS_CAP = 600;
 
 export interface UserProfileStoreEvents {
   changed: (profile: UserProfile) => void;
@@ -107,6 +111,10 @@ export class UserProfileStore extends EventEmitter {
       geographies: patch.geographies ?? current.geographies,
       topics: patch.topics ?? current.topics,
       tone: patch.tone !== undefined ? patch.tone : current.tone,
+      signalInterests:
+        patch.signalInterests !== undefined
+          ? patch.signalInterests
+          : current.signalInterests,
       profileSkipped:
         patch.profileSkipped !== undefined
           ? patch.profileSkipped
@@ -131,6 +139,7 @@ export class UserProfileStore extends EventEmitter {
       geographies: [],
       topics: [],
       tone: null,
+      signalInterests: "",
       profileSkipped: false,
     });
   }
@@ -178,6 +187,10 @@ export class UserProfileStore extends EventEmitter {
         input.tone && TONE_VALUES.includes(input.tone as UserProfileTone)
           ? (input.tone as UserProfileTone)
           : null,
+      signalInterests: trimToCap(
+        input.signalInterests ?? "",
+        SIGNAL_INTERESTS_CAP,
+      ),
       profileSkipped: input.profileSkipped === true,
       updatedAt:
         typeof input.updatedAt === "string" ? input.updatedAt : null,
@@ -216,6 +229,7 @@ function didChange(a: UserProfile, b: UserProfile): boolean {
   if (a.bio !== b.bio) return true;
   if (a.role !== b.role) return true;
   if (a.tone !== b.tone) return true;
+  if (a.signalInterests !== b.signalInterests) return true;
   if (a.profileSkipped !== b.profileSkipped) return true;
   if (!sameArray(a.industries, b.industries)) return true;
   if (!sameArray(a.geographies, b.geographies)) return true;

@@ -2698,7 +2698,14 @@ app.whenReady().then(async () => {
 
   // LinkedIn-Beobachter (Phase L0). Persistent settings + consent gate
   // + kill-switch IPC. No scraper code here yet — that lands in L1+.
-  initLinkedIn({ providers, gateway: gatewayClient });
+  initLinkedIn({
+    providers,
+    gateway: gatewayClient,
+    // v0.1.344 — Profil-Freitext fließt als zusätzliche Stärke-Kriterien
+    // in die Signalbewertung. Live gelesen, damit Profil-Edits ab dem
+    // nächsten Scan greifen (kein Neustart nötig).
+    signalInterests: () => userProfile.get().signalInterests,
+  });
 
   // Skills loader (PLAN §2, S1+S2). Discovers SKILL.md files in
   // userData/skills/ and <repo>/.ava/skills/, validates frontmatter,
