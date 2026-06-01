@@ -1398,6 +1398,32 @@ export interface LinkedInSignalListRow {
     description: string | null;
   }>;
   dismissed: boolean;
+  /** v0.1.345 — the user's current 👍/👎 on this signal, or null. */
+  userFeedback: LinkedInSignalFeedback | null;
+}
+
+/** v0.1.345 — per-signal feedback. */
+export type LinkedInSignalFeedbackVote = "up" | "down";
+export type LinkedInSignalFeedbackDirection = "too_high" | "too_low";
+export interface LinkedInSignalFeedback {
+  vote: LinkedInSignalFeedbackVote;
+  direction: LinkedInSignalFeedbackDirection | null;
+  comment: string | null;
+}
+/** Input for `linkedin.feed.voteSignal` (null = remove the vote). */
+export type LinkedInSignalFeedbackInput = {
+  vote: LinkedInSignalFeedbackVote;
+  direction?: LinkedInSignalFeedbackDirection | null;
+  comment?: string | null;
+};
+
+/** v0.1.345 — distilled signal-strength calibration note + queue state. */
+export interface LinkedInCalibrationStatus {
+  note: string;
+  updatedAt: string | null;
+  /** Votes not yet folded into the note. */
+  pending: number;
+  running: boolean;
 }
 
 /** Phase L6: full detail payload for the expanded card view. */

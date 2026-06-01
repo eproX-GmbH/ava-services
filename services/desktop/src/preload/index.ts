@@ -48,6 +48,8 @@ import type {
   LinkedInImageAnalysisStatus,
   LinkedInLinkedSignal,
   LinkedInLinkerStatus,
+  LinkedInSignalFeedbackInput,
+  LinkedInCalibrationStatus,
   LinkedInRecentPost,
   LinkedInRunListEntry,
   LinkedInScanResult,
@@ -1379,6 +1381,14 @@ const api = {
         postUrn: string,
       ): Promise<LinkedInSignalDetail | null> =>
         ipcRenderer.invoke("linkedin:feed:signalDetail", { postUrn }),
+      /** v0.1.345 — 👍/👎-Feedback zur Signalstärke. `feedback: null`
+       *  entfernt den Vote. Jeder Aufruf plant eine (debounced)
+       *  Kalibrierungs-Destillation im Hintergrund. */
+      vote: (
+        postUrn: string,
+        feedback: LinkedInSignalFeedbackInput | null,
+      ): Promise<{ ok: true }> =>
+        ipcRenderer.invoke("linkedin:feed:voteSignal", { postUrn, feedback }),
       /** L6 — relative URL for a media file the route renders. */
       mediaUrl: (relPath: string): string => {
         const safe = relPath
@@ -1422,6 +1432,18 @@ const api = {
         offset?: number;
       }): Promise<LinkedInLinkedSignal[]> =>
         ipcRenderer.invoke("linkedin:linker:signalsForCompany", args),
+    },
+    /** v0.1.345 — aus dem 👍/👎-Feedback destillierte, gedeckelte
+     *  Signalstärke-Kalibrierungs-Notiz. Anzeige/Editor in Settings. */
+    calibration: {
+      status: (): Promise<LinkedInCalibrationStatus> =>
+        ipcRenderer.invoke("linkedin:calibration:status"),
+      set: (note: string): Promise<LinkedInCalibrationStatus> =>
+        ipcRenderer.invoke("linkedin:calibration:set", { note }),
+      clear: (): Promise<LinkedInCalibrationStatus> =>
+        ipcRenderer.invoke("linkedin:calibration:clear"),
+      runNow: (): Promise<LinkedInCalibrationStatus> =>
+        ipcRenderer.invoke("linkedin:calibration:runNow"),
     },
   },
   /** v0.1.172 Settings Phase A — Research Features ("Erweiterte

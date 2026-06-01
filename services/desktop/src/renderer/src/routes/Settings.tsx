@@ -43,6 +43,7 @@ import type {
   LinkedInRunListEntry,
   LinkedInScanStatus,
   LinkedInSettings,
+  LinkedInCalibrationStatus,
   LinkedInSignalStatus,
   LlmProviderKind,
   NotificationPermissionStatus,
@@ -2695,6 +2696,124 @@ interface GeneralMemoryEntry {
 // explicit user surface; the gate exists for agent-inferred updates
 // in chat, not for here.
 
+// v0.1.345 — die aus dem 👍/👎-Signal-Feedback destillierte, gedeckelte
+// Kalibrierungs-Notiz. Anzeige + Editor + „zurücksetzen" + „Jetzt aus
+// Feedback lernen". Transparenz: der Nutzer sieht/korrigiert, was AVA
+// aus seinem Feedback über seine Signalstärke-Vorlieben gelernt hat.
+function LinkedInCalibrationNote() {
+  const [status, setStatus] = useState<LinkedInCalibrationStatus | null>(null);
+  const [draft, setDraft] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = async () => {
+    try {
+      const s = await window.api.linkedin.calibration.status();
+      setStatus(s);
+      setDraft(s.note);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  };
+  useEffect(() => {
+    void load();
+  }, []);
+
+  const onSave = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      const s = await window.api.linkedin.calibration.set(draft.trim());
+      setStatus(s);
+      setDraft(s.note);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+  const onClear = async () => {
+    if (!window.confirm("Gelernte Kalibrierung wirklich zurücksetzen?")) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const s = await window.api.linkedin.calibration.clear();
+      setStatus(s);
+      setDraft(s.note);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+  const onRunNow = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      const s = await window.api.linkedin.calibration.runNow();
+      setStatus(s);
+      setDraft(s.note);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="alerts-prefs__row">
+      <label className="alerts-prefs__label" htmlFor="ln-calibration">
+        Gelernte Signal-Kalibrierung (aus deinem 👍/👎-Feedback)
+      </label>
+      <textarea
+        id="ln-calibration"
+        rows={4}
+        maxLength={800}
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        placeholder="Noch nichts gelernt. Bewerte ein paar Signale auf der LinkedIn-Seite mit 👍/👎 — AVA destilliert daraus automatisch eine kompakte Kalibrierung, die hier erscheint."
+        style={{ width: "100%", resize: "vertical" }}
+      />
+      <p className="muted small">
+        Fließt zusätzlich in die Bewertung neuer LinkedIn-Signale ein
+        (beeinflusst damit auch, was zur Benachrichtigung wird). Wird nach
+        jedem Vote automatisch im Hintergrund aktualisiert.
+        {status ? ` Offene Votes: ${status.pending}.` : ""}
+        {status?.updatedAt
+          ? ` Zuletzt gelernt ${new Date(status.updatedAt).toLocaleString("de-DE")}.`
+          : ""}
+      </p>
+      <div className="alerts-prefs__actions">
+        <button
+          type="button"
+          className="primary"
+          onClick={() => void onSave()}
+          disabled={busy}
+        >
+          {busy ? "…" : "Notiz speichern"}
+        </button>
+        <button
+          type="button"
+          className="link"
+          onClick={() => void onRunNow()}
+          disabled={busy}
+        >
+          Jetzt aus Feedback lernen
+        </button>
+        <button
+          type="button"
+          className="link bad"
+          onClick={() => void onClear()}
+          disabled={busy}
+        >
+          Zurücksetzen
+        </button>
+      </div>
+      {error && <p className="error small">{error}</p>}
+    </div>
+  );
+}
+
 export function ProfileSection() {
   const profile = useProfileStore((s) => s.profile);
   const ready = useProfileStore((s) => s.ready);
@@ -2910,6 +3029,8 @@ export function ProfileSection() {
           nächsten Scan. {signalInterests.length} / 600
         </p>
       </div>
+
+      <LinkedInCalibrationNote />
 
       <div className="alerts-prefs__actions">
         <button

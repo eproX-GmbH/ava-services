@@ -214,6 +214,27 @@ ALTER TABLE linkedin_scan_run ADD COLUMN IF NOT EXISTS aggressive_mode BOOLEAN;
 -- short German keywords; surfaced as chips in the /linkedin signal card.
 ALTER TABLE linkedin_signal ADD COLUMN IF NOT EXISTS matched_interests JSONB;
 
+-- v0.1.345: per-signal user feedback (thumbs up/down on "did the
+-- strength fit?"). One row per post (re-votable, upsert). Raw feedback
+-- NEVER enters the scoring prompt; a debounced LLM pass distils it into
+-- a bounded calibration note (see calibration.ts). feature_snapshot
+-- captures the signal's shape at vote time so distillation has context
+-- even if the post is later pruned. synthesized_at marks rows already
+-- folded into the note (re-voting resets it to NULL).
+CREATE TABLE IF NOT EXISTS linkedin_signal_feedback (
+  post_urn          TEXT PRIMARY KEY REFERENCES linkedin_post(post_urn) ON DELETE CASCADE,
+  vote              TEXT NOT NULL,          -- 'up' | 'down'
+  direction         TEXT,                   -- 'too_high' | 'too_low' | NULL
+  comment           TEXT,                   -- optional free-text "why"
+  strength_at_vote  INTEGER,                -- signal_strength snapshot
+  feature_snapshot  JSONB,                  -- {signalKind, topics, matchedInterests, summary, authorHeadline}
+  synthesized_at    TIMESTAMPTZ,
+  created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at        TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS linkedin_feedback_unsynth
+  ON linkedin_signal_feedback (synthesized_at);
+
 -- Cleanup of legacy Sponsored/Promoted posts that landed before the
 -- extractor learned to filter them out. The strongest post-hoc signal
 -- we have is "author is a company AND its display name was never
@@ -1592,6 +1613,9 @@ export interface SignalListRow {
   detectedLogos: string[];
   images: SignalListImage[];
   dismissed: boolean;
+  /** v0.1.345 — the user's current 👍/👎 (+ optional direction/comment)
+   *  for this signal, or null if not voted. */
+  userFeedback: SignalFeedbackRow | null;
 }
 
 function mediaRoot(): string {
@@ -1805,6 +1829,9 @@ export async function listSignals(
     }
   }
 
+  // v0.1.345 — the user's current vote per post (for the 👍/👎 state).
+  const feedbackByPost = await getFeedbackByPosts(db, postUrns);
+
   return res.rows.map((r) => ({
     postUrn: r.post_urn,
     postedAt: r.posted_at ? new Date(r.posted_at).getTime() : null,
@@ -1829,6 +1856,7 @@ export async function listSignals(
     detectedLogos: Array.from(logosByPost.get(r.post_urn) ?? []),
     images: imagesByPost.get(r.post_urn) ?? [],
     dismissed: r.dismissed_at !== null,
+    userFeedback: feedbackByPost.get(r.post_urn) ?? null,
   }));
 }
 
@@ -1937,6 +1965,7 @@ export async function loadSignalDetail(
       matchedContacts: [],
       detectedLogos: [],
       images: [],
+      userFeedback: (await getFeedbackByPosts(db, [postUrn])).get(postUrn) ?? null,
       dismissed: r.dismissed_at !== null,
     };
   }
@@ -2196,4 +2225,236 @@ export async function imageAnalysisCounts(
     else if (r.status === "skipped") out.skipped = n;
   }
   return out;
+}
+
+// ---- v0.1.345: per-signal feedback (thumbs up/down) -----------------------
+
+export type SignalFeedbackVote = "up" | "down";
+export type SignalFeedbackDirection = "too_high" | "too_low";
+
+export interface SignalFeedbackInput {
+  vote: SignalFeedbackVote;
+  /** Only meaningful for a 'down' vote; null otherwise. */
+  direction?: SignalFeedbackDirection | null;
+  /** Optional free-text "why". Capped before persist. */
+  comment?: string | null;
+}
+
+export interface SignalFeedbackRow {
+  postUrn: string;
+  vote: SignalFeedbackVote;
+  direction: SignalFeedbackDirection | null;
+  comment: string | null;
+}
+
+interface FeedbackFeatureSnapshot {
+  signalKind: string | null;
+  signalStrength: number | null;
+  topics: string[];
+  matchedInterests: string[];
+  summary: string | null;
+  authorHeadline: string | null;
+}
+
+const FEEDBACK_COMMENT_CAP = 500;
+
+/**
+ * Upsert the user's feedback for one signal (re-votable). Captures a
+ * compact feature snapshot from the current signal row so the later
+ * distillation has context even if the post gets pruned. Resets
+ * `synthesized_at` to NULL so the (possibly changed) vote is re-folded
+ * into the calibration note on the next distillation pass.
+ */
+export async function upsertSignalFeedback(
+  db: PGliteInstance,
+  postUrn: string,
+  input: SignalFeedbackInput,
+): Promise<void> {
+  const snapRes = await db.query<{
+    signal_kind: string | null;
+    signal_strength: number | null;
+    topics: unknown;
+    matched_interests: unknown;
+    summary: string | null;
+    author_headline: string | null;
+  }>(
+    `SELECT s.signal_kind, s.signal_strength, s.topics, s.matched_interests,
+            s.summary, a.headline AS author_headline
+       FROM linkedin_signal s
+       JOIN linkedin_post  p ON p.post_urn = s.post_urn
+       JOIN linkedin_actor a ON a.actor_urn = p.author_urn
+      WHERE s.post_urn = $1`,
+    [postUrn],
+  );
+  const s = snapRes.rows[0];
+  const snapshot: FeedbackFeatureSnapshot = {
+    signalKind: s?.signal_kind ?? null,
+    signalStrength: s?.signal_strength ?? null,
+    topics: parseJsonStringArray(s?.topics),
+    matchedInterests: parseJsonStringArray(s?.matched_interests),
+    summary: s?.summary ?? null,
+    authorHeadline: s?.author_headline ?? null,
+  };
+  const direction =
+    input.vote === "down" && input.direction ? input.direction : null;
+  const comment =
+    typeof input.comment === "string" && input.comment.trim()
+      ? input.comment.trim().slice(0, FEEDBACK_COMMENT_CAP)
+      : null;
+
+  await db.query(
+    `INSERT INTO linkedin_signal_feedback
+       (post_urn, vote, direction, comment, strength_at_vote,
+        feature_snapshot, synthesized_at, created_at, updated_at)
+     VALUES ($1, $2, $3, $4, $5, $6::jsonb, NULL, NOW(), NOW())
+     ON CONFLICT (post_urn) DO UPDATE
+       SET vote = EXCLUDED.vote,
+           direction = EXCLUDED.direction,
+           comment = EXCLUDED.comment,
+           strength_at_vote = EXCLUDED.strength_at_vote,
+           feature_snapshot = EXCLUDED.feature_snapshot,
+           synthesized_at = NULL,
+           updated_at = NOW()`,
+    [
+      postUrn,
+      input.vote,
+      direction,
+      comment,
+      snapshot.signalStrength,
+      JSON.stringify(snapshot),
+    ],
+  );
+}
+
+/** Remove the user's feedback for a signal (un-vote). */
+export async function deleteSignalFeedback(
+  db: PGliteInstance,
+  postUrn: string,
+): Promise<void> {
+  await db.query(`DELETE FROM linkedin_signal_feedback WHERE post_urn = $1`, [
+    postUrn,
+  ]);
+}
+
+/** Current votes for a set of posts, keyed by post_urn. Used to paint the
+ *  active 👍/👎 state on the signal list. */
+export async function getFeedbackByPosts(
+  db: PGliteInstance,
+  postUrns: string[],
+): Promise<Map<string, SignalFeedbackRow>> {
+  const out = new Map<string, SignalFeedbackRow>();
+  if (postUrns.length === 0) return out;
+  const res = await db.query<{
+    post_urn: string;
+    vote: string;
+    direction: string | null;
+    comment: string | null;
+  }>(
+    `SELECT post_urn, vote, direction, comment
+       FROM linkedin_signal_feedback
+      WHERE post_urn = ANY($1::text[])`,
+    [postUrns],
+  );
+  for (const r of res.rows) {
+    out.set(r.post_urn, {
+      postUrn: r.post_urn,
+      vote: r.vote === "down" ? "down" : "up",
+      direction:
+        r.direction === "too_high" || r.direction === "too_low"
+          ? r.direction
+          : null,
+      comment: r.comment,
+    });
+  }
+  return out;
+}
+
+export interface UnsynthesizedFeedback {
+  postUrn: string;
+  vote: SignalFeedbackVote;
+  direction: SignalFeedbackDirection | null;
+  comment: string | null;
+  strengthAtVote: number | null;
+  signalKind: string | null;
+  topics: string[];
+  matchedInterests: string[];
+  summary: string | null;
+  authorHeadline: string | null;
+}
+
+/** Feedback rows not yet folded into the calibration note. Newest first. */
+export async function nextUnsynthesizedFeedback(
+  db: PGliteInstance,
+  limit = 30,
+): Promise<UnsynthesizedFeedback[]> {
+  const lim = Math.min(Math.max(limit, 1), 100);
+  const res = await db.query<{
+    post_urn: string;
+    vote: string;
+    direction: string | null;
+    comment: string | null;
+    strength_at_vote: number | null;
+    feature_snapshot: unknown;
+  }>(
+    `SELECT post_urn, vote, direction, comment, strength_at_vote, feature_snapshot
+       FROM linkedin_signal_feedback
+      WHERE synthesized_at IS NULL
+      ORDER BY updated_at DESC
+      LIMIT $1`,
+    [lim],
+  );
+  return res.rows.map((r) => {
+    let snap: Partial<FeedbackFeatureSnapshot> = {};
+    try {
+      snap =
+        typeof r.feature_snapshot === "string"
+          ? (JSON.parse(r.feature_snapshot) as FeedbackFeatureSnapshot)
+          : ((r.feature_snapshot as FeedbackFeatureSnapshot) ?? {});
+    } catch {
+      snap = {};
+    }
+    return {
+      postUrn: r.post_urn,
+      vote: r.vote === "down" ? "down" : "up",
+      direction:
+        r.direction === "too_high" || r.direction === "too_low"
+          ? r.direction
+          : null,
+      comment: r.comment,
+      strengthAtVote: r.strength_at_vote,
+      signalKind: snap.signalKind ?? null,
+      topics: Array.isArray(snap.topics) ? snap.topics : [],
+      matchedInterests: Array.isArray(snap.matchedInterests)
+        ? snap.matchedInterests
+        : [],
+      summary: snap.summary ?? null,
+      authorHeadline: snap.authorHeadline ?? null,
+    };
+  });
+}
+
+/** Mark feedback rows as folded into the calibration note. */
+export async function markFeedbackSynthesized(
+  db: PGliteInstance,
+  postUrns: string[],
+): Promise<void> {
+  if (postUrns.length === 0) return;
+  await db.query(
+    `UPDATE linkedin_signal_feedback
+        SET synthesized_at = NOW()
+      WHERE post_urn = ANY($1::text[])`,
+    [postUrns],
+  );
+}
+
+/** How many votes are waiting to be distilled. */
+export async function countUnsynthesizedFeedback(
+  db: PGliteInstance,
+): Promise<number> {
+  const res = await db.query<{ n: string }>(
+    `SELECT COUNT(*)::text AS n
+       FROM linkedin_signal_feedback
+      WHERE synthesized_at IS NULL`,
+  );
+  return Number(res.rows[0]?.n ?? 0);
 }

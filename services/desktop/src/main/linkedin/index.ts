@@ -53,14 +53,23 @@ import {
 } from "./scraper";
 import { listRecentRuns, type RunMetadata } from "./runs";
 import {
+  deleteSignalFeedback,
   dismissSignal,
   getDb,
   listSignals,
   loadSignalDetail,
   recentPosts,
   signalsForCompany,
+  upsertSignalFeedback,
+  type SignalFeedbackInput,
   type SignalListFilter,
 } from "./db";
+import {
+  calibrationStatus,
+  distillNow,
+  scheduleDistillation,
+} from "./calibration";
+import { clearCalibration, writeCalibration } from "./calibration-store";
 import { startScheduler, stopScheduler } from "./scheduler";
 import { destroyScraperWindow } from "./scraper-window";
 
@@ -327,6 +336,44 @@ export function initLinkedIn(opts?: {
       return { ok: true };
     },
   );
+
+  // v0.1.345 — per-signal feedback (👍/👎). Passing vote=null removes the
+  // vote (un-vote). Every change schedules a debounced calibration pass.
+  ipcMain.handle(
+    "linkedin:feed:voteSignal",
+    async (
+      _e,
+      args: { postUrn: string; feedback: SignalFeedbackInput | null },
+    ): Promise<{ ok: true }> => {
+      const db = await getDb();
+      if (args.feedback === null) {
+        await deleteSignalFeedback(db, args.postUrn);
+      } else {
+        await upsertSignalFeedback(db, args.postUrn, args.feedback);
+      }
+      scheduleDistillation();
+      return { ok: true };
+    },
+  );
+
+  // v0.1.345 — calibration note (distilled from feedback). Read for the
+  // Settings panel; set/clear for the user editor; runNow for the
+  // "Jetzt aus Feedback lernen" button.
+  ipcMain.handle("linkedin:calibration:status", async () =>
+    calibrationStatus(),
+  );
+  ipcMain.handle(
+    "linkedin:calibration:set",
+    async (_e, args: { note: string }) => {
+      writeCalibration(args.note ?? "");
+      return calibrationStatus();
+    },
+  );
+  ipcMain.handle("linkedin:calibration:clear", async () => {
+    clearCalibration();
+    return calibrationStatus();
+  });
+  ipcMain.handle("linkedin:calibration:runNow", async () => distillNow());
 
   ipcMain.handle(
     "linkedin:linker:signalsForCompany",

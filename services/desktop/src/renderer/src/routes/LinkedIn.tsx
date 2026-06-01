@@ -6,6 +6,8 @@ import type {
   LinkedInSettings,
   LinkedInSignalListFilter,
   LinkedInSignalListRow,
+  LinkedInSignalFeedbackInput,
+  LinkedInSignalFeedbackDirection,
 } from "../../../shared/types";
 
 // Phase L6 — /linkedin route.
@@ -300,6 +302,15 @@ export function LinkedIn() {
     await queryClient.invalidateQueries({ queryKey: ["linkedin", "signals"] });
   };
 
+  // v0.1.345 — 👍/👎 feedback. `feedback: null` removes the vote.
+  const onVote = async (
+    postUrn: string,
+    feedback: LinkedInSignalFeedbackInput | null,
+  ) => {
+    await window.api.linkedin.feed.vote(postUrn, feedback);
+    await queryClient.invalidateQueries({ queryKey: ["linkedin", "signals"] });
+  };
+
   return (
     <section className="page" style={{ paddingBottom: "2rem" }}>
       <header className="ct-page-header">
@@ -438,6 +449,7 @@ export function LinkedIn() {
                   setExpanded((p) => ({ ...p, [row.postUrn]: !p[row.postUrn] }))
                 }
                 onDismissToggle={() => onDismissToggle(row.postUrn, row.dismissed)}
+                onVote={(feedback) => onVote(row.postUrn, feedback)}
                 onOpenImage={(img) => setLightbox(img)}
                 onOpenLinkedIn={openConfirm.openLinkedIn}
               />
@@ -474,6 +486,7 @@ interface SignalCardProps {
   expanded: boolean;
   onToggleExpanded: () => void;
   onDismissToggle: () => void;
+  onVote: (feedback: LinkedInSignalFeedbackInput | null) => void;
   onOpenImage: (img: LightboxImage) => void;
   onOpenLinkedIn: (href: string) => void;
 }
@@ -483,6 +496,7 @@ function SignalCard({
   expanded,
   onToggleExpanded,
   onDismissToggle,
+  onVote,
   onOpenImage,
   onOpenLinkedIn,
 }: SignalCardProps) {
@@ -735,7 +749,144 @@ function SignalCard({
           {row.dismissed ? "Zurückholen" : "Verwerfen"}
         </button>
       </footer>
+
+      <FeedbackBar row={row} onVote={onVote} />
     </article>
+  );
+}
+
+// v0.1.345 — 👍/👎-Feedback zur Signalstärke. 👍 = passte; 👎 öffnet
+// Richtung (zu hoch/zu niedrig) + optionalen Kommentar. Beide erlauben
+// einen optionalen Kommentar. Erneuter Klick auf den aktiven Daumen
+// nimmt den Vote zurück. Das destillierte Feedback kalibriert künftige
+// Signalstärken (siehe calibration.ts), beeinflusst also auch, was zur
+// Notification wird.
+function FeedbackBar({
+  row,
+  onVote,
+}: {
+  row: LinkedInSignalListRow;
+  onVote: (feedback: LinkedInSignalFeedbackInput | null) => void;
+}) {
+  const fb = row.userFeedback;
+  const [open, setOpen] = useState(fb?.vote === "down");
+  const [comment, setComment] = useState(fb?.comment ?? "");
+  const [direction, setDirection] = useState<
+    LinkedInSignalFeedbackDirection | null
+  >(fb?.direction ?? null);
+
+  // Re-sync when the server row changes (refetch after a vote).
+  useEffect(() => {
+    setComment(row.userFeedback?.comment ?? "");
+    setDirection(row.userFeedback?.direction ?? null);
+    setOpen(row.userFeedback?.vote === "down");
+  }, [row.userFeedback]);
+
+  const submit = (
+    vote: "up" | "down",
+    dir: LinkedInSignalFeedbackDirection | null,
+  ) => {
+    onVote({ vote, direction: dir, comment: comment.trim() || null });
+  };
+
+  return (
+    <div
+      style={{
+        marginTop: "0.6rem",
+        paddingTop: "0.5rem",
+        borderTop: "1px solid var(--ct-border, #eee)",
+        display: "flex",
+        flexDirection: "column",
+        gap: "0.4rem",
+      }}
+    >
+      <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+        <span className="muted small">Stärke passend?</span>
+        <button
+          type="button"
+          className={`ct-pill ${fb?.vote === "up" ? "ct-pill--accent" : "ct-pill--muted"}`}
+          aria-pressed={fb?.vote === "up"}
+          title="Passte"
+          style={{ cursor: "pointer", border: 0 }}
+          onClick={() => {
+            if (fb?.vote === "up") onVote(null);
+            else {
+              setDirection(null);
+              setOpen(true);
+              submit("up", null);
+            }
+          }}
+        >
+          👍
+        </button>
+        <button
+          type="button"
+          className={`ct-pill ${fb?.vote === "down" ? "ct-pill--bad" : "ct-pill--muted"}`}
+          aria-pressed={fb?.vote === "down"}
+          title="Passte nicht"
+          style={{ cursor: "pointer", border: 0 }}
+          onClick={() => {
+            if (fb?.vote === "down") onVote(null);
+            else {
+              setOpen(true);
+              submit("down", direction);
+            }
+          }}
+        >
+          👎
+        </button>
+        {fb && (
+          <button
+            type="button"
+            className="link small"
+            onClick={() => setOpen((o) => !o)}
+          >
+            {open ? "weniger" : "Begründung"}
+          </button>
+        )}
+      </div>
+
+      {fb && open && (
+        <div style={{ display: "flex", flexDirection: "column", gap: "0.35rem" }}>
+          {fb.vote === "down" && (
+            <div style={{ display: "flex", gap: "0.4rem", alignItems: "center" }}>
+              <span className="muted small">Stärke war:</span>
+              {(
+                [
+                  ["too_high", "zu hoch"],
+                  ["too_low", "zu niedrig"],
+                ] as Array<[LinkedInSignalFeedbackDirection, string]>
+              ).map(([val, label]) => (
+                <button
+                  key={val}
+                  type="button"
+                  className={`ct-pill ${direction === val ? "ct-pill--accent" : "ct-pill--muted"}`}
+                  style={{ cursor: "pointer", border: 0 }}
+                  onClick={() => {
+                    setDirection(val);
+                    submit("down", val);
+                  }}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          )}
+          <textarea
+            rows={2}
+            maxLength={500}
+            value={comment}
+            onChange={(e) => setComment(e.target.value)}
+            onBlur={() => {
+              if ((fb.comment ?? "") !== comment.trim())
+                submit(fb.vote, fb.vote === "down" ? direction : null);
+            }}
+            placeholder="Warum? (optional) — hilft AVA, deine Signalstärke besser zu treffen"
+            style={{ width: "100%", resize: "vertical" }}
+          />
+        </div>
+      )}
+    </div>
   );
 }
 
