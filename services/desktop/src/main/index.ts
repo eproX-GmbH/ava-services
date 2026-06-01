@@ -262,7 +262,19 @@ function startPeriodicResumeSweep(): void {
   if (periodicResumeTimer) return;
   periodicResumeTimer = setInterval(() => {
     if (!auth.getStatus().signedIn) return;
-    void resumeStuckStages({ gateway: gatewayClient }).catch((err) => {
+    void resumeStuckStages({
+      gateway: gatewayClient,
+      // v0.1.360 — verklemmte Producer (lange in_progress) neu starten,
+      // damit ein frischer AMQP-Consumer das re-dispatchte Event abholt.
+      // Behebt „Pipeline komplett eingefroren". Nur im periodischen Sweep
+      // (beim Boot starten die Producer ohnehin frisch).
+      restartProducer: async (name: string) => {
+        const sup = producers.find((p) => p.getStatus().name === name);
+        if (!sup) return;
+        await sup.stop();
+        await sup.start();
+      },
+    }).catch((err) => {
       console.warn(
         "[producer-resume] periodic sweep rejected:",
         err instanceof Error ? err.message : err,

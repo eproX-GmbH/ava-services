@@ -36,10 +36,31 @@ type Stage = (typeof RESUMABLE_STAGES)[number];
 
 const STUCK_STATES = new Set(["pending", "in_progress"]);
 
+/** v0.1.360 — Stage → Producer-Name (= kebab-case der Stage = das
+ *  resources/producers/<name>/-Verzeichnis). Wird gebraucht, um den
+ *  Producer zu RESTARTEN, der eine festhängende Stage besitzt. */
+const STAGE_TO_PRODUCER: Record<Stage, string> = {
+  structuredContent: "structured-content",
+  companyPublication: "company-publication",
+  website: "website",
+  companyProfile: "company-profile",
+  companyContact: "company-contact",
+  companyEvaluation: "company-evaluation",
+};
+
 /** Sanity bound: ignore transactions older than this. */
 const MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 /** Don't double-launch a row that just started transitioning. */
 const RECENT_UPDATE_GUARD_MS = 60 * 1000;
+/**
+ * v0.1.360 — Eine Stage, die SO lange in `in_progress` festhängt, gilt als
+ * "verklemmter Producer" (lebt, konsumiert aber kein AMQP mehr / Compute
+ * eingefroren). Re-Dispatch allein hilft dann nicht — der Producer muss
+ * neu gestartet werden, damit ein frischer AMQP-Consumer das (re-published)
+ * Event abholt. Großzügig bemessen, damit ein langsamer, aber echt
+ * arbeitender Producer (großer LLM-Call) nicht abgewürgt wird.
+ */
+const STALE_IN_PROGRESS_RESTART_MS = 10 * 60 * 1000;
 /** Pull a generous window of recent transactions to scan. */
 const TRANSACTIONS_PAGE_SIZE = 50;
 /** Inter-call pacing so we don't hammer the gateway on a big sweep. */
@@ -69,12 +90,22 @@ export interface ResumeStuckStagesDeps {
   gateway: GatewayClient;
   /** Optional logger; defaults to console. */
   logger?: { info: (...a: unknown[]) => void; warn: (...a: unknown[]) => void; debug?: (...a: unknown[]) => void };
+  /**
+   * v0.1.360 — Restartet den lokalen Producer-Subprozess mit diesem Namen
+   * (stop+start). Wird aufgerufen, wenn eine Stage zu lange in
+   * `in_progress` festhängt (verklemmter Producer). Ohne Restart bringt
+   * der Re-Dispatch nichts, weil ein wedged Producer das AMQP-Event nicht
+   * konsumiert. Optional — beim Boot weggelassen (Producer starten dort
+   * ohnehin frisch).
+   */
+  restartProducer?: (producerName: string) => Promise<void>;
 }
 
 export interface ResumeStuckStagesResult {
   transactionsScanned: number;
   resumed: number;
   failed: number;
+  restartedProducers: string[];
   byStage: Partial<Record<Stage, number>>;
 }
 
@@ -111,8 +142,11 @@ export async function resumeStuckStages(
     transactionsScanned: 0,
     resumed: 0,
     failed: 0,
+    restartedProducers: [],
     byStage: {},
   };
+  /** Producer, die eine zu-lange-in_progress-Stage besitzen → Restart. */
+  const staleProducers = new Set<string>();
 
   // 1. List recent transactions. The gateway list endpoint sorts
   // newest-first and doesn't filter by status, so we pull a window
@@ -183,6 +217,16 @@ export async function resumeStuckStages(
         // double-launch it. Skipped naturally for `pending` cells
         // with no updatedAt.
         if (cell && isRecentlyUpdated(cell, now)) continue;
+        // v0.1.360 — Stage hängt lange in `in_progress`? Dann ist der
+        // Producer vermutlich verklemmt (lebt, konsumiert aber kein AMQP
+        // mehr). Owner-Producer für einen Restart vormerken — sonst holt
+        // niemand das gleich re-dispatchte Event ab.
+        if (cell && cell.state === "in_progress" && cell.updatedAt) {
+          const ts = Date.parse(cell.updatedAt);
+          if (!Number.isNaN(ts) && now - ts >= STALE_IN_PROGRESS_RESTART_MS) {
+            staleProducers.add(STAGE_TO_PRODUCER[stage]);
+          }
+        }
         jobs.push({ transactionId, companyId, stage });
       }
     }
@@ -193,6 +237,27 @@ export async function resumeStuckStages(
       `scanned ${result.transactionsScanned} transaction(s); no stuck stages to resume`,
     );
     return result;
+  }
+
+  // v0.1.360 — Verklemmte Producer ZUERST neu starten, BEVOR wir
+  // re-dispatchen. Ein wedged Producer (lebt, konsumiert aber kein AMQP)
+  // ignoriert sonst das re-published Event und die Stage bleibt ewig
+  // `in_progress` (gemeldeter „Pipeline komplett eingefroren"-Bug). Ein
+  // Neustart bringt einen frischen AMQP-Consumer hoch, der das gleich
+  // folgende Retry-Event abholt.
+  if (deps.restartProducer && staleProducers.size > 0) {
+    for (const name of staleProducers) {
+      try {
+        await deps.restartProducer(name);
+        result.restartedProducers.push(name);
+        log.info(`restarted wedged producer '${name}' (stale in_progress stage)`);
+      } catch (err) {
+        log.warn(
+          `restart of producer '${name}' failed:`,
+          err instanceof Error ? err.message : err,
+        );
+      }
+    }
   }
 
   // 3. Dispatch retries sequentially with a small inter-call delay.
