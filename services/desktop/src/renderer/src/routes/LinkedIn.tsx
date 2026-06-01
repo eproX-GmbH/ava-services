@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { CSSProperties } from "react";
 import { Link } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Activity, ExternalLink } from "lucide-react";
@@ -789,6 +790,62 @@ function FeedbackBar({
     onVote({ vote, direction: dir, comment: comment.trim() || null });
   };
 
+  // Explizite, theme-sichere Styles: aktive Auswahl wird klar gefüllt +
+  // umrandet, inaktiv als Ghost-Button. (Die ct-pill--accent/--bad-
+  // Modifier existieren im CSS NICHT, daher hier hartkodiert.)
+  const baseBtn: CSSProperties = {
+    cursor: "pointer",
+    borderRadius: "999px",
+    padding: "0.32rem 0.8rem",
+    fontSize: "0.9rem",
+    display: "inline-flex",
+    alignItems: "center",
+    gap: "0.35rem",
+    lineHeight: 1.2,
+    transition: "background 120ms ease, border-color 120ms ease",
+  };
+  const voteStyle = (active: boolean, tone: "up" | "down"): CSSProperties => {
+    const color = tone === "up" ? "#10b981" : "#ef4444";
+    return active
+      ? {
+          ...baseBtn,
+          border: `2px solid ${color}`,
+          background:
+            tone === "up" ? "rgba(16,185,129,0.18)" : "rgba(239,68,68,0.18)",
+          color: "var(--ct-text, #111)",
+          fontWeight: 700,
+          boxShadow: `0 0 0 1px ${color} inset`,
+        }
+      : {
+          ...baseBtn,
+          border: "1.5px solid var(--ct-border, rgba(120,120,120,0.4))",
+          background: "transparent",
+          color: "var(--ct-muted, #8a8a8a)",
+          fontWeight: 500,
+          opacity: 0.8,
+        };
+  };
+  const chipStyle = (active: boolean): CSSProperties =>
+    active
+      ? {
+          ...baseBtn,
+          padding: "0.24rem 0.7rem",
+          fontSize: "0.82rem",
+          fontWeight: 700,
+          border: "2px solid var(--ct-aqua, #0aa)",
+          background: "rgba(0,170,200,0.16)",
+          color: "var(--ct-text, #111)",
+        }
+      : {
+          ...baseBtn,
+          padding: "0.24rem 0.7rem",
+          fontSize: "0.82rem",
+          fontWeight: 500,
+          border: "1.5px solid var(--ct-border, rgba(120,120,120,0.4))",
+          background: "transparent",
+          color: "var(--ct-muted, #8a8a8a)",
+        };
+
   return (
     <div
       style={{
@@ -797,17 +854,25 @@ function FeedbackBar({
         borderTop: "1px solid var(--ct-border, #eee)",
         display: "flex",
         flexDirection: "column",
-        gap: "0.4rem",
+        gap: "0.45rem",
       }}
     >
-      <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
-        <span className="muted small">Stärke passend?</span>
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: "0.5rem",
+          flexWrap: "wrap",
+        }}
+      >
+        <span className="muted small" style={{ marginRight: "0.1rem" }}>
+          Stärke passend?
+        </span>
         <button
           type="button"
-          className={`ct-pill ${fb?.vote === "up" ? "ct-pill--accent" : "ct-pill--muted"}`}
           aria-pressed={fb?.vote === "up"}
-          title="Passte"
-          style={{ cursor: "pointer", border: 0 }}
+          title="Stärke passte"
+          style={voteStyle(fb?.vote === "up", "up")}
           onClick={() => {
             if (fb?.vote === "up") onVote(null);
             else {
@@ -817,14 +882,13 @@ function FeedbackBar({
             }
           }}
         >
-          👍
+          <span aria-hidden>👍</span> Passt
         </button>
         <button
           type="button"
-          className={`ct-pill ${fb?.vote === "down" ? "ct-pill--bad" : "ct-pill--muted"}`}
           aria-pressed={fb?.vote === "down"}
-          title="Passte nicht"
-          style={{ cursor: "pointer", border: 0 }}
+          title="Stärke passte nicht"
+          style={voteStyle(fb?.vote === "down", "down")}
           onClick={() => {
             if (fb?.vote === "down") onVote(null);
             else {
@@ -833,8 +897,17 @@ function FeedbackBar({
             }
           }}
         >
-          👎
+          <span aria-hidden>👎</span> Passt nicht
         </button>
+        {fb && (
+          <span
+            className="small"
+            style={{ color: "#10b981", fontWeight: 600 }}
+            title="Dein Feedback wurde gespeichert und fließt in die Kalibrierung ein"
+          >
+            ✓ gespeichert
+          </span>
+        )}
         {fb && (
           <button
             type="button"
@@ -847,9 +920,16 @@ function FeedbackBar({
       </div>
 
       {fb && open && (
-        <div style={{ display: "flex", flexDirection: "column", gap: "0.35rem" }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: "0.4rem" }}>
           {fb.vote === "down" && (
-            <div style={{ display: "flex", gap: "0.4rem", alignItems: "center" }}>
+            <div
+              style={{
+                display: "flex",
+                gap: "0.45rem",
+                alignItems: "center",
+                flexWrap: "wrap",
+              }}
+            >
               <span className="muted small">Stärke war:</span>
               {(
                 [
@@ -860,8 +940,8 @@ function FeedbackBar({
                 <button
                   key={val}
                   type="button"
-                  className={`ct-pill ${direction === val ? "ct-pill--accent" : "ct-pill--muted"}`}
-                  style={{ cursor: "pointer", border: 0 }}
+                  aria-pressed={direction === val}
+                  style={chipStyle(direction === val)}
                   onClick={() => {
                     setDirection(val);
                     submit("down", val);
