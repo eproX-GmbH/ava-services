@@ -1857,6 +1857,10 @@ export function ProviderSection() {
   // Anthropic provider run.
   const anthropicHasAnyCredential =
     hasKey.anthropic || hasAnthropicSubscriptionToken;
+  // v0.1.353 — analog: OpenAI hat eine Credential, wenn ein API-Key ODER
+  // eine ChatGPT-Abo-Verbindung existiert.
+  const hasOpenAISubscriptionToken = cfg.data.hasOpenAISubscriptionToken;
+  const openaiHasAnyCredential = hasKey.openai || hasOpenAISubscriptionToken;
   const activeKind = config.kind;
   const activeModelId = config.models[activeKind] || "";
   const modelsByKind = groupBy(models.data, (m) => m.provider);
@@ -1898,12 +1902,18 @@ export function ProviderSection() {
                   ? true
                   : k === "anthropic"
                     ? anthropicHasAnyCredential
-                    : hasKey[k];
+                    : k === "openai"
+                      ? openaiHasAnyCredential
+                      : hasKey[k];
               // v0.1.216 — Bei Anthropic ohne Credential heißt das
               // jetzt "kein Abo verknüpft" statt "kein Schlüssel",
               // weil die API-Key-Anmeldung eingestellt wurde.
               const missingSuffix =
-                k === "anthropic" ? " (kein Abo verknüpft)" : " (kein Schlüssel)";
+                k === "anthropic"
+                  ? " (kein Abo verknüpft)"
+                  : k === "openai"
+                    ? " (kein Schlüssel/Abo)"
+                    : " (kein Schlüssel)";
               return (
                 <option key={k} value={k} disabled={!hasCred}>
                   {PROVIDER_LABEL[k]}
@@ -2004,7 +2014,135 @@ export function ProviderSection() {
           />
         ))}
       </div>
+
+      {/* v0.1.353 — „Sign in with ChatGPT" (Codex-OAuth-Abo). Eigene
+          Karte unter den API-Schlüsseln, analog zum Claude-Abo. */}
+      <OpenAISubscriptionContent
+        hasToken={cfg.data.hasOpenAISubscriptionToken}
+        hasOpenAIApiKey={hasKey.openai}
+        openaiAuthMode={config.openaiAuthMode ?? "api-key"}
+        activeKind={activeKind}
+      />
     </section>
+  );
+}
+
+// -- v0.1.353 — „Sign in with ChatGPT"-Abo-Karte ----------------------
+
+interface OpenAISubscriptionCardProps {
+  hasToken: boolean;
+  hasOpenAIApiKey: boolean;
+  openaiAuthMode: "api-key" | "subscription";
+  activeKind: LlmProviderKind;
+}
+
+function OpenAISubscriptionContent({
+  hasToken,
+  hasOpenAIApiKey,
+  openaiAuthMode,
+  activeKind,
+}: OpenAISubscriptionCardProps) {
+  const qc = useQueryClient();
+  const [hint, setHint] = useState<string | null>(null);
+  const [hintKind, setHintKind] = useState<"ok" | "warn" | "error">("ok");
+
+  const connect = useMutation({
+    mutationFn: async () => {
+      const result = await window.api.agent.connectOpenAISubscription();
+      if (!result.ok) throw new Error(result.error);
+    },
+    onSuccess: () => {
+      setHint("Mit ChatGPT verbunden.");
+      setHintKind("ok");
+      qc.invalidateQueries({ queryKey: ["agent", "providerConfig"] });
+    },
+    onError: (err) => {
+      setHint(err instanceof Error ? err.message : String(err));
+      setHintKind("error");
+    },
+  });
+
+  const clear = useMutation({
+    mutationFn: () => window.api.agent.clearOpenAISubscriptionToken(),
+    onSuccess: () => {
+      setHint("ChatGPT-Verbindung getrennt.");
+      setHintKind("ok");
+      qc.invalidateQueries({ queryKey: ["agent", "providerConfig"] });
+    },
+  });
+
+  const isActiveSubscription =
+    activeKind === "openai" && openaiAuthMode === "subscription";
+
+  return (
+    <div className="provider-subscription" id="chatgpt-abo">
+      <h4>ChatGPT-Abo (Sign in with ChatGPT)</h4>
+      <p className="muted small">
+        Nutze dein ChatGPT-Plus/Pro/Team-Abo direkt in AVA — ohne separaten
+        API-Schlüssel. AVA spricht denselben Codex-Endpunkt an, den auch
+        OpenAIs Codex-CLI verwendet. Läuft über dein Abo-Kontingent
+        (rollierendes 5-Stunden-Fenster). Hinweis: experimentell — der
+        Endpunkt ist von OpenAI nicht offiziell dokumentiert und kann sich
+        ändern.
+      </p>
+
+      {hasToken ? (
+        <div className="subscription-connected">
+          <p className="muted">
+            Status:{" "}
+            <span className="badge ok">Verbunden</span>
+            {isActiveSubscription ? " · aktiv für den Agent" : ""}
+          </p>
+          <div className="row">
+            <button
+              type="button"
+              className="secondary"
+              onClick={() => connect.mutate()}
+              disabled={connect.isPending}
+            >
+              {connect.isPending ? "Verbinde…" : "Neu verbinden"}
+            </button>
+            <button
+              type="button"
+              className="danger"
+              onClick={() => clear.mutate()}
+              disabled={clear.isPending}
+            >
+              Trennen
+            </button>
+          </div>
+        </div>
+      ) : (
+        <button
+          type="button"
+          className="primary"
+          onClick={() => connect.mutate()}
+          disabled={connect.isPending}
+        >
+          {connect.isPending ? "Verbinde…" : "Mit ChatGPT verbinden"}
+        </button>
+      )}
+
+      {!hasOpenAIApiKey && !hasToken && (
+        <p className="muted small">
+          Alternativ kannst du oben einen OpenAI-API-Schlüssel hinterlegen.
+        </p>
+      )}
+
+      {hint && (
+        <p
+          className={
+            hintKind === "error"
+              ? "error"
+              : hintKind === "warn"
+                ? "muted"
+                : "muted"
+          }
+        >
+          {hint}
+        </p>
+      )}
+    </div>
   );
 }
 

@@ -627,7 +627,7 @@ importers:
         version: 2.0.31
       '@ai-sdk/openai':
         specifier: ^2.0.0
-        version: 2.0.103
+        version: 2.0.103(zod@3.25.76)
       ai:
         specifier: ^5.0.0
         version: 5.0.179(zod@3.25.76)
@@ -862,6 +862,9 @@ importers:
 
   services/desktop:
     dependencies:
+      '@ai-sdk/openai':
+        specifier: ^2.0.0
+        version: 2.0.103(zod@3.25.76)
       '@ava/ai-provider':
         specifier: workspace:*
         version: link:../../packages/ai-provider
@@ -7238,6 +7241,7 @@ packages:
 
   uuid@9.0.1:
     resolution: {integrity: sha512-b+1eJOlsR9K8HJpow9Ok3fiWOWSIcIzXodvv0rQjVoOVNpWMpxf1wZNpt4y9h10odCNrqnYp1OBzRktckBe3sA==}
+    deprecated: uuid@10 and below is no longer supported.  For ESM codebases, update to uuid@latest.  For CommonJS codebases, use uuid@11 (but be aware this version will likely be deprecated in 2028).
     hasBin: true
 
   v8-compile-cache-lib@3.0.1:
@@ -7508,10 +7512,11 @@ snapshots:
       '@ai-sdk/provider': 2.0.1
       '@ai-sdk/provider-utils': 3.0.23(zod@3.25.76)
 
-  '@ai-sdk/openai@2.0.103':
+  '@ai-sdk/openai@2.0.103(zod@3.25.76)':
     dependencies:
       '@ai-sdk/provider': 2.0.1
       '@ai-sdk/provider-utils': 3.0.23(zod@3.25.76)
+      zod: 3.25.76
 
   '@ai-sdk/provider-utils@3.0.23(zod@3.25.76)':
     dependencies:

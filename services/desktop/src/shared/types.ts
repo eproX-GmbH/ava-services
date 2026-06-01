@@ -596,6 +596,13 @@ export type HostedProviderKind = Exclude<LlmProviderKind, "ollama">;
  */
 export type AnthropicAuthMode = "api-key" | "subscription";
 
+/**
+ * v0.1.353 — wie `AnthropicAuthMode`, aber für OpenAI. "subscription"
+ * meint den „Sign in with ChatGPT"-Codex-OAuth-Pfad (ChatGPT-Plus/Pro-
+ * Abo) statt eines API-Keys. Nur relevant wenn `kind === "openai"`.
+ */
+export type OpenAIAuthMode = "api-key" | "subscription";
+
 export interface ProviderConfig {
   /** Currently active provider for new turns. */
   kind: LlmProviderKind;
@@ -611,6 +618,11 @@ export interface ProviderConfig {
    * `kind` + `models` in `provider.json`.
    */
   anthropicAuthMode?: AnthropicAuthMode;
+  /**
+   * v0.1.353 — Welche Credential AVA bei `kind === "openai"` nutzt.
+   * Default "api-key". "subscription" = „Sign in with ChatGPT".
+   */
+  openaiAuthMode?: OpenAIAuthMode;
 }
 
 export interface ProviderStatusSnapshot {
@@ -631,6 +643,11 @@ export interface ProviderConfigBundle {
    * can coexist on disk). True iff `anthropic-subscription.enc` exists.
    */
   hasAnthropicSubscriptionToken: boolean;
+  /**
+   * v0.1.353 — analog für OpenAI: True iff `openai-subscription.enc`
+   * (ChatGPT-Abo-OAuth-Token) auf der Platte liegt.
+   */
+  hasOpenAISubscriptionToken: boolean;
   encryptionAvailable: boolean;
   /**
    * v0.1.209 — Letzter bekannter Tier-Schnappschuss aus den Anthropic-

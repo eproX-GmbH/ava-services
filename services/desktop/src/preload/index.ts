@@ -705,6 +705,17 @@ const api = {
       { ok: true } | { ok: false; error: string }
     > => ipcRenderer.invoke("agent:connectAnthropicSubscription"),
     /**
+     * v0.1.353 — „Sign in with ChatGPT" (Codex-OAuth). Öffnet ein
+     * Electron-`BrowserWindow` mit OpenAIs Authorize-Endpunkt, fängt den
+     * localhost:1455-Redirect ab, tauscht den Code gegen Access-/Refresh-
+     * Token + ChatGPT-Account-ID und persistiert alles verschlüsselt.
+     */
+    connectOpenAISubscription: (): Promise<
+      { ok: true } | { ok: false; error: string }
+    > => ipcRenderer.invoke("agent:connectOpenAISubscription"),
+    clearOpenAISubscriptionToken: (): Promise<{ ok: true }> =>
+      ipcRenderer.invoke("agent:clearOpenAISubscriptionToken"),
+    /**
      * Phase A1 — flip between Anthropic auth modes without changing
      * credentials. Throws when the requested mode has no credential.
      */

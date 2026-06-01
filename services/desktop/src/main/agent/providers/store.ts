@@ -14,6 +14,7 @@ import type {
   AnthropicTierInfo,
   HostedProviderKind,
   LlmProviderKind,
+  OpenAIAuthMode,
   ProviderConfig,
 } from "../../../shared/types";
 
@@ -25,6 +26,13 @@ import type {
  * safeStorage just like the other `.enc` files.
  */
 const ANTHROPIC_SUBSCRIPTION_FILENAME = "anthropic-subscription.enc";
+
+/**
+ * v0.1.353 — Filename für das ChatGPT-Abo-OAuth-Token („Sign in with
+ * ChatGPT"). Analog zum Anthropic-Pendant: parallele Credential zum
+ * `openai`-Provider, verschlüsselt via safeStorage.
+ */
+const OPENAI_SUBSCRIPTION_FILENAME = "openai-subscription.enc";
 
 // Provider config persistence (Phase 8.j, expanded in 8.k1).
 //
@@ -90,6 +98,7 @@ const DEFAULT_CONFIG: ProviderConfig = {
     mistral: "",
   },
   anthropicAuthMode: "api-key",
+  openaiAuthMode: "api-key",
 };
 
 export type { ProviderConfig };
@@ -114,12 +123,27 @@ export interface AnthropicSubscriptionRecord {
   expiresAt: number;
 }
 
+/**
+ * v0.1.353 — Vollständiger ChatGPT-Abo-Record. Wie der Anthropic-
+ * Pendant, plus `accountId` (die als `chatgpt-account-id`-Header an den
+ * Codex-Endpunkt geht).
+ */
+export interface OpenAISubscriptionRecord {
+  accessToken: string;
+  refreshToken?: string;
+  expiresAt: number;
+  /** ChatGPT-Account-ID aus dem OAuth-JWT. Optional. */
+  accountId?: string;
+}
+
 export interface ProviderConfigStoreEvents {
   configChanged: (cfg: ProviderConfig) => void;
   /** Fires for any provider's key being set/cleared. Listener can re-check via `hasKey`. */
   keyChanged: (kind: HostedProviderKind) => void;
   /** Fires when the Anthropic subscription token is set/cleared. */
   anthropicSubscriptionTokenChanged: () => void;
+  /** v0.1.353 — fires when the OpenAI/ChatGPT subscription token is set/cleared. */
+  openaiSubscriptionTokenChanged: () => void;
 }
 
 export declare interface ProviderConfigStore {
@@ -169,6 +193,7 @@ export class ProviderConfigStore extends EventEmitter {
     kind?: LlmProviderKind;
     models?: Partial<Record<LlmProviderKind, string>>;
     anthropicAuthMode?: AnthropicAuthMode;
+    openaiAuthMode?: OpenAIAuthMode;
   }): ProviderConfig {
     const next: ProviderConfig = cloneConfig(this.cached);
     if (partial.kind) {
@@ -193,6 +218,17 @@ export class ProviderConfigStore extends EventEmitter {
         );
       }
       next.anthropicAuthMode = partial.anthropicAuthMode;
+    }
+    if (partial.openaiAuthMode !== undefined) {
+      if (
+        partial.openaiAuthMode !== "api-key" &&
+        partial.openaiAuthMode !== "subscription"
+      ) {
+        throw new Error(
+          `unknown openaiAuthMode: ${String(partial.openaiAuthMode)}`,
+        );
+      }
+      next.openaiAuthMode = partial.openaiAuthMode;
     }
     this.writeConfigAtomic(next);
     this.cached = next;
@@ -512,6 +548,118 @@ export class ProviderConfigStore extends EventEmitter {
     this.emit("anthropicSubscriptionTokenChanged");
   }
 
+  // ---- OpenAI/ChatGPT subscription token (v0.1.353) ------------------------
+  //
+  // Parallele Credential zum `openai`-Provider, analog zum Anthropic-
+  // Pendant. JSON-Envelope inkl. accountId (für den
+  // `chatgpt-account-id`-Header).
+
+  private openaiSubscriptionPath(): string {
+    return join(this.dir, OPENAI_SUBSCRIPTION_FILENAME);
+  }
+
+  hasOpenAISubscriptionToken(): boolean {
+    return existsSync(this.openaiSubscriptionPath());
+  }
+
+  async getOpenAISubscriptionToken(): Promise<string | null> {
+    const record = await this.getOpenAISubscriptionRecord();
+    return record?.accessToken ?? null;
+  }
+
+  async getOpenAISubscriptionAccountId(): Promise<string | null> {
+    const record = await this.getOpenAISubscriptionRecord();
+    return record?.accountId ?? null;
+  }
+
+  async getOpenAISubscriptionRecord(): Promise<OpenAISubscriptionRecord | null> {
+    const path = this.openaiSubscriptionPath();
+    if (!existsSync(path)) return null;
+    try {
+      const buf = readFileSync(path);
+      const plaintext = safeStorage.decryptString(buf);
+      try {
+        const parsed = JSON.parse(plaintext) as Partial<OpenAISubscriptionRecord>;
+        if (
+          typeof parsed.accessToken === "string" &&
+          parsed.accessToken.length > 0
+        ) {
+          return {
+            accessToken: parsed.accessToken,
+            refreshToken:
+              typeof parsed.refreshToken === "string" &&
+              parsed.refreshToken.length > 0
+                ? parsed.refreshToken
+                : undefined,
+            expiresAt:
+              typeof parsed.expiresAt === "number" &&
+              Number.isFinite(parsed.expiresAt)
+                ? parsed.expiresAt
+                : 0,
+            accountId:
+              typeof parsed.accountId === "string" &&
+              parsed.accountId.length > 0
+                ? parsed.accountId
+                : undefined,
+          };
+        }
+      } catch {
+        /* fall through — legacy raw-string format */
+      }
+      return { accessToken: plaintext, expiresAt: 0 };
+    } catch (err) {
+      console.warn(
+        "[provider-store] failed to decrypt openai-subscription token — removing broken blob:",
+        err,
+      );
+      try {
+        unlinkSync(path);
+      } catch (unlinkErr) {
+        console.warn(
+          "[provider-store] could not unlink broken openai-subscription.enc:",
+          unlinkErr,
+        );
+      }
+      this.emit("openaiSubscriptionTokenChanged");
+      return null;
+    }
+  }
+
+  setOpenAISubscriptionRecord(record: OpenAISubscriptionRecord): void {
+    if (!record.accessToken || record.accessToken.trim() === "") {
+      throw new Error("openai subscription accessToken is empty");
+    }
+    if (!safeStorage.isEncryptionAvailable()) {
+      console.warn(
+        "[provider-store] safeStorage encryption not available — falling back to basic cipher (openai-subscription)",
+      );
+    }
+    const envelope = JSON.stringify({
+      accessToken: record.accessToken,
+      refreshToken: record.refreshToken,
+      expiresAt: record.expiresAt,
+      accountId: record.accountId,
+    });
+    const enc = safeStorage.encryptString(envelope);
+    writeFileSync(this.openaiSubscriptionPath(), enc, { mode: 0o600 });
+    this.emit("openaiSubscriptionTokenChanged");
+  }
+
+  clearOpenAISubscriptionToken(): void {
+    const path = this.openaiSubscriptionPath();
+    if (existsSync(path)) {
+      try {
+        unlinkSync(path);
+      } catch (err) {
+        console.warn(
+          "[provider-store] clearOpenAISubscriptionToken unlink failed:",
+          err,
+        );
+      }
+    }
+    this.emit("openaiSubscriptionTokenChanged");
+  }
+
   // ---- Disk I/O -------------------------------------------------------------
 
   private keyPath(kind: HostedProviderKind): string {
@@ -554,7 +702,9 @@ export class ProviderConfigStore extends EventEmitter {
         parsed.anthropicAuthMode === "subscription"
           ? "subscription"
           : "api-key";
-      return { kind, models, anthropicAuthMode };
+      const openaiAuthMode: OpenAIAuthMode =
+        parsed.openaiAuthMode === "subscription" ? "subscription" : "api-key";
+      return { kind, models, anthropicAuthMode, openaiAuthMode };
     } catch (err) {
       console.warn("[provider-store] failed to read provider.json:", err);
       return cloneConfig(DEFAULT_CONFIG);
@@ -575,5 +725,6 @@ function cloneConfig(cfg: ProviderConfig): ProviderConfig {
     kind: cfg.kind,
     models: { ...cfg.models },
     anthropicAuthMode: cfg.anthropicAuthMode ?? "api-key",
+    openaiAuthMode: cfg.openaiAuthMode ?? "api-key",
   };
 }

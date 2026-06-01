@@ -1572,7 +1572,9 @@ app.whenReady().then(async () => {
   // ~15 min before expiry using the stored refresh_token. The first
   // tick runs synchronously inside start() so a long-stale token
   // gets refreshed at boot before any producer-spawn.
-  const { AnthropicTokenRefresher } = await import("./auth/token-refresher");
+  const { AnthropicTokenRefresher, OpenAITokenRefresher } = await import(
+    "./auth/token-refresher"
+  );
   const { ProviderConfigStore } = await import("./agent/providers/store");
   const providerConfigStore = ProviderConfigStore.shared();
   const anthropicTokenRefresher = new AnthropicTokenRefresher(
@@ -1580,6 +1582,10 @@ app.whenReady().then(async () => {
   );
   anthropicTokenRefresher.start();
   app.on("before-quit", () => anthropicTokenRefresher.stop());
+  // v0.1.353 — paralleler Refresher für das ChatGPT-Abo-OAuth-Token.
+  const openaiTokenRefresher = new OpenAITokenRefresher(providerConfigStore);
+  openaiTokenRefresher.start();
+  app.on("before-quit", () => openaiTokenRefresher.stop());
 
   // v0.1.257 — Mail-Supervisor (Phase 9.m). Braucht providers + Provider-
   // Config-Store, beide jetzt verfügbar. start() lädt das Konto aus dem
@@ -2036,6 +2042,20 @@ app.whenReady().then(async () => {
       subjectId: "anthropic-subscription",
       summary: "Anthropic-Subscription-Token aktualisiert",
       metadata: { provider: "anthropic", authMode: "subscription" },
+    });
+  });
+  providerConfigStore.on("openaiSubscriptionTokenChanged", () => {
+    scheduleCredentialCycle("openaiSubscriptionTokenChanged");
+    audit({
+      actorType: "user",
+      actorId: null,
+      category: "auth",
+      action: "credential.subscription.changed",
+      severity: "info",
+      subjectType: "credential",
+      subjectId: "openai-subscription",
+      summary: "ChatGPT-Subscription-Token aktualisiert",
+      metadata: { provider: "openai", authMode: "subscription" },
     });
   });
   // configChanged covers anthropicAuthMode flips ("auf API-Key umschalten"
@@ -3961,6 +3981,43 @@ app.whenReady().then(async () => {
       }
     },
   );
+
+  // v0.1.353 — „Sign in with ChatGPT" (Codex-OAuth). Pendant zu
+  // connectAnthropicSubscription.
+  ipcMain.handle(
+    "agent:connectOpenAISubscription",
+    async (event): Promise<{ ok: true } | { ok: false; error: string }> => {
+      try {
+        const parent =
+          BrowserWindow.fromWebContents(event.sender) ??
+          BrowserWindow.getFocusedWindow() ??
+          BrowserWindow.getAllWindows()[0] ??
+          null;
+        const { runOpenAIOAuth } = await import("./auth/openai-oauth-flow");
+        const token = await runOpenAIOAuth({ parent });
+        providers.setOpenAISubscriptionRecord({
+          accessToken: token.accessToken,
+          refreshToken: token.refreshToken,
+          expiresIn: token.expiresIn,
+          accountId: token.accountId,
+        });
+        try {
+          providers.setProvider("openai");
+        } catch {
+          // Token bleibt gespeichert + Auth-Modus auf "subscription" —
+          // reicht für die Settings-Karte ("Verbunden").
+        }
+        return { ok: true };
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        return { ok: false, error: message };
+      }
+    },
+  );
+  ipcMain.handle("agent:clearOpenAISubscriptionToken", () => {
+    providers.clearOpenAISubscriptionToken();
+    return { ok: true };
+  });
 
   // Memory IPC (Phase 8.d). The probe is cached on the MemoryStore — these
   // handlers are read-only views; mutations happen implicitly as the

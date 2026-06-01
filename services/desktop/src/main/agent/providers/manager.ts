@@ -109,6 +109,24 @@ export class LlmProviderManager extends EventEmitter {
               },
             }
           : {}),
+        // v0.1.353 — OpenAI „Sign in with ChatGPT"-Resolver.
+        ...(kind === "openai"
+          ? {
+              getOpenAIAuthMode: () =>
+                this.store.getConfig().openaiAuthMode ?? "api-key",
+              getOpenAISubscriptionToken: () =>
+                this.store.getOpenAISubscriptionToken(),
+              getOpenAISubscriptionAccountId: () =>
+                this.store.getOpenAISubscriptionAccountId(),
+              hasStoredOpenAISubscriptionToken: () =>
+                this.store.hasOpenAISubscriptionToken(),
+              onOpenAISubscriptionTokenChanged: (cb: () => void) => {
+                this.store.on("openaiSubscriptionTokenChanged", cb);
+                return () =>
+                  this.store.off("openaiSubscriptionTokenChanged", cb);
+              },
+            }
+          : {}),
       });
 
     this.providers = {
@@ -129,6 +147,7 @@ export class LlmProviderManager extends EventEmitter {
     this.store.on("anthropicSubscriptionTokenChanged", () =>
       this.recompute(),
     );
+    this.store.on("openaiSubscriptionTokenChanged", () => this.recompute());
   }
 
   // ---- Public surface -------------------------------------------------------
@@ -173,6 +192,16 @@ export class LlmProviderManager extends EventEmitter {
     ) {
       return null;
     }
+    // v0.1.353 — ChatGPT-Abo-OAuth ist (noch) nicht über die env-Shape
+    // an Producer durchgeplumbt. In dem Modus verhalten wir uns wie
+    // "kein Key" → Producer nutzen ihren env-LLM. Der Chat-Agent
+    // (in-process) nutzt den Token korrekt via streamChat.
+    if (
+      kind === "openai" &&
+      (config.openaiAuthMode ?? "api-key") === "subscription"
+    ) {
+      return null;
+    }
     const key = await this.store.getKey(kind as HostedProviderKind);
     if (!key) return null;
     const model = config.models?.[kind] || undefined;
@@ -189,6 +218,7 @@ export class LlmProviderManager extends EventEmitter {
     status: LlmProviderStatus;
     hasKey: Record<LlmProviderKind, boolean>;
     hasAnthropicSubscriptionToken: boolean;
+    hasOpenAISubscriptionToken: boolean;
     encryptionAvailable: boolean;
     /** v0.1.209 — Letzter Tier-Schnappschuss; `null` wenn nie ermittelt
      *  oder Anthropic-Key entfernt. Renderer zeigt einen Hinweis-Banner
@@ -201,6 +231,7 @@ export class LlmProviderManager extends EventEmitter {
       hasKey: this.store.hasAllKeys(),
       hasAnthropicSubscriptionToken:
         this.store.hasAnthropicSubscriptionToken(),
+      hasOpenAISubscriptionToken: this.store.hasOpenAISubscriptionToken(),
       encryptionAvailable: this.store.isEncryptionAvailable(),
       anthropicTierInfo: this.store.getAnthropicTierInfo(),
     };
@@ -238,6 +269,21 @@ export class LlmProviderManager extends EventEmitter {
         this.store.setConfig({ anthropicAuthMode: "api-key" });
       } else if (mode === "api-key" && !hasKey) {
         this.store.setConfig({ anthropicAuthMode: "subscription" });
+      }
+    } else if (kind === "openai") {
+      // v0.1.353 — wie Anthropic: API-Key ODER ChatGPT-Abo-Token zählt.
+      const hasKey = this.store.hasKey("openai");
+      const hasToken = this.store.hasOpenAISubscriptionToken();
+      if (!hasKey && !hasToken) {
+        throw new Error(
+          `OpenAI credential is not set. Save an API key or connect ChatGPT first via Settings → Modelle.`,
+        );
+      }
+      const mode = this.store.getConfig().openaiAuthMode ?? "api-key";
+      if (mode === "subscription" && !hasToken) {
+        this.store.setConfig({ openaiAuthMode: "api-key" });
+      } else if (mode === "api-key" && !hasKey) {
+        this.store.setConfig({ openaiAuthMode: "subscription" });
       }
     } else if (kind !== "ollama" && !this.store.hasKey(kind as HostedProviderKind)) {
       throw new Error(
@@ -450,6 +496,50 @@ export class LlmProviderManager extends EventEmitter {
     return this.store.setConfig({ anthropicAuthMode: mode });
   }
 
+  // ---- OpenAI/ChatGPT subscription token (v0.1.353) ------------------------
+
+  hasOpenAISubscriptionToken(): boolean {
+    return this.store.hasOpenAISubscriptionToken();
+  }
+
+  getOpenAISubscriptionToken(): Promise<string | null> {
+    return this.store.getOpenAISubscriptionToken();
+  }
+
+  /**
+   * Persist the full ChatGPT-Abo-Record from the In-App-OAuth flow
+   * (button "Mit ChatGPT verbinden") and flip the active OpenAI auth
+   * mode to "subscription".
+   */
+  setOpenAISubscriptionRecord(args: {
+    accessToken: string;
+    refreshToken?: string;
+    expiresIn?: number;
+    accountId?: string;
+  }): void {
+    const accessToken = args.accessToken.trim();
+    if (accessToken.length === 0) throw new Error("Access-Token ist leer.");
+    const expiresAt =
+      typeof args.expiresIn === "number" && args.expiresIn > 0
+        ? Date.now() + args.expiresIn * 1000
+        : 0;
+    this.store.setOpenAISubscriptionRecord({
+      accessToken,
+      refreshToken: args.refreshToken,
+      expiresAt,
+      accountId: args.accountId,
+    });
+    this.store.setConfig({ openaiAuthMode: "subscription" });
+  }
+
+  clearOpenAISubscriptionToken(): void {
+    this.store.clearOpenAISubscriptionToken();
+    const cfg = this.store.getConfig();
+    if (cfg.openaiAuthMode === "subscription") {
+      this.store.setConfig({ openaiAuthMode: "api-key" });
+    }
+  }
+
   isEncryptionAvailable(): boolean {
     return this.store.isEncryptionAvailable();
   }
@@ -561,6 +651,15 @@ export class LlmProviderManager extends EventEmitter {
       env.anthropicSubscriptionToken = token;
       return env;
     }
+    // v0.1.353 — OpenAI-Abo-Modus ist nicht über die env-Shape an
+    // Producer durchgeplumbt → wie "kein Key" behandeln (Producer
+    // nutzen ihren env-LLM). Der Chat-Agent nutzt den Token in-process.
+    if (
+      kind === "openai" &&
+      (cfg.openaiAuthMode ?? "api-key") === "subscription"
+    ) {
+      return null;
+    }
     const key = await this.store.getKey(kind as HostedProviderKind);
     if (!key) return null;
     if (kind === "openai") env.openaiApiKey = key;
@@ -594,6 +693,15 @@ export class LlmProviderManager extends EventEmitter {
       if (!token) {
         return `Kein Anthropic-Subscription-Token hinterlegt. Token in Einstellungen → Modelle → LLM-Provider eintragen oder auf Ollama wechseln.`;
       }
+      return null;
+    }
+    // v0.1.353 — OpenAI-Abo-Modus: kein Blocker für den Chat-Agent, aber
+    // Producer können den OAuth-Token nicht nutzen → sie laufen mit
+    // ihrem env-LLM. Daher hier kein Fehler.
+    if (
+      kind === "openai" &&
+      (cfg.openaiAuthMode ?? "api-key") === "subscription"
+    ) {
       return null;
     }
     const key = await this.store.getKey(kind as HostedProviderKind);

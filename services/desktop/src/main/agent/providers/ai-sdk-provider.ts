@@ -6,6 +6,7 @@ import type {
   ToolSet,
 } from "ai";
 import { createLLM, type RuntimeProvider } from "@ava/ai-provider";
+import { createOpenAISubscriptionModel } from "./openai-subscription-model";
 import type { OllamaSupervisor } from "../../ollama-supervisor";
 import type { AgentMessage, LlmProviderKind } from "../../../shared/types";
 import type { OllamaToolSpec } from "../types";
@@ -111,6 +112,18 @@ export interface AiSdkProviderOptions {
    * (set / clear). Returns an unsubscribe handle.
    */
   onAnthropicSubscriptionTokenChanged?: (cb: () => void) => () => void;
+  /**
+   * v0.1.353 — OpenAI-„Sign in with ChatGPT"-Pendant. Only wired for
+   * `kind === "openai"`. When the active auth mode is "subscription",
+   * the provider pulls the OAuth access token + account id and forwards
+   * them to `createLLM` as `openaiSubscriptionToken` /
+   * `openaiSubscriptionAccountId` (Codex-Backend-Pfad).
+   */
+  getOpenAIAuthMode?: () => "api-key" | "subscription";
+  getOpenAISubscriptionToken?: () => Promise<string | null>;
+  getOpenAISubscriptionAccountId?: () => Promise<string | null>;
+  hasStoredOpenAISubscriptionToken?: () => boolean;
+  onOpenAISubscriptionTokenChanged?: (cb: () => void) => () => void;
 }
 
 export class AiSdkProvider extends EventEmitter implements LlmProvider {
@@ -122,9 +135,14 @@ export class AiSdkProvider extends EventEmitter implements LlmProvider {
   private readonly unsubscribeKey: () => void;
   private readonly unsubscribeOllama?: () => void;
   private readonly unsubscribeSubscriptionToken?: () => void;
+  private readonly unsubscribeOpenAISubscriptionToken?: () => void;
   private readonly getAnthropicAuthMode?: () => "api-key" | "subscription";
   private readonly getAnthropicSubscriptionToken?: () => Promise<string | null>;
   private readonly hasStoredAnthropicSubscriptionToken?: () => boolean;
+  private readonly getOpenAIAuthMode?: () => "api-key" | "subscription";
+  private readonly getOpenAISubscriptionToken?: () => Promise<string | null>;
+  private readonly getOpenAISubscriptionAccountId?: () => Promise<string | null>;
+  private readonly hasStoredOpenAISubscriptionToken?: () => boolean;
 
   constructor(opts: AiSdkProviderOptions) {
     super();
@@ -137,6 +155,11 @@ export class AiSdkProvider extends EventEmitter implements LlmProvider {
     this.getAnthropicSubscriptionToken = opts.getAnthropicSubscriptionToken;
     this.hasStoredAnthropicSubscriptionToken =
       opts.hasStoredAnthropicSubscriptionToken;
+    this.getOpenAIAuthMode = opts.getOpenAIAuthMode;
+    this.getOpenAISubscriptionToken = opts.getOpenAISubscriptionToken;
+    this.getOpenAISubscriptionAccountId = opts.getOpenAISubscriptionAccountId;
+    this.hasStoredOpenAISubscriptionToken =
+      opts.hasStoredOpenAISubscriptionToken;
 
     this.unsubscribeKey = opts.onKeyChanged(() => {
       // The flag is recomputed sync each time getStatus() runs, so we
@@ -148,6 +171,13 @@ export class AiSdkProvider extends EventEmitter implements LlmProvider {
     if (opts.onAnthropicSubscriptionTokenChanged) {
       this.unsubscribeSubscriptionToken =
         opts.onAnthropicSubscriptionTokenChanged(() => {
+          this.emit("status", this.getStatus());
+        });
+    }
+
+    if (opts.onOpenAISubscriptionTokenChanged) {
+      this.unsubscribeOpenAISubscriptionToken =
+        opts.onOpenAISubscriptionTokenChanged(() => {
           this.emit("status", this.getStatus());
         });
     }
@@ -179,6 +209,7 @@ export class AiSdkProvider extends EventEmitter implements LlmProvider {
     this.unsubscribeKey();
     this.unsubscribeOllama?.();
     this.unsubscribeSubscriptionToken?.();
+    this.unsubscribeOpenAISubscriptionToken?.();
     this.removeAllListeners();
   }
 
@@ -215,16 +246,19 @@ export class AiSdkProvider extends EventEmitter implements LlmProvider {
     // active auth mode. Subscription mode looks at the OAuth token blob
     // instead of `anthropic.enc`. Other hosted providers behave exactly
     // as before.
-    const authMode =
-      this.kind === "anthropic" && this.getAnthropicAuthMode
-        ? this.getAnthropicAuthMode()
-        : "api-key";
-    const hasCredential =
-      this.kind === "anthropic" && authMode === "subscription"
-        ? (this.hasStoredAnthropicSubscriptionToken?.() ?? false)
+    const anthropicSub =
+      this.kind === "anthropic" &&
+      (this.getAnthropicAuthMode?.() ?? "api-key") === "subscription";
+    const openaiSub =
+      this.kind === "openai" &&
+      (this.getOpenAIAuthMode?.() ?? "api-key") === "subscription";
+    const hasCredential = anthropicSub
+      ? (this.hasStoredAnthropicSubscriptionToken?.() ?? false)
+      : openaiSub
+        ? (this.hasStoredOpenAISubscriptionToken?.() ?? false)
         : this.hasStoredKey();
     const credLabel =
-      this.kind === "anthropic" && authMode === "subscription"
+      anthropicSub || openaiSub
         ? `${labelFor(this.kind)} subscription token not set.`
         : `${labelFor(this.kind)} API key not set.`;
     return {
@@ -256,8 +290,14 @@ export class AiSdkProvider extends EventEmitter implements LlmProvider {
       this.kind === "anthropic" && this.getAnthropicAuthMode
         ? this.getAnthropicAuthMode()
         : "api-key";
+    const openaiAuthMode =
+      this.kind === "openai" && this.getOpenAIAuthMode
+        ? this.getOpenAIAuthMode()
+        : "api-key";
     let apiKey: string | undefined;
     let anthropicSubscriptionToken: string | undefined;
+    let openaiSubscriptionToken: string | undefined;
+    let openaiSubscriptionAccountId: string | undefined;
     if (this.kind === "anthropic" && authMode === "subscription") {
       anthropicSubscriptionToken =
         (await this.getAnthropicSubscriptionToken?.()) ?? undefined;
@@ -267,6 +307,19 @@ export class AiSdkProvider extends EventEmitter implements LlmProvider {
       ) {
         throw new Error(
           `${labelFor(this.kind)} subscription token is unreadable. The OS keychain may have changed since it was saved. Open Whoami → API keys and re-enter the token.`,
+        );
+      }
+    } else if (this.kind === "openai" && openaiAuthMode === "subscription") {
+      openaiSubscriptionToken =
+        (await this.getOpenAISubscriptionToken?.()) ?? undefined;
+      openaiSubscriptionAccountId =
+        (await this.getOpenAISubscriptionAccountId?.()) ?? undefined;
+      if (
+        !openaiSubscriptionToken &&
+        this.hasStoredOpenAISubscriptionToken?.()
+      ) {
+        throw new Error(
+          `${labelFor(this.kind)} subscription token is unreadable. The OS keychain may have changed since it was saved. Open Settings → Modelle and re-connect ChatGPT.`,
         );
       }
     } else {
@@ -286,28 +339,41 @@ export class AiSdkProvider extends EventEmitter implements LlmProvider {
     // the key reached this layer intact and which model the SDK is
     // about to talk to. Never logs the full key.
     if (this.kind !== "ollama") {
-      const k = anthropicSubscriptionToken ?? apiKey ?? "";
+      const k =
+        anthropicSubscriptionToken ?? openaiSubscriptionToken ?? apiKey ?? "";
       const masked =
         k.length > 8 ? `${k.slice(0, 4)}…${k.slice(-4)}` : `len=${k.length}`;
       const ascii = /^[\x20-\x7E]*$/.test(k);
       const hasWS = /\s/.test(k);
-      const credKind = anthropicSubscriptionToken
-        ? "oauth-bearer"
-        : "api-key";
+      const credKind =
+        anthropicSubscriptionToken || openaiSubscriptionToken
+          ? "oauth-bearer"
+          : "api-key";
       // eslint-disable-next-line no-console
       console.log(
         `[${this.kind}] outgoing call → model=${status.model} cred=${credKind} key=${masked} keyLen=${k.length} ascii=${ascii} hasWhitespace=${hasWS}`,
       );
     }
-    const model = createLLM({
-      provider: this.kind as RuntimeProvider,
-      model: status.model,
-      apiKey,
-      baseURL,
-      ...(anthropicSubscriptionToken
-        ? { anthropicSubscriptionToken }
-        : {}),
-    });
+    // v0.1.353 — ChatGPT-Abo-Pfad läuft über den Desktop-lokalen Builder
+    // (Codex-Endpunkt), NICHT über createLLM — siehe
+    // openai-subscription-model.ts für den Grund (CI-vendor-drift-Guard).
+    const model = openaiSubscriptionToken
+      ? createOpenAISubscriptionModel({
+          model: status.model,
+          accessToken: openaiSubscriptionToken,
+          ...(openaiSubscriptionAccountId
+            ? { accountId: openaiSubscriptionAccountId }
+            : {}),
+        })
+      : createLLM({
+          provider: this.kind as RuntimeProvider,
+          model: status.model,
+          apiKey,
+          baseURL,
+          ...(anthropicSubscriptionToken
+            ? { anthropicSubscriptionToken }
+            : {}),
+        });
 
     const tools = req.tools ? buildToolSet(req.tools) : undefined;
 

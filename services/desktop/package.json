@@ -1,6 +1,6 @@
 {
   "name": "@ava/desktop",
-  "version": "0.1.352",
+  "version": "0.1.353",
   "private": true,
   "description": "AVA Electron desktop app — replaces user-interface/ Next.js. Talks to db-gateway only.",
   "author": {
@@ -46,6 +46,7 @@
     "package:linux": "pnpm fetch:ollama --platform=linux-x64 && pnpm fetch:whisper --platform=linux-x64 && electron-vite build && electron-builder --linux"
   },
   "dependencies": {
+    "@ai-sdk/openai": "^2.0.0",
     "@ava/ai-provider": "workspace:*",
     "@electric-sql/pglite": "^0.4.5",
     "@fontsource-variable/geist": "^5.2.8",
