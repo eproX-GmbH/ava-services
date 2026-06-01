@@ -1,6 +1,6 @@
 import type { PropsWithChildren } from "react";
 import { NavLink, useNavigate, useLocation } from "react-router-dom";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { AlertCircle, Loader2, RefreshCw, Lightbulb, X } from "lucide-react";
 import { AlertBell } from "./AlertBell";
 import { WatchChip } from "./WatchChip";
@@ -111,6 +111,7 @@ export function AppShell({ children }: PropsWithChildren) {
     <div className="app-shell">
       <TopBar />
       <QuotaExhaustedBanner />
+      <ConnectionHealthBanner />
       <ExternalServiceBanner />
       <LinkedInActiveBanner />
       <main className="app-shell__main">{children}</main>
@@ -120,6 +121,202 @@ export function AppShell({ children }: PropsWithChildren) {
         onBeforePick={onBeforePick as (h: ChatSearchPickPayload & { conversationId: string }) => void}
       />
     </div>
+  );
+}
+
+// v0.1.358 — Verbindungs-/Auth-Indikator. Slim, wegklickbares Banner
+// unter der TopBar, das sofort meldet, wenn eine der Hintergrund-
+// Verbindungen kaputt ist: Claude/ChatGPT-Abo, LinkedIn-Sitzung oder
+// CRM (HubSpot). Jede Warnung hat einen „Beheben"-Button, der direkt die
+// Neu-Anmeldung anstößt. Reine Renderer-Logik über vorhandene Status-
+// IPCs (kein neues Main-Subsystem): wir pollen beim Mount, alle 30 s und
+// bei Fenster-Fokus; nach einer Fix-Aktion sofort neu.
+interface HealthProblem {
+  domain: "llm" | "linkedin" | "crm";
+  /** Stabiler Schlüssel für Dismiss — ändert sich, wenn das Problem ein
+   *  anderes wird, damit ein neues Problem wieder auftaucht. */
+  signature: string;
+  message: string;
+  fixLabel: string;
+  fix: () => Promise<unknown>;
+}
+
+const HEALTH_DISMISS_KEY = "ava.connectionHealth.dismissed";
+
+function readDismissed(): Set<string> {
+  try {
+    const raw = localStorage.getItem(HEALTH_DISMISS_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw) as unknown;
+      if (Array.isArray(parsed))
+        return new Set(parsed.filter((v): v is string => typeof v === "string"));
+    }
+  } catch {
+    /* ignore */
+  }
+  return new Set();
+}
+
+function writeDismissed(set: Set<string>): void {
+  try {
+    localStorage.setItem(HEALTH_DISMISS_KEY, JSON.stringify([...set]));
+  } catch {
+    /* ignore */
+  }
+}
+
+function ConnectionHealthBanner() {
+  const [problems, setProblems] = useState<HealthProblem[]>([]);
+  const [dismissed, setDismissed] = useState<Set<string>>(() => readDismissed());
+  const [busy, setBusy] = useState<string | null>(null);
+
+  const refresh = useCallback(async () => {
+    const next: HealthProblem[] = [];
+
+    // --- LLM-Abo (Claude / ChatGPT) ---
+    try {
+      const bundle = await window.api.agent.getProviderConfig();
+      const kind = bundle.config.kind;
+      const subAnthropic =
+        kind === "anthropic" &&
+        (bundle.config.anthropicAuthMode ?? "api-key") === "subscription";
+      const subOpenai =
+        kind === "openai" &&
+        (bundle.config.openaiAuthMode ?? "api-key") === "subscription";
+      if ((subAnthropic || subOpenai) && !bundle.status.ready) {
+        const label = subAnthropic ? "Claude-Abo" : "ChatGPT-Abo";
+        next.push({
+          domain: "llm",
+          signature: `llm:${kind}:${bundle.status.errorMessage ?? "not-ready"}`,
+          message: `${label} ist nicht verbunden — AVA kann gerade keine Anfragen verarbeiten.`,
+          fixLabel: "Neu anmelden",
+          fix: () =>
+            subAnthropic
+              ? window.api.agent.connectAnthropicSubscription()
+              : window.api.agent.connectOpenAISubscription(),
+        });
+      }
+    } catch {
+      /* Status nicht lesbar — kein Banner */
+    }
+
+    // --- LinkedIn-Sitzung ---
+    try {
+      const li = await window.api.linkedin.auth.status();
+      // Nur warnen, wenn schon mal eine Sitzung bestand (meta != null) und
+      // sie jetzt weg ist — sonst (nie verbunden) keine Warnung.
+      if (!li.connected && li.meta) {
+        next.push({
+          domain: "linkedin",
+          signature: "linkedin:expired",
+          message:
+            "LinkedIn-Sitzung abgelaufen — der LinkedIn-Beobachter pausiert, bis du dich neu anmeldest.",
+          fixLabel: "Neu anmelden",
+          fix: () => window.api.linkedin.auth.openLogin(),
+        });
+      }
+    } catch {
+      /* ignore */
+    }
+
+    // --- CRM (HubSpot) ---
+    try {
+      const crm = await window.api.crm.getStatus("hubspot");
+      const wasConnected = Boolean(crm.account || crm.lastRefreshedAt);
+      if (crm.lastError || (!crm.connected && wasConnected)) {
+        next.push({
+          domain: "crm",
+          signature: `crm:${crm.lastError ?? "disconnected"}`,
+          message: "HubSpot-Verbindung gestört — Schreib-/Lesezugriffe schlagen fehl.",
+          fixLabel: "Neu verbinden",
+          fix: () => window.api.crm.connect("hubspot"),
+        });
+      }
+    } catch {
+      /* ignore */
+    }
+
+    setProblems(next);
+    // Dismiss-Einträge aufräumen, deren Problem nicht mehr existiert →
+    // ein künftiges Wiederauftreten zeigt das Banner erneut.
+    setDismissed((prev) => {
+      const live = new Set(next.map((p) => p.signature));
+      let changed = false;
+      const cleaned = new Set<string>();
+      for (const s of prev) {
+        if (live.has(s)) cleaned.add(s);
+        else changed = true;
+      }
+      if (changed) writeDismissed(cleaned);
+      return changed ? cleaned : prev;
+    });
+  }, []);
+
+  useEffect(() => {
+    void refresh();
+    const id = setInterval(() => void refresh(), 30_000);
+    const onFocus = (): void => void refresh();
+    window.addEventListener("focus", onFocus);
+    return () => {
+      clearInterval(id);
+      window.removeEventListener("focus", onFocus);
+    };
+  }, [refresh]);
+
+  const visible = problems.filter((p) => !dismissed.has(p.signature));
+  if (visible.length === 0) return null;
+
+  const onDismiss = (sig: string): void => {
+    setDismissed((prev) => {
+      const nextSet = new Set(prev);
+      nextSet.add(sig);
+      writeDismissed(nextSet);
+      return nextSet;
+    });
+  };
+
+  const onFix = async (p: HealthProblem): Promise<void> => {
+    setBusy(p.signature);
+    try {
+      await p.fix();
+    } catch {
+      /* Fehler im Fix-Flow werden im jeweiligen Flow selbst gemeldet */
+    } finally {
+      setBusy(null);
+      await refresh();
+    }
+  };
+
+  return (
+    <>
+      {visible.map((p) => (
+        <div
+          key={p.signature}
+          className="upstream-banner"
+          role="alert"
+          aria-live="assertive"
+          style={{ background: "rgba(180,136,0,0.10)" }}
+        >
+          <span style={{ marginRight: "auto" }}>⚠ {p.message}</span>
+          <button
+            type="button"
+            className="link upstream-banner__retry"
+            disabled={busy === p.signature}
+            onClick={() => void onFix(p)}
+          >
+            {busy === p.signature ? "…" : p.fixLabel}
+          </button>
+          <button
+            type="button"
+            className="upstream-banner__close"
+            aria-label="Hinweis schließen"
+            onClick={() => onDismiss(p.signature)}
+          >
+            ✕
+          </button>
+        </div>
+      ))}
+    </>
   );
 }
 
