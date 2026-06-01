@@ -356,7 +356,21 @@ export class Updater extends EventEmitter {
       const triggerInstall = (): void => {
         if (installed) return;
         installed = true;
-        setTimeout(() => autoUpdater.quitAndInstall(false, true), 100);
+        // v0.1.351 — isSilent muss auf Windows TRUE sein.
+        //
+        // macOS (Squirrel.Mac) ignoriert den isSilent-Parameter — dort
+        // bleibt das Verhalten exakt gleich (false). Auf Windows steuert
+        // isSilent aber, ob der NSIS-Installer mit voller UI läuft:
+        //   - false → Installer zeigt seinen interaktiven „App ist noch
+        //     offen, bitte schließen + Wiederholen"-Dialog. Genau der
+        //     Prompt „AVA kann nicht geschlossen werden", an dem die
+        //     User hängen blieben (Real-Run-Screenshots).
+        //   - true  (/S) → Installer schließt die laufende AVA selbst
+        //     (zusätzlich zu unserem customInit-taskkill in
+        //     installer.nsh), installiert ohne Prompt und relauncht.
+        // isForceRunAfter bleibt true (AVA startet nach dem Update neu).
+        const isSilent = process.platform === "win32";
+        setTimeout(() => autoUpdater.quitAndInstall(isSilent, true), 100);
       };
       setTimeout(triggerInstall, 8000);
 

@@ -18,7 +18,7 @@ import "./file-logger-init";
 import { join } from "node:path";
 import { spawn as spawnChild } from "node:child_process";
 import { logRendererLine, getMainLogPath, getLogDir } from "./file-logger";
-import { startWatchdog } from "./watchdog";
+import { startWatchdog, writeUpdatingFlag } from "./watchdog";
 import { Auth, type AuthStatus } from "./auth";
 import { OllamaSupervisor } from "./ollama-supervisor";
 import {
@@ -3289,9 +3289,35 @@ app.whenReady().then(async () => {
     // Absolute Obergrenze 120s, damit eine WIRKLICH tote App (der Spin,
     // der den Backstop überhaupt nötig macht) nicht ewig hängt — gibt
     // auch langsamen Laptops genug Zeit fürs Entpacken.
+    // v0.1.351 — Watchdog (v0.1.341) VOR dem Quit stilllegen. Sonst
+    // sieht der externe Watchdog während des Update-Quits den
+    // eingefrorenen/sterbenden Main-Prozess, deklariert „wedged" und
+    // RELAUNCHT AVA mitten in der Installation. Auf Windows heißt das:
+    // NSIS sieht AVA.exe wieder laufen → „kann nicht geschlossen
+    // werden". Das Flag wird vom Watchdog bei jedem Tick geprüft; ist
+    // es da, beendet er sich ohne Relaunch. Cross-platform sicher
+    // (auf macOS verhindert es nur einen störenden Relaunch während
+    // des 1–3-min-ShipIt-Copy, ändert den Erfolgs-Pfad nicht).
+    try {
+      writeUpdatingFlag();
+    } catch (err) {
+      console.warn("[updater:install] writeUpdatingFlag failed:", err instanceof Error ? err.message : String(err));
+    }
+    // v0.1.351 — Der OS-Level-Backstop unten ist NUR für den macOS-
+    // Squirrel.Mac-JIT-Spin (quitAndInstall wedged den Main-Thread in
+    // einer V8-Schleife). Auf Windows gibt es diesen Spin nicht: NSIS
+    // läuft als eigener Prozess, und der silent-Install (/S) + der
+    // customInit-taskkill in installer.nsh schließen AVA zuverlässig.
+    // Das sichtbare `timeout /t 120`-Konsolenfenster (Real-Run-
+    // Screenshots) war reiner Schaden. Daher: Backstop NUR auf
+    // Nicht-Windows armen.
     const parentPid = process.pid;
     const CEIL_S = 120;
     try {
+      if (process.platform === "win32") {
+        console.log("[updater:install] backstop skipped on win32 (NSIS handles close via /S + customInit)");
+        return updater.installAndRelaunch();
+      }
       const macScript = [
         `PID=${parentPid}`,
         `CACHE="$HOME/Library/Caches/com.ava.desktop.ShipIt"`,
@@ -3316,23 +3342,10 @@ app.whenReady().then(async () => {
         `  sleep 2`,
         `done`,
       ].join("\n");
-      const sh =
-        process.platform === "win32"
-          ? spawnChild(
-              "cmd.exe",
-              [
-                // Windows nutzt NSIS (kein in-process-Extract wie
-                // Squirrel.Mac), aber ein längeres Fenster ist strikt
-                // sicherer für langsame Maschinen.
-                "/c",
-                `timeout /t ${CEIL_S} /nobreak >nul & taskkill /F /PID ${parentPid}`,
-              ],
-              { detached: true, stdio: "ignore" },
-            )
-          : spawnChild("/bin/sh", ["-c", macScript], {
-              detached: true,
-              stdio: "ignore",
-            });
+      const sh = spawnChild("/bin/sh", ["-c", macScript], {
+        detached: true,
+        stdio: "ignore",
+      });
       sh.unref();
       console.log(
         `[updater:install] backstop armed (pid=${parentPid}, staging-gated, ceiling ${CEIL_S}s)`,

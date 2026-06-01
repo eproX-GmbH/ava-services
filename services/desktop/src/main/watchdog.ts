@@ -26,11 +26,31 @@
 
 import { app } from "electron";
 import { spawn } from "node:child_process";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { getHeartbeatPath, getLogDir } from "./file-logger";
 
 let started = false;
+
+/**
+ * v0.1.351 — Pfad des "Update läuft"-Flags. Wird vom Install-Handler
+ * (index.ts updater:install) geschrieben, bevor quitAndInstall feuert,
+ * und vom Watchdog bei jedem Tick geprüft. Liegt das Flag, beendet sich
+ * der Watchdog OHNE Relaunch — sonst würde er den während des Updates
+ * sterbenden/eingefrorenen Main-Prozess als "wedged" werten und AVA
+ * mitten in der Installation neu starten (auf Windows → NSIS-Fehler
+ * "AVA kann nicht geschlossen werden").
+ */
+export function getUpdatingFlagPath(): string {
+  return join(app.getPath("userData"), "ava-updating.flag");
+}
+
+/** Schreibt das Update-Flag synchron. Idempotent. */
+export function writeUpdatingFlag(): void {
+  const p = getUpdatingFlagPath();
+  mkdirSync(app.getPath("userData"), { recursive: true });
+  writeFileSync(p, String(Date.now()), "utf8");
+}
 
 // The watchdog program text. Materialised to <userData>/ava-watchdog.cjs
 // at boot and run as a standalone Node script — it uses only node
@@ -47,6 +67,7 @@ const HEARTBEAT = process.env.AVA_WD_HEARTBEAT || "";
 const MAIN_PID = parseInt(process.env.AVA_WD_MAIN_PID || "0", 10);
 const APP_PATH = process.env.AVA_WD_APP_PATH || "";
 const LOG = process.env.AVA_WD_LOG || "";
+const UPDATING_FLAG = process.env.AVA_WD_UPDATING_FLAG || "";
 
 const TICK_MS = 5000;     // how often we check
 const STALE_MS = 20000;   // heartbeat must advance within this much AWAKE time
@@ -89,6 +110,22 @@ const timer = setInterval(function () {
   const now = Date.now();
   const gap = now - lastTick;
   lastTick = now;
+
+  // v0.1.351 — Update läuft? Dann NICHT relaunchen. Der Install-Handler
+  // schreibt dieses Flag vor quitAndInstall. Ohne diese Prüfung würde
+  // der Watchdog den während des Updates sterbenden/eingefrorenen
+  // Main-Prozess als "wedged" werten und AVA mitten in der Installation
+  // neu starten (Windows: NSIS-Fehler "kann nicht geschlossen werden").
+  if (UPDATING_FLAG) {
+    try {
+      if (fs.existsSync(UPDATING_FLAG)) {
+        log("update in progress (flag present) -> exiting watchdog, no relaunch");
+        clearInterval(timer);
+        process.exit(0);
+        return;
+      }
+    } catch (e) {}
+  }
 
   // Clean quit of main -> our job is done. A fresh main spawns a fresh
   // watchdog, so exiting here avoids relaunching on top of a normal quit.
@@ -152,6 +189,15 @@ export function startWatchdog(): void {
     const scriptPath = join(userData, "ava-watchdog.cjs");
     writeFileSync(scriptPath, WATCHDOG_SOURCE, "utf8");
 
+    // v0.1.351 — Stale Update-Flag eines abgebrochenen Updates beim
+    // Boot räumen, sonst würde der frische Watchdog sich sofort wieder
+    // beenden. Wenn wir hier (neu) starten, ist kein Update aktiv.
+    try {
+      rmSync(getUpdatingFlagPath(), { force: true });
+    } catch {
+      /* ignore */
+    }
+
     const child = spawn(process.execPath, [scriptPath], {
       detached: true,
       stdio: "ignore",
@@ -162,6 +208,7 @@ export function startWatchdog(): void {
         AVA_WD_MAIN_PID: String(process.pid),
         AVA_WD_APP_PATH: appBundlePath(),
         AVA_WD_LOG: join(getLogDir(), "ava-watchdog.log"),
+        AVA_WD_UPDATING_FLAG: getUpdatingFlagPath(),
       },
     });
     child.unref();
