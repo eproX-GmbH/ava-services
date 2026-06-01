@@ -14,7 +14,12 @@
 
 import { generateText } from "ai";
 import { nativeImage } from "electron";
-import { createLLM, hasVision, tierForModel } from "@ava/ai-provider";
+import { hasVision, tierForModel } from "@ava/ai-provider";
+import {
+  resolveActiveLlm as resolveSharedLlm,
+  buildLinkedInModel,
+  type ResolvedLlm,
+} from "./llm";
 import * as yup from "yup";
 import {
   getDb,
@@ -92,24 +97,13 @@ export async function imageStatusSnapshot(
   }
 }
 
-interface ResolvedLlm {
-  provider: "openai" | "anthropic" | "google" | "mistral" | "ollama";
-  model: string;
-  apiKey: string | null;
-  baseURL?: string;
-}
-
+// v0.1.357 — delegiert an den gemeinsamen Resolver (extractor + image-
+// extractor teilen sich jetzt llm.ts), damit BEIDE Abo-Pfade (Claude +
+// ChatGPT) UND API-Keys greifen. Vorher kannte dieser Resolver nur den
+// API-Key-Pfad → „No LLM defined" für alle Abo-Nutzer bei der Bildanalyse.
 async function resolveActiveLlm(): Promise<ResolvedLlm | null> {
   if (!providersRef || !storeRef) return null;
-  const status = providersRef.getStatus();
-  if (!status.ready || !status.model) return null;
-  const kind = status.kind;
-  if (kind === "ollama") {
-    return { provider: "ollama", model: status.model, apiKey: null };
-  }
-  const key = await storeRef.getKey(kind);
-  if (!key) return null;
-  return { provider: kind, model: status.model, apiKey: key };
+  return resolveSharedLlm(providersRef, storeRef);
 }
 
 const ENVIRONMENT_VALUES = [
@@ -219,12 +213,7 @@ async function callVisionLlm(
   image: PreprocessedImage,
   signal: AbortSignal,
 ): Promise<string> {
-  const model = createLLM({
-    provider: llm.provider,
-    model: llm.model,
-    apiKey: llm.apiKey ?? undefined,
-    baseURL: llm.baseURL,
-  });
+  const model = buildLinkedInModel(llm);
   // The AI SDK's `generateText` accepts a `messages` array with image
   // parts. Anthropic + Google + OpenAI + Mistral all accept the
   // canonical `{ type: "image", image: <Buffer | dataUrl> }` part shape;
