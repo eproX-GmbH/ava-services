@@ -12,7 +12,7 @@ export function buildUiTools(): Tool[] {
   const askUser = defineTool({
     name: "ask_user_choice",
     description:
-      "Ask the user to pick one option. ONLY use when (a) a search/list tool already returned multiple plausible matches, AND (b) you genuinely cannot pick automatically (e.g. two companies with the same name in different cities, two databases with similar names). DO NOT use this to ask the user for information they already provided in the current message, and DO NOT use it as a shortcut around exploring with read-only tools first — if the answer is in `notion_introspect_database`, `notion_list_databases`, `company_search`, etc., call those tools INSTEAD of asking. Returns the picked option's `value` string.",
+      "Ask the user to pick one option. ONLY use when (a) a search/list tool already returned multiple plausible matches, AND (b) you genuinely cannot pick automatically (e.g. two companies with the same name in different cities, two databases with similar names). DO NOT use this to ask the user for information they already provided in the current message, and DO NOT use it as a shortcut around exploring with read-only tools first — if the answer is in `notion_introspect_database`, `notion_list_databases`, `company_search`, etc., call those tools INSTEAD of asking. When disambiguating between matches (e.g. several companies with the same name), DO NOT trim the list to 2-3 — present ALL plausible candidates the search returned, up to the 12-option cap (aim for ~10 when a company-name search returns many hits), so the right one is actually on screen. Put the location/Stadt in each option's `description` so look-alikes are distinguishable. You do NOT need to add a 'Sonstige'/free-text option yourself — the UI always appends a 'Sonstiges …' free-text field automatically. Returns the picked option's `value` string.",
     parameters: {
       type: "object",
       properties: {
@@ -23,8 +23,9 @@ export function buildUiTools(): Tool[] {
         options: {
           type: "array",
           minItems: 2,
-          maxItems: 8,
-          description: "Choices the user can pick from.",
+          maxItems: 12,
+          description:
+            "Choices the user can pick from. For disambiguation, include every plausible candidate (up to 12) rather than a trimmed shortlist.",
           items: {
             type: "object",
             required: ["value", "label"],
@@ -62,7 +63,7 @@ export function buildUiTools(): Tool[] {
             .required(),
         )
         .min(2)
-        .max(8)
+        .max(12)
         .required(),
     }),
     run: async (args, ctx) => {
