@@ -2757,32 +2757,63 @@ function renderChatContent(text: string): ReactNode {
 // react-markdown custom components. Memoised at module scope so the
 // component object is referentially stable across renders (cheap perf
 // nicety — react-markdown re-walks the tree on every render anyway).
+// v0.1.352 — robuste Erkennung interner Firmen-Links. Der Agent SOLL
+// `company:<id>` schreiben (siehe prompts.ts), liefert aber in der
+// Praxis auch andere Formate (`/companies/<id>`, `companies/<id>`,
+// `#/companies/<id>`). Alle müssen über den SPA-<Link> laufen — NICHT
+// über ein nacktes <a href>, sonst macht der Hash-Router eine harte
+// Navigation, lädt index.html neu und der User landet wieder im Chat
+// (Default-Route). Genau der gemeldete Bug.
+function extractCompanyId(target: string): string {
+  if (target.startsWith("company:")) {
+    return target.slice("company:".length).trim();
+  }
+  const m = target.match(/^#?\/?companies\/([^/?#]+)/i);
+  if (m && m[1]) {
+    try {
+      return decodeURIComponent(m[1]);
+    } catch {
+      return m[1];
+    }
+  }
+  return "";
+}
+
+// Interner SPA-Pfad (z. B. `/transactions`, `#/meldungen`) → normalisiert
+// auf einen führenden Slash, damit er per <Link> geroutet werden kann.
+// Gibt null zurück, wenn es kein interner Pfad ist.
+function toSpaPath(target: string): string | null {
+  if (target.startsWith("#/")) return target.slice(1); // "#/x" -> "/x"
+  if (target.startsWith("/")) return target; // "/x"
+  return null;
+}
+
 const MARKDOWN_COMPONENTS: Components = {
   a({ href, children, ...rest }) {
-    const target = typeof href === "string" ? href : "";
-    if (target.startsWith("company:")) {
-      const companyId = target.slice("company:".length).trim();
-      if (companyId) {
-        return (
-          <Link
-            to={`/companies/${encodeURIComponent(companyId)}`}
-            className="chat-company-link"
-            title={`Firma ${companyId} öffnen`}
-            // Phase 8.r4 — interest signal. CompanyDetail will also
-            // ping on mount, but recording here too means the scheduler
-            // sees the click even if the user never lands on the page.
-            onClick={() => {
-              void window.api.interest.record(companyId);
-            }}
-          >
-            {children}
-          </Link>
-        );
-      }
-      // Malformed `company:` link — render the label as plain text so
-      // the user at least sees something, instead of a silent disappear.
-      return <>{children}</>;
+    const target = typeof href === "string" ? href.trim() : "";
+
+    // 1) Interner Firmen-Link (mehrere Formate) → SPA-Detailseite.
+    const companyId = extractCompanyId(target);
+    if (companyId) {
+      return (
+        <Link
+          to={`/companies/${encodeURIComponent(companyId)}`}
+          className="chat-company-link"
+          title={`Firma ${companyId} öffnen`}
+          // Phase 8.r4 — interest signal. CompanyDetail will also
+          // ping on mount, but recording here too means the scheduler
+          // sees the click even if the user never lands on the page.
+          onClick={() => {
+            void window.api.interest.record(companyId);
+          }}
+        >
+          {children}
+        </Link>
+      );
     }
+
+    // 2) Externer http(s)-Link → im OS-Browser öffnen, niemals den
+    //    hash-gerouteten Renderer navigieren (würde den Chat zerstören).
     if (/^https?:\/\//i.test(target)) {
       return (
         <a
@@ -2798,8 +2829,28 @@ const MARKDOWN_COMPONENTS: Components = {
         </a>
       );
     }
+
+    // 3) Anderer interner SPA-Pfad (/foo oder #/foo) → per <Link>
+    //    routen statt hart zu navigieren.
+    const spaPath = toSpaPath(target);
+    if (spaPath) {
+      return (
+        <Link to={spaPath} className="chat-link">
+          {children}
+        </Link>
+      );
+    }
+
+    // 4) Unbekannter / leerer / nackter href → als Text-Link rendern,
+    //    aber NIE hart navigieren (preventDefault). Sonst lädt der
+    //    Browser index.html neu und der User landet wieder im Chat.
     return (
-      <a href={target} {...rest}>
+      <a
+        href={target || undefined}
+        className="chat-link"
+        onClick={(e) => e.preventDefault()}
+        {...rest}
+      >
         {children}
       </a>
     );
