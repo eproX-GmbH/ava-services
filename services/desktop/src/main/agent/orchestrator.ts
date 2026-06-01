@@ -47,7 +47,14 @@ import {
 // 8.a ships with an empty ToolRegistry so the loop only ever sees plain
 // content frames — tool-calling becomes live in 8.b.
 
-const STEP_BUDGET = 12;
+// v0.1.346 — pro Antwort erlaubte ReAct-Schritte (LLM-Runden mit
+// Tool-Calls). War lange 12, was echte Mehrschritt-Aufgaben (CRM-
+// Anreicherung über viele Firmen, längere Recherche) hart abwürgte
+// („agent step budget exhausted"). Deutlich angehoben; Pathologien
+// fängt der Anti-Loop-Wächter (3× identischer fehlschlagender Call) ab,
+// und bei Erreichen des Budgets gibt es jetzt einen Graceful Wrap-up
+// (Abschluss-Antwort + „weitermachen?") statt eines Fehlers.
+const STEP_BUDGET = 80;
 
 export interface AgentOrchestratorOptions {
   /**
@@ -790,6 +797,10 @@ export class AgentOrchestrator extends EventEmitter {
       { count: number; failures: number }
     >();
 
+    // v0.1.346 — last system message built in the loop, reused for the
+    // graceful wrap-up turn if the step budget is reached.
+    let lastSystemMessage: AgentMessage | null = null;
+
     try {
       for (let step = 0; step < STEP_BUDGET; step++) {
         // v0.1.241 — Compute the available-tool-name set ONCE here so
@@ -837,6 +848,7 @@ export class AgentOrchestrator extends EventEmitter {
           ),
           createdAt: 0,
         };
+        lastSystemMessage = systemMessage;
         const messages = [systemMessage, ...conversation.messages];
 
         const assistantId = randomUUID();
@@ -1005,9 +1017,90 @@ export class AgentOrchestrator extends EventEmitter {
         }
       }
 
-      // Step budget exhausted — emit a terminal error so the renderer
-      // releases its in-flight gate.
-      throw new Error(`agent step budget exhausted (${STEP_BUDGET})`);
+      // v0.1.346 — Step-Budget erreicht. Statt zu werfen (was die ganze
+      // bisherige Arbeit dieses Turns verwerfen würde) machen wir EINEN
+      // finalen Turn OHNE Tools: das Modell wird gezwungen, eine echte
+      // Abschluss-Antwort zu geben — was erledigt wurde, was offen ist,
+      // und ob es weitermachen soll. Der Nutzer kann einfach „weiter"
+      // sagen; der nächste Turn setzt mit frischem Budget auf der vollen
+      // Tool-Historie fort. So wird das Limit zum Checkpoint, nicht zur
+      // Wand.
+      const wrapUpId = randomUUID();
+      let wrapUpContent = "";
+      const wrapUpNudge: AgentMessage = {
+        id: "__wrapup__",
+        role: "user",
+        content:
+          `[System: Du hast das Schritt-Limit für diese Antwort erreicht ` +
+          `(${STEP_BUDGET} Schritte). Rufe KEINE weiteren Tools auf. Fasse ` +
+          `jetzt knapp zusammen, was du in diesem Durchgang erledigt hast ` +
+          `und was noch offen ist, und biete an weiterzumachen (z. B. „Sag ` +
+          `‚weiter', dann mache ich dort weiter."). Antworte normal auf ` +
+          `Deutsch.]`,
+        createdAt: Date.now(),
+      };
+      const wrapUpMessages = lastSystemMessage
+        ? [lastSystemMessage, ...conversation.messages, wrapUpNudge]
+        : [...conversation.messages, wrapUpNudge];
+      for await (const frame of provider.streamChat({
+        messages: wrapUpMessages,
+        tools: undefined, // keine Tools → erzwingt eine Text-Antwort
+        signal,
+      })) {
+        if (frame.errorMessage) throw new Error(frame.errorMessage);
+        if (frame.contentDelta && frame.contentDelta.length > 0) {
+          wrapUpContent += frame.contentDelta;
+          this.emitFrame({
+            kind: "token",
+            requestId,
+            conversationId: conversation.id,
+            messageId: wrapUpId,
+            delta: frame.contentDelta,
+          });
+        }
+        if (frame.usage && this.onUsage) {
+          try {
+            const status = provider.getStatus();
+            this.onUsage({
+              provider: status.kind,
+              model: status.model ?? "",
+              conversationId: conversation.id,
+              usage: frame.usage,
+            });
+          } catch (err) {
+            console.warn("[usage] forward to store failed:", err);
+          }
+        }
+      }
+      // Sicherheitsnetz: hat das Modell nichts geliefert, eine
+      // verständliche Standard-Antwort senden (statt Leer-Bubble).
+      if (!wrapUpContent.trim()) {
+        wrapUpContent =
+          `Ich habe das Schritt-Limit (${STEP_BUDGET}) für diese Antwort ` +
+          `erreicht und mehrere Schritte ausgeführt, die Aufgabe ist aber ` +
+          `noch nicht ganz fertig. Sag „weiter", dann mache ich dort ` +
+          `weiter, wo ich aufgehört habe.`;
+        this.emitFrame({
+          kind: "token",
+          requestId,
+          conversationId: conversation.id,
+          messageId: wrapUpId,
+          delta: wrapUpContent,
+        });
+      }
+      this.appendMessage(conversation, {
+        id: wrapUpId,
+        role: "assistant",
+        content: wrapUpContent,
+        createdAt: Date.now(),
+      });
+      this.emitFrame({
+        kind: "done",
+        requestId,
+        conversationId: conversation.id,
+        messageId: wrapUpId,
+      });
+      return;
     } catch (err) {
       const raw =
         err instanceof Error
