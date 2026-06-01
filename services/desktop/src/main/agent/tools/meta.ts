@@ -366,6 +366,7 @@ const KNOWN_BUNDLES: readonly ToolBundle[] = [
       "crm_introspect_hubspot_task",
       "crm_update_hubspot_task",
       "crm_create_hubspot_company",
+      "crm_sync_hubspot_company_from_ava",
       "crm_enrich_hubspot_company_from_ava",
       "crm_create_hubspot_contact",
       "crm_create_hubspot_deal",

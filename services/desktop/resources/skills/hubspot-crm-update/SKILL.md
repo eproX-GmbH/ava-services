@@ -12,6 +12,13 @@ b2b-scope: internal
 allowed-tools:
   - crm_status
   - company_search
+  - company_get
+  - company_profile
+  - company_structured_content
+  - company_publications
+  - company_keywords
+  - company_website
+  - company_contacts
   - crm_list_links_for_company
   - crm_search_hubspot_companies
   - crm_search_hubspot_contacts
@@ -20,6 +27,7 @@ allowed-tools:
   - crm_introspect_hubspot_company
   - crm_update_hubspot_company
   - crm_create_hubspot_company
+  - crm_sync_hubspot_company_from_ava
   - crm_enrich_hubspot_company_from_ava
   - crm_delete_hubspot_company
   - company_search
@@ -53,6 +61,63 @@ user-invocable: true
 ---
 
 # HubSpot Full-CRUD via Chat
+
+## AVA → HubSpot: Standard-Weg (Voll-Sync)
+
+Sobald der Nutzer eine **in AVA bekannte Firma** in HubSpot anlegen,
+aktualisieren oder anreichern will („in HubSpot anlegen", „HubSpot
+aktualisieren", „mit AVA-Daten anreichern", „Firma X ins CRM"), ist der
+**bevorzugte und fast immer richtige Weg EIN Tool-Call**:
+
+```
+crm_sync_hubspot_company_from_ava(avaCompanyId, includeContacts=true)
+```
+
+(AVA-companyId vorher mit `company_search` auflösen.)
+
+Dieses Tool macht ALLES in einem Schritt — du musst die Felder NICHT
+selbst zusammenklauben und NICHT Feld-für-Feld nachfragen:
+
+- holt automatisch **alle** AVA-Quellen (Stammdaten, Structured-Content,
+  Profil, Website/SERP, Publikationen, Keywords, Kontakte),
+- legt die HubSpot-Company an **oder** aktualisiert eine vorhandene
+  (Dublettensuche inkl. Rückfrage, wenn nötig),
+- mappt die Branche gegen HubSpots Enum,
+- legt Geschäftsführer + Ansprechpartner als verknüpfte Contacts an
+  (dedupliziert),
+- zeigt **eine** Sammel-Bestätigung und schreibt dann alles.
+
+**Nutze `crm_update_hubspot_company` / `crm_create_hubspot_company` /
+`crm_create_hubspot_contact` nur**, wenn der Nutzer EINEN konkreten,
+manuellen Einzelwert setzen will (z. B. „setze Lifecycle auf Customer"),
+NICHT für die Daten-Übernahme aus AVA.
+
+### Feld-Mapping (AVA → HubSpot)
+
+| HubSpot | AVA-Quelle (Priorität) |
+|---|---|
+| `name` | base.name |
+| `address` | structured-content street+houseNumber → SERP-Adresse |
+| `zip` / `city` | structured-content zipCode / city (city sonst base.location) |
+| `country` | „Deutschland" (DE-Handelsregister-Default) |
+| `numberofemployees` | **publications.employeeCount** (neuester Abschluss) |
+| `annualrevenue` | publications.salesVolume → revenueVolume |
+| `founded_year` | structured-content.foundingYear |
+| `description` | corporatePurpose → businessPurpose/profile → website-Description → Keywords |
+| `industry` | SERP-Kategorie/Keywords → gegen HubSpot-Enum gematcht |
+| `website` / `domain` | SERP-URL |
+| `phone` | SERP-Telefon |
+| Contacts | structured-content.managingDirectors (Geschäftsführer) + contacts.employments (Ansprechpartner) → firstname/lastname/jobtitle/email/phone, an Company verknüpft |
+
+### Voll-Load-Pflicht
+
+Wenn du Firmendaten brauchst (für HubSpot **oder** für eine inhaltliche
+Antwort), lade IMMER den **vollständigen** Überblick — nicht nur Profil +
+Website + Structured-Content. Parallel im selben Turn:
+`company_get`, `company_structured_content`, `company_profile`,
+`company_website`, `company_publications`, `company_keywords`,
+`company_contacts`. Erst dann antworten/schreiben. Der Voll-Sync oben
+macht das intern bereits; bei eigener Recherche ziehst du es selbst.
 
 ## Operations-Matrix
 

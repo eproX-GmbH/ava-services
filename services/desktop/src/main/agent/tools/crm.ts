@@ -1356,18 +1356,38 @@ export function buildCrmTools(deps: CrmToolDeps): Tool[] {
     signal: AbortSignal,
   ): Promise<{
     props: Record<string, string>;
+    /** v0.1.354 — Roh-Branchenkandidat (SERP-Kategorie / Keyword). Geht
+     *  NICHT direkt in `props`, weil HubSpots `industry` ein festes Enum
+     *  ist — der Sync-Tool matcht ihn erst gegen die erlaubten Optionen. */
+    industryCandidate?: string;
+    /** v0.1.354 — Kontakt-Kandidaten aus structured-content
+     *  (Geschäftsführer) + contacts (Ansprechpartner), dedup-roh. */
+    contactCandidates: Array<{
+      firstName?: string;
+      lastName?: string;
+      fullName: string;
+      jobTitle?: string;
+      email?: string;
+      phone?: string;
+      source: string;
+    }>;
     hasData: boolean;
     sources: string[];
-    /** v0.1.320 — pro Endpoint protokollieren ob er Daten lieferte,
-     *  Fehler warf oder leer war. Wandert in den Confirm-Dialog +
-     *  in den "keine Änderungen"-Fehler damit der User+Agent sehen
-     *  WARUM nichts ankam (vorher silent null → frustrierende
-     *  "AVA hat keine Daten"-Meldung bei stiller Gateway-Latenz). */
     diagnostics: Array<{ endpoint: string; ok: boolean; reason?: string }>;
   }> {
     const props: Record<string, string> = {};
     const sources: string[] = [];
     const diagnostics: Array<{ endpoint: string; ok: boolean; reason?: string }> = [];
+    const contactCandidates: Array<{
+      firstName?: string;
+      lastName?: string;
+      fullName: string;
+      jobTitle?: string;
+      email?: string;
+      phone?: string;
+      source: string;
+    }> = [];
+    let industryCandidate: string | undefined;
     const get = async <T = unknown>(
       label: string,
       path: string,
@@ -1386,130 +1406,651 @@ export function buildCrmTools(deps: CrmToolDeps): Tool[] {
         return null;
       }
     };
-    // Base-Record (legalName, adresse, etc.)
-    const base = await get<{
-      legalName?: string;
-      city?: string;
-      postcode?: string;
-      street?: string;
-      countryCode?: string;
-      foundationYear?: number;
-      hrbNumber?: string;
-    }>("base", `/v1/companies/${encodeURIComponent(avaCompanyId)}`);
-    if (base) {
+    const str = (v: unknown): string | undefined =>
+      typeof v === "string" && v.trim().length > 0
+        ? v.trim()
+        : typeof v === "number" && Number.isFinite(v)
+          ? String(v)
+          : undefined;
+
+    // v0.1.354 — ALLE relevanten Endpunkte laden (vorher wurden Felder aus
+    // nicht-existenten Keys gelesen → "befüllt nie"). Parallel für Tempo.
+    const [base, structured, profile, website, pubs, kw, contacts] =
+      await Promise.all([
+        // Base-Stammdaten: name, location, register…
+        get<{ name?: string; location?: string }>(
+          "base",
+          `/v1/companies/${encodeURIComponent(avaCompanyId)}`,
+        ),
+        // Structured-Content: Adresse, Gründungsjahr, Gegenstand, GF…
+        get<{
+          name?: string;
+          corporatePurpose?: string | null;
+          legalForm?: string | null;
+          street?: string | null;
+          houseNumber?: string | null;
+          zipCode?: string | null;
+          city?: string | null;
+          foundingYear?: number | string | null;
+          managingDirectors?: Array<{
+            firstName?: string;
+            lastName?: string;
+            city?: string;
+          }>;
+        }>(
+          "structured-content",
+          `/v1/companies/${encodeURIComponent(avaCompanyId)}/structured-content`,
+        ),
+        // Profile: businessPurpose, profile-Summary, keywords
+        get<{
+          profile?: string;
+          businessPurpose?: string | null;
+          keywords?: string[];
+        }>(
+          "profile",
+          `/v1/companies/${encodeURIComponent(avaCompanyId)}/profile`,
+        ),
+        // Website: { website:{siteName,description}, companySerp:{url,address,category,phone} }
+        get<{
+          website?: { siteName?: string | null; description?: string | null };
+          companySerp?: {
+            url?: string | null;
+            category?: string | null;
+            address?: string | null;
+            phone?: string | null;
+          };
+        }>(
+          "website",
+          `/v1/companies/${encodeURIComponent(avaCompanyId)}/website`,
+        ),
+        // Publications: items[].{ employeeCount, salesVolume{value}, revenueVolume{value}, year }
+        get<{
+          items?: Array<{
+            year?: number | null;
+            employeeCount?: number | null;
+            salesVolume?: { value?: number } | null;
+            revenueVolume?: { value?: number } | null;
+          }>;
+        }>(
+          "publications",
+          `/v1/companies/${encodeURIComponent(avaCompanyId)}/publications`,
+        ),
+        get<{ items?: Array<{ keyword?: string }> }>(
+          "keywords",
+          `/v1/companies/${encodeURIComponent(avaCompanyId)}/keywords`,
+        ),
+        // Contacts-Aggregat: employments[] (Ansprechpartner)
+        get<{ employments?: Array<Record<string, unknown>> }>(
+          "contacts",
+          `/v1/companies/${encodeURIComponent(avaCompanyId)}/contacts`,
+        ),
+      ]);
+
+    // ---- Name ----
+    if (base?.name) {
       sources.push("base");
-      if (base.legalName) props.name = base.legalName;
-      if (base.city) props.city = base.city;
-      if (base.postcode) props.zip = base.postcode;
-      if (base.street) props.address = base.street;
-      if (base.countryCode) props.country = base.countryCode;
-      if (base.foundationYear)
-        props.founded_year = String(base.foundationYear);
+      props.name = base.name;
+    } else if (structured?.name) {
+      props.name = structured.name;
     }
-    // Website / Domain
-    const website = await get<{
-      url?: string;
-      homepageUrl?: string;
-      description?: string;
-    }>("website", `/v1/companies/${encodeURIComponent(avaCompanyId)}/website`);
-    if (website && (website.url || website.homepageUrl)) {
-      sources.push("website");
-      const url = website.url ?? website.homepageUrl ?? "";
-      props.website = url;
-      try {
-        const u = new URL(url);
-        props.domain = u.hostname.replace(/^www\./, "");
-      } catch {
-        // ignore — Agent hat ggf. einen unsauberen URL
-      }
-      if (website.description) {
-        props.description = website.description.slice(0, 1000);
+
+    // ---- Adresse / Gründungsjahr / Gegenstand (structured-content) ----
+    if (structured) {
+      sources.push("structured-content");
+      const street = str(structured.street);
+      const houseNo = str(structured.houseNumber);
+      if (street) props.address = houseNo ? `${street} ${houseNo}` : street;
+      const zip = str(structured.zipCode);
+      if (zip) props.zip = zip;
+      const city = str(structured.city);
+      if (city) props.city = city;
+      const fy = str(structured.foundingYear);
+      if (fy) props.founded_year = fy;
+      const purpose = str(structured.corporatePurpose);
+      if (purpose) props.description = purpose.slice(0, 1000);
+      // Deutsche Handelsregister-Daten ⇒ Land = Deutschland (Default).
+      props.country = "Deutschland";
+      // Geschäftsführer → Kontakt-Kandidaten.
+      for (const md of structured.managingDirectors ?? []) {
+        const first = str(md.firstName);
+        const last = str(md.lastName);
+        const full = [first, last].filter(Boolean).join(" ").trim();
+        if (full.length > 0) {
+          contactCandidates.push({
+            ...(first ? { firstName: first } : {}),
+            ...(last ? { lastName: last } : {}),
+            fullName: full,
+            jobTitle: "Geschäftsführer",
+            source: "structured-content",
+          });
+        }
       }
     }
-    // Profile (Headcount, Branche, Summary)
-    const profile = await get<{
-      companyProfile?: string;
-      headcount?: number | string;
-      industry?: string;
-      businessPurpose?: string;
-    }>("profile", `/v1/companies/${encodeURIComponent(avaCompanyId)}/profile`);
+
+    // ---- Beschreibung-Fallbacks (Profile) ----
     if (profile) {
       sources.push("profile");
-      if (profile.headcount) {
-        props.numberofemployees = String(profile.headcount);
-      }
-      if (profile.industry) {
-        props.industry = profile.industry;
-      }
-      // Wenn description noch nicht von Website kam: companyProfile als
-      // Fallback nehmen (LLM-erzeugte Zusammenfassung).
-      if (!props.description && profile.companyProfile) {
-        props.description = String(profile.companyProfile).slice(0, 1000);
+      if (!props.description) {
+        const bp = str(profile.businessPurpose) ?? str(profile.profile);
+        if (bp) props.description = bp.slice(0, 1000);
       }
     }
-    // Latest financial publication für Umsatz/EK-Snapshot
-    const pubs = await get<{ items?: Array<Record<string, unknown>> }>(
-      "publications",
-      `/v1/companies/${encodeURIComponent(avaCompanyId)}/publications`,
-    );
-    const latestPub = pubs?.items?.[0] as
-      | { year?: number; sales?: { value?: number } }
-      | undefined;
-    if (latestPub?.sales?.value) {
+
+    // ---- Website / Domain / Adresse-Fallback / Branche / Telefon ----
+    if (website && (website.website || website.companySerp)) {
+      sources.push("website");
+      const serp = website.companySerp;
+      const url = str(serp?.url);
+      if (url) {
+        props.website = url;
+        try {
+          props.domain = new URL(
+            url.startsWith("http") ? url : `https://${url}`,
+          ).hostname.replace(/^www\./, "");
+        } catch {
+          /* unsaubere URL — Domain weglassen */
+        }
+      }
+      if (!props.address) {
+        const serpAddr = str(serp?.address);
+        if (serpAddr) props.address = serpAddr;
+      }
+      if (!props.description) {
+        const wd = str(website.website?.description);
+        if (wd) props.description = wd.slice(0, 1000);
+      }
+      industryCandidate = industryCandidate ?? str(serp?.category);
+      const phone = str(serp?.phone);
+      if (phone) props.phone = phone;
+    }
+
+    // ---- Mitarbeiterzahl + Umsatz (neueste Publikation) ----
+    const items = pubs?.items ?? [];
+    if (items.length > 0) {
       sources.push("publications");
-      props.annualrevenue = String(latestPub.sales.value);
-    }
-    // v0.1.320 — Keywords als Description-Fallback. Wenn weder Website
-    // noch Profile eine description geliefert haben, aber AVA Keywords
-    // extrahiert hat, daraus eine kurze "Beschreibung" zusammensetzen.
-    // Besser eine Keyword-Liste als gar nichts in HubSpot.
-    if (!props.description) {
-      const kw = await get<{ items?: Array<{ keyword?: string }> }>(
-        "keywords",
-        `/v1/companies/${encodeURIComponent(avaCompanyId)}/keywords`,
+      // Items sind year DESC sortiert; nimm jeweils den ersten mit Wert.
+      const emp = items.find((p) => typeof p.employeeCount === "number");
+      if (emp?.employeeCount != null) {
+        props.numberofemployees = String(emp.employeeCount);
+      }
+      const rev = items.find(
+        (p) =>
+          typeof p.salesVolume?.value === "number" ||
+          typeof p.revenueVolume?.value === "number",
       );
-      const list = (kw?.items ?? [])
-        .map((k) => k?.keyword)
-        .filter((s): s is string => typeof s === "string" && s.length > 0)
-        .slice(0, 20);
-      if (list.length > 0) {
-        sources.push("keywords");
-        props.description = `Schwerpunkte: ${list.join(", ")}`.slice(0, 1000);
+      const revVal = rev?.salesVolume?.value ?? rev?.revenueVolume?.value;
+      if (typeof revVal === "number") {
+        props.annualrevenue = String(Math.round(revVal));
       }
     }
-    // v0.1.320 — Telefon aus den ersten verfuegbaren Contact-Phones.
-    // Workphone bevorzugt, sonst irgendeine Nummer. HubSpot's `phone`
-    // ist auf Company-Ebene zentral fuer Outreach.
-    if (!props.phone) {
-      const contacts = await get<{
-        items?: Array<{
-          workPhones?: string[];
-          phones?: string[];
-        }>;
-      }>(
-        "contacts",
-        `/v1/companies/${encodeURIComponent(avaCompanyId)}/contacts`,
-      );
-      const phone =
-        contacts?.items
-          ?.flatMap((c) => [...(c.workPhones ?? []), ...(c.phones ?? [])])
-          .find((p) => typeof p === "string" && p.trim().length >= 5);
-      if (phone) {
-        sources.push("contacts");
-        props.phone = phone.trim();
+
+    // ---- Keywords: Branchenkandidat + Description-Fallback ----
+    const keywordList = (kw?.items ?? [])
+      .map((k) => str(k?.keyword))
+      .filter((s): s is string => Boolean(s));
+    if (keywordList.length > 0) {
+      sources.push("keywords");
+      industryCandidate = industryCandidate ?? keywordList[0];
+      if (!props.description) {
+        props.description = `Schwerpunkte: ${keywordList.slice(0, 20).join(", ")}`.slice(
+          0,
+          1000,
+        );
       }
     }
-    // hasData: substantiell wenn mindestens EINE der Side-Quellen
-    // (alles außer base) was geliefert hat. Base allein ist nur
-    // Stammdaten — die hatte HubSpot ohnehin meist schon.
+
+    // ---- Ansprechpartner aus contacts/employments (best effort) ----
+    for (const emp of contacts?.employments ?? []) {
+      const first = str(emp.firstName) ?? str((emp.person as { firstName?: string })?.firstName);
+      const last = str(emp.lastName) ?? str((emp.person as { lastName?: string })?.lastName);
+      const nameField = str(emp.name) ?? str((emp.person as { name?: string })?.name);
+      const full =
+        nameField ?? [first, last].filter(Boolean).join(" ").trim();
+      if (!full || full.length === 0) continue;
+      // Dedup gegen schon erfasste GF (gleicher Name).
+      if (
+        contactCandidates.some(
+          (c) => c.fullName.toLowerCase() === full.toLowerCase(),
+        )
+      ) {
+        continue;
+      }
+      contactCandidates.push({
+        ...(first ? { firstName: first } : {}),
+        ...(last ? { lastName: last } : {}),
+        fullName: full,
+        ...(str(emp.title) ? { jobTitle: str(emp.title) } : {}),
+        ...(str(emp.email) ? { email: str(emp.email) } : {}),
+        ...(str(emp.phone) ? { phone: str(emp.phone) } : {}),
+        source: "contacts",
+      });
+    }
+    if ((contacts?.employments ?? []).length > 0 && !sources.includes("contacts")) {
+      sources.push("contacts");
+    }
+
+    // hasData: substanziell wenn IRGENDEINE inhaltliche Quelle griff.
     const hasData =
+      sources.includes("structured-content") ||
       sources.includes("website") ||
       sources.includes("profile") ||
       sources.includes("publications") ||
       sources.includes("keywords") ||
       sources.includes("contacts");
-    return { props, hasData, sources, diagnostics };
+    return {
+      props,
+      ...(industryCandidate ? { industryCandidate } : {}),
+      contactCandidates,
+      hasData,
+      sources,
+      diagnostics,
+    };
   }
+
+  // v0.1.354 — Best-Match einer freien AVA-Branche/Kategorie gegen HubSpots
+  // festes `industry`-Enum. HubSpot ignoriert Werte, die nicht exakt einer
+  // Option entsprechen, daher MÜSSEN wir auf einen erlaubten `value` mappen.
+  // Heuristik: exакte/teilstring-Übereinstimmung gegen label+value (case-
+  // insensitive). Kein Treffer → undefined (Feld wird ausgelassen, kein
+  // Müll). LLM-Fallback bewusst (noch) nicht — die Heuristik deckt die
+  // häufigen Fälle und vermeidet einen Tool-internen Modell-Call.
+  function bestMatchIndustry(
+    candidate: string | undefined,
+    options: Array<{ label: string; value: string }>,
+  ): string | undefined {
+    if (!candidate || options.length === 0) return undefined;
+    const cand = candidate.toLowerCase().trim();
+    // 1) exakter Label/Value-Match
+    for (const o of options) {
+      if (o.label.toLowerCase() === cand || o.value.toLowerCase() === cand) {
+        return o.value;
+      }
+    }
+    // 2) Teilstring in beide Richtungen (längster Treffer gewinnt)
+    let best: { value: string; score: number } | null = null;
+    for (const o of options) {
+      const label = o.label.toLowerCase();
+      if (label.includes(cand) || cand.includes(label)) {
+        const score = Math.min(label.length, cand.length);
+        if (!best || score > best.score) best = { value: o.value, score };
+      }
+    }
+    return best?.value;
+  }
+
+  // v0.1.354 — Standard-HubSpot-Company-Properties, die wir ohne Schema-
+  // Introspektion gefahrlos schreiben dürfen (existieren in jedem Portal).
+  const STANDARD_COMPANY_PROPS = new Set<string>([
+    "name",
+    "domain",
+    "website",
+    "address",
+    "city",
+    "zip",
+    "state",
+    "country",
+    "numberofemployees",
+    "annualrevenue",
+    "founded_year",
+    "description",
+    "phone",
+    "industry",
+  ]);
+
+  // v0.1.354 — Ein-Klick-Voll-Sync: AVA-Firma → HubSpot. Holt ALLE
+  // AVA-Daten (Stammdaten, Structured-Content, Profil, Website/SERP,
+  // Publikationen, Keywords, Kontakte), legt die HubSpot-Company an ODER
+  // aktualisiert sie, mappt die Branche gegen HubSpots Enum, legt
+  // Geschäftsführer + Ansprechpartner als Contacts an (dedupliziert,
+  // verknüpft) — alles hinter EINER Bestätigung. Das ist der Standard-
+  // Pfad, wenn der Nutzer eine AVA-Firma „in HubSpot anlegen/aktualisieren/
+  // anreichern" will.
+  const syncCompanyTool = defineTool({
+    name: "crm_sync_hubspot_company_from_ava",
+    description:
+      "VOLL-SYNC einer AVA-Firma nach HubSpot in EINEM Schritt — der bevorzugte Weg, sobald der Nutzer eine in AVA bekannte Firma in HubSpot anlegen, aktualisieren oder anreichern will. Holt automatisch ALLE AVA-Daten (Stammdaten, Structured-Content, Profil, Website/SERP, Publikationen, Keywords, Kontakte) und befüllt die HubSpot-Felder: name, address, zip, city, country, numberofemployees (aus letztem Jahresabschluss), annualrevenue, founded_year, description (Unternehmensgegenstand), website/domain, phone, industry (gegen HubSpots Branchen-Enum gematcht). Legt zusätzlich Geschäftsführer + Ansprechpartner als verknüpfte Contacts an (dedupliziert). Alles hinter EINER Sammel-Bestätigung — KEIN Feld-für-Feld-Nachfragen. Wenn keine `hubspotCompanyId` gegeben ist, sucht das Tool selbst nach Dubletten und fragt ggf. welche Firma gemeint ist bzw. legt neu an. Vorher die AVA-companyId via `company_search` auflösen. Wenn die Firma in AVA noch nicht recherchiert wurde, bricht das Tool mit klarem Hinweis ab.",
+    parameters: {
+      type: "object",
+      required: ["avaCompanyId"],
+      properties: {
+        avaCompanyId: {
+          type: "string",
+          description:
+            "AVA-Master-Data-companyId (via company_search auflösen).",
+        },
+        hubspotCompanyId: {
+          type: "string",
+          description:
+            "Optional: bekannte HubSpot-companyId. Wenn weggelassen, sucht das Tool nach Dubletten (Name/Domain) und legt sonst neu an.",
+        },
+        includeContacts: {
+          type: "boolean",
+          description:
+            "Geschäftsführer + Ansprechpartner als Contacts anlegen + verknüpfen. Default true.",
+        },
+        rationale: {
+          type: "string",
+          description: "Optionale 1-Satz-Begründung für den Confirm-Dialog.",
+        },
+      },
+    },
+    schema: yup
+      .object({
+        avaCompanyId: yup.string().trim().min(1).required(),
+        hubspotCompanyId: yup.string().trim().optional(),
+        includeContacts: yup.boolean().optional(),
+        rationale: yup.string().trim().max(500).optional(),
+      })
+      .noUnknown(true),
+    preview: (r: {
+      applied: boolean;
+      companyId?: string;
+      created?: boolean;
+      fieldsWritten?: number;
+      contactsCreated?: number;
+      error?: string;
+    }) =>
+      r.applied
+        ? `HubSpot ${r.created ? "angelegt" : "aktualisiert"} (${r.companyId}) · ${r.fieldsWritten ?? 0} Felder · ${r.contactsCreated ?? 0} Kontakte`
+        : r.error
+          ? `Fehler: ${r.error}`
+          : "Sync verworfen",
+    run: async (args, ctx) => {
+      const includeContacts = args.includeContacts ?? true;
+      const status = crm.getStatus("hubspot");
+      if (!status.connected) {
+        return {
+          applied: false,
+          error:
+            "HubSpot ist nicht verbunden. Bitte zuerst in den Einstellungen verbinden.",
+        };
+      }
+
+      // 1) ALLE AVA-Daten holen.
+      const enrich = await gatherAvaCompanyDataForHubspot(
+        args.avaCompanyId,
+        ctx.signal,
+      );
+      if (!enrich.hasData) {
+        const diag = enrich.diagnostics
+          .map((d) => `${d.endpoint}: ${d.ok ? "ok" : (d.reason ?? "leer")}`)
+          .join(" · ");
+        return {
+          applied: false,
+          error:
+            `Firma ${args.avaCompanyId} ist in AVA noch nicht recherchiert (keine inhaltlichen Daten). ` +
+            `Bitte zuerst die Recherche anstoßen (Tab „Firmen" → Firma → neu recherchieren) und erneut versuchen.\n` +
+            `Quellen-Status: ${diag}`,
+        };
+      }
+
+      // 2) Ziel-Company auflösen (gegeben / Dublettensuche / neu).
+      let hubspotId = args.hubspotCompanyId;
+      let creating = false;
+      let schemaCompanyId: string | null = hubspotId ?? null;
+      if (!hubspotId) {
+        const query = enrich.props.domain || enrich.props.name || "";
+        const search = query
+          ? await searchHubspotCompanies(crm, { query, limit: 10 }).catch(
+              () => ({ items: [] as Array<{ id: string; name: string | null; domain: string | null; city: string | null }> }),
+            )
+          : { items: [] };
+        if (search.items.length === 0) {
+          creating = true;
+        } else {
+          const pick = await ctx.ui.askChoice(
+            `Für „${enrich.props.name ?? args.avaCompanyId}" gibt es in HubSpot bereits Treffer. Welche Firma soll ich aktualisieren — oder eine neue anlegen?`,
+            [
+              ...search.items.slice(0, 10).map((m) => ({
+                value: m.id,
+                label: m.name ?? `(ohne Name) ${m.id}`,
+                description: [m.domain, m.city].filter(Boolean).join(" · ") || undefined,
+              })),
+              {
+                value: "__new__",
+                label: "Neue Firma anlegen",
+                description: "Keiner der Treffer passt",
+              },
+            ],
+            ctx.signal,
+          );
+          if (pick === "__new__" || pick.startsWith("__user_other__")) {
+            creating = true;
+            // Falls es Treffer gibt, nehmen wir den ersten nur fürs Schema.
+            schemaCompanyId = search.items[0]?.id ?? null;
+          } else {
+            hubspotId = pick;
+            schemaCompanyId = pick;
+          }
+        }
+        if (creating && !schemaCompanyId && search.items.length > 0) {
+          schemaCompanyId = search.items[0]?.id ?? null;
+        }
+      }
+
+      // 3) Schema + aktuelle Werte (für Branche-Match + Property-Filter +
+      //    Diff). Nur möglich, wenn es eine company gibt, deren Schema wir
+      //    lesen können (Schema ist portalweit identisch).
+      let schemaNames: Set<string> | null = null;
+      let industryOptions: Array<{ label: string; value: string }> = [];
+      let currentValues: Record<string, string | null> = {};
+      if (schemaCompanyId) {
+        try {
+          const intro = await introspectHubspotObject(
+            crm,
+            "companies",
+            schemaCompanyId,
+          );
+          schemaNames = new Set(intro.schema.map((p) => p.name));
+          industryOptions =
+            intro.schema.find((p) => p.name === "industry")?.options ?? [];
+          // currentValues nur relevant, wenn wir DIESE company updaten.
+          if (!creating && hubspotId === schemaCompanyId) {
+            currentValues = intro.currentValues;
+          }
+        } catch {
+          /* Schema nicht lesbar — Fallback auf Standard-Whitelist */
+        }
+      }
+
+      // 4) Finale Property-Map bauen.
+      const finalProps: Record<string, string> = { ...enrich.props };
+      // Branche gegen Enum matchen.
+      if (enrich.industryCandidate && industryOptions.length > 0) {
+        const matched = bestMatchIndustry(
+          enrich.industryCandidate,
+          industryOptions,
+        );
+        if (matched) finalProps.industry = matched;
+      }
+      // Filter: nur Properties schreiben, die HubSpot kennt (sonst 400).
+      for (const k of Object.keys(finalProps)) {
+        const known = schemaNames ? schemaNames.has(k) : STANDARD_COMPANY_PROPS.has(k);
+        if (!known) delete finalProps[k];
+      }
+      // Beim Update: nur leere oder abweichende Felder vorschlagen.
+      const changed: Record<string, string> = {};
+      for (const [k, v] of Object.entries(finalProps)) {
+        if (creating) {
+          changed[k] = v;
+          continue;
+        }
+        const cur = currentValues[k];
+        if (cur == null || cur === "" || cur.trim() !== v.trim()) {
+          changed[k] = v;
+        }
+      }
+      if (creating && !changed.name && enrich.props.name) {
+        changed.name = enrich.props.name;
+      }
+
+      // 5) Kontakt-Plan (dedupliziert via HubSpot-Suche).
+      const contactPlan: Array<{
+        firstName?: string;
+        lastName?: string;
+        fullName: string;
+        jobTitle?: string;
+        email?: string;
+        phone?: string;
+      }> = [];
+      if (includeContacts) {
+        for (const c of enrich.contactCandidates.slice(0, 12)) {
+          let exists = false;
+          try {
+            const q = c.email || c.fullName;
+            const res = await searchHubspotContacts(crm, { query: q, limit: 5 });
+            exists = res.items.some((it) => {
+              const itName = [it.firstName, it.lastName]
+                .filter(Boolean)
+                .join(" ")
+                .toLowerCase();
+              return (
+                (c.email && it.email && it.email.toLowerCase() === c.email.toLowerCase()) ||
+                itName === c.fullName.toLowerCase()
+              );
+            });
+          } catch {
+            /* Suche fehlgeschlagen — sicherheitshalber NICHT anlegen, um
+               kein Duplikat zu riskieren */
+            exists = true;
+          }
+          if (!exists) contactPlan.push(c);
+        }
+      }
+
+      // 6) EINE Sammel-Bestätigung.
+      const fieldLines = Object.entries(changed)
+        .map(([k, v]) => `  • ${k}: ${v.length > 70 ? v.slice(0, 70) + "…" : v}`)
+        .join("\n");
+      const contactLines = contactPlan
+        .map(
+          (c) =>
+            `  • ${c.fullName}${c.jobTitle ? ` (${c.jobTitle})` : ""}${c.email ? ` · ${c.email}` : ""}`,
+        )
+        .join("\n");
+      if (Object.keys(changed).length === 0 && contactPlan.length === 0) {
+        return {
+          applied: false,
+          error:
+            "Nichts zu tun — HubSpot ist bereits auf dem Stand der AVA-Daten (oder AVA hat zu diesen Feldern keine Werte).",
+        };
+      }
+      const header = creating
+        ? `Ich lege folgende NEUE Firma in HubSpot an und reichere sie aus AVA an:`
+        : `Ich aktualisiere die HubSpot-Firma ${hubspotId} aus AVA:`;
+      const rationaleBlock = args.rationale ? `\n\nBegründung: ${args.rationale}` : "";
+      const sourcesBlock = `\n\nQuellen: ${enrich.sources.join(", ")}`;
+      const fieldsBlock =
+        Object.keys(changed).length > 0
+          ? `\n\nFelder (${Object.keys(changed).length}):\n${fieldLines}`
+          : "\n\n(keine Feldänderungen)";
+      const contactsBlock =
+        contactPlan.length > 0
+          ? `\n\nKontakte anlegen + verknüpfen (${contactPlan.length}):\n${contactLines}`
+          : includeContacts
+            ? "\n\n(keine neuen Kontakte — bereits vorhanden oder keine gefunden)"
+            : "";
+      const decision = await ctx.ui.askChoice(
+        `${header}${fieldsBlock}${contactsBlock}${sourcesBlock}${rationaleBlock}`,
+        [
+          {
+            value: "apply",
+            label: "Übernehmen",
+            description: "Alles in einem Rutsch nach HubSpot schreiben",
+          },
+          { value: "cancel", label: "Verwerfen" },
+        ],
+        ctx.signal,
+      );
+      if (decision !== "apply") return { applied: false };
+
+      // 7) Schreiben.
+      let companyId = hubspotId;
+      let created = false;
+      const errors: string[] = [];
+      try {
+        if (creating) {
+          const res = await createHubspotObject(crm, {
+            objectType: "companies",
+            properties: changed,
+          });
+          companyId = res.id;
+          created = true;
+          // AVA verknüpfen.
+          try {
+            await gateway.request(
+              `/v1/companies/${encodeURIComponent(args.avaCompanyId)}/crm/links`,
+              {
+                method: "POST",
+                body: {
+                  crmType: "HUBSPOT" as CrmLinkType,
+                  crmExternalId: companyId,
+                  crmDisplayName: changed.name ?? enrich.props.name ?? null,
+                },
+                signal: ctx.signal,
+              },
+            );
+          } catch (err) {
+            errors.push(
+              `AVA-Verknüpfung fehlgeschlagen: ${err instanceof Error ? err.message : String(err)}`,
+            );
+          }
+        } else if (companyId && Object.keys(changed).length > 0) {
+          await updateHubspotObject(crm, {
+            objectType: "companies",
+            objectId: companyId,
+            properties: changed,
+          });
+        }
+      } catch (err) {
+        return {
+          applied: false,
+          error: err instanceof Error ? err.message : String(err),
+        };
+      }
+
+      // 8) Kontakte anlegen + verknüpfen.
+      let contactsCreated = 0;
+      if (companyId && contactPlan.length > 0) {
+        for (const c of contactPlan) {
+          const cProps: Record<string, string> = {};
+          if (c.firstName) cProps.firstname = c.firstName;
+          if (c.lastName) cProps.lastname = c.lastName;
+          if (!c.firstName && !c.lastName) cProps.lastname = c.fullName;
+          if (c.jobTitle) cProps.jobtitle = c.jobTitle;
+          if (c.email) cProps.email = c.email;
+          if (c.phone) cProps.phone = c.phone;
+          try {
+            await createHubspotObject(crm, {
+              objectType: "contacts",
+              properties: cProps,
+              associations: [
+                {
+                  toObjectType: "companies" as HubspotObjectType,
+                  toObjectId: companyId,
+                },
+              ],
+            });
+            contactsCreated += 1;
+          } catch (err) {
+            errors.push(
+              `Kontakt „${c.fullName}" fehlgeschlagen: ${err instanceof Error ? err.message : String(err)}`,
+            );
+          }
+        }
+      }
+
+      return {
+        applied: true,
+        companyId,
+        created,
+        fieldsWritten: Object.keys(changed).length,
+        contactsCreated,
+        sources: enrich.sources,
+        ...(errors.length > 0 ? { warnings: errors } : {}),
+      };
+    },
+  });
 
   // v0.1.269 — Company-Create (Phase H5). Bisher waren Companies/
   // Contacts/Deals nur update-able; Create war bewusst weggelassen
@@ -2188,6 +2729,7 @@ export function buildCrmTools(deps: CrmToolDeps): Tool[] {
     associateTool,
     disassociateTool,
     createCompanyTool,
+    syncCompanyTool,
     enrichCompanyFromAvaTool,
     createContactTool,
     createDealTool,

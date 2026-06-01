@@ -4,8 +4,8 @@ Auto-generiert von `services/desktop/scripts/generate-tools-md.mjs`.
 NICHT direkt bearbeiten — die Quelle der Wahrheit ist `services/desktop/src/main/agent/tools/*.ts`.
 Lauf via `pnpm -F @ava/desktop tools:doc` (oder automatisch via `build:typecheck`).
 
-Stand: 2026-05-30
-Anzahl Tools: 159
+Stand: 2026-06-01
+Anzahl Tools: 160
 
 ## Firmen (11)
 
@@ -537,7 +537,7 @@ Switch the active LLM provider. `kind` is one of 'ollama', 'openai', 'anthropic'
 
 _Parameter:_ keine.
 
-## CRM (28)
+## CRM (29)
 
 ### `connect_crm`
 
@@ -597,19 +597,9 @@ _Parameter:_
 
 _Datei:_ `services/desktop/src/main/agent/tools/crm.ts`
 
-Legt einen NEUEN Deal in HubSpot an. PROPOSE-AND-CONFIRM via ask_user_choice. PFLICHT vorher: crm_introspect_hubspot_deal auf einem existierenden Deal aufrufen, um pipeline + dealstage-Optionen zu kennen (dealstage ist an pipeline gekoppelt — falsche Kombination wird silently rejected). Pflichtfelder: dealname, pipeline, dealstage. Mindestens eine Association (Company oder Contact) ist Pflicht, sonst orphan deal. Optional: amount, closedate (ISO), dealtype, hubspot_owner_id, weitere Properties.
+Legt einen NEUEN Deal in HubSpot an. PROPOSE-AND-CONFIRM via ask_user_choice. PFLICHT vorher: crm_introspect_hubspot_deal auf einem existierenden Deal aufrufen, um pipeline + dealstage-Optionen zu kennen (dealstage ist an pipeline gekoppelt — falsche Kombination wird silently rejected). Pflichtfelder: dealname, pipeline, dealstage. associations (Company/Contact) ist OPTIONAL und EMPFOHLEN: gib mind. 1 Verknüpfung an, dann wird sie direkt mit angelegt; lässt du sie weg, entsteht zunächst ein Deal ohne Verknüpfung, den du danach mit crm_associate_hubspot_objects verknüpfen kannst. Optional: amount, closedate (ISO), dealtype, hubspot_owner_id, weitere Properties.
 
-_Parameter:_
-- `dealname: string` (required)
-- `pipeline: string` (required) — Pipeline-Internal-Name aus dem Schema.
-- `dealstage: string` (required) — Stage-Internal-Name. MUSS zur pipeline passen — vorher via crm_introspect_hubspot_deal die gültigen Kombinationen prüfen.
-- `amount: string` — Geldbetrag als String (HubSpot konvertiert).
-- `closedate: string` — ISO-Date (z. B. 2026-12-31).
-- `dealtype: string`
-- `hubspot_owner_id: string` — Owner-ID (numerisch). Aus crm_list_hubspot_owners.
-- `properties: object` — Weitere HubSpot-Properties (Name → String).
-- `associations: array` (required) — Pflicht: mind. 1 Verknüpfung zu Company oder Contact.
-- `rationale: string`
+_Parameter:_ keine.
 
 ### `crm_create_hubspot_note`
 
@@ -780,6 +770,18 @@ Read CRM connection status. Without `provider`, returns the status of all suppor
 
 _Parameter:_ keine.
 
+### `crm_sync_hubspot_company_from_ava`
+
+_Datei:_ `services/desktop/src/main/agent/tools/crm.ts`
+
+VOLL-SYNC einer AVA-Firma nach HubSpot in EINEM Schritt — der bevorzugte Weg, sobald der Nutzer eine in AVA bekannte Firma in HubSpot anlegen, aktualisieren oder anreichern will. Holt automatisch ALLE AVA-Daten (Stammdaten, Structured-Content, Profil, Website/SERP, Publikationen, Keywords, Kontakte) und befüllt die HubSpot-Felder: name, address, zip, city, country, numberofemployees (aus letztem Jahresabschluss), annualrevenue, founded_year, description (Unternehmensgegenstand), website/domain, phone, industry (gegen HubSpots Branchen-Enum gematcht). Legt zusätzlich Geschäftsführer + Ansprechpartner als verknüpfte Contacts an (dedupliziert). Alles hinter EINER Sammel-Bestätigung — KEIN Feld-für-Feld-Nachfragen. Wenn keine `hubspotCompanyId` gegeben ist, sucht das Tool selbst nach Dubletten und fragt ggf. welche Firma gemeint ist bzw. legt neu an. Vorher die AVA-companyId via `company_search` auflösen. Wenn die Firma in AVA noch nicht recherchiert wurde, bricht das Tool mit klarem Hinweis ab.
+
+_Parameter:_
+- `avaCompanyId: string` (required) — AVA-Master-Data-companyId (via company_search auflösen).
+- `hubspotCompanyId: string` — Optional: bekannte HubSpot-companyId. Wenn weggelassen, sucht das Tool nach Dubletten (Name/Domain) und legt sonst neu an.
+- `includeContacts: boolean` — Geschäftsführer + Ansprechpartner als Contacts anlegen + verknüpfen. Default true.
+- `rationale: string` — Optionale 1-Satz-Begründung für den Confirm-Dialog.
+
 ### `crm_update_hubspot_${SINGULAR[objectType]}`
 
 _Datei:_ `services/desktop/src/main/agent/tools/crm.ts`
@@ -864,11 +866,11 @@ _Parameter:_ keine.
 
 _Datei:_ `services/desktop/src/main/agent/tools/ui.ts`
 
-Ask the user to pick one option. ONLY use when (a) a search/list tool already returned multiple plausible matches, AND (b) you genuinely cannot pick automatically (e.g. two companies with the same name in different cities, two databases with similar names). DO NOT use this to ask the user for information they already provided in the current message, and DO NOT use it as a shortcut around exploring with read-only tools first — if the answer is in `notion_introspect_database`, `notion_list_databases`, `company_search`, etc., call those tools INSTEAD of asking. Returns the picked option's `value` string.
+Ask the user to pick one option. ONLY use when (a) a search/list tool already returned multiple plausible matches, AND (b) you genuinely cannot pick automatically (e.g. two companies with the same name in different cities, two databases with similar names). DO NOT use this to ask the user for information they already provided in the current message, and DO NOT use it as a shortcut around exploring with read-only tools first — if the answer is in `notion_introspect_database`, `notion_list_databases`, `company_search`, etc., call those tools INSTEAD of asking. When disambiguating between matches (e.g. several companies with the same name), DO NOT trim the list to 2-3 — present ALL plausible candidates the search returned, up to the 12-option cap (aim for ~10 when a company-name search returns many hits), so the right one is actually on screen. Put the location/Stadt in each option's `description` so look-alikes are distinguishable. You do NOT need to add a 'Sonstige'/free-text option yourself — the UI always appends a 'Sonstiges …' free-text field automatically. Returns the picked option's `value` string.
 
 _Parameter:_
 - `prompt: string` (required) — Short question shown above the buttons.
-- `options: array` (required) — Choices the user can pick from.
+- `options: array` (required) — Choices the user can pick from. For disambiguation, include every plausible candidate (up to 12) rather than a trimmed shortlist.
 
 ### `ask_user_text`
 
