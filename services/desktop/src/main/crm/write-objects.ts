@@ -470,17 +470,23 @@ export interface CreateResult {
 const DEFAULT_ASSOC_TYPE_ID: Partial<
   Record<HubspotObjectType, Partial<Record<HubspotObjectType, number>>>
 > = {
+  // v0.1.347 — Deal-Richtungen waren paarweise VERTAUSCHT (Label-Kommentar
+  // stimmte, Zahl nicht). HubSpot HUBSPOT_DEFINED-Defaults (primary):
+  //   deal_to_contact=3, contact_to_deal=4, deal_to_company=5,
+  //   company_to_deal=6. Vorher stand deal_to_company=6 (= company_to_deal)
+  //   etc. → crm_create_hubspot_deal mit Company-Inline-Assoc warf HTTP 400
+  //   („invalid association type"). Jetzt korrekt.
   contacts: {
     companies: 1, // contact_to_company (primary)
-    deals: 3, // contact_to_deal
+    deals: 4, // contact_to_deal
   },
   companies: {
-    contacts: 2, // company_to_contact
-    deals: 5, // company_to_deal
+    contacts: 2, // company_to_contact (primary)
+    deals: 6, // company_to_deal
   },
   deals: {
-    contacts: 4, // deal_to_contact
-    companies: 6, // deal_to_company
+    contacts: 3, // deal_to_contact
+    companies: 5, // deal_to_company
   },
   notes: {
     companies: 190, // note_to_company

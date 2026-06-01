@@ -1819,10 +1819,10 @@ export function buildCrmTools(deps: CrmToolDeps): Tool[] {
   const createDealTool = defineTool({
     name: "crm_create_hubspot_deal",
     description:
-      "Legt einen NEUEN Deal in HubSpot an. PROPOSE-AND-CONFIRM via ask_user_choice. PFLICHT vorher: crm_introspect_hubspot_deal auf einem existierenden Deal aufrufen, um pipeline + dealstage-Optionen zu kennen (dealstage ist an pipeline gekoppelt — falsche Kombination wird silently rejected). Pflichtfelder: dealname, pipeline, dealstage. Mindestens eine Association (Company oder Contact) ist Pflicht, sonst orphan deal. Optional: amount, closedate (ISO), dealtype, hubspot_owner_id, weitere Properties.",
+      "Legt einen NEUEN Deal in HubSpot an. PROPOSE-AND-CONFIRM via ask_user_choice. PFLICHT vorher: crm_introspect_hubspot_deal auf einem existierenden Deal aufrufen, um pipeline + dealstage-Optionen zu kennen (dealstage ist an pipeline gekoppelt — falsche Kombination wird silently rejected). Pflichtfelder: dealname, pipeline, dealstage. associations (Company/Contact) ist OPTIONAL und EMPFOHLEN: gib mind. 1 Verknüpfung an, dann wird sie direkt mit angelegt; lässt du sie weg, entsteht zunächst ein Deal ohne Verknüpfung, den du danach mit crm_associate_hubspot_objects verknüpfen kannst. Optional: amount, closedate (ISO), dealtype, hubspot_owner_id, weitere Properties.",
     parameters: {
       type: "object",
-      required: ["dealname", "pipeline", "dealstage", "associations"],
+      required: ["dealname", "pipeline", "dealstage"],
       properties: {
         dealname: { type: "string" },
         pipeline: { type: "string", description: "Pipeline-Internal-Name aus dem Schema." },
@@ -1845,8 +1845,8 @@ export function buildCrmTools(deps: CrmToolDeps): Tool[] {
         },
         associations: {
           type: "array",
-          minItems: 1,
-          description: "Pflicht: mind. 1 Verknüpfung zu Company oder Contact.",
+          description:
+            "Optional, empfohlen: Verknüpfungen zu Company/Contact. Leer lassen ist erlaubt (Deal wird dann ohne Verknüpfung angelegt).",
           items: {
             type: "object",
             required: ["objectType", "objectId"],
@@ -1879,8 +1879,8 @@ export function buildCrmTools(deps: CrmToolDeps): Tool[] {
               })
               .required(),
           )
-          .min(1)
-          .required(),
+          .optional()
+          .default([]),
         rationale: yup.string().trim().max(500).optional(),
       })
       .noUnknown(true),
@@ -1909,9 +1909,13 @@ export function buildCrmTools(deps: CrmToolDeps): Tool[] {
       const propLines = Object.entries(props)
         .map(([k, v]) => `  ${k}: ${v}`)
         .join("\n");
-      const assocLine = args.associations
-        .map((a) => `${a.objectType.replace(/s$/, "")} ${a.objectId}`)
-        .join(", ");
+      const assocList = args.associations ?? [];
+      const assocLine =
+        assocList.length > 0
+          ? assocList
+              .map((a) => `${a.objectType.replace(/s$/, "")} ${a.objectId}`)
+              .join(", ")
+          : "— (ohne Verknüpfung; danach via crm_associate_hubspot_objects verknüpfbar)";
       const rationaleBlock = args.rationale
         ? `\n\nBegründung: ${args.rationale}`
         : "";
@@ -1928,7 +1932,7 @@ export function buildCrmTools(deps: CrmToolDeps): Tool[] {
         const result = await createHubspotObject(crm, {
           objectType: "deals",
           properties: props,
-          associations: args.associations.map((a) => ({
+          associations: assocList.map((a) => ({
             toObjectType: a.objectType as HubspotObjectType,
             toObjectId: a.objectId,
           })),
