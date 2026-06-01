@@ -1,6 +1,7 @@
 import {
   PlanSection,
   ProfileSection,
+  LinkedInCalibrationNote,
   GeneralMemorySection,
 } from "../Settings";
 
@@ -14,6 +15,7 @@ export function KontoTab() {
     <>
       <PlanSection />
       <ProfileSection />
+      <LinkedInCalibrationNote />
       <GeneralMemorySection />
       <section
         id="erscheinung"

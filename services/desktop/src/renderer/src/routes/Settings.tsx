@@ -2700,7 +2700,7 @@ interface GeneralMemoryEntry {
 // Kalibrierungs-Notiz. Anzeige + Editor + „zurücksetzen" + „Jetzt aus
 // Feedback lernen". Transparenz: der Nutzer sieht/korrigiert, was AVA
 // aus seinem Feedback über seine Signalstärke-Vorlieben gelernt hat.
-function LinkedInCalibrationNote() {
+export function LinkedInCalibrationNote() {
   const [status, setStatus] = useState<LinkedInCalibrationStatus | null>(null);
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
@@ -2760,57 +2760,77 @@ function LinkedInCalibrationNote() {
     }
   };
 
+  const hasNote = Boolean(status?.note?.trim());
+
   return (
-    <div className="alerts-prefs__row">
-      <label className="alerts-prefs__label" htmlFor="ln-calibration">
-        Gelernte Signal-Kalibrierung (aus deinem 👍/👎-Feedback)
-      </label>
+    <section className="provider-section" id="signal-kalibrierung">
+      <h3>Signal-Kalibrierung</h3>
+      <p className="muted">
+        Was AVA aus deinem 👍/👎-Feedback (auf der LinkedIn-Seite) über deine
+        Signalstärke-Vorlieben gelernt hat. Es fließt automatisch in die
+        Bewertung neuer Signale ein — und damit auch in die
+        Benachrichtigungen. Du kannst es ansehen, anpassen oder zurücksetzen.
+      </p>
+
       <textarea
         id="ln-calibration"
+        aria-label="Gelernte Signal-Kalibrierung"
         rows={4}
         maxLength={800}
         value={draft}
         onChange={(e) => setDraft(e.target.value)}
-        placeholder="Noch nichts gelernt. Bewerte ein paar Signale auf der LinkedIn-Seite mit 👍/👎 — AVA destilliert daraus automatisch eine kompakte Kalibrierung, die hier erscheint."
-        style={{ width: "100%", resize: "vertical" }}
+        placeholder="Noch nichts gelernt. Bewerte ein paar Signale auf der LinkedIn-Seite mit 👍 / 👎 — AVA destilliert daraus automatisch eine kompakte Kalibrierung, die hier erscheint."
+        style={{
+          width: "100%",
+          resize: "vertical",
+          marginTop: "0.5rem",
+          minHeight: "5rem",
+        }}
       />
-      <p className="muted small">
-        Fließt zusätzlich in die Bewertung neuer LinkedIn-Signale ein
-        (beeinflusst damit auch, was zur Benachrichtigung wird). Wird nach
-        jedem Vote automatisch im Hintergrund aktualisiert.
-        {status ? ` Offene Votes: ${status.pending}.` : ""}
+      <p className="muted small" style={{ marginTop: "0.25rem" }}>
+        {hasNote ? `${draft.length} / 800 Zeichen · ` : ""}
+        {status ? `${status.pending} offene Bewertung${status.pending === 1 ? "" : "en"}` : ""}
         {status?.updatedAt
-          ? ` Zuletzt gelernt ${new Date(status.updatedAt).toLocaleString("de-DE")}.`
+          ? ` · zuletzt gelernt ${new Date(status.updatedAt).toLocaleString("de-DE")}`
           : ""}
       </p>
-      <div className="alerts-prefs__actions">
+
+      <div
+        className="actions"
+        style={{ display: "flex", flexWrap: "wrap", gap: "0.6rem", alignItems: "center", marginTop: "0.5rem" }}
+      >
         <button
           type="button"
           className="primary"
           onClick={() => void onSave()}
           disabled={busy}
+          title="Deine Änderungen an der Kalibrierungs-Notiz übernehmen"
         >
-          {busy ? "…" : "Notiz speichern"}
+          {busy ? "…" : "Kalibrierung speichern"}
         </button>
         <button
           type="button"
           className="link"
           onClick={() => void onRunNow()}
           disabled={busy}
+          title="Offene 👍/👎-Bewertungen jetzt sofort einarbeiten (statt auf den Hintergrund-Lauf zu warten)"
         >
           Jetzt aus Feedback lernen
         </button>
-        <button
-          type="button"
-          className="link bad"
-          onClick={() => void onClear()}
-          disabled={busy}
-        >
-          Zurücksetzen
-        </button>
+        {hasNote && (
+          <button
+            type="button"
+            className="link bad"
+            onClick={() => void onClear()}
+            disabled={busy}
+            title="Gelernte Kalibrierung leeren"
+          >
+            Zurücksetzen
+          </button>
+        )}
       </div>
       {error && <p className="error small">{error}</p>}
-    </div>
+    </section>
   );
 }
 
@@ -3029,8 +3049,6 @@ export function ProfileSection() {
           nächsten Scan. {signalInterests.length} / 600
         </p>
       </div>
-
-      <LinkedInCalibrationNote />
 
       <div className="alerts-prefs__actions">
         <button
