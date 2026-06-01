@@ -153,6 +153,18 @@ function useLinkedInOpenConfirm() {
   return { pendingHref, openLinkedIn, cancel, confirm };
 }
 
+// v0.1.355 — Ein "echter" LinkedIn-Ziel-Link ist alles AUSSER der
+// Startseite / Feed-Wurzel. Verhindert, dass ein fehlender Permalink den
+// Nutzer auf linkedin.com (Homepage) schickt statt zum Beitrag/Profil.
+function isRealLinkedInUrl(u: string | null | undefined): u is string {
+  if (!u) return false;
+  const s = u.trim().toLowerCase().replace(/\/+$/, "");
+  if (s.length === 0) return false;
+  if (s === "https://www.linkedin.com" || s === "https://linkedin.com") return false;
+  if (s.endsWith("linkedin.com/feed")) return false;
+  return true;
+}
+
 interface LinkedInOpenWarningModalProps {
   href: string | null;
   onCancel: () => void;
@@ -509,14 +521,17 @@ function SignalCard({
   const truncated = text.length > 240;
   const visibleText = expanded || !truncated ? text : text.slice(0, 240) + "…";
 
-  // v0.1.113: LinkedIn's new DOM no longer exposes a usable permalink
-  // for most feed posts (the React permalink lives off-DOM, every <a>
-  // points at the placeholder /feed/ href). When `row.permalink` is
-  // null, fall back to the actor's profile URL so "Auf LinkedIn
-  // öffnen" at least lands the user on the right person/company page.
-  // Synthesising a /feed/update/<postKey>/ URL from the new postKey
-  // would produce a 404 — postKey is not a `urn:li:` activity URN.
-  const permalink = row.permalink ?? row.author.profileUrl ?? null;
+  // v0.1.355 — Beitrags-Permalink vs. Profil-Fallback sauber trennen und
+  // NIEMALS auf die LinkedIn-Startseite/Feed-Wurzel verlinken (das war der
+  // gemeldete Bug: fehlender Permalink → Fallback landete auf der
+  // Startseite). Ist ein echter Beitrags-Link da → „Beitrag öffnen";
+  // sonst der Profil-Link → „Profil öffnen"; sonst gar kein Button.
+  const postUrl = isRealLinkedInUrl(row.permalink) ? row.permalink : null;
+  const profileUrl = isRealLinkedInUrl(row.author.profileUrl)
+    ? row.author.profileUrl
+    : null;
+  const openTarget = postUrl ?? profileUrl;
+  const openLabel = postUrl ? "Beitrag öffnen" : "Profil öffnen";
 
   return (
     <article
@@ -736,14 +751,14 @@ function SignalCard({
           flexWrap: "wrap",
         }}
       >
-        {permalink && (
+        {openTarget && (
           <button
             type="button"
             className="link"
-            onClick={() => onOpenLinkedIn(permalink)}
+            onClick={() => onOpenLinkedIn(openTarget)}
             style={{ background: "none", border: 0, padding: 0, cursor: "pointer" }}
           >
-            Auf LinkedIn öffnen <ExternalLink className="ct-icon-sm" aria-hidden="true" />
+            {openLabel} <ExternalLink className="ct-icon-sm" aria-hidden="true" />
           </button>
         )}
         <button type="button" className="link" onClick={onDismissToggle}>

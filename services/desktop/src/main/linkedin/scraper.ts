@@ -806,9 +806,28 @@ const EXTRACTOR_SCRIPT = `
         var ph = permaCandidates[pc].getAttribute("href");
         if (!ph) continue;
         if (ph === "/feed/" || ph === "https://www.linkedin.com/feed/") continue;
+        // Nur akzeptieren, wenn der Link wirklich auf einen Beitrag zeigt
+        // (Aktivitäts-URN oder /posts/-Slug), nicht auf die Feed-Wurzel.
+        if (ph.indexOf("/feed/update/urn:li:") === -1 && ph.indexOf("/posts/") === -1) continue;
         try {
           permalink = new URL(ph, location.origin).toString().split('?')[0];
           break;
+        } catch (e) { /* ignore */ }
+      }
+      // v0.1.355 — Fallback: die Aktivitäts-URN steckt fast immer
+      // irgendwo im Markup (Tracking-Attribute, eingebettetes JSON,
+      // Reaktions-/Kommentar-Links), auch wenn kein klickbarer
+      // Permalink-Anchor da ist. Wir ziehen die erste urn:li:activity/
+      // ugcPost/share-URN aus dem outerHTML und bauen daraus die
+      // kanonische Beitrags-URL. Das ist der echte Post-Link — vorher
+      // landete der Nutzer mangels Permalink auf der LinkedIn-Startseite.
+      if (!permalink) {
+        try {
+          var nodeHtml = node.outerHTML || "";
+          var urnMatch = nodeHtml.match(/urn:li:(?:activity|ugcPost|share):[0-9]+/);
+          if (urnMatch) {
+            permalink = "https://www.linkedin.com/feed/update/" + urnMatch[0] + "/";
+          }
         } catch (e) { /* ignore */ }
       }
 
