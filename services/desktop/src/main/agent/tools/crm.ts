@@ -1452,7 +1452,11 @@ export function buildCrmTools(deps: CrmToolDeps): Tool[] {
         ),
         // Website: { website:{siteName,description}, companySerp:{url,address,category,phone} }
         get<{
-          website?: { siteName?: string | null; description?: string | null };
+          website?: {
+            siteName?: string | null;
+            description?: string | null;
+            socialLinks?: Array<{ platform: string; url: string }>;
+          };
           companySerp?: {
             url?: string | null;
             category?: string | null;
@@ -1562,6 +1566,24 @@ export function buildCrmTools(deps: CrmToolDeps): Tool[] {
       industryCandidate = industryCandidate ?? str(serp?.category);
       const phone = str(serp?.phone);
       if (phone) props.phone = phone;
+      // v0.1.358 — Social-Media-Unternehmensseiten → HubSpot-Standardfelder.
+      // HubSpot kennt linkedin_company_page, facebook_company_page,
+      // twitterhandle als Default-Properties. Instagram/YouTube/Xing/TikTok
+      // haben kein Standardfeld → bewusst ausgelassen (kämen in Custom-
+      // Properties oder die Beschreibung, ist hier out of scope).
+      for (const sl of website.website?.socialLinks ?? []) {
+        const url = str(sl?.url);
+        if (!url) continue;
+        if (sl.platform === "linkedin" && !props.linkedin_company_page) {
+          props.linkedin_company_page = url;
+        } else if (sl.platform === "facebook" && !props.facebook_company_page) {
+          props.facebook_company_page = url;
+        } else if (sl.platform === "twitter" && !props.twitterhandle) {
+          // HubSpots twitterhandle erwartet den Handle, nicht die URL.
+          const handle = url.replace(/\/+$/, "").split("/").pop();
+          if (handle) props.twitterhandle = handle;
+        }
+      }
     }
 
     // ---- Mitarbeiterzahl + Umsatz (neueste Publikation) ----
@@ -1695,6 +1717,9 @@ export function buildCrmTools(deps: CrmToolDeps): Tool[] {
     "description",
     "phone",
     "industry",
+    "linkedin_company_page",
+    "facebook_company_page",
+    "twitterhandle",
   ]);
 
   // v0.1.354 — Ein-Klick-Voll-Sync: AVA-Firma → HubSpot. Holt ALLE

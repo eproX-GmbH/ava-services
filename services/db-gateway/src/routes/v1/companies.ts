@@ -274,10 +274,11 @@ companiesRouter.openapi(websiteRoute, async (c) => {
     siteName: string | null;
     description: string | null;
     tags: string[];
+    socialLinks: Array<{ platform: string; url: string }> | null;
     createdAt: Date;
     updatedAt: Date;
   }>(
-    `SELECT "companyId", "siteName", description, tags, "createdAt", "updatedAt"
+    `SELECT "companyId", "siteName", description, tags, "socialLinks", "createdAt", "updatedAt"
      FROM "Website" WHERE "companyId" = $1 LIMIT 1`,
     [companyId],
   );
@@ -307,6 +308,7 @@ companiesRouter.openapi(websiteRoute, async (c) => {
           siteName: websiteRow.rows[0].siteName ?? null,
           description: websiteRow.rows[0].description ?? null,
           tags: websiteRow.rows[0].tags ?? [],
+          socialLinks: websiteRow.rows[0].socialLinks ?? [],
           createdAt: websiteRow.rows[0].createdAt.toISOString(),
           updatedAt: websiteRow.rows[0].updatedAt.toISOString(),
         }

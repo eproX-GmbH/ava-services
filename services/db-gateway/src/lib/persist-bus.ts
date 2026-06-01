@@ -846,6 +846,7 @@ interface WebsiteResult {
     siteName?: string | null;
     description?: string | null;
     tags?: string[];
+    socialLinks?: Array<{ platform: string; url: string }>;
   };
   /** v0.1.60 — LLM-judge audit trail. Persisted to the gateway's
    *  WebsiteJudgment table (NOT the producer's website DB) so the
@@ -913,15 +914,16 @@ const applyWebsite: ApplyFn = async (pool, event, log) => {
       const w = result.website;
       await client.query(
         `INSERT INTO "Website" (
-           "companyId", url, "siteName", description, tags,
+           "companyId", url, "siteName", description, tags, "socialLinks",
            "createdAt", "updatedAt"
          )
-         VALUES ($1,$2,$3,$4,$5, NOW(), $6)
+         VALUES ($1,$2,$3,$4,$5,$6, NOW(), $7)
          ON CONFLICT ("companyId") DO UPDATE SET
            url = EXCLUDED.url,
            "siteName" = EXCLUDED."siteName",
            description = EXCLUDED.description,
            tags = EXCLUDED.tags,
+           "socialLinks" = EXCLUDED."socialLinks",
            "updatedAt" = EXCLUDED."updatedAt"
          WHERE EXCLUDED."updatedAt" > "Website"."updatedAt"`,
         [
@@ -930,6 +932,8 @@ const applyWebsite: ApplyFn = async (pool, event, log) => {
           w.siteName ?? null,
           w.description ?? null,
           w.tags ?? [],
+          // v0.1.358 — Social-Links als JSONB. Array von { platform, url }.
+          w.socialLinks ? JSON.stringify(w.socialLinks) : null,
           updatedAt,
         ],
       );

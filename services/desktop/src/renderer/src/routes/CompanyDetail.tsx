@@ -128,7 +128,19 @@ interface CompanySerp {
 interface WebsiteCore {
   url?: string | null;
   siteName?: string | null;
+  socialLinks?: Array<{ platform: string; url: string }>;
 }
+
+// v0.1.358 — Anzeige-Labels für Social-Media-Plattformen (Chips).
+const SOCIAL_LABEL: Record<string, string> = {
+  linkedin: "LinkedIn",
+  xing: "XING",
+  instagram: "Instagram",
+  facebook: "Facebook",
+  twitter: "X / Twitter",
+  youtube: "YouTube",
+  tiktok: "TikTok",
+};
 interface DeepResearch {
   type?: string;
   title?: string;
@@ -352,6 +364,28 @@ export function CompanyDetail() {
               </a>
             </KpiTile>
           )}
+          {website.data?.website?.socialLinks &&
+            website.data.website.socialLinks.length > 0 && (
+              <KpiTile label="Social Media">
+                <span
+                  style={{ display: "flex", flexWrap: "wrap", gap: "0.4rem" }}
+                >
+                  {website.data.website.socialLinks.map((s) => (
+                    <a
+                      key={s.platform}
+                      href={s.url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="ct-pill ct-pill--muted"
+                      style={{ textDecoration: "none" }}
+                      title={s.url}
+                    >
+                      {SOCIAL_LABEL[s.platform] ?? s.platform}
+                    </a>
+                  ))}
+                </span>
+              </KpiTile>
+            )}
         </div>
       </header>
 

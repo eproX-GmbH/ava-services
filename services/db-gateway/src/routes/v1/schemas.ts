@@ -83,6 +83,9 @@ const WebsiteCoreShape = z
     siteName: z.string().nullable().optional(),
     description: z.string().nullable().optional(),
     tags: z.array(z.string()).default([]),
+    socialLinks: z
+      .array(z.object({ platform: z.string(), url: z.string() }))
+      .default([]),
     createdAt: z.string().optional(),
     updatedAt: z.string().optional(),
   })
