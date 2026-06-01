@@ -115,6 +115,25 @@ export function ResearchFeaturesSection() {
         )}
       </p>
 
+      {bundle.config.expansionTenders.tier === "off" &&
+        bundle.config.jobPostings.tier === "off" && (
+          <p
+            className="muted small"
+            style={{
+              marginBottom: 16,
+              padding: "8px 12px",
+              background: "rgba(180,136,0,0.08)",
+              borderLeft: "3px solid #b48800",
+              borderRadius: 4,
+            }}
+          >
+            Beide Funktionen sind aktuell <strong>deaktiviert</strong> — dann
+            liefern „Stellenanzeigen" und „Deep Research" pro Firma keine
+            Ergebnisse. Stell sie unten auf <strong>Standard</strong> (mit
+            deinem hinterlegten Schlüssel), um sie zu nutzen.
+          </p>
+        )}
+
       {(["expansionTenders", "jobPostings"] as ResearchFeature[]).map(
         (feature) => (
           <FeatureCard

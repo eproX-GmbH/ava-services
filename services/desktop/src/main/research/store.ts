@@ -111,40 +111,102 @@ export class ResearchFeaturesStore extends EventEmitter {
     if (!existsSync(this.dir)) mkdirSync(this.dir, { recursive: true });
     if (!existsSync(this.keysDir)) mkdirSync(this.keysDir, { recursive: true });
 
-    const fresh = !existsSync(this.configPath);
     this.cached = this.readConfigFromDisk();
 
-    // Phase E migration: on first boot of this version, if there's no
-    // features.json yet AND the chat-agent ProviderConfigStore has an
-    // OpenAI key, default both features to tier=standard / provider=openai /
-    // keyId="global:openai". Deep tier intentionally stays off so the
-    // user has to opt in to the cost-warning modal explicitly.
-    if (fresh) {
-      const pcs = ProviderConfigStore.shared();
-      if (pcs.hasKey("openai")) {
-        const migrated: ResearchFeaturesConfig = {
-          expansionTenders: { tier: "standard", provider: "openai", keyId: GLOBAL_OPENAI },
-          jobPostings: { tier: "standard", provider: "openai", keyId: GLOBAL_OPENAI },
-        };
-        this.writeConfigAtomic(migrated);
-        this.cached = migrated;
-        console.info(
-          "[research-store] Phase-E migration: openai key found in ProviderConfigStore, " +
-            "both research features auto-enabled at tier=standard (deep stays off pending user opt-in).",
-        );
-      } else if (pcs.hasKey("anthropic")) {
-        // Anthropic-only install: mirror behavior with the anthropic key.
-        const migrated: ResearchFeaturesConfig = {
-          expansionTenders: { tier: "standard", provider: "anthropic", keyId: GLOBAL_ANTHROPIC },
-          jobPostings: { tier: "standard", provider: "anthropic", keyId: GLOBAL_ANTHROPIC },
-        };
-        this.writeConfigAtomic(migrated);
-        this.cached = migrated;
-        console.info(
-          "[research-store] Phase-E migration: anthropic key found, both research features auto-enabled at tier=standard.",
-        );
+    // v0.1.356 — Backfill: existierende, klar vom Nutzer konfigurierte
+    // Installs (mind. ein Feature != off) als „angefasst" markieren, damit
+    // die Auto-Aktivierung unten sie NICHT überschreibt.
+    if (!this.hasUserTouched() && this.anyFeatureEnabled()) {
+      this.markUserTouched();
+    }
+
+    // v0.1.356 — Auto-Aktivierung robust gemacht. Vorher lief die Phase-E-
+    // Migration NUR beim allerersten Boot (fresh) und nur wenn der Key zu
+    // dem Zeitpunkt schon da war. Wer den OpenAI-Key später eintrug, blieb
+    // für immer auf „off" hängen → Job-Postings + Deep-Research lieferten
+    // still nichts (gemeldeter Bug). Jetzt: bei JEDEM Boot, solange der
+    // Nutzer Research nicht explizit selbst konfiguriert hat, aus dem
+    // vorhandenen globalen Key (OpenAI bevorzugt) beide Features auf
+    // tier=standard schalten. Deep bleibt bewusst aus (Opt-in/Kosten).
+    if (!this.hasUserTouched()) {
+      this.autoEnableFromGlobalKeys();
+    }
+  }
+
+  // ---- v0.1.356 — „user-touched"-Marker + Auto-Aktivierung ----------------
+  //
+  // Separate Marker-Datei statt eines Felds in features.json, damit die
+  // bestehende ResearchFeaturesConfig-Form (und alle Consumer) unberührt
+  // bleibt. Existiert die Datei, hat der Nutzer Research mindestens einmal
+  // selbst gesetzt → wir aktivieren nichts mehr automatisch.
+
+  private userTouchedPath(): string {
+    return join(this.dir, "user-touched.flag");
+  }
+
+  private hasUserTouched(): boolean {
+    return existsSync(this.userTouchedPath());
+  }
+
+  private markUserTouched(): void {
+    try {
+      writeFileSync(this.userTouchedPath(), String(Date.now()), { mode: 0o600 });
+    } catch (err) {
+      console.warn("[research-store] markUserTouched failed:", err);
+    }
+  }
+
+  private anyFeatureEnabled(): boolean {
+    return VALID_FEATURES.some((f) => this.cached[f].tier !== "off");
+  }
+
+  /**
+   * Wenn der Nutzer Research nie selbst angefasst hat und ein globaler
+   * OpenAI- (sonst Anthropic-) Key existiert: beide noch-„off"-Features
+   * auf tier=standard mit dem globalen Key-Alias schalten. Idempotent;
+   * gibt true zurück, wenn sich etwas geändert hat.
+   */
+  private autoEnableFromGlobalKeys(): boolean {
+    const pcs = ProviderConfigStore.shared();
+    let provider: ResearchProvider | null = null;
+    let keyId: string | null = null;
+    if (pcs.hasKey("openai")) {
+      provider = "openai";
+      keyId = GLOBAL_OPENAI;
+    } else if (pcs.hasKey("anthropic")) {
+      provider = "anthropic";
+      keyId = GLOBAL_ANTHROPIC;
+    }
+    if (!provider || !keyId) return false;
+
+    const next = cloneConfig(this.cached);
+    let changed = false;
+    for (const f of VALID_FEATURES) {
+      if (next[f].tier === "off") {
+        next[f] = { tier: "standard", provider, keyId };
+        changed = true;
       }
     }
+    if (!changed) return false;
+    this.writeConfigAtomic(next);
+    this.cached = next;
+    this.emit("configChanged", cloneConfig(next));
+    console.info(
+      `[research-store] auto-enabled research features at tier=standard from global ${provider} key ` +
+        `(deep stays off; user hasn't configured research explicitly).`,
+    );
+    return true;
+  }
+
+  /**
+   * Öffentlicher Hook: wird aufgerufen, wenn ein Provider-Key gesetzt wird
+   * (ProviderConfigStore "keyChanged"). Aktiviert Research nachträglich,
+   * falls der Nutzer es nie selbst konfiguriert hat — behebt den „Key
+   * später eingetragen → bleibt off"-Fall ohne Neustart.
+   */
+  maybeAutoEnableFromGlobalKeys(): void {
+    if (this.hasUserTouched()) return;
+    this.autoEnableFromGlobalKeys();
   }
 
   static shared(): ResearchFeaturesStore {
@@ -203,6 +265,9 @@ export class ResearchFeaturesStore extends EventEmitter {
     next[feature] = merged;
     this.writeConfigAtomic(next);
     this.cached = next;
+    // v0.1.356 — ab jetzt hat der Nutzer Research explizit konfiguriert →
+    // keine automatische (Re-)Aktivierung mehr.
+    this.markUserTouched();
     this.emit("configChanged", cloneConfig(next));
     return cloneConfig(next);
   }

@@ -2018,6 +2018,18 @@ app.whenReady().then(async () => {
   }
   providerConfigStore.on("keyChanged", (kind) => {
     scheduleCredentialCycle(`keyChanged(${kind})`);
+    // v0.1.356 — Wenn ein OpenAI-/Anthropic-Key (neu) gesetzt wird und der
+    // Nutzer Research nie selbst konfiguriert hat, Job-Postings + Deep-
+    // Research nachträglich auf tier=standard aktivieren. Behebt den Fall
+    // „Key später eingetragen → Features blieben still aus". Der dadurch
+    // ausgelöste research configChanged cycelt den Website-Producer.
+    if (kind === "openai" || kind === "anthropic") {
+      try {
+        ResearchFeaturesStore.shared().maybeAutoEnableFromGlobalKeys();
+      } catch (err) {
+        console.warn("[research-store] maybeAutoEnableFromGlobalKeys failed:", err);
+      }
+    }
     audit({
       actorType: "user",
       actorId: null,
