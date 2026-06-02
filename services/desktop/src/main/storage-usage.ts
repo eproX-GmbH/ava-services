@@ -13,6 +13,7 @@ import { existsSync, readdirSync, rmSync, statSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { app } from "electron";
 import { REQUIRED_MODELS } from "./ollama-models";
+import { handelsregisterTempDir } from "./temp-sweep";
 import type {
   OllamaInstalledModel,
   StorageCategory,
@@ -50,6 +51,22 @@ function ollamaManagedDir(): string {
 }
 function userDataDir(): string {
   return app.getPath("userData");
+}
+
+/** Gefahrlos leerbare Cache-/Temp-Ordner (Logs/Screenshots unter userData +
+ *  der Producer-Handelsregister-Download-Ordner im OS-Temp). Single source
+ *  of truth für Anzeige UND Lösch-Guard. */
+function managedCacheDirs(): Array<{ path: string; label: string }> {
+  const ud = userDataDir();
+  return [
+    { path: join(ud, "logs"), label: "Logs" },
+    { path: join(ud, "producer-logs"), label: "Producer-Logs" },
+    { path: join(ud, "screenshots"), label: "Producer-Screenshots" },
+    {
+      path: handelsregisterTempDir(),
+      label: "Handelsregister-Downloads (Temp)",
+    },
+  ];
 }
 
 // ---- Größen-Helfer --------------------------------------------------------
@@ -219,17 +236,12 @@ export function buildStorageOverview(deps: StorageDeps): StorageOverview {
     });
   }
 
-  // 4. AVA-Cache (Logs / Screenshots) — gefahrlos leerbar.
+  // 4. AVA-Cache (Logs / Screenshots / Producer-Temp) — gefahrlos leerbar.
   {
-    const cacheDirs: Array<{ name: string; label: string }> = [
-      { name: "logs", label: "Logs" },
-      { name: "producer-logs", label: "Producer-Logs" },
-      { name: "screenshots", label: "Producer-Screenshots" },
-    ];
-    const items: StorageItem[] = cacheDirs.map(({ name, label }) => ({
-      id: join(userDataDir(), name),
+    const items: StorageItem[] = managedCacheDirs().map(({ path, label }) => ({
+      id: path,
       label,
-      sizeBytes: dirSizeBytes(join(userDataDir(), name)),
+      sizeBytes: dirSizeBytes(path),
       protected: false,
       detail: "leerbar",
     }));
@@ -348,7 +360,9 @@ export async function deleteStorageItem(
         return { ok: true, freedBytes: before };
       }
       case "avaCache": {
-        if (!isUnderUserData(id)) {
+        // Nur exakt die verwalteten Cache-/Temp-Ordner zulassen (der
+        // Handelsregister-Temp liegt im OS-Temp, nicht unter userData).
+        if (!managedCacheDirs().some((d) => d.path === id)) {
           return { ok: false, freedBytes: 0, error: "Ungültiger Pfad." };
         }
         const before = dirSizeBytes(id);

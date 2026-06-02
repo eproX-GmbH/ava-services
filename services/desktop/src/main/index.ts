@@ -34,6 +34,7 @@ import {
   deleteStorageItem,
   cleanupOrphanModels,
 } from "./storage-usage";
+import { sweepManagedTemp } from "./temp-sweep";
 import {
   producerLogBuffer,
   type ProducerLogEvent,
@@ -1554,6 +1555,29 @@ app.whenReady().then(async () => {
   void pruneOldScreenshots();
   // L6 — same protocol pattern for LinkedIn media thumbnails.
   registerLinkedInMediaProtocol();
+
+  // v0.1.366 — verwaiste Temp-Artefakte aufräumen. Der lokale
+  // structured-content-Producer lädt Handelsregister-Dokumente nach
+  // `…/Temp/ava-handelsregister-downloads`; beim Producer-Crash (z. B. der
+  // MAX_PATH-Loop) oder einem fehlgeschlagenen Cleanup blieben sie liegen
+  // und summierten sich auf zig GB. Beim Boot einmal aufräumen (Backlog
+  // abbauen) + danach stündlich. Die 30-min-Altersschwelle schützt eine
+  // gerade laufende Download/Transkription.
+  try {
+    sweepManagedTemp();
+  } catch {
+    /* best-effort */
+  }
+  setInterval(
+    () => {
+      try {
+        sweepManagedTemp();
+      } catch {
+        /* best-effort */
+      }
+    },
+    60 * 60 * 1000,
+  ).unref();
 
   // v0.1.55 — clear `com.apple.quarantine` from this bundle. This
   // launch's process retains its quarantine flag (set by the kernel
