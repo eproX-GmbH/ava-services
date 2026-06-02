@@ -7,6 +7,7 @@ import { promisify } from "node:util";
 import net from "node:net";
 import { producerLogBuffer } from "./producer-log-buffer";
 import { screenshotDirForProducer } from "./producer-screenshots";
+import { resolveProducerDirUnder } from "./producer-dirs";
 import type { Readable } from "node:stream";
 import { EventEmitter } from "node:events";
 import { existsSync } from "node:fs";
@@ -769,26 +770,14 @@ export class ProducerSupervisor extends EventEmitter {
   // ---- Path resolution ------------------------------------------------------
 
   private resolveProducerDir(): string | null {
-    // Packaged: <resourcesPath>/producers/<name>/
-    if (app.isPackaged) {
-      const packaged = join(
-        process.resourcesPath,
-        "producers",
-        this.opts.config.name,
-      );
-      if (existsSync(packaged)) return packaged;
-      return null;
-    }
-    // Dev: alongside the desktop's resources/ — vendored locally
-    // by `pnpm fetch:producers`.
-    const dev = join(
-      app.getAppPath(),
-      "resources",
-      "producers",
-      this.opts.config.name,
-    );
-    if (existsSync(dev)) return dev;
-    return null;
+    // v0.1.363 — short-dir layout `resources/p/<code>/` (Windows MAX_PATH
+    // fix) with legacy `resources/producers/<name>/` fallback. See
+    // producer-dirs.ts. Packaged root is process.resourcesPath; dev root
+    // is <appPath>/resources (vendored locally by `pnpm fetch:producers`).
+    const resourcesRoot = app.isPackaged
+      ? process.resourcesPath
+      : join(app.getAppPath(), "resources");
+    return resolveProducerDirUnder(resourcesRoot, this.opts.config.name);
   }
 
   /**

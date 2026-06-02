@@ -53,8 +53,11 @@ extraResources:
       - "**/*"
   # Vendored producer Node services (Phase 8.v1.2+). `pnpm
   # fetch:producers` builds + prunes + trims each producer
-  # submodule into resources/producers/<name>/. The fetch step in
-  # CI is soft-skipped if SUBMODULES_PAT isn't configured — in
+  # submodule into resources/p/<short-code>/ (v0.1.363 — short dirs
+  # to keep installed paths under Windows' 260-char MAX_PATH; see
+  # scripts/fetch-producers.mjs + src/main/producer-dirs.ts) and
+  # writes a resources/p/dirs.json name→dir manifest. The fetch step
+  # in CI is soft-skipped if SUBMODULES_PAT isn't configured — in
   # that case the dir doesn't exist and electron-builder's
   # extraResources copy needs to NOT abort the build. We achieve
   # that by always-writing a marker file before electron-builder
@@ -62,8 +65,8 @@ extraResources:
   # empty. The desktop's ProducerSupervisor then sees an empty
   # producer list and the Settings panel reads "Keine Producer
   # konfiguriert", which matches the v0.1.11 fallback path.
-  - from: resources/producers
-    to: producers
+  - from: resources/p
+    to: p
     filter:
       - "**/*"
   # S6 — Starter skills shipped with the app. Vendored on first

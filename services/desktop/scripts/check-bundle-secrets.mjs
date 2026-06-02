@@ -114,8 +114,12 @@ function isAllowed(key) {
 // vendored files is caught regardless.
 // Match both POSIX and Windows path separators — CI runs on macOS
 // (/) and windows-2022 (\) so the regex has to handle both.
+// v0.1.363 — producers vendored under the short-dir layout
+// `resources/p/<code>/` (Windows MAX_PATH fix). Match both the new `p`
+// and the legacy `producers` parent, with the optional `resources/`
+// prefix, on POSIX (/) and Windows (\) separators.
 const SKIP_CONTENT_SCAN_RE =
-  /[\\/](?:resources[\\/]producers|producers)[\\/][^\\/]+[\\/]node_modules[\\/]/;
+  /[\\/](?:resources[\\/])?(?:producers|p)[\\/][^\\/]+[\\/]node_modules[\\/]/;
 
 function* walk(dir) {
   let entries;

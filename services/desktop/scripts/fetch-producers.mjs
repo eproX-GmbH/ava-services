@@ -56,7 +56,24 @@ import { createHash } from "node:crypto";
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const DESKTOP_ROOT = resolve(__dirname, "..");
 const REPO_ROOT = resolve(DESKTOP_ROOT, "..", "..");
-const RESOURCES_ROOT = join(DESKTOP_ROOT, "resources", "producers");
+// v0.1.363 — Windows MAX_PATH (260) fix. The producers' compiled tree
+// contains a pathological path:
+//   dist/application/processing-errors/queries/
+//     list-processing-errors-by-transaction-id-and-company-id/
+//     list-processing-errors-by-transaction-id-and-company-id-query-mapper.js
+// (~170 chars on its own). Bundled under the old
+// `resources/producers/<long-name>/` layout, the installed path for a
+// producer like `structured-content` or `company-publication` exceeds
+// 260 chars (e.g. 261 for user "Patrick"). The NSIS installer silently
+// drops those files → the producer crashes on boot with MODULE_NOT_FOUND
+// → the whole pipeline stalls on Windows (macOS is immune, no MAX_PATH).
+// We shorten the on-disk layout to `resources/p/<short-code>/` (saving
+// ~24 chars) so the deepest path clears 260 with comfortable margin even
+// for long usernames. The logical producer `name` (AMQP/gateway/status
+// identity) is UNCHANGED — only the on-disk directory is shortened. A
+// `dirs.json` manifest maps name → short-code so the runtime resolves the
+// directory without a duplicated (drift-prone) map.
+const RESOURCES_ROOT = join(DESKTOP_ROOT, "resources", "p");
 
 // Producer manifest. Keep the entry list ordered by dispatch chain
 // (master-data → structured-content → company-profile → ...) so the
@@ -67,9 +84,13 @@ const RESOURCES_ROOT = join(DESKTOP_ROOT, "resources", "producers");
 // what `node` is invoked on at runtime. `databaseName` is the
 // PGlite database the producer talks to — the supervisor injects
 // this into DATABASE_URL.
+// `dir` is the SHORT on-disk directory name under resources/p/ (Windows
+// MAX_PATH fix — see RESOURCES_ROOT comment). Must be unique + stable;
+// the runtime reads the name→dir map from the generated dirs.json.
 const PRODUCERS = [
   {
     name: "company-profile",
+    dir: "cp",
     workspaceDir: "company-profile",
     entry: "dist/web/api/server.js",
     databaseName: "company_profile",
@@ -79,24 +100,28 @@ const PRODUCERS = [
   // database under userData/pglite/<name>/.
   {
     name: "structured-content",
+    dir: "sc",
     workspaceDir: "structured-content",
     entry: "dist/web/api/server.js",
     databaseName: "structured_content",
   },
   {
     name: "company-publication",
+    dir: "pub",
     workspaceDir: "company-publication",
     entry: "dist/web/api/server.js",
     databaseName: "company_publication",
   },
   {
     name: "company-evaluation",
+    dir: "ev",
     workspaceDir: "company-evaluation",
     entry: "dist/web/api/server.js",
     databaseName: "company_evaluation",
   },
   {
     name: "company-contact",
+    dir: "ct",
     workspaceDir: "company-contact",
     entry: "dist/web/api/server.js",
     databaseName: "company_contact",
@@ -105,6 +130,7 @@ const PRODUCERS = [
     // §8.v3 pivot-2 — website moves local. Uses operator-paid
     // valueserp via the gateway proxy (key never leaves fly).
     name: "website",
+    dir: "web",
     workspaceDir: "website",
     entry: "dist/web/api/server.js",
     databaseName: "website",
@@ -126,9 +152,21 @@ async function main() {
 
   mkdirSync(RESOURCES_ROOT, { recursive: true });
 
+  // Always (re)write the name→short-dir manifest covering ALL producers,
+  // regardless of which were (re)built this run or skipped via cache. The
+  // desktop runtime reads this to resolve each producer's on-disk
+  // directory (Windows MAX_PATH fix) without a duplicated, drift-prone map.
+  const dirsManifest = Object.fromEntries(
+    PRODUCERS.map((p) => [p.name, p.dir]),
+  );
+  writeFileSync(
+    join(RESOURCES_ROOT, "dirs.json"),
+    JSON.stringify(dirsManifest, null, 2) + "\n",
+  );
+
   for (const target of targets) {
     const srcDir = join(REPO_ROOT, target.workspaceDir);
-    const dstDir = join(RESOURCES_ROOT, target.name);
+    const dstDir = join(RESOURCES_ROOT, target.dir);
     const sentinel = join(dstDir, "node_modules", ".package-lock.json");
     // v0.1.164 — content-aware skip. Pre-v0.1.164 used the bare
     // presence of `node_modules/.package-lock.json` as "already

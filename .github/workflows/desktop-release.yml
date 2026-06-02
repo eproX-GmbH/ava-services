@@ -150,7 +150,7 @@ jobs:
           # müssen.
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
-          mkdir -p resources/producers
+          mkdir -p resources/p
           if [ ! -f ../../company-profile/package.json ]; then
             echo "::warning::No producer submodules checked out — shipping .dmg without local producers."
             exit 0
@@ -368,7 +368,7 @@ jobs:
         env:
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
-          mkdir -p resources/producers
+          mkdir -p resources/p
           if [ ! -f ../../company-profile/package.json ]; then
             echo "::warning::No producer submodules checked out — shipping .dmg without local producers."
             exit 0
@@ -609,7 +609,7 @@ jobs:
           # müssen.
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
-          mkdir -p resources/producers
+          mkdir -p resources/p
           if [ ! -f ../../company-profile/package.json ]; then
             echo "::warning::No producer submodules checked out — shipping .dmg without local producers."
             exit 0

@@ -28,6 +28,7 @@ import {
 import { PostgresSupervisor } from "./postgres-supervisor";
 import { ProducerSupervisor } from "./producer-supervisor";
 import { resumeStuckStages } from "./producer-resume";
+import { resolveProducerDirUnder } from "./producer-dirs";
 import {
   producerLogBuffer,
   type ProducerLogEvent,
@@ -670,22 +671,15 @@ function buildProducer(
     // Phase 4 cleanup destroys the suspended fly app definitions.
   ];
 
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const { existsSync } = require("node:fs") as typeof import("node:fs");
   for (const entry of PRODUCER_REGISTRY) {
-    const candidatePackaged = join(
-      process.resourcesPath ?? "",
-      "producers",
-      entry.name,
-    );
-    const candidateDev = join(
-      app.getAppPath(),
-      "resources",
-      "producers",
-      entry.name,
-    );
-    const vendored = app.isPackaged ? candidatePackaged : candidateDev;
-    if (existsSync(vendored)) {
+    // v0.1.363 — short-dir layout `resources/p/<code>/` (Windows MAX_PATH
+    // fix) with legacy `resources/producers/<name>/` fallback. See
+    // producer-dirs.ts (same resolver the supervisor uses).
+    const resourcesRoot = app.isPackaged
+      ? (process.resourcesPath ?? "")
+      : join(app.getAppPath(), "resources");
+    const vendored = resolveProducerDirUnder(resourcesRoot, entry.name);
+    if (vendored) {
       producers.push(
         buildProducer(entry.name, entry.entry, entry.databaseName, entry.port),
       );
