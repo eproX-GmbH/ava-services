@@ -441,6 +441,15 @@ export class AiSdkProvider extends EventEmitter implements LlmProvider {
       // ourselves so the orchestrator can interleave UI prompts /
       // user-confirmation flows between tool calls.
       stopWhen: stepCountIs(1),
+      // v0.1.364 — AI-SDK-Default ist maxRetries:2 (3 Versuche). Bei
+      // Anthropic-`529 Overloaded` (vorübergehende Server-Überlastung
+      // auf Anbieterseite) waren das nur ~wenige Sekunden Retry-Fenster,
+      // danach kam der harte „Failed after 3 attempts"-Fehler. Das SDK
+      // wiederholt 429/5xx (inkl. 529) mit exponentiellem Backoff
+      // (~2s,4s,8s,16s); mit 4 Retries (5 Versuche) ≈ 30 s Fenster
+      // reiten wir kurze Überlast-Spitzen aus, statt dem Nutzer sofort
+      // einen Fehler zu zeigen.
+      maxRetries: 4,
       abortSignal: req.signal,
     });
 
@@ -549,7 +558,13 @@ export class AiSdkProvider extends EventEmitter implements LlmProvider {
         stack: err instanceof Error ? err.stack : undefined,
         name: err instanceof Error ? err.name : typeof err,
       });
-      const msg = err instanceof Error ? err.message : String(err);
+      // v0.1.364 — auch den „throw vor dem ersten Frame"-Pfad durch
+      // humanizeProviderError schicken (vorher kam hier die rohe
+      // englische SDK-Meldung ungefiltert durch). Manche Fehler (u. a.
+      // ein nach Retries erschöpftes `529 Overloaded`) werfen synchron,
+      // bevor ein Stream-`error`-Part kommt.
+      const rawMsg = err instanceof Error ? err.message : String(err);
+      const msg = humanizeProviderError(this.kind, rawMsg);
       yield { done: true, errorMessage: msg };
       return;
     }
@@ -784,6 +799,30 @@ function humanizeProviderError(kind: LlmProviderKind, raw: string): string {
       `${label}: Anfrage-Limit pro Minute überschritten${limitDetail}.${retryDetail} ` +
       `Falls das häufig passiert, kannst du in deinem ${label}-Konto ` +
       `den Tier (Guthaben aufladen) erhöhen, um das Limit anzuheben.`
+    );
+  }
+
+  // v0.1.364 — Überlastung des Anbieters (Anthropic `529 Overloaded` /
+  // `overloaded_error`, allgemein 503 / „service unavailable"). Das ist
+  // ein VORÜBERGEHENDER Engpass auf Anbieterseite, KEIN Konto-/Key-/
+  // Guthaben-Problem. Das AI-SDK hat schon mehrfach automatisch
+  // wiederholt (siehe maxRetries) — kommt es trotzdem durch, ist der
+  // Spike länger. Klare, beruhigende Meldung + Hinweis „gleich erneut
+  // senden" statt der rohen „Failed after 3 attempts. Last error:
+  // Overloaded"-Zeile.
+  if (
+    lower.includes("overloaded") ||
+    lower.includes("529") ||
+    lower.includes("503") ||
+    lower.includes("service unavailable") ||
+    lower.includes("service_unavailable") ||
+    lower.includes("temporarily unavailable")
+  ) {
+    return (
+      `${label}: Die KI-Server von ${label} sind gerade kurzzeitig ` +
+      `überlastet — ein vorübergehender Engpass auf ${label}-Seite, ` +
+      `nicht bei dir. AVA hat es bereits mehrfach automatisch wiederholt. ` +
+      `Bitte in ein paar Sekunden einfach erneut senden.`
     );
   }
 
