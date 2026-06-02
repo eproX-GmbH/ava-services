@@ -50,6 +50,8 @@ export interface AlertCreateInput {
    * (e.g. `publication:${companyId}:${publicationId}`).
    */
   sourceRef: string;
+  /** v0.1.369 — optionale externe Quell-URL (z. B. LinkedIn-Permalink). */
+  url?: string | null;
 }
 
 export class AlertsStore {
@@ -131,6 +133,7 @@ export class AlertsStore {
       createdAt: new Date().toISOString(),
       seenAt: null,
       dismissedAt: null,
+      ...(input.url ? { url: input.url } : {}),
     };
     if (this.writable) {
       try {

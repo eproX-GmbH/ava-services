@@ -316,6 +316,16 @@ export class Heartbeat extends EventEmitter {
           headline: verdict.headline,
           rationale: verdict.rationale,
           sourceRef: c.sourceRef,
+          // v0.1.369 — externe Quell-URL durchreichen (z. B. der
+          // LinkedIn-Permalink aus dem Kandidaten-Payload), damit die
+          // Meldung „Beitrag öffnen" verlinken kann — wichtig für Firmen
+          // ohne interne Detailseite.
+          url:
+            typeof c.payload?.permalink === "string"
+              ? (c.payload.permalink as string)
+              : typeof c.payload?.url === "string"
+                ? (c.payload.url as string)
+                : null,
         });
         if (row) {
           alertsCreated += 1;

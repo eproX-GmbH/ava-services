@@ -782,6 +782,14 @@ export interface Alert {
   seenAt: string | null;
   /** ISO-8601 when the user dismissed it; dismissed rows are hidden. */
   dismissedAt: string | null;
+  /**
+   * v0.1.369 — optionale externe Quell-URL (z. B. der LinkedIn-Permalink
+   * bei LinkedIn-Signalen). Wird in der Meldungs-Detailansicht als
+   * „Beitrag öffnen" verlinkt. Wichtig für Signale zu Firmen, die NICHT
+   * in den Stammdaten liegen — dort gibt es keine interne Detailseite,
+   * sehr wohl aber den Originalbeitrag.
+   */
+  url?: string | null;
 }
 
 /**

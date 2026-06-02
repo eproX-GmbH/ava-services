@@ -15,6 +15,19 @@ import type { Alert, AlertKind, AlertSeverity } from "../../../shared/types";
 // "Jetzt auslösen" trigger button. The richer filter chips (this week /
 // this month / by severity) wait for 8.f2 alongside the bell + popover.
 
+// v0.1.369 — Eine „echte" interne Firma hat eine Stammdaten-ID mit
+// Detailseite. LinkedIn-Signale zu (noch) nicht gematchten Firmen tragen
+// eine synthetische `linkedin-ext:`-ID ohne Detailseite — für die zeigen
+// wir keinen internen Link (sonst 404), sondern nur den Namen + den
+// LinkedIn-Beitrag.
+function isInternalCompany(companyId: string | null | undefined): boolean {
+  return (
+    typeof companyId === "string" &&
+    companyId.length > 0 &&
+    !companyId.startsWith("linkedin-ext:")
+  );
+}
+
 const KIND_LABEL: Record<AlertKind, string> = {
   publication: "Publikation",
   "financial-delta": "Finanzkennzahl",
@@ -124,12 +137,21 @@ export function Alerts() {
                     <div className="alert__main">
                       <div className="alert__headline">{a.headline}</div>
                       <div className="alert__meta muted">
-                        <Link
-                          to={`/companies/${a.companyId}`}
-                          onClick={(e) => e.stopPropagation()}
-                        >
-                          {a.companyName}
-                        </Link>
+                        {/* v0.1.369 — interner Firmen-Link nur, wenn es
+                            eine echte Stammdaten-Firma ist. LinkedIn-Signale
+                            zu (noch) nicht gematchten Firmen tragen eine
+                            synthetische `linkedin-ext:`-ID ohne Detailseite
+                            → dann nur der Name als Text (404-Link vermieden). */}
+                        {isInternalCompany(a.companyId) ? (
+                          <Link
+                            to={`/companies/${encodeURIComponent(a.companyId)}`}
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            {a.companyName}
+                          </Link>
+                        ) : (
+                          <span>{a.companyName}</span>
+                        )}
                         <span className="alert__sep">·</span>
                         <span>{KIND_LABEL[a.kind]}</span>
                         <span className="alert__sep">·</span>
@@ -147,9 +169,23 @@ export function Alerts() {
                     >
                       <p>{a.rationale}</p>
                       <div className="alert__actions">
-                        <Link to={`/companies/${a.companyId}`}>
-                          Im Firmenkontext öffnen →
-                        </Link>
+                        {a.url && (
+                          <a
+                            href={a.url}
+                            onClick={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              void window.api.shell.openExternal(a.url!);
+                            }}
+                          >
+                            Beitrag öffnen →
+                          </a>
+                        )}
+                        {isInternalCompany(a.companyId) && (
+                          <Link to={`/companies/${encodeURIComponent(a.companyId)}`}>
+                            Im Firmenkontext öffnen →
+                          </Link>
+                        )}
                         <button
                           type="button"
                           className="link bad"

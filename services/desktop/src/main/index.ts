@@ -926,10 +926,46 @@ async function fetchLinkedInHeartbeatCandidates(): Promise<
     const settings = readLinkedInSettings();
     if (!settings.enabled) return [];
     const db = await getLinkedInDb();
-    const rows = await listLinkedInHeartbeatCandidates(db, {
-      limit: 20,
+    const rawRows = await listLinkedInHeartbeatCandidates(db, {
+      limit: 50,
       minStrength: 4,
     });
+    // v0.1.369 — Dedup gegen „aggressive" Meldungs-Flut. Ein einzelnes
+    // Real-Ereignis (z. B. „Otto Group: Führungswechsel") wird von vielen
+    // Personen GLEICHZEITIG gepostet (Journalisten, Analysten, die Firma
+    // selbst). Jeder Post war bisher ein eigenes Signal → eigene Meldung
+    // (gemeldet: 8 fast identische Otto-Group-Meldungen). Wir kollabieren
+    // pro Sweep auf EINE Meldung je (Firma × Signal-Art): wir behalten den
+    // stärksten (bei Gleichstand neuesten) Post als Kandidaten und markieren
+    // die übrigen sofort als ausgewertet, damit sie nicht erneut auftauchen.
+    const strongest = new Map<string, (typeof rawRows)[number]>();
+    const dropped: typeof rawRows = [];
+    for (const r of rawRows) {
+      const key = `${r.companyId}|${r.signalKind}`;
+      const cur = strongest.get(key);
+      if (!cur) {
+        strongest.set(key, r);
+        continue;
+      }
+      const better =
+        r.signalStrength > cur.signalStrength ||
+        (r.signalStrength === cur.signalStrength &&
+          (r.postedAt ?? 0) > (cur.postedAt ?? 0));
+      if (better) {
+        dropped.push(cur);
+        strongest.set(key, r);
+      } else {
+        dropped.push(r);
+      }
+    }
+    for (const d of dropped) {
+      try {
+        await recordLinkedInHeartbeatVerdict(db, d.postUrn, null);
+      } catch {
+        /* best-effort — der nächste Sweep fängt es sonst erneut */
+      }
+    }
+    const rows = [...strongest.values()];
     return rows.map((r) => ({
       kind: "linkedin-signal" as const,
       companyId: r.companyId,
