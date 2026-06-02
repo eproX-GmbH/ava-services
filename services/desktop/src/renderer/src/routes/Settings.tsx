@@ -2754,10 +2754,21 @@ function ApiKeyCard({
                 Pro/Max-Abo (siehe unten) — dort sind die Kosten
                 fix und Anthropic priorisiert eingeloggte Nutzer.
               </p>
-              <p>
-                Dein gespeicherter Schlüssel funktioniert weiter, bis
-                du ihn entfernst.
-              </p>
+              {anthropicSubscription?.hasToken ? (
+                <p>
+                  ✅ Dein Claude-Abo ist verbunden und wird ab sofort
+                  <strong> automatisch bevorzugt</strong> — der alte
+                  API-Key wird ignoriert (kein API-Minutenlimit mehr).
+                  Du kannst ihn hier bedenkenlos entfernen.
+                </p>
+              ) : (
+                <p>
+                  Solange kein Abo verbunden ist, nutzt AVA noch diesen
+                  Schlüssel (mit dem strengen API-Minutenlimit). Verbinde
+                  unten dein Pro/Max-Abo — danach wird der Key automatisch
+                  ignoriert.
+                </p>
+              )}
               <button
                 type="button"
                 onClick={() => clear.mutate()}

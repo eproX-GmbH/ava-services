@@ -96,8 +96,16 @@ export class LlmProviderManager extends EventEmitter {
         // api-key path.
         ...(kind === "anthropic"
           ? {
+              // v0.1.368 — Abo hat IMMER Vorrang: sobald ein
+              // Subscription-Token vorliegt, nutzt AVA das Claude-Abo —
+              // unabhängig vom gespeicherten Modus oder einem (evtl.
+              // veralteten) API-Key. Behebt den gemeldeten Fall, dass ein
+              // alter Anthropic-API-Key das verbundene Abo verdrängte und
+              // der Chat in das API-Minutenlimit lief.
               getAnthropicAuthMode: () =>
-                this.store.getConfig().anthropicAuthMode ?? "api-key",
+                this.store.hasAnthropicSubscriptionToken()
+                  ? "subscription"
+                  : (this.store.getConfig().anthropicAuthMode ?? "api-key"),
               getAnthropicSubscriptionToken: () =>
                 this.store.getAnthropicSubscriptionToken(),
               hasStoredAnthropicSubscriptionToken: () =>
@@ -112,8 +120,12 @@ export class LlmProviderManager extends EventEmitter {
         // v0.1.353 — OpenAI „Sign in with ChatGPT"-Resolver.
         ...(kind === "openai"
           ? {
+              // v0.1.368 — wie Anthropic: ChatGPT-Abo hat Vorrang vor
+              // einem hinterlegten OpenAI-API-Key.
               getOpenAIAuthMode: () =>
-                this.store.getConfig().openaiAuthMode ?? "api-key",
+                this.store.hasOpenAISubscriptionToken()
+                  ? "subscription"
+                  : (this.store.getConfig().openaiAuthMode ?? "api-key"),
               getOpenAISubscriptionToken: () =>
                 this.store.getOpenAISubscriptionToken(),
               getOpenAISubscriptionAccountId: () =>
@@ -136,6 +148,30 @@ export class LlmProviderManager extends EventEmitter {
       google: make("google"),
       mistral: make("mistral"),
     };
+
+    // v0.1.368 — Stuck-State-Reparatur: Falls ein Abo-Token vorliegt, der
+    // gespeicherte Modus aber noch auf "api-key" steht (z. B. weil das Abo
+    // mit einem älteren Build verbunden wurde, oder ein alter API-Key den
+    // Modus "festhielt"), ziehen wir den Modus EINMALIG auf "subscription".
+    // So sind ALLE Konsumenten (UI-Anzeige, Tier-Logik, Producer-Passthrough)
+    // konsistent mit dem tatsächlichen Verhalten (Abo hat Vorrang).
+    try {
+      const cfg = this.store.getConfig();
+      if (
+        this.store.hasAnthropicSubscriptionToken() &&
+        (cfg.anthropicAuthMode ?? "api-key") !== "subscription"
+      ) {
+        this.store.setConfig({ anthropicAuthMode: "subscription" });
+      }
+      if (
+        this.store.hasOpenAISubscriptionToken() &&
+        (cfg.openaiAuthMode ?? "api-key") !== "subscription"
+      ) {
+        this.store.setConfig({ openaiAuthMode: "subscription" });
+      }
+    } catch {
+      /* best-effort */
+    }
 
     this.status = this.activeProvider().getStatus();
 
@@ -188,7 +224,8 @@ export class LlmProviderManager extends EventEmitter {
     // keeps using the OAuth token correctly via streamChat above.
     if (
       kind === "anthropic" &&
-      (config.anthropicAuthMode ?? "api-key") === "subscription"
+      (this.store.hasAnthropicSubscriptionToken() ||
+        (config.anthropicAuthMode ?? "api-key") === "subscription")
     ) {
       return null;
     }
@@ -198,7 +235,8 @@ export class LlmProviderManager extends EventEmitter {
     // (in-process) nutzt den Token korrekt via streamChat.
     if (
       kind === "openai" &&
-      (config.openaiAuthMode ?? "api-key") === "subscription"
+      (this.store.hasOpenAISubscriptionToken() ||
+        (config.openaiAuthMode ?? "api-key") === "subscription")
     ) {
       return null;
     }
