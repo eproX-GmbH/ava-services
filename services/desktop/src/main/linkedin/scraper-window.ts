@@ -85,6 +85,23 @@ export function prewarmScraperWindow(): Promise<BrowserWindow> {
         /* ignore */
       }
       try {
+        // v0.1.362 — Click-through erzwingen. Das Fenster sitzt bei
+        // (-2000,-2000) opacity 0, aber macOS klemmt ein vollständig
+        // off-screen Fenster teilweise auf den sichtbaren Bildschirm
+        // zurück (typischerweise an den linken Rand). Dort fängt es —
+        // obwohl unsichtbar und `focusable:false` — trotzdem Mausklicks
+        // ab: ein Klick LINKS neben dem AVA-Fenster landet auf diesem
+        // unsichtbaren Fenster, fokussiert aber weder AVA noch die App
+        // dahinter (gemeldeter „Klick links fokussiert die App dahinter
+        // nicht"-Bug). setIgnoreMouseEvents(true) macht das Fenster für
+        // alle Mausereignisse durchlässig, sodass Klicks an die App
+        // dahinter durchgereicht werden. Rendering/Scraping bleibt
+        // unberührt (betrifft nur Hit-Testing, nicht das Painting).
+        win.setIgnoreMouseEvents(true);
+      } catch {
+        /* ignore */
+      }
+      try {
         // v0.1.309 — showInactive() statt show:true: paint-but-no-focus.
         // Bringt die AVA-App nicht in den Vordergrund.
         win.showInactive();
