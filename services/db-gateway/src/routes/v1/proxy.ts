@@ -383,10 +383,24 @@ proxyRouter.post(
     const params = new URLSearchParams();
     params.set("api_key", env.VALUESERP_API_KEY);
 
-    if (env.VALUESERP_DOMAIN) params.set("google_domain", env.VALUESERP_DOMAIN);
-    if (env.VALUESERP_UI_LANGUAGE) params.set("hl", env.VALUESERP_UI_LANGUAGE);
-    if (env.VALUESERP_LOCATION) params.set("gl", env.VALUESERP_LOCATION);
-    if (env.VALUESERP_COUNTRY) params.set("location", env.VALUESERP_COUNTRY);
+    // v0.1.363 — Geo-Lokalisierung (google_domain/hl/gl/location) NUR für
+    // die Places-Suche. Empirisch belegt (Diamant Software GmbH Bielefeld):
+    // bei der ORGANISCHEN Websuche degradiert die DE-Lokalisierung das
+    // Ergebnis massiv — Google liefert dann nur ~6 organische Treffer,
+    // dominiert von Verzeichnissen (kununu/northdata/softguide), und die
+    // ECHTE Unternehmens-Homepage fällt komplett aus dem Fenster. Ohne
+    // Lokalisierung kommen die regulären 10 organischen Treffer inkl. der
+    // echten Seite (#2) zurück. Places hingegen BRAUCHT die Lokalisierung,
+    // um deutsche Einträge zu finden — dort bleibt sie aktiv.
+    // (Caller-Overrides unten greifen weiterhin, falls jemand bewusst
+    // lokalisieren will.)
+    const isPlaces = body.search_type === "places";
+    if (isPlaces) {
+      if (env.VALUESERP_DOMAIN) params.set("google_domain", env.VALUESERP_DOMAIN);
+      if (env.VALUESERP_UI_LANGUAGE) params.set("hl", env.VALUESERP_UI_LANGUAGE);
+      if (env.VALUESERP_LOCATION) params.set("gl", env.VALUESERP_LOCATION);
+      if (env.VALUESERP_COUNTRY) params.set("location", env.VALUESERP_COUNTRY);
+    }
     if (env.VALUESERP_PAGINATION_SIZE) {
       params.set("num", String(env.VALUESERP_PAGINATION_SIZE));
     }
