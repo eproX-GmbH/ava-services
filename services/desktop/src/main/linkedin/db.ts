@@ -2142,14 +2142,26 @@ export async function heartbeatCandidates(
     summary: string | null;
     author_display_name: string;
     author_headline: string | null;
-    master_company_id: string;
-    master_company_name: string;
+    master_company_id: string | null;
+    master_company_name: string | null;
+    source_value: string | null;
   }>(
-    `SELECT DISTINCT ON (s.post_urn, l.master_company_id)
+    // v0.1.367 — NICHT mehr auf Stammdaten-gematchte Firmen beschränken.
+    // Vorher verlangte der Gate `l.resolution = 'matched'` + master_company_id
+    // — ein starkes Signal (z. B. Personalwechsel, Stärke 4) zu einer Firma,
+    // die (noch) NICHT in den Stammdaten liegt, wurde damit NIE zur Meldung,
+    // obwohl es klar relevant ist (gemeldeter Fall: Zimmer Group). Jetzt
+    // reichen ALLE Signale mit Stärke ≥ minStrength und einer erkannten Firma
+    // (source_value) durch — egal ob gematcht oder nicht. Der nachgelagerte
+    // LLM-Alert-Judge bleibt die Qualitätsschranke (er kann worthAlerting=false
+    // setzen), und Stärke ≥ 4 hält das Volumen ohnehin niedrig. Für gematchte
+    // Firmen nehmen wir die Stammdaten-ID/-Namen, sonst die erkannte Firma mit
+    // synthetischer `linkedin-ext:`-ID.
+    `SELECT DISTINCT ON (s.post_urn, COALESCE(l.master_company_id, l.source_value))
             s.post_urn, p.posted_at, p.text, p.permalink,
             s.signal_kind, s.signal_strength, s.summary,
             a.display_name AS author_display_name, a.headline AS author_headline,
-            l.master_company_id, l.master_company_name
+            l.master_company_id, l.master_company_name, l.source_value
        FROM linkedin_signal s
        JOIN linkedin_post   p ON p.post_urn = s.post_urn
        JOIN linkedin_actor  a ON a.actor_urn = p.author_urn
@@ -2158,21 +2170,33 @@ export async function heartbeatCandidates(
         AND s.dismissed_at IS NULL
         AND s.heartbeat_evaluated_at IS NULL
         AND COALESCE(s.signal_strength, 0) >= $2
-        AND l.resolution = 'matched'
-        AND l.master_company_id IS NOT NULL
-      ORDER BY s.post_urn, l.master_company_id, p.scraped_at DESC
+        AND COALESCE(l.master_company_name, l.source_value) IS NOT NULL
+      ORDER BY s.post_urn, COALESCE(l.master_company_id, l.source_value), p.scraped_at DESC
       LIMIT $1`,
     [limit, minStrength],
   );
   return res.rows
+    .map((r) => {
+      const companyName = r.master_company_name ?? r.source_value;
+      // Synthetische ID für (noch) nicht gematchte Firmen — der Alert-Store
+      // akzeptiert beliebige String-IDs (sourceRef-Dedup bleibt stabil).
+      const companyId =
+        r.master_company_id ??
+        `linkedin-ext:${(r.source_value ?? "")
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, "-")
+          .replace(/^-+|-+$/g, "")
+          .slice(0, 60)}`;
+      return { r, companyId, companyName };
+    })
     .filter(
-      (r) =>
+      ({ r, companyName }) =>
         r.signal_kind &&
         r.signal_kind !== "none" &&
         r.summary &&
-        r.master_company_name,
+        companyName,
     )
-    .map((r) => ({
+    .map(({ r, companyId, companyName }) => ({
       postUrn: r.post_urn,
       postedAt: r.posted_at ? new Date(r.posted_at).getTime() : null,
       text: r.text ?? "",
@@ -2182,8 +2206,8 @@ export async function heartbeatCandidates(
       summary: r.summary as string,
       authorDisplayName: r.author_display_name,
       authorHeadline: r.author_headline,
-      companyId: r.master_company_id,
-      companyName: r.master_company_name,
+      companyId,
+      companyName: companyName as string,
     }));
 }
 
