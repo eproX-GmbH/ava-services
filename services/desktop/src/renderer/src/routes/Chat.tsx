@@ -2091,7 +2091,7 @@ function ChoiceCardWithOther(props: {
     return (
       <div className="chat-msg chat-msg-choice">
         <div className="chat-choice">
-          <div className="chat-choice-prompt">{choice.prompt}</div>
+          <div className="chat-choice-prompt">{renderTextSegment(choice.prompt, `choiceprompt-${choice.choiceId}`)}</div>
           <div className="chat-choice-options">
             {choice.options.map((opt) => (
               <button
@@ -2114,7 +2114,7 @@ function ChoiceCardWithOther(props: {
   return (
     <div className="chat-msg chat-msg-choice">
       <div className="chat-choice">
-        <div className="chat-choice-prompt">{choice.prompt}</div>
+        <div className="chat-choice-prompt">{renderTextSegment(choice.prompt, `choiceprompt-${choice.choiceId}`)}</div>
         {otherMode ? (
           <div className="chat-choice-other">
             <input
@@ -2205,7 +2205,7 @@ function TextPromptCard(props: {
   return (
     <div className="chat-msg chat-msg-choice">
       <div className="chat-choice">
-        <div className="chat-choice-prompt">{props.prompt.prompt}</div>
+        <div className="chat-choice-prompt">{renderTextSegment(props.prompt.prompt, `inputprompt-${props.prompt.choiceId}`)}</div>
         {answered ? (
           <div className="chat-textprompt__answered muted">
             {props.prompt.answeredValue ? (

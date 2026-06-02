@@ -1944,13 +1944,17 @@ export function buildCrmTools(deps: CrmToolDeps): Tool[] {
       }
 
       // 6) EINE Sammel-Bestätigung.
+      // v0.1.370 — Markdown-formatiert (der Confirm-Dialog rendert jetzt
+      // Markdown), damit die lange Feld-/Kontaktliste lesbar ist: echte
+      // `- `-Listen (eine Zeile je Eintrag) + fette Labels statt einer
+      // zusammengelaufenen `•`-Textwand.
       const fieldLines = Object.entries(changed)
-        .map(([k, v]) => `  • ${k}: ${v.length > 70 ? v.slice(0, 70) + "…" : v}`)
+        .map(([k, v]) => `- **${k}:** ${v.length > 80 ? v.slice(0, 80) + "…" : v}`)
         .join("\n");
       const contactLines = contactPlan
         .map(
           (c) =>
-            `  • ${c.fullName}${c.jobTitle ? ` (${c.jobTitle})` : ""}${c.email ? ` · ${c.email}` : ""}`,
+            `- ${c.fullName}${c.jobTitle ? ` _(${c.jobTitle})_` : ""}${c.email ? ` · ${c.email}` : ""}`,
         )
         .join("\n");
       if (Object.keys(changed).length === 0 && contactPlan.length === 0) {
@@ -1961,19 +1965,21 @@ export function buildCrmTools(deps: CrmToolDeps): Tool[] {
         };
       }
       const header = creating
-        ? `Ich lege folgende NEUE Firma in HubSpot an und reichere sie aus AVA an:`
-        : `Ich aktualisiere die HubSpot-Firma ${hubspotId} aus AVA:`;
-      const rationaleBlock = args.rationale ? `\n\nBegründung: ${args.rationale}` : "";
-      const sourcesBlock = `\n\nQuellen: ${enrich.sources.join(", ")}`;
+        ? `**Ich lege folgende NEUE Firma in HubSpot an** und reichere sie aus AVA an:`
+        : `**Ich aktualisiere die HubSpot-Firma \`${hubspotId}\` aus AVA:**`;
+      const rationaleBlock = args.rationale
+        ? `\n\n_Begründung: ${args.rationale}_`
+        : "";
+      const sourcesBlock = `\n\n_Quellen: ${enrich.sources.join(", ")}_`;
       const fieldsBlock =
         Object.keys(changed).length > 0
-          ? `\n\nFelder (${Object.keys(changed).length}):\n${fieldLines}`
-          : "\n\n(keine Feldänderungen)";
+          ? `\n\n**Felder (${Object.keys(changed).length}):**\n\n${fieldLines}`
+          : "\n\n_(keine Feldänderungen)_";
       const contactsBlock =
         contactPlan.length > 0
-          ? `\n\nKontakte anlegen + verknüpfen (${contactPlan.length}):\n${contactLines}`
+          ? `\n\n**Kontakte anlegen + verknüpfen (${contactPlan.length}):**\n\n${contactLines}`
           : includeContacts
-            ? "\n\n(keine neuen Kontakte — bereits vorhanden oder keine gefunden)"
+            ? "\n\n_(keine neuen Kontakte — bereits vorhanden oder keine gefunden)_"
             : "";
       const decision = await ctx.ui.askChoice(
         `${header}${fieldsBlock}${contactsBlock}${sourcesBlock}${rationaleBlock}`,

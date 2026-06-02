@@ -2157,7 +2157,16 @@ code, pre { font-family: var(--font-mono); font-size: 12px; }
   background: var(--ctrl-bg);
   color: var(--fg);
 }
-.chat-choice-prompt { font-weight: 600; margin-bottom: 10px; }
+/* v0.1.370 — der Prompt-Text wird jetzt als Markdown gerendert. Kein
+   pauschales bold mehr (sonst wird die ganze Liste fett); stattdessen
+   normale Lesbarkeit mit kompakten Abständen für Absätze/Listen. */
+.chat-choice-prompt { margin-bottom: 10px; line-height: 1.45; }
+.chat-choice-prompt > :first-child { margin-top: 0; }
+.chat-choice-prompt > :last-child { margin-bottom: 0; }
+.chat-choice-prompt p { margin: 0 0 0.5em; }
+.chat-choice-prompt ul { margin: 0.25em 0 0.6em; padding-left: 1.25em; }
+.chat-choice-prompt li { margin: 0.1em 0; }
+.chat-choice-prompt code { font-size: 0.92em; }
 .chat-choice-options {
   display: flex; flex-direction: column; gap: 6px;
 }
