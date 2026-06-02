@@ -436,6 +436,21 @@ export class OllamaBinaryUpdater extends EventEmitter {
       }
     });
     await pipeline(reader, out);
+
+    // v0.1.361 — Download-Integrität prüfen. Vorher wurde ein
+    // unvollständig geladenes Archiv (Verbindung mitten im 177-MB-Download
+    // abgebrochen, Stream endete aber „sauber") stillschweigend an `unzip`
+    // übergeben → kryptisches „unzip exited 2". Wenn die empfangenen Bytes
+    // nicht zur Content-Length passen, brechen wir mit klarer, aktionabler
+    // Meldung ab; der Install-Flow räumt den Versions-Ordner auf, sodass
+    // ein erneuter Versuch sauber von vorn lädt.
+    if (total > 0 && received !== total) {
+      throw new Error(
+        `Download unvollständig: ${received} von ${total} Bytes empfangen ` +
+          `(die Verbindung wurde vermutlich unterbrochen). Bitte das ` +
+          `Ollama-Update erneut starten.`,
+      );
+    }
   }
 
   private setState(next: OllamaUpdaterState): void {
