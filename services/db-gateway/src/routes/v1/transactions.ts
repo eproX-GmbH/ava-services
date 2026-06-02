@@ -1098,7 +1098,35 @@ transactionsRouter.openapi(pipelineRoute, async (c) => {
     return { state: "pending", errorCount: 0 };
   };
 
+  // v0.1.363 — company-profile / company-contact werden nur dispatcht,
+  // wenn die website-Stage eine URL gefunden hat. Lief sie terminal OHNE
+  // Ergebnis (failed/skipped — Judge fand keine Webseite) und existiert
+  // keine eigene EntityProgress-Zeile für die abhängige Stage, dann ist
+  // ihr „echter" Zustand `skipped` (sie wird nie laufen) — nicht das
+  // naive `pending`, das ewig gelb hängen bliebe.
+  const deriveDependentOnWebsite = (
+    stage: "companyProfile" | "companyContact",
+    companyId: string,
+    websiteCell: Cell,
+  ): Cell => {
+    const own = byStage.get(stage)?.get(companyId);
+    if (own) return cellFromRow(own);
+    if (websiteCell.state === "failed" || websiteCell.state === "skipped") {
+      return {
+        state: "skipped",
+        updatedAt: websiteCell.updatedAt ?? null,
+        errorCount: 0,
+      };
+    }
+    return { state: "pending", errorCount: 0 };
+  };
+
   const rows = Array.from(allCompanyIds).map((companyId) => {
+    const websiteCell = attachRetry(
+      "website",
+      companyId,
+      cellFromRow(byStage.get("website")?.get(companyId)),
+    );
     const cells: {
       masterData: Cell;
       structuredContent: Cell;
@@ -1121,20 +1149,25 @@ transactionsRouter.openapi(pipelineRoute, async (c) => {
         companyId,
         cellFromRow(byStage.get("companyPublication")?.get(companyId)),
       ),
-      website: attachRetry(
-        "website",
-        companyId,
-        cellFromRow(byStage.get("website")?.get(companyId)),
-      ),
+      website: websiteCell,
+      // v0.1.363 — company-profile + company-contact hängen vom
+      // website-URL-Treffer ab: der website-Producer dispatcht ihre
+      // Trigger-Events nur, wenn eine URL gefunden wurde (`if (url)`).
+      // Findet der LLM-Judge KEINE Unternehmenswebseite, läuft die
+      // website-Stage auf `failed` (siehe persist-bus.ts) und es
+      // entsteht NIE eine EntityProgress-Zeile für Profil/Kontakt → die
+      // naive Zelle wäre für immer `pending` (der gemeldete „hängt ewig
+      // gelb"-Bug). In genau diesem Fall leiten wir sie als `skipped`
+      // ab, damit die Matrix terminal wird statt hängen zu bleiben.
       companyProfile: attachRetry(
         "companyProfile",
         companyId,
-        cellFromRow(byStage.get("companyProfile")?.get(companyId)),
+        deriveDependentOnWebsite("companyProfile", companyId, websiteCell),
       ),
       companyContact: attachRetry(
         "companyContact",
         companyId,
-        cellFromRow(byStage.get("companyContact")?.get(companyId)),
+        deriveDependentOnWebsite("companyContact", companyId, websiteCell),
       ),
       companyEvaluation: deriveEvaluationCell(companyId),
     };

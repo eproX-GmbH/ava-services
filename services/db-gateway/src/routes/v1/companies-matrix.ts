@@ -222,6 +222,29 @@ companiesMatrixRouter.openapi(matrixRoute, async (c) => {
       }
     }
 
+    // v0.1.363 — company-profile / company-contact hängen vom
+    // website-URL-Treffer ab (Producer dispatcht ihre Trigger nur bei
+    // gefundener URL). Fand der LLM-Judge keine Webseite, läuft website
+    // auf `failed` und es entsteht nie eine EntityProgress-Zeile für
+    // Profil/Kontakt → die Zelle bliebe ewig `pending` (gelb). In genau
+    // diesem Fall als `skipped` ableiten, damit die Matrix terminal wird.
+    // (Spiegelt deriveDependentOnWebsite in transactions.ts.)
+    {
+      const websiteCell = stages["website"];
+      const websiteTerminalNoResult =
+        websiteCell?.state === "failed" || websiteCell?.state === "skipped";
+      for (const dep of ["company-profile", "company-contact"] as const) {
+        const cell = stages[dep];
+        if (cell && cell.state === "pending" && websiteTerminalNoResult) {
+          stages[dep] = {
+            state: "skipped",
+            updatedAt: websiteCell?.updatedAt ?? null,
+            errorMessage: null,
+          };
+        }
+      }
+    }
+
     // v0.1.279 — companyEvaluation aus Upstreams DERIVEN, statt den
     // rohen EntityProgress-Status zu nehmen. Sonst sahen Firmen, deren
     // 5 Upstream-Producer alle completed sind, in der Matrix gelb aus

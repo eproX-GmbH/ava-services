@@ -1845,12 +1845,40 @@ class PersistBus {
           try {
             const pool = this.getPool(binding.producer);
             await binding.apply(pool, event, log);
+            // v0.1.363 — `website`-Sonderfall: der LLM-Judge kann zu dem
+            // Schluss kommen, dass es GAR KEINE Unternehmenswebseite gibt
+            // (matchIndex=null → weder serp- noch website-Zeile im
+            // Payload). apply() persistiert dann nichts ausser dem
+            // Judgment-Audit und kehrt normal zurück — die Matrix zeigte
+            // bisher fälschlich „fertig" (grün). Schlimmer: ohne URL
+            // werden die Folge-Stages company-profile/-contact NIE
+            // angestossen (ihr Dispatch ist im Producer an `url` gebunden),
+            // sodass sie ewig „gelb" (pending) hängen. Wir markieren die
+            // website-Stage daher als `failed` (rot), wenn kein Treffer
+            // gefunden wurde — sichtbarer Fehlerzustand + die Folge-Stages
+            // werden im Pipeline-Read als `skipped` abgeleitet (siehe
+            // transactions.ts / companies-matrix.ts).
+            let progressState: "completed" | "failed" = "completed";
+            let progressError: string | null = null;
+            if (binding.producer === "website") {
+              const r = event.data?.result as
+                | {
+                    website?: { url?: string | null };
+                    serp?: { url?: string | null };
+                  }
+                | undefined;
+              const foundUrl = Boolean(r?.website?.url || r?.serp?.url);
+              if (!foundUrl) {
+                progressState = "failed";
+                progressError = "Keine Unternehmenswebseite gefunden";
+              }
+            }
             await recordEntityProgress(
               binding.producer,
               txId,
               companyId,
-              "completed",
-              null,
+              progressState,
+              progressError,
               log,
             );
           } catch (err) {
