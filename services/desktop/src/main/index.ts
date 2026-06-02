@@ -30,6 +30,11 @@ import { ProducerSupervisor } from "./producer-supervisor";
 import { resumeStuckStages } from "./producer-resume";
 import { resolveProducerDirUnder } from "./producer-dirs";
 import {
+  buildStorageOverview,
+  deleteStorageItem,
+  cleanupOrphanModels,
+} from "./storage-usage";
+import {
   producerLogBuffer,
   type ProducerLogEvent,
 } from "./producer-log-buffer";
@@ -3191,6 +3196,33 @@ app.whenReady().then(async () => {
   ipcMain.handle("ollama:deleteModel", (_e, modelName: string) =>
     ollama.deleteModel(modelName),
   );
+
+  // v0.1.365 — Speicher-Übersicht + Bereinigung (Settings → Speicher).
+  // Hauptursache volllaufender Platten: alte Ollama-Modelle in
+  // ~/.ollama/models, die über AVA-Versionen hinweg veralten und nie
+  // aufgeräumt werden. Das Panel schlüsselt alle Ordner auf und erlaubt
+  // gezieltes + automatisches Löschen (aktives/erforderliches Modell
+  // immer geschützt).
+  const storageDeps = (): import("./storage-usage").StorageDeps => ({
+    ollama,
+    whisper,
+    providerStore: ProviderConfigStore.shared(),
+  });
+  ipcMain.handle("storage:getOverview", () =>
+    buildStorageOverview(storageDeps()),
+  );
+  ipcMain.handle(
+    "storage:deleteItem",
+    (_e, category: import("../shared/types").StorageCategoryKey, id: string) =>
+      deleteStorageItem(storageDeps(), category, id),
+  );
+  ipcMain.handle("storage:cleanupOrphans", () =>
+    cleanupOrphanModels(storageDeps()),
+  );
+  ipcMain.handle("storage:openFolder", async (_e, path: string) => {
+    const err = await shell.openPath(path);
+    return { ok: err === "", error: err || undefined };
+  });
 
   // v0.1.220 — Ollama-Binary Self-Update.
   //

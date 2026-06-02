@@ -1036,6 +1036,64 @@ export interface VoiceStatus {
   errorMessage: string | null;
 }
 
+// ---- Speicher / Storage usage (v0.1.365) ----------------------------------
+//
+// Aufschlüsselung des Plattenverbrauchs für den Settings-„Speicher"-Tab.
+// Haupt-Platzfresser sind die Ollama-Modelle (~/.ollama/models), die über
+// AVA-Versionen hinweg veralten ohne dass etwas sie aufräumt.
+
+export type StorageCategoryKey =
+  | "ollamaModels"
+  | "whisperModels"
+  | "ollamaManaged"
+  | "avaCache"
+  | "avaData";
+
+export interface StorageItem {
+  /** Stable identifier used for deletion (model name / file path / dir). */
+  id: string;
+  /** Display label. */
+  label: string;
+  sizeBytes: number;
+  /** Geschützt = aktiv / erforderlich → kann nicht gelöscht werden. */
+  protected: boolean;
+  /** Kurzbeschreibung, z. B. "aktiv", "erforderlich", Datum. */
+  detail?: string;
+}
+
+export interface StorageCategory {
+  key: StorageCategoryKey;
+  label: string;
+  /** On-disk root for this category (for "Ordner öffnen"). */
+  path: string;
+  totalBytes: number;
+  /** Whether items in this category can be deleted at all. */
+  deletable: boolean;
+  items: StorageItem[];
+}
+
+export interface StorageOverview {
+  categories: StorageCategory[];
+  totalBytes: number;
+  /** Summe der löschbaren, nicht-geschützten Modell-Items ("verwaist"). */
+  orphanBytes: number;
+  orphanCount: number;
+  generatedAt: string;
+}
+
+export interface StorageDeleteResult {
+  ok: boolean;
+  freedBytes: number;
+  error?: string;
+}
+
+export interface StorageCleanupResult {
+  ok: boolean;
+  freedBytes: number;
+  removed: string[];
+  error?: string;
+}
+
 // ---- User profile (Phase 8.t1) --------------------------------------------
 //
 // Stable per-tenant lens the agent uses to bias every response: bio +

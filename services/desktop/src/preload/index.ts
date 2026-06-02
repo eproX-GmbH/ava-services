@@ -35,6 +35,10 @@ import type {
   OllamaStatus,
   PostgresStatus,
   ProducerLogEvent,
+  StorageOverview,
+  StorageCategoryKey,
+  StorageDeleteResult,
+  StorageCleanupResult,
   ProducerLogLine,
   ProducerScreenshotEntry,
   ProducerStatus,
@@ -123,6 +127,10 @@ export type {
   OllamaStatus,
   PostgresStatus,
   ProducerLogEvent,
+  StorageOverview,
+  StorageCategoryKey,
+  StorageDeleteResult,
+  StorageCleanupResult,
   ProducerLogLine,
   ProducerScreenshotEntry,
   ProducerStatus,
@@ -261,6 +269,23 @@ const api = {
   // Ollama (D7) — bundled local LLM/embedding runtime.
   // Renderer never sees the child process directly; everything is mediated
   // by the supervisor in the main process.
+  // v0.1.365 — Speicher-Übersicht + Bereinigung (Settings → Speicher).
+  storage: {
+    getOverview: (): Promise<StorageOverview> =>
+      ipcRenderer.invoke("storage:getOverview"),
+    deleteItem: (
+      category: StorageCategoryKey,
+      id: string,
+    ): Promise<StorageDeleteResult> =>
+      ipcRenderer.invoke("storage:deleteItem", category, id),
+    cleanupOrphans: (): Promise<StorageCleanupResult> =>
+      ipcRenderer.invoke("storage:cleanupOrphans"),
+    openFolder: (
+      path: string,
+    ): Promise<{ ok: boolean; error?: string }> =>
+      ipcRenderer.invoke("storage:openFolder", path),
+  },
+
   ollama: {
     getStatus: (): Promise<OllamaStatus> =>
       ipcRenderer.invoke("ollama:getStatus"),

@@ -4,6 +4,7 @@ import {
   ProducersSection,
 } from "../Settings";
 import { OllamaVersionSection } from "../../components/OllamaVersionSection";
+import { StorageSection } from "../../components/StorageSection";
 import { DiagnoseSection } from "../../components/DiagnoseSection";
 
 // System-Tab — Updates, lokale Postgres-Instanz, Ollama-Laufzeit,
@@ -14,6 +15,7 @@ export function SystemTab() {
     <>
       <UpdaterSection />
       <OllamaVersionSection />
+      <StorageSection />
       <PostgresSection />
       <ProducersSection />
       <DiagnoseSection />
