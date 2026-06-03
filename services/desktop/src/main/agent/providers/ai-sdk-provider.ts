@@ -807,10 +807,10 @@ function humanizeProviderError(
       const aboLabel = kind === "openai" ? "ChatGPT" : "Claude";
       return (
         `${label}: Nutzungslimit deines ${aboLabel}-Abos erreicht${limitDetail}.${retryDetail} ` +
-        `AVA nutzt korrekt dein Abo (NICHT den API-Key) — aber Pro/Max-Abos ` +
-        `haben ein Limit pro Zeitfenster, das bei langen, werkzeugintensiven ` +
-        `Recherchen schnell erreicht ist. Tipp: ein paar Minuten warten, oder ` +
-        `kürzere Anfragen stellen; das Limit füllt sich automatisch wieder auf.`
+        `Dein ${aboLabel}-Abo hat ein Nutzungs-Budget pro Zeitfenster, das bei ` +
+        `langen, werkzeugintensiven Recherchen schnell aufgebraucht ist. Das ` +
+        `Budget füllt sich automatisch wieder auf — bitte ein paar Minuten ` +
+        `warten oder die Anfrage etwas kürzer fassen.`
       );
     }
 
