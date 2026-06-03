@@ -805,12 +805,21 @@ function humanizeProviderError(
     // Recherchen schnell erreicht).
     if (authMode === "subscription") {
       const aboLabel = kind === "openai" ? "ChatGPT" : "Claude";
+      // v0.1.373 — KEIN „ein paar Minuten" mehr: das Sitzungs-Budget der
+      // Abos (v. a. Pro) setzt sich erst nach einem festen Fenster zurück
+      // (oft mehrere Stunden, vom Nutzer bestätigt: Pro-Sitzung 5 h). Wir
+      // verweisen auf die echte Restzeit in der Claude-App und bieten den
+      // kostenlosen, limitfreien Ausweg an: lokales Ollama-Modell.
+      const retryHint = retryMatch
+        ? ` ${aboLabel} nennt eine Wartezeit von ~${retryMatch[1]} Sekunden.`
+        : "";
       return (
-        `${label}: Nutzungslimit deines ${aboLabel}-Abos erreicht${limitDetail}.${retryDetail} ` +
-        `Dein ${aboLabel}-Abo hat ein Nutzungs-Budget pro Zeitfenster, das bei ` +
-        `langen, werkzeugintensiven Recherchen schnell aufgebraucht ist. Das ` +
-        `Budget füllt sich automatisch wieder auf — bitte ein paar Minuten ` +
-        `warten oder die Anfrage etwas kürzer fassen.`
+        `${label}: Nutzungslimit deines ${aboLabel}-Abos erreicht${limitDetail}.${retryHint} ` +
+        `Das Abo-Budget setzt sich nicht sofort zurück, sondern erst nach einem ` +
+        `festen Zeitfenster (bei Pro oft mehrere Stunden — die genaue Restzeit ` +
+        `steht in der ${aboLabel}-App unter „Nutzung"). Für die Zwischenzeit ` +
+        `kannst du in den Einstellungen → Modelle auf ein lokales Ollama-Modell ` +
+        `umschalten (kostenlos, ohne Limit).`
       );
     }
 
