@@ -107,7 +107,7 @@ function stripComments(src) {
  * Extract `defineTool({ ... })` blocks from a TS source string.
  * Returns an array of { name, description, parameters }.
  */
-function extractTools(rawSource) {
+export function extractTools(rawSource) {
   const source = stripComments(rawSource);
   const tools = [];
   let i = 0;
@@ -461,4 +461,5 @@ function main() {
   console.log(`[tools:doc] wrote ${OUT_PATH} (${total} tools across ${ordered.length} files)`);
 }
 
-main();
+import { argv } from "node:process";
+if (argv[1] && import.meta.url === `file://${argv[1]}`) main();
