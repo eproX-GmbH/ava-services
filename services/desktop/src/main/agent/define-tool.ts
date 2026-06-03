@@ -14,6 +14,44 @@ import { normaliseToolArgs } from "./tool-arg-normalizer";
 // schema is documentation, and writing it by hand lets us include
 // constraints (enum values, max length) the model actually uses.
 
+// v0.1.375 — Einheitliches Resultat, wenn der Nutzer eine Aktion im
+// Bestätigungsdialog (ask_user_choice → „Verwerfen") ABLEHNT. Vorher gaben
+// die Confirm-Tools nur ein nacktes `{ applied: false }` zurück — für das
+// Modell ununterscheidbar von einem stillen Fehler, weshalb es die Aktion
+// 2–3× erneut versuchte. Dieses Marker-Feld macht die Ablehnung explizit:
+//   - das Modell liest eine klare Anweisung (NICHT erneut versuchen),
+//   - der Orchestrator erkennt `userDeclined` und sperrt Wiederholungen
+//     desselben Tools im selben Turn hart (siehe runLoop).
+export interface UserDeclinedResult {
+  applied: false;
+  userDeclined: true;
+  message: string;
+}
+
+export function userDeclined(action?: string): UserDeclinedResult {
+  const what = action ? `„${action}"` : "diese Aktion";
+  return {
+    applied: false,
+    userDeclined: true,
+    message:
+      `Der Nutzer hat ${what} im Bestätigungsdialog ABGELEHNT. ` +
+      `Führe die Aktion NICHT erneut aus und schlage sie nicht erneut vor ` +
+      `(auch nicht mit leicht veränderten Argumenten), außer der Nutzer ` +
+      `fordert es in einer neuen Nachricht ausdrücklich. Bestätige kurz, ` +
+      `dass du die Aktion verworfen hast, und mach mit dem Rest der Aufgabe ` +
+      `weiter bzw. frag, was er stattdessen möchte.`,
+  };
+}
+
+/** Type-guard: erkennt das standardisierte Ablehnungs-Resultat. */
+export function isUserDeclined(value: unknown): value is UserDeclinedResult {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    (value as { userDeclined?: unknown }).userDeclined === true
+  );
+}
+
 export interface DefineToolArgs<TArgs, TResult> {
   name: string;
   description: string;

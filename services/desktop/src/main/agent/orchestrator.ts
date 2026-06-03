@@ -15,6 +15,7 @@ import { selectToolsForTurn } from "./tool-selection";
 import { buildMetaTools, ALWAYS_ON_CORE_TOOL_NAMES } from "./tools/meta";
 import type { ConversationToolLoadState } from "./tools/meta";
 import { buildSystemPrompt } from "./prompts";
+import { isUserDeclined } from "./define-tool";
 import { UiBridge, type PendingChoice } from "./ui-bridge";
 import type { LlmProviderManager, LlmStreamToolCall } from "./providers";
 import type { Conversation, Tool, ToolContext } from "./types";
@@ -797,6 +798,16 @@ export class AgentOrchestrator extends EventEmitter {
       { count: number; failures: number }
     >();
 
+    // v0.1.375 — Pro Turn: Tools, deren Aktion der Nutzer im Confirm-Dialog
+    // bereits ABGELEHNT hat. Lehnt der Nutzer z. B. „Company anlegen" ab,
+    // versuchte der Agent es vorher 2–3× erneut (auch mit leicht anderen
+    // Args) und interpretierte das nackte `{ applied: false }` als stillen
+    // Fehler. Jetzt sperren wir Wiederholungen desselben Tools im selben
+    // Turn hart — eine Ablehnung muss beim ersten Mal greifen. Reset bei
+    // jedem neuen Turn (= neue User-Nachricht), damit ein späteres „doch,
+    // leg sie an" wieder erlaubt ist.
+    const declinedTools = new Set<string>();
+
     // v0.1.346 — last system message built in the loop, reused for the
     // graceful wrap-up turn if the step budget is reached.
     let lastSystemMessage: AgentMessage | null = null;
@@ -946,6 +957,37 @@ export class AgentOrchestrator extends EventEmitter {
             toolCall: call,
           });
 
+          // v0.1.375 — Decline-Wächter. Hat der Nutzer die Aktion dieses
+          // Tools in diesem Turn schon im Confirm-Dialog abgelehnt, führen
+          // wir es NICHT erneut aus (auch nicht mit veränderten Args).
+          // Eine Ablehnung muss beim ERSTEN Mal greifen — vorher hakte der
+          // Agent 2–3× nach.
+          if (declinedTools.has(call.name)) {
+            const msg =
+              `Der Nutzer hat die Aktion von '${call.name}' in diesem ` +
+              `Verlauf bereits im Bestätigungsdialog ABGELEHNT. Ich führe ` +
+              `sie nicht erneut aus. Frag NICHT noch einmal nach demselben ` +
+              `und versuche es nicht mit veränderten Argumenten. Bestätige ` +
+              `die Ablehnung und mach mit dem Rest der Aufgabe weiter oder ` +
+              `frag, was der Nutzer stattdessen möchte.`;
+            this.appendMessage(conversation, {
+              id: randomUUID(),
+              role: "tool",
+              content: JSON.stringify({ error: msg, userDeclined: true }),
+              toolCallId: call.id,
+              createdAt: Date.now(),
+            });
+            this.emitFrame({
+              kind: "tool-result",
+              requestId,
+              conversationId: conversation.id,
+              toolCallId: call.id,
+              ok: false,
+              preview: `${call.name}: vom Nutzer bereits abgelehnt`,
+            });
+            continue;
+          }
+
           // v0.1.227 — Anti-Loop-Wächter. Wenn das LLM denselben
           // Tool-Call mit denselben Args dreimal hintereinander
           // schickt UND mindestens zweimal davon mit Validation- oder
@@ -998,6 +1040,9 @@ export class AgentOrchestrator extends EventEmitter {
           );
           if (!result.ok) sigState.failures += 1;
           toolCallSignatures.set(callSignature, sigState);
+          // v0.1.375 — Ablehnung merken, damit ein erneuter Aufruf desselben
+          // Tools in diesem Turn oben hart abgefangen wird.
+          if (result.declined) declinedTools.add(call.name);
 
           this.appendMessage(conversation, {
             id: randomUUID(),
@@ -1228,7 +1273,13 @@ export class AgentOrchestrator extends EventEmitter {
     requestId: string,
     conversationId: string,
     autonomousMode: boolean = false,
-  ): Promise<{ ok: boolean; content: string; preview: string }> {
+  ): Promise<{
+    ok: boolean;
+    content: string;
+    preview: string;
+    /** v0.1.375 — true, wenn der Nutzer die Aktion im Confirm-Dialog ablehnte. */
+    declined?: boolean;
+  }> {
     // v0.1.299 — Im Auto-Triage-Modus die ask_user_*-Tools hart
     // sperren BEVOR wir in Allowlist/Repair-Logik einsteigen. Sonst
     // würde der Agent in pendingChoices warten und nie zurückkehren
@@ -1331,6 +1382,7 @@ export class AgentOrchestrator extends EventEmitter {
         ok: true,
         content: JSON.stringify(result),
         preview: tool.preview(result),
+        ...(isUserDeclined(result) ? { declined: true } : {}),
       };
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);

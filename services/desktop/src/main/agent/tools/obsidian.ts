@@ -1,5 +1,5 @@
 import * as yup from "yup";
-import { defineTool } from "../define-tool";
+import { defineTool, userDeclined } from "../define-tool";
 import type { Tool } from "../types";
 import type { KnowledgeManager } from "../../knowledge/manager";
 
@@ -455,7 +455,7 @@ export function buildObsidianTools(deps: {
         ],
         ctx.signal,
       );
-      if (value !== "delete") return { applied: false };
+      if (value !== "delete") return userDeclined();
       try {
         await km.deleteItem("obsidian", args.path);
         return { applied: true };

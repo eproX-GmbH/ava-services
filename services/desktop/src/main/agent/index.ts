@@ -7,7 +7,7 @@ export type { AgentOrchestratorOptions } from "./orchestrator";
 export { ToolRegistry } from "./tool-registry";
 export type { Tool, ToolContext, OllamaToolSpec } from "./types";
 export { GatewayClient } from "./gateway-client";
-export { defineTool } from "./define-tool";
+export { defineTool, userDeclined, isUserDeclined } from "./define-tool";
 export { buildReadOnlyRegistry } from "./tools";
 export { LlmProviderManager, ProviderConfigStore } from "./providers";
 export type { KeyValidation } from "./providers";

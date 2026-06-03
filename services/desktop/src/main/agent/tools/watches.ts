@@ -1,5 +1,5 @@
 import * as yup from "yup";
-import { defineTool } from "../define-tool";
+import { defineTool, userDeclined } from "../define-tool";
 import type { Tool } from "../types";
 import type { WatchStore } from "../watch-store";
 import type {
@@ -158,7 +158,7 @@ export function buildWatchesTools(deps: WatchesToolDeps): Tool[] {
         ],
         ctx.signal,
       );
-      if (value !== "accept") return { applied: false };
+      if (value !== "accept") return userDeclined();
       try {
         const row = deps.store.add({
           prompt: args.prompt,

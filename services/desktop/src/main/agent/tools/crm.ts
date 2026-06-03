@@ -14,7 +14,7 @@
 // LLM never sees access tokens; tools return only metadata.
 
 import * as yup from "yup";
-import { defineTool } from "../define-tool";
+import { defineTool, userDeclined } from "../define-tool";
 import type { Tool } from "../types";
 import type { GatewayClient } from "../gateway-client";
 import type { CrmManager } from "../../crm";
@@ -439,7 +439,7 @@ export function buildCrmTools(deps: CrmToolDeps): Tool[] {
         ],
         c.signal,
       );
-      if (value !== "link") return { applied: false as const };
+      if (value !== "link") return userDeclined();
       try {
         await gateway.request(
           `/v1/companies/${encodeURIComponent(args.companyId)}/crm/links`,
@@ -610,7 +610,7 @@ export function buildCrmTools(deps: CrmToolDeps): Tool[] {
         ],
         ctx.signal,
       );
-      if (value !== "apply") return { applied: false };
+      if (value !== "apply") return userDeclined();
 
       const result = await updateHubspotObject(crm, {
         objectType: "companies",
@@ -743,7 +743,7 @@ export function buildCrmTools(deps: CrmToolDeps): Tool[] {
           ],
           ctx.signal,
         );
-        if (value !== "apply") return { applied: false };
+        if (value !== "apply") return userDeclined();
 
         const result = await updateHubspotObject(crm, {
           objectType,
@@ -941,7 +941,7 @@ export function buildCrmTools(deps: CrmToolDeps): Tool[] {
         ],
         ctx.signal,
       );
-      if (value !== "apply") return { applied: false };
+      if (value !== "apply") return userDeclined();
       await associateHubspotObjects(crm, {
         fromObjectType: args.fromObjectType as HubspotObjectType,
         fromObjectId: args.fromObjectId,
@@ -990,7 +990,7 @@ export function buildCrmTools(deps: CrmToolDeps): Tool[] {
         ],
         ctx.signal,
       );
-      if (value !== "apply") return { applied: false };
+      if (value !== "apply") return userDeclined();
       await disassociateHubspotObjects(crm, {
         fromObjectType: args.fromObjectType as HubspotObjectType,
         fromObjectId: args.fromObjectId,
@@ -1080,7 +1080,7 @@ export function buildCrmTools(deps: CrmToolDeps): Tool[] {
         ],
         ctx.signal,
       );
-      if (value !== "create") return { applied: false };
+      if (value !== "create") return userDeclined();
       const result = await createHubspotObject(crm, {
         objectType: "notes",
         properties: {
@@ -1253,7 +1253,7 @@ export function buildCrmTools(deps: CrmToolDeps): Tool[] {
         ],
         ctx.signal,
       );
-      if (value !== "create") return { applied: false };
+      if (value !== "create") return userDeclined();
       const result = await createHubspotObject(crm, {
         objectType,
         properties,
@@ -1356,7 +1356,7 @@ export function buildCrmTools(deps: CrmToolDeps): Tool[] {
         ],
         ctx.signal,
       );
-      if (value !== "create") return { applied: false };
+      if (value !== "create") return userDeclined();
       const properties: Record<string, string> = {
         hs_task_subject: args.subject,
         hs_task_status: "NOT_STARTED",
@@ -1491,7 +1491,7 @@ export function buildCrmTools(deps: CrmToolDeps): Tool[] {
         ],
         ctx.signal,
       );
-      if (value !== "complete") return { applied: false };
+      if (value !== "complete") return userDeclined();
       const result = await updateHubspotObject(crm, {
         objectType: "tasks",
         objectId: args.taskId,
@@ -2175,7 +2175,7 @@ export function buildCrmTools(deps: CrmToolDeps): Tool[] {
         ],
         ctx.signal,
       );
-      if (decision !== "apply") return { applied: false };
+      if (decision !== "apply") return userDeclined();
 
       // 7) Schreiben.
       let companyId = hubspotId;
@@ -2404,7 +2404,7 @@ export function buildCrmTools(deps: CrmToolDeps): Tool[] {
         ],
         ctx.signal,
       );
-      if (value !== "create") return { applied: false };
+      if (value !== "create") return userDeclined();
       let createdId: string;
       try {
         const result = await createHubspotObject(crm, {
@@ -2534,7 +2534,7 @@ export function buildCrmTools(deps: CrmToolDeps): Tool[] {
         ],
         ctx.signal,
       );
-      if (value !== "create") return { applied: false };
+      if (value !== "create") return userDeclined();
       let createdId: string;
       try {
         const r = await createHubspotObject(crm, {
@@ -2681,7 +2681,7 @@ export function buildCrmTools(deps: CrmToolDeps): Tool[] {
         ],
         ctx.signal,
       );
-      if (value !== "create") return { applied: false };
+      if (value !== "create") return userDeclined();
       try {
         const result = await createHubspotObject(crm, {
           objectType: "deals",
@@ -2824,7 +2824,7 @@ export function buildCrmTools(deps: CrmToolDeps): Tool[] {
         ],
         ctx.signal,
       );
-      if (value !== "apply") return { applied: false, changedFields: 0 };
+      if (value !== "apply") return { ...userDeclined(), changedFields: 0 };
       try {
         await updateHubspotObject(crm, {
           objectType: "companies",
@@ -2896,7 +2896,7 @@ export function buildCrmTools(deps: CrmToolDeps): Tool[] {
           ],
           ctx.signal,
         );
-        if (value !== "delete") return { applied: false };
+        if (value !== "delete") return userDeclined();
         try {
           await deleteHubspotObject(crm, { objectType, objectId: args.objectId });
           return { applied: true };

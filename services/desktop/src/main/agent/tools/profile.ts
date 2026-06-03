@@ -1,5 +1,5 @@
 import * as yup from "yup";
-import { defineTool } from "../define-tool";
+import { defineTool, userDeclined } from "../define-tool";
 import type { Tool } from "../types";
 import type { UserProfileStore } from "../profile-store";
 import type {
@@ -223,7 +223,7 @@ export function buildProfileTools(deps: ProfileToolDeps): Tool[] {
         ctx.signal,
       );
       if (value !== "accept") {
-        return { applied: false };
+        return userDeclined();
       }
       const next = deps.store.set(args.patch as Partial<UserProfile>);
       deps.onChanged();

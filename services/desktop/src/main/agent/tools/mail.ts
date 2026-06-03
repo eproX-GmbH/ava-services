@@ -20,7 +20,7 @@
 // destruktiv-irreversibel — bewusst gewartet.
 
 import * as yup from "yup";
-import { defineTool } from "../define-tool";
+import { defineTool, userDeclined } from "../define-tool";
 import type { Tool } from "../types";
 import type { MailSupervisor } from "../../mail/supervisor";
 import type {
@@ -211,7 +211,7 @@ export function buildMailTools(deps: MailToolDeps): Tool[] {
           ],
           ctx.signal,
         );
-        if (value !== "send") return { sent: false, declined: true };
+        if (value !== "send") return { sent: false, declined: true, userDeclined: true as const };
       }
 
       try {
@@ -285,7 +285,7 @@ export function buildMailTools(deps: MailToolDeps): Tool[] {
           ],
           ctx.signal,
         );
-        if (value !== "send") return { sent: false, declined: true };
+        if (value !== "send") return { sent: false, declined: true, userDeclined: true as const };
       }
 
       const subject = /^re:/i.test(source.subject)
@@ -384,7 +384,7 @@ export function buildMailTools(deps: MailToolDeps): Tool[] {
           ],
           ctx.signal,
         );
-        if (value !== "send") return { sent: false, declined: true };
+        if (value !== "send") return { sent: false, declined: true, userDeclined: true as const };
       }
 
       const subject = /^fwd:|^wg:/i.test(source.subject)
@@ -527,7 +527,7 @@ export function buildMailTools(deps: MailToolDeps): Tool[] {
         ],
         ctx.signal,
       );
-      if (value !== "add") return { added: false };
+      if (value !== "add") return { added: false, userDeclined: true as const };
       const entry = await sup.getStore().addAllowlistEntry({
         pattern: args.pattern,
         label: args.label,

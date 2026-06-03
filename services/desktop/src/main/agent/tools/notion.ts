@@ -1,5 +1,5 @@
 import * as yup from "yup";
-import { defineTool } from "../define-tool";
+import { defineTool, userDeclined } from "../define-tool";
 import type { Tool } from "../types";
 import type { KnowledgeManager } from "../../knowledge/manager";
 
@@ -487,7 +487,7 @@ export function buildNotionTools(deps: {
         ],
         ctx.signal,
       );
-      if (value !== "archive") return { applied: false };
+      if (value !== "archive") return userDeclined();
       try {
         await km.deleteItem("notion", args.pageId);
         return { applied: true };

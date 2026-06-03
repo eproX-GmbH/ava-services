@@ -18,7 +18,7 @@
 // Confirm dort.
 
 import * as yup from "yup";
-import { defineTool } from "../define-tool";
+import { defineTool, userDeclined } from "../define-tool";
 import type { Tool } from "../types";
 import type { ScheduledJobsSupervisor } from "../../scheduler/supervisor";
 import {
@@ -224,7 +224,7 @@ export function buildSchedulerTools(deps: SchedulerToolDeps): Tool[] {
         ],
         ctx.signal,
       );
-      if (value !== "create") return { applied: false };
+      if (value !== "create") return userDeclined();
 
       try {
         const job = await sup.createMailLoop({
@@ -388,7 +388,7 @@ export function buildSchedulerTools(deps: SchedulerToolDeps): Tool[] {
         ],
         ctx.signal,
       );
-      if (value !== "create") return { applied: false };
+      if (value !== "create") return userDeclined();
 
       // expiresAt: bei recurring 1y voraus, bei one-shot 1d nach dueAt
       const expiresAt = recurring
