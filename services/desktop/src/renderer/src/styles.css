@@ -4829,6 +4829,32 @@ a.heartbeat-decision__company:hover {
   text-decoration: none;
 }
 
+/* Blockierender Zustand: Kontingent voll → AVA verarbeitet nichts mehr.
+   Laute, solide rote Voll-Fläche statt dezentem Tint, damit es unter dem
+   Header nicht übersehen werden kann. */
+.quota-banner--blocking {
+  background: var(--color-err, #ef4444);
+  border-bottom-color: #b91c1c;
+  color: #ffffff;
+  font-weight: 500;
+}
+:root.dark .quota-banner--blocking {
+  background: #dc2626;
+}
+.quota-banner--blocking .quota-banner__icon {
+  color: #ffffff;
+}
+.quota-banner--blocking .quota-banner__msg strong {
+  color: #ffffff;
+}
+.quota-banner--blocking .quota-banner__cta {
+  background: #ffffff;
+  color: #b91c1c;
+}
+.quota-banner--blocking .quota-banner__cta:hover {
+  background: #fee2e2;
+}
+
 .linkedin-active-banner {
   position: relative;
   display: flex;

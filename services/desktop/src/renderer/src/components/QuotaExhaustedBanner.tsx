@@ -26,6 +26,15 @@ export function QuotaExhaustedBanner() {
   const hasParked = (data.parkedCount ?? 0) > 0;
   if (!exhausted && !hasParked) return null;
 
+  // „Blockierend" = das Kontingent ist voll. In diesem Zustand verarbeitet
+  // AVA keine neuen Firmen mehr — sie bleiben in der Firmenübersicht auf
+  // „in Bearbeitung" (gelb) hängen. Das ist der Fall, den der Nutzer
+  // unübersehbar gemeldet bekommen soll: laute, rote Voll-Fehlermeldung,
+  // role="alert". Der reine „Reste aus einem früheren Lauf warten noch und
+  // laufen automatisch weiter"-Fall (under quota + parked) bleibt dagegen
+  // die ruhige, informative Variante.
+  const blocking = exhausted;
+
   const periodLabel = labelForPeriod(data.periodKey);
   const message = renderMessage({
     exhausted,
@@ -34,11 +43,15 @@ export function QuotaExhaustedBanner() {
     limit: data.limit,
     parkedCount: data.parkedCount ?? 0,
     periodLabel,
+    periodKey: data.periodKey,
     periodEnd: data.periodEnd,
   });
 
   return (
-    <div className="quota-banner" role="status">
+    <div
+      className={`quota-banner${blocking ? " quota-banner--blocking" : ""}`}
+      role={blocking ? "alert" : "status"}
+    >
       <span className="quota-banner__icon" aria-hidden>
         <BoltIcon />
       </span>
@@ -57,6 +70,7 @@ function renderMessage({
   limit,
   parkedCount,
   periodLabel,
+  periodKey,
   periodEnd,
 }: {
   exhausted: boolean;
@@ -65,26 +79,27 @@ function renderMessage({
   limit: number;
   parkedCount: number;
   periodLabel: string;
+  periodKey: string;
   periodEnd: string | null;
 }) {
-  if (exhausted && hasParked) {
-    const dateLabel = formatPeriodEnd(periodEnd);
-    return (
-      <>
-        Dein Firmen-Kontingent ist erschöpft (<strong>{used}/{limit}</strong>
-        {periodLabel ? ` ${periodLabel}` : ""}). <strong>{parkedCount} Firmen</strong>
-        {" "}wurden importiert und warten auf Verarbeitung — sie laufen
-        automatisch los, sobald du upgradest{dateLabel ? ` oder die Periode am ${dateLabel} zurückgesetzt wird` : ""}.
-      </>
-    );
-  }
+  // Wie sich das Kontingent „erholt": Lifetime-Kontingent (Free) wird nie
+  // automatisch zurückgesetzt — nur ein Upgrade hilft. Monats-Perioden
+  // setzen sich am periodEnd zurück.
+  const recovery = recoveryHint(periodKey, periodEnd);
+
   if (exhausted) {
     return (
       <>
-        Dein Firmen-Kontingent ist erreicht (<strong>{used}/{limit}</strong>
-        {periodLabel ? ` ${periodLabel}` : ""}). Neue Importe werden zwar
-        akzeptiert, aber bis zur Periodenrücksetzung oder einem Upgrade
-        nicht verarbeitet.
+        <strong>Kontingent aufgebraucht</strong> (<strong>{used}/{limit}</strong>
+        {periodLabel ? ` ${periodLabel}` : ""}). AVA verarbeitet aktuell{" "}
+        <strong>keine neuen Firmen</strong> mehr — Importe bleiben in der
+        Firmenübersicht auf „in Bearbeitung" (gelb) hängen
+        {hasParked ? (
+          <>
+            {" "}(<strong>{parkedCount}</strong> warten bereits)
+          </>
+        ) : null}
+        . Das bleibt so, {recovery}
       </>
     );
   }
@@ -95,6 +110,18 @@ function renderMessage({
       Das passiert automatisch innerhalb der nächsten Minuten.
     </>
   );
+}
+
+/** Satz-Fortsetzung nach „Das bleibt so, …" — abhängig vom Perioden-Typ. */
+function recoveryHint(periodKey: string, periodEnd: string | null): string {
+  if (periodKey === "lifetime") {
+    return "bis du deinen Tarif upgradest.";
+  }
+  const dateLabel = formatPeriodEnd(periodEnd);
+  if (dateLabel) {
+    return `bis die Periode am ${dateLabel} zurückgesetzt wird oder du deinen Tarif upgradest.`;
+  }
+  return "bis sich dein Kontingent zurücksetzt oder du deinen Tarif upgradest.";
 }
 
 function labelForPeriod(periodKey: string): string {
