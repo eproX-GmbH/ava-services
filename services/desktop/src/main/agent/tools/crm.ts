@@ -74,6 +74,9 @@ const SINGULAR: Record<HubspotObjectType, string> = {
   deals: "deal",
   notes: "note",
   tasks: "task",
+  calls: "call",
+  emails: "email",
+  meetings: "meeting",
 };
 
 export function buildCrmTools(deps: CrmToolDeps): Tool[] {
@@ -1093,6 +1096,176 @@ export function buildCrmTools(deps: CrmToolDeps): Tool[] {
     },
   });
 
+  // v0.1.374 — Aktivität/Engagement protokollieren (Anruf/E-Mail/Meeting/
+  // Notiz). Vorher konnte AVA nur „Notiz" — wenn aus dem Kontext klar ist,
+  // dass es ein protokollierter Anruf / eine protokollierte E-Mail / ein
+  // Meeting ist, soll der passende HubSpot-Aktivitätstyp benutzt werden.
+  const ACTIVITY_VALUES = ["call", "email", "meeting", "note"] as const;
+  const DIRECTION_VALUES = ["inbound", "outbound"] as const;
+  const ACTIVITY_TO_OBJECT: Record<
+    (typeof ACTIVITY_VALUES)[number],
+    HubspotObjectType
+  > = { call: "calls", email: "emails", meeting: "meetings", note: "notes" };
+
+  const logActivityTool = defineTool({
+    name: "crm_log_hubspot_activity",
+    description:
+      "Protokolliert eine Aktivität in HubSpot und verknüpft sie SOFORT mit Company/Contact/Deal. WICHTIG: Wähle den `activity`-Typ AUS DEM KONTEXT — NICHT pauschal eine Notiz anlegen: protokollierte E-Mail → `email`, protokollierter Anruf → `call`, Meeting/Termin → `meeting`, sonstige Aktennotiz → `note`. So landen Aktivitäten in HubSpot in der richtigen Spur (E-Mail-/Anruf-/Meeting-Timeline) statt als generische Notiz. PROPOSE-AND-CONFIRM via ask_user_choice. Für reine To-Dos/Wiedervorlagen nutze stattdessen crm_create_hubspot_task.",
+    parameters: {
+      type: "object",
+      required: ["activity", "body", "associations"],
+      properties: {
+        activity: {
+          type: "string",
+          enum: [...ACTIVITY_VALUES],
+          description:
+            "Aktivitätstyp aus dem Kontext: 'email' (E-Mail protokollieren), 'call' (Anruf), 'meeting' (Termin), 'note' (sonstige Notiz).",
+        },
+        title: {
+          type: "string",
+          description:
+            "Betreff/Titel (E-Mail-Betreff, Anruf-/Meeting-Titel). Bei 'note' optional/ignoriert.",
+        },
+        body: {
+          type: "string",
+          description:
+            "Inhalt: E-Mail-Text / Gesprächsnotiz / Meeting-Agenda / Notiztext. Plain oder einfaches HTML.",
+        },
+        direction: {
+          type: "string",
+          enum: [...DIRECTION_VALUES],
+          description:
+            "Nur für call/email: 'inbound' (eingehend) oder 'outbound' (ausgehend). Wenn unklar, weglassen.",
+        },
+        timestamp: {
+          type: "string",
+          description:
+            "Optional ISO-Timestamp (Aktivitäts-/Anruf-/E-Mail-Zeit bzw. Meeting-Start). Default jetzt.",
+        },
+        endTime: {
+          type: "string",
+          description: "Nur für meeting: optionaler ISO-Endzeitpunkt.",
+        },
+        associations: {
+          type: "array",
+          minItems: 1,
+          description:
+            "Mindestens 1 Verknüpfung. Format: {objectType: 'companies'|'contacts'|'deals', objectId: '...'}",
+          items: {
+            type: "object",
+            required: ["objectType", "objectId"],
+            properties: {
+              objectType: { type: "string", enum: [...ASSOC_TARGET_VALUES] },
+              objectId: { type: "string" },
+            },
+          },
+        },
+      },
+    },
+    schema: yup
+      .object({
+        activity: yup
+          .string()
+          .oneOf([...ACTIVITY_VALUES])
+          .required(),
+        title: yup.string().trim().max(500).optional(),
+        body: yup.string().trim().min(1).max(50_000).required(),
+        direction: yup
+          .string()
+          .oneOf([...DIRECTION_VALUES])
+          .optional(),
+        timestamp: yup.string().trim().optional(),
+        endTime: yup.string().trim().optional(),
+        associations: yup
+          .array()
+          .of(
+            yup
+              .object({
+                objectType: yup
+                  .string()
+                  .oneOf([...ASSOC_TARGET_VALUES])
+                  .required(),
+                objectId: yup.string().trim().min(1).required(),
+              })
+              .required(),
+          )
+          .min(1)
+          .required(),
+      })
+      .noUnknown(true),
+    preview: (r: { applied: boolean; id?: string; label?: string }) =>
+      r.applied ? `${r.label ?? "Aktivität"} protokolliert (${r.id})` : "Verworfen",
+    run: async (args, ctx) => {
+      const ts = args.timestamp ?? new Date().toISOString();
+      const objectType = ACTIVITY_TO_OBJECT[args.activity];
+      const label = OBJECT_LABEL[objectType];
+      let properties: Record<string, string>;
+      switch (args.activity) {
+        case "call":
+          properties = {
+            hs_call_title: args.title ?? "Anruf",
+            hs_call_body: args.body,
+            hs_call_status: "COMPLETED",
+            hs_timestamp: ts,
+            ...(args.direction
+              ? {
+                  hs_call_direction:
+                    args.direction === "inbound" ? "INBOUND" : "OUTBOUND",
+                }
+              : {}),
+          };
+          break;
+        case "email":
+          properties = {
+            hs_email_subject: args.title ?? "E-Mail",
+            hs_email_text: args.body,
+            hs_email_status: "SENT",
+            hs_timestamp: ts,
+            // HubSpot-Enum: ausgehend = "EMAIL", eingehend = "INCOMING_EMAIL".
+            hs_email_direction:
+              args.direction === "inbound" ? "INCOMING_EMAIL" : "EMAIL",
+          };
+          break;
+        case "meeting":
+          properties = {
+            hs_meeting_title: args.title ?? "Meeting",
+            hs_meeting_body: args.body,
+            hs_meeting_start_time: ts,
+            hs_timestamp: ts,
+            ...(args.endTime ? { hs_meeting_end_time: args.endTime } : {}),
+          };
+          break;
+        default: // note
+          properties = { hs_note_body: args.body, hs_timestamp: ts };
+      }
+      const assocSummary = args.associations
+        .map((a) => `${a.objectType.replace(/s$/, "")} ${a.objectId}`)
+        .join(", ");
+      const value = await ctx.ui.askChoice(
+        `Ich protokolliere in HubSpot eine Aktivität vom Typ **${label}**${
+          args.title ? ` („${args.title}")` : ""
+        }:\n\n${args.body.slice(0, 1500)}${
+          args.body.length > 1500 ? "\n\n[…gekürzt]" : ""
+        }\n\nVerknüpft mit: ${assocSummary}`,
+        [
+          { value: "create", label: "Protokollieren", description: "POST wird gesendet" },
+          { value: "cancel", label: "Verwerfen" },
+        ],
+        ctx.signal,
+      );
+      if (value !== "create") return { applied: false };
+      const result = await createHubspotObject(crm, {
+        objectType,
+        properties,
+        associations: args.associations.map((a) => ({
+          toObjectType: a.objectType as HubspotObjectType,
+          toObjectId: a.objectId,
+        })),
+      });
+      return { applied: true, id: result.id, label };
+    },
+  });
+
   const createTaskTool = defineTool({
     name: "crm_create_hubspot_task",
     description:
@@ -1510,8 +1683,10 @@ export function buildCrmTools(deps: CrmToolDeps): Tool[] {
       if (city) props.city = city;
       const fy = str(structured.foundingYear);
       if (fy) props.founded_year = fy;
-      const purpose = str(structured.corporatePurpose);
-      if (purpose) props.description = purpose.slice(0, 1000);
+      // v0.1.374 — `description` („Über uns") wird NICHT mehr hier aus dem
+      // Unternehmensgegenstand gesetzt. Primär soll das Firmenprofil aus
+      // dem company-profile-Producer rein; der Gegenstand ist nur Fallback.
+      // Siehe zentralen Beschreibungs-Block weiter unten.
       // Deutsche Handelsregister-Daten ⇒ Land = Deutschland (Default).
       props.country = "Deutschland";
       // Geschäftsführer → Kontakt-Kandidaten.
@@ -1531,13 +1706,9 @@ export function buildCrmTools(deps: CrmToolDeps): Tool[] {
       }
     }
 
-    // ---- Beschreibung-Fallbacks (Profile) ----
+    // ---- Profile als Quelle markieren (Beschreibung zentral unten) ----
     if (profile) {
       sources.push("profile");
-      if (!props.description) {
-        const bp = str(profile.businessPurpose) ?? str(profile.profile);
-        if (bp) props.description = bp.slice(0, 1000);
-      }
     }
 
     // ---- Website / Domain / Adresse-Fallback / Branche / Telefon ----
@@ -1558,10 +1729,6 @@ export function buildCrmTools(deps: CrmToolDeps): Tool[] {
       if (!props.address) {
         const serpAddr = str(serp?.address);
         if (serpAddr) props.address = serpAddr;
-      }
-      if (!props.description) {
-        const wd = str(website.website?.description);
-        if (wd) props.description = wd.slice(0, 1000);
       }
       industryCandidate = industryCandidate ?? str(serp?.category);
       const phone = str(serp?.phone);
@@ -1613,11 +1780,26 @@ export function buildCrmTools(deps: CrmToolDeps): Tool[] {
     if (keywordList.length > 0) {
       sources.push("keywords");
       industryCandidate = industryCandidate ?? keywordList[0];
-      if (!props.description) {
-        props.description = `Schwerpunkte: ${keywordList.slice(0, 20).join(", ")}`.slice(
-          0,
-          1000,
-        );
+    }
+
+    // ---- Beschreibung („Über uns") — v0.1.374 ----
+    // PRIORITÄT (Nutzerwunsch): PRIMÄR das Firmenprofil aus dem
+    // company-profile-Producer (`profile.profile`), erst danach der
+    // Handelsregister-Unternehmensgegenstand, dann weitere Fallbacks.
+    // Cap auf 5000 Zeichen, damit ein mehrabsätziges Profil nicht
+    // abgeschnitten wird (HubSpots `description` fasst weit mehr).
+    {
+      const descCandidates = [
+        str(profile?.profile), // 1. Firmenprofil (company-profile-Producer)
+        str(structured?.corporatePurpose), // 2. Unternehmensgegenstand (HR)
+        str(profile?.businessPurpose), // 3.
+        str(website?.website?.description), // 4. Website-Meta-Description
+        keywordList.length > 0
+          ? `Schwerpunkte: ${keywordList.slice(0, 20).join(", ")}`
+          : undefined, // 5. Notnagel aus Keywords
+      ].filter((s): s is string => Boolean(s));
+      if (descCandidates[0]) {
+        props.description = descCandidates[0].slice(0, 5000);
       }
     }
 
@@ -1733,7 +1915,7 @@ export function buildCrmTools(deps: CrmToolDeps): Tool[] {
   const syncCompanyTool = defineTool({
     name: "crm_sync_hubspot_company_from_ava",
     description:
-      "VOLL-SYNC einer AVA-Firma nach HubSpot in EINEM Schritt — der bevorzugte Weg, sobald der Nutzer eine in AVA bekannte Firma in HubSpot anlegen, aktualisieren oder anreichern will. Holt automatisch ALLE AVA-Daten (Stammdaten, Structured-Content, Profil, Website/SERP, Publikationen, Keywords, Kontakte) und befüllt die HubSpot-Felder: name, address, zip, city, country, numberofemployees (aus letztem Jahresabschluss), annualrevenue, founded_year, description (Unternehmensgegenstand), website/domain, phone, industry (gegen HubSpots Branchen-Enum gematcht). Legt zusätzlich Geschäftsführer + Ansprechpartner als verknüpfte Contacts an (dedupliziert). Alles hinter EINER Sammel-Bestätigung — KEIN Feld-für-Feld-Nachfragen. Wenn keine `hubspotCompanyId` gegeben ist, sucht das Tool selbst nach Dubletten und fragt ggf. welche Firma gemeint ist bzw. legt neu an. Vorher die AVA-companyId via `company_search` auflösen. Wenn die Firma in AVA noch nicht recherchiert wurde, bricht das Tool mit klarem Hinweis ab.",
+      "VOLL-SYNC einer AVA-Firma nach HubSpot in EINEM Schritt — der bevorzugte Weg, sobald der Nutzer eine in AVA bekannte Firma in HubSpot anlegen, aktualisieren oder anreichern will. Holt automatisch ALLE AVA-Daten (Stammdaten, Structured-Content, Profil, Website/SERP, Publikationen, Keywords, Kontakte) und befüllt die HubSpot-Felder: name, address, zip, city, country, numberofemployees (aus letztem Jahresabschluss), annualrevenue, founded_year, description (PRIMÄR das Firmenprofil aus dem company-profile-Producer, sonst der Handelsregister-Unternehmensgegenstand), numberofemployees = HubSpots „Anzahl der Mitarbeiter“ (aus Jahresabschluss/Publikationen), annualrevenue = Umsatz (aus Jahresabschluss), website/domain, phone, industry (gegen HubSpots Branchen-Enum gematcht). Legt zusätzlich Geschäftsführer + Ansprechpartner als verknüpfte Contacts an (dedupliziert). Alles hinter EINER Sammel-Bestätigung — KEIN Feld-für-Feld-Nachfragen. Wenn keine `hubspotCompanyId` gegeben ist, sucht das Tool selbst nach Dubletten und fragt ggf. welche Firma gemeint ist bzw. legt neu an. Vorher die AVA-companyId via `company_search` auflösen. Wenn die Firma in AVA noch nicht recherchiert wurde, bricht das Tool mit klarem Hinweis ab.",
     parameters: {
       type: "object",
       required: ["avaCompanyId"],
@@ -2765,6 +2947,7 @@ export function buildCrmTools(deps: CrmToolDeps): Tool[] {
     createContactTool,
     createDealTool,
     createNoteTool,
+    logActivityTool,
     createTaskTool,
     deleteCompanyTool,
     deleteContactTool,
@@ -2783,4 +2966,7 @@ const OBJECT_LABEL: Record<HubspotObjectType, string> = {
   deals: "Deal",
   notes: "Note",
   tasks: "Task",
+  calls: "Anruf",
+  emails: "E-Mail",
+  meetings: "Meeting",
 };

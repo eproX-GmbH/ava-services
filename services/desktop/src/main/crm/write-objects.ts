@@ -25,7 +25,12 @@ export type HubspotObjectType =
   | "contacts"
   | "deals"
   | "notes"
-  | "tasks";
+  | "tasks"
+  // v0.1.374 — Engagement-/Aktivitäts-Typen, damit AVA echte
+  // „Anruf/E-Mail/Meeting protokollieren" statt nur „Notiz" anlegen kann.
+  | "calls"
+  | "emails"
+  | "meetings";
 
 // ---- Property-Schema (introspect) ----------------------------------------
 
@@ -101,6 +106,36 @@ function isUserEditableProperty(
       "hs_task_priority",
       "hs_task_type",
       "hs_task_completion_date",
+      "hs_timestamp",
+    ]),
+    // v0.1.374 — Engagement-Typen sind komplett hs_*-driven.
+    calls: new Set([
+      "hs_call_title",
+      "hs_call_body",
+      "hs_call_direction",
+      "hs_call_disposition",
+      "hs_call_duration",
+      "hs_call_status",
+      "hs_call_from_number",
+      "hs_call_to_number",
+      "hs_timestamp",
+    ]),
+    emails: new Set([
+      "hs_email_subject",
+      "hs_email_text",
+      "hs_email_html",
+      "hs_email_direction",
+      "hs_email_status",
+      "hs_email_headers",
+      "hs_timestamp",
+    ]),
+    meetings: new Set([
+      "hs_meeting_title",
+      "hs_meeting_body",
+      "hs_meeting_location",
+      "hs_meeting_start_time",
+      "hs_meeting_end_time",
+      "hs_meeting_outcome",
       "hs_timestamp",
     ]),
   };
@@ -498,6 +533,22 @@ const DEFAULT_ASSOC_TYPE_ID: Partial<
     contacts: 204, // task_to_contact
     deals: 216, // task_to_deal
   },
+  // v0.1.374 — Engagement→Objekt-Default-Assoc-IDs (HUBSPOT_DEFINED).
+  calls: {
+    companies: 182, // call_to_company
+    contacts: 194, // call_to_contact
+    deals: 206, // call_to_deal
+  },
+  emails: {
+    companies: 186, // email_to_company
+    contacts: 198, // email_to_contact
+    deals: 210, // email_to_deal
+  },
+  meetings: {
+    companies: 188, // meeting_to_company
+    contacts: 200, // meeting_to_contact
+    deals: 212, // meeting_to_deal
+  },
 };
 
 export async function createHubspotObject(
@@ -583,6 +634,9 @@ export async function previewHubspotObject(
     deals: ["dealname", "amount", "dealstage", "pipeline", "closedate"],
     notes: ["hs_note_body", "hs_timestamp"],
     tasks: ["hs_task_subject", "hs_task_status", "hs_task_priority", "hs_timestamp"],
+    calls: ["hs_call_title", "hs_call_body", "hs_call_direction", "hs_timestamp"],
+    emails: ["hs_email_subject", "hs_email_text", "hs_email_direction", "hs_timestamp"],
+    meetings: ["hs_meeting_title", "hs_meeting_body", "hs_meeting_start_time", "hs_timestamp"],
   };
   const url = new URL(
     `${HUBSPOT_API}/crm/v3/objects/${args.objectType}/${encodeURIComponent(args.objectId)}`,

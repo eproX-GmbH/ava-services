@@ -4,8 +4,8 @@ Auto-generiert von `services/desktop/scripts/generate-tools-md.mjs`.
 NICHT direkt bearbeiten — die Quelle der Wahrheit ist `services/desktop/src/main/agent/tools/*.ts`.
 Lauf via `pnpm -F @ava/desktop tools:doc` (oder automatisch via `build:typecheck`).
 
-Stand: 2026-06-02
-Anzahl Tools: 160
+Stand: 2026-06-03
+Anzahl Tools: 161
 
 ## Firmen (11)
 
@@ -537,7 +537,7 @@ Switch the active LLM provider. `kind` is one of 'ollama', 'openai', 'anthropic'
 
 _Parameter:_ keine.
 
-## CRM (29)
+## CRM (30)
 
 ### `connect_crm`
 
@@ -732,6 +732,14 @@ Listet alle CRM-Verknüpfungen einer AVA-Firma auf (CRM-Typ, externe ID, Anzeige
 _Parameter:_
 - `companyId: string` (required) — AVA Master-Data companyId.
 
+### `crm_log_hubspot_activity`
+
+_Datei:_ `services/desktop/src/main/agent/tools/crm.ts`
+
+Protokolliert eine Aktivität in HubSpot und verknüpft sie SOFORT mit Company/Contact/Deal. WICHTIG: Wähle den `activity`-Typ AUS DEM KONTEXT — NICHT pauschal eine Notiz anlegen: protokollierte E-Mail → `email`, protokollierter Anruf → `call`, Meeting/Termin → `meeting`, sonstige Aktennotiz → `note`. So landen Aktivitäten in HubSpot in der richtigen Spur (E-Mail-/Anruf-/Meeting-Timeline) statt als generische Notiz. PROPOSE-AND-CONFIRM via ask_user_choice. Für reine To-Dos/Wiedervorlagen nutze stattdessen crm_create_hubspot_task.
+
+_Parameter:_ keine.
+
 ### `crm_search_hubspot_companies`
 
 _Datei:_ `services/desktop/src/main/agent/tools/crm.ts`
@@ -774,7 +782,7 @@ _Parameter:_ keine.
 
 _Datei:_ `services/desktop/src/main/agent/tools/crm.ts`
 
-VOLL-SYNC einer AVA-Firma nach HubSpot in EINEM Schritt — der bevorzugte Weg, sobald der Nutzer eine in AVA bekannte Firma in HubSpot anlegen, aktualisieren oder anreichern will. Holt automatisch ALLE AVA-Daten (Stammdaten, Structured-Content, Profil, Website/SERP, Publikationen, Keywords, Kontakte) und befüllt die HubSpot-Felder: name, address, zip, city, country, numberofemployees (aus letztem Jahresabschluss), annualrevenue, founded_year, description (Unternehmensgegenstand), website/domain, phone, industry (gegen HubSpots Branchen-Enum gematcht). Legt zusätzlich Geschäftsführer + Ansprechpartner als verknüpfte Contacts an (dedupliziert). Alles hinter EINER Sammel-Bestätigung — KEIN Feld-für-Feld-Nachfragen. Wenn keine `hubspotCompanyId` gegeben ist, sucht das Tool selbst nach Dubletten und fragt ggf. welche Firma gemeint ist bzw. legt neu an. Vorher die AVA-companyId via `company_search` auflösen. Wenn die Firma in AVA noch nicht recherchiert wurde, bricht das Tool mit klarem Hinweis ab.
+VOLL-SYNC einer AVA-Firma nach HubSpot in EINEM Schritt — der bevorzugte Weg, sobald der Nutzer eine in AVA bekannte Firma in HubSpot anlegen, aktualisieren oder anreichern will. Holt automatisch ALLE AVA-Daten (Stammdaten, Structured-Content, Profil, Website/SERP, Publikationen, Keywords, Kontakte) und befüllt die HubSpot-Felder: name, address, zip, city, country, numberofemployees (aus letztem Jahresabschluss), annualrevenue, founded_year, description (PRIMÄR das Firmenprofil aus dem company-profile-Producer, sonst der Handelsregister-Unternehmensgegenstand), numberofemployees = HubSpots „Anzahl der Mitarbeiter“ (aus Jahresabschluss/Publikationen), annualrevenue = Umsatz (aus Jahresabschluss), website/domain, phone, industry (gegen HubSpots Branchen-Enum gematcht). Legt zusätzlich Geschäftsführer + Ansprechpartner als verknüpfte Contacts an (dedupliziert). Alles hinter EINER Sammel-Bestätigung — KEIN Feld-für-Feld-Nachfragen. Wenn keine `hubspotCompanyId` gegeben ist, sucht das Tool selbst nach Dubletten und fragt ggf. welche Firma gemeint ist bzw. legt neu an. Vorher die AVA-companyId via `company_search` auflösen. Wenn die Firma in AVA noch nicht recherchiert wurde, bricht das Tool mit klarem Hinweis ab.
 
 _Parameter:_
 - `avaCompanyId: string` (required) — AVA-Master-Data-companyId (via company_search auflösen).
