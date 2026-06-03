@@ -294,6 +294,16 @@ export class AiSdkProvider extends EventEmitter implements LlmProvider {
       this.kind === "openai" && this.getOpenAIAuthMode
         ? this.getOpenAIAuthMode()
         : "api-key";
+    // v0.1.371 — der tatsächlich genutzte Auth-Modus dieses Providers.
+    // Wird an humanizeProviderError gegeben, damit eine Rate-Limit-Meldung
+    // im Abo-Modus NICHT die API-Key-Tier-Sprache zeigt (verwirrte Nutzer:
+    // „nutzt wieder den API-Key", obwohl es das Abo-Limit war).
+    const effectiveAuthMode: "api-key" | "subscription" =
+      this.kind === "anthropic"
+        ? authMode
+        : this.kind === "openai"
+          ? openaiAuthMode
+          : "api-key";
     let apiKey: string | undefined;
     let anthropicSubscriptionToken: string | undefined;
     let openaiSubscriptionToken: string | undefined;
@@ -509,7 +519,7 @@ export class AiSdkProvider extends EventEmitter implements LlmProvider {
                 : typeof err === "string"
                   ? err
                   : "ai-sdk stream error";
-            const msg = humanizeProviderError(this.kind, rawMsg);
+            const msg = humanizeProviderError(this.kind, rawMsg, effectiveAuthMode);
             yield { done: true, errorMessage: msg };
             return;
           }
@@ -564,7 +574,7 @@ export class AiSdkProvider extends EventEmitter implements LlmProvider {
       // ein nach Retries erschöpftes `529 Overloaded`) werfen synchron,
       // bevor ein Stream-`error`-Part kommt.
       const rawMsg = err instanceof Error ? err.message : String(err);
-      const msg = humanizeProviderError(this.kind, rawMsg);
+      const msg = humanizeProviderError(this.kind, rawMsg, effectiveAuthMode);
       yield { done: true, errorMessage: msg };
       return;
     }
@@ -755,7 +765,11 @@ function buildToolSet(specs: OllamaToolSpec[]): ToolSet {
  *   - Quota / 402 / "insufficient_quota": tell them billing is the
  *     issue (kein Tier-Wechsel, sondern Guthaben).
  */
-function humanizeProviderError(kind: LlmProviderKind, raw: string): string {
+function humanizeProviderError(
+  kind: LlmProviderKind,
+  raw: string,
+  authMode: "api-key" | "subscription" = "api-key",
+): string {
   const lower = raw.toLowerCase();
   const label = labelFor(kind);
 
@@ -782,9 +796,27 @@ function humanizeProviderError(kind: LlmProviderKind, raw: string): string {
       ? ` Anthropic empfiehlt ${retryMatch[1]} Sekunden Wartezeit.`
       : " Bitte 30–60 Sekunden warten und erneut versuchen.";
 
-    // v0.1.209 — Anthropic-spezifisch: direkter Deeplink zur Console-
-    // Limits-Seite + Tier-2-Erklärung. Für andere Provider bleibt der
-    // generische Hinweis.
+    // v0.1.371 — Abo-Modus: das 429 stammt vom NUTZUNGSLIMIT des Pro/Max-
+    // Abos, NICHT vom API-Key. Vorher zeigte AVA hier die API-Key-Tier-
+    // Sprache („Tier 1, 30 000 Input-Tokens, console.anthropic.com") —
+    // dadurch dachten Nutzer fälschlich, AVA sei wieder auf den alten
+    // API-Key zurückgefallen. AVA nutzt korrekt das Abo; das Abo selbst
+    // hat aber ein Limit pro Zeitfenster (bei langen, werkzeugintensiven
+    // Recherchen schnell erreicht).
+    if (authMode === "subscription") {
+      const aboLabel = kind === "openai" ? "ChatGPT" : "Claude";
+      return (
+        `${label}: Nutzungslimit deines ${aboLabel}-Abos erreicht${limitDetail}.${retryDetail} ` +
+        `AVA nutzt korrekt dein Abo (NICHT den API-Key) — aber Pro/Max-Abos ` +
+        `haben ein Limit pro Zeitfenster, das bei langen, werkzeugintensiven ` +
+        `Recherchen schnell erreicht ist. Tipp: ein paar Minuten warten, oder ` +
+        `kürzere Anfragen stellen; das Limit füllt sich automatisch wieder auf.`
+      );
+    }
+
+    // v0.1.209 — Anthropic-spezifisch (API-Key-Pfad): direkter Deeplink zur
+    // Console-Limits-Seite + Tier-2-Erklärung. Für andere Provider bleibt
+    // der generische Hinweis.
     if (kind === "anthropic") {
       return (
         `Anthropic: Minutenlimit erreicht${limitDetail}.${retryDetail}\n\n` +
