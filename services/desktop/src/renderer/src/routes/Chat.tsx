@@ -2764,9 +2764,18 @@ function renderChatContent(text: string): ReactNode {
 // über ein nacktes <a href>, sonst macht der Hash-Router eine harte
 // Navigation, lädt index.html neu und der User landet wieder im Chat
 // (Default-Route). Genau der gemeldete Bug.
+// AVA-Company-ID-Form: GROSSBUCHSTABEN/Ziffern-Segmente per Unterstrich,
+// endend auf eine Register-Nummer — z. B. `KEMPTENALLGAEU_HRA_325`,
+// `ULM_HRB_721978`, `FULDA_HRA_1593`. Diente als letzter Fallback: liefert
+// das Modell die ID NACKT als href (häufig bei schwächeren Modellen, v. a.
+// in Tabellenzellen, statt `company:<id>`), erkennen wir sie trotzdem als
+// Firmen-Link. http(s)-URLs / SPA-Pfade matchen hier nicht (enthalten
+// `:` / `/` / Kleinbuchstaben), TransactionId-UUIDs auch nicht.
+const BARE_COMPANY_ID = /^[A-Z0-9ÄÖÜ]+(?:_[A-Z0-9ÄÖÜ]+)*_\d+$/;
+
 function extractCompanyId(target: string): string {
-  if (target.startsWith("company:")) {
-    return target.slice("company:".length).trim();
+  if (/^company:/i.test(target)) {
+    return target.replace(/^company:/i, "").trim();
   }
   const m = target.match(/^#?\/?companies\/([^/?#]+)/i);
   if (m && m[1]) {
@@ -2775,6 +2784,9 @@ function extractCompanyId(target: string): string {
     } catch {
       return m[1];
     }
+  }
+  if (BARE_COMPANY_ID.test(target)) {
+    return target;
   }
   return "";
 }
