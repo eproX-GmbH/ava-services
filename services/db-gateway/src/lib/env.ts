@@ -30,6 +30,18 @@ const schema = z.object({
   EVENT_BUS_EXCHANGE: z.string().default("exchange"),
   EVENT_BUS_QUEUE: z.string().default("db-gateway-progress"),
 
+  // Stuck-progress reaper (v0.1.378). A producer step that emits
+  // `in_progress` but never a terminal event (worker crash, killed,
+  // offline, requeue-without-failed, upstream hard-down) would leave the
+  // pipeline cell permanently yellow ("läuft") and look frozen. The
+  // reaper flips any `EntityProgress` row stuck in `in_progress` for
+  // longer than this many minutes to `failed`, so the UI shows red
+  // instead of a frozen-yellow step. Self-healing: a later `completed`
+  // event still overrides the reaped `failed`. Must exceed the longest
+  // legitimate single producer run (Selenium scraping is the slowest) to
+  // avoid reaping a step mid-run. 0 disables the reaper.
+  STUCK_PROGRESS_TIMEOUT_MINUTES: z.coerce.number().default(30),
+
   // Operator-paid API keys proxied through the gateway. These never
   // travel to the desktop — every producer that needs them issues an
   // authenticated request to `/v1/proxy/<service>` and the gateway

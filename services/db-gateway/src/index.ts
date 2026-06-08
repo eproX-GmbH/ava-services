@@ -17,6 +17,7 @@ import { billingWebhookRouter } from "./routes/v1/billing";
 import { publicAuthRouter } from "./routes/v1/auth";
 import { internalQuotaRouter } from "./routes/internal-quota";
 import { startQuotaResumeCron } from "./lib/quota-resume-worker";
+import { startStuckProgressReaperCron } from "./lib/stuck-progress-reaper";
 
 const env = loadEnv();
 const app = new OpenAPIHono();
@@ -111,3 +112,9 @@ import("./lib/persist-bus")
 // with parked rows + headroom and asks master-data to replay producer
 // triggers in batches. Stripe webhook trigger lives inside billing.ts.
 startQuotaResumeCron();
+
+// v0.1.378 — Stuck-progress reaper. Flips EntityProgress rows that hang
+// in `in_progress` past STUCK_PROGRESS_TIMEOUT_MINUTES to `failed`, so a
+// dead/crashed/offline producer step shows RED in the pipeline instead
+// of a frozen yellow "läuft". Self-healing — a later `completed` wins.
+startStuckProgressReaperCron();
