@@ -42,6 +42,18 @@ const schema = z.object({
   // avoid reaping a step mid-run. 0 disables the reaper.
   STUCK_PROGRESS_TIMEOUT_MINUTES: z.coerce.number().default(30),
 
+  // v0.1.378 — die Fly-App `ava-company-profile` ist abgebaut (§8.v3:
+  // company-profile rechnet jetzt lokal). Der Host löst nicht mehr auf
+  // (`getaddrinfo ENOTFOUND ava-company-profile.fly.dev`); jeder Aufruf
+  // verbrät eine fehlschlagende DNS-Auflösung. Default `false` =
+  // „retired": callUpstream("companyProfile") schlägt sofort & ohne
+  // Netz-Call fehl (alle Aufrufer fangen das ab → leere/unavailable
+  // Daten). Auf `true` setzen, falls der Upstream je wiederkommt.
+  UPSTREAM_COMPANY_PROFILE_ENABLED: z
+    .string()
+    .optional()
+    .transform((v) => v === "true" || v === "1"),
+
   // Operator-paid API keys proxied through the gateway. These never
   // travel to the desktop — every producer that needs them issues an
   // authenticated request to `/v1/proxy/<service>` and the gateway

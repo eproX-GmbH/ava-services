@@ -81,6 +81,14 @@ export async function callUpstream<T = unknown>(
   path: string,
   opts: UpstreamOptions = {},
 ): Promise<T> {
+  // v0.1.378 — `companyProfile` ist abgebaut (§8.v3, lokale Compute).
+  // Sofort & ohne Netz-Call fehlschlagen statt eine DNS-Auflösung auf den
+  // toten Host zu verbraten. Alle Aufrufer fangen das ab und liefern
+  // leere/als-unavailable-Daten. Reaktivierbar via Env-Flag.
+  if (name === "companyProfile" && !loadEnv().UPSTREAM_COMPANY_PROFILE_ENABLED) {
+    throw new HTTPException(502, { message: "upstream_companyProfile_retired" });
+  }
+
   const base = baseUrlFor(name);
   const url = new URL(path, base);
   if (opts.query) {

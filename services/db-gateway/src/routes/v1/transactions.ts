@@ -1639,6 +1639,66 @@ transactionsRouter.openapi(retryRoute, async (c) => {
         "retry endpoint failed to persist in_progress",
       );
     }
+  } else {
+    // v0.1.378 — KEIN Target hat angenommen → der Auto-Retry hat nichts
+    // bewirkt. Vorher blieb die Zeile `state='failed'` mit reifem
+    // `nextRetryAt` stehen → der Heartbeat hat sie bei JEDEM Tick erneut
+    // gefeuert. Bei vielen aussichtslosen Zeilen führte das zu einem
+    // Dauer-Burst auf die DB, bis die Connection-Slots ausgingen (der
+    // gemeldete contacts-500). Jetzt schreiben wir das Ergebnis zurück:
+    //   - 404-only („nichts zum Re-Publish": kein Kontakt-/Publikations-/
+    //     Strukturdatensatz) ist DAUERHAFT aussichtslos → `giveUpAt`
+    //     setzen, damit die Zeile die Retry-Queue endgültig verlässt.
+    //   - sonst (Netz/5xx/DB) → exponentiell zurückstellen und nach 10
+    //     Versuchen final aufgeben, damit ein toter Upstream nicht ewig
+    //     loopt.
+    // Self-healing: ein echtes späteres `completed`/Persist überschreibt
+    // die Zeile ohnehin (Terminal-Guard im event-bus).
+    const allFutile =
+      dispatched.length > 0 && dispatched.every((d) => d.status === 404);
+    const producerCol = STAGE_TO_SERVICE[stage];
+    try {
+      const pool = getGatewayPool();
+      if (allFutile) {
+        await pool.query(
+          `UPDATE "EntityProgress"
+              SET "giveUpAt" = NOW(), "updatedAt" = NOW(),
+                  "errorMessage" = $4
+            WHERE "transactionId" = $1 AND "companyId" = $2 AND producer = $3
+              AND state = 'failed' AND "giveUpAt" IS NULL`,
+          [
+            transactionId,
+            companyId,
+            producerCol,
+            "Kein Quell-Datensatz zum erneuten Verarbeiten vorhanden — Auto-Retry gestoppt. Firma bei Bedarf neu importieren.",
+          ],
+        );
+      } else {
+        await pool.query(
+          `UPDATE "EntityProgress"
+              SET "attempts" = "attempts" + 1,
+                  "lastFailureAt" = NOW(), "updatedAt" = NOW(),
+                  "nextRetryAt" = NOW() + (
+                    (ARRAY[300,1800,7200,28800,86400])[LEAST("attempts" + 1, 5)]
+                    * INTERVAL '1 second'),
+                  "giveUpAt" = CASE WHEN "attempts" + 1 >= 10 THEN NOW()
+                                    ELSE "giveUpAt" END
+            WHERE "transactionId" = $1 AND "companyId" = $2 AND producer = $3
+              AND state = 'failed' AND "giveUpAt" IS NULL`,
+          [transactionId, companyId, producerCol],
+        );
+      }
+    } catch (err) {
+      logger.warn(
+        {
+          err: err instanceof Error ? err.message : String(err),
+          transactionId,
+          companyId,
+          stage,
+        },
+        "retry endpoint failed to update backoff/give-up",
+      );
+    }
   }
 
   return c.json(
