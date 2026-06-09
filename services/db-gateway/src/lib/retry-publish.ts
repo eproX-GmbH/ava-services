@@ -253,15 +253,27 @@ export async function publishWebsiteRetry(opts: {
   }
 
   if (stage === "companyContact") {
-    if (!companyName) {
-      throw new HTTPException(400, {
-        message: `companyName is required to retry companyContact for ${companyId}`,
-      });
+    // v0.1.378 — companyName ist für die companyContact-Slice Pflicht, der
+    // Heartbeat-Auto-Retry schickt ihn aber NICHT mit (nur transactionId/
+    // companyId). Vorher scheiterte das hart mit 400 und die Zeile blieb in
+    // der Retry-Queue → Dauer-Hammer. Jetzt laden wir den Namen aus dem
+    // Structured-Content-Store nach (dort steht `sc.name`); nur wenn auch
+    // der fehlt, ist der Retry wirklich aussichtslos → notFound (404), das
+    // der Retry-Handler als „giveUp" terminalisiert.
+    let resolvedName = companyName;
+    if (!resolvedName) {
+      const loaded = await loadStructuredContent(companyId);
+      resolvedName = loaded?.sc.name ?? undefined;
+    }
+    if (!resolvedName) {
+      notFound(
+        `No companyName for ${companyId} (caller omitted it, none in structured content); cannot retry companyContact`,
+      );
     }
     const event: CloudEvent<CompanyContactUpsertPayload> =
       new EventBuilder().website.upsertCompanyContact
         .header(header)
-        .data({ url, companyName })
+        .data({ url, companyName: resolvedName })
         .build();
     await client.publish(env.EVENT_BUS_EXCHANGE, targetUserRoutingKey(event, userId));
     return { published: 1 };
