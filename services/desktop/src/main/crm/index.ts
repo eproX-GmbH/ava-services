@@ -230,23 +230,31 @@ export class CrmManager extends EventEmitter {
 
   /**
    * v0.1.153 — Pull the HubSpot portal id (hub_id) for a given access
-   * token. HubSpot's `/oauth/v1/access-tokens/{token}` returns metadata
-   * including `hub_id` and `user` — the only authoritative source for
-   * the portal id post-exchange. Returns null on any failure (network,
-   * revoked token, parse) so the caller can degrade gracefully to a
+   * token. Returns null on any failure (network, revoked token, parse,
+   * missing scope) so the caller can degrade gracefully to a
    * portal-agnostic fallback URL.
+   *
+   * v0.1.378 — von `GET /oauth/v1/access-tokens/{token}` auf
+   * `GET /account-info/v3/details` migriert. Der alte Endpunkt ist ein
+   * OAuth-v1-Endpunkt, den HubSpot zum 16.02.2027 abschaltet, weil er den
+   * Token IN DER URL übergibt. Die Account-Information-API nimmt den Token
+   * im `Authorization: Bearer`-Header (nicht in der URL), braucht KEIN
+   * client_secret (bleibt also komplett im Desktop) und liefert die
+   * Portal-ID im Feld `portalId`. Da das Resultat nach dem ersten Abruf
+   * gecacht wird (tokens.extra.hubId), feuert dieser Call ohnehin nur
+   * einmal pro Portal.
    */
   private async fetchHubspotPortalId(
     accessToken: string,
   ): Promise<string | null> {
     try {
-      const res = await fetch(
-        `https://api.hubapi.com/oauth/v1/access-tokens/${encodeURIComponent(accessToken)}`,
-      );
+      const res = await fetch("https://api.hubapi.com/account-info/v3/details", {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
       if (!res.ok) return null;
-      const body = (await res.json()) as { hub_id?: unknown };
-      if (typeof body.hub_id === "number") return String(body.hub_id);
-      if (typeof body.hub_id === "string") return body.hub_id;
+      const body = (await res.json()) as { portalId?: unknown };
+      if (typeof body.portalId === "number") return String(body.portalId);
+      if (typeof body.portalId === "string") return body.portalId;
       return null;
     } catch {
       return null;
