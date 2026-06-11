@@ -1757,12 +1757,21 @@ export function buildCrmTools(deps: CrmToolDeps): Tool[] {
     const items = pubs?.items ?? [];
     if (items.length > 0) {
       sources.push("publications");
-      // Items sind year DESC sortiert; nimm jeweils den ersten mit Wert.
-      const emp = items.find((p) => typeof p.employeeCount === "number");
+      // v0.1.379 — NICHT auf die Upstream-Sortierung verlassen. Gewünscht ist
+      // je Kennzahl der Wert aus dem JÜNGSTEN Jahresabschluss (company-
+      // publication-Producer). Darum explizit nach `year` absteigend sortieren
+      // (fehlendes Jahr ans Ende) und pro Kennzahl unabhängig den ersten
+      // vorhandenen Wert nehmen — so kippt ein Jahr ohne Umsatz nicht die
+      // Mitarbeiterzahl und umgekehrt.
+      const byYearDesc = [...items].sort(
+        (a, b) => (b.year ?? -Infinity) - (a.year ?? -Infinity),
+      );
+      const emp = byYearDesc.find((p) => typeof p.employeeCount === "number");
       if (emp?.employeeCount != null) {
         props.numberofemployees = String(emp.employeeCount);
       }
-      const rev = items.find(
+      // „Gesamtumsatz" = Umsatzerlöse (salesVolume); revenueVolume nur Fallback.
+      const rev = byYearDesc.find(
         (p) =>
           typeof p.salesVolume?.value === "number" ||
           typeof p.revenueVolume?.value === "number",
@@ -1782,24 +1791,27 @@ export function buildCrmTools(deps: CrmToolDeps): Tool[] {
       industryCandidate = industryCandidate ?? keywordList[0];
     }
 
-    // ---- Beschreibung („Über uns") — v0.1.374 ----
-    // PRIORITÄT (Nutzerwunsch): PRIMÄR das Firmenprofil aus dem
-    // company-profile-Producer (`profile.profile`), erst danach der
-    // Handelsregister-Unternehmensgegenstand, dann weitere Fallbacks.
-    // Cap auf 5000 Zeichen, damit ein mehrabsätziges Profil nicht
-    // abgeschnitten wird (HubSpots `description` fasst weit mehr).
+    // ---- Beschreibung (`description`) + Über uns (`about_us`) — v0.1.379 ----
+    // Laut Mapping-Sheet sind das ZWEI getrennte HubSpot-Felder:
+    //   • description = Firmenprofil (company-profile-Producer `profile.profile`)
+    //   • about_us    = Unternehmensgegenstand (Handelsregister `corporatePurpose`)
+    // (Korrigiert die v0.1.374-Logik, die den Gegenstand in `description`
+    // gefaltet hatte.) Cap je 5000 Zeichen.
     {
       const descCandidates = [
         str(profile?.profile), // 1. Firmenprofil (company-profile-Producer)
-        str(structured?.corporatePurpose), // 2. Unternehmensgegenstand (HR)
-        str(profile?.businessPurpose), // 3.
-        str(website?.website?.description), // 4. Website-Meta-Description
+        str(profile?.businessPurpose), // 2. Fallback
+        str(website?.website?.description), // 3. Website-Meta-Description
         keywordList.length > 0
           ? `Schwerpunkte: ${keywordList.slice(0, 20).join(", ")}`
-          : undefined, // 5. Notnagel aus Keywords
+          : undefined, // 4. Notnagel aus Keywords
       ].filter((s): s is string => Boolean(s));
       if (descCandidates[0]) {
         props.description = descCandidates[0].slice(0, 5000);
+      }
+      const aboutUs = str(structured?.corporatePurpose);
+      if (aboutUs) {
+        props.about_us = aboutUs.slice(0, 5000);
       }
     }
 
@@ -1897,6 +1909,7 @@ export function buildCrmTools(deps: CrmToolDeps): Tool[] {
     "annualrevenue",
     "founded_year",
     "description",
+    "about_us",
     "phone",
     "industry",
     "linkedin_company_page",
@@ -1915,7 +1928,7 @@ export function buildCrmTools(deps: CrmToolDeps): Tool[] {
   const syncCompanyTool = defineTool({
     name: "crm_sync_hubspot_company_from_ava",
     description:
-      "VOLL-SYNC einer AVA-Firma nach HubSpot in EINEM Schritt — der bevorzugte Weg, sobald der Nutzer eine in AVA bekannte Firma in HubSpot anlegen, aktualisieren oder anreichern will. Holt automatisch ALLE AVA-Daten (Stammdaten, Structured-Content, Profil, Website/SERP, Publikationen, Keywords, Kontakte) und befüllt die HubSpot-Felder: name, address, zip, city, country, numberofemployees (aus letztem Jahresabschluss), annualrevenue, founded_year, description (PRIMÄR das Firmenprofil aus dem company-profile-Producer, sonst der Handelsregister-Unternehmensgegenstand), numberofemployees = HubSpots „Anzahl der Mitarbeiter“ (aus Jahresabschluss/Publikationen), annualrevenue = Umsatz (aus Jahresabschluss), website/domain, phone, industry (gegen HubSpots Branchen-Enum gematcht). Legt zusätzlich Geschäftsführer + Ansprechpartner als verknüpfte Contacts an (dedupliziert). Alles hinter EINER Sammel-Bestätigung — KEIN Feld-für-Feld-Nachfragen. Wenn keine `hubspotCompanyId` gegeben ist, sucht das Tool selbst nach Dubletten und fragt ggf. welche Firma gemeint ist bzw. legt neu an. Vorher die AVA-companyId via `company_search` auflösen. Wenn die Firma in AVA noch nicht recherchiert wurde, bricht das Tool mit klarem Hinweis ab.",
+      "VOLL-SYNC einer AVA-Firma nach HubSpot in EINEM Schritt — der bevorzugte Weg, sobald der Nutzer eine in AVA bekannte Firma in HubSpot anlegen, aktualisieren oder anreichern will. Holt automatisch ALLE AVA-Daten (Stammdaten, Structured-Content, Profil, Website/SERP, Publikationen, Keywords, Kontakte) und befüllt die HubSpot-Felder nach festem Mapping: name = AVA-Name; address = Straße+Hausnummer; zip = PLZ; city = Stadt; country = Land; phone = Telefon; website/domain = Website; description = FIRMENPROFIL (company-profile-Producer); about_us („Über uns“) = UNTERNEHMENSGEGENSTAND (Handelsregister); numberofemployees = Mitarbeiterzahl aus dem JÜNGSTEN Jahresabschluss (company-publication-Producer — NICHT irgendeine Zahl); annualrevenue = Gesamtumsatz aus dem jüngsten Jahresabschluss; founded_year = Gründungsjahr; industry = Branche (gegen HubSpots Branchen-Enum gematcht); linkedin_company_page = LinkedIn-Unternehmensseite (falls vorhanden). Legt zusätzlich Geschäftsführer + Ansprechpartner als verknüpfte Contacts an (dedupliziert). Alles hinter EINER Sammel-Bestätigung — KEIN Feld-für-Feld-Nachfragen. Wenn keine `hubspotCompanyId` gegeben ist, sucht das Tool selbst nach Dubletten und fragt ggf. welche Firma gemeint ist bzw. legt neu an. Vorher die AVA-companyId via `company_search` auflösen. Wenn die Firma in AVA noch nicht recherchiert wurde, bricht das Tool mit klarem Hinweis ab.",
     parameters: {
       type: "object",
       required: ["avaCompanyId"],

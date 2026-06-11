@@ -4,7 +4,7 @@ Auto-generiert von `services/desktop/scripts/generate-tools-md.mjs`.
 NICHT direkt bearbeiten — die Quelle der Wahrheit ist `services/desktop/src/main/agent/tools/*.ts`.
 Lauf via `pnpm -F @ava/desktop tools:doc` (oder automatisch via `build:typecheck`).
 
-Stand: 2026-06-03
+Stand: 2026-06-11
 Anzahl Tools: 161
 
 ## Firmen (11)
@@ -782,7 +782,7 @@ _Parameter:_ keine.
 
 _Datei:_ `services/desktop/src/main/agent/tools/crm.ts`
 
-VOLL-SYNC einer AVA-Firma nach HubSpot in EINEM Schritt — der bevorzugte Weg, sobald der Nutzer eine in AVA bekannte Firma in HubSpot anlegen, aktualisieren oder anreichern will. Holt automatisch ALLE AVA-Daten (Stammdaten, Structured-Content, Profil, Website/SERP, Publikationen, Keywords, Kontakte) und befüllt die HubSpot-Felder: name, address, zip, city, country, numberofemployees (aus letztem Jahresabschluss), annualrevenue, founded_year, description (PRIMÄR das Firmenprofil aus dem company-profile-Producer, sonst der Handelsregister-Unternehmensgegenstand), numberofemployees = HubSpots „Anzahl der Mitarbeiter“ (aus Jahresabschluss/Publikationen), annualrevenue = Umsatz (aus Jahresabschluss), website/domain, phone, industry (gegen HubSpots Branchen-Enum gematcht). Legt zusätzlich Geschäftsführer + Ansprechpartner als verknüpfte Contacts an (dedupliziert). Alles hinter EINER Sammel-Bestätigung — KEIN Feld-für-Feld-Nachfragen. Wenn keine `hubspotCompanyId` gegeben ist, sucht das Tool selbst nach Dubletten und fragt ggf. welche Firma gemeint ist bzw. legt neu an. Vorher die AVA-companyId via `company_search` auflösen. Wenn die Firma in AVA noch nicht recherchiert wurde, bricht das Tool mit klarem Hinweis ab.
+VOLL-SYNC einer AVA-Firma nach HubSpot in EINEM Schritt — der bevorzugte Weg, sobald der Nutzer eine in AVA bekannte Firma in HubSpot anlegen, aktualisieren oder anreichern will. Holt automatisch ALLE AVA-Daten (Stammdaten, Structured-Content, Profil, Website/SERP, Publikationen, Keywords, Kontakte) und befüllt die HubSpot-Felder nach festem Mapping: name = AVA-Name; address = Straße+Hausnummer; zip = PLZ; city = Stadt; country = Land; phone = Telefon; website/domain = Website; description = FIRMENPROFIL (company-profile-Producer); about_us („Über uns“) = UNTERNEHMENSGEGENSTAND (Handelsregister); numberofemployees = Mitarbeiterzahl aus dem JÜNGSTEN Jahresabschluss (company-publication-Producer — NICHT irgendeine Zahl); annualrevenue = Gesamtumsatz aus dem jüngsten Jahresabschluss; founded_year = Gründungsjahr; industry = Branche (gegen HubSpots Branchen-Enum gematcht); linkedin_company_page = LinkedIn-Unternehmensseite (falls vorhanden). Legt zusätzlich Geschäftsführer + Ansprechpartner als verknüpfte Contacts an (dedupliziert). Alles hinter EINER Sammel-Bestätigung — KEIN Feld-für-Feld-Nachfragen. Wenn keine `hubspotCompanyId` gegeben ist, sucht das Tool selbst nach Dubletten und fragt ggf. welche Firma gemeint ist bzw. legt neu an. Vorher die AVA-companyId via `company_search` auflösen. Wenn die Firma in AVA noch nicht recherchiert wurde, bricht das Tool mit klarem Hinweis ab.
 
 _Parameter:_
 - `avaCompanyId: string` (required) — AVA-Master-Data-companyId (via company_search auflösen).
