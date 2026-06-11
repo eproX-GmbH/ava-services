@@ -2452,6 +2452,85 @@ code, pre { font-family: var(--font-mono); font-size: 12px; }
 }
 .provider-section h3 { margin-top: 0; }
 .provider-section h4 { margin-bottom: 0.5rem; }
+
+/* v0.1.381 — Abo-Karten ganz oben in Einstellungen → Modelle. Der
+   empfohlene Weg (ChatGPT-/Claude-Abo) bekommt visuelles Gewicht:
+   Akzent-Rahmen + leichte Tönung, zweispaltig nebeneinander. */
+.subscription-hero-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+  margin: 0.75rem 0 1.25rem;
+}
+@media (max-width: 860px) {
+  .subscription-hero-grid { grid-template-columns: 1fr; }
+}
+.subscription-hero-card {
+  border: 1.5px solid var(--accent, #00c0a7);
+  border-radius: 10px;
+  padding: 0.9rem 1rem;
+  background: rgba(0, 192, 167, 0.06);
+}
+:root.dark .subscription-hero-card {
+  background: rgba(0, 192, 167, 0.1);
+}
+.subscription-hero-card h4 { margin-top: 0; }
+.subscription-hero-card__note {
+  margin: 0.6rem 0 0;
+  font-size: 12px;
+  color: var(--color-fg-muted, #6b7280);
+  border-top: 1px dashed var(--border);
+  padding-top: 0.5rem;
+}
+
+/* v0.1.381 — „Aktive Konfiguration": Modell + Abrechnungs-Kanal +
+   Status auf einen Blick. */
+.active-config-card {
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--accent, #00c0a7);
+  border-radius: 8px;
+  padding: 0.7rem 1rem;
+  margin: 0 0 1.25rem;
+  display: grid;
+  gap: 0.35rem;
+  max-width: 720px;
+}
+.active-config-card--warn {
+  border-left-color: var(--color-warn, #f59e0b);
+}
+.active-config-card__row {
+  display: grid;
+  grid-template-columns: 160px 1fr;
+  gap: 0.5rem;
+  align-items: baseline;
+}
+.active-config-card__label {
+  font-size: 12px;
+  color: var(--color-fg-muted, #6b7280);
+}
+.active-config-card__value {
+  font-size: 13.5px;
+  font-weight: 500;
+}
+
+/* v0.1.381 — Klapp-Sektionen gegen die überladene Modelle-Ansicht. */
+.settings-collapse {
+  margin: 0.75rem 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.5rem 0.9rem;
+}
+.settings-collapse > summary {
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 13.5px;
+  padding: 0.25rem 0;
+}
+.settings-collapse[open] > summary {
+  margin-bottom: 0.5rem;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 0.5rem;
+}
 .provider-grid {
   display: grid;
   grid-template-columns: 1fr 2fr;
@@ -6252,6 +6331,22 @@ html.dark .producer-error__pre { background: rgba(255, 255, 255, 0.05); }
  */
 
 /* Hero — Claude Pro/Max-Abo */
+/* v0.1.381 — zwei Abo-Hero-Karten nebeneinander (ChatGPT + Claude).
+   Innerhalb des Grids verliert die einzelne Karte ihren Außenabstand;
+   das Grid übernimmt den Rhythmus. */
+.first-run__hero-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+  margin: 1.5rem 0 1.25rem;
+}
+.first-run__hero-grid .first-run__hero {
+  margin: 0;
+}
+@media (max-width: 900px) {
+  .first-run__hero-grid { grid-template-columns: 1fr; }
+}
+
 .first-run__hero {
   display: flex;
   gap: 1.2rem;

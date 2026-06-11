@@ -1872,19 +1872,98 @@ export function ProviderSection() {
     activeEntry !== undefined &&
     activeEntry.provider === "ollama";
 
+  // v0.1.381 — Aktiver Provider-KANAL, klar benannt. Spiegelt exakt die
+  // Auflösung in providers/manager.ts (getAnthropicAuthMode /
+  // getOpenAIAuthMode): ein vorhandener Abo-Token GEWINNT immer gegen den
+  // API-Key. Damit weiß der Nutzer, was tatsächlich belastet wird, wenn
+  // beides hinterlegt ist.
+  const activeChannel: string =
+    activeKind === "ollama"
+      ? "Lokal (Ollama) — kostenlos"
+      : activeKind === "anthropic"
+        ? hasAnthropicSubscriptionToken
+          ? "Claude-Abo (Pro/Max)"
+          : "Anthropic API-Schlüssel"
+        : activeKind === "openai"
+          ? hasOpenAISubscriptionToken
+            ? "ChatGPT-Abo"
+            : "OpenAI API-Schlüssel"
+          : `${PROVIDER_LABEL[activeKind]} API-Schlüssel`;
+  const channelIsSubscription =
+    (activeKind === "anthropic" && hasAnthropicSubscriptionToken) ||
+    (activeKind === "openai" && hasOpenAISubscriptionToken);
+
+  const anyHostedKey =
+    hasKey.openai || hasKey.google || hasKey.mistral || hasKey.anthropic;
+
   return (
     <section className="provider-section">
-      <h3>Agent-Anbieter</h3>
-      <p className="muted">
-        Status:{" "}
-        <span className={`badge ${status.ready ? "ok" : "warn"}`}>
-          {status.ready ? "bereit" : "nicht bereit"}
-        </span>{" "}
-        {status.errorMessage && (
-          <span className="error">{status.errorMessage}</span>
-        )}
-      </p>
+      <h3>Modelle</h3>
 
+      {/* v0.1.381 — Abos GANZ OBEN, visuell hervorgehoben. Der empfohlene
+          Weg: ChatGPT-Abo oder Claude-Abo verbinden — kein API-Key nötig. */}
+      <div className="subscription-hero-grid">
+        <div className="subscription-hero-card">
+          <OpenAISubscriptionContent
+            hasToken={hasOpenAISubscriptionToken}
+            hasOpenAIApiKey={hasKey.openai}
+            openaiAuthMode={config.openaiAuthMode ?? "api-key"}
+            activeKind={activeKind}
+          />
+        </div>
+        <div className="subscription-hero-card" id="claude-abo">
+          <h4>Claude-Abo (Pro/Max)</h4>
+          <AnthropicSubscriptionContent
+            hasToken={hasAnthropicSubscriptionToken}
+            hasAnthropicApiKey={hasKey.anthropic}
+            anthropicAuthMode={config.anthropicAuthMode ?? "api-key"}
+            activeKind={activeKind}
+          />
+          <p className="subscription-hero-card__note">
+            Hinweis: Ab dem 15.06.2026 wird die Claude-Abo-Verbindung in
+            AVA separat abgerechnet.
+          </p>
+        </div>
+      </div>
+
+      {/* v0.1.381 — Aktive Konfiguration: WAS läuft gerade, über WELCHEN
+          Kanal wird abgerechnet. Beantwortet die Frage „Abo oder API-Key?"
+          ohne Raten. */}
+      <div
+        className={`active-config-card${status.ready ? "" : " active-config-card--warn"}`}
+      >
+        <div className="active-config-card__row">
+          <span className="active-config-card__label">Aktives Modell</span>
+          <span className="active-config-card__value">
+            {activeEntry?.label ?? activeModelId ?? "—"}
+            {" · "}
+            {PROVIDER_LABEL[activeKind]}
+          </span>
+        </div>
+        <div className="active-config-card__row">
+          <span className="active-config-card__label">Abrechnung über</span>
+          <span className="active-config-card__value">
+            <span
+              className={`badge ${channelIsSubscription ? "ok" : activeKind === "ollama" ? "ok" : "warn"}`}
+            >
+              {activeChannel}
+            </span>
+          </span>
+        </div>
+        <div className="active-config-card__row">
+          <span className="active-config-card__label">Status</span>
+          <span className="active-config-card__value">
+            <span className={`badge ${status.ready ? "ok" : "warn"}`}>
+              {status.ready ? "bereit" : "nicht bereit"}
+            </span>{" "}
+            {status.errorMessage && (
+              <span className="error">{status.errorMessage}</span>
+            )}
+          </span>
+        </div>
+      </div>
+
+      <h4>Anbieter & Modell wählen</h4>
       <div className="provider-grid">
         <label className="field">
           <span>Anbieter</span>
@@ -1972,57 +2051,53 @@ export function ProviderSection() {
         <p className="error">{(setModel.error as Error).message}</p>
       )}
 
-      <InstalledModelsSection />
+      {/* v0.1.381 — API-Schlüssel sind der Zweitweg (Abos oben sind der
+          empfohlene Weg) und wandern in eine Klappe, damit die Ansicht
+          nicht überläuft. Auf, wenn bereits ein Key gespeichert ist. */}
+      <details className="settings-collapse" open={anyHostedKey}>
+        <summary>API-Schlüssel (OpenAI, Google, Mistral) — Alternative zum Abo</summary>
+        {!encryptionAvailable && (
+          <p className="muted">
+            ⚠ OS-Schlüsselbund nicht verfügbar: Schlüssel werden unverschlüsselt
+            im Benutzerdatenordner gespeichert. Cloud-Anbieter funktionieren
+            weiterhin, dieser Modus eignet sich aber nur für Entwicklungs­zwecke.
+          </p>
+        )}
+        <div className="api-keys">
+          {HOSTED_KINDS
+            // Anthropic-API-Keys sind eingestellt (v0.1.216); die Karte
+            // erscheint nur noch, solange ein Alt-Key gespeichert ist
+            // (zum Entfernen). Der Claude-Abo-Block lebt jetzt oben.
+            .filter((kind) => kind !== "anthropic" || hasKey.anthropic)
+            .map((kind) => (
+              <ApiKeyCard
+                key={kind}
+                kind={kind}
+                hasKey={hasKey[kind]}
+                anthropicSubscription={
+                  kind === "anthropic"
+                    ? {
+                        hasToken: hasAnthropicSubscriptionToken,
+                        anthropicAuthMode:
+                          config.anthropicAuthMode ?? "api-key",
+                        activeKind,
+                      }
+                    : undefined
+                }
+                anthropicTierInfo={
+                  kind === "anthropic"
+                    ? (cfg.data.anthropicTierInfo ?? null)
+                    : null
+                }
+              />
+            ))}
+        </div>
+      </details>
 
-      <h4>API-Schlüssel</h4>
-      {!encryptionAvailable && (
-        <p className="muted">
-          ⚠ OS-Schlüsselbund nicht verfügbar: Schlüssel werden unverschlüsselt
-          im Benutzerdatenordner gespeichert. Cloud-Anbieter funktionieren
-          weiterhin, dieser Modus eignet sich aber nur für Entwicklungs­zwecke.
-        </p>
-      )}
-      <div className="api-keys">
-        {HOSTED_KINDS.map((kind) => (
-          <ApiKeyCard
-            key={kind}
-            kind={kind}
-            hasKey={hasKey[kind]}
-            // Anthropic gets the Claude.ai-Abo-Block nested inside its
-            // own card (v0.1.175). Forwarding through the prop keeps
-            // the wiring shallow and lets the unused subscription IPC
-            // refs stay tree-shaken for non-Anthropic providers.
-            anthropicSubscription={
-              kind === "anthropic"
-                ? {
-                    hasToken: hasAnthropicSubscriptionToken,
-                    anthropicAuthMode: config.anthropicAuthMode ?? "api-key",
-                    activeKind,
-                  }
-                : undefined
-            }
-            // v0.1.209 — Anthropic-Tier-Info wird unter der Karte als
-            // Banner gerendert (siehe AnthropicTierBanner). Wir geben
-            // den Schnappschuss durch, statt im ApiKeyCard erneut
-            // einen Query zu starten, damit die Daten konsistent zur
-            // Rest-Card sind.
-            anthropicTierInfo={
-              kind === "anthropic"
-                ? (cfg.data.anthropicTierInfo ?? null)
-                : null
-            }
-          />
-        ))}
-      </div>
-
-      {/* v0.1.353 — „Sign in with ChatGPT" (Codex-OAuth-Abo). Eigene
-          Karte unter den API-Schlüsseln, analog zum Claude-Abo. */}
-      <OpenAISubscriptionContent
-        hasToken={cfg.data.hasOpenAISubscriptionToken}
-        hasOpenAIApiKey={hasKey.openai}
-        openaiAuthMode={config.openaiAuthMode ?? "api-key"}
-        activeKind={activeKind}
-      />
+      <details className="settings-collapse">
+        <summary>Lokal installierte Modelle (Ollama)</summary>
+        <InstalledModelsSection />
+      </details>
     </section>
   );
 }
@@ -2751,8 +2826,8 @@ function ApiKeyCard({
                 Rückmeldung mehrerer Nutzer waren die API-Kosten für
                 den AVA-Use-Case deutlich höher als gleichwertige
                 OpenAI-Modelle. Wir empfehlen den Wechsel auf das
-                Pro/Max-Abo (siehe unten) — dort sind die Kosten
-                fix und Anthropic priorisiert eingeloggte Nutzer.
+                Pro/Max-Abo (siehe Abo-Karten ganz oben) — dort sind die
+                Kosten fix und Anthropic priorisiert eingeloggte Nutzer.
               </p>
               {anthropicSubscription?.hasToken ? (
                 <p>
@@ -2765,8 +2840,8 @@ function ApiKeyCard({
                 <p>
                   Solange kein Abo verbunden ist, nutzt AVA noch diesen
                   Schlüssel (mit dem strengen API-Minutenlimit). Verbinde
-                  unten dein Pro/Max-Abo — danach wird der Key automatisch
-                  ignoriert.
+                  ganz oben dein Pro/Max-Abo — danach wird der Key
+                  automatisch ignoriert.
                 </p>
               )}
               <button
@@ -2795,20 +2870,9 @@ function ApiKeyCard({
         </div>
       )}
 
-      {kind === "anthropic" && anthropicSubscription && (
-        <>
-          {/* v0.1.216 — "oder"-Divider macht nur Sinn, wenn der API-
-              Key-Pfad oben tatsächlich sichtbar ist. Seit der API-Key-
-              Eingabe für Anthropic eingestellt wurde, ist die Abo-
-              Anmeldung der einzige Pfad — Divider entfällt. */}
-          <AnthropicSubscriptionContent
-            hasToken={anthropicSubscription.hasToken}
-            hasAnthropicApiKey={hasKey}
-            anthropicAuthMode={anthropicSubscription.anthropicAuthMode}
-            activeKind={anthropicSubscription.activeKind}
-          />
-        </>
-      )}
+      {/* v0.1.381 — Der Claude-Abo-Block lebt jetzt PROMINENT oben in der
+          Modelle-Ansicht (subscription-hero-grid) statt hier verschachtelt.
+          Diese Karte erscheint nur noch für Alt-Key-Besitzer (Entfernen). */}
 
       {/* v0.1.209 — Tier-1-Hinweisbanner. v0.1.216: bleibt für
           Restbestand-Nutzer mit noch gespeichertem API-Key

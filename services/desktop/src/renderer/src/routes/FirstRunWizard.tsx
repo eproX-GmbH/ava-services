@@ -551,48 +551,68 @@ function ProviderChooserGrid({
 
   return (
     <>
-      {/* v0.1.219 — Drei klar abgesetzte Sektionen statt 3-spaltiger
-          gleichberechtigter Grid. Reihenfolge nach Empfehlung:
-          1. Hero: Claude Pro/Max-Abo (beste Qualität / fixe Kosten)
+      {/* v0.1.381 — Reihenfolge nach Empfehlung:
+          1. Hero-Reihe: ChatGPT-Abo UND Claude-Abo nebeneinander —
+             Abo-Verbindung ist der empfohlene Standardweg und steht
+             visuell hervorgehoben ganz oben. ChatGPT zuerst (ab
+             15.06.2026 wird die Claude-Abo-Verbindung in AVA separat
+             abgerechnet).
           2. Sekundär: API-Key OpenAI/Google/Mistral
           3. Tertiär kollabiert: Lokale Modelle (mit Sysreq-Warnung)
        */}
 
-      {/* Sektion 1 — Anthropic Pro/Max-Abo (Hero) */}
-      <div className="first-run__hero">
-        <div className="first-run__hero-glyph" aria-hidden="true">✦</div>
-        <div className="first-run__hero-body">
-          <h3 className="first-run__hero-title">
-            Mit Claude Pro/Max-Abo verbinden
-          </h3>
-          <p className="first-run__hero-sub">
-            Beste Qualität, fixe monatliche Kosten — keine API-Abrechnung.
-            Funktioniert mit Pro, Max, Team und Enterprise. Wir empfehlen
-            diesen Weg für die meisten Nutzer.
-          </p>
-          <div className="first-run__hero-docs">
+      {/* Sektion 1 — Abo-Heroes (ChatGPT + Claude) */}
+      <div className="first-run__hero-grid">
+        <div className="first-run__hero">
+          <div className="first-run__hero-glyph" aria-hidden="true">⌬</div>
+          <div className="first-run__hero-body">
+            <h3 className="first-run__hero-title">
+              Mit ChatGPT-Abo verbinden
+            </h3>
+            <p className="first-run__hero-sub">
+              Nutze dein ChatGPT-Plus/Pro/Team-Abo direkt in AVA — ohne
+              API-Schlüssel, ohne Extra-Kosten. Anmeldung per Klick
+              („Sign in with ChatGPT“). Empfohlener Weg.
+            </p>
+            <OpenAISubscriptionHeroCTA onDone={onSubscriptionDone} />
+          </div>
+        </div>
+
+        <div className="first-run__hero">
+          <div className="first-run__hero-glyph" aria-hidden="true">✦</div>
+          <div className="first-run__hero-body">
+            <h3 className="first-run__hero-title">
+              Mit Claude Pro/Max-Abo verbinden
+            </h3>
+            <p className="first-run__hero-sub">
+              Sehr gute Qualität, fixe monatliche Abo-Kosten. Funktioniert
+              mit Pro, Max, Team und Enterprise. Hinweis: Ab dem 15.06.2026
+              wird die Claude-Abo-Verbindung in AVA separat abgerechnet.
+            </p>
+            <div className="first-run__hero-docs">
+              <button
+                type="button"
+                className="link small"
+                onClick={() => openExternal(ANTHROPIC_TOKEN_DOCS_URL)}
+              >
+                So funktioniert die Anmeldung
+              </button>
+              <button
+                type="button"
+                className="link small"
+                onClick={() => openExternal(ANTHROPIC_AUTH_DOC_URL)}
+              >
+                Was bedeutet „Extra Usage"?
+              </button>
+            </div>
             <button
               type="button"
-              className="link small"
-              onClick={() => openExternal(ANTHROPIC_TOKEN_DOCS_URL)}
+              className="first-run__hero-cta"
+              onClick={() => setActive("subscription")}
             >
-              So funktioniert die Anmeldung
-            </button>
-            <button
-              type="button"
-              className="link small"
-              onClick={() => openExternal(ANTHROPIC_AUTH_DOC_URL)}
-            >
-              Was bedeutet „Extra Usage"?
+              Mit Claude verbinden →
             </button>
           </div>
-          <button
-            type="button"
-            className="first-run__hero-cta"
-            onClick={() => setActive("subscription")}
-          >
-            Mit Claude verbinden →
-          </button>
         </div>
       </div>
 
@@ -857,6 +877,52 @@ function ApiKeySubForm({
         </button>
       </div>
     </div>
+  );
+}
+
+/**
+ * v0.1.381 — ChatGPT-Abo-CTA direkt in der Hero-Karte. Anders als beim
+ * Claude-Pfad (Subform mit Advanced-Token-Paste) ist der OpenAI-Flow ein
+ * einzelner OAuth-Klick — der Main-Process-Handler setzt nach Erfolg
+ * selbst `setProvider("openai")`, hier reicht Connect + onDone.
+ */
+function OpenAISubscriptionHeroCTA({
+  onDone,
+}: {
+  onDone: () => Promise<void> | void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const onConnect = async (): Promise<void> => {
+    setBusy(true);
+    setError(null);
+    try {
+      const result = await window.api.agent.connectOpenAISubscription();
+      if (result.ok) {
+        await onDone();
+        return;
+      }
+      setError(result.error);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <>
+      <button
+        type="button"
+        className="first-run__hero-cta"
+        onClick={() => void onConnect()}
+        disabled={busy}
+      >
+        {busy ? "Öffne Anmeldung…" : "Mit ChatGPT verbinden →"}
+      </button>
+      {error && <p className="error small">{error}</p>}
+    </>
   );
 }
 
