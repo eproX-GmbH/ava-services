@@ -16,6 +16,28 @@ import type { LanguageModel } from "ai";
 
 const OPENAI_CODEX_BASE_URL = "https://chatgpt.com/backend-api/codex";
 
+// v0.1.382 — Der Codex-Backend-Endpunkt akzeptiert NUR Codex-fähige
+// Modell-IDs (im Kern `gpt-5` und `gpt-5-codex`), NICHT die allgemeinen
+// API-Katalog-IDs (gpt-5.4-mini, gpt-5.5, gpt-4o, o3, …). Schickt der
+// Nutzer eine Katalog-ID — und der Default fürs Abo war `gpt-5.4-mini` —
+// antwortet der Endpunkt mit `400 Bad Request`. Genau der gemeldete
+// Fehler. Wir mappen darum jede eingehende ID auf eine Codex-erlaubte ID.
+// Override per Env, falls OpenAI die IDs umbenennt (kein Rebuild nötig).
+const CODEX_DEFAULT_MODEL = "gpt-5";
+
+export function normalizeCodexModel(model: string): string {
+  const override = process.env.AVA_OPENAI_CODEX_MODEL?.trim();
+  if (override) return override;
+  const m = (model || "").trim().toLowerCase();
+  if (!m) return CODEX_DEFAULT_MODEL;
+  // Bereits eine Codex-ID (…-codex) → unverändert durchlassen.
+  if (m.includes("codex")) return model;
+  // Exakt erlaubte Basis-IDs durchlassen.
+  if (m === "gpt-5" || m === "gpt-5-codex") return m;
+  // Alles andere (gpt-5.x, gpt-4*, o3/o4, mini/nano …) → Codex-Default.
+  return CODEX_DEFAULT_MODEL;
+}
+
 // Node 20+ undici-fetch bevorzugen (Chromium-net-fetch hat im Hardened-
 // Runtime macOS-Build den bekannten ECONNRESET-Bug bei gestreamten
 // Responses). Probe beim Modul-Load, Fallback auf global fetch.
@@ -49,7 +71,10 @@ function makeCodexFetch(
   accountId: string | undefined,
 ): typeof fetch {
   const sessionId = randomSessionId();
-  return ((input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+  return (async (
+    input: Parameters<typeof fetch>[0],
+    init?: RequestInit,
+  ) => {
     const next: RequestInit = { ...(init ?? {}) };
     const headers = new Headers(next.headers ?? {});
     headers.delete("x-api-key");
@@ -79,7 +104,26 @@ function makeCodexFetch(
         /* body not JSON */
       }
     }
-    return baseFetch(input, next);
+
+    const res = await baseFetch(input, next);
+
+    // v0.1.382 — Bei 4xx/5xx auf dem Codex-Endpunkt den ECHTEN Fehler-Body
+    // loggen. Vorher ging er verloren und der Nutzer sah nur ein opakes
+    // „Bad Request". Wir klonen die Response (Original bleibt für das
+    // AI-SDK lesbar) und schreiben Status + Body-Auszug in die Konsole —
+    // so ist eine künftige 400 sofort diagnostizierbar.
+    if (!res.ok && url.includes("/responses")) {
+      try {
+        const bodyText = await res.clone().text();
+        // eslint-disable-next-line no-console
+        console.error(
+          `[openai-subscription] Codex ${res.status} ${res.statusText}: ${bodyText.slice(0, 1000)}`,
+        );
+      } catch {
+        /* body not readable */
+      }
+    }
+    return res;
   }) as typeof fetch;
 }
 
@@ -94,6 +138,13 @@ export function createOpenAISubscriptionModel(args: {
   accessToken: string;
   accountId?: string;
 }): LanguageModel {
+  const codexModel = normalizeCodexModel(args.model);
+  if (codexModel !== args.model) {
+    // eslint-disable-next-line no-console
+    console.log(
+      `[openai-subscription] Modell für Codex-Endpunkt gemappt: ${args.model} → ${codexModel} (nur Codex-IDs werden akzeptiert)`,
+    );
+  }
   const client = createOpenAI({
     apiKey: "oauth-placeholder",
     baseURL: OPENAI_CODEX_BASE_URL,
@@ -103,5 +154,5 @@ export function createOpenAISubscriptionModel(args: {
       args.accountId,
     ),
   });
-  return client.responses(args.model);
+  return client.responses(codexModel);
 }

@@ -907,6 +907,27 @@ function humanizeProviderError(
     );
   }
 
+  // v0.1.382 — ChatGPT-Abo (Codex-Endpunkt): ein 400 „Bad Request" kam
+  // bisher aus einer nicht-Codex-fähigen Modell-ID (der Abo-Default
+  // `gpt-5.4-mini` ist auf dem Codex-Backend ungültig). Seit v0.1.382
+  // mappen wir die ID automatisch auf eine Codex-ID — bleibt der Fehler
+  // trotzdem, ist die häufigste Ursache eine abgelaufene/unvollständige
+  // Abo-Verbindung. Statt des opaken „Bad Request" eine handlungsleitende
+  // Meldung.
+  if (
+    kind === "openai" &&
+    authMode === "subscription" &&
+    (lower.includes("400") || lower.includes("bad request"))
+  ) {
+    return (
+      `${label} (ChatGPT-Abo): Der Codex-Endpunkt hat die Anfrage abgelehnt ` +
+      `(Bad Request). Bitte in Einstellungen → Modelle die ChatGPT-Verbindung ` +
+      `einmal trennen und neu verbinden. Bleibt es bestehen, hat dein Abo den ` +
+      `Codex-Zugang evtl. (noch) nicht freigeschaltet — dann auf einen ` +
+      `OpenAI-API-Schlüssel oder ein lokales Ollama-Modell ausweichen.`
+    );
+  }
+
   // Fall-through: prefix with the provider label so it's clear who
   // failed, but otherwise pass the raw message through.
   return `${label}: ${raw}`;
