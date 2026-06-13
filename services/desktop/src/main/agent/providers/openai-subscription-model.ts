@@ -25,6 +25,21 @@ const OPENAI_CODEX_BASE_URL = "https://chatgpt.com/backend-api/codex";
 // Override per Env, falls OpenAI die IDs umbenennt (kein Rebuild nötig).
 const CODEX_DEFAULT_MODEL = "gpt-5";
 
+// v0.1.383 — Der Codex-Backend-Endpunkt erwartet im `instructions`-Feld eine
+// kurze Codex-Basispräambel und limitiert das Feld auf ~32 KiB. Der
+// @ai-sdk/openai-Responses-Provider mappt aber unseren KOMPLETTEN
+// System-Prompt (Persona + Skills + Tools + Erinnerungen) in genau dieses
+// Feld — das ist fast immer deutlich >32 KiB → der Endpunkt antwortet mit
+// `400 Bad Request` (der gemeldete Fehler, der auch nach Neu-Verbinden des
+// Abos blieb, weil er nichts mit dem Token zu tun hat). Wir verschieben den
+// echten AVA-Prompt darum in eine führende `developer`-Input-Nachricht
+// (höheres Limit, gleiche Anweisungs-Priorität) und setzen `instructions` auf
+// die erwartete kurze Codex-Präambel. Analog zum Anthropic-CLAUDE_CODE_MARKER,
+// nur invers: dort PREPENDen wir den Marker, hier ERSETZEN wir das Feld und
+// reichen den eigentlichen Prompt als Input durch.
+const CODEX_INSTRUCTIONS =
+  "You are Codex, based on GPT-5. You are running as a coding agent.";
+
 export function normalizeCodexModel(model: string): string {
   const override = process.env.AVA_OPENAI_CODEX_MODEL?.trim();
   if (override) return override;
@@ -99,6 +114,30 @@ function makeCodexFetch(
       try {
         const parsed = JSON.parse(next.body) as Record<string, unknown>;
         if (parsed.store !== false) parsed.store = false;
+
+        // Großen System-Prompt aus `instructions` in eine führende
+        // `developer`-Input-Nachricht verschieben (umgeht das ~32-KiB-Limit
+        // des Codex-Endpunkts) und `instructions` auf die kurze Präambel
+        // setzen. Idempotent: bereits-gemappte Requests werden übersprungen.
+        const instr = parsed.instructions;
+        if (typeof instr === "string" && instr.length > 0) {
+          if (instr !== CODEX_INSTRUCTIONS) {
+            const devMsg = {
+              type: "message",
+              role: "developer",
+              content: [{ type: "input_text", text: instr }],
+            };
+            parsed.input = Array.isArray(parsed.input)
+              ? [devMsg, ...parsed.input]
+              : [devMsg];
+            parsed.instructions = CODEX_INSTRUCTIONS;
+          }
+        } else if (instr == null) {
+          // Kein System-Prompt im Body — der Endpunkt verlangt trotzdem ein
+          // nicht-leeres `instructions`-Feld.
+          parsed.instructions = CODEX_INSTRUCTIONS;
+        }
+
         next.body = JSON.stringify(parsed);
       } catch {
         /* body not JSON */
