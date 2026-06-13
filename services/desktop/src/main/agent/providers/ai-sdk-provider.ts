@@ -519,7 +519,13 @@ export class AiSdkProvider extends EventEmitter implements LlmProvider {
                 : typeof err === "string"
                   ? err
                   : "ai-sdk stream error";
-            const msg = humanizeProviderError(this.kind, rawMsg, effectiveAuthMode);
+            const up = extractUpstreamDetail(err);
+            const msg = humanizeProviderError(
+              this.kind,
+              rawMsg,
+              effectiveAuthMode,
+              up,
+            );
             yield { done: true, errorMessage: msg };
             return;
           }
@@ -574,7 +580,13 @@ export class AiSdkProvider extends EventEmitter implements LlmProvider {
       // ein nach Retries erschöpftes `529 Overloaded`) werfen synchron,
       // bevor ein Stream-`error`-Part kommt.
       const rawMsg = err instanceof Error ? err.message : String(err);
-      const msg = humanizeProviderError(this.kind, rawMsg, effectiveAuthMode);
+      const up = extractUpstreamDetail(err);
+      const msg = humanizeProviderError(
+        this.kind,
+        rawMsg,
+        effectiveAuthMode,
+        up,
+      );
       yield { done: true, errorMessage: msg };
       return;
     }
@@ -765,13 +777,55 @@ function buildToolSet(specs: OllamaToolSpec[]): ToolSet {
  *   - Quota / 402 / "insufficient_quota": tell them billing is the
  *     issue (kein Tier-Wechsel, sondern Guthaben).
  */
+// v0.1.384 — Den ECHTEN Upstream-Response-Body + HTTP-Status aus dem
+// AI-SDK-Fehlerobjekt ziehen. Das AI-SDK wirft/streamt bei HTTP-Fehlern eine
+// APICallError mit `responseBody` (roher HTTP-Body) und `statusCode`; bei
+// einem 400 enthält `err.message` aber nur „Bad Request", der konkrete Grund
+// steht im Body (z. B. `invalid_request_error: instructions too long`,
+// `unsupported tool type`, …). Den heben wir hoch, damit er in der
+// Chat-Meldung sichtbar wird — sonst ist der Fehler ohne Konsolen-/Log-Zugriff
+// nicht diagnostizierbar. Entpackt rekursiv die `cause`-Kette.
+function extractUpstreamDetail(err: unknown): {
+  detail?: string;
+  status?: number;
+} {
+  if (!err || typeof err !== "object") return {};
+  const e = err as Record<string, unknown>;
+  const status =
+    typeof e.statusCode === "number"
+      ? e.statusCode
+      : typeof e.status === "number"
+        ? e.status
+        : undefined;
+  let body: string | undefined;
+  if (typeof e.responseBody === "string" && e.responseBody.trim().length > 0) {
+    body = e.responseBody;
+  } else if (e.data != null) {
+    try {
+      body = typeof e.data === "string" ? e.data : JSON.stringify(e.data);
+    } catch {
+      /* nicht serialisierbar */
+    }
+  }
+  if (!body && e.cause && typeof e.cause === "object") {
+    const inner = extractUpstreamDetail(e.cause);
+    return { detail: inner.detail, status: status ?? inner.status };
+  }
+  return {
+    detail: body ? body.replace(/\s+/g, " ").trim().slice(0, 800) : undefined,
+    status,
+  };
+}
+
 function humanizeProviderError(
   kind: LlmProviderKind,
   raw: string,
   authMode: "api-key" | "subscription" = "api-key",
+  upstream?: { detail?: string; status?: number },
 ): string {
   const lower = raw.toLowerCase();
   const label = labelFor(kind);
+  const detail = upstream?.detail;
 
   // Rate-limit (both Anthropic "exceed your organization's rate limit"
   // and OpenAI "rate_limit_exceeded" / "429").
@@ -917,20 +971,29 @@ function humanizeProviderError(
   if (
     kind === "openai" &&
     authMode === "subscription" &&
-    (lower.includes("400") || lower.includes("bad request"))
+    (lower.includes("400") ||
+      lower.includes("bad request") ||
+      upstream?.status === 400)
   ) {
+    // v0.1.384 — Den echten Codex-Grund mit anhängen, damit ohne Log-Zugriff
+    // klar wird, WORAN es scheitert (Feldgröße, Tool-Typ, Codex-Zugang …).
+    const reason = detail
+      ? `\n\nTechnischer Grund (Codex-Antwort): ${detail}`
+      : "";
     return (
       `${label} (ChatGPT-Abo): Der Codex-Endpunkt hat die Anfrage abgelehnt ` +
       `(Bad Request). Bitte in Einstellungen → Modelle die ChatGPT-Verbindung ` +
       `einmal trennen und neu verbinden. Bleibt es bestehen, hat dein Abo den ` +
       `Codex-Zugang evtl. (noch) nicht freigeschaltet — dann auf einen ` +
-      `OpenAI-API-Schlüssel oder ein lokales Ollama-Modell ausweichen.`
+      `OpenAI-API-Schlüssel oder ein lokales Ollama-Modell ausweichen.` +
+      reason
     );
   }
 
   // Fall-through: prefix with the provider label so it's clear who
-  // failed, but otherwise pass the raw message through.
-  return `${label}: ${raw}`;
+  // failed. v0.1.384 — den echten Upstream-Body anhängen, falls vorhanden,
+  // statt nur die opake SDK-Kurzmeldung.
+  return detail ? `${label}: ${raw}\n\n${detail}` : `${label}: ${raw}`;
 }
 
 function labelFor(kind: LlmProviderKind): string {
