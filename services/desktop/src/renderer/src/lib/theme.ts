@@ -50,6 +50,14 @@ export function applyTheme(theme: "light" | "dark"): void {
   else root.classList.remove("dark");
   // Native form controls + scrollbars need this hint too.
   root.style.colorScheme = theme;
+  // v0.1.386 — Windows: die Fensterleisten-Buttons (titleBarOverlay) mit
+  // umfärben, damit Min/Max/Schließen im Dark-Mode nicht schwarz-auf-dunkel
+  // verschwinden. Auf macOS ist das ein No-op im Main-Process.
+  try {
+    void window.api?.setTitleBarOverlay?.(theme);
+  } catch {
+    /* api noch nicht bereit / nicht in Electron — egal */
+  }
 }
 
 /** Apply the currently-stored mode immediately. Call once at boot. */

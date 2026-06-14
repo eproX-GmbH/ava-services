@@ -81,6 +81,14 @@ export function App({ children }: PropsWithChildren) {
   // usable" stays `status.missing` + provider config.
   const [pathChosen, setPathChosen] = useState(false);
 
+  // v0.1.386 — Plattform an <html> annotieren, damit die integrierte
+  // Titelleiste (CSS in styles.css) die System-Buttons freihält: macOS die
+  // Ampel links, Windows das Overlay rechts.
+  useEffect(() => {
+    const platform = window.api.platform;
+    if (platform) document.documentElement.dataset.platform = platform;
+  }, []);
+
   useEffect(() => {
     void window.api.getConfig().then(setConfig);
     void window.api.auth.getStatus().then(setAuth);

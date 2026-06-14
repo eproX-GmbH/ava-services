@@ -1546,6 +1546,16 @@ agent.on("stream", broadcastAgentStream);
 agent.on("status", broadcastAgentStatus);
 
 function createMainWindow(): BrowserWindow {
+  // v0.1.386 — Vollintegrierte Titelleiste: die native System-Leiste
+  // ausblenden und die App-eigene `.topbar` (64px) zur Fensterleiste machen,
+  // damit Fenster-Buttons + Branding optisch eine Einheit bilden (wie bei
+  // anderen nativen Mac-Apps). macOS: `hiddenInset` lässt die Ampel-Buttons
+  // eingebettet sichtbar — `trafficLightPosition` zentriert sie vertikal in
+  // der 64px-Leiste. Windows: `titleBarOverlay` zeichnet Min/Max/Schließen
+  // über die Leiste; Farben werden zur Boot-Zeit (hell) gesetzt und bei
+  // Theme-Wechsel via `window:setTitleBarOverlay` nachgezogen.
+  const isMac = process.platform === "darwin";
+  const isWin = process.platform === "win32";
   const win = new BrowserWindow({
     width: 1280,
     height: 800,
@@ -1553,6 +1563,21 @@ function createMainWindow(): BrowserWindow {
     minHeight: 600,
     show: false,
     autoHideMenuBar: true,
+    ...(isMac
+      ? {
+          titleBarStyle: "hiddenInset" as const,
+          trafficLightPosition: { x: 19, y: 24 },
+        }
+      : {}),
+    ...(isWin
+      ? {
+          titleBarOverlay: {
+            color: "#F2F7F6",
+            symbolColor: "#0A1F2A",
+            height: 64,
+          },
+        }
+      : {}),
     webPreferences: {
       preload: join(__dirname, "../preload/index.js"),
       contextIsolation: true,
@@ -3381,6 +3406,28 @@ app.whenReady().then(async () => {
   // Antwortet IMMER synchron mit pong + Zeitstempel; jede Latenz hier
   // ist diagnostisch wertvoll (Renderer kann das loggen).
   ipcMain.handle("app:ping", () => ({ pong: true, at: Date.now() }));
+
+  // v0.1.386 — Windows-Fensterleiste (titleBarOverlay) bei Theme-Wechsel
+  // umfärben. Auf macOS sind die Ampel-Buttons systemgezeichnet und brauchen
+  // das nicht — dort ist der Handler ein No-op. Der Renderer ruft das aus
+  // `applyTheme` mit „light"/„dark".
+  ipcMain.handle(
+    "window:setTitleBarOverlay",
+    (event, theme: "light" | "dark") => {
+      if (process.platform !== "win32") return;
+      const w = BrowserWindow.fromWebContents(event.sender);
+      if (!w) return;
+      const overlay =
+        theme === "dark"
+          ? { color: "#0A1F2A", symbolColor: "#F2F7F6", height: 64 }
+          : { color: "#F2F7F6", symbolColor: "#0A1F2A", height: 64 };
+      try {
+        w.setTitleBarOverlay(overlay);
+      } catch {
+        /* nur verfügbar wenn das Fenster mit titleBarOverlay erstellt wurde */
+      }
+    },
+  );
 
   ipcMain.handle("updater:install", () => {
     console.log("[updater:install] pre-kill subprocesses + arm backstop");

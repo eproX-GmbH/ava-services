@@ -194,6 +194,17 @@ export type {
 const api = {
   getConfig: (): Promise<AppConfig> => ipcRenderer.invoke("app:getConfig"),
 
+  /** v0.1.386 — Plattform-Kennung für die integrierte Titelleiste. Der
+   *  Renderer setzt daraus `data-platform` auf <html>, damit CSS die
+   *  Ampel-Buttons (macOS, links) bzw. das Overlay (Windows, rechts)
+   *  freihält. In sandboxed-preload ist `process.platform` verfügbar. */
+  platform: process.platform as NodeJS.Platform,
+
+  /** v0.1.386 — Windows: Farben der Fensterleisten-Buttons bei
+   *  Theme-Wechsel nachziehen. Auf macOS ein No-op im Main-Process. */
+  setTitleBarOverlay: (theme: "light" | "dark"): Promise<void> =>
+    ipcRenderer.invoke("window:setTitleBarOverlay", theme),
+
   /** v0.1.327 — Health-Heartbeat fuer den Wake-Recovery-Pfad.
    *  Renderer ruft das nach `power:resumed`; bleibt der Promise
    *  haengen, ist der Main-Process wedged → window.location.reload().

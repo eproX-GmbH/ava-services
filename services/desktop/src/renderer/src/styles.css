@@ -505,6 +505,52 @@ body {
   position: sticky;
   top: 0;
   z-index: 20;
+  /* v0.1.386 — integrierte Titelleiste: die ganze Leiste ist Drag-Zone
+   * (Fenster verschieben), interaktive Kinder werden unten wieder
+   * no-drag gesetzt, sonst wären Nav/Buttons nicht klickbar. */
+  -webkit-app-region: drag;
+}
+/* Interaktive Elemente in der Leiste klickbar halten. */
+.topbar a,
+.topbar button,
+.topbar input,
+.topbar select,
+.topbar textarea,
+.topbar [role="button"],
+.topbar [tabindex] {
+  -webkit-app-region: no-drag;
+}
+/* v0.1.386 — System-Fensterbuttons freihalten: macOS Ampel links,
+ * Windows Overlay rechts. data-platform setzt App.tsx aus window.api. */
+:root[data-platform="darwin"] .topbar {
+  padding-left: 88px;
+}
+:root[data-platform="win32"] .topbar {
+  padding-right: 150px;
+}
+/* v0.1.386 — Login + First-Run-Wizard haben keine .topbar, müssen mit der
+ * integrierten Titelleiste aber trotzdem verschiebbar bleiben. Ganze Shell
+ * = Drag-Zone, Bedien-Elemente wieder no-drag. Die zentrierte Karte lässt
+ * oben links genug Platz für die macOS-Ampel. */
+.signin-shell,
+.first-run {
+  -webkit-app-region: drag;
+}
+.signin-shell a,
+.signin-shell button,
+.signin-shell input,
+.signin-shell select,
+.signin-shell textarea,
+.signin-shell [role="button"],
+.signin-shell [tabindex],
+.first-run a,
+.first-run button,
+.first-run input,
+.first-run select,
+.first-run textarea,
+.first-run [role="button"],
+.first-run [tabindex] {
+  -webkit-app-region: no-drag;
 }
 .topbar__brand {
   display: flex;
