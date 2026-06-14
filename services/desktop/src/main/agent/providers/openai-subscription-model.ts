@@ -16,14 +16,17 @@ import type { LanguageModel } from "ai";
 
 const OPENAI_CODEX_BASE_URL = "https://chatgpt.com/backend-api/codex";
 
-// v0.1.382 — Der Codex-Backend-Endpunkt akzeptiert NUR Codex-fähige
-// Modell-IDs (im Kern `gpt-5` und `gpt-5-codex`), NICHT die allgemeinen
-// API-Katalog-IDs (gpt-5.4-mini, gpt-5.5, gpt-4o, o3, …). Schickt der
-// Nutzer eine Katalog-ID — und der Default fürs Abo war `gpt-5.4-mini` —
-// antwortet der Endpunkt mit `400 Bad Request`. Genau der gemeldete
-// Fehler. Wir mappen darum jede eingehende ID auf eine Codex-erlaubte ID.
-// Override per Env, falls OpenAI die IDs umbenennt (kein Rebuild nötig).
-const CODEX_DEFAULT_MODEL = "gpt-5";
+// v0.1.385 — Der ChatGPT-Account-Codex-Endpunkt akzeptiert NUR die
+// `…-codex`-Modellfamilie, NICHT die allgemeinen API-Katalog-IDs — und
+// (entgegen der v0.1.382-Annahme) AUCH NICHT das nackte `gpt-5`. Der echte
+// Server-Body belegt das wörtlich:
+//   {"detail":"The 'gpt-5' model is not supported when using Codex with a
+//    ChatGPT account."}
+// Darum mappen wir JEDE Nicht-Codex-ID (gpt-5, gpt-5.4-mini, gpt-4o, o3, …)
+// auf das Codex-Default `gpt-5-codex` (das Default des echten Codex-CLI mit
+// ChatGPT-Login). Override per Env, falls OpenAI die IDs umbenennt (kein
+// Rebuild nötig).
+const CODEX_DEFAULT_MODEL = "gpt-5-codex";
 
 // v0.1.383 — Der Codex-Backend-Endpunkt erwartet im `instructions`-Feld eine
 // kurze Codex-Basispräambel und limitiert das Feld auf ~32 KiB. Der
@@ -47,9 +50,8 @@ export function normalizeCodexModel(model: string): string {
   if (!m) return CODEX_DEFAULT_MODEL;
   // Bereits eine Codex-ID (…-codex) → unverändert durchlassen.
   if (m.includes("codex")) return model;
-  // Exakt erlaubte Basis-IDs durchlassen.
-  if (m === "gpt-5" || m === "gpt-5-codex") return m;
-  // Alles andere (gpt-5.x, gpt-4*, o3/o4, mini/nano …) → Codex-Default.
+  // Alles andere — inkl. des nackten `gpt-5`, das der ChatGPT-Account-Codex-
+  // Endpunkt ablehnt — auf das Codex-Default mappen.
   return CODEX_DEFAULT_MODEL;
 }
 
