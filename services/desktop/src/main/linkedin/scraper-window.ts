@@ -78,7 +78,25 @@ export function prewarmScraperWindow(): Promise<BrowserWindow> {
         offscreen: false,
       },
     });
+    // v0.1.387 — Fenster als LinkedIn-Scraper markieren, damit der
+    // `activate`-Handler in main/index.ts es beim „AVA nach vorne holen"
+    // sicher vom echten Hauptfenster unterscheiden kann.
+    (win as unknown as { __avaLinkedInScraper?: boolean }).__avaLinkedInScraper =
+      true;
+
     if (!debugWindow) {
+      try {
+        // v0.1.387 — Aus dem macOS-Fenster-Menü (und der Dock-Fensterliste)
+        // ausschließen. Sonst taucht dieses unsichtbare Off-Screen-Fenster
+        // dort als „Feed | LinkedIn" auf; der Nutzer wechselt versehentlich
+        // dorthin statt zu AVA und landet auf einem leeren/unsichtbaren
+        // Fenster. macOS-only Property — auf anderen Plattformen No-op.
+        (
+          win as unknown as { excludedFromShownWindowsMenu?: boolean }
+        ).excludedFromShownWindowsMenu = true;
+      } catch {
+        /* nur macOS */
+      }
       try {
         win.setOpacity(0);
       } catch {

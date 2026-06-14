@@ -1545,6 +1545,23 @@ function broadcastAgentStatus(status: AgentStatus): void {
 agent.on("stream", broadcastAgentStream);
 agent.on("status", broadcastAgentStatus);
 
+/**
+ * v0.1.387 — Das echte AVA-Hauptfenster finden, ohne das persistente
+ * LinkedIn-Scraper-Fenster zu erwischen (das ist off-screen + unsichtbar und
+ * mit `__avaLinkedInScraper` markiert). Liefert das erste sichtbare
+ * Nicht-Scraper-Fenster, sonst null.
+ */
+function getMainAppWindow(): BrowserWindow | null {
+  return (
+    BrowserWindow.getAllWindows().find(
+      (w) =>
+        !w.isDestroyed() &&
+        !(w as unknown as { __avaLinkedInScraper?: boolean })
+          .__avaLinkedInScraper,
+    ) ?? null
+  );
+}
+
 function createMainWindow(): BrowserWindow {
   // v0.1.386 — Vollintegrierte Titelleiste: die native System-Leiste
   // ausblenden und die App-eigene `.topbar` (64px) zur Fensterleiste machen,
@@ -5038,7 +5055,20 @@ app.whenReady().then(async () => {
   void updater.start();
 
   app.on("activate", () => {
-    if (BrowserWindow.getAllWindows().length === 0) createMainWindow();
+    // v0.1.387 — Dock-Klick / App-Aktivierung: das echte AVA-Hauptfenster
+    // nach vorne holen. Vorher prüfte das nur `length === 0` und legte ein
+    // neues Fenster an — aber das persistente, unsichtbare LinkedIn-Scraper-
+    // Fenster hält die Fensterzahl IMMER > 0, sodass der Klick ins Leere lief
+    // und AVA sich nicht aus dem Hintergrund holen ließ. Jetzt suchen wir
+    // gezielt das Nicht-Scraper-Fenster, stellen es wieder her und fokussieren.
+    const main = getMainAppWindow();
+    if (!main) {
+      createMainWindow();
+      return;
+    }
+    if (main.isMinimized()) main.restore();
+    main.show();
+    main.focus();
   });
 });
 
