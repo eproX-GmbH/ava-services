@@ -29,6 +29,17 @@ kill_timeout = '5s'
 [env]
   JAVA_OPTS = '-Djboss.bind.address.private=0.0.0.0 -Djboss.bind.address=0.0.0.0 -Djava.net.preferIPv6Addresses=true'
   KC_DB = 'postgres'
+  # Connection-Pool kappen. Keycloak (Agroal) lief vorher mit dem Default
+  # KC_DB_POOL_MAX_SIZE=100 auf der GETEILTEN MPG-Cluster (max_connections=100),
+  # die sich db-gateway/master-data/Producer teilen. Der Gateway budgetiert
+  # seine Pools (~28 Slots, siehe db-gateway producer-pools.ts), Keycloak war
+  # der einzige unbudgetierte Konsument und fraß die Rest-Slots auf → FATAL:
+  # "remaining connection slots are reserved for roles with the SUPERUSER
+  # attribute" (PSQLState 53300). Für die SSO-Last (Desktop-Login + selten
+  # Admin) reichen wenige Verbindungen; 15 lässt Luft für Login-Spitzen.
+  KC_DB_POOL_INITIAL_SIZE = '2'
+  KC_DB_POOL_MIN_SIZE = '2'
+  KC_DB_POOL_MAX_SIZE = '15'
   KC_HOSTNAME_STRICT = 'false'
   KC_HTTP_ENABLED = 'true'
   KC_PROXY = 'edge'
