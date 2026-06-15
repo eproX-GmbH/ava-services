@@ -200,9 +200,9 @@ export function buildMetaTools(deps: MetaToolDeps): Tool[] {
           type: "array",
           items: { type: "string" },
           minItems: 1,
-          maxItems: 20,
+          maxItems: 50,
           description:
-            "Tool names to load (as returned by `tool_search`). Pass several at once when you need a whole group (e.g. all notion_* tools for a CRM workflow).",
+            "Tool names to load (as returned by `tool_search`). Pass an ENTIRE bundle in ONE call (e.g. all CRM/HubSpot read tools for a CRM query) — up to 50 at once. Don't load one-by-one and don't ask the user first.",
         },
       },
       required: ["names"],
@@ -212,7 +212,12 @@ export function buildMetaTools(deps: MetaToolDeps): Tool[] {
         .array()
         .of(yup.string().trim().required())
         .min(1, "names darf nicht leer sein")
-        .max(20, "höchstens 20 Tools auf einmal")
+        // v0.1.389 — Cap von 20 auf 50 angehoben. Das HubSpot-CRM-Bundle hat
+        // ~36 Tools; bei 20 schlug „lade das ganze Bundle auf einmal" (so der
+        // System-Prompt) mit einem Fehler fehl → unnötiges Splitten + wirkte
+        // unentschlossen. Pro-Call-Cap begrenzt NICHT den Gesamtkontext (das
+        // täte nur ein Total-Cap), daher kostenneutral ggü. Batch-Laden.
+        .max(50, "höchstens 50 Tools auf einmal")
         .required("names fehlt"),
     }),
     run: async (args) => {

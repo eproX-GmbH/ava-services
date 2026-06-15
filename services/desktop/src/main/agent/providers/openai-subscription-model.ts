@@ -40,8 +40,21 @@ const CODEX_DEFAULT_MODEL = "gpt-5-codex";
 // die erwartete kurze Codex-Präambel. Analog zum Anthropic-CLAUDE_CODE_MARKER,
 // nur invers: dort PREPENDen wir den Marker, hier ERSETZEN wir das Feld und
 // reichen den eigentlichen Prompt als Input durch.
+// v0.1.389 — Diese kurze Direktive steht im top-level `instructions`-Feld
+// (höchste Prompt-Position). BEWUSST NICHT die Codex-`base_instructions` (der
+// vorsichtige Coding-Agent-Prompt) — die machten AVA auf dem Codex-Pfad
+// zaghaft: es fragte ständig nach, ob es ein Tool laden soll, statt autonom zu
+// handeln (siehe Nutzer-Feedback). Wir verankern stattdessen AVAs autonome
+// Identität ganz oben; die VOLLE Persona/Regeln folgen als developer-Input.
 const CODEX_INSTRUCTIONS =
-  "You are Codex, based on GPT-5. You are running as a coding agent.";
+  "You are AVA, an autonomous German-language B2B research and CRM assistant. " +
+  "Your complete operating instructions, identity, and rules are provided in the " +
+  "developer message that follows — obey them exactly; they take precedence over " +
+  "any generic assistant or coding-agent defaults. Act autonomously and decisively: " +
+  "when a capability or tool is not yet loaded, load it via tool_search/tool_load and " +
+  "immediately continue in the SAME turn. Never ask the user for permission to load or " +
+  "use a tool, and never stop at a partial result while more data is reachable. Only ask " +
+  "the user about genuine ambiguity that no tool can resolve.";
 
 export function normalizeCodexModel(model: string): string {
   const override = process.env.AVA_OPENAI_CODEX_MODEL?.trim();
@@ -299,9 +312,12 @@ function makeCodexFetch(
         );
         parsed.model = resolved.slug;
 
-        // Präambel: bevorzugt die offizielle `base_instructions` des Modells
-        // (was der echte Client schickt), sonst die kurze Fallback-Präambel.
-        const preamble = resolved.baseInstructions ?? CODEX_INSTRUCTIONS;
+        // v0.1.389 — Präambel = AVA-Autonomie-Direktive (CODEX_INSTRUCTIONS),
+        // NICHT die Codex-`base_instructions`. Letztere (Coding-Agent-Prompt)
+        // standen vorher an höchster Position und machten AVA zaghaft. Der
+        // /models-Abruf (resolved.slug) bleibt davon unberührt — nur die
+        // base_instructions werden bewusst nicht mehr als Präambel verwendet.
+        const preamble = CODEX_INSTRUCTIONS;
 
         // Großen System-Prompt aus `instructions` in eine führende
         // `developer`-Input-Nachricht verschieben (umgeht das ~32-KiB-Limit
