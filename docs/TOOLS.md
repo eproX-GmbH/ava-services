@@ -5,7 +5,7 @@ NICHT direkt bearbeiten — die Quelle der Wahrheit ist `services/desktop/src/ma
 Lauf via `pnpm -F @ava/desktop tools:doc` (oder automatisch via `build:typecheck`).
 
 Stand: 2026-06-16
-Anzahl Tools: 162
+Anzahl Tools: 161
 
 ## Firmen (11)
 
@@ -111,13 +111,13 @@ Get the crawled website summary for a company (homepage URL, scraped sections, l
 _Parameter:_
 - `companyId: string` (required)
 
-## Importe (6)
+## Importe (5)
 
 ### `import_companies`
 
 _Datei:_ `services/desktop/src/main/agent/tools/imports.ts`
 
-Bulk-import a pasted LIST of companies as ONE transaction (full master-data pipeline: profile, website, publications, contacts, evaluations). Use this whenever the user pastes / names MULTIPLE companies in chat and there is NO file attachment and NO connected-CRM source (e.g. a list copied from LinkedIn). Do NOT loop `import_company` per row — that creates one transaction per company and scatters the Transactions view. WORKFLOW: call FIRST with `dryRun: true` — you get back a matching preview AND a downloadable Excel report (path in `reportPath`). Show the user the matched / not-uniquely-matched companies and the report link, let them confirm or correct, THEN call again with `dryRun: false` to commit. Each row needs name + city (city disambiguates same-named companies); if the user didn't give cities, use the best-known HQ city — the dry-run report will flag wrong guesses as not-uniquely-matched. Returns a transactionId on commit; progress via `import_status`.
+Ingest ONE OR MORE companies (by name + city) as a SINGLE transaction, kicking off the full master-data pipeline (profile, website, publications, contacts, evaluations). This is THE import tool when the user names or pastes companies in chat (no file attachment): a single company ("leg mir Foo GmbH aus Berlin an") is just a one-item list, a pasted list (e.g. from LinkedIn) is the many-item case. Pass ALL companies in this ONE call — never split into multiple calls, that scatters the Transactions view into one transaction per company. WORKFLOW for lists: call FIRST with `dryRun: true` — you get a matching preview AND a downloadable Excel report (path in `reportPath`); show the user matched / not-uniquely-matched + the report link, let them confirm or correct, THEN call again with `dryRun: false` to commit. For a single, clearly-specified company you may commit directly. Each row needs name + city (city disambiguates same-named companies); if the user gave no city, use the best-known HQ — the dry-run report flags wrong guesses. Returns a transactionId on commit; progress via `import_status`.
 
 _Parameter:_ keine.
 
@@ -126,14 +126,6 @@ _Parameter:_ keine.
 _Datei:_ `services/desktop/src/main/agent/tools/imports.ts`
 
 Import companies from the user's CONNECTED CRM (HubSpot, Salesforce, or Microsoft Dynamics 365) and start one transaction with the full master- data pipeline. Use when the user says "importiere alle Firmen aus HubSpot", "start a run for everyone in our CRM", "alles aus dem CRM", etc. Today only HubSpot is wired end-to-end; if the user picks Salesforce or Dynamics this returns a clear 'not yet implemented' message — fall back to suggesting HubSpot or a file upload. Always check `crm_status` first if you're unsure which CRM is connected. Returns a transactionId you can hand back; progress checkable via `import_status`.
-
-_Parameter:_ keine.
-
-### `import_company`
-
-_Datei:_ `services/desktop/src/main/agent/tools/imports.ts`
-
-Ingest a single company by name + city, kicking off the full master-data pipeline (profile, website, publications, contacts, evaluations). Use this when the user asks to add or research one specific company they haven't attached a spreadsheet for (e.g. "Leg mir Foo GmbH aus Berlin an", "add ACME from Munich and find their data"). For multiple companies from a spreadsheet, use `import_excel` instead. Set `dryRun: true` to preview what master-data would match WITHOUT starting a transaction — the response then has shape `{dryRun: true, matched, unmatched: [{candidates: [...]}]}` so you can confirm the match with the user (especially when the company is uncertain) before committing. Otherwise returns a transactionId you can hand back; progress is checkable via `import_status`.
 
 _Parameter:_ keine.
 

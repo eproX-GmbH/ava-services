@@ -517,143 +517,6 @@ export function buildImportTools(deps: {
     },
   });
 
-  // ---- import_company (single-company ingest) -----------------------------
-  //
-  // The 1-row counterpart to `import_excel`. The user says "Leg mir
-  // ACME GmbH aus Köln an" or "Add Foo Industries from Berlin" — the
-  // gateway hand-encodes a single-row xlsx and pushes it through the
-  // same master-data pipeline, so the resulting company gets the full
-  // profile/website/contacts/evaluations fan-out.
-
-  const importCompany = defineTool({
-    name: "import_company",
-    description:
-      "Ingest a single company by name + city, kicking off the full master-data " +
-      "pipeline (profile, website, publications, contacts, evaluations). Use " +
-      "this when the user asks to add or research one specific company they " +
-      "haven't attached a spreadsheet for (e.g. \"Leg mir Foo GmbH aus Berlin an\", " +
-      "\"add ACME from Munich and find their data\"). For multiple companies " +
-      "from a spreadsheet, use `import_excel` instead. " +
-      "Set `dryRun: true` to preview what master-data would match WITHOUT " +
-      "starting a transaction — the response then has shape `{dryRun: true, " +
-      "matched, unmatched: [{candidates: [...]}]}` so you can confirm the match " +
-      "with the user (especially when the company is uncertain) before committing. " +
-      "Otherwise returns a transactionId you can hand back; progress is checkable " +
-      "via `import_status`.",
-    parameters: {
-      type: "object",
-      required: ["name", "city"],
-      properties: {
-        name: {
-          type: "string",
-          description: "Company name as the user gave it (e.g. \"ACME GmbH\").",
-        },
-        city: {
-          type: "string",
-          description:
-            "City / location the user gave (e.g. \"Berlin\", \"Köln\"). Required by master-data to disambiguate same-named companies.",
-        },
-        transactionName: {
-          type: "string",
-          description:
-            "Optional human-readable label for the transaction (shows up in the Transactions view). Defaults to the company name.",
-        },
-        isFuzzy: {
-          type: "boolean",
-          description:
-            "Allow fuzzy matching against existing companies (handles minor name variants). Default false.",
-        },
-        dryRun: {
-          type: "boolean",
-          description:
-            "Preview match results WITHOUT creating a transaction. Returns `{dryRun: true, matched, unmatched}` so you can confirm with the user before committing. Default false (starts the transaction immediately).",
-        },
-        crm: {
-          type: "object",
-          description:
-            "Optional CRM-side identifier for this row. When set on a commit (dryRun=false), the gateway binds the resulting master-data companyId to the given external id (CompanyCrmLink). Set this when the user is importing this specific company from a connected CRM (e.g. 'add HubSpot company 12345').",
-          required: ["type", "externalId"],
-          properties: {
-            type: {
-              type: "string",
-              enum: ["hubspot", "salesforce", "dynamics"],
-            },
-            externalId: { type: "string" },
-            displayName: { type: "string" },
-          },
-        },
-      },
-    },
-    schema: yup
-      .object({
-        name: yup.string().required().min(1),
-        city: yup.string().required().min(1),
-        transactionName: yup.string().optional(),
-        isFuzzy: yup.boolean().optional(),
-        dryRun: yup.boolean().optional(),
-        crm: yup
-          .object({
-            type: yup
-              .string()
-              .required()
-              .oneOf(["hubspot", "salesforce", "dynamics"]),
-            externalId: yup.string().required().min(1),
-            displayName: yup.string().optional(),
-          })
-          .noUnknown(true)
-          .optional()
-          .default(undefined),
-      })
-      .noUnknown(true),
-    preview: (r: {
-      transactionId?: string;
-      name: string;
-      preview?: ImportPreview;
-    }) =>
-      r.preview
-        ? `${summarizePreview(r.preview)} (single: "${r.name}")`
-        : `import "${r.name}" → tx ${(r.transactionId ?? "").slice(0, 8)}…`,
-    run: async (args, ctx) => {
-      ctx.log(
-        `import_company: ${args.name} / ${args.city}${args.dryRun ? " [dryRun]" : ""}`,
-      );
-      const body = {
-        name: args.name,
-        city: args.city,
-        ...(args.transactionName
-          ? { transactionName: args.transactionName }
-          : {}),
-        ...(args.isFuzzy !== undefined ? { isFuzzy: args.isFuzzy } : {}),
-        ...(args.dryRun ? { dryRun: true } : {}),
-        ...(args.crm ? { crm: args.crm } : {}),
-      };
-      // The gateway returns ImportPreview for dryRun=true, the legacy
-      // {transactionId} otherwise. Use a permissive type and branch
-      // on the discriminator.
-      const response = await deps.gateway.request<
-        { transactionId: string } | ImportPreview
-      >("/v1/companies", {
-        method: "POST",
-        body,
-        idempotencyKey: randomUUID(),
-        signal: ctx.signal,
-        attachUserLlm: true,
-      });
-      if (args.dryRun) {
-        return {
-          name: args.name,
-          city: args.city,
-          preview: response as ImportPreview,
-        };
-      }
-      return {
-        transactionId: (response as { transactionId: string }).transactionId,
-        name: args.name,
-        city: args.city,
-      };
-    },
-  });
-
   // ---- import_companies_from_crm (v0.1.57 — CRM Phase 2) ------------------
   //
   // Pulls companies from a connected CRM (today: HubSpot; Salesforce +
@@ -662,8 +525,8 @@ export function buildImportTools(deps: {
   // transaction with all rows. Same downstream pipeline as a file upload —
   // the matrix view shows N companies, SSE progresses live.
   //
-  // Why not have the agent loop `import_company`: that creates N transactions
-  // (one per row), scattering the matrix and breaking the user's mental model
+  // Why not have the agent split into per-row calls: that creates N
+  // transactions (one per row), scattering the matrix and breaking the model
   // of "I imported a batch". One bulk POST → one transaction.
   //
   // Token handling is invisible to the agent: CrmManager auto-refreshes if
@@ -925,13 +788,12 @@ export function buildImportTools(deps: {
 
   // ---- import_companies (v0.1.390 — Inline-Bulk-Liste) -------------------
   //
-  // Der fehlende Baustein: Wenn der Nutzer eine LISTE von Firmen als TEXT
-  // einfügt (z. B. aus LinkedIn kopiert) — KEINE Datei, KEIN verbundenes CRM —
-  // gab es bisher kein Tool, das die ganze Liste in EINER Transaktion anlegt.
-  // Der Agent musste `import_company` N-mal loopen → N Transaktionen, die die
-  // Matrix zerstreuen. Dieses Tool postet die Inline-Liste an denselben
-  // Bulk-Endpunkt wie der CRM-Import (`/v1/imports/from-list`) → EINE
-  // Transaktion mit voller Pipeline-Anreicherung.
+  // Das Universal-Import-Tool für in den Chat genannte/eingefügte Firmen
+  // (KEINE Datei, KEIN verbundenes CRM): EINE Firma oder eine ganze LISTE
+  // (z. B. aus LinkedIn kopiert) — immer in EINER Transaktion. Postet die
+  // Inline-Liste an denselben Bulk-Endpunkt wie der CRM-Import
+  // (`/v1/imports/from-list`) → eine Transaktion mit voller Pipeline-
+  // Anreicherung. Ersetzt das frühere Einzel-Tool `import_company` (v0.1.391).
   //
   // Ablauf (vom System-Prompt vorgegeben): ERST `dryRun: true` → Matching-
   // Vorschau + Excel-Report (Downloads); dem Nutzer matched/unmatched zeigen;
@@ -940,19 +802,21 @@ export function buildImportTools(deps: {
   const importCompanies = defineTool({
     name: "import_companies",
     description:
-      "Bulk-import a pasted LIST of companies as ONE transaction (full master-" +
-      "data pipeline: profile, website, publications, contacts, evaluations). " +
-      "Use this whenever the user pastes / names MULTIPLE companies in chat and " +
-      "there is NO file attachment and NO connected-CRM source (e.g. a list " +
-      "copied from LinkedIn). Do NOT loop `import_company` per row — that " +
-      "creates one transaction per company and scatters the Transactions view. " +
-      "WORKFLOW: call FIRST with `dryRun: true` — you get back a matching " +
-      "preview AND a downloadable Excel report (path in `reportPath`). Show the " +
-      "user the matched / not-uniquely-matched companies and the report link, " +
-      "let them confirm or correct, THEN call again with `dryRun: false` to " +
-      "commit. Each row needs name + city (city disambiguates same-named " +
-      "companies); if the user didn't give cities, use the best-known HQ city — " +
-      "the dry-run report will flag wrong guesses as not-uniquely-matched. " +
+      "Ingest ONE OR MORE companies (by name + city) as a SINGLE transaction, " +
+      "kicking off the full master-data pipeline (profile, website, " +
+      "publications, contacts, evaluations). This is THE import tool when the " +
+      "user names or pastes companies in chat (no file attachment): a single " +
+      "company (\"leg mir Foo GmbH aus Berlin an\") is just a one-item list, a " +
+      "pasted list (e.g. from LinkedIn) is the many-item case. Pass ALL " +
+      "companies in this ONE call — never split into multiple calls, that " +
+      "scatters the Transactions view into one transaction per company. " +
+      "WORKFLOW for lists: call FIRST with `dryRun: true` — you get a matching " +
+      "preview AND a downloadable Excel report (path in `reportPath`); show the " +
+      "user matched / not-uniquely-matched + the report link, let them confirm " +
+      "or correct, THEN call again with `dryRun: false` to commit. For a single, " +
+      "clearly-specified company you may commit directly. Each row needs " +
+      "name + city (city disambiguates same-named companies); if the user gave " +
+      "no city, use the best-known HQ — the dry-run report flags wrong guesses. " +
       "Returns a transactionId on commit; progress via `import_status`.",
     parameters: {
       type: "object",
@@ -962,13 +826,27 @@ export function buildImportTools(deps: {
           type: "array",
           minItems: 1,
           description:
-            "The companies to import. Each item is `{name, city}`. Pass ALL of them in this ONE call.",
+            "The companies to import. Each item is `{name, city}` (plus optional `crm` to bind to a CRM record). Pass ALL of them in this ONE call — a single company is a one-item list.",
           items: {
             type: "object",
             required: ["name", "city"],
             properties: {
               name: { type: "string", minLength: 1 },
               city: { type: "string", minLength: 1 },
+              crm: {
+                type: "object",
+                description:
+                  "Optional CRM-side identifier for this row. On commit (dryRun=false) the gateway binds the resulting master-data companyId to this external id (e.g. 'add HubSpot company 12345').",
+                required: ["type", "externalId"],
+                properties: {
+                  type: {
+                    type: "string",
+                    enum: ["hubspot", "salesforce", "dynamics"],
+                  },
+                  externalId: { type: "string" },
+                  displayName: { type: "string" },
+                },
+              },
             },
           },
         },
@@ -998,6 +876,18 @@ export function buildImportTools(deps: {
               .object({
                 name: yup.string().required().min(1),
                 city: yup.string().required().min(1),
+                crm: yup
+                  .object({
+                    type: yup
+                      .string()
+                      .required()
+                      .oneOf(["hubspot", "salesforce", "dynamics"]),
+                    externalId: yup.string().required().min(1),
+                    displayName: yup.string().optional(),
+                  })
+                  .noUnknown(true)
+                  .optional()
+                  .default(undefined),
               })
               .noUnknown(true),
           )
@@ -1019,7 +909,16 @@ export function buildImportTools(deps: {
         ? `dry-run: ${r.matchedCount ?? 0} gefunden, ${r.unmatchedCount ?? 0} nicht eindeutig → Report "${r.reportFilename}"`
         : `import ${r.companyCount ?? 0} Firmen → tx ${(r.transactionId ?? "").slice(0, 8)}…`,
     run: async (args, ctx) => {
-      const companies = args.companies as Array<{ name: string; city: string }>;
+      const companies = args.companies as Array<{
+        name: string;
+        city: string;
+        crm?: { type: string; externalId: string; displayName?: string };
+      }>;
+      const toWire = (c: (typeof companies)[number]) => ({
+        name: c.name,
+        city: c.city,
+        ...(c.crm ? { crm: c.crm } : {}),
+      });
       const label =
         args.transactionName ?? `Liste: ${companies.length} Firmen`;
 
@@ -1033,7 +932,7 @@ export function buildImportTools(deps: {
           {
             method: "POST",
             body: {
-              companies: companies.map((c) => ({ name: c.name, city: c.city })),
+              companies: companies.map(toWire),
               transactionName: label,
               ...(args.isFuzzy !== undefined ? { isFuzzy: args.isFuzzy } : {}),
               dryRun: true,
@@ -1323,7 +1222,6 @@ export function buildImportTools(deps: {
   return [
     importExcel,
     importStatus,
-    importCompany,
     importCompanies,
     importFromCrm,
     retryStage,
