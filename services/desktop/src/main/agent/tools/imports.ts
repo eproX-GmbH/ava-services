@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import * as yup from "yup";
 import { defineTool } from "../define-tool";
 import type { Tool } from "../types";
+import type { AgentMatchRow } from "../../../shared/types";
 import type { GatewayClient } from "../gateway-client";
 import type { AttachmentStore } from "../attachment-store";
 import type { CrmManager } from "../../crm";
@@ -1049,6 +1050,222 @@ export function buildImportTools(deps: {
     },
   });
 
+  // ---- resolve_import_matches (v0.1.392 — Batch-Zuordnung) ---------------
+  //
+  // Nach einem `import_companies`-Dry-Run liefert das Gateway `matched`
+  // (eindeutig) + `unmatched` (mehrdeutig, mit Kandidaten). Dieses Tool zeigt
+  // ALLE Zweifelsfälle in EINER scrollbaren Karte (ui.askMatch) statt N
+  // einzelner Dialoge. Eindeutige Einzel-Kandidaten (oder klar dominanter
+  // Top-Treffer) werden automatisch zugeordnet und NICHT angezeigt. Ergebnis:
+  // eine fertige `commitCompanies`-Liste, die direkt an `import_companies`
+  // (dryRun=false) geht.
+
+  const resolveImportMatches = defineTool({
+    name: "resolve_import_matches",
+    description:
+      "After an `import_companies` dry-run returned `unmatched` companies, call " +
+      "this to let the user resolve them in ONE scrollable card (instead of " +
+      "many separate questions). Pass the dry-run's `matched` AND `unmatched` " +
+      "arrays straight through. Companies with a single clear candidate are " +
+      "auto-assigned (not shown); only genuine doubt cases are presented, each " +
+      "with its candidates + a 'skip' option. Returns `commitCompanies` — the " +
+      "final {name, city} list ready to pass to `import_companies` with " +
+      "`dryRun: false`. Skipped companies are omitted. ONLY call when " +
+      "`unmatched` is non-empty.",
+    parameters: {
+      type: "object",
+      required: ["unmatched"],
+      properties: {
+        matched: {
+          type: "array",
+          description:
+            "The dry-run's `matched` array (already resolved). Each item `{name, location}`.",
+          items: {
+            type: "object",
+            required: ["name", "location"],
+            properties: {
+              name: { type: "string" },
+              location: { type: "string" },
+            },
+          },
+        },
+        unmatched: {
+          type: "array",
+          minItems: 1,
+          description:
+            "The dry-run's `unmatched` array. Each item `{name, location, candidates: [{companyId, name, location, score}]}`.",
+          items: {
+            type: "object",
+            required: ["name", "location", "candidates"],
+            properties: {
+              name: { type: "string" },
+              location: { type: "string" },
+              candidates: {
+                type: "array",
+                items: {
+                  type: "object",
+                  required: ["companyId", "name", "location", "score"],
+                  properties: {
+                    companyId: { type: "string" },
+                    name: { type: "string" },
+                    location: { type: "string" },
+                    score: { type: "number" },
+                  },
+                },
+              },
+            },
+          },
+        },
+        prompt: {
+          type: "string",
+          description:
+            "Optional headline shown above the card. Defaults to a generic German prompt.",
+        },
+      },
+    },
+    schema: yup
+      .object({
+        matched: yup
+          .array()
+          .of(
+            yup
+              .object({
+                name: yup.string().required(),
+                location: yup.string().defined(),
+              })
+              .noUnknown(true),
+          )
+          .optional()
+          .default([]),
+        unmatched: yup
+          .array()
+          .of(
+            yup
+              .object({
+                name: yup.string().required(),
+                location: yup.string().defined(),
+                candidates: yup
+                  .array()
+                  .of(
+                    yup
+                      .object({
+                        companyId: yup.string().required(),
+                        name: yup.string().required(),
+                        location: yup.string().defined(),
+                        score: yup.number().defined(),
+                      })
+                      .noUnknown(true),
+                  )
+                  .required(),
+              })
+              .noUnknown(true),
+          )
+          .required()
+          .min(1),
+        prompt: yup.string().optional(),
+      })
+      .noUnknown(true),
+    preview: (r: {
+      autoAssigned?: number;
+      resolved?: number;
+      skipped?: number;
+    }) =>
+      `Zuordnung: ${r.autoAssigned ?? 0} automatisch, ${r.resolved ?? 0} bestätigt, ${r.skipped ?? 0} übersprungen`,
+    run: async (args, ctx) => {
+      const matched = (args.matched ?? []) as Array<{
+        name: string;
+        location: string;
+      }>;
+      const unmatched = args.unmatched as Array<{
+        name: string;
+        location: string;
+        candidates: Array<{
+          companyId: string;
+          name: string;
+          location: string;
+          score: number;
+        }>;
+      }>;
+
+      // Klar dominanter Top-Treffer (≥1.6× zweitbester) oder einziger
+      // Kandidat → automatisch zuordnen, NICHT in der Karte zeigen.
+      const DOMINANCE = 1.6;
+      const autoResolved: Array<{ name: string; city: string }> = [];
+      const doubt: Array<{
+        name: string;
+        location: string;
+        candidates: Array<{
+          companyId: string;
+          name: string;
+          location: string;
+          score: number;
+        }>;
+      }> = [];
+      for (const u of unmatched) {
+        const cands = [...(u.candidates ?? [])].sort(
+          (a, b) => (b.score ?? 0) - (a.score ?? 0),
+        );
+        if (cands.length === 0) {
+          doubt.push({ name: u.name, location: u.location, candidates: [] });
+          continue;
+        }
+        const top = cands[0]!;
+        const second = cands[1];
+        const dominant =
+          !second || (top.score > 0 && top.score >= DOMINANCE * (second.score ?? 0));
+        if (cands.length === 1 || dominant) {
+          autoResolved.push({ name: top.name, city: top.location });
+        } else {
+          doubt.push({ name: u.name, location: u.location, candidates: cands });
+        }
+      }
+
+      const rows: AgentMatchRow[] = doubt.map((d, i) => ({
+        rowId: String(i),
+        name: d.name,
+        location: d.location,
+        candidates: d.candidates.map((c) => ({
+          companyId: c.companyId,
+          name: c.name,
+          location: c.location,
+          score: c.score,
+        })),
+      }));
+
+      const userResolved: Array<{ name: string; city: string }> = [];
+      let skipped = 0;
+      if (rows.length > 0) {
+        const promptText =
+          args.prompt ??
+          `Bitte ${rows.length} nicht eindeutig erkannte ${rows.length === 1 ? "Firma" : "Firmen"} zuordnen oder überspringen.`;
+        const map = await ctx.ui.askMatch(promptText, rows, ctx.signal);
+        for (const r of rows) {
+          const pick = map[r.rowId];
+          if (!pick || pick === "skip") {
+            skipped += 1;
+            continue;
+          }
+          const cand = r.candidates.find((c) => c.companyId === pick);
+          if (cand) userResolved.push({ name: cand.name, city: cand.location });
+          else skipped += 1;
+        }
+      }
+
+      const commitCompanies = [
+        ...matched.map((m) => ({ name: m.name, city: m.location })),
+        ...autoResolved,
+        ...userResolved,
+      ];
+
+      return {
+        commitCompanies,
+        autoAssigned: autoResolved.length,
+        resolved: userResolved.length,
+        skipped,
+      };
+    },
+  });
+
   // ---- retry_stage --------------------------------------------------------
   //
   // Pipeline retries are common: the website crawl times out, a contact
@@ -1223,6 +1440,7 @@ export function buildImportTools(deps: {
     importExcel,
     importStatus,
     importCompanies,
+    resolveImportMatches,
     importFromCrm,
     retryStage,
   ];

@@ -40,6 +40,7 @@ import {
 import { renderPdfPagesToImages } from "../lib/pdf-to-images";
 import type {
   AgentChoiceOption,
+  AgentMatchRow,
   AgentMessage,
   AgentStatus,
   AgentStreamFrame,
@@ -116,6 +117,15 @@ interface UiMessage {
     placeholder?: string;
     defaultValue?: string;
     optional?: boolean;
+    answeredValue?: string;
+  };
+  /** v0.1.392 — Batch-Zuordnung nicht eindeutiger Import-Firmen. Eine Karte
+   *  mit allen Zweifelsfällen; antwortet über denselben answerChoice-Kanal
+   *  mit einer JSON-Map `{ rowId: companyId | "skip" }`. */
+  matchPrompt?: {
+    choiceId: string;
+    prompt: string;
+    rows: AgentMatchRow[];
     answeredValue?: string;
   };
 }
@@ -396,6 +406,17 @@ export function Chat() {
                 choiceId: p.choiceId,
                 prompt: p.prompt,
                 options: p.options,
+              },
+            });
+          } else if (p.kind === "match-request") {
+            replayed.push({
+              id: `mt-${p.choiceId}`,
+              role: "tool",
+              content: "",
+              matchPrompt: {
+                choiceId: p.choiceId,
+                prompt: p.prompt,
+                rows: p.rows,
               },
             });
           } else {
@@ -746,6 +767,20 @@ export function Chat() {
             },
           },
         ]);
+      } else if (frame.kind === "match-request") {
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: `mt-${frame.choiceId}`,
+            role: "tool",
+            content: "",
+            matchPrompt: {
+              choiceId: frame.choiceId,
+              prompt: frame.prompt,
+              rows: frame.rows,
+            },
+          },
+        ]);
       } else if (frame.kind === "choice-resolved") {
         setMessages((prev) =>
           prev.map((m) => {
@@ -756,6 +791,12 @@ export function Chat() {
               return {
                 ...m,
                 textPrompt: { ...m.textPrompt, answeredValue: frame.value },
+              };
+            }
+            if (m.matchPrompt?.choiceId === frame.choiceId) {
+              return {
+                ...m,
+                matchPrompt: { ...m.matchPrompt, answeredValue: frame.value },
               };
             }
             return m;
@@ -1292,6 +1333,23 @@ export function Chat() {
     void window.api.agent.answerChoice({ choiceId, value });
   }
 
+  // v0.1.392 — Batch-Zuordnung: die Map `{ rowId: companyId | "skip" }` als
+  // JSON über denselben answerChoice-Kanal.
+  function handleSubmitMatch(
+    choiceId: string,
+    map: Record<string, string>,
+  ) {
+    const value = JSON.stringify(map);
+    setMessages((prev) =>
+      prev.map((m) =>
+        m.matchPrompt?.choiceId === choiceId
+          ? { ...m, matchPrompt: { ...m.matchPrompt, answeredValue: value } }
+          : m,
+      ),
+    );
+    void window.api.agent.answerChoice({ choiceId, value });
+  }
+
   // ChatGPT-inspired layout (8.l3).
   //
   //   - Empty state (no messages yet): centered "Wo sollen wir anfangen?"
@@ -1764,6 +1822,17 @@ export function Chat() {
                     key={m.id}
                     prompt={m.textPrompt}
                     onSubmit={(v) => handleSubmitText(m.textPrompt!.choiceId, v)}
+                  />
+                );
+              }
+              if (m.matchPrompt) {
+                return (
+                  <MatchResolutionCard
+                    key={m.id}
+                    prompt={m.matchPrompt}
+                    onSubmit={(map) =>
+                      handleSubmitMatch(m.matchPrompt!.choiceId, map)
+                    }
                   />
                 );
               }
@@ -2246,6 +2315,214 @@ function TextPromptCard(props: {
             </div>
           </form>
         )}
+      </div>
+    </div>
+  );
+}
+
+// v0.1.392 — Batch-Zuordnung nicht eindeutiger Import-Firmen. Eine
+// scrollbare Karte: pro Firma die Kandidaten (relativer Treffer-Balken,
+// „bester Treffer"-Tag) + „Überspringen". Top-Kandidat ist vorausgewählter,
+// überschreibbarer Default. Massen-Aktionen + Filter für große Listen.
+function MatchResolutionCard(props: {
+  prompt: {
+    choiceId: string;
+    prompt: string;
+    rows: AgentMatchRow[];
+    answeredValue?: string;
+  };
+  onSubmit: (map: Record<string, string>) => void;
+}) {
+  const { rows } = props.prompt;
+  const answered = props.prompt.answeredValue !== undefined;
+  const [selection, setSelection] = useState<Record<string, string>>(() => {
+    const init: Record<string, string> = {};
+    for (const r of rows) init[r.rowId] = r.candidates[0]?.companyId ?? "skip";
+    return init;
+  });
+  const [filter, setFilter] = useState("");
+
+  if (answered) {
+    let assigned = 0;
+    let skipped = 0;
+    try {
+      const map = JSON.parse(props.prompt.answeredValue || "{}") as Record<
+        string,
+        string
+      >;
+      for (const r of rows) {
+        const v = map[r.rowId];
+        if (v && v !== "skip") assigned += 1;
+        else skipped += 1;
+      }
+    } catch {
+      /* ignore */
+    }
+    return (
+      <div className="chat-msg chat-msg-choice">
+        <div className="chat-choice import-match import-match--done">
+          <div className="import-match__head">
+            <i className="ti ti-git-compare" aria-hidden="true" />
+            <span>
+              Zuordnung übermittelt — {assigned} zugeordnet, {skipped}{" "}
+              übersprungen
+            </span>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  const setAll = (mode: "top" | "skip") =>
+    setSelection(() => {
+      const next: Record<string, string> = {};
+      for (const r of rows) {
+        next[r.rowId] =
+          mode === "skip" ? "skip" : (r.candidates[0]?.companyId ?? "skip");
+      }
+      return next;
+    });
+
+  const q = filter.trim().toLowerCase();
+  const visible = q
+    ? rows.filter(
+        (r) =>
+          r.name.toLowerCase().includes(q) ||
+          r.location.toLowerCase().includes(q),
+      )
+    : rows;
+  const assignedCount = Object.values(selection).filter(
+    (v) => v && v !== "skip",
+  ).length;
+  const skippedCount = rows.length - assignedCount;
+
+  return (
+    <div className="chat-msg chat-msg-choice">
+      <div className="chat-choice import-match">
+        <div className="import-match__head">
+          <i className="ti ti-git-compare" aria-hidden="true" />
+          <span>{props.prompt.prompt}</span>
+        </div>
+        <div className="import-match__bulk">
+          <button type="button" onClick={() => setAll("top")}>
+            Top-Vorschlag überall
+          </button>
+          <button type="button" onClick={() => setAll("skip")}>
+            Alle überspringen
+          </button>
+          <input
+            type="text"
+            className="import-match__filter"
+            placeholder="Filtern…"
+            value={filter}
+            onChange={(e) => setFilter(e.target.value)}
+          />
+        </div>
+        <div className="import-match__list">
+          {visible.map((r) => {
+            const maxScore = r.candidates.reduce(
+              (m, c) => Math.max(m, c.score ?? 0),
+              0,
+            );
+            const group = `m-${props.prompt.choiceId}-${r.rowId}`;
+            return (
+              <div key={r.rowId} className="import-match__row">
+                <div className="import-match__company">
+                  <span className="import-match__name">{r.name}</span>
+                  {r.location && (
+                    <span className="import-match__city"> · {r.location}</span>
+                  )}
+                </div>
+                <div className="import-match__options">
+                  {r.candidates.map((c, i) => {
+                    const pct =
+                      maxScore > 0
+                        ? Math.round(((c.score ?? 0) / maxScore) * 100)
+                        : 0;
+                    const sel = selection[r.rowId] === c.companyId;
+                    return (
+                      <label
+                        key={c.companyId}
+                        className={`import-match__opt${sel ? " is-selected" : ""}`}
+                      >
+                        <input
+                          type="radio"
+                          name={group}
+                          checked={sel}
+                          onChange={() =>
+                            setSelection((p) => ({
+                              ...p,
+                              [r.rowId]: c.companyId,
+                            }))
+                          }
+                        />
+                        <span className="import-match__opt-main">
+                          <span className="import-match__opt-name">
+                            {c.name}
+                            {c.location ? (
+                              <span className="muted"> · {c.location}</span>
+                            ) : null}
+                            {i === 0 && (
+                              <span className="import-match__best">
+                                bester Treffer
+                              </span>
+                            )}
+                          </span>
+                          {maxScore > 0 && (
+                            <span className="import-match__bar" aria-hidden="true">
+                              <span
+                                className="import-match__bar-fill"
+                                style={{ width: `${pct}%` }}
+                              />
+                            </span>
+                          )}
+                        </span>
+                      </label>
+                    );
+                  })}
+                  <label
+                    className={`import-match__opt import-match__opt--skip${
+                      selection[r.rowId] === "skip" ? " is-selected" : ""
+                    }`}
+                  >
+                    <input
+                      type="radio"
+                      name={group}
+                      checked={selection[r.rowId] === "skip"}
+                      onChange={() =>
+                        setSelection((p) => ({ ...p, [r.rowId]: "skip" }))
+                      }
+                    />
+                    <span className="import-match__opt-main">
+                      <i
+                        className="ti ti-player-skip-forward"
+                        aria-hidden="true"
+                      />{" "}
+                      Überspringen
+                    </span>
+                  </label>
+                </div>
+              </div>
+            );
+          })}
+          {visible.length === 0 && (
+            <div className="import-match__empty muted">
+              Kein Treffer für „{filter}".
+            </div>
+          )}
+        </div>
+        <div className="import-match__foot">
+          <span className="muted">
+            {assignedCount} zugeordnet · {skippedCount} übersprungen
+          </span>
+          <button
+            type="button"
+            className="primary"
+            onClick={() => props.onSubmit(selection)}
+          >
+            Auswahl übernehmen
+          </button>
+        </div>
       </div>
     </div>
   );

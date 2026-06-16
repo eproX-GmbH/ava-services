@@ -466,6 +466,28 @@ export interface AgentChoiceOption {
   description?: string;
 }
 
+// v0.1.392 — Batch-Zuordnung beim Import. Wenn master-data eine Firma nicht
+// eindeutig auflösen kann, sammelt der Agent ALLE Zweifelsfälle und zeigt sie
+// in EINER scrollbaren Karte (statt N einzelner choice-requests). Der Nutzer
+// wählt je Firma einen Kandidaten oder „überspringen"; die Antwort ist eine
+// JSON-Map `{ [rowId]: companyId | "skip" }` über den answerChoice-Kanal.
+export interface AgentMatchCandidate {
+  companyId: string;
+  name: string;
+  location: string;
+  /** Relevanz-Score aus master-data (ES `_score` — RELATIV, kein Prozent). */
+  score: number;
+}
+
+export interface AgentMatchRow {
+  /** Stabiler Schlüssel der Zeile (für die Antwort-Map). */
+  rowId: string;
+  /** Name + Ort, wie vom Nutzer/Agent übergeben. */
+  name: string;
+  location: string;
+  candidates: AgentMatchCandidate[];
+}
+
 /**
  * Streaming frame multiplexed over a single IPC channel. The renderer
  * filters by `requestId` (8.a uses one request at a time, but the protocol
@@ -516,6 +538,14 @@ export type AgentStreamFrame =
       defaultValue?: string;
       optional?: boolean;
     }
+  | {
+      kind: "match-request";
+      requestId: string;
+      conversationId: string;
+      choiceId: string;
+      prompt: string;
+      rows: AgentMatchRow[];
+    }
   | { kind: "navigate"; requestId: string; conversationId: string; path: string }
   | { kind: "error"; requestId: string; conversationId: string; message: string }
   | { kind: "done"; requestId: string; conversationId: string; messageId: string };
@@ -555,6 +585,14 @@ export type AgentPendingPrompt =
       placeholder?: string;
       defaultValue?: string;
       optional?: boolean;
+    }
+  | {
+      kind: "match-request";
+      conversationId: string;
+      requestId: string;
+      choiceId: string;
+      prompt: string;
+      rows: AgentMatchRow[];
     };
 
 // ---- Provider switch (Phase 8.j + 8.k) -------------------------------------

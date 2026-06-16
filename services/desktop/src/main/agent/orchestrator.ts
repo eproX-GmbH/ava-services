@@ -376,6 +376,15 @@ export class AgentOrchestrator extends EventEmitter {
           prompt: entry.prompt.prompt,
           options: entry.prompt.options,
         });
+      } else if (entry.prompt.kind === "match-request") {
+        out.push({
+          kind: "match-request",
+          conversationId: entry.conversationId,
+          requestId: entry.requestId,
+          choiceId,
+          prompt: entry.prompt.prompt,
+          rows: entry.prompt.rows,
+        });
       } else {
         out.push({
           kind: "text-request",

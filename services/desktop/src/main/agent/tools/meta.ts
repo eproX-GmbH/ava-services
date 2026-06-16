@@ -467,6 +467,7 @@ const KNOWN_BUNDLES: readonly ToolBundle[] = [
       "import_excel",
       "import_companies",
       "import_companies_from_crm",
+      "resolve_import_matches",
       "import_status",
     ],
     queryHints: ["import", "excel", "csv", "bulk"],

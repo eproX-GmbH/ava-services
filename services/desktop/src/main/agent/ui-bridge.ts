@@ -2,6 +2,7 @@ import { Notification } from "electron";
 import { randomUUID } from "node:crypto";
 import type {
   AgentChoiceOption,
+  AgentMatchRow,
   AgentStreamFrame,
 } from "../../shared/types";
 
@@ -46,6 +47,11 @@ export interface PendingChoice {
         placeholder?: string;
         defaultValue?: string;
         optional?: boolean;
+      }
+    | {
+        kind: "match-request";
+        prompt: string;
+        rows: AgentMatchRow[];
       };
 }
 
@@ -197,6 +203,73 @@ export class UiBridge {
         ...(opts.placeholder ? { placeholder: opts.placeholder } : {}),
         ...(opts.defaultValue ? { defaultValue: opts.defaultValue } : {}),
         ...(opts.optional ? { optional: true } : {}),
+      });
+    });
+  }
+
+  /**
+   * v0.1.392 — Batch-Zuordnung: zeigt EINE Karte mit allen nicht eindeutig
+   * auflösbaren Firmen, je mit Kandidaten + „überspringen". Blockt bis der
+   * Nutzer EINMAL bestätigt; liefert eine Map `{ rowId: companyId | "skip" }`.
+   * Reused den answerChoice-Kanal (Antwort-`value` ist die JSON-Map).
+   */
+  async askMatch(
+    prompt: string,
+    rows: AgentMatchRow[],
+    signal: AbortSignal,
+  ): Promise<Record<string, string>> {
+    if (this.autonomousMode) {
+      throw new Error(
+        "askMatch ist im Auto-Triage-Modus nicht erlaubt (kein User da). " +
+          "Triff die Zuordnung selbst oder überspringe unklare Firmen.",
+      );
+    }
+    if (rows.length === 0) return {};
+    const choiceId = randomUUID();
+    return new Promise<Record<string, string>>((resolve, reject) => {
+      const onAbort = () => {
+        const entry = this.deps.pending.get(choiceId);
+        if (entry) {
+          this.deps.pending.delete(choiceId);
+          entry.reject(new Error("aborted"));
+        }
+      };
+      if (signal.aborted) {
+        reject(new Error("aborted"));
+        return;
+      }
+      signal.addEventListener("abort", onAbort, { once: true });
+
+      this.deps.pending.set(choiceId, {
+        requestId: this.requestId,
+        conversationId: this.conversationId,
+        prompt: { kind: "match-request", prompt, rows },
+        resolve: (value) => {
+          signal.removeEventListener("abort", onAbort);
+          let parsed: Record<string, string> = {};
+          try {
+            const obj = JSON.parse(value) as unknown;
+            if (obj && typeof obj === "object" && !Array.isArray(obj)) {
+              parsed = obj as Record<string, string>;
+            }
+          } catch {
+            /* malformed → leere Map = alles überspringen */
+          }
+          resolve(parsed);
+        },
+        reject: (err) => {
+          signal.removeEventListener("abort", onAbort);
+          reject(err);
+        },
+      });
+
+      this.deps.emit({
+        kind: "match-request",
+        requestId: this.requestId,
+        conversationId: this.conversationId,
+        choiceId,
+        prompt,
+        rows,
       });
     });
   }

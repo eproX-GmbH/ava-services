@@ -5,7 +5,7 @@ NICHT direkt bearbeiten — die Quelle der Wahrheit ist `services/desktop/src/ma
 Lauf via `pnpm -F @ava/desktop tools:doc` (oder automatisch via `build:typecheck`).
 
 Stand: 2026-06-16
-Anzahl Tools: 161
+Anzahl Tools: 162
 
 ## Firmen (11)
 
@@ -111,7 +111,7 @@ Get the crawled website summary for a company (homepage URL, scraped sections, l
 _Parameter:_
 - `companyId: string` (required)
 
-## Importe (5)
+## Importe (6)
 
 ### `import_companies`
 
@@ -145,6 +145,14 @@ Quick progress snapshot for an import (or any transaction). Returns per-state co
 
 _Parameter:_
 - `transactionId: string` (required) — The transactionId returned by `import_excel` (or any other transaction kick-off).
+
+### `resolve_import_matches`
+
+_Datei:_ `services/desktop/src/main/agent/tools/imports.ts`
+
+After an `import_companies` dry-run returned `unmatched` companies, call this to let the user resolve them in ONE scrollable card (instead of many separate questions). Pass the dry-run's `matched` AND `unmatched` arrays straight through. Companies with a single clear candidate are auto-assigned (not shown); only genuine doubt cases are presented, each with its candidates + a 'skip' option. Returns `commitCompanies` — the final {name, city} list ready to pass to `import_companies` with `dryRun: false`. Skipped companies are omitted. ONLY call when `unmatched` is non-empty.
+
+_Parameter:_ keine.
 
 ### `retry_stage`
 
