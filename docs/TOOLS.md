@@ -150,7 +150,7 @@ _Parameter:_
 
 _Datei:_ `services/desktop/src/main/agent/tools/imports.ts`
 
-After an `import_companies` dry-run returned `unmatched` companies, call this to let the user resolve them in ONE scrollable card (instead of many separate questions). Pass the dry-run's `matched` AND `unmatched` arrays straight through. Companies with a single clear candidate are auto-assigned (not shown); only genuine doubt cases are presented, each with its candidates + a 'skip' option. Returns `commitCompanies` — the final {name, city} list ready to pass to `import_companies` with `dryRun: false`. Skipped companies are omitted. ONLY call when `unmatched` is non-empty.
+After an `import_companies` dry-run returned a `resolveToken` (and a non-zero unmatched count), call this to let the user resolve the ambiguous companies in ONE scrollable card. STRONGLY PREFERRED: pass just the `resolveToken` from the dry-run result — the matched/unmatched data is fetched server-side, so you do NOT re-emit the whole company list (which is slow). Only fall back to passing `matched`/`unmatched` arrays inline if no token is available. Companies with a single clear candidate are auto-assigned (not shown); only genuine doubt cases are presented, each with candidates + a 'skip' option. Returns `commitCompanies` — the final {name, city} list ready to pass to `import_companies` with `dryRun: false`. Skipped companies are omitted.
 
 _Parameter:_ keine.
 

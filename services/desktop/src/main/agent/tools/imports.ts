@@ -102,6 +102,41 @@ export function buildImportTools(deps: {
    *  card and the connect_crm/disconnect_crm tools use. */
   crm: CrmManager;
 }): Tool[] {
+  // v0.1.393 — Dry-Run-Vorschau-Cache. `import_companies` legt das
+  // matched/unmatched-Ergebnis hier ab und gibt dem Modell nur ein kurzes
+  // `resolveToken` zurück. `resolve_import_matches` zieht die Daten über das
+  // Token statt sie vom Modell als Tool-Argumente neu ausschreiben zu lassen
+  // (das dauerte bei 24 Firmen viele Sekunden → die Karte erschien gefühlt
+  // gar nicht). TTL 30 min, simple Größen-Begrenzung.
+  type CachedPreview = {
+    matched: Array<{ name: string; location: string }>;
+    unmatched: Array<{
+      name: string;
+      location: string;
+      candidates: Array<{
+        companyId: string;
+        name: string;
+        location: string;
+        score: number;
+      }>;
+    }>;
+    at: number;
+  };
+  const dryRunPreviewCache = new Map<string, CachedPreview>();
+  const pruneDryRunCache = () => {
+    const cutoff = Date.now() - 30 * 60 * 1000;
+    for (const [k, v] of dryRunPreviewCache) {
+      if (v.at < cutoff) dryRunPreviewCache.delete(k);
+    }
+    // Hard cap, falls jemand sehr viele Dry-Runs fährt.
+    if (dryRunPreviewCache.size > 50) {
+      const oldest = [...dryRunPreviewCache.entries()].sort(
+        (a, b) => a[1].at - b[1].at,
+      )[0];
+      if (oldest) dryRunPreviewCache.delete(oldest[0]);
+    }
+  };
+
   const importExcel = defineTool({
     name: "import_excel",
     description:
@@ -959,12 +994,37 @@ export function buildImportTools(deps: {
             `import_companies: Report-Schreiben fehlgeschlagen (${err instanceof Error ? err.message : String(err)})`,
           );
         }
+        // v0.1.393 — Vorschau cachen + nur ein kurzes Token zurückgeben.
+        // Das volle `preview` NICHT ins Tool-Result spiegeln (das Modell muss
+        // es weder lesen noch — für resolve_import_matches — neu ausschreiben;
+        // es übergibt nur `resolveToken`). Spart die lange Tool-Argument-
+        // Generierung, die die Zuordnungs-Karte verzögert hat.
+        const resolveToken = randomUUID();
+        dryRunPreviewCache.set(resolveToken, {
+          matched: preview.matched.map((m) => ({
+            name: m.name,
+            location: m.location,
+          })),
+          unmatched: preview.unmatched.map((u) => ({
+            name: u.name,
+            location: u.location,
+            candidates: (u.candidates ?? []).map((c) => ({
+              companyId: c.companyId,
+              name: c.name,
+              location: c.location,
+              score: c.score,
+            })),
+          })),
+          at: Date.now(),
+        });
+        pruneDryRunCache();
         return {
           dryRun: true as const,
           providedCount: preview.providedCount,
           matchedCount: preview.matched.length,
           unmatchedCount: preview.unmatched.length,
-          preview,
+          // Token für resolve_import_matches — KEINE Daten kopieren.
+          resolveToken,
           ...(reportPath ? { reportPath } : {}),
           ...(reportFilename ? { reportFilename } : {}),
         };
@@ -1063,19 +1123,25 @@ export function buildImportTools(deps: {
   const resolveImportMatches = defineTool({
     name: "resolve_import_matches",
     description:
-      "After an `import_companies` dry-run returned `unmatched` companies, call " +
-      "this to let the user resolve them in ONE scrollable card (instead of " +
-      "many separate questions). Pass the dry-run's `matched` AND `unmatched` " +
-      "arrays straight through. Companies with a single clear candidate are " +
-      "auto-assigned (not shown); only genuine doubt cases are presented, each " +
-      "with its candidates + a 'skip' option. Returns `commitCompanies` — the " +
-      "final {name, city} list ready to pass to `import_companies` with " +
-      "`dryRun: false`. Skipped companies are omitted. ONLY call when " +
-      "`unmatched` is non-empty.",
+      "After an `import_companies` dry-run returned a `resolveToken` (and a " +
+      "non-zero unmatched count), call this to let the user resolve the " +
+      "ambiguous companies in ONE scrollable card. STRONGLY PREFERRED: pass " +
+      "just the `resolveToken` from the dry-run result — the matched/unmatched " +
+      "data is fetched server-side, so you do NOT re-emit the whole company " +
+      "list (which is slow). Only fall back to passing `matched`/`unmatched` " +
+      "arrays inline if no token is available. Companies with a single clear " +
+      "candidate are auto-assigned (not shown); only genuine doubt cases are " +
+      "presented, each with candidates + a 'skip' option. Returns " +
+      "`commitCompanies` — the final {name, city} list ready to pass to " +
+      "`import_companies` with `dryRun: false`. Skipped companies are omitted.",
     parameters: {
       type: "object",
-      required: ["unmatched"],
       properties: {
+        resolveToken: {
+          type: "string",
+          description:
+            "The `resolveToken` from the `import_companies` dry-run result. PREFERRED input — pass this alone, don't copy the company arrays.",
+        },
         matched: {
           type: "array",
           description:
@@ -1091,9 +1157,8 @@ export function buildImportTools(deps: {
         },
         unmatched: {
           type: "array",
-          minItems: 1,
           description:
-            "The dry-run's `unmatched` array. Each item `{name, location, candidates: [{companyId, name, location, score}]}`.",
+            "Fallback only (prefer `resolveToken`). The dry-run's `unmatched` array. Each item `{name, location, candidates: [{companyId, name, location, score}]}`.",
           items: {
             type: "object",
             required: ["name", "location", "candidates"],
@@ -1125,6 +1190,7 @@ export function buildImportTools(deps: {
     },
     schema: yup
       .object({
+        resolveToken: yup.string().optional(),
         matched: yup
           .array()
           .of(
@@ -1160,8 +1226,8 @@ export function buildImportTools(deps: {
               })
               .noUnknown(true),
           )
-          .required()
-          .min(1),
+          .optional()
+          .default([]),
         prompt: yup.string().optional(),
       })
       .noUnknown(true),
@@ -1172,11 +1238,11 @@ export function buildImportTools(deps: {
     }) =>
       `Zuordnung: ${r.autoAssigned ?? 0} automatisch, ${r.resolved ?? 0} bestätigt, ${r.skipped ?? 0} übersprungen`,
     run: async (args, ctx) => {
-      const matched = (args.matched ?? []) as Array<{
-        name: string;
-        location: string;
-      }>;
-      const unmatched = args.unmatched as Array<{
+      // v0.1.393 — Bevorzugt aus dem Dry-Run-Cache über `resolveToken` laden
+      // (kein Re-Ausschreiben der Firmen durch das Modell). Fallback: die
+      // inline übergebenen Arrays.
+      let matched: Array<{ name: string; location: string }>;
+      let unmatched: Array<{
         name: string;
         location: string;
         candidates: Array<{
@@ -1186,6 +1252,32 @@ export function buildImportTools(deps: {
           score: number;
         }>;
       }>;
+      const token = args.resolveToken?.trim();
+      const cached = token ? dryRunPreviewCache.get(token) : undefined;
+      if (cached) {
+        matched = cached.matched;
+        unmatched = cached.unmatched;
+      } else {
+        matched = (args.matched ?? []) as typeof matched;
+        unmatched = (args.unmatched ?? []) as typeof unmatched;
+      }
+      if (unmatched.length === 0) {
+        // Nichts zu klären (oder Token abgelaufen ohne Fallback-Daten).
+        return {
+          commitCompanies: matched.map((m) => ({
+            name: m.name,
+            city: m.location,
+          })),
+          autoAssigned: 0,
+          resolved: 0,
+          skipped: 0,
+          ...(token && !cached
+            ? {
+                note: "resolveToken abgelaufen/unbekannt und keine Inline-Daten — bitte import_companies-Dry-Run erneut ausführen.",
+              }
+            : {}),
+        };
+      }
 
       // Klar dominanter Top-Treffer (≥1.6× zweitbester) oder einziger
       // Kandidat → automatisch zuordnen, NICHT in der Karte zeigen.
