@@ -2824,6 +2824,26 @@ const MARKDOWN_COMPONENTS: Components = {
       );
     }
 
+    // 1b) v0.1.390 — Lokale Datei (z. B. Import-Report) → im OS-Standard-
+    //     programm öffnen. Form: `[Label](avafile:/abs/pfad.xlsx)`.
+    if (/^avafile:/i.test(target)) {
+      const filePath = target.replace(/^avafile:/i, "");
+      return (
+        <a
+          href="#"
+          className="chat-link"
+          title={`Datei öffnen: ${filePath}`}
+          onClick={(e) => {
+            e.preventDefault();
+            void window.api.shell.openPath(filePath);
+          }}
+          {...rest}
+        >
+          {children}
+        </a>
+      );
+    }
+
     // 2) Externer http(s)-Link → im OS-Browser öffnen, niemals den
     //    hash-gerouteten Renderer navigieren (würde den Chat zerstören).
     if (/^https?:\/\//i.test(target)) {

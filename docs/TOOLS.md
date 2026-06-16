@@ -4,8 +4,8 @@ Auto-generiert von `services/desktop/scripts/generate-tools-md.mjs`.
 NICHT direkt bearbeiten — die Quelle der Wahrheit ist `services/desktop/src/main/agent/tools/*.ts`.
 Lauf via `pnpm -F @ava/desktop tools:doc` (oder automatisch via `build:typecheck`).
 
-Stand: 2026-06-11
-Anzahl Tools: 161
+Stand: 2026-06-16
+Anzahl Tools: 162
 
 ## Firmen (11)
 
@@ -111,7 +111,15 @@ Get the crawled website summary for a company (homepage URL, scraped sections, l
 _Parameter:_
 - `companyId: string` (required)
 
-## Importe (5)
+## Importe (6)
+
+### `import_companies`
+
+_Datei:_ `services/desktop/src/main/agent/tools/imports.ts`
+
+Bulk-import a pasted LIST of companies as ONE transaction (full master-data pipeline: profile, website, publications, contacts, evaluations). Use this whenever the user pastes / names MULTIPLE companies in chat and there is NO file attachment and NO connected-CRM source (e.g. a list copied from LinkedIn). Do NOT loop `import_company` per row — that creates one transaction per company and scatters the Transactions view. WORKFLOW: call FIRST with `dryRun: true` — you get back a matching preview AND a downloadable Excel report (path in `reportPath`). Show the user the matched / not-uniquely-matched companies and the report link, let them confirm or correct, THEN call again with `dryRun: false` to commit. Each row needs name + city (city disambiguates same-named companies); if the user didn't give cities, use the best-known HQ city — the dry-run report will flag wrong guesses as not-uniquely-matched. Returns a transactionId on commit; progress via `import_status`.
+
+_Parameter:_ keine.
 
 ### `import_companies_from_crm`
 
@@ -1024,8 +1032,7 @@ _Datei:_ `services/desktop/src/main/agent/tools/meta.ts`
 
 Bring one or more tools into your live tool-list. The loaded tools are usable starting with the NEXT step of the current answer cycle — you can call `tool_load` and then immediately invoke the freshly-loaded tool in the same user turn. Tools stay loaded for the rest of this conversation, so you only need to load them once. Unknown names are reported back — don't retry blindly, do another `tool_search` with corrected keywords. Already-loaded tools and core tools are silently ignored (no-op).
 
-_Parameter:_
-- `names: array` (required) — Tool names to load (as returned by `tool_search`). Pass several at once when you need a whole group (e.g. all notion_* tools for a CRM workflow).
+_Parameter:_ keine.
 
 ### `tool_search`
 

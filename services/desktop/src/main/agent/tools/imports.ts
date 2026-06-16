@@ -10,6 +10,7 @@ import {
   fetchCompaniesFromCrm,
   type CompanyForImport,
 } from "../../crm/fetch-companies";
+import { writeImportReport } from "./import-report";
 
 // v0.1.57 — dry-run preview envelope returned by master-data when the
 // import tools are called with `dryRun: true`. Mirrors the shape in
@@ -922,6 +923,233 @@ export function buildImportTools(deps: {
     },
   });
 
+  // ---- import_companies (v0.1.390 — Inline-Bulk-Liste) -------------------
+  //
+  // Der fehlende Baustein: Wenn der Nutzer eine LISTE von Firmen als TEXT
+  // einfügt (z. B. aus LinkedIn kopiert) — KEINE Datei, KEIN verbundenes CRM —
+  // gab es bisher kein Tool, das die ganze Liste in EINER Transaktion anlegt.
+  // Der Agent musste `import_company` N-mal loopen → N Transaktionen, die die
+  // Matrix zerstreuen. Dieses Tool postet die Inline-Liste an denselben
+  // Bulk-Endpunkt wie der CRM-Import (`/v1/imports/from-list`) → EINE
+  // Transaktion mit voller Pipeline-Anreicherung.
+  //
+  // Ablauf (vom System-Prompt vorgegeben): ERST `dryRun: true` → Matching-
+  // Vorschau + Excel-Report (Downloads); dem Nutzer matched/unmatched zeigen;
+  // nach Bestätigung `dryRun: false` → Commit.
+
+  const importCompanies = defineTool({
+    name: "import_companies",
+    description:
+      "Bulk-import a pasted LIST of companies as ONE transaction (full master-" +
+      "data pipeline: profile, website, publications, contacts, evaluations). " +
+      "Use this whenever the user pastes / names MULTIPLE companies in chat and " +
+      "there is NO file attachment and NO connected-CRM source (e.g. a list " +
+      "copied from LinkedIn). Do NOT loop `import_company` per row — that " +
+      "creates one transaction per company and scatters the Transactions view. " +
+      "WORKFLOW: call FIRST with `dryRun: true` — you get back a matching " +
+      "preview AND a downloadable Excel report (path in `reportPath`). Show the " +
+      "user the matched / not-uniquely-matched companies and the report link, " +
+      "let them confirm or correct, THEN call again with `dryRun: false` to " +
+      "commit. Each row needs name + city (city disambiguates same-named " +
+      "companies); if the user didn't give cities, use the best-known HQ city — " +
+      "the dry-run report will flag wrong guesses as not-uniquely-matched. " +
+      "Returns a transactionId on commit; progress via `import_status`.",
+    parameters: {
+      type: "object",
+      required: ["companies"],
+      properties: {
+        companies: {
+          type: "array",
+          minItems: 1,
+          description:
+            "The companies to import. Each item is `{name, city}`. Pass ALL of them in this ONE call.",
+          items: {
+            type: "object",
+            required: ["name", "city"],
+            properties: {
+              name: { type: "string", minLength: 1 },
+              city: { type: "string", minLength: 1 },
+            },
+          },
+        },
+        transactionName: {
+          type: "string",
+          description:
+            "Optional human-readable label for the run (shows in the Transactions view). Defaults to a generic 'Liste: N Firmen'.",
+        },
+        isFuzzy: {
+          type: "boolean",
+          description:
+            "Allow fuzzy matching against existing companies. Default false (strict).",
+        },
+        dryRun: {
+          type: "boolean",
+          description:
+            "Preview matches + generate the Excel report WITHOUT creating a transaction. Returns `{dryRun:true, preview, reportPath, reportFilename}`. ALWAYS do this first.",
+        },
+      },
+    },
+    schema: yup
+      .object({
+        companies: yup
+          .array()
+          .of(
+            yup
+              .object({
+                name: yup.string().required().min(1),
+                city: yup.string().required().min(1),
+              })
+              .noUnknown(true),
+          )
+          .required()
+          .min(1),
+        transactionName: yup.string().optional(),
+        isFuzzy: yup.boolean().optional(),
+        dryRun: yup.boolean().optional(),
+      })
+      .noUnknown(true),
+    preview: (r: {
+      transactionId?: string;
+      companyCount?: number;
+      reportFilename?: string;
+      matchedCount?: number;
+      unmatchedCount?: number;
+    }) =>
+      r.reportFilename !== undefined
+        ? `dry-run: ${r.matchedCount ?? 0} gefunden, ${r.unmatchedCount ?? 0} nicht eindeutig → Report "${r.reportFilename}"`
+        : `import ${r.companyCount ?? 0} Firmen → tx ${(r.transactionId ?? "").slice(0, 8)}…`,
+    run: async (args, ctx) => {
+      const companies = args.companies as Array<{ name: string; city: string }>;
+      const label =
+        args.transactionName ?? `Liste: ${companies.length} Firmen`;
+
+      // ---- Dry-Run: Vorschau + Excel-Report, KEINE Transaktion. ----------
+      if (args.dryRun) {
+        ctx.log(
+          `import_companies: dry-run für ${companies.length} Firmen → /v1/imports/from-list`,
+        );
+        const preview = await deps.gateway.request<ImportPreview>(
+          "/v1/imports/from-list",
+          {
+            method: "POST",
+            body: {
+              companies: companies.map((c) => ({ name: c.name, city: c.city })),
+              transactionName: label,
+              ...(args.isFuzzy !== undefined ? { isFuzzy: args.isFuzzy } : {}),
+              dryRun: true,
+            },
+            idempotencyKey: randomUUID(),
+            signal: ctx.signal,
+          },
+        );
+        let reportPath: string | undefined;
+        let reportFilename: string | undefined;
+        try {
+          const report = await writeImportReport(
+            preview as unknown as Parameters<typeof writeImportReport>[0],
+            { now: Date.now(), label: args.transactionName },
+          );
+          reportPath = report.path;
+          reportFilename = report.filename;
+          ctx.log(`import_companies: Report geschrieben → ${report.path}`);
+        } catch (err) {
+          // Report ist Komfort, kein Muss — bei Schreibfehler trotzdem die
+          // Vorschau zurückgeben.
+          ctx.log(
+            `import_companies: Report-Schreiben fehlgeschlagen (${err instanceof Error ? err.message : String(err)})`,
+          );
+        }
+        return {
+          dryRun: true as const,
+          providedCount: preview.providedCount,
+          matchedCount: preview.matched.length,
+          unmatchedCount: preview.unmatched.length,
+          preview,
+          ...(reportPath ? { reportPath } : {}),
+          ...(reportFilename ? { reportFilename } : {}),
+        };
+      }
+
+      // ---- Commit: Kosten-Gate + EINE Transaktion. -----------------------
+      // v0.1.179-Logik (analog import_companies_from_crm): vor dem AMQP-
+      // Fan-out die geschätzten Anreicherungskosten zeigen.
+      let useSkipMode = false;
+      let skipSnapshotKey: string | null = null;
+      {
+        const { ResearchFeaturesStore } = await import("../../research/store");
+        const { estimateImportCost, FEATURE_LABEL, formatEuroRange } =
+          await import("../../../shared/research-cost");
+        const store = ResearchFeaturesStore.shared();
+        const estimate = estimateImportCost(store.getConfig(), companies.length);
+        if (estimate) {
+          const lines: string[] = [
+            `Du importierst ${companies.length.toLocaleString("de-DE")} Firmen aus einer Liste.`,
+            "",
+            "Folgende kostenpflichtige Anreicherungen sind aktiv:",
+            ...estimate.perFeature.map(
+              (p) =>
+                `  • ${FEATURE_LABEL[p.feature]} (${p.provider === "openai" ? "OpenAI" : "Anthropic"} ${p.tier === "deep" ? "Deep Research" : "Standard"}): ${formatEuroRange(p.perFirma, { perFirma: true })} je Firma → ${formatEuroRange(p.total)} total`,
+            ),
+            "",
+            `Gesamtschätzung: ${formatEuroRange(estimate.total)}. Diese Kosten werden direkt deinen API-Konten belastet.`,
+          ];
+          const choice = await ctx.ui.askChoice(
+            lines.join("\n"),
+            [
+              { value: "with", label: "Mit Anreicherung importieren" },
+              { value: "without", label: "Ohne Anreicherung (diesmal)" },
+              { value: "cancel", label: "Abbrechen" },
+            ],
+            ctx.signal,
+          );
+          if (choice === "cancel") {
+            return { cancelled: true, companyCount: companies.length } as never;
+          }
+          useSkipMode = choice === "without";
+          if (useSkipMode) {
+            skipSnapshotKey = store.beginSkipMode();
+            ctx.log(
+              `import_companies: skip-mode active (snapshot=${skipSnapshotKey}). Awaiting website producer reboot (~15s)…`,
+            );
+            await new Promise((r) => setTimeout(r, 15_000));
+            ctx.log("import_companies: producer reboot window elapsed");
+          }
+        }
+      }
+
+      ctx.log(
+        `import_companies: commit ${companies.length} Firmen → /v1/imports/from-list`,
+      );
+      const response = await deps.gateway.request<{
+        transactionId: string;
+        companyCount: number;
+      }>("/v1/imports/from-list", {
+        method: "POST",
+        body: {
+          companies: companies.map((c) => ({ name: c.name, city: c.city })),
+          transactionName: label,
+          ...(args.isFuzzy !== undefined ? { isFuzzy: args.isFuzzy } : {}),
+        },
+        idempotencyKey: randomUUID(),
+        signal: ctx.signal,
+        attachUserLlm: true,
+      });
+
+      if (skipSnapshotKey) {
+        const { ResearchFeaturesStore } = await import("../../research/store");
+        ResearchFeaturesStore.shared().attachSkipSnapshotToTransaction(
+          skipSnapshotKey,
+          response.transactionId,
+        );
+      }
+
+      return {
+        transactionId: response.transactionId,
+        companyCount: response.companyCount,
+      };
+    },
+  });
+
   // ---- retry_stage --------------------------------------------------------
   //
   // Pipeline retries are common: the website crawl times out, a contact
@@ -1092,5 +1320,12 @@ export function buildImportTools(deps: {
     },
   });
 
-  return [importExcel, importStatus, importCompany, importFromCrm, retryStage];
+  return [
+    importExcel,
+    importStatus,
+    importCompany,
+    importCompanies,
+    importFromCrm,
+    retryStage,
+  ];
 }

@@ -466,6 +466,7 @@ const KNOWN_BUNDLES: readonly ToolBundle[] = [
     tools: [
       "import_excel",
       "import_company",
+      "import_companies",
       "import_companies_from_crm",
       "import_status",
     ],
