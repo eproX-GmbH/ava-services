@@ -12,6 +12,10 @@ import {
   type CompanyForImport,
 } from "../../crm/fetch-companies";
 import { writeImportReport } from "./import-report";
+import {
+  isProcessingPaused,
+  PROCESSING_PAUSED_MESSAGE,
+} from "../../processing-control";
 
 // v0.1.57 — dry-run preview envelope returned by master-data when the
 // import tools are called with `dryRun: true`. Mirrors the shape in
@@ -213,6 +217,10 @@ export function buildImportTools(deps: {
         ? `${summarizePreview(r.preview)} (file: "${r.filename}")`
         : `import "${r.filename}" (${r.rows} rows) → tx ${(r.transactionId ?? "").slice(0, 8)}…`,
     run: async (args, ctx) => {
+      // v0.1.395 — bei lokaler Pause keinen Commit-Import starten (Dry-Run ok).
+      if (!args.dryRun && isProcessingPaused()) {
+        throw new Error(PROCESSING_PAUSED_MESSAGE);
+      }
       const att = deps.attachments.get(args.attachmentId);
       if (!att) {
         throw new Error(
@@ -661,6 +669,10 @@ export function buildImportTools(deps: {
           (r.skipped > 0 ? ` (${r.skipped} skipped)` : "") +
           ` → tx ${(r.transactionId ?? "").slice(0, 8)}…`,
     run: async (args, ctx) => {
+      // v0.1.395 — bei lokaler Pause keinen Commit-Import starten (Dry-Run ok).
+      if (!args.dryRun && isProcessingPaused()) {
+        throw new Error(PROCESSING_PAUSED_MESSAGE);
+      }
       const provider = args.provider as CrmProvider;
 
       // Either the agent supplied an explicit companies list (e.g.
@@ -1031,6 +1043,10 @@ export function buildImportTools(deps: {
       }
 
       // ---- Commit: Kosten-Gate + EINE Transaktion. -----------------------
+      // v0.1.395 — bei lokaler Pause nicht committen.
+      if (isProcessingPaused()) {
+        throw new Error(PROCESSING_PAUSED_MESSAGE);
+      }
       // v0.1.179-Logik (analog import_companies_from_crm): vor dem AMQP-
       // Fan-out die geschätzten Anreicherungskosten zeigen.
       let useSkipMode = false;
@@ -1464,6 +1480,10 @@ export function buildImportTools(deps: {
         : `retry ${r.stage} → FAILED (${okCount}/${total})`;
     },
     run: async (args, ctx) => {
+      // v0.1.395 — bei lokaler Pause keinen Stage-Retry antreiben.
+      if (isProcessingPaused()) {
+        throw new Error(PROCESSING_PAUSED_MESSAGE);
+      }
       ctx.log(
         `retry_stage: tx=${args.transactionId} co=${args.companyId} stage=${args.stage}`,
       );

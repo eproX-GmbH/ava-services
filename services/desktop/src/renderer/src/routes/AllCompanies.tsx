@@ -1,10 +1,35 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { Search, ChevronLeft, ChevronRight, Building2 } from "lucide-react";
+import { Search, ChevronLeft, ChevronRight, Building2, Trash2 } from "lucide-react";
 import { gatewayFetch } from "../api/gateway";
 import { CrmBadgeRow } from "../components/CrmBadge";
 import { DiagnosticsPanel } from "../components/DiagnosticsPanel";
+import { ProcessingToggle } from "../components/ProcessingToggle";
+
+// v0.1.395 — „Aus Meine Firmen löschen" ist eine REIN LOKALE Ausblendung:
+// die companyId wandert in ein localStorage-Set, die Liste filtert sie raus.
+// Transaktionen / Audit / die zugrundeliegenden Daten bleiben unberührt.
+const HIDDEN_COMPANIES_KEY = "ava.hiddenCompanies";
+function loadHiddenCompanies(): Set<string> {
+  try {
+    const raw = localStorage.getItem(HIDDEN_COMPANIES_KEY);
+    if (!raw) return new Set();
+    const arr = JSON.parse(raw) as unknown;
+    return Array.isArray(arr)
+      ? new Set(arr.filter((x): x is string => typeof x === "string"))
+      : new Set();
+  } catch {
+    return new Set();
+  }
+}
+function persistHiddenCompanies(ids: Set<string>): void {
+  try {
+    localStorage.setItem(HIDDEN_COMPANIES_KEY, JSON.stringify([...ids]));
+  } catch {
+    /* localStorage voll / nicht verfügbar — Ausblendung bleibt für die Sitzung */
+  }
+}
 
 // v0.1.61 — global "all companies" matrix.
 //
@@ -141,9 +166,30 @@ export function AllCompanies() {
   // rows' CompanyCrmLink summaries; rows without any link get no
   // badge, so an empty response is the common case for tenants who
   // never imported from a CRM.
+  // v0.1.395 — lokal ausgeblendete Firmen (aus „Meine Firmen" gelöscht).
+  const [hiddenIds, setHiddenIds] = useState<Set<string>>(loadHiddenCompanies);
+  const hideCompany = (companyId: string, name: string) => {
+    const ok = window.confirm(
+      `„${name}" aus „Meine Firmen" entfernen?\n\nDie Firma verschwindet nur ` +
+        `aus dieser Liste. Vorgänge und recherchierte Daten bleiben erhalten.`,
+    );
+    if (!ok) return;
+    setHiddenIds((prev) => {
+      const next = new Set(prev);
+      next.add(companyId);
+      persistHiddenCompanies(next);
+      return next;
+    });
+    if (openCompanyId === companyId) setOpenCompanyId(null);
+  };
+  const visibleCompanies = useMemo(
+    () => (matrix.data?.companies ?? []).filter((r) => !hiddenIds.has(r.companyId)),
+    [matrix.data, hiddenIds],
+  );
+
   const companyIds = useMemo(
-    () => (matrix.data?.companies ?? []).map((r) => r.companyId),
-    [matrix.data],
+    () => visibleCompanies.map((r) => r.companyId),
+    [visibleCompanies],
   );
   const crmLinks = useQuery({
     queryKey: ["crm-links-batch", companyIds],
@@ -166,10 +212,8 @@ export function AllCompanies() {
   // dropping it), close the panel so we never show a stale ghost.
   const openRow = useMemo(
     () =>
-      (matrix.data?.companies ?? []).find(
-        (c) => c.companyId === openCompanyId,
-      ) ?? null,
-    [matrix.data, openCompanyId],
+      visibleCompanies.find((c) => c.companyId === openCompanyId) ?? null,
+    [visibleCompanies, openCompanyId],
   );
   useEffect(() => {
     if (openCompanyId && matrix.data && !openRow) {
@@ -198,6 +242,9 @@ export function AllCompanies() {
           Transaktionen hinweg. Eine Zelle zeigt den jüngsten Stand des
           jeweiligen Schritts.
         </p>
+        <div className="proc-toggle-bar">
+          <ProcessingToggle />
+        </div>
       </header>
 
       <div className="all-companies__filters ct-card" style={{ padding: "0.75rem 1rem" }}>
@@ -227,7 +274,7 @@ export function AllCompanies() {
         </p>
       )}
 
-      {matrix.data && matrix.data.companies.length === 0 && (
+      {matrix.data && visibleCompanies.length === 0 && (
         <p className="muted">
           {search
             ? `Keine Firmen passen zu „${search}".`
@@ -235,7 +282,7 @@ export function AllCompanies() {
         </p>
       )}
 
-      {matrix.data && matrix.data.companies.length > 0 && (
+      {matrix.data && visibleCompanies.length > 0 && (
         <div className="ct-card all-companies__table-card" style={{ padding: 0, overflow: "hidden" }}>
           <table className="matrix all-companies__matrix">
             <thead>
@@ -245,10 +292,11 @@ export function AllCompanies() {
                   <th key={p}>{PRODUCER_LABEL[p]}</th>
                 ))}
                 <th>Zuletzt gesehen</th>
+                <th aria-label="Aktionen"></th>
               </tr>
             </thead>
             <tbody>
-              {matrix.data.companies.map((row) => (
+              {visibleCompanies.map((row) => (
                 <tr
                   key={row.companyId}
                   className={openCompanyId === row.companyId ? "active" : ""}
@@ -292,6 +340,20 @@ export function AllCompanies() {
                     );
                   })}
                   <td className="muted">{formatTime(row.lastSeenAt)}</td>
+                  <td className="all-companies__actions">
+                    <button
+                      type="button"
+                      className="all-companies__delete"
+                      title="Aus der Liste entfernen"
+                      aria-label={`${row.name} aus Meine Firmen entfernen`}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        hideCompany(row.companyId, row.name);
+                      }}
+                    >
+                      <Trash2 className="ct-icon-sm" aria-hidden="true" />
+                    </button>
+                  </td>
                 </tr>
               ))}
             </tbody>

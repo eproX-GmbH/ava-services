@@ -65,12 +65,6 @@ model EntityProgress {
   nextRetryAt    DateTime?
   giveUpAt       DateTime?
 
-  /// v0.1.394 — Nutzergesteuertes Pausieren EINER Firma. Wenn true,
-  /// überspringt die Retry-Queue (`/transactions/retry-queue/pending`) diese
-  /// Zeile, sodass fehlgeschlagene Schritte nicht erneut angetrieben werden.
-  /// „Fortsetzen" setzt es zurück; „Abbrechen" nutzt `giveUpAt` + state.
-  paused         Boolean   @default(false)
-
   @@id([transactionId, companyId, producer])
   @@index([transactionId])
 }

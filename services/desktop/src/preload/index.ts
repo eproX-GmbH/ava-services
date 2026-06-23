@@ -212,6 +212,21 @@ const api = {
   ping: (): Promise<{ pong: boolean; at: number }> =>
     ipcRenderer.invoke("app:ping"),
 
+  /** v0.1.395 — Lokaler Verarbeitungs-Schalter (Play/Pause). Pausiert die
+   *  lokalen Producer + sperrt Import-/Retry-Tools des Agenten. */
+  processing: {
+    getStatus: (): Promise<{ paused: boolean }> =>
+      ipcRenderer.invoke("processing:getStatus"),
+    setPaused: (paused: boolean): Promise<{ paused: boolean }> =>
+      ipcRenderer.invoke("processing:setPaused", paused),
+    onChanged: (handler: (p: { paused: boolean }) => void): (() => void) => {
+      const wrapped = (_e: unknown, payload: { paused: boolean }): void =>
+        handler(payload);
+      ipcRenderer.on("processing-control:changed", wrapped);
+      return () => ipcRenderer.off("processing-control:changed", wrapped);
+    },
+  },
+
   /** v0.1.327 — Subscribe zum `power:resumed`-Frame vom Main-Process.
    *  Returnt eine unsubscribe-Funktion. v0.1.335: handler bekommt
    *  jetzt die wake-nonce uebergeben — der Renderer MUSS sie via

@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import { gatewayFetch } from "../api/gateway";
 import { fmtDate } from "../lib/format";
+import { ProcessingToggle } from "../components/ProcessingToggle";
 
 // W2 — list the actor's transactions. Uses the gateway's §4.2 read.
 
@@ -45,6 +46,9 @@ export function Transactions() {
           gruppiert die Firmen einer Excel-Datei oder eines manuellen
           Imports.
         </p>
+        <div className="proc-toggle-bar">
+          <ProcessingToggle />
+        </div>
       </header>
       {q.isLoading && <p>Lädt…</p>}
       {q.error && <p className="error">Fehler: {(q.error as Error).message}</p>}

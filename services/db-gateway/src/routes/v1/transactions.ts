@@ -1278,7 +1278,6 @@ transactionsRouter.openapi(retryQueueRoute, async (c) => {
      FROM "EntityProgress"
      WHERE state = 'failed'
        AND "giveUpAt" IS NULL
-       AND "paused" = false
        AND ("nextRetryAt" IS NULL OR "nextRetryAt" <= NOW())
        AND "transactionId" = ANY($1)
      ORDER BY "attempts" ASC, "lastFailureAt" ASC NULLS FIRST
@@ -1706,117 +1705,6 @@ transactionsRouter.openapi(retryRoute, async (c) => {
     { transactionId, companyId, stage, dispatched, ok },
     202,
   );
-});
-
-// ---- v0.1.394 — Pause / Resume / Cancel processing for ONE company --------
-//
-// Per-company control over the retry/re-dispatch loop. Because producers run
-// locally and consume AMQP events that were already published, these cannot
-// abort an IN-FLIGHT stage — they stop the company from being re-driven:
-//   - pause   → set `paused=true`; the retry-queue (`/retry-queue/pending`)
-//               skips paused rows, so failed stages aren't re-dispatched.
-//   - resume  → clear `paused`; re-queue failed rows promptly (nextRetryAt=NOW).
-//   - cancel  → set `giveUpAt=NOW()` (permanently off the retry queue) and
-//               terminalize still-pending/in_progress rows as `skipped`
-//               ("Vom Nutzer abgebrochen"). Completed/failed stay as-is.
-
-const EntityControlResult = z
-  .object({ ok: z.boolean(), affected: z.number().int() })
-  .openapi("EntityControlResult");
-
-const pauseRoute = createRoute({
-  method: "post",
-  path: "/transactions/{transactionId}/entities/{companyId}/pause",
-  tags: [tag],
-  summary: "Pause processing (retry re-dispatch) for one company",
-  request: { params: TransactionEntityParams },
-  responses: {
-    200: { content: { "application/json": { schema: EntityControlResult } }, description: "paused" },
-    ...errorResponses,
-  },
-});
-
-transactionsRouter.openapi(pauseRoute, async (c) => {
-  const { transactionId, companyId } = c.req.valid("param");
-  await assertTransactionOwnershipById(c, transactionId);
-  const pool = getGatewayPool();
-  const res = await pool.query(
-    `UPDATE "EntityProgress" SET "paused" = true
-     WHERE "transactionId" = $1 AND "companyId" = $2`,
-    [transactionId, companyId],
-  );
-  logger.info(
-    { transactionId, companyId, affected: res.rowCount ?? 0, requestId: c.get("requestId") },
-    "entity paused",
-  );
-  return c.json({ ok: true, affected: res.rowCount ?? 0 }, 200);
-});
-
-const resumeRoute = createRoute({
-  method: "post",
-  path: "/transactions/{transactionId}/entities/{companyId}/resume",
-  tags: [tag],
-  summary: "Resume processing for one paused company",
-  request: { params: TransactionEntityParams },
-  responses: {
-    200: { content: { "application/json": { schema: EntityControlResult } }, description: "resumed" },
-    ...errorResponses,
-  },
-});
-
-transactionsRouter.openapi(resumeRoute, async (c) => {
-  const { transactionId, companyId } = c.req.valid("param");
-  await assertTransactionOwnershipById(c, transactionId);
-  const pool = getGatewayPool();
-  // Clear pause; nudge failed (non-given-up) rows back to "ripe now" so the
-  // ticker re-enrolls them on the next slot instead of waiting out backoff.
-  const res = await pool.query(
-    `UPDATE "EntityProgress"
-        SET "paused" = false,
-            "nextRetryAt" = CASE WHEN state = 'failed' AND "giveUpAt" IS NULL
-                                 THEN NOW() ELSE "nextRetryAt" END
-      WHERE "transactionId" = $1 AND "companyId" = $2`,
-    [transactionId, companyId],
-  );
-  logger.info(
-    { transactionId, companyId, affected: res.rowCount ?? 0, requestId: c.get("requestId") },
-    "entity resumed",
-  );
-  return c.json({ ok: true, affected: res.rowCount ?? 0 }, 200);
-});
-
-const cancelRoute = createRoute({
-  method: "post",
-  path: "/transactions/{transactionId}/entities/{companyId}/cancel",
-  tags: [tag],
-  summary: "Stop/cancel processing for one company",
-  request: { params: TransactionEntityParams },
-  responses: {
-    200: { content: { "application/json": { schema: EntityControlResult } }, description: "cancelled" },
-    ...errorResponses,
-  },
-});
-
-transactionsRouter.openapi(cancelRoute, async (c) => {
-  const { transactionId, companyId } = c.req.valid("param");
-  await assertTransactionOwnershipById(c, transactionId);
-  const pool = getGatewayPool();
-  const res = await pool.query(
-    `UPDATE "EntityProgress"
-        SET "giveUpAt" = NOW(),
-            "paused" = false,
-            state = CASE WHEN state IN ('pending', 'in_progress') THEN 'skipped' ELSE state END,
-            "errorMessage" = CASE WHEN state IN ('pending', 'in_progress')
-                                  THEN 'Vom Nutzer abgebrochen' ELSE "errorMessage" END,
-            "updatedAt" = NOW()
-      WHERE "transactionId" = $1 AND "companyId" = $2 AND state <> 'completed'`,
-    [transactionId, companyId],
-  );
-  logger.info(
-    { transactionId, companyId, affected: res.rowCount ?? 0, requestId: c.get("requestId") },
-    "entity cancelled",
-  );
-  return c.json({ ok: true, affected: res.rowCount ?? 0 }, 200);
 });
 
 // Inverse of SERVICE_TO_STAGE on the renderer side. Kept here because the

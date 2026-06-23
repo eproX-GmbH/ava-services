@@ -27,6 +27,7 @@ import {
 } from "./ollama-binary-updater";
 import { PostgresSupervisor } from "./postgres-supervisor";
 import { ProducerSupervisor } from "./producer-supervisor";
+import { processingControl } from "./processing-control";
 import { resumeStuckStages } from "./producer-resume";
 import { resolveProducerDirUnder } from "./producer-dirs";
 import {
@@ -311,7 +312,7 @@ function broadcastAuthStatus(status: AuthStatus): void {
   // hammering a downed upstream. The monitor's own status listener
   // (set up below) handles the inverse transition (resume on
   // reachable). This branch only refuses to start them now.
-  if (status.signedIn) {
+  if (status.signedIn && !processingControl.isPaused()) {
     for (const p of producers) {
       const s = p.getStatus().state;
       if (s !== "idle" && s !== "error") continue;
@@ -361,6 +362,23 @@ function broadcastAuthStatus(status: AuthStatus): void {
   }
 }
 auth.on("status", broadcastAuthStatus);
+
+// v0.1.395 — Lokaler Verarbeitungs-Schalter. Pause → alle lokalen Producer
+// stoppen (kein Konsumieren mehr; laufender Schritt endet). Resume → die
+// reguläre Sign-in-Start-Logik erneut anstoßen (Producer laufen wieder an,
+// Reachability-Gating greift weiterhin). Renderer wird benachrichtigt.
+processingControl.on("changed", (paused: boolean) => {
+  for (const win of BrowserWindow.getAllWindows()) {
+    win.webContents.send("processing-control:changed", { paused });
+  }
+  if (paused) {
+    console.log("[processing-control] pausiert — stoppe alle Producer");
+    for (const p of producers) void p.stop();
+  } else {
+    console.log("[processing-control] fortgesetzt — Producer neu starten");
+    broadcastAuthStatus(auth.getStatus());
+  }
+});
 
 // Ollama supervisor (D7). Started on app.whenReady, stopped on before-quit.
 // Disabled by setting AVA_DISABLE_OLLAMA=1 — used in CI / mock-gateway dev
@@ -787,6 +805,8 @@ externalServiceMonitor.on("status", (status: ExternalServicesStatus) => {
         void p.stop();
       }
     } else if (resumeCondition) {
+      // v0.1.395 — Nutzer-Pause hat Vorrang: nicht wieder anlaufen lassen.
+      if (processingControl.isPaused()) continue;
       const s = p.getStatus().state;
       if ((s === "idle" || s === "error") && auth.getStatus().signedIn) {
         console.log(
@@ -1626,6 +1646,10 @@ function createMainWindow(): BrowserWindow {
 }
 
 app.whenReady().then(async () => {
+  // v0.1.395 — persistierten Verarbeitungs-Pause-Zustand laden, BEVOR die
+  // Auth-Lifecycle-Logik die Producer startet (sonst würden sie trotz
+  // gespeicherter Pause anlaufen).
+  processingControl.load();
   // Wire the on-disk handler for the `ava-screenshot://` protocol we
   // pre-registered above. Also prune captures older than the TTL so
   // a long-running install doesn't accumulate gigabytes of frames.
@@ -3423,6 +3447,15 @@ app.whenReady().then(async () => {
   // Antwortet IMMER synchron mit pong + Zeitstempel; jede Latenz hier
   // ist diagnostisch wertvoll (Renderer kann das loggen).
   ipcMain.handle("app:ping", () => ({ pong: true, at: Date.now() }));
+
+  // v0.1.395 — Lokaler Verarbeitungs-Schalter (Play/Pause).
+  ipcMain.handle("processing:getStatus", () => ({
+    paused: processingControl.isPaused(),
+  }));
+  ipcMain.handle("processing:setPaused", (_e, paused: boolean) => {
+    processingControl.setPaused(paused === true);
+    return { paused: processingControl.isPaused() };
+  });
 
   // v0.1.386 — Windows-Fensterleiste (titleBarOverlay) bei Theme-Wechsel
   // umfärben. Auf macOS sind die Ampel-Buttons systemgezeichnet und brauchen
