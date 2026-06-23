@@ -491,6 +491,13 @@ export function TransactionDetail() {
             }}
           />
 
+          {/* v0.1.394 — Verarbeitung dieser Firma pausieren / stoppen. */}
+          <CompanyProcessingControls
+            key={openCompanyId}
+            transactionId={id!}
+            companyId={openCompanyId}
+          />
+
           {/* v0.1.50 — live producer logs + Selenium screenshots scoped
               to this company. The dropdown ALWAYS lists every local
               producer (not filtered by `stages` from the pipeline
@@ -674,6 +681,102 @@ function RetryStagePicker({
           </ul>
         </div>
       )}
+    </div>
+  );
+}
+
+// v0.1.394 — Verarbeitung EINER Firma steuern: pausieren / fortsetzen /
+// stoppen. „Pausieren" nimmt die Firma aus der Retry-Queue (fehlgeschlagene
+// Schritte werden nicht erneut angetrieben), „Stoppen" beendet sie endgültig.
+// Ein bereits LAUFENDER Producer-Schritt läuft noch zu Ende — gestoppt wird
+// das erneute Antreiben. Status wird lokal gehalten (Reset bei Firmenwechsel
+// via key-Prop).
+function CompanyProcessingControls({
+  transactionId,
+  companyId,
+}: {
+  transactionId: string;
+  companyId: string;
+}) {
+  const [busy, setBusy] = useState<null | "pause" | "resume" | "cancel">(null);
+  const [state, setState] = useState<
+    null | "paused" | "resumed" | "cancelled"
+  >(null);
+  const [err, setErr] = useState<string | null>(null);
+
+  const call = async (action: "pause" | "resume" | "cancel") => {
+    if (action === "cancel") {
+      const ok = window.confirm(
+        "Verarbeitung dieser Firma wirklich stoppen? Offene Schritte werden " +
+          "abgebrochen und nicht erneut angetrieben. (Bereits gelaufene Daten " +
+          "bleiben erhalten.)",
+      );
+      if (!ok) return;
+    }
+    setBusy(action);
+    setErr(null);
+    try {
+      await gatewayFetch(
+        `/v1/transactions/${transactionId}/entities/${companyId}/${action}`,
+        { method: "POST" },
+      );
+      setState(
+        action === "pause"
+          ? "paused"
+          : action === "resume"
+            ? "resumed"
+            : "cancelled",
+      );
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const cancelled = state === "cancelled";
+  return (
+    <div className="proc-controls">
+      <h4>Verarbeitung steuern</h4>
+      <div className="proc-controls__row">
+        {state === "paused" ? (
+          <button
+            type="button"
+            onClick={() => call("resume")}
+            disabled={busy !== null}
+          >
+            {busy === "resume" ? "Wird fortgesetzt…" : "Fortsetzen"}
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={() => call("pause")}
+            disabled={busy !== null || cancelled}
+          >
+            {busy === "pause" ? "Wird pausiert…" : "Pausieren"}
+          </button>
+        )}
+        <button
+          type="button"
+          className="danger"
+          onClick={() => call("cancel")}
+          disabled={busy !== null || cancelled}
+        >
+          {busy === "cancel" ? "Wird gestoppt…" : "Stoppen"}
+        </button>
+      </div>
+      {state === "paused" && (
+        <p className="muted">
+          Pausiert — fehlgeschlagene Schritte werden nicht erneut angetrieben.
+        </p>
+      )}
+      {state === "resumed" && <p className="muted">Fortgesetzt.</p>}
+      {cancelled && (
+        <p className="muted">
+          Gestoppt — diese Firma wird nicht weiter verarbeitet.
+        </p>
+      )}
+      {err && <p className="bad">Fehler: {err}</p>}
     </div>
   );
 }

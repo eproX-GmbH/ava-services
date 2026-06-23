@@ -7535,3 +7535,23 @@ html.dark .self-corrections__stat { background: rgba(0,192,167,0.15); }
 }
 .import-match__foot .muted { font-size: 13px; }
 .import-match__foot .primary { margin-left: auto; }
+
+/* v0.1.394 — Verarbeitung-steuern (Pause/Stop pro Firma) */
+.proc-controls { margin-top: 1rem; }
+.proc-controls h4 { margin: 0 0 0.5rem; }
+.proc-controls__row { display: flex; gap: 8px; flex-wrap: wrap; }
+.proc-controls__row button {
+  font-size: 13px; padding: 6px 14px; border-radius: 8px;
+  border: 1px solid var(--color-border); background: var(--color-bg-1);
+  cursor: pointer;
+}
+.proc-controls__row button:hover:not(:disabled) { border-color: var(--color-border-strong); }
+.proc-controls__row button:disabled { opacity: 0.5; cursor: default; }
+.proc-controls__row button.danger {
+  color: #b42318;
+  border-color: color-mix(in oklab, #b42318 35%, var(--color-border));
+}
+.proc-controls__row button.danger:hover:not(:disabled) {
+  background: color-mix(in oklab, #b42318 8%, transparent);
+}
+.proc-controls p { margin: 0.5rem 0 0; font-size: 13px; }
