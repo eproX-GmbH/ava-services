@@ -129,7 +129,13 @@ function MonitorRow({ monitor }: { monitor: LinkMonitor }): JSX.Element {
           {monitor.isLinkedIn && <span className="pill">LinkedIn</span>}
         </div>
         <div className="muted scheduler-row__meta">
-          <a href={monitor.url} target="_blank" rel="noreferrer">
+          <a
+            className="lm-url"
+            href={monitor.url}
+            target="_blank"
+            rel="noreferrer"
+            title={monitor.url}
+          >
             {monitor.url}
           </a>
         </div>

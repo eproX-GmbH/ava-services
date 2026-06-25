@@ -7002,6 +7002,15 @@ html.dark .chat-images__warn { background: rgba(252,211,77,0.18); color: #fcd34d
 .scheduler-row__main { flex: 1; min-width: 0; }
 .scheduler-row__header { display: flex; gap: 8px; align-items: center; }
 .scheduler-row__meta { font-size: 0.85rem; margin-top: 4px; }
+/* LM — lange überwachte URLs auf eine Zeile kürzen (… statt Überlauf).
+   Volltext bleibt als title-Tooltip + per Klick erreichbar. */
+.lm-url {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .scheduler-row__error {
   color: #b91c1c; font-size: 0.85rem; margin-top: 4px;
 }
