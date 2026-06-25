@@ -36,23 +36,6 @@ export interface LinkMonitorToolDeps {
   getSupervisor: () => LinkMonitorSupervisor | null;
 }
 
-function presetLabel(p: LinkMonitorFrequencyPreset): string {
-  switch (p) {
-    case "5min":
-      return "alle 5 Minuten";
-    case "15min":
-      return "alle 15 Minuten";
-    case "hourly":
-      return "stündlich";
-    case "daily":
-      return "täglich";
-    case "weekly":
-      return "wöchentlich";
-    case "custom":
-      return "benutzerdefiniert";
-  }
-}
-
 function intervalLabel(minutes: number): string {
   if (minutes % (24 * 60) === 0) return `alle ${minutes / (24 * 60)} Tage`;
   if (minutes % 60 === 0) return `alle ${minutes / 60} Stunden`;
@@ -135,27 +118,40 @@ export function buildLinkMonitorTools(deps: LinkMonitorToolDeps): Tool[] {
         label: yup.string().trim().max(200).optional(),
       })
       .noUnknown(true),
-    preview: (r: { applied: boolean; status?: string }) =>
-      r.applied ? `Überwachung eingerichtet (${r.status})` : "Abgelehnt",
+    preview: (r: {
+      applied: boolean;
+      status?: string;
+      awaitingCustomFrequency?: boolean;
+    }) =>
+      r.applied
+        ? `Überwachung eingerichtet (${r.status})`
+        : r.awaitingCustomFrequency
+          ? "wartet auf Intervall-Angabe"
+          : "Abgelehnt",
     run: async (args, ctx) => {
       const sup = requireSup();
+      const url = args.url.trim();
 
       let preset = args.frequencyPreset as
         | LinkMonitorFrequencyPreset
         | undefined;
-      let minutes = args.intervalMinutes;
+      const minutes = args.intervalMinutes;
 
+      // Frequenz noch unbekannt → interaktiv abfragen. Der Picker dient
+      // ZUGLEICH als Einverständnis (eine Frequenz wählen = ja). Hat der
+      // Agent Intervall/Preset bereits vom Nutzer, legen wir DIREKT an —
+      // KEIN zusätzlicher Bestätigungsdialog (sonst klickt der Nutzer dort
+      // „Sonstiges", was den Tool-Dialog abbricht).
       if (!preset && minutes === undefined) {
-        // Brief-UX: Frequenz interaktiv abfragen.
         const choice = await ctx.ui.askChoice(
-          `Soll ich diesen Link für dich überwachen?\n\n  ${args.url.trim()}\n\nWenn ja: in welcher Regelmäßigkeit?`,
+          `Soll ich diesen Link für dich überwachen?\n\n  ${url}\n\nWenn ja: in welcher Regelmäßigkeit? (Für ein eigenes Intervall „Sonstiges" wählen und z. B. „alle 10 Minuten" eingeben.)`,
           [
-            { value: "5min", label: "Alle 5 Minuten", description: "Sehr häufig" },
+            { value: "5min", label: "Alle 5 Minuten", description: "" },
             { value: "hourly", label: "Stündlich", description: "" },
             {
               value: "daily",
               label: "Täglich (empfohlen)",
-              description: "Standard",
+              description: "",
             },
             { value: "weekly", label: "Wöchentlich", description: "" },
             { value: "decline", label: "Nicht überwachen", description: "" },
@@ -163,21 +159,21 @@ export function buildLinkMonitorTools(deps: LinkMonitorToolDeps): Tool[] {
           ctx.signal,
         );
         if (choice === "decline") return userDeclined();
+        // „Sonstiges" (Sentinel __user_other__) ODER irgendein Nicht-Preset:
+        // der Nutzer nennt gleich ein eigenes Intervall als Folge-Nachricht.
+        // Wir legen NICHTS an, sondern geben dem Agenten die URL zurück, damit
+        // er nach der Intervall-Angabe erneut registriert (ohne erneut nach
+        // der URL zu fragen).
+        const validPresets = ["5min", "15min", "hourly", "daily", "weekly"];
+        if (!validPresets.includes(choice)) {
+          return {
+            applied: false,
+            awaitingCustomFrequency: true,
+            url,
+            message: `Der Nutzer möchte ein eigenes Intervall für ${url} angeben. Warte auf seine Intervall-Angabe (z. B. „alle 10 Minuten") und rufe link_monitor_register danach ERNEUT auf — mit url="${url}" und intervalMinutes (z. B. 10). Frag NICHT noch einmal nach der URL.`,
+          };
+        }
         preset = choice as LinkMonitorFrequencyPreset;
-      } else {
-        const label =
-          minutes !== undefined
-            ? intervalLabel(minutes)
-            : presetLabel(preset ?? "daily");
-        const ok = await ctx.ui.askChoice(
-          `Link überwachen (${label})?\n\n  ${args.url.trim()}`,
-          [
-            { value: "accept", label: "Ja, einrichten", description: "" },
-            { value: "decline", label: "Abbrechen", description: "" },
-          ],
-          ctx.signal,
-        );
-        if (ok !== "accept") return userDeclined();
       }
 
       try {
