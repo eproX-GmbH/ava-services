@@ -4,6 +4,7 @@ import {
   WatchesSection,
 } from "../Settings";
 import { SchedulerSection } from "./SchedulerSection";
+import { LinkMonitorSection } from "./LinkMonitorSection";
 
 // v0.1.273+ — Automatisierungen-Tab.
 //
@@ -16,6 +17,7 @@ export function AutomatisierungenTab() {
   return (
     <>
       <WatchesSection />
+      <LinkMonitorSection />
       <SchedulerSection />
       <FreshnessSection />
       <AlertsSection />

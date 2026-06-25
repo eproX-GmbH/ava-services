@@ -4,8 +4,8 @@ Auto-generiert von `services/desktop/scripts/generate-tools-md.mjs`.
 NICHT direkt bearbeiten — die Quelle der Wahrheit ist `services/desktop/src/main/agent/tools/*.ts`.
 Lauf via `pnpm -F @ava/desktop tools:doc` (oder automatisch via `build:typecheck`).
 
-Stand: 2026-06-16
-Anzahl Tools: 162
+Stand: 2026-06-25
+Anzahl Tools: 169
 
 ## Firmen (11)
 
@@ -942,6 +942,74 @@ _Datei:_ `services/desktop/src/main/agent/tools/chat-history.ts`
 Lädt das Transkript einer früheren Chat-Sitzung anhand ihrer ID. Liefert die Nachrichtenliste mit Rolle (user / assistant / tool / system) und Inhalt. Nutze das Tool, nachdem `chat_history_list` die passende konversationsId geliefert hat. Unbekannte oder nicht lesbare IDs ergeben eine leere Nachrichtenliste.
 
 _Parameter:_ keine.
+
+## link-monitor (7)
+
+### `link_monitor_list`
+
+_Datei:_ `services/desktop/src/main/agent/tools/link-monitor.ts`
+
+Liste alle überwachten Links (neueste zuerst) mit id, url, Anweisung, Frequenz, Status (active/paused/error), letztem Lauf + letzter erkannter Änderung. Nutze dies, wenn der Nutzer fragt 'welche Links überwachst du' / 'was beobachtest du gerade'. Gibt activeCount + cap (max 5 gleichzeitig aktiv) zurück.
+
+_Parameter:_ keine.
+
+### `link_monitor_pause`
+
+_Datei:_ `services/desktop/src/main/agent/tools/link-monitor.ts`
+
+Pausiere eine Überwachung, ohne sie zu löschen (zählt dann nicht mehr gegen das 5-aktiv-Limit). Resume via link_monitor_resume.
+
+_Parameter:_
+- `id: string` (required)
+
+### `link_monitor_register`
+
+_Datei:_ `services/desktop/src/main/agent/tools/link-monitor.ts`
+
+Richte eine neue Link-Überwachung ein. Nutze dies, wenn der Nutzer einen Link überwachen lassen will ('beobachte diese Seite', 'sag mir wenn sich hier was ändert', 'gib mir alle X Minuten ein Update') ODER wenn er einen Link kommentarlos schickt (dann zuerst nachfragen, ob überwacht werden soll). Übergib `instructions`, worauf zu achten ist (z. B. 'gehe die Pagination durch, achte auf neue Produkte'). Frequenz: gib entweder `frequencyPreset` ODER `intervalMinutes` (5–10080) an; ohne Angabe fragt das Tool die Frequenz interaktiv ab und nutzt sonst täglich. LinkedIn-Links nutzen automatisch die hinterlegte Anmeldung. Maximal 5 gleichzeitig aktiv — überzählige werden pausiert angelegt.
+
+_Parameter:_ keine.
+
+### `link_monitor_remove`
+
+_Datei:_ `services/desktop/src/main/agent/tools/link-monitor.ts`
+
+Lösche eine Überwachung samt Verlauf (idempotent). id via link_monitor_list holen. Nutze dies bei 'überwache X nicht mehr' / 'lösche die Überwachung'.
+
+_Parameter:_
+- `id: string` (required)
+
+### `link_monitor_resume`
+
+_Datei:_ `services/desktop/src/main/agent/tools/link-monitor.ts`
+
+Setze eine pausierte Überwachung fort. Schlägt mit klarer Meldung fehl, wenn bereits 5 aktiv sind (zuerst eine andere pausieren).
+
+_Parameter:_
+- `id: string` (required)
+
+### `link_monitor_run_now`
+
+_Datei:_ `services/desktop/src/main/agent/tools/link-monitor.ts`
+
+Führe für eine Überwachung sofort einen Durchlauf aus (statt auf den nächsten Timer zu warten). Nützlich zum Testen oder bei 'prüf jetzt mal'.
+
+_Parameter:_
+- `id: string` (required)
+
+### `link_monitor_update`
+
+_Datei:_ `services/desktop/src/main/agent/tools/link-monitor.ts`
+
+Aktualisiere eine bestehende Überwachung (url, Anweisung, Frequenz oder Label). id zuvor via link_monitor_list holen. Nur die übergebenen Felder werden geändert.
+
+_Parameter:_
+- `id: string` (required)
+- `url: string`
+- `instructions: string`
+- `frequencyPreset: string (enum: 5min, 15min, hourly, daily, weekly)`
+- `intervalMinutes: number`
+- `label: string`
 
 ## mail (8)
 

@@ -83,6 +83,9 @@ import type {
   ResearchTier,
   ResearchProvider,
   ResearchKeyProbeResult,
+  LinkMonitor,
+  LinkMonitorInput,
+  LinkMonitorSnapshot,
 } from "../shared/types";
 export type {
   AgentChoiceAnswer,
@@ -1118,6 +1121,44 @@ const api = {
       ): void => cb(jobs);
       ipcRenderer.on("scheduler:jobs-changed", handler);
       return () => ipcRenderer.removeListener("scheduler:jobs-changed", handler);
+    },
+  },
+
+  // LM — Link-Überwachung. Verwaltung der überwachten Links aus der
+  // Settings-UI; Push-Updates via onChanged.
+  linkMonitor: {
+    list: (): Promise<LinkMonitorSnapshot> =>
+      ipcRenderer.invoke("linkMonitor:list"),
+    create: (
+      input: LinkMonitorInput,
+    ): Promise<
+      { ok: true; monitor: LinkMonitor } | { ok: false; error: string }
+    > => ipcRenderer.invoke("linkMonitor:create", input),
+    update: (
+      id: string,
+      patch: Partial<LinkMonitorInput>,
+    ): Promise<{ ok: true } | { ok: false; error: string }> =>
+      ipcRenderer.invoke("linkMonitor:update", id, patch),
+    remove: (id: string): Promise<{ ok: true }> =>
+      ipcRenderer.invoke("linkMonitor:remove", id),
+    pause: (id: string): Promise<{ ok: true }> =>
+      ipcRenderer.invoke("linkMonitor:pause", id),
+    resume: (
+      id: string,
+    ): Promise<{ ok: true } | { ok: false; error: string }> =>
+      ipcRenderer.invoke("linkMonitor:resume", id),
+    runNow: (id: string): Promise<{ ok: true }> =>
+      ipcRenderer.invoke("linkMonitor:runNow", id),
+    onChanged: (
+      cb: (snapshot: LinkMonitorSnapshot) => void,
+    ): (() => void) => {
+      const handler = (
+        _e: Electron.IpcRendererEvent,
+        snapshot: LinkMonitorSnapshot,
+      ): void => cb(snapshot);
+      ipcRenderer.on("link-monitor:changed", handler);
+      return () =>
+        ipcRenderer.removeListener("link-monitor:changed", handler);
     },
   },
 

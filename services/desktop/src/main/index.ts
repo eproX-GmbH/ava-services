@@ -70,11 +70,19 @@ import { startScheduler as startLinkedInScheduler, stopScheduler as stopLinkedIn
 import { MailSupervisor } from "./mail/supervisor";
 import { ScheduledJobsStore } from "./scheduler/store";
 import { ScheduledJobsSupervisor } from "./scheduler/supervisor";
+import { LinkMonitorStore } from "./link-monitor/store";
+import { LinkMonitorSupervisor } from "./link-monitor/supervisor";
 import { SelfCorrectionsStore } from "./agent/self-corrections-store";
 import type {
   ScheduledJob,
   ScheduledMailSendPayload,
   ScheduledReminderPayload,
+} from "../shared/types";
+import {
+  LINK_MONITOR_ACTIVE_CAP,
+  type LinkMonitor,
+  type LinkMonitorInput,
+  type LinkMonitorSnapshot,
 } from "../shared/types";
 import type {
   MailAccount,
@@ -1051,6 +1059,7 @@ watchStore.on("changed", () => broadcastWatchesChanged());
 // dem app.whenReady() in den Boot-Sequenz unten attached (siehe weiter unten).
 let mailSupervisor: MailSupervisor | null = null;
 let scheduledJobsSupervisor: ScheduledJobsSupervisor | null = null;
+let linkMonitorSupervisor: LinkMonitorSupervisor | null = null;
 
 function broadcastMailSnapshot(snapshot: MailSnapshot): void {
   for (const win of BrowserWindow.getAllWindows()) {
@@ -1450,6 +1459,7 @@ const agentRegistry = buildReadOnlyRegistry({
   getMailSupervisor: () => mailSupervisor,
   // v0.1.267 — ScheduledJobs-Supervisor (Phase S). Analog Lazy-Pattern.
   getScheduledJobsSupervisor: () => scheduledJobsSupervisor,
+  getLinkMonitorSupervisor: () => linkMonitorSupervisor,
   // v0.1.284 — Self-Correction-Reporting (always-on Telemetrie).
   selfCorrectionsStore,
   getActiveConversationId: () => agent.getStatus().inFlightConversationId,
@@ -2091,6 +2101,52 @@ app.whenReady().then(async () => {
       const jobs = await scheduledJobsSupervisor.store.list();
       for (const win of BrowserWindow.getAllWindows()) {
         win.webContents.send("scheduler:jobs-changed", jobs);
+      }
+    } catch {
+      /* store nicht ready */
+    }
+  }
+
+  // LM — Link-Monitor-Supervisor. Eigener PGlite-Store unter
+  // userData/pglite/link-monitor. Boot-Rehydrate aller active-Monitore;
+  // bei erkannter Änderung erzeugt der Supervisor einen Alert
+  // (kind="link-change") + OS-Push über dieselbe Pipeline wie Reminder.
+  const linkMonitorStore = new LinkMonitorStore();
+  linkMonitorSupervisor = new LinkMonitorSupervisor({
+    store: linkMonitorStore,
+    providers,
+    alerts,
+    notify: (a) => {
+      notifications.notifyForAlert(a);
+    },
+    onAlertsChanged: broadcastAlertsChanged,
+  });
+  linkMonitorSupervisor.on("changed", () => {
+    void broadcastLinkMonitorsChanged();
+  });
+  try {
+    await linkMonitorSupervisor.start();
+  } catch (err) {
+    console.warn(
+      "[link-monitor] start fehlgeschlagen:",
+      err instanceof Error ? err.message : String(err),
+    );
+  }
+  app.on("before-quit", () => {
+    void linkMonitorSupervisor?.stop();
+  });
+
+  async function broadcastLinkMonitorsChanged(): Promise<void> {
+    if (!linkMonitorSupervisor) return;
+    try {
+      const monitors = await linkMonitorSupervisor.store.list();
+      const snapshot: LinkMonitorSnapshot = {
+        monitors,
+        activeCount: monitors.filter((m) => m.status === "active").length,
+        cap: LINK_MONITOR_ACTIVE_CAP,
+      };
+      for (const win of BrowserWindow.getAllWindows()) {
+        win.webContents.send("link-monitor:changed", snapshot);
       }
     } catch {
       /* store nicht ready */
@@ -4713,6 +4769,104 @@ app.whenReady().then(async () => {
     async (_e, jobId: string): Promise<{ ok: true }> => {
       if (!scheduledJobsSupervisor) return { ok: true };
       await scheduledJobsSupervisor.resume(jobId);
+      return { ok: true };
+    },
+  );
+
+  // LM — Link-Monitor IPC. Verwaltung der überwachten Links aus der
+  // Settings-UI (und gespiegelt über die Agent-Tools).
+  ipcMain.handle(
+    "linkMonitor:list",
+    async (): Promise<LinkMonitorSnapshot> => {
+      if (!linkMonitorSupervisor) {
+        return { monitors: [], activeCount: 0, cap: LINK_MONITOR_ACTIVE_CAP };
+      }
+      const monitors = await linkMonitorSupervisor.store.list();
+      return {
+        monitors,
+        activeCount: monitors.filter((m) => m.status === "active").length,
+        cap: LINK_MONITOR_ACTIVE_CAP,
+      };
+    },
+  );
+  ipcMain.handle(
+    "linkMonitor:create",
+    async (
+      _e,
+      input: LinkMonitorInput,
+    ): Promise<
+      { ok: true; monitor: LinkMonitor } | { ok: false; error: string }
+    > => {
+      if (!linkMonitorSupervisor) {
+        return { ok: false, error: "Link-Monitor noch nicht bereit." };
+      }
+      try {
+        const monitor = await linkMonitorSupervisor.createMonitor(input, "user");
+        return { ok: true, monitor };
+      } catch (err) {
+        return {
+          ok: false,
+          error: err instanceof Error ? err.message : String(err),
+        };
+      }
+    },
+  );
+  ipcMain.handle(
+    "linkMonitor:update",
+    async (
+      _e,
+      id: string,
+      patch: Partial<LinkMonitorInput>,
+    ): Promise<{ ok: true } | { ok: false; error: string }> => {
+      if (!linkMonitorSupervisor) {
+        return { ok: false, error: "Link-Monitor noch nicht bereit." };
+      }
+      try {
+        await linkMonitorSupervisor.update(id, patch);
+        return { ok: true };
+      } catch (err) {
+        return {
+          ok: false,
+          error: err instanceof Error ? err.message : String(err),
+        };
+      }
+    },
+  );
+  ipcMain.handle(
+    "linkMonitor:remove",
+    async (_e, id: string): Promise<{ ok: true }> => {
+      if (linkMonitorSupervisor) await linkMonitorSupervisor.remove(id);
+      return { ok: true };
+    },
+  );
+  ipcMain.handle(
+    "linkMonitor:pause",
+    async (_e, id: string): Promise<{ ok: true }> => {
+      if (linkMonitorSupervisor) await linkMonitorSupervisor.pause(id);
+      return { ok: true };
+    },
+  );
+  ipcMain.handle(
+    "linkMonitor:resume",
+    async (_e, id: string): Promise<{ ok: true } | { ok: false; error: string }> => {
+      if (!linkMonitorSupervisor) {
+        return { ok: false, error: "Link-Monitor noch nicht bereit." };
+      }
+      try {
+        await linkMonitorSupervisor.resume(id);
+        return { ok: true };
+      } catch (err) {
+        return {
+          ok: false,
+          error: err instanceof Error ? err.message : String(err),
+        };
+      }
+    },
+  );
+  ipcMain.handle(
+    "linkMonitor:runNow",
+    async (_e, id: string): Promise<{ ok: true }> => {
+      if (linkMonitorSupervisor) void linkMonitorSupervisor.runNow(id);
       return { ok: true };
     },
   );

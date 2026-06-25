@@ -790,7 +790,8 @@ export type AlertKind =
   | "profile-change"   // master-data fact changed (address, leadership, …)
   | "evaluation-flag"  // an LLM evaluation flagged something noteworthy
   | "linkedin-signal"  // L6: LinkedIn-Beobachter strong signal
-  | "reminder";        // v0.1.305: User-Reminder, vom ScheduledJob ausgelöst
+  | "reminder"         // v0.1.305: User-Reminder, vom ScheduledJob ausgelöst
+  | "link-change";     // LM: überwachter Link hat sich geändert
 
 export interface Alert {
   id: string;
@@ -2391,3 +2392,134 @@ export interface SelfCorrectionListResponse {
   pageSize: number;
   items: SelfCorrectionEvent[];
 }
+
+// ---------------------------------------------------------------------------
+// Link-Monitoring (LM) — Überwachung beliebiger Website-Links
+// ---------------------------------------------------------------------------
+//
+// AVA öffnet einen vom Nutzer angegebenen Link in einstellbarer Frequenz in
+// einem Headless-Browser (menschliches Verhalten simuliert), befolgt pro
+// Link hinterlegte Anweisungen, extrahiert strukturierte Beobachtungen und
+// vergleicht sie mit dem vorherigen Durchlauf. Bei Änderung → Alert
+// (kind:"link-change") + OS-Push + Alarm-Glocke.
+//
+// Rein LOKAL: Browser + LLM-Extraktion laufen auf der Maschine des Nutzers
+// (Compute-Locality-Invariante). Persistenz in lokaler PGlite-DB.
+
+/** Frequenz-Presets für die UI. Intern wird immer `intervalMinutes`
+ *  gespeichert; "custom" erlaubt Freitext-Minuten. */
+export type LinkMonitorFrequencyPreset =
+  | "5min"
+  | "15min"
+  | "hourly"
+  | "daily"
+  | "weekly"
+  | "custom";
+
+export type LinkMonitorStatus =
+  | "active" // läuft gemäß Frequenz
+  | "paused" // vom Nutzer pausiert (zählt nicht gegen Active-Cap)
+  | "error"; // nach zu vielen Fehlversuchen automatisch angehalten
+
+/** Ausgang eines einzelnen Durchlaufs. */
+export type LinkMonitorRunOutcome =
+  | "ok" // Durchlauf erfolgreich, Snapshot gespeichert
+  | "changed" // erfolgreich UND Änderung erkannt → Alert ausgelöst
+  | "timeout" // 3-Min-Deadline gerissen, Teilergebnis aggregiert
+  | "error"; // Durchlauf gescheitert
+
+export interface LinkMonitor {
+  id: string;
+  /** Zu überwachende URL (normalisiert, mit Schema). */
+  url: string;
+  /** Optionaler Anzeigename; default = Host der URL. */
+  label: string;
+  /** Freitext-Anweisungen, worauf zu achten ist (z. B. "Gehe die
+   *  Pagination durch und achte auf neue Produkte"). Leer = generisch. */
+  instructions: string;
+  /** Recurrence in Minuten. Geklemmt auf [MIN, MAX]. */
+  intervalMinutes: number;
+  /** Preset für die UI-Darstellung; "custom" wenn frei gesetzt. */
+  frequencyPreset: LinkMonitorFrequencyPreset;
+  status: LinkMonitorStatus;
+  /** true, wenn Host auf linkedin.com endet → LinkedIn-Session-Cookies
+   *  werden beim Öffnen injiziert. Abgeleitet beim Anlegen. */
+  isLinkedIn: boolean;
+  createdAt: string; // ISO
+  /** ISO des letzten abgeschlossenen Durchlaufs; null = noch nie. */
+  lastCheckedAt: string | null;
+  /** ISO des nächsten geplanten Durchlaufs. */
+  nextRunAt: string;
+  /** Ausgang + Kurzbeschreibung des letzten Durchlaufs (für die UI). */
+  lastOutcome: LinkMonitorRunOutcome | null;
+  /** ISO der zuletzt erkannten Änderung; null = noch keine. */
+  lastChangedAt: string | null;
+  /** Deutsche Ein-Zeilen-Zusammenfassung der letzten Änderung. */
+  lastChangeSummary: string | null;
+  /** Aufeinanderfolgende Fehlversuche (für Auto-Pause). */
+  consecutiveFailures: number;
+  /** Quelle des Eintrags (Audit). */
+  source: "agent" | "user";
+}
+
+/** Ein gespeicherter Durchlauf inkl. Snapshot der Beobachtungen. Dient
+ *  als Vergleichsbasis für den nächsten Durchlauf. */
+export interface LinkMonitorRun {
+  id: string;
+  monitorId: string;
+  startedAt: string; // ISO
+  finishedAt: string; // ISO
+  outcome: LinkMonitorRunOutcome;
+  /** Schneller Inhalts-Hash (sha256) zur No-Change-Erkennung. */
+  contentHash: string;
+  /** LLM-extrahierte, strukturierte Beobachtungen (gemäß Anweisung).
+   *  Als JSON gespeichert; Form ist absichtlich offen. */
+  observations: unknown;
+  /** Bei outcome="changed": deutsche Zusammenfassung der Änderung. */
+  changeSummary: string | null;
+  /** Optionale Fehler-/Timeout-Notiz. */
+  note: string | null;
+}
+
+/** Snapshot für die Renderer-UI (Liste + Active-Cap-Badge). */
+export interface LinkMonitorSnapshot {
+  monitors: LinkMonitor[];
+  activeCount: number;
+  cap: number;
+}
+
+/** Eingabe zum Anlegen/Aktualisieren eines Monitors über IPC/Tool. */
+export interface LinkMonitorInput {
+  url: string;
+  instructions?: string;
+  /** Entweder Preset ODER intervalMinutes; intervalMinutes hat Vorrang. */
+  frequencyPreset?: LinkMonitorFrequencyPreset;
+  intervalMinutes?: number;
+  label?: string;
+}
+
+/** Max gleichzeitig AKTIVE Überwachungen. Anlegen ist unbegrenzt, aber
+ *  nur 5 dürfen gleichzeitig "active" sein. */
+export const LINK_MONITOR_ACTIVE_CAP = 5;
+/** Minimale Frequenz: alle 5 Minuten. */
+export const LINK_MONITOR_MIN_INTERVAL_MINUTES = 5;
+/** Maximale Frequenz: wöchentlich (7 Tage). */
+export const LINK_MONITOR_MAX_INTERVAL_MINUTES = 7 * 24 * 60;
+/** Default ohne Nutzer-Angabe: täglich (24 h). */
+export const LINK_MONITOR_DEFAULT_INTERVAL_MINUTES = 24 * 60;
+/** Per-Durchlauf-Timeout: 3 Minuten. */
+export const LINK_MONITOR_RUN_TIMEOUT_MS = 3 * 60 * 1000;
+/** Auto-Pause (status="error") nach so vielen Fehlversuchen in Folge. */
+export const LINK_MONITOR_MAX_CONSECUTIVE_FAILURES = 5;
+
+/** Preset → Minuten. "custom" hat hier keinen festen Wert. */
+export const LINK_MONITOR_PRESET_MINUTES: Record<
+  Exclude<LinkMonitorFrequencyPreset, "custom">,
+  number
+> = {
+  "5min": 5,
+  "15min": 15,
+  hourly: 60,
+  daily: 24 * 60,
+  weekly: 7 * 24 * 60,
+};

@@ -42,9 +42,11 @@ import { buildObsidianTools } from "./obsidian";
 import { buildSkillsTools } from "./skills";
 import { buildMailTools } from "./mail";
 import { buildSchedulerTools } from "./scheduler";
+import { buildLinkMonitorTools } from "./link-monitor";
 import { buildSelfCorrectionTools } from "./self-correction";
 import type { MailSupervisor } from "../../mail/supervisor";
 import type { ScheduledJobsSupervisor } from "../../scheduler/supervisor";
+import type { LinkMonitorSupervisor } from "../../link-monitor/supervisor";
 import type { SelfCorrectionsStore } from "../self-corrections-store";
 import type { KnowledgeManager } from "../../knowledge/manager";
 import type { SkillStore } from "../../skills/store";
@@ -130,6 +132,8 @@ export function buildReadOnlyRegistry(deps: {
   /** v0.1.267 — ScheduledJobsSupervisor für wiederkehrende Aktionen
    *  (Phase S). Lazy-Getter analog Mail. */
   getScheduledJobsSupervisor: () => ScheduledJobsSupervisor | null;
+  /** LM — LinkMonitorSupervisor für die Link-Überwachung. Lazy-Getter. */
+  getLinkMonitorSupervisor: () => LinkMonitorSupervisor | null;
   /** v0.1.284 — Self-Correction-Reporting-Store. */
   selfCorrectionsStore: SelfCorrectionsStore;
   /** Aktive Conversation-ID, vom Orchestrator gesetzt. */
@@ -189,6 +193,11 @@ export function buildReadOnlyRegistry(deps: {
   for (const t of buildSchedulerTools({
     getSupervisor: deps.getScheduledJobsSupervisor,
     getMailSupervisor: deps.getMailSupervisor,
+  }))
+    registry.register(t);
+  // LM — Link-Überwachungs-Tools, gleiche Lazy-Getter-Logik.
+  for (const t of buildLinkMonitorTools({
+    getSupervisor: deps.getLinkMonitorSupervisor,
   }))
     registry.register(t);
   // v0.1.284 — Self-Correction-Reporting (always-on Telemetrie).
