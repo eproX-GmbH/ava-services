@@ -185,6 +185,7 @@ export const SETTINGS_TAB_SUB_ITEMS: Record<
   ],
   automatisierungen: [
     { anchor: "watches-section", label: "Watches" },
+    { anchor: "link-monitor-section", label: "Link-Überwachung" },
     { anchor: "scheduler-section", label: "Wiederkehrende Aufgaben" },
     { anchor: "freshness-section", label: "Datenrefresh" },
     { anchor: "alerts-cadence", label: "Alerts / Heartbeat" },
@@ -226,6 +227,7 @@ export const SETTINGS_ANCHOR_TO_TAB: Record<string, SettingsTabId> = {
   "alerts-severity":         "automatisierungen",
   "freshness-section":       "automatisierungen",
   "watches-section":         "automatisierungen",
+  "link-monitor-section":    "automatisierungen",
   "scheduler-section":       "automatisierungen",
   "updates":                 "system",
   "local-services":          "system",
