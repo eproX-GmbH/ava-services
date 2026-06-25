@@ -206,7 +206,13 @@ jobs:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-          # GitHub release upload.
+          # Diagnose-Logging: @electron/notarize verschluckt sonst die
+          # echte notarytool-Antwort im `JSON.parse(stdout)` und wir sehen
+          # nur "Unexpected token 'E', \"Error: HTT\"…". Mit diesem DEBUG-
+          # Namespace druckt notarize das rohe stdout/stderr von
+          # `xcrun notarytool` — inkl. der echten Apple-Fehlermeldung
+          # (z. B. "HTTP status code: 401. Unable to authenticate.").
+          DEBUG: electron-notarize*
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           # macOS runners default to ulimit -n 256, which the
