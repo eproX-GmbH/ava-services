@@ -94,28 +94,11 @@ export class LlmProviderManager extends EventEmitter {
         // Phase A1 — Anthropic-only auth-mode resolvers. Other kinds
         // pass them through as undefined and fall back to the legacy
         // api-key path.
+        // Claude-Abo-OAuth wurde entfernt — Anthropic läuft NUR per
+        // API-Key. Der Auth-Mode-Resolver meldet daher fix "api-key";
+        // es werden keine Abo-Token-Getter mehr durchgereicht.
         ...(kind === "anthropic"
-          ? {
-              // v0.1.368 — Abo hat IMMER Vorrang: sobald ein
-              // Subscription-Token vorliegt, nutzt AVA das Claude-Abo —
-              // unabhängig vom gespeicherten Modus oder einem (evtl.
-              // veralteten) API-Key. Behebt den gemeldeten Fall, dass ein
-              // alter Anthropic-API-Key das verbundene Abo verdrängte und
-              // der Chat in das API-Minutenlimit lief.
-              getAnthropicAuthMode: () =>
-                this.store.hasAnthropicSubscriptionToken()
-                  ? "subscription"
-                  : (this.store.getConfig().anthropicAuthMode ?? "api-key"),
-              getAnthropicSubscriptionToken: () =>
-                this.store.getAnthropicSubscriptionToken(),
-              hasStoredAnthropicSubscriptionToken: () =>
-                this.store.hasAnthropicSubscriptionToken(),
-              onAnthropicSubscriptionTokenChanged: (cb: () => void) => {
-                this.store.on("anthropicSubscriptionTokenChanged", cb);
-                return () =>
-                  this.store.off("anthropicSubscriptionTokenChanged", cb);
-              },
-            }
+          ? { getAnthropicAuthMode: () => "api-key" as const }
           : {}),
         // v0.1.353 — OpenAI „Sign in with ChatGPT"-Resolver.
         ...(kind === "openai"
@@ -155,14 +138,11 @@ export class LlmProviderManager extends EventEmitter {
     // Modus "festhielt"), ziehen wir den Modus EINMALIG auf "subscription".
     // So sind ALLE Konsumenten (UI-Anzeige, Tier-Logik, Producer-Passthrough)
     // konsistent mit dem tatsächlichen Verhalten (Abo hat Vorrang).
+    // Stuck-State-Reparatur nur noch für das ChatGPT-Abo (Anthropic-Abo
+    // entfernt). Liegt ein OpenAI-Abo-Token vor, der Modus aber auf
+    // "api-key", wird er einmalig auf "subscription" gezogen.
     try {
       const cfg = this.store.getConfig();
-      if (
-        this.store.hasAnthropicSubscriptionToken() &&
-        (cfg.anthropicAuthMode ?? "api-key") !== "subscription"
-      ) {
-        this.store.setConfig({ anthropicAuthMode: "subscription" });
-      }
       if (
         this.store.hasOpenAISubscriptionToken() &&
         (cfg.openaiAuthMode ?? "api-key") !== "subscription"

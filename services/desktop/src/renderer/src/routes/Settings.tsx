@@ -1902,8 +1902,9 @@ export function ProviderSection() {
     <section className="provider-section">
       <h3>Modelle</h3>
 
-      {/* v0.1.381 — Abos GANZ OBEN, visuell hervorgehoben. Der empfohlene
-          Weg: ChatGPT-Abo oder Claude-Abo verbinden — kein API-Key nötig. */}
+      {/* ChatGPT-Abo als empfohlener „kein-API-Key"-Weg. Das Claude-Abo
+          (OAuth) wurde entfernt — Anthropic läuft nur noch per API-Key
+          (siehe Provider-Liste unten). */}
       <div className="subscription-hero-grid">
         <div className="subscription-hero-card">
           <OpenAISubscriptionContent
@@ -1912,19 +1913,6 @@ export function ProviderSection() {
             openaiAuthMode={config.openaiAuthMode ?? "api-key"}
             activeKind={activeKind}
           />
-        </div>
-        <div className="subscription-hero-card" id="claude-abo">
-          <h4>Claude-Abo (Pro/Max)</h4>
-          <AnthropicSubscriptionContent
-            hasToken={hasAnthropicSubscriptionToken}
-            hasAnthropicApiKey={hasKey.anthropic}
-            anthropicAuthMode={config.anthropicAuthMode ?? "api-key"}
-            activeKind={activeKind}
-          />
-          <p className="subscription-hero-card__note">
-            Hinweis: Ab dem 15.06.2026 wird die Claude-Abo-Verbindung in
-            AVA separat abgerechnet.
-          </p>
         </div>
       </div>
 

@@ -578,55 +578,19 @@ function ProviderChooserGrid({
           </div>
         </div>
 
-        <div className="first-run__hero">
-          <div className="first-run__hero-glyph" aria-hidden="true">✦</div>
-          <div className="first-run__hero-body">
-            <h3 className="first-run__hero-title">
-              Mit Claude Pro/Max-Abo verbinden
-            </h3>
-            <p className="first-run__hero-sub">
-              Sehr gute Qualität, fixe monatliche Abo-Kosten. Funktioniert
-              mit Pro, Max, Team und Enterprise. Hinweis: Ab dem 15.06.2026
-              wird die Claude-Abo-Verbindung in AVA separat abgerechnet.
-            </p>
-            <div className="first-run__hero-docs">
-              <button
-                type="button"
-                className="link small"
-                onClick={() => openExternal(ANTHROPIC_TOKEN_DOCS_URL)}
-              >
-                So funktioniert die Anmeldung
-              </button>
-              <button
-                type="button"
-                className="link small"
-                onClick={() => openExternal(ANTHROPIC_AUTH_DOC_URL)}
-              >
-                Was bedeutet „Extra Usage"?
-              </button>
-            </div>
-            <button
-              type="button"
-              className="first-run__hero-cta"
-              onClick={() => setActive("subscription")}
-            >
-              Mit Claude verbinden →
-            </button>
-          </div>
-        </div>
+        {/* Das Claude-Abo (OAuth) wurde entfernt — Anthropic läuft nur
+            noch per API-Key (siehe „Eigener API-Schlüssel" unten). */}
       </div>
 
       {/* Sektion 2 — API-Key bei externem Provider */}
       <div className="first-run__option-card">
         <div className="first-run__option-glyph" aria-hidden="true">⌘</div>
         <h3 className="first-run__option-title">
-          Eigener API-Schlüssel (OpenAI, Google, Mistral)
+          Eigener API-Schlüssel (OpenAI, Anthropic, Google, Mistral)
         </h3>
         <p className="first-run__option-sub">
           Bezahle direkt beim Anbieter nach Token-Verbrauch. Schnell
-          eingerichtet, gut kontrollierbar. Anthropic-API-Keys sind
-          ausgeschlossen — deren Pro-Abo (oben) ist preislich
-          deutlich attraktiver.
+          eingerichtet, gut kontrollierbar.
         </p>
         <div className="first-run__option-docs">
           {(Object.keys(PROVIDER_KEY_DOCS) as HostedProviderKind[])
@@ -803,16 +767,13 @@ function ApiKeySubForm({
           }}
           disabled={busy}
         >
-          {/* v0.1.216 — Anthropic-API-Key-Pfad entfernt. Anmeldung
-              läuft jetzt ausschließlich über das Pro/Max-Abo (siehe
-              SubscriptionTokenSubForm im selben Wizard). */}
-          {(Object.keys(PROVIDER_LABEL) as HostedProviderKind[])
-            .filter((k) => k !== "anthropic")
-            .map((k) => (
-              <option key={k} value={k}>
-                {PROVIDER_LABEL[k]}
-              </option>
-            ))}
+          {/* Anthropic-API-Key wieder aktiv (Claude-Abo-OAuth entfernt) —
+              alle Hosted-Provider sind wählbar. */}
+          {(Object.keys(PROVIDER_LABEL) as HostedProviderKind[]).map((k) => (
+            <option key={k} value={k}>
+              {PROVIDER_LABEL[k]}
+            </option>
+          ))}
         </select>
       </label>
       <label className="field">

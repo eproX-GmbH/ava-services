@@ -171,6 +171,48 @@ export class ProviderConfigStore extends EventEmitter {
       mkdirSync(this.dir, { recursive: true });
     }
     this.cached = this.readConfigFromDisk();
+    this.migrateAwayFromAnthropicSubscription();
+  }
+
+  /**
+   * Rückbau des Claude-Abo-OAuth (entfernt). Anthropic hat die Nutzung von
+   * Abo-OAuth-Tokens in Dritt-Apps gesperrt — der OAuth-Pfad ist komplett
+   * raus. Für Bestandsnutzer mit verbundenem Abo MUSS hier deadlock-sicher
+   * migriert werden:
+   *   - das gespeicherte Abo-Token-Blob wird gelöscht (unbrauchbar), und
+   *   - anthropicAuthMode wird auf "api-key" zurückgesetzt.
+   * Folge: Anthropic meldet ohne API-Key „nicht bereit" → die bestehenden
+   * Gates (FirstRunWizard / AppShell-Banner) zwingen den Nutzer zur Wahl
+   * eines verfügbaren Modells (Codex-OAuth / LLM-API-Key / Ollama). Es wird
+   * NIE wieder versucht, den entfernten OAuth-Pfad zu nutzen. Idempotent.
+   */
+  private migrateAwayFromAnthropicSubscription(): void {
+    try {
+      const legacyBlob = join(this.dir, "anthropic-subscription.enc");
+      if (existsSync(legacyBlob)) {
+        try {
+          unlinkSync(legacyBlob);
+        } catch (err) {
+          console.warn(
+            "[provider-store] Konnte Alt-Abo-Token nicht löschen:",
+            err,
+          );
+        }
+      }
+      const mode = (this.cached as { anthropicAuthMode?: string })
+        .anthropicAuthMode;
+      if (mode === "subscription") {
+        const next = cloneConfig(this.cached);
+        next.anthropicAuthMode = "api-key";
+        this.writeConfigAtomic(next);
+        this.cached = next;
+      }
+    } catch (err) {
+      console.warn(
+        "[provider-store] Abo-Migration fehlgeschlagen (nicht fatal):",
+        err,
+      );
+    }
   }
 
   static shared(): ProviderConfigStore {

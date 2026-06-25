@@ -173,27 +173,20 @@ function ConnectionHealthBanner() {
   const refresh = useCallback(async () => {
     const next: HealthProblem[] = [];
 
-    // --- LLM-Abo (Claude / ChatGPT) ---
+    // --- ChatGPT-Abo (Claude-Abo wurde entfernt) ---
     try {
       const bundle = await window.api.agent.getProviderConfig();
       const kind = bundle.config.kind;
-      const subAnthropic =
-        kind === "anthropic" &&
-        (bundle.config.anthropicAuthMode ?? "api-key") === "subscription";
       const subOpenai =
         kind === "openai" &&
         (bundle.config.openaiAuthMode ?? "api-key") === "subscription";
-      if ((subAnthropic || subOpenai) && !bundle.status.ready) {
-        const label = subAnthropic ? "Claude-Abo" : "ChatGPT-Abo";
+      if (subOpenai && !bundle.status.ready) {
         next.push({
           domain: "llm",
           signature: `llm:${kind}:${bundle.status.errorMessage ?? "not-ready"}`,
-          message: `${label} ist nicht verbunden — AVA kann gerade keine Anfragen verarbeiten.`,
+          message: `ChatGPT-Abo ist nicht verbunden — AVA kann gerade keine Anfragen verarbeiten.`,
           fixLabel: "Neu anmelden",
-          fix: () =>
-            subAnthropic
-              ? window.api.agent.connectAnthropicSubscription()
-              : window.api.agent.connectOpenAISubscription(),
+          fix: () => window.api.agent.connectOpenAISubscription(),
         });
       }
     } catch {

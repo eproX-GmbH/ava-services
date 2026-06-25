@@ -1719,17 +1719,11 @@ app.whenReady().then(async () => {
   // ~15 min before expiry using the stored refresh_token. The first
   // tick runs synchronously inside start() so a long-stale token
   // gets refreshed at boot before any producer-spawn.
-  const { AnthropicTokenRefresher, OpenAITokenRefresher } = await import(
-    "./auth/token-refresher"
-  );
+  // Claude-Abo-OAuth wurde entfernt — kein AnthropicTokenRefresher mehr.
+  // Nur noch der ChatGPT-Abo-Refresher läuft.
+  const { OpenAITokenRefresher } = await import("./auth/token-refresher");
   const { ProviderConfigStore } = await import("./agent/providers/store");
   const providerConfigStore = ProviderConfigStore.shared();
-  const anthropicTokenRefresher = new AnthropicTokenRefresher(
-    providerConfigStore,
-  );
-  anthropicTokenRefresher.start();
-  app.on("before-quit", () => anthropicTokenRefresher.stop());
-  // v0.1.353 — paralleler Refresher für das ChatGPT-Abo-OAuth-Token.
   const openaiTokenRefresher = new OpenAITokenRefresher(providerConfigStore);
   openaiTokenRefresher.start();
   app.on("before-quit", () => openaiTokenRefresher.stop());
@@ -2235,20 +2229,8 @@ app.whenReady().then(async () => {
       metadata: { provider: kind },
     });
   });
-  providerConfigStore.on("anthropicSubscriptionTokenChanged", () => {
-    scheduleCredentialCycle("anthropicSubscriptionTokenChanged");
-    audit({
-      actorType: "user",
-      actorId: null,
-      category: "auth",
-      action: "credential.subscription.changed",
-      severity: "info",
-      subjectType: "credential",
-      subjectId: "anthropic-subscription",
-      summary: "Anthropic-Subscription-Token aktualisiert",
-      metadata: { provider: "anthropic", authMode: "subscription" },
-    });
-  });
+  // Claude-Abo-OAuth entfernt — kein anthropicSubscriptionTokenChanged-
+  // Listener mehr. Nur noch das ChatGPT-Abo.
   providerConfigStore.on("openaiSubscriptionTokenChanged", () => {
     scheduleCredentialCycle("openaiSubscriptionTokenChanged");
     audit({
@@ -2428,9 +2410,6 @@ app.whenReady().then(async () => {
   providerConfigStore.on("keyChanged", (kind) =>
     unblockAuth(`keyChanged(${kind})`),
   );
-  providerConfigStore.on("anthropicSubscriptionTokenChanged", () =>
-    unblockAuth("anthropicSubscriptionTokenChanged"),
-  );
   providerConfigStore.on("configChanged", () =>
     unblockAuth("configChanged"),
   );
@@ -2450,96 +2429,15 @@ app.whenReady().then(async () => {
       summary: `Producer ${args.producerName} meldet abgelehnten ${args.provider ?? "LLM-"}Credential`,
       metadata: { producer: args.producerName, provider: args.provider },
     });
-    if (args.provider !== "anthropic") {
-      // Only the Anthropic OAuth path has an auto-refreshable
-      // credential today. OpenAI / Google / Mistral keys can't be
-      // self-healed — surface a clear UI hint instead.
-      console.warn(
-        `[providers] producer ${args.producerName} signalled auth failure for provider=${args.provider}; no auto-refresh available, user must update the key in Settings.`,
-      );
-      void notifyUserAuthExpired(args.provider);
-      return;
-    }
-    authRecoveryInFlight = true;
-    try {
-      console.info(
-        `[providers] producer ${args.producerName} signalled Anthropic auth failure; attempting forced token refresh`,
-      );
-      const result = await anthropicTokenRefresher.refreshNow();
-      audit({
-        actorType: "system",
-        actorId: "token-refresher",
-        category: "auth",
-        action: `token.refresh.${result.status}`,
-        severity: result.status === "refreshed" ? "info" : "warning",
-        subjectType: "credential",
-        subjectId: "anthropic-subscription",
-        summary:
-          result.status === "refreshed"
-            ? "Anthropic-OAuth-Token erneuert (reaktiv nach 401)"
-            : result.status === "no_refresh_token"
-              ? "Anthropic-Token-Refresh übersprungen (Legacy-Login ohne refresh_token)"
-              : result.status === "revoked"
-                ? "Anthropic-Token-Refresh abgelehnt (revoked, Neu-Anmeldung erforderlich)"
-                : result.status === "transient"
-                  ? "Anthropic-Token-Refresh transient fehlgeschlagen (Retry geplant)"
-                  : "Anthropic-Token-Refresh übersprungen (kein Record)",
-        metadata: {
-          trigger: "producer-401",
-          producer: args.producerName,
-          ...(result.status === "revoked" || result.status === "transient"
-            ? { error: (result as { error?: string }).error ?? null }
-            : {}),
-        },
-      });
-      switch (result.status) {
-        case "refreshed":
-          // Reset the transient-failure tally — we've recovered.
-          // The setAnthropicSubscriptionRecord() call inside the
-          // refresher already fired the
-          // anthropicSubscriptionTokenChanged event, which routes
-          // through scheduleCredentialCycle() — we don't cycle
-          // here.
-          transientFailures = [];
-          console.info(
-            `[providers] forced refresh succeeded for ${args.producerName}; producers will cycle automatically`,
-          );
-          return;
-        case "no_refresh_token":
-          console.warn(
-            `[providers] forced refresh skipped: legacy OAuth record without refresh_token. User must re-connect.`,
-          );
-          // v0.1.205 — non-recoverable: block until user re-logs.
-          blockAuth("legacy OAuth login ohne refresh_token");
-          return;
-        case "revoked":
-          console.warn(
-            `[providers] forced refresh rejected by Anthropic (revoked). User must re-connect: ${result.error}`,
-          );
-          blockAuth("Anthropic-Refresh-Token revoked");
-          return;
-        case "transient":
-          // v0.1.205 — count transient failures; block after N in
-          // the rolling window so a sustained outage doesn't
-          // crashloop producers for hours.
-          console.warn(
-            `[providers] forced refresh transient failure: ${result.error}. Will retry on next scheduled tick.`,
-          );
-          if (recordTransientFailure()) {
-            blockAuth(
-              `${TRANSIENT_FAILURE_THRESHOLD} aufeinanderfolgende transiente Refresh-Fehler — Netzwerk oder Anthropic unerreichbar`,
-            );
-          }
-          return;
-        case "no_record":
-          // No subscription token at all — the user is on an api-key
-          // path that hit 401 anyway. Block too.
-          blockAuth("kein Anthropic-Subscription-Record vorhanden");
-          return;
-      }
-    } finally {
-      authRecoveryInFlight = false;
-    }
+    // Claude-Abo-OAuth wurde entfernt → kein Provider hat mehr ein
+    // auto-refreshbares Credential. Jedes Producer-401 (egal welcher
+    // Provider) ist ein „Key prüfen / neu anmelden"-Fall; wir weisen den
+    // Nutzer hin statt einen (nicht mehr existierenden) Token-Refresh zu
+    // versuchen.
+    console.warn(
+      `[providers] producer ${args.producerName} signalled auth failure for provider=${args.provider}; user must update the key in Settings.`,
+    );
+    void notifyUserAuthExpired(args.provider);
   }
 
   // v0.1.338 — reactive recovery for a rejected GATEWAY token.
@@ -3940,32 +3838,10 @@ app.whenReady().then(async () => {
     },
   );
 
-  // ---- Phase A1 — Anthropic subscription auth ---------------------------
-  ipcMain.handle(
-    "agent:setAnthropicSubscriptionToken",
-    (_e, args: { token: string }) => {
-      providers.setAnthropicSubscriptionToken(args.token);
-    },
-  );
-  ipcMain.handle(
-    "agent:validateAnthropicSubscriptionToken",
-    (_e, args: { token: string }) =>
-      providers.validateAnthropicSubscriptionToken(args.token),
-  );
-  ipcMain.handle("agent:clearAnthropicSubscriptionToken", () => {
-    providers.clearAnthropicSubscriptionToken();
-  });
-  ipcMain.handle(
-    "agent:setAnthropicAuthMode",
-    (_e, args: { mode: "api-key" | "subscription" }) =>
-      providers.setAnthropicAuthMode(args.mode),
-  );
+  // Claude-Abo-OAuth wurde entfernt — keine Anthropic-Subscription-IPC
+  // mehr (set/validate/clear/setAuthMode/connect). Anthropic läuft nur
+  // noch per API-Key über die normale Key-IPC.
 
-  // Phase A6 — In-App-OAuth-Flow. Öffnet das Anthropic-Login in einem
-  // dedizierten Electron-Fenster, fängt den Redirect ab, tauscht Code
-  // gegen Access-Token und persistiert ihn über die bestehende
-  // Subscription-Token-Pipeline. Renderer bekommt nur `{ ok, error? }`
-  // — der Token verlässt den Main-Process nicht.
   // ---- v0.1.172 Settings Phase A — Research Features --------------------
   // Per-feature config + key registry for the website producer's two
   // research pipelines (Deep Research / Tenders+Expansion, Job-Postings).
@@ -4206,47 +4082,9 @@ app.whenReady().then(async () => {
     }, 500);
   });
 
-  ipcMain.handle(
-    "agent:connectAnthropicSubscription",
-    async (event): Promise<{ ok: true } | { ok: false; error: string }> => {
-      try {
-        const parent =
-          BrowserWindow.fromWebContents(event.sender) ??
-          BrowserWindow.getFocusedWindow() ??
-          BrowserWindow.getAllWindows()[0] ??
-          null;
-        const { runAnthropicOAuth } = await import(
-          "./auth/anthropic-oauth-flow"
-        );
-        const token = await runAnthropicOAuth({ parent });
-        // v0.1.181 — save the full record (access + refresh +
-        // expires_in) so the background refresher can keep the
-        // access_token fresh without user interaction. Falls back
-        // to plain-token behavior if the server didn't return
-        // refresh_token / expires_in.
-        providers.setAnthropicSubscriptionRecord({
-          accessToken: token.accessToken,
-          refreshToken: token.refreshToken,
-          expiresIn: token.expiresIn,
-        });
-        try {
-          providers.setProvider("anthropic");
-        } catch {
-          // Falls der Manager nicht switchen kann (z. B. weil eine
-          // andere Pre-Condition fehlt), bleibt der Token gespeichert
-          // und der Auth-Modus auf "subscription" — das reicht für die
-          // Settings-Karte, die danach „Verbunden" zeigt.
-        }
-        return { ok: true };
-      } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-        return { ok: false, error: message };
-      }
-    },
-  );
+  // Claude-Abo-OAuth (connectAnthropicSubscription) wurde entfernt.
 
-  // v0.1.353 — „Sign in with ChatGPT" (Codex-OAuth). Pendant zu
-  // connectAnthropicSubscription.
+  // v0.1.353 — „Sign in with ChatGPT" (Codex-OAuth).
   ipcMain.handle(
     "agent:connectOpenAISubscription",
     async (event): Promise<{ ok: true } | { ok: false; error: string }> => {

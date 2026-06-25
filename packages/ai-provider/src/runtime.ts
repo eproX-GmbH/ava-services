@@ -22,7 +22,6 @@ import { createMistral } from "@ai-sdk/mistral";
 import { createOllama } from "ollama-ai-provider-v2";
 import type { EmbeddingModel, LanguageModel } from "ai";
 import type { CatalogProvider } from "./catalog";
-import { makeAnthropicOAuthFetch } from "./anthropic-oauth-fetch";
 
 // Force Node's undici-based fetch instead of Electron's Chromium-net
 // global fetch when we're inside an Electron main process. Chromium's
@@ -103,24 +102,9 @@ export function createLLM(opts: CreateLLMOptions): LanguageModel {
       return client(opts.model);
     }
     case "anthropic": {
-      const subscriptionToken = opts.anthropicSubscriptionToken;
-      if (subscriptionToken && subscriptionToken.length > 0) {
-        // Phase A1 — Claude Pro/Max-Abo OAuth path. See
-        // `anthropic-oauth-fetch.ts` for the full wrapper rationale
-        // (bearer injection + Claude-Code system-marker on
-        // /v1/messages). We pass a placeholder apiKey because the SDK
-        // refuses to construct without one; the fetch wrapper strips
-        // any x-api-key the SDK would otherwise emit.
-        const client = createAnthropic({
-          apiKey: "oauth-placeholder",
-          headers: { "x-api-key": "" },
-          fetch: makeAnthropicOAuthFetch(
-            preferredFetch ?? fetch,
-            subscriptionToken,
-          ),
-        });
-        return client(opts.model);
-      }
+      // Claude-Abo-OAuth wurde komplett entfernt (Anthropic sperrt
+      // Abo-OAuth-Tokens in Dritt-Apps). Anthropic läuft nur noch per
+      // API-Key.
       const client = createAnthropic({
         apiKey: requireKey(opts, "ANTHROPIC_API_KEY"),
         fetch: preferredFetch,
