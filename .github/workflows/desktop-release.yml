@@ -206,13 +206,6 @@ jobs:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-          # Diagnose-Logging: @electron/notarize verschluckt sonst die
-          # echte notarytool-Antwort im `JSON.parse(stdout)` und wir sehen
-          # nur "Unexpected token 'E', \"Error: HTT\"…". Mit diesem DEBUG-
-          # Namespace druckt notarize das rohe stdout/stderr von
-          # `xcrun notarytool` — inkl. der echten Apple-Fehlermeldung
-          # (z. B. "HTTP status code: 401. Unable to authenticate.").
-          DEBUG: electron-notarize*
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           # macOS runners default to ulimit -n 256, which the
@@ -252,6 +245,37 @@ jobs:
             --arm64 \
             --publish always \
             --config.mac.notarize.teamId="$APPLE_TEAM_ID"
+
+      # v0.1.396 — Sicherheitsnetz gegen electron-builders stille
+      # 2-Stunden-Skip-Sperre. Dessen GitHub-Publisher überspringt
+      # JEDEN Upload, wenn das Release länger als 2 h „published" ist
+      # (Anti-Clobber-Schutz). Genau das passierte bei v0.1.395: das
+      # Release wurde am Vortag durch den Windows-Lauf angelegt, der
+      # macOS-Re-Run am Folgetag traf die Sperre und ließ die arm64-
+      # .dmg/.zip lautlos weg — latest-mac.yml verwies dann auf
+      # Dateien, die für Apple-Silicon-Nutzer 404 lieferten.
+      #
+      # `gh release upload --clobber` unterliegt dieser Sperre NICHT.
+      # Wir laden die arm64-Binaries also unbedingt + idempotent (neu)
+      # hoch. Im Frisch-Lauf hat electron-builder sie bereits geladen,
+      # --clobber überschreibt identisch (harmlos); im Re-Run/Stale-
+      # Fall ist dies der einzige Upload, der durchkommt.
+      - name: Ensure arm64 artifacts on release (bypass 2h skip)
+        working-directory: services/desktop
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          TAG="${{ github.event.inputs.tag || github.ref_name }}"
+          VERSION="${TAG#v}"
+          RELEASE_DIR="release/${VERSION}"
+          gh release upload "$TAG" \
+            "$RELEASE_DIR/AVA-${VERSION}-arm64.dmg" \
+            "$RELEASE_DIR/AVA-${VERSION}-arm64.dmg.blockmap" \
+            "$RELEASE_DIR/AVA-${VERSION}-arm64.zip" \
+            "$RELEASE_DIR/AVA-${VERSION}-arm64.zip.blockmap" \
+            --clobber \
+            --repo "${{ github.repository }}"
 
       - name: Audit bundle for secret leaks
         working-directory: services/desktop
