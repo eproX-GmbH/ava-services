@@ -986,6 +986,55 @@ async function fetchLinkedInHeartbeatCandidates(): Promise<
         dropped.push(r);
       }
     }
+
+    // v0.1.404 — Pass 2: FIRMENÜBERGREIFENDE Inhalts-Dedup. Dieselbe
+    // Nachricht (z. B. „Corgi schließt 106 Mio. USD-Runde ab und expandiert
+    // in neue Verticals") taucht in den Feeds VIELER überwachter Firmen
+    // gleichzeitig auf (z. B. bei zehn Investoren, die alle darüber posten).
+    // Jeder Post hat eine andere companyId (= die überwachte Investor-Firma,
+    // nicht das Subjekt Corgi) und überlebt daher Pass 1. Wir clustern die
+    // Überlebenden über eine normalisierte Token-Signatur der Zusammenfassung
+    // (Präfix-Stemming gegen „Verticals/Vertikalen/Vertikale" etc. + Jaccard)
+    // und behalten je Cluster nur den stärksten (bei Gleichstand neuesten)
+    // Post. So wird aus zehn Corgi-Meldungen genau eine.
+    const STOP = new Set([
+      "und", "der", "die", "das", "ein", "eine", "einen", "mit", "fuer",
+      "von", "im", "in", "ab", "auf", "zu", "an", "bei", "sowie", "neue",
+      "neuen", "weitere", "weiteren", "ueber", "the", "and", "for", "with",
+      "new",
+    ]);
+    const sigOf = (summary: string): Set<string> =>
+      new Set(
+        (summary ?? "")
+          .toLowerCase()
+          .replace(/[^\p{L}\p{N}]+/gu, " ")
+          .split(/\s+/)
+          .filter((w) => w.length >= 3 && !STOP.has(w))
+          .map((w) => w.slice(0, 5)),
+      );
+    const jaccard = (a: Set<string>, b: Set<string>): number => {
+      if (a.size === 0 || b.size === 0) return 0;
+      let inter = 0;
+      for (const x of a) if (b.has(x)) inter += 1;
+      return inter / (a.size + b.size - inter);
+    };
+    const SIM_THRESHOLD = 0.5;
+    const ordered = [...strongest.values()].sort(
+      (a, b) =>
+        b.signalStrength - a.signalStrength ||
+        (b.postedAt ?? 0) - (a.postedAt ?? 0),
+    );
+    const clusters: { rep: (typeof rawRows)[number]; sig: Set<string> }[] = [];
+    for (const r of ordered) {
+      const sig = sigOf(r.summary);
+      const hit = clusters.find((c) => jaccard(c.sig, sig) >= SIM_THRESHOLD);
+      if (hit) {
+        dropped.push(r); // gleiche Nachricht aus anderem Feed → kollabieren
+      } else {
+        clusters.push({ rep: r, sig });
+      }
+    }
+
     for (const d of dropped) {
       try {
         await recordLinkedInHeartbeatVerdict(db, d.postUrn, null);
@@ -993,7 +1042,7 @@ async function fetchLinkedInHeartbeatCandidates(): Promise<
         /* best-effort — der nächste Sweep fängt es sonst erneut */
       }
     }
-    const rows = [...strongest.values()];
+    const rows = clusters.map((c) => c.rep);
     return rows.map((r) => ({
       kind: "linkedin-signal" as const,
       companyId: r.companyId,
