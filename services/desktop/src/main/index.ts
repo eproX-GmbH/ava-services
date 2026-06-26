@@ -1513,8 +1513,48 @@ const agentRegistry = buildReadOnlyRegistry({
   selfCorrectionsStore,
   getActiveConversationId: () => agent.getStatus().inFlightConversationId,
 });
+// v0.1.405 — Tages-Token-Limit-Status berechnen (Chat + Agent teilen
+// EINEN Tageszähler). `usedToday` ist die Summe aller heute (UTC-
+// Kalendertag) verbrauchten Tokens im lokalen UsageStore.
+async function computeDailyLimitStatus(): Promise<
+  import("../shared/types").DailyTokenLimitStatus
+> {
+  const limit = providers.getDailyTokenLimit();
+  if (limit === null || limit <= 0) {
+    return { limit: null, usedToday: 0, exceeded: false };
+  }
+  let usedToday = 0;
+  try {
+    usedToday = await usageStore.tokensUsedToday();
+  } catch (err) {
+    console.warn("[usage] tokensUsedToday failed:", err);
+  }
+  return { limit, usedToday, exceeded: usedToday >= limit };
+}
+
+// v0.1.405 — Status an alle Fenster pushen (Banner + Verbrauchs-Tab
+// aktualisieren sich live, sobald das Limit erreicht oder geändert wird).
+async function broadcastDailyLimitStatus(): Promise<void> {
+  try {
+    const status = await computeDailyLimitStatus();
+    for (const win of BrowserWindow.getAllWindows()) {
+      try {
+        win.webContents.send("usage:dailyLimitStatus", status);
+      } catch {
+        /* zerstörtes Fenster — ignorieren */
+      }
+    }
+  } catch (err) {
+    console.warn("[usage] broadcast daily-limit status failed:", err);
+  }
+}
+
 const agent = new AgentOrchestrator({
   providers,
+  // v0.1.405 — Gate vor jedem Turn (Chat UND Agent laufen durch den
+  // Orchestrator). Liefert den aktuellen Tagesstand; bei `exceeded`
+  // blockt der Orchestrator den Turn mit Hinweis-Frame.
+  checkDailyLimit: () => computeDailyLimitStatus(),
   registry: agentRegistry,
   memory: memoryProbe.writable ? memory : undefined,
   memoryError: memoryProbe.writable
@@ -1581,6 +1621,12 @@ const agent = new AgentOrchestrator({
           ...(usage.quotaSnapshot
             ? { quotaSnapshot: usage.quotaSnapshot }
             : {}),
+        })
+        .then(() => {
+          // v0.1.405 — nach jedem aufgezeichneten Turn den Limit-Status
+          // neu pushen, damit das Banner sofort erscheint, sobald der
+          // Tagesverbrauch das Limit erreicht (auch ohne neue Anfrage).
+          void broadcastDailyLimitStatus();
         })
         .catch((err) => {
           console.warn("[usage] record failed:", err);
@@ -4346,6 +4392,31 @@ app.whenReady().then(async () => {
   });
   ipcMain.handle("usage:list", async (_e, query) => {
     return usageStore.list(query ?? {});
+  });
+  // v0.1.405 — Tages-Token-Limit: lesen, setzen/entfernen, Live-Status.
+  ipcMain.handle("usage:getDailyLimit", async () => {
+    return providers.getDailyTokenLimit();
+  });
+  ipcMain.handle(
+    "usage:setDailyLimit",
+    async (_e, limit: number | null) => {
+      const next = providers.setDailyTokenLimit(
+        typeof limit === "number" ? limit : null,
+      );
+      // configChanged feuert broadcastDailyLimitStatus() bereits (siehe
+      // Subscription unten); hier zusätzlich direkt, damit der Aufrufer
+      // den frischen Status sofort zurückbekommt.
+      void broadcastDailyLimitStatus();
+      return next;
+    },
+  );
+  ipcMain.handle("usage:limitStatus", async () => {
+    return computeDailyLimitStatus();
+  });
+  // Limit-Änderung über den Chat-Tool-Pfad (settings_set_daily_token_limit)
+  // läuft über setConfig → configChanged. Hier an alle Fenster spiegeln.
+  ProviderConfigStore.shared().on("configChanged", () => {
+    void broadcastDailyLimitStatus();
   });
   ipcMain.handle("usage:purgeAll", async () => {
     const removed = await usageStore.purgeAll();

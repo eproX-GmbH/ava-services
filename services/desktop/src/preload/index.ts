@@ -1164,6 +1164,24 @@ const api = {
       ipcRenderer.invoke("usage:list", query),
     purgeAll: (): Promise<{ removed: number }> =>
       ipcRenderer.invoke("usage:purgeAll"),
+    // v0.1.405 — Tages-Token-Limit (Chat + Agent).
+    getDailyLimit: (): Promise<number | null> =>
+      ipcRenderer.invoke("usage:getDailyLimit"),
+    setDailyLimit: (limit: number | null): Promise<number | null> =>
+      ipcRenderer.invoke("usage:setDailyLimit", limit),
+    limitStatus: (): Promise<
+      import("../shared/types").DailyTokenLimitStatus
+    > => ipcRenderer.invoke("usage:limitStatus"),
+    onDailyLimitStatus: (
+      cb: (status: import("../shared/types").DailyTokenLimitStatus) => void,
+    ): (() => void) => {
+      const handler = (
+        _e: unknown,
+        status: import("../shared/types").DailyTokenLimitStatus,
+      ): void => cb(status);
+      ipcRenderer.on("usage:dailyLimitStatus", handler);
+      return () => ipcRenderer.off("usage:dailyLimitStatus", handler);
+    },
   },
 
   // v0.1.224 — Knowledge-Integrationen (Notion, Obsidian, …).

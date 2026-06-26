@@ -139,6 +139,16 @@ export interface AgentOrchestratorOptions {
     conversationId: string;
     usage: import("./providers/types").LlmUsageSnapshot;
   }) => void;
+  /**
+   * v0.1.405 — Tages-Token-Limit-Gate. Vor jedem Turn (Chat UND Agent)
+   * aufgerufen; liefert den aktuellen Tagesstand. Ist `exceeded === true`,
+   * blockt der Orchestrator den Turn und sendet ein Fehler-Frame mit
+   * Hinweis auf die Einstellungen. `null` ⇒ Gate übersprungen (z. B. kein
+   * Limit gesetzt oder Usage-Store nicht verfügbar).
+   */
+  checkDailyLimit?: () => Promise<
+    import("../../shared/types").DailyTokenLimitStatus | null
+  >;
 }
 
 export interface AgentOrchestratorEvents {
@@ -177,6 +187,8 @@ export class AgentOrchestrator extends EventEmitter {
    *  sobald ein Turn beendet ist und der Provider Token-Counts
    *  geliefert hat. */
   private readonly onUsage?: AgentOrchestratorOptions["onUsage"];
+  /** v0.1.405 — Tages-Token-Limit-Gate (siehe Options-Doc). */
+  private readonly checkDailyLimit?: AgentOrchestratorOptions["checkDailyLimit"];
   /** Active skill for the in-flight turn (set in send(), read in
    *  runTool() for the allowlist gate + in buildSystemPrompt() for
    *  the active-skill hint). null when no skill is active. */
@@ -214,6 +226,7 @@ export class AgentOrchestrator extends EventEmitter {
     this.skillStore = opts.skillStore;
     this.skillsPrefs = opts.skillsPrefs;
     this.onUsage = opts.onUsage;
+    this.checkDailyLimit = opts.checkDailyLimit;
 
     // v0.1.240 — Register the meta-tools (tool_search + tool_load).
     // We do this here (not in tools/index.ts) because the meta-tools
@@ -822,6 +835,40 @@ export class AgentOrchestrator extends EventEmitter {
     let lastSystemMessage: AgentMessage | null = null;
 
     try {
+      // v0.1.405 — Tages-Token-Limit-Gate. Gilt für Chat UND Agent (beide
+      // laufen durch runLoop). Die Anfrage, die das Limit überschreitet,
+      // lief bereits (Usage lag bei ihrem Start noch darunter) und wurde
+      // voll zu Ende gebracht; HIER wird die NÄCHSTE Anfrage geblockt,
+      // sobald der Tagesverbrauch das Limit erreicht hat — mit klarer
+      // Meldung + Verweis auf die Einstellungen.
+      if (this.checkDailyLimit) {
+        let limitStatus: import("../../shared/types").DailyTokenLimitStatus | null =
+          null;
+        try {
+          limitStatus = await this.checkDailyLimit();
+        } catch (err) {
+          // Limit-Abfrage darf den Chat nie blockieren, wenn sie selbst
+          // scheitert (z. B. Usage-Store noch nicht hochgefahren).
+          console.warn("[agent] daily-limit check failed:", err);
+        }
+        if (limitStatus && limitStatus.exceeded && limitStatus.limit !== null) {
+          this.errorMessage =
+            `Tägliches Token-Limit aufgebraucht ` +
+            `(${limitStatus.usedToday.toLocaleString("de-DE")} von ` +
+            `${limitStatus.limit.toLocaleString("de-DE")} Tokens heute). ` +
+            `Neue Anfragen sind pausiert, bis du das Limit unter ` +
+            `Einstellungen → Verbrauch erhöhst oder entfernst.`;
+          this.emitFrame({
+            kind: "error",
+            requestId,
+            conversationId: conversation.id,
+            message: this.errorMessage,
+          });
+          this.emit("status", this.getStatus());
+          return;
+        }
+      }
+
       for (let step = 0; step < STEP_BUDGET; step++) {
         // v0.1.241 — Compute the available-tool-name set ONCE here so
         // both buildSystemPrompt() (for the text "Verfügbare Tools"

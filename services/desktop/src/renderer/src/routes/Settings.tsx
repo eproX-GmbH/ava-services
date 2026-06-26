@@ -217,6 +217,7 @@ export const SETTINGS_ANCHOR_TO_TAB: Record<string, SettingsTabId> = {
   "linkedin-image-analysis": "datenquellen",
   "crm-connections":         "datenquellen",
   "mail-account-section":    "datenquellen",
+  "verbrauch-limit":         "verbrauch",
   "audit-trail":             "verlauf",
   "research-features":       "modelle",
   "ollama-version":          "modelle",

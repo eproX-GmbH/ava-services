@@ -6085,6 +6085,64 @@ html.dark .tier-banner--warn {
 
 .verbrauch-tab__header h3 { margin: 0 0 0.25rem; }
 
+/* v0.1.405 — Tages-Token-Limit-Einstellung */
+.verbrauch-tab__limit {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.9rem 1rem;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface-2, rgba(127, 127, 127, 0.05));
+}
+.verbrauch-tab__limit h4 { margin: 0; }
+.verbrauch-tab__limit-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+}
+.verbrauch-tab__limit-input {
+  width: 9rem;
+  padding: 0.4rem 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--fg);
+  font-variant-numeric: tabular-nums;
+}
+
+/* v0.1.405 — Banner „Tages-Token-Limit aufgebraucht" (unter der TopBar) */
+.token-limit-banner {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.55rem 1rem;
+  font-size: 12.5px;
+  background: rgba(239, 68, 68, 0.14);
+  border-bottom: 1px solid var(--color-err, #ef4444);
+  color: var(--fg);
+}
+:root.dark .token-limit-banner { background: rgba(239, 68, 68, 0.2); }
+.token-limit-banner__icon {
+  display: inline-flex;
+  align-items: center;
+  color: var(--color-err, #ef4444);
+}
+.token-limit-banner__msg { margin: 0; flex: 1; min-width: 0; }
+.token-limit-banner__cta {
+  flex-shrink: 0;
+  padding: 4px 12px;
+  border-radius: 6px;
+  background: var(--color-err, #ef4444);
+  color: #ffffff;
+  text-decoration: none;
+  font-weight: 500;
+  font-size: 12px;
+}
+.token-limit-banner__cta:hover { background: #dc2626; text-decoration: none; }
+
 .verbrauch-tab__controls {
   display: flex;
   gap: 1rem;

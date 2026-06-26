@@ -1,6 +1,8 @@
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useEffect } from "react";
 import type {
+  DailyTokenLimitStatus,
   LlmProviderKind,
   UsageDailyBucket,
 } from "../../../../shared/types";
@@ -51,6 +53,8 @@ export function VerbrauchTab() {
           Hintergrund-Aufgaben der Producer folgen im nächsten Update.
         </p>
       </header>
+
+      <DailyLimitSetting />
 
       <div className="verbrauch-tab__controls">
         <div className="verbrauch-tab__range">
@@ -149,6 +153,130 @@ export function VerbrauchTab() {
           </div>
         </>
       )}
+    </section>
+  );
+}
+
+// v0.1.405 — Konfigurierbares TAGES-Token-Limit (Chat + Agent zusammen).
+// Standard: KEIN Limit. Numerisches Ganzzahl-Feld (keine Kommazahlen).
+// Live-Status (heute verbraucht) kommt per Push aus dem Main-Prozess.
+function DailyLimitSetting() {
+  const qc = useQueryClient();
+  const status = useQuery<DailyTokenLimitStatus>({
+    queryKey: ["usage", "limitStatus"],
+    queryFn: () => window.api.usage.limitStatus(),
+    staleTime: 10_000,
+  });
+
+  // Eingabe-Puffer: leerer String = „kein Limit". Nur Ziffern erlaubt.
+  const [draft, setDraft] = useState<string>("");
+  const [touched, setTouched] = useState(false);
+
+  // Server-Wert in den Puffer spiegeln, solange der Nutzer nicht tippt.
+  useEffect(() => {
+    if (touched) return;
+    const lim = status.data?.limit ?? null;
+    setDraft(lim === null ? "" : String(lim));
+  }, [status.data?.limit, touched]);
+
+  // Live-Push abonnieren: Banner-relevanter Status ändert sich nach jedem
+  // Turn / jeder Limit-Änderung — Query-Cache aktualisieren.
+  useEffect(() => {
+    const unsub = window.api.usage.onDailyLimitStatus((s) => {
+      qc.setQueryData(["usage", "limitStatus"], s);
+    });
+    return unsub;
+  }, [qc]);
+
+  const save = useMutation({
+    mutationFn: (limit: number | null) => window.api.usage.setDailyLimit(limit),
+    onSuccess: () => {
+      setTouched(false);
+      void qc.invalidateQueries({ queryKey: ["usage", "limitStatus"] });
+    },
+  });
+
+  const parsed = draft.trim() === "" ? null : Number.parseInt(draft, 10);
+  const valid = parsed === null || (Number.isInteger(parsed) && parsed > 0);
+  const current = status.data?.limit ?? null;
+  const usedToday = status.data?.usedToday ?? 0;
+  const dirty = (current === null ? "" : String(current)) !== draft.trim();
+
+  return (
+    <section id="verbrauch-limit" className="verbrauch-tab__limit">
+      <h4>Tägliches Token-Limit</h4>
+      <p className="muted small">
+        Gemeinsame Obergrenze für Chat und Agent pro Tag (zählt Input +
+        Output + Cache, UTC-Tag). Standard: kein Limit. Die laufende Anfrage
+        wird immer fertig — ist das Tageskontingent danach erreicht, pausiert
+        AVA neue Anfragen, bis du das Limit erhöhst oder entfernst.
+      </p>
+
+      <div className="verbrauch-tab__limit-row">
+        <input
+          type="number"
+          inputMode="numeric"
+          min={1}
+          step={1}
+          placeholder="kein Limit"
+          className="verbrauch-tab__limit-input"
+          value={draft}
+          onChange={(e) => {
+            // Nur Ziffern — Kommazahlen / Minus / Exponent rausfiltern.
+            const digits = e.target.value.replace(/[^\d]/g, "");
+            setTouched(true);
+            setDraft(digits);
+          }}
+          onKeyDown={(e) => {
+            // Punkt/Komma/„e"/Vorzeichen hart blocken.
+            if ([".", ",", "e", "E", "+", "-"].includes(e.key)) {
+              e.preventDefault();
+            }
+          }}
+        />
+        <span className="muted small">Tokens / Tag</span>
+        <button
+          type="button"
+          className="btn"
+          disabled={!valid || !dirty || save.isPending}
+          onClick={() => save.mutate(parsed)}
+        >
+          {save.isPending ? "Speichert…" : "Speichern"}
+        </button>
+        {current !== null && (
+          <button
+            type="button"
+            className="link"
+            disabled={save.isPending}
+            onClick={() => {
+              setTouched(false);
+              save.mutate(null);
+            }}
+          >
+            Limit entfernen
+          </button>
+        )}
+      </div>
+
+      {!valid && (
+        <p className="error small">
+          Bitte eine ganze positive Zahl eingeben (oder Feld leeren für „kein
+          Limit").
+        </p>
+      )}
+
+      <p className="muted small">
+        {current === null ? (
+          <>Aktuell kein Limit aktiv.</>
+        ) : (
+          <>
+            Heute verbraucht:{" "}
+            <strong>{usedToday.toLocaleString("de-DE")}</strong> von{" "}
+            <strong>{current.toLocaleString("de-DE")}</strong> Tokens
+            {status.data?.exceeded ? " — Limit erreicht, Anfragen pausiert." : "."}
+          </>
+        )}
+      </p>
     </section>
   );
 }

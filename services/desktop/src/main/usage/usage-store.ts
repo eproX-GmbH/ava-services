@@ -222,6 +222,31 @@ export class UsageStore extends EventEmitter {
   }
 
   /**
+   * v0.1.405 — Summe aller heute (UTC-Kalendertag) verbrauchten Tokens
+   * über ALLE Modelle/Quellen (Input + Output + Cache-Read + Cache-Write).
+   * Grundlage für das konfigurierbare Tages-Token-Limit. Bewusst
+   * Kalendertag (date_trunc('day', NOW())), passend zum Verbrauchs-Tab —
+   * NICHT das rollierende 24-h-Fenster von `daily(1)`.
+   */
+  async tokensUsedToday(): Promise<number> {
+    await this.start();
+    const pg = this.requirePg();
+    const res = await pg.query<{ total: string | number | null }>(
+      `
+      SELECT COALESCE(
+        SUM(input_tokens + output_tokens + cache_read_tokens + cache_write_tokens),
+        0
+      )::bigint AS total
+      FROM usage_log
+      WHERE date_trunc('day', timestamp) = date_trunc('day', NOW())
+      `,
+    );
+    const total = res.rows[0]?.total ?? 0;
+    const n = typeof total === "string" ? Number(total) : Number(total);
+    return Number.isFinite(n) ? n : 0;
+  }
+
+  /**
    * Tages-Aggregat über die letzten `days` Tage (UTC). Zwei Achsen
    * gleichzeitig: pro Modell und pro Quelle. Renderer rendert dann
    * das gestapelte Tages-Diagramm + Source-Donut + Top-Modelle-Tabelle

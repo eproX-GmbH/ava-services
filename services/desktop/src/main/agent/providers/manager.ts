@@ -176,6 +176,16 @@ export class LlmProviderManager extends EventEmitter {
     return this.store.getConfig();
   }
 
+  /** v0.1.405 — Tages-Token-Limit (Chat + Agent). `null` = kein Limit. */
+  getDailyTokenLimit(): number | null {
+    return this.store.getDailyTokenLimit();
+  }
+
+  /** v0.1.405 — Limit setzen/entfernen (delegiert an den Store). */
+  setDailyTokenLimit(limit: number | null): number | null {
+    return this.store.setDailyTokenLimit(limit);
+  }
+
   /**
    * Active provider's key + model — Option D BYO-key passthrough.
    *

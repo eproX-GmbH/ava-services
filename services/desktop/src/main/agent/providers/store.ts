@@ -99,6 +99,7 @@ const DEFAULT_CONFIG: ProviderConfig = {
   },
   anthropicAuthMode: "api-key",
   openaiAuthMode: "api-key",
+  dailyTokenLimit: null,
 };
 
 export type { ProviderConfig };
@@ -236,6 +237,8 @@ export class ProviderConfigStore extends EventEmitter {
     models?: Partial<Record<LlmProviderKind, string>>;
     anthropicAuthMode?: AnthropicAuthMode;
     openaiAuthMode?: OpenAIAuthMode;
+    /** v0.1.405 — `null` löscht das Limit, positive Ganzzahl setzt es. */
+    dailyTokenLimit?: number | null;
   }): ProviderConfig {
     const next: ProviderConfig = cloneConfig(this.cached);
     if (partial.kind) {
@@ -272,10 +275,30 @@ export class ProviderConfigStore extends EventEmitter {
       }
       next.openaiAuthMode = partial.openaiAuthMode;
     }
+    if (partial.dailyTokenLimit !== undefined) {
+      next.dailyTokenLimit = normaliseDailyTokenLimit(partial.dailyTokenLimit);
+    }
     this.writeConfigAtomic(next);
     this.cached = next;
     this.emit("configChanged", cloneConfig(next));
     return cloneConfig(next);
+  }
+
+  /**
+   * v0.1.405 — Tages-Token-Limit lesen. `null` = kein Limit.
+   */
+  getDailyTokenLimit(): number | null {
+    return this.cached.dailyTokenLimit ?? null;
+  }
+
+  /**
+   * v0.1.405 — Tages-Token-Limit setzen/entfernen. `null`, `0` oder
+   * negative Werte entfernen das Limit; positive Werte werden auf eine
+   * Ganzzahl gerundet. Persistiert + feuert `configChanged`.
+   */
+  setDailyTokenLimit(limit: number | null): number | null {
+    this.setConfig({ dailyTokenLimit: limit });
+    return this.getDailyTokenLimit();
   }
 
   // ---- Encrypted API keys ---------------------------------------------------
@@ -762,11 +785,23 @@ export class ProviderConfigStore extends EventEmitter {
   }
 }
 
+/**
+ * v0.1.405 — Tages-Token-Limit auf eine saubere positive Ganzzahl oder
+ * `null` (= kein Limit) normalisieren. 0/negativ/NaN ⇒ `null`.
+ */
+function normaliseDailyTokenLimit(limit: number | null | undefined): number | null {
+  if (limit === null || limit === undefined) return null;
+  if (!Number.isFinite(limit)) return null;
+  const n = Math.floor(limit);
+  return n > 0 ? n : null;
+}
+
 function cloneConfig(cfg: ProviderConfig): ProviderConfig {
   return {
     kind: cfg.kind,
     models: { ...cfg.models },
     anthropicAuthMode: cfg.anthropicAuthMode ?? "api-key",
     openaiAuthMode: cfg.openaiAuthMode ?? "api-key",
+    dailyTokenLimit: cfg.dailyTokenLimit ?? null,
   };
 }

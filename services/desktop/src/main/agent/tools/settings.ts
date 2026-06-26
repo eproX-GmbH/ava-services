@@ -235,5 +235,53 @@ export function buildSettingsTools(deps: SettingsToolDeps): Tool[] {
 
   // Claude-Abo-OAuth wurde entfernt — keine Abo-Token-Tools mehr.
 
-  return [getProvider, setProvider, setKey, clearKey];
+  // v0.1.405 — Tages-Token-Limit (Chat + Agent) per Chat setzen/entfernen.
+  const setDailyTokenLimit = defineTool({
+    name: "settings_set_daily_token_limit",
+    description:
+      "Set or remove the daily token limit that applies to BOTH chat and " +
+      "the agent (shared per-day counter, UTC calendar day, counting " +
+      "input+output+cache tokens). Pass a positive integer to set it, or " +
+      "null/0 to remove the limit entirely (default = no limit). When the " +
+      "day's usage reaches the limit, the in-flight request still finishes " +
+      "and the NEXT request is paused until the user raises or removes the " +
+      "limit. Use this when the user asks to cap, change, or lift their " +
+      "daily token budget.",
+    parameters: {
+      type: "object",
+      properties: {
+        limit: {
+          type: ["integer", "null"],
+          description:
+            "Daily token limit as a positive whole number (e.g. 200000), " +
+            "or null/0 to remove the limit.",
+        },
+      },
+      required: ["limit"],
+    },
+    schema: yup.object({
+      limit: yup
+        .number()
+        .typeError("Limit muss eine ganze Zahl sein")
+        .integer("Limit muss eine ganze Zahl sein (keine Kommazahl)")
+        .min(0, "Limit darf nicht negativ sein")
+        .nullable()
+        .defined(),
+    }),
+    run: async (args) => {
+      const raw = args.limit;
+      const limit =
+        typeof raw === "number" && Number.isFinite(raw) && raw > 0
+          ? Math.floor(raw)
+          : null;
+      const applied = providers.setDailyTokenLimit(limit);
+      return { limit: applied };
+    },
+    preview: (r) =>
+      r.limit === null
+        ? "Tägliches Token-Limit entfernt"
+        : `Tägliches Token-Limit: ${r.limit.toLocaleString("de-DE")} Tokens/Tag`,
+  });
+
+  return [getProvider, setProvider, setKey, clearKey, setDailyTokenLimit];
 }

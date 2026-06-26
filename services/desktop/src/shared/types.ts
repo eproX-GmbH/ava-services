@@ -661,6 +661,27 @@ export interface ProviderConfig {
    * Default "api-key". "subscription" = „Sign in with ChatGPT".
    */
   openaiAuthMode?: OpenAIAuthMode;
+  /**
+   * v0.1.405 — Optionales tägliches Token-Limit (Kalendertag, UTC) für
+   * Chat + Agent zusammen. `null`/`undefined` = KEIN Limit (Default).
+   * Positive Ganzzahl = Obergrenze über alle LLM-Anfragen pro Tag.
+   * Die laufende Anfrage läuft immer voll durch; ist das Tageskontingent
+   * danach erreicht, blockt die NÄCHSTE Anfrage mit einem Hinweis-Banner.
+   */
+  dailyTokenLimit?: number | null;
+}
+
+/**
+ * v0.1.405 — Momentaufnahme des Tages-Token-Limits. Geliefert vom Main an
+ * Renderer (Banner + Verbrauchs-Tab) und intern an den Orchestrator-Gate.
+ */
+export interface DailyTokenLimitStatus {
+  /** Konfiguriertes Limit; `null` = kein Limit gesetzt. */
+  limit: number | null;
+  /** Heute (UTC-Kalendertag) verbrauchte Tokens (Input+Output+Cache). */
+  usedToday: number;
+  /** `true` ⇔ `limit != null && usedToday >= limit`. */
+  exceeded: boolean;
 }
 
 export interface ProviderStatusSnapshot {
