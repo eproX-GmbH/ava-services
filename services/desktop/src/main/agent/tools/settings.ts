@@ -233,72 +233,7 @@ export function buildSettingsTools(deps: SettingsToolDeps): Tool[] {
     preview: (r) => `${r.provider} key cleared, now using ${r.kind}`,
   });
 
-  // ---- Phase A1 — Anthropic subscription auth tools -----------------------
+  // Claude-Abo-OAuth wurde entfernt — keine Abo-Token-Tools mehr.
 
-  const setAnthropicSubscriptionToken = defineTool({
-    name: "settings_set_anthropic_subscription_token",
-    description:
-      "Speichert einen Claude.ai-Subscription-OAuth-Token (vom `claude setup-token`-CLI erzeugt). Nutzt das Pro/Max-Abo des Nutzers statt Api-Credits. Der Token wird verschlüsselt im OS-Schlüsselbund abgelegt; gleichzeitig wird der Anthropic-Auth-Modus auf 'subscription' geschaltet. Niemals den Token in der Antwort wiedergeben.",
-    parameters: {
-      type: "object",
-      properties: {
-        token: {
-          type: "string",
-          description:
-            "Der Subscription-Token, beginnend mit 'sk-ant-oat01-'.",
-        },
-      },
-      required: ["token"],
-    },
-    schema: yup.object({
-      token: yup
-        .string()
-        .trim()
-        .min(30, "Token wirkt zu kurz")
-        .required(),
-    }),
-    run: async (args) => {
-      providers.setAnthropicSubscriptionToken(args.token);
-      return {
-        ok: true,
-        provider: "anthropic" as const,
-        authMode: "subscription" as const,
-        encryptionAvailable: providers.isEncryptionAvailable(),
-      };
-    },
-    preview: (r) =>
-      `anthropic subscription token stored (${
-        r.encryptionAvailable
-          ? "OS keychain"
-          : "basic cipher, keychain unavailable"
-      })`,
-  });
-
-  const clearAnthropicSubscriptionToken = defineTool({
-    name: "settings_clear_anthropic_subscription_token",
-    description:
-      "Entfernt den gespeicherten Anthropic-Subscription-OAuth-Token. Falls Subscription der aktive Anthropic-Auth-Modus war, wird auf 'api-key' zurückgeschaltet (sofern ein Api-Schlüssel hinterlegt ist) oder der aktive Provider auf Ollama gewechselt.",
-    parameters: { type: "object", properties: {} },
-    schema: yup.object({}),
-    run: async () => {
-      providers.clearAnthropicSubscriptionToken();
-      return {
-        ok: true,
-        kind: providers.getConfig().kind,
-        anthropicAuthMode:
-          providers.getConfig().anthropicAuthMode ?? "api-key",
-      };
-    },
-    preview: (r) =>
-      `anthropic subscription token cleared, now using ${r.kind} (mode=${r.anthropicAuthMode})`,
-  });
-
-  return [
-    getProvider,
-    setProvider,
-    setKey,
-    clearKey,
-    setAnthropicSubscriptionToken,
-    clearAnthropicSubscriptionToken,
-  ];
+  return [getProvider, setProvider, setKey, clearKey];
 }

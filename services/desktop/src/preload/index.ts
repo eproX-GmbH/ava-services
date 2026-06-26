@@ -723,41 +723,9 @@ const api = {
     clearApiKey: (args: { kind: HostedProviderKind }): Promise<void> =>
       ipcRenderer.invoke("agent:clearApiKey", args),
 
-    /**
-     * Phase A1 — store the user's Anthropic OAuth subscription token
-     * (produced by Anthropic's `claude setup-token` CLI). Encrypted at
-     * rest in a separate keychain blob so the API-key entry stays
-     * untouched. Saving also flips the active Anthropic auth mode to
-     * `"subscription"`.
-     */
-    setAnthropicSubscriptionToken: (args: { token: string }): Promise<void> =>
-      ipcRenderer.invoke("agent:setAnthropicSubscriptionToken", args),
-    /**
-     * Phase A1 — probe the Bearer-auth path against
-     * `https://api.anthropic.com/v1/models`. Returns `{ ok: false,
-     * reason }` with a human-readable reason on failure. Inconclusive
-     * 401s (Anthropic may restrict the model-list endpoint to API
-     * keys) come back as `{ ok: false }` too — the UI then offers
-     * "trotzdem speichern".
-     */
-    validateAnthropicSubscriptionToken: (args: {
-      token: string;
-    }): Promise<ApiKeyValidation> =>
-      ipcRenderer.invoke("agent:validateAnthropicSubscriptionToken", args),
-    clearAnthropicSubscriptionToken: (): Promise<void> =>
-      ipcRenderer.invoke("agent:clearAnthropicSubscriptionToken"),
-    /**
-     * Phase A6 — Ein-Klick-OAuth-Login gegen Claude.ai. Öffnet ein
-     * Electron-`BrowserWindow` mit dem Anthropic-Authorize-Endpunkt,
-     * fängt den Redirect ab, tauscht den Code gegen einen Access-Token
-     * und persistiert ihn (gleiche Pipeline wie der Paste-Flow). Bei
-     * Erfolg ist der aktive Auth-Modus anschließend `"subscription"`.
-     * Fehler kommen als `{ ok: false, error }` zurück — der UI-Layer
-     * blendet sie inline ein und bietet den Paste-Flow als Fallback.
-     */
-    connectAnthropicSubscription: (): Promise<
-      { ok: true } | { ok: false; error: string }
-    > => ipcRenderer.invoke("agent:connectAnthropicSubscription"),
+    // Claude-Abo-OAuth wurde entfernt — keine Anthropic-Subscription-
+    // Bridge mehr (set/validate/clear/connect/setAuthMode). Anthropic
+    // läuft nur noch per API-Key über validateApiKey/setKey/clearKey.
     /**
      * v0.1.353 — „Sign in with ChatGPT" (Codex-OAuth). Öffnet ein
      * Electron-`BrowserWindow` mit OpenAIs Authorize-Endpunkt, fängt den
@@ -769,14 +737,6 @@ const api = {
     > => ipcRenderer.invoke("agent:connectOpenAISubscription"),
     clearOpenAISubscriptionToken: (): Promise<{ ok: true }> =>
       ipcRenderer.invoke("agent:clearOpenAISubscriptionToken"),
-    /**
-     * Phase A1 — flip between Anthropic auth modes without changing
-     * credentials. Throws when the requested mode has no credential.
-     */
-    setAnthropicAuthMode: (args: {
-      mode: "api-key" | "subscription";
-    }): Promise<ProviderConfig> =>
-      ipcRenderer.invoke("agent:setAnthropicAuthMode", args),
 
     // Memory (Phase 8.d). The probe is the FirstRunWizard's signal that
     // transcripts will (or won't) survive a restart; `listConversations`
