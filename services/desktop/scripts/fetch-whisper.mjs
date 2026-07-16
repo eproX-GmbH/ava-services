@@ -28,10 +28,12 @@ import {
   createWriteStream,
   existsSync,
   mkdirSync,
+  readFileSync,
   rmSync,
   statSync,
   chmodSync,
 } from "node:fs";
+import { createHash } from "node:crypto";
 import { mkdir, rename } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -220,6 +222,50 @@ async function fetchViaBrew(formula, outDir, exeName) {
  *     ISA), so we can't verify the bundle locally — verification
  *     happens on the Intel user's machine after install.
  */
+/**
+ * v0.1.408 — Bottle-URL + sha256 für einen Formula-Tag aus der Homebrew-
+ * Formula-JSON-API auflösen. Unabhängig von der lokal installierten
+ * brew-Formula-Version (die auf arm64-Runnern den Intel-Tag nicht mehr
+ * kennt).
+ */
+async function resolveBottleFromApi(formula, bottleTag) {
+  const res = await fetch(
+    `https://formulae.brew.sh/api/formula/${formula}.json`,
+    { redirect: "follow" },
+  );
+  if (!res.ok) {
+    throw new Error(`brew API ${formula} → HTTP ${res.status}`);
+  }
+  const json = await res.json();
+  const file = json?.bottle?.stable?.files?.[bottleTag];
+  const version = json?.versions?.stable ?? "?";
+  if (!file?.url) {
+    throw new Error(
+      `no ${bottleTag} bottle for ${formula} (stable ${version}) in brew API`,
+    );
+  }
+  return { url: file.url, sha256: file.sha256, version };
+}
+
+/**
+ * Ein Homebrew-ghcr.io-Bottle-Blob laden. Der Blob-Endpoint verlangt
+ * Homebrews anonymes Bearer-Token „QQ=="; er leitet dann auf eine
+ * signierte Storage-URL um (Node-fetch entfernt das Authorization-Header
+ * beim Cross-Origin-Redirect korrekterweise — die signierte URL braucht
+ * keine Auth).
+ */
+async function downloadBottle(url, dest) {
+  const res = await fetch(url, {
+    headers: { Authorization: "Bearer QQ==" },
+    redirect: "follow",
+  });
+  if (!res.ok) {
+    throw new Error(`bottle download failed: ${url} → HTTP ${res.status}`);
+  }
+  if (!res.body) throw new Error(`empty body for ${url}`);
+  await pipeline(Readable.fromWeb(res.body), createWriteStream(dest));
+}
+
 async function fetchViaCrossBrew(target, outDir, exeName) {
   const { formula, bottleTag } = target;
   // ggml is the direct dependency of whisper-cpp; libomp is a
@@ -229,39 +275,38 @@ async function fetchViaCrossBrew(target, outDir, exeName) {
   const tmpRoot = `/tmp/ava-cross-brew-${process.pid}-${Date.now()}`;
   await mkdir(tmpRoot, { recursive: true });
 
-  // Download Intel bottles (no install)
-  console.log(`[whisper] ${target.id}: fetching ${formula} (bottle-tag=${bottleTag})`);
-  await runCmd("brew", ["fetch", `--bottle-tag=${bottleTag}`, formula]);
-  for (const dep of dependencyFormulas) {
-    console.log(`[whisper] ${target.id}: fetching ${dep} (bottle-tag=${bottleTag})`);
-    await runCmd("brew", ["fetch", `--bottle-tag=${bottleTag}`, dep]);
-  }
-
-  // Resolve cached tarball paths
-  const whisperTar = (
-    await runCmdCapture("brew", ["--cache", `--bottle-tag=${bottleTag}`, formula])
-  ).trim();
-  const depTars = {};
-  for (const dep of dependencyFormulas) {
-    depTars[dep] = (
-      await runCmdCapture("brew", ["--cache", `--bottle-tag=${bottleTag}`, dep])
-    ).trim();
-  }
-  if (!existsSync(whisperTar)) {
-    throw new Error(`bottle cache resolve failed: whisper=${whisperTar}`);
-  }
-  for (const [dep, path] of Object.entries(depTars)) {
-    if (!existsSync(path)) {
-      throw new Error(`bottle cache resolve failed: ${dep}=${path}`);
+  // v0.1.408 — Bottles DIREKT von ghcr.io laden statt via `brew fetch`.
+  // Homebrew stellt x86_64-Bottles 2026 breit ein: `brew fetch
+  // --bottle-tag=sonoma` meldet auf dem arm64-CI-Runner „Bottle for tag
+  // :sonoma is unavailable" (die Runner-Formula kennt den Intel-Tag nicht
+  // mehr), obwohl die Bottle-Datei auf ghcr.io weiter existiert. Wir holen
+  // sie deshalb direkt über die Formula-JSON-API (mit Homebrews anonymem
+  // Bearer-Token „QQ==") + sha256-Prüfung — unabhängig davon, welche
+  // Formula-Version die lokale brew-Installation gerade kennt.
+  const allFormulas = [formula, ...dependencyFormulas];
+  const tars = {};
+  for (const f of allFormulas) {
+    console.log(`[whisper] ${target.id}: resolving ${f} (${bottleTag}) via brew API`);
+    const { url, sha256, version } = await resolveBottleFromApi(f, bottleTag);
+    console.log(`[whisper] ${target.id}: downloading ${f} ${version} bottle`);
+    const dest = join(tmpRoot, `${f}.bottle.tar.gz`);
+    await downloadBottle(url, dest);
+    if (sha256) {
+      const actual = createHash("sha256").update(readFileSync(dest)).digest("hex");
+      if (actual !== sha256) {
+        throw new Error(
+          `bottle sha256 mismatch for ${f}: got ${actual}, expected ${sha256}`,
+        );
+      }
     }
+    tars[f] = dest;
   }
 
   // Extract into the temp root. Tarball top-level is `<formula>/<version>/...`
   // which our existing logic treats as the brew prefix.
   console.log(`[whisper] ${target.id}: extracting bottles to ${tmpRoot}`);
-  await runCmd("tar", ["xzf", whisperTar, "-C", tmpRoot]);
-  for (const path of Object.values(depTars)) {
-    await runCmd("tar", ["xzf", path, "-C", tmpRoot]);
+  for (const f of allFormulas) {
+    await runCmd("tar", ["xzf", tars[f], "-C", tmpRoot]);
   }
 
   // Resolve the per-formula extracted prefixes.
