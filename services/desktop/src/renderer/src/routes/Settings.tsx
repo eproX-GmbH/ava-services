@@ -1803,6 +1803,63 @@ export function LinkedInSection() {
 
 // -- Provider section -------------------------------------------------
 
+// v0.1.407 — Ollama-Modelle im Dropdown nach Hersteller gruppieren +
+// nach Leistungsfähigkeit sortieren. Ollama-Tags tragen keinen Vendor;
+// wir leiten ihn aus dem id-Präfix ab.
+function ollamaVendorLabel(id: string): string {
+  const n = id.toLowerCase();
+  if (n.startsWith("gemma") || n.startsWith("embeddinggemma")) return "Google · Gemma";
+  if (n.startsWith("qwen")) return "Alibaba · Qwen";
+  if (n.startsWith("llama")) return "Meta · Llama";
+  if (n.startsWith("mistral") || n.startsWith("mixtral") || n.startsWith("magistral"))
+    return "Mistral";
+  if (n.startsWith("phi")) return "Microsoft · Phi";
+  if (n.startsWith("deepseek")) return "DeepSeek";
+  if (n.startsWith("granite")) return "IBM · Granite";
+  if (n.startsWith("command-r") || n.startsWith("command-a")) return "Cohere";
+  if (n.startsWith("nomic")) return "Nomic";
+  return "Sonstige";
+}
+
+function modelOptionLabel(m: ProviderCatalogEntry): string {
+  return (
+    `${m.label}${m.recommended ? " ★" : ""} · ${formatContext(m.contextWindow)}` +
+    `${m.costClass !== "free" ? ` · ${m.costClass}` : ""}` +
+    `${m.vision ? " · vision" : ""}`
+  );
+}
+
+/** Nach Vendor gruppieren; innerhalb nach Tier↓ dann Größe↓ sortieren,
+ *  Gruppen nach ihrem stärksten Modell (max Tier) absteigend. */
+function groupOllamaByVendor(
+  models: ProviderCatalogEntry[],
+): { vendor: string; models: ProviderCatalogEntry[] }[] {
+  const byVendor = new Map<string, ProviderCatalogEntry[]>();
+  for (const m of models) {
+    const v = ollamaVendorLabel(m.id);
+    const arr = byVendor.get(v);
+    if (arr) arr.push(m);
+    else byVendor.set(v, [m]);
+  }
+  const groups = [...byVendor.entries()].map(([vendor, ms]) => ({
+    vendor,
+    models: ms
+      .slice()
+      .sort(
+        (a, b) =>
+          b.tier - a.tier ||
+          (b.approxBytes ?? 0) - (a.approxBytes ?? 0) ||
+          a.label.localeCompare(b.label),
+      ),
+  }));
+  groups.sort((a, b) => {
+    const maxA = Math.max(...a.models.map((m) => m.tier));
+    const maxB = Math.max(...b.models.map((m) => m.tier));
+    return maxB - maxA || a.vendor.localeCompare(b.vendor);
+  });
+  return groups;
+}
+
 export function ProviderSection() {
   const qc = useQueryClient();
 
@@ -2008,15 +2065,21 @@ export function ProviderSection() {
             }}
             disabled={setModel.isPending || activeList.length === 0}
           >
-            {activeList.map((m) => (
-              <option key={m.id} value={m.id}>
-                {m.label}
-                {m.recommended ? " ★" : ""} ·{" "}
-                {formatContext(m.contextWindow)}
-                {m.costClass !== "free" ? ` · ${m.costClass}` : ""}
-                {m.vision ? " · vision" : ""}
-              </option>
-            ))}
+            {activeKind === "ollama"
+              ? groupOllamaByVendor(activeList).map((g) => (
+                  <optgroup key={g.vendor} label={g.vendor}>
+                    {g.models.map((m) => (
+                      <option key={m.id} value={m.id}>
+                        {modelOptionLabel(m)}
+                      </option>
+                    ))}
+                  </optgroup>
+                ))
+              : activeList.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {modelOptionLabel(m)}
+                  </option>
+                ))}
           </select>
         </label>
       </div>

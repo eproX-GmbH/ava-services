@@ -773,6 +773,11 @@ export interface ProviderCatalogEntry {
   recommended: boolean;
   /** Approximate on-disk size for Ollama tags — UX hint only. */
   approxBytes?: number;
+  /**
+   * v0.1.407 — Leistungs-/Fähigkeits-Rang aus dem Katalog (1 = klein,
+   * 4 = Frontier). Treibt die Sortierung im Modell-Dropdown.
+   */
+  tier: 1 | 2 | 3 | 4;
 }
 
 /**

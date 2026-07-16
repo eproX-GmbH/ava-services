@@ -787,6 +787,7 @@ function projectCatalogEntry(e: CatalogEntry): ProviderCatalogEntry {
     contextWindow: e.capabilities.contextWindow,
     costClass: e.costClass,
     recommended: e.recommended ?? false,
+    tier: e.tier,
     ...(e.approxBytes !== undefined ? { approxBytes: e.approxBytes } : {}),
   };
 }
