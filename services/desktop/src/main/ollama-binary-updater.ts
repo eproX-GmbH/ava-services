@@ -89,7 +89,10 @@ function targetForHost(): PlatformTarget | null {
     case "darwin-x64":
       return {
         assetName: "Ollama-darwin.zip",
-        innerBinaryPath: "Ollama.app/Contents/Resources/ollama",
+        // v0.1.406 — extractMacZip flacht Contents/Resources/ (ollama +
+        // llama-server + Runner-Libs) bereits nach outDir ab, daher liegt
+        // die Binary direkt unter outDir/ollama.
+        innerBinaryPath: "ollama",
         exeName: "ollama",
         extract: extractMacZip,
       };
@@ -229,13 +232,27 @@ export class OllamaBinaryUpdater extends EventEmitter {
     const versionDir = join(managedRoot(), version);
     const finalBinary = join(versionDir, target.exeName);
 
-    if (existsSync(finalBinary)) {
+    // v0.1.406 — „schon installiert"-Kurzschluss NUR, wenn die Installation
+    // auch vollständig ist. Ältere AVA-Versionen extrahierten auf macOS nur
+    // die `ollama`-Binary ohne die separate `llama-server`-Runner-Binary
+    // (Ollama v0.30.0-Split) — solche Managed-Versionen sind kaputt und
+    // müssen neu extrahiert werden, statt hier fälschlich als fertig zu
+    // gelten.
+    const installComplete =
+      existsSync(finalBinary) &&
+      (process.platform !== "darwin" ||
+        existsSync(join(versionDir, "llama-server")));
+    if (installComplete) {
       this.setState({
         state: "ready",
         version,
         path: finalBinary,
       });
       return;
+    }
+    if (existsSync(finalBinary)) {
+      // Unvollständige Alt-Installation — verwerfen und sauber neu ziehen.
+      rmSync(versionDir, { recursive: true, force: true });
     }
 
     mkdirSync(versionDir, { recursive: true });
@@ -466,10 +483,35 @@ function managedRoot(): string {
 // ---- Extractors ----------------------------------------------------------
 
 async function extractMacZip(archive: string, outDir: string): Promise<void> {
-  // Upstream-macOS-Release ist ein .zip mit `Ollama.app/`. Wir
-  // entpacken alles, der Caller verschiebt nur das interne
-  // `Contents/Resources/ollama`-Binary an die Standardposition.
+  // v0.1.406 — Upstream-macOS-Release ist ein .zip mit `Ollama.app/`.
+  // Seit Ollama v0.30.0 liegt der Inferenz-Server als SEPARATE
+  // `llama-server`-Binary + GGML/LLAMA-Runner-Libs (und MLX-Metal-Runner)
+  // NEBEN `ollama` unter `Contents/Resources/`. Die KOMPLETTE Payload muss
+  // flach nach outDir, sonst findet der gestartete Server seine
+  // `llama-server`-Binary nicht ("llama-server binary not found") und jede
+  // lokale Inferenz scheitert mit HTTP 500.
   await runCmd("unzip", ["-q", "-o", archive, "-d", outDir]);
+  const resources = join(outDir, "Ollama.app", "Contents", "Resources");
+  const innerBin = join(resources, "ollama");
+  if (!existsSync(innerBin)) {
+    throw new Error(
+      `Erwartete Binary unter ${innerBin} nach Unzip nicht gefunden — Release-Layout geändert?`,
+    );
+  }
+  for (const name of readdirSync(resources)) {
+    await rename(join(resources, name), join(outDir, name));
+  }
+  rmSync(join(outDir, "Ollama.app"), { recursive: true, force: true });
+  // Apple-Silicon-only MLX-Metal-Runner (~350 MB) auf Intel (x64) prunen.
+  if (process.arch === "x64") {
+    for (const dir of ["mlx_metal_v3", "mlx_metal_v4"]) {
+      rmSync(join(outDir, dir), { recursive: true, force: true });
+    }
+  }
+  const llamaServer = join(outDir, "llama-server");
+  if (existsSync(llamaServer)) {
+    await chmod(llamaServer, 0o755);
+  }
 }
 
 async function extractWindowsZip(

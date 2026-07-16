@@ -26,7 +26,13 @@
 //   - The script does NOT verify checksums. Step 7 hardening: pin a
 //     SHA256SUMS file from the release page and verify before extraction.
 
-import { createWriteStream, existsSync, mkdirSync, rmSync } from "node:fs";
+import {
+  createWriteStream,
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  rmSync,
+} from "node:fs";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -102,7 +108,7 @@ async function main() {
     const url = `https://github.com/ollama/ollama/releases/download/${VERSION}/${target.asset}`;
     const tmp = join(outDir, target.asset);
     await download(url, tmp);
-    await target.extract(tmp, outDir, exeName);
+    await target.extract(tmp, outDir, exeName, target.id);
     rmSync(tmp, { force: true });
     await writeFile(versionMarker, VERSION);
     console.log(`[ollama] ${target.id}: written ${outBin}`);
@@ -124,19 +130,52 @@ async function download(url, dest) {
 
 // ---- Platform-specific extraction ------------------------------------------
 
-async function extractMacApp(archive, outDir, exeName) {
+async function extractMacApp(archive, outDir, exeName, targetId) {
   // The macOS release ships an .app bundle inside a .zip. The server binary
-  // we want lives at `Ollama.app/Contents/Resources/ollama`.
+  // lives at `Ollama.app/Contents/Resources/ollama`.
+  //
+  // v0.1.406 — WICHTIG: seit Ollama v0.30.0 ist der Inferenz-Server aus der
+  // einzelnen `ollama`-Binary herausgelöst. `Contents/Resources/` enthält
+  // jetzt NEBEN `ollama` auch eine separate `llama-server`-Binary sowie die
+  // GGML/LLAMA-Runner-Libs (`libggml-*.so`, `libllama*.dylib`,
+  // `libllama-server-impl.dylib`) und die MLX-Metal-Runner (`mlx_metal_v*`).
+  // Die alte Extraktion nahm NUR `ollama` und warf den Rest weg — dann
+  // findet der Server beim Start seine `llama-server`-Binary nicht
+  // ("llama-server binary not found") und JEDE lokale Inferenz scheitert mit
+  // HTTP 500 (auf Intel-Macs besonders sichtbar, da kein Metal-Fallback).
+  // Fix: die KOMPLETTE Resources-Payload flach nach outDir übernehmen, damit
+  // `ollama` seine Geschwister-Binary + Libs findet.
   await runCmd("unzip", ["-q", "-o", archive, "-d", outDir]);
-  const inner = join(outDir, "Ollama.app", "Contents", "Resources", "ollama");
-  if (!existsSync(inner)) {
-    throw new Error(`expected ${inner} after unzip — release layout changed?`);
+  const resources = join(outDir, "Ollama.app", "Contents", "Resources");
+  const innerBin = join(resources, "ollama");
+  if (!existsSync(innerBin)) {
+    throw new Error(`expected ${innerBin} after unzip — release layout changed?`);
   }
-  await rename(inner, join(outDir, exeName));
+  // Alle Einträge aus Resources/ nach outDir verschieben (ollama →
+  // outDir/exeName, llama-server + Libs als Geschwister daneben).
+  for (const name of readdirSync(resources)) {
+    const dest = name === "ollama" ? exeName : name;
+    await rename(join(resources, name), join(outDir, dest));
+  }
   rmSync(join(outDir, "Ollama.app"), { recursive: true, force: true });
-  // chmod +x — `rename` preserves perms but the upstream may not set them
-  // on x64 universal slices.
+
+  // Apple-Silicon-only: die MLX-Metal-Runner (`mlx_metal_v3/v4`, ~350 MB)
+  // laufen NUR auf Apple-GPUs. Auf Intel (x64) sind sie nutzlos — prunen,
+  // um das DMG nicht unnötig aufzublähen. Der CPU-Pfad (libggml-cpu-*.so)
+  // bleibt erhalten.
+  if (targetId === "darwin-x64") {
+    for (const dir of ["mlx_metal_v3", "mlx_metal_v4"]) {
+      rmSync(join(outDir, dir), { recursive: true, force: true });
+    }
+  }
+
+  // chmod +x auf die ausführbaren Binaries (rename erhält Perms, aber sicher
+  // ist sicher — v. a. auf x64-Slices).
   await runCmd("chmod", ["+x", join(outDir, exeName)]);
+  const llamaServer = join(outDir, "llama-server");
+  if (existsSync(llamaServer)) {
+    await runCmd("chmod", ["+x", llamaServer]);
+  }
 }
 
 async function extractLinuxTgz(archive, outDir, exeName) {
