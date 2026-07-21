@@ -6,6 +6,7 @@ import {
 import { OllamaVersionSection } from "../../components/OllamaVersionSection";
 import { StorageSection } from "../../components/StorageSection";
 import { DiagnoseSection } from "../../components/DiagnoseSection";
+import { DangerZoneSection } from "../../components/DangerZoneSection";
 
 // System-Tab — Updates, lokale Postgres-Instanz, Ollama-Laufzeit,
 // lokale Producer-Subprozesse, Diagnose-Protokoll. Alles, was die
@@ -19,6 +20,7 @@ export function SystemTab() {
       <PostgresSection />
       <ProducersSection />
       <DiagnoseSection />
+      <DangerZoneSection />
     </>
   );
 }

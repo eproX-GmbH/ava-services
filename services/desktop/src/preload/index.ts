@@ -315,6 +315,13 @@ const api = {
       ipcRenderer.invoke("storage:openFolder", path),
   },
 
+  // v0.1.409 — Werksreset (alle lokalen Daten außer LLM-Modelle/Keys).
+  // Startet die App neu; die Löschung passiert beim nächsten Boot.
+  settings: {
+    resetAllExceptModels: (): Promise<{ ok: boolean }> =>
+      ipcRenderer.invoke("settings:resetAllExceptModels"),
+  },
+
   ollama: {
     getStatus: (): Promise<OllamaStatus> =>
       ipcRenderer.invoke("ollama:getStatus"),

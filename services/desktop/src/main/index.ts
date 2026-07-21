@@ -123,6 +123,10 @@ import { Updater, broadcastUpdateStatus } from "./updater";
 // v0.1.200 — Audit-Trail. Local-first PGlite store, see audit-store.ts.
 import { AuditStore } from "./audit/audit-store";
 import { UsageStore } from "./usage/usage-store";
+import {
+  performBootResetIfRequested,
+  requestResetExceptModels,
+} from "./reset-store";
 // v0.1.224 — Knowledge-Integrations-Framework (Phase 1). Konkrete
 // Adapter (Notion, Obsidian) folgen in P2/P3.
 import { KnowledgeProviderStore } from "./knowledge/store";
@@ -1751,6 +1755,15 @@ function createMainWindow(): BrowserWindow {
 }
 
 app.whenReady().then(async () => {
+  // v0.1.409 — GANZ ZUERST: ausstehenden „Werksreset außer Modelle"
+  // ausführen, BEVOR irgendein Store seine Dateien öffnet. Löscht alle
+  // lokalen Daten außer der LLM-Provider-Konfig/Keys + Ollama/Whisper-
+  // Modelle (siehe reset-store.ts).
+  try {
+    performBootResetIfRequested();
+  } catch (err) {
+    console.warn("[reset] boot reset failed:", err);
+  }
   // v0.1.395 — persistierten Verarbeitungs-Pause-Zustand laden, BEVOR die
   // Auth-Lifecycle-Logik die Producer startet (sonst würden sie trotz
   // gespeicherter Pause anlaufen).
@@ -4412,6 +4425,29 @@ app.whenReady().then(async () => {
   );
   ipcMain.handle("usage:limitStatus", async () => {
     return computeDailyLimitStatus();
+  });
+  // v0.1.409 — „Alles zurücksetzen außer KI-Modelle" (Werksreset). Setzt
+  // einen Marker und startet die App neu; die Löschung passiert beim
+  // nächsten Boot vor Store-Init (siehe reset-store.ts).
+  ipcMain.handle("settings:resetAllExceptModels", async () => {
+    audit({
+      actorType: "user",
+      actorId: null,
+      category: "auth",
+      action: "settings.reset.all-except-models",
+      severity: "warning",
+      subjectType: null,
+      subjectId: null,
+      summary:
+        "Werksreset ausgelöst: alle lokalen Daten außer LLM-Modelle/Keys werden beim Neustart gelöscht",
+      metadata: {},
+    });
+    // Kurze Verzögerung, damit die IPC-Antwort + das Audit-Log noch
+    // durchgehen, bevor der Prozess neu startet.
+    setTimeout(() => {
+      requestResetExceptModels();
+    }, 250);
+    return { ok: true };
   });
   // Limit-Änderung über den Chat-Tool-Pfad (settings_set_daily_token_limit)
   // läuft über setConfig → configChanged. Hier an alle Fenster spiegeln.
