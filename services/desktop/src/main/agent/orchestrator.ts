@@ -16,6 +16,7 @@ import { buildMetaTools, ALWAYS_ON_CORE_TOOL_NAMES } from "./tools/meta";
 import type { ConversationToolLoadState } from "./tools/meta";
 import { buildSystemPrompt } from "./prompts";
 import { isUserDeclined } from "./define-tool";
+import { WELCOME_MESSAGE, isWelcomeTrigger } from "./welcome";
 import { UiBridge, type PendingChoice } from "./ui-bridge";
 import type { LlmProviderManager, LlmStreamToolCall } from "./providers";
 import type { Conversation, Tool, ToolContext } from "./types";
@@ -835,6 +836,42 @@ export class AgentOrchestrator extends EventEmitter {
     let lastSystemMessage: AgentMessage | null = null;
 
     try {
+      // v0.1.409 — Willkommens-/Capability-Kurzschluss. Schreibt der Nutzer
+      // im normalen Chat nur eine Begrüßung („Hi") oder fragt „Was kannst
+      // du?", antworten wir mit dem FESTEN Überblickstext — ohne LLM-Aufruf
+      // (keine Kosten, immer identisch, kein Halluzinationsrisiko). Nicht in
+      // Skills oder im autonomen Modus (Mail-Triage).
+      if (!this.activeSkill && conversation.autonomousMode !== true) {
+        const lastUser = [...conversation.messages]
+          .reverse()
+          .find((m) => m.role === "user" && !m.id.startsWith("__"));
+        const text =
+          typeof lastUser?.content === "string" ? lastUser.content : "";
+        if (text && isWelcomeTrigger(text)) {
+          const welcomeId = randomUUID();
+          this.emitFrame({
+            kind: "token",
+            requestId,
+            conversationId: conversation.id,
+            messageId: welcomeId,
+            delta: WELCOME_MESSAGE,
+          });
+          this.appendMessage(conversation, {
+            id: welcomeId,
+            role: "assistant",
+            content: WELCOME_MESSAGE,
+            createdAt: Date.now(),
+          });
+          this.emitFrame({
+            kind: "done",
+            requestId,
+            conversationId: conversation.id,
+            messageId: welcomeId,
+          });
+          return;
+        }
+      }
+
       // v0.1.405 — Tages-Token-Limit-Gate. Gilt für Chat UND Agent (beide
       // laufen durch runLoop). Die Anfrage, die das Limit überschreitet,
       // lief bereits (Usage lag bei ihrem Start noch darunter) und wurde
