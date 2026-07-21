@@ -414,6 +414,16 @@ export class MemoryStore {
    */
   ensureConversation(conversationId: string): void {
     if (!this.writable) return;
+    // v0.1.409 — selbstheilend: falls das Memory-Verzeichnis zur Laufzeit
+    // verschwindet (z. B. externe Löschung), hier neu anlegen, damit der
+    // folgende writeFileSync nie mit ENOENT scheitert.
+    if (!existsSync(this.dir)) {
+      try {
+        mkdirSync(this.dir, { recursive: true });
+      } catch (err) {
+        console.warn("[memory] could not recreate dir:", err);
+      }
+    }
     const path = this.fileFor(conversationId);
     if (existsSync(path)) return;
     const frontmatter = [

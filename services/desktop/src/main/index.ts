@@ -204,6 +204,19 @@ const GATEWAY_URL = APP_CONFIG.gatewayUrl;
 const AUTH_ISSUER = APP_CONFIG.authIssuer;
 const AUTH_CLIENT_ID = APP_CONFIG.authClientId;
 
+// v0.1.409 — Ausstehenden „Werksreset außer Modelle" GANZ FRÜH ausführen —
+// beim Modul-Load, BEVOR die Store-Singletons (memory, usage, …) unten
+// konstruiert werden und ihre Verzeichnisse anlegen. Liefe der Reset erst
+// in app.whenReady(), würde er die von den Stores bereits (beim Import)
+// angelegten Verzeichnisse — v. a. agent/memory — wieder löschen, ohne dass
+// sie in derselben Session neu entstehen → jeder Chat-Schreibvorgang würde
+// mit ENOENT scheitern. `app.getPath("userData")` ist hier bereits gültig.
+try {
+  performBootResetIfRequested();
+} catch (err) {
+  console.warn("[reset] boot reset failed:", err);
+}
+
 // Register custom `ava-screenshot://` protocol as a privileged scheme.
 // Must be called before app.whenReady() (electron requirement). The
 // actual file-serving handler is wired in registerScreenshotProtocol()
@@ -1755,15 +1768,6 @@ function createMainWindow(): BrowserWindow {
 }
 
 app.whenReady().then(async () => {
-  // v0.1.409 — GANZ ZUERST: ausstehenden „Werksreset außer Modelle"
-  // ausführen, BEVOR irgendein Store seine Dateien öffnet. Löscht alle
-  // lokalen Daten außer der LLM-Provider-Konfig/Keys + Ollama/Whisper-
-  // Modelle (siehe reset-store.ts).
-  try {
-    performBootResetIfRequested();
-  } catch (err) {
-    console.warn("[reset] boot reset failed:", err);
-  }
   // v0.1.395 — persistierten Verarbeitungs-Pause-Zustand laden, BEVOR die
   // Auth-Lifecycle-Logik die Producer startet (sonst würden sie trotz
   // gespeicherter Pause anlaufen).
