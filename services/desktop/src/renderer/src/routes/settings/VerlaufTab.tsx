@@ -495,6 +495,29 @@ function AuditEventRow({
                 </dd>
               </>
             )}
+            {typeof event.metadata.screenshot === "string" && (
+              <>
+                <dt>Seitenansicht</dt>
+                <dd>
+                  {/* v0.1.414 — Beweis-Screenshot des Überwachungslaufs.
+                      Zeigt, ob die Seite wirklich geladen hat (statt
+                      Cookie-Banner, Bot-Sperre oder Login-Wand). */}
+                  <a
+                    href={event.metadata.screenshot}
+                    target="_blank"
+                    rel="noreferrer"
+                    title="In voller Größe öffnen"
+                  >
+                    <img
+                      className="audit-event-screenshot"
+                      src={event.metadata.screenshot}
+                      alt="Screenshot der überwachten Seite"
+                      loading="lazy"
+                    />
+                  </a>
+                </dd>
+              </>
+            )}
             {Object.keys(event.metadata).length > 0 && (
               <>
                 <dt>Metadaten</dt>

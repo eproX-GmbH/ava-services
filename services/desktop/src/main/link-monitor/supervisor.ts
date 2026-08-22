@@ -35,6 +35,10 @@ import {
   type LinkObservations,
 } from "./extractor";
 import { clampInterval, LinkMonitorStore } from "./store";
+import {
+  deleteMonitorScreenshots,
+  saveRunScreenshot,
+} from "./screenshots";
 
 const DELAY_CAP_MS = 30 * 60 * 1000;
 const MAX_CONCURRENT_RUNS = 2;
@@ -192,6 +196,8 @@ export class LinkMonitorSupervisor extends EventEmitter {
       this.timers.delete(id);
     }
     await this.store.delete(id);
+    // v0.1.414 — zugehörige Lauf-Screenshots mit entfernen.
+    await deleteMonitorScreenshots(id);
   }
 
   /**
@@ -294,6 +300,7 @@ export class LinkMonitorSupervisor extends EventEmitter {
     let changeSummary: string | null = null;
     let contentHash = "";
     let observations: LinkObservations | null = null;
+    let screenshotUrl: string | null = null;
 
     try {
       const browse = await browseUrl(monitor.url, {
@@ -305,6 +312,12 @@ export class LinkMonitorSupervisor extends EventEmitter {
       if (browse.truncated) {
         outcome = "timeout";
         note = browse.note ?? "Teilergebnis (Timeout/Längenlimit).";
+      }
+      // v0.1.414 — Beweis-Screenshot ablegen, BEVOR die weitere Auswertung
+      // laufen kann. So existiert er auch dann, wenn Extraktion oder Diff
+      // danach scheitern — genau dann will man ja nachsehen können.
+      if (browse.screenshot) {
+        screenshotUrl = await saveRunScreenshot(monitor.id, browse.screenshot);
       }
 
       const extracted = await extractObservations({
@@ -380,6 +393,8 @@ export class LinkMonitorSupervisor extends EventEmitter {
           url: monitor.url,
           outcome,
           trigger,
+          // v0.1.414 — im Verlauf als Bild dargestellt (siehe VerlaufTab).
+          ...(screenshotUrl ? { screenshot: screenshotUrl } : {}),
         },
       });
     } catch {

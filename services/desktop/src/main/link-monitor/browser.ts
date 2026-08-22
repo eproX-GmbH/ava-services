@@ -35,6 +35,13 @@ export interface BrowseResult {
   pagesVisited: number;
   /** Nicht-fatale Notiz (z. B. „Login fehlt", „Timeout"). */
   note: string | null;
+  /**
+   * v0.1.414 — PNG der vollständig geladenen Seite (erste Seite, nach
+   * Settle + Scroll). Beweist im Verlauf, ob die Seite WIRKLICH geladen hat
+   * (Cookie-Banner, Bot-Sperre, Login-Wand statt Inhalt). `null`, wenn die
+   * Aufnahme nicht möglich war — nie ein Grund, den Lauf scheitern zu lassen.
+   */
+  screenshot: Buffer | null;
 }
 
 export interface BrowseOptions {
@@ -49,6 +56,8 @@ export interface BrowseOptions {
   maxScrolls?: number;
   /** Max Pagination-Seiten (Default 5). */
   maxPages?: number;
+  /** v0.1.414 — Screenshot der geladenen Seite aufnehmen (Default: true). */
+  capture?: boolean;
 }
 
 /** Obergrenze für den extrahierten Text pro Seite (Zeichen). Schützt vor
@@ -243,6 +252,9 @@ function createWindow(isLinkedIn: boolean): BrowserWindow {
       nodeIntegration: false,
       sandbox: true,
       offscreen: false,
+      // v0.1.414 — versteckte Fenster drosseln sonst das Rendern, was den
+      // Beweis-Screenshot leer bzw. veraltet macht.
+      backgroundThrottling: false,
     },
   });
   (win as unknown as { __avaLinkMonitor?: boolean }).__avaLinkMonitor = true;
@@ -307,6 +319,7 @@ export async function browseUrl(
   let finalUrl = url;
   let truncated = false;
   let note: string | null = null;
+  let screenshot: Buffer | null = null;
 
   try {
     const loaded = await navigateWithDeadline(
@@ -336,6 +349,12 @@ export async function browseUrl(
       if (p === 0) {
         title = snap.title;
         finalUrl = snap.finalUrl;
+        // v0.1.414 — genau hier ist die Seite fertig geladen, gescrollt und
+        // gerendert: der beste Moment für den Beweis-Screenshot. Fehler
+        // dabei sind nie fatal (der Lauf selbst zählt).
+        if (opts.capture !== false) {
+          screenshot = await capturePng(win);
+        }
       }
       if (snap.text) {
         pages.push(snap.text);
@@ -367,6 +386,7 @@ export async function browseUrl(
       truncated,
       pagesVisited: Math.max(pagesVisited, pages.length),
       note,
+      screenshot,
     };
   } finally {
     try {
@@ -374,6 +394,55 @@ export async function browseUrl(
     } catch {
       /* ignore */
     }
+  }
+}
+
+/**
+ * v0.1.414 — Screenshot des sichtbaren Viewports als PNG. Schluckt jeden
+ * Fehler: ein fehlender Screenshot darf einen Überwachungslauf niemals
+ * scheitern lassen.
+ */
+async function capturePng(win: BrowserWindow): Promise<Buffer | null> {
+  try {
+    if (win.isDestroyed()) return null;
+
+    // Erster Versuch am versteckten Fenster.
+    let image = await win.webContents.capturePage();
+
+    // Ein Fenster mit `show: false` wird von Chromium nicht komponiert —
+    // capturePage liefert dann ein LEERES Bild. Fallback: das Fenster
+    // kurz „anzeigen", aber unsichtbar: es sitzt bereits bei (-2000,-2000)
+    // mit Deckkraft 0, ist nicht fokussierbar und aus der Taskleiste
+    // ausgenommen. Danach wieder verstecken.
+    if (image.isEmpty()) {
+      let shownForCapture = false;
+      try {
+        if (!win.isVisible()) {
+          win.showInactive();
+          shownForCapture = true;
+          // Ein Frame Zeit zum Zeichnen geben.
+          await new Promise((r) => setTimeout(r, 400));
+        }
+        image = await win.webContents.capturePage();
+      } finally {
+        if (shownForCapture && !win.isDestroyed()) {
+          try {
+            win.hide();
+          } catch {
+            /* ignore */
+          }
+        }
+      }
+    }
+
+    if (image.isEmpty()) {
+      console.warn("[link-monitor] capturePage lieferte ein leeres Bild");
+      return null;
+    }
+    return image.toPNG();
+  } catch (err) {
+    console.warn("[link-monitor] capturePage fehlgeschlagen:", err);
+    return null;
   }
 }
 
