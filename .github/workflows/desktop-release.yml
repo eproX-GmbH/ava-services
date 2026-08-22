@@ -270,11 +270,41 @@ jobs:
           # when using notarization with password credentials". The
           # APPLE_ID + APPLE_APP_SPECIFIC_PASSWORD env vars are still
           # picked up automatically by notarytool from process.env.
+          # v0.1.413 — `hdiutil detach` scheitert auf den macOS-Runnern
+          # wiederholt mit "couldn't eject ... Resource busy", NACHDEM das
+          # .dmg fertig gebaut, signiert UND notarisiert ist (die Spotlight-
+          # Abschaltung oben reicht nicht mehr; v0.1.412 fiel zweimal genau
+          # hier). Das Auswerfen des Images ist auf einem Wegwerf-Runner
+          # reine Kosmetik — die Artefakte existieren zu dem Zeitpunkt
+          # bereits. Wir brechen deshalb nur ab, wenn sie WIRKLICH fehlen.
+          set +e
           pnpm exec electron-builder \
             --mac \
             --arm64 \
             --publish always \
             --config.mac.notarize.teamId="$APPLE_TEAM_ID"
+          builder_status=$?
+          set -e
+          if [ "$builder_status" -ne 0 ]; then
+            TAG="${{ github.event.inputs.tag || github.ref_name }}"
+            VERSION="${TAG#v}"
+            RELEASE_DIR="release/${VERSION}"
+            missing=0
+            for f in \
+              "$RELEASE_DIR/AVA-${VERSION}-arm64.dmg" \
+              "$RELEASE_DIR/AVA-${VERSION}-arm64.zip" \
+              "$RELEASE_DIR/latest-mac.yml"; do
+              if [ ! -f "$f" ]; then
+                echo "::error::Fehlendes Artefakt nach electron-builder-Fehler: $f"
+                missing=1
+              fi
+            done
+            if [ "$missing" -ne 0 ]; then
+              echo "::error::electron-builder ist mit Status $builder_status abgebrochen und Artefakte fehlen."
+              exit "$builder_status"
+            fi
+            echo "::warning::electron-builder endete mit Status $builder_status, alle Artefakte sind aber vorhanden (typisch: hdiutil-Eject). Build wird fortgesetzt."
+          fi
 
       # v0.1.396 — Sicherheitsnetz gegen electron-builders stille
       # 2-Stunden-Skip-Sperre. Dessen GitHub-Publisher überspringt
@@ -505,11 +535,41 @@ jobs:
           # the release manually below after merging the manifest. If
           # we used --publish always here, the per-job latest-mac.yml
           # would overwrite the arm64 job's, breaking arm64 OTA.
+          # v0.1.413 — `hdiutil detach` scheitert auf den macOS-Runnern
+          # wiederholt mit "couldn't eject ... Resource busy", NACHDEM das
+          # .dmg fertig gebaut, signiert UND notarisiert ist (die Spotlight-
+          # Abschaltung oben reicht nicht mehr; v0.1.412 fiel zweimal genau
+          # hier). Das Auswerfen des Images ist auf einem Wegwerf-Runner
+          # reine Kosmetik — die Artefakte existieren zu dem Zeitpunkt
+          # bereits. Wir brechen deshalb nur ab, wenn sie WIRKLICH fehlen.
+          set +e
           pnpm exec electron-builder \
             --mac \
             --x64 \
             --publish never \
             --config.mac.notarize.teamId="$APPLE_TEAM_ID"
+          builder_status=$?
+          set -e
+          if [ "$builder_status" -ne 0 ]; then
+            TAG="${{ github.event.inputs.tag || github.ref_name }}"
+            VERSION="${TAG#v}"
+            RELEASE_DIR="release/${VERSION}"
+            missing=0
+            for f in \
+              "$RELEASE_DIR/AVA-${VERSION}-x64.dmg" \
+              "$RELEASE_DIR/AVA-${VERSION}-x64.zip" \
+              "$RELEASE_DIR/latest-mac.yml"; do
+              if [ ! -f "$f" ]; then
+                echo "::error::Fehlendes Artefakt nach electron-builder-Fehler: $f"
+                missing=1
+              fi
+            done
+            if [ "$missing" -ne 0 ]; then
+              echo "::error::electron-builder ist mit Status $builder_status abgebrochen und Artefakte fehlen."
+              exit "$builder_status"
+            fi
+            echo "::warning::electron-builder endete mit Status $builder_status, alle Artefakte sind aber vorhanden (typisch: hdiutil-Eject). Build wird fortgesetzt."
+          fi
 
       - name: Audit bundle for secret leaks
         working-directory: services/desktop
