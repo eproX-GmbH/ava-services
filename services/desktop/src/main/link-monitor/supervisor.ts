@@ -301,6 +301,8 @@ export class LinkMonitorSupervisor extends EventEmitter {
     let contentHash = "";
     let observations: LinkObservations | null = null;
     let screenshotUrl: string | null = null;
+    let targetMissed = false;
+    let interstitialActions: string[] = [];
 
     try {
       const browse = await browseUrl(monitor.url, {
@@ -308,11 +310,23 @@ export class LinkMonitorSupervisor extends EventEmitter {
         instructions: monitor.instructions,
         signal: ctrl.signal,
         deadlineAt,
+        // v0.1.415 — LLM für die Zwischenseiten-Steuerung (Cookie-Banner,
+        // Alters-/Regionsabfragen), damit der Lauf wirklich auf der
+        // Zielseite landet.
+        providers: this.providers,
       });
       if (browse.truncated) {
         outcome = "timeout";
         note = browse.note ?? "Teilergebnis (Timeout/Längenlimit).";
       }
+      // v0.1.415 — Zieladresse verfehlt (fremde Domain, Login-/Sperrseite).
+      // Der Inhalt gehört dann NICHT zur überwachten Seite — das muss
+      // sichtbar sein, statt still einen falschen Vergleich zu füttern.
+      if (!browse.onTarget) {
+        targetMissed = true;
+        note = [note, browse.targetNote].filter(Boolean).join(" · ") || null;
+      }
+      interstitialActions = browse.interstitialActions;
       // v0.1.414 — Beweis-Screenshot ablegen, BEVOR die weitere Auswertung
       // laufen kann. So existiert er auch dann, wenn Extraktion oder Diff
       // danach scheitern — genau dann will man ja nachsehen können.
@@ -375,10 +389,11 @@ export class LinkMonitorSupervisor extends EventEmitter {
         severity:
           outcome === "error"
             ? "error"
-            : outcome === "timeout"
+            : outcome === "timeout" || targetMissed
               ? "warning"
               : "info",
         summary:
+          (targetMissed ? "⚠ Zielseite verfehlt — " : "") +
           `Link-Überwachung „${monitor.label}" ` +
           `(${trigger === "manual" ? "manuell" : "planmäßig"}): ` +
           (outcome === "changed"
@@ -395,6 +410,11 @@ export class LinkMonitorSupervisor extends EventEmitter {
           trigger,
           // v0.1.414 — im Verlauf als Bild dargestellt (siehe VerlaufTab).
           ...(screenshotUrl ? { screenshot: screenshotUrl } : {}),
+          // v0.1.415 — Nachvollziehbarkeit der Zwischenseiten-Steuerung.
+          ...(interstitialActions.length > 0
+            ? { zwischenseite: interstitialActions }
+            : {}),
+          ...(targetMissed ? { zielseiteVerfehlt: true } : {}),
         },
       });
     } catch {

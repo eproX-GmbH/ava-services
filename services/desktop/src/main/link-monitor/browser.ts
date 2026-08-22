@@ -17,6 +17,8 @@
 // Rein LOKAL: alles läuft im Desktop-Main-Process des Nutzers.
 
 import { BrowserWindow } from "electron";
+import type { LlmProviderManager } from "../agent/providers";
+import { checkTarget, clearInterstitials } from "./interstitial";
 import { LINK_MONITOR_RUN_TIMEOUT_MS } from "../../shared/types";
 import { read as readLinkedInSettings } from "../linkedin/store";
 import { buildStealthInjection } from "../linkedin/stealth";
@@ -42,6 +44,16 @@ export interface BrowseResult {
    * Aufnahme nicht möglich war — nie ein Grund, den Lauf scheitern zu lassen.
    */
   screenshot: Buffer | null;
+  /**
+   * v0.1.415 — Landete der Lauf wirklich auf der gewünschten Seite? False
+   * z. B. bei Weiterleitung auf eine fremde Consent-/Login-Domain. Dann ist
+   * der extrahierte Inhalt mit Vorsicht zu genießen.
+   */
+  onTarget: boolean;
+  /** Begründung, wenn `onTarget` false ist. */
+  targetNote: string | null;
+  /** Was gegen Zwischenseiten unternommen wurde (Verlauf/Diagnose). */
+  interstitialActions: string[];
 }
 
 export interface BrowseOptions {
@@ -58,6 +70,11 @@ export interface BrowseOptions {
   maxPages?: number;
   /** v0.1.414 — Screenshot der geladenen Seite aufnehmen (Default: true). */
   capture?: boolean;
+  /**
+   * v0.1.415 — LLM für die Zwischenseiten-Steuerung (Cookie-Banner,
+   * Altersabfrage …). Fehlt es, bleibt es bei der deterministischen Stufe.
+   */
+  providers?: LlmProviderManager;
 }
 
 /** Obergrenze für den extrahierten Text pro Seite (Zeichen). Schützt vor
@@ -320,6 +337,9 @@ export async function browseUrl(
   let truncated = false;
   let note: string | null = null;
   let screenshot: Buffer | null = null;
+  let onTarget = true;
+  let targetNote: string | null = null;
+  let interstitialActions: string[] = [];
 
   try {
     const loaded = await navigateWithDeadline(
@@ -334,6 +354,25 @@ export async function browseUrl(
     }
     // Erste Seite: settle + scroll + extract.
     await sleep(jitter(800, 1600), opts.signal).catch(() => undefined);
+
+    // v0.1.415 — Zwischenseiten überwinden, BEVOR gescrollt und extrahiert
+    // wird: erst bekannte Consent-Knöpfe, dann bei Bedarf KI-gesteuert.
+    // Ohne das überwacht AVA im Zweifel den Cookie-Dialog statt der Seite.
+    try {
+      const cleared = await clearInterstitials({
+        win,
+        url,
+        providers: opts.providers,
+        signal: opts.signal,
+        settle: async (ms) => {
+          await sleep(ms, opts.signal).catch(() => undefined);
+        },
+        readText: async () => (await extractVisibleText(win)).text,
+      });
+      interstitialActions = cleared.actions;
+    } catch (err) {
+      console.warn("[link-monitor] Zwischenseiten-Behandlung fehlgeschlagen:", err);
+    }
 
     let totalLen = 0;
     let pagesVisited = 0;
@@ -355,6 +394,11 @@ export async function browseUrl(
         if (opts.capture !== false) {
           screenshot = await capturePng(win);
         }
+        // v0.1.415 — Zieladresse prüfen: hat uns eine Middleware auf eine
+        // fremde Domain oder eine Sperrseite umgeleitet?
+        const target = checkTarget(url, snap.finalUrl);
+        onTarget = target.onTarget;
+        targetNote = target.reason;
       }
       if (snap.text) {
         pages.push(snap.text);
@@ -387,6 +431,9 @@ export async function browseUrl(
       pagesVisited: Math.max(pagesVisited, pages.length),
       note,
       screenshot,
+      onTarget,
+      targetNote,
+      interstitialActions,
     };
   } finally {
     try {
