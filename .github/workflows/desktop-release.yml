@@ -101,6 +101,36 @@ jobs:
           GITHUB_REF_NAME: ${{ github.event.inputs.tag || github.ref_name }}
         run: node scripts/validate-version-tag.mjs
 
+      # v0.1.412 — Preflight: GitLab-npm-Token VOR den teuren Schritten pruefen.
+      # Ein abgelaufener NPM_TOKEN liess den Build bisher erst nach ~20 Minuten
+      # in "Vendor producer subprocesses" mit `npm error code E401` sterben
+      # (v0.1.394/395 im Juni, erneut v0.1.411). Jetzt bricht CI nach Sekunden
+      # mit klarer Handlungsanweisung ab, statt Runner-Zeit zu verbrennen.
+      - name: Preflight — GitLab npm token
+        shell: bash
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          if [ -z "$NPM_TOKEN" ]; then
+            echo "::warning::NPM_TOKEN nicht gesetzt — Producer-Vendoring scheitert, sobald Submodules ausgecheckt sind."
+            exit 0
+          fi
+          code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 20 \
+            -H "Authorization: Bearer $NPM_TOKEN" \
+            "https://gitlab.com/api/v4/groups/65084418/-/packages/npm/@ava%2Fauth" || echo "000")
+          case "$code" in
+            401|403)
+              echo "::error::NPM_TOKEN ist abgelaufen oder ungueltig (HTTP $code). Fix: in GitLab unter Gruppe eprox-gmbh/ava -> Settings -> Repository -> Deploy tokens einen Token mit Scope read_package_registry OHNE Ablaufdatum erzeugen und als GitHub-Secret NPM_TOKEN hinterlegen, dann den Tag neu bauen."
+              exit 1
+              ;;
+            000)
+              echo "::warning::GitLab nicht erreichbar — Token-Preflight uebersprungen."
+              ;;
+            *)
+              echo "NPM_TOKEN ok (HTTP $code)"
+              ;;
+          esac
+
       # v0.1.193 — guard against stale vendored @ava/ai-provider copies
       # in producer submodules. v0.1.191 was a real production bug where
       # company-contact and company-profile shipped with a pre-v0.1.145
@@ -373,6 +403,36 @@ jobs:
           GITHUB_REF_NAME: ${{ github.event.inputs.tag || github.ref_name }}
         run: node scripts/validate-version-tag.mjs
 
+      # v0.1.412 — Preflight: GitLab-npm-Token VOR den teuren Schritten pruefen.
+      # Ein abgelaufener NPM_TOKEN liess den Build bisher erst nach ~20 Minuten
+      # in "Vendor producer subprocesses" mit `npm error code E401` sterben
+      # (v0.1.394/395 im Juni, erneut v0.1.411). Jetzt bricht CI nach Sekunden
+      # mit klarer Handlungsanweisung ab, statt Runner-Zeit zu verbrennen.
+      - name: Preflight — GitLab npm token
+        shell: bash
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          if [ -z "$NPM_TOKEN" ]; then
+            echo "::warning::NPM_TOKEN nicht gesetzt — Producer-Vendoring scheitert, sobald Submodules ausgecheckt sind."
+            exit 0
+          fi
+          code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 20 \
+            -H "Authorization: Bearer $NPM_TOKEN" \
+            "https://gitlab.com/api/v4/groups/65084418/-/packages/npm/@ava%2Fauth" || echo "000")
+          case "$code" in
+            401|403)
+              echo "::error::NPM_TOKEN ist abgelaufen oder ungueltig (HTTP $code). Fix: in GitLab unter Gruppe eprox-gmbh/ava -> Settings -> Repository -> Deploy tokens einen Token mit Scope read_package_registry OHNE Ablaufdatum erzeugen und als GitHub-Secret NPM_TOKEN hinterlegen, dann den Tag neu bauen."
+              exit 1
+              ;;
+            000)
+              echo "::warning::GitLab nicht erreichbar — Token-Preflight uebersprungen."
+              ;;
+            *)
+              echo "NPM_TOKEN ok (HTTP $code)"
+              ;;
+          esac
+
       # v0.1.193 — guard against stale vendored @ava/ai-provider copies
       # in producer submodules. v0.1.191 was a real production bug where
       # company-contact and company-profile shipped with a pre-v0.1.145
@@ -599,6 +659,36 @@ jobs:
         env:
           GITHUB_REF_NAME: ${{ github.event.inputs.tag || github.ref_name }}
         run: node scripts/validate-version-tag.mjs
+
+      # v0.1.412 — Preflight: GitLab-npm-Token VOR den teuren Schritten pruefen.
+      # Ein abgelaufener NPM_TOKEN liess den Build bisher erst nach ~20 Minuten
+      # in "Vendor producer subprocesses" mit `npm error code E401` sterben
+      # (v0.1.394/395 im Juni, erneut v0.1.411). Jetzt bricht CI nach Sekunden
+      # mit klarer Handlungsanweisung ab, statt Runner-Zeit zu verbrennen.
+      - name: Preflight — GitLab npm token
+        shell: bash
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          if [ -z "$NPM_TOKEN" ]; then
+            echo "::warning::NPM_TOKEN nicht gesetzt — Producer-Vendoring scheitert, sobald Submodules ausgecheckt sind."
+            exit 0
+          fi
+          code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 20 \
+            -H "Authorization: Bearer $NPM_TOKEN" \
+            "https://gitlab.com/api/v4/groups/65084418/-/packages/npm/@ava%2Fauth" || echo "000")
+          case "$code" in
+            401|403)
+              echo "::error::NPM_TOKEN ist abgelaufen oder ungueltig (HTTP $code). Fix: in GitLab unter Gruppe eprox-gmbh/ava -> Settings -> Repository -> Deploy tokens einen Token mit Scope read_package_registry OHNE Ablaufdatum erzeugen und als GitHub-Secret NPM_TOKEN hinterlegen, dann den Tag neu bauen."
+              exit 1
+              ;;
+            000)
+              echo "::warning::GitLab nicht erreichbar — Token-Preflight uebersprungen."
+              ;;
+            *)
+              echo "NPM_TOKEN ok (HTTP $code)"
+              ;;
+          esac
 
       # v0.1.193 — guard against stale vendored @ava/ai-provider copies
       # in producer submodules. v0.1.191 was a real production bug where
