@@ -74,6 +74,7 @@ export function performBootResetIfRequested(): boolean {
     "crm", // HubSpot-OAuth-Tokens + Cache.
     "mail-cache", // zwischengespeicherte Mail-Anhänge/Inhalte.
     "mail-creds.bin", // IMAP/SMTP-Passwörter (Mail-Trennung).
+    "telegram", // v0.1.412 — Bot-Token + Chat-Konfiguration.
     "research", // Research-Feature-Zustand/Tiers.
     "skills", // benutzerdefinierte Skills.
     "skills-prefs.json",

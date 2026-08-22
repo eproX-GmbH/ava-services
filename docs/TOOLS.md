@@ -5,7 +5,7 @@ NICHT direkt bearbeiten — die Quelle der Wahrheit ist `services/desktop/src/ma
 Lauf via `pnpm -F @ava/desktop tools:doc` (oder automatisch via `build:typecheck`).
 
 Stand: 2026-08-22
-Anzahl Tools: 168
+Anzahl Tools: 175
 
 ## Firmen (11)
 
@@ -1585,6 +1585,67 @@ Substring-search across skill names + descriptions + bodies. Returns up to 10 hi
 
 _Parameter:_
 - `query: string` (required) — Search term (case-insensitive).
+
+## telegram (7)
+
+### `telegram_connect_save_token`
+
+_Datei:_ `services/desktop/src/main/agent/tools/telegram.ts`
+
+Persist the Telegram bot token the user just pasted in chat, then validate it with a getMe call. The token is stored encrypted in the OS keychain. Returns the bot username on success. Never echo the token back in your reply. After success, tell the user to send /start to their bot, then call telegram_link_chat.
+
+_Parameter:_
+- `token: string` (required) — The Telegram bot token exactly as BotFather issued it, e.g. 123456789:AAG...
+
+### `telegram_connect_start`
+
+_Datei:_ `services/desktop/src/main/agent/tools/telegram.ts`
+
+Explain how the user sets up Telegram notifications. Returns the exact German setup steps (create a bot via @BotFather, copy the token). Call this FIRST when the user wants Telegram notifications and no bot token is stored yet. Does not require any argument.
+
+_Parameter:_ keine.
+
+### `telegram_disconnect`
+
+_Datei:_ `services/desktop/src/main/agent/tools/telegram.ts`
+
+Remove the stored Telegram bot token and chat configuration. Use when the user wants to disconnect Telegram.
+
+_Parameter:_ keine.
+
+### `telegram_link_chat`
+
+_Datei:_ `services/desktop/src/main/agent/tools/telegram.ts`
+
+Discover and store the Telegram chat id by reading the bot's pending updates. The user must have sent the bot a message (e.g. /start) beforehand. Call this after telegram_connect_save_token. Returns an error asking the user to message the bot if no update is pending.
+
+_Parameter:_ keine.
+
+### `telegram_send_message`
+
+_Datei:_ `services/desktop/src/main/agent/tools/telegram.ts`
+
+Send a free-form message to the user's connected Telegram chat. Use this when the user explicitly asks to be sent something via Telegram, or inside a skill that delivers a digest/summary to Telegram. Plain text only — keep it short and readable on a phone. Requires a connected bot and linked chat.
+
+_Parameter:_
+- `text: string` (required) — Message body as plain text (max ~3500 characters).
+
+### `telegram_set_enabled`
+
+_Datei:_ `services/desktop/src/main/agent/tools/telegram.ts`
+
+Turn Telegram alert delivery on or off. Requires a stored token and a linked chat. Use when the user says things like 'schick mir Meldungen per Telegram' / 'keine Telegram-Meldungen mehr'.
+
+_Parameter:_
+- `enabled: boolean` (required) — true = an, false = aus
+
+### `telegram_status`
+
+_Datei:_ `services/desktop/src/main/agent/tools/telegram.ts`
+
+Read the current Telegram configuration: whether a bot token is stored, whether a chat is linked, whether delivery is enabled, and the severity threshold. Never returns the token itself.
+
+_Parameter:_ keine.
 
 ## App-Updates (4)
 

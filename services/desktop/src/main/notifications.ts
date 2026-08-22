@@ -42,11 +42,37 @@ const SEVERITY_RANK: Record<AlertSeverity, number> = {
   urgent: 2,
 };
 
+/**
+ * v0.1.412 — Zusätzlicher Zustellkanal (heute: Telegram). Bewusst als
+ * schmale Schnittstelle, damit weitere Kanäle (Slack, E-Mail …) später
+ * ohne Umbau andocken können.
+ */
+export interface ExtraNotificationChannel {
+  /** Nimmt den Alert entgegen; muss SOFORT zurückkehren (fire-and-forget). */
+  enqueue(alert: Alert): boolean;
+}
+
 export class NotificationManager {
   private readonly prefs: AlertPrefsStore;
+  private readonly channels: ExtraNotificationChannel[] = [];
 
   constructor(prefs: AlertPrefsStore) {
     this.prefs = prefs;
+  }
+
+  /**
+   * Zusätzlichen Kanal registrieren. Jeder Kanal bringt sein EIGENES Gate
+   * mit (eigener Schwellwert, eigener Ein/Aus-Schalter) — der typische
+   * Wunsch ist „Desktop-Push aus, Wichtiges aufs Handy", deshalb hängt
+   * Telegram NICHT am OS-Push-Schalter.
+   */
+  addChannel(channel: ExtraNotificationChannel): void {
+    this.channels.push(channel);
+  }
+
+  /** Ruhezeiten-Zustand — von den Zusatzkanälen mitgenutzt. */
+  isInQuietHours(): boolean {
+    return this.inQuietHours();
   }
 
   /**
@@ -70,6 +96,18 @@ export class NotificationManager {
    * false otherwise (with the reason logged in dev console).
    */
   notifyForAlert(alert: Alert): boolean {
+    // v0.1.412 — Zusatzkanäle ZUERST und unabhängig vom OS-Push-Gate
+    // bedienen: Telegram soll auch dann zustellen, wenn Desktop-Toasts
+    // aus sind oder das OS keine Benachrichtigungen kann. Jeder Kanal
+    // filtert selbst; Fehler dürfen den OS-Pfad nie beeinflussen.
+    for (const channel of this.channels) {
+      try {
+        channel.enqueue(alert);
+      } catch (err) {
+        console.warn("[notifications] channel enqueue failed:", err);
+      }
+    }
+
     const reason = this.shouldSuppress(alert);
     if (reason) {
       // Silent: this is normal operation (push off, severity below

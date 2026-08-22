@@ -5,6 +5,7 @@ import {
 } from "../Settings";
 import { SchedulerSection } from "./SchedulerSection";
 import { LinkMonitorSection } from "./LinkMonitorSection";
+import { TelegramSection } from "./TelegramSection";
 
 // v0.1.273+ — Automatisierungen-Tab.
 //
@@ -21,6 +22,7 @@ export function AutomatisierungenTab() {
       <SchedulerSection />
       <FreshnessSection />
       <AlertsSection />
+      <TelegramSection />
     </>
   );
 }

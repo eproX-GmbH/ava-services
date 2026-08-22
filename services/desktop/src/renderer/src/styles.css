@@ -7713,3 +7713,22 @@ html.dark .self-corrections__stat { background: rgba(0,192,167,0.15); }
 
 /* v0.1.411 — Link-Überwachung: Indikator für einen gerade laufenden Durchlauf */
 .pill--running { background: #dbeafe; color: #1d4ed8; }
+
+/* ----- v0.1.412 — Telegram-Einstellungen -------------------------------- */
+.telegram-steps { margin: 0 0 0.75rem 1.1rem; padding: 0; line-height: 1.6; }
+.telegram-steps code {
+  padding: 0 4px; border-radius: 4px;
+  background: var(--surface-2, rgba(127,127,127,0.12));
+}
+.telegram-row {
+  display: flex; align-items: center; flex-wrap: wrap;
+  gap: 0.6rem; margin: 0.6rem 0;
+}
+.telegram-input {
+  flex: 1 1 18rem; min-width: 12rem;
+  padding: 0.45rem 0.6rem;
+  border: 1px solid var(--border, rgba(127,127,127,0.4));
+  border-radius: 6px;
+  background: var(--bg); color: var(--fg);
+  font-family: var(--font-mono, monospace);
+}

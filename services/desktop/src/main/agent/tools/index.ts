@@ -43,6 +43,7 @@ import { buildSkillsTools } from "./skills";
 import { buildMailTools } from "./mail";
 import { buildSchedulerTools } from "./scheduler";
 import { buildLinkMonitorTools } from "./link-monitor";
+import { buildTelegramTools } from "./telegram";
 import { buildSelfCorrectionTools } from "./self-correction";
 import type { MailSupervisor } from "../../mail/supervisor";
 import type { ScheduledJobsSupervisor } from "../../scheduler/supervisor";
@@ -134,6 +135,9 @@ export function buildReadOnlyRegistry(deps: {
   getScheduledJobsSupervisor: () => ScheduledJobsSupervisor | null;
   /** LM — LinkMonitorSupervisor für die Link-Überwachung. Lazy-Getter. */
   getLinkMonitorSupervisor: () => LinkMonitorSupervisor | null;
+  /** v0.1.412 — Telegram-Kanal (lazy, wie die uebrigen Supervisoren). */
+  getTelegramStore: () => import("../../telegram/store").TelegramStore | null;
+  getTelegramChannel: () => import("../../telegram/channel").TelegramChannel | null;
   /** v0.1.284 — Self-Correction-Reporting-Store. */
   selfCorrectionsStore: SelfCorrectionsStore;
   /** Aktive Conversation-ID, vom Orchestrator gesetzt. */
@@ -198,6 +202,13 @@ export function buildReadOnlyRegistry(deps: {
   // LM — Link-Überwachungs-Tools, gleiche Lazy-Getter-Logik.
   for (const t of buildLinkMonitorTools({
     getSupervisor: deps.getLinkMonitorSupervisor,
+  }))
+    registry.register(t);
+  // v0.1.412 — Telegram-Tools (Einrichtung per Chat + telegram_send_message,
+  // das eigene Skills wie "Tagesbriefing per Telegram" ermoeglicht).
+  for (const t of buildTelegramTools({
+    getStore: deps.getTelegramStore,
+    getChannel: deps.getTelegramChannel,
   }))
     registry.register(t);
   // v0.1.284 — Self-Correction-Reporting (always-on Telemetrie).

@@ -2508,6 +2508,36 @@ export interface LinkMonitorRun {
 }
 
 /** Snapshot für die Renderer-UI (Liste + Active-Cap-Badge). */
+// ---- Telegram-Benachrichtigungskanal (v0.1.412) ----------------------------
+
+/**
+ * Nicht-geheime Telegram-Konfiguration. Der Bot-Token liegt NIEMALS hier,
+ * sondern verschlüsselt in `userData/telegram/bot-token.enc`.
+ */
+export interface TelegramConfig {
+  /** Kanal aktiv? Erst nach erfolgreichem Test sinnvoll einschaltbar. */
+  enabled: boolean;
+  /** Ziel-Chat (privat, Gruppe oder Kanal). `null` = noch nicht ermittelt. */
+  chatId: string | null;
+  /** Anzeigename des Bots aus `getMe` — reine UI-Information. */
+  botUsername: string | null;
+  /** Eigener Schwellwert: „Desktop-Push aus, Wichtiges aufs Handy". */
+  severityThreshold: AlertSeverity;
+  /** Ruhezeiten auch für Telegram beachten (Default: ja). */
+  respectQuietHours: boolean;
+}
+
+/** Zustand für die Einstellungs-UI. Enthält NIE den Token. */
+export interface TelegramSnapshot {
+  config: TelegramConfig;
+  /** True, sobald ein Bot-Token hinterlegt ist. */
+  hasToken: boolean;
+  /** OS-Keychain verfügbar? Ohne ihn lehnen wir das Speichern ab. */
+  encryptionAvailable: boolean;
+  /** Anzahl noch nicht zugestellter Meldungen in der Outbox. */
+  pendingCount: number;
+}
+
 export interface LinkMonitorSnapshot {
   monitors: LinkMonitor[];
   activeCount: number;

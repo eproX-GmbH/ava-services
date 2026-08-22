@@ -322,6 +322,43 @@ const api = {
       ipcRenderer.invoke("settings:resetAllExceptModels"),
   },
 
+  // v0.1.412 — Telegram-Benachrichtigungskanal. Der Bot-Token wird NIE
+  // zurückgegeben (nur `hasToken` im Snapshot).
+  telegram: {
+    snapshot: (): Promise<import("../shared/types").TelegramSnapshot> =>
+      ipcRenderer.invoke("telegram:snapshot"),
+    connect: (
+      token: string,
+    ): Promise<{ ok: boolean; botUsername?: string; error?: string }> =>
+      ipcRenderer.invoke("telegram:connect", token),
+    discoverChat: (): Promise<{
+      ok: boolean;
+      chatId?: string;
+      title?: string;
+      error?: string;
+    }> => ipcRenderer.invoke("telegram:discoverChat"),
+    sendTest: (): Promise<{ ok: boolean; error?: string }> =>
+      ipcRenderer.invoke("telegram:sendTest"),
+    setConfig: (
+      patch: Partial<import("../shared/types").TelegramConfig>,
+    ): Promise<import("../shared/types").TelegramSnapshot> =>
+      ipcRenderer.invoke("telegram:setConfig", patch),
+    disconnect: (): Promise<import("../shared/types").TelegramSnapshot> =>
+      ipcRenderer.invoke("telegram:disconnect"),
+    onChanged: (
+      cb: (snapshot: import("../shared/types").TelegramSnapshot) => void,
+    ): (() => void) => {
+      const handler = (
+        _e: Electron.IpcRendererEvent,
+        snapshot: import("../shared/types").TelegramSnapshot,
+      ): void => cb(snapshot);
+      ipcRenderer.on("telegram:changed", handler);
+      return () => {
+        ipcRenderer.removeListener("telegram:changed", handler);
+      };
+    },
+  },
+
   ollama: {
     getStatus: (): Promise<OllamaStatus> =>
       ipcRenderer.invoke("ollama:getStatus"),

@@ -83,6 +83,8 @@ import {
   type LinkMonitor,
   type LinkMonitorInput,
   type LinkMonitorSnapshot,
+  type TelegramConfig,
+  type TelegramSnapshot,
 } from "../shared/types";
 import type {
   MailAccount,
@@ -127,6 +129,14 @@ import {
   performBootResetIfRequested,
   requestResetExceptModels,
 } from "./reset-store";
+import { TelegramStore } from "./telegram/store";
+import { TelegramChannel } from "./telegram/channel";
+import {
+  escapeHtml as telegramEscapeHtml,
+  getMe as telegramGetMe,
+  getUpdates as telegramGetUpdates,
+  sendMessage as telegramSendMessage,
+} from "./telegram/client";
 // v0.1.224 — Knowledge-Integrations-Framework (Phase 1). Konkrete
 // Adapter (Notion, Obsidian) folgen in P2/P3.
 import { KnowledgeProviderStore } from "./knowledge/store";
@@ -905,6 +915,52 @@ if (!alertsProbe.writable) {
 }
 const alertPrefs = new AlertPrefsStore();
 const notifications = new NotificationManager(alertPrefs);
+// v0.1.412 — Telegram als zusätzlicher Zustellkanal. Eigener Schalter +
+// eigener Schwellwert (unabhängig vom Desktop-Push), Queue mit Taktung und
+// Bündelung gegen Meldungswellen. Wird unten an den NotificationManager
+// gehängt, sodass alle vorhandenen Alert-Quellen automatisch mitspielen.
+const telegramStore = new TelegramStore();
+const telegramChannel = new TelegramChannel({
+  store: telegramStore,
+  inQuietHours: () => notifications.isInQuietHours(),
+  onAudit: ({ severity, summary, metadata }) => {
+    audit({
+      actorType: "system",
+      actorId: null,
+      category: "watch",
+      action: "telegram.delivery",
+      severity,
+      subjectType: null,
+      subjectId: null,
+      summary,
+      metadata,
+    });
+  },
+  onPendingChanged: () => {
+    void broadcastTelegramChanged();
+  },
+});
+notifications.addChannel(telegramChannel);
+telegramStore.on("changed", () => {
+  void broadcastTelegramChanged();
+});
+// Beim Beenden die Zustell-Timer stoppen, damit kein Retry mehr feuert.
+app.on("before-quit", () => telegramChannel.stop());
+function broadcastTelegramChanged(): void {
+  const snapshot: TelegramSnapshot = {
+    config: telegramStore.getConfig(),
+    hasToken: telegramStore.hasToken(),
+    encryptionAvailable: telegramStore.isEncryptionAvailable(),
+    pendingCount: telegramChannel.pendingCount(),
+  };
+  for (const win of BrowserWindow.getAllWindows()) {
+    try {
+      win.webContents.send("telegram:changed", snapshot);
+    } catch {
+      /* zerstörtes Fenster */
+    }
+  }
+}
 // 8.f4 — real candidate source backed by existing gateway endpoints
 // (transactions → entities → publications). Falls back to the in-process
 // demo source ONLY when the real source returns nothing AND the alerts
@@ -1526,6 +1582,10 @@ const agentRegistry = buildReadOnlyRegistry({
   // v0.1.267 — ScheduledJobs-Supervisor (Phase S). Analog Lazy-Pattern.
   getScheduledJobsSupervisor: () => scheduledJobsSupervisor,
   getLinkMonitorSupervisor: () => linkMonitorSupervisor,
+  // v0.1.412 — Telegram: Store + Kanal stehen bereits vor dem Registry-Bau,
+  // der Lazy-Getter hält das Muster der übrigen Supervisoren bei.
+  getTelegramStore: () => telegramStore,
+  getTelegramChannel: () => telegramChannel,
   // v0.1.284 — Self-Correction-Reporting (always-on Telemetrie).
   selfCorrectionsStore,
   getActiveConversationId: () => agent.getStatus().inFlightConversationId,
@@ -4444,6 +4504,130 @@ app.whenReady().then(async () => {
   );
   ipcMain.handle("usage:limitStatus", async () => {
     return computeDailyLimitStatus();
+  });
+
+  // v0.1.412 — Telegram-Kanal.
+  const telegramSnapshot = (): TelegramSnapshot => ({
+    config: telegramStore.getConfig(),
+    hasToken: telegramStore.hasToken(),
+    encryptionAvailable: telegramStore.isEncryptionAvailable(),
+    pendingCount: telegramChannel.pendingCount(),
+  });
+  ipcMain.handle("telegram:snapshot", async (): Promise<TelegramSnapshot> => {
+    return telegramSnapshot();
+  });
+  /** Token speichern + sofort per getMe validieren. Gibt NIE den Token zurück. */
+  ipcMain.handle(
+    "telegram:connect",
+    async (
+      _e,
+      token: string,
+    ): Promise<{ ok: boolean; botUsername?: string; error?: string }> => {
+      try {
+        const info = await telegramGetMe(String(token ?? "").trim());
+        await telegramStore.saveToken(String(token).trim());
+        telegramStore.setConfig({ botUsername: info.username });
+        audit({
+          actorType: "user",
+          actorId: null,
+          category: "watch",
+          action: "telegram.connect",
+          severity: "info",
+          subjectType: "credential",
+          subjectId: null,
+          summary: `Telegram-Bot verbunden: @${info.username}`,
+          metadata: { botUsername: info.username },
+        });
+        return { ok: true, botUsername: info.username };
+      } catch (err) {
+        return {
+          ok: false,
+          error: err instanceof Error ? err.message : String(err),
+        };
+      }
+    },
+  );
+  /**
+   * Chat-ID automatisch ermitteln: liest eingehende Nachrichten des Bots.
+   * Der Nutzer schickt dem Bot einfach „/start" — kein Suchen numerischer IDs.
+   */
+  ipcMain.handle(
+    "telegram:discoverChat",
+    async (): Promise<{
+      ok: boolean;
+      chatId?: string;
+      title?: string;
+      error?: string;
+    }> => {
+      try {
+        const token = await telegramStore.getToken();
+        if (!token) return { ok: false, error: "Kein Bot-Token hinterlegt." };
+        const updates = await telegramGetUpdates(token);
+        const last = updates[updates.length - 1];
+        if (!last) {
+          return {
+            ok: false,
+            error:
+              "Noch keine Nachricht empfangen. Öffne den Bot in Telegram und schicke ihm „/start“, dann erneut versuchen.",
+          };
+        }
+        telegramStore.setConfig({ chatId: last.chat.chatId });
+        return { ok: true, chatId: last.chat.chatId, title: last.chat.title };
+      } catch (err) {
+        return {
+          ok: false,
+          error: err instanceof Error ? err.message : String(err),
+        };
+      }
+    },
+  );
+  /** Testnachricht — der sichtbare Beweis, dass die Verbindung steht. */
+  ipcMain.handle(
+    "telegram:sendTest",
+    async (): Promise<{ ok: boolean; error?: string }> => {
+      try {
+        const token = await telegramStore.getToken();
+        const cfg = telegramStore.getConfig();
+        if (!token) return { ok: false, error: "Kein Bot-Token hinterlegt." };
+        if (!cfg.chatId)
+          return { ok: false, error: "Keine Chat-ID hinterlegt." };
+        await telegramSendMessage(
+          token,
+          cfg.chatId,
+          `✅ <b>AVA ist verbunden.</b>\n${telegramEscapeHtml(
+            "Ab jetzt bekommst du hier deine Meldungen.",
+          )}`,
+        );
+        return { ok: true };
+      } catch (err) {
+        return {
+          ok: false,
+          error: err instanceof Error ? err.message : String(err),
+        };
+      }
+    },
+  );
+  ipcMain.handle(
+    "telegram:setConfig",
+    async (_e, patch: Partial<TelegramConfig>): Promise<TelegramSnapshot> => {
+      telegramStore.setConfig(patch ?? {});
+      return telegramSnapshot();
+    },
+  );
+  ipcMain.handle("telegram:disconnect", async (): Promise<TelegramSnapshot> => {
+    await telegramStore.clear();
+    audit({
+      actorType: "user",
+      actorId: null,
+      category: "watch",
+      action: "telegram.disconnect",
+      severity: "warning",
+      subjectType: "credential",
+      subjectId: null,
+      summary: "Telegram-Verbindung getrennt (Token entfernt)",
+      metadata: {},
+    });
+    return telegramSnapshot();
   });
   // v0.1.409 — „Alles zurücksetzen außer KI-Modelle" (Werksreset). Setzt
   // einen Marker und startet die App neu; die Löschung passiert beim
