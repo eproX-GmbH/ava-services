@@ -2226,6 +2226,20 @@ app.whenReady().then(async () => {
       notifications.notifyForAlert(a);
     },
     onAlertsChanged: broadcastAlertsChanged,
+    // v0.1.411 — Link-Überwachungs-Läufe im Audit-Trail protokollieren.
+    onAudit: ({ action, severity, summary, metadata }) => {
+      audit({
+        actorType: "system",
+        actorId: null,
+        category: "watch",
+        action,
+        severity,
+        subjectType: null,
+        subjectId: null,
+        summary,
+        metadata,
+      });
+    },
   });
   linkMonitorSupervisor.on("changed", () => {
     void broadcastLinkMonitorsChanged();
@@ -2250,6 +2264,7 @@ app.whenReady().then(async () => {
         monitors,
         activeCount: monitors.filter((m) => m.status === "active").length,
         cap: LINK_MONITOR_ACTIVE_CAP,
+        runningIds: linkMonitorSupervisor.runningIds(),
       };
       for (const win of BrowserWindow.getAllWindows()) {
         win.webContents.send("link-monitor:changed", snapshot);
@@ -4777,13 +4792,19 @@ app.whenReady().then(async () => {
     "linkMonitor:list",
     async (): Promise<LinkMonitorSnapshot> => {
       if (!linkMonitorSupervisor) {
-        return { monitors: [], activeCount: 0, cap: LINK_MONITOR_ACTIVE_CAP };
+        return {
+          monitors: [],
+          activeCount: 0,
+          cap: LINK_MONITOR_ACTIVE_CAP,
+          runningIds: [],
+        };
       }
       const monitors = await linkMonitorSupervisor.store.list();
       return {
         monitors,
         activeCount: monitors.filter((m) => m.status === "active").length,
         cap: LINK_MONITOR_ACTIVE_CAP,
+        runningIds: linkMonitorSupervisor.runningIds(),
       };
     },
   );
@@ -4863,9 +4884,29 @@ app.whenReady().then(async () => {
   );
   ipcMain.handle(
     "linkMonitor:runNow",
-    async (_e, id: string): Promise<{ ok: true }> => {
-      if (linkMonitorSupervisor) void linkMonitorSupervisor.runNow(id);
-      return { ok: true };
+    async (
+      _e,
+      id: string,
+    ): Promise<{ ok: boolean; outcome?: string; error?: string }> => {
+      // v0.1.411 — vorher: `void runNow(id); return {ok:true}` — der Aufruf
+      // war fire-and-forget und meldete IMMER Erfolg, selbst wenn der
+      // Supervisor gar nicht lief. Der Knopf wirkte dadurch tot. Jetzt
+      // warten wir den Durchlauf ab und geben das echte Ergebnis zurück.
+      if (!linkMonitorSupervisor) {
+        return {
+          ok: false,
+          error:
+            "Die Link-Überwachung ist noch nicht bereit. Versuch es in ein paar Sekunden erneut.",
+        };
+      }
+      try {
+        return await linkMonitorSupervisor.runNow(id);
+      } catch (err) {
+        return {
+          ok: false,
+          error: err instanceof Error ? err.message : String(err),
+        };
+      }
     },
   );
   // v0.1.274 — Direkter Create-Path aus Settings-UI. Form-Submit IST der

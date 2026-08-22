@@ -7710,3 +7710,6 @@ html.dark .self-corrections__stat { background: rgba(0,192,167,0.15); }
 }
 .btn:hover:not(:disabled) { background: rgba(127, 127, 127, 0.16); }
 .btn:disabled { opacity: 0.45; cursor: not-allowed; }
+
+/* v0.1.411 — Link-Überwachung: Indikator für einen gerade laufenden Durchlauf */
+.pill--running { background: #dbeafe; color: #1d4ed8; }

@@ -21,6 +21,7 @@ const EMPTY_SNAPSHOT: LinkMonitorSnapshot = {
   monitors: [],
   activeCount: 0,
   cap: 5,
+  runningIds: [],
 };
 
 export function LinkMonitorSection(): JSX.Element {
@@ -56,7 +57,11 @@ export function LinkMonitorSection(): JSX.Element {
       ) : (
         <ul className="scheduler-list">
           {s.monitors.map((m) => (
-            <MonitorRow key={m.id} monitor={m} />
+            <MonitorRow
+              key={m.id}
+              monitor={m}
+              running={(s.runningIds ?? []).includes(m.id)}
+            />
           ))}
         </ul>
       )}
@@ -78,9 +83,42 @@ export function LinkMonitorSection(): JSX.Element {
   );
 }
 
-function MonitorRow({ monitor }: { monitor: LinkMonitor }): JSX.Element {
+function MonitorRow({
+  monitor,
+  running = false,
+}: {
+  monitor: LinkMonitor;
+  /** v0.1.411 — Durchlauf gerade aktiv (manuell oder planmäßig). */
+  running?: boolean;
+}): JSX.Element {
   const [busy, setBusy] = useState(false);
   const [editing, setEditing] = useState(false);
+
+  /**
+   * v0.1.411 — „Jetzt prüfen". Ein Durchlauf dauert bis zu 3 Minuten; der
+   * Aufruf wartet ihn ab. Solange zeigt der Knopf „Prüft…". Am Ende gibt es
+   * eine klare Rückmeldung — vorher wirkte der Knopf komplett tot.
+   */
+  const onRunNow = async (): Promise<void> => {
+    setBusy(true);
+    try {
+      const r = await window.api.linkMonitor.runNow(monitor.id);
+      if (!r.ok) {
+        window.alert(r.error ?? "Prüfung konnte nicht gestartet werden.");
+      } else if (r.outcome === "error") {
+        window.alert(
+          "Die Prüfung ist fehlgeschlagen. Details stehen im Verlauf (Einstellungen → Verlauf).",
+        );
+      }
+    } catch (err) {
+      window.alert(
+        "Prüfung fehlgeschlagen: " +
+          (err instanceof Error ? err.message : String(err)),
+      );
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const guard = async (fn: () => Promise<unknown>): Promise<void> => {
     setBusy(true);
@@ -126,6 +164,8 @@ function MonitorRow({ monitor }: { monitor: LinkMonitor }): JSX.Element {
         <div className="scheduler-row__header">
           <strong>{monitor.label}</strong>
           <span className={`pill pill--${monitor.status}`}>{statusLabel}</span>
+          {/* v0.1.411 — sichtbarer Lauf-Indikator, auch für planmäßige Läufe. */}
+          {running && <span className="pill pill--running">prüft gerade…</span>}
           {monitor.isLinkedIn && <span className="pill">LinkedIn</span>}
         </div>
         <div className="muted scheduler-row__meta">
@@ -164,10 +204,15 @@ function MonitorRow({ monitor }: { monitor: LinkMonitor }): JSX.Element {
       <div className="scheduler-row__actions">
         <button
           type="button"
-          disabled={busy}
-          onClick={() => guard(() => window.api.linkMonitor.runNow(monitor.id))}
+          disabled={busy || running}
+          onClick={() => void onRunNow()}
+          title={
+            running
+              ? "Ein Durchlauf läuft gerade — das kann bis zu 3 Minuten dauern."
+              : "Sofort einen Durchlauf starten"
+          }
         >
-          Jetzt prüfen
+          {busy || running ? "Prüft…" : "Jetzt prüfen"}
         </button>
         {monitor.status === "active" ? (
           <button

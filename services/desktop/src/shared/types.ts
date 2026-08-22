@@ -2512,6 +2512,13 @@ export interface LinkMonitorSnapshot {
   monitors: LinkMonitor[];
   activeCount: number;
   cap: number;
+  /**
+   * v0.1.411 — IDs der Monitore, die GERADE einen Durchlauf ausführen
+   * (manuell per „Jetzt prüfen" oder planmäßig). Die UI zeigt dafür einen
+   * Lauf-Indikator; ohne den wirkte „Jetzt prüfen" wie ein toter Knopf,
+   * weil ein Durchlauf bis zu 3 Minuten dauert.
+   */
+  runningIds: string[];
 }
 
 /** Eingabe zum Anlegen/Aktualisieren eines Monitors über IPC/Tool. */

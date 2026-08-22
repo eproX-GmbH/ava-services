@@ -47,6 +47,18 @@ export interface LinkMonitorSupervisorDeps {
   notify: (alert: Alert) => void;
   /** Renderer-Glocke aktualisieren (broadcastAlertsChanged). */
   onAlertsChanged: () => void;
+  /**
+   * v0.1.411 — Audit-Eintrag schreiben (main/index.ts `audit`). Optional,
+   * damit Tests den Supervisor ohne Audit-Store bauen können. Vorher wurde
+   * KEIN Link-Monitor-Lauf protokolliert — im Audit-Trail war nichts zu
+   * sehen, auch nicht bei manuellem „Jetzt prüfen".
+   */
+  onAudit?: (entry: {
+    action: string;
+    severity: "info" | "warning" | "error";
+    summary: string;
+    metadata: Record<string, unknown>;
+  }) => void;
 }
 
 export interface LinkMonitorSupervisorEvents {
@@ -74,6 +86,7 @@ export class LinkMonitorSupervisor extends EventEmitter {
   private readonly alerts: AlertsStore;
   private readonly notify: (alert: Alert) => void;
   private readonly onAlertsChanged: () => void;
+  private readonly onAudit?: LinkMonitorSupervisorDeps["onAudit"];
 
   constructor(deps: LinkMonitorSupervisorDeps) {
     super();
@@ -82,7 +95,13 @@ export class LinkMonitorSupervisor extends EventEmitter {
     this.alerts = deps.alerts;
     this.notify = deps.notify;
     this.onAlertsChanged = deps.onAlertsChanged;
+    this.onAudit = deps.onAudit;
     this.store.on("changed", () => this.emit("changed"));
+  }
+
+  /** v0.1.411 — IDs der aktuell laufenden Durchläufe (für den UI-Indikator). */
+  runningIds(): string[] {
+    return [...this.inFlight];
   }
 
   /** Boot vom main/index.ts. Re-armiert alle active-Monitore. */
@@ -175,15 +194,33 @@ export class LinkMonitorSupervisor extends EventEmitter {
     await this.store.delete(id);
   }
 
-  /** Sofort einen Durchlauf erzwingen (UI „Jetzt prüfen"). */
-  async runNow(id: string): Promise<void> {
+  /**
+   * Sofort einen Durchlauf erzwingen (UI „Jetzt prüfen").
+   *
+   * v0.1.411 — liefert jetzt ein ECHTES Ergebnis statt `void`. Vorher
+   * schluckte der Aufruf jede Absage stumm (Monitor unbekannt, Lauf bereits
+   * unterwegs), und der IPC-Handler meldete pauschal Erfolg — der Knopf
+   * wirkte tot. Der Aufruf wartet bewusst auf das Ende des Durchlaufs
+   * (bis ~3 min), damit der Renderer den Knopf so lange als „Prüft…"
+   * anzeigen und danach das Ergebnis melden kann.
+   */
+  async runNow(
+    id: string,
+  ): Promise<{ ok: boolean; outcome?: LinkMonitorRunOutcome; error?: string }> {
     const m = await this.store.get(id);
-    if (!m) return;
-    await this.runPipeline(m);
+    if (!m) return { ok: false, error: "Überwachung nicht gefunden." };
+    if (this.inFlight.has(id)) {
+      return { ok: false, error: "Für diese Überwachung läuft bereits eine Prüfung." };
+    }
+    const outcome = await this.runPipeline(m, "manual");
     const refreshed = await this.store.get(id);
     if (refreshed && refreshed.status === "active") {
       this.scheduleNextRun(refreshed);
     }
+    if (outcome === undefined) {
+      return { ok: false, error: "Prüfung konnte nicht gestartet werden." };
+    }
+    return { ok: true, outcome };
   }
 
   // ---- intern -------------------------------------------------------------
@@ -229,10 +266,21 @@ export class LinkMonitorSupervisor extends EventEmitter {
     }
   }
 
-  /** Ein vollständiger Durchlauf inkl. Persistenz + ggf. Alert. */
-  private async runPipeline(monitor: LinkMonitor): Promise<void> {
-    if (this.inFlight.has(monitor.id)) return;
+  /**
+   * Ein vollständiger Durchlauf inkl. Persistenz + ggf. Alert.
+   *
+   * v0.1.411 — gibt das Ergebnis zurück (`undefined`, wenn wegen eines schon
+   * laufenden Durchlaufs abgelehnt) und meldet Start/Ende an die UI, damit
+   * ein laufender Durchlauf sichtbar ist.
+   */
+  private async runPipeline(
+    monitor: LinkMonitor,
+    trigger: "manual" | "scheduled" = "scheduled",
+  ): Promise<LinkMonitorRunOutcome | undefined> {
+    if (this.inFlight.has(monitor.id)) return undefined;
     this.inFlight.add(monitor.id);
+    // Laufenden Zustand sofort an den Renderer melden (Knopf → „Prüft…").
+    this.emit("changed");
     const startedAt = new Date().toISOString();
     const ctrl = new AbortController();
     const deadlineAt = Date.now() + LINK_MONITOR_RUN_TIMEOUT_MS;
@@ -302,6 +350,43 @@ export class LinkMonitorSupervisor extends EventEmitter {
       note,
     });
     await this.store.pruneRuns(monitor.id).catch(() => undefined);
+
+    // v0.1.411 — Audit-Eintrag pro Durchlauf. Vorher tauchten
+    // Link-Überwachungen im Audit-Trail überhaupt nicht auf.
+    try {
+      this.onAudit?.({
+        action:
+          trigger === "manual"
+            ? "link-monitor.run.manual"
+            : "link-monitor.run.scheduled",
+        severity:
+          outcome === "error"
+            ? "error"
+            : outcome === "timeout"
+              ? "warning"
+              : "info",
+        summary:
+          `Link-Überwachung „${monitor.label}" ` +
+          `(${trigger === "manual" ? "manuell" : "planmäßig"}): ` +
+          (outcome === "changed"
+            ? `Änderung erkannt — ${changeSummary ?? "Inhalt hat sich geändert."}`
+            : outcome === "error"
+              ? `Fehler — ${note ?? "unbekannt"}`
+              : outcome === "timeout"
+                ? `Zeitüberschreitung — ${note ?? "Teilergebnis"}`
+                : "keine Änderung"),
+        metadata: {
+          monitorId: monitor.id,
+          url: monitor.url,
+          outcome,
+          trigger,
+        },
+      });
+    } catch {
+      /* Audit ist best-effort — darf den Lauf nie kippen */
+    }
+
+    return outcome;
   }
 
   private fireAlert(

@@ -1114,7 +1114,10 @@ const api = {
       id: string,
     ): Promise<{ ok: true } | { ok: false; error: string }> =>
       ipcRenderer.invoke("linkMonitor:resume", id),
-    runNow: (id: string): Promise<{ ok: true }> =>
+    /** v0.1.411 — wartet den Durchlauf ab und liefert das echte Ergebnis. */
+    runNow: (
+      id: string,
+    ): Promise<{ ok: boolean; outcome?: string; error?: string }> =>
       ipcRenderer.invoke("linkMonitor:runNow", id),
     onChanged: (
       cb: (snapshot: LinkMonitorSnapshot) => void,
