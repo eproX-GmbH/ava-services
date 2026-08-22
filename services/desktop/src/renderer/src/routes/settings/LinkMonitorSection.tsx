@@ -49,6 +49,12 @@ export function LinkMonitorSection(): JSX.Element {
         </strong>
         . Überzählige werden pausiert angelegt.
       </p>
+      <p className="muted small">
+        Tipp: Sehr kurze Intervalle lösen bei vielen Shops den Bot-Schutz aus
+        (z. B. Cloudflare-Sicherheitsprüfung) — die Seite lädt dann gar nicht
+        erst. Für Verfügbarkeits- und Preisprüfungen sind 30–60 Minuten meist
+        die verlässlichere Wahl.
+      </p>
 
       {snap == null ? (
         <p className="muted">Lädt…</p>

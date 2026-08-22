@@ -40,6 +40,14 @@ import {
   saveRunScreenshot,
 } from "./screenshots";
 
+/** v0.1.416 — kontrollierter Abbruch eines Laufs ohne echten Fehler. */
+class SkipRunError extends Error {
+  constructor() {
+    super("run skipped");
+    this.name = "SkipRunError";
+  }
+}
+
 const DELAY_CAP_MS = 30 * 60 * 1000;
 const MAX_CONCURRENT_RUNS = 2;
 
@@ -327,6 +335,21 @@ export class LinkMonitorSupervisor extends EventEmitter {
         note = [note, browse.targetNote].filter(Boolean).join(" · ") || null;
       }
       interstitialActions = browse.interstitialActions;
+
+      // v0.1.416 — Bot-Pruefung nicht durchgelaufen: Der Text stammt von
+      // der Wartesseite, nicht von der Zielseite. Wir brechen den Lauf
+      // hier EHRLICH ab, statt "keine Aenderung" zu melden (genau der
+      // Fehler, den der Screenshot aufgedeckt hat) — und sparen zugleich
+      // die LLM-Aufrufe fuer Extraktion und Vergleich.
+      if (browse.botChallenge) {
+        outcome = "error";
+        targetMissed = true;
+        note =
+          "Sicherheitspruefung der Website war noch aktiv — die Zielseite " +
+          "wurde nicht erreicht. Ein groesseres Pruefintervall verringert " +
+          "die Wahrscheinlichkeit solcher Sperren.";
+        throw new SkipRunError();
+      }
       // v0.1.414 — Beweis-Screenshot ablegen, BEVOR die weitere Auswertung
       // laufen kann. So existiert er auch dann, wenn Extraktion oder Diff
       // danach scheitern — genau dann will man ja nachsehen können.
@@ -361,8 +384,12 @@ export class LinkMonitorSupervisor extends EventEmitter {
         this.fireAlert(monitor, diff.summary ?? "Inhalt hat sich geändert.", contentHash);
       }
     } catch (err) {
-      outcome = "error";
-      note = err instanceof Error ? err.message.slice(0, 300) : String(err);
+      // Kontrollierter Abbruch (z. B. Bot-Pruefung): outcome/note stehen
+      // bereits, nicht ueberschreiben.
+      if (!(err instanceof SkipRunError)) {
+        outcome = "error";
+        note = err instanceof Error ? err.message.slice(0, 300) : String(err);
+      }
     } finally {
       clearTimeout(hardTimeout);
       this.inFlight.delete(monitor.id);

@@ -54,6 +54,12 @@ export interface BrowseResult {
   targetNote: string | null;
   /** Was gegen Zwischenseiten unternommen wurde (Verlauf/Diagnose). */
   interstitialActions: string[];
+  /**
+   * v0.1.416 — Eine Bot-/Sicherheitspruefung lief und wurde nicht von
+   * selbst fertig. Der Seiteninhalt ist dann NICHT die Zielseite und darf
+   * nicht als Vergleichsgrundlage dienen.
+   */
+  botChallenge: boolean;
 }
 
 export interface BrowseOptions {
@@ -340,6 +346,7 @@ export async function browseUrl(
   let onTarget = true;
   let targetNote: string | null = null;
   let interstitialActions: string[] = [];
+  let botChallenge = false;
 
   try {
     const loaded = await navigateWithDeadline(
@@ -370,6 +377,7 @@ export async function browseUrl(
         readText: async () => (await extractVisibleText(win)).text,
       });
       interstitialActions = cleared.actions;
+      botChallenge = cleared.botChallenge === true;
     } catch (err) {
       console.warn("[link-monitor] Zwischenseiten-Behandlung fehlgeschlagen:", err);
     }
@@ -434,6 +442,7 @@ export async function browseUrl(
       onTarget,
       targetNote,
       interstitialActions,
+      botChallenge,
     };
   } finally {
     try {

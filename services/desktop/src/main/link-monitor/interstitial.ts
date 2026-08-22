@@ -45,6 +45,8 @@ export interface InterstitialResult {
   actions: string[];
   /** true, wenn am Ende keine Wand mehr erkennbar war. */
   cleared: boolean;
+  /** v0.1.416 — Bot-Pruefung lief und wurde NICHT von selbst fertig. */
+  botChallenge?: boolean;
 }
 
 /**
@@ -108,6 +110,70 @@ export function checkTarget(
     };
   }
   return base;
+}
+
+/**
+ * v0.1.416 — Laufende Bot-/Sicherheitspruefung erkennen (Cloudflare
+ * Turnstile, hCaptcha, reCAPTCHA, "Checking your browser" ...).
+ *
+ * AVA LOEST solche Pruefungen NICHT und klickt sie nicht weg. Der
+ * "managed"-Modus von Cloudflare laeuft ohnehin passiv von selbst durch —
+ * er braucht nur ein paar Sekunden. Genau darauf warten wir (siehe
+ * waitForChallengeToClear). Cloudflare weist im Dialog selbst darauf hin,
+ * dass ein Neuladen die Pruefung ZURUECKSETZT — deshalb laden wir auch
+ * bewusst nicht neu.
+ */
+export async function detectBotChallenge(
+  win: BrowserWindow,
+): Promise<string | null> {
+  const js = `(() => {
+    const sel = [
+      "#challenge-form", "#challenge-running", "#cf-challenge-running",
+      ".cf-turnstile", "iframe[src*='challenges.cloudflare.com']",
+      "iframe[src*='hcaptcha.com']", "iframe[src*='recaptcha']",
+      "#px-captcha"
+    ];
+    for (const s of sel) { if (document.querySelector(s)) return s; }
+    const t = (document.body?.innerText || "").toLowerCase();
+    const phrases = [
+      "sicherheitsuberprufung", "sicherheits\u00fcberpr\u00fcfung",
+      "checking your browser", "verifying you are human",
+      "kein bot sind", "b\u00f6swilligen bots", "just a moment",
+      "ich bin kein roboter", "i am not a robot"
+    ];
+    const hit = phrases.find((p) => t.includes(p));
+    return hit ? ("text:" + hit) : null;
+  })()`;
+  try {
+    return (await win.webContents.executeJavaScript(js, false)) as string | null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * v0.1.416 — Auf das SELBSTAENDIGE Durchlaufen der Pruefung warten.
+ * Kein Klick, kein Reload — nur Geduld, wie ein Mensch sie auch haette.
+ * Gibt true zurueck, wenn die Pruefung verschwunden ist.
+ */
+export async function waitForChallengeToClear(args: {
+  win: BrowserWindow;
+  settle: (ms: number) => Promise<void>;
+  maxWaitMs?: number;
+  signal?: AbortSignal;
+}): Promise<boolean> {
+  const { win, settle, signal } = args;
+  const maxWaitMs = args.maxWaitMs ?? 25_000;
+  const stepMs = 2_000;
+  const until = Date.now() + maxWaitMs;
+  while (Date.now() < until) {
+    if (signal?.aborted) return false;
+    await settle(stepMs);
+    if (win.isDestroyed()) return false;
+    const still = await detectBotChallenge(win);
+    if (!still) return true;
+  }
+  return false;
 }
 
 /**
@@ -219,6 +285,10 @@ export async function collectCandidates(
       const text = ((el.innerText || el.value || el.getAttribute("aria-label") || "")
         .replace(/\\s+/g, " ").trim());
       if (!text || text.length > 80) continue;
+      // v0.1.416 — Bot-Verifizierung NIE als Kandidat anbieten.
+      const low = text.toLowerCase();
+      const FORBIDDEN = ["verifizier","verify","captcha","roboter","robot","human","mensch","security check"];
+      if (FORBIDDEN.some((f) => low.includes(f))) continue;
       el.setAttribute("data-ava-cand", String(i));
       out.push({ index: i, tag: el.tagName.toLowerCase(), text });
       i++;
@@ -271,6 +341,8 @@ async function pickCandidateWithAi(
     "(z. B. Einwilligung bestätigen, Altersbestätigung, Land wählen, " +
     "Dialog schließen). Bevorzuge die Variante, die den Dialog beendet. " +
     "Wähle NIEMALS Anmelden/Registrieren, Abos, Käufe oder Ablehnen-mit-" +
+    "Weiterleitung. Wähle NIEMALS Sicherheits-/Bot-Prüfungen " +
+    "(Captcha, Verifizieren, Ich-bin-kein-Roboter). " +
     "Weiterleitung. Ist keine passende Schaltfläche dabei oder wirkt die " +
     "Seite bereits wie der eigentliche Inhalt, antworte mit index null. " +
     'Antworte NUR als JSON: {"index": <zahl|null>, "reason": "<kurz>"}. ' +
@@ -323,6 +395,25 @@ export async function clearInterstitials(args: {
 }): Promise<InterstitialResult> {
   const { win, url, providers, signal, settle, readText } = args;
   const actions: string[] = [];
+
+  // v0.1.416 — Laeuft eine Sicherheitspruefung? Dann NICHT anfassen,
+  // sondern abwarten: Cloudflares managed-Modus laeuft passiv durch.
+  const challenge = await detectBotChallenge(win);
+  if (challenge) {
+    const passed = await waitForChallengeToClear({ win, settle, signal });
+    if (passed) {
+      actions.push(
+        "Sicherheitspruefung lief und ist von selbst durchgelaufen (abgewartet).",
+      );
+      await settle(600);
+    } else {
+      actions.push(
+        `Sicherheitspruefung (${challenge}) war nach 25 s noch aktiv. ` +
+          "AVA loest solche Pruefungen nicht — der Lauf zeigt NICHT die Zielseite.",
+      );
+      return { actions, cleared: false, botChallenge: true };
+    }
+  }
 
   // Stufe 1 — deterministisch, ggf. mehrfach (manche Seiten stapeln Layer).
   for (let i = 0; i < 2; i++) {
