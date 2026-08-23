@@ -567,9 +567,10 @@ export class AgentOrchestrator extends EventEmitter {
    * und nach Beendigung sequenziell abgearbeitet.
    */
   startAutonomousConversation(input: {
-    skillName: string;
+    skillName?: string;
     initialMessage: string;
-    sourceMailId: string;
+    /** v0.1.417 — optional: nur der Mail-Pfad setzt das. */
+    sourceMailId?: string;
   }): { conversationId: string; requestId: string } | null {
     const status = this.getStatus();
     if (!status.ready) {
@@ -595,15 +596,17 @@ export class AgentOrchestrator extends EventEmitter {
   }
 
   private pendingAutonomousQueue: Array<{
-    skillName: string;
+    skillName?: string;
     initialMessage: string;
-    sourceMailId: string;
+    /** v0.1.417 — optional: nur der Mail-Pfad setzt das. */
+    sourceMailId?: string;
   }> = [];
 
   private runAutonomousNow(input: {
-    skillName: string;
+    skillName?: string;
     initialMessage: string;
-    sourceMailId: string;
+    /** v0.1.417 — optional: nur der Mail-Pfad setzt das. */
+    sourceMailId?: string;
   }): { conversationId: string; requestId: string } {
     const conversationId = randomUUID();
     const convo: Conversation = {
@@ -620,7 +623,9 @@ export class AgentOrchestrator extends EventEmitter {
     // initialMessage ein roher Mail-Body ist, der die Keyword-Matcher
     // unzuverlässig macht.
     const skills = this.availableSkills();
-    const skill = skills.find((s) => s.name === input.skillName);
+    const skill = input.skillName
+      ? skills.find((s) => s.name === input.skillName)
+      : undefined;
     if (skill) {
       this.activeSkill = skill;
       this.markToolsLoaded(convo, skill.allowedTools);
@@ -629,9 +634,11 @@ export class AgentOrchestrator extends EventEmitter {
       );
     } else {
       this.activeSkill = null;
-      console.warn(
-        `[orchestrator] autonomous: skill '${input.skillName}' not found — running without skill`,
-      );
+      if (input.skillName) {
+        console.warn(
+          `[orchestrator] autonomous: skill '${input.skillName}' not found — running without skill`,
+        );
+      }
     }
 
     // Mail-Content als user-role-Message (so sieht der Agent das wie

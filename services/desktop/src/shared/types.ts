@@ -2525,6 +2525,15 @@ export interface TelegramConfig {
   severityThreshold: AlertSeverity;
   /** Ruhezeiten auch für Telegram beachten (Default: ja). */
   respectQuietHours: boolean;
+  /**
+   * v0.1.417 — Eingehende Nachrichten verarbeiten (Gegenrichtung).
+   * Standard AUS: AVA beantwortet dann Nachrichten aus dem verknüpften
+   * Chat wie eine Mail-Anfrage. Nur Nachrichten aus GENAU diesem Chat
+   * werden akzeptiert.
+   */
+  inboundEnabled: boolean;
+  /** Zuletzt verarbeitete Telegram-Update-ID (verhindert Doppelverarbeitung). */
+  lastUpdateId: number | null;
 }
 
 /** Zustand für die Einstellungs-UI. Enthält NIE den Token. */

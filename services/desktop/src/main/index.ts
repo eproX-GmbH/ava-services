@@ -131,6 +131,7 @@ import {
 } from "./reset-store";
 import { TelegramStore } from "./telegram/store";
 import { TelegramChannel } from "./telegram/channel";
+import { TelegramInbound } from "./telegram/inbound";
 import {
   escapeHtml as telegramEscapeHtml,
   getMe as telegramGetMe,
@@ -943,9 +944,14 @@ const telegramChannel = new TelegramChannel({
 notifications.addChannel(telegramChannel);
 telegramStore.on("changed", () => {
   void broadcastTelegramChanged();
+  telegramInbound?.sync();
 });
 // Beim Beenden die Zustell-Timer stoppen, damit kein Retry mehr feuert.
 app.on("before-quit", () => telegramChannel.stop());
+// v0.1.417 — Gegenrichtung: Nachrichten aus dem Telegram-Chat lesen und
+// beantworten. Wird erst nach der Orchestrator-Konstruktion gesetzt
+// (siehe unten) und folgt danach der Konfiguration.
+let telegramInbound: TelegramInbound | null = null;
 function broadcastTelegramChanged(): void {
   const snapshot: TelegramSnapshot = {
     config: telegramStore.getConfig(),
@@ -1713,6 +1719,28 @@ const agent = new AgentOrchestrator({
     }
   },
 });
+
+// v0.1.417 — Telegram-Eingang an den Orchestrator haengen (der existiert
+// erst ab hier) und gemaess gespeicherter Konfiguration starten.
+telegramInbound = new TelegramInbound({
+  store: telegramStore,
+  orchestrator: agent,
+  onAudit: ({ severity, summary, metadata }) => {
+    audit({
+      actorType: "system",
+      actorId: null,
+      category: "watch",
+      action: "telegram.inbound",
+      severity,
+      subjectType: null,
+      subjectId: null,
+      summary,
+      metadata,
+    });
+  },
+});
+telegramInbound.sync();
+app.on("before-quit", () => telegramInbound?.stop());
 
 alertPrefs.on("changed", (next: AlertPrefs) => {
   // Apply the new cadence immediately. push / quiet-hours / threshold

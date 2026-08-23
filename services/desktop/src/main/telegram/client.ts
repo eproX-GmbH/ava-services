@@ -159,6 +159,7 @@ export async function sendMessage(
 export async function getUpdates(
   token: string,
   offset?: number,
+  longPollSeconds = 0,
 ): Promise<{ updateId: number; chat: TelegramIncomingChat }[]> {
   const raw = await call<
     {
@@ -170,7 +171,7 @@ export async function getUpdates(
     }[]
   >(token, "getUpdates", {
     ...(offset !== undefined ? { offset } : {}),
-    timeout: 0,
+    timeout: longPollSeconds,
     allowed_updates: ["message"],
   });
 

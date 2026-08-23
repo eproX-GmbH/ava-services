@@ -243,6 +243,28 @@ export function TelegramSection(): JSX.Element {
           <label className="field-inline">
             <input
               type="checkbox"
+              checked={cfg.inboundEnabled}
+              disabled={busy || !ready}
+              onChange={(e) => void patch({ inboundEnabled: e.target.checked })}
+            />
+            <span>
+              Auf meine Nachrichten antworten (Gegenrichtung)
+              {!ready && " (erst Chat verknüpfen)"}
+            </span>
+          </label>
+          {cfg.inboundEnabled && (
+            <p className="muted small">
+              AVA liest Nachrichten aus <strong>diesem</strong> Chat und
+              antwortet darauf — wie bei der Mail-Bearbeitung. Nachrichten aus
+              anderen Chats werden verworfen. Aktionen, die am Rechner eine
+              Rückfrage brauchen (z. B. etwas im CRM löschen), sind über
+              Telegram bewusst nicht möglich.
+            </p>
+          )}
+
+          <label className="field-inline">
+            <input
+              type="checkbox"
               checked={cfg.respectQuietHours}
               disabled={busy}
               onChange={(e) =>
