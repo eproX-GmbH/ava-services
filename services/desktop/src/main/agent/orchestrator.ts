@@ -17,6 +17,7 @@ import type { ConversationToolLoadState } from "./tools/meta";
 import { buildSystemPrompt } from "./prompts";
 import { isUserDeclined } from "./define-tool";
 import { WELCOME_MESSAGE, isWelcomeTrigger } from "./welcome";
+import type { AgentMessageImage } from "../../shared/types";
 import { UiBridge, type PendingChoice } from "./ui-bridge";
 import type { LlmProviderManager, LlmStreamToolCall } from "./providers";
 import type { Conversation, Tool, ToolContext } from "./types";
@@ -571,6 +572,8 @@ export class AgentOrchestrator extends EventEmitter {
     initialMessage: string;
     /** v0.1.417 — optional: nur der Mail-Pfad setzt das. */
     sourceMailId?: string;
+    /** v0.1.419 — Bilder (z. B. Foto aus Telegram). */
+    images?: AgentMessageImage[];
   }): { conversationId: string; requestId: string } | null {
     const status = this.getStatus();
     if (!status.ready) {
@@ -600,6 +603,8 @@ export class AgentOrchestrator extends EventEmitter {
     initialMessage: string;
     /** v0.1.417 — optional: nur der Mail-Pfad setzt das. */
     sourceMailId?: string;
+    /** v0.1.419 — Bilder (z. B. Foto aus Telegram). */
+    images?: AgentMessageImage[];
   }> = [];
 
   private runAutonomousNow(input: {
@@ -607,6 +612,8 @@ export class AgentOrchestrator extends EventEmitter {
     initialMessage: string;
     /** v0.1.417 — optional: nur der Mail-Pfad setzt das. */
     sourceMailId?: string;
+    /** v0.1.419 — Bilder (z. B. Foto aus Telegram). */
+    images?: AgentMessageImage[];
   }): { conversationId: string; requestId: string } {
     const conversationId = randomUUID();
     const convo: Conversation = {
@@ -649,6 +656,9 @@ export class AgentOrchestrator extends EventEmitter {
       role: "user",
       content: input.initialMessage,
       createdAt: Date.now(),
+      ...(input.images && input.images.length > 0
+        ? { images: input.images }
+        : {}),
     };
     this.appendMessage(convo, initial);
 

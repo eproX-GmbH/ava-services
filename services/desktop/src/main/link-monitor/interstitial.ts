@@ -115,13 +115,6 @@ export function checkTarget(
 /**
  * v0.1.416 — Laufende Bot-/Sicherheitspruefung erkennen (Cloudflare
  * Turnstile, hCaptcha, reCAPTCHA, "Checking your browser" ...).
- *
- * AVA LOEST solche Pruefungen NICHT und klickt sie nicht weg. Der
- * "managed"-Modus von Cloudflare laeuft ohnehin passiv von selbst durch —
- * er braucht nur ein paar Sekunden. Genau darauf warten wir (siehe
- * waitForChallengeToClear). Cloudflare weist im Dialog selbst darauf hin,
- * dass ein Neuladen die Pruefung ZURUECKSETZT — deshalb laden wir auch
- * bewusst nicht neu.
  */
 export async function detectBotChallenge(
   win: BrowserWindow,
@@ -381,10 +374,6 @@ async function pickCandidateWithAi(
   }
 }
 
-/**
- * Vollständige Behandlung: erst deterministisch, dann bei Bedarf KI —
- * bis die Wand weg ist oder das Schrittlimit erreicht ist.
- */
 export async function clearInterstitials(args: {
   win: BrowserWindow;
   url: string;
@@ -396,8 +385,6 @@ export async function clearInterstitials(args: {
   const { win, url, providers, signal, settle, readText } = args;
   const actions: string[] = [];
 
-  // v0.1.416 — Laeuft eine Sicherheitspruefung? Dann NICHT anfassen,
-  // sondern abwarten: Cloudflares managed-Modus laeuft passiv durch.
   const challenge = await detectBotChallenge(win);
   if (challenge) {
     const passed = await waitForChallengeToClear({ win, settle, signal });

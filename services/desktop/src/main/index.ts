@@ -1725,6 +1725,9 @@ const agent = new AgentOrchestrator({
 telegramInbound = new TelegramInbound({
   store: telegramStore,
   orchestrator: agent,
+  // v0.1.419 — Sprachnachrichten lokal transkribieren. Whisper ist bereits
+  // gebuendelt; damit verlaesst auch die Sprache den Rechner nicht.
+  transcribe: (wav) => whisper.transcribe(wav),
   onAudit: ({ severity, summary, metadata }) => {
     audit({
       actorType: "system",

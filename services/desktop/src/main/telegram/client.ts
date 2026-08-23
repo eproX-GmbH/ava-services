@@ -42,6 +42,12 @@ export interface TelegramIncomingChat {
   chatType: string;
   title: string;
   text: string;
+  /** v0.1.419 — Foto (groesste angebotene Aufloesung). */
+  photoFileId?: string;
+  /** v0.1.419 — Sprachnachricht bzw. Audio (OGG/Opus). */
+  voiceFileId?: string;
+  /** Bildunterschrift bei Fotos. */
+  caption?: string;
 }
 
 /** Entfernt einen Bot-Token aus beliebigem Text (Logs, Fehlermeldungen). */
@@ -166,6 +172,10 @@ export async function getUpdates(
       update_id: number;
       message?: {
         text?: string;
+        caption?: string;
+        photo?: { file_id: string; file_size?: number; width?: number }[];
+        voice?: { file_id: string; file_size?: number };
+        audio?: { file_id: string; file_size?: number };
         chat?: { id: number; type?: string; title?: string; username?: string; first_name?: string };
       };
     }[]
@@ -179,6 +189,12 @@ export async function getUpdates(
   for (const u of raw) {
     const chat = u.message?.chat;
     if (!chat) continue;
+    // Telegram liefert Fotos in mehreren Aufloesungen — die groesste nehmen.
+    const photos = u.message?.photo ?? [];
+    const biggest = photos.length
+      ? photos.reduce((a, b) => ((b.width ?? 0) > (a.width ?? 0) ? b : a))
+      : undefined;
+    const voice = u.message?.voice ?? u.message?.audio;
     out.push({
       updateId: u.update_id,
       chat: {
@@ -190,10 +206,66 @@ export async function getUpdates(
           chat.first_name ??
           String(chat.id),
         text: u.message?.text ?? "",
+        ...(biggest ? { photoFileId: biggest.file_id } : {}),
+        ...(voice ? { voiceFileId: voice.file_id } : {}),
+        ...(u.message?.caption ? { caption: u.message.caption } : {}),
       },
     });
   }
   return out;
+}
+
+/** Obergrenze fuer heruntergeladene Anhaenge (Bilder/Sprachnachrichten). */
+const MAX_FILE_BYTES = 12 * 1024 * 1024;
+
+/**
+ * v0.1.419 — Eine Telegram-Datei herunterladen (Foto oder Sprachnachricht).
+ * Zwei Schritte laut Bot-API: erst `getFile` fuer den Pfad, dann der
+ * Datei-Endpunkt. Der Token steckt auch hier in der URL — Fehlermeldungen
+ * laufen deshalb durch `redactToken`.
+ */
+export async function downloadFile(
+  token: string,
+  fileId: string,
+): Promise<{ bytes: Buffer; mimeHint: string } | null> {
+  try {
+    const info = await call<{ file_path?: string; file_size?: number }>(
+      token,
+      "getFile",
+      { file_id: fileId },
+    );
+    if (!info.file_path) return null;
+    if ((info.file_size ?? 0) > MAX_FILE_BYTES) {
+      throw new Error("Datei ist zu gross (max. 12 MB).");
+    }
+    const res = await fetch(
+      `${API_BASE}/file/bot${token}/${info.file_path}`,
+      { signal: AbortSignal.timeout(60_000) },
+    );
+    if (!res.ok) {
+      throw new Error(`Download fehlgeschlagen: HTTP ${res.status}`);
+    }
+    const buf = Buffer.from(await res.arrayBuffer());
+    if (buf.byteLength > MAX_FILE_BYTES) {
+      throw new Error("Datei ist zu gross (max. 12 MB).");
+    }
+    const ext = info.file_path.split(".").pop()?.toLowerCase() ?? "";
+    const mimeHint =
+      ext === "jpg" || ext === "jpeg"
+        ? "image/jpeg"
+        : ext === "png"
+          ? "image/png"
+          : ext === "webp"
+            ? "image/webp"
+            : ext === "oga" || ext === "ogg"
+              ? "audio/ogg"
+              : "application/octet-stream";
+    return { bytes: buf, mimeHint };
+  } catch (err) {
+    const msg = err instanceof Error ? redactToken(err.message) : String(err);
+    console.warn("[telegram] Datei-Download:", msg);
+    return null;
+  }
 }
 
 /** HTML-Escaping für Telegram (parse_mode=HTML erlaubt nur wenige Tags). */
