@@ -48,6 +48,17 @@ const ERROR_BACKOFF_MS = 30_000;
 const MIN_GAP_MS = 1_500;
 /** So lange warten wir höchstens darauf, dass der Agent frei wird. */
 const WAIT_FOR_AGENT_MS = 5 * 60_000;
+/**
+ * v0.1.420 — Kommen ZUERST Bilder, warten wir auf die Erklärung dazu.
+ * Bewusst großzügig: In der Praxis schickt man erst die Fotos und spricht
+ * danach eine längere Sprachnachricht ein — 5–10 Sekunden wären dafür viel
+ * zu knapp. Kommt in dieser Zeit nichts, werden die Bilder allein verarbeitet.
+ */
+const MEDIA_WAIT_MS = 5 * 60_000;
+/** Nach so langer Funkstille beginnt ein neuer Gesprächsfaden. */
+const CONVERSATION_IDLE_MS = 6 * 60 * 60_000;
+/** Ab so vielen Nachrichten im Faden wird neu begonnen (Kontextgrenze). */
+const MAX_THREAD_MESSAGES = 60;
 /** So lange warten wir höchstens auf die Antwort des Agenten. */
 const REPLY_TIMEOUT_MS = 5 * 60_000;
 
@@ -72,6 +83,14 @@ export class TelegramInbound {
   private running = false;
   private loopHandle: Promise<void> | null = null;
   private lastHandledAt = 0;
+  /** v0.1.420 — laufender Gesprächsfaden (wie ein normaler AVA-Chat). */
+  private conversationId: string | null = null;
+  private lastActivityAt = 0;
+  private threadMessages = 0;
+  /** Gepufferte Bilder, die auf eine Erklärung warten. */
+  private pendingImages: AgentMessageImage[] = [];
+  private pendingCaptions: string[] = [];
+  private mediaTimer: NodeJS.Timeout | null = null;
 
   constructor(deps: TelegramInboundDeps) {
     this.store = deps.store;
@@ -98,6 +117,10 @@ export class TelegramInbound {
   stop(): void {
     if (!this.running) return;
     this.running = false;
+    if (this.mediaTimer) {
+      clearTimeout(this.mediaTimer);
+      this.mediaTimer = null;
+    }
     console.log("[telegram] Eingang deaktiviert");
   }
 
@@ -137,6 +160,11 @@ export class TelegramInbound {
           const text = u.chat.text.trim();
           const hasMedia = Boolean(u.chat.photoFileId || u.chat.voiceFileId);
           if (!text && !hasMedia) continue;
+          if (text === "/neu" || text === "/reset") {
+            this.resetThread();
+            await this.reply("Alles klar — ich fange einen neuen Faden an.");
+            continue;
+          }
           if (text === "/start") {
             await this.reply(
               "Hi! Ich bin verbunden. Schreib mir einfach, was du wissen willst.",
@@ -144,13 +172,13 @@ export class TelegramInbound {
             continue;
           }
           await this.pace();
-          if (u.chat.voiceFileId) {
+          if (u.chat.photoFileId) {
+            // Bild: sammeln und auf die Erklärung warten.
+            await this.bufferPhoto(u.chat.photoFileId, u.chat.caption ?? "");
+          } else if (u.chat.voiceFileId) {
+            // Sprachnachricht: transkribieren und ZUSAMMEN mit evtl.
+            // wartenden Bildern als EINE Anfrage verarbeiten.
             await this.handleVoice(u.chat.voiceFileId);
-          } else if (u.chat.photoFileId) {
-            await this.handlePhoto(
-              u.chat.photoFileId,
-              u.chat.caption ?? text,
-            );
           } else {
             await this.handleMessage(text);
           }
@@ -192,14 +220,23 @@ export class TelegramInbound {
     }
     if (!this.running) return;
 
+    // v0.1.420 — Wartende Bilder gehören zu DIESER Anweisung.
+    const buffered = this.takeBufferedImages();
+    const allImages = [...(buffered.images ?? []), ...(images ?? [])];
+    const withCaptions =
+      buffered.captions.length > 0
+        ? `${buffered.captions.join("\n")}\n\n${text}`
+        : text;
+
     const started = this.orchestrator.startAutonomousConversation({
+      conversationId: this.threadId(),
       initialMessage:
-        `[Nachricht des Nutzers über Telegram]\n\n${text}\n\n` +
+        `[Nachricht des Nutzers über Telegram]\n\n${withCaptions}\n\n` +
         `[Hinweis: Antworte knapp und handyfreundlich. Es gibt hier keinen ` +
         `Bestätigungsdialog — Aktionen, die eine Rückfrage brauchen, kannst ` +
         `du nicht ausführen; sag in dem Fall, dass es am Rechner erledigt ` +
         `werden muss.]`,
-      ...(images && images.length > 0 ? { images } : {}),
+      ...(allImages.length > 0 ? { images: allImages } : {}),
     });
 
     if (!started) {
@@ -305,8 +342,14 @@ export class TelegramInbound {
     await this.handleMessage(text);
   }
 
-  /** v0.1.419 — Foto an den Agenten geben (Bildunterschrift als Anweisung). */
-  private async handlePhoto(fileId: string, caption: string): Promise<void> {
+  /**
+   * v0.1.420 — Foto NICHT sofort verarbeiten, sondern sammeln: In der Praxis
+   * kommen erst die Bilder und danach die Erklärung (oft als längere
+   * Sprachnachricht). Erst wenn für MEDIA_WAIT_MS nichts mehr folgt, werden
+   * die Bilder für sich ausgewertet. Eine Bildunterschrift zählt bereits als
+   * Erklärung und löst sofort aus.
+   */
+  private async bufferPhoto(fileId: string, caption: string): Promise<void> {
     const token = await this.store.getToken();
     if (!token) return;
     const file = await downloadFile(token, fileId);
@@ -314,19 +357,86 @@ export class TelegramInbound {
       await this.reply("Das Bild konnte ich nicht laden.");
       return;
     }
-    const prompt =
-      caption.trim().length > 0
-        ? caption.trim()
-        : "Was ist auf diesem Bild zu sehen? Fasse das Wichtigste zusammen.";
-    await this.handleMessage(prompt, [
-      {
-        base64: file.bytes.toString("base64"),
-        mimeType: file.mimeHint.startsWith("image/")
-          ? file.mimeHint
-          : "image/jpeg",
-        filename: "telegram-foto.jpg",
-      },
-    ]);
+    this.pendingImages.push({
+      base64: file.bytes.toString("base64"),
+      mimeType: file.mimeHint.startsWith("image/")
+        ? file.mimeHint
+        : "image/jpeg",
+      filename: `telegram-foto-${this.pendingImages.length + 1}.jpg`,
+    });
+    if (caption.trim()) this.pendingCaptions.push(caption.trim());
+
+    // Bildunterschrift = Erklärung liegt vor → direkt verarbeiten.
+    if (caption.trim()) {
+      await this.handleMessage(caption.trim());
+      return;
+    }
+
+    // Sonst: Sammelfenster (neu) starten.
+    if (this.mediaTimer) clearTimeout(this.mediaTimer);
+    this.mediaTimer = setTimeout(() => {
+      this.mediaTimer = null;
+      void this.flushImagesAlone();
+    }, MEDIA_WAIT_MS);
+    console.log(
+      `[telegram] ${this.pendingImages.length} Bild(er) gepuffert — warte auf Erläuterung`,
+    );
+  }
+
+  /** Gepufferte Bilder entnehmen (und das Sammelfenster beenden). */
+  private takeBufferedImages(): {
+    images: AgentMessageImage[];
+    captions: string[];
+  } {
+    if (this.mediaTimer) {
+      clearTimeout(this.mediaTimer);
+      this.mediaTimer = null;
+    }
+    const images = this.pendingImages;
+    const captions = this.pendingCaptions;
+    this.pendingImages = [];
+    this.pendingCaptions = [];
+    return { images, captions };
+  }
+
+  /** Sammelfenster abgelaufen — Bilder ohne Erläuterung auswerten. */
+  private async flushImagesAlone(): Promise<void> {
+    if (!this.running || this.pendingImages.length === 0) return;
+    await this.handleMessage(
+      "Zu diesen Bildern kam keine weitere Erläuterung. Beschreibe kurz, " +
+        "was darauf zu sehen ist, und halte fest, was für den Vertrieb " +
+        "relevant sein könnte.",
+    );
+  }
+
+  /**
+   * v0.1.420 — ID des laufenden Gesprächsfadens. Der Telegram-Chat verhält
+   * sich damit wie ein normaler AVA-Chat: Folgefragen ("und das bitte auch
+   * bei Kunde Y") kennen den Zusammenhang. Nach langer Funkstille oder bei
+   * zu vielen Nachrichten beginnt ein frischer Faden, damit der Kontext
+   * nicht unbegrenzt wächst.
+   */
+  private threadId(): string {
+    const now = Date.now();
+    const stale =
+      this.conversationId === null ||
+      now - this.lastActivityAt > CONVERSATION_IDLE_MS ||
+      this.threadMessages >= MAX_THREAD_MESSAGES;
+    if (stale) {
+      this.conversationId = `telegram-${now.toString(36)}`;
+      this.threadMessages = 0;
+    }
+    this.lastActivityAt = now;
+    this.threadMessages += 1;
+    // Nach dem stale-Zweig ist die ID immer gesetzt.
+    return this.conversationId as string;
+  }
+
+  /** Faden bewusst neu beginnen (/neu im Chat). */
+  private resetThread(): void {
+    this.conversationId = null;
+    this.threadMessages = 0;
+    this.takeBufferedImages();
   }
 
   private async reply(text: string): Promise<void> {

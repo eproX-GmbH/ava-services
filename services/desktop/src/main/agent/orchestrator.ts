@@ -574,6 +574,14 @@ export class AgentOrchestrator extends EventEmitter {
     sourceMailId?: string;
     /** v0.1.419 — Bilder (z. B. Foto aus Telegram). */
     images?: AgentMessageImage[];
+    /**
+     * v0.1.420 — Bestehende Konversation FORTSETZEN statt eine neue
+     * anzulegen. Damit hat der Telegram-Chat einen echten Gespraechsfaden
+     * ("und das bitte auch bei Kunde Y") wie ein normaler AVA-Chat.
+     * Unbekannte ID ⇒ es wird eine neue Konversation mit genau dieser ID
+     * angelegt, der Aufrufer kann sie also selbst vergeben.
+     */
+    conversationId?: string;
   }): { conversationId: string; requestId: string } | null {
     const status = this.getStatus();
     if (!status.ready) {
@@ -605,6 +613,14 @@ export class AgentOrchestrator extends EventEmitter {
     sourceMailId?: string;
     /** v0.1.419 — Bilder (z. B. Foto aus Telegram). */
     images?: AgentMessageImage[];
+    /**
+     * v0.1.420 — Bestehende Konversation FORTSETZEN statt eine neue
+     * anzulegen. Damit hat der Telegram-Chat einen echten Gespraechsfaden
+     * ("und das bitte auch bei Kunde Y") wie ein normaler AVA-Chat.
+     * Unbekannte ID ⇒ es wird eine neue Konversation mit genau dieser ID
+     * angelegt, der Aufrufer kann sie also selbst vergeben.
+     */
+    conversationId?: string;
   }> = [];
 
   private runAutonomousNow(input: {
@@ -614,15 +630,27 @@ export class AgentOrchestrator extends EventEmitter {
     sourceMailId?: string;
     /** v0.1.419 — Bilder (z. B. Foto aus Telegram). */
     images?: AgentMessageImage[];
+    /**
+     * v0.1.420 — Bestehende Konversation FORTSETZEN statt eine neue
+     * anzulegen. Damit hat der Telegram-Chat einen echten Gespraechsfaden
+     * ("und das bitte auch bei Kunde Y") wie ein normaler AVA-Chat.
+     * Unbekannte ID ⇒ es wird eine neue Konversation mit genau dieser ID
+     * angelegt, der Aufrufer kann sie also selbst vergeben.
+     */
+    conversationId?: string;
   }): { conversationId: string; requestId: string } {
-    const conversationId = randomUUID();
-    const convo: Conversation = {
+    const conversationId = input.conversationId ?? randomUUID();
+    const existing = this.conversations.get(conversationId);
+    const convo: Conversation = existing ?? {
       id: conversationId,
       messages: [],
       autonomousMode: true,
       sourceMailId: input.sourceMailId,
       loadedToolNames: new Set(),
     };
+    // Fortgesetzte Konversation bleibt im autonomen Modus (kein User da,
+    // der Rueckfragen beantworten koennte).
+    convo.autonomousMode = true;
     this.conversations.set(conversationId, convo);
     this.memory?.ensureConversation(conversationId);
 
