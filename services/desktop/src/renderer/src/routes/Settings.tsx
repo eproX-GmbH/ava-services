@@ -189,6 +189,7 @@ export const SETTINGS_TAB_SUB_ITEMS: Record<
     { anchor: "scheduler-section", label: "Wiederkehrende Aufgaben" },
     { anchor: "freshness-section", label: "Datenrefresh" },
     { anchor: "alerts-cadence", label: "Alerts / Heartbeat" },
+    { anchor: "telegram-section", label: "Telegram" },
   ],
   wissensquellen: [],
   skills: [],
@@ -218,6 +219,8 @@ export const SETTINGS_ANCHOR_TO_TAB: Record<string, SettingsTabId> = {
   "crm-connections":         "datenquellen",
   "mail-account-section":    "datenquellen",
   "verbrauch-limit":         "verbrauch",
+  "telegram-section":        "automatisierungen",
+  "danger-zone":             "system",
   "audit-trail":             "verlauf",
   "research-features":       "modelle",
   "ollama-version":          "modelle",
@@ -308,13 +311,34 @@ export function Settings() {
   useEffect(() => {
     if (!hash || hash.length <= 1) return;
     const id = hash.slice(1);
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
-        document
-          .getElementById(id)
-          ?.scrollIntoView({ behavior: "smooth", block: "start" });
-      });
-    });
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+
+    // v0.1.418 — geduldig statt einmalig: Manche Abschnitte rendern erst,
+    // wenn ihre Daten da sind (react-query-Ladezustand). Zwei Frames
+    // reichten dafür nicht — der Sprung ging dann ins Leere, was sich als
+    // „manche Menüpunkte scrollen nicht" zeigte. Wir versuchen es bis zu
+    // 3 Sekunden lang, bis das Ziel wirklich im DOM steht.
+    const deadline = Date.now() + 3000;
+    const tryScroll = (): void => {
+      if (cancelled) return;
+      const el = document.getElementById(id);
+      if (el) {
+        el.scrollIntoView({ behavior: "smooth", block: "start" });
+        return;
+      }
+      if (Date.now() < deadline) {
+        timer = setTimeout(tryScroll, 100);
+      } else {
+        console.warn(`[settings] Anker "${id}" nicht gefunden`);
+      }
+    };
+    requestAnimationFrame(() => requestAnimationFrame(tryScroll));
+
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+    };
   }, [hash, activeTab]);
 
   return (
@@ -1891,7 +1915,7 @@ export function ProviderSection() {
 
   if (cfg.isLoading || models.isLoading) {
     return (
-      <section className="provider-section">
+      <section className="provider-section" id="provider-section">
         <h3>Agent-Anbieter</h3>
         <p className="muted">Lädt…</p>
       </section>
@@ -1899,7 +1923,7 @@ export function ProviderSection() {
   }
   if (cfg.error || models.error) {
     return (
-      <section className="provider-section">
+      <section className="provider-section" id="provider-section">
         <h3>Agent-Anbieter</h3>
         <p className="error">
           {((cfg.error || models.error) as Error)?.message ?? "Konnte nicht geladen werden"}
@@ -1957,7 +1981,7 @@ export function ProviderSection() {
     hasKey.openai || hasKey.google || hasKey.mistral || hasKey.anthropic;
 
   return (
-    <section className="provider-section">
+    <section className="provider-section" id="provider-section">
       <h3>Modelle</h3>
 
       {/* ChatGPT-Abo als empfohlener „kein-API-Key"-Weg. Das Claude-Abo
@@ -2301,7 +2325,7 @@ function InstalledModelsSection() {
   if (installed.length === 0) {
     return (
       <>
-        <h4>Lokale Modelle auf der Festplatte</h4>
+        <h4 id="installed-models">Lokale Modelle auf der Festplatte</h4>
         <p className="muted small">Noch keine lokalen Modelle installiert.</p>
         <button
           type="button"
@@ -2356,7 +2380,7 @@ function InstalledModelsSection() {
 
   return (
     <>
-      <h4>
+      <h4 id="installed-models">
         Lokale Modelle auf der Festplatte{" "}
         <span className="muted small">
           ({installed.length} · {formatBytesGB(total)})
@@ -3924,7 +3948,7 @@ export function FreshnessSection() {
 
   if (!prefs) {
     return (
-      <section className="provider-section">
+      <section className="provider-section" id="freshness-section">
         <h3>Aktualisierung</h3>
         <p className="muted">Lädt…</p>
       </section>
@@ -4706,7 +4730,7 @@ export function GeneralMemorySection() {
   };
 
   return (
-    <section className="provider-section">
+    <section className="provider-section" id="general-memory">
       <h3>Langzeitgedächtnis</h3>
       <p className="muted small">
         Fakten, die der Agent über Konversationen hinweg gespeichert hat
