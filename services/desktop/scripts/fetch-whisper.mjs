@@ -482,6 +482,19 @@ async function placeMacDylibs(formula, outDir) {
     /* ggml not present as a separate formula on this brew version —
        libwhisper may be self-contained. Continue. */
   }
+  // v0.1.421 — libomp MUSS mit. `libggml-base.dylib` linkt gegen
+  // OpenMP; ohne die Kopie + Pfad-Umschreibung behaelt sie den absoluten
+  // Homebrew-Pfad und dyld scheitert auf JEDEM Rechner ohne Homebrew-libomp
+  // mit "whisper-cli exited -1 ... /opt/homebrew/opt/libomp/lib/libomp.dylib
+  // (no such file)". Der Cross-Build-Pfad (Intel) macht das laengst richtig
+  // — hier fehlte es, deshalb war nur der arm64-Build betroffen.
+  let libompPrefix = null;
+  try {
+    libompPrefix = (await runCmdCapture("brew", ["--prefix", "libomp"])).trim();
+  } catch {
+    /* libomp nicht als Formel vorhanden — dann linkt ggml vermutlich
+       nicht dagegen. Weiter. */
+  }
   // Also copy any shared libraries the binary links to. The Homebrew
   // whisper-cli binary on macOS has LC_RPATH set to
   // `@loader_path/../lib`, so it looks for libwhisper.1.dylib + ggml
@@ -499,6 +512,9 @@ async function placeMacDylibs(formula, outDir) {
   if (ggmlPrefix) {
     await copyDylibsFromBrew(join(ggmlPrefix, "lib"), dstLibDir);
   }
+  if (libompPrefix) {
+    await copyDylibsFromBrew(join(libompPrefix, "lib"), dstLibDir);
+  }
   console.log(`[whisper] ${outDir}: copied dylibs to ${dstLibDir}`);
 
   // v0.1.177 — ggml backend plugins live under `<ggml>/libexec/`
@@ -515,16 +531,44 @@ async function placeMacDylibs(formula, outDir) {
 
   // Rewrite absolute brew paths in the binary + every copied dylib
   // to @rpath so dyld resolves them inside the .app bundle.
+  // v0.1.421 — dieselbe Praefix-Abdeckung wie im Cross-Build-Pfad: neben den
+  // aufgeloesten Prefixen auch die Cellar-/opt-Varianten beider Architekturen
+  // sowie die Bottle-Platzhalter. Sonst bleibt je nach Bottle-Form ein
+  // absoluter Pfad stehen.
+  const macPrefixes = [
+    prefix,
+    ggmlPrefix,
+    libompPrefix,
+    "/usr/local/Cellar/whisper-cpp",
+    "/usr/local/Cellar/ggml",
+    "/usr/local/Cellar/libomp",
+    "/usr/local/opt/whisper-cpp",
+    "/usr/local/opt/ggml",
+    "/usr/local/opt/libomp",
+    "/opt/homebrew/Cellar/whisper-cpp",
+    "/opt/homebrew/Cellar/ggml",
+    "/opt/homebrew/Cellar/libomp",
+    "/opt/homebrew/opt/whisper-cpp",
+    "/opt/homebrew/opt/ggml",
+    "/opt/homebrew/opt/libomp",
+    "@@HOMEBREW_PREFIX@@/opt/whisper-cpp",
+    "@@HOMEBREW_PREFIX@@/opt/ggml",
+    "@@HOMEBREW_PREFIX@@/opt/libomp",
+    "@@HOMEBREW_CELLAR@@/whisper-cpp",
+    "@@HOMEBREW_CELLAR@@/ggml",
+    "@@HOMEBREW_CELLAR@@/libomp",
+  ].filter(Boolean);
+
   const binaryPath = join(outDir, "whisper-cli");
   if (existsSync(binaryPath)) {
-    await rewriteBrewPathsToRpath(binaryPath, [prefix, ggmlPrefix].filter(Boolean));
+    await rewriteBrewPathsToRpath(binaryPath, macPrefixes);
   }
   for (const name of await fs.readdir(dstLibDir)) {
     if (!name.endsWith(".dylib")) continue;
     const dylibPath = join(dstLibDir, name);
     const stat = await fs.lstat(dylibPath);
     if (stat.isSymbolicLink()) continue;
-    await rewriteBrewPathsToRpath(dylibPath, [prefix, ggmlPrefix].filter(Boolean));
+    await rewriteBrewPathsToRpath(dylibPath, macPrefixes);
   }
   // v0.1.177 — same rpath rewrite for the libexec/*.so backend
   // plugins. Each plugin links back to libggml + libggml-base in
@@ -538,7 +582,7 @@ async function placeMacDylibs(formula, outDir) {
       const pluginPath = join(dstLibexecDir, name);
       const stat = await fs.lstat(pluginPath);
       if (stat.isSymbolicLink()) continue;
-      await rewriteBrewPathsToRpath(pluginPath, [prefix, ggmlPrefix].filter(Boolean));
+      await rewriteBrewPathsToRpath(pluginPath, macPrefixes);
     }
   }
   console.log(`[whisper] ${outDir}: rewrote brew paths to @rpath`);
