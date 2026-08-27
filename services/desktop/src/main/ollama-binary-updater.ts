@@ -170,7 +170,27 @@ export class OllamaBinaryUpdater extends EventEmitter {
       .reverse();
     for (const v of candidates) {
       const p = join(root, v, target.exeName);
-      if (existsSync(p)) return p;
+      if (!existsSync(p)) continue;
+      // v0.1.437 — Vollstaendigkeits-Check auch bei der BOOT-Auswahl.
+      // Vor v0.1.406 extrahierte der Updater auf macOS nur die
+      // `ollama`-Binary ohne die separate `llama-server`-Runner-Binary
+      // (Ollama-0.30-Split). Solche Alt-Installationen starten zwar,
+      // aber JEDE Inferenz stirbt mit HTTP 500 ("llama-server binary
+      // not found") — Chat, Embeddings, alles. Der v0.1.410-Check griff
+      // nur bei NEU-Installationen; hier wurde die kaputte Version
+      // weiter ausgewaehlt und gewann gegen die vollstaendige gebundelte
+      // Binary. Unvollstaendige Versionen werden jetzt uebersprungen
+      // (Fallback: aeltere vollstaendige Version oder Bundle).
+      if (
+        process.platform === "darwin" &&
+        !existsSync(join(root, v, "llama-server"))
+      ) {
+        console.warn(
+          `[ollama-updater] managed ${v} ist unvollstaendig (llama-server fehlt) — uebersprungen`,
+        );
+        continue;
+      }
+      return p;
     }
     return null;
   }
