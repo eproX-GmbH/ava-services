@@ -116,6 +116,13 @@ function LogsView({ producer, runId }: { producer: string; runId: string }) {
   // that didn't carry the runId substring (Selenium / Chromium output,
   // most internal log lines) and made the panel look empty on remount.
   const [filter, setFilter] = useState<string>("");
+  // v0.1.432 — P4: Log-Hierarchie. "run" zeigt NUR den letzten Lauf dieser
+  // Firma (per-Run-Index im Main-Prozess), "live" den globalen Stream.
+  const hasRealRunId = runId.includes(":");
+  const [mode, setMode] = useState<"run" | "live">(
+    hasRealRunId ? "run" : "live",
+  );
+  const [runEmpty, setRunEmpty] = useState(false);
   const [stderrOnly, setStderrOnly] = useState<boolean>(false);
   const [autoScroll, setAutoScroll] = useState<boolean>(true);
   // Copy-button state: "idle" → "copied" briefly after success →
@@ -129,11 +136,16 @@ function LogsView({ producer, runId }: { producer: string; runId: string }) {
   useEffect(() => {
     let cancelled = false;
     setLines([]);
-    void window.api.producers.logs
-      .tail(producer, LOG_TAIL_LIMIT)
-      .then((tail) => {
-        if (!cancelled) setLines(tail);
-      });
+    setRunEmpty(false);
+    const backfill =
+      mode === "run" && hasRealRunId
+        ? window.api.producers.logs.tailForRun(producer, runId, LOG_TAIL_LIMIT)
+        : window.api.producers.logs.tail(producer, LOG_TAIL_LIMIT);
+    void backfill.then((tail) => {
+      if (cancelled) return;
+      setLines(tail);
+      if (mode === "run" && tail.length === 0) setRunEmpty(true);
+    });
     const off = window.api.producers.logs.onLine((event: ProducerLogEvent) => {
       if (event.producer !== producer) return;
       setLines((prev) => {
@@ -149,7 +161,7 @@ function LogsView({ producer, runId }: { producer: string; runId: string }) {
       cancelled = true;
       off();
     };
-  }, [producer]);
+  }, [producer, mode, runId, hasRealRunId]);
 
   // Auto-scroll: only follow the bottom while the user hasn't scrolled
   // up. Track scroll position to flip autoScroll off when they read
@@ -262,6 +274,30 @@ function LogsView({ producer, runId }: { producer: string; runId: string }) {
           )}
         </button>
       </div>
+      {hasRealRunId && (
+        <div className="logs-mode-row">
+          <button
+            type="button"
+            className={mode === "run" ? "pill pill--connected" : "pill"}
+            onClick={() => setMode("run")}
+          >
+            Letzter Lauf dieser Firma
+          </button>
+          <button
+            type="button"
+            className={mode === "live" ? "pill pill--connected" : "pill"}
+            onClick={() => setMode("live")}
+          >
+            Live-Log (alle)
+          </button>
+          {mode === "run" && runEmpty && (
+            <span className="muted small">
+              Kein Lauf-Protokoll im Speicher (entsteht ab dem nächsten Lauf
+              nach App-Start) — Live-Log nutzen.
+            </span>
+          )}
+        </div>
+      )}
       <div
         className="diagnostics__log-stream"
         ref={scrollerRef}

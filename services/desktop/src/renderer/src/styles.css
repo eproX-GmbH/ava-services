@@ -7781,3 +7781,7 @@ tr.held-row td:first-child::after {
   font-size: 0.7rem; font-weight: 600;
   background: rgba(148, 163, 184, 0.25); color: var(--fg);
 }
+
+/* v0.1.432 — P4: Log-Modus-Umschalter im Diagnose-Panel */
+.logs-mode-row { display: flex; align-items: center; gap: 0.5rem; margin: 0.4rem 0; flex-wrap: wrap; }
+.logs-mode-row .pill { cursor: pointer; border: 1px solid var(--border, rgba(127,127,127,0.35)); background: transparent; }

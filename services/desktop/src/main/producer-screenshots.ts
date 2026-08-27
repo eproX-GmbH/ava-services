@@ -92,9 +92,16 @@ export async function listScreenshots(
 /** Delete capture directories whose newest file is older than
  *  CAPTURE_TTL_MS. Called once on app boot. */
 export async function pruneOldScreenshots(): Promise<void> {
+  // v0.1.432 — P5: Regel statt pauschalem 7-Tage-TTL:
+  //   Je (Producer × Firma) bleibt der NEUESTE Run-Ordner erhalten, bis
+  //   ein neuerer Lauf existiert — der aktuellste Beweis-Screenshot einer
+  //   Firma verschwindet also nie durch reines Altern. Aeltere Runs
+  //   derselben Firma werden nach CAPTURE_TTL_MS geloescht; als Backstop
+  //   faellt ALLES nach 30 Tagen (sonst wachsen verwaiste Firmen ewig).
+  const BACKSTOP_MS = 30 * 24 * 60 * 60 * 1000;
   const root = screenshotsRoot();
   if (!existsSync(root)) return;
-  const cutoff = Date.now() - CAPTURE_TTL_MS;
+  const now = Date.now();
   const producers = await fs.readdir(root).catch(() => [] as string[]);
   for (const producer of producers) {
     const producerDir = join(root, producer);
@@ -104,20 +111,42 @@ export async function pruneOldScreenshots(): Promise<void> {
     } catch {
       continue;
     }
+
+    // Runs je Firma gruppieren (runId = "<tx>:<companyId>"; Fallback:
+    // ganzer Ordnername als Gruppe, z. B. link-monitor/<monitorId>).
+    const groups = new Map<string, { dir: string; newest: number }[]>();
     for (const runId of runDirs) {
       const runDir = join(producerDir, runId);
+      let newest = 0;
       try {
-        const files = await fs.readdir(runDir);
-        let newest = 0;
-        for (const f of files) {
+        for (const f of await fs.readdir(runDir)) {
           const m = f.match(/^(\d+)-/);
           if (m) newest = Math.max(newest, Number(m[1]));
         }
-        if (newest > 0 && newest < cutoff) {
-          await fs.rm(runDir, { recursive: true, force: true });
-        }
       } catch {
-        // Ignore — best-effort cleanup
+        continue;
+      }
+      const sep = runId.lastIndexOf(":");
+      const companyKey = sep >= 0 ? runId.slice(sep + 1) : runId;
+      const arr = groups.get(companyKey) ?? [];
+      arr.push({ dir: runDir, newest });
+      groups.set(companyKey, arr);
+    }
+
+    for (const runs of groups.values()) {
+      runs.sort((a, b) => b.newest - a.newest);
+      for (let i = 0; i < runs.length; i++) {
+        const r = runs[i]!;
+        const age = r.newest > 0 ? now - r.newest : Infinity;
+        const isNewestOfCompany = i === 0;
+        const expired = isNewestOfCompany
+          ? age > BACKSTOP_MS
+          : age > CAPTURE_TTL_MS;
+        if (expired) {
+          await fs
+            .rm(r.dir, { recursive: true, force: true })
+            .catch(() => undefined);
+        }
       }
     }
   }

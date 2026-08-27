@@ -26,6 +26,10 @@ import {
 import { join } from "node:path";
 
 const MAX_LINES_PER_PRODUCER = 5000;
+// v0.1.432 — P4: Sekundaer-Index je Run (runId = "<tx>:<companyId>").
+const MAX_LINES_PER_RUN = 2000;
+const MAX_RUNS = 50;
+const RUN_ID_RE = /runId=([A-Za-z0-9:_-]+)/;
 
 export interface ProducerLogLine {
   /** Monotonic id within this process so the renderer can dedupe on
@@ -44,6 +48,14 @@ export interface ProducerLogEvent {
 
 class ProducerLogBuffer extends EventEmitter {
   private buffers: Map<string, ProducerLogLine[]> = new Map();
+  // v0.1.432 — P4: Zeilen zusaetzlich je Run indexieren. Nur Worker-Zeilen
+  // tragen die runId; alles dazwischen (Selenium, amqplib, chromedriver)
+  // wird ueber eine "current-runId-Latch" je Producer demselben Run
+  // zugerechnet — korrekt, weil jeder Producer dank AMQP prefetch(1)
+  // immer nur EINE Firma gleichzeitig verarbeitet.
+  private runBuffers: Map<string, ProducerLogLine[]> = new Map();
+  private runOrder: string[] = [];
+  private currentRun: Map<string, string> = new Map();
   private nextId = 1;
   // v0.1.163 — Per-producer append-only log file. Mirrors every line
   // the in-memory ring sees. Lives under
@@ -111,6 +123,33 @@ class ProducerLogBuffer extends EventEmitter {
         this.buffers.set(producer, buf);
       }
       buf.push(entry);
+
+      // v0.1.432 — P4: Run-Zuordnung. Neue runId in der Zeile setzt die
+      // Latch; danach laufen alle Zeilen dieses Producers in den Run-Puffer.
+      const m = RUN_ID_RE.exec(line);
+      if (m && m[1] && m[1].includes(":")) {
+        this.currentRun.set(producer, m[1]);
+      }
+      const runId = this.currentRun.get(producer);
+      if (runId) {
+        const key = `${producer}\u0000${runId}`;
+        let rbuf = this.runBuffers.get(key);
+        if (!rbuf) {
+          rbuf = [];
+          this.runBuffers.set(key, rbuf);
+          this.runOrder.push(key);
+          // LRU: aelteste Runs verwerfen.
+          while (this.runOrder.length > MAX_RUNS) {
+            const oldest = this.runOrder.shift();
+            if (oldest) this.runBuffers.delete(oldest);
+          }
+        }
+        rbuf.push(entry);
+        if (rbuf.length > MAX_LINES_PER_RUN) {
+          rbuf.splice(0, rbuf.length - MAX_LINES_PER_RUN);
+        }
+      }
+
       if (buf.length > MAX_LINES_PER_PRODUCER) {
         // Drop from the head — keep the most recent. Splice is fine
         // here; the buffer hits the cap once per producer per session
@@ -143,6 +182,20 @@ class ProducerLogBuffer extends EventEmitter {
    * renderer when the Logs tab opens — it gets a backfill before
    * subscribing to the "line" event for the live tail.
    */
+  /**
+   * v0.1.432 — P4: Zeilen eines konkreten Runs (tx:companyId). Leeres
+   * Array, wenn der Run nicht (mehr) im Speicher ist — z. B. nach einem
+   * App-Neustart; dann bleibt der globale Live-Log die Quelle.
+   */
+  tailForRun(
+    producer: string,
+    runId: string,
+    limit = 1000,
+  ): ProducerLogLine[] {
+    const rbuf = this.runBuffers.get(`${producer}\u0000${runId}`) ?? [];
+    return rbuf.slice(-limit);
+  }
+
   tail(producer: string, limit = 500): ProducerLogLine[] {
     const buf = this.buffers.get(producer);
     if (!buf) return [];

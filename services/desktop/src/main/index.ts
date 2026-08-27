@@ -1886,6 +1886,9 @@ app.whenReady().then(async () => {
   // a long-running install doesn't accumulate gigabytes of frames.
   registerScreenshotProtocol();
   void pruneOldScreenshots();
+  // v0.1.432 — P5: Prune nicht nur beim Boot, sondern taeglich — sonst
+  // greift die Keep-Newest-Regel bei Dauerlaeufern nie.
+  setInterval(() => void pruneOldScreenshots(), 24 * 60 * 60 * 1000);
   // L6 — same protocol pattern for LinkedIn media thumbnails.
   registerLinkedInMediaProtocol();
 
@@ -3798,6 +3801,16 @@ app.whenReady().then(async () => {
     "producers:logs:tail",
     (_e, args: { producer: string; limit?: number }) =>
       producerLogBuffer.tail(args.producer, args.limit ?? 500),
+  );
+  // v0.1.432 — P4: Zeilen eines konkreten Runs (Firma) aus dem Run-Index.
+  ipcMain.handle(
+    "producers:logs:tailForRun",
+    (_e, args: { producer: string; runId: string; limit?: number }) =>
+      producerLogBuffer.tailForRun(
+        String(args.producer),
+        String(args.runId),
+        args.limit,
+      ),
   );
   // v0.1.163 — on-disk log file path per producer so renderer / chat
   // tools can point the user at the file for `tail -f` from Terminal.

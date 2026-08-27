@@ -562,6 +562,17 @@ const api = {
         limit?: number,
       ): Promise<ProducerLogLine[]> =>
         ipcRenderer.invoke("producers:logs:tail", { producer, limit }),
+      /** v0.1.432 — P4: Log eines konkreten Runs (tx:companyId). */
+      tailForRun: (
+        producer: string,
+        runId: string,
+        limit?: number,
+      ): Promise<import("../shared/types").ProducerLogLine[]> =>
+        ipcRenderer.invoke("producers:logs:tailForRun", {
+          producer,
+          runId,
+          limit,
+        }),
       onLine: (
         cb: (event: ProducerLogEvent) => void,
       ): (() => void) => {
