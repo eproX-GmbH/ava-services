@@ -688,3 +688,137 @@ companiesRouter.openapi(structuredContentRoute, async (c) => {
   };
   return c.json(payload, 200);
 });
+
+
+// ---------------------------------------------------------------------------
+// v0.1.427 — PB3: Hybrid-Suche ueber die Publikations-Bloecke.
+//
+// BM25 laeuft ZENTRAL (tsvector german + ts_rank_cd ueber PublicationBlock);
+// die Kandidaten gehen samt ihrer (beim Ingest lokal berechneten)
+// Embeddings zurueck an den Desktop, der das Vektor-Reranking clientseitig
+// macht — das Gateway braucht damit weder Embedder noch ANN-Index.
+// Mehrere Queries pro Aufruf (LLM-Zerlegung der Nutzerfrage im Desktop);
+// Deduplizierung hier, damit nicht dieselben Bloecke mehrfach reisen.
+
+const publicationBlockSearchRoute = createRoute({
+  method: "post",
+  path: "/companies/{companyId}/publication-blocks/search",
+  tags: [tag],
+  summary: "Hybrid search over stored publication blocks (PB3)",
+  request: {
+    params: CompanyIdParam,
+    body: {
+      content: {
+        "application/json": {
+          schema: z.object({
+            queries: z.array(z.string().min(2).max(200)).min(1).max(5),
+            perQuery: z.number().int().min(5).max(50).optional(),
+          }),
+        },
+      },
+    },
+  },
+  responses: {
+    200: {
+      content: {
+        "application/json": {
+          schema: z.object({
+            candidates: z.array(
+              z.object({
+                runId: z.string(),
+                ordinal: z.number(),
+                year: z.number().nullable(),
+                docName: z.string().nullable(),
+                type: z.string(),
+                text: z.string(),
+                truncated: z.boolean(),
+                bm25Ranks: z.array(z.number().nullable()),
+                embedding: z.array(z.number()).nullable(),
+              }),
+            ),
+          }),
+        },
+      },
+      description: "BM25 candidates incl. stored embeddings",
+    },
+    ...errorResponses,
+  },
+});
+
+companiesRouter.openapi(publicationBlockSearchRoute, async (c) => {
+  const { companyId } = c.req.valid("param");
+  const { queries, perQuery } = c.req.valid("json");
+  const limit = perQuery ?? 30;
+  const pool = getProducerPool("company-publication");
+
+  interface Row {
+    runId: string;
+    ordinal: number;
+    year: number | null;
+    docName: string | null;
+    type: string;
+    text: string;
+    embedding: number[] | null;
+    rank: number;
+  }
+
+  const byKey = new Map<
+    string,
+    Omit<Row, "rank"> & { bm25Ranks: (number | null)[] }
+  >();
+
+  for (let qi = 0; qi < queries.length; qi++) {
+    let rows: Row[] = [];
+    try {
+      const res = await pool.query<Row>(
+        `SELECT "runId", ordinal, year, "docName", type, text, embedding,
+                ts_rank_cd(tsv, websearch_to_tsquery('german', $2)) AS rank
+         FROM "PublicationBlock"
+         WHERE "companyId" = $1
+           AND tsv @@ websearch_to_tsquery('german', $2)
+         ORDER BY rank DESC
+         LIMIT $3`,
+        [companyId, queries[qi], limit],
+      );
+      rows = res.rows;
+    } catch (err) {
+      // 42P01 = Tabelle existiert noch nicht (nie Bloecke persistiert) —
+      // leeres Ergebnis statt 500.
+      if ((err as { code?: string }).code === "42P01") continue;
+      throw err;
+    }
+    rows.forEach((r, rankIdx) => {
+      const key = r.runId + "\u0000" + String(r.ordinal);
+      let entry = byKey.get(key);
+      if (!entry) {
+        entry = {
+          runId: r.runId,
+          ordinal: r.ordinal,
+          year: r.year,
+          docName: r.docName,
+          type: r.type,
+          text: r.text,
+          embedding: r.embedding,
+          bm25Ranks: queries.map(() => null),
+        };
+        byKey.set(key, entry);
+      }
+      entry.bm25Ranks[qi] = rankIdx;
+    });
+  }
+
+  const MAX_TEXT = 6000;
+  const candidates = [...byKey.values()].map((e) => ({
+    runId: e.runId,
+    ordinal: e.ordinal,
+    year: e.year,
+    docName: e.docName,
+    type: e.type,
+    text: e.text.length > MAX_TEXT ? e.text.slice(0, MAX_TEXT) : e.text,
+    truncated: e.text.length > MAX_TEXT,
+    bm25Ranks: e.bm25Ranks,
+    embedding: e.embedding,
+  }));
+
+  return c.json({ candidates }, 200);
+});

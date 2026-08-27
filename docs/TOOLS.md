@@ -4,8 +4,8 @@ Auto-generiert von `services/desktop/scripts/generate-tools-md.mjs`.
 NICHT direkt bearbeiten — die Quelle der Wahrheit ist `services/desktop/src/main/agent/tools/*.ts`.
 Lauf via `pnpm -F @ava/desktop tools:doc` (oder automatisch via `build:typecheck`).
 
-Stand: 2026-08-22
-Anzahl Tools: 175
+Stand: 2026-08-27
+Anzahl Tools: 176
 
 ## Firmen (11)
 
@@ -1443,6 +1443,16 @@ _Parameter:_ keine.
 _Datei:_ `services/desktop/src/main/agent/tools/producers.ts`
 
 Liefert den Status aller lokal laufenden Producer (z. B. company-profile, structured-content, company-publication, master-data). Pro Producer: Name, Zustand (idle / migrating / starting / ready / error / stopping / not_installed), TCP-Port, PID, letzte Fehlermeldung. Nutze das Tool, wenn der Nutzer fragt, ob ein Producer läuft oder warum eine Verarbeitungs-Stage hängt.
+
+_Parameter:_ keine.
+
+## publications (1)
+
+### `publication_search`
+
+_Datei:_ `services/desktop/src/main/agent/tools/publications.ts`
+
+Semantische Volltext-Suche ueber die gespeicherten Jahresabschluss-Bloecke (Bundesanzeiger) einer Firma: Bilanzposten, GuV, Anhang, Lagebericht, Prognosen, Risiken. Nutze dieses Tool fuer JEDE Detailfrage zu Jahresabschluessen/Publikationen (Zahlen, Trends, wirtschaftliche Lage), bevor du sagst, dass Daten fehlen. Die Frage wird automatisch in mehrere Suchanfragen zerlegt und hybrid (BM25 + Vektor) gesucht. companyId wie von company_search geliefert.
 
 _Parameter:_ keine.
 

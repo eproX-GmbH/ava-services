@@ -44,6 +44,7 @@ import { buildMailTools } from "./mail";
 import { buildSchedulerTools } from "./scheduler";
 import { buildLinkMonitorTools } from "./link-monitor";
 import { buildTelegramTools } from "./telegram";
+import { buildPublicationTools } from "./publications";
 import { buildSelfCorrectionTools } from "./self-correction";
 import type { MailSupervisor } from "../../mail/supervisor";
 import type { ScheduledJobsSupervisor } from "../../scheduler/supervisor";
@@ -149,6 +150,12 @@ export function buildReadOnlyRegistry(deps: {
   for (const t of buildTransactionTools(ctx)) registry.register(t);
   for (const t of buildEvaluationTools(ctx)) registry.register(t);
   for (const t of buildUiTools()) registry.register(t);
+  // v0.1.427 — PB3: Lazy-RAG-Suche ueber Jahresabschluss-Bloecke.
+  for (const t of buildPublicationTools({
+    gateway: deps.gateway,
+    providers: deps.providers,
+  }))
+    registry.register(t);
   for (const t of buildSettingsTools({ providers: deps.providers }))
     registry.register(t);
   for (const t of buildMemoryTools({ generalMemory: deps.generalMemory }))
