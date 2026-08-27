@@ -1937,3 +1937,98 @@ async function assertTransactionOwnershipById(
     throw new HTTPException(403, { message: "forbidden" });
   }
 }
+
+
+// ---------------------------------------------------------------------------
+// v0.1.433 — Verarbeitungs-Feed ("wer laeuft gerade?").
+//
+// Chronologische Liste der EntityProgress-Uebergaenge der EIGENEN
+// Transaktionen: aktive Schritte (in_progress) zuoberst, danach der
+// Verlauf nach Aktualitaet. Treibt das Slide-in-Panel in der
+// Firmenuebersicht. Firmennamen loest der Desktop auf (Stammdaten liegen
+// in master-data; der Feed bleibt dadurch eine einzige indizierte Query).
+
+const processingFeedRoute = createRoute({
+  method: "get",
+  path: "/transactions/processing-feed",
+  tags: [tag],
+  summary: "Chronological processing feed (active first)",
+  request: {
+    query: z.object({
+      limit: z.coerce.number().int().min(10).max(300).optional(),
+    }),
+  },
+  responses: {
+    200: {
+      content: {
+        "application/json": {
+          schema: z.object({
+            items: z.array(
+              z.object({
+                transactionId: z.string(),
+                companyId: z.string(),
+                producer: z.string(),
+                state: z.string(),
+                updatedAt: z.string(),
+                startedAt: z.string().nullable(),
+                errorMessage: z.string().nullable(),
+                attempts: z.number().nullable(),
+              }),
+            ),
+          }),
+        },
+      },
+      description: "processing feed",
+    },
+    ...errorResponses,
+  },
+});
+
+transactionsRouter.openapi(processingFeedRoute, async (c) => {
+  const { limit } = c.req.valid("query");
+  const max = limit ?? 120;
+  const myTxns = await getMyTransactions(c);
+  const myIds = myTxns
+    .map((t) => (t as { id?: string }).id ?? "")
+    .filter(Boolean);
+  if (myIds.length === 0) return c.json({ items: [] }, 200);
+
+  const pool = getGatewayPool();
+  const res = await pool.query<{
+    transactionId: string;
+    companyId: string;
+    producer: string;
+    state: string;
+    updatedAt: Date;
+    createdAt: Date | null;
+    errorMessage: string | null;
+    attempts: number | null;
+  }>(
+    `SELECT "transactionId", "companyId", producer, state,
+            "updatedAt", "createdAt", "errorMessage", attempts
+     FROM "EntityProgress"
+     WHERE "transactionId" = ANY($1::text[])
+       AND state <> 'pending'
+     ORDER BY (state = 'in_progress') DESC, "updatedAt" DESC
+     LIMIT $2`,
+    [myIds, max],
+  );
+
+  return c.json(
+    {
+      items: res.rows.map((r) => ({
+        transactionId: r.transactionId,
+        companyId: r.companyId,
+        producer: r.producer,
+        state: r.state,
+        updatedAt: r.updatedAt.toISOString(),
+        startedAt: r.createdAt ? r.createdAt.toISOString() : null,
+        errorMessage: r.errorMessage
+          ? r.errorMessage.slice(0, 300)
+          : null,
+        attempts: r.attempts,
+      })),
+    },
+    200,
+  );
+});

@@ -6,6 +6,7 @@ import { gatewayFetch } from "../api/gateway";
 import { CrmBadgeRow } from "../components/CrmBadge";
 import { DiagnosticsPanel } from "../components/DiagnosticsPanel";
 import { ProcessingToggle } from "../components/ProcessingToggle";
+import { ProcessingFeedButton } from "../components/ProcessingFeedPanel";
 
 // v0.1.395 — „Aus Meine Firmen löschen" ist eine REIN LOKALE Ausblendung:
 // die companyId wandert in ein localStorage-Set, die Liste filtert sie raus.
@@ -296,6 +297,7 @@ export function AllCompanies() {
         </p>
         <div className="proc-toggle-bar">
           <ProcessingToggle />
+          <ProcessingFeedButton />
         </div>
       </header>
 
