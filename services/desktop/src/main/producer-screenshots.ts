@@ -166,3 +166,33 @@ export function registerScreenshotProtocol(): void {
 function sanitizeSegment(s: string): string {
   return s.replace(/[/\\]|\.\./g, "_");
 }
+
+
+/**
+ * v0.1.431 — P3: Lokale Screenshots einer Firma entfernen (Run-Ordner
+ * heissen "<tx>:<companyId>"). Best-effort, Rueckgabe = geloeschte Ordner.
+ */
+export async function deleteScreenshotsForCompany(
+  companyId: string,
+): Promise<number> {
+  const root = screenshotsRoot();
+  if (!existsSync(root)) return 0;
+  const safe = sanitizeSegment(companyId);
+  let removed = 0;
+  const producers = await fs.readdir(root).catch(() => [] as string[]);
+  for (const producer of producers) {
+    const producerDir = join(root, producer);
+    const runs = await fs.readdir(producerDir).catch(() => [] as string[]);
+    for (const run of runs) {
+      if (run === safe || run.endsWith(`:${safe}`) || run.endsWith(`_${safe}`)) {
+        await fs
+          .rm(join(producerDir, run), { recursive: true, force: true })
+          .then(() => {
+            removed += 1;
+          })
+          .catch(() => undefined);
+      }
+    }
+  }
+  return removed;
+}

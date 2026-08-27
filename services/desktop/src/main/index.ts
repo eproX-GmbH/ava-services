@@ -44,6 +44,7 @@ import {
   listScreenshots,
   pruneOldScreenshots,
   registerScreenshotProtocol,
+  deleteScreenshotsForCompany,
 } from "./producer-screenshots";
 import { registerLinkedInMediaProtocol } from "./linkedin/media-protocol";
 import {
@@ -4743,6 +4744,14 @@ app.whenReady().then(async () => {
   // v0.1.409 — „Alles zurücksetzen außer KI-Modelle" (Werksreset). Setzt
   // einen Marker und startet die App neu; die Löschung passiert beim
   // nächsten Boot vor Store-Init (siehe reset-store.ts).
+  // v0.1.431 — P3: lokale Screenshots einer geloeschten Firma entfernen.
+  ipcMain.handle(
+    "screenshots:deleteForCompany",
+    async (_e, companyId: string): Promise<{ removed: number }> => {
+      const removed = await deleteScreenshotsForCompany(String(companyId));
+      return { removed };
+    },
+  );
   ipcMain.handle("settings:resetAllExceptModels", async () => {
     audit({
       actorType: "user",

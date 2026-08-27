@@ -29,6 +29,7 @@ import { HTTPException } from "hono/http-exception";
 import { callUpstream } from "../../lib/upstream";
 import { getGatewayPool } from "../../lib/producer-pools";
 import { heldSubset } from "../../lib/company-holds";
+import { tombstonedSubset } from "../../lib/company-tombstones";
 import { PRODUCER_NAMES } from "../../lib/db-urls";
 import { ErrorShape } from "./schemas";
 
@@ -198,6 +199,22 @@ companiesMatrixRouter.openapi(matrixRoute, async (c) => {
       errorMessage: r.errorMessage,
       transactionId: r.transactionId,
     });
+  }
+
+  // v0.1.431 — P3: Vom Nutzer geloeschte Firmen aus der Sicht filtern.
+  const actorId =
+    (c.get("auth") as { actorId?: string | null })?.actorId ?? "";
+  if (actorId) {
+    const gone = await tombstonedSubset(
+      getGatewayPool(),
+      actorId,
+      upstream.companies.map((co) => co.companyId),
+    );
+    if (gone.size > 0) {
+      upstream.companies = upstream.companies.filter(
+        (co) => !gone.has(co.companyId),
+      );
+    }
   }
 
   // v0.1.430 — P2: Ausgesetzt-Status je Firma mitliefern (Pause-Knopf).

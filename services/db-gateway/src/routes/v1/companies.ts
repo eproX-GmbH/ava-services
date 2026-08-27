@@ -4,6 +4,7 @@ import { requireScope } from "../../middleware/auth";
 import { callUpstream } from "../../lib/upstream";
 import { getGatewayPool, getProducerPool } from "../../lib/producer-pools";
 import { clearHold, setHold } from "../../lib/company-holds";
+import { tombstoneCompany } from "../../lib/company-tombstones";
 import { logger } from "../../lib/logger";
 import {
   CompanyContactShape,
@@ -882,4 +883,68 @@ companiesRouter.openapi(holdDeleteRoute, async (c) => {
   const { companyId } = c.req.valid("param");
   await clearHold(getGatewayPool(), companyId);
   return c.json({ held: false }, 200);
+});
+
+
+// ---------------------------------------------------------------------------
+// v0.1.431 — P3: Firma aus der eigenen Sicht loeschen.
+//
+// Firmen sind geteilte Stammdaten — geloescht wird die NUTZER-Sicht:
+// Tombstone + Purge der EntityProgress-Zeilen der EIGENEN Transaktionen;
+// dadurch leergewordene Transaktionen verschwinden aus der Vorgaenge-Liste.
+// Geteilte abgeleitete Daten (Publikations-Bloecke, Freshness) bleiben.
+
+const companyDeleteRoute = createRoute({
+  method: "delete",
+  path: "/companies/{companyId}",
+  tags: [tag],
+  summary: "Delete company from the user's view (P3)",
+  request: { params: CompanyIdParam },
+  responses: {
+    200: {
+      content: {
+        "application/json": {
+          schema: z.object({
+            deleted: z.boolean(),
+            removedRows: z.number(),
+            hiddenTransactions: z.number(),
+          }),
+        },
+      },
+      description: "company removed from this user's view",
+    },
+    ...errorResponses,
+  },
+});
+
+companiesRouter.openapi(companyDeleteRoute, async (c) => {
+  const { companyId } = c.req.valid("param");
+  // Auth-Middleware garantiert einen Actor; defensiver Fallback haelt den
+  // Tombstone wenigstens nutzerneutral fern statt zu crashen.
+  const userId =
+    (c.get("auth") as { actorId?: string | null })?.actorId ?? "__unknown__";
+
+  // Eigene Transaktionen holen (Scope des Purges).
+  let myTxIds: string[] = [];
+  try {
+    const list = await callUpstream<{
+      transactions?: Array<{ id?: string }>;
+    }>(c, "masterData", "/api/v1/transactions/users/user", {
+      query: { pageNumber: 1, pageSize: 200 },
+    });
+    myTxIds = (list.transactions ?? [])
+      .map((t) => t.id)
+      .filter((id): id is string => typeof id === "string");
+  } catch {
+    // Upstream nicht erreichbar → Tombstone trotzdem setzen (Sicht-Filter
+    // greift), Purge holt der naechste Loeschversuch nach.
+  }
+
+  const res = await tombstoneCompany(
+    getGatewayPool(),
+    userId,
+    companyId,
+    myTxIds,
+  );
+  return c.json({ deleted: true, ...res }, 200);
 });

@@ -205,19 +205,34 @@ export function AllCompanies() {
     },
   });
 
+  // v0.1.431 — P3: ECHTES Loeschen statt localStorage-Verstecken. Entfernt
+  // die Firma aus der eigenen Sicht (Gateway-Tombstone + Purge der eigenen
+  // Fortschritts-Zeilen; leergewordene Vorgaenge verschwinden aus der
+  // Liste) und raeumt lokale Screenshots auf. Firmen sind geteilte
+  // Stammdaten — andere Nutzer sind nicht betroffen.
+  const deleteCompany = useMutation({
+    mutationFn: async (args: { companyId: string }) => {
+      await gatewayFetch(`/v1/companies/${encodeURIComponent(args.companyId)}`, {
+        method: "DELETE",
+      });
+      await window.api.screenshots
+        .deleteForCompany(args.companyId)
+        .catch(() => undefined);
+    },
+    onSuccess: () => {
+      setOpenCompanyId(null);
+      void qc.invalidateQueries({ queryKey: ["companies-matrix"] });
+    },
+  });
+
   const hideCompany = (companyId: string, name: string) => {
-    const ok = window.confirm(
-      `„${name}" aus „Meine Firmen" entfernen?\n\nDie Firma verschwindet nur ` +
-        `aus dieser Liste. Vorgänge und recherchierte Daten bleiben erhalten.`,
-    );
-    if (!ok) return;
-    setHiddenIds((prev) => {
-      const next = new Set(prev);
-      next.add(companyId);
-      persistHiddenCompanies(next);
-      return next;
-    });
-    if (openCompanyId === companyId) setOpenCompanyId(null);
+    if (
+      !window.confirm(
+        `„${name}" wirklich loeschen? Die Firma verschwindet aus deiner Firmen- und Vorgaenge-Ansicht; ihr Verarbeitungsfortschritt wird entfernt. Recherchierte Basisdaten bleiben zentral erhalten (geteilte Stammdaten).`,
+      )
+    )
+      return;
+    deleteCompany.mutate({ companyId });
   };
   const visibleCompanies = useMemo(
     () => (matrix.data?.companies ?? []).filter((r) => !hiddenIds.has(r.companyId)),

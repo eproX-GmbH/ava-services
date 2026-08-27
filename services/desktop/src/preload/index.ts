@@ -315,6 +315,12 @@ const api = {
       ipcRenderer.invoke("storage:openFolder", path),
   },
 
+  // v0.1.431 — P3: lokale Screenshot-Ordner einer Firma loeschen.
+  screenshots: {
+    deleteForCompany: (companyId: string): Promise<{ removed: number }> =>
+      ipcRenderer.invoke("screenshots:deleteForCompany", companyId),
+  },
+
   // v0.1.409 — Werksreset (alle lokalen Daten außer LLM-Modelle/Keys).
   // Startet die App neu; die Löschung passiert beim nächsten Boot.
   settings: {

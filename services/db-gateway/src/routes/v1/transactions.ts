@@ -14,6 +14,7 @@ import {
   publishWebsiteRetry,
 } from "../../lib/retry-publish";
 import { heldSubset, isHeld } from "../../lib/company-holds";
+import { hiddenTransactionSubset } from "../../lib/company-tombstones";
 import { logger } from "../../lib/logger";
 import {
   getTransactionName,
@@ -263,7 +264,19 @@ transactionsRouter.openapi(listRoute, async (c) => {
   // check on a per-id route reuses the same fetch.
   const all = await getMyTransactions(c);
 
-  const sorted = [...all].sort((a, b) => {
+  // v0.1.431 — P3: Transaktionen, die durch Firmen-Loeschungen leer
+  // geworden sind, aus der Liste nehmen ("ewig viele leere
+  // Transaktionslisten").
+  const hidden = await hiddenTransactionSubset(
+    getGatewayPool(),
+    (c.get("auth") as { actorId?: string | null })?.actorId ?? "",
+    all.map((t) => (t as { id?: string }).id ?? "").filter(Boolean),
+  );
+  const visible = all.filter(
+    (t) => !hidden.has((t as { id?: string }).id ?? ""),
+  );
+
+  const sorted = [...visible].sort((a, b) => {
     // String compare on ISO-8601 timestamps is correct because the format
     // is lexicographically ordered. Missing `createdAt` (defensive) sorts
     // to the bottom so a malformed row doesn't push the latest off-page.
