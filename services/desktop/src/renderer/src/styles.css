@@ -7744,3 +7744,21 @@ html.dark .self-corrections__stat { background: rgba(0,192,167,0.15); }
   border-radius: 8px;
   background: #fff;
 }
+
+/* v0.1.422 — Hinweis: Hintergrund-Verarbeitung auf starkem Modell */
+.producer-model-banner {
+  display: flex; align-items: center; gap: 0.6rem;
+  padding: 0.5rem 1rem; font-size: 12.5px;
+  background: rgba(245, 158, 11, 0.13);
+  border-bottom: 1px solid var(--color-warn, #f59e0b);
+  color: var(--fg);
+}
+:root.dark .producer-model-banner { background: rgba(245, 158, 11, 0.18); }
+.producer-model-banner__icon { display: inline-flex; align-items: center; }
+.producer-model-banner__msg { margin: 0; flex: 1; min-width: 0; }
+.producer-model-banner__cta {
+  flex-shrink: 0; padding: 4px 12px; border-radius: 6px;
+  background: var(--color-warn, #f59e0b); color: #1f2937;
+  text-decoration: none; font-weight: 600; font-size: 12px;
+}
+.producer-model-banner__cta:hover { filter: brightness(0.95); text-decoration: none; }

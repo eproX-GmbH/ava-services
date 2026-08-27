@@ -100,6 +100,7 @@ const DEFAULT_CONFIG: ProviderConfig = {
   anthropicAuthMode: "api-key",
   openaiAuthMode: "api-key",
   dailyTokenLimit: null,
+  producerModels: {},
 };
 
 export type { ProviderConfig };
@@ -239,6 +240,8 @@ export class ProviderConfigStore extends EventEmitter {
     openaiAuthMode?: OpenAIAuthMode;
     /** v0.1.405 — `null` löscht das Limit, positive Ganzzahl setzt es. */
     dailyTokenLimit?: number | null;
+    /** v0.1.422 — Producer-Modell je Anbieter; "" = Chat-Modell nutzen. */
+    producerModels?: Partial<Record<LlmProviderKind, string>>;
   }): ProviderConfig {
     const next: ProviderConfig = cloneConfig(this.cached);
     if (partial.kind) {
@@ -274,6 +277,15 @@ export class ProviderConfigStore extends EventEmitter {
         );
       }
       next.openaiAuthMode = partial.openaiAuthMode;
+    }
+    if (partial.producerModels) {
+      next.producerModels = { ...(next.producerModels ?? {}) };
+      for (const [k, v] of Object.entries(partial.producerModels)) {
+        if (!ALL_KINDS.includes(k as LlmProviderKind)) continue;
+        const val = (v ?? "").trim();
+        if (val) next.producerModels[k as LlmProviderKind] = val;
+        else delete next.producerModels[k as LlmProviderKind];
+      }
     }
     if (partial.dailyTokenLimit !== undefined) {
       next.dailyTokenLimit = normaliseDailyTokenLimit(partial.dailyTokenLimit);
@@ -803,5 +815,6 @@ function cloneConfig(cfg: ProviderConfig): ProviderConfig {
     anthropicAuthMode: cfg.anthropicAuthMode ?? "api-key",
     openaiAuthMode: cfg.openaiAuthMode ?? "api-key",
     dailyTokenLimit: cfg.dailyTokenLimit ?? null,
+    producerModels: { ...(cfg.producerModels ?? {}) },
   };
 }

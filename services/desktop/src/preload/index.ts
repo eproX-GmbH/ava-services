@@ -749,6 +749,12 @@ const api = {
       model: string;
     }): Promise<ProviderConfig> =>
       ipcRenderer.invoke("agent:setModel", args),
+    /** v0.1.422 — Modell fuer die Producer-Hintergrundarbeit ("" = Chat-Modell). */
+    setProducerModel: (args: {
+      kind: import("../shared/types").LlmProviderKind;
+      model: string;
+    }): Promise<import("../shared/types").ProviderConfig> =>
+      ipcRenderer.invoke("agent:setProducerModel", args),
     setApiKey: (args: {
       kind: HostedProviderKind;
       apiKey: string;

@@ -7,6 +7,7 @@ import { WatchChip } from "./WatchChip";
 import { UsageChip } from "./UsageChip";
 import { QuotaExhaustedBanner } from "./QuotaExhaustedBanner";
 import { DailyTokenLimitBanner } from "./DailyTokenLimitBanner";
+import { ProducerModelBanner } from "./ProducerModelBanner";
 import { LinkedInActiveBanner } from "./LinkedInActiveBanner";
 import {
   ChatSearchModal,
@@ -112,6 +113,7 @@ export function AppShell({ children }: PropsWithChildren) {
     <div className="app-shell">
       <TopBar />
       <DailyTokenLimitBanner />
+      <ProducerModelBanner />
       <QuotaExhaustedBanner />
       <ConnectionHealthBanner />
       <ExternalServiceBanner />

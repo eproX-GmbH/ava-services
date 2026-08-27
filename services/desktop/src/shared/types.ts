@@ -662,6 +662,16 @@ export interface ProviderConfig {
    */
   openaiAuthMode?: OpenAIAuthMode;
   /**
+   * v0.1.422 — Eigenes Modell für die Hintergrund-Verarbeitung der Producer
+   * (Jahresabschluss-Analyse, Profil-Extraktion …), je Anbieter. Leer oder
+   * fehlend = das im Chat gewählte Modell wird genutzt (Standard).
+   *
+   * Sinn: Diese Aufgaben laufen über Tausende Textblöcke pro Firma. Ein
+   * grosses Reasoning-Modell ist dafür unnötig teuer und langsam, während
+   * es im Chat weiterhin die beste Wahl sein kann.
+   */
+  producerModels?: Partial<Record<LlmProviderKind, string>>;
+  /**
    * v0.1.405 — Optionales tägliches Token-Limit (Kalendertag, UTC) für
    * Chat + Agent zusammen. `null`/`undefined` = KEIN Limit (Default).
    * Positive Ganzzahl = Obergrenze über alle LLM-Anfragen pro Tag.

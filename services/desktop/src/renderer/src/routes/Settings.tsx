@@ -1906,6 +1906,15 @@ export function ProviderSection() {
       qc.invalidateQueries({ queryKey: ["agent", "providerConfig"] }),
   });
 
+  // v0.1.422 — Eigenes Modell fuer die Producer-Hintergrundarbeit.
+  const setProducerModel = useMutation({
+    mutationFn: (args: { kind: LlmProviderKind; model: string }) =>
+      window.api.agent.setProducerModel(args),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["agent", "providerConfig"] });
+    },
+  });
+
   const setModel = useMutation({
     mutationFn: (args: { kind: LlmProviderKind; model: string }) =>
       window.api.agent.setModel(args),
@@ -2106,7 +2115,48 @@ export function ProviderSection() {
                 ))}
           </select>
         </label>
+
+        <label className="field">
+          <span>Modell für Hintergrund-Verarbeitung</span>
+          <select
+            value={cfg.data?.config.producerModels?.[activeKind] ?? ""}
+            onChange={(e) => {
+              setProducerModel.mutate({
+                kind: activeKind,
+                model: e.target.value,
+              });
+            }}
+            disabled={setProducerModel.isPending || activeList.length === 0}
+          >
+            <option value="">Wie oben (Standard)</option>
+            {activeKind === "ollama"
+              ? groupOllamaByVendor(activeList).map((g) => (
+                  <optgroup key={g.vendor} label={g.vendor}>
+                    {g.models.map((m) => (
+                      <option key={m.id} value={m.id}>
+                        {modelOptionLabel(m)}
+                      </option>
+                    ))}
+                  </optgroup>
+                ))
+              : activeList.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {modelOptionLabel(m)}
+                  </option>
+                ))}
+          </select>
+        </label>
       </div>
+
+      <p className="muted small">
+        Die Hintergrund-Verarbeitung (Jahresabschlüsse, Firmenprofile,
+        Publikationen) schickt <strong>tausende Textblöcke pro Firma</strong> an
+        das Modell — ein einzelner Jahresabschluss kann über 1.000 Abschnitte
+        haben. Hier lohnt sich ein <strong>günstiges, schnelles Modell</strong>:
+        Es geht um einfaches Heraussuchen von Kennzahlen, nicht um komplexes
+        Denken. Im Chat kannst du trotzdem das starke Modell behalten. Ohne
+        eigene Wahl wird das oben gewählte Modell verwendet.
+      </p>
 
       {activeEntry && (
         <p className="muted small">

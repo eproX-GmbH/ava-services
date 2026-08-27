@@ -4024,6 +4024,11 @@ app.whenReady().then(async () => {
       providers.setModel(args.kind, args.model),
   );
   ipcMain.handle(
+    "agent:setProducerModel",
+    (_e, args: { kind: LlmProviderKind; model: string }) =>
+      providers.setProducerModel(args.kind, args.model),
+  );
+  ipcMain.handle(
     "agent:setApiKey",
     async (_e, args: { kind: HostedProviderKind; apiKey: string }) => {
       // v0.1.216 — Anthropic-API-Key-Pfad eingestellt. UI versteckt

@@ -331,6 +331,14 @@ export class LlmProviderManager extends EventEmitter {
    * Update the model for a specific provider without flipping the active
    * one. Used by the model dropdown in Settings.
    */
+  /**
+   * v0.1.422 — Modell fuer die Producer-Hintergrundarbeit setzen. Leerer
+   * String = wieder das Chat-Modell verwenden.
+   */
+  setProducerModel(kind: LlmProviderKind, model: string): ProviderConfig {
+    return this.store.setConfig({ producerModels: { [kind]: model } });
+  }
+
   setModel(kind: LlmProviderKind, model: string): ProviderConfig {
     return this.store.setConfig({ models: { [kind]: model } });
   }
@@ -644,7 +652,12 @@ export class LlmProviderManager extends EventEmitter {
   } | null> {
     const cfg = this.store.getConfig();
     const kind = cfg.kind;
-    const model = this.resolveModel(kind);
+    // v0.1.422 — Producer-Modell hat Vorrang. Die Hintergrund-Verarbeitung
+    // laeuft ueber Tausende Textbloecke pro Firma; ein grosses
+    // Reasoning-Modell ist dafuer unnoetig teuer und langsam, waehrend es
+    // im Chat weiter die beste Wahl sein kann. Nicht gesetzt = Chat-Modell.
+    const producerOverride = (cfg.producerModels ?? {})[kind]?.trim();
+    const model = producerOverride || this.resolveModel(kind);
     const env: Awaited<ReturnType<typeof this.getProducerLlmEnv>> = {
       provider: kind,
       model: model || undefined,
