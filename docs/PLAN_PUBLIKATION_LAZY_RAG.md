@@ -22,7 +22,25 @@ company-evaluation + Desktop-Agent.
    pgvector in company-evaluation). **BM25/Volltext existiert NIRGENDS** —
    kein tsvector im ganzen System. Hybrid-Suche ist Greenfield.
 
-## Architektur-Entscheidung: Blöcke bleiben LOKAL
+## Architektur-Entscheidung (REVIDIERT v0.1.426): Blöcke + Embeddings ZENTRAL
+
+**Korrektur:** Die ursprüngliche Lokal-Entscheidung (unten, historisch)
+war falsch begründet — Jahresabschlüsse sind ÖFFENTLICHE
+Bundesanzeiger-Daten, und das AVA-Datenmodell teilt Firmendaten („einer
+verarbeitet, alle profitieren"). Blöcke UND Embeddings gehen deshalb als
+gebatchte Persist-Events (`tenant.persist.company-publication-blocks.v1`,
+100 Blöcke/Event) an das Gateway → Tabelle `PublicationBlock` in
+`ava_company_publication` (tsvector german + GIN; Embeddings als REAL[],
+768-dim embeddinggemma — lokal beim verarbeitenden Nutzer berechnet).
+Replace-Semantik über runId (reihenfolge- und redelivery-sicher).
+Kein pgvector/ANN-Index nötig: Suche = BM25 zentral, Vektor-Rerank beim
+Suchenden über die Kandidaten.
+
+**Kapazitäts-Hinweis (Operator):** Text + Vektoren ≈ 5–15 MB je Firma.
+Der basic-MPG-Cluster hat 10 GB Disk — bei vielen hundert Firmen Disk
+beobachten/skalieren.
+
+## Historisch (verworfen): Blöcke bleiben LOKAL
 
 Die Blöcke sind das größte Artefakt im System (3 Publikationen × ~1.300
 Blöcke × bis 12k Zeichen). Empfehlung: **lokale PGlite-Datenbank** statt

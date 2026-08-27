@@ -640,22 +640,16 @@ function buildProducer(
           : name === "company-publication"
             ? // v0.1.424 — Analyse-Modus (PB1): "lazy" (Default) analysiert
               // nur trend-relevante Bloecke, "eager" jeden Block.
-              // v0.1.425 — PB2: zusaetzlich die lokale Block-DB (PGlite via
-              // postgres-supervisor; Port kann bei Kollision wandern, daher
-              // zur Spawn-Zeit vom Supervisor erfragen) + lokales
-              // Embedding-Modell. Siehe docs/PLAN_PUBLIKATION_LAZY_RAG.md.
-              async (): Promise<Record<string, string>> => {
-                const env: Record<string, string> = {
-                  AVA_PUBLICATION_ANALYSIS: publicationStore.getMode(),
-                  EMBED_PROVIDER: "ollama",
-                  EMBED_MODEL: "embeddinggemma:latest",
-                };
-                const pgPort = postgres.getStatus().port;
-                if (pgPort) {
-                  env.BLOCKS_DATABASE_URL = `postgres://postgres@127.0.0.1:${pgPort}/publication_blocks`;
-                }
-                return env;
-              }
+              // v0.1.426 — PB2b: Embedding-Env fuer die Block-Einbettung.
+              // Die Bloecke gehen als Persist-Events ans Gateway (zentraler
+              // Korpus fuer alle Nutzer); embeddet wird LOKAL beim
+              // verarbeitenden Nutzer — embeddinggemma fuer alle identisch,
+              // dieselbe Konsistenz-Entscheidung wie bei company-evaluation.
+              async (): Promise<Record<string, string>> => ({
+                AVA_PUBLICATION_ANALYSIS: publicationStore.getMode(),
+                EMBED_PROVIDER: "ollama",
+                EMBED_MODEL: "embeddinggemma:latest",
+              })
             : undefined;
   return new ProducerSupervisor({
     config: { name, entry, databaseName, port },

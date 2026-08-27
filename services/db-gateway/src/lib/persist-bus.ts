@@ -1050,6 +1050,121 @@ interface CompanyPublicationsResult {
  * inner shape evolves and last-write-wins is the right semantics
  * for the whole blob anyway.
  */
+// v0.1.426 — PB2b: Rohbloecke der Jahresabschluesse + lokale Embeddings.
+//
+// Zentraler Suchkorpus fuer ALLE Nutzer (Bundesanzeiger-Daten sind
+// oeffentlich und im Datenmodell geteilt). Der verarbeitende Nutzer
+// embeddet lokal (embeddinggemma, 768-dim) und schickt Batches von 100
+// Bloecken; Replace-Semantik ueber runId: JEDER Batch loescht zuerst alle
+// Zeilen der Firma aus fremden Runs — dadurch ist die Reihenfolge der
+// Batches egal und Redelivery idempotent (PK-Upsert je (company,run,ordinal)).
+//
+// Schema wird lazy angelegt (CREATE TABLE IF NOT EXISTS) — die Producer-
+// Migrationskette bleibt unberuehrt. pgvector ist bewusst NICHT noetig:
+// Vektoren liegen als REAL[]; das Reranking macht der Suchende clientseitig
+// ueber die BM25-Kandidaten (haelt die zentrale DB frei von ANN-Indizes).
+let publicationBlocksSchemaReady = false;
+
+const applyPublicationBlocks: ApplyFn = async (pool, event, log) => {
+  const data = event.data as
+    | PersistEvent<{
+        companyId: string;
+        runId: string;
+        batchIndex: number;
+        batchCount: number;
+        blocks: Array<{
+          year: number | null;
+          docName: string | null;
+          sourceUrl: string | null;
+          ordinal: number;
+          type: string;
+          text: string;
+          embedding: number[] | null;
+        }>;
+      }>
+    | undefined;
+  if (!data) throw new Error("empty payload");
+  const { result } = data;
+  if (!result?.companyId) throw new Error("missing result.companyId");
+  if (!result.runId) throw new Error("missing result.runId");
+  const blocks = result.blocks ?? [];
+
+  const client = await pool.connect();
+  try {
+    if (!publicationBlocksSchemaReady) {
+      await client.query(`
+        CREATE TABLE IF NOT EXISTS "PublicationBlock" (
+          "companyId"  TEXT NOT NULL,
+          "runId"      TEXT NOT NULL,
+          ordinal      INT  NOT NULL,
+          year         INT,
+          "docName"    TEXT,
+          "sourceUrl"  TEXT,
+          type         TEXT NOT NULL,
+          text         TEXT NOT NULL,
+          tsv          TSVECTOR,
+          embedding    REAL[],
+          "updatedAt"  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          PRIMARY KEY ("companyId", "runId", ordinal)
+        );
+      `);
+      await client.query(
+        `CREATE INDEX IF NOT EXISTS pb_company_idx ON "PublicationBlock"("companyId");`,
+      );
+      await client.query(
+        `CREATE INDEX IF NOT EXISTS pb_tsv_idx ON "PublicationBlock" USING GIN(tsv);`,
+      );
+      publicationBlocksSchemaReady = true;
+    }
+
+    await client.query("BEGIN");
+    // Replace: alles von FREMDEN Runs weg — reihenfolge-/redelivery-sicher.
+    await client.query(
+      `DELETE FROM "PublicationBlock" WHERE "companyId" = $1 AND "runId" <> $2`,
+      [result.companyId, result.runId],
+    );
+    for (const b of blocks) {
+      await client.query(
+        `INSERT INTO "PublicationBlock"
+           ("companyId", "runId", ordinal, year, "docName", "sourceUrl",
+            type, text, tsv, embedding, "updatedAt")
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,
+                 to_tsvector('german', $8), $9, NOW())
+         ON CONFLICT ("companyId", "runId", ordinal) DO UPDATE SET
+           text = EXCLUDED.text,
+           tsv = EXCLUDED.tsv,
+           embedding = EXCLUDED.embedding,
+           "updatedAt" = NOW()`,
+        [
+          result.companyId,
+          result.runId,
+          b.ordinal,
+          b.year,
+          b.docName,
+          b.sourceUrl,
+          b.type === "table" ? "table" : "text",
+          String(b.text ?? "").slice(0, 20000),
+          Array.isArray(b.embedding) ? b.embedding : null,
+        ],
+      );
+    }
+    await client.query("COMMIT");
+    log.info(
+      {
+        companyId: result.companyId,
+        batch: `${result.batchIndex + 1}/${result.batchCount}`,
+        blocks: blocks.length,
+      },
+      "publication blocks applied",
+    );
+  } catch (err) {
+    await client.query("ROLLBACK").catch(() => undefined);
+    throw err;
+  } finally {
+    client.release();
+  }
+};
+
 const applyCompanyPublication: ApplyFn = async (pool, event, log) => {
   const data = event.data as
     | PersistEvent<CompanyPublicationsResult>
@@ -1737,6 +1852,12 @@ const BINDINGS: ProducerBinding[] = [
     routingKey: "tenant.persist.company-publication.v1",
     queue: "db-gateway-persist-company-publication",
     apply: withTierGate("company-publication", applyCompanyPublication),
+  },
+  {
+    producer: "company-publication",
+    routingKey: "tenant.persist.company-publication-blocks.v1",
+    queue: "db-gateway-persist-company-publication-blocks",
+    apply: withTierGate("company-publication", applyPublicationBlocks),
   },
   {
     producer: "company-evaluation",
