@@ -884,6 +884,7 @@ function FinancialsTab({ pubs }: { pubs: Publication[] }) {
           is on top. */}
       <section style={{ gridColumn: "1 / -1", display: "grid", gap: "1rem" }}>
         <h3 style={{ margin: 0 }}>Jahresberichte</h3>
+        <PublicationModeHint />
         {[...pubs].reverse().map((p, i) => (
           <PublicationCard key={i} pub={p} />
         ))}
@@ -1804,5 +1805,34 @@ function JobsTab({ jobs }: { jobs: JobPosting[] }) {
         </div>
       )}
     </>
+  );
+}
+
+
+/** v0.1.429 — PB4: Im Sparmodus wissen lassen, dass Details nicht fehlen,
+ *  sondern per Chat-Frage on-the-fly geholt werden (publication_search). */
+function PublicationModeHint() {
+  const [mode, setMode] = useState<"lazy" | "eager" | null>(null);
+  useEffect(() => {
+    let alive = true;
+    void window.api.publication
+      .getAnalysisMode()
+      .then((m) => {
+        if (alive) setMode(m);
+      })
+      .catch(() => undefined);
+    return () => {
+      alive = false;
+    };
+  }, []);
+  if (mode !== "lazy") return null;
+  return (
+    <p className="muted small" style={{ margin: 0 }}>
+      Sparsame Analyse aktiv: Vorab extrahiert werden nur Kernzahlen und
+      Lagebericht-Aussagen. Der vollständige Jahresabschluss ist trotzdem
+      durchsuchbar — stell deine Detailfrage einfach im Chat (z.&nbsp;B.
+      „Wie haben sich die Umsatzerlöse entwickelt?“). Vollständige
+      Voranalyse: Einstellungen&nbsp;→ Modelle&nbsp;→ Publikations-Analyse.
+    </p>
   );
 }

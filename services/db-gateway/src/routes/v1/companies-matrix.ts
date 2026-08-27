@@ -146,12 +146,14 @@ companiesMatrixRouter.openapi(matrixRoute, async (c) => {
     state: string;
     errorMessage: string | null;
     updatedAt: Date;
+    transactionId: string | null;
   }> = [];
   if (companyIds.length > 0) {
     const pool = getGatewayPool();
     const res = await pool.query(
       `SELECT DISTINCT ON ("companyId", producer)
-         "companyId", producer, state, "errorMessage", "updatedAt"
+         "companyId", producer, state, "errorMessage", "updatedAt",
+         "transactionId"
        FROM "EntityProgress"
        WHERE "companyId" = ANY($1::text[])
        ORDER BY "companyId", producer,
@@ -175,7 +177,12 @@ companiesMatrixRouter.openapi(matrixRoute, async (c) => {
     string,
     Map<
       string,
-      { state: string; updatedAt: Date; errorMessage: string | null }
+      {
+        state: string;
+        updatedAt: Date;
+        errorMessage: string | null;
+        transactionId: string | null;
+      }
     >
   >();
   for (const r of stageRows) {
@@ -188,6 +195,7 @@ companiesMatrixRouter.openapi(matrixRoute, async (c) => {
       state: r.state,
       updatedAt: r.updatedAt,
       errorMessage: r.errorMessage,
+      transactionId: r.transactionId,
     });
   }
 
@@ -196,6 +204,9 @@ companiesMatrixRouter.openapi(matrixRoute, async (c) => {
       state: "pending" | "in_progress" | "completed" | "failed" | "skipped";
       updatedAt: string | null;
       errorMessage: string | null;
+      /** v0.1.429 — Transaktion des Gewinner-Rows: der Renderer baut daraus
+       *  die runId (tx:companyId) fuer Screenshots + Log-Filter. */
+      transactionId: string | null;
     };
     const stages: Record<string, StageCell> = {};
     const found = byCompany.get(co.companyId) ?? new Map();
@@ -207,6 +218,7 @@ companiesMatrixRouter.openapi(matrixRoute, async (c) => {
           state: normalizeState(row.state),
           updatedAt: row.updatedAt.toISOString(),
           errorMessage: row.errorMessage,
+          transactionId: row.transactionId,
         };
       } else {
         // No EntityProgress row for this (company, producer) — the
@@ -218,6 +230,7 @@ companiesMatrixRouter.openapi(matrixRoute, async (c) => {
           state: "pending",
           updatedAt: null,
           errorMessage: null,
+          transactionId: null,
         };
       }
     }
@@ -240,6 +253,7 @@ companiesMatrixRouter.openapi(matrixRoute, async (c) => {
             state: "skipped",
             updatedAt: websiteCell?.updatedAt ?? null,
             errorMessage: null,
+            transactionId: null,
           };
         }
       }
@@ -288,18 +302,21 @@ companiesMatrixRouter.openapi(matrixRoute, async (c) => {
             state: "in_progress",
             updatedAt: lastTs,
             errorMessage: null,
+            transactionId: null,
           };
         } else if (allTerminal && anyCompleted) {
           stages["companyEvaluation"] = {
             state: "completed",
             updatedAt: lastTs,
             errorMessage: null,
+            transactionId: null,
           };
         } else if (allTerminal) {
           stages["companyEvaluation"] = {
             state: "skipped",
             updatedAt: lastTs,
             errorMessage: null,
+            transactionId: null,
           };
         }
       }

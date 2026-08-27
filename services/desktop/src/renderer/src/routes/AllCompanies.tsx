@@ -59,6 +59,19 @@ interface StageCell {
   state: StageState;
   updatedAt: string | null;
   errorMessage: string | null;
+  /** v0.1.429 — Transaktion des Gewinner-Rows (fuer runId = tx:companyId). */
+  transactionId?: string | null;
+}
+
+/** v0.1.429 — Reaper-Timeout ("kein Lebenszeichen") von echten Fehlern
+ *  unterscheiden. Gleicher DB-Zustand (failed), aber andere Bedeutung:
+ *  der Schritt wurde nach 30 Min Stille abgebrochen — typisch bei
+ *  Infrastruktur-Engpaessen, nicht bei kaputten Firmendaten. */
+function isTimeoutCell(cell: StageCell): boolean {
+  return (
+    cell.state === "failed" &&
+    (cell.errorMessage ?? "").startsWith("Zeitüberschreitung")
+  );
 }
 
 interface CompanyMatrixRow {
@@ -332,8 +345,8 @@ export function AllCompanies() {
                     return (
                       <td key={p} className="matrix-cell">
                         <span
-                          className={`dot ${STATE_DOT_CLASS[cell.state]}`}
-                          title={`${PRODUCER_LABEL[p]}: ${STATE_LABEL[cell.state]}${cell.updatedAt ? ` (${formatTime(cell.updatedAt)})` : ""}${cell.errorMessage ? `: ${cell.errorMessage}` : ""}`}
+                          className={`dot ${isTimeoutCell(cell) ? "timeout" : STATE_DOT_CLASS[cell.state]}`}
+                          title={`${PRODUCER_LABEL[p]}: ${isTimeoutCell(cell) ? "Zeitüberschreitung (abgebrochen — kein Datenfehler)" : STATE_LABEL[cell.state]}${cell.updatedAt ? ` (${formatTime(cell.updatedAt)})` : ""}${cell.errorMessage ? `: ${cell.errorMessage}` : ""}`}
                           aria-label={`${PRODUCER_LABEL[p]}: ${STATE_LABEL[cell.state]}`}
                         />
                       </td>
@@ -473,11 +486,22 @@ export function AllCompanies() {
               PRODUCERS.find((p) => openRow.stages[p]?.state === "failed") ??
               PRODUCERS.find((p) => openRow.stages[p]?.state === "in_progress") ??
               PRODUCERS[0];
+            // v0.1.429 — Screenshots + Logs sind unter runId = tx:companyId
+            // abgelegt. Vorher wurde hier die nackte companyId uebergeben,
+            // wodurch der Screenshots-Tab in der Firmenuebersicht NIE etwas
+            // fand. Die Matrix liefert jetzt die Gewinner-Transaktion mit.
+            const tx =
+              openRow.stages[interesting]?.transactionId ??
+              PRODUCERS.map((p) => openRow.stages[p]?.transactionId).find(
+                (t) => !!t,
+              ) ??
+              null;
+            const diagRunId = tx ? `${tx}:${openCompanyId}` : openCompanyId;
             return (
               <>
                 <h4>Diagnose</h4>
                 <DiagnosticsPanel
-                  runId={openCompanyId}
+                  runId={diagRunId}
                   producers={[...PRODUCERS]}
                   initialProducer={interesting}
                 />

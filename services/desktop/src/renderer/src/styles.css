@@ -7768,3 +7768,6 @@ html.dark .self-corrections__stat { background: rgba(0,192,167,0.15); }
   background: transparent; color: inherit; cursor: pointer; opacity: 0.65;
 }
 .producer-model-banner__dismiss:hover { opacity: 1; background: rgba(0,0,0,0.08); }
+
+/* v0.1.429 — Timeout-Zustand (Reaper) getrennt von echtem Fehler-Rot */
+.dot.timeout { background: rgba(249, 115, 22, 0.9); border-color: rgba(249, 115, 22, 1); }
