@@ -33,7 +33,7 @@ Cloud-MPG, aus drei Gründen:
 2. **MPG-Kapazität** — der geteilte Cluster lief eben erst bei 97/100
    Verbindungen; ihn zusätzlich mit dem dicksten Datensatz des Systems zu
    fluten wäre fahrlässig.
-3. **AMQP-Событие** — das heutige Ein-Event-pro-Firma-Design trägt keine
+3. **AMQP-Event** — das heutige Ein-Event-pro-Firma-Design trägt keine
    ~15 MB Blocktext; Batching wäre Zusatzkomplexität.
 
 Seam dafür existiert schon: Der `postgres-supervisor` serviert PGlite über
