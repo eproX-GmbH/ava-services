@@ -63,7 +63,7 @@ export function ProcessingFeedPanel({
     queryKey: ["processing-feed"],
     queryFn: () =>
       gatewayFetch<{ items: FeedItem[] }>(
-        "/v1/transactions/processing-feed?limit=150",
+        "/v1/transactions/processing-feed/items?limit=150",
       ),
     enabled: open,
     refetchInterval: open ? 5000 : false,
@@ -181,7 +181,7 @@ export function ProcessingFeedButton(): JSX.Element {
     <>
       <button
         type="button"
-        className="pf-open-btn"
+        className="proc-toggle pf-open-btn"
         title="Verarbeitungs-Feed anzeigen (wer läuft gerade?)"
         onClick={() => setOpen(true)}
       >

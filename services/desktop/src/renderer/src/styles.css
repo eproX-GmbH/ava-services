@@ -7787,14 +7787,10 @@ tr.held-row td:first-child::after {
 .logs-mode-row .pill { cursor: pointer; border: 1px solid var(--border, rgba(127,127,127,0.35)); background: transparent; }
 
 /* ----- v0.1.433 — Verarbeitungs-Feed (Slide-in von rechts) --------------- */
-.pf-open-btn {
-  display: inline-flex; align-items: center; gap: 0.4rem;
-  padding: 0.45rem 0.8rem; border-radius: 8px;
-  border: 1px solid var(--border, rgba(127,127,127,0.35));
-  background: var(--surface-2, rgba(127,127,127,0.06));
-  color: var(--fg); cursor: pointer; font-weight: 500;
-}
-.pf-open-btn:hover { background: rgba(127,127,127,0.14); }
+/* v0.1.436 — erbt Metrik/Look von .proc-toggle (gleiche Hoehe/Padding);
+   hier nur die Icon-Groesse. Abstand kommt vom Flex-Gap der Leiste. */
+.pf-open-btn .ct-icon-sm { width: 14px; height: 14px; }
+.proc-toggle-bar { display: inline-flex; align-items: center; gap: 10px; }
 .pf-overlay {
   position: fixed; inset: 0; z-index: 900;
   background: rgba(0,0,0,0.35);

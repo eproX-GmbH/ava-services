@@ -1951,7 +1951,10 @@ async function assertTransactionOwnershipById(
 
 const processingFeedRoute = createRoute({
   method: "get",
-  path: "/transactions/processing-feed",
+  // Zwei Segmente wie retry-queue/pending — ein einsegmentiger Pfad wuerde
+  // von der frueher registrierten "/transactions/{transactionId}"-Route als
+  // ID geschluckt (Ownership-Check -> 404).
+  path: "/transactions/processing-feed/items",
   tags: [tag],
   summary: "Chronological processing feed (active first)",
   request: {
