@@ -2,7 +2,8 @@ import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
 import { HTTPException } from "hono/http-exception";
 import { requireScope } from "../../middleware/auth";
 import { callUpstream } from "../../lib/upstream";
-import { getProducerPool } from "../../lib/producer-pools";
+import { getGatewayPool, getProducerPool } from "../../lib/producer-pools";
+import { clearHold, setHold } from "../../lib/company-holds";
 import { logger } from "../../lib/logger";
 import {
   CompanyContactShape,
@@ -821,4 +822,64 @@ companiesRouter.openapi(publicationBlockSearchRoute, async (c) => {
   }));
 
   return c.json({ candidates }, 200);
+});
+
+
+// ---------------------------------------------------------------------------
+// v0.1.430 — P2: Verarbeitung pro Firma aussetzen/fortsetzen.
+
+const holdPutRoute = createRoute({
+  method: "put",
+  path: "/companies/{companyId}/hold",
+  tags: [tag],
+  summary: "Pause processing for one company (P2)",
+  request: {
+    params: CompanyIdParam,
+    body: {
+      content: {
+        "application/json": {
+          schema: z.object({ reason: z.string().max(300).optional() }),
+        },
+      },
+    },
+  },
+  responses: {
+    200: {
+      content: {
+        "application/json": { schema: z.object({ held: z.boolean() }) },
+      },
+      description: "company processing held",
+    },
+    ...errorResponses,
+  },
+});
+
+companiesRouter.openapi(holdPutRoute, async (c) => {
+  const { companyId } = c.req.valid("param");
+  const { reason } = c.req.valid("json");
+  await setHold(getGatewayPool(), companyId, reason ?? null);
+  return c.json({ held: true }, 200);
+});
+
+const holdDeleteRoute = createRoute({
+  method: "delete",
+  path: "/companies/{companyId}/hold",
+  tags: [tag],
+  summary: "Resume processing for one company (P2)",
+  request: { params: CompanyIdParam },
+  responses: {
+    200: {
+      content: {
+        "application/json": { schema: z.object({ held: z.boolean() }) },
+      },
+      description: "company processing resumed",
+    },
+    ...errorResponses,
+  },
+});
+
+companiesRouter.openapi(holdDeleteRoute, async (c) => {
+  const { companyId } = c.req.valid("param");
+  await clearHold(getGatewayPool(), companyId);
+  return c.json({ held: false }, 200);
 });

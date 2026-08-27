@@ -13,6 +13,7 @@ import {
   publishStructuredContentRetry,
   publishWebsiteRetry,
 } from "../../lib/retry-publish";
+import { heldSubset, isHeld } from "../../lib/company-holds";
 import { logger } from "../../lib/logger";
 import {
   getTransactionName,
@@ -1284,7 +1285,16 @@ transactionsRouter.openapi(retryQueueRoute, async (c) => {
      LIMIT $2`,
     [myIds, limit],
   );
-  const items: z.infer<typeof RetryQueueItem>[] = res.rows.map((r) => ({
+  // v0.1.430 — P2: ausgesetzte Firmen tauchen in der Auto-Retry-Queue gar
+  // nicht erst auf (sonst wuerde der Heartbeat sie anfassen und am
+  // Retry-Endpunkt abblitzen — unnoetige Requests + Log-Rauschen).
+  const held = await heldSubset(
+    pool,
+    [...new Set(res.rows.map((r) => r.companyId))],
+  );
+  const liveRows = res.rows.filter((r) => !held.has(r.companyId));
+
+  const items: z.infer<typeof RetryQueueItem>[] = liveRows.map((r) => ({
     transactionId: r.transactionId,
     companyId: r.companyId,
     producer: r.producer,
@@ -1395,6 +1405,18 @@ const retryRoute = createRoute({
       content: { "application/json": { schema: RetryStageResultShape } },
       description: "retry dispatched",
     },
+        409: {
+      content: {
+        "application/json": {
+          schema: z.object({
+            ok: z.boolean(),
+            skipped: z.string(),
+            message: z.string(),
+          }),
+        },
+      },
+      description: "company processing is held (paused)",
+    },
     ...errorResponses,
   },
 });
@@ -1404,6 +1426,21 @@ transactionsRouter.openapi(retryRoute, async (c) => {
   const { stage, companyName } = c.req.valid("json");
 
   await assertTransactionOwnershipById(c, transactionId);
+
+  // v0.1.430 — P2: Firma ausgesetzt? Dann keinerlei Wiederanlauf. Dieser
+  // Endpunkt ist der Chokepoint fuer ALLE Retry-Ausloeser (Agent-Tool,
+  // Freshness, Resume-Sweep, Auto-Retry-Heartbeat).
+  if (await isHeld(getGatewayPool(), companyId)) {
+    return c.json(
+      {
+        ok: false,
+        skipped: "held",
+        message:
+          "Verarbeitung fuer diese Firma ist ausgesetzt (pausiert). In der Firmenuebersicht fortsetzen, um Wiederanlaeufe zu erlauben.",
+      } as never,
+      409,
+    );
+  }
 
   // v0.1.53 — per-user AMQP routing. Retry republishes need to land
   // on the same user's per-user queue the original dispatch did.

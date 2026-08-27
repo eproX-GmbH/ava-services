@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { useQuery } from "@tanstack/react-query";
-import { Search, ChevronLeft, ChevronRight, Building2, Trash2 } from "lucide-react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { Search, ChevronLeft, ChevronRight, Building2, Trash2, Pause, Play } from "lucide-react";
 import { gatewayFetch } from "../api/gateway";
 import { CrmBadgeRow } from "../components/CrmBadge";
 import { DiagnosticsPanel } from "../components/DiagnosticsPanel";
@@ -75,6 +75,8 @@ function isTimeoutCell(cell: StageCell): boolean {
 }
 
 interface CompanyMatrixRow {
+  /** v0.1.430 — P2: Verarbeitung fuer diese Firma ausgesetzt. */
+  held?: boolean;
   companyId: string;
   name: string;
   location: string;
@@ -131,6 +133,7 @@ const STATE_DOT_CLASS: Record<StageState, string> = {
 const PAGE_SIZE = 50;
 
 export function AllCompanies() {
+  const qc = useQueryClient();
   const [page, setPage] = useState(1);
   const [searchInput, setSearchInput] = useState("");
   const [search, setSearch] = useState("");
@@ -181,6 +184,27 @@ export function AllCompanies() {
   // never imported from a CRM.
   // v0.1.395 — lokal ausgeblendete Firmen (aus „Meine Firmen" gelöscht).
   const [hiddenIds, setHiddenIds] = useState<Set<string>>(loadHiddenCompanies);
+  // v0.1.430 — P2: Verarbeitung pro Firma aussetzen/fortsetzen. Der Hold
+  // wirkt zentral am Gateway-Retry-Chokepoint: keine Auto-Retries, kein
+  // Resume-Sweep, kein Heartbeat-Wiederbeleben mehr fuer diese Firma.
+  const toggleHold = useMutation({
+    mutationFn: async (args: { companyId: string; held: boolean }) => {
+      if (args.held) {
+        await gatewayFetch(`/v1/companies/${encodeURIComponent(args.companyId)}/hold`, {
+          method: "DELETE",
+        });
+      } else {
+        await gatewayFetch(`/v1/companies/${encodeURIComponent(args.companyId)}/hold`, {
+          method: "PUT",
+          body: { reason: "Vom Nutzer pausiert (Firmenuebersicht)" },
+        });
+      }
+    },
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["companies-matrix"] });
+    },
+  });
+
   const hideCompany = (companyId: string, name: string) => {
     const ok = window.confirm(
       `„${name}" aus „Meine Firmen" entfernen?\n\nDie Firma verschwindet nur ` +
@@ -312,7 +336,7 @@ export function AllCompanies() {
               {visibleCompanies.map((row) => (
                 <tr
                   key={row.companyId}
-                  className={openCompanyId === row.companyId ? "active" : ""}
+                  className={`${openCompanyId === row.companyId ? "active" : ""}${row.held ? " held-row" : ""}`}
                   onClick={() => setOpenCompanyId(row.companyId)}
                   role="button"
                   tabIndex={0}
@@ -354,6 +378,34 @@ export function AllCompanies() {
                   })}
                   <td className="muted">{formatTime(row.lastSeenAt)}</td>
                   <td className="all-companies__actions">
+                    <button
+                      type="button"
+                      className="all-companies__delete"
+                      title={
+                        row.held
+                          ? "Verarbeitung fortsetzen (Auto-Retries wieder erlauben)"
+                          : "Verarbeitung aussetzen (keine weiteren Wiederanlaeufe)"
+                      }
+                      aria-label={
+                        row.held
+                          ? `Verarbeitung von ${row.name} fortsetzen`
+                          : `Verarbeitung von ${row.name} aussetzen`
+                      }
+                      disabled={toggleHold.isPending}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        toggleHold.mutate({
+                          companyId: row.companyId,
+                          held: row.held === true,
+                        });
+                      }}
+                    >
+                      {row.held ? (
+                        <Play className="ct-icon-sm" aria-hidden="true" />
+                      ) : (
+                        <Pause className="ct-icon-sm" aria-hidden="true" />
+                      )}
+                    </button>
                     <button
                       type="button"
                       className="all-companies__delete"

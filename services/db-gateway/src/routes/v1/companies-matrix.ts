@@ -28,6 +28,7 @@ import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
 import { HTTPException } from "hono/http-exception";
 import { callUpstream } from "../../lib/upstream";
 import { getGatewayPool } from "../../lib/producer-pools";
+import { heldSubset } from "../../lib/company-holds";
 import { PRODUCER_NAMES } from "../../lib/db-urls";
 import { ErrorShape } from "./schemas";
 
@@ -199,6 +200,12 @@ companiesMatrixRouter.openapi(matrixRoute, async (c) => {
     });
   }
 
+  // v0.1.430 — P2: Ausgesetzt-Status je Firma mitliefern (Pause-Knopf).
+  const heldSet = await heldSubset(
+    getGatewayPool(),
+    upstream.companies.map((co) => co.companyId),
+  );
+
   const companies = upstream.companies.map((co) => {
     type StageCell = {
       state: "pending" | "in_progress" | "completed" | "failed" | "skipped";
@@ -323,6 +330,7 @@ companiesMatrixRouter.openapi(matrixRoute, async (c) => {
     }
 
     return {
+      held: heldSet.has(co.companyId),
       companyId: co.companyId,
       name: co.name,
       location: co.location,
