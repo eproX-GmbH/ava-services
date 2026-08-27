@@ -798,11 +798,40 @@ export class WhisperSidecar extends EventEmitter {
   private resolveGgmlBackendPath(): string | null {
     if (!this.binaryPath) return null;
     if (process.platform !== "darwin") return null;
-    // <bin>/../../libexec/libggml-cpu.so
     const libexecDir = join(dirname(dirname(this.binaryPath)), "libexec");
-    const cpuPlugin = join(libexecDir, "libggml-cpu.so");
-    if (!existsSync(cpuPlugin)) return null;
-    return cpuPlugin;
+
+    // v0.1.435 — ggml 0.15 liefert keinen generischen libggml-cpu.so mehr,
+    // sondern CHIP-GATED Varianten (libggml-cpu-apple_m1/_m2_m3/_m4.so bzw.
+    // Intel-Feature-Level). Die alte Suche fand nichts, GGML_BACKEND_PATH
+    // blieb leer, ggml registrierte KEIN Backend und whisper-cli starb mit
+    // "GGML_ASSERT(device) failed" beim Modell-Laden (Telegram-Sprach-
+    // nachricht + Diktat gleichermassen).
+    //
+    // Empirisch am Bundle verifiziert (M1 Pro):
+    //   - GGML_BACKEND_PATH ist ein EINZELDATEI-Override (Verzeichnis wird
+    //     ignoriert — keine "search path"-Zeile fuer unser Dir).
+    //   - libggml-metal.so laedt auf Apple Silicon inkl. EINGEBETTETER
+    //     Metal-Library und transkribiert -> GPU statt CPU, chip-neutral.
+    //   - Eine falsche CPU-Variante wird abgelehnt ("not supported on this
+    //     system") und es bleibt bei 0 Backends -> Crash. Deshalb NIE eine
+    //     Chip-Variante raten.
+    const candidates =
+      process.arch === "arm64"
+        ? [
+            "libggml-cpu.so", // alte Bottles (generisch) zuerst
+            "libggml-metal.so", // ggml>=0.15: GPU, laeuft auf jedem M-Chip
+          ]
+        : [
+            "libggml-cpu.so",
+            // Intel: sse42 ist der kleinste gemeinsame Nenner und laeuft
+            // auf jeder x86_64-CPU (langsamer, aber nie "not supported").
+            "libggml-cpu-sse42.so",
+          ];
+    for (const name of candidates) {
+      const p = join(libexecDir, name);
+      if (existsSync(p)) return p;
+    }
+    return null;
   }
 
   private resolveBinary(): string | null {
