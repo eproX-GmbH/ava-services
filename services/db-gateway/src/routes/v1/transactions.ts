@@ -15,6 +15,7 @@ import {
 } from "../../lib/retry-publish";
 import { heldSubset, isHeld } from "../../lib/company-holds";
 import { hiddenTransactionSubset } from "../../lib/company-tombstones";
+import { resolveCompanyNames } from "../../lib/company-names";
 import { logger } from "../../lib/logger";
 import {
   getTransactionName,
@@ -1967,6 +1968,7 @@ const processingFeedRoute = createRoute({
               z.object({
                 transactionId: z.string(),
                 companyId: z.string(),
+                companyName: z.string().nullable(),
                 producer: z.string(),
                 state: z.string(),
                 updatedAt: z.string(),
@@ -2014,11 +2016,18 @@ transactionsRouter.openapi(processingFeedRoute, async (c) => {
     [myIds, max],
   );
 
+  // v0.1.434 — Namen serverseitig aufloesen (lokaler Cache, ein Query).
+  const names = await resolveCompanyNames(
+    pool,
+    res.rows.map((r) => r.companyId),
+  );
+
   return c.json(
     {
       items: res.rows.map((r) => ({
         transactionId: r.transactionId,
         companyId: r.companyId,
+        companyName: names.get(r.companyId) ?? null,
         producer: r.producer,
         state: r.state,
         updatedAt: r.updatedAt.toISOString(),

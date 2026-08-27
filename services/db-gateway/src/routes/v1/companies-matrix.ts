@@ -30,6 +30,7 @@ import { callUpstream } from "../../lib/upstream";
 import { getGatewayPool } from "../../lib/producer-pools";
 import { heldSubset } from "../../lib/company-holds";
 import { tombstonedSubset } from "../../lib/company-tombstones";
+import { cacheCompanyNames } from "../../lib/company-names";
 import { PRODUCER_NAMES } from "../../lib/db-urls";
 import { ErrorShape } from "./schemas";
 
@@ -200,6 +201,16 @@ companiesMatrixRouter.openapi(matrixRoute, async (c) => {
       transactionId: r.transactionId,
     });
   }
+
+  // v0.1.434 — Namens-Cache als Nebeneffekt pflegen (fire-and-forget):
+  // der Verarbeitungs-Feed loest Firmennamen serverseitig dagegen auf.
+  void cacheCompanyNames(
+    getGatewayPool(),
+    upstream.companies.map((co) => ({
+      companyId: co.companyId,
+      name: (co as { name?: string }).name ?? "",
+    })),
+  );
 
   // v0.1.431 — P3: Vom Nutzer geloeschte Firmen aus der Sicht filtern.
   const actorId =

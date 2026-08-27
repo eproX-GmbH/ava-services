@@ -14,6 +14,8 @@ import { gatewayFetch } from "../api/gateway";
 interface FeedItem {
   transactionId: string;
   companyId: string;
+  /** v0.1.434 — serverseitig aufgeloest (Namens-Cache im Gateway). */
+  companyName: string | null;
   producer: string;
   state: string;
   updatedAt: string;
@@ -100,7 +102,11 @@ export function ProcessingFeedPanel({
       <span className={`dot ${stateDot(item)}${pulse ? " pf-pulse" : ""}`} />
       <div className="pf-row__main">
         <div className="pf-row__title">
-          <strong>{nameMap.get(item.companyId) ?? item.companyId}</strong>
+          <strong>
+            {item.companyName ??
+              nameMap.get(item.companyId) ??
+              item.companyId}
+          </strong>
           <span className="muted"> · {PRODUCER_LABEL[item.producer] ?? item.producer}</span>
         </div>
         <div className="muted small">
