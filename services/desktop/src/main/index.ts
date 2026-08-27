@@ -130,6 +130,7 @@ import {
   requestResetExceptModels,
 } from "./reset-store";
 import { TelegramStore } from "./telegram/store";
+import { PublicationStore } from "./publication/store";
 import { TelegramChannel } from "./telegram/channel";
 import { TelegramInbound } from "./telegram/inbound";
 import {
@@ -636,7 +637,14 @@ function buildProducer(
               EMBED_PROVIDER: "ollama",
               EMBED_MODEL: "embeddinggemma:latest",
             })
-          : undefined;
+          : name === "company-publication"
+            ? // v0.1.424 — Analyse-Modus (PB1): "lazy" (Default) analysiert
+              // nur trend-relevante Bloecke, "eager" jeden Block. Siehe
+              // docs/PLAN_PUBLIKATION_LAZY_RAG.md.
+              async (): Promise<Record<string, string>> => ({
+                AVA_PUBLICATION_ANALYSIS: publicationStore.getMode(),
+              })
+            : undefined;
   return new ProducerSupervisor({
     config: { name, entry, databaseName, port },
     databaseUrl: makeDatabaseUrlGetter(name),
@@ -921,6 +929,9 @@ const notifications = new NotificationManager(alertPrefs);
 // Bündelung gegen Meldungswellen. Wird unten an den NotificationManager
 // gehängt, sodass alle vorhandenen Alert-Quellen automatisch mitspielen.
 const telegramStore = new TelegramStore();
+// v0.1.424 — Publikations-Analyse-Modus (lazy/eager) fuer den
+// company-publication-Producer.
+const publicationStore = new PublicationStore();
 const telegramChannel = new TelegramChannel({
   store: telegramStore,
   inQuietHours: () => notifications.isInQuietHours(),
@@ -4300,6 +4311,64 @@ app.whenReady().then(async () => {
           await website.start();
         } catch (err) {
           console.error("[research-store] website.start() rejected after restart:", err);
+        }
+      })();
+    }, 500);
+  });
+
+  // v0.1.424 — Publikations-Analyse-Modus (PB1). IPC + Restart-on-Change
+  // nach exakt dem Research-Muster: Aenderung -> debounced Neustart des
+  // company-publication-Producers, damit extraEnvAsync den frischen
+  // AVA_PUBLICATION_ANALYSIS-Wert liefert.
+  ipcMain.handle("publication:getAnalysisMode", () =>
+    publicationStore.getMode(),
+  );
+  ipcMain.handle(
+    "publication:setAnalysisMode",
+    (_e, mode: "lazy" | "eager") => {
+      const next = publicationStore.setMode(mode);
+      audit({
+        actorType: "user",
+        actorId: null,
+        category: "producer",
+        action: "publication.analysis-mode",
+        severity: "info",
+        subjectType: null,
+        subjectId: null,
+        summary:
+          next === "eager"
+            ? "Publikations-Analyse auf VOLLSTAENDIG (eager) gestellt — jeder Block wird per LLM analysiert"
+            : "Publikations-Analyse auf SPARSAM (lazy) gestellt — nur trend-relevante Bloecke",
+        metadata: { mode: next },
+      });
+      return next;
+    },
+  );
+  let publicationRestartTimer: NodeJS.Timeout | null = null;
+  publicationStore.on("changed", () => {
+    if (publicationRestartTimer) clearTimeout(publicationRestartTimer);
+    publicationRestartTimer = setTimeout(() => {
+      publicationRestartTimer = null;
+      const pub = producers.find(
+        (p) => p.getStatus().name === "company-publication",
+      );
+      if (!pub) return;
+      const st = pub.getStatus().state;
+      if (st === "idle" || st === "stopping") return;
+      console.info(
+        "[publication-store] Modus geaendert — cycle company-publication",
+      );
+      void (async () => {
+        try {
+          await pub.stop();
+        } catch (err) {
+          console.warn("[publication-store] stop() failed:", err);
+        }
+        if (!auth.getStatus().signedIn) return;
+        try {
+          await pub.start();
+        } catch (err) {
+          console.error("[publication-store] start() rejected:", err);
         }
       })();
     }, 500);

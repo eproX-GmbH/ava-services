@@ -322,6 +322,14 @@ const api = {
       ipcRenderer.invoke("settings:resetAllExceptModels"),
   },
 
+  // v0.1.424 — Publikations-Analyse-Modus (lazy/eager).
+  publication: {
+    getAnalysisMode: (): Promise<"lazy" | "eager"> =>
+      ipcRenderer.invoke("publication:getAnalysisMode"),
+    setAnalysisMode: (mode: "lazy" | "eager"): Promise<"lazy" | "eager"> =>
+      ipcRenderer.invoke("publication:setAnalysisMode", mode),
+  },
+
   // v0.1.412 — Telegram-Benachrichtigungskanal. Der Bot-Token wird NIE
   // zurückgegeben (nur `hasToken` im Snapshot).
   telegram: {

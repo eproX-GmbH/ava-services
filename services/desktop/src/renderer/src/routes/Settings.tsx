@@ -171,6 +171,7 @@ export const SETTINGS_TAB_SUB_ITEMS: Record<
   ],
   modelle: [
     { anchor: "provider-section", label: "Agent-Anbieter & Schlüssel" },
+    { anchor: "publication-analysis", label: "Publikations-Analyse" },
     { anchor: "research-features", label: "Research-Features" },
     { anchor: "voice-settings", label: "Voice / Whisper" },
     { anchor: "installed-models", label: "Installierte Modelle" },
@@ -214,6 +215,7 @@ export const SETTINGS_ANCHOR_TO_TAB: Record<string, SettingsTabId> = {
   "provider-section":        "modelle",
   "voice-settings":          "modelle",
   "installed-models":        "modelle",
+  "publication-analysis":    "modelle",
   "linkedin-section":        "datenquellen",
   "linkedin-image-analysis": "datenquellen",
   "crm-connections":         "datenquellen",
