@@ -154,9 +154,17 @@ expectFail(
   "kind",
 );
 
+// v0.1.439 — 1-Punkt-Serien sind GUELTIG (reale Kennzahlen liegen oft
+// nur fuer ein Jahr vor, z. B. Eigenkapital erst ab 2024); rendert als
+// Marker. Vorher expectFail, seit dem min(2)->min(1)-Fix expectOk.
+expectOk("nur 1 Datenpunkt (seit v0.1.439 gueltig)", {
+  kind: "bar",
+  series: [{ name: "x", data: [{ x: "a", y: 1 }] }],
+});
+
 expectFail(
-  "nur 1 Datenpunkt",
-  { kind: "bar", series: [{ name: "x", data: [{ x: "a", y: 1 }] }] },
+  "leere Datenreihe",
+  { kind: "bar", series: [{ name: "x", data: [] }] },
   "data",
 );
 

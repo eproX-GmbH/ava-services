@@ -4,23 +4,16 @@
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
-import { createRequire } from "node:module";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = join(here, "..");
 const inner = join(here, "_test-chart-spec.inner.mjs");
-const require = createRequire(import.meta.url);
-try {
-  require.resolve("tsx");
-} catch (err) {
-  console.error(
-    "[test:chart] 'tsx' nicht auflösbar — bitte `pnpm install` im Repo-Root ausführen",
-  );
-  console.error(err instanceof Error ? err.message : String(err));
-  process.exit(1);
-}
 
-const res = spawnSync(process.execPath, ["--import", "tsx", inner], {
+// v0.1.446 — tsx raus: Node >= 22.6 strippt TS-Typen nativ, und der
+// tsx-Loader lieferte unter Node 24 ein Modul OHNE Named-Exports
+// ("does not provide an export named 'parseAndValidate'"). Der native
+// Pfad ist verifiziert und braucht keine Dev-Dependency.
+const res = spawnSync(process.execPath, [inner], {
   stdio: "inherit",
   cwd: root,
 });
