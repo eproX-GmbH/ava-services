@@ -48,24 +48,30 @@ export function buildIcpTools(deps: IcpToolDeps): Tool[] {
       type: "object",
       properties: {
         beschreibung: { type: "string", description: "Freitext-ICP (max 2000 Zeichen)." },
+        angebot: { type: "string", description: "Eigenes Angebot (Produkte/Leistungen)." },
+        nutzen: { type: "string", description: "Geloestes Problem / Nutzenversprechen." },
         branchen: { type: "array", items: { type: "string" }, description: "Max 12." },
         orte: { type: "array", items: { type: "string" }, description: "Heimat-Orte fuer den Radar, max 5." },
         radiusKm: { type: "integer", description: "Radar-Umkreis (Default 50, max 200)." },
         groesse: { type: "string", description: "Groessen-Praeferenz, z. B. '10-200 Mitarbeiter'." },
+        merkmale: { type: "array", items: { type: "string" }, description: "Weitere Merkmale idealer Kunden, max 10." },
         ausschluesse: { type: "string", description: "Harte Ausschluesse, z. B. 'keine Agenturen'." },
       },
     },
     schema: yup.object({
       beschreibung: yup.string().trim().max(2000).optional(),
+      angebot: yup.string().trim().max(600).optional(),
+      nutzen: yup.string().trim().max(600).optional(),
       branchen: yup.array().of(yup.string().trim().min(2).max(60).required()).max(12).optional(),
       orte: yup.array().of(yup.string().trim().min(2).max(80).required()).max(5).optional(),
       radiusKm: yup.number().integer().min(1).max(200).optional(),
       groesse: yup.string().trim().max(200).optional(),
+      merkmale: yup.array().of(yup.string().trim().min(2).max(120).required()).max(10).optional(),
       ausschluesse: yup.string().trim().max(500).optional(),
     }),
     preview: () => "ICP aktualisiert",
     run: async (args) => {
-      const merged = deps.icp.set(args);
+      const merged = deps.icp.set({ ...args, quelle: "chat" });
       return { gespeichert: true, icp: merged };
     },
   });

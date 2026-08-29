@@ -1,6 +1,6 @@
 # Plan: ICP-Assistent („Zeig mir dich und deine 5 besten Kunden")
 
-Stand: 2026-08-29 · Status: ENTWURF — zur Ratifizierung
+Stand: 2026-08-29 · Status: RATIFIZIERT (P1 → ja, wird I5; P2 → Chat-Card)
 
 ## 1. Ziel & Kernidee
 
@@ -125,6 +125,12 @@ Renderer:
   Fallback, Route + Radar-Verlinkung.
 - **Prüfstein:** ICP manuell über das Formular anlegen → Radar-Match
   nutzt die neuen Felder im Embedding-Text.
+- **STATUS: implementiert 2026-08-29** — IcpProfile um K-Felder erweitert
+  (angebot, nutzen, merkmale, kundenBeispiele, quelle; Migration
+  verifiziert), renderText erweitert (Matcher profitiert ohne Änderung),
+  icp_set-Tool nachgezogen (quelle="chat"), IPC discovery:setIcp
+  (+Audit), Route /icp-assistent mit Fragenkatalog-Formular K1–K9,
+  Radar verlinkt („ICP bearbeiten" + Hinweis-Box).
 
 ### I2 — URL-Analyse-Engine
 - `discovery/icp-assistant.ts`: Crawl-Wiederverwendung (+ Impressum-
@@ -158,10 +164,10 @@ Renderer:
 - Crawl-Policy identisch zu Phase 2 (robots.txt, keine Bot-Bypässe,
   keine Personendaten).
 
-## 7. Offene Punkte (vor I2)
+## 7. Entscheidungen (ratifiziert 2026-08-29)
 
-- **P1:** Sollen die Kunden-Beispiele später fürs Matching aktiv genutzt
-  werden (z. B. „ähnlich zu deinen Top-Kunden" als eigenes
-  Embedding-Signal)? Spricht viel dafür — wäre I5.
-- **P2:** Vorschlags-Platzierung Erst-Login: Card über dem Chat (B5)
-  ok, oder lieber Eintrag im FirstRunWizard-Abschluss-Screen?
+- **P1 — ENTSCHIEDEN: ja.** Kunden-Beispiele werden als eigenes
+  Matching-Signal genutzt („ähnlich zu deinen Top-Kunden"):
+  **I5** — Kundenprofile lokal einbetten, Kandidaten-Score bekommt
+  eine Ähnlichkeits-Komponente zum nächsten Top-Kunden-Profil.
+- **P2 — ENTSCHIEDEN: Chat-Card** (B5 wie vorgeschlagen).

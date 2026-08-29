@@ -4438,6 +4438,25 @@ app.whenReady().then(async () => {
     ...icpStore.get(),
     gesetzt: icpStore.isSet(),
   }));
+  // I1 ICP-Assistent — Handeingabe ueber das Fragenkatalog-Formular.
+  ipcMain.handle(
+    "discovery:setIcp",
+    (_e, patch: Partial<import("./agent/icp-store").IcpProfile>) => {
+      const next = icpStore.set({ ...patch, quelle: patch.quelle ?? "manuell" });
+      audit({
+        actorType: "user",
+        actorId: null,
+        category: "import",
+        action: "discovery.icp-set",
+        severity: "info",
+        subjectType: null,
+        subjectId: null,
+        summary: `ICP aktualisiert (${next.quelle ?? "manuell"})`,
+        metadata: { quelle: next.quelle },
+      });
+      return { ...next, gesetzt: icpStore.isSet() };
+    },
+  );
   // Phase 4 — Radar-Automatik (Opt-in).
   ipcMain.handle("discovery:getRadarConfig", () =>
     radarSupervisor ? radarSupervisor.getConfig() : null,

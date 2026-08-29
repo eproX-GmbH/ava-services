@@ -14,27 +14,50 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { app } from "electron";
 
+export interface IcpKundenBeispiel {
+  /** Normierte Kern-Domain des Bestandskunden. */
+  domain: string;
+  name?: string;
+  ort?: string;
+}
+
 export interface IcpProfile {
-  /** Freitext: "Welche Firmen sind die perfekten Kunden?" */
+  /** Freitext: "Welche Firmen sind die perfekten Kunden?" (K-Synthese) */
   beschreibung: string;
+  /** K1 — eigenes Angebot (Produkte/Leistungen). */
+  angebot: string;
+  /** K2 — geloestes Problem / Nutzenversprechen. */
+  nutzen: string;
+  /** K4 — Zielbranchen. */
   branchen: string[];
-  /** Heimat-Orte fuer den Radar (z. B. ["Hannover"]). */
+  /** K3/K6 — Heimat-Orte fuer den Radar (z. B. ["Hannover"]). */
   orte: string[];
   radiusKm: number;
-  /** Groessen-Praeferenz als Freitext ("10-200 Mitarbeiter", "KMU"). */
+  /** K5 — Groessen-Praeferenz als Freitext ("10-200 Mitarbeiter", "KMU"). */
   groesse: string;
-  /** Harte Ausschluesse ("keine Agenturen", "kein Einzelhandel"). */
+  /** K7 — weitere Merkmale eines perfekten Kunden. */
+  merkmale: string[];
+  /** K8 — harte Ausschluesse ("keine Agenturen", "kein Einzelhandel"). */
   ausschluesse: string;
+  /** K9 — beste Bestandskunden (bleiben LOKAL — Entscheidung B1). */
+  kundenBeispiele: IcpKundenBeispiel[];
+  /** Wie das ICP entstand — fuers UI ("per Assistent erstellt"). */
+  quelle: "assistent" | "manuell" | "chat" | null;
   updatedAt: string | null;
 }
 
 const DEFAULT_ICP: IcpProfile = {
   beschreibung: "",
+  angebot: "",
+  nutzen: "",
   branchen: [],
   orte: [],
   radiusKm: 50,
   groesse: "",
+  merkmale: [],
   ausschluesse: "",
+  kundenBeispiele: [],
+  quelle: null,
   updatedAt: null,
 };
 
@@ -47,23 +70,42 @@ function clampList(v: unknown, maxItems: number, maxLen: number): string[] {
     .slice(0, maxItems);
 }
 
+function clampStr(v: unknown, max: number): string {
+  return typeof v === "string" ? v.trim().slice(0, max) : "";
+}
+
 function normalise(p: Partial<IcpProfile>): IcpProfile {
+  const kunden = Array.isArray(p.kundenBeispiele)
+    ? p.kundenBeispiele
+        .filter(
+          (k): k is IcpKundenBeispiel =>
+            !!k && typeof k === "object" && typeof k.domain === "string" && k.domain.length >= 4,
+        )
+        .map((k) => ({
+          domain: k.domain.trim().toLowerCase().slice(0, 100),
+          ...(k.name ? { name: clampStr(k.name, 200) } : {}),
+          ...(k.ort ? { ort: clampStr(k.ort, 80) } : {}),
+        }))
+        .slice(0, 5)
+    : [];
   return {
-    beschreibung:
-      typeof p.beschreibung === "string"
-        ? p.beschreibung.trim().slice(0, 2000)
-        : "",
+    beschreibung: clampStr(p.beschreibung, 2000),
+    angebot: clampStr(p.angebot, 600),
+    nutzen: clampStr(p.nutzen, 600),
     branchen: clampList(p.branchen, 12, 60),
     orte: clampList(p.orte, 5, 80),
     radiusKm:
       typeof p.radiusKm === "number" && Number.isFinite(p.radiusKm)
         ? Math.min(200, Math.max(1, Math.round(p.radiusKm)))
         : 50,
-    groesse: typeof p.groesse === "string" ? p.groesse.trim().slice(0, 200) : "",
-    ausschluesse:
-      typeof p.ausschluesse === "string"
-        ? p.ausschluesse.trim().slice(0, 500)
-        : "",
+    groesse: clampStr(p.groesse, 200),
+    merkmale: clampList(p.merkmale, 10, 120),
+    ausschluesse: clampStr(p.ausschluesse, 500),
+    kundenBeispiele: kunden,
+    quelle:
+      p.quelle === "assistent" || p.quelle === "manuell" || p.quelle === "chat"
+        ? p.quelle
+        : null,
     updatedAt: typeof p.updatedAt === "string" ? p.updatedAt : null,
   };
 }
@@ -103,11 +145,16 @@ export class IcpStore {
     const current = this.get();
     const merged = normalise({
       beschreibung: patch.beschreibung ?? current.beschreibung,
+      angebot: patch.angebot ?? current.angebot,
+      nutzen: patch.nutzen ?? current.nutzen,
       branchen: patch.branchen ?? current.branchen,
       orte: patch.orte ?? current.orte,
       radiusKm: patch.radiusKm ?? current.radiusKm,
       groesse: patch.groesse ?? current.groesse,
+      merkmale: patch.merkmale ?? current.merkmale,
       ausschluesse: patch.ausschluesse ?? current.ausschluesse,
+      kundenBeispiele: patch.kundenBeispiele ?? current.kundenBeispiele,
+      quelle: patch.quelle ?? current.quelle,
       updatedAt: new Date().toISOString(),
     });
     this.cache = merged;
@@ -125,8 +172,11 @@ export class IcpStore {
     const p = this.get();
     const lines: string[] = [];
     if (p.beschreibung) lines.push(p.beschreibung);
+    if (p.angebot) lines.push(`Eigenes Angebot: ${p.angebot}.`);
+    if (p.nutzen) lines.push(`Nutzenversprechen: ${p.nutzen}.`);
     if (p.branchen.length > 0) lines.push(`Branchen: ${p.branchen.join(", ")}.`);
     if (p.groesse) lines.push(`Groesse: ${p.groesse}.`);
+    if (p.merkmale.length > 0) lines.push(`Merkmale: ${p.merkmale.join("; ")}.`);
     if (p.orte.length > 0) {
       lines.push(`Region: ${p.orte.join(", ")} (Umkreis ${p.radiusKm} km).`);
     }

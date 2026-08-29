@@ -8024,3 +8024,59 @@ tr.held-row td:first-child::after {
   font-size: 12px;
   color: var(--color-fg-muted, #94a3b8);
 }
+
+/* I1 ICP-Assistent — Fragenkatalog-Formular ---------------------------- */
+.icp-page {
+  max-width: 760px;
+}
+.icp-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+  margin-top: 1rem;
+}
+.icp-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1;
+}
+.icp-field > span {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-fg-muted, #94a3b8);
+}
+.icp-field input,
+.icp-field textarea {
+  font-size: 13px;
+  padding: 7px 9px;
+  border-radius: 8px;
+  border: 1px solid var(--color-border-muted, rgba(148, 163, 184, 0.4));
+  background: transparent;
+  color: inherit;
+  font-family: inherit;
+  resize: vertical;
+}
+.icp-field input:focus,
+.icp-field textarea:focus {
+  outline: none;
+  border-color: #00c0a7;
+}
+.icp-row {
+  display: flex;
+  gap: 12px;
+}
+.icp-field-narrow {
+  max-width: 130px;
+  flex: 0 0 auto;
+}
+.icp-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 0.3rem;
+}
+.radar-icplink {
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+}

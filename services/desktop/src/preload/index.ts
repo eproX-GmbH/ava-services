@@ -194,6 +194,24 @@ export type {
 // Channels match `ipcMain.handle(...)` calls in main/index.ts. Adding a
 // capability means adding the channel name in both places.
 
+// I1 ICP-Assistent — DTO fuer das Fragenkatalog-Formular (Spiegel von
+// main/agent/icp-store.ts IcpProfile + gesetzt-Flag).
+export interface IcpDto {
+  beschreibung: string;
+  angebot: string;
+  nutzen: string;
+  branchen: string[];
+  orte: string[];
+  radiusKm: number;
+  groesse: string;
+  merkmale: string[];
+  ausschluesse: string;
+  kundenBeispiele: Array<{ domain: string; name?: string; ort?: string }>;
+  quelle: "assistent" | "manuell" | "chat" | null;
+  updatedAt: string | null;
+  gesetzt: boolean;
+}
+
 const api = {
   getConfig: (): Promise<AppConfig> => ipcRenderer.invoke("app:getConfig"),
 
@@ -337,6 +355,7 @@ const api = {
   },
 
   // Phase 3 Firmen-Discovery — Radar-Kandidaten-Tabelle.
+  // (IcpDto: siehe Typ-Definition am Dateiende-Bereich der Discovery-API.)
   discovery: {
     candidates: (): Promise<{
       ok: boolean;
@@ -379,13 +398,9 @@ const api = {
         }
       | { error: string }
     > => ipcRenderer.invoke("discovery:match"),
-    getIcp: (): Promise<{
-      beschreibung: string;
-      branchen: string[];
-      orte: string[];
-      radiusKm: number;
-      gesetzt: boolean;
-    }> => ipcRenderer.invoke("discovery:getIcp"),
+    getIcp: (): Promise<IcpDto> => ipcRenderer.invoke("discovery:getIcp"),
+    setIcp: (patch: Partial<Omit<IcpDto, "gesetzt">>): Promise<IcpDto> =>
+      ipcRenderer.invoke("discovery:setIcp", patch),
     getRadarConfig: (): Promise<{
       enabled: boolean;
       intervalHours: 24 | 168;

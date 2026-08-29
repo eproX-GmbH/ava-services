@@ -151,6 +151,9 @@ export function DiscoveryRadar(): JSX.Element {
           </p>
         </div>
         <div className="radar-actions">
+          <Link to="/icp-assistent" className="proc-toggle radar-icplink">
+            ICP bearbeiten
+          </Link>
           <button
             className="proc-toggle"
             onClick={() => void reload()}
@@ -229,10 +232,10 @@ export function DiscoveryRadar(): JSX.Element {
 
       {!icpGesetzt && (
         <div className="radar-hint">
-          Für die Priorisierung fehlt dein <strong>Idealkundenprofil</strong>.
-          Beschreibe AVA im <Link to="/chat">Chat</Link> kurz, welche Firmen
-          deine perfekten Kunden sind — sie speichert das als ICP und sortiert
-          den Radar danach.
+          Für die Priorisierung fehlt dein <strong>Idealkundenprofil</strong> —{" "}
+          <Link to="/icp-assistent">jetzt einrichten</Link> (Formular) oder
+          einfach im <Link to="/chat">Chat</Link> beschreiben, welche Firmen
+          deine perfekten Kunden sind.
         </div>
       )}
       {notice && (
