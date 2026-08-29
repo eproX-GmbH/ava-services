@@ -18,6 +18,7 @@ import { companiesMatrixRouter } from "./v1/companies-matrix";
 import { companyStateRouter } from "./v1/company-state";
 import { companiesCrmRouter } from "./v1/companies-crm";
 import { geoRouter } from "./v1/geo";
+import { discoveryRouter } from "./v1/discovery";
 
 // /v1 router.
 //
@@ -109,6 +110,9 @@ v1.route("/", companyStateRouter);
 // GET /geo/places?near=…&radiusKm=… (GeoPlace lazy-geseedet aus dem
 // eingecheckten GeoNames-Destillat).
 v1.route("/", geoRouter);
+
+// Phase 1 Firmen-Discovery — Scan-Quota + geteilter Kandidaten-Bestand.
+v1.route("/", discoveryRouter);
 
 // Retained for smoke-testing auth end-to-end. Safe to remove once clients
 // exist — no workflow reference.

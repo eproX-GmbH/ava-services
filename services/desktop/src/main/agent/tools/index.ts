@@ -46,6 +46,7 @@ import { buildLinkMonitorTools } from "./link-monitor";
 import { buildTelegramTools } from "./telegram";
 import { buildPublicationTools } from "./publications";
 import { buildGeoTools } from "./geo";
+import { buildDiscoveryTools } from "./discovery";
 import { buildSelfCorrectionTools } from "./self-correction";
 import type { MailSupervisor } from "../../mail/supervisor";
 import type { ScheduledJobsSupervisor } from "../../scheduler/supervisor";
@@ -157,8 +158,14 @@ export function buildReadOnlyRegistry(deps: {
     providers: deps.providers,
   }))
     registry.register(t);
-  // Phase 0 Firmen-Discovery — Ortsgraph-Abfrage (PLAN_FIRMEN_DISCOVERY.md).
+  // Phase 0/1 Firmen-Discovery — Ortsgraph + Scan (PLAN_FIRMEN_DISCOVERY.md).
   for (const t of buildGeoTools(ctx)) registry.register(t);
+  for (const t of buildDiscoveryTools({
+    gateway: deps.gateway,
+    getDefaultIndustries: () =>
+      (deps.profile.get()?.industries ?? []).filter((s) => s.trim().length > 1),
+  }))
+    registry.register(t);
   for (const t of buildSettingsTools({ providers: deps.providers }))
     registry.register(t);
   for (const t of buildMemoryTools({ generalMemory: deps.generalMemory }))

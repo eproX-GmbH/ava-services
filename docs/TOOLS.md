@@ -5,7 +5,7 @@ NICHT direkt bearbeiten — die Quelle der Wahrheit ist `services/desktop/src/ma
 Lauf via `pnpm -F @ava/desktop tools:doc` (oder automatisch via `build:typecheck`).
 
 Stand: 2026-08-29
-Anzahl Tools: 177
+Anzahl Tools: 179
 
 ## Firmen (11)
 
@@ -932,6 +932,28 @@ _Parameter:_
 _Datei:_ `services/desktop/src/main/agent/tools/chat-history.ts`
 
 Lädt das Transkript einer früheren Chat-Sitzung anhand ihrer ID. Liefert die Nachrichtenliste mit Rolle (user / assistant / tool / system) und Inhalt. Nutze das Tool, nachdem `chat_history_list` die passende konversationsId geliefert hat. Unbekannte oder nicht lesbare IDs ergeben eine leere Nachrichtenliste.
+
+_Parameter:_ keine.
+
+## discovery (2)
+
+### `discovery_candidates`
+
+_Datei:_ `services/desktop/src/main/agent/tools/discovery.ts`
+
+Liest Firmen-Kandidaten aus dem zentralen Discovery-Bestand — optional begrenzt auf einen Umkreis (lat/lon/radiusKm, z. B. aus geo_places_nearby-Origin). masterCompanyId gesetzt = Firma ist in AVA schon bekannt; decision zeigt eine fruehere Nutzer-Entscheidung (imported/dismissed).
+
+_Parameter:_
+- `lat: number`
+- `lon: number`
+- `radiusKm: integer` — Nur mit lat+lon sinnvoll.
+- `limit: integer` — Max Ergebnisse (Default 50, max 200).
+
+### `discovery_scan`
+
+_Datei:_ `services/desktop/src/main/agent/tools/discovery.ts`
+
+Startet einen Discovery-Scan: findet Firmen im Umkreis eines Orts, die noch NICHT in AVA importiert sind (Quellen: OpenStreetMap-Gewerbeeintraege + Google-Places-Suche pro Branchenbegriff). Kandidaten landen im geteilten zentralen Bestand; bereits bekannte Firmen werden automatisch markiert. Dauert 30-90 Sekunden. Branchenbegriffe verbessern das Ergebnis deutlich — ohne Angabe werden die Branchen aus dem Nutzerprofil verwendet. Tageslimit pro Konto beachten (Fehlermeldung nennt es).
 
 _Parameter:_ keine.
 

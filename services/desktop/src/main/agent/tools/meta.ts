@@ -449,6 +449,27 @@ const KNOWN_BUNDLES: readonly ToolBundle[] = [
     queryHints: ["obsidian", "vault", "markdown note"],
   },
   {
+    // Phase 1 Firmen-Discovery (PLAN_FIRMEN_DISCOVERY.md) — Umkreis-Scan
+    // nach NEUEN Firmen (nicht in AVA/CRM) + Ortsgraph-Abfrage.
+    label: "Firmen-Discovery",
+    tools: ["geo_places_nearby", "discovery_scan", "discovery_candidates"],
+    queryHints: [
+      "discovery",
+      "radar",
+      "neue firmen",
+      "firmen finden",
+      "finde firmen",
+      "umkreis",
+      "umgebung",
+      "nachbarort",
+      "region",
+      "akquise",
+      "leads",
+      "potenzielle kunden",
+      "nicht im crm",
+    ],
+  },
+  {
     label: "Meldungen / Alerts",
     tools: [
       "alerts_list",

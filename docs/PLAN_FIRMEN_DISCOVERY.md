@@ -180,6 +180,18 @@ Watermarks, Audit).
   Kandidaten/Scan je Tenant (Default je Plan, Override je Tenant).
 - **Prüfstein:** Scan „Hannover, 30 km" legt zentral Kandidaten an,
   bereits bekannte Firmen sind als solche markiert.
+- **STATUS: implementiert 2026-08-29** — Gateway: `lib/discovery.ts`
+  (DiscoveredCompany/DiscoveryScan/DiscoveryDecision/DiscoveryQuotaOverride,
+  Quota-Gate, Upsert mit COALESCE-Anreicherung),
+  `routes/v1/discovery.ts` (scans/candidates, Dedup-Hook = master-data-
+  Fuzzy-Dry-Run per Mini-xlsx). Desktop: `discovery/scan.ts`
+  (Overpass-Kanal — User-Agent PFLICHT, sonst 406; Behörden/Vereine
+  gefiltert — + valueserp-places-Kanal ≤8 Queries, Priorisierung
+  Website>Nähe), Tools `discovery_scan`/`discovery_candidates`,
+  Bundle „Firmen-Discovery" in meta.ts. Overpass empirisch getestet
+  (Hannover 30 km: 800 POIs, 381 mit Website, 6,4 s); Gateway-Lib
+  gegen Wegwerf-Postgres verifiziert. Live-Prüfstein steht nach
+  Gateway-Deploy + Desktop-Release aus.
 
 ### Phase 2 — Mini-Profil + Embedding
 - Kurzcrawl je Kandidat (BFS-Muster aus company-contact: Startseite,
