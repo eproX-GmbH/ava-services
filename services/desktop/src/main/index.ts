@@ -179,6 +179,7 @@ import { domainFromUrl } from "./discovery/scan";
 import { listCandidatesWithMatches } from "./discovery/list";
 import { decideCandidates, type DecideInput } from "./discovery/decide";
 import { runMatch } from "./discovery/matcher";
+import { runProfiler } from "./discovery/profiler";
 import type { StagedSheetSummary } from "./agent";
 import type { ProviderConfig, LlmProviderKind } from "./agent";
 import type { HostedProviderKind } from "../shared/types";
@@ -4441,6 +4442,21 @@ app.whenReady().then(async () => {
   ipcMain.handle("discovery:match", async () =>
     runMatch(gatewayClient, providers, icpStore, discoveryMatches, customerProfiles),
   );
+  // Backlog-Abbau direkt aus dem Radar: bis zu 25 Mini-Profile pro
+  // Klick, ICP-Branchen zuerst.
+  let profileRunning = false;
+  ipcMain.handle("discovery:profile", async () => {
+    if (profileRunning) return { error: "Profil-Lauf laeuft bereits." };
+    profileRunning = true;
+    try {
+      return await runProfiler(gatewayClient, providers, {
+        limit: 25,
+        prioritizeTerms: icpStore.get().branchen,
+      });
+    } finally {
+      profileRunning = false;
+    }
+  });
   ipcMain.handle("discovery:getIcp", () => ({
     ...icpStore.get(),
     gesetzt: icpStore.isSet(),

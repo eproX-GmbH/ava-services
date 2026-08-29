@@ -6,6 +6,7 @@
 
 import type { GatewayClient } from "../agent/gateway-client";
 import type { MatchStore } from "./match-store";
+import { sanitizeCategory } from "./category";
 
 export interface CandidateListRow {
   discoveryId: string;
@@ -50,7 +51,10 @@ export async function listCandidatesWithMatches(
       ort: c.city,
       plz: c.plz,
       website: c.domain,
-      kategorie: c.category,
+      // Sanitizing auch beim Lesen: Bestandsdaten mit Roh-Tags
+      // ("yes", "construction_company") erscheinen sauber, ohne
+      // DB-Migration (COALESCE-Upsert ueberschreibt Altwerte nicht).
+      kategorie: sanitizeCategory(c.category),
       quelle: c.source,
       bereitsInAva: c.masterCompanyId !== null,
       profiliert: c.profiledAt !== null,

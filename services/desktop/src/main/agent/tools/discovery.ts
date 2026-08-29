@@ -160,7 +160,11 @@ export function buildDiscoveryTools(deps: DiscoveryToolDeps): Tool[] {
       return `${res.profiliert ?? 0}/${res.betrachtet ?? 0} Profile erstellt`;
     },
     run: async (args) =>
-      runProfiler(deps.gateway, deps.providers, { limit: args.limit ?? 10 }),
+      runProfiler(deps.gateway, deps.providers, {
+        limit: args.limit ?? 10,
+        // ICP-Branchen zuerst profilieren — echte Treffer vor Absagen.
+        prioritizeTerms: deps.icp.get().branchen,
+      }),
   });
 
   const match = defineTool({

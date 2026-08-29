@@ -195,6 +195,7 @@ export class RadarSupervisor {
       }
       const prof = await runProfiler(this.deps.gateway, this.deps.providers, {
         limit: PROFILE_LIMIT_PER_RUN,
+        prioritizeTerms: icp.branchen,
       });
       const profNote =
         "error" in prof

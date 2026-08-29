@@ -278,10 +278,34 @@ interface CandidateForProfiling {
   profiledAt: string | null;
 }
 
+/** Prioritaets-Sortierung: Kandidaten, deren Kategorie oder Name zu den
+ *  ICP-Branchen passt, werden ZUERST profiliert — so liefern schon die
+ *  ersten Laeufe echte Treffer statt ehrlicher Absagen. Substring in
+ *  beide Richtungen ("Immobilien" ↔ "Immobilienmakler"). */
+function prioritize<T extends { name: string; category: string | null }>(
+  candidates: T[],
+  terms: string[],
+): T[] {
+  const t = terms.map((s) => s.trim().toLowerCase()).filter((s) => s.length > 2);
+  if (t.length === 0) return candidates;
+  const matches = (c: T): boolean => {
+    const hay = `${c.category ?? ""} ${c.name}`.toLowerCase();
+    return t.some((term) => hay.includes(term) || (c.category ?? "").toLowerCase().length > 2 && term.includes((c.category ?? "").toLowerCase()));
+  };
+  const hit: T[] = [];
+  const rest: T[] = [];
+  for (const c of candidates) (matches(c) ? hit : rest).push(c);
+  return [...hit, ...rest];
+}
+
 export async function runProfiler(
   gateway: GatewayClient,
   providers: LlmProviderManager,
-  opts: { limit: number },
+  opts: {
+    limit: number;
+    /** ICP-Branchen fuer die Prioritaets-Sortierung (optional). */
+    prioritizeTerms?: string[];
+  },
 ): Promise<ProfilerSummary | { error: string }> {
   const t0 = Date.now();
   let all: CandidateForProfiling[];
@@ -302,7 +326,7 @@ export async function runProfiler(
     (c) =>
       !c.profiledAt || now - Date.parse(c.profiledAt) > PROFILE_MAX_AGE_MS,
   );
-  const batch = due.slice(0, opts.limit);
+  const batch = prioritize(due, opts.prioritizeTerms ?? []).slice(0, opts.limit);
 
   const summary: ProfilerSummary = {
     betrachtet: batch.length,

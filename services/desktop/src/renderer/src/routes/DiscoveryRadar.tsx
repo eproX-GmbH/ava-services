@@ -27,7 +27,7 @@ export function DiscoveryRadar(): JSX.Element {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [busy, setBusy] = useState<"decide" | "match" | null>(null);
+  const [busy, setBusy] = useState<"decide" | "match" | "profile" | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [lastImportTx, setLastImportTx] = useState<string | null>(null);
   const [icpGesetzt, setIcpGesetzt] = useState<boolean>(true);
@@ -114,6 +114,28 @@ export function DiscoveryRadar(): JSX.Element {
     }
   };
 
+  const runProfile = async (): Promise<void> => {
+    if (busy) return;
+    setBusy("profile");
+    setNotice(null);
+    try {
+      const result = await window.api.discovery.profile();
+      if ("error" in result) {
+        setNotice(result.error);
+      } else {
+        setNotice(
+          `Profil-Lauf: ${result.profiliert} von ${result.betrachtet} Kandidaten profiliert` +
+            (result.crawlFehler > 0 ? `, ${result.crawlFehler} Website(s) nicht erreichbar` : "") +
+            (result.llmFehler > 0 ? `, ${result.llmFehler} KI-Fehler` : "") +
+            ` (${result.dauerSek}s).`,
+        );
+        await reload();
+      }
+    } finally {
+      setBusy(null);
+    }
+  };
+
   const runMatch = async (): Promise<void> => {
     if (busy) return;
     setBusy("match");
@@ -160,6 +182,14 @@ export function DiscoveryRadar(): JSX.Element {
             disabled={loading || busy !== null}
           >
             Aktualisieren
+          </button>
+          <button
+            className="proc-toggle"
+            onClick={() => void runProfile()}
+            disabled={busy !== null}
+            title="Bis zu 25 fehlende Mini-Profile erstellen — Kandidaten aus deinen ICP-Branchen zuerst"
+          >
+            {busy === "profile" ? "Profiliert…" : "Mini-Profile erstellen"}
           </button>
           <button
             className="proc-toggle"
@@ -284,6 +314,9 @@ export function DiscoveryRadar(): JSX.Element {
           <div className="radar-meta">
             {rows.length} offene Kandidaten
             {hotCount > 0 ? ` · ${hotCount} heiß (Score ≥ 70)` : ""}
+            {rows.filter((r) => !r.profiliert).length > 0
+              ? ` · ${rows.filter((r) => !r.profiliert).length} ohne Mini-Profil (⧗) — „Mini-Profile erstellen" arbeitet den Rückstand in 25er-Schritten ab`
+              : ""}
           </div>
           <div className="radar-tablewrap">
             <table className="radar-table">

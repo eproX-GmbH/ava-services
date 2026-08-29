@@ -398,6 +398,16 @@ const api = {
         }
       | { error: string }
     > => ipcRenderer.invoke("discovery:match"),
+    profile: (): Promise<
+      | {
+          betrachtet: number;
+          profiliert: number;
+          crawlFehler: number;
+          llmFehler: number;
+          dauerSek: number;
+        }
+      | { error: string }
+    > => ipcRenderer.invoke("discovery:profile"),
     getIcp: (): Promise<IcpDto> => ipcRenderer.invoke("discovery:getIcp"),
     setIcp: (patch: Partial<Omit<IcpDto, "gesetzt">>): Promise<IcpDto> =>
       ipcRenderer.invoke("discovery:setIcp", patch),

@@ -17,6 +17,7 @@
 // sind APIs, kein Browser-Scraping.
 
 import type { GatewayClient } from "../agent/gateway-client";
+import { sanitizeCategory } from "./category";
 
 const OVERPASS_URL =
   process.env.AVA_OVERPASS_URL ?? "https://overpass-api.de/api/interpreter";
@@ -181,7 +182,9 @@ out center 800;`;
         lat,
         lon,
         domain,
-        category: tags.office ?? (tags.craft ? `craft:${tags.craft}` : null),
+        category: sanitizeCategory(
+          tags.office ?? (tags.craft ? `craft:${tags.craft}` : null),
+        ),
         source: "osm",
       });
     }
@@ -256,7 +259,7 @@ async function fetchSerpCandidates(
           lat: p.gps_coordinates?.latitude ?? null,
           lon: p.gps_coordinates?.longitude ?? null,
           domain,
-          category: p.category ?? null,
+          category: sanitizeCategory(p.category),
           meta: Object.keys(meta).length > 0 ? meta : null,
           source: "serp",
         });
