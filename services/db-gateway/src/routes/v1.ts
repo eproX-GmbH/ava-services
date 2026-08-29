@@ -17,6 +17,7 @@ import { billingRouter } from "./v1/billing";
 import { companiesMatrixRouter } from "./v1/companies-matrix";
 import { companyStateRouter } from "./v1/company-state";
 import { companiesCrmRouter } from "./v1/companies-crm";
+import { geoRouter } from "./v1/geo";
 
 // /v1 router.
 //
@@ -103,6 +104,11 @@ v1.route("/", billingRouter);
 // per-stage ContentFreshness (updatedAt + llmTier). Producers query
 // this at compute start and skip if data is fresh+same-or-better-tier.
 v1.route("/", companyStateRouter);
+
+// Phase 0 Firmen-Discovery (PLAN_FIRMEN_DISCOVERY.md) — Ortsgraph.
+// GET /geo/places?near=…&radiusKm=… (GeoPlace lazy-geseedet aus dem
+// eingecheckten GeoNames-Destillat).
+v1.route("/", geoRouter);
 
 // Retained for smoke-testing auth end-to-end. Safe to remove once clients
 // exist — no workflow reference.

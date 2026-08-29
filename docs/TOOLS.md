@@ -5,7 +5,7 @@ NICHT direkt bearbeiten — die Quelle der Wahrheit ist `services/desktop/src/ma
 Lauf via `pnpm -F @ava/desktop tools:doc` (oder automatisch via `build:typecheck`).
 
 Stand: 2026-08-29
-Anzahl Tools: 176
+Anzahl Tools: 177
 
 ## Firmen (11)
 
@@ -932,6 +932,16 @@ _Parameter:_
 _Datei:_ `services/desktop/src/main/agent/tools/chat-history.ts`
 
 Lädt das Transkript einer früheren Chat-Sitzung anhand ihrer ID. Liefert die Nachrichtenliste mit Rolle (user / assistant / tool / system) und Inhalt. Nutze das Tool, nachdem `chat_history_list` die passende konversationsId geliefert hat. Unbekannte oder nicht lesbare IDs ergeben eine leere Nachrichtenliste.
+
+_Parameter:_ keine.
+
+## geo (1)
+
+### `geo_places_nearby`
+
+_Datei:_ `services/desktop/src/main/agent/tools/geo.ts`
+
+Deutsche Orte im Umkreis eines Ortsnamens finden (Luftlinie ab Orts-Zentroid). Liefert Nachbarorte mit Distanz, Kreis, Bundesland und PLZ-Liste — z. B. fuer die Frage, welche Region eine Firmen-Discovery um einen Standort abdecken wuerde. Bei mehrdeutigen Ortsnamen gewinnt die groesste Stadt; Alternativen werden mitgeliefert.
 
 _Parameter:_ keine.
 
