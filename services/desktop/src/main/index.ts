@@ -172,6 +172,7 @@ import { NotificationManager } from "./notifications";
 import { WhisperSidecar } from "./voice/whisper-sidecar";
 import { IcpStore } from "./agent/icp-store";
 import { MatchStore } from "./discovery/match-store";
+import { CustomerProfileStore } from "./discovery/customer-profiles";
 import { RadarSupervisor } from "./discovery/radar-supervisor";
 import { runIcpAnalysis } from "./discovery/icp-assistant";
 import { domainFromUrl } from "./discovery/scan";
@@ -1564,12 +1565,15 @@ const selfCorrectionsStore = new SelfCorrectionsStore();
 // Radar-IPC-Handlern unten geteilt.
 const icpStore = new IcpStore();
 const discoveryMatches = new MatchStore();
+// I5 — lokale Top-Kunden-Profile (Aehnlichkeits-Signal im Match).
+const customerProfiles = new CustomerProfileStore();
 
 const agentRegistry = buildReadOnlyRegistry({
   gateway: gatewayClient,
   providers,
   icp: icpStore,
   discoveryMatches,
+  discoveryCustomerProfiles: customerProfiles,
   generalMemory,
   attachments,
   alerts,
@@ -2390,6 +2394,7 @@ app.whenReady().then(async () => {
     providers,
     icp: icpStore,
     matchStore: discoveryMatches,
+    customerStore: customerProfiles,
     alerts,
     notify: (a) => {
       notifications.notifyForAlert(a);
@@ -4434,7 +4439,7 @@ app.whenReady().then(async () => {
     },
   );
   ipcMain.handle("discovery:match", async () =>
-    runMatch(gatewayClient, providers, icpStore, discoveryMatches),
+    runMatch(gatewayClient, providers, icpStore, discoveryMatches, customerProfiles),
   );
   ipcMain.handle("discovery:getIcp", () => ({
     ...icpStore.get(),
@@ -4471,6 +4476,7 @@ app.whenReady().then(async () => {
               /* Fenster ggf. geschlossen */
             }
           },
+          customerProfiles,
         );
         audit({
           actorType: "user",

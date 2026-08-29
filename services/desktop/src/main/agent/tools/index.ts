@@ -50,6 +50,7 @@ import { buildDiscoveryTools } from "./discovery";
 import { buildIcpTools } from "./icp";
 import type { IcpStore } from "../icp-store";
 import type { MatchStore } from "../../discovery/match-store";
+import type { CustomerProfileStore } from "../../discovery/customer-profiles";
 import { buildSelfCorrectionTools } from "./self-correction";
 import type { MailSupervisor } from "../../mail/supervisor";
 import type { ScheduledJobsSupervisor } from "../../scheduler/supervisor";
@@ -151,6 +152,8 @@ export function buildReadOnlyRegistry(deps: {
   /** Phase 3 Firmen-Discovery — ICP (lokal, privat) + Match-Store. */
   icp: IcpStore;
   discoveryMatches: MatchStore;
+  /** I5 — lokale Top-Kunden-Profile (Aehnlichkeits-Signal). */
+  discoveryCustomerProfiles: CustomerProfileStore;
 }): ToolRegistry {
   const registry = new ToolRegistry();
   const ctx = { gateway: deps.gateway };
@@ -171,6 +174,7 @@ export function buildReadOnlyRegistry(deps: {
     providers: deps.providers,
     icp: deps.icp,
     matchStore: deps.discoveryMatches,
+    customerStore: deps.discoveryCustomerProfiles,
     getDefaultIndustries: () => {
       // SERP-Branchen-Fallback: ICP-Branchen zuerst, sonst Nutzerprofil.
       const icpBranchen = deps.icp.get().branchen;
@@ -185,6 +189,7 @@ export function buildReadOnlyRegistry(deps: {
     icp: deps.icp,
     gateway: deps.gateway,
     providers: deps.providers,
+    customerStore: deps.discoveryCustomerProfiles,
   }))
     registry.register(t);
   for (const t of buildSettingsTools({ providers: deps.providers }))

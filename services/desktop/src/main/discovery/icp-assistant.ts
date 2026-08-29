@@ -13,7 +13,8 @@ import * as yup from "yup";
 import type { GatewayClient } from "../agent/gateway-client";
 import type { LlmProviderManager } from "../agent/providers";
 import type { IcpProfile, IcpKundenBeispiel } from "../agent/icp-store";
-import { crawlSite } from "./profiler";
+import { crawlSite, embedText } from "./profiler";
+import type { CustomerProfileStore } from "./customer-profiles";
 import {
   buildMessages,
   parseJsonObject,
@@ -245,11 +246,25 @@ async function suggestRadius(
 
 // ---- Orchestrator ----------------------------------------------------------
 
+/** Kompakter Profiltext eines Top-Kunden — gleicher Stil wie die
+ *  Radar-Mini-Profile, damit die Embeddings vergleichbar sind (I5). */
+export function renderCustomerProfileText(k: CustomerSiteAnalysis): string {
+  const lines = [
+    `${k.name}${k.standort ? ` (${k.standort})` : ""} — ${k.branche}.`,
+  ];
+  if (k.leistungen.length > 0) lines.push(`Leistungen: ${k.leistungen.join(", ")}.`);
+  if (k.groessenIndiz) lines.push(`Groesse: ${k.groessenIndiz}.`);
+  return lines.join("\n");
+}
+
 export async function runIcpAnalysis(
   gateway: GatewayClient,
   providers: LlmProviderManager,
   args: { eigeneDomain: string; kundenDomains: string[] },
   onProgress: (p: IcpAnalysisProgress) => void,
+  /** I5 — Kundenprofile (Text + Embedding) fuer das Match-Signal
+   *  lokal ablegen. Optional (Tests). */
+  customerStore?: CustomerProfileStore,
 ): Promise<IcpDraft | { error: string }> {
   if (!providers.getStatus().ready) {
     return { error: "Kein KI-Modell bereit — bitte zuerst ein Modell einrichten." };
@@ -283,8 +298,20 @@ export async function runIcpAnalysis(
       if (!domain) return;
       tick(`Analysiere Kunden-Website ${domain} …`);
       const result = await analyzeCustomerSite(providers, domain);
-      if (result) kunden.push(result);
-      else hinweise.push(`${domain} konnte nicht analysiert werden — uebersprungen.`);
+      if (result) {
+        kunden.push(result);
+        // I5 — Profil + Embedding lokal ablegen (Match-Signal
+        // "aehnlich zu deinen Top-Kunden"). Best-effort.
+        if (customerStore) {
+          const profileText = renderCustomerProfileText(result);
+          customerStore.set(domain, {
+            profileText,
+            embedding: await embedText(profileText),
+          });
+        }
+      } else {
+        hinweise.push(`${domain} konnte nicht analysiert werden — uebersprungen.`);
+      }
     }
   });
   await Promise.all(workers);

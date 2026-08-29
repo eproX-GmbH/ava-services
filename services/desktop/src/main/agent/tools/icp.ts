@@ -12,11 +12,13 @@ import type { IcpStore } from "../icp-store";
 import type { Tool } from "../types";
 import { runIcpAnalysis } from "../../discovery/icp-assistant";
 import { domainFromUrl } from "../../discovery/scan";
+import type { CustomerProfileStore } from "../../discovery/customer-profiles";
 
 export interface IcpToolDeps {
   icp: IcpStore;
   gateway: GatewayClient;
   providers: LlmProviderManager;
+  customerStore: CustomerProfileStore;
 }
 
 export function buildIcpTools(deps: IcpToolDeps): Tool[] {
@@ -136,6 +138,7 @@ export function buildIcpTools(deps: IcpToolDeps): Tool[] {
         () => {
           /* Chat-Pfad: kein Fortschritts-Stream noetig */
         },
+        deps.customerStore,
       );
       if ("error" in result) return result;
       return {

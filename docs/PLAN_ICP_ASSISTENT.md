@@ -191,4 +191,14 @@ Renderer:
   Matching-Signal genutzt („ähnlich zu deinen Top-Kunden"):
   **I5** — Kundenprofile lokal einbetten, Kandidaten-Score bekommt
   eine Ähnlichkeits-Komponente zum nächsten Top-Kunden-Profil.
+  **STATUS: implementiert 2026-08-29** — `discovery/customer-profiles.ts`
+  (lokaler Store, Text im Mini-Profil-Stil → vergleichbarer
+  Embedding-Raum), befüllt von der ICP-Analyse und lazy vom Matcher
+  (manuell eingetragene Kunden werden beim ersten Match gecrawlt +
+  profiliert). Vorranking = 0,6·ICP-Nähe + 0,4·Nähe zum nächsten
+  Top-Kunden; ab Kosinus ≥ 0,65 bekommt das LLM-Urteil den Hinweis
+  „sehr ähnlich zu Bestandskunde X" und die Begründung nennt den
+  Kunden explizit. Verifiziert mit ECHTEN embeddinggemma-Embeddings:
+  Vermessungs-Kandidat rankt vor Bäckerei/Steuerkanzlei, Hinweis im
+  Judge-Prompt, Begründung angereichert.
 - **P2 — ENTSCHIEDEN: Chat-Card** (B5 wie vorgeschlagen).

@@ -16,6 +16,8 @@ import type { GatewayClient } from "../agent/gateway-client";
 import type { LlmProviderManager } from "../agent/providers";
 import type { IcpStore } from "../agent/icp-store";
 import { MatchStore, type MatchEntry } from "./match-store";
+import type { CustomerProfileStore } from "./customer-profiles";
+import { crawlSite, buildProfile, renderProfileText } from "./profiler";
 import {
   buildMessages,
   parseJsonObject,
@@ -94,6 +96,8 @@ async function judgeBatch(
   icpText: string,
   feedbackText: string,
   batch: ProfiledCandidate[],
+  /** I5 — discoveryId → Hinweis-Zeile ("sehr aehnlich zu Bestandskunde X"). */
+  hints: Map<string, string>,
 ): Promise<Map<string, { score: number; begruendung: string }>> {
   const out = new Map<string, { score: number; begruendung: string }>();
   const system =
@@ -112,10 +116,13 @@ async function judgeBatch(
     (feedbackText ? `\nFruehere Verwerf-Gruende des Nutzers:\n${feedbackText}\n` : "") +
     `\nFirmen:\n` +
     batch
-      .map(
-        (c) =>
-          `- id: ${c.discoveryId}\n  ${c.profileText?.slice(0, 1200) ?? c.name}`,
-      )
+      .map((c) => {
+        const hint = hints.get(c.discoveryId);
+        return (
+          `- id: ${c.discoveryId}\n  ${c.profileText?.slice(0, 1200) ?? c.name}` +
+          (hint ? `\n  Hinweis: ${hint}` : "")
+        );
+      })
       .join("\n");
   try {
     const raw = await streamToText(
@@ -141,11 +148,62 @@ async function judgeBatch(
   return out;
 }
 
+// ---- I5: Top-Kunden-Aehnlichkeit -------------------------------------------
+
+const CUSTOMER_SIM_THRESHOLD = 0.65;
+
+interface CustomerVec {
+  name: string;
+  embedding: number[];
+}
+
+/** Kundenprofile fuer die ICP-K9-Domains sicherstellen: fehlende werden
+ *  lazy gecrawlt + profiliert (manuell eingetragene Kunden ohne
+ *  Assistent-Analyse). Best-effort — liefert nur, was Embeddings hat. */
+async function ensureCustomerVecs(
+  providers: LlmProviderManager,
+  icp: IcpStore,
+  store: CustomerProfileStore,
+  hinweise: string[],
+): Promise<CustomerVec[]> {
+  const beispiele = icp.get().kundenBeispiele;
+  const out: CustomerVec[] = [];
+  for (const b of beispiele) {
+    let profile = store.get(b.domain);
+    if (!profile) {
+      const siteText = await crawlSite(b.domain);
+      if (siteText) {
+        const mini = await buildProfile(
+          providers,
+          { name: b.name ?? b.domain, city: b.ort ?? null, category: null },
+          siteText,
+        );
+        if (mini) {
+          const profileText = renderProfileText(b.name ?? b.domain, b.ort ?? null, mini);
+          const embedding = await embedText(profileText);
+          store.set(b.domain, { profileText, embedding });
+          profile = store.get(b.domain);
+        }
+      }
+      if (!profile) {
+        hinweise.push(`Top-Kunde ${b.domain} nicht profilierbar — ohne Aehnlichkeits-Signal.`);
+        continue;
+      }
+    }
+    if (profile.embedding) {
+      out.push({ name: b.name ?? b.domain, embedding: profile.embedding });
+    }
+  }
+  return out;
+}
+
 export async function runMatch(
   gateway: GatewayClient,
   providers: LlmProviderManager,
   icp: IcpStore,
   matchStore: MatchStore,
+  /** I5 — lokale Top-Kunden-Profile fuers Aehnlichkeits-Signal. */
+  customerStore?: CustomerProfileStore,
 ): Promise<MatchSummary | { error: string }> {
   if (!icp.isSet()) {
     return {
@@ -194,15 +252,34 @@ export async function runMatch(
     };
   }
 
-  // Kosinus-Vorranking (lokal). Ohne Embedder: Reihenfolge unveraendert.
+  // I5 — Top-Kunden-Vektoren (best-effort, lazy nachprofiliert).
+  const kundenVecs = customerStore
+    ? await ensureCustomerVecs(providers, icp, customerStore, hinweise)
+    : [];
+
+  // Kosinus-Vorranking (lokal): ICP-Naehe + Aehnlichkeit zum naechsten
+  // Top-Kunden (I5). Ohne Embedder: Reihenfolge unveraendert.
   let ranked = candidates;
+  const nearestCustomer = new Map<string, { name: string; sim: number }>();
   const icpVec = await embedText(icpText);
   if (icpVec) {
     ranked = candidates
-      .map((c) => ({
-        c,
-        sim: c.embedding ? cosine(icpVec, c.embedding) : -1,
-      }))
+      .map((c) => {
+        const cosIcp = c.embedding ? cosine(icpVec, c.embedding) : -1;
+        let best: { name: string; sim: number } | null = null;
+        if (c.embedding) {
+          for (const k of kundenVecs) {
+            const sim = cosine(k.embedding, c.embedding);
+            if (!best || sim > best.sim) best = { name: k.name, sim };
+          }
+        }
+        if (best) nearestCustomer.set(c.discoveryId, best);
+        const sim =
+          best && kundenVecs.length > 0
+            ? 0.6 * cosIcp + 0.4 * best.sim
+            : cosIcp;
+        return { c, sim };
+      })
       .sort((a, b) => b.sim - a.sim)
       .map((x) => x.c);
   } else {
@@ -226,6 +303,14 @@ export async function runMatch(
     /* Feedback ist optional */
   }
 
+  // I5 — Aehnlichkeits-Hinweise fuers Urteil (nur bei starker Naehe).
+  const hints = new Map<string, string>();
+  for (const [id, best] of nearestCustomer) {
+    if (best.sim >= CUSTOMER_SIM_THRESHOLD) {
+      hints.set(id, `Profil sehr aehnlich zu Bestandskunde "${best.name}".`);
+    }
+  }
+
   // LLM-Urteil in Batches.
   const judged = new Map<string, { score: number; begruendung: string }>();
   for (let i = 0; i < topK.length; i += JUDGE_BATCH) {
@@ -234,6 +319,7 @@ export async function runMatch(
       icpText,
       feedbackText,
       topK.slice(i, i + JUDGE_BATCH),
+      hints,
     );
     for (const [k, v] of part) judged.set(k, v);
   }
@@ -250,9 +336,20 @@ export async function runMatch(
   for (const c of topK) {
     const j = judged.get(c.discoveryId);
     if (!j) continue;
+    // I5 — Aehnlichkeit sichtbar machen, falls das Urteil sie nicht
+    // schon selbst erwaehnt.
+    const near = nearestCustomer.get(c.discoveryId);
+    let begruendung = j.begruendung;
+    if (
+      near &&
+      near.sim >= CUSTOMER_SIM_THRESHOLD &&
+      !begruendung.toLowerCase().includes(near.name.toLowerCase())
+    ) {
+      begruendung = `${begruendung} Ähnelt deinem Bestandskunden ${near.name}.`;
+    }
     entries[c.discoveryId] = {
       score: j.score,
-      begruendung: j.begruendung,
+      begruendung,
       matchedAt: now,
     };
     ergebnisse.push({
@@ -260,7 +357,7 @@ export async function runMatch(
       name: c.name,
       ort: c.city,
       score: j.score,
-      begruendung: j.begruendung,
+      begruendung,
     });
   }
   matchStore.setMany(entries);

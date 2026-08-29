@@ -22,6 +22,7 @@ import type { LlmProviderManager } from "../agent/providers";
 import type { AlertsStore } from "../agent/alerts-store";
 import type { IcpStore } from "../agent/icp-store";
 import type { MatchStore } from "./match-store";
+import type { CustomerProfileStore } from "./customer-profiles";
 import { runDiscoveryScan } from "./scan";
 import { runProfiler } from "./profiler";
 import { runMatch } from "./matcher";
@@ -50,6 +51,7 @@ export interface RadarSupervisorDeps {
   providers: LlmProviderManager;
   icp: IcpStore;
   matchStore: MatchStore;
+  customerStore: CustomerProfileStore;
   alerts: AlertsStore;
   notify: (alert: Alert) => void;
   onAlertsChanged: () => void;
@@ -203,6 +205,7 @@ export class RadarSupervisor {
         this.deps.providers,
         this.deps.icp,
         this.deps.matchStore,
+        this.deps.customerStore,
       );
       if ("error" in match) {
         this.finishRun(

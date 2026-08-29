@@ -17,12 +17,14 @@ import { decideCandidates } from "../../discovery/decide";
 import { listCandidatesWithMatches } from "../../discovery/list";
 import type { IcpStore } from "../icp-store";
 import type { MatchStore } from "../../discovery/match-store";
+import type { CustomerProfileStore } from "../../discovery/customer-profiles";
 
 export interface DiscoveryToolDeps {
   gateway: GatewayClient;
   providers: LlmProviderManager;
   icp: IcpStore;
   matchStore: MatchStore;
+  customerStore: CustomerProfileStore;
   /** Branchen-Fallback aus dem Nutzerprofil (UserProfile.industries). */
   getDefaultIndustries: () => string[];
 }
@@ -181,7 +183,13 @@ export function buildDiscoveryTools(deps: DiscoveryToolDeps): Tool[] {
       return `${res.bewertet ?? 0} Kandidaten bewertet`;
     },
     run: async () =>
-      runMatch(deps.gateway, deps.providers, deps.icp, deps.matchStore),
+      runMatch(
+        deps.gateway,
+        deps.providers,
+        deps.icp,
+        deps.matchStore,
+        deps.customerStore,
+      ),
   });
 
   const decide = defineTool({

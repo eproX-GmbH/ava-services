@@ -200,7 +200,7 @@ export async function crawlSite(coreDomain: string): Promise<string | null> {
 
 // ---- LLM + Embedding -------------------------------------------------------
 
-async function buildProfile(
+export async function buildProfile(
   providers: LlmProviderManager,
   candidate: { name: string; city: string | null; category: string | null },
   siteText: string,
@@ -251,7 +251,7 @@ export function renderProfileText(name: string, city: string | null, p: MiniProf
   return lines.join("\n");
 }
 
-async function embedText(text: string): Promise<number[] | null> {
+export async function embedText(text: string): Promise<number[] | null> {
   try {
     const res = await fetch(`${OLLAMA_URL}/api/embed`, {
       method: "POST",
