@@ -339,6 +339,15 @@ export class LlmProviderManager extends EventEmitter {
     return this.store.setConfig({ producerModels: { [kind]: model } });
   }
 
+  /** v0.1.442 — Producer-Modell des AKTIVEN Providers (falls gesetzt).
+   *  Desktop-interne Hintergrund-Jobs (Discovery-Profiler) geben das
+   *  als `modelOverride` in streamChat, damit Hintergrundarbeit nicht
+   *  auf dem teuren Chat-Modell laeuft. */
+  getProducerModelOverride(): string | undefined {
+    const cfg = this.store.getConfig();
+    return (cfg.producerModels ?? {})[cfg.kind]?.trim() || undefined;
+  }
+
   setModel(kind: LlmProviderKind, model: string): ProviderConfig {
     return this.store.setConfig({ models: { [kind]: model } });
   }

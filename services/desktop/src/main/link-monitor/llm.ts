@@ -13,7 +13,7 @@ import type { LlmProviderManager } from "../agent/providers";
 export async function streamToText(
   providers: LlmProviderManager,
   messages: AgentMessage[],
-  opts: { signal?: AbortSignal; timeoutMs?: number } = {},
+  opts: { signal?: AbortSignal; timeoutMs?: number; modelOverride?: string } = {},
 ): Promise<string> {
   const ctrl = new AbortController();
   const timeout = setTimeout(() => ctrl.abort(), opts.timeoutMs ?? 45_000);
@@ -21,7 +21,11 @@ export async function streamToText(
   opts.signal?.addEventListener("abort", onAbort, { once: true });
   let buf = "";
   try {
-    const stream = providers.streamChat({ messages, signal: ctrl.signal });
+    const stream = providers.streamChat({
+      messages,
+      signal: ctrl.signal,
+      ...(opts.modelOverride ? { modelOverride: opts.modelOverride } : {}),
+    });
     for await (const frame of stream) {
       if (frame.contentDelta) buf += frame.contentDelta;
       if (frame.done) break;

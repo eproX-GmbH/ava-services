@@ -220,6 +220,19 @@ Watermarks, Audit).
   ein Refresh zulässig.
 - **Prüfstein:** ≥ 80 % der Kandidaten mit Website bekommen ein valides
   Profil; Kosten pro 100 Firmen gemessen und im Plan nachgetragen.
+- **STATUS: implementiert 2026-08-29** — Desktop `discovery/profiler.ts`
+  (Kurzcrawl max 5 Seiten mit robots.txt-Respekt, LLM-Profil per
+  yup-validiertem JSON, Embedding via lokalem Ollama), Gateway
+  `saveProfile` + `PUT /discovery/candidates/{id}/profile` (A9-Sperre
+  SERVERSEITIG, tsv german für Phase-3-BM25), Tool
+  `discovery_profile_run` (Default 10, max 25 Firmen/Lauf).
+  Neu: `LlmStreamRequest.modelOverride` — Desktop-interne
+  Hintergrund-Jobs nutzen das günstige Producer-Modell
+  (`getProducerModelOverride`). Verifiziert: Crawl real (drecoll.de
+  28,7k / quikk.de 26k Zeichen in ~1 s), saveProfile-Sperre/tsv/
+  Refresh-nach-7-Monaten gegen Wegwerf-Postgres, Embedding 768d
+  gegen lokale Ollama. LLM-Schritt + 80-%-Quote werden im Live-Lauf
+  gemessen.
 
 ### Phase 3 — ICP + Match + Alert + Import
 - `icp-store.ts` (profile-store-Muster) + Tools `icp_get`/`icp_set`;

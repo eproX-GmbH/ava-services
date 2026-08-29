@@ -452,7 +452,12 @@ const KNOWN_BUNDLES: readonly ToolBundle[] = [
     // Phase 1 Firmen-Discovery (PLAN_FIRMEN_DISCOVERY.md) — Umkreis-Scan
     // nach NEUEN Firmen (nicht in AVA/CRM) + Ortsgraph-Abfrage.
     label: "Firmen-Discovery",
-    tools: ["geo_places_nearby", "discovery_scan", "discovery_candidates"],
+    tools: [
+      "geo_places_nearby",
+      "discovery_scan",
+      "discovery_candidates",
+      "discovery_profile_run",
+    ],
     queryHints: [
       "discovery",
       "radar",

@@ -47,6 +47,9 @@ async function ensureSchema(pool: Pool): Promise<void> {
       ON "DiscoveredCompany" ("nameNormalized");
     CREATE INDEX IF NOT EXISTS "DiscoveredCompany_latlon_idx"
       ON "DiscoveredCompany" (lat, lon);
+    ALTER TABLE "DiscoveredCompany" ADD COLUMN IF NOT EXISTS tsv tsvector;
+    CREATE INDEX IF NOT EXISTS "DiscoveredCompany_tsv_idx"
+      ON "DiscoveredCompany" USING GIN (tsv);
     CREATE TABLE IF NOT EXISTS "DiscoveryScan" (
       "scanId"          TEXT PRIMARY KEY,
       "tenantId"        TEXT NOT NULL,
@@ -310,6 +313,57 @@ export async function addCandidates(
     [args.scanId, batch.length],
   );
   return { added, updated, capped, skippedNoDomain, known };
+}
+
+export type SaveProfileResult =
+  | { saved: true }
+  | { skipped: "fresh"; profiledAt: string }
+  | { error: "not_found" };
+
+/**
+ * Mini-Profil (Phase 2) speichern. Setzt profiledAt = NOW() und baut
+ * den deutschen tsvector fuer die BM25-Suche (Phase 3).
+ *
+ * Verarbeitungs-Sperre A9: Ist bereits ein Profil juenger als 6 Monate
+ * vorhanden, wird NICHT ueberschrieben — der Aufrufer bekommt
+ * {skipped: "fresh"} samt Zeitstempel. So koennen sich mehrere Nutzer
+ * nicht gegenseitig Verarbeitungs-Kosten verursachen.
+ */
+export async function saveProfile(
+  pool: Pool,
+  args: {
+    discoveryId: string;
+    profileJson: Record<string, unknown>;
+    profileText: string;
+    embedding: number[] | null;
+  },
+): Promise<SaveProfileResult> {
+  await ensureSchema(pool);
+  const updated = await pool.query(
+    `UPDATE "DiscoveredCompany" SET
+       "profileJson" = $2,
+       "profileText" = $3,
+       tsv = to_tsvector('german', left($3, 20000)),
+       embedding = $4,
+       "profiledAt" = NOW(),
+       "updatedAt" = NOW()
+     WHERE "discoveryId" = $1
+       AND ("profiledAt" IS NULL OR "profiledAt" < NOW() - INTERVAL '6 months')`,
+    [
+      args.discoveryId,
+      JSON.stringify(args.profileJson).slice(0, 8000),
+      args.profileText.slice(0, 20000),
+      args.embedding,
+    ],
+  );
+  if ((updated.rowCount ?? 0) > 0) return { saved: true };
+  const existing = await pool.query<{ profiledAt: Date | null }>(
+    `SELECT "profiledAt" FROM "DiscoveredCompany" WHERE "discoveryId" = $1`,
+    [args.discoveryId],
+  );
+  if (existing.rows.length === 0) return { error: "not_found" };
+  const at = existing.rows[0].profiledAt;
+  return { skipped: "fresh", profiledAt: at ? at.toISOString() : "" };
 }
 
 export interface CandidateRow {

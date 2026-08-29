@@ -162,6 +162,7 @@ export function buildReadOnlyRegistry(deps: {
   for (const t of buildGeoTools(ctx)) registry.register(t);
   for (const t of buildDiscoveryTools({
     gateway: deps.gateway,
+    providers: deps.providers,
     getDefaultIndustries: () =>
       (deps.profile.get()?.industries ?? []).filter((s) => s.trim().length > 1),
   }))

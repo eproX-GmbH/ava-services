@@ -5,7 +5,7 @@ NICHT direkt bearbeiten — die Quelle der Wahrheit ist `services/desktop/src/ma
 Lauf via `pnpm -F @ava/desktop tools:doc` (oder automatisch via `build:typecheck`).
 
 Stand: 2026-08-29
-Anzahl Tools: 179
+Anzahl Tools: 180
 
 ## Firmen (11)
 
@@ -935,7 +935,7 @@ Lädt das Transkript einer früheren Chat-Sitzung anhand ihrer ID. Liefert die N
 
 _Parameter:_ keine.
 
-## discovery (2)
+## discovery (3)
 
 ### `discovery_candidates`
 
@@ -948,6 +948,15 @@ _Parameter:_
 - `lon: number`
 - `radiusKm: integer` — Nur mit lat+lon sinnvoll.
 - `limit: integer` — Max Ergebnisse (Default 50, max 200).
+
+### `discovery_profile_run`
+
+_Datei:_ `services/desktop/src/main/agent/tools/discovery.ts`
+
+Erstellt fuer bis zu N offene Discovery-Kandidaten ein kompaktes Firmen-Kurzprofil: Website kurz crawlen (Startseite + Impressum/Leistungen, robots.txt respektiert), Profil per LLM (nutzt das guenstige Producer-Modell, falls konfiguriert), Embedding lokal, zentrale Ablage — einer verarbeitet, alle profitieren. Firmen mit Profil juenger als 6 Monate werden uebersprungen. Dauert grob 10-20 Sekunden pro Firma; Default 10 Firmen pro Lauf.
+
+_Parameter:_
+- `limit: integer` — Wie viele Kandidaten dieser Lauf verarbeitet (Default 10, max 25).
 
 ### `discovery_scan`
 

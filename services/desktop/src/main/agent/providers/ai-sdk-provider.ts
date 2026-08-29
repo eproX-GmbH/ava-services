@@ -364,12 +364,15 @@ export class AiSdkProvider extends EventEmitter implements LlmProvider {
         `[${this.kind}] outgoing call → model=${status.model} cred=${credKind} key=${masked} keyLen=${k.length} ascii=${ascii} hasWhitespace=${hasWS}`,
       );
     }
+    // v0.1.442 — optionale Modell-Override pro Request (Hintergrund-Jobs
+    // nutzen das guenstige Producer-Modell). Kind/Credentials unveraendert.
+    const effectiveModel = req.modelOverride?.trim() || status.model;
     // v0.1.353 — ChatGPT-Abo-Pfad läuft über den Desktop-lokalen Builder
     // (Codex-Endpunkt), NICHT über createLLM — siehe
     // openai-subscription-model.ts für den Grund (CI-vendor-drift-Guard).
     const model = openaiSubscriptionToken
       ? createOpenAISubscriptionModel({
-          model: status.model,
+          model: effectiveModel,
           accessToken: openaiSubscriptionToken,
           ...(openaiSubscriptionAccountId
             ? { accountId: openaiSubscriptionAccountId }
@@ -377,7 +380,7 @@ export class AiSdkProvider extends EventEmitter implements LlmProvider {
         })
       : createLLM({
           provider: this.kind as RuntimeProvider,
-          model: status.model,
+          model: effectiveModel,
           apiKey,
           baseURL,
           ...(anthropicSubscriptionToken

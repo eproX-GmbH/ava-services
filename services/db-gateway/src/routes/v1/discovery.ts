@@ -19,6 +19,7 @@ import {
   addCandidates,
   listCandidates,
   startScan,
+  saveProfile,
   discoveryIdFor,
   type CandidateInput,
 } from "../../lib/discovery";
@@ -237,6 +238,82 @@ discoveryRouter.openapi(addCandidatesRoute, async (c) => {
     throw new HTTPException(409, { message: "candidate_cap_exhausted" });
   }
   return c.json(result, 200);
+});
+
+// ---- PUT /discovery/candidates/{discoveryId}/profile -----------------------
+//
+// Phase 2: Mini-Profil + Embedding zentral ablegen. 6-Monats-Sperre
+// (A9) wird HIER durchgesetzt, nicht nur im Client — sonst koennten
+// sich parallel scannende Nutzer gegenseitig Crawl-/LLM-Kosten
+// verursachen.
+
+const SaveProfileResponseShape = z
+  .object({
+    saved: z.boolean(),
+    skipped: z.string().optional(),
+    profiledAt: z.string().optional(),
+  })
+  .openapi("DiscoverySaveProfileResponse");
+
+const saveProfileRoute = createRoute({
+  method: "put",
+  path: "/discovery/candidates/{discoveryId}/profile",
+  tags: ["discovery"],
+  summary:
+    "Mini-Profil (JSON + Text + Embedding) eines Kandidaten speichern. 6-Monats-Sperre serverseitig.",
+  request: {
+    params: z.object({ discoveryId: z.string().min(4).max(100) }),
+    body: {
+      content: {
+        "application/json": {
+          schema: z.object({
+            profileJson: z.record(z.string(), z.unknown()),
+            profileText: z.string().min(20).max(20000),
+            embedding: z.array(z.number()).min(8).max(4096).nullable(),
+          }),
+        },
+      },
+    },
+  },
+  responses: {
+    200: {
+      content: { "application/json": { schema: SaveProfileResponseShape } },
+      description: "gespeichert ODER wegen frischem Profil uebersprungen",
+    },
+    404: {
+      content: { "application/json": { schema: ErrorShape } },
+      description: "Kandidat unbekannt",
+    },
+    401: {
+      content: { "application/json": { schema: ErrorShape } },
+      description: "unauthenticated",
+    },
+  },
+});
+
+discoveryRouter.openapi(saveProfileRoute, async (c) => {
+  const auth = c.get("auth");
+  if (!auth?.tenantId) {
+    throw new HTTPException(401, { message: "auth_context_missing" });
+  }
+  const { discoveryId } = c.req.valid("param");
+  const { profileJson, profileText, embedding } = c.req.valid("json");
+  const result = await saveProfile(getGatewayPool(), {
+    discoveryId,
+    profileJson,
+    profileText,
+    embedding,
+  });
+  if ("error" in result) {
+    throw new HTTPException(404, { message: "candidate_not_found" });
+  }
+  if ("skipped" in result) {
+    return c.json(
+      { saved: false, skipped: result.skipped, profiledAt: result.profiledAt },
+      200,
+    );
+  }
+  return c.json({ saved: true }, 200);
 });
 
 // ---- GET /discovery/candidates ---------------------------------------------

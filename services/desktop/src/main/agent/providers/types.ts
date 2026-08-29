@@ -19,6 +19,11 @@ export interface LlmStreamRequest {
   messages: AgentMessage[];
   tools?: OllamaToolSpec[];
   signal: AbortSignal;
+  /** v0.1.442 — Modell fuer DIESEN Request statt des konfigurierten
+   *  Chat-Modells (z. B. das guenstige Producer-Modell fuer
+   *  Hintergrund-Jobs im Desktop-Main wie den Discovery-Profiler).
+   *  Provider-Kind bleibt unveraendert — nur die Modell-ID wechselt. */
+  modelOverride?: string;
 }
 
 export interface LlmStreamToolCall {

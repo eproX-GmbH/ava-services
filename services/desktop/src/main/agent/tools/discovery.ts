@@ -8,11 +8,14 @@
 import * as yup from "yup";
 import { defineTool } from "../define-tool";
 import type { GatewayClient } from "../gateway-client";
+import type { LlmProviderManager } from "../providers";
 import type { Tool } from "../types";
 import { runDiscoveryScan } from "../../discovery/scan";
+import { runProfiler } from "../../discovery/profiler";
 
 export interface DiscoveryToolDeps {
   gateway: GatewayClient;
+  providers: LlmProviderManager;
   /** Branchen-Fallback aus dem Nutzerprofil (UserProfile.industries). */
   getDefaultIndustries: () => string[];
 }
@@ -126,6 +129,7 @@ export function buildDiscoveryTools(deps: DiscoveryToolDeps): Tool[] {
           category: string | null;
           source: string;
           masterCompanyId: string | null;
+          profiledAt: string | null;
           decision: string | null;
         }>;
       }>(`/v1/discovery/candidates?${qs.toString()}`);
@@ -141,10 +145,45 @@ export function buildDiscoveryTools(deps: DiscoveryToolDeps): Tool[] {
           kategorie: c.category,
           quelle: c.source,
           bereitsInAva: c.masterCompanyId !== null,
+          profiliert: c.profiledAt !== null,
         })),
       };
     },
   });
 
-  return [scan, list];
+  const profile = defineTool({
+    name: "discovery_profile_run",
+    summary:
+      "Mini-Profile fuer offene Discovery-Kandidaten erstellen (Website-Kurzcrawl + LLM + Embedding, zentral geteilt).",
+    category: "discovery profil firmenprofil",
+    description:
+      "Erstellt fuer bis zu N offene Discovery-Kandidaten ein kompaktes " +
+      "Firmen-Kurzprofil: Website kurz crawlen (Startseite + Impressum/" +
+      "Leistungen, robots.txt respektiert), Profil per LLM (nutzt das " +
+      "guenstige Producer-Modell, falls konfiguriert), Embedding lokal, " +
+      "zentrale Ablage — einer verarbeitet, alle profitieren. Firmen mit " +
+      "Profil juenger als 6 Monate werden uebersprungen. Dauert grob " +
+      "10-20 Sekunden pro Firma; Default 10 Firmen pro Lauf.",
+    parameters: {
+      type: "object",
+      properties: {
+        limit: {
+          type: "integer",
+          description: "Wie viele Kandidaten dieser Lauf verarbeitet (Default 10, max 25).",
+        },
+      },
+    },
+    schema: yup.object({
+      limit: yup.number().integer().min(1).max(25).optional(),
+    }),
+    preview: (r) => {
+      const res = r as { error?: string; profiliert?: number; betrachtet?: number };
+      if (res.error) return res.error;
+      return `${res.profiliert ?? 0}/${res.betrachtet ?? 0} Profile erstellt`;
+    },
+    run: async (args) =>
+      runProfiler(deps.gateway, deps.providers, { limit: args.limit ?? 10 }),
+  });
+
+  return [scan, list, profile];
 }
