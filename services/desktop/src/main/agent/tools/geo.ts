@@ -35,6 +35,9 @@ export interface GeoToolDeps {
 export function buildGeoTools(deps: GeoToolDeps): Tool[] {
   const nearby = defineTool({
     name: "geo_places_nearby",
+    summary:
+      "Orte/Nachbarorte im Umkreis (Radius km) eines deutschen Ortsnamens finden — mit Distanz, Kreis, Bundesland, PLZ.",
+    category: "geo umkreis region",
     description:
       "Deutsche Orte im Umkreis eines Ortsnamens finden (Luftlinie ab " +
       "Orts-Zentroid). Liefert Nachbarorte mit Distanz, Kreis, Bundesland " +
