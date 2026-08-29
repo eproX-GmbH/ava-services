@@ -51,7 +51,11 @@ interface Candidate {
   plz?: string | null;
   lat?: number | null;
   lon?: number | null;
-  domain?: string | null;
+  /** Pflicht (Zielbild): ohne Website wird eine Firma komplett
+   *  uebersprungen — die normierte Kern-Domain ist die Discovery-ID. */
+  domain: string;
+  category?: string | null;
+  meta?: Record<string, unknown> | null;
   source: "osm" | "serp";
 }
 
@@ -73,19 +77,32 @@ function haversineKm(aLat: number, aLon: number, bLat: number, bLon: number): nu
   return 2 * R * Math.asin(Math.sqrt(x));
 }
 
+/** URL → normierte KERN-Domain. MUSS mit `normalizeDomain` im Gateway
+ *  (services/db-gateway/src/lib/discovery.ts) uebereinstimmen — die
+ *  Kern-Domain ist die Discovery-ID. */
 function domainFromUrl(url: string | undefined | null): string | null {
   if (!url) return null;
+  let host: string;
   try {
-    const u = new URL(url.startsWith("http") ? url : `https://${url}`);
-    const host = u.hostname.toLowerCase().replace(/^www\./, "");
-    // Social-Profile sind keine Firmen-Domains — fuers Mini-Profil nutzlos.
-    if (/facebook\.com|instagram\.com|linkedin\.com|xing\.com/.test(host)) {
-      return null;
-    }
-    return host;
+    host = new URL(url.startsWith("http") ? url : `https://${url}`).hostname;
   } catch {
     return null;
   }
+  host = host.toLowerCase().replace(/^www\./, "").replace(/\.$/, "");
+  // Social-Profile sind keine Firmen-Domains — fuers Mini-Profil nutzlos.
+  if (/facebook\.com|instagram\.com|linkedin\.com|xing\.com/.test(host)) {
+    return null;
+  }
+  const labels = host.split(".").filter(Boolean);
+  if (labels.length < 2) return null;
+  const SECOND_LEVEL = new Set(["co", "com", "org", "net", "gov", "ac", "edu"]);
+  const tld = labels[labels.length - 1] ?? "";
+  const sld = labels[labels.length - 2] ?? "";
+  const take =
+    labels.length > 2 && tld.length === 2 && SECOND_LEVEL.has(sld) ? 3 : 2;
+  const core = labels.slice(-take).join(".");
+  if (core.length < 4 || core.length > 100) return null;
+  return core;
 }
 
 /** Kanal a: OSM Overpass — benannte Gewerbe-POIs in der bbox. */
@@ -153,13 +170,16 @@ out center 800;`;
       if (haversineKm(geo.origin.lat, geo.origin.lon, lat, lon) > radiusKm) {
         continue;
       }
+      const domain = domainFromUrl(tags.website ?? tags["contact:website"]);
+      if (!domain) continue; // Zielbild: ohne Website komplett ueberspringen
       out.push({
         name,
         city: tags["addr:city"] ?? null,
         plz: tags["addr:postcode"] ?? null,
         lat,
         lon,
-        domain: domainFromUrl(tags.website ?? tags["contact:website"]),
+        domain,
+        category: tags.office ?? (tags.craft ? `craft:${tags.craft}` : null),
         source: "osm",
       });
     }
@@ -195,14 +215,20 @@ async function fetchSerpCandidates(
     .slice(0, MAX_SERP_QUERIES)
     .map((b) => `${b} ${ort}`);
   const candidates: Candidate[] = [];
+  let ohneWebsite = 0;
   for (const q of queries) {
     try {
       const body = await gateway.request<{
         places_results?: Array<{
           title?: string;
           address?: string;
+          category?: string;
+          rating?: number;
+          reviews?: number;
+          phone?: string;
           gps_coordinates?: { latitude?: number; longitude?: number };
           website?: string;
+          link?: string;
         }>;
       }>("/v1/proxy/valueserp", {
         method: "POST",
@@ -211,14 +237,25 @@ async function fetchSerpCandidates(
       for (const p of body.places_results ?? []) {
         const name = p.title?.trim();
         if (!name) continue;
+        const domain = domainFromUrl(p.website ?? p.link);
+        if (!domain) {
+          ohneWebsite++; // Zielbild: ohne Website komplett ueberspringen
+          continue;
+        }
         const { plz, city } = parseAddress(p.address);
+        const meta: Record<string, unknown> = {};
+        if (p.rating !== undefined) meta.rating = p.rating;
+        if (p.reviews !== undefined) meta.reviews = p.reviews;
+        if (p.phone) meta.phone = p.phone;
         candidates.push({
           name,
           city,
           plz,
           lat: p.gps_coordinates?.latitude ?? null,
           lon: p.gps_coordinates?.longitude ?? null,
-          domain: domainFromUrl(p.website),
+          domain,
+          category: p.category ?? null,
+          meta: Object.keys(meta).length > 0 ? meta : null,
           source: "serp",
         });
       }
@@ -227,6 +264,11 @@ async function fetchSerpCandidates(
         `SERP-Query "${q}" fehlgeschlagen (${err instanceof Error ? err.message : String(err)}).`,
       );
     }
+  }
+  if (ohneWebsite > 0) {
+    hinweise.push(
+      `${ohneWebsite} Places-Treffer ohne Website uebersprungen (Zielbild: nur Firmen mit Website).`,
+    );
   }
   return { candidates, queries };
 }
@@ -281,19 +323,16 @@ export async function runDiscoveryScan(
     );
   }
 
-  // 4. Lokal deduplizieren + priorisieren (Domain zuerst, dann Naehe).
+  // 4. Lokal per Domain deduplizieren (Domain = Discovery-ID),
+  //    Naehe-priorisieren fuers Cap.
   const merged: Candidate[] = [];
   const seen = new Set<string>();
   for (const c of [...osm, ...serp.candidates]) {
-    const key = c.domain
-      ? `d:${c.domain}`
-      : `n:${c.name.toLowerCase()}|${(c.city ?? "").toLowerCase()}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
+    if (seen.has(c.domain)) continue;
+    seen.add(c.domain);
     merged.push(c);
   }
   merged.sort((a, b) => {
-    if (!!a.domain !== !!b.domain) return a.domain ? -1 : 1;
     const da =
       a.lat != null && a.lon != null
         ? haversineKm(geo.origin.lat, geo.origin.lon, a.lat, a.lon)
@@ -307,7 +346,7 @@ export async function runDiscoveryScan(
   const capped = merged.slice(0, scan.maxCandidatesPerScan);
   if (merged.length > capped.length) {
     hinweise.push(
-      `${merged.length - capped.length} Kandidaten wegen Scan-Cap (${scan.maxCandidatesPerScan}) nicht uebertragen — Kandidaten mit Website und geringer Distanz wurden bevorzugt.`,
+      `${merged.length - capped.length} Kandidaten wegen Scan-Cap (${scan.maxCandidatesPerScan}) nicht uebertragen — die naechstgelegenen wurden bevorzugt.`,
     );
   }
 

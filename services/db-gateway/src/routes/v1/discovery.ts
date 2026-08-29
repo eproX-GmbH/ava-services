@@ -109,7 +109,11 @@ const CandidateInputShape = z.object({
   plz: z.string().max(10).nullish(),
   lat: z.number().nullish(),
   lon: z.number().nullish(),
-  domain: z.string().max(200).nullish(),
+  /** Website — Pflicht (Zielbild: Firmen ohne Website werden komplett
+   *  uebersprungen; die normierte Kern-Domain ist die Discovery-ID). */
+  domain: z.string().min(4).max(200),
+  category: z.string().max(120).nullish(),
+  meta: z.record(z.string(), z.unknown()).nullish(),
   source: z.enum(["osm", "serp", "register"]),
 });
 
@@ -118,6 +122,7 @@ const AddCandidatesResponseShape = z
     added: z.number(),
     updated: z.number(),
     capped: z.number(),
+    skippedNoDomain: z.number(),
     /** discoveryId → master-data companyId (bereits bekannte Firmen). */
     known: z.record(z.string(), z.string()),
   })
@@ -201,7 +206,8 @@ async function resolveMasterIds(
     for (const cand of candidates) {
       const key = `${cand.name.trim().toLowerCase()}|${(cand.city ?? "").trim().toLowerCase()}`;
       const companyId = byKey.get(key);
-      if (companyId) out.set(discoveryIdFor(cand), companyId);
+      const discoveryId = discoveryIdFor(cand);
+      if (companyId && discoveryId) out.set(discoveryId, companyId);
     }
   } catch (err) {
     logger.warn({ err }, "discovery: master-data dedup dry-run failed (best-effort, skipping)");
@@ -243,7 +249,8 @@ const CandidateRowShape = z
     plz: z.string().nullable(),
     lat: z.number().nullable(),
     lon: z.number().nullable(),
-    domain: z.string().nullable(),
+    domain: z.string(),
+    category: z.string().nullable(),
     source: z.string(),
     masterCompanyId: z.string().nullable(),
     profiledAt: z.string().nullable(),
@@ -263,6 +270,9 @@ const listRoute = createRoute({
       lon: z.coerce.number().optional(),
       radiusKm: z.coerce.number().min(1).max(200).optional(),
       limit: z.coerce.number().int().min(1).max(500).default(200),
+      /** Default false: entschiedene Kandidaten (importiert/verworfen)
+       *  verschwinden aus der Liste (Zielbild Kandidaten-Tabelle). */
+      includeDecided: z.coerce.boolean().default(false),
     }),
   },
   responses: {
@@ -286,13 +296,14 @@ discoveryRouter.openapi(listRoute, async (c) => {
   if (!auth?.tenantId) {
     throw new HTTPException(401, { message: "auth_context_missing" });
   }
-  const { lat, lon, radiusKm, limit } = c.req.valid("query");
+  const { lat, lon, radiusKm, limit, includeDecided } = c.req.valid("query");
   const candidates = await listCandidates(getGatewayPool(), {
     userId: auth.actorId,
     lat,
     lon,
     radiusKm,
     limit,
+    includeDecided,
   });
   return c.json({ candidates }, 200);
 });

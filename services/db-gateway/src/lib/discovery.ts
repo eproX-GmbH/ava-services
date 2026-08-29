@@ -31,7 +31,9 @@ async function ensureSchema(pool: Pool): Promise<void> {
       plz               TEXT,
       lat               DOUBLE PRECISION,
       lon               DOUBLE PRECISION,
-      domain            TEXT,
+      domain            TEXT NOT NULL,
+      category          TEXT,
+      "metaJson"        JSONB,
       source            TEXT NOT NULL,
       "masterCompanyId" TEXT,
       "profileJson"     JSONB,
@@ -115,11 +117,40 @@ export function normalizeCompanyName(name: string): string {
     .trim();
 }
 
-export function discoveryIdFor(c: { name: string; city?: string | null; domain?: string | null }): string {
-  const key = c.domain
-    ? `d:${c.domain.toLowerCase()}`
-    : `n:${normalizeCompanyName(c.name)}|${(c.city ?? "").trim().toLowerCase()}`;
-  return createHash("sha256").update(key).digest("hex").slice(0, 24);
+/**
+ * URL/Hostname → normierte KERN-Domain (Zielbild-Entscheidung: die
+ * Website-Domain IST die Firmen-ID im Discovery-Kontext, weil die
+ * HRB+Registergericht-ID der normalen Verarbeitung hier nicht
+ * zuverlaessig vorliegt). Normierung: lowercase, www.-Praefix und
+ * Sub-Domains runter auf die registrierbare Domain (Heuristik mit
+ * den gaengigen Second-Level-TLDs), kein Pfad/Slash/Port.
+ * null, wenn keine brauchbare Domain extrahierbar ist.
+ */
+export function normalizeDomain(input: string | null | undefined): string | null {
+  if (!input) return null;
+  let host = input.trim().toLowerCase();
+  try {
+    host = new URL(host.startsWith("http") ? host : `https://${host}`).hostname;
+  } catch {
+    return null;
+  }
+  host = host.replace(/^www\./, "").replace(/\.$/, "");
+  const labels = host.split(".").filter(Boolean);
+  if (labels.length < 2) return null;
+  const SECOND_LEVEL = new Set(["co", "com", "org", "net", "gov", "ac", "edu"]);
+  const tld = labels[labels.length - 1];
+  const sld = labels[labels.length - 2];
+  const take =
+    labels.length > 2 && tld.length === 2 && SECOND_LEVEL.has(sld) ? 3 : 2;
+  const core = labels.slice(-take).join(".");
+  if (core.length < 4 || core.length > 100) return null;
+  return core;
+}
+
+/** Discovery-ID = normierte Kern-Domain. Kandidaten ohne Website haben
+ *  keine ID und werden nicht aufgenommen (Zielbild: komplett skippen). */
+export function discoveryIdFor(c: { domain?: string | null }): string | null {
+  return normalizeDomain(c.domain);
 }
 
 export type StartScanResult =
@@ -159,7 +190,13 @@ export interface CandidateInput {
   plz?: string | null;
   lat?: number | null;
   lon?: number | null;
-  domain?: string | null;
+  /** Website — Pflicht. Kandidaten ohne verwertbare Domain werden
+   *  verworfen (Zielbild: ohne Website keine Beruecksichtigung). */
+  domain: string;
+  /** Quell-Kategorie (z. B. Google-Places-Kategorie, OSM office-Tag). */
+  category?: string | null;
+  /** Weitere Quell-Metadaten (Rating, Telefon, …) — roh, klein halten. */
+  meta?: Record<string, unknown> | null;
   source: string;
 }
 
@@ -168,6 +205,8 @@ export interface AddCandidatesResult {
   updated: number;
   /** Wegen Kandidaten-Cap des Scans verworfen. */
   capped: number;
+  /** Ohne verwertbare Website-Domain verworfen (Zielbild-Regel). */
+  skippedNoDomain: number;
   /** discoveryId → masterCompanyId fuer bereits bekannte Firmen. */
   known: Record<string, string>;
 }
@@ -202,15 +241,21 @@ export async function addCandidates(
 
   const seen = new Set<string>();
   const rows: Array<CandidateInput & { discoveryId: string; nameNormalized: string }> = [];
+  let skippedNoDomain = 0;
   for (const c of args.candidates) {
     const name = c.name?.trim();
     if (!name) continue;
     const discoveryId = discoveryIdFor(c);
+    if (!discoveryId) {
+      skippedNoDomain++;
+      continue;
+    }
     if (seen.has(discoveryId)) continue;
     seen.add(discoveryId);
     rows.push({
       ...c,
       name: name.slice(0, 300),
+      domain: discoveryId,
       discoveryId,
       nameNormalized: normalizeCompanyName(name).slice(0, 300),
     });
@@ -218,7 +263,7 @@ export async function addCandidates(
   const capped = Math.max(0, rows.length - room);
   const batch = rows.slice(0, room);
   if (batch.length === 0) {
-    return { added: 0, updated: 0, capped, known: {} };
+    return { added: 0, updated: 0, capped, skippedNoDomain, known: {} };
   }
 
   let added = 0;
@@ -229,14 +274,15 @@ export async function addCandidates(
     if (masterId) known[r.discoveryId] = masterId;
     const res = await pool.query<{ inserted: boolean }>(
       `INSERT INTO "DiscoveredCompany"
-         ("discoveryId", name, "nameNormalized", city, plz, lat, lon, domain, source, "masterCompanyId")
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+         ("discoveryId", name, "nameNormalized", city, plz, lat, lon, domain, category, "metaJson", source, "masterCompanyId")
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
        ON CONFLICT ("discoveryId") DO UPDATE SET
          city = COALESCE("DiscoveredCompany".city, EXCLUDED.city),
          plz = COALESCE("DiscoveredCompany".plz, EXCLUDED.plz),
          lat = COALESCE("DiscoveredCompany".lat, EXCLUDED.lat),
          lon = COALESCE("DiscoveredCompany".lon, EXCLUDED.lon),
-         domain = COALESCE("DiscoveredCompany".domain, EXCLUDED.domain),
+         category = COALESCE("DiscoveredCompany".category, EXCLUDED.category),
+         "metaJson" = COALESCE("DiscoveredCompany"."metaJson", EXCLUDED."metaJson"),
          "masterCompanyId" = COALESCE("DiscoveredCompany"."masterCompanyId", EXCLUDED."masterCompanyId"),
          "updatedAt" = NOW()
        RETURNING (xmax = 0) AS inserted`,
@@ -248,7 +294,9 @@ export async function addCandidates(
         r.plz?.trim().slice(0, 10) ?? null,
         r.lat ?? null,
         r.lon ?? null,
-        r.domain?.toLowerCase().slice(0, 200) ?? null,
+        r.domain,
+        r.category?.trim().slice(0, 120) ?? null,
+        r.meta ? JSON.stringify(r.meta).slice(0, 4000) : null,
         r.source.slice(0, 20),
         masterId,
       ],
@@ -261,7 +309,7 @@ export async function addCandidates(
       WHERE "scanId" = $1`,
     [args.scanId, batch.length],
   );
-  return { added, updated, capped, known };
+  return { added, updated, capped, skippedNoDomain, known };
 }
 
 export interface CandidateRow {
@@ -271,7 +319,8 @@ export interface CandidateRow {
   plz: string | null;
   lat: number | null;
   lon: number | null;
-  domain: string | null;
+  domain: string;
+  category: string | null;
   source: string;
   masterCompanyId: string | null;
   profiledAt: string | null;
@@ -279,8 +328,9 @@ export interface CandidateRow {
 }
 
 /** Kandidaten im Radius (oder alle neuesten), mit der Entscheidung des
- *  anfragenden Nutzers gejoint. Verworfene bleiben sichtbar markiert —
- *  filtern ist Sache des Aufrufers. */
+ *  anfragenden Nutzers gejoint. Default: bereits ENTSCHIEDENE
+ *  (importiert/verworfen) fliegen raus — Zielbild: die Kandidaten-
+ *  Tabelle zeigt nur Offenes und macht nach einer Entscheidung Platz. */
 export async function listCandidates(
   pool: Pool,
   args: {
@@ -289,11 +339,15 @@ export async function listCandidates(
     lon?: number;
     radiusKm?: number;
     limit: number;
+    includeDecided?: boolean;
   },
 ): Promise<CandidateRow[]> {
   await ensureSchema(pool);
   const params: unknown[] = [args.userId];
-  let where = "";
+  const conditions: string[] = [];
+  if (!args.includeDecided) {
+    conditions.push("dd.decision IS NULL");
+  }
   if (
     args.lat !== undefined &&
     args.lon !== undefined &&
@@ -308,13 +362,16 @@ export async function listCandidates(
       args.lon - lonDelta,
       args.lon + lonDelta,
     );
-    where = `WHERE dc.lat BETWEEN $2 AND $3 AND dc.lon BETWEEN $4 AND $5`;
+    conditions.push(
+      `dc.lat BETWEEN $${params.length - 3} AND $${params.length - 2} AND dc.lon BETWEEN $${params.length - 1} AND $${params.length}`,
+    );
   }
   params.push(args.limit);
+  const where = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
   const r = await pool.query(
     `SELECT dc."discoveryId", dc.name, dc.city, dc.plz, dc.lat, dc.lon,
-            dc.domain, dc.source, dc."masterCompanyId", dc."profiledAt",
-            dd.decision
+            dc.domain, dc.category, dc.source, dc."masterCompanyId",
+            dc."profiledAt", dd.decision
        FROM "DiscoveredCompany" dc
        LEFT JOIN "DiscoveryDecision" dd
          ON dd."discoveryId" = dc."discoveryId" AND dd."userId" = $1
@@ -331,6 +388,7 @@ export async function listCandidates(
     lat: row.lat,
     lon: row.lon,
     domain: row.domain,
+    category: row.category,
     source: row.source,
     masterCompanyId: row.masterCompanyId,
     profiledAt: row.profiledAt ? new Date(row.profiledAt).toISOString() : null,

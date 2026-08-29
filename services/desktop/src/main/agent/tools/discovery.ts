@@ -122,22 +122,25 @@ export function buildDiscoveryTools(deps: DiscoveryToolDeps): Tool[] {
           name: string;
           city: string | null;
           plz: string | null;
-          domain: string | null;
+          domain: string;
+          category: string | null;
           source: string;
           masterCompanyId: string | null;
           decision: string | null;
         }>;
       }>(`/v1/discovery/candidates?${qs.toString()}`);
       return {
+        hinweis:
+          "Nur offene Kandidaten (bereits importierte/verworfene sind ausgeblendet).",
         candidates: r.candidates.map((c) => ({
           discoveryId: c.discoveryId,
           name: c.name,
           ort: c.city,
           plz: c.plz,
           website: c.domain,
+          kategorie: c.category,
           quelle: c.source,
           bereitsInAva: c.masterCompanyId !== null,
-          entscheidung: c.decision,
         })),
       };
     },

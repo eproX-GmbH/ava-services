@@ -118,6 +118,23 @@ Ortsgraph ──▶ Kandidaten finden ──▶ Mini-Profil (nur Website, billig
   die ganze Stadt; teils sehr große Bezirke) → Gericht ist Vorfilter
   und Fallback, nie alleiniger Locator; Sitzverlegungen ändern das
   zuständige Gericht.
+- **A8 — Website ist Pflicht; die normierte Kern-Domain ist die
+  Discovery-ID** (Zielbild-Schärfung 2026-08-29). Die HRB+Registergericht-
+  ID der normalen Verarbeitung liegt bei Places/OSM-Funden nicht
+  zuverlässig vor. Deshalb: Firmen OHNE Website werden komplett
+  übersprungen; die Website-URL wird normiert (lowercase, ohne www./
+  Subdomains/Pfad/Slash → registrierbare Kern-Domain) und ist der
+  Primärschlüssel. Quell-Metadaten (Places-Kategorie, Rating, OSM-Tags)
+  werden mitgespeichert.
+- **A9 — Verarbeitungs-Sperre 6 Monate.** Eine Firma, für die bereits
+  ein Mini-Profil erstellt wurde (`profiledAt` gesetzt), wird frühestens
+  nach 6 Monaten neu verarbeitet (Website-Crawl etc.); bis dahin wird
+  sie beim Scan/Profiling einfach übersprungen. Durchsetzung in Phase 2
+  am `profiledAt`-Feld.
+- **A10 — Verarbeitung nur auf explizite Nutzer-Entscheidung.** Discovery
+  legt NIE selbst eine Vollverarbeitung an. Der Nutzer entscheidet in der
+  Kandidaten-Tabelle (Phase 3) per Checkbox: Bulk-Import ODER Ignorieren;
+  entschiedene Firmen verschwinden aus der Tabelle (DiscoveryDecision).
 - **A7 — Kein Bot-Detection-Bypass.** Für Quell-Websites gilt dieselbe
   Policy wie beim Link-Monitor: Challenges abwarten, nie lösen; Firma bei
   Blockade übersprungen markieren.
@@ -198,7 +215,9 @@ Watermarks, Audit).
   Impressum, Leistungen; maxPages 5, Timeout, robots.txt respektieren).
 - Profil mit **Producer-Modell** (billig, konfigurierbar — vorhandene
   Infrastruktur), Embedding lokal via Ollama, Batch-Persist ans Gateway.
-- Refresh-Politik: Profil älter als 6 Monate → beim nächsten Scan neu.
+- Verarbeitungs-Sperre (A9): `profiledAt` jünger als 6 Monate → Firma
+  wird beim Profiling übersprungen, kein Website-Crawl. Erst danach ist
+  ein Refresh zulässig.
 - **Prüfstein:** ≥ 80 % der Kandidaten mit Website bekommen ein valides
   Profil; Kosten pro 100 Firmen gemessen und im Plan nachgetragen.
 
@@ -208,10 +227,15 @@ Watermarks, Audit).
 - Match-Lauf: Gateway-Query (Radius + optional BM25) → lokal Cosine
   gegen ICP-Embedding → Top-K (≈ 20) → LLM-Urteil mit Score + Begründung
   → Schwellwert.
-- Alert-Feed in der UI (Slide-in-Panel-Muster) mit Begründung, Quelle,
-  Website-Link; Aktionen: **Importieren** (`POST /v1/companies`) /
-  **Verwerfen** (`DiscoveryDecision`, nie wieder alerten). Optional
-  Telegram-Benachrichtigung (Kanal existiert).
+- **Kandidaten-Tabelle als eigener App-Bereich** (Zielbild): alle offenen
+  Kandidaten als Tabelle, sortiert nach Match-Score („heiße" Kandidaten
+  oben) mit Kurztext, WARUM die Firma zum ICP passt (aus dem LLM-Urteil).
+  Checkbox-Auswahl → **Bulk-Import** (`POST /v1/imports/from-list`) ODER
+  **Ignorieren**; entschiedene Firmen verschwinden aus der Tabelle
+  (DiscoveryDecision) und machen Platz. Match-Score + Begründung sind
+  nutzerbezogen (ICP ist privat) und werden lokal bzw. user-scoped
+  gehalten, nie im geteilten Bestand. Optional Telegram-Alert für neue
+  Top-Kandidaten (Kanal existiert).
 - **Prüfstein:** Ende-zu-Ende: Scan → Alert → Import → Firma läuft durch
   die normale Pipeline.
 
