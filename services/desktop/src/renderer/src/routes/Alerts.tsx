@@ -36,6 +36,7 @@ const KIND_LABEL: Record<AlertKind, string> = {
   "linkedin-signal": "LinkedIn-Signal",
   reminder: "Erinnerung",
   "link-change": "Link-Änderung",
+  "radar-match": "Radar-Treffer",
 };
 
 const SEVERITY_LABEL: Record<AlertSeverity, string> = {

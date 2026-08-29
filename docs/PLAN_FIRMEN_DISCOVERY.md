@@ -278,6 +278,23 @@ Watermarks, Audit).
   Firmen aus dem master-data-Bestand, die der Nutzer nicht hat und die
   im Radius liegen, wandern in die Kandidatenliste (Website-Ermittlung
   dann via searchAndJudge-Muster).
+- **STATUS: implementiert 2026-08-29** — (1) Radar-Automatik:
+  `discovery/radar-supervisor.ts` (Opt-in, Default AUS; täglich/
+  wöchentlich; Scan→Profile(15)→Match→Alerts kind="radar-match" für
+  neue Kandidaten Score ≥ 70, max 5/Lauf, dedupliziert über
+  radar-alerted.json; Fanout = Glocke + OS-Push + Telegram), UI-Block
+  „Automatik" im Radar inkl. „Jetzt komplett laufen lassen". (2)
+  Feedback-Loop: `GET /discovery/dismissals` (Verwerf-Gründe mit Grund,
+  pro Nutzer) → fließen in den Match-Judge-Prompt. (3) Kanal 3:
+  `GET /discovery/register-candidates` (master-data-Pool auf demselben
+  Cluster, Pool-Cap 2; Ausschluss DiscoveredCompany + CompanyNameCache)
+  + Desktop-Website-Auflösung per SERP (max 12 Lookups/Scan,
+  Verzeichnis-Filter northdata & Co.; Budget mit Branchen-Queries ≤ 20
+  < O1-Limit 30); source=register trägt masterCompanyId direkt.
+  Gerichtsbezirks-Vorfilter (A6) zurückgestellt — Ortsnamen-Matching
+  über die GeoPlace-Ortsmenge reicht für die aktuelle Bestandsgröße,
+  A6 wird relevant, wenn die location-Vielfalt Probleme macht.
+  Verifiziert gegen Wegwerf-Postgres (inkl. Fake-ava_master_data).
 
 ## 6. Prozessplan (Betrieb)
 

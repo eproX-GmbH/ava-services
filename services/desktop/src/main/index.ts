@@ -172,6 +172,7 @@ import { NotificationManager } from "./notifications";
 import { WhisperSidecar } from "./voice/whisper-sidecar";
 import { IcpStore } from "./agent/icp-store";
 import { MatchStore } from "./discovery/match-store";
+import { RadarSupervisor } from "./discovery/radar-supervisor";
 import { listCandidatesWithMatches } from "./discovery/list";
 import { decideCandidates, type DecideInput } from "./discovery/decide";
 import { runMatch } from "./discovery/matcher";
@@ -1211,6 +1212,7 @@ watchStore.on("changed", () => broadcastWatchesChanged());
 let mailSupervisor: MailSupervisor | null = null;
 let scheduledJobsSupervisor: ScheduledJobsSupervisor | null = null;
 let linkMonitorSupervisor: LinkMonitorSupervisor | null = null;
+let radarSupervisor: RadarSupervisor | null = null;
 
 function broadcastMailSnapshot(snapshot: MailSnapshot): void {
   for (const win of BrowserWindow.getAllWindows()) {
@@ -2377,6 +2379,38 @@ app.whenReady().then(async () => {
       err instanceof Error ? err.message : String(err),
     );
   }
+  // Phase 4 Firmen-Discovery — Radar-Automatik (Opt-in, Default AUS).
+  // Scan/Profile/Match nach Intervall; neue heisse ICP-Treffer laufen
+  // als kind="radar-match" durch den normalen Alert-Fanout
+  // (Glocke + OS-Push + Telegram).
+  radarSupervisor = new RadarSupervisor({
+    gateway: gatewayClient,
+    providers,
+    icp: icpStore,
+    matchStore: discoveryMatches,
+    alerts,
+    notify: (a) => {
+      notifications.notifyForAlert(a);
+    },
+    onAlertsChanged: broadcastAlertsChanged,
+    isSignedIn: () => auth.getStatus().signedIn,
+    onAudit: ({ action, severity, summary, metadata }) => {
+      audit({
+        actorType: "system",
+        actorId: null,
+        category: "import",
+        action,
+        severity,
+        subjectType: null,
+        subjectId: null,
+        summary,
+        metadata: metadata ?? {},
+      });
+    },
+  });
+  radarSupervisor.start();
+  app.on("before-quit", () => radarSupervisor?.stop());
+
   app.on("before-quit", () => {
     void linkMonitorSupervisor?.stop();
   });
@@ -4404,6 +4438,35 @@ app.whenReady().then(async () => {
     ...icpStore.get(),
     gesetzt: icpStore.isSet(),
   }));
+  // Phase 4 — Radar-Automatik (Opt-in).
+  ipcMain.handle("discovery:getRadarConfig", () =>
+    radarSupervisor ? radarSupervisor.getConfig() : null,
+  );
+  ipcMain.handle(
+    "discovery:setRadarConfig",
+    (_e, patch: { enabled?: boolean; intervalHours?: 24 | 168 }) => {
+      if (!radarSupervisor) return null;
+      const next = radarSupervisor.setConfig(patch ?? {});
+      audit({
+        actorType: "user",
+        actorId: null,
+        category: "import",
+        action: "discovery.radar-config",
+        severity: "info",
+        subjectType: null,
+        subjectId: null,
+        summary: next.enabled
+          ? `Radar-Automatik AN (${next.intervalHours === 168 ? "wöchentlich" : "täglich"})`
+          : "Radar-Automatik AUS",
+        metadata: { enabled: next.enabled, intervalHours: next.intervalHours },
+      });
+      return next;
+    },
+  );
+  ipcMain.handle("discovery:radarRunNow", async () => {
+    if (!radarSupervisor) return { error: "Radar noch nicht initialisiert." };
+    return { outcome: await radarSupervisor.runNow("manuell") };
+  });
 
   ipcMain.handle("publication:getAnalysisMode", () =>
     publicationStore.getMode(),

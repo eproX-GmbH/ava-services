@@ -35,7 +35,7 @@ export interface ScanSummary {
   scanId: string;
   origin: { name: string; kreis: string };
   orteImRadius: number;
-  quellen: { osm: number; serp: number };
+  quellen: { osm: number; serp: number; register: number };
   kandidatenGesamt: number;
   added: number;
   updated: number;
@@ -56,7 +56,9 @@ interface Candidate {
   domain: string;
   category?: string | null;
   meta?: Record<string, unknown> | null;
-  source: "osm" | "serp";
+  /** Register-Kanal: master-data-companyId ist hier schon bekannt. */
+  masterCompanyId?: string | null;
+  source: "osm" | "serp" | "register";
 }
 
 interface GeoResponse {
@@ -273,6 +275,83 @@ async function fetchSerpCandidates(
   return { candidates, queries };
 }
 
+// ---- Kanal c (Phase 4): Register-Bestand im Umkreis ------------------------
+//
+// master-data-Firmen mit Sitzort im Radius, die AVA noch nie verarbeitet
+// hat. Website-Ermittlung per normaler SERP-Suche (1 Query/Firma, hartes
+// Budget) mit Verzeichnis-Filter — Portale wie Northdata sind nicht die
+// Firmen-Website. A8 gilt: ohne aufgeloeste Website kein Kandidat.
+
+const DIRECTORY_DOMAIN_RE =
+  /northdata|unternehmensregister|handelsregister|bundesanzeiger|creditreform|dnb\.com|firmenwissen|firmeneintrag|wlw\.de|gelbeseiten|11880|dasoertliche|kununu|linkedin|xing|facebook|instagram|moneyhouse|companyhouse|implisense|genios|websiteprofile|branchenbuch|cylex|yelp|herold|stepstone|indeed|wikipedia|youtube|northd/i;
+
+const MAX_REGISTER_LOOKUPS = 12;
+
+async function fetchRegisterCandidates(
+  gateway: GatewayClient,
+  ort: string,
+  radiusKm: number,
+  hinweise: string[],
+): Promise<{ candidates: Candidate[]; lookups: number }> {
+  let regs: Array<{ companyId: string; name: string; location: string }>;
+  try {
+    const qs = new URLSearchParams({
+      near: ort,
+      radiusKm: String(radiusKm),
+      limit: String(MAX_REGISTER_LOOKUPS),
+    });
+    const r = await gateway.request<{
+      candidates: Array<{ companyId: string; name: string; location: string }>;
+    }>(`/v1/discovery/register-candidates?${qs.toString()}`);
+    regs = r.candidates;
+  } catch (err) {
+    hinweise.push(
+      `Register-Kanal uebersprungen (${err instanceof Error ? err.message : String(err)}).`,
+    );
+    return { candidates: [], lookups: 0 };
+  }
+  const out: Candidate[] = [];
+  let lookups = 0;
+  let ohneWebsite = 0;
+  for (const reg of regs) {
+    lookups++;
+    try {
+      const body = await gateway.request<{
+        organic_results?: Array<{ link?: string; domain?: string }>;
+      }>("/v1/proxy/valueserp", {
+        method: "POST",
+        body: { q: `${reg.name} ${reg.location}`, num: 5 },
+      });
+      const hit = (body.organic_results ?? [])
+        .map((o) => domainFromUrl(o.link ?? o.domain))
+        .find((d) => d && !DIRECTORY_DOMAIN_RE.test(d));
+      if (!hit) {
+        ohneWebsite++;
+        continue;
+      }
+      out.push({
+        name: reg.name,
+        city: reg.location,
+        domain: hit,
+        masterCompanyId: reg.companyId,
+        source: "register",
+      });
+    } catch {
+      // Quota/Netz — Kanal bricht leise ab, Rest der Quellen laeuft.
+      hinweise.push(
+        `Register-Kanal nach ${lookups} Website-Lookups abgebrochen (SERP-Fehler/Quota).`,
+      );
+      break;
+    }
+  }
+  if (ohneWebsite > 0) {
+    hinweise.push(
+      `${ohneWebsite} Register-Firmen ohne aufloesbare Website uebersprungen.`,
+    );
+  }
+  return { candidates: out, lookups };
+}
+
 export async function runDiscoveryScan(
   gateway: GatewayClient,
   args: ScanArgs,
@@ -310,12 +389,14 @@ export async function runDiscoveryScan(
     return { error: `Scan-Start fehlgeschlagen: ${msg}` };
   }
 
-  // 3. Kanaele (parallel).
-  const [osm, serp] = await Promise.all([
+  // 3. Kanaele (parallel). SERP-Budget (O1: max 30/Scan): Branchen-
+  //    Queries (<=8) + Register-Lookups (<=12) bleiben klar darunter.
+  const [osm, serp, register] = await Promise.all([
     fetchOsmCandidates(geo, args.radiusKm, hinweise),
     args.branchen.length > 0
       ? fetchSerpCandidates(gateway, args.ort, args.branchen, hinweise)
       : Promise.resolve({ candidates: [] as Candidate[], queries: [] as string[] }),
+    fetchRegisterCandidates(gateway, args.ort, args.radiusKm, hinweise),
   ]);
   if (args.branchen.length === 0) {
     hinweise.push(
@@ -327,7 +408,7 @@ export async function runDiscoveryScan(
   //    Naehe-priorisieren fuers Cap.
   const merged: Candidate[] = [];
   const seen = new Set<string>();
-  for (const c of [...osm, ...serp.candidates]) {
+  for (const c of [...osm, ...serp.candidates, ...register.candidates]) {
     if (seen.has(c.domain)) continue;
     seen.add(c.domain);
     merged.push(c);
@@ -382,7 +463,11 @@ export async function runDiscoveryScan(
     scanId: scan.scanId,
     origin: { name: geo.origin.name, kreis: geo.origin.kreis },
     orteImRadius: geo.places.length,
-    quellen: { osm: osm.length, serp: serp.candidates.length },
+    quellen: {
+      osm: osm.length,
+      serp: serp.candidates.length,
+      register: register.candidates.length,
+    },
     kandidatenGesamt: capped.length,
     added,
     updated,

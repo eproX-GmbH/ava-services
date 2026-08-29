@@ -31,16 +31,25 @@ export function DiscoveryRadar(): JSX.Element {
   const [notice, setNotice] = useState<string | null>(null);
   const [lastImportTx, setLastImportTx] = useState<string | null>(null);
   const [icpGesetzt, setIcpGesetzt] = useState<boolean>(true);
+  const [radarConfig, setRadarConfig] = useState<{
+    enabled: boolean;
+    intervalHours: 24 | 168;
+    lastRunAt: string | null;
+    lastOutcome: string | null;
+  } | null>(null);
+  const [radarRunning, setRadarRunning] = useState(false);
 
   const reload = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const [r, icp] = await Promise.all([
+      const [r, icp, cfg] = await Promise.all([
         window.api.discovery.candidates(),
         window.api.discovery.getIcp(),
+        window.api.discovery.getRadarConfig(),
       ]);
       setIcpGesetzt(icp.gesetzt);
+      setRadarConfig(cfg);
       if (!r.ok || !r.candidates) {
         setError(r.error ?? "Kandidaten konnten nicht geladen werden.");
         setRows([]);
@@ -163,6 +172,60 @@ export function DiscoveryRadar(): JSX.Element {
           </button>
         </div>
       </div>
+
+      {radarConfig && (
+        <div className="radar-auto">
+          <label className="radar-auto-toggle">
+            <input
+              type="checkbox"
+              checked={radarConfig.enabled}
+              onChange={(e) =>
+                void window.api.discovery
+                  .setRadarConfig({ enabled: e.target.checked })
+                  .then((c) => setRadarConfig(c))
+              }
+            />
+            <strong>Automatik</strong> — Radar läuft selbstständig
+          </label>
+          <select
+            value={radarConfig.intervalHours}
+            disabled={!radarConfig.enabled}
+            onChange={(e) =>
+              void window.api.discovery
+                .setRadarConfig({
+                  intervalHours: Number(e.target.value) === 168 ? 168 : 24,
+                })
+                .then((c) => setRadarConfig(c))
+            }
+          >
+            <option value={24}>täglich</option>
+            <option value={168}>wöchentlich</option>
+          </select>
+          <button
+            className="proc-toggle"
+            disabled={radarRunning || busy !== null || !icpGesetzt}
+            onClick={() => {
+              setRadarRunning(true);
+              setNotice(null);
+              void window.api.discovery
+                .radarRunNow()
+                .then((r) => {
+                  setNotice(r.outcome ?? r.error ?? null);
+                  return reload();
+                })
+                .finally(() => setRadarRunning(false));
+            }}
+            title="Voller Lauf: Scan → Profile → Match → Alerts (dauert einige Minuten)"
+          >
+            {radarRunning ? "Radar läuft…" : "Jetzt komplett laufen lassen"}
+          </button>
+          <span className="radar-auto-meta">
+            {radarConfig.lastRunAt
+              ? `Letzter Lauf: ${new Date(radarConfig.lastRunAt).toLocaleString("de-DE")}${radarConfig.lastOutcome ? ` — ${radarConfig.lastOutcome}` : ""}`
+              : "Noch kein Lauf."}
+          </span>
+        </div>
+      )}
 
       {!icpGesetzt && (
         <div className="radar-hint">

@@ -827,7 +827,8 @@ export type AlertKind =
   | "evaluation-flag"  // an LLM evaluation flagged something noteworthy
   | "linkedin-signal"  // L6: LinkedIn-Beobachter strong signal
   | "reminder"         // v0.1.305: User-Reminder, vom ScheduledJob ausgelöst
-  | "link-change";     // LM: überwachter Link hat sich geändert
+  | "link-change"      // LM: überwachter Link hat sich geändert
+  | "radar-match";     // Phase 4 Discovery: neuer heißer ICP-Kandidat im Radar
 
 export interface Alert {
   id: string;

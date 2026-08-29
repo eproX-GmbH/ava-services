@@ -7993,3 +7993,34 @@ tr.held-row td:first-child::after {
   max-width: 340px;
   color: var(--color-fg, inherit);
 }
+
+/* Phase 4 — Radar-Automatik ------------------------------------------- */
+.radar-auto {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-top: 0.9rem;
+  padding: 0.55rem 0.8rem;
+  border: 1px solid var(--color-border-muted, rgba(148, 163, 184, 0.4));
+  border-radius: 8px;
+  font-size: 13px;
+}
+.radar-auto-toggle {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  cursor: pointer;
+}
+.radar-auto select {
+  font-size: 13px;
+  padding: 3px 6px;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  border: 1px solid var(--color-border-muted, rgba(148, 163, 184, 0.4));
+}
+.radar-auto-meta {
+  font-size: 12px;
+  color: var(--color-fg-muted, #94a3b8);
+}

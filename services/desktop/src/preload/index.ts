@@ -386,6 +386,23 @@ const api = {
       radiusKm: number;
       gesetzt: boolean;
     }> => ipcRenderer.invoke("discovery:getIcp"),
+    getRadarConfig: (): Promise<{
+      enabled: boolean;
+      intervalHours: 24 | 168;
+      lastRunAt: string | null;
+      lastOutcome: string | null;
+    } | null> => ipcRenderer.invoke("discovery:getRadarConfig"),
+    setRadarConfig: (patch: {
+      enabled?: boolean;
+      intervalHours?: 24 | 168;
+    }): Promise<{
+      enabled: boolean;
+      intervalHours: 24 | 168;
+      lastRunAt: string | null;
+      lastOutcome: string | null;
+    } | null> => ipcRenderer.invoke("discovery:setRadarConfig", patch),
+    radarRunNow: (): Promise<{ outcome?: string; error?: string }> =>
+      ipcRenderer.invoke("discovery:radarRunNow"),
   },
 
   // v0.1.412 — Telegram-Benachrichtigungskanal. Der Bot-Token wird NIE

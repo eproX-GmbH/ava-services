@@ -92,6 +92,7 @@ const judgeSchema = yup.array().of(
 async function judgeBatch(
   providers: LlmProviderManager,
   icpText: string,
+  feedbackText: string,
   batch: ProfiledCandidate[],
 ): Promise<Map<string, { score: number; begruendung: string }>> {
   const out = new Map<string, { score: number; begruendung: string }>();
@@ -102,10 +103,14 @@ async function judgeBatch(
     "als Begruendung, der konkret benennt, WARUM die Firma (nicht) " +
     "passt — bezogen auf das ICP, nicht generisch. Beruecksichtige " +
     "Ausschluesse im ICP hart (Ausschluss getroffen → score unter 20). " +
+    "Falls fruehere Verwerf-Gruende des Nutzers mitgeliefert werden: " +
+    "aehnliche Firmen entsprechend niedriger bewerten. " +
     'Antworte NUR als JSON: {"bewertungen": [{"id": "...", "score": 0, ' +
     '"begruendung": "..."}]}';
   const user =
-    `ICP:\n${icpText}\n\nFirmen:\n` +
+    `ICP:\n${icpText}\n` +
+    (feedbackText ? `\nFruehere Verwerf-Gruende des Nutzers:\n${feedbackText}\n` : "") +
+    `\nFirmen:\n` +
     batch
       .map(
         (c) =>
@@ -207,10 +212,29 @@ export async function runMatch(
   }
   const topK = ranked.slice(0, TOP_K);
 
+  // Feedback-Loop (Phase 4): juengste Verwerf-Gruende als Praeferenz-
+  // Signal in den Urteils-Prompt. Best-effort.
+  let feedbackText = "";
+  try {
+    const fb = await gateway.request<{
+      dismissals: Array<{ name: string; reason: string }>;
+    }>("/v1/discovery/dismissals?limit=10");
+    feedbackText = fb.dismissals
+      .map((d) => `- ${d.name}: ${d.reason}`)
+      .join("\n");
+  } catch {
+    /* Feedback ist optional */
+  }
+
   // LLM-Urteil in Batches.
   const judged = new Map<string, { score: number; begruendung: string }>();
   for (let i = 0; i < topK.length; i += JUDGE_BATCH) {
-    const part = await judgeBatch(providers, icpText, topK.slice(i, i + JUDGE_BATCH));
+    const part = await judgeBatch(
+      providers,
+      icpText,
+      feedbackText,
+      topK.slice(i, i + JUDGE_BATCH),
+    );
     for (const [k, v] of part) judged.set(k, v);
   }
   if (judged.size === 0 && topK.length > 0) {

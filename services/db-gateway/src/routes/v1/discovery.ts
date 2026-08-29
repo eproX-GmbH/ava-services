@@ -21,9 +21,12 @@ import {
   startScan,
   saveProfile,
   saveDecisions,
+  findRegisterCandidates,
+  listDismissedWithReasons,
   discoveryIdFor,
   type CandidateInput,
 } from "../../lib/discovery";
+import { findPlacesNearby } from "../../lib/geo-places";
 import { buildXlsx } from "../../lib/xlsx-mini";
 import { callUpstreamBinaryExpectJson } from "../../lib/upstream";
 import { logger } from "../../lib/logger";
@@ -116,6 +119,7 @@ const CandidateInputShape = z.object({
   domain: z.string().min(4).max(200),
   category: z.string().max(120).nullish(),
   meta: z.record(z.string(), z.unknown()).nullish(),
+  masterCompanyId: z.string().max(100).nullish(),
   source: z.enum(["osm", "serp", "register"]),
 });
 
@@ -392,6 +396,132 @@ discoveryRouter.openapi(listRoute, async (c) => {
     withProfiles,
   });
   return c.json({ candidates }, 200);
+});
+
+// ---- GET /discovery/register-candidates ------------------------------------
+//
+// Phase 4, Kanal 3 (O5/A6-Nachfolger): Firmen aus dem globalen
+// master-data-Register-Bestand, deren Sitzort im Radius liegt und die
+// weder als Radar-Kandidat existieren noch je in AVA verarbeitet
+// wurden. Der Desktop ermittelt anschliessend die Website (A8) und
+// meldet sie als normale Kandidaten (source=register) zurueck.
+
+const registerCandidatesRoute = createRoute({
+  method: "get",
+  path: "/discovery/register-candidates",
+  tags: ["discovery"],
+  summary:
+    "Unverarbeitete Register-Firmen (GermanCompany) mit Sitzort im Radius um einen Ort.",
+  request: {
+    query: z.object({
+      near: z.string().min(2).max(80),
+      radiusKm: z.coerce.number().min(1).max(200).default(30),
+      limit: z.coerce.number().int().min(1).max(50).default(15),
+    }),
+  },
+  responses: {
+    200: {
+      content: {
+        "application/json": {
+          schema: z
+            .object({
+              candidates: z.array(
+                z.object({
+                  companyId: z.string(),
+                  name: z.string(),
+                  location: z.string(),
+                }),
+              ),
+            })
+            .openapi("DiscoveryRegisterCandidatesResponse"),
+        },
+      },
+      description: "Register-Firmen ohne Radar-/AVA-Historie",
+    },
+    404: {
+      content: { "application/json": { schema: ErrorShape } },
+      description: "Ort nicht aufloesbar",
+    },
+    401: {
+      content: { "application/json": { schema: ErrorShape } },
+      description: "unauthenticated",
+    },
+  },
+});
+
+discoveryRouter.openapi(registerCandidatesRoute, async (c) => {
+  const auth = c.get("auth");
+  if (!auth?.tenantId) {
+    throw new HTTPException(401, { message: "auth_context_missing" });
+  }
+  const { near, radiusKm, limit } = c.req.valid("query");
+  const pool = getGatewayPool();
+  const geo = await findPlacesNearby(pool, near, radiusKm);
+  if (!geo) {
+    throw new HTTPException(404, { message: `Ort "${near}" nicht gefunden` });
+  }
+  const candidates = await findRegisterCandidates(
+    pool,
+    geo.places.map((p) => p.name),
+    limit,
+  );
+  return c.json({ candidates }, 200);
+});
+
+// ---- GET /discovery/dismissals ---------------------------------------------
+//
+// Phase 4 Feedback-Loop: juengste Verwerf-Gruende des Nutzers — der
+// lokale Matcher webt sie als Praeferenzen in den Urteils-Prompt.
+
+const dismissalsRoute = createRoute({
+  method: "get",
+  path: "/discovery/dismissals",
+  tags: ["discovery"],
+  summary: "Juengste Verwerf-Entscheidungen MIT Grund (Feedback fuer den Match).",
+  request: {
+    query: z.object({
+      limit: z.coerce.number().int().min(1).max(50).default(10),
+    }),
+  },
+  responses: {
+    200: {
+      content: {
+        "application/json": {
+          schema: z
+            .object({
+              dismissals: z.array(
+                z.object({
+                  discoveryId: z.string(),
+                  name: z.string(),
+                  reason: z.string(),
+                  decidedAt: z.string(),
+                }),
+              ),
+            })
+            .openapi("DiscoveryDismissalsResponse"),
+        },
+      },
+      description: "Verwerf-Gruende, neueste zuerst",
+    },
+    401: {
+      content: { "application/json": { schema: ErrorShape } },
+      description: "unauthenticated",
+    },
+  },
+});
+
+discoveryRouter.openapi(dismissalsRoute, async (c) => {
+  const auth = c.get("auth");
+  if (!auth?.tenantId) {
+    throw new HTTPException(401, { message: "auth_context_missing" });
+  }
+  const { limit } = c.req.valid("query");
+  const dismissals = await listDismissedWithReasons(
+    getGatewayPool(),
+    auth.actorId,
+    limit,
+  );
+  return c.json({ dismissals }, 200);
 });
 
 // ---- POST /discovery/decisions ---------------------------------------------

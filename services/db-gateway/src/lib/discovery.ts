@@ -16,7 +16,8 @@
 // ohne Schema-Drift aufsetzen kann.
 
 import { createHash } from "node:crypto";
-import type { Pool } from "pg";
+import pg, { type Pool } from "pg";
+import { loadEnv } from "./env";
 
 let schemaReady = false;
 
@@ -200,6 +201,9 @@ export interface CandidateInput {
   category?: string | null;
   /** Weitere Quell-Metadaten (Rating, Telefon, …) — roh, klein halten. */
   meta?: Record<string, unknown> | null;
+  /** Vom Aufrufer bereits bekannte master-data-ID (Register-Kanal) —
+   *  hat Vorrang vor dem Fuzzy-Dedup der Route. */
+  masterCompanyId?: string | null;
   source: string;
 }
 
@@ -273,7 +277,8 @@ export async function addCandidates(
   let updated = 0;
   const known: Record<string, string> = {};
   for (const r of batch) {
-    const masterId = args.masterIds.get(r.discoveryId) ?? null;
+    const masterId =
+      r.masterCompanyId ?? args.masterIds.get(r.discoveryId) ?? null;
     if (masterId) known[r.discoveryId] = masterId;
     const res = await pool.query<{ inserted: boolean }>(
       `INSERT INTO "DiscoveredCompany"
@@ -313,6 +318,116 @@ export async function addCandidates(
     [args.scanId, batch.length],
   );
   return { added, updated, capped, skippedNoDomain, known };
+}
+
+// ---- Kanal 3 (Phase 4): Register-Bestand im Umkreis ------------------------
+//
+// master-data's globale GermanCompany-Tabelle (HRB-basiert) liegt auf
+// demselben MPG-Cluster in der DB ava_master_data — nur das
+// Datenbank-Segment der URL unterscheidet sich (Muster db-urls.ts).
+// Lesender Zugriff mit hartem Pool-Cap 2 (geteiltes
+// Verbindungsbudget!).
+
+let masterPool: Pool | null = null;
+
+function getMasterDataPool(): Pool {
+  if (masterPool) return masterPool;
+  const url = new URL(loadEnv().DATABASE_URL);
+  url.pathname = "/ava_master_data";
+  masterPool = new pg.Pool({
+    connectionString: url.toString(),
+    max: 2,
+    idleTimeoutMillis: 30_000,
+  });
+  masterPool.on("error", (err) => {
+    console.warn("[discovery] master-data pool error:", err.message);
+  });
+  return masterPool;
+}
+
+export interface RegisterCandidate {
+  companyId: string;
+  name: string;
+  location: string;
+}
+
+/**
+ * Firmen aus dem globalen Register-Bestand (GermanCompany), deren
+ * Sitzort in der uebergebenen Ortsmenge liegt und die im Radar noch
+ * NICHT als Kandidat existieren und noch nie in AVA verarbeitet
+ * wurden (Proxy: CompanyNameCache). Der Aufrufer (Desktop-Scan)
+ * ermittelt anschliessend die Website — ohne Website kein Kandidat
+ * (A8).
+ */
+export async function findRegisterCandidates(
+  gatewayPool: Pool,
+  placeNames: string[],
+  limit: number,
+): Promise<RegisterCandidate[]> {
+  await ensureSchema(gatewayPool);
+  const places = [...new Set(placeNames.map((p) => p.trim()).filter(Boolean))];
+  if (places.length === 0) return [];
+  let rows: RegisterCandidate[];
+  try {
+    const r = await getMasterDataPool().query<RegisterCandidate>(
+      `SELECT "companyId", name, location FROM "GermanCompany"
+        WHERE location = ANY($1::text[])
+        ORDER BY "companyId"
+        LIMIT $2`,
+      [places, Math.min(500, limit * 10)],
+    );
+    rows = r.rows;
+  } catch (err) {
+    console.warn("[discovery] register query failed:", err);
+    return [];
+  }
+  if (rows.length === 0) return [];
+  const ids = rows.map((r) => r.companyId);
+  const [known, cached] = await Promise.all([
+    gatewayPool.query<{ masterCompanyId: string }>(
+      `SELECT "masterCompanyId" FROM "DiscoveredCompany"
+        WHERE "masterCompanyId" = ANY($1::text[])`,
+      [ids],
+    ),
+    gatewayPool
+      .query<{ companyId: string }>(
+        `SELECT "companyId" FROM "CompanyNameCache"
+          WHERE "companyId" = ANY($1::text[])`,
+        [ids],
+      )
+      .catch(() => ({ rows: [] as Array<{ companyId: string }> })),
+  ]);
+  const exclude = new Set<string>([
+    ...known.rows.map((r) => r.masterCompanyId),
+    ...cached.rows.map((r) => r.companyId),
+  ]);
+  return rows.filter((r) => !exclude.has(r.companyId)).slice(0, limit);
+}
+
+/** Juengste Verwerf-Entscheidungen MIT Grund (Feedback-Loop Phase 4):
+ *  fliessen als Nutzer-Praeferenzen in den Match-Prompt ein. */
+export async function listDismissedWithReasons(
+  pool: Pool,
+  userId: string,
+  limit: number,
+): Promise<Array<{ discoveryId: string; name: string; reason: string; decidedAt: string }>> {
+  await ensureSchema(pool);
+  const r = await pool.query(
+    `SELECT dd."discoveryId", dc.name, dd.reason, dd."decidedAt"
+       FROM "DiscoveryDecision" dd
+       JOIN "DiscoveredCompany" dc ON dc."discoveryId" = dd."discoveryId"
+      WHERE dd."userId" = $1 AND dd.decision = 'dismissed'
+        AND dd.reason IS NOT NULL AND length(trim(dd.reason)) > 0
+      ORDER BY dd."decidedAt" DESC
+      LIMIT $2`,
+    [userId, limit],
+  );
+  return r.rows.map((row) => ({
+    discoveryId: row.discoveryId,
+    name: row.name,
+    reason: row.reason,
+    decidedAt: new Date(row.decidedAt).toISOString(),
+  }));
 }
 
 export type SaveProfileResult =
