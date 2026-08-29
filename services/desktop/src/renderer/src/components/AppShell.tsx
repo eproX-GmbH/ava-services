@@ -643,6 +643,7 @@ function TopBar() {
           subItems={[
             { to: "/alle-firmen", label: "Meine Firmen" },
             { to: "/companies", label: "Firmensuche" },
+            { to: "/radar", label: "Radar" },
           ]}
         />
         <NavItem

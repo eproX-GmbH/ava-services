@@ -23,6 +23,7 @@ import { TransactionDetail } from "./routes/TransactionDetail";
 import { TransactionStream } from "./routes/TransactionStream";
 import { Companies } from "./routes/Companies";
 import { AllCompanies } from "./routes/AllCompanies";
+import { DiscoveryRadar } from "./routes/DiscoveryRadar";
 import { CompanyDetail } from "./routes/CompanyDetail";
 import { Evaluations } from "./routes/Evaluations";
 import { BestMatchDetail } from "./routes/BestMatchDetail";
@@ -75,6 +76,7 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
               <Route path="/transactions/:id/stream" element={<TransactionStream />} />
               <Route path="/companies" element={<Companies />} />
               <Route path="/alle-firmen" element={<AllCompanies />} />
+              <Route path="/radar" element={<DiscoveryRadar />} />
               <Route path="/companies/:id" element={<CompanyDetail />} />
               <Route path="/transactions/:id/evaluations" element={<Evaluations />} />
               <Route path="/evaluations/best-matches/:id" element={<BestMatchDetail />} />

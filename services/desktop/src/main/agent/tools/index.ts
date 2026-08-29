@@ -47,6 +47,9 @@ import { buildTelegramTools } from "./telegram";
 import { buildPublicationTools } from "./publications";
 import { buildGeoTools } from "./geo";
 import { buildDiscoveryTools } from "./discovery";
+import { buildIcpTools } from "./icp";
+import type { IcpStore } from "../icp-store";
+import type { MatchStore } from "../../discovery/match-store";
 import { buildSelfCorrectionTools } from "./self-correction";
 import type { MailSupervisor } from "../../mail/supervisor";
 import type { ScheduledJobsSupervisor } from "../../scheduler/supervisor";
@@ -145,6 +148,9 @@ export function buildReadOnlyRegistry(deps: {
   selfCorrectionsStore: SelfCorrectionsStore;
   /** Aktive Conversation-ID, vom Orchestrator gesetzt. */
   getActiveConversationId: () => string | null;
+  /** Phase 3 Firmen-Discovery — ICP (lokal, privat) + Match-Store. */
+  icp: IcpStore;
+  discoveryMatches: MatchStore;
 }): ToolRegistry {
   const registry = new ToolRegistry();
   const ctx = { gateway: deps.gateway };
@@ -163,10 +169,19 @@ export function buildReadOnlyRegistry(deps: {
   for (const t of buildDiscoveryTools({
     gateway: deps.gateway,
     providers: deps.providers,
-    getDefaultIndustries: () =>
-      (deps.profile.get()?.industries ?? []).filter((s) => s.trim().length > 1),
+    icp: deps.icp,
+    matchStore: deps.discoveryMatches,
+    getDefaultIndustries: () => {
+      // SERP-Branchen-Fallback: ICP-Branchen zuerst, sonst Nutzerprofil.
+      const icpBranchen = deps.icp.get().branchen;
+      if (icpBranchen.length > 0) return icpBranchen;
+      return (deps.profile.get()?.industries ?? []).filter(
+        (s) => s.trim().length > 1,
+      );
+    },
   }))
     registry.register(t);
+  for (const t of buildIcpTools({ icp: deps.icp })) registry.register(t);
   for (const t of buildSettingsTools({ providers: deps.providers }))
     registry.register(t);
   for (const t of buildMemoryTools({ generalMemory: deps.generalMemory }))

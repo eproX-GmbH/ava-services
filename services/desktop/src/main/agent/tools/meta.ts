@@ -457,6 +457,10 @@ const KNOWN_BUNDLES: readonly ToolBundle[] = [
       "discovery_scan",
       "discovery_candidates",
       "discovery_profile_run",
+      "discovery_match_run",
+      "discovery_decide",
+      "icp_get",
+      "icp_set",
     ],
     queryHints: [
       "discovery",
@@ -472,6 +476,10 @@ const KNOWN_BUNDLES: readonly ToolBundle[] = [
       "leads",
       "potenzielle kunden",
       "nicht im crm",
+      "icp",
+      "idealkunden",
+      "idealkundenprofil",
+      "perfekte kunden",
     ],
   },
   {

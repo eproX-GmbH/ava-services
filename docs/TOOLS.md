@@ -5,7 +5,7 @@ NICHT direkt bearbeiten — die Quelle der Wahrheit ist `services/desktop/src/ma
 Lauf via `pnpm -F @ava/desktop tools:doc` (oder automatisch via `build:typecheck`).
 
 Stand: 2026-08-29
-Anzahl Tools: 180
+Anzahl Tools: 184
 
 ## Firmen (11)
 
@@ -935,19 +935,33 @@ Lädt das Transkript einer früheren Chat-Sitzung anhand ihrer ID. Liefert die N
 
 _Parameter:_ keine.
 
-## discovery (3)
+## discovery (5)
 
 ### `discovery_candidates`
 
 _Datei:_ `services/desktop/src/main/agent/tools/discovery.ts`
 
-Liest Firmen-Kandidaten aus dem zentralen Discovery-Bestand — optional begrenzt auf einen Umkreis (lat/lon/radiusKm, z. B. aus geo_places_nearby-Origin). masterCompanyId gesetzt = Firma ist in AVA schon bekannt; decision zeigt eine fruehere Nutzer-Entscheidung (imported/dismissed).
+Liest die OFFENEN Firmen-Kandidaten aus dem Discovery-Bestand, sortiert nach ICP-Match-Score (heisseste zuerst, inkl. Warum-Begruendung, falls discovery_match_run gelaufen ist). bereitsInAva = Firma ist schon im Bestand; profiliert = Mini-Profil vorhanden.
 
 _Parameter:_
-- `lat: number`
-- `lon: number`
-- `radiusKm: integer` — Nur mit lat+lon sinnvoll.
 - `limit: integer` — Max Ergebnisse (Default 50, max 200).
+
+### `discovery_decide`
+
+_Datei:_ `services/desktop/src/main/agent/tools/discovery.ts`
+
+Speichert Entscheidungen zu Kandidaten: 'imported' startet EINEN Bulk-Import (eine Transaktion, volle Pipeline) fuer alle gewaehlten Firmen; 'dismissed' blendet sie dauerhaft aus. Entschiedene Firmen verschwinden aus der Kandidatenliste. WICHTIG: Nur aufrufen, wenn der Nutzer die Entscheidung explizit getroffen hat — nie eigenmaechtig importieren. Import braucht einen Ort; Firmen ohne Ort werden gemeldet.
+
+_Parameter:_
+- `decisions: array` (required)
+
+### `discovery_match_run`
+
+_Datei:_ `services/desktop/src/main/agent/tools/discovery.ts`
+
+Matcht die profilierten offenen Kandidaten gegen das Idealkunden-profil des Nutzers: lokales Embedding-Vorranking, dann LLM-Urteil (guenstiges Producer-Modell) mit Score 0-100 und einem Satz, WARUM die Firma (nicht) passt. Ergebnisse landen lokal und sortieren die Kandidaten-Tabelle. Braucht ein gesetztes ICP (icp_set) und profilierte Kandidaten (discovery_profile_run).
+
+_Parameter:_ keine.
 
 ### `discovery_profile_run`
 
@@ -973,6 +987,24 @@ _Parameter:_ keine.
 _Datei:_ `services/desktop/src/main/agent/tools/geo.ts`
 
 Deutsche Orte im Umkreis eines Ortsnamens finden (Luftlinie ab Orts-Zentroid). Liefert Nachbarorte mit Distanz, Kreis, Bundesland und PLZ-Liste — z. B. fuer die Frage, welche Region eine Firmen-Discovery um einen Standort abdecken wuerde. Bei mehrdeutigen Ortsnamen gewinnt die groesste Stadt; Alternativen werden mitgeliefert.
+
+_Parameter:_ keine.
+
+## icp (2)
+
+### `icp_get`
+
+_Datei:_ `services/desktop/src/main/agent/tools/icp.ts`
+
+Liest das gespeicherte Idealkundenprofil (ICP): Freitext-Beschreibung, Branchen, Heimat-Orte + Radius, Groessen-Praeferenz, Ausschluesse. Das ICP bleibt lokal auf der Nutzer-Maschine.
+
+_Parameter:_ keine.
+
+### `icp_set`
+
+_Datei:_ `services/desktop/src/main/agent/tools/icp.ts`
+
+Speichert das Idealkundenprofil (Patch — nur uebergebene Felder aendern sich). Rufe dieses Tool auf, wenn der Nutzer sein ICP beschreibt oder die ICP-Frage aus der Begruessung beantwortet (Branche, Groesse, Region). beschreibung = Freitext in den Worten des Nutzers; branchen/orte strukturiert dazu. KEINE Vermutungen speichern — nur, was der Nutzer gesagt hat.
 
 _Parameter:_ keine.
 

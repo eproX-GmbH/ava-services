@@ -170,6 +170,11 @@ import {
 } from "./agent";
 import { NotificationManager } from "./notifications";
 import { WhisperSidecar } from "./voice/whisper-sidecar";
+import { IcpStore } from "./agent/icp-store";
+import { MatchStore } from "./discovery/match-store";
+import { listCandidatesWithMatches } from "./discovery/list";
+import { decideCandidates, type DecideInput } from "./discovery/decide";
+import { runMatch } from "./discovery/matcher";
 import type { StagedSheetSummary } from "./agent";
 import type { ProviderConfig, LlmProviderKind } from "./agent";
 import type { HostedProviderKind } from "../shared/types";
@@ -1550,9 +1555,17 @@ const skillsUserDir = join(app.getPath("userData"), "skills");
 // Wird unten im Boot via .start() initialisiert.
 const selfCorrectionsStore = new SelfCorrectionsStore();
 
+// Phase 3 Firmen-Discovery (PLAN_FIRMEN_DISCOVERY.md) — ICP (privat,
+// lokal) + Match-Store (nutzerbezogene Scores). Von Tools UND den
+// Radar-IPC-Handlern unten geteilt.
+const icpStore = new IcpStore();
+const discoveryMatches = new MatchStore();
+
 const agentRegistry = buildReadOnlyRegistry({
   gateway: gatewayClient,
   providers,
+  icp: icpStore,
+  discoveryMatches,
   generalMemory,
   attachments,
   alerts,
@@ -4340,6 +4353,58 @@ app.whenReady().then(async () => {
   // nach exakt dem Research-Muster: Aenderung -> debounced Neustart des
   // company-publication-Producers, damit extraEnvAsync den frischen
   // AVA_PUBLICATION_ANALYSIS-Wert liefert.
+  // Phase 3 Firmen-Discovery (PLAN_FIRMEN_DISCOVERY.md) — Radar-IPC
+  // fuer die Kandidaten-Tabelle: Liste (mit lokalen Match-Scores),
+  // Bulk-Entscheidung (Import/Ignorieren), Match-Lauf.
+  ipcMain.handle("discovery:candidates", async () => {
+    try {
+      return {
+        ok: true,
+        candidates: await listCandidatesWithMatches(
+          gatewayClient,
+          discoveryMatches,
+          { limit: 300 },
+        ),
+      };
+    } catch (err) {
+      return {
+        ok: false,
+        error: err instanceof Error ? err.message : String(err),
+      };
+    }
+  });
+  ipcMain.handle(
+    "discovery:decide",
+    async (_e, decisions: DecideInput[]) => {
+      const result = await decideCandidates(gatewayClient, decisions ?? []);
+      if (!("error" in result)) {
+        audit({
+          actorType: "user",
+          actorId: null,
+          category: "import",
+          action: "discovery.decide",
+          severity: "info",
+          subjectType: null,
+          subjectId: result.transactionId,
+          summary: `Radar: ${result.importiert} Firmen importiert, ${result.ignoriert} ignoriert`,
+          metadata: {
+            importiert: result.importiert,
+            ignoriert: result.ignoriert,
+            ohneOrt: result.ohneOrt,
+          },
+        });
+      }
+      return result;
+    },
+  );
+  ipcMain.handle("discovery:match", async () =>
+    runMatch(gatewayClient, providers, icpStore, discoveryMatches),
+  );
+  ipcMain.handle("discovery:getIcp", () => ({
+    ...icpStore.get(),
+    gesetzt: icpStore.isSet(),
+  }));
+
   ipcMain.handle("publication:getAnalysisMode", () =>
     publicationStore.getMode(),
   );

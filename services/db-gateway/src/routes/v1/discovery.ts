@@ -20,6 +20,7 @@ import {
   listCandidates,
   startScan,
   saveProfile,
+  saveDecisions,
   discoveryIdFor,
   type CandidateInput,
 } from "../../lib/discovery";
@@ -332,6 +333,9 @@ const CandidateRowShape = z
     masterCompanyId: z.string().nullable(),
     profiledAt: z.string().nullable(),
     decision: z.string().nullable(),
+    profileJson: z.record(z.string(), z.unknown()).nullable().optional(),
+    profileText: z.string().nullable().optional(),
+    embedding: z.array(z.number()).nullable().optional(),
   })
   .openapi("DiscoveryCandidate");
 
@@ -350,6 +354,9 @@ const listRoute = createRoute({
       /** Default false: entschiedene Kandidaten (importiert/verworfen)
        *  verschwinden aus der Liste (Zielbild Kandidaten-Tabelle). */
       includeDecided: z.coerce.boolean().default(false),
+      /** Profil-Text + Embedding mitliefern (nur profilierte Kandidaten;
+       *  fuer den lokalen ICP-Match — Muster publication-blocks). */
+      withProfiles: z.coerce.boolean().default(false),
     }),
   },
   responses: {
@@ -373,7 +380,8 @@ discoveryRouter.openapi(listRoute, async (c) => {
   if (!auth?.tenantId) {
     throw new HTTPException(401, { message: "auth_context_missing" });
   }
-  const { lat, lon, radiusKm, limit, includeDecided } = c.req.valid("query");
+  const { lat, lon, radiusKm, limit, includeDecided, withProfiles } =
+    c.req.valid("query");
   const candidates = await listCandidates(getGatewayPool(), {
     userId: auth.actorId,
     lat,
@@ -381,6 +389,73 @@ discoveryRouter.openapi(listRoute, async (c) => {
     radiusKm,
     limit,
     includeDecided,
+    withProfiles,
   });
   return c.json({ candidates }, 200);
+});
+
+// ---- POST /discovery/decisions ---------------------------------------------
+//
+// Phase 3: Nutzer-Entscheidungen (Bulk aus der Kandidaten-Tabelle):
+// imported | dismissed. Nutzerbezogen (actorId) — die Firma bleibt im
+// geteilten Bestand, verschwindet aber aus der Liste dieses Nutzers.
+// Der eigentliche Import laeuft separat ueber POST /v1/imports/from-list.
+
+const decisionsRoute = createRoute({
+  method: "post",
+  path: "/discovery/decisions",
+  tags: ["discovery"],
+  summary:
+    "Bulk-Entscheidungen zu Kandidaten speichern (imported/dismissed, pro Nutzer).",
+  request: {
+    body: {
+      content: {
+        "application/json": {
+          schema: z.object({
+            decisions: z
+              .array(
+                z.object({
+                  discoveryId: z.string().min(4).max(100),
+                  decision: z.enum(["imported", "dismissed"]),
+                  reason: z.string().max(500).nullish(),
+                }),
+              )
+              .min(1)
+              .max(200),
+          }),
+        },
+      },
+    },
+  },
+  responses: {
+    200: {
+      content: {
+        "application/json": {
+          schema: z.object({ saved: z.number() }).openapi("DiscoveryDecisionsResponse"),
+        },
+      },
+      description: "Anzahl gespeicherter Entscheidungen",
+    },
+    401: {
+      content: { "application/json": { schema: ErrorShape } },
+      description: "unauthenticated",
+    },
+  },
+});
+
+discoveryRouter.openapi(decisionsRoute, async (c) => {
+  const auth = c.get("auth");
+  if (!auth?.tenantId) {
+    throw new HTTPException(401, { message: "auth_context_missing" });
+  }
+  const { decisions } = c.req.valid("json");
+  const result = await saveDecisions(getGatewayPool(), {
+    userId: auth.actorId,
+    decisions: decisions.map((d) => ({
+      discoveryId: d.discoveryId,
+      decision: d.decision,
+      reason: d.reason ?? null,
+    })),
+  });
+  return c.json(result, 200);
 });

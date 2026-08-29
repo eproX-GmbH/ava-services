@@ -12,10 +12,17 @@ import type { LlmProviderManager } from "../providers";
 import type { Tool } from "../types";
 import { runDiscoveryScan } from "../../discovery/scan";
 import { runProfiler } from "../../discovery/profiler";
+import { runMatch } from "../../discovery/matcher";
+import { decideCandidates } from "../../discovery/decide";
+import { listCandidatesWithMatches } from "../../discovery/list";
+import type { IcpStore } from "../icp-store";
+import type { MatchStore } from "../../discovery/match-store";
 
 export interface DiscoveryToolDeps {
   gateway: GatewayClient;
   providers: LlmProviderManager;
+  icp: IcpStore;
+  matchStore: MatchStore;
   /** Branchen-Fallback aus dem Nutzerprofil (UserProfile.industries). */
   getDefaultIndustries: () => string[];
 }
@@ -88,24 +95,18 @@ export function buildDiscoveryTools(deps: DiscoveryToolDeps): Tool[] {
       "Discovery-Kandidaten aus dem zentralen Bestand lesen (optional Geo-Radius) — inkl. bereits-bekannt-Markierung.",
     category: "discovery neue firmen kandidaten",
     description:
-      "Liest Firmen-Kandidaten aus dem zentralen Discovery-Bestand — " +
-      "optional begrenzt auf einen Umkreis (lat/lon/radiusKm, z. B. aus " +
-      "geo_places_nearby-Origin). masterCompanyId gesetzt = Firma ist in " +
-      "AVA schon bekannt; decision zeigt eine fruehere Nutzer-Entscheidung " +
-      "(imported/dismissed).",
+      "Liest die OFFENEN Firmen-Kandidaten aus dem Discovery-Bestand, " +
+      "sortiert nach ICP-Match-Score (heisseste zuerst, inkl. Warum-" +
+      "Begruendung, falls discovery_match_run gelaufen ist). " +
+      "bereitsInAva = Firma ist schon im Bestand; profiliert = " +
+      "Mini-Profil vorhanden.",
     parameters: {
       type: "object",
       properties: {
-        lat: { type: "number" },
-        lon: { type: "number" },
-        radiusKm: { type: "integer", description: "Nur mit lat+lon sinnvoll." },
         limit: { type: "integer", description: "Max Ergebnisse (Default 50, max 200)." },
       },
     },
     schema: yup.object({
-      lat: yup.number().min(-90).max(90).optional(),
-      lon: yup.number().min(-180).max(180).optional(),
-      radiusKm: yup.number().integer().min(1).max(200).optional(),
       limit: yup.number().integer().min(1).max(200).optional(),
     }),
     preview: (r) => {
@@ -113,40 +114,15 @@ export function buildDiscoveryTools(deps: DiscoveryToolDeps): Tool[] {
       return `${res.candidates?.length ?? 0} Kandidaten`;
     },
     run: async (args) => {
-      const qs = new URLSearchParams({ limit: String(args.limit ?? 50) });
-      if (args.lat !== undefined && args.lon !== undefined && args.radiusKm) {
-        qs.set("lat", String(args.lat));
-        qs.set("lon", String(args.lon));
-        qs.set("radiusKm", String(args.radiusKm));
-      }
-      const r = await deps.gateway.request<{
-        candidates: Array<{
-          discoveryId: string;
-          name: string;
-          city: string | null;
-          plz: string | null;
-          domain: string;
-          category: string | null;
-          source: string;
-          masterCompanyId: string | null;
-          profiledAt: string | null;
-          decision: string | null;
-        }>;
-      }>(`/v1/discovery/candidates?${qs.toString()}`);
+      const rows = await listCandidatesWithMatches(
+        deps.gateway,
+        deps.matchStore,
+        { limit: args.limit ?? 50 },
+      );
       return {
         hinweis:
-          "Nur offene Kandidaten (bereits importierte/verworfene sind ausgeblendet).",
-        candidates: r.candidates.map((c) => ({
-          discoveryId: c.discoveryId,
-          name: c.name,
-          ort: c.city,
-          plz: c.plz,
-          website: c.domain,
-          kategorie: c.category,
-          quelle: c.source,
-          bereitsInAva: c.masterCompanyId !== null,
-          profiliert: c.profiledAt !== null,
-        })),
+          "Nur offene Kandidaten (importierte/verworfene ausgeblendet), sortiert nach ICP-Match-Score.",
+        candidates: rows,
       };
     },
   });
@@ -185,5 +161,89 @@ export function buildDiscoveryTools(deps: DiscoveryToolDeps): Tool[] {
       runProfiler(deps.gateway, deps.providers, { limit: args.limit ?? 10 }),
   });
 
-  return [scan, list, profile];
+  const match = defineTool({
+    name: "discovery_match_run",
+    summary:
+      "Profilierte Discovery-Kandidaten gegen das ICP matchen — Score 0-100 + Warum-Begruendung pro Firma.",
+    category: "discovery icp match radar",
+    description:
+      "Matcht die profilierten offenen Kandidaten gegen das Idealkunden-" +
+      "profil des Nutzers: lokales Embedding-Vorranking, dann LLM-Urteil " +
+      "(guenstiges Producer-Modell) mit Score 0-100 und einem Satz, WARUM " +
+      "die Firma (nicht) passt. Ergebnisse landen lokal und sortieren die " +
+      "Kandidaten-Tabelle. Braucht ein gesetztes ICP (icp_set) und " +
+      "profilierte Kandidaten (discovery_profile_run).",
+    parameters: { type: "object", properties: {} },
+    schema: yup.object({}),
+    preview: (r) => {
+      const res = r as { error?: string; bewertet?: number };
+      if (res.error) return res.error;
+      return `${res.bewertet ?? 0} Kandidaten bewertet`;
+    },
+    run: async () =>
+      runMatch(deps.gateway, deps.providers, deps.icp, deps.matchStore),
+  });
+
+  const decide = defineTool({
+    name: "discovery_decide",
+    summary:
+      "Discovery-Kandidaten importieren (volle Verarbeitung) oder ignorieren — NUR auf explizite Nutzer-Anweisung.",
+    category: "discovery import ignorieren",
+    description:
+      "Speichert Entscheidungen zu Kandidaten: 'imported' startet EINEN " +
+      "Bulk-Import (eine Transaktion, volle Pipeline) fuer alle gewaehlten " +
+      "Firmen; 'dismissed' blendet sie dauerhaft aus. Entschiedene Firmen " +
+      "verschwinden aus der Kandidatenliste. WICHTIG: Nur aufrufen, wenn " +
+      "der Nutzer die Entscheidung explizit getroffen hat — nie " +
+      "eigenmaechtig importieren. Import braucht einen Ort; Firmen ohne " +
+      "Ort werden gemeldet.",
+    parameters: {
+      type: "object",
+      required: ["decisions"],
+      properties: {
+        decisions: {
+          type: "array",
+          items: {
+            type: "object",
+            required: ["discoveryId", "decision"],
+            properties: {
+              discoveryId: { type: "string" },
+              decision: { type: "string", enum: ["imported", "dismissed"] },
+              reason: { type: "string", description: "Optional, z. B. Verwerf-Grund." },
+            },
+          },
+        },
+      },
+    },
+    schema: yup.object({
+      decisions: yup
+        .array()
+        .of(
+          yup.object({
+            discoveryId: yup.string().trim().min(4).max(100).required(),
+            decision: yup.string().oneOf(["imported", "dismissed"]).required(),
+            reason: yup.string().trim().max(500).optional(),
+          }),
+        )
+        .min(1)
+        .max(200)
+        .required(),
+    }),
+    preview: (r) => {
+      const res = r as { error?: string; importiert?: number; ignoriert?: number };
+      if (res.error) return res.error;
+      return `${res.importiert ?? 0} importiert, ${res.ignoriert ?? 0} ignoriert`;
+    },
+    run: async (args) =>
+      decideCandidates(
+        deps.gateway,
+        args.decisions.map((d) => ({
+          discoveryId: d.discoveryId,
+          decision: d.decision as "imported" | "dismissed",
+          reason: d.reason ?? null,
+        })),
+      ),
+  });
+
+  return [scan, list, profile, match, decide];
 }

@@ -7847,3 +7847,149 @@ tr.held-row td:first-child::after {
   .pf-panel { animation: none; }
   .pf-pulse { animation: none; }
 }
+
+/* Phase 3 Firmen-Discovery — Radar (Kandidaten-Tabelle) ---------------- */
+.radar-page {
+  padding: 1.25rem 1.5rem;
+  max-width: 1100px;
+}
+.radar-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+.radar-head h1 {
+  margin: 0 0 0.25rem;
+  font-size: 1.35rem;
+}
+.radar-sub {
+  margin: 0;
+  font-size: 13px;
+  color: var(--color-fg-muted, #94a3b8);
+  max-width: 620px;
+}
+.radar-actions {
+  display: flex;
+  gap: 10px;
+  flex-shrink: 0;
+}
+.radar-hint,
+.radar-notice,
+.radar-error {
+  margin-top: 0.9rem;
+  padding: 0.6rem 0.8rem;
+  border-radius: 8px;
+  font-size: 13px;
+  border: 1px solid var(--color-border-muted, rgba(148, 163, 184, 0.4));
+}
+.radar-error {
+  border-color: rgba(239, 68, 68, 0.5);
+  color: #ef4444;
+}
+.radar-bulkbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 0.9rem;
+  padding: 0.5rem 0.8rem;
+  border-radius: 8px;
+  border: 1px solid var(--color-border-muted, rgba(148, 163, 184, 0.4));
+  font-size: 13px;
+}
+.radar-import {
+  font-weight: 600;
+}
+.radar-meta {
+  margin: 0.9rem 0 0.4rem;
+  font-size: 12px;
+  color: var(--color-fg-muted, #94a3b8);
+}
+.radar-empty {
+  margin-top: 1.2rem;
+  font-size: 13px;
+  color: var(--color-fg-muted, #94a3b8);
+}
+.radar-tablewrap {
+  overflow-x: auto;
+  border: 1px solid var(--color-border-muted, rgba(148, 163, 184, 0.3));
+  border-radius: 10px;
+}
+.radar-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.radar-table th {
+  text-align: left;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-fg-muted, #94a3b8);
+  padding: 0.55rem 0.7rem;
+  border-bottom: 1px solid var(--color-border-muted, rgba(148, 163, 184, 0.3));
+}
+.radar-table td {
+  padding: 0.55rem 0.7rem;
+  border-bottom: 1px solid var(--color-border-muted, rgba(148, 163, 184, 0.15));
+  vertical-align: top;
+}
+.radar-row.radar-hot {
+  background: rgba(0, 192, 167, 0.07);
+}
+.radar-check {
+  width: 32px;
+}
+.radar-name {
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.radar-badge {
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  border: 1px solid var(--color-border-muted, rgba(148, 163, 184, 0.5));
+  color: var(--color-fg-muted, #94a3b8);
+  font-weight: 500;
+}
+.radar-domain {
+  background: none;
+  border: none;
+  padding: 0;
+  font-size: 12px;
+  color: var(--color-fg-muted, #64748b);
+  cursor: pointer;
+  text-decoration: underline dotted;
+}
+.radar-score {
+  display: inline-block;
+  min-width: 32px;
+  text-align: center;
+  padding: 2px 7px;
+  border-radius: 999px;
+  font-weight: 700;
+  font-size: 12px;
+}
+.radar-score-hot {
+  background: rgba(0, 192, 167, 0.18);
+  color: #009c88;
+}
+.radar-score-mid {
+  background: rgba(234, 179, 8, 0.15);
+  color: #b45309;
+}
+.radar-score-low {
+  background: rgba(148, 163, 184, 0.15);
+  color: var(--color-fg-muted, #94a3b8);
+}
+.radar-score-none {
+  color: var(--color-fg-muted, #94a3b8);
+}
+.radar-why {
+  max-width: 340px;
+  color: var(--color-fg, inherit);
+}

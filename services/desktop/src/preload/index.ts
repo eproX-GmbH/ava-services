@@ -336,6 +336,58 @@ const api = {
       ipcRenderer.invoke("publication:setAnalysisMode", mode),
   },
 
+  // Phase 3 Firmen-Discovery — Radar-Kandidaten-Tabelle.
+  discovery: {
+    candidates: (): Promise<{
+      ok: boolean;
+      error?: string;
+      candidates?: Array<{
+        discoveryId: string;
+        name: string;
+        ort: string | null;
+        plz: string | null;
+        website: string;
+        kategorie: string | null;
+        quelle: string;
+        bereitsInAva: boolean;
+        profiliert: boolean;
+        matchScore: number | null;
+        matchBegruendung: string | null;
+      }>;
+    }> => ipcRenderer.invoke("discovery:candidates"),
+    decide: (
+      decisions: Array<{
+        discoveryId: string;
+        decision: "imported" | "dismissed";
+        reason?: string | null;
+      }>,
+    ): Promise<
+      | {
+          entschieden: number;
+          importiert: number;
+          ignoriert: number;
+          transactionId: string | null;
+          ohneOrt: string[];
+        }
+      | { error: string }
+    > => ipcRenderer.invoke("discovery:decide", decisions),
+    match: (): Promise<
+      | {
+          kandidatenMitProfil: number;
+          bewertet: number;
+          hinweise: string[];
+        }
+      | { error: string }
+    > => ipcRenderer.invoke("discovery:match"),
+    getIcp: (): Promise<{
+      beschreibung: string;
+      branchen: string[];
+      orte: string[];
+      radiusKm: number;
+      gesetzt: boolean;
+    }> => ipcRenderer.invoke("discovery:getIcp"),
+  },
+
   // v0.1.412 — Telegram-Benachrichtigungskanal. Der Bot-Token wird NIE
   // zurückgegeben (nur `hasToken` im Snapshot).
   telegram: {

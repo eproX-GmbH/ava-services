@@ -379,6 +379,36 @@ export interface CandidateRow {
   masterCompanyId: string | null;
   profiledAt: string | null;
   decision: string | null;
+  /** Nur bei withProfiles=true befuellt (Match-Lauf, Phase 3). */
+  profileJson?: Record<string, unknown> | null;
+  profileText?: string | null;
+  embedding?: number[] | null;
+}
+
+/** Entscheidungen (imported/dismissed) fuer einen Nutzer upserten.
+ *  Idempotent; eine neue Entscheidung ueberschreibt die alte. */
+export async function saveDecisions(
+  pool: Pool,
+  args: {
+    userId: string;
+    decisions: Array<{ discoveryId: string; decision: "imported" | "dismissed"; reason?: string | null }>;
+  },
+): Promise<{ saved: number }> {
+  await ensureSchema(pool);
+  let saved = 0;
+  for (const d of args.decisions) {
+    const r = await pool.query(
+      `INSERT INTO "DiscoveryDecision" ("userId", "discoveryId", decision, reason)
+       VALUES ($1, $2, $3, $4)
+       ON CONFLICT ("userId", "discoveryId") DO UPDATE SET
+         decision = EXCLUDED.decision,
+         reason = EXCLUDED.reason,
+         "decidedAt" = NOW()`,
+      [args.userId, d.discoveryId, d.decision, d.reason?.slice(0, 500) ?? null],
+    );
+    saved += r.rowCount ?? 0;
+  }
+  return { saved };
 }
 
 /** Kandidaten im Radius (oder alle neuesten), mit der Entscheidung des
@@ -394,6 +424,9 @@ export async function listCandidates(
     radiusKm?: number;
     limit: number;
     includeDecided?: boolean;
+    /** Profil-Text + Embedding mitliefern (Match-Lauf). Impliziert
+     *  "nur profilierte Kandidaten". */
+    withProfiles?: boolean;
   },
 ): Promise<CandidateRow[]> {
   await ensureSchema(pool);
@@ -401,6 +434,9 @@ export async function listCandidates(
   const conditions: string[] = [];
   if (!args.includeDecided) {
     conditions.push("dd.decision IS NULL");
+  }
+  if (args.withProfiles) {
+    conditions.push(`dc."profiledAt" IS NOT NULL`);
   }
   if (
     args.lat !== undefined &&
@@ -422,10 +458,13 @@ export async function listCandidates(
   }
   params.push(args.limit);
   const where = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
+  const profileCols = args.withProfiles
+    ? `, dc."profileJson", dc."profileText", dc.embedding`
+    : "";
   const r = await pool.query(
     `SELECT dc."discoveryId", dc.name, dc.city, dc.plz, dc.lat, dc.lon,
             dc.domain, dc.category, dc.source, dc."masterCompanyId",
-            dc."profiledAt", dd.decision
+            dc."profiledAt", dd.decision${profileCols}
        FROM "DiscoveredCompany" dc
        LEFT JOIN "DiscoveryDecision" dd
          ON dd."discoveryId" = dc."discoveryId" AND dd."userId" = $1
@@ -447,5 +486,12 @@ export async function listCandidates(
     masterCompanyId: row.masterCompanyId,
     profiledAt: row.profiledAt ? new Date(row.profiledAt).toISOString() : null,
     decision: row.decision,
+    ...(args.withProfiles
+      ? {
+          profileJson: row.profileJson ?? null,
+          profileText: row.profileText ?? null,
+          embedding: row.embedding ?? null,
+        }
+      : {}),
   }));
 }

@@ -633,28 +633,34 @@ export class WhisperSidecar extends EventEmitter {
         threads,
       ];
 
-      // v0.1.177 — point libggml at our bundled `libexec/` directory
-      // so `ggml_backend_load_best()` finds the CPU / Metal / BLAS
-      // backend plugins. ggml v0.10+ refactored backends out of the
-      // main libggml.dylib into standalone Mach-O bundles loaded via
-      // dlopen() at init time. Without GGML_BACKEND_PATH ggml falls
-      // back to a brew-baked default (`/opt/homebrew/Cellar/ggml/
-      // X.Y.Z/libexec`) that doesn't exist on user machines and
-      // whisper-cli crashes early when it tries to actually run
-      // inference (--help works fine because no backend is needed).
-      // See scripts/fetch-whisper.mjs's `copyBackendPluginsFromBrew`
-      // for the build-time side.
-      const ggmlBackendPath = this.resolveGgmlBackendPath();
-      const spawnEnv: NodeJS.ProcessEnv = {
-        ...process.env,
-        ...(ggmlBackendPath ? { GGML_BACKEND_PATH: ggmlBackendPath } : {}),
-      };
+      // v0.1.440 — ggml 0.15.x durchsucht neben dem eingebrannten
+      // Homebrew-Pfad auch das ARBEITSVERZEICHNIS und den Exe-Ordner
+      // nach Backend-Plugins und waehlt per Score die beste
+      // unterstuetzte Variante (chip-gated CPU + Metal + BLAS
+      // zusammen). Der fruehere GGML_BACKEND_PATH-Ansatz (v0.1.435,
+      // Einzeldatei-Override) laedt dagegen genau EIN Plugin — und
+      // whisper 1.9.1 braucht zum Metal- zwingend auch ein CPU-Device:
+      // make_buft_list crasht sonst mit "GGML_ASSERT(device) failed"
+      // (whisper-cli exited -1, "main + 2324 | dyld start" im stderr).
+      // Deshalb: cwd auf unser libexec/ setzen und GGML_BACKEND_PATH
+      // NICHT setzen — ggml laedt dann alle passenden Plugins selbst.
+      // Empirisch am installierten v0.1.438-Bundle (M1 Pro) verifiziert:
+      // BLAS + Metal + libggml-cpu-apple_m1 laden, Transkription laeuft.
+      const libexecDir = this.resolveGgmlLibexecDir();
+      const spawnEnv: NodeJS.ProcessEnv = { ...process.env };
+      if (libexecDir) {
+        // Ein geerbter Einzeldatei-Override wuerde die Verzeichnis-
+        // Suche wieder aushebeln — weg damit, unser libexec gewinnt.
+        delete spawnEnv.GGML_BACKEND_PATH;
+      }
+      const spawnCwd = libexecDir ?? undefined;
 
       let { stdout, stderr, exitCode } = await runWithCapture(
         this.binaryPath,
         args,
         90_000,
         spawnEnv,
+        spawnCwd,
       );
 
       // v0.1.162 — Self-heal for native crashes of whisper-cli (exit
@@ -678,6 +684,7 @@ export class WhisperSidecar extends EventEmitter {
             args,
             90_000,
             spawnEnv,
+            spawnCwd,
           ));
         } catch (err) {
           // Self-heal itself failed; fall through to the standard
@@ -760,78 +767,46 @@ export class WhisperSidecar extends EventEmitter {
    * the error message points the user at a fixable location.
    */
   /**
-   * v0.1.177 — Resolve the bundled CPU-backend plugin for ggml.
+   * v0.1.440 — Resolve the bundled ggml backend-plugin directory.
    *
    * ggml >= 0.10 refactored compute backends out of libggml.dylib into
-   * separately-loaded Mach-O bundles (`libggml-cpu.so`, `libggml-blas.so`,
-   * `libggml-metal.so`). The walker in libggml has a hardcoded default
-   * search-path baked in at Homebrew-build-time
-   * (e.g. `/opt/homebrew/Cellar/ggml/X.Y.Z/libexec/`) that does NOT
-   * exist on a user's machine without brew — which is the common case.
+   * separately-loaded Mach-O bundles (`libggml-cpu*.so`, `libggml-blas.so`,
+   * `libggml-metal.so`). `ggml_backend_load_best()` searches, in order:
+   * the process CWD, the executable's directory, and a Homebrew-baked
+   * default (`/opt/homebrew/Cellar/ggml/X.Y.Z/libexec/`) that doesn't
+   * exist on user machines — and picks the best SUPPORTED variant per
+   * backend via a score function (so the chip-gated CPU plugins of
+   * ggml 0.15 resolve themselves; no guessing on our side).
    *
-   * `GGML_BACKEND_PATH` is read as a SINGLE-FILE override (verified by
-   * inspecting libggml.0.dylib strings + reproducing the user crash).
-   * Setting it to our bundled libggml-cpu.so guarantees a working CPU
-   * backend regardless of the user's brew state. The other plugins
-   * (BLAS / Metal) would be nice-to-have for perf but require either
-   * a binary patch of the hardcoded path or building whisper.cpp from
-   * source with `GGML_BACKEND_DL=OFF`. CPU-only inference on M1/M2 for
-   * the base / small whisper models is still near-real-time, so this
-   * is an acceptable trade-off for v0.1.177 — full multi-backend
-   * support tracked for v0.1.178+ via source-build in CI.
+   * History of wrong turns, kept so nobody re-walks them:
+   *   - v0.1.177 set `GGML_BACKEND_PATH` to a single plugin file (it is
+   *     a SINGLE-FILE override in these brew builds; a directory value
+   *     fails dlopen).
+   *   - v0.1.435 pointed it at libggml-metal.so — worked with whisper
+   *     1.9.0, but whisper 1.9.1's `make_buft_list` additionally
+   *     REQUIRES a CPU device and crashes with "GGML_ASSERT(device)
+   *     failed" ("whisper-cli exited -1: main + 2324 | dyld start")
+   *     when Metal is the only registered backend.
    *
-   * Path is derived from `this.binaryPath` so it works for both
-   * packaged (`<bundle>/Contents/Resources/whisper/<arch>/whisper-cli`
-   * → `<bundle>/Contents/Resources/whisper/libexec/libggml-cpu.so`)
-   * and dev (`<repo>/services/desktop/resources/whisper/<arch>/whisper-cli`
-   * → `<repo>/services/desktop/resources/whisper/libexec/libggml-cpu.so`)
-   * builds.
+   * The CWD search is the escape hatch: spawn whisper-cli with
+   * `cwd = <resources>/whisper/libexec` and NO `GGML_BACKEND_PATH`,
+   * and ggml loads BLAS + Metal + the right CPU variant all by itself
+   * (verified on the installed v0.1.438 bundle, M1 Pro).
+   *
+   * Derived from `this.binaryPath` so it works for both packaged
+   * (`<bundle>/Contents/Resources/whisper/<arch>/whisper-cli` →
+   * `…/whisper/libexec/`) and dev-repo layouts.
    *
    * Returns null when:
    *   - binaryPath is unresolved (sidecar not yet booted)
-   *   - the plugin file doesn't exist (e.g. macOS bundle without the
-   *     fetch:whisper libexec copy, or non-macOS host where the path
-   *     is N/A)
-   *   - binaryPath is a brew install on PATH (we shouldn't override
-   *     ggml's own configured path in that case)
+   *   - the libexec dir doesn't exist (non-macOS host, or a brew
+   *     install on PATH — there ggml's own baked search path works)
    */
-  private resolveGgmlBackendPath(): string | null {
+  private resolveGgmlLibexecDir(): string | null {
     if (!this.binaryPath) return null;
     if (process.platform !== "darwin") return null;
     const libexecDir = join(dirname(dirname(this.binaryPath)), "libexec");
-
-    // v0.1.435 — ggml 0.15 liefert keinen generischen libggml-cpu.so mehr,
-    // sondern CHIP-GATED Varianten (libggml-cpu-apple_m1/_m2_m3/_m4.so bzw.
-    // Intel-Feature-Level). Die alte Suche fand nichts, GGML_BACKEND_PATH
-    // blieb leer, ggml registrierte KEIN Backend und whisper-cli starb mit
-    // "GGML_ASSERT(device) failed" beim Modell-Laden (Telegram-Sprach-
-    // nachricht + Diktat gleichermassen).
-    //
-    // Empirisch am Bundle verifiziert (M1 Pro):
-    //   - GGML_BACKEND_PATH ist ein EINZELDATEI-Override (Verzeichnis wird
-    //     ignoriert — keine "search path"-Zeile fuer unser Dir).
-    //   - libggml-metal.so laedt auf Apple Silicon inkl. EINGEBETTETER
-    //     Metal-Library und transkribiert -> GPU statt CPU, chip-neutral.
-    //   - Eine falsche CPU-Variante wird abgelehnt ("not supported on this
-    //     system") und es bleibt bei 0 Backends -> Crash. Deshalb NIE eine
-    //     Chip-Variante raten.
-    const candidates =
-      process.arch === "arm64"
-        ? [
-            "libggml-cpu.so", // alte Bottles (generisch) zuerst
-            "libggml-metal.so", // ggml>=0.15: GPU, laeuft auf jedem M-Chip
-          ]
-        : [
-            "libggml-cpu.so",
-            // Intel: sse42 ist der kleinste gemeinsame Nenner und laeuft
-            // auf jeder x86_64-CPU (langsamer, aber nie "not supported").
-            "libggml-cpu-sse42.so",
-          ];
-    for (const name of candidates) {
-      const p = join(libexecDir, name);
-      if (existsSync(p)) return p;
-    }
-    return null;
+    return existsSync(libexecDir) ? libexecDir : null;
   }
 
   private resolveBinary(): string | null {
@@ -950,11 +925,13 @@ async function runWithCapture(
   args: string[],
   timeoutMs: number,
   env?: NodeJS.ProcessEnv,
+  cwd?: string,
 ): Promise<{ stdout: string; stderr: string; exitCode: number }> {
   return new Promise((resolveRun, rejectRun) => {
     const child = spawn(cmd, args, {
       stdio: ["ignore", "pipe", "pipe"],
       ...(env ? { env } : {}),
+      ...(cwd ? { cwd } : {}),
     });
     let stdout = "";
     let stderr = "";

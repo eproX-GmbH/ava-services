@@ -251,6 +251,22 @@ Watermarks, Audit).
   Top-Kandidaten (Kanal existiert).
 - **Prüfstein:** Ende-zu-Ende: Scan → Alert → Import → Firma läuft durch
   die normale Pipeline.
+- **STATUS: implementiert 2026-08-29** — ICP: `agent/icp-store.ts`
+  (userData/agent/icp.json, privat) + Tools `icp_get`/`icp_set` +
+  System-Prompt-Block (ICP-Antwort aus Begrüßung wird gespeichert).
+  Match: `discovery/matcher.ts` (Embedding-Vorranking lokal → Top-20 →
+  LLM-Urteil in 8er-Batches auf Producer-Modell, Score+Warum-Satz),
+  Scores nutzerlokal in `discovery/match-store.ts`. Entscheidungen:
+  Gateway `POST /discovery/decisions` + `discovery/decide.ts`
+  (Import ZUERST via /imports/from-list — schlägt er fehl, bleibt
+  alles offen; Kandidaten ohne Ort werden gemeldet). UI: Route
+  `/radar` (Firmen → Radar): Tabelle heißeste zuerst mit Score-Badge +
+  Warum-Text, Checkbox-Bulk Import/Ignorieren, Vorgangs-Link nach
+  Import, Empty-States mit Chat-Anleitungen. Tools
+  `discovery_match_run`/`discovery_decide` (nur auf explizite
+  Nutzer-Entscheidung, A10). Gateway-Lib gegen Wegwerf-Postgres
+  verifiziert (withProfiles, Decision-Ausblendung pro Nutzer,
+  Re-Decision-Upsert). LLM-Match-Qualität + E2E im Live-Lauf.
 
 ### Phase 4 — Automatisierung + Lernen (nach Praxis-Feedback)
 - Scheduler (täglich/wöchentlich, konfigurierbar; Watermark: nur neue/
