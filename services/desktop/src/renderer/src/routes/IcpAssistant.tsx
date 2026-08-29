@@ -69,6 +69,7 @@ export function IcpAssistant(): JSX.Element {
   >([]);
   const [analysisNotes, setAnalysisNotes] = useState<string[]>([]);
   const [radiusHint, setRadiusHint] = useState<string | null>(null);
+  const [showAutoCta, setShowAutoCta] = useState(false);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -166,6 +167,9 @@ export function IcpAssistant(): JSX.Element {
       });
       if (saved.gesetzt) {
         setNotice("ICP gespeichert — der Radar nutzt es ab dem nächsten Match.");
+        // I3 — Abschluss-CTA: Automatik nur anbieten, wenn sie noch aus ist.
+        const cfg = await window.api.discovery.getRadarConfig();
+        setShowAutoCta(cfg !== null && !cfg.enabled);
       } else {
         setNotice(
           "Gespeichert, aber noch zu dünn für den Radar: Bitte mindestens die Beschreibung oder Branchen füllen.",
@@ -350,6 +354,25 @@ export function IcpAssistant(): JSX.Element {
         </label>
 
         {notice && <div className="radar-notice">{notice}</div>}
+        {showAutoCta && (
+          <div className="radar-hint icp-auto-cta">
+            Soll der <strong>Radar automatisch</strong> nach neuen passenden
+            Firmen suchen und dich bei Treffern benachrichtigen?{" "}
+            <button
+              className="proc-toggle radar-import"
+              onClick={() => {
+                void window.api.discovery
+                  .setRadarConfig({ enabled: true, intervalHours: 24 })
+                  .then(() => navigate("/radar"));
+              }}
+            >
+              Automatik aktivieren (täglich)
+            </button>{" "}
+            <button className="proc-toggle" onClick={() => setShowAutoCta(false)}>
+              Nicht jetzt
+            </button>
+          </div>
+        )}
         <div className="icp-actions">
           <button
             className="proc-toggle radar-import"

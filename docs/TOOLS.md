@@ -5,7 +5,7 @@ NICHT direkt bearbeiten — die Quelle der Wahrheit ist `services/desktop/src/ma
 Lauf via `pnpm -F @ava/desktop tools:doc` (oder automatisch via `build:typecheck`).
 
 Stand: 2026-08-29
-Anzahl Tools: 184
+Anzahl Tools: 185
 
 ## Firmen (11)
 
@@ -990,7 +990,17 @@ Deutsche Orte im Umkreis eines Ortsnamens finden (Luftlinie ab Orts-Zentroid). L
 
 _Parameter:_ keine.
 
-## icp (2)
+## icp (3)
+
+### `icp_assist_from_urls`
+
+_Datei:_ `services/desktop/src/main/agent/tools/icp.ts`
+
+Analysiert die eigene Website des Nutzers (Angebot, Nutzen, Standort aus dem Impressum) und bis zu 5 Websites seiner besten Bestandskunden (Branche, Groesse, Standort) und erstellt daraus einen ICP-Entwurf inkl. Radius-Vorschlag aus den realen Kunden-Distanzen. Dauert 1-3 Minuten. WICHTIG: Das Ergebnis ist NUR ein Entwurf — praesentiere ihn dem Nutzer uebersichtlich und speichere erst nach dessen Bestaetigung via icp_set. Kunden-Daten bleiben lokal.
+
+_Parameter:_
+- `eigeneUrl: string` (required) — Website des Nutzers.
+- `kundenUrls: array` — Websites der besten Bestandskunden, max 5.
 
 ### `icp_get`
 

@@ -156,6 +156,10 @@ Renderer:
 - Stepper-UX: URLs-Validierung (Domain-Normierung wiederverwenden!),
   einzelne fehlgeschlagene Kunden-Crawls überspringen statt abbrechen
   (transparent gezählt), Abschluss-Screen mit CTA Radar-Automatik.
+- **STATUS: implementiert 2026-08-29** — URL-Validierung + Skip-Verhalten
+  landeten bereits in I2; neu: Abschluss-CTA nach „ICP übernehmen"
+  („Radar-Automatik aktivieren (täglich)?" → setRadarConfig + Sprung
+  zum Radar; nur wenn Automatik noch aus ist).
 
 ### I4 — Einstiegspunkte
 - Erst-Login-Vorschlag (B5) mit persistiertem „Später".
@@ -164,6 +168,12 @@ Renderer:
 - Agent-Tool `icp_assist_from_urls` (B7) + System-Prompt-Zeile.
 - **Prüfstein:** Frischer Account → Login → Vorschlag erscheint →
   Assistent → ICP gespeichert → Radar sofort einsatzbereit.
+- **STATUS: implementiert 2026-08-29** — IcpProposalCard im Chat
+  (nicht-modal, „Später" persistiert per localStorage, verschwindet
+  sobald ein ICP existiert), Welcome-Message um den URL-Weg ergänzt,
+  Agent-Tool `icp_assist_from_urls` (Entwurf, Speichern nur nach
+  Bestätigung via icp_set) im Firmen-Discovery-Bundle +
+  System-Prompt-Zeile. Live-Prüfstein nach Release.
 
 ## 6. Aufwand & Risiken
 

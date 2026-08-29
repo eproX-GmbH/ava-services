@@ -6,11 +6,17 @@
 
 import * as yup from "yup";
 import { defineTool } from "../define-tool";
+import type { GatewayClient } from "../gateway-client";
+import type { LlmProviderManager } from "../providers";
 import type { IcpStore } from "../icp-store";
 import type { Tool } from "../types";
+import { runIcpAnalysis } from "../../discovery/icp-assistant";
+import { domainFromUrl } from "../../discovery/scan";
 
 export interface IcpToolDeps {
   icp: IcpStore;
+  gateway: GatewayClient;
+  providers: LlmProviderManager;
 }
 
 export function buildIcpTools(deps: IcpToolDeps): Tool[] {
@@ -76,5 +82,72 @@ export function buildIcpTools(deps: IcpToolDeps): Tool[] {
     },
   });
 
-  return [get, set];
+  const assist = defineTool({
+    name: "icp_assist_from_urls",
+    summary:
+      "ICP-Entwurf automatisch aus der eigenen Website + Kunden-Websites erstellen (Analyse, KEIN Speichern).",
+    category: "icp idealkunden assistent discovery",
+    description:
+      "Analysiert die eigene Website des Nutzers (Angebot, Nutzen, " +
+      "Standort aus dem Impressum) und bis zu 5 Websites seiner besten " +
+      "Bestandskunden (Branche, Groesse, Standort) und erstellt daraus " +
+      "einen ICP-Entwurf inkl. Radius-Vorschlag aus den realen " +
+      "Kunden-Distanzen. Dauert 1-3 Minuten. WICHTIG: Das Ergebnis ist " +
+      "NUR ein Entwurf — praesentiere ihn dem Nutzer uebersichtlich und " +
+      "speichere erst nach dessen Bestaetigung via icp_set. Kunden-Daten " +
+      "bleiben lokal.",
+    parameters: {
+      type: "object",
+      required: ["eigeneUrl"],
+      properties: {
+        eigeneUrl: { type: "string", description: "Website des Nutzers." },
+        kundenUrls: {
+          type: "array",
+          items: { type: "string" },
+          description: "Websites der besten Bestandskunden, max 5.",
+        },
+      },
+    },
+    schema: yup.object({
+      eigeneUrl: yup.string().trim().min(4).max(300).required(),
+      kundenUrls: yup
+        .array()
+        .of(yup.string().trim().min(4).max(300).required())
+        .max(5)
+        .optional(),
+    }),
+    preview: (r) => {
+      const res = r as { error?: string; kundenAnalysiert?: number };
+      if (res.error) return res.error;
+      return `ICP-Entwurf erstellt (${res.kundenAnalysiert ?? 0} Kunden analysiert)`;
+    },
+    run: async (args) => {
+      const eigeneDomain = domainFromUrl(args.eigeneUrl);
+      if (!eigeneDomain) {
+        return { error: "Die eigene Website-URL ist nicht verwertbar." };
+      }
+      const kundenDomains = (args.kundenUrls ?? [])
+        .map((u) => domainFromUrl(u))
+        .filter((d): d is string => d !== null && d !== eigeneDomain);
+      const result = await runIcpAnalysis(
+        deps.gateway,
+        deps.providers,
+        { eigeneDomain, kundenDomains },
+        () => {
+          /* Chat-Pfad: kein Fortschritts-Stream noetig */
+        },
+      );
+      if ("error" in result) return result;
+      return {
+        hinweisFuerAgent:
+          "ENTWURF — dem Nutzer zusammengefasst zeigen und erst nach Bestaetigung via icp_set speichern (Felder 1:1 uebernehmen).",
+        entwurf: result.icp,
+        radiusBegruendung: result.radiusBegruendung,
+        kundenAnalysiert: result.kunden.length,
+        hinweise: result.hinweise,
+      };
+    },
+  });
+
+  return [get, set, assist];
 }

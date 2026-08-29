@@ -33,7 +33,9 @@ Ich helfe dir, Vertrieb und Recherche im B2B von der lästigen Fleißarbeit zu b
 **🔒 Lokal & privat**
 - Deine Berechnung läuft auf deiner Maschine. Du wählst deinen KI-Anbieter oder ein lokales Modell — deine Daten bleiben bei dir.
 
-Damit ich dich gezielt unterstützen kann, lass uns kurz dein **Idealkundenprofil (ICP)** festhalten: **Welche Firmen sind für dich die perfekten Kunden?** Beschreib mir gern Branche, Größe, Region und was eine Firma zu einem guten Lead macht — oder frag mich einfach direkt etwas.`;
+Damit ich dich gezielt unterstützen kann, lass uns kurz dein **Idealkundenprofil (ICP)** festhalten: **Welche Firmen sind für dich die perfekten Kunden?** Beschreib mir gern Branche, Größe, Region und was eine Firma zu einem guten Lead macht.
+
+Noch schneller: Nenn mir einfach **deine Website-URL und die Websites deiner besten Kunden** — ich lese daraus dein Angebot, deinen Standort und was deine Top-Kunden gemeinsam haben, und erstelle dein ICP selbst (auch als Assistent unter Firmen → Radar → „ICP bearbeiten"). Oder frag mich einfach direkt etwas.`;
 
 /**
  * Erkennt eine bloße Begrüßung oder eine „Was kannst du?"-Frage. Bewusst

@@ -181,7 +181,12 @@ export function buildReadOnlyRegistry(deps: {
     },
   }))
     registry.register(t);
-  for (const t of buildIcpTools({ icp: deps.icp })) registry.register(t);
+  for (const t of buildIcpTools({
+    icp: deps.icp,
+    gateway: deps.gateway,
+    providers: deps.providers,
+  }))
+    registry.register(t);
   for (const t of buildSettingsTools({ providers: deps.providers }))
     registry.register(t);
   for (const t of buildMemoryTools({ generalMemory: deps.generalMemory }))

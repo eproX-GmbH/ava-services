@@ -38,6 +38,7 @@ import {
   type SpreadsheetAttachment,
 } from "../lib/attachment";
 import { renderPdfPagesToImages } from "../lib/pdf-to-images";
+import { IcpProposalCard } from "../components/IcpProposalCard";
 import type {
   AgentChoiceOption,
   AgentMatchRow,
@@ -1753,6 +1754,10 @@ export function Chat() {
           </div>
         </div>
       )}
+
+      {/* I4 — ICP-Assistent-Vorschlag (B5): erscheint, solange kein ICP
+          existiert und "Spaeter" nicht gewaehlt wurde. */}
+      <IcpProposalCard />
 
       {isEmpty ? (
         <div className="chat-welcome-stack">

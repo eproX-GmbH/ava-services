@@ -461,6 +461,7 @@ const KNOWN_BUNDLES: readonly ToolBundle[] = [
       "discovery_decide",
       "icp_get",
       "icp_set",
+      "icp_assist_from_urls",
     ],
     queryHints: [
       "discovery",
