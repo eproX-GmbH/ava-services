@@ -52,12 +52,23 @@ function toDomain(v: string): string | null {
   }
 }
 
+type Mode = "intro" | "analyzing" | "form";
+
 export function IcpAssistant(): JSX.Element {
+  const [mode, setMode] = useState<Mode>("intro");
   const [form, setForm] = useState<FormState>(EMPTY);
   const [loaded, setLoaded] = useState(false);
   const [saving, setSaving] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [quelle, setQuelle] = useState<string | null>(null);
+  // I2 — URL-Analyse.
+  const [ownUrl, setOwnUrl] = useState("");
+  const [customerUrls, setCustomerUrls] = useState("");
+  const [progress, setProgress] = useState<
+    { step: number; total: number; text: string }[]
+  >([]);
+  const [analysisNotes, setAnalysisNotes] = useState<string[]>([]);
+  const [radiusHint, setRadiusHint] = useState<string | null>(null);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -75,9 +86,53 @@ export function IcpAssistant(): JSX.Element {
         kundenUrls: icp.kundenBeispiele.map((k) => k.domain).join("\n"),
       });
       setQuelle(icp.quelle);
+      // Existiert schon ein ICP, direkt ins Formular; sonst Intro.
+      if (icp.gesetzt) setMode("form");
       setLoaded(true);
     });
   }, []);
+
+  useEffect(() => {
+    return window.api.discovery.onIcpProgress((p) => {
+      setProgress((prev) => [...prev, p]);
+    });
+  }, []);
+
+  const startAnalysis = async (): Promise<void> => {
+    setMode("analyzing");
+    setProgress([]);
+    setNotice(null);
+    setAnalysisNotes([]);
+    setRadiusHint(null);
+    const result = await window.api.discovery.icpAnalyze({
+      eigeneUrl: ownUrl,
+      kundenUrls: splitList(customerUrls),
+    });
+    if ("error" in result) {
+      setNotice(result.error);
+      setMode("intro");
+      return;
+    }
+    const d = result.icp;
+    setForm({
+      beschreibung: d.beschreibung ?? "",
+      angebot: d.angebot ?? "",
+      nutzen: d.nutzen ?? "",
+      branchen: (d.branchen ?? []).join(", "),
+      orte: (d.orte ?? []).join(", "),
+      radiusKm: d.radiusKm ?? 50,
+      groesse: d.groesse ?? "",
+      merkmale: (d.merkmale ?? []).join(", "),
+      ausschluesse: "",
+      kundenUrls: (d.kundenBeispiele ?? []).map((k) => k.domain).join("\n"),
+    });
+    setAnalysisNotes(result.hinweise);
+    setRadiusHint(result.radiusBegruendung);
+    setNotice(
+      `Entwurf aus deiner Website${result.kunden.length > 0 ? ` und ${result.kunden.length} Kunden-Websites` : ""} erstellt — bitte prüfen und anpassen, gespeichert wird erst mit „ICP übernehmen“.`,
+    );
+    setMode("form");
+  };
 
   const upd =
     (key: keyof FormState) =>
@@ -97,6 +152,7 @@ export function IcpAssistant(): JSX.Element {
         .slice(0, 5)
         .map((domain) => ({ domain }));
       const saved = await window.api.discovery.setIcp({
+        quelle: radiusHint !== null || analysisNotes.length > 0 ? "assistent" : "manuell",
         beschreibung: form.beschreibung,
         angebot: form.angebot,
         nutzen: form.nutzen,
@@ -107,7 +163,6 @@ export function IcpAssistant(): JSX.Element {
         merkmale: splitList(form.merkmale),
         ausschluesse: form.ausschluesse,
         kundenBeispiele: kunden,
-        quelle: "manuell",
       });
       if (saved.gesetzt) {
         setNotice("ICP gespeichert — der Radar nutzt es ab dem nächsten Match.");
@@ -128,6 +183,82 @@ export function IcpAssistant(): JSX.Element {
 
   if (!loaded) return <div className="radar-page">Lade…</div>;
 
+  if (mode === "intro") {
+    return (
+      <div className="radar-page icp-page">
+        <h1>Idealkundenprofil in 2 Minuten</h1>
+        <p className="radar-sub">
+          Keine Fragebogen-Folter: Gib nur <strong>deine Website</strong> und
+          bis zu <strong>5 Websites deiner besten Kunden</strong> an — AVA
+          liest daraus Angebot, Standort und was deine Top-Kunden gemeinsam
+          haben, und schreibt dir einen ICP-Entwurf zum Prüfen. Die
+          Kunden-Angaben bleiben ausschließlich auf deinem Rechner.
+        </p>
+        <div className="icp-form">
+          <label className="icp-field">
+            <span>Deine Website</span>
+            <input
+              value={ownUrl}
+              onChange={(e) => setOwnUrl(e.target.value)}
+              placeholder="z. B. meine-firma.de"
+            />
+          </label>
+          <label className="icp-field">
+            <span>Websites deiner besten Bestandskunden (eine pro Zeile, optional, max 5)</span>
+            <textarea
+              value={customerUrls}
+              onChange={(e) => setCustomerUrls(e.target.value)}
+              rows={5}
+              placeholder={"kunde-a.de\nkunde-b.de\nkunde-c.de"}
+            />
+          </label>
+          {notice && <div className="radar-error">{notice}</div>}
+          <div className="icp-actions">
+            <button
+              className="proc-toggle radar-import"
+              disabled={ownUrl.trim().length < 4}
+              onClick={() => void startAnalysis()}
+            >
+              Analysieren &amp; ICP erstellen
+            </button>
+            <button className="proc-toggle" onClick={() => setMode("form")}>
+              Lieber von Hand ausfüllen
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (mode === "analyzing") {
+    const last = progress[progress.length - 1];
+    return (
+      <div className="radar-page icp-page">
+        <h1>AVA liest mit …</h1>
+        <p className="radar-sub">
+          Websites werden analysiert — das dauert je nach Anzahl 1–3 Minuten.
+        </p>
+        <div className="icp-progress">
+          {progress.map((p, i) => (
+            <div
+              key={i}
+              className={
+                i === progress.length - 1 ? "icp-step icp-step-active" : "icp-step icp-step-done"
+              }
+            >
+              {i === progress.length - 1 ? "⏳" : "✓"} {p.text}
+            </div>
+          ))}
+          {last && (
+            <div className="icp-progress-meta">
+              Schritt {last.step} von {last.total}
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="radar-page icp-page">
       <h1>Idealkundenprofil (ICP)</h1>
@@ -145,8 +276,15 @@ export function IcpAssistant(): JSX.Element {
                 : "von Hand gepflegt"}
             .
           </>
-        )}
+        )}{" "}
+        <button className="icp-linkbtn" onClick={() => setMode("intro")}>
+          Neu aus Websites erstellen
+        </button>
       </p>
+      {radiusHint && <div className="radar-hint">{radiusHint}</div>}
+      {analysisNotes.length > 0 && (
+        <div className="radar-hint">{analysisNotes.join(" ")}</div>
+      )}
 
       <div className="icp-form">
         <label className="icp-field">

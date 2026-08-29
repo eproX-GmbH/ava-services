@@ -173,6 +173,8 @@ import { WhisperSidecar } from "./voice/whisper-sidecar";
 import { IcpStore } from "./agent/icp-store";
 import { MatchStore } from "./discovery/match-store";
 import { RadarSupervisor } from "./discovery/radar-supervisor";
+import { runIcpAnalysis } from "./discovery/icp-assistant";
+import { domainFromUrl } from "./discovery/scan";
 import { listCandidatesWithMatches } from "./discovery/list";
 import { decideCandidates, type DecideInput } from "./discovery/decide";
 import { runMatch } from "./discovery/matcher";
@@ -4438,6 +4440,59 @@ app.whenReady().then(async () => {
     ...icpStore.get(),
     gesetzt: icpStore.isSet(),
   }));
+  // I2 ICP-Assistent — URL-Analyse ("deine Website + deine 5 besten
+  // Kunden"). Fortschritt streamt per icpAssistant:progress an das
+  // aufrufende Fenster; das Ergebnis ist NUR ein Entwurf (B6 — der
+  // Review-Screen speichert explizit ueber discovery:setIcp).
+  let icpAnalysisRunning = false;
+  ipcMain.handle(
+    "icpAssistant:analyze",
+    async (e, args: { eigeneUrl: string; kundenUrls: string[] }) => {
+      if (icpAnalysisRunning) {
+        return { error: "Es laeuft bereits eine Analyse." };
+      }
+      const eigeneDomain = domainFromUrl(args?.eigeneUrl);
+      if (!eigeneDomain) {
+        return { error: "Die eigene Website-URL ist nicht verwertbar." };
+      }
+      const kundenDomains = (args?.kundenUrls ?? [])
+        .map((u) => domainFromUrl(u))
+        .filter((d): d is string => d !== null && d !== eigeneDomain);
+      icpAnalysisRunning = true;
+      try {
+        const result = await runIcpAnalysis(
+          gatewayClient,
+          providers,
+          { eigeneDomain, kundenDomains },
+          (p) => {
+            try {
+              e.sender.send("icpAssistant:progress", p);
+            } catch {
+              /* Fenster ggf. geschlossen */
+            }
+          },
+        );
+        audit({
+          actorType: "user",
+          actorId: null,
+          category: "import",
+          action: "discovery.icp-analyze",
+          severity: "error" in result ? "warning" : "info",
+          subjectType: null,
+          subjectId: null,
+          summary:
+            "error" in result
+              ? `ICP-Analyse fehlgeschlagen: ${result.error}`
+              : `ICP-Analyse: ${eigeneDomain} + ${result.kunden.length} Kunden-Websites`,
+          metadata: { eigeneDomain, kundenAnzahl: kundenDomains.length },
+        });
+        return result;
+      } finally {
+        icpAnalysisRunning = false;
+      }
+    },
+  );
+
   // I1 ICP-Assistent — Handeingabe ueber das Fragenkatalog-Formular.
   ipcMain.handle(
     "discovery:setIcp",

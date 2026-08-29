@@ -140,6 +140,17 @@ Renderer:
 - **Prüfstein:** quikk.de + 3 echte Kunden-URLs → ICP-Entwurf mit
   korrektem Nutzer-Standort, plausiblen Branchen und Radius-Begründung
   in < 3 Minuten.
+- **STATUS: implementiert 2026-08-29** — `discovery/icp-assistant.ts`
+  (drei LLM-Schritte B3, yup-validiert, Producer-Modell; Radius-
+  Vorschlag B4 via Geo-Route + Haversine; Fortschritts-Callback),
+  IPC `icpAssistant:analyze` (Progress-Stream, Parallel-Lauf-Sperre,
+  Audit) + Preload `icpAnalyze`/`onIcpProgress`, Stepper in
+  IcpAssistant.tsx (Intro → Analyse-Fortschritt → vorbefülltes
+  Review-Formular mit Radius-Begründung + Hinweisen; „Lieber von Hand
+  ausfüllen" bleibt). Integrationstest mit LLM-Stub + ECHTEN Crawls:
+  quikk.de + drecoll.de → Ort Hannover, Radius 60 km aus realer
+  57-km-Distanz, tote Domain übersprungen, quelle=assistent, K8 leer.
+  LLM-Qualität selbst wird im Live-Lauf geprüft (I2-Prüfstein final).
 
 ### I3 — Wizard-Polish
 - Stepper-UX: URLs-Validierung (Domain-Normierung wiederverwenden!),

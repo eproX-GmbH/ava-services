@@ -82,7 +82,7 @@ function haversineKm(aLat: number, aLon: number, bLat: number, bLon: number): nu
 /** URL → normierte KERN-Domain. MUSS mit `normalizeDomain` im Gateway
  *  (services/db-gateway/src/lib/discovery.ts) uebereinstimmen — die
  *  Kern-Domain ist die Discovery-ID. */
-function domainFromUrl(url: string | undefined | null): string | null {
+export function domainFromUrl(url: string | undefined | null): string | null {
   if (!url) return null;
   let host: string;
   try {

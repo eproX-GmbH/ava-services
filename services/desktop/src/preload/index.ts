@@ -418,6 +418,42 @@ const api = {
     } | null> => ipcRenderer.invoke("discovery:setRadarConfig", patch),
     radarRunNow: (): Promise<{ outcome?: string; error?: string }> =>
       ipcRenderer.invoke("discovery:radarRunNow"),
+    // I2 ICP-Assistent — URL-Analyse. Ergebnis ist ein ENTWURF fuer den
+    // Review-Screen; gespeichert wird erst ueber setIcp.
+    icpAnalyze: (args: {
+      eigeneUrl: string;
+      kundenUrls: string[];
+    }): Promise<
+      | {
+          icp: Partial<Omit<IcpDto, "gesetzt">>;
+          eigene: {
+            angebot: string;
+            nutzen: string;
+            branche: string;
+            leistungen: string[];
+            standort: string;
+          } | null;
+          kunden: Array<{
+            domain: string;
+            name: string;
+            branche: string;
+            standort: string;
+          }>;
+          radiusBegruendung: string | null;
+          hinweise: string[];
+        }
+      | { error: string }
+    > => ipcRenderer.invoke("icpAssistant:analyze", args),
+    onIcpProgress: (
+      handler: (p: { step: number; total: number; text: string }) => void,
+    ): (() => void) => {
+      const wrapped = (
+        _e: Electron.IpcRendererEvent,
+        p: { step: number; total: number; text: string },
+      ): void => handler(p);
+      ipcRenderer.on("icpAssistant:progress", wrapped);
+      return () => ipcRenderer.removeListener("icpAssistant:progress", wrapped);
+    },
   },
 
   // v0.1.412 — Telegram-Benachrichtigungskanal. Der Bot-Token wird NIE
