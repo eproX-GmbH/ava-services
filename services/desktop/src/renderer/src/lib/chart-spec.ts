@@ -52,7 +52,7 @@ const dataPoint = yup
 
 const series = yup
   .object({
-    name: yup.string().required().max(40),
+    name: yup.string().required().max(60),
     data: yup.array().of(dataPoint).min(2).max(100).required(),
   })
   .noUnknown();
@@ -138,7 +138,7 @@ export function parseAndValidate(raw: string): ParseResult {
     };
   }
   try {
-    const spec = chartSpecSchema.validateSync(json, {
+    const spec = chartSpecSchema.validateSync(sanitizeSpec(json), {
       abortEarly: true,
       strict: true,
     });
@@ -146,6 +146,47 @@ export function parseAndValidate(raw: string): ParseResult {
   } catch (e) {
     return { ok: false, reason: (e as Error).message, raw };
   }
+}
+
+/**
+ * v0.1.438 — Überlange Beschriftungen KAPPEN statt das ganze Diagramm zu
+ * verwerfen. Ausloeser aus der Praxis: die Serie „Forderungen und sonstige
+ * Vermögensgegenstände" (45 Zeichen) liess die komplette Spec am
+ * 40-Zeichen-Limit scheitern — der Nutzer sah Rohdaten statt Diagramm.
+ * Legitime deutsche (Bilanz-)Begriffe sprengen solche Limits leicht; ein
+ * gekürzter Legendentext ist das kleinere Übel. Nur bekannte String-Felder
+ * werden angefasst; alles andere prüft weiterhin das Schema.
+ */
+function sanitizeSpec(json: unknown): unknown {
+  if (!json || typeof json !== "object" || Array.isArray(json)) return json;
+  const clamp = (v: unknown, max: number): unknown =>
+    typeof v === "string" && v.length > max ? `${v.slice(0, max - 1)}…` : v;
+
+  const spec = { ...(json as Record<string, unknown>) };
+  spec.title = clamp(spec.title, 120);
+  spec.xLabel = clamp(spec.xLabel, 60);
+  spec.yLabel = clamp(spec.yLabel, 60);
+  if (Array.isArray(spec.series)) {
+    spec.series = spec.series.map((entry) => {
+      if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
+        return entry;
+      }
+      const e = { ...(entry as Record<string, unknown>) };
+      e.name = clamp(e.name, 60);
+      return e;
+    });
+  }
+  if (Array.isArray(spec.annotations)) {
+    spec.annotations = spec.annotations.map((entry) => {
+      if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
+        return entry;
+      }
+      const e = { ...(entry as Record<string, unknown>) };
+      e.label = clamp(e.label, 40);
+      return e;
+    });
+  }
+  return spec;
 }
 
 /** Streaming-Fence-State.
