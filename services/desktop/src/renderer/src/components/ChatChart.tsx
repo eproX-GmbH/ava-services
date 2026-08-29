@@ -636,8 +636,33 @@ function renderLineOrArea(
   } else {
     gridLines = gridlines(min, max, format);
   }
-  // x-Achse: gemeinsame Kategorien aus erster Serie (Index-basiert).
-  const categories = (spec.series[0]?.data ?? []).map((p) => p.x);
+  // v0.1.439 — x-Achse: VEREINIGUNG der Kategorien aller Serien, Punkte
+  // werden per x-Wert (nicht per Index) positioniert. Vorher bestimmte
+  // allein die erste Serie die Achse und kürzere Serien rutschten an den
+  // Anfang — „Liquide Mittel" (2023, 2024) landete auf 2020/2021. Reale
+  // Kennzahlreihen sind lückenhaft (Werte erst ab Jahr X berichtet),
+  // daher ist das hier der Normalfall, nicht die Ausnahme.
+  const categories: (string | number)[] = [];
+  const catIndex = new Map<string, number>();
+  for (const s of spec.series) {
+    for (const p of s.data ?? []) {
+      const k = String(p.x);
+      if (!catIndex.has(k)) {
+        catIndex.set(k, categories.length);
+        categories.push(p.x);
+      }
+    }
+  }
+  // Sortieren, wenn alle Kategorien numerisch lesbar sind (Jahre,
+  // Quartals-Zahlen) — sonst Einfüge-Reihenfolge respektieren (frei
+  // benannte Kategorien haben eine gewollte Ordnung).
+  if (
+    categories.length > 1 &&
+    categories.every((c) => Number.isFinite(Number(c)))
+  ) {
+    categories.sort((a, b) => Number(a) - Number(b));
+    categories.forEach((c, i) => catIndex.set(String(c), i));
+  }
   const xCount = Math.max(1, categories.length - 1);
 
   return (
@@ -669,8 +694,9 @@ function renderLineOrArea(
       })}
       {spec.series.map((s, si) => {
         const color = colorAt(palette, si);
-        const pts = s.data.map((p, pi) => {
-          const x = PAD_LEFT + (pi / xCount) * innerW;
+        const pts = s.data.map((p) => {
+          const ci = catIndex.get(String(p.x)) ?? 0;
+          const x = PAD_LEFT + (ci / xCount) * innerW;
           const y =
             PAD_TOP +
             innerH -

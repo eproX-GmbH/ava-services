@@ -9,13 +9,23 @@ import { parseAndValidate } from "../lib/chart-spec";
 import { ChatChart } from "./ChatChart";
 import { ChartErrorBoundary } from "./ChartErrorBoundary";
 
-function Fallback({ raw, reason }: { raw: string; reason: string }) {
+function Fallback({
+  raw,
+  reason,
+  friendly,
+}: {
+  raw: string;
+  reason: string;
+  friendly: string;
+}) {
   return (
     <div className="chart-fallback">
-      <div className="hint">
-        Diagramm-Spec ungültig — Rohdaten anzeigen ({reason})
-      </div>
-      <pre>{raw}</pre>
+      <div className="hint">Das Diagramm konnte nicht angezeigt werden: {friendly}</div>
+      <details className="chart-fallback-details">
+        <summary>Technische Details &amp; Rohdaten</summary>
+        <div className="hint-tech">{reason}</div>
+        <pre>{raw}</pre>
+      </details>
     </div>
   );
 }
@@ -25,11 +35,17 @@ export function ChartBlock({ raw }: { raw: string }) {
   if (!result.ok) {
     // eslint-disable-next-line no-console
     console.warn("[chart] Spec-Validierung fehlgeschlagen:", result.reason);
-    return <Fallback raw={raw} reason={result.reason} />;
+    return <Fallback raw={raw} reason={result.reason} friendly={result.friendly} />;
   }
   return (
     <ChartErrorBoundary
-      fallback={<Fallback raw={raw} reason="Render-Time-Exception" />}
+      fallback={
+        <Fallback
+          raw={raw}
+          reason="Render-Time-Exception"
+          friendly="Bei der Darstellung ist ein unerwarteter Fehler aufgetreten."
+        />
+      }
     >
       <ChatChart spec={result.spec} />
     </ChartErrorBoundary>

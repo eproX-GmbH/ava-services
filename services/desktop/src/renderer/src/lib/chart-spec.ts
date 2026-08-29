@@ -52,8 +52,12 @@ const dataPoint = yup
 
 const series = yup
   .object({
+    // v0.1.439 — min(1) statt min(2): reale Kennzahlen liegen oft nur für
+    // EIN Jahr vor (z. B. Eigenkapital erst ab 2024 berichtet). Ein
+    // einzelner Punkt rendert als Marker; das Diagramm deswegen komplett
+    // zu verwerfen war der schlechtere Tausch.
     name: yup.string().required().max(60),
-    data: yup.array().of(dataPoint).min(2).max(100).required(),
+    data: yup.array().of(dataPoint).min(1).max(100).required(),
   })
   .noUnknown();
 
@@ -121,21 +125,19 @@ export type ChartSpec = yup.InferType<typeof chartSpecSchema>;
 
 export type ParseResult =
   | { ok: true; spec: ChartSpec }
-  | { ok: false; reason: string; raw: string };
+  | { ok: false; reason: string; friendly: string; raw: string };
 
 export function parseAndValidate(raw: string): ParseResult {
   if (raw.length > MAX_SPEC_BYTES) {
-    return { ok: false, reason: "Spec überschreitet 8 KB", raw };
+    const reason = "Spec überschreitet 8 KB";
+    return { ok: false, reason, friendly: humanizeReason(reason, null), raw };
   }
   let json: unknown;
   try {
     json = JSON.parse(raw);
   } catch (e) {
-    return {
-      ok: false,
-      reason: `JSON-Parse: ${(e as Error).message}`,
-      raw,
-    };
+    const reason = `JSON-Parse: ${(e as Error).message}`;
+    return { ok: false, reason, friendly: humanizeReason(reason, null), raw };
   }
   try {
     const spec = chartSpecSchema.validateSync(sanitizeSpec(json), {
@@ -144,8 +146,70 @@ export function parseAndValidate(raw: string): ParseResult {
     });
     return { ok: true, spec };
   } catch (e) {
-    return { ok: false, reason: (e as Error).message, raw };
+    const reason = (e as Error).message;
+    return { ok: false, reason, friendly: humanizeReason(reason, json), raw };
   }
+}
+
+/**
+ * v0.1.439 — yup-Fehlermeldungen (englisch, Pfad-Syntax wie
+ * „series[1].data") in einen Satz übersetzen, den auch Nicht-Techniker
+ * verstehen. Wo der Fehlerpfad eine konkrete Serie benennt, wird deren
+ * Name aus der Roh-Spec aufgelöst („Datenreihe ‚Eigenkapital'…").
+ * Die technische Original-Meldung bleibt als Detail sichtbar.
+ */
+export function humanizeReason(reason: string, json: unknown): string {
+  const seriesName = (() => {
+    const m = /series\[(\d+)\]/.exec(reason);
+    if (!m || !json || typeof json !== "object") return null;
+    const arr = (json as Record<string, unknown>).series;
+    if (!Array.isArray(arr)) return null;
+    const entry = arr[Number(m[1])];
+    const name =
+      entry && typeof entry === "object"
+        ? (entry as Record<string, unknown>).name
+        : null;
+    return typeof name === "string" && name ? name : null;
+  })();
+  const wo = seriesName ? `Die Datenreihe „${seriesName}"` : "Eine Datenreihe";
+
+  if (reason.startsWith("Spec überschreitet")) {
+    return "Das Diagramm enthält zu viele Daten für die Anzeige.";
+  }
+  if (reason.startsWith("JSON-Parse")) {
+    return "Die Diagramm-Daten sind unvollständig oder fehlerhaft formatiert.";
+  }
+  if (/must have at least \d+ items?/.test(reason)) {
+    return /^series\b/.test(reason) && !/\.data/.test(reason)
+      ? "Das Diagramm enthält keine Datenreihe."
+      : `${wo} enthält zu wenige Datenpunkte für die Darstellung.`;
+  }
+  if (/must have less than or equal to \d+ items?|must have at most \d+ items?/.test(reason)) {
+    return /\.data/.test(reason)
+      ? `${wo} enthält zu viele Datenpunkte.`
+      : "Das Diagramm enthält zu viele Datenreihen oder Markierungen.";
+  }
+  if (/must be at most \d+ characters/.test(reason)) {
+    return "Eine Beschriftung im Diagramm ist zu lang.";
+  }
+  if (/is a required field|must be defined|cannot be null/.test(reason)) {
+    return "Im Diagramm fehlen Pflichtangaben (z. B. Werte oder Namen).";
+  }
+  if (/must be one of/.test(reason)) {
+    return "Das Diagramm verwendet einen unbekannten Typ oder ein ungültiges Zahlenformat.";
+  }
+  if (/must be a `number` type|must be a `string` type|NaN/.test(reason)) {
+    return `${wo} enthält einen ungültigen Wert.`;
+  }
+  if (/has unspecified keys|unknown/i.test(reason)) {
+    return "Die Diagramm-Daten enthalten unerwartete Felder.";
+  }
+  // Eigene Test-Meldungen (pie-…, scatter-…, Serien-Namen, x/y endlich)
+  // sind bereits deutsch formuliert — direkt durchreichen.
+  if (/[äöüÄÖÜß]|Diagramm|Serien|endlich/.test(reason)) {
+    return reason;
+  }
+  return "Die Daten passen nicht in das erwartete Diagramm-Format.";
 }
 
 /**
