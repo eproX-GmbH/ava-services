@@ -1849,7 +1849,17 @@ telegramInbound = new TelegramInbound({
   orchestrator: agent,
   // v0.1.419 — Sprachnachrichten lokal transkribieren. Whisper ist bereits
   // gebuendelt; damit verlaesst auch die Sprache den Rechner nicht.
-  transcribe: (wav) => whisper.transcribe(wav),
+  // v0.1.470 — Boot-Rennen: Die Telegram-Schleife kann eine wartende
+  // Sprachnachricht greifen, BEVOR der Whisper-Probe beim App-Start
+  // durch ist ("nicht bereit (state=idle)"). start() ist ein
+  // idempotenter Probe — bei nicht-ready einmal nachproben statt
+  // sofort zu scheitern.
+  transcribe: async (wav) => {
+    if (whisper.getStatus().state !== "ready") {
+      await whisper.start();
+    }
+    return whisper.transcribe(wav);
+  },
   onAudit: ({ severity, summary, metadata }) => {
     audit({
       actorType: "system",

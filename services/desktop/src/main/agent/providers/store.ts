@@ -781,7 +781,25 @@ export class ProviderConfigStore extends EventEmitter {
           : "api-key";
       const openaiAuthMode: OpenAIAuthMode =
         parsed.openaiAuthMode === "subscription" ? "subscription" : "api-key";
-      return { kind, models, anthropicAuthMode, openaiAuthMode };
+      // v0.1.470 — producerModels + dailyTokenLimit wurden zwar immer
+      // GESCHRIEBEN, beim Laden aber verworfen: Nach jedem App-Neustart
+      // war das Hintergrund-Modell wieder ab- und das Tageslimit
+      // ausgewählt. Jetzt beide Felder zurücklesen.
+      const producerModels: Partial<Record<LlmProviderKind, string>> = {};
+      if (parsed.producerModels && typeof parsed.producerModels === "object") {
+        for (const k of ALL_KINDS) {
+          const v = parsed.producerModels[k];
+          if (typeof v === "string" && v.trim()) producerModels[k] = v.trim();
+        }
+      }
+      return {
+        kind,
+        models,
+        anthropicAuthMode,
+        openaiAuthMode,
+        dailyTokenLimit: normaliseDailyTokenLimit(parsed.dailyTokenLimit),
+        producerModels,
+      };
     } catch (err) {
       console.warn("[provider-store] failed to read provider.json:", err);
       return cloneConfig(DEFAULT_CONFIG);

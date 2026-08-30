@@ -613,7 +613,7 @@ _Parameter:_ keine.
 
 _Datei:_ `services/desktop/src/main/agent/tools/crm.ts`
 
-Legt eine neue Aufgabe in HubSpot an und verknüpft sie SOFORT mit Company/Contact/Deal. PROPOSE-AND-CONFIRM. Optional sind Fälligkeit, Priorität, Owner, Typ (EMAIL/CALL/TODO). Status startet immer auf NOT_STARTED.
+Legt eine neue Aufgabe in HubSpot an und verknüpft sie SOFORT mit Company/Contact/Deal. PROPOSE-AND-CONFIRM. Optional sind Fälligkeit (dueAt; ohne Angabe: fällig in 24 Stunden), Priorität, Owner, Typ (EMAIL/CALL/TODO). Status startet immer auf NOT_STARTED.
 
 _Parameter:_ keine.
 
