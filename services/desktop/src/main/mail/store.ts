@@ -483,6 +483,35 @@ export class MailStore extends EventEmitter {
     return out;
   }
 
+  /**
+   * v0.1.461 — Gesprächsfaden mit einem Korrespondenten: eingehende
+   * Mails VON der Adresse plus ausgehende Mails AN die Adresse (AVAs
+   * eigene Antworten, seit sendAndSync sie spiegelt). Neueste zuerst;
+   * die Subject-Zuordnung (Re:/AW:-Normalisierung) macht der Aufrufer
+   * in TS — SQL kann die Präfix-Schichten nicht sauber strippen.
+   * Bewusst ohne Attachment-Fetch: der Verlauf ist Prompt-Kontext,
+   * keine Detailansicht.
+   */
+  async listThreadWithCorrespondent(
+    address: string,
+    limit = 50,
+  ): Promise<MailMessage[]> {
+    await this.start();
+    const pg = this.requirePg();
+    const addr = address.toLowerCase().trim();
+    const res = await pg.query<MessageRow>(
+      `SELECT * FROM mail_messages
+        WHERE (direction = 'inbound' AND from_address = $1)
+           OR (direction = 'outbound' AND EXISTS (
+                 SELECT 1 FROM jsonb_array_elements(to_json) AS r
+                  WHERE lower(r->>'address') = $1))
+        ORDER BY date DESC
+        LIMIT $2`,
+      [addr, Math.min(limit, 200)],
+    );
+    return res.rows.map((row) => rowToMessage(row, []));
+  }
+
   /** Anzahl Mails pro Absender in den letzten N Stunden. Trust-Engine
    *  nutzt das zur Rate-Limit-Heuristik. */
   async countFromSenderRecent(

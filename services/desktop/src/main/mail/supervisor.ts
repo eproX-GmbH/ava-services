@@ -248,6 +248,37 @@ export class MailSupervisor extends EventEmitter {
         );
       }
     }
+    // v0.1.461 — Ausgehende Mail auch im LOKALEN Store spiegeln.
+    // Vorher lag sie nur im IMAP-Sent-Ordner (den wir nicht syncen) —
+    // der Triage-Agent sah bei Folge-Mails im selben Thread also nie,
+    // was AVA selbst geantwortet hatte, und verlor den Faden.
+    // Best-effort: ein Store-Fehler bricht den Send nicht.
+    try {
+      const account = await this.store.getAccount();
+      await this.store.recordMessage({
+        imapUid: null,
+        folder: "SENT",
+        direction: "outbound",
+        from: { address: account?.address ?? "", name: "AVA" },
+        to: input.to.map((a) => ({ address: a, name: null })),
+        cc: (input.cc ?? []).map((a) => ({ address: a, name: null })),
+        subject: input.subject,
+        date: new Date().toISOString(),
+        bodyText: input.text,
+        bodyHtml: input.html ?? null,
+        authResults: { spf: "none", dkim: "none", fromMatchesReturnPath: true },
+        trustLevel: "trusted",
+        classification: null,
+        attachments: [],
+        messageIdHeader: result.messageId || null,
+        inReplyTo: input.inReplyTo ?? null,
+      });
+    } catch (err) {
+      console.warn(
+        "[mail/supervisor] Outbound-Spiegelung in Store fehlgeschlagen:",
+        err instanceof Error ? err.message : String(err),
+      );
+    }
     return result;
   }
 
