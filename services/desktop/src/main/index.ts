@@ -174,6 +174,7 @@ import { IcpStore } from "./agent/icp-store";
 import { MatchStore } from "./discovery/match-store";
 import { CustomerProfileStore } from "./discovery/customer-profiles";
 import { RadarSupervisor } from "./discovery/radar-supervisor";
+import { RadarAlertEmitter } from "./discovery/radar-alerts";
 import { runIcpAnalysis, buildCustomerInputs } from "./discovery/icp-assistant";
 import { domainFromUrl } from "./discovery/scan";
 import { listCandidatesWithMatches } from "./discovery/list";
@@ -1217,6 +1218,7 @@ let mailSupervisor: MailSupervisor | null = null;
 let scheduledJobsSupervisor: ScheduledJobsSupervisor | null = null;
 let linkMonitorSupervisor: LinkMonitorSupervisor | null = null;
 let radarSupervisor: RadarSupervisor | null = null;
+let radarAlertEmitter: RadarAlertEmitter | null = null;
 
 function broadcastMailSnapshot(snapshot: MailSnapshot): void {
   for (const win of BrowserWindow.getAllWindows()) {
@@ -1575,6 +1577,7 @@ const agentRegistry = buildReadOnlyRegistry({
   icp: icpStore,
   discoveryMatches,
   discoveryCustomerProfiles: customerProfiles,
+  getRadarAlerts: () => radarAlertEmitter,
   discoveryAudit: ({ action, severity, summary, metadata }) => {
     audit({
       actorType: "system",
@@ -2403,17 +2406,20 @@ app.whenReady().then(async () => {
   // Scan/Profile/Match nach Intervall; neue heisse ICP-Treffer laufen
   // als kind="radar-match" durch den normalen Alert-Fanout
   // (Glocke + OS-Push + Telegram).
+  radarAlertEmitter = new RadarAlertEmitter({
+    alerts,
+    notify: (a) => {
+      notifications.notifyForAlert(a);
+    },
+    onAlertsChanged: broadcastAlertsChanged,
+  });
   radarSupervisor = new RadarSupervisor({
     gateway: gatewayClient,
     providers,
     icp: icpStore,
     matchStore: discoveryMatches,
     customerStore: customerProfiles,
-    alerts,
-    notify: (a) => {
-      notifications.notifyForAlert(a);
-    },
-    onAlertsChanged: broadcastAlertsChanged,
+    radarAlerts: radarAlertEmitter,
     isSignedIn: () => auth.getStatus().signedIn,
     onAudit: ({ action, severity, summary, metadata }) => {
       audit({
@@ -4452,9 +4458,31 @@ app.whenReady().then(async () => {
       return result;
     },
   );
-  ipcMain.handle("discovery:match", async () =>
-    runMatch(gatewayClient, providers, icpStore, discoveryMatches, customerProfiles),
-  );
+  ipcMain.handle("discovery:match", async () => {
+    const result = await runMatch(
+      gatewayClient,
+      providers,
+      icpStore,
+      discoveryMatches,
+      customerProfiles,
+    );
+    // Alerts feuern auch beim MANUELLEN Match (Glocke + Push +
+    // Telegram) — vorher nur im Automatik-Lauf, wodurch heisse Treffer
+    // stumm blieben.
+    if (!("error" in result) && radarAlertEmitter) {
+      const emitted = radarAlertEmitter.emit(result.ergebnisse);
+      if (emitted.neu > 0 || emitted.bereitsGemeldet > 0) {
+        result.hinweise.push(
+          `${emitted.neu} neue heisse Treffer gemeldet` +
+            (emitted.bereitsGemeldet > 0
+              ? ` (${emitted.bereitsGemeldet} bereits frueher gemeldet)`
+              : "") +
+            ".",
+        );
+      }
+    }
+    return result;
+  });
   // Backlog-Abbau direkt aus dem Radar: bis zu 25 Mini-Profile pro
   // Klick, ICP-Branchen zuerst.
   let profileRunning = false;

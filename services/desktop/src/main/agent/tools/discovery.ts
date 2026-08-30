@@ -18,6 +18,7 @@ import { listCandidatesWithMatches } from "../../discovery/list";
 import type { IcpStore } from "../icp-store";
 import type { MatchStore } from "../../discovery/match-store";
 import type { CustomerProfileStore } from "../../discovery/customer-profiles";
+import type { RadarAlertEmitter } from "../../discovery/radar-alerts";
 
 export interface DiscoveryToolDeps {
   gateway: GatewayClient;
@@ -25,6 +26,8 @@ export interface DiscoveryToolDeps {
   icp: IcpStore;
   matchStore: MatchStore;
   customerStore: CustomerProfileStore;
+  /** Lazy — der Emitter entsteht erst im App-Boot nach dem Registry-Build. */
+  getRadarAlerts: () => RadarAlertEmitter | null;
   /** Branchen-Fallback aus dem Nutzerprofil (UserProfile.industries). */
   getDefaultIndustries: () => string[];
   /** Audit-Trail — Scans (inkl. der geplanten SERP-Queries) sollen
@@ -213,14 +216,30 @@ export function buildDiscoveryTools(deps: DiscoveryToolDeps): Tool[] {
       if (res.error) return res.error;
       return `${res.bewertet ?? 0} Kandidaten bewertet`;
     },
-    run: async () =>
-      runMatch(
+    run: async () => {
+      const result = await runMatch(
         deps.gateway,
         deps.providers,
         deps.icp,
         deps.matchStore,
         deps.customerStore,
-      ),
+      );
+      // Heisse Treffer melden (Glocke/Push/Telegram) — alle Match-Pfade
+      // laufen durch denselben Emitter (Dedup inklusive).
+      if (!("error" in result)) {
+        const emitted = deps.getRadarAlerts()?.emit(result.ergebnisse);
+        if (emitted && (emitted.neu > 0 || emitted.bereitsGemeldet > 0)) {
+          result.hinweise.push(
+            `${emitted.neu} neue heisse Treffer gemeldet` +
+              (emitted.bereitsGemeldet > 0
+                ? ` (${emitted.bereitsGemeldet} bereits frueher gemeldet)`
+                : "") +
+              ".",
+          );
+        }
+      }
+      return result;
+    },
   });
 
   const decide = defineTool({

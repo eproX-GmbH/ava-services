@@ -16,20 +16,17 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { app } from "electron";
-import type { Alert } from "../../shared/types";
 import type { GatewayClient } from "../agent/gateway-client";
 import type { LlmProviderManager } from "../agent/providers";
-import type { AlertsStore } from "../agent/alerts-store";
 import type { IcpStore } from "../agent/icp-store";
 import type { MatchStore } from "./match-store";
 import type { CustomerProfileStore } from "./customer-profiles";
+import type { RadarAlertEmitter } from "./radar-alerts";
 import { runDiscoveryScan } from "./scan";
 import { runProfiler } from "./profiler";
 import { runMatch } from "./matcher";
 
 const CHECK_INTERVAL_MS = 30 * 60 * 1000;
-const HOT_SCORE = 70;
-const MAX_ALERTS_PER_RUN = 5;
 const PROFILE_LIMIT_PER_RUN = 15;
 
 export interface RadarConfig {
@@ -52,9 +49,8 @@ export interface RadarSupervisorDeps {
   icp: IcpStore;
   matchStore: MatchStore;
   customerStore: CustomerProfileStore;
-  alerts: AlertsStore;
-  notify: (alert: Alert) => void;
-  onAlertsChanged: () => void;
+  /** Zentraler Alert-Emitter — geteilt mit dem manuellen Match. */
+  radarAlerts: RadarAlertEmitter;
   isSignedIn: () => boolean;
   onAudit: (entry: {
     action: string;
@@ -68,9 +64,7 @@ export class RadarSupervisor {
   private readonly deps: RadarSupervisorDeps;
   private readonly dir: string;
   private readonly configPath: string;
-  private readonly alertedPath: string;
   private config: RadarConfig | null = null;
-  private alerted: Set<string> | null = null;
   private timer: NodeJS.Timeout | null = null;
   private running = false;
 
@@ -78,7 +72,6 @@ export class RadarSupervisor {
     this.deps = deps;
     this.dir = dir ?? join(app.getPath("userData"), "discovery");
     this.configPath = join(this.dir, "radar-config.json");
-    this.alertedPath = join(this.dir, "radar-alerted.json");
   }
 
   start(): void {
@@ -132,29 +125,6 @@ export class RadarSupervisor {
       writeFileSync(this.configPath, JSON.stringify(this.config), "utf8");
     } catch (err) {
       console.warn("[radar] config persist failed:", err);
-    }
-  }
-
-  private getAlerted(): Set<string> {
-    if (this.alerted) return this.alerted;
-    try {
-      this.alerted = existsSync(this.alertedPath)
-        ? new Set(JSON.parse(readFileSync(this.alertedPath, "utf8")) as string[])
-        : new Set();
-    } catch {
-      this.alerted = new Set();
-    }
-    return this.alerted;
-  }
-
-  private persistAlerted(): void {
-    try {
-      mkdirSync(this.dir, { recursive: true });
-      const arr = [...this.getAlerted()];
-      // Cap gegen unbegrenztes Wachstum.
-      writeFileSync(this.alertedPath, JSON.stringify(arr.slice(-1000)), "utf8");
-    } catch (err) {
-      console.warn("[radar] alerted persist failed:", err);
     }
   }
 
@@ -219,40 +189,18 @@ export class RadarSupervisor {
         return match.error;
       }
 
-      // Alerts fuer NEUE heisse Kandidaten.
-      const alerted = this.getAlerted();
-      const hot = match.ergebnisse
-        .filter((r) => r.score >= HOT_SCORE && !alerted.has(r.discoveryId))
-        .slice(0, MAX_ALERTS_PER_RUN);
-      for (const h of hot) {
-        const alert = this.deps.alerts.add({
-          tenantId: null,
-          companyId: "",
-          companyName: h.name,
-          kind: "radar-match",
-          severity: "info",
-          headline: `Radar: ${h.name} passt zu deinem ICP (Score ${h.score})`,
-          rationale: `${h.begruendung} — Entscheiden unter Firmen → Radar.`,
-          sourceRef: `radar:${h.discoveryId}`,
-        });
-        alerted.add(h.discoveryId);
-        if (alert) {
-          try {
-            this.deps.notify(alert);
-          } catch {
-            /* best-effort */
-          }
-        }
-      }
-      if (hot.length > 0) {
-        this.persistAlerted();
-        this.deps.onAlertsChanged();
-      }
+      // Alerts fuer NEUE heisse Kandidaten (zentraler Emitter — Dedup
+      // ueber alle Match-Pfade hinweg).
+      const emitted = this.deps.radarAlerts.emit(match.ergebnisse);
 
       const outcome =
         `${scan.kandidatenGesamt} Kandidaten (OSM ${scan.quellen.osm}, ` +
         `SERP ${scan.quellen.serp}, Register ${scan.quellen.register}), ` +
-        `${profNote}, ${match.bewertet} bewertet, ${hot.length} neue heisse Treffer`;
+        `${profNote}, ${match.bewertet} bewertet, ` +
+        `${emitted.neu} neue heisse Treffer` +
+        (emitted.bereitsGemeldet > 0
+          ? ` (${emitted.bereitsGemeldet} heisse bereits frueher gemeldet)`
+          : "");
       // Auditierbarkeit: die geplanten SERP-Recherchen gesammelt in die
       // Metadaten des Lauf-Eintrags.
       this.finishRun(startedAt, outcome, trigger, "info", {

@@ -567,8 +567,13 @@ export async function listCandidates(
       args.lon - lonDelta,
       args.lon + lonDelta,
     );
+    // Kandidaten OHNE Koordinaten (v. a. Register-Kanal: nur Sitzort-
+    // Name) duerfen nicht stillschweigend am Geo-Filter scheitern —
+    // NULL BETWEEN waere NULL und die Zeile fiele raus, obwohl sie aus
+    // einem ortsgebundenen Scan stammt. Der LLM-Match sieht den Ort im
+    // Profil und kann selbst abwerten.
     conditions.push(
-      `dc.lat BETWEEN $${params.length - 3} AND $${params.length - 2} AND dc.lon BETWEEN $${params.length - 1} AND $${params.length}`,
+      `((dc.lat BETWEEN $${params.length - 3} AND $${params.length - 2} AND dc.lon BETWEEN $${params.length - 1} AND $${params.length}) OR dc.lat IS NULL)`,
     );
   }
   params.push(args.limit);

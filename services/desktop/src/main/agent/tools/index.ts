@@ -154,6 +154,8 @@ export function buildReadOnlyRegistry(deps: {
   discoveryMatches: MatchStore;
   /** I5 — lokale Top-Kunden-Profile (Aehnlichkeits-Signal). */
   discoveryCustomerProfiles: CustomerProfileStore;
+  /** Lazy-Getter auf den Radar-Alert-Emitter (entsteht im Boot). */
+  getRadarAlerts: () => import("../../discovery/radar-alerts").RadarAlertEmitter | null;
   /** Audit-Trail-Sink fuer Discovery-Aktionen (Scan-Queries etc.). */
   discoveryAudit: (entry: {
     action: string;
@@ -182,6 +184,7 @@ export function buildReadOnlyRegistry(deps: {
     icp: deps.icp,
     matchStore: deps.discoveryMatches,
     customerStore: deps.discoveryCustomerProfiles,
+    getRadarAlerts: deps.getRadarAlerts,
     onAudit: deps.discoveryAudit,
     getDefaultIndustries: () => {
       // SERP-Branchen-Fallback: ICP-Branchen zuerst, sonst Nutzerprofil.
