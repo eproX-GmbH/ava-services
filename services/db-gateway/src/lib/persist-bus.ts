@@ -52,6 +52,11 @@ import { loadEnv } from "./env";
 import { logger } from "./logger";
 import { PRODUCER_NAMES, type ProducerName } from "./db-urls";
 import { getProducerPool, getGatewayPool } from "./producer-pools";
+import {
+  diffManagingDirectors,
+  recordManagingDirectorChange,
+  type ManagingDirectorDiff,
+} from "./profile-changes";
 import { transactionProgressBus } from "./event-bus";
 import { recordUsage } from "./billing";
 import { tierShouldWrite, type ModelTier } from "./tier";
@@ -771,7 +776,31 @@ const applyStructuredContent: ApplyFn = async (pool, event, log) => {
     // transient parsing miss) must NOT clear directors stored by an
     // earlier run — otherwise we'd silently drop existing data. The next
     // non-empty scrape still overwrites authoritatively.
+    //
+    // v0.1.460 — Geschäftsführer-Wechsel: Bevor der Bestand ersetzt
+    // wird, die alte Namensmenge sichern und gegen die neue diffen.
+    // Nur wenn es VORHER Daten gab UND die Menge abweicht, entsteht
+    // nach dem COMMIT ein ProfileChangeEvent (best-effort). Der
+    // Desktop-Heartbeat macht daraus einen "profile-change"-Alert.
+    let directorDiff: ManagingDirectorDiff | null = null;
     if (Array.isArray(result.managingDirectors) && result.managingDirectors.length > 0) {
+      const existing = await client.query<{
+        firstName: string;
+        lastName: string;
+      }>(
+        `SELECT "firstName", "lastName" FROM "ManagingDirector"
+          WHERE "companyId" = $1`,
+        [result.companyId],
+      );
+      if (existing.rows.length > 0) {
+        const diff = diffManagingDirectors(
+          existing.rows,
+          result.managingDirectors,
+        );
+        if (diff.added.length > 0 || diff.removed.length > 0) {
+          directorDiff = diff;
+        }
+      }
       await client.query(
         `DELETE FROM "ManagingDirector" WHERE "companyId" = $1`,
         [result.companyId],
@@ -803,6 +832,11 @@ const applyStructuredContent: ApplyFn = async (pool, event, log) => {
       },
       "structured-content persist ✓",
     );
+
+    // Nach dem COMMIT, damit ein Fehler hier den Persist nie anfasst.
+    if (directorDiff) {
+      await recordManagingDirectorChange(log, result.companyId, directorDiff);
+    }
   } catch (err) {
     await client.query("ROLLBACK").catch(() => {});
     throw err;

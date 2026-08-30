@@ -5,6 +5,7 @@ import { callUpstream } from "../../lib/upstream";
 import { getGatewayPool, getProducerPool } from "../../lib/producer-pools";
 import { clearHold, setHold } from "../../lib/company-holds";
 import { tombstoneCompany } from "../../lib/company-tombstones";
+import { listProfileChanges } from "../../lib/profile-changes";
 import { logger } from "../../lib/logger";
 import {
   CompanyContactShape,
@@ -16,6 +17,7 @@ import {
   ErrorShape,
   PaginatedShape,
   PaginationQuery,
+  ProfileChangeShape,
   SearchQuery,
   SearchResultShape,
   StructuredContentShape,
@@ -500,6 +502,38 @@ companiesRouter.openapi(publicationsRoute, async (c) => {
       updatedAt: r.updatedAt.toISOString(),
     }),
   );
+  return c.json({ items }, 200);
+});
+
+// ---- GET /v1/companies/:companyId/profile-changes --------------------------
+//
+// v0.1.460 — Geschäftsführer-Wechsel (und künftige Profil-Diffs).
+// Quelle: ProfileChangeEvent in der Gateway-DB, geschrieben vom
+// structured-content-Persist-Handler beim ManagingDirector-Diff.
+// Konsument: Desktop-Heartbeat (Kandidaten-Kind "profile-change").
+
+const profileChangesRoute = createRoute({
+  method: "get",
+  path: "/companies/{companyId}/profile-changes",
+  tags: [tag],
+  summary: "Profil-Änderungs-Ereignisse (Geschäftsführer-Wechsel)",
+  request: { params: CompanyIdParam },
+  responses: {
+    200: {
+      content: {
+        "application/json": {
+          schema: z.object({ items: z.array(ProfileChangeShape) }),
+        },
+      },
+      description: "profile changes, newest first",
+    },
+    ...errorResponses,
+  },
+});
+
+companiesRouter.openapi(profileChangesRoute, async (c) => {
+  const { companyId } = c.req.valid("param");
+  const items = await listProfileChanges(companyId, 20);
   return c.json({ items }, 200);
 });
 

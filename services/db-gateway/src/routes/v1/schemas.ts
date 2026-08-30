@@ -204,6 +204,28 @@ export const CompanyPublicationShape = z
   })
   .openapi("CompanyPublication");
 
+// ---- Profile changes (v0.1.460 — Geschäftsführer-Wechsel) ------------------
+//
+// Abgeleitetes Signal aus dem structured-content-Persist: Diff der
+// ManagingDirector-Namensmenge gegen den Vorbestand. Konsument ist der
+// Desktop-Heartbeat (Kandidaten-Kind "profile-change").
+
+const DirectorNameShape = z.object({
+  firstName: z.string(),
+  lastName: z.string(),
+});
+
+export const ProfileChangeShape = z
+  .object({
+    id: z.string(),
+    companyId: z.string(),
+    kind: z.string(),
+    added: z.array(DirectorNameShape),
+    removed: z.array(DirectorNameShape),
+    createdAt: z.string(),
+  })
+  .openapi("ProfileChange");
+
 // ---- Company contacts (company-contact) ------------------------------------
 //
 // `companyFacts`, `companyObservations`, `companySignals`, and `employments`

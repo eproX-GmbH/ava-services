@@ -70,6 +70,17 @@ interface VolumeShape {
   currency?: string | null;
 }
 
+/** v0.1.460 — Geschäftsführer-Wechsel aus dem Gateway
+ *  (`ProfileChangeEvent`, geschrieben vom structured-content-Persist). */
+interface ProfileChangeRow {
+  id: string;
+  companyId: string;
+  kind: string;
+  added?: Array<{ firstName?: string; lastName?: string }>;
+  removed?: Array<{ firstName?: string; lastName?: string }>;
+  createdAt?: string;
+}
+
 interface CompanyMeta {
   /** Master-data sometimes calls this `name`, sometimes `companyName`. We
    *  accept either and fall back to a truncated id if both are absent. */
@@ -162,12 +173,15 @@ async function fetchCandidatesForCompany(
   cutoff: Date,
   sinceIso: string | null,
 ): Promise<HeartbeatCandidate[]> {
-  const [metaResult, pubsResult] = await Promise.allSettled([
+  const [metaResult, pubsResult, changesResult] = await Promise.allSettled([
     gateway.request<CompanyMeta>(
       `/v1/companies/${encodeURIComponent(companyId)}`,
     ),
     gateway.request<{ items?: PubRow[] }>(
       `/v1/companies/${encodeURIComponent(companyId)}/publications`,
+    ),
+    gateway.request<{ items?: ProfileChangeRow[] }>(
+      `/v1/companies/${encodeURIComponent(companyId)}/profile-changes`,
     ),
   ]);
 
@@ -175,10 +189,48 @@ async function fetchCandidatesForCompany(
   const companyName =
     meta.name ?? meta.companyName ?? `${companyId.slice(0, 12)}…`;
 
-  if (pubsResult.status !== "fulfilled") return [];
-  const pubs = pubsResult.value.items ?? [];
-
   const out: HeartbeatCandidate[] = [];
+
+  // v0.1.460 — Geschäftsführer-Wechsel zuerst: Das sind die seltenen,
+  // hochrelevanten Signale; sie sollen nicht hinter dem Kandidaten-Cap
+  // eines publikationsreichen Korpus verschwinden. Ein 404 (älteres
+  // Gateway ohne die Route) fällt still auf "keine Ereignisse" zurück.
+  if (changesResult.status === "fulfilled") {
+    for (const ch of changesResult.value.items ?? []) {
+      if (ch.kind !== "managing-directors" || !ch.id) continue;
+      const created =
+        typeof ch.createdAt === "string" && ch.createdAt.length > 0
+          ? new Date(ch.createdAt)
+          : null;
+      if (!created || Number.isNaN(created.getTime())) continue;
+      if (created < cutoff) continue;
+      if (sinceIso && created.toISOString() <= sinceIso) continue;
+      const fmt = (
+        list: Array<{ firstName?: string; lastName?: string }> | undefined,
+      ): string[] =>
+        (list ?? [])
+          .map((p) => `${p.firstName ?? ""} ${p.lastName ?? ""}`.trim())
+          .filter((n) => n.length > 0);
+      const added = fmt(ch.added);
+      const removed = fmt(ch.removed);
+      if (added.length === 0 && removed.length === 0) continue;
+      const parts: string[] = [];
+      if (added.length > 0) parts.push(`neu: ${added.join(", ")}`);
+      if (removed.length > 0) parts.push(`ausgeschieden: ${removed.join(", ")}`);
+      out.push({
+        kind: "profile-change",
+        companyId,
+        companyName,
+        sourceRef: `profile-change:${ch.id}`,
+        occurredAt: created.toISOString(),
+        summary: `Geschäftsführer-Wechsel laut Handelsregister bei ${companyName} — ${parts.join("; ")}.`,
+        payload: { added, removed, source: "handelsregister" },
+      });
+    }
+  }
+
+  if (pubsResult.status !== "fulfilled") return out;
+  const pubs = pubsResult.value.items ?? [];
   for (const p of pubs) {
     const occurred = pickOccurredAt(p);
     if (!occurred) continue;
