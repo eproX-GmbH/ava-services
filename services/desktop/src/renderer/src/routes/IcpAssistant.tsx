@@ -129,8 +129,21 @@ export function IcpAssistant(): JSX.Element {
     });
     setAnalysisNotes(result.hinweise);
     setRadiusHint(result.radiusBegruendung);
+    const parts: string[] = [];
+    if (result.kunden.length > 0) {
+      parts.push(
+        `Eingeflossen: ${result.kunden.map((k) => k.name).join(", ")}.`,
+      );
+    }
+    if (result.kundenFehlgeschlagen.length > 0) {
+      parts.push(
+        `NICHT eingeflossen: ${result.kundenFehlgeschlagen
+          .map((f) => `${f.domain} (${f.grund})`)
+          .join("; ")}.`,
+      );
+    }
     setNotice(
-      `Entwurf aus deiner Website${result.kunden.length > 0 ? ` und ${result.kunden.length} Kunden-Websites` : ""} erstellt — bitte prüfen und anpassen, gespeichert wird erst mit „ICP übernehmen“.`,
+      `Entwurf aus deiner Website erstellt. ${parts.join(" ")} Bitte prüfen und anpassen — gespeichert wird erst mit „ICP übernehmen“.`,
     );
     setMode("form");
   };

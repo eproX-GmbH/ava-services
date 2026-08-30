@@ -169,11 +169,23 @@ export function pickSubpageLinks(html: string, base: URL, coreDomain: string): s
   return out.slice(0, MAX_SUBPAGES);
 }
 
-/** Website eines Kandidaten kurz crawlen. null = nicht erreichbar. */
-export async function crawlSite(coreDomain: string): Promise<string | null> {
+/** Website eines Kandidaten kurz crawlen. null = nicht erreichbar.
+ *
+ *  `startUrl` (optional): exakte Einstiegs-URL inkl. Pfad — wichtig fuer
+ *  Kunden-Beispiele im ICP-Assistenten (z. B. der konkrete
+ *  Engel-&-Voelkers-Shop statt der globalen Konzern-Startseite).
+ *  Ohne startUrl wird wie bisher die Domain-Wurzel (+www-Fallback)
+ *  genommen. */
+export async function crawlSite(
+  coreDomain: string,
+  startUrl?: string,
+): Promise<string | null> {
   let homeHtml: string | null = null;
   let base: URL | null = null;
-  for (const candidate of [`https://${coreDomain}`, `https://www.${coreDomain}`]) {
+  const starts = startUrl
+    ? [startUrl, `https://${coreDomain}`]
+    : [`https://${coreDomain}`, `https://www.${coreDomain}`];
+  for (const candidate of starts) {
     homeHtml = await fetchPageText(candidate);
     if (homeHtml) {
       base = new URL(candidate);

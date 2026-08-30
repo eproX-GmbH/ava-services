@@ -10,7 +10,7 @@ import type { GatewayClient } from "../gateway-client";
 import type { LlmProviderManager } from "../providers";
 import type { IcpStore } from "../icp-store";
 import type { Tool } from "../types";
-import { runIcpAnalysis } from "../../discovery/icp-assistant";
+import { runIcpAnalysis, buildCustomerInputs } from "../../discovery/icp-assistant";
 import { domainFromUrl } from "../../discovery/scan";
 import type { CustomerProfileStore } from "../../discovery/customer-profiles";
 
@@ -119,22 +119,29 @@ export function buildIcpTools(deps: IcpToolDeps): Tool[] {
         .optional(),
     }),
     preview: (r) => {
-      const res = r as { error?: string; kundenAnalysiert?: number };
+      const res = r as {
+        error?: string;
+        kundenBeruecksichtigt?: string[];
+        kundenFehlgeschlagen?: unknown[];
+      };
       if (res.error) return res.error;
-      return `ICP-Entwurf erstellt (${res.kundenAnalysiert ?? 0} Kunden analysiert)`;
+      const ok = res.kundenBeruecksichtigt?.length ?? 0;
+      const bad = res.kundenFehlgeschlagen?.length ?? 0;
+      return `ICP-Entwurf erstellt (${ok} Kunden eingeflossen${bad > 0 ? `, ${bad} fehlgeschlagen` : ""})`;
     },
     run: async (args) => {
       const eigeneDomain = domainFromUrl(args.eigeneUrl);
       if (!eigeneDomain) {
         return { error: "Die eigene Website-URL ist nicht verwertbar." };
       }
-      const kundenDomains = (args.kundenUrls ?? [])
-        .map((u) => domainFromUrl(u))
-        .filter((d): d is string => d !== null && d !== eigeneDomain);
+      const { inputs: kunden, unbrauchbar } = buildCustomerInputs(
+        args.kundenUrls ?? [],
+        eigeneDomain,
+      );
       const result = await runIcpAnalysis(
         deps.gateway,
         deps.providers,
-        { eigeneDomain, kundenDomains },
+        { eigeneDomain, kunden },
         () => {
           /* Chat-Pfad: kein Fortschritts-Stream noetig */
         },
@@ -143,10 +150,12 @@ export function buildIcpTools(deps: IcpToolDeps): Tool[] {
       if ("error" in result) return result;
       return {
         hinweisFuerAgent:
-          "ENTWURF — dem Nutzer zusammengefasst zeigen und erst nach Bestaetigung via icp_set speichern (Felder 1:1 uebernehmen).",
+          "ENTWURF — dem Nutzer zusammengefasst zeigen (inkl. NICHT eingeflossener Kunden!) und erst nach Bestaetigung via icp_set speichern (Felder 1:1 uebernehmen).",
         entwurf: result.icp,
         radiusBegruendung: result.radiusBegruendung,
-        kundenAnalysiert: result.kunden.length,
+        kundenBeruecksichtigt: result.kunden.map((k) => `${k.name} (${k.domain})`),
+        kundenFehlgeschlagen: result.kundenFehlgeschlagen,
+        unbrauchbareUrls: unbrauchbar,
         hinweise: result.hinweise,
       };
     },

@@ -449,6 +449,7 @@ const api = {
             branche: string;
             standort: string;
           }>;
+          kundenFehlgeschlagen: Array<{ domain: string; grund: string }>;
           radiusBegruendung: string | null;
           hinweise: string[];
         }

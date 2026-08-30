@@ -174,7 +174,7 @@ import { IcpStore } from "./agent/icp-store";
 import { MatchStore } from "./discovery/match-store";
 import { CustomerProfileStore } from "./discovery/customer-profiles";
 import { RadarSupervisor } from "./discovery/radar-supervisor";
-import { runIcpAnalysis } from "./discovery/icp-assistant";
+import { runIcpAnalysis, buildCustomerInputs } from "./discovery/icp-assistant";
 import { domainFromUrl } from "./discovery/scan";
 import { listCandidatesWithMatches } from "./discovery/list";
 import { decideCandidates, type DecideInput } from "./discovery/decide";
@@ -4489,15 +4489,16 @@ app.whenReady().then(async () => {
       if (!eigeneDomain) {
         return { error: "Die eigene Website-URL ist nicht verwertbar." };
       }
-      const kundenDomains = (args?.kundenUrls ?? [])
-        .map((u) => domainFromUrl(u))
-        .filter((d): d is string => d !== null && d !== eigeneDomain);
+      const { inputs: kunden, unbrauchbar } = buildCustomerInputs(
+        args?.kundenUrls ?? [],
+        eigeneDomain,
+      );
       icpAnalysisRunning = true;
       try {
         const result = await runIcpAnalysis(
           gatewayClient,
           providers,
-          { eigeneDomain, kundenDomains },
+          { eigeneDomain, kunden },
           (p) => {
             try {
               e.sender.send("icpAssistant:progress", p);
@@ -4518,9 +4519,27 @@ app.whenReady().then(async () => {
           summary:
             "error" in result
               ? `ICP-Analyse fehlgeschlagen: ${result.error}`
-              : `ICP-Analyse: ${eigeneDomain} + ${result.kunden.length} Kunden-Websites`,
-          metadata: { eigeneDomain, kundenAnzahl: kundenDomains.length },
+              : `ICP-Analyse ${eigeneDomain}: ${result.kunden.length}/${kunden.length} Kunden-Websites eingeflossen` +
+                (result.kundenFehlgeschlagen.length > 0
+                  ? ` (fehlgeschlagen: ${result.kundenFehlgeschlagen.map((f) => f.domain).join(", ")})`
+                  : ""),
+          metadata: {
+            eigeneDomain,
+            kundenAnzahl: kunden.length,
+            ...( "error" in result
+              ? {}
+              : {
+                  beruecksichtigt: result.kunden.map((k) => `${k.name} (${k.domain})`),
+                  fehlgeschlagen: result.kundenFehlgeschlagen,
+                }),
+            unbrauchbareUrls: unbrauchbar,
+          },
         });
+        if (!("error" in result) && unbrauchbar.length > 0) {
+          result.hinweise.push(
+            `Nicht als URL verwertbar: ${unbrauchbar.join(", ")}.`,
+          );
+        }
         return result;
       } finally {
         icpAnalysisRunning = false;

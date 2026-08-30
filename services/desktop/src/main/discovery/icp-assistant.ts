@@ -14,6 +14,7 @@ import type { GatewayClient } from "../agent/gateway-client";
 import type { LlmProviderManager } from "../agent/providers";
 import type { IcpProfile, IcpKundenBeispiel } from "../agent/icp-store";
 import { crawlSite, embedText } from "./profiler";
+import { domainFromUrl } from "./scan";
 import type { CustomerProfileStore } from "./customer-profiles";
 import {
   buildMessages,
@@ -45,10 +46,19 @@ export interface CustomerSiteAnalysis {
   leistungen: string[];
 }
 
+export interface CustomerInput {
+  /** Normierte Kern-Domain (ID/Dedup). */
+  domain: string;
+  /** Exakte vom Nutzer angegebene URL (inkl. Pfad) — Crawl-Einstieg. */
+  url: string;
+}
+
 export interface IcpDraft {
   icp: Partial<IcpProfile>;
   eigene: OwnSiteAnalysis | null;
   kunden: CustomerSiteAnalysis[];
+  /** Kunden-Websites, die NICHT eingeflossen sind — mit Grund. */
+  kundenFehlgeschlagen: Array<{ domain: string; grund: string }>;
   radiusBegruendung: string | null;
   hinweise: string[];
 }
@@ -131,10 +141,12 @@ async function analyzeOwnSite(
 
 async function analyzeCustomerSite(
   providers: LlmProviderManager,
-  domain: string,
-): Promise<CustomerSiteAnalysis | null> {
-  const text = await crawlSite(domain);
-  if (!text) return null;
+  cand: CustomerInput,
+): Promise<CustomerSiteAnalysis | { fehler: "crawl" | "llm" }> {
+  // Exakte URL crawlen (inkl. Pfad!) — die angegebene Seite IST der
+  // Kunde (z. B. ein konkreter Shop), nicht die Konzern-Startseite.
+  const text = await crawlSite(cand.domain, cand.url);
+  if (!text) return { fehler: "crawl" };
   const system =
     "Du analysierst die Website eines Unternehmens (Bestandskunde eines " +
     "B2B-Anbieters). Extrahiere NUR Belegbares, KEINE Personennamen. " +
@@ -142,14 +154,19 @@ async function analyzeCustomerSite(
     'Antworte NUR als JSON: {"name": "Firmenname", "branche": "...", ' +
     '"groessenIndiz": "z. B. Mitarbeiter/Standorte, falls erkennbar, ' +
     'sonst leer", "standort": "Ort oder leer", "leistungen": ["..."]}';
-  const result = await llmJson(
-    providers,
-    system,
-    `Website-Text von ${domain}:\n${text.slice(0, 20_000)}`,
-    "icpcust",
-    customerSchema,
-  );
-  return result ? { ...result, domain } : null;
+  // Bis zu 2 Versuche — unparsbare/schema-widrige KI-Antworten sollen
+  // einen Kunden nicht still aus dem ICP werfen.
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const result = await llmJson(
+      providers,
+      system,
+      `Website-Text von ${cand.url}:\n${text.slice(0, 20_000)}`,
+      "icpcust",
+      customerSchema,
+    );
+    if (result) return { ...result, domain: cand.domain };
+  }
+  return { fehler: "llm" };
 }
 
 // ---- Schritt 3: Synthese ---------------------------------------------------
@@ -257,10 +274,36 @@ export function renderCustomerProfileText(k: CustomerSiteAnalysis): string {
   return lines.join("\n");
 }
 
+/** Rohe Nutzer-URLs → CustomerInputs: exakte URL BEHALTEN (Crawl-
+ *  Einstieg), Kern-Domain normieren (ID/Dedup), eigene Domain und
+ *  Unbrauchbares aussortieren. */
+export function buildCustomerInputs(
+  rawUrls: string[],
+  eigeneDomain: string,
+): { inputs: CustomerInput[]; unbrauchbar: string[] } {
+  const inputs: CustomerInput[] = [];
+  const unbrauchbar: string[] = [];
+  for (const raw of rawUrls) {
+    const trimmed = raw.trim();
+    if (!trimmed) continue;
+    const domain = domainFromUrl(trimmed);
+    if (!domain) {
+      unbrauchbar.push(trimmed.slice(0, 120));
+      continue;
+    }
+    if (domain === eigeneDomain) continue;
+    inputs.push({
+      domain,
+      url: trimmed.startsWith("http") ? trimmed : `https://${trimmed}`,
+    });
+  }
+  return { inputs, unbrauchbar };
+}
+
 export async function runIcpAnalysis(
   gateway: GatewayClient,
   providers: LlmProviderManager,
-  args: { eigeneDomain: string; kundenDomains: string[] },
+  args: { eigeneDomain: string; kunden: CustomerInput[] },
   onProgress: (p: IcpAnalysisProgress) => void,
   /** I5 — Kundenprofile (Text + Embedding) fuer das Match-Signal
    *  lokal ablegen. Optional (Tests). */
@@ -269,8 +312,15 @@ export async function runIcpAnalysis(
   if (!providers.getStatus().ready) {
     return { error: "Kein KI-Modell bereit — bitte zuerst ein Modell einrichten." };
   }
-  const kundenDomains = [...new Set(args.kundenDomains)].slice(0, 5);
-  const total = 2 + kundenDomains.length + 1; // eigene + je Kunde + Synthese/Radius
+  const seenDomains = new Set<string>();
+  const kundenInputs = args.kunden
+    .filter((k) => {
+      if (seenDomains.has(k.domain)) return false;
+      seenDomains.add(k.domain);
+      return true;
+    })
+    .slice(0, 5);
+  const total = 2 + kundenInputs.length + 1; // eigene + je Kunde + Synthese/Radius
   let step = 0;
   const hinweise: string[] = [];
   const tick = (text: string): void => {
@@ -291,30 +341,49 @@ export async function runIcpAnalysis(
 
   // 2. Kunden-Websites (Concurrency 2 — schont fremde Server).
   const kunden: CustomerSiteAnalysis[] = [];
-  const queue = [...kundenDomains];
+  const kundenFehlgeschlagen: Array<{ domain: string; grund: string }> = [];
+  const queue = [...kundenInputs];
   const workers = Array.from({ length: 2 }, async () => {
     for (;;) {
-      const domain = queue.shift();
-      if (!domain) return;
-      tick(`Analysiere Kunden-Website ${domain} …`);
-      const result = await analyzeCustomerSite(providers, domain);
-      if (result) {
-        kunden.push(result);
-        // I5 — Profil + Embedding lokal ablegen (Match-Signal
-        // "aehnlich zu deinen Top-Kunden"). Best-effort.
-        if (customerStore) {
-          const profileText = renderCustomerProfileText(result);
-          customerStore.set(domain, {
-            profileText,
-            embedding: await embedText(profileText),
-          });
-        }
-      } else {
-        hinweise.push(`${domain} konnte nicht analysiert werden — uebersprungen.`);
+      const cand = queue.shift();
+      if (!cand) return;
+      tick(`Analysiere Kunden-Website ${cand.domain} …`);
+      const result = await analyzeCustomerSite(providers, cand);
+      if ("fehler" in result) {
+        kundenFehlgeschlagen.push({
+          domain: cand.domain,
+          grund:
+            result.fehler === "crawl"
+              ? "Website nicht erreichbar oder nicht lesbar"
+              : "KI-Analyse fehlgeschlagen (2 Versuche) — bitte erneut analysieren",
+        });
+        continue;
+      }
+      kunden.push(result);
+      // I5 — Profil + Embedding lokal ablegen (Match-Signal
+      // "aehnlich zu deinen Top-Kunden"). Best-effort.
+      if (customerStore) {
+        const profileText = renderCustomerProfileText(result);
+        customerStore.set(cand.domain, {
+          profileText,
+          embedding: await embedText(profileText),
+        });
       }
     }
   });
   await Promise.all(workers);
+  for (const f of kundenFehlgeschlagen) {
+    hinweise.push(`${f.domain}: ${f.grund}.`);
+  }
+  // Duenne-Basis-Warnung: weniger als die Haelfte der Kunden analysierbar.
+  if (
+    kundenInputs.length > 0 &&
+    kunden.length < Math.ceil(kundenInputs.length / 2)
+  ) {
+    hinweise.push(
+      `Nur ${kunden.length} von ${kundenInputs.length} Kunden-Websites flossen ein — das ICP steht auf duenner Basis. URLs pruefen und erneut analysieren lohnt sich.`,
+    );
+  }
 
   // 3. Synthese + Radius.
   tick("Erstelle dein Idealkundenprofil …");
@@ -360,5 +429,5 @@ export async function runIcpAnalysis(
     kundenBeispiele,
     quelle: "assistent",
   };
-  return { icp, eigene, kunden, radiusBegruendung, hinweise };
+  return { icp, eigene, kunden, kundenFehlgeschlagen, radiusBegruendung, hinweise };
 }
