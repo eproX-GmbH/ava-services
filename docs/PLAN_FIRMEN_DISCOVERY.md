@@ -327,9 +327,20 @@ Watermarks, Audit).
   Tages-Cap über bestehende Quota (`ProxyQuotaOverride`).
 - **O2 — ENTSCHIEDEN:** Overpass v1 über öffentliche Instanz mit
   Throttle; Wechsel auf eigene Instanz erst bei Volumen.
-- **O3 — ENTSCHIEDEN:** Radar für **alle Tenants**, aber mit
-  **konfigurierbarer Begrenzung pro Plan & Tag** (Scans/Tag,
-  Kandidaten/Scan). Umsetzung: Limits zentral im Gateway
+- **O3 — ENTSCHIEDEN, UMGESETZT v0.1.466:** Radar für **alle Tenants**
+  mit Plan-Staffelung, zentral im Gateway erzwungen (`PLAN_DISCOVERY`
+  in lib/discovery.ts): free 1 Scan/Woche · 25 km · 1 Gebiet · SERP 8 ·
+  Cap 50; starter 1/Tag · 50 km · 2 Gebiete · SERP 20 · Cap 150; pro
+  4/Tag · 100 km · 5 Gebiete · SERP 30 · Cap 300. **Erst-Backlog-Scan
+  läuft für alle Pläne mit Pro-Parametern und zählt nicht gegen
+  Quota/Gebiete** (isInitial-Flag). Desktop: SERP-Budget-Split
+  (Planner/Register/Nachschlag, LLM-Planner erst ab Budget ≥12),
+  Alert-Politik `policyForTier` (free Top 3/Woche ab Score 75, starter
+  10/Tag ab 75, pro sofort ab 65 — Schwelle wird für niedrige Pläne NICHT
+  gesenkt: weniger, aber die besten), Automatik-Klammer (free aus,
+  6-h-Intervall nur Pro). Mini-Profile bleiben für alle ungedrosselt
+  (lokales Compute, geteilter Pool). `DiscoveryQuotaOverride` bleibt
+  Operator-Notausgang. Ursprüngliche Planung: Limits zentral im Gateway
   (Muster `ProxyQuotaOverride`/`TenantBilling` — Default je Plan,
   Override je Tenant), Prüfung beim Scan-Start.
 - **O4 — ENTSCHIEDEN:** Nur öffentliche Firmendaten; **keine

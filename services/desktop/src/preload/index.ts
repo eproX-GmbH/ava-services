@@ -415,16 +415,16 @@ const api = {
       ipcRenderer.invoke("discovery:setIcp", patch),
     getRadarConfig: (): Promise<{
       enabled: boolean;
-      intervalHours: 24 | 168;
+      intervalHours: 6 | 24 | 168;
       lastRunAt: string | null;
       lastOutcome: string | null;
     } | null> => ipcRenderer.invoke("discovery:getRadarConfig"),
     setRadarConfig: (patch: {
       enabled?: boolean;
-      intervalHours?: 24 | 168;
+      intervalHours?: 6 | 24 | 168;
     }): Promise<{
       enabled: boolean;
-      intervalHours: 24 | 168;
+      intervalHours: 6 | 24 | 168;
       lastRunAt: string | null;
       lastOutcome: string | null;
     } | null> => ipcRenderer.invoke("discovery:setRadarConfig", patch),

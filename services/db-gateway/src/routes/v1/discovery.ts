@@ -41,6 +41,11 @@ const StartScanResponseShape = z
   .object({
     scanId: z.string(),
     maxCandidatesPerScan: z.number(),
+    /** v0.1.466 — SERP-Calls, die der Desktop fuer diesen Scan
+     *  ausgeben darf (Plan-Staffelung; Erst-Scan = Pro-Level). */
+    serpBudget: z.number(),
+    tier: z.string(),
+    isInitial: z.boolean(),
     maxScansPerDay: z.number(),
     scansUsedToday: z.number(),
   })
@@ -57,7 +62,7 @@ const startScanRoute = createRoute({
         "application/json": {
           schema: z.object({
             ort: z.string().min(2).max(120),
-            radiusKm: z.number().int().min(1).max(200),
+            radiusKm: z.number().int().min(1).max(250),
           }),
         },
       },
@@ -70,7 +75,11 @@ const startScanRoute = createRoute({
     },
     429: {
       content: { "application/json": { schema: ErrorShape } },
-      description: "Tages-Quota erschoepft",
+      description: "Scan-Quota des Plans erschoepft",
+    },
+    400: {
+      content: { "application/json": { schema: ErrorShape } },
+      description: "Radius oder Gebiete-Limit des Plans ueberschritten",
     },
     401: {
       content: { "application/json": { schema: ErrorShape } },
@@ -92,16 +101,31 @@ discoveryRouter.openapi(startScanRoute, async (c) => {
     radiusKm,
   });
   if (!result.ok) {
+    const l = result.limits;
+    if (result.reason === "radius") {
+      throw new HTTPException(400, {
+        message: `RADIUS_LIMIT: Der ${l.tier}-Plan erlaubt maximal ${l.maxRadiusKm} km Radius.`,
+      });
+    }
+    if (result.reason === "gebiete") {
+      throw new HTTPException(400, {
+        message: `GEBIETE_LIMIT: Der ${l.tier}-Plan erlaubt ${l.maxGebiete} verschiedene(s) Suchgebiet(e) pro Woche.`,
+      });
+    }
+    const fenster = l.windowDays === 1 ? "heute" : `in ${l.windowDays} Tagen`;
     throw new HTTPException(429, {
-      message: `Discovery-Tageslimit erreicht (${result.scansUsedToday}/${result.limits.maxScansPerDay} Scans heute)`,
+      message: `SCAN_QUOTA: Scan-Limit des ${l.tier}-Plans erreicht (${result.scansUsedInWindow}/${l.maxScansPerWindow} ${fenster}).`,
     });
   }
   return c.json(
     {
       scanId: result.scanId,
-      maxCandidatesPerScan: result.limits.maxCandidatesPerScan,
-      maxScansPerDay: result.limits.maxScansPerDay,
-      scansUsedToday: result.scansUsedToday,
+      maxCandidatesPerScan: result.maxCandidatesPerScan,
+      serpBudget: result.serpBudget,
+      tier: result.limits.tier,
+      isInitial: result.isInitial,
+      maxScansPerDay: result.limits.maxScansPerWindow,
+      scansUsedToday: result.scansUsedInWindow,
     },
     201,
   );

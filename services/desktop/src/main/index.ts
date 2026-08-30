@@ -174,7 +174,7 @@ import { IcpStore } from "./agent/icp-store";
 import { MatchStore } from "./discovery/match-store";
 import { CustomerProfileStore } from "./discovery/customer-profiles";
 import { RadarSupervisor } from "./discovery/radar-supervisor";
-import { RadarAlertEmitter } from "./discovery/radar-alerts";
+import { RadarAlertEmitter, policyForTier } from "./discovery/radar-alerts";
 import { runIcpAnalysis, buildCustomerInputs } from "./discovery/icp-assistant";
 import { fillProfileFromIcp } from "./agent/icp-profile-sync";
 import { domainFromUrl } from "./discovery/scan";
@@ -900,6 +900,35 @@ externalServiceMonitor.on("status", (status: ExternalServicesStatus) => {
 // gateway client so the BYO-key callback (Option D) can read the
 // active provider's key on dispatch HTTP requests.
 const providers = new LlmProviderManager(ollama);
+
+// v0.1.466 — Plan-Tier-Cache (Radar-Staffelung). Synchron lesbar fuer
+// Alert-Politik + Automatik-Klammer; Refresh lazy alle 30 Minuten via
+// GET /v1/usage. null = noch unbekannt (Konsumenten fallen dann auf
+// ihr Legacy-Verhalten zurueck, nie auf kuenstliche Verknappung).
+let cachedTenantTier: "free" | "starter" | "pro" | "enterprise" | null = null;
+let tierFetchStartedAt = 0;
+function getTenantTierCached(): typeof cachedTenantTier {
+  if (Date.now() - tierFetchStartedAt > 30 * 60_000) {
+    tierFetchStartedAt = Date.now();
+    void gatewayClient
+      .request<{ tier?: string }>("/v1/usage")
+      .then((u) => {
+        if (
+          u.tier === "free" ||
+          u.tier === "starter" ||
+          u.tier === "pro" ||
+          u.tier === "enterprise"
+        ) {
+          cachedTenantTier = u.tier;
+        }
+      })
+      .catch(() => {
+        /* offline/ausgeloggt — letzter bekannter Wert bleibt */
+      });
+  }
+  return cachedTenantTier;
+}
+
 const gatewayClient = new GatewayClient({
   baseUrl: GATEWAY_URL,
   getAccessToken: () => auth.getAccessToken(),
@@ -2455,6 +2484,8 @@ app.whenReady().then(async () => {
       notifications.notifyForAlert(a);
     },
     onAlertsChanged: broadcastAlertsChanged,
+    // v0.1.466 — Plan-Politik: Schwelle/Budget nach Abo-Stufe.
+    getPolicy: () => policyForTier(getTenantTierCached()),
   });
   radarSupervisor = new RadarSupervisor({
     gateway: gatewayClient,
@@ -2464,6 +2495,8 @@ app.whenReady().then(async () => {
     customerStore: customerProfiles,
     radarAlerts: radarAlertEmitter,
     isSignedIn: () => auth.getStatus().signedIn,
+    // v0.1.466 — Automatik-Klammer nach Plan (free: aus, 6h nur Pro).
+    getTier: () => getTenantTierCached(),
     onAudit: ({ action, severity, summary, metadata }) => {
       audit({
         actorType: "system",
@@ -4647,7 +4680,7 @@ app.whenReady().then(async () => {
   );
   ipcMain.handle(
     "discovery:setRadarConfig",
-    (_e, patch: { enabled?: boolean; intervalHours?: 24 | 168 }) => {
+    (_e, patch: { enabled?: boolean; intervalHours?: 6 | 24 | 168 }) => {
       if (!radarSupervisor) return null;
       const next = radarSupervisor.setConfig(patch ?? {});
       audit({
@@ -4659,7 +4692,7 @@ app.whenReady().then(async () => {
         subjectType: null,
         subjectId: null,
         summary: next.enabled
-          ? `Radar-Automatik AN (${next.intervalHours === 168 ? "wöchentlich" : "täglich"})`
+          ? `Radar-Automatik AN (${next.intervalHours === 168 ? "wöchentlich" : next.intervalHours === 6 ? "4x täglich" : "täglich"})`
           : "Radar-Automatik AUS",
         metadata: { enabled: next.enabled, intervalHours: next.intervalHours },
       });

@@ -20,10 +20,43 @@ import type { MatchResultRow } from "./matcher";
 const HOT_SCORE = 70;
 const MAX_ALERTS_PER_EMIT = 5;
 
+// ---- Plan-Politik (v0.1.466) -----------------------------------------------
+//
+// "Alle Tiers sehen dieselbe Rangliste, aber unterschiedlich viel und
+// unterschiedlich schnell": Free bekommt die Top-Treffer eines
+// Wochen-Budgets, Starter ein Tages-Budget, Pro alles ab niedrigerer
+// Schwelle sofort. Die Schwelle wird fuer niedrigere Plaene NICHT
+// gesenkt — Free-Treffer sind per Konstruktion die relevantesten.
+
+export interface RadarAlertPolicy {
+  threshold: number;
+  maxPerEmit: number;
+  /** Alert-Budget je Zeitfenster; null = unbegrenzt. */
+  budget: { max: number; windowDays: number } | null;
+}
+
+export function policyForTier(tier: string | null): RadarAlertPolicy {
+  switch (tier) {
+    case "free":
+      return { threshold: 75, maxPerEmit: 3, budget: { max: 3, windowDays: 7 } };
+    case "starter":
+      return { threshold: 75, maxPerEmit: 5, budget: { max: 10, windowDays: 1 } };
+    case "pro":
+    case "enterprise":
+      return { threshold: 65, maxPerEmit: 10, budget: null };
+    default:
+      // Tier (noch) unbekannt → bisheriges Verhalten.
+      return { threshold: HOT_SCORE, maxPerEmit: MAX_ALERTS_PER_EMIT, budget: null };
+  }
+}
+
 export interface RadarAlertEmitterDeps {
   alerts: AlertsStore;
   notify: (alert: Alert) => void;
   onAlertsChanged: () => void;
+  /** v0.1.466 — Plan-Politik (synchron aus dem Tier-Cache in index.ts).
+   *  Fehlt der Hook: Legacy-Verhalten. */
+  getPolicy?: () => RadarAlertPolicy;
 }
 
 export interface EmitResult {
@@ -72,14 +105,62 @@ export class RadarAlertEmitter {
     }
   }
 
-  /** Heisse Treffer (Score >= 70) aus einem Match-Lauf melden. */
+  // Alert-Budget-Fenster (Plan-Politik): {windowStart, count}.
+  private budgetState: { windowStart: number; count: number } | null = null;
+
+  private budgetPath(): string {
+    return join(this.dir, "radar-alert-budget.json");
+  }
+
+  private loadBudget(): { windowStart: number; count: number } {
+    if (this.budgetState) return this.budgetState;
+    try {
+      const raw = JSON.parse(
+        readFileSync(this.budgetPath(), "utf8"),
+      ) as { windowStart?: number; count?: number };
+      this.budgetState = {
+        windowStart: typeof raw.windowStart === "number" ? raw.windowStart : Date.now(),
+        count: typeof raw.count === "number" ? raw.count : 0,
+      };
+    } catch {
+      this.budgetState = { windowStart: Date.now(), count: 0 };
+    }
+    return this.budgetState;
+  }
+
+  private persistBudget(): void {
+    try {
+      mkdirSync(this.dir, { recursive: true });
+      writeFileSync(this.budgetPath(), JSON.stringify(this.budgetState), "utf8");
+    } catch {
+      /* best-effort */
+    }
+  }
+
+  /** Wieviele Alerts das Plan-Budget JETZT noch zulaesst. */
+  private budgetRoom(policy: RadarAlertPolicy): number {
+    if (!policy.budget) return Number.MAX_SAFE_INTEGER;
+    const st = this.loadBudget();
+    const windowMs = policy.budget.windowDays * 86_400_000;
+    if (Date.now() - st.windowStart >= windowMs) {
+      st.windowStart = Date.now();
+      st.count = 0;
+    }
+    return Math.max(0, policy.budget.max - st.count);
+  }
+
+  /** Heisse Treffer aus einem Match-Lauf melden (Schwelle + Budget
+   *  nach Plan-Politik; beste Scores zuerst). */
   emit(ergebnisse: MatchResultRow[]): EmitResult {
+    const policy = this.deps.getPolicy?.() ?? policyForTier(null);
     const alerted = this.getAlerted();
-    const hot = ergebnisse.filter((r) => r.score >= HOT_SCORE);
+    const hot = ergebnisse.filter((r) => r.score >= policy.threshold);
     const bereitsGemeldet = hot.filter((r) => alerted.has(r.discoveryId)).length;
+    const room = Math.min(policy.maxPerEmit, this.budgetRoom(policy));
     const neu = hot
       .filter((r) => !alerted.has(r.discoveryId))
-      .slice(0, MAX_ALERTS_PER_EMIT);
+      .sort((a, b) => b.score - a.score)
+      .slice(0, room);
     for (const h of neu) {
       const alert = this.deps.alerts.add({
         tenantId: null,
@@ -105,6 +186,11 @@ export class RadarAlertEmitter {
       }
     }
     if (neu.length > 0) {
+      if (policy.budget) {
+        const st = this.loadBudget();
+        st.count += neu.length;
+        this.persistBudget();
+      }
       this.persist();
       this.deps.onAlertsChanged();
     }

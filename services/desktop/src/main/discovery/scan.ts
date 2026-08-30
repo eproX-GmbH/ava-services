@@ -29,6 +29,25 @@ import {
 const OVERPASS_URL =
   process.env.AVA_OVERPASS_URL ?? "https://overpass-api.de/api/interpreter";
 const MAX_SERP_QUERIES = 8;
+
+/**
+ * v0.1.466 — Plan-Staffelung: Das Gateway gibt pro Scan ein SERP-Budget
+ * vor (free 8, starter 20, pro/Erst-Scan 30). Der Split verteilt es auf
+ * die drei SERP-Konsumenten; der LLM-Query-Planner lohnt erst ab einem
+ * Budget von ~12 (darunter: "Branche Ort"-Fallback).
+ */
+function splitSerpBudget(budget: number): {
+  planner: number;
+  register: number;
+  followup: number;
+  usePlanner: boolean;
+} {
+  const b = Math.max(1, Math.floor(budget));
+  const planner = Math.min(15, Math.max(2, Math.floor(b * 0.5)));
+  const register = Math.min(12, Math.max(1, Math.floor(b * 0.35)));
+  const followup = Math.min(6, Math.max(0, b - planner - register));
+  return { planner, register, followup, usePlanner: b >= 12 };
+}
 const BATCH_SIZE = 100;
 
 export interface ScanArgs {
@@ -237,6 +256,7 @@ async function planSerpQueries(
   ort: string,
   geo: GeoResponse,
   hinweise: string[],
+  maxQueries: number = MAX_PLANNED_QUERIES,
 ): Promise<string[] | null> {
   if (!providers.getStatus().ready) return null;
   // Groessere Orte zuerst (plz-Anzahl als Proxy), max 12 zur Auswahl.
@@ -279,7 +299,7 @@ async function planSerpQueries(
       abortEarly: true,
     });
     return queries && queries.length > 0
-      ? [...new Set(queries)].slice(0, MAX_PLANNED_QUERIES)
+      ? [...new Set(queries)].slice(0, Math.min(maxQueries, MAX_PLANNED_QUERIES))
       : null;
   } catch (err) {
     hinweise.push(
@@ -472,13 +492,14 @@ async function fetchRegisterCandidates(
   ort: string,
   radiusKm: number,
   hinweise: string[],
+  maxLookups: number = MAX_REGISTER_LOOKUPS,
 ): Promise<{ candidates: Candidate[]; lookups: number }> {
   let regs: Array<{ companyId: string; name: string; location: string }>;
   try {
     const qs = new URLSearchParams({
       near: ort,
       radiusKm: String(radiusKm),
-      limit: String(MAX_REGISTER_LOOKUPS),
+      limit: String(Math.min(maxLookups, MAX_REGISTER_LOOKUPS)),
     });
     const r = await gateway.request<{
       candidates: Array<{ companyId: string; name: string; location: string }>;
@@ -555,28 +576,67 @@ export async function runDiscoveryScan(
     return { error: `Ortsaufloesung fehlgeschlagen: ${msg}` };
   }
 
-  // 2. Scan-Start (Quota-Gate).
-  let scan: { scanId: string; maxCandidatesPerScan: number };
+  // 2. Scan-Start (Quota-Gate — Plan-Staffelung v0.1.466). Das Gateway
+  //    liefert das SERP-Budget und den Kandidaten-Cap fuer DIESEN Scan
+  //    (Erst-Backlog-Scan: Pro-Level, zaehlt nicht gegen die Quota).
+  let scan: {
+    scanId: string;
+    maxCandidatesPerScan: number;
+    serpBudget?: number;
+    tier?: string;
+    isInitial?: boolean;
+  };
   try {
-    scan = await gateway.request<{ scanId: string; maxCandidatesPerScan: number }>(
+    scan = await gateway.request<{
+      scanId: string;
+      maxCandidatesPerScan: number;
+      serpBudget?: number;
+      tier?: string;
+      isInitial?: boolean;
+    }>(
       "/v1/discovery/scans",
       { method: "POST", body: { ort: args.ort, radiusKm: args.radiusKm } },
     );
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    if (msg.includes("429")) {
-      return { error: "Discovery-Tageslimit erreicht — morgen wieder verfuegbar." };
+    if (msg.includes("SCAN_QUOTA") || msg.includes("429")) {
+      return {
+        error:
+          "Scan-Limit deines Plans erreicht — spaeter wieder verfuegbar. " +
+          "Mehr Scans, groessere Radien und mehrere Gebiete gibt es in " +
+          "hoeheren Plaenen (Einstellungen → Abo).",
+      };
+    }
+    if (msg.includes("RADIUS_LIMIT") || msg.includes("GEBIETE_LIMIT")) {
+      // Gateway-Message ist bereits deutsch und nennt das Limit.
+      return { error: msg.replace(/^.*?(RADIUS|GEBIETE)_LIMIT:\s*/, "") };
     }
     return { error: `Scan-Start fehlgeschlagen: ${msg}` };
   }
+  // Aeltere Gateways ohne Plan-Staffelung: volles O1-Budget.
+  const serpBudget = scan.serpBudget ?? 30;
+  const split = splitSerpBudget(serpBudget);
+  if (scan.isInitial) {
+    hinweise.push(
+      "Erst-Backlog-Scan: einmalig mit vollen Pro-Parametern, zaehlt nicht gegen dein Scan-Kontingent.",
+    );
+  }
 
   // 2b. SERP-Recherche-Plan: LLM-Planner aus dem ICP-Kontext (wie ein
-  //     menschlicher Rechercheur), Fallback "Branche Ort". Budget O1:
-  //     max 15 Planner-Queries + max 12 Register-Lookups = 27 < 30.
+  //     menschlicher Rechercheur), Fallback "Branche Ort". Das Budget
+  //     kommt aus der Plan-Staffelung; unter ~12 Calls lohnt der
+  //     Planner nicht (Fallback-Queries sind dann guenstiger).
   let queries: string[] = [];
   let queryPlanung: "llm" | "fallback" | "keine" = "keine";
-  if (args.icpText && providers) {
-    const planned = await planSerpQueries(providers, args.icpText, args.ort, geo, hinweise);
+  if (args.icpText && providers && split.usePlanner) {
+    const planned = await planSerpQueries(
+      providers,
+      args.icpText,
+      args.ort,
+      geo,
+      hinweise,
+      split.planner,
+    );
     if (planned) {
       queries = planned;
       queryPlanung = "llm";
@@ -586,7 +646,7 @@ export async function runDiscoveryScan(
     queries = args.branchen
       .map((b) => b.trim())
       .filter((b) => b.length >= 2)
-      .slice(0, MAX_SERP_QUERIES)
+      .slice(0, Math.min(MAX_SERP_QUERIES, split.planner))
       .map((b) => `${b} ${args.ort}`);
     queryPlanung = "fallback";
   }
@@ -606,7 +666,7 @@ export async function runDiscoveryScan(
           queries: [] as string[],
           ohneWebsite: [] as PlacesHitOhneWebsite[],
         }),
-    fetchRegisterCandidates(gateway, args.ort, args.radiusKm, hinweise),
+    fetchRegisterCandidates(gateway, args.ort, args.radiusKm, hinweise, split.register),
   ]);
 
   // 3b. Website-Nachschlag — nur bei duenner Ausbeute. Budget: O1 laesst
@@ -617,7 +677,10 @@ export async function runDiscoveryScan(
     serp.ohneWebsite.length > 0 &&
     serp.candidates.length < SPARSE_SERP_THRESHOLD
   ) {
-    const budget = Math.max(0, 30 - serp.queries.length - register.lookups);
+    const budget = Math.min(
+      split.followup,
+      Math.max(0, serpBudget - serp.queries.length - register.lookups),
+    );
     const resolved = await resolveWebsitesViaSerp(
       gateway,
       serp.ohneWebsite,

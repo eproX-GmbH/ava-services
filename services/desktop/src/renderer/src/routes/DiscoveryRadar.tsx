@@ -33,7 +33,7 @@ export function DiscoveryRadar(): JSX.Element {
   const [icpGesetzt, setIcpGesetzt] = useState<boolean>(true);
   const [radarConfig, setRadarConfig] = useState<{
     enabled: boolean;
-    intervalHours: 24 | 168;
+    intervalHours: 6 | 24 | 168;
     lastRunAt: string | null;
     lastOutcome: string | null;
   } | null>(null);
@@ -226,11 +226,17 @@ export function DiscoveryRadar(): JSX.Element {
             onChange={(e) =>
               void window.api.discovery
                 .setRadarConfig({
-                  intervalHours: Number(e.target.value) === 168 ? 168 : 24,
+                  intervalHours:
+                    Number(e.target.value) === 168
+                      ? 168
+                      : Number(e.target.value) === 6
+                        ? 6
+                        : 24,
                 })
                 .then((c) => setRadarConfig(c))
             }
           >
+            <option value={6}>4x täglich (Pro)</option>
             <option value={24}>täglich</option>
             <option value={168}>wöchentlich</option>
           </select>

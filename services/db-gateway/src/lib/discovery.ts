@@ -75,6 +75,9 @@ async function ensureSchema(pool: Pool): Promise<void> {
       "maxScansPerDay"       INTEGER,
       "maxCandidatesPerScan" INTEGER
     );
+    -- v0.1.466 — Erst-Backlog-Scan: zaehlt NICht gegen Quota/Gebiete.
+    ALTER TABLE "DiscoveryScan"
+      ADD COLUMN IF NOT EXISTS "isInitial" BOOLEAN NOT NULL DEFAULT FALSE;
   `);
   schemaReady = true;
 }
@@ -84,16 +87,86 @@ function envInt(name: string, fallback: number): number {
   return Number.isFinite(v) && v > 0 ? Math.floor(v) : fallback;
 }
 
+// ---- Plan-Staffelung (v0.1.466, PLAN_FIRMEN_DISCOVERY.md O3) ---------------
+//
+// Der teure Teil eines Scans sind die SERP-Calls (Operator-Kosten) —
+// genau die werden pro Plan gestaffelt, zusammen mit Frequenz, Radius
+// und Gebieten. Mini-Profile (lokales Compute) bleiben bewusst fuer
+// alle ungedrosselt: der Kandidaten-Pool ist geteilt.
+//
+// Free zaehlt pro WOCHE (windowDays 7), bezahlte Plaene pro Tag.
+// DiscoveryQuotaOverride bleibt der Operator-Notausgang und schlaegt
+// die Plan-Defaults fuer Scans/Kandidaten.
+
 export interface DiscoveryLimits {
-  maxScansPerDay: number;
+  tier: string;
+  /** Scans pro Zeitfenster (windowDays). */
+  maxScansPerWindow: number;
+  windowDays: number;
   maxCandidatesPerScan: number;
+  /** SERP-Calls, die der Desktop fuer DIESEN Scan ausgeben darf. */
+  serpBudget: number;
+  maxRadiusKm: number;
+  /** Verschiedene Orte (7-Tage-Fenster). */
+  maxGebiete: number;
+}
+
+const PLAN_DISCOVERY: Record<string, Omit<DiscoveryLimits, "tier">> = {
+  free: {
+    maxScansPerWindow: 1,
+    windowDays: 7,
+    maxCandidatesPerScan: 50,
+    serpBudget: 8,
+    maxRadiusKm: 25,
+    maxGebiete: 1,
+  },
+  starter: {
+    maxScansPerWindow: 1,
+    windowDays: 1,
+    maxCandidatesPerScan: 150,
+    serpBudget: 20,
+    maxRadiusKm: 50,
+    maxGebiete: 2,
+  },
+  pro: {
+    maxScansPerWindow: 4,
+    windowDays: 1,
+    maxCandidatesPerScan: 300,
+    serpBudget: 30,
+    maxRadiusKm: 100,
+    maxGebiete: 5,
+  },
+  enterprise: {
+    maxScansPerWindow: 10,
+    windowDays: 1,
+    maxCandidatesPerScan: 300,
+    serpBudget: 30,
+    maxRadiusKm: 250,
+    maxGebiete: 20,
+  },
+};
+
+/** Erst-Backlog-Scan: fuer ALLE Plaene mit Pro-Parametern — der beste
+ *  Aha-Moment entsteht beim ersten grossen Schwung. Zaehlt nicht gegen
+ *  Quota oder Gebiete (User-Entscheidung 2026-08-30). */
+const INITIAL_SCAN_PARAMS = PLAN_DISCOVERY.pro!;
+
+async function tenantTier(pool: Pool, tenantId: string): Promise<string> {
+  try {
+    const r = await pool.query<{ tier: string }>(
+      `SELECT tier FROM "TenantBilling" WHERE "tenantId" = $1`,
+      [tenantId],
+    );
+    const t = r.rows[0]?.tier;
+    return t && PLAN_DISCOVERY[t] ? t : "free";
+  } catch {
+    return "free";
+  }
 }
 
 async function effectiveLimits(pool: Pool, tenantId: string): Promise<DiscoveryLimits> {
-  const defaults: DiscoveryLimits = {
-    maxScansPerDay: envInt("DISCOVERY_MAX_SCANS_PER_DAY", 10),
-    maxCandidatesPerScan: envInt("DISCOVERY_MAX_CANDIDATES_PER_SCAN", 200),
-  };
+  const tier = await tenantTier(pool, tenantId);
+  const plan = PLAN_DISCOVERY[tier] ?? PLAN_DISCOVERY.free!;
   const r = await pool.query<{
     maxScansPerDay: number | null;
     maxCandidatesPerScan: number | null;
@@ -104,8 +177,15 @@ async function effectiveLimits(pool: Pool, tenantId: string): Promise<DiscoveryL
   );
   const o = r.rows[0];
   return {
-    maxScansPerDay: o?.maxScansPerDay ?? defaults.maxScansPerDay,
-    maxCandidatesPerScan: o?.maxCandidatesPerScan ?? defaults.maxCandidatesPerScan,
+    tier,
+    ...plan,
+    // Operator-Override: Scans/Tag-Semantik (windowDays 1), wenn gesetzt.
+    ...(o?.maxScansPerDay != null
+      ? { maxScansPerWindow: o.maxScansPerDay, windowDays: 1 }
+      : {}),
+    ...(o?.maxCandidatesPerScan != null
+      ? { maxCandidatesPerScan: o.maxCandidatesPerScan }
+      : {}),
   };
 }
 
@@ -158,8 +238,23 @@ export function discoveryIdFor(c: { domain?: string | null }): string | null {
 }
 
 export type StartScanResult =
-  | { ok: true; scanId: string; limits: DiscoveryLimits; scansUsedToday: number }
-  | { ok: false; reason: "quota"; limits: DiscoveryLimits; scansUsedToday: number };
+  | {
+      ok: true;
+      scanId: string;
+      limits: DiscoveryLimits;
+      scansUsedInWindow: number;
+      /** Erst-Backlog-Scan: Pro-Parameter, zaehlt nicht gegen Quota. */
+      isInitial: boolean;
+      /** Effektive Parameter fuer DIESEN Scan (bei isInitial Pro-Level). */
+      serpBudget: number;
+      maxCandidatesPerScan: number;
+    }
+  | {
+      ok: false;
+      reason: "quota" | "radius" | "gebiete";
+      limits: DiscoveryLimits;
+      scansUsedInWindow: number;
+    };
 
 export async function startScan(
   pool: Pool,
@@ -167,25 +262,74 @@ export async function startScan(
 ): Promise<StartScanResult> {
   await ensureSchema(pool);
   const limits = await effectiveLimits(pool, args.tenantId);
-  const used = await pool.query<{ n: number }>(
-    `SELECT COUNT(*)::int AS n FROM "DiscoveryScan"
-      WHERE "tenantId" = $1 AND "startedAt" >= date_trunc('day', NOW())`,
+
+  // Erst-Backlog: noch NIE ein Scan fuer diesen Tenant → grosszuegiger
+  // Pro-Level-Lauf, der weder Quota noch Gebiete/Radius-Gates beruehrt.
+  const total = await pool.query<{ n: number }>(
+    `SELECT COUNT(*)::int AS n FROM "DiscoveryScan" WHERE "tenantId" = $1`,
     [args.tenantId],
   );
-  const scansUsedToday = used.rows[0]?.n ?? 0;
-  if (scansUsedToday >= limits.maxScansPerDay) {
-    return { ok: false, reason: "quota", limits, scansUsedToday };
+  const isInitial = (total.rows[0]?.n ?? 0) === 0;
+
+  // Quota-Zaehlung im Plan-Fenster — der Erst-Scan zaehlt nicht mit.
+  const used = await pool.query<{ n: number }>(
+    `SELECT COUNT(*)::int AS n FROM "DiscoveryScan"
+      WHERE "tenantId" = $1
+        AND "isInitial" = FALSE
+        AND "startedAt" >= NOW() - make_interval(days => $2)`,
+    [args.tenantId, limits.windowDays],
+  );
+  const scansUsedInWindow = used.rows[0]?.n ?? 0;
+
+  if (!isInitial) {
+    if (args.radiusKm > limits.maxRadiusKm) {
+      return { ok: false, reason: "radius", limits, scansUsedInWindow };
+    }
+    if (scansUsedInWindow >= limits.maxScansPerWindow) {
+      return { ok: false, reason: "quota", limits, scansUsedInWindow };
+    }
+    // Gebiete-Gate: verschiedene Orte im 7-Tage-Fenster (Erst-Scan
+    // ausgenommen). Ein bereits bescannter Ort ist immer erlaubt.
+    const orte = await pool.query<{ ort: string }>(
+      `SELECT DISTINCT lower(trim(ort)) AS ort FROM "DiscoveryScan"
+        WHERE "tenantId" = $1
+          AND "isInitial" = FALSE
+          AND "startedAt" >= NOW() - interval '7 days'`,
+      [args.tenantId],
+    );
+    const known = new Set(orte.rows.map((r) => r.ort));
+    const requested = args.ort.trim().toLowerCase();
+    if (!known.has(requested) && known.size >= limits.maxGebiete) {
+      return { ok: false, reason: "gebiete", limits, scansUsedInWindow };
+    }
   }
+
+  const effective = isInitial ? INITIAL_SCAN_PARAMS : limits;
   const scanId = createHash("sha256")
     .update(`${args.tenantId}|${args.actorId}|${Date.now()}|${Math.random()}`)
     .digest("hex")
     .slice(0, 24);
   await pool.query(
-    `INSERT INTO "DiscoveryScan" ("scanId", "tenantId", "actorId", ort, "radiusKm")
-     VALUES ($1, $2, $3, $4, $5)`,
-    [scanId, args.tenantId, args.actorId, args.ort.slice(0, 120), args.radiusKm],
+    `INSERT INTO "DiscoveryScan" ("scanId", "tenantId", "actorId", ort, "radiusKm", "isInitial")
+     VALUES ($1, $2, $3, $4, $5, $6)`,
+    [
+      scanId,
+      args.tenantId,
+      args.actorId,
+      args.ort.slice(0, 120),
+      args.radiusKm,
+      isInitial,
+    ],
   );
-  return { ok: true, scanId, limits, scansUsedToday: scansUsedToday + 1 };
+  return {
+    ok: true,
+    scanId,
+    limits,
+    scansUsedInWindow: scansUsedInWindow + (isInitial ? 0 : 1),
+    isInitial,
+    serpBudget: effective.serpBudget,
+    maxCandidatesPerScan: effective.maxCandidatesPerScan,
+  };
 }
 
 export interface CandidateInput {
@@ -235,15 +379,24 @@ export async function addCandidates(
   },
 ): Promise<AddCandidatesResult | { error: "scan_not_found" | "cap_exhausted" }> {
   await ensureSchema(pool);
-  const scan = await pool.query<{ tenantId: string; candidatesAdded: number }>(
-    `SELECT "tenantId", "candidatesAdded" FROM "DiscoveryScan" WHERE "scanId" = $1`,
+  const scan = await pool.query<{
+    tenantId: string;
+    candidatesAdded: number;
+    isInitial: boolean;
+  }>(
+    `SELECT "tenantId", "candidatesAdded", "isInitial"
+       FROM "DiscoveryScan" WHERE "scanId" = $1`,
     [args.scanId],
   );
   if (scan.rows.length === 0 || scan.rows[0].tenantId !== args.tenantId) {
     return { error: "scan_not_found" };
   }
   const limits = await effectiveLimits(pool, args.tenantId);
-  const room = limits.maxCandidatesPerScan - scan.rows[0].candidatesAdded;
+  // Erst-Backlog-Scan laeuft mit Pro-Cap, egal welcher Plan.
+  const cap = scan.rows[0].isInitial
+    ? INITIAL_SCAN_PARAMS.maxCandidatesPerScan
+    : limits.maxCandidatesPerScan;
+  const room = cap - scan.rows[0].candidatesAdded;
   if (room <= 0) return { error: "cap_exhausted" };
 
   const seen = new Set<string>();
