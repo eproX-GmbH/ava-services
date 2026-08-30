@@ -86,7 +86,11 @@ export class RadarAlertEmitter {
         companyId: "",
         companyName: h.name,
         kind: "radar-match",
-        severity: "info",
+        // "warn", nicht "info": Radar-Treffer sind bewusst aktivierte,
+        // seltene, heisse Meldungen (Score >= 70, max 5/Lauf, Dedup) —
+        // der Telegram-Kanal filtert per Default alles unter "warn"
+        // weg, und genau dort sollen sie ankommen.
+        severity: "warn",
         headline: `Radar: ${h.name} passt zu deinem ICP (Score ${h.score})`,
         rationale: `${h.begruendung} — Entscheiden unter Firmen → Radar.`,
         sourceRef: `radar:${h.discoveryId}`,
