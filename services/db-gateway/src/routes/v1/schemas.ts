@@ -354,6 +354,10 @@ export const BestMatchShape = z
     id: z.string(),
     input: z.string(),
     transactionId: z.string().nullable().optional(),
+    /** §8.v3-Rewire: queued|running|completed|failed. null = Legacy-Job
+     *  von vor der Status-Spalte ("results leer = lief noch"). */
+    status: z.string().nullable().optional(),
+    errorMessage: z.string().nullable().optional(),
     results: z.array(BestMatchResultItemShape).default([]),
     createdAt: z.string(),
     updatedAt: z.string(),

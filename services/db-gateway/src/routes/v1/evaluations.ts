@@ -4,6 +4,7 @@ import { HTTPException } from "hono/http-exception";
 import { requireScope } from "../../middleware/auth";
 import { callUpstream } from "../../lib/upstream";
 import { getProducerPool } from "../../lib/producer-pools";
+import { ensureBestMatchJobColumns } from "../../lib/best-match-jobs";
 import {
   BestMatchIdParam,
   BestMatchShape,
@@ -149,14 +150,17 @@ evaluationsRouter.openapi(bestMatchesListRoute, async (c) => {
   );
   const total = Number(totalRes.rows[0]?.total ?? "0");
 
+  await ensureBestMatchJobColumns(pool);
   const jobsRes = await pool.query<{
     id: string;
     input: string;
     transactionId: string | null;
+    status: string | null;
+    errorMessage: string | null;
     createdAt: Date;
     updatedAt: Date;
   }>(
-    `SELECT id, input, "transactionId", "createdAt", "updatedAt"
+    `SELECT id, input, "transactionId", "status", "errorMessage", "createdAt", "updatedAt"
      FROM "BestMatchJob"
      WHERE "transactionId" = $1
      ORDER BY "createdAt" DESC
@@ -201,6 +205,8 @@ evaluationsRouter.openapi(bestMatchesListRoute, async (c) => {
     id: j.id,
     input: j.input,
     transactionId: j.transactionId,
+    status: j.status,
+    errorMessage: j.errorMessage,
     results: resultsByJob.get(j.id) ?? [],
     createdAt: j.createdAt.toISOString(),
     updatedAt: j.updatedAt.toISOString(),
@@ -226,14 +232,18 @@ evaluationsRouter.openapi(bestMatchDetailRoute, async (c) => {
   const { bestMatchId } = c.req.valid("param");
   const pool = getProducerPool("company-evaluation");
 
+  await ensureBestMatchJobColumns(pool);
   const jobRes = await pool.query<{
     id: string;
     input: string;
     transactionId: string | null;
+    status: string | null;
+    errorMessage: string | null;
+    userId: string | null;
     createdAt: Date;
     updatedAt: Date;
   }>(
-    `SELECT id, input, "transactionId", "createdAt", "updatedAt"
+    `SELECT id, input, "transactionId", "status", "errorMessage", "userId", "createdAt", "updatedAt"
      FROM "BestMatchJob" WHERE id = $1 LIMIT 1`,
     [bestMatchId],
   );
@@ -243,9 +253,13 @@ evaluationsRouter.openapi(bestMatchDetailRoute, async (c) => {
   const job = jobRes.rows[0];
 
   // Cross-check ownership against the caller's transactions (matches
-  // the legacy upstream's behaviour).
+  // the legacy upstream's behaviour). Transaktionslose Jobs (globale
+  // Offer-Analysis) sind seit dem Rewire per userId geschuetzt;
+  // Legacy-Zeilen ohne userId bleiben lesbar (Bestandskompatibilitaet).
   if (job.transactionId) {
     await assertTransactionOwnership(c, job.transactionId);
+  } else if (job.userId && job.userId !== c.get("auth").actorId) {
+    throw new HTTPException(404, { message: "not_found" });
   }
 
   const resultsRes = await pool.query<{
@@ -272,6 +286,8 @@ evaluationsRouter.openapi(bestMatchDetailRoute, async (c) => {
       id: job.id,
       input: job.input,
       transactionId: job.transactionId,
+      status: job.status,
+      errorMessage: job.errorMessage,
       results,
       createdAt: job.createdAt.toISOString(),
       updatedAt: job.updatedAt.toISOString(),

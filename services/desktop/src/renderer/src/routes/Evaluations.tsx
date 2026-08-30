@@ -154,7 +154,8 @@ function BestMatchCreateForm({
 
   const create = useMutation({
     mutationFn: (body: { input: string; companyIds: string[]; topics: Topic[] }) =>
-      gatewayFetch<{ id: string }>("/v1/evaluations/best-matches", {
+      // §8.v3-Rewire: 202 + { bestMatchJobId } (nicht { id }).
+      gatewayFetch<{ bestMatchJobId: string }>("/v1/evaluations/best-matches", {
         method: "POST",
         body: { ...body, transactionId },
       }),

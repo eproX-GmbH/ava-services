@@ -5,6 +5,11 @@ import { requireScope } from "../../middleware/auth";
 import { callUpstream } from "../../lib/upstream";
 import { getProducerPool } from "../../lib/producer-pools";
 import {
+  createBestMatchJob,
+  markBestMatchJobFailed,
+  publishEvaluationCompute,
+} from "../../lib/best-match-jobs";
+import {
   BestMatchCreateBody,
   BestMatchCreateResponse,
   BestMatchFeedbackBody,
@@ -136,13 +141,43 @@ const bestMatchCreateRoute = createRoute({
 });
 
 evaluationWritesRouter.openapi(bestMatchCreateRoute, async (c) => {
-  // §8.v3 Phase 2c — write path needs async rewiring (gateway publish + local
-  // company-evaluation compute-worker subscribe). Until that lands, returning
-  // 501 instead of proxying to a destroyed fly app.
-  void c.req.valid("json");
-  throw new HTTPException(501, {
-    message: "best-match POST pending §8.v3 async rewire",
+  // §8.v3-Rewire: Job-Zeile anlegen → Compute-Event auf die
+  // Nutzer-Queue → 202. Gerechnet wird lokal beim Nutzer (LLM +
+  // Embeddings), Ergebnis + Status landen in ava_company_evaluation.
+  const auth = c.get("auth");
+  const body = c.req.valid("json");
+  if (body.transactionId) {
+    await assertTransactionOwnership(c, body.transactionId);
+  }
+  const pool = getProducerPool("company-evaluation");
+  const bestMatchJobId = await createBestMatchJob(pool, {
+    input: body.input,
+    transactionId: body.transactionId ?? null,
+    v: 0,
+    userId: auth.actorId,
   });
+  try {
+    await publishEvaluationCompute({
+      kind: "best-match",
+      bestMatchJobId,
+      tenantId: auth.tenantId,
+      userId: auth.actorId,
+      input: body.input,
+      companyIds: body.companyIds,
+      topics: body.topics,
+      transactionId: body.transactionId ?? null,
+    });
+  } catch (err) {
+    await markBestMatchJobFailed(
+      pool,
+      bestMatchJobId,
+      "Auftrag konnte nicht zugestellt werden (Event-Bus nicht erreichbar).",
+    ).catch(() => {});
+    throw new HTTPException(502, {
+      message: `best-match dispatch failed: ${err instanceof Error ? err.message : String(err)}`,
+    });
+  }
+  return c.json({ bestMatchJobId }, 202);
 });
 
 // ---- POST /v1/evaluations/offer-analysis -----------------------------------
@@ -165,13 +200,38 @@ const offerAnalysisRoute = createRoute({
 });
 
 evaluationWritesRouter.openapi(offerAnalysisRoute, async (c) => {
-  // §8.v3 Phase 2c — write path needs async rewiring (gateway publish + local
-  // company-evaluation compute-worker subscribe). Until that lands, returning
-  // 501 instead of proxying to a destroyed fly app.
-  void c.req.valid("json");
-  throw new HTTPException(501, {
-    message: "offer-analysis POST pending §8.v3 async rewire",
+  // §8.v3-Rewire: wie best-match, aber v=1 (globale Suche ohne
+  // transactionId). ANSTELLE des toten Elasticsearch-Pfads rechnet der
+  // lokale Worker mit BM25-Vorfilter + Embedding-Reranking + LLM-Urteil.
+  const auth = c.get("auth");
+  const body = c.req.valid("json");
+  const pool = getProducerPool("company-evaluation");
+  const bestMatchJobId = await createBestMatchJob(pool, {
+    input: body.offer,
+    transactionId: null,
+    v: 1,
+    userId: auth.actorId,
   });
+  try {
+    await publishEvaluationCompute({
+      kind: "offer-analysis",
+      bestMatchJobId,
+      tenantId: auth.tenantId,
+      userId: auth.actorId,
+      offer: body.offer,
+      topK: body.topK ?? 10,
+    });
+  } catch (err) {
+    await markBestMatchJobFailed(
+      pool,
+      bestMatchJobId,
+      "Auftrag konnte nicht zugestellt werden (Event-Bus nicht erreichbar).",
+    ).catch(() => {});
+    throw new HTTPException(502, {
+      message: `offer-analysis dispatch failed: ${err instanceof Error ? err.message : String(err)}`,
+    });
+  }
+  return c.json({ bestMatchJobId }, 202);
 });
 
 // ---- POST /v1/evaluations/best-matches/:bestMatchId/feedback ---------------
