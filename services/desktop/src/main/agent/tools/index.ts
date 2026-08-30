@@ -154,6 +154,13 @@ export function buildReadOnlyRegistry(deps: {
   discoveryMatches: MatchStore;
   /** I5 — lokale Top-Kunden-Profile (Aehnlichkeits-Signal). */
   discoveryCustomerProfiles: CustomerProfileStore;
+  /** Audit-Trail-Sink fuer Discovery-Aktionen (Scan-Queries etc.). */
+  discoveryAudit: (entry: {
+    action: string;
+    severity: "info" | "warning" | "error";
+    summary: string;
+    metadata: Record<string, unknown>;
+  }) => void;
 }): ToolRegistry {
   const registry = new ToolRegistry();
   const ctx = { gateway: deps.gateway };
@@ -175,6 +182,7 @@ export function buildReadOnlyRegistry(deps: {
     icp: deps.icp,
     matchStore: deps.discoveryMatches,
     customerStore: deps.discoveryCustomerProfiles,
+    onAudit: deps.discoveryAudit,
     getDefaultIndustries: () => {
       // SERP-Branchen-Fallback: ICP-Branchen zuerst, sonst Nutzerprofil.
       const icpBranchen = deps.icp.get().branchen;

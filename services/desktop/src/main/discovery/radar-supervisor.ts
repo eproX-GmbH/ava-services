@@ -184,10 +184,11 @@ export class RadarSupervisor {
         return msg;
       }
 
-      const scan = await runDiscoveryScan(this.deps.gateway, {
+      const scan = await runDiscoveryScan(this.deps.gateway, this.deps.providers, {
         ort,
         radiusKm: icp.radiusKm,
         branchen: icp.branchen,
+        icpText: this.deps.icp.renderText(),
       });
       if ("error" in scan) {
         this.finishRun(startedAt, `Scan: ${scan.error}`, trigger, "warning");
@@ -252,7 +253,14 @@ export class RadarSupervisor {
         `${scan.kandidatenGesamt} Kandidaten (OSM ${scan.quellen.osm}, ` +
         `SERP ${scan.quellen.serp}, Register ${scan.quellen.register}), ` +
         `${profNote}, ${match.bewertet} bewertet, ${hot.length} neue heisse Treffer`;
-      this.finishRun(startedAt, outcome, trigger, "info");
+      // Auditierbarkeit: die geplanten SERP-Recherchen gesammelt in die
+      // Metadaten des Lauf-Eintrags.
+      this.finishRun(startedAt, outcome, trigger, "info", {
+        scanId: scan.scanId,
+        queryPlanung: scan.queryPlanung,
+        serpQueries: scan.serpQueries,
+        quellen: scan.quellen,
+      });
       return outcome;
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -268,6 +276,7 @@ export class RadarSupervisor {
     outcome: string,
     trigger: string,
     severity: "info" | "warning" | "error",
+    extraMetadata: Record<string, unknown> = {},
   ): void {
     this.config = { ...this.getConfig(), lastRunAt: startedAt, lastOutcome: outcome };
     this.persistConfig();
@@ -275,7 +284,7 @@ export class RadarSupervisor {
       action: "discovery.radar-run",
       severity,
       summary: `Radar-Lauf (${trigger}): ${outcome}`,
-      metadata: { trigger },
+      metadata: { trigger, ...extraMetadata },
     });
   }
 }

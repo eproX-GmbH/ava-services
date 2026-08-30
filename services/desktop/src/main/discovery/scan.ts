@@ -16,8 +16,15 @@
 // Bot-Detection-Policy (A7) betrifft diesen Code nicht — beide Kanaele
 // sind APIs, kein Browser-Scraping.
 
+import * as yup from "yup";
 import type { GatewayClient } from "../agent/gateway-client";
+import type { LlmProviderManager } from "../agent/providers";
 import { sanitizeCategory } from "./category";
+import {
+  buildMessages,
+  parseJsonObject,
+  streamToText,
+} from "../link-monitor/llm";
 
 const OVERPASS_URL =
   process.env.AVA_OVERPASS_URL ?? "https://overpass-api.de/api/interpreter";
@@ -27,9 +34,14 @@ const BATCH_SIZE = 100;
 export interface ScanArgs {
   ort: string;
   radiusKm: number;
-  /** Branchenbegriffe fuer den SERP-Kanal ("IT-Dienstleister", …).
-   *  Leer → SERP-Kanal wird uebersprungen (nur OSM). */
+  /** Branchenbegriffe — Fallback fuer den SERP-Kanal, wenn der
+   *  LLM-Query-Planner nicht verfuegbar ist. Leer + kein icpText →
+   *  SERP-Kanal wird uebersprungen (nur OSM/Register). */
   branchen: string[];
+  /** Voller ICP-Text (icp.renderText()) — aktiviert den LLM-Query-
+   *  Planner: gezielte Places-Suchen wie ein menschlicher Rechercheur
+   *  statt stumpfem "Branche Ort". */
+  icpText?: string;
 }
 
 export interface ScanSummary {
@@ -43,6 +55,9 @@ export interface ScanSummary {
   bereitsBekannt: number;
   capped: number;
   serpQueries: string[];
+  /** Wie die SERP-Queries entstanden: LLM-Planner, Branche-Ort-Fallback
+   *  oder gar nicht (kein ICP/Branchen). */
+  queryPlanung: "llm" | "fallback" | "keine";
   hinweise: string[];
 }
 
@@ -64,7 +79,8 @@ interface Candidate {
 
 interface GeoResponse {
   origin: { name: string; kreis: string; lat: number; lon: number };
-  places: Array<{ name: string }>;
+  /** plz-Anzahl dient als Groessen-Proxy des Orts (Query-Planner). */
+  places: Array<{ name: string; plz?: string[] }>;
   bbox: { minLat: number; maxLat: number; minLon: number; maxLon: number };
 }
 
@@ -197,6 +213,82 @@ out center 800;`;
   }
 }
 
+// ---- LLM-Query-Planner (SERP-Kanal) ----------------------------------------
+//
+// Imitiert einen menschlichen Rechercheur: aus dem vollen ICP-Kontext
+// und der Ortsliste im Radius entsteht ein Recherche-Plan aus 12-15
+// gezielten Places-Suchen — verschiedene Zielgruppen-Richtungen,
+// Synonym-Varianten, verteilt ueber die groesseren Orte. Ein billiger
+// LLM-Call (Producer-Modell); Fallback bleibt "Branche Ort".
+// Budget-Invariante O1: max 15 Planner-Queries + max 12 Register-
+// Lookups = 27 < 30.
+
+const MAX_PLANNED_QUERIES = 15;
+
+const plannedQueriesSchema = yup
+  .array()
+  .of(yup.string().trim().min(4).max(80).required())
+  .min(3)
+  .max(MAX_PLANNED_QUERIES);
+
+async function planSerpQueries(
+  providers: LlmProviderManager,
+  icpText: string,
+  ort: string,
+  geo: GeoResponse,
+  hinweise: string[],
+): Promise<string[] | null> {
+  if (!providers.getStatus().ready) return null;
+  // Groessere Orte zuerst (plz-Anzahl als Proxy), max 12 zur Auswahl.
+  const orte = [...geo.places]
+    .sort((a, b) => (b.plz?.length ?? 0) - (a.plz?.length ?? 0))
+    .slice(0, 12)
+    .map((p) => p.name);
+  const system =
+    "Du planst eine B2B-Lead-Recherche ueber die Google-Places-Suche, " +
+    "wie ein Mensch, der systematisch googelt. Erstelle 10 bis " +
+    `${MAX_PLANNED_QUERIES} kurze Suchanfragen, die zum Idealkundenprofil ` +
+    "(ICP) passen. Regeln fuer Places-Suchen:\n" +
+    "- Muster: <Zielgruppen-/Kategoriebegriff> <Ort> (z. B. " +
+    '"Immobilienmakler Hannover"). KEINE Attribute wie Mitarbeiterzahl, ' +
+    "KEINE Filter-Phrasen, KEINE Anfuehrungszeichen — Places matcht nur " +
+    "Kategorie/Name/Ort.\n" +
+    "- Verschiedene Zielgruppen-Richtungen des ICP abdecken UND pro " +
+    "Zielgruppe Synonym-Varianten ausprobieren (z. B. Steuerkanzlei / " +
+    "Steuerberater / Wirtschaftspruefer).\n" +
+    "- Die Suchen ueber mehrere der genannten Orte verteilen (groessere " +
+    "Orte bevorzugen), nicht alles auf den Zentrums-Ort.\n" +
+    "- Ausschluesse im ICP respektieren: danach gar nicht erst suchen.\n" +
+    'Antworte NUR als JSON: {"queries": ["...", "..."]}';
+  const user =
+    `ICP:\n${icpText}\n\nZentrums-Ort: ${ort}\n` +
+    `Orte im Radius (nach Groesse): ${orte.join(", ")}`;
+  try {
+    const raw = await streamToText(
+      providers,
+      buildMessages(system, user, "serpplan"),
+      {
+        timeoutMs: 45_000,
+        ...(providers.getProducerModelOverride()
+          ? { modelOverride: providers.getProducerModelOverride() }
+          : {}),
+      },
+    );
+    const parsed = parseJsonObject(raw) as { queries?: unknown } | null;
+    const queries = plannedQueriesSchema.validateSync(parsed?.queries ?? [], {
+      abortEarly: true,
+    });
+    return queries && queries.length > 0
+      ? [...new Set(queries)].slice(0, MAX_PLANNED_QUERIES)
+      : null;
+  } catch (err) {
+    hinweise.push(
+      `Query-Planner fehlgeschlagen (${err instanceof Error ? err.message : String(err)}) — Fallback "Branche Ort".`,
+    );
+    return null;
+  }
+}
+
 /** Adresse "Musterstr. 1, 30159 Hannover" → {plz, city}. */
 function parseAddress(address: string | undefined): { plz: string | null; city: string | null } {
   if (!address) return { plz: null, city: null };
@@ -207,18 +299,13 @@ function parseAddress(address: string | undefined): { plz: string | null; city: 
   return { plz: null, city: last && last.length <= 60 ? last : null };
 }
 
-/** Kanal b: valueserp places ueber den Gateway-Proxy. */
+/** Kanal b: valueserp places ueber den Gateway-Proxy — mit fertiger
+ *  Query-Liste (vom LLM-Planner oder dem Branche-Ort-Fallback). */
 async function fetchSerpCandidates(
   gateway: GatewayClient,
-  ort: string,
-  branchen: string[],
+  queries: string[],
   hinweise: string[],
 ): Promise<{ candidates: Candidate[]; queries: string[] }> {
-  const queries = branchen
-    .map((b) => b.trim())
-    .filter((b) => b.length >= 2)
-    .slice(0, MAX_SERP_QUERIES)
-    .map((b) => `${b} ${ort}`);
   const candidates: Candidate[] = [];
   let ohneWebsite = 0;
   for (const q of queries) {
@@ -357,6 +444,7 @@ async function fetchRegisterCandidates(
 
 export async function runDiscoveryScan(
   gateway: GatewayClient,
+  providers: LlmProviderManager | null,
   args: ScanArgs,
 ): Promise<ScanSummary | { error: string }> {
   const hinweise: string[] = [];
@@ -392,20 +480,40 @@ export async function runDiscoveryScan(
     return { error: `Scan-Start fehlgeschlagen: ${msg}` };
   }
 
-  // 3. Kanaele (parallel). SERP-Budget (O1: max 30/Scan): Branchen-
-  //    Queries (<=8) + Register-Lookups (<=12) bleiben klar darunter.
+  // 2b. SERP-Recherche-Plan: LLM-Planner aus dem ICP-Kontext (wie ein
+  //     menschlicher Rechercheur), Fallback "Branche Ort". Budget O1:
+  //     max 15 Planner-Queries + max 12 Register-Lookups = 27 < 30.
+  let queries: string[] = [];
+  let queryPlanung: "llm" | "fallback" | "keine" = "keine";
+  if (args.icpText && providers) {
+    const planned = await planSerpQueries(providers, args.icpText, args.ort, geo, hinweise);
+    if (planned) {
+      queries = planned;
+      queryPlanung = "llm";
+    }
+  }
+  if (queries.length === 0 && args.branchen.length > 0) {
+    queries = args.branchen
+      .map((b) => b.trim())
+      .filter((b) => b.length >= 2)
+      .slice(0, MAX_SERP_QUERIES)
+      .map((b) => `${b} ${args.ort}`);
+    queryPlanung = "fallback";
+  }
+  if (queries.length === 0) {
+    hinweise.push(
+      "SERP-Kanal uebersprungen: kein ICP fuer den Query-Planner und keine Branchenbegriffe vorhanden.",
+    );
+  }
+
+  // 3. Kanaele (parallel).
   const [osm, serp, register] = await Promise.all([
     fetchOsmCandidates(geo, args.radiusKm, hinweise),
-    args.branchen.length > 0
-      ? fetchSerpCandidates(gateway, args.ort, args.branchen, hinweise)
+    queries.length > 0
+      ? fetchSerpCandidates(gateway, queries, hinweise)
       : Promise.resolve({ candidates: [] as Candidate[], queries: [] as string[] }),
     fetchRegisterCandidates(gateway, args.ort, args.radiusKm, hinweise),
   ]);
-  if (args.branchen.length === 0) {
-    hinweise.push(
-      "SERP-Kanal uebersprungen: keine Branchenbegriffe uebergeben und keine im Nutzerprofil hinterlegt.",
-    );
-  }
 
   // 4. Lokal per Domain deduplizieren (Domain = Discovery-ID),
   //    Naehe-priorisieren fuers Cap.
@@ -477,6 +585,7 @@ export async function runDiscoveryScan(
     bereitsBekannt,
     capped: cappedRemote,
     serpQueries: serp.queries,
+    queryPlanung,
     hinweise,
   };
 }

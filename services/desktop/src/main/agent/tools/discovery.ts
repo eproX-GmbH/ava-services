@@ -27,6 +27,14 @@ export interface DiscoveryToolDeps {
   customerStore: CustomerProfileStore;
   /** Branchen-Fallback aus dem Nutzerprofil (UserProfile.industries). */
   getDefaultIndustries: () => string[];
+  /** Audit-Trail — Scans (inkl. der geplanten SERP-Queries) sollen
+   *  nachvollziehbar sein. */
+  onAudit: (entry: {
+    action: string;
+    severity: "info" | "warning" | "error";
+    summary: string;
+    metadata: Record<string, unknown>;
+  }) => void;
 }
 
 export function buildDiscoveryTools(deps: DiscoveryToolDeps): Tool[] {
@@ -83,11 +91,30 @@ export function buildDiscoveryTools(deps: DiscoveryToolDeps): Tool[] {
         args.branchen && args.branchen.length > 0
           ? args.branchen
           : deps.getDefaultIndustries();
-      return runDiscoveryScan(deps.gateway, {
+      const result = await runDiscoveryScan(deps.gateway, deps.providers, {
         ort: args.ort,
         radiusKm: args.radiusKm ?? 30,
         branchen,
+        ...(deps.icp.isSet() ? { icpText: deps.icp.renderText() } : {}),
       });
+      if (!("error" in result)) {
+        deps.onAudit({
+          action: "discovery.scan",
+          severity: "info",
+          summary:
+            `Radar-Scan ${args.ort} (${args.radiusKm ?? 30} km): ` +
+            `${result.kandidatenGesamt} Kandidaten — SERP-Recherche ` +
+            `(${result.queryPlanung}): ${result.serpQueries.join(" | ") || "—"}`,
+          metadata: {
+            scanId: result.scanId,
+            queryPlanung: result.queryPlanung,
+            serpQueries: result.serpQueries,
+            quellen: result.quellen,
+            hinweise: result.hinweise,
+          },
+        });
+      }
+      return result;
     },
   });
 

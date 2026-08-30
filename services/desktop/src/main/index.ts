@@ -1575,6 +1575,19 @@ const agentRegistry = buildReadOnlyRegistry({
   icp: icpStore,
   discoveryMatches,
   discoveryCustomerProfiles: customerProfiles,
+  discoveryAudit: ({ action, severity, summary, metadata }) => {
+    audit({
+      actorType: "system",
+      actorId: null,
+      category: "import",
+      action,
+      severity,
+      subjectType: null,
+      subjectId: null,
+      summary,
+      metadata,
+    });
+  },
   generalMemory,
   attachments,
   alerts,
