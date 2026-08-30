@@ -244,7 +244,12 @@ export class TelegramInbound {
     // v0.1.459 — T6: Sind Rückfragen aufs Handy erlaubt (Opt-in), bekommt
     // die Konversation einen RemoteAsk-Kanal und der Hinweis-Text ändert
     // sich entsprechend. Der Nutzer sitzt ja gerade am Handy.
-    const confirmEnabled = this.store.getConfig().inboundConfirmEnabled;
+    const inboundCfg = this.store.getConfig();
+    const confirmEnabled = inboundCfg.inboundConfirmEnabled;
+    // v0.1.462 — Vollmacht: deckt Klasse-A-(/B-)Aktionen ohne Rückfrage
+    // (PLAN_VOLLMACHT.md). Nicht Gedecktes fällt auf T6-Rückfrage bzw.
+    // fail-closed zurück.
+    const autonomyLevel = inboundCfg.autonomyLevel;
     const hint = confirmEnabled
       ? `[Hinweis: Antworte knapp und handyfreundlich. Wenn eine Aktion ` +
         `eine Bestätigung oder Auswahl braucht, nutze ask_user_choice/` +
@@ -260,6 +265,7 @@ export class TelegramInbound {
         `[Nachricht des Nutzers über Telegram]\n\n${withCaptions}\n\n${hint}`,
       ...(allImages.length > 0 ? { images: allImages } : {}),
       ...(confirmEnabled ? { remoteAsk: this.buildRemoteAsk() } : {}),
+      ...(autonomyLevel !== "none" ? { autonomyLevel } : {}),
     });
 
     if (!started) {

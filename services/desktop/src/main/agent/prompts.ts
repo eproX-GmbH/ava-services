@@ -65,6 +65,10 @@ export interface PromptSkillContext {
    *      bevor der Loop endet.
    */
   autonomousMode?: boolean;
+  /** v0.1.462 — T6/Vollmacht: Rückfrage-Kanal (Telegram) aktiv? */
+  hasRemoteAsk?: boolean;
+  /** v0.1.462 — Vollmacht-Stufe des Kanals (PLAN_VOLLMACHT.md). */
+  autonomyLevel?: import("../../shared/types").AutonomyLevel;
 }
 
 export function buildSystemPrompt(
@@ -626,9 +630,34 @@ export function buildSystemPrompt(
         "   auf eine sinnlose Umleitung. Bearbeite die Anfrage SO als",
         "   ob sie im Chat gekommen wäre, antworte dann per mail_reply.",
         "",
-        "1. ask_user_choice / ask_user_text SIND NICHT ERLAUBT. Die",
-        "   Tools werfen sofort einen Fehler. Triff Entscheidungen",
-        "   selbst, anhand der vorliegenden Daten + Tool-Outputs.",
+        ...(skillContext?.hasRemoteAsk
+          ? [
+              "1. ask_user_choice / ask_user_text stellen die Frage dem",
+              "   Nutzer direkt im Telegram-Chat (Antwort per Nummer oder",
+              "   Text, Timeout 3 Minuten). Nutze sie NUR wenn eine echte",
+              "   Entscheidung des Nutzers nötig ist — sonst entscheide",
+              "   selbst.",
+            ]
+          : [
+              "1. ask_user_choice / ask_user_text SIND NICHT ERLAUBT. Die",
+              "   Tools werfen sofort einen Fehler. Triff Entscheidungen",
+              "   selbst, anhand der vorliegenden Daten + Tool-Outputs.",
+            ]),
+        ...(skillContext?.autonomyLevel === "additive" ||
+        skillContext?.autonomyLevel === "mutating"
+          ? [
+              "",
+              `1b. VOLLMACHT AKTIV (${skillContext.autonomyLevel}): Aktionen,`,
+              "   die Neues anlegen (CRM-Notiz, Aktivität, Aufgabe, neue",
+              "   Company/Contact/Deal, Verknüpfung)" +
+                (skillContext.autonomyLevel === "mutating"
+                  ? " sowie Feld-Updates"
+                  : ""),
+              "   werden autonom bestätigt — führe sie einfach aus, sie",
+              "   landen im Audit-Trail. Destruktives (Löschen) bleibt",
+              "   IMMER bestätigungspflichtig.",
+            ]
+          : []),
         "",
         "2. Du wirst NICHT um Bestätigung gefragt, wenn du eine Mail",
         "   sendest oder ein CRM-Update machst. mail_reply geht direkt",

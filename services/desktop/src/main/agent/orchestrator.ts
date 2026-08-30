@@ -9,6 +9,7 @@ import type {
   AgentStatus,
   AgentStreamFrame,
   AgentToolCall,
+  AutonomyLevel,
 } from "../../shared/types";
 import { ToolRegistry } from "./tool-registry";
 import { selectToolsForTurn } from "./tool-selection";
@@ -157,6 +158,17 @@ export interface AgentOrchestratorOptions {
   checkDailyLimit?: () => Promise<
     import("../../shared/types").DailyTokenLimitStatus | null
   >;
+  /**
+   * v0.1.462 — Audit-Senke für autonome Vollmacht-Bestätigungen
+   * (PLAN_VOLLMACHT.md). Wird in main/index.ts auf den zentralen
+   * Audit-Trail verdrahtet; jede per Vollmacht durchgewunkene Aktion
+   * MUSS dort nachlesbar sein.
+   */
+  onAudit?: (entry: {
+    action: string;
+    summary: string;
+    metadata: Record<string, unknown>;
+  }) => void;
 }
 
 export interface AgentOrchestratorEvents {
@@ -198,6 +210,7 @@ export class AgentOrchestrator extends EventEmitter {
   private readonly onUsage?: AgentOrchestratorOptions["onUsage"];
   /** v0.1.405 — Tages-Token-Limit-Gate (siehe Options-Doc). */
   private readonly checkDailyLimit?: AgentOrchestratorOptions["checkDailyLimit"];
+  private readonly onAudit?: AgentOrchestratorOptions["onAudit"];
   /** Active skill for the in-flight turn (set in send(), read in
    *  runTool() for the allowlist gate + in buildSystemPrompt() for
    *  the active-skill hint). null when no skill is active. */
@@ -237,6 +250,7 @@ export class AgentOrchestrator extends EventEmitter {
     this.skillsPrefs = opts.skillsPrefs;
     this.onUsage = opts.onUsage;
     this.checkDailyLimit = opts.checkDailyLimit;
+    this.onAudit = opts.onAudit;
 
     // v0.1.240 — Register the meta-tools (tool_search + tool_load).
     // We do this here (not in tools/index.ts) because the meta-tools
@@ -594,6 +608,10 @@ export class AgentOrchestrator extends EventEmitter {
      * v0.1.459 — T6: Rückfragen-Kanal (Telegram). Siehe Conversation.remoteAsk.
      */
     remoteAsk?: RemoteAskHandler;
+    /**
+     * v0.1.462 — Vollmacht-Stufe des Kanals (PLAN_VOLLMACHT.md).
+     */
+    autonomyLevel?: AutonomyLevel;
   }): { conversationId: string; requestId: string } | null {
     const status = this.getStatus();
     if (!status.ready) {
@@ -637,6 +655,10 @@ export class AgentOrchestrator extends EventEmitter {
      * v0.1.459 — T6: Rückfragen-Kanal (Telegram). Siehe Conversation.remoteAsk.
      */
     remoteAsk?: RemoteAskHandler;
+    /**
+     * v0.1.462 — Vollmacht-Stufe des Kanals (PLAN_VOLLMACHT.md).
+     */
+    autonomyLevel?: AutonomyLevel;
   }> = [];
 
   private runAutonomousNow(input: {
@@ -658,6 +680,10 @@ export class AgentOrchestrator extends EventEmitter {
      * v0.1.459 — T6: Rückfragen-Kanal (Telegram). Siehe Conversation.remoteAsk.
      */
     remoteAsk?: RemoteAskHandler;
+    /**
+     * v0.1.462 — Vollmacht-Stufe des Kanals (PLAN_VOLLMACHT.md).
+     */
+    autonomyLevel?: AutonomyLevel;
   }): { conversationId: string; requestId: string } {
     const conversationId = input.conversationId ?? randomUUID();
     const existing = this.conversations.get(conversationId);
@@ -675,6 +701,12 @@ export class AgentOrchestrator extends EventEmitter {
     // zwischen zwei Telegram-Nachrichten ändern).
     if (input.remoteAsk) convo.remoteAsk = input.remoteAsk;
     else delete convo.remoteAsk;
+    // v0.1.462 — Vollmacht ebenso pro Turn auffrischen.
+    if (input.autonomyLevel && input.autonomyLevel !== "none") {
+      convo.autonomyLevel = input.autonomyLevel;
+    } else {
+      delete convo.autonomyLevel;
+    }
     this.conversations.set(conversationId, convo);
     this.memory?.ensureConversation(conversationId);
 
@@ -1020,6 +1052,11 @@ export class AgentOrchestrator extends EventEmitter {
               // Verhaltens-Block im System-Prompt (kein ask_user_*,
               // direkt handeln, Reply-Loop-Schutz).
               autonomousMode: conversation.autonomousMode === true,
+              // v0.1.462 — T6/Vollmacht in den Verhaltens-Block spiegeln,
+              // damit der Agent weiß, was er darf (statt der pauschalen
+              // "ask_user_* verboten"-Ansage).
+              hasRemoteAsk: conversation.remoteAsk != null,
+              autonomyLevel: conversation.autonomyLevel ?? "none",
             },
           ),
           createdAt: 0,
@@ -1531,11 +1568,16 @@ export class AgentOrchestrator extends EventEmitter {
       return { ok: false, content: JSON.stringify({ error: msg }), preview: msg };
     }
     const ui = new UiBridge(
-      { emit: (f) => this.emitFrame(f), pending: this.pendingChoices },
+      {
+        emit: (f) => this.emitFrame(f),
+        pending: this.pendingChoices,
+        audit: this.onAudit,
+      },
       requestId,
       conversationId,
       autonomousMode,
       remoteAsk,
+      this.conversations.get(conversationId)?.autonomyLevel ?? "none",
     );
     const ctx: ToolContext = {
       signal,

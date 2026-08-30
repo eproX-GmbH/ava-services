@@ -34,8 +34,13 @@ const DEFAULT_CONFIG: TelegramConfig = {
   respectQuietHours: true,
   inboundEnabled: false,
   inboundConfirmEnabled: false,
+  autonomyLevel: "none",
   lastUpdateId: null,
 };
+
+function sanitiseAutonomy(v: unknown): TelegramConfig["autonomyLevel"] {
+  return v === "additive" || v === "mutating" ? v : "none";
+}
 
 export interface TelegramStoreEvents {
   changed: (config: TelegramConfig) => void;
@@ -110,6 +115,9 @@ export class TelegramStore extends EventEmitter {
     if (patch.inboundConfirmEnabled !== undefined) {
       next.inboundConfirmEnabled = patch.inboundConfirmEnabled === true;
     }
+    if (patch.autonomyLevel !== undefined) {
+      next.autonomyLevel = sanitiseAutonomy(patch.autonomyLevel);
+    }
     if (patch.lastUpdateId !== undefined) {
       next.lastUpdateId =
         typeof patch.lastUpdateId === "number" &&
@@ -121,9 +129,10 @@ export class TelegramStore extends EventEmitter {
     if (next.inboundEnabled && (next.chatId === null || !this.hasToken())) {
       next.inboundEnabled = false;
     }
-    // Rückfragen setzen den Eingang voraus.
+    // Rückfragen und Vollmacht setzen den Eingang voraus.
     if (!next.inboundEnabled) {
       next.inboundConfirmEnabled = false;
+      next.autonomyLevel = "none";
     }
     // Ohne Token oder Chat-ID kann der Kanal nicht aktiv sein.
     if (next.enabled && (next.chatId === null || !this.hasToken())) {
@@ -156,6 +165,10 @@ export class TelegramStore extends EventEmitter {
         inboundConfirmEnabled:
           parsed.inboundEnabled === true &&
           parsed.inboundConfirmEnabled === true,
+        autonomyLevel:
+          parsed.inboundEnabled === true
+            ? sanitiseAutonomy(parsed.autonomyLevel)
+            : "none",
         lastUpdateId:
           typeof parsed.lastUpdateId === "number" ? parsed.lastUpdateId : null,
       };

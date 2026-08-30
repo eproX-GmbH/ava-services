@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import type {
   AlertSeverity,
+  TelegramConfig,
   TelegramSnapshot,
 } from "../../../../shared/types";
 
@@ -283,6 +284,42 @@ export function TelegramSection(): JSX.Element {
                   Minuten keine Antwort, wird die Aktion abgebrochen. Damit
                   sind auch Aktionen mit Bestätigungspflicht — etwa
                   CRM-Löschungen — vom Handy aus möglich.
+                </p>
+              )}
+
+              {/* v0.1.462 — Vollmacht (PLAN_VOLLMACHT.md): welche
+                  Wirkungsklassen darf AVA ohne Rückfrage bestätigen? */}
+              <label className="field">
+                <span>Vollmacht (ohne Rückfrage bestätigen)</span>
+                <select
+                  value={cfg.autonomyLevel}
+                  disabled={busy}
+                  onChange={(e) =>
+                    void patch({
+                      autonomyLevel: e.target
+                        .value as TelegramConfig["autonomyLevel"],
+                    })
+                  }
+                >
+                  <option value="none">Keine — immer fragen</option>
+                  <option value="additive">
+                    Neues anlegen (Notiz, Aktivität, Aufgabe, Neuanlage,
+                    Verknüpfung)
+                  </option>
+                  <option value="mutating">
+                    Neues anlegen + Bestehendes ändern
+                  </option>
+                </select>
+              </label>
+              {cfg.autonomyLevel !== "none" && (
+                <p className="muted small">
+                  Gedeckte Aktionen bestätigt AVA autonom — jede davon landet
+                  im Audit-Trail. Löschen und andere destruktive Aktionen
+                  bleiben IMMER bestätigungspflichtig
+                  {cfg.inboundConfirmEnabled
+                    ? " (Rückfrage in diesem Chat)"
+                    : " (nur am Rechner)"}
+                  .
                 </p>
               )}
             </>

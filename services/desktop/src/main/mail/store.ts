@@ -84,6 +84,9 @@ interface AccountRow {
   // v0.1.299 — Optional, weil ältere Tables die Spalte noch nicht haben
   // (siehe applySchema unten — ALTER TABLE ADD COLUMN IF NOT EXISTS).
   auto_triage_enabled?: boolean | null;
+  // v0.1.462 — Vollmacht-Stufe (PLAN_VOLLMACHT.md); optional wegen
+  // ALTER TABLE ADD COLUMN IF NOT EXISTS.
+  autonomy_level?: string | null;
   poll_interval_minutes: number | string;
   last_sync_at: string | null;
   last_error_at: string | null;
@@ -178,9 +181,9 @@ export class MailStore extends EventEmitter {
     await pg.query(
       `INSERT INTO mail_account
          (address, display_name, imap_json, smtp_json, outbound_enabled,
-          auto_triage_enabled,
+          auto_triage_enabled, autonomy_level,
           poll_interval_minutes, last_sync_at, last_error_at, last_error_message)
-       VALUES ($1, $2, $3::jsonb, $4::jsonb, $5, $6, $7, $8, $9, $10)`,
+       VALUES ($1, $2, $3::jsonb, $4::jsonb, $5, $6, $7, $8, $9, $10, $11)`,
       [
         account.address,
         account.displayName,
@@ -192,6 +195,9 @@ export class MailStore extends EventEmitter {
         // Konto an und Auto-Antwort war stumm aus.
         account.outboundEnabled !== false,
         account.autoTriageEnabled !== false,
+        // v0.1.462 — Mail kennt nur none|additive (kein "mutating"),
+        // Default none (opt-in).
+        account.autonomyLevel === "additive" ? "additive" : "none",
         account.pollIntervalMinutes,
         account.lastSyncAt,
         account.lastErrorAt,
@@ -701,6 +707,10 @@ export class MailStore extends EventEmitter {
       -- den ALTER idempotent.
       ALTER TABLE mail_account
         ADD COLUMN IF NOT EXISTS auto_triage_enabled BOOLEAN NOT NULL DEFAULT TRUE;
+      -- v0.1.462 — Vollmacht-Stufe (PLAN_VOLLMACHT.md). Default 'none'
+      -- = bisheriges fail-closed-Verhalten, opt-in.
+      ALTER TABLE mail_account
+        ADD COLUMN IF NOT EXISTS autonomy_level TEXT NOT NULL DEFAULT 'none';
       -- v0.1.318 — Defaults von outbound + auto_triage auf TRUE gesetzt.
       -- Hintergrund: der User erwartet "Whitelist == AVA antwortet
       -- automatisch", drei separate Sicherheits-Toggles waren zu viel
@@ -842,6 +852,7 @@ function rowToAccount(row: AccountRow): MailAccount {
     smtp: parseJson(row.smtp_json) as MailAccount["smtp"],
     outboundEnabled: row.outbound_enabled,
     autoTriageEnabled: row.auto_triage_enabled === true,
+    autonomyLevel: row.autonomy_level === "additive" ? "additive" : "none",
     pollIntervalMinutes: Number(row.poll_interval_minutes),
     lastSyncAt: row.last_sync_at,
     lastErrorAt: row.last_error_at,

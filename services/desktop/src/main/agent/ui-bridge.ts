@@ -4,6 +4,7 @@ import type {
   AgentChoiceOption,
   AgentMatchRow,
   AgentStreamFrame,
+  AutonomyLevel,
 } from "../../shared/types";
 
 // UiBridge — the seam between tools and the renderer.
@@ -73,9 +74,41 @@ export interface RemoteAskHandler {
   ): Promise<string>;
 }
 
+/** v0.1.462 — Wirkungsklasse einer bestätigungspflichtigen Aktion
+ *  (PLAN_VOLLMACHT.md §3). Tools DEKLARIEREN die Klasse, die
+ *  Vollmacht-Stufe des Kanals entscheidet, ob autonom bestätigt wird. */
+export type ActionKind = "additive" | "mutating" | "destructive";
+
+export interface ConfirmActionInput {
+  kind: ActionKind;
+  /** Anzeigetext — identisch zum bisherigen askChoice-Prompt. */
+  prompt: string;
+  /** Der Options-value, der "Ja, ausführen" bedeutet. Wird bei
+   *  autonomer Bestätigung direkt zurückgegeben. */
+  confirmValue: string;
+  options: AgentChoiceOption[];
+}
+
+/** Deckt die Vollmacht-Stufe die Wirkungsklasse? Destruktiv: niemals. */
+export function autonomyCovers(
+  level: AutonomyLevel,
+  kind: ActionKind,
+): boolean {
+  if (kind === "destructive") return false;
+  if (kind === "additive") return level === "additive" || level === "mutating";
+  return level === "mutating";
+}
+
 export interface UiBridgeDeps {
   emit: (frame: AgentStreamFrame) => void;
   pending: Map<string, PendingChoice>;
+  /** v0.1.462 — Audit-Senke für autonome Bestätigungen. Jede per
+   *  Vollmacht durchgewunkene Aktion MUSS nachlesbar sein. */
+  audit?: (entry: {
+    action: string;
+    summary: string;
+    metadata: Record<string, unknown>;
+  }) => void;
 }
 
 export class UiBridge {
@@ -94,7 +127,58 @@ export class UiBridge {
     private readonly autonomousMode: boolean = false,
     /** v0.1.459 — T6: beantwortet Rückfragen im autonomen Modus remote. */
     private readonly remoteAsk: RemoteAskHandler | null = null,
+    /** v0.1.462 — Vollmacht-Stufe des Kanals (PLAN_VOLLMACHT.md). */
+    private readonly autonomyLevel: AutonomyLevel = "none",
   ) {}
+
+  /**
+   * v0.1.462 — Bestätigungspflichtige Aktion mit DEKLARIERTER
+   * Wirkungsklasse (PLAN_VOLLMACHT.md §4.1). Auflösungsreihenfolge:
+   *
+   *   1. Interaktiver Chat → normaler askChoice-Dialog.
+   *   2. Autonom + Vollmacht deckt die Klasse → sofort confirmValue,
+   *      mit Audit-Eintrag (jede autonome Entscheidung ist nachlesbar).
+   *   3. Autonom + RemoteAsk (Telegram T6) → Rückfrage im Chat.
+   *   4. Sonst → throw (fail-closed, wie bisher).
+   *
+   * askChoice bleibt für echte Auswahlfragen (Disambiguierung) das
+   * richtige API — confirmAction ist NUR für Ja/Nein-Genehmigungen.
+   */
+  async confirmAction(
+    input: ConfirmActionInput,
+    signal: AbortSignal,
+  ): Promise<string> {
+    if (!this.autonomousMode) {
+      return this.askChoice(input.prompt, input.options, signal);
+    }
+    if (autonomyCovers(this.autonomyLevel, input.kind)) {
+      this.deps.audit?.({
+        action: "agent.autonomy.autoConfirm",
+        summary: `Aktion autonom bestätigt (Vollmacht ${this.autonomyLevel}, Klasse ${input.kind})`,
+        metadata: {
+          conversationId: this.conversationId,
+          requestId: this.requestId,
+          kind: input.kind,
+          level: this.autonomyLevel,
+          prompt: input.prompt.slice(0, 2000),
+          confirmValue: input.confirmValue,
+        },
+      });
+      return input.confirmValue;
+    }
+    if (this.remoteAsk && input.options.length > 0) {
+      return this.remoteAsk.askChoice(input.prompt, input.options, signal);
+    }
+    throw new Error(
+      input.kind === "destructive"
+        ? "Diese Aktion ist destruktiv und braucht IMMER eine Bestätigung — " +
+          "im Auto-Modus ohne Rückfrage-Kanal nicht möglich. Am Rechner erledigen."
+        : `Diese Aktion (Klasse ${input.kind}) ist von der aktuellen ` +
+          `Vollmacht-Stufe (${this.autonomyLevel}) nicht gedeckt und es gibt ` +
+          `keinen Rückfrage-Kanal. Wähle einen anderen Pfad oder verweise ` +
+          `auf den Rechner. (Vollmacht: Einstellungen → Mail bzw. Telegram.)`,
+    );
+  }
 
   async askChoice(
     prompt: string,

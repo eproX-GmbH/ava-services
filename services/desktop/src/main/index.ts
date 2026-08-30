@@ -1704,6 +1704,20 @@ async function broadcastDailyLimitStatus(): Promise<void> {
 
 const agent = new AgentOrchestrator({
   providers,
+  // v0.1.462 — Vollmacht: jede autonome Bestätigung landet im
+  // Audit-Trail (PLAN_VOLLMACHT.md §4.1).
+  onAudit: (entry) =>
+    audit({
+      actorType: "system",
+      actorId: null,
+      category: "agent",
+      action: entry.action,
+      severity: "info",
+      subjectType: null,
+      subjectId: null,
+      summary: entry.summary,
+      metadata: entry.metadata,
+    }),
   // v0.1.405 — Gate vor jedem Turn (Chat UND Agent laufen durch den
   // Orchestrator). Liefert den aktuellen Tagesstand; bei `exceeded`
   // blockt der Orchestrator den Turn mit Hinweis-Frame.

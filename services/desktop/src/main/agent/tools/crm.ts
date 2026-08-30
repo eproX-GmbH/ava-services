@@ -431,12 +431,16 @@ export function buildCrmTools(deps: CrmToolDeps): Tool[] {
     }),
     run: async (args, c) => {
       // v0.1.278 — Confirm-Gate dazu (User-Wunsch: alle Writes bestätigen).
-      const value = await c.ui.askChoice(
-        `Soll ich folgende CRM-Verknüpfung anlegen?\n\nAVA-Firma: ${args.companyId}\n↔ ${args.crmType} ${args.crmExternalId}${args.crmDisplayName ? ` (${args.crmDisplayName})` : ""}`,
-        [
-          { value: "link", label: "Verknüpfen", description: "POST wird gesendet" },
-          { value: "cancel", label: "Verwerfen" },
-        ],
+      const value = await c.ui.confirmAction(
+        {
+          kind: "additive",
+          prompt: `Soll ich folgende CRM-Verknüpfung anlegen?\n\nAVA-Firma: ${args.companyId}\n↔ ${args.crmType} ${args.crmExternalId}${args.crmDisplayName ? ` (${args.crmDisplayName})` : ""}`,
+          confirmValue: "link",
+          options: [
+            { value: "link", label: "Verknüpfen", description: "POST wird gesendet" },
+            { value: "cancel", label: "Verwerfen" },
+          ],
+        },
         c.signal,
       );
       if (value !== "link") return userDeclined();
@@ -933,12 +937,16 @@ export function buildCrmTools(deps: CrmToolDeps): Tool[] {
       const fromLabel = OBJECT_LABEL[args.fromObjectType as HubspotObjectType];
       const toLabel = OBJECT_LABEL[args.toObjectType as HubspotObjectType];
       const rationaleBlock = args.rationale ? `\n\nBegründung: ${args.rationale}` : "";
-      const value = await ctx.ui.askChoice(
-        `Soll ich folgende Verknüpfung in HubSpot erstellen?\n\n${fromLabel} ${args.fromObjectId}\n↔ ${toLabel} ${args.toObjectId}${rationaleBlock}`,
-        [
-          { value: "apply", label: "Verknüpfen", description: "PUT wird gesendet" },
-          { value: "cancel", label: "Verwerfen" },
-        ],
+      const value = await ctx.ui.confirmAction(
+        {
+          kind: "additive",
+          prompt: `Soll ich folgende Verknüpfung in HubSpot erstellen?\n\n${fromLabel} ${args.fromObjectId}\n↔ ${toLabel} ${args.toObjectId}${rationaleBlock}`,
+          confirmValue: "apply",
+          options: [
+            { value: "apply", label: "Verknüpfen", description: "PUT wird gesendet" },
+            { value: "cancel", label: "Verwerfen" },
+          ],
+        },
         ctx.signal,
       );
       if (value !== "apply") return userDeclined();
@@ -1072,12 +1080,16 @@ export function buildCrmTools(deps: CrmToolDeps): Tool[] {
       const summary = args.associations
         .map((a) => `${a.objectType.replace(/s$/, "")} ${a.objectId}`)
         .join(", ");
-      const value = await ctx.ui.askChoice(
-        `Ich möchte folgende Notiz in HubSpot anlegen:\n\n${args.body.slice(0, 1500)}${args.body.length > 1500 ? "\n\n[…gekürzt]" : ""}\n\nVerknüpft mit: ${summary}`,
-        [
-          { value: "create", label: "Anlegen", description: "POST wird gesendet" },
-          { value: "cancel", label: "Verwerfen" },
-        ],
+      const value = await ctx.ui.confirmAction(
+        {
+          kind: "additive",
+          prompt: `Ich möchte folgende Notiz in HubSpot anlegen:\n\n${args.body.slice(0, 1500)}${args.body.length > 1500 ? "\n\n[…gekürzt]" : ""}\n\nVerknüpft mit: ${summary}`,
+          confirmValue: "create",
+          options: [
+            { value: "create", label: "Anlegen", description: "POST wird gesendet" },
+            { value: "cancel", label: "Verwerfen" },
+          ],
+        },
         ctx.signal,
       );
       if (value !== "create") return userDeclined();
@@ -1241,16 +1253,20 @@ export function buildCrmTools(deps: CrmToolDeps): Tool[] {
       const assocSummary = args.associations
         .map((a) => `${a.objectType.replace(/s$/, "")} ${a.objectId}`)
         .join(", ");
-      const value = await ctx.ui.askChoice(
-        `Ich protokolliere in HubSpot eine Aktivität vom Typ **${label}**${
-          args.title ? ` („${args.title}")` : ""
-        }:\n\n${args.body.slice(0, 1500)}${
-          args.body.length > 1500 ? "\n\n[…gekürzt]" : ""
-        }\n\nVerknüpft mit: ${assocSummary}`,
-        [
-          { value: "create", label: "Protokollieren", description: "POST wird gesendet" },
-          { value: "cancel", label: "Verwerfen" },
-        ],
+      const value = await ctx.ui.confirmAction(
+        {
+          kind: "additive",
+          prompt: `Ich protokolliere in HubSpot eine Aktivität vom Typ **${label}**${
+            args.title ? ` („${args.title}")` : ""
+          }:\n\n${args.body.slice(0, 1500)}${
+            args.body.length > 1500 ? "\n\n[…gekürzt]" : ""
+          }\n\nVerknüpft mit: ${assocSummary}`,
+          confirmValue: "create",
+          options: [
+            { value: "create", label: "Protokollieren", description: "POST wird gesendet" },
+            { value: "cancel", label: "Verwerfen" },
+          ],
+        },
         ctx.signal,
       );
       if (value !== "create") return userDeclined();
@@ -1348,12 +1364,16 @@ export function buildCrmTools(deps: CrmToolDeps): Tool[] {
       ]
         .filter(Boolean)
         .join(" · ");
-      const value = await ctx.ui.askChoice(
-        `Ich möchte folgende Aufgabe in HubSpot anlegen:\n\n${args.subject}${args.body ? `\n\n${args.body.slice(0, 800)}` : ""}\n${meta ? `\n${meta}` : ""}\n\nVerknüpft mit: ${summary}`,
-        [
-          { value: "create", label: "Anlegen", description: "POST wird gesendet" },
-          { value: "cancel", label: "Verwerfen" },
-        ],
+      const value = await ctx.ui.confirmAction(
+        {
+          kind: "additive",
+          prompt: `Ich möchte folgende Aufgabe in HubSpot anlegen:\n\n${args.subject}${args.body ? `\n\n${args.body.slice(0, 800)}` : ""}\n${meta ? `\n${meta}` : ""}\n\nVerknüpft mit: ${summary}`,
+          confirmValue: "create",
+          options: [
+            { value: "create", label: "Anlegen", description: "POST wird gesendet" },
+            { value: "cancel", label: "Verwerfen" },
+          ],
+        },
         ctx.signal,
       );
       if (value !== "create") return userDeclined();
@@ -2405,16 +2425,20 @@ export function buildCrmTools(deps: CrmToolDeps): Tool[] {
               : ""
           }`
         : "";
-      const value = await ctx.ui.askChoice(
-        `Ich möchte folgende NEUE Company in HubSpot anlegen:\n\n${propLines}${rationaleBlock}${linkHint}\n\nFalls die Firma bereits existiert, sag bitte Bescheid — sonst gibt es ein Duplikat.`,
-        [
-          {
-            value: "create",
-            label: "Anlegen",
-            description: "POST wird ans HubSpot-API gesendet",
-          },
-          { value: "cancel", label: "Verwerfen" },
-        ],
+      const value = await ctx.ui.confirmAction(
+        {
+          kind: "additive",
+          prompt: `Ich möchte folgende NEUE Company in HubSpot anlegen:\n\n${propLines}${rationaleBlock}${linkHint}\n\nFalls die Firma bereits existiert, sag bitte Bescheid — sonst gibt es ein Duplikat.`,
+          confirmValue: "create",
+          options: [
+            {
+              value: "create",
+              label: "Anlegen",
+              description: "POST wird ans HubSpot-API gesendet",
+            },
+            { value: "cancel", label: "Verwerfen" },
+          ],
+        },
         ctx.signal,
       );
       if (value !== "create") return userDeclined();
@@ -2539,12 +2563,16 @@ export function buildCrmTools(deps: CrmToolDeps): Tool[] {
       const rationaleBlock = args.rationale
         ? `\n\nBegründung: ${args.rationale}`
         : "";
-      const value = await ctx.ui.askChoice(
-        `Ich möchte folgenden NEUEN Contact in HubSpot anlegen:\n\n${propLines}${linkHint}${rationaleBlock}\n\nFalls dieser Contact bereits existiert (gleiche E-Mail), sag Bescheid — sonst gibt es ein Duplikat.`,
-        [
-          { value: "create", label: "Anlegen", description: "POST wird gesendet" },
-          { value: "cancel", label: "Verwerfen" },
-        ],
+      const value = await ctx.ui.confirmAction(
+        {
+          kind: "additive",
+          prompt: `Ich möchte folgenden NEUEN Contact in HubSpot anlegen:\n\n${propLines}${linkHint}${rationaleBlock}\n\nFalls dieser Contact bereits existiert (gleiche E-Mail), sag Bescheid — sonst gibt es ein Duplikat.`,
+          confirmValue: "create",
+          options: [
+            { value: "create", label: "Anlegen", description: "POST wird gesendet" },
+            { value: "cancel", label: "Verwerfen" },
+          ],
+        },
         ctx.signal,
       );
       if (value !== "create") return userDeclined();
@@ -2686,12 +2714,16 @@ export function buildCrmTools(deps: CrmToolDeps): Tool[] {
       const rationaleBlock = args.rationale
         ? `\n\nBegründung: ${args.rationale}`
         : "";
-      const value = await ctx.ui.askChoice(
-        `Ich möchte folgenden NEUEN Deal in HubSpot anlegen:\n\n${propLines}\n\nVerknüpft mit: ${assocLine}${rationaleBlock}`,
-        [
-          { value: "create", label: "Anlegen", description: "POST wird gesendet" },
-          { value: "cancel", label: "Verwerfen" },
-        ],
+      const value = await ctx.ui.confirmAction(
+        {
+          kind: "additive",
+          prompt: `Ich möchte folgenden NEUEN Deal in HubSpot anlegen:\n\n${propLines}\n\nVerknüpft mit: ${assocLine}${rationaleBlock}`,
+          confirmValue: "create",
+          options: [
+            { value: "create", label: "Anlegen", description: "POST wird gesendet" },
+            { value: "cancel", label: "Verwerfen" },
+          ],
+        },
         ctx.signal,
       );
       if (value !== "create") return userDeclined();
