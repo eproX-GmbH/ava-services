@@ -65,20 +65,24 @@ export interface IcpDraft {
 
 // ---- LLM-Schemata ----------------------------------------------------------
 
+// Schemas bewusst TOLERANT: ein fehlendes Nebenfeld darf die ganze
+// Analyse nicht kippen (Live-Befund: "KI-Analyse fehlgeschlagen" fuer
+// intakte Websites, weil kleine Producer-Modelle Felder auslassen).
+// Pflicht bleibt nur das Minimum; Rest hat Defaults.
 const ownSchema = yup.object({
   angebot: yup.string().trim().min(5).max(600).required(),
   nutzen: yup.string().trim().max(600).default(""),
   branche: yup.string().trim().max(120).default(""),
-  leistungen: yup.array().of(yup.string().trim().min(2).max(120).required()).max(10).default([]),
+  leistungen: yup.array().of(yup.string().trim().max(120)).max(10).default([]),
   standort: yup.string().trim().max(80).default(""),
 });
 
 const customerSchema = yup.object({
-  name: yup.string().trim().min(2).max(200).required(),
-  branche: yup.string().trim().min(2).max(120).required(),
+  name: yup.string().trim().max(200).default(""),
+  branche: yup.string().trim().max(120).default(""),
   groessenIndiz: yup.string().trim().max(200).default(""),
   standort: yup.string().trim().max(80).default(""),
-  leistungen: yup.array().of(yup.string().trim().min(2).max(120).required()).max(8).default([]),
+  leistungen: yup.array().of(yup.string().trim().max(120)).max(8).default([]),
 });
 
 const synthesisSchema = yup.object({
@@ -88,38 +92,65 @@ const synthesisSchema = yup.object({
   merkmale: yup.array().of(yup.string().trim().min(2).max(120).required()).max(10).default([]),
 });
 
+type LlmJsonResult<T> = { ok: true; value: T } | { ok: false; detail: string };
+
+/** LLM-JSON mit ESKALATION: Versuch 1 auf dem guenstigen Producer-
+ *  Modell, Versuch 2 auf dem vollen Chat-Modell (kleine Modelle sind
+ *  die Hauptursache fuer unparsbares JSON). Fehler kommen mit
+ *  konkretem Grund zurueck statt als stilles null. */
 async function llmJson<T>(
   providers: LlmProviderManager,
   system: string,
   user: string,
   tag: string,
   schema: yup.Schema<T>,
-): Promise<T | null> {
-  if (!providers.getStatus().ready) return null;
-  try {
-    const raw = await streamToText(providers, buildMessages(system, user, tag), {
-      timeoutMs: 90_000,
-      ...(providers.getProducerModelOverride()
-        ? { modelOverride: providers.getProducerModelOverride() }
-        : {}),
-    });
-    const parsed = parseJsonObject(raw);
-    if (!parsed) return null;
-    return schema.validateSync(parsed, { abortEarly: true });
-  } catch (err) {
-    console.warn(`[icp-assistant] LLM-Schritt ${tag} fehlgeschlagen:`, err);
-    return null;
+): Promise<LlmJsonResult<T>> {
+  if (!providers.getStatus().ready) {
+    return { ok: false, detail: "kein KI-Modell bereit" };
   }
+  let detail = "unbekannt";
+  const producerOverride = providers.getProducerModelOverride();
+  const attempts: Array<string | undefined> = producerOverride
+    ? [producerOverride, undefined] // 2. Versuch: Chat-Modell
+    : [undefined, undefined];
+  for (const modelOverride of attempts) {
+    try {
+      const raw = await streamToText(
+        providers,
+        buildMessages(system, user, tag),
+        {
+          timeoutMs: 90_000,
+          ...(modelOverride ? { modelOverride } : {}),
+        },
+      );
+      const parsed = parseJsonObject(raw);
+      if (!parsed) {
+        detail = "Antwort war kein JSON";
+        continue;
+      }
+      return { ok: true, value: schema.validateSync(parsed, { abortEarly: true }) };
+    } catch (err) {
+      detail = err instanceof Error ? err.message.slice(0, 160) : String(err);
+      console.warn(`[icp-assistant] LLM-Schritt ${tag} fehlgeschlagen:`, err);
+    }
+  }
+  return { ok: false, detail };
 }
 
 // ---- Schritt 1: eigene Website ---------------------------------------------
 
+function cleanList(v: Array<string | undefined>): string[] {
+  return v.filter((s): s is string => !!s && s.trim().length >= 2);
+}
+
 async function analyzeOwnSite(
   providers: LlmProviderManager,
   domain: string,
-): Promise<OwnSiteAnalysis | null> {
+): Promise<OwnSiteAnalysis | { fehler: string }> {
   const text = await crawlSite(domain);
-  if (!text) return null;
+  if (!text) {
+    return { fehler: "Website nicht erreichbar oder nicht lesbar" };
+  }
   const system =
     "Du analysierst die eigene Website eines B2B-Anbieters. Extrahiere " +
     "NUR, was der Text belegt — keine Vermutungen, KEINE Personennamen. " +
@@ -128,13 +159,15 @@ async function analyzeOwnSite(
     'Antworte NUR als JSON: {"angebot": "1-2 Saetze: was wird ' +
     'angeboten", "nutzen": "welches Problem wird geloest", "branche": ' +
     '"...", "leistungen": ["..."], "standort": "Ort oder leer"}';
-  return llmJson(
+  const r = await llmJson(
     providers,
     system,
-    `Website-Text von ${domain}:\n${text.slice(0, 24_000)}`,
+    `Website-Text von ${domain}:\n${text.slice(0, 14_000)}`,
     "icpown",
     ownSchema,
   );
+  if (!r.ok) return { fehler: `KI-Analyse fehlgeschlagen (${r.detail})` };
+  return { ...r.value, leistungen: cleanList(r.value.leistungen) };
 }
 
 // ---- Schritt 2: Kunden-Websites --------------------------------------------
@@ -142,7 +175,7 @@ async function analyzeOwnSite(
 async function analyzeCustomerSite(
   providers: LlmProviderManager,
   cand: CustomerInput,
-): Promise<CustomerSiteAnalysis | { fehler: "crawl" | "llm" }> {
+): Promise<CustomerSiteAnalysis | { fehler: "crawl" | "llm"; detail?: string }> {
   // Exakte URL crawlen (inkl. Pfad!) — die angegebene Seite IST der
   // Kunde (z. B. ein konkreter Shop), nicht die Konzern-Startseite.
   const text = await crawlSite(cand.domain, cand.url);
@@ -154,19 +187,21 @@ async function analyzeCustomerSite(
     'Antworte NUR als JSON: {"name": "Firmenname", "branche": "...", ' +
     '"groessenIndiz": "z. B. Mitarbeiter/Standorte, falls erkennbar, ' +
     'sonst leer", "standort": "Ort oder leer", "leistungen": ["..."]}';
-  // Bis zu 2 Versuche — unparsbare/schema-widrige KI-Antworten sollen
-  // einen Kunden nicht still aus dem ICP werfen.
-  for (let attempt = 0; attempt < 2; attempt++) {
-    const result = await llmJson(
-      providers,
-      system,
-      `Website-Text von ${cand.url}:\n${text.slice(0, 20_000)}`,
-      "icpcust",
-      customerSchema,
-    );
-    if (result) return { ...result, domain: cand.domain };
-  }
-  return { fehler: "llm" };
+  const r = await llmJson(
+    providers,
+    system,
+    `Website-Text von ${cand.url}:\n${text.slice(0, 12_000)}`,
+    "icpcust",
+    customerSchema,
+  );
+  if (!r.ok) return { fehler: "llm", detail: r.detail };
+  return {
+    ...r.value,
+    // Fallbacks statt Totalausfall: fehlender Name → Domain.
+    name: r.value.name.trim() || cand.domain,
+    leistungen: cleanList(r.value.leistungen),
+    domain: cand.domain,
+  };
 }
 
 // ---- Schritt 3: Synthese ---------------------------------------------------
@@ -211,7 +246,8 @@ async function synthesizeIcp(
           `${k.leistungen.length > 0 ? ` | Taetigkeit: ${k.leistungen.join(", ")}` : ""}`,
       )
       .join("\n");
-  return llmJson(providers, system, user, "icpsynth", synthesisSchema);
+  const r = await llmJson(providers, system, user, "icpsynth", synthesisSchema);
+  return r.ok ? r.value : null;
 }
 
 // ---- Radius-Vorschlag (B4) -------------------------------------------------
@@ -343,14 +379,13 @@ export async function runIcpAnalysis(
 
   // 1. Eigene Website.
   tick(`Analysiere deine Website (${args.eigeneDomain}) …`);
-  const eigene = await analyzeOwnSite(providers, args.eigeneDomain);
-  if (!eigene) {
+  const eigeneResult = await analyzeOwnSite(providers, args.eigeneDomain);
+  if ("fehler" in eigeneResult) {
     return {
-      error:
-        `Deine Website (${args.eigeneDomain}) konnte nicht analysiert werden ` +
-        `(nicht erreichbar, zu wenig Text oder KI-Fehler). Bitte URL pruefen.`,
+      error: `Deine Website (${args.eigeneDomain}): ${eigeneResult.fehler}. Bitte URL pruefen und erneut versuchen.`,
     };
   }
+  const eigene = eigeneResult;
 
   // 2. Kunden-Websites (Concurrency 2 — schont fremde Server).
   const kunden: CustomerSiteAnalysis[] = [];
@@ -363,13 +398,14 @@ export async function runIcpAnalysis(
       tick(`Analysiere Kunden-Website ${cand.domain} …`);
       const result = await analyzeCustomerSite(providers, cand);
       if ("fehler" in result) {
-        kundenFehlgeschlagen.push({
-          domain: cand.domain,
-          grund:
-            result.fehler === "crawl"
-              ? "Website nicht erreichbar oder nicht lesbar"
-              : "KI-Analyse fehlgeschlagen (2 Versuche) — bitte erneut analysieren",
-        });
+        const grund =
+          result.fehler === "crawl"
+            ? "Website nicht erreichbar oder nicht lesbar (auch per Browser)"
+            : `KI-Analyse fehlgeschlagen (${result.detail ?? "2 Versuche"})`;
+        kundenFehlgeschlagen.push({ domain: cand.domain, grund });
+        // Ehrliche Fortschrittszeile — vorher bekam auch ein Fehlschlag
+        // in der Anzeige einen Haken.
+        onProgress({ step, total, text: `✗ ${cand.domain}: ${grund}` });
         continue;
       }
       kunden.push(result);

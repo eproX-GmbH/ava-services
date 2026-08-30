@@ -262,16 +262,27 @@ export function IcpAssistant(): JSX.Element {
           Websites werden analysiert — das dauert je nach Anzahl 1–3 Minuten.
         </p>
         <div className="icp-progress">
-          {progress.map((p, i) => (
-            <div
-              key={i}
-              className={
-                i === progress.length - 1 ? "icp-step icp-step-active" : "icp-step icp-step-done"
-              }
-            >
-              {i === progress.length - 1 ? "⏳" : "✓"} {p.text}
-            </div>
-          ))}
+          {progress.map((p, i) => {
+            // ✗-Zeilen sind Fehlschlaege aus der Engine — die bekommen
+            // KEINEN Haken (vorher wirkte jeder Schritt erfolgreich).
+            const failed = p.text.startsWith("✗");
+            const active = i === progress.length - 1 && !failed;
+            return (
+              <div
+                key={i}
+                className={
+                  failed
+                    ? "icp-step icp-step-failed"
+                    : active
+                      ? "icp-step icp-step-active"
+                      : "icp-step icp-step-done"
+                }
+              >
+                {failed ? "" : active ? "⏳ " : "✓ "}
+                {p.text}
+              </div>
+            );
+          })}
           {last && (
             <div className="icp-progress-meta">
               Schritt {last.step} von {last.total}

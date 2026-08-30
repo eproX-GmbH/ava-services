@@ -16,6 +16,7 @@
 // profiledAt bleibt leer, ein spaeterer Lauf versucht es erneut.
 
 import * as yup from "yup";
+import { BrowserWindow } from "electron";
 import type { GatewayClient } from "../agent/gateway-client";
 import type { LlmProviderManager } from "../agent/providers";
 import {
@@ -169,6 +170,63 @@ export function pickSubpageLinks(html: string, base: URL, coreDomain: string): s
   return out.slice(0, MAX_SUBPAGES);
 }
 
+// ---- Browser-Fallback ------------------------------------------------------
+//
+// Plain-HTTP scheitert an JS-gerenderten Seiten (SPA liefert leeres
+// HTML) und an Bot-Gates, die den schlichten fetch-UA ablehnen. Dann
+// laedt ein verstecktes Electron-Fenster die Seite wie ein echter
+// Browser und liest das GERENDERTE innerText. Serialisiert (Mutex),
+// damit parallele Crawls keine Fenster-Flut erzeugen. Kein Bypass von
+// Challenges (A7): wenn die Seite nach dem Rendern leer bleibt, bleibt
+// sie leer.
+
+let browserFetchChain: Promise<unknown> = Promise.resolve();
+
+async function fetchTextViaBrowser(url: string): Promise<string | null> {
+  const run = async (): Promise<string | null> => {
+    let win: BrowserWindow | null = null;
+    try {
+      win = new BrowserWindow({
+        show: false,
+        width: 1280,
+        height: 900,
+        webPreferences: {
+          backgroundThrottling: false,
+          images: false,
+          sandbox: true,
+          contextIsolation: true,
+          nodeIntegration: false,
+        },
+      });
+      await Promise.race([
+        win.loadURL(url),
+        new Promise((_, rej) =>
+          setTimeout(() => rej(new Error("browser timeout")), 25_000),
+        ),
+      ]);
+      // Kurz rendern lassen (Hydration/Nachlade-Inhalte).
+      await new Promise((r) => setTimeout(r, 2_500));
+      const text = (await win.webContents.executeJavaScript(
+        "document.body ? document.body.innerText : ''",
+        true,
+      )) as string;
+      const cleaned = (text ?? "").replace(/\s+/g, " ").trim();
+      return cleaned.length >= 200 ? cleaned.slice(0, 30_000) : null;
+    } catch {
+      return null;
+    } finally {
+      try {
+        win?.destroy();
+      } catch {
+        /* schon zu */
+      }
+    }
+  };
+  const result = browserFetchChain.then(run, run);
+  browserFetchChain = result.catch(() => null);
+  return result as Promise<string | null>;
+}
+
 /** Website eines Kandidaten kurz crawlen. null = nicht erreichbar.
  *
  *  `startUrl` (optional): exakte Einstiegs-URL inkl. Pfad — wichtig fuer
@@ -190,6 +248,17 @@ export async function crawlSite(
     if (homeHtml) {
       base = new URL(candidate);
       break;
+    }
+  }
+  // Duennes/leeres statisches HTML (SPA, Bot-Gate) → Browser-Fallback:
+  // gerendertes innerText aus einem versteckten Electron-Fenster. Das
+  // Ergebnis ist bereits Text (kein HTML) und hat keine Links fuer den
+  // Unterseiten-Crawl — fuer die LLM-Analyse reicht die gerenderte
+  // Startseite in der Praxis aus.
+  if (!homeHtml || htmlToText(homeHtml).length < 200) {
+    for (const candidate of starts) {
+      const rendered = await fetchTextViaBrowser(candidate);
+      if (rendered) return rendered;
     }
   }
   if (!homeHtml || !base) return null;

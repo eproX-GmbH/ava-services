@@ -8138,3 +8138,7 @@ tr.held-row td:first-child::after {
   gap: 10px;
   flex-wrap: wrap;
 }
+
+.icp-step-failed {
+  color: #ef4444;
+}
