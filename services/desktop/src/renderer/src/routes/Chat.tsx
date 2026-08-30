@@ -1554,10 +1554,10 @@ export function Chat() {
           disabled={isRecording}
           title={
             autonomyMode === "manual"
-              ? "Immer fragen: jede Aktion mit Bestätigungsdialog"
+              ? "Manuell: jede Aktion mit Bestätigungsdialog"
               : autonomyMode === "additive"
-                ? "Neues automatisch: Notizen, Aufgaben, Neuanlagen ohne Rückfrage (mit Audit). Gilt auch für Telegram und Mail."
-                : "Voll-Automatik: auch Änderungen ohne Rückfrage (mit Audit). Löschen fragt immer. Gilt auch für Telegram; Mail bleibt bei „Neues automatisch“."
+                ? "Halb-auto: Neues (Notizen, Aufgaben, Neuanlagen) ohne Rückfrage, mit Audit. Gilt auch für Telegram und Mail."
+                : "Voll-auto: auch Änderungen ohne Rückfrage, mit Audit. Löschen fragt immer. Gilt auch für Telegram; Mail bleibt bei Halb-auto."
           }
           aria-label="Autonomie-Modus"
           onChange={(e) =>
@@ -1568,8 +1568,8 @@ export function Chat() {
               .then(setAutonomyMode)
           }
         >
-          <option value="manual">Fragen</option>
-          <option value="additive">Neues auto</option>
+          <option value="manual">Manuell</option>
+          <option value="additive">Halb-auto</option>
           <option value="mutating">Voll-auto</option>
         </select>
         <button

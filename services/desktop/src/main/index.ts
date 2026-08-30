@@ -4194,10 +4194,10 @@ app.whenReady().then(async () => {
         subjectId: null,
         summary: `Autonomie-Modus: ${
           next === "manual"
-            ? "Immer fragen"
+            ? "Manuell"
             : next === "additive"
-              ? "Neues automatisch"
-              : "Voll-Automatik (außer Löschen)"
+              ? "Halb-auto"
+              : "Voll-auto (außer Löschen)"
         }`,
         metadata: { mode: next },
       });
