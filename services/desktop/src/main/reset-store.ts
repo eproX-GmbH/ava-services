@@ -75,6 +75,11 @@ export function performBootResetIfRequested(): boolean {
     "mail-cache", // zwischengespeicherte Mail-Anhänge/Inhalte.
     "mail-creds.bin", // IMAP/SMTP-Passwörter (Mail-Trennung).
     "telegram", // v0.1.412 — Bot-Token + Chat-Konfiguration.
+    "discovery", // v0.1.455 — Radar: Automatik-Konfig, Alert-Dedup,
+    //              Match-Scores, Top-Kunden-Profile. Die ZENTRALEN
+    //              Ignoriert/Importiert-Entscheidungen loescht der
+    //              IPC-Handler vor dem Neustart (siehe index.ts —
+    //              braucht Auth, die es beim Boot nicht mehr gibt).
     "research", // Research-Feature-Zustand/Tiers.
     "skills", // benutzerdefinierte Skills.
     "skills-prefs.json",
@@ -113,6 +118,7 @@ export function performBootResetIfRequested(): boolean {
     "freshness-prefs.json",
     "freshness-cursor.json",
     "watches.jsonl",
+    "icp.json", // v0.1.455 — Idealkundenprofil (Radar-Grundlage).
     "memory", // Chat-Transkripte (Verzeichnis).
     "knowledge", // Notion/Obsidian-Status + Tokens.
   ];

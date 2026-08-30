@@ -5055,6 +5055,23 @@ app.whenReady().then(async () => {
     },
   );
   ipcMain.handle("settings:resetAllExceptModels", async () => {
+    // Zentrale Radar-Entscheidungen (ignoriert/importiert, pro Nutzer im
+    // Gateway) JETZT loeschen — beim Boot-Reset gibt es keine Auth mehr.
+    // Best-effort: ein Offline-Reset soll nicht daran scheitern; dann
+    // bleiben die Entscheidungen stehen (im Audit vermerkt).
+    let radarDecisionsDeleted: number | null = null;
+    try {
+      const r = await gatewayClient.request<{ deleted: number }>(
+        "/v1/discovery/decisions",
+        { method: "DELETE" },
+      );
+      radarDecisionsDeleted = r.deleted;
+    } catch (err) {
+      console.warn(
+        "[reset] Radar-Entscheidungen konnten nicht geloescht werden (offline?):",
+        err instanceof Error ? err.message : String(err),
+      );
+    }
     audit({
       actorType: "user",
       actorId: null,
@@ -5064,8 +5081,11 @@ app.whenReady().then(async () => {
       subjectType: null,
       subjectId: null,
       summary:
-        "Werksreset ausgelöst: alle lokalen Daten außer LLM-Modelle/Keys werden beim Neustart gelöscht",
-      metadata: {},
+        "Werksreset ausgelöst: alle lokalen Daten außer LLM-Modelle/Keys werden beim Neustart gelöscht" +
+        (radarDecisionsDeleted !== null
+          ? ` (${radarDecisionsDeleted} zentrale Radar-Entscheidungen gelöscht)`
+          : " (zentrale Radar-Entscheidungen NICHT erreichbar — bleiben bestehen)"),
+      metadata: { radarDecisionsDeleted },
     });
     // Kurze Verzögerung, damit die IPC-Antwort + das Audit-Log noch
     // durchgehen, bevor der Prozess neu startet.

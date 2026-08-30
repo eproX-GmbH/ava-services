@@ -404,6 +404,21 @@ export async function findRegisterCandidates(
   return rows.filter((r) => !exclude.has(r.companyId)).slice(0, limit);
 }
 
+/** ALLE Entscheidungen eines Nutzers loeschen (Werksreset): ignorierte
+ *  und importierte Firmen tauchen danach wieder als offene Kandidaten
+ *  auf. Der geteilte Bestand (DiscoveredCompany) bleibt unberuehrt. */
+export async function clearDecisions(
+  pool: Pool,
+  userId: string,
+): Promise<{ deleted: number }> {
+  await ensureSchema(pool);
+  const r = await pool.query(
+    `DELETE FROM "DiscoveryDecision" WHERE "userId" = $1`,
+    [userId],
+  );
+  return { deleted: r.rowCount ?? 0 };
+}
+
 /** Juengste Verwerf-Entscheidungen MIT Grund (Feedback-Loop Phase 4):
  *  fliessen als Nutzer-Praeferenzen in den Match-Prompt ein. */
 export async function listDismissedWithReasons(

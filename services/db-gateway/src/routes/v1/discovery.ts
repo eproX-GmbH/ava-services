@@ -21,6 +21,7 @@ import {
   startScan,
   saveProfile,
   saveDecisions,
+  clearDecisions,
   findRegisterCandidates,
   listDismissedWithReasons,
   discoveryIdFor,
@@ -571,6 +572,44 @@ const decisionsRoute = createRoute({
       description: "unauthenticated",
     },
   },
+});
+
+// ---- DELETE /discovery/decisions -------------------------------------------
+//
+// Werksreset-Begleiter: loescht ALLE Entscheidungen des Nutzers, damit
+// ignorierte/importierte Firmen nach einem Reset wieder als offene
+// Kandidaten erscheinen. Nur die eigenen Zeilen (actorId).
+
+const clearDecisionsRoute = createRoute({
+  method: "delete",
+  path: "/discovery/decisions",
+  tags: ["discovery"],
+  summary: "Alle eigenen Kandidaten-Entscheidungen loeschen (Werksreset).",
+  responses: {
+    200: {
+      content: {
+        "application/json": {
+          schema: z
+            .object({ deleted: z.number() })
+            .openapi("DiscoveryClearDecisionsResponse"),
+        },
+      },
+      description: "Anzahl geloeschter Entscheidungen",
+    },
+    401: {
+      content: { "application/json": { schema: ErrorShape } },
+      description: "unauthenticated",
+    },
+  },
+});
+
+discoveryRouter.openapi(clearDecisionsRoute, async (c) => {
+  const auth = c.get("auth");
+  if (!auth?.tenantId) {
+    throw new HTTPException(401, { message: "auth_context_missing" });
+  }
+  const result = await clearDecisions(getGatewayPool(), auth.actorId);
+  return c.json(result, 200);
 });
 
 discoveryRouter.openapi(decisionsRoute, async (c) => {
