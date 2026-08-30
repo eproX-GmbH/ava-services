@@ -6,10 +6,29 @@ import {
   CreateObservationInput,
 } from "./observation";
 import { reconcileEntity } from "./reconcile-entity";
+import { nameIdentityForm } from "./sanitize-person";
 
 export function sha256(input: string): string {
   return createHash("sha256").update(input).digest("hex");
 }
+
+// v0.1.189-Port — Host-Gate fuer Personen-Profil-URLs. Das LLM haengt
+// gelegentlich CDN-Avatar-URLs an das linkedinUrl-Feld; ohne Gate wird
+// so eine Bild-URL zum Identitaetsschluessel UND zum klickbaren Badge.
+function isHostFor(
+  url: string | undefined | null,
+  allowedHosts: ReadonlyArray<string>,
+): boolean {
+  if (!url) return false;
+  try {
+    const host = new URL(url).hostname.toLowerCase();
+    return allowedHosts.some((h) => host === h || host.endsWith("." + h));
+  } catch {
+    return false;
+  }
+}
+const LINKEDIN_HOSTS = ["linkedin.com", "lnkd.in"];
+const XING_HOSTS = ["xing.com"];
 
 export function personIdentityKey(args: {
   companyId: string;
@@ -17,9 +36,19 @@ export function personIdentityKey(args: {
   linkedinUrl?: string | null;
   xingUrl?: string | null;
 }): string {
-  const url = (args.linkedinUrl || args.xingUrl || "").trim().toLowerCase();
+  // Nur echte Profil-URLs duerfen Identitaet stiften (Host-Gate) —
+  // sonst wird derselbe Mensch pro Avatar-CDN-Pfad neu angelegt.
+  const gatedUrl = isHostFor(args.linkedinUrl, LINKEDIN_HOSTS)
+    ? args.linkedinUrl
+    : isHostFor(args.xingUrl, XING_HOSTS)
+      ? args.xingUrl
+      : null;
+  const url = (gatedUrl ?? "").trim().toLowerCase();
   if (url) return `url:${url}`;
-  const name = args.fullName.trim().toLowerCase();
+  // Titel-/Diakritik-gefaltete Namensform: "Dr. Anna Meier" und
+  // "Anna Meier" sind dieselbe Person. Fuer schlichte Namen identisch
+  // zur alten lowercase-Form → bestehende Schluessel bleiben stabil.
+  const name = nameIdentityForm(args.fullName);
   return `name:${sha256(`${args.companyId}|${name}`)}`;
 }
 
@@ -119,7 +148,10 @@ export function buildPersonObservations(args: {
     companyId: args.companyId,
   });
 
-  if (args.candidate.linkedinUrl) {
+  if (
+    args.candidate.linkedinUrl &&
+    isHostFor(args.candidate.linkedinUrl, LINKEDIN_HOSTS)
+  ) {
     obs.push({
       entityType: "PERSON" as EntityType,
       entityId: args.personId,
@@ -133,7 +165,7 @@ export function buildPersonObservations(args: {
     });
   }
 
-  if (args.candidate.xingUrl) {
+  if (args.candidate.xingUrl && isHostFor(args.candidate.xingUrl, XING_HOSTS)) {
     obs.push({
       entityType: "PERSON" as EntityType,
       entityId: args.personId,

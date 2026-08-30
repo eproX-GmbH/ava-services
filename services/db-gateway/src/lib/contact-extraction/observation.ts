@@ -1,5 +1,6 @@
 import type { PrismaClient, EntityType, FactStatus } from "../../../generated/company-contact-client";
 import { normalizeValue } from "./normalize-value";
+import { cleanContactValueForDisplay } from "./presentation";
 import { buildObservationHash, buildSignalDedupKey } from "./hashing";
 
 export type CreateObservationInput = {
@@ -21,9 +22,18 @@ export async function createObservationIdempotent(
   prisma: PrismaClient,
   input: CreateObservationInput,
 ) {
-  const normalized = normalizeValue({
+  // Nadeloehr fuer ALLE drei Extraktions-Quellen: erst den Wert fuer
+  // die Anzeige bereinigen (De-Obfuskierung, tel://-Praefixe, Labels),
+  // dann daraus die Dedup-Normalform berechnen. Vorher landeten
+  // Rohwerte wie "info (at) quikk.de" unveraendert in Fact.value UND
+  // in der Normalform — kein Dedup gegen "info@quikk.de".
+  const cleanedValue = cleanContactValueForDisplay({
     field: input.field,
     value: input.value,
+  });
+  const normalized = normalizeValue({
+    field: input.field,
+    value: cleanedValue,
     defaultCountryCode: input.defaultCountryCode,
   });
 
@@ -52,7 +62,7 @@ export async function createObservationIdempotent(
       companyId: input.companyId ?? null,
       personId: input.personId ?? null,
       field: input.field,
-      value: input.value,
+      value: cleanedValue,
       normalized,
       source: input.source,
       evidenceUrl: input.evidenceUrl ?? null,
@@ -152,6 +162,37 @@ export async function applyObservation(
     update: {},
     create: { factId: fact.id, observationId: args.observationId },
   });
+
+  // Konfidenz aus der Beleglage berechnen — vorher stand hier eine
+  // Konstante (0.6, nie aktualisiert): jeder Balken zeigte 60 %,
+  // egal ob ein Einmal-Fund oder fuenffach bestaetigt.
+  //
+  // Formel (bewusst simpel und erklaerbar):
+  //   0.45 + 0.15 * min(#unterschiedliche Beleg-URLs, 3)
+  //        + 0.05 * min(#unterschiedliche Quellen - 1, 2), Cap 0.95
+  // → 1 Beleg = 0.60 (Kontinuitaet zum alten Wert), 2 URLs = 0.75,
+  //   3+ URLs = 0.90, unabhaengige Quellen (website/people/search)
+  //   geben den Rest bis 0.95.
+  const links = await prisma.factObservationLink.findMany({
+    where: { factId: fact.id },
+    include: { observation: { select: { evidenceUrl: true, source: true } } },
+  });
+  const evidenceUrls = new Set(
+    links.map((l) => l.observation.evidenceUrl ?? "(ohne-url)"),
+  );
+  const sources = new Set(links.map((l) => l.observation.source));
+  const confidence = Math.min(
+    0.95,
+    0.45 +
+      0.15 * Math.min(evidenceUrls.size, 3) +
+      0.05 * Math.min(Math.max(sources.size - 1, 0), 2),
+  );
+  if (Math.abs(confidence - fact.confidence) > 0.001) {
+    fact = await prisma.fact.update({
+      where: { id: fact.id },
+      data: { confidence },
+    });
+  }
 
   if (createdFact) {
     const type =

@@ -32,6 +32,7 @@ import {
   reconcilePersonAndProjectEmployment,
 } from "./contact-extraction/employment";
 import { createObservationIdempotent } from "./contact-extraction/observation";
+import { sanitizePersonName, sanitizeRole } from "./contact-extraction/sanitize-person";
 import { reconcileEntity } from "./contact-extraction/reconcile-entity";
 import type { ApplyObservationPolicy } from "./contact-extraction/observation";
 import type { PersistEvent } from "./persist-bus-types";
@@ -114,10 +115,16 @@ export async function applyCompanyContactPersist(
   // company contact fields are change-tracked (a new observed value
   // replaces the prior fact), and adding a new email/phone/address
   // marks the prior one inactive (single-source-of-truth per field).
+  // phone/email sind MULTI-VALUE: Firmen haben legitim Zentrale + Fax +
+  // Support-Nummer und mehrere Adressen-Postfaecher. Die alte
+  // Single-Value-Policy setzte bei jeder neu gesehenen Nummer ALLE
+  // anderen auf INACTIVE — pro Crawl ein Flapping aus falschen
+  // "Telefon geaendert"-Signalen. Adresse bleibt Single-Value
+  // (Sitz-Wechsel ist ein echtes Signal).
   const COMPANY_POLICY: ApplyObservationPolicy = {
-    multiValueFields: new Set<string>([]),
-    changeFields: new Set<string>(["phone", "email", "address", "websiteUrl"]),
-    inactiveOnNewForFields: new Set<string>(["phone", "email", "address"]),
+    multiValueFields: new Set<string>(["phone", "email"]),
+    changeFields: new Set<string>(["address", "websiteUrl"]),
+    inactiveOnNewForFields: new Set<string>(["address"]),
   };
 
   // ---- 1. Company-scope facts ----------------------------------------------
@@ -167,9 +174,14 @@ export async function applyCompanyContactPersist(
   // ---- 2. Per-person upsert + reconciliation -------------------------------
   let personsTouched = 0;
   for (const p of result.people ?? []) {
+    // Kandidat EINMAL zentral bereinigen: Rollen-Sanitization (Titel-
+    // Split, Rechtsfloskel-Blacklist — "Inhaltlich Verantwortliche
+    // gemäß § 10 Abs. 3 MDStV" ist keine Position) + Namens-Cleanup.
+    // Der bereinigte Kandidat geht auch in die Observations (vorher
+    // floss dort das rohe `p` ein — latenter Drift zum Identity-Pfad).
     const candidate: EmployeeCandidate = {
-      fullName: p.fullName,
-      title: p.title,
+      fullName: sanitizePersonName(p.fullName),
+      title: sanitizeRole(p.title) ?? undefined,
       department: p.department,
       linkedinUrl: p.linkedinUrl,
       xingUrl: p.xingUrl,
@@ -178,12 +190,13 @@ export async function applyCompanyContactPersist(
       source: source,
       sourceUrl: p.sourceUrl ?? evidenceUrl ?? undefined,
     };
+    if (!candidate.fullName) continue;
     const up = await upsertPersonByIdentity(prisma, { companyId, candidate });
     const obs = buildPersonObservations({
       personId: up.personId,
       identityKey: up.identityKey,
       companyId,
-      candidate: p,
+      candidate,
       source,
       evidenceUrl: evidenceUrl ?? undefined,
       defaultCountryCode: result.defaultCountryCode,
