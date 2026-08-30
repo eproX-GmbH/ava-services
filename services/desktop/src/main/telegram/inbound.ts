@@ -75,6 +75,37 @@ const ASK_TIMEOUT_MS = 3 * 60_000;
  *  und Abort zeitnah greifen). */
 const ASK_POLL_SECONDS = 10;
 
+/**
+ * v0.1.464 — Write-Claim-Guard: Tools, die nach außen SCHREIBEN.
+ * Läuft im Turn keins davon erfolgreich, der Antworttext behauptet
+ * aber Vollzug („habe … angelegt/erfasst"), hängt der Guard einen
+ * deterministischen Korrektur-Hinweis an. Bewusst GROSSZÜGIG gefasst
+ * (lieber eine Behauptung durchlassen als eine echte Aktion als
+ * Halluzination markieren).
+ */
+const WRITE_TOOL_RE =
+  /^(crm_(create|update|log|sync|enrich|associate|disassociate|delete|complete|link)|mail_(reply|send|forward|archive|allowlist)|notion_(create|update|delete|append)|obsidian_(create|append|write|delete)|import_|profile_(set|propose)|watch_(register|remove|pause|resume)|freshness_(set|pin|unpin|run)|scheduler_|discovery_|icp_)/;
+
+/** Vollzugs-Behauptung im Antworttext (Vergangenheitsform mit
+ *  Hilfsverb — Konjunktiv/Futur wie „würde anlegen" matcht nicht). */
+const CLAIM_RE =
+  /\b(habe?|wurden?|ist|sind)\b[^.!?\n]{0,80}\b(angelegt|erfasst|eingetragen|aktualisiert|protokolliert|erstellt|hinterlegt|gespeichert|dokumentiert|verkn(ü|ue)pft|(ü|ue)bernommen|archiviert|verschickt|gesendet)\b/i;
+
+/** Aktions-Objekte, auf die sich eine Vollzugs-Behauptung beziehen
+ *  muss (im SELBEN Satz). Ohne diese Kopplung würde der Guard auch
+ *  bei Faktenaussagen über Firmen anschlagen („Der Jahresabschluss
+ *  wurde im Bundesanzeiger hinterlegt"). */
+const CLAIM_OBJECT_RE =
+  /\b(hubspot|crm|notiz|aktivit(ä|ae)t|aufgabe|task|deal|company|kontakt(e|daten)?|verkn(ü|ue)pfung|mail|e-mail|erinnerung|termin|notion|obsidian|profil|import)\b/i;
+
+/** Behauptet der Text in irgendeinem Satz den Vollzug einer
+ *  AVA-Aktion? Satzweise geprüft, damit Verb und Objekt zusammengehören. */
+function claimsWriteAction(text: string): boolean {
+  return text
+    .split(/[.!?\n]+/)
+    .some((s) => CLAIM_RE.test(s) && CLAIM_OBJECT_RE.test(s));
+}
+
 export interface TelegramInboundDeps {
   store: TelegramStore;
   orchestrator: AgentOrchestrator;
@@ -282,25 +313,52 @@ export class TelegramInbound {
       metadata: { conversationId: started.conversationId },
     });
 
-    const answer = await this.awaitAnswer(started.requestId);
-    await this.reply(
+    const { text: answer, writesExecuted } = await this.awaitAnswer(
+      started.requestId,
+    );
+    let finalText =
       answer && answer.trim().length > 0
         ? answer
-        : "Ich konnte dazu leider keine Antwort erzeugen.",
-    );
+        : "Ich konnte dazu leider keine Antwort erzeugen.";
+    // v0.1.464 — Write-Claim-Guard: Behauptet die Antwort Vollzug,
+    // obwohl im Turn KEIN Schreib-Tool erfolgreich lief, wird ein
+    // deterministischer Hinweis angehängt. Reine Trace-Prüfung, kein
+    // LLM — kann selbst nicht halluzinieren.
+    if (writesExecuted === 0 && claimsWriteAction(finalText)) {
+      finalText +=
+        "\n\n⚠️ Automatischer Hinweis: In diesem Durchlauf wurde " +
+        "tatsächlich KEINE Schreib-Aktion ausgeführt (kein CRM-/Mail-/" +
+        "Notiz-Tool gelaufen). Falls oben etwas anderes steht, stimmt " +
+        "es nicht — bitte am Rechner prüfen oder erneut beauftragen.";
+      this.onAudit?.({
+        severity: "warning",
+        summary:
+          "Write-Claim-Guard: Antwort behauptete Vollzug ohne Schreib-Tool",
+        metadata: {
+          conversationId: started.conversationId,
+          preview: finalText.slice(0, 300),
+        },
+      });
+    }
+    await this.reply(finalText);
   }
 
-  /** Sammelt die Antwort des Agenten aus den Stream-Frames. */
-  private awaitAnswer(requestId: string): Promise<string> {
+  /** Sammelt die Antwort des Agenten aus den Stream-Frames — plus die
+   *  Zahl der ERFOLGREICH gelaufenen Schreib-Tools (Write-Claim-Guard). */
+  private awaitAnswer(
+    requestId: string,
+  ): Promise<{ text: string; writesExecuted: number }> {
     return new Promise((resolve) => {
       let buf = "";
       let settled = false;
+      let writesExecuted = 0;
+      const toolNameById = new Map<string, string>();
       const finish = (v: string): void => {
         if (settled) return;
         settled = true;
         clearTimeout(timer);
         this.orchestrator.off("stream", onFrame);
-        resolve(v);
+        resolve({ text: v, writesExecuted });
       };
       const onFrame = (frame: AgentStreamFrame): void => {
         if (frame.requestId !== requestId) return;
@@ -309,7 +367,14 @@ export class TelegramInbound {
         // fixer Timer würde die Antwort danach verwerfen.
         refresh();
         if (frame.kind === "token" && frame.delta) buf += frame.delta;
-        else if (frame.kind === "done") finish(buf);
+        else if (frame.kind === "tool-call") {
+          toolNameById.set(frame.toolCall.id, frame.toolCall.name);
+        } else if (frame.kind === "tool-result") {
+          const name = toolNameById.get(frame.toolCallId);
+          if (frame.ok && name && WRITE_TOOL_RE.test(name)) {
+            writesExecuted++;
+          }
+        } else if (frame.kind === "done") finish(buf);
         else if (frame.kind === "error") {
           finish(buf || `Fehler: ${frame.message}`);
         }
