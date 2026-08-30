@@ -178,18 +178,31 @@ async function synthesizeIcp(
 ): Promise<yup.InferType<typeof synthesisSchema> | null> {
   const system =
     "Du erstellst aus dem Angebot eines B2B-Anbieters und den Profilen " +
-    "seiner besten Bestandskunden ein Idealkundenprofil (ICP). Leite " +
-    "NUR Muster ab, die die Kundenprofile wirklich zeigen — keine " +
-    "Vermutungen, keine Personennamen, KEINE Ausschluss-Kriterien " +
-    "(die definiert der Nutzer selbst). beschreibung: 3-6 Saetze in " +
-    "Du-Form aus Sicht des Anbieters (\"Deine idealen Kunden sind ...\"), " +
-    "konkret und ohne Marketing-Floskeln. " +
+    "seiner besten Bestandskunden ein Idealkundenprofil (ICP). Das ICP " +
+    "beschreibt die ZIELGRUPPE verallgemeinert — es ist KEINE " +
+    "Nacherzaehlung der Beispiel-Firmen. Regeln:\n" +
+    "- Nur Muster ableiten, die die Kundenprofile wirklich zeigen — " +
+    "keine Vermutungen, keine Personennamen, KEINE Ausschluss-" +
+    "Kriterien (die definiert der Nutzer selbst).\n" +
+    "- branchen: 2-6 UEBERGEORDNETE Branchenbezeichnungen (z. B. " +
+    '"Immobilien", "Rechtsberatung", "Steuerberatung") — KEINE ' +
+    "Leistungs- oder Produktlisten der Beispiel-Firmen.\n" +
+    "- groesse: ein realistisches Groessenband fuer ZIELKUNDEN (z. B. " +
+    '"10-200 Mitarbeiter" oder "mehrere Standorte"). NIEMALS Kennzahlen ' +
+    "einer einzelnen Beispiel-Firma woertlich uebernehmen (etwa " +
+    "Konzern-Standortzahlen). Bei nur EINEM Kundenbeispiel oder ohne " +
+    "belastbares Muster: leer lassen.\n" +
+    "- merkmale: verallgemeinerte Eigenschaften der Zielgruppe, nicht " +
+    "firmenspezifische Fakten.\n" +
+    "- beschreibung: 3-6 Saetze in Du-Form aus Sicht des Anbieters " +
+    "(\"Deine idealen Kunden sind ...\"), konkret, ohne Marketing-" +
+    "Floskeln und ohne die Beispiel-Firmen beim Namen zu nennen. " +
     'Antworte NUR als JSON: {"beschreibung": "...", "branchen": ["..."], ' +
-    '"groesse": "Groessenband, falls ableitbar, sonst leer", ' +
-    '"merkmale": ["gemeinsame Merkmale der Kunden"]}';
+    '"groesse": "...oder leer", "merkmale": ["..."]}';
   const user =
     `ANBIETER:\nAngebot: ${own.angebot}\nNutzen: ${own.nutzen}\n` +
-    `Leistungen: ${own.leistungen.join(", ")}\n\nBESTE KUNDEN:\n` +
+    `Leistungen: ${own.leistungen.join(", ")}\n\n` +
+    `BESTE KUNDEN (${kunden.length} Beispiel${kunden.length === 1 ? " — vorsichtig verallgemeinern, nichts woertlich uebernehmen" : "e"}):\n` +
     kunden
       .map(
         (k) =>
