@@ -490,6 +490,18 @@ export interface CreateResult {
   id: string;
   /** Voll-Object wie HubSpot zurückgibt (für UI-Preview). */
   raw: Record<string, unknown>;
+  /**
+   * v0.1.465 — M6 Zuverlässigkeit: Read-back-Verify der mitgeschickten
+   * Associations (Muster des Update-Diffs: Wirkung belegen statt
+   * Response glauben). HubSpot legt das Objekt auch dann an, wenn
+   * einzelne Associations still scheitern — genau das wird hier per
+   * Fresh-GET aufgedeckt. Leer/undefined = keine Associations
+   * angefragt bzw. Verify nicht möglich (siehe associationsUnverified).
+   */
+  associationsMissing?: Array<{ toObjectType: string; toObjectId: string }>;
+  /** true, wenn der Verify-GET selbst fehlschlug — dann ist über die
+   *  Associations KEINE Aussage möglich (nicht "alles ok"). */
+  associationsUnverified?: boolean;
 }
 
 /** Default-Association-Type-IDs aus HubSpot v4 — DIRECTIONAL (from→to).
@@ -592,7 +604,46 @@ export async function createHubspotObject(
     },
   )) as { id: string } & Record<string, unknown>;
 
-  return { id: json.id, raw: json };
+  // v0.1.465 — M6: Associations per Fresh-GET verifizieren. Das
+  // Objekt selbst ist durch die zurückgegebene id belegt; die
+  // Verknüpfungen sind es NICHT (HubSpot kann sie still verwerfen,
+  // z. B. bei gelöschtem Zielobjekt). Ein Verify-Fehler macht den
+  // Create nicht kaputt — er wird als associationsUnverified ehrlich
+  // gemeldet statt als Erfolg.
+  if (!input.associations || input.associations.length === 0) {
+    return { id: json.id, raw: json };
+  }
+  const missing: Array<{ toObjectType: string; toObjectId: string }> = [];
+  try {
+    const byType = new Map<string, Set<string>>();
+    for (const a of input.associations) {
+      let set = byType.get(a.toObjectType);
+      if (!set) {
+        set = new Set();
+        byType.set(a.toObjectType, set);
+      }
+      set.add(String(a.toObjectId));
+    }
+    for (const [toObjectType, wanted] of byType) {
+      const url = `${HUBSPOT_API}/crm/v4/objects/${input.objectType}/${encodeURIComponent(json.id)}/associations/${toObjectType}`;
+      const assoc = (await hubspotFetch(accessToken, url)) as {
+        results?: Array<{ toObjectId: number | string }>;
+      };
+      const found = new Set(
+        (assoc.results ?? []).map((r) => String(r.toObjectId)),
+      );
+      for (const id of wanted) {
+        if (!found.has(id)) missing.push({ toObjectType, toObjectId: id });
+      }
+    }
+  } catch (err) {
+    console.warn(
+      "[crm] Association-Verify nach Create fehlgeschlagen:",
+      err instanceof Error ? err.message : String(err),
+    );
+    return { id: json.id, raw: json, associationsUnverified: true };
+  }
+  return { id: json.id, raw: json, associationsMissing: missing };
 }
 
 // ---- Delete (soft, archive in HubSpot-Terminologie) ----------------------

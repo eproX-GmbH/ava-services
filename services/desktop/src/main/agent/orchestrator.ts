@@ -24,6 +24,7 @@ import {
   type PendingChoice,
   type RemoteAskHandler,
 } from "./ui-bridge";
+import { claimsWriteAction, isWriteTool } from "./write-claim";
 import type { LlmProviderManager, LlmStreamToolCall } from "./providers";
 import type { Conversation, Tool, ToolContext } from "./types";
 import type { MemoryStore } from "./memory";
@@ -168,6 +169,8 @@ export interface AgentOrchestratorOptions {
     action: string;
     summary: string;
     metadata: Record<string, unknown>;
+    /** Default "info". */
+    severity?: "info" | "warning" | "error";
   }) => void;
 }
 
@@ -931,6 +934,11 @@ export class AgentOrchestrator extends EventEmitter {
     // jedem neuen Turn (= neue User-Nachricht), damit ein späteres „doch,
     // leg sie an" wieder erlaubt ist.
     const declinedTools = new Set<string>();
+    // v0.1.465 — M3 Zuverlässigkeit: Zahl der ERFOLGREICH gelaufenen
+    // Schreib-Tools in diesem Turn. Behauptet die finale Antwort einer
+    // AUTONOMEN Konversation Vollzug, obwohl hier 0 steht, schreibt
+    // auditWriteClaim eine Audit-Warnung (agent.claim.unverified).
+    let writesExecuted = 0;
 
     // v0.1.346 — last system message built in the loop, reused for the
     // graceful wrap-up turn if the step budget is reached.
@@ -1141,6 +1149,7 @@ export class AgentOrchestrator extends EventEmitter {
 
         // No tool calls → assistant turn is complete.
         if (!toolCalls || toolCalls.length === 0) {
+          this.auditWriteClaim(conversation, assistantContent, writesExecuted);
           this.emitFrame({
             kind: "done",
             requestId,
@@ -1241,6 +1250,7 @@ export class AgentOrchestrator extends EventEmitter {
             conversation.autonomousMode === true,
           );
           if (!result.ok) sigState.failures += 1;
+          if (result.ok && isWriteTool(call.name)) writesExecuted++;
           toolCallSignatures.set(callSignature, sigState);
           // v0.1.375 — Ablehnung merken, damit ein erneuter Aufruf desselben
           // Tools in diesem Turn oben hart abgefangen wird.
@@ -1341,6 +1351,7 @@ export class AgentOrchestrator extends EventEmitter {
         content: wrapUpContent,
         createdAt: Date.now(),
       });
+      this.auditWriteClaim(conversation, wrapUpContent, writesExecuted);
       this.emitFrame({
         kind: "done",
         requestId,
@@ -1469,6 +1480,39 @@ export class AgentOrchestrator extends EventEmitter {
    * folded into a non-ok result so the loop can surface the failure to
    * the model — the model often recovers by trying a different approach.
    */
+  /**
+   * v0.1.465 — M3 Zuverlässigkeit: Post-Turn-Abgleich Behauptung ↔
+   * Tool-Trace für AUTONOME Konversationen (Mail, Telegram, Skills).
+   * Behauptet die finale Antwort den Vollzug einer AVA-Aktion, obwohl
+   * kein Schreib-Tool erfolgreich lief, landet eine Audit-Warnung —
+   * beim Mail-Pfad ist die Antwort dann zwar schon raus (mail_reply
+   * mitten im Turn), aber der Vorfall wird SICHTBAR statt still.
+   * Der Telegram-Guard (inbound.ts) korrigiert zusätzlich die Antwort.
+   */
+  private auditWriteClaim(
+    conversation: Conversation,
+    finalText: string,
+    writesExecuted: number,
+  ): void {
+    if (conversation.autonomousMode !== true) return;
+    if (writesExecuted > 0) return;
+    if (!finalText || !claimsWriteAction(finalText)) return;
+    console.warn(
+      `[orchestrator] write-claim: autonome Antwort behauptet Vollzug ohne Schreib-Tool (conv ${conversation.id})`,
+    );
+    this.onAudit?.({
+      action: "agent.claim.unverified",
+      severity: "warning",
+      summary:
+        "Autonome Antwort behauptete eine ausgeführte Aktion, obwohl kein Schreib-Tool erfolgreich lief",
+      metadata: {
+        conversationId: conversation.id,
+        sourceMailId: conversation.sourceMailId ?? null,
+        preview: finalText.slice(0, 300),
+      },
+    });
+  }
+
   private async runTool(
     call: AgentToolCall,
     signal: AbortSignal,

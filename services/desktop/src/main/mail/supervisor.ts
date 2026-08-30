@@ -36,6 +36,13 @@ import { classifyMail, attachClassifierProviders } from "./classifier";
 interface SupervisorOptions {
   providers: LlmProviderManager;
   providerStore: ProviderConfigStore;
+  /** v0.1.465 — M5: Best-effort-Fehler (z. B. Outbound-Spiegelung)
+   *  dürfen nicht still bleiben — sie landen im zentralen Audit-Trail. */
+  onAudit?: (entry: {
+    severity: "info" | "warning" | "error";
+    summary: string;
+    metadata: Record<string, unknown>;
+  }) => void;
 }
 
 export interface MailSupervisorEvents {
@@ -274,10 +281,17 @@ export class MailSupervisor extends EventEmitter {
         inReplyTo: input.inReplyTo ?? null,
       });
     } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
       console.warn(
         "[mail/supervisor] Outbound-Spiegelung in Store fehlgeschlagen:",
-        err instanceof Error ? err.message : String(err),
+        msg,
       );
+      this.opts.onAudit?.({
+        severity: "warning",
+        summary:
+          "Gesendete Mail konnte nicht in den lokalen Verlauf gespiegelt werden — der Thread-Kontext künftiger Antworten ist unvollständig",
+        metadata: { error: msg, to: input.to, subject: input.subject },
+      });
     }
     return result;
   }

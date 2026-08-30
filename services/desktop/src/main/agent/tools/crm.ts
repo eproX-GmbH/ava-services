@@ -79,6 +79,32 @@ const SINGULAR: Record<HubspotObjectType, string> = {
   meetings: "meeting",
 };
 
+/**
+ * v0.1.465 — M6 Zuverlässigkeit: Association-Verify-Ergebnis eines
+ * Creates in Tool-Result-Felder übersetzen. Fehlende oder
+ * unverifizierte Verknüpfungen bekommen eine explizite `warnung`,
+ * damit das Modell sie dem Nutzer MELDET statt „verknüpft" zu sagen.
+ */
+function assocVerifyFields(r: {
+  associationsMissing?: Array<{ toObjectType: string; toObjectId: string }>;
+  associationsUnverified?: boolean;
+}): Record<string, unknown> {
+  if (r.associationsUnverified) {
+    return {
+      associationsUnverified: true,
+      warnung:
+        "Objekt angelegt, aber die Verknüpfungen konnten NICHT verifiziert werden — nicht als sicher verknüpft melden.",
+    };
+  }
+  if (r.associationsMissing && r.associationsMissing.length > 0) {
+    return {
+      associationsMissing: r.associationsMissing,
+      warnung: `Objekt angelegt, aber ${r.associationsMissing.length} Verknüpfung(en) sind NICHT angekommen (${r.associationsMissing.map((m) => `${m.toObjectType} ${m.toObjectId}`).join(", ")}) — dem Nutzer klar sagen und ggf. crm_associate_hubspot_objects nachschieben.`,
+    };
+  }
+  return {};
+}
+
 export function buildCrmTools(deps: CrmToolDeps): Tool[] {
   const { crm, gateway, getBearer, gatewayUrl } = deps;
 
@@ -1116,7 +1142,7 @@ export function buildCrmTools(deps: CrmToolDeps): Tool[] {
           toObjectId: a.objectId,
         })),
       });
-      return { applied: true, id: result.id };
+      return { applied: true, id: result.id, ...assocVerifyFields(result) };
     },
   });
 
@@ -1290,7 +1316,7 @@ export function buildCrmTools(deps: CrmToolDeps): Tool[] {
           toObjectId: a.objectId,
         })),
       });
-      return { applied: true, id: result.id, label };
+      return { applied: true, id: result.id, label, ...assocVerifyFields(result) };
     },
   });
 
@@ -1406,7 +1432,7 @@ export function buildCrmTools(deps: CrmToolDeps): Tool[] {
           toObjectId: a.objectId,
         })),
       });
-      return { applied: true, id: result.id };
+      return { applied: true, id: result.id, ...assocVerifyFields(result) };
     },
   });
 
@@ -2597,6 +2623,7 @@ export function buildCrmTools(deps: CrmToolDeps): Tool[] {
       );
       if (value !== "create") return userDeclined();
       let createdId: string;
+      let assocFields: Record<string, unknown> = {};
       try {
         const r = await createHubspotObject(crm, {
           objectType: "contacts",
@@ -2613,6 +2640,7 @@ export function buildCrmTools(deps: CrmToolDeps): Tool[] {
             : {}),
         });
         createdId = r.id;
+        assocFields = assocVerifyFields(r);
       } catch (err) {
         return {
           applied: false,
@@ -2622,7 +2650,10 @@ export function buildCrmTools(deps: CrmToolDeps): Tool[] {
       return {
         applied: true,
         id: createdId,
-        linked: Boolean(args.linkToHubspotCompanyId),
+        linked:
+          Boolean(args.linkToHubspotCompanyId) &&
+          !("associationsMissing" in assocFields),
+        ...assocFields,
       };
     },
   });
@@ -2756,7 +2787,7 @@ export function buildCrmTools(deps: CrmToolDeps): Tool[] {
             toObjectId: a.objectId,
           })),
         });
-        return { applied: true, id: result.id };
+        return { applied: true, id: result.id, ...assocVerifyFields(result) };
       } catch (err) {
         return {
           applied: false,

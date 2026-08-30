@@ -222,6 +222,21 @@ export function buildMailTools(deps: MailToolDeps): Tool[] {
           subject: args.subject,
           text: args.text,
         });
+        // v0.1.465 — M1 Zuverlässigkeit: "sent" heißt ZUGESTELLT AN ALLE.
+        // Teilweise abgelehnte Empfänger sind KEIN Erfolg — sie werden
+        // explizit benannt, damit der Agent nie "Mail ist raus" sagt,
+        // während jemand sie nie bekommen hat.
+        if (result.rejected.length > 0) {
+          return {
+            sent: false,
+            partial: result.accepted.length > 0,
+            to: args.to,
+            accepted: result.accepted,
+            rejected: result.rejected,
+            messageId: result.messageId,
+            error: `NICHT zugestellt an: ${result.rejected.join(", ")}${result.accepted.length > 0 ? ` (zugestellt nur an: ${result.accepted.join(", ")})` : ""}. Das dem Nutzer klar sagen.`,
+          };
+        }
         return {
           sent: true,
           to: args.to,
@@ -302,6 +317,16 @@ export function buildMailTools(deps: MailToolDeps): Tool[] {
           inReplyTo: source.messageIdHeader ?? undefined,
           references,
         });
+        // v0.1.465 — M1: abgelehnter Empfänger = NICHT gesendet.
+        if (result.rejected.length > 0) {
+          return {
+            sent: false,
+            to: source.from.address,
+            accepted: result.accepted,
+            rejected: result.rejected,
+            error: `Antwort NICHT zugestellt — Server lehnte ${result.rejected.join(", ")} ab. NICHT archivieren, dem Nutzer melden.`,
+          };
+        }
         return {
           sent: true,
           to: source.from.address,
@@ -403,6 +428,17 @@ export function buildMailTools(deps: MailToolDeps): Tool[] {
           text: body,
           references,
         });
+        // v0.1.465 — M1: abgelehnte Empfänger = kein (voller) Erfolg.
+        if (result.rejected.length > 0) {
+          return {
+            sent: false,
+            partial: result.accepted.length > 0,
+            to: args.to,
+            accepted: result.accepted,
+            rejected: result.rejected,
+            error: `NICHT zugestellt an: ${result.rejected.join(", ")}${result.accepted.length > 0 ? ` (zugestellt nur an: ${result.accepted.join(", ")})` : ""}. Das dem Nutzer klar sagen.`,
+          };
+        }
         return {
           sent: true,
           to: args.to,

@@ -22,6 +22,7 @@
 // Deshalb Long-Polling über getUpdates.
 
 import type { AgentOrchestrator } from "../agent/orchestrator";
+import { claimsWriteAction, isWriteTool } from "../agent/write-claim";
 import type { RemoteAskHandler } from "../agent/ui-bridge";
 import type {
   AgentChoiceOption,
@@ -75,36 +76,10 @@ const ASK_TIMEOUT_MS = 3 * 60_000;
  *  und Abort zeitnah greifen). */
 const ASK_POLL_SECONDS = 10;
 
-/**
- * v0.1.464 — Write-Claim-Guard: Tools, die nach außen SCHREIBEN.
- * Läuft im Turn keins davon erfolgreich, der Antworttext behauptet
- * aber Vollzug („habe … angelegt/erfasst"), hängt der Guard einen
- * deterministischen Korrektur-Hinweis an. Bewusst GROSSZÜGIG gefasst
- * (lieber eine Behauptung durchlassen als eine echte Aktion als
- * Halluzination markieren).
- */
-const WRITE_TOOL_RE =
-  /^(crm_(create|update|log|sync|enrich|associate|disassociate|delete|complete|link)|mail_(reply|send|forward|archive|allowlist)|notion_(create|update|delete|append)|obsidian_(create|append|write|delete)|import_|profile_(set|propose)|watch_(register|remove|pause|resume)|freshness_(set|pin|unpin|run)|scheduler_|discovery_|icp_)/;
-
-/** Vollzugs-Behauptung im Antworttext (Vergangenheitsform mit
- *  Hilfsverb — Konjunktiv/Futur wie „würde anlegen" matcht nicht). */
-const CLAIM_RE =
-  /\b(habe?|wurden?|ist|sind)\b[^.!?\n]{0,80}\b(angelegt|erfasst|eingetragen|aktualisiert|protokolliert|erstellt|hinterlegt|gespeichert|dokumentiert|verkn(ü|ue)pft|(ü|ue)bernommen|archiviert|verschickt|gesendet)\b/i;
-
-/** Aktions-Objekte, auf die sich eine Vollzugs-Behauptung beziehen
- *  muss (im SELBEN Satz). Ohne diese Kopplung würde der Guard auch
- *  bei Faktenaussagen über Firmen anschlagen („Der Jahresabschluss
- *  wurde im Bundesanzeiger hinterlegt"). */
-const CLAIM_OBJECT_RE =
-  /\b(hubspot|crm|notiz|aktivit(ä|ae)t|aufgabe|task|deal|company|kontakt(e|daten)?|verkn(ü|ue)pfung|mail|e-mail|erinnerung|termin|notion|obsidian|profil|import)\b/i;
-
-/** Behauptet der Text in irgendeinem Satz den Vollzug einer
- *  AVA-Aktion? Satzweise geprüft, damit Verb und Objekt zusammengehören. */
-function claimsWriteAction(text: string): boolean {
-  return text
-    .split(/[.!?\n]+/)
-    .some((s) => CLAIM_RE.test(s) && CLAIM_OBJECT_RE.test(s));
-}
+// v0.1.465 — Write-Claim-Logik nach agent/write-claim.ts umgezogen:
+// der Orchestrator nutzt sie jetzt als Post-Turn-Audit für ALLE
+// autonomen Kanäle (M3); dieser Guard hier bleibt der einzige, der
+// die Antwort auch noch KORRIGIEREN kann (sie ist noch nicht raus).
 
 export interface TelegramInboundDeps {
   store: TelegramStore;
@@ -371,7 +346,7 @@ export class TelegramInbound {
           toolNameById.set(frame.toolCall.id, frame.toolCall.name);
         } else if (frame.kind === "tool-result") {
           const name = toolNameById.get(frame.toolCallId);
-          if (frame.ok && name && WRITE_TOOL_RE.test(name)) {
+          if (frame.ok && name && isWriteTool(name)) {
             writesExecuted++;
           }
         } else if (frame.kind === "done") finish(buf);
@@ -698,18 +673,36 @@ export class TelegramInbound {
   }
 
   private async reply(text: string): Promise<void> {
-    try {
-      const cfg = this.store.getConfig();
-      const token = await this.store.getToken();
-      if (!token || !cfg.chatId) return;
-      // Telegram-Limit ~4096 Zeichen.
-      await sendMessage(token, cfg.chatId, escapeHtml(text).slice(0, 3900));
-    } catch (err) {
-      console.warn(
-        "[telegram] Antwort senden fehlgeschlagen:",
-        err instanceof Error ? redactToken(err.message) : err,
-      );
+    // v0.1.465 — M2 Zuverlässigkeit: Vorher schluckte ein Sendefehler
+    // die Antwort komplett (nur console.warn) — der Agent "hatte
+    // geantwortet", der Nutzer sah nichts. Jetzt: 3 Versuche mit
+    // Backoff; endgültiger Verlust landet im Audit-Trail.
+    const cfg = this.store.getConfig();
+    const token = await this.store.getToken();
+    if (!token || !cfg.chatId) return;
+    const payload = escapeHtml(text).slice(0, 3900);
+    const delays = [0, 2_000, 5_000];
+    let lastErr = "";
+    for (let attempt = 0; attempt < delays.length; attempt++) {
+      const delay = delays[attempt] ?? 0;
+      if (delay > 0) await sleep(delay);
+      try {
+        await sendMessage(token, cfg.chatId, payload);
+        return;
+      } catch (err) {
+        lastErr = err instanceof Error ? redactToken(err.message) : String(err);
+        console.warn(
+          `[telegram] Antwort senden fehlgeschlagen (Versuch ${attempt + 1}/${delays.length}):`,
+          lastErr,
+        );
+      }
     }
+    this.onAudit?.({
+      severity: "error",
+      summary:
+        "Telegram-Antwort nach 3 Versuchen NICHT zugestellt — Nachricht verloren",
+      metadata: { error: lastErr, preview: text.slice(0, 200) },
+    });
   }
 }
 

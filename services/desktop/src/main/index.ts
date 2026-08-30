@@ -1712,7 +1712,7 @@ const agent = new AgentOrchestrator({
       actorId: null,
       category: "agent",
       action: entry.action,
-      severity: "info",
+      severity: entry.severity ?? "info",
       subjectType: null,
       subjectId: null,
       summary: entry.summary,
@@ -2026,6 +2026,19 @@ app.whenReady().then(async () => {
   mailSupervisor = new MailSupervisor({
     providers,
     providerStore: providerConfigStore,
+    // v0.1.465 — M5: Best-effort-Fehler sichtbar machen.
+    onAudit: (entry) =>
+      audit({
+        actorType: "system",
+        actorId: null,
+        category: "watch",
+        action: "mail.supervisor.warning",
+        severity: entry.severity,
+        subjectType: null,
+        subjectId: null,
+        summary: entry.summary,
+        metadata: entry.metadata,
+      }),
   });
   mailSupervisor.on("snapshot", broadcastMailSnapshot);
   try {
