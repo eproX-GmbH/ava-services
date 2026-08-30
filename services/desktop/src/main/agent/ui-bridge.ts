@@ -148,9 +148,10 @@ export class UiBridge {
     input: ConfirmActionInput,
     signal: AbortSignal,
   ): Promise<string> {
-    if (!this.autonomousMode) {
-      return this.askChoice(input.prompt, input.options, signal);
-    }
+    // v0.1.468 — Der Autonomie-Modus gilt GLOBAL (Claude-Code-Muster):
+    // Deckt die Stufe die Klasse, wird auch im INTERAKTIVEN Chat ohne
+    // Dialog bestaetigt (mit Audit) — der Nutzer hat den Modus ja
+    // sichtbar am Eingabefeld gewaehlt.
     if (autonomyCovers(this.autonomyLevel, input.kind)) {
       this.deps.audit?.({
         action: "agent.autonomy.autoConfirm",
@@ -166,6 +167,9 @@ export class UiBridge {
       });
       return input.confirmValue;
     }
+    if (!this.autonomousMode) {
+      return this.askChoice(input.prompt, input.options, signal);
+    }
     if (this.remoteAsk && input.options.length > 0) {
       return this.remoteAsk.askChoice(input.prompt, input.options, signal);
     }
@@ -173,10 +177,10 @@ export class UiBridge {
       input.kind === "destructive"
         ? "Diese Aktion ist destruktiv und braucht IMMER eine Bestätigung — " +
           "im Auto-Modus ohne Rückfrage-Kanal nicht möglich. Am Rechner erledigen."
-        : `Diese Aktion (Klasse ${input.kind}) ist von der aktuellen ` +
-          `Vollmacht-Stufe (${this.autonomyLevel}) nicht gedeckt und es gibt ` +
+        : `Diese Aktion (Klasse ${input.kind}) ist vom aktuellen ` +
+          `Autonomie-Modus (${this.autonomyLevel}) nicht gedeckt und es gibt ` +
           `keinen Rückfrage-Kanal. Wähle einen anderen Pfad oder verweise ` +
-          `auf den Rechner. (Vollmacht: Einstellungen → Mail bzw. Telegram.)`,
+          `auf den Rechner. (Modus: Schalter am Chat-Eingabefeld.)`,
     );
   }
 

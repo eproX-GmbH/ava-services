@@ -851,6 +851,13 @@ const api = {
   agent: {
     getStatus: (): Promise<AgentStatus> =>
       ipcRenderer.invoke("agent:getStatus"),
+    /** v0.1.468 — globaler Autonomie-Modus (Schalter am Eingabefeld). */
+    getAutonomyMode: (): Promise<"manual" | "additive" | "mutating"> =>
+      ipcRenderer.invoke("agent:getAutonomyMode"),
+    setAutonomyMode: (
+      mode: "manual" | "additive" | "mutating",
+    ): Promise<"manual" | "additive" | "mutating"> =>
+      ipcRenderer.invoke("agent:setAutonomyMode", mode),
     send: (input: AgentSendInput): Promise<AgentSendResult> =>
       ipcRenderer.invoke("agent:send", input),
     abort: (requestId?: string): Promise<void> =>

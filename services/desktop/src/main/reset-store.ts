@@ -119,6 +119,7 @@ export function performBootResetIfRequested(): boolean {
     "freshness-cursor.json",
     "watches.jsonl",
     "icp.json", // v0.1.455 — Idealkundenprofil (Radar-Grundlage).
+    "autonomy.json", // v0.1.468 — globaler Autonomie-Modus.
     "memory", // Chat-Transkripte (Verzeichnis).
     "knowledge", // Notion/Obsidian-Status + Tokens.
   ];

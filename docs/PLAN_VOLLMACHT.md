@@ -160,3 +160,15 @@ Empfehlung: V1–V3 als ein Release; V4 direkt danach; V5 zurückstellen.
   Imports) bleiben vorerst askChoice — migrieren, wenn sie im
   Auto-Modus praktisch gebraucht werden.
 - Offen: V5 (Mail deferred-consent, zurückgestellt).
+- **v0.1.468 — Umbau auf GLOBALEN Autonomie-Modus (Claude-Code-Muster,
+  User-Wunsch):** Die kanal-spezifischen Vollmacht-Settings (Telegram-
+  Select, Mail-Checkbox aus V3) sind ERSETZT durch EINEN Modus-Schalter
+  am Chat-Eingabefeld (Fragen / Neues auto / Voll-auto), gespeichert in
+  agent/autonomy.json (AutonomyStore, im Werksreset). Der Modus gilt
+  überall — auch im INTERAKTIVEN Chat bestätigt confirmAction gedeckte
+  Klassen jetzt ohne Dialog (mit Audit). Zwei unveränderliche Klammern:
+  destruktiv fragt IMMER, und Mail-Triage (sourceMailId) wird vom
+  Orchestrator auf max. „additive" geklammert (injection-exponiertester
+  Kanal — bewusste Abweichung von „gilt immer", dem User transparent
+  gemacht). T6 „Rückfragen aufs Handy" bleibt separates
+  Telegram-Setting (Kanal-Feature, keine Vollmacht).

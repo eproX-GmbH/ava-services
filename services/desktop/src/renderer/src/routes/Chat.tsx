@@ -213,6 +213,13 @@ export function Chat() {
   const dragDepthRef = useRef(0);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const composerTextareaRef = useRef<HTMLTextAreaElement | null>(null);
+  // v0.1.468 — globaler Autonomie-Modus (gilt fuer Chat, Telegram, Mail).
+  const [autonomyMode, setAutonomyMode] = useState<
+    "manual" | "additive" | "mutating"
+  >("manual");
+  useEffect(() => {
+    void window.api.agent.getAutonomyMode().then(setAutonomyMode);
+  }, []);
   // Slash-command palette state. `dismissed` lets Escape close the
   // palette without forcing the user to delete the slash they typed.
   const slashPaletteRef = useRef<SlashPaletteHandle | null>(null);
@@ -1538,6 +1545,33 @@ export function Chat() {
       <div
         className={`chat-composer${status?.ready ? "" : " is-disabled"}${isRecording ? " chat-composer--recording" : ""}`}
       >
+        {/* v0.1.468 — Autonomie-Modus (Claude-Code-Muster): gilt
+            global fuer Chat, Telegram und Mail. Loeschen bleibt in
+            jedem Modus bestaetigungspflichtig. */}
+        <select
+          className="chat-composer__mode"
+          value={autonomyMode}
+          disabled={isRecording}
+          title={
+            autonomyMode === "manual"
+              ? "Immer fragen: jede Aktion mit Bestätigungsdialog"
+              : autonomyMode === "additive"
+                ? "Neues automatisch: Notizen, Aufgaben, Neuanlagen ohne Rückfrage (mit Audit). Gilt auch für Telegram und Mail."
+                : "Voll-Automatik: auch Änderungen ohne Rückfrage (mit Audit). Löschen fragt immer. Gilt auch für Telegram; Mail bleibt bei „Neues automatisch“."
+          }
+          aria-label="Autonomie-Modus"
+          onChange={(e) =>
+            void window.api.agent
+              .setAutonomyMode(
+                e.target.value as "manual" | "additive" | "mutating",
+              )
+              .then(setAutonomyMode)
+          }
+        >
+          <option value="manual">Fragen</option>
+          <option value="additive">Neues auto</option>
+          <option value="mutating">Voll-auto</option>
+        </select>
         <button
           type="button"
           className="chat-composer__icon-btn"

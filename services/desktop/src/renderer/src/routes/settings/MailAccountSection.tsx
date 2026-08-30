@@ -38,8 +38,6 @@ interface FormState {
   // v0.1.299 — Auto-Triage für eingehende trusted Mails (siehe Toggle
   // im Form). Default off, explizites Opt-in.
   autoTriageEnabled: boolean;
-  // v0.1.462 — Vollmacht (PLAN_VOLLMACHT.md): Mail kennt nur none|additive.
-  autonomyAdditive: boolean;
   pollIntervalMinutes: number;
 }
 
@@ -58,7 +56,6 @@ const EMPTY_FORM: FormState = {
   smtpPassword: "",
   outboundEnabled: false,
   autoTriageEnabled: false,
-  autonomyAdditive: false,
   pollIntervalMinutes: 15,
 };
 
@@ -97,7 +94,6 @@ export function MailAccountSection(): JSX.Element {
       smtpPassword: "",
       outboundEnabled: a.outboundEnabled,
       autoTriageEnabled: a.autoTriageEnabled === true,
-      autonomyAdditive: a.autonomyLevel === "additive",
       pollIntervalMinutes: a.pollIntervalMinutes,
     });
   }, [snapshot, editing]);
@@ -119,7 +115,6 @@ export function MailAccountSection(): JSX.Element {
     },
     outboundEnabled: form.outboundEnabled,
     autoTriageEnabled: form.autoTriageEnabled,
-    autonomyLevel: form.autonomyAdditive ? "additive" : "none",
     pollIntervalMinutes: form.pollIntervalMinutes,
     lastSyncAt: snapshot?.account?.lastSyncAt ?? null,
     lastErrorAt: snapshot?.account?.lastErrorAt ?? null,
@@ -378,28 +373,6 @@ export function MailAccountSection(): JSX.Element {
                 Limits: max 5 Auto-Replies pro Thread, Cooldown 5min.
                 Nicht-Allowlist-Mails bleiben unverändert manuell.
                 Setzt aktivierten Versand voraus.
-              </span>
-            </label>
-          </div>
-          {/* v0.1.462 — Vollmacht (PLAN_VOLLMACHT.md). Mail bekommt
-              bewusst nur die Stufe "additiv" — kein "verändernd". */}
-          <div className="mail-form__row">
-            <label className="mail-form__checkbox">
-              <input
-                type="checkbox"
-                checked={form.autonomyAdditive}
-                disabled={!form.outboundEnabled || !form.autoTriageEnabled}
-                onChange={(e) =>
-                  setForm({ ...form, autonomyAdditive: e.target.checked })
-                }
-              />
-              <span>
-                <strong>Vollmacht: Neues anlegen erlauben</strong> (additiv).
-                In der Auto-Triage darf AVA Aktionen, die nur NEUES anlegen
-                (CRM-Notiz, Aktivität, Aufgabe, neue Company/Contact/Deal,
-                Verknüpfung), ohne Rückfrage bestätigen — jede davon landet
-                im Audit-Trail. Ändern oder Löschen bestehender Daten bleibt
-                weiterhin bestätigungspflichtig am Rechner.
               </span>
             </label>
           </div>

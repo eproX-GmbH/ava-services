@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
 import type {
   AlertSeverity,
-  TelegramConfig,
   TelegramSnapshot,
 } from "../../../../shared/types";
 
@@ -287,41 +286,14 @@ export function TelegramSection(): JSX.Element {
                 </p>
               )}
 
-              {/* v0.1.462 — Vollmacht (PLAN_VOLLMACHT.md): welche
-                  Wirkungsklassen darf AVA ohne Rückfrage bestätigen? */}
-              <label className="field">
-                <span>Vollmacht (ohne Rückfrage bestätigen)</span>
-                <select
-                  value={cfg.autonomyLevel}
-                  disabled={busy}
-                  onChange={(e) =>
-                    void patch({
-                      autonomyLevel: e.target
-                        .value as TelegramConfig["autonomyLevel"],
-                    })
-                  }
-                >
-                  <option value="none">Keine — immer fragen</option>
-                  <option value="additive">
-                    Neues anlegen (Notiz, Aktivität, Aufgabe, Neuanlage,
-                    Verknüpfung)
-                  </option>
-                  <option value="mutating">
-                    Neues anlegen + Bestehendes ändern
-                  </option>
-                </select>
-              </label>
-              {cfg.autonomyLevel !== "none" && (
-                <p className="muted small">
-                  Gedeckte Aktionen bestätigt AVA autonom — jede davon landet
-                  im Audit-Trail. Löschen und andere destruktive Aktionen
-                  bleiben IMMER bestätigungspflichtig
-                  {cfg.inboundConfirmEnabled
-                    ? " (Rückfrage in diesem Chat)"
-                    : " (nur am Rechner)"}
-                  .
-                </p>
-              )}
+              {/* v0.1.468 — Die Vollmacht ist jetzt GLOBAL: Autonomie-
+                  Modus am Chat-Eingabefeld (gilt auch für Telegram
+                  und Mail). */}
+              <p className="muted small">
+                Wieviel AVA ohne Rückfrage erledigen darf, steuerst du
+                zentral über den Modus-Schalter am Chat-Eingabefeld — er
+                gilt auch hier.
+              </p>
             </>
           )}
 

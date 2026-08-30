@@ -149,6 +149,7 @@ import type { AuditEventInput } from "./audit/audit-types";
 import {
   AgentOrchestrator,
   AlertPrefsStore,
+  AutonomyStore,
   AlertsStore,
   AttachmentStore,
   FreshnessCursorStore,
@@ -1731,8 +1732,14 @@ async function broadcastDailyLimitStatus(): Promise<void> {
   }
 }
 
+// v0.1.468 — Globaler Autonomie-Modus (Schalter am Chat-Eingabefeld).
+const autonomyStore = new AutonomyStore();
+
 const agent = new AgentOrchestrator({
   providers,
+  // v0.1.468 — EIN Modus fuer Chat, Telegram und Mail; der
+  // Orchestrator klammert Mail selbst auf max. "additive".
+  getAutonomyLevel: () => autonomyStore.asLevel(),
   // v0.1.462 — Vollmacht: jede autonome Bestätigung landet im
   // Audit-Trail (PLAN_VOLLMACHT.md §4.1).
   onAudit: (entry) =>
@@ -4171,6 +4178,32 @@ app.whenReady().then(async () => {
   // expected to filter by `requestId` (the protocol leaves room for future
   // parallel requests, but 8.a only allows one in-flight at a time).
   ipcMain.handle("agent:getStatus", () => agent.getStatus());
+  // v0.1.468 — Autonomie-Modus (global, Claude-Code-Muster).
+  ipcMain.handle("agent:getAutonomyMode", () => autonomyStore.getMode());
+  ipcMain.handle(
+    "agent:setAutonomyMode",
+    (_e, mode: "manual" | "additive" | "mutating") => {
+      const next = autonomyStore.setMode(mode);
+      audit({
+        actorType: "user",
+        actorId: null,
+        category: "agent",
+        action: "agent.autonomy.mode",
+        severity: "info",
+        subjectType: null,
+        subjectId: null,
+        summary: `Autonomie-Modus: ${
+          next === "manual"
+            ? "Immer fragen"
+            : next === "additive"
+              ? "Neues automatisch"
+              : "Voll-Automatik (außer Löschen)"
+        }`,
+        metadata: { mode: next },
+      });
+      return next;
+    },
+  );
   ipcMain.handle("agent:send", (_e, input: AgentSendInput) => agent.send(input));
   ipcMain.handle("agent:abort", (_e, requestId?: string) => {
     agent.abort(requestId);

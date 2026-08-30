@@ -232,17 +232,13 @@ export class MailAgentBridge {
         thread,
       });
 
-      // v0.1.462 — Vollmacht (PLAN_VOLLMACHT.md): Mail kennt nur
-      // none|additive. Bei "additive" bestätigt AVA Klasse-A-Aktionen
-      // (Notiz, Aktivität, Task, Neuanlage, Verknüpfung) autonom —
-      // jede davon mit Audit-Eintrag.
-      const autonomyLevel =
-        account.autonomyLevel === "additive" ? "additive" : "none";
+      // v0.1.468 — Vollmacht ist GLOBAL (Autonomie-Modus am Chat-
+      // Eingabefeld); der Orchestrator klammert Mail-Konversationen
+      // (sourceMailId) selbst auf maximal "additive".
       const result = this.orchestrator.startAutonomousConversation({
         skillName: "mail-triage",
         initialMessage,
         sourceMailId: msg.id,
-        ...(autonomyLevel !== "none" ? { autonomyLevel } : {}),
       });
       if (!result) {
         console.warn(

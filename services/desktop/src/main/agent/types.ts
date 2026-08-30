@@ -114,10 +114,4 @@ export interface Conversation {
    * ask_user_choice/ask_user_text dorthin delegiert statt zu werfen.
    */
   remoteAsk?: import("./ui-bridge").RemoteAskHandler;
-  /**
-   * v0.1.462 — Vollmacht-Stufe des auslösenden Kanals
-   * (PLAN_VOLLMACHT.md). Steuert, welche confirmAction-Klassen im
-   * autonomen Modus ohne Rückfrage bestätigt werden. Fehlt = "none".
-   */
-  autonomyLevel?: import("../../shared/types").AutonomyLevel;
 }

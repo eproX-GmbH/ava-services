@@ -172,6 +172,12 @@ export interface AgentOrchestratorOptions {
     /** Default "info". */
     severity?: "info" | "warning" | "error";
   }) => void;
+  /**
+   * v0.1.468 — GLOBALER Autonomie-Modus (Schalter am Chat-Eingabefeld,
+   * Claude-Code-Muster). Gilt fuer Chat, Telegram und Mail; ersetzt die
+   * kanal-spezifische Vollmacht aus v0.1.462.
+   */
+  getAutonomyLevel?: () => AutonomyLevel;
 }
 
 export interface AgentOrchestratorEvents {
@@ -214,6 +220,7 @@ export class AgentOrchestrator extends EventEmitter {
   /** v0.1.405 — Tages-Token-Limit-Gate (siehe Options-Doc). */
   private readonly checkDailyLimit?: AgentOrchestratorOptions["checkDailyLimit"];
   private readonly onAudit?: AgentOrchestratorOptions["onAudit"];
+  private readonly getAutonomyLevel?: AgentOrchestratorOptions["getAutonomyLevel"];
   /** Active skill for the in-flight turn (set in send(), read in
    *  runTool() for the allowlist gate + in buildSystemPrompt() for
    *  the active-skill hint). null when no skill is active. */
@@ -254,6 +261,7 @@ export class AgentOrchestrator extends EventEmitter {
     this.onUsage = opts.onUsage;
     this.checkDailyLimit = opts.checkDailyLimit;
     this.onAudit = opts.onAudit;
+    this.getAutonomyLevel = opts.getAutonomyLevel;
 
     // v0.1.240 — Register the meta-tools (tool_search + tool_load).
     // We do this here (not in tools/index.ts) because the meta-tools
@@ -611,10 +619,7 @@ export class AgentOrchestrator extends EventEmitter {
      * v0.1.459 — T6: Rückfragen-Kanal (Telegram). Siehe Conversation.remoteAsk.
      */
     remoteAsk?: RemoteAskHandler;
-    /**
-     * v0.1.462 — Vollmacht-Stufe des Kanals (PLAN_VOLLMACHT.md).
-     */
-    autonomyLevel?: AutonomyLevel;
+
   }): { conversationId: string; requestId: string } | null {
     const status = this.getStatus();
     if (!status.ready) {
@@ -658,10 +663,7 @@ export class AgentOrchestrator extends EventEmitter {
      * v0.1.459 — T6: Rückfragen-Kanal (Telegram). Siehe Conversation.remoteAsk.
      */
     remoteAsk?: RemoteAskHandler;
-    /**
-     * v0.1.462 — Vollmacht-Stufe des Kanals (PLAN_VOLLMACHT.md).
-     */
-    autonomyLevel?: AutonomyLevel;
+
   }> = [];
 
   private runAutonomousNow(input: {
@@ -683,10 +685,7 @@ export class AgentOrchestrator extends EventEmitter {
      * v0.1.459 — T6: Rückfragen-Kanal (Telegram). Siehe Conversation.remoteAsk.
      */
     remoteAsk?: RemoteAskHandler;
-    /**
-     * v0.1.462 — Vollmacht-Stufe des Kanals (PLAN_VOLLMACHT.md).
-     */
-    autonomyLevel?: AutonomyLevel;
+
   }): { conversationId: string; requestId: string } {
     const conversationId = input.conversationId ?? randomUUID();
     const existing = this.conversations.get(conversationId);
@@ -704,12 +703,8 @@ export class AgentOrchestrator extends EventEmitter {
     // zwischen zwei Telegram-Nachrichten ändern).
     if (input.remoteAsk) convo.remoteAsk = input.remoteAsk;
     else delete convo.remoteAsk;
-    // v0.1.462 — Vollmacht ebenso pro Turn auffrischen.
-    if (input.autonomyLevel && input.autonomyLevel !== "none") {
-      convo.autonomyLevel = input.autonomyLevel;
-    } else {
-      delete convo.autonomyLevel;
-    }
+    // v0.1.468 — Vollmacht ist jetzt GLOBAL (getAutonomyLevel), kein
+    // Kanal-Feld mehr an der Konversation.
     this.conversations.set(conversationId, convo);
     this.memory?.ensureConversation(conversationId);
 
@@ -1064,7 +1059,7 @@ export class AgentOrchestrator extends EventEmitter {
               // damit der Agent weiß, was er darf (statt der pauschalen
               // "ask_user_* verboten"-Ansage).
               hasRemoteAsk: conversation.remoteAsk != null,
-              autonomyLevel: conversation.autonomyLevel ?? "none",
+              autonomyLevel: this.effectiveAutonomyLevel(conversation),
             },
           ),
           createdAt: 0,
@@ -1481,6 +1476,19 @@ export class AgentOrchestrator extends EventEmitter {
    * the model — the model often recovers by trying a different approach.
    */
   /**
+   * v0.1.468 — Effektive Autonomie-Stufe fuer eine Konversation:
+   * globaler Modus, mit EINER Klammer — Mail-Triage (sourceMailId)
+   * bleibt bei maximal "additive". Mail ist der injection-exponierteste
+   * Kanal; "Bestehendes aendern" auf Zuruf einer eingehenden Mail
+   * bleibt bewusst gesperrt (PLAN_VOLLMACHT.md §2).
+   */
+  private effectiveAutonomyLevel(conversation: Conversation | undefined): AutonomyLevel {
+    const level = this.getAutonomyLevel?.() ?? "none";
+    if (level === "mutating" && conversation?.sourceMailId) return "additive";
+    return level;
+  }
+
+  /**
    * v0.1.465 — M3 Zuverlässigkeit: Post-Turn-Abgleich Behauptung ↔
    * Tool-Trace für AUTONOME Konversationen (Mail, Telegram, Skills).
    * Behauptet die finale Antwort den Vollzug einer AVA-Aktion, obwohl
@@ -1533,8 +1541,8 @@ export class AgentOrchestrator extends EventEmitter {
     // v0.1.459 — T6: Hat die Konversation einen Rückfragen-Kanal
     // (Telegram, verifizierter Chat, Opt-in), gehen ask_user_choice/
     // ask_user_text dorthin statt hart zu scheitern.
-    const remoteAsk =
-      this.conversations.get(conversationId)?.remoteAsk ?? null;
+    const convoForTool = this.conversations.get(conversationId);
+    const remoteAsk = convoForTool?.remoteAsk ?? null;
     if (
       autonomousMode &&
       !remoteAsk &&
@@ -1621,7 +1629,7 @@ export class AgentOrchestrator extends EventEmitter {
       conversationId,
       autonomousMode,
       remoteAsk,
-      this.conversations.get(conversationId)?.autonomyLevel ?? "none",
+      this.effectiveAutonomyLevel(convoForTool),
     );
     const ctx: ToolContext = {
       signal,

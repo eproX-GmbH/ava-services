@@ -8142,3 +8142,25 @@ tr.held-row td:first-child::after {
 .icp-step-failed {
   color: #ef4444;
 }
+
+/* v0.1.468 — Autonomie-Modus-Schalter im Composer (Claude-Code-Muster). */
+.chat-composer__mode {
+  appearance: none;
+  -webkit-appearance: none;
+  border: 1px solid var(--border, rgba(127, 127, 127, 0.35));
+  background: transparent;
+  color: inherit;
+  border-radius: 999px;
+  padding: 4px 10px;
+  font-size: 12px;
+  cursor: pointer;
+  align-self: center;
+  max-width: 110px;
+}
+.chat-composer__mode:hover {
+  border-color: rgba(0, 192, 167, 0.7);
+}
+.chat-composer__mode:disabled {
+  opacity: 0.5;
+  cursor: default;
+}

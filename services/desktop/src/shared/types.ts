@@ -2171,15 +2171,6 @@ export interface MailAccount {
    * v0.1.318: Default TRUE (war FALSE). Siehe outboundEnabled-Kommentar.
    */
   autoTriageEnabled?: boolean;
-  /**
-   * v0.1.462 — Vollmacht im Auto-Triage-Modus (PLAN_VOLLMACHT.md).
-   * "none" (Default): jedes Confirm-Gate wirft wie bisher (fail-closed).
-   * "additive": Klasse-A-Aktionen (Notiz/Aktivität/Task/Neuanlage/
-   * Verknüpfung — erzeugt Neues, überschreibt nichts) bestätigt AVA
-   * autonom, mit Audit-Eintrag. Mail bekommt BEWUSST keine Stufe
-   * "mutating" — injection-exponiertester Kanal.
-   */
-  autonomyLevel?: AutonomyLevel;
   /** Poll-Intervall in Minuten (Fallback wenn IMAP IDLE nicht supported).
    *  Default 15. Wird ignoriert, wenn IDLE läuft. */
   pollIntervalMinutes: number;
@@ -2570,15 +2561,6 @@ export interface TelegramConfig {
    * Telegram heraus nicht).
    */
   inboundConfirmEnabled: boolean;
-  /**
-   * v0.1.462 — Vollmacht für Telegram-initiierte Gespräche
-   * (PLAN_VOLLMACHT.md). "none" (Default): Confirm-Gates gehen als
-   * Rückfrage in den Chat (wenn inboundConfirmEnabled) oder werfen.
-   * "additive": Klasse-A-Aktionen bestätigt AVA autonom (mit Audit).
-   * "mutating": zusätzlich Klasse B (Feld-Updates, Enrich/Sync).
-   * Destruktives (Klasse C) deckt KEINE Stufe ab.
-   */
-  autonomyLevel: AutonomyLevel;
   /** Zuletzt verarbeitete Telegram-Update-ID (verhindert Doppelverarbeitung). */
   lastUpdateId: number | null;
 }
