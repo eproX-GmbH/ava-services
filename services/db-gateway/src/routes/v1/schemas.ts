@@ -768,6 +768,10 @@ export const PipelineCellShape = z
     attempts: z.number().int().nonnegative().optional(),
     nextRetryAt: z.string().nullable().optional(),
     giveUpAt: z.string().nullable().optional(),
+    // v0.1.459 — Fehlertext der EntityProgress-Zeile. Erlaubt dem
+    // Renderer, Reaper-Timeouts ("Zeitüberschreitung…") orange statt
+    // rot zu markieren (gleiches Muster wie companies-matrix).
+    errorMessage: z.string().nullable().optional(),
   })
   .openapi("PipelineCell");
 

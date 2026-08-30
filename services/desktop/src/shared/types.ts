@@ -2543,6 +2543,15 @@ export interface TelegramConfig {
    * werden akzeptiert.
    */
   inboundEnabled: boolean;
+  /**
+   * v0.1.459 — T6: Rückfragen aufs Handy. Wenn an, darf der Agent in
+   * Telegram-initiierten Gesprächen Bestätigungs-Rückfragen (askChoice/
+   * askText) an GENAU den verknüpften Chat stellen statt hart zu
+   * scheitern — der Nutzer sitzt ja am Handy. Standard AUS: dann bleibt
+   * das bisherige Fail-Closed-Verhalten (destruktive Aktionen gehen aus
+   * Telegram heraus nicht).
+   */
+  inboundConfirmEnabled: boolean;
   /** Zuletzt verarbeitete Telegram-Update-ID (verhindert Doppelverarbeitung). */
   lastUpdateId: number | null;
 }

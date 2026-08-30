@@ -22,7 +22,11 @@
 // Deshalb Long-Polling über getUpdates.
 
 import type { AgentOrchestrator } from "../agent/orchestrator";
-import type { AgentStreamFrame } from "../../shared/types";
+import type { RemoteAskHandler } from "../agent/ui-bridge";
+import type {
+  AgentChoiceOption,
+  AgentStreamFrame,
+} from "../../shared/types";
 import {
   downloadFile,
   escapeHtml,
@@ -61,6 +65,15 @@ const CONVERSATION_IDLE_MS = 6 * 60 * 60_000;
 const MAX_THREAD_MESSAGES = 60;
 /** So lange warten wir höchstens auf die Antwort des Agenten. */
 const REPLY_TIMEOUT_MS = 5 * 60_000;
+/**
+ * v0.1.459 — T6: Rückfragen aufs Handy. So lange darf eine Antwort auf
+ * eine askChoice/askText-Rückfrage ausbleiben, bevor die Aktion
+ * abgebrochen wird (fail-closed wie bisher).
+ */
+const ASK_TIMEOUT_MS = 3 * 60_000;
+/** Poll-Fenster WÄHREND einer offenen Rückfrage (kurz, damit Timeout
+ *  und Abort zeitnah greifen). */
+const ASK_POLL_SECONDS = 10;
 
 export interface TelegramInboundDeps {
   store: TelegramStore;
@@ -228,15 +241,25 @@ export class TelegramInbound {
         ? `${buffered.captions.join("\n")}\n\n${text}`
         : text;
 
+    // v0.1.459 — T6: Sind Rückfragen aufs Handy erlaubt (Opt-in), bekommt
+    // die Konversation einen RemoteAsk-Kanal und der Hinweis-Text ändert
+    // sich entsprechend. Der Nutzer sitzt ja gerade am Handy.
+    const confirmEnabled = this.store.getConfig().inboundConfirmEnabled;
+    const hint = confirmEnabled
+      ? `[Hinweis: Antworte knapp und handyfreundlich. Wenn eine Aktion ` +
+        `eine Bestätigung oder Auswahl braucht, nutze ask_user_choice/` +
+        `ask_user_text — die Rückfrage wird dem Nutzer direkt in Telegram ` +
+        `gestellt.]`
+      : `[Hinweis: Antworte knapp und handyfreundlich. Es gibt hier keinen ` +
+        `Bestätigungsdialog — Aktionen, die eine Rückfrage brauchen, kannst ` +
+        `du nicht ausführen; sag in dem Fall, dass es am Rechner erledigt ` +
+        `werden muss.]`;
     const started = this.orchestrator.startAutonomousConversation({
       conversationId: this.threadId(),
       initialMessage:
-        `[Nachricht des Nutzers über Telegram]\n\n${withCaptions}\n\n` +
-        `[Hinweis: Antworte knapp und handyfreundlich. Es gibt hier keinen ` +
-        `Bestätigungsdialog — Aktionen, die eine Rückfrage brauchen, kannst ` +
-        `du nicht ausführen; sag in dem Fall, dass es am Rechner erledigt ` +
-        `werden muss.]`,
+        `[Nachricht des Nutzers über Telegram]\n\n${withCaptions}\n\n${hint}`,
       ...(allImages.length > 0 ? { images: allImages } : {}),
+      ...(confirmEnabled ? { remoteAsk: this.buildRemoteAsk() } : {}),
     });
 
     if (!started) {
@@ -275,16 +298,28 @@ export class TelegramInbound {
       };
       const onFrame = (frame: AgentStreamFrame): void => {
         if (frame.requestId !== requestId) return;
+        // v0.1.459 — T6: Aktivität verlängert das Zeitfenster. Eine
+        // offene Telegram-Rückfrage kann allein 3 Minuten dauern; ein
+        // fixer Timer würde die Antwort danach verwerfen.
+        refresh();
         if (frame.kind === "token" && frame.delta) buf += frame.delta;
         else if (frame.kind === "done") finish(buf);
         else if (frame.kind === "error") {
           finish(buf || `Fehler: ${frame.message}`);
         }
       };
-      const timer = setTimeout(
+      let timer = setTimeout(
         () => finish(buf || "Zeitüberschreitung bei der Antwort."),
         REPLY_TIMEOUT_MS,
       );
+      const refresh = (): void => {
+        if (settled) return;
+        clearTimeout(timer);
+        timer = setTimeout(
+          () => finish(buf || "Zeitüberschreitung bei der Antwort."),
+          REPLY_TIMEOUT_MS,
+        );
+      };
       this.orchestrator.on("stream", onFrame);
     });
   }
@@ -437,6 +472,158 @@ export class TelegramInbound {
     this.conversationId = null;
     this.threadMessages = 0;
     this.takeBufferedImages();
+  }
+
+  // ---- T6: Rückfragen aufs Handy (v0.1.459) -------------------------------
+  //
+  // Warum die Rückfrage SELBST pollt: Die Haupt-Long-Poll-Schleife wartet
+  // in handleMessage auf die Agenten-Antwort und liest währenddessen keine
+  // Updates. Es gibt also genau EINEN getUpdates-Konsumenten zur Zeit —
+  // erst die Schleife, während einer offenen Rückfrage dieser Poller.
+  //
+  // Sicherheit: nur der verknüpfte Chat zählt (wie überall), Timeout
+  // 3 Minuten → Abbruch (fail-closed, exakt das bisherige Verhalten),
+  // „abbrechen" lehnt die Aktion explizit ab.
+
+  private askActive = false;
+
+  private buildRemoteAsk(): RemoteAskHandler {
+    return {
+      askChoice: (prompt, options, signal) =>
+        this.remoteAskPrompt(prompt, options, signal),
+      askText: (prompt, opts, signal) =>
+        this.remoteAskPrompt(prompt, null, signal, opts.optional === true),
+    };
+  }
+
+  private async remoteAskPrompt(
+    prompt: string,
+    options: AgentChoiceOption[] | null,
+    signal: AbortSignal,
+    optional = false,
+  ): Promise<string> {
+    if (this.askActive) {
+      throw new Error("Es ist bereits eine Rückfrage in Telegram offen.");
+    }
+    const cfg = this.store.getConfig();
+    if (!cfg.inboundConfirmEnabled || !cfg.chatId) {
+      throw new Error(
+        "Rückfragen über Telegram sind nicht (mehr) aktiviert.",
+      );
+    }
+    this.askActive = true;
+    try {
+      const lines = [`❓ ${prompt}`];
+      if (options) {
+        options.forEach((o, i) => {
+          lines.push(
+            `${i + 1}) ${o.label}${o.description ? ` — ${o.description}` : ""}`,
+          );
+        });
+        lines.push(
+          `\nAntworte mit der Nummer (1–${options.length}) oder „abbrechen".`,
+        );
+      } else {
+        lines.push(
+          optional
+            ? `\nAntworte als Text, „-" zum Überspringen oder „abbrechen".`
+            : `\nAntworte als Text oder mit „abbrechen".`,
+        );
+      }
+      await this.reply(lines.join("\n"));
+      this.onAudit?.({
+        severity: "info",
+        summary: `Telegram-Rückfrage gestellt: ${prompt.slice(0, 80)}`,
+        metadata: { options: options?.length ?? 0 },
+      });
+
+      const deadline = Date.now() + ASK_TIMEOUT_MS;
+      while (Date.now() < deadline && this.running) {
+        if (signal.aborted) throw new Error("aborted");
+        const token = await this.store.getToken();
+        const cur = this.store.getConfig();
+        if (!token || !cur.chatId) break;
+        const offset =
+          cur.lastUpdateId !== null ? cur.lastUpdateId + 1 : undefined;
+        const updates = await getUpdates(token, offset, ASK_POLL_SECONDS);
+        for (const u of updates) {
+          this.store.setConfig({ lastUpdateId: u.updateId });
+          if (u.chat.chatId !== cur.chatId) continue;
+          const text = u.chat.text.trim();
+          if (!text) {
+            // Bild/Sprachnachricht während einer Rückfrage: nicht
+            // interpretierbar — kurz sagen, was gebraucht wird.
+            await this.reply(`Bitte als Text antworten (oder „abbrechen").`);
+            continue;
+          }
+          const answer = this.parseAskAnswer(text, options, optional);
+          if (answer.kind === "cancel") {
+            await this.reply("Okay, abgebrochen.");
+            throw new Error(
+              "Der Nutzer hat die Rückfrage in Telegram abgebrochen.",
+            );
+          }
+          if (answer.kind === "invalid") {
+            await this.reply(
+              options
+                ? `Das konnte ich keiner Option zuordnen — bitte eine Nummer von 1 bis ${options.length} schicken (oder „abbrechen").`
+                : `Das konnte ich nicht verwerten — bitte als Text antworten (oder „abbrechen").`,
+            );
+            continue;
+          }
+          this.onAudit?.({
+            severity: "info",
+            summary: "Telegram-Rückfrage beantwortet",
+            metadata: { prompt: prompt.slice(0, 80) },
+          });
+          return answer.value;
+        }
+      }
+      await this.reply(
+        "⏱️ Keine Antwort erhalten — ich habe die Aktion abgebrochen.",
+      );
+      throw new Error(
+        "Keine Antwort auf die Telegram-Rückfrage innerhalb von 3 Minuten — " +
+          "Aktion abgebrochen. Wähle einen Pfad ohne Bestätigung oder " +
+          "verweise auf den Rechner.",
+      );
+    } finally {
+      this.askActive = false;
+    }
+  }
+
+  /** Antworttext einer Rückfrage auswerten. */
+  private parseAskAnswer(
+    text: string,
+    options: AgentChoiceOption[] | null,
+    optional: boolean,
+  ):
+    | { kind: "value"; value: string }
+    | { kind: "cancel" }
+    | { kind: "invalid" } {
+    const t = text.trim();
+    const lower = t.toLowerCase();
+    if (["abbrechen", "abbruch", "cancel", "stop", "/abbrechen"].includes(lower)) {
+      return { kind: "cancel" };
+    }
+    if (!options) {
+      if (optional && (t === "-" || lower === "überspringen" || lower === "skip")) {
+        return { kind: "value", value: "" };
+      }
+      return { kind: "value", value: t };
+    }
+    const num = /^\d{1,2}$/.test(t) ? Number(t) : NaN;
+    if (Number.isInteger(num) && num >= 1 && num <= options.length) {
+      const opt = options[num - 1];
+      if (opt) return { kind: "value", value: opt.value };
+    }
+    const byLabel = options.find(
+      (o) =>
+        o.label.trim().toLowerCase() === lower ||
+        o.value.trim().toLowerCase() === lower,
+    );
+    if (byLabel) return { kind: "value", value: byLabel.value };
+    return { kind: "invalid" };
   }
 
   private async reply(text: string): Promise<void> {

@@ -108,4 +108,10 @@ export interface Conversation {
    * Thread-Reply-Counter benutzt.
    */
   sourceMailId?: string;
+  /**
+   * v0.1.459 — T6: Rückfragen-Kanal für autonome Konversationen aus
+   * einem verifizierten Zweiweg-Kanal (Telegram). Wenn gesetzt, werden
+   * ask_user_choice/ask_user_text dorthin delegiert statt zu werfen.
+   */
+  remoteAsk?: import("./ui-bridge").RemoteAskHandler;
 }

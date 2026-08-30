@@ -291,9 +291,14 @@ Watermarks, Audit).
   + Desktop-Website-Auflösung per SERP (max 12 Lookups/Scan,
   Verzeichnis-Filter northdata & Co.; Budget mit Branchen-Queries ≤ 20
   < O1-Limit 30); source=register trägt masterCompanyId direkt.
-  Gerichtsbezirks-Vorfilter (A6) zurückgestellt — Ortsnamen-Matching
-  über die GeoPlace-Ortsmenge reicht für die aktuelle Bestandsgröße,
-  A6 wird relevant, wenn die location-Vielfalt Probleme macht.
+  A6 seit v0.1.459 als **Recall-Fallback** live: Die Court→Region-Karte
+  wird empirisch aus den exakten Orts-Treffern abgeleitet (Top-5-Gerichte
+  der gematchten Firmen); bleibt die exakte Ausbeute unter dem doppelten
+  Limit, füllen Firmen derselben Gerichtsbezirke mit abweichendem
+  location-Text auf (Ortsteile, Schreibvarianten wie „Porta
+  Westfalica-Barkhausen") — bewusst unscharf, daher nachrangig und auf
+  max. 100 Zeilen gedeckelt. Der volle Vorfilter (Karte vorab) bleibt
+  Ausbaustufe.
   Verifiziert gegen Wegwerf-Postgres (inkl. Fake-ava_master_data).
 
 ## 6. Prozessplan (Betrieb)
@@ -307,6 +312,14 @@ Watermarks, Audit).
 4. **Nutzer-Entscheidung:** Import (volle Pipeline) oder Verwerfen.
 5. **Pflege:** Profil-Refresh > 6 Monate; Quota-/Kosten-Review über
    ProxyAudit; Ortsgraph-Seed jährlich aktualisieren.
+
+   **GeoNames-Jahres-Refresh (Prozess, seit v0.1.459 überwacht):**
+   Das Gateway warnt beim Start per `console.warn`, sobald
+   `meta.generatedAt` in `src/data/geo-places.json` älter als ~13 Monate
+   ist. Refresh: `cd services/db-gateway && node scripts/build-geo-dataset.mjs`,
+   dann `src/data/geo-places.json` committen und deployen — das lazy
+   Seeding erkennt die abweichende Zeilenzahl und lädt die GeoPlace-Tabelle
+   automatisch neu.
 
 ## 7. Entscheidungen (ratifiziert 2026-08-29)
 

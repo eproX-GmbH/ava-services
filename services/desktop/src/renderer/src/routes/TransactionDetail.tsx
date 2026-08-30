@@ -41,6 +41,9 @@ interface PipelineCell {
   attempts?: number;
   nextRetryAt?: string | null;
   giveUpAt?: string | null;
+  /** v0.1.459 — Fehlertext der EntityProgress-Zeile; erlaubt die
+   *  orange Timeout-Markierung (gleiches Muster wie AllCompanies). */
+  errorMessage?: string | null;
 }
 
 interface PipelineRow {
@@ -266,6 +269,7 @@ export function TransactionDetail() {
                 state: evState,
                 updatedAt: payload.updatedAt ?? new Date().toISOString(),
                 errorCount: evState === "failed" ? 1 : 0,
+                errorMessage: payload.errorMessage ?? null,
               };
               return {
                 ...prev,
@@ -285,6 +289,7 @@ export function TransactionDetail() {
               state: evState,
               updatedAt: payload.updatedAt ?? new Date().toISOString(),
               errorCount: evState === "failed" ? 1 : 0,
+              errorMessage: payload.errorMessage ?? null,
             };
             const newRow: PipelineRow = {
               ...row,
@@ -679,7 +684,13 @@ function RetryStagePicker({
 }
 
 function CellDot({ cell }: { cell: PipelineCell }) {
-  const cls = stateClass(cell.state);
+  // v0.1.459 — Reaper-Timeouts ("kein Lebenszeichen" nach 30 Min) orange
+  // statt rot markieren, wie in der AllCompanies-Matrix: gleicher
+  // DB-Zustand (failed), aber Infrastruktur-Engpass statt Datenfehler.
+  const isTimeout =
+    cell.state === "failed" &&
+    (cell.errorMessage ?? "").startsWith("Zeitüberschreitung");
+  const cls = isTimeout ? "timeout" : stateClass(cell.state);
   // v0.1.118 — derive a retry-status label for failed cells. The
   // heartbeat-driven orchestrator (Settings → Meldungen) walks rows
   // whose nextRetryAt has matured every ~10 min; we surface where
@@ -711,7 +722,9 @@ function CellDot({ cell }: { cell: PipelineCell }) {
     }
   }
   const title = [
-    CELL_STATE_LABEL[cell.state],
+    isTimeout
+      ? "Zeitüberschreitung (abgebrochen — kein Datenfehler)"
+      : CELL_STATE_LABEL[cell.state],
     cell.updatedAt ? formatTime(cell.updatedAt) : null,
     cell.errorCount ? `${cell.errorCount} Fehler` : null,
     retryLabel || null,

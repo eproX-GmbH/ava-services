@@ -367,10 +367,12 @@ export async function findRegisterCandidates(
   await ensureSchema(gatewayPool);
   const places = [...new Set(placeNames.map((p) => p.trim()).filter(Boolean))];
   if (places.length === 0) return [];
-  let rows: RegisterCandidate[];
+  let rows: Array<RegisterCandidate & { districtCourt?: string }>;
   try {
-    const r = await getMasterDataPool().query<RegisterCandidate>(
-      `SELECT "companyId", name, location FROM "GermanCompany"
+    const r = await getMasterDataPool().query<
+      RegisterCandidate & { districtCourt: string }
+    >(
+      `SELECT "companyId", name, location, "districtCourt" FROM "GermanCompany"
         WHERE location = ANY($1::text[])
         ORDER BY "companyId"
         LIMIT $2`,
@@ -380,6 +382,47 @@ export async function findRegisterCandidates(
   } catch (err) {
     console.warn("[discovery] register query failed:", err);
     return [];
+  }
+
+  // A6 (PLAN_FIRMEN_DISCOVERY.md §3) — Gerichtsbezirks-Recall-Fallback.
+  // Die Orts-Treffer sind exakte Freitext-Matches gegen GeoPlace-Namen;
+  // Ortsteile und Schreibvarianten ("Porta Westfalica-Barkhausen")
+  // fallen durch. Die Court→Region-Karte wird EMPIRISCH aus den
+  // Treffern abgeleitet: die Gerichtsbezirke der exakt gematchten
+  // Firmen decken den Radius ab. Nur wenn die exakte Ausbeute unter
+  // dem Limit bleibt, fuellen Firmen derselben Bezirke mit fremdem
+  // location-Text auf — bewusst unscharf (Bezirk ~ Kreis-Skala),
+  // deshalb nachrangig und klein gedeckelt.
+  if (rows.length > 0 && rows.length < limit * 2) {
+    const courtCount = new Map<string, number>();
+    for (const r of rows) {
+      const c = r.districtCourt?.trim();
+      if (c) courtCount.set(c, (courtCount.get(c) ?? 0) + 1);
+    }
+    const courts = [...courtCount.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 5)
+      .map(([c]) => c);
+    if (courts.length > 0) {
+      try {
+        const fb = await getMasterDataPool().query<RegisterCandidate>(
+          `SELECT "companyId", name, location FROM "GermanCompany"
+            WHERE "districtCourt" = ANY($1::text[])
+              AND NOT (location = ANY($2::text[]))
+            ORDER BY "companyId"
+            LIMIT $3`,
+          [courts, places, Math.min(100, limit * 3)],
+        );
+        if (fb.rows.length > 0) {
+          console.log(
+            `[discovery] A6 Gerichtsbezirks-Fallback: +${fb.rows.length} Kandidaten aus [${courts.join(", ")}]`,
+          );
+          rows = [...rows, ...fb.rows];
+        }
+      } catch (err) {
+        console.warn("[discovery] A6 court fallback query failed:", err);
+      }
+    }
   }
   if (rows.length === 0) return [];
   const ids = rows.map((r) => r.companyId);

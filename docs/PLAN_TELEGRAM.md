@@ -156,3 +156,16 @@ verwandt mit der Confirm-Gate-Frage aus dem Security-Review:
 **Empfehlung:** T1–T4 als geschlossenes Feature ausliefern (dann funktionieren
 Benachrichtigungen), T5 direkt danach (macht Skills möglich). T6 nur, wenn
 zweiwege wirklich gewünscht ist — dann mit eigener Sicherheitsabnahme.
+
+**STATUS T6 (v0.1.459): umgesetzt als „Rückfragen aufs Handy".**
+Opt-in-Schalter `inboundConfirmEnabled` (Settings → Telegram, nur sichtbar
+wenn der Eingang aktiv ist; Default AUS — dann bleibt das bisherige
+Fail-Closed-Verhalten unverändert). Wenn an: Telegram-initiierte
+Konversationen bekommen einen `RemoteAskHandler` (ui-bridge.ts), über den
+`ask_user_choice`/`ask_user_text` die Rückfrage direkt in den verknüpften
+Chat stellen (nummerierte Optionen, Antwort per Nummer/Text, „abbrechen"
+lehnt ab). Sicherheitsgrenzen: nur der verifizierte Chat, 3-Minuten-Timeout
+→ Abbruch (fail-closed), `ask_user_match` bleibt Desktop-only, alle
+Rückfragen + Antworten im Audit-Trail. Die Rückfrage pollt getUpdates
+selbst — die Haupt-Long-Poll-Schleife wartet währenddessen in
+handleMessage, es gibt also nie zwei getUpdates-Konsumenten gleichzeitig.

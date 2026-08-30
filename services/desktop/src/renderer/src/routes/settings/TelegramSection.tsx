@@ -256,10 +256,36 @@ export function TelegramSection(): JSX.Element {
             <p className="muted small">
               AVA liest Nachrichten aus <strong>diesem</strong> Chat und
               antwortet darauf — wie bei der Mail-Bearbeitung. Nachrichten aus
-              anderen Chats werden verworfen. Aktionen, die am Rechner eine
-              Rückfrage brauchen (z. B. etwas im CRM löschen), sind über
-              Telegram bewusst nicht möglich.
+              anderen Chats werden verworfen.
+              {!cfg.inboundConfirmEnabled &&
+                " Aktionen, die am Rechner eine Rückfrage brauchen (z. B. etwas im CRM löschen), sind über Telegram bewusst nicht möglich."}
             </p>
+          )}
+
+          {cfg.inboundEnabled && (
+            <>
+              <label className="field-inline">
+                <input
+                  type="checkbox"
+                  checked={cfg.inboundConfirmEnabled}
+                  disabled={busy}
+                  onChange={(e) =>
+                    void patch({ inboundConfirmEnabled: e.target.checked })
+                  }
+                />
+                <span>Rückfragen aufs Handy erlauben</span>
+              </label>
+              {cfg.inboundConfirmEnabled && (
+                <p className="muted small">
+                  Braucht eine Aktion eine Bestätigung oder Auswahl, stellt
+                  AVA die Rückfrage direkt in diesem Chat (Antwort per Nummer
+                  oder Text, „abbrechen" bricht ab). Kommt innerhalb von 3
+                  Minuten keine Antwort, wird die Aktion abgebrochen. Damit
+                  sind auch Aktionen mit Bestätigungspflicht — etwa
+                  CRM-Löschungen — vom Handy aus möglich.
+                </p>
+              )}
+            </>
           )}
 
           <label className="field-inline">

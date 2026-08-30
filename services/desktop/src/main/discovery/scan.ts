@@ -301,13 +301,30 @@ function parseAddress(address: string | undefined): { plz: string | null; city: 
 
 /** Kanal b: valueserp places ueber den Gateway-Proxy — mit fertiger
  *  Query-Liste (vom LLM-Planner oder dem Branche-Ort-Fallback). */
+/** Places-Treffer ohne Website — Rohdaten fuer den optionalen
+ *  SERP-Website-Nachschlag (nur bei duenner Ausbeute, Budget-gedeckelt). */
+interface PlacesHitOhneWebsite {
+  name: string;
+  city: string | null;
+  plz: string | null;
+  lat: number | null;
+  lon: number | null;
+  category: string | null;
+  meta: Record<string, unknown> | null;
+}
+
 async function fetchSerpCandidates(
   gateway: GatewayClient,
   queries: string[],
   hinweise: string[],
-): Promise<{ candidates: Candidate[]; queries: string[] }> {
+): Promise<{
+  candidates: Candidate[];
+  queries: string[];
+  ohneWebsite: PlacesHitOhneWebsite[];
+}> {
   const candidates: Candidate[] = [];
-  let ohneWebsite = 0;
+  const ohneWebsite: PlacesHitOhneWebsite[] = [];
+  const skippedNames = new Set<string>();
   for (const q of queries) {
     try {
       const body = await gateway.request<{
@@ -330,15 +347,31 @@ async function fetchSerpCandidates(
         const name = p.title?.trim();
         if (!name) continue;
         const domain = domainFromUrl(p.website ?? p.link);
-        if (!domain) {
-          ohneWebsite++; // Zielbild: ohne Website komplett ueberspringen
-          continue;
-        }
         const { plz, city } = parseAddress(p.address);
         const meta: Record<string, unknown> = {};
         if (p.rating !== undefined) meta.rating = p.rating;
         if (p.reviews !== undefined) meta.reviews = p.reviews;
         if (p.phone) meta.phone = p.phone;
+        if (!domain) {
+          // Zielbild: ohne Website ueberspringen — aber die Treffer
+          // merken, damit ein Nachschlag (Schritt 3b) die Website per
+          // organischer SERP-Suche aufloesen kann, wenn die Ausbeute
+          // sonst zu duenn ist.
+          const key = `${name.toLowerCase()}|${city ?? ""}`;
+          if (!skippedNames.has(key)) {
+            skippedNames.add(key);
+            ohneWebsite.push({
+              name,
+              city,
+              plz,
+              lat: p.gps_coordinates?.latitude ?? null,
+              lon: p.gps_coordinates?.longitude ?? null,
+              category: sanitizeCategory(p.category),
+              meta: Object.keys(meta).length > 0 ? meta : null,
+            });
+          }
+          continue;
+        }
         candidates.push({
           name,
           city,
@@ -357,12 +390,69 @@ async function fetchSerpCandidates(
       );
     }
   }
-  if (ohneWebsite > 0) {
+  return { candidates, queries, ohneWebsite };
+}
+
+// ---- SERP-Website-Nachschlag (Backlog v0.1.459) ----------------------------
+//
+// Places liefert nicht fuer jeden Treffer eine Website. Statt diese
+// Firmen pauschal zu verwerfen, wird bei DUENNER Ausbeute (weniger als
+// SPARSE_SERP_THRESHOLD Places-Kandidaten mit Website) fuer einen Teil
+// der uebersprungenen Treffer eine normale organische SERP-Suche
+// "Name Ort" gefahren — gleiches Muster wie der Register-Kanal, mit
+// demselben Verzeichnis-Filter. Hartes Budget: O1 (30 SERP-Calls/Scan)
+// minus bereits verbrauchter Queries/Lookups, zusaetzlich gedeckelt.
+
+const SPARSE_SERP_THRESHOLD = 10;
+const MAX_WEBSITE_FOLLOWUPS = 6;
+
+async function resolveWebsitesViaSerp(
+  gateway: GatewayClient,
+  hits: PlacesHitOhneWebsite[],
+  budget: number,
+  hinweise: string[],
+): Promise<Candidate[]> {
+  const limit = Math.min(hits.length, budget, MAX_WEBSITE_FOLLOWUPS);
+  if (limit <= 0) return [];
+  const out: Candidate[] = [];
+  let versucht = 0;
+  for (const hit of hits.slice(0, limit)) {
+    versucht++;
+    try {
+      const body = await gateway.request<{
+        organic_results?: Array<{ link?: string; domain?: string }>;
+      }>("/v1/proxy/valueserp", {
+        method: "POST",
+        body: { q: `${hit.name} ${hit.city ?? ""}`.trim(), num: 5 },
+      });
+      const domain = (body.organic_results ?? [])
+        .map((o) => domainFromUrl(o.link ?? o.domain))
+        .find((d) => d && !DIRECTORY_DOMAIN_RE.test(d));
+      if (!domain) continue;
+      out.push({
+        name: hit.name,
+        city: hit.city,
+        plz: hit.plz,
+        lat: hit.lat,
+        lon: hit.lon,
+        domain,
+        category: hit.category,
+        meta: hit.meta,
+        source: "serp",
+      });
+    } catch {
+      hinweise.push(
+        `Website-Nachschlag nach ${versucht} Suchen abgebrochen (SERP-Fehler/Quota).`,
+      );
+      break;
+    }
+  }
+  if (out.length > 0) {
     hinweise.push(
-      `${ohneWebsite} Places-Treffer ohne Website uebersprungen (Zielbild: nur Firmen mit Website).`,
+      `Website-Nachschlag: ${out.length} von ${versucht} Places-Treffern ohne Website per SERP-Suche aufgeloest.`,
     );
   }
-  return { candidates, queries };
+  return out;
 }
 
 // ---- Kanal c (Phase 4): Register-Bestand im Umkreis ------------------------
@@ -511,9 +601,41 @@ export async function runDiscoveryScan(
     fetchOsmCandidates(geo, args.radiusKm, hinweise),
     queries.length > 0
       ? fetchSerpCandidates(gateway, queries, hinweise)
-      : Promise.resolve({ candidates: [] as Candidate[], queries: [] as string[] }),
+      : Promise.resolve({
+          candidates: [] as Candidate[],
+          queries: [] as string[],
+          ohneWebsite: [] as PlacesHitOhneWebsite[],
+        }),
     fetchRegisterCandidates(gateway, args.ort, args.radiusKm, hinweise),
   ]);
+
+  // 3b. Website-Nachschlag — nur bei duenner Ausbeute. Budget: O1 laesst
+  //     30 SERP-Calls pro Scan zu; Queries + Register-Lookups sind schon
+  //     verbraucht, der Rest deckelt den Nachschlag (zusaetzlich hart
+  //     auf MAX_WEBSITE_FOLLOWUPS begrenzt).
+  if (
+    serp.ohneWebsite.length > 0 &&
+    serp.candidates.length < SPARSE_SERP_THRESHOLD
+  ) {
+    const budget = Math.max(0, 30 - serp.queries.length - register.lookups);
+    const resolved = await resolveWebsitesViaSerp(
+      gateway,
+      serp.ohneWebsite,
+      budget,
+      hinweise,
+    );
+    serp.candidates.push(...resolved);
+    const rest = serp.ohneWebsite.length - resolved.length;
+    if (rest > 0) {
+      hinweise.push(
+        `${rest} Places-Treffer ohne Website uebersprungen (Zielbild: nur Firmen mit Website).`,
+      );
+    }
+  } else if (serp.ohneWebsite.length > 0) {
+    hinweise.push(
+      `${serp.ohneWebsite.length} Places-Treffer ohne Website uebersprungen (Ausbeute ausreichend, kein Nachschlag noetig).`,
+    );
+  }
 
   // 4. Lokal per Domain deduplizieren (Domain = Discovery-ID),
   //    Naehe-priorisieren fuers Cap.

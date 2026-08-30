@@ -33,6 +33,7 @@ const DEFAULT_CONFIG: TelegramConfig = {
   severityThreshold: "warn",
   respectQuietHours: true,
   inboundEnabled: false,
+  inboundConfirmEnabled: false,
   lastUpdateId: null,
 };
 
@@ -106,6 +107,9 @@ export class TelegramStore extends EventEmitter {
     if (patch.inboundEnabled !== undefined) {
       next.inboundEnabled = patch.inboundEnabled === true;
     }
+    if (patch.inboundConfirmEnabled !== undefined) {
+      next.inboundConfirmEnabled = patch.inboundConfirmEnabled === true;
+    }
     if (patch.lastUpdateId !== undefined) {
       next.lastUpdateId =
         typeof patch.lastUpdateId === "number" &&
@@ -116,6 +120,10 @@ export class TelegramStore extends EventEmitter {
     // Ohne Chat/Token gibt es auch nichts zu empfangen.
     if (next.inboundEnabled && (next.chatId === null || !this.hasToken())) {
       next.inboundEnabled = false;
+    }
+    // Rückfragen setzen den Eingang voraus.
+    if (!next.inboundEnabled) {
+      next.inboundConfirmEnabled = false;
     }
     // Ohne Token oder Chat-ID kann der Kanal nicht aktiv sein.
     if (next.enabled && (next.chatId === null || !this.hasToken())) {
@@ -145,6 +153,9 @@ export class TelegramStore extends EventEmitter {
         severityThreshold: sanitiseSeverity(parsed.severityThreshold),
         respectQuietHours: parsed.respectQuietHours !== false,
         inboundEnabled: parsed.inboundEnabled === true,
+        inboundConfirmEnabled:
+          parsed.inboundEnabled === true &&
+          parsed.inboundConfirmEnabled === true,
         lastUpdateId:
           typeof parsed.lastUpdateId === "number" ? parsed.lastUpdateId : null,
       };

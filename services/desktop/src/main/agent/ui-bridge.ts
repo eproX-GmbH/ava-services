@@ -55,6 +55,24 @@ export interface PendingChoice {
       };
 }
 
+// v0.1.459 — T6: Rückfragen über einen entfernten Kanal (Telegram).
+// Wenn eine autonome Konversation von einem verifizierten Zweiweg-Kanal
+// stammt UND der Nutzer das Feature eingeschaltet hat, beantwortet der
+// Kanal askChoice/askText statt dass sie hart werfen. askMatch bleibt
+// bewusst Desktop-only (Tabellen-UI, am Handy nicht sinnvoll).
+export interface RemoteAskHandler {
+  askChoice(
+    prompt: string,
+    options: AgentChoiceOption[],
+    signal: AbortSignal,
+  ): Promise<string>;
+  askText(
+    prompt: string,
+    opts: { optional?: boolean },
+    signal: AbortSignal,
+  ): Promise<string>;
+}
+
 export interface UiBridgeDeps {
   emit: (frame: AgentStreamFrame) => void;
   pending: Map<string, PendingChoice>;
@@ -74,6 +92,8 @@ export class UiBridge {
      * Auto-Modus nicht — wähl einen anderen oder beende".
      */
     private readonly autonomousMode: boolean = false,
+    /** v0.1.459 — T6: beantwortet Rückfragen im autonomen Modus remote. */
+    private readonly remoteAsk: RemoteAskHandler | null = null,
   ) {}
 
   async askChoice(
@@ -82,6 +102,9 @@ export class UiBridge {
     signal: AbortSignal,
   ): Promise<string> {
     if (this.autonomousMode) {
+      if (this.remoteAsk && options.length > 0) {
+        return this.remoteAsk.askChoice(prompt, options, signal);
+      }
       throw new Error(
         "askChoice ist im Auto-Triage-Modus nicht erlaubt (kein User da, " +
           "der antworten könnte). Triff die Entscheidung selbst oder " +
@@ -153,6 +176,13 @@ export class UiBridge {
     signal: AbortSignal,
   ): Promise<string> {
     if (this.autonomousMode) {
+      if (this.remoteAsk) {
+        return this.remoteAsk.askText(
+          prompt,
+          { ...(opts.optional ? { optional: true } : {}) },
+          signal,
+        );
+      }
       throw new Error(
         "askText ist im Auto-Triage-Modus nicht erlaubt. Triff die " +
           "Entscheidung selbst oder beende die Konversation mit einer " +

@@ -959,15 +959,21 @@ transactionsRouter.openapi(pipelineRoute, async (c) => {
     attempts: number;
     nextRetryAt: Date | null;
     giveUpAt: Date | null;
+    errorMessage: string | null;
   };
   const retryByKey = new Map<
     string,
-    { attempts: number; nextRetryAt: string | null; giveUpAt: string | null }
+    {
+      attempts: number;
+      nextRetryAt: string | null;
+      giveUpAt: string | null;
+      errorMessage: string | null;
+    }
   >();
   try {
     const pool = getGatewayPool();
     const res = await pool.query<RetryRow>(
-      `SELECT producer, "companyId", "attempts", "nextRetryAt", "giveUpAt"
+      `SELECT producer, "companyId", "attempts", "nextRetryAt", "giveUpAt", "errorMessage"
        FROM "EntityProgress"
        WHERE "transactionId" = $1`,
       [transactionId],
@@ -977,6 +983,7 @@ transactionsRouter.openapi(pipelineRoute, async (c) => {
         attempts: r.attempts ?? 0,
         nextRetryAt: r.nextRetryAt ? r.nextRetryAt.toISOString() : null,
         giveUpAt: r.giveUpAt ? r.giveUpAt.toISOString() : null,
+        errorMessage: r.errorMessage ?? null,
       });
     }
   } catch (err) {
@@ -1011,6 +1018,7 @@ transactionsRouter.openapi(pipelineRoute, async (c) => {
       attempts: r.attempts,
       nextRetryAt: r.nextRetryAt,
       giveUpAt: r.giveUpAt,
+      errorMessage: r.errorMessage,
     };
   };
 

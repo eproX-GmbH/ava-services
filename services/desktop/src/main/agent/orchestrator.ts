@@ -18,7 +18,11 @@ import { buildSystemPrompt } from "./prompts";
 import { isUserDeclined } from "./define-tool";
 import { WELCOME_MESSAGE, isWelcomeTrigger } from "./welcome";
 import type { AgentMessageImage } from "../../shared/types";
-import { UiBridge, type PendingChoice } from "./ui-bridge";
+import {
+  UiBridge,
+  type PendingChoice,
+  type RemoteAskHandler,
+} from "./ui-bridge";
 import type { LlmProviderManager, LlmStreamToolCall } from "./providers";
 import type { Conversation, Tool, ToolContext } from "./types";
 import type { MemoryStore } from "./memory";
@@ -586,6 +590,10 @@ export class AgentOrchestrator extends EventEmitter {
      * angelegt, der Aufrufer kann sie also selbst vergeben.
      */
     conversationId?: string;
+    /**
+     * v0.1.459 — T6: Rückfragen-Kanal (Telegram). Siehe Conversation.remoteAsk.
+     */
+    remoteAsk?: RemoteAskHandler;
   }): { conversationId: string; requestId: string } | null {
     const status = this.getStatus();
     if (!status.ready) {
@@ -625,6 +633,10 @@ export class AgentOrchestrator extends EventEmitter {
      * angelegt, der Aufrufer kann sie also selbst vergeben.
      */
     conversationId?: string;
+    /**
+     * v0.1.459 — T6: Rückfragen-Kanal (Telegram). Siehe Conversation.remoteAsk.
+     */
+    remoteAsk?: RemoteAskHandler;
   }> = [];
 
   private runAutonomousNow(input: {
@@ -642,6 +654,10 @@ export class AgentOrchestrator extends EventEmitter {
      * angelegt, der Aufrufer kann sie also selbst vergeben.
      */
     conversationId?: string;
+    /**
+     * v0.1.459 — T6: Rückfragen-Kanal (Telegram). Siehe Conversation.remoteAsk.
+     */
+    remoteAsk?: RemoteAskHandler;
   }): { conversationId: string; requestId: string } {
     const conversationId = input.conversationId ?? randomUUID();
     const existing = this.conversations.get(conversationId);
@@ -655,6 +671,10 @@ export class AgentOrchestrator extends EventEmitter {
     // Fortgesetzte Konversation bleibt im autonomen Modus (kein User da,
     // der Rueckfragen beantworten koennte).
     convo.autonomousMode = true;
+    // T6: Rückfragen-Kanal pro Turn auffrischen (Setting kann sich
+    // zwischen zwei Telegram-Nachrichten ändern).
+    if (input.remoteAsk) convo.remoteAsk = input.remoteAsk;
+    else delete convo.remoteAsk;
     this.conversations.set(conversationId, convo);
     this.memory?.ensureConversation(conversationId);
 
@@ -1429,8 +1449,14 @@ export class AgentOrchestrator extends EventEmitter {
     // sperren BEVOR wir in Allowlist/Repair-Logik einsteigen. Sonst
     // würde der Agent in pendingChoices warten und nie zurückkehren
     // (kein User da, der antwortet).
+    // v0.1.459 — T6: Hat die Konversation einen Rückfragen-Kanal
+    // (Telegram, verifizierter Chat, Opt-in), gehen ask_user_choice/
+    // ask_user_text dorthin statt hart zu scheitern.
+    const remoteAsk =
+      this.conversations.get(conversationId)?.remoteAsk ?? null;
     if (
       autonomousMode &&
+      !remoteAsk &&
       (call.name === "ask_user_choice" || call.name === "ask_user_text")
     ) {
       const msg =
@@ -1509,6 +1535,7 @@ export class AgentOrchestrator extends EventEmitter {
       requestId,
       conversationId,
       autonomousMode,
+      remoteAsk,
     );
     const ctx: ToolContext = {
       signal,
