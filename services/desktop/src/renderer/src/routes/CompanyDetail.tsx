@@ -210,6 +210,7 @@ interface Fact {
   normalized?: string;
   confidence?: number;
   status?: "ACTIVE" | "INACTIVE" | string;
+  lastSeen?: string;
   [k: string]: unknown;
 }
 interface CompanyContact {
@@ -1194,11 +1195,10 @@ function FactGroup({
             <span className="fact-value">
               {f.value ? <FactValue value={f.value} kind={kind} /> : ""}
             </span>
-            {f.normalized && f.normalized !== f.value && (
-              <span className="muted fact-normalized">{f.normalized}</span>
-            )}
+            {/* Die interne Dedup-Normalform ("+495219426029") wird nicht
+                mehr angezeigt — sie ist Technik, keine Information. */}
             <span className="fact-meta">
-              <StatusPill status={f.status} />
+              <StatusPill status={f.status} lastSeen={f.lastSeen} />
               <ConfidenceBar confidence={f.confidence} />
             </span>
           </li>
@@ -1397,17 +1397,44 @@ function PersonCardVariants({
   );
 }
 
-function StatusPill({ status }: { status?: string }) {
+/** Relative deutsche Zeitangabe ("vor 3 Tagen"). */
+function relTimeDe(iso?: string): string | null {
+  if (!iso) return null;
+  const ms = Date.now() - Date.parse(iso);
+  if (!Number.isFinite(ms) || ms < 0) return null;
+  const days = Math.floor(ms / 86_400_000);
+  if (days === 0) return "heute";
+  if (days === 1) return "gestern";
+  if (days < 30) return `vor ${days} Tagen`;
+  const months = Math.floor(days / 30);
+  return months === 1 ? "vor 1 Monat" : `vor ${months} Monaten`;
+}
+
+// Ehrliches Badge statt "ACTIVE": Der Status ist keine Verifikation,
+// sondern nur "zuletzt auf der Website gesehen und nicht verdraengt".
+function StatusPill({ status, lastSeen }: { status?: string; lastSeen?: string }) {
   if (!status) return null;
-  const cls = status === "ACTIVE" ? "ok" : "warn";
-  return <span className={`badge ${cls}`}>{status}</span>;
+  const active = status === "ACTIVE";
+  const rel = relTimeDe(lastSeen);
+  const label = active ? (rel ? `gesehen ${rel}` : "aktuell") : "veraltet";
+  const title = active
+    ? "Zuletzt beim Website-Crawl gefunden — keine inhaltliche Verifikation."
+    : "Beim letzten Crawl nicht mehr gefunden oder durch einen neueren Wert ersetzt.";
+  return (
+    <span className={`badge ${active ? "ok" : "warn"}`} title={title}>
+      {label}
+    </span>
+  );
 }
 
 function ConfidenceBar({ confidence }: { confidence?: number }) {
   if (confidence == null) return null;
   const pct = Math.round(confidence * 100);
   return (
-    <span className="confidence">
+    <span
+      className="confidence"
+      title="Konfidenz aus der Beleglage: steigt, wenn derselbe Wert auf mehreren Seiten und aus mehreren Quellen bestätigt wurde."
+    >
       <span className="confidence-track">
         <span className="confidence-fill" style={{ width: `${pct}%` }} />
       </span>

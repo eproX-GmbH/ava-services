@@ -32,6 +32,7 @@ import {
   reconcilePersonAndProjectEmployment,
 } from "./contact-extraction/employment";
 import { createObservationIdempotent } from "./contact-extraction/observation";
+import { emitRemovalsByTTL } from "./contact-extraction/emit-removals-by-ttl";
 import { sanitizePersonName, sanitizeRole } from "./contact-extraction/sanitize-person";
 import { reconcileEntity } from "./contact-extraction/reconcile-entity";
 import type { ApplyObservationPolicy } from "./contact-extraction/observation";
@@ -230,6 +231,21 @@ export async function applyCompanyContactPersist(
       companyId,
       emitSignals: true,
     });
+    // Firmen-Kontaktdaten altern jetzt ebenfalls: Nummern/Mails, die
+    // seit Ablauf der TTL auf keiner gecrawlten Seite mehr auftauchen,
+    // gehen auf INACTIVE (+ REMOVED-Signal). Vorher lag der Helper
+    // ungenutzt im Gateway — veraltete Kontakte blieben ewig ACTIVE.
+    for (const field of ["phone", "email"]) {
+      await emitRemovalsByTTL(prisma, {
+        entityType: EntityType.COMPANY,
+        entityId: companyId,
+        companyId,
+        field,
+        ttlMs: result.cleanupTtlMs,
+        runId,
+        source,
+      });
+    }
   }
 
   log.info(
