@@ -598,20 +598,24 @@ export function buildCrmTools(deps: CrmToolDeps): Tool[] {
       const rationaleBlock = args.rationale
         ? `\n\nBegründung: ${args.rationale}`
         : "";
-      const value = await ctx.ui.askChoice(
-        `Ich möchte folgende Änderungen in HubSpot vornehmen (Company ${args.companyId}):\n\n${draftLines.join("\n")}${rationaleBlock}`,
-        [
-          {
-            value: "apply",
-            label: "Übernehmen",
-            description: "PATCH wird an HubSpot gesendet",
-          },
-          {
-            value: "cancel",
-            label: "Verwerfen",
-            description: "Nichts ändert sich",
-          },
-        ],
+      const value = await ctx.ui.confirmAction(
+        {
+          kind: "mutating",
+          prompt: `Ich möchte folgende Änderungen in HubSpot vornehmen (Company ${args.companyId}):\n\n${draftLines.join("\n")}${rationaleBlock}`,
+          confirmValue: "apply",
+          options: [
+            {
+              value: "apply",
+              label: "Übernehmen",
+              description: "PATCH wird an HubSpot gesendet",
+            },
+            {
+              value: "cancel",
+              label: "Verwerfen",
+              description: "Nichts ändert sich",
+            },
+          ],
+        },
         ctx.signal,
       );
       if (value !== "apply") return userDeclined();
@@ -739,12 +743,16 @@ export function buildCrmTools(deps: CrmToolDeps): Tool[] {
         const rationaleBlock = args.rationale
           ? `\n\nBegründung: ${args.rationale}`
           : "";
-        const value = await ctx.ui.askChoice(
-          `Ich möchte folgende Änderungen in HubSpot vornehmen (${objectLabel} ${args.objectId}):\n\n${draftLines.join("\n")}${rationaleBlock}`,
-          [
-            { value: "apply", label: "Übernehmen", description: "PATCH wird gesendet" },
-            { value: "cancel", label: "Verwerfen" },
-          ],
+        const value = await ctx.ui.confirmAction(
+          {
+            kind: "mutating",
+            prompt: `Ich möchte folgende Änderungen in HubSpot vornehmen (${objectLabel} ${args.objectId}):\n\n${draftLines.join("\n")}${rationaleBlock}`,
+            confirmValue: "apply",
+            options: [
+              { value: "apply", label: "Übernehmen", description: "PATCH wird gesendet" },
+              { value: "cancel", label: "Verwerfen" },
+            ],
+          },
           ctx.signal,
         );
         if (value !== "apply") return userDeclined();
@@ -990,12 +998,16 @@ export function buildCrmTools(deps: CrmToolDeps): Tool[] {
       const fromLabel = OBJECT_LABEL[args.fromObjectType as HubspotObjectType];
       const toLabel = OBJECT_LABEL[args.toObjectType as HubspotObjectType];
       const rationaleBlock = args.rationale ? `\n\nBegründung: ${args.rationale}` : "";
-      const value = await ctx.ui.askChoice(
-        `Soll ich folgende Verknüpfung in HubSpot ENTFERNEN?\n\n${fromLabel} ${args.fromObjectId}\n↔ ${toLabel} ${args.toObjectId}${rationaleBlock}\n\nDie Records selbst bleiben erhalten — nur die Beziehung wird gelöst.`,
-        [
-          { value: "apply", label: "Entfernen", description: "DELETE wird gesendet" },
-          { value: "cancel", label: "Verwerfen" },
-        ],
+      const value = await ctx.ui.confirmAction(
+        {
+          kind: "mutating",
+          prompt: `Soll ich folgende Verknüpfung in HubSpot ENTFERNEN?\n\n${fromLabel} ${args.fromObjectId}\n↔ ${toLabel} ${args.toObjectId}${rationaleBlock}\n\nDie Records selbst bleiben erhalten — nur die Beziehung wird gelöst.`,
+          confirmValue: "apply",
+          options: [
+            { value: "apply", label: "Entfernen", description: "DELETE wird gesendet" },
+            { value: "cancel", label: "Verwerfen" },
+          ],
+        },
         ctx.signal,
       );
       if (value !== "apply") return userDeclined();
@@ -1503,12 +1515,16 @@ export function buildCrmTools(deps: CrmToolDeps): Tool[] {
       const subject =
         (preview && preview.hs_task_subject) ?? `Task ${args.taskId}`;
       const completedAt = args.completedAt ?? new Date().toISOString();
-      const value = await ctx.ui.askChoice(
-        `Soll ich folgende Aufgabe in HubSpot als erledigt markieren?\n\n${subject}\nID: ${args.taskId}\nAbschluss-Zeitpunkt: ${completedAt}`,
-        [
-          { value: "complete", label: "Erledigt", description: "PATCH wird gesendet" },
-          { value: "cancel", label: "Abbrechen" },
-        ],
+      const value = await ctx.ui.confirmAction(
+        {
+          kind: "mutating",
+          prompt: `Soll ich folgende Aufgabe in HubSpot als erledigt markieren?\n\n${subject}\nID: ${args.taskId}\nAbschluss-Zeitpunkt: ${completedAt}`,
+          confirmValue: "complete",
+          options: [
+            { value: "complete", label: "Erledigt", description: "PATCH wird gesendet" },
+            { value: "cancel", label: "Abbrechen" },
+          ],
+        },
         ctx.signal,
       );
       if (value !== "complete") return userDeclined();
@@ -2196,16 +2212,20 @@ export function buildCrmTools(deps: CrmToolDeps): Tool[] {
           : includeContacts
             ? "\n\n_(keine neuen Kontakte — bereits vorhanden oder keine gefunden)_"
             : "";
-      const decision = await ctx.ui.askChoice(
-        `${header}${fieldsBlock}${contactsBlock}${sourcesBlock}${rationaleBlock}`,
-        [
-          {
-            value: "apply",
-            label: "Übernehmen",
-            description: "Alles in einem Rutsch nach HubSpot schreiben",
-          },
-          { value: "cancel", label: "Verwerfen" },
-        ],
+      const decision = await ctx.ui.confirmAction(
+        {
+          kind: "mutating",
+          prompt: `${header}${fieldsBlock}${contactsBlock}${sourcesBlock}${rationaleBlock}`,
+          confirmValue: "apply",
+          options: [
+            {
+              value: "apply",
+              label: "Übernehmen",
+              description: "Alles in einem Rutsch nach HubSpot schreiben",
+            },
+            { value: "cancel", label: "Verwerfen" },
+          ],
+        },
         ctx.signal,
       );
       if (decision !== "apply") return userDeclined();
@@ -2857,16 +2877,20 @@ export function buildCrmTools(deps: CrmToolDeps): Tool[] {
       const rationaleBlock = args.rationale
         ? `\n\nBegründung: ${args.rationale}`
         : "";
-      const value = await ctx.ui.askChoice(
-        `Ich möchte die HubSpot-Company ${args.hubspotCompanyId} mit AVA-Daten anreichern:\n\n${diffLines.join("\n")}${rationaleBlock}\n\nAVA-Quellen: ${enrich.sources.join(", ")}.`,
-        [
-          {
-            value: "apply",
-            label: "Übernehmen",
-            description: "PATCH wird an HubSpot gesendet",
-          },
-          { value: "cancel", label: "Verwerfen" },
-        ],
+      const value = await ctx.ui.confirmAction(
+        {
+          kind: "mutating",
+          prompt: `Ich möchte die HubSpot-Company ${args.hubspotCompanyId} mit AVA-Daten anreichern:\n\n${diffLines.join("\n")}${rationaleBlock}\n\nAVA-Quellen: ${enrich.sources.join(", ")}.`,
+          confirmValue: "apply",
+          options: [
+            {
+              value: "apply",
+              label: "Übernehmen",
+              description: "PATCH wird an HubSpot gesendet",
+            },
+            { value: "cancel", label: "Verwerfen" },
+          ],
+        },
         ctx.signal,
       );
       if (value !== "apply") return { ...userDeclined(), changedFields: 0 };
@@ -2933,12 +2957,19 @@ export function buildCrmTools(deps: CrmToolDeps): Tool[] {
         const rationaleBlock = args.rationale
           ? `\n\nBegründung: ${args.rationale}`
           : "";
-        const value = await ctx.ui.askChoice(
-          `Soll ich folgenden ${label} in HubSpot LÖSCHEN?\n\nID: ${args.objectId}\n${summary}${rationaleBlock}\n\nHubSpot archiviert den Record 90 Tage lang — bis dahin kannst du ihn im HubSpot-Admin wiederherstellen.`,
-          [
-            { value: "delete", label: "Löschen", description: "DELETE wird gesendet" },
-            { value: "cancel", label: "Behalten" },
-          ],
+        const value = await ctx.ui.confirmAction(
+          {
+            // Destruktiv: von KEINER Vollmacht-Stufe gedeckt. Mit
+            // Telegram-Rückfrage-Kanal (T6) geht die Frage in den Chat,
+            // sonst wirft es — nie autonom.
+            kind: "destructive",
+            prompt: `Soll ich folgenden ${label} in HubSpot LÖSCHEN?\n\nID: ${args.objectId}\n${summary}${rationaleBlock}\n\nHubSpot archiviert den Record 90 Tage lang — bis dahin kannst du ihn im HubSpot-Admin wiederherstellen.`,
+            confirmValue: "delete",
+            options: [
+              { value: "delete", label: "Löschen", description: "DELETE wird gesendet" },
+              { value: "cancel", label: "Behalten" },
+            ],
+          },
           ctx.signal,
         );
         if (value !== "delete") return userDeclined();

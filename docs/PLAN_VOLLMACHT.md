@@ -147,6 +147,16 @@ Empfehlung: V1–V3 als ein Release; V4 direkt danach; V5 zurückstellen.
   Deckungsmatrix + Auflösungsreihenfolge per Bundle-Smoke verifiziert;
   destruktiv ist von keiner Stufe gedeckt, geht mit T6 aber als
   Rückfrage in den Chat (gültige Bestätigung).
-- Offen: V4 (Klasse-B-Gates migrieren — Telegram-Stufe „mutating"
-  deckt bis dahin nichts zusätzlich), V5 (Mail deferred-consent,
-  zurückgestellt).
+- **V4 umgesetzt (v0.1.463):** Die 6 Klasse-B-Gates in crm.ts auf
+  `confirmAction(kind: "mutating")` migriert (update_hubspot_company,
+  generisches Objekt-Update, disassociate, complete_task,
+  sync_from_ava, enrich_from_ava) — die Telegram-Stufe „verändernd"
+  deckt sie jetzt wirklich. Zusätzlich crm_delete_hubspot_* auf
+  `kind: "destructive"` umgestellt (verhaltensgleich: nie autonom, mit
+  T6 als Chat-Rückfrage, sonst throw — aber deklarierte Klasse +
+  präzise Fehlermeldung). Einzige verbleibende askChoice-Stelle in
+  crm.ts ist die Dubletten-Disambiguierung (Klasse D, korrekt so).
+  Confirm-Gates außerhalb crm.ts (Notion/Obsidian/Scheduler/Watches/
+  Imports) bleiben vorerst askChoice — migrieren, wenn sie im
+  Auto-Modus praktisch gebraucht werden.
+- Offen: V5 (Mail deferred-consent, zurückgestellt).
