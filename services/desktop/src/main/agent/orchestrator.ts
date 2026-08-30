@@ -99,6 +99,8 @@ export interface AgentOrchestratorOptions {
    * (and a future stateless mode) can omit it.
    */
   profileStore?: { get: () => import("../../shared/types").UserProfile };
+  /** ICP-Kurztext fuer den System-Prompt (null = keins gesetzt). */
+  getIcpText?: () => string | null;
   /**
    * v0.1.161 — General-memory store. When set, the orchestrator injects
    * the most recent N entries into the system prompt under
@@ -179,6 +181,7 @@ export class AgentOrchestrator extends EventEmitter {
   private readonly profileStore:
     | { get: () => import("../../shared/types").UserProfile }
     | undefined;
+  private readonly getIcpText: (() => string | null) | undefined;
   // v0.1.161 — see AgentOrchestratorOptions.generalMemoryStore.
   private readonly generalMemoryStore:
     | { list: () => import("./general-memory").GeneralMemoryEntry[] }
@@ -224,6 +227,7 @@ export class AgentOrchestrator extends EventEmitter {
     this.memoryError = opts.memoryError ?? null;
     this.runtimeRecover = opts.runtimeRecover;
     this.profileStore = opts.profileStore;
+    this.getIcpText = opts.getIcpText;
     this.generalMemoryStore = opts.generalMemoryStore;
     this.skillStore = opts.skillStore;
     this.skillsPrefs = opts.skillsPrefs;
@@ -988,6 +992,9 @@ export class AgentOrchestrator extends EventEmitter {
               rememberedFacts: this.generalMemoryStore
                 ? this.generalMemoryStore.list().slice(0, 30)
                 : [],
+              // ICP als passiver Lese-Kontext in jedem Turn (Chat,
+              // Telegram, Triage) — Radar/Match nutzen den Store direkt.
+              icpText: this.getIcpText?.() ?? null,
               availableToolNames,
               // v0.1.299 — Auto-Triage-Modus aktiviert ein zusätzliches
               // Verhaltens-Block im System-Prompt (kein ask_user_*,

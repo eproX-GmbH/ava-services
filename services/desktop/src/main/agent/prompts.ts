@@ -36,6 +36,10 @@ export interface PromptSkillContext {
    *  block so the agent ALWAYS sees stored facts about the user,
    *  not only when it remembers to call `recall_memory`. */
   rememberedFacts?: GeneralMemoryEntry[];
+  /** ICP-Kurztext (icpStore.renderText()) — landet als Lese-Kontext im
+   *  System-Prompt, damit der Agent Idealkunden-Bezug OHNE
+   *  Tool-Roundtrip hat. null/leer = kein Block. */
+  icpText?: string | null;
   /**
    * v0.1.241 — Names of the tools that are ACTUALLY available to the
    * LLM this turn (core + lazy-loaded + skill + slash). When provided,
@@ -540,6 +544,18 @@ export function buildSystemPrompt(
   // exist so the agent doesn't keep asking for a profile while the
   // user already told it things about themselves.
   const profileBlock = renderProfileBlock(profile);
+  // ICP als Lese-Kontext (Phase 3+ Firmen-Discovery): der Agent kennt
+  // die Idealkunden passiv — fuer Priorisierung, Formulierungen und
+  // Fragen wie "passt Firma X zu mir?" ohne icp_get-Roundtrip.
+  // Aenderungen weiterhin NUR ueber icp_set.
+  const icpText = (skillContext?.icpText ?? "").trim();
+  const icpBlock = icpText
+    ? [
+        "Idealkundenprofil (ICP) des Nutzers — Lese-Kontext, Aenderungen nur via `icp_set`:",
+        ...icpText.slice(0, 1500).split("\n").map((l) => `  ${l}`),
+        "",
+      ].join("\n")
+    : "";
   const rememberedBlock = renderRememberedFactsBlock(
     skillContext?.rememberedFacts ?? [],
   );
@@ -646,6 +662,7 @@ export function buildSystemPrompt(
     // ohne Daten-Tool-Call. Siehe agent/soul.ts.
     SOUL,
     profileBlock,
+    icpBlock,
     rememberedBlock,
     nudgeBlock,
     persona,

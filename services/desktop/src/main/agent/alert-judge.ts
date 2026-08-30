@@ -44,6 +44,10 @@ export interface BuildJudgeOptions {
   isProviderReady: () => boolean;
   /** Wall-clock injection for tests. Defaults to `new Date()`. */
   now?: () => Date;
+  /** Nutzer-Kontext (Profil-Kurzform + ICP) — macht die Alarm-
+   *  Bewertung nutzerspezifisch statt generisch. Live gelesen, damit
+   *  Profil-/ICP-Aenderungen ab dem naechsten Tick wirken. */
+  getUserContext?: () => string | null;
 }
 
 /**
@@ -66,7 +70,7 @@ export function buildLlmAlertJudge(
       {
         id: `alert-judge-system-${candidate.sourceRef}`,
         role: "system",
-        content: buildSystemPrompt(today),
+        content: buildSystemPrompt(today, options.getUserContext?.() ?? null),
         createdAt: stamp,
       },
       {
@@ -146,13 +150,26 @@ export class JudgeProviderUnavailable extends Error {
 
 // ---- Prompts --------------------------------------------------------------
 
-function buildSystemPrompt(today: Date): string {
+function buildSystemPrompt(today: Date, userContext: string | null): string {
   const todayIso = today.toISOString().slice(0, 10);
   return [
     "Du bist die Alarm-Bewertungsstufe von AVA, einer Recherche-App für",
     "deutsche Unternehmen.",
     `Heute ist ${todayIso}.`,
     "",
+    // Nutzer-Kontext macht die Bewertung massgeschneidert: dieselbe
+    // Meldung kann fuer einen Immobilien-Fokus alarmwuerdig sein und
+    // fuer einen Maschinenbau-Fokus Rauschen.
+    ...(userContext
+      ? [
+          "Kontext der Analystin (beruecksichtige ihn bei der Relevanz-",
+          "Einschaetzung — Naehe zu ihren Branchen/Regionen/Idealkunden",
+          "erhoeht die Alarmwuerdigkeit, voellig fachfremde Punkte senken",
+          "sie):",
+          ...userContext.slice(0, 1200).split("\n").map((l) => `  ${l}`),
+          "",
+        ]
+      : []),
     "Aufgabe: Entscheide, ob der folgende Datenpunkt eine Benachrichtigung",
     "an die Analystin rechtfertigt.",
     "",

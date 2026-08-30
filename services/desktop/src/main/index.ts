@@ -1283,6 +1283,19 @@ const heartbeat = new Heartbeat({
   // skipped tick so dedup slots aren't burned during cold-start.
   judge: buildLlmAlertJudge(providers, {
     isProviderReady: () => providers.getStatus().ready,
+    // Profil + ICP live in die Alarm-Bewertung — dieselbe Meldung ist
+    // je nach Nutzer-Fokus alarmwuerdig oder Rauschen.
+    getUserContext: () => {
+      const p = userProfile.get();
+      const lines: string[] = [];
+      if (p.bio?.trim()) lines.push(`Bio: ${p.bio.trim()}`);
+      if ((p.industries ?? []).length > 0)
+        lines.push(`Branchen: ${p.industries.join(", ")}`);
+      if ((p.geographies ?? []).length > 0)
+        lines.push(`Regionen: ${p.geographies.join(", ")}`);
+      if (icpStore.isSet()) lines.push(`ICP: ${icpStore.renderText()}`);
+      return lines.length > 0 ? lines.join("\n") : null;
+    },
   }),
   // 8.t2 — same candidate set the alert judge consumed → the watch
   // executor evaluates each due watch's rubric. Hits create alerts
@@ -1708,6 +1721,8 @@ const agent = new AgentOrchestrator({
   // 8.t1 — system-prompt builder reads profile on every turn so every
   // response is biased by the user's lens.
   profileStore: userProfile,
+  // ICP als passiver Lese-Kontext in jedem Agenten-Turn.
+  getIcpText: () => (icpStore.isSet() ? icpStore.renderText() : null),
   // v0.1.161 — fold the long-term memory entries into the system
   // prompt on every turn. Previously the agent could only reach them
   // via `recall_memory`-tool-use; the auto-inject closes the failure
