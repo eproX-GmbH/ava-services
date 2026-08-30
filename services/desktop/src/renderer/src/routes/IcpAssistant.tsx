@@ -179,7 +179,13 @@ export function IcpAssistant(): JSX.Element {
         kundenBeispiele: kunden,
       });
       if (saved.gesetzt) {
-        setNotice("ICP gespeichert — der Radar nutzt es ab dem nächsten Match.");
+        const profilInfo =
+          saved.profilErgaenzt && saved.profilErgaenzt.length > 0
+            ? ` Dein Nutzerprofil wurde dabei ergänzt (${saved.profilErgaenzt.join(", ")}) — bestehende Angaben blieben unangetastet.`
+            : "";
+        setNotice(
+          `ICP gespeichert — der Radar nutzt es ab dem nächsten Match.${profilInfo}`,
+        );
         // I3 — Abschluss-CTA: Automatik nur anbieten, wenn sie noch aus ist.
         const cfg = await window.api.discovery.getRadarConfig();
         setShowAutoCta(cfg !== null && !cfg.enabled);

@@ -409,7 +409,9 @@ const api = {
       | { error: string }
     > => ipcRenderer.invoke("discovery:profile"),
     getIcp: (): Promise<IcpDto> => ipcRenderer.invoke("discovery:getIcp"),
-    setIcp: (patch: Partial<Omit<IcpDto, "gesetzt">>): Promise<IcpDto> =>
+    setIcp: (
+      patch: Partial<Omit<IcpDto, "gesetzt">>,
+    ): Promise<IcpDto & { profilErgaenzt?: string[] }> =>
       ipcRenderer.invoke("discovery:setIcp", patch),
     getRadarConfig: (): Promise<{
       enabled: boolean;

@@ -176,6 +176,7 @@ import { CustomerProfileStore } from "./discovery/customer-profiles";
 import { RadarSupervisor } from "./discovery/radar-supervisor";
 import { RadarAlertEmitter } from "./discovery/radar-alerts";
 import { runIcpAnalysis, buildCustomerInputs } from "./discovery/icp-assistant";
+import { fillProfileFromIcp } from "./agent/icp-profile-sync";
 import { domainFromUrl } from "./discovery/scan";
 import { listCandidatesWithMatches } from "./discovery/list";
 import { decideCandidates, type DecideInput } from "./discovery/decide";
@@ -4580,6 +4581,10 @@ app.whenReady().then(async () => {
     "discovery:setIcp",
     (_e, patch: Partial<import("./agent/icp-store").IcpProfile>) => {
       const next = icpStore.set({ ...patch, quelle: patch.quelle ?? "manuell" });
+      // ICP → Profil-Bruecke: leere Profil-Felder (Bio/Branchen/
+      // Regionen) aus dem ICP ergaenzen — Nutzer-Eingaben bleiben
+      // unangetastet.
+      const profilErgaenzt = fillProfileFromIcp(userProfile, next);
       audit({
         actorType: "user",
         actorId: null,
@@ -4591,7 +4596,7 @@ app.whenReady().then(async () => {
         summary: `ICP aktualisiert (${next.quelle ?? "manuell"})`,
         metadata: { quelle: next.quelle },
       });
-      return { ...next, gesetzt: icpStore.isSet() };
+      return { ...next, gesetzt: icpStore.isSet(), profilErgaenzt };
     },
   );
   // Phase 4 — Radar-Automatik (Opt-in).

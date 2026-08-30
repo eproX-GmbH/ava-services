@@ -12,13 +12,17 @@ import type { IcpStore } from "../icp-store";
 import type { Tool } from "../types";
 import { runIcpAnalysis, buildCustomerInputs } from "../../discovery/icp-assistant";
 import { domainFromUrl } from "../../discovery/scan";
+import { fillProfileFromIcp } from "../icp-profile-sync";
 import type { CustomerProfileStore } from "../../discovery/customer-profiles";
+import type { UserProfileStore } from "../profile-store";
 
 export interface IcpToolDeps {
   icp: IcpStore;
   gateway: GatewayClient;
   providers: LlmProviderManager;
   customerStore: CustomerProfileStore;
+  /** ICP→Profil-Bruecke: leere Profil-Felder aus dem ICP ergaenzen. */
+  profile: UserProfileStore;
 }
 
 export function buildIcpTools(deps: IcpToolDeps): Tool[] {
@@ -80,7 +84,19 @@ export function buildIcpTools(deps: IcpToolDeps): Tool[] {
     preview: () => "ICP aktualisiert",
     run: async (args) => {
       const merged = deps.icp.set({ ...args, quelle: "chat" });
-      return { gespeichert: true, icp: merged };
+      // Leere Profil-Felder (Bio/Branchen/Regionen) mit-befuellen —
+      // Nutzer-Eingaben werden nie ueberschrieben.
+      const profilErgaenzt = fillProfileFromIcp(deps.profile, merged);
+      return {
+        gespeichert: true,
+        icp: merged,
+        ...(profilErgaenzt.length > 0
+          ? {
+              profilErgaenzt,
+              hinweis: `Nutzerprofil ergaenzt (${profilErgaenzt.join(", ")}) — bestehende Angaben blieben unangetastet.`,
+            }
+          : {}),
+      };
     },
   });
 

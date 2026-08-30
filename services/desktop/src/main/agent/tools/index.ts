@@ -201,6 +201,7 @@ export function buildReadOnlyRegistry(deps: {
     gateway: deps.gateway,
     providers: deps.providers,
     customerStore: deps.discoveryCustomerProfiles,
+    profile: deps.profile,
   }))
     registry.register(t);
   for (const t of buildSettingsTools({ providers: deps.providers }))
