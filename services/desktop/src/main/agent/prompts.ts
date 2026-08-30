@@ -102,6 +102,8 @@ export function buildSystemPrompt(
     "  im Chat statt auf der Detailseite).",
     "- Die companyId nie sichtbar in den Fließtext schreiben (auch nicht",
     "  in Klammern), sie gehört nur in den Markdown-Link.",
+    "- NUR Firmen verlinken. Personen (Geschäftsführer, Ansprechpartner)",
+    "  bekommen NIE einen company:-Link — Name als reiner Text.",
     "",
     "Tool-Discovery (Lazy-Loading):",
     "- Permanent verfügbar sind nur 6 Tools: `tool_search`, `tool_load`,",

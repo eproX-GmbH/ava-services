@@ -1323,7 +1323,7 @@ export function buildCrmTools(deps: CrmToolDeps): Tool[] {
   const createTaskTool = defineTool({
     name: "crm_create_hubspot_task",
     description:
-      "Legt eine neue Aufgabe in HubSpot an und verknüpft sie SOFORT mit Company/Contact/Deal. PROPOSE-AND-CONFIRM. Optional sind Fälligkeit, Priorität, Owner, Typ (EMAIL/CALL/TODO). Status startet immer auf NOT_STARTED.",
+      "Legt eine neue Aufgabe in HubSpot an und verknüpft sie SOFORT mit Company/Contact/Deal. PROPOSE-AND-CONFIRM. Optional sind Fälligkeit (dueAt; ohne Angabe: fällig in 24 Stunden), Priorität, Owner, Typ (EMAIL/CALL/TODO). Status startet immer auf NOT_STARTED.",
     parameters: {
       type: "object",
       required: ["subject", "associations"],
@@ -1422,7 +1422,13 @@ export function buildCrmTools(deps: CrmToolDeps): Tool[] {
         hs_task_type: args.type ?? "TODO",
       };
       if (args.body) properties.hs_task_body = args.body;
-      if (args.dueAt) properties.hs_timestamp = args.dueAt;
+      // v0.1.467 — hs_timestamp (Faelligkeit) ist bei HubSpot fuer ALLE
+      // Engagement-Objekte PFLICHT. Ohne Default scheiterte jeder Task
+      // ohne explizites dueAt mit einem 400 ("Pflicht-Zeitstempel").
+      // Default: faellig in 24 Stunden — sofort ueberfaellig waere
+      // falsch, ein stiller Termin in ferner Zukunft auch.
+      properties.hs_timestamp =
+        args.dueAt ?? new Date(Date.now() + 24 * 3600 * 1000).toISOString();
       if (args.ownerId) properties.hubspot_owner_id = args.ownerId;
       const result = await createHubspotObject(crm, {
         objectType: "tasks",
