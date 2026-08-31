@@ -18,6 +18,16 @@ ueber ERP-Migration reagiert" = Kaufsignal, das im Feed nie auftauchen
 wuerde. Die Watchlist-Eintraege sind typischerweise Ansprechpartner aus
 dem CRM/Kontakte-Bestand.
 
+**Zweck 1 (dieser Plan, ratifiziert 2026-08-31):** Timing +
+Gespraechsanlass fuer BESTEHENDE Zielkontakte — „wann spreche ich wen
+womit an". Die beobachteten Personen kommen aus dem Kontakte-Bestand
+(company-contact-Service), siehe §2b Datengrundlage.
+
+**Zweck 2 (Ausbaustufe, ausdruecklich im Auge behalten):**
+Personen-Radar — Neukunden-Entdeckung ueber Engagement (wer reagiert
+auf relevante Posts?). Eigener Abschnitt §9 mit dem
+Person→Firma-Matching-Mechanismus.
+
 **Das letzte Drittel der Kette existiert bereits** und wird
 wiederverwendet: Dedupe-Muster, Linker (Signal → Firma/Kontakt im
 Bestand), Signal-Klassifikation (SIGNAL_KINDS in extractor.ts),
@@ -75,6 +85,59 @@ Alert-Fanout (Glocke/Push/Telegram inkl. Plan-Politik).
 - **W7 — Kill-Switch + Reset.** Watchlist, Sichtungs-Historie und
   Anbieter-Keys stehen im Werksreset; der bestehende LinkedIn-
   Kill-Switch (store.reset) loescht auch die Watchlist-Daten.
+
+## 2b. Datengrundlage: Woher kommen die LinkedIn-URLs?
+
+Die Watchlist ist nur so gut wie die Profil-URLs am Kontakt. Heutige
+Herkunft (verifiziert im Code):
+
+1. **valueserp-Mitarbeitersuche** im company-contact-Producer
+   (`valueserp.ts`): Queries wie `site:linkedin.com/in "<Firmenname>"`
+   und `site:linkedin.com/in "<Domain>"` — LLM extrahiert daraus
+   Personen inkl. `linkedinUrl`.
+2. **Website-Extraktion** (Team-/Ueber-uns-Seiten mit
+   LinkedIn-Links).
+3. **Host-Gate im Gateway-Persist** (`employee-contact.ts`,
+   LINKEDIN_HOSTS linkedin.com/lnkd.in): verhindert, dass CDN-/
+   Avatar-URLs im linkedinUrl-Feld landen.
+
+**WL0 — Vorab-Pruefung (PFLICHT vor WL1, User-Auflage):** Wie gut ist
+diese Grundlage wirklich?
+
+- **Abdeckung messen:** Anteil der EmployeeContacts im Bestand mit
+  befuelltem linkedinUrl (SQL gegen die Kontakt-DB, read-only).
+- **Korrektheit stichproben:** 20-30 zufaellige (Name, Firma,
+  linkedinUrl)-Tripel manuell/halbautomatisch pruefen — zeigt die URL
+  wirklich DIESE Person bei DIESER Firma? (Namensvetter-Risiko der
+  site:-Suche!)
+- **Luecken-Pfad:** fuer Kontakte OHNE URL einen gezielten
+  Nachschlag definieren (`site:linkedin.com/in "<Vorname Nachname>"
+  "<Firma>"` via valueserp, 1 Query/Kontakt, nur auf Anforderung/
+  fuer Fokus-Personen — Budget!). Erst wenn Abdeckung + Korrektheit
+  akzeptabel sind, lohnt der Watchlist-Bau.
+
+Ergebnis von WL0 gehoert als Messwert hier ins Doc.
+
+## 2c. Fokus-Personen (Priorisierung, User-Auflage)
+
+Der Kontakte-Bestand waechst schnell auf Hunderte Personen — die
+Watchlist darf kein Alles-oder-Nichts sein:
+
+- Kontakte (und Watchlist-Eintraege) bekommen ein **Fokus-Flag**
+  (`fokus: boolean`, setzbar im Kontakt-Detail, in der
+  Watchlist-Ansicht und per Chat-Tool „nimm Nils Frohloff in den
+  Fokus").
+- **Budget-Verteilung statt harter Trennung:** Fokus-Personen werden
+  bei JEDEM Lauf zuerst geprueft (taeglich bei Pro); der Rest der
+  Watchlist rotiert im verbleibenden Item-Budget (round-robin nach
+  aeltester Sichtung, woechentliche Garantie). Damit bleibt die
+  Kostenkontrolle beim Nutzer: `maxItemsProLauf` in den Settings,
+  Fokus frisst zuerst.
+- **Alert-Gewichtung:** Signale von Fokus-Personen bekommen severity
+  mindestens "warn" (→ Telegram-Default), Nicht-Fokus normal "info"
+  ausser bei starker ICP-Naehe.
+- Plan-Staffelung §6 gilt zusaetzlich fuer die Fokus-Plaetze:
+  Starter max 5, Pro max 25 Fokus-Personen.
 
 ## 3. Normiertes Signal-Schema (der Vertrag)
 
@@ -141,7 +204,8 @@ eines Nebenfelds.
 ### 4.2 Watchlist-Store (`main/linkedin/watchlist/store.ts`)
 
 Lokale Liste `{ profileUrl, label, addedAt, quelle: "manuell" |
-"kontakt", companyId?: string | null, aktiv: boolean }`. Profile-URL
+"kontakt", companyId?: string | null, aktiv: boolean,
+fokus: boolean }` (§2c). Profile-URL
 wird beim Anlegen normiert (Slug extrahieren, www erzwingen, Pfad/Query
 strippen). Verknuepfung zu Bestand: beim Hinzufuegen aus einer
 Kontaktansicht wird companyId mitgegeben — dann kann der Alert direkt
@@ -214,6 +278,7 @@ reine Produktpolitik, durchgesetzt lokal im Watchlist-Store:
 
 | Phase | Inhalt | Aufwand |
 |---|---|---|
+| WL0 | Vorab-Pruefung Datengrundlage (§2b): Abdeckungs-Messung + Korrektheits-Stichprobe der linkedinUrl-Felder, Luecken-Nachschlag-Design | ~½ Tag |
 | WL1 | Schema + Adapter-Interface + Apify-Adapter (verify, fetchActivity, tolerante Normalisierung) — VOR Start: Actor-Schemata live pruefen | ~½ Tag |
 | WL2 | Watchlist-Store + Dedupe-Historie (SQLite) + Key-Store (safeStorage) + Reset/Kill-Switch-Anbindung | ~½ Tag |
 | WL3 | Supervisor (Intervall, Batches, Backoff) + Klassifikation + Alert-Fanout | ~½ Tag |
@@ -221,10 +286,72 @@ reine Produktpolitik, durchgesetzt lokal im Watchlist-Store:
 | WL5 | *(Ausbaustufe)* zweiter Adapter (Gegenprobe der Abstraktion) | ~½ Tag |
 | WL6 | *(Ausbaustufe, nur bei Bedarf)* Operator-Kostprobe via Gateway-Proxy (valueserp-Muster) + harte Item-Deckel | ~1 Tag |
 
-Empfehlung: WL1–WL4 als ein Release; WL5/WL6 zurueckstellen, bis das
-Feature Nutzung zeigt.
+Empfehlung: WL0 zuerst (Ergebnis entscheidet ueber Go); WL1–WL4 als
+ein Release; WL5/WL6 zurueckstellen, bis das Feature Nutzung zeigt.
 
-## 8. Offene Punkte (bei Umsetzung klaeren)
+## 8. Zweck 2 (Ausbaustufe): Personen-Radar ueber Engagement
+
+Umgekehrte Richtung: Nicht „was tun meine Kontakte", sondern **„wer
+zeigt gerade Interesse am Thema"** — Engagement als Lead-Quelle. Wer
+auf einen Post ueber ERP-Migration reagiert oder kommentiert, hat sich
+selbst als thematisch interessiert markiert; das ist ein
+Personen-Level-Pendant zum Firmen-Radar.
+
+**Quellen (konfigurierbar, alle drei sinnvoll):**
+1. Eigene Posts des Nutzers (waermste Leads: die kennen dich schon).
+2. Posts definierter Autoren (Branchen-Groessen, Wettbewerber).
+3. Thematische Post-Suchen (Keyword → Posts → deren Engager).
+
+Braucht ANDERE Actors als Zweck 1 (Post-Reactions/-Comments statt
+Profil-Activity) — Adapter-Schicht und Signal-Schema aus §3/§4 werden
+wiederverwendet, nur die Eingangsrichtung dreht sich.
+
+### 8.1 Person→Firma-Matching (der Kernmechanismus, User-Auflage)
+
+Ein Engager ist erst dann ein Radar-Kandidat, wenn er BELASTBAR einer
+Firma zugeordnet ist. Konfidenz-Kaskade, beste Quelle zuerst:
+
+1. **LinkedIn-Company-Link (hart):** Liefert der Actor am Engager die
+   aktuelle Positions-Company als linkedin.com/company/<slug>, wird
+   die Company-Page aufgeloest → dort steht die **Website-Domain** →
+   `normalizeDomain` → **das IST die Discovery-ID** (Domain=ID-
+   Invariante des Radars!). Damit landet die Person verlustfrei im
+   bestehenden Firmen-Trichter: Domain bekannt → Firma bekannt/
+   Kandidat; Domain neu → neuer DiscoveredCompany-Kandidat (Website-
+   Pflicht per Konstruktion erfuellt), Mini-Profil + ICP-Match wie
+   gehabt.
+2. **Headline-Parsing (mittel):** „Rolle bei <Firmenname>" aus der
+   Engager-Headline → `normalizeCompanyName` → Abgleich gegen
+   CompanyNameCache / GermanCompany (master-data) / DiscoveredCompany.
+   Eindeutiger Treffer → wie 1 weiter; mehrdeutig → SERP-Nachschlag
+   `"<Firmenname>" <Ort?>` zur Domain-Aufloesung (Verzeichnis-Filter
+   wie im Register-Kanal).
+3. **Kein Match (ehrlich):** Person OHNE belastbare Firma wird NICHT
+   geraten und NICHT als Kandidat gefuehrt — sie erscheint hoechstens
+   in einer „ungeklaert"-Liste zur manuellen Sichtung. Kein
+   LLM-Raten von Arbeitgebern (Halluzinations-Verbot).
+
+**Ergebnis-Objekt:** neuer Radar-Kandidat (Firma) MIT angehaengter
+Ausloeser-Person `{ name, profileUrl, rolle, ausloeser: "reagierte
+auf <Post-Thema>" }` — beim Import wird die Person direkt als
+Kontakt-Kandidat an der Firma angelegt. Der ICP-Match laeuft auf der
+FIRMA (bestehender Judge); die Person liefert Begruendungs-Kontext
+(„Entscheider zeigt aktives Interesse an X").
+
+### 8.2 Abgrenzung + Risiken
+
+- Deutlich hoeheres Volumen als Zweck 1 (ein viraler Post = Tausende
+  Engager) → hartes Item-Budget pro Lauf + Vorfilter (nur Engager mit
+  Company-Signal, nur DACH, Dedupe ueber Person).
+- DSGVO-Gewicht hoeher (Erhebung ueber voellig Unbeteiligte) — gleiche
+  BYOK-Logik wie W1, Leitplanken aus §5 gelten verschaerft;
+  „ungeklaert"-Liste mit kurzer TTL (14 Tage).
+- Phasen (grob, erst nach WL1-WL4 + Nutzungserfahrung): PR1
+  Post-Engagement-Adapter, PR2 Matching-Kaskade §8.1, PR3
+  Radar-Integration (Kandidat + Ausloeser-Person), PR4 Quellen-UI.
+  Schaetzung ~2-3 Tage.
+
+## 9. Offene Punkte (bei Umsetzung klaeren)
 
 - Actor-Landschaft neu sichten (Preise, Schemata, cookielos?) — Stand
   in diesem Doc ist 2026-08 und veraltet schnell.
@@ -238,3 +365,8 @@ Feature Nutzung zeigt.
 ## STATUS
 
 - Entwurf erstellt (2026-08-31), keine Umsetzung begonnen.
+- 2026-08-31: Zweck 1 vom User ratifiziert; Auflagen ergaenzt: WL0
+  Datengrundlagen-Pruefung (linkedinUrl-Qualitaet aus dem
+  Kontakt-Service), Fokus-Personen-Priorisierung (§2c); Zweck 2
+  (Personen-Radar) als Ausbaustufe §8 festgehalten inkl.
+  Person→Firma-Matching-Kaskade.
