@@ -5,7 +5,7 @@ NICHT direkt bearbeiten — die Quelle der Wahrheit ist `services/desktop/src/ma
 Lauf via `pnpm -F @ava/desktop tools:doc` (oder automatisch via `build:typecheck`).
 
 Stand: 2026-08-31
-Anzahl Tools: 195
+Anzahl Tools: 197
 
 ## Firmen (12)
 
@@ -507,7 +507,16 @@ _Parameter:_
 - `content: string` (required) — The fact to remember, written as a self-contained sentence. Future-you will read this without conversation context, so don't say "the company we just discussed" — name it.
 - `tags: array` — Optional short tags for grouping (e.g. "preference", "company:acme"). Lowercase, no spaces.
 
-## Einstellungen (5)
+## Einstellungen (6)
+
+### `publication_analysis_config`
+
+_Datei:_ `services/desktop/src/main/agent/tools/settings.ts`
+
+Ohne Parameter: aktueller Publikations-Analysemodus. Mit `mode`: umstellen (mutating). 'lazy' (Default) analysiert nur trend-relevante Bloecke per LLM, 'eager' JEDEN Block — gruendlicher, aber deutlich mehr LLM-Kosten/Laufzeit. Die Umstellung recycelt den company-publication-Producer automatisch.
+
+_Parameter:_
+- `mode: string (enum: lazy, eager)`
 
 ### `settings_clear_api_key`
 
@@ -1131,7 +1140,7 @@ _Parameter:_
 - `addPostUrls: array` — LinkedIn-Post-URLs hinzufuegen.
 - `removePostUrls: array` — Post-URLs entfernen.
 
-## mail (8)
+## mail (9)
 
 ### `mail_allowlist_add`
 
@@ -1211,6 +1220,16 @@ _Parameter:_
 - `cc: array`
 - `subject: string` (required)
 - `text: string` (required) — Plain-Text-Body. Markdown wird NICHT konvertiert.
+
+### `mail_triage_config`
+
+_Datei:_ `services/desktop/src/main/agent/tools/mail.ts`
+
+Ohne Parameter: aktuelle Mail-Triage-Einstellungen. Mit Parametern: aendern (Wirkungsklasse mutating). threadContextLimit = wieviele vorherige Thread-Nachrichten maximal in den Triage-Prompt gehen (0-50, Default 10; 0 = kein Verlauf). threadBodyCap = Zeichen-Cap je Verlaufs-Nachricht (200-5000, Default 1200) — die aktuelle Mail bleibt immer ungekuerzt. Hohe Werte = mehr Kontext, aber mehr Tokens pro Triage-Lauf.
+
+_Parameter:_
+- `threadContextLimit: number` — 0-50 vorherige Thread-Nachrichten.
+- `threadBodyCap: number` — Zeichen-Cap je Verlaufs-Nachricht (200-5000).
 
 ## meta (2)
 

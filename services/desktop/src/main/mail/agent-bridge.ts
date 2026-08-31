@@ -28,6 +28,7 @@
 import type { MailMessage } from "../../shared/types";
 import type { MailSupervisor } from "./supervisor";
 import type { MailStore } from "./store";
+import { getMailBridgeSettings } from "./bridge-settings";
 import type { AgentOrchestrator } from "../agent/orchestrator";
 
 export interface MailAgentBridgeOptions {
@@ -273,15 +274,12 @@ export class MailAgentBridge {
           stripReplyPrefixes(m.subject).toLowerCase().trim() === subjectKey,
       )
       .sort((a, b) => a.date.localeCompare(b.date))
-      .slice(-THREAD_CONTEXT_LIMIT);
+      .slice(-getMailBridgeSettings().threadContextLimit);
   }
 }
 
-/** Wieviele vorherige Thread-Nachrichten maximal in den Prompt gehen. */
-const THREAD_CONTEXT_LIMIT = 10;
-/** Zeichen-Cap pro Verlaufs-Nachricht, damit 10 lange Mails den
- *  Kontext nicht fluten. Die aktuelle Mail bleibt ungekürzt. */
-const THREAD_BODY_CAP = 1_200;
+// v0.1.491 — THREAD_CONTEXT_LIMIT/THREAD_BODY_CAP leben jetzt in
+// bridge-settings.ts (per Chat-Tool mail_triage_config aenderbar).
 
 /**
  * Normalisiert subject + from zu einem stabilen Thread-Key. Strippt
@@ -356,9 +354,10 @@ function renderMailAsPrompt(
             ? `${m.from.name} <${m.from.address}>`
             : m.from.address;
       const body = (m.bodyText || "(kein Text)").trim();
+      const bodyCap = getMailBridgeSettings().threadBodyCap;
       const capped =
-        body.length > THREAD_BODY_CAP
-          ? `${body.slice(0, THREAD_BODY_CAP)}\n[…gekürzt]`
+        body.length > bodyCap
+          ? `${body.slice(0, bodyCap)}\n[…gekürzt]`
           : body;
       threadLines.push(
         `--- ${m.date} · ${who} · ${m.subject}`,

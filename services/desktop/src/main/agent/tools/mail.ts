@@ -27,6 +27,10 @@ import type {
   MailAllowlistEntry,
   MailMessage,
 } from "../../../shared/types";
+import {
+  getMailBridgeSettings,
+  setMailBridgeSettings,
+} from "../../mail/bridge-settings";
 
 export interface MailToolDeps {
   /** Lazy-Getter weil der Supervisor erst nach buildReadOnlyRegistry()
@@ -573,6 +577,57 @@ export function buildMailTools(deps: MailToolDeps): Tool[] {
     },
   });
 
+  // v0.1.491 — Self-Service: Mail-Triage-Kontext konfigurieren
+  // (User-Wunsch seit v0.1.461: THREAD_CONTEXT_LIMIT konfigurierbar).
+  const triageConfig = defineTool({
+    name: "mail_triage_config",
+    description:
+      "Ohne Parameter: aktuelle Mail-Triage-Einstellungen. Mit Parametern: " +
+      "aendern (Wirkungsklasse mutating). threadContextLimit = wieviele " +
+      "vorherige Thread-Nachrichten maximal in den Triage-Prompt gehen " +
+      "(0-50, Default 10; 0 = kein Verlauf). threadBodyCap = Zeichen-Cap " +
+      "je Verlaufs-Nachricht (200-5000, Default 1200) — die aktuelle Mail " +
+      "bleibt immer ungekuerzt. Hohe Werte = mehr Kontext, aber mehr " +
+      "Tokens pro Triage-Lauf.",
+    parameters: {
+      type: "object",
+      properties: {
+        threadContextLimit: { type: "number", description: "0-50 vorherige Thread-Nachrichten." },
+        threadBodyCap: { type: "number", description: "Zeichen-Cap je Verlaufs-Nachricht (200-5000)." },
+      },
+    },
+    schema: yup.object({
+      threadContextLimit: yup.number().min(0).max(50).optional(),
+      threadBodyCap: yup.number().min(200).max(5000).optional(),
+    }),
+    preview: (r) => JSON.stringify(r).slice(0, 80),
+    run: async (args, c) => {
+      const patch: Record<string, number> = {};
+      if (args.threadContextLimit !== undefined)
+        patch.threadContextLimit = args.threadContextLimit;
+      if (args.threadBodyCap !== undefined)
+        patch.threadBodyCap = args.threadBodyCap;
+      if (Object.keys(patch).length === 0) return getMailBridgeSettings();
+      const beschreibung = Object.entries(patch)
+        .map(([k, v]) => `${k} → ${v}`)
+        .join(", ");
+      const value = await c.ui.confirmAction(
+        {
+          kind: "mutating",
+          prompt: `Mail-Triage-Einstellungen aendern: ${beschreibung}?`,
+          confirmValue: "save",
+          options: [
+            { value: "save", label: "Aendern" },
+            { value: "cancel", label: "Abbrechen" },
+          ],
+        },
+        c.signal,
+      );
+      if (value !== "save") return userDeclined();
+      return { gespeichert: true, ...setMailBridgeSettings(patch) };
+    },
+  });
+
   return [
     listInbox,
     getMessage,
@@ -582,6 +637,7 @@ export function buildMailTools(deps: MailToolDeps): Tool[] {
     markRead,
     archive,
     allowlistAdd,
+    triageConfig,
   ];
 }
 

@@ -1,5 +1,5 @@
 import * as yup from "yup";
-import { defineTool } from "../define-tool";
+import { defineTool, userDeclined } from "../define-tool";
 import type { LlmProviderManager } from "../providers";
 import type { Tool } from "../types";
 import type {
@@ -90,6 +90,9 @@ function validateApiKey(provider: HostedProviderKind, key: string): void {
 
 export interface SettingsToolDeps {
   providers: LlmProviderManager;
+  /** v0.1.491 — Publikations-Analysemodus (lazy/eager) per Chat. */
+  getPublicationMode?: () => "lazy" | "eager";
+  setPublicationMode?: (mode: "lazy" | "eager") => "lazy" | "eager";
 }
 
 export function buildSettingsTools(deps: SettingsToolDeps): Tool[] {
@@ -283,5 +286,58 @@ export function buildSettingsTools(deps: SettingsToolDeps): Tool[] {
         : `Tägliches Token-Limit: ${r.limit.toLocaleString("de-DE")} Tokens/Tag`,
   });
 
-  return [getProvider, setProvider, setKey, clearKey, setDailyTokenLimit];
+  // v0.1.491 — Self-Service: Publikations-Analysemodus.
+  const publicationAnalysis = defineTool({
+    name: "publication_analysis_config",
+    description:
+      "Ohne Parameter: aktueller Publikations-Analysemodus. Mit `mode`: " +
+      "umstellen (mutating). 'lazy' (Default) analysiert nur " +
+      "trend-relevante Bloecke per LLM, 'eager' JEDEN Block — " +
+      "gruendlicher, aber deutlich mehr LLM-Kosten/Laufzeit. Die " +
+      "Umstellung recycelt den company-publication-Producer automatisch.",
+    parameters: {
+      type: "object",
+      properties: {
+        mode: { type: "string", enum: ["lazy", "eager"] },
+      },
+    },
+    schema: yup.object({
+      mode: yup.string().oneOf(["lazy", "eager"]).optional(),
+    }),
+    preview: (r) => JSON.stringify(r).slice(0, 80),
+    run: async (args, c) => {
+      if (!deps.getPublicationMode || !deps.setPublicationMode) {
+        return "Publikations-Analyse nicht initialisiert.";
+      }
+      const aktuell = deps.getPublicationMode();
+      if (!args.mode) return { mode: aktuell };
+      if (args.mode === aktuell) return { mode: aktuell, hinweis: "unveraendert" };
+      const value = await c.ui.confirmAction(
+        {
+          kind: "mutating",
+          prompt:
+            args.mode === "eager"
+              ? "Publikations-Analyse auf VOLLSTAENDIG (eager) stellen? Jeder Block wird per LLM analysiert — mehr Kosten und Laufzeit."
+              : "Publikations-Analyse auf SPARSAM (lazy) stellen? Nur trend-relevante Bloecke werden analysiert.",
+          confirmValue: "save",
+          options: [
+            { value: "save", label: "Umstellen" },
+            { value: "cancel", label: "Abbrechen" },
+          ],
+        },
+        c.signal,
+      );
+      if (value !== "save") return userDeclined();
+      return { mode: deps.setPublicationMode(args.mode as "lazy" | "eager") };
+    },
+  });
+
+  return [
+    getProvider,
+    setProvider,
+    setKey,
+    clearKey,
+    setDailyTokenLimit,
+    publicationAnalysis,
+  ];
 }

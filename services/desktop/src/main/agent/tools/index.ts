@@ -165,6 +165,8 @@ export function buildReadOnlyRegistry(deps: {
   onCompanyWindowChanged?: () => void;
   getPersonenRadarStore: () => import("../../linkedin/personen-radar/store").PersonenRadarStore | null;
   getPersonenRadarSupervisor: () => import("../../linkedin/personen-radar/supervisor").PersonenRadarSupervisor | null;
+  getPublicationMode?: () => "lazy" | "eager";
+  setPublicationMode?: (mode: "lazy" | "eager") => "lazy" | "eager";
   /** v0.1.475 — Plan-Tier fuer das Chat-Blur-Gate der Discovery-Tools. */
   getTenantTier: () => string | null;
   /** Audit-Trail-Sink fuer Discovery-Aktionen (Scan-Queries etc.). */
@@ -230,7 +232,11 @@ export function buildReadOnlyRegistry(deps: {
     profile: deps.profile,
   }))
     registry.register(t);
-  for (const t of buildSettingsTools({ providers: deps.providers }))
+  for (const t of buildSettingsTools({
+    providers: deps.providers,
+    getPublicationMode: deps.getPublicationMode,
+    setPublicationMode: deps.setPublicationMode,
+  }))
     registry.register(t);
   for (const t of buildMemoryTools({ generalMemory: deps.generalMemory }))
     registry.register(t);
