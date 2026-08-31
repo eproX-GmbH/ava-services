@@ -35,6 +35,12 @@ export interface WatchlistConfig {
   /** Kosten-Transparenz: gelieferte Items im laufenden Monat. */
   monthKey: string;
   monthItems: number;
+  /** v0.1.479 — Bestands-Rotation: zusaetzlich zur Watchlist werden
+   *  je Lauf N Kontakte aus dem gesamten Firmen-Bestand geprueft
+   *  (rotierend, am laengsten ungeprueft zuerst). Opt-in — kostet
+   *  zusaetzliche Items. */
+  bestandRotationEnabled: boolean;
+  maxBestandPerRun: number;
 }
 
 const DEFAULT_CONFIG: WatchlistConfig = {
@@ -48,6 +54,8 @@ const DEFAULT_CONFIG: WatchlistConfig = {
   lastOutcome: null,
   monthKey: "",
   monthItems: 0,
+  bestandRotationEnabled: false,
+  maxBestandPerRun: 5,
 };
 
 export class WatchlistKeyStore {
@@ -97,6 +105,12 @@ export class WatchlistKeyStore {
             typeof p.monthItems === "number" && Number.isFinite(p.monthItems)
               ? Math.max(0, Math.floor(p.monthItems))
               : 0,
+          bestandRotationEnabled: p.bestandRotationEnabled === true,
+          maxBestandPerRun:
+            typeof p.maxBestandPerRun === "number" &&
+            Number.isFinite(p.maxBestandPerRun)
+              ? Math.min(50, Math.max(1, Math.floor(p.maxBestandPerRun)))
+              : DEFAULT_CONFIG.maxBestandPerRun,
         };
         return { ...this.configCache };
       }

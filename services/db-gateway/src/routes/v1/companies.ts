@@ -507,6 +507,78 @@ companiesRouter.openapi(publicationsRoute, async (c) => {
   return c.json({ items }, 200);
 });
 
+// ---- POST /v1/contacts/linkedin-profiles -----------------------------------
+//
+// v0.1.479 — Watchlist-Bestands-Rotation: liefert alle Kontakte MIT
+// LinkedIn-Profil-URL fuer eine Firmen-Liste (die Firmen des Tenants,
+// vom Desktop aus den eigenen Transaktionen gesammelt). Eine Abfrage
+// statt N Kontakt-Detail-Calls.
+
+const linkedinProfilesRoute = createRoute({
+  method: "post",
+  path: "/contacts/linkedin-profiles",
+  tags: [tag],
+  summary: "Kontakte mit LinkedIn-Profil je Firmen-Liste (Watchlist-Pool)",
+  request: {
+    body: {
+      content: {
+        "application/json": {
+          schema: z.object({
+            companyIds: z.array(z.string().min(2)).min(1).max(300),
+          }),
+        },
+      },
+    },
+  },
+  responses: {
+    200: {
+      content: {
+        "application/json": {
+          schema: z.object({
+            items: z.array(
+              z.object({
+                fullName: z.string(),
+                companyId: z.string(),
+                linkedinUrl: z.string(),
+                title: z.string().nullable(),
+              }),
+            ),
+          }),
+        },
+      },
+      description: "Kontakte mit Profil-URL",
+    },
+    ...errorResponses,
+  },
+});
+
+companiesRouter.openapi(linkedinProfilesRoute, async (c) => {
+  const { companyIds } = c.req.valid("json");
+  const pool = getProducerPool("company-contact");
+  const r = await pool.query<{
+    fullName: string;
+    companyId: string;
+    linkedinUrl: string;
+    title: string | null;
+  }>(
+    `SELECT DISTINCT ON (f.value, e."companyId")
+            p."fullName" AS "fullName",
+            e."companyId" AS "companyId",
+            f.value AS "linkedinUrl",
+            e.title AS title
+       FROM "Fact" f
+       JOIN "Person" p ON p.id = f."personId"
+       JOIN "Employment" e ON e."personId" = p.id AND e."isCurrent" = TRUE
+      WHERE f.field = 'linkedinUrl' AND f.status = 'ACTIVE'
+        AND f.value ~ 'linkedin\.com/in/'
+        AND e."companyId" = ANY($1::text[])
+      ORDER BY f.value, e."companyId"
+      LIMIT 1000`,
+    [companyIds],
+  );
+  return c.json({ items: r.rows }, 200);
+});
+
 // ---- GET /v1/companies/:companyId/profile-changes --------------------------
 //
 // v0.1.460 — Geschäftsführer-Wechsel (und künftige Profil-Diffs).

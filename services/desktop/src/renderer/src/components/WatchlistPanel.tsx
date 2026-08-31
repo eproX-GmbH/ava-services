@@ -25,6 +25,8 @@ interface WlState {
     commentsActorId: string;
     intervalHours: 24 | 168;
     maxItemsPerProfile: number;
+    bestandRotationEnabled?: boolean;
+    maxBestandPerRun?: number;
     lastRunAt: string | null;
     lastOutcome: string | null;
   };
@@ -222,6 +224,49 @@ export function WatchlistPanel(): JSX.Element {
             {" · "}Verbrauch diesen Monat: {state.monthItems ?? 0} Items
             {limits ? ` · Plätze: ${entries.length}/${limits.maxEintraege} (Fokus ${entries.filter((e) => e.fokus).length}/${limits.maxFokus})` : ""}
           </p>
+
+          {/* v0.1.479 — Bestands-Rotation: alle verarbeiteten Firmen
+              wenigstens ab und zu beobachten. */}
+          <label className="field-inline" title="Zusätzlich zur Watchlist rotieren pro Lauf einige Kontakte aus deinem gesamten Firmen-Bestand (am längsten ungeprüft zuerst) — kostet entsprechend mehr Items">
+            <input
+              type="checkbox"
+              checked={cfg.bestandRotationEnabled === true}
+              disabled={busy || !state.hasKey}
+              onChange={(e) =>
+                void run(() =>
+                  window.api.linkedin.watchlist.setConfig({
+                    bestandRotationEnabled: e.target.checked,
+                  }),
+                )
+              }
+            />
+            <span>
+              Bestands-Rotation: auch Kontakte aller verarbeiteten Firmen
+              gelegentlich prüfen
+            </span>
+          </label>
+          {cfg.bestandRotationEnabled === true && (
+            <label className="field-inline" style={{ marginLeft: 24 }}>
+              <span className="muted" style={{ fontSize: 12 }}>
+                Kontakte pro Lauf:
+              </span>
+              <input
+                type="number"
+                min={1}
+                max={50}
+                value={cfg.maxBestandPerRun ?? 5}
+                disabled={busy}
+                style={{ width: 64 }}
+                onChange={(e) =>
+                  void run(() =>
+                    window.api.linkedin.watchlist.setConfig({
+                      maxBestandPerRun: Number(e.target.value),
+                    }),
+                  )
+                }
+              />
+            </label>
+          )}
 
           <details style={{ marginBottom: 8 }}>
             <summary className="muted" style={{ fontSize: 12, cursor: "pointer" }}>

@@ -48,6 +48,7 @@ const FIRST_TICK_DELAY_MS = 3 * 60_000;
 const REST_PROFILES_PER_RUN = 10;
 const FAIL_BACKOFF_MS = 24 * 3600_000;
 const CLASSIFY_BATCH = 5;
+const BESTAND_POOL_MAX_AGE_MS = 7 * 24 * 3600_000;
 const MAX_ALERTS_PER_RUN = 15;
 
 const classifySchema = yup.array().of(
@@ -69,6 +70,14 @@ export interface WatchlistSupervisorDeps {
   notify: (alert: Alert) => void;
   onAlertsChanged: () => void;
   isSignedIn: () => boolean;
+  /** v0.1.479 — Bestands-Rotation: liefert alle Kontakte mit
+   *  LinkedIn-Profil aus dem verarbeiteten Firmen-Bestand (Gateway).
+   *  null = Quelle nicht verfuegbar (offline) → Rotation aussetzen. */
+  fetchBestandPool?: () => Promise<Array<{
+    profileUrl: string;
+    label: string;
+    companyId: string | null;
+  }> | null>;
   onAudit: (entry: {
     action: string;
     severity: "info" | "warning" | "error";
@@ -141,10 +150,6 @@ export class WatchlistSupervisor {
       reactionsActorId: cfg.reactionsActorId,
       commentsActorId: cfg.commentsActorId,
     });
-    let profileOk = 0;
-    let neueSignale = 0;
-    let alertsNeu = 0;
-    let baselines = 0;
     const probleme: string[] = [];
     try {
       const entries = await this.deps.watchlist.list();
@@ -155,71 +160,84 @@ export class WatchlistSupervisor {
         return msg;
       }
 
+      const zaehler = { profileOk: 0, neueSignale: 0, alertsNeu: 0, baselines: 0 };
       for (const entry of selected) {
-        let signals: ProfileActivitySignal[];
-        try {
-          const r = await provider.fetchActivity(key, [entry.profileUrl], {
-            maxItemsPerProfile: cfg.maxItemsPerProfile,
-          });
-          signals = r.signals;
-          this.deps.keyStore.addMonthItems(r.kosteneinheiten);
-          for (const f of r.fehlgeschlagen) {
-            if (f.grund.includes("keine oeffentliche Aktivitaet")) continue;
-            probleme.push(`${entry.label}: ${f.grund}`);
-          }
-        } catch (err) {
-          const grund = err instanceof Error ? err.message : String(err);
-          if (grund.startsWith("APIFY_AUTH")) {
-            this.deps.keyStore.setConfig({ enabled: false });
-            this.finishRun(
-              startedAt,
-              "Apify-Token ungueltig — Automatik abgeschaltet. Neuen Token hinterlegen (Einstellungen → LinkedIn → Watchlist).",
-              trigger,
-              "error",
-            );
-            return "Apify-Token ungueltig.";
-          }
-          if (grund.startsWith("APIFY_CREDITS")) {
-            this.finishRun(
-              startedAt,
-              "Apify-Guthaben aufgebraucht — Lauf abgebrochen, Automatik bleibt an.",
-              trigger,
-              "warning",
-            );
-            return "Apify-Guthaben aufgebraucht.";
-          }
-          this.failedAt.set(entry.profileUrl, Date.now());
-          probleme.push(`${entry.label}: ${grund.slice(0, 120)}`);
-          continue;
+        const r = await this.checkProfile(provider, key, cfg, entry, zaehler, probleme, (url) =>
+          this.deps.watchlist.markChecked([url]),
+        );
+        if (r === "auth") {
+          this.deps.keyStore.setConfig({ enabled: false });
+          this.finishRun(
+            startedAt,
+            "Apify-Token ungueltig — Automatik abgeschaltet. Neuen Token hinterlegen (Einstellungen → LinkedIn → Watchlist).",
+            trigger,
+            "error",
+          );
+          return "Apify-Token ungueltig.";
         }
-
-        const isBaseline = entry.lastCheckedAt === null;
-        if (isBaseline) {
-          await this.deps.watchlist.markSeen(signals);
-          await this.deps.watchlist.markChecked([entry.profileUrl]);
-          baselines++;
-          profileOk++;
-          continue;
+        if (r === "credits") {
+          this.finishRun(
+            startedAt,
+            "Apify-Guthaben aufgebraucht — Lauf abgebrochen, Automatik bleibt an.",
+            trigger,
+            "warning",
+          );
+          return "Apify-Guthaben aufgebraucht.";
         }
-
-        const neu = await this.deps.watchlist.filterNew(signals);
-        neueSignale += neu.length;
-        if (neu.length > 0 && alertsNeu < MAX_ALERTS_PER_RUN) {
-          const bewertet = await this.classify(neu.slice(0, MAX_ALERTS_PER_RUN));
-          for (const b of bewertet) {
-            if (alertsNeu >= MAX_ALERTS_PER_RUN) break;
-            if (this.emitAlert(entry, b.signal, b.relevanz, b.begruendung)) {
-              alertsNeu++;
-            }
-          }
-        }
-        await this.deps.watchlist.markSeen(signals);
-        await this.deps.watchlist.markChecked([entry.profileUrl]);
-        profileOk++;
       }
 
+      // ---- v0.1.479: Bestands-Rotation — "alle verarbeiteten Firmen
+      //      wenigstens ab und zu": nach der Watchlist rotieren N
+      //      Kontakte aus dem Gesamt-Bestand (am laengsten ungeprueft
+      //      zuerst). Pool woechentlich auffrischen.
+      let bestandGeprueft = 0;
+      if (cfg.bestandRotationEnabled && this.deps.fetchBestandPool) {
+        const info = await this.deps.watchlist.bestandPoolInfo();
+        const stale =
+          !info.refreshedAt ||
+          Date.now() - Date.parse(info.refreshedAt) > BESTAND_POOL_MAX_AGE_MS;
+        if (stale) {
+          try {
+            const pool = await this.deps.fetchBestandPool();
+            if (pool) {
+              const n = await this.deps.watchlist.refreshBestandPool(pool);
+              this.deps.onAudit({
+                action: "linkedin.watchlist.bestandPool",
+                severity: "info",
+                summary: `Bestands-Pool aufgefrischt: ${n} Kontakte mit LinkedIn-Profil`,
+                metadata: {},
+              });
+            }
+          } catch (err) {
+            probleme.push(
+              `Bestands-Pool: ${err instanceof Error ? err.message.slice(0, 100) : String(err)}`,
+            );
+          }
+        }
+        const batch = await this.deps.watchlist.nextBestandBatch(cfg.maxBestandPerRun);
+        for (const b of batch) {
+          const pseudo: WatchlistEntry = {
+            profileUrl: b.profileUrl,
+            label: b.label,
+            quelle: "kontakt",
+            companyId: b.companyId,
+            aktiv: true,
+            fokus: false,
+            addedAt: "",
+            lastCheckedAt: b.lastCheckedAt,
+          };
+          const r = await this.checkProfile(provider, key, cfg, pseudo, zaehler, probleme, (url) =>
+            this.deps.watchlist.markBestandChecked([url]),
+          );
+          if (r === "auth" || r === "credits") break; // Meldung kam schon oben nicht — hier: Lauf einfach beenden
+          if (r === "ok") bestandGeprueft++;
+        }
+      }
+
+      const { profileOk, neueSignale, alertsNeu, baselines } = zaehler;
       const teile = [
-        `${profileOk}/${selected.length} Profile geprueft`,
+        `${profileOk}/${selected.length + bestandGeprueft} Profile geprueft` +
+          (bestandGeprueft > 0 ? ` (davon ${bestandGeprueft} Bestand)` : ""),
         baselines > 0 ? `${baselines} Baseline(s) aufgenommen` : null,
         `${neueSignale} neue Signale`,
         `${alertsNeu} Meldungen`,
@@ -238,6 +256,63 @@ export class WatchlistSupervisor {
     } finally {
       this.running = false;
     }
+  }
+
+  /** Eine Person pruefen (Watchlist ODER Bestand — gleiche Semantik,
+   *  nur der Checked-Marker unterscheidet sich). */
+  private async checkProfile(
+    provider: ReturnType<typeof buildApifyProvider>,
+    key: string,
+    cfg: ReturnType<WatchlistKeyStore["getConfig"]>,
+    entry: WatchlistEntry,
+    zaehler: { profileOk: number; neueSignale: number; alertsNeu: number; baselines: number },
+    probleme: string[],
+    markChecked: (url: string) => Promise<void>,
+  ): Promise<"ok" | "fehler" | "auth" | "credits"> {
+    let signals: ProfileActivitySignal[];
+    try {
+      const r = await provider.fetchActivity(key, [entry.profileUrl], {
+        maxItemsPerProfile: cfg.maxItemsPerProfile,
+      });
+      signals = r.signals;
+      this.deps.keyStore.addMonthItems(r.kosteneinheiten);
+      for (const f of r.fehlgeschlagen) {
+        if (f.grund.includes("keine oeffentliche Aktivitaet")) continue;
+        probleme.push(`${entry.label}: ${f.grund}`);
+      }
+    } catch (err) {
+      const grund = err instanceof Error ? err.message : String(err);
+      if (grund.startsWith("APIFY_AUTH")) return "auth";
+      if (grund.startsWith("APIFY_CREDITS")) return "credits";
+      this.failedAt.set(entry.profileUrl, Date.now());
+      probleme.push(`${entry.label}: ${grund.slice(0, 120)}`);
+      return "fehler";
+    }
+
+    const isBaseline = entry.lastCheckedAt === null;
+    if (isBaseline) {
+      await this.deps.watchlist.markSeen(signals);
+      await markChecked(entry.profileUrl);
+      zaehler.baselines++;
+      zaehler.profileOk++;
+      return "ok";
+    }
+
+    const neu = await this.deps.watchlist.filterNew(signals);
+    zaehler.neueSignale += neu.length;
+    if (neu.length > 0 && zaehler.alertsNeu < MAX_ALERTS_PER_RUN) {
+      const bewertet = await this.classify(neu.slice(0, MAX_ALERTS_PER_RUN));
+      for (const b of bewertet) {
+        if (zaehler.alertsNeu >= MAX_ALERTS_PER_RUN) break;
+        if (this.emitAlert(entry, b.signal, b.relevanz, b.begruendung)) {
+          zaehler.alertsNeu++;
+        }
+      }
+    }
+    await this.deps.watchlist.markSeen(signals);
+    await markChecked(entry.profileUrl);
+    zaehler.profileOk++;
+    return "ok";
   }
 
   private finishRun(

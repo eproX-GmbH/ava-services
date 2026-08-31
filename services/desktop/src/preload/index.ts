@@ -1632,6 +1632,8 @@ const api = {
           commentsActorId: string;
           intervalHours: 24 | 168;
           maxItemsPerProfile: number;
+          bestandRotationEnabled?: boolean;
+          maxBestandPerRun?: number;
           lastRunAt: string | null;
           lastOutcome: string | null;
         };

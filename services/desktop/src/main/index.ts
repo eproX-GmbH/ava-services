@@ -168,6 +168,7 @@ import {
   buildLlmAlertJudge,
   buildReadOnlyRegistry,
   buildRealCandidateSource,
+  collectTenantCompanyIds,
 } from "./agent";
 import { NotificationManager } from "./notifications";
 import { WhisperSidecar } from "./voice/whisper-sidecar";
@@ -2583,6 +2584,29 @@ app.whenReady().then(async () => {
     },
     onAlertsChanged: broadcastAlertsChanged,
     isSignedIn: () => auth.getStatus().signedIn,
+    // v0.1.479 — Bestands-Rotation: Kontakte mit LinkedIn-Profil aus
+    // ALLEN verarbeiteten Firmen (Tenant-Transaktionen → Firmen →
+    // Gateway-Pool-Route).
+    fetchBestandPool: async () => {
+      try {
+        const companyIds = await collectTenantCompanyIds(gatewayClient, 250);
+        if (companyIds.length === 0) return [];
+        const r = await gatewayClient.request<{
+          items: Array<{ fullName: string; companyId: string; linkedinUrl: string }>;
+        }>("/v1/contacts/linkedin-profiles", {
+          method: "POST",
+          body: { companyIds: companyIds.slice(0, 300) },
+        });
+        return r.items.map((i) => ({
+          profileUrl: i.linkedinUrl,
+          label: i.fullName,
+          companyId: i.companyId,
+        }));
+      } catch (err) {
+        console.warn("[watchlist] Bestands-Pool-Fetch fehlgeschlagen:", err);
+        return null;
+      }
+    },
     onAudit: ({ action, severity, summary, metadata }) => {
       audit({
         actorType: "system",
@@ -4721,6 +4745,8 @@ app.whenReady().then(async () => {
         commentsActorId: cfg.commentsActorId,
         intervalHours: cfg.intervalHours,
         maxItemsPerProfile: cfg.maxItemsPerProfile,
+        bestandRotationEnabled: cfg.bestandRotationEnabled,
+        maxBestandPerRun: cfg.maxBestandPerRun,
         lastRunAt: cfg.lastRunAt,
         lastOutcome: cfg.lastOutcome,
       },
@@ -4742,6 +4768,8 @@ app.whenReady().then(async () => {
         "commentsActorId",
         "intervalHours",
         "maxItemsPerProfile",
+        "bestandRotationEnabled",
+        "maxBestandPerRun",
       ]) {
         if (patch && k in patch) allowed[k] = patch[k];
       }

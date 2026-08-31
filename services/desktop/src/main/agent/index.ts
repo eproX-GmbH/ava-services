@@ -40,7 +40,7 @@ export type {
 export { buildLlmAlertJudge, JudgeProviderUnavailable } from "./alert-judge";
 export { AlertPrefsStore } from "./alert-prefs-store";
 export { AutonomyStore } from "./autonomy-store";
-export { buildRealCandidateSource } from "./real-candidate-source";
+export { buildRealCandidateSource, collectTenantCompanyIds } from "./real-candidate-source";
 export { FreshnessScheduler } from "./freshness-scheduler";
 export type { FreshnessSchedulerOptions } from "./freshness-scheduler";
 export { FreshnessPrefsStore } from "./freshness-prefs-store";

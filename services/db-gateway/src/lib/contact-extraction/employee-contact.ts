@@ -131,6 +131,16 @@ export async function upsertPersonByIdentity(
   const legacyUrl = (legacyGated ?? "").trim().toLowerCase();
   const keys = [key];
   if (legacyUrl && `url:${legacyUrl}` !== key) keys.push(`url:${legacyUrl}`);
+  // v0.1.479 — Namens-Schluessel als ZUSAETZLICHER Lookup: Eine
+  // Website-Person (name-geschluesselt) und derselbe Mensch mit
+  // nachgeschlagener LinkedIn-URL (url-geschluesselt) sind EINE
+  // Person — ohne diesen Fallback entstand bei jedem URL-Nachschlag
+  // eine Dublette. Namens-Kollisionen innerhalb einer Firma teilen
+  // sich diese Semantik mit dem bestehenden name-Key-Pfad.
+  if (key.startsWith("url:")) {
+    const nameKey = `name:${sha256(`${args.companyId}|${nameIdentityForm(args.candidate.fullName)}`)}`;
+    keys.push(nameKey);
+  }
 
   const existing = await prisma.person.findFirst({
     where: {

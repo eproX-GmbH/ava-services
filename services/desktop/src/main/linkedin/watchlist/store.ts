@@ -69,6 +69,13 @@ CREATE TABLE IF NOT EXISTS watchlist_seen (
 );
 CREATE INDEX IF NOT EXISTS watchlist_seen_first_idx
   ON watchlist_seen (first_seen);
+CREATE TABLE IF NOT EXISTS watchlist_bestand (
+  profile_url     TEXT PRIMARY KEY,
+  label           TEXT NOT NULL,
+  company_id      TEXT,
+  last_checked_at TIMESTAMPTZ,
+  refreshed_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
 `;
 
 interface EntryRow {
@@ -251,6 +258,90 @@ export class WatchlistStore {
     const db = await this.db();
     await db.query(
       `UPDATE watchlist_entry SET last_checked_at = NOW()
+        WHERE profile_url = ANY($1::text[])`,
+      [profileUrls],
+    );
+  }
+
+  // ---- Bestands-Rotation (v0.1.479, §2c-Erweiterung) ------------------------
+  //
+  // Pool = alle Kontakte MIT LinkedIn-Profil aus dem verarbeiteten
+  // Firmen-Bestand. Wird periodisch vom Supervisor aufgefrischt
+  // (Gateway-Route); die Rotation nimmt je Lauf die am laengsten
+  // ungeprueften. Watchlist-Eintraege werden NICHT doppelt gefuehrt.
+
+  async refreshBestandPool(
+    rows: Array<{ profileUrl: string; label: string; companyId: string | null }>,
+  ): Promise<number> {
+    const db = await this.db();
+    const aufWatchlist = new Set(
+      (await this.list()).map((e) => e.profileUrl),
+    );
+    const now = new Date().toISOString();
+    const kept = new Set<string>();
+    for (const r of rows) {
+      const url = normalizeLinkedInProfileUrl(r.profileUrl);
+      if (!url || aufWatchlist.has(url)) continue;
+      kept.add(url);
+      await db.query(
+        `INSERT INTO watchlist_bestand (profile_url, label, company_id, refreshed_at)
+         VALUES ($1, $2, $3, $4)
+         ON CONFLICT (profile_url) DO UPDATE SET
+           label = EXCLUDED.label,
+           company_id = COALESCE(EXCLUDED.company_id, watchlist_bestand.company_id),
+           refreshed_at = EXCLUDED.refreshed_at`,
+        [url, r.label.slice(0, 200), r.companyId, now],
+      );
+    }
+    // Nicht mehr im Bestand (oder auf die Watchlist gewandert) → raus.
+    await db.query(
+      `DELETE FROM watchlist_bestand WHERE refreshed_at < $1`,
+      [now],
+    );
+    return kept.size;
+  }
+
+  async bestandPoolInfo(): Promise<{ count: number; refreshedAt: string | null }> {
+    const db = await this.db();
+    const r = await db.query<{ n: number; newest: string | Date | null }>(
+      `SELECT COUNT(*)::int AS n, MAX(refreshed_at) AS newest FROM watchlist_bestand`,
+    );
+    return {
+      count: r.rows[0]?.n ?? 0,
+      refreshedAt: iso(r.rows[0]?.newest ?? null),
+    };
+  }
+
+  /** Die N am laengsten ungeprueften Bestands-Kontakte. */
+  async nextBestandBatch(n: number): Promise<
+    Array<{ profileUrl: string; label: string; companyId: string | null; lastCheckedAt: string | null }>
+  > {
+    const db = await this.db();
+    const r = await db.query<{
+      profile_url: string;
+      label: string;
+      company_id: string | null;
+      last_checked_at: string | Date | null;
+    }>(
+      `SELECT profile_url, label, company_id, last_checked_at
+         FROM watchlist_bestand
+        ORDER BY last_checked_at ASC NULLS FIRST
+        LIMIT $1`,
+      [Math.max(0, n)],
+    );
+    return r.rows.map((x) => ({
+      profileUrl: x.profile_url,
+      label: x.label,
+      companyId: x.company_id,
+      lastCheckedAt: iso(x.last_checked_at),
+    }));
+  }
+
+  async markBestandChecked(profileUrls: string[]): Promise<void> {
+    if (profileUrls.length === 0) return;
+    const db = await this.db();
+    await db.query(
+      `UPDATE watchlist_bestand SET last_checked_at = NOW()
         WHERE profile_url = ANY($1::text[])`,
       [profileUrls],
     );

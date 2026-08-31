@@ -447,6 +447,15 @@ FIRMA (bestehender Judge); die Person liefert Begruendungs-Kontext
 ## STATUS
 
 - Entwurf erstellt (2026-08-31).
+- v0.1.479: Bestands-Rotation (§2c-Erweiterung, User-Wunsch): opt-in
+  rotieren je Lauf N Kontakte aus ALLEN verarbeiteten Firmen (Pool via
+  neuer Gateway-Route POST /v1/contacts/linkedin-profiles, woechentlich
+  aufgefrischt, am laengsten ungeprueft zuerst; Baseline-Semantik gilt).
+  Dazu Producer-Nachschlag: company-contact sucht jetzt fuer bis zu 5
+  Kontakte ohne URL je Lauf praezise per Person (Fuehrungsrollen
+  zuerst, nur eindeutige Slug-Treffer) — vorher lief die SERP-Suche
+  nur bei <5 Personen ueberhaupt. Gateway-Upsert matcht url-geschluesselte
+  Kandidaten zusaetzlich ueber den Namens-Schluessel (Dubletten-Fix).
 - WL1-WL4 released als v0.1.477 (2026-08-31) — Feature komplett, wartet auf Live-Test mit echtem Apify-Token.
 - WL0 durchgefuehrt (2026-08-31): Ergebnis in §2b — Abdeckung 21 %,
   22 % Fremd-URLs im Feld, Gate-/Normalisierungs-Fixes als

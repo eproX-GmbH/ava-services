@@ -132,6 +132,35 @@ export function buildRealCandidateSource(
   };
 }
 
+/**
+ * v0.1.479 — Firmen des Tenants einsammeln (Transaktionen → Entities).
+ * Exportiert fuer die Watchlist-Bestands-Rotation: "alle Firmen, die
+ * ich verarbeitet habe". Gleiche Mechanik wie der Heartbeat oben.
+ */
+export async function collectTenantCompanyIds(
+  gateway: GatewayClient,
+  maxCompanies = 200,
+): Promise<string[]> {
+  const transactions = await listTransactions(gateway);
+  const seen = new Set<string>();
+  await runWithConcurrency(transactions, CONCURRENCY, async (tx) => {
+    if (seen.size >= maxCompanies) return;
+    try {
+      const data = await gateway.request<{ items?: EntityRow[] }>(
+        `/v1/transactions/${encodeURIComponent(tx.id)}/entities`,
+      );
+      for (const e of data.items ?? []) {
+        if (!e.companyId) continue;
+        seen.add(e.companyId);
+        if (seen.size >= maxCompanies) return;
+      }
+    } catch {
+      /* eine kaputte Transaktion kippt die Sammlung nicht */
+    }
+  });
+  return [...seen];
+}
+
 // ---- Stages ---------------------------------------------------------------
 
 async function listTransactions(gateway: GatewayClient): Promise<TxRow[]> {
