@@ -116,7 +116,51 @@ diese Grundlage wirklich?
   fuer Fokus-Personen — Budget!). Erst wenn Abdeckung + Korrektheit
   akzeptabel sind, lohnt der Watchlist-Bau.
 
-Ergebnis von WL0 gehoert als Messwert hier ins Doc.
+**WL0-ERGEBNIS (gemessen 2026-08-31, Prod read-only via MPG-Proxy):**
+
+Abdeckung — DUENN:
+- 147 Personen im Bestand, 130 mit aktueller Anstellung, 29 Firmen
+  mit Kontakten.
+- Nur **31 Personen (21 %)** haben einen aktiven linkedinUrl-Fact;
+  nur **4 von 29 Firmen (14 %)** haben ueberhaupt einen Kontakt mit
+  URL. → Der Luecken-Nachschlag ist PFLICHT, nicht Option.
+- 11 der 31 URL-Traeger haben KEINE aktuelle Firmen-Zuordnung
+  (Employment fehlt) — fuer die Watchlist unbrauchbar, solange die
+  Firma nicht haengt.
+
+Korrektheit — Licht und Schatten:
+- Von 32 aktiven Facts sind **25 echte /in/-Profile (78 %)**; bei
+  denen matcht der URL-Slug durchgehend plausibel den Personennamen
+  (birgit-peters, kathrin-milsmann, hakan-sağkal url-encodiert, …).
+  Firmen-Zuordnungs-Korrektheit (Namensvetter!) bleibt bei
+  valueserp-Quellen ungeprueft — Konfidenz einheitlich 0.60
+  (Altbestand aus der Vor-Sanierungs-Aera).
+- **7 Facts (22 %) sind KEINE Profil-URLs**: 1x linkedin.com/posts/…
+  (Post statt Profil — das Host-Gate prueft nur den Host, nicht den
+  Pfad), 4x Presseseiten/CDN-JPGs von Firmen-Websites (Quelle
+  agent:website_people, VOR dem Host-Gate persistiert — Teil des
+  bekannten offenen Punkts „Altbestand-Re-Normalisierung").
+- 1 Personen-Duplikat durch fehlende URL-Normalisierung
+  (linkedin.com/in/x vs www.linkedin.com/in/x/ als zwei Facts);
+  Laender-Subdomains (de./uk./tr.) uneinheitlich.
+
+**Konsequenzen (Vorbedingungen fuer WL1-Go):**
+1. *Gate schaerfen (Gateway, employee-contact.ts):* linkedinUrl
+   braucht zusaetzlich ein PFAD-Gate (nur /in/-Profile) und eine
+   URL-Normalisierung (https + www erzwingen, Laender-Subdomain →
+   www, Slash/Query strippen) als normalized/Dedupe-Schluessel.
+   Kleiner Fix, sofort machbar.
+2. *Altbestand bereinigen:* die 7 Fremd-Facts retracten + das
+   Duplikat mergen — Prod-Write, braucht explizites Go.
+3. *Nachschlag bauen:* gezielte valueserp-Query
+   (site:linkedin.com/in "<Name>" "<Firma>") pro Fokus-Person, mit
+   Slug≈Name-Plausibilitaetscheck vor dem Persist.
+4. Die 11 firmenlosen URL-Traeger sind beim Watchlist-Add aus der
+   Kontaktansicht unkritisch (companyId kommt mit), gehoeren aber
+   mittelfristig ans Employment.
+
+FAZIT WL0: Grundlage noch NICHT stabil — erst 1 (+2 mit Go) und 3,
+dann WL1.
 
 ## 2c. Fokus-Personen (Priorisierung, User-Auflage)
 
@@ -384,7 +428,10 @@ FIRMA (bestehender Judge); die Person liefert Begruendungs-Kontext
 
 ## STATUS
 
-- Entwurf erstellt (2026-08-31), keine Umsetzung begonnen.
+- Entwurf erstellt (2026-08-31).
+- WL0 durchgefuehrt (2026-08-31): Ergebnis in §2b — Abdeckung 21 %,
+  22 % Fremd-URLs im Feld, Gate-/Normalisierungs-Fixes als
+  Vorbedingung identifiziert.
 - 2026-08-31: Zweck 1 vom User ratifiziert; Auflagen ergaenzt: WL0
   Datengrundlagen-Pruefung (linkedinUrl-Qualitaet aus dem
   Kontakt-Service), Fokus-Personen-Priorisierung (§2c); Zweck 2
