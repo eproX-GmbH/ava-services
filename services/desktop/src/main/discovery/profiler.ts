@@ -57,6 +57,8 @@ export interface ProfilerSummary {
   ohneEmbedding: number;
   dauerSek: number;
   beispiele: Array<{ name: string; branche: string }>;
+  /** v0.1.474 — IDs, deren Crawl/LLM scheiterte (Backoff im Worker). */
+  fehlgeschlagenIds: string[];
 }
 
 // ---- Crawl -----------------------------------------------------------------
@@ -386,6 +388,11 @@ export async function runProfiler(
     limit: number;
     /** ICP-Branchen fuer die Prioritaets-Sortierung (optional). */
     prioritizeTerms?: string[];
+    /** v0.1.474 — Kandidaten mit Fehl-Backoff ueberspringen. */
+    exclude?: Set<string>;
+    /** v0.1.474 — true = LLM gerade anderweitig gebraucht (Chat-Turn)
+     *  → Worker wartet zwischen Kandidaten, statt zu konkurrieren. */
+    shouldPause?: () => boolean;
   },
 ): Promise<ProfilerSummary | { error: string }> {
   const t0 = Date.now();
@@ -405,7 +412,8 @@ export async function runProfiler(
   const now = Date.now();
   const due = all.filter(
     (c) =>
-      !c.profiledAt || now - Date.parse(c.profiledAt) > PROFILE_MAX_AGE_MS,
+      (!c.profiledAt || now - Date.parse(c.profiledAt) > PROFILE_MAX_AGE_MS) &&
+      !opts.exclude?.has(c.discoveryId),
   );
   const batch = prioritize(due, opts.prioritizeTerms ?? []).slice(0, opts.limit);
 
@@ -418,26 +426,35 @@ export async function runProfiler(
     ohneEmbedding: 0,
     dauerSek: 0,
     beispiele: [],
+    fehlgeschlagenIds: [],
   };
   if (batch.length === 0) {
     summary.dauerSek = Math.round((Date.now() - t0) / 1000);
     return summary;
   }
 
-  // Sequenziell mit Concurrency 2 — schont fremde Websites und das LLM.
+  // v0.1.474 — Concurrency 3 (Crawls ueberlappen; das LLM serialisiert
+  // sich bei Ollama ohnehin selbst). Zwischen Kandidaten wird pausiert,
+  // wenn der Nutzer gerade aktiv chattet (shouldPause).
   const queue = [...batch];
-  const workers = Array.from({ length: 2 }, async () => {
+  const workers = Array.from({ length: 3 }, async () => {
     for (;;) {
       const cand = queue.shift();
       if (!cand) return;
+      // Aktiver Chat-Turn hat Vorrang vor Hintergrund-Profilen.
+      while (opts.shouldPause?.()) {
+        await new Promise((r) => setTimeout(r, 5_000));
+      }
       const siteText = await crawlSite(cand.domain);
       if (!siteText) {
         summary.crawlFehler++;
+        summary.fehlgeschlagenIds.push(cand.discoveryId);
         continue;
       }
       const profile = await buildProfile(providers, cand, siteText);
       if (!profile) {
         summary.llmFehler++;
+        summary.fehlgeschlagenIds.push(cand.discoveryId);
         continue;
       }
       const profileText = renderProfileText(cand.name, cand.city, profile);

@@ -197,6 +197,15 @@ async function ensureCustomerVecs(
   return out;
 }
 
+/** v0.1.474 — stabiler Kurz-Hash (djb2) fuer den ICP-Text. */
+function hashText(text: string): string {
+  let h = 5381;
+  for (let i = 0; i < text.length; i++) {
+    h = ((h << 5) + h + text.charCodeAt(i)) | 0;
+  }
+  return (h >>> 0).toString(36);
+}
+
 export async function runMatch(
   gateway: GatewayClient,
   providers: LlmProviderManager,
@@ -204,6 +213,12 @@ export async function runMatch(
   matchStore: MatchStore,
   /** I5 — lokale Top-Kunden-Profile fuers Aehnlichkeits-Signal. */
   customerStore?: CustomerProfileStore,
+  /** v0.1.474 — "incremental": nur Kandidaten OHNE bestehenden Score
+   *  bewerten (Paket c: der Profil-Worker stoesst das nach jedem
+   *  Drain an — frische Treffer troepfeln laufend rein, der teure
+   *  Volllauf bleibt fuer ICP-Aenderungen). Bei geaendertem ICP wird
+   *  automatisch auf einen Volllauf mit Score-Reset umgeschaltet. */
+  opts?: { mode?: "full" | "incremental" },
 ): Promise<MatchSummary | { error: string }> {
   if (!icp.isSet()) {
     return {
@@ -213,6 +228,17 @@ export async function runMatch(
   }
   const hinweise: string[] = [];
   const icpText = icp.renderText();
+
+  // v0.1.474 — ICP-Drift erkennen: Scores gehoeren immer zu GENAU
+  // einem ICP-Stand. Weicht der Hash ab, sind alle alten Scores
+  // wertlos → verwerfen und voll neu bewerten.
+  const icpHash = hashText(icpText);
+  let mode: "full" | "incremental" = opts?.mode ?? "full";
+  if (matchStore.getIcpHash() !== icpHash) {
+    if (mode === "incremental") mode = "full";
+    matchStore.clear();
+    hinweise.push("ICP hat sich geaendert — alle Kandidaten werden neu bewertet.");
+  }
 
   // Geo-Eingrenzung ueber den ersten ICP-Ort (optional).
   let geoParams = "";
@@ -250,6 +276,23 @@ export async function runMatch(
         "Keine profilierten offenen Kandidaten — erst discovery_scan und discovery_profile_run laufen lassen.",
       ],
     };
+  }
+
+  // Inkrementell: bereits bewertete Kandidaten (gleicher ICP-Stand)
+  // ueberspringen. Wiederholte Laeufe arbeiten so den Rest-Backlog ab,
+  // weil bewertete IDs jeweils rausfallen.
+  const gesamtMitProfil = candidates.length;
+  if (mode === "incremental") {
+    const existing = matchStore.getAll();
+    candidates = candidates.filter((c) => !(c.discoveryId in existing));
+    if (candidates.length === 0) {
+      return {
+        kandidatenMitProfil: gesamtMitProfil,
+        bewertet: 0,
+        ergebnisse: [],
+        hinweise: [...hinweise, "Keine neuen Kandidaten zu bewerten."],
+      };
+    }
   }
 
   // I5 — Top-Kunden-Vektoren (best-effort, lazy nachprofiliert).
@@ -361,10 +404,11 @@ export async function runMatch(
     });
   }
   matchStore.setMany(entries);
+  matchStore.setIcpHash(icpHash);
   ergebnisse.sort((a, b) => b.score - a.score);
 
   return {
-    kandidatenMitProfil: candidates.length,
+    kandidatenMitProfil: gesamtMitProfil,
     bewertet: ergebnisse.length,
     ergebnisse,
     hinweise,

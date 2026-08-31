@@ -182,7 +182,7 @@ import { domainFromUrl } from "./discovery/scan";
 import { listCandidatesWithMatches } from "./discovery/list";
 import { decideCandidates, type DecideInput } from "./discovery/decide";
 import { runMatch } from "./discovery/matcher";
-import { runProfiler } from "./discovery/profiler";
+import { ProfileWorker } from "./discovery/profile-worker";
 import type { StagedSheetSummary } from "./agent";
 import type { ProviderConfig, LlmProviderKind } from "./agent";
 import type { HostedProviderKind } from "../shared/types";
@@ -1250,6 +1250,7 @@ let scheduledJobsSupervisor: ScheduledJobsSupervisor | null = null;
 let linkMonitorSupervisor: LinkMonitorSupervisor | null = null;
 let radarSupervisor: RadarSupervisor | null = null;
 let radarAlertEmitter: RadarAlertEmitter | null = null;
+let profileWorker: ProfileWorker | null = null;
 
 function broadcastMailSnapshot(snapshot: MailSnapshot): void {
   for (const win of BrowserWindow.getAllWindows()) {
@@ -2504,6 +2505,54 @@ app.whenReady().then(async () => {
     // v0.1.466 — Plan-Politik: Schwelle/Budget nach Abo-Stufe.
     getPolicy: () => policyForTier(getTenantTierCached()),
   });
+  // v0.1.474 — Paket a+c: kontinuierlicher Profil-Worker; nach jedem
+  // Drain mit neuen Profilen laeuft ein INKREMENTELLER Match (nur die
+  // neuen Kandidaten) und heisse Treffer gehen durch den Alert-Fanout.
+  let incrementalMatchRunning = false;
+  const runIncrementalMatch = async (): Promise<void> => {
+    if (incrementalMatchRunning || !icpStore.isSet()) return;
+    incrementalMatchRunning = true;
+    try {
+      const result = await runMatch(
+        gatewayClient,
+        providers,
+        icpStore,
+        discoveryMatches,
+        customerProfiles,
+        { mode: "incremental" },
+      );
+      if (!("error" in result) && result.bewertet > 0 && radarAlertEmitter) {
+        radarAlertEmitter.emit(result.ergebnisse);
+        broadcastAlertsChanged();
+      }
+    } catch (err) {
+      console.warn("[discovery] inkrementeller Match fehlgeschlagen:", err);
+    } finally {
+      incrementalMatchRunning = false;
+    }
+  };
+  profileWorker = new ProfileWorker({
+    gateway: gatewayClient,
+    providers,
+    getPrioritizeTerms: () => icpStore.get().branchen,
+    isSignedIn: () => auth.getStatus().signedIn,
+    isLlmBusy: () => agent.getStatus().inFlightRequestId !== null,
+    onDrained: () => void runIncrementalMatch(),
+    onAudit: (entry) =>
+      audit({
+        actorType: "system",
+        actorId: null,
+        category: "import",
+        action: "discovery.profileWorker",
+        severity: entry.severity,
+        subjectType: null,
+        subjectId: null,
+        summary: entry.summary,
+        metadata: entry.metadata,
+      }),
+  });
+  profileWorker.start();
+
   radarSupervisor = new RadarSupervisor({
     gateway: gatewayClient,
     providers,
@@ -2511,6 +2560,7 @@ app.whenReady().then(async () => {
     matchStore: discoveryMatches,
     customerStore: customerProfiles,
     radarAlerts: radarAlertEmitter,
+    profileWorker,
     isSignedIn: () => auth.getStatus().signedIn,
     // v0.1.466 — Automatik-Klammer nach Plan (free: aus, 6h nur Pro).
     getTier: () => getTenantTierCached(),
@@ -4602,20 +4652,12 @@ app.whenReady().then(async () => {
     }
     return result;
   });
-  // Backlog-Abbau direkt aus dem Radar: bis zu 25 Mini-Profile pro
-  // Klick, ICP-Branchen zuerst.
-  let profileRunning = false;
+  // v0.1.474 — Backlog-Abbau: der Button stoesst jetzt den
+  // kontinuierlichen Worker an (voller Drain statt 25er-Happen);
+  // laeuft schon einer, haengt sich der Klick an dessen Ergebnis.
   ipcMain.handle("discovery:profile", async () => {
-    if (profileRunning) return { error: "Profil-Lauf laeuft bereits." };
-    profileRunning = true;
-    try {
-      return await runProfiler(gatewayClient, providers, {
-        limit: 25,
-        prioritizeTerms: icpStore.get().branchen,
-      });
-    } finally {
-      profileRunning = false;
-    }
+    if (!profileWorker) return { error: "Profil-Worker nicht bereit." };
+    return profileWorker.drain();
   });
   ipcMain.handle("discovery:getIcp", () => ({
     ...icpStore.get(),

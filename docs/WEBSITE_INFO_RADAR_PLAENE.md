@@ -37,6 +37,7 @@ ausdruecklich freigibst.
 | Suchtiefe pro Lauf | Basis-Suche | erweiterte Suche mit KI-Suchplaner | volle Suche: KI-Suchplaner, Handelsregister-Abgleich, Website-Nachrecherche |
 | Kandidaten pro Lauf | bis 50 | bis 150 | bis 300 |
 | Treffer-Meldungen | die Top 3 der Woche | bis 10 pro Tag | alle passenden, sofort |
+| Sichtbare Treffer in der Radar-Liste | die 2 besten klar, Rest verdeckt (Score sichtbar) | alle | alle |
 | Meldungs-Schwelle | nur sehr gute Treffer | nur sehr gute Treffer | auch gute Treffer |
 
 Formulierungshilfen fuer die Tabelle:

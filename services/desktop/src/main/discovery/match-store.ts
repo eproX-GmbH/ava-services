@@ -17,11 +17,56 @@ export interface MatchEntry {
 export class MatchStore {
   readonly path: string;
   private readonly dir: string;
+  private readonly metaPath: string;
   private cache: Record<string, MatchEntry> | null = null;
+  private metaCache: { icpHash: string | null } | null = null;
 
   constructor(dir?: string) {
     this.dir = dir ?? join(app.getPath("userData"), "discovery");
     this.path = join(this.dir, "matches.json");
+    this.metaPath = join(this.dir, "matches-meta.json");
+  }
+
+  /** v0.1.474 — Hash des ICP-Texts, mit dem die Scores entstanden.
+   *  Weicht er ab, sind ALLE Scores veraltet (clear + Volllauf). */
+  getIcpHash(): string | null {
+    if (this.metaCache) return this.metaCache.icpHash;
+    try {
+      if (existsSync(this.metaPath)) {
+        const parsed = JSON.parse(readFileSync(this.metaPath, "utf8")) as {
+          icpHash?: string;
+        };
+        this.metaCache = {
+          icpHash: typeof parsed.icpHash === "string" ? parsed.icpHash : null,
+        };
+        return this.metaCache.icpHash;
+      }
+    } catch {
+      /* korrupt → null */
+    }
+    this.metaCache = { icpHash: null };
+    return null;
+  }
+
+  setIcpHash(hash: string): void {
+    this.metaCache = { icpHash: hash };
+    try {
+      mkdirSync(this.dir, { recursive: true });
+      writeFileSync(this.metaPath, JSON.stringify(this.metaCache), "utf8");
+    } catch (err) {
+      console.warn("[discovery-match] meta persist failed:", err);
+    }
+  }
+
+  /** Alle Scores verwerfen (ICP hat sich geaendert). */
+  clear(): void {
+    this.cache = {};
+    try {
+      mkdirSync(this.dir, { recursive: true });
+      writeFileSync(this.path, JSON.stringify({}), "utf8");
+    } catch (err) {
+      console.warn("[discovery-match] clear failed:", err);
+    }
   }
 
   getAll(): Record<string, MatchEntry> {

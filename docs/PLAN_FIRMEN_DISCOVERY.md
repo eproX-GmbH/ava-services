@@ -340,7 +340,20 @@ Watermarks, Audit).
   gesenkt: weniger, aber die besten), Automatik-Klammer (free aus,
   6-h-Intervall nur Pro). Mini-Profile bleiben für alle ungedrosselt
   (lokales Compute, geteilter Pool). `DiscoveryQuotaOverride` bleibt
-  Operator-Notausgang. Ursprüngliche Planung: Limits zentral im Gateway
+  Operator-Notausgang.
+  **Radar-Paket v0.1.474 (Schlagzahl + Monetarisierung):** (a)
+  Kontinuierlicher `ProfileWorker` (discovery/profile-worker.ts):
+  Tick alle 10 Min + Kick nach Scan/Button, Runden à 100 bis der
+  Backlog leer ist, Concurrency 3, pausiert während aktiver
+  Chat-Turns, 24-h-Backoff für Fehl-Kandidaten — die alten
+  15er/25er-Caps sind weg. (b) Blur-Gate im Radar (Free): Top 2
+  bewertete Treffer klar, Rest geblurred (Score sichtbar), Banner mit
+  Upgrade-Link — reines UI-Gate, Matches laufen für alle gleich
+  frisch; KEIN Match-Frequenz-Gating (bewusst verworfen: „ICP geändert,
+  eine Woche keine Reaktion" fühlt sich kaputt an). (c) Inkrementelles
+  Matching: matches-meta.json speichert den ICP-Hash; der Worker stößt
+  nach jedem Drain einen Match NUR über neue Kandidaten an, bei
+  ICP-Änderung automatisch Volllauf mit Score-Reset. Ursprüngliche Planung: Limits zentral im Gateway
   (Muster `ProxyQuotaOverride`/`TenantBilling` — Default je Plan,
   Override je Tenant), Prüfung beim Scan-Start.
 - **O4 — ENTSCHIEDEN:** Nur öffentliche Firmendaten; **keine

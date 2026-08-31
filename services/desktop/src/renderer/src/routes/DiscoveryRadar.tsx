@@ -7,6 +7,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
+import { useUsage } from "../api/usage";
 
 interface RadarRow {
   discoveryId: string;
@@ -21,6 +22,10 @@ interface RadarRow {
   matchScore: number | null;
   matchBegruendung: string | null;
 }
+
+/** v0.1.474 — Blur-Gate: so viele bewertete Treffer sieht der
+ *  Free-Plan KLAR; der Rest ist geblurred (Score bleibt sichtbar). */
+const FREE_VISIBLE_MATCHES = 2;
 
 export function DiscoveryRadar(): JSX.Element {
   const [rows, setRows] = useState<RadarRow[]>([]);
@@ -156,6 +161,19 @@ export function DiscoveryRadar(): JSX.Element {
     }
   };
 
+  // v0.1.474 — Blur-Gate fuer den Free-Plan: Matches laufen fuer alle
+  // gleich oft und frisch, aber Free sieht nur die Top-Treffer klar.
+  // Der Score bleibt sichtbar ("es GIBT 12 weitere ab 70"), Name,
+  // Website und Begruendung sind geblurred. Reines UI-Gate.
+  const usage = useUsage();
+  const lockedIds = useMemo(() => {
+    if (usage.data?.tier !== "free") return new Set<string>();
+    const scored = rows
+      .filter((r) => r.matchScore !== null)
+      .sort((a, b) => (b.matchScore ?? 0) - (a.matchScore ?? 0));
+    return new Set(scored.slice(FREE_VISIBLE_MATCHES).map((r) => r.discoveryId));
+  }, [rows, usage.data?.tier]);
+
   const hotCount = useMemo(
     () => rows.filter((r) => (r.matchScore ?? 0) >= 70).length,
     [rows],
@@ -187,7 +205,7 @@ export function DiscoveryRadar(): JSX.Element {
             className="proc-toggle"
             onClick={() => void runProfile()}
             disabled={busy !== null}
-            title="Bis zu 25 fehlende Mini-Profile erstellen — Kandidaten aus deinen ICP-Branchen zuerst"
+            title="Fehlende Mini-Profile jetzt erstellen (kompletter Backlog; läuft sonst automatisch im Hintergrund) — ICP-Branchen zuerst"
           >
             {busy === "profile" ? "Profiliert…" : "Mini-Profile erstellen"}
           </button>
@@ -324,6 +342,13 @@ export function DiscoveryRadar(): JSX.Element {
               ? ` · ${rows.filter((r) => !r.profiliert).length} ohne Mini-Profil (⧗) — „Mini-Profile erstellen" arbeitet den Rückstand in 25er-Schritten ab`
               : ""}
           </div>
+          {lockedIds.size > 0 && (
+            <div className="radar-lockbanner">
+              🔒 {lockedIds.size} weitere bewertete Treffer{hotCount > FREE_VISIBLE_MATCHES ? ` (davon ${hotCount - FREE_VISIBLE_MATCHES} heiß)` : ""} — im{" "}
+              <Link to="/settings#plan-section">Starter-Plan</Link> siehst du
+              alle Namen und Begründungen. Die Scores unten zeigen, was da ist.
+            </div>
+          )}
           <div className="radar-tablewrap">
             <table className="radar-table">
               <thead>
@@ -344,25 +369,29 @@ export function DiscoveryRadar(): JSX.Element {
                 </tr>
               </thead>
               <tbody>
-                {rows.map((r) => (
+                {rows.map((r) => {
+                  const locked = lockedIds.has(r.discoveryId);
+                  return (
                   <tr
                     key={r.discoveryId}
                     className={
-                      (r.matchScore ?? 0) >= 70 ? "radar-row radar-hot" : "radar-row"
+                      ((r.matchScore ?? 0) >= 70 ? "radar-row radar-hot" : "radar-row") +
+                      (locked ? " radar-locked-row" : "")
                     }
                   >
                     <td className="radar-check">
                       <input
                         type="checkbox"
-                        checked={selected.has(r.discoveryId)}
+                        checked={!locked && selected.has(r.discoveryId)}
+                        disabled={locked}
                         onChange={() => toggle(r.discoveryId)}
                         aria-label={`${r.name} auswählen`}
                       />
                     </td>
                     <td>
-                      <div className="radar-name">
+                      <div className={locked ? "radar-name radar-blur" : "radar-name"}>
                         {r.name}
-                        {r.bereitsInAva && (
+                        {!locked && r.bereitsInAva && (
                           <span
                             className="radar-badge radar-known"
                             title="Diese Firma ist in AVA bereits bekannt"
@@ -372,17 +401,26 @@ export function DiscoveryRadar(): JSX.Element {
                         )}
                       </div>
                       <button
-                        className="radar-domain"
+                        className={locked ? "radar-domain radar-blur" : "radar-domain"}
+                        disabled={locked}
                         onClick={() =>
-                          void window.api.shell.openExternal(`https://${r.website}`)
+                          locked
+                            ? undefined
+                            : void window.api.shell.openExternal(`https://${r.website}`)
                         }
-                        title={`https://${r.website} im Browser öffnen`}
+                        title={
+                          locked
+                            ? "Im Starter-Plan sichtbar"
+                            : `https://${r.website} im Browser öffnen`
+                        }
                       >
                         {r.website}
                       </button>
                     </td>
-                    <td>{[r.plz, r.ort].filter(Boolean).join(" ") || "—"}</td>
-                    <td>{r.kategorie ?? "—"}</td>
+                    <td className={locked ? "radar-blur" : undefined}>
+                      {[r.plz, r.ort].filter(Boolean).join(" ") || "—"}
+                    </td>
+                    <td className={locked ? "radar-blur" : undefined}>{r.kategorie ?? "—"}</td>
                     <td>
                       {r.matchScore !== null ? (
                         <span
@@ -409,11 +447,15 @@ export function DiscoveryRadar(): JSX.Element {
                         </span>
                       )}
                     </td>
-                    <td className="radar-why" title={r.matchBegruendung ?? undefined}>
+                    <td
+                      className={locked ? "radar-why radar-blur" : "radar-why"}
+                      title={locked ? "Im Starter-Plan sichtbar" : (r.matchBegruendung ?? undefined)}
+                    >
                       {r.matchBegruendung ?? "—"}
                     </td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           </div>

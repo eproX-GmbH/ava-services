@@ -23,8 +23,8 @@ import type { MatchStore } from "./match-store";
 import type { CustomerProfileStore } from "./customer-profiles";
 import type { RadarAlertEmitter } from "./radar-alerts";
 import { runDiscoveryScan } from "./scan";
-import { runProfiler } from "./profiler";
 import { runMatch } from "./matcher";
+import type { ProfileWorker } from "./profile-worker";
 
 const CHECK_INTERVAL_MS = 30 * 60 * 1000;
 
@@ -32,7 +32,6 @@ const CHECK_INTERVAL_MS = 30 * 60 * 1000;
 // lastOutcome und ist damit im Radar-UI-Status sichtbar).
 const FREE_AUTOMATIK_HINT =
   "Automatik ist im Free-Plan nicht enthalten — 1 manueller Scan pro Woche. Mehr im Starter-/Pro-Plan (Einstellungen → Abo).";
-const PROFILE_LIMIT_PER_RUN = 15;
 
 export interface RadarConfig {
   enabled: boolean;
@@ -57,6 +56,10 @@ export interface RadarSupervisorDeps {
   customerStore: CustomerProfileStore;
   /** Zentraler Alert-Emitter — geteilt mit dem manuellen Match. */
   radarAlerts: RadarAlertEmitter;
+  /** v0.1.474 — kontinuierlicher Profil-Worker (Paket a): der
+   *  Supervisor stoesst nach dem Scan einen vollen Drain an, statt
+   *  selbst in 15er-Happen zu profilieren. */
+  profileWorker: ProfileWorker;
   isSignedIn: () => boolean;
   /** v0.1.466 — Plan-Staffelung: aktueller Tier (aus dem Cache in
    *  index.ts; null = noch unbekannt → keine Einschraenkung). */
@@ -208,10 +211,7 @@ export class RadarSupervisor {
         this.finishRun(startedAt, `Scan: ${scan.error}`, trigger, "warning");
         return scan.error;
       }
-      const prof = await runProfiler(this.deps.gateway, this.deps.providers, {
-        limit: PROFILE_LIMIT_PER_RUN,
-        prioritizeTerms: icp.branchen,
-      });
+      const prof = await this.deps.profileWorker.drain();
       const profNote =
         "error" in prof
           ? `Profile: ${prof.error}`

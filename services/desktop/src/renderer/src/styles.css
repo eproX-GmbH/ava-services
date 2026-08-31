@@ -8164,3 +8164,20 @@ tr.held-row td:first-child::after {
   opacity: 0.5;
   cursor: default;
 }
+
+/* v0.1.474 — Radar Blur-Gate (Free-Plan): Namen/Begruendungen jenseits
+ * der frei sichtbaren Top-Treffer sind unkenntlich, Scores bleiben. */
+.radar-blur {
+  filter: blur(5px);
+  user-select: none;
+  pointer-events: none;
+}
+.radar-locked-row { opacity: 0.9; }
+.radar-lockbanner {
+  margin: 0 0 0.6rem;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: rgba(0, 192, 167, 0.08);
+  font-size: 13px;
+}
