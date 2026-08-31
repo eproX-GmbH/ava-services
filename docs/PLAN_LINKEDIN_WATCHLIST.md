@@ -173,8 +173,12 @@ Pfad). Desktop-Tool contact_linkedin_lookup: SERP-Suche + Slug≈Name-
 Plausibilitaetscheck (Umlaut-/Transliterations-Falte beidseitig),
 confirmAction Klasse A, Mehrdeutigkeit → Kandidatenliste, kein
 Treffer → ehrlich nichts. Verifiziert gegen alle WL0-Problemfaelle.
-OFFEN: Konsequenz 2 (Altbestand: 7 Fremd-Facts retracten + 1
-Duplikat mergen) — Prod-Write, wartet auf Go.
+Konsequenz 2 ERLEDIGT (2026-08-31, mit User-Go): 7 Fremd-Facts auf
+INACTIVE gesetzt (Status-Aenderung, keine Loeschung; Beleg-IDs im
+Session-Log), Joyce-Duplikat auf die kanonische Form konsolidiert
+(1 Fact aktualisiert, 1 deaktiviert). Nachher-Stand: 24 aktive
+linkedinUrl-Facts, davon 24 echte /in/-Profile (100 %). Gateway mit
+Gate+Route deployed. → WL1 kann starten.
 
 ## 2c. Fokus-Personen (Priorisierung, User-Auflage)
 
