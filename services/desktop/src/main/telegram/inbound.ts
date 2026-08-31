@@ -282,17 +282,67 @@ export class TelegramInbound {
       metadata: { conversationId: started.conversationId },
     });
 
-    const { text: answer, writesExecuted } = await this.awaitAnswer(
-      started.requestId,
-    );
+    const first = await this.awaitAnswer(started.requestId);
     let finalText =
-      answer && answer.trim().length > 0
-        ? answer
+      first.text && first.text.trim().length > 0
+        ? first.text
         : "Ich konnte dazu leider keine Antwort erzeugen.";
+    let writesExecuted = first.writesExecuted;
+
     // v0.1.464 — Write-Claim-Guard: Behauptet die Antwort Vollzug,
-    // obwohl im Turn KEIN Schreib-Tool erfolgreich lief, wird ein
-    // deterministischer Hinweis angehängt. Reine Trace-Prüfung, kein
-    // LLM — kann selbst nicht halluzinieren.
+    // obwohl im Turn KEIN Schreib-Tool erfolgreich lief? Reine
+    // Trace-Prüfung, kein LLM — kann selbst nicht halluzinieren.
+    //
+    // v0.1.472 — Auto-Retry: Statt dem Nutzer nur die Warnung zu
+    // schicken (worauf er selbst "bitte wirklich anlegen" sagen
+    // musste), bekommt der Agent GENAU EINE automatische
+    // Korrektur-Runde im selben Gesprächsfaden: Aktion jetzt wirklich
+    // ausführen ODER ehrlich zurückrudern. Erst wenn auch die zweite
+    // Runde Vollzug ohne Write behauptet, geht die ⚠️-Warnung raus.
+    if (writesExecuted === 0 && claimsWriteAction(finalText)) {
+      this.onAudit?.({
+        severity: "info",
+        summary:
+          "Write-Claim-Guard: Vollzugs-Behauptung ohne Schreib-Tool — automatische Korrektur-Runde gestartet",
+        metadata: {
+          conversationId: started.conversationId,
+          preview: finalText.slice(0, 300),
+        },
+      });
+      // Nur bei FREIEM Orchestrator: Ein belegter würde die Runde
+      // einreihen und später unbeobachtet ausführen — die Antwort
+      // ginge nie nach Telegram, schlimmstenfalls liefe die Aktion
+      // NACH unserer "nichts ausgeführt"-Warnung noch still los.
+      const orchestratorFree =
+        this.orchestrator.getStatus().inFlightRequestId === null;
+      const retry = !orchestratorFree
+        ? null
+        : this.orchestrator.startAutonomousConversation({
+        conversationId: started.conversationId,
+        initialMessage:
+          "[Automatische Systemprüfung — kein Nutzertext]\n\n" +
+          "Deine letzte Antwort behauptet eine ausgeführte Aktion, aber " +
+          "in diesem Durchlauf lief KEIN Schreib-Tool (kein crm_*, " +
+          "mail_*, notion_* Write). Zwei erlaubte Wege:\n" +
+          "1. Führe die zugesagte Aktion JETZT wirklich aus — rufe die " +
+          "nötigen Tools auf und berichte danach das echte Ergebnis.\n" +
+          "2. Oder antworte ehrlich, dass die Aktion NICHT ausgeführt " +
+          "wurde und warum.\n" +
+          "Behaupte unter keinen Umständen erneut einen Vollzug ohne " +
+          "Tool-Call. Antworte knapp und handyfreundlich.",
+        ...(confirmEnabled ? { remoteAsk: this.buildRemoteAsk() } : {}),
+      });
+      if (retry) {
+        const second = await this.awaitAnswer(retry.requestId);
+        if (second.text && second.text.trim().length > 0) {
+          finalText = second.text;
+          writesExecuted = second.writesExecuted;
+        }
+      }
+    }
+
+    // Behauptet auch die Korrektur-Runde Vollzug ohne Write (oder kam
+    // kein Retry zustande), bleibt die ehrliche Warnung der Endzustand.
     if (writesExecuted === 0 && claimsWriteAction(finalText)) {
       finalText +=
         "\n\n⚠️ Automatischer Hinweis: In diesem Durchlauf wurde " +
@@ -302,7 +352,7 @@ export class TelegramInbound {
       this.onAudit?.({
         severity: "warning",
         summary:
-          "Write-Claim-Guard: Antwort behauptete Vollzug ohne Schreib-Tool",
+          "Write-Claim-Guard: Antwort behauptete Vollzug ohne Schreib-Tool (auch nach Korrektur-Runde)",
         metadata: {
           conversationId: started.conversationId,
           preview: finalText.slice(0, 300),

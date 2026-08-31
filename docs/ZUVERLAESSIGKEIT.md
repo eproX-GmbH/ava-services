@@ -42,8 +42,13 @@ Wirkung BELEGEN statt der API-Response zu glauben:
 - **Write-Claim-Erkennung** (agent/write-claim.ts, deterministisch,
   kein LLM): Vollzugs-Verb in Vergangenheitsform + Aktions-Objekt im
   selben Satz vs. Tool-Trace des Turns.
-  - Telegram (inbound.ts): korrigiert die Antwort VOR dem Senden
-    (⚠️-Hinweis) + Audit-Warnung.
+  - Telegram (inbound.ts): seit v0.1.472 mit AUTO-RETRY — bei
+    „Vollzug behauptet, kein Write gelaufen" bekommt der Agent genau
+    EINE automatische Korrektur-Runde im selben Faden (Aktion jetzt
+    wirklich ausführen ODER ehrlich zurückrudern; nur bei freiem
+    Orchestrator, sonst würde die Runde unbeobachtet nachlaufen).
+    Erst wenn auch die zweite Runde behauptet statt handelt, geht der
+    ⚠️-Hinweis an den Nutzer + Audit-Warnung.
   - Orchestrator (auditWriteClaim, v0.1.465): Post-Turn-Audit für ALLE
     autonomen Konversationen (`agent.claim.unverified`, severity
     warning) — beim Mail-Pfad ist die Antwort schon raus, aber der
