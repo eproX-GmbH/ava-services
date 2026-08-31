@@ -1115,7 +1115,7 @@ code, pre { font-family: var(--font-mono); font-size: 12px; }
 .retry-form { display: flex; flex-direction: column; gap: 0.5rem; }
 .retry-form__row { display: flex; flex-direction: column; gap: 0.25rem; font-size: 12px; color: var(--muted); }
 .retry-form__row select, .retry-form__row input {
-  background: var(--surface); color: var(--text); border: 1px solid var(--border);
+  background: var(--ctrl-bg-input); color: var(--fg); border: 1px solid var(--border);
   border-radius: 4px; padding: 0.25rem 0.5rem; font-size: 13px;
 }
 .retry-form button {
@@ -7545,9 +7545,9 @@ html.dark .self-corrections__stat { background: rgba(0,192,167,0.15); }
   color: var(--muted, #9aa);
   font: inherit;
 }
-.storage-tab:hover { color: var(--text, #e8e8e8); }
+.storage-tab:hover { color: var(--fg); }
 .storage-tab.active {
-  color: var(--text, #e8e8e8);
+  color: var(--fg);
   border-bottom-color: var(--accent, #00c0a7);
 }
 .link.danger { color: #e5534b; }
