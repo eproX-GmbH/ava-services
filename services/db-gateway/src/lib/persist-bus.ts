@@ -359,12 +359,13 @@ const STAGE_IS_LLM: Record<ProducerName, boolean> = {
 async function readFreshness(
   companyId: string,
   stage: ProducerName,
-): Promise<{ tier: ModelTier | null; updatedAt: Date } | null> {
+): Promise<{ tier: ModelTier | null; updatedAt: Date; runId: string | null } | null> {
   const res = await getGatewayPool().query<{
     llmTier: number | null;
     updatedAt: Date;
+    runId: string | null;
   }>(
-    `SELECT "llmTier", "updatedAt" FROM "ContentFreshness"
+    `SELECT "llmTier", "updatedAt", "runId" FROM "ContentFreshness"
      WHERE "companyId" = $1 AND stage = $2`,
     [companyId, stage],
   );
@@ -373,6 +374,7 @@ async function readFreshness(
   return {
     tier: (row.llmTier as ModelTier | null) ?? null,
     updatedAt: row.updatedAt,
+    runId: row.runId ?? null,
   };
 }
 
@@ -384,15 +386,17 @@ async function recordFreshness(
   stage: ProducerName,
   llmTier: ModelTier | null,
   llmModel: string | null,
+  runId: string | null,
 ): Promise<void> {
   await getGatewayPool().query(
-    `INSERT INTO "ContentFreshness" ("companyId", stage, "llmTier", "llmModel", "updatedAt")
-       VALUES ($1, $2, $3, $4, NOW())
+    `INSERT INTO "ContentFreshness" ("companyId", stage, "llmTier", "llmModel", "runId", "updatedAt")
+       VALUES ($1, $2, $3, $4, $5, NOW())
      ON CONFLICT ("companyId", stage) DO UPDATE SET
        "llmTier" = EXCLUDED."llmTier",
        "llmModel" = EXCLUDED."llmModel",
+       "runId" = EXCLUDED."runId",
        "updatedAt" = NOW()`,
-    [companyId, stage, llmTier, llmModel],
+    [companyId, stage, llmTier, llmModel, runId],
   );
 }
 
@@ -413,6 +417,7 @@ function withTierGate(stage: ProducerName, inner: ApplyFn): ApplyFn {
     const companyId = data?.result?.companyId;
     const incomingTier = (data?.llmTier ?? null) as ModelTier | null;
     const incomingModel = (data?.llmModel ?? null) as string | null;
+    const incomingRunId = (data?.runId ?? null) as string | null;
     const transactionId = (event as { transaction?: string }).transaction ?? "";
 
     if (!companyId) {
@@ -421,7 +426,7 @@ function withTierGate(stage: ProducerName, inner: ApplyFn): ApplyFn {
       return inner(pool, event, log);
     }
 
-    const decision = await gatePersist(companyId, stage, incomingTier, log);
+    const decision = await gatePersist(companyId, stage, incomingTier, incomingRunId, log);
     if (!decision.apply) {
       log.info(
         {
@@ -467,6 +472,7 @@ function withTierGate(stage: ProducerName, inner: ApplyFn): ApplyFn {
         stage,
         isLlm ? incomingTier : null,
         isLlm ? incomingModel : null,
+        incomingRunId,
       );
     } catch (err) {
       // Best-effort: a freshness-write failure should never roll back
@@ -496,6 +502,7 @@ async function gatePersist(
   companyId: string,
   stage: ProducerName,
   incomingTier: ModelTier | null,
+  incomingRunId: string | null,
   log: typeof logger,
 ): Promise<{ apply: boolean; reason: string; existingTier: ModelTier | null }> {
   // Sanity: if the stage is non-LLM, force incomingTier null to avoid
@@ -504,7 +511,11 @@ async function gatePersist(
   // shouldn't.
   const effectiveIncomingTier = STAGE_IS_LLM[stage] ? incomingTier : null;
 
-  let existing: { tier: ModelTier | null; updatedAt: Date } | null;
+  let existing: {
+    tier: ModelTier | null;
+    updatedAt: Date;
+    runId: string | null;
+  } | null;
   try {
     existing = await readFreshness(companyId, stage);
   } catch (err) {
@@ -527,6 +538,20 @@ async function gatePersist(
     ? Date.now() - existing.updatedAt.getTime()
     : Infinity;
   const existingTier = existing?.tier ?? null;
+
+  // v0.1.486 — Multi-Event-Laeufe: Events mit der runId, die die
+  // Freshness-Zeile selbst geschrieben hat, duerfen IMMER weiter
+  // schreiben. Ohne das sperrte das erste Event eines Laufs alle
+  // folgenden desselben Laufs aus ("same tier, fresh") — bei
+  // company-contact (pro Seite + SERP + Cleanup je ein Event) kamen
+  // dadurch nur die Personen des ersten Events an.
+  if (incomingRunId && existing?.runId && existing.runId === incomingRunId) {
+    return {
+      apply: true,
+      reason: "same run (runId match)",
+      existingTier,
+    };
+  }
 
   const decision = tierShouldWrite({
     incomingTier: effectiveIncomingTier,

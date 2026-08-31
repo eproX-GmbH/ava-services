@@ -185,6 +185,10 @@ model ContentFreshness {
   stage     String
   llmTier   Int?
   llmModel  String?
+  /// v0.1.486 — Lauf, der diese Zeile geschrieben hat. Events mit
+  /// identischer runId duerfen immer weiterschreiben (Multi-Event-
+  /// Laeufe wie company-contact sperrten sich sonst selbst aus).
+  runId     String?
   updatedAt DateTime @default(now())
 
   @@id([companyId, stage])
