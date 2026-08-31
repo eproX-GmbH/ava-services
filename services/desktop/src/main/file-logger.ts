@@ -233,7 +233,18 @@ export function initFileLogger(): void {
   } catch {
     /* ignore */
   }
+  // v0.1.485 — Event-Loop-Stall-Detektor huckepack auf dem Heartbeat:
+  // feuert der 2s-Timer erst nach >10s, war der Main-Loop so lange
+  // blockiert (oder das System schlief — dann steht direkt davor der
+  // [power]-suspend-Log). Gibt Wedges eine Vorgeschichte im Log.
+  let lastTickAt = Date.now();
   const tick = (): void => {
+    const now = Date.now();
+    const drift = now - lastTickAt - HEARTBEAT_INTERVAL_MS;
+    lastTickAt = now;
+    if (drift > 10_000) {
+      writeLine("WARN ", `[heartbeat] event-loop stall: Tick kam ${drift}ms zu spaet`);
+    }
     try {
       writeFileSync(
         heartbeatPath,
@@ -247,6 +258,28 @@ export function initFileLogger(): void {
   heartbeatTimer = setInterval(tick, HEARTBEAT_INTERVAL_MS);
   // Don't keep the event loop alive on quit just for the heartbeat.
   if (typeof heartbeatTimer.unref === "function") heartbeatTimer.unref();
+}
+
+/**
+ * v0.1.485 — Schlaf-Marker in die Heartbeat-Datei schreiben. Der
+ * powerMonitor-suspend-Handler ruft das SYNCHRON als allererstes auf:
+ * macOS friert die Prozesse beim Einschlafen nicht gleichzeitig ein —
+ * Main stand schon still, waehrend der Watchdog-Sidecar noch ~30s
+ * weitertickte, den eingefrorenen Heartbeat als "wedged" wertete und
+ * die App mitten im Einschlafen killte (Live-Befund 2026-08-31 14:29).
+ * Der Watchdog pausiert die Stale-Zaehlung, solange der letzte
+ * Heartbeat mit " suspend" endet.
+ */
+export function markHeartbeatSuspend(): void {
+  if (!heartbeatPath) return;
+  try {
+    writeFileSync(
+      heartbeatPath,
+      `${ts()} pid=${process.pid} v${app.getVersion()} suspend\n`,
+    );
+  } catch {
+    /* best-effort — must never throw */
+  }
 }
 
 /**

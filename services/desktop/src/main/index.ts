@@ -17,7 +17,12 @@ import {
 import "./file-logger-init";
 import { join } from "node:path";
 import { spawn as spawnChild } from "node:child_process";
-import { logRendererLine, getMainLogPath, getLogDir } from "./file-logger";
+import {
+  logRendererLine,
+  getMainLogPath,
+  getLogDir,
+  markHeartbeatSuspend,
+} from "./file-logger";
 import { startWatchdog, writeUpdatingFlag } from "./watchdog";
 import { Auth, type AuthStatus } from "./auth";
 import { OllamaSupervisor } from "./ollama-supervisor";
@@ -2178,6 +2183,11 @@ app.whenReady().then(async () => {
   // resume neu starten. Jeder Aufruf separat best-effort, damit ein
   // hängender stop() nicht die anderen blockiert.
   powerMonitor.on("suspend", () => {
+    // v0.1.485 — SYNCHRON als allererstes: Schlaf-Marker in die
+    // Heartbeat-Datei, damit der Watchdog-Sidecar den Einschlaf-
+    // Uebergang nicht als Main-Wedge fehlinterpretiert (er tickt
+    // beim Einschlafen einige Sekunden laenger als Main).
+    markHeartbeatSuspend();
     console.log("[power] suspend — proactively stopping background services");
     setImmediate(() => {
       void mailSupervisor?.stop().catch((err) => {
