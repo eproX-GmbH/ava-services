@@ -32,6 +32,9 @@ export interface WatchlistConfig {
   maxItemsPerProfile: number;
   lastRunAt: string | null;
   lastOutcome: string | null;
+  /** Kosten-Transparenz: gelieferte Items im laufenden Monat. */
+  monthKey: string;
+  monthItems: number;
 }
 
 const DEFAULT_CONFIG: WatchlistConfig = {
@@ -43,6 +46,8 @@ const DEFAULT_CONFIG: WatchlistConfig = {
   maxItemsPerProfile: 10,
   lastRunAt: null,
   lastOutcome: null,
+  monthKey: "",
+  monthItems: 0,
 };
 
 export class WatchlistKeyStore {
@@ -87,6 +92,11 @@ export class WatchlistKeyStore {
               : DEFAULT_CONFIG.maxItemsPerProfile,
           lastRunAt: typeof p.lastRunAt === "string" ? p.lastRunAt : null,
           lastOutcome: typeof p.lastOutcome === "string" ? p.lastOutcome : null,
+          monthKey: typeof p.monthKey === "string" ? p.monthKey : "",
+          monthItems:
+            typeof p.monthItems === "number" && Number.isFinite(p.monthItems)
+              ? Math.max(0, Math.floor(p.monthItems))
+              : 0,
         };
         return { ...this.configCache };
       }
@@ -95,6 +105,16 @@ export class WatchlistKeyStore {
     }
     this.configCache = { ...DEFAULT_CONFIG };
     return { ...this.configCache };
+  }
+
+  /** Items dem Monatszaehler zuschlagen (Monatswechsel setzt zurueck). */
+  addMonthItems(items: number): void {
+    const key = new Date().toISOString().slice(0, 7); // YYYY-MM
+    const cfg = this.getConfig();
+    this.setConfig({
+      monthKey: key,
+      monthItems: (cfg.monthKey === key ? cfg.monthItems : 0) + Math.max(0, items),
+    });
   }
 
   setConfig(patch: Partial<WatchlistConfig>): WatchlistConfig {

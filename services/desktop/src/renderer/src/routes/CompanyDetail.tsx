@@ -1099,7 +1099,7 @@ function ContactsTab({ id }: { id: string }) {
           </h3>
           <div className="grid-2">
             {Object.entries(byPerson).map(([pid, pf]) => (
-              <PersonCard key={pid} facts={pf} />
+              <PersonCard key={pid} facts={pf} companyId={id!} />
             ))}
           </div>
         </section>
@@ -1208,7 +1208,11 @@ function FactGroup({
   );
 }
 
-function PersonCard({ facts }: { facts: Fact[] }) {
+function PersonCard({ facts, companyId }: { facts: Fact[]; companyId?: string }) {
+  // WL4 — "Auf die Watchlist": nur wenn eine LinkedIn-Profil-URL
+  // am Kontakt haengt; setzt companyId mit (direkter Firmen-Link
+  // in den Watchlist-Alerts).
+  const [wlNotice, setWlNotice] = useState<string | null>(null);
   const find = (field: string) => facts.find((f) => f.field === field);
   const name = find("fullName")?.value ?? "Unbekannte Person";
   const job = facts.find((f) => f.field === "jobTitle" && f.status === "ACTIVE");
@@ -1306,6 +1310,33 @@ function PersonCard({ facts }: { facts: Fact[] }) {
               <span className="visually-hidden">LinkedIn</span>
               <LinkedInIcon size={18} />
             </ExternalLink>
+          )}
+          {linkedin?.value && linkedin.value.includes("/in/") && (
+            <button
+              type="button"
+              className="link"
+              style={{ fontSize: 11 }}
+              title="Öffentliche LinkedIn-Aktivität dieser Person beobachten (Personen-Watchlist)"
+              onClick={() =>
+                void window.api.linkedin.watchlist
+                  .add({
+                    profileUrl: linkedin.value ?? "",
+                    label: name,
+                    companyId: companyId ?? null,
+                    quelle: "kontakt",
+                  })
+                  .then((r) =>
+                    setWlNotice(
+                      "error" in r && r.error ? r.error : "Auf der Watchlist ✓",
+                    ),
+                  )
+              }
+            >
+              👀 Watchlist
+            </button>
+          )}
+          {wlNotice && (
+            <span className="muted" style={{ fontSize: 11 }}>{wlNotice}</span>
           )}
         </div>
       </div>

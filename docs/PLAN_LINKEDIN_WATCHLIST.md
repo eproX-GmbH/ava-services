@@ -344,7 +344,7 @@ reine Produktpolitik, durchgesetzt lokal im Watchlist-Store:
 | WL1 ✅ | Schema + Adapter-Interface + Apify-Adapter — UMGESETZT 2026-08-31 (Actor-Schemata live geprueft: Input {profiles, maxItems} bestaetigt, Pricing inzwischen PAY_PER_EVENT pro Item, Output-Felder aus Store-Beispiel extrahiert; WICHTIG: Actors liefern POST-Datum, keinen Reaktions-Zeitpunkt — im Schema dokumentiert) | erledigt |
 | WL2 ✅ | Watchlist-Store + Dedupe-Historie + Key-Store — UMGESETZT 2026-08-31 (Tabellen in der bestehenden LinkedIn-PGlite → Kill-Switch/Werksreset automatisch; Plan-Deckel inkl. Fokus-Plaetze im Store durchgesetzt; Upsert erhaelt Fokus/Label bei Update-Adds — Smoke-Befund gefixt; Key via safeStorage, nie ueber IPC) | erledigt |
 | WL3 ✅ | Supervisor + Klassifikation + Alert-Fanout — UMGESETZT 2026-08-31 (Fokus-zuerst + Rest-Rotation nach aeltester Sichtung; 1-Profil-Batches wegen Item-Zuordnungs-Risiko; ERST-LAUF = Baseline ohne Alerts; LLM-Einordnung mit ICP-Kontext und Heuristik-Fallback; Severity Fokus/Kommentar/ICP≥70 → warn; APIFY_AUTH schaltet Automatik ab, CREDITS bricht Lauf ab; 24-h-Profil-Backoff; max 15 Meldungen/Lauf) | erledigt |
-| WL4 | UI (Settings-Block, Watchlist-Tab, Kontakt-Aktion) + Chat-Tools + Plan-Deckel | ~½–1 Tag |
+| WL4 ✅ | UI + Chat-Tools — UMGESETZT 2026-08-31 (WatchlistPanel in der LinkedIn-Route: Key-Eingabe/testen/loeschen, Automatik+Intervall+Item-Budget, Actor-Overrides aufklappbar, Eintrags-Tabelle mit Fokus/Aktiv/Entfernen, Kosten-Monatszaehler, Datenschutz-Einordnung sichtbar, Free-Teaser; Kontakt-Aktion 👀 Watchlist am PersonCard bei /in/-URL mit companyId; 5 Chat-Tools linkedin_watchlist_add/list/set_fokus/remove/check_now — add/fokus/check via confirmAction additive, remove interaktiv; IPC watchlist:* — Key nie gespiegelt) | erledigt |
 | WL5 | *(Ausbaustufe)* zweiter Adapter (Gegenprobe der Abstraktion) | ~½ Tag |
 | WL6 | *(Ausbaustufe, nur bei Bedarf)* Operator-Kostprobe via Gateway-Proxy (valueserp-Muster) + harte Item-Deckel | ~1 Tag |
 
@@ -447,6 +447,7 @@ FIRMA (bestehender Judge); die Person liefert Begruendungs-Kontext
 ## STATUS
 
 - Entwurf erstellt (2026-08-31).
+- WL1-WL4 released als v0.1.477 (2026-08-31) — Feature komplett, wartet auf Live-Test mit echtem Apify-Token.
 - WL0 durchgefuehrt (2026-08-31): Ergebnis in §2b — Abdeckung 21 %,
   22 % Fremd-URLs im Feld, Gate-/Normalisierungs-Fixes als
   Vorbedingung identifiziert.

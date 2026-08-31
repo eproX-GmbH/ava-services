@@ -47,6 +47,7 @@ import { buildTelegramTools } from "./telegram";
 import { buildPublicationTools } from "./publications";
 import { buildGeoTools } from "./geo";
 import { buildDiscoveryTools } from "./discovery";
+import { buildWatchlistTools } from "./watchlist";
 import { buildIcpTools } from "./icp";
 import type { IcpStore } from "../icp-store";
 import type { MatchStore } from "../../discovery/match-store";
@@ -156,6 +157,10 @@ export function buildReadOnlyRegistry(deps: {
   discoveryCustomerProfiles: CustomerProfileStore;
   /** Lazy-Getter auf den Radar-Alert-Emitter (entsteht im Boot). */
   getRadarAlerts: () => import("../../discovery/radar-alerts").RadarAlertEmitter | null;
+  /** WL4 — Personen-Watchlist (lazy, entsteht im App-Boot). */
+  getWatchlistStore: () => import("../../linkedin/watchlist/store").WatchlistStore | null;
+  getWatchlistSupervisor: () => import("../../linkedin/watchlist/supervisor").WatchlistSupervisor | null;
+  getWatchlistKeyStore: () => import("../../linkedin/watchlist/key-store").WatchlistKeyStore | null;
   /** v0.1.475 — Plan-Tier fuer das Chat-Blur-Gate der Discovery-Tools. */
   getTenantTier: () => string | null;
   /** Audit-Trail-Sink fuer Discovery-Aktionen (Scan-Queries etc.). */
@@ -180,6 +185,13 @@ export function buildReadOnlyRegistry(deps: {
     registry.register(t);
   // Phase 0/1 Firmen-Discovery — Ortsgraph + Scan (PLAN_FIRMEN_DISCOVERY.md).
   for (const t of buildGeoTools(ctx)) registry.register(t);
+  // WL4 — Personen-Watchlist.
+  for (const t of buildWatchlistTools({
+    getStore: deps.getWatchlistStore,
+    getSupervisor: deps.getWatchlistSupervisor,
+    getKeyStore: deps.getWatchlistKeyStore,
+  }))
+    registry.register(t);
   for (const t of buildDiscoveryTools({
     gateway: deps.gateway,
     providers: deps.providers,

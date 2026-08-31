@@ -184,7 +184,8 @@ import { decideCandidates, type DecideInput } from "./discovery/decide";
 import { runMatch } from "./discovery/matcher";
 import { ProfileWorker } from "./discovery/profile-worker";
 import { WatchlistKeyStore } from "./linkedin/watchlist/key-store";
-import { WatchlistStore } from "./linkedin/watchlist/store";
+import { WatchlistStore, watchlistLimitsForTier } from "./linkedin/watchlist/store";
+import { buildApifyProvider } from "./linkedin/watchlist/providers/apify";
 import { WatchlistSupervisor } from "./linkedin/watchlist/supervisor";
 import type { StagedSheetSummary } from "./agent";
 import type { ProviderConfig, LlmProviderKind } from "./agent";
@@ -1630,6 +1631,9 @@ const agentRegistry = buildReadOnlyRegistry({
   discoveryCustomerProfiles: customerProfiles,
   getRadarAlerts: () => radarAlertEmitter,
   getTenantTier: () => getTenantTierCached(),
+  getWatchlistStore: () => watchlistStore,
+  getWatchlistSupervisor: () => watchlistSupervisor,
+  getWatchlistKeyStore: () => watchlistKeyStore,
   discoveryAudit: ({ action, severity, summary, metadata }) => {
     audit({
       actorType: "system",
@@ -4701,6 +4705,110 @@ app.whenReady().then(async () => {
     if (!profileWorker) return { error: "Profil-Worker nicht bereit." };
     return profileWorker.drain();
   });
+  // ---- WL4 — Personen-Watchlist (PLAN_LINKEDIN_WATCHLIST.md §4.5) ----------
+  // Der Anbieter-Key wird NIE zurueckgespiegelt (nur hasKey).
+  ipcMain.handle("watchlist:getState", async () => {
+    if (!watchlistKeyStore || !watchlistStore || !watchlistSupervisor) {
+      return { error: "Watchlist nicht initialisiert." };
+    }
+    const cfg = watchlistKeyStore.getConfig();
+    const monthKey = new Date().toISOString().slice(0, 7);
+    return {
+      config: {
+        enabled: cfg.enabled,
+        providerId: cfg.providerId,
+        reactionsActorId: cfg.reactionsActorId,
+        commentsActorId: cfg.commentsActorId,
+        intervalHours: cfg.intervalHours,
+        maxItemsPerProfile: cfg.maxItemsPerProfile,
+        lastRunAt: cfg.lastRunAt,
+        lastOutcome: cfg.lastOutcome,
+      },
+      hasKey: watchlistKeyStore.hasKey(),
+      running: watchlistSupervisor.isRunning(),
+      monthItems: cfg.monthKey === monthKey ? cfg.monthItems : 0,
+      limits: watchlistLimitsForTier(getTenantTierCached()),
+      entries: await watchlistStore.list(),
+    };
+  });
+  ipcMain.handle(
+    "watchlist:setConfig",
+    (_e, patch: Record<string, unknown>) => {
+      if (!watchlistKeyStore) return { error: "nicht initialisiert" };
+      const allowed: Record<string, unknown> = {};
+      for (const k of [
+        "enabled",
+        "reactionsActorId",
+        "commentsActorId",
+        "intervalHours",
+        "maxItemsPerProfile",
+      ]) {
+        if (patch && k in patch) allowed[k] = patch[k];
+      }
+      return watchlistKeyStore.setConfig(allowed);
+    },
+  );
+  ipcMain.handle("watchlist:setKey", async (_e, key: string) => {
+    if (!watchlistKeyStore) return { ok: false, error: "nicht initialisiert" };
+    const r = watchlistKeyStore.setKey(String(key ?? ""));
+    if (r.ok) {
+      audit({
+        actorType: "user", actorId: null, category: "linkedin",
+        action: "watchlist.key.set", severity: "info",
+        subjectType: "credential", subjectId: null,
+        summary: "Watchlist: Anbieter-Token hinterlegt", metadata: {},
+      });
+    }
+    return r;
+  });
+  ipcMain.handle("watchlist:clearKey", () => {
+    watchlistKeyStore?.clearKey();
+    audit({
+      actorType: "user", actorId: null, category: "linkedin",
+      action: "watchlist.key.clear", severity: "warning",
+      subjectType: "credential", subjectId: null,
+      summary: "Watchlist: Anbieter-Token geloescht (Automatik aus)", metadata: {},
+    });
+    return { ok: true };
+  });
+  ipcMain.handle("watchlist:verifyKey", async () => {
+    const key = watchlistKeyStore?.getKey();
+    if (!key) return { ok: false, detail: "Kein Token hinterlegt." };
+    const cfg = watchlistKeyStore!.getConfig();
+    return buildApifyProvider({
+      reactionsActorId: cfg.reactionsActorId,
+      commentsActorId: cfg.commentsActorId,
+    }).verify(key);
+  });
+  ipcMain.handle(
+    "watchlist:add",
+    (
+      _e,
+      input: {
+        profileUrl: string;
+        label?: string;
+        companyId?: string | null;
+        fokus?: boolean;
+        quelle?: "manuell" | "kontakt";
+      },
+    ) =>
+      watchlistStore ? watchlistStore.add(input) : { error: "nicht initialisiert" },
+  );
+  ipcMain.handle("watchlist:remove", (_e, profileUrl: string) =>
+    watchlistStore ? watchlistStore.remove(profileUrl) : false,
+  );
+  ipcMain.handle("watchlist:setFokus", (_e, profileUrl: string, fokus: boolean) =>
+    watchlistStore ? watchlistStore.setFokus(profileUrl, fokus) : false,
+  );
+  ipcMain.handle("watchlist:setAktiv", (_e, profileUrl: string, aktiv: boolean) =>
+    watchlistStore ? watchlistStore.setAktiv(profileUrl, aktiv) : false,
+  );
+  ipcMain.handle("watchlist:runNow", () =>
+    watchlistSupervisor
+      ? watchlistSupervisor.runNow("manuell")
+      : "nicht initialisiert",
+  );
+
   ipcMain.handle("discovery:getIcp", () => ({
     ...icpStore.get(),
     gesetzt: icpStore.isSet(),

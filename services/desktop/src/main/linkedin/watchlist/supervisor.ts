@@ -162,6 +162,7 @@ export class WatchlistSupervisor {
             maxItemsPerProfile: cfg.maxItemsPerProfile,
           });
           signals = r.signals;
+          this.deps.keyStore.addMonthItems(r.kosteneinheiten);
           for (const f of r.fehlgeschlagen) {
             if (f.grund.includes("keine oeffentliche Aktivitaet")) continue;
             probleme.push(`${entry.label}: ${f.grund}`);

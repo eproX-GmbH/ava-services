@@ -1621,6 +1621,62 @@ const api = {
   },
 
   linkedin: {
+    /** WL4 — Personen-Watchlist (BYOK). Key wird NIE zurueckgespiegelt. */
+    watchlist: {
+      getState: (): Promise<{
+        error?: string;
+        config?: {
+          enabled: boolean;
+          providerId: string;
+          reactionsActorId: string;
+          commentsActorId: string;
+          intervalHours: 24 | 168;
+          maxItemsPerProfile: number;
+          lastRunAt: string | null;
+          lastOutcome: string | null;
+        };
+        hasKey?: boolean;
+        running?: boolean;
+        monthItems?: number;
+        limits?: { maxEintraege: number; maxFokus: number } | null;
+        entries?: Array<{
+          profileUrl: string;
+          label: string;
+          quelle: string;
+          companyId: string | null;
+          aktiv: boolean;
+          fokus: boolean;
+          addedAt: string;
+          lastCheckedAt: string | null;
+        }>;
+      }> => ipcRenderer.invoke("watchlist:getState"),
+      setConfig: (patch: Record<string, unknown>): Promise<unknown> =>
+        ipcRenderer.invoke("watchlist:setConfig", patch),
+      setKey: (key: string): Promise<{ ok: boolean; error?: string }> =>
+        ipcRenderer.invoke("watchlist:setKey", key),
+      clearKey: (): Promise<{ ok: boolean }> =>
+        ipcRenderer.invoke("watchlist:clearKey"),
+      verifyKey: (): Promise<{ ok: boolean; detail?: string }> =>
+        ipcRenderer.invoke("watchlist:verifyKey"),
+      add: (input: {
+        profileUrl: string;
+        label?: string;
+        companyId?: string | null;
+        fokus?: boolean;
+        quelle?: "manuell" | "kontakt";
+      }): Promise<{ error?: string; profileUrl?: string }> =>
+        ipcRenderer.invoke("watchlist:add", input),
+      remove: (profileUrl: string): Promise<boolean> =>
+        ipcRenderer.invoke("watchlist:remove", profileUrl),
+      setFokus: (
+        profileUrl: string,
+        fokus: boolean,
+      ): Promise<boolean | { error: string }> =>
+        ipcRenderer.invoke("watchlist:setFokus", profileUrl, fokus),
+      setAktiv: (profileUrl: string, aktiv: boolean): Promise<boolean> =>
+        ipcRenderer.invoke("watchlist:setAktiv", profileUrl, aktiv),
+      runNow: (): Promise<string> => ipcRenderer.invoke("watchlist:runNow"),
+    },
     getSettings: (): Promise<LinkedInSettings> =>
       ipcRenderer.invoke("linkedin:settings:get"),
     updateSettings: (
