@@ -445,6 +445,63 @@ FIRMA (bestehender Judge); die Person liefert Begruendungs-Kontext
   Automatik, Aufloesungs-Budget, Ungeklaert-Liste 14d). Quellen v1 =
   Post-URLs; Autoren-Profile + thematische Suche bleiben Ausbaustufe.
 
+## 8b. Kontakt-Beschaffung ueber das LinkedIn-Firmenprofil (Apify primaer, SERP-Fallback)
+
+User-Vorschlag 2026-08-31: Wenn ein Apify-Key vorhanden ist, soll der
+company-contact-Producer die Personen direkt vom LinkedIn-
+Unternehmensprofil beziehen, statt Google-SERPs per LLM auszuwerten
+(spart ValueSerp-Calls und die fehleranfaellige Snippet-Extraktion —
+Feedback-Befund AVANCO: Firmenname-als-Abteilung, Fragment-Titel).
+Harte Auflage: NUR bei garantiert passendem Firmenprofil; sonst
+Fallback auf den bestehenden ValueSerp-Mechanismus.
+
+### Zuordnungs-Garantie (zwei akzeptierte Wege, sonst Fallback)
+
+1. **Selbstauskunft (Gold-Standard):** Der Website-Crawl desselben
+   Laufs extrahiert bereits `company.socials` — verlinkt die Firma auf
+   ihrer EIGENEN Website ein linkedin.com/company/-Profil, ist die
+   Zuordnung bewiesen. Kein Suchschritt noetig.
+2. **Domain-Verifikation:** Apify-Firmensuche (harvestapi~linkedin-company,
+   Adapter existiert im Personen-Radar) nach dem Firmennamen; das
+   Ergebnis zaehlt NUR, wenn die Website-Domain des LinkedIn-Profils
+   nach normalizeDomain der bekannten Firmen-Domain entspricht
+   (dieselbe Kaskade wie §8.1 „hart").
+
+Kein Treffer ueber Weg 1 oder 2 → ValueSerp-Prozess wie bisher.
+Namensaehnlichkeit allein ist NIE ausreichend.
+
+### Personen-Bezug
+
+- Employees-Actor (Kandidat: harvestapi Company-Employees-Familie;
+  Actor-ID konfigurierbar wie alle anderen, Schema VOR Umsetzung live
+  verifizieren — Stand veraltet schnell).
+- Deckel je Lauf (z. B. 25 Personen, Fuehrungsrollen/LEAD_RE zuerst),
+  Ergebnis laeuft durch bereinigePerson + dasselbe Persist-Nadeloehr
+  (applyCompanyContactPersist) wie alle anderen Quellen;
+  source="apify:company-profile". Profil-URLs kommen kanonisch
+  normalisiert an (normalizeLinkedInProfileUrl-Zwilling).
+- Kosten zaehlen in den Monats-Zaehler des Watchlist-Key-Stores.
+
+### Token-Weg (Abweichung dokumentiert)
+
+Der Apify-Token liegt im WatchlistKeyStore (safeStorage, nie an den
+RENDERER). Fuer den Producer wird er wie alle anderen Nutzer-Keys
+(OPENAI_API_KEY etc.) beim Spawn als env injiziert (extraEnvAsync,
+APIFY_TOKEN) — Main→Child-env ist eine andere Grenze als Renderer-IPC;
+die bestehende Regel „nie ueber die IPC-Grenze" bleibt unberuehrt.
+Token-Aenderung/Loeschung recycelt den Producer (wie beim
+Analyse-Modus-Wechsel von company-publication).
+
+### Reihenfolge im Lauf (Soll)
+
+1. Website-Crawl (unveraendert — liefert auch companyLinkedinUrl).
+2. Apify-Weg, falls Token vorhanden UND Zuordnung garantiert (oben).
+3. ValueSerp-Fallback nur, wenn Apify nicht lief oder <5 Personen brachte.
+4. Per-Person-LinkedIn-Nachschlag (v0.1.479) bleibt fuer Kontakte ohne
+   URL — entfaellt fuer Personen, die schon per Apify mit URL kamen.
+
+STATUS: Entwurf, noch nicht beauftragt.
+
 ## 9. Offene Punkte (bei Umsetzung klaeren)
 
 - Actor-Landschaft neu sichten (Preise, Schemata, cookielos?) — Stand
