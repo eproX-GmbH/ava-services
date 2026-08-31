@@ -1488,17 +1488,16 @@ transactionsRouter.openapi(retryRoute, async (c) => {
   // provenance is lost for those rows — that's intentional, since the
   // upcoming retry will overwrite them anyway and the user's
   // explicit "do it again" supersedes the cached audit trail.
-  const producersToClear = new Set<string>();
-  for (const t of targets) {
-    if (t.kind === "gateway") {
-      producersToClear.add(t.producer);
-    } else {
-      // upstream targets carry a camelCase `stage`; map it back to
-      // the kebab-case producer name used in ContentFreshness.stage.
-      const mapped = STAGE_TO_SERVICE[t.stage as z.infer<typeof RetryStage>];
-      if (mapped) producersToClear.add(mapped);
-    }
-  }
+  // v0.1.483 — BUGFIX: geleert werden muss die Freshness der Stufe,
+  // die gleich NEU SCHREIBT — nicht die der Republish-Quellen. Der alte
+  // Loop sammelte bei Gateway-Targets `t.producer` (die Trigger-Quelle:
+  // bei companyContact ist das "website"), sodass die eigene
+  // ContentFreshness-Zeile (z.B. company-contact, Tier 2) stehen blieb
+  // und das Tier-Gate den explizit angeforderten Re-Lauf mit "downgrade
+  // refused" verwarf (Live-Befund 2026-08-31, BADOEYNHAUSEN_HRB_5591:
+  // people=2 extrahiert, alle Persists verworfen). STAGE_TO_SERVICE
+  // deckt auch die Sub-Pipelines ab (deepResearch/jobPostings → website).
+  const producersToClear = new Set<string>([STAGE_TO_SERVICE[stage]]);
   if (producersToClear.size > 0) {
     try {
       const pool = getGatewayPool();
