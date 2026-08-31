@@ -341,7 +341,7 @@ reine Produktpolitik, durchgesetzt lokal im Watchlist-Store:
 | Phase | Inhalt | Aufwand |
 |---|---|---|
 | WL0 | Vorab-Pruefung Datengrundlage (§2b): Abdeckungs-Messung + Korrektheits-Stichprobe der linkedinUrl-Felder, Luecken-Nachschlag-Design | ~½ Tag |
-| WL1 | Schema + Adapter-Interface + Apify-Adapter (verify, fetchActivity, tolerante Normalisierung) — VOR Start: Actor-Schemata live pruefen | ~½ Tag |
+| WL1 ✅ | Schema + Adapter-Interface + Apify-Adapter — UMGESETZT 2026-08-31 (Actor-Schemata live geprueft: Input {profiles, maxItems} bestaetigt, Pricing inzwischen PAY_PER_EVENT pro Item, Output-Felder aus Store-Beispiel extrahiert; WICHTIG: Actors liefern POST-Datum, keinen Reaktions-Zeitpunkt — im Schema dokumentiert) | erledigt |
 | WL2 | Watchlist-Store + Dedupe-Historie (SQLite) + Key-Store (safeStorage) + Reset/Kill-Switch-Anbindung | ~½ Tag |
 | WL3 | Supervisor (Intervall, Batches, Backoff) + Klassifikation + Alert-Fanout | ~½ Tag |
 | WL4 | UI (Settings-Block, Watchlist-Tab, Kontakt-Aktion) + Chat-Tools + Plan-Deckel | ~½–1 Tag |
