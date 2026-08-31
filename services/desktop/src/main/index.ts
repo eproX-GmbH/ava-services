@@ -183,6 +183,9 @@ import { listCandidatesWithMatches } from "./discovery/list";
 import { decideCandidates, type DecideInput } from "./discovery/decide";
 import { runMatch } from "./discovery/matcher";
 import { ProfileWorker } from "./discovery/profile-worker";
+import { WatchlistKeyStore } from "./linkedin/watchlist/key-store";
+import { WatchlistStore } from "./linkedin/watchlist/store";
+import { WatchlistSupervisor } from "./linkedin/watchlist/supervisor";
 import type { StagedSheetSummary } from "./agent";
 import type { ProviderConfig, LlmProviderKind } from "./agent";
 import type { HostedProviderKind } from "../shared/types";
@@ -1251,6 +1254,9 @@ let linkMonitorSupervisor: LinkMonitorSupervisor | null = null;
 let radarSupervisor: RadarSupervisor | null = null;
 let radarAlertEmitter: RadarAlertEmitter | null = null;
 let profileWorker: ProfileWorker | null = null;
+let watchlistKeyStore: WatchlistKeyStore | null = null;
+let watchlistStore: WatchlistStore | null = null;
+let watchlistSupervisor: WatchlistSupervisor | null = null;
 
 function broadcastMailSnapshot(snapshot: MailSnapshot): void {
   for (const win of BrowserWindow.getAllWindows()) {
@@ -2553,6 +2559,41 @@ app.whenReady().then(async () => {
       }),
   });
   profileWorker.start();
+
+  // WL3 (PLAN_LINKEDIN_WATCHLIST.md) — Personen-Watchlist: BYOK-
+  // Beobachtung der oeffentlichen LinkedIn-Aktivitaet von
+  // Zielkontakten. Opt-in (Key + enabled), Fokus-Priorisierung,
+  // Alerts als kind="linkedin-signal" durch den normalen Fanout.
+  watchlistKeyStore = new WatchlistKeyStore();
+  watchlistStore = new WatchlistStore({
+    getTier: () => getTenantTierCached(),
+  });
+  watchlistSupervisor = new WatchlistSupervisor({
+    keyStore: watchlistKeyStore,
+    watchlist: watchlistStore,
+    providers,
+    icp: icpStore,
+    alerts,
+    notify: (a) => {
+      notifications.notifyForAlert(a);
+    },
+    onAlertsChanged: broadcastAlertsChanged,
+    isSignedIn: () => auth.getStatus().signedIn,
+    onAudit: ({ action, severity, summary, metadata }) => {
+      audit({
+        actorType: "system",
+        actorId: null,
+        category: "linkedin",
+        action,
+        severity,
+        subjectType: null,
+        subjectId: null,
+        summary,
+        metadata: metadata ?? {},
+      });
+    },
+  });
+  watchlistSupervisor.start();
 
   radarSupervisor = new RadarSupervisor({
     gateway: gatewayClient,
