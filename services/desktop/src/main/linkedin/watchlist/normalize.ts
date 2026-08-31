@@ -11,9 +11,15 @@ export function normalizeLinkedInProfileUrl(
   raw: string | null | undefined,
 ): string | null {
   if (!raw) return null;
+  // Menschliche Eingaben kommen oft ohne Schema ("linkedin.com/in/x") —
+  // tolerieren statt ablehnen.
+  const trimmed = raw.trim();
+  const withScheme = /^[a-z][a-z0-9+.-]*:\/\//i.test(trimmed)
+    ? trimmed
+    : `https://${trimmed}`;
   let u: URL;
   try {
-    u = new URL(raw.trim());
+    u = new URL(withScheme);
   } catch {
     return null;
   }
