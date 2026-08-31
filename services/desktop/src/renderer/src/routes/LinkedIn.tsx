@@ -5,6 +5,8 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Activity, ExternalLink } from "lucide-react";
 import { WatchlistPanel } from "../components/WatchlistPanel";
 import { PersonenRadarPanel } from "../components/PersonenRadarPanel";
+import { LinkedInConsentModal } from "../components/LinkedInConsentModal";
+import { notifyLinkedInSettingsChanged } from "../components/LinkedInActiveBanner";
 import type {
   LinkedInSettings,
   LinkedInSignalListFilter,
@@ -308,6 +310,21 @@ export function LinkedIn() {
 
   const enabled = settingsQuery.data?.enabled === true;
 
+  // v0.1.482 — An/Aus direkt auf der Signale-Seite. Aktivieren läuft wie
+  // in den Einstellungen durch das Consent-Modal (hartes Opt-in), das
+  // selbst acceptConsent + updateSettings ausführt.
+  const [consentOpen, setConsentOpen] = useState(false);
+  const afterMasterChange = async () => {
+    notifyLinkedInSettingsChanged();
+    await queryClient.invalidateQueries({ queryKey: ["linkedin"] });
+  };
+  const onDisable = async () => {
+    // Consent-Zeitstempel bleibt erhalten — Wieder-Einschalten geht ohne
+    // erneutes Durchlesen; revokeConsent gibt es in den Einstellungen.
+    await window.api.linkedin.updateSettings({ enabled: false });
+    await afterMasterChange();
+  };
+
   const updateFilter = <K extends keyof FilterState>(key: K, value: FilterState[K]) => {
     setFilters((prev) => ({ ...prev, [key]: value }));
   };
@@ -346,16 +363,63 @@ export function LinkedIn() {
       <PersonenRadarPanel />
 
       {!settingsQuery.isLoading && !enabled && (
-        <div className="ct-card" style={{ padding: "1rem", marginTop: "1rem" }}>
-          <p>
-            LinkedIn-Beobachter ist nicht aktiv.{" "}
-            <Link to="/settings#linkedin-section" className="link">
-              Einschalten
-            </Link>
-            .
+        <div
+          className="ct-card"
+          style={{
+            padding: "1rem",
+            marginTop: "1rem",
+            display: "flex",
+            flexWrap: "wrap",
+            gap: "0.75rem",
+            alignItems: "center",
+          }}
+        >
+          <p style={{ margin: 0, flex: "1 1 260px" }}>
+            Der LinkedIn-Beobachter ist nicht aktiv. Aktiviere ihn hier, um
+            Signale aus deinem LinkedIn-Feed zu erfassen.
           </p>
+          <button
+            type="button"
+            className="btn btn--primary"
+            onClick={() => setConsentOpen(true)}
+          >
+            Beobachter aktivieren
+          </button>
         </div>
       )}
+
+      {enabled && (
+        <div
+          className="ct-card"
+          style={{
+            padding: "0.6rem 1rem",
+            marginTop: "1rem",
+            display: "flex",
+            flexWrap: "wrap",
+            gap: "0.75rem",
+            alignItems: "center",
+          }}
+        >
+          <span style={{ flex: "1 1 220px" }}>
+            <span className="ct-pill ct-pill--accent">Beobachter aktiv</span>{" "}
+            <Link to="/settings#linkedin-section" className="link muted small">
+              Details in den Einstellungen
+            </Link>
+          </span>
+          <button type="button" className="btn" onClick={() => void onDisable()}>
+            Deaktivieren
+          </button>
+        </div>
+      )}
+
+      <LinkedInConsentModal
+        open={consentOpen}
+        onClose={() => setConsentOpen(false)}
+        onAccepted={() => {
+          setConsentOpen(false);
+          void afterMasterChange();
+        }}
+      />
 
       {enabled && (
         <>

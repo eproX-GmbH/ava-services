@@ -600,25 +600,10 @@ function formatRelativeMinutes(ts: number): string {
 }
 
 function TopBar() {
-  // L6 — show the LinkedIn-Beobachter nav entry only when the master
-  // switch is on. We re-fetch on focus so a Settings flip is reflected
-  // without a full page reload.
-  const [linkedinEnabled, setLinkedinEnabled] = useState<boolean>(false);
-  useEffect(() => {
-    let cancelled = false;
-    const refresh = (): void => {
-      void window.api.linkedin.getSettings().then((s) => {
-        if (!cancelled) setLinkedinEnabled(s.enabled === true);
-      });
-    };
-    refresh();
-    const onFocus = () => refresh();
-    window.addEventListener("focus", onFocus);
-    return () => {
-      cancelled = true;
-      window.removeEventListener("focus", onFocus);
-    };
-  }, []);
+  // v0.1.482 — der Signale-Tab ist IMMER sichtbar. Vorher hing er am
+  // Master-Schalter und tauchte nach dem Aktivieren erst nach einem
+  // Neustart auf (der Focus-Refresh griff bei Same-Window-Toggles nie);
+  // Aktivieren/Deaktivieren passiert jetzt direkt auf der Signale-Seite.
   return (
     <header className="topbar">
       {/* v0.1.69 — restored the brand SVG. The gradient text wordmark
@@ -654,7 +639,7 @@ function TopBar() {
             { to: "/inbox", label: "Mail-Triage" },
           ]}
         />
-        {linkedinEnabled && <NavItem to="/linkedin" label="Signale" />}
+        <NavItem to="/linkedin" label="Signale" />
         <NavItem to="/settings" label="Einstellungen" />
         <NavItem to="/whoami" label="Status" />
       </nav>
