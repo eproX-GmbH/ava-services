@@ -480,7 +480,10 @@ Namensaehnlichkeit allein ist NIE ausreichend.
   (applyCompanyContactPersist) wie alle anderen Quellen;
   source="apify:company-profile". Profil-URLs kommen kanonisch
   normalisiert an (normalizeLinkedInProfileUrl-Zwilling).
-- Kosten zaehlen in den Monats-Zaehler des Watchlist-Key-Stores.
+- Kosten: der Watchlist-Monats-Zaehler lebt im Desktop-Prozess und ist
+  aus dem Producer-Subprozess nicht erreichbar — §8b-Verbrauch wird
+  daher NICHT mitgezaehlt (Abweichung, bewusst); sichtbar bleibt er im
+  Apify-Dashboard und in den Producer-Logs.
 
 ### Token-Weg (Abweichung dokumentiert)
 
@@ -500,7 +503,12 @@ Analyse-Modus-Wechsel von company-publication).
 4. Per-Person-LinkedIn-Nachschlag (v0.1.479) bleibt fuer Kontakte ohne
    URL — entfaellt fuer Personen, die schon per Apify mit URL kamen.
 
-STATUS: Entwurf, noch nicht beauftragt.
+STATUS: Umgesetzt (v0.1.487, 2026-08-31). Actor-Schemata live
+verifiziert (company-search: {searchQuery,maxItems} → linkedinUrl+website;
+company-employees: {companies:[/company/-URL],maxItems,profileScraperMode
+"Short ($4 per 1k)"} → firstName/lastName/position/linkedinUrl).
+Actor-IDs via env APIFY_ACTOR_COMPANY_SEARCH / _EMPLOYEES uebersteuerbar.
+Token-Recycle: watchlist:setKey/clearKey cycled company-contact.
 
 ## 9. Offene Punkte (bei Umsetzung klaeren)
 

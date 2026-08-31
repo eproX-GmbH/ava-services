@@ -663,6 +663,15 @@ function buildProducer(
               EMBED_PROVIDER: "ollama",
               EMBED_MODEL: "embeddinggemma:latest",
             })
+          : name === "company-contact"
+            ? // §8b (v0.1.487) — Apify-BYOK-Token fuer den Firmenprofil-
+              // Primaerweg. Gleicher Vertrauens-Weg wie OPENAI_API_KEY:
+              // Main→Child-env beim Spawn (Renderer-IPC bleibt tabu).
+              // Kein Token = leeres env, Producer faellt auf SERP zurueck.
+              async (): Promise<Record<string, string>> => {
+                const apifyKey = watchlistKeyStore?.getKey();
+                return apifyKey ? { APIFY_TOKEN: apifyKey } : {};
+              }
           : name === "company-publication"
             ? // v0.1.424 — Analyse-Modus (PB1): "lazy" (Default) analysiert
               // nur trend-relevante Bloecke, "eager" jeden Block.
@@ -4836,10 +4845,36 @@ app.whenReady().then(async () => {
       return watchlistKeyStore.setConfig(allowed);
     },
   );
+  // §8b — Token-Aenderung muss den company-contact-Producer recyceln,
+  // damit extraEnvAsync das frische APIFY_TOKEN-env injiziert (gleiches
+  // Muster wie der publication-Analyse-Modus).
+  const cycleCompanyContact = (): void => {
+    const cc = producers.find(
+      (p) => p.getStatus().name === "company-contact",
+    );
+    if (!cc) return;
+    const st = cc.getStatus().state;
+    if (st === "idle" || st === "stopping") return;
+    console.info("[watchlist-key] Token geaendert — cycle company-contact");
+    void (async () => {
+      try {
+        await cc.stop();
+      } catch (err) {
+        console.warn("[watchlist-key] stop() failed:", err);
+      }
+      if (!auth.getStatus().signedIn) return;
+      try {
+        await cc.start();
+      } catch (err) {
+        console.error("[watchlist-key] start() rejected:", err);
+      }
+    })();
+  };
   ipcMain.handle("watchlist:setKey", async (_e, key: string) => {
     if (!watchlistKeyStore) return { ok: false, error: "nicht initialisiert" };
     const r = watchlistKeyStore.setKey(String(key ?? ""));
     if (r.ok) {
+      cycleCompanyContact();
       audit({
         actorType: "user", actorId: null, category: "linkedin",
         action: "watchlist.key.set", severity: "info",
@@ -4851,6 +4886,7 @@ app.whenReady().then(async () => {
   });
   ipcMain.handle("watchlist:clearKey", () => {
     watchlistKeyStore?.clearKey();
+    cycleCompanyContact();
     audit({
       actorType: "user", actorId: null, category: "linkedin",
       action: "watchlist.key.clear", severity: "warning",
