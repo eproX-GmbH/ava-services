@@ -475,7 +475,12 @@ Namensaehnlichkeit allein ist NIE ausreichend.
 - Employees-Actor (Kandidat: harvestapi Company-Employees-Familie;
   Actor-ID konfigurierbar wie alle anderen, Schema VOR Umsetzung live
   verifizieren — Stand veraltet schnell).
-- Deckel je Lauf (z. B. 25 Personen, Fuehrungsrollen/LEAD_RE zuerst),
+- v0.1.488: Suchfenster 100 (Short-Mode, ~40 Cent), lokales
+  Rollen-Ranking (Rang 3 Geschaeftsleitung / 2 Leitungsebene /
+  1 Vertrieb/Einkauf), die besten 25 werden persistiert. Fenster voll
+  UND keine Fuehrungsrolle → gezielter Zweitlauf mit jobTitles-Filter
+  (LEAD_JOB_TITLES), Ergebnisse dedupliziert und mitgerankt.
+- Persist-Deckel je Lauf (25 Personen, Fuehrungsrollen zuerst),
   Ergebnis laeuft durch bereinigePerson + dasselbe Persist-Nadeloehr
   (applyCompanyContactPersist) wie alle anderen Quellen;
   source="apify:company-profile". Profil-URLs kommen kanonisch
