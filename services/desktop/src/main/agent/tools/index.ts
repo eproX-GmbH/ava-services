@@ -156,6 +156,8 @@ export function buildReadOnlyRegistry(deps: {
   discoveryCustomerProfiles: CustomerProfileStore;
   /** Lazy-Getter auf den Radar-Alert-Emitter (entsteht im Boot). */
   getRadarAlerts: () => import("../../discovery/radar-alerts").RadarAlertEmitter | null;
+  /** v0.1.475 — Plan-Tier fuer das Chat-Blur-Gate der Discovery-Tools. */
+  getTenantTier: () => string | null;
   /** Audit-Trail-Sink fuer Discovery-Aktionen (Scan-Queries etc.). */
   discoveryAudit: (entry: {
     action: string;
@@ -185,6 +187,7 @@ export function buildReadOnlyRegistry(deps: {
     matchStore: deps.discoveryMatches,
     customerStore: deps.discoveryCustomerProfiles,
     getRadarAlerts: deps.getRadarAlerts,
+    getTier: deps.getTenantTier,
     onAudit: deps.discoveryAudit,
     getDefaultIndustries: () => {
       // SERP-Branchen-Fallback: ICP-Branchen zuerst, sonst Nutzerprofil.

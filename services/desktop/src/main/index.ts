@@ -1623,6 +1623,7 @@ const agentRegistry = buildReadOnlyRegistry({
   discoveryMatches,
   discoveryCustomerProfiles: customerProfiles,
   getRadarAlerts: () => radarAlertEmitter,
+  getTenantTier: () => getTenantTierCached(),
   discoveryAudit: ({ action, severity, summary, metadata }) => {
     audit({
       actorType: "system",

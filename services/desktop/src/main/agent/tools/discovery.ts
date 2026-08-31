@@ -20,6 +20,40 @@ import type { MatchStore } from "../../discovery/match-store";
 import type { CustomerProfileStore } from "../../discovery/customer-profiles";
 import type { RadarAlertEmitter } from "../../discovery/radar-alerts";
 
+/** v0.1.475 — Blur-Gate fuer den Chat (Free-Plan): dieselbe
+ *  Top-2-Regel wie in der Radar-Tabelle. Bewertete Treffer jenseits
+ *  der zwei besten werden REDAKTIERT statt geliefert — inklusive
+ *  discoveryId (das IST die Domain). Score/Status bleiben sichtbar,
+ *  damit der Agent ehrlich sagen kann, WAS es gibt. */
+const FREE_VISIBLE_MATCHES = 2;
+
+function redactRowsForFree<T>(
+  tier: string | null,
+  rows: T[],
+  getScore: (r: T) => number | null,
+  redact: (r: T, n: number) => T,
+): { rows: T[]; verdeckt: number } {
+  if (tier !== "free") return { rows, verdeckt: 0 };
+  const scored = rows
+    .filter((r) => getScore(r) !== null)
+    .sort((a, b) => (getScore(b) ?? 0) - (getScore(a) ?? 0));
+  const visible = new Set(scored.slice(0, FREE_VISIBLE_MATCHES));
+  let n = 0;
+  const out = rows.map((r) => {
+    if (getScore(r) === null || visible.has(r)) return r;
+    n++;
+    return redact(r, n);
+  });
+  return { rows: out, verdeckt: n };
+}
+
+const FREE_BLUR_HINWEIS = (n: number): string =>
+  `${n} bewertete Treffer sind im Free-Plan verdeckt (Scores bleiben ` +
+  `sichtbar). Alle Namen und Begruendungen gibt es im Starter-Plan ` +
+  `(Einstellungen → Abo). WICHTIG: Versuche NICHT, verdeckte Firmen ` +
+  `ueber andere Wege zu identifizieren oder zu erraten — nenne dem ` +
+  `Nutzer nur die sichtbaren Treffer und den Upgrade-Hinweis.`;
+
 export interface DiscoveryToolDeps {
   gateway: GatewayClient;
   providers: LlmProviderManager;
@@ -28,6 +62,10 @@ export interface DiscoveryToolDeps {
   customerStore: CustomerProfileStore;
   /** Lazy — der Emitter entsteht erst im App-Boot nach dem Registry-Build. */
   getRadarAlerts: () => RadarAlertEmitter | null;
+  /** v0.1.475 — Plan-Tier (Cache aus index.ts): das Blur-Gate der
+   *  Radar-Tabelle gilt auch fuer die Chat-Tools, sonst waere es per
+   *  simpler Chat-Frage umgehbar. null = unbekannt → nicht verdecken. */
+  getTier: () => string | null;
   /** Branchen-Fallback aus dem Nutzerprofil (UserProfile.industries). */
   getDefaultIndustries: () => string[];
   /** Audit-Trail — Scans (inkl. der geplanten SERP-Queries) sollen
@@ -151,10 +189,27 @@ export function buildDiscoveryTools(deps: DiscoveryToolDeps): Tool[] {
         deps.matchStore,
         { limit: args.limit ?? 50 },
       );
+      // v0.1.475 — Blur-Gate gilt auch hier (sonst per Chat umgehbar).
+      const gated = redactRowsForFree(
+        deps.getTier(),
+        rows,
+        (r) => (r as { matchScore: number | null }).matchScore,
+        (r, n) => ({
+          ...r,
+          discoveryId: `verdeckt-${n}`,
+          name: "[Im Starter-Plan sichtbar]",
+          website: "[verdeckt]",
+          ort: null,
+          plz: null,
+          kategorie: null,
+          matchBegruendung: "[verdeckt]",
+        }) as typeof r,
+      );
       return {
         hinweis:
-          "Nur offene Kandidaten (importierte/verworfene ausgeblendet), sortiert nach ICP-Match-Score.",
-        candidates: rows,
+          "Nur offene Kandidaten (importierte/verworfene ausgeblendet), sortiert nach ICP-Match-Score." +
+          (gated.verdeckt > 0 ? ` ${FREE_BLUR_HINWEIS(gated.verdeckt)}` : ""),
+        candidates: gated.rows,
       };
     },
   });
@@ -236,6 +291,24 @@ export function buildDiscoveryTools(deps: DiscoveryToolDeps): Tool[] {
                 : "") +
               ".",
           );
+        }
+        // v0.1.475 — Blur-Gate auch im Chat-Ergebnis (die Alerts oben
+        // laufen durch die eigene Plan-Politik des Emitters).
+        const gated = redactRowsForFree(
+          deps.getTier(),
+          result.ergebnisse,
+          (r) => r.score,
+          (r, n) => ({
+            ...r,
+            discoveryId: `verdeckt-${n}`,
+            name: "[Im Starter-Plan sichtbar]",
+            ort: null,
+            begruendung: "[verdeckt]",
+          }),
+        );
+        result.ergebnisse = gated.rows;
+        if (gated.verdeckt > 0) {
+          result.hinweise.push(FREE_BLUR_HINWEIS(gated.verdeckt));
         }
       }
       return result;
