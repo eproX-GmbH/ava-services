@@ -261,3 +261,52 @@ export async function applyCompanyContactPersist(
     "company-contact persist ✓",
   );
 }
+
+
+/**
+ * v0.1.476 — Einzel-Kandidat durchs volle Sanitierungs-Nadeloehr
+ * (WL0-Konsequenz 3: gezielter LinkedIn-URL-Nachschlag aus dem
+ * Desktop). Spiegelt exakt die Schritte des Producer-Persist-Pfads
+ * oben — Identitaet, Observations, Reconcile, Employment-Projektion —
+ * fuer genau EINEN Kandidaten. Persist-Logik bleibt damit
+ * ausschliesslich hier im Gateway (Architektur-Invariante).
+ */
+export async function applySingleEmployeeCandidate(args: {
+  companyId: string;
+  candidate: EmployeeCandidate;
+  source: string;
+  evidenceUrl?: string | null;
+  runId: string;
+}): Promise<{ personId: string; created: boolean }> {
+  const prisma = getContactPrismaClient();
+  const candidate: EmployeeCandidate = {
+    ...args.candidate,
+    fullName: sanitizePersonName(args.candidate.fullName),
+    title: sanitizeRole(args.candidate.title) ?? undefined,
+    source: args.source,
+    sourceUrl: args.candidate.sourceUrl ?? args.evidenceUrl ?? undefined,
+  };
+  if (!candidate.fullName) throw new Error("leerer Personenname");
+  const up = await upsertPersonByIdentity(prisma, {
+    companyId: args.companyId,
+    candidate,
+  });
+  const obs = buildPersonObservations({
+    personId: up.personId,
+    identityKey: up.identityKey,
+    companyId: args.companyId,
+    candidate,
+    source: args.source,
+    evidenceUrl: args.evidenceUrl ?? undefined,
+  });
+  await persistObservations(prisma, { runId: args.runId, observations: obs });
+  await reconcilePerson(prisma, { runId: args.runId, personId: up.personId });
+  await reconcilePersonAndProjectEmployment(prisma, {
+    runId: args.runId,
+    personId: up.personId,
+    companyId: args.companyId,
+    source: args.source,
+    evidenceUrl: args.evidenceUrl ?? undefined,
+  });
+  return { personId: up.personId, created: up.created };
+}

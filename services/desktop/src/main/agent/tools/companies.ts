@@ -383,6 +383,172 @@ export function buildCompanyTools(ctx: Ctx): Tool[] {
       ),
   });
 
+  // ---- contact_linkedin_lookup (v0.1.476, WL0-Konsequenz 3) ---------------
+  //
+  // Gezielter LinkedIn-Profil-Nachschlag fuer einen bekannten Kontakt:
+  // SERP-Suche (site:linkedin.com/in "<Name>" "<Firma>") ueber den
+  // Gateway-Proxy, dann Slug≈Name-Plausibilitaetscheck (WL0 hat gezeigt,
+  // dass der Slug bei echten Treffern den Namen traegt). Persist NUR
+  // ueber die Nadeloehr-Route (POST …/contacts/linkedin-url) — mit
+  // confirmAction (Klasse A: legt Neues an, ueberschreibt nichts).
+
+  const foldName = (v: string): string =>
+    v
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(/\p{M}+/gu, "")
+      .replace(/ae/g, "a")
+      .replace(/oe/g, "o")
+      .replace(/ue/g, "u")
+      .replace(/ss/g, "s")
+      .replace(/[^a-z0-9]+/g, "-");
+
+  const profileFromSerpUrl = (raw: string | undefined): string | null => {
+    if (!raw) return null;
+    try {
+      const u = new URL(raw);
+      const host = u.hostname.toLowerCase();
+      if (host !== "linkedin.com" && !host.endsWith(".linkedin.com")) return null;
+      const m = /^\/in\/([^/]+)/.exec(u.pathname);
+      if (!m?.[1]) return null;
+      const slug = decodeURIComponent(m[1]).trim().toLowerCase();
+      return slug ? `https://www.linkedin.com/in/${encodeURIComponent(slug)}` : null;
+    } catch {
+      return null;
+    }
+  };
+
+  const linkedinLookup = defineTool({
+    name: "contact_linkedin_lookup",
+    summary:
+      "LinkedIn-Profil-URL fuer einen bekannten Kontakt per SERP-Suche finden und (nach Plausibilitaetscheck) am Kontakt speichern.",
+    category: "kontakte linkedin",
+    description:
+      "Sucht die LinkedIn-Profil-URL einer Person (site:linkedin.com/in " +
+      "Suche via SERP), prueft ob der Profil-Slug plausibel zum Namen " +
+      "passt, und speichert den besten Treffer am Kontakt der Firma " +
+      "(companyId + fullName noetig; Firmenname verbessert die Suche). " +
+      "Bei mehreren plausiblen Treffern werden die Kandidaten " +
+      "zurueckgegeben — dann per ask_user_choice klaeren lassen und mit " +
+      "chosenUrl erneut aufrufen. Kostet 1 SERP-Abfrage.",
+    parameters: {
+      type: "object",
+      required: ["companyId", "fullName"],
+      properties: {
+        companyId: { type: "string", description: "AVA-companyId der Firma." },
+        fullName: { type: "string", description: "Voller Personenname." },
+        companyName: {
+          type: "string",
+          description: "Firmenname fuer die Suche (empfohlen).",
+        },
+        chosenUrl: {
+          type: "string",
+          description:
+            "Bereits geklaerte Profil-URL — ueberspringt die Suche und speichert direkt.",
+        },
+      },
+    },
+    schema: yup
+      .object({
+        companyId: yup.string().trim().min(2).required(),
+        fullName: yup.string().trim().min(3).max(200).required(),
+        companyName: yup.string().trim().max(200).optional(),
+        chosenUrl: yup.string().trim().max(500).optional(),
+      })
+      .noUnknown(true),
+    preview: (r) => {
+      const res = r as { saved?: boolean; kandidaten?: unknown[]; error?: string };
+      if (res.error) return res.error;
+      if (res.saved) return "Profil-URL gespeichert";
+      if (res.kandidaten?.length) return `${res.kandidaten.length} Kandidaten — Auswahl noetig`;
+      return "Kein plausibles Profil gefunden";
+    },
+    run: async (args, c) => {
+      const persist = async (url: string): Promise<unknown> => {
+        const value = await c.ui.confirmAction(
+          {
+            kind: "additive",
+            prompt:
+              `LinkedIn-Profil am Kontakt speichern?\n\n` +
+              `${args.fullName} (${args.companyName ?? args.companyId})\n${url}`,
+            confirmValue: "save",
+            options: [
+              { value: "save", label: "Speichern", description: "POST ans Gateway" },
+              { value: "cancel", label: "Verwerfen" },
+            ],
+          },
+          c.signal,
+        );
+        if (value !== "save") return { saved: false, abgebrochen: true };
+        const res = await gateway.request<{
+          saved: boolean;
+          personId: string;
+          normalizedUrl: string;
+        }>(
+          `/v1/companies/${encodeURIComponent(args.companyId)}/contacts/linkedin-url`,
+          {
+            method: "POST",
+            body: { fullName: args.fullName, linkedinUrl: url },
+            signal: c.signal,
+          },
+        );
+        return { saved: res.saved, url: res.normalizedUrl, personId: res.personId };
+      };
+
+      if (args.chosenUrl) {
+        const norm = profileFromSerpUrl(args.chosenUrl);
+        if (!norm) {
+          return { error: "chosenUrl ist keine LinkedIn-Profil-URL (linkedin.com/in/…)." };
+        }
+        return persist(norm);
+      }
+
+      const q = args.companyName
+        ? `site:linkedin.com/in "${args.fullName}" "${args.companyName}"`
+        : `site:linkedin.com/in "${args.fullName}"`;
+      const body = await gateway.request<{
+        organic_results?: Array<{ link?: string; title?: string }>;
+      }>("/v1/proxy/valueserp", {
+        method: "POST",
+        body: { q, num: 10 },
+        signal: c.signal,
+      });
+
+      // Plausibilitaet: alle Namens-Tokens (>=3 Zeichen) muessen im
+      // gefalteten Slug vorkommen (WL0-Befund: bei echten Treffern
+      // traegt der Slug den Namen; Umlaut-/ae-ue-Falten beidseitig).
+      const tokens = foldName(args.fullName)
+        .split("-")
+        .filter((t) => t.length >= 3);
+      const seen = new Set<string>();
+      const plausibel: Array<{ url: string; titel: string | null }> = [];
+      for (const r of body.organic_results ?? []) {
+        const url = profileFromSerpUrl(r.link);
+        if (!url || seen.has(url)) continue;
+        seen.add(url);
+        const slugFold = foldName(decodeURIComponent(url.split("/in/")[1] ?? ""));
+        if (tokens.length > 0 && tokens.every((t) => slugFold.includes(t))) {
+          plausibel.push({ url, titel: r.title ?? null });
+        }
+      }
+
+      if (plausibel.length === 0) {
+        return {
+          saved: false,
+          hinweis:
+            "Kein Profil gefunden, dessen Slug plausibel zum Namen passt — nichts gespeichert (kein Raten).",
+        };
+      }
+      if (plausibel.length === 1) return persist(plausibel[0]!.url);
+      return {
+        saved: false,
+        kandidaten: plausibel,
+        hinweis:
+          "Mehrere plausible Profile — lass den Nutzer per ask_user_choice waehlen und rufe das Tool mit chosenUrl erneut auf.",
+      };
+    },
+  });
+
   return [
     search,
     get,
@@ -395,5 +561,6 @@ export function buildCompanyTools(ctx: Ctx): Tool[] {
     dataQuality,
     linkedInSignals,
     crmSummary,
+    linkedinLookup,
   ];
 }

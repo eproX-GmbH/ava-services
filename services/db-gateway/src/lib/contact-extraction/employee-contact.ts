@@ -30,19 +30,53 @@ function isHostFor(
 const LINKEDIN_HOSTS = ["linkedin.com", "lnkd.in"];
 const XING_HOSTS = ["xing.com"];
 
+/**
+ * v0.1.476 — WL0-Konsequenz 1: LinkedIn-PROFIL-Normalisierung.
+ *
+ * Das reine Host-Gate liess Post-URLs (linkedin.com/posts/…) und
+ * Varianten-Duplikate (www./Laender-Subdomain/Trailing-Slash/Locale-
+ * Suffix) durch. Ab jetzt gilt: Nur /in/-Profile zaehlen als
+ * linkedinUrl, und sie werden auf EINE kanonische Form gebracht:
+ *   https://www.linkedin.com/in/<slug>   (Slug decodiert, lowercase,
+ *   wieder encodiert; de./uk./tr. → www; kein Slash/Query/Locale).
+ * Kurzlinks (lnkd.in) sind KEINE Profil-Belege — sie werden verworfen.
+ * Liefert null fuer alles, was kein Profil ist.
+ */
+export function normalizeLinkedInProfileUrl(
+  raw: string | null | undefined,
+): string | null {
+  if (!raw) return null;
+  let u: URL;
+  try {
+    u = new URL(raw.trim());
+  } catch {
+    return null;
+  }
+  const host = u.hostname.toLowerCase();
+  if (host !== "linkedin.com" && !host.endsWith(".linkedin.com")) return null;
+  const m = /^\/in\/([^/]+)/.exec(u.pathname);
+  if (!m || !m[1]) return null;
+  let slug: string;
+  try {
+    slug = decodeURIComponent(m[1]).trim().toLowerCase();
+  } catch {
+    slug = m[1].trim().toLowerCase();
+  }
+  if (!slug) return null;
+  return `https://www.linkedin.com/in/${encodeURIComponent(slug)}`;
+}
+
 export function personIdentityKey(args: {
   companyId: string;
   fullName: string;
   linkedinUrl?: string | null;
   xingUrl?: string | null;
 }): string {
-  // Nur echte Profil-URLs duerfen Identitaet stiften (Host-Gate) —
-  // sonst wird derselbe Mensch pro Avatar-CDN-Pfad neu angelegt.
-  const gatedUrl = isHostFor(args.linkedinUrl, LINKEDIN_HOSTS)
-    ? args.linkedinUrl
-    : isHostFor(args.xingUrl, XING_HOSTS)
-      ? args.xingUrl
-      : null;
+  // Nur echte Profil-URLs duerfen Identitaet stiften — LinkedIn ab
+  // v0.1.476 in kanonischer Form (dedupt www-/Subdomain-Varianten).
+  const gatedUrl =
+    normalizeLinkedInProfileUrl(args.linkedinUrl) ??
+    (isHostFor(args.xingUrl, XING_HOSTS) ? args.xingUrl : null);
   const url = (gatedUrl ?? "").trim().toLowerCase();
   if (url) return `url:${url}`;
   // Titel-/Diakritik-gefaltete Namensform: "Dr. Anna Meier" und
@@ -79,12 +113,25 @@ export async function upsertPersonByIdentity(
     xingUrl: args.candidate.xingUrl ?? null,
   });
 
+  // v0.1.476 — Bestandsschutz: Alt-Schluessel wurden aus der ROHEN
+  // URL gebaut (vor der Profil-Normalisierung). Beim Lookup werden
+  // beide Formen gesucht, damit ein Re-Scrape derselben Person keine
+  // Dublette anlegt.
+  const legacyGated = isHostFor(args.candidate.linkedinUrl, LINKEDIN_HOSTS)
+    ? args.candidate.linkedinUrl
+    : isHostFor(args.candidate.xingUrl, XING_HOSTS)
+      ? args.candidate.xingUrl
+      : null;
+  const legacyUrl = (legacyGated ?? "").trim().toLowerCase();
+  const keys = [key];
+  if (legacyUrl && `url:${legacyUrl}` !== key) keys.push(`url:${legacyUrl}`);
+
   const existing = await prisma.person.findFirst({
     where: {
       personFacts: {
         some: {
           field: "identityKey",
-          normalized: key,
+          normalized: { in: keys },
         },
       },
     },
@@ -148,16 +195,17 @@ export function buildPersonObservations(args: {
     companyId: args.companyId,
   });
 
-  if (
-    args.candidate.linkedinUrl &&
-    isHostFor(args.candidate.linkedinUrl, LINKEDIN_HOSTS)
-  ) {
+  const linkedinProfile = normalizeLinkedInProfileUrl(
+    args.candidate.linkedinUrl,
+  );
+  if (linkedinProfile) {
     obs.push({
       entityType: "PERSON" as EntityType,
       entityId: args.personId,
       personId: args.personId,
       field: "linkedinUrl",
-      value: args.candidate.linkedinUrl,
+      // Kanonische Form persistieren — dedupt Varianten am Nadeloehr.
+      value: linkedinProfile,
       source: args.source,
       evidenceUrl: args.evidenceUrl ?? null,
       evidence: null,

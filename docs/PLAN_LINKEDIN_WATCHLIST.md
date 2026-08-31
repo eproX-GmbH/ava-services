@@ -162,6 +162,20 @@ Korrektheit — Licht und Schatten:
 FAZIT WL0: Grundlage noch NICHT stabil — erst 1 (+2 mit Go) und 3,
 dann WL1.
 
+**Konsequenz 1+3 UMGESETZT (v0.1.476):** normalizeLinkedInProfileUrl
+im Gateway (Pfad-Gate /in/, kanonische Form www+lowercase-Slug,
+lnkd.in verworfen) — wirkt in personIdentityKey (mit Legacy-Key-
+Fallback gegen Re-Scrape-Dubletten) und buildPersonObservations
+(kanonischer Wert wird persistiert). Neue Nadeloehr-Route POST
+/v1/companies/{id}/contacts/linkedin-url (validiert serverseitig,
+persistiert via applySingleEmployeeCandidate = voller Sanitierungs-
+Pfad). Desktop-Tool contact_linkedin_lookup: SERP-Suche + Slug≈Name-
+Plausibilitaetscheck (Umlaut-/Transliterations-Falte beidseitig),
+confirmAction Klasse A, Mehrdeutigkeit → Kandidatenliste, kein
+Treffer → ehrlich nichts. Verifiziert gegen alle WL0-Problemfaelle.
+OFFEN: Konsequenz 2 (Altbestand: 7 Fremd-Facts retracten + 1
+Duplikat mergen) — Prod-Write, wartet auf Go.
+
 ## 2c. Fokus-Personen (Priorisierung, User-Auflage)
 
 Der Kontakte-Bestand waechst schnell auf Hunderte Personen — die

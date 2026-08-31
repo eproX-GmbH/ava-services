@@ -6,6 +6,8 @@ import { getGatewayPool, getProducerPool } from "../../lib/producer-pools";
 import { clearHold, setHold } from "../../lib/company-holds";
 import { tombstoneCompany } from "../../lib/company-tombstones";
 import { listProfileChanges } from "../../lib/profile-changes";
+import { applySingleEmployeeCandidate } from "../../lib/contact-extraction-apply";
+import { normalizeLinkedInProfileUrl } from "../../lib/contact-extraction/employee-contact";
 import { logger } from "../../lib/logger";
 import {
   CompanyContactShape,
@@ -535,6 +537,90 @@ companiesRouter.openapi(profileChangesRoute, async (c) => {
   const { companyId } = c.req.valid("param");
   const items = await listProfileChanges(companyId, 20);
   return c.json({ items }, 200);
+});
+
+// ---- POST /v1/companies/:companyId/contacts/linkedin-url -------------------
+//
+// v0.1.476 — WL0-Konsequenz 3: gezielter LinkedIn-URL-Nachschlag.
+// Der Desktop hat per SERP + Plausibilitaetscheck ein Profil zu einem
+// bekannten Kontakt gefunden; persistiert wird ueber das VOLLE
+// Sanitierungs-Nadeloehr (applySingleEmployeeCandidate) — nie direkt.
+// Das Pfad-Gate (nur /in/-Profile, kanonische Form) wird hier
+// zusaetzlich serverseitig erzwungen (400 bei Nicht-Profil-URLs).
+
+const contactLinkedinRoute = createRoute({
+  method: "post",
+  path: "/companies/{companyId}/contacts/linkedin-url",
+  tags: [tag],
+  summary: "LinkedIn-Profil-URL fuer einen Kontakt nachtragen (Nadeloehr-Persist)",
+  request: {
+    params: CompanyIdParam,
+    body: {
+      content: {
+        "application/json": {
+          schema: z.object({
+            fullName: z.string().min(3).max(200),
+            linkedinUrl: z.string().min(10).max(500),
+            title: z.string().max(200).optional(),
+            evidenceUrl: z.string().max(1000).optional(),
+          }),
+        },
+      },
+    },
+  },
+  responses: {
+    200: {
+      content: {
+        "application/json": {
+          schema: z.object({
+            saved: z.boolean(),
+            personId: z.string(),
+            created: z.boolean(),
+            normalizedUrl: z.string(),
+          }),
+        },
+      },
+      description: "persistiert (kanonische Profil-URL)",
+    },
+    400: {
+      content: { "application/json": { schema: ErrorShape } },
+      description: "keine gueltige LinkedIn-Profil-URL (/in/)",
+    },
+    ...errorResponses,
+  },
+});
+
+companiesRouter.openapi(contactLinkedinRoute, async (c) => {
+  const { companyId } = c.req.valid("param");
+  const body = c.req.valid("json");
+  const normalized = normalizeLinkedInProfileUrl(body.linkedinUrl);
+  if (!normalized) {
+    throw new HTTPException(400, {
+      message:
+        "linkedinUrl ist keine LinkedIn-PROFIL-URL (erwartet linkedin.com/in/<slug>).",
+    });
+  }
+  const auth = c.get("auth");
+  const result = await applySingleEmployeeCandidate({
+    companyId,
+    candidate: {
+      fullName: body.fullName,
+      linkedinUrl: normalized,
+      ...(body.title ? { title: body.title } : {}),
+    },
+    source: "agent:linkedin_lookup",
+    evidenceUrl: body.evidenceUrl ?? null,
+    runId: `linkedin-lookup:${auth?.tenantId ?? "?"}:${Date.now()}`,
+  });
+  return c.json(
+    {
+      saved: true,
+      personId: result.personId,
+      created: result.created,
+      normalizedUrl: normalized,
+    },
+    200,
+  );
 });
 
 // ---- GET /v1/companies/:companyId/contacts ---------------------------------
