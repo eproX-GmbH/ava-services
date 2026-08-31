@@ -5,9 +5,9 @@ NICHT direkt bearbeiten — die Quelle der Wahrheit ist `services/desktop/src/ma
 Lauf via `pnpm -F @ava/desktop tools:doc` (oder automatisch via `build:typecheck`).
 
 Stand: 2026-08-31
-Anzahl Tools: 185
+Anzahl Tools: 195
 
-## Firmen (11)
+## Firmen (12)
 
 ### `company_contacts`
 
@@ -110,6 +110,18 @@ Get the crawled website summary for a company (homepage URL, scraped sections, l
 
 _Parameter:_
 - `companyId: string` (required)
+
+### `contact_linkedin_lookup`
+
+_Datei:_ `services/desktop/src/main/agent/tools/companies.ts`
+
+Sucht die LinkedIn-Profil-URL einer Person (site:linkedin.com/in Suche via SERP), prueft ob der Profil-Slug plausibel zum Namen passt, und speichert den besten Treffer am Kontakt der Firma (companyId + fullName noetig; Firmenname verbessert die Suche). Bei mehreren plausiblen Treffern werden die Kandidaten zurueckgegeben — dann per ask_user_choice klaeren lassen und mit chosenUrl erneut aufrufen. Kostet 1 SERP-Abfrage.
+
+_Parameter:_
+- `companyId: string` (required) — AVA-companyId der Firma.
+- `fullName: string` (required) — Voller Personenname.
+- `companyName: string` — Firmenname fuer die Suche (empfohlen).
+- `chosenUrl: string` — Bereits geklaerte Profil-URL — ueberspringt die Suche und speichert direkt.
 
 ## Importe (6)
 
@@ -1086,6 +1098,39 @@ _Parameter:_
 - `intervalMinutes: number`
 - `label: string`
 
+## linkedin-selfservice (3)
+
+### `linkedin_beobachter`
+
+_Datei:_ `services/desktop/src/main/agent/tools/linkedin-selfservice.ts`
+
+action 'status' zeigt den Zustand. 'aus' deaktiviert den Beobachter (Consent bleibt erhalten). 'an' aktiviert ihn — das geht per Chat NUR, wenn der Nutzer den Consent frueher schon in der UI erteilt hat; sonst muss er einmalig auf der Signale-Seite durch das Consent-Modal (hartes Opt-in, nicht delegierbar).
+
+_Parameter:_
+- `action: string (enum: status, an, aus)` (required)
+
+### `personen_radar_check_now`
+
+_Datei:_ `services/desktop/src/main/agent/tools/linkedin-selfservice.ts`
+
+Stoesst einen sofortigen Personen-Radar-Lauf ueber die konfigurierten Post-URLs an. Kostet Apify-Items (BYOK — der Nutzer zahlt). Gefundene Firmen erscheinen im Firmen-Radar.
+
+_Parameter:_ keine.
+
+### `personen_radar_config`
+
+_Datei:_ `services/desktop/src/main/agent/tools/linkedin-selfservice.ts`
+
+Ohne Parameter: aktuelle Personen-Radar-Konfiguration. Mit Parametern: Einstellungen aendern (Wirkungsklasse mutating). addPostUrls/removePostUrls pflegen die beobachteten LinkedIn-Post-URLs (max. 25). maxResolvesPerRun ist der teuerste Hebel (Profil-Aufloesungen, 4 $ je 1.000 beim Apify-Anbieter — der Nutzer zahlt).
+
+_Parameter:_
+- `automatik: boolean` — Automatische Laeufe an/aus.
+- `intervalHours: number (enum: 24, 168)` — 24 = taeglich, 168 = woechentlich.
+- `maxItemsPerPost: number` — Engagement-Items je Post (1-200).
+- `maxResolvesPerRun: number` — Profil-Aufloesungen je Lauf (1-50) — Kosten-Hebel.
+- `addPostUrls: array` — LinkedIn-Post-URLs hinzufuegen.
+- `removePostUrls: array` — Post-URLs entfernen.
+
 ## mail (8)
 
 ### `mail_allowlist_add`
@@ -1808,3 +1853,62 @@ _Datei:_ `services/desktop/src/main/agent/tools/voice.ts`
 Liefert den Status der Spracherkennung: ist das whisper.cpp-Binary installiert, ist das Sprachmodell heruntergeladen, läuft ein Download. Nutze das Tool, wenn der Nutzer fragt, ob Diktat / Spracheingabe einsatzbereit ist.
 
 _Parameter:_ keine.
+
+## watchlist (6)
+
+### `linkedin_watchlist_add`
+
+_Datei:_ `services/desktop/src/main/agent/tools/watchlist.ts`
+
+Setzt eine Person auf die LinkedIn-Personen-Watchlist: ihre oeffentliche Aktivitaet (Reaktionen/Kommentare) wird regelmaessig geprueft und relevante Signale werden gemeldet. Braucht die LinkedIn-Profil-URL (linkedin.com/in/…) — falls unbekannt, erst contact_linkedin_lookup. fokus=true prueft die Person bei JEDEM Lauf und meldet mindestens mit 'warn' (Telegram). companyId verknuepft Meldungen direkt mit der Firma.
+
+_Parameter:_ keine.
+
+### `linkedin_watchlist_check_now`
+
+_Datei:_ `services/desktop/src/main/agent/tools/watchlist.ts`
+
+Stoesst einen sofortigen Watchlist-Lauf an (Fokus-Personen zuerst). Kostet Items beim Scraping-Anbieter (BYOK — der Nutzer zahlt). Ergebnis ist die Lauf-Zusammenfassung; neue Signale kommen als Meldungen (Glocke/Telegram).
+
+_Parameter:_ keine.
+
+### `linkedin_watchlist_config`
+
+_Datei:_ `services/desktop/src/main/agent/tools/watchlist.ts`
+
+Ohne Parameter: aktuelle Watchlist-Konfiguration inkl. Monats-Verbrauch. Mit Parametern: Einstellungen aendern (Wirkungsklasse mutating — fragt je nach Vollmacht nach). companyWindow steuert, wie viele Profile die Kontakt-Verarbeitung je Firma vom LinkedIn-Firmenprofil zieht (Short-Mode, 4 $ je 1.000 Profile — der Nutzer zahlt). Der Apify-Token selbst kann NUR im Signale-Panel gesetzt werden, nie per Chat.
+
+_Parameter:_
+- `automatik: boolean` — Automatische Laeufe an/aus (braucht hinterlegten Token).
+- `intervalHours: number (enum: 24, 168)` — Pruef-Intervall: 24 = taeglich, 168 = woechentlich.
+- `maxItemsPerProfile: number` — Item-Budget je Person und Lauf (1-100).
+- `bestandRotationEnabled: boolean` — Bestands-Rotation an/aus.
+- `maxBestandPerRun: number` — Rotierte Bestands-Kontakte je Lauf (1-50).
+- `companyWindow: number` — Kontakt-Suchfenster je Firma (25-1000 Profile).
+
+### `linkedin_watchlist_list`
+
+_Datei:_ `services/desktop/src/main/agent/tools/watchlist.ts`
+
+Listet die LinkedIn-Personen-Watchlist: wer wird beobachtet, wer ist Fokus-Person, wann war die letzte Pruefung. Dazu Status der Automatik (lastOutcome).
+
+_Parameter:_ keine.
+
+### `linkedin_watchlist_remove`
+
+_Datei:_ `services/desktop/src/main/agent/tools/watchlist.ts`
+
+Entfernt eine Person von der Watchlist (Beobachtung endet; die Sichtungs-Historie verfaellt nach TTL von selbst).
+
+_Parameter:_
+- `profileUrl: string` (required)
+
+### `linkedin_watchlist_set_fokus`
+
+_Datei:_ `services/desktop/src/main/agent/tools/watchlist.ts`
+
+Markiert eine Watchlist-Person als Fokus (jeden Lauf gecheckt, Meldungen mind. 'warn') oder nimmt den Fokus zurueck. Fokus-Plaetze sind je Plan begrenzt.
+
+_Parameter:_
+- `profileUrl: string` (required)
+- `fokus: boolean` (required)

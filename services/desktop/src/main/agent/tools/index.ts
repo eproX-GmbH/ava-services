@@ -48,6 +48,7 @@ import { buildPublicationTools } from "./publications";
 import { buildGeoTools } from "./geo";
 import { buildDiscoveryTools } from "./discovery";
 import { buildWatchlistTools } from "./watchlist";
+import { buildLinkedInSelfserviceTools } from "./linkedin-selfservice";
 import { buildIcpTools } from "./icp";
 import type { IcpStore } from "../icp-store";
 import type { MatchStore } from "../../discovery/match-store";
@@ -161,6 +162,9 @@ export function buildReadOnlyRegistry(deps: {
   getWatchlistStore: () => import("../../linkedin/watchlist/store").WatchlistStore | null;
   getWatchlistSupervisor: () => import("../../linkedin/watchlist/supervisor").WatchlistSupervisor | null;
   getWatchlistKeyStore: () => import("../../linkedin/watchlist/key-store").WatchlistKeyStore | null;
+  onCompanyWindowChanged?: () => void;
+  getPersonenRadarStore: () => import("../../linkedin/personen-radar/store").PersonenRadarStore | null;
+  getPersonenRadarSupervisor: () => import("../../linkedin/personen-radar/supervisor").PersonenRadarSupervisor | null;
   /** v0.1.475 — Plan-Tier fuer das Chat-Blur-Gate der Discovery-Tools. */
   getTenantTier: () => string | null;
   /** Audit-Trail-Sink fuer Discovery-Aktionen (Scan-Queries etc.). */
@@ -190,6 +194,13 @@ export function buildReadOnlyRegistry(deps: {
     getStore: deps.getWatchlistStore,
     getSupervisor: deps.getWatchlistSupervisor,
     getKeyStore: deps.getWatchlistKeyStore,
+    onCompanyWindowChanged: deps.onCompanyWindowChanged,
+  }))
+    registry.register(t);
+  // v0.1.490 — Self-Service im Chat: Personen-Radar + Feed-Beobachter.
+  for (const t of buildLinkedInSelfserviceTools({
+    getPradarStore: deps.getPersonenRadarStore,
+    getPradarSupervisor: deps.getPersonenRadarSupervisor,
   }))
     registry.register(t);
   for (const t of buildDiscoveryTools({

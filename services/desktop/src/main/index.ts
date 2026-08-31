@@ -1283,6 +1283,10 @@ let watchlistStore: WatchlistStore | null = null;
 let watchlistSupervisor: WatchlistSupervisor | null = null;
 let personenRadarStore: PersonenRadarStore | null = null;
 let personenRadarSupervisor: PersonenRadarSupervisor | null = null;
+// v0.1.490 — Bruecke: das Chat-Tool linkedin_watchlist_config aendert
+// companyWindow und muss den company-contact-Producer recyceln; die
+// eigentliche cycle-Funktion entsteht erst in der IPC-Registrierung.
+let recycleCompanyContactRef: (() => void) | null = null;
 
 function broadcastMailSnapshot(snapshot: MailSnapshot): void {
   for (const win of BrowserWindow.getAllWindows()) {
@@ -1659,6 +1663,9 @@ const agentRegistry = buildReadOnlyRegistry({
   getWatchlistStore: () => watchlistStore,
   getWatchlistSupervisor: () => watchlistSupervisor,
   getWatchlistKeyStore: () => watchlistKeyStore,
+  onCompanyWindowChanged: () => recycleCompanyContactRef?.(),
+  getPersonenRadarStore: () => personenRadarStore,
+  getPersonenRadarSupervisor: () => personenRadarSupervisor,
   discoveryAudit: ({ action, severity, summary, metadata }) => {
     audit({
       actorType: "system",
@@ -4882,6 +4889,7 @@ app.whenReady().then(async () => {
       }
     })();
   };
+  recycleCompanyContactRef = cycleCompanyContact;
   ipcMain.handle("watchlist:setKey", async (_e, key: string) => {
     if (!watchlistKeyStore) return { ok: false, error: "nicht initialisiert" };
     const r = watchlistKeyStore.setKey(String(key ?? ""));

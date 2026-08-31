@@ -18,6 +18,9 @@ export interface WatchlistToolDeps {
   getStore: () => WatchlistStore | null;
   getSupervisor: () => WatchlistSupervisor | null;
   getKeyStore: () => WatchlistKeyStore | null;
+  /** v0.1.490 — companyWindow-Aenderung recycelt den company-contact-
+   *  Producer (frisches APIFY_COMPANY_FENSTER-env). */
+  onCompanyWindowChanged?: () => void;
 }
 
 export function buildWatchlistTools(deps: WatchlistToolDeps): Tool[] {
@@ -232,5 +235,111 @@ export function buildWatchlistTools(deps: WatchlistToolDeps): Tool[] {
     },
   });
 
-  return [add, list, setFokus, remove, checkNow];
+  // v0.1.490 — Self-Service im Chat: Watchlist-Konfiguration lesen und
+  // aendern. Der Apify-TOKEN selbst wird NIE per Chat gesetzt.
+  const config = defineTool({
+    name: "linkedin_watchlist_config",
+    summary:
+      "Watchlist-Einstellungen anzeigen oder aendern (Automatik, Intervall, Items/Person, Bestands-Rotation, Kontakt-Suchfenster).",
+    category: "linkedin watchlist einstellungen",
+    description:
+      "Ohne Parameter: aktuelle Watchlist-Konfiguration inkl. " +
+      "Monats-Verbrauch. Mit Parametern: Einstellungen aendern " +
+      "(Wirkungsklasse mutating — fragt je nach Vollmacht nach). " +
+      "companyWindow steuert, wie viele Profile die Kontakt-Verarbeitung " +
+      "je Firma vom LinkedIn-Firmenprofil zieht (Short-Mode, 4 $ je " +
+      "1.000 Profile — der Nutzer zahlt). Der Apify-Token selbst kann " +
+      "NUR im Signale-Panel gesetzt werden, nie per Chat.",
+    parameters: {
+      type: "object",
+      properties: {
+        automatik: { type: "boolean", description: "Automatische Laeufe an/aus (braucht hinterlegten Token)." },
+        intervalHours: { type: "number", enum: [24, 168], description: "Pruef-Intervall: 24 = taeglich, 168 = woechentlich." },
+        maxItemsPerProfile: { type: "number", description: "Item-Budget je Person und Lauf (1-100)." },
+        bestandRotationEnabled: { type: "boolean", description: "Bestands-Rotation an/aus." },
+        maxBestandPerRun: { type: "number", description: "Rotierte Bestands-Kontakte je Lauf (1-50)." },
+        companyWindow: { type: "number", description: "Kontakt-Suchfenster je Firma (25-1000 Profile)." },
+      },
+    },
+    schema: yup.object({
+      automatik: yup.boolean().optional(),
+      intervalHours: yup.number().oneOf([24, 168]).optional(),
+      maxItemsPerProfile: yup.number().min(1).max(100).optional(),
+      bestandRotationEnabled: yup.boolean().optional(),
+      maxBestandPerRun: yup.number().min(1).max(50).optional(),
+      companyWindow: yup.number().min(25).max(1000).optional(),
+    }),
+    preview: (r) => JSON.stringify(r).slice(0, 80),
+    run: async (args, c) => {
+      const ks = deps.getKeyStore();
+      if (!ks) return "Watchlist nicht initialisiert.";
+      const patch: Record<string, unknown> = {};
+      if (args.automatik !== undefined) patch.enabled = args.automatik === true;
+      for (const k of [
+        "intervalHours",
+        "maxItemsPerProfile",
+        "bestandRotationEnabled",
+        "maxBestandPerRun",
+        "companyWindow",
+      ] as const) {
+        if (args[k] !== undefined) patch[k] = args[k];
+      }
+      const vorher = ks.getConfig();
+      if (Object.keys(patch).length === 0) {
+        return {
+          automatik: vorher.enabled,
+          tokenHinterlegt: ks.hasKey(),
+          intervalHours: vorher.intervalHours,
+          maxItemsPerProfile: vorher.maxItemsPerProfile,
+          bestandRotationEnabled: vorher.bestandRotationEnabled,
+          maxBestandPerRun: vorher.maxBestandPerRun,
+          companyWindow: vorher.companyWindow,
+          monatsVerbrauchItems: vorher.monthItems,
+          hinweis:
+            "companyWindow kostet im Extremfall (companyWindow x 4 $ / 1000) je Firmenlauf.",
+        };
+      }
+      if (patch.enabled === true && !ks.hasKey()) {
+        return "Automatik braucht einen hinterlegten Apify-Token — bitte im Signale-Panel setzen (Tokens gehen nie ueber den Chat).";
+      }
+      const beschreibung = Object.entries(patch)
+        .map(([k, v]) => `${k} → ${String(v)}`)
+        .join(", ");
+      const kostenHinweis =
+        typeof patch.companyWindow === "number"
+          ? ` Achtung: ${patch.companyWindow} Profile kosten im Extremfall ~${((patch.companyWindow * 4) / 1000).toFixed(2)} $ je Firmenlauf.`
+          : "";
+      const value = await c.ui.confirmAction(
+        {
+          kind: "mutating",
+          prompt: `Watchlist-Einstellungen aendern: ${beschreibung}?${kostenHinweis}`,
+          confirmValue: "save",
+          options: [
+            { value: "save", label: "Aendern" },
+            { value: "cancel", label: "Abbrechen" },
+          ],
+        },
+        c.signal,
+      );
+      if (value !== "save") return userDeclined();
+      const nach = ks.setConfig(patch);
+      if (
+        typeof patch.companyWindow === "number" &&
+        nach.companyWindow !== vorher.companyWindow
+      ) {
+        deps.onCompanyWindowChanged?.();
+      }
+      return {
+        gespeichert: true,
+        automatik: nach.enabled,
+        intervalHours: nach.intervalHours,
+        maxItemsPerProfile: nach.maxItemsPerProfile,
+        bestandRotationEnabled: nach.bestandRotationEnabled,
+        maxBestandPerRun: nach.maxBestandPerRun,
+        companyWindow: nach.companyWindow,
+      };
+    },
+  });
+
+  return [add, list, setFokus, remove, checkNow, config];
 }
