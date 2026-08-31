@@ -311,16 +311,36 @@ wiederverwendet, nur die Eingangsrichtung dreht sich.
 Ein Engager ist erst dann ein Radar-Kandidat, wenn er BELASTBAR einer
 Firma zugeordnet ist. Konfidenz-Kaskade, beste Quelle zuerst:
 
-1. **LinkedIn-Company-Link (hart):** Liefert der Actor am Engager die
-   aktuelle Positions-Company als linkedin.com/company/<slug>, wird
-   die Company-Page aufgeloest → dort steht die **Website-Domain** →
-   `normalizeDomain` → **das IST die Discovery-ID** (Domain=ID-
-   Invariante des Radars!). Damit landet die Person verlustfrei im
-   bestehenden Firmen-Trichter: Domain bekannt → Firma bekannt/
-   Kandidat; Domain neu → neuer DiscoveredCompany-Kandidat (Website-
-   Pflicht per Konstruktion erfuellt), Mini-Profil + ICP-Match wie
-   gehabt.
-2. **Headline-Parsing (mittel):** „Rolle bei <Firmenname>" aus der
+1. **Berufserfahrung → Unternehmensseite → Website (hart).**
+   WICHTIG, Quelle praezise: NICHT das freie „Website"-Feld im
+   Profil-Kontaktbereich (das ist oft ein Calendly-Link o. ae. —
+   unbrauchbar). Sondern: die **aktuellen Positionen** aus der
+   Berufserfahrung der Person. Positionen bei Firmen MIT
+   LinkedIn-Unternehmensseite tragen einen
+   `linkedin.com/company/<slug>`-Link; die Unternehmensseite pflegt
+   ihr Website-Feld selbst (Firmen-Angabe, nicht Personen-Angabe) →
+   `normalizeDomain` → **das IST die Discovery-ID**
+   (Domain=ID-Invariante). Damit landet die Firma verlustfrei im
+   bestehenden Trichter: Domain bekannt → Firma bekannt/Kandidat;
+   Domain neu → neuer DiscoveredCompany-Kandidat (Website-Pflicht per
+   Konstruktion erfuellt), Mini-Profil + ICP-Match wie gehabt.
+
+   **Mehrere aktuelle Positionen sind der Normalfall, kein Randfall**
+   (Anstellung + eigene GmbH + Beirat/Beteiligung): ALLE aktuellen
+   Positionen werden aufgeloest und gematcht — eine Person darf auf
+   mehrere Firmen zeigen. Ranking der Firmen fuers Radar: primaere
+   Position zuerst (LinkedIn-Reihenfolge), dann ICP-Score; die
+   Ausloeser-Person haengt an JEDER gematchten Firma mit ihrer
+   dortigen Rolle.
+
+   **Daten-Realitaet / Kosten:** Engagement-Actors liefern am Engager
+   typischerweise nur Name, Headline, Profil-URL — die
+   Berufserfahrung braucht einen ZWEITEN Lookup (Profil-Detail-Actor)
+   und die Website einen DRITTEN (Company-Page). Aufloesung deshalb
+   nur fuer Engager, die die Vorfilter passieren (§8.2), mit hartem
+   Budget; Positionen ohne Unternehmensseiten-Link (Freitext-
+   Arbeitgeber) fallen auf Stufe 2 zurueck.
+2. **Headline-/Freitext-Parsing (mittel):** „Rolle bei <Firmenname>" aus der
    Engager-Headline → `normalizeCompanyName` → Abgleich gegen
    CompanyNameCache / GermanCompany (master-data) / DiscoveredCompany.
    Eindeutiger Treffer → wie 1 weiter; mehrdeutig → SERP-Nachschlag
