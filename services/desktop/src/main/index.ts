@@ -670,7 +670,13 @@ function buildProducer(
               // Kein Token = leeres env, Producer faellt auf SERP zurueck.
               async (): Promise<Record<string, string>> => {
                 const apifyKey = watchlistKeyStore?.getKey();
-                return apifyKey ? { APIFY_TOKEN: apifyKey } : {};
+                if (!apifyKey) return {};
+                return {
+                  APIFY_TOKEN: apifyKey,
+                  APIFY_COMPANY_FENSTER: String(
+                    watchlistKeyStore?.getConfig().companyWindow ?? 100,
+                  ),
+                };
               }
           : name === "company-publication"
             ? // v0.1.424 — Analyse-Modus (PB1): "lazy" (Default) analysiert
@@ -4839,10 +4845,16 @@ app.whenReady().then(async () => {
         "maxItemsPerProfile",
         "bestandRotationEnabled",
         "maxBestandPerRun",
+        "companyWindow",
       ]) {
         if (patch && k in patch) allowed[k] = patch[k];
       }
-      return watchlistKeyStore.setConfig(allowed);
+      // §8b — Fenster-Aenderung muss den company-contact-Producer
+      // recyceln, damit extraEnvAsync den frischen Wert injiziert.
+      const vorher = watchlistKeyStore.getConfig().companyWindow;
+      const result = watchlistKeyStore.setConfig(allowed);
+      if (result.companyWindow !== vorher) cycleCompanyContact();
+      return result;
     },
   );
   // §8b — Token-Aenderung muss den company-contact-Producer recyceln,

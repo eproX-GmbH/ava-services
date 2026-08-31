@@ -475,6 +475,9 @@ Namensaehnlichkeit allein ist NIE ausreichend.
 - Employees-Actor (Kandidat: harvestapi Company-Employees-Familie;
   Actor-ID konfigurierbar wie alle anderen, Schema VOR Umsetzung live
   verifizieren — Stand veraltet schnell).
+- v0.1.489: Suchfenster im WatchlistPanel konfigurierbar (25..1000,
+  Default 100) mit dynamischem Preis-Hinweis (n x 4 $/1k); Wert geht
+  als APIFY_COMPANY_FENSTER an den Producer, Aenderung recycelt ihn.
 - v0.1.488: Suchfenster 100 (Short-Mode, ~40 Cent), lokales
   Rollen-Ranking (Rang 3 Geschaeftsleitung / 2 Leitungsebene /
   1 Vertrieb/Einkauf), die besten 25 werden persistiert. Fenster voll

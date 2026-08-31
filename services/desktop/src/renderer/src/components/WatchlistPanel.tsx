@@ -27,6 +27,7 @@ interface WlState {
     maxItemsPerProfile: number;
     bestandRotationEnabled?: boolean;
     maxBestandPerRun?: number;
+    companyWindow?: number;
     lastRunAt: string | null;
     lastOutcome: string | null;
   };
@@ -267,6 +268,43 @@ export function WatchlistPanel(): JSX.Element {
               />
             </label>
           )}
+
+          {/* v0.1.489 — §8b Kontakt-Suchfenster: wie viele Profile die
+              Kontakt-Verarbeitung je Firma vom LinkedIn-Firmenprofil
+              zieht. Dynamischer Preis-Hinweis, damit niemand blind
+              hochdreht. */}
+          <label
+            className="field-inline"
+            title="Wie viele Profile die Kontakt-Verarbeitung je Firma maximal vom LinkedIn-Firmenprofil bezieht (Short-Mode). Persistiert werden die 25 relevantesten nach Rollen-Ranking."
+          >
+            <span className="muted" style={{ fontSize: 12 }}>
+              Kontakt-Suchfenster je Firma:
+            </span>
+            <input
+              type="number"
+              min={25}
+              max={1000}
+              step={25}
+              value={cfg.companyWindow ?? 100}
+              disabled={busy || !state.hasKey}
+              style={{ width: 72 }}
+              onChange={(e) =>
+                void run(() =>
+                  window.api.linkedin.watchlist.setConfig({
+                    companyWindow: Number(e.target.value),
+                  }),
+                )
+              }
+            />
+            <span className="muted" style={{ fontSize: 12 }}>
+              Profile · kostet im Extremfall ~
+              {(((cfg.companyWindow ?? 100) * 4) / 1000).toLocaleString(
+                "de-DE",
+                { minimumFractionDigits: 2, maximumFractionDigits: 2 },
+              )}
+              {" $ pro Firmenlauf (4 $ je 1.000 Profile)"}
+            </span>
+          </label>
 
           <details style={{ marginBottom: 8 }}>
             <summary className="muted" style={{ fontSize: 12, cursor: "pointer" }}>

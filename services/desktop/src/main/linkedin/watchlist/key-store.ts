@@ -41,6 +41,10 @@ export interface WatchlistConfig {
    *  zusaetzliche Items. */
   bestandRotationEnabled: boolean;
   maxBestandPerRun: number;
+  /** v0.1.489 — §8b Kontakt-Suchfenster: wie viele Profile der
+   *  Employees-Actor je Firmenlauf maximal liefert (Short-Mode,
+   *  4 $ je 1.000 Profile — der Nutzer zahlt). Clamp 25..1000. */
+  companyWindow: number;
 }
 
 const DEFAULT_CONFIG: WatchlistConfig = {
@@ -56,6 +60,7 @@ const DEFAULT_CONFIG: WatchlistConfig = {
   monthItems: 0,
   bestandRotationEnabled: false,
   maxBestandPerRun: 5,
+  companyWindow: 100,
 };
 
 export class WatchlistKeyStore {
@@ -111,6 +116,11 @@ export class WatchlistKeyStore {
             Number.isFinite(p.maxBestandPerRun)
               ? Math.min(50, Math.max(1, Math.floor(p.maxBestandPerRun)))
               : DEFAULT_CONFIG.maxBestandPerRun,
+          companyWindow:
+            typeof p.companyWindow === "number" &&
+            Number.isFinite(p.companyWindow)
+              ? Math.min(1000, Math.max(25, Math.round(p.companyWindow)))
+              : DEFAULT_CONFIG.companyWindow,
         };
         return { ...this.configCache };
       }
@@ -133,6 +143,12 @@ export class WatchlistKeyStore {
 
   setConfig(patch: Partial<WatchlistConfig>): WatchlistConfig {
     const next = { ...this.getConfig(), ...patch, providerId: "apify" as const };
+    // Kosten-Leitplanke: Suchfenster hart auf 25..1000 begrenzen
+    // (1000 = Actor-Maximum je Firma).
+    next.companyWindow = Math.max(
+      25,
+      Math.min(1000, Math.round(Number(next.companyWindow) || 100)),
+    );
     // Ohne Key keine Automatik.
     if (next.enabled && !this.hasKey()) next.enabled = false;
     try {
