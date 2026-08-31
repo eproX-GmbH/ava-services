@@ -69,27 +69,54 @@ export interface IcpDraft {
 // Analyse nicht kippen (Live-Befund: "KI-Analyse fehlgeschlagen" fuer
 // intakte Websites, weil kleine Producer-Modelle Felder auslassen).
 // Pflicht bleibt nur das Minimum; Rest hat Defaults.
+// v0.1.471 — Zu VIEL Inhalt ist KEIN Fehler, sondern ein Kürz-Job
+// (Live-Befund: "leistungen field must have less than or equal to 8
+// items" kippte die komplette Kunden-Analyse — ausgerechnet bei
+// gründlichen, starken Modellen). Ober-Grenzen werden deshalb VOR der
+// Validierung gestutzt statt abgelehnt; nur Unter-Grenzen (zu wenig
+// Substanz) bleiben echte Fehler.
+const clampString = (max: number) =>
+  yup
+    .string()
+    .transform((v) => (typeof v === "string" ? v.trim().slice(0, max) : v));
+
+const clampList = (itemMax: number, maxItems: number) =>
+  yup
+    .array()
+    .transform((v) =>
+      Array.isArray(v)
+        ? v
+            .filter((x) => typeof x === "string" && x.trim().length > 0)
+            .map((x: string) => x.trim().slice(0, itemMax))
+            .slice(0, maxItems)
+        : v,
+    )
+    // required() nur fuer den Typ (string[] statt (string|undefined)[]) —
+    // leere Items sind durch den Transform-Filter schon raus.
+    .of(yup.string().required())
+    .default([]);
+
 const ownSchema = yup.object({
-  angebot: yup.string().trim().min(5).max(600).required(),
-  nutzen: yup.string().trim().max(600).default(""),
-  branche: yup.string().trim().max(120).default(""),
-  leistungen: yup.array().of(yup.string().trim().max(120)).max(10).default([]),
-  standort: yup.string().trim().max(80).default(""),
+  angebot: clampString(600).min(5).required(),
+  nutzen: clampString(600).default(""),
+  branche: clampString(120).default(""),
+  leistungen: clampList(120, 10),
+  standort: clampString(80).default(""),
 });
 
 const customerSchema = yup.object({
-  name: yup.string().trim().max(200).default(""),
-  branche: yup.string().trim().max(120).default(""),
-  groessenIndiz: yup.string().trim().max(200).default(""),
-  standort: yup.string().trim().max(80).default(""),
-  leistungen: yup.array().of(yup.string().trim().max(120)).max(8).default([]),
+  name: clampString(200).default(""),
+  branche: clampString(120).default(""),
+  groessenIndiz: clampString(200).default(""),
+  standort: clampString(80).default(""),
+  leistungen: clampList(120, 8),
 });
 
 const synthesisSchema = yup.object({
-  beschreibung: yup.string().trim().min(40).max(2000).required(),
-  branchen: yup.array().of(yup.string().trim().min(2).max(60).required()).max(12).default([]),
-  groesse: yup.string().trim().max(200).default(""),
-  merkmale: yup.array().of(yup.string().trim().min(2).max(120).required()).max(10).default([]),
+  beschreibung: clampString(2000).min(40).required(),
+  branchen: clampList(60, 12),
+  groesse: clampString(200).default(""),
+  merkmale: clampList(120, 10),
 });
 
 type LlmJsonResult<T> = { ok: true; value: T } | { ok: false; detail: string };
@@ -158,7 +185,7 @@ async function analyzeOwnSite(
     "der Ort ohne Strasse/PLZ; leer lassen, wenn nicht eindeutig. " +
     'Antworte NUR als JSON: {"angebot": "1-2 Saetze: was wird ' +
     'angeboten", "nutzen": "welches Problem wird geloest", "branche": ' +
-    '"...", "leistungen": ["..."], "standort": "Ort oder leer"}';
+    '"...", "leistungen": ["max. 10 wichtigste"], "standort": "Ort oder leer"}';
   const r = await llmJson(
     providers,
     system,
@@ -186,7 +213,7 @@ async function analyzeCustomerSite(
     "standort = Ortsname des Firmensitzes (Impressum), nur der Ort. " +
     'Antworte NUR als JSON: {"name": "Firmenname", "branche": "...", ' +
     '"groessenIndiz": "z. B. Mitarbeiter/Standorte, falls erkennbar, ' +
-    'sonst leer", "standort": "Ort oder leer", "leistungen": ["..."]}';
+    'sonst leer", "standort": "Ort oder leer", "leistungen": ["max. 8 wichtigste"]}';
   const r = await llmJson(
     providers,
     system,
