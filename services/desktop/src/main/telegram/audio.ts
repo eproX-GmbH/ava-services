@@ -36,6 +36,8 @@ export async function decodeToWav16k(input: Buffer): Promise<Buffer | null> {
       backgroundThrottling: false,
     },
   });
+  // v0.1.481 — Helfer-Fenster nie im macOS-Fenster-/Dock-Menue listen.
+  win.excludedFromShownWindowsMenu = true;
 
   try {
     // Leere Seite laden — wir brauchen nur eine JS-Umgebung mit WebAudio.

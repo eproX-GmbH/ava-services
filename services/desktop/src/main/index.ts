@@ -1934,13 +1934,25 @@ agent.on("status", broadcastAgentStatus);
  * Nicht-Scraper-Fenster, sonst null.
  */
 function getMainAppWindow(): BrowserWindow | null {
+  // v0.1.481 — POSITIV nach dem Hauptfenster suchen statt Helfer
+  // aufzuzaehlen. Der alte Ausschluss kannte nur den LinkedIn-Scraper;
+  // inzwischen gibt es weitere versteckte Helfer (Crawl-Browser-
+  // Fallback des Profil-Workers, Audio-Decoder, Link-Monitor) — stand
+  // so einer vorn in getAllWindows(), zeigte der Dock-Klick ein
+  // LEERES unsichtbares Fenster statt AVA (Live-Befund).
+  const all = BrowserWindow.getAllWindows().filter((w) => !w.isDestroyed());
   return (
-    BrowserWindow.getAllWindows().find(
+    all.find(
+      (w) => (w as unknown as { __avaMainWindow?: boolean }).__avaMainWindow,
+    ) ??
+    // Fallback (sollte nie greifen): ein SICHTBARES Nicht-Helfer-Fenster.
+    all.find(
       (w) =>
-        !w.isDestroyed() &&
+        w.isVisible() &&
         !(w as unknown as { __avaLinkedInScraper?: boolean })
           .__avaLinkedInScraper,
-    ) ?? null
+    ) ??
+    null
   );
 }
 
@@ -1984,6 +1996,9 @@ function createMainWindow(): BrowserWindow {
       nodeIntegration: false,
     },
   });
+  // v0.1.481 — positive Markierung fuers Dock-Klick-Routing
+  // (getMainAppWindow): NUR dieses Fenster ist das AVA-Hauptfenster.
+  (win as unknown as { __avaMainWindow?: boolean }).__avaMainWindow = true;
 
   win.on("ready-to-show", () => win.show());
 

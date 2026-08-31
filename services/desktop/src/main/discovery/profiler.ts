@@ -200,6 +200,8 @@ async function fetchTextViaBrowser(url: string): Promise<string | null> {
           nodeIntegration: false,
         },
       });
+      // v0.1.481 — Helfer-Fenster nie im macOS-Fenster-/Dock-Menue listen.
+      win.excludedFromShownWindowsMenu = true;
       await Promise.race([
         win.loadURL(url),
         new Promise((_, rej) =>
