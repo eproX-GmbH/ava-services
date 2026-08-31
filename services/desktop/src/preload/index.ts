@@ -1679,6 +1679,33 @@ const api = {
         ipcRenderer.invoke("watchlist:setAktiv", profileUrl, aktiv),
       runNow: (): Promise<string> => ipcRenderer.invoke("watchlist:runNow"),
     },
+    /** §8 Personen-Radar (Engagement → Radar-Kandidaten). */
+    personenRadar: {
+      getState: (): Promise<{
+        error?: string;
+        config?: {
+          enabled: boolean;
+          postUrls: string[];
+          intervalHours: 24 | 168;
+          maxItemsPerPost: number;
+          maxResolvesPerRun: number;
+          lastRunAt: string | null;
+          lastOutcome: string | null;
+        };
+        hasKey?: boolean;
+        running?: boolean;
+        unklar?: Array<{
+          profileUrl: string;
+          name: string | null;
+          headline: string | null;
+          grund: string | null;
+          firstSeen: string;
+        }>;
+      }> => ipcRenderer.invoke("pradar:getState"),
+      setConfig: (patch: Record<string, unknown>): Promise<unknown> =>
+        ipcRenderer.invoke("pradar:setConfig", patch),
+      runNow: (): Promise<string> => ipcRenderer.invoke("pradar:runNow"),
+    },
     getSettings: (): Promise<LinkedInSettings> =>
       ipcRenderer.invoke("linkedin:settings:get"),
     updateSettings: (

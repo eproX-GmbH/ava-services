@@ -78,6 +78,10 @@ async function ensureSchema(pool: Pool): Promise<void> {
     -- v0.1.466 — Erst-Backlog-Scan: zaehlt NICht gegen Quota/Gebiete.
     ALTER TABLE "DiscoveryScan"
       ADD COLUMN IF NOT EXISTS "isInitial" BOOLEAN NOT NULL DEFAULT FALSE;
+    -- v0.1.480 — Personen-Radar: 'direct'-Scans buendeln Kandidaten
+    -- aus dem Engagement-Trichter (kein Orts-Scan, eigener Deckel).
+    ALTER TABLE "DiscoveryScan"
+      ADD COLUMN IF NOT EXISTS kind TEXT NOT NULL DEFAULT 'scan';
   `);
   schemaReady = true;
 }
@@ -276,6 +280,7 @@ export async function startScan(
     `SELECT COUNT(*)::int AS n FROM "DiscoveryScan"
       WHERE "tenantId" = $1
         AND "isInitial" = FALSE
+        AND kind = 'scan'
         AND "startedAt" >= NOW() - make_interval(days => $2)`,
     [args.tenantId, limits.windowDays],
   );
@@ -294,6 +299,7 @@ export async function startScan(
       `SELECT DISTINCT lower(trim(ort)) AS ort FROM "DiscoveryScan"
         WHERE "tenantId" = $1
           AND "isInitial" = FALSE
+          AND kind = 'scan'
           AND "startedAt" >= NOW() - interval '7 days'`,
       [args.tenantId],
     );
@@ -598,6 +604,60 @@ export async function findRegisterCandidates(
     ...cached.rows.map((r) => r.companyId),
   ]);
   return rows.filter((r) => !exclude.has(r.companyId)).slice(0, limit);
+}
+
+/**
+ * v0.1.480 — Personen-Radar: Kandidaten OHNE Orts-Scan einspeisen.
+ * Buendelt sie in einem taeglichen 'direct'-Scan je Tenant (Audit +
+ * Cap-Basis); eigener Tages-Deckel unabhaengig von der Scan-Quota.
+ * Danach laufen die Kandidaten durch den NORMALEN Trichter (Profiler,
+ * ICP-Match, Radar-Tabelle, Import).
+ */
+const DIRECT_DAILY_CAP = envInt("DISCOVERY_DIRECT_DAILY_CAP", 50);
+
+export async function addDirectCandidates(
+  pool: Pool,
+  args: {
+    tenantId: string;
+    actorId: string;
+    source: string;
+    candidates: CandidateInput[];
+    masterIds: Map<string, string>;
+  },
+): Promise<AddCandidatesResult | { error: "cap_exhausted" }> {
+  await ensureSchema(pool);
+  // Heutigen direct-Scan holen/anlegen.
+  const existing = await pool.query<{ scanId: string; candidatesAdded: number }>(
+    `SELECT "scanId", "candidatesAdded" FROM "DiscoveryScan"
+      WHERE "tenantId" = $1 AND kind = 'direct'
+        AND "startedAt" >= date_trunc('day', NOW())
+      ORDER BY "startedAt" DESC LIMIT 1`,
+    [args.tenantId],
+  );
+  let scanId: string;
+  let usedToday = 0;
+  if (existing.rows.length > 0) {
+    scanId = existing.rows[0]!.scanId;
+    usedToday = existing.rows[0]!.candidatesAdded;
+  } else {
+    scanId = createHash("sha256")
+      .update(`direct|${args.tenantId}|${Date.now()}|${Math.random()}`)
+      .digest("hex")
+      .slice(0, 24);
+    await pool.query(
+      `INSERT INTO "DiscoveryScan" ("scanId", "tenantId", "actorId", ort, "radiusKm", kind)
+       VALUES ($1, $2, $3, $4, 0, 'direct')`,
+      [scanId, args.tenantId, args.actorId, args.source.slice(0, 120)],
+    );
+  }
+  if (usedToday >= DIRECT_DAILY_CAP) return { error: "cap_exhausted" };
+  const room = DIRECT_DAILY_CAP - usedToday;
+  return addCandidates(pool, {
+    scanId,
+    tenantId: args.tenantId,
+    candidates: args.candidates.slice(0, room),
+    masterIds: args.masterIds,
+  }) as Promise<AddCandidatesResult | { error: "cap_exhausted" }>;
 }
 
 /** ALLE Entscheidungen eines Nutzers loeschen (Werksreset): ignorierte

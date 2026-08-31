@@ -4,6 +4,7 @@ import { Link } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Activity, ExternalLink } from "lucide-react";
 import { WatchlistPanel } from "../components/WatchlistPanel";
+import { PersonenRadarPanel } from "../components/PersonenRadarPanel";
 import type {
   LinkedInSettings,
   LinkedInSignalListFilter,
@@ -342,6 +343,7 @@ export function LinkedIn() {
       </header>
 
       <WatchlistPanel />
+      <PersonenRadarPanel />
 
       {!settingsQuery.isLoading && !enabled && (
         <div className="ct-card" style={{ padding: "1rem", marginTop: "1rem" }}>

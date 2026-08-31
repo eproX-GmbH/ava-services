@@ -18,6 +18,7 @@ import { getGatewayPool } from "../../lib/producer-pools";
 import {
   addCandidates,
   listCandidates,
+  addDirectCandidates,
   startScan,
   saveProfile,
   saveDecisions,
@@ -145,7 +146,7 @@ const CandidateInputShape = z.object({
   category: z.string().max(120).nullish(),
   meta: z.record(z.string(), z.unknown()).nullish(),
   masterCompanyId: z.string().max(100).nullish(),
-  source: z.enum(["osm", "serp", "register"]),
+  source: z.enum(["osm", "serp", "register", "personen-radar"]),
 });
 
 const AddCandidatesResponseShape = z
@@ -268,6 +269,85 @@ discoveryRouter.openapi(addCandidatesRoute, async (c) => {
     throw new HTTPException(409, { message: "candidate_cap_exhausted" });
   }
   return c.json(result, 200);
+});
+
+// ---- POST /v1/discovery/candidates/direct ----------------------------------
+//
+// v0.1.480 — Personen-Radar (§8): Kandidaten aus dem Engagement-
+// Trichter OHNE Orts-Scan einspeisen. Eigener Tages-Deckel
+// (DISCOVERY_DIRECT_DAILY_CAP, Default 50), unabhaengig von der
+// Scan-Quota; danach normaler Trichter (Profiler/Match/Import).
+
+const directCandidatesRoute = createRoute({
+  method: "post",
+  path: "/discovery/candidates/direct",
+  tags: ["discovery"],
+  summary: "Kandidaten direkt einspeisen (Personen-Radar, eigener Tages-Deckel)",
+  request: {
+    body: {
+      content: {
+        "application/json": {
+          schema: z.object({
+            source: z.string().min(2).max(120),
+            candidates: z.array(CandidateInputShape).min(1).max(25),
+          }),
+        },
+      },
+    },
+  },
+  responses: {
+    200: {
+      content: {
+        "application/json": {
+          schema: z.object({
+            added: z.number(),
+            updated: z.number(),
+            capped: z.number(),
+            known: z.record(z.string(), z.string()),
+          }),
+        },
+      },
+      description: "eingespeist",
+    },
+    429: {
+      content: { "application/json": { schema: ErrorShape } },
+      description: "Direkt-Tages-Deckel erschoepft",
+    },
+    401: {
+      content: { "application/json": { schema: ErrorShape } },
+      description: "unauthenticated",
+    },
+  },
+});
+
+discoveryRouter.openapi(directCandidatesRoute, async (c) => {
+  const auth = c.get("auth");
+  if (!auth?.tenantId) {
+    throw new HTTPException(401, { message: "auth_context_missing" });
+  }
+  const { source, candidates } = c.req.valid("json");
+  const masterIds = await resolveMasterIds(c, candidates);
+  const result = await addDirectCandidates(getGatewayPool(), {
+    tenantId: auth.tenantId,
+    actorId: auth.actorId,
+    source,
+    candidates,
+    masterIds,
+  });
+  if ("error" in result) {
+    throw new HTTPException(429, {
+      message: "DIRECT_CAP: Tages-Deckel fuer Direkt-Kandidaten erreicht.",
+    });
+  }
+  return c.json(
+    {
+      added: result.added,
+      updated: result.updated,
+      capped: result.capped,
+      known: result.known,
+    },
+    200,
+  );
 });
 
 // ---- PUT /discovery/candidates/{discoveryId}/profile -----------------------

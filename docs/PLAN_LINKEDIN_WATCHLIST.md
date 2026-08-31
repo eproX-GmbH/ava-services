@@ -428,10 +428,22 @@ FIRMA (bestehender Judge); die Person liefert Begruendungs-Kontext
 - DSGVO-Gewicht hoeher (Erhebung ueber voellig Unbeteiligte) — gleiche
   BYOK-Logik wie W1, Leitplanken aus §5 gelten verschaerft;
   „ungeklaert"-Liste mit kurzer TTL (14 Tage).
-- Phasen (grob, erst nach WL1-WL4 + Nutzungserfahrung): PR1
-  Post-Engagement-Adapter, PR2 Matching-Kaskade §8.1, PR3
-  Radar-Integration (Kandidat + Ausloeser-Person), PR4 Quellen-UI.
-  Schaetzung ~2-3 Tage.
+- **PR1-PR4 UMGESETZT (v0.1.480, 2026-08-31):** Actor-Familie live
+  verifiziert (harvestapi post-reactions/post-comments/profile-scraper
+  4USD/1k/company — Input-Schemata + Output-Felder aus Store-Seiten;
+  experience[] traegt companyLinkedinUrl, company-Actor traegt website
+  → harter Kaskadenpfad vollstaendig). PR1 engagement.ts (drei
+  tolerante Fetcher), PR2 matching.ts (Kaskade: Positionen →
+  Company-Page → Website=domainFromUrl hart; Firmenname/Headline →
+  konservativer SERP-Lookup mittel; sonst ungeklaert — kein Raten),
+  PR3 supervisor.ts (Quell-Posts → Engagement → Personen-Dedupe 90d →
+  Budget-Aufloesung → DIREKT-Kandidaten via POST
+  /discovery/candidates/direct mit eigenem Tages-Deckel 50,
+  kind=direct-Scans ausserhalb der Scan-Quota; Ausloeser-Person im
+  metaJson; Info-Alert je neuer Firma; ProfileWorker-Kick →
+  Profil+ICP-Match automatisch), PR4 PersonenRadarPanel (Post-URLs,
+  Automatik, Aufloesungs-Budget, Ungeklaert-Liste 14d). Quellen v1 =
+  Post-URLs; Autoren-Profile + thematische Suche bleiben Ausbaustufe.
 
 ## 9. Offene Punkte (bei Umsetzung klaeren)
 

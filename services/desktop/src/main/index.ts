@@ -188,6 +188,8 @@ import { WatchlistKeyStore } from "./linkedin/watchlist/key-store";
 import { WatchlistStore, watchlistLimitsForTier } from "./linkedin/watchlist/store";
 import { buildApifyProvider } from "./linkedin/watchlist/providers/apify";
 import { WatchlistSupervisor } from "./linkedin/watchlist/supervisor";
+import { PersonenRadarStore } from "./linkedin/personen-radar/store";
+import { PersonenRadarSupervisor } from "./linkedin/personen-radar/supervisor";
 import type { StagedSheetSummary } from "./agent";
 import type { ProviderConfig, LlmProviderKind } from "./agent";
 import type { HostedProviderKind } from "../shared/types";
@@ -1259,6 +1261,8 @@ let profileWorker: ProfileWorker | null = null;
 let watchlistKeyStore: WatchlistKeyStore | null = null;
 let watchlistStore: WatchlistStore | null = null;
 let watchlistSupervisor: WatchlistSupervisor | null = null;
+let personenRadarStore: PersonenRadarStore | null = null;
+let personenRadarSupervisor: PersonenRadarSupervisor | null = null;
 
 function broadcastMailSnapshot(snapshot: MailSnapshot): void {
   for (const win of BrowserWindow.getAllWindows()) {
@@ -2622,6 +2626,37 @@ app.whenReady().then(async () => {
     },
   });
   watchlistSupervisor.start();
+
+  // §8 Personen-Radar: Engagement auf beobachteten Posts → Firmen in
+  // den normalen Radar-Trichter (Direkt-Kandidaten). Teilt sich den
+  // Apify-Key mit der Watchlist.
+  personenRadarStore = new PersonenRadarStore();
+  personenRadarSupervisor = new PersonenRadarSupervisor({
+    keyStore: watchlistKeyStore,
+    store: personenRadarStore,
+    gateway: gatewayClient,
+    alerts,
+    notify: (a) => {
+      notifications.notifyForAlert(a);
+    },
+    onAlertsChanged: broadcastAlertsChanged,
+    isSignedIn: () => auth.getStatus().signedIn,
+    onCandidatesAdded: () => void profileWorker?.drain(),
+    onAudit: ({ action, severity, summary, metadata }) => {
+      audit({
+        actorType: "system",
+        actorId: null,
+        category: "linkedin",
+        action,
+        severity,
+        subjectType: null,
+        subjectId: null,
+        summary,
+        metadata: metadata ?? {},
+      });
+    },
+  });
+  personenRadarSupervisor.start();
 
   radarSupervisor = new RadarSupervisor({
     gateway: gatewayClient,
@@ -4834,6 +4869,31 @@ app.whenReady().then(async () => {
   ipcMain.handle("watchlist:runNow", () =>
     watchlistSupervisor
       ? watchlistSupervisor.runNow("manuell")
+      : "nicht initialisiert",
+  );
+  // ---- §8 Personen-Radar ----------------------------------------------------
+  ipcMain.handle("pradar:getState", async () => {
+    if (!personenRadarStore || !personenRadarSupervisor) {
+      return { error: "nicht initialisiert" };
+    }
+    return {
+      config: personenRadarStore.getConfig(),
+      hasKey: watchlistKeyStore?.hasKey() ?? false,
+      running: personenRadarSupervisor.isRunning(),
+      unklar: await personenRadarStore.listUnklar(),
+    };
+  });
+  ipcMain.handle("pradar:setConfig", (_e, patch: Record<string, unknown>) => {
+    if (!personenRadarStore) return { error: "nicht initialisiert" };
+    const allowed: Record<string, unknown> = {};
+    for (const k of ["enabled", "postUrls", "intervalHours", "maxItemsPerPost", "maxResolvesPerRun"]) {
+      if (patch && k in patch) allowed[k] = patch[k];
+    }
+    return personenRadarStore.setConfig(allowed);
+  });
+  ipcMain.handle("pradar:runNow", () =>
+    personenRadarSupervisor
+      ? personenRadarSupervisor.runNow("manuell")
       : "nicht initialisiert",
   );
 
