@@ -298,7 +298,7 @@ export function FirstRunWizard({
             <span className="ct-gradient-text">Wie startest du mit AVA?</span>
           </h1>
           <p className="muted">
-            Wir empfehlen das Claude-Abo — beste Qualität, fixe Kosten.
+            Wir empfehlen das ChatGPT-Abo — beste Qualität, fixe Kosten.
             Eigene API-Keys oder lokales Hosting sind weitere Wege. Du
             kannst die Wahl später in Einstellungen → Modelle jederzeit
             ändern.
@@ -449,7 +449,7 @@ export function FirstRunWizard({
               className="link"
               onClick={() => setView("chooser")}
               disabled={running}
-              title="Stattdessen einen Cloud-Anbieter (eigener Schlüssel oder Claude-Abo) wählen"
+              title="Stattdessen einen Cloud-Anbieter (eigener Schlüssel oder ChatGPT-Abo) wählen"
             >
               Stattdessen Cloud-Anbieter wählen
             </button>
@@ -560,17 +560,14 @@ function ProviderChooserGrid({
 
   return (
     <>
-      {/* v0.1.381 — Reihenfolge nach Empfehlung:
-          1. Hero-Reihe: ChatGPT-Abo UND Claude-Abo nebeneinander —
-             Abo-Verbindung ist der empfohlene Standardweg und steht
-             visuell hervorgehoben ganz oben. ChatGPT zuerst (ab
-             15.06.2026 wird die Claude-Abo-Verbindung in AVA separat
-             abgerechnet).
-          2. Sekundär: API-Key OpenAI/Google/Mistral
+      {/* Reihenfolge nach Empfehlung:
+          1. Hero: ChatGPT-Abo — der einzige verbleibende Abo-Weg und
+             der empfohlene Standard (das Claude-Abo wurde entfernt).
+          2. Sekundär: eigener API-Key (OpenAI/Anthropic/Google/…)
           3. Tertiär kollabiert: Lokale Modelle (mit Sysreq-Warnung)
        */}
 
-      {/* Sektion 1 — Abo-Heroes (ChatGPT + Claude) */}
+      {/* Sektion 1 — Abo-Hero (ChatGPT) */}
       <div className="first-run__hero-grid">
         <div className="first-run__hero">
           <div className="first-run__hero-glyph" aria-hidden="true">⌬</div>

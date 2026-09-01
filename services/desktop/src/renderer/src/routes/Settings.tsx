@@ -95,9 +95,9 @@ const PROVIDER_FEATURES: Record<HostedProviderKind, string> = {
     "spezifischen Calls werden zur Laufzeit übersprungen.",
   anthropic:
     "Wird als Chat-LLM und in allen LLM-getriebenen Producer-Stages " +
-    "(Profile, Contact, Evaluation, Publications) verwendet. Mit " +
-    "Claude-Pro/Max-Abo via OAuth: keine API-Kosten, dafür Quota " +
-    "des Abos.",
+    "(Profile, Contact, Evaluation, Publications) verwendet. " +
+    "Anmeldung ausschließlich per API-Schlüssel — die Anmeldung über " +
+    "ein Claude-Pro/Max-Abo wird nicht mehr unterstützt.",
   google:
     "Wird als Chat-LLM und in allen LLM-getriebenen Producer-Stages " +
     "verwendet (z. B. Gemini 2.5 Pro für anspruchsvolle Recherche).",
@@ -1996,18 +1996,14 @@ export function ProviderSection() {
   const activeChannel: string =
     activeKind === "ollama"
       ? "Lokal (Ollama) — kostenlos"
-      : activeKind === "anthropic"
-        ? hasAnthropicSubscriptionToken
-          ? "Claude-Abo (Pro/Max)"
-          : "Anthropic API-Schlüssel"
-        : activeKind === "openai"
+      : activeKind === "openai"
           ? hasOpenAISubscriptionToken
             ? "ChatGPT-Abo"
             : "OpenAI API-Schlüssel"
           : `${PROVIDER_LABEL[activeKind]} API-Schlüssel`;
+  // v0.1.505 — nur noch ChatGPT: die Claude-Abo-Anmeldung gibt es nicht mehr.
   const channelIsSubscription =
-    (activeKind === "anthropic" && hasAnthropicSubscriptionToken) ||
-    (activeKind === "openai" && hasOpenAISubscriptionToken);
+    activeKind === "openai" && hasOpenAISubscriptionToken;
 
   const anyHostedKey =
     hasKey.openai || hasKey.google || hasKey.mistral || hasKey.anthropic;
@@ -2216,25 +2212,17 @@ export function ProviderSection() {
         )}
         <div className="api-keys">
           {HOSTED_KINDS
-            // Anthropic-API-Keys sind eingestellt (v0.1.216); die Karte
-            // erscheint nur noch, solange ein Alt-Key gespeichert ist
-            // (zum Entfernen). Der Claude-Abo-Block lebt jetzt oben.
-            .filter((kind) => kind !== "anthropic" || hasKey.anthropic)
+            // v0.1.505 — Anthropic ist wieder eine normale API-Key-Karte.
+            // Die Sonderbehandlung stammte aus der Zeit, als die
+            // Claude-Abo-Anmeldung (OAuth) der einzige Weg war; seit
+            // deren Wegfall war Anthropic in der UI ueberhaupt nicht
+            // mehr konfigurierbar — Karte gefiltert UND Key-Eingabe
+            // ausgeblendet.
             .map((kind) => (
               <ApiKeyCard
                 key={kind}
                 kind={kind}
                 hasKey={hasKey[kind]}
-                anthropicSubscription={
-                  kind === "anthropic"
-                    ? {
-                        hasToken: hasAnthropicSubscriptionToken,
-                        anthropicAuthMode:
-                          config.anthropicAuthMode ?? "api-key",
-                        activeKind,
-                      }
-                    : undefined
-                }
                 anthropicTierInfo={
                   kind === "anthropic"
                     ? (cfg.data.anthropicTierInfo ?? null)
@@ -2371,8 +2359,6 @@ function OpenAISubscriptionContent({
     </div>
   );
 }
-
-// -- Phase A1 — Claude.ai Pro/Max-Abo card ----------------------------
 
 // -- Installed models (delete-from-disk) ------------------------------
 
@@ -2594,27 +2580,16 @@ interface ApiKeyRowProps {
  * provider now renders as a bordered card containing header + input +
  * description + doc-link in a fixed vertical rhythm.
  *
- * For Anthropic specifically, the card also nests the Claude.ai
- * Pro/Max-Abo affordance (`<AnthropicSubscriptionContent />`) below a
- * divider so the user sees both auth methods for the same provider in
- * one visual unit.
+ * v0.1.505 — die Claude-Abo-Anmeldung (OAuth) gibt es nicht mehr;
+ * Anthropic laeuft wie jeder andere Anbieter ueber einen API-Key.
  */
 function ApiKeyCard({
   kind,
   hasKey,
-  // Anthropic-only props (forwarded into the nested subscription
-  // content). Undefined for non-Anthropic providers; rendered iff kind
-  // === "anthropic".
-  anthropicSubscription,
   // v0.1.209 — Anthropic-Tier-Schnappschuss (für den Tier-1-Hinweis-
   // banner). Null bei Non-Anthropic-Providern oder wenn nicht ermittelt.
   anthropicTierInfo,
 }: ApiKeyRowProps & {
-  anthropicSubscription?: {
-    hasToken: boolean;
-    anthropicAuthMode: "api-key" | "subscription";
-    activeKind: LlmProviderKind;
-  };
   anthropicTierInfo?: AnthropicTierInfo | null;
 }) {
   const qc = useQueryClient();
@@ -2633,30 +2608,11 @@ function ApiKeyCard({
       qc.invalidateQueries({ queryKey: ["agent", "providerConfig"] }),
   });
 
-  // Status badge: per provider, what's currently active.
-  // Anthropic is special — it can be "active via API-Key" OR "active via
-  // Pro/Max-Abo". For the other three, "gespeichert" = key present.
-  const statusBadge = (() => {
-    if (kind === "anthropic" && anthropicSubscription) {
-      const { hasToken, anthropicAuthMode } = anthropicSubscription;
-      if (anthropicAuthMode === "subscription" && hasToken) {
-        return <span className="badge ok">Pro/Max-Abo aktiv</span>;
-      }
-      if (hasKey) return <span className="badge ok">API-Key gespeichert</span>;
-      if (hasToken) return <span className="badge ok">Pro/Max-Abo verbunden</span>;
-      return null;
-    }
-    return hasKey ? <span className="badge ok">gespeichert</span> : null;
-  })();
-
-  // v0.1.216 — Bei Anthropic ist der API-Key-Pfad deaktiviert (Nutzer
-  // bemängelten zu hohe API-Kosten gegenüber OpenAI). Die Eingabe wird
-  // komplett ausgeblendet; einzig die Pro/Max-Abo-Anmeldung bleibt.
-  // Existierende gespeicherte Keys werden NICHT automatisch
-  // gelöscht — wir zeigen einen Deprecation-Hinweis mit einem
-  // Klick zum Entfernen, damit Nutzer mit laufenden Sessions nicht
-  // mitten in der Arbeit umkonfiguriert werden müssen.
-  const anthropicKeyDisabled = kind === "anthropic";
+  // Status badge: "gespeichert" = Key hinterlegt. (Bis v0.1.504 gab es
+  // hier eine Anthropic-Sonderlogik fuer die Abo-Anmeldung.)
+  const statusBadge = hasKey ? (
+    <span className="badge ok">gespeichert</span>
+  ) : null;
 
   return (
     <div className="provider-key-card">
@@ -2665,8 +2621,7 @@ function ApiKeyCard({
         {statusBadge}
       </div>
 
-      {!anthropicKeyDisabled && (
-        <>
+      <>
           <div className="provider-key-card__input-row">
             <input
               type="password"
@@ -2724,76 +2679,8 @@ function ApiKeyCard({
             )}
           </div>
         </>
-      )}
 
-      {/* v0.1.216 — Anthropic-API-Key-Pfad eingestellt. Bei aktuell
-          gespeichertem Key: Deprecation-Hinweis + Ein-Klick-
-          Entfernung. Bei leerem Slot: nur eine kurze Erläuterung,
-          dass die Anmeldung jetzt ausschließlich über das Pro/Max-
-          Abo läuft (Abo-Block kommt darunter). */}
-      {anthropicKeyDisabled && (
-        <div className="provider-key-card__deprecation">
-          {hasKey ? (
-            <>
-              <p className="provider-key-card__deprecation-title">
-                ⚠️ API-Key-Anmeldung wird nicht mehr unterstützt
-              </p>
-              <p>
-                Du hast noch einen Anthropic-API-Key hinterlegt. Nach
-                Rückmeldung mehrerer Nutzer waren die API-Kosten für
-                den AVA-Use-Case deutlich höher als gleichwertige
-                OpenAI-Modelle. Wir empfehlen den Wechsel auf das
-                Pro/Max-Abo (siehe Abo-Karten ganz oben) — dort sind die
-                Kosten fix und Anthropic priorisiert eingeloggte Nutzer.
-              </p>
-              {anthropicSubscription?.hasToken ? (
-                <p>
-                  ✅ Dein Claude-Abo ist verbunden und wird ab sofort
-                  <strong> automatisch bevorzugt</strong> — der alte
-                  API-Key wird ignoriert (kein API-Minutenlimit mehr).
-                  Du kannst ihn hier bedenkenlos entfernen.
-                </p>
-              ) : (
-                <p>
-                  Solange kein Abo verbunden ist, nutzt AVA noch diesen
-                  Schlüssel (mit dem strengen API-Minutenlimit). Verbinde
-                  ganz oben dein Pro/Max-Abo — danach wird der Key
-                  automatisch ignoriert.
-                </p>
-              )}
-              <button
-                type="button"
-                onClick={() => clear.mutate()}
-                disabled={clear.isPending}
-              >
-                {clear.isPending
-                  ? "Entfernt…"
-                  : "Gespeicherten Schlüssel entfernen"}
-              </button>
-              {clear.error && (
-                <p className="provider-key-card__error">
-                  {(clear.error as Error).message}
-                </p>
-              )}
-            </>
-          ) : (
-            <p>
-              Anthropic-Anmeldung läuft ausschließlich über das
-              Pro/Max-Abo. Für reine API-Key-Nutzung empfehlen wir
-              OpenAI — bessere Preise pro Token für AVAs typische
-              Anfragen.
-            </p>
-          )}
-        </div>
-      )}
-
-      {/* v0.1.381 — Der Claude-Abo-Block lebt jetzt PROMINENT oben in der
-          Modelle-Ansicht (subscription-hero-grid) statt hier verschachtelt.
-          Diese Karte erscheint nur noch für Alt-Key-Besitzer (Entfernen). */}
-
-      {/* v0.1.209 — Tier-1-Hinweisbanner. v0.1.216: bleibt für
-          Restbestand-Nutzer mit noch gespeichertem API-Key
-          sichtbar; neue Keys können nicht mehr hinterlegt werden. */}
+      {/* v0.1.209 — Tier-1-Hinweisbanner, sobald ein Key hinterlegt ist. */}
       {kind === "anthropic" && hasKey && (
         <AnthropicTierBanner tier={anthropicTierInfo} />
       )}
