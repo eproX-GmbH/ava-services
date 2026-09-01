@@ -155,21 +155,7 @@ function buildSystemPrompt(today: Date, userContext: string | null): string {
   return [
     "Du bist die Alarm-Bewertungsstufe von AVA, einer Recherche-App für",
     "deutsche Unternehmen.",
-    `Heute ist ${todayIso}.`,
     "",
-    // Nutzer-Kontext macht die Bewertung massgeschneidert: dieselbe
-    // Meldung kann fuer einen Immobilien-Fokus alarmwuerdig sein und
-    // fuer einen Maschinenbau-Fokus Rauschen.
-    ...(userContext
-      ? [
-          "Kontext der Analystin (beruecksichtige ihn bei der Relevanz-",
-          "Einschaetzung — Naehe zu ihren Branchen/Regionen/Idealkunden",
-          "erhoeht die Alarmwuerdigkeit, voellig fachfremde Punkte senken",
-          "sie):",
-          ...userContext.slice(0, 1200).split("\n").map((l) => `  ${l}`),
-          "",
-        ]
-      : []),
     "Aufgabe: Entscheide, ob der folgende Datenpunkt eine Benachrichtigung",
     "an die Analystin rechtfertigt.",
     "",
@@ -224,6 +210,21 @@ function buildSystemPrompt(today: Date, userContext: string | null): string {
     "    Begründung wird der Analystin im Diagnostik-Log gezeigt.",
     "  - Keine zusätzlichen Felder. Keine Markdown-Codeblöcke.",
     "  - Keine Begrüßung, kein Kommentar, kein Fließtext um das JSON herum.",
+      // v0.1.499 — Cache-Layout: alles Dynamische ganz HINTEN, damit der
+    // statische Regel-Block ueber Tage und Profil-Aenderungen hinweg
+    // als Prompt-Cache-Praefix stabil bleibt.
+    ...(userContext
+      ? [
+          "",
+          "Kontext der Analystin (beruecksichtige ihn bei der Relevanz-",
+          "Einschaetzung — Naehe zu ihren Branchen/Regionen/Idealkunden",
+          "erhoeht die Alarmwuerdigkeit, voellig fachfremde Punkte senken",
+          "sie):",
+          ...userContext.slice(0, 1200).split("\n").map((l) => `  ${l}`),
+        ]
+      : []),
+    "",
+    `Heute ist ${todayIso}.`,
   ].join("\n");
 }
 

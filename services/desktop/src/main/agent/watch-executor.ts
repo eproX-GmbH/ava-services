@@ -241,10 +241,6 @@ function buildRubricSystemPrompt(watch: Watch, now: Date): string {
   const today = now.toISOString().slice(0, 10);
   return [
     "Du bewertest, ob ein Datenpunkt einer überwachten Rubrik entspricht.",
-    `Heute ist ${today}.`,
-    "",
-    "Rubrik (vom Nutzer formuliert, NIE umformulieren oder erweitern):",
-    `  ${watch.trigger.rubric}`,
     "",
     "Antworte NUR mit einem JSON-Objekt nach diesem Schema:",
     "  {",
@@ -263,6 +259,14 @@ function buildRubricSystemPrompt(watch: Watch, now: Date): string {
     "    (warum entspricht es / warum nicht).",
     "  - Keine zusätzlichen Felder, keine Markdown-Codeblöcke,",
     "    keine Begrüssung, kein Fließtext um das JSON.",
+      // v0.1.499 — Cache-Layout: Rubrik + Datum ganz HINTEN. Der
+    // Regel-Block davor ist fuer ALLE Watches identisch und bleibt so
+    // ueber verschiedene Watches hinweg als Cache-Praefix stabil.
+    "",
+    "Rubrik (vom Nutzer formuliert, NIE umformulieren oder erweitern):",
+    `  ${watch.trigger.rubric}`,
+    "",
+    `Heute ist ${today}.`,
   ].join("\n");
 }
 

@@ -722,15 +722,23 @@ export function buildSystemPrompt(
     // Enthält genau eine harte Regel: keine Antwort über eine Firma
     // ohne Daten-Tool-Call. Siehe agent/soul.ts.
     SOUL,
+    // v0.1.499 — Cache-Layout: statische Bloecke VOR den dynamischen.
+    // Vorher standen Profil/ICP/Memory direkt hinter SOUL — jede
+    // Memory- oder Profil-Aenderung entwertete persona, Chart-Regeln
+    // und alles dahinter im Prompt-Cache. Reihenfolge jetzt nach
+    // Aenderungsfrequenz: statisch (persona, Charts) → langsam
+    // (Profil/ICP/Memory/Nudge) → sitzungsdynamisch (Skills, Tools —
+    // tool_load aendert ohnehin auch das tools-Array und bustet ab
+    // dort) → Rest.
+    persona,
+    CHART_INSTRUCTIONS,
     profileBlock,
     icpBlock,
     rememberedBlock,
     nudgeBlock,
-    persona,
-    toolsBlock,
     skillsBlock,
     skillsRefusalBlock,
-    CHART_INSTRUCTIONS,
+    toolsBlock,
     activeSkillHint,
     autonomousBlock,
   ]
