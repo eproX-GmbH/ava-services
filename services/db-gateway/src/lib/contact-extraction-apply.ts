@@ -82,6 +82,12 @@ export interface CompanyContactPersistRequest {
      *  chain so we don't TTL-cleanup mid-pipeline (which would
      *  spuriously close employments the next event was about to
      *  reconfirm). */
+    /** T2 (v0.1.509) — Anbieter aus der Datenschutzerklaerung. */
+    techVendors?: Array<{
+      name: string;
+      kategorie: string;
+      beleg?: string;
+    }>;
     cleanupTtlMs?: number;
   };
 }
@@ -143,8 +149,29 @@ export async function applyCompanyContactPersist(
   // anderen auf INACTIVE — pro Crawl ein Flapping aus falschen
   // "Telefon geaendert"-Signalen. Adresse bleibt Single-Value
   // (Sitz-Wechsel ist ein echtes Signal).
+  // T2 (v0.1.509) — tech:<kategorie> ist MULTI-VALUE: eine Firma nennt
+  // legitim mehrere Systeme je Kategorie (z. B. zwei Analytics-Dienste).
+  // Ohne das wuerde jeder neue Treffer die anderen auf INACTIVE setzen
+  // und pro Lauf ein Flapping erzeugen — derselbe Fehler, der bei
+  // Telefonnummern schon einmal auftrat.
+  const TECH_KATEGORIEN = [
+    "crm",
+    "marketing",
+    "analytics",
+    "support",
+    "shop",
+    "hosting",
+    "kommunikation",
+    "hr",
+    "zahlung",
+    "consent",
+  ];
   const COMPANY_POLICY: ApplyObservationPolicy = {
-    multiValueFields: new Set<string>(["phone", "email"]),
+    multiValueFields: new Set<string>([
+      "phone",
+      "email",
+      ...TECH_KATEGORIEN.map((k) => `tech:${k}`),
+    ]),
     changeFields: new Set<string>(["address", "websiteUrl"]),
     inactiveOnNewForFields: new Set<string>(["address"]),
   };
@@ -182,6 +209,46 @@ export async function applyCompanyContactPersist(
     }
 
     if (companyObs.length > 0) {
+      await reconcileEntity(prisma, {
+        entityType: EntityType.COMPANY,
+        entityId: companyId,
+        companyId,
+        runId,
+        observedAfter: null,
+        policy: COMPANY_POLICY,
+      });
+    }
+  }
+
+  // ---- 1b. Eingesetzte Systeme (T2, v0.1.509) ------------------------------
+  //
+  // Anbieter aus der Datenschutzerklaerung. Eigener Block statt in
+  // companyExtracts, weil die Belegstelle (Textausschnitt) mitwandert:
+  // sie landet in Observation.evidence und macht jeden Treffer
+  // nachpruefbar, ohne die Seite erneut zu laden.
+  if (result.techVendors && result.techVendors.length > 0) {
+    let techObs = 0;
+    for (const v of result.techVendors) {
+      const name = (v.name ?? "").trim();
+      const kat = (v.kategorie ?? "").trim().toLowerCase();
+      if (!name || !TECH_KATEGORIEN.includes(kat)) continue;
+      const created = await createObservationIdempotent(prisma, {
+        entityType: EntityType.COMPANY,
+        entityId: companyId,
+        companyId,
+        field: `tech:${kat}`,
+        value: name,
+        source,
+        evidenceUrl,
+        evidence: v.beleg ? v.beleg.slice(0, 500) : null,
+        runId,
+      });
+      if (created?.id) {
+        observationsCreated += 1;
+        techObs += 1;
+      }
+    }
+    if (techObs > 0) {
       await reconcileEntity(prisma, {
         entityType: EntityType.COMPANY,
         entityId: companyId,

@@ -1131,6 +1131,8 @@ function ContactsTab({ id }: { id: string }) {
         </div>
       </article>
 
+      <TechStackPanel facts={companyFacts} belege={belege} />
+
       <FactGroup title="Telefon" kind="phone" facts={phones} belege={belege} />
       <FactGroup title="E-Mail" kind="email" facts={emails} belege={belege} />
       <FactGroup
@@ -1225,6 +1227,99 @@ function UrlIcon({ href }: { href: string }) {
 function looksLikeHttpUrl(value: string): boolean {
   if (!value) return false;
   return /^https?:\/\/[^\s]+$/i.test(value.trim());
+}
+
+// T3 (v0.1.509) — "Eingesetzte Systeme" aus der Datenschutzerklaerung.
+// Fakten liegen als `tech:<kategorie>` an der Firma. Reihenfolge =
+// Aussagekraft: CRM und Marketing sind das eigentliche Signal,
+// Consent-/Hosting-Dienste eher Rauschen.
+const TECH_KATEGORIE_LABEL: Record<string, string> = {
+  crm: "CRM",
+  marketing: "Marketing-Automation",
+  support: "Support & Ticketing",
+  shop: "Shop",
+  hr: "HR & Recruiting",
+  kommunikation: "Kommunikation",
+  analytics: "Analyse & Tracking",
+  zahlung: "Zahlung",
+  hosting: "Hosting & Cloud",
+  consent: "Einwilligungs-Verwaltung",
+};
+const TECH_REIHENFOLGE = [
+  "crm",
+  "marketing",
+  "support",
+  "shop",
+  "hr",
+  "kommunikation",
+  "analytics",
+  "zahlung",
+  "hosting",
+  "consent",
+];
+
+function TechStackPanel({
+  facts,
+  belege,
+}: {
+  facts: Fact[];
+  belege: Map<string, string>;
+}) {
+  const tech = facts.filter(
+    (f) => (f.field ?? "").startsWith("tech:") && f.status === "ACTIVE",
+  );
+  if (tech.length === 0) return null;
+
+  const proKategorie = new Map<string, Fact[]>();
+  for (const f of tech) {
+    const kat = (f.field ?? "").slice("tech:".length);
+    const arr = proKategorie.get(kat) ?? [];
+    arr.push(f);
+    proKategorie.set(kat, arr);
+  }
+  const sortiert = TECH_REIHENFOLGE.filter((k) => proKategorie.has(k)).concat(
+    [...proKategorie.keys()].filter((k) => !TECH_REIHENFOLGE.includes(k)),
+  );
+
+  return (
+    <article className="panel">
+      <h3 style={{ marginTop: 0 }}>
+        Eingesetzte Systeme ({numFmt.format(tech.length)})
+      </h3>
+      <p className="muted" style={{ marginTop: 0, fontSize: 12 }}>
+        Aus der Datenschutzerklärung der Firma — dort müssen
+        Auftragsverarbeiter benannt werden. Eine Nennung belegt eine
+        Geschäftsbeziehung, nicht zwingend den aktiven Betrieb: solche
+        Seiten sind oft veraltet oder aus Vorlagen erzeugt.
+      </p>
+      <ul className="list">
+        {sortiert.map((kat) => (
+          <li key={kat} className="fact-row">
+            <span className="muted">
+              {TECH_KATEGORIE_LABEL[kat] ?? kat}:
+            </span>
+            <span className="fact-value">
+              {(proKategorie.get(kat) ?? [])
+                .map((f) => f.value ?? "")
+                .filter(Boolean)
+                .join(", ")}
+            </span>
+            <span className="fact-meta">
+              {(() => {
+                const erster = (proKategorie.get(kat) ?? [])[0];
+                const obsId =
+                  erster && typeof erster.lastObsId === "string"
+                    ? erster.lastObsId
+                    : null;
+                const url = obsId ? belege.get(obsId) : undefined;
+                return url ? <QuellenLink url={url} /> : null;
+              })()}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </article>
+  );
 }
 
 function FactGroup({
