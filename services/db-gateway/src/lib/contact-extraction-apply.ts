@@ -89,6 +89,8 @@ export interface CompanyContactPersistRequest {
 type Log = typeof Logger;
 
 /** Single-entry orchestrator the persist-bus calls. */
+import { behandleFirmenwert } from "./contact-extraction/firmenname-filter";
+
 export async function applyCompanyContactPersist(
   data: PersistEvent<CompanyContactPersistRequest["result"]>,
   log: Log,
@@ -109,6 +111,25 @@ export async function applyCompanyContactPersist(
     update: {},
     create: { id: companyId },
   });
+  // v0.1.497 — Firmenname fuer den Abteilungs-/Titel-Filter (Zwilling
+  // des Producer-Filters; schuetzt Altversionen + alle Quellen).
+  const companyNameRow = await prisma.company.findUnique({
+    where: { id: companyId },
+    select: { name: true },
+  });
+  const eventName =
+    typeof (result as { companyName?: unknown }).companyName === "string"
+      ? ((result as { companyName?: string }).companyName as string)
+      : null;
+  const bekannterFirmenname = eventName ?? companyNameRow?.name ?? null;
+  // Backfill: die Company-Zeile entsteht hier oft nur als {id} —
+  // ohne Namen greift kein Firmennamen-Filter und die UI zeigt ids.
+  if (eventName && !companyNameRow?.name) {
+    await prisma.company.update({
+      where: { id: companyId },
+      data: { name: eventName },
+    });
+  }
 
   let observationsCreated = 0;
 
@@ -180,10 +201,13 @@ export async function applyCompanyContactPersist(
     // gemäß § 10 Abs. 3 MDStV" ist keine Position) + Namens-Cleanup.
     // Der bereinigte Kandidat geht auch in die Observations (vorher
     // floss dort das rohe `p` ein — latenter Drift zum Identity-Pfad).
+    const rohTitle = sanitizeRole(p.title) ?? undefined;
     const candidate: EmployeeCandidate = {
       fullName: sanitizePersonName(p.fullName),
-      title: sanitizeRole(p.title) ?? undefined,
-      department: p.department,
+      // v0.1.497 — Firmenname ist kein Titel und keine Abteilung;
+      // Werte, die ihn nur ENTHALTEN, werden gestutzt statt gedroppt.
+      title: behandleFirmenwert(rohTitle, bekannterFirmenname),
+      department: behandleFirmenwert(p.department, bekannterFirmenname),
       linkedinUrl: p.linkedinUrl,
       xingUrl: p.xingUrl,
       email: p.email,
