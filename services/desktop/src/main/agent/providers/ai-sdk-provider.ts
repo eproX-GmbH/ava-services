@@ -413,9 +413,27 @@ export class AiSdkProvider extends EventEmitter implements LlmProvider {
     // providers (OpenAI / Ollama / Google), so leaving the markers
     // in place for those is a no-op. OpenAI does its own automatic
     // caching ≥1024 tokens regardless.
+    // v0.1.500 — dritter Breakpoint: die GESPRAECHSHISTORIE. Bisher
+    // waren nur System-Prompt und Tools markiert; die mit jeder Runde
+    // wachsende Historie (Tool-Ergebnisse sind oft die groessten
+    // Bloecke!) wurde bei Anthropic jede Runde voll neu berechnet.
+    // OpenAI/Google cachen den kompletten Praefix automatisch — nur
+    // Anthropic braucht die explizite Marke. Sie wandert jede Runde
+    // ans Ende; Anthropic matcht den laengsten passenden Praefix, der
+    // vorherige Cache-Eintrag trifft also weiterhin. Anthropic erlaubt
+    // 4 Breakpoints (MAX_CACHE_BREAKPOINTS im SDK), wir nutzen 3.
     const modelMessages = toModelMessages(req.messages);
-    const cachedMessages = modelMessages.map((m) => {
+    const letzterIndex = modelMessages.length - 1;
+    const cachedMessages = modelMessages.map((m, i) => {
       if (m.role === "system") {
+        return {
+          ...m,
+          providerOptions: {
+            anthropic: { cacheControl: { type: "ephemeral" as const } },
+          },
+        };
+      }
+      if (this.kind === "anthropic" && i === letzterIndex) {
         return {
           ...m,
           providerOptions: {
