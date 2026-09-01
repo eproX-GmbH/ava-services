@@ -148,6 +148,13 @@ function LogsView({ producer, runId }: { producer: string; runId: string }) {
     });
     const off = window.api.producers.logs.onLine((event: ProducerLogEvent) => {
       if (event.producer !== producer) return;
+      // v0.1.515 — BUGFIX: im Lauf-Modus auch die LIVE-Zeilen auf den
+      // geoeffneten Lauf filtern. Der Backfill war gefiltert
+      // (tailForRun), der Stream aber nur auf den Producer — nach dem
+      // Oeffnen stroemten Zeilen ANDERER Firmen rein (gemeldet
+      // 2026-09-01). Zeilen ohne Lauf-Zuordnung (Boot-Output vor dem
+      // ersten received) bleiben draussen — konsistent zum Backfill.
+      if (mode === "run" && hasRealRunId && event.runId !== runId) return;
       setLines((prev) => {
         // Cap renderer-side too — main caps at 5000, but a long
         // session would still grow the React state unboundedly.

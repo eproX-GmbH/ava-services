@@ -155,6 +155,8 @@ export interface ProducerLogEvent {
   /** Producer name (matches ProducerStatus.name). */
   producer: string;
   line: ProducerLogLine;
+  /** v0.1.515 — Lauf-Zuordnung der Zeile (siehe producer-log-buffer). */
+  runId?: string;
 }
 
 // ---- Producer screenshots (v0.1.50) ---------------------------------------

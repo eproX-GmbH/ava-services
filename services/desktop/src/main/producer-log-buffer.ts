@@ -44,6 +44,10 @@ export interface ProducerLogLine {
 export interface ProducerLogEvent {
   producer: string;
   line: ProducerLogLine;
+  /** v0.1.515 — Run, dem die Zeile zugeordnet wurde (current-run-Latch).
+   *  Der Drill-Down filtert Live-Zeilen damit auf den geoeffneten Lauf;
+   *  vorher stroemten Zeilen ANDERER Firmen ungefiltert rein. */
+  runId?: string;
 }
 
 class ProducerLogBuffer extends EventEmitter {
@@ -164,7 +168,13 @@ class ProducerLogBuffer extends EventEmitter {
         const tag = stream === "stderr" ? "ERR" : "OUT";
         fileTarget.write(`${ts} ${tag} ${line}\n`);
       }
-      this.emit("line", { producer, line: entry } satisfies ProducerLogEvent);
+      this.emit("line", {
+        producer,
+        line: entry,
+        ...(this.currentRun.get(producer)
+          ? { runId: this.currentRun.get(producer) }
+          : {}),
+      } satisfies ProducerLogEvent);
     }
   }
 
