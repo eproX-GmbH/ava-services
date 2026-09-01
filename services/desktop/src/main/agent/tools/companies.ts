@@ -14,6 +14,9 @@ import { read as readLinkedInSettings } from "../../linkedin/store";
 
 interface Ctx {
   gateway: GatewayClient;
+  /** T5 — Firmen des Tenants (aus den eigenen Vorgaengen). Lazy, weil
+   *  der Aufruf das Gateway befragt; nur company_tech_stack braucht ihn. */
+  getTenantCompanyIds: () => Promise<string[]>;
 }
 
 function pickFirst<T>(...vals: T[]): T | undefined {
@@ -186,6 +189,74 @@ export function buildCompanyTools(ctx: Ctx): Tool[] {
         { signal: c.signal },
       ),
     preview: () => "contacts fetched",
+  });
+
+  // T5 (v0.1.510) — firmenuebergreifend: "Welche meiner Firmen nutzen
+  // HubSpot?" Quelle sind die tech:<kategorie>-Fakten aus der
+  // Datenschutzerklaerung. Read-only, daher ohne confirmAction.
+  const techStack = defineTool({
+    name: "company_tech_stack",
+    summary:
+      "Eingesetzte Systeme der eigenen Firmen (CRM, Hosting, Marketing) — optional nach Anbieter oder Kategorie filtern.",
+    category: "firmen systeme technologie",
+    description:
+      "Listet die eingesetzten Systeme der verarbeiteten Firmen. Quelle ist " +
+      "ausschliesslich die Datenschutzerklaerung der jeweiligen Website — dort " +
+      "muessen Auftragsverarbeiter benannt werden. Mit `vendor` nach einem " +
+      "Anbieter filtern (Teiltreffer, z. B. 'hubspot'), mit `kategorie` nach " +
+      "crm | marketing | analytics | support | shop | hosting | kommunikation | " +
+      "hr | zahlung | consent. WICHTIG fuer die Antwort: eine Nennung belegt " +
+      "eine Geschaeftsbeziehung, NICHT zwingend den aktiven Betrieb — solche " +
+      "Seiten sind oft veraltet oder aus Vorlagen erzeugt. Sag das dazu, wenn " +
+      "du daraus Schluesse ziehst.",
+    parameters: {
+      type: "object",
+      properties: {
+        vendor: { type: "string", description: "Anbieter-Teiltreffer, z. B. 'hubspot'." },
+        kategorie: { type: "string", description: "Kategorie-Filter, z. B. 'crm'." },
+      },
+    },
+    schema: yup.object({
+      vendor: yup.string().trim().min(2).max(80).optional(),
+      kategorie: yup.string().trim().min(2).max(40).optional(),
+    }),
+    preview: (r) => {
+      const n = (r as { treffer?: unknown[] })?.treffer?.length ?? 0;
+      return `${n} Treffer`;
+    },
+    run: async (args, c) => {
+      const companyIds = await ctx.getTenantCompanyIds();
+      if (companyIds.length === 0) {
+        return {
+          treffer: [],
+          hinweis:
+            "Noch keine verarbeiteten Firmen gefunden — erst Firmen importieren und verarbeiten lassen.",
+        };
+      }
+      const res = await gateway.request<{
+        items: Array<{
+          companyId: string;
+          companyName: string | null;
+          kategorie: string;
+          vendor: string;
+          evidenceUrl: string | null;
+        }>;
+      }>("/v1/companies/tech-stack", {
+        method: "POST",
+        body: {
+          companyIds: companyIds.slice(0, 300),
+          ...(args.vendor ? { vendor: args.vendor } : {}),
+          ...(args.kategorie ? { kategorie: args.kategorie } : {}),
+        },
+        signal: c.signal,
+      });
+      return {
+        treffer: res.items,
+        durchsuchteFirmen: Math.min(companyIds.length, 300),
+        hinweis:
+          "Quelle ist die Datenschutzerklaerung: eine Nennung belegt eine Geschaeftsbeziehung, nicht zwingend den aktiven Betrieb.",
+      };
+    },
   });
 
   const structuredContent = defineTool({
@@ -562,5 +633,6 @@ export function buildCompanyTools(ctx: Ctx): Tool[] {
     linkedInSignals,
     crmSummary,
     linkedinLookup,
+    techStack,
   ];
 }

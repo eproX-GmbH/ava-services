@@ -579,6 +579,88 @@ companiesRouter.openapi(linkedinProfilesRoute, async (c) => {
   return c.json({ items: r.rows }, 200);
 });
 
+// ---- POST /v1/companies/tech-stack -----------------------------------------
+//
+// T5 (v0.1.510) — firmenuebergreifende Abfrage der eingesetzten Systeme
+// ("Welche meiner Firmen nutzen HubSpot?"). Quelle sind die
+// `tech:<kategorie>`-Fakten, die der company-contact-Producer aus der
+// Datenschutzerklaerung schreibt. Gleiches Muster wie die
+// Watchlist-Pool-Route: der Desktop schickt seine Firmen-Liste mit.
+
+const techStackRoute = createRoute({
+  method: "post",
+  path: "/companies/tech-stack",
+  tags: [tag],
+  summary: "Eingesetzte Systeme je Firmen-Liste (aus Datenschutzerklaerung)",
+  request: {
+    body: {
+      content: {
+        "application/json": {
+          schema: z.object({
+            companyIds: z.array(z.string().min(2)).min(1).max(300),
+            /** Optionaler Anbieter-Filter, Teiltreffer, case-insensitiv. */
+            vendor: z.string().min(2).max(80).optional(),
+            /** Optionaler Kategorie-Filter, z. B. "crm". */
+            kategorie: z.string().min(2).max(40).optional(),
+          }),
+        },
+      },
+    },
+  },
+  responses: {
+    200: {
+      content: {
+        "application/json": {
+          schema: z.object({
+            items: z.array(
+              z.object({
+                companyId: z.string(),
+                companyName: z.string().nullable(),
+                kategorie: z.string(),
+                vendor: z.string(),
+                evidenceUrl: z.string().nullable(),
+              }),
+            ),
+          }),
+        },
+      },
+      description: "eingesetzte Systeme",
+    },
+    ...errorResponses,
+  },
+});
+
+companiesRouter.openapi(techStackRoute, async (c) => {
+  const { companyIds, vendor, kategorie } = c.req.valid("json");
+  const pool = getProducerPool("company-contact");
+  const r = await pool.query<{
+    companyId: string;
+    companyName: string | null;
+    kategorie: string;
+    vendor: string;
+    evidenceUrl: string | null;
+  }>(
+    `SELECT f."companyId"                     AS "companyId",
+            co.name                           AS "companyName",
+            substring(f.field from 6)         AS kategorie,
+            f.value                           AS vendor,
+            o."evidenceUrl"                   AS "evidenceUrl"
+       FROM "Fact" f
+       LEFT JOIN "Company" co ON co.id = f."companyId"
+       LEFT JOIN "Observation" o ON o.id = f."lastObsId"
+      WHERE f."entityType" = 'COMPANY'
+        AND f.status = 'ACTIVE'
+        AND f.field LIKE 'tech:%'
+        AND f."companyId" = ANY($1::text[])
+        AND ($2::text IS NULL OR f.value ILIKE '%' || $2 || '%')
+        AND ($3::text IS NULL OR f.field = 'tech:' || $3)
+      ORDER BY co.name NULLS LAST, f.field, f.value
+      LIMIT 1000`,
+    [companyIds, vendor ?? null, kategorie ?? null],
+  );
+  return c.json({ items: r.rows }, 200);
+});
+
 // ---- GET /v1/companies/:companyId/profile-changes --------------------------
 //
 // v0.1.460 — Geschäftsführer-Wechsel (und künftige Profil-Diffs).

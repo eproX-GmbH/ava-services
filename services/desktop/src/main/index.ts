@@ -1666,6 +1666,7 @@ const agentRegistry = buildReadOnlyRegistry({
   onCompanyWindowChanged: () => recycleCompanyContactRef?.(),
   getPersonenRadarStore: () => personenRadarStore,
   getPersonenRadarSupervisor: () => personenRadarSupervisor,
+  getTenantCompanyIds: () => collectTenantCompanyIds(gatewayClient, 250),
   getPublicationMode: () => publicationStore.getMode(),
   setPublicationMode: (mode: "lazy" | "eager") => publicationStore.setMode(mode),
   discoveryAudit: ({ action, severity, summary, metadata }) => {

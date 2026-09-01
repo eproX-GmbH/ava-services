@@ -5,9 +5,9 @@ NICHT direkt bearbeiten — die Quelle der Wahrheit ist `services/desktop/src/ma
 Lauf via `pnpm -F @ava/desktop tools:doc` (oder automatisch via `build:typecheck`).
 
 Stand: 2026-09-01
-Anzahl Tools: 197
+Anzahl Tools: 198
 
-## Firmen (12)
+## Firmen (13)
 
 ### `company_contacts`
 
@@ -101,6 +101,14 @@ Get extracted structured content (facts, observations, signals) the cascade has 
 
 _Parameter:_
 - `companyId: string` (required)
+
+### `company_tech_stack`
+
+_Datei:_ `services/desktop/src/main/agent/tools/companies.ts`
+
+Listet die eingesetzten Systeme der verarbeiteten Firmen. Quelle ist ausschliesslich die Datenschutzerklaerung der jeweiligen Website — dort muessen Auftragsverarbeiter benannt werden. Mit `vendor` nach einem Anbieter filtern (Teiltreffer, z. B. 'hubspot'), mit `kategorie` nach crm | marketing | analytics | support | shop | hosting | kommunikation | hr | zahlung | consent. WICHTIG fuer die Antwort: eine Nennung belegt eine Geschaeftsbeziehung, NICHT zwingend den aktiven Betrieb — solche Seiten sind oft veraltet oder aus Vorlagen erzeugt. Sag das dazu, wenn du daraus Schluesse ziehst.
+
+_Parameter:_ keine.
 
 ### `company_website`
 

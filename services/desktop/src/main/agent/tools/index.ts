@@ -165,6 +165,8 @@ export function buildReadOnlyRegistry(deps: {
   onCompanyWindowChanged?: () => void;
   getPersonenRadarStore: () => import("../../linkedin/personen-radar/store").PersonenRadarStore | null;
   getPersonenRadarSupervisor: () => import("../../linkedin/personen-radar/supervisor").PersonenRadarSupervisor | null;
+  /** T5 — Firmen des Tenants fuer firmenuebergreifende Abfragen. */
+  getTenantCompanyIds: () => Promise<string[]>;
   getPublicationMode?: () => "lazy" | "eager";
   setPublicationMode?: (mode: "lazy" | "eager") => "lazy" | "eager";
   /** v0.1.475 — Plan-Tier fuer das Chat-Blur-Gate der Discovery-Tools. */
@@ -178,7 +180,10 @@ export function buildReadOnlyRegistry(deps: {
   }) => void;
 }): ToolRegistry {
   const registry = new ToolRegistry();
-  const ctx = { gateway: deps.gateway };
+  const ctx = {
+    gateway: deps.gateway,
+    getTenantCompanyIds: deps.getTenantCompanyIds,
+  };
   for (const t of buildCompanyTools(ctx)) registry.register(t);
   for (const t of buildTransactionTools(ctx)) registry.register(t);
   for (const t of buildEvaluationTools(ctx)) registry.register(t);

@@ -36,6 +36,14 @@ const PROFILE_MAX_AGE_MS = 6 * 30 * 24 * 3600 * 1000; // A9: 6 Monate
 const SUBPAGE_RE =
   /impressum|imprint|leistung|service|angebot|produkt|portfolio|referenz|ueber-?uns|über-?uns|about|unternehmen|kompetenz|branche/i;
 
+// T4 (v0.1.510) — Datenschutzseite GETRENNT einsammeln. Sie gehoert
+// nicht in die Leistungs-Unterseiten (dort wuerde sie ein Platz aus
+// MAX_SUBPAGES verbrauchen), traegt aber als einzige Seite die
+// eingesetzten Systeme: die DSGVO zwingt zur Nennung der
+// Auftragsverarbeiter. Genau EINE solche Seite, gedeckelter Ausschnitt.
+const PRIVACY_RE = /datenschutz|privacy|data-protection/i;
+const MAX_PRIVACY_TEXT = 8_000;
+
 const profileSchema = yup.object({
   branche: yup.string().trim().min(2).max(120).required(),
   kurzbeschreibung: yup.string().trim().min(20).max(500).required(),
@@ -44,6 +52,9 @@ const profileSchema = yup.object({
   region: yup.string().trim().max(160).default(""),
   groessenIndiz: yup.string().trim().max(200).default(""),
   keywords: yup.array().of(yup.string().trim().min(2).max(60).required()).max(12).default([]),
+  /** T4 — eingesetzte Systeme/Dienstleister, ausschliesslich aus dem
+   *  Datenschutz-Abschnitt (CRM, Hosting, Marketing-Tools ...). */
+  systeme: yup.array().of(yup.string().trim().min(2).max(60).required()).max(12).default([]),
 });
 
 export type MiniProfile = yup.InferType<typeof profileSchema>;
@@ -172,6 +183,31 @@ export function pickSubpageLinks(html: string, base: URL, coreDomain: string): s
   return out.slice(0, MAX_SUBPAGES);
 }
 
+/** Erste Datenschutz-Seite auf der Startseite. Getrennt von
+ *  pickSubpageLinks, damit das Unterseiten-Budget unangetastet bleibt. */
+export function pickPrivacyLink(
+  html: string,
+  base: URL,
+  coreDomain: string,
+): string | null {
+  const re = /href\s*=\s*["']([^"'#]+)["']/gi;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(html)) !== null) {
+    const href = m[1]!;
+    if (!PRIVACY_RE.test(href)) continue;
+    try {
+      const u = new URL(href, base);
+      if (!u.hostname.endsWith(coreDomain)) continue;
+      u.hash = "";
+      u.search = "";
+      return u.toString();
+    } catch {
+      /* unbrauchbarer Link */
+    }
+  }
+  return null;
+}
+
 // ---- Browser-Fallback ------------------------------------------------------
 //
 // Plain-HTTP scheitert an JS-gerenderten Seiten (SPA liefert leeres
@@ -279,6 +315,21 @@ export async function crawlSite(
     const html = await fetchPageText(link);
     if (html) parts.push(`[Seite ${path}] ${htmlToText(html)}`);
   }
+  // T4 — Datenschutzseite ans Ende, klar markiert. Der Profil-Prompt
+  // weist das Modell an, daraus NUR die genannten Dienstleister zu
+  // ziehen (nicht die Rechtstexte selbst).
+  const privacyLink = pickPrivacyLink(homeHtml, base, coreDomain);
+  if (privacyLink) {
+    const path = new URL(privacyLink).pathname;
+    if (isAllowed(path, disallows)) {
+      const html = await fetchPageText(privacyLink);
+      if (html) {
+        parts.push(
+          `[Datenschutzerklaerung ${path}] ${htmlToText(html).slice(0, MAX_PRIVACY_TEXT)}`,
+        );
+      }
+    }
+  }
   const text = parts.join("\n\n").trim();
   return text.length >= 200 ? text : null;
 }
@@ -298,7 +349,14 @@ export async function buildProfile(
     'Antworte NUR als JSON: {"branche": "...", "kurzbeschreibung": ' +
     '"2-3 Saetze", "leistungen": ["..."], "zielkunden": "...", ' +
     '"region": "...", "groessenIndiz": "z. B. Teamgroesse/Standorte, ' +
-    'falls erkennbar, sonst leer", "keywords": ["..."]}';
+    'falls erkennbar, sonst leer", "keywords": ["..."], "systeme": ["..."]}' +
+    "\n\nZu \"systeme\": NUR aus einem mitgelieferten Abschnitt " +
+    "[Datenschutzerklaerung ...] die dort NAMENTLICH genannten " +
+    "Dienstleister und Software-Anbieter uebernehmen (z. B. CRM, " +
+    "Hosting, Newsletter, Analyse). Die Firma selbst, Anwaelte, " +
+    "Datenschutzbeauftragte und Behoerden gehoeren NICHT dazu. Gibt es " +
+    "keinen solchen Abschnitt oder keine Nennungen: leere Liste. " +
+    "Niemals aus Weltwissen ergaenzen.";
   const user =
     `Firma: ${candidate.name}` +
     (candidate.city ? ` (${candidate.city})` : "") +
@@ -333,6 +391,11 @@ export function renderProfileText(name: string, city: string | null, p: MiniProf
   if (p.region) lines.push(`Region: ${p.region}.`);
   if (p.groessenIndiz) lines.push(`Groesse: ${p.groessenIndiz}.`);
   if (p.keywords.length > 0) lines.push(`Stichworte: ${p.keywords.join(", ")}.`);
+  // T4 — fliesst in Embedding UND LLM-Urteil ein: damit wird ein ICP wie
+  // "Firmen mit Microsoft-Stack" ueberhaupt matchbar.
+  if (p.systeme && p.systeme.length > 0) {
+    lines.push(`Eingesetzte Systeme: ${p.systeme.join(", ")}.`);
+  }
   return lines.join("\n");
 }
 

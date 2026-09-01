@@ -1,6 +1,6 @@
 # Plan: Eingesetzte Systeme aus der Datenschutzerklaerung
 
-Stand: 2026-09-01 · Status: ENTWURF, wartet auf Freigabe
+Stand: 2026-09-01 · Status: T1-T5 UMGESETZT (v0.1.509/510)
 
 ## 1. Idee und Nutzen
 
@@ -94,4 +94,18 @@ LLM-Budget im Kontakt-Pfad.
 - Rechtlich unkritisch: veroeffentlichte Firmenangaben, keine
   Personendaten.
 
-STATUS: Entwurf, noch nicht beauftragt.
+STATUS: T1-T5 umgesetzt (v0.1.509 + v0.1.510).
+
+Nachtrag zur Erkennung (User-Einwand 2026-09-01): ein festes
+Woerterbuch ist grundsaetzlich unvollstaendig — quikk.de nennt
+"Website-Hosting: Vercel Inc." woertlich, das Woerterbuch kannte es
+nicht, und die Hosting-Info ist genauso interessant wie das CRM.
+Konsequenz: Woerterbuch auf 73 Anbieter erweitert (Schwerpunkt
+Hosting/PaaS) UND die offene LLM-Stufe aus §3 von "optional" auf
+"fest eingebaut" hochgestuft — mit der Halluzinationssperre
+(woertlicher Textabgleich) als Bedingung.
+
+T4 loest den Radar OHNE Woerterbuch-Zwilling: der Profiler haengt die
+Datenschutzseite an den ohnehin gecrawlten Text und laesst das Modell
+im selben Aufruf ein Feld `systeme` fuellen. Das landet im
+profileText und wirkt damit auf Embedding UND LLM-Urteil.
