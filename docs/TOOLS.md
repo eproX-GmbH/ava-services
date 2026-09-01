@@ -106,7 +106,7 @@ _Parameter:_
 
 _Datei:_ `services/desktop/src/main/agent/tools/companies.ts`
 
-Listet die eingesetzten Systeme der verarbeiteten Firmen. Quelle ist ausschliesslich die Datenschutzerklaerung der jeweiligen Website — dort muessen Auftragsverarbeiter benannt werden. Mit `vendor` nach einem Anbieter filtern (Teiltreffer, z. B. 'hubspot'), mit `kategorie` nach crm | marketing | analytics | support | shop | hosting | kommunikation | hr | zahlung | consent. WICHTIG fuer die Antwort: eine Nennung belegt eine Geschaeftsbeziehung, NICHT zwingend den aktiven Betrieb — solche Seiten sind oft veraltet oder aus Vorlagen erzeugt. Sag das dazu, wenn du daraus Schluesse ziehst.
+Listet die eingesetzten Systeme der verarbeiteten Firmen. Quelle ist ausschliesslich die Datenschutzerklaerung der jeweiligen Website — dort muessen Auftragsverarbeiter benannt werden. Mit `vendor` nach einem Anbieter filtern (Teiltreffer, z. B. 'hubspot'), mit `kategorie` nach crm | erp | buchhaltung | marketing | analytics | support | shop | hosting | kommunikation | produktivitaet | hr | zahlung | consent. WICHTIG fuer die Antwort: eine Nennung belegt eine Geschaeftsbeziehung, NICHT zwingend den aktiven Betrieb — solche Seiten sind oft veraltet oder aus Vorlagen erzeugt. Sag das dazu, wenn du daraus Schluesse ziehst.
 
 _Parameter:_ keine.
 

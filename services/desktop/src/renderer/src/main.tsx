@@ -1,7 +1,7 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { HashRouter, Route, Routes, Navigate } from "react-router-dom";
+import { HashRouter, Route, Routes, Navigate, Link } from "react-router-dom";
 // Plus Jakarta Sans — Corporate Trust display face. Bundled locally
 // (CSP `font-src 'self' data:` rules out Google Fonts CDN). The five
 // weights cover Regular/Medium/SemiBold/Bold/ExtraBold called for in
@@ -83,6 +83,26 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
               <Route path="/transactions/:id/evaluations" element={<Evaluations />} />
               <Route path="/evaluations/best-matches/:id" element={<BestMatchDetail />} />
               <Route path="/evaluations/chats/:sessionId" element={<ChatSession />} />
+              {/* v0.1.512 — Auffangroute. Ohne sie rendert ein unbekannter
+                  Pfad eine LEERE Seite im App-Rahmen (gemeldet 2026-09-01:
+                  Chat-Links auf erfundene Pfade). Lieber eine ehrliche
+                  Meldung als ein weisser Bereich. */}
+              <Route
+                path="*"
+                element={
+                  <section className="page">
+                    <h2>Seite nicht gefunden</h2>
+                    <p className="muted">
+                      Diese Adresse gibt es in AVA nicht. Möglicherweise
+                      stammt der Link aus einer Chat-Antwort und zeigt ins
+                      Leere.
+                    </p>
+                    <p>
+                      <Link to="/chat">Zurück zum Chat</Link>
+                    </p>
+                  </section>
+                }
+              />
             </Routes>
           </AppShell>
         </App>

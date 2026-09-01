@@ -3107,13 +3107,40 @@ function extractCompanyId(target: string): string {
   return "";
 }
 
+// v0.1.512 — Erlaubte Wurzel-Segmente der App. Der Router hat KEINE
+// Catch-all-Route: ein Link auf einen unbekannten Pfad rendert eine
+// leere Seite im App-Rahmen — genau der gemeldete Fehler "Link fuehrt
+// auf eine nicht existierende Seite". Modelle erfinden solche Pfade
+// gerne ("/firmen/xyz" statt "/companies/xyz"). Deshalb wird hier
+// gegen die tatsaechlichen Routen aus main.tsx geprueft; alles andere
+// faellt auf die Text-Darstellung zurueck.
+const SPA_WURZELN = new Set([
+  "chat",
+  "whoami",
+  "settings",
+  "ingest",
+  "alerts",
+  "linkedin",
+  "inbox",
+  "transactions",
+  "companies",
+  "alle-firmen",
+  "radar",
+  "icp-assistent",
+  "evaluations",
+]);
+
 // Interner SPA-Pfad (z. B. `/transactions`, `#/meldungen`) → normalisiert
 // auf einen führenden Slash, damit er per <Link> geroutet werden kann.
-// Gibt null zurück, wenn es kein interner Pfad ist.
+// Gibt null zurück, wenn es kein interner Pfad ist ODER die Route gar
+// nicht existiert.
 function toSpaPath(target: string): string | null {
-  if (target.startsWith("#/")) return target.slice(1); // "#/x" -> "/x"
-  if (target.startsWith("/")) return target; // "/x"
-  return null;
+  let pfad: string | null = null;
+  if (target.startsWith("#/")) pfad = target.slice(1); // "#/x" -> "/x"
+  else if (target.startsWith("/")) pfad = target; // "/x"
+  if (!pfad) return null;
+  const wurzel = pfad.split("/")[1]?.split("?")[0]?.split("#")[0] ?? "";
+  return SPA_WURZELN.has(wurzel) ? pfad : null;
 }
 
 const MARKDOWN_COMPONENTS: Components = {
@@ -3189,18 +3216,20 @@ const MARKDOWN_COMPONENTS: Components = {
       );
     }
 
-    // 4) Unbekannter / leerer / nackter href → als Text-Link rendern,
-    //    aber NIE hart navigieren (preventDefault). Sonst lädt der
-    //    Browser index.html neu und der User landet wieder im Chat.
+    // 4) Unbekannter / leerer / nackter href → als REINEN TEXT rendern.
+    //
+    // v0.1.512 — vorher stand hier ein <a class="chat-link"> mit
+    // preventDefault: es SAH aus wie ein Link, tat aber nichts. Der
+    // Nutzer klickt ins Leere und haelt die App fuer kaputt (gemeldet
+    // 2026-09-01 an der Import-Vorschau). Ursache dort: die Vorschau
+    // liefert bewusst KEINE companyIds — die Firmen sind noch nicht
+    // importiert —, das Modell erfand also Ziele. Ein Link, hinter dem
+    // nichts liegt, darf gar nicht erst wie einer aussehen; dieselbe
+    // Ehrlichkeits-Regel wie bei Vollzugsmeldungen.
     return (
-      <a
-        href={target || undefined}
-        className="chat-link"
-        onClick={(e) => e.preventDefault()}
-        {...rest}
-      >
+      <span className="chat-link-dead" title="Kein Ziel hinterlegt">
         {children}
-      </a>
+      </span>
     );
   },
   code({ className, children, ...rest }) {

@@ -2023,6 +2023,15 @@ code, pre { font-family: var(--font-mono); font-size: 12px; }
   text-underline-offset: 2px;
   font-weight: 500;
 }
+
+/* v0.1.512 — Link ohne Ziel: als normaler Text darstellen. Vorher sah
+   er aus wie ein Link, tat aber nichts — der Nutzer klickte ins Leere.
+   Kein Zeiger-Cursor, keine Akzentfarbe, keine Unterstreichung. */
+.chat-link-dead {
+  color: inherit;
+  text-decoration: none;
+  cursor: text;
+}
 .chat-company-link:hover,
 .chat-link:hover { color: var(--color-violet-600); }
 
