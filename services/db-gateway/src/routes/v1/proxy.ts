@@ -209,6 +209,23 @@ function sha256(s: string): string {
   return createHash("sha256").update(s).digest("hex");
 }
 
+/**
+ * v0.1.506 — Antwort von Operator-Zugangsdaten und Abrechnungs-Interna
+ * befreien. `search_metadata` enthaelt `html_url`/`json_url` MIT dem
+ * api_key-Query-Parameter, `request_info` die Guthaben-Zaehler des
+ * Operators. Beides braucht kein Producer. Defensive Kopie — die
+ * Nutzdaten (organic_results, places_results, …) bleiben unangetastet.
+ */
+function scrubValueserpResponse(parsed: unknown): unknown {
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    return parsed;
+  }
+  const out: Record<string, unknown> = { ...(parsed as Record<string, unknown>) };
+  delete out.search_metadata;
+  delete out.request_info;
+  return out;
+}
+
 async function readCache(
   pool: pg.Pool,
   cacheKey: string,
@@ -465,6 +482,50 @@ proxyRouter.post(
       });
     }
 
+    // ---- 4. Fachlicher Fehler trotz HTTP 200 -------------------------------
+    //
+    // v0.1.506 — ValueSerp meldet Stoerungen NICHT per HTTP-Status,
+    // sondern im Body: {"request_info":{"success":false,"message":"…"}}
+    // (Live-Befund 2026-09-01, Zimmer Group: 174 ms, HTTP 200, kein
+    // organic_results). Bis hierher galt jede 200 als Erfolg — die
+    // Fehlantwort wurde GECACHT und der Producer schloss daraus
+    // "keine Website gefunden". Ein Neuversuch lieferte 24 h lang
+    // denselben leeren Treffer. Solche Fehlschlaege duerfen nie still
+    // als Ergebnis durchgehen (siehe docs/ZUVERLAESSIGKEIT.md).
+    const info = (parsed as { request_info?: { success?: unknown; message?: unknown } })
+      ?.request_info;
+    if (info && info.success === false) {
+      await recordAudit(pool, {
+        tenantId,
+        actorId,
+        qHash,
+        status: 502,
+        latencyMs,
+        cacheHit: false,
+      });
+      const msg =
+        typeof info.message === "string" ? info.message.slice(0, 300) : "";
+      logger.warn(
+        { tenantId, actorId, latencyMs, msg },
+        "valueserp meldet Fehler im Body (HTTP 200)",
+      );
+      // KEIN writeCache — sonst friert die Stoerung fuer die TTL ein.
+      throw new HTTPException(502, {
+        message: `valueserp_upstream_failed${msg ? `: ${msg}` : ""}`,
+      });
+    }
+
+    // ---- 5. Operator-Zugangsdaten aus der Antwort entfernen ---------------
+    //
+    // v0.1.506 — SICHERHEIT: ValueSerp spiegelt den API-Key in
+    // `search_metadata.html_url` / `json_url` zurueck. Der Body ging
+    // unveraendert an die Producer — die auf NUTZER-Maschinen laufen.
+    // Damit landete der Operator-Schluessel bei jedem Nutzer, obwohl
+    // genau das der Zweck dieses Proxys verhindern soll. Die
+    // Metadaten braucht kein Aufrufer; wir entfernen sie ganz (und
+    // damit auch die Guthaben-Zaehler aus request_info).
+    const scrubbed = scrubValueserpResponse(parsed);
+
     await recordAudit(pool, {
       tenantId,
       actorId,
@@ -473,8 +534,10 @@ proxyRouter.post(
       latencyMs,
       cacheHit: false,
     });
-    await writeCache(pool, cacheKey, text);
+    // Cache den BEREINIGTEN Body — sonst liegt der Schluessel weiter in
+    // der Datenbank und wird bei Cache-Treffern erneut ausgeliefert.
+    await writeCache(pool, cacheKey, JSON.stringify(scrubbed));
 
-    return c.json(parsed);
+    return c.json(scrubbed);
   },
 );
