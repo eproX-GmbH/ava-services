@@ -272,6 +272,40 @@ const OPENAI_LLM: CatalogEntry[] = [
   // tool plans more reliably than 4o-mini and stays cheap. Step up to
   // gpt-5.4 for tricky agent turns, gpt-5.5 / 5.5-pro for analyst-grade
   // reasoning. The 5.5 line is OpenAI's current frontier.
+  // GPT-5.6 (GA 2026-07-09) — aktuelle Frontier-Generation, 1,05 M
+  // Kontext ueber alle drei Stufen. Sol = Flaggschiff, Terra = Mittel-
+  // klasse, Luna = Budget. Luna bewusst Tier 2 (wie die mini-Stufen):
+  // Preisquellen widersprechen sich (0,20-1 $ Input), im Zweifel lieber
+  // ZU niedrig einstufen — dann verweigert das Tier-Gate hoechstens
+  // einen Ueberschreib-Vorgang, statt schwache Daten gute ersetzen zu
+  // lassen.
+  {
+    provider: "openai",
+    id: "gpt-5.6-sol",
+    label: "GPT-5.6 Sol (frontier)",
+    role: "llm",
+    capabilities: { tools: true, vision: true, contextWindow: 1_050_000 },
+    costClass: "high",
+    tier: 4,
+  },
+  {
+    provider: "openai",
+    id: "gpt-5.6-terra",
+    label: "GPT-5.6 Terra",
+    role: "llm",
+    capabilities: { tools: true, vision: true, contextWindow: 1_050_000 },
+    costClass: "mid",
+    tier: 4,
+  },
+  {
+    provider: "openai",
+    id: "gpt-5.6-luna",
+    label: "GPT-5.6 Luna (guenstig)",
+    role: "llm",
+    capabilities: { tools: true, vision: true, contextWindow: 1_050_000 },
+    costClass: "cheap",
+    tier: 2,
+  },
   {
     provider: "openai",
     id: "gpt-5.5-pro",
@@ -491,6 +525,37 @@ const OPENAI_EMBED: CatalogEntry[] = [
 // Order = display order in the picker. Current models first, then
 // the legacy ladder (still callable; some users have keys pinned).
 const ANTHROPIC_LLM: CatalogEntry[] = [
+  // Claude-5-Generation (2026). Fable 5 und Opus 5 teilen das Modell;
+  // Fable ist die allgemein verfuegbare Variante mit zusaetzlichen
+  // Sicherheitsmassnahmen fuer Dual-Use-Faehigkeiten.
+  {
+    provider: "anthropic",
+    id: "claude-fable-5",
+    label: "Claude Fable 5 (frontier)",
+    role: "llm",
+    capabilities: { tools: true, vision: true, contextWindow: 1_000_000 },
+    costClass: "high",
+    tier: 4,
+  },
+  {
+    provider: "anthropic",
+    id: "claude-opus-5",
+    label: "Claude Opus 5",
+    role: "llm",
+    capabilities: { tools: true, vision: true, contextWindow: 1_000_000 },
+    costClass: "high",
+    tier: 4,
+  },
+  {
+    provider: "anthropic",
+    id: "claude-sonnet-5",
+    label: "Claude Sonnet 5",
+    role: "llm",
+    capabilities: { tools: true, vision: true, contextWindow: 1_000_000 },
+    costClass: "mid",
+    tier: 4,
+    recommended: true,
+  },
   {
     provider: "anthropic",
     id: "claude-opus-4-7",
@@ -508,7 +573,6 @@ const ANTHROPIC_LLM: CatalogEntry[] = [
     capabilities: { tools: true, vision: true, contextWindow: 1_000_000 },
     costClass: "mid",
     tier: 3,
-    recommended: true,
   },
   {
     provider: "anthropic",
@@ -569,6 +633,18 @@ const ANTHROPIC_LLM: CatalogEntry[] = [
 // real-world reliability for German extraction tasks. Users who want
 // the bleeding-edge can flip to a 3.x preview from the picker.
 const GOOGLE_LLM: CatalogEntry[] = [
+  // Gemini 3.7 Flash (GA 2026-08-13): 1 M Kontext, multimodal,
+  // Function Calling. Achtung: einen 3.5/3.7 **Pro** gibt es NICHT —
+  // die hoechste Pro-Stufe bleibt 3.1 Pro.
+  {
+    provider: "google",
+    id: "gemini-3.7-flash",
+    label: "Gemini 3.7 Flash",
+    role: "llm",
+    capabilities: { tools: true, vision: true, contextWindow: 1_000_000 },
+    costClass: "cheap",
+    tier: 3,
+  },
   {
     provider: "google",
     id: "gemini-3.1-pro-preview",
