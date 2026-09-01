@@ -302,11 +302,19 @@ export class WatchlistSupervisor {
     zaehler.neueSignale += neu.length;
     if (neu.length > 0 && zaehler.alertsNeu < MAX_ALERTS_PER_RUN) {
       const bewertet = await this.classify(neu.slice(0, MAX_ALERTS_PER_RUN));
-      for (const b of bewertet) {
-        if (zaehler.alertsNeu >= MAX_ALERTS_PER_RUN) break;
-        if (this.emitAlert(entry, b.signal, b.relevanz, b.begruendung)) {
+      // v0.1.517 — EINE Meldung pro Person und Lauf (User-Direktive:
+      // 9 Einzel-Meldungen fuer dieselbe Person fluten die Ansicht,
+      // und Telegram unterdrueckte die info-Reaktionen einzeln —
+      // gebuendelt traegt die Sammel-Meldung die HOECHSTE Severity,
+      // sodass ein enthaltener Kommentar sie ueber die warn-Schwelle
+      // hebt). Genau ein Signal → bisheriges Einzel-Format.
+      const einzig = bewertet.length === 1 ? bewertet[0] : undefined;
+      if (einzig) {
+        if (this.emitAlert(entry, einzig.signal, einzig.relevanz, einzig.begruendung)) {
           zaehler.alertsNeu++;
         }
+      } else if (this.emitSammelAlert(entry, bewertet)) {
+        zaehler.alertsNeu++;
       }
     }
     await this.deps.watchlist.markSeen(signals);
@@ -383,6 +391,72 @@ export class WatchlistSupervisor {
       relevanz: out.get(idx)?.relevanz ?? -1,
       begruendung: out.get(idx)?.begruendung ?? "",
     }));
+  }
+
+  /** v0.1.517 — Sammel-Meldung: alle neuen Signale einer Person in
+   *  EINEM Alert. Severity = Maximum der Einzelsignale. */
+  private emitSammelAlert(
+    entry: WatchlistEntry,
+    bewertet: Array<{
+      signal: ProfileActivitySignal;
+      relevanz: number;
+      begruendung: string;
+    }>,
+  ): boolean {
+    const erstes = bewertet[0];
+    if (!erstes) return false;
+    const kommentare = bewertet.filter(
+      (b) => b.signal.activityType === "comment",
+    ).length;
+    const reaktionen = bewertet.length - kommentare;
+    const severity: Alert["severity"] =
+      entry.fokus ||
+      kommentare > 0 ||
+      bewertet.some((b) => b.relevanz >= 70)
+        ? "warn"
+        : "info";
+    const teile = [
+      kommentare > 0
+        ? `${kommentare} Kommentar${kommentare === 1 ? "" : "e"}`
+        : null,
+      reaktionen > 0
+        ? `${reaktionen} Reaktion${reaktionen === 1 ? "" : "en"}`
+        : null,
+    ].filter(Boolean);
+    const MAX_ZEILEN = 6;
+    const zeilen = bewertet.slice(0, MAX_ZEILEN).map((b) => {
+      const s = b.signal;
+      const art =
+        s.activityType === "comment"
+          ? `kommentiert${s.commentText ? `: "${s.commentText.slice(0, 80)}"` : ""}`
+          : `reagiert${s.reactionType ? ` (${s.reactionType.toLowerCase()})` : ""}`;
+      const thema =
+        (s.targetSnippet ?? "").slice(0, 80) ||
+        (s.targetAuthorName ? `Post von ${s.targetAuthorName}` : "LinkedIn-Post");
+      return `• ${art} — ${thema}${s.targetPostUrl ? ` — ${s.targetPostUrl}` : ""}`;
+    });
+    if (bewertet.length > MAX_ZEILEN) {
+      zeilen.push(`… und ${bewertet.length - MAX_ZEILEN} weitere Signale`);
+    }
+    const alert = this.deps.alerts.add({
+      tenantId: null,
+      companyId: entry.companyId ?? "",
+      companyName: entry.label,
+      kind: "linkedin-signal",
+      severity,
+      headline: `Watchlist: ${entry.label} — ${bewertet.length} neue Signale (${teile.join(", ")})`,
+      rationale: zeilen.join("\n"),
+      sourceRef: `watchlist:sammel:${activityDedupeKey(erstes.signal)}+${bewertet.length}`,
+    });
+    if (alert) {
+      try {
+        this.deps.notify(alert);
+      } catch {
+        /* best-effort */
+      }
+      return true;
+    }
+    return false;
   }
 
   /** Alert bauen + durch den normalen Fanout schicken. */
