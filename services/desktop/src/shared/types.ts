@@ -612,7 +612,12 @@ export type LlmProviderKind =
   | "openai"
   | "anthropic"
   | "google"
-  | "mistral";
+  | "mistral"
+  // v0.1.503 — OpenAI-Chat-kompatible Anbieter (eigene baseURL,
+  // kein zusaetzliches SDK-Paket; siehe packages/ai-provider/runtime.ts)
+  | "deepseek"
+  | "xai"
+  | "qwen";
 
 /** Subset that requires an API key — used by the key-storage UIs. */
 export type HostedProviderKind = Exclude<LlmProviderKind, "ollama">;

@@ -47,6 +47,9 @@ const PROVIDER_LABEL: Record<HostedProviderKind, string> = {
   anthropic: "Anthropic",
   google: "Google",
   mistral: "Mistral",
+  deepseek: "DeepSeek",
+  xai: "xAI (Grok)",
+  qwen: "Qwen",
 };
 
 const PROVIDER_KEY_DOCS: Record<HostedProviderKind, string> = {
@@ -54,6 +57,9 @@ const PROVIDER_KEY_DOCS: Record<HostedProviderKind, string> = {
   anthropic: "https://console.anthropic.com/settings/keys",
   google: "https://aistudio.google.com/app/apikey",
   mistral: "https://console.mistral.ai/api-keys",
+  deepseek: "https://platform.deepseek.com/api_keys",
+  xai: "https://console.x.ai/",
+  qwen: "https://modelstudio.console.alibabacloud.com/",
 };
 
 const PROVIDER_KEY_DOC_LABEL: Record<HostedProviderKind, string> = {
@@ -61,6 +67,9 @@ const PROVIDER_KEY_DOC_LABEL: Record<HostedProviderKind, string> = {
   anthropic: "Anthropic-Schlüssel erstellen",
   google: "Google Gemini-Schlüssel erstellen",
   mistral: "Mistral-Schlüssel erstellen",
+  deepseek: "DeepSeek-Schlüssel erstellen",
+  xai: "xAI-Schlüssel erstellen",
+  qwen: "Qwen-Schlüssel erstellen (Alibaba Model Studio)",
 };
 
 const OLLAMA_LIBRARY_URL = "https://ollama.com/library";
@@ -1000,5 +1009,11 @@ function labelFor(kind: LlmProviderKind): string {
       return "Google";
     case "mistral":
       return "Mistral";
+    case "deepseek":
+      return "DeepSeek";
+    case "xai":
+      return "xAI (Grok)";
+    case "qwen":
+      return "Qwen";
   }
 }

@@ -33,7 +33,40 @@ export type LLMProvider =
   | "anthropic"
   | "google"
   | "mistral"
+  | "deepseek"
+  | "xai"
+  | "qwen"
   | "ollama";
+
+// v0.1.503 — DeepSeek, xAI (Grok) und Qwen sprechen alle die
+// OpenAI-Chat-Completions-API. Wir binden sie deshalb ueber den
+// bereits vorhandenen @ai-sdk/openai-Client mit eigener baseURL an,
+// statt drei weitere Provider-Pakete zu ziehen: @ai-sdk/deepseek und
+// @ai-sdk/openai-compatible haengen inzwischen am Provider-Core v3
+// (AI SDK 6) und waeren mit unserem ai@5-Stack nicht kompatibel.
+// WICHTIG: `.chat(...)` explizit — der Default-Pfad von createOpenAI
+// ist die Responses-API, die keiner der drei implementiert.
+const OPENAI_KOMPATIBEL: Record<
+  "deepseek" | "xai" | "qwen",
+  { baseURL: string; envKey: string; defaultModel: string }
+> = {
+  deepseek: {
+    baseURL: "https://api.deepseek.com/v1",
+    envKey: "DEEPSEEK_API_KEY",
+    defaultModel: "deepseek-v4-flash",
+  },
+  xai: {
+    baseURL: "https://api.x.ai/v1",
+    envKey: "XAI_API_KEY",
+    defaultModel: "grok-4.6",
+  },
+  qwen: {
+    // Internationaler Model-Studio-Endpunkt (nicht die Peking-Region).
+    baseURL: "https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
+    envKey: "DASHSCOPE_API_KEY",
+    defaultModel: "qwen3.8-max",
+  },
+};
 export type EmbedProvider = "openai" | "google" | "ollama";
 
 function requireEnv(name: string): string {
@@ -91,6 +124,16 @@ export function getLLM(): LanguageModel {
         apiKey: requireEnv("MISTRAL_API_KEY"),
       });
       return client(model ?? "mistral-large-latest");
+    }
+    case "deepseek":
+    case "xai":
+    case "qwen": {
+      const cfg = OPENAI_KOMPATIBEL[provider];
+      const client = createOpenAI({
+        apiKey: requireEnv(cfg.envKey),
+        baseURL: cfg.baseURL,
+      });
+      return client.chat(model ?? cfg.defaultModel);
     }
     case "ollama": {
       const client = createOllama({

@@ -111,6 +111,9 @@ export interface ProducerSupervisorOptions {
     anthropicSubscriptionToken?: string;
     googleApiKey?: string;
     mistralApiKey?: string;
+    deepseekApiKey?: string;
+    xaiApiKey?: string;
+    qwenApiKey?: string;
     ollamaUrl?: string;
   } | null>;
   /**
@@ -167,7 +170,7 @@ export class ProducerSupervisor extends EventEmitter {
    * until the first successful spawn.
    */
   private lastLlmConfig:
-    | { openaiApiKey?: string; anthropicSubscriptionToken?: string; anthropicApiKey?: string; googleApiKey?: string; mistralApiKey?: string }
+    | { openaiApiKey?: string; anthropicSubscriptionToken?: string; anthropicApiKey?: string; googleApiKey?: string; mistralApiKey?: string; deepseekApiKey?: string; xaiApiKey?: string; qwenApiKey?: string }
     | null = null;
 
   /**
@@ -335,6 +338,9 @@ export class ProducerSupervisor extends EventEmitter {
     if (c.openaiApiKey) return "openai";
     if (c.googleApiKey) return "google";
     if (c.mistralApiKey) return "mistral";
+    if (c.deepseekApiKey) return "deepseek";
+    if (c.xaiApiKey) return "xai";
+    if (c.qwenApiKey) return "qwen";
     return null;
   }
 
@@ -619,6 +625,9 @@ export class ProducerSupervisor extends EventEmitter {
         : {}),
       ...(llm.googleApiKey ? { googleApiKey: llm.googleApiKey } : {}),
       ...(llm.mistralApiKey ? { mistralApiKey: llm.mistralApiKey } : {}),
+      ...(llm.deepseekApiKey ? { deepseekApiKey: llm.deepseekApiKey } : {}),
+      ...(llm.xaiApiKey ? { xaiApiKey: llm.xaiApiKey } : {}),
+      ...(llm.qwenApiKey ? { qwenApiKey: llm.qwenApiKey } : {}),
     };
     // Bearer token for the producer's outbound gateway calls (today
     // only the valueserp proxy). Captured once at spawn — see
@@ -676,6 +685,11 @@ export class ProducerSupervisor extends EventEmitter {
         : {}),
       ...(llm.googleApiKey ? { GOOGLE_API_KEY: llm.googleApiKey } : {}),
       ...(llm.mistralApiKey ? { MISTRAL_API_KEY: llm.mistralApiKey } : {}),
+      // v0.1.503 — OpenAI-kompatible Anbieter; die env-Namen entsprechen
+      // denen in packages/ai-provider (getLLM/createLLM).
+      ...(llm.deepseekApiKey ? { DEEPSEEK_API_KEY: llm.deepseekApiKey } : {}),
+      ...(llm.xaiApiKey ? { XAI_API_KEY: llm.xaiApiKey } : {}),
+      ...(llm.qwenApiKey ? { DASHSCOPE_API_KEY: llm.qwenApiKey } : {}),
       ...(llm.ollamaUrl ? { OLLAMA_URL: llm.ollamaUrl } : {}),
       // v0.1.184 — EMBED_PROVIDER / EMBED_MODEL are set per-producer
       // via the extraEnvAsync hook in index.ts (currently only

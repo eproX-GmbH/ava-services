@@ -70,6 +70,27 @@ export async function validateApiKey(
         return await probeGoogle(trimmed, ctrl.signal);
       case "mistral":
         return await probeMistral(trimmed, ctrl.signal);
+      case "deepseek":
+        return await probeOpenAiKompatibel(
+          trimmed,
+          ctrl.signal,
+          "https://api.deepseek.com/v1/models",
+          "DeepSeek",
+        );
+      case "xai":
+        return await probeOpenAiKompatibel(
+          trimmed,
+          ctrl.signal,
+          "https://api.x.ai/v1/models",
+          "xAI",
+        );
+      case "qwen":
+        return await probeOpenAiKompatibel(
+          trimmed,
+          ctrl.signal,
+          "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models",
+          "Qwen",
+        );
     }
   } catch (err) {
     if (err instanceof Error && err.name === "AbortError") {
@@ -216,6 +237,43 @@ async function probeMistral(
     signal,
   });
   return interpret(res, "Mistral");
+}
+
+// v0.1.503 — DeepSeek / xAI / Qwen: alle drei bieten `GET /v1/models`
+// mit Bearer-Auth wie OpenAI. Ein Prober fuer alle drei.
+async function probeOpenAiKompatibel(
+  apiKey: string,
+  signal: AbortSignal,
+  url: string,
+  label: string,
+): Promise<KeyValidation> {
+  const res = await probeFetch(url, {
+    method: "GET",
+    headers: { authorization: `Bearer ${apiKey}` },
+    signal,
+  });
+  if (res.ok) return { ok: true };
+  // xAI antwortet auf einen falschen Schluessel mit HTTP 400 (nicht 401)
+  // und legt die Begruendung als STRING in `error` ab, nicht als
+  // `{error:{message}}` wie OpenAI (live geprueft 2026-09-01). Beide
+  // Formen hier auswerten, damit der Nutzer eine klare Meldung sieht.
+  const body = (await safeReadJson(res)) as
+    | { error?: string | { message?: string } }
+    | null;
+  const raw = body?.error;
+  const msg = typeof raw === "string" ? raw : raw?.message;
+  if (res.status === 400 || res.status === 401 || res.status === 403) {
+    return {
+      ok: false,
+      reason: msg
+        ? `${label}: ${msg}`
+        : `${label} hat den Schluessel abgelehnt (ungueltig).`,
+    };
+  }
+  return {
+    ok: false,
+    reason: `${label} antwortete mit HTTP ${res.status}${msg ? `: ${msg}` : ""}.`,
+  };
 }
 
 // Shared 200-or-401-or-other handler. We don't read the body on success

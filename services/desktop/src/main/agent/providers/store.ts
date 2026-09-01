@@ -73,6 +73,9 @@ const HOSTED_KINDS: readonly HostedProviderKind[] = [
   "anthropic",
   "google",
   "mistral",
+  "deepseek",
+  "xai",
+  "qwen",
 ];
 
 const ALL_KINDS: readonly LlmProviderKind[] = [
@@ -81,6 +84,9 @@ const ALL_KINDS: readonly LlmProviderKind[] = [
   "anthropic",
   "google",
   "mistral",
+  "deepseek",
+  "xai",
+  "qwen",
 ];
 
 /**
@@ -96,6 +102,9 @@ const DEFAULT_CONFIG: ProviderConfig = {
     anthropic: "",
     google: "",
     mistral: "",
+    deepseek: "",
+    xai: "",
+    qwen: "",
   },
   anthropicAuthMode: "api-key",
   openaiAuthMode: "api-key",
@@ -343,6 +352,9 @@ export class ProviderConfigStore extends EventEmitter {
       anthropic: this.hasKey("anthropic"),
       google: this.hasKey("google"),
       mistral: this.hasKey("mistral"),
+      deepseek: this.hasKey("deepseek"),
+      xai: this.hasKey("xai"),
+      qwen: this.hasKey("qwen"),
     };
   }
 

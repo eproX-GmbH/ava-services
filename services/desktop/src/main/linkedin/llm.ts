@@ -17,7 +17,15 @@ import type { ProviderConfigStore } from "../agent/providers/store";
 import { createOpenAISubscriptionModel } from "../agent/providers/openai-subscription-model";
 
 export interface ResolvedLlm {
-  provider: "openai" | "anthropic" | "google" | "mistral" | "ollama";
+  provider:
+    | "openai"
+    | "anthropic"
+    | "google"
+    | "mistral"
+    | "deepseek"
+    | "xai"
+    | "qwen"
+    | "ollama";
   model: string;
   apiKey: string | null;
   baseURL?: string;

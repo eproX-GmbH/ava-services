@@ -1029,6 +1029,12 @@ function labelFor(kind: LlmProviderKind): string {
       return "Google";
     case "mistral":
       return "Mistral";
+    case "deepseek":
+      return "DeepSeek";
+    case "xai":
+      return "xAI (Grok)";
+    case "qwen":
+      return "Qwen";
   }
 }
 

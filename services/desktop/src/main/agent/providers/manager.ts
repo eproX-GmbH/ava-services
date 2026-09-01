@@ -130,6 +130,9 @@ export class LlmProviderManager extends EventEmitter {
       anthropic: make("anthropic"),
       google: make("google"),
       mistral: make("mistral"),
+      deepseek: make("deepseek"),
+      xai: make("xai"),
+      qwen: make("qwen"),
     };
 
     // v0.1.368 — Stuck-State-Reparatur: Falls ein Abo-Token vorliegt, der
@@ -657,6 +660,9 @@ export class LlmProviderManager extends EventEmitter {
     anthropicSubscriptionToken?: string;
     googleApiKey?: string;
     mistralApiKey?: string;
+    deepseekApiKey?: string;
+    xaiApiKey?: string;
+    qwenApiKey?: string;
     ollamaUrl?: string;
   } | null> {
     const cfg = this.store.getConfig();
@@ -716,6 +722,9 @@ export class LlmProviderManager extends EventEmitter {
     else if (kind === "anthropic") env.anthropicApiKey = key;
     else if (kind === "google") env.googleApiKey = key;
     else if (kind === "mistral") env.mistralApiKey = key;
+    else if (kind === "deepseek") env.deepseekApiKey = key;
+    else if (kind === "xai") env.xaiApiKey = key;
+    else if (kind === "qwen") env.qwenApiKey = key;
     return env;
   }
 
@@ -826,5 +835,11 @@ function labelFor(kind: LlmProviderKind): string {
       return "Google";
     case "mistral":
       return "Mistral";
+    case "deepseek":
+      return "DeepSeek";
+    case "xai":
+      return "xAI (Grok)";
+    case "qwen":
+      return "Qwen";
   }
 }

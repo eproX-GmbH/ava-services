@@ -72,6 +72,9 @@ const PROVIDER_LABEL: Record<LlmProviderKind, string> = {
   anthropic: "Anthropic",
   google: "Google",
   mistral: "Mistral",
+  deepseek: "DeepSeek",
+  xai: "xAI (Grok)",
+  qwen: "Qwen",
 };
 
 /**
@@ -101,6 +104,18 @@ const PROVIDER_FEATURES: Record<HostedProviderKind, string> = {
   mistral:
     "Wird als Chat-LLM und in allen LLM-getriebenen Producer-Stages " +
     "verwendet (z. B. Mistral Large 3 für deutschsprachige Inhalte).",
+  deepseek:
+    "Wird als Chat-LLM und in allen LLM-getriebenen Producer-Stages " +
+    "verwendet. Mit Abstand der günstigste Anbieter (V4 Flash), " +
+    "1 Mio. Kontext — interessant für die Hintergrund-Verarbeitung. " +
+    "Kein Bild-Verständnis.",
+  xai:
+    "Wird als Chat-LLM und in allen LLM-getriebenen Producer-Stages " +
+    "verwendet (Grok 4.6: 500k Kontext, Bild-Verständnis).",
+  qwen:
+    "Wird als Chat-LLM und in allen LLM-getriebenen Producer-Stages " +
+    "verwendet (Qwen3.8 Max, 1 Mio. Kontext). Läuft über Alibabas " +
+    "internationalen Model-Studio-Endpunkt. Kein Bild-Verständnis.",
 };
 
 const HOSTED_KINDS: HostedProviderKind[] = [
@@ -108,6 +123,9 @@ const HOSTED_KINDS: HostedProviderKind[] = [
   "anthropic",
   "google",
   "mistral",
+  "deepseek",
+  "xai",
+  "qwen",
 ];
 
 // v0.1.132 — surface "Wo bekomme ich einen Schlüssel?" inline beneath
@@ -119,6 +137,9 @@ const PROVIDER_KEY_DOCS: Record<HostedProviderKind, string> = {
   anthropic: "https://console.anthropic.com/settings/keys",
   google: "https://aistudio.google.com/app/apikey",
   mistral: "https://console.mistral.ai/api-keys",
+  deepseek: "https://platform.deepseek.com/api_keys",
+  xai: "https://console.x.ai/",
+  qwen: "https://modelstudio.console.alibabacloud.com/",
 };
 
 // -- Settings tab shell (U1) ------------------------------------------

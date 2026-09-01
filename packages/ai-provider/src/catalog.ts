@@ -827,6 +827,75 @@ const MISTRAL_LLM: CatalogEntry[] = [
 // ---- Aggregate -------------------------------------------------------------
 
 /** Full catalog. Order = display order in pickers. */
+// v0.1.503 — DeepSeek, xAI (Grok) und Qwen. Alle drei sprechen die
+// OpenAI-Chat-Completions-API; die Anbindung laeuft ueber den
+// vorhandenen openai-Client mit eigener baseURL (siehe runtime.ts).
+const DEEPSEEK_LLM: CatalogEntry[] = [
+  {
+    provider: "deepseek",
+    id: "deepseek-v4-pro",
+    label: "DeepSeek V4 Pro",
+    role: "llm",
+    capabilities: { tools: true, vision: false, contextWindow: 1_000_000 },
+    costClass: "cheap",
+    tier: 3,
+  },
+  {
+    provider: "deepseek",
+    id: "deepseek-v4-flash",
+    label: "DeepSeek V4 Flash (sehr guenstig)",
+    role: "llm",
+    capabilities: { tools: true, vision: false, contextWindow: 1_000_000 },
+    costClass: "cheap",
+    tier: 2,
+    recommended: true,
+  },
+];
+
+const XAI_LLM: CatalogEntry[] = [
+  {
+    provider: "xai",
+    id: "grok-4.6",
+    label: "Grok 4.6 (frontier)",
+    role: "llm",
+    capabilities: { tools: true, vision: true, contextWindow: 500_000 },
+    costClass: "mid",
+    tier: 4,
+    recommended: true,
+  },
+  {
+    provider: "xai",
+    id: "grok-4.5",
+    label: "Grok 4.5",
+    role: "llm",
+    capabilities: { tools: true, vision: true, contextWindow: 500_000 },
+    costClass: "mid",
+    tier: 3,
+  },
+];
+
+const QWEN_LLM: CatalogEntry[] = [
+  {
+    provider: "qwen",
+    id: "qwen3.8-max",
+    label: "Qwen3.8 Max",
+    role: "llm",
+    capabilities: { tools: true, vision: false, contextWindow: 1_000_000 },
+    costClass: "mid",
+    tier: 4,
+    recommended: true,
+  },
+  {
+    provider: "qwen",
+    id: "qwen3.8-flash",
+    label: "Qwen3.8 Flash (guenstig)",
+    role: "llm",
+    capabilities: { tools: true, vision: false, contextWindow: 1_000_000 },
+    costClass: "cheap",
+    tier: 2,
+  },
+];
+
 export const CATALOG: readonly CatalogEntry[] = Object.freeze([
   ...OLLAMA_LLM,
   ...OLLAMA_EMBED,
@@ -836,6 +905,9 @@ export const CATALOG: readonly CatalogEntry[] = Object.freeze([
   ...GOOGLE_LLM,
   ...GOOGLE_EMBED,
   ...MISTRAL_LLM,
+  ...DEEPSEEK_LLM,
+  ...XAI_LLM,
+  ...QWEN_LLM,
 ]);
 
 /** Convenience: filter the catalog by role and (optionally) provider. */

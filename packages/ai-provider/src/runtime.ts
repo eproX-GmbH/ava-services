@@ -50,6 +50,23 @@ try {
 /** Runtime-config taxonomy. Same set as catalog.CatalogProvider. */
 export type RuntimeProvider = CatalogProvider;
 
+/** v0.1.503 — Endpunkte der OpenAI-kompatiblen Anbieter. Siehe
+ *  index.ts fuer die Begruendung (kein eigenes Provider-Paket). */
+const OPENAI_KOMPATIBEL_ENDPUNKTE: Record<
+  "deepseek" | "xai" | "qwen",
+  { baseURL: string; envKey: string }
+> = {
+  deepseek: {
+    baseURL: "https://api.deepseek.com/v1",
+    envKey: "DEEPSEEK_API_KEY",
+  },
+  xai: { baseURL: "https://api.x.ai/v1", envKey: "XAI_API_KEY" },
+  qwen: {
+    baseURL: "https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
+    envKey: "DASHSCOPE_API_KEY",
+  },
+};
+
 export interface CreateLLMOptions {
   provider: RuntimeProvider;
   /** Model id from the catalog (or any tag the provider accepts). */
@@ -82,8 +99,13 @@ export interface CreateLLMOptions {
 }
 
 export interface CreateEmbedderOptions extends Omit<CreateLLMOptions, "provider"> {
-  /** Mistral has no embedding endpoint we use; `anthropic` has no embed at all. */
-  provider: Exclude<RuntimeProvider, "anthropic" | "mistral">;
+  /** Mistral has no embedding endpoint we use; `anthropic` has no embed
+   *  at all. v0.1.503: deepseek/xai/qwen binden wir nur als Chat-LLM an
+   *  — Embeddings bleiben bei embeddinggemma (Vektor-Kompatibilitaet). */
+  provider: Exclude<
+    RuntimeProvider,
+    "anthropic" | "mistral" | "deepseek" | "xai" | "qwen"
+  >;
 }
 
 /**
@@ -140,6 +162,20 @@ export function createLLM(opts: CreateLLMOptions): LanguageModel {
         fetch: preferredFetch,
       });
       return client(opts.model);
+    }
+    case "deepseek":
+    case "xai":
+    case "qwen": {
+      // v0.1.503 — OpenAI-Chat-Completions-kompatible Anbieter ueber den
+      // vorhandenen openai-Client. `.chat()` ist Pflicht: der Default
+      // waere die Responses-API, die keiner der drei spricht.
+      const cfg = OPENAI_KOMPATIBEL_ENDPUNKTE[opts.provider];
+      const client = createOpenAI({
+        apiKey: requireKey(opts, cfg.envKey),
+        baseURL: opts.baseURL ?? cfg.baseURL,
+        fetch: preferredFetch,
+      });
+      return client.chat(opts.model);
     }
     case "ollama": {
       const client = createOllama({
