@@ -6,7 +6,39 @@
 // (Pflichtfeld des Kontakt-Producers), bleibt aber editierbar.
 
 import { useEffect, useMemo, useState } from "react";
-import { gatewayFetch } from "../api/gateway";
+import { gatewayFetch, GatewayError } from "../api/gateway";
+
+/** v0.1.504 — verstaendliche Fehlertexte statt "gateway 403". Der
+ *  Status allein sagt Nutzern nichts; jede Zeile nennt Ursache UND
+ *  naechsten Schritt. */
+function fehlertext(e: unknown): string {
+  if (e instanceof GatewayError) {
+    if (e.status === 403) {
+      return (
+        "Dieser Verarbeitungs-Vorgang gehört nicht zu deinem Konto oder " +
+        "existiert nicht mehr. Falls die Firma zwischenzeitlich gelöscht " +
+        "wurde: einmal neu importieren."
+      );
+    }
+    if (e.status === 409) {
+      return (
+        "Die Verarbeitung dieser Firma ist ausgesetzt (pausiert). " +
+        "In der Firmenübersicht fortsetzen, dann erneut versuchen."
+      );
+    }
+    if (e.status === 404) {
+      return "Vorgang oder Firma nicht gefunden — vermutlich zwischenzeitlich gelöscht.";
+    }
+    if (e.status === 429) {
+      return "Zu viele Anfragen. Bitte kurz warten und erneut versuchen.";
+    }
+    if (e.status >= 500) {
+      return `Der Server meldet einen Fehler (HTTP ${e.status}). Bitte später erneut versuchen.`;
+    }
+    return e.message;
+  }
+  return e instanceof Error ? e.message : String(e);
+}
 
 export type RetryStageId =
   | "structuredContent"
@@ -99,7 +131,7 @@ export function RetryStageForm({
       setResult(res);
       onDispatched?.();
     } catch (e) {
-      setErr(e instanceof Error ? e.message : String(e));
+      setErr(fehlertext(e));
     } finally {
       setBusy(false);
     }

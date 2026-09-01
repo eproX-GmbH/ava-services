@@ -1937,13 +1937,50 @@ async function assertTransactionOwnershipById(
   c: Context,
   transactionId: string,
 ): Promise<void> {
+  // Schneller Pfad: die (pro Request memoisierte) Liste der letzten 50
+  // Vorgaenge deckt den Normalfall ab.
   const all = await getMyTransactions(c);
-  const owns = all.some(
-    (t) => t.id === transactionId || t.transactionId === transactionId,
-  );
-  if (!owns) {
-    throw new HTTPException(403, { message: "forbidden" });
+  if (
+    all.some((t) => t.id === transactionId || t.transactionId === transactionId)
+  ) {
+    return;
   }
+
+  // v0.1.504 — BUGFIX: die Liste ist auf Seite 1 / 50 Zeilen begrenzt.
+  // Wer mehr Vorgaenge hat, bekam fuer JEDEN aelteren Vorgang ein 403 —
+  // obwohl er ihm gehoert (Live-Befund: 55 Vorgaenge, Neustart aus der
+  // Firmenuebersicht traf Rang 52/55). Sichtbar wurde das erst mit dem
+  // Retry aus dem Firmen-Drill-Down (v0.1.492), der bewusst die
+  // transactionId des LETZTEN Laufs einer Stufe verwendet — und die
+  // kann beliebig alt sein. Jetzt: gezielte Einzelabfrage, die den
+  // Besitzer direkt vergleicht. Kein Paginierungs-Abgrund mehr.
+  const actorId = (c.get("auth") as { actorId?: string | null })?.actorId ?? "";
+  try {
+    const one = await callUpstream<{ userId?: string } | null>(
+      c,
+      "masterData",
+      `/api/v1/transactions/${encodeURIComponent(transactionId)}`,
+    );
+    if (one && typeof one.userId === "string" && one.userId === actorId) {
+      return;
+    }
+  } catch (err) {
+    // 404 = Vorgang existiert nicht (mehr). Alles andere ist ein
+    // Upstream-Problem — in beiden Faellen faellt es unten auf die
+    // Verweigerung durch, aber mit klarer Meldung.
+    logger.info(
+      {
+        transactionId,
+        err: err instanceof Error ? err.message : String(err),
+      },
+      "ownership: gezielte Vorgangs-Abfrage fehlgeschlagen",
+    );
+  }
+
+  throw new HTTPException(403, {
+    message:
+      "Dieser Vorgang gehoert nicht zu deinem Konto (oder existiert nicht mehr).",
+  });
 }
 
 
