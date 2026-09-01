@@ -865,7 +865,13 @@ export function buildImportTools(deps: {
       "clearly-specified company you may commit directly. Each row needs " +
       "name + city (city disambiguates same-named companies); if the user gave " +
       "no city, use the best-known HQ — the dry-run report flags wrong guesses. " +
-      "Returns a transactionId on commit; progress via `import_status`.",
+      "Returns a transactionId on commit; progress via `import_status`. " +
+      "The dry-run creates NO transaction — waiting for the user's " +
+      "confirmation before committing is the intended flow, never a " +
+      "mistake. If the user claims something was or wasn't imported, " +
+      "VERIFY with `transactions_list` / `import_status` before agreeing: " +
+      "an older transaction with a similar name (e.g. an earlier " +
+      "single-company import) is easily mistaken for this one.",
     parameters: {
       type: "object",
       required: ["companies"],
@@ -1032,6 +1038,18 @@ export function buildImportTools(deps: {
         pruneDryRunCache();
         return {
           dryRun: true as const,
+          // v0.1.513 — unmissverstaendlicher Zustand. Live-Vorfall
+          // (gpt-5.6-terra): das Modell erklaerte spaeter sein KORREKTES
+          // Warten auf Bestaetigung zum eigenen Fehler, weil das Result
+          // den Zustand nicht explizit benannte.
+          status: "vorschau" as const,
+          importiert: false,
+          hinweis:
+            "Das war NUR die Vorschau — es wurde noch NICHTS importiert " +
+            "und kein Vorgang angelegt. Auf die Bestaetigung des Nutzers " +
+            "zu warten ist der vorgesehene Ablauf, kein Fehler. Nach der " +
+            "Bestaetigung: import_companies erneut mit dryRun=false und " +
+            "ALLEN Firmen aufrufen.",
           providedCount: preview.providedCount,
           matchedCount: preview.matched.length,
           unmatchedCount: preview.unmatched.length,
