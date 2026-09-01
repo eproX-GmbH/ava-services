@@ -213,11 +213,51 @@ interface Fact {
   lastSeen?: string;
   [k: string]: unknown;
 }
+/** v0.1.508 — Beobachtung hinter einem Fakt. Der Persist-Weg schreibt
+ *  zu jedem Fakt die Belegseite mit (`evidenceUrl`); die Route liefert
+ *  die Beobachtungen ohnehin schon mit, sie wurden nur nie angezeigt. */
+interface Observation {
+  id?: string;
+  evidenceUrl?: string | null;
+  source?: string | null;
+  [k: string]: unknown;
+}
 interface CompanyContact {
   id?: string;
   companyName?: string | null;
   websiteUrl?: string | null;
   companyFacts?: Fact[];
+  companyObservations?: Observation[];
+}
+
+/** Fakt-Id → Belegseite. `lastObsId` zeigt auf die Beobachtung, die den
+ *  Fakt zuletzt bestaetigt hat. */
+function belegKarte(obs: Observation[] | undefined): Map<string, string> {
+  const map = new Map<string, string>();
+  for (const o of obs ?? []) {
+    const id = typeof o.id === "string" ? o.id : null;
+    const url = typeof o.evidenceUrl === "string" ? o.evidenceUrl : null;
+    if (id && url && /^https?:\/\//i.test(url)) map.set(id, url);
+  }
+  return map;
+}
+
+/** Kompakter "Quelle"-Link neben einem Fakt. Oeffnet die Seite, auf der
+ *  der Wert gefunden wurde. */
+function QuellenLink({ url }: { url: string }) {
+  let label = "Quelle";
+  try {
+    const u = new URL(url);
+    const pfad = u.pathname.replace(/\/$/, "");
+    label = pfad && pfad !== "" ? `Quelle: ${pfad.slice(0, 28)}` : `Quelle: ${u.hostname}`;
+  } catch {
+    /* Fallback bleibt "Quelle" */
+  }
+  return (
+    <ExternalLink href={url} className="fact-source" title={url}>
+      {label}
+    </ExternalLink>
+  );
 }
 
 // v0.1.65 — per-stage LLM provenance.
@@ -1070,6 +1110,9 @@ function ContactsTab({ id }: { id: string }) {
 
   const byField = groupBy(companyFacts, (f) => f.field ?? "other");
   const byPerson = groupBy(personFacts, (f) => f.entityId ?? "?");
+  // v0.1.508 — Belegseiten je Fakt (Telefon/E-Mail/Adresse). Kommt aus
+  // den ohnehin mitgelieferten Beobachtungen.
+  const belege = belegKarte(data.companyObservations);
 
   const phones = (byField.phone ?? []).filter((f) => f.status === "ACTIVE");
   const emails = (byField.email ?? []).filter((f) => f.status === "ACTIVE");
@@ -1088,9 +1131,14 @@ function ContactsTab({ id }: { id: string }) {
         </div>
       </article>
 
-      <FactGroup title="Telefon" kind="phone" facts={phones} />
-      <FactGroup title="E-Mail" kind="email" facts={emails} />
-      <FactGroup title="Adressen" kind="address" facts={addresses} />
+      <FactGroup title="Telefon" kind="phone" facts={phones} belege={belege} />
+      <FactGroup title="E-Mail" kind="email" facts={emails} belege={belege} />
+      <FactGroup
+        title="Adressen"
+        kind="address"
+        facts={addresses}
+        belege={belege}
+      />
 
       {Object.keys(byPerson).length > 0 && (
         <section>
@@ -1099,7 +1147,12 @@ function ContactsTab({ id }: { id: string }) {
           </h3>
           <div className="grid-2">
             {Object.entries(byPerson).map(([pid, pf]) => (
-              <PersonCard key={pid} facts={pf} companyId={id!} />
+              <PersonCard
+                key={pid}
+                facts={pf}
+                companyId={id!}
+                belege={belege}
+              />
             ))}
           </div>
         </section>
@@ -1178,10 +1231,13 @@ function FactGroup({
   title,
   facts,
   kind,
+  belege,
 }: {
   title: string;
   facts: Fact[];
   kind?: "phone" | "email" | "address";
+  /** Fakt-Id → Belegseite (siehe belegKarte). */
+  belege?: Map<string, string>;
 }) {
   if (facts.length === 0) return null;
   return (
@@ -1198,6 +1254,12 @@ function FactGroup({
             {/* Die interne Dedup-Normalform ("+495219426029") wird nicht
                 mehr angezeigt — sie ist Technik, keine Information. */}
             <span className="fact-meta">
+              {(() => {
+                const obsId =
+                  typeof f.lastObsId === "string" ? f.lastObsId : null;
+                const url = obsId ? belege?.get(obsId) : undefined;
+                return url ? <QuellenLink url={url} /> : null;
+              })()}
               <StatusPill status={f.status} lastSeen={f.lastSeen} />
               <ConfidenceBar confidence={f.confidence} />
             </span>
@@ -1208,7 +1270,16 @@ function FactGroup({
   );
 }
 
-function PersonCard({ facts, companyId }: { facts: Fact[]; companyId?: string }) {
+function PersonCard({
+  facts,
+  companyId,
+  belege,
+}: {
+  facts: Fact[];
+  companyId?: string;
+  /** v0.1.508 — Fakt-Id → Belegseite (Telefon/E-Mail an der Person). */
+  belege?: Map<string, string>;
+}) {
   // WL4 — "Auf die Watchlist": nur wenn eine LinkedIn-Profil-URL
   // am Kontakt haengt; setzt companyId mit (direkter Firmen-Link
   // in den Watchlist-Alerts).
@@ -1363,6 +1434,19 @@ function PersonCard({ facts, companyId }: { facts: Fact[]; companyId?: string })
                   )}
                 </span>
                 <span className="fact-meta">
+                  {(() => {
+                    // v0.1.508 — Quelle nur bei direkten Kontaktdaten.
+                    // Profil-URLs sind ihre eigene Quelle, da waere der
+                    // Link nur Rauschen.
+                    if (!["phone", "mobilePhone", "email", "address"].includes(field))
+                      return null;
+                    const obsId =
+                      typeof primary.lastObsId === "string"
+                        ? primary.lastObsId
+                        : null;
+                    const url = obsId ? belege?.get(obsId) : undefined;
+                    return url ? <QuellenLink url={url} /> : null;
+                  })()}
                   <ConfidenceBar confidence={primary.confidence} />
                 </span>
               </li>

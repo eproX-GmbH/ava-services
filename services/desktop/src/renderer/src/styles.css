@@ -3457,6 +3457,26 @@ a.heartbeat-decision__company:hover {
   max-width: 100%;
 }
 .fact-url:hover { text-decoration: underline; text-underline-offset: 2px; }
+
+/* v0.1.508 — "Quelle"-Link neben Telefon/E-Mail/Adresse: fuehrt auf die
+   Seite, auf der der Wert gefunden wurde. Bewusst unauffaellig (klein,
+   gedaempft) — der Wert selbst bleibt die Hauptinformation. */
+.fact-source {
+  font-size: 11px;
+  color: var(--muted);
+  text-decoration: none;
+  white-space: nowrap;
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 1px 8px;
+}
+.fact-source:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+}
 .fact-url__label {
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   max-width: 360px;
