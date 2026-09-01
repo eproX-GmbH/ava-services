@@ -274,11 +274,13 @@ const OPENAI_LLM: CatalogEntry[] = [
   // reasoning. The 5.5 line is OpenAI's current frontier.
   // GPT-5.6 (GA 2026-07-09) — aktuelle Frontier-Generation, 1,05 M
   // Kontext ueber alle drei Stufen. Sol = Flaggschiff, Terra = Mittel-
-  // klasse, Luna = Budget. Luna bewusst Tier 2 (wie die mini-Stufen):
-  // Preisquellen widersprechen sich (0,20-1 $ Input), im Zweifel lieber
-  // ZU niedrig einstufen — dann verweigert das Tier-Gate hoechstens
-  // einen Ueberschreib-Vorgang, statt schwache Daten gute ersetzen zu
-  // lassen.
+  // klasse, Luna = Budget. Preisstand geklaert (2026-09-01): Luna kostet
+  // seit dem 30.07.2026 0,20 $ / 1,20 $ je 1 M (Cache-Read 0,02 $) — die
+  // 1 $ / 6 $ aus manchen Quellen sind der Einfuehrungspreis vor der
+  // 80-%-Senkung. Luna ist damit input-gleich zu gpt-5.4-nano, aber eine
+  // Generation neuer und mit 1,05 M statt 400 k Kontext. Tier 2 (wie die
+  // mini-Stufen) bleibt: der Preis sagt nichts ueber die Qualitaet, und
+  // beim Tier-Gate ist Untertreiben die sichere Richtung.
   {
     provider: "openai",
     id: "gpt-5.6-sol",
