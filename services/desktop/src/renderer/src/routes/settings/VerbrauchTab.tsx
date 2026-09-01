@@ -97,7 +97,7 @@ export function VerbrauchTab() {
             <SummaryStat
               label="Cache-Read"
               value={summary.cacheReadTokens.toLocaleString("de-DE")}
-              hint="Anthropic Prompt-Caching"
+              hint="Vom Anbieter gecachte Prompt-Tokens (verguenstigt)"
             />
           </div>
 
