@@ -34,5 +34,11 @@ export function normalizeLinkedInProfileUrl(
     slug = m[1].trim().toLowerCase();
   }
   if (!slug) return null;
+  // v0.1.507 — LinkedIn-Member-URNs abweisen. Manche Quellen (Apify-
+  // Actors, gescrapte Seiten) liefern statt des Vanity-Slugs die
+  // interne Mitglieds-ID: /in/ACwAAD… Solche URLs sind opak, nicht
+  // menschenlesbar, taugen nicht zur Namenspruefung und veralten mit
+  // dem Account. 52 davon lagen aktiv im Bestand (Befund 2026-09-01).
+  if (/^ac[owy]a[a-z0-9_-]{25,}$/i.test(slug)) return null;
   return `https://www.linkedin.com/in/${encodeURIComponent(slug)}`;
 }
