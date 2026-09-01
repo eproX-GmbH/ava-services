@@ -76,5 +76,14 @@ export function normalizeValue(input: NormalizeInput): string {
     }
   }
 
+  // v0.1.511 — tech:<kategorie>: Anbieternamen case-insensitiv dedupen.
+  // Das Woerterbuch liefert kanonische Schreibweisen, die offene
+  // LLM-Stufe aber Modell-Varianten ("HubSpot"/"Hubspot") — ohne das
+  // entstuenden Duplikat-Fakten zwischen Laeufen. Anzeige-Wert bleibt
+  // unberuehrt, nur die Dedupe-Form wird gefaltet.
+  if (f.startsWith("tech:")) {
+    return v.replace(/\s+/g, " ").trim().toLowerCase();
+  }
+
   return v.replace(/\s+/g, " ").trim();
 }

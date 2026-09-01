@@ -42,7 +42,7 @@ const SUBPAGE_RE =
 // eingesetzten Systeme: die DSGVO zwingt zur Nennung der
 // Auftragsverarbeiter. Genau EINE solche Seite, gedeckelter Ausschnitt.
 const PRIVACY_RE = /datenschutz|privacy|data-protection/i;
-const MAX_PRIVACY_TEXT = 8_000;
+const MAX_PRIVACY_TEXT = 10_000;
 
 const profileSchema = yup.object({
   branche: yup.string().trim().min(2).max(120).required(),

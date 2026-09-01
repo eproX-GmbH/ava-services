@@ -156,12 +156,15 @@ export async function applyCompanyContactPersist(
   // Telefonnummern schon einmal auftrat.
   const TECH_KATEGORIEN = [
     "crm",
+    "erp",
+    "buchhaltung",
     "marketing",
     "analytics",
     "support",
     "shop",
     "hosting",
     "kommunikation",
+    "produktivitaet",
     "hr",
     "zahlung",
     "consent",

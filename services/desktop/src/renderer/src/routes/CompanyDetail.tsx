@@ -1235,6 +1235,9 @@ function looksLikeHttpUrl(value: string): boolean {
 // Consent-/Hosting-Dienste eher Rauschen.
 const TECH_KATEGORIE_LABEL: Record<string, string> = {
   crm: "CRM",
+  erp: "ERP & Warenwirtschaft",
+  buchhaltung: "Buchhaltung & Finanzen",
+  produktivitaet: "Produktivität & Zusammenarbeit",
   marketing: "Marketing-Automation",
   support: "Support & Ticketing",
   shop: "Shop",
@@ -1247,7 +1250,10 @@ const TECH_KATEGORIE_LABEL: Record<string, string> = {
 };
 const TECH_REIHENFOLGE = [
   "crm",
+  "erp",
+  "buchhaltung",
   "marketing",
+  "produktivitaet",
   "support",
   "shop",
   "hr",
