@@ -7,6 +7,10 @@ import { CrmBadgeRow } from "../components/CrmBadge";
 import { DiagnosticsPanel } from "../components/DiagnosticsPanel";
 import { ProcessingToggle } from "../components/ProcessingToggle";
 import { ProcessingFeedButton } from "../components/ProcessingFeedPanel";
+import {
+  RetryStageForm,
+  type RetryStageId,
+} from "../components/RetryStageForm";
 
 // v0.1.395 — „Aus Meine Firmen löschen" ist eine REIN LOKALE Ausblendung:
 // die companyId wandert in ein localStorage-Set, die Liste filtert sie raus.
@@ -540,6 +544,61 @@ export function AllCompanies() {
                     ))}
                   </ul>
                 )}
+              </>
+            );
+          })()}
+
+          {/* v0.1.492 — Retry direkt aus dem Firmen-Drill-Down. Vorher
+              war "Erneut versuchen" nur im Vorgangs-Detail versteckt;
+              die Matrix-Zellen tragen die transactionId ihres letzten
+              Laufs, also koennen wir hier stufen-genau re-dispatchen.
+              Firmenname ist vorbefuellt (Pflichtfeld des
+              Kontakt-Producers). */}
+          {(() => {
+            const STAGE_FOR_PRODUCER: Record<
+              (typeof PRODUCERS)[number],
+              RetryStageId
+            > = {
+              "structured-content": "structuredContent",
+              "company-publication": "companyPublication",
+              website: "website",
+              "company-profile": "companyProfile",
+              "company-contact": "companyContact",
+              "company-evaluation": "companyEvaluation",
+            };
+            const byStage: Partial<Record<RetryStageId, string>> = {};
+            for (const p of PRODUCERS) {
+              const tx = openRow.stages[p]?.transactionId;
+              if (tx) byStage[STAGE_FOR_PRODUCER[p]] = tx;
+            }
+            const fallbackTx = Object.values(byStage)[0];
+            if (!fallbackTx) {
+              return (
+                <>
+                  <h4>Erneut versuchen</h4>
+                  <p className="muted">
+                    Kein Verarbeitungs-Vorgang zu dieser Firma bekannt —
+                    Neustart erst nach der ersten Verarbeitung möglich.
+                  </p>
+                </>
+              );
+            }
+            const failed = PRODUCERS.filter(
+              (p) => openRow.stages[p]?.state === "failed",
+            ).map((p) => STAGE_FOR_PRODUCER[p]);
+            return (
+              <>
+                <h4>Erneut versuchen</h4>
+                <RetryStageForm
+                  transactionId={fallbackTx}
+                  transactionIdByStage={byStage}
+                  companyId={openCompanyId}
+                  defaultCompanyName={openRow.name}
+                  failedStages={failed}
+                  onDispatched={() => {
+                    void matrix.refetch();
+                  }}
+                />
               </>
             );
           })()}

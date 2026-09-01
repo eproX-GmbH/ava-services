@@ -5,6 +5,7 @@ import { gatewayFetch, gatewaySSE } from "../api/gateway";
 import { fmtDate } from "../lib/format";
 import { DiagnosticsPanel } from "../components/DiagnosticsPanel";
 import { CrmBadgeRow } from "../components/CrmBadge";
+import { RetryStageForm, RETRY_STAGES } from "../components/RetryStageForm";
 
 // W3 — pipeline matrix view.
 //
@@ -482,10 +483,13 @@ export function TransactionDetail() {
           )}
 
           <h4>Erneut versuchen</h4>
-          <RetryStagePicker
+          <RetryStageForm
             transactionId={id!}
             companyId={openCompanyId}
-            row={openRow}
+            defaultCompanyName={companyNames.data?.get(openCompanyId) ?? null}
+            failedStages={RETRY_STAGES.map((s) => s.id).filter(
+              (sid) => openRow.cells[sid]?.state === "failed",
+            )}
             onDispatched={() => {
               // Refetch errors so the panel reflects the new run; the SSE
               // bridge will update the matrix as the producer publishes
@@ -549,140 +553,6 @@ export function TransactionDetail() {
 // no upstream of master-data to republish from). Default selection is the
 // first failed stage in the row, so a user clicking a row with a red dot
 // can hit "Retry" without picking from the list.
-const RETRY_STAGES: Array<{ id: StageId; label: string }> = [
-  { id: "structuredContent", label: "Structured Content" },
-  { id: "companyPublication", label: "Company Publication" },
-  { id: "website", label: "Website" },
-  { id: "companyProfile", label: "Company Profile" },
-  { id: "companyContact", label: "Company Contact" },
-  { id: "companyEvaluation", label: "Company Evaluation" },
-];
-
-interface RetryDispatch {
-  upstream: string;
-  stage: string;
-  ok: boolean;
-  status?: number;
-  error?: string;
-}
-
-interface RetryResult {
-  transactionId: string;
-  companyId: string;
-  stage: string;
-  dispatched: RetryDispatch[];
-  ok: boolean;
-}
-
-function RetryStagePicker({
-  transactionId,
-  companyId,
-  row,
-  onDispatched,
-}: {
-  transactionId: string;
-  companyId: string;
-  row: PipelineRow;
-  onDispatched: () => void;
-}) {
-  const firstFailed = useMemo<StageId>(() => {
-    const failed = RETRY_STAGES.find(
-      (s) => row.cells[s.id]?.state === "failed",
-    );
-    return failed?.id ?? "structuredContent";
-  }, [row]);
-
-  const [stage, setStage] = useState<StageId>(firstFailed);
-  const [companyName, setCompanyName] = useState<string>("");
-  const [busy, setBusy] = useState(false);
-  const [result, setResult] = useState<RetryResult | null>(null);
-  const [err, setErr] = useState<string | null>(null);
-
-  // Re-default the stage selection when the user switches to a different row.
-  useEffect(() => {
-    setStage(firstFailed);
-    setResult(null);
-    setErr(null);
-  }, [firstFailed, companyId]);
-
-  const onClick = async () => {
-    setBusy(true);
-    setErr(null);
-    setResult(null);
-    try {
-      const body: { stage: StageId; companyName?: string } = { stage };
-      if (stage === "companyContact" && companyName.trim()) {
-        body.companyName = companyName.trim();
-      }
-      const res = await gatewayFetch<RetryResult>(
-        `/v1/transactions/${transactionId}/entities/${companyId}/retry`,
-        { method: "POST", body },
-      );
-      setResult(res);
-      onDispatched();
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : String(e));
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  return (
-    <div className="retry-form">
-      <label className="retry-form__row">
-        <span>Schritt</span>
-        <select
-          value={stage}
-          onChange={(e) => setStage(e.target.value as StageId)}
-          disabled={busy}
-        >
-          {RETRY_STAGES.map((s) => (
-            <option key={s.id} value={s.id}>
-              {s.label}
-              {row.cells[s.id]?.state === "failed" ? " (fehlgeschlagen)" : ""}
-            </option>
-          ))}
-        </select>
-      </label>
-      {stage === "companyContact" && (
-        <label className="retry-form__row">
-          <span>Firmenname</span>
-          <input
-            type="text"
-            placeholder={`Pflichtfeld für „Kontakt"`}
-            value={companyName}
-            onChange={(e) => setCompanyName(e.target.value)}
-            disabled={busy}
-          />
-        </label>
-      )}
-      <button type="button" onClick={onClick} disabled={busy}>
-        {busy ? "Wird ausgelöst…" : "Schritt erneut starten"}
-      </button>
-      {err && <p className="bad">Fehler: {err}</p>}
-      {result && (
-        <div className={`retry-result ${result.ok ? "ok" : "warn"}`}>
-          <p>
-            <strong>{result.ok ? "✓ Ausgelöst" : "⚠ Teilweise ausgelöst"}</strong>{" "}
-            <span className="muted">
-              ({result.dispatched.filter((d) => d.ok).length}/
-              {result.dispatched.length})
-            </span>
-          </p>
-          <ul>
-            {result.dispatched.map((d, i) => (
-              <li key={i} className={d.ok ? "ok" : "bad"}>
-                <code>{d.upstream}</code> → {d.stage} ·{" "}
-                {d.ok ? "ok" : `fehlgeschlagen: ${d.error ?? "unbekannt"}`}
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
-    </div>
-  );
-}
-
 function CellDot({ cell }: { cell: PipelineCell }) {
   // v0.1.459 — Reaper-Timeouts ("kein Lebenszeichen" nach 30 Min) orange
   // statt rot markieren, wie in der AllCompanies-Matrix: gleicher
