@@ -43,8 +43,17 @@ export interface KaskadenErgebnis {
 /** Headline "Rolle bei Firma" / "Rolle @ Firma" → Firmenname. */
 export function companyFromHeadline(headline: string | null): string | null {
   if (!headline) return null;
-  const m = /(?:\bbei\b|@)\s+([^|•·,;–—-]{3,60})/i.exec(headline);
-  return m?.[1]?.trim() ?? null;
+  // v0.1.518 — "at" ergaenzt (englische Headlines: "… Manager at KUNCKE
+  // KONZEPT" lief vorher ins Leere) und Satzfortsetzungen abgeschnitten
+  // ("bei SalesDone fuer begeisterte Kunden" → "SalesDone"; vorher ging
+  // der ganze Satzrest als Firmenname in die SERP-Suche).
+  const m = /(?:\bbei\b|\bat\b|@)\s*([^|•·,;–—-]{3,60})/i.exec(headline);
+  const roh = m?.[1]?.trim();
+  if (!roh) return null;
+  const name = roh
+    .split(/\s+(?:für|fuer|for|mit|with|und|and|als|as|in|im|wo|where|the)\s+/i)[0]
+    ?.trim();
+  return name && name.length >= 3 ? name : null;
 }
 
 export async function resolveEngagerCompanies(args: {

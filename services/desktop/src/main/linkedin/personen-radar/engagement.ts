@@ -147,6 +147,30 @@ export async function fetchPostEngagement(
 
 /** Aktuelle Positionen einer Person (Profile-Scraper, $4/1000 —
  *  NUR fuer vorgefilterte Engager aufrufen!). */
+/** v0.1.518 — BUGFIX. Der harvestapi-Profil-Actor markiert laufende
+ *  Positionen NICHT mit fehlendem endDate, sondern mit
+ *  `endDate: { text: "Present" }` (Store-Beispiel verifiziert
+ *  2026-09-02). Die alte Pruefung "null oder leeres Objekt" hielt
+ *  damit JEDE aktuelle Position fuer beendet — Stufe 1 der Kaskade
+ *  lieferte fuer niemanden etwas, alle Personen landeten in
+ *  "ungeklaert". Aktuell = kein Jahr im endDate ODER Text wie
+ *  Present/Heute/Now. */
+export function istAktuell(end: unknown): boolean {
+  if (end == null) return true;
+  if (typeof end === "string") {
+    return end.trim() === "" || /present|heute|aktuell|now|current/i.test(end);
+  }
+  if (typeof end === "object") {
+    const o = end as Record<string, unknown>;
+    if (Object.keys(o).length === 0) return true;
+    const text = typeof o.text === "string" ? o.text : "";
+    if (/present|heute|aktuell|now|current/i.test(text)) return true;
+    const jahr = typeof o.year === "number" ? o.year : Number(o.year);
+    return !Number.isFinite(jahr) || jahr <= 0;
+  }
+  return false;
+}
+
 export async function fetchCurrentPositions(
   key: string,
   actors: EngagementActorConfig,
@@ -170,12 +194,7 @@ export async function fetchCurrentPositions(
     for (const e of exp) {
       const eo = asObj(e);
       if (!eo) continue;
-      // "aktuell" = kein endDate (tolerant: fehlend oder leer).
-      const end = eo.endDate;
-      const laeuftNoch =
-        end == null ||
-        (typeof end === "object" && Object.keys(end as object).length === 0);
-      if (!laeuftNoch) continue;
+      if (!istAktuell(eo.endDate)) continue;
       positions.push({
         companyName: pickStr(eo, "companyName", "company"),
         companyLinkedinUrl: pickStr(eo, "companyLinkedinUrl", "companyUrl"),
@@ -183,13 +202,23 @@ export async function fetchCurrentPositions(
       });
     }
     // currentPosition-Feld als Zusatzquelle (manche Profile ohne exp).
-    const cur = asObj(o.currentPosition) ?? null;
-    if (cur && positions.length === 0) {
-      positions.push({
-        companyName: pickStr(cur, "companyName", "company"),
-        companyLinkedinUrl: pickStr(cur, "companyLinkedinUrl"),
-        position: pickStr(cur, "position", "title"),
-      });
+    // v0.1.518 — der Actor liefert es als ARRAY ([{companyName}]), nicht
+    // als Objekt; asObj() gab dafuer null → Fallback griff nie.
+    if (positions.length === 0) {
+      const curListe = Array.isArray(o.currentPosition)
+        ? o.currentPosition
+        : o.currentPosition != null
+          ? [o.currentPosition]
+          : [];
+      for (const c of curListe) {
+        const cur = asObj(c);
+        if (!cur) continue;
+        positions.push({
+          companyName: pickStr(cur, "companyName", "company"),
+          companyLinkedinUrl: pickStr(cur, "companyLinkedinUrl"),
+          position: pickStr(cur, "position", "title"),
+        });
+      }
     }
   }
   return { positions: positions.slice(0, 5), kosteneinheiten: rows.length };

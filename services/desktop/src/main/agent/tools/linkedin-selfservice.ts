@@ -3,6 +3,7 @@
 //
 //   personen_radar_config     — Konfiguration lesen/aendern inkl. Post-URLs
 //   personen_radar_check_now  — sofortiger Lauf (kostet Apify-Guthaben)
+//   personen_radar_status     — letzter Lauf im Detail (Ungeklaert-Liste)
 //   linkedin_beobachter       — Feed-Beobachter Status / an / aus
 //
 // Grenzen bleiben hart: API-Tokens gehen NIE ueber den Chat, und das
@@ -167,6 +168,48 @@ export function buildLinkedInSelfserviceTools(
     },
   });
 
+  // v0.1.518 — Lauf-Ergebnis im Detail (User-Frage 2026-09-02: "Warum
+  // kann ich im Chat nicht die Ergebnisse des Laufs auswerten?" — das
+  // Config-Tool lieferte nur die Aggregat-Zeile; die Ungeklaert-Liste
+  // gab es bisher ausschliesslich in der UI).
+  const pradarStatus = defineTool({
+    name: "personen_radar_status",
+    summary:
+      "Letzten Personen-Radar-Lauf im Detail auswerten: ungeklaerte Personen mit Grund.",
+    category: "linkedin personen-radar ergebnis auswertung ungeklaert",
+    description:
+      "Liefert das Ergebnis des letzten Personen-Radar-Laufs im Detail: " +
+      "Zusammenfassung plus die Liste der UNGEKLAERTEN Personen (Name, " +
+      "Headline, Profil-URL, Grund, seit wann). Nutze es, wenn der " +
+      "Nutzer fragt, welche Personen gefunden wurden oder warum keine " +
+      "Firma zugeordnet werden konnte. Aufgeloeste Firmen stehen als " +
+      "Kandidaten im Firmen-Radar (dort mit Ausloeser-Person). Read-only.",
+    parameters: { type: "object", properties: {} },
+    schema: yup.object({}),
+    preview: () => "Personen-Radar-Ergebnis",
+    run: async () => {
+      const store = deps.getPradarStore();
+      if (!store) return "Personen-Radar nicht initialisiert.";
+      const cfg = store.getConfig();
+      const unklar = await store.listUnklar();
+      return {
+        letzterLauf: cfg.lastRunAt,
+        zusammenfassung: cfg.lastOutcome,
+        hinweis:
+          "Grund 'keine belastbare Firma' = weder aktuelle Position mit " +
+          "Unternehmensseite noch eindeutige Website ueber den Firmennamen; " +
+          "AVA raet nie. Ungeklaerte verfallen nach 14 Tagen.",
+        ungeklaert: unklar.map((u) => ({
+          name: u.name,
+          headline: u.headline,
+          profileUrl: u.profileUrl,
+          grund: u.grund,
+          seit: u.firstSeen,
+        })),
+      };
+    },
+  });
+
   const beobachter = defineTool({
     name: "linkedin_beobachter",
     summary:
@@ -244,5 +287,5 @@ export function buildLinkedInSelfserviceTools(
     },
   });
 
-  return [pradarConfig, pradarCheckNow, beobachter];
+  return [pradarConfig, pradarCheckNow, pradarStatus, beobachter];
 }

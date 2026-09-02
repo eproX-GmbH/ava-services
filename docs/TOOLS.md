@@ -4,8 +4,8 @@ Auto-generiert von `services/desktop/scripts/generate-tools-md.mjs`.
 NICHT direkt bearbeiten — die Quelle der Wahrheit ist `services/desktop/src/main/agent/tools/*.ts`.
 Lauf via `pnpm -F @ava/desktop tools:doc` (oder automatisch via `build:typecheck`).
 
-Stand: 2026-09-01
-Anzahl Tools: 198
+Stand: 2026-09-02
+Anzahl Tools: 199
 
 ## Firmen (13)
 
@@ -1115,7 +1115,7 @@ _Parameter:_
 - `intervalMinutes: number`
 - `label: string`
 
-## linkedin-selfservice (3)
+## linkedin-selfservice (4)
 
 ### `linkedin_beobachter`
 
@@ -1147,6 +1147,14 @@ _Parameter:_
 - `maxResolvesPerRun: number` — Profil-Aufloesungen je Lauf (1-50) — Kosten-Hebel.
 - `addPostUrls: array` — LinkedIn-Post-URLs hinzufuegen.
 - `removePostUrls: array` — Post-URLs entfernen.
+
+### `personen_radar_status`
+
+_Datei:_ `services/desktop/src/main/agent/tools/linkedin-selfservice.ts`
+
+Liefert das Ergebnis des letzten Personen-Radar-Laufs im Detail: Zusammenfassung plus die Liste der UNGEKLAERTEN Personen (Name, Headline, Profil-URL, Grund, seit wann). Nutze es, wenn der Nutzer fragt, welche Personen gefunden wurden oder warum keine Firma zugeordnet werden konnte. Aufgeloeste Firmen stehen als Kandidaten im Firmen-Radar (dort mit Ausloeser-Person). Read-only.
+
+_Parameter:_ keine.
 
 ## mail (9)
 
