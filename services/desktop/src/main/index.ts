@@ -22,6 +22,9 @@ import {
   getMainLogPath,
   getLogDir,
   markHeartbeatSuspend,
+  quitStep,
+  traceStep,
+  writeLineSync,
 } from "./file-logger";
 import { startWatchdog, writeUpdatingFlag } from "./watchdog";
 import { Auth, type AuthStatus } from "./auth";
@@ -1034,7 +1037,7 @@ telegramStore.on("changed", () => {
   telegramInbound?.sync();
 });
 // Beim Beenden die Zustell-Timer stoppen, damit kein Retry mehr feuert.
-app.on("before-quit", () => telegramChannel.stop());
+app.on("before-quit", () => quitStep("telegramChannel.stop", () => telegramChannel.stop()));
 // v0.1.417 — Gegenrichtung: Nachrichten aus dem Telegram-Chat lesen und
 // beantworten. Wird erst nach der Orchestrator-Konstruktion gesetzt
 // (siehe unten) und folgt danach der Konfiguration.
@@ -1922,7 +1925,7 @@ telegramInbound = new TelegramInbound({
   },
 });
 telegramInbound.sync();
-app.on("before-quit", () => telegramInbound?.stop());
+app.on("before-quit", () => quitStep("telegramInbound.stop", () => telegramInbound?.stop()));
 
 alertPrefs.on("changed", (next: AlertPrefs) => {
   // Apply the new cadence immediately. push / quiet-hours / threshold
@@ -2126,7 +2129,7 @@ app.whenReady().then(async () => {
   const providerConfigStore = ProviderConfigStore.shared();
   const openaiTokenRefresher = new OpenAITokenRefresher(providerConfigStore);
   openaiTokenRefresher.start();
-  app.on("before-quit", () => openaiTokenRefresher.stop());
+  app.on("before-quit", () => quitStep("openaiTokenRefresher.stop", () => openaiTokenRefresher.stop()));
 
   // v0.1.257 — Mail-Supervisor (Phase 9.m). Braucht providers + Provider-
   // Config-Store, beide jetzt verfügbar. start() lädt das Konto aus dem
@@ -2175,7 +2178,7 @@ app.whenReady().then(async () => {
     );
   }
   app.on("before-quit", () => {
-    void mailSupervisor?.stop();
+    quitStep("mailSupervisor.stop", () => mailSupervisor?.stop());
   });
 
   // v0.1.307 — Sleep/Wake-Handler. macOS-Sleep-Cycles lassen TCP-Sockets
@@ -2213,38 +2216,39 @@ app.whenReady().then(async () => {
     // Uebergang nicht als Main-Wedge fehlinterpretiert (er tickt
     // beim Einschlafen einige Sekunden laenger als Main).
     markHeartbeatSuspend();
+    writeLineSync("INFO ", "[power] suspend begin");
     console.log("[power] suspend — proactively stopping background services");
-    setImmediate(() => {
+    setImmediate(() => traceStep("[power]", "mailSupervisor", () => {
       void mailSupervisor?.stop().catch((err) => {
         console.warn("[power] suspend: mailSupervisor.stop failed:", err instanceof Error ? err.message : String(err));
       });
-    });
-    setImmediate(() => {
+    }));
+    setImmediate(() => traceStep("[power]", "externalServiceMonitor", () => {
       try {
         externalServiceMonitor.stop();
       } catch (err) {
         console.warn("[power] suspend: externalServiceMonitor.stop failed:", err instanceof Error ? err.message : String(err));
       }
-    });
-    setImmediate(() => {
+    }));
+    setImmediate(() => traceStep("[power]", "stopLinkedInScheduler", () => {
       try {
         stopLinkedInScheduler();
       } catch (err) {
         console.warn("[power] suspend: linkedinScheduler.stop failed:", err instanceof Error ? err.message : String(err));
       }
-    });
-    setImmediate(() => {
+    }));
+    setImmediate(() => traceStep("[power]", "scheduledJobsSupervisor", () => {
       void scheduledJobsSupervisor?.stop().catch((err) => {
         console.warn("[power] suspend: scheduledJobsSupervisor.stop failed:", err instanceof Error ? err.message : String(err));
       });
-    });
-    setImmediate(() => {
+    }));
+    setImmediate(() => traceStep("[power]", "updater", () => {
       try {
         updater.stop();
       } catch (err) {
         console.warn("[power] suspend: updater.stop failed:", err instanceof Error ? err.message : String(err));
       }
-    });
+    }));
     // v0.1.340 — auch den in-process PGlite/pg-gateway-Socket-Server
     // proaktiv schließen. Real-Run-Log zeigt: Main-Prozess friert nach
     // Wake komplett ein (kein `[power] resume`-Log mehr). Der pg-gateway
@@ -2253,11 +2257,11 @@ app.whenReady().then(async () => {
     // ist der wahrscheinlichste Wedge-Punkt. Schließen wie die anderen
     // Sockets; resume startet ihn mit der 3s-Grace neu. stop() flusht
     // die PGlite-Instanzen sauber auf Platte.
-    setImmediate(() => {
+    setImmediate(() => traceStep("[power]", "postgres", () => {
       void postgres.stop().catch((err) => {
         console.warn("[power] suspend: postgres.stop failed:", err instanceof Error ? err.message : String(err));
       });
-    });
+    }));
   });
   powerMonitor.on("resume", () => {
     console.log("[power] resume — re-arming services in 3s");
@@ -2426,7 +2430,7 @@ app.whenReady().then(async () => {
     );
   }
   app.on("before-quit", () => {
-    void selfCorrectionsStore.stop();
+    quitStep("selfCorrectionsStore.stop", () => selfCorrectionsStore.stop());
   });
 
   // v0.1.267 — ScheduledJobs-Supervisor (Phase S). Eigener PGlite-Store
@@ -2504,7 +2508,7 @@ app.whenReady().then(async () => {
     );
   }
   app.on("before-quit", () => {
-    void scheduledJobsSupervisor?.stop();
+    quitStep("scheduledJobsSupervisor.stop", () => scheduledJobsSupervisor?.stop());
   });
 
   async function broadcastScheduledJobsChanged(): Promise<void> {
@@ -2750,10 +2754,10 @@ app.whenReady().then(async () => {
     },
   });
   radarSupervisor.start();
-  app.on("before-quit", () => radarSupervisor?.stop());
+  app.on("before-quit", () => quitStep("radarSupervisor.stop", () => radarSupervisor?.stop()));
 
   app.on("before-quit", () => {
-    void linkMonitorSupervisor?.stop();
+    quitStep("linkMonitorSupervisor.stop", () => linkMonitorSupervisor?.stop());
   });
 
   async function broadcastLinkMonitorsChanged(): Promise<void> {
@@ -6437,15 +6441,18 @@ app.on("window-all-closed", () => {
 // das nicht warten — dort räumt der Process-Group-Tree von selbst auf.
 let quitInProgress = false;
 app.on("before-quit", (e) => {
-  whisper.cancelDownload();
-  freshness.stop();
-  heartbeat.stop();
-  retryTicker.stop();
-  agent.dispose();
-  providers.dispose();
-  updater.stop();
-  externalServiceMonitor.stop();
-  void ollama.stop();
+  // v0.1.520 — jeder Schritt mit synchroner Breadcrumb (siehe
+  // file-logger.quitStep): benennt beim naechsten haengenden Quit den
+  // Schritt, in dem der Main-Thread stecken bleibt.
+  quitStep("whisper.cancelDownload", () => whisper.cancelDownload());
+  quitStep("freshness.stop", () => freshness.stop());
+  quitStep("heartbeat.stop", () => heartbeat.stop());
+  quitStep("retryTicker.stop", () => retryTicker.stop());
+  quitStep("agent.dispose", () => agent.dispose());
+  quitStep("providers.dispose", () => providers.dispose());
+  quitStep("updater.stop", () => updater.stop());
+  quitStep("externalServiceMonitor.stop", () => externalServiceMonitor.stop());
+  quitStep("ollama.stop", () => ollama.stop());
   // v0.1.314 — Update-Install-Pfad: NSIS hat den Quit gefeuert. Hier
   // dürfen wir KEINEN graceful Stop machen, weil NSIS bereits versucht
   // .exe-Dateien zu überschreiben, und jeder gehaltene Handle führt
@@ -6491,8 +6498,11 @@ app.on("before-quit", (e) => {
     return;
   }
   // Non-Windows: fire-and-forget, OS räumt den Prozess-Tree auf.
-  for (const p of producers) {
-    void p.stop();
-  }
-  void postgres.stop();
+  quitStep("producers.stop", () => {
+    for (const p of producers) {
+      void p.stop();
+    }
+  });
+  quitStep("postgres.stop", () => postgres.stop());
+  writeLineSync("INFO ", "[quit] before-quit handlers done");
 });

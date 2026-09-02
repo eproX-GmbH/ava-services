@@ -81,6 +81,12 @@ const POST_WAKE_GRACE_MS = 45000;
 // haengt der Marker laenger als das hier an WACHER Zeit (Sleep wurde
 // abgebrochen und Main haengt wirklich), zaehlen wir wieder.
 const SLEEP_PENDING_MAX_MS = 600000;
+// v0.1.520 — Heartbeat endet mit " quit" = Main beendet sich gerade.
+// Haengt der Quit laenger als das hier, wird er beendet (SIGKILL) —
+// aber NICHT neu gestartet: der Nutzer wollte die App schliessen.
+// Vorher: 20s Beachball, dann Kill + (wegen eines Race, s.u.) gar kein
+// Relaunch — vier Faelle am 1./2.9.2026.
+const QUIT_STALE_MS = 8000;
 
 function log(msg) {
   const line = new Date().toISOString() + " [watchdog] " + msg + "\n";
@@ -158,6 +164,11 @@ const timer = setInterval(function () {
   // Clean quit of main -> our job is done. A fresh main spawns a fresh
   // watchdog, so exiting here avoids relaunching on top of a normal quit.
   if (!mainAlive()) {
+    // v0.1.520 — RACE-FIX: nach unserem eigenen SIGKILL ist die pid
+    // sofort weg, der Relaunch haengt aber an einem 1,5s-Timer. Vorher
+    // beendete sich der Watchdog hier VOR dem Relaunch — in allen vier
+    // Wedge-Faellen kam AVA deshalb nie zurueck.
+    if (recovering) return;
     log("main pid " + MAIN_PID + " gone -> exiting watchdog");
     clearInterval(timer);
     process.exit(0);
@@ -180,6 +191,22 @@ const timer = setInterval(function () {
     lastValue = cur;
     unchangedSince = now;
     sleepPendingSince = 0;
+    return;
+  }
+
+  // v0.1.520 — Quit-Marker: haengender Quit wird kurz beendet, ohne
+  // Relaunch. Ein GESUNDER Quit haelt den Heartbeat weiter am Laufen
+  // (mit Marker), faellt also nie in diesen Zweig.
+  if (cur && cur.indexOf(" quit") >= 0) {
+    if (now - unchangedSince >= QUIT_STALE_MS && !recovering) {
+      recovering = true;
+      log("QUIT WEDGED: heartbeat frozen at '" + cur + "' for " +
+          (now - unchangedSince) + "ms; SIGKILL pid " + MAIN_PID + ", NO relaunch");
+      captureWedgeSample();
+      try { process.kill(MAIN_PID, "SIGKILL"); } catch (e) { log("kill failed: " + e); }
+      clearInterval(timer);
+      setTimeout(function () { process.exit(0); }, 500);
+    }
     return;
   }
 

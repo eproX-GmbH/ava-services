@@ -72,6 +72,7 @@ import {
 import { clearCalibration, writeCalibration } from "./calibration-store";
 import { startScheduler, stopScheduler } from "./scheduler";
 import { destroyScraperWindow } from "./scraper-window";
+import { quitStep } from "../file-logger";
 
 /** Generate + persist the fingerprint on first run if it's missing.
  *  Idempotent — safe to call on every boot. */
@@ -396,9 +397,9 @@ export function initLinkedIn(opts?: {
 
   // Clean shutdown
   app.on("before-quit", () => {
-    stopScheduler();
-    void shutdownScraper();
+    quitStep("linkedin.stopScheduler", () => stopScheduler());
+    quitStep("linkedin.shutdownScraper", () => shutdownScraper());
     // v0.1.330 — persistent Scraper-Window aufraeumen
-    destroyScraperWindow();
+    quitStep("linkedin.destroyScraperWindow", () => destroyScraperWindow());
   });
 }

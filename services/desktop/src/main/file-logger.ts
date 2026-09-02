@@ -27,6 +27,7 @@
 
 import { app } from "electron";
 import {
+  appendFileSync,
   createWriteStream,
   existsSync,
   mkdirSync,
@@ -68,6 +69,9 @@ let heartbeatPath = "";
 let heartbeatTimer: NodeJS.Timeout | null = null;
 let bytesWritten = 0;
 let initialized = false;
+// v0.1.520 — Quit laeuft: Heartbeat traegt den " quit"-Marker, damit der
+// Watchdog einen haengenden Quit kurz (8s) und OHNE Relaunch beendet.
+let quitting = false;
 
 // Captured before we monkey-patch, so our own writeLine can still reach
 // the real stdout/stderr if it ever needs to (and so the patched
@@ -248,7 +252,7 @@ export function initFileLogger(): void {
     try {
       writeFileSync(
         heartbeatPath,
-        `${ts()} pid=${process.pid} v${app.getVersion()}\n`,
+        `${ts()} pid=${process.pid} v${app.getVersion()}${quitting ? " quit" : ""}\n`,
       );
     } catch {
       /* best-effort — must never throw */
@@ -256,6 +260,19 @@ export function initFileLogger(): void {
   };
   tick();
   heartbeatTimer = setInterval(tick, HEARTBEAT_INTERVAL_MS);
+  // v0.1.520 — FRUEHESTER before-quit-Handler (initFileLogger laeuft vor
+  // allen anderen Registrierungen): Marker + synchrone Breadcrumb. Die
+  // vier Wedges vom 1./2.9. lagen ALLE in der Quit-/Suspend-Kette, und
+  // weil der normale Logger ueber einen gepufferten Stream schreibt,
+  // gingen die letzten Zeilen vor dem SIGKILL verloren. Alles hier
+  // schreibt deshalb SYNCHRON (appendFileSync).
+  app.on("before-quit", () => {
+    quitting = true;
+    markHeartbeatQuit();
+    writeLineSync("INFO ", `[quit] before-quit begin (v${app.getVersion()} pid=${process.pid})`);
+  });
+  app.on("will-quit", () => writeLineSync("INFO ", "[quit] will-quit"));
+  app.on("quit", (_e, code) => writeLineSync("INFO ", `[quit] quit exitCode=${code}`));
   // Don't keep the event loop alive on quit just for the heartbeat.
   if (typeof heartbeatTimer.unref === "function") heartbeatTimer.unref();
 }
@@ -270,6 +287,57 @@ export function initFileLogger(): void {
  * Der Watchdog pausiert die Stale-Zaehlung, solange der letzte
  * Heartbeat mit " suspend" endet.
  */
+/** v0.1.520 — SYNCHRONE Log-Zeile (appendFileSync), fuer Breadcrumbs in
+ *  Quit-/Suspend-Ketten, die ein Wedge sonst verschluckt. Sparsam nutzen. */
+export function writeLineSync(level: string, line: string): void {
+  if (!logPath) return;
+  try {
+    appendFileSync(logPath, `${ts()} ${level} ${line}\n`);
+  } catch {
+    /* best-effort */
+  }
+}
+
+/**
+ * v0.1.520 — Schritt der Quit-/Suspend-Kette mit synchronen Breadcrumbs
+ * davor und danach (inkl. Dauer des SYNCHRONEN Anteils — bei async-
+ * Funktionen also nur bis zum ersten await, und genau der Anteil kann
+ * den Main-Thread blockieren). Fehler werden geloggt, nie geworfen:
+ * ein kaputter Schritt darf die restliche Kette nicht abbrechen.
+ */
+export function traceStep(prefix: string, name: string, fn: () => unknown): void {
+  writeLineSync("INFO ", `${prefix} > ${name}`);
+  const t0 = Date.now();
+  try {
+    const r = fn();
+    if (r && typeof (r as Promise<unknown>).catch === "function") {
+      (r as Promise<unknown>).catch((err) =>
+        writeLineSync("WARN ", `${prefix} ${name} async-fehler: ${err instanceof Error ? err.message : String(err)}`),
+      );
+    }
+  } catch (err) {
+    writeLineSync("WARN ", `${prefix} ${name} fehler: ${err instanceof Error ? err.message : String(err)}`);
+  }
+  writeLineSync("INFO ", `${prefix} < ${name} (${Date.now() - t0}ms sync)`);
+}
+
+export function quitStep(name: string, fn: () => unknown): void {
+  traceStep("[quit]", name, fn);
+}
+
+/** v0.1.520 — Quit-Marker im Heartbeat (Zwilling zu markHeartbeatSuspend). */
+export function markHeartbeatQuit(): void {
+  if (!heartbeatPath) return;
+  try {
+    writeFileSync(
+      heartbeatPath,
+      `${ts()} pid=${process.pid} v${app.getVersion()} quit\n`,
+    );
+  } catch {
+    /* best-effort — must never throw */
+  }
+}
+
 export function markHeartbeatSuspend(): void {
   if (!heartbeatPath) return;
   try {
