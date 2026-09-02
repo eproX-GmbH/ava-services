@@ -11,6 +11,12 @@
 // — der eigentliche Match-Alert kommt spaeter aus dem Radar-Pfad.
 
 import type { AlertsStore } from "../../agent/alerts-store";
+import type { LlmProviderManager } from "../../agent/providers";
+import {
+  buildMessages,
+  parseJsonObject,
+  streamToText,
+} from "../../link-monitor/llm";
 import type { GatewayClient } from "../../agent/gateway-client";
 import type { Alert } from "../../../shared/types";
 import type { WatchlistKeyStore } from "../watchlist/key-store";
@@ -24,6 +30,8 @@ const MAX_POSTS_PER_RUN = 10;
 const MAX_CANDIDATES_PER_BATCH = 25;
 
 export interface PersonenRadarSupervisorDeps {
+  /** v0.1.519 — fuer die Headline-Extraktion per LLM. */
+  providers: LlmProviderManager;
   keyStore: WatchlistKeyStore;
   store: PersonenRadarStore;
   gateway: GatewayClient;
@@ -46,6 +54,41 @@ export class PersonenRadarSupervisor {
   private running = false;
 
   constructor(private readonly deps: PersonenRadarSupervisorDeps) {}
+
+  /**
+   * v0.1.519 — Arbeitgeber aus der Headline per LLM (User-Direktive
+   * 2026-09-02: "bei/at/@"-Heuristik deckt die Realitaet nicht ab).
+   * Halluzinationssperre: der genannte Name muss WOERTLICH in der
+   * Headline stehen (Whitespace-gefaltet, case-insensitiv) — sonst
+   * null. Kein Modell bereit → null (dann greift die Heuristik).
+   */
+  async firmaAusHeadlinePerLlm(headline: string): Promise<string | null> {
+    if (!this.deps.providers.getStatus().ready) return null;
+    const system =
+      "Du liest LinkedIn-Headlines und nennst den AKTUELLEN Arbeitgeber (Firmenname), " +
+      "falls die Headline einen nennt. Regeln: Nur den Firmennamen, exakt so geschrieben " +
+      "wie in der Headline, ohne Rolle, ohne Zusatz. Hochschulen, Vereine und Eigenmarken " +
+      "gelten als Arbeitgeber. Steht KEIN Arbeitgeber in der Headline (nur Rolle, Slogan, " +
+      "Themen), antworte mit null. Niemals raten oder ergaenzen. " +
+      'Antworte NUR als JSON: {"firma": "<Name>" | null}';
+    try {
+      const producerModel = this.deps.providers.getProducerModelOverride();
+      const raw = await streamToText(
+        this.deps.providers,
+        buildMessages(system, headline.slice(0, 300), "pradar-headline"),
+        { timeoutMs: 30_000, ...(producerModel ? { modelOverride: producerModel } : {}) },
+      );
+      const parsed = parseJsonObject(raw) as { firma?: unknown } | null;
+      const firma = typeof parsed?.firma === "string" ? parsed.firma.trim() : "";
+      if (firma.length < 2 || firma.length > 80) return null;
+      const falte = (t: string) => t.replace(/\s+/g, " ").toLowerCase();
+      if (!falte(headline).includes(falte(firma))) return null;
+      return firma;
+    } catch (err) {
+      console.warn("[personen-radar] Headline-Extraktion fehlgeschlagen:", err);
+      return null;
+    }
+  }
 
   start(): void {
     if (this.timer) return;
@@ -145,6 +188,7 @@ export class PersonenRadarSupervisor {
             actors: cfg.actorIds,
             gateway: this.deps.gateway,
             engager,
+            firmaAusHeadline: (h) => this.firmaAusHeadlinePerLlm(h),
           });
           this.deps.keyStore.addMonthItems(r.kosteneinheiten);
           aufgeloest += r.matches.length > 0 ? 1 : 0;

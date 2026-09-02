@@ -62,6 +62,10 @@ export async function resolveEngagerCompanies(args: {
   gateway: GatewayClient;
   engager: Engager;
   signal?: AbortSignal;
+  /** v0.1.519 — LLM-Extraktion des Arbeitgebers aus der Headline
+   *  (User-Direktive: Heuristik deckt "zig tausende" Headline-Formen
+   *  nicht ab). Optional; ohne Modell greift die Heuristik. */
+  firmaAusHeadline?: (headline: string) => Promise<string | null>;
 }): Promise<KaskadenErgebnis> {
   const out: FirmenMatch[] = [];
   const unaufgeloest: string[] = [];
@@ -128,7 +132,15 @@ export async function resolveEngagerCompanies(args: {
   // Kein Profil-Detail / nichts gefunden → Headline als letzter
   // Stufe-2-Versuch.
   if (out.length === 0) {
-    const name = companyFromHeadline(args.engager.headline);
+    let name: string | null = null;
+    if (args.firmaAusHeadline && args.engager.headline) {
+      try {
+        name = await args.firmaAusHeadline(args.engager.headline);
+      } catch {
+        name = null;
+      }
+    }
+    if (!name) name = companyFromHeadline(args.engager.headline);
     if (name) {
       const domain = await serpDomainLookup(args.gateway, name, args.signal);
       if (domain) {

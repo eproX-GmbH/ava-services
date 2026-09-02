@@ -5,7 +5,7 @@ NICHT direkt bearbeiten — die Quelle der Wahrheit ist `services/desktop/src/ma
 Lauf via `pnpm -F @ava/desktop tools:doc` (oder automatisch via `build:typecheck`).
 
 Stand: 2026-09-02
-Anzahl Tools: 199
+Anzahl Tools: 200
 
 ## Firmen (13)
 
@@ -1115,7 +1115,7 @@ _Parameter:_
 - `intervalMinutes: number`
 - `label: string`
 
-## linkedin-selfservice (4)
+## linkedin-selfservice (5)
 
 ### `linkedin_beobachter`
 
@@ -1147,6 +1147,14 @@ _Parameter:_
 - `maxResolvesPerRun: number` — Profil-Aufloesungen je Lauf (1-50) — Kosten-Hebel.
 - `addPostUrls: array` — LinkedIn-Post-URLs hinzufuegen.
 - `removePostUrls: array` — Post-URLs entfernen.
+
+### `personen_radar_freigeben`
+
+_Datei:_ `services/desktop/src/main/agent/tools/linkedin-selfservice.ts`
+
+Hebt die 90-Tage-Sperre fuer alle aktuell ungeklaerten Personen auf, sodass der naechste Personen-Radar-Lauf sie erneut aufzuloesen versucht (kostet dann Apify-Items). Sinnvoll nach Verbesserungen der Aufloesung oder wenn Profile inzwischen gepflegt wurden. Wirkungsklasse mutating.
+
+_Parameter:_ keine.
 
 ### `personen_radar_status`
 

@@ -2682,6 +2682,7 @@ app.whenReady().then(async () => {
   // Apify-Key mit der Watchlist.
   personenRadarStore = new PersonenRadarStore();
   personenRadarSupervisor = new PersonenRadarSupervisor({
+    providers,
     keyStore: watchlistKeyStore,
     store: personenRadarStore,
     gateway: gatewayClient,
@@ -2707,6 +2708,21 @@ app.whenReady().then(async () => {
     },
   });
   personenRadarSupervisor.start();
+  // v0.1.519 — einmalige Freigabe aller Ungeklaerten: der Positionen-
+  // Bugfix (v0.1.518) hat die Kaskade repariert, aber die 90-Tage-
+  // Sperre haette die betroffenen Personen bis Dezember blockiert.
+  {
+    const prs = personenRadarStore;
+    if (!prs.getConfig().unklarFreigegebenAm) {
+      void prs
+        .releaseUnklar()
+        .then((n) => {
+          prs.setConfig({ unklarFreigegebenAm: new Date().toISOString() });
+          if (n > 0) console.log(`[personen-radar] ${n} Ungeklaerte nach Bugfix freigegeben`);
+        })
+        .catch((err) => console.warn("[personen-radar] Freigabe fehlgeschlagen:", err));
+    }
+  }
 
   radarSupervisor = new RadarSupervisor({
     gateway: gatewayClient,

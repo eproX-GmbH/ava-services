@@ -210,6 +210,44 @@ export function buildLinkedInSelfserviceTools(
     },
   });
 
+  // v0.1.519 — Ungeklaerte gezielt freigeben (Self-Service).
+  const pradarFreigeben = defineTool({
+    name: "personen_radar_freigeben",
+    summary:
+      "Ungeklaerte Personen des Personen-Radars fuer einen erneuten Aufloesungsversuch freigeben.",
+    category: "linkedin personen-radar ungeklaert erneut",
+    description:
+      "Hebt die 90-Tage-Sperre fuer alle aktuell ungeklaerten Personen " +
+      "auf, sodass der naechste Personen-Radar-Lauf sie erneut aufzuloesen " +
+      "versucht (kostet dann Apify-Items). Sinnvoll nach Verbesserungen " +
+      "der Aufloesung oder wenn Profile inzwischen gepflegt wurden. " +
+      "Wirkungsklasse mutating.",
+    parameters: { type: "object", properties: {} },
+    schema: yup.object({}),
+    preview: () => "Ungeklaerte freigeben",
+    run: async (_args, c) => {
+      const store = deps.getPradarStore();
+      if (!store) return "Personen-Radar nicht initialisiert.";
+      const unklar = await store.listUnklar();
+      if (unklar.length === 0) return "Keine ungeklaerten Personen vorhanden.";
+      const value = await c.ui.confirmAction(
+        {
+          kind: "mutating",
+          prompt: `${unklar.length} ungeklaerte Person(en) fuer einen erneuten Aufloesungsversuch freigeben? Der naechste Lauf kostet dafuer Apify-Items.`,
+          confirmValue: "release",
+          options: [
+            { value: "release", label: "Freigeben" },
+            { value: "cancel", label: "Abbrechen" },
+          ],
+        },
+        c.signal,
+      );
+      if (value !== "release") return userDeclined();
+      const n = await store.releaseUnklar();
+      return `${n} Person(en) freigegeben — beim naechsten Lauf (oder per personen_radar_check_now) werden sie erneut aufgeloest.`;
+    },
+  });
+
   const beobachter = defineTool({
     name: "linkedin_beobachter",
     summary:
@@ -287,5 +325,5 @@ export function buildLinkedInSelfserviceTools(
     },
   });
 
-  return [pradarConfig, pradarCheckNow, pradarStatus, beobachter];
+  return [pradarConfig, pradarCheckNow, pradarStatus, pradarFreigeben, beobachter];
 }

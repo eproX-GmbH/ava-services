@@ -32,6 +32,9 @@ export interface PersonenRadarConfig {
   actorIds: typeof ENGAGEMENT_DEFAULT_ACTORS;
   lastRunAt: string | null;
   lastOutcome: string | null;
+  /** v0.1.519 — Zeitstempel der einmaligen Freigabe aller Ungeklaerten
+   *  nach dem Positionen-Bugfix (v0.1.518). */
+  unklarFreigegebenAm: string | null;
 }
 
 const DEFAULT_CONFIG: PersonenRadarConfig = {
@@ -43,6 +46,7 @@ const DEFAULT_CONFIG: PersonenRadarConfig = {
   actorIds: { ...ENGAGEMENT_DEFAULT_ACTORS },
   lastRunAt: null,
   lastOutcome: null,
+  unklarFreigegebenAm: null,
 };
 
 const SCHEMA = `
@@ -97,6 +101,8 @@ export class PersonenRadarStore {
           },
           lastRunAt: typeof p.lastRunAt === "string" ? p.lastRunAt : null,
           lastOutcome: typeof p.lastOutcome === "string" ? p.lastOutcome : null,
+          unklarFreigegebenAm:
+            typeof p.unklarFreigegebenAm === "string" ? p.unklarFreigegebenAm : null,
         };
         return this.getConfig();
       }
@@ -149,6 +155,21 @@ export class PersonenRadarStore {
       );
     }
     await db.query(`DELETE FROM pradar_seen WHERE first_seen < NOW() - interval '90 days'`);
+  }
+
+  /** v0.1.519 — Ungeklaerte GEZIELT freigeben: ihre 90-Tage-Sperre
+   *  (pradar_seen) faellt, der naechste Lauf versucht sie erneut. Die
+   *  Ungeklaert-Liste wird geleert. Liefert die Anzahl. */
+  async releaseUnklar(): Promise<number> {
+    const db = await this.db();
+    const r = await db.query<{ profile_url: string }>(
+      `SELECT profile_url FROM pradar_unklar`,
+    );
+    const urls = r.rows.map((x) => x.profile_url);
+    if (urls.length === 0) return 0;
+    await db.query(`DELETE FROM pradar_seen WHERE profile_url = ANY($1::text[])`, [urls]);
+    await db.query(`DELETE FROM pradar_unklar WHERE profile_url = ANY($1::text[])`, [urls]);
+    return urls.length;
   }
 
   async addUnklar(rows: Array<{ profileUrl: string; name: string | null; headline: string | null; grund: string }>): Promise<void> {
