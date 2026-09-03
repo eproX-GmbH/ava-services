@@ -1,5 +1,16 @@
 import { app, BrowserWindow, safeStorage, shell } from "electron";
-import { consumeForceLoginPrompt } from "./account-space";
+import { consumeForceLoginPrompt, readIdentity } from "./account-space";
+
+/** v0.1.532 — Keycloak-Parameter gegen das SSO-Konto-Ping-Pong. */
+function hint(
+  identity: { email: string | null; sub: string } | null,
+  force: boolean,
+): Record<string, string> {
+  const out: Record<string, string> = {};
+  if (force || identity) out.prompt = "login";
+  if (identity?.email) out.login_hint = identity.email;
+  return out;
+}
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { createHash, randomBytes } from "node:crypto";
@@ -400,7 +411,13 @@ export class Auth extends EventEmitter {
         // T2 — nach "Anderes Konto hinzufuegen": Keycloak MUSS das
         // Login-Formular zeigen, statt die SSO-Session des vorherigen
         // Kontos stillschweigend wiederzuverwenden.
-        ...(consumeForceLoginPrompt() ? { prompt: "login" } : {}),
+        // v0.1.532 — dasselbe, sobald der aktive Space schon einer
+        // Identitaet gehoert: Live-Befund 2026-09-03 12:19–12:20, vier
+        // Neustarts in 40s. Nach "Wechsel zu A" lieferte der System-
+        // Browser per SSO-Cookie stillschweigend Konto B → Identitaets-
+        // Sperre → Neustart in B → dort Anmeldung als A → Sperre → …
+        // login_hint fuellt das Formular mit dem Konto des Spaces vor.
+        ...(hint(readIdentity(), consumeForceLoginPrompt())),
         code_challenge: challenge,
         code_challenge_method: "S256",
         state,

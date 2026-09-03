@@ -310,9 +310,16 @@ export function traceStep(prefix: string, name: string, fn: () => unknown): void
   const t0 = Date.now();
   try {
     const r = fn();
-    if (r && typeof (r as Promise<unknown>).catch === "function") {
-      (r as Promise<unknown>).catch((err) =>
-        writeLineSync("WARN ", `${prefix} ${name} async-fehler: ${err instanceof Error ? err.message : String(err)}`),
+    if (r && typeof (r as Promise<unknown>).then === "function") {
+      // v0.1.532 — auch das ENDE der asynchronen Fortsetzung festhalten.
+      // Hang-Report 2026-09-03 12:21 (pid 29158): alle synchronen
+      // Anteile der Suspend-Kette 0ms, der Wedge lag in einer der
+      // Fortsetzungen danach. Naechstes Mal steht hier, welche nie
+      // fertig wurde bzw. welche als letzte fertig war.
+      (r as Promise<unknown>).then(
+        () => writeLineSync("INFO ", `${prefix} ~ ${name} fertig (${Date.now() - t0}ms)`),
+        (err) =>
+          writeLineSync("WARN ", `${prefix} ~ ${name} fehlgeschlagen (${Date.now() - t0}ms): ${err instanceof Error ? err.message : String(err)}`),
       );
     }
   } catch (err) {

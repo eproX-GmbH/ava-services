@@ -17,6 +17,7 @@ import {
 import "./file-logger-init";
 // T1 — Account-Space VOR allen Stores waehlen (siehe account-space.ts).
 import "./account-space-init";
+import { setMaxListeners } from "node:events";
 import {
   handleSignedIn as accountSpaceSignedIn,
   listAccounts,
@@ -248,6 +249,11 @@ import type {
 // Resolved here at module load using `app.isPackaged` + `app.getVersion()`
 // so the rest of main can treat config as static.
 import { resolveConfig } from "../shared/config";
+// v0.1.532 — 11 before-quit-Handler (Breadcrumbs je Modul) sind
+// Absicht; Node warnt ab 10. Vorher stand bei jedem Start eine
+// MaxListenersExceededWarning im Log.
+setMaxListeners(40, app);
+
 const APP_CONFIG = resolveConfig({
   appVersion: app.getVersion(),
   isPackaged: app.isPackaged,
@@ -2287,23 +2293,29 @@ app.whenReady().then(async () => {
         console.warn("[power] suspend: updater.stop failed:", err instanceof Error ? err.message : String(err));
       }
     }));
-    // v0.1.340 — auch den in-process PGlite/pg-gateway-Socket-Server
-    // proaktiv schließen. Real-Run-Log zeigt: Main-Prozess friert nach
-    // Wake komplett ein (kein `[power] resume`-Log mehr). Der pg-gateway
-    // ist der einzige offene TCP-Socket in Main, der bisher NICHT vor
-    // dem Sleep geschlossen wurde — stale Socket + WASM-Engine (PGlite)
-    // ist der wahrscheinlichste Wedge-Punkt. Schließen wie die anderen
-    // Sockets; resume startet ihn mit der 3s-Grace neu. stop() flusht
-    // die PGlite-Instanzen sauber auf Platte.
-    setImmediate(() => traceStep("[power]", "postgres", () => {
-      void postgres.stop().catch((err) => {
-        console.warn("[power] suspend: postgres.stop failed:", err instanceof Error ? err.message : String(err));
-      });
+    // v0.1.532 — postgres.stop() (v0.1.340) laeuft beim Suspend NICHT
+    // mehr: es schloss den pg-gateway-Server UND alle PGlite-Instanzen
+    // in dem ~2s-Fenster, das macOS vor dem Schlaf gewaehrt. Die Wedge-
+    // Serie (2026-09-01/02/03) lag ausnahmslos in Quit-/Suspend-Ketten,
+    // und seit die Quit-Kette per Breadcrumbs sauber durchlaeuft, bleibt
+    // die Suspend-Kette als Tatort. Loopback-Verbindungen ueberstehen
+    // den Schlaf; resume ruft postgres.start() ohnehin idempotent.
+    // v0.1.532 — Telegram-Long-Polling vor dem Schlaf beenden (Netz
+    // faellt weg); resume startet es per sync() wieder.
+    setImmediate(() => traceStep("[power]", "telegramInbound", () => {
+      telegramInbound?.stop();
     }));
   });
   powerMonitor.on("resume", () => {
+    writeLineSync("INFO ", "[power] resume begin");
     console.log("[power] resume — re-arming services in 3s");
     setTimeout(() => {
+      // v0.1.532 — Telegram-Eingang wieder starten (Konfiguration entscheidet).
+      try {
+        telegramInbound?.sync();
+      } catch (err) {
+        console.warn("[power] resume: telegramInbound.sync failed:", err instanceof Error ? err.message : String(err));
+      }
       void mailSupervisor?.start().catch((err) => {
         console.warn("[power] resume: mailSupervisor.start failed:", err instanceof Error ? err.message : String(err));
       });
