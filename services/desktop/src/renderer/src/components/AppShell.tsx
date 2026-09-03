@@ -647,11 +647,17 @@ function TopBar() {
         <NavItem to="/whoami" label="Status" />
       </nav>
       <div className="topbar__spacer" />
-      <ThemeToggle />
-      <UsageChip />
-      <WatchChip />
-      <AlertBell />
-      <UserBadge />
+      {/* v0.1.533 — rechter Cluster: einheitliche Hoehe, gleicher Abstand,
+          Trenner vor dem Konto. Vorher standen Toggle, Chips, Glocke und
+          Konto mit unterschiedlichen Hoehen/Abstaenden dicht aneinander. */}
+      <div className="topbar__cluster">
+        <UsageChip />
+        <WatchChip />
+        <AlertBell />
+        <ThemeToggle />
+        <span className="topbar__divider" aria-hidden />
+        <UserBadge />
+      </div>
     </header>
   );
 }

@@ -168,6 +168,11 @@ export function initAccountSpace(): void {
   log(`aktiver Space: ${activeId === PENDING ? "_pending (nicht angemeldet)" : activeId} → ${dir}`);
 }
 
+/** Space-Verzeichnis eines Kontos (auch wenn es nicht aktiv ist). */
+export function spaceDirFor(sub: string): string {
+  return spaceDir(sub);
+}
+
 /** Basis-userData (Electron-Default), unabhaengig vom aktiven Space. */
 export function getBaseUserData(): string {
   return baseDir || app.getPath("userData");

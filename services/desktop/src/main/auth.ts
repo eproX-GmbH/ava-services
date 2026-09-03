@@ -117,6 +117,13 @@ const APP_SCOPES = [
   "openid",
   "profile",
   "email",
+  // v0.1.533 — Offline-Token: unabhaengig von der Browser-SSO-Session.
+  // Normale Refresh-Tokens sterben, sobald sich im System-Browser ein
+  // anderes Konto an- oder abmeldet ("Session not active") — genau das
+  // machte den Kontowechsel zaeh (Neustart → Anmeldemaske → falsches
+  // Konto per SSO-Cookie …). Offline-Tokens sind fuer native Apps
+  // gedacht und bleiben je Konto-Space gueltig, bis wir sie loeschen.
+  "offline_access",
   "company:read",
   "company:write",
   "transaction:read",
@@ -554,6 +561,15 @@ export class Auth extends EventEmitter {
     });
 
     if (tokens.refresh_token) {
+      this.lastRefreshToken = tokens.refresh_token;
+      // Einmal je Anmeldung festhalten, ob Keycloak wirklich ein
+      // Offline-Token ausgestellt hat (typ "Offline") — sonst fehlt dem
+      // Client der Scope und der Kontowechsel bleibt SSO-gebunden.
+      const typ = decodeJwtPayload(tokens.refresh_token)["typ"];
+      if (typ !== this.lastLoggedRefreshTyp) {
+        this.lastLoggedRefreshTyp = typeof typ === "string" ? typ : "?";
+        console.log(`auth: refresh token typ=${this.lastLoggedRefreshTyp}${typ === "Offline" ? "" : " (KEIN Offline-Token — offline_access-Scope am Client pruefen)"}`);
+      }
       await this.saveRefreshToken(tokens.refresh_token);
     }
 
@@ -603,6 +619,28 @@ export class Auth extends EventEmitter {
       email: `${actorId}@dev.local`,
       name: actorId,
     });
+  }
+
+  private lastRefreshToken: string | null = null;
+  private lastLoggedRefreshTyp: string | null = null;
+
+  /**
+   * v0.1.533 — Frisches Refresh-Token in den Space eines ANDEREN Kontos
+   * legen. Greift die Identitaets-Sperre (Token gehoert nicht zum
+   * aktiven Space), nimmt das Ziel-Konto sein Token mit — nach dem
+   * Neustart ist es sofort angemeldet statt erneut die Maske zu sehen.
+   */
+  async exportRefreshTokenTo(spaceDir: string): Promise<boolean> {
+    if (!this.lastRefreshToken || !safeStorage.isEncryptionAvailable()) return false;
+    try {
+      await fs.mkdir(spaceDir, { recursive: true });
+      const enc = safeStorage.encryptString(this.lastRefreshToken);
+      await fs.writeFile(join(spaceDir, "auth.bin"), enc, { mode: 0o600 });
+      return true;
+    } catch (err) {
+      console.warn("auth: export des Refresh-Tokens fehlgeschlagen:", (err as Error).message);
+      return false;
+    }
   }
 
   // ---- Refresh-token persistence (OS keychain via safeStorage) --------------

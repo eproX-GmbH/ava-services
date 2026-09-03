@@ -24,6 +24,7 @@ import {
   switchAccount,
   startNewAccount,
   removeAccount,
+  spaceDirFor,
   getActiveSpaceId,
   readIdentity,
 } from "./account-space";
@@ -1468,14 +1469,22 @@ let lastSpaceSub: string | null = null;
 auth.on("status", (status: AuthStatus) => {
   if (status.signedIn && status.actorId && status.actorId !== lastSpaceSub) {
     lastSpaceSub = status.actorId;
-    const ergebnis = accountSpaceSignedIn({
-      sub: status.actorId,
-      email: status.email ?? null,
-      name: status.name ?? null,
-      tenantId: status.tenantId ?? null,
-      tenantName: status.tenantName ?? null,
-    });
+    const ergebnis = accountSpaceSignedIn(
+      {
+        sub: status.actorId,
+        email: status.email ?? null,
+        name: status.name ?? null,
+        tenantId: status.tenantId ?? null,
+        tenantName: status.tenantName ?? null,
+      },
+      { relaunchDelayMs: 1500 },
+    );
     if (ergebnis === "relaunching") {
+      // v0.1.533 — das eben erhaltene (Offline-)Token in den Ziel-Space
+      // mitnehmen: nach dem Neustart ist das Konto sofort angemeldet.
+      void auth.exportRefreshTokenTo(spaceDirFor(status.actorId)).then((ok) => {
+        console.log(`[account-space] Refresh-Token in Ziel-Space uebernommen: ${ok}`);
+      });
       console.log("[account-space] lokale Daten werden diesem Konto zugeordnet — AVA startet neu");
       for (const win of BrowserWindow.getAllWindows()) {
         try {

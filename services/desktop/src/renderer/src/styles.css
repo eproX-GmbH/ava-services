@@ -3650,12 +3650,11 @@ a.heartbeat-decision__company:hover {
 .watch-chip {
   position: relative;
   display: flex; align-items: center;
-  margin-right: 4px;
 }
 .watch-chip__btn {
   display: inline-flex; align-items: center; gap: 6px;
-  padding: 4px 10px;
-  height: 28px;
+  padding: 0 12px;
+  height: 32px;
   border: 1px solid var(--ctrl-border);
   border-radius: 999px;
   background: var(--ctrl-bg);
@@ -8222,8 +8221,8 @@ tr.held-row td:first-child::after {
 
 /* T2 — Kontowechsler in der Topbar */
 .topbar__account {
-  background: none; border: 1px solid transparent; border-radius: 999px;
-  padding: 4px 10px; cursor: pointer; font: inherit; font-size: 13px;
+  background: none; border: 1px solid var(--ctrl-border, #d0d4d9); border-radius: 999px;
+  height: 32px; padding: 0 12px; cursor: pointer; font: inherit; font-size: 13px;
   color: var(--color-fg); display: inline-flex; align-items: center; gap: 0.35rem;
 }
 .topbar__account:hover { border-color: var(--border, #d0d4d9); background: var(--color-indigo-50); }
@@ -8248,3 +8247,10 @@ html.dark .account-relaunch { background: #111827; color: #e5e7eb; }
 /* T2 — Spinner fuer das Neustart-Overlay */
 @keyframes ava-spin { to { transform: rotate(360deg); } }
 .spin { animation: ava-spin 0.9s linear infinite; }
+
+
+/* v0.1.533 — Topbar rechter Cluster */
+.topbar__cluster { display: flex; align-items: center; gap: 8px; height: 36px; }
+.topbar__cluster > * { display: flex; align-items: center; }
+.topbar__divider { width: 1px; height: 22px; background: var(--ctrl-border, #d0d4d9); margin: 0 4px; }
+.topbar__user { gap: 0; }
