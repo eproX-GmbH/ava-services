@@ -19,6 +19,7 @@ interface AlertsState {
   unreadCount: number;
   refresh: () => Promise<void>;
   markSeen: (id: string) => Promise<void>;
+  markAllSeen: () => Promise<number>;
   dismiss: (id: string) => Promise<void>;
   triggerNow: () => Promise<void>;
 }
@@ -50,6 +51,18 @@ export const useAlertsStore = create<AlertsState>((set, get) => ({
       );
       return { alerts, unreadCount: deriveUnread(alerts) };
     });
+  },
+
+  markAllSeen: async () => {
+    const n = await window.api.alerts.markAllSeen();
+    const now = new Date().toISOString();
+    set((s) => {
+      const alerts = s.alerts.map((a) =>
+        a.seenAt === null ? { ...a, seenAt: now } : a,
+      );
+      return { alerts, unreadCount: deriveUnread(alerts) };
+    });
+    return n;
   },
 
   dismiss: async (id) => {

@@ -5,7 +5,7 @@ NICHT direkt bearbeiten — die Quelle der Wahrheit ist `services/desktop/src/ma
 Lauf via `pnpm -F @ava/desktop tools:doc` (oder automatisch via `build:typecheck`).
 
 Stand: 2026-09-03
-Anzahl Tools: 200
+Anzahl Tools: 201
 
 ## Firmen (13)
 
@@ -281,7 +281,7 @@ Start a per-transaction DEEP RESEARCH best-match job. Picks the top candidates a
 
 _Parameter:_ keine.
 
-## Meldungen / Alerts (7)
+## Meldungen / Alerts (8)
 
 ### `alerts_dismiss`
 
@@ -317,6 +317,14 @@ List current heartbeat alerts (newest first). Use when the user asks 'welche Mel
 _Parameter:_
 - `unreadOnly: boolean` — When true, only return entries with seenAt=null.
 - `limit: integer` — Max entries to return. Default 20.
+
+### `alerts_mark_all_seen`
+
+_Datei:_ `services/desktop/src/main/agent/tools/alerts.ts`
+
+Mark EVERY unread alert as read in one shot (clears the bell counter) WITHOUT dismissing anything. Use when the user says 'markiere alle Meldungen als gelesen', 'alles gelesen', 'Glocke zuruecksetzen'. Returns the number of rows touched. Reversible in effect (alerts stay visible); prefer this over alerts_dismiss_all when the user only wants the counter gone.
+
+_Parameter:_ keine.
 
 ### `alerts_purge`
 

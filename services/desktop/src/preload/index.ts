@@ -1061,6 +1061,8 @@ const api = {
       ipcRenderer.invoke("alerts:unreadCount"),
     markSeen: (id: string): Promise<boolean> =>
       ipcRenderer.invoke("alerts:markSeen", id),
+    /** v0.1.523 — alle ungelesenen als gelesen markieren; liefert die Anzahl. */
+    markAllSeen: (): Promise<number> => ipcRenderer.invoke("alerts:markAllSeen"),
     dismiss: (id: string): Promise<boolean> =>
       ipcRenderer.invoke("alerts:dismiss", id),
     /**

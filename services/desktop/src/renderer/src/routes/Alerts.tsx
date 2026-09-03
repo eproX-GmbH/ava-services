@@ -47,7 +47,7 @@ const SEVERITY_LABEL: Record<AlertSeverity, string> = {
 };
 
 export function Alerts() {
-  const { alerts, ready, markSeen, dismiss, triggerNow } = useAlertsStore();
+  const { alerts, ready, markSeen, markAllSeen, dismiss, triggerNow } = useAlertsStore();
   const [filter, setFilter] = useState<"all" | "unread">("all");
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -97,6 +97,15 @@ export function Alerts() {
               Ungelesen ({alerts.filter((a) => a.seenAt === null).length})
             </button>
           </div>
+          {alerts.some((a) => a.seenAt === null) && (
+            <button
+              type="button"
+              onClick={() => void markAllSeen()}
+              title="Alle ungelesenen Meldungen als gelesen markieren — nichts wird verworfen"
+            >
+              Alle als gelesen markieren
+            </button>
+          )}
           <button type="button" onClick={onTrigger} disabled={busy}>
             {busy ? "Heartbeat läuft…" : "Jetzt auslösen"}
           </button>

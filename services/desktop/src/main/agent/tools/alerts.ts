@@ -129,6 +129,22 @@ export function buildAlertsTools(deps: AlertsToolDeps): Tool[] {
     },
   });
 
+  // v0.1.523 — Self-Service-Zwilling des Buttons auf der Meldungs-Seite.
+  const markAllSeen = defineTool({
+    name: "alerts_mark_all_seen",
+    description:
+      "Mark EVERY unread alert as read in one shot (clears the bell counter) WITHOUT dismissing anything. Use when the user says 'markiere alle Meldungen als gelesen', 'alles gelesen', 'Glocke zuruecksetzen'. Returns the number of rows touched. Reversible in effect (alerts stay visible); prefer this over alerts_dismiss_all when the user only wants the counter gone.",
+    parameters: { type: "object", properties: {} },
+    schema: yup.object({}).noUnknown(true),
+    preview: (r: { markiert: number }) =>
+      `${r.markiert} Meldung${r.markiert === 1 ? "" : "en"} als gelesen markiert`,
+    run: async () => {
+      const markiert = deps.alerts.markAllSeen();
+      if (markiert > 0) deps.onChanged();
+      return { markiert };
+    },
+  });
+
   const triggerHeartbeat = defineTool({
     name: "alerts_trigger_heartbeat",
     description:
@@ -267,6 +283,7 @@ export function buildAlertsTools(deps: AlertsToolDeps): Tool[] {
   });
 
   return [
+    markAllSeen,
     list,
     dismissOne,
     dismissAll,

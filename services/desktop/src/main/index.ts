@@ -5288,6 +5288,12 @@ app.whenReady().then(async () => {
     if (ok) broadcastAlertsChanged();
     return ok;
   });
+  // v0.1.523 — "Alle als gelesen markieren" (Meldungs-Seite + Chat-Tool).
+  ipcMain.handle("alerts:markAllSeen", () => {
+    const n = alerts.markAllSeen();
+    if (n > 0) broadcastAlertsChanged();
+    return n;
+  });
   ipcMain.handle("alerts:triggerNow", async () => {
     const info = await heartbeat.triggerNow();
     return info;

@@ -160,6 +160,23 @@ export class AlertsStore {
     return this.patch(id, { dismissedAt: now, seenAt: now });
   }
 
+  /** v0.1.523 — alle sichtbaren, ungelesenen Meldungen als gelesen
+   *  markieren (Glocke auf 0), OHNE sie zu verwerfen. Liefert die
+   *  Anzahl. Vorher musste jede Meldung einzeln angeklickt werden. */
+  markAllSeen(): number {
+    const all = this.loadCache();
+    const now = new Date().toISOString();
+    let touched = 0;
+    const next = all.map((a) => {
+      if (a.dismissedAt !== null || a.seenAt !== null) return a;
+      touched += 1;
+      return { ...a, seenAt: now };
+    });
+    if (touched === 0) return 0;
+    this.rewrite(next);
+    return touched;
+  }
+
   /**
    * Bulk-dismiss every currently-visible alert. Returns the number of
    * rows touched. Used by the `alerts_dismiss_all` tool when the user
