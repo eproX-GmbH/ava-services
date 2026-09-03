@@ -22,6 +22,7 @@ import {
   listAccounts,
   switchAccount,
   startNewAccount,
+  removeAccount,
   getActiveSpaceId,
   readIdentity,
 } from "./account-space";
@@ -5320,6 +5321,7 @@ app.whenReady().then(async () => {
     startNewAccount();
     return true;
   });
+  ipcMain.handle("accounts:remove", (_e, sub: string) => removeAccount(String(sub)));
   ipcMain.handle("alerts:list", () => alerts.list());
   ipcMain.handle("alerts:unreadCount", () => alerts.unreadCount());
   ipcMain.handle("alerts:markSeen", (_e, id: string) => {

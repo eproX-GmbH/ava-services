@@ -1061,6 +1061,8 @@ const api = {
     list: (): Promise<AccountsSnapshot> => ipcRenderer.invoke("accounts:list"),
     switch: (sub: string): Promise<boolean> => ipcRenderer.invoke("accounts:switch", sub),
     addAnother: (): Promise<boolean> => ipcRenderer.invoke("accounts:addAnother"),
+    remove: (sub: string): Promise<{ ok: boolean; grund?: string }> =>
+      ipcRenderer.invoke("accounts:remove", sub),
     onRelaunching: (cb: (info: { sub: string }) => void): (() => void) => {
       const h = (_e: unknown, info: { sub: string }) => cb(info);
       ipcRenderer.on("accounts:relaunching", h);

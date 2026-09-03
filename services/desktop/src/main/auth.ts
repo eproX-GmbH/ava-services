@@ -1,4 +1,5 @@
 import { app, BrowserWindow, safeStorage, shell } from "electron";
+import { consumeForceLoginPrompt } from "./account-space";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { createHash, randomBytes } from "node:crypto";
@@ -396,6 +397,10 @@ export class Auth extends EventEmitter {
         response_type: "code",
         redirect_uri: `http://127.0.0.1:${port}/callback`,
         scope: this.scopes.join(" "),
+        // T2 — nach "Anderes Konto hinzufuegen": Keycloak MUSS das
+        // Login-Formular zeigen, statt die SSO-Session des vorherigen
+        // Kontos stillschweigend wiederzuverwenden.
+        ...(consumeForceLoginPrompt() ? { prompt: "login" } : {}),
         code_challenge: challenge,
         code_challenge_method: "S256",
         state,

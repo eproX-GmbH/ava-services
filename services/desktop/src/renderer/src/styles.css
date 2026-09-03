@@ -8218,3 +8218,33 @@ tr.held-row td:first-child::after {
 .alert-md li { margin: 0.3rem 0; line-height: 1.45; }
 .alert-md a { word-break: break-all; }
 .alert-md strong { font-weight: 600; }
+
+
+/* T2 — Kontowechsler in der Topbar */
+.topbar__account {
+  background: none; border: 1px solid transparent; border-radius: 999px;
+  padding: 4px 10px; cursor: pointer; font: inherit; font-size: 13px;
+  color: var(--color-fg); display: inline-flex; align-items: center; gap: 0.35rem;
+}
+.topbar__account:hover { border-color: var(--border, #d0d4d9); background: var(--color-indigo-50); }
+.topbar__account-name { font-weight: 600; max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.topbar__submenu--account { left: auto; right: 0; min-width: 260px; }
+.account-menu__head { padding: 6px 10px 8px; border-bottom: 1px solid var(--border, #e3e6ea); margin-bottom: 4px; }
+.account-menu__name { font-weight: 600; }
+.account-menu__sub { font-size: 12px; color: var(--color-fg-muted); }
+.account-menu__label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--color-fg-faint); padding: 6px 10px 2px; }
+.account-menu__row { display: flex; align-items: center; gap: 2px; }
+.account-menu__row .topbar__submenu-item { flex: 1; text-align: left; }
+.account-menu__remove { background: none; border: 0; cursor: pointer; color: var(--color-fg-faint); padding: 4px 6px; border-radius: 4px; }
+.account-menu__remove:hover { color: var(--color-danger, #b91c1c); background: rgba(185, 28, 28, 0.08); }
+.topbar__submenu-item--danger { color: var(--color-danger, #b91c1c); }
+.account-relaunch {
+  position: fixed; inset: 0; z-index: 5000; display: flex; align-items: center; justify-content: center; gap: 0.6rem;
+  background: var(--surface, #fff); color: var(--color-fg); font-size: 15px;
+}
+html.dark .account-menu__head { border-color: rgba(255,255,255,0.10); }
+html.dark .account-relaunch { background: #111827; color: #e5e7eb; }
+
+/* T2 — Spinner fuer das Neustart-Overlay */
+@keyframes ava-spin { to { transform: rotate(360deg); } }
+.spin { animation: ava-spin 0.9s linear infinite; }

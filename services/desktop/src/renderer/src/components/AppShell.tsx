@@ -3,6 +3,7 @@ import { NavLink, useNavigate, useLocation } from "react-router-dom";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AlertCircle, Loader2, RefreshCw, Lightbulb, X } from "lucide-react";
 import { AlertBell } from "./AlertBell";
+import { useAuthStore } from "../store/auth";
 import { WatchChip } from "./WatchChip";
 import { UsageChip } from "./UsageChip";
 import { QuotaExhaustedBanner } from "./QuotaExhaustedBanner";
@@ -19,6 +20,8 @@ import type {
   ExternalServiceId,
   ExternalServiceStatus,
   ExternalServicesStatus,
+  AccountsSnapshot,
+  AccountRecord,
 } from "../../../shared/types";
 import {
   applyTheme,
@@ -910,21 +913,171 @@ function NavItemWithSubMenu({
   );
 }
 
+function kurzId(sub: string): string {
+  return sub.length > 12 ? `${sub.slice(0, 8)}…` : sub;
+}
+
+/** T2 — Kontowechsler: Chip (Name · Tenant), Menue mit bekannten
+ *  Konten, "Anderes Konto hinzufuegen", Abmelden, Konto entfernen.
+ *  Wechsel und Hinzufuegen starten AVA neu (Konzept: kein Laufzeit-
+ *  Wechsel, weil Stores/Producer/Queues am Konto haengen). */
 function UserBadge() {
-  // Identity (tenant + actor sub IDs) is intentionally NOT shown here —
-  // the IDs are opaque uuids that don't tell the user anything useful.
-  // The /whoami route still surfaces them for the rare case someone
-  // needs the values for support / debugging.
+  const auth = useAuthStore();
+  const [open, setOpen] = useState(false);
+  const [snap, setSnap] = useState<AccountsSnapshot | null>(null);
+  const [relaunching, setRelaunching] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const rootRef = useRef<HTMLDivElement | null>(null);
+
+  const lade = useCallback(async () => {
+    try {
+      setSnap(await window.api.accounts.list());
+    } catch {
+      setSnap(null);
+    }
+  }, []);
+  useEffect(() => {
+    void lade();
+    return window.api.accounts.onRelaunching(({ sub }) => setRelaunching(sub));
+  }, [lade]);
+  useEffect(() => {
+    if (!open) return;
+    void lade();
+    const onDoc = (e: MouseEvent) => {
+      if (rootRef.current && !rootRef.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
+  }, [open, lade]);
+
+  const anzeigeName = auth.name ?? auth.email ?? (auth.actorId ? kurzId(auth.actorId) : "Konto");
+  const tenant = snap?.identity?.tenantName ?? auth.tenantId ?? null;
+  const tenantLabel = tenant
+    ? tenant === auth.actorId
+      ? "persönlicher Tenant"
+      : kurzId(tenant)
+    : null;
+  const andere = (snap?.accounts ?? []).filter((a) => a.sub !== auth.actorId);
+
+  const wechseln = async (sub: string) => {
+    setBusy(true);
+    setRelaunching(sub);
+    const ok = await window.api.accounts.switch(sub);
+    if (!ok) {
+      setRelaunching(null);
+      setBusy(false);
+    }
+  };
+  const hinzufuegen = async () => {
+    setBusy(true);
+    setRelaunching("neu");
+    await window.api.accounts.addAnother();
+  };
+  const entfernen = async (a: AccountRecord) => {
+    const label = a.email ?? a.name ?? kurzId(a.sub);
+    if (
+      !window.confirm(
+        `Konto ${label} samt aller lokalen Daten (Chats, Profil, Schlüssel, Integrationen) von diesem Gerät entfernen? Daten auf dem Server bleiben erhalten.`,
+      )
+    )
+      return;
+    const r = await window.api.accounts.remove(a.sub);
+    if (!r.ok) window.alert(`Entfernen fehlgeschlagen: ${r.grund ?? "unbekannt"}`);
+    void lade();
+  };
+
   return (
-    <div className="topbar__user">
+    <div className="topbar__user" ref={rootRef}>
+      {relaunching && (
+        <div className="account-relaunch" role="status">
+          <Loader2 size={16} className="spin" />
+          <span>
+            {relaunching === "neu"
+              ? "AVA startet für die Anmeldung mit einem weiteren Konto neu …"
+              : "AVA startet mit dem gewählten Konto neu …"}
+          </span>
+        </div>
+      )}
       <button
         type="button"
-        onClick={() => void window.api.auth.signOut()}
-        className="topbar__signout"
-        title="Abmelden"
+        className="topbar__account"
+        onClick={() => setOpen((o) => !o)}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        title={auth.email ?? undefined}
       >
-        abmelden
+        <span className="topbar__account-name">{anzeigeName}</span>
+        {tenantLabel && (
+          <>
+            <span className="topbar__user-sep">·</span>
+            <span className="topbar__user-tenant">{tenantLabel}</span>
+          </>
+        )}
       </button>
+      {open && (
+        <div className="topbar__submenu topbar__submenu--account" role="menu" aria-label="Konto">
+          <div className="account-menu__head">
+            <div className="account-menu__name">{anzeigeName}</div>
+            {auth.email && auth.email !== anzeigeName && (
+              <div className="account-menu__sub">{auth.email}</div>
+            )}
+            <div className="account-menu__sub">
+              Tenant: {tenantLabel ?? "unbekannt"}
+            </div>
+          </div>
+          {andere.length > 0 && (
+            <>
+              <div className="account-menu__label">Weitere Konten auf diesem Gerät</div>
+              {andere.map((a) => (
+                <div key={a.sub} className="account-menu__row">
+                  <button
+                    type="button"
+                    role="menuitem"
+                    className="topbar__submenu-item"
+                    disabled={busy}
+                    onClick={() => void wechseln(a.sub)}
+                    title="Zu diesem Konto wechseln (AVA startet neu)"
+                  >
+                    {a.name ?? a.email ?? kurzId(a.sub)}
+                    {a.email && a.name && <span className="muted"> · {a.email}</span>}
+                  </button>
+                  <button
+                    type="button"
+                    className="account-menu__remove"
+                    disabled={busy}
+                    onClick={() => void entfernen(a)}
+                    title="Konto samt lokalen Daten von diesem Gerät entfernen"
+                    aria-label="Konto entfernen"
+                  >
+                    <X size={14} />
+                  </button>
+                </div>
+              ))}
+            </>
+          )}
+          <button
+            type="button"
+            role="menuitem"
+            className="topbar__submenu-item"
+            disabled={busy}
+            onClick={() => void hinzufuegen()}
+          >
+            Anderes Konto hinzufügen …
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            className="topbar__submenu-item topbar__submenu-item--danger"
+            disabled={busy}
+            onClick={() => {
+              setOpen(false);
+              void window.api.auth.signOut();
+            }}
+          >
+            Abmelden
+          </button>
+        </div>
+      )}
     </div>
   );
 }

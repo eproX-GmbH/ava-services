@@ -35,6 +35,7 @@ import {
   readFileSync,
   readdirSync,
   renameSync,
+  rmSync,
   writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
@@ -307,6 +308,28 @@ export function startNewAccount(): void {
   }
   log("neues Konto: _pending aktiviert → Neustart");
   setTimeout(relaunch, 300);
+}
+
+/**
+ * T2 — Konto samt lokalem Space vom Geraet entfernen. Nur fuer NICHT
+ * aktive Konten (der aktive Space hat offene PGlite-/Datei-Handles).
+ * Loescht Keys, Chats, Profil, Integrationen dieses Kontos endgueltig;
+ * Remote-Daten bleiben unberuehrt.
+ */
+export function removeAccount(sub: string): { ok: boolean; grund?: string } {
+  if (sub === activeId) return { ok: false, grund: "aktives Konto kann nicht entfernt werden" };
+  if (sub === PENDING || !/^[A-Za-z0-9._-]+$/.test(sub)) return { ok: false, grund: "ungueltige Konto-ID" };
+  const reg = readRegistry();
+  try {
+    if (existsSync(spaceDir(sub))) rmSync(spaceDir(sub), { recursive: true, force: true });
+  } catch (err) {
+    return { ok: false, grund: err instanceof Error ? err.message : String(err) };
+  }
+  delete reg.accounts[sub];
+  if (reg.active === sub) reg.active = null;
+  writeRegistry(reg);
+  log(`Konto ${sub} vom Geraet entfernt`);
+  return { ok: true };
 }
 
 export function consumeForceLoginPrompt(): boolean {
