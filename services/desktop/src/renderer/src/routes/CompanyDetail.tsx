@@ -926,26 +926,12 @@ function FinancialsTab({ pubs }: { pubs: Publication[] }) {
       <section style={{ gridColumn: "1 / -1", display: "grid", gap: "1rem" }}>
         <h3 style={{ margin: 0 }}>Jahresberichte</h3>
         <PublicationModeHint />
-        {pubs.length > 0 && pubs.every((p) => istKonzernabschluss(p.name)) && (
-          <p className="muted small" style={{ margin: 0 }}>
-            Für diese Firma liegt im Unternehmensregister kein eigener
-            Jahresabschluss vor (typisch für Konzernmütter, deren Töchter nach
-            § 264b HGB befreit sind). Die Zahlen stammen aus dem
-            Konzernabschluss und sind konsolidiert.
-          </p>
-        )}
         {[...pubs].reverse().map((p, i) => (
           <PublicationCard key={i} pub={p} />
         ))}
       </section>
     </div>
   );
-}
-
-/** v0.1.525 — Konzernabschluss-Fallback des Publication-Producers:
- *  der Registertitel steht im Feld `name`. */
-function istKonzernabschluss(name: string | null | undefined): boolean {
-  return /konzernabschluss/i.test(name ?? "");
 }
 
 function PublicationCard({ pub }: { pub: Publication }) {
@@ -968,15 +954,6 @@ function PublicationCard({ pub }: { pub: Publication }) {
           {pub.name && (
             <span className="muted" style={{ fontWeight: 400, marginLeft: "0.5rem" }}>
               {pub.name}
-            </span>
-          )}
-          {istKonzernabschluss(pub.name) && (
-            <span
-              className="badge"
-              title="Konzernabschluss: konsolidierte Zahlen der gesamten Gruppe, nicht nur dieser Gesellschaft"
-              style={{ marginLeft: "0.5rem", fontWeight: 500 }}
-            >
-              konsolidiert
             </span>
           )}
         </h3>
