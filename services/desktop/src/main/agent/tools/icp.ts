@@ -84,18 +84,25 @@ export function buildIcpTools(deps: IcpToolDeps): Tool[] {
     preview: () => "ICP aktualisiert",
     run: async (args) => {
       const merged = deps.icp.set({ ...args, quelle: "chat" });
-      // Leere Profil-Felder (Bio/Branchen/Regionen) mit-befuellen —
-      // Nutzer-Eingaben werden nie ueberschrieben.
-      const profilErgaenzt = fillProfileFromIcp(deps.profile, merged);
+      // v0.1.521 — Profil-Felder (Bio/Branchen/Regionen) mitziehen:
+      // leere und unveraendert ICP-abgeleitete werden ersetzt, vom
+      // Nutzer bearbeitete bleiben unangetastet (werden gemeldet).
+      const sync = fillProfileFromIcp(deps.profile, merged);
+      const hinweise: string[] = [];
+      if (sync.aktualisiert.length > 0) {
+        hinweise.push(`Nutzerprofil aktualisiert: ${sync.aktualisiert.join(", ")}.`);
+      }
+      if (sync.beibehalten.length > 0) {
+        hinweise.push(
+          `Beibehalten, weil vom Nutzer selbst bearbeitet: ${sync.beibehalten.join(", ")} — auf Wunsch per profile_update ueberschreiben.`,
+        );
+      }
       return {
         gespeichert: true,
         icp: merged,
-        ...(profilErgaenzt.length > 0
-          ? {
-              profilErgaenzt,
-              hinweis: `Nutzerprofil ergaenzt (${profilErgaenzt.join(", ")}) — bestehende Angaben blieben unangetastet.`,
-            }
-          : {}),
+        ...(sync.aktualisiert.length > 0 ? { profilErgaenzt: sync.aktualisiert } : {}),
+        ...(sync.beibehalten.length > 0 ? { profilBeibehalten: sync.beibehalten } : {}),
+        ...(hinweise.length > 0 ? { hinweis: hinweise.join(" ") } : {}),
       };
     },
   });

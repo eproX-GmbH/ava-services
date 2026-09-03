@@ -5083,10 +5083,12 @@ app.whenReady().then(async () => {
     "discovery:setIcp",
     (_e, patch: Partial<import("./agent/icp-store").IcpProfile>) => {
       const next = icpStore.set({ ...patch, quelle: patch.quelle ?? "manuell" });
-      // ICP → Profil-Bruecke: leere Profil-Felder (Bio/Branchen/
-      // Regionen) aus dem ICP ergaenzen — Nutzer-Eingaben bleiben
-      // unangetastet.
-      const profilErgaenzt = fillProfileFromIcp(userProfile, next);
+      // ICP → Profil-Bruecke (v0.1.521): leere UND unveraendert
+      // ICP-abgeleitete Felder werden aktualisiert; vom Nutzer
+      // bearbeitete bleiben unangetastet und werden gemeldet.
+      const sync = fillProfileFromIcp(userProfile, next);
+      const profilErgaenzt = sync.aktualisiert;
+      const profilBeibehalten = sync.beibehalten;
       audit({
         actorType: "user",
         actorId: null,
@@ -5098,7 +5100,7 @@ app.whenReady().then(async () => {
         summary: `ICP aktualisiert (${next.quelle ?? "manuell"})`,
         metadata: { quelle: next.quelle },
       });
-      return { ...next, gesetzt: icpStore.isSet(), profilErgaenzt };
+      return { ...next, gesetzt: icpStore.isSet(), profilErgaenzt, profilBeibehalten };
     },
   );
   // Phase 4 — Radar-Automatik (Opt-in).

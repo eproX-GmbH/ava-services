@@ -2,6 +2,7 @@ import * as yup from "yup";
 import { defineTool, userDeclined } from "../define-tool";
 import type { Tool } from "../types";
 import type { UserProfileStore } from "../profile-store";
+import { USER_PROFILE_BIO_CAP } from "../../../shared/types";
 import type {
   UserProfile,
   UserProfileTone,
@@ -70,7 +71,7 @@ export function buildProfileTools(deps: ProfileToolDeps): Tool[] {
         bio: {
           type: "string",
           description:
-            "Free-text 2-3 sentences describing the user's context. Capped at 300 chars upstream.",
+            "Free-text 2-4 sentences describing the user's context. HARD CAP 600 chars — longer values are REJECTED (not truncated), so shorten first.",
         },
         role: {
           // v0.1.187 — single string type (Gemini rejects union types
@@ -121,7 +122,14 @@ export function buildProfileTools(deps: ProfileToolDeps): Tool[] {
     },
     schema: yup
       .object({
-        bio: yup.string().optional(),
+        bio: yup
+          .string()
+          .max(
+            USER_PROFILE_BIO_CAP,
+            ({ value }) =>
+              `Bio zu lang: ${String(value).length}/${USER_PROFILE_BIO_CAP} Zeichen — bitte kuerzen, es wird NICHTS gespeichert.`,
+          )
+          .optional(),
         role: yup.string().nullable().optional(),
         industries: yup.array().of(yup.string().required()).optional(),
         geographies: yup.array().of(yup.string().required()).optional(),
@@ -158,7 +166,7 @@ export function buildProfileTools(deps: ProfileToolDeps): Tool[] {
           description:
             "The fields you'd like to set. Same shape as `profile_set`.",
           properties: {
-            bio: { type: "string" },
+            bio: { type: "string", description: "HARD CAP 600 chars — longer values are rejected." },
             // v0.1.187 — single string type for Gemini compat.
             // Empty string clears; omit for "no change".
             role: { type: "string" },
@@ -185,7 +193,14 @@ export function buildProfileTools(deps: ProfileToolDeps): Tool[] {
       .object({
         patch: yup
           .object({
-            bio: yup.string().optional(),
+            bio: yup
+          .string()
+          .max(
+            USER_PROFILE_BIO_CAP,
+            ({ value }) =>
+              `Bio zu lang: ${String(value).length}/${USER_PROFILE_BIO_CAP} Zeichen — bitte kuerzen, es wird NICHTS gespeichert.`,
+          )
+          .optional(),
             role: yup.string().nullable().optional(),
             industries: yup.array().of(yup.string().required()).optional(),
             geographies: yup.array().of(yup.string().required()).optional(),

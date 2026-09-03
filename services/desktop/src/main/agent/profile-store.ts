@@ -8,9 +8,10 @@ import {
 } from "node:fs";
 import { join } from "node:path";
 import { app } from "electron";
-import type {
-  UserProfile,
-  UserProfileTone,
+import {
+  USER_PROFILE_BIO_CAP,
+  type UserProfile,
+  type UserProfileTone,
 } from "../../shared/types";
 
 // UserProfileStore (Phase 8.t1).
@@ -31,6 +32,7 @@ const DEFAULT_PROFILE: UserProfile = {
   tone: null,
   signalInterests: "",
   profileSkipped: false,
+  icpAbgeleitet: null,
   updatedAt: null,
 };
 
@@ -42,7 +44,7 @@ const TONE_VALUES: readonly UserProfileTone[] = [
 
 /** Hard cap on bio chars so token spend stays bounded — every turn
  *  weaves the bio into the system prompt verbatim. */
-const BIO_CAP = 300;
+const BIO_CAP = USER_PROFILE_BIO_CAP;
 /** Hard cap per structured-field array so a runaway agent can't write
  *  100 industries. */
 const ARRAY_CAP = 12;
@@ -119,6 +121,10 @@ export class UserProfileStore extends EventEmitter {
         patch.profileSkipped !== undefined
           ? patch.profileSkipped
           : current.profileSkipped,
+      icpAbgeleitet:
+        patch.icpAbgeleitet !== undefined
+          ? patch.icpAbgeleitet
+          : current.icpAbgeleitet ?? null,
       updatedAt: current.updatedAt,
     });
     if (didChange(current, merged)) {
@@ -141,6 +147,7 @@ export class UserProfileStore extends EventEmitter {
       tone: null,
       signalInterests: "",
       profileSkipped: false,
+      icpAbgeleitet: null,
     });
   }
 
@@ -192,6 +199,20 @@ export class UserProfileStore extends EventEmitter {
         SIGNAL_INTERESTS_CAP,
       ),
       profileSkipped: input.profileSkipped === true,
+      icpAbgeleitet:
+        input.icpAbgeleitet && typeof input.icpAbgeleitet === "object"
+          ? {
+              ...(typeof input.icpAbgeleitet.bio === "string"
+                ? { bio: input.icpAbgeleitet.bio }
+                : {}),
+              ...(Array.isArray(input.icpAbgeleitet.industries)
+                ? { industries: capArray(input.icpAbgeleitet.industries) }
+                : {}),
+              ...(Array.isArray(input.icpAbgeleitet.geographies)
+                ? { geographies: capArray(input.icpAbgeleitet.geographies) }
+                : {}),
+            }
+          : null,
       updatedAt:
         typeof input.updatedAt === "string" ? input.updatedAt : null,
     };

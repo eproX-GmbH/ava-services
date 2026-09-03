@@ -26,6 +26,7 @@ import { useConfigStore } from "../store/config";
 import { useUpdaterStore } from "../store/updater";
 import { humanizeUpdaterError } from "../lib/updater-error";
 import { classifyProducerError } from "../lib/producer-error";
+import { USER_PROFILE_BIO_CAP } from "../../../shared/types";
 import type {
   AlertCadenceMinutes,
   AlertCandidateDecision,
@@ -2956,18 +2957,18 @@ export function ProfileSection() {
 
       <div className="alerts-prefs__row">
         <label className="alerts-prefs__label" htmlFor="profile-bio">
-          Bio (max. 300 Zeichen)
+          Bio (max. {USER_PROFILE_BIO_CAP} Zeichen)
         </label>
         <textarea
           id="profile-bio"
           rows={3}
-          maxLength={300}
+          maxLength={USER_PROFILE_BIO_CAP}
           value={bio}
           onChange={(e) => setBio(e.target.value)}
           placeholder="z. B. „Ich arbeite im B2B-Vertrieb für Maschinenbau-Mittelstand in Bayern; Schwerpunkt Geschäftsführer-Wechsel und neue Produktlinien."
           style={{ width: "100%", resize: "vertical" }}
         />
-        <p className="muted small">{bio.length} / 300</p>
+        <p className="muted small">{bio.length} / {USER_PROFILE_BIO_CAP}</p>
       </div>
 
       <div className="alerts-prefs__row">

@@ -1195,9 +1195,13 @@ export interface StorageCleanupResult {
 /** Conversation tone shapes how knapp / detailed the agent answers. */
 export type UserProfileTone = "neutral" | "knapp" | "ausführlich";
 
+/** v0.1.521 — Bio-Cap (vorher 300: schnitt die aus der Website
+ *  abgeleitete Bio mitten im Wort ab). ~150 Tokens je Turn. */
+export const USER_PROFILE_BIO_CAP = 600;
+
 export interface UserProfile {
-  /** Free-text bio (~300 chars cap). The primary signal — woven into
-   *  the system prompt verbatim. Empty string = no bio. */
+  /** Free-text bio (USER_PROFILE_BIO_CAP chars). The primary signal —
+   *  woven into the system prompt verbatim. Empty string = no bio. */
   bio: string;
   /** Optional structured fields the user (or the agent on confirm)
    *  has set. Used as tie-breakers + by 8.t4 ranking. */
@@ -1217,6 +1221,15 @@ export interface UserProfile {
    *  agent must NOT re-prompt unless the user says "lass uns mein
    *  Profil mal aktualisieren" or similar. */
   profileSkipped: boolean;
+  /** v0.1.521 — Provenienz: was die ICP→Profil-Bruecke zuletzt in
+   *  bio/industries/geographies geschrieben hat. Stimmt der aktuelle
+   *  Wert damit ueberein, hat der Nutzer ihn nie angefasst und ein
+   *  neues ICP darf ihn ersetzen; weicht er ab, bleibt er unantastbar. */
+  icpAbgeleitet?: {
+    bio?: string;
+    industries?: string[];
+    geographies?: string[];
+  } | null;
   /** ISO-8601 of the most recent successful write. Useful for "Profil
    *  zuletzt aktualisiert am …" surfaces. */
   updatedAt: string | null;

@@ -179,10 +179,17 @@ export function IcpAssistant(): JSX.Element {
         kundenBeispiele: kunden,
       });
       if (saved.gesetzt) {
-        const profilInfo =
-          saved.profilErgaenzt && saved.profilErgaenzt.length > 0
-            ? ` Dein Nutzerprofil wurde dabei ergänzt (${saved.profilErgaenzt.join(", ")}) — bestehende Angaben blieben unangetastet.`
-            : "";
+        const teile: string[] = [];
+        if (saved.profilErgaenzt && saved.profilErgaenzt.length > 0) {
+          teile.push(`Dein Nutzerprofil wurde aktualisiert (${saved.profilErgaenzt.join(", ")}).`);
+        }
+        const beibehalten = (saved as { profilBeibehalten?: string[] }).profilBeibehalten ?? [];
+        if (beibehalten.length > 0) {
+          teile.push(
+            `Beibehalten, weil von dir selbst bearbeitet: ${beibehalten.join(", ")} — unter Einstellungen → Profil anpassbar.`,
+          );
+        }
+        const profilInfo = teile.length > 0 ? ` ${teile.join(" ")}` : "";
         setNotice(
           `ICP gespeichert — der Radar nutzt es ab dem nächsten Match.${profilInfo}`,
         );
