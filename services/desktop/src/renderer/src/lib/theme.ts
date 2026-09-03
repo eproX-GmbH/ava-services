@@ -3,7 +3,8 @@
 // Three states map to two CSS classes:
 //   "light" -> no class on <html>
 //   "dark"  -> class="dark" on <html>
-//   "system" (default) -> follow `prefers-color-scheme`, re-evaluated on change
+//   "system" -> follow `prefers-color-scheme`, re-evaluated on change
+//   Default ohne gespeicherte Wahl: "light" (v0.1.534).
 //
 // Persisted in localStorage under `ava.theme`. The Corporate Trust
 // styles.css reserves a `:root.dark` block that overrides the surface
@@ -18,9 +19,13 @@ export function getStoredMode(): ThemeMode {
     const v = localStorage.getItem(STORAGE_KEY);
     if (v === "light" || v === "dark" || v === "system") return v;
   } catch {
-    /* localStorage unavailable (private mode); fall back to system */
+    /* localStorage unavailable (private mode); fall back to light */
   }
-  return "system";
+  // v0.1.534 — Ohne gespeicherte Wahl IMMER Light (User-Entscheidung
+  // 2026-09-03): das Onboarding soll neutral und hell starten, nicht
+  // der OS-Einstellung folgen. "system" bleibt als bewusste Wahl im
+  // Umschalter erhalten.
+  return "light";
 }
 
 export function setStoredMode(mode: ThemeMode): void {

@@ -164,9 +164,8 @@ export function FirstRunWizard({
     return (
       <div className="first-run">
         <div className="first-run__card first-run__card--wide">
-          <h1 className="first-run__title">
-            <span className="ct-gradient-text">Lokale Modell-Laufzeit</span> nicht verfügbar
-          </h1>
+          <p className="first-run__eyebrow">Einrichtung</p>
+          <h1 className="first-run__title">Lokale Modell-Laufzeit nicht verfügbar</h1>
           <p className="bad">{status.errorMessage ?? "Unbekannter Fehler"}</p>
           <p className="muted">
             Kein Problem — AVA läuft auch ohne lokale Modell-Laufzeit.
@@ -196,9 +195,8 @@ export function FirstRunWizard({
     return (
       <div className="first-run">
         <div className="first-run__card">
-          <h1 className="first-run__title">
-            <span className="ct-gradient-text">Lokale Modell-Laufzeit</span> wird gestartet…
-          </h1>
+          <p className="first-run__eyebrow">Einrichtung</p>
+          <h1 className="first-run__title">Lokale Modell-Laufzeit wird gestartet …</h1>
           <p className="muted">
             Dauert beim ersten Start meist einige Sekunden.
           </p>
@@ -294,14 +292,13 @@ export function FirstRunWizard({
     return (
       <div className="first-run">
         <div className="first-run__card first-run__card--wide">
-          <h1 className="first-run__title">
-            <span className="ct-gradient-text">Wie startest du mit AVA?</span>
-          </h1>
+          <p className="first-run__eyebrow">Schritt 1 von 2 · KI-Anbieter wählen</p>
+          <h1 className="first-run__title">Womit soll AVA denken?</h1>
           <p className="muted">
-            Wir empfehlen das ChatGPT-Abo — beste Qualität, fixe Kosten.
-            Eigene API-Keys oder lokales Hosting sind weitere Wege. Du
-            kannst die Wahl später in Einstellungen → Modelle jederzeit
-            ändern.
+            Wähle, welche KI AVA nutzt. Wir empfehlen das ChatGPT-Abo:
+            beste Qualität bei festen Kosten. Ein eigener API-Schlüssel
+            oder lokale Modelle sind ebenfalls möglich. Die Wahl lässt
+            sich später unter Einstellungen → Modelle jederzeit ändern.
           </p>
           {memoryWarning}
           <ProviderChooserGrid
@@ -361,10 +358,9 @@ export function FirstRunWizard({
   return (
     <div className="first-run">
       <div className="first-run__card">
+        <p className="first-run__eyebrow">Schritt 2 von 2 · Modelle bereitstellen</p>
         <h1 className="first-run__title">
-          <span className="ct-gradient-text">
-            {cloudOk ? "Fast bereit" : "Lokale Modelle herunterladen"}
-          </span>
+          {cloudOk ? "Fast geschafft" : "Lokale Modelle herunterladen"}
         </h1>
         {memoryWarning}
         {cloudOk ? (

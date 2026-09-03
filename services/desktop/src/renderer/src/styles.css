@@ -267,7 +267,12 @@ button {
   cursor: pointer;
   transition: var(--ctrl-transition);
 }
-button:hover:not(:disabled) {
+/* v0.1.534 — :where() nimmt dieser Regel jede Spezifitaet. Vorher
+ * (0,2,1) schlug sie JEDE klassenbasierte Button-Farbe (0,1,0..0,2,0):
+ * beim Hover wurde ein farbiger Button fast weiss, die weisse Schrift
+ * unlesbar (User-Befund, "schon oft gesehen"). Jetzt gewinnt jede
+ * Klassenfarbe; nur schlichte Buttons bekommen den Standard-Hover. */
+button:where(:hover:not(:disabled)) {
   background: var(--ctrl-bg-hover);
   border-color: var(--ctrl-border-hover);
   transform: translateY(-1px);
@@ -300,8 +305,9 @@ button.link {
   color: var(--accent);
   border: 0;
   padding: 4px 6px;
-  text-decoration: underline;
-  text-underline-offset: 2px;
+  /* v0.1.534 — keine Unterstreichung in Buttons (User-Vorgabe, app-weit).
+   * Link-Buttons unterscheiden sich durch Farbe und fehlende Kontur. */
+  text-decoration: none;
   font-weight: 500;
   box-shadow: none;
 }
@@ -1134,187 +1140,7 @@ code, pre { font-family: var(--font-mono); font-size: 12px; }
 
 /* First-run wizard (D7) — full-screen overlay shown when missing models
    block the rest of the app. */
-.first-run {
-  display: flex; align-items: center; justify-content: center;
-  min-height: 100vh;
-  padding: 2rem;
-  background: var(--color-bg-0);
-  position: relative;
-  isolation: isolate;
-  overflow: hidden;
-}
-.first-run::before {
-  content: "";
-  position: absolute;
-  top: -120px; left: -120px;
-  width: 480px; height: 480px;
-  border-radius: 50%;
-  filter: blur(80px);
-  opacity: 0.40;
-  background: radial-gradient(circle, rgba(0, 192, 167, 0.45), transparent 70%);
-  z-index: -1;
-}
-.first-run::after {
-  content: "";
-  position: absolute;
-  bottom: -160px; right: -120px;
-  width: 520px; height: 520px;
-  border-radius: 50%;
-  filter: blur(80px);
-  opacity: 0.35;
-  background: radial-gradient(circle, rgba(8, 145, 178, 0.45), transparent 70%);
-  z-index: -1;
-}
-.first-run__card {
-  max-width: 600px; width: 100%; padding: 2.5rem;
-  background: var(--color-bg-1);
-  border: 1px solid var(--color-border);
-  border-radius: 20px;
-  color: var(--color-fg);
-  box-shadow: var(--shadow-soft-lg);
-}
-.first-run__card h1,
-.first-run__title {
-  margin: 0 0 0.75rem;
-  font-size: 28px;
-  font-weight: 800;
-  line-height: 1.1;
-  letter-spacing: -0.02em;
-}
-.first-run__list { list-style: none; padding: 0; margin: 1.5rem 0; display: flex; flex-direction: column; gap: 1rem; }
-.first-run__model { display: flex; flex-direction: column; gap: 0.4rem; }
-.first-run__model-head { display: flex; justify-content: space-between; align-items: baseline; gap: 1rem; font-size: 13px; }
-.first-run__model-status { font-size: 12px; }
-.first-run__bar {
-  height: 6px; background: rgba(255,255,255,0.06);
-  border-radius: 3px; overflow: hidden;
-}
-.first-run__bar-fill {
-  height: 100%; background: var(--accent, #3b82f6);
-  transition: width 200ms ease-out;
-}
-.first-run__bar-fill.ok { background: rgb(34, 197, 94); }
-.first-run__bar-fill.warn { background: rgb(234, 179, 8); }
-.first-run__bar-fill.bad { background: rgb(239, 68, 68); }
-.first-run__model-meter {
-  display: flex; gap: 0.45rem; align-items: baseline;
-  font-size: 11.5px; font-variant-numeric: tabular-nums;
-}
-.first-run__model-sep { opacity: 0.5; }
-.first-run__actions {
-  display: flex; gap: 0.75rem; align-items: center; flex-wrap: wrap;
-  margin-top: 1rem;
-}
-.first-run__card .first-run__actions button { margin-top: 0; }
-/* `.first-run__card button.link` inherits the global text-link styling. */
-.first-run__chooser {
-  display: flex; flex-direction: column; gap: 0.75rem;
-  margin-top: 0.75rem;
-}
-.first-run__chooser .field { display: flex; flex-direction: column; gap: 0.3rem; }
-.first-run__chooser .field > span {
-  font-size: 12px; opacity: 0.75;
-}
-/* FirstRunWizard inputs/selects inherit the global form-control look;
- * keep only the size tweak this card uses. */
-.first-run__chooser input,
-.first-run__chooser select { font-size: 13px; }
-.first-run__chooser textarea.first-run__token-input {
-  font-size: 12px;
-  font-family: var(--font-mono, monospace);
-  resize: vertical;
-  word-break: break-all;
-  line-height: 1.35;
-  padding: 0.5rem 0.6rem;
-}
-.first-run__subform-title {
-  margin: 0 0 0.25rem;
-  font-size: 16px;
-  font-weight: 700;
-}
-
-/* Three-card onboarding chooser (v0.1.132). The wide variant of the
- * first-run card stretches to give every option breathing room on a
- * desktop monitor; on narrow screens we fall back to the standard
- * single-column card width and the grid stacks. */
-.first-run__card--wide { max-width: 1100px; }
-.first-run__chooser-grid {
-  display: grid;
-  grid-template-columns: 1fr;
-  gap: 1rem;
-  margin: 1.5rem 0 0.5rem;
-}
-@media (min-width: 1100px) {
-  .first-run__chooser-grid {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
-}
-.first-run__option-card {
-  display: flex;
-  flex-direction: column;
-  gap: 0.6rem;
-  padding: 1.25rem 1.25rem 1.4rem;
-  background: var(--color-bg-2, rgba(255, 255, 255, 0.02));
-  border: 1px solid var(--color-border);
-  border-radius: 14px;
-  transition: border-color 160ms ease, transform 160ms ease,
-    box-shadow 160ms ease;
-}
-.first-run__option-card:hover {
-  border-color: rgba(8, 145, 178, 0.55);
-  box-shadow: 0 0 0 1px rgba(8, 145, 178, 0.35) inset;
-}
-.first-run__option-glyph {
-  font-size: 24px;
-  line-height: 1;
-  opacity: 0.85;
-  color: rgba(8, 145, 178, 0.95);
-}
-.first-run__option-title {
-  margin: 0;
-  font-size: 17px;
-  font-weight: 700;
-  letter-spacing: -0.01em;
-}
-.first-run__option-sub {
-  margin: 0;
-  font-size: 13px;
-  line-height: 1.4;
-  color: var(--muted, rgba(255, 255, 255, 0.7));
-}
-.first-run__option-list {
-  list-style: disc;
-  padding-left: 1.1rem;
-  margin: 0;
-  font-size: 12.5px;
-  color: var(--muted, rgba(255, 255, 255, 0.7));
-  display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
-}
-.first-run__option-docs {
-  display: flex;
-  flex-direction: column;
-  gap: 0.2rem;
-  margin-top: auto;
-  padding-top: 0.5rem;
-}
-.first-run__option-docs .link.small,
-.first-run__option-docs button.link {
-  font-size: 12px;
-  text-align: left;
-}
-.first-run__option-cta {
-  margin-top: 0.4rem;
-  align-self: flex-start;
-}
-.first-run__subform {
-  margin-top: 1.25rem;
-  padding: 1.1rem 1.25rem 1.25rem;
-  background: var(--color-bg-2, rgba(255, 255, 255, 0.02));
-  border: 1px solid var(--color-border);
-  border-radius: 14px;
-}
+/* first-run: Styles siehe Abschnitt "Onboarding (v0.1.534)" am Dateiende. */
 
 /* Download Dock (Phase 8.k10c) ------------------------------------- */
 .dl-dock {
@@ -1478,12 +1304,7 @@ code, pre { font-family: var(--font-mono); font-size: 12px; }
   background: var(--accent, #3b82f6); color: white;
   border: none; border-radius: 4px; cursor: pointer;
 }
-.first-run__card button {
-  margin-top: 1rem; padding: 0.6rem 1rem; font-size: 14px;
-  background: var(--accent, #3b82f6); color: white;
-  border: none; border-radius: 4px; cursor: pointer;
-}
-.first-run__card button:disabled { opacity: 0.6; cursor: not-allowed; }
+/* (v0.1.534) alte Wizard-Button-Regel entfernt — siehe Onboarding-Abschnitt am Dateiende. */
 
 /* ---- Markdown rendering (react-markdown) --------------------------------
  *
@@ -4568,7 +4389,7 @@ a.heartbeat-decision__company:hover {
   cursor: pointer;
   color: var(--color-accent-1, #00c0a7);
 }
-.signin__signup-link:hover:not(:disabled) { text-decoration: underline; }
+.signin__signup-link:hover:not(:disabled) { text-decoration: none; opacity: 0.85; }
 .signin__signup-link:disabled { opacity: 0.5; cursor: not-allowed; }
 
 /* Sign-Up-Form: gleicher Card-Container wie SignIn, aber breiter +
@@ -6481,236 +6302,6 @@ html.dark .producer-error__pre { background: rgba(255, 255, 255, 0.05); }
 /* v0.1.381 — zwei Abo-Hero-Karten nebeneinander (ChatGPT + Claude).
    Innerhalb des Grids verliert die einzelne Karte ihren Außenabstand;
    das Grid übernimmt den Rhythmus. */
-.first-run__hero-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 1rem;
-  margin: 1.5rem 0 1.25rem;
-}
-.first-run__hero-grid .first-run__hero {
-  margin: 0;
-}
-@media (max-width: 900px) {
-  .first-run__hero-grid { grid-template-columns: 1fr; }
-}
-
-.first-run__hero {
-  display: flex;
-  gap: 1.2rem;
-  align-items: flex-start;
-  margin: 1.5rem 0 1.25rem;
-  padding: 1.5rem 1.6rem;
-  background: linear-gradient(
-    135deg,
-    rgba(0, 192, 167, 0.08) 0%,
-    rgba(99, 102, 241, 0.08) 100%
-  );
-  border: 1px solid rgba(0, 192, 167, 0.35);
-  border-radius: 16px;
-  position: relative;
-}
-
-.first-run__hero::before {
-  content: "Empfohlen";
-  position: absolute;
-  top: -0.6rem;
-  left: 1.5rem;
-  padding: 0.15rem 0.6rem;
-  background: rgb(0, 192, 167);
-  color: #ffffff;
-  font-size: 11px;
-  font-weight: 600;
-  border-radius: 999px;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-}
-
-.first-run__hero-glyph {
-  font-size: 40px;
-  line-height: 1;
-  background: linear-gradient(135deg, rgb(0, 192, 167), rgb(99, 102, 241));
-  -webkit-background-clip: text;
-  background-clip: text;
-  -webkit-text-fill-color: transparent;
-  flex-shrink: 0;
-}
-
-.first-run__hero-body {
-  display: flex;
-  flex-direction: column;
-  gap: 0.55rem;
-  min-width: 0;
-}
-
-.first-run__hero-title {
-  margin: 0;
-  font-size: 20px;
-  font-weight: 700;
-  letter-spacing: -0.01em;
-}
-
-.first-run__hero-sub {
-  margin: 0;
-  font-size: 14px;
-  line-height: 1.5;
-  color: var(--muted, rgba(255, 255, 255, 0.78));
-}
-
-.first-run__hero-docs {
-  display: flex;
-  gap: 1rem;
-  flex-wrap: wrap;
-}
-
-.first-run__hero-cta {
-  margin-top: 0.6rem;
-  align-self: flex-start;
-  background: linear-gradient(135deg, rgb(0, 192, 167), rgb(99, 102, 241));
-  color: #ffffff;
-  font-weight: 600;
-  padding: 0.6rem 1.1rem;
-  border: 0;
-  border-radius: 8px;
-  cursor: pointer;
-  font-size: 14px;
-  transition: transform 120ms ease, box-shadow 120ms ease;
-}
-
-.first-run__hero-cta:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 6px 16px rgba(0, 192, 167, 0.35);
-}
-
-/* Lokal-Sektion (kollabiert) */
-.first-run__local {
-  margin: 1rem 0;
-  padding: 0;
-  background: var(--color-bg-2, rgba(255, 255, 255, 0.02));
-  border: 1px solid var(--color-border);
-  border-radius: 14px;
-  overflow: hidden;
-}
-
-.first-run__local-summary {
-  display: grid;
-  grid-template-columns: auto 1fr auto;
-  gap: 0.75rem;
-  align-items: center;
-  padding: 1rem 1.25rem;
-  cursor: pointer;
-  user-select: none;
-  list-style: none;
-}
-
-.first-run__local-summary::-webkit-details-marker { display: none; }
-
-.first-run__local-summary::after {
-  content: "▸";
-  font-size: 12px;
-  opacity: 0.5;
-  transition: transform 160ms ease;
-  grid-column: 3;
-}
-
-.first-run__local[open] .first-run__local-summary::after {
-  transform: rotate(90deg);
-}
-
-.first-run__local-glyph {
-  font-size: 20px;
-  opacity: 0.7;
-}
-
-.first-run__local-title {
-  font-weight: 600;
-  font-size: 15px;
-}
-
-.first-run__local-hint {
-  grid-column: 2;
-  font-size: 12px;
-  color: var(--muted, rgba(255, 255, 255, 0.65));
-  margin-top: 0.15rem;
-}
-
-.first-run__local-body {
-  padding: 0 1.25rem 1.25rem;
-  display: flex;
-  flex-direction: column;
-  gap: 0.85rem;
-}
-
-.first-run__local-models {
-  list-style: none;
-  padding: 0;
-  margin: 0;
-  display: grid;
-  gap: 0.55rem;
-}
-
-.first-run__local-model {
-  padding: 0.75rem 0.9rem;
-  background: var(--color-bg-3, rgba(255, 255, 255, 0.03));
-  border: 1px solid var(--color-border);
-  border-radius: 10px;
-  display: flex;
-  flex-direction: column;
-  gap: 0.35rem;
-}
-
-.first-run__local-model-head {
-  display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-  gap: 0.5rem;
-}
-
-.first-run__local-model-name {
-  font-weight: 600;
-  font-size: 14px;
-}
-
-.first-run__local-model-ram {
-  font-size: 11px;
-  font-weight: 600;
-  padding: 0.15rem 0.55rem;
-  background: rgba(8, 145, 178, 0.15);
-  border: 1px solid rgba(8, 145, 178, 0.35);
-  border-radius: 999px;
-  color: inherit;
-  white-space: nowrap;
-}
-
-.first-run__local-model-note {
-  margin: 0;
-  font-size: 12.5px;
-  color: var(--muted, rgba(255, 255, 255, 0.7));
-  line-height: 1.4;
-}
-
-.first-run__local-model-foot {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 0.5rem;
-  margin-top: 0.15rem;
-}
-
-.first-run__local-model-cta {
-  padding: 0.35rem 0.85rem;
-  font-size: 12.5px;
-  border-radius: 6px;
-  cursor: pointer;
-  background: var(--color-bg-1, transparent);
-  border: 1px solid var(--color-border);
-  color: inherit;
-}
-
-.first-run__local-model-cta:hover {
-  background: rgba(8, 145, 178, 0.1);
-  border-color: rgba(8, 145, 178, 0.4);
-}
-
 /* ----- v0.1.220 — DownloadDock Error+Updater-Sub-UI ---------------------- */
 
 .dl-dock__row-error {
@@ -8135,7 +7726,7 @@ tr.held-row td:first-child::after {
   color: #00c0a7;
   cursor: pointer;
   font-size: inherit;
-  text-decoration: underline;
+  text-decoration: none;
 }
 
 /* I4 — ICP-Vorschlags-Card im Chat -------------------------------------- */
@@ -8254,3 +7845,168 @@ html.dark .account-relaunch { background: #111827; color: #e5e7eb; }
 .topbar__cluster > * { display: flex; align-items: center; }
 .topbar__divider { width: 1px; height: 22px; background: var(--ctrl-border, #d0d4d9); margin: 0 4px; }
 .topbar__user { gap: 0; }
+
+
+/* ======================================================================
+   Onboarding (v0.1.534) — schlicht, ruhig, light-first.
+   Vorher: Blur-Blobs, Verlaufstitel, Verlaufs-Button, Uppercase-Badge.
+   Jetzt: neutrale Flaeche, eine Karte, eine Primaeraktion je Schritt,
+   Optionen als gleich geformte Zeilen, Empfehlung als dezente Marke.
+   ====================================================================== */
+.first-run {
+  display: flex; align-items: flex-start; justify-content: center;
+  min-height: 100vh;
+  padding: 4rem 1.5rem 3rem;
+  background: var(--color-bg-0);
+  color: var(--color-fg);
+}
+.first-run__card {
+  width: 100%; max-width: 640px;
+  padding: 2.25rem 2.25rem 2rem;
+  background: var(--color-bg-1);
+  border: 1px solid var(--color-border);
+  border-radius: 16px;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04), 0 8px 24px rgba(15, 23, 42, 0.06);
+}
+.first-run__card--wide { max-width: 760px; }
+.first-run__eyebrow {
+  margin: 0 0 0.5rem;
+  font-size: 12px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase;
+  color: var(--color-fg-muted);
+}
+.first-run__title {
+  margin: 0 0 0.6rem;
+  font-size: 24px; font-weight: 600; line-height: 1.2; letter-spacing: -0.01em;
+  color: var(--color-fg);
+}
+.first-run__card > .muted { font-size: 14px; line-height: 1.55; margin: 0 0 0.75rem; }
+.first-run__card > .muted.small { font-size: 12.5px; margin-top: 1rem; }
+.first-run__card .bad, .first-run__card .warn { font-size: 13px; }
+
+/* Optionen */
+.first-run__hero-grid { display: grid; grid-template-columns: 1fr; gap: 0.75rem; margin: 1.5rem 0 0.75rem; }
+.first-run__hero,
+.first-run__option-card,
+.first-run__local {
+  position: relative;
+  display: flex; flex-direction: column; gap: 0.5rem;
+  margin: 0;
+  padding: 1.15rem 1.25rem 1.25rem;
+  background: var(--color-bg-1);
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+}
+.first-run__option-card { margin-top: 0.75rem; }
+.first-run__hero { border-color: rgba(0, 192, 167, 0.45); box-shadow: inset 3px 0 0 rgb(0, 192, 167); }
+.first-run__hero::before {
+  content: "Empfohlen";
+  position: absolute; top: 1rem; right: 1.25rem;
+  padding: 0.15rem 0.55rem;
+  font-size: 11px; font-weight: 600; letter-spacing: 0.02em;
+  color: rgb(0, 122, 106);
+  background: rgba(0, 192, 167, 0.12);
+  border-radius: 999px;
+}
+.first-run__hero-glyph, .first-run__option-glyph, .first-run__local-glyph { display: none; }
+.first-run__hero-body { display: flex; flex-direction: column; gap: 0.5rem; min-width: 0; }
+.first-run__hero-title, .first-run__option-title, .first-run__local-title {
+  margin: 0; font-size: 15.5px; font-weight: 600; letter-spacing: 0;
+}
+.first-run__hero-title { padding-right: 6rem; }
+.first-run__hero-sub, .first-run__option-sub, .first-run__local-hint, .first-run__local-model-note {
+  margin: 0; font-size: 13px; line-height: 1.5; color: var(--color-fg-muted);
+}
+.first-run__option-docs { display: flex; flex-wrap: wrap; gap: 0.25rem 1rem; margin-top: 0.15rem; }
+.first-run__option-docs .link.small, .first-run__option-docs button.link { font-size: 12.5px; text-align: left; }
+
+/* Buttons: eine Primaeraktion (aqua), Sekundaeres umrandet */
+.first-run__hero-cta,
+.first-run__card .first-run__actions > button:not(.link) {
+  align-self: flex-start;
+  margin-top: 0.35rem;
+  padding: 0.55rem 1.05rem;
+  font: inherit; font-size: 14px; font-weight: 600;
+  color: #ffffff;
+  background: rgb(0, 192, 167);
+  border: 1px solid rgb(0, 172, 150);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 120ms ease;
+}
+.first-run__hero-cta:hover,
+.first-run__card .first-run__actions > button:not(.link):hover { background: rgb(0, 172, 150); }
+.first-run__hero-cta:disabled,
+.first-run__card .first-run__actions > button:not(.link):disabled { opacity: 0.55; cursor: default; }
+.first-run__option-cta, .first-run__local-model-cta {
+  align-self: flex-start;
+  margin-top: 0.35rem;
+  padding: 0.5rem 0.95rem;
+  font: inherit; font-size: 13.5px; font-weight: 600;
+  color: var(--color-fg);
+  background: var(--color-bg-1);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  cursor: pointer;
+}
+.first-run__option-cta:hover, .first-run__local-model-cta:hover { border-color: rgba(0, 192, 167, 0.6); background: rgba(0, 192, 167, 0.06); }
+.first-run__actions { display: flex; gap: 0.5rem 1rem; align-items: center; flex-wrap: wrap; margin-top: 1.25rem; }
+.first-run__card .first-run__actions button { margin-top: 0; }
+
+/* Lokal (aufklappbar) */
+.first-run__local { padding: 0; overflow: hidden; margin-top: 0.75rem; }
+.first-run__local-summary {
+  display: grid; grid-template-columns: 1fr auto; gap: 0.15rem 0.75rem; align-items: center;
+  padding: 1rem 1.25rem; cursor: pointer; user-select: none; list-style: none;
+}
+.first-run__local-summary::-webkit-details-marker { display: none; }
+.first-run__local-summary::after {
+  content: "▾"; grid-column: 2; grid-row: 1 / span 2; font-size: 14px; color: var(--color-fg-muted);
+  transition: transform 160ms ease;
+}
+.first-run__local[open] .first-run__local-summary::after { transform: rotate(180deg); }
+.first-run__local-hint { grid-column: 1; font-size: 12.5px; }
+.first-run__local-body { padding: 0 1.25rem 1.25rem; display: flex; flex-direction: column; gap: 0.85rem; border-top: 1px solid var(--color-border); padding-top: 1rem; }
+.first-run__local-models { list-style: none; padding: 0; margin: 0; display: grid; gap: 0.5rem; }
+.first-run__local-model {
+  padding: 0.8rem 0.95rem; background: var(--color-bg-1); border: 1px solid var(--color-border); border-radius: 10px;
+  display: flex; flex-direction: column; gap: 0.3rem;
+}
+.first-run__local-model-head { display: flex; justify-content: space-between; align-items: baseline; gap: 0.5rem; }
+.first-run__local-model-name { font-weight: 600; font-size: 14px; }
+.first-run__local-model-ram {
+  font-size: 11px; font-weight: 600; padding: 0.12rem 0.5rem; white-space: nowrap;
+  color: var(--color-fg-muted); background: var(--color-bg-2, rgba(15, 23, 42, 0.04)); border: 1px solid var(--color-border); border-radius: 999px;
+}
+.first-run__local-model-foot { display: flex; justify-content: space-between; align-items: center; gap: 0.5rem; margin-top: 0.15rem; }
+.first-run__local-model-cta { margin-top: 0; padding: 0.35rem 0.8rem; font-size: 12.5px; }
+
+/* Unterformular (API-Schluessel) */
+.first-run__subform {
+  margin-top: 1rem; padding: 1.1rem 1.25rem 1.25rem;
+  background: var(--color-bg-1); border: 1px solid var(--color-border); border-radius: 12px;
+}
+.first-run__subform-title { margin: 0 0 0.5rem; font-size: 15.5px; font-weight: 600; }
+.first-run__chooser { display: flex; flex-direction: column; gap: 0.75rem; margin-top: 0.5rem; }
+.first-run__chooser .field { display: flex; flex-direction: column; gap: 0.3rem; }
+.first-run__chooser .field > span { font-size: 12.5px; color: var(--color-fg-muted); }
+.first-run__chooser input, .first-run__chooser select { font-size: 13.5px; }
+.first-run__chooser textarea.first-run__token-input {
+  font-size: 12px; font-family: var(--font-mono, monospace); resize: vertical; word-break: break-all; line-height: 1.35; padding: 0.5rem 0.6rem;
+}
+
+/* Downloads (Schritt 2) */
+.first-run__list { list-style: none; padding: 0; margin: 1.25rem 0 0.5rem; display: flex; flex-direction: column; gap: 0.9rem; }
+.first-run__model { display: flex; flex-direction: column; gap: 0.4rem; padding: 0.9rem 1rem; border: 1px solid var(--color-border); border-radius: 10px; }
+.first-run__model-head { display: flex; justify-content: space-between; align-items: baseline; gap: 1rem; font-size: 13.5px; }
+.first-run__model-name { font-weight: 600; }
+.first-run__model-status { font-size: 12px; color: var(--color-fg-muted); }
+.first-run__bar { height: 6px; background: var(--color-bg-2, rgba(15, 23, 42, 0.06)); border-radius: 3px; overflow: hidden; }
+.first-run__bar-fill { height: 100%; background: rgb(0, 192, 167); transition: width 200ms ease-out; }
+.first-run__bar-fill.ok { background: rgb(0, 192, 167); }
+.first-run__bar-fill.warn { background: rgb(234, 179, 8); }
+.first-run__bar-fill.bad { background: rgb(239, 68, 68); }
+.first-run__model-meter { display: flex; gap: 0.45rem; align-items: baseline; font-size: 11.5px; font-variant-numeric: tabular-nums; color: var(--color-fg-muted); }
+.first-run__model-sep { opacity: 0.5; }
+
+html.dark .first-run__card { box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35); }
+html.dark .first-run__hero::before { color: rgb(0, 192, 167); background: rgba(0, 192, 167, 0.16); }
