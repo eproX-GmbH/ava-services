@@ -1,3 +1,4 @@
+import { getSharedDir } from "../account-space";
 import { EventEmitter } from "node:events";
 import {
   createWriteStream,
@@ -161,7 +162,7 @@ export class WhisperSidecar extends EventEmitter {
     super();
     this.binaryPathOverride = opts.binaryPathOverride ?? null;
     this.modelDir =
-      opts.modelDirOverride ?? join(app.getPath("userData"), "whisper");
+      opts.modelDirOverride ?? getSharedDir("whisper");
   }
 
   /** Synchronous snapshot. */

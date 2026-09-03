@@ -15,6 +15,16 @@ import {
 // Captures boot AND the post-wake `[power] resume` / updater path even on
 // a normal Finder/Dock launch, where stdout is otherwise discarded.
 import "./file-logger-init";
+// T1 — Account-Space VOR allen Stores waehlen (siehe account-space.ts).
+import "./account-space-init";
+import {
+  handleSignedIn as accountSpaceSignedIn,
+  listAccounts,
+  switchAccount,
+  startNewAccount,
+  getActiveSpaceId,
+  readIdentity,
+} from "./account-space";
 import { join } from "node:path";
 import { spawn as spawnChild } from "node:child_process";
 import {
@@ -1445,7 +1455,30 @@ heartbeat.on("tick", (info: AlertTickInfo) => {
 // untouched). Each event we log is a clear user-visible state
 // transition that belongs in the trail.
 let lastAuthSignedIn = false;
+// T1 — Account-Space-Zuordnung bei Anmeldung (Adoption von _pending,
+// Identitaets-Sperre bei fremdem sub). Nur einmal je Anmeldung.
+let lastSpaceSub: string | null = null;
 auth.on("status", (status: AuthStatus) => {
+  if (status.signedIn && status.actorId && status.actorId !== lastSpaceSub) {
+    lastSpaceSub = status.actorId;
+    const ergebnis = accountSpaceSignedIn({
+      sub: status.actorId,
+      email: status.email ?? null,
+      name: status.name ?? null,
+      tenantId: status.tenantId ?? null,
+    });
+    if (ergebnis === "relaunching") {
+      console.log("[account-space] lokale Daten werden diesem Konto zugeordnet — AVA startet neu");
+      for (const win of BrowserWindow.getAllWindows()) {
+        try {
+          win.webContents.send("accounts:relaunching", { sub: status.actorId });
+        } catch {
+          /* zerstoertes Fenster */
+        }
+      }
+    }
+  }
+  if (!status.signedIn) lastSpaceSub = null;
   if (status.signedIn !== lastAuthSignedIn) {
     audit({
       actorType: "user",
@@ -5276,6 +5309,17 @@ app.whenReady().then(async () => {
   // Settings — wired in 8.f3) but is safe to call at any time. Mutation
   // handlers re-broadcast `alerts:changed` so every open window's store
   // refreshes without the renderer having to invalidate cache.
+  // T1 — Account-Spaces (Kontowechsler-UI folgt in T2).
+  ipcMain.handle("accounts:list", () => ({
+    ...listAccounts(),
+    activeSpace: getActiveSpaceId(),
+    identity: readIdentity(),
+  }));
+  ipcMain.handle("accounts:switch", (_e, sub: string) => switchAccount(String(sub)));
+  ipcMain.handle("accounts:addAnother", () => {
+    startNewAccount();
+    return true;
+  });
   ipcMain.handle("alerts:list", () => alerts.list());
   ipcMain.handle("alerts:unreadCount", () => alerts.unreadCount());
   ipcMain.handle("alerts:markSeen", (_e, id: string) => {

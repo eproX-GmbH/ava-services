@@ -51,6 +51,8 @@ const SIGNED_OUT: AuthStatus = {
   actorId: null,
   tenantId: null,
   scopes: [],
+  email: null,
+  name: null,
 };
 
 interface TokenResponse {
@@ -506,6 +508,14 @@ export class Auth extends EventEmitter {
     const tenantId = (claims["tenant_id"] as string | undefined) ?? null;
     const actorId = (claims["sub"] as string | undefined) ?? null;
     const scopes = parseScopes(claims["scope"]);
+    // T1 — Anzeige-Claims (Keycloak: email / name / preferred_username).
+    const email = typeof claims["email"] === "string" ? (claims["email"] as string) : null;
+    const name =
+      typeof claims["name"] === "string"
+        ? (claims["name"] as string)
+        : typeof claims["preferred_username"] === "string"
+          ? (claims["preferred_username"] as string)
+          : null;
 
     this.setStatus({
       signedIn: true,
@@ -514,6 +524,8 @@ export class Auth extends EventEmitter {
       tenantId,
       actorId,
       scopes,
+      email,
+      name,
     });
 
     if (tokens.refresh_token) {
@@ -563,6 +575,8 @@ export class Auth extends EventEmitter {
       actorId,
       tenantId,
       scopes: this.scopes.filter((s) => s !== "openid" && s !== "profile" && s !== "email"),
+      email: `${actorId}@dev.local`,
+      name: actorId,
     });
   }
 

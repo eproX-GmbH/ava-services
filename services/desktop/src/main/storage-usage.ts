@@ -9,6 +9,7 @@
 // auf und bietet gezielte + automatische Bereinigung — wobei das aktive
 // und die erforderlichen Modelle immer geschützt sind.
 
+import { getSharedDir } from "./account-space";
 import { existsSync, readdirSync, rmSync, statSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { app } from "electron";
@@ -44,10 +45,10 @@ function ollamaModelsDir(): string {
   return join(app.getPath("home"), ".ollama", "models");
 }
 function whisperDir(): string {
-  return join(app.getPath("userData"), "whisper");
+  return getSharedDir("whisper");
 }
 function ollamaManagedDir(): string {
-  return join(app.getPath("userData"), "ollama-managed");
+  return getSharedDir("ollama-managed");
 }
 function userDataDir(): string {
   return app.getPath("userData");

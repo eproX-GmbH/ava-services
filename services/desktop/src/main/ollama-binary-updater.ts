@@ -19,6 +19,7 @@
 // Supervisor checkt erst den Managed-Pfad. Nur falls keiner existiert,
 // fällt er auf die Bundled-Variante zurück.
 
+import { getSharedDir } from "./account-space";
 import { EventEmitter } from "node:events";
 import {
   createWriteStream,
@@ -497,7 +498,7 @@ export class OllamaBinaryUpdater extends EventEmitter {
 }
 
 function managedRoot(): string {
-  return join(app.getPath("userData"), "ollama-managed");
+  return getSharedDir("ollama-managed");
 }
 
 // ---- Extractors ----------------------------------------------------------

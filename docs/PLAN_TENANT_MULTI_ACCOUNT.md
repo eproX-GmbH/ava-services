@@ -1,6 +1,6 @@
 # Plan: Tenant-Konzept und Multi-Account auf einem Geraet
 
-Stand 2026-09-03. Status: Konzept, noch nichts umgesetzt.
+Stand 2026-09-03. Status: T1 umgesetzt (v0.1.527), T2–T6 offen.
 
 ## 1. Ziele
 
@@ -206,7 +206,7 @@ nur an neuem Ort. Kein Datenverlust, kein Import.
 
 | Stufe | Inhalt | Umfang |
 |---|---|---|
-| T1 | Desktop: Account-Space-Waehler, Registry, Migration des Bestands, Relaunch-Wechsel, `identity.json` | 2–3 Tage |
+| T1 ✅ v0.1.527 | Desktop: Account-Space-Waehler (`account-space.ts`), Registry, Migration des Bestands per Rename, Relaunch-Wechsel, `identity.json`, E-Mail/Name im Auth-Status, IPC `accounts:*` | erledigt |
 | T2 | Desktop: Kontowechsler-UI, Identitaets-Sperre, `prompt=login`, Konto entfernen | 1–2 Tage |
 | T3 | Keycloak: Gruppen als Tenants, Mapper `tenant_id`/`tenant_name`, Realm-Skript wiederherstellen, bestehende User in persoenliche Tenants | 1 Tag |
 | T4 | Gateway: Tabellen Tenant/TenantMember, Kompatibilitaetsmigration, whoami erweitert, Fallback-Logging | 1 Tag + Deploy (mit Go) |
@@ -226,5 +226,7 @@ und unabhaengig vom Backend), dann T3 → T4 → T5.
 3. **Nicht zugeordneter Altbestand (`_pending`) wird bei fremdem
    Erst-Login verworfen**, ohne Rueckfrage. Die Migration des eigenen
    Bestands (Abschnitt 6, Schritt 1) bleibt bestehen.
-4. **Provider-Keys strikt je Account.** Keine geraeteweite Freigabe; wer
-   zwei Accounts nutzt, hinterlegt Keys je Account.
+4. **Provider-Keys strikt je Account** (OpenAI, Anthropic & Co. unter
+   `agent/`, Apify unter `linkedin/`). Geraeteweit geteilt werden NUR
+   lokale Modelle: Ollama (`shared/ollama-managed`, Modelle in ~/.ollama)
+   und Whisper (`shared/whisper`).

@@ -26,6 +26,25 @@ export interface AuthStatus {
   actorId: string | null;
   tenantId: string | null;
   scopes: string[];
+  /** T1 — aus den Token-Claims, fuer Kontowechsler/Header. */
+  email?: string | null;
+  name?: string | null;
+}
+
+/** T1 — Account-Space-Registry (Kontowechsler). */
+export interface AccountRecord {
+  sub: string;
+  email: string | null;
+  name: string | null;
+  tenantId: string | null;
+  tenantName?: string | null;
+  lastUsedAt: string;
+}
+export interface AccountsSnapshot {
+  active: string | null;
+  accounts: AccountRecord[];
+  activeSpace: string;
+  identity: (Omit<AccountRecord, "lastUsedAt"> & { lastSignInAt?: string }) | null;
 }
 
 // ---- Auto-updater (8.u4 / 8.v1.5) -----------------------------------------

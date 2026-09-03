@@ -1,3 +1,4 @@
+import { getSharedDir } from "./account-space";
 import { spawn, type ChildProcessByStdio } from "node:child_process";
 import type { Readable } from "node:stream";
 import { EventEmitter } from "node:events";
@@ -718,7 +719,7 @@ export class OllamaSupervisor extends EventEmitter {
    */
   private resolveManagedBinaryPath(): string | null {
     try {
-      const root = join(app.getPath("userData"), "ollama-managed");
+      const root = getSharedDir("ollama-managed");
       if (!existsSync(root)) return null;
       const exe = process.platform === "win32" ? "ollama.exe" : "ollama";
       // Höchste Version aus dem Verzeichnis. Lexikographisch ist OK

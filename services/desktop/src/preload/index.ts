@@ -86,6 +86,7 @@ import type {
   LinkMonitor,
   LinkMonitorInput,
   LinkMonitorSnapshot,
+  AccountsSnapshot,
 } from "../shared/types";
 export type {
   AgentChoiceAnswer,
@@ -1055,6 +1056,17 @@ const api = {
   // Heartbeat alerts (Phase 8.f1). The renderer reads + mutates via this
   // surface; main rebroadcasts `alerts-changed` after every successful
   // mutation so every open window can refresh its store without polling.
+  // T1 — Account-Spaces (Kontowechsler-UI in T2).
+  accounts: {
+    list: (): Promise<AccountsSnapshot> => ipcRenderer.invoke("accounts:list"),
+    switch: (sub: string): Promise<boolean> => ipcRenderer.invoke("accounts:switch", sub),
+    addAnother: (): Promise<boolean> => ipcRenderer.invoke("accounts:addAnother"),
+    onRelaunching: (cb: (info: { sub: string }) => void): (() => void) => {
+      const h = (_e: unknown, info: { sub: string }) => cb(info);
+      ipcRenderer.on("accounts:relaunching", h);
+      return () => ipcRenderer.removeListener("accounts:relaunching", h);
+    },
+  },
   alerts: {
     list: (): Promise<Alert[]> => ipcRenderer.invoke("alerts:list"),
     unreadCount: (): Promise<number> =>
