@@ -1,4 +1,5 @@
 import type { GatewayClient } from "../gateway-client";
+import { buildAccountTools } from "./account";
 import type { LlmProviderManager } from "../providers";
 import type { GeneralMemoryStore } from "../general-memory";
 import type { AttachmentStore } from "../attachment-store";
@@ -113,6 +114,9 @@ export function buildReadOnlyRegistry(deps: {
   getBearer: () => Promise<string | null>;
   /** Gateway base URL — needed by `crm_enrich_now` for the cache POST. */
   gatewayUrl: string;
+  /** T5 — Konto/Tenant im Chat (`account_info`). */
+  getAuthStatus: () => import("../../../shared/types").AuthStatus;
+  listAccounts: () => { active: string | null; accounts: import("../../../shared/types").AccountRecord[] };
   /** Fired by the alerts tools after every mutation so the renderer's
    *  bell + /alerts list refresh live. main/index.ts wires this to the
    *  IPC `alerts:changed` broadcast. */
@@ -185,6 +189,13 @@ export function buildReadOnlyRegistry(deps: {
     getTenantCompanyIds: deps.getTenantCompanyIds,
   };
   for (const t of buildCompanyTools(ctx)) registry.register(t);
+  // T5 — Konto + Tenant (read-only).
+  for (const t of buildAccountTools({
+    gateway: deps.gateway,
+    getAuthStatus: deps.getAuthStatus,
+    listAccounts: deps.listAccounts,
+  }))
+    registry.register(t);
   for (const t of buildTransactionTools(ctx)) registry.register(t);
   for (const t of buildEvaluationTools(ctx)) registry.register(t);
   for (const t of buildUiTools()) registry.register(t);

@@ -27,6 +27,12 @@ interface WhoamiResponse {
   tenantId: string;
   actorId: string;
   scopes: string[];
+  // T4/T5 — vom Gateway seit 20260903_tenants.
+  tenantName?: string | null;
+  role?: string;
+  memberCount?: number;
+  email?: string | null;
+  tenantSource?: "claim" | "sub";
 }
 
 export function Whoami() {
@@ -44,19 +50,77 @@ export function Whoami() {
       )}
       {whoami.data && (
         <dl>
-          <dt>Mandant</dt>
-          <dd>{whoami.data.tenantId}</dd>
-          <dt>Akteur</dt>
-          <dd>{whoami.data.actorId}</dd>
+          <dt>Tenant</dt>
+          <dd>
+            {whoami.data.tenantName ??
+              (whoami.data.tenantId === whoami.data.actorId
+                ? "persönlicher Tenant"
+                : whoami.data.tenantId)}
+            {whoami.data.role && (
+              <span className="muted small"> · Rolle: {whoami.data.role}</span>
+            )}
+            {typeof whoami.data.memberCount === "number" && (
+              <span className="muted small">
+                {" "}· {whoami.data.memberCount} Mitglied{whoami.data.memberCount === 1 ? "" : "er"}
+              </span>
+            )}
+          </dd>
+          <dt>Tenant-ID</dt>
+          <dd>
+            <code>{whoami.data.tenantId}</code>
+            <span className="muted small">
+              {" "}
+              {whoami.data.tenantSource === "claim"
+                ? "· aus dem Token-Claim (Keycloak-Tenant)"
+                : "· Kompatibilitäts-Fallback: Tenant = User-ID"}
+            </span>
+          </dd>
+          <dt>Konto</dt>
+          <dd>
+            {whoami.data.email ?? "—"}{" "}
+            <span className="muted small">· Nutzer-ID <code>{whoami.data.actorId}</code></span>
+          </dd>
           <dt>Berechtigungen</dt>
           <dd>{whoami.data.scopes.join(" · ")}</dd>
         </dl>
       )}
+      <GeraeteKonten />
       <p className="muted small">
         Anbieter, Modell, API-Schlüssel und Gedächtnis findest du unter{" "}
         <a href="#/settings">Einstellungen</a>.
       </p>
       <ExternalServiceDiagnostics />
+    </section>
+  );
+}
+
+// T5 — Konten, die auf diesem Geraet bekannt sind (Account-Spaces).
+function GeraeteKonten() {
+  const konten = useQuery({
+    queryKey: ["accounts"],
+    queryFn: () => window.api.accounts.list(),
+  });
+  if (!konten.data || konten.data.accounts.length === 0) return null;
+  return (
+    <section style={{ marginTop: "1.5rem" }}>
+      <h3>Konten auf diesem Gerät</h3>
+      <dl>
+        {konten.data.accounts.map((a) => (
+          <span key={a.sub} style={{ display: "contents" }}>
+            <dt>{a.sub === konten.data.active ? "aktiv" : "weiteres Konto"}</dt>
+            <dd>
+              {a.name ?? a.email ?? a.sub}
+              {a.email && a.name && <span className="muted small"> · {a.email}</span>}
+              {a.tenantName && <span className="muted small"> · {a.tenantName}</span>}
+            </dd>
+          </span>
+        ))}
+      </dl>
+      <p className="muted small">
+        Wechsel und weitere Konten über das Konto-Menü in der Kopfzeile. Lokale
+        Daten, Chats und Schlüssel sind je Konto getrennt; nur lokale KI-Modelle
+        werden geteilt.
+      </p>
     </section>
   );
 }

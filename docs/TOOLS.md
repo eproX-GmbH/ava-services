@@ -5,7 +5,7 @@ NICHT direkt bearbeiten — die Quelle der Wahrheit ist `services/desktop/src/ma
 Lauf via `pnpm -F @ava/desktop tools:doc` (oder automatisch via `build:typecheck`).
 
 Stand: 2026-09-03
-Anzahl Tools: 201
+Anzahl Tools: 202
 
 ## Firmen (13)
 
@@ -943,6 +943,16 @@ Show a native OS notification. Use sparingly — only for events the user genuin
 _Parameter:_
 - `title: string` (required) — Bold first line.
 - `body: string` (required) — One short sentence.
+
+## account (1)
+
+### `account_info`
+
+_Datei:_ `services/desktop/src/main/agent/tools/account.ts`
+
+Liefert das angemeldete Konto (Name, E-Mail, Nutzer-ID), den Tenant (Name, Rolle, Mitgliederzahl, ob die Tenant-ID aus dem Token-Claim oder dem Kompatibilitaets-Fallback stammt) und die weiteren Konten, die auf diesem Geraet bekannt sind. Read-only. Kontowechsel und 'Anderes Konto hinzufuegen' laufen ueber das Konto-Menue in der Kopfzeile, weil AVA dafuer neu startet.
+
+_Parameter:_ keine.
 
 ## Chat-Verlauf (3)
 
