@@ -184,11 +184,21 @@ Massnahmen (C6):
 | C5 | compose.sovereign, konfigurierbare Gateway-URL, MSI/PKG-Kanal | 3–5 Tage |
 | Enterprise-Worker, Dynamics-Adapter, T6 | eigene Konzepte | spaeter |
 
-## 9. Entscheidungen, die Joyce treffen muss
-1. Personen-Tombstone global (ein Loeschwunsch tilgt die Person fuer alle
-   Tenants — datenschutzrechtlich die sichere Variante) oder je Tenant?
-   Vorschlag: global.
-2. Aufbewahrungs-Default fuer unbestaetigte Personen: 180 Tage?
-3. Bildanalyse lokal-only als Default — akzeptierter Qualitaetsverlust?
-4. Enterprise-Plan-Text: welche Integrationen werden zugesagt (Dynamics
-   als Produkt, ERP als Projekt)?
+## 9. Entscheidungen (2026-09-03, Joyce)
+1. **Personen-Loeschung global.** Ein Loeschwunsch tilgt die Person im
+   zentralen Bestand fuer alle Tenants; Tombstone sperrt die
+   Wiedererfassung (Namens-/Profil-Hash).
+2. **Aufbewahrung „unbestaetigt":** gemeint ist *nicht erneut beobachtet*.
+   Jede Person/Beschaeftigung traegt `lastSeen` = letzter Lauf, der sie auf
+   einer Quelle wiedergefunden hat. Wird eine Person N Tage lang von
+   keinem Lauf (keines Tenants) mehr gesehen, gilt sie als veraltet und
+   wird getilgt. Der Mechanismus existiert fuer Beschaeftigungen bereits
+   (TTL 120 Tage, `emit-removals-by-ttl`); die Person selbst bleibt heute
+   liegen. Vorschlag: Person 180 Tage nach letzter Beobachtung tilgen,
+   Beschaeftigung weiterhin 120 Tage. Einstellbar je Tenant, im Chat sichtbar.
+3. **Bildanalyse lokal-only ist bereits Default** (`imageAnalysis: "local"`,
+   `imageAnalysisCloudOptIn: false`). C3.2 reduziert sich auf den Hinweistext
+   beim Cloud-Opt-in („Bilder aus Personen-Posts verlassen den Rechner").
+4. **Enterprise-Plan ohne feste Zusagen:** Aussage ist „individuelle
+   Konnektoren (ERP, CRM, Datenquellen) sind umsetzbar, Umfang und Preis
+   nach Absprache". Kein Preis, keine Feature-Liste.
