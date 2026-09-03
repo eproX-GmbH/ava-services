@@ -50,6 +50,11 @@ export interface AccountIdentity {
 
 export interface AccountRecord extends AccountIdentity {
   lastUsedAt: string;
+  /** v0.1.536 — Verzeichnisname des Spaces, falls (noch) nicht = sub.
+   *  Nach einer Adoption von _pending bleibt der Space bis zum naechsten
+   *  Start unter "_pending" liegen (Stores haben ihn offen); der Boot
+   *  benennt ihn dann VOR dem Oeffnen der Stores um. */
+  dir?: string;
 }
 
 interface Registry {
@@ -102,6 +107,12 @@ function spaceDir(id: string): string {
   return join(baseDir, "accounts", id);
 }
 
+/** Verzeichnis eines Kontos: registriertes `dir` oder sub. */
+function dirOf(sub: string, reg?: Registry): string {
+  const r = reg ?? readRegistry();
+  return spaceDir(r.accounts[sub]?.dir ?? sub);
+}
+
 /** Einmalige Migration des flachen Alt-Layouts nach accounts/_pending. */
 function migrateLegacyLayout(): void {
   if (existsSync(join(baseDir, MIGRATION_MARKER))) return;
@@ -146,7 +157,28 @@ export function initAccountSpace(): void {
     mkdirSync(baseDir, { recursive: true });
     migrateLegacyLayout();
     const reg = readRegistry();
-    if (reg.active && existsSync(spaceDir(reg.active))) {
+    // v0.1.536 — aufgeschobene Umbenennung: Space liegt noch unter
+    // "_pending" (Adoption ohne Neustart) → jetzt, vor allen Stores,
+    // nach accounts/<sub> verschieben.
+    const aktiv = reg.active ? reg.accounts[reg.active] : undefined;
+    if (reg.active && aktiv?.dir && aktiv.dir !== reg.active) {
+      const von = spaceDir(aktiv.dir);
+      const nach = spaceDir(reg.active);
+      if (existsSync(von) && !existsSync(nach)) {
+        try {
+          renameSync(von, nach);
+          delete aktiv.dir;
+          writeRegistry(reg);
+          log(`Space ${aktiv.dir ?? "_pending"} → accounts/${reg.active} umbenannt (aufgeschobene Adoption)`);
+        } catch (err) {
+          console.warn("[account-space] aufgeschobene Umbenennung fehlgeschlagen:", err);
+        }
+      } else if (existsSync(nach)) {
+        delete aktiv.dir;
+        writeRegistry(reg);
+      }
+    }
+    if (reg.active && existsSync(dirOf(reg.active, reg))) {
       activeId = reg.active;
     } else {
       activeId = PENDING;
@@ -156,13 +188,13 @@ export function initAccountSpace(): void {
         writeRegistry(reg);
       }
     }
-    mkdirSync(spaceDir(activeId), { recursive: true });
+    mkdirSync(activeId === PENDING ? spaceDir(PENDING) : dirOf(activeId), { recursive: true });
     for (const s of SHARED_DIRS) mkdirSync(join(baseDir, "shared", s), { recursive: true });
   } catch (err) {
     console.warn("[account-space] Init fehlgeschlagen, bleibe im Basis-userData:", err);
     return;
   }
-  const dir = spaceDir(activeId);
+  const dir = activeId === PENDING ? spaceDir(PENDING) : dirOf(activeId);
   app.setPath("userData", dir);
   app.setPath("sessionData", dir);
   log(`aktiver Space: ${activeId === PENDING ? "_pending (nicht angemeldet)" : activeId} → ${dir}`);
@@ -170,7 +202,7 @@ export function initAccountSpace(): void {
 
 /** Space-Verzeichnis eines Kontos (auch wenn es nicht aktiv ist). */
 export function spaceDirFor(sub: string): string {
-  return spaceDir(sub);
+  return dirOf(sub);
 }
 
 /** Basis-userData (Electron-Default), unabhaengig vom aktiven Space. */
@@ -202,7 +234,7 @@ export function listAccounts(): { active: string | null; accounts: AccountRecord
 function writeIdentity(id: AccountIdentity): void {
   try {
     writeFileSync(
-      join(spaceDir(id.sub), "identity.json"),
+      join(dirOf(id.sub), "identity.json"),
       JSON.stringify({ ...id, lastSignInAt: new Date().toISOString() }, null, 2),
       { mode: 0o600 },
     );
@@ -214,7 +246,7 @@ function writeIdentity(id: AccountIdentity): void {
 export function readIdentity(): (AccountIdentity & { lastSignInAt?: string }) | null {
   if (activeId === PENDING) return null;
   try {
-    const p = join(spaceDir(activeId), "identity.json");
+    const p = join(dirOf(activeId), "identity.json");
     if (!existsSync(p)) return null;
     return JSON.parse(readFileSync(p, "utf8")) as AccountIdentity & { lastSignInAt?: string };
   } catch {
@@ -251,19 +283,21 @@ export function handleSignedIn(id: AccountIdentity, opts: { relaunchDelayMs?: nu
   if (activeId === PENDING) {
     const ziel = spaceDir(id.sub);
     if (!existsSync(ziel)) {
-      try {
-        renameSync(spaceDir(PENDING), ziel);
-        log(`_pending → accounts/${id.sub} zugeordnet (${id.email ?? "ohne E-Mail"})`);
-      } catch (err) {
-        console.warn("[account-space] Zuordnung von _pending fehlgeschlagen:", err);
-        mkdirSync(ziel, { recursive: true });
-      }
-    } else {
-      // Der User hat schon einen Space (z. B. nach "Konto hinzufuegen"
-      // doch das alte gewaehlt): _pending bleibt liegen, ist nur
-      // Onboarding-Zustand.
-      log(`accounts/${id.sub} existiert bereits, _pending bleibt unbenutzt`);
+      // v0.1.536 — Adoption OHNE Neustart (User-Befund: nach der
+      // Registrierung startete AVA neu). Die Stores haben _pending offen,
+      // ein Rename jetzt waere unsicher — also nur die Zuordnung in die
+      // Registry schreiben; der naechste Start benennt um.
+      reg.accounts[id.sub] = { ...reg.accounts[id.sub]!, dir: PENDING };
+      reg.active = id.sub;
+      writeRegistry(reg);
+      activeId = id.sub;
+      writeIdentity(id);
+      log(`_pending diesem Konto zugeordnet (${id.email ?? "ohne E-Mail"}) — kein Neustart, Umbenennung beim naechsten Start`);
+      return "ok";
     }
+    // Der User hat schon einen Space (z. B. nach "Konto hinzufuegen" doch
+    // das alte gewaehlt): _pending bleibt liegen, Neustart in den Space.
+    log(`accounts/${id.sub} existiert bereits, _pending bleibt unbenutzt → Neustart`);
   } else {
     log(`Identitaets-Sperre: Space ${activeId} gehoert nicht zu ${id.sub} → eigener Space, Neustart`);
     mkdirSync(spaceDir(id.sub), { recursive: true });
@@ -297,7 +331,7 @@ export function handleSignedIn(id: AccountIdentity, opts: { relaunchDelayMs?: nu
 /** Zu einem bekannten Account wechseln (Neustart). */
 export function switchAccount(sub: string): boolean {
   const reg = readRegistry();
-  if (!reg.accounts[sub] || !existsSync(spaceDir(sub))) return false;
+  if (!reg.accounts[sub] || !existsSync(dirOf(sub, reg))) return false;
   if (sub === activeId) return true;
   reg.active = sub;
   reg.accounts[sub] = { ...reg.accounts[sub], lastUsedAt: new Date().toISOString() };
@@ -336,7 +370,8 @@ export function removeAccount(sub: string): { ok: boolean; grund?: string } {
   if (sub === PENDING || !/^[A-Za-z0-9._-]+$/.test(sub)) return { ok: false, grund: "ungueltige Konto-ID" };
   const reg = readRegistry();
   try {
-    if (existsSync(spaceDir(sub))) rmSync(spaceDir(sub), { recursive: true, force: true });
+    const d = dirOf(sub, reg);
+    if (existsSync(d)) rmSync(d, { recursive: true, force: true });
   } catch (err) {
     return { ok: false, grund: err instanceof Error ? err.message : String(err) };
   }

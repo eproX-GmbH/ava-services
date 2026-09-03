@@ -539,8 +539,18 @@ body {
  * = Drag-Zone, Bedien-Elemente wieder no-drag. Die zentrierte Karte lässt
  * oben links genug Platz für die macOS-Ampel. */
 .signin-shell,
+/* v0.1.536 — NICHT mehr der ganze Onboarding-Screen als Drag-Region:
+ * Electron liefert in Drag-Regionen weder Mausrad noch Klicks auf
+ * <summary> (User-Befund: kein Scrollen, "Lokal hosten" reagiert nicht).
+ * Nur ein schmaler Streifen oben bleibt greifbar zum Fensterziehen. */
 .first-run {
+  -webkit-app-region: no-drag;
+}
+.first-run::before {
+  content: "";
+  position: fixed; top: 0; left: 0; right: 0; height: 38px;
   -webkit-app-region: drag;
+  pointer-events: none;
 }
 .signin-shell a,
 .signin-shell button,
@@ -555,7 +565,9 @@ body {
 .first-run select,
 .first-run textarea,
 .first-run [role="button"],
-.first-run [tabindex] {
+.first-run [tabindex],
+.first-run summary,
+.first-run details {
   -webkit-app-region: no-drag;
 }
 .topbar__brand {
