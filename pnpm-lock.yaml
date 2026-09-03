@@ -1028,6 +1028,9 @@ importers:
       '@prisma/client':
         specifier: ^5.13.0
         version: 5.22.0(prisma@5.22.0)
+      '@types/selenium-webdriver':
+        specifier: ^4.1.21
+        version: 4.35.5
       ai:
         specifier: ^5.0.0
         version: 5.0.179(zod@3.25.76)
