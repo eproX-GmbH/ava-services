@@ -226,4 +226,5 @@ und unabhaengig vom Backend), dann T3 → T4 → T5.
 3. **Nicht zugeordneter Altbestand (`_pending`) wird bei fremdem
    Erst-Login verworfen**, ohne Rueckfrage. Die Migration des eigenen
    Bestands (Abschnitt 6, Schritt 1) bleibt bestehen.
-4. **Provider-Keys**: offen. Konzept nimmt „strikt je Account" an.
+4. **Provider-Keys strikt je Account.** Keine geraeteweite Freigabe; wer
+   zwei Accounts nutzt, hinterlegt Keys je Account.
