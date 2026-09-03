@@ -951,12 +951,16 @@ function UserBadge() {
   }, [open, lade]);
 
   const anzeigeName = auth.name ?? auth.email ?? (auth.actorId ? kurzId(auth.actorId) : "Konto");
-  const tenant = snap?.identity?.tenantName ?? auth.tenantId ?? null;
-  const tenantLabel = tenant
-    ? tenant === auth.actorId
-      ? "persönlicher Tenant"
-      : kurzId(tenant)
-    : null;
+  // T3 — tenant_name-Claim (Keycloak-Gruppe) hat Vorrang; ohne Claim:
+  // Tenant = eigene ID → "persoenlicher Tenant".
+  const tenantName = auth.tenantName ?? snap?.identity?.tenantName ?? null;
+  const tenantLabel = tenantName
+    ? tenantName
+    : auth.tenantId
+      ? auth.tenantId === auth.actorId
+        ? "persönlicher Tenant"
+        : kurzId(auth.tenantId)
+      : null;
   const andere = (snap?.accounts ?? []).filter((a) => a.sub !== auth.actorId);
 
   const wechseln = async (sub: string) => {

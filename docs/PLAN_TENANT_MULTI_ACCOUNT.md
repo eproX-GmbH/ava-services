@@ -1,6 +1,6 @@
 # Plan: Tenant-Konzept und Multi-Account auf einem Geraet
 
-Stand 2026-09-03. Status: T1 (v0.1.527) und T2 (v0.1.528) umgesetzt, T3–T6 offen.
+Stand 2026-09-03. Status: T1 (v0.1.527), T2 (v0.1.528) umgesetzt; T3 Skript bereit (v0.1.529), Anwendung auf Keycloak ausstehend; T4–T6 offen.
 
 ## 1. Ziele
 
@@ -208,7 +208,7 @@ nur an neuem Ort. Kein Datenverlust, kein Import.
 |---|---|---|
 | T1 ✅ v0.1.527 | Desktop: Account-Space-Waehler (`account-space.ts`), Registry, Migration des Bestands per Rename, Relaunch-Wechsel, `identity.json`, E-Mail/Name im Auth-Status, IPC `accounts:*` | erledigt |
 | T2 ✅ v0.1.528 | Desktop: Kontowechsler in der Topbar (Chip Name · Tenant, Menue mit bekannten Konten, Wechsel/Hinzufuegen per Neustart, Konto vom Geraet entfernen), Identitaets-Sperre (T1), `prompt=login` nach "Anderes Konto" | erledigt |
-| T3 | Keycloak: Gruppen als Tenants, Mapper `tenant_id`/`tenant_name`, Realm-Skript wiederherstellen, bestehende User in persoenliche Tenants | 1 Tag |
+| T3 ◐ v0.1.529 | `scripts/keycloak-tenants.mjs` (Plan/Apply, idempotent): Mapper `tenant_id`/`tenant_name` am Client, persoenliche Gruppen `tenant:<sub>` je User; Desktop liest `tenant_name`. **Anwendung auf Keycloak: Operator mit Admin-Zugang, erst Plan, dann `--apply`.** | Skript fertig |
 | T4 | Gateway: Tabellen Tenant/TenantMember, Kompatibilitaetsmigration, whoami erweitert, Fallback-Logging | 1 Tag + Deploy (mit Go) |
 | T5 | Desktop: Tenant-Anzeige (Chip, Whoami), Chat-Tool `account_info` (Self-Service-Prinzip) | 0,5 Tag |
 | T6 | Vorbereitung Kollaboration: `GET /v1/tenants/me/transactions`, „Firmen meines Tenants" in der Firmenuebersicht als Filter | spaeter, eigenes Konzept |

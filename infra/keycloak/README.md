@@ -70,3 +70,25 @@ graph (the desktop app only consumes Keycloak's HTTP API at runtime),
 so they don't belong under `services/` or any producer directory.
 `infra/` mirrors the existing `infra/docker-compose.dev.yml` pattern —
 shared substrate, deployed independently.
+
+## Tenants (T3, PLAN_TENANT_MULTI_ACCOUNT.md)
+
+Tenants sind Realm-Gruppen `tenant:<id>` mit den Attributen `tenant_id`
+und `tenant_name`. Der Client `ava-desktop` traegt zwei User-Attribute-
+Mapper, die diese Attribute (ueber die Gruppen des Users aufgeloest) als
+Claims `tenant_id` / `tenant_name` in Access-, ID-Token und Userinfo
+schreiben. Jeder User gehoert genau einer Tenant-Gruppe an.
+
+```sh
+KEYCLOAK_ADMIN_URL=https://fly-keycloak-broken-bird-3701.fly.dev \
+KEYCLOAK_ADMIN_USER=admin KEYCLOAK_ADMIN_PASSWORD='…' \
+node scripts/keycloak-tenants.mjs          # Plan, aendert nichts
+node scripts/keycloak-tenants.mjs --apply  # anwenden
+```
+
+Idempotent: legt fehlende Mapper an und gibt jedem User ohne Tenant eine
+persoenliche Gruppe `tenant:<sub>` (tenant_id = sub — identisch mit dem
+heutigen Gateway-Fallback, aendert also keine Datenzuordnung).
+Zusammenlegen mehrerer User zu einem Tenant: User in die Zielgruppe
+verschieben, alte persoenliche Gruppe loeschen (Admin-UI). Neue User
+bekommen ihren persoenlichen Tenant beim naechsten Skript-Lauf.

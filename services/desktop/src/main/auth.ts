@@ -514,6 +514,8 @@ export class Auth extends EventEmitter {
     const actorId = (claims["sub"] as string | undefined) ?? null;
     const scopes = parseScopes(claims["scope"]);
     // T1 — Anzeige-Claims (Keycloak: email / name / preferred_username).
+    const tenantName =
+      typeof claims["tenant_name"] === "string" ? (claims["tenant_name"] as string) : null;
     const email = typeof claims["email"] === "string" ? (claims["email"] as string) : null;
     const name =
       typeof claims["name"] === "string"
@@ -531,6 +533,7 @@ export class Auth extends EventEmitter {
       scopes,
       email,
       name,
+      tenantName,
     });
 
     if (tokens.refresh_token) {

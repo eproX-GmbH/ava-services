@@ -1467,6 +1467,7 @@ auth.on("status", (status: AuthStatus) => {
       email: status.email ?? null,
       name: status.name ?? null,
       tenantId: status.tenantId ?? null,
+      tenantName: status.tenantName ?? null,
     });
     if (ergebnis === "relaunching") {
       console.log("[account-space] lokale Daten werden diesem Konto zugeordnet — AVA startet neu");

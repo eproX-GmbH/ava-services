@@ -29,6 +29,8 @@ export interface AuthStatus {
   /** T1 — aus den Token-Claims, fuer Kontowechsler/Header. */
   email?: string | null;
   name?: string | null;
+  /** T3 — Claim `tenant_name` (Keycloak-Gruppenattribut). */
+  tenantName?: string | null;
 }
 
 /** T1 — Account-Space-Registry (Kontowechsler). */
