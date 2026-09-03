@@ -267,6 +267,16 @@ export function handleSignedIn(id: AccountIdentity, opts: { relaunchDelayMs?: nu
   } else {
     log(`Identitaets-Sperre: Space ${activeId} gehoert nicht zu ${id.sub} → eigener Space, Neustart`);
     mkdirSync(spaceDir(id.sub), { recursive: true });
+    // v0.1.535 — ein fremdes Token darf im Space des anderen Kontos nicht
+    // liegen bleiben (sonst Endlosschleife: Wechsel → stille Anmeldung
+    // als falsches Konto → Sperre → zurueck). Der Space meldet sich beim
+    // naechsten Wechsel einmal ueber das vorbefuellte Formular neu an.
+    try {
+      rmSync(join(spaceDir(activeId), "auth.bin"), { force: true });
+      log(`fremdes auth.bin aus Space ${activeId} entfernt`);
+    } catch {
+      /* best-effort */
+    }
   }
   reg.active = id.sub;
   writeRegistry(reg);

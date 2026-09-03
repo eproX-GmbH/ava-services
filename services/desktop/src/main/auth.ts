@@ -548,6 +548,19 @@ export class Auth extends EventEmitter {
           ? (claims["preferred_username"] as string)
           : null;
 
+    // v0.1.535 — Token VOR dem Status-Ereignis merken: der Status-Handler
+    // (Identitaets-Sperre) exportiert es in den Ziel-Space; vorher war
+    // lastRefreshToken dort noch null ("uebernommen: false").
+    if (tokens.refresh_token) this.lastRefreshToken = tokens.refresh_token;
+    // v0.1.535 — Gehoert das Token einem ANDEREN Konto als dem aktiven
+    // Space, wird es hier NICHT gespeichert. Vorher ueberschrieb ein
+    // fremdes Login (SSO-Cookie) das auth.bin des aktiven Spaces: beim
+    // naechsten Wechsel dorthin meldete die stille Anmeldung das falsche
+    // Konto, die Sperre warf zurueck — "zwei Neustarts, alter Account".
+    const spaceIdentity = readIdentity();
+    const tokenGehoertZumSpace =
+      !spaceIdentity || !actorId || spaceIdentity.sub === actorId;
+
     this.setStatus({
       signedIn: true,
       accessToken: tokens.access_token,
@@ -560,8 +573,12 @@ export class Auth extends EventEmitter {
       tenantName,
     });
 
-    if (tokens.refresh_token) {
-      this.lastRefreshToken = tokens.refresh_token;
+    if (tokens.refresh_token && !tokenGehoertZumSpace) {
+      console.log(
+        `auth: Token gehoert zu ${actorId}, aktiver Space zu ${spaceIdentity?.sub} — nicht im aktiven Space gespeichert`,
+      );
+    }
+    if (tokens.refresh_token && tokenGehoertZumSpace) {
       // Einmal je Anmeldung festhalten, ob Keycloak wirklich ein
       // Offline-Token ausgestellt hat (typ "Offline") — sonst fehlt dem
       // Client der Scope und der Kontowechsel bleibt SSO-gebunden.
