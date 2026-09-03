@@ -194,7 +194,7 @@ Massnahmen (C6):
    keinem Lauf (keines Tenants) mehr gesehen, gilt sie als veraltet und
    wird getilgt. Der Mechanismus existiert fuer Beschaeftigungen bereits
    (TTL 120 Tage, `emit-removals-by-ttl`); die Person selbst bleibt heute
-   liegen. Vorschlag: Person 180 Tage nach letzter Beobachtung tilgen,
+   liegen. **Entschieden: Person 180 Tage nach letzter Beobachtung tilgen,**
    Beschaeftigung weiterhin 120 Tage. Einstellbar je Tenant, im Chat sichtbar.
 3. **Bildanalyse lokal-only ist bereits Default** (`imageAnalysis: "local"`,
    `imageAnalysisCloudOptIn: false`). C3.2 reduziert sich auf den Hinweistext
