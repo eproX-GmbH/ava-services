@@ -216,13 +216,14 @@ nur an neuem Ort. Kein Datenverlust, kein Import.
 Reihenfolge: T1 → T2 zuerst (lokale Trennung ist die Sicherheitsanforderung
 und unabhaengig vom Backend), dann T3 → T4 → T5.
 
-## 9. Offene Entscheidungen
-1. Darf ein User mehreren Tenants angehoeren? Konzept nimmt **genau einen**
-   an; Mehrfachzugehoerigkeit wuerde einen Tenant-Umschalter im Account
-   erfordern (lokal dann `accounts/<sub>/tenants/<tenantId>/`).
-2. Wer legt Tenants an und ordnet Mitglieder zu: nur Operator (Admin-UI),
-   oder Einladung durch einen `owner` aus der App heraus?
-3. Sollen Provider-Keys geraetweit geteilt werden duerfen (Komfort) oder
-   strikt pro Account (Konzept: strikt)?
-4. `_pending`-Bestand bei fremdem Erst-Login: nachfragen (Konzept) oder
-   immer verwerfen?
+## 9. Entscheidungen (2026-09-03, Joyce)
+1. **Genau ein Tenant je User.** Kein Tenant-Umschalter, lokal
+   `accounts/<sub>/` ohne weitere Tenant-Ebene.
+2. **Tenants und Mitglieder werden vorerst manuell vom Operator direkt in
+   der DB gepflegt.** Keine Einladungs-UI in dieser Stufe. Die Gateway-
+   Tabellen Tenant/TenantMember sind dafuer ausreichend; die Keycloak-
+   Gruppe liefert nur den Claim.
+3. **Nicht zugeordneter Altbestand (`_pending`) wird bei fremdem
+   Erst-Login verworfen**, ohne Rueckfrage. Die Migration des eigenen
+   Bestands (Abschnitt 6, Schritt 1) bleibt bestehen.
+4. **Provider-Keys**: offen. Konzept nimmt „strikt je Account" an.
