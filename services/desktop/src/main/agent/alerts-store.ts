@@ -128,7 +128,9 @@ export class AlertsStore {
       kind: input.kind,
       severity: input.severity,
       headline: input.headline.trim().slice(0, 120),
-      rationale: input.rationale.trim().slice(0, 500),
+      // v0.1.522 — 500 → 2000: Sammel-Meldungen (bis 10 Signale mit
+      // Snippet + Link) wurden sonst nach dem zweiten Eintrag gekappt.
+      rationale: input.rationale.trim().slice(0, 2000),
       sourceRef: input.sourceRef,
       createdAt: new Date().toISOString(),
       seenAt: null,

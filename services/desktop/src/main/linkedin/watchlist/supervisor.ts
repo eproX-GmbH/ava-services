@@ -423,21 +423,31 @@ export class WatchlistSupervisor {
         ? `${reaktionen} Reaktion${reaktionen === 1 ? "" : "en"}`
         : null,
     ].filter(Boolean);
-    const MAX_ZEILEN = 6;
+    // v0.1.522 — Markdown (Meldungs-Seite rendert es, Telegram wandelt
+    // es in Text): eine Liste, je Signal Art, Zitat und Beitrags-Link.
+    const MAX_ZEILEN = 10;
+    const kuerze = (t: string, n: number): string =>
+      t.replace(/\s+/g, " ").trim().length > n
+        ? `${t.replace(/\s+/g, " ").trim().slice(0, n).trimEnd()} …`
+        : t.replace(/\s+/g, " ").trim();
     const zeilen = bewertet.slice(0, MAX_ZEILEN).map((b) => {
       const s = b.signal;
+      const autor = s.targetAuthorName ? ` bei ${s.targetAuthorName}` : "";
       const art =
         s.activityType === "comment"
-          ? `kommentiert${s.commentText ? `: "${s.commentText.slice(0, 80)}"` : ""}`
-          : `reagiert${s.reactionType ? ` (${s.reactionType.toLowerCase()})` : ""}`;
-      const thema =
-        (s.targetSnippet ?? "").slice(0, 80) ||
-        (s.targetAuthorName ? `Post von ${s.targetAuthorName}` : "LinkedIn-Post");
-      return `• ${art} — ${thema}${s.targetPostUrl ? ` — ${s.targetPostUrl}` : ""}`;
+          ? `**Kommentar**${autor}${s.commentText ? `: „${kuerze(s.commentText, 100)}“` : ""}`
+          : `**Reaktion**${s.reactionType ? ` (${s.reactionType.toLowerCase()})` : ""}${autor}`;
+      const thema = s.targetSnippet ? ` — „${kuerze(s.targetSnippet, 90)}“` : "";
+      const link = s.targetPostUrl ? ` — [Beitrag öffnen](${s.targetPostUrl})` : "";
+      return `- ${art}${thema}${link}`;
     });
     if (bewertet.length > MAX_ZEILEN) {
-      zeilen.push(`… und ${bewertet.length - MAX_ZEILEN} weitere Signale`);
+      zeilen.push(`- … und ${bewertet.length - MAX_ZEILEN} weitere Signale`);
     }
+    zeilen.unshift(
+      `${entry.label} war auf LinkedIn aktiv (${teile.join(", ")}):`,
+      "",
+    );
     const alert = this.deps.alerts.add({
       tenantId: null,
       companyId: entry.companyId ?? "",

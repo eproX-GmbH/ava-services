@@ -3089,7 +3089,7 @@ function renderChatContent(text: string): ReactNode {
 // `:` / `/` / Kleinbuchstaben), TransactionId-UUIDs auch nicht.
 const BARE_COMPANY_ID = /^[A-Z0-9ÄÖÜ]+(?:_[A-Z0-9ÄÖÜ]+)*_\d+$/;
 
-function extractCompanyId(target: string): string {
+export function extractCompanyId(target: string): string {
   if (/^company:/i.test(target)) {
     return target.replace(/^company:/i, "").trim();
   }
@@ -3134,7 +3134,7 @@ const SPA_WURZELN = new Set([
 // auf einen führenden Slash, damit er per <Link> geroutet werden kann.
 // Gibt null zurück, wenn es kein interner Pfad ist ODER die Route gar
 // nicht existiert.
-function toSpaPath(target: string): string | null {
+export function toSpaPath(target: string): string | null {
   let pfad: string | null = null;
   if (target.startsWith("#/")) pfad = target.slice(1); // "#/x" -> "/x"
   else if (target.startsWith("/")) pfad = target; // "/x"

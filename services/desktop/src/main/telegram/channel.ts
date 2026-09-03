@@ -265,7 +265,7 @@ function formatAlert(alert: Alert): string {
     `${SEVERITY_EMOJI[alert.severity]} <b>${escapeHtml(alert.headline)}</b>`,
   );
   if (alert.companyName) lines.push(escapeHtml(alert.companyName));
-  if (alert.rationale) lines.push("", escapeHtml(alert.rationale));
+  if (alert.rationale) lines.push("", escapeHtml(markdownZuText(alert.rationale)));
   if (alert.url) lines.push("", escapeHtml(alert.url));
   return lines.join("\n");
 }
@@ -286,4 +286,17 @@ function formatBatch(alerts: Alert[]): string {
     lines.push("", `… und ${alerts.length - 10} weitere.`);
   }
   return lines.join("\n");
+}
+
+
+/** v0.1.522 — Meldungs-Beschreibungen sind Markdown (Meldungs-Seite);
+ *  Telegram bekommt lesbaren Text: Links als "Label: URL", Listen mit
+ *  Punkt, Fettung entfernt. */
+export function markdownZuText(md: string): string {
+  return md
+    .replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g, "$1: $2")
+    .replace(/\*\*([^*]+)\*\*/g, "$1")
+    .replace(/^\s*[-*]\s+/gm, "• ")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
 }

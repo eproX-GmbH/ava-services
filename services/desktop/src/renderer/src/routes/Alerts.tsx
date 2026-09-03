@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { useAlertsStore } from "../store/alerts";
+import { AlertMarkdown } from "../components/AlertMarkdown";
 import type { Alert, AlertKind, AlertSeverity } from "../../../shared/types";
 
 // `/alerts` route (Phase 8.f1).
@@ -169,7 +170,7 @@ export function Alerts() {
                       className="alert__detail"
                       onClick={(e) => e.stopPropagation()}
                     >
-                      <p>{a.rationale}</p>
+                      <AlertMarkdown text={a.rationale} />
                       <div className="alert__actions">
                         {a.url && (
                           <a

@@ -8210,3 +8210,11 @@ tr.held-row td:first-child::after {
   background: rgba(0, 192, 167, 0.08);
   font-size: 13px;
 }
+
+
+/* v0.1.522 — Markdown in Meldungs-Beschreibungen */
+.alert-md p { margin: 0.35rem 0; }
+.alert-md ul, .alert-md ol { margin: 0.4rem 0 0.4rem 1.2rem; padding: 0; }
+.alert-md li { margin: 0.3rem 0; line-height: 1.45; }
+.alert-md a { word-break: break-all; }
+.alert-md strong { font-weight: 600; }
