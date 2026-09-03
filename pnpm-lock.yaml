@@ -66,6 +66,9 @@ importers:
       html-to-text:
         specifier: ^9.0.5
         version: 9.0.5
+      selenium-webdriver:
+        specifier: ^4.40.0
+        version: 4.43.0
       swagger-ui-express:
         specifier: ^4.5.0
         version: 4.6.3(express@4.22.1)
@@ -362,6 +365,9 @@ importers:
       html-to-text:
         specifier: ^9.0.5
         version: 9.0.5
+      selenium-webdriver:
+        specifier: ^4.40.0
+        version: 4.43.0
       swagger-ui-express:
         specifier: ^4.5.0
         version: 4.6.3(express@4.22.1)
@@ -1055,6 +1061,9 @@ importers:
       openai:
         specifier: ^6.0.0
         version: 6.34.0(ws@8.20.0)(zod@3.25.76)
+      selenium-webdriver:
+        specifier: ^4.40.0
+        version: 4.43.0
       swagger-ui-express:
         specifier: ^4.5.0
         version: 4.6.3(express@4.22.1)
