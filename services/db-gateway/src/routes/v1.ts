@@ -1,5 +1,8 @@
 import { OpenAPIHono } from "@hono/zod-openapi";
 import { authMiddleware } from "../middleware/auth";
+import { ensureTenantForAuth } from "../lib/tenants";
+import { getGatewayPool } from "../lib/producer-pools";
+import { logger } from "../lib/logger";
 import { rateLimitMiddleware } from "../middleware/rate-limit";
 import { auditMiddleware } from "../middleware/audit";
 import { companiesRouter } from "./v1/companies";
@@ -116,7 +119,24 @@ v1.route("/", discoveryRouter);
 
 // Retained for smoke-testing auth end-to-end. Safe to remove once clients
 // exist — no workflow reference.
-v1.get("/whoami", (c) => {
+// T4 — liefert zusaetzlich tenantName/role/memberCount/email und stellt
+// Tenant + Mitgliedschaft sicher (Upsert, nur hier — nicht pro Request).
+v1.get("/whoami", async (c) => {
   const auth = c.get("auth");
-  return c.json({ tenantId: auth.tenantId, actorId: auth.actorId, scopes: auth.scopes });
+  try {
+    return c.json(await ensureTenantForAuth(getGatewayPool(), auth));
+  } catch (err) {
+    // Tenant-Tabellen fehlen (Migration ausstehend) → alte Antwort.
+    logger.warn({ err: err instanceof Error ? err.message : String(err) }, "whoami: tenant lookup failed");
+    return c.json({
+      tenantId: auth.tenantId,
+      actorId: auth.actorId,
+      scopes: auth.scopes,
+      tenantName: auth.tenantName ?? null,
+      role: "member",
+      memberCount: 0,
+      email: auth.email ?? null,
+      tenantSource: auth.tenantSource,
+    });
+  }
 });

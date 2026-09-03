@@ -409,3 +409,30 @@ model AuditLog {
   @@index([actorId, createdAt])
   @@index([requestId])
 }
+
+/// T4 (docs/PLAN_TENANT_MULTI_ACCOUNT.md) — Tenant als eigene Entitaet.
+/// Bisher galt Tenant = User (JWT-Fallback tenantId := sub). Die
+/// Kompatibilitaetsmigration legt je vorhandener tenantId einen Tenant
+/// mit derselben ID an, sodass TenantBilling/UsageEntry/ParkedCompany/
+/// CompanyCrmLink ohne Umschluesselung gueltig bleiben. Pflege vorerst
+/// manuell durch den Operator (Entscheidung 2026-09-03).
+model Tenant {
+  id        String   @id
+  name      String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @default(now())
+  members   TenantMember[]
+}
+
+/// Mitgliedschaft User (JWT sub) → Tenant. Genau ein Tenant je User.
+model TenantMember {
+  tenantId String
+  actorId  String
+  role     String   @default("member") // owner | member
+  joinedAt DateTime @default(now())
+  tenant   Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@id([tenantId, actorId])
+  @@unique([actorId])
+  @@index([tenantId])
+}

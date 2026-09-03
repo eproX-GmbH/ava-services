@@ -7,6 +7,9 @@ import {
   type JWTVerifyGetKey,
 } from "jose";
 import { loadEnv } from "../lib/env";
+import { logger } from "../lib/logger";
+
+const fallbackGeloggt = new Set<string>();
 
 // Auth context populated after successful JWT verification.
 // Downstream handlers read this via c.get(...).
@@ -14,6 +17,11 @@ export type AuthContext = {
   tenantId: string;
   actorId: string; // JWT `sub`
   scopes: string[]; // JWT `scope` space-separated, split
+  // T4 — Herkunft der tenantId: "claim" (tenant/tenant_id im Token)
+  // oder "sub" (Kompatibilitaets-Fallback, Tenant = User).
+  tenantSource: "claim" | "sub";
+  tenantName?: string | null; // Claim `tenant_name` (Keycloak-Gruppe)
+  email?: string | null;
 };
 
 declare module "hono" {
@@ -95,15 +103,18 @@ export const authMiddleware = createMiddleware(async (c, next) => {
   //                     matches the data on disk.
   const [, payloadB64] = token.split(".");
   let tenantId: string;
+  let tenantSource: "claim" | "sub" = "sub";
   try {
     const payload = JSON.parse(
       Buffer.from(payloadB64, "base64url").toString("utf8"),
     ) as { tenant?: unknown; tenant_id?: unknown; sub?: unknown };
-    const raw = payload.tenant ?? payload.tenant_id ?? payload.sub;
+    const claim = payload.tenant ?? payload.tenant_id;
+    const raw = claim ?? payload.sub;
     if (typeof raw !== "string" || raw.length === 0) {
       throw new Error("no tenant or sub claim");
     }
     tenantId = raw;
+    tenantSource = typeof claim === "string" && claim.length > 0 ? "claim" : "sub";
   } catch (err) {
     const message =
       err instanceof Error ? err.message : "malformed_token";
@@ -141,7 +152,17 @@ export const authMiddleware = createMiddleware(async (c, next) => {
     if (typeof payload.sub !== "string") throw new Error("sub claim missing");
     const scopes =
       typeof payload.scope === "string" ? payload.scope.split(/\s+/).filter(Boolean) : [];
-    c.set("auth", { tenantId, actorId: payload.sub, scopes });
+    const tenantName =
+      typeof payload["tenant_name"] === "string" ? (payload["tenant_name"] as string) : null;
+    const email = typeof payload["email"] === "string" ? (payload["email"] as string) : null;
+    // T4 — Fallback sichtbar machen: einmal je Prozess und User, damit
+    // nach der Keycloak-Umstellung (T3) erkennbar bleibt, wer noch mit
+    // Alt-Tokens ohne tenant_id unterwegs ist.
+    if (tenantSource === "sub" && !fallbackGeloggt.has(payload.sub)) {
+      fallbackGeloggt.add(payload.sub);
+      logger.info({ actorId: payload.sub, tenant_fallback: "sub" }, "tenantId aus sub abgeleitet (kein tenant_id-Claim)");
+    }
+    c.set("auth", { tenantId, actorId: payload.sub, scopes, tenantSource, tenantName, email });
   } catch (err) {
     const message = err instanceof Error ? err.message : "verification_failed";
     // Surface a useful `message` field too so the desktop's GatewayError
