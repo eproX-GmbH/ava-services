@@ -9,7 +9,7 @@ import {
 import { loadEnv } from "../lib/env";
 import { logger } from "../lib/logger";
 import { getGatewayPool } from "../lib/producer-pools";
-import { resolveTenantByMembership } from "../lib/membership-cache";
+import { resolveTenantByMembership, tenantKind } from "../lib/membership-cache";
 
 const fallbackGeloggt = new Set<string>();
 
@@ -158,6 +158,26 @@ export const authMiddleware = createMiddleware(async (c, next) => {
     let tenantName =
       typeof payload["tenant_name"] === "string" ? (payload["tenant_name"] as string) : null;
     const email = typeof payload["email"] === "string" ? (payload["email"] as string) : null;
+    // 2026-09-04 — Alt-Claim `tenant` (z. B. "pilot" aus der Keycloak-
+    // Fruehzeit) zeigt auf einen fremden PERSOENLICHEN Tenant. Persoenliche
+    // Tenants sind per Definition id = sub; ein solcher Claim wird
+    // ignoriert (sonst: Desktop liest tenant_id = sub, Gateway sagt
+    // "pilot" → Neustart-Schleife). Nur Organisationen gelten als Claim.
+    if (tenantSource === "claim" && tenantId !== payload.sub) {
+      try {
+        const kind = await tenantKind(getGatewayPool(), tenantId);
+        if (kind !== "organisation") {
+          if (!fallbackGeloggt.has(`claim:${payload.sub}`)) {
+            fallbackGeloggt.add(`claim:${payload.sub}`);
+            logger.warn({ actorId: payload.sub, claimTenant: tenantId, kind }, "tenant-Claim zeigt auf keinen Organisations-Tenant — ignoriert, tenant=sub");
+          }
+          tenantId = payload.sub;
+          tenantSource = "sub";
+        }
+      } catch (err) {
+        logger.warn({ err: err instanceof Error ? err.message : String(err) }, "tenant kind lookup failed; claim beibehalten");
+      }
+    }
     // O2 — ohne tenant_id-Claim entscheidet die Mitgliedschaft im Gateway
     // (Organisationen funktionieren damit unabhaengig vom Keycloak-Mapper).
     if (tenantSource === "sub") {

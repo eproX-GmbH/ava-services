@@ -39,3 +39,15 @@ export async function resolveTenantByMembership(
 export function invalidateMembership(actorId: string): void {
   cache.delete(actorId);
 }
+
+const kindCache = new Map<string, { kind: string | null; bis: number }>();
+
+/** Tenant-Art (organisation | personal | null = unbekannt), kurz gecacht. */
+export async function tenantKind(pool: pg.Pool, tenantId: string): Promise<string | null> {
+  const hit = kindCache.get(tenantId);
+  if (hit && hit.bis > Date.now()) return hit.kind;
+  const r = await pool.query<{ kind: string }>(`SELECT "kind" FROM "Tenant" WHERE "id" = $1`, [tenantId]);
+  const kind = r.rows[0]?.kind ?? null;
+  kindCache.set(tenantId, { kind, bis: Date.now() + TTL_MS });
+  return kind;
+}
