@@ -2290,7 +2290,7 @@ app.whenReady().then(async () => {
     writeLineSync("INFO ", "[power] suspend begin");
     console.log("[power] suspend — proactively stopping background services");
     setImmediate(() => traceStep("[power]", "mailSupervisor", () => {
-      void mailSupervisor?.stop().catch((err) => {
+      void mailSupervisor?.suspendConnections().catch((err) => {
         console.warn("[power] suspend: mailSupervisor.stop failed:", err instanceof Error ? err.message : String(err));
       });
     }));
@@ -2309,9 +2309,9 @@ app.whenReady().then(async () => {
       }
     }));
     setImmediate(() => traceStep("[power]", "scheduledJobsSupervisor", () => {
-      void scheduledJobsSupervisor?.stop().catch((err) => {
+      try { scheduledJobsSupervisor?.suspendTimers(); } catch (err) {
         console.warn("[power] suspend: scheduledJobsSupervisor.stop failed:", err instanceof Error ? err.message : String(err));
-      });
+      }
     }));
     setImmediate(() => traceStep("[power]", "updater", () => {
       try {
@@ -2320,6 +2320,9 @@ app.whenReady().then(async () => {
         console.warn("[power] suspend: updater.stop failed:", err instanceof Error ? err.message : String(err));
       }
     }));
+    // v0.1.538 — beim Suspend wird KEINE PGlite-Instanz mehr geschlossen
+    // (Scheduler: suspendTimers(), Mail: suspendConnections()); nur Netzverbindungen
+    // und Timer. Begruendung siehe ScheduledJobsSupervisor.suspendTimers.
     // v0.1.532 — postgres.stop() (v0.1.340) laeuft beim Suspend NICHT
     // mehr: es schloss den pg-gateway-Server UND alle PGlite-Instanzen
     // in dem ~2s-Fenster, das macOS vor dem Schlaf gewaehrt. Die Wedge-
@@ -2356,8 +2359,8 @@ app.whenReady().then(async () => {
       } catch (err) {
         console.warn("[power] resume: linkedinScheduler.start failed:", err instanceof Error ? err.message : String(err));
       }
-      void scheduledJobsSupervisor?.start().catch((err) => {
-        console.warn("[power] resume: scheduledJobsSupervisor.start failed:", err instanceof Error ? err.message : String(err));
+      void scheduledJobsSupervisor?.resumeTimers().catch((err) => {
+        console.warn("[power] resume: scheduledJobsSupervisor.resumeTimers failed:", err instanceof Error ? err.message : String(err));
       });
       void updater.start().catch((err) => {
         console.warn("[power] resume: updater.start failed:", err instanceof Error ? err.message : String(err));

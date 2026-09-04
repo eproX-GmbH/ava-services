@@ -77,6 +77,26 @@ export class ScheduledJobsSupervisor extends EventEmitter {
     await this.store.stop();
   }
 
+  /** v0.1.538 — Suspend: NUR Timer anhalten, Store (PGlite/WASM) bleibt
+   *  offen. Ein PGlite-close(), das macOS mitten im Schlaf einfriert,
+   *  blieb nach dem Aufwachen in einer Warteschleife haengen (Log
+   *  2026-09-04 05:57: keine Fortsetzung der Suspend-Kette wurde je
+   *  fertig, Main-Thread stundenlang blockiert). */
+  suspendTimers(): void {
+    for (const t of this.timers.values()) clearTimeout(t);
+    this.timers.clear();
+  }
+
+  /** v0.1.538 — Resume: Timer aus dem (offen gebliebenen) Store neu armieren. */
+  async resumeTimers(): Promise<void> {
+    if (this.stopping) return;
+    this.suspendTimers();
+    const active = await this.store.listActive();
+    for (const job of active) {
+      this.scheduleNextRun(job);
+    }
+  }
+
   async createMailLoop(input: {
     label: string;
     payload: {

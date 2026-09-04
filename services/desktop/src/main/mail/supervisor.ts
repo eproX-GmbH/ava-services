@@ -113,6 +113,20 @@ export class MailSupervisor extends EventEmitter {
     }
   }
 
+  /** v0.1.538 — Suspend: nur Netzverbindungen trennen (IMAP-IDLE, SMTP),
+   *  der Store (PGlite/WASM) bleibt offen — siehe ScheduledJobsSupervisor.suspendTimers. */
+  async suspendConnections(): Promise<void> {
+    if (this.imap) {
+      await this.imap.stop();
+      this.imap = null;
+    }
+    if (this.smtp) {
+      await this.smtp.close();
+      this.smtp = null;
+    }
+    this.setState("disconnected");
+  }
+
   async stop(): Promise<void> {
     if (this.imap) {
       await this.imap.stop();
