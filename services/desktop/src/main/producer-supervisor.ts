@@ -115,6 +115,7 @@ export interface ProducerSupervisorOptions {
     xaiApiKey?: string;
     qwenApiKey?: string;
     ollamaUrl?: string;
+    viaGateway?: boolean;
   } | null>;
   /**
    * When `llmConfig()` returns null, this returns a German one-liner
@@ -696,6 +697,9 @@ export class ProducerSupervisor extends EventEmitter {
       ...(llm.xaiApiKey ? { XAI_API_KEY: llm.xaiApiKey } : {}),
       ...(llm.qwenApiKey ? { DASHSCOPE_API_KEY: llm.qwenApiKey } : {}),
       ...(llm.ollamaUrl ? { OLLAMA_URL: llm.ollamaUrl } : {}),
+      // O5 — Organisationsschluessel: LLM-Aufrufe ueber GATEWAY_URL/v1/llm/<anbieter>
+      // mit PRODUCER_GATEWAY_TOKEN; kein Anbieterschluessel im Kindprozess.
+      ...(llm.viaGateway ? { AVA_LLM_VIA_GATEWAY: "1" } : {}),
       // v0.1.184 — EMBED_PROVIDER / EMBED_MODEL are set per-producer
       // via the extraEnvAsync hook in index.ts (currently only
       // company-evaluation cares, hardcoded to ollama + embeddinggemma).

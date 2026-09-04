@@ -6,6 +6,7 @@ import { createMistral } from "@ai-sdk/mistral";
 import { createOllama } from "ollama-ai-provider-v2";
 import type { EmbeddingModel, LanguageModel } from "ai";
 import { makeAnthropicOAuthFetch } from "./anthropic-oauth-fetch";
+import { gatewayProxyBaseURL } from "./runtime";
 
 // Two distinct LLM call paths in AVA — keep them straight:
 //
@@ -69,6 +70,22 @@ const OPENAI_KOMPATIBEL: Record<
 };
 export type EmbedProvider = "openai" | "google" | "ollama";
 
+/**
+ * O5 — Stellvertreter-Weg fuer Producer: AVA_LLM_VIA_GATEWAY=1 (Desktop setzt
+ * es, wenn der Nutzer den Organisationsschluessel nutzt). Dann gehen die
+ * Anbieter-Aufrufe ueber `GATEWAY_URL/v1/llm/<anbieter>` mit dem
+ * Nutzer-JWT (PRODUCER_GATEWAY_TOKEN); der Anbieterschluessel bleibt im Gateway.
+ */
+function proxyOpts(provider: LLMProvider): { apiKey: string; baseURL: string; headers: Record<string, string> } | null {
+  if (process.env.AVA_LLM_VIA_GATEWAY !== "1") return null;
+  const gw = process.env.GATEWAY_URL;
+  const token = process.env.PRODUCER_GATEWAY_TOKEN;
+  if (!gw || !token) return null;
+  const base = gatewayProxyBaseURL(gw, provider);
+  if (!base) return null;
+  return { apiKey: token, baseURL: base, headers: { authorization: `Bearer ${token}` } };
+}
+
 function requireEnv(name: string): string {
   const value = process.env[name];
   if (!value) {
@@ -83,10 +100,13 @@ export function getLLM(): LanguageModel {
 
   switch (provider) {
     case "openai": {
+      const px = proxyOpts("openai");
       const client = createOpenAI({
-        apiKey: requireEnv("OPENAI_API_KEY"),
+        apiKey: px?.apiKey ?? requireEnv("OPENAI_API_KEY"),
         project: process.env.OPENAI_PROJECT_KEY,
         organization: process.env.OPENAI_ORGANIZATION_KEY,
+        baseURL: px?.baseURL,
+        headers: px?.headers,
       });
       return client(model ?? "gpt-4o-mini");
     }
@@ -99,6 +119,11 @@ export function getLLM(): LanguageModel {
       // path when no token is present. See `anthropic-oauth-fetch.ts`
       // for the bearer-injection + Claude-Code system-marker logic
       // shared with the desktop main path.
+      const pxA = proxyOpts("anthropic");
+      if (pxA) {
+        const client = createAnthropic({ apiKey: pxA.apiKey, baseURL: pxA.baseURL, headers: pxA.headers });
+        return client(model ?? "claude-sonnet-4-6");
+      }
       const subscriptionToken = process.env.ANTHROPIC_AUTH_TOKEN;
       if (subscriptionToken && subscriptionToken.length > 0) {
         const client = createAnthropic({
@@ -114,14 +139,20 @@ export function getLLM(): LanguageModel {
       return client(model ?? "claude-sonnet-4-6");
     }
     case "google": {
+      const px = proxyOpts("google");
       const client = createGoogleGenerativeAI({
-        apiKey: requireEnv("GOOGLE_API_KEY"),
+        apiKey: px?.apiKey ?? requireEnv("GOOGLE_API_KEY"),
+        baseURL: px?.baseURL,
+        headers: px?.headers,
       });
       return client(model ?? "gemini-2.5-pro");
     }
     case "mistral": {
+      const px = proxyOpts("mistral");
       const client = createMistral({
-        apiKey: requireEnv("MISTRAL_API_KEY"),
+        apiKey: px?.apiKey ?? requireEnv("MISTRAL_API_KEY"),
+        baseURL: px?.baseURL,
+        headers: px?.headers,
       });
       return client(model ?? "mistral-large-latest");
     }
@@ -129,9 +160,11 @@ export function getLLM(): LanguageModel {
     case "xai":
     case "qwen": {
       const cfg = OPENAI_KOMPATIBEL[provider];
+      const px = proxyOpts(provider);
       const client = createOpenAI({
-        apiKey: requireEnv(cfg.envKey),
-        baseURL: cfg.baseURL,
+        apiKey: px?.apiKey ?? requireEnv(cfg.envKey),
+        baseURL: px?.baseURL ?? cfg.baseURL,
+        headers: px?.headers,
       });
       return client.chat(model ?? cfg.defaultModel);
     }
@@ -185,12 +218,15 @@ export function getEmbedder(): EmbeddingModel<string> | null {
 
   switch (provider) {
     case "openai": {
-      const apiKey = process.env.OPENAI_API_KEY;
+      const px = proxyOpts("openai");
+      const apiKey = px?.apiKey ?? process.env.OPENAI_API_KEY;
       if (!apiKey || apiKey.length === 0) return null;
       const client = createOpenAI({
         apiKey,
         project: process.env.OPENAI_PROJECT_KEY,
         organization: process.env.OPENAI_ORGANIZATION_KEY,
+        baseURL: px?.baseURL,
+        headers: px?.headers,
       });
       return client.textEmbeddingModel(model ?? "text-embedding-3-large");
     }
@@ -473,3 +509,5 @@ export function getDeepResearchClient(): DeepResearchClient | null {
       "o4-mini-deep-research-2025-06-26",
   };
 }
+
+export { gatewayProxyBaseURL } from "./runtime";

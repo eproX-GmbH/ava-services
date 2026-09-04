@@ -102,6 +102,8 @@ export interface OrgState {
   members: OrgMember[];
   openRequests: OrgJoinRequest[];
   policy: OrgPolicy;
+  /** O4 — hinterlegte Organisationsschluessel (nur Anbieter + Hinweis). */
+  providers?: Array<{ kind: string; keyHint: string; updatedAt: string }>;
 }
 
 // ---- Auto-updater (8.u4 / 8.v1.5) -----------------------------------------
@@ -762,7 +764,17 @@ export interface ProviderConfig {
    * danach erreicht, blockt die NÄCHSTE Anfrage mit einem Hinweis-Banner.
    */
   dailyTokenLimit?: number | null;
+  /**
+   * O5 — Schluesselquelle je Anbieter: eigener Schluessel/Abo ("eigen")
+   * oder Organisationsschluessel ueber den Stellvertreter-Proxy
+   * ("organisation"). Fehlend = Organisation, falls sie einen Schluessel
+   * hat und lokal keiner hinterlegt ist; sonst eigen.
+   */
+  keySource?: Partial<Record<LlmProviderKind, KeySource>>;
 }
+
+/** O5 — Herkunft des Anbieterschluessels. */
+export type KeySource = "eigen" | "organisation";
 
 /**
  * v0.1.405 — Momentaufnahme des Tages-Token-Limits. Geliefert vom Main an
@@ -810,6 +822,14 @@ export interface ProviderConfigBundle {
    * Anthropic-Key nicht gesetzt ist.
    */
   anthropicTierInfo?: AnthropicTierInfo | null;
+  /** O5 — Organisationsschluessel je Anbieter (Hinweis = letzte 4 Zeichen), inkl. apify. */
+  orgProviders?: Partial<Record<LlmProviderKind | "apify", string>>;
+  /** O5 — wirksame Schluesselquelle je Anbieter. */
+  keySource?: Record<LlmProviderKind, KeySource>;
+  /** O5 — Organisationsvorgabe sperrt lokale Aenderungen. */
+  providerLock?: boolean;
+  /** O5 — Modellvorgaben der Organisation (nur informativ; Manager setzt sie durch). */
+  policyModels?: { chatModel: string | null; producerModel: string | null };
 }
 
 /**

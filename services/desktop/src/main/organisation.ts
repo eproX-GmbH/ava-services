@@ -29,6 +29,8 @@ interface WhoamiLite {
 interface Deps {
   gateway: GatewayClient;
   isSignedIn: () => boolean;
+  /** O5 — Organisationsschluessel (Hinweise) an den Provider-Manager melden. */
+  onOrgProviders?: (providers: Record<string, string>) => void;
 }
 
 let deps: Deps | null = null;
@@ -136,6 +138,10 @@ async function pruefeAnfragen(): Promise<void> {
   } catch {
     return;
   }
+  // O5 — hinterlegte Organisationsschluessel (nur Hinweise) weiterreichen.
+  const provs: Record<string, string> = {};
+  for (const p of st.providers ?? []) provs[p.kind] = p.keyHint;
+  deps.onOrgProviders?.(provs);
   if (st.kind !== "organisation" || !(st.myRole === "owner" || st.myRole === "admin")) {
     bekannteAnfragen = null;
     return;

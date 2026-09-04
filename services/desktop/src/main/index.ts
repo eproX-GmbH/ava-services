@@ -701,7 +701,16 @@ function buildProducer(
                 const apifyKey = watchlistKeyStore?.getKey();
                 // O3 — Organisationsvorgabe „Kontakt-Recherche aus": kein
                 // Apify-Token → keine Mitarbeiter-Suche im Producer.
-                if (!apifyKey || !featureEnabled("kontakte")) return {};
+                if (!featureEnabled("kontakte")) return {};
+                // O5 — Organisations-Token bleibt im Gateway: Producer ruft
+                // /v1/proxy/apify mit dem Nutzer-JWT.
+                if (providers.apifyUeberOrganisation(Boolean(apifyKey))) {
+                  return {
+                    AVA_APIFY_VIA_GATEWAY: "1",
+                    APIFY_COMPANY_FENSTER: String(watchlistKeyStore?.getConfig().companyWindow ?? 100),
+                  };
+                }
+                if (!apifyKey) return {};
                 return {
                   APIFY_TOKEN: apifyKey,
                   APIFY_COMPANY_FENSTER: String(
@@ -3539,6 +3548,12 @@ app.whenReady().then(async () => {
   initOrganisation({
     gateway: gatewayClient,
     isSignedIn: () => auth.getStatus().signedIn,
+    onOrgProviders: (provs) =>
+      providers.setOrgContext({
+        providers: provs as Partial<Record<LlmProviderKind | "apify", string>>,
+        gatewayUrl: APP_CONFIG.gatewayUrl,
+        getToken: () => auth.getAccessToken(),
+      }),
   });
 
   // v0.1.101 — generic shell.openExternal bridge for plain http/https
@@ -4604,6 +4619,12 @@ app.whenReady().then(async () => {
     "agent:setProducerModel",
     (_e, args: { kind: LlmProviderKind; model: string }) =>
       providers.setProducerModel(args.kind, args.model),
+  );
+  // O5 — Schluesselquelle je Anbieter (eigen | organisation).
+  ipcMain.handle(
+    "agent:setKeySource",
+    (_e, args: { kind: LlmProviderKind; source: "eigen" | "organisation" }): ProviderConfig =>
+      providers.setKeySource(args.kind, args.source),
   );
   ipcMain.handle(
     "agent:setApiKey",

@@ -1986,6 +1986,11 @@ export function ProviderSection() {
   if (!cfg.data || !models.data) return null;
 
   const { config, status, hasKey, encryptionAvailable } = cfg.data;
+  // O5 — Organisationsschluessel + Anbieter-Sperre.
+  const providerLock = cfg.data.providerLock === true;
+  const orgProviders = cfg.data.orgProviders ?? {};
+  const keySource = cfg.data.keySource;
+  const policyModels = cfg.data.policyModels;
   const hasAnthropicSubscriptionToken =
     cfg.data.hasAnthropicSubscriptionToken;
   // Phase A1 — the dropdown's "kein Schlüssel" gate should fall when
@@ -2083,8 +2088,21 @@ export function ProviderSection() {
         </div>
       </div>
 
+      {providerLock && (
+        <div className="active-config-card" role="note">
+          <div className="active-config-card__row">
+            <span className="active-config-card__label">Organisationsvorgabe</span>
+            <span className="active-config-card__value">
+              Anbieter, Schlüssel und Modell legt deine Organisation fest.
+              {policyModels?.chatModel && <> Chat: <code>{policyModels.chatModel}</code>.</>}
+              {policyModels?.producerModel && <> Hintergrund: <code>{policyModels.producerModel}</code>.</>}{" "}
+              Aufrufe laufen über den Schlüssel der Organisation; eigene Schlüssel und Abos sind hier gesperrt.
+            </span>
+          </div>
+        </div>
+      )}
       <h4>Anbieter & Modell wählen</h4>
-      <div className="provider-grid">
+      <div className="provider-grid" style={providerLock ? { pointerEvents: "none", opacity: 0.6 } : undefined} aria-disabled={providerLock}>
         <label className="field">
           <span>Anbieter</span>
           <select
@@ -2243,6 +2261,9 @@ export function ProviderSection() {
                 key={kind}
                 kind={kind}
                 hasKey={hasKey[kind]}
+                orgHint={orgProviders[kind] ?? null}
+                source={keySource?.[kind] ?? "eigen"}
+                locked={providerLock}
                 anthropicTierInfo={
                   kind === "anthropic"
                     ? (cfg.data.anthropicTierInfo ?? null)
@@ -2609,12 +2630,24 @@ function ApiKeyCard({
   // v0.1.209 — Anthropic-Tier-Schnappschuss (für den Tier-1-Hinweis-
   // banner). Null bei Non-Anthropic-Providern oder wenn nicht ermittelt.
   anthropicTierInfo,
+  orgHint = null,
+  source = "eigen",
+  locked = false,
 }: ApiKeyRowProps & {
   anthropicTierInfo?: AnthropicTierInfo | null;
+  /** O5 — Organisationsschluessel vorhanden (letzte 4 Zeichen). */
+  orgHint?: string | null;
+  source?: "eigen" | "organisation";
+  locked?: boolean;
 }) {
   const qc = useQueryClient();
   const [draft, setDraft] = useState("");
   useEffect(() => setDraft(""), [hasKey]);
+  const setSource = useMutation({
+    mutationFn: (next: "eigen" | "organisation") => window.api.agent.setKeySource({ kind, source: next }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["agent", "providerConfig"] }),
+  });
+  const viaOrg = source === "organisation";
 
   const save = useMutation({
     mutationFn: (apiKey: string) =>
@@ -2630,7 +2663,9 @@ function ApiKeyCard({
 
   // Status badge: "gespeichert" = Key hinterlegt. (Bis v0.1.504 gab es
   // hier eine Anthropic-Sonderlogik fuer die Abo-Anmeldung.)
-  const statusBadge = hasKey ? (
+  const statusBadge = viaOrg ? (
+    <span className="badge ok">Organisation …{orgHint}</span>
+  ) : hasKey ? (
     <span className="badge ok">gespeichert</span>
   ) : null;
 
@@ -2641,7 +2676,33 @@ function ApiKeyCard({
         {statusBadge}
       </div>
 
-      <>
+      {orgHint && (
+        <div className="provider-key-card__input-row" style={{ gap: "1rem", flexWrap: "wrap" }}>
+          <label style={{ display: "flex", gap: "0.35rem", alignItems: "center" }}>
+            <input type="radio" name={`ks-${kind}`} checked={viaOrg} disabled={locked || setSource.isPending}
+              onChange={() => setSource.mutate("organisation")} />
+            Schlüssel der Organisation (…{orgHint})
+          </label>
+          <label style={{ display: "flex", gap: "0.35rem", alignItems: "center" }}>
+            <input type="radio" name={`ks-${kind}`} checked={!viaOrg} disabled={locked || setSource.isPending}
+              onChange={() => setSource.mutate("eigen")} />
+            Eigener Schlüssel / Abo
+          </label>
+          {setSource.error && <span className="provider-key-card__error">{(setSource.error as Error).message}</span>}
+        </div>
+      )}
+      {viaOrg && (
+        <p className="provider-key-card__description">
+          Aufrufe laufen über das AVA-Gateway mit dem Schlüssel deiner Organisation; der Schlüssel selbst bleibt dort.
+          Das Gateway sieht dabei die Prompts (Frankfurt, EU), speichert sie aber nur, wenn deine Organisation
+          Prompt-Audit eingeschaltet hat. Verbrauch wird der Organisation zugerechnet.
+        </p>
+      )}
+      {locked && !viaOrg && (
+        <p className="provider-key-card__description">Von der Organisation vorgegeben; eigene Schlüssel sind gesperrt.</p>
+      )}
+
+      {!viaOrg && !locked && (<>
           <div className="provider-key-card__input-row">
             <input
               type="password"
@@ -2698,7 +2759,7 @@ function ApiKeyCard({
               </p>
             )}
           </div>
-        </>
+        </>)}
 
       {/* v0.1.209 — Tier-1-Hinweisbanner, sobald ein Key hinterlegt ist. */}
       {kind === "anthropic" && hasKey && (

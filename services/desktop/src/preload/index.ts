@@ -926,6 +926,11 @@ const api = {
       kind: HostedProviderKind;
       apiKey: string;
     }): Promise<void> => ipcRenderer.invoke("agent:setApiKey", args),
+    /** O5 — Schluesselquelle je Anbieter: eigener Schluessel/Abo oder Organisation. */
+    setKeySource: (args: {
+      kind: LlmProviderKind;
+      source: "eigen" | "organisation";
+    }): Promise<ProviderConfig> => ipcRenderer.invoke("agent:setKeySource", args),
     /**
      * Phase 8.k10b — verify a hosted-provider key against its cheapest
      * auth-checked endpoint without persisting. Used by the FirstRunWizard

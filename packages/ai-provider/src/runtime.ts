@@ -67,6 +67,30 @@ const OPENAI_KOMPATIBEL_ENDPUNKTE: Record<
   },
 };
 
+/**
+ * O5 — Basis-URL des Stellvertreter-Proxys je Anbieter. Das Gateway reicht
+ * `/v1/llm/<anbieter>/<rest>` an die Anbieter-API durch; die SDK-Defaults
+ * (`/v1` bei Anthropic, `/v1beta` bei Google) haengen wir hier an, weil
+ * die SDKs sie bei gesetzter baseURL nicht mehr selbst ergaenzen.
+ */
+export function gatewayProxyBaseURL(gatewayUrl: string, provider: RuntimeProvider): string | null {
+  const gw = gatewayUrl.replace(/\/+$/, "");
+  switch (provider) {
+    case "openai":
+    case "mistral":
+    case "deepseek":
+    case "xai":
+    case "qwen":
+      return `${gw}/v1/llm/${provider}`;
+    case "anthropic":
+      return `${gw}/v1/llm/anthropic/v1`;
+    case "google":
+      return `${gw}/v1/llm/google/v1beta`;
+    default:
+      return null;
+  }
+}
+
 export interface CreateLLMOptions {
   provider: RuntimeProvider;
   /** Model id from the catalog (or any tag the provider accepts). */
@@ -93,6 +117,13 @@ export interface CreateLLMOptions {
    * required by ollama-ai-provider-v2).
    */
   baseURL?: string;
+  /**
+   * O5 — Zusatz-Header fuer jeden Aufruf. Der Stellvertreter-Proxy des
+   * Gateways (Organisationsschluessel) erwartet `authorization: Bearer <JWT>`
+   * unabhaengig vom Anbieter; Anthropic/Google-SDKs wuerden sonst nur
+   * x-api-key bzw. x-goog-api-key senden.
+   */
+  headers?: Record<string, string>;
   /** OpenAI multi-tenant headers — passed straight through to the SDK. */
   openaiProject?: string;
   openaiOrganization?: string;
@@ -120,6 +151,8 @@ export function createLLM(opts: CreateLLMOptions): LanguageModel {
         apiKey: requireKey(opts, "OPENAI_API_KEY"),
         project: opts.openaiProject,
         organization: opts.openaiOrganization,
+        baseURL: opts.baseURL,
+        headers: opts.headers,
         fetch: preferredFetch,
       });
       return client(opts.model);
@@ -145,6 +178,8 @@ export function createLLM(opts: CreateLLMOptions): LanguageModel {
       }
       const client = createAnthropic({
         apiKey: requireKey(opts, "ANTHROPIC_API_KEY"),
+        baseURL: opts.baseURL,
+        headers: opts.headers,
         fetch: preferredFetch,
       });
       return client(opts.model);
@@ -152,6 +187,8 @@ export function createLLM(opts: CreateLLMOptions): LanguageModel {
     case "google": {
       const client = createGoogleGenerativeAI({
         apiKey: requireKey(opts, "GOOGLE_API_KEY"),
+        baseURL: opts.baseURL,
+        headers: opts.headers,
         fetch: preferredFetch,
       });
       return client(opts.model);
@@ -159,6 +196,8 @@ export function createLLM(opts: CreateLLMOptions): LanguageModel {
     case "mistral": {
       const client = createMistral({
         apiKey: requireKey(opts, "MISTRAL_API_KEY"),
+        baseURL: opts.baseURL,
+        headers: opts.headers,
         fetch: preferredFetch,
       });
       return client(opts.model);
@@ -173,6 +212,7 @@ export function createLLM(opts: CreateLLMOptions): LanguageModel {
       const client = createOpenAI({
         apiKey: requireKey(opts, cfg.envKey),
         baseURL: opts.baseURL ?? cfg.baseURL,
+        headers: opts.headers,
         fetch: preferredFetch,
       });
       return client.chat(opts.model);

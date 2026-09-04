@@ -5,7 +5,7 @@ NICHT direkt bearbeiten — die Quelle der Wahrheit ist `services/desktop/src/ma
 Lauf via `pnpm -F @ava/desktop tools:doc` (oder automatisch via `build:typecheck`).
 
 Stand: 2026-09-04
-Anzahl Tools: 208
+Anzahl Tools: 209
 
 ## Firmen (13)
 
@@ -523,7 +523,7 @@ _Parameter:_
 - `content: string` (required) — The fact to remember, written as a self-contained sentence. Future-you will read this without conversation context, so don't say "the company we just discussed" — name it.
 - `tags: array` — Optional short tags for grouping (e.g. "preference", "company:acme"). Lowercase, no spaces.
 
-## Einstellungen (6)
+## Einstellungen (7)
 
 ### `publication_analysis_config`
 
@@ -563,6 +563,14 @@ _Parameter:_ keine.
 _Datei:_ `services/desktop/src/main/agent/tools/settings.ts`
 
 Set or remove the daily token limit that applies to BOTH chat and the agent (shared per-day counter, UTC calendar day, counting input+output+cache tokens). Pass a positive integer to set it, or null/0 to remove the limit entirely (default = no limit). When the day's usage reaches the limit, the in-flight request still finishes and the NEXT request is paused until the user raises or removes the limit. Use this when the user asks to cap, change, or lift their daily token budget.
+
+_Parameter:_ keine.
+
+### `settings_set_key_source`
+
+_Datei:_ `services/desktop/src/main/agent/tools/settings.ts`
+
+Schluesselquelle eines Anbieters umschalten: 'organisation' = Aufrufe laufen ueber den Organisationsschluessel im AVA-Gateway (Verbrauch der Organisation, Gateway sieht Prompts), 'eigen' = eigener Schluessel/Abo, alles lokal. Nur moeglich, wenn die Organisation fuer den Anbieter einen Schluessel hinterlegt hat und die Vorgabe lokales Ueberschreiben erlaubt.
 
 _Parameter:_ keine.
 

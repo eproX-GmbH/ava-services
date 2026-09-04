@@ -114,6 +114,9 @@ export function buildSettingsTools(deps: SettingsToolDeps): Tool[] {
         hasKey: bundle.hasKey,
         encryptionAvailable: bundle.encryptionAvailable,
         errorMessage: bundle.status.errorMessage,
+        keySource: bundle.keySource,
+        orgProviders: bundle.orgProviders,
+        providerLock: bundle.providerLock,
       };
     },
     preview: (r) => {
@@ -332,6 +335,32 @@ export function buildSettingsTools(deps: SettingsToolDeps): Tool[] {
     },
   });
 
+  // O5 — Schluesselquelle je Anbieter (eigen | organisation).
+  const setKeySource = defineTool({
+    name: "settings_set_key_source",
+    description:
+      "Schluesselquelle eines Anbieters umschalten: 'organisation' = Aufrufe laufen ueber den Organisationsschluessel im AVA-Gateway (Verbrauch der Organisation, Gateway sieht Prompts), 'eigen' = eigener Schluessel/Abo, alles lokal. Nur moeglich, wenn die Organisation fuer den Anbieter einen Schluessel hinterlegt hat und die Vorgabe lokales Ueberschreiben erlaubt.",
+    parameters: {
+      type: "object",
+      required: ["kind", "source"],
+      properties: {
+        kind: { type: "string", enum: [...ALL_KINDS] },
+        source: { type: "string", enum: ["eigen", "organisation"] },
+      },
+    },
+    schema: yup
+      .object({
+        kind: yup.string().oneOf([...ALL_KINDS]).required(),
+        source: yup.string().oneOf(["eigen", "organisation"]).required(),
+      })
+      .noUnknown(true),
+    preview: (r: { kind: string; source: string }) => `${r.kind}: Schluessel ${r.source === "organisation" ? "der Organisation" : "eigen"}`,
+    run: async (args) => {
+      providers.setKeySource(args.kind as LlmProviderKind, args.source as "eigen" | "organisation");
+      return { kind: args.kind, source: args.source, ready: providers.getStatus().ready };
+    },
+  });
+
   return [
     getProvider,
     setProvider,
@@ -339,5 +368,6 @@ export function buildSettingsTools(deps: SettingsToolDeps): Tool[] {
     clearKey,
     setDailyTokenLimit,
     publicationAnalysis,
+    setKeySource,
   ];
 }

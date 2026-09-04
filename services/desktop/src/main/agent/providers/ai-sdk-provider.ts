@@ -124,6 +124,9 @@ export interface AiSdkProviderOptions {
   getOpenAISubscriptionAccountId?: () => Promise<string | null>;
   hasStoredOpenAISubscriptionToken?: () => boolean;
   onOpenAISubscriptionTokenChanged?: (cb: () => void) => () => void;
+  /** O5 — Stellvertreter-Proxy (Organisationsschluessel): baseURL + JWT,
+   *  oder null, wenn der eigene Schluessel/Abo genutzt wird. */
+  getGatewayProxy?: () => Promise<{ baseURL: string; token: string } | null>;
 }
 
 export class AiSdkProvider extends EventEmitter implements LlmProvider {
@@ -137,6 +140,7 @@ export class AiSdkProvider extends EventEmitter implements LlmProvider {
   private readonly unsubscribeSubscriptionToken?: () => void;
   private readonly unsubscribeOpenAISubscriptionToken?: () => void;
   private readonly getAnthropicAuthMode?: () => "api-key" | "subscription";
+  private readonly getGatewayProxy?: () => Promise<{ baseURL: string; token: string } | null>;
   private readonly getAnthropicSubscriptionToken?: () => Promise<string | null>;
   private readonly hasStoredAnthropicSubscriptionToken?: () => boolean;
   private readonly getOpenAIAuthMode?: () => "api-key" | "subscription";
@@ -152,6 +156,7 @@ export class AiSdkProvider extends EventEmitter implements LlmProvider {
     this.hasStoredKey = opts.hasStoredKey;
     this.supervisor = opts.supervisor;
     this.getAnthropicAuthMode = opts.getAnthropicAuthMode;
+    this.getGatewayProxy = opts.getGatewayProxy;
     this.getAnthropicSubscriptionToken = opts.getAnthropicSubscriptionToken;
     this.hasStoredAnthropicSubscriptionToken =
       opts.hasStoredAnthropicSubscriptionToken;
@@ -308,7 +313,12 @@ export class AiSdkProvider extends EventEmitter implements LlmProvider {
     let anthropicSubscriptionToken: string | undefined;
     let openaiSubscriptionToken: string | undefined;
     let openaiSubscriptionAccountId: string | undefined;
-    if (this.kind === "anthropic" && authMode === "subscription") {
+    // O5 — Organisationsschluessel: Aufruf ueber das Gateway mit dem
+    // Nutzer-JWT; Abo-/Key-Pfade werden dann nicht angefasst.
+    const gatewayProxy = this.kind === "ollama" ? null : ((await this.getGatewayProxy?.()) ?? null);
+    if (gatewayProxy) {
+      apiKey = gatewayProxy.token;
+    } else if (this.kind === "anthropic" && authMode === "subscription") {
       anthropicSubscriptionToken =
         (await this.getAnthropicSubscriptionToken?.()) ?? undefined;
       if (
@@ -343,7 +353,8 @@ export class AiSdkProvider extends EventEmitter implements LlmProvider {
     const baseURL =
       this.kind === "ollama"
         ? this.ollamaBaseURL()
-        : undefined;
+        : gatewayProxy?.baseURL;
+    const proxyHeaders = gatewayProxy ? { authorization: `Bearer ${gatewayProxy.token}` } : undefined;
     // v0.1.7 diagnostic: log key shape (length + masked head/tail) and
     // request shape so we can tell, post-mortem in DevTools, whether
     // the key reached this layer intact and which model the SDK is
@@ -355,8 +366,9 @@ export class AiSdkProvider extends EventEmitter implements LlmProvider {
         k.length > 8 ? `${k.slice(0, 4)}…${k.slice(-4)}` : `len=${k.length}`;
       const ascii = /^[\x20-\x7E]*$/.test(k);
       const hasWS = /\s/.test(k);
-      const credKind =
-        anthropicSubscriptionToken || openaiSubscriptionToken
+      const credKind = gatewayProxy
+        ? "organisation-proxy"
+        : anthropicSubscriptionToken || openaiSubscriptionToken
           ? "oauth-bearer"
           : "api-key";
       // eslint-disable-next-line no-console
@@ -383,6 +395,7 @@ export class AiSdkProvider extends EventEmitter implements LlmProvider {
           model: effectiveModel,
           apiKey,
           baseURL,
+          ...(proxyHeaders ? { headers: proxyHeaders } : {}),
           ...(anthropicSubscriptionToken
             ? { anthropicSubscriptionToken }
             : {}),

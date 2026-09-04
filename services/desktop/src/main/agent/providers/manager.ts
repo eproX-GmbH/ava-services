@@ -1,5 +1,6 @@
 import { EventEmitter } from "node:events";
-import { listCatalog, recommendedFor } from "@ava/ai-provider";
+import { listCatalog, recommendedFor, gatewayProxyBaseURL } from "@ava/ai-provider";
+import { getOrgPolicy } from "../../org-policy";
 import type { CatalogEntry, CatalogProvider } from "@ava/ai-provider";
 import type { OllamaSupervisor } from "../../ollama-supervisor";
 import { AiSdkProvider } from "./ai-sdk-provider";
@@ -16,6 +17,7 @@ import {
 // setApiKey wieder anhängen.
 // import { detectAnthropicTier } from "./anthropic-tier";
 import type {
+  KeySource,
   AnthropicAuthMode,
   AnthropicTierInfo,
   HostedProviderKind,
@@ -62,6 +64,13 @@ export class LlmProviderManager extends EventEmitter {
   private readonly providers: Record<LlmProviderKind, AiSdkProvider>;
   /** Keeps current status so getStatus() is sync. */
   private status: LlmProviderStatus;
+  /** O5 — Organisationskontext: hinterlegte Anbieter (Hinweis), Gateway,
+   *  JWT-Getter. Von organisation.ts / index.ts gesetzt. */
+  private org: {
+    providers: Partial<Record<LlmProviderKind | "apify", string>>;
+    gatewayUrl: string;
+    getToken: () => Promise<string | null>;
+  } = { providers: {}, gatewayUrl: "", getToken: async () => null };
 
   constructor(supervisor: OllamaSupervisor) {
     super();
@@ -81,7 +90,14 @@ export class LlmProviderManager extends EventEmitter {
         hasStoredKey:
           kind === "ollama"
             ? () => true
-            : () => this.store.hasKey(kind as HostedProviderKind),
+            : () => this.store.hasKey(kind as HostedProviderKind) || this.keySource(kind) === "organisation",
+        getGatewayProxy: async () => {
+          if (kind === "ollama" || this.keySource(kind) !== "organisation") return null;
+          const token = await this.org.getToken();
+          const baseURL = this.org.gatewayUrl ? gatewayProxyBaseURL(this.org.gatewayUrl, kind) : null;
+          if (!token || !baseURL) return null;
+          return { baseURL, token };
+        },
         onKeyChanged: (cb) => {
           const handler = (changedKind: HostedProviderKind): void => {
             // Only fire the per-provider listener when its own key moved.
@@ -176,7 +192,94 @@ export class LlmProviderManager extends EventEmitter {
   }
 
   getConfig(): ProviderConfig {
-    return this.store.getConfig();
+    const cfg = this.store.getConfig();
+    // O5 — Anbieter-Sperre: ist ein Chat-Modell vorgegeben, dessen Anbieter
+    // die Organisation mit Schluessel bereitstellt, ist dieser Anbieter aktiv.
+    const forced = this.lockedKind();
+    return forced && forced !== cfg.kind ? { ...cfg, kind: forced } : cfg;
+  }
+
+  // ---- O5 — Organisationsschluessel / Anbieter-Sperre --------------------
+
+  setOrgContext(ctx: {
+    providers: Partial<Record<LlmProviderKind | "apify", string>>;
+    gatewayUrl: string;
+    getToken: () => Promise<string | null>;
+  }): void {
+    const vorher = JSON.stringify(this.org.providers);
+    this.org = ctx;
+    if (vorher !== JSON.stringify(ctx.providers)) {
+      this.emit("configChanged");
+      this.recompute();
+    }
+  }
+
+  /** Anbieter, die die Organisation mit Schluessel bereitstellt (Hinweis). */
+  getOrgProviders(): Partial<Record<LlmProviderKind | "apify", string>> {
+    return { ...this.org.providers };
+  }
+
+  isProviderLocked(): boolean {
+    return getOrgPolicy().providerLock;
+  }
+
+  private lockedKind(): LlmProviderKind | null {
+    const pol = getOrgPolicy();
+    if (!pol.providerLock || !pol.chatModel) return null;
+    const entry = listCatalog({ role: "llm", toolsOnly: false }).find((e) => e.id === pol.chatModel);
+    const kind = entry?.provider as LlmProviderKind | undefined;
+    if (!kind) return null;
+    if (kind === "ollama") return kind;
+    return this.org.providers[kind] ? kind : null;
+  }
+
+  private sperrePruefen(was: string): void {
+    if (this.isProviderLocked()) {
+      throw new Error(`Organisationsvorgabe: ${was} ist gesperrt. Anbieter, Schluessel und Modell legt deine Organisation fest.`);
+    }
+  }
+
+  /** Wirksame Schluesselquelle je Anbieter. */
+  keySource(kind: LlmProviderKind): KeySource {
+    if (kind === "ollama") return "eigen";
+    if (!this.org.providers[kind]) return "eigen";
+    if (this.isProviderLocked()) return "organisation";
+    const explicit = this.store.getConfig().keySource?.[kind];
+    if (explicit) return explicit;
+    return this.store.hasKey(kind as HostedProviderKind) ? "eigen" : "organisation";
+  }
+
+  keySources(): Record<LlmProviderKind, KeySource> {
+    const out = {} as Record<LlmProviderKind, KeySource>;
+    for (const k of ALL_KINDS) out[k] = this.keySource(k);
+    return out;
+  }
+
+  setKeySource(kind: LlmProviderKind, source: KeySource): ProviderConfig {
+    this.sperrePruefen("die Schluesselquelle");
+    if (kind === "ollama") throw new Error("Ollama braucht keinen Schluessel.");
+    if (source === "organisation" && !this.org.providers[kind]) {
+      throw new Error(`Deine Organisation hat fuer ${labelFor(kind)} keinen Schluessel hinterlegt.`);
+    }
+    if (source === "eigen" && !this.store.hasKey(kind as HostedProviderKind) && !this.hatAbo(kind)) {
+      throw new Error(`Fuer ${labelFor(kind)} ist kein eigener Schluessel hinterlegt.`);
+    }
+    const next = this.store.setConfig({ keySource: { ...(this.store.getConfig().keySource ?? {}), [kind]: source } });
+    this.recompute();
+    return next;
+  }
+
+  private hatAbo(kind: LlmProviderKind): boolean {
+    if (kind === "anthropic") return this.store.hasAnthropicSubscriptionToken();
+    if (kind === "openai") return this.store.hasOpenAISubscriptionToken();
+    return false;
+  }
+
+  /** Apify: Organisations-Token nutzen, wenn lokal keiner hinterlegt ist (oder Sperre). */
+  apifyUeberOrganisation(hatEigenen: boolean): boolean {
+    if (!this.org.providers.apify) return false;
+    if (this.isProviderLocked()) return true;
+    return !hatEigenen;
   }
 
   /** v0.1.405 — Tages-Token-Limit (Chat + Agent). `null` = kein Limit. */
@@ -255,11 +358,20 @@ export class LlmProviderManager extends EventEmitter {
      *  oder Anthropic-Key entfernt. Renderer zeigt einen Hinweis-Banner
      *  bei `tierLabel === "tier-1"`. */
     anthropicTierInfo: AnthropicTierInfo | null;
+    orgProviders: Partial<Record<LlmProviderKind | "apify", string>>;
+    keySource: Record<LlmProviderKind, KeySource>;
+    providerLock: boolean;
+    policyModels: { chatModel: string | null; producerModel: string | null };
   } {
+    const pol = getOrgPolicy();
     return {
       config: this.getConfig(),
       status: this.getStatus(),
-      hasKey: this.store.hasAllKeys(),
+      hasKey: this.hasAllKeys(),
+      orgProviders: this.getOrgProviders(),
+      keySource: this.keySources(),
+      providerLock: pol.providerLock,
+      policyModels: { chatModel: pol.chatModel, producerModel: pol.producerModel },
       hasAnthropicSubscriptionToken:
         this.store.hasAnthropicSubscriptionToken(),
       hasOpenAISubscriptionToken: this.store.hasOpenAISubscriptionToken(),
@@ -283,6 +395,12 @@ export class LlmProviderManager extends EventEmitter {
     kind: LlmProviderKind,
     overrides?: { model?: string },
   ): ProviderConfig {
+    this.sperrePruefen("der Anbieterwechsel");
+    if (kind !== "ollama" && this.keySource(kind) === "organisation") {
+      const patch: { kind: LlmProviderKind; models?: Partial<Record<LlmProviderKind, string>> } = { kind };
+      if (overrides?.model !== undefined) patch.models = { [kind]: overrides.model };
+      return this.store.setConfig(patch);
+    }
     if (kind === "anthropic") {
       // Phase A1 — either auth mode counts. The active mode is whatever
       // the user last saved (the store flips `anthropicAuthMode` when
@@ -339,6 +457,7 @@ export class LlmProviderManager extends EventEmitter {
    * String = wieder das Chat-Modell verwenden.
    */
   setProducerModel(kind: LlmProviderKind, model: string): ProviderConfig {
+    if (getOrgPolicy().providerLock && getOrgPolicy().producerModel) this.sperrePruefen("das Hintergrund-Modell");
     return this.store.setConfig({ producerModels: { [kind]: model } });
   }
 
@@ -352,10 +471,12 @@ export class LlmProviderManager extends EventEmitter {
   }
 
   setModel(kind: LlmProviderKind, model: string): ProviderConfig {
+    if (getOrgPolicy().providerLock && getOrgPolicy().chatModel) this.sperrePruefen("das Chat-Modell");
     return this.store.setConfig({ models: { [kind]: model } });
   }
 
   async setApiKey(kind: HostedProviderKind, plaintext: string): Promise<void> {
+    this.sperrePruefen("das Hinterlegen eigener Schluessel");
     // v0.1.216 — Anthropic-API-Key-Pfad eingestellt. Defense in depth:
     // selbst wenn ein veralteter Renderer-Build oder ein Chat-Tool den
     // Call doch absetzt, halten wir hier hart. UI ist primärer Schutz
@@ -387,6 +508,7 @@ export class LlmProviderManager extends EventEmitter {
   }
 
   clearApiKey(kind: HostedProviderKind): void {
+    this.sperrePruefen("das Entfernen von Schluesseln");
     // If we're clearing the key for the ACTIVE provider, demote to
     // ollama so the agent stays usable. The user/model can prompt for
     // a fresh key later.
@@ -593,11 +715,13 @@ export class LlmProviderManager extends EventEmitter {
   }
 
   hasKey(kind: HostedProviderKind): boolean {
-    return this.store.hasKey(kind);
+    return this.store.hasKey(kind) || this.keySource(kind) === "organisation";
   }
 
   hasAllKeys(): Record<LlmProviderKind, boolean> {
-    return this.store.hasAllKeys();
+    const out = this.store.hasAllKeys();
+    for (const k of ALL_KINDS) if (k !== "ollama" && this.keySource(k) === "organisation") out[k] = true;
+    return out;
   }
 
   /**
@@ -628,7 +752,7 @@ export class LlmProviderManager extends EventEmitter {
    * can't swap engines underneath an in-flight loop.
    */
   activeProvider(): LlmProvider {
-    return this.providers[this.store.getConfig().kind];
+    return this.providers[this.getConfig().kind];
   }
 
   async *streamChat(
@@ -664,19 +788,27 @@ export class LlmProviderManager extends EventEmitter {
     xaiApiKey?: string;
     qwenApiKey?: string;
     ollamaUrl?: string;
+    /** O5 — Aufrufe ueber den Stellvertreter-Proxy (Organisationsschluessel). */
+    viaGateway?: boolean;
   } | null> {
-    const cfg = this.store.getConfig();
+    const cfg = this.getConfig();
     const kind = cfg.kind;
+    const pol = getOrgPolicy();
     // v0.1.422 — Producer-Modell hat Vorrang. Die Hintergrund-Verarbeitung
     // laeuft ueber Tausende Textbloecke pro Firma; ein grosses
     // Reasoning-Modell ist dafuer unnoetig teuer und langsam, waehrend es
     // im Chat weiter die beste Wahl sein kann. Nicht gesetzt = Chat-Modell.
+    // O5 — Organisationsvorgabe (providerLock + producerModel) schlaegt beides.
     const producerOverride = (cfg.producerModels ?? {})[kind]?.trim();
-    const model = producerOverride || this.resolveModel(kind);
+    const model = (pol.providerLock && pol.producerModel) || producerOverride || this.resolveModel(kind);
     const env: Awaited<ReturnType<typeof this.getProducerLlmEnv>> = {
       provider: kind,
       model: model || undefined,
     };
+    if (kind !== "ollama" && this.keySource(kind) === "organisation") {
+      env.viaGateway = true;
+      return env;
+    }
 
     // v0.1.184 — the v0.1.183 embed-provider cascade is REMOVED.
     // embeddinggemma is now the single mandatory embedder for
@@ -737,9 +869,10 @@ export class LlmProviderManager extends EventEmitter {
    * Returns null when env IS available (no blocker).
    */
   async getProducerLlmBlockerReason(): Promise<string | null> {
-    const cfg = this.store.getConfig();
+    const cfg = this.getConfig();
     const kind = cfg.kind;
     if (kind === "ollama") return null;
+    if (this.keySource(kind) === "organisation") return null;
     // v0.1.145 — subscription mode is no longer a blocker (the token
     // now plumbs through as ANTHROPIC_AUTH_TOKEN). Missing token is a
     // blocker for the subscription path, same way a missing API key
@@ -778,6 +911,8 @@ export class LlmProviderManager extends EventEmitter {
    * for this provider yet.
    */
   private resolveModel(kind: LlmProviderKind): string {
+    const pol = getOrgPolicy();
+    if (pol.providerLock && pol.chatModel && this.lockedKind() === kind) return pol.chatModel;
     const explicit = this.store.getConfig().models[kind];
     if (explicit && explicit.length > 0) return explicit;
     const rec = recommendedFor(kind as CatalogProvider, "llm");

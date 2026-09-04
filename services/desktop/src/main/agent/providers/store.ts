@@ -10,6 +10,7 @@ import {
 import { join } from "node:path";
 import { app, safeStorage } from "electron";
 import type {
+  KeySource,
   AnthropicAuthMode,
   AnthropicTierInfo,
   HostedProviderKind,
@@ -251,6 +252,8 @@ export class ProviderConfigStore extends EventEmitter {
     dailyTokenLimit?: number | null;
     /** v0.1.422 — Producer-Modell je Anbieter; "" = Chat-Modell nutzen. */
     producerModels?: Partial<Record<LlmProviderKind, string>>;
+    /** O5 — Schluesselquelle je Anbieter (eigen | organisation). */
+    keySource?: Partial<Record<LlmProviderKind, KeySource>>;
   }): ProviderConfig {
     const next: ProviderConfig = cloneConfig(this.cached);
     if (partial.kind) {
@@ -295,6 +298,9 @@ export class ProviderConfigStore extends EventEmitter {
         if (val) next.producerModels[k as LlmProviderKind] = val;
         else delete next.producerModels[k as LlmProviderKind];
       }
+    }
+    if (partial.keySource) {
+      next.keySource = { ...(next.keySource ?? {}), ...partial.keySource };
     }
     if (partial.dailyTokenLimit !== undefined) {
       next.dailyTokenLimit = normaliseDailyTokenLimit(partial.dailyTokenLimit);

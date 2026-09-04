@@ -126,6 +126,7 @@ export function Organisation() {
       )}
 
       <Vorgaben st={st} admin={admin} busy={busy} aktion={aktion} />
+      <Schluessel st={st} admin={admin} busy={busy} aktion={aktion} />
     </section>
   );
 }
@@ -481,6 +482,99 @@ function Vorgaben({
           Vorgaben speichern
         </button>
       </div>
+    </>
+  );
+}
+
+// O5 — Organisationsschluessel: Admin hinterlegt je Anbieter einen Schluessel,
+// der im Gateway verschluesselt bleibt (Klartext geht rein, nie wieder raus).
+const ANBIETER: Array<{ kind: string; label: string }> = [
+  { kind: "openai", label: "OpenAI" },
+  { kind: "anthropic", label: "Anthropic" },
+  { kind: "google", label: "Google" },
+  { kind: "mistral", label: "Mistral" },
+  { kind: "deepseek", label: "DeepSeek" },
+  { kind: "xai", label: "xAI" },
+  { kind: "qwen", label: "Qwen" },
+  { kind: "apify", label: "Apify" },
+];
+
+function Schluessel({
+  st,
+  admin,
+  busy,
+  aktion,
+}: {
+  st: OrgState;
+  admin: boolean;
+  busy: boolean;
+  aktion: (fn: () => Promise<void>, okText?: string) => Promise<void>;
+}) {
+  const [entwurf, setEntwurf] = useState<Record<string, string>>({});
+  if (st.kind !== "organisation") return null;
+  const hints: Record<string, string> = {};
+  for (const p of st.providers ?? []) hints[p.kind] = p.keyHint;
+
+  const setzen = (kind: string) =>
+    aktion(async () => {
+      const apiKey = (entwurf[kind] ?? "").trim();
+      if (apiKey.length < 8) throw new Error("Schlüssel zu kurz.");
+      await gatewayFetch(`/v1/tenants/me/providers/${kind}`, { method: "PUT", body: { apiKey } });
+      setEntwurf({ ...entwurf, [kind]: "" });
+      await window.api.org.refreshPolicy();
+    }, "Organisationsschlüssel gespeichert. Mitglieder ohne eigenen Schlüssel nutzen ihn beim nächsten Abgleich.");
+
+  const entfernen = (kind: string) => {
+    if (!window.confirm(`Organisationsschlüssel für ${kind} entfernen? Mitglieder, die ihn nutzen, verlieren den Zugriff.`)) return;
+    void aktion(async () => {
+      await gatewayFetch(`/v1/tenants/me/providers/${kind}`, { method: "DELETE" });
+      await window.api.org.refreshPolicy();
+    }, "Organisationsschlüssel entfernt.");
+  };
+
+  return (
+    <>
+      <h3 style={{ marginTop: "1.5rem" }}>Organisationsschlüssel</h3>
+      <p className="muted small">
+        Die Schlüssel bleiben verschlüsselt im AVA-Gateway; Mitglieder rufen die Anbieter darüber auf, ohne den
+        Schlüssel je zu sehen. Verbrauch wird der Organisation zugerechnet. Mit eigenem Schlüssel läuft alles
+        lokal wie bisher.
+      </p>
+      <dl>
+        {ANBIETER.map((a) => (
+          <span key={a.kind} style={{ display: "contents" }}>
+            <dt>{a.label}</dt>
+            <dd>
+              {hints[a.kind] ? (
+                <span className="pill">hinterlegt · …{hints[a.kind]}</span>
+              ) : (
+                <span className="muted small">kein Schlüssel</span>
+              )}
+              {admin && (
+                <span style={{ display: "inline-flex", gap: "0.4rem", marginLeft: "0.6rem", alignItems: "center" }}>
+                  <input
+                    type="password"
+                    placeholder={hints[a.kind] ? "neuen Schlüssel einfügen" : "Schlüssel"}
+                    value={entwurf[a.kind] ?? ""}
+                    autoComplete="off"
+                    disabled={busy}
+                    onChange={(e) => setEntwurf({ ...entwurf, [a.kind]: e.target.value })}
+                    style={{ width: 260 }}
+                  />
+                  <button type="button" className="btn" disabled={busy || (entwurf[a.kind] ?? "").trim().length < 8} onClick={() => void setzen(a.kind)}>
+                    Speichern
+                  </button>
+                  {hints[a.kind] && (
+                    <button type="button" className="btn btn--danger" disabled={busy} onClick={() => entfernen(a.kind)}>
+                      Entfernen
+                    </button>
+                  )}
+                </span>
+              )}
+            </dd>
+          </span>
+        ))}
+      </dl>
     </>
   );
 }
