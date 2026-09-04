@@ -1,6 +1,6 @@
 import { OpenAPIHono } from "@hono/zod-openapi";
 import { authMiddleware } from "../middleware/auth";
-import { ensureTenantForAuth } from "../lib/tenants";
+import { ensureTenantForAuth, DEFAULT_POLICY } from "../lib/tenants";
 import { getGatewayPool } from "../lib/producer-pools";
 import { logger } from "../lib/logger";
 import { rateLimitMiddleware } from "../middleware/rate-limit";
@@ -13,6 +13,7 @@ import { importsRouter } from "./v1/imports";
 import { transactionsRouter } from "./v1/transactions";
 import { localAmqpRouter } from "./v1/local-amqp";
 import { proxyRouter } from "./v1/proxy";
+import { tenantsRouter } from "./v1/tenants";
 import { producersRouter } from "./v1/producers";
 import { crmRouter } from "./v1/crm";
 import { usageRouter } from "./v1/usage";
@@ -117,6 +118,9 @@ v1.route("/", geoRouter);
 // Phase 1 Firmen-Discovery — Scan-Quota + geteilter Kandidaten-Bestand.
 v1.route("/", discoveryRouter);
 
+// O1 — Organisationen (docs/PLAN_ORGANISATIONEN.md).
+v1.route("/", tenantsRouter);
+
 // Retained for smoke-testing auth end-to-end. Safe to remove once clients
 // exist — no workflow reference.
 // T4 — liefert zusaetzlich tenantName/role/memberCount/email und stellt
@@ -137,6 +141,9 @@ v1.get("/whoami", async (c) => {
       memberCount: 0,
       email: auth.email ?? null,
       tenantSource: auth.tenantSource,
+      tenantKind: "personal",
+      policy: DEFAULT_POLICY,
+      openJoinRequest: null,
     });
   }
 });

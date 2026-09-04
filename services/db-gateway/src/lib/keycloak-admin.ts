@@ -204,3 +204,57 @@ export async function createUser(input: CreateUserInput): Promise<string> {
   }
   throw new KeycloakAdminError(res.status, text, "keycloak_error");
 }
+
+
+// ---- O1 — Tenant-Gruppen (docs/PLAN_ORGANISATIONEN.md) -----------------
+//
+// Gruppe `tenant:<tenantId>` mit Attributen tenant_id/tenant_name; der
+// User-Attribute-Mapper (T3) loest sie in die Token-Claims auf. Ein User
+// gehoert genau einer tenant:*-Gruppe an. Rollen leben NICHT hier
+// (Gateway-Wahrheit: TenantMember.role).
+
+async function adminFetch(path: string, init: RequestInit = {}): Promise<Response> {
+  const token = await getAdminToken();
+  return fetch(`${adminBase()}${path}`, {
+    ...init,
+    headers: {
+      authorization: `Bearer ${token}`,
+      "content-type": "application/json",
+      ...(init.headers ?? {}),
+    },
+  });
+}
+
+export async function ensureTenantGroup(tenantId: string, tenantName: string): Promise<string> {
+  const name = `tenant:${tenantId}`;
+  const q = await adminFetch(`/groups?search=${encodeURIComponent(name)}&exact=true&briefRepresentation=false`);
+  if (!q.ok) throw new KeycloakAdminError(q.status, await q.text().catch(() => ""), "keycloak_error");
+  const found = ((await q.json()) as Array<{ id: string; name: string }>).find((g) => g.name === name);
+  if (found) return found.id;
+  const c = await adminFetch(`/groups`, {
+    method: "POST",
+    body: JSON.stringify({ name, attributes: { tenant_id: [tenantId], tenant_name: [tenantName] } }),
+  });
+  if (!c.ok && c.status !== 409) throw new KeycloakAdminError(c.status, await c.text().catch(() => ""), "keycloak_error");
+  const again = await adminFetch(`/groups?search=${encodeURIComponent(name)}&exact=true`);
+  const g = ((await again.json()) as Array<{ id: string; name: string }>).find((x) => x.name === name);
+  if (!g) throw new KeycloakAdminError(500, `group ${name} not found after create`, "keycloak_error");
+  return g.id;
+}
+
+/** User in genau EINE tenant:*-Gruppe haengen (alle anderen entfernen). */
+export async function moveUserToTenantGroup(userId: string, tenantId: string, tenantName: string): Promise<void> {
+  const gid = await ensureTenantGroup(tenantId, tenantName);
+  const r = await adminFetch(`/users/${encodeURIComponent(userId)}/groups?max=200`);
+  if (!r.ok) throw new KeycloakAdminError(r.status, await r.text().catch(() => ""), "keycloak_error");
+  const groups = (await r.json()) as Array<{ id: string; name: string }>;
+  for (const g of groups) {
+    if (g.name.startsWith("tenant:") && g.id !== gid) {
+      await adminFetch(`/users/${encodeURIComponent(userId)}/groups/${g.id}`, { method: "DELETE" });
+    }
+  }
+  if (!groups.some((g) => g.id === gid)) {
+    const a = await adminFetch(`/users/${encodeURIComponent(userId)}/groups/${gid}`, { method: "PUT" });
+    if (!a.ok) throw new KeycloakAdminError(a.status, await a.text().catch(() => ""), "keycloak_error");
+  }
+}

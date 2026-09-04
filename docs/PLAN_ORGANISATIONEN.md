@@ -188,7 +188,7 @@ Genau so laeuft heute schon ValueSerp mit dem Operator-Schluessel.
 
 | Stufe | Inhalt | Aufwand | Deploy |
 |---|---|---|---|
-| O1 | Gateway: Tenant.kind/slug, TenantJoinRequest, TenantPolicy; Routen anlegen/beitreten/annehmen/ablehnen/entfernen/Rolle; Keycloak-Gruppenwechsel ueber den Admin-Client; /whoami liefert role, policy, offene Anfrage | 3–4 Tage | ja (Go) |
+| O1 ✅ | Gateway: Tenant.kind/inviteToken, TenantJoinRequest, TenantPolicy; Routen `/v1/tenants*` (anlegen, Beitritt per Link, annehmen/ablehnen, entfernen mit Rueckfall auf persoenlichen Tenant, Rolle, Vorgaben, Link erneuern); Keycloak-Gruppe `tenant:<id>` best-effort nach Commit; /whoami liefert tenantKind, policy, openJoinRequest. Umgesetzt 2026-09-04 (Migration `20260904_organisationen`, Ablauftest in PGlite; Deploy ausstehend) | 3–4 Tage | ja (Go) |
 | O2 | Desktop: Seite „Organisation" (Mitglieder, Anfragen), Beitrittscode/Link, Tenant-Wechsel-Erkennung mit kontrolliertem Neustart, Chat-Tools org_* | 3 Tage | – |
 | O3 | Funktionen-Policy: Desktop blendet Module aus (Navigation, Tabs, Einstellungen, Tool-Registry, Producer-Start), Gateway setzt serverseitig durch (Persist-Events, Proxy) | 2–3 Tage | ja |
 | O4 | Stellvertreter-Proxy fuer LLM-Anbieter + Apify im Gateway (Streaming, Key-Injektion, Audit), verschluesselte TenantProvider-Ablage, Metering LlmUsage | 4–5 Tage | ja |

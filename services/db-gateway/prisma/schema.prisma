@@ -417,11 +417,51 @@ model AuditLog {
 /// CompanyCrmLink ohne Umschluesselung gueltig bleiben. Pflege vorerst
 /// manuell durch den Operator (Entscheidung 2026-09-03).
 model Tenant {
-  id        String   @id
-  name      String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @default(now())
-  members   TenantMember[]
+  id          String   @id
+  name        String?
+  /// O1 — "personal" (Tenant = User, Default) | "organisation".
+  kind        String   @default("personal")
+  /// O1 — Einladungslink-Token (ava://join/<token>), rotierbar.
+  inviteToken String?  @unique
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @default(now())
+  members     TenantMember[]
+  joinRequests TenantJoinRequest[]
+  policy      TenantPolicy?
+}
+
+/// O1 — Beitrittsanfrage: bis zur Freigabe bleibt der Nutzer in seinem
+/// bisherigen Tenant. Ein Nutzer hat hoechstens eine offene Anfrage.
+model TenantJoinRequest {
+  id          String   @id @default(cuid())
+  tenantId    String
+  actorId     String
+  email       String?
+  name        String?
+  status      String   @default("open") // open | approved | rejected | withdrawn
+  requestedAt DateTime @default(now())
+  decidedAt   DateTime?
+  decidedBy   String?
+  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, status])
+  @@index([actorId, status])
+}
+
+/// O1 — Organisationsvorgaben. features: JSON { "linkedin.beobachter": false, ... }
+/// (fehlender Schluessel = erlaubt). providerLock sperrt lokale
+/// Ueberschreibung von Anbieter/Schluessel/Modell. promptAudit ist das
+/// Opt-in fuer die Speicherung von Prompts im Stellvertreter-Proxy (O4).
+model TenantPolicy {
+  tenantId      String   @id
+  features      Json     @default("{}")
+  providerLock  Boolean  @default(false)
+  chatModel     String?
+  producerModel String?
+  promptAudit   Boolean  @default(false)
+  updatedAt     DateTime @default(now())
+  updatedBy     String?
+  tenant        Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 }
 
 /// Mitgliedschaft User (JWT sub) → Tenant. Genau ein Tenant je User.
