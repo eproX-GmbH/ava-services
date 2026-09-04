@@ -173,6 +173,10 @@ const schema = z.object({
   KEYCLOAK_REGISTRAR_CLIENT_ID: z.string().optional(),
   KEYCLOAK_REGISTRAR_CLIENT_SECRET: z.string().optional(),
   KEYCLOAK_REGISTRATION_CLIENT_ID: z.string().optional(),
+  // O4 — Master-Schluessel (32 Byte, base64) fuer die verschluesselte
+  // Ablage der Organisationsschluessel (TenantProvider). Ohne ihn sind
+  // die Stellvertreter-Routen abgeschaltet (503 secrets_unconfigured).
+  TENANT_SECRETS_KEY: z.string().optional(),
 });
 
 export type Env = z.infer<typeof schema>;

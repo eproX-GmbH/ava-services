@@ -257,6 +257,8 @@ export interface OrgState {
   members: Array<{ actorId: string; role: string; joinedAt: string; email: string | null; name: string | null }>;
   openRequests: Array<{ id: string; actorId: string; email: string | null; name: string | null; requestedAt: string }>;
   policy: TenantPolicyShape;
+  /** O4 — hinterlegte Organisationsschluessel (nur Anbieter + Hinweis). */
+  providers: Array<{ kind: string; keyHint: string; updatedAt: string }>;
 }
 
 export async function getOrgState(pool: pg.Pool, auth: AuthContext): Promise<OrgState> {
@@ -295,6 +297,12 @@ export async function getOrgState(pool: pg.Pool, auth: AuthContext): Promise<Org
     members: members.rows.map((m) => ({ ...m, joinedAt: new Date(m.joinedAt).toISOString() })),
     openRequests: reqs.rows.map((r) => ({ ...r, requestedAt: new Date(r.requestedAt).toISOString() })),
     policy: await readPolicy(pool, auth.tenantId),
+    providers: (
+      await pool.query<{ kind: string; keyHint: string; updatedAt: Date }>(
+        `SELECT "kind", "keyHint", "updatedAt" FROM "TenantProvider" WHERE "tenantId" = $1 ORDER BY "kind"`,
+        [auth.tenantId],
+      )
+    ).rows.map((r) => ({ kind: r.kind, keyHint: r.keyHint, updatedAt: new Date(r.updatedAt).toISOString() })),
   };
 }
 

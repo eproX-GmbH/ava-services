@@ -428,6 +428,7 @@ model Tenant {
   members     TenantMember[]
   joinRequests TenantJoinRequest[]
   policy      TenantPolicy?
+  providers   TenantProvider[]
 }
 
 /// O1 — Beitrittsanfrage: bis zur Freigabe bleibt der Nutzer in seinem
@@ -462,6 +463,55 @@ model TenantPolicy {
   updatedAt     DateTime @default(now())
   updatedBy     String?
   tenant        Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+}
+
+/// O4 — Organisationsschluessel je Anbieter, verschluesselt (AES-256-GCM
+/// mit TENANT_SECRETS_KEY). Nie im Klartext lesbar; nur der Stellvertreter-
+/// Proxy entschluesselt beim Aufruf. keyHint = letzte 4 Zeichen.
+model TenantProvider {
+  tenantId      String
+  kind          String   // openai | anthropic | google | mistral | deepseek | xai | qwen | apify
+  keyCiphertext String
+  keyHint       String
+  updatedAt     DateTime @default(now())
+  updatedBy     String?
+  tenant        Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@id([tenantId, kind])
+}
+
+/// O4 — Metering je Stellvertreter-Aufruf (nur Zaehler, keine Inhalte).
+model LlmUsage {
+  id              String   @id @default(cuid())
+  tenantId        String
+  actorId         String
+  kind            String
+  model           String?
+  inputTokens     Int      @default(0)
+  outputTokens    Int      @default(0)
+  cacheReadTokens Int      @default(0)
+  costMicroUsd    Int?
+  status          Int
+  latencyMs       Int
+  streamed        Boolean  @default(false)
+  createdAt       DateTime @default(now())
+
+  @@index([tenantId, createdAt])
+  @@index([actorId, createdAt])
+}
+
+/// O4 — Prompt-Audit (nur bei TenantPolicy.promptAudit = true).
+model PromptAudit {
+  id        String   @id @default(cuid())
+  tenantId  String
+  actorId   String
+  kind      String
+  model     String?
+  request   Json
+  response  String
+  createdAt DateTime @default(now())
+
+  @@index([tenantId, createdAt])
 }
 
 /// Mitgliedschaft User (JWT sub) → Tenant. Genau ein Tenant je User.

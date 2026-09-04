@@ -14,6 +14,7 @@ import { transactionsRouter } from "./v1/transactions";
 import { localAmqpRouter } from "./v1/local-amqp";
 import { proxyRouter } from "./v1/proxy";
 import { tenantsRouter } from "./v1/tenants";
+import { llmProxyRouter } from "./v1/llm-proxy";
 import { producersRouter } from "./v1/producers";
 import { crmRouter } from "./v1/crm";
 import { usageRouter } from "./v1/usage";
@@ -120,6 +121,9 @@ v1.route("/", discoveryRouter);
 
 // O1 — Organisationen (docs/PLAN_ORGANISATIONEN.md).
 v1.route("/", tenantsRouter);
+
+// O4 — Stellvertreter-Proxy (Organisationsschluessel, Metering, Prompt-Audit).
+v1.route("/", llmProxyRouter);
 
 // Retained for smoke-testing auth end-to-end. Safe to remove once clients
 // exist — no workflow reference.
