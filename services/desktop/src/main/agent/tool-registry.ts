@@ -9,6 +9,12 @@ import type { OllamaToolSpec, Tool } from "./types";
 
 export class ToolRegistry {
   private readonly tools = new Map<string, Tool>();
+  /** O3 — Organisationsvorgabe: gesperrte Tools sind weder sichtbar noch aufrufbar. */
+  private gesperrt: (name: string) => boolean = () => false;
+
+  setSperre(pred: (name: string) => boolean): void {
+    this.gesperrt = pred;
+  }
 
   register<TArgs, TResult>(tool: Tool<TArgs, TResult>): void {
     if (this.tools.has(tool.name)) {
@@ -18,11 +24,12 @@ export class ToolRegistry {
   }
 
   get(name: string): Tool | undefined {
+    if (this.gesperrt(name)) return undefined;
     return this.tools.get(name);
   }
 
   list(): Tool[] {
-    return Array.from(this.tools.values());
+    return Array.from(this.tools.values()).filter((t) => !this.gesperrt(t.name));
   }
 
   /** Materialise the JSON-Schema descriptors Ollama's `/api/chat` expects. */

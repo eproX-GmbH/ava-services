@@ -1,6 +1,7 @@
 import type { GatewayClient } from "../gateway-client";
 import { buildAccountTools } from "./account";
 import { buildOrganisationTools } from "./organisation";
+import { toolGesperrt } from "../../org-policy";
 import type { LlmProviderManager } from "../providers";
 import type { GeneralMemoryStore } from "../general-memory";
 import type { AttachmentStore } from "../attachment-store";
@@ -118,6 +119,8 @@ export function buildReadOnlyRegistry(deps: {
   /** T5 — Konto/Tenant im Chat (`account_info`). */
   getAuthStatus: () => import("../../../shared/types").AuthStatus;
   listAccounts: () => { active: string | null; accounts: import("../../../shared/types").AccountRecord[] };
+  /** O3 — Vorgaben vom Gateway holen und lokal anwenden (org_*_set). */
+  refreshPolicy: () => Promise<unknown>;
   /** Fired by the alerts tools after every mutation so the renderer's
    *  bell + /alerts list refresh live. main/index.ts wires this to the
    *  IPC `alerts:changed` broadcast. */
@@ -185,6 +188,9 @@ export function buildReadOnlyRegistry(deps: {
   }) => void;
 }): ToolRegistry {
   const registry = new ToolRegistry();
+  // O3 — Organisationsvorgaben: abgeschaltete Funktionen verschwinden aus
+  // dem Chat (Liste + Aufruf). Praedikat liest live, kein Neuaufbau noetig.
+  registry.setSperre(toolGesperrt);
   const ctx = {
     gateway: deps.gateway,
     getTenantCompanyIds: deps.getTenantCompanyIds,
@@ -198,7 +204,7 @@ export function buildReadOnlyRegistry(deps: {
   }))
     registry.register(t);
   // O2 — Organisation (org_*).
-  for (const t of buildOrganisationTools({ gateway: deps.gateway })) registry.register(t);
+  for (const t of buildOrganisationTools({ gateway: deps.gateway, refreshPolicy: deps.refreshPolicy })) registry.register(t);
   for (const t of buildTransactionTools(ctx)) registry.register(t);
   for (const t of buildEvaluationTools(ctx)) registry.register(t);
   for (const t of buildUiTools()) registry.register(t);

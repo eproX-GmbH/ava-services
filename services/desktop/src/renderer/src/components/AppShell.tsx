@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { AlertCircle, Loader2, RefreshCw, Lightbulb, X } from "lucide-react";
 import { AlertBell } from "./AlertBell";
 import { useAuthStore } from "../store/auth";
+import { useFeature } from "../store/policy";
 import { WatchChip } from "./WatchChip";
 import { UsageChip } from "./UsageChip";
 import { QuotaExhaustedBanner } from "./QuotaExhaustedBanner";
@@ -65,6 +66,10 @@ export function AppShell({ children }: PropsWithChildren) {
   const location = useLocation();
 
   useChatSearchHotkey(setSearchOpen);
+
+  // O3 — Organisationsvorgaben: abgeschaltete Module verschwinden aus der
+  // Navigation (Seiten leiten zusaetzlich um, Tools sind im Chat gesperrt).
+  const beobachterErlaubt = useFeature("linkedin.beobachter");
 
   // O2 — Organisationen: Einladungslink → Seite mit Rueckfrage;
   // Tenant-Wechsel → Hinweis, AVA startet neu; Klick auf die
@@ -146,7 +151,7 @@ export function AppShell({ children }: PropsWithChildren) {
       <QuotaExhaustedBanner />
       <ConnectionHealthBanner />
       <ExternalServiceBanner />
-      <LinkedInActiveBanner />
+      {beobachterErlaubt && <LinkedInActiveBanner />}
       <main className="app-shell__main">{children}</main>
       <ChatSearchModal
         open={searchOpen}
@@ -629,6 +634,9 @@ function formatRelativeMinutes(ts: number): string {
 }
 
 function TopBar() {
+  // O3 — Organisationsvorgaben: abgeschaltete Module verschwinden aus der Navigation.
+  const mailErlaubt = useFeature("mail");
+  const signaleErlaubt = useFeature("linkedin.beobachter") || useFeature("linkedin.watchlist") || useFeature("linkedin.radar");
   // v0.1.482 — der Signale-Tab ist IMMER sichtbar. Vorher hing er am
   // Master-Schalter und tauchte nach dem Aktivieren erst nach einem
   // Neustart auf (der Focus-Refresh griff bei Same-Window-Toggles nie);
@@ -665,10 +673,10 @@ function TopBar() {
           label="Meldungen"
           subItems={[
             { to: "/alerts", label: "Aktive Meldungen" },
-            { to: "/inbox", label: "Mail-Triage" },
+            ...(mailErlaubt ? [{ to: "/inbox", label: "Mail-Triage" }] : []),
           ]}
         />
-        <NavItem to="/linkedin" label="Signale" />
+        {signaleErlaubt && <NavItem to="/linkedin" label="Signale" />}
         <NavItem to="/settings" label="Einstellungen" />
         <NavItem to="/organisation" label="Organisation" />
         <NavItem to="/whoami" label="Status" />

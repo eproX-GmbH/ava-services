@@ -15,13 +15,15 @@
 import { app, BrowserWindow, Notification } from "electron";
 import { readIdentity, updateIdentityTenant } from "./account-space";
 import type { GatewayClient } from "./agent/gateway-client";
-import type { OrgState } from "../shared/types";
+import type { OrgState, OrgPolicy } from "../shared/types";
+import { applyOrgPolicy } from "./org-policy";
 
 interface WhoamiLite {
   tenantId: string;
   actorId: string;
   tenantName?: string | null;
   role?: string;
+  policy?: Partial<OrgPolicy> | null;
 }
 
 interface Deps {
@@ -97,6 +99,8 @@ export async function checkTenantChange(grund: string): Promise<boolean> {
     console.log(`[organisation] whoami (${grund}) nicht erreichbar: ${err instanceof Error ? err.message : String(err)}`);
     return false;
   }
+  // O3 — Vorgaben immer uebernehmen (auch ohne Tenant-Wechsel).
+  applyOrgPolicy(who.policy ?? null);
   const ident = readIdentity();
   if (!ident || ident.sub !== who.actorId) return false;
   if (!ident.tenantId) {

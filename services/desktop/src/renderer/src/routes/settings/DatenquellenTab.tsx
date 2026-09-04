@@ -1,5 +1,6 @@
 import { LinkedInSection, CrmSection } from "../Settings";
 import { MailAccountSection } from "./MailAccountSection";
+import { useFeature } from "../../store/policy";
 
 // v0.1.273 — Datenquellen-Tab.
 //
@@ -8,11 +9,14 @@ import { MailAccountSection } from "./MailAccountSection";
 // "Automatisierungen"-Tab umgezogen — das war hier sonst Mischmasch aus
 // "wo kommen Daten her" und "was passiert automatisch damit".
 export function DatenquellenTab() {
+  // O3 — Organisationsvorgaben blenden ganze Abschnitte aus.
+  const linkedin = useFeature("linkedin.beobachter");
+  const mail = useFeature("mail");
   return (
     <>
-      <LinkedInSection />
+      {linkedin && <LinkedInSection />}
       <CrmSection />
-      <MailAccountSection />
+      {mail && <MailAccountSection />}
     </>
   );
 }

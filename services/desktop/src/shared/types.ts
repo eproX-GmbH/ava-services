@@ -54,6 +54,19 @@ export interface AccountsSnapshot {
 
 // ---- O2 — Organisationen (docs/PLAN_ORGANISATIONEN.md) ---------------------
 
+/** O3 — Funktionen, die eine Organisation abschalten kann. Fehlender
+ *  Schluessel in policy.features = erlaubt. Reihenfolge: personenbezogene zuerst. */
+export const ORG_FEATURES = [
+  { key: "linkedin.beobachter", label: "LinkedIn-Beobachter", hinweis: "Feed-Scans, Signale-Seite, LinkedIn-Chat-Tools" },
+  { key: "linkedin.watchlist", label: "Personen-Watchlist", hinweis: "Beobachtete Personen und ihre Beitraege" },
+  { key: "linkedin.radar", label: "Personen-Radar", hinweis: "Engagement auf Beitraegen als Firmenkandidaten" },
+  { key: "bildanalyse", label: "Bildanalyse", hinweis: "Bilder aus LinkedIn-Beitraegen auswerten (lokal oder Cloud)" },
+  { key: "kontakte", label: "Kontakt-Recherche", hinweis: "Mitarbeiter-Suche je Firma (Apify/LinkedIn), Kontakt-Tools, Profil-URLs" },
+  { key: "mail", label: "Mail-Anbindung", hinweis: "IMAP-Konto, Mail-Triage, Mail-Tools" },
+  { key: "telegram", label: "Telegram", hinweis: "Benachrichtigungen und Rueckfragen per Telegram" },
+] as const;
+export type OrgFeatureKey = (typeof ORG_FEATURES)[number]["key"];
+
 export interface OrgPolicy {
   features: Record<string, boolean>;
   providerLock: boolean;

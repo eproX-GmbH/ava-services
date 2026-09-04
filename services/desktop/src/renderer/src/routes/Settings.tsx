@@ -5,6 +5,7 @@ import { LinkedInConsentModal } from "../components/LinkedInConsentModal";
 import { AnthropicTierBanner } from "../components/AnthropicTierBanner";
 import { SettingsSkills } from "./SettingsSkills";
 import { SettingsSearch } from "./settings/SettingsSearch";
+import { useFeature, usePolicyStore } from "../store/policy";
 import { KontoTab } from "./settings/KontoTab";
 import { ModelleTab } from "./settings/ModelleTab";
 import { DatenquellenTab } from "./settings/DatenquellenTab";
@@ -176,6 +177,14 @@ const SETTINGS_TAB_IDS: readonly SettingsTabId[] =
 /** v0.1.280 — Sub-Section-Tree pro Settings-Tab. Wird in der Sidebar
  *  als Hover-Popover gerendert; Klick navigiert per Anchor-Hash direkt
  *  in die Section. */
+/** O3 — Sprungmarken, die eine Organisationsvorgabe ausblendet. */
+const ANCHOR_FEATURE: Record<string, import("../../../shared/types").OrgFeatureKey> = {
+  "linkedin-section": "linkedin.beobachter",
+  "linkedin-image-analysis": "bildanalyse",
+  "mail-account-section": "mail",
+  "telegram-section": "telegram",
+};
+
 export const SETTINGS_TAB_SUB_ITEMS: Record<
   SettingsTabId,
   Array<{ anchor: string; label: string }>
@@ -365,6 +374,13 @@ export function Settings() {
     };
   }, [hash, activeTab]);
 
+  const policyFeatures = usePolicyStore((st) => st.policy.features);
+  const subItemsNachVorgabe = (tabId: SettingsTabId) =>
+    SETTINGS_TAB_SUB_ITEMS[tabId].filter((it) => {
+      const f = ANCHOR_FEATURE[it.anchor];
+      return !f || policyFeatures[f] !== false;
+    });
+
   return (
     <div className="settings-shell">
       <aside className="settings-shell__sidebar" aria-label="Einstellungen">
@@ -376,7 +392,7 @@ export function Settings() {
               tabId={t.id}
               label={t.label}
               active={t.id === activeTab}
-              subItems={SETTINGS_TAB_SUB_ITEMS[t.id]}
+              subItems={subItemsNachVorgabe(t.id)}
             />
           ))}
         </nav>
@@ -1078,6 +1094,7 @@ function formatScanSummary(
 }
 
 export function LinkedInSection() {
+  const bildanalyseErlaubt = useFeature("bildanalyse");
   const [settings, setSettings] = useState<LinkedInSettings | null>(null);
   const [auth, setAuth] = useState<LinkedInAuthStatus | null>(null);
   const [consentOpen, setConsentOpen] = useState(false);
@@ -1448,7 +1465,8 @@ export function LinkedInSection() {
         </fieldset>
       )}
 
-      {/* Image analysis controls */}
+      {/* Image analysis controls — O3: bei Organisationsvorgabe „Bildanalyse aus" ausgeblendet */}
+      {bildanalyseErlaubt && (
       <fieldset
         id="linkedin-image-analysis"
         className="linkedin-fieldset"
@@ -1544,6 +1562,7 @@ export function LinkedInSection() {
           </p>
         )}
       </fieldset>
+      )}
 
       {/* Scan schedule */}
       <fieldset className="linkedin-fieldset" disabled={!enabled || busy}>

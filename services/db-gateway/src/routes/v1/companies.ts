@@ -9,6 +9,7 @@ import { listProfileChanges } from "../../lib/profile-changes";
 import { applySingleEmployeeCandidate } from "../../lib/contact-extraction-apply";
 import { normalizeLinkedInProfileUrl } from "../../lib/contact-extraction/employee-contact";
 import { logger } from "../../lib/logger";
+import { requireFeature } from "../../lib/policy-guard";
 import {
   CompanyContactShape,
   CompanyIdParam,
@@ -553,6 +554,7 @@ const linkedinProfilesRoute = createRoute({
 });
 
 companiesRouter.openapi(linkedinProfilesRoute, async (c) => {
+  await requireFeature(getGatewayPool(), c.get("auth"), "kontakte");
   const { companyIds } = c.req.valid("json");
   const pool = getProducerPool("company-contact");
   const r = await pool.query<{
@@ -745,6 +747,8 @@ const contactLinkedinRoute = createRoute({
 });
 
 companiesRouter.openapi(contactLinkedinRoute, async (c) => {
+  // O3 — Organisationsvorgabe „Kontakt-Recherche aus" gilt auch serverseitig.
+  await requireFeature(getGatewayPool(), c.get("auth"), "kontakte");
   const { companyId } = c.req.valid("param");
   const body = c.req.valid("json");
   const normalized = normalizeLinkedInProfileUrl(body.linkedinUrl);

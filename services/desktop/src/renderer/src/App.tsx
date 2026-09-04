@@ -18,6 +18,7 @@ import { DownloadDock } from "./components/DownloadDock";
 import { UpdateBanner } from "./components/UpdateBanner";
 import { OllamaUpdateBanner } from "./components/OllamaUpdateBanner";
 import type { LlmProviderKind } from "../../shared/types";
+import { usePolicyStore } from "./store/policy";
 
 interface MemoryProbe {
   writable: boolean;
@@ -103,6 +104,10 @@ export function App({ children }: PropsWithChildren) {
         // branch (the wizard is shown, with the LLM listed as missing).
       });
     const offAuth = window.api.auth.onStatusChanged(setAuth);
+    // O3 — Organisationsvorgaben spiegeln (Navigation, Einstellungen, Seiten).
+    const setPolicy = usePolicyStore.getState().set;
+    void window.api.org.getPolicy().then(setPolicy).catch(() => undefined);
+    const offPolicy = window.api.org.onPolicyChanged(setPolicy);
     const offOllama = window.api.ollama.onStatusChanged(setOllamaStatus);
     const offPull = window.api.ollama.onPullProgress(setPullProgress);
     const offPostgres = window.api.postgres.onStatusChanged(setPostgresStatus);
@@ -135,6 +140,7 @@ export function App({ children }: PropsWithChildren) {
     });
     return () => {
       offAuth();
+      offPolicy();
       offOllama();
       offPull();
       offPostgres();

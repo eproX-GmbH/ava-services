@@ -24,6 +24,7 @@ import { BrowserWindow } from "electron";
 import { isScanRunning, runScan } from "./scraper";
 import { linkedInSettingsEvents, read as readSettings } from "./store";
 import { prewarmScraperWindow } from "./scraper-window";
+import { featureEnabled } from "../org-policy";
 
 let timer: NodeJS.Timeout | null = null;
 let initialTickHandle: NodeJS.Timeout | null = null;
@@ -69,7 +70,7 @@ async function tick(reason: "initial" | "interval"): Promise<void> {
     return;
   }
   const s = readSettings();
-  if (!s.enabled || !s.automaticScans || !s.consentAcceptedAt) {
+  if (!s.enabled || !s.automaticScans || !s.consentAcceptedAt || !featureEnabled("linkedin.beobachter")) {
     console.log(
       `[linkedin/scheduler] tick (${reason}) skipped — settings: enabled=${s.enabled}, automaticScans=${s.automaticScans}, consentAccepted=${!!s.consentAcceptedAt}`,
     );
@@ -113,7 +114,7 @@ function arm(opts?: { runInitial?: boolean }): void {
   clear();
   const s = readSettings();
   lastArmKeys = extractScheduleKeys(s);
-  if (!s.enabled || !s.automaticScans) {
+  if (!s.enabled || !s.automaticScans || !featureEnabled("linkedin.beobachter")) {
     console.log(
       `[linkedin/scheduler] arm() skipped — settings: enabled=${s.enabled}, automaticScans=${s.automaticScans}`,
     );
@@ -147,7 +148,7 @@ export function startScheduler(): void {
   // Block faellt EINMAL in eine Phase wo der User es nicht sieht
   // (Boot ist eh „lade...") und NIE wieder pro Scan.
   setTimeout(() => {
-    if (!readSettings().enabled) return;
+    if (!readSettings().enabled || !featureEnabled("linkedin.beobachter")) return;
     void prewarmScraperWindow().catch((err) => {
       console.warn(
         "[linkedin/scheduler] pre-warm failed (non-fatal, will lazy-init):",

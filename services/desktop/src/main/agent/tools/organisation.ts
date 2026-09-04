@@ -14,10 +14,12 @@ import * as yup from "yup";
 import { defineTool } from "../define-tool";
 import type { Tool } from "../types";
 import type { GatewayClient } from "../gateway-client";
-import type { OrgState } from "../../../shared/types";
+import { ORG_FEATURES, type OrgState, type OrgPolicy } from "../../../shared/types";
 
 export interface OrgToolDeps {
   gateway: GatewayClient;
+  /** O3 — Vorgaben nach Aenderung sofort lokal uebernehmen. */
+  refreshPolicy: () => Promise<unknown>;
 }
 
 function istAdmin(st: OrgState): boolean {
@@ -176,5 +178,113 @@ export function buildOrganisationTools(deps: OrgToolDeps): Tool[] {
     },
   });
 
-  return [info, members, approve, remove];
+  // O3 — Vorgaben (Admin, confirmAction). Schluessel-Eingabe bleibt UI-only.
+  const featuresSet = defineTool({
+    name: "org_features_set",
+    summary: "Funktionen der Organisation ab- oder freischalten (Admin, mit Bestaetigung).",
+    category: "organisation vorgaben funktionen abschalten policy compliance",
+    description:
+      "Schaltet Funktionen fuer ALLE Mitglieder ab oder frei: " +
+      ORG_FEATURES.map((f) => `${f.key} (${f.label})`).join(", ") +
+      ". Abgeschaltet = aus Navigation, Einstellungen und Chat entfernt, Hintergrunddienste gestoppt; " +
+      "kontakte wird zusaetzlich im Gateway abgewiesen. Nur genannte Schluessel aendern sich. Fragt vorher nach.",
+    parameters: {
+      type: "object",
+      required: ["features"],
+      properties: {
+        features: {
+          type: "object",
+          description: "Schluessel → true (erlaubt) | false (abgeschaltet)",
+          additionalProperties: { type: "boolean" },
+        },
+      },
+    },
+    schema: yup
+      .object({
+        features: yup
+          .object()
+          .test("keys", "unbekannter Funktionsschluessel", (v) =>
+            Object.keys(v ?? {}).every((k) => ORG_FEATURES.some((f) => f.key === k)),
+          )
+          .required(),
+      })
+      .noUnknown(true),
+    preview: (r: { ok?: boolean; abgebrochen?: boolean; aus?: string[] }) =>
+      r.abgebrochen ? "abgebrochen" : `Vorgaben gesetzt — aus: ${r.aus?.length ? r.aus.join(", ") : "nichts"}`,
+    run: async (args, c) => {
+      const feats = args.features as Record<string, boolean>;
+      const zeilen = Object.entries(feats).map(([k, v]) => {
+        const f = ORG_FEATURES.find((x) => x.key === k);
+        return `${f?.label ?? k}: ${v ? "frei" : "AUS"}`;
+      });
+      const value = await c.ui.confirmAction(
+        {
+          kind: "additive",
+          prompt: `Vorgaben fuer alle Mitglieder aendern?\n\n${zeilen.join("\n")}`,
+          confirmValue: "ja",
+          options: [
+            { value: "ja", label: "Setzen" },
+            { value: "nein", label: "Abbrechen" },
+          ],
+        },
+        c.signal,
+      );
+      if (value !== "ja") return { ok: false, abgebrochen: true };
+      const neu = await deps.gateway.request<OrgPolicy>("/v1/tenants/me/policy", { method: "PUT", body: { features: feats } });
+      await deps.refreshPolicy();
+      return { ok: true, aus: Object.entries(neu.features).filter(([, v]) => v === false).map(([k]) => k) };
+    },
+  });
+
+  const providerSet = defineTool({
+    name: "org_provider_set",
+    summary: "Anbieter-Sperre, Modellvorgaben und Prompt-Audit der Organisation setzen (Admin, mit Bestaetigung).",
+    category: "organisation vorgaben anbieter modell sperre audit",
+    description:
+      "Setzt providerLock (Mitglieder duerfen Anbieter/Schluessel/Modell nicht lokal ueberschreiben), " +
+      "chatModel, producerModel (null = frei) und promptAudit (Opt-in). Schluessel selbst werden NIE ueber " +
+      "den Chat gesetzt. Nur genannte Felder aendern sich. Fragt vorher nach.",
+    parameters: {
+      type: "object",
+      properties: {
+        providerLock: { type: "boolean" },
+        chatModel: { type: ["string", "null"] },
+        producerModel: { type: ["string", "null"] },
+        promptAudit: { type: "boolean" },
+      },
+    },
+    schema: yup
+      .object({
+        providerLock: yup.boolean().optional(),
+        chatModel: yup.string().max(120).nullable().optional(),
+        producerModel: yup.string().max(120).nullable().optional(),
+        promptAudit: yup.boolean().optional(),
+      })
+      .noUnknown(true),
+    preview: (r: { ok?: boolean; abgebrochen?: boolean }) => (r.abgebrochen ? "abgebrochen" : "Vorgaben gesetzt"),
+    run: async (args, c) => {
+      const zeilen = Object.entries(args)
+        .filter(([, v]) => v !== undefined)
+        .map(([k, v]) => `${k}: ${v === null ? "frei" : String(v)}`);
+      if (zeilen.length === 0) return { ok: false, hinweis: "Nichts angegeben." };
+      const value = await c.ui.confirmAction(
+        {
+          kind: "additive",
+          prompt: `KI-Vorgaben der Organisation aendern?\n\n${zeilen.join("\n")}`,
+          confirmValue: "ja",
+          options: [
+            { value: "ja", label: "Setzen" },
+            { value: "nein", label: "Abbrechen" },
+          ],
+        },
+        c.signal,
+      );
+      if (value !== "ja") return { ok: false, abgebrochen: true };
+      const neu = await deps.gateway.request<OrgPolicy>("/v1/tenants/me/policy", { method: "PUT", body: args });
+      await deps.refreshPolicy();
+      return { ok: true, vorgaben: neu };
+    },
+  });
+
+  return [info, members, approve, remove, featuresSet, providerSet];
 }

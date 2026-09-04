@@ -11,6 +11,7 @@ import { randomBytes } from "node:crypto";
 import type { AuthContext } from "../middleware/auth";
 import { moveUserToTenantGroup } from "./keycloak-admin";
 import { invalidateMembership } from "./membership-cache";
+import { invalidateFeatures } from "./policy-guard";
 import { logger } from "./logger";
 
 export interface TenantPolicyShape {
@@ -412,6 +413,7 @@ export async function setPolicy(pool: pg.Pool, auth: AuthContext, patch: Partial
        "updatedAt" = CURRENT_TIMESTAMP, "updatedBy" = EXCLUDED."updatedBy"`,
     [auth.tenantId, JSON.stringify(neu.features), neu.providerLock, neu.chatModel, neu.producerModel, neu.promptAudit, auth.actorId],
   );
+  invalidateFeatures(auth.tenantId);
   return neu;
 }
 

@@ -87,6 +87,7 @@ import type {
   LinkMonitorInput,
   LinkMonitorSnapshot,
   AccountsSnapshot,
+  OrgPolicy,
 } from "../shared/types";
 export type {
   AgentChoiceAnswer,
@@ -1098,6 +1099,15 @@ const api = {
       const h = () => cb();
       ipcRenderer.on("org:openPage", h);
       return () => ipcRenderer.removeListener("org:openPage", h);
+    },
+    /** O3 — aktuelle Organisationsvorgaben (persoenlich: alles erlaubt). */
+    getPolicy: (): Promise<OrgPolicy> => ipcRenderer.invoke("org:getPolicy"),
+    /** Vorgaben sofort vom Gateway holen (nach Aenderung durch einen Admin). */
+    refreshPolicy: (): Promise<OrgPolicy> => ipcRenderer.invoke("org:refreshPolicy"),
+    onPolicyChanged: (cb: (p: OrgPolicy) => void): (() => void) => {
+      const h = (_e: unknown, p: OrgPolicy) => cb(p);
+      ipcRenderer.on("org:policyChanged", h);
+      return () => ipcRenderer.removeListener("org:policyChanged", h);
     },
   },
   alerts: {

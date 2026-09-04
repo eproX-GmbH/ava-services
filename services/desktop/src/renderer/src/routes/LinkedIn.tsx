@@ -7,6 +7,7 @@ import { WatchlistPanel } from "../components/WatchlistPanel";
 import { PersonenRadarPanel } from "../components/PersonenRadarPanel";
 import { LinkedInConsentModal } from "../components/LinkedInConsentModal";
 import { notifyLinkedInSettingsChanged } from "../components/LinkedInActiveBanner";
+import { useFeature } from "../store/policy";
 import type {
   LinkedInSettings,
   LinkedInSignalListFilter,
@@ -343,6 +344,10 @@ export function LinkedIn() {
     await queryClient.invalidateQueries({ queryKey: ["linkedin", "signals"] });
   };
 
+  const beobachterErlaubt = useFeature("linkedin.beobachter");
+  const watchlistErlaubt = useFeature("linkedin.watchlist");
+  const radarErlaubt = useFeature("linkedin.radar");
+
   return (
     <section className="page" style={{ paddingBottom: "2rem" }}>
       <header className="ct-page-header">
@@ -359,9 +364,15 @@ export function LinkedIn() {
         </p>
       </header>
 
-      <WatchlistPanel />
-      <PersonenRadarPanel />
+      {watchlistErlaubt && <WatchlistPanel />}
+      {radarErlaubt && <PersonenRadarPanel />}
 
+      {!beobachterErlaubt && (
+        <p className="muted small" style={{ marginTop: "1rem" }}>
+          Der LinkedIn-Beobachter ist in deiner Organisation abgeschaltet.
+        </p>
+      )}
+      {beobachterErlaubt && (<>
       {!settingsQuery.isLoading && !enabled && (
         <div
           className="ct-card"
@@ -559,6 +570,7 @@ export function LinkedIn() {
           )}
         </div>
       )}
+      </>)}
     </section>
   );
 }

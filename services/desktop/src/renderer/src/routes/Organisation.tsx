@@ -12,7 +12,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { gatewayFetch } from "../api/gateway";
-import type { OrgState } from "../../../shared/types";
+import { ORG_FEATURES, type OrgPolicy, type OrgState } from "../../../shared/types";
 
 interface WhoamiLite {
   tenantId: string;
@@ -125,7 +125,7 @@ export function Organisation() {
         <OrgAnsicht st={st} me={me} admin={admin} busy={busy} aktion={aktion} />
       )}
 
-      <Vorgaben st={st} />
+      <Vorgaben st={st} admin={admin} busy={busy} aktion={aktion} />
     </section>
   );
 }
@@ -369,26 +369,118 @@ function OrgAnsicht({
   );
 }
 
-function Vorgaben({ st }: { st: OrgState }) {
+function Vorgaben({
+  st,
+  admin,
+  busy,
+  aktion,
+}: {
+  st: OrgState;
+  admin: boolean;
+  busy: boolean;
+  aktion: (fn: () => Promise<void>, okText?: string) => Promise<void>;
+}) {
+  const [entwurf, setEntwurf] = useState<OrgPolicy>(st.policy);
+  useEffect(() => setEntwurf(st.policy), [st.policy]);
   if (st.kind !== "organisation") return null;
   const p = st.policy;
-  const aus = Object.entries(p.features).filter(([, v]) => v === false).map(([k]) => k);
+
+  const speichern = () =>
+    aktion(async () => {
+      await gatewayFetch("/v1/tenants/me/policy", {
+        method: "PUT",
+        body: {
+          features: entwurf.features,
+          providerLock: entwurf.providerLock,
+          chatModel: entwurf.chatModel?.trim() || null,
+          producerModel: entwurf.producerModel?.trim() || null,
+          promptAudit: entwurf.promptAudit,
+        },
+      });
+      await window.api.org.refreshPolicy();
+    }, "Vorgaben gespeichert. Mitglieder übernehmen sie beim nächsten Abgleich (spätestens in 10 Minuten).");
+
+  if (!admin) {
+    const aus = ORG_FEATURES.filter((f) => p.features[f.key] === false).map((f) => f.label);
+    return (
+      <>
+        <h3 style={{ marginTop: "1.5rem" }}>Vorgaben</h3>
+        <dl>
+          <dt>Abgeschaltete Funktionen</dt>
+          <dd>{aus.length === 0 ? "keine" : aus.join(", ")}</dd>
+          <dt>Anbieter-Sperre</dt>
+          <dd>{p.providerLock ? "Anbieter und Schlüssel dürfen nicht lokal überschrieben werden" : "lokales Überschreiben erlaubt"}</dd>
+          <dt>Modelle</dt>
+          <dd>Chat: {p.chatModel ?? "frei"} · Hintergrund: {p.producerModel ?? "frei"}</dd>
+          <dt>Prompt-Audit</dt>
+          <dd>{p.promptAudit ? "aktiv" : "aus"}</dd>
+        </dl>
+      </>
+    );
+  }
+
   return (
     <>
       <h3 style={{ marginTop: "1.5rem" }}>Vorgaben</h3>
-      <dl>
-        <dt>Abgeschaltete Funktionen</dt>
-        <dd>{aus.length === 0 ? "keine" : aus.join(", ")}</dd>
-        <dt>Anbieter-Sperre</dt>
-        <dd>{p.providerLock ? "Mitglieder dürfen Anbieter und Schlüssel nicht lokal überschreiben" : "Mitglieder dürfen lokal überschreiben"}</dd>
-        <dt>Modelle</dt>
-        <dd>
-          Chat: {p.chatModel ?? "frei"} · Hintergrund: {p.producerModel ?? "frei"}
-        </dd>
-        <dt>Prompt-Audit</dt>
-        <dd>{p.promptAudit ? "aktiv" : "aus"}</dd>
-      </dl>
-      <p className="muted small">Bearbeiten der Vorgaben folgt mit der nächsten Stufe (O3).</p>
+      <p className="muted small">
+        Abgeschaltete Funktionen verschwinden bei allen Mitgliedern aus Navigation, Einstellungen und Chat; Hintergrunddienste
+        stoppen. Kontakt-Recherche wird zusätzlich im Gateway abgewiesen.
+      </p>
+      <h4>Funktionen</h4>
+      <div style={{ display: "grid", gap: "0.35rem", maxWidth: 640 }}>
+        {ORG_FEATURES.map((f) => (
+          <label key={f.key} style={{ display: "flex", gap: "0.5rem", alignItems: "baseline" }}>
+            <input
+              type="checkbox"
+              checked={entwurf.features[f.key] !== false}
+              disabled={busy}
+              onChange={(e) =>
+                setEntwurf({ ...entwurf, features: { ...entwurf.features, [f.key]: e.target.checked } })
+              }
+            />
+            <span>
+              {f.label} <span className="muted small">· {f.hinweis}</span>
+            </span>
+          </label>
+        ))}
+      </div>
+      <h4 style={{ marginTop: "1rem" }}>KI und Schlüssel</h4>
+      <p className="muted small">Anbieter-Sperre und Modellvorgaben werden mit den nächsten Stufen (O5/O6) in der App durchgesetzt; hier bereits einstellbar.</p>
+      <div style={{ display: "grid", gap: "0.5rem", maxWidth: 640 }}>
+        <label style={{ display: "flex", gap: "0.5rem", alignItems: "baseline" }}>
+          <input
+            type="checkbox"
+            checked={entwurf.providerLock}
+            disabled={busy}
+            onChange={(e) => setEntwurf({ ...entwurf, providerLock: e.target.checked })}
+          />
+          <span>Mitglieder dürfen Anbieter, Schlüssel und Modell <strong>nicht</strong> lokal überschreiben</span>
+        </label>
+        <label style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
+          <span style={{ minWidth: 160 }}>Chat-Modell</span>
+          <input type="text" placeholder="frei" value={entwurf.chatModel ?? ""} disabled={busy} style={{ flex: 1 }}
+            onChange={(e) => setEntwurf({ ...entwurf, chatModel: e.target.value || null })} />
+        </label>
+        <label style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
+          <span style={{ minWidth: 160 }}>Hintergrund-Modell</span>
+          <input type="text" placeholder="frei" value={entwurf.producerModel ?? ""} disabled={busy} style={{ flex: 1 }}
+            onChange={(e) => setEntwurf({ ...entwurf, producerModel: e.target.value || null })} />
+        </label>
+        <label style={{ display: "flex", gap: "0.5rem", alignItems: "baseline" }}>
+          <input
+            type="checkbox"
+            checked={entwurf.promptAudit}
+            disabled={busy}
+            onChange={(e) => setEntwurf({ ...entwurf, promptAudit: e.target.checked })}
+          />
+          <span>Prompt-Audit: Prompts über den Organisationsschlüssel werden gespeichert (Opt-in, wirkt ab O4)</span>
+        </label>
+      </div>
+      <div style={{ marginTop: "0.75rem" }}>
+        <button type="button" className="primary" disabled={busy} onClick={() => void speichern()}>
+          Vorgaben speichern
+        </button>
+      </div>
     </>
   );
 }

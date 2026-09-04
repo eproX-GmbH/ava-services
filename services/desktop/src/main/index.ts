@@ -94,6 +94,7 @@ import {
   checkTenantChange,
   extractJoinToken,
 } from "./organisation";
+import { featureEnabled, getOrgPolicy, onOrgPolicyChange } from "./org-policy";
 import { initLinkedIn } from "./linkedin";
 import { startScheduler as startLinkedInScheduler, stopScheduler as stopLinkedInScheduler } from "./linkedin/scheduler";
 import { MailSupervisor } from "./mail/supervisor";
@@ -698,7 +699,9 @@ function buildProducer(
               // Kein Token = leeres env, Producer faellt auf SERP zurueck.
               async (): Promise<Record<string, string>> => {
                 const apifyKey = watchlistKeyStore?.getKey();
-                if (!apifyKey) return {};
+                // O3 — Organisationsvorgabe „Kontakt-Recherche aus": kein
+                // Apify-Token → keine Mitarbeiter-Suche im Producer.
+                if (!apifyKey || !featureEnabled("kontakte")) return {};
                 return {
                   APIFY_TOKEN: apifyKey,
                   APIFY_COMPANY_FENSTER: String(
@@ -1750,6 +1753,7 @@ const agentRegistry = buildReadOnlyRegistry({
   // T5 — account_info.
   getAuthStatus: () => auth.getStatus(),
   listAccounts: () => listAccounts(),
+  refreshPolicy: () => checkTenantChange("Vorgaben per Chat geaendert").then(() => getOrgPolicy()),
   getTenantCompanyIds: () => collectTenantCompanyIds(gatewayClient, 250),
   getPublicationMode: () => publicationStore.getMode(),
   setPublicationMode: (mode: "lazy" | "eager") => publicationStore.setMode(mode),
@@ -2005,7 +2009,8 @@ telegramInbound = new TelegramInbound({
     });
   },
 });
-telegramInbound.sync();
+if (featureEnabled("telegram")) telegramInbound.sync();
+else console.log("[telegram] nicht gestartet — Organisationsvorgabe: Telegram aus");
 app.on("before-quit", () => quitStep("telegramInbound.stop", () => telegramInbound?.stop()));
 
 alertPrefs.on("changed", (next: AlertPrefs) => {
@@ -2234,7 +2239,8 @@ app.whenReady().then(async () => {
   });
   mailSupervisor.on("snapshot", broadcastMailSnapshot);
   try {
-    await mailSupervisor.start();
+    if (featureEnabled("mail")) await mailSupervisor.start();
+    else console.log("[mail/supervisor] nicht gestartet — Organisationsvorgabe: Mail-Anbindung aus");
   } catch (err) {
     console.warn(
       "[mail/supervisor] start fehlgeschlagen:",
@@ -2769,7 +2775,8 @@ app.whenReady().then(async () => {
       });
     },
   });
-  watchlistSupervisor.start();
+  if (featureEnabled("linkedin.watchlist")) watchlistSupervisor.start();
+  else console.log("[watchlist] nicht gestartet — Organisationsvorgabe: Personen-Watchlist aus");
 
   // §8 Personen-Radar: Engagement auf beobachteten Posts → Firmen in
   // den normalen Radar-Trichter (Direkt-Kandidaten). Teilt sich den
@@ -2801,7 +2808,27 @@ app.whenReady().then(async () => {
       });
     },
   });
-  personenRadarSupervisor.start();
+  if (featureEnabled("linkedin.radar")) personenRadarSupervisor.start();
+  else console.log("[personen-radar] nicht gestartet — Organisationsvorgabe: Personen-Radar aus");
+
+  // O3 — Vorgaben aendern sich zur Laufzeit (Admin schaltet um, Tenant-
+  // Wechsel): Hintergrunddienste je Funktion stoppen bzw. starten.
+  onOrgPolicyChange((neu, alt) => {
+    const an = (k: string) => neu.features[k] !== false;
+    const war = (k: string) => alt.features[k] !== false;
+    const umschalten = (k: string, start: () => void | Promise<void>, stop: () => void | Promise<void>) => {
+      if (an(k) === war(k)) return;
+      console.log(`[org-policy] ${k}: ${an(k) ? "freigegeben → starten" : "abgeschaltet → stoppen"}`);
+      void Promise.resolve()
+        .then(() => (an(k) ? start() : stop()))
+        .catch((err) => console.warn(`[org-policy] ${k} umschalten fehlgeschlagen:`, err instanceof Error ? err.message : String(err)));
+    };
+    umschalten("mail", () => mailSupervisor?.start(), () => mailSupervisor?.stop());
+    umschalten("telegram", () => telegramInbound?.sync(), () => telegramInbound?.stop());
+    umschalten("linkedin.watchlist", () => watchlistSupervisor?.start(), () => watchlistSupervisor?.stop());
+    umschalten("linkedin.radar", () => personenRadarSupervisor?.start(), () => personenRadarSupervisor?.stop());
+    umschalten("linkedin.beobachter", () => startLinkedInScheduler(), () => stopLinkedInScheduler());
+  });
   // v0.1.519 — einmalige Freigabe aller Ungeklaerten: der Positionen-
   // Bugfix (v0.1.518) hat die Kaskade repariert, aber die 90-Tage-
   // Sperre haette die betroffenen Personen bis Dezember blockiert.
@@ -5387,6 +5414,11 @@ app.whenReady().then(async () => {
   ipcMain.handle("org:consumePendingJoin", () => consumePendingJoin());
   ipcMain.handle("org:checkTenant", () => checkTenantChange("auf Anforderung"));
   ipcMain.handle("org:extractJoinToken", (_e, eingabe: string) => extractJoinToken(String(eingabe ?? "")));
+  ipcMain.handle("org:getPolicy", () => getOrgPolicy());
+  ipcMain.handle("org:refreshPolicy", async () => {
+    await checkTenantChange("Vorgaben aktualisiert");
+    return getOrgPolicy();
+  });
   ipcMain.handle("alerts:list", () => alerts.list());
   ipcMain.handle("alerts:unreadCount", () => alerts.unreadCount());
   ipcMain.handle("alerts:markSeen", (_e, id: string) => {

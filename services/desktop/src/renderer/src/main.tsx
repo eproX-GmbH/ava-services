@@ -16,6 +16,7 @@ import { App } from "./App";
 import { AppShell } from "./components/AppShell";
 import { Whoami } from "./routes/Whoami";
 import { Organisation } from "./routes/Organisation";
+import { FeatureGate } from "./components/FeatureGate";
 import { Settings } from "./routes/Settings";
 import { Chat } from "./routes/Chat";
 import { Ingest } from "./routes/Ingest";
@@ -73,7 +74,7 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
               <Route path="/ingest" element={<Ingest />} />
               <Route path="/alerts" element={<Alerts />} />
               <Route path="/linkedin" element={<LinkedIn />} />
-              <Route path="/inbox" element={<TriageInbox />} />
+              <Route path="/inbox" element={<FeatureGate feature="mail"><TriageInbox /></FeatureGate>} />
               <Route path="/transactions" element={<Transactions />} />
               <Route path="/transactions/:id" element={<TransactionDetail />} />
               <Route path="/transactions/:id/stream" element={<TransactionStream />} />

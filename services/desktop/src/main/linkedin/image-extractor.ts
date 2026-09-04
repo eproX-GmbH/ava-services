@@ -14,6 +14,7 @@
 
 import { generateText } from "ai";
 import { nativeImage } from "electron";
+import { featureEnabled } from "../org-policy";
 import { hasVision, tierForModel } from "@ava/ai-provider";
 import {
   resolveActiveLlm as resolveSharedLlm,
@@ -267,7 +268,7 @@ export async function drainImageQueue(opts: {
   const db = await getDb();
 
   // Off-state: flip ALL pending rows to skipped and bail.
-  if (settings.imageAnalysis === "off") {
+  if ((settings.imageAnalysis === "off" || !featureEnabled("bildanalyse"))) {
     const pending = await nextPendingImageAnalyses(db, 1000);
     for (const c of pending) {
       await recordImageAnalysisSkipped(
@@ -416,7 +417,7 @@ export async function drainImageQueue(opts: {
 export async function resetSkippedImagesIfRunnable(): Promise<void> {
   try {
     const settings = readSettings();
-    if (settings.imageAnalysis === "off") return;
+    if ((settings.imageAnalysis === "off" || !featureEnabled("bildanalyse"))) return;
     const db = await getDb();
     await resetSkippedImageAnalysesToPending(db);
   } catch (err) {

@@ -6,6 +6,7 @@ import {
 import { SchedulerSection } from "./SchedulerSection";
 import { LinkMonitorSection } from "./LinkMonitorSection";
 import { TelegramSection } from "./TelegramSection";
+import { useFeature } from "../../store/policy";
 
 // v0.1.273+ — Automatisierungen-Tab.
 //
@@ -15,6 +16,7 @@ import { TelegramSection } from "./TelegramSection";
 //   - Freshness-Scheduler (Datenrefresh-Cadences)
 //   - Alerts / Heartbeat-Trigger
 export function AutomatisierungenTab() {
+  const telegramErlaubt = useFeature("telegram");
   return (
     <>
       <WatchesSection />
@@ -22,7 +24,7 @@ export function AutomatisierungenTab() {
       <SchedulerSection />
       <FreshnessSection />
       <AlertsSection />
-      <TelegramSection />
+      {telegramErlaubt && <TelegramSection />}
     </>
   );
 }

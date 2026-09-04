@@ -5,7 +5,7 @@ NICHT direkt bearbeiten — die Quelle der Wahrheit ist `services/desktop/src/ma
 Lauf via `pnpm -F @ava/desktop tools:doc` (oder automatisch via `build:typecheck`).
 
 Stand: 2026-09-04
-Anzahl Tools: 206
+Anzahl Tools: 208
 
 ## Firmen (13)
 
@@ -1617,7 +1617,16 @@ Liefert den Status des lokalen Ollama-Daemons: Zustand (idle / starting / ready 
 
 _Parameter:_ keine.
 
-## organisation (4)
+## organisation (6)
+
+### `org_features_set`
+
+_Datei:_ `services/desktop/src/main/agent/tools/organisation.ts`
+
+Schaltet Funktionen fuer ALLE Mitglieder ab oder frei:
+
+_Parameter:_
+- `features: object` (required) — Schluessel → true (erlaubt) | false (abgeschaltet)
 
 ### `org_info`
 
@@ -1653,6 +1662,18 @@ _Datei:_ `services/desktop/src/main/agent/tools/organisation.ts`
 Listet Mitglieder (Nutzer-ID, Name/E-Mail soweit bekannt, Rolle, seit) und fuer Admins die offenen Beitrittsanfragen mit Anfrage-ID. Die Anfrage-ID braucht org_member_approve.
 
 _Parameter:_ keine.
+
+### `org_provider_set`
+
+_Datei:_ `services/desktop/src/main/agent/tools/organisation.ts`
+
+Setzt providerLock (Mitglieder duerfen Anbieter/Schluessel/Modell nicht lokal ueberschreiben), chatModel, producerModel (null = frei) und promptAudit (Opt-in). Schluessel selbst werden NIE ueber den Chat gesetzt. Nur genannte Felder aendern sich. Fragt vorher nach.
+
+_Parameter:_
+- `providerLock: boolean`
+- `chatModel: string,null`
+- `producerModel: string,null`
+- `promptAudit: boolean`
 
 ## Producer (Hintergrund-Services) (2)
 
