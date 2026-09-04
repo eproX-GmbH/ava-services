@@ -35,3 +35,18 @@ export async function requireFeature(pool: pg.Pool, auth: AuthContext, key: stri
     throw new HTTPException(403, { message: `feature_disabled:${key}` });
   }
 }
+
+/** Fuer Persist-Ereignisse: tenantId kann Organisation ODER Nutzer-ID sein
+ *  (persoenlicher Tenant, Alt-Token). Beides pruefen — gesperrt, sobald
+ *  eine der beiden Vorgaben die Funktion abschaltet. */
+export async function featureEnabledForEventTenant(pool: pg.Pool, tenantId: string, key: string): Promise<boolean> {
+  const direkt = await loadFeatures(pool, tenantId);
+  if (direkt[key] === false) return false;
+  const { resolveTenantByMembership } = await import("./membership-cache");
+  const m = await resolveTenantByMembership(pool, tenantId);
+  if (m && m.tenantId !== tenantId) {
+    const org = await loadFeatures(pool, m.tenantId);
+    if (org[key] === false) return false;
+  }
+  return true;
+}

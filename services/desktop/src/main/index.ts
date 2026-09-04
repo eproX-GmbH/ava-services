@@ -742,6 +742,12 @@ function buildProducer(
     // producer uses it to scope queue + binding key + downstream
     // publish routing.
     getUserId: async () => auth.getStatus().actorId ?? null,
+    // O3 — wirksamer Tenant aus dem whoami-Abgleich (identity.json), sonst
+    // Token-Claim, sonst Nutzer-ID (persoenlicher Tenant).
+    getTenantId: async () => {
+      const st = auth.getStatus();
+      return readIdentity()?.tenantId ?? st.tenantId ?? st.actorId ?? null;
+    },
     extraEnvAsync,
   });
 }

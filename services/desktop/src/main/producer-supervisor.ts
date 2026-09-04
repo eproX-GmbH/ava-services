@@ -150,6 +150,10 @@ export interface ProducerSupervisorOptions {
    * legacy shared base names.
    */
   getUserId: () => Promise<string | null>;
+  /** O3 — wirksamer Tenant (Organisation oder persoenlich) fuer
+   *  AVA_TENANT_ID: Persist-Ereignisse tragen ihn, das Gateway setzt
+   *  Organisationsvorgaben darueber durch. */
+  getTenantId?: () => Promise<string | null>;
   /** Extra env merged in after the supervisor's defaults. */
   extraEnv?: Record<string, string>;
   /** v0.1.105 — dynamic extra env, evaluated at each spawn. Used for
@@ -640,6 +644,7 @@ export class ProducerSupervisor extends EventEmitter {
     // supervisor cycles (auth-status branch in main/index.ts), so
     // a new userId is captured fresh.
     const userId = await this.opts.getUserId();
+    const tenantId = this.opts.getTenantId ? await this.opts.getTenantId() : null;
     return {
       ...process.env,
       // Cloud-managed Postgres URL fetched from gateway. The
@@ -704,6 +709,8 @@ export class ProducerSupervisor extends EventEmitter {
       // path. Empty / unset on legacy / dev paths; producer falls
       // back to the shared base queue then.
       ...(userId ? { AVA_USER_ID: userId } : {}),
+      // O3 — Tenant fuer Persist-Ereignisse (vorher Default "pilot").
+      ...(tenantId ? { AVA_TENANT_ID: tenantId } : {}),
       // Selenium-driven producers (structured-content,
       // company-publication, website) write per-step screenshots
       // here so the renderer can show them in the matrix drill-down.

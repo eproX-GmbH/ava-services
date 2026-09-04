@@ -58,6 +58,7 @@ import {
   type ManagingDirectorDiff,
 } from "./profile-changes";
 import { transactionProgressBus } from "./event-bus";
+import { featureEnabledForEventTenant } from "./policy-guard";
 import { recordUsage } from "./billing";
 import { tierShouldWrite, type ModelTier } from "./tier";
 
@@ -411,6 +412,35 @@ async function recordFreshness(
  * instead of `applyX` directly. Same signature so the rest of the
  * persist-bus plumbing is unchanged.
  */
+// O3 — Organisationsvorgabe serverseitig: Persist-Ereignisse einer
+// abgeschalteten Funktion werden verworfen (Matrix zeigt „uebersprungen").
+// tenantId stammt aus AVA_TENANT_ID des Desktops (wirksamer Tenant);
+// Alt-Clients ohne die Variable senden "pilot" → keine Vorgabe → erlaubt.
+function withFeatureGate(stage: ProducerName, feature: string, inner: ApplyFn): ApplyFn {
+  return async (pool, event, log) => {
+    const data = event.data as PersistEvent<{ companyId?: string }> | undefined;
+    const tenantId = data?.tenantId;
+    const companyId = data?.result?.companyId ?? "";
+    const transactionId = (event as { transaction?: string }).transaction ?? "";
+    if (tenantId) {
+      let erlaubt = true;
+      try {
+        erlaubt = await featureEnabledForEventTenant(getGatewayPool(), tenantId, feature);
+      } catch (err) {
+        log.warn({ stage, tenantId, err: err instanceof Error ? err.message : String(err) }, "feature-gate: lookup failed; applying");
+      }
+      if (!erlaubt) {
+        log.info({ stage, tenantId, companyId, feature }, "feature-gate: persist verworfen (Organisationsvorgabe)");
+        if (companyId) {
+          await recordEntityProgress(stage, transactionId, companyId, "skipped", `feature_disabled:${feature}`, log);
+        }
+        return;
+      }
+    }
+    return inner(pool, event, log);
+  };
+}
+
 function withTierGate(stage: ProducerName, inner: ApplyFn): ApplyFn {
   return async (pool, event, log) => {
     const data = event.data as PersistEvent<{ companyId: string }> | undefined;
@@ -1928,7 +1958,7 @@ const BINDINGS: ProducerBinding[] = [
     producer: "company-contact",
     routingKey: "tenant.persist.company-contact.v1",
     queue: "db-gateway-persist-company-contact",
-    apply: withTierGate("company-contact", applyCompanyContact),
+    apply: withFeatureGate("company-contact", "kontakte", withTierGate("company-contact", applyCompanyContact)),
   },
   {
     producer: "website",
