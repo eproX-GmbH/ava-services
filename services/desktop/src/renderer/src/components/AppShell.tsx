@@ -636,7 +636,13 @@ function formatRelativeMinutes(ts: number): string {
 function TopBar() {
   // O3 — Organisationsvorgaben: abgeschaltete Module verschwinden aus der Navigation.
   const mailErlaubt = useFeature("mail");
-  const signaleErlaubt = useFeature("linkedin.beobachter") || useFeature("linkedin.watchlist") || useFeature("linkedin.radar");
+  // v0.1.546 — Hooks IMMER alle aufrufen (kein Kurzschluss mit ||): sonst
+  // aendert sich die Hook-Anzahl, sobald der Beobachter abgeschaltet wird
+  // → React-Abbruch, weisser Bildschirm (User-Befund beim Speichern).
+  const beobachterOk = useFeature("linkedin.beobachter");
+  const watchlistOk = useFeature("linkedin.watchlist");
+  const radarOk = useFeature("linkedin.radar");
+  const signaleErlaubt = beobachterOk || watchlistOk || radarOk;
   // v0.1.482 — der Signale-Tab ist IMMER sichtbar. Vorher hing er am
   // Master-Schalter und tauchte nach dem Aktivieren erst nach einem
   // Neustart auf (der Focus-Refresh griff bei Same-Window-Toggles nie);
