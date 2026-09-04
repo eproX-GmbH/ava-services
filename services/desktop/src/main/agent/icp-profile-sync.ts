@@ -32,7 +32,7 @@ export interface ProfilSyncErgebnis {
 }
 
 /** Auf den Cap kuerzen, aber an einer Satzgrenze — nie mitten im Wort. */
-export function kuerzeAnSatzgrenze(text: string, cap: number): string {
+function kuerzeAnSatzgrenze(text: string, cap: number): string {
   const t = text.replace(/\s+/g, " ").trim();
   if (t.length <= cap) return t;
   const kopf = t.slice(0, cap);

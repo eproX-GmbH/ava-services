@@ -155,7 +155,7 @@ export async function fetchPostEngagement(
  *  lieferte fuer niemanden etwas, alle Personen landeten in
  *  "ungeklaert". Aktuell = kein Jahr im endDate ODER Text wie
  *  Present/Heute/Now. */
-export function istAktuell(end: unknown): boolean {
+function istAktuell(end: unknown): boolean {
   if (end == null) return true;
   if (typeof end === "string") {
     return end.trim() === "" || /present|heute|aktuell|now|current/i.test(end);

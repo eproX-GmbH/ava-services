@@ -206,7 +206,7 @@ export function spaceDirFor(sub: string): string {
 }
 
 /** Basis-userData (Electron-Default), unabhaengig vom aktiven Space. */
-export function getBaseUserData(): string {
+function getBaseUserData(): string {
   return baseDir || app.getPath("userData");
 }
 
@@ -219,9 +219,6 @@ export function getActiveSpaceId(): string {
   return activeId;
 }
 
-export function isPendingSpace(): boolean {
-  return activeId === PENDING;
-}
 
 export function listAccounts(): { active: string | null; accounts: AccountRecord[] } {
   const reg = readRegistry();

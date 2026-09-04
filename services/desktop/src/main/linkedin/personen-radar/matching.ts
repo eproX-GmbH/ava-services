@@ -41,7 +41,7 @@ export interface KaskadenErgebnis {
 }
 
 /** Headline "Rolle bei Firma" / "Rolle @ Firma" → Firmenname. */
-export function companyFromHeadline(headline: string | null): string | null {
+function companyFromHeadline(headline: string | null): string | null {
   if (!headline) return null;
   // v0.1.518 — "at" ergaenzt (englische Headlines: "… Manager at KUNCKE
   // KONZEPT" lief vorher ins Leere) und Satzfortsetzungen abgeschnitten

@@ -566,7 +566,6 @@ function ProviderChooserGrid({
       {/* Sektion 1 — Abo-Hero (ChatGPT) */}
       <div className="first-run__hero-grid">
         <div className="first-run__hero">
-          <div className="first-run__hero-glyph" aria-hidden="true">⌬</div>
           <div className="first-run__hero-body">
             <h3 className="first-run__hero-title">
               Mit ChatGPT-Abo verbinden
@@ -586,7 +585,6 @@ function ProviderChooserGrid({
 
       {/* Sektion 2 — API-Key bei externem Provider */}
       <div className="first-run__option-card">
-        <div className="first-run__option-glyph" aria-hidden="true">⌘</div>
         <h3 className="first-run__option-title">
           Eigener API-Schlüssel (OpenAI, Anthropic, Google, Mistral)
         </h3>
@@ -621,7 +619,6 @@ function ProviderChooserGrid({
       {!disableLocal && (
         <details className="first-run__local">
           <summary className="first-run__local-summary">
-            <span className="first-run__local-glyph" aria-hidden="true">◉</span>
             <span className="first-run__local-title">
               Lokal hosten (für Fortgeschrittene)
             </span>

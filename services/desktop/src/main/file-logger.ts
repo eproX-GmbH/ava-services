@@ -333,7 +333,7 @@ export function quitStep(name: string, fn: () => unknown): void {
 }
 
 /** v0.1.520 — Quit-Marker im Heartbeat (Zwilling zu markHeartbeatSuspend). */
-export function markHeartbeatQuit(): void {
+function markHeartbeatQuit(): void {
   if (!heartbeatPath) return;
   try {
     writeFileSync(

@@ -7919,7 +7919,6 @@ html.dark .account-relaunch { background: #111827; color: #e5e7eb; }
   background: rgba(0, 192, 167, 0.12);
   border-radius: 999px;
 }
-.first-run__hero-glyph, .first-run__option-glyph, .first-run__local-glyph { display: none; }
 .first-run__hero-body { display: flex; flex-direction: column; gap: 0.5rem; min-width: 0; }
 .first-run__hero-title, .first-run__option-title, .first-run__local-title {
   margin: 0; font-size: 15.5px; font-weight: 600; letter-spacing: 0;
@@ -8002,9 +8001,6 @@ html.dark .account-relaunch { background: #111827; color: #e5e7eb; }
 .first-run__chooser .field { display: flex; flex-direction: column; gap: 0.3rem; }
 .first-run__chooser .field > span { font-size: 12.5px; color: var(--color-fg-muted); }
 .first-run__chooser input, .first-run__chooser select { font-size: 13.5px; }
-.first-run__chooser textarea.first-run__token-input {
-  font-size: 12px; font-family: var(--font-mono, monospace); resize: vertical; word-break: break-all; line-height: 1.35; padding: 0.5rem 0.6rem;
-}
 
 /* Downloads (Schritt 2) */
 .first-run__list { list-style: none; padding: 0; margin: 1.25rem 0 0.5rem; display: flex; flex-direction: column; gap: 0.9rem; }
