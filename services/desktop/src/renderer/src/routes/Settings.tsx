@@ -68,7 +68,7 @@ import { WATCH_CAP_DEFAULT } from "../../../shared/types";
 // existing `window.api.agent.*` and `window.api.ollama.*` methods.
 // Adding a setting means adding a section, not an IPC contract.
 
-const PROVIDER_LABEL: Record<LlmProviderKind, string> = {
+export const PROVIDER_LABEL: Record<LlmProviderKind, string> = {
   ollama: "Ollama (lokal)",
   openai: "OpenAI",
   anthropic: "Anthropic",
@@ -1888,7 +1888,7 @@ function ollamaVendorLabel(id: string): string {
   return "Sonstige";
 }
 
-function modelOptionLabel(m: ProviderCatalogEntry): string {
+export function modelOptionLabel(m: ProviderCatalogEntry): string {
   return (
     `${m.label}${m.recommended ? " ★" : ""} · ${formatContext(m.contextWindow)}` +
     `${m.costClass !== "free" ? ` · ${m.costClass}` : ""}` +

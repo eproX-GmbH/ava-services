@@ -683,8 +683,14 @@ function TopBar() {
           ]}
         />
         {signaleErlaubt && <NavItem to="/linkedin" label="Signale" />}
-        <NavItem to="/settings" label="Einstellungen" />
-        <NavItem to="/organisation" label="Organisation" />
+        <NavItem
+          to="/settings"
+          label="Einstellungen"
+          subItems={[
+            { to: "/settings", label: "Einstellungen" },
+            { to: "/organisation", label: "Organisation" },
+          ]}
+        />
         <NavItem to="/whoami" label="Status" />
       </nav>
       <div className="topbar__spacer" />
