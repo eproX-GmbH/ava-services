@@ -1069,6 +1069,37 @@ const api = {
       return () => ipcRenderer.removeListener("accounts:relaunching", h);
     },
   },
+  // O2 — Organisationen (Einladungslink, Tenant-Wechsel, Anfragen).
+  org: {
+    /** Gepufferten ava://join/<token> genau einmal abholen (Kaltstart). */
+    consumePendingJoin: (): Promise<string | null> => ipcRenderer.invoke("org:consumePendingJoin"),
+    /** Tenant sofort abgleichen; true = Wechsel erkannt, AVA startet neu. */
+    checkTenant: (): Promise<boolean> => ipcRenderer.invoke("org:checkTenant"),
+    extractJoinToken: (eingabe: string): Promise<string | null> =>
+      ipcRenderer.invoke("org:extractJoinToken", eingabe),
+    onJoinLink: (cb: (info: { token: string }) => void): (() => void) => {
+      const h = (_e: unknown, info: { token: string }) => cb(info);
+      ipcRenderer.on("org:joinLink", h);
+      return () => ipcRenderer.removeListener("org:joinLink", h);
+    },
+    onTenantChanged: (
+      cb: (info: { tenantId: string; tenantName: string | null; persoenlich: boolean }) => void,
+    ): (() => void) => {
+      const h = (_e: unknown, info: { tenantId: string; tenantName: string | null; persoenlich: boolean }) => cb(info);
+      ipcRenderer.on("org:tenantChanged", h);
+      return () => ipcRenderer.removeListener("org:tenantChanged", h);
+    },
+    onRequestsChanged: (cb: () => void): (() => void) => {
+      const h = () => cb();
+      ipcRenderer.on("org:requestsChanged", h);
+      return () => ipcRenderer.removeListener("org:requestsChanged", h);
+    },
+    onOpenPage: (cb: () => void): (() => void) => {
+      const h = () => cb();
+      ipcRenderer.on("org:openPage", h);
+      return () => ipcRenderer.removeListener("org:openPage", h);
+    },
+  },
   alerts: {
     list: (): Promise<Alert[]> => ipcRenderer.invoke("alerts:list"),
     unreadCount: (): Promise<number> =>

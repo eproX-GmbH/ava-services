@@ -21,6 +21,7 @@
 // boot to keep this module decoupled from APP_CONFIG.
 
 import { app, BrowserWindow, ipcMain, shell } from "electron";
+import { handleJoinUrl } from "./organisation";
 
 interface BillingDeps {
   gatewayUrl: string;
@@ -135,6 +136,11 @@ function handleAvaUrl(raw: string): void {
     return;
   }
   if (parsed.protocol !== "ava:") return;
+  // O2 — ava://join/<token> (Einladungslink einer Organisation).
+  if (parsed.host === "join") {
+    handleJoinUrl(parsed);
+    return;
+  }
   // ava://billing/success | ava://billing/cancel | ava://billing/upgrade
   // URL parses host="billing", pathname="/success" etc.
   if (parsed.host !== "billing") return;

@@ -10,6 +10,7 @@ import type pg from "pg";
 import { randomBytes } from "node:crypto";
 import type { AuthContext } from "../middleware/auth";
 import { moveUserToTenantGroup } from "./keycloak-admin";
+import { invalidateMembership } from "./membership-cache";
 import { logger } from "./logger";
 
 export interface TenantPolicyShape {
@@ -36,8 +37,8 @@ export interface WhoamiPayload {
   role: string;
   memberCount: number;
   email: string | null;
-  /** "claim" = tenant_id aus dem Token; "sub" = Kompatibilitaets-Fallback. */
-  tenantSource: "claim" | "sub";
+  /** "claim" = tenant_id aus dem Token; "membership" = aus TenantMember (O2); "sub" = Kompatibilitaets-Fallback. */
+  tenantSource: "claim" | "sub" | "membership";
   /** O1 */
   tenantKind: "personal" | "organisation";
   policy: TenantPolicyShape;
@@ -207,6 +208,7 @@ export async function createOrganisation(
       [id, auth.actorId],
     );
     await client.query("COMMIT");
+    invalidateMembership(auth.actorId);
     void syncKeycloak(auth.actorId, id, name);
     return { tenantId: id, name, inviteToken };
   } catch (err) {
@@ -328,6 +330,7 @@ export async function decideJoinRequest(
       tenantName = (await client.query<{ name: string | null }>(`SELECT "name" FROM "Tenant" WHERE "id" = $1`, [req.tenantId])).rows[0]?.name ?? null;
     }
     await client.query("COMMIT");
+    invalidateMembership(req.actorId);
     if (entscheidung === "approve") void syncKeycloak(req.actorId, req.tenantId, tenantName);
     return { actorId: req.actorId, tenantId: req.tenantId };
   } catch (err) {
@@ -368,6 +371,7 @@ export async function removeMember(pool: pg.Pool, auth: AuthContext, actorId: st
     )).rows[0]?.email ?? null;
     await setzeAufPersoenlichenTenant(client, actorId, email);
     await client.query("COMMIT");
+    invalidateMembership(actorId);
     void syncKeycloak(actorId, actorId, email);
   } catch (err) {
     await client.query("ROLLBACK").catch(() => undefined);

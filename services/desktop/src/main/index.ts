@@ -87,6 +87,13 @@ import {
   searchHubspotCompanies,
 } from "./crm/fetch-enrichment";
 import { initBilling } from "./billing";
+import {
+  initOrganisation,
+  onSignedIn as organisationSignedIn,
+  consumePendingJoin,
+  checkTenantChange,
+  extractJoinToken,
+} from "./organisation";
 import { initLinkedIn } from "./linkedin";
 import { startScheduler as startLinkedInScheduler, stopScheduler as stopLinkedInScheduler } from "./linkedin/scheduler";
 import { MailSupervisor } from "./mail/supervisor";
@@ -1487,6 +1494,9 @@ auth.on("status", (status: AuthStatus) => {
   }
   if (status.signedIn && status.actorId && status.actorId !== lastSpaceSub) {
     lastSpaceSub = status.actorId;
+    // O2 — Tenant-Wechsel seit dem letzten Lauf erkennen (Beitritt
+    // freigegeben / entfernt), Anfragen-Waechter fuer Admins anwerfen.
+    organisationSignedIn();
     const ergebnis = accountSpaceSignedIn(
       {
         sub: status.actorId,
@@ -3492,6 +3502,11 @@ app.whenReady().then(async () => {
     gatewayUrl: APP_CONFIG.gatewayUrl,
     getAccessToken: () => auth.getAccessToken(),
   });
+  // O2 — Organisationen: Einladungslink, Tenant-Wechsel, Anfragen-Waechter.
+  initOrganisation({
+    gateway: gatewayClient,
+    isSignedIn: () => auth.getStatus().signedIn,
+  });
 
   // v0.1.101 — generic shell.openExternal bridge for plain http/https
   // links (Enterprise contact page on Settings → Plan & Abrechnung).
@@ -5368,6 +5383,10 @@ app.whenReady().then(async () => {
     return true;
   });
   ipcMain.handle("accounts:remove", (_e, sub: string) => removeAccount(String(sub)));
+  // O2 — Organisationen.
+  ipcMain.handle("org:consumePendingJoin", () => consumePendingJoin());
+  ipcMain.handle("org:checkTenant", () => checkTenantChange("auf Anforderung"));
+  ipcMain.handle("org:extractJoinToken", (_e, eingabe: string) => extractJoinToken(String(eingabe ?? "")));
   ipcMain.handle("alerts:list", () => alerts.list());
   ipcMain.handle("alerts:unreadCount", () => alerts.unreadCount());
   ipcMain.handle("alerts:markSeen", (_e, id: string) => {

@@ -240,6 +240,24 @@ function writeIdentity(id: AccountIdentity): void {
   }
 }
 
+/** O2 — Tenant in identity.json + Registry nachziehen (Wechsel erkannt). */
+export function updateIdentityTenant(tenantId: string | null, tenantName: string | null): void {
+  const id = readIdentity();
+  if (!id) return;
+  writeIdentity({ ...id, tenantId, tenantName });
+  try {
+    const reg = readRegistry();
+    const acc = reg.accounts[id.sub];
+    if (acc) {
+      acc.tenantId = tenantId;
+      acc.tenantName = tenantName;
+      writeRegistry(reg);
+    }
+  } catch (err) {
+    console.warn("[account-space] Registry-Tenant nicht aktualisiert:", err);
+  }
+}
+
 export function readIdentity(): (AccountIdentity & { lastSignInAt?: string }) | null {
   if (activeId === PENDING) return null;
   try {

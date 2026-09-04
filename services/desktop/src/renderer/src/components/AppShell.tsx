@@ -66,6 +66,21 @@ export function AppShell({ children }: PropsWithChildren) {
 
   useChatSearchHotkey(setSearchOpen);
 
+  // O2 — Organisationen: Einladungslink → Seite mit Rueckfrage;
+  // Tenant-Wechsel → Hinweis, AVA startet neu; Klick auf die
+  // OS-Benachrichtigung „Neue Beitrittsanfrage" → Seite oeffnen.
+  const [tenantWechsel, setTenantWechsel] = useState<{ tenantName: string | null; persoenlich: boolean } | null>(null);
+  useEffect(() => {
+    const offLink = window.api.org.onJoinLink(({ token }) => navigate(`/organisation?join=${encodeURIComponent(token)}`));
+    const offPage = window.api.org.onOpenPage(() => navigate("/organisation"));
+    const offWechsel = window.api.org.onTenantChanged((info) => setTenantWechsel(info));
+    return () => {
+      offLink();
+      offPage();
+      offWechsel();
+    };
+  }, [navigate]);
+
   // Sidebar's search-icon button fires a bus event so it doesn't have
   // to know about the modal directly.
   useEffect(() => {
@@ -112,8 +127,19 @@ export function AppShell({ children }: PropsWithChildren) {
     }
   };
 
+  const tenantWechselOverlay = tenantWechsel ? (
+    <div className="account-relaunch" role="status">
+      <Loader2 size={16} className="spin" />
+      <span>
+        {tenantWechsel.persoenlich
+          ? "Du bist nicht mehr Mitglied der Organisation. AVA startet in deinem persönlichen Bereich neu …"
+          : `Du bist jetzt Mitglied von ${tenantWechsel.tenantName ?? "einer Organisation"}. AVA startet neu …`}
+      </span>
+    </div>
+  ) : null;
   return (
     <div className="app-shell">
+      {tenantWechselOverlay}
       <TopBar />
       <DailyTokenLimitBanner />
       <ProducerModelBanner />
@@ -644,6 +670,7 @@ function TopBar() {
         />
         <NavItem to="/linkedin" label="Signale" />
         <NavItem to="/settings" label="Einstellungen" />
+        <NavItem to="/organisation" label="Organisation" />
         <NavItem to="/whoami" label="Status" />
       </nav>
       <div className="topbar__spacer" />

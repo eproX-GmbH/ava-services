@@ -26,7 +26,7 @@ function newRequestId(): string {
 }
 
 interface GatewayOptions {
-  method?: "GET" | "POST" | "PUT" | "DELETE";
+  method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
   query?: Record<string, string | number | boolean | string[] | undefined>;
   body?: unknown;
   signal?: AbortSignal;

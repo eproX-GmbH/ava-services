@@ -8,6 +8,8 @@ import {
 } from "jose";
 import { loadEnv } from "../lib/env";
 import { logger } from "../lib/logger";
+import { getGatewayPool } from "../lib/producer-pools";
+import { resolveTenantByMembership } from "../lib/membership-cache";
 
 const fallbackGeloggt = new Set<string>();
 
@@ -17,9 +19,10 @@ export type AuthContext = {
   tenantId: string;
   actorId: string; // JWT `sub`
   scopes: string[]; // JWT `scope` space-separated, split
-  // T4 — Herkunft der tenantId: "claim" (tenant/tenant_id im Token)
-  // oder "sub" (Kompatibilitaets-Fallback, Tenant = User).
-  tenantSource: "claim" | "sub";
+  // T4 — Herkunft der tenantId: "claim" (tenant/tenant_id im Token),
+  // "membership" (O2: aus TenantMember, wenn kein Claim vorliegt) oder
+  // "sub" (Kompatibilitaets-Fallback, Tenant = User).
+  tenantSource: "claim" | "sub" | "membership";
   tenantName?: string | null; // Claim `tenant_name` (Keycloak-Gruppe)
   email?: string | null;
 };
@@ -103,7 +106,7 @@ export const authMiddleware = createMiddleware(async (c, next) => {
   //                     matches the data on disk.
   const [, payloadB64] = token.split(".");
   let tenantId: string;
-  let tenantSource: "claim" | "sub" = "sub";
+  let tenantSource: "claim" | "sub" | "membership" = "sub";
   try {
     const payload = JSON.parse(
       Buffer.from(payloadB64, "base64url").toString("utf8"),
@@ -152,9 +155,23 @@ export const authMiddleware = createMiddleware(async (c, next) => {
     if (typeof payload.sub !== "string") throw new Error("sub claim missing");
     const scopes =
       typeof payload.scope === "string" ? payload.scope.split(/\s+/).filter(Boolean) : [];
-    const tenantName =
+    let tenantName =
       typeof payload["tenant_name"] === "string" ? (payload["tenant_name"] as string) : null;
     const email = typeof payload["email"] === "string" ? (payload["email"] as string) : null;
+    // O2 — ohne tenant_id-Claim entscheidet die Mitgliedschaft im Gateway
+    // (Organisationen funktionieren damit unabhaengig vom Keycloak-Mapper).
+    if (tenantSource === "sub") {
+      try {
+        const m = await resolveTenantByMembership(getGatewayPool(), payload.sub);
+        if (m && m.tenantId !== payload.sub) {
+          tenantId = m.tenantId;
+          tenantName = m.tenantName ?? tenantName;
+          tenantSource = "membership";
+        }
+      } catch (err) {
+        logger.warn({ err: err instanceof Error ? err.message : String(err) }, "membership lookup failed; tenant=sub");
+      }
+    }
     // T4 — Fallback sichtbar machen: einmal je Prozess und User, damit
     // nach der Keycloak-Umstellung (T3) erkennbar bleibt, wer noch mit
     // Alt-Tokens ohne tenant_id unterwegs ist.

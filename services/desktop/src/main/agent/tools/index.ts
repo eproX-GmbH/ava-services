@@ -1,5 +1,6 @@
 import type { GatewayClient } from "../gateway-client";
 import { buildAccountTools } from "./account";
+import { buildOrganisationTools } from "./organisation";
 import type { LlmProviderManager } from "../providers";
 import type { GeneralMemoryStore } from "../general-memory";
 import type { AttachmentStore } from "../attachment-store";
@@ -196,6 +197,8 @@ export function buildReadOnlyRegistry(deps: {
     listAccounts: deps.listAccounts,
   }))
     registry.register(t);
+  // O2 — Organisation (org_*).
+  for (const t of buildOrganisationTools({ gateway: deps.gateway })) registry.register(t);
   for (const t of buildTransactionTools(ctx)) registry.register(t);
   for (const t of buildEvaluationTools(ctx)) registry.register(t);
   for (const t of buildUiTools()) registry.register(t);

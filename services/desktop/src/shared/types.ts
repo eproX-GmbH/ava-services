@@ -52,6 +52,45 @@ export interface AccountsSnapshot {
   identity: (Omit<AccountRecord, "lastUsedAt"> & { lastSignInAt?: string }) | null;
 }
 
+// ---- O2 — Organisationen (docs/PLAN_ORGANISATIONEN.md) ---------------------
+
+export interface OrgPolicy {
+  features: Record<string, boolean>;
+  providerLock: boolean;
+  chatModel: string | null;
+  producerModel: string | null;
+  promptAudit: boolean;
+}
+
+export interface OrgMember {
+  actorId: string;
+  role: string;
+  joinedAt: string;
+  email: string | null;
+  name: string | null;
+}
+
+export interface OrgJoinRequest {
+  id: string;
+  actorId: string;
+  email: string | null;
+  name: string | null;
+  requestedAt: string;
+}
+
+/** Antwort von GET /v1/tenants/me. */
+export interface OrgState {
+  tenantId: string;
+  name: string | null;
+  kind: "personal" | "organisation";
+  myRole: string;
+  /** nur fuer Admins gefuellt */
+  inviteToken: string | null;
+  members: OrgMember[];
+  openRequests: OrgJoinRequest[];
+  policy: OrgPolicy;
+}
+
 // ---- Auto-updater (8.u4 / 8.v1.5) -----------------------------------------
 //
 // Background OTA flow via electron-updater talking to GitHub

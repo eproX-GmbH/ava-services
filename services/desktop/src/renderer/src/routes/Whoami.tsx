@@ -32,7 +32,7 @@ interface WhoamiResponse {
   role?: string;
   memberCount?: number;
   email?: string | null;
-  tenantSource?: "claim" | "sub";
+  tenantSource?: "claim" | "sub" | "membership";
 }
 
 export function Whoami() {
@@ -72,7 +72,9 @@ export function Whoami() {
               {" "}
               {whoami.data.tenantSource === "claim"
                 ? "· aus dem Token-Claim (Keycloak-Tenant)"
-                : "· Kompatibilitäts-Fallback: Tenant = User-ID"}
+                : whoami.data.tenantSource === "membership"
+                  ? "· aus der Mitgliedschaft (Gateway)"
+                  : "· Kompatibilitäts-Fallback: Tenant = User-ID"}
             </span>
           </dd>
           <dt>Konto</dt>

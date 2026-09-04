@@ -4,8 +4,8 @@ Auto-generiert von `services/desktop/scripts/generate-tools-md.mjs`.
 NICHT direkt bearbeiten — die Quelle der Wahrheit ist `services/desktop/src/main/agent/tools/*.ts`.
 Lauf via `pnpm -F @ava/desktop tools:doc` (oder automatisch via `build:typecheck`).
 
-Stand: 2026-09-03
-Anzahl Tools: 202
+Stand: 2026-09-04
+Anzahl Tools: 206
 
 ## Firmen (13)
 
@@ -1614,6 +1614,43 @@ _Parameter:_ keine.
 _Datei:_ `services/desktop/src/main/agent/tools/ollama.ts`
 
 Liefert den Status des lokalen Ollama-Daemons: Zustand (idle / starting / ready / error), installierte Modelle und fehlende Pflichtmodelle. Nutze das Tool, wenn der Nutzer fragt, ob Ollama läuft, welche Modelle vorhanden sind oder warum die KI-Antworten ausbleiben.
+
+_Parameter:_ keine.
+
+## organisation (4)
+
+### `org_info`
+
+_Datei:_ `services/desktop/src/main/agent/tools/organisation.ts`
+
+Liefert die Organisation des angemeldeten Kontos (oder 'persoenlicher Bereich'), die eigene Rolle (owner/admin/member), Mitgliederzahl, die Vorgaben (Funktionen, Anbieter-Sperre, Modelle, Prompt-Audit) und fuer Admins den Einladungslink ava://join/<token>. Read-only. Organisation anlegen, per Link beitreten oder verlassen laeuft ueber die Seite 'Organisation' (#/organisation), weil AVA dabei neu startet.
+
+_Parameter:_ keine.
+
+### `org_member_approve`
+
+_Datei:_ `services/desktop/src/main/agent/tools/organisation.ts`
+
+Entscheidet eine offene Beitrittsanfrage. requestId aus org_members. 'approve' macht den Nutzer zum Mitglied (seine AVA startet beim naechsten Abgleich neu), 'reject' lehnt ab. Fragt vor der Ausfuehrung nach.
+
+_Parameter:_
+- `requestId: string` (required) — Anfrage-ID aus org_members
+- `entscheidung: string (enum: approve, reject)` (required)
+
+### `org_member_remove`
+
+_Datei:_ `services/desktop/src/main/agent/tools/organisation.ts`
+
+Entfernt ein Mitglied; es faellt auf seinen persoenlichen Bereich zurueck, seine AVA startet beim naechsten Abgleich neu. Der letzte Owner kann nicht entfernt werden. actorId aus org_members. Fragt vor der Ausfuehrung nach. Fuer den eigenen Austritt die Seite 'Organisation' nutzen.
+
+_Parameter:_
+- `actorId: string` (required) — Nutzer-ID aus org_members
+
+### `org_members`
+
+_Datei:_ `services/desktop/src/main/agent/tools/organisation.ts`
+
+Listet Mitglieder (Nutzer-ID, Name/E-Mail soweit bekannt, Rolle, seit) und fuer Admins die offenen Beitrittsanfragen mit Anfrage-ID. Die Anfrage-ID braucht org_member_approve.
 
 _Parameter:_ keine.
 
