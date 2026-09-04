@@ -286,14 +286,25 @@ function relaunch(): void {
 export function handleSignedIn(id: AccountIdentity, opts: { relaunchDelayMs?: number } = {}): "ok" | "relaunching" {
   const reg = readRegistry();
   const now = new Date().toISOString();
-  reg.accounts[id.sub] = { ...id, lastUsedAt: now };
 
   if (activeId === id.sub) {
+    // O2/O5 (2026-09-04) — Der Tenant in identity.json kommt vom Gateway-
+    // Abgleich (organisation.ts). Ein Token ohne tenant_id-Claim darf ihn
+    // nicht auf null zuruecksetzen, sonst meldet der naechste Abgleich
+    // wieder einen „Wechsel" → Neustart-Schleife.
+    const alt = readIdentity();
+    const merged: AccountIdentity = {
+      ...id,
+      tenantId: id.tenantId ?? alt?.tenantId ?? null,
+      tenantName: id.tenantName ?? alt?.tenantName ?? null,
+    };
+    reg.accounts[id.sub] = { ...merged, lastUsedAt: now };
     reg.active = id.sub;
     writeRegistry(reg);
-    writeIdentity(id);
+    writeIdentity(merged);
     return "ok";
   }
+  reg.accounts[id.sub] = { ...id, lastUsedAt: now };
 
   if (activeId === PENDING) {
     const ziel = spaceDir(id.sub);

@@ -95,6 +95,15 @@ export async function ensureTenantForAuth(
     // ANDEREN Tenant wird NICHT stillschweigend umgehaengt (das ist
     // Operator-Sache) — dann bleibt die alte Zeile und der Claim ist
     // massgeblich fuer die Datenzuordnung; whoami zeigt beides.
+    // Reparatur (2026-09-04): Mitgliedschaft in einem FREMDEN persoenlichen
+    // Tenant (Kompatibilitaets-Altbestand "pilot") loeschen — persoenliche
+    // Tenants sind per Definition id = sub. Der Insert darunter legt die
+    // eigene Mitgliedschaft neu an.
+    await client.query(
+      `DELETE FROM "TenantMember" m USING "Tenant" t
+       WHERE m."actorId" = $1 AND t."id" = m."tenantId" AND t."kind" = 'personal' AND m."tenantId" <> $1`,
+      [auth.actorId],
+    );
     await client.query(
       `INSERT INTO "TenantMember" ("tenantId", "actorId", "role")
        VALUES ($1, $2, $3)

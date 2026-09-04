@@ -17,12 +17,20 @@ export async function resolveTenantByMembership(
 ): Promise<{ tenantId: string; tenantName: string | null } | null> {
   const hit = cache.get(actorId);
   if (hit && hit.bis > Date.now()) return hit;
+  // Nur echte Organisationen zaehlen. Persoenliche Tenants sind per
+  // Definition id = sub; eine Mitgliedschaft in einem FREMDEN persoenlichen
+  // Tenant (Kompatibilitaets-Altbestand wie "pilot") darf den Tenant nicht
+  // umbiegen — das erzeugte im Desktop eine Neustart-Schleife (2026-09-04).
   const r = await pool.query<{ tenantId: string; name: string | null }>(
-    `SELECT m."tenantId", t."name" FROM "TenantMember" m JOIN "Tenant" t ON t."id" = m."tenantId" WHERE m."actorId" = $1`,
+    `SELECT m."tenantId", t."name" FROM "TenantMember" m JOIN "Tenant" t ON t."id" = m."tenantId"
+     WHERE m."actorId" = $1 AND t."kind" = 'organisation'`,
     [actorId],
   );
   const row = r.rows[0];
-  if (!row) return null;
+  if (!row) {
+    cache.set(actorId, { tenantId: actorId, tenantName: null, bis: Date.now() + TTL_MS });
+    return null;
+  }
   const eintrag = { tenantId: row.tenantId, tenantName: row.name, bis: Date.now() + TTL_MS };
   cache.set(actorId, eintrag);
   return eintrag;

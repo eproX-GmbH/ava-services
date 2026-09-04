@@ -13,6 +13,8 @@
 //     und passt hier nicht).
 
 import { app, BrowserWindow, Notification } from "electron";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { readIdentity, updateIdentityTenant } from "./account-space";
 import type { GatewayClient } from "./agent/gateway-client";
 import type { OrgState, OrgPolicy } from "../shared/types";
@@ -40,6 +42,23 @@ let relaunchAngestossen = false;
 let bekannteAnfragen: Set<string> | null = null;
 
 const PRUEF_INTERVALL_MS = 10 * 60_000;
+/** Wiederholungsschutz: derselbe Wechsel loest innerhalb dieser Frist
+ *  keinen zweiten Neustart aus (Schleifen-Bremse, 2026-09-04). */
+const WECHSEL_SPERRE_MS = 30 * 60_000;
+
+function wechselMarkerPfad(): string {
+  return join(app.getPath("userData"), "tenant-switch.json");
+}
+
+function letzterWechsel(): { from: string; to: string; at: number } | null {
+  try {
+    const p = wechselMarkerPfad();
+    if (!existsSync(p)) return null;
+    return JSON.parse(readFileSync(p, "utf8")) as { from: string; to: string; at: number };
+  } catch {
+    return null;
+  }
+}
 
 function broadcast(channel: string, payload: unknown): void {
   for (const win of BrowserWindow.getAllWindows()) {
@@ -117,9 +136,22 @@ export async function checkTenantChange(grund: string): Promise<boolean> {
   }
   const name = who.tenantName ?? (who.tenantId === who.actorId ? null : who.tenantId);
   const persoenlich = who.tenantId === who.actorId;
+  const letzter = letzterWechsel();
+  if (letzter && letzter.from === ident.tenantId && letzter.to === who.tenantId && Date.now() - letzter.at < WECHSEL_SPERRE_MS) {
+    console.warn(
+      `[organisation] Tenant-Wechsel ${ident.tenantId.slice(0, 12)}… → ${who.tenantId.slice(0, 12)}… wiederholt sich innerhalb von ${Math.round(WECHSEL_SPERRE_MS / 60000)} Min — KEIN weiterer Neustart (Schleifen-Bremse). Identitaet wird nur nachgezogen.`,
+    );
+    updateIdentityTenant(who.tenantId, who.tenantName ?? null);
+    return false;
+  }
   console.log(
     `[organisation] Tenant-Wechsel erkannt (${grund}): ${ident.tenantId.slice(0, 12)}… → ${who.tenantId.slice(0, 12)}… (${persoenlich ? "persoenlich" : name}) — Neustart`,
   );
+  try {
+    writeFileSync(wechselMarkerPfad(), JSON.stringify({ from: ident.tenantId, to: who.tenantId, at: Date.now() }));
+  } catch {
+    /* best-effort */
+  }
   updateIdentityTenant(who.tenantId, who.tenantName ?? null);
   relaunchAngestossen = true;
   broadcast("org:tenantChanged", { tenantId: who.tenantId, tenantName: name, persoenlich });
