@@ -245,13 +245,16 @@ export class Auth extends EventEmitter {
       // Adapt the gateway's camelCase shape to the OIDC-style snake_case
       // applyTokens() expects (it was originally fed the Keycloak token
       // endpoint response directly).
-      await this.applyTokens({
+      await this.applyTokens(
+        {
         access_token: data.accessToken,
         refresh_token: data.refreshToken,
         id_token: data.idToken,
         expires_in: data.expiresIn,
         token_type: data.tokenType,
-      });
+      },
+        "register",
+      );
       return;
     }
     // Non-2xx — surface the gateway's structured error so the form
@@ -494,7 +497,7 @@ export class Auth extends EventEmitter {
       throw new Error(`token exchange failed: ${res.status} ${text.slice(0, 200)}`);
     }
     const tokens = (await res.json()) as TokenResponse;
-    await this.applyTokens(tokens);
+    await this.applyTokens(tokens, "interactive");
   }
 
   private async exchangeRefreshToken(refreshToken: string): Promise<void> {
@@ -524,7 +527,10 @@ export class Auth extends EventEmitter {
     await this.applyTokens(tokens);
   }
 
-  private async applyTokens(tokens: TokenResponse): Promise<void> {
+  private async applyTokens(
+    tokens: TokenResponse,
+    via: "restore" | "interactive" | "register" = "restore",
+  ): Promise<void> {
     const expiresAt = Date.now() + tokens.expires_in * 1000;
     // v0.1.151 — cache the id_token for the eventual RP-initiated
     // logout. Keycloak returns a new id_token on every refresh, so
@@ -571,6 +577,7 @@ export class Auth extends EventEmitter {
       email,
       name,
       tenantName,
+      via,
     });
 
     if (tokens.refresh_token && !tokenGehoertZumSpace) {
@@ -653,6 +660,7 @@ export class Auth extends EventEmitter {
       await fs.mkdir(spaceDir, { recursive: true });
       const enc = safeStorage.encryptString(this.lastRefreshToken);
       await fs.writeFile(join(spaceDir, "auth.bin"), enc, { mode: 0o600 });
+      console.log(`auth: refresh token exportiert sub=${subOf(this.lastRefreshToken)} → ${kurzPfad(join(spaceDir, "auth.bin"))}`);
       return true;
     } catch (err) {
       console.warn("auth: export des Refresh-Tokens fehlgeschlagen:", (err as Error).message);
@@ -673,17 +681,38 @@ export class Auth extends EventEmitter {
       return;
     }
     const enc = safeStorage.encryptString(token);
-    await fs.writeFile(this.refreshTokenPath(), enc, { mode: 0o600 });
+    const p = this.refreshTokenPath();
+    await fs.writeFile(p, enc, { mode: 0o600 });
+    // v0.1.537 — Diagnose: WER schreibt WELCHES Konto WOHIN (Kontowechsel-
+    // Schleife 2026-09-04 war aus dem Log nicht mehr belegbar).
+    console.log(`auth: refresh token gespeichert sub=${subOf(token)} → ${kurzPfad(p)}`);
   }
 
   private async loadRefreshToken(): Promise<string | null> {
     try {
-      const buf = await fs.readFile(this.refreshTokenPath());
+      const p = this.refreshTokenPath();
+      const buf = await fs.readFile(p);
       if (!safeStorage.isEncryptionAvailable()) return null;
-      return safeStorage.decryptString(buf);
+      const token = safeStorage.decryptString(buf);
+      console.log(`auth: refresh token geladen sub=${subOf(token)} ← ${kurzPfad(p)}`);
+      return token;
     } catch {
       return null;
     }
+  }
+
+  /**
+   * v0.1.537 — Wiederhergestellte Sitzung verwerfen, OHNE Keycloak-Logout:
+   * das Token gehoerte nicht zum aktiven Space. Datei weg, Status
+   * abgemeldet; die Anmeldemaske erscheint fuer DIESEN Space
+   * (login_hint = Space-Identitaet).
+   */
+  async discardRestoredSession(): Promise<void> {
+    if (this.refreshTimer) clearTimeout(this.refreshTimer);
+    this.refreshTimer = null;
+    await this.clearRefreshToken();
+    this.idToken = null;
+    this.setStatus(SIGNED_OUT);
   }
 
   private async clearRefreshToken(): Promise<void> {
@@ -925,4 +954,19 @@ function stringifyErrorCauseChain(err: unknown): string {
     depth += 1;
   }
   return parts.length > 0 ? parts.join(" ← caused by ") : "unknown";
+}
+
+
+/** v0.1.537 — sub eines JWT fuer Diagnose-Logs (gekuerzt). */
+function subOf(token: string): string {
+  try {
+    const sub = decodeJwtPayload(token)["sub"];
+    return typeof sub === "string" ? sub.slice(0, 8) : "?";
+  } catch {
+    return "?";
+  }
+}
+function kurzPfad(p: string): string {
+  const m = /accounts\/([^/]+)\/auth\.bin$/.exec(p);
+  return m && m[1] ? `accounts/${m[1].slice(0, 8)}…/auth.bin` : p;
 }

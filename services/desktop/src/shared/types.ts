@@ -31,6 +31,9 @@ export interface AuthStatus {
   name?: string | null;
   /** T3 — Claim `tenant_name` (Keycloak-Gruppenattribut). */
   tenantName?: string | null;
+  /** v0.1.537 — Herkunft dieser Anmeldung: stille Wiederherstellung aus
+   *  dem gespeicherten Token, interaktiver Login im Browser, Registrierung. */
+  via?: "restore" | "interactive" | "register";
 }
 
 /** T1 — Account-Space-Registry (Kontowechsler). */

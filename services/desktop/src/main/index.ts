@@ -1467,6 +1467,24 @@ let lastAuthSignedIn = false;
 // Identitaets-Sperre bei fremdem sub). Nur einmal je Anmeldung.
 let lastSpaceSub: string | null = null;
 auth.on("status", (status: AuthStatus) => {
+  // v0.1.537 — Liefert die STILLE Wiederherstellung ein fremdes Konto,
+  // gehoert das gespeicherte Token nicht in diesen Space: verwerfen,
+  // in seinen eigenen Space exportieren, Anmeldemaske fuer DIESEN Space
+  // zeigen. Vorher griff die Identitaets-Sperre und warf den Nutzer in
+  // den alten Account zurueck ("2x Neustart, wieder quikk").
+  if (status.signedIn && status.actorId && status.via === "restore") {
+    const ident = readIdentity();
+    if (ident && ident.sub !== status.actorId) {
+      console.warn(
+        `[account-space] stille Anmeldung lieferte ${status.actorId.slice(0, 8)}…, Space gehoert ${ident.sub.slice(0, 8)}… → Token verworfen, Anmeldung fuer diesen Space`,
+      );
+      void auth
+        .exportRefreshTokenTo(spaceDirFor(status.actorId))
+        .then(() => auth.discardRestoredSession())
+        .catch((err) => console.warn("[account-space] Verwerfen fehlgeschlagen:", err));
+      return;
+    }
+  }
   if (status.signedIn && status.actorId && status.actorId !== lastSpaceSub) {
     lastSpaceSub = status.actorId;
     const ergebnis = accountSpaceSignedIn(
