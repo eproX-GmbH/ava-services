@@ -1,16 +1,6 @@
 import { app, BrowserWindow, safeStorage, shell } from "electron";
-import { consumeForceLoginPrompt, readIdentity } from "./account-space";
+import { consumeForceLoginPrompt, readIdentity, getActiveSpaceId } from "./account-space";
 
-/** v0.1.532 — Keycloak-Parameter gegen das SSO-Konto-Ping-Pong. */
-function hint(
-  identity: { email: string | null; sub: string } | null,
-  force: boolean,
-): Record<string, string> {
-  const out: Record<string, string> = {};
-  if (force || identity) out.prompt = "login";
-  if (identity?.email) out.login_hint = identity.email;
-  return out;
-}
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { createHash, randomBytes } from "node:crypto";
@@ -412,30 +402,68 @@ export class Auth extends EventEmitter {
     const challenge = base64url(createHash("sha256").update(verifier).digest());
     const state = base64url(randomBytes(16));
 
-    const { code, redirectUri } = await runLoopbackFlow(state, (port) => {
-      const params = new URLSearchParams({
-        client_id: this.clientId,
-        response_type: "code",
-        redirect_uri: `http://127.0.0.1:${port}/callback`,
-        scope: this.scopes.join(" "),
-        // T2 — nach "Anderes Konto hinzufuegen": Keycloak MUSS das
-        // Login-Formular zeigen, statt die SSO-Session des vorherigen
-        // Kontos stillschweigend wiederzuverwenden.
-        // v0.1.532 — dasselbe, sobald der aktive Space schon einer
-        // Identitaet gehoert: Live-Befund 2026-09-03 12:19–12:20, vier
-        // Neustarts in 40s. Nach "Wechsel zu A" lieferte der System-
-        // Browser per SSO-Cookie stillschweigend Konto B → Identitaets-
-        // Sperre → Neustart in B → dort Anmeldung als A → Sperre → …
-        // login_hint fuellt das Formular mit dem Konto des Spaces vor.
-        ...(hint(readIdentity(), consumeForceLoginPrompt())),
-        code_challenge: challenge,
-        code_challenge_method: "S256",
-        state,
-      });
-      void shell.openExternal(`${disc.authorization_endpoint}?${params.toString()}`);
+    // v0.1.539 — Anmeldung in einem EIGENEN Fenster mit Cookie-Partition
+    // je Konto-Space statt im System-Browser. Live-Beweis 2026-09-04
+    // 10:25: Refresh-Token des Google-Kontos geladen, Keycloak antwortete
+    // mit einer Sitzung des quikk-Kontos — beide Konten hingen an
+    // DERSELBEN Browser-SSO-Session. Mit getrennter Partition hat jedes
+    // Konto seine eigene Keycloak-Sitzung; prompt=login und die rote
+    // "erneut anmelden"-Maske entfallen. Faellt das Fenster aus, bleibt
+    // der System-Browser als Rueckfalloption.
+    let loginWin: BrowserWindow | null = null;
+    let windowClosedEarly: (() => void) | null = null;
+    const closedEarly = new Promise<never>((_r, reject) => {
+      windowClosedEarly = () => reject(new Error("Anmeldung abgebrochen (Fenster geschlossen)."));
     });
-
-    await this.exchangeAuthorizationCode(code, verifier, redirectUri);
+    const force = consumeForceLoginPrompt();
+    const identity = readIdentity();
+    try {
+      const { code, redirectUri } = await Promise.race([
+        runLoopbackFlow(state, (port) => {
+          const params = new URLSearchParams({
+            client_id: this.clientId,
+            response_type: "code",
+            redirect_uri: `http://127.0.0.1:${port}/callback`,
+            scope: this.scopes.join(" "),
+            ...(identity?.email ? { login_hint: identity.email } : {}),
+            ...(force ? { prompt: "login" } : {}),
+            code_challenge: challenge,
+            code_challenge_method: "S256",
+            state,
+          });
+          const url = `${disc.authorization_endpoint}?${params.toString()}`;
+          try {
+            loginWin = new BrowserWindow({
+              width: 520,
+              height: 760,
+              title: "AVA Anmeldung",
+              autoHideMenuBar: true,
+              webPreferences: {
+                partition: `persist:ava-auth-${getActiveSpaceId()}`,
+                nodeIntegration: false,
+                contextIsolation: true,
+                sandbox: true,
+              },
+            });
+            loginWin.on("closed", () => {
+              loginWin = null;
+              windowClosedEarly?.();
+            });
+            void loginWin.loadURL(url);
+          } catch (err) {
+            console.warn("auth: Login-Fenster nicht verfuegbar, System-Browser:", (err as Error).message);
+            void shell.openExternal(url);
+          }
+        }),
+        closedEarly,
+      ]);
+      windowClosedEarly = null;
+      await this.exchangeAuthorizationCode(code, verifier, redirectUri);
+    } finally {
+      windowClosedEarly = null;
+      const w = loginWin as BrowserWindow | null;
+      if (w && !w.isDestroyed()) w.close();
+    }
   }
 
   private async ensureDiscovery(): Promise<DiscoveryDoc> {
@@ -501,6 +529,17 @@ export class Auth extends EventEmitter {
   }
 
   private async exchangeRefreshToken(refreshToken: string): Promise<void> {
+    const erwartet = subOf(refreshToken);
+    await this.exchangeRefreshTokenInner(refreshToken);
+    const erhalten = (this.status.actorId ?? "").slice(0, 8);
+    if (erwartet !== "?" && erhalten && erwartet !== erhalten) {
+      console.warn(
+        `auth: Keycloak lieferte beim Refresh ein ANDERES Konto: gesendet sub=${erwartet} sid=${sidOf(refreshToken)}, erhalten sub=${erhalten}`,
+      );
+    }
+  }
+
+  private async exchangeRefreshTokenInner(refreshToken: string): Promise<void> {
     const disc = await this.ensureDiscovery();
     const body = new URLSearchParams({
       grant_type: "refresh_token",
@@ -969,4 +1008,13 @@ function subOf(token: string): string {
 function kurzPfad(p: string): string {
   const m = /accounts\/([^/]+)\/auth\.bin$/.exec(p);
   return m && m[1] ? `accounts/${m[1].slice(0, 8)}…/auth.bin` : p;
+}
+function sidOf(token: string): string {
+  try {
+    const p = decodeJwtPayload(token);
+    const sid = p["sid"] ?? p["session_state"];
+    return typeof sid === "string" ? sid.slice(0, 8) : "?";
+  } catch {
+    return "?";
+  }
 }
