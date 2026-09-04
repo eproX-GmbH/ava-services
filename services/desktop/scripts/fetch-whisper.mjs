@@ -228,6 +228,33 @@ async function fetchViaBrew(formula, outDir, exeName) {
  * brew-Formula-Version (die auf arm64-Runnern den Intel-Tag nicht mehr
  * kennt).
  */
+/**
+ * v0.1.548 — Bekannt-gute Intel-Bottles als Rueckfall. Homebrew liefert
+ * seit ggml 0.23.0 (2026-09-04) keine `sonoma`-(x86_64-)Bottles mehr; die
+ * alten Blobs bleiben auf ghcr.io erreichbar. Greift NUR, wenn die
+ * Formula-API den Tag nicht mehr kennt. Paar whisper-cpp 1.9.2 + ggml
+ * 0.22.0 + libomp ist der letzte gruene CI-Stand (v0.1.544).
+ */
+const PINNED_BOTTLES = {
+  sonoma: {
+      "whisper-cpp": {
+          "version": "1.9.2",
+          "sha256": "0898a0a1a1c8fefdde20b675538b28a73ca3aa762859af63a4ee172e9386821b",
+          "url": "https://ghcr.io/v2/homebrew/core/whisper-cpp/blobs/sha256:0898a0a1a1c8fefdde20b675538b28a73ca3aa762859af63a4ee172e9386821b"
+      },
+      "ggml": {
+          "version": "0.22.0",
+          "sha256": "d720d9acb4996974b8365f5624f15dab415603aab41b41cbe8c4edf5d229a4bc",
+          "url": "https://ghcr.io/v2/homebrew/core/ggml/blobs/sha256:d720d9acb4996974b8365f5624f15dab415603aab41b41cbe8c4edf5d229a4bc"
+      },
+      "libomp": {
+          "version": "23.1.0",
+          "sha256": "4925945ec704f56f229695cf28e8079aaa0b7f554297b8b82a9af7b4815de1d7",
+          "url": "https://ghcr.io/v2/homebrew/core/libomp/blobs/sha256:4925945ec704f56f229695cf28e8079aaa0b7f554297b8b82a9af7b4815de1d7"
+      }
+  },
+};
+
 async function resolveBottleFromApi(formula, bottleTag) {
   const res = await fetch(
     `https://formulae.brew.sh/api/formula/${formula}.json`,
@@ -240,6 +267,13 @@ async function resolveBottleFromApi(formula, bottleTag) {
   const file = json?.bottle?.stable?.files?.[bottleTag];
   const version = json?.versions?.stable ?? "?";
   if (!file?.url) {
+    const pin = PINNED_BOTTLES[bottleTag]?.[formula];
+    if (pin) {
+      console.warn(
+        `[whisper] no ${bottleTag} bottle for ${formula} (stable ${version}) in brew API — using pinned ${pin.version} bottle`,
+      );
+      return { url: pin.url, sha256: pin.sha256, version: `${pin.version} (pinned)` };
+    }
     throw new Error(
       `no ${bottleTag} bottle for ${formula} (stable ${version}) in brew API`,
     );
