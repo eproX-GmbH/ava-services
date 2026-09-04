@@ -59,9 +59,10 @@ im Speicher des Gateways.
 
 ## 3. Beitritt und Wechsel
 
-- Nutzer gibt in der App einen **Beitrittscode** (Slug) ein oder folgt
-  einem Einladungslink (`ava://join/<slug>`; Link-Handling gibt es fuer
-  OAuth schon). Ergebnis: `TenantJoinRequest open`. Der Nutzer bleibt in
+- Nutzer folgt einem **Einladungslink** (`ava://join/<slug>`; Link-
+  Handling gibt es fuer OAuth schon; Admin erzeugt den Link in der
+  Organisations-Ansicht, kopierbar). Entscheidung 2026-09-04: nur Link,
+  kein manuell einzugebender Code. Ergebnis: `TenantJoinRequest open`. Der Nutzer bleibt in
   seiner bisherigen Organisation; die App zeigt „Beitritt zu X angefragt".
 - Admin sieht offene Anfragen (Ansicht + Chat-Tool + Meldung im
   Meldungs-Feed des Admins), nimmt an oder lehnt ab.
@@ -139,6 +140,15 @@ Genau so laeuft heute schon ValueSerp mit dem Operator-Schluessel.
   Monatsbudget der Organisation); bei Ueberschreitung 429 mit klarer
   Meldung, die der Desktop als Banner zeigt (Muster: Tages-Token-Limit-
   Banner existiert).
+- **Nur wenn noetig** (Entscheidung 2026-09-04): Der Stellvertreter-Weg
+  gilt ausschliesslich fuer Aufrufe mit dem **Organisationsschluessel**.
+  Hat der Nutzer fuer einen Anbieter einen **eigenen** Schluessel oder
+  das Abo hinterlegt, laeuft alles lokal und direkt wie heute — kein
+  Proxy, keine Sicht des Gateways auf Prompts. Je Anbieter waehlt der
+  Nutzer in Einstellungen → Modelle (und per Chat-Tool) die Quelle:
+  „Schluessel der Organisation" oder „Eigener Schluessel/Abo"; die
+  Auswahl ist jederzeit umschaltbar, solange die Policy Ueberschreiben
+  erlaubt. Ohne eigenen Schluessel ist „Organisation" der Default.
 - **Lokale Modelle** (Ollama) bleiben unberuehrt: kein Schluessel, kein
   Proxy, kein Limit — Policy kann sie erlauben oder verbieten.
 - **Datenschutz-Ehrlichkeit**: Beim Stellvertreter-Weg sieht das Gateway
@@ -147,8 +157,14 @@ Genau so laeuft heute schon ValueSerp mit dem Operator-Schluessel.
   das der Anwendungsfall fuer das souveraene Substrat (C5) — dann ist das
   Gateway ihr eigenes. Das gehoert in die Datenfluss-Tabelle (C6).
 - **Abo-Pfad (ChatGPT/Codex)** bleibt Konto-gebunden und laesst sich nicht
-  zentralisieren (OAuth des einzelnen Nutzers). Policy kann ihn erlauben
-  oder sperren.
+  zentralisieren (OAuth des einzelnen Nutzers). Ist Ueberschreiben
+  erlaubt, ist das Abo erlaubt (Entscheidung 2026-09-04); bei Sperre
+  nicht.
+- **Prompt-Audit opt-in** (Entscheidung 2026-09-04): je Organisation
+  kann ein Admin aktivieren, dass der Proxy Prompts und Antworten fuer
+  Audit-Zwecke speichert (TenantPolicy.promptAudit, Default aus; sichtbar
+  fuer Mitglieder in der Datenfluss-Anzeige). Ohne Opt-in werden nur
+  Zaehler gespeichert.
 
 ## 6. Sperre lokaler Ueberschreibung und Modellvorgabe
 
@@ -159,9 +175,12 @@ Genau so laeuft heute schon ValueSerp mit dem Operator-Schluessel.
   Tools nicht. Producer-Supervisor baut die Env aus der Policy
   (LLM_PROVIDER, LLM_MODEL, Proxy-`baseURL`, PRODUCER_GATEWAY_TOKEN).
 - `providerLock = false`: Organisationsvorgabe ist Default, Mitglieder
-  duerfen lokal abweichen (eigener Key oder Abo); Limits gelten trotzdem
-  fuer Aufrufe ueber den Stellvertreter, nicht fuer eigene Schluessel
-  (technisch nicht messbar — wird in der UI so benannt).
+  duerfen lokal alles angeben wie heute (eigener Key jedes Anbieters,
+  Abo, Ollama) und je Anbieter zwischen eigenem und Organisations-
+  Schluessel umschalten. Limits gelten fuer Aufrufe ueber den
+  Stellvertreter (Organisationsschluessel); eigene Schluessel sind
+  nicht messbar und bleiben unlimitiert (Entscheidung 2026-09-04) —
+  die UI benennt das.
 - Vorgaben werden beim Start und bei jedem /whoami-Refresh geladen; die
   Policy traegt eine Version, der Desktop laedt bei Aenderung neu.
 
@@ -194,11 +213,15 @@ zuerst, sie sind unabhaengig vom Proxy), dann O4 → O5 → O6.
   Gateway-Wahrheit nicht beschaedigen (erst Gateway, dann Keycloak, bei
   Fehler Wiederholung im Hintergrund).
 
-## 9. Entscheidungen, die anstehen
-1. Beitritt per Code (Slug) UND Einladungslink, oder nur eines davon?
-2. Duerfen Mitglieder bei `providerLock = false` das Abo (ChatGPT) nutzen,
-   oder ist das Abo grundsaetzlich nur ohne Organisationsvorgabe erlaubt?
-3. Limits nur fuer Stellvertreter-Aufrufe (messbar) — ist es akzeptabel,
-   dass eigene Schluessel der Mitglieder unlimitiert bleiben?
-4. Sollen Prompts im Proxy fuer Audit-Zwecke gespeichert werden koennen
-   (Option je Organisation), oder grundsaetzlich nie?
+## 9. Entscheidungen (2026-09-04, Joyce)
+1. Beitritt **nur per Einladungslink**.
+2. Ist Ueberschreiben erlaubt, darf auch das ChatGPT-Abo genutzt werden;
+   Mitglieder koennen dann alles angeben wie heute.
+3. Eigene Schluessel bleiben unlimitiert (nur Stellvertreter-Aufrufe
+   sind messbar). Akzeptiert.
+4. Prompt-Audit im Proxy **per Opt-in je Organisation** aktivierbar,
+   Default aus.
+5. KI-Gateway (Stellvertreter) **nur wo noetig**: fuer Nutzer, die den
+   Organisationsschluessel verwenden UND lokal keinen eigenen haben.
+   Mit eigenem Schluessel laeuft alles lokal wie heute. Nutzer koennen je
+   Anbieter zwischen eigenem und Organisations-Schluessel wechseln.
