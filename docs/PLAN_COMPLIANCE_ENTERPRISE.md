@@ -20,13 +20,19 @@ oder Funktionen sauber abschaltbar machen; nichts ueberverkaufen.
 | **Personen-Radar-Ausloeser** (Name, Profil-URL, Kommentar-Auszug einer Person, die auf einen beobachteten Post reagiert hat) | nein | **ja** | als `meta.ausloeser` am Radar-Kandidaten (JSON, bis 4000 Zeichen) |
 | Bilder aus LinkedIn-Posts (Logo-/Produkt-Erkennung) | je nach Modell | je nach Modell | gehen an das konfigurierte Vision-Modell: lokal (Ollama) ODER Cloud-Anbieter |
 | Verbrauch (Firmen je Monat), Audit (Methode/Pfad/Akteur), Proxy-Nutzung | nein | ja | Lizenz-/Kontingentzaehlung, kein Produkt-Tracking (keine Sentry/PostHog o. ae.) |
+| **Prompts und Antworten bei Nutzung eines Organisationsschluessels** (O4/O5, seit 2026-09-04) | nein | **ja, im Transit** | Stellvertreter-Proxy `/v1/llm/<anbieter>` setzt den Organisationsschluessel ein und reicht durch (Frankfurt, EU). Gespeichert werden nur Zaehler (Tokens, Modell, geschaetzte Kosten je Mitglied). Inhalte werden NUR gespeichert, wenn die Organisation Prompt-Audit aktiviert hat (Opt-in, fuer Mitglieder sichtbar). Mit eigenem Schluessel/Abo: lokal wie bisher, das Gateway sieht nichts |
+| Organisationsschluessel (OpenAI, Anthropic, …, Apify) | nein | ja, verschluesselt | AES-256-GCM mit Gateway-Master-Schluessel, gebunden an Organisation + Anbieter; kein Endpunkt liefert den Klartext, sichtbar sind nur die letzten 4 Zeichen |
+| Organisationsvorgaben (abgeschaltete Module, Anbieter-Sperre, Modelle, Limits), Mitgliedschaften, Beitrittsanfragen | nein | ja | Gateway-Tabellen je Organisation; Kontakt-Recherche wird bei Abschaltung auch serverseitig verworfen (Persist-Bus) |
 
 Konsequenz fuer die Aussenkommunikation: „verlaesst deinen Rechner nie"
 ist so nicht haltbar. Haltbar und stark ist: **„Deine eigenen Daten
 (Chats, Logins, Schluessel, ICP, Mails) verlassen deinen Rechner nie.
 Oeffentliche Firmen- und Kontaktinformationen aus oeffentlichen Quellen
 landen mit Quellenbeleg in einem geteilten Bestand, den du auch selbst
-betreiben kannst."**
+betreiben kannst."** Eine benannte Ausnahme seit O4/O5: Wer den
+**Organisationsschluessel** nutzt, schickt seine Prompts ueber das Gateway
+(Transit, EU, nur Zaehler gespeichert, Inhalte nur mit Prompt-Audit-Opt-in);
+wer einen eigenen Schluessel hinterlegt, bleibt komplett lokal.
 
 ## 1. Rechtsgrundlage, Art. 14, Betroffenenrechte — der Audit-Trail zu Kontaktdaten
 
@@ -146,6 +152,9 @@ Massnahmen (C6):
 1. Website/Doku: die Tabelle aus Abschnitt 0 als „Was verlaesst deinen
    Rechner?" veroeffentlichen. Kontingent = serverseitige Zaehlung der
    Firmen je Monat (Firmen-ID, Zeitpunkt), keine Inhalte, kein Tracking.
+   ✅ 2026-09-05 (O7): Tabelle um Stellvertreter-Proxy, Organisations-
+   schluessel und Organisationsvorgaben ergaenzt; Website-Prompt
+   (docs/WEBSITE_PROMPT_COMPLIANCE.md §5/§7) entsprechend aktualisiert.
 2. In der App: Einstellungen → Datenschutz zeigt dieselbe Tabelle live
    (welche Endpunkte, letzte Uebertragung), plus „Alle lokalen Daten
    dieses Kontos loeschen" (existiert als Werksreset) und „Meinen Anteil

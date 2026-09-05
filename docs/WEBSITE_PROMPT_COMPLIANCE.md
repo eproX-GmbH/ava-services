@@ -101,6 +101,19 @@ Bewertungen empfehlen wir Cloud- oder Server-Modelle. Kennzeichne als
 **in Arbeit**: Festlegung je Mandant, welche Datenklassen an welche
 Modellklasse dürfen (zum Beispiel Personendaten nur lokal oder EU).
 
+Ergänze einen Absatz **„Zentrale Schlüssel für Teams"** (live): Eine
+Organisation kann Schlüssel für KI-Anbieter und Apify zentral hinterlegen.
+Diese Schlüssel liegen verschlüsselt im AVA-Gateway und sind für niemanden
+auslesbar, auch nicht für die Mitglieder; die App ruft die Anbieter dann
+über das Gateway auf, das den Schlüssel einsetzt. Sage ohne Beschönigung,
+was das bedeutet: Bei diesem Weg laufen Prompts und Antworten durch das
+AVA-Gateway (Frankfurt, EU). Gespeichert werden nur Zähler (Tokens,
+Modell, geschätzte Kosten je Mitglied), keine Inhalte, es sei denn, die
+Organisation schaltet ein Prompt-Audit bewusst ein; das ist für alle
+Mitglieder sichtbar. Wer einen eigenen Schlüssel oder ein Abo hinterlegt,
+bleibt komplett lokal, wie bisher. Beides ist je Anbieter umschaltbar,
+sofern die Organisation das Überschreiben erlaubt.
+
 ## 6. Betrieb: als Service oder in eigener Infrastruktur
 
 Formuliere eine neue Sektion „Betriebsmodelle":
@@ -115,12 +128,35 @@ Formuliere eine neue Sektion „Betriebsmodelle":
 
 ## 7. Zusammenarbeit und Enterprise
 
-Beschreibe, was live ist: Mandanten mit mehreren Nutzern, Kontowechsel
-auf einem Gerät mit strikt getrennten lokalen Daten, geteilter
-Firmenbestand. Kennzeichne als **in Arbeit**: Sicht auf die Recherchen
-aller Kollegen im Mandanten, ein Server-Worker, der Beobachtung und Radar
-für den Mandanten übernimmt, damit nichts vom aufgeklappten Laptop
-abhängt, sowie eine Anbindung an Microsoft Dynamics 365 Sales.
+Beschreibe, was live ist (Stand 2026-09-05):
+- **Organisationen:** Ein Nutzer legt eine Organisation an und wird
+  Admin. Weitere Mitglieder kommen nur per Einladungslink dazu; der Admin
+  gibt jede Beitrittsanfrage frei. Rollen: Owner, Admin, Mitglied.
+- **Kontowechsel** auf einem Gerät mit strikt getrennten lokalen Daten
+  (Chats, Schlüssel, Logins je Konto; nur lokale Modelle werden geteilt).
+- **Vorgaben für alle Mitglieder:** Module lassen sich für die
+  Organisation abschalten (LinkedIn-Beobachter, Personen-Watchlist,
+  Personen-Radar, Bildanalyse, Kontakt-Recherche, Mail, Telegram). Aus
+  heißt: verschwindet aus der App, Hintergrunddienste stoppen, und die
+  Kontakt-Recherche wird zusätzlich serverseitig abgewiesen.
+- **Zentrale Schlüssel ohne Auslesbarkeit** (siehe Abschnitt 5), auf
+  Wunsch mit Sperre lokaler Überschreibung und festen Modellvorgaben für
+  Chat und Hintergrundverarbeitung.
+- **Limits und Verbrauch:** Monatsbudget der Organisation oder
+  Tagesbudget je Mitglied für Aufrufe über die zentralen Schlüssel, wahlweise
+  harter Stopp oder nur Hinweis; Verbrauchsübersicht je Mitglied. Sage
+  ehrlich: Eigene Schlüssel der Mitglieder sind nicht messbar und bleiben
+  unlimitiert. Beträge sind Schätzungen in US-Dollar aus der Preistabelle.
+- **Geteiltes Firmenwissen:** Öffentliche Firmen- und Kontaktinformationen
+  liegen mit Quellenbeleg in einem gemeinsamen Bestand.
+
+Kennzeichne als **in Arbeit**: Recherchen (Transaktionen) mit der
+Organisation teilen und Firmen daraus übernehmen, Radar-Firmen an Kollegen
+weitergeben, ein Server-Worker, der Beobachtung und Radar für die
+Organisation übernimmt, damit nichts vom aufgeklappten Laptop abhängt,
+sowie eine Anbindung an Microsoft Dynamics 365 Sales. Ebenfalls in
+Arbeit: Festlegung je Organisation, welche Datenklassen an welche
+Modellklasse dürfen.
 
 Enterprise-Plan: keine Feature-Liste, keinen Preis. Aussage: „Individuelle
 Konnektoren zu ERP-, CRM- und Datensystemen sind umsetzbar, Umfang und
