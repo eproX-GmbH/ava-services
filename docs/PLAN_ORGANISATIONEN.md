@@ -225,3 +225,115 @@ zuerst, sie sind unabhaengig vom Proxy), dann O4 → O5 → O6.
    Organisationsschluessel verwenden UND lokal keinen eigenen haben.
    Mit eigenem Schluessel laeuft alles lokal wie heute. Nutzer koennen je
    Anbieter zwischen eigenem und Organisations-Schluessel wechseln.
+
+## 10. Teilen in der Organisation — Transaktionen und Radar-Firmen (Ideen 2026-09-05)
+
+### 10.1 Befund: Was heute wem gehoert
+
+| Datum | Eigentuemer heute | Folge fuer Organisationen |
+|---|---|---|
+| Transaktion (master-data `Transaction.userId`) | Nutzer | Andere Mitglieder sehen sie nicht; jede Gateway-Route prueft `userId = JWT sub` (`assertTransactionOwnership`) |
+| „Meine Firmen" (master-data `/tenants/me/companies`) | master-data-Tenant des Nutzers | master-data legt je Nutzer einen EIGENEN Tenant an (lazy aus Keycloak-Claims) → faktisch je Nutzer. Der master-data-Tenant ist NICHT der Gateway-Tenant |
+| Radar-Kandidaten (`DiscoveredCompany`) | global, ein Bestand fuer alle | Bereits fuer alle sichtbar; persoenlich sind nur Entscheidungen (`DiscoveryDecision.userId`) und die lokale ICP-Bewertung im Desktop |
+| Geparkte Firmen, CRM-Links, Quota, Verbrauch (Gateway) | Gateway-Tenant | Seit O2 teilen Mitglieder diese automatisch, weil `auth.tenantId` = Organisation |
+| Firmendaten selbst (Profil, Website, Kontakte …) | global (Domain = ID) | Nichts zu teilen — nur die Zuordnung „gehoert zu meinem Bestand" ist persoenlich |
+
+Kernaussage: Firmen sind global, Transaktionen und der Bestand sind
+persoenlich. „Teilen" heisst darum nie Daten kopieren, sondern eine
+**Freigabe** anlegen und eine **Uebernahme** in den eigenen Bestand
+ermoeglichen.
+
+### 10.2 Datenmodell (Gateway)
+
+```
+OrgShare   id, tenantId, kind ("transaction" | "radar_company"), refId
+           (transactionId bzw. discoveryId/masterCompanyId), sharedBy (actorId),
+           sharedAt, note?, revokedAt?
+           @@unique(tenantId, kind, refId)  @@index(tenantId, kind, sharedAt)
+OrgShareSeen  shareId, actorId, seenAt, dismissedAt?   -- „neu"-Marker und Ausblenden je Mitglied
+```
+
+Eine Freigabe gilt fuer die ganze Organisation (Entscheidung offen: gezielt an
+einzelne Mitglieder ist im Modell moeglich — `OrgShareRecipient` —, im ersten
+Schritt aber nicht noetig). Zuruecknehmen setzt `revokedAt`; wer schon
+uebernommen hat, behaelt seine Kopie.
+
+### 10.3 Transaktionen teilen
+
+**Freigeben (Eigentuemer):** Button „Mit Organisation teilen" in der
+Transaktions-Ansicht (und Chat-Tool `transaction_share`). Gateway
+`POST /v1/tenants/me/shares {kind:"transaction", refId}` — nur der
+Eigentuemer (Ownership-Pruefung wie bisher) und nur in einer Organisation.
+
+**Sehen (Mitglieder):** `GET /v1/transactions` bekommt `?includeShared=1`;
+das Gateway haengt die freigegebenen Transaktionen der Organisation an
+(master-data `/api/v1/transactions/:id` je Freigabe, gecacht) und markiert sie
+`shared: { by, at, name }`. Desktop: eigener Abschnitt „Aus der Organisation"
+in der Transaktionsliste, Zeile mit Namen des Teilenden. Die Detail-,
+Entitaeten-, Matrix- und Stream-Routen lassen Mitglieder derselben
+Organisation lesen, wenn eine aktive Freigabe existiert
+(`assertTransactionOwnership` → `assertTransactionReadable`: Eigentuemer ODER
+Freigabe). Schreibende Aktionen (Retry, Loeschen, Umbenennen) bleiben dem
+Eigentuemer vorbehalten.
+
+**Uebernehmen („Firmen aus dieser Transaktion uebernehmen"):** Die Firmen
+landen bewusst NICHT automatisch in „Meine Firmen". Der Button legt fuer
+das Mitglied eine eigene Transaktion mit denselben `companyIds` an — ueber
+den vorhandenen Import-Pfad (`POST /v1/imports/companies`, Quelle
+`shared:<transactionId>`). Vorteile: Matrix, EntityProgress und „Meine
+Firmen" funktionieren exakt wie bei jedem Import; die Producer laufen
+erneut an, werden aber durch Tier-Gate und 30-Tage-Frische fast
+vollstaendig uebersprungen (Kosten minimal, keine Sonderlogik fuer
+„Fortschritt kopieren"). Teil-Uebernahme (Checkbox je Firma) ist derselbe
+Pfad mit Teilmenge. Chat-Tool `transaction_adopt`.
+
+### 10.4 Radar-Firmen teilen
+
+Kandidaten liegen bereits im gemeinsamen Bestand; was fehlt, ist der
+Hinweis „X empfiehlt euch diese Firmen" unabhaengig vom eigenen ICP.
+
+**Teilen:** Checkbox-Auswahl im Radar → „Mit Organisation teilen" →
+`POST /v1/tenants/me/shares` je Firma (`kind:"radar_company"`, `refId =
+discoveryId`, Batch-Route). Chat-Tool `radar_share`.
+
+**Automatisch beim Empfaenger:** Radar-Ansicht bekommt oben den Block
+„Von der Organisation geteilt" (Name des Teilenden, Datum, Notiz), gespeist
+aus `GET /v1/tenants/me/shares?kind=radar_company&unseen=1`; er erscheint
+ohne ICP-Filter und unabhaengig von eigenen Entscheidungen. Der Desktop
+fragt die Freigaben im bestehenden 10-Minuten-Abgleich mit ab und zeigt
+eine Meldung „3 neue Firmen aus der Organisation" (Meldungs-Feed braucht
+companyId → hier passt es, weil es Firmen sind). Von dort wie gewohnt:
+annehmen (Import per Transaktion), ablehnen (eigene `DiscoveryDecision`),
+ausblenden (`OrgShareSeen.dismissedAt`).
+
+### 10.5 Umsetzungsstufen
+
+| Stufe | Inhalt | Aufwand |
+|---|---|---|
+| O8 | Gateway: OrgShare/OrgShareSeen, Routen `/v1/tenants/me/shares` (anlegen, Liste, zuruecknehmen, gesehen/ausgeblendet), `includeShared` in `/v1/transactions`, `assertTransactionReadable`; Desktop: Teilen-Button, Abschnitt „Aus der Organisation", Uebernehmen-Button (Import-Pfad), Chat-Tools transaction_share/transaction_adopt | 3 Tage |
+| O9 | Radar: Mehrfachauswahl + Teilen, Block „Von der Organisation geteilt", Meldung, Abgleich, Chat-Tool radar_share | 2 Tage |
+
+Reihenfolge nach O6/O7 (Limits, Doku), weil O8 auf dem stabilen
+Organisations-Tenant aufsetzt und O6 die Verbrauchszurechnung bei
+uebernommenen Transaktionen klaert (Producer-Laeufe des Uebernehmenden
+zaehlen auf sein Konto bzw. die Organisation, nicht auf den Teilenden).
+
+### 10.6 Entscheidungen, die noch fehlen
+
+1. **Sichtbarkeit:** Freigabe immer an die ganze Organisation (Vorschlag)
+   oder wahlweise an einzelne Mitglieder?
+2. **Ruecknahme:** Darf der Eigentuemer eine Freigabe zurueckziehen, und
+   behalten Mitglieder ihre bereits uebernommenen Transaktionen (Vorschlag:
+   ja, beides)?
+3. **Uebernahme-Mechanik:** Erneuter Import mit Tier-Gate (Vorschlag, robust
+   und ohne Sonderlogik) oder Kopie des Fortschritts ohne Producer-Lauf
+   (schneller sichtbar, aber eigene EntityProgress-Kopierlogik)?
+4. **master-data-Tenant:** Sollen Mitglieder einer Organisation langfristig
+   auch in master-data denselben Tenant teilen (dann waere „Meine Firmen"
+   automatisch der Organisationsbestand, und O8 wuerde zur reinen
+   Sichtbarkeits-Frage)? Vorschlag: NEIN fuer jetzt — persoenlicher Bestand
+   plus bewusste Uebernahme ist genau das gewuenschte Verhalten und
+   vermeidet eine master-data-Migration.
+5. **Radar-Meldung:** Meldung im Feed je geteilter Firma oder eine
+   Sammel-Meldung je Teilvorgang (Vorschlag: Sammel-Meldung, wie bei der
+   Watchlist)?
