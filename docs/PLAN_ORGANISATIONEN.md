@@ -318,22 +318,24 @@ Organisations-Tenant aufsetzt und O6 die Verbrauchszurechnung bei
 uebernommenen Transaktionen klaert (Producer-Laeufe des Uebernehmenden
 zaehlen auf sein Konto bzw. die Organisation, nicht auf den Teilenden).
 
-### 10.6 Entscheidungen, die noch fehlen
+### 10.6 Entscheidungen (2026-09-05, Joyce)
 
-1. **Sichtbarkeit:** Freigabe immer an die ganze Organisation (Vorschlag)
-   oder wahlweise an einzelne Mitglieder?
-2. **Ruecknahme:** Darf der Eigentuemer eine Freigabe zurueckziehen, und
-   behalten Mitglieder ihre bereits uebernommenen Transaktionen (Vorschlag:
-   ja, beides)?
-3. **Uebernahme-Mechanik:** Erneuter Import mit Tier-Gate (Vorschlag, robust
-   und ohne Sonderlogik) oder Kopie des Fortschritts ohne Producer-Lauf
-   (schneller sichtbar, aber eigene EntityProgress-Kopierlogik)?
-4. **master-data-Tenant:** Sollen Mitglieder einer Organisation langfristig
-   auch in master-data denselben Tenant teilen (dann waere „Meine Firmen"
-   automatisch der Organisationsbestand, und O8 wuerde zur reinen
-   Sichtbarkeits-Frage)? Vorschlag: NEIN fuer jetzt — persoenlicher Bestand
-   plus bewusste Uebernahme ist genau das gewuenschte Verhalten und
-   vermeidet eine master-data-Migration.
-5. **Radar-Meldung:** Meldung im Feed je geteilter Firma oder eine
-   Sammel-Meldung je Teilvorgang (Vorschlag: Sammel-Meldung, wie bei der
-   Watchlist)?
+1. **Sichtbarkeit:** Freigabe immer an die ganze Organisation.
+2. **Ruecknahme:** Eigentuemer darf zurueckziehen; bereits uebernommene
+   Transaktionen bleiben beim Mitglied.
+3. **Uebernahme-Mechanik: Fortschritt KOPIEREN, nicht neu verarbeiten.**
+   Der Uebernehmende bekommt eine eigene Transaktion mit denselben
+   `companyIds` (master-data `Transaction`), und das Gateway kopiert die
+   `EntityProgress`-Zeilen der Quell-Transaktion (Stufe, Zustand,
+   Zeitstempel, Fehlermeldung, Tier/Modell) auf die neue transactionId —
+   keine Producer-Dispatches. Die Firmendaten selbst sind global und liegen
+   schon vor. Erst ein spaeterer Refresh (Datenrefresh/Retry) laesst
+   Producer fuer den Uebernehmenden laufen. Das braucht in master-data eine
+   Route „Transaktion aus Vorlage anlegen" (userId = Uebernehmender,
+   companyIds = Quelle, name = „<Quellname> (uebernommen von <Name>)") und
+   im Gateway `copyEntityProgress(fromTx, toTx)`.
+4. **master-data-Tenant:** bleibt je Nutzer; kein gemeinsamer Bestand,
+   sondern bewusste Uebernahme.
+5. **Radar-Meldung:** Sammel-Meldung je Teilvorgang.
+
+Reihenfolge bestaetigt: O6 (Go 2026-09-05) → O7 → O8 → O9.
