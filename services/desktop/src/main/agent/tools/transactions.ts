@@ -51,7 +51,8 @@ export function buildTransactionTools(ctx: Ctx): Tool[] {
         page?: number;
         pageSize?: number;
       }>("/v1/transactions", {
-        query: { page: args.page, pageSize: args.pageSize },
+        // O8 — geteilte Vorgaenge der Organisation mitliefern (Feld `shared`).
+        query: { page: args.page, pageSize: args.pageSize, includeShared: 1 },
         signal: c.signal,
       });
       return {
@@ -190,5 +191,89 @@ export function buildTransactionTools(ctx: Ctx): Tool[] {
     preview: () => "pipeline matrix fetched",
   });
 
-  return [list, get, entities, errors, pipeline];
+  // O8 — Teilen in der Organisation.
+  const share = defineTool({
+    name: "transaction_share",
+    summary: "Einen eigenen Vorgang mit der Organisation teilen (oder die Freigabe zuruecknehmen).",
+    category: "transaktion vorgang teilen organisation freigabe",
+    description:
+      "Teilt einen eigenen Vorgang (Transaktion) mit allen Mitgliedern der Organisation: sie sehen ihn unter 'Aus der Organisation' " +
+      "und koennen ihn uebernehmen. Mit zuruecknehmen=true wird die Freigabe beendet (bereits uebernommene Kopien bleiben). " +
+      "transactionId aus transactions_list. Fragt vor der Ausfuehrung nach.",
+    parameters: {
+      type: "object",
+      required: ["transactionId"],
+      properties: {
+        transactionId: { type: "string" },
+        zuruecknehmen: { type: "boolean", description: "true = Freigabe zuruecknehmen statt teilen" },
+        notiz: { type: "string", description: "Optionale Notiz fuer die Mitglieder" },
+      },
+    },
+    schema: yup
+      .object({ transactionId: yup.string().trim().min(4).required(), zuruecknehmen: yup.boolean().optional(), notiz: yup.string().trim().max(500).optional() })
+      .noUnknown(true),
+    preview: (r: { ok?: boolean; abgebrochen?: boolean; zurueckgenommen?: boolean }) =>
+      r.abgebrochen ? "abgebrochen" : r.zurueckgenommen ? "Freigabe zurueckgenommen" : "mit Organisation geteilt",
+    run: async (args, c) => {
+      const value = await c.ui.confirmAction(
+        {
+          kind: "additive",
+          prompt: args.zuruecknehmen
+            ? `Freigabe des Vorgangs ${args.transactionId.slice(0, 8)}… zuruecknehmen?`
+            : `Vorgang ${args.transactionId.slice(0, 8)}… mit allen Mitgliedern der Organisation teilen? Sie koennen ihn ansehen und uebernehmen.`,
+          confirmValue: "ja",
+          options: [
+            { value: "ja", label: args.zuruecknehmen ? "Zuruecknehmen" : "Teilen" },
+            { value: "nein", label: "Abbrechen" },
+          ],
+        },
+        c.signal,
+      );
+      if (value !== "ja") return { ok: false, abgebrochen: true };
+      if (args.zuruecknehmen) {
+        const d = await gateway.request<{ shared?: { shareId: string } }>(`/v1/transactions/${encodeURIComponent(args.transactionId)}`, { method: "GET" });
+        if (!d.shared) return { ok: false, hinweis: "Dieser Vorgang ist nicht geteilt." };
+        await gateway.request(`/v1/tenants/me/shares/${encodeURIComponent(d.shared.shareId)}`, { method: "DELETE" });
+        return { ok: true, zurueckgenommen: true };
+      }
+      await gateway.request("/v1/tenants/me/shares", { method: "POST", body: { kind: "transaction", refId: args.transactionId, ...(args.notiz ? { note: args.notiz } : {}) } });
+      return { ok: true };
+    },
+  });
+
+  const adopt = defineTool({
+    name: "transaction_adopt",
+    summary: "Einen geteilten Vorgang der Organisation uebernehmen (eigene Kopie samt Verarbeitungsfortschritt).",
+    category: "transaktion vorgang uebernehmen organisation firmen",
+    description:
+      "Legt fuer dich eine eigene Kopie eines mit der Organisation geteilten Vorgangs an: gleiche Firmen, Verarbeitungsfortschritt " +
+      "wird kopiert, nichts wird neu verarbeitet. Die Firmen erscheinen danach in 'Meine Firmen'. transactionId aus " +
+      "transactions_list (Eintraege mit shared.own=false). Fragt vor der Ausfuehrung nach.",
+    parameters: { type: "object", required: ["transactionId"], properties: { transactionId: { type: "string" }, name: { type: "string", description: "Optionaler Name der Kopie" } } },
+    schema: yup.object({ transactionId: yup.string().trim().min(4).required(), name: yup.string().trim().max(200).optional() }).noUnknown(true),
+    preview: (r: { ok?: boolean; abgebrochen?: boolean; transactionId?: string; copiedProgress?: number }) =>
+      r.abgebrochen ? "abgebrochen" : `uebernommen → ${r.transactionId?.slice(0, 8)}… (${r.copiedProgress ?? 0} Fortschrittszeilen kopiert)`,
+    run: async (args, c) => {
+      const value = await c.ui.confirmAction(
+        {
+          kind: "additive",
+          prompt: `Vorgang ${args.transactionId.slice(0, 8)}… uebernehmen? Du bekommst eine eigene Kopie samt Fortschritt; die Firmen landen in 'Meine Firmen'.`,
+          confirmValue: "ja",
+          options: [
+            { value: "ja", label: "Uebernehmen" },
+            { value: "nein", label: "Abbrechen" },
+          ],
+        },
+        c.signal,
+      );
+      if (value !== "ja") return { ok: false, abgebrochen: true };
+      const r = await gateway.request<{ transactionId: string; name: string; companyCount: number; copiedProgress: number }>(
+        `/v1/transactions/${encodeURIComponent(args.transactionId)}/adopt`,
+        { method: "POST", body: args.name ? { name: args.name } : {} },
+      );
+      return { ok: true, ...r, seite: `#/transactions/${r.transactionId}` };
+    },
+  });
+
+  return [list, get, entities, errors, pipeline, share, adopt];
 }

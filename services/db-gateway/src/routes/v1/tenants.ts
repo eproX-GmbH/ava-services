@@ -15,6 +15,8 @@
 import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
 import { HTTPException } from "hono/http-exception";
 import { getGatewayPool } from "../../lib/producer-pools";
+import { createShare, listShares, revokeShare, markShare } from "../../lib/org-shares";
+import { callUpstream } from "../../lib/upstream";
 import {
   createOrganisation,
   requestJoin,
@@ -177,5 +179,82 @@ tenantsRouter.openapi(
   async (c) => {
     const inviteToken = await wrap(() => rotateInvite(getGatewayPool(), c.get("auth")));
     return c.json({ ok: true as const, inviteToken });
+  },
+);
+
+
+// ---- O8 — Freigaben (Transaktionen, Radar-Firmen) ---------------------------
+
+const ShareKind = z.enum(["transaction", "radar_company"]);
+
+tenantsRouter.openapi(
+  createRoute({
+    method: "post",
+    path: "/tenants/me/shares",
+    tags: ["tenants"],
+    summary: "Mit der Organisation teilen (Transaktion: nur der Eigentuemer).",
+    request: {
+      body: { content: { "application/json": { schema: z.object({ kind: ShareKind, refId: z.string().min(1).max(200), note: z.string().max(500).optional() }) } } },
+    },
+    responses: { 201: { content: { "application/json": { schema: z.object({}).passthrough() } }, description: "geteilt" } },
+  }),
+  async (c) => {
+    const auth = c.get("auth");
+    const { kind, refId, note } = c.req.valid("json");
+    if (kind === "transaction") {
+      const t = await callUpstream<{ userId?: string }>(c, "masterData", `/api/v1/transactions/${encodeURIComponent(refId)}`).catch(() => null);
+      if (!t) throw new HTTPException(404, { message: "transaction_not_found" });
+      if (t.userId && t.userId !== auth.actorId) throw new HTTPException(403, { message: "Nur der Eigentuemer kann eine Transaktion teilen." });
+    }
+    const row = await wrap(() => createShare(getGatewayPool(), auth, kind, refId, note ?? null));
+    return c.json({ ok: true as const, share: row }, 201);
+  },
+);
+
+tenantsRouter.openapi(
+  createRoute({
+    method: "get",
+    path: "/tenants/me/shares",
+    tags: ["tenants"],
+    summary: "Freigaben der Organisation (optional nur ungesehene).",
+    request: { query: z.object({ kind: ShareKind.optional(), unseen: z.coerce.number().int().min(0).max(1).default(0), includeDismissed: z.coerce.number().int().min(0).max(1).default(0) }) },
+    responses: { 200: { content: { "application/json": { schema: z.object({}).passthrough() } }, description: "ok" } },
+  }),
+  async (c) => {
+    const { kind, unseen, includeDismissed } = c.req.valid("query");
+    const items = await listShares(getGatewayPool(), c.get("auth"), { kind, unseenOnly: unseen === 1, includeDismissed: includeDismissed === 1 });
+    return c.json({ items });
+  },
+);
+
+tenantsRouter.openapi(
+  createRoute({
+    method: "delete",
+    path: "/tenants/me/shares/{id}",
+    tags: ["tenants"],
+    summary: "Freigabe zuruecknehmen (Teilender oder Admin); bereits uebernommene Kopien bleiben.",
+    request: { params: z.object({ id: z.string().min(1).max(64) }) },
+    responses: { 200: { content: { "application/json": { schema: Ok } }, description: "zurueckgenommen" } },
+  }),
+  async (c) => {
+    const { id } = c.req.valid("param");
+    await wrap(() => revokeShare(getGatewayPool(), c.get("auth"), id));
+    return c.json({ ok: true as const });
+  },
+);
+
+tenantsRouter.openapi(
+  createRoute({
+    method: "post",
+    path: "/tenants/me/shares/{id}/{was}",
+    tags: ["tenants"],
+    summary: "Freigabe als gesehen markieren oder ausblenden (nur fuer mich).",
+    request: { params: z.object({ id: z.string().min(1).max(64), was: z.enum(["seen", "dismiss"]) }) },
+    responses: { 200: { content: { "application/json": { schema: Ok } }, description: "markiert" } },
+  }),
+  async (c) => {
+    const { id, was } = c.req.valid("param");
+    await wrap(() => markShare(getGatewayPool(), c.get("auth"), id, was));
+    return c.json({ ok: true as const });
   },
 );

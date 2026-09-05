@@ -430,6 +430,7 @@ model Tenant {
   policy      TenantPolicy?
   providers   TenantProvider[]
   quota       TenantQuota?
+  shares      OrgShare[]
 }
 
 /// O1 — Beitrittsanfrage: bis zur Freigabe bleibt der Nutzer in seinem
@@ -479,6 +480,36 @@ model TenantProvider {
   tenant        Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   @@id([tenantId, kind])
+}
+
+/// O8 — Freigabe innerhalb der Organisation (Transaktion oder Radar-Firma).
+/// Gilt fuer die ganze Organisation; revokedAt = zurueckgenommen (bereits
+/// uebernommene Kopien bleiben). refId = transactionId bzw. discoveryId.
+model OrgShare {
+  id        String    @id @default(cuid())
+  tenantId  String
+  kind      String    // transaction | radar_company
+  refId     String
+  sharedBy  String
+  sharedAt  DateTime  @default(now())
+  note      String?
+  revokedAt DateTime?
+  tenant    Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  seen      OrgShareSeen[]
+
+  @@unique([tenantId, kind, refId])
+  @@index([tenantId, kind, sharedAt])
+}
+
+/// O8 — „gesehen"/„ausgeblendet" je Mitglied.
+model OrgShareSeen {
+  shareId     String
+  actorId     String
+  seenAt      DateTime  @default(now())
+  dismissedAt DateTime?
+  share       OrgShare  @relation(fields: [shareId], references: [id], onDelete: Cascade)
+
+  @@id([shareId, actorId])
 }
 
 /// O6 — Limits fuer Stellvertreter-Aufrufe (Organisationsschluessel).

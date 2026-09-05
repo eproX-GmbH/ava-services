@@ -15,6 +15,7 @@ import {
 } from "../../lib/retry-publish";
 import { heldSubset, isHeld } from "../../lib/company-holds";
 import { hiddenTransactionSubset } from "../../lib/company-tombstones";
+import { activeShareFor, listShares, copyEntityProgress } from "../../lib/org-shares";
 import { resolveCompanyNames } from "../../lib/company-names";
 import { logger } from "../../lib/logger";
 import {
@@ -243,8 +244,8 @@ const listRoute = createRoute({
   method: "get",
   path: "/transactions",
   tags: [tag],
-  summary: "List my transactions (W2)",
-  request: { query: PaginationQuery },
+  summary: "List my transactions (W2); includeShared=1 haengt Freigaben der Organisation an (O8)",
+  request: { query: PaginationQuery.extend({ includeShared: z.coerce.number().int().min(0).max(1).default(0) }) },
   responses: {
     200: {
       content: { "application/json": { schema: PaginatedShape(TransactionShape) } },
@@ -255,7 +256,7 @@ const listRoute = createRoute({
 });
 
 transactionsRouter.openapi(listRoute, async (c) => {
-  const { page, pageSize } = c.req.valid("query");
+  const { page, pageSize, includeShared } = c.req.valid("query");
 
   // Upstream returns an unpaginated array (filtered by token's userId).
   // Gateway sorts by `createdAt` descending (newest first — what every
@@ -263,7 +264,31 @@ transactionsRouter.openapi(listRoute, async (c) => {
   // then slices client-side. TODO upstream: add pageNumber/pageSize +
   // server-side ordering. Cached for the request so a follow-up ownership
   // check on a per-id route reuses the same fetch.
-  const all = await getMyTransactions(c);
+  const eigene = await getMyTransactions(c);
+  const auth = c.get("auth");
+  // O8 — Freigaben der Organisation: eigene Transaktionen markieren,
+  // fremde geteilte anhaengen (Detail je Freigabe aus master-data).
+  const shares = includeShared ? await listShares(getGatewayPool(), auth, { kind: "transaction" }) : [];
+  const shareByTx = new Map(shares.map((sh) => [sh.refId, sh]));
+  const eigeneIds = new Set(eigene.map((t) => (t as { id?: string }).id ?? ""));
+  const fremde: UpstreamTransaction[] = [];
+  for (const sh of shares) {
+    if (eigeneIds.has(sh.refId)) continue;
+    try {
+      const t = await callUpstream<UpstreamTransaction>(c, "masterData", `/api/v1/transactions/${encodeURIComponent(sh.refId)}`);
+      if (t) fremde.push(t);
+    } catch {
+      /* Quelle geloescht oder nicht erreichbar — Freigabe ueberspringen */
+    }
+  }
+  const markiere = (t: UpstreamTransaction): UpstreamTransaction => {
+    const id = t.id ?? t.transactionId ?? "";
+    const sh = shareByTx.get(id);
+    return sh
+      ? { ...t, shared: { shareId: sh.id, by: sh.sharedBy, byName: sh.sharedByName, at: sh.sharedAt, note: sh.note, own: t.userId === auth.actorId } }
+      : t;
+  };
+  const all = [...eigene, ...fremde].map(markiere);
 
   // v0.1.431 — P3: Transaktionen, die durch Firmen-Loeschungen leer
   // geworden sind, aus der Liste nehmen ("ewig viele leere
@@ -348,10 +373,14 @@ transactionsRouter.openapi(detailRoute, async (c) => {
   );
   await assertTransactionOwnership(c, upstream as Record<string, unknown>);
   // Same gateway-owned overlay as the list route — see comment there.
-  const annotated =
-    !upstream.name
-      ? { ...upstream, name: getTransactionName(transactionId) ?? upstream.name }
-      : upstream;
+  // O8 — Freigabe-Marker (eigene geteilte oder fremde geteilte Transaktion).
+  const share = await activeShareFor(getGatewayPool(), c.get("auth").tenantId, "transaction", transactionId);
+  const annotated = {
+    ...(!upstream.name ? { ...upstream, name: getTransactionName(transactionId) ?? upstream.name } : upstream),
+    ...(share
+      ? { shared: { shareId: share.id, by: share.sharedBy, byName: null, at: share.sharedAt, note: share.note, own: upstream.userId === c.get("auth").actorId } }
+      : {}),
+  };
   return c.json(annotated, 200);
 });
 
@@ -1447,7 +1476,7 @@ transactionsRouter.openapi(retryRoute, async (c) => {
   const { transactionId, companyId } = c.req.valid("param");
   const { stage, companyName } = c.req.valid("json");
 
-  await assertTransactionOwnershipById(c, transactionId);
+  await assertTransactionOwnershipById(c, transactionId, { allowShared: false });
 
   // v0.1.430 — P2: Firma ausgesetzt? Dann keinerlei Wiederanlauf. Dieser
   // Endpunkt ist der Chokepoint fuer ALLE Retry-Ausloeser (Agent-Tool,
@@ -1823,6 +1852,11 @@ interface UpstreamTransaction {
   id?: string;
   transactionId?: string;
   userId?: string;
+  name?: string | null;
+  companyCount?: number | null;
+  startTime?: string | null;
+  createdAt?: string;
+  shared?: { shareId: string; by: string; byName: string | null; at: string; note: string | null; own: boolean };
 }
 
 async function getMyTransactions(c: Context): Promise<UpstreamTransaction[]> {
@@ -1929,6 +1963,9 @@ async function assertTransactionOwnership(
     return assertTransactionOwnershipById(c, txnId);
   }
   if (owner !== actorId) {
+    // O8 — Lesezugriff fuer Mitglieder derselben Organisation bei aktiver Freigabe.
+    const txnId = ((txn as UpstreamTransaction).id ?? (txn as UpstreamTransaction).transactionId) as string | undefined;
+    if (txnId && (await activeShareFor(getGatewayPool(), c.get("auth").tenantId, "transaction", txnId))) return;
     throw new HTTPException(403, { message: "forbidden" });
   }
 }
@@ -1936,6 +1973,7 @@ async function assertTransactionOwnership(
 async function assertTransactionOwnershipById(
   c: Context,
   transactionId: string,
+  opts: { allowShared?: boolean } = {},
 ): Promise<void> {
   // Schneller Pfad: die (pro Request memoisierte) Liste der letzten 50
   // Vorgaenge deckt den Normalfall ab.
@@ -1944,6 +1982,11 @@ async function assertTransactionOwnershipById(
     all.some((t) => t.id === transactionId || t.transactionId === transactionId)
   ) {
     return;
+  }
+  // O8 — geteilte Transaktion der Organisation: lesen ja, schreiben nein.
+  if (opts.allowShared !== false) {
+    const share = await activeShareFor(getGatewayPool(), c.get("auth").tenantId, "transaction", transactionId);
+    if (share) return;
   }
 
   // v0.1.504 — BUGFIX: die Liste ist auf Seite 1 / 50 Zeilen begrenzt.
@@ -2087,4 +2130,41 @@ transactionsRouter.openapi(processingFeedRoute, async (c) => {
     },
     200,
   );
+});
+
+
+// ---- O8 — Transaktion uebernehmen ----------------------------------------
+//
+// Eigene Transaktion fuer den Aufrufer mit den companyIds der (eigenen oder
+// geteilten) Quelle; der Verarbeitungsfortschritt (EntityProgress) wird
+// kopiert, KEIN Producer-Dispatch (Entscheidung 2026-09-05).
+
+const adoptRoute = createRoute({
+  method: "post",
+  path: "/transactions/{transactionId}/adopt",
+  tags: [tag],
+  summary: "Geteilte Transaktion uebernehmen: eigene Kopie mit kopiertem Fortschritt (O8)",
+  request: {
+    params: z.object({ transactionId: z.string().min(1) }),
+    body: { content: { "application/json": { schema: z.object({ name: z.string().max(200).optional() }) } }, required: false },
+  },
+  responses: {
+    201: { content: { "application/json": { schema: z.object({}).passthrough() } }, description: "uebernommen" },
+    ...errorResponses,
+  },
+});
+
+transactionsRouter.openapi(adoptRoute, async (c) => {
+  const { transactionId } = c.req.valid("param");
+  const body = (await c.req.json().catch(() => ({}))) as { name?: string };
+  await assertTransactionOwnershipById(c, transactionId); // eigene ODER geteilte Quelle
+  const neu = await callUpstream<{ id: string; companyIds: string[]; companyCount: number; name: string; sourceUserId: string }>(
+    c,
+    "masterData",
+    `/api/v1/transactions/${encodeURIComponent(transactionId)}/adopt`,
+    { method: "POST", body: { name: body?.name } },
+  );
+  const copied = await copyEntityProgress(getGatewayPool(), transactionId, neu.id);
+  logger.info({ from: transactionId, to: neu.id, copied, actorId: c.get("auth").actorId }, "transaction adopted (O8)");
+  return c.json({ transactionId: neu.id, name: neu.name, companyCount: neu.companyCount, copiedProgress: copied }, 201);
 });

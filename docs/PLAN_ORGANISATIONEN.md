@@ -310,7 +310,7 @@ ausblenden (`OrgShareSeen.dismissedAt`).
 
 | Stufe | Inhalt | Aufwand |
 |---|---|---|
-| O8 | Gateway: OrgShare/OrgShareSeen, Routen `/v1/tenants/me/shares` (anlegen, Liste, zuruecknehmen, gesehen/ausgeblendet), `includeShared` in `/v1/transactions`, `assertTransactionReadable`; Desktop: Teilen-Button, Abschnitt „Aus der Organisation", Uebernehmen-Button (Import-Pfad), Chat-Tools transaction_share/transaction_adopt | 3 Tage |
+| O8 ✅ | 2026-09-05 (v0.1.550): master-data `POST /api/v1/transactions/:id/adopt` (eigene Zeile mit companyIds der Quelle); Gateway OrgShare/OrgShareSeen (Migration 20260905_org_shares), Routen `/v1/tenants/me/shares` (anlegen nur Eigentuemer, Liste, zuruecknehmen durch Teilenden/Admin, seen/dismiss), `/v1/transactions?includeShared=1` markiert eigene geteilte und haengt fremde an (`shared{by,at,own}`), Lesezugriff fuer Mitglieder bei aktiver Freigabe (Retry bleibt Eigentuemer), `POST /v1/transactions/:id/adopt` kopiert EntityProgress (kein Dispatch); Desktop: Abschnitt „Aus der Organisation" mit Uebernehmen, Detail-Buttons Teilen/Zuruecknehmen/Uebernehmen, Chat-Tools transaction_share/transaction_adopt. Tests (PGlite, 17): Freigabe, Sicht je Mitglied, seen/dismiss, Rechte, Fortschritts-Kopie idempotent, Reaktivierung, Cascade | 3 Tage |
 | O9 | Radar: Mehrfachauswahl + Teilen, Block „Von der Organisation geteilt", Meldung, Abgleich, Chat-Tool radar_share | 2 Tage |
 
 Reihenfolge nach O6/O7 (Limits, Doku), weil O8 auf dem stabilen

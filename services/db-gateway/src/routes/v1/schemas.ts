@@ -298,6 +298,17 @@ export const TransactionShape = z
     // `userId` is the ownership field (gateway-side ownership check). Upstream
     // surfaces it on the detail route; not always present on list rows.
     userId: z.string().optional(),
+    /** O8 — mit der Organisation geteilt (Freigabe aktiv). */
+    shared: z
+      .object({
+        shareId: z.string(),
+        by: z.string(),
+        byName: z.string().nullable().optional(),
+        at: z.string(),
+        note: z.string().nullable().optional(),
+        own: z.boolean(),
+      })
+      .optional(),
     createdAt: z.string(),
     updatedAt: z.string(),
   })

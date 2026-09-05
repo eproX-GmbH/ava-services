@@ -5,7 +5,7 @@ NICHT direkt bearbeiten — die Quelle der Wahrheit ist `services/desktop/src/ma
 Lauf via `pnpm -F @ava/desktop tools:doc` (oder automatisch via `build:typecheck`).
 
 Stand: 2026-09-05
-Anzahl Tools: 211
+Anzahl Tools: 213
 
 ## Firmen (13)
 
@@ -186,7 +186,17 @@ _Parameter:_
 - `stage: string (enum: structuredContent, companyPublication, website, companyProfile, companyContact, companyEvaluation, deepResearch, jobPostings)` (required) — Which stage to re-run. `companyEvaluation` fans out across all 5 evaluation producers in parallel.
 - `companyName: string` — Optional — some upstream stages re-resolve by name (helps when the row's stored name had a typo).
 
-## Transaktionen (5)
+## Transaktionen (7)
+
+### `transaction_adopt`
+
+_Datei:_ `services/desktop/src/main/agent/tools/transactions.ts`
+
+Legt fuer dich eine eigene Kopie eines mit der Organisation geteilten Vorgangs an: gleiche Firmen, Verarbeitungsfortschritt wird kopiert, nichts wird neu verarbeitet. Die Firmen erscheinen danach in 'Meine Firmen'. transactionId aus transactions_list (Eintraege mit shared.own=false). Fragt vor der Ausfuehrung nach.
+
+_Parameter:_
+- `transactionId: string` (required)
+- `name: string` — Optionaler Name der Kopie
 
 ### `transaction_entities`
 
@@ -223,6 +233,17 @@ Get the per-company × per-stage state matrix for a transaction. Each row carrie
 
 _Parameter:_
 - `transactionId: string` (required)
+
+### `transaction_share`
+
+_Datei:_ `services/desktop/src/main/agent/tools/transactions.ts`
+
+Teilt einen eigenen Vorgang (Transaktion) mit allen Mitgliedern der Organisation: sie sehen ihn unter 'Aus der Organisation' und koennen ihn uebernehmen. Mit zuruecknehmen=true wird die Freigabe beendet (bereits uebernommene Kopien bleiben). transactionId aus transactions_list. Fragt vor der Ausfuehrung nach.
+
+_Parameter:_
+- `transactionId: string` (required)
+- `zuruecknehmen: boolean` — true = Freigabe zuruecknehmen statt teilen
+- `notiz: string` — Optionale Notiz fuer die Mitglieder
 
 ### `transactions_list`
 

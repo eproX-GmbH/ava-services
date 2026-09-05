@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Link, useParams } from "react-router-dom";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Link, useNavigate, useParams } from "react-router-dom";
+import { useAuthStore } from "../store/auth";
 import { gatewayFetch, gatewaySSE } from "../api/gateway";
 import { fmtDate } from "../lib/format";
 import { DiagnosticsPanel } from "../components/DiagnosticsPanel";
@@ -67,6 +68,9 @@ interface Transaction {
   companyCount?: number | null;
   createdAt: string;
   name?: string | null;
+  userId?: string;
+  /** O8 — mit der Organisation geteilt. */
+  shared?: { shareId: string; by: string; byName?: string | null; at: string; note?: string | null; own: boolean };
 }
 
 interface ProcessingError {
@@ -369,8 +373,19 @@ export function TransactionDetail() {
               <dt>Firmen</dt>
               <dd>{detail.data.companyCount ?? ""}</dd>
             </div>
+            {detail.data.shared && (
+              <div>
+                <dt>Organisation</dt>
+                <dd>
+                  {detail.data.shared.own
+                    ? `von dir geteilt am ${fmtDate(detail.data.shared.at)}`
+                    : `geteilt von ${detail.data.shared.byName ?? `${detail.data.shared.by.slice(0, 8)}…`} am ${fmtDate(detail.data.shared.at)}`}
+                </dd>
+              </div>
+            )}
           </dl>
         )}
+        {detail.data && <OrgAktionen tx={detail.data} />}
 
         {pipeline.isLoading && <p>Pipeline wird geladen…</p>}
         {pipeline.error && (
@@ -658,4 +673,66 @@ function stageLabelForService(service?: string): string {
 function fmtErrorTime(input?: string | null): string {
   if (!input) return "";
   return formatTime(input);
+}
+
+
+// O8 — Teilen (Eigentuemer) / Freigabe zuruecknehmen / Uebernehmen (Mitglied).
+function OrgAktionen({ tx }: { tx: Transaction }) {
+  const qc = useQueryClient();
+  const navigate = useNavigate();
+  const actorId = useAuthStore((s) => s.actorId);
+  const istEigentuemer = !tx.userId || tx.userId === actorId;
+  const geteilt = tx.shared ?? null;
+  const [meldung, setMeldung] = useState<string | null>(null);
+
+  const teilen = useMutation({
+    mutationFn: () => gatewayFetch("/v1/tenants/me/shares", { method: "POST", body: { kind: "transaction", refId: tx.id } }),
+    onSuccess: () => {
+      setMeldung("Mit der Organisation geteilt. Mitglieder sehen den Vorgang unter 'Aus der Organisation'.");
+      void qc.invalidateQueries({ queryKey: ["transaction", tx.id] });
+      void qc.invalidateQueries({ queryKey: ["transactions"] });
+    },
+    onError: (e) => setMeldung((e as Error).message),
+  });
+  const zurueck = useMutation({
+    mutationFn: () => gatewayFetch(`/v1/tenants/me/shares/${encodeURIComponent(geteilt!.shareId)}`, { method: "DELETE" }),
+    onSuccess: () => {
+      setMeldung("Freigabe zurückgenommen. Bereits übernommene Kopien bleiben bei den Kolleginnen und Kollegen.");
+      void qc.invalidateQueries({ queryKey: ["transaction", tx.id] });
+      void qc.invalidateQueries({ queryKey: ["transactions"] });
+    },
+    onError: (e) => setMeldung((e as Error).message),
+  });
+  const uebernehmen = useMutation({
+    mutationFn: () =>
+      gatewayFetch<{ transactionId: string; copiedProgress: number }>(`/v1/transactions/${encodeURIComponent(tx.id)}/adopt`, { method: "POST", body: {} }),
+    onSuccess: (r) => {
+      void qc.invalidateQueries({ queryKey: ["transactions"] });
+      void qc.invalidateQueries({ queryKey: ["companies"] });
+      navigate(`/transactions/${r.transactionId}`);
+    },
+    onError: (e) => setMeldung((e as Error).message),
+  });
+
+  const busy = teilen.isPending || zurueck.isPending || uebernehmen.isPending;
+  return (
+    <div className="org-actions" style={{ marginBottom: "1rem" }}>
+      {istEigentuemer && !geteilt && (
+        <button type="button" className="btn" disabled={busy} onClick={() => teilen.mutate()} title="Mitglieder deiner Organisation können den Vorgang ansehen und übernehmen">
+          Mit Organisation teilen
+        </button>
+      )}
+      {istEigentuemer && geteilt && (
+        <button type="button" className="btn" disabled={busy} onClick={() => zurueck.mutate()}>
+          Freigabe zurücknehmen
+        </button>
+      )}
+      {!istEigentuemer && (
+        <button type="button" className="primary" disabled={busy} onClick={() => uebernehmen.mutate()} title="Eigene Kopie mit kopiertem Verarbeitungsfortschritt; die Firmen erscheinen in 'Meine Firmen'">
+          {uebernehmen.isPending ? "Übernimmt…" : "Firmen aus diesem Vorgang übernehmen"}
+        </button>
+      )}
+      {meldung && <span className="muted small">{meldung}</span>}
+    </div>
+  );
 }
