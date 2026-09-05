@@ -18,7 +18,9 @@ import {
   ORG_FEATURES,
   type LlmProviderKind,
   type OrgPolicy,
+  type OrgQuota,
   type OrgState,
+  type OrgUsageRow,
   type ProviderCatalogEntry,
 } from "../../../shared/types";
 
@@ -173,6 +175,8 @@ export function Organisation() {
           <Mitglieder st={st} me={me} admin={admin} busy={busy} aktion={aktion} />
           <Vorgaben st={st} admin={admin} busy={busy} aktion={aktion} />
           <Schluessel st={st} admin={admin} busy={busy} aktion={aktion} />
+          <Limits st={st} admin={admin} busy={busy} aktion={aktion} />
+          <Verbrauch st={st} me={me} />
           <Verlassen st={st} me={me} busy={busy} aktion={aktion} />
         </>
       )}
@@ -753,6 +757,201 @@ function Verlassen({ st, me, busy, aktion }: { st: OrgState; me: WhoamiLite; bus
           Organisation verlassen
         </button>
       </div>
+    </section>
+  );
+}
+
+// ---- O6 — Limits und Verbrauch ----------------------------------------------
+
+function usd(cents: number | null | undefined): string {
+  return cents == null ? "—" : `${(cents / 100).toLocaleString("de-DE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USD`;
+}
+
+function Limits({ st, admin, busy, aktion }: { st: OrgState; admin: boolean; busy: boolean; aktion: Aktion }) {
+  const quelle: OrgQuota = st.quota ?? { mode: "off", orgMonthlyCents: null, userDailyCents: null, hardStop: true };
+  const [entwurf, setEntwurf] = useState<OrgQuota>(quelle);
+  useEffect(() => setEntwurf(quelle), [st.quota]); // eslint-disable-line react-hooks/exhaustive-deps
+  const geaendert = JSON.stringify(entwurf) !== JSON.stringify(quelle);
+
+  const speichern = () =>
+    aktion(async () => {
+      await gatewayFetch("/v1/tenants/me/quota", { method: "PUT", body: entwurf });
+    }, "Limit gespeichert. Gilt sofort für alle Aufrufe über Organisationsschlüssel.");
+
+  const beschreibung =
+    quelle.mode === "off"
+      ? "Kein Limit gesetzt."
+      : quelle.mode === "org_total"
+        ? `Monatsbudget der Organisation: ${usd(quelle.orgMonthlyCents)} · ${quelle.hardStop ? "harter Stopp" : "nur Hinweis"}`
+        : `Tagesbudget je Mitglied: ${usd(quelle.userDailyCents)} · ${quelle.hardStop ? "harter Stopp" : "nur Hinweis"}`;
+
+  return (
+    <section className="provider-section">
+      <h3>Limits</h3>
+      <p className="muted small">
+        Gilt nur für Aufrufe über Organisationsschlüssel; eigene Schlüssel sind nicht messbar und bleiben unlimitiert.
+        Beträge in US-Dollar, geschätzt aus der Preistabelle des Modellkatalogs.
+      </p>
+      {!admin ? (
+        <div className="active-config-card">
+          <div className="active-config-card__row">
+            <span className="active-config-card__label">Limit</span>
+            <span className="active-config-card__value">{beschreibung}</span>
+          </div>
+        </div>
+      ) : (
+        <>
+          <div className="provider-grid">
+            <label className="field">
+              <span>Art</span>
+              <select value={entwurf.mode} disabled={busy} onChange={(e) => setEntwurf({ ...entwurf, mode: e.target.value as OrgQuota["mode"] })}>
+                <option value="off">kein Limit</option>
+                <option value="org_total">Gesamtbudget der Organisation je Monat</option>
+                <option value="per_user_daily">Tagesbudget je Mitglied</option>
+              </select>
+            </label>
+            {entwurf.mode === "org_total" && (
+              <label className="field">
+                <span>Monatsbudget (USD)</span>
+                <input
+                  type="number"
+                  min={1}
+                  step={1}
+                  value={entwurf.orgMonthlyCents != null ? Math.round(entwurf.orgMonthlyCents / 100) : ""}
+                  disabled={busy}
+                  onChange={(e) => setEntwurf({ ...entwurf, orgMonthlyCents: e.target.value ? Math.round(Number(e.target.value) * 100) : null })}
+                />
+              </label>
+            )}
+            {entwurf.mode === "per_user_daily" && (
+              <label className="field">
+                <span>Tagesbudget je Mitglied (USD)</span>
+                <input
+                  type="number"
+                  min={1}
+                  step={1}
+                  value={entwurf.userDailyCents != null ? Math.round(entwurf.userDailyCents / 100) : ""}
+                  disabled={busy}
+                  onChange={(e) => setEntwurf({ ...entwurf, userDailyCents: e.target.value ? Math.round(Number(e.target.value) * 100) : null })}
+                />
+              </label>
+            )}
+          </div>
+          {entwurf.mode !== "off" && (
+            <div className="org-checks">
+              <label className="org-check">
+                <input type="checkbox" checked={entwurf.hardStop} disabled={busy} onChange={(e) => setEntwurf({ ...entwurf, hardStop: e.target.checked })} />
+                <span>
+                  Harter Stopp
+                  <span className="org-check__hint">
+                    Bei Überschreitung werden Aufrufe abgelehnt (Banner beim Mitglied). Ohne Haken laufen sie weiter, das
+                    Gateway markiert die Überschreitung nur.
+                  </span>
+                </span>
+              </label>
+            </div>
+          )}
+          <div className="org-actions">
+            <button type="button" className="primary" disabled={busy || !geaendert} onClick={() => void speichern()}>
+              Limit speichern
+            </button>
+            {geaendert && <span className="muted small">ungespeicherte Änderungen</span>}
+          </div>
+        </>
+      )}
+    </section>
+  );
+}
+
+function Verbrauch({ st, me }: { st: OrgState; me: WhoamiLite }) {
+  const [tage, setTage] = useState(30);
+  const usage = useQuery({
+    queryKey: ["org", "usage", tage],
+    queryFn: () => gatewayFetch<{ rows: OrgUsageRow[]; monthCents: number; todayCents: number; adminView: boolean }>(`/v1/tenants/me/usage?days=${tage}`),
+  });
+  const namen = new Map<string, string>();
+  for (const m of st.members) namen.set(m.actorId, m.name ?? m.email ?? `${m.actorId.slice(0, 8)}…`);
+  const rows = usage.data?.rows ?? [];
+  const jeMitglied = new Map<string, { calls: number; input: number; output: number; cents: number }>();
+  for (const r of rows) {
+    const a = jeMitglied.get(r.actorId) ?? { calls: 0, input: 0, output: 0, cents: 0 };
+    a.calls += r.calls;
+    a.input += r.inputTokens;
+    a.output += r.outputTokens;
+    a.cents += r.costCents;
+    jeMitglied.set(r.actorId, a);
+  }
+  return (
+    <section className="provider-section">
+      <h3>Verbrauch über Organisationsschlüssel</h3>
+      <div className="active-config-card">
+        <div className="active-config-card__row">
+          <span className="active-config-card__label">Dieser Monat</span>
+          <span className="active-config-card__value">
+            {usd(usage.data?.monthCents ?? 0)}
+            {usage.data?.adminView ? " (Organisation)" : " (du)"}
+          </span>
+        </div>
+        <div className="active-config-card__row">
+          <span className="active-config-card__label">Heute (du)</span>
+          <span className="active-config-card__value">{usd(usage.data?.todayCents ?? 0)}</span>
+        </div>
+      </div>
+      <div className="org-actions">
+        <label className="field" style={{ minWidth: 160 }}>
+          <span>Zeitraum</span>
+          <select value={tage} onChange={(e) => setTage(Number(e.target.value))}>
+            <option value={7}>7 Tage</option>
+            <option value={30}>30 Tage</option>
+            <option value={90}>90 Tage</option>
+          </select>
+        </label>
+      </div>
+      {usage.isLoading && <p className="muted small">Lädt…</p>}
+      {usage.error && <p className="error">{fehlerText(usage.error)}</p>}
+      {!usage.isLoading && rows.length === 0 && <p className="muted small">Noch keine Aufrufe über Organisationsschlüssel im Zeitraum.</p>}
+      {jeMitglied.size > 0 && (
+        <div className="org-list">
+          {Array.from(jeMitglied.entries())
+            .sort((a, b) => b[1].cents - a[1].cents)
+            .map(([actorId, a]) => (
+              <div key={actorId} className="org-row">
+                <div className="org-row__main">
+                  <span className="org-row__title">
+                    {namen.get(actorId) ?? `${actorId.slice(0, 8)}…`}
+                    {actorId === me.actorId && <span className="muted"> · du</span>}
+                  </span>
+                  <span className="org-row__meta">
+                    {a.calls.toLocaleString("de-DE")} Aufrufe · {a.input.toLocaleString("de-DE")} Eingabe- / {a.output.toLocaleString("de-DE")} Ausgabe-Tokens
+                  </span>
+                </div>
+                <div className="org-row__actions">
+                  <strong>{usd(a.cents)}</strong>
+                </div>
+              </div>
+            ))}
+        </div>
+      )}
+      {rows.length > 0 && (
+        <details className="settings-collapse" style={{ marginTop: "0.75rem" }}>
+          <summary>Je Tag</summary>
+          <div className="org-list">
+            {rows.map((r) => (
+              <div key={`${r.day}-${r.actorId}`} className="org-row">
+                <div className="org-row__main">
+                  <span className="org-row__title">
+                    {r.day} · {namen.get(r.actorId) ?? `${r.actorId.slice(0, 8)}…`}
+                  </span>
+                  <span className="org-row__meta">
+                    {r.calls} Aufrufe · {r.inputTokens.toLocaleString("de-DE")} / {r.outputTokens.toLocaleString("de-DE")} Tokens
+                  </span>
+                </div>
+                <div className="org-row__actions">{usd(r.costCents)}</div>
+              </div>
+            ))}
+          </div>
+        </details>
+      )}
     </section>
   );
 }

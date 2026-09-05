@@ -9,6 +9,7 @@ import { WatchChip } from "./WatchChip";
 import { UsageChip } from "./UsageChip";
 import { QuotaExhaustedBanner } from "./QuotaExhaustedBanner";
 import { DailyTokenLimitBanner } from "./DailyTokenLimitBanner";
+import { OrgQuotaBanner } from "./OrgQuotaBanner";
 import { ProducerModelBanner } from "./ProducerModelBanner";
 import { LinkedInActiveBanner } from "./LinkedInActiveBanner";
 import {
@@ -147,6 +148,7 @@ export function AppShell({ children }: PropsWithChildren) {
       {tenantWechselOverlay}
       <TopBar />
       <DailyTokenLimitBanner />
+      <OrgQuotaBanner />
       <ProducerModelBanner />
       <QuotaExhaustedBanner />
       <ConnectionHealthBanner />

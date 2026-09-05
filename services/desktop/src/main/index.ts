@@ -87,6 +87,7 @@ import {
   searchHubspotCompanies,
 } from "./crm/fetch-enrichment";
 import { initBilling } from "./billing";
+import { setOrgQuotaExceededHandler } from "./agent/providers/ai-sdk-provider";
 import {
   initOrganisation,
   onSignedIn as organisationSignedIn,
@@ -3543,6 +3544,16 @@ app.whenReady().then(async () => {
   initBilling({
     gatewayUrl: APP_CONFIG.gatewayUrl,
     getAccessToken: () => auth.getAccessToken(),
+  });
+  // O6 — Limit der Organisation erreicht → Banner im Renderer.
+  setOrgQuotaExceededHandler((info) => {
+    for (const win of BrowserWindow.getAllWindows()) {
+      try {
+        win.webContents.send("org:quotaExceeded", info);
+      } catch {
+        /* zerstoertes Fenster */
+      }
+    }
   });
   // O2 — Organisationen: Einladungslink, Tenant-Wechsel, Anfragen-Waechter.
   initOrganisation({

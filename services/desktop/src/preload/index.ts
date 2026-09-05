@@ -1105,6 +1105,12 @@ const api = {
       ipcRenderer.on("org:openPage", h);
       return () => ipcRenderer.removeListener("org:openPage", h);
     },
+    /** O6 — Limit der Organisation erreicht (429 vom Stellvertreter-Proxy). */
+    onQuotaExceeded: (cb: (info: import("../shared/types").OrgQuotaExceeded) => void): (() => void) => {
+      const h = (_e: unknown, info: import("../shared/types").OrgQuotaExceeded) => cb(info);
+      ipcRenderer.on("org:quotaExceeded", h);
+      return () => ipcRenderer.removeListener("org:quotaExceeded", h);
+    },
     /** O3 — aktuelle Organisationsvorgaben (persoenlich: alles erlaubt). */
     getPolicy: (): Promise<OrgPolicy> => ipcRenderer.invoke("org:getPolicy"),
     /** Vorgaben sofort vom Gateway holen (nach Aenderung durch einen Admin). */

@@ -104,6 +104,35 @@ export interface OrgState {
   policy: OrgPolicy;
   /** O4 — hinterlegte Organisationsschluessel (nur Anbieter + Hinweis). */
   providers?: Array<{ kind: string; keyHint: string; updatedAt: string }>;
+  /** O6 — Limit fuer Stellvertreter-Aufrufe (US-Cent, Schaetzwerte). */
+  quota?: OrgQuota;
+}
+
+/** O6 — Limit fuer Aufrufe ueber den Organisationsschluessel. */
+export interface OrgQuota {
+  mode: "off" | "org_total" | "per_user_daily";
+  orgMonthlyCents: number | null;
+  userDailyCents: number | null;
+  hardStop: boolean;
+}
+
+/** O6 — 429-Antwort des Stellvertreter-Proxys. */
+export interface OrgQuotaExceeded {
+  error: "org_quota_exceeded";
+  scope: "org_total" | "per_user_daily" | "off";
+  limitCents: number | null;
+  usedCents: number;
+  resetAt: string | null;
+  hardStop: boolean;
+}
+
+export interface OrgUsageRow {
+  actorId: string;
+  day: string;
+  calls: number;
+  inputTokens: number;
+  outputTokens: number;
+  costCents: number;
 }
 
 // ---- Auto-updater (8.u4 / 8.v1.5) -----------------------------------------

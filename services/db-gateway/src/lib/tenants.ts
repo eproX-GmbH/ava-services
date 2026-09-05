@@ -268,6 +268,8 @@ export interface OrgState {
   policy: TenantPolicyShape;
   /** O4 — hinterlegte Organisationsschluessel (nur Anbieter + Hinweis). */
   providers: Array<{ kind: string; keyHint: string; updatedAt: string }>;
+  /** O6 — Limit fuer Stellvertreter-Aufrufe. */
+  quota: { mode: string; orgMonthlyCents: number | null; userDailyCents: number | null; hardStop: boolean };
 }
 
 export async function getOrgState(pool: pg.Pool, auth: AuthContext): Promise<OrgState> {
@@ -312,6 +314,7 @@ export async function getOrgState(pool: pg.Pool, auth: AuthContext): Promise<Org
         [auth.tenantId],
       )
     ).rows.map((r) => ({ kind: r.kind, keyHint: r.keyHint, updatedAt: new Date(r.updatedAt).toISOString() })),
+    quota: await (await import("./quota")).getQuota(pool, auth.tenantId),
   };
 }
 

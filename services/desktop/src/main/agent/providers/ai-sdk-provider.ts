@@ -8,7 +8,33 @@ import type {
 import { createLLM, type RuntimeProvider } from "@ava/ai-provider";
 import { createOpenAISubscriptionModel } from "./openai-subscription-model";
 import type { OllamaSupervisor } from "../../ollama-supervisor";
-import type { AgentMessage, LlmProviderKind } from "../../../shared/types";
+import type { AgentMessage, LlmProviderKind, OrgQuotaExceeded } from "../../../shared/types";
+
+// O6 — Limit der Organisation erreicht (429 org_quota_exceeded vom
+// Stellvertreter-Proxy). index.ts haengt den Renderer-Broadcast ein.
+let orgQuotaHandler: ((info: OrgQuotaExceeded) => void) | null = null;
+export function setOrgQuotaExceededHandler(fn: (info: OrgQuotaExceeded) => void): void {
+  orgQuotaHandler = fn;
+}
+
+function erkenneOrgQuota(up: { detail?: string; status?: number }): OrgQuotaExceeded | null {
+  if (up.status !== 429 || !up.detail || !up.detail.includes("org_quota_exceeded")) return null;
+  try {
+    const start = up.detail.indexOf("{");
+    const o = JSON.parse(up.detail.slice(start)) as OrgQuotaExceeded;
+    return o.error === "org_quota_exceeded" ? o : null;
+  } catch {
+    return { error: "org_quota_exceeded", scope: "off", limitCents: null, usedCents: 0, resetAt: null, hardStop: true };
+  }
+}
+
+function orgQuotaText(q: OrgQuotaExceeded): string {
+  const limit = q.limitCents != null ? `${(q.limitCents / 100).toFixed(2)} USD` : "das Limit";
+  const bis = q.resetAt ? ` (Zurücksetzung ${new Date(q.resetAt).toLocaleString("de-DE")})` : "";
+  return q.scope === "org_total"
+    ? `Das Monatsbudget deiner Organisation für KI-Aufrufe ist aufgebraucht (${limit})${bis}. Ein Admin kann das Limit unter Einstellungen → Organisation anpassen; mit eigenem Schlüssel läuft der Chat weiter.`
+    : `Dein Tagesbudget für KI-Aufrufe über den Organisationsschlüssel ist aufgebraucht (${limit})${bis}. Ein Admin kann das Limit anpassen; mit eigenem Schlüssel läuft der Chat weiter.`;
+}
 import type { OllamaToolSpec } from "../types";
 import type {
   LlmProvider,
@@ -615,6 +641,12 @@ export class AiSdkProvider extends EventEmitter implements LlmProvider {
       // bevor ein Stream-`error`-Part kommt.
       const rawMsg = err instanceof Error ? err.message : String(err);
       const up = extractUpstreamDetail(err);
+      const orgQuota = erkenneOrgQuota(up);
+      if (orgQuota) {
+        orgQuotaHandler?.(orgQuota);
+        yield { done: true, errorMessage: orgQuotaText(orgQuota) };
+        return;
+      }
       const msg = humanizeProviderError(
         this.kind,
         rawMsg,

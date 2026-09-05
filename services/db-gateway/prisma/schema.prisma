@@ -429,6 +429,7 @@ model Tenant {
   joinRequests TenantJoinRequest[]
   policy      TenantPolicy?
   providers   TenantProvider[]
+  quota       TenantQuota?
 }
 
 /// O1 — Beitrittsanfrage: bis zur Freigabe bleibt der Nutzer in seinem
@@ -478,6 +479,21 @@ model TenantProvider {
   tenant        Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   @@id([tenantId, kind])
+}
+
+/// O6 — Limits fuer Stellvertreter-Aufrufe (Organisationsschluessel).
+/// mode: off | org_total (Monatsbudget der Organisation) | per_user_daily
+/// (Tagesbudget je Mitglied). Betraege in US-Cent (Preistabelle ist USD).
+/// hardStop: 429 statt nur Hinweis.
+model TenantQuota {
+  tenantId        String   @id
+  mode            String   @default("off")
+  orgMonthlyCents Int?
+  userDailyCents  Int?
+  hardStop        Boolean  @default(true)
+  updatedAt       DateTime @default(now())
+  updatedBy       String?
+  tenant          Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 }
 
 /// O4 — Metering je Stellvertreter-Aufruf (nur Zaehler, keine Inhalte).

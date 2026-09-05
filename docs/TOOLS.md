@@ -4,8 +4,8 @@ Auto-generiert von `services/desktop/scripts/generate-tools-md.mjs`.
 NICHT direkt bearbeiten — die Quelle der Wahrheit ist `services/desktop/src/main/agent/tools/*.ts`.
 Lauf via `pnpm -F @ava/desktop tools:doc` (oder automatisch via `build:typecheck`).
 
-Stand: 2026-09-04
-Anzahl Tools: 209
+Stand: 2026-09-05
+Anzahl Tools: 211
 
 ## Firmen (13)
 
@@ -1625,7 +1625,7 @@ Liefert den Status des lokalen Ollama-Daemons: Zustand (idle / starting / ready 
 
 _Parameter:_ keine.
 
-## organisation (6)
+## organisation (8)
 
 ### `org_features_set`
 
@@ -1643,6 +1643,17 @@ _Datei:_ `services/desktop/src/main/agent/tools/organisation.ts`
 Liefert die Organisation des angemeldeten Kontos (oder 'persoenlicher Bereich'), die eigene Rolle (owner/admin/member), Mitgliederzahl, die Vorgaben (Funktionen, Anbieter-Sperre, Modelle, Prompt-Audit) und fuer Admins den Einladungslink ava://join/<token>. Read-only. Organisation anlegen, per Link beitreten oder verlassen laeuft ueber die Seite 'Organisation' (#/organisation), weil AVA dabei neu startet.
 
 _Parameter:_ keine.
+
+### `org_limits_set`
+
+_Datei:_ `services/desktop/src/main/agent/tools/organisation.ts`
+
+Setzt das Limit fuer Aufrufe ueber Organisationsschluessel: mode 'off' (kein Limit), 'org_total' (Monatsbudget der Organisation in US-Dollar) oder 'per_user_daily' (Tagesbudget je Mitglied in US-Dollar); hardStop true = Aufrufe werden abgelehnt, false = nur Hinweis. Eigene Schluessel bleiben unlimitiert. Fragt vor der Ausfuehrung nach.
+
+_Parameter:_
+- `mode: string (enum: off, org_total, per_user_daily)` (required)
+- `budgetUsd: number` — Budget in US-Dollar (Monat bei org_total, Tag je Mitglied bei per_user_daily)
+- `hardStop: boolean`
 
 ### `org_member_approve`
 
@@ -1682,6 +1693,15 @@ _Parameter:_
 - `chatModel: string,null`
 - `producerModel: string,null`
 - `promptAudit: boolean`
+
+### `org_usage`
+
+_Datei:_ `services/desktop/src/main/agent/tools/organisation.ts`
+
+Liefert Limit und Stand (Monatsbudget bzw. Tagesbudget) sowie den Verbrauch ueber Organisationsschluessel je Mitglied und Tag (Admins: alle Mitglieder; Mitglieder: nur eigener). Betraege in US-Cent (Schaetzung aus der Preistabelle).
+
+_Parameter:_
+- `tage: number` — Zeitraum in Tagen (1–90, Standard 30)
 
 ## Producer (Hintergrund-Services) (2)
 

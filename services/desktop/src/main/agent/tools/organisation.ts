@@ -286,5 +286,85 @@ export function buildOrganisationTools(deps: OrgToolDeps): Tool[] {
     },
   });
 
-  return [info, members, approve, remove, featuresSet, providerSet];
+  // O6 — Limits und Verbrauch.
+  const limitsSet = defineTool({
+    name: "org_limits_set",
+    summary: "Limit fuer KI-Aufrufe ueber Organisationsschluessel setzen (Admin, mit Bestaetigung).",
+    category: "organisation limit budget kosten verbrauch quota",
+    description:
+      "Setzt das Limit fuer Aufrufe ueber Organisationsschluessel: mode 'off' (kein Limit), 'org_total' (Monatsbudget der " +
+      "Organisation in US-Dollar) oder 'per_user_daily' (Tagesbudget je Mitglied in US-Dollar); hardStop true = Aufrufe " +
+      "werden abgelehnt, false = nur Hinweis. Eigene Schluessel bleiben unlimitiert. Fragt vor der Ausfuehrung nach.",
+    parameters: {
+      type: "object",
+      required: ["mode"],
+      properties: {
+        mode: { type: "string", enum: ["off", "org_total", "per_user_daily"] },
+        budgetUsd: { type: "number", description: "Budget in US-Dollar (Monat bei org_total, Tag je Mitglied bei per_user_daily)" },
+        hardStop: { type: "boolean" },
+      },
+    },
+    schema: yup
+      .object({
+        mode: yup.string().oneOf(["off", "org_total", "per_user_daily"]).required(),
+        budgetUsd: yup.number().min(0).max(1_000_000).optional(),
+        hardStop: yup.boolean().optional(),
+      })
+      .noUnknown(true),
+    preview: (r: { ok?: boolean; abgebrochen?: boolean; text?: string }) => (r.abgebrochen ? "abgebrochen" : r.text ?? "Limit gesetzt"),
+    run: async (args, c) => {
+      const text =
+        args.mode === "off"
+          ? "Kein Limit"
+          : args.mode === "org_total"
+            ? `Monatsbudget der Organisation ${args.budgetUsd ?? "?"} USD`
+            : `Tagesbudget je Mitglied ${args.budgetUsd ?? "?"} USD`;
+      const value = await c.ui.confirmAction(
+        {
+          kind: "additive",
+          prompt: `Limit setzen: ${text}${args.mode !== "off" ? (args.hardStop === false ? " (nur Hinweis)" : " (harter Stopp)") : ""}?`,
+          confirmValue: "ja",
+          options: [
+            { value: "ja", label: "Setzen" },
+            { value: "nein", label: "Abbrechen" },
+          ],
+        },
+        c.signal,
+      );
+      if (value !== "ja") return { ok: false, abgebrochen: true };
+      const cents = args.budgetUsd != null ? Math.round(args.budgetUsd * 100) : null;
+      await deps.gateway.request("/v1/tenants/me/quota", {
+        method: "PUT",
+        body: {
+          mode: args.mode,
+          ...(args.mode === "org_total" ? { orgMonthlyCents: cents } : {}),
+          ...(args.mode === "per_user_daily" ? { userDailyCents: cents } : {}),
+          ...(args.hardStop !== undefined ? { hardStop: args.hardStop } : {}),
+        },
+      });
+      return { ok: true, text };
+    },
+  });
+
+  const usage = defineTool({
+    name: "org_usage",
+    summary: "Verbrauch ueber Organisationsschluessel (Monat, heute, je Mitglied) anzeigen.",
+    category: "organisation verbrauch kosten limit budget",
+    description:
+      "Liefert Limit und Stand (Monatsbudget bzw. Tagesbudget) sowie den Verbrauch ueber Organisationsschluessel je Mitglied " +
+      "und Tag (Admins: alle Mitglieder; Mitglieder: nur eigener). Betraege in US-Cent (Schaetzung aus der Preistabelle).",
+    parameters: { type: "object", properties: { tage: { type: "number", description: "Zeitraum in Tagen (1–90, Standard 30)" } } },
+    schema: yup.object({ tage: yup.number().integer().min(1).max(90).optional() }).noUnknown(true),
+    preview: (r: { monthCents?: number }) => `Verbrauch diesen Monat: ${((r.monthCents ?? 0) / 100).toFixed(2)} USD`,
+    run: async (args) => {
+      const q = await deps.gateway.request<{ quota: unknown; stand: unknown }>("/v1/tenants/me/quota", { method: "GET" });
+      const u = await deps.gateway.request<{ rows: unknown[]; monthCents: number; todayCents: number; adminView: boolean }>(
+        `/v1/tenants/me/usage?days=${args.tage ?? 30}`,
+        { method: "GET" },
+      );
+      return { limit: q.quota, stand: q.stand, monthCents: u.monthCents, todayCents: u.todayCents, adminView: u.adminView, jeTag: u.rows };
+    },
+  });
+
+  return [info, members, approve, remove, featuresSet, providerSet, limitsSet, usage];
 }

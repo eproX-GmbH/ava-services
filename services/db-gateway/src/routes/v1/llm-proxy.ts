@@ -29,6 +29,7 @@ import {
 } from "../../lib/tenant-providers";
 import { estimateMicroUsd } from "../../lib/llm-pricing";
 import { parseUsageFromJson, parseUsageFromSse, extractTextFromSse, type UsageCounts } from "../../lib/llm-usage-parse";
+import { checkQuota, getQuota, setQuota, usageSummary } from "../../lib/quota";
 
 export const llmProxyRouter = new OpenAPIHono();
 
@@ -103,6 +104,57 @@ llmProxyRouter.openapi(
   },
 );
 
+// ---- O6 — Limits und Verbrauch --------------------------------------------
+
+const QuotaShape = z.object({
+  mode: z.enum(["off", "org_total", "per_user_daily"]).optional(),
+  orgMonthlyCents: z.number().int().min(0).max(100_000_000).nullable().optional(),
+  userDailyCents: z.number().int().min(0).max(100_000_000).nullable().optional(),
+  hardStop: z.boolean().optional(),
+});
+
+llmProxyRouter.openapi(
+  createRoute({
+    method: "get",
+    path: "/tenants/me/quota",
+    tags: ["tenants"],
+    summary: "Limit fuer Stellvertreter-Aufrufe (US-Cent) und aktueller Stand.",
+    responses: { 200: { content: { "application/json": { schema: z.object({}).passthrough() } }, description: "ok" } },
+  }),
+  async (c) => {
+    const auth = c.get("auth");
+    const pool = getGatewayPool();
+    return c.json({ quota: await getQuota(pool, auth.tenantId), stand: await checkQuota(pool, auth.tenantId, auth.actorId) });
+  },
+);
+
+llmProxyRouter.openapi(
+  createRoute({
+    method: "put",
+    path: "/tenants/me/quota",
+    tags: ["tenants"],
+    summary: "Limit setzen (Admin): Monatsbudget der Organisation oder Tagesbudget je Mitglied, harter Stopp oder Hinweis.",
+    request: { body: { content: { "application/json": { schema: QuotaShape } } } },
+    responses: { 200: { content: { "application/json": { schema: z.object({}).passthrough() } }, description: "gesetzt" } },
+  }),
+  async (c) => c.json(await wrap(() => setQuota(getGatewayPool(), c.get("auth"), c.req.valid("json")))),
+);
+
+llmProxyRouter.openapi(
+  createRoute({
+    method: "get",
+    path: "/tenants/me/usage",
+    tags: ["tenants"],
+    summary: "Verbrauch ueber Organisationsschluessel je Mitglied und Tag (Admins: alle, Mitglieder: nur eigener).",
+    request: { query: z.object({ days: z.coerce.number().int().min(1).max(90).default(30) }) },
+    responses: { 200: { content: { "application/json": { schema: z.object({}).passthrough() } }, description: "ok" } },
+  }),
+  async (c) => {
+    const { days } = c.req.valid("query");
+    return c.json(await usageSummary(getGatewayPool(), c.get("auth"), days));
+  },
+);
+
 // ---- Passthrough --------------------------------------------------------
 
 const HOP_BY_HOP = new Set([
@@ -130,6 +182,23 @@ async function passthrough(c: Context, kind: ProviderKind, base: string, rest: s
   if (!secretsConfigured()) throw new HTTPException(503, { message: "secrets_unconfigured" });
   const key = await getProviderKey(pool, auth.tenantId, kind);
   if (!key) throw new HTTPException(404, { message: `provider_not_configured:${kind}` });
+
+  // O6 — Vorabpruefung des Limits (nur messbare Stellvertreter-Aufrufe).
+  let quotaWarnung: string | null = null;
+  if (meter) {
+    const q = await checkQuota(pool, auth.tenantId, auth.actorId);
+    if (!q.allowed) {
+      const info = { error: "org_quota_exceeded", scope: q.scope, limitCents: q.limitCents, usedCents: q.usedCents, resetAt: q.resetAt, hardStop: q.hardStop };
+      if (q.hardStop) {
+        logger.info({ tenantId: auth.tenantId, actorId: auth.actorId, scope: q.scope }, "llm-proxy: org quota exceeded (hard stop)");
+        return new Response(JSON.stringify(info), {
+          status: 429,
+          headers: { "content-type": "application/json", "retry-after": String(Math.max(60, Math.round(((q.resetAt ? Date.parse(q.resetAt) : Date.now() + 3_600_000) - Date.now()) / 1000))) },
+        });
+      }
+      quotaWarnung = JSON.stringify(info);
+    }
+  }
 
   const url = new URL(c.req.url);
   const target = `${base}/${rest.replace(/^\/+/, "")}${url.search}`;
@@ -174,6 +243,7 @@ async function passthrough(c: Context, kind: ProviderKind, base: string, rest: s
   upstream.headers.forEach((v, k) => {
     if (!RESPONSE_DROP.has(k.toLowerCase())) outHeaders.set(k, v);
   });
+  if (quotaWarnung) outHeaders.set("x-ava-org-quota", quotaWarnung);
   const ctype = upstream.headers.get("content-type") ?? "";
   const streamed = ctype.includes("text/event-stream");
   const promptAudit = meter ? await promptAuditAktiv(pool, auth.tenantId) : false;
