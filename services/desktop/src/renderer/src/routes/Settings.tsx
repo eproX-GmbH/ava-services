@@ -2040,16 +2040,20 @@ export function ProviderSection() {
       {/* ChatGPT-Abo als empfohlener „kein-API-Key"-Weg. Das Claude-Abo
           (OAuth) wurde entfernt — Anthropic läuft nur noch per API-Key
           (siehe Provider-Liste unten). */}
-      <div className="subscription-hero-grid">
-        <div className="subscription-hero-card">
-          <OpenAISubscriptionContent
-            hasToken={hasOpenAISubscriptionToken}
-            hasOpenAIApiKey={hasKey.openai}
-            openaiAuthMode={config.openaiAuthMode ?? "api-key"}
-            activeKind={activeKind}
-          />
+      {/* v0.1.553 — unter Anbieter-Sperre gibt es keinen Abo-Weg: die
+          Organisation legt Schluessel fest, eigene Abos sind gesperrt. */}
+      {!providerLock && (
+        <div className="subscription-hero-grid">
+          <div className="subscription-hero-card">
+            <OpenAISubscriptionContent
+              hasToken={hasOpenAISubscriptionToken}
+              hasOpenAIApiKey={hasKey.openai}
+              openaiAuthMode={config.openaiAuthMode ?? "api-key"}
+              activeKind={activeKind}
+            />
+          </div>
         </div>
-      </div>
+      )}
 
       {/* v0.1.381 — Aktive Konfiguration: WAS läuft gerade, über WELCHEN
           Kanal wird abgerechnet. Beantwortet die Frage „Abo oder API-Key?"

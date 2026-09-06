@@ -83,14 +83,18 @@ export class LlmProviderManager extends EventEmitter {
       new AiSdkProvider({
         kind,
         getModel: () => this.resolveModel(kind),
+        // v0.1.553 — unter Anbieter-Sperre zaehlen eigene Schluessel nicht.
         getApiKey:
           kind === "ollama"
             ? async () => null
-            : () => this.store.getKey(kind as HostedProviderKind),
+            : async () => (this.isProviderLocked() ? null : this.store.getKey(kind as HostedProviderKind)),
         hasStoredKey:
           kind === "ollama"
             ? () => true
-            : () => this.store.hasKey(kind as HostedProviderKind) || this.keySource(kind) === "organisation",
+            : () =>
+                this.isProviderLocked()
+                  ? this.keySource(kind) === "organisation"
+                  : this.store.hasKey(kind as HostedProviderKind) || this.keySource(kind) === "organisation",
         getGatewayProxy: async () => {
           if (kind === "ollama" || this.keySource(kind) !== "organisation") return null;
           const token = await this.org.getToken();
@@ -122,9 +126,11 @@ export class LlmProviderManager extends EventEmitter {
               // v0.1.368 — wie Anthropic: ChatGPT-Abo hat Vorrang vor
               // einem hinterlegten OpenAI-API-Key.
               getOpenAIAuthMode: () =>
-                this.store.hasOpenAISubscriptionToken()
-                  ? "subscription"
-                  : (this.store.getConfig().openaiAuthMode ?? "api-key"),
+                this.isProviderLocked()
+                  ? "api-key"
+                  : this.store.hasOpenAISubscriptionToken()
+                    ? "subscription"
+                    : (this.store.getConfig().openaiAuthMode ?? "api-key"),
               getOpenAISubscriptionToken: () =>
                 this.store.getOpenAISubscriptionToken(),
               getOpenAISubscriptionAccountId: () =>
@@ -587,6 +593,7 @@ export class LlmProviderManager extends EventEmitter {
    * untouched.
    */
   setAnthropicSubscriptionToken(plaintext: string): void {
+    this.sperrePruefen("die Abo-Anmeldung");
     const trimmed = plaintext.trim();
     if (trimmed.length === 0) throw new Error("Token ist leer.");
     if (trimmed.length < 30) {
@@ -618,6 +625,7 @@ export class LlmProviderManager extends EventEmitter {
     refreshToken?: string;
     expiresIn?: number;
   }): void {
+    this.sperrePruefen("die Abo-Anmeldung");
     const accessToken = args.accessToken.trim();
     if (accessToken.length === 0) {
       throw new Error("Access-Token ist leer.");
@@ -653,6 +661,7 @@ export class LlmProviderManager extends EventEmitter {
    * requested mode has no credential on disk.
    */
   setAnthropicAuthMode(mode: AnthropicAuthMode): ProviderConfig {
+    this.sperrePruefen("die Abo-Anmeldung");
     if (mode === "subscription" && !this.store.hasAnthropicSubscriptionToken()) {
       throw new Error(
         "Subscription-Token ist nicht gespeichert. Erst über Settings → Anbieter speichern.",
@@ -687,6 +696,7 @@ export class LlmProviderManager extends EventEmitter {
     expiresIn?: number;
     accountId?: string;
   }): void {
+    this.sperrePruefen("die Abo-Anmeldung");
     const accessToken = args.accessToken.trim();
     if (accessToken.length === 0) throw new Error("Access-Token ist leer.");
     const expiresAt =
@@ -809,6 +819,8 @@ export class LlmProviderManager extends EventEmitter {
       env.viaGateway = true;
       return env;
     }
+    // v0.1.553 — Sperre ohne Organisationsschluessel: kein Rueckfall auf eigene Schluessel/Abo.
+    if (kind !== "ollama" && this.isProviderLocked()) return null;
 
     // v0.1.184 — the v0.1.183 embed-provider cascade is REMOVED.
     // embeddinggemma is now the single mandatory embedder for
@@ -873,6 +885,9 @@ export class LlmProviderManager extends EventEmitter {
     const kind = cfg.kind;
     if (kind === "ollama") return null;
     if (this.keySource(kind) === "organisation") return null;
+    if (this.isProviderLocked()) {
+      return `Organisationsvorgabe: Fuer ${labelFor(kind)} ist kein Organisationsschluessel hinterlegt; eigene Schluessel und Abos sind gesperrt. Ein Admin kann den Schluessel unter Einstellungen → Organisation hinterlegen.`;
+    }
     // v0.1.145 — subscription mode is no longer a blocker (the token
     // now plumbs through as ANTHROPIC_AUTH_TOKEN). Missing token is a
     // blocker for the subscription path, same way a missing API key

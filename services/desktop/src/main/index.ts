@@ -5384,6 +5384,10 @@ app.whenReady().then(async () => {
   ipcMain.handle(
     "agent:connectOpenAISubscription",
     async (event): Promise<{ ok: true } | { ok: false; error: string }> => {
+      // v0.1.553 — Anbieter-Sperre der Organisation: kein Abo-Login.
+      if (providers.isProviderLocked()) {
+        return { ok: false, error: "Organisationsvorgabe: Anbieter und Schlüssel legt deine Organisation fest; ein eigenes ChatGPT-Abo ist gesperrt." };
+      }
       try {
         const parent =
           BrowserWindow.fromWebContents(event.sender) ??
