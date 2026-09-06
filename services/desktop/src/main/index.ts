@@ -2852,6 +2852,21 @@ app.whenReady().then(async () => {
     umschalten("linkedin.radar", () => personenRadarSupervisor?.start(), () => personenRadarSupervisor?.stop());
     umschalten("linkedin.beobachter", () => startLinkedInScheduler(), () => stopLinkedInScheduler());
   });
+  // v0.1.559 — Modellvorgabe der Organisation (providerLock, chatModel,
+  // producerModel) wird von den Producern nur beim Spawn gelesen
+  // (LLM_MODEL/AVA_LLM_VIA_GATEWAY aus getProducerLlmEnv). Trifft die
+  // Policy erst nach dem Start ein (Erstinstallation, Neustart nach
+  // Tenant-Wechsel, Admin aendert die Vorgabe zur Laufzeit), liefen die
+  // Producer sonst bis zum naechsten App-Start mit dem alten Modell weiter.
+  onOrgPolicyChange((neu, alt) => {
+    if (neu.providerLock === alt.providerLock && neu.chatModel === alt.chatModel && neu.producerModel === alt.producerModel) return;
+    console.log(`[org-policy] Modellvorgabe geaendert (lock=${neu.providerLock}, chat=${neu.chatModel ?? "-"}, producer=${neu.producerModel ?? "-"}) → Producer neu starten`);
+    scheduleCredentialCycle("org-policy");
+  });
+  // v0.1.559 — Organisationsschluessel treffen ebenfalls erst nach dem
+  // whoami-Abgleich ein; der Manager meldet das als configChanged, das
+  // bisher niemand fuer den Producer-Cycle ausgewertet hat.
+  providers.on("configChanged", () => scheduleCredentialCycle("org-context"));
   // v0.1.519 — einmalige Freigabe aller Ungeklaerten: der Positionen-
   // Bugfix (v0.1.518) hat die Kaskade repariert, aber die 90-Tage-
   // Sperre haette die betroffenen Personen bis Dezember blockiert.
