@@ -237,7 +237,12 @@ export class LlmProviderManager extends EventEmitter {
   }
 
   isProviderLocked(): boolean {
-    return getOrgPolicy().providerLock;
+    // v0.1.557 — Deadlock-Schutz: Eine Sperre ohne Organisationsschluessel
+    // liesse dem Mitglied keinen einzigen Weg (kein eigener Schluessel, kein
+    // Abo, kein Ollama). Die Sperre wirkt deshalb nur, wenn die Organisation
+    // mindestens einen KI-Anbieter mit Schluessel bereitstellt.
+    if (!getOrgPolicy().providerLock) return false;
+    return ALL_KINDS.some((k) => k !== "ollama" && Boolean(this.org.providers[k]));
   }
 
   private lockedKind(): LlmProviderKind | null {

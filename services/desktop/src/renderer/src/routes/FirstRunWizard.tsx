@@ -273,7 +273,14 @@ export function FirstRunWizard({
           <OrgStep
             onWeiterOhne={() => setView("chooser")}
             onOrgSchluessel={async (kind) => {
-              await window.api.agent.setProvider({ kind });
+              try {
+                await window.api.agent.setProvider({ kind });
+              } catch (err) {
+                // Unter Sperre erzwingt die Vorgabe den Anbieter ohnehin —
+                // dann ist der Wechsel kein Fehler, sondern bereits Zustand.
+                const b = await window.api.agent.getProviderConfig();
+                if (!(b.providerLock && b.config.kind === kind)) throw err;
+              }
               const next = await window.api.agent.getProviderConfig();
               setConfig(next);
               onProviderConfigChanged?.(next);
@@ -575,6 +582,35 @@ function ProviderChooserGrid({
   hideBack?: boolean;
 }) {
   const [active, setActive] = useState<ChooserSubForm>(null);
+  // v0.1.557 — Organisationsschluessel auch in der Anbieterwahl anbieten
+  // (deckt die Ollama-Fehlerseite ab, die den Organisationsschritt nicht hat).
+  const [orgKarte, setOrgKarte] = useState<{ kind: HostedProviderKind; hint: string; lock: boolean } | null>(null);
+  const [orgFehler, setOrgFehler] = useState<string | null>(null);
+  useEffect(() => {
+    void window.api.agent
+      .getProviderConfig()
+      .then((b) => {
+        const provs = (b.orgProviders ?? {}) as Partial<Record<string, string>>;
+        const kinds = (["openai", "anthropic", "google", "mistral", "deepseek", "xai", "qwen"] as HostedProviderKind[]).filter((k) => provs[k]);
+        if (kinds.length > 0) setOrgKarte({ kind: kinds[0]!, hint: provs[kinds[0]!] ?? "", lock: b.providerLock === true });
+      })
+      .catch(() => undefined);
+  }, []);
+  const orgSchluesselNutzen = async () => {
+    if (!orgKarte) return;
+    setOrgFehler(null);
+    try {
+      try {
+        await window.api.agent.setProvider({ kind: orgKarte.kind });
+      } catch (err) {
+        const b = await window.api.agent.getProviderConfig();
+        if (!(b.providerLock && b.config.kind === orgKarte.kind)) throw err;
+      }
+      await onApiKeyDone();
+    } catch (err) {
+      setOrgFehler(err instanceof Error ? err.message : String(err));
+    }
+  };
 
   // When a card's primary button is clicked we expand the matching
   // sub-form inline below the grid and scroll it into view so the
@@ -596,6 +632,20 @@ function ProviderChooserGrid({
           2. Sekundär: eigener API-Key (OpenAI/Anthropic/Google/…)
           3. Tertiär kollabiert: Lokale Modelle (mit Sysreq-Warnung)
        */}
+
+      {orgKarte && (
+        <div className="first-run__option-card" style={{ borderColor: "var(--accent, #00C0A7)" }}>
+          <h3 className="first-run__option-title">Schlüssel deiner Organisation ({PROVIDER_LABEL[orgKarte.kind]} …{orgKarte.hint})</h3>
+          <p className="first-run__option-sub">
+            Aufrufe laufen über das AVA-Gateway, die Abrechnung über die Organisation.
+            {orgKarte.lock ? " Eigene Schlüssel und Abos hat deine Organisation gesperrt; das ist der vorgesehene Weg." : " Du kannst stattdessen auch einen eigenen Weg unten wählen."}
+          </p>
+          <button type="button" className="primary" onClick={() => void orgSchluesselNutzen()}>
+            Organisationsschlüssel verwenden →
+          </button>
+          {orgFehler && <p className="bad">{orgFehler}</p>}
+        </div>
+      )}
 
       {/* Sektion 1 — Abo-Hero (ChatGPT) */}
       <div className="first-run__hero-grid">
@@ -1072,10 +1122,12 @@ function OrgStep({
   const lade = async () => {
     setLaden(true);
     try {
-      await window.api.org.refreshPolicy().catch(() => undefined);
+      await Promise.race([window.api.org.refreshPolicy(), new Promise((r) => setTimeout(r, 8000))]).catch(() => undefined);
+      // Zeitlimit: haengt das Gateway, darf der Schritt nicht endlos laden.
+      const signal = AbortSignal.timeout(15_000);
       const [org, who] = await Promise.all([
-        gatewayFetch<OrgState>("/v1/tenants/me"),
-        gatewayFetch<{ openJoinRequest?: { tenantName: string | null } | null }>("/v1/whoami"),
+        gatewayFetch<OrgState>("/v1/tenants/me", { signal }),
+        gatewayFetch<{ openJoinRequest?: { tenantName: string | null } | null }>("/v1/whoami", { signal }),
       ]);
       setSt(org);
       setOffen(who.openJoinRequest ?? null);
@@ -1117,7 +1169,16 @@ function OrgStep({
     }
   };
 
-  if (laden) return <p className="muted">Organisation wird geprüft…</p>;
+  if (laden) {
+    return (
+      <p className="muted">
+        Organisation wird geprüft…{" "}
+        <button type="button" className="link" onClick={onWeiterOhne}>
+          Überspringen
+        </button>
+      </p>
+    );
+  }
 
   const orgKeys = (st?.providers ?? []).filter((p) => (LLM_KINDS as readonly string[]).includes(p.kind));
   const chatModel = st?.policy?.chatModel ?? null;
