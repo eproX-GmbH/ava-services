@@ -1152,6 +1152,11 @@ function OrgStep({
                 </button>
               )}
             </div>
+            {st.policy?.providerLock && (
+              <p className="muted small" style={{ marginTop: "0.5rem" }}>
+                Deine Organisation hat eigene Schlüssel gesperrt; der Organisationsschlüssel ist der einzige Weg.
+              </p>
+            )}
           </>
         ) : (
           <>
@@ -1165,12 +1170,26 @@ function OrgStep({
           </>
         )}
         {fehler && <p className="bad">{fehler}</p>}
+        {(fehler || !st.policy?.providerLock) && (
+          <p style={{ marginTop: "0.75rem" }}>
+            <button type="button" className="link" onClick={onWeiterOhne} disabled={busy}>
+              Schritt überspringen
+            </button>
+          </p>
+        )}
       </div>
     );
   }
 
   return (
     <>
+      <p className="muted small">
+        Nach der Registrierung bist du automatisch in deinem eigenen, persönlichen Bereich. Das kann so bleiben — dieser
+        Schritt ist optional.{" "}
+        <button type="button" className="link" onClick={onWeiterOhne} disabled={busy}>
+          Überspringen
+        </button>
+      </p>
       <div className="first-run__option-card">
         <h3 className="first-run__option-title">Einladungslink einer Organisation</h3>
         {offen ? (

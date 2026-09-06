@@ -412,7 +412,12 @@ export class LlmProviderManager extends EventEmitter {
     kind: LlmProviderKind,
     overrides?: { model?: string },
   ): ProviderConfig {
-    this.sperrePruefen("der Anbieterwechsel");
+    // v0.1.556 — Unter Sperre ist NUR der Wechsel auf einen Anbieter erlaubt,
+    // den die Organisation mit Schluessel bereitstellt (Onboarding
+    // „Organisationsschluessel verwenden" scheiterte sonst an der Sperre).
+    if (this.isProviderLocked() && !(kind !== "ollama" && this.org.providers[kind])) {
+      this.sperrePruefen("der Anbieterwechsel");
+    }
     if (kind !== "ollama" && this.keySource(kind) === "organisation") {
       const patch: { kind: LlmProviderKind; models?: Partial<Record<LlmProviderKind, string>> } = { kind };
       if (overrides?.model !== undefined) patch.models = { [kind]: overrides.model };
