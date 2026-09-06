@@ -72,6 +72,8 @@ export interface OrgPolicy {
   providerLock: boolean;
   chatModel: string | null;
   producerModel: string | null;
+  /** Deep-Research-Modell (OpenAI, fester Satz aus shared/research-models.ts); null = Standard. */
+  researchModel?: string | null;
   promptAudit: boolean;
   /** C1 — Personen ohne Beobachtung seit N Tagen tilgen; null = Standard 180. */
   personRetentionDays?: number | null;
@@ -2054,6 +2056,12 @@ export interface ResearchSettingsBundle {
    *  warning chip if false (basic cipher fallback on Linux without
    *  libsecret/kwallet). */
   encryptionAvailable: boolean;
+  /** Organisation stellt einen OpenAI-Schluessel bereit → Research darf ueber den Gateway-Proxy laufen (keyId "org:openai"). */
+  orgOpenai: boolean;
+  /** Anbieter-Sperre der Organisation: eigene Schluessel sind nicht waehlbar. */
+  providerLock: boolean;
+  /** Von der Organisation vorgegebenes Deep-Research-Modell (null = Standard). */
+  researchModel: string | null;
 }
 
 /** Probe-result shape for the Settings "Test"-button (Phase G). */

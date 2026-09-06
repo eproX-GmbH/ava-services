@@ -11,6 +11,7 @@
 // starten AVA neu (Tenant-Wechsel) oder brauchen einen Link von aussen.
 
 import * as yup from "yup";
+import { DEEP_RESEARCH_MODELS } from "../../../shared/research-models";
 import { defineTool } from "../define-tool";
 import type { Tool } from "../types";
 import type { GatewayClient } from "../gateway-client";
@@ -242,7 +243,8 @@ export function buildOrganisationTools(deps: OrgToolDeps): Tool[] {
     category: "organisation vorgaben anbieter modell sperre audit",
     description:
       "Setzt providerLock (Mitglieder duerfen Anbieter/Schluessel/Modell nicht lokal ueberschreiben), " +
-      "chatModel, producerModel (null = frei) und promptAudit (Opt-in). Schluessel selbst werden NIE ueber " +
+      "chatModel, producerModel (null = frei), researchModel (Deep-Research-Modell, nur OpenAI: " +
+      "o4-mini-deep-research-2025-06-26 oder o3-deep-research-2025-06-26; null = Standard) und promptAudit (Opt-in). Schluessel selbst werden NIE ueber " +
       "den Chat gesetzt. Nur genannte Felder aendern sich. Fragt vorher nach.",
     parameters: {
       type: "object",
@@ -250,6 +252,7 @@ export function buildOrganisationTools(deps: OrgToolDeps): Tool[] {
         providerLock: { type: "boolean" },
         chatModel: { type: ["string", "null"] },
         producerModel: { type: ["string", "null"] },
+        researchModel: { type: ["string", "null"] },
         promptAudit: { type: "boolean" },
       },
     },
@@ -258,6 +261,11 @@ export function buildOrganisationTools(deps: OrgToolDeps): Tool[] {
         providerLock: yup.boolean().optional(),
         chatModel: yup.string().max(120).nullable().optional(),
         producerModel: yup.string().max(120).nullable().optional(),
+        researchModel: yup
+          .string()
+          .oneOf(DEEP_RESEARCH_MODELS.map((m) => m.id))
+          .nullable()
+          .optional(),
         promptAudit: yup.boolean().optional(),
       })
       .noUnknown(true),

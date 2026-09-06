@@ -9,6 +9,7 @@
 // schluessel (KI-Anbieter) und Apify getrennt, Austritt.
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { DEEP_RESEARCH_MODELS } from "../../../shared/research-models";
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { Building2 } from "lucide-react";
@@ -493,6 +494,7 @@ function Vorgaben({ st, admin, busy, aktion }: { st: OrgState; admin: boolean; b
           providerLock: entwurf.providerLock,
           chatModel: entwurf.chatModel || null,
           producerModel: entwurf.producerModel || null,
+          researchModel: entwurf.researchModel || null,
           promptAudit: entwurf.promptAudit,
           personRetentionDays: entwurf.personRetentionDays ?? null,
         },
@@ -517,7 +519,8 @@ function Vorgaben({ st, admin, busy, aktion }: { st: OrgState; admin: boolean; b
           <div className="active-config-card__row">
             <span className="active-config-card__label">Modelle</span>
             <span className="active-config-card__value">
-              Chat: {p.chatModel ?? "frei"} · Hintergrund: {p.producerModel ?? "frei"}
+              Chat: {p.chatModel ?? "frei"} · Hintergrund: {p.producerModel ?? "frei"} · Deep Research:{" "}
+              {DEEP_RESEARCH_MODELS.find((m) => m.id === p.researchModel)?.label ?? p.researchModel ?? "Standard"}
             </span>
           </div>
           <div className="active-config-card__row">
@@ -582,7 +585,30 @@ function Vorgaben({ st, admin, busy, aktion }: { st: OrgState; admin: boolean; b
             disabled={busy || models.isLoading}
             onChange={(v) => setEntwurf({ ...entwurf, producerModel: v })}
           />
+          {/* 2026-09-06 — Deep Research ist OpenAI-exklusiv (Responses-API mit
+              web_search); nur die dafuer faehigen Modelle sind waehlbar. */}
+          <label className="field">
+            <span>Modell für Deep Research (OpenAI)</span>
+            <select
+              value={entwurf.researchModel ?? ""}
+              disabled={busy}
+              onChange={(e) => setEntwurf({ ...entwurf, researchModel: e.target.value || null })}
+            >
+              <option value="">Standard ({DEEP_RESEARCH_MODELS[0]!.label})</option>
+              {DEEP_RESEARCH_MODELS.map((m) => (
+                <option key={m.id} value={m.id}>
+                  {m.label} — {m.hinweis}
+                </option>
+              ))}
+            </select>
+          </label>
         </div>
+        {!st.providers?.some((x) => x.kind === "openai") && (
+          <p className="muted small">
+            Deep Research läuft ausschließlich über OpenAI. Damit Mitglieder es über die Organisation nutzen können, hinterlege
+            unten einen OpenAI-Organisationsschlüssel.
+          </p>
+        )}
         <div className="org-checks">
           <label className="org-check">
             <input

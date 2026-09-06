@@ -1747,12 +1747,13 @@ _Parameter:_ keine.
 
 _Datei:_ `services/desktop/src/main/agent/tools/organisation.ts`
 
-Setzt providerLock (Mitglieder duerfen Anbieter/Schluessel/Modell nicht lokal ueberschreiben), chatModel, producerModel (null = frei) und promptAudit (Opt-in). Schluessel selbst werden NIE ueber den Chat gesetzt. Nur genannte Felder aendern sich. Fragt vorher nach.
+Setzt providerLock (Mitglieder duerfen Anbieter/Schluessel/Modell nicht lokal ueberschreiben), chatModel, producerModel (null = frei), researchModel (Deep-Research-Modell, nur OpenAI: o4-mini-deep-research-2025-06-26 oder o3-deep-research-2025-06-26; null = Standard) und promptAudit (Opt-in). Schluessel selbst werden NIE ueber den Chat gesetzt. Nur genannte Felder aendern sich. Fragt vorher nach.
 
 _Parameter:_
 - `providerLock: boolean`
 - `chatModel: string,null`
 - `producerModel: string,null`
+- `researchModel: string,null`
 - `promptAudit: boolean`
 
 ### `org_usage`

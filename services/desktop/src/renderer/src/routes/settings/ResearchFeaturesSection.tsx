@@ -8,6 +8,7 @@ import type {
   ResearchSettingsBundle,
   ResearchTier,
 } from "../../../../shared/types";
+import { DEFAULT_DEEP_RESEARCH_MODEL, RESEARCH_ORG_OPENAI_KEY_ID } from "../../../../shared/research-models";
 
 // v0.1.172 — Settings → Erweiterte Recherche-Funktionen.
 //
@@ -102,9 +103,12 @@ export function ResearchFeaturesSection() {
       <p className="muted small" style={{ marginTop: 4, marginBottom: 16 }}>
         Aktiviert zusätzliche LLM-gestützte Anreicherung pro Firma. Standard
         ist kostengünstig (~0,02–0,15 € je Firma), Deep Research dagegen
-        gründlicher, aber spürbar teurer. Beide nutzen API-Keys, die du
-        beim jeweiligen Anbieter selbst hinterlegst — AVA fakturiert
-        nichts darüber.
+        gründlicher, aber spürbar teurer.{" "}
+        {bundle.providerLock && bundle.orgOpenai
+          ? "Beide laufen über den OpenAI-Schlüssel deiner Organisation (AVA-Gateway); der Verbrauch wird der Organisation zugerechnet."
+          : bundle.orgOpenai
+            ? "Du kannst den OpenAI-Schlüssel deiner Organisation oder eigene Schlüssel nutzen — AVA fakturiert nichts darüber."
+            : "Beide nutzen API-Keys, die du beim jeweiligen Anbieter selbst hinterlegst — AVA fakturiert nichts darüber."}
         {!bundle.encryptionAvailable && (
           <span style={{ display: "block", color: "#b48800", marginTop: 8 }}>
             ⚠ Verschlüsselter Schlüssel-Speicher ist auf diesem System nicht
@@ -129,8 +133,8 @@ export function ResearchFeaturesSection() {
           >
             Beide Funktionen sind aktuell <strong>deaktiviert</strong> — dann
             liefern „Stellenanzeigen" und „Deep Research" pro Firma keine
-            Ergebnisse. Stell sie unten auf <strong>Standard</strong> (mit
-            deinem hinterlegten Schlüssel), um sie zu nutzen.
+            Ergebnisse. Stell sie unten auf <strong>Standard</strong>
+            {bundle.orgOpenai ? "" : " (mit deinem hinterlegten Schlüssel)"}, um sie zu nutzen.
           </p>
         )}
 
@@ -206,7 +210,7 @@ function FeatureCard({
       void setConfig.mutateAsync({ feature, partial: { tier: "off" } });
       return;
     }
-    const provider: ResearchProvider = cfg.provider ?? "openai";
+    const provider: ResearchProvider = bundle.providerLock && bundle.orgOpenai ? "openai" : (cfg.provider ?? "openai");
     if (tier === "deep") {
       // Gate behind cost modal.
       onRequestDeep(provider);
@@ -266,38 +270,55 @@ function FeatureCard({
         ))}
       </div>
 
-      {cfg.tier !== "off" && cfg.provider && (
+      {cfg.tier !== "off" && cfg.provider && (() => {
+        // 2026-09-06 — Organisationsschluessel: unter Anbieter-Sperre gibt es
+        // weder Anbieter- noch Schluesselwahl (OpenAI ueber das Gateway).
+        const ueberOrg = bundle.orgOpenai && (bundle.providerLock || cfg.keyId === RESEARCH_ORG_OPENAI_KEY_ID);
+        const provider: ResearchProvider = ueberOrg ? "openai" : cfg.provider!;
+        const modellText =
+          provider === "openai" && cfg.tier === "deep"
+            ? `${bundle.researchModel ?? DEFAULT_DEEP_RESEARCH_MODEL} + web_search`
+            : MODEL_LABEL[provider][cfg.tier];
+        return (
         <>
           <div className="research-feature-card__row">
             <span className="research-feature-card__label">Anbieter</span>
-            <select
-              value={cfg.provider}
-              onChange={(e) => onProviderChange(e.target.value as ResearchProvider)}
-            >
-              <option value="openai">OpenAI</option>
-              <option value="anthropic">Anthropic</option>
-            </select>
+            {bundle.providerLock && bundle.orgOpenai ? (
+              <span>OpenAI (Organisation)</span>
+            ) : (
+              <select
+                value={cfg.provider!}
+                onChange={(e) => onProviderChange(e.target.value as ResearchProvider)}
+              >
+                <option value="openai">OpenAI</option>
+                <option value="anthropic">Anthropic</option>
+              </select>
+            )}
             <span className="research-feature-card__model-hint">
-              Modell: {MODEL_LABEL[cfg.provider][cfg.tier]}
+              Modell: {modellText}
             </span>
           </div>
 
-          <KeyPicker
-            feature={feature}
-            cfg={cfg}
-            bundle={bundle}
-            onChange={onKeyChange}
-            onCreateKey={() => onCreateKey(cfg.provider!)}
-          />
+          {!(bundle.providerLock && bundle.orgOpenai) && (
+            <KeyPicker
+              feature={feature}
+              cfg={cfg}
+              bundle={bundle}
+              onChange={onKeyChange}
+              onCreateKey={() => onCreateKey(cfg.provider!)}
+            />
+          )}
 
           <p className="research-feature-card__cost">
             Geschätzte Kosten:{" "}
-            <strong>{COST_PER_FIRMA[cfg.provider][cfg.tier]} je Firma</strong>{" "}
-            (wird direkt deinem{" "}
-            {cfg.provider === "openai" ? "OpenAI" : "Anthropic"}-Konto belastet).
+            <strong>{COST_PER_FIRMA[provider][cfg.tier]} je Firma</strong>{" "}
+            {ueberOrg
+              ? "(wird über das AVA-Gateway deiner Organisation zugerechnet)."
+              : `(wird direkt deinem ${provider === "openai" ? "OpenAI" : "Anthropic"}-Konto belastet).`}
           </p>
         </>
-      )}
+        );
+      })()}
     </div>
   );
 }
@@ -322,7 +343,10 @@ function KeyPicker({
 
   const availableKeys = useMemo(() => {
     const out: Array<{ id: string; label: string; hint?: string }> = [];
-    if (provider === "openai" && bundle.globals.openai) {
+    if (provider === "openai" && bundle.orgOpenai) {
+      out.push({ id: RESEARCH_ORG_OPENAI_KEY_ID, label: "Schlüssel der Organisation (AVA-Gateway)" });
+    }
+    if (provider === "openai" && bundle.globals.openai && !bundle.providerLock) {
       out.push({
         id: "global:openai",
         label: "Allgemeine Modell-Konfiguration",
@@ -336,6 +360,7 @@ function KeyPicker({
     }
     for (const k of bundle.keys) {
       if (k.provider !== provider) continue;
+      if (bundle.providerLock) continue;
       out.push({ id: k.id, label: k.label, hint: k.keyHint });
     }
     return out;
@@ -362,15 +387,17 @@ function KeyPicker({
           </option>
         ))}
       </select>
-      <button
-        type="button"
-        className="link"
-        onClick={onCreateKey}
-        title="Eigenen Key für dieses Feature anlegen"
-      >
-        + neuer Schlüssel
-      </button>
-      {cfg.keyId && (
+      {!bundle.providerLock && (
+        <button
+          type="button"
+          className="link"
+          onClick={onCreateKey}
+          title="Eigenen Key für dieses Feature anlegen"
+        >
+          + neuer Schlüssel
+        </button>
+      )}
+      {cfg.keyId && cfg.keyId !== RESEARCH_ORG_OPENAI_KEY_ID && (
         <button
           type="button"
           onClick={() => probe.mutate(cfg.keyId!)}
@@ -589,6 +616,7 @@ function defaultKeyIdFor(
   // Prefer the "Allgemeine Modell-Konfiguration"-Key (shared by reference)
   // if available -- it's the most likely source the user wants. Falls
   // back to the first matching research-owned key.
+  if (provider === "openai" && bundle.orgOpenai && (bundle.providerLock || !bundle.globals.openai)) return RESEARCH_ORG_OPENAI_KEY_ID;
   if (provider === "openai" && bundle.globals.openai) return "global:openai";
   if (provider === "anthropic" && bundle.globals.anthropic) return "global:anthropic";
   const own = bundle.keys.find((k) => k.provider === provider);

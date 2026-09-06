@@ -19,6 +19,8 @@ export interface TenantPolicyShape {
   providerLock: boolean;
   chatModel: string | null;
   producerModel: string | null;
+  /** Deep-Research-Modell (OpenAI); null = Standard o4-mini-deep-research. */
+  researchModel: string | null;
   promptAudit: boolean;
   /** C1 — Personen ohne Beobachtung seit N Tagen tilgen; null = Standard (180). */
   personRetentionDays: number | null;
@@ -29,6 +31,7 @@ export const DEFAULT_POLICY: TenantPolicyShape = {
   providerLock: false,
   chatModel: null,
   producerModel: null,
+  researchModel: null,
   promptAudit: false,
   personRetentionDays: null,
 };
@@ -53,8 +56,8 @@ export interface WhoamiPayload {
 type Q = { query: pg.Pool["query"] };
 
 async function readPolicy(q: Q, tenantId: string): Promise<TenantPolicyShape> {
-  const r = await q.query<{ features: unknown; providerLock: boolean; chatModel: string | null; producerModel: string | null; promptAudit: boolean; personRetentionDays: number | null }>(
-    `SELECT "features", "providerLock", "chatModel", "producerModel", "promptAudit", "personRetentionDays" FROM "TenantPolicy" WHERE "tenantId" = $1`,
+  const r = await q.query<{ features: unknown; providerLock: boolean; chatModel: string | null; producerModel: string | null; researchModel: string | null; promptAudit: boolean; personRetentionDays: number | null }>(
+    `SELECT "features", "providerLock", "chatModel", "producerModel", "researchModel", "promptAudit", "personRetentionDays" FROM "TenantPolicy" WHERE "tenantId" = $1`,
     [tenantId],
   );
   const row = r.rows[0];
@@ -63,7 +66,7 @@ async function readPolicy(q: Q, tenantId: string): Promise<TenantPolicyShape> {
   if (row.features && typeof row.features === "object") {
     for (const [k, v] of Object.entries(row.features as Record<string, unknown>)) feats[k] = v !== false;
   }
-  return { features: feats, providerLock: row.providerLock, chatModel: row.chatModel, producerModel: row.producerModel, promptAudit: row.promptAudit, personRetentionDays: row.personRetentionDays ?? null };
+  return { features: feats, providerLock: row.providerLock, chatModel: row.chatModel, producerModel: row.producerModel, researchModel: row.researchModel ?? null, promptAudit: row.promptAudit, personRetentionDays: row.personRetentionDays ?? null };
 }
 
 /** Keycloak-Gruppe nachziehen — best-effort NACH dem DB-Commit; ein
@@ -434,6 +437,7 @@ export async function setPolicy(pool: pg.Pool, auth: AuthContext, patch: Partial
     providerLock: patch.providerLock ?? alt.providerLock,
     chatModel: patch.chatModel === undefined ? alt.chatModel : patch.chatModel,
     producerModel: patch.producerModel === undefined ? alt.producerModel : patch.producerModel,
+    researchModel: patch.researchModel === undefined ? alt.researchModel : patch.researchModel,
     promptAudit: patch.promptAudit ?? alt.promptAudit,
     personRetentionDays: patch.personRetentionDays === undefined ? alt.personRetentionDays : patch.personRetentionDays,
   };
@@ -441,13 +445,13 @@ export async function setPolicy(pool: pg.Pool, auth: AuthContext, patch: Partial
     throw new TenantError(400, "Aufbewahrung fuer Personen: 30 bis 3650 Tage (oder leer = Standard 180).");
   }
   await pool.query(
-    `INSERT INTO "TenantPolicy" ("tenantId", "features", "providerLock", "chatModel", "producerModel", "promptAudit", "personRetentionDays", "updatedAt", "updatedBy")
-     VALUES ($1, $2::jsonb, $3, $4, $5, $6, $8, CURRENT_TIMESTAMP, $7)
+    `INSERT INTO "TenantPolicy" ("tenantId", "features", "providerLock", "chatModel", "producerModel", "promptAudit", "personRetentionDays", "researchModel", "updatedAt", "updatedBy")
+     VALUES ($1, $2::jsonb, $3, $4, $5, $6, $8, $9, CURRENT_TIMESTAMP, $7)
      ON CONFLICT ("tenantId") DO UPDATE SET "features" = EXCLUDED."features", "providerLock" = EXCLUDED."providerLock",
        "chatModel" = EXCLUDED."chatModel", "producerModel" = EXCLUDED."producerModel", "promptAudit" = EXCLUDED."promptAudit",
-       "personRetentionDays" = EXCLUDED."personRetentionDays",
+       "personRetentionDays" = EXCLUDED."personRetentionDays", "researchModel" = EXCLUDED."researchModel",
        "updatedAt" = CURRENT_TIMESTAMP, "updatedBy" = EXCLUDED."updatedBy"`,
-    [auth.tenantId, JSON.stringify(neu.features), neu.providerLock, neu.chatModel, neu.producerModel, neu.promptAudit, auth.actorId, neu.personRetentionDays],
+    [auth.tenantId, JSON.stringify(neu.features), neu.providerLock, neu.chatModel, neu.producerModel, neu.promptAudit, auth.actorId, neu.personRetentionDays, neu.researchModel],
   );
   invalidateFeatures(auth.tenantId);
   return neu;

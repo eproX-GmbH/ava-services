@@ -461,6 +461,7 @@ model TenantPolicy {
   providerLock  Boolean  @default(false)
   chatModel     String?
   producerModel String?
+  researchModel String? // Deep-Research-Modell (OpenAI)
   promptAudit   Boolean  @default(false)
   /// C1 — Personen ohne Beobachtung seit N Tagen tilgen (null = Standard 180).
   personRetentionDays Int?

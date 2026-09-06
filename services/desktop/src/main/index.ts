@@ -642,19 +642,27 @@ function buildProducer(
           async (): Promise<Record<string, string>> => {
             const store = ResearchFeaturesStore.shared();
             const env: Record<string, string> = {};
-            const expansion = await store.resolveFeature("expansionTenders");
+            // 2026-09-06 — Organisationsschluessel: unter Anbieter-Sperre
+            // laeuft Research immer ueber den Gateway-Proxy; das Deep-
+            // Research-Modell gibt die Organisation vor.
+            const locked = providers.isProviderLocked();
+            const pol = getOrgPolicy();
+            if (pol.researchModel) env.RESEARCH_DEEP_MODEL = pol.researchModel;
+            const expansion = await store.resolveFeature("expansionTenders", { providerLocked: locked });
             if (expansion) {
               env.RESEARCH_EXPANSION_TIER = expansion.tier;
               env.RESEARCH_EXPANSION_PROVIDER = expansion.provider;
               env.RESEARCH_EXPANSION_API_KEY = expansion.apiKey;
+              if (expansion.viaGateway) env.RESEARCH_EXPANSION_VIA_GATEWAY = "1";
             } else {
               env.RESEARCH_EXPANSION_TIER = "off";
             }
-            const jobs = await store.resolveFeature("jobPostings");
+            const jobs = await store.resolveFeature("jobPostings", { providerLocked: locked });
             if (jobs) {
               env.RESEARCH_JOBS_TIER = jobs.tier;
               env.RESEARCH_JOBS_PROVIDER = jobs.provider;
               env.RESEARCH_JOBS_API_KEY = jobs.apiKey;
+              if (jobs.viaGateway) env.RESEARCH_JOBS_VIA_GATEWAY = "1";
             } else {
               env.RESEARCH_JOBS_TIER = "off";
             }
@@ -667,9 +675,9 @@ function buildProducer(
             // keinen scheinbaren Fehler mehr. Außer producer-supervisor
             // setzt es schon aus dem Haupt-LLM (dann bleibt's so).
             const fallbackOpenaiKey =
-              expansion && expansion.provider === "openai"
+              expansion && expansion.provider === "openai" && !expansion.viaGateway
                 ? expansion.apiKey
-                : jobs && jobs.provider === "openai"
+                : jobs && jobs.provider === "openai" && !jobs.viaGateway
                   ? jobs.apiKey
                   : null;
             if (fallbackOpenaiKey) {
@@ -2859,8 +2867,8 @@ app.whenReady().then(async () => {
   // Tenant-Wechsel, Admin aendert die Vorgabe zur Laufzeit), liefen die
   // Producer sonst bis zum naechsten App-Start mit dem alten Modell weiter.
   onOrgPolicyChange((neu, alt) => {
-    if (neu.providerLock === alt.providerLock && neu.chatModel === alt.chatModel && neu.producerModel === alt.producerModel) return;
-    console.log(`[org-policy] Modellvorgabe geaendert (lock=${neu.providerLock}, chat=${neu.chatModel ?? "-"}, producer=${neu.producerModel ?? "-"}) → Producer neu starten`);
+    if (neu.providerLock === alt.providerLock && neu.chatModel === alt.chatModel && neu.producerModel === alt.producerModel && (neu.researchModel ?? null) === (alt.researchModel ?? null)) return;
+    console.log(`[org-policy] Modellvorgabe geaendert (lock=${neu.providerLock}, chat=${neu.chatModel ?? "-"}, producer=${neu.producerModel ?? "-"}, research=${neu.researchModel ?? "-"}) → Producer neu starten`);
     scheduleCredentialCycle("org-policy");
   });
   // v0.1.559 — Organisationsschluessel treffen ebenfalls erst nach dem
@@ -3581,12 +3589,15 @@ app.whenReady().then(async () => {
   initOrganisation({
     gateway: gatewayClient,
     isSignedIn: () => auth.getStatus().signedIn,
-    onOrgProviders: (provs) =>
+    onOrgProviders: (provs) => {
       providers.setOrgContext({
         providers: provs as Partial<Record<LlmProviderKind | "apify", string>>,
         gatewayUrl: APP_CONFIG.gatewayUrl,
         getToken: () => auth.getAccessToken(),
-      }),
+      });
+      // Deep Research ueber den OpenAI-Schluessel der Organisation.
+      ResearchFeaturesStore.shared().setOrgOpenaiAvailable(Boolean(provs.openai));
+    },
     // O9 — Sammel-Meldung je Abgleich: „N neue Firmen aus der Organisation".
     onNeueRadarFreigaben: (shares) => {
       const zeilen = shares.slice(0, 10).map((x) => {
@@ -4740,6 +4751,9 @@ app.whenReady().then(async () => {
         anthropic: pcs.hasKey("anthropic"),
       },
       encryptionAvailable: pcs.isEncryptionAvailable(),
+      orgOpenai: researchStore.hasOrgOpenai(),
+      providerLock: providers.isProviderLocked(),
+      researchModel: getOrgPolicy().researchModel ?? null,
     };
   }
 

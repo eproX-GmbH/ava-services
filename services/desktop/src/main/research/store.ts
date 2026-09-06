@@ -55,6 +55,9 @@ const FEATURES_FILENAME = "features.json";
 const KEYS_DIRNAME = "keys";
 const GLOBAL_OPENAI = "global:openai";
 const GLOBAL_ANTHROPIC = "global:anthropic";
+// 2026-09-06 — OpenAI-Schluessel der Organisation (Gateway-Proxy); kein
+// Klartext im Store, der Producer bekommt RESEARCH_*_VIA_GATEWAY=1.
+const ORG_OPENAI = "org:openai";
 
 const VALID_TIERS: readonly ResearchTier[] = ["off", "standard", "deep"];
 const VALID_PROVIDERS: readonly ResearchProvider[] = ["openai", "anthropic"];
@@ -102,6 +105,8 @@ export class ResearchFeaturesStore extends EventEmitter {
    * which is the fail-safe outcome (no surprise spending).
    */
   private pendingRestores: Map<string, ResearchFeaturesConfig> = new Map();
+  /** Organisation stellt einen OpenAI-Schluessel bereit (setzt index.ts aus dem whoami-Abgleich). */
+  private orgOpenai = false;
 
   private constructor() {
     super();
@@ -154,6 +159,35 @@ export class ResearchFeaturesStore extends EventEmitter {
     } catch (err) {
       console.warn("[research-store] markUserTouched failed:", err);
     }
+  }
+
+  /** Organisationsschluessel verfuegbar? Aktiviert Research automatisch, solange der Nutzer nie selbst konfiguriert hat. */
+  setOrgOpenaiAvailable(available: boolean): void {
+    const vorher = this.orgOpenai;
+    this.orgOpenai = available;
+    if (available && !vorher && !this.hasUserTouched()) this.autoEnableFromOrg();
+  }
+
+  hasOrgOpenai(): boolean {
+    return this.orgOpenai;
+  }
+
+  /** Alle Features mit tier != off auf den Organisationsschluessel umstellen (Anbieter-Sperre). */
+  private autoEnableFromOrg(): boolean {
+    const next = cloneConfig(this.cached);
+    let changed = false;
+    for (const f of VALID_FEATURES) {
+      if (next[f].tier === "off") {
+        next[f] = { tier: "standard", provider: "openai", keyId: ORG_OPENAI };
+        changed = true;
+      }
+    }
+    if (!changed) return false;
+    this.writeConfigAtomic(next);
+    this.cached = next;
+    this.emit("configChanged", cloneConfig(next));
+    console.info("[research-store] Research auf tier=standard ueber den Organisationsschluessel aktiviert (Deep bleibt aus).");
+    return true;
   }
 
   private anyFeatureEnabled(): boolean {
@@ -251,6 +285,10 @@ export class ResearchFeaturesStore extends EventEmitter {
       }
       if (!merged.keyId) {
         throw new Error(`tier=${merged.tier} requires a keyId`);
+      }
+      if (merged.keyId === ORG_OPENAI) {
+        if (!this.orgOpenai) throw new Error("Deine Organisation stellt keinen OpenAI-Schluessel bereit.");
+        if (merged.provider !== "openai") throw new Error("Der Organisationsschluessel gilt nur fuer OpenAI.");
       }
       // Cross-check: keyId's provider must match feature.provider so we
       // don't accidentally pass an Anthropic key to OpenAI.
@@ -396,13 +434,25 @@ export class ResearchFeaturesStore extends EventEmitter {
    *
    * For `global:*` keyIds, defers to ProviderConfigStore.getKey(...).
    */
-  async resolveFeature(feature: ResearchFeature): Promise<{
+  async resolveFeature(feature: ResearchFeature, opts?: { providerLocked?: boolean }): Promise<{
     tier: ResearchTier;
     provider: ResearchProvider;
     apiKey: string;
+    /** Aufruf ueber den Gateway-Proxy mit dem OpenAI-Schluessel der Organisation. */
+    viaGateway?: boolean;
   } | null> {
     const cfg = this.cached[feature];
     if (cfg.tier === "off" || !cfg.provider || !cfg.keyId) return null;
+
+    // Organisationsschluessel: explizit gewaehlt ODER Anbieter-Sperre (eigene
+    // Schluessel sind dann nicht erlaubt) — Provider ist damit immer OpenAI.
+    if (this.orgOpenai && (cfg.keyId === ORG_OPENAI || opts?.providerLocked)) {
+      return { tier: cfg.tier, provider: "openai", apiKey: "", viaGateway: true };
+    }
+    if (cfg.keyId === ORG_OPENAI) {
+      console.warn(`[research-store] feature=${feature}: Organisationsschluessel gewaehlt, aber keiner verfuegbar`);
+      return null;
+    }
 
     let plaintext: string | null = null;
 
@@ -571,7 +621,7 @@ export class ResearchFeaturesStore extends EventEmitter {
   }
 
   private resolveKeyProvider(keyId: string): ResearchProvider | null {
-    if (keyId === GLOBAL_OPENAI) return "openai";
+    if (keyId === GLOBAL_OPENAI || keyId === ORG_OPENAI) return "openai";
     if (keyId === GLOBAL_ANTHROPIC) return "anthropic";
     const path = join(this.keysDir, `${keyId}.meta.json`);
     if (!existsSync(path)) return null;

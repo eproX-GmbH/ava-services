@@ -16,6 +16,7 @@ export const DEFAULT_ORG_POLICY: OrgPolicy = {
   providerLock: false,
   chatModel: null,
   producerModel: null,
+  researchModel: null,
   promptAudit: false,
 };
 
@@ -52,6 +53,7 @@ function normalisiere(raw: Partial<OrgPolicy> | null | undefined): OrgPolicy {
     providerLock: raw?.providerLock === true,
     chatModel: typeof raw?.chatModel === "string" ? raw.chatModel : null,
     producerModel: typeof raw?.producerModel === "string" ? raw.producerModel : null,
+    researchModel: typeof raw?.researchModel === "string" ? raw.researchModel : null,
     promptAudit: raw?.promptAudit === true,
   };
 }
