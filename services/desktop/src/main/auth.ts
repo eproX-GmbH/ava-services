@@ -503,6 +503,25 @@ export class Auth extends EventEmitter {
       windowClosedEarly = null;
       const w = loginWin as BrowserWindow | null;
       if (w && !w.isDestroyed()) w.close();
+      // v0.1.558 — Windows gibt den Fokus nach dem Schliessen des Login-
+      // Fensters nicht zuverlaessig an das Hauptfenster zurueck; der erste
+      // Klick aktivierte dann nur das Fenster, Textfelder blieben ohne Fokus.
+      setTimeout(() => {
+        try {
+          const main = BrowserWindow.getAllWindows().find(
+            (x) => (x as unknown as { __avaMainWindow?: boolean }).__avaMainWindow && !x.isDestroyed(),
+          );
+          if (main) {
+            if (main.isMinimized()) main.restore();
+            main.show();
+            main.focus();
+            main.webContents.focus();
+          }
+          app.focus({ steal: true });
+        } catch {
+          /* kosmetisch */
+        }
+      }, 150);
     }
   }
 

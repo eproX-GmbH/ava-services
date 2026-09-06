@@ -8039,3 +8039,21 @@ html.dark .first-run__hero::before { color: rgb(0, 192, 167); background: rgba(0
 .org-check__hint { display: block; font-size: 12px; color: var(--muted); }
 .org-actions { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; margin-top: 0.75rem; }
 .org-code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; word-break: break-all; }
+
+/* ---- v0.1.558 — Windows: Drag-Zone der Titelleiste schluckt Klicks --------
+ * Unter Windows berechnet Chromium die Drag-Regionen (-webkit-app-region:
+ * drag) aus den Element-Rechtecken und ignoriert dabei pointer-events und
+ * z-index: alles, was die 64px-Topbar-Zone ueberlappt und nicht ausdruecklich
+ * no-drag ist, bekommt keinen Mausklick und damit keinen Fokus — z. B. der
+ * Chat-Suche-Dialog (oben eingeblendet), das Kontomenue, seitliche Panels,
+ * Dialoge. User-Befund: "Textfeld reagiert im ersten Moment gar nicht".
+ * Sicherheitsnetz: interaktive Elemente und Overlay-Container app-weit
+ * no-drag; die Topbar selbst bleibt als Griff zum Fensterziehen. */
+input, textarea, select, button, a, summary, details,
+[role="button"], [role="dialog"], [role="menu"], [role="listbox"], [role="textbox"],
+[contenteditable="true"], [tabindex],
+.chat-search-overlay, .chat-search-panel, .pf-overlay, .pf-panel, .link-warning-overlay,
+.account-menu, .account-relaunch, .drill-panel, .first-run__card, .signin-card,
+.token-limit-banner, .quota-banner, .radar-bulkbar {
+  -webkit-app-region: no-drag;
+}
