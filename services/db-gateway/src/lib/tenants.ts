@@ -20,6 +20,8 @@ export interface TenantPolicyShape {
   chatModel: string | null;
   producerModel: string | null;
   promptAudit: boolean;
+  /** C1 — Personen ohne Beobachtung seit N Tagen tilgen; null = Standard (180). */
+  personRetentionDays: number | null;
 }
 
 export const DEFAULT_POLICY: TenantPolicyShape = {
@@ -28,6 +30,7 @@ export const DEFAULT_POLICY: TenantPolicyShape = {
   chatModel: null,
   producerModel: null,
   promptAudit: false,
+  personRetentionDays: null,
 };
 
 export interface WhoamiPayload {
@@ -50,8 +53,8 @@ export interface WhoamiPayload {
 type Q = { query: pg.Pool["query"] };
 
 async function readPolicy(q: Q, tenantId: string): Promise<TenantPolicyShape> {
-  const r = await q.query<{ features: unknown; providerLock: boolean; chatModel: string | null; producerModel: string | null; promptAudit: boolean }>(
-    `SELECT "features", "providerLock", "chatModel", "producerModel", "promptAudit" FROM "TenantPolicy" WHERE "tenantId" = $1`,
+  const r = await q.query<{ features: unknown; providerLock: boolean; chatModel: string | null; producerModel: string | null; promptAudit: boolean; personRetentionDays: number | null }>(
+    `SELECT "features", "providerLock", "chatModel", "producerModel", "promptAudit", "personRetentionDays" FROM "TenantPolicy" WHERE "tenantId" = $1`,
     [tenantId],
   );
   const row = r.rows[0];
@@ -60,7 +63,7 @@ async function readPolicy(q: Q, tenantId: string): Promise<TenantPolicyShape> {
   if (row.features && typeof row.features === "object") {
     for (const [k, v] of Object.entries(row.features as Record<string, unknown>)) feats[k] = v !== false;
   }
-  return { features: feats, providerLock: row.providerLock, chatModel: row.chatModel, producerModel: row.producerModel, promptAudit: row.promptAudit };
+  return { features: feats, providerLock: row.providerLock, chatModel: row.chatModel, producerModel: row.producerModel, promptAudit: row.promptAudit, personRetentionDays: row.personRetentionDays ?? null };
 }
 
 /** Keycloak-Gruppe nachziehen — best-effort NACH dem DB-Commit; ein
@@ -424,14 +427,19 @@ export async function setPolicy(pool: pg.Pool, auth: AuthContext, patch: Partial
     chatModel: patch.chatModel === undefined ? alt.chatModel : patch.chatModel,
     producerModel: patch.producerModel === undefined ? alt.producerModel : patch.producerModel,
     promptAudit: patch.promptAudit ?? alt.promptAudit,
+    personRetentionDays: patch.personRetentionDays === undefined ? alt.personRetentionDays : patch.personRetentionDays,
   };
+  if (neu.personRetentionDays !== null && (neu.personRetentionDays < 30 || neu.personRetentionDays > 3650)) {
+    throw new TenantError(400, "Aufbewahrung fuer Personen: 30 bis 3650 Tage (oder leer = Standard 180).");
+  }
   await pool.query(
-    `INSERT INTO "TenantPolicy" ("tenantId", "features", "providerLock", "chatModel", "producerModel", "promptAudit", "updatedAt", "updatedBy")
-     VALUES ($1, $2::jsonb, $3, $4, $5, $6, CURRENT_TIMESTAMP, $7)
+    `INSERT INTO "TenantPolicy" ("tenantId", "features", "providerLock", "chatModel", "producerModel", "promptAudit", "personRetentionDays", "updatedAt", "updatedBy")
+     VALUES ($1, $2::jsonb, $3, $4, $5, $6, $8, CURRENT_TIMESTAMP, $7)
      ON CONFLICT ("tenantId") DO UPDATE SET "features" = EXCLUDED."features", "providerLock" = EXCLUDED."providerLock",
        "chatModel" = EXCLUDED."chatModel", "producerModel" = EXCLUDED."producerModel", "promptAudit" = EXCLUDED."promptAudit",
+       "personRetentionDays" = EXCLUDED."personRetentionDays",
        "updatedAt" = CURRENT_TIMESTAMP, "updatedBy" = EXCLUDED."updatedBy"`,
-    [auth.tenantId, JSON.stringify(neu.features), neu.providerLock, neu.chatModel, neu.producerModel, neu.promptAudit, auth.actorId],
+    [auth.tenantId, JSON.stringify(neu.features), neu.providerLock, neu.chatModel, neu.producerModel, neu.promptAudit, auth.actorId, neu.personRetentionDays],
   );
   invalidateFeatures(auth.tenantId);
   return neu;

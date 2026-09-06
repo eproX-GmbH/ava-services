@@ -462,6 +462,8 @@ model TenantPolicy {
   chatModel     String?
   producerModel String?
   promptAudit   Boolean  @default(false)
+  /// C1 — Personen ohne Beobachtung seit N Tagen tilgen (null = Standard 180).
+  personRetentionDays Int?
   updatedAt     DateTime @default(now())
   updatedBy     String?
   tenant        Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)

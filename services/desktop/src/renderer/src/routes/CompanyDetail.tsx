@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useParams } from "react-router-dom";
+import { getGatewayUrl } from "../store/config";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { gatewayFetch, GatewayError } from "../api/gateway";
@@ -228,6 +229,8 @@ interface CompanyContact {
   websiteUrl?: string | null;
   companyFacts?: Fact[];
   companyObservations?: Observation[];
+  /** C1 — „Informiert am" (Art. 14) je Person fuer meinen Tenant. */
+  personNotices?: Array<{ personId: string; informedAt: string; channel: string | null }>;
 }
 
 /** Fakt-Id → Belegseite. `lastObsId` zeigt auf die Beobachtung, die den
@@ -1151,9 +1154,11 @@ function ContactsTab({ id }: { id: string }) {
             {Object.entries(byPerson).map(([pid, pf]) => (
               <PersonCard
                 key={pid}
+                personId={pid}
                 facts={pf}
                 companyId={id!}
                 belege={belege}
+                informiertAm={data.personNotices?.find((n) => n.personId === pid)?.informedAt ?? null}
               />
             ))}
           </div>
@@ -1375,12 +1380,66 @@ function PersonCard({
   facts,
   companyId,
   belege,
+  personId,
+  informiertAm = null,
 }: {
   facts: Fact[];
   companyId?: string;
   /** v0.1.508 — Fakt-Id → Belegseite (Telefon/E-Mail an der Person). */
   belege?: Map<string, string>;
+  /** C1 — Person-ID (entityId der Personen-Fakten). */
+  personId?: string;
+  informiertAm?: string | null;
 }) {
+  // C1 — Herkunft, Art.-14-Hinweis, Informiert am, Loeschen.
+  const qc = useQueryClient();
+  const [herkunft, setHerkunft] = useState<string | null>(null);
+  const [c1Notice, setC1Notice] = useState<string | null>(null);
+  const [c1Busy, setC1Busy] = useState(false);
+  const pid = personId ?? (typeof facts[0]?.personId === "string" ? (facts[0].personId as string) : facts[0]?.entityId ?? "");
+  const c1 = async (fn: () => Promise<void>) => {
+    setC1Busy(true);
+    setC1Notice(null);
+    try {
+      await fn();
+    } catch (e) {
+      setC1Notice(e instanceof Error ? e.message : String(e));
+    } finally {
+      setC1Busy(false);
+    }
+  };
+  const zeigeHerkunft = () =>
+    c1(async () => {
+      if (herkunft) {
+        setHerkunft(null);
+        return;
+      }
+      const url = new URL(`/v1/persons/${encodeURIComponent(pid)}/herkunft`, getGatewayUrl());
+      url.searchParams.set("format", "markdown");
+      const token = await window.api.auth.getAccessToken();
+      const res = await fetch(url, { headers: token ? { authorization: `Bearer ${token}` } : {} });
+      if (!res.ok) throw new Error(`Herkunft nicht abrufbar (${res.status})`);
+      setHerkunft(await res.text());
+    });
+  const hinweisKopieren = () =>
+    c1(async () => {
+      const r = await gatewayFetch<{ text: string }>(`/v1/persons/${encodeURIComponent(pid)}/hinweis`);
+      await navigator.clipboard.writeText(r.text);
+      setC1Notice("Art.-14-Hinweistext in die Zwischenablage kopiert.");
+    });
+  const informiert = () =>
+    c1(async () => {
+      await gatewayFetch(`/v1/persons/${encodeURIComponent(pid)}/informed`, { method: "POST", body: { channel: "manuell" } });
+      setC1Notice("Als informiert markiert.");
+      void qc.invalidateQueries({ queryKey: ["company", companyId ?? "", "contacts"] });
+    });
+  const loeschen = () => {
+    if (!window.confirm(`${facts.find((f) => f.field === "fullName")?.value ?? "Diese Person"} im gesamten Bestand löschen? Die Person wird für alle Organisationen entfernt und gegen erneute Erfassung gesperrt.`)) return;
+    void c1(async () => {
+      await gatewayFetch(`/v1/persons/${encodeURIComponent(pid)}`, { method: "DELETE", body: { reason: "Loeschwunsch" } });
+      void qc.invalidateQueries({ queryKey: ["company", companyId ?? "", "contacts"] });
+    });
+  };
   // WL4 — "Auf die Watchlist": nur wenn eine LinkedIn-Profil-URL
   // am Kontakt haengt; setzt companyId mit (direkter Firmen-Link
   // in den Watchlist-Alerts).
@@ -1554,6 +1613,35 @@ function PersonCard({
             );
           })}
         </ul>
+      )}
+      <div className="org-actions" style={{ marginTop: "0.6rem", gap: "0.4rem" }}>
+        <button type="button" className="link" style={{ fontSize: 11 }} disabled={c1Busy} onClick={() => void zeigeHerkunft()} title="Herkunftsnachweis (Art. 15): alle Angaben mit Quelle, Beleg, Zeitpunkt">
+          {herkunft ? "Herkunft ausblenden" : "Herkunft"}
+        </button>
+        <button type="button" className="link" style={{ fontSize: 11 }} disabled={c1Busy} onClick={() => void hinweisKopieren()} title="Vorformulierten Hinweistext nach Art. 14 DSGVO kopieren">
+          Art.-14-Hinweis
+        </button>
+        {informiertAm ? (
+          <span className="muted" style={{ fontSize: 11 }} title="Information nach Art. 14 dokumentiert">
+            informiert am {new Date(informiertAm).toLocaleDateString("de-DE")}
+          </span>
+        ) : (
+          <button type="button" className="link" style={{ fontSize: 11 }} disabled={c1Busy} onClick={() => void informiert()} title="Dokumentieren, dass die Person nach Art. 14 informiert wurde">
+            als informiert markieren
+          </button>
+        )}
+        <button type="button" className="link" style={{ fontSize: 11 }} disabled={c1Busy} onClick={loeschen} title="Person global löschen (Löschwunsch, Art. 17)">
+          Löschen
+        </button>
+        {c1Notice && <span className="muted" style={{ fontSize: 11 }}>{c1Notice}</span>}
+      </div>
+      {herkunft && (
+        <details className="person-card__history" open>
+          <summary className="muted">Herkunftsnachweis</summary>
+          <div className="chat-markdown" style={{ fontSize: 12, marginTop: "0.5rem", maxHeight: 420, overflow: "auto" }}>
+            <ReactMarkdown>{herkunft}</ReactMarkdown>
+          </div>
+        </details>
       )}
       {inactiveFacts.length > 0 && (
         <details className="person-card__history">

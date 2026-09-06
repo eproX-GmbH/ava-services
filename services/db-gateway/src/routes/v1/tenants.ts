@@ -47,6 +47,7 @@ const PolicyShape = z.object({
   chatModel: z.string().max(120).nullable().optional(),
   producerModel: z.string().max(120).nullable().optional(),
   promptAudit: z.boolean().optional(),
+  personRetentionDays: z.number().int().min(30).max(3650).nullable().optional(),
 });
 
 tenantsRouter.openapi(

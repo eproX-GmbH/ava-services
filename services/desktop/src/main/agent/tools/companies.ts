@@ -620,7 +620,88 @@ export function buildCompanyTools(ctx: Ctx): Tool[] {
     },
   });
 
+  // C1 — Personen: Herkunft, Art.-14-Hinweis, Informiert am, Loeschung.
+  const personHerkunft = defineTool({
+    name: "person_herkunft",
+    summary: "Herkunftsnachweis einer Person (Art. 15): alle Angaben mit Quelle, Beleg, Zeitpunkt, erhebender Organisation.",
+    category: "person kontakt herkunft auskunft dsgvo artikel 15 beleg quelle",
+    description:
+      "Liefert den vollstaendigen Herkunftsnachweis einer Person (personId aus company_contacts, Feld personId/entityId der " +
+      "Personen-Fakten): Fakten, Beobachtungen mit Quelle/Beleg-URL/Zeitpunkt/Lauf/erhebendem Tenant, Beschaeftigungen, " +
+      "Information-nach-Art.-14-Vermerke. format 'markdown' = druckbarer Bericht fuer ein Auskunftsersuchen.",
+    parameters: { type: "object", required: ["personId"], properties: { personId: { type: "string" }, format: { type: "string", enum: ["json", "markdown"] } } },
+    schema: yup.object({ personId: yup.string().trim().min(4).required(), format: yup.string().oneOf(["json", "markdown"]).optional() }).noUnknown(true),
+    preview: (r: { person?: { fullName?: string }; markdown?: string }) => `Herkunft: ${r.person?.fullName ?? (r.markdown ? "Bericht" : "?")}`,
+    run: async (args) => {
+      if (args.format === "markdown") {
+        const md = await gateway.request<string>(`/v1/persons/${encodeURIComponent(args.personId)}/herkunft?format=markdown`, { method: "GET" });
+        return { markdown: md };
+      }
+      return gateway.request<Record<string, unknown>>(`/v1/persons/${encodeURIComponent(args.personId)}/herkunft`, { method: "GET" });
+    },
+  });
+
+  const personHinweis = defineTool({
+    name: "person_hinweis",
+    summary: "Vorformulierten Hinweistext nach Art. 14 DSGVO fuer eine Person liefern.",
+    category: "person kontakt information artikel 14 hinweis dsgvo",
+    description: "Liefert den Hinweistext (Quelle, Zweck, Speicherdauer, Rechte, Kontakt) fuer die Information der Person nach Art. 14. Optional kontaktEmail der Organisation.",
+    parameters: { type: "object", required: ["personId"], properties: { personId: { type: "string" }, kontaktEmail: { type: "string" } } },
+    schema: yup.object({ personId: yup.string().trim().min(4).required(), kontaktEmail: yup.string().trim().email().optional() }).noUnknown(true),
+    preview: () => "Art.-14-Hinweistext",
+    run: async (args) =>
+      gateway.request<{ text: string }>(`/v1/persons/${encodeURIComponent(args.personId)}/hinweis${args.kontaktEmail ? `?kontaktEmail=${encodeURIComponent(args.kontaktEmail)}` : ""}`, { method: "GET" }),
+  });
+
+  const personInformed = defineTool({
+    name: "person_informed",
+    summary: "Dokumentieren, dass eine Person nach Art. 14 informiert wurde (Informiert am).",
+    category: "person kontakt informiert artikel 14 dokumentation",
+    description: "Setzt fuer meine Organisation den Vermerk 'Informiert am' an der Person (Kanal optional, z. B. 'E-Mail'). Fragt vor der Ausfuehrung nach.",
+    parameters: { type: "object", required: ["personId"], properties: { personId: { type: "string" }, kanal: { type: "string" } } },
+    schema: yup.object({ personId: yup.string().trim().min(4).required(), kanal: yup.string().trim().max(60).optional() }).noUnknown(true),
+    preview: (r: { ok?: boolean; abgebrochen?: boolean }) => (r.abgebrochen ? "abgebrochen" : "als informiert markiert"),
+    run: async (args, c) => {
+      const value = await c.ui.confirmAction(
+        { kind: "additive", prompt: `Person ${args.personId.slice(0, 8)}… als nach Art. 14 informiert markieren${args.kanal ? ` (${args.kanal})` : ""}?`, confirmValue: "ja", options: [{ value: "ja", label: "Markieren" }, { value: "nein", label: "Abbrechen" }] },
+        c.signal,
+      );
+      if (value !== "ja") return { ok: false, abgebrochen: true };
+      await gateway.request(`/v1/persons/${encodeURIComponent(args.personId)}/informed`, { method: "POST", body: { channel: args.kanal ?? "chat" } });
+      return { ok: true };
+    },
+  });
+
+  const personDelete = defineTool({
+    name: "person_delete",
+    summary: "Person global loeschen (Loeschwunsch, Art. 17) — Tombstone sperrt die Wiedererfassung.",
+    category: "person kontakt loeschen loeschwunsch artikel 17 dsgvo widerspruch",
+    description:
+      "Loescht eine Person im gesamten geteilten Bestand (alle Organisationen) und sperrt die erneute Erfassung ueber Namens- und " +
+      "Profil-Kennung. Nur fuer Organisationen, die die Person erhoben haben. Irreversibel; fragt IMMER nach. Grund optional.",
+    parameters: { type: "object", required: ["personId"], properties: { personId: { type: "string" }, grund: { type: "string" } } },
+    schema: yup.object({ personId: yup.string().trim().min(4).required(), grund: yup.string().trim().max(500).optional() }).noUnknown(true),
+    preview: (r: { ok?: boolean; abgebrochen?: boolean; fullName?: string | null }) => (r.abgebrochen ? "abgebrochen" : `geloescht: ${r.fullName ?? "?"}`),
+    run: async (args, c) => {
+      const value = await c.ui.confirmAction(
+        {
+          kind: "destructive",
+          prompt: `Person ${args.personId.slice(0, 8)}… im GESAMTEN Bestand loeschen und gegen erneute Erfassung sperren? Das gilt fuer alle Organisationen und ist nicht umkehrbar.`,
+          confirmValue: "loeschen",
+          options: [{ value: "loeschen", label: "Loeschen" }, { value: "nein", label: "Abbrechen" }],
+        },
+        c.signal,
+      );
+      if (value !== "loeschen") return { ok: false, abgebrochen: true };
+      return gateway.request<{ ok: boolean; fullName: string | null; tombstones: number }>(`/v1/persons/${encodeURIComponent(args.personId)}`, { method: "DELETE", body: { reason: args.grund ?? "Loeschwunsch (Chat)" } });
+    },
+  });
+
   return [
+    personHerkunft,
+    personHinweis,
+    personInformed,
+    personDelete,
     search,
     get,
     profile,

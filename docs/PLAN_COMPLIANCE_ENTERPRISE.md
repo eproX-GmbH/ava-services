@@ -187,7 +187,7 @@ Massnahmen (C6):
 |---|---|---|
 | C6 | Datenfluss-Tabelle (Website + Einstellungen → Datenschutz), Claim schaerfen | 1 Tag |
 | C2 | Tenant-Policy fuer LinkedIn-Module (Gateway + Desktop + Chat-Tools), Consent-Satz | 2 Tage + Deploy |
-| C1 | Observation tenantId/actorId, Herkunftsnachweis je Person, Personen-Tombstone, Art.-14-Baustein, Aufbewahrung je Tenant | 3–4 Tage + Deploy |
+| C1 ✅ | 2026-09-06 (v0.1.552): Observation.tenantId/actorId (IF-NOT-EXISTS-DDL aus dem Gateway, Backfill NULL; Producer sendet actorId), `GET /v1/persons/{id}/herkunft` (JSON/Markdown), `GET …/hinweis` (Art. 14), `POST …/informed`, `DELETE /v1/persons/{id}` (global, PersonTombstone Name+Profil, Sperre im Persist-Pfad, AuditLog), Aufbewahrung `TenantPolicy.personRetentionDays` (Standard 180, taeglicher Tilgungslauf, kleinster Wert bei mehreren Tenants), Desktop: Kontaktkarte mit Herkunft/Art.-14-Hinweis/Informiert am/Loeschen, Vorgaben-Feld, Chat-Tools person_herkunft/person_hinweis/person_informed/person_delete, docs/compliance (Verarbeitungsverzeichnis, Art.-14-Vorlage) | 3–4 Tage + Deploy |
 | C3 | DSFA-Vorlage, Bildanalyse lokal-only Default, Rohpost-Verzicht | 1–2 Tage |
 | C4 | Datenfluss je Anbieter, Modell-Klassen je Datenklasse, EU-Endpunkte | 2 Tage |
 | C5 | compose.sovereign, konfigurierbare Gateway-URL, MSI/PKG-Kanal | 3–5 Tage |

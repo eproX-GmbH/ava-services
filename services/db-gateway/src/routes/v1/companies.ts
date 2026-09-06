@@ -10,6 +10,7 @@ import { applySingleEmployeeCandidate } from "../../lib/contact-extraction-apply
 import { normalizeLinkedInProfileUrl } from "../../lib/contact-extraction/employee-contact";
 import { logger } from "../../lib/logger";
 import { requireFeature } from "../../lib/policy-guard";
+import { ensurePersonComplianceSchema } from "../../lib/person-compliance";
 import {
   CompanyContactShape,
   CompanyIdParam,
@@ -836,6 +837,22 @@ companiesRouter.openapi(contactsRoute, async (c) => {
       pool.query(`SELECT * FROM "Employment" WHERE "companyId" = $1`, [companyId]),
     ]);
 
+    // C1 — „Informiert am" (Art. 14) je Person fuer den aufrufenden Tenant.
+    let personNotices: Array<{ personId: string; informedAt: string; channel: string | null }> = [];
+    try {
+      await ensurePersonComplianceSchema(pool);
+      const pids = Array.from(new Set((employments.rows as Array<{ personId?: string }>).map((e) => e.personId).filter((x): x is string => !!x)));
+      if (pids.length > 0) {
+        const n = await pool.query<{ personId: string; informedAt: Date; channel: string | null }>(
+          `SELECT "personId", "informedAt", "channel" FROM "PersonNotice" WHERE "tenantId" = $1 AND "personId" = ANY($2::text[])`,
+          [c.get("auth").tenantId, pids],
+        );
+        personNotices = n.rows.map((x) => ({ personId: x.personId, informedAt: new Date(x.informedAt).toISOString(), channel: x.channel }));
+      }
+    } catch {
+      /* Compliance-Tabellen optional */
+    }
+
     return c.json(
       {
         id: company.id,
@@ -845,6 +862,7 @@ companiesRouter.openapi(contactsRoute, async (c) => {
         companyObservations: observations.rows as Array<Record<string, unknown>>,
         companySignals: signals.rows as Array<Record<string, unknown>>,
         employments: employments.rows as Array<Record<string, unknown>>,
+        personNotices,
         createdAt: company.createdAt.toISOString(),
         updatedAt: company.updatedAt.toISOString(),
       },

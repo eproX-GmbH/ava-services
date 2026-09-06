@@ -494,6 +494,7 @@ function Vorgaben({ st, admin, busy, aktion }: { st: OrgState; admin: boolean; b
           chatModel: entwurf.chatModel || null,
           producerModel: entwurf.producerModel || null,
           promptAudit: entwurf.promptAudit,
+          personRetentionDays: entwurf.personRetentionDays ?? null,
         },
       });
       await window.api.org.refreshPolicy();
@@ -522,6 +523,10 @@ function Vorgaben({ st, admin, busy, aktion }: { st: OrgState; admin: boolean; b
           <div className="active-config-card__row">
             <span className="active-config-card__label">Prompt-Audit</span>
             <span className="active-config-card__value">{p.promptAudit ? "aktiv" : "aus"}</span>
+          </div>
+          <div className="active-config-card__row">
+            <span className="active-config-card__label">Aufbewahrung Personen</span>
+            <span className="active-config-card__value">{p.personRetentionDays ?? 180} Tage ohne Beobachtung</span>
           </div>
         </div>
       </section>
@@ -609,6 +614,26 @@ function Vorgaben({ st, admin, busy, aktion }: { st: OrgState; admin: boolean; b
               </span>
             </span>
           </label>
+        </div>
+        <h4 style={{ marginTop: "1rem" }}>Aufbewahrung von Personendaten</h4>
+        <div className="provider-grid">
+          <label className="field">
+            <span>Personen tilgen nach Tagen ohne Beobachtung (Standard 180)</span>
+            <input
+              type="number"
+              min={30}
+              max={3650}
+              placeholder="180"
+              value={entwurf.personRetentionDays ?? ""}
+              disabled={busy}
+              onChange={(e) => setEntwurf({ ...entwurf, personRetentionDays: e.target.value ? Number(e.target.value) : null })}
+            />
+          </label>
+          <p className="muted small" style={{ alignSelf: "end" }}>
+            Eine Person, die so lange von keinem Lauf mehr auf einer Quelle gesehen wurde, wird im gemeinsamen Bestand
+            gelöscht. Beschäftigungen verfallen unabhängig davon nach 120 Tagen. Bei mehreren Organisationen gilt der
+            kleinste Wert.
+          </p>
         </div>
         <div className="org-actions">
           <button type="button" className="primary" disabled={busy || !geaendert} onClick={() => void speichern()}>

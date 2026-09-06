@@ -5,6 +5,8 @@
 export interface PersistEvent<TResult = unknown> {
   runId: string;
   tenantId: string;
+  /** C1 — erhebender Nutzer (AVA_USER_ID), optional bei Alt-Clients. */
+  actorId?: string | null;
   dispatchedAt: string;
   computedAt: string;
   result: TResult;

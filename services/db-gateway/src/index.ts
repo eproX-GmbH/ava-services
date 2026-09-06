@@ -18,6 +18,7 @@ import { publicAuthRouter } from "./routes/v1/auth";
 import { internalQuotaRouter } from "./routes/internal-quota";
 import { startQuotaResumeCron } from "./lib/quota-resume-worker";
 import { startStuckProgressReaperCron } from "./lib/stuck-progress-reaper";
+import { startPersonRetentionCron } from "./lib/person-retention-reaper";
 
 const env = loadEnv();
 const app = new OpenAPIHono();
@@ -118,3 +119,6 @@ startQuotaResumeCron();
 // dead/crashed/offline producer step shows RED in the pipeline instead
 // of a frozen yellow "läuft". Self-healing — a later `completed` wins.
 startStuckProgressReaperCron();
+
+// C1 — Aufbewahrung: Personen ohne Beobachtung seit N Tagen tilgen.
+startPersonRetentionCron();

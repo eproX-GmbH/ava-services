@@ -33,6 +33,8 @@ import {
 } from "./contact-extraction/employment";
 import { createObservationIdempotent } from "./contact-extraction/observation";
 import { emitRemovalsByTTL } from "./contact-extraction/emit-removals-by-ttl";
+import { getProducerPool } from "./producer-pools";
+import { isPersonTombstoned, stampObservations } from "./person-compliance";
 import { sanitizePersonName, sanitizeRole } from "./contact-extraction/sanitize-person";
 import { reconcileEntity } from "./contact-extraction/reconcile-entity";
 import type { ApplyObservationPolicy } from "./contact-extraction/observation";
@@ -102,6 +104,9 @@ export async function applyCompanyContactPersist(
   log: Log,
 ): Promise<void> {
   const { result, runId, tenantId } = data;
+  // C1 — erhebender Nutzer (AVA_USER_ID); Alt-Clients liefern nichts.
+  const actorId = (data as { actorId?: string | null }).actorId ?? null;
+  const contactPool = getProducerPool("company-contact");
   if (!result?.companyId) throw new Error("missing result.companyId");
   if (!result.source) throw new Error("missing result.source");
 
@@ -286,6 +291,11 @@ export async function applyCompanyContactPersist(
       sourceUrl: p.sourceUrl ?? evidenceUrl ?? undefined,
     };
     if (!candidate.fullName) continue;
+    // C1 — Wiedererfassungs-Sperre (Personen-Tombstone).
+    if (await isPersonTombstoned(contactPool, { fullName: candidate.fullName, linkedinUrl: candidate.linkedinUrl, xingUrl: candidate.xingUrl })) {
+      log.info({ runId, companyId, name: candidate.fullName }, "person tombstoned — skipped (C1)");
+      continue;
+    }
     const up = await upsertPersonByIdentity(prisma, { companyId, candidate });
     const obs = buildPersonObservations({
       personId: up.personId,
@@ -296,7 +306,10 @@ export async function applyCompanyContactPersist(
       evidenceUrl: evidenceUrl ?? undefined,
       defaultCountryCode: result.defaultCountryCode,
     });
-    await persistObservations(prisma, { runId, observations: obs });
+    const obsIds = await persistObservations(prisma, { runId, observations: obs });
+    await stampObservations(contactPool, obsIds, tenantId && tenantId !== "pilot" ? tenantId : null, actorId).catch((err: unknown) =>
+      log.warn({ err: err instanceof Error ? err.message : String(err) }, "observation stamp failed"),
+    );
     await reconcilePerson(prisma, {
       runId,
       personId: up.personId,

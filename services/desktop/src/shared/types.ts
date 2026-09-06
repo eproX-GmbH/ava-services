@@ -73,6 +73,8 @@ export interface OrgPolicy {
   chatModel: string | null;
   producerModel: string | null;
   promptAudit: boolean;
+  /** C1 — Personen ohne Beobachtung seit N Tagen tilgen; null = Standard 180. */
+  personRetentionDays?: number | null;
 }
 
 export interface OrgMember {

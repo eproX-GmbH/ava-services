@@ -5,9 +5,9 @@ NICHT direkt bearbeiten — die Quelle der Wahrheit ist `services/desktop/src/ma
 Lauf via `pnpm -F @ava/desktop tools:doc` (oder automatisch via `build:typecheck`).
 
 Stand: 2026-09-06
-Anzahl Tools: 214
+Anzahl Tools: 218
 
-## Firmen (13)
+## Firmen (17)
 
 ### `company_contacts`
 
@@ -130,6 +130,46 @@ _Parameter:_
 - `fullName: string` (required) — Voller Personenname.
 - `companyName: string` — Firmenname fuer die Suche (empfohlen).
 - `chosenUrl: string` — Bereits geklaerte Profil-URL — ueberspringt die Suche und speichert direkt.
+
+### `person_delete`
+
+_Datei:_ `services/desktop/src/main/agent/tools/companies.ts`
+
+Loescht eine Person im gesamten geteilten Bestand (alle Organisationen) und sperrt die erneute Erfassung ueber Namens- und Profil-Kennung. Nur fuer Organisationen, die die Person erhoben haben. Irreversibel; fragt IMMER nach. Grund optional.
+
+_Parameter:_
+- `personId: string` (required)
+- `grund: string`
+
+### `person_herkunft`
+
+_Datei:_ `services/desktop/src/main/agent/tools/companies.ts`
+
+Liefert den vollstaendigen Herkunftsnachweis einer Person (personId aus company_contacts, Feld personId/entityId der Personen-Fakten): Fakten, Beobachtungen mit Quelle/Beleg-URL/Zeitpunkt/Lauf/erhebendem Tenant, Beschaeftigungen, Information-nach-Art.-14-Vermerke. format 'markdown' = druckbarer Bericht fuer ein Auskunftsersuchen.
+
+_Parameter:_
+- `personId: string` (required)
+- `format: string (enum: json, markdown)`
+
+### `person_hinweis`
+
+_Datei:_ `services/desktop/src/main/agent/tools/companies.ts`
+
+Liefert den Hinweistext (Quelle, Zweck, Speicherdauer, Rechte, Kontakt) fuer die Information der Person nach Art. 14. Optional kontaktEmail der Organisation.
+
+_Parameter:_
+- `personId: string` (required)
+- `kontaktEmail: string`
+
+### `person_informed`
+
+_Datei:_ `services/desktop/src/main/agent/tools/companies.ts`
+
+Setzt fuer meine Organisation den Vermerk 'Informiert am' an der Person (Kanal optional, z. B. 'E-Mail'). Fragt vor der Ausfuehrung nach.
+
+_Parameter:_
+- `personId: string` (required)
+- `kanal: string`
 
 ## Importe (6)
 
