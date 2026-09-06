@@ -6,6 +6,7 @@
 // (Pflichtfeld des Kontakt-Producers), bleibt aber editierbar.
 
 import { useEffect, useMemo, useState } from "react";
+import { useFeature } from "../store/policy";
 import { gatewayFetch, GatewayError } from "../api/gateway";
 
 /** v0.1.504 — verstaendliche Fehlertexte statt "gateway 403". Der
@@ -92,6 +93,9 @@ export function RetryStageForm({
   failedStages?: RetryStageId[];
   onDispatched?: () => void;
 }) {
+  // O3/v0.1.561 — Kontakt-Stufe nur, wenn die Organisation Kontakte erlaubt.
+  const kontakteErlaubt = useFeature("kontakte");
+  const stufen = kontakteErlaubt ? RETRY_STAGES : RETRY_STAGES.filter((s) => s.id !== "companyContact");
   const firstFailed = useMemo<RetryStageId>(
     () => failedStages?.[0] ?? "structuredContent",
     [failedStages],
@@ -146,7 +150,7 @@ export function RetryStageForm({
           onChange={(e) => setStage(e.target.value as RetryStageId)}
           disabled={busy}
         >
-          {RETRY_STAGES.map((s) => (
+          {stufen.map((s) => (
             <option key={s.id} value={s.id}>
               {s.label}
               {failedStages?.includes(s.id) ? " (fehlgeschlagen)" : ""}

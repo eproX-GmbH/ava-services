@@ -17,11 +17,13 @@ import { useFeature } from "../../store/policy";
 //   - Alerts / Heartbeat-Trigger
 export function AutomatisierungenTab() {
   const telegramErlaubt = useFeature("telegram");
+  // v0.1.561 — der Scheduler kennt nur Mail-Loops → ohne Mail-Funktion ausblenden.
+  const mailErlaubt = useFeature("mail");
   return (
     <>
       <WatchesSection />
       <LinkMonitorSection />
-      <SchedulerSection />
+      {mailErlaubt && <SchedulerSection />}
       <FreshnessSection />
       <AlertsSection />
       {telegramErlaubt && <TelegramSection />}

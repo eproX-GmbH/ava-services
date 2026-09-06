@@ -4,6 +4,7 @@ import {
   LinkedInCalibrationNote,
   GeneralMemorySection,
 } from "../Settings";
+import { useFeature } from "../../store/policy";
 
 // Konto-Tab — "wer du bist" + Abrechnung + (zukünftig) Erscheinung.
 //
@@ -11,11 +12,12 @@ import {
 // "Erscheinung" (Theme, später Sprache/Datumsformat) ist hier als
 // leerer Anker schon angelegt — der Inhalt zieht in U2 ein.
 export function KontoTab() {
+  const beobachterErlaubt = useFeature("linkedin.beobachter");
   return (
     <>
       <PlanSection />
       <ProfileSection />
-      <LinkedInCalibrationNote />
+      {beobachterErlaubt && <LinkedInCalibrationNote />}
       <GeneralMemorySection />
       <section
         id="erscheinung"

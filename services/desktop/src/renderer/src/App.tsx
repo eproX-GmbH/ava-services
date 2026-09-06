@@ -106,7 +106,7 @@ export function App({ children }: PropsWithChildren) {
     const offAuth = window.api.auth.onStatusChanged(setAuth);
     // O3 — Organisationsvorgaben spiegeln (Navigation, Einstellungen, Seiten).
     const setPolicy = usePolicyStore.getState().set;
-    void window.api.org.getPolicy().then(setPolicy).catch(() => undefined);
+    void window.api.org.getPolicy().then(setPolicy).catch(() => setPolicy(usePolicyStore.getState().policy));
     const offPolicy = window.api.org.onPolicyChanged(setPolicy);
     const offOllama = window.api.ollama.onStatusChanged(setOllamaStatus);
     const offPull = window.api.ollama.onPullProgress(setPullProgress);

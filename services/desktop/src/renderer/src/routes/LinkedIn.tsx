@@ -367,11 +367,6 @@ export function LinkedIn() {
       {watchlistErlaubt && <WatchlistPanel />}
       {radarErlaubt && <PersonenRadarPanel />}
 
-      {!beobachterErlaubt && (
-        <p className="muted small" style={{ marginTop: "1rem" }}>
-          Der LinkedIn-Beobachter ist in deiner Organisation abgeschaltet.
-        </p>
-      )}
       {beobachterErlaubt && (<>
       {!settingsQuery.isLoading && !enabled && (
         <div

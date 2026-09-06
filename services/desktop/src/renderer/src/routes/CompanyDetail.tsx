@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useFeature } from "../store/policy";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useParams } from "react-router-dom";
 import { getGatewayUrl } from "../store/config";
@@ -311,6 +312,12 @@ const TIER_DOT: Record<number, string> = {
 export function CompanyDetail() {
   const { id } = useParams<{ id: string }>();
   const [tab, setTab] = useState<TabKey>("overview");
+  // O3/v0.1.561 — Kontakte per Organisationsvorgabe abgeschaltet: Tab weg.
+  const kontakteErlaubt = useFeature("kontakte");
+  const sichtbareTabs = kontakteErlaubt ? TABS : TABS.filter((t) => t.key !== "contacts");
+  useEffect(() => {
+    if (!kontakteErlaubt && tab === "contacts") setTab("overview");
+  }, [kontakteErlaubt, tab]);
 
   // Phase 8.r4 — interest signal. Pinging on every CompanyDetail mount
   // tells the freshness scheduler the user is paying attention to this
@@ -440,7 +447,7 @@ export function CompanyDetail() {
 
       {/* ---- Tabs --------------------------------------------------------- */}
       <nav className="tabs">
-        {TABS.map((t) => (
+        {sichtbareTabs.map((t) => (
           <button
             key={t.key}
             type="button"
@@ -474,7 +481,7 @@ export function CompanyDetail() {
         )}
         {tab === "financials" && <FinancialsTab pubs={sorted} />}
         {tab === "management" && <ManagementTab structured={structured.data} />}
-        {tab === "contacts" && <ContactsTab id={id!} />}
+        {tab === "contacts" && kontakteErlaubt && <ContactsTab id={id!} />}
         {tab === "insights" && (
           <InsightsTab
             structured={structured.data}

@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { AlertCircle, Loader2, RefreshCw, Lightbulb, X } from "lucide-react";
 import { AlertBell } from "./AlertBell";
 import { useAuthStore } from "../store/auth";
-import { useFeature } from "../store/policy";
+import { useFeature, usePolicyStore } from "../store/policy";
 import { WatchChip } from "./WatchChip";
 import { UsageChip } from "./UsageChip";
 import { QuotaExhaustedBanner } from "./QuotaExhaustedBanner";
@@ -233,8 +233,9 @@ function ConnectionHealthBanner() {
       /* Status nicht lesbar — kein Banner */
     }
 
-    // --- LinkedIn-Sitzung ---
-    try {
+    // --- LinkedIn-Sitzung --- (nur, wenn der Beobachter nicht per
+    // Organisationsvorgabe abgeschaltet ist; sonst gibt es nichts zu warnen)
+    if (usePolicyStore.getState().policy.features["linkedin.beobachter"] !== false) try {
       const li = await window.api.linkedin.auth.status();
       // Nur warnen, wenn schon mal eine Sitzung bestand (meta != null) und
       // sie jetzt weg ist — sonst (nie verbunden) keine Warnung.

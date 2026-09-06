@@ -1,3 +1,4 @@
+import { useFeature } from "../store/policy";
 import {
   useCallback,
   useEffect,
@@ -214,6 +215,9 @@ export function Chat() {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const composerTextareaRef = useRef<HTMLTextAreaElement | null>(null);
   // v0.1.468 — globaler Autonomie-Modus (gilt fuer Chat, Telegram, Mail).
+  // v0.1.561 — Tooltip nennt nur Kanaele, die die Organisation erlaubt.
+  const telegramAn = useFeature("telegram");
+  const mailAn = useFeature("mail");
   const [autonomyMode, setAutonomyMode] = useState<
     "manual" | "additive" | "mutating"
   >("manual");
@@ -1556,8 +1560,8 @@ export function Chat() {
             autonomyMode === "manual"
               ? "Manuell: jede Aktion mit Bestätigungsdialog"
               : autonomyMode === "additive"
-                ? "Halb-auto: Neues (Notizen, Aufgaben, Neuanlagen) ohne Rückfrage, mit Audit. Gilt auch für Telegram und Mail."
-                : "Voll-auto: auch Änderungen ohne Rückfrage, mit Audit. Löschen fragt immer. Gilt auch für Telegram; Mail bleibt bei Halb-auto."
+                ? `Halb-auto: Neues (Notizen, Aufgaben, Neuanlagen) ohne Rückfrage, mit Audit.${telegramAn && mailAn ? " Gilt auch für Telegram und Mail." : telegramAn ? " Gilt auch für Telegram." : mailAn ? " Gilt auch für Mail." : ""}`
+                : `Voll-auto: auch Änderungen ohne Rückfrage, mit Audit. Löschen fragt immer.${telegramAn ? " Gilt auch für Telegram." : ""}${mailAn ? " Mail bleibt bei Halb-auto." : ""}`
           }
           aria-label="Autonomie-Modus"
           onChange={(e) =>

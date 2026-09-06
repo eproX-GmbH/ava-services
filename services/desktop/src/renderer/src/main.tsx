@@ -73,7 +73,7 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
               <Route path="/settings/:tab" element={<Settings />} />
               <Route path="/ingest" element={<Ingest />} />
               <Route path="/alerts" element={<Alerts />} />
-              <Route path="/linkedin" element={<LinkedIn />} />
+              <Route path="/linkedin" element={<FeatureGate feature={["linkedin.beobachter", "linkedin.watchlist", "linkedin.radar"]}><LinkedIn /></FeatureGate>} />
               <Route path="/inbox" element={<FeatureGate feature="mail"><TriageInbox /></FeatureGate>} />
               <Route path="/transactions" element={<Transactions />} />
               <Route path="/transactions/:id" element={<TransactionDetail />} />

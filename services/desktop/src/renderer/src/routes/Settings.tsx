@@ -182,8 +182,11 @@ const ANCHOR_FEATURE: Record<string, import("../../../shared/types").OrgFeatureK
   "linkedin-section": "linkedin.beobachter",
   "linkedin-image-analysis": "bildanalyse",
   "mail-account-section": "mail",
+  "scheduler-section": "mail",
   "telegram-section": "telegram",
 };
+/** v0.1.561 — Sprungmarken, die unter Anbieter-Sperre keinen Inhalt haben. */
+const ANCHOR_HIDDEN_UNDER_LOCK = new Set(["installed-models"]);
 
 export const SETTINGS_TAB_SUB_ITEMS: Record<
   SettingsTabId,
@@ -375,8 +378,10 @@ export function Settings() {
   }, [hash, activeTab]);
 
   const policyFeatures = usePolicyStore((st) => st.policy.features);
+  const policyLock = usePolicyStore((st) => st.policy.providerLock);
   const subItemsNachVorgabe = (tabId: SettingsTabId) =>
     SETTINGS_TAB_SUB_ITEMS[tabId].filter((it) => {
+      if (policyLock && ANCHOR_HIDDEN_UNDER_LOCK.has(it.anchor)) return false;
       const f = ANCHOR_FEATURE[it.anchor];
       return !f || policyFeatures[f] !== false;
     });
@@ -1721,7 +1726,7 @@ export function LinkedInSection() {
             {counts.signalsSkipped.toLocaleString("de-DE")} übersprungen
             {counts.signalsSkipped > 0 ? " (kein LLM)" : ""}
           </p>
-          {settings.imageAnalysis !== "off" && (
+          {settings.imageAnalysis !== "off" && bildanalyseErlaubt && (
             <p className="muted small">
               Bildanalyse:{" "}
               {counts.imageAnalyses.analyzed.toLocaleString("de-DE")}{" "}
@@ -2100,13 +2105,17 @@ export function ProviderSection() {
               Anbieter, Schlüssel und Modell legt deine Organisation fest.
               {policyModels?.chatModel && <> Chat: <code>{policyModels.chatModel}</code>.</>}
               {policyModels?.producerModel && <> Hintergrund: <code>{policyModels.producerModel}</code>.</>}{" "}
-              Aufrufe laufen über den Schlüssel der Organisation; eigene Schlüssel und Abos sind hier gesperrt.
+              Aufrufe laufen über den Schlüssel der Organisation.
             </span>
           </div>
         </div>
       )}
+      {/* v0.1.561 — unter Anbieter-Sperre gibt es nichts zu waehlen:
+          Auswahl, Schluessel-Klappe und Ollama-Verwaltung entfallen ganz
+          (die Vorgabe steht in der Karte oben). */}
+      {!providerLock && (<>
       <h4>Anbieter & Modell wählen</h4>
-      <div className="provider-grid" style={providerLock ? { pointerEvents: "none", opacity: 0.6 } : undefined} aria-disabled={providerLock}>
+      <div className="provider-grid">
         <label className="field">
           <span>Anbieter</span>
           <select
@@ -2218,6 +2227,7 @@ export function ProviderSection() {
         Denken. Im Chat kannst du trotzdem das starke Modell behalten. Ohne
         eigene Wahl wird das oben gewählte Modell verwendet.
       </p>
+      </>)}
 
       {activeEntry && (
         <p className="muted small">
@@ -2243,6 +2253,7 @@ export function ProviderSection() {
       {/* v0.1.381 — API-Schlüssel sind der Zweitweg (Abos oben sind der
           empfohlene Weg) und wandern in eine Klappe, damit die Ansicht
           nicht überläuft. Auf, wenn bereits ein Key gespeichert ist. */}
+      {!providerLock && (<>
       <details className="settings-collapse" open={anyHostedKey}>
         <summary>API-Schlüssel (OpenAI, Google, Mistral) — Alternative zum Abo</summary>
         {!encryptionAvailable && (
@@ -2282,6 +2293,7 @@ export function ProviderSection() {
         <summary>Lokal installierte Modelle (Ollama)</summary>
         <InstalledModelsSection />
       </details>
+      </>)}
     </section>
   );
 }

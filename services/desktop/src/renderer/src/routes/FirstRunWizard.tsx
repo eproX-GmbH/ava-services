@@ -172,10 +172,11 @@ export function FirstRunWizard({
           <p className="bad">{status.errorMessage ?? "Unbekannter Fehler"}</p>
           <p className="muted">
             Kein Problem — AVA läuft auch ohne lokale Modell-Laufzeit.
-            Wähle unten einen Hosted-Anbieter (eigener API-Key oder
-            Claude-Pro-/Max-Abo) und du kannst direkt loslegen. Die
-            lokale Laufzeit kannst du jederzeit später unter
-            Einstellungen → Anbieter nachrüsten oder reparieren.
+            {config?.providerLock
+              ? " Nutze unten den Schlüssel deiner Organisation und du kannst direkt loslegen."
+              : " Wähle unten einen Hosted-Anbieter (eigener API-Key oder ChatGPT-Abo) und du kannst direkt loslegen."}{" "}
+            Die lokale Laufzeit kannst du jederzeit später unter
+            Einstellungen → Modelle nachrüsten oder reparieren.
           </p>
           {memoryWarning}
           <ProviderChooserGrid
@@ -336,10 +337,9 @@ export function FirstRunWizard({
           <p className="first-run__eyebrow">Schritt 2 von 3 · KI-Anbieter wählen</p>
           <h1 className="first-run__title">Womit soll AVA denken?</h1>
           <p className="muted">
-            Wähle, welche KI AVA nutzt. Wir empfehlen das ChatGPT-Abo:
-            beste Qualität bei festen Kosten. Ein eigener API-Schlüssel
-            oder lokale Modelle sind ebenfalls möglich. Die Wahl lässt
-            sich später unter Einstellungen → Modelle jederzeit ändern.
+            {config?.providerLock
+              ? "Deine Organisation legt Anbieter, Schlüssel und Modell fest. Bestätige unten den Organisationsschlüssel."
+              : "Wähle, welche KI AVA nutzt. Wir empfehlen das ChatGPT-Abo: beste Qualität bei festen Kosten. Ein eigener API-Schlüssel oder lokale Modelle sind ebenfalls möglich. Die Wahl lässt sich später unter Einstellungen → Modelle jederzeit ändern."}
           </p>
           {memoryWarning}
           <ProviderChooserGrid
@@ -638,7 +638,7 @@ function ProviderChooserGrid({
           <h3 className="first-run__option-title">Schlüssel deiner Organisation ({PROVIDER_LABEL[orgKarte.kind]} …{orgKarte.hint})</h3>
           <p className="first-run__option-sub">
             Aufrufe laufen über das AVA-Gateway, die Abrechnung über die Organisation.
-            {orgKarte.lock ? " Eigene Schlüssel und Abos hat deine Organisation gesperrt; das ist der vorgesehene Weg." : " Du kannst stattdessen auch einen eigenen Weg unten wählen."}
+            {orgKarte.lock ? "" : " Du kannst stattdessen auch einen eigenen Weg unten wählen."}
           </p>
           <button type="button" className="primary" onClick={() => void orgSchluesselNutzen()}>
             Organisationsschlüssel verwenden →
@@ -647,6 +647,9 @@ function ProviderChooserGrid({
         </div>
       )}
 
+      {/* v0.1.561 — unter Anbieter-Sperre gibt es nur den Organisationsweg;
+          Abo, eigener Schluessel und lokale Modelle entfallen komplett. */}
+      {!orgKarte?.lock && (<>
       {/* Sektion 1 — Abo-Hero (ChatGPT) */}
       <div className="first-run__hero-grid">
         <div className="first-run__hero">
@@ -775,6 +778,8 @@ function ProviderChooserGrid({
           )}
         </div>
       )}
+
+      </>)}
 
       {!active && !hideBack && (
         <div className="first-run__actions">
@@ -1213,11 +1218,6 @@ function OrgStep({
                 </button>
               )}
             </div>
-            {st.policy?.providerLock && (
-              <p className="muted small" style={{ marginTop: "0.5rem" }}>
-                Deine Organisation hat eigene Schlüssel gesperrt; der Organisationsschlüssel ist der einzige Weg.
-              </p>
-            )}
           </>
         ) : (
           <>
