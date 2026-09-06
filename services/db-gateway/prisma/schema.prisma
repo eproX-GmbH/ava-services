@@ -569,6 +569,8 @@ model TenantMember {
   actorId  String
   role     String   @default("member") // owner | member
   joinedAt DateTime @default(now())
+  email    String? // aus dem Token (whoami-Abgleich), Anzeige in der Mitgliederliste
+  name     String?
   tenant   Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   @@id([tenantId, actorId])

@@ -113,6 +113,14 @@ export async function ensureTenantForAuth(
        ON CONFLICT ("actorId") DO NOTHING`,
       [auth.tenantId, auth.actorId, auth.actorId === auth.tenantId ? "owner" : "member"],
     );
+    // Mitglieder-Anzeige: E-Mail/Name aus dem Token nachtragen (Owner hat
+    // keine Beitrittsanfrage). Nie mit null ueberschreiben.
+    if (auth.email || auth.name) {
+      await client.query(
+        `UPDATE "TenantMember" SET "email" = COALESCE($2, "email"), "name" = COALESCE($3, "name") WHERE "actorId" = $1`,
+        [auth.actorId, auth.email ?? null, auth.name ?? null],
+      );
+    }
     const t = await client.query<{ name: string | null }>(
       `SELECT "name" FROM "Tenant" WHERE "id" = $1`,
       [auth.tenantId],
@@ -287,12 +295,12 @@ export async function getOrgState(pool: pg.Pool, auth: AuthContext): Promise<Org
     `SELECT "role" FROM "TenantMember" WHERE "tenantId" = $1 AND "actorId" = $2`,
     [auth.tenantId, auth.actorId],
   );
-  // E-Mail/Name der Mitglieder kennen wir aus ihren Beitrittsanfragen
-  // (oder aus dem Audit); Keycloak fragen wir hier nicht.
+  // E-Mail/Name der Mitglieder: aus dem Token (whoami-Abgleich, seit
+  // 2026-09-06 an der Mitgliedschaft) oder aus der Beitrittsanfrage.
   const members = await pool.query<{ actorId: string; role: string; joinedAt: Date; email: string | null; name: string | null }>(
     `SELECT m."actorId", m."role", m."joinedAt",
-            (SELECT r."email" FROM "TenantJoinRequest" r WHERE r."actorId" = m."actorId" ORDER BY r."requestedAt" DESC LIMIT 1) AS "email",
-            (SELECT r."name" FROM "TenantJoinRequest" r WHERE r."actorId" = m."actorId" ORDER BY r."requestedAt" DESC LIMIT 1) AS "name"
+            COALESCE(m."email", (SELECT r."email" FROM "TenantJoinRequest" r WHERE r."actorId" = m."actorId" ORDER BY r."requestedAt" DESC LIMIT 1)) AS "email",
+            COALESCE(m."name", (SELECT r."name" FROM "TenantJoinRequest" r WHERE r."actorId" = m."actorId" ORDER BY r."requestedAt" DESC LIMIT 1)) AS "name"
      FROM "TenantMember" m WHERE m."tenantId" = $1 ORDER BY m."joinedAt"`,
     [auth.tenantId],
   );

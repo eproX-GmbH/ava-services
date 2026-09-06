@@ -423,7 +423,7 @@ function Mitglieder({
         })}
       </div>
       <p className="muted small">
-        Name und E-Mail kennt AVA aus der Beitrittsanfrage; wer die Organisation angelegt hat, erscheint mit Nutzer-ID.
+        Name und E-Mail übernimmt AVA aus der Anmeldung; bis zum nächsten Abgleich eines Mitglieds kann noch die Nutzer-ID erscheinen.
       </p>
     </section>
   );

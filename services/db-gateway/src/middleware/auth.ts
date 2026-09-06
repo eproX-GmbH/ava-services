@@ -25,6 +25,8 @@ export type AuthContext = {
   tenantSource: "claim" | "sub" | "membership";
   tenantName?: string | null; // Claim `tenant_name` (Keycloak-Gruppe)
   email?: string | null;
+  /** Anzeigename aus dem Token (`name`, sonst Vor-/Nachname, sonst preferred_username). */
+  name?: string | null;
 };
 
 declare module "hono" {
@@ -158,6 +160,9 @@ export const authMiddleware = createMiddleware(async (c, next) => {
     let tenantName =
       typeof payload["tenant_name"] === "string" ? (payload["tenant_name"] as string) : null;
     const email = typeof payload["email"] === "string" ? (payload["email"] as string) : null;
+    const str = (k: string) => (typeof payload[k] === "string" && (payload[k] as string).trim() ? (payload[k] as string).trim() : null);
+    const vollName = [str("given_name"), str("family_name")].filter(Boolean).join(" ");
+    const displayName = str("name") ?? (vollName || null) ?? str("preferred_username");
     // 2026-09-04 — Alt-Claim `tenant` (z. B. "pilot" aus der Keycloak-
     // Fruehzeit) zeigt auf einen fremden PERSOENLICHEN Tenant. Persoenliche
     // Tenants sind per Definition id = sub; ein solcher Claim wird
@@ -199,7 +204,7 @@ export const authMiddleware = createMiddleware(async (c, next) => {
       fallbackGeloggt.add(payload.sub);
       logger.info({ actorId: payload.sub, tenant_fallback: "sub" }, "tenantId aus sub abgeleitet (kein tenant_id-Claim)");
     }
-    c.set("auth", { tenantId, actorId: payload.sub, scopes, tenantSource, tenantName, email });
+    c.set("auth", { tenantId, actorId: payload.sub, scopes, tenantSource, tenantName, email, name: displayName });
   } catch (err) {
     const message = err instanceof Error ? err.message : "verification_failed";
     // Surface a useful `message` field too so the desktop's GatewayError
