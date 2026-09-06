@@ -222,6 +222,11 @@ async function pruefeRadarFreigaben(): Promise<void> {
   merkeGemeldet(gemeldet);
 }
 
+/** Onboarding/Einstellungen: Organisationskontext (Schluessel, Anfragen) sofort nachladen. */
+export async function refreshOrgContext(): Promise<void> {
+  await pruefeAnfragen();
+}
+
 async function pruefeAnfragen(): Promise<void> {
   if (!deps || !deps.isSignedIn()) return;
   let st: OrgState;

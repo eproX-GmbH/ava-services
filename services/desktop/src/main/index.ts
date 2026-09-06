@@ -97,6 +97,7 @@ import {
   listShares as orgListShares,
   shareRadar as orgShareRadar,
   markShare as orgMarkShare,
+  refreshOrgContext as orgRefreshContext,
 } from "./organisation";
 import { featureEnabled, getOrgPolicy, onOrgPolicyChange } from "./org-policy";
 import { initLinkedIn } from "./linkedin";
@@ -5499,6 +5500,8 @@ app.whenReady().then(async () => {
   ipcMain.handle("org:getPolicy", () => getOrgPolicy());
   ipcMain.handle("org:refreshPolicy", async () => {
     await checkTenantChange("Vorgaben aktualisiert");
+    // v0.1.555 — auch Organisationsschluessel/Anfragen nachladen (Onboarding).
+    await orgRefreshContext().catch(() => undefined);
     return getOrgPolicy();
   });
   ipcMain.handle("alerts:list", () => alerts.list());

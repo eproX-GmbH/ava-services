@@ -202,7 +202,18 @@ export class LlmProviderManager extends EventEmitter {
     // O5 — Anbieter-Sperre: ist ein Chat-Modell vorgegeben, dessen Anbieter
     // die Organisation mit Schluessel bereitstellt, ist dieser Anbieter aktiv.
     const forced = this.lockedKind();
-    return forced && forced !== cfg.kind ? { ...cfg, kind: forced } : cfg;
+    if (!forced) return cfg;
+    // v0.1.555 — Unter Sperre die VORGABE-Modelle abbilden (Chat + Hintergrund),
+    // nicht die lokal gespeicherten: sonst zeigten die Einstellungen bei
+    // Mitgliedern „Wie Standard"/ein altes Modell, waehrend die Laufzeit
+    // laengst die Vorgabe nutzte (User-Befund).
+    const pol = getOrgPolicy();
+    return {
+      ...cfg,
+      kind: forced,
+      models: { ...cfg.models, ...(pol.chatModel ? { [forced]: pol.chatModel } : {}) },
+      producerModels: { ...(cfg.producerModels ?? {}), ...(pol.producerModel ? { [forced]: pol.producerModel } : {}) },
+    };
   }
 
   // ---- O5 — Organisationsschluessel / Anbieter-Sperre --------------------

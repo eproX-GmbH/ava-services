@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
 import { pullModelTracked, useOllamaStore } from "../store/ollama";
+import { gatewayFetch } from "../api/gateway";
+import type { OrgState } from "../../../shared/types";
 import { AnthropicTierBanner } from "../components/AnthropicTierBanner";
 import type {
   ApiKeyValidation,
@@ -39,7 +41,7 @@ interface MemoryProbe {
   path: string;
 }
 
-type ViewState = "intro" | "chooser";
+type ViewState = "org" | "intro" | "chooser";
 type ChooserSubForm = null | "apiKey" | "subscription";
 
 const PROVIDER_LABEL: Record<HostedProviderKind, string> = {
@@ -108,7 +110,8 @@ export function FirstRunWizard({
   // wodurch der Default-Pfad lokal war (was auf Standard-Hardware zu
   // schlechter Qualität führte). Neue Reihenfolge: aktive Wahl
   // zwischen Abo (prominent) → API → Lokal (kollabiert).
-  const [view, setView] = useState<ViewState>("chooser");
+  // v0.1.555 — Schritt 1: Organisation (Einladungslink / Organisationsschluessel).
+  const [view, setView] = useState<ViewState>("org");
   const [config, setConfig] = useState<ProviderConfigBundle | null>(null);
 
   // Read the persisted provider config once on mount so we know whether
@@ -256,6 +259,37 @@ export function FirstRunWizard({
   // escape-hatch chooser can also render this warning if it applies.
   // (Already moved further up — see top of function.)
 
+  if (view === "org") {
+    return (
+      <div className="first-run">
+        <div className="first-run__card first-run__card--wide">
+          <p className="first-run__eyebrow">Schritt 1 von 3 · Organisation</p>
+          <h1 className="first-run__title">Arbeitest du in einer Organisation?</h1>
+          <p className="muted">
+            Organisationen teilen Firmenbestand, Vorgaben und auf Wunsch zentrale KI-Schlüssel. Über einen
+            Einladungslink deines Admins trittst du bei; die KI-Abrechnung läuft dann über die Organisation.
+          </p>
+          {memoryWarning}
+          <OrgStep
+            onWeiterOhne={() => setView("chooser")}
+            onOrgSchluessel={async (kind) => {
+              await window.api.agent.setProvider({ kind });
+              const next = await window.api.agent.getProviderConfig();
+              setConfig(next);
+              onProviderConfigChanged?.(next);
+              const stillNeeded = status.missing.filter((m) => m.role !== "llm");
+              for (const m of stillNeeded) {
+                void pullModelTracked(m.name).catch(() => undefined);
+              }
+              onPathChosen?.();
+              setView("intro");
+            }}
+          />
+        </div>
+      </div>
+    );
+  }
+
   if (view === "chooser") {
     const onCloudDone = async () => {
       const next = await window.api.agent.getProviderConfig();
@@ -292,7 +326,7 @@ export function FirstRunWizard({
     return (
       <div className="first-run">
         <div className="first-run__card first-run__card--wide">
-          <p className="first-run__eyebrow">Schritt 1 von 2 · KI-Anbieter wählen</p>
+          <p className="first-run__eyebrow">Schritt 2 von 3 · KI-Anbieter wählen</p>
           <h1 className="first-run__title">Womit soll AVA denken?</h1>
           <p className="muted">
             Wähle, welche KI AVA nutzt. Wir empfehlen das ChatGPT-Abo:
@@ -305,7 +339,7 @@ export function FirstRunWizard({
             onPickLocal={onPickLocalModel}
             onApiKeyDone={onCloudDone}
             onSubscriptionDone={onCloudDone}
-            onBack={() => setView("intro")}
+            onBack={() => setView("org")}
             hideBack
           />
           <p className="muted small">
@@ -358,7 +392,7 @@ export function FirstRunWizard({
   return (
     <div className="first-run">
       <div className="first-run__card">
-        <p className="first-run__eyebrow">Schritt 2 von 2 · Modelle bereitstellen</p>
+        <p className="first-run__eyebrow">Schritt 3 von 3 · Modelle bereitstellen</p>
         <h1 className="first-run__title">
           {cloudOk ? "Fast geschafft" : "Lokale Modelle herunterladen"}
         </h1>
@@ -1006,4 +1040,181 @@ function labelFor(kind: LlmProviderKind): string {
     case "qwen":
       return "Qwen";
   }
+}
+
+
+// v0.1.555 — Onboarding-Schritt „Organisation".
+//
+// Faelle:
+//   - Mitglied einer Organisation MIT KI-Schluessel → Anbieter-Schritt darf
+//     uebersprungen werden (Organisationsschluessel, Abrechnung ueber die Orga).
+//   - Mitglied OHNE Schluessel → Hinweis, Anbieter selbst waehlen.
+//   - persoenlich → Einladungslink einfuegen (Beitrittsanfrage) oder ohne
+//     Organisation weiter. Eine offene Anfrage wirkt erst nach Admin-Freigabe,
+//     bis dahin muss der Anbieter selbst gewaehlt werden.
+const LLM_KINDS = ["openai", "anthropic", "google", "mistral", "deepseek", "xai", "qwen"] as const;
+const LLM_LABEL: Record<string, string> = { openai: "OpenAI", anthropic: "Anthropic", google: "Google", mistral: "Mistral", deepseek: "DeepSeek", xai: "xAI", qwen: "Qwen", apify: "Apify" };
+
+function OrgStep({
+  onWeiterOhne,
+  onOrgSchluessel,
+}: {
+  onWeiterOhne: () => void;
+  onOrgSchluessel: (kind: HostedProviderKind) => Promise<void>;
+}) {
+  const [st, setSt] = useState<OrgState | null>(null);
+  const [offen, setOffen] = useState<{ tenantName: string | null } | null>(null);
+  const [link, setLink] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [fehler, setFehler] = useState<string | null>(null);
+  const [laden, setLaden] = useState(true);
+
+  const lade = async () => {
+    setLaden(true);
+    try {
+      await window.api.org.refreshPolicy().catch(() => undefined);
+      const [org, who] = await Promise.all([
+        gatewayFetch<OrgState>("/v1/tenants/me"),
+        gatewayFetch<{ openJoinRequest?: { tenantName: string | null } | null }>("/v1/whoami"),
+      ]);
+      setSt(org);
+      setOffen(who.openJoinRequest ?? null);
+      const pending = await window.api.org.consumePendingJoin();
+      if (pending) setLink(`ava://join/${pending}`);
+    } catch (e) {
+      setFehler(e instanceof Error ? e.message : String(e));
+    } finally {
+      setLaden(false);
+    }
+  };
+  useEffect(() => {
+    void lade();
+  }, []);
+
+  const beitritt = async () => {
+    setBusy(true);
+    setFehler(null);
+    try {
+      const token = await window.api.org.extractJoinToken(link);
+      if (!token) throw new Error("Das ist kein gültiger Einladungslink (erwartet: ava://join/…).");
+      const r = await gatewayFetch<{ tenantName: string | null }>("/v1/tenants/join", { method: "POST", body: { inviteToken: token } });
+      setOffen({ tenantName: r.tenantName });
+      setLink("");
+    } catch (e) {
+      setFehler(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const statusPruefen = async () => {
+    setBusy(true);
+    try {
+      const gewechselt = await window.api.org.checkTenant();
+      if (!gewechselt) await lade();
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (laden) return <p className="muted">Organisation wird geprüft…</p>;
+
+  const orgKeys = (st?.providers ?? []).filter((p) => (LLM_KINDS as readonly string[]).includes(p.kind));
+  const chatModel = st?.policy?.chatModel ?? null;
+
+  if (st?.kind === "organisation") {
+    return (
+      <div className="first-run__option-card" style={{ borderColor: "var(--accent, #00C0A7)" }}>
+        <h3 className="first-run__option-title">Du bist Mitglied von {st.name ?? "einer Organisation"}</h3>
+        {orgKeys.length > 0 ? (
+          <>
+            <p className="first-run__option-sub">
+              Deine Organisation stellt KI-Schlüssel bereit ({orgKeys.map((k) => LLM_LABEL[k.kind] ?? k.kind).join(", ")}). Aufrufe
+              laufen über das AVA-Gateway, die Abrechnung über die Organisation; einen eigenen Schlüssel brauchst du nicht.
+              {chatModel ? ` Vorgegebenes Chat-Modell: ${chatModel}.` : ""}
+            </p>
+            <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
+              <button
+                type="button"
+                className="primary"
+                disabled={busy}
+                onClick={() => {
+                  setBusy(true);
+                  const kind = (orgKeys.find((k) => k.kind === "openai") ?? orgKeys[0])!.kind as HostedProviderKind;
+                  void onOrgSchluessel(kind).catch((e) => setFehler(e instanceof Error ? e.message : String(e))).finally(() => setBusy(false));
+                }}
+              >
+                Organisationsschlüssel verwenden →
+              </button>
+              {!st.policy?.providerLock && (
+                <button type="button" onClick={onWeiterOhne} disabled={busy}>
+                  Eigenen Anbieter wählen
+                </button>
+              )}
+            </div>
+          </>
+        ) : (
+          <>
+            <p className="first-run__option-sub">
+              Deine Organisation hat noch keinen KI-Schlüssel hinterlegt. Bis ein Admin das unter Einstellungen → Organisation
+              nachholt, wähle deinen Anbieter selbst.
+            </p>
+            <button type="button" className="primary" onClick={onWeiterOhne}>
+              Anbieter wählen →
+            </button>
+          </>
+        )}
+        {fehler && <p className="bad">{fehler}</p>}
+      </div>
+    );
+  }
+
+  return (
+    <>
+      <div className="first-run__option-card">
+        <h3 className="first-run__option-title">Einladungslink einer Organisation</h3>
+        {offen ? (
+          <>
+            <p className="first-run__option-sub">
+              Beitritt zu <strong>{offen.tenantName ?? "der Organisation"}</strong> angefragt. Sobald ein Admin freigibt, startet AVA
+              in der Organisation neu; die Schlüssel der Organisation gelten dann automatisch. Bis dahin wähle bitte deinen
+              Anbieter selbst.
+            </p>
+            <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
+              <button type="button" onClick={() => void statusPruefen()} disabled={busy}>
+                Freigabe prüfen
+              </button>
+              <button type="button" className="primary" onClick={onWeiterOhne} disabled={busy}>
+                Weiter: Anbieter wählen →
+              </button>
+            </div>
+          </>
+        ) : (
+          <>
+            <p className="first-run__option-sub">
+              Füge den Link ein, den du von deinem Admin bekommen hast (ava://join/…). Der Beitritt wird angefragt und muss vom
+              Admin freigegeben werden.
+            </p>
+            <div style={{ display: "flex", gap: "0.5rem", maxWidth: 560 }}>
+              <input type="text" placeholder="ava://join/…" value={link} onChange={(e) => setLink(e.target.value)} style={{ flex: 1 }} />
+              <button type="button" className="primary" disabled={busy || link.trim().length < 8} onClick={() => void beitritt()}>
+                Beitritt anfragen
+              </button>
+            </div>
+          </>
+        )}
+        {fehler && <p className="bad">{fehler}</p>}
+      </div>
+      <div className="first-run__option-card">
+        <h3 className="first-run__option-title">Ohne Organisation</h3>
+        <p className="first-run__option-sub">
+          Du arbeitest in deinem persönlichen Bereich und wählst deine KI selbst. Eine Organisation kannst du später
+          unter Einstellungen → Organisation anlegen oder beitreten.
+        </p>
+        <button type="button" onClick={onWeiterOhne} disabled={busy}>
+          Weiter ohne Organisation →
+        </button>
+      </div>
+    </>
+  );
 }
