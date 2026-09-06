@@ -159,11 +159,51 @@ export class Auth extends EventEmitter {
       await this.exchangeRefreshToken(refreshToken);
       return this.status.signedIn;
     } catch (err) {
-      console.warn("auth: silent restore failed:", (err as Error).message);
-      // Persisted token is unusable — wipe it so we don't loop on it.
-      await this.clearRefreshToken();
+      // v0.1.554 — Vorher wurde das Token bei JEDEM Fehler geloescht, auch bei
+      // Timeout/Proxy/Netz weg → „staendig neu anmelden" (Windows-Befund).
+      // Jetzt: nur bei definitiver Ablehnung loeschen, sonst behalten und
+      // im Hintergrund erneut versuchen.
+      if (err instanceof AuthRejectedError) {
+        console.warn("auth: silent restore rejected by issuer — token discarded:", err.message);
+        await this.clearRefreshToken();
+        return false;
+      }
+      console.warn("auth: silent restore failed (transient, token kept):", (err as Error).message);
+      this.scheduleRestoreRetry();
       return false;
     }
+  }
+
+  private restoreRetryTimer: NodeJS.Timeout | null = null;
+  private restoreRetryAttempt = 0;
+
+  /** v0.1.554 — Stille Wiederherstellung spaeter erneut versuchen (Backoff bis 5 Min, max. ~2 h). */
+  private scheduleRestoreRetry(): void {
+    if (this.status.signedIn) return;
+    const delays = [15_000, 30_000, 60_000, 120_000];
+    const delay = delays[this.restoreRetryAttempt] ?? 300_000;
+    if (this.restoreRetryAttempt > 30) return;
+    this.restoreRetryAttempt++;
+    if (this.restoreRetryTimer) clearTimeout(this.restoreRetryTimer);
+    this.restoreRetryTimer = setTimeout(() => {
+      this.restoreRetryTimer = null;
+      void this.retryRestore("timer");
+    }, delay);
+    this.restoreRetryTimer.unref?.();
+    console.log(`auth: restore retry #${this.restoreRetryAttempt} in ${Math.round(delay / 1000)}s`);
+  }
+
+  /** Von aussen (Netz wieder da, Aufwachen, Klick) anstossbar. */
+  async retryRestore(grund: string): Promise<boolean> {
+    if (this.status.signedIn || this.inFlight) return this.status.signedIn;
+    if (this.restoreRetryTimer) {
+      clearTimeout(this.restoreRetryTimer);
+      this.restoreRetryTimer = null;
+    }
+    console.log(`auth: restore retry (${grund})`);
+    const ok = await this.tryRestoreSession();
+    if (ok) this.restoreRetryAttempt = 0;
+    return ok;
   }
 
   async signIn(): Promise<void> {
@@ -469,25 +509,29 @@ export class Auth extends EventEmitter {
   private async ensureDiscovery(): Promise<DiscoveryDoc> {
     if (this.discovery) return this.discovery;
     const url = `${this.issuer.replace(/\/$/, "")}/.well-known/openid-configuration`;
-    // v0.1.204 — harden the first network call. The bare `fetch(url)`
-    // failed silently on a tester's older Intel Mac with "TypeError:
-    // fetch failed", which is undici's generic surface and hides the
-    // real cause (DNS / TLS / connection-refused / IPv6-only network /
-    // proxy / cold-start). The renderer then displayed only the
-    // wrapped IPC error and we couldn't tell what was wrong.
-    //
-    //   - 10s timeout per attempt (prev: no timeout → hung forever
-    //     when the network silently dropped packets).
-    //   - Three attempts with backoff (250ms, 1s) to absorb a Fly
-    //     cold-start or a single packet loss.
-    //   - Surface the cause chain on final failure so the renderer
-    //     shows a useful message (e.g. "DNS lookup failed" /
-    //     "self-signed cert" / "operation timed out") instead of
-    //     undici's opaque "fetch failed".
-    const res = await fetchWithRetry(url, {}, { retries: 3, timeoutMs: 10_000 });
-    if (!res.ok) throw new Error(`discovery failed: ${res.status} ${url}`);
-    this.discovery = (await res.json()) as DiscoveryDoc;
-    return this.discovery;
+    // v0.1.554 — Discovery-Dokument auf Platte cachen: Ist der Anmeldedienst
+    // beim Start kurz nicht erreichbar, reicht der Cache fuer den Token-
+    // Refresh (der Token-Endpunkt selbst muss natuerlich erreichbar sein).
+    const cachePfad = join(app.getPath("userData"), "oidc-discovery.json");
+    try {
+      const res = await fetchWithRetry(url, {}, { retries: 3, timeoutMs: 10_000 });
+      if (!res.ok) throw new Error(`discovery failed: ${res.status} ${url}`);
+      this.discovery = (await res.json()) as DiscoveryDoc;
+      fs.writeFile(cachePfad, JSON.stringify({ issuer: this.issuer, doc: this.discovery }), "utf8").catch(() => undefined);
+      return this.discovery;
+    } catch (err) {
+      try {
+        const raw = JSON.parse(await fs.readFile(cachePfad, "utf8")) as { issuer?: string; doc?: DiscoveryDoc };
+        if (raw.issuer === this.issuer && raw.doc?.token_endpoint) {
+          console.warn("auth: discovery fetch failed — using cached document:", (err as Error).message);
+          this.discovery = raw.doc;
+          return this.discovery;
+        }
+      } catch {
+        /* kein Cache */
+      }
+      throw err;
+    }
   }
 
   private async exchangeAuthorizationCode(
@@ -560,6 +604,9 @@ export class Auth extends EventEmitter {
     );
     if (!res.ok) {
       const text = await res.text().catch(() => "");
+      if (res.status === 400 || res.status === 401) {
+        throw new AuthRejectedError(`refresh rejected: ${res.status} ${text.slice(0, 200)}`, res.status);
+      }
       throw new Error(`refresh failed: ${res.status} ${text.slice(0, 200)}`);
     }
     const tokens = (await res.json()) as TokenResponse;
@@ -639,10 +686,28 @@ export class Auth extends EventEmitter {
     if (this.refreshTimer) clearTimeout(this.refreshTimer);
     const delay = Math.max(5_000, expiresAt - Date.now() - REFRESH_LEAD_MS);
     this.refreshTimer = setTimeout(() => {
-      this.silentRefresh().catch((err) => {
-        console.warn("auth: scheduled refresh failed:", (err as Error).message);
-      });
+      void this.silentRefreshMitWiederholung(0);
     }, delay);
+  }
+
+  /** v0.1.554 — Geplanter Refresh: bei voruebergehenden Fehlern alle 30 s
+   *  erneut (bis 20x), bei Ablehnung Abmeldung + Token verwerfen. */
+  private async silentRefreshMitWiederholung(versuch: number): Promise<void> {
+    try {
+      await this.silentRefresh();
+    } catch (err) {
+      if (err instanceof AuthRejectedError) {
+        console.warn("auth: scheduled refresh rejected — signing out:", err.message);
+        await this.clearRefreshToken();
+        this.setStatus(SIGNED_OUT);
+        return;
+      }
+      console.warn(`auth: scheduled refresh failed (transient, #${versuch + 1}):`, (err as Error).message);
+      if (versuch < 20) {
+        if (this.refreshTimer) clearTimeout(this.refreshTimer);
+        this.refreshTimer = setTimeout(() => void this.silentRefreshMitWiederholung(versuch + 1), 30_000);
+      }
+    }
   }
 
   private async silentRefresh(): Promise<void> {
@@ -935,6 +1000,30 @@ interface RetryOpts {
   timeoutMs: number;
 }
 
+/** v0.1.554 — Definitive Ablehnung durch Keycloak (400/401 am Token-Endpunkt):
+ *  NUR dann darf das gespeicherte Refresh-Token verworfen werden. Netzwerk-,
+ *  Timeout- und 5xx-Fehler sind voruebergehend und behalten das Token. */
+export class AuthRejectedError extends Error {
+  constructor(message: string, public readonly status: number) {
+    super(message);
+    this.name = "AuthRejectedError";
+  }
+}
+
+/** v0.1.554 — Electron-`net.fetch` statt Node-`fetch` (undici): geht durch
+ *  Chromiums Netzwerk-Stack, respektiert System-Proxy/PAC und den
+ *  Zertifikatsspeicher des Betriebssystems (Windows mit Unternehmens-Proxy
+ *  oder TLS-Inspektion). Rueckfall auf globales fetch ausserhalb Electron. */
+function proxyAwareFetch(): typeof fetch {
+  try {
+    const { net } = require("electron") as { net?: { fetch?: typeof fetch } };
+    if (net && typeof net.fetch === "function" && app.isReady()) return net.fetch.bind(net) as typeof fetch;
+  } catch {
+    /* kein Electron (Tests) */
+  }
+  return fetch;
+}
+
 async function fetchWithRetry(
   url: string,
   init: RequestInit = {},
@@ -946,7 +1035,7 @@ async function fetchWithRetry(
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), opts.timeoutMs);
     try {
-      const res = await fetch(url, { ...init, signal: controller.signal });
+      const res = await proxyAwareFetch()(url, { ...init, signal: controller.signal });
       clearTimeout(timeout);
       // Don't retry on a 4xx/5xx response — the caller handles
       // those. Retry only network-level errors (caught below).
@@ -962,8 +1051,12 @@ async function fetchWithRetry(
       await new Promise((r) => setTimeout(r, delay));
     }
   }
+  const hinweis =
+    lastErr instanceof Error && lastErr.name === "AbortError"
+      ? " — Zeitueberschreitung: Der Anmeldedienst ist von diesem Rechner aus nicht erreichbar (Proxy, Firewall oder VPN pruefen)."
+      : "";
   throw new Error(
-    `fetch ${url} failed after ${opts.retries} attempt(s): ${stringifyErrorCauseChain(lastErr)}`,
+    `fetch ${url} failed after ${opts.retries} attempt(s): ${stringifyErrorCauseChain(lastErr)}${hinweis}`,
   );
 }
 

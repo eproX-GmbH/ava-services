@@ -2372,6 +2372,9 @@ app.whenReady().then(async () => {
     }));
   });
   powerMonitor.on("resume", () => {
+    // v0.1.554 — Netz nach dem Aufwachen oft erst spaeter da: stille
+    // Anmeldung erneut versuchen, statt den Nutzer zur Maske zu schicken.
+    setTimeout(() => void auth.retryRestore("resume").catch(() => undefined), 8_000);
     writeLineSync("INFO ", "[power] resume begin");
     console.log("[power] resume — re-arming services in 3s");
     setTimeout(() => {
