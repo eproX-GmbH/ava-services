@@ -15,7 +15,7 @@
 import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
 import { HTTPException } from "hono/http-exception";
 import { getGatewayPool } from "../../lib/producer-pools";
-import { createShare, listShares, revokeShare, markShare } from "../../lib/org-shares";
+import { createShare, createRadarShares, listShares, revokeShare, markShare } from "../../lib/org-shares";
 import { callUpstream } from "../../lib/upstream";
 import {
   createOrganisation,
@@ -256,5 +256,21 @@ tenantsRouter.openapi(
     const { id, was } = c.req.valid("param");
     await wrap(() => markShare(getGatewayPool(), c.get("auth"), id, was));
     return c.json({ ok: true as const });
+  },
+);
+
+tenantsRouter.openapi(
+  createRoute({
+    method: "post",
+    path: "/tenants/me/shares/radar",
+    tags: ["tenants"],
+    summary: "O9 — mehrere Radar-Firmen mit der Organisation teilen.",
+    request: { body: { content: { "application/json": { schema: z.object({ discoveryIds: z.array(z.string().min(1).max(200)).min(1).max(200), note: z.string().max(500).optional() }) } } } },
+    responses: { 201: { content: { "application/json": { schema: z.object({}).passthrough() } }, description: "geteilt" } },
+  }),
+  async (c) => {
+    const { discoveryIds, note } = c.req.valid("json");
+    const r = await wrap(() => createRadarShares(getGatewayPool(), c.get("auth"), discoveryIds, note ?? null));
+    return c.json({ ok: true as const, ...r }, 201);
   },
 );

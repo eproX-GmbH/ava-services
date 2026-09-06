@@ -17,7 +17,7 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { readIdentity, updateIdentityTenant } from "./account-space";
 import type { GatewayClient } from "./agent/gateway-client";
-import type { OrgState, OrgPolicy } from "../shared/types";
+import type { OrgState, OrgPolicy, OrgShareRow } from "../shared/types";
 import { applyOrgPolicy } from "./org-policy";
 
 interface WhoamiLite {
@@ -33,6 +33,8 @@ interface Deps {
   isSignedIn: () => boolean;
   /** O5 — Organisationsschluessel (Hinweise) an den Provider-Manager melden. */
   onOrgProviders?: (providers: Record<string, string>) => void;
+  /** O9 — neue, noch nicht gemeldete Radar-Freigaben (Sammel-Meldung). */
+  onNeueRadarFreigaben?: (shares: OrgShareRow[]) => void;
 }
 
 let deps: Deps | null = null;
@@ -162,6 +164,64 @@ export async function checkTenantChange(grund: string): Promise<boolean> {
   return true;
 }
 
+// O9 — Radar-Freigaben: einmal je Freigabe melden (Merker in userData).
+function gemeldetPfad(): string {
+  return join(app.getPath("userData"), "org-shares-notified.json");
+}
+function gemeldeteIds(): Set<string> {
+  try {
+    const p = gemeldetPfad();
+    if (!existsSync(p)) return new Set();
+    return new Set(JSON.parse(readFileSync(p, "utf8")) as string[]);
+  } catch {
+    return new Set();
+  }
+}
+function merkeGemeldet(ids: Set<string>): void {
+  try {
+    writeFileSync(gemeldetPfad(), JSON.stringify(Array.from(ids).slice(-2000)));
+  } catch {
+    /* best-effort */
+  }
+}
+
+export async function listShares(kind?: "transaction" | "radar_company"): Promise<OrgShareRow[]> {
+  if (!deps) return [];
+  const qs = kind ? `?kind=${kind}` : "";
+  const r = await deps.gateway.request<{ items: OrgShareRow[] }>(`/v1/tenants/me/shares${qs}`, { method: "GET" });
+  return r.items ?? [];
+}
+
+export async function shareRadar(discoveryIds: string[], note?: string): Promise<{ geteilt: number; unbekannt: string[] }> {
+  if (!deps) throw new Error("Organisation nicht initialisiert");
+  return deps.gateway.request<{ geteilt: number; unbekannt: string[] }>("/v1/tenants/me/shares/radar", {
+    method: "POST",
+    body: { discoveryIds, ...(note ? { note } : {}) },
+  });
+}
+
+export async function markShare(id: string, was: "seen" | "dismiss"): Promise<void> {
+  if (!deps) return;
+  await deps.gateway.request(`/v1/tenants/me/shares/${encodeURIComponent(id)}/${was}`, { method: "POST" });
+}
+
+async function pruefeRadarFreigaben(): Promise<void> {
+  if (!deps || !deps.isSignedIn() || !deps.onNeueRadarFreigaben) return;
+  let items: OrgShareRow[];
+  try {
+    items = await listShares("radar_company");
+  } catch {
+    return;
+  }
+  const gemeldet = gemeldeteIds();
+  const ident = readIdentity();
+  const neu = items.filter((x) => !gemeldet.has(x.id) && !x.seenAt && x.sharedBy !== ident?.sub);
+  if (neu.length === 0) return;
+  deps.onNeueRadarFreigaben(neu);
+  for (const x of neu) gemeldet.add(x.id);
+  merkeGemeldet(gemeldet);
+}
+
 async function pruefeAnfragen(): Promise<void> {
   if (!deps || !deps.isSignedIn()) return;
   let st: OrgState;
@@ -174,6 +234,7 @@ async function pruefeAnfragen(): Promise<void> {
   const provs: Record<string, string> = {};
   for (const p of st.providers ?? []) provs[p.kind] = p.keyHint;
   deps.onOrgProviders?.(provs);
+  if (st.kind === "organisation") void pruefeRadarFreigaben();
   if (st.kind !== "organisation" || !(st.myRole === "owner" || st.myRole === "admin")) {
     bekannteAnfragen = null;
     return;

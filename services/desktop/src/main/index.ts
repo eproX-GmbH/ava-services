@@ -94,6 +94,9 @@ import {
   consumePendingJoin,
   checkTenantChange,
   extractJoinToken,
+  listShares as orgListShares,
+  shareRadar as orgShareRadar,
+  markShare as orgMarkShare,
 } from "./organisation";
 import { featureEnabled, getOrgPolicy, onOrgPolicyChange } from "./org-policy";
 import { initLinkedIn } from "./linkedin";
@@ -3565,6 +3568,34 @@ app.whenReady().then(async () => {
         gatewayUrl: APP_CONFIG.gatewayUrl,
         getToken: () => auth.getAccessToken(),
       }),
+    // O9 — Sammel-Meldung je Abgleich: „N neue Firmen aus der Organisation".
+    onNeueRadarFreigaben: (shares) => {
+      const zeilen = shares.slice(0, 10).map((x) => {
+        const k = x.candidate;
+        const ort = k ? [k.plz, k.city].filter(Boolean).join(" ") : "";
+        const wer = x.sharedByName ?? x.sharedBy.slice(0, 8) + "…";
+        return `- **${k?.name ?? x.refId}**${ort ? ` (${ort})` : ""}${k?.domain ? ` · ${k.domain}` : ""} · geteilt von ${wer}${x.note ? ` · „${x.note}"` : ""}`;
+      });
+      const mehr = shares.length > 10 ? `\n- … und ${shares.length - 10} weitere` : "";
+      const alert = alerts.add({
+        tenantId: auth.getStatus().tenantId ?? null,
+        companyId: shares[0]?.candidate?.masterCompanyId ?? "",
+        companyName: shares.length === 1 ? (shares[0]?.candidate?.name ?? "Organisation") : "Organisation",
+        kind: "radar-match",
+        severity: "info",
+        headline: shares.length === 1 ? "1 neue Firma aus der Organisation im Radar" : `${shares.length} neue Firmen aus der Organisation im Radar`,
+        rationale: `Kolleginnen und Kollegen haben Firmen mit dir geteilt:\n${zeilen.join("\n")}${mehr}\n\nEntscheiden unter [Firmen → Radar](#/radar).`,
+        sourceRef: `org-share:radar:${shares.map((x) => x.id).sort().join(",").slice(0, 400)}`,
+      });
+      if (alert) {
+        broadcastAlertsChanged();
+        try {
+          notifications.notifyForAlert(alert);
+        } catch {
+          /* best-effort */
+        }
+      }
+    },
   });
 
   // v0.1.101 — generic shell.openExternal bridge for plain http/https
@@ -5452,6 +5483,12 @@ app.whenReady().then(async () => {
   ipcMain.handle("org:consumePendingJoin", () => consumePendingJoin());
   ipcMain.handle("org:checkTenant", () => checkTenantChange("auf Anforderung"));
   ipcMain.handle("org:extractJoinToken", (_e, eingabe: string) => extractJoinToken(String(eingabe ?? "")));
+  // O9 — Freigaben (Radar-Firmen) im Renderer.
+  ipcMain.handle("org:shares", (_e, kind?: "transaction" | "radar_company") => orgListShares(kind));
+  ipcMain.handle("org:shareRadar", (_e, ids: string[], note?: string) =>
+    orgShareRadar((Array.isArray(ids) ? ids : []).map(String), typeof note === "string" ? note : undefined),
+  );
+  ipcMain.handle("org:markShare", (_e, id: string, was: "seen" | "dismiss") => orgMarkShare(String(id), was === "dismiss" ? "dismiss" : "seen"));
   ipcMain.handle("org:getPolicy", () => getOrgPolicy());
   ipcMain.handle("org:refreshPolicy", async () => {
     await checkTenantChange("Vorgaben aktualisiert");

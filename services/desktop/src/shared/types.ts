@@ -126,6 +126,20 @@ export interface OrgQuotaExceeded {
   hardStop: boolean;
 }
 
+/** O8/O9 — Freigabe in der Organisation (GET /v1/tenants/me/shares). */
+export interface OrgShareRow {
+  id: string;
+  kind: "transaction" | "radar_company";
+  refId: string;
+  sharedBy: string;
+  sharedByName: string | null;
+  sharedAt: string;
+  note: string | null;
+  seenAt: string | null;
+  dismissedAt: string | null;
+  candidate?: { name: string; city: string | null; plz: string | null; domain: string | null; category: string | null; masterCompanyId: string | null } | null;
+}
+
 export interface OrgUsageRow {
   actorId: string;
   day: string;

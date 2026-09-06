@@ -8,6 +8,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { useUsage } from "../api/usage";
+import type { OrgShareRow } from "../../../shared/types";
 
 interface RadarRow {
   discoveryId: string;
@@ -43,6 +44,57 @@ export function DiscoveryRadar(): JSX.Element {
     lastOutcome: string | null;
   } | null>(null);
   const [radarRunning, setRadarRunning] = useState(false);
+  // O9 — Freigaben aus der Organisation (unabhaengig vom eigenen ICP).
+  const [geteilt, setGeteilt] = useState<OrgShareRow[]>([]);
+  const [shareBusy, setShareBusy] = useState<string | null>(null);
+  const ladeGeteilt = async (): Promise<void> => {
+    try {
+      const items = await window.api.org.shares("radar_company");
+      setGeteilt(items);
+      for (const x of items) if (!x.seenAt) void window.api.org.markShare(x.id, "seen");
+    } catch {
+      setGeteilt([]);
+    }
+  };
+  useEffect(() => {
+    void ladeGeteilt();
+    return window.api.org.onRequestsChanged(() => void ladeGeteilt());
+  }, []);
+  const teilen = async (): Promise<void> => {
+    if (selected.size === 0 || busy) return;
+    setBusy("decide");
+    setNotice(null);
+    try {
+      const r = await window.api.org.shareRadar([...selected]);
+      setNotice(`${r.geteilt} Firma${r.geteilt === 1 ? "" : "n"} mit der Organisation geteilt.${r.unbekannt.length ? ` ${r.unbekannt.length} unbekannt.` : ""}`);
+      setSelected(new Set());
+    } catch (e) {
+      setNotice(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(null);
+    }
+  };
+  const geteiltEntscheiden = async (x: OrgShareRow, decision: "imported" | "dismissed" | "hide"): Promise<void> => {
+    setShareBusy(x.id);
+    try {
+      if (decision !== "hide") {
+        const result = await window.api.discovery.decide([{ discoveryId: x.refId, decision }]);
+        if ("error" in result) {
+          setNotice(result.error);
+          return;
+        }
+        if (decision === "imported") {
+          setNotice(result.importiert > 0 ? "Firma importiert — Verarbeitung läuft" : result.ohneOrt.length > 0 ? "Nicht importierbar (kein Ort)" : "Keine Änderung.");
+          setLastImportTx(result.transactionId);
+        }
+      }
+      await window.api.org.markShare(x.id, "dismiss");
+      setGeteilt((g) => g.filter((y) => y.id !== x.id));
+      if (decision !== "hide") await reload();
+    } finally {
+      setShareBusy(null);
+    }
+  };
 
   const reload = useCallback(async () => {
     setLoading(true);
@@ -322,7 +374,55 @@ export function DiscoveryRadar(): JSX.Element {
           >
             Ignorieren ({selected.size})
           </button>
+          <button
+            className="proc-toggle"
+            onClick={() => void teilen()}
+            disabled={busy !== null}
+            title="Die ausgewählten Firmen erscheinen bei allen Mitgliedern deiner Organisation im Radar"
+          >
+            Mit Organisation teilen ({selected.size})
+          </button>
         </div>
+      )}
+
+      {geteilt.length > 0 && (
+        <section className="provider-section" style={{ marginTop: "1rem" }}>
+          <h3>Von der Organisation geteilt</h3>
+          <p className="muted small">
+            Kolleginnen und Kollegen empfehlen dir diese Firmen. Sie erscheinen unabhängig von deinem ICP; importieren legt wie
+            gewohnt einen Vorgang an.
+          </p>
+          <div className="org-list">
+            {geteilt.map((x) => {
+              const k = x.candidate;
+              const ort = k ? [k.plz, k.city].filter(Boolean).join(" ") : "";
+              return (
+                <div key={x.id} className="org-row">
+                  <div className="org-row__main">
+                    <span className="org-row__title">{k?.name ?? x.refId}</span>
+                    <span className="org-row__meta">
+                      {[ort, k?.domain, k?.category].filter(Boolean).join(" · ")}
+                      {" · geteilt von "}
+                      {x.sharedByName ?? `${x.sharedBy.slice(0, 8)}…`}
+                      {x.note ? ` · „${x.note}"` : ""}
+                    </span>
+                  </div>
+                  <div className="org-row__actions">
+                    <button type="button" className="primary" disabled={shareBusy !== null} onClick={() => void geteiltEntscheiden(x, "imported")}>
+                      Importieren
+                    </button>
+                    <button type="button" className="btn" disabled={shareBusy !== null} onClick={() => void geteiltEntscheiden(x, "dismissed")}>
+                      Ignorieren
+                    </button>
+                    <button type="button" className="btn" disabled={shareBusy !== null} onClick={() => void geteiltEntscheiden(x, "hide")} title="Nur für mich ausblenden">
+                      Ausblenden
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </section>
       )}
 
       {loading ? (

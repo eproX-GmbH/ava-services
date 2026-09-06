@@ -20,6 +20,8 @@ export interface OrgShareRow {
   note: string | null;
   seenAt: string | null;
   dismissedAt: string | null;
+  /** O9 — nur bei kind=radar_company: Kandidat aus dem gemeinsamen Bestand. */
+  candidate?: { name: string; city: string | null; plz: string | null; domain: string | null; category: string | null; masterCompanyId: string | null } | null;
 }
 
 async function istOrganisation(pool: pg.Pool, tenantId: string): Promise<boolean> {
@@ -95,7 +97,7 @@ export async function listShares(
       LIMIT 500`,
     params,
   );
-  return r.rows.map((x) => ({
+  const rows: OrgShareRow[] = r.rows.map((x) => ({
     id: x.id,
     kind: x.kind as ShareKind,
     refId: x.refId,
@@ -106,6 +108,50 @@ export async function listShares(
     seenAt: x.seenAt ? new Date(x.seenAt).toISOString() : null,
     dismissedAt: x.dismissedAt ? new Date(x.dismissedAt).toISOString() : null,
   }));
+  // O9 — Radar-Firmen mit Kandidatendaten anreichern (gemeinsamer Bestand).
+  const radarIds = rows.filter((x) => x.kind === "radar_company").map((x) => x.refId);
+  if (radarIds.length > 0) {
+    try {
+      const c = await pool.query<{ discoveryId: string; name: string; city: string | null; plz: string | null; domain: string | null; category: string | null; masterCompanyId: string | null }>(
+        `SELECT "discoveryId", name, city, plz, domain, category, "masterCompanyId" FROM "DiscoveredCompany" WHERE "discoveryId" = ANY($1::text[])`,
+        [radarIds],
+      );
+      const by = new Map(c.rows.map((x) => [x.discoveryId, x]));
+      for (const row of rows) {
+        if (row.kind !== "radar_company") continue;
+        const k = by.get(row.refId);
+        row.candidate = k ? { name: k.name, city: k.city, plz: k.plz, domain: k.domain, category: k.category, masterCompanyId: k.masterCompanyId } : null;
+      }
+    } catch {
+      /* DiscoveredCompany-Tabelle (ensureSchema) evtl. noch nicht da — ohne Anreicherung liefern */
+    }
+  }
+  return rows;
+}
+
+/** O9 — mehrere Radar-Firmen auf einmal teilen; unbekannte discoveryIds werden uebersprungen. */
+export async function createRadarShares(pool: pg.Pool, auth: AuthContext, discoveryIds: string[], note: string | null): Promise<{ geteilt: number; unbekannt: string[] }> {
+  if (!(await istOrganisation(pool, auth.tenantId))) throw new TenantError(409, "Teilen geht nur innerhalb einer Organisation.");
+  const ids = Array.from(new Set(discoveryIds.map((x) => x.trim()).filter(Boolean))).slice(0, 200);
+  let bekannt = new Set<string>(ids);
+  try {
+    const r = await pool.query<{ discoveryId: string }>(`SELECT "discoveryId" FROM "DiscoveredCompany" WHERE "discoveryId" = ANY($1::text[])`, [ids]);
+    bekannt = new Set(r.rows.map((x) => x.discoveryId));
+  } catch {
+    /* ohne Bestandstabelle alle akzeptieren */
+  }
+  let geteilt = 0;
+  for (const id of ids) {
+    if (!bekannt.has(id)) continue;
+    await pool.query(
+      `INSERT INTO "OrgShare" ("id", "tenantId", "kind", "refId", "sharedBy", "note")
+       VALUES ($1, $2, 'radar_company', $3, $4, $5)
+       ON CONFLICT ("tenantId", "kind", "refId") DO UPDATE SET "revokedAt" = NULL, "sharedBy" = EXCLUDED."sharedBy", "sharedAt" = CURRENT_TIMESTAMP, "note" = EXCLUDED."note"`,
+      [`sh_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`, auth.tenantId, id, auth.actorId, note],
+    );
+    geteilt++;
+  }
+  return { geteilt, unbekannt: ids.filter((x) => !bekannt.has(x)) };
 }
 
 /** Aktive Transaktions-Freigabe im Tenant fuer eine transactionId (Lesezugriff fuer Mitglieder). */

@@ -4,8 +4,8 @@ Auto-generiert von `services/desktop/scripts/generate-tools-md.mjs`.
 NICHT direkt bearbeiten — die Quelle der Wahrheit ist `services/desktop/src/main/agent/tools/*.ts`.
 Lauf via `pnpm -F @ava/desktop tools:doc` (oder automatisch via `build:typecheck`).
 
-Stand: 2026-09-05
-Anzahl Tools: 213
+Stand: 2026-09-06
+Anzahl Tools: 214
 
 ## Firmen (13)
 
@@ -1646,7 +1646,7 @@ Liefert den Status des lokalen Ollama-Daemons: Zustand (idle / starting / ready 
 
 _Parameter:_ keine.
 
-## organisation (8)
+## organisation (9)
 
 ### `org_features_set`
 
@@ -1723,6 +1723,16 @@ Liefert Limit und Stand (Monatsbudget bzw. Tagesbudget) sowie den Verbrauch uebe
 
 _Parameter:_
 - `tage: number` — Zeitraum in Tagen (1–90, Standard 30)
+
+### `radar_share`
+
+_Datei:_ `services/desktop/src/main/agent/tools/organisation.ts`
+
+Teilt Radar-Kandidaten mit der Organisation: sie erscheinen bei allen Mitgliedern oben im Radar unter 'Von der Organisation geteilt', unabhaengig vom ICP, mit optionaler Notiz. discoveryIds aus discovery_candidates. Fragt vor der Ausfuehrung nach.
+
+_Parameter:_
+- `discoveryIds: array` (required)
+- `notiz: string` — Optionale Notiz fuer die Mitglieder (max. 500 Zeichen)
 
 ## Producer (Hintergrund-Services) (2)
 

@@ -366,5 +366,47 @@ export function buildOrganisationTools(deps: OrgToolDeps): Tool[] {
     },
   });
 
-  return [info, members, approve, remove, featuresSet, providerSet, limitsSet, usage];
+  // O9 — Radar-Firmen mit der Organisation teilen.
+  const radarShare = defineTool({
+    name: "radar_share",
+    summary: "Radar-Firmen (discoveryIds) mit allen Mitgliedern der Organisation teilen.",
+    category: "radar firmen teilen organisation empfehlen kollegen",
+    description:
+      "Teilt Radar-Kandidaten mit der Organisation: sie erscheinen bei allen Mitgliedern oben im Radar unter 'Von der Organisation " +
+      "geteilt', unabhaengig vom ICP, mit optionaler Notiz. discoveryIds aus discovery_candidates. Fragt vor der Ausfuehrung nach.",
+    parameters: {
+      type: "object",
+      required: ["discoveryIds"],
+      properties: {
+        discoveryIds: { type: "array", items: { type: "string" }, minItems: 1, maxItems: 200 },
+        notiz: { type: "string", description: "Optionale Notiz fuer die Mitglieder (max. 500 Zeichen)" },
+      },
+    },
+    schema: yup
+      .object({ discoveryIds: yup.array().of(yup.string().trim().min(1).required()).min(1).max(200).required(), notiz: yup.string().trim().max(500).optional() })
+      .noUnknown(true),
+    preview: (r: { ok?: boolean; abgebrochen?: boolean; geteilt?: number }) => (r.abgebrochen ? "abgebrochen" : `${r.geteilt ?? 0} Firmen geteilt`),
+    run: async (args, c) => {
+      const value = await c.ui.confirmAction(
+        {
+          kind: "additive",
+          prompt: `${args.discoveryIds.length} Radar-Firma${args.discoveryIds.length === 1 ? "" : "n"} mit allen Mitgliedern der Organisation teilen?${args.notiz ? ` Notiz: „${args.notiz}"` : ""}`,
+          confirmValue: "ja",
+          options: [
+            { value: "ja", label: "Teilen" },
+            { value: "nein", label: "Abbrechen" },
+          ],
+        },
+        c.signal,
+      );
+      if (value !== "ja") return { ok: false, abgebrochen: true };
+      const r = await deps.gateway.request<{ geteilt: number; unbekannt: string[] }>("/v1/tenants/me/shares/radar", {
+        method: "POST",
+        body: { discoveryIds: args.discoveryIds, ...(args.notiz ? { note: args.notiz } : {}) },
+      });
+      return { ok: true, ...r };
+    },
+  });
+
+  return [info, members, approve, remove, featuresSet, providerSet, limitsSet, usage, radarShare];
 }

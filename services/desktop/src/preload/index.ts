@@ -1105,6 +1105,12 @@ const api = {
       ipcRenderer.on("org:openPage", h);
       return () => ipcRenderer.removeListener("org:openPage", h);
     },
+    /** O9 — Freigaben der Organisation (Radar-Firmen, Transaktionen). */
+    shares: (kind?: "transaction" | "radar_company"): Promise<import("../shared/types").OrgShareRow[]> =>
+      ipcRenderer.invoke("org:shares", kind),
+    shareRadar: (discoveryIds: string[], note?: string): Promise<{ geteilt: number; unbekannt: string[] }> =>
+      ipcRenderer.invoke("org:shareRadar", discoveryIds, note),
+    markShare: (id: string, was: "seen" | "dismiss"): Promise<void> => ipcRenderer.invoke("org:markShare", id, was),
     /** O6 — Limit der Organisation erreicht (429 vom Stellvertreter-Proxy). */
     onQuotaExceeded: (cb: (info: import("../shared/types").OrgQuotaExceeded) => void): (() => void) => {
       const h = (_e: unknown, info: import("../shared/types").OrgQuotaExceeded) => cb(info);
