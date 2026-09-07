@@ -2023,17 +2023,30 @@ export function ProviderSection() {
   // getOpenAIAuthMode): ein vorhandener Abo-Token GEWINNT immer gegen den
   // API-Key. Damit weiß der Nutzer, was tatsächlich belastet wird, wenn
   // beides hinterlegt ist.
+  // v0.1.564 — Organisationsschluessel als Kanal sichtbar machen; im
+  // Abo-Modus laeuft die Hintergrund-Verarbeitung getrennt vom Chat.
+  const viaOrgActive = activeKind !== "ollama" && keySource?.[activeKind] === "organisation";
+  const orgHintActive = activeKind !== "ollama" ? (orgProviders[activeKind] ?? null) : null;
   const activeChannel: string =
     activeKind === "ollama"
       ? "Lokal (Ollama) — kostenlos"
-      : activeKind === "openai"
+      : viaOrgActive
+        ? `Schlüssel der Organisation (…${orgHintActive ?? "?"})`
+        : activeKind === "openai"
           ? hasOpenAISubscriptionToken
             ? "ChatGPT-Abo"
             : "OpenAI API-Schlüssel"
           : `${PROVIDER_LABEL[activeKind]} API-Schlüssel`;
+  const aboNurChat =
+    activeKind === "openai" && !viaOrgActive && hasOpenAISubscriptionToken && !hasKey.openai;
+  const producerChannel: string | null = !aboNurChat
+    ? null
+    : orgProviders.openai
+      ? `Schlüssel der Organisation (…${orgProviders.openai}) — das ChatGPT-Abo gilt nur im Chat`
+      : "nicht möglich — das ChatGPT-Abo gilt nur im Chat; eigener OpenAI-Schlüssel nötig";
   // v0.1.505 — nur noch ChatGPT: die Claude-Abo-Anmeldung gibt es nicht mehr.
   const channelIsSubscription =
-    activeKind === "openai" && hasOpenAISubscriptionToken;
+    activeKind === "openai" && !viaOrgActive && hasOpenAISubscriptionToken;
 
   const anyHostedKey =
     hasKey.openai || hasKey.google || hasKey.mistral || hasKey.anthropic;
@@ -2075,7 +2088,7 @@ export function ProviderSection() {
           </span>
         </div>
         <div className="active-config-card__row">
-          <span className="active-config-card__label">Abrechnung über</span>
+          <span className="active-config-card__label">{producerChannel ? "Chat über" : "Abrechnung über"}</span>
           <span className="active-config-card__value">
             <span
               className={`badge ${channelIsSubscription ? "ok" : activeKind === "ollama" ? "ok" : "warn"}`}
@@ -2084,6 +2097,14 @@ export function ProviderSection() {
             </span>
           </span>
         </div>
+        {producerChannel && (
+          <div className="active-config-card__row">
+            <span className="active-config-card__label">Hintergrund über</span>
+            <span className="active-config-card__value">
+              <span className={`badge ${orgProviders.openai ? "warn" : "bad"}`}>{producerChannel}</span>
+            </span>
+          </div>
+        )}
         <div className="active-config-card__row">
           <span className="active-config-card__label">Status</span>
           <span className="active-config-card__value">

@@ -268,7 +268,22 @@ export class LlmProviderManager extends EventEmitter {
     if (this.isProviderLocked()) return "organisation";
     const explicit = this.store.getConfig().keySource?.[kind];
     if (explicit) return explicit;
-    return this.store.hasKey(kind as HostedProviderKind) ? "eigen" : "organisation";
+    // v0.1.564 — ein verbundenes Abo (ChatGPT) zaehlt wie ein eigener
+    // Schluessel: eigene Zugaenge haben Vorrang vor dem Organisationsschluessel.
+    return this.store.hasKey(kind as HostedProviderKind) || this.hatAbo(kind) ? "eigen" : "organisation";
+  }
+
+  /**
+   * v0.1.564 — Hintergrund-Verarbeitung im ChatGPT-Abo-Modus: das Abo gilt
+   * nur im Chat (OAuth-Token, kein API-Zugang fuer Producer). Ohne eigenen
+   * API-Schluessel springt der Organisationsschluessel ein, sofern vorhanden.
+   */
+  producerFaelltAufOrganisationZurueck(kind: LlmProviderKind): boolean {
+    if (kind !== "openai") return false;
+    if (this.keySource(kind) !== "eigen") return false;
+    if ((this.store.getConfig().openaiAuthMode ?? "api-key") !== "subscription") return false;
+    if (this.store.hasKey("openai")) return false;
+    return Boolean(this.org.providers.openai);
   }
 
   keySources(): Record<LlmProviderKind, KeySource> {
@@ -840,6 +855,12 @@ export class LlmProviderManager extends EventEmitter {
       env.viaGateway = true;
       return env;
     }
+    // v0.1.564 — ChatGPT-Abo im Chat, Organisationsschluessel im Hintergrund.
+    if (this.producerFaelltAufOrganisationZurueck(kind)) {
+      env.model = (producerOverride || pol.producerModel || this.resolveModel(kind)) || undefined;
+      env.viaGateway = true;
+      return env;
+    }
     // v0.1.553 — Sperre ohne Organisationsschluessel: kein Rueckfall auf eigene Schluessel/Abo.
     if (kind !== "ollama" && this.isProviderLocked()) return null;
 
@@ -923,14 +944,15 @@ export class LlmProviderManager extends EventEmitter {
       }
       return null;
     }
-    // v0.1.353 — OpenAI-Abo-Modus: kein Blocker für den Chat-Agent, aber
-    // Producer können den OAuth-Token nicht nutzen → sie laufen mit
-    // ihrem env-LLM. Daher hier kein Fehler.
+    // v0.1.353/v0.1.564 — OpenAI-Abo-Modus: Producer koennen den OAuth-Token
+    // nicht nutzen. Mit Organisationsschluessel laufen sie darueber (kein
+    // Blocker); ohne bleibt es beim Hinweis.
     if (
       kind === "openai" &&
       (cfg.openaiAuthMode ?? "api-key") === "subscription"
     ) {
-      return null;
+      if (this.producerFaelltAufOrganisationZurueck(kind) || this.store.hasKey("openai")) return null;
+      return "Das ChatGPT-Abo gilt nur im Chat. Fuer die Hintergrund-Verarbeitung brauchst du einen eigenen OpenAI-API-Schluessel oder einen Organisationsschluessel.";
     }
     const key = await this.store.getKey(kind as HostedProviderKind);
     if (!key) {
