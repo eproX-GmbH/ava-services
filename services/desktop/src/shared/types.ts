@@ -361,6 +361,10 @@ export interface ProducerStatus {
    * Empty when the producer is at full capacity.
    */
   featureWarnings: string[];
+  /** v0.1.566 — geplanter automatischer Neustart nach Absturz (Epoch-ms), sonst null. */
+  nextRetryAt?: number | null;
+  /** v0.1.566 — Abstuerze in Folge (0 = stabil). */
+  crashCount?: number;
 }
 
 // ---- Producer logs (v0.1.50) ----------------------------------------------

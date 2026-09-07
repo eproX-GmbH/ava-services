@@ -53,6 +53,18 @@ const HEALTH_TIMEOUT_MS = 30_000;
 const HEALTH_POLL_MS = 500;
 const STOP_TIMEOUT_MS = 10_000;
 /**
+ * v0.1.566 — Selbstheilung nach Absturz. Ein Producer, der unerwartet
+ * endet (Exit ohne stop()) oder nicht gesund wird, blieb bisher bis zum
+ * naechsten Anmelde-/Schluessel-/Vorgabenereignis im Zustand "error"
+ * liegen (Real-Fall 2026-09-07: structured-content + company-publication
+ * nach Exit-Code 1 fuer den Rest der Sitzung tot). Jetzt: Neustart mit
+ * wachsendem Abstand; laeuft ein Producer STABLE_AFTER_MS stabil, setzt
+ * sich der Zaehler zurueck. Blocker (kein Schluessel, nicht angemeldet)
+ * spawnen gar nicht und laufen NICHT in diese Wiederholung.
+ */
+const CRASH_BACKOFF_MS = [5_000, 30_000, 120_000, 600_000] as const;
+const STABLE_AFTER_MS = 5 * 60_000;
+/**
  * v0.1.192 — minimum gap between consecutive `authError` emits from a
  * single producer. A stale Anthropic token surfaces the same 401 on
  * every redelivered AMQP message; without the debounce a packed queue
@@ -168,6 +180,11 @@ export class ProducerSupervisor extends EventEmitter {
   private state: ProducerSupervisorState = "idle";
   private errorMessage: string | null = null;
   private exitCode: number | null = null;
+  /** v0.1.566 — Absturz-Wiederholung. */
+  private crashCount = 0;
+  private readyAt: number | null = null;
+  private retryTimer: NodeJS.Timeout | null = null;
+  private nextRetryAt: number | null = null;
   /**
    * v0.1.170 — last LLM config we applied at spawn time. Captured here
    * so getStatus() can derive `featureWarnings` (e.g. "Deep Research
@@ -361,7 +378,38 @@ export class ProducerSupervisor extends EventEmitter {
       errorMessage: this.errorMessage,
       lastExitCode: this.exitCode,
       featureWarnings: this.computeFeatureWarnings(),
+      nextRetryAt: this.nextRetryAt,
+      crashCount: this.crashCount,
     };
+  }
+
+  /**
+   * v0.1.566 — nach unerwartetem Ende einen Neustart mit wachsendem
+   * Abstand einplanen. Idempotent: ein bereits laufender Timer bleibt.
+   */
+  private scheduleCrashRetry(reason: string): void {
+    if (this.retryTimer) return;
+    if (this.readyAt && Date.now() - this.readyAt > STABLE_AFTER_MS) this.crashCount = 0;
+    this.crashCount += 1;
+    const delay = CRASH_BACKOFF_MS[Math.min(this.crashCount, CRASH_BACKOFF_MS.length) - 1]!;
+    this.nextRetryAt = Date.now() + delay;
+    const sek = Math.round(delay / 1000);
+    const wann = sek < 60 ? `${sek} s` : `${Math.round(sek / 60)} min`;
+    this.setState("error", `${reason} — Neustart in ${wann} (Versuch ${this.crashCount})`);
+    this.retryTimer = setTimeout(() => {
+      this.retryTimer = null;
+      this.nextRetryAt = null;
+      if (this.state !== "error") return;
+      console.info(`[producer-supervisor] ${this.opts.config.name}: Neustart nach Absturz (Versuch ${this.crashCount})`);
+      void this.start().catch((err) => console.warn(`[producer-supervisor] ${this.opts.config.name}: Neustart fehlgeschlagen:`, err));
+    }, delay);
+    this.retryTimer.unref?.();
+  }
+
+  private cancelCrashRetry(): void {
+    if (this.retryTimer) clearTimeout(this.retryTimer);
+    this.retryTimer = null;
+    this.nextRetryAt = null;
   }
 
   /**
@@ -408,6 +456,7 @@ export class ProducerSupervisor extends EventEmitter {
     // both pass the guard, both spawn, the second one EADDRINUSEs.
     // The pre-emptive setState narrows the race window to the
     // synchronous prefix, which Node guarantees is uninterruptible.
+    this.cancelCrashRetry();
     this.setState("starting");
     const producerDir = this.resolveProducerDir();
     if (!producerDir) {
@@ -520,8 +569,7 @@ export class ProducerSupervisor extends EventEmitter {
       if (this.state === "stopping") {
         this.setState("idle");
       } else if (wasRunning) {
-        this.setState(
-          "error",
+        this.scheduleCrashRetry(
           `${this.opts.config.name} exited unexpectedly (code=${code ?? "null"}, signal=${signal ?? "null"})`,
         );
       }
@@ -530,16 +578,19 @@ export class ProducerSupervisor extends EventEmitter {
     const ok = await this.waitUntilReady();
     if (!ok) {
       this.killChild();
-      this.setState(
-        "error",
+      this.scheduleCrashRetry(
         `${this.opts.config.name} did not become healthy within ${HEALTH_TIMEOUT_MS / 1000}s`,
       );
       return;
     }
+    this.readyAt = Date.now();
     this.setState("ready");
   }
 
   async stop(): Promise<void> {
+    // v0.1.566 — ein geplanter Absturz-Neustart wird durch stop() abgesagt
+    // (Abmeldung, Beenden, gezielter Zyklus).
+    this.cancelCrashRetry();
     if (this.state === "idle" || this.state === "error") return;
     if (!this.child) {
       this.setState("idle");

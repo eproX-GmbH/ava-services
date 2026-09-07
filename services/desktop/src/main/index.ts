@@ -3395,10 +3395,19 @@ app.whenReady().then(async () => {
     // that already lives in the Producer-Status-Panel; keeping
     // it out of the audit log saves TTL space for actual signal.
     let prevState: string | null = null;
+    // v0.1.566 — Absturz-Wiederholungen nicht je Versuch auditieren:
+    // erster Absturz sofort, danach hoechstens alle 10 Minuten.
+    let lastCrashAuditAt = 0;
+    let fehlerOffen = false;
     p.on("status", (status: ProducerStatus) => {
       const cur = status.state;
-      const wasErrored = prevState === "error";
-      if (cur === "error" && prevState !== "error") {
+      // v0.1.566 — "wieder bereit" auch nach Absturz-Neustart (error → starting → ready).
+      if (cur === "error") fehlerOffen = true;
+      const wasErrored = prevState === "error" || fehlerOffen;
+      const istAbsturz = (status.crashCount ?? 0) > 0 && status.nextRetryAt != null;
+      const absturzGedrosselt = istAbsturz && (status.crashCount ?? 0) > 1 && Date.now() - lastCrashAuditAt < 10 * 60_000;
+      if (cur === "error" && prevState !== "error" && !absturzGedrosselt) {
+        if (istAbsturz) lastCrashAuditAt = Date.now();
         audit({
           actorType: "producer",
           actorId: status.name,
@@ -3412,9 +3421,12 @@ app.whenReady().then(async () => {
             producer: status.name,
             errorMessage: status.errorMessage,
             lastExitCode: status.lastExitCode,
+            crashCount: status.crashCount ?? 0,
+            nextRetryAt: status.nextRetryAt ?? null,
           },
         });
       } else if (cur === "ready" && wasErrored) {
+        fehlerOffen = false;
         audit({
           actorType: "producer",
           actorId: status.name,
