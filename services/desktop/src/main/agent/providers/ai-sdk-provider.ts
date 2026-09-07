@@ -31,9 +31,11 @@ function erkenneOrgQuota(up: { detail?: string; status?: number }): OrgQuotaExce
 function orgQuotaText(q: OrgQuotaExceeded): string {
   const limit = q.limitCents != null ? `${(q.limitCents / 100).toFixed(2)} USD` : "das Limit";
   const bis = q.resetAt ? ` (Zurücksetzung ${new Date(q.resetAt).toLocaleString("de-DE")})` : "";
+  // O6b — bei getrennten Budgets betrifft ein 429 im Chat nur das Chat-Budget.
+  const was = q.channel === "chat" ? " für den Chat" : q.channel === "background" ? " für die Hintergrund-Verarbeitung" : " für KI-Aufrufe";
   return q.scope === "org_total"
-    ? `Das Monatsbudget deiner Organisation für KI-Aufrufe ist aufgebraucht (${limit})${bis}. Ein Admin kann das Limit unter Einstellungen → Organisation anpassen; mit eigenem Schlüssel läuft der Chat weiter.`
-    : `Dein Tagesbudget für KI-Aufrufe über den Organisationsschlüssel ist aufgebraucht (${limit})${bis}. Ein Admin kann das Limit anpassen; mit eigenem Schlüssel läuft der Chat weiter.`;
+    ? `Das Monatsbudget deiner Organisation${was} ist aufgebraucht (${limit})${bis}. Ein Admin kann das Limit unter Einstellungen → Organisation anpassen; mit eigenem Schlüssel läuft der Chat weiter.`
+    : `Dein Tagesbudget${was} über den Organisationsschlüssel ist aufgebraucht (${limit})${bis}. Ein Admin kann das Limit anpassen; mit eigenem Schlüssel läuft der Chat weiter.`;
 }
 import type { OllamaToolSpec } from "../types";
 import type {
@@ -380,7 +382,10 @@ export class AiSdkProvider extends EventEmitter implements LlmProvider {
       this.kind === "ollama"
         ? this.ollamaBaseURL()
         : gatewayProxy?.baseURL;
-    const proxyHeaders = gatewayProxy ? { authorization: `Bearer ${gatewayProxy.token}` } : undefined;
+    // O6b — Kanal fuer getrennte Limits (Chat vs. Hintergrund) im Gateway.
+    const proxyHeaders = gatewayProxy
+      ? { authorization: `Bearer ${gatewayProxy.token}`, "x-ava-llm-channel": req.channel ?? "chat" }
+      : undefined;
     // v0.1.7 diagnostic: log key shape (length + masked head/tail) and
     // request shape so we can tell, post-mortem in DevTools, whether
     // the key reached this layer intact and which model the SDK is

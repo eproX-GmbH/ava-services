@@ -546,12 +546,17 @@ model OrgShareSeen {
 /// mode: off | org_total (Monatsbudget der Organisation) | per_user_daily
 /// (Tagesbudget je Mitglied). Betraege in US-Cent (Preistabelle ist USD).
 /// hardStop: 429 statt nur Hinweis.
+/// O6b: split=true trennt Chat (chat*Cents) und Hintergrund-Verarbeitung
+/// (orgMonthlyCents/userDailyCents); null beim Chat = unbegrenzt.
 model TenantQuota {
-  tenantId        String   @id
-  mode            String   @default("off")
-  orgMonthlyCents Int?
-  userDailyCents  Int?
-  hardStop        Boolean  @default(true)
+  tenantId            String   @id
+  mode                String   @default("off")
+  orgMonthlyCents     Int?
+  userDailyCents      Int?
+  hardStop            Boolean  @default(true)
+  split               Boolean  @default(false)
+  chatOrgMonthlyCents Int?
+  chatUserDailyCents  Int?
   updatedAt       DateTime @default(now())
   updatedBy       String?
   tenant          Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
@@ -571,9 +576,12 @@ model LlmUsage {
   status          Int
   latencyMs       Int
   streamed        Boolean  @default(false)
+  /// O6b — chat | background (Header x-ava-llm-channel; Default background).
+  channel         String   @default("background")
   createdAt       DateTime @default(now())
 
   @@index([tenantId, createdAt])
+  @@index([tenantId, channel, createdAt])
   @@index([actorId, createdAt])
 }
 

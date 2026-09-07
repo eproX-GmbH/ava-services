@@ -1154,22 +1154,49 @@ function usd(cents: number | null | undefined): string {
 }
 
 function Limits({ st, admin, busy, aktion }: { st: OrgState; admin: boolean; busy: boolean; aktion: Aktion }) {
-  const quelle: OrgQuota = st.quota ?? { mode: "off", orgMonthlyCents: null, userDailyCents: null, hardStop: true };
+  const quelle: OrgQuota = {
+    mode: "off",
+    orgMonthlyCents: null,
+    userDailyCents: null,
+    hardStop: true,
+    split: false,
+    chatOrgMonthlyCents: null,
+    chatUserDailyCents: null,
+    ...(st.quota ?? {}),
+  };
   const [entwurf, setEntwurf] = useState<OrgQuota>(quelle);
   useEffect(() => setEntwurf(quelle), [st.quota]); // eslint-disable-line react-hooks/exhaustive-deps
   const geaendert = JSON.stringify(entwurf) !== JSON.stringify(quelle);
+  const monat = entwurf.mode === "org_total";
+  const split = entwurf.split === true;
 
   const speichern = () =>
     aktion(async () => {
       await gatewayFetch("/v1/tenants/me/quota", { method: "PUT", body: entwurf });
     }, "Limit gespeichert. Gilt sofort für alle Aufrufe über Organisationsschlüssel.");
 
-  const beschreibung =
-    quelle.mode === "off"
-      ? "Kein Limit gesetzt."
-      : quelle.mode === "org_total"
-        ? `Monatsbudget der Organisation: ${usd(quelle.orgMonthlyCents)} · ${quelle.hardStop ? "harter Stopp" : "nur Hinweis"}`
-        : `Tagesbudget je Mitglied: ${usd(quelle.userDailyCents)} · ${quelle.hardStop ? "harter Stopp" : "nur Hinweis"}`;
+  // O6b — Beschreibung fuer Mitglieder (read-only) und als Zusammenfassung.
+  const stopp = quelle.hardStop ? "harter Stopp" : "nur Hinweis";
+  const beschreibung = (() => {
+    if (quelle.mode === "off") return "Kein Limit gesetzt.";
+    const art = quelle.mode === "org_total" ? "Monatsbudget der Organisation" : "Tagesbudget je Mitglied";
+    const hintergrund = quelle.mode === "org_total" ? quelle.orgMonthlyCents : quelle.userDailyCents;
+    if (!quelle.split) return `${art}: ${usd(hintergrund)} · ${stopp}`;
+    const chat = quelle.mode === "org_total" ? quelle.chatOrgMonthlyCents : quelle.chatUserDailyCents;
+    return `${art} · Hintergrund-Verarbeitung ${usd(hintergrund)} · Chat ${chat != null ? usd(chat) : "unbegrenzt"} · ${stopp}`;
+  })();
+
+  const centsInput = (wert: number | null | undefined, setzen: (cents: number | null) => void, pflicht: boolean) => (
+    <input
+      type="number"
+      min={pflicht ? 1 : 0}
+      step={1}
+      placeholder={pflicht ? undefined : "unbegrenzt"}
+      value={wert != null ? Math.round(wert / 100) : ""}
+      disabled={busy}
+      onChange={(e) => setzen(e.target.value ? Math.round(Number(e.target.value) * 100) : null)}
+    />
+  );
 
   return (
     <section className="provider-section">
@@ -1196,35 +1223,38 @@ function Limits({ st, admin, busy, aktion }: { st: OrgState; admin: boolean; bus
                 <option value="per_user_daily">Tagesbudget je Mitglied</option>
               </select>
             </label>
-            {entwurf.mode === "org_total" && (
+            {entwurf.mode !== "off" && (
               <label className="field">
-                <span>Monatsbudget (USD)</span>
-                <input
-                  type="number"
-                  min={1}
-                  step={1}
-                  value={entwurf.orgMonthlyCents != null ? Math.round(entwurf.orgMonthlyCents / 100) : ""}
-                  disabled={busy}
-                  onChange={(e) => setEntwurf({ ...entwurf, orgMonthlyCents: e.target.value ? Math.round(Number(e.target.value) * 100) : null })}
-                />
+                <span>
+                  {split ? "Hintergrund-Verarbeitung" : monat ? "Monatsbudget" : "Tagesbudget je Mitglied"} (USD{monat ? " je Monat" : " je Tag"})
+                </span>
+                {monat
+                  ? centsInput(entwurf.orgMonthlyCents, (c) => setEntwurf({ ...entwurf, orgMonthlyCents: c }), true)
+                  : centsInput(entwurf.userDailyCents, (c) => setEntwurf({ ...entwurf, userDailyCents: c }), true)}
               </label>
             )}
-            {entwurf.mode === "per_user_daily" && (
+            {entwurf.mode !== "off" && split && (
               <label className="field">
-                <span>Tagesbudget je Mitglied (USD)</span>
-                <input
-                  type="number"
-                  min={1}
-                  step={1}
-                  value={entwurf.userDailyCents != null ? Math.round(entwurf.userDailyCents / 100) : ""}
-                  disabled={busy}
-                  onChange={(e) => setEntwurf({ ...entwurf, userDailyCents: e.target.value ? Math.round(Number(e.target.value) * 100) : null })}
-                />
+                <span>Chat (USD{monat ? " je Monat" : " je Tag"})</span>
+                {monat
+                  ? centsInput(entwurf.chatOrgMonthlyCents, (c) => setEntwurf({ ...entwurf, chatOrgMonthlyCents: c }), false)
+                  : centsInput(entwurf.chatUserDailyCents, (c) => setEntwurf({ ...entwurf, chatUserDailyCents: c }), false)}
               </label>
             )}
           </div>
           {entwurf.mode !== "off" && (
             <div className="org-checks">
+              <label className="org-check">
+                <input type="checkbox" checked={split} disabled={busy} onChange={(e) => setEntwurf({ ...entwurf, split: e.target.checked })} />
+                <span>
+                  Chat und Hintergrund-Verarbeitung getrennt begrenzen
+                  <span className="org-check__hint">
+                    Die Hintergrund-Verarbeitung (Firmenprofile, Publikationen, Kontakte, Radar) und der Chat mit dem Hauptmodell
+                    bekommen je ein eigenes Budget. Ist das Hintergrund-Budget aufgebraucht, antwortet der Chat weiter. Chat-Feld
+                    leer lassen heißt: Chat unbegrenzt.
+                  </span>
+                </span>
+              </label>
               <label className="org-check">
                 <input type="checkbox" checked={entwurf.hardStop} disabled={busy} onChange={(e) => setEntwurf({ ...entwurf, hardStop: e.target.checked })} />
                 <span>
@@ -1253,8 +1283,21 @@ function Verbrauch({ st, me }: { st: OrgState; me: WhoamiLite }) {
   const [tage, setTage] = useState(30);
   const usage = useQuery({
     queryKey: ["org", "usage", tage],
-    queryFn: () => gatewayFetch<{ rows: OrgUsageRow[]; monthCents: number; todayCents: number; adminView: boolean }>(`/v1/tenants/me/usage?days=${tage}`),
+    queryFn: () =>
+      gatewayFetch<{
+        rows: OrgUsageRow[];
+        monthCents: number;
+        todayCents: number;
+        monthChatCents?: number;
+        monthBackgroundCents?: number;
+        todayChatCents?: number;
+        todayBackgroundCents?: number;
+        adminView: boolean;
+      }>(`/v1/tenants/me/usage?days=${tage}`),
   });
+  // O6b — Aufteilung Chat / Hintergrund (aeltere Gateways liefern sie nicht).
+  const kanal = (chat: number | undefined, hintergrund: number | undefined) =>
+    chat == null || hintergrund == null ? null : ` · Chat ${usd(chat)} · Hintergrund ${usd(hintergrund)}`;
   const namen = new Map<string, string>();
   for (const m of st.members) namen.set(m.actorId, m.name ?? m.email ?? `${m.actorId.slice(0, 8)}…`);
   const rows = usage.data?.rows ?? [];
@@ -1276,11 +1319,15 @@ function Verbrauch({ st, me }: { st: OrgState; me: WhoamiLite }) {
           <span className="active-config-card__value">
             {usd(usage.data?.monthCents ?? 0)}
             {usage.data?.adminView ? " (Organisation)" : " (du)"}
+            {kanal(usage.data?.monthChatCents, usage.data?.monthBackgroundCents)}
           </span>
         </div>
         <div className="active-config-card__row">
           <span className="active-config-card__label">Heute (du)</span>
-          <span className="active-config-card__value">{usd(usage.data?.todayCents ?? 0)}</span>
+          <span className="active-config-card__value">
+            {usd(usage.data?.todayCents ?? 0)}
+            {kanal(usage.data?.todayChatCents, usage.data?.todayBackgroundCents)}
+          </span>
         </div>
       </div>
       <div className="org-actions">

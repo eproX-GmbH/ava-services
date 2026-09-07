@@ -29,7 +29,7 @@ import {
 } from "../../lib/tenant-providers";
 import { estimateMicroUsd } from "../../lib/llm-pricing";
 import { parseUsageFromJson, parseUsageFromSse, extractTextFromSse, type UsageCounts } from "../../lib/llm-usage-parse";
-import { checkQuota, getQuota, setQuota, usageSummary } from "../../lib/quota";
+import { checkQuota, getQuota, parseChannel, setQuota, usageSummary, type LlmChannel } from "../../lib/quota";
 
 export const llmProxyRouter = new OpenAPIHono();
 
@@ -111,6 +111,10 @@ const QuotaShape = z.object({
   orgMonthlyCents: z.number().int().min(0).max(100_000_000).nullable().optional(),
   userDailyCents: z.number().int().min(0).max(100_000_000).nullable().optional(),
   hardStop: z.boolean().optional(),
+  // O6b — getrennte Budgets fuer Chat und Hintergrund-Verarbeitung.
+  split: z.boolean().optional(),
+  chatOrgMonthlyCents: z.number().int().min(0).max(100_000_000).nullable().optional(),
+  chatUserDailyCents: z.number().int().min(0).max(100_000_000).nullable().optional(),
 });
 
 llmProxyRouter.openapi(
@@ -124,7 +128,11 @@ llmProxyRouter.openapi(
   async (c) => {
     const auth = c.get("auth");
     const pool = getGatewayPool();
-    return c.json({ quota: await getQuota(pool, auth.tenantId), stand: await checkQuota(pool, auth.tenantId, auth.actorId) });
+    const quota = await getQuota(pool, auth.tenantId);
+    // O6b — Stand je Kanal; ohne split sind beide identisch (gemeinsames Budget).
+    const stand = await checkQuota(pool, auth.tenantId, auth.actorId, "background");
+    const standChat = quota.split ? await checkQuota(pool, auth.tenantId, auth.actorId, "chat") : stand;
+    return c.json({ quota, stand, standChat });
   },
 );
 
@@ -133,7 +141,7 @@ llmProxyRouter.openapi(
     method: "put",
     path: "/tenants/me/quota",
     tags: ["tenants"],
-    summary: "Limit setzen (Admin): Monatsbudget der Organisation oder Tagesbudget je Mitglied, harter Stopp oder Hinweis.",
+    summary: "Limit setzen (Admin): Monatsbudget der Organisation oder Tagesbudget je Mitglied, harter Stopp oder Hinweis; split = Chat und Hintergrund getrennt.",
     request: { body: { content: { "application/json": { schema: QuotaShape } } } },
     responses: { 200: { content: { "application/json": { schema: z.object({}).passthrough() } }, description: "gesetzt" } },
   }),
@@ -183,14 +191,18 @@ async function passthrough(c: Context, kind: ProviderKind, base: string, rest: s
   const key = await getProviderKey(pool, auth.tenantId, kind);
   if (!key) throw new HTTPException(404, { message: `provider_not_configured:${kind}` });
 
+  // O6b — Kanal des Aufrufs: Desktop-Chat sendet `x-ava-llm-channel: chat`,
+  // Producer und aeltere Desktop-Versionen nichts (= background).
+  const channel: LlmChannel = parseChannel(c.req.header("x-ava-llm-channel"));
+
   // O6 — Vorabpruefung des Limits (nur messbare Stellvertreter-Aufrufe).
   let quotaWarnung: string | null = null;
   if (meter) {
-    const q = await checkQuota(pool, auth.tenantId, auth.actorId);
+    const q = await checkQuota(pool, auth.tenantId, auth.actorId, channel);
     if (!q.allowed) {
-      const info = { error: "org_quota_exceeded", scope: q.scope, limitCents: q.limitCents, usedCents: q.usedCents, resetAt: q.resetAt, hardStop: q.hardStop };
+      const info = { error: "org_quota_exceeded", scope: q.scope, channel: q.channel, limitCents: q.limitCents, usedCents: q.usedCents, resetAt: q.resetAt, hardStop: q.hardStop };
       if (q.hardStop) {
-        logger.info({ tenantId: auth.tenantId, actorId: auth.actorId, scope: q.scope }, "llm-proxy: org quota exceeded (hard stop)");
+        logger.info({ tenantId: auth.tenantId, actorId: auth.actorId, scope: q.scope, channel: q.channel }, "llm-proxy: org quota exceeded (hard stop)");
         return new Response(JSON.stringify(info), {
           status: 429,
           headers: { "content-type": "application/json", "retry-after": String(Math.max(60, Math.round(((q.resetAt ? Date.parse(q.resetAt) : Date.now() + 3_600_000) - Date.now()) / 1000))) },
@@ -251,11 +263,11 @@ async function passthrough(c: Context, kind: ProviderKind, base: string, rest: s
   const abschluss = (text: string, status: number) => {
     const latencyMs = Date.now() - start;
     if (!meter) {
-      void recordUsage(pool, { tenantId: auth.tenantId, actorId: auth.actorId, kind, model: rest.split("/")[0] ?? null, usage: null, status, latencyMs, streamed: false });
+      void recordUsage(pool, { tenantId: auth.tenantId, actorId: auth.actorId, kind, channel, model: rest.split("/")[0] ?? null, usage: null, status, latencyMs, streamed: false });
       return;
     }
     const usage = streamed ? parseUsageFromSse(text) : parseUsageFromJson(text);
-    void recordUsage(pool, { tenantId: auth.tenantId, actorId: auth.actorId, kind, model: usage?.model ?? model, usage, status, latencyMs, streamed });
+    void recordUsage(pool, { tenantId: auth.tenantId, actorId: auth.actorId, kind, channel, model: usage?.model ?? model, usage, status, latencyMs, streamed });
     if (promptAudit && status < 400) {
       const response = streamed ? extractTextFromSse(text) : text.slice(0, AUDIT_MAX_CHARS);
       void pool
@@ -299,7 +311,7 @@ async function promptAuditAktiv(pool: ReturnType<typeof getGatewayPool>, tenantI
 
 async function recordUsage(
   pool: ReturnType<typeof getGatewayPool>,
-  e: { tenantId: string; actorId: string; kind: ProviderKind; model: string | null; usage: UsageCounts | null; status: number; latencyMs: number; streamed: boolean },
+  e: { tenantId: string; actorId: string; kind: ProviderKind; channel: LlmChannel; model: string | null; usage: UsageCounts | null; status: number; latencyMs: number; streamed: boolean },
 ): Promise<void> {
   const input = e.usage?.inputTokens ?? 0;
   const output = e.usage?.outputTokens ?? 0;
@@ -307,9 +319,9 @@ async function recordUsage(
   const cost = e.kind === "apify" ? null : estimateMicroUsd({ provider: e.kind, model: e.model, inputTokens: input, outputTokens: output, cacheReadTokens: cache });
   try {
     await pool.query(
-      `INSERT INTO "LlmUsage" ("id", "tenantId", "actorId", "kind", "model", "inputTokens", "outputTokens", "cacheReadTokens", "costMicroUsd", "status", "latencyMs", "streamed")
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
-      [`lu_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`, e.tenantId, e.actorId, e.kind, e.model, input, output, cache, cost, e.status, e.latencyMs, e.streamed],
+      `INSERT INTO "LlmUsage" ("id", "tenantId", "actorId", "kind", "model", "inputTokens", "outputTokens", "cacheReadTokens", "costMicroUsd", "status", "latencyMs", "streamed", "channel")
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
+      [`lu_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`, e.tenantId, e.actorId, e.kind, e.model, input, output, cache, cost, e.status, e.latencyMs, e.streamed, e.channel],
     );
   } catch (err) {
     logger.warn({ err: err instanceof Error ? err.message : String(err) }, "llm-usage insert failed");

@@ -1753,12 +1753,14 @@ _Parameter:_ keine.
 
 _Datei:_ `services/desktop/src/main/agent/tools/organisation.ts`
 
-Setzt das Limit fuer Aufrufe ueber Organisationsschluessel: mode 'off' (kein Limit), 'org_total' (Monatsbudget der Organisation in US-Dollar) oder 'per_user_daily' (Tagesbudget je Mitglied in US-Dollar); hardStop true = Aufrufe werden abgelehnt, false = nur Hinweis. Eigene Schluessel bleiben unlimitiert. Fragt vor der Ausfuehrung nach.
+Setzt das Limit fuer Aufrufe ueber Organisationsschluessel: mode 'off' (kein Limit), 'org_total' (Monatsbudget der Organisation in US-Dollar) oder 'per_user_daily' (Tagesbudget je Mitglied in US-Dollar); hardStop true = Aufrufe werden abgelehnt, false = nur Hinweis. split true = Chat (Hauptmodell) und Hintergrund-Verarbeitung getrennt begrenzen: budgetUsd gilt dann fuer die Hintergrund-Verarbeitung, chatBudgetUsd fuer den Chat (weglassen = Chat unbegrenzt). Eigene Schluessel bleiben unlimitiert. Fragt vor der Ausfuehrung nach.
 
 _Parameter:_
 - `mode: string (enum: off, org_total, per_user_daily)` (required)
-- `budgetUsd: number` — Budget in US-Dollar (Monat bei org_total, Tag je Mitglied bei per_user_daily)
+- `budgetUsd: number` — Budget in US-Dollar (Monat bei org_total, Tag je Mitglied bei per_user_daily); bei split nur Hintergrund-Verarbeitung
 - `hardStop: boolean`
+- `split: boolean` — Chat und Hintergrund-Verarbeitung getrennt begrenzen
+- `chatBudgetUsd: number` — Chat-Budget in US-Dollar bei split (weglassen = Chat unbegrenzt)
 
 ### `org_member_approve`
 

@@ -24,6 +24,11 @@ export interface LlmStreamRequest {
    *  Hintergrund-Jobs im Desktop-Main wie den Discovery-Profiler).
    *  Provider-Kind bleibt unveraendert — nur die Modell-ID wechselt. */
   modelOverride?: string;
+  /** O6b — Kanal fuer das Organisations-Limit: "chat" (Hauptmodell im
+   *  Chat, Default) oder "background" (Hintergrund-Jobs im Hauptprozess wie
+   *  Discovery, Link-Monitor, Radar). Geht als Header x-ava-llm-channel an
+   *  den Stellvertreter-Proxy; nur dort relevant. */
+  channel?: "chat" | "background";
 }
 
 export interface LlmStreamToolCall {

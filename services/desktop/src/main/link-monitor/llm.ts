@@ -24,6 +24,10 @@ export async function streamToText(
     const stream = providers.streamChat({
       messages,
       signal: ctrl.signal,
+      // O6b — alle Aufrufer dieses Helfers sind Hintergrund-Jobs (Link-
+      // Monitor, Discovery, Radar, Watchlist): zaehlen gegen das
+      // Hintergrund-Budget der Organisation, nicht gegen den Chat.
+      channel: "background",
       ...(opts.modelOverride ? { modelOverride: opts.modelOverride } : {}),
     });
     for await (const frame of stream) {

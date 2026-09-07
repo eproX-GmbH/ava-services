@@ -216,15 +216,26 @@ export interface OrgBillingState {
 /** O6 — Limit fuer Aufrufe ueber den Organisationsschluessel. */
 export interface OrgQuota {
   mode: "off" | "org_total" | "per_user_daily";
+  /** Gemeinsames Budget (split=false) bzw. Budget der Hintergrund-Verarbeitung (split=true). */
   orgMonthlyCents: number | null;
   userDailyCents: number | null;
   hardStop: boolean;
+  /** O6b — Chat (Hauptmodell) und Hintergrund-Verarbeitung getrennt begrenzen. */
+  split?: boolean;
+  /** Chat-Budget bei split=true; null = Chat unbegrenzt. */
+  chatOrgMonthlyCents?: number | null;
+  chatUserDailyCents?: number | null;
 }
+
+/** O6b — Kanal eines Stellvertreter-Aufrufs (Header x-ava-llm-channel). */
+export type LlmChannel = "chat" | "background";
 
 /** O6 — 429-Antwort des Stellvertreter-Proxys. */
 export interface OrgQuotaExceeded {
   error: "org_quota_exceeded";
   scope: "org_total" | "per_user_daily" | "off";
+  /** O6b — betroffener Kanal; null/undefined = gemeinsames Budget. */
+  channel?: LlmChannel | null;
   limitCents: number | null;
   usedCents: number;
   resetAt: string | null;
@@ -252,6 +263,8 @@ export interface OrgUsageRow {
   inputTokens: number;
   outputTokens: number;
   costCents: number;
+  /** O6b — Anteil des Chats an costCents (Rest = Hintergrund). Aeltere Gateways: undefined. */
+  chatCents?: number;
 }
 
 // ---- Auto-updater (8.u4 / 8.v1.5) -----------------------------------------

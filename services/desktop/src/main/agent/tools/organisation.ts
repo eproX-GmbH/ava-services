@@ -315,14 +315,18 @@ export function buildOrganisationTools(deps: OrgToolDeps): Tool[] {
     description:
       "Setzt das Limit fuer Aufrufe ueber Organisationsschluessel: mode 'off' (kein Limit), 'org_total' (Monatsbudget der " +
       "Organisation in US-Dollar) oder 'per_user_daily' (Tagesbudget je Mitglied in US-Dollar); hardStop true = Aufrufe " +
-      "werden abgelehnt, false = nur Hinweis. Eigene Schluessel bleiben unlimitiert. Fragt vor der Ausfuehrung nach.",
+      "werden abgelehnt, false = nur Hinweis. split true = Chat (Hauptmodell) und Hintergrund-Verarbeitung getrennt begrenzen: " +
+      "budgetUsd gilt dann fuer die Hintergrund-Verarbeitung, chatBudgetUsd fuer den Chat (weglassen = Chat unbegrenzt). " +
+      "Eigene Schluessel bleiben unlimitiert. Fragt vor der Ausfuehrung nach.",
     parameters: {
       type: "object",
       required: ["mode"],
       properties: {
         mode: { type: "string", enum: ["off", "org_total", "per_user_daily"] },
-        budgetUsd: { type: "number", description: "Budget in US-Dollar (Monat bei org_total, Tag je Mitglied bei per_user_daily)" },
+        budgetUsd: { type: "number", description: "Budget in US-Dollar (Monat bei org_total, Tag je Mitglied bei per_user_daily); bei split nur Hintergrund-Verarbeitung" },
         hardStop: { type: "boolean" },
+        split: { type: "boolean", description: "Chat und Hintergrund-Verarbeitung getrennt begrenzen" },
+        chatBudgetUsd: { type: "number", description: "Chat-Budget in US-Dollar bei split (weglassen = Chat unbegrenzt)" },
       },
     },
     schema: yup
@@ -330,16 +334,19 @@ export function buildOrganisationTools(deps: OrgToolDeps): Tool[] {
         mode: yup.string().oneOf(["off", "org_total", "per_user_daily"]).required(),
         budgetUsd: yup.number().min(0).max(1_000_000).optional(),
         hardStop: yup.boolean().optional(),
+        split: yup.boolean().optional(),
+        chatBudgetUsd: yup.number().min(0).max(1_000_000).optional(),
       })
       .noUnknown(true),
     preview: (r: { ok?: boolean; abgebrochen?: boolean; text?: string }) => (r.abgebrochen ? "abgebrochen" : r.text ?? "Limit gesetzt"),
     run: async (args, c) => {
+      const chatText = args.split ? ` (Hintergrund), Chat ${args.chatBudgetUsd != null ? `${args.chatBudgetUsd} USD` : "unbegrenzt"}` : "";
       const text =
         args.mode === "off"
           ? "Kein Limit"
           : args.mode === "org_total"
-            ? `Monatsbudget der Organisation ${args.budgetUsd ?? "?"} USD`
-            : `Tagesbudget je Mitglied ${args.budgetUsd ?? "?"} USD`;
+            ? `Monatsbudget der Organisation ${args.budgetUsd ?? "?"} USD${chatText}`
+            : `Tagesbudget je Mitglied ${args.budgetUsd ?? "?"} USD${chatText}`;
       const value = await c.ui.confirmAction(
         {
           kind: "additive",
@@ -354,6 +361,7 @@ export function buildOrganisationTools(deps: OrgToolDeps): Tool[] {
       );
       if (value !== "ja") return { ok: false, abgebrochen: true };
       const cents = args.budgetUsd != null ? Math.round(args.budgetUsd * 100) : null;
+      const chatCents = args.chatBudgetUsd != null ? Math.round(args.chatBudgetUsd * 100) : null;
       await deps.gateway.request("/v1/tenants/me/quota", {
         method: "PUT",
         body: {
@@ -361,6 +369,9 @@ export function buildOrganisationTools(deps: OrgToolDeps): Tool[] {
           ...(args.mode === "org_total" ? { orgMonthlyCents: cents } : {}),
           ...(args.mode === "per_user_daily" ? { userDailyCents: cents } : {}),
           ...(args.hardStop !== undefined ? { hardStop: args.hardStop } : {}),
+          ...(args.split !== undefined ? { split: args.split } : {}),
+          ...(args.split && args.mode === "org_total" ? { chatOrgMonthlyCents: chatCents } : {}),
+          ...(args.split && args.mode === "per_user_daily" ? { chatUserDailyCents: chatCents } : {}),
         },
       });
       return { ok: true, text };

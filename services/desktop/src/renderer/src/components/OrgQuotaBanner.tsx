@@ -30,10 +30,15 @@ export function OrgQuotaBanner() {
         ⛔
       </span>
       <p className="token-limit-banner__msg">
-        {info.scope === "org_total" ? "Monatsbudget der Organisation aufgebraucht" : "Dein Tagesbudget über den Organisationsschlüssel ist aufgebraucht"}{" "}
-        — <strong>{used}</strong> von <strong>{limit}</strong>
-        {reset ? <> · Zurücksetzung {reset}</> : null}. KI-Aufrufe über den Organisationsschlüssel sind pausiert; mit eigenem
-        Schlüssel geht es weiter.
+        {info.scope === "org_total" ? "Monatsbudget der Organisation" : "Dein Tagesbudget über den Organisationsschlüssel"}
+        {info.channel === "chat" ? " für den Chat" : info.channel === "background" ? " für die Hintergrund-Verarbeitung" : ""} aufgebraucht —{" "}
+        <strong>{used}</strong> von <strong>{limit}</strong>
+        {reset ? <> · Zurücksetzung {reset}</> : null}.{" "}
+        {info.channel === "chat"
+          ? "Der Chat über den Organisationsschlüssel ist pausiert, die Hintergrund-Verarbeitung läuft weiter; mit eigenem Schlüssel geht es weiter."
+          : info.channel === "background"
+            ? "Die Hintergrund-Verarbeitung über den Organisationsschlüssel ist pausiert, der Chat läuft weiter; mit eigenem Schlüssel geht es weiter."
+            : "KI-Aufrufe über den Organisationsschlüssel sind pausiert; mit eigenem Schlüssel geht es weiter."}
       </p>
       <Link to="/organisation" className="token-limit-banner__cta">
         Limits ansehen

@@ -294,7 +294,15 @@ export interface OrgState {
   /** O4 — hinterlegte Organisationsschluessel (nur Anbieter + Hinweis). */
   providers: Array<{ kind: string; keyHint: string; updatedAt: string }>;
   /** O6 — Limit fuer Stellvertreter-Aufrufe. */
-  quota: { mode: string; orgMonthlyCents: number | null; userDailyCents: number | null; hardStop: boolean };
+  quota: {
+    mode: string;
+    orgMonthlyCents: number | null;
+    userDailyCents: number | null;
+    hardStop: boolean;
+    split: boolean;
+    chatOrgMonthlyCents: number | null;
+    chatUserDailyCents: number | null;
+  };
 }
 
 export async function getOrgState(pool: pg.Pool, auth: AuthContext): Promise<OrgState> {
