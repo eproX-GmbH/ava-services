@@ -108,6 +108,17 @@ interface CodexModelCacheEntry {
 
 const CODEX_MODEL_CACHE_TTL_MS = 30 * 60 * 1000; // 30 min
 const codexModelCache = new Map<string, CodexModelCacheEntry>();
+
+/**
+ * v0.1.567 — zuletzt fuers Konto aufgeloestes Codex-Modell (Anzeige in den
+ * Einstellungen: im Abo-Modus waehlt Codex das Chat-Modell, nicht die
+ * lokale Hauptmodell-Auswahl). Null, solange kein Chat-Aufruf lief.
+ */
+export function getCachedCodexModel(): string | null {
+  let best: CodexModelCacheEntry | null = null;
+  for (const e of codexModelCache.values()) if (!best || e.fetchedAt > best.fetchedAt) best = e;
+  return best?.resolved.slug ?? null;
+}
 const codexModelInFlight = new Map<string, Promise<ResolvedCodexModel>>();
 
 /** GET /models — die fürs Konto berechtigten Codex-Modelle abrufen. */

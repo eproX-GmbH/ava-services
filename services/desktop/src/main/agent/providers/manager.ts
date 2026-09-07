@@ -1,4 +1,5 @@
 import { EventEmitter } from "node:events";
+import { getCachedCodexModel } from "./openai-subscription-model";
 import { listCatalog, recommendedFor, gatewayProxyBaseURL } from "@ava/ai-provider";
 import { getOrgPolicy } from "../../org-policy";
 import type { CatalogEntry, CatalogProvider } from "@ava/ai-provider";
@@ -399,6 +400,8 @@ export class LlmProviderManager extends EventEmitter {
     keySource: Record<LlmProviderKind, KeySource>;
     providerLock: boolean;
     policyModels: { chatModel: string | null; producerModel: string | null };
+    /** v0.1.567 — im ChatGPT-Abo-Modus das vom Konto aufgeloeste Codex-Modell (null = noch kein Aufruf). */
+    codexChatModel: string | null;
   } {
     const pol = getOrgPolicy();
     return {
@@ -409,6 +412,7 @@ export class LlmProviderManager extends EventEmitter {
       keySource: this.keySources(),
       providerLock: pol.providerLock,
       policyModels: { chatModel: pol.chatModel, producerModel: pol.producerModel },
+      codexChatModel: getCachedCodexModel(),
       hasAnthropicSubscriptionToken:
         this.store.hasAnthropicSubscriptionToken(),
       hasOpenAISubscriptionToken: this.store.hasOpenAISubscriptionToken(),

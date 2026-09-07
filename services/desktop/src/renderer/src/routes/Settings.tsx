@@ -2039,6 +2039,10 @@ export function ProviderSection() {
           : `${PROVIDER_LABEL[activeKind]} API-Schlüssel`;
   const aboNurChat =
     activeKind === "openai" && !viaOrgActive && hasOpenAISubscriptionToken && !hasKey.openai;
+  // v0.1.567 — Chat laeuft ueber das Abo: Codex waehlt das Modell selbst; die
+  // lokale Hauptmodell-Auswahl ist dann fuer den Chat wirkungslos.
+  const chatUeberAbo = activeKind === "openai" && !viaOrgActive && hasOpenAISubscriptionToken;
+  const codexChatModel = cfg.data.codexChatModel ?? null;
   const producerChannel: string | null = !aboNurChat
     ? null
     : orgProviders.openai
@@ -2080,11 +2084,11 @@ export function ProviderSection() {
         className={`active-config-card${status.ready ? "" : " active-config-card--warn"}`}
       >
         <div className="active-config-card__row">
-          <span className="active-config-card__label">Aktives Modell</span>
+          <span className="active-config-card__label">{chatUeberAbo ? "Chat-Modell" : "Aktives Modell"}</span>
           <span className="active-config-card__value">
-            {activeEntry?.label ?? activeModelId ?? "—"}
-            {" · "}
-            {PROVIDER_LABEL[activeKind]}
+            {chatUeberAbo
+              ? (codexChatModel ? `${codexChatModel} · wählt dein ChatGPT-Abo (Codex)` : "wählt dein ChatGPT-Abo (Codex) beim ersten Aufruf")
+              : <>{activeEntry?.label ?? activeModelId ?? "—"}{" · "}{PROVIDER_LABEL[activeKind]}</>}
           </span>
         </div>
         <div className="active-config-card__row">
@@ -2175,6 +2179,15 @@ export function ProviderSection() {
           </select>
         </label>
 
+        {chatUeberAbo ? (
+          <div className="field">
+            <span>Chat-Modell</span>
+            <p className="muted small" style={{ margin: 0 }}>
+              Bestimmt dein ChatGPT-Abo: Codex wählt aus den für dein Konto freigeschalteten Modellen
+              {codexChatModel ? ` (aktuell ${codexChatModel})` : ""}. Eine eigene Auswahl greift hier nicht.
+            </p>
+          </div>
+        ) : (
         <label className="field">
           <span>Modell</span>
           <select
@@ -2207,6 +2220,8 @@ export function ProviderSection() {
           </select>
         </label>
 
+        )}
+
         <label className="field">
           <span>Modell für Hintergrund-Verarbeitung</span>
           <select
@@ -2219,7 +2234,11 @@ export function ProviderSection() {
             }}
             disabled={setProducerModel.isPending || activeList.length === 0}
           >
-            <option value="">Wie oben (Standard)</option>
+            <option value="">
+              {chatUeberAbo
+                ? `Standard (${policyModels?.producerModel ?? activeEntry?.label ?? activeModelId ?? "Modell des Schlüssels"})`
+                : "Wie oben (Standard)"}
+            </option>
             {activeKind === "ollama"
               ? groupOllamaByVendor(activeList).map((g) => (
                   <optgroup key={g.vendor} label={g.vendor}>

@@ -982,6 +982,8 @@ export interface ProviderConfigBundle {
   providerLock?: boolean;
   /** O5 — Modellvorgaben der Organisation (nur informativ; Manager setzt sie durch). */
   policyModels?: { chatModel: string | null; producerModel: string | null };
+  /** v0.1.567 — im ChatGPT-Abo-Modus: vom Konto aufgeloestes Codex-Modell fuer den Chat. */
+  codexChatModel?: string | null;
 }
 
 /**
