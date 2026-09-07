@@ -2131,6 +2131,9 @@ export function ProviderSection() {
               {policyModels?.chatModel && <> Chat: <code>{policyModels.chatModel}</code>.</>}
               {policyModels?.producerModel && <> Hintergrund: <code>{policyModels.producerModel}</code>.</>}{" "}
               Aufrufe laufen über den Schlüssel der Organisation.
+              {hasOpenAISubscriptionToken && (
+                <> Dein verbundenes ChatGPT-Abo wird in dieser Organisation nicht verwendet, weder im Chat noch im Hintergrund.</>
+              )}
             </span>
           </div>
         </div>
