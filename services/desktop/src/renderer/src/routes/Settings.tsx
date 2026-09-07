@@ -17,7 +17,7 @@ import { VerbrauchTab } from "./settings/VerbrauchTab";
 import { WissensquellenTab } from "./settings/WissensquellenTab";
 import { notifyLinkedInSettingsChanged } from "../components/LinkedInActiveBanner";
 import { gatewayFetch } from "../api/gateway";
-import { useUsage, isUnlimited, type BillingTier } from "../api/usage";
+import { useUsage, isUnlimited, isSeatPaid, type BillingTier } from "../api/usage";
 import { pullModelTracked, useOllamaStore } from "../store/ollama";
 import { useVoiceStore } from "../store/voice";
 import { useProfileStore } from "../store/profile";
@@ -5037,6 +5037,76 @@ export function PlanSection() {
     return null;
   }
 
+  // B2 (docs/PLAN_ABRECHNUNG_SEATS.md) — Zugang wird von der Organisation
+  // bezahlt: keine Plan-Karten, kein Checkout (Regel „gesperrte UI komplett
+  // ausblenden"); nur der Seat, das Pool-Kontingent und ggf. das eigene
+  // Rest-Abo, solange es laeuft (A-5).
+  if (data && isSeatPaid(data)) {
+    const ent = data.entitlement;
+    const pct = data.limit > 0 ? Math.min(100, (data.used / Math.max(1, data.limit)) * 100) : 0;
+    return (
+      <section id="plan-section" className="ct-card" style={{ marginBottom: "1.25rem" }}>
+        <header className="ct-card__header">
+          <h3>Plan &amp; Abrechnung</h3>
+          <p className="muted">Dein Zugang wird über die Sammelabrechnung deiner Organisation bezahlt.</p>
+        </header>
+        <div style={{ display: "grid", gap: "1rem" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", flexWrap: "wrap" }}>
+            <span className={`badge badge--${data.tier}`}>{TIER_LABELS[data.tier]}-Seat</span>
+            <span className="muted small">bezahlt von {ent.paidBy ?? "deiner Organisation"}</span>
+            {ent.seats?.tierNext && ent.seats.tierNextFrom && (
+              <span className="muted small">· ab {fmtDateShort(ent.seats.tierNextFrom)} {TIER_LABELS[ent.seats.tierNext]}</span>
+            )}
+            {ent.seats?.endsAt && <span className="muted small">· Sammelabrechnung endet am {fmtDateShort(ent.seats.endsAt)}</span>}
+          </div>
+          {data.status === "suspended" && (
+            <div className="error">
+              Die Sammelabrechnung deiner Organisation ist wegen einer offenen Zahlung pausiert. Importe und Radar-Scans laufen
+              erst wieder, wenn der Owner die Zahlung klärt.
+            </div>
+          )}
+          {data.status === "past_due" && (
+            <div className="ct-card" style={{ padding: "0.75rem 1rem", borderColor: "var(--color-warn)" }}>
+              Bei der Organisation ist eine Zahlung offen. Der Owner wurde informiert; bis zur Klärung läuft alles weiter.
+            </div>
+          )}
+          {!isUnlimited(data) && (
+            <div>
+              <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.9rem" }}>
+                <strong>
+                  {data.used.toLocaleString("de-DE")} von {data.limit.toLocaleString("de-DE")} verbraucht
+                </strong>
+                {data.periodEnd && <span className="muted">Erneuert sich am {fmtDateShort(data.periodEnd)}</span>}
+              </div>
+              <div role="progressbar" aria-valuemin={0} aria-valuemax={data.limit} aria-valuenow={data.used}
+                style={{ height: 8, background: "var(--color-border)", borderRadius: 4, overflow: "hidden", marginTop: 4 }}>
+                <div style={{ width: `${pct}%`, height: "100%", background: data.used >= data.limit ? "var(--color-err)" : pct >= 80 ? "var(--color-warn)" : "var(--color-indigo-500)" }} />
+              </div>
+              <small className="muted">
+                Gemeinsames Kontingent der Organisation ({ent.seats?.count ?? 1} Seat{(ent.seats?.count ?? 1) === 1 ? "" : "s"} ×{" "}
+                {ent.seats?.tier === "pro" ? "2 000" : "500"} Firmen pro Monat).
+              </small>
+            </div>
+          )}
+          {ent.personalSubscription && (
+            <div className="ct-card" style={{ padding: "0.75rem 1rem" }}>
+              <strong>Dein eigenes {TIER_LABELS[(ent.personalSubscription.tier as BillingTier) ?? "starter"] ?? ent.personalSubscription.tier}-Abo läuft noch.</strong>{" "}
+              {ent.personalSubscription.cancelAtPeriodEnd
+                ? `Es endet ${ent.personalSubscription.periodEnd ? `am ${fmtDateShort(ent.personalSubscription.periodEnd)}` : "zum Periodenende"} und wird nicht erneuert, weil dein Zugang jetzt über die Organisation läuft.`
+                : "Es läuft weiter, obwohl dein Zugang über die Organisation bezahlt wird."}{" "}
+              Über{" "}
+              <button type="button" className="link" disabled={busy !== null} onClick={() => void openPortal()} style={{ display: "inline", padding: 0 }}>
+                Abonnement verwalten
+              </button>{" "}
+              kannst du das ändern.
+            </div>
+          )}
+          {opError && <div className="error">{opError}</div>}
+        </div>
+      </section>
+    );
+  }
+
   const currentTier = data?.tier;
   // Verwalten only makes sense once a Stripe customer exists. We use
   // tier as a proxy — free has no customer; paid tiers always do.
@@ -5079,6 +5149,18 @@ export function PlanSection() {
                 </span>
               )}
             </div>
+            {data.status === "suspended" && (
+              <div className="error">
+                Dein Abo ist wegen einer offenen Zahlung pausiert: Importe und Radar-Scans laufen erst wieder, wenn die
+                Zahlung im Kunden-Portal geklärt ist.
+              </div>
+            )}
+            {data.status === "past_due" && (
+              <div className="ct-card" style={{ padding: "0.75rem 1rem", borderColor: "var(--color-warn)" }}>
+                <strong>Zahlung fehlgeschlagen.</strong> Stripe versucht es erneut; bitte Zahlungsmittel im Kunden-Portal prüfen,
+                sonst wird der Zugang nach 14 Tagen pausiert.
+              </div>
+            )}
             {data.cancelAtPeriodEnd && data.periodEnd && (
               <div className="ct-card" style={{ padding: "0.75rem 1rem", borderColor: "var(--color-warn)" }}>
                 <strong>

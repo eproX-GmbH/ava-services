@@ -19,6 +19,7 @@ import { internalQuotaRouter } from "./routes/internal-quota";
 import { startQuotaResumeCron } from "./lib/quota-resume-worker";
 import { startStuckProgressReaperCron } from "./lib/stuck-progress-reaper";
 import { startPersonRetentionCron } from "./lib/person-retention-reaper";
+import { startBillingCron } from "./lib/billing-cron";
 
 const env = loadEnv();
 const app = new OpenAPIHono();
@@ -122,3 +123,7 @@ startStuckProgressReaperCron();
 
 // C1 — Aufbewahrung: Personen ohne Beobachtung seit N Tagen tilgen.
 startPersonRetentionCron();
+
+// B1/B2 — Abrechnung: Seat-Monatsabschluss, vorgemerkte Tier-Aenderungen,
+// Zahlungsstoerungen (Karenz → Sperre), taeglicher Stripe-Abgleich.
+startBillingCron();

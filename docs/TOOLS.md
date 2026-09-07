@@ -5,7 +5,7 @@ NICHT direkt bearbeiten — die Quelle der Wahrheit ist `services/desktop/src/ma
 Lauf via `pnpm -F @ava/desktop tools:doc` (oder automatisch via `build:typecheck`).
 
 Stand: 2026-09-06
-Anzahl Tools: 218
+Anzahl Tools: 223
 
 ## Firmen (17)
 
@@ -1686,7 +1686,51 @@ Liefert den Status des lokalen Ollama-Daemons: Zustand (idle / starting / ready 
 
 _Parameter:_ keine.
 
-## organisation (9)
+## organisation (14)
+
+### `org_billing_activate_seats`
+
+_Datei:_ `services/desktop/src/main/agent/tools/organisation.ts`
+
+Aktiviert die Sammelabrechnung: alle Mitglieder erhalten sofort dasselbe Tier (starter 49 EUR oder pro 149 EUR je Seat und Monat, netto), die Organisation bekommt eine Monatsrechnung ueber alle Seats, das Kontingent wird gepoolt. Der laufende Monat zaehlt voll. Persoenliche Abos der Mitglieder werden zum Ende ihrer Laufzeit gekuendigt (im Kunden-Portal widerrufbar). Nur Owner. Fragt vor der Ausfuehrung nach.
+
+_Parameter:_
+- `tier: string (enum: starter, pro)` (required)
+
+### `org_billing_deactivate_seats`
+
+_Datei:_ `services/desktop/src/main/agent/tools/organisation.ts`
+
+Merkt die Beendigung der Sammelabrechnung zum naechsten Monatsersten vor (der laufende Monat wird noch voll abgerechnet; danach gilt fuer jedes Mitglied wieder sein eigenes Abo oder Free). Mit zuruecknehmen=true wird eine vorgemerkte Beendigung aufgehoben. Nur Owner. Fragt vor der Ausfuehrung nach.
+
+_Parameter:_
+- `zuruecknehmen: boolean`
+
+### `org_billing_info`
+
+_Datei:_ `services/desktop/src/main/agent/tools/organisation.ts`
+
+Liefert fuer Admins/Owner die Sammelabrechnung der Organisation: Modus (none = jedes Mitglied zahlt selbst, seats = Sammelabrechnung, enterprise = Vertrag), Organisations-Tier, Zahlungsstatus, Seats im laufenden Monat (Regel: eine Person zaehlt, wenn sie an mindestens einem Tagesstichtag 00:00 UTC Mitglied war — voller Monat, keine anteilige Berechnung), Prognose in EUR netto, vorgemerkte Aenderungen und die bisherigen Monatsdatensaetze. Read-only. Mitglieder ohne Admin-Rolle sehen ihren Seat unter Einstellungen → Plan.
+
+_Parameter:_ keine.
+
+### `org_billing_invoices`
+
+_Datei:_ `services/desktop/src/main/agent/tools/organisation.ts`
+
+Liefert den Datensatz einer Periode (YYYY-MM): Positionen je Tier, Seats mit Name/E-Mail, Tier, erstem und letztem Stichtag und Anzahl Stichtage, Pruefsumme. Ohne Periode: Liste aller Datensaetze. CSV-Export ueber die Seite 'Organisation' (#/organisation). Read-only, Admin.
+
+_Parameter:_
+- `periode: string` — YYYY-MM, z. B. 2026-09
+
+### `org_billing_set_tier`
+
+_Datei:_ `services/desktop/src/main/agent/tools/organisation.ts`
+
+Setzt das Tier fuer alle Seats: 'pro' wirkt sofort (der laufende Monat wird als Pro berechnet), 'starter' wirkt zum naechsten Monatsersten (bis dahin bleibt Pro). Nur bei aktiver Sammelabrechnung, nur Owner. Fragt vor der Ausfuehrung nach.
+
+_Parameter:_
+- `tier: string (enum: starter, pro)` (required)
 
 ### `org_features_set`
 

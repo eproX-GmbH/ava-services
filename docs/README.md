@@ -7,6 +7,8 @@ Sammelstelle für alles, was den Code begleitet aber nicht ins Hauptrepo-README 
 | [`DECISIONS.md`](./DECISIONS.md) | Ratifizierte D1–D11-Architekturentscheidungen — was wir warum gewählt haben (Compute-Lokalität, Cloud-Substrat-Umfang, …) |
 | [`DESKTOP_DATA_FLOW.md`](./DESKTOP_DATA_FLOW.md) | Workflows W1–W25 quer durch die Pipeline, SSE-Bridge zwischen Producer und Desktop, IPC-Verträge |
 | [`INVENTORY.md`](./INVENTORY.md) | Vollständige Bestandsaufnahme aller Services, ihrer Verantwortlichkeiten und Schnittstellen |
+| [`PLAN_ENTERPRISE_FREIGABE.md`](./PLAN_ENTERPRISE_FREIGABE.md) | Konzern-/Enterprise-Freigabe: Status-quo-Ampel am Code, Entscheidungen E-1…E-15, Arbeitspakete E0–E8 (baut auf PLAN_COMPLIANCE_ENTERPRISE.md und PLAN_ORGANISATIONEN.md auf) |
+| [`PLAN_ABRECHNUNG_SEATS.md`](./PLAN_ABRECHNUNG_SEATS.md) | Abrechnung: Einzel-Abo haerten, Seat-Sammelabrechnung fuer Organisationen (Belegungsmonat, keine Proration), Edge-Case-Katalog, Stufen B1–B4 |
 | [`PLANS.md`](./PLANS.md) | Aktive technische Feature-Pläne (Tool-Coverage-Audit, Skills-System usw.) |
 | [`PLANS_chart_skill.md`](./PLANS_chart_skill.md) | Detail-Plan für das Chart-Skill (visuelle Datenauswertung im Chat) |
 | [`MODEL_TIERS.md`](./MODEL_TIERS.md) | Quality-Buckets für LLMs (Tier S/A/B/C) — Source of Truth für die tier-aware-persist-Bus |

@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { gatewayFetch } from "./gateway";
+import type { UsageEntitlement, BillingStatus } from "../../../shared/types";
 
 // Shared `/v1/usage` snapshot type + react-query hook.
 //
@@ -32,6 +33,10 @@ export interface UsageSnapshot {
    *  `ParkedCompany` for this tenant, waiting on quota headroom.
    *  Surfaces in the QuotaExhaustedBanner + per-row matrix pill. */
   parkedCount: number;
+  /** B1 — Zahlungszustand des Abrechnungskontos. */
+  status: BillingStatus;
+  /** B1 — woher die Berechtigung kommt (eigenes Abo, Seat der Organisation, Enterprise). */
+  entitlement: UsageEntitlement;
 }
 
 export const USAGE_QUERY_KEY = ["usage"] as const;
@@ -49,4 +54,9 @@ export function useUsage() {
 
 export function isUnlimited(snap: UsageSnapshot | undefined): boolean {
   return !!snap && (snap.tier === "enterprise" || snap.limit === -1);
+}
+
+/** B1 — Zugang wird von der Organisation bezahlt (Seat). */
+export function isSeatPaid(snap: UsageSnapshot | undefined): boolean {
+  return !!snap && snap.entitlement?.source === "seat";
 }

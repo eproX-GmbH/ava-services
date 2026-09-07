@@ -19,6 +19,25 @@ import { useUsage, isUnlimited } from "../api/usage";
 export function QuotaExhaustedBanner() {
   const { data } = useUsage();
   if (!data) return null;
+  // B1 — Zahlungsstoerung ueber die Karenz hinaus: Importe/Scans pausiert.
+  if (data.status === "suspended") {
+    const seat = data.entitlement?.source === "seat";
+    return (
+      <div className="quota-banner quota-banner--blocking" role="alert">
+        <span className="quota-banner__icon" aria-hidden>
+          <BoltIcon />
+        </span>
+        <p className="quota-banner__msg">
+          {seat
+            ? `Die Sammelabrechnung von ${data.entitlement.paidBy ?? "deiner Organisation"} ist wegen einer offenen Zahlung pausiert. Neue Firmen warten, bis der Owner die Zahlung klärt.`
+            : "Dein Abo ist wegen einer offenen Zahlung pausiert. Neue Firmen warten, bis die Zahlung geklärt ist."}
+        </p>
+        <Link to={seat ? "/organisation" : "/settings#plan-section"} className="quota-banner__cta">
+          {seat ? "Zur Organisation" : "Zahlung klären"}
+        </Link>
+      </div>
+    );
+  }
   if (isUnlimited(data)) return null;
   if (data.limit <= 0) return null;
 

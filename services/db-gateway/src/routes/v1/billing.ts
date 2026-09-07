@@ -27,7 +27,8 @@ import {
   tierFromPriceId,
   type PaidTier,
 } from "../../lib/billing-plans";
-import type { BillingTier } from "../../lib/billing";
+import { type BillingTier, readBillingAccount, invalidateBillingResolution } from "../../lib/billing";
+import { recordBillingEvent } from "../../lib/billing-events";
 
 // =============================================================================
 // Authed router — checkout + portal. Mounted in v1.ts behind the standard
@@ -80,8 +81,17 @@ billingRouter.openapi(checkoutRoute, async (c) => {
     throw new HTTPException(503, { message: `stripe price id not configured for tier=${tier}` });
   }
 
+  // B1 — Einzelabo haengt am PERSOENLICHEN Abrechnungskonto (actorId),
+  // auch wenn der Daten-Tenant eine Organisation ist. Mitglieder, deren
+  // Zugang die Organisation bezahlt, brauchen kein eigenes Abo.
+  const billingAccountId = auth.actorId;
+  const orgAcc = auth.tenantId !== auth.actorId ? await readBillingAccount(getGatewayPool(), auth.tenantId) : null;
+  if (orgAcc && (orgAcc.mode === "seats" || orgAcc.mode === "enterprise")) {
+    throw new HTTPException(409, { message: "Dein Zugang wird von deiner Organisation bezahlt. Ein eigenes Abo ist nicht noetig." });
+  }
+
   const stripe = getStripe();
-  let existing = await readStripeCustomerId(auth.tenantId);
+  let existing = await readStripeCustomerId(billingAccountId);
 
   // v0.1.158 — defend against a stale `stripeCustomerId`. The most
   // common path that triggers this: STRIPE_SECRET_KEY was rotated
@@ -100,10 +110,10 @@ billingRouter.openapi(checkoutRoute, async (c) => {
     const stillValid = await stripeCustomerExists(stripe, existing);
     if (!stillValid) {
       logger.warn(
-        { tenantId: auth.tenantId, staleCustomerId: existing },
+        { billingAccountId, staleCustomerId: existing },
         "stale stripeCustomerId — wiping and falling through to fresh-customer checkout",
       );
-      await clearStripeCustomerId(auth.tenantId);
+      await clearStripeCustomerId(billingAccountId);
       existing = null;
     }
   }
@@ -141,11 +151,18 @@ billingRouter.openapi(checkoutRoute, async (c) => {
         // Clear any scheduled cancellation — the tenant explicitly
         // chose a new plan, so they're not cancelling anymore.
         cancel_at_period_end: false,
-        metadata: { tenantId: auth.tenantId },
+        metadata: { tenantId: billingAccountId },
+      });
+      await recordBillingEvent(getGatewayPool(), {
+        billingAccountId,
+        kind: "checkout_inplace_update",
+        source: "admin",
+        actorId: auth.actorId,
+        payload: { subscriptionId: existingSub.id, fromPrice: currentPrice, toPrice: priceId, tier },
       });
       logger.info(
         {
-          tenantId: auth.tenantId,
+          billingAccountId,
           subscriptionId: existingSub.id,
           fromPrice: currentPrice,
           toPrice: priceId,
@@ -166,9 +183,10 @@ billingRouter.openapi(checkoutRoute, async (c) => {
   const params: Stripe.Checkout.SessionCreateParams = {
     mode: "subscription",
     line_items: [{ price: priceId, quantity: 1 }],
-    metadata: { tenantId: auth.tenantId },
+    client_reference_id: billingAccountId,
+    metadata: { tenantId: billingAccountId },
     subscription_data: {
-      metadata: { tenantId: auth.tenantId },
+      metadata: { tenantId: billingAccountId },
     },
     automatic_tax: { enabled: true },
     success_url: "ava://billing/success?session_id={CHECKOUT_SESSION_ID}",
@@ -177,6 +195,13 @@ billingRouter.openapi(checkoutRoute, async (c) => {
   if (existing) params.customer = existing;
 
   const session = await stripe.checkout.sessions.create(params);
+  await recordBillingEvent(getGatewayPool(), {
+    billingAccountId,
+    kind: "checkout_started",
+    source: "admin",
+    actorId: auth.actorId,
+    payload: { sessionId: session.id, tier },
+  });
   return c.json({ url: session.url ?? "", sessionId: session.id }, 200);
 });
 
@@ -232,7 +257,7 @@ billingRouter.openapi(portalRoute, async (c) => {
   const auth = c.get("auth");
   if (!auth?.tenantId) throw new HTTPException(401, { message: "auth_context_missing" });
 
-  const customerId = await readStripeCustomerId(auth.tenantId);
+  const customerId = await readStripeCustomerId(auth.actorId);
   if (!customerId) {
     throw new HTTPException(400, { message: "no stripe customer; complete a checkout first" });
   }
@@ -270,6 +295,23 @@ billingWebhookRouter.post("/v1/billing/webhook", async (c) => {
     return c.text("invalid signature", 400);
   }
 
+  // B1 H2 — Dedupe: Stripe wiederholt Events bis 2xx; ein bereits
+  // verarbeitetes Event ist ein No-op. INSERT … ON CONFLICT liefert nur
+  // fuer den Erstverarbeiter eine Zeile.
+  try {
+    const ins = await getGatewayPool().query(
+      `INSERT INTO "StripeEvent" ("id", "type", "created") VALUES ($1, $2, to_timestamp($3)) ON CONFLICT ("id") DO NOTHING`,
+      [event.id, event.type, event.created],
+    );
+    if ((ins.rowCount ?? 0) === 0) {
+      logger.info({ eventId: event.id, eventType: event.type }, "stripe webhook duplicate — ignored");
+      return c.text("ok (duplicate)", 200);
+    }
+  } catch (err) {
+    // Tabelle fehlt (Migration ausstehend) → ohne Dedupe weiter.
+    logger.warn({ err: err instanceof Error ? err.message : String(err) }, "stripe event dedupe unavailable");
+  }
+
   try {
     await handleStripeEvent(event);
   } catch (err) {
@@ -289,13 +331,20 @@ async function handleStripeEvent(event: Stripe.Event): Promise<void> {
   switch (event.type) {
     case "checkout.session.completed": {
       const session = event.data.object as Stripe.Checkout.Session;
-      const tenantId = (session.metadata?.tenantId as string | undefined) ?? null;
+      const tenantId = (session.metadata?.tenantId as string | undefined) ?? session.client_reference_id ?? null;
       const customerId = typeof session.customer === "string" ? session.customer : session.customer?.id ?? null;
       if (!tenantId || !customerId) {
         logger.warn({ eventId: event.id }, "checkout.session.completed missing tenantId/customerId");
         return;
       }
       await upsertCustomerLink(tenantId, customerId);
+      await recordBillingEvent(getGatewayPool(), {
+        billingAccountId: tenantId,
+        kind: "checkout_completed",
+        source: "webhook",
+        stripeEventId: event.id,
+        payload: { sessionId: session.id, customerId, mode: session.mode },
+      });
       logger.info({ tenantId, customerId }, "stripe checkout completed");
       return;
     }
@@ -318,6 +367,15 @@ async function handleStripeEvent(event: Stripe.Event): Promise<void> {
       const periodEndUnix = (sub as unknown as { current_period_end?: number }).current_period_end ?? null;
       const periodEnd = periodEndUnix ? new Date(periodEndUnix * 1000) : null;
       const cancelAtPeriodEnd = (sub as unknown as { cancel_at_period_end?: boolean }).cancel_at_period_end === true;
+      // B1 H2 — Reihenfolge: ein aelteres Event darf einen neueren Stand
+      // nicht ueberschreiben (Stripe garantiert keine Zustellreihenfolge).
+      if (await isStaleEvent(tenantId, event)) {
+        logger.warn({ eventId: event.id, tenantId, created: event.created }, "stripe event older than last applied — ignored");
+        return;
+      }
+      const vorher = await readBillingAccount(getGatewayPool(), tenantId);
+      // B1 H3 — Abo-Status → Kontozustand (Smart Retries laufen bei Stripe).
+      const status = subscriptionStatusToAccountStatus(sub.status, vorher?.status ?? "active");
       await upsertSubscriptionState({
         tenantId,
         customerId,
@@ -326,16 +384,21 @@ async function handleStripeEvent(event: Stripe.Event): Promise<void> {
         quotaLimit: TIER_LIMITS[tier],
         periodEnd,
         cancelAtPeriodEnd,
+        status,
+        eventCreated: event.created,
       });
-      logger.info({ tenantId, tier, subscriptionId: sub.id }, "stripe subscription state synced");
+      await recordBillingEvent(getGatewayPool(), {
+        billingAccountId: tenantId,
+        kind: event.type === "customer.subscription.created" ? "subscription_created" : "subscription_updated",
+        source: "webhook",
+        stripeEventId: event.id,
+        payload: { tier, from: vorher?.tier ?? null, subscriptionId: sub.id, stripeStatus: sub.status, status, cancelAtPeriodEnd, periodEnd: periodEnd?.toISOString() ?? null },
+      });
+      invalidateBillingResolution(tenantId);
+      logger.info({ tenantId, tier, subscriptionId: sub.id, status }, "stripe subscription state synced");
       // Q-track v0.1.137 — Tier flip may have created fresh headroom.
       // Fire-and-forget the resume-worker; it dedupes via in-flight set.
-      try {
-        const { resumeParkedForTenant } = await import("../../lib/quota-resume-worker");
-        resumeParkedForTenant(tenantId);
-      } catch (err) {
-        logger.warn({ err: err instanceof Error ? err.message : String(err) }, "resume-worker hook failed");
-      }
+      await resumeForBillingAccount(tenantId);
       return;
     }
     case "customer.subscription.deleted": {
@@ -347,16 +410,68 @@ async function handleStripeEvent(event: Stripe.Event): Promise<void> {
         logger.warn({ eventId: event.id, customerId }, "subscription.deleted has no tenantId mapping");
         return;
       }
-      await downgradeToFree(tenantId);
+      if (await isStaleEvent(tenantId, event)) {
+        logger.warn({ eventId: event.id, tenantId }, "stripe subscription.deleted older than last applied — ignored");
+        return;
+      }
+      await downgradeToFree(tenantId, event.created);
+      await recordBillingEvent(getGatewayPool(), {
+        billingAccountId: tenantId,
+        kind: "subscription_deleted",
+        source: "webhook",
+        stripeEventId: event.id,
+        payload: { subscriptionId: sub.id },
+      });
+      invalidateBillingResolution(tenantId);
       logger.info({ tenantId }, "stripe subscription deleted; downgraded to free");
       return;
     }
     case "invoice.payment_failed": {
+      // B1 H3 — Zahlungsstoerung: past_due ab dem ersten Fehlschlag; die
+      // Sperre (suspended) setzt der Billing-Cron nach graceDays (K7).
       const inv = event.data.object as Stripe.Invoice;
-      logger.warn(
-        { eventId: event.id, invoiceId: inv.id, customer: inv.customer },
-        "stripe invoice payment failed (no state change; awaiting subscription.updated)",
+      const customerId = typeof inv.customer === "string" ? inv.customer : inv.customer?.id ?? null;
+      const tenantId = customerId ? await readTenantIdByCustomer(customerId) : null;
+      if (!tenantId) {
+        logger.warn({ eventId: event.id, invoiceId: inv.id, customer: inv.customer }, "invoice.payment_failed without tenant mapping");
+        return;
+      }
+      await getGatewayPool().query(
+        `UPDATE "TenantBilling" SET "status" = 'past_due', "pastDueSince" = COALESCE("pastDueSince", NOW()), "updatedAt" = NOW()
+          WHERE "tenantId" = $1 AND "status" IN ('active', 'past_due')`,
+        [tenantId],
       );
+      await recordBillingEvent(getGatewayPool(), {
+        billingAccountId: tenantId,
+        kind: "payment_failed",
+        source: "webhook",
+        stripeEventId: event.id,
+        payload: { invoiceId: inv.id, amountDue: inv.amount_due, attemptCount: inv.attempt_count },
+      });
+      logger.warn({ eventId: event.id, invoiceId: inv.id, tenantId }, "stripe invoice payment failed → past_due");
+      return;
+    }
+    case "invoice.paid": {
+      const inv = event.data.object as Stripe.Invoice;
+      const customerId = typeof inv.customer === "string" ? inv.customer : inv.customer?.id ?? null;
+      const tenantId = customerId ? await readTenantIdByCustomer(customerId) : null;
+      if (!tenantId) return;
+      const r = await getGatewayPool().query(
+        `UPDATE "TenantBilling" SET "status" = 'active', "pastDueSince" = NULL, "suspendedAt" = NULL, "updatedAt" = NOW()
+          WHERE "tenantId" = $1 AND "status" IN ('past_due', 'suspended')`,
+        [tenantId],
+      );
+      await recordBillingEvent(getGatewayPool(), {
+        billingAccountId: tenantId,
+        kind: "invoice_paid",
+        source: "webhook",
+        stripeEventId: event.id,
+        payload: { invoiceId: inv.id, amountPaid: inv.amount_paid, reactivated: (r.rowCount ?? 0) > 0 },
+      });
+      if ((r.rowCount ?? 0) > 0) {
+        logger.info({ tenantId, invoiceId: inv.id }, "stripe invoice paid → active (K8)");
+        await resumeForBillingAccount(tenantId);
+      }
       return;
     }
     default:
@@ -368,6 +483,41 @@ async function handleStripeEvent(event: Stripe.Event): Promise<void> {
 }
 
 // ---- DB helpers --------------------------------------------------------------
+
+/** B1 H2 — Event aelter als der zuletzt angewandte Stand des Kontos? */
+async function isStaleEvent(tenantId: string, event: Stripe.Event): Promise<boolean> {
+  const r = await getGatewayPool().query<{ lastStripeEventAt: Date | null }>(
+    `SELECT "lastStripeEventAt" FROM "TenantBilling" WHERE "tenantId" = $1`,
+    [tenantId],
+  );
+  const last = r.rows[0]?.lastStripeEventAt;
+  return !!last && new Date(last).getTime() > event.created * 1000;
+}
+
+/** Stripe-Abo-Status → Kontozustand. `unpaid`/`past_due` = past_due;
+ *  `canceled`/`incomplete_expired` = canceled; sonst active. Ein bereits
+ *  gesperrtes Konto bleibt gesperrt, bis eine Rechnung bezahlt ist. */
+function subscriptionStatusToAccountStatus(stripeStatus: string, current: string): "active" | "past_due" | "suspended" | "canceled" {
+  if (stripeStatus === "past_due" || stripeStatus === "unpaid") return current === "suspended" ? "suspended" : "past_due";
+  if (stripeStatus === "canceled" || stripeStatus === "incomplete_expired") return "canceled";
+  return "active";
+}
+
+/** Geparkte Firmen nachspielen — beim Daten-Tenant des Kontos: das Konto
+ *  selbst und (persoenliches Konto) die Organisation des Nutzers. */
+async function resumeForBillingAccount(billingAccountId: string): Promise<void> {
+  try {
+    const { resumeParkedForTenant } = await import("../../lib/quota-resume-worker");
+    resumeParkedForTenant(billingAccountId);
+    const m = await getGatewayPool().query<{ tenantId: string }>(
+      `SELECT "tenantId" FROM "TenantMember" WHERE "actorId" = $1 AND "tenantId" <> $1`,
+      [billingAccountId],
+    );
+    for (const row of m.rows) resumeParkedForTenant(row.tenantId);
+  } catch (err) {
+    logger.warn({ err: err instanceof Error ? err.message : String(err) }, "resume-worker hook failed");
+  }
+}
 
 /**
  * v0.1.158 — probe whether a customer id still exists in the
@@ -432,8 +582,8 @@ async function upsertCustomerLink(tenantId: string, customerId: string): Promise
   // they paid before any persist event (unlikely but possible).
   await getGatewayPool().query(
     `INSERT INTO "TenantBilling"
-       ("tenantId", tier, "quotaLimit", "stripeCustomerId", "updatedAt", "createdAt")
-     VALUES ($1, 'free', 25, $2, NOW(), NOW())
+       ("tenantId", "kind", "mode", tier, "quotaLimit", "stripeCustomerId", "updatedAt", "createdAt")
+     VALUES ($1, 'personal', 'none', 'free', 25, $2, NOW(), NOW())
      ON CONFLICT ("tenantId")
      DO UPDATE SET "stripeCustomerId" = EXCLUDED."stripeCustomerId",
                    "updatedAt" = NOW()`,
@@ -449,20 +599,29 @@ async function upsertSubscriptionState(args: {
   quotaLimit: number;
   periodEnd: Date | null;
   cancelAtPeriodEnd: boolean;
+  status: "active" | "past_due" | "suspended" | "canceled";
+  eventCreated: number;
 }): Promise<void> {
+  // B1 — mode wird nur gesetzt, wenn das Konto kein Organisationskonto
+  // mit Sammelabrechnung/Enterprise ist (Einzelabo eines Nutzers).
   await getGatewayPool().query(
     `INSERT INTO "TenantBilling"
-       ("tenantId", tier, "quotaLimit", "stripeCustomerId",
-        "stripeSubscriptionId", "periodEnd", "cancelAtPeriodEnd",
+       ("tenantId", "kind", "mode", tier, "quotaLimit", "stripeCustomerId",
+        "stripeSubscriptionId", "periodEnd", "cancelAtPeriodEnd", "status", "lastStripeEventAt",
         "updatedAt", "createdAt")
-     VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), NOW())
+     VALUES ($1, 'personal', 'subscription', $2, $3, $4, $5, $6, $7, $8, to_timestamp($9), NOW(), NOW())
      ON CONFLICT ("tenantId")
      DO UPDATE SET tier = EXCLUDED.tier,
+                   "mode" = CASE WHEN "TenantBilling"."mode" IN ('seats', 'enterprise') THEN "TenantBilling"."mode" ELSE 'subscription' END,
                    "quotaLimit" = EXCLUDED."quotaLimit",
                    "stripeCustomerId" = EXCLUDED."stripeCustomerId",
                    "stripeSubscriptionId" = EXCLUDED."stripeSubscriptionId",
                    "periodEnd" = EXCLUDED."periodEnd",
                    "cancelAtPeriodEnd" = EXCLUDED."cancelAtPeriodEnd",
+                   "status" = EXCLUDED."status",
+                   "pastDueSince" = CASE WHEN EXCLUDED."status" = 'active' THEN NULL ELSE COALESCE("TenantBilling"."pastDueSince", NOW()) END,
+                   "suspendedAt" = CASE WHEN EXCLUDED."status" = 'active' THEN NULL ELSE "TenantBilling"."suspendedAt" END,
+                   "lastStripeEventAt" = EXCLUDED."lastStripeEventAt",
                    "updatedAt" = NOW()`,
     [
       args.tenantId,
@@ -472,20 +631,27 @@ async function upsertSubscriptionState(args: {
       args.subscriptionId,
       args.periodEnd,
       args.cancelAtPeriodEnd,
+      args.status,
+      args.eventCreated,
     ],
   );
 }
 
-async function downgradeToFree(tenantId: string): Promise<void> {
+async function downgradeToFree(tenantId: string, eventCreated: number): Promise<void> {
   await getGatewayPool().query(
     `UPDATE "TenantBilling"
         SET tier = 'free',
+            "mode" = CASE WHEN "mode" IN ('seats', 'enterprise') THEN "mode" ELSE 'none' END,
             "quotaLimit" = 25,
             "stripeSubscriptionId" = NULL,
             "periodEnd" = NULL,
             "cancelAtPeriodEnd" = FALSE,
+            "status" = 'active',
+            "pastDueSince" = NULL,
+            "suspendedAt" = NULL,
+            "lastStripeEventAt" = to_timestamp($2),
             "updatedAt" = NOW()
       WHERE "tenantId" = $1`,
-    [tenantId],
+    [tenantId, eventCreated],
   );
 }

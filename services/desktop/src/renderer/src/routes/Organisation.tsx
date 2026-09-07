@@ -18,12 +18,16 @@ import { PROVIDER_LABEL, modelOptionLabel } from "./Settings";
 import {
   ORG_FEATURES,
   type LlmProviderKind,
+  type OrgBillingInvoice,
+  type OrgBillingState,
   type OrgPolicy,
   type OrgQuota,
   type OrgState,
   type OrgUsageRow,
   type ProviderCatalogEntry,
+  type SeatTier,
 } from "../../../shared/types";
+import { USAGE_QUERY_KEY } from "../api/usage";
 
 interface WhoamiLite {
   tenantId: string;
@@ -174,6 +178,7 @@ export function Organisation() {
           <Ueberblick st={st} admin={admin} busy={busy} aktion={aktion} />
           {admin && <Anfragen st={st} busy={busy} aktion={aktion} />}
           <Mitglieder st={st} me={me} admin={admin} busy={busy} aktion={aktion} />
+          {admin && <Abrechnung st={st} busy={busy} aktion={aktion} />}
           <Vorgaben st={st} admin={admin} busy={busy} aktion={aktion} />
           <Schluessel st={st} admin={admin} busy={busy} aktion={aktion} />
           <Limits st={st} admin={admin} busy={busy} aktion={aktion} />
@@ -329,14 +334,25 @@ function Ueberblick({ st, admin, busy, aktion }: { st: OrgState; admin: boolean;
 }
 
 function Anfragen({ st, busy, aktion }: { st: OrgState; busy: boolean; aktion: Aktion }) {
+  // B2 — Kostenhinweis, wenn die Organisation Seats bezahlt (Owner-Sicht auf die Wirkung einer Aufnahme).
+  const billing = useQuery({ queryKey: ["org", "billing"], queryFn: () => gatewayFetch<OrgBillingState>("/v1/tenants/me/billing") });
+  const seat = billing.data?.mode === "seats" && billing.data.seatTier ? { tier: billing.data.seatTier, cents: billing.data.prices[billing.data.seatTier] } : null;
   const entscheiden = (id: string, entscheidung: "approve" | "reject") =>
     aktion(
       () => gatewayFetch(`/v1/tenants/me/requests/${encodeURIComponent(id)}`, { method: "POST", body: { entscheidung } }),
-      entscheidung === "approve" ? "Anfrage angenommen. Die Person wird beim nächsten Abgleich Mitglied." : "Anfrage abgelehnt.",
+      entscheidung === "approve"
+        ? `Anfrage angenommen. Die Person wird beim nächsten Abgleich Mitglied.${seat ? ` Sie zählt ab dem nächsten Stichtag als ${TIER_LABEL[seat.tier]}-Seat (${eur(seat.cents)}/Monat).` : ""}`
+        : "Anfrage abgelehnt.",
     );
   return (
     <section className="provider-section">
       <h3>Offene Anfragen</h3>
+      {seat && st.openRequests.length > 0 && (
+        <p className="muted small">
+          Jede Aufnahme kostet einen weiteren {TIER_LABEL[seat.tier]}-Seat ({eur(seat.cents)} pro Monat, voller Monat ab dem ersten
+          Stichtag).
+        </p>
+      )}
       {st.openRequests.length === 0 ? (
         <p className="muted small">Keine offenen Beitrittsanfragen.</p>
       ) : (
@@ -427,6 +443,325 @@ function Mitglieder({
         Name und E-Mail übernimmt AVA aus der Anmeldung; bis zum nächsten Abgleich eines Mitglieds kann noch die Nutzer-ID erscheinen.
       </p>
     </section>
+  );
+}
+
+// ---- B2 — Abrechnung (docs/PLAN_ABRECHNUNG_SEATS.md) --------------------------
+
+const TIER_LABEL: Record<SeatTier, string> = { starter: "Starter", pro: "Pro" };
+const INVOICE_STATUS: Record<string, string> = {
+  recorded: "erfasst",
+  issued: "gestellt",
+  paid: "bezahlt",
+  void: "storniert",
+  enterprise_export: "Enterprise (Export)",
+};
+
+function eur(cents: number | null | undefined): string {
+  return cents == null ? "—" : `${(cents / 100).toLocaleString("de-DE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €`;
+}
+
+function monatLabel(periodKey: string): string {
+  const [y, m] = periodKey.split("-");
+  const d = new Date(Date.UTC(Number(y), Number(m) - 1, 1));
+  return d.toLocaleDateString("de-DE", { month: "long", year: "numeric", timeZone: "UTC" });
+}
+
+function invoiceCsv(inv: OrgBillingInvoice, orgName: string | null): string {
+  const esc = (v: unknown) => `"${String(v ?? "").replace(/"/g, '""')}"`;
+  const e = (c: number) => (c / 100).toFixed(2).replace(".", ",");
+  const rows: string[] = [];
+  rows.push(["Organisation", "Periode", "Status", "Seats", "Netto EUR", "Hash"].map(esc).join(";"));
+  rows.push([orgName ?? inv.id, inv.periodKey, inv.status, inv.seatCount, e(inv.subtotalCents), inv.computeHash].map(esc).join(";"));
+  rows.push("");
+  rows.push(["Position", "Tier", "Seats", "Einzelpreis EUR", "Betrag EUR"].map(esc).join(";"));
+  inv.lines.forEach((l, i) => rows.push([i + 1, l.tier, l.seats, e(l.unitPriceCents), e(l.amountCents)].map(esc).join(";")));
+  rows.push("");
+  rows.push(["Nutzer-ID", "Name", "E-Mail", "Tier", "Erster Stichtag", "Letzter Stichtag", "Stichtage"].map(esc).join(";"));
+  for (const s of inv.seats ?? []) rows.push([s.actorId, s.name, s.email, s.tier, s.firstCountedDay, s.lastCountedDay, s.countedDays].map(esc).join(";"));
+  return rows.join("\r\n");
+}
+
+function Abrechnung({ st, busy, aktion }: { st: OrgState; busy: boolean; aktion: Aktion }) {
+  const qc = useQueryClient();
+  const owner = st.myRole === "owner";
+  const billing = useQuery({ queryKey: ["org", "billing"], queryFn: () => gatewayFetch<OrgBillingState>("/v1/tenants/me/billing") });
+  const [tierWahl, setTierWahl] = useState<SeatTier>("starter");
+  const [deckel, setDeckel] = useState<string>("");
+  const [detail, setDetail] = useState<OrgBillingInvoice | null>(null);
+  const b = billing.data;
+  useEffect(() => {
+    if (b) {
+      setDeckel(b.maxSeats != null ? String(b.maxSeats) : "");
+      if (b.seatTier) setTierWahl(b.seatTier);
+    }
+  }, [b?.maxSeats, b?.seatTier]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const nachher = () => {
+    void qc.invalidateQueries({ queryKey: ["org"] });
+    void qc.invalidateQueries({ queryKey: USAGE_QUERY_KEY });
+  };
+  const call = (fn: () => Promise<unknown>, ok?: string) =>
+    aktion(async () => {
+      await fn();
+      nachher();
+    }, ok);
+
+  const aktivieren = () => {
+    if (!b) return;
+    const preis = b.prices[tierWahl];
+    const summe = b.memberCount * preis;
+    const text =
+      `Sammelabrechnung aktivieren?\n\n` +
+      `${b.memberCount} Mitglied${b.memberCount === 1 ? "" : "er"} × ${eur(preis)} (${TIER_LABEL[tierWahl]}) = ${eur(summe)} pro Monat, ` +
+      `bereits für den laufenden Monat (voller Monatspreis, keine anteilige Berechnung).\n\n` +
+      `Persönliche Abos der Mitglieder werden zum Ende ihrer Laufzeit gekündigt (im Kunden-Portal widerrufbar). ` +
+      `Alle Mitglieder erhalten sofort ${TIER_LABEL[tierWahl]}-Berechtigungen.`;
+    if (!window.confirm(text)) return;
+    void call(
+      () => gatewayFetch("/v1/tenants/me/billing/seats/activate", { method: "POST", body: { tier: tierWahl } }),
+      `Sammelabrechnung aktiv: ${TIER_LABEL[tierWahl]} für alle Mitglieder.`,
+    );
+  };
+  const beenden = () => {
+    if (!window.confirm("Sammelabrechnung zum nächsten Monatsersten beenden? Der laufende Monat wird noch voll abgerechnet; danach gilt für jedes Mitglied wieder sein eigenes Abo (oder Free).")) return;
+    void call(() => gatewayFetch("/v1/tenants/me/billing/seats/deactivate", { method: "POST", body: {} }), "Beendigung zum Monatsersten vorgemerkt.");
+  };
+  const beendenZurueck = () =>
+    call(() => gatewayFetch("/v1/tenants/me/billing/seats/deactivate", { method: "POST", body: { revoke: true } }), "Beendigung zurückgenommen.");
+  const tierSetzen = (tier: SeatTier) => {
+    if (!b?.seatTier || tier === b.seatTier) return;
+    const upgrade = tier === "pro";
+    const text = upgrade
+      ? `Auf Pro wechseln? Gilt sofort für alle Mitglieder; der laufende Monat wird als Pro berechnet (${eur(b.prices.pro)} je Seat).`
+      : `Auf Starter wechseln? Gilt ab dem nächsten Monatsersten; bis dahin bleibt Pro (${eur(b.prices.starter)} je Seat ab dann).`;
+    if (!window.confirm(text)) return;
+    void call(() => gatewayFetch("/v1/tenants/me/billing/seats/tier", { method: "PUT", body: { tier } }), upgrade ? "Upgrade auf Pro aktiv." : "Downgrade zum Monatsersten vorgemerkt.");
+  };
+  const deckelSpeichern = () => {
+    const n = deckel.trim() === "" ? null : Number(deckel);
+    if (n !== null && (!Number.isInteger(n) || n < 1)) return;
+    void call(() => gatewayFetch("/v1/tenants/me/billing/seats", { method: "PATCH", body: { maxSeats: n } }), n === null ? "Seat-Deckel entfernt." : `Seat-Deckel: ${n}.`);
+  };
+  const oeffneDetail = async (periodKey: string) => {
+    try {
+      setDetail(await gatewayFetch<OrgBillingInvoice>(`/v1/tenants/me/billing/invoices/${periodKey}`));
+    } catch (err) {
+      window.alert(fehlerText(err));
+    }
+  };
+  const csvLaden = (inv: OrgBillingInvoice) => {
+    const blob = new Blob(["\ufeff" + invoiceCsv(inv, st.name)], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `ava-seats-${inv.periodKey}.csv`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  };
+
+  if (billing.isLoading) {
+    return (
+      <section className="provider-section">
+        <h3>Abrechnung</h3>
+        <p className="muted small">Lädt…</p>
+      </section>
+    );
+  }
+  if (billing.error || !b) {
+    return (
+      <section className="provider-section">
+        <h3>Abrechnung</h3>
+        <p className="error">{billing.error ? fehlerText(billing.error) : "Keine Abrechnungsdaten."}</p>
+      </section>
+    );
+  }
+
+  const aktiv = b.mode === "seats" && b.seatTier;
+  const cur = b.currentPeriod;
+
+  return (
+    <>
+      <section className="provider-section">
+        <h3>Abrechnung</h3>
+        {b.mode === "enterprise" ? (
+          <p className="muted small">Enterprise-Vertrag: die Abrechnung pflegt der Betreiber. Seats werden zur Information gezählt.</p>
+        ) : !aktiv ? (
+          <>
+            <p className="muted small">
+              Ohne Sammelabrechnung zahlt jedes Mitglied sein eigenes Abo (Einstellungen → Plan) und hat sein eigenes Kontingent.
+              Mit Sammelabrechnung bekommt die Organisation eine Monatsrechnung über alle Seats; alle Mitglieder erhalten
+              dasselbe Tier und teilen sich das Kontingent.
+            </p>
+            <div className="active-config-card">
+              <div className="active-config-card__row">
+                <span className="active-config-card__label">Regel</span>
+                <span className="active-config-card__value">
+                  Ein Seat zählt für den Monat, wenn die Person an mindestens einem Tagesstichtag (00:00 UTC) Mitglied war. Keine
+                  anteilige Berechnung, keine Erstattung. Upgrade sofort, Downgrade zum Monatsersten.
+                </span>
+              </div>
+              <div className="active-config-card__row">
+                <span className="active-config-card__label">Preise</span>
+                <span className="active-config-card__value">
+                  Starter {eur(b.prices.starter)} · Pro {eur(b.prices.pro)} je Seat und Monat, netto
+                </span>
+              </div>
+            </div>
+            {owner ? (
+              <>
+                <div className="provider-grid">
+                  <label className="field">
+                    <span>Tier für alle Mitglieder</span>
+                    <select value={tierWahl} disabled={busy} onChange={(e) => setTierWahl(e.target.value as SeatTier)}>
+                      <option value="starter">Starter · 500 Firmen je Seat und Monat</option>
+                      <option value="pro">Pro · 2 000 Firmen je Seat und Monat</option>
+                    </select>
+                  </label>
+                </div>
+                <div className="org-actions">
+                  <button type="button" className="primary" disabled={busy} onClick={aktivieren}>
+                    Sammelabrechnung aktivieren
+                  </button>
+                  <span className="muted small">
+                    {b.memberCount} Mitglied{b.memberCount === 1 ? "" : "er"} · {eur(b.memberCount * b.prices[tierWahl])} pro Monat
+                  </span>
+                </div>
+              </>
+            ) : (
+              <p className="muted small">Nur der Owner kann die Sammelabrechnung aktivieren.</p>
+            )}
+          </>
+        ) : (
+          <>
+            <div className="active-config-card">
+              <div className="active-config-card__row">
+                <span className="active-config-card__label">Status</span>
+                <span className="active-config-card__value">
+                  <span className={`badge ${b.status === "active" ? "ok" : ""}`}>
+                    {b.status === "active" ? "aktiv" : b.status === "past_due" ? "Zahlung offen" : b.status === "suspended" ? "pausiert" : b.status}
+                  </span>{" "}
+                  {TIER_LABEL[b.seatTier!]} für alle Mitglieder{b.since ? ` · seit ${datum(b.since)}` : ""}
+                  {b.tierNext && b.tierNextFrom ? ` · ab ${datum(b.tierNextFrom)} ${TIER_LABEL[b.tierNext]}` : ""}
+                  {b.endsAt ? ` · endet am ${datum(b.endsAt)}` : ""}
+                </span>
+              </div>
+              <div className="active-config-card__row">
+                <span className="active-config-card__label">Laufender Monat</span>
+                <span className="active-config-card__value">
+                  {cur.seatCount} Seat{cur.seatCount === 1 ? "" : "s"} bisher gezählt ({monatLabel(cur.periodKey)}) · voraussichtlich{" "}
+                  {eur(b.projectedCents)} netto
+                </span>
+              </div>
+              <div className="active-config-card__row">
+                <span className="active-config-card__label">Mitglieder jetzt</span>
+                <span className="active-config-card__value">
+                  {b.memberCount}
+                  {b.maxSeats != null ? ` von maximal ${b.maxSeats}` : ""} · {eur(b.prices[b.seatTier!])} je Seat und Monat
+                </span>
+              </div>
+            </div>
+            {b.status === "suspended" && (
+              <p className="error">Wegen einer offenen Zahlung sind Importe und Radar-Scans pausiert. Nach Zahlungseingang läuft alles automatisch weiter.</p>
+            )}
+            {owner && (
+              <>
+                <div className="provider-grid">
+                  <label className="field">
+                    <span>Tier</span>
+                    <select value={b.seatTier!} disabled={busy || !!b.endsAt} onChange={(e) => tierSetzen(e.target.value as SeatTier)}>
+                      <option value="starter">Starter</option>
+                      <option value="pro">Pro</option>
+                    </select>
+                  </label>
+                  <label className="field">
+                    <span>Seat-Deckel (leer = keiner)</span>
+                    <input type="number" min={1} step={1} value={deckel} disabled={busy} onChange={(e) => setDeckel(e.target.value)} onBlur={deckelSpeichern} />
+                  </label>
+                </div>
+                <div className="org-actions">
+                  {b.endsAt ? (
+                    <button type="button" className="btn" disabled={busy} onClick={() => void beendenZurueck()}>
+                      Beendigung zurücknehmen
+                    </button>
+                  ) : (
+                    <button type="button" className="btn btn--danger" disabled={busy} onClick={beenden}>
+                      Zum Monatsersten beenden
+                    </button>
+                  )}
+                </div>
+              </>
+            )}
+            <p className="muted small">
+              Ein Seat zählt für den Monat, sobald die Person an einem Tagesstichtag (00:00 UTC) Mitglied war; Entfernte zählen den
+              laufenden Monat noch, Beitritte ab dem nächsten Stichtag. Upgrade sofort, Downgrade zum Monatsersten.
+            </p>
+          </>
+        )}
+      </section>
+
+      {(b.invoices.length > 0 || aktiv) && (
+        <section className="provider-section">
+          <h3>Abrechnungsdatensätze</h3>
+          {b.invoices.length === 0 ? (
+            <p className="muted small">Der erste Datensatz entsteht am Monatsersten.</p>
+          ) : (
+            <div className="org-list">
+              {b.invoices.map((inv) => (
+                <div key={inv.id} className="org-row">
+                  <div className="org-row__main">
+                    <span className="org-row__title">{monatLabel(inv.periodKey)}</span>
+                    <span className="org-row__meta">
+                      {inv.seatCount} Seat{inv.seatCount === 1 ? "" : "s"} ·{" "}
+                      {inv.lines.map((l) => `${l.seats} × ${TIER_LABEL[l.tier]}`).join(", ") || "keine Positionen"} ·{" "}
+                      {INVOICE_STATUS[inv.status] ?? inv.status}
+                    </span>
+                  </div>
+                  <div className="org-row__actions">
+                    <strong>{eur(inv.subtotalCents)}</strong>
+                    <button type="button" className="btn" onClick={() => void oeffneDetail(inv.periodKey)}>
+                      Nachweis
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+          {detail && (
+            <div className="ct-card" style={{ marginTop: "0.75rem", padding: "0.75rem 1rem" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "0.5rem", flexWrap: "wrap" }}>
+                <strong>
+                  {monatLabel(detail.periodKey)} · {detail.seatCount} Seat{detail.seatCount === 1 ? "" : "s"} · {eur(detail.subtotalCents)} netto
+                </strong>
+                <span className="org-actions">
+                  <button type="button" className="btn" onClick={() => csvLaden(detail)}>
+                    CSV herunterladen
+                  </button>
+                  <button type="button" className="btn" onClick={() => setDetail(null)}>
+                    Schließen
+                  </button>
+                </span>
+              </div>
+              <div className="org-list" style={{ marginTop: "0.5rem" }}>
+                {(detail.seats ?? []).map((s) => (
+                  <div key={s.actorId} className="org-row">
+                    <div className="org-row__main">
+                      <span className="org-row__title">{s.name ?? s.email ?? `${s.actorId.slice(0, 8)}…`}</span>
+                      <span className="org-row__meta">
+                        {TIER_LABEL[s.tier]} · Stichtage {s.firstCountedDay} bis {s.lastCountedDay} ({s.countedDays})
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <p className="muted small" style={{ marginTop: "0.5rem" }}>
+                Prüfsumme {detail.computeHash.slice(0, 16)}… · erfasst am {datum(detail.computedAt)}
+              </p>
+            </div>
+          )}
+        </section>
+      )}
+    </>
   );
 }
 

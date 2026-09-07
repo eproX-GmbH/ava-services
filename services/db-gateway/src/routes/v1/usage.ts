@@ -43,6 +43,11 @@ const UsageResponseShape = z
      *  the period hasn't ended yet. Desktop shows
      *  "Kündigung zum X vorgemerkt" while this is true. */
     cancelAtPeriodEnd: z.boolean(),
+    parkedCount: z.number().int().nonnegative(),
+    /** B1 — active | past_due | suspended | canceled */
+    status: z.string(),
+    /** B1 — Berechtigungsquelle (personal | seat | enterprise) und Details. */
+    entitlement: z.object({}).passthrough(),
   })
   .openapi("UsageSnapshot");
 
@@ -69,6 +74,8 @@ usageRouter.openapi(usageRoute, async (c) => {
   if (!auth?.tenantId) {
     throw new HTTPException(401, { message: "auth_context_missing" });
   }
-  const snapshot = await getUsageSnapshot(getGatewayPool(), auth.tenantId);
+  // B1 — Konto aus (Daten-Tenant, Akteur) aufloesen: Mitglieder einer
+  // Organisation ohne Sammelabrechnung zaehlen auf ihr eigenes Konto.
+  const snapshot = await getUsageSnapshot(getGatewayPool(), { tenantId: auth.tenantId, actorId: auth.actorId });
   return c.json(snapshot, 200);
 });

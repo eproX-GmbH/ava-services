@@ -41,3 +41,21 @@ export function tierFromPriceId(priceId: string): PaidTier | null {
   if (priceId === process.env.STRIPE_PRICE_PRO) return "pro";
   return null;
 }
+
+// ---- B2 — Seat-Sammelabrechnung (docs/PLAN_ABRECHNUNG_SEATS.md) ------------
+
+export type SeatTier = "starter" | "pro";
+
+/** Listenpreis je Seat und Monat in Euro-Cent (netto). Ueberschreibbar
+ *  per Env (SEAT_PRICE_STARTER_CENTS / SEAT_PRICE_PRO_CENTS), damit
+ *  Preisaenderungen ohne Deploy moeglich sind. */
+export function seatPriceCents(tier: SeatTier): number {
+  const env = tier === "starter" ? process.env.SEAT_PRICE_STARTER_CENTS : process.env.SEAT_PRICE_PRO_CENTS;
+  const n = env ? Number(env) : NaN;
+  if (Number.isFinite(n) && n >= 0) return Math.round(n);
+  return tier === "starter" ? 4900 : 14900;
+}
+
+export function isSeatTier(v: unknown): v is SeatTier {
+  return v === "starter" || v === "pro";
+}

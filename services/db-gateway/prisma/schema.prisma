@@ -251,19 +251,42 @@ model WebsiteJudgment {
 ///   - tier="starter" / "pro" → end of the current rolling-monthly window;
 ///     persist-bus rolls usage over to the next periodKey when this passes.
 ///   - tier="enterprise" → null (no quota enforced)
+/// B1 (docs/PLAN_ABRECHNUNG_SEATS.md) — ABRECHNUNGSKONTO. `tenantId` ist
+/// die billingAccountId: persoenlich = Nutzer-sub, Organisation =
+/// Organisations-ID. Aufloesung Daten-Tenant → Konto in
+/// lib/billing.ts resolveBillingAccountId(): Organisationen mit
+/// mode seats|enterprise zahlen fuer alle Mitglieder, sonst zaehlt
+/// jedes Mitglied auf sein persoenliches Konto.
 model TenantBilling {
   tenantId             String    @id
+  /// personal | organisation
+  kind                 String    @default("personal")
+  /// none | subscription (Stripe-Einzelabo) | seats (Sammelabrechnung) | enterprise (Operator)
+  mode                 String    @default("none")
   tier                 String    @default("free")
   quotaLimit           Int       @default(25)
+  /// active | past_due | suspended | canceled
+  status               String    @default("active")
+  pastDueSince         DateTime?
+  suspendedAt          DateTime?
+  graceDays            Int       @default(14)
   // Stripe linkage when present.
   stripeCustomerId     String?
   stripeSubscriptionId String?
+  lastStripeEventAt    DateTime?
   // Rolls over for paid tiers; null for free / enterprise.
   periodEnd            DateTime?
   /// v0.1.103 — Stripe's `cancel_at_period_end` mirrored here so the
   /// desktop can show "Kündigung zum X vorgemerkt" until period end.
   /// Webhook flips this on every subscription.updated event.
   cancelAtPeriodEnd    Boolean   @default(false)
+  /// B2 — Sammelabrechnung: Organisations-Tier (starter | pro), aktiv seit,
+  /// vorgemerktes Ende (Monatsersten), Seat-Deckel, Karenzband (Operator).
+  seatTier             String?
+  seatBillingSince     DateTime?
+  seatBillingEndsAt    DateTime?
+  maxSeats             Int?
+  karenzTag            Int?
   updatedAt            DateTime  @updatedAt
   createdAt            DateTime  @default(now())
 }
@@ -288,15 +311,16 @@ model TenantBilling {
 /// company-profile, …) write their persist events but the listener
 /// short-circuits since they're free downstream of structured-content.
 model UsageEntry {
-  tenantId  String
-  periodKey String
-  companyId String
-  source    String
-  createdAt DateTime @default(now())
+  /// B1 — Abrechnungskonto (TenantBilling.tenantId), nicht der Daten-Tenant.
+  billingAccountId String
+  periodKey        String
+  companyId        String
+  source           String
+  createdAt        DateTime @default(now())
 
-  @@id([tenantId, periodKey, companyId])
-  // Counter window for /v1/usage: count(*) where (tenantId, periodKey).
-  @@index([tenantId, periodKey])
+  @@id([billingAccountId, periodKey, companyId])
+  // Counter window for /v1/usage: count(*) where (billingAccountId, periodKey).
+  @@index([billingAccountId, periodKey])
 }
 
 /// Q-track v0.1.137 — Deferred-processing quota.
@@ -431,6 +455,9 @@ model Tenant {
   providers   TenantProvider[]
   quota       TenantQuota?
   shares      OrgShare[]
+  memberships TenantMembership[]
+  seatTiers   SeatTierChange[]
+  seatInvoices SeatInvoice[]
 }
 
 /// O1 — Beitrittsanfrage: bis zur Freigabe bleibt der Nutzer in seinem
@@ -577,4 +604,116 @@ model TenantMember {
   @@id([tenantId, actorId])
   @@unique([actorId])
   @@index([tenantId])
+}
+
+/// B1 — Mitgliedschaftshistorie (Intervalle) fuer Organisationen. Quelle
+/// der Seat-Zaehlung (docs/PLAN_ABRECHNUNG_SEATS.md R2). TenantMember
+/// bleibt die aktuelle Sicht; hier wird nie geloescht, nur leftAt gesetzt.
+model TenantMembership {
+  id         String    @id
+  tenantId   String
+  actorId    String
+  role       String
+  email      String?
+  name       String?
+  joinedAt   DateTime  @default(now())
+  leftAt     DateTime?
+  /// removed | left | replaced
+  leftReason String?
+  tenant     Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, joinedAt])
+  @@index([actorId, leftAt])
+}
+
+/// B2 — Tier-Zeitachse der Sammelabrechnung. tier = starter | pro | none
+/// (none = Sammelabrechnung endet zum validFrom). Upgrades sofort,
+/// Downgrades und Deaktivierung zum naechsten Monatsersten (R4, R8).
+model SeatTierChange {
+  id        String   @id
+  tenantId  String
+  tier      String
+  validFrom DateTime
+  createdAt DateTime @default(now())
+  createdBy String?
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, validFrom])
+}
+
+/// B2 — Abrechnungsdatensatz je Organisation und Monat; aus
+/// TenantMembership + SeatTierChange jederzeit reproduzierbar
+/// (computeHash). status: recorded | issued | paid | void | enterprise_export.
+model SeatInvoice {
+  id              String    @id
+  tenantId        String
+  periodKey       String
+  status          String    @default("recorded")
+  currency        String    @default("EUR")
+  subtotalCents   Int       @default(0)
+  taxCents        Int?
+  totalCents      Int       @default(0)
+  seatCount       Int       @default(0)
+  computedAt      DateTime  @default(now())
+  computeHash     String
+  stripeInvoiceId String?
+  issuedAt        DateTime?
+  paidAt          DateTime?
+  note            String?
+  tenant          Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  lines           SeatInvoiceLine[]
+  seats           SeatInvoiceSeat[]
+
+  @@unique([tenantId, periodKey])
+}
+
+model SeatInvoiceLine {
+  id             String      @id
+  invoiceId      String
+  tier           String
+  seats          Int
+  unitPriceCents Int
+  amountCents    Int
+  invoice        SeatInvoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  @@index([invoiceId])
+}
+
+/// Personen-Nachweis je Rechnung (wer, welches Tier, welche Stichtage).
+model SeatInvoiceSeat {
+  id              String      @id
+  invoiceId       String
+  actorId         String
+  email           String?
+  name            String?
+  tier            String
+  firstCountedDay String
+  lastCountedDay  String
+  countedDays     Int
+  invoice         SeatInvoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  @@index([invoiceId])
+}
+
+/// B1 — Audit je Abrechnungskonto (Tier-/Abo-/Seat-/Zahlungsereignisse).
+model BillingEvent {
+  id               BigInt   @id @default(autoincrement())
+  billingAccountId String
+  ts               DateTime @default(now())
+  kind             String
+  /// webhook | admin | cron | operator | system
+  source           String
+  actorId          String?
+  stripeEventId    String?
+  payload          Json?
+
+  @@index([billingAccountId, ts])
+}
+
+/// B1 — Stripe-Webhook-Dedupe (Event-ID ist der Schluessel).
+model StripeEvent {
+  id          String   @id
+  type        String
+  created     DateTime
+  processedAt DateTime @default(now())
 }

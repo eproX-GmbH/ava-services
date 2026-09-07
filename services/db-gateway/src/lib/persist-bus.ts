@@ -908,6 +908,7 @@ const applyStructuredContent: ApplyFn = async (pool, event, log) => {
   if (tenantId && result?.companyId) {
     await recordUsage(getGatewayPool(), log, {
       tenantId,
+      actorId: (event.data as { actorId?: string | null } | undefined)?.actorId ?? null,
       companyId: result.companyId,
       source: "structured-content",
     });

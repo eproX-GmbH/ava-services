@@ -8,7 +8,7 @@
 
 import { Hono } from "hono";
 import { getGatewayPool } from "../lib/producer-pools";
-import { ensureBillingRowForQuota, periodKeyFor, isUnlimited, UNLIMITED } from "../lib/billing";
+import { ensureBillingRowForQuota, periodKeyFor, isUnlimited, resolveBillingAccountId, UNLIMITED } from "../lib/billing";
 import { internalAuthMiddleware } from "../middleware/internal-auth";
 import { logger } from "../lib/logger";
 
@@ -36,23 +36,36 @@ function parseBody<T>(raw: string): T | null {
 // two parallel imports don't race past the limit by their combined
 // size.
 //
-// Body: { tenantId, count }
-// Returns: { granted, used, limit, parkedCount }
+// Body: { tenantId, userId?, count }
+// Returns: { granted, used, limit, parkedCount, reason? }
+//
+// B1 — `userId` (master-data kennt ihn je Transaktion) loest das
+// Abrechnungskonto auf: Organisation mit Sammelabrechnung → Organisation,
+// sonst das persoenliche Konto des Nutzers. Ohne userId (Alt-Client)
+// bleibt es der Tenant. Ein gesperrtes Konto (Zahlungsstoerung ueber die
+// Karenz hinaus) wird wie „kein Kontingent" behandelt: parken, spaeter
+// automatisch nachspielen (K7/K8).
 internalQuotaRouter.post("/quota/try-reserve", async (c) => {
   const raw = c.get("internalRawBody");
-  const body = parseBody<{ tenantId?: string; count?: number }>(raw);
+  const body = parseBody<{ tenantId?: string; userId?: string | null; count?: number }>(raw);
   if (!body?.tenantId || typeof body.count !== "number" || body.count <= 0) {
     return c.json({ error: "bad_request" }, 400);
   }
   const { tenantId, count } = body;
 
   const pool = getGatewayPool();
+  const billingAccountId = await resolveBillingAccountId(pool, { tenantId, actorId: body.userId ?? null });
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
     // Ensure billing row + lock it for the duration of the decision.
-    const billing = await ensureBillingRowForQuota(client, tenantId);
+    const billing = await ensureBillingRowForQuota(client, billingAccountId);
     const periodKey = periodKeyFor(billing.tier);
+
+    if (billing.status === "suspended") {
+      await client.query("COMMIT");
+      return c.json({ granted: false, used: 0, limit: billing.quotaLimit, parkedCount: 0, reason: "billing_suspended" });
+    }
 
     if (isUnlimited(billing.tier)) {
       await client.query("COMMIT");
@@ -67,13 +80,18 @@ internalQuotaRouter.post("/quota/try-reserve", async (c) => {
     const usedRes = await client.query<{ used: string }>(
       `SELECT COUNT(*)::text AS used
          FROM "UsageEntry"
-        WHERE "tenantId" = $1 AND "periodKey" = $2`,
-      [tenantId, periodKey],
+        WHERE "billingAccountId" = $1 AND "periodKey" = $2`,
+      [billingAccountId, periodKey],
     );
-    const parkedRes = await client.query<{ parked: string }>(
-      `SELECT COUNT(*)::text AS parked FROM "ParkedCompany" WHERE "tenantId" = $1`,
-      [tenantId],
-    );
+    // Geparkte Zeilen haengen am Daten-Tenant; sie zaehlen nur mit,
+    // wenn der Tenant selbst das Abrechnungskonto ist (sonst gehoeren
+    // sie anderen Mitgliedern mit eigenem Kontingent).
+    const parkedRes = billingAccountId === tenantId
+      ? await client.query<{ parked: string }>(
+          `SELECT COUNT(*)::text AS parked FROM "ParkedCompany" WHERE "tenantId" = $1`,
+          [tenantId],
+        )
+      : { rows: [{ parked: "0" }] };
     const used = Number(usedRes.rows[0]?.used ?? 0);
     const parkedCount = Number(parkedRes.rows[0]?.parked ?? 0);
     const limit = billing.quotaLimit;

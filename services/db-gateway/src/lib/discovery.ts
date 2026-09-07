@@ -155,21 +155,23 @@ const PLAN_DISCOVERY: Record<string, Omit<DiscoveryLimits, "tier">> = {
  *  Quota oder Gebiete (User-Entscheidung 2026-08-30). */
 const INITIAL_SCAN_PARAMS = PLAN_DISCOVERY.pro!;
 
-async function tenantTier(pool: Pool, tenantId: string): Promise<string> {
+// B1 — Tier des ABRECHNUNGSKONTOS (docs/PLAN_ABRECHNUNG_SEATS.md):
+// Mitglieder einer Organisation ohne Sammelabrechnung bringen ihren
+// eigenen Plan mit; ohne actorId (Alt-Aufrufer) zaehlt der Tenant.
+async function tenantTier(pool: Pool, tenantId: string, actorId?: string | null): Promise<string> {
   try {
-    const r = await pool.query<{ tier: string }>(
-      `SELECT tier FROM "TenantBilling" WHERE "tenantId" = $1`,
-      [tenantId],
-    );
-    const t = r.rows[0]?.tier;
+    const { resolveBillingAccountId, readBillingAccount, effectiveTier } = await import("./billing");
+    const id = await resolveBillingAccountId(pool, { tenantId, actorId: actorId ?? null });
+    const acc = await readBillingAccount(pool, id);
+    const t = acc ? effectiveTier(acc) : "free";
     return t && PLAN_DISCOVERY[t] ? t : "free";
   } catch {
     return "free";
   }
 }
 
-async function effectiveLimits(pool: Pool, tenantId: string): Promise<DiscoveryLimits> {
-  const tier = await tenantTier(pool, tenantId);
+async function effectiveLimits(pool: Pool, tenantId: string, actorId?: string | null): Promise<DiscoveryLimits> {
+  const tier = await tenantTier(pool, tenantId, actorId);
   const plan = PLAN_DISCOVERY[tier] ?? PLAN_DISCOVERY.free!;
   const r = await pool.query<{
     maxScansPerDay: number | null;
@@ -265,7 +267,7 @@ export async function startScan(
   args: { tenantId: string; actorId: string; ort: string; radiusKm: number },
 ): Promise<StartScanResult> {
   await ensureSchema(pool);
-  const limits = await effectiveLimits(pool, args.tenantId);
+  const limits = await effectiveLimits(pool, args.tenantId, args.actorId);
 
   // Erst-Backlog: noch NIE ein Scan fuer diesen Tenant → grosszuegiger
   // Pro-Level-Lauf, der weder Quota noch Gebiete/Radius-Gates beruehrt.

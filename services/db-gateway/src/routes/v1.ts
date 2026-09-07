@@ -20,6 +20,7 @@ import { producersRouter } from "./v1/producers";
 import { crmRouter } from "./v1/crm";
 import { usageRouter } from "./v1/usage";
 import { billingRouter } from "./v1/billing";
+import { seatBillingRouter } from "./v1/seat-billing";
 import { companiesMatrixRouter } from "./v1/companies-matrix";
 import { companyStateRouter } from "./v1/company-state";
 import { companiesCrmRouter } from "./v1/companies-crm";
@@ -122,6 +123,9 @@ v1.route("/", discoveryRouter);
 
 // O1 — Organisationen (docs/PLAN_ORGANISATIONEN.md).
 v1.route("/", tenantsRouter);
+
+// B2 — Seat-Sammelabrechnung (docs/PLAN_ABRECHNUNG_SEATS.md).
+v1.route("/", seatBillingRouter);
 
 // O4 — Stellvertreter-Proxy (Organisationsschluessel, Metering, Prompt-Audit).
 v1.route("/", llmProxyRouter);

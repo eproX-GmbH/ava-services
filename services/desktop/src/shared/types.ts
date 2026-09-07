@@ -112,6 +112,107 @@ export interface OrgState {
   quota?: OrgQuota;
 }
 
+// ---- B1/B2 — Abrechnung (docs/PLAN_ABRECHNUNG_SEATS.md) --------------------
+
+export type SeatTier = "starter" | "pro";
+export type BillingStatus = "active" | "past_due" | "suspended" | "canceled";
+export type BillingMode = "none" | "subscription" | "seats" | "enterprise";
+
+/** GET /v1/usage → entitlement: woher die Berechtigung kommt. */
+export interface UsageEntitlement {
+  tier: "free" | "starter" | "pro" | "enterprise";
+  /** personal = eigenes Konto; seat = Sammelabrechnung der Organisation; enterprise = Vertrag. */
+  source: "personal" | "seat" | "enterprise";
+  billingAccountId: string;
+  paidBy: string | null;
+  status: BillingStatus;
+  mode: BillingMode;
+  seats: {
+    tier: SeatTier;
+    count: number;
+    since: string | null;
+    endsAt: string | null;
+    tierNext: SeatTier | null;
+    tierNextFrom: string | null;
+    maxSeats: number | null;
+  } | null;
+  /** Eigenes Stripe-Abo laeuft (noch), obwohl ein Seat traegt (A-5). */
+  personalSubscription: { tier: string; cancelAtPeriodEnd: boolean; periodEnd: string | null } | null;
+}
+
+export interface OrgBillingSeatRow {
+  actorId: string;
+  email: string | null;
+  name: string | null;
+  tier: SeatTier;
+  firstCountedDay: string;
+  lastCountedDay: string;
+  countedDays: number;
+}
+
+export interface OrgBillingLine {
+  tier: SeatTier;
+  seats: number;
+  unitPriceCents: number;
+  amountCents: number;
+}
+
+export interface OrgBillingComputation {
+  periodKey: string;
+  seats: OrgBillingSeatRow[];
+  lines: OrgBillingLine[];
+  seatCount: number;
+  subtotalCents: number;
+  computeHash: string;
+}
+
+export interface OrgBillingInvoice {
+  id: string;
+  periodKey: string;
+  /** recorded | issued | paid | void | enterprise_export */
+  status: string;
+  currency: string;
+  seatCount: number;
+  subtotalCents: number;
+  totalCents: number;
+  computedAt: string;
+  computeHash: string;
+  lines: OrgBillingLine[];
+  /** nur im Detail (GET …/invoices/{periodKey}) */
+  seats?: OrgBillingSeatRow[];
+  note?: string | null;
+}
+
+export interface OrgBillingEvent {
+  id: string;
+  ts: string;
+  kind: string;
+  source: string;
+  actorId: string | null;
+  payload: unknown;
+}
+
+/** GET /v1/tenants/me/billing (Admin). */
+export interface OrgBillingState {
+  tenantId: string;
+  tenantName: string | null;
+  mode: BillingMode;
+  status: BillingStatus;
+  seatTier: SeatTier | null;
+  since: string | null;
+  endsAt: string | null;
+  tierNext: SeatTier | null;
+  tierNextFrom: string | null;
+  maxSeats: number | null;
+  karenzTag: number | null;
+  memberCount: number;
+  prices: Record<SeatTier, number>;
+  currentPeriod: OrgBillingComputation;
+  projectedCents: number;
+  invoices: OrgBillingInvoice[];
+  events: OrgBillingEvent[];
+}
+
 /** O6 — Limit fuer Aufrufe ueber den Organisationsschluessel. */
 export interface OrgQuota {
   mode: "off" | "org_total" | "per_user_daily";

@@ -6,6 +6,9 @@
 //   org_members         — read-only: Mitglieder + offene Anfragen (Admin).
 //   org_member_approve  — Anfrage annehmen/ablehnen (Admin, confirmAction).
 //   org_member_remove   — Mitglied entfernen (Admin, destruktiv).
+//   org_billing_info    — B2: Sammelabrechnung (Zustand, laufender Monat, Datensaetze; Admin).
+//   org_billing_activate_seats / _deactivate_seats / _set_tier — Owner, confirmAction.
+//   org_billing_invoices — Datensatz einer Periode mit Personen-Nachweis (Admin).
 //
 // Anlegen, Beitritt per Link, Rollen, Austritt bleiben in der UI: sie
 // starten AVA neu (Tenant-Wechsel) oder brauchen einen Link von aussen.
@@ -15,7 +18,7 @@ import { DEEP_RESEARCH_MODELS } from "../../../shared/research-models";
 import { defineTool } from "../define-tool";
 import type { Tool } from "../types";
 import type { GatewayClient } from "../gateway-client";
-import { ORG_FEATURES, type OrgState, type OrgPolicy } from "../../../shared/types";
+import { ORG_FEATURES, type OrgState, type OrgPolicy, type OrgBillingState, type OrgBillingInvoice } from "../../../shared/types";
 
 export interface OrgToolDeps {
   gateway: GatewayClient;
@@ -134,11 +137,21 @@ export function buildOrganisationTools(deps: OrgToolDeps): Tool[] {
         c.signal,
       );
       if (value !== "ja") return { ok: false, abgebrochen: true };
-      await deps.gateway.request(`/v1/tenants/me/requests/${encodeURIComponent(args.requestId)}`, {
-        method: "POST",
-        body: { entscheidung: args.entscheidung },
-      });
-      return { ok: true, entscheidung: args.entscheidung, wer };
+      const r = await deps.gateway.request<{ seat?: { tier: string; unitPriceCents: number } }>(
+        `/v1/tenants/me/requests/${encodeURIComponent(args.requestId)}`,
+        {
+          method: "POST",
+          body: { entscheidung: args.entscheidung },
+        },
+      );
+      return {
+        ok: true,
+        entscheidung: args.entscheidung,
+        wer,
+        ...(r?.seat
+          ? { seat: r.seat, hinweis: `Zaehlt ab dem naechsten Stichtag als ${r.seat.tier}-Seat (${(r.seat.unitPriceCents / 100).toFixed(2)} EUR/Monat, voller Monat).` }
+          : {}),
+      };
     },
   });
 
@@ -416,5 +429,203 @@ export function buildOrganisationTools(deps: OrgToolDeps): Tool[] {
     },
   });
 
-  return [info, members, approve, remove, featuresSet, providerSet, limitsSet, usage, radarShare];
+  // ---- B2 — Sammelabrechnung (docs/PLAN_ABRECHNUNG_SEATS.md) ----------------
+
+  const eur = (cents: number) => `${(cents / 100).toFixed(2).replace(".", ",")} EUR`;
+  const ladeBilling = () => deps.gateway.request<OrgBillingState>("/v1/tenants/me/billing", { method: "GET" });
+
+  const billingInfo = defineTool({
+    name: "org_billing_info",
+    summary: "Sammelabrechnung der Organisation: Zustand, Tier, Seats im laufenden Monat, Prognose, Datensaetze (Admin).",
+    category: "organisation abrechnung rechnung seats lizenzen sammelabrechnung kosten",
+    description:
+      "Liefert fuer Admins/Owner die Sammelabrechnung der Organisation: Modus (none = jedes Mitglied zahlt selbst, " +
+      "seats = Sammelabrechnung, enterprise = Vertrag), Organisations-Tier, Zahlungsstatus, Seats im laufenden Monat " +
+      "(Regel: eine Person zaehlt, wenn sie an mindestens einem Tagesstichtag 00:00 UTC Mitglied war — voller Monat, " +
+      "keine anteilige Berechnung), Prognose in EUR netto, vorgemerkte Aenderungen und die bisherigen Monatsdatensaetze. " +
+      "Read-only. Mitglieder ohne Admin-Rolle sehen ihren Seat unter Einstellungen → Plan.",
+    parameters: { type: "object", properties: {} },
+    schema: yup.object({}),
+    preview: (r: { mode?: string; seatTier?: string | null; hinweis?: string }) =>
+      r.hinweis ?? (r.mode === "seats" ? `Sammelabrechnung ${r.seatTier ?? ""}` : "keine Sammelabrechnung"),
+    run: async () => {
+      const st = await lade();
+      if (st.kind !== "organisation") return { hinweis: "Du bist in keiner Organisation.", mode: "none" };
+      if (!istAdmin(st)) return { hinweis: "Nur Admins sehen die Abrechnung. Deinen eigenen Seat zeigt Einstellungen → Plan.", mode: "unbekannt" };
+      const b = await ladeBilling();
+      return {
+        organisation: b.tenantName,
+        mode: b.mode,
+        status: b.status,
+        seatTier: b.seatTier,
+        seit: b.since,
+        endetAm: b.endsAt,
+        tierAb: b.tierNext ? { tier: b.tierNext, ab: b.tierNextFrom } : null,
+        maxSeats: b.maxSeats,
+        mitgliederJetzt: b.memberCount,
+        preise: { starter: eur(b.prices.starter), pro: eur(b.prices.pro) },
+        laufenderMonat: {
+          periode: b.currentPeriod.periodKey,
+          seatsBisher: b.currentPeriod.seatCount,
+          positionen: b.currentPeriod.lines.map((l) => `${l.seats} x ${l.tier} = ${eur(l.amountCents)}`),
+          prognoseNetto: eur(b.projectedCents),
+        },
+        datensaetze: b.invoices.map((i) => ({ periode: i.periodKey, seats: i.seatCount, netto: eur(i.subtotalCents), status: i.status })),
+        seite: "#/organisation",
+      };
+    },
+  });
+
+  const billingActivate = defineTool({
+    name: "org_billing_activate_seats",
+    summary: "Sammelabrechnung fuer die Organisation aktivieren (Owner, mit Bestaetigung).",
+    category: "organisation abrechnung seats aktivieren sammelabrechnung lizenzen",
+    description:
+      "Aktiviert die Sammelabrechnung: alle Mitglieder erhalten sofort dasselbe Tier (starter 49 EUR oder pro 149 EUR je " +
+      "Seat und Monat, netto), die Organisation bekommt eine Monatsrechnung ueber alle Seats, das Kontingent wird gepoolt. " +
+      "Der laufende Monat zaehlt voll. Persoenliche Abos der Mitglieder werden zum Ende ihrer Laufzeit gekuendigt (im " +
+      "Kunden-Portal widerrufbar). Nur Owner. Fragt vor der Ausfuehrung nach.",
+    parameters: {
+      type: "object",
+      required: ["tier"],
+      properties: { tier: { type: "string", enum: ["starter", "pro"] } },
+    },
+    schema: yup.object({ tier: yup.string().oneOf(["starter", "pro"]).required() }).noUnknown(true),
+    preview: (r: { ok?: boolean; abgebrochen?: boolean; memberCount?: number }) =>
+      r.abgebrochen ? "abgebrochen" : `Sammelabrechnung aktiv (${r.memberCount ?? 0} Seats)`,
+    run: async (args, c) => {
+      const b = await ladeBilling();
+      const tier = args.tier as "starter" | "pro";
+      const summe = b.memberCount * b.prices[tier];
+      const value = await c.ui.confirmAction(
+        {
+          kind: "additive",
+          prompt:
+            `Sammelabrechnung aktivieren: ${b.memberCount} Mitglied${b.memberCount === 1 ? "" : "er"} x ${eur(b.prices[tier])} (${tier}) = ` +
+            `${eur(summe)} pro Monat, bereits fuer den laufenden Monat (kein anteiliger Preis)? Persoenliche Abos der Mitglieder ` +
+            `werden zum Laufzeitende gekuendigt.`,
+          confirmValue: "ja",
+          options: [
+            { value: "ja", label: "Aktivieren" },
+            { value: "nein", label: "Abbrechen" },
+          ],
+        },
+        c.signal,
+      );
+      if (value !== "ja") return { ok: false, abgebrochen: true };
+      const r = await deps.gateway.request<{ memberCount: number; personalSubscriptionsScheduled: string[] }>(
+        "/v1/tenants/me/billing/seats/activate",
+        { method: "POST", body: { tier } },
+      );
+      return { ok: true, tier, memberCount: r.memberCount, monatlichNetto: eur(summe), persoenlicheAbosGekuendigt: r.personalSubscriptionsScheduled.length };
+    },
+  });
+
+  const billingDeactivate = defineTool({
+    name: "org_billing_deactivate_seats",
+    summary: "Sammelabrechnung zum naechsten Monatsersten beenden oder die Vormerkung zuruecknehmen (Owner, mit Bestaetigung).",
+    category: "organisation abrechnung seats beenden kuendigen sammelabrechnung",
+    description:
+      "Merkt die Beendigung der Sammelabrechnung zum naechsten Monatsersten vor (der laufende Monat wird noch voll " +
+      "abgerechnet; danach gilt fuer jedes Mitglied wieder sein eigenes Abo oder Free). Mit zuruecknehmen=true wird eine " +
+      "vorgemerkte Beendigung aufgehoben. Nur Owner. Fragt vor der Ausfuehrung nach.",
+    parameters: { type: "object", properties: { zuruecknehmen: { type: "boolean" } } },
+    schema: yup.object({ zuruecknehmen: yup.boolean().optional() }).noUnknown(true),
+    preview: (r: { ok?: boolean; abgebrochen?: boolean; endsAt?: string | null }) =>
+      r.abgebrochen ? "abgebrochen" : r.endsAt ? `Beendigung vorgemerkt zum ${r.endsAt.slice(0, 10)}` : "Beendigung zurueckgenommen",
+    run: async (args, c) => {
+      const revoke = args.zuruecknehmen === true;
+      const value = await c.ui.confirmAction(
+        {
+          kind: revoke ? "additive" : "destructive",
+          prompt: revoke
+            ? "Vorgemerkte Beendigung der Sammelabrechnung zuruecknehmen?"
+            : "Sammelabrechnung zum naechsten Monatsersten beenden? Der laufende Monat wird noch voll abgerechnet; danach zahlt jedes Mitglied selbst.",
+          confirmValue: "ja",
+          options: [
+            { value: "ja", label: revoke ? "Zuruecknehmen" : "Beenden" },
+            { value: "nein", label: "Abbrechen" },
+          ],
+        },
+        c.signal,
+      );
+      if (value !== "ja") return { ok: false, abgebrochen: true };
+      const r = await deps.gateway.request<{ endsAt: string | null }>("/v1/tenants/me/billing/seats/deactivate", {
+        method: "POST",
+        body: { revoke },
+      });
+      return { ok: true, endsAt: r.endsAt };
+    },
+  });
+
+  const billingTier = defineTool({
+    name: "org_billing_set_tier",
+    summary: "Organisations-Tier der Sammelabrechnung setzen: Upgrade sofort, Downgrade zum Monatsersten (Owner, mit Bestaetigung).",
+    category: "organisation abrechnung tier upgrade downgrade starter pro seats",
+    description:
+      "Setzt das Tier fuer alle Seats: 'pro' wirkt sofort (der laufende Monat wird als Pro berechnet), 'starter' wirkt zum " +
+      "naechsten Monatsersten (bis dahin bleibt Pro). Nur bei aktiver Sammelabrechnung, nur Owner. Fragt vor der Ausfuehrung nach.",
+    parameters: { type: "object", required: ["tier"], properties: { tier: { type: "string", enum: ["starter", "pro"] } } },
+    schema: yup.object({ tier: yup.string().oneOf(["starter", "pro"]).required() }).noUnknown(true),
+    preview: (r: { ok?: boolean; abgebrochen?: boolean; immediate?: boolean; tier?: string }) =>
+      r.abgebrochen ? "abgebrochen" : r.immediate ? `Upgrade auf ${r.tier} aktiv` : `Downgrade auf ${r.tier} vorgemerkt`,
+    run: async (args, c) => {
+      const tier = args.tier as "starter" | "pro";
+      const b = await ladeBilling();
+      if (b.mode !== "seats") return { ok: false, hinweis: "Sammelabrechnung ist nicht aktiv." };
+      if (b.seatTier === tier) return { ok: false, hinweis: `Die Organisation ist bereits auf ${tier}.` };
+      const upgrade = tier === "pro";
+      const value = await c.ui.confirmAction(
+        {
+          kind: "additive",
+          prompt: upgrade
+            ? `Auf Pro wechseln? Gilt sofort fuer alle ${b.memberCount} Mitglieder; der laufende Monat wird als Pro berechnet (${eur(b.prices.pro)} je Seat).`
+            : `Auf Starter wechseln? Gilt ab dem naechsten Monatsersten (${eur(b.prices.starter)} je Seat ab dann); bis dahin bleibt Pro.`,
+          confirmValue: "ja",
+          options: [
+            { value: "ja", label: upgrade ? "Upgraden" : "Vormerken" },
+            { value: "nein", label: "Abbrechen" },
+          ],
+        },
+        c.signal,
+      );
+      if (value !== "ja") return { ok: false, abgebrochen: true };
+      const r = await deps.gateway.request<{ effectiveFrom: string; immediate: boolean }>("/v1/tenants/me/billing/seats/tier", {
+        method: "PUT",
+        body: { tier },
+      });
+      return { ok: true, tier, ...r };
+    },
+  });
+
+  const billingInvoices = defineTool({
+    name: "org_billing_invoices",
+    summary: "Abrechnungsdatensatz eines Monats mit Personen-Nachweis (Admin).",
+    category: "organisation abrechnung rechnung nachweis seats monat export",
+    description:
+      "Liefert den Datensatz einer Periode (YYYY-MM): Positionen je Tier, Seats mit Name/E-Mail, Tier, erstem und letztem " +
+      "Stichtag und Anzahl Stichtage, Pruefsumme. Ohne Periode: Liste aller Datensaetze. CSV-Export ueber die Seite " +
+      "'Organisation' (#/organisation). Read-only, Admin.",
+    parameters: { type: "object", properties: { periode: { type: "string", description: "YYYY-MM, z. B. 2026-09" } } },
+    schema: yup.object({ periode: yup.string().matches(/^\d{4}-\d{2}$/).optional() }).noUnknown(true),
+    preview: (r: { periode?: string; seats?: unknown[]; datensaetze?: unknown[] }) =>
+      r.periode ? `Datensatz ${r.periode}: ${r.seats?.length ?? 0} Seats` : `${r.datensaetze?.length ?? 0} Datensaetze`,
+    run: async (args) => {
+      if (!args.periode) {
+        const b = await ladeBilling();
+        return { datensaetze: b.invoices.map((i) => ({ periode: i.periodKey, seats: i.seatCount, netto: eur(i.subtotalCents), status: i.status })) };
+      }
+      const inv = await deps.gateway.request<OrgBillingInvoice>(`/v1/tenants/me/billing/invoices/${args.periode}`, { method: "GET" });
+      return {
+        periode: inv.periodKey,
+        status: inv.status,
+        netto: eur(inv.subtotalCents),
+        positionen: inv.lines.map((l) => ({ tier: l.tier, seats: l.seats, einzelpreis: eur(l.unitPriceCents), betrag: eur(l.amountCents) })),
+        seats: (inv.seats ?? []).map((s) => ({ name: s.name, email: s.email, tier: s.tier, ersterStichtag: s.firstCountedDay, letzterStichtag: s.lastCountedDay, stichtage: s.countedDays })),
+        pruefsumme: inv.computeHash,
+      };
+    },
+  });
+
+  return [info, members, approve, remove, featuresSet, providerSet, limitsSet, usage, radarShare, billingInfo, billingActivate, billingDeactivate, billingTier, billingInvoices];
 }

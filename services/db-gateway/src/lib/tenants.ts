@@ -13,6 +13,13 @@ import { moveUserToTenantGroup } from "./keycloak-admin";
 import { invalidateMembership } from "./membership-cache";
 import { invalidateFeatures } from "./policy-guard";
 import { logger } from "./logger";
+import { TenantError } from "./tenant-error";
+import { openMembership, closeMembership, updateMembershipRole, updateMembershipIdentity } from "./memberships";
+import { assertSeatAvailable, scheduleCancelPersonalSubscriptions } from "./seat-billing";
+import { readBillingAccount } from "./billing";
+import { recordBillingEvent } from "./billing-events";
+
+export { TenantError };
 
 export interface TenantPolicyShape {
   features: Record<string, boolean>;
@@ -110,12 +117,19 @@ export async function ensureTenantForAuth(
        WHERE m."actorId" = $1 AND t."id" = m."tenantId" AND t."kind" = 'personal' AND m."tenantId" <> $1`,
       [auth.actorId],
     );
-    await client.query(
+    const neu = await client.query(
       `INSERT INTO "TenantMember" ("tenantId", "actorId", "role")
        VALUES ($1, $2, $3)
        ON CONFLICT ("actorId") DO NOTHING`,
       [auth.tenantId, auth.actorId, auth.actorId === auth.tenantId ? "owner" : "member"],
     );
+    // B1 — Historie fuer Claim-basierte Organisationsmitglieder (Altpfad ohne Beitrittsanfrage).
+    if ((neu.rowCount ?? 0) > 0 && auth.tenantId !== auth.actorId) {
+      const kind = await client.query<{ kind: string }>(`SELECT "kind" FROM "Tenant" WHERE "id" = $1`, [auth.tenantId]);
+      if (kind.rows[0]?.kind === "organisation") {
+        await openMembership(client, { tenantId: auth.tenantId, actorId: auth.actorId, role: "member", email: auth.email ?? null, name: auth.name ?? null });
+      }
+    }
     // Mitglieder-Anzeige: E-Mail/Name aus dem Token nachtragen (Owner hat
     // keine Beitrittsanfrage). Nie mit null ueberschreiben.
     if (auth.email || auth.name) {
@@ -123,6 +137,7 @@ export async function ensureTenantForAuth(
         `UPDATE "TenantMember" SET "email" = COALESCE($2, "email"), "name" = COALESCE($3, "name") WHERE "actorId" = $1`,
         [auth.actorId, auth.email ?? null, auth.name ?? null],
       );
+      await updateMembershipIdentity(client, { actorId: auth.actorId, email: auth.email ?? null, name: auth.name ?? null });
     }
     const t = await client.query<{ name: string | null }>(
       `SELECT "name" FROM "Tenant" WHERE "id" = $1`,
@@ -171,12 +186,6 @@ export async function ensureTenantForAuth(
 
 
 // ---- O1 — Organisationen -------------------------------------------------
-
-export class TenantError extends Error {
-  constructor(public readonly status: 400 | 403 | 404 | 409, message: string) {
-    super(message);
-  }
-}
 
 function neuerInviteToken(): string {
   return randomBytes(18).toString("base64url");
@@ -228,9 +237,11 @@ export async function createOrganisation(
     await client.query(`INSERT INTO "TenantPolicy" ("tenantId", "updatedBy") VALUES ($1, $2)`, [id, auth.actorId]);
     await client.query(`DELETE FROM "TenantMember" WHERE "actorId" = $1`, [auth.actorId]);
     await client.query(
-      `INSERT INTO "TenantMember" ("tenantId", "actorId", "role") VALUES ($1, $2, 'owner')`,
-      [id, auth.actorId],
+      `INSERT INTO "TenantMember" ("tenantId", "actorId", "role", "email", "name") VALUES ($1, $2, 'owner', $3, $4)`,
+      [id, auth.actorId, auth.email ?? null, auth.name ?? null],
     );
+    // B1 — Historie (Seat-Zaehlung, docs/PLAN_ABRECHNUNG_SEATS.md).
+    await openMembership(client, { tenantId: id, actorId: auth.actorId, role: "owner", email: auth.email ?? null, name: auth.name ?? null });
     await client.query("COMMIT");
     invalidateMembership(auth.actorId);
     void syncKeycloak(auth.actorId, id, name);
@@ -356,18 +367,50 @@ export async function decideJoinRequest(
       [requestId, entscheidung === "approve" ? "approved" : "rejected", auth.actorId],
     );
     let tenantName: string | null = null;
+    let seatInfo: { tier: string; unitPriceCents: number } | null = null;
     if (entscheidung === "approve") {
+      // B2 K17 — Seat-Deckel nur fuer neue Aufnahmen.
+      await assertSeatAvailable(client, req.tenantId);
+      const reqIdent = await client.query<{ email: string | null; name: string | null }>(
+        `SELECT "email", "name" FROM "TenantJoinRequest" WHERE "id" = $1`,
+        [requestId],
+      );
+      // Eine vorherige Organisations-Mitgliedschaft (Wechsel) wird geschlossen.
+      await closeMembership(client, { actorId: req.actorId, reason: "replaced" });
       await client.query(`DELETE FROM "TenantMember" WHERE "actorId" = $1`, [req.actorId]);
       await client.query(
-        `INSERT INTO "TenantMember" ("tenantId", "actorId", "role") VALUES ($1, $2, 'member')`,
-        [req.tenantId, req.actorId],
+        `INSERT INTO "TenantMember" ("tenantId", "actorId", "role", "email", "name") VALUES ($1, $2, 'member', $3, $4)`,
+        [req.tenantId, req.actorId, reqIdent.rows[0]?.email ?? null, reqIdent.rows[0]?.name ?? null],
       );
+      await openMembership(client, {
+        tenantId: req.tenantId,
+        actorId: req.actorId,
+        role: "member",
+        email: reqIdent.rows[0]?.email ?? null,
+        name: reqIdent.rows[0]?.name ?? null,
+      });
       tenantName = (await client.query<{ name: string | null }>(`SELECT "name" FROM "Tenant" WHERE "id" = $1`, [req.tenantId])).rows[0]?.name ?? null;
+      const acc = await readBillingAccount(client, req.tenantId);
+      if (acc?.mode === "seats" && acc.seatTier) {
+        const { seatPriceCents } = await import("./billing-plans");
+        seatInfo = { tier: acc.seatTier, unitPriceCents: seatPriceCents(acc.seatTier) };
+        await recordBillingEvent(client, {
+          billingAccountId: req.tenantId,
+          kind: "member_joined",
+          source: "admin",
+          actorId: auth.actorId,
+          payload: { memberId: req.actorId, tier: acc.seatTier, unitPriceCents: seatInfo.unitPriceCents },
+        });
+      }
     }
     await client.query("COMMIT");
     invalidateMembership(req.actorId);
-    if (entscheidung === "approve") void syncKeycloak(req.actorId, req.tenantId, tenantName);
-    return { actorId: req.actorId, tenantId: req.tenantId };
+    if (entscheidung === "approve") {
+      void syncKeycloak(req.actorId, req.tenantId, tenantName);
+      // A-5 — persoenliches Abo des Beigetretenen zum Periodenende kuendigen (best-effort, nach Commit).
+      if (seatInfo) void scheduleCancelPersonalSubscriptions(pool, [req.actorId], { orgId: req.tenantId, actorId: auth.actorId });
+    }
+    return { actorId: req.actorId, tenantId: req.tenantId, ...(seatInfo ? { seat: seatInfo } : {}) };
   } catch (err) {
     await client.query("ROLLBACK").catch(() => undefined);
     throw err;
@@ -404,7 +447,19 @@ export async function removeMember(pool: pg.Pool, auth: AuthContext, actorId: st
       `SELECT "email" FROM "TenantJoinRequest" WHERE "actorId" = $1 ORDER BY "requestedAt" DESC LIMIT 1`,
       [actorId],
     )).rows[0]?.email ?? null;
+    // B1 — Historie schliessen (Seat bleibt fuer den Monat gezaehlt, R5).
+    await closeMembership(client, { actorId, tenantId: auth.tenantId, reason: selbst ? "left" : "removed" });
     await setzeAufPersoenlichenTenant(client, actorId, email);
+    const acc = await readBillingAccount(client, auth.tenantId);
+    if (acc?.mode === "seats") {
+      await recordBillingEvent(client, {
+        billingAccountId: auth.tenantId,
+        kind: selbst ? "member_left" : "member_removed",
+        source: "admin",
+        actorId: auth.actorId,
+        payload: { memberId: actorId, tier: acc.seatTier },
+      });
+    }
     await client.query("COMMIT");
     invalidateMembership(actorId);
     void syncKeycloak(actorId, actorId, email);
@@ -427,6 +482,7 @@ export async function setMemberRole(pool: pg.Pool, auth: AuthContext, actorId: s
     [auth.tenantId, actorId, role],
   );
   if (r.rowCount === 0) throw new TenantError(404, "Kein Mitglied dieser Organisation.");
+  await updateMembershipRole(pool, { tenantId: auth.tenantId, actorId, role });
 }
 
 export async function setPolicy(pool: pg.Pool, auth: AuthContext, patch: Partial<TenantPolicyShape>): Promise<TenantPolicyShape> {
