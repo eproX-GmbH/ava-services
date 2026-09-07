@@ -163,7 +163,25 @@ kündbar. Ergänze:
 - Die Sätze zu LinkedIn, Bildanalyse lokal, Frankfurt/EU und „liked,
   kommentiert oder schreibt nicht automatisch" sind weiterhin korrekt.
 
-## 7. Arbeitsregeln
+## 7. Download für Mac: zwei Architekturen
+
+Der Download-Link führt heute auf die GitHub-Release-Seite, dort steht die
+Apple-Silicon-Datei zuerst. Intel-Nutzer laden dadurch die falsche Datei
+und sehen beim Öffnen „AVA ist beschädigt und kann nicht geöffnet werden".
+Ändere den Download so:
+
+- Zwei klar benannte Schaltflächen oder eine automatische Erkennung:
+  „Mac mit Apple Silicon (M1 bis M4)" lädt `AVA-<version>-arm64.dmg`,
+  „Mac mit Intel-Prozessor" lädt `AVA-<version>-x64.dmg`, Windows lädt
+  `AVA-Setup-<version>.exe`. Die Dateien liegen unter
+  `https://github.com/eproX-GmbH/ava-services/releases/latest/download/<Dateiname>`;
+  die Version steht in `latest-mac.yml` bzw. `latest.yml` derselben Adresse.
+- Hilfetext: „Welchen Mac habe ich? Apple-Menü, Über diesen Mac. Steht dort
+  ‚Chip Apple M…', nimm Apple Silicon, steht dort ‚Prozessor Intel', nimm
+  Intel."
+- Systemanforderung Mac: macOS 11 oder neuer, Apple Silicon oder Intel.
+
+## 8. Arbeitsregeln
 
 Wie in der Übergabe vom 2026-09-05: Nichts als vorhanden schreiben, was
 hier oder dort als „in Arbeit" steht. Beträge zu KI-Kosten sind Schätzungen.

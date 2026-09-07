@@ -88,19 +88,27 @@ mac:
   artifactName: ${productName}-${version}-${arch}.${ext}
   target:
     - target: dmg
-      # v0.1.174 — added x64. Built on macos-13 in CI (the last Intel
-      # runner GitHub Actions offers). Each arch builds in its own job
-      # (separate Whisper Homebrew bottle per native arch); the
-      # `latest-mac.yml` manifest is merged in a post-step so OTA
-      # works for both.
-      arch: [arm64, x64]
+      # v0.1.174 — x64 ergänzt. Jede Architektur baut in CI in einem
+      # eigenen Job (eigene Whisper-Bottle je Arch); `latest-mac.yml`
+      # wird in einem Nachschritt zusammengeführt, damit OTA für beide
+      # funktioniert.
+      #
+      # v0.1.569 — KEINE `arch:`-Liste mehr. Mit `arch: [arm64, x64]`
+      # hat der arm64-Job (electron-builder --mac --arm64) trotzdem
+      # BEIDE Architekturen gebaut und per `--publish always` auch den
+      # x64-Build hochgeladen — ohne Intel-Ollama/-Whisper, weil der
+      # arm64-Job nur darwin-arm64 holt. Bis der x64-Job ~25 Minuten
+      # später mit `--clobber` überschrieb, bekamen Intel-Nutzer (Download
+      # oder OTA) einen Build mit fehlendem `ollama/darwin-x64`
+      # („Ollama binary not found … parent fehlt"). Die Architektur
+      # bestimmt jetzt ausschließlich das CLI-Flag (`--arm64`/`--x64`),
+      # siehe package.json `package:mac*` und desktop-release.yml.
     # electron-updater on macOS uses the `.zip` artifact (not `.dmg`)
     # for OTA: the `.dmg` is the first-install installer; the `.zip`
     # is what auto-update downloads + unpacks in place. Without `zip`
     # here the updater fails with "ZIP file not provided" right after
     # the user accepts the version pill (surfaced on the v0.1.28 OTA).
     - target: zip
-      arch: [arm64, x64]
   category: public.app-category.business
   # Icon source: `resources/icon.icns` — multi-resolution (16…1024)
   # built from /Users/mac/Desktop/Repos/ava-v2/public/ios via

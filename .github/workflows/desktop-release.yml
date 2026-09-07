@@ -320,6 +320,32 @@ jobs:
       # hoch. Im Frisch-Lauf hat electron-builder sie bereits geladen,
       # --clobber überschreibt identisch (harmlos); im Re-Run/Stale-
       # Fall ist dies der einzige Upload, der durchkommt.
+      # v0.1.569 — Architektur-Wächter. Bis v0.1.568 stand in
+      # electron-builder.yml `arch: [arm64, x64]`, wodurch dieser Job
+      # trotz `--arm64` BEIDE Architekturen baute; der arm64-Job hatte
+      # aber nur darwin-arm64-Ollama/-Whisper geholt, der fremde Build
+      # war also unvollständig. Hier brechen wir ab, falls das je wieder
+      # passiert, und prüfen, dass der eigene Build sein Ollama trägt.
+      - name: Guard — nur arm64 gebaut, Ollama darwin-arm64 enthalten
+        working-directory: services/desktop
+        shell: bash
+        run: |
+          TAG="${{ github.event.inputs.tag || github.ref_name }}"
+          VERSION="${TAG#v}"
+          RELEASE_DIR="release/${VERSION}"
+          if ls "$RELEASE_DIR"/AVA-"$VERSION"-x64.* >/dev/null 2>&1; then
+            echo "::error::arm64-Job hat x64-Artefakte gebaut — electron-builder-Architektur nicht auf arm64 beschränkt"
+            ls -la "$RELEASE_DIR"
+            exit 1
+          fi
+          BIN="$RELEASE_DIR/mac-arm64/AVA.app/Contents/Resources/ollama/darwin-arm64/ollama"
+          if [ ! -x "$BIN" ]; then
+            echo "::error::Gebündeltes Ollama fehlt: $BIN"
+            ls -la "$RELEASE_DIR/mac-arm64/AVA.app/Contents/Resources/ollama" || true
+            exit 1
+          fi
+          echo "OK: nur arm64-Artefakte, Ollama darwin-arm64 vorhanden"
+
       - name: Ensure arm64 artifacts on release (bypass 2h skip)
         working-directory: services/desktop
         env:
@@ -570,6 +596,32 @@ jobs:
             fi
             echo "::warning::electron-builder endete mit Status $builder_status, alle Artefakte sind aber vorhanden (typisch: hdiutil-Eject). Build wird fortgesetzt."
           fi
+
+      # v0.1.569 — Architektur-Wächter. Bis v0.1.568 stand in
+      # electron-builder.yml `arch: [arm64, x64]`, wodurch dieser Job
+      # trotz `--x64` BEIDE Architekturen baute; der x64-Job hatte
+      # aber nur darwin-x64-Ollama/-Whisper geholt, der fremde Build
+      # war also unvollständig. Hier brechen wir ab, falls das je wieder
+      # passiert, und prüfen, dass der eigene Build sein Ollama trägt.
+      - name: Guard — nur x64 gebaut, Ollama darwin-x64 enthalten
+        working-directory: services/desktop
+        shell: bash
+        run: |
+          TAG="${{ github.event.inputs.tag || github.ref_name }}"
+          VERSION="${TAG#v}"
+          RELEASE_DIR="release/${VERSION}"
+          if ls "$RELEASE_DIR"/AVA-"$VERSION"-arm64.* >/dev/null 2>&1; then
+            echo "::error::x64-Job hat arm64-Artefakte gebaut — electron-builder-Architektur nicht auf x64 beschränkt"
+            ls -la "$RELEASE_DIR"
+            exit 1
+          fi
+          BIN="$RELEASE_DIR/mac/AVA.app/Contents/Resources/ollama/darwin-x64/ollama"
+          if [ ! -x "$BIN" ]; then
+            echo "::error::Gebündeltes Ollama fehlt: $BIN"
+            ls -la "$RELEASE_DIR/mac/AVA.app/Contents/Resources/ollama" || true
+            exit 1
+          fi
+          echo "OK: nur x64-Artefakte, Ollama darwin-x64 vorhanden"
 
       - name: Audit bundle for secret leaks
         working-directory: services/desktop
