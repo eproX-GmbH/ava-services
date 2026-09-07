@@ -158,6 +158,13 @@ export function FirstRunWizard({
     // `onApiKeyDone` / `onSubscriptionDone` callbacks set
     // `usingHostedLlm`, which trips App.tsx's escape clause and lets
     // the app boot normally.
+    // v0.1.565 — Abo verbunden: Konfiguration nachladen, aber im Schritt
+    // bleiben (Hintergrund braucht weiterhin Schluessel/lokales Modell).
+    const onAboVerbunden = async () => {
+      const next = await window.api.agent.getProviderConfig();
+      setConfig(next);
+      onProviderConfigChanged?.(next);
+    };
     const onCloudDone = async () => {
       const next = await window.api.agent.getProviderConfig();
       setConfig(next);
@@ -174,7 +181,7 @@ export function FirstRunWizard({
             Kein Problem — AVA läuft auch ohne lokale Modell-Laufzeit.
             {config?.providerLock
               ? " Nutze unten den Schlüssel deiner Organisation und du kannst direkt loslegen."
-              : " Wähle unten einen Hosted-Anbieter (eigener API-Key oder ChatGPT-Abo) und du kannst direkt loslegen."}{" "}
+              : " Hinterlege unten einen eigenen API-Schlüssel und du kannst direkt loslegen."}{" "}
             Die lokale Laufzeit kannst du jederzeit später unter
             Einstellungen → Modelle nachrüsten oder reparieren.
           </p>
@@ -186,7 +193,7 @@ export function FirstRunWizard({
             onPickLocal={() => undefined}
             disableLocal
             onApiKeyDone={onCloudDone}
-            onSubscriptionDone={onCloudDone}
+            onSubscriptionDone={onAboVerbunden}
             onBack={() => undefined}
             hideBack
           />
@@ -299,6 +306,13 @@ export function FirstRunWizard({
   }
 
   if (view === "chooser") {
+    // v0.1.565 — Abo verbunden: Konfiguration nachladen, aber im Schritt
+    // bleiben (Hintergrund braucht weiterhin Schluessel/lokales Modell).
+    const onAboVerbunden = async () => {
+      const next = await window.api.agent.getProviderConfig();
+      setConfig(next);
+      onProviderConfigChanged?.(next);
+    };
     const onCloudDone = async () => {
       const next = await window.api.agent.getProviderConfig();
       setConfig(next);
@@ -339,13 +353,13 @@ export function FirstRunWizard({
           <p className="muted">
             {config?.providerLock
               ? "Deine Organisation legt Anbieter, Schlüssel und Modell fest. Bestätige unten den Organisationsschlüssel."
-              : "Wähle, welche KI AVA nutzt. Wir empfehlen das ChatGPT-Abo: beste Qualität bei festen Kosten. Ein eigener API-Schlüssel oder lokale Modelle sind ebenfalls möglich. Die Wahl lässt sich später unter Einstellungen → Modelle jederzeit ändern."}
+              : "AVA braucht für die Hintergrund-Verarbeitung (Firmenprofile, Jahresabschlüsse, Publikationen) einen eigenen API-Schlüssel oder ein lokales Modell. Ein ChatGPT-Abo kannst du zusätzlich für den Chat verbinden — es ersetzt den Schlüssel nicht. Die Wahl lässt sich später unter Einstellungen → Modelle ändern."}
           </p>
           {memoryWarning}
           <ProviderChooserGrid
             onPickLocal={onPickLocalModel}
             onApiKeyDone={onCloudDone}
-            onSubscriptionDone={onCloudDone}
+            onSubscriptionDone={onAboVerbunden}
             onBack={() => setView("org")}
             hideBack
           />
@@ -486,7 +500,7 @@ export function FirstRunWizard({
               className="link"
               onClick={() => setView("chooser")}
               disabled={running}
-              title="Stattdessen einen Cloud-Anbieter (eigener Schlüssel oder ChatGPT-Abo) wählen"
+              title="Stattdessen einen Cloud-Anbieter (eigener API-Schlüssel) wählen"
             >
               Stattdessen Cloud-Anbieter wählen
             </button>
@@ -582,6 +596,7 @@ function ProviderChooserGrid({
   hideBack?: boolean;
 }) {
   const [active, setActive] = useState<ChooserSubForm>(null);
+  const [aboVerbunden, setAboVerbunden] = useState(false);
   // v0.1.557 — Organisationsschluessel auch in der Anbieterwahl anbieten
   // (deckt die Ollama-Fehlerseite ab, die den Organisationsschritt nicht hat).
   const [orgKarte, setOrgKarte] = useState<{ kind: HostedProviderKind; hint: string; lock: boolean } | null>(null);
@@ -593,6 +608,7 @@ function ProviderChooserGrid({
         const provs = (b.orgProviders ?? {}) as Partial<Record<string, string>>;
         const kinds = (["openai", "anthropic", "google", "mistral", "deepseek", "xai", "qwen"] as HostedProviderKind[]).filter((k) => provs[k]);
         if (kinds.length > 0) setOrgKarte({ kind: kinds[0]!, hint: provs[kinds[0]!] ?? "", lock: b.providerLock === true });
+        if (b.hasOpenAISubscriptionToken) setAboVerbunden(true);
       })
       .catch(() => undefined);
   }, []);
@@ -650,34 +666,20 @@ function ProviderChooserGrid({
       {/* v0.1.561 — unter Anbieter-Sperre gibt es nur den Organisationsweg;
           Abo, eigener Schluessel und lokale Modelle entfallen komplett. */}
       {!orgKarte?.lock && (<>
-      {/* Sektion 1 — Abo-Hero (ChatGPT) */}
+      {/* v0.1.565 — Reihenfolge nach Notwendigkeit: Die Hintergrund-
+          Verarbeitung (Firmenprofile, Jahresabschluesse, Publikationen)
+          braucht einen API-Schluessel oder ein lokales Modell. Das ChatGPT-
+          Abo deckt nur den Chat ab und ist deshalb ein optionaler Zusatz. */}
+      {/* Sektion 1 — API-Key bei externem Provider (Pflichtweg A) */}
       <div className="first-run__hero-grid">
-        <div className="first-run__hero">
-          <div className="first-run__hero-body">
-            <h3 className="first-run__hero-title">
-              Mit ChatGPT-Abo verbinden
-            </h3>
-            <p className="first-run__hero-sub">
-              Nutze dein ChatGPT-Plus/Pro/Team-Abo direkt in AVA — ohne
-              API-Schlüssel, ohne Extra-Kosten. Anmeldung per Klick
-              („Sign in with ChatGPT“). Empfohlener Weg.
-            </p>
-            <OpenAISubscriptionHeroCTA onDone={onSubscriptionDone} />
-          </div>
-        </div>
-
-        {/* Das Claude-Abo (OAuth) wurde entfernt — Anthropic läuft nur
-            noch per API-Key (siehe „Eigener API-Schlüssel" unten). */}
-      </div>
-
-      {/* Sektion 2 — API-Key bei externem Provider */}
-      <div className="first-run__option-card">
-        <h3 className="first-run__option-title">
+      <div className="first-run__hero">
+        <div className="first-run__hero-body">
+        <h3 className="first-run__hero-title">
           Eigener API-Schlüssel (OpenAI, Anthropic, Google, Mistral)
         </h3>
-        <p className="first-run__option-sub">
-          Bezahle direkt beim Anbieter nach Token-Verbrauch. Schnell
-          eingerichtet, gut kontrollierbar.
+        <p className="first-run__hero-sub">
+          Nötig für Chat <strong>und</strong> Hintergrund-Verarbeitung. Bezahle direkt
+          beim Anbieter nach Token-Verbrauch. Schnell eingerichtet, gut kontrollierbar.
         </p>
         <div className="first-run__option-docs">
           {(Object.keys(PROVIDER_KEY_DOCS) as HostedProviderKind[])
@@ -695,14 +697,16 @@ function ProviderChooserGrid({
         </div>
         <button
           type="button"
-          className="first-run__option-cta"
+          className="first-run__hero-cta"
           onClick={() => setActive("apiKey")}
         >
-          Schlüssel hinterlegen
+          Schlüssel hinterlegen →
         </button>
+        </div>
+      </div>
       </div>
 
-      {/* Sektion 3 — Lokal hosten (kollabiert, mit Modell-Liste) */}
+      {/* Sektion 2 — Lokal hosten (Pflichtweg B, kollabiert, mit Modell-Liste) */}
       {!disableLocal && (
         <details className="first-run__local">
           <summary className="first-run__local-summary">
@@ -764,6 +768,34 @@ function ProviderChooserGrid({
           </div>
         </details>
       )}
+
+      {/* Sektion 3 — ChatGPT-Abo: optionaler Zusatz NUR fuer den Chat.
+          Schliesst den Schritt nicht ab; der Hintergrund braucht weiterhin
+          Schluessel oder lokales Modell. */}
+      <div className="first-run__option-card">
+        <h3 className="first-run__option-title">
+          Zusatz für den Chat: ChatGPT-Abo verbinden
+        </h3>
+        <p className="first-run__option-sub">
+          Optional. Nutzt dein ChatGPT-Plus/Pro/Team-Abo für Gespräche mit AVA ohne
+          Extra-Kosten. <strong>Gilt nur für den Chat</strong> — die Hintergrund-Verarbeitung
+          läuft weiterhin über einen API-Schlüssel oder ein lokales Modell.
+          {orgKarte ? " Ist der Organisationsschlüssel gewählt, übernimmt er den Hintergrund." : ""}
+        </p>
+        {aboVerbunden ? (
+          <p className="muted small">
+            <span className="badge ok">ChatGPT-Abo verbunden</span> · Wähle jetzt oben Schlüssel, lokales Modell
+            {orgKarte ? " oder Organisationsschlüssel" : ""} für die Hintergrund-Verarbeitung.
+          </p>
+        ) : (
+          <OpenAISubscriptionHeroCTA
+            onDone={async () => {
+              setAboVerbunden(true);
+              await onSubscriptionDone();
+            }}
+          />
+        )}
+      </div>
 
       {active && (
         <div id="first-run-subform" className="first-run__subform">

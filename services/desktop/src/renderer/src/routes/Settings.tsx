@@ -2043,7 +2043,7 @@ export function ProviderSection() {
     ? null
     : orgProviders.openai
       ? `Schlüssel der Organisation (…${orgProviders.openai}) — das ChatGPT-Abo gilt nur im Chat`
-      : "nicht möglich — das ChatGPT-Abo gilt nur im Chat; eigener OpenAI-Schlüssel nötig";
+      : "nicht möglich — das ChatGPT-Abo gilt nur im Chat; API-Schlüssel unten hinterlegen oder lokales Modell wählen";
   // v0.1.505 — nur noch ChatGPT: die Claude-Abo-Anmeldung gibt es nicht mehr.
   const channelIsSubscription =
     activeKind === "openai" && !viaOrgActive && hasOpenAISubscriptionToken;
@@ -2275,8 +2275,8 @@ export function ProviderSection() {
           empfohlene Weg) und wandern in eine Klappe, damit die Ansicht
           nicht überläuft. Auf, wenn bereits ein Key gespeichert ist. */}
       {!providerLock && (<>
-      <details className="settings-collapse" open={anyHostedKey}>
-        <summary>API-Schlüssel (OpenAI, Google, Mistral) — Alternative zum Abo</summary>
+      <details className="settings-collapse" open={anyHostedKey || aboNurChat}>
+        <summary>API-Schlüssel (OpenAI, Anthropic, Google, Mistral, …) — nötig für die Hintergrund-Verarbeitung</summary>
         {!encryptionAvailable && (
           <p className="muted">
             ⚠ OS-Schlüsselbund nicht verfügbar: Schlüssel werden unverschlüsselt
@@ -2368,14 +2368,15 @@ function OpenAISubscriptionContent({
 
   return (
     <div className="provider-subscription" id="chatgpt-abo">
-      <h4>ChatGPT-Abo (Sign in with ChatGPT)</h4>
+      <h4>ChatGPT-Abo — nur für den Chat</h4>
       <p className="muted small">
-        Nutze dein ChatGPT-Plus/Pro/Team-Abo direkt in AVA — ohne separaten
-        API-Schlüssel. AVA spricht denselben Codex-Endpunkt an, den auch
-        OpenAIs Codex-CLI verwendet. Läuft über dein Abo-Kontingent
-        (rollierendes 5-Stunden-Fenster). Hinweis: experimentell — der
-        Endpunkt ist von OpenAI nicht offiziell dokumentiert und kann sich
-        ändern.
+        Optionaler Zusatz: Gespräche mit AVA laufen über dein ChatGPT-Plus/Pro/Team-Abo
+        ohne Extra-Kosten. <strong>Das Abo ersetzt keinen API-Schlüssel:</strong> Die
+        Hintergrund-Verarbeitung (Firmenprofile, Jahresabschlüsse, Publikationen) braucht
+        einen eigenen API-Schlüssel, ein lokales Modell oder den Schlüssel deiner
+        Organisation. AVA spricht denselben Codex-Endpunkt an wie OpenAIs Codex-CLI
+        (Abo-Kontingent im rollierenden 5-Stunden-Fenster; experimentell, der Endpunkt
+        ist von OpenAI nicht offiziell dokumentiert).
       </p>
 
       {hasToken ? (
@@ -2383,7 +2384,7 @@ function OpenAISubscriptionContent({
           <p className="muted">
             Status:{" "}
             <span className="badge ok">Verbunden</span>
-            {isActiveSubscription ? " · aktiv für den Agent" : ""}
+            {isActiveSubscription ? " · aktiv für den Chat" : ""}
           </p>
           <div className="row">
             <button
