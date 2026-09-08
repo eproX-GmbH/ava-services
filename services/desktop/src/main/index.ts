@@ -5240,6 +5240,8 @@ app.whenReady().then(async () => {
   ipcMain.handle("discovery:getIcp", () => ({
     ...icpStore.get(),
     gesetzt: icpStore.isSet(),
+    vollstaendig: icpStore.isComplete(),
+    fehlend: icpStore.fehlendeFelder(),
   }));
   // I2 ICP-Assistent — URL-Analyse ("deine Website + deine 5 besten
   // Kunden"). Fortschritt streamt per icpAssistant:progress an das
@@ -5336,7 +5338,14 @@ app.whenReady().then(async () => {
         summary: `ICP aktualisiert (${next.quelle ?? "manuell"})`,
         metadata: { quelle: next.quelle },
       });
-      return { ...next, gesetzt: icpStore.isSet(), profilErgaenzt, profilBeibehalten };
+      return {
+        ...next,
+        gesetzt: icpStore.isSet(),
+        vollstaendig: icpStore.isComplete(),
+        fehlend: icpStore.fehlendeFelder(),
+        profilErgaenzt,
+        profilBeibehalten,
+      };
     },
   );
   // Phase 4 — Radar-Automatik (Opt-in).

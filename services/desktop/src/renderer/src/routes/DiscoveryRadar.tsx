@@ -37,6 +37,9 @@ export function DiscoveryRadar(): JSX.Element {
   const [notice, setNotice] = useState<string | null>(null);
   const [lastImportTx, setLastImportTx] = useState<string | null>(null);
   const [icpGesetzt, setIcpGesetzt] = useState<boolean>(true);
+  // v0.1.574 — Radar-Lauf nur mit vollstaendigem ICP.
+  const [icpVollstaendig, setIcpVollstaendig] = useState<boolean>(true);
+  const [icpFehlend, setIcpFehlend] = useState<string[]>([]);
   const [radarConfig, setRadarConfig] = useState<{
     enabled: boolean;
     intervalHours: 6 | 24 | 168;
@@ -106,6 +109,8 @@ export function DiscoveryRadar(): JSX.Element {
         window.api.discovery.getRadarConfig(),
       ]);
       setIcpGesetzt(icp.gesetzt);
+      setIcpVollstaendig(icp.vollstaendig !== false);
+      setIcpFehlend(icp.fehlend ?? []);
       setRadarConfig(cfg);
       if (!r.ok || !r.candidates) {
         setError(r.error ?? "Kandidaten konnten nicht geladen werden.");
@@ -312,7 +317,7 @@ export function DiscoveryRadar(): JSX.Element {
           </select>
           <button
             className="proc-toggle"
-            disabled={radarRunning || busy !== null || !icpGesetzt}
+            disabled={radarRunning || busy !== null || !icpVollstaendig}
             onClick={() => {
               setRadarRunning(true);
               setNotice(null);
@@ -336,14 +341,19 @@ export function DiscoveryRadar(): JSX.Element {
         </div>
       )}
 
-      {!icpGesetzt && (
+      {!icpGesetzt ? (
         <div className="radar-hint">
-          Für die Priorisierung fehlt dein <strong>Idealkundenprofil</strong> —{" "}
+          Der Radar startet erst mit deinem <strong>Idealkundenprofil</strong> (Ort, Zielbranchen, Beschreibung) —{" "}
           <Link to="/icp-assistent">jetzt einrichten</Link> (Formular) oder
           einfach im <Link to="/chat">Chat</Link> beschreiben, welche Firmen
           deine perfekten Kunden sind.
         </div>
-      )}
+      ) : !icpVollstaendig ? (
+        <div className="radar-hint">
+          Der Radar startet erst mit vollständigem <strong>Idealkundenprofil</strong>. Es fehlt noch: {icpFehlend.join("; ")} —{" "}
+          <Link to="/icp-assistent">ICP ergänzen</Link>.
+        </div>
+      ) : null}
       {notice && (
         <div className="radar-notice">
           {notice}

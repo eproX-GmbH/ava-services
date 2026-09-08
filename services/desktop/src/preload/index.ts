@@ -212,6 +212,9 @@ export interface IcpDto {
   quelle: "assistent" | "manuell" | "chat" | null;
   updatedAt: string | null;
   gesetzt: boolean;
+  /** v0.1.574 — Pflichtfelder fuer den Radar erfuellt (Ort, Branchen, Beschreibung/Angebot). */
+  vollstaendig: boolean;
+  fehlend: string[];
 }
 
 const api = {
@@ -412,7 +415,7 @@ const api = {
     > => ipcRenderer.invoke("discovery:profile"),
     getIcp: (): Promise<IcpDto> => ipcRenderer.invoke("discovery:getIcp"),
     setIcp: (
-      patch: Partial<Omit<IcpDto, "gesetzt">>,
+      patch: Partial<Omit<IcpDto, "gesetzt" | "vollstaendig" | "fehlend">>,
     ): Promise<IcpDto & { profilErgaenzt?: string[] }> =>
       ipcRenderer.invoke("discovery:setIcp", patch),
     getRadarConfig: (): Promise<{
@@ -439,7 +442,7 @@ const api = {
       kundenUrls: string[];
     }): Promise<
       | {
-          icp: Partial<Omit<IcpDto, "gesetzt">>;
+          icp: Partial<Omit<IcpDto, "gesetzt" | "vollstaendig" | "fehlend">>;
           eigene: {
             angebot: string;
             nutzen: string;

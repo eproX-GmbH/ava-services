@@ -190,8 +190,11 @@ export function IcpAssistant(): JSX.Element {
           );
         }
         const profilInfo = teile.length > 0 ? ` ${teile.join(" ")}` : "";
+        const fehlend = (saved as { fehlend?: string[] }).fehlend ?? [];
         setNotice(
-          `ICP gespeichert — der Radar nutzt es ab dem nächsten Match.${profilInfo}`,
+          fehlend.length > 0
+            ? `ICP gespeichert. Für den Radar fehlt noch: ${fehlend.join("; ")}.${profilInfo}`
+            : `ICP gespeichert — der Radar nutzt es ab dem nächsten Match.${profilInfo}`,
         );
         // I3 — Abschluss-CTA: Automatik nur anbieten, wenn sie noch aus ist.
         const cfg = await window.api.discovery.getRadarConfig();

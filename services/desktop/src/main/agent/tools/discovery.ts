@@ -128,15 +128,29 @@ export function buildDiscoveryTools(deps: DiscoveryToolDeps): Tool[] {
       return `${res.kandidatenGesamt ?? 0} Kandidaten (${res.added ?? 0} neu)`;
     },
     run: async (args) => {
+      // v0.1.574 — Kein Scan ohne vollstaendiges ICP: Google-/Register-
+      // Suchen kosten Kontingent und liefern ohne Region/Branchen/Profil
+      // nur eine unsortierte Masse. Erst ICP vervollstaendigen (icp_set).
+      const fehlt = deps.icp.fehlendeFelder();
+      if (fehlt.length > 0) {
+        return {
+          error:
+            `Kein Radar-Scan: Das Idealkundenprofil ist unvollstaendig — es fehlt: ${fehlt.join("; ")}. ` +
+            "Frag den Nutzer nach den fehlenden Angaben und speichere sie mit icp_set; danach den Scan starten.",
+          icpUnvollstaendig: fehlt,
+        };
+      }
       const branchen =
         args.branchen && args.branchen.length > 0
           ? args.branchen
-          : deps.getDefaultIndustries();
+          : deps.icp.get().branchen.length > 0
+            ? deps.icp.get().branchen
+            : deps.getDefaultIndustries();
       const result = await runDiscoveryScan(deps.gateway, deps.providers, {
         ort: args.ort,
         radiusKm: args.radiusKm ?? 30,
         branchen,
-        ...(deps.icp.isSet() ? { icpText: deps.icp.renderText() } : {}),
+        icpText: deps.icp.renderText(),
       });
       if (!("error" in result)) {
         deps.onAudit({

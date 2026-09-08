@@ -141,6 +141,26 @@ export class IcpStore {
     return p.beschreibung.length >= 10 || p.branchen.length > 0;
   }
 
+  /** v0.1.574 — Pflichtfelder fuer den Firmen-Radar. Vorher startete ein
+   *  Scan schon mit einem Satz Beschreibung (isSet) und spuelte bis zu 300
+   *  Firmen aus OSM/Register in die Liste, ohne dass Region oder Branchen
+   *  feststanden. Vollstaendig heisst: mindestens ein Ort, mindestens eine
+   *  Branche und eine Beschreibung oder ein eigenes Angebot. */
+  fehlendeFelder(): string[] {
+    const p = this.get();
+    const fehlt: string[] = [];
+    if (p.orte.length === 0) fehlt.push("Ort/Region (orte)");
+    if (p.branchen.length === 0) fehlt.push("Zielbranchen (branchen)");
+    if (p.beschreibung.trim().length < 20 && p.angebot.trim().length === 0) {
+      fehlt.push("Beschreibung der idealen Kunden oder eigenes Angebot (beschreibung/angebot)");
+    }
+    return fehlt;
+  }
+
+  isComplete(): boolean {
+    return this.fehlendeFelder().length === 0;
+  }
+
   set(patch: Partial<IcpProfile>): IcpProfile {
     const current = this.get();
     const merged = normalise({

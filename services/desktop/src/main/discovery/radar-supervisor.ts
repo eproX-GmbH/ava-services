@@ -150,7 +150,14 @@ export class RadarSupervisor {
     if (!cfg.enabled || this.running) return;
     if (!this.deps.isSignedIn()) return;
     if (!this.deps.providers.getStatus().ready) return;
-    if (!this.deps.icp.isSet()) return;
+    // v0.1.574 — Automatik nur mit vollstaendigem ICP (Ort, Branchen,
+    // Beschreibung/Angebot); Grund sichtbar machen statt still zu warten.
+    const fehlt = this.deps.icp.fehlendeFelder();
+    if (fehlt.length > 0) {
+      const hinweis = `Radar wartet: ICP unvollstaendig — es fehlt ${fehlt.join("; ")}.`;
+      if (this.getConfig().lastOutcome !== hinweis) this.setConfigInternal({ lastOutcome: hinweis });
+      return;
+    }
 
     // v0.1.466 — Plan-Staffelung: Free hat keine Automatik (nur den
     // manuellen Wochen-Scan); das 6-Stunden-Intervall ist Pro/Enterprise
@@ -193,13 +200,13 @@ export class RadarSupervisor {
     const startedAt = new Date().toISOString();
     try {
       const icp = this.deps.icp.get();
-      const ort = icp.orte[0];
-      if (!ort) {
-        const msg =
-          "Kein Radar-Ort im ICP hinterlegt (icp_set mit orte) — Lauf uebersprungen.";
+      const fehlt = this.deps.icp.fehlendeFelder();
+      if (fehlt.length > 0) {
+        const msg = `Kein Radar-Lauf: Idealkundenprofil unvollstaendig — es fehlt ${fehlt.join("; ")}. Bitte unter Firmen → Radar → ICP bearbeiten ergaenzen.`;
         this.finishRun(startedAt, msg, trigger, "warning");
         return msg;
       }
+      const ort = icp.orte[0]!;
 
       const scan = await runDiscoveryScan(this.deps.gateway, this.deps.providers, {
         ort,

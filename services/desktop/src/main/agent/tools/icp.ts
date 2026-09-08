@@ -97,8 +97,16 @@ export function buildIcpTools(deps: IcpToolDeps): Tool[] {
           `Beibehalten, weil vom Nutzer selbst bearbeitet: ${sync.beibehalten.join(", ")} — auf Wunsch per profile_update ueberschreiben.`,
         );
       }
+      const fehlt = deps.icp.fehlendeFelder();
+      if (fehlt.length > 0) {
+        hinweise.push(
+          `Fuer den Firmen-Radar fehlt noch: ${fehlt.join("; ")}. Frag den Nutzer danach, bevor du einen Scan startest.`,
+        );
+      }
       return {
         gespeichert: true,
+        vollstaendig: fehlt.length === 0,
+        ...(fehlt.length > 0 ? { fehlend: fehlt } : {}),
         icp: merged,
         ...(sync.aktualisiert.length > 0 ? { profilErgaenzt: sync.aktualisiert } : {}),
         ...(sync.beibehalten.length > 0 ? { profilBeibehalten: sync.beibehalten } : {}),
