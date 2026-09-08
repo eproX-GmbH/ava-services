@@ -64,6 +64,9 @@ import {
 // und bei Erreichen des Budgets gibt es jetzt einen Graceful Wrap-up
 // (Abschluss-Antwort + „weitermachen?") statt eines Fehlers.
 const STEP_BUDGET = 80;
+// v0.1.571 — Wiederholungs-Wächter je Tool-Name (siehe runLoop).
+const TOOL_REPEAT_HINT_AT = 5;
+const TOOL_REPEAT_HARD_LIMIT = 12;
 
 export interface AgentOrchestratorOptions {
   /**
@@ -919,6 +922,14 @@ export class AgentOrchestrator extends EventEmitter {
       string,
       { count: number; failures: number }
     >();
+    // v0.1.571 — Wiederholungs-Wächter je Tool-NAME (Args egal). Ein
+    // Nutzer sah >20× `crm_search_hubspot_companies` mit leicht anderen
+    // Suchbegriffen in einem Turn: jeder Aufruf war erfolgreich, also
+    // griff der Signatur-Wächter oben nicht. Ab dem 5. Aufruf hängen wir
+    // dem Ergebnis einen Hinweis an (Bulk-Tool suchen / Nutzer fragen),
+    // ab dem 12. lehnen wir ab. Kern-Tools (tool_search, ask_user_*)
+    // sind ausgenommen.
+    const toolNameCounts = new Map<string, number>();
 
     // v0.1.375 — Pro Turn: Tools, deren Aktion der Nutzer im Confirm-Dialog
     // bereits ABGELEHNT hat. Lehnt der Nutzer z. B. „Company anlegen" ab,
@@ -1200,6 +1211,33 @@ export class AgentOrchestrator extends EventEmitter {
           // Tool-Fehler endete, brechen wir hart ab. Verhindert den
           // klassischen „LLM dreht im Kreis, weil es seinen Misformat
           // nicht erkennt"-Fall, der das Step-Budget aufressen würde.
+          const nameCount = (toolNameCounts.get(call.name) ?? 0) + 1;
+          toolNameCounts.set(call.name, nameCount);
+          const wiederholungGezaehlt = !ALWAYS_ON_CORE_TOOL_NAMES.has(call.name);
+          if (wiederholungGezaehlt && nameCount > TOOL_REPEAT_HARD_LIMIT) {
+            const msg =
+              `Tool '${call.name}' wurde in dieser Antwort bereits ${TOOL_REPEAT_HARD_LIMIT}× ` +
+              `aufgerufen. Ich führe es nicht erneut aus. Für Sammelabfragen gibt es Bulk-Tools ` +
+              `(per tool_search finden, z. B. „verknüpfte Records“, „batch“, „liste“). Fasse ` +
+              `die bisherigen Ergebnisse zusammen oder frag den Nutzer, was genau er braucht.`;
+            this.appendMessage(conversation, {
+              id: randomUUID(),
+              role: "tool",
+              content: JSON.stringify({ error: msg, repeatLimit: true }),
+              toolCallId: call.id,
+              createdAt: Date.now(),
+            });
+            this.emitFrame({
+              kind: "tool-result",
+              requestId,
+              conversationId: conversation.id,
+              toolCallId: call.id,
+              ok: false,
+              preview: `${call.name}: Wiederholungs-Limit (${TOOL_REPEAT_HARD_LIMIT}×) erreicht`,
+            });
+            continue;
+          }
+
           const callSignature = `${call.name}::${stableStringify(call.args)}`;
           const sigState = toolCallSignatures.get(callSignature) ?? {
             count: 0,
@@ -1251,10 +1289,18 @@ export class AgentOrchestrator extends EventEmitter {
           // Tools in diesem Turn oben hart abgefangen wird.
           if (result.declined) declinedTools.add(call.name);
 
+          // v0.1.571 — ab dem 5. Aufruf desselben Tools: Hinweis ans Modell.
+          const wiederholungsHinweis =
+            wiederholungGezaehlt && nameCount >= TOOL_REPEAT_HINT_AT
+              ? `\n\n[Hinweis: '${call.name}' wurde in dieser Antwort schon ${nameCount}× aufgerufen. ` +
+                `Wenn du Daten für mehrere Objekte brauchst, nutze ein Bulk-Tool (tool_search) statt Einzelaufrufe; ` +
+                `bei ${TOOL_REPEAT_HARD_LIMIT} Aufrufen wird das Tool gesperrt. Antworte dem Nutzer, wenn du genug weißt.]`
+              : "";
+
           this.appendMessage(conversation, {
             id: randomUUID(),
             role: "tool",
-            content: result.content,
+            content: result.content + wiederholungsHinweis,
             toolCallId: call.id,
             createdAt: Date.now(),
           });

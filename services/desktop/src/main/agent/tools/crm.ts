@@ -30,6 +30,7 @@ import {
   searchHubspotDeals,
   listHubspotOwners,
   listHubspotAssociations,
+  listHubspotAssociatedRecords,
   associateHubspotObjects,
   disassociateHubspotObjects,
   createHubspotObject,
@@ -936,6 +937,86 @@ export function buildCrmTools(deps: CrmToolDeps): Tool[] {
         fromObjectId: args.fromObjectId,
         toObjectType: args.toObjectType as HubspotObjectType,
       }),
+  });
+
+  // v0.1.571 — Bulk: verknuepfte Records MIT Inhalt in einem Aufruf
+  // (Ansprechpartner/Deals einer Firma). Loest die Firma bei Bedarf per
+  // Suchbegriff selbst auf, damit kein Suchen-in-Schleife noetig ist.
+  const listAssociatedRecordsTool = defineTool({
+    name: "crm_list_hubspot_associated_records",
+    summary: "Alle Ansprechpartner (Contacts) oder Deals einer HubSpot-Firma in EINEM Aufruf, mit Name, E-Mail, Position.",
+    category: "crm hubspot ansprechpartner kontakte contacts deals firma company verknuepft bulk liste",
+    description:
+      "Liefert in EINEM Aufruf alle mit einem HubSpot-Record verknüpften Records samt Inhalt: z. B. alle Ansprechpartner " +
+      "(Contacts mit Vorname, Nachname, E-Mail, Position, Telefon, Owner) oder alle Deals einer Company. Die Ausgangs-Firma " +
+      "kann per `fromObjectId` ODER per `query` (Firmenname/Domain) angegeben werden; bei mehreren Treffern kommen die Kandidaten " +
+      "zurück, dann `fromObjectId` wählen. Nutze dieses Tool für Fragen wie „welche Ansprechpartner sind bei Firma X im CRM " +
+      "hinterlegt“ — NICHT mehrfach `crm_search_hubspot_companies` aufrufen und NICHT je Kontakt ein eigenes Introspect. Read-only.",
+    parameters: {
+      type: "object",
+      properties: {
+        fromObjectType: {
+          type: "string",
+          enum: [...ASSOC_TARGET_VALUES],
+          description: "Object-Type des Ausgangs-Records. Default companies.",
+        },
+        fromObjectId: { type: "string", description: "HubSpot-ID des Ausgangs-Records (falls bekannt)." },
+        query: { type: "string", description: "Alternativ: Name oder Domain der Firma; wird per Suche aufgelöst." },
+        toObjectType: {
+          type: "string",
+          enum: [...ASSOC_TARGET_VALUES],
+          description: "Welche verknüpften Records: contacts (Ansprechpartner, Default), deals oder companies.",
+        },
+        limit: { type: "integer", minimum: 1, maximum: 500, description: "Max. Records (Default 100)." },
+      },
+    },
+    schema: yup
+      .object({
+        fromObjectType: yup.string().oneOf([...ASSOC_TARGET_VALUES]).optional(),
+        fromObjectId: yup.string().trim().min(1).optional(),
+        query: yup.string().trim().min(1).optional(),
+        toObjectType: yup.string().oneOf([...ASSOC_TARGET_VALUES]).optional(),
+        limit: yup.number().integer().min(1).max(500).optional(),
+      })
+      .noUnknown(true)
+      .test("id-oder-query", "fromObjectId oder query angeben.", (v) => Boolean(v?.fromObjectId || v?.query)),
+    preview: (r: { error?: string; candidates?: unknown[]; records?: unknown[]; total?: number }) => {
+      if (r.error) return `Abruf fehlgeschlagen: ${r.error}`;
+      if (r.candidates) return `${r.candidates.length} Kandidaten — bitte fromObjectId wählen`;
+      return `${r.records?.length ?? 0} von ${r.total ?? 0} verknüpften Records`;
+    },
+    run: async (args) => {
+      const status = crm.getStatus("hubspot");
+      if (!status.connected) {
+        return { error: "Du bist nicht verbunden. Soll ich das Verbindungsfenster öffnen? Verwende dafür das Tool `connect_crm`." };
+      }
+      const fromObjectType = (args.fromObjectType ?? "companies") as HubspotObjectType;
+      const toObjectType = (args.toObjectType ?? "contacts") as HubspotObjectType;
+      try {
+        let fromObjectId = args.fromObjectId;
+        let from: { id: string; name: string | null } | null = null;
+        if (!fromObjectId) {
+          if (fromObjectType !== "companies") {
+            return { error: "`query` löst nur Firmen auf; für Contacts/Deals bitte fromObjectId angeben (aus crm_search_hubspot_contacts / _deals)." };
+          }
+          const { items } = await searchHubspotCompanies(crm, { query: args.query!, limit: 10 });
+          if (items.length === 0) return { error: `Keine HubSpot-Firma zu „${args.query}“ gefunden.`, records: [], total: 0 };
+          if (items.length > 1) {
+            const q = args.query!.trim().toLowerCase();
+            const exakt = items.filter((i) => (i.name ?? "").trim().toLowerCase() === q || (i.domain ?? "").trim().toLowerCase() === q);
+            if (exakt.length !== 1) return { candidates: items, hint: "Mehrere Firmen passen — rufe das Tool erneut mit fromObjectId auf." };
+            from = { id: exakt[0]!.id, name: exakt[0]!.name };
+          } else {
+            from = { id: items[0]!.id, name: items[0]!.name };
+          }
+          fromObjectId = from.id;
+        }
+        const r = await listHubspotAssociatedRecords(crm, { fromObjectType, fromObjectId: fromObjectId!, toObjectType, limit: args.limit });
+        return { from: from ?? { id: fromObjectId, name: null }, fromObjectType, toObjectType, ...r };
+      } catch (err) {
+        return { error: err instanceof Error ? err.message : String(err) };
+      }
+    },
   });
 
   const associateTool = defineTool({
@@ -3052,6 +3133,7 @@ export function buildCrmTools(deps: CrmToolDeps): Tool[] {
     searchDealsTool,
     listOwnersTool,
     listAssociationsTool,
+    listAssociatedRecordsTool,
     associateTool,
     disassociateTool,
     createCompanyTool,

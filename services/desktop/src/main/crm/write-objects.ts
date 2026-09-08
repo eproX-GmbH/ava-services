@@ -909,6 +909,60 @@ export async function listHubspotAssociations(
   };
 }
 
+// v0.1.571 — Bulk-Abruf verknuepfter Records in EINEM Tool-Call.
+//
+// Hintergrund: „Welche Ansprechpartner sind bei Firma X hinterlegt?"
+// brauchte bisher Company-Suche → Associations (nur IDs) → je Contact ein
+// Introspect. Ein Nutzer sah dabei >20 Tool-Calls in Folge. Jetzt:
+// Associations + HubSpot Batch-Read (max 100 IDs je Request) → fertige
+// Datensaetze mit den wichtigsten Eigenschaften.
+const ASSOCIATED_RECORD_PROPERTIES: Partial<Record<HubspotObjectType, string[]>> = {
+  contacts: ["firstname", "lastname", "email", "jobtitle", "phone", "mobilephone", "lifecyclestage", "hs_lead_status", "hubspot_owner_id", "lastmodifieddate"],
+  companies: ["name", "domain", "city", "industry", "hubspot_owner_id", "lastmodifieddate"],
+  deals: ["dealname", "amount", "dealstage", "pipeline", "closedate", "hubspot_owner_id", "lastmodifieddate"],
+  notes: ["hs_note_body", "hs_timestamp", "hubspot_owner_id"],
+  tasks: ["hs_task_subject", "hs_task_status", "hs_task_priority", "hs_timestamp", "hubspot_owner_id"],
+};
+
+export interface AssociatedRecord {
+  id: string;
+  associationTypeLabels: string[];
+  properties: Record<string, string | null>;
+}
+
+export async function listHubspotAssociatedRecords(
+  crm: CrmManager,
+  args: {
+    fromObjectType: HubspotObjectType;
+    fromObjectId: string;
+    toObjectType: HubspotObjectType;
+    /** Obergrenze der zurueckgegebenen Records (Default 100, max 500). */
+    limit?: number;
+  },
+): Promise<{ total: number; truncated: boolean; records: AssociatedRecord[] }> {
+  const accessToken = await crm.getAccessToken("hubspot");
+  if (!accessToken) throw new Error("HubSpot ist nicht verbunden.");
+  const { associations } = await listHubspotAssociations(crm, args);
+  const limit = Math.max(1, Math.min(args.limit ?? 100, 500));
+  const ausgewaehlt = associations.slice(0, limit);
+  const labels = new Map(ausgewaehlt.map((a) => [a.toObjectId, a.associationTypeLabels]));
+  const properties = ASSOCIATED_RECORD_PROPERTIES[args.toObjectType] ?? ["hs_object_id", "hs_timestamp", "hubspot_owner_id"];
+  const records: AssociatedRecord[] = [];
+  for (let i = 0; i < ausgewaehlt.length; i += 100) {
+    const batch = ausgewaehlt.slice(i, i + 100);
+    const json = (await hubspotFetch(accessToken, `${HUBSPOT_API}/crm/v3/objects/${args.toObjectType}/batch/read`, {
+      method: "POST",
+      body: JSON.stringify({ properties, inputs: batch.map((a) => ({ id: a.toObjectId })) }),
+    })) as { results?: Array<{ id: string; properties?: Record<string, string | null | undefined> }> } | null;
+    for (const r of json?.results ?? []) {
+      const props: Record<string, string | null> = {};
+      for (const key of properties) props[key] = trimOrNull(r.properties?.[key]);
+      records.push({ id: String(r.id), associationTypeLabels: labels.get(String(r.id)) ?? [], properties: props });
+    }
+  }
+  return { total: associations.length, truncated: associations.length > ausgewaehlt.length, records };
+}
+
 export async function associateHubspotObjects(
   crm: CrmManager,
   args: {

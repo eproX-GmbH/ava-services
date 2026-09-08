@@ -4,8 +4,8 @@ Auto-generiert von `services/desktop/scripts/generate-tools-md.mjs`.
 NICHT direkt bearbeiten — die Quelle der Wahrheit ist `services/desktop/src/main/agent/tools/*.ts`.
 Lauf via `pnpm -F @ava/desktop tools:doc` (oder automatisch via `build:typecheck`).
 
-Stand: 2026-09-07
-Anzahl Tools: 223
+Stand: 2026-09-08
+Anzahl Tools: 224
 
 ## Firmen (17)
 
@@ -643,7 +643,7 @@ Switch the active LLM provider. `kind` is one of 'ollama', 'openai', 'anthropic'
 
 _Parameter:_ keine.
 
-## CRM (30)
+## CRM (31)
 
 ### `connect_crm`
 
@@ -794,6 +794,14 @@ _Parameter:_
 _Datei:_ `services/desktop/src/main/agent/tools/crm.ts`
 
 Verknüpft eine AVA-Firma manuell mit einem CRM-Datensatz, z. B. wenn der Nutzer sagt 'verknüpfe ACME mit HubSpot 12345'. Anzeigename ist optional, hilft aber bei späterer Identifikation. Setzt voraus, dass die Verknüpfung im CRM existiert (prüfe ggf. vorher mit `crm_search_hubspot_companies`).
+
+_Parameter:_ keine.
+
+### `crm_list_hubspot_associated_records`
+
+_Datei:_ `services/desktop/src/main/agent/tools/crm.ts`
+
+Liefert in EINEM Aufruf alle mit einem HubSpot-Record verknüpften Records samt Inhalt: z. B. alle Ansprechpartner (Contacts mit Vorname, Nachname, E-Mail, Position, Telefon, Owner) oder alle Deals einer Company. Die Ausgangs-Firma kann per `fromObjectId` ODER per `query` (Firmenname/Domain) angegeben werden; bei mehreren Treffern kommen die Kandidaten zurück, dann `fromObjectId` wählen. Nutze dieses Tool für Fragen wie „welche Ansprechpartner sind bei Firma X im CRM hinterlegt“ — NICHT mehrfach `crm_search_hubspot_companies` aufrufen und NICHT je Kontakt ein eigenes Introspect. Read-only.
 
 _Parameter:_ keine.
 
