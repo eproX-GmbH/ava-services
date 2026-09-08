@@ -573,6 +573,9 @@ function peekFirstUserMessage(path: string): string {
         if (!candidate) continue;
         // Stop at the next message header — no content in this msg.
         if (candidate.startsWith("## ")) break;
+        // v0.1.578 — Meta-Zeilen wie "[Nachricht des Nutzers über
+        // Telegram]" ueberspringen: das Label soll den Inhalt zeigen.
+        if (/^\[.*\]$/.test(candidate)) continue;
         return candidate.length > 60
           ? candidate.slice(0, 57) + "…"
           : candidate;

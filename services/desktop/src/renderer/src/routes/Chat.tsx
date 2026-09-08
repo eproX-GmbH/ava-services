@@ -92,6 +92,19 @@ type Activity = {
   preview?: string;
 };
 
+/** v0.1.578 — Nutzer-Nachrichten von aussen tragen einen Meta-Kopf in
+ *  eckigen Klammern ("[Nachricht des Nutzers über Telegram …]") und einen
+ *  Hinweis-Block fuers Modell. Fuer die Anzeige: Kopf → Badge, Hinweis weg. */
+function praesentiereNutzerText(content: string): { badge: string | null; text: string } {
+  const m = /^\[Nachricht des Nutzers über (Telegram|Mail)([^\]]*)\]\s*/.exec(content);
+  if (!m) return { badge: null, text: content };
+  let text = content.slice(m[0].length);
+  text = text.replace(/\n*\[Hinweis:[\s\S]*\]\s*$/, "").trim();
+  const sprach = /Sprachnachricht/.test(m[2] ?? "");
+  const badge = `via ${m[1]}${sprach ? " · 🎙️ Sprachnachricht (transkribiert)" : ""}`;
+  return { badge, text };
+}
+
 interface UiMessage {
   id: string;
   role: AgentMessage["role"];
@@ -642,7 +655,12 @@ export function Chat() {
       const matchesConversation =
         "conversationId" in frame &&
         frame.conversationId === conversationIdRef.current;
-      if (!matchesActive && !matchesConversation) return;
+      if (!matchesActive && !matchesConversation) {
+        // v0.1.578 — neue Telegram-/Mail-Konversation taucht sofort in
+        // der Liste auf, auch wenn gerade eine andere offen ist.
+        if (frame.kind === "user-message") void refreshConversations();
+        return;
+      }
       // Late-binding: if we accepted via (b) and the ref is empty,
       // remember the requestId so the Stop button has something to
       // abort with and subsequent frames take the fast path through (a).
@@ -661,6 +679,19 @@ export function Chat() {
         setThinking(false);
       } else if (frame.kind === "tool-result") {
         setThinking(true);
+      }
+
+      // v0.1.578 — Nutzer-Nachricht von aussen (Telegram/Mail) in der
+      // offenen Konversation als Blase anzeigen; AVA denkt jetzt nach.
+      if (frame.kind === "user-message") {
+        setMessages((prev) =>
+          prev.some((m) => m.id === frame.messageId)
+            ? prev
+            : [...prev, { id: frame.messageId, role: "user", content: frame.content }],
+        );
+        setThinking(true);
+        void refreshConversations();
+        return;
       }
 
       if (frame.kind === "token") {
@@ -1889,7 +1920,19 @@ export function Chat() {
                   <div className="chat-content">
                     {m.role === "user" ? (
                       <>
-                        <UserBubbleContent content={m.content} />
+                        {(() => {
+                          const p = praesentiereNutzerText(m.content);
+                          return (
+                            <>
+                              {p.badge && (
+                                <div className="muted small" style={{ marginBottom: "0.25rem" }}>
+                                  {p.badge}
+                                </div>
+                              )}
+                              <UserBubbleContent content={p.text} />
+                            </>
+                          );
+                        })()}
                         {m.images && m.images.length > 0 && (
                           <div className="chat-msg-images">
                             {m.images.map((img, idx) => (

@@ -222,6 +222,7 @@ export class TelegramInbound {
   private async handleMessage(
     text: string,
     images?: AgentMessageImage[],
+    opts?: { sprachnachricht?: boolean },
   ): Promise<void> {
     // v0.1.419 — Der Orchestrator verarbeitet immer nur EINE Anfrage. War er
     // beschäftigt, meldete der Empfänger früher "bin beschäftigt" und die
@@ -260,10 +261,13 @@ export class TelegramInbound {
         `Bestätigungsdialog — Aktionen, die eine Rückfrage brauchen, kannst ` +
         `du nicht ausführen; sag in dem Fall, dass es am Rechner erledigt ` +
         `werden muss.]`;
+    const kopf = opts?.sprachnachricht
+      ? "[Nachricht des Nutzers über Telegram (Sprachnachricht, transkribiert)]"
+      : "[Nachricht des Nutzers über Telegram]";
     const started = this.orchestrator.startAutonomousConversation({
       conversationId: this.threadId(),
-      initialMessage:
-        `[Nachricht des Nutzers über Telegram]\n\n${withCaptions}\n\n${hint}`,
+      source: "telegram",
+      initialMessage: `${kopf}\n\n${withCaptions}\n\n${hint}`,
       ...(allImages.length > 0 ? { images: allImages } : {}),
       ...(confirmEnabled ? { remoteAsk: this.buildRemoteAsk() } : {}),
     });
@@ -464,7 +468,7 @@ export class TelegramInbound {
       summary: `Telegram-Sprachnachricht transkribiert: ${text.slice(0, 80)}`,
       metadata: { chars: text.length },
     });
-    await this.handleMessage(text);
+    await this.handleMessage(text, undefined, { sprachnachricht: true });
   }
 
   /**

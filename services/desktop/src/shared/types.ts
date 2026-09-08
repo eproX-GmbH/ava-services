@@ -793,6 +793,10 @@ export type AgentStreamFrame =
     }
   | { kind: "navigate"; requestId: string; conversationId: string; path: string }
   | { kind: "error"; requestId: string; conversationId: string; message: string }
+  /** v0.1.578 — Nutzer-Nachricht, die NICHT aus dem App-Chat kam (Telegram,
+   *  Mail): der Renderer haengt sie als Nutzer-Blase an, wenn die
+   *  Konversation gerade offen ist, und frischt die Liste auf. */
+  | { kind: "user-message"; requestId: string; conversationId: string; messageId: string; content: string; source: "telegram" | "mail" }
   | { kind: "done"; requestId: string; conversationId: string; messageId: string };
 
 /** Renderer → main. Resolves a pending `choice-request`. */

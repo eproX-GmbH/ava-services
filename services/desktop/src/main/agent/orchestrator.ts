@@ -622,7 +622,8 @@ export class AgentOrchestrator extends EventEmitter {
      * v0.1.459 — T6: Rückfragen-Kanal (Telegram). Siehe Conversation.remoteAsk.
      */
     remoteAsk?: RemoteAskHandler;
-
+    /** v0.1.578 — Herkunft fuer die App-Anzeige (user-message-Frame). */
+    source?: "telegram" | "mail";
   }): { conversationId: string; requestId: string } | null {
     const status = this.getStatus();
     if (!status.ready) {
@@ -666,7 +667,8 @@ export class AgentOrchestrator extends EventEmitter {
      * v0.1.459 — T6: Rückfragen-Kanal (Telegram). Siehe Conversation.remoteAsk.
      */
     remoteAsk?: RemoteAskHandler;
-
+    /** v0.1.578 — Herkunft fuer die App-Anzeige (user-message-Frame). */
+    source?: "telegram" | "mail";
   }> = [];
 
   private runAutonomousNow(input: {
@@ -688,7 +690,8 @@ export class AgentOrchestrator extends EventEmitter {
      * v0.1.459 — T6: Rückfragen-Kanal (Telegram). Siehe Conversation.remoteAsk.
      */
     remoteAsk?: RemoteAskHandler;
-
+    /** v0.1.578 — Herkunft fuer die App-Anzeige (user-message-Frame). */
+    source?: "telegram" | "mail";
   }): { conversationId: string; requestId: string } {
     const conversationId = input.conversationId ?? randomUUID();
     const existing = this.conversations.get(conversationId);
@@ -752,6 +755,19 @@ export class AgentOrchestrator extends EventEmitter {
     this.inFlightConversationId = convo.id;
     this.errorMessage = null;
     this.emit("status", this.getStatus());
+    // v0.1.578 — Die App zeigt die Nutzer-Nachricht (z. B. transkribierte
+    // Telegram-Sprachnachricht) live an; vorher erschien im offenen Chat
+    // nur AVAs Antwort, die Frage kam erst nach einem Reload.
+    if (input.source) {
+      this.emitFrame({
+        kind: "user-message",
+        requestId,
+        conversationId: convo.id,
+        messageId: initial.id,
+        content: initial.content,
+        source: input.source,
+      });
+    }
 
     const abort = new AbortController();
     this.currentAbort = abort;

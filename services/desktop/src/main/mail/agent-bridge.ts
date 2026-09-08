@@ -240,6 +240,7 @@ export class MailAgentBridge {
         skillName: "mail-triage",
         initialMessage,
         sourceMailId: msg.id,
+        source: "mail",
       });
       if (!result) {
         console.warn(
