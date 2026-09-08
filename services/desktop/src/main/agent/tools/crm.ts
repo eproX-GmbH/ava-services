@@ -2633,12 +2633,11 @@ export function buildCrmTools(deps: CrmToolDeps): Tool[] {
   const createContactTool = defineTool({
     name: "crm_create_hubspot_contact",
     description:
-      "Legt einen NEUEN Contact in HubSpot an. PROPOSE-AND-CONFIRM via ask_user_choice. PFLICHT vorher: crm_search_hubspot_contacts mit der email — wenn schon ein Contact mit dieser email existiert, dem Nutzer das transparent zeigen und Update statt Create vorschlagen. Pflichtfeld ist `email` (HubSpots Dedup-Key). Empfohlen: firstname, lastname. Optional: linkToHubspotCompanyId für Inline-Verknüpfung zur Company.",
+      "Legt einen NEUEN Contact in HubSpot an. PROPOSE-AND-CONFIRM via ask_user_choice. PFLICHT vorher: crm_search_hubspot_contacts mit der email (falls bekannt) oder dem Namen — wenn schon ein Contact existiert, dem Nutzer das transparent zeigen und Update statt Create vorschlagen. Eine E-Mail ist NICHT Pflicht: HubSpot legt Contacts auch nur mit Vor-/Nachname an (die E-Mail ist dort lediglich der Dubletten-Schlüssel). Mindestens eines von email, firstname, lastname angeben; NIE eine Platzhalter- oder erfundene E-Mail eintragen. Optional: linkToHubspotCompanyId für Inline-Verknüpfung zur Company.",
     parameters: {
       type: "object",
-      required: ["email"],
       properties: {
-        email: { type: "string", description: "E-Mail (Pflicht, HubSpots Dedup-Key)." },
+        email: { type: "string", description: "E-Mail (optional; wenn bekannt, HubSpots Dubletten-Schlüssel). Nie erfinden." },
         firstname: { type: "string" },
         lastname: { type: "string" },
         jobtitle: { type: "string" },
@@ -2657,7 +2656,9 @@ export function buildCrmTools(deps: CrmToolDeps): Tool[] {
     },
     schema: yup
       .object({
-        email: yup.string().email().required(),
+        // v0.1.573 — E-Mail optional: HubSpot verlangt sie nicht, ein
+        // Nutzer wurde faelschlich zu Platzhalter-Adressen gedraengt.
+        email: yup.string().trim().email().optional(),
         firstname: yup.string().trim().max(500).optional(),
         lastname: yup.string().trim().max(500).optional(),
         jobtitle: yup.string().trim().max(500).optional(),
@@ -2666,7 +2667,12 @@ export function buildCrmTools(deps: CrmToolDeps): Tool[] {
         linkToHubspotCompanyId: yup.string().trim().optional(),
         rationale: yup.string().trim().max(500).optional(),
       })
-      .noUnknown(true),
+      .noUnknown(true)
+      .test(
+        "identitaet",
+        "Mindestens eines von email, firstname oder lastname angeben.",
+        (v) => Boolean(v?.email || v?.firstname || v?.lastname),
+      ),
     preview: (r: { applied: boolean; id?: string; linked?: boolean; error?: string }) =>
       r.applied
         ? r.linked
@@ -2676,7 +2682,8 @@ export function buildCrmTools(deps: CrmToolDeps): Tool[] {
           ? `Fehler: ${r.error}`
           : "Contact nicht angelegt",
     run: async (args, ctx) => {
-      const props: Record<string, string> = { email: args.email };
+      const props: Record<string, string> = {};
+      if (args.email) props.email = args.email;
       if (args.firstname) props.firstname = args.firstname;
       if (args.lastname) props.lastname = args.lastname;
       if (args.jobtitle) props.jobtitle = args.jobtitle;
@@ -2699,7 +2706,7 @@ export function buildCrmTools(deps: CrmToolDeps): Tool[] {
       const value = await ctx.ui.confirmAction(
         {
           kind: "additive",
-          prompt: `Ich möchte folgenden NEUEN Contact in HubSpot anlegen:\n\n${propLines}${linkHint}${rationaleBlock}\n\nFalls dieser Contact bereits existiert (gleiche E-Mail), sag Bescheid — sonst gibt es ein Duplikat.`,
+          prompt: `Ich möchte folgenden NEUEN Contact in HubSpot anlegen:\n\n${propLines}${linkHint}${rationaleBlock}\n\nFalls dieser Contact bereits existiert (gleiche E-Mail oder gleicher Name), sag Bescheid — sonst gibt es ein Duplikat.`,
           confirmValue: "create",
           options: [
             { value: "create", label: "Anlegen", description: "POST wird gesendet" },

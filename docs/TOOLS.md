@@ -687,10 +687,10 @@ _Parameter:_ keine.
 
 _Datei:_ `services/desktop/src/main/agent/tools/crm.ts`
 
-Legt einen NEUEN Contact in HubSpot an. PROPOSE-AND-CONFIRM via ask_user_choice. PFLICHT vorher: crm_search_hubspot_contacts mit der email — wenn schon ein Contact mit dieser email existiert, dem Nutzer das transparent zeigen und Update statt Create vorschlagen. Pflichtfeld ist `email` (HubSpots Dedup-Key). Empfohlen: firstname, lastname. Optional: linkToHubspotCompanyId für Inline-Verknüpfung zur Company.
+Legt einen NEUEN Contact in HubSpot an. PROPOSE-AND-CONFIRM via ask_user_choice. PFLICHT vorher: crm_search_hubspot_contacts mit der email (falls bekannt) oder dem Namen — wenn schon ein Contact existiert, dem Nutzer das transparent zeigen und Update statt Create vorschlagen. Eine E-Mail ist NICHT Pflicht: HubSpot legt Contacts auch nur mit Vor-/Nachname an (die E-Mail ist dort lediglich der Dubletten-Schlüssel). Mindestens eines von email, firstname, lastname angeben; NIE eine Platzhalter- oder erfundene E-Mail eintragen. Optional: linkToHubspotCompanyId für Inline-Verknüpfung zur Company.
 
 _Parameter:_
-- `email: string` (required) — E-Mail (Pflicht, HubSpots Dedup-Key).
+- `email: string` — E-Mail (optional; wenn bekannt, HubSpots Dubletten-Schlüssel). Nie erfinden.
 - `firstname: string`
 - `lastname: string`
 - `jobtitle: string`
