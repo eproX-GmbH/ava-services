@@ -141,10 +141,6 @@ export function DiscoveryRadar(): JSX.Element {
       return next;
     });
   };
-  const allSelected = rows.length > 0 && selected.size === rows.length;
-  const toggleAll = (): void => {
-    setSelected(allSelected ? new Set() : new Set(rows.map((r) => r.discoveryId)));
-  };
 
   const decide = async (decision: "imported" | "dismissed"): Promise<void> => {
     if (selected.size === 0 || busy) return;
@@ -230,6 +226,14 @@ export function DiscoveryRadar(): JSX.Element {
       .sort((a, b) => (b.matchScore ?? 0) - (a.matchScore ?? 0));
     return new Set(scored.slice(FREE_VISIBLE_MATCHES).map((r) => r.discoveryId));
   }, [rows, usage.data?.tier]);
+
+  // v0.1.575 — "Alle" meint nur die frei sichtbaren Zeilen; gesperrte
+  // (Free-Plan) haben ohnehin keine aktive Checkbox.
+  const waehlbar = rows.filter((r) => !lockedIds.has(r.discoveryId));
+  const allSelected = waehlbar.length > 0 && waehlbar.every((r) => selected.has(r.discoveryId));
+  const toggleAll = (): void => {
+    setSelected(allSelected ? new Set() : new Set(waehlbar.map((r) => r.discoveryId)));
+  };
 
   const hotCount = useMemo(
     () => rows.filter((r) => (r.matchScore ?? 0) >= 70).length,
