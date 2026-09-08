@@ -1342,6 +1342,28 @@ let watchlistStore: WatchlistStore | null = null;
 let watchlistSupervisor: WatchlistSupervisor | null = null;
 let personenRadarStore: PersonenRadarStore | null = null;
 let personenRadarSupervisor: PersonenRadarSupervisor | null = null;
+
+/** v0.1.580 — Apify-Zugang fuer Watchlist/Personen-Radar im Hauptprozess:
+ *  eigener Token gewinnt (ausser unter Anbieter-Sperre), sonst der
+ *  Organisationsschluessel ueber den Gateway-Proxy mit dem Nutzer-JWT. */
+async function resolveApifyAccess(): Promise<import("./linkedin/apify-access").ApifyAccess | null> {
+  const { eigenerApifyZugang, organisationsApifyZugang } = await import("./linkedin/apify-access");
+  const eigener = watchlistKeyStore?.getKey() ?? null;
+  if (providers.apifyUeberOrganisation(Boolean(eigener))) {
+    const gw = providers.getOrgGateway();
+    const jwt = await gw.getToken();
+    if (gw.gatewayUrl && jwt) return organisationsApifyZugang(gw.gatewayUrl, jwt);
+  }
+  return eigener ? eigenerApifyZugang(eigener) : null;
+}
+
+/** Fuer die UI: woher der Apify-Zugang kommt (ohne Token-Inhalte). */
+function apifyZugangInfo(): { apifyQuelle: "eigen" | "organisation" | null; apifyVerfuegbar: boolean; eigenerTokenErlaubt: boolean } {
+  const eigener = watchlistKeyStore?.hasKey() ?? false;
+  const org = providers.apifyUeberOrganisation(eigener) && Boolean(providers.getOrgGateway().gatewayUrl);
+  const quelle = org ? "organisation" : eigener ? "eigen" : null;
+  return { apifyQuelle: quelle, apifyVerfuegbar: quelle !== null, eigenerTokenErlaubt: !providers.isProviderLocked() };
+}
 // v0.1.490 — Bruecke: das Chat-Tool linkedin_watchlist_config aendert
 // companyWindow und muss den company-contact-Producer recyceln; die
 // eigentliche cycle-Funktion entsteht erst in der IPC-Registrierung.
@@ -1775,6 +1797,7 @@ const agentRegistry = buildReadOnlyRegistry({
   getWatchlistStore: () => watchlistStore,
   getWatchlistSupervisor: () => watchlistSupervisor,
   // v0.1.576 — Radar-Config per Chat (radar_config).
+  hatApifyZugang: async () => Boolean(await resolveApifyAccess()),
   getRadar: () =>
     radarSupervisor
       ? {
@@ -2773,6 +2796,7 @@ app.whenReady().then(async () => {
   });
   watchlistSupervisor = new WatchlistSupervisor({
     keyStore: watchlistKeyStore,
+    getApifyAccess: resolveApifyAccess,
     watchlist: watchlistStore,
     providers,
     icp: icpStore,
@@ -2829,6 +2853,7 @@ app.whenReady().then(async () => {
   personenRadarSupervisor = new PersonenRadarSupervisor({
     providers,
     keyStore: watchlistKeyStore,
+    getApifyAccess: resolveApifyAccess,
     store: personenRadarStore,
     gateway: gatewayClient,
     alerts,
@@ -5107,6 +5132,7 @@ app.whenReady().then(async () => {
         lastOutcome: cfg.lastOutcome,
       },
       hasKey: watchlistKeyStore.hasKey(),
+      ...apifyZugangInfo(),
       running: watchlistSupervisor.isRunning(),
       monthItems: cfg.monthKey === monthKey ? cfg.monthItems : 0,
       limits: watchlistLimitsForTier(getTenantTierCached()),
@@ -5190,8 +5216,8 @@ app.whenReady().then(async () => {
     return { ok: true };
   });
   ipcMain.handle("watchlist:verifyKey", async () => {
-    const key = watchlistKeyStore?.getKey();
-    if (!key) return { ok: false, detail: "Kein Token hinterlegt." };
+    const key = await resolveApifyAccess();
+    if (!key) return { ok: false, detail: "Kein Apify-Zugang (weder eigener Token noch Organisationsschluessel)." };
     const cfg = watchlistKeyStore!.getConfig();
     return buildApifyProvider({
       reactionsActorId: cfg.reactionsActorId,
@@ -5234,6 +5260,7 @@ app.whenReady().then(async () => {
     return {
       config: personenRadarStore.getConfig(),
       hasKey: watchlistKeyStore?.hasKey() ?? false,
+      ...apifyZugangInfo(),
       running: personenRadarSupervisor.isRunning(),
       unklar: await personenRadarStore.listUnklar(),
     };

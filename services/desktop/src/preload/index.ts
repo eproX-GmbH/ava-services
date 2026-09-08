@@ -1718,6 +1718,10 @@ const api = {
           lastOutcome: string | null;
         };
         hasKey?: boolean;
+        /** v0.1.580 — woher der Apify-Zugang kommt. */
+        apifyQuelle?: "eigen" | "organisation" | null;
+        apifyVerfuegbar?: boolean;
+        eigenerTokenErlaubt?: boolean;
         running?: boolean;
         monthItems?: number;
         limits?: { maxEintraege: number; maxFokus: number } | null;
@@ -1773,6 +1777,8 @@ const api = {
           lastOutcome: string | null;
         };
         hasKey?: boolean;
+        apifyQuelle?: "eigen" | "organisation" | null;
+        apifyVerfuegbar?: boolean;
         running?: boolean;
         unklar?: Array<{
           profileUrl: string;

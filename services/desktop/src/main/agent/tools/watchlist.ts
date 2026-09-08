@@ -21,6 +21,8 @@ export interface WatchlistToolDeps {
   /** v0.1.490 — companyWindow-Aenderung recycelt den company-contact-
    *  Producer (frisches APIFY_COMPANY_FENSTER-env). */
   onCompanyWindowChanged?: () => void;
+  /** v0.1.580 — true, wenn ein Apify-Zugang (eigen oder Organisation) existiert. */
+  hatApifyZugang?: () => Promise<boolean>;
 }
 
 export function buildWatchlistTools(deps: WatchlistToolDeps): Tool[] {
@@ -299,8 +301,8 @@ export function buildWatchlistTools(deps: WatchlistToolDeps): Tool[] {
             "companyWindow kostet im Extremfall (companyWindow x 4 $ / 1000) je Firmenlauf.",
         };
       }
-      if (patch.enabled === true && !ks.hasKey()) {
-        return "Automatik braucht einen hinterlegten Apify-Token — bitte im Signale-Panel setzen (Tokens gehen nie ueber den Chat).";
+      if (patch.enabled === true && !ks.hasKey() && !(await deps.hatApifyZugang?.())) {
+        return "Automatik braucht einen Apify-Zugang — eigenen Token im Signale-Panel setzen (Tokens gehen nie ueber den Chat) oder einen Organisationsschluessel fuer Apify.";
       }
       const beschreibung = Object.entries(patch)
         .map(([k, v]) => `${k} → ${String(v)}`)

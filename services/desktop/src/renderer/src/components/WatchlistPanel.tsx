@@ -32,6 +32,9 @@ interface WlState {
     lastOutcome: string | null;
   };
   hasKey?: boolean;
+  apifyQuelle?: "eigen" | "organisation" | null;
+  apifyVerfuegbar?: boolean;
+  eigenerTokenErlaubt?: boolean;
   running?: boolean;
   monthItems?: number;
   limits?: { maxEintraege: number; maxFokus: number } | null;
@@ -78,14 +81,18 @@ export function WatchlistPanel(): JSX.Element {
   const entries = state.entries ?? [];
   const limits = state.limits;
   const gesperrt = limits !== null && limits !== undefined && limits.maxEintraege === 0;
+  // v0.1.580 — Apify-Zugang: eigener Token oder Organisationsschluessel.
+  const zugang = state.apifyVerfuegbar ?? state.hasKey ?? false;
+  const ueberOrg = state.apifyQuelle === "organisation";
+  const eigenerErlaubt = state.eigenerTokenErlaubt !== false;
 
   return (
     <div className="ct-card" style={{ padding: "1rem", marginTop: "1.5rem" }}>
       <h3 style={{ marginTop: 0 }}>Personen-Watchlist</h3>
       <p className="muted" style={{ fontSize: 13 }}>
         Beobachtet die <strong>öffentliche</strong> LinkedIn-Aktivität deiner
-        Ansprechpartner (Reaktionen, Kommentare) über deinen eigenen
-        Apify-Zugang und meldet relevante Signale. Du bist dabei
+        Ansprechpartner (Reaktionen, Kommentare) über deinen Apify-Zugang
+        (eigener Token oder Organisationsschlüssel) und meldet relevante Signale. Du bist dabei
         datenschutzrechtlich Verantwortlicher: Beobachte nur Personen mit
         geschäftlichem Bezug, informiere spätestens bei der ersten
         Kontaktaufnahme (Art. 14 DSGVO). Sichtungen verfallen nach 90 Tagen;
@@ -102,12 +109,30 @@ export function WatchlistPanel(): JSX.Element {
       {!gesperrt && (
         <>
           {/* Key */}
-          {!state.hasKey ? (
+          {ueberOrg && (
+            <div className="telegram-row">
+              <span className="pill pill--connected">Apify über Organisationsschlüssel</span>
+              <button
+                type="button"
+                className="btn"
+                disabled={busy}
+                onClick={() =>
+                  void run(async () => {
+                    const r = await window.api.linkedin.watchlist.verifyKey();
+                    return r.ok ? `✓ ${r.detail ?? "Zugang gültig"}` : { error: r.detail ?? "Zugang ungültig" };
+                  })
+                }
+              >
+                Zugang testen
+              </button>
+            </div>
+          )}
+          {ueberOrg && !eigenerErlaubt ? null : !state.hasKey ? (
             <div className="telegram-row">
               <input
                 type="password"
                 className="telegram-input"
-                placeholder="Apify-API-Token (apify.com → Settings → Integrations)"
+                placeholder={ueberOrg ? "Optional: eigener Apify-Token statt Organisationsschlüssel" : "Apify-API-Token (apify.com → Settings → Integrations)"}
                 value={keyInput}
                 disabled={busy}
                 onChange={(e) => setKeyInput(e.target.value)}
@@ -163,7 +188,7 @@ export function WatchlistPanel(): JSX.Element {
             <input
               type="checkbox"
               checked={cfg.enabled}
-              disabled={busy || !state.hasKey}
+              disabled={busy || !zugang}
               onChange={(e) =>
                 void run(() =>
                   window.api.linkedin.watchlist.setConfig({
@@ -173,7 +198,7 @@ export function WatchlistPanel(): JSX.Element {
               }
             />
             <span>
-              Automatik {state.hasKey ? "" : "(erst Token hinterlegen)"}
+              Automatik {zugang ? "" : "(erst Apify-Zugang hinterlegen)"}
             </span>
           </label>
           <div className="telegram-row">
@@ -212,7 +237,7 @@ export function WatchlistPanel(): JSX.Element {
             <button
               type="button"
               className="proc-toggle"
-              disabled={busy || !state.hasKey || state.running}
+              disabled={busy || !zugang || state.running}
               onClick={() => void run(() => window.api.linkedin.watchlist.runNow())}
             >
               {state.running ? "Läuft…" : "Jetzt prüfen"}
@@ -232,7 +257,7 @@ export function WatchlistPanel(): JSX.Element {
             <input
               type="checkbox"
               checked={cfg.bestandRotationEnabled === true}
-              disabled={busy || !state.hasKey}
+              disabled={busy || !zugang}
               onChange={(e) =>
                 void run(() =>
                   window.api.linkedin.watchlist.setConfig({
@@ -286,7 +311,7 @@ export function WatchlistPanel(): JSX.Element {
               max={1000}
               step={25}
               value={cfg.companyWindow ?? 100}
-              disabled={busy || !state.hasKey}
+              disabled={busy || !zugang}
               style={{ width: 72 }}
               onChange={(e) =>
                 void run(() =>

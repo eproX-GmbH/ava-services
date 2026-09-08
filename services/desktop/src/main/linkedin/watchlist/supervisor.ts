@@ -63,6 +63,8 @@ const classifySchema = yup.array().of(
 
 export interface WatchlistSupervisorDeps {
   keyStore: WatchlistKeyStore;
+  /** v0.1.580 — eigener Token oder Organisationsschluessel (Gateway-Proxy). */
+  getApifyAccess: () => Promise<import("../apify-access").ApifyAccess | null>;
   watchlist: WatchlistStore;
   providers: LlmProviderManager;
   icp: IcpStore;
@@ -112,7 +114,7 @@ export class WatchlistSupervisor {
     const cfg = this.deps.keyStore.getConfig();
     if (!cfg.enabled || this.running) return;
     if (!this.deps.isSignedIn()) return;
-    if (!this.deps.keyStore.hasKey()) return;
+    if (!(await this.deps.getApifyAccess())) return;
     const last = cfg.lastRunAt ? Date.parse(cfg.lastRunAt) : 0;
     if (Date.now() - last < cfg.intervalHours * 3600_000) return;
     await this.runNow("automatik");
@@ -142,8 +144,8 @@ export class WatchlistSupervisor {
   async runNow(trigger: "automatik" | "manuell"): Promise<string> {
     if (this.running) return "Watchlist-Lauf laeuft bereits.";
     const cfg = this.deps.keyStore.getConfig();
-    const key = this.deps.keyStore.getKey();
-    if (!key) return "Kein Anbieter-Token hinterlegt (Einstellungen → LinkedIn → Watchlist).";
+    const key = await this.deps.getApifyAccess();
+    if (!key) return "Kein Apify-Zugang: weder eigener Token (Einstellungen → LinkedIn → Watchlist) noch Organisationsschluessel.";
     this.running = true;
     const startedAt = new Date().toISOString();
     const provider = buildApifyProvider({
@@ -262,7 +264,7 @@ export class WatchlistSupervisor {
    *  nur der Checked-Marker unterscheidet sich). */
   private async checkProfile(
     provider: ReturnType<typeof buildApifyProvider>,
-    key: string,
+    key: import("../apify-access").ApifyAccess,
     cfg: ReturnType<WatchlistKeyStore["getConfig"]>,
     entry: WatchlistEntry,
     zaehler: { profileOk: number; neueSignale: number; alertsNeu: number; baselines: number },

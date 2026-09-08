@@ -313,6 +313,12 @@ export class LlmProviderManager extends EventEmitter {
     return false;
   }
 
+  /** v0.1.580 — Gateway-URL + JWT-Getter fuer Stellvertreter-Aufrufe
+   *  ausserhalb der LLM-Provider (z. B. Apify-Proxy). */
+  getOrgGateway(): { gatewayUrl: string; getToken: () => Promise<string | null> } {
+    return { gatewayUrl: this.org.gatewayUrl, getToken: this.org.getToken };
+  }
+
   /** Apify: Organisations-Token nutzen, wenn lokal keiner hinterlegt ist (oder Sperre). */
   apifyUeberOrganisation(hatEigenen: boolean): boolean {
     if (!this.org.providers.apify) return false;

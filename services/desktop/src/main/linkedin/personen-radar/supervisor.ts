@@ -33,6 +33,8 @@ export interface PersonenRadarSupervisorDeps {
   /** v0.1.519 — fuer die Headline-Extraktion per LLM. */
   providers: LlmProviderManager;
   keyStore: WatchlistKeyStore;
+  /** v0.1.580 — eigener Token oder Organisationsschluessel (Gateway-Proxy). */
+  getApifyAccess: () => Promise<import("../apify-access").ApifyAccess | null>;
   store: PersonenRadarStore;
   gateway: GatewayClient;
   alerts: AlertsStore;
@@ -108,8 +110,9 @@ export class PersonenRadarSupervisor {
   private async tick(): Promise<void> {
     const cfg = this.deps.store.getConfig();
     if (!cfg.enabled || this.running) return;
-    if (!this.deps.isSignedIn() || !this.deps.keyStore.hasKey()) return;
+    if (!this.deps.isSignedIn()) return;
     if (cfg.postUrls.length === 0) return;
+    if (!(await this.deps.getApifyAccess())) return;
     const last = cfg.lastRunAt ? Date.parse(cfg.lastRunAt) : 0;
     if (Date.now() - last < cfg.intervalHours * 3600_000) return;
     await this.runNow("automatik");
@@ -118,8 +121,8 @@ export class PersonenRadarSupervisor {
   async runNow(trigger: "automatik" | "manuell"): Promise<string> {
     if (this.running) return "Personen-Radar-Lauf laeuft bereits.";
     const cfg = this.deps.store.getConfig();
-    const key = this.deps.keyStore.getKey();
-    if (!key) return "Kein Apify-Token hinterlegt (LinkedIn → Watchlist).";
+    const key = await this.deps.getApifyAccess();
+    if (!key) return "Kein Apify-Zugang: weder eigener Token (LinkedIn → Watchlist) noch Organisationsschluessel.";
     if (cfg.postUrls.length === 0) return "Keine Quell-Posts konfiguriert.";
     this.running = true;
     const startedAt = new Date().toISOString();
@@ -184,7 +187,7 @@ export class PersonenRadarSupervisor {
         bearbeitet.push(url);
         try {
           const r = await resolveEngagerCompanies({
-            key,
+            access: key,
             actors: cfg.actorIds,
             gateway: this.deps.gateway,
             engager,

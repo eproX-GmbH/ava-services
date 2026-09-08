@@ -55,9 +55,9 @@ export interface ProfileActivityProvider {
   id: string;
   label: string;
   /** Key-/Health-Check fuer die Settings-UI. */
-  verify(key: string): Promise<{ ok: boolean; detail?: string }>;
+  verify(access: import("../apify-access").ApifyAccess): Promise<{ ok: boolean; detail?: string }>;
   fetchActivity(
-    key: string,
+    access: import("../apify-access").ApifyAccess,
     /** Wenige pro Call (W5 — synchron); der Supervisor batcht. */
     profiles: string[],
     opts: { maxItemsPerProfile: number; signal?: AbortSignal },

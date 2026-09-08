@@ -57,7 +57,7 @@ function companyFromHeadline(headline: string | null): string | null {
 }
 
 export async function resolveEngagerCompanies(args: {
-  key: string;
+  access: import("../apify-access").ApifyAccess;
   actors: EngagementActorConfig;
   gateway: GatewayClient;
   engager: Engager;
@@ -76,7 +76,7 @@ export async function resolveEngagerCompanies(args: {
   let positions: Awaited<ReturnType<typeof fetchCurrentPositions>>["positions"] = [];
   try {
     const r = await fetchCurrentPositions(
-      args.key,
+      args.access,
       args.actors,
       args.engager.profileUrl,
       args.signal,
@@ -94,7 +94,7 @@ export async function resolveEngagerCompanies(args: {
     if (pos.companyLinkedinUrl) {
       try {
         const c = await fetchCompanyWebsite(
-          args.key,
+          args.access,
           args.actors,
           pos.companyLinkedinUrl,
           args.signal,

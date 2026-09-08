@@ -15,7 +15,7 @@
 
 import { normalizeLinkedInProfileUrl } from "../watchlist/normalize";
 
-const APIFY_API = "https://api.apify.com/v2";
+import { apifyHeaders, apifyUrl, type ApifyAccess } from "../apify-access";
 const RUN_TIMEOUT_MS = 5 * 60_000;
 
 export interface EngagementActorConfig {
@@ -64,17 +64,18 @@ const pickStr = (o: Raw | null, ...keys: string[]): string | null => {
 };
 
 async function runActor(
-  key: string,
+  access: ApifyAccess,
   actorId: string,
   input: Record<string, unknown>,
   signal?: AbortSignal,
 ): Promise<unknown[]> {
-  const url =
-    `${APIFY_API}/acts/${encodeURIComponent(actorId)}` +
-    `/run-sync-get-dataset-items?token=${encodeURIComponent(key)}&format=json`;
+  const url = apifyUrl(
+    access,
+    `/acts/${encodeURIComponent(actorId)}/run-sync-get-dataset-items?format=json`,
+  );
   const res = await fetch(url, {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: apifyHeaders(access, { "content-type": "application/json" }),
     body: JSON.stringify(input),
     signal: signal ?? AbortSignal.timeout(RUN_TIMEOUT_MS),
   });
@@ -94,7 +95,7 @@ async function runActor(
 
 /** Engager (Reaktionen + Kommentare) eines Posts holen. */
 export async function fetchPostEngagement(
-  key: string,
+  access: ApifyAccess,
   actors: EngagementActorConfig,
   postUrl: string,
   maxItemsPerPost: number,
@@ -110,7 +111,7 @@ export async function fetchPostEngagement(
   }
   for (const lauf of laeufe) {
     const rows = await runActor(
-      key,
+      access,
       lauf.actorId,
       { posts: [postUrl], maxItems: maxItemsPerPost },
       signal,
@@ -172,13 +173,13 @@ function istAktuell(end: unknown): boolean {
 }
 
 export async function fetchCurrentPositions(
-  key: string,
+  access: ApifyAccess,
   actors: EngagementActorConfig,
   profileUrl: string,
   signal?: AbortSignal,
 ): Promise<{ positions: CurrentPosition[]; kosteneinheiten: number }> {
   const rows = await runActor(
-    key,
+    access,
     actors.profileActorId,
     {
       queries: [profileUrl],
@@ -226,13 +227,13 @@ export async function fetchCurrentPositions(
 
 /** Website einer LinkedIn-Unternehmensseite (Firmen-Angabe!). */
 export async function fetchCompanyWebsite(
-  key: string,
+  access: ApifyAccess,
   actors: EngagementActorConfig,
   companyLinkedinUrl: string,
   signal?: AbortSignal,
 ): Promise<{ website: string | null; name: string | null; kosteneinheiten: number }> {
   const rows = await runActor(
-    key,
+    access,
     actors.companyActorId,
     { companies: [companyLinkedinUrl] },
     signal,

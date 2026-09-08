@@ -25,7 +25,8 @@ import type {
   ProviderFetchResult,
 } from "../types";
 
-const APIFY_API = "https://api.apify.com/v2";
+import { apifyHeaders, apifyUrl, type ApifyAccess } from "../../apify-access";
+
 const RUN_TIMEOUT_MS = 5 * 60_000;
 
 export interface ApifyActorConfig {
@@ -146,18 +147,19 @@ export function buildApifyProvider(
   actors: ApifyActorConfig = APIFY_DEFAULT_ACTORS,
 ): ProfileActivityProvider {
   async function runActor(
-    key: string,
+    access: ApifyAccess,
     actorId: string,
     profiles: string[],
     maxItems: number,
     signal: AbortSignal | undefined,
   ): Promise<unknown[]> {
-    const url =
-      `${APIFY_API}/acts/${encodeURIComponent(actorId)}` +
-      `/run-sync-get-dataset-items?token=${encodeURIComponent(key)}&format=json`;
+    const url = apifyUrl(
+      access,
+      `/acts/${encodeURIComponent(actorId)}/run-sync-get-dataset-items?format=json`,
+    );
     const res = await fetch(url, {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: apifyHeaders(access, { "content-type": "application/json" }),
       body: JSON.stringify({ profiles, maxItems }),
       signal: signal ?? AbortSignal.timeout(RUN_TIMEOUT_MS),
     });
@@ -181,12 +183,12 @@ export function buildApifyProvider(
     id: "apify",
     label: "Apify (Actor-Marktplatz)",
 
-    async verify(key: string): Promise<{ ok: boolean; detail?: string }> {
+    async verify(access: ApifyAccess): Promise<{ ok: boolean; detail?: string }> {
       try {
-        const res = await fetch(
-          `${APIFY_API}/users/me?token=${encodeURIComponent(key)}`,
-          { signal: AbortSignal.timeout(15_000) },
-        );
+        const res = await fetch(apifyUrl(access, "/users/me"), {
+          headers: apifyHeaders(access),
+          signal: AbortSignal.timeout(15_000),
+        });
         if (res.status === 401) return { ok: false, detail: "Token ungueltig." };
         if (!res.ok) return { ok: false, detail: `HTTP ${res.status}` };
         const data = (await res.json()) as { data?: { username?: string } };
@@ -204,7 +206,7 @@ export function buildApifyProvider(
       }
     },
 
-    async fetchActivity(key, profiles, opts): Promise<ProviderFetchResult> {
+    async fetchActivity(access, profiles, opts): Promise<ProviderFetchResult> {
       // Kanonisieren + Nicht-Profile ehrlich aussortieren.
       const canonical = new Map<string, string>(); // kanonisch → wie angefragt
       const fehlgeschlagen: Array<{ profileUrl: string; grund: string }> = [];
@@ -233,7 +235,7 @@ export function buildApifyProvider(
         let items: unknown[];
         try {
           items = await runActor(
-            key,
+            access,
             lauf.actorId,
             list,
             opts.maxItemsPerProfile,

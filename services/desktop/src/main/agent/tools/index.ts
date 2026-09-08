@@ -169,6 +169,8 @@ export function buildReadOnlyRegistry(deps: {
   /** WL4 — Personen-Watchlist (lazy, entsteht im App-Boot). */
   getWatchlistStore: () => import("../../linkedin/watchlist/store").WatchlistStore | null;
   getWatchlistSupervisor: () => import("../../linkedin/watchlist/supervisor").WatchlistSupervisor | null;
+  /** v0.1.580 — Apify-Zugang vorhanden (eigen oder Organisation)? */
+  hatApifyZugang?: () => Promise<boolean>;
   /** v0.1.576 — Firmen-Radar-Config (Automatik, Intervall, Sofort-Profile), lazy. */
   getRadar: () => import("./discovery").RadarConfigAccess | null;
   getWatchlistKeyStore: () => import("../../linkedin/watchlist/key-store").WatchlistKeyStore | null;
@@ -224,6 +226,7 @@ export function buildReadOnlyRegistry(deps: {
     getSupervisor: deps.getWatchlistSupervisor,
     getKeyStore: deps.getWatchlistKeyStore,
     onCompanyWindowChanged: deps.onCompanyWindowChanged,
+    hatApifyZugang: deps.hatApifyZugang,
   }))
     registry.register(t);
   // v0.1.490 — Self-Service im Chat: Personen-Radar + Feed-Beobachter.

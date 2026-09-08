@@ -19,6 +19,7 @@ interface PrState {
     lastOutcome: string | null;
   };
   hasKey?: boolean;
+  apifyVerfuegbar?: boolean;
   running?: boolean;
   unklar?: Array<{
     profileUrl: string;
@@ -75,10 +76,11 @@ export function PersonenRadarPanel(): JSX.Element {
         Apify-Guthaben).
       </p>
 
-      {!state.hasKey ? (
+      {!(state.apifyVerfuegbar ?? state.hasKey) ? (
         <p className="muted">
-          Erst den Apify-Token in der Personen-Watchlist oben hinterlegen —
-          der Personen-Radar nutzt denselben Zugang.
+          Erst den Apify-Zugang in der Personen-Watchlist oben hinterlegen
+          (eigener Token oder Organisationsschlüssel) — der Personen-Radar
+          nutzt denselben Zugang.
         </p>
       ) : (
         <>
