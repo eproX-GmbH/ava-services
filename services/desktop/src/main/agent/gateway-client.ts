@@ -139,12 +139,32 @@ export class GatewayClient {
       // level only — info-level would print on every dispatch.
     }
 
-    const res = await fetch(url, {
-      method: opts.method ?? "GET",
-      headers,
-      body,
-      signal: opts.signal,
-    });
+    let res: Response;
+    const method = opts.method ?? "GET";
+    const versuch = () => fetch(url, { method, headers, body, signal: opts.signal });
+    try {
+      try {
+        res = await versuch();
+      } catch (err) {
+        // v0.1.581 — Ein einzelner Netz-Schluckauf (Laptop wechselt WLAN,
+        // Fly-Edge trennt kurz) soll keine leere Radar-Seite mit "fetch
+        // failed" hinterlassen: GET ist idempotent → genau ein Retry.
+        if (method !== "GET" || opts.signal?.aborted) throw err;
+        await new Promise((r) => setTimeout(r, 1_500));
+        res = await versuch();
+      }
+    } catch (err) {
+      // v0.1.581 — undici meldet Verbindungsfehler nur als "fetch failed";
+      // der eigentliche Grund (ECONNRESET, ENOTFOUND, Timeout, TLS) steckt
+      // in `cause`. Ohne ihn ist ein "fetch failed" im Radar nicht
+      // diagnostizierbar.
+      const cause = (err as { cause?: { code?: string; message?: string } })?.cause;
+      const grund = cause?.code ?? cause?.message ?? (err instanceof Error ? err.message : String(err));
+      throw new Error(
+        `Server nicht erreichbar (${grund}) — ${opts.method ?? "GET"} ${path.split("?")[0]}. ` +
+          "Bitte Internetverbindung prüfen und erneut versuchen.",
+      );
+    }
 
     // Always read text first — a 502 from the gateway often comes with an
     // HTML body from upstream which would crash res.json(). We try JSON and
