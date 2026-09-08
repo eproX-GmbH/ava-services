@@ -1108,7 +1108,7 @@ _Parameter:_ keine.
 
 _Datei:_ `services/desktop/src/main/agent/tools/discovery.ts`
 
-Liest oder aendert die Einstellungen des Firmen-Radars. Ohne Argumente: aktuelle Werte. Mit Argumenten (nach Bestaetigung): enabled = Radar-Automatik, intervalHours = 6 (4x taeglich, Pro), 24 (taeglich) oder 168 (woechentlich), profileSofort = sofortige Mini-Profil-Verarbeitung (alle offenen Kandidaten so schnell wie moeglich profilieren: mehr Parallelitaet, Minutentakt, keine Ruecksicht auf laufende Chats; verbraucht entsprechend mehr KI-Aufrufe).
+Liest oder aendert die Einstellungen des Firmen-Radars. Ohne Argumente: aktuelle Werte. Mit Argumenten (nach Bestaetigung): enabled = Radar-Automatik, intervalHours = 6 (4x taeglich, Pro), 24 (taeglich) oder 168 (woechentlich), profileSofort = sofortige Mini-Profil-Verarbeitung (alle offenen Kandidaten so schnell wie moeglich profilieren: mehr Parallelitaet, Minutentakt; laufende Chats haben weiterhin Vorrang; verbraucht entsprechend mehr KI-Aufrufe).
 
 _Parameter:_
 - `enabled: boolean`

@@ -302,7 +302,7 @@ export function DiscoveryRadar(): JSX.Element {
           </label>
           <label
             className="radar-auto-toggle"
-            title="Alle offenen Kandidaten so schnell wie möglich profilieren: mehr parallel, Minutentakt, keine Rücksicht auf laufende Chats. Braucht entsprechend mehr KI-Aufrufe in kurzer Zeit."
+            title="Alle offenen Kandidaten so schnell wie möglich profilieren: mehr parallel, Minutentakt. Der Chat behält Vorrang. Braucht entsprechend mehr KI-Aufrufe in kurzer Zeit."
           >
             <input
               type="checkbox"

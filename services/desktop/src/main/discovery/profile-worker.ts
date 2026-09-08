@@ -25,9 +25,9 @@ const TICK_MS = 10 * 60_000;
 const FIRST_TICK_DELAY_MS = 2 * 60_000;
 // v0.1.576 — "Sofortige Mini-Profil-Verarbeitung": Nutzer wollen den
 // Backlog nicht ueber Stunden tröpfeln sehen. Im Sofort-Modus tickt der
-// Worker jede Minute, faehrt doppelt so viele Kandidaten parallel und
-// pausiert NICHT fuer laufende Chat-Turns. Am Ende werden ohnehin alle
-// Kandidaten profiliert — es geht nur um die Reihenfolge der Ruecksicht.
+// Worker jede Minute und faehrt doppelt so viele Kandidaten parallel.
+// Laufende Chat-Turns haben AUCH im Sofort-Modus Vorrang (Entscheidung
+// 2026-09-08): der Chat darf nie wegen Hintergrund-Profilen stocken.
 const SOFORT_TICK_MS = 60_000;
 const CONCURRENCY_SCHONEND = 3;
 const CONCURRENCY_SOFORT = 6;
@@ -144,8 +144,8 @@ export class ProfileWorker {
         limit: ROUND_LIMIT,
         prioritizeTerms: this.deps.getPrioritizeTerms(),
         exclude: this.exclude(),
-        // Sofort-Modus: keine Chat-Ruecksicht, mehr Parallelitaet.
-        shouldPause: this.sofort ? undefined : this.deps.isLlmBusy,
+        // Chat-Turns haben immer Vorrang, auch im Sofort-Modus.
+        shouldPause: this.deps.isLlmBusy,
         concurrency: this.sofort ? CONCURRENCY_SOFORT : CONCURRENCY_SCHONEND,
       });
       if ("error" in r) {
