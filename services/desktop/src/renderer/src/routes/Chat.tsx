@@ -330,6 +330,9 @@ export function Chat() {
     const activityIdx = new Map<string, number>();
     for (const m of history) {
       if (m.role === "user") {
+        // v0.1.579 — reine Modell-Hinweise ("[Hinweis: …]") nicht als
+        // Nutzer-Blase zeigen.
+        if (/^\[Hinweis:[\s\S]*\]\s*$/.test(m.content.trim())) continue;
         out.push({ id: m.id, role: "user", content: m.content });
         continue;
       }

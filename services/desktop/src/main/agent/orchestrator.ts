@@ -477,6 +477,18 @@ export class AgentOrchestrator extends EventEmitter {
 
     const requestId = randomUUID();
     const convo = this.getOrCreateConversation(input.conversationId);
+    // v0.1.579 — Eine ueber Telegram/Mail gestartete Konversation wird am
+    // Rechner fortgesetzt: Der Nutzer sitzt jetzt VOR der App, also gelten
+    // Bestaetigungsdialoge und Rueckfragen wieder. Vorher blieb
+    // autonomousMode dauerhaft gesetzt, und ask_user_choice/skill_create
+    // wurden mit "im Auto-Triage-Modus nicht erlaubt" abgelehnt, obwohl
+    // der Nutzer direkt im AVA-Chat schrieb. Die naechste Telegram-
+    // Nachricht setzt den Modus wieder (runAutonomousNow).
+    const warAutonom = convo.autonomousMode === true;
+    if (warAutonom) {
+      convo.autonomousMode = false;
+      delete convo.remoteAsk;
+    }
     const userMessage: AgentMessage = {
       id: randomUUID(),
       role: "user",
@@ -487,6 +499,20 @@ export class AgentOrchestrator extends EventEmitter {
         : {}),
     };
     this.appendMessage(convo, userMessage);
+    if (warAutonom) {
+      // Das Modell hat in dieser Konversation Hinweise wie "es gibt hier
+      // keinen Bestaetigungsdialog" gesehen — ausdruecklich aufheben.
+      this.appendMessage(convo, {
+        id: randomUUID(),
+        role: "user",
+        content:
+          "[Hinweis: Der Nutzer schreibt jetzt direkt in der AVA-App am Rechner. " +
+          "Bestätigungsdialoge und Rückfragen (ask_user_choice, ask_user_text) sowie alle " +
+          "Aktionen sind wieder möglich. Frühere Hinweise zu Telegram- oder Mail-Einschränkungen " +
+          "in dieser Konversation gelten nicht mehr.]",
+        createdAt: Date.now(),
+      });
+    }
 
     // S2 — resolve the active skill for this turn. Explicit /name wins
     // (and injects the rendered body as an additional user-role
