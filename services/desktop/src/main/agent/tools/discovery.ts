@@ -54,8 +54,21 @@ const FREE_BLUR_HINWEIS = (n: number): string =>
   `ueber andere Wege zu identifizieren oder zu erraten — nenne dem ` +
   `Nutzer nur die sichtbaren Treffer und den Upgrade-Hinweis.`;
 
+/** v0.1.576 — Zugriff auf die Radar-Automatik-Config aus dem Chat. */
+export interface RadarConfigAccess {
+  getConfig: () => { enabled: boolean; intervalHours: 6 | 24 | 168; profileSofort: boolean; lastRunAt: string | null; lastOutcome: string | null };
+  setConfig: (patch: { enabled?: boolean; intervalHours?: 6 | 24 | 168; profileSofort?: boolean }) => {
+    enabled: boolean;
+    intervalHours: 6 | 24 | 168;
+    profileSofort: boolean;
+  };
+  profileStatus: () => { running: boolean; sofort: boolean; lastDrainAt: string | null } | null;
+}
+
 export interface DiscoveryToolDeps {
   gateway: GatewayClient;
+  /** Lazy — der Radar-Supervisor entsteht erst im App-Boot. */
+  getRadar: () => RadarConfigAccess | null;
   providers: LlmProviderManager;
   icp: IcpStore;
   matchStore: MatchStore;
@@ -390,5 +403,70 @@ export function buildDiscoveryTools(deps: DiscoveryToolDeps): Tool[] {
       ),
   });
 
-  return [scan, list, profile, match, decide];
+  // v0.1.576 — Radar-Automatik und Sofort-Profile per Chat steuerbar.
+  const radarConfig = defineTool({
+    name: "radar_config",
+    summary: "Firmen-Radar-Einstellungen lesen/aendern: Automatik an/aus, Intervall, sofortige Mini-Profil-Verarbeitung.",
+    category: "radar firmenradar automatik intervall mini-profile sofort schnell einstellungen",
+    description:
+      "Liest oder aendert die Einstellungen des Firmen-Radars. Ohne Argumente: aktuelle Werte. Mit Argumenten (nach Bestaetigung): " +
+      "enabled = Radar-Automatik, intervalHours = 6 (4x taeglich, Pro), 24 (taeglich) oder 168 (woechentlich), " +
+      "profileSofort = sofortige Mini-Profil-Verarbeitung (alle offenen Kandidaten so schnell wie moeglich profilieren: " +
+      "mehr Parallelitaet, Minutentakt, keine Ruecksicht auf laufende Chats; verbraucht entsprechend mehr KI-Aufrufe).",
+    parameters: {
+      type: "object",
+      properties: {
+        enabled: { type: "boolean" },
+        intervalHours: { type: "number", enum: [6, 24, 168] },
+        profileSofort: { type: "boolean", description: "true = sofortige Mini-Profil-Verarbeitung" },
+      },
+    },
+    schema: yup
+      .object({
+        enabled: yup.boolean().optional(),
+        intervalHours: yup.number().oneOf([6, 24, 168]).optional(),
+        profileSofort: yup.boolean().optional(),
+      })
+      .noUnknown(true),
+    preview: (r: { error?: string; geaendert?: boolean; config?: { enabled: boolean; profileSofort: boolean } }) =>
+      r.error ? r.error : r.geaendert ? "Radar-Einstellungen geaendert" : "Radar-Einstellungen gelesen",
+    run: async (args, c) => {
+      const radar = deps.getRadar();
+      if (!radar) return { error: "Radar noch nicht initialisiert." };
+      const patch: { enabled?: boolean; intervalHours?: 6 | 24 | 168; profileSofort?: boolean } = {};
+      const aenderungen: string[] = [];
+      if (args.enabled !== undefined) {
+        patch.enabled = args.enabled;
+        aenderungen.push(`Automatik → ${args.enabled ? "an" : "aus"}`);
+      }
+      if (args.intervalHours !== undefined) {
+        patch.intervalHours = args.intervalHours as 6 | 24 | 168;
+        aenderungen.push(`Intervall → ${args.intervalHours}h`);
+      }
+      if (args.profileSofort !== undefined) {
+        patch.profileSofort = args.profileSofort;
+        aenderungen.push(`Sofortige Mini-Profil-Verarbeitung → ${args.profileSofort ? "an" : "aus"}`);
+      }
+      if (aenderungen.length === 0) {
+        return { geaendert: false, config: radar.getConfig(), profile: radar.profileStatus() };
+      }
+      const value = await c.ui.confirmAction(
+        {
+          kind: "additive",
+          prompt: `Firmen-Radar aendern: ${aenderungen.join(", ")}?`,
+          confirmValue: "ja",
+          options: [
+            { value: "ja", label: "Ändern" },
+            { value: "nein", label: "Abbrechen" },
+          ],
+        },
+        c.signal,
+      );
+      if (value !== "ja") return { geaendert: false, abgebrochen: true };
+      const config = radar.setConfig(patch);
+      return { geaendert: true, config };
+    },
+  });
+
+  return [scan, list, profile, match, decide, radarConfig];
 }

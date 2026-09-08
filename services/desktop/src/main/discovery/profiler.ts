@@ -458,6 +458,8 @@ export async function runProfiler(
     /** v0.1.474 — true = LLM gerade anderweitig gebraucht (Chat-Turn)
      *  → Worker wartet zwischen Kandidaten, statt zu konkurrieren. */
     shouldPause?: () => boolean;
+    /** v0.1.576 — parallele Kandidaten (Default 3; Sofort-Modus mehr). */
+    concurrency?: number;
   },
 ): Promise<ProfilerSummary | { error: string }> {
   const t0 = Date.now();
@@ -502,7 +504,8 @@ export async function runProfiler(
   // sich bei Ollama ohnehin selbst). Zwischen Kandidaten wird pausiert,
   // wenn der Nutzer gerade aktiv chattet (shouldPause).
   const queue = [...batch];
-  const workers = Array.from({ length: 3 }, async () => {
+  const parallel = Math.max(1, Math.min(opts.concurrency ?? 3, 12));
+  const workers = Array.from({ length: parallel }, async () => {
     for (;;) {
       const cand = queue.shift();
       if (!cand) return;

@@ -43,6 +43,7 @@ export function DiscoveryRadar(): JSX.Element {
   const [radarConfig, setRadarConfig] = useState<{
     enabled: boolean;
     intervalHours: 6 | 24 | 168;
+    profileSofort?: boolean;
     lastRunAt: string | null;
     lastOutcome: string | null;
   } | null>(null);
@@ -298,6 +299,21 @@ export function DiscoveryRadar(): JSX.Element {
               }
             />
             <strong>Automatik</strong> — Radar läuft selbstständig
+          </label>
+          <label
+            className="radar-auto-toggle"
+            title="Alle offenen Kandidaten so schnell wie möglich profilieren: mehr parallel, Minutentakt, keine Rücksicht auf laufende Chats. Braucht entsprechend mehr KI-Aufrufe in kurzer Zeit."
+          >
+            <input
+              type="checkbox"
+              checked={radarConfig.profileSofort === true}
+              onChange={(e) =>
+                void window.api.discovery
+                  .setRadarConfig({ profileSofort: e.target.checked })
+                  .then((c) => setRadarConfig(c))
+              }
+            />
+            <strong>Sofortige Mini-Profil-Verarbeitung</strong> — Backlog ohne Schonung abarbeiten
           </label>
           <select
             value={radarConfig.intervalHours}

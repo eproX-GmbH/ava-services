@@ -37,6 +37,9 @@ export interface RadarConfig {
   enabled: boolean;
   /** 6 = 4x taeglich (nur Pro/Enterprise), 24 = taeglich, 168 = woechentlich. */
   intervalHours: 6 | 24 | 168;
+  /** v0.1.576 — Sofortige Mini-Profil-Verarbeitung (Worker ohne Chat-
+   *  Ruecksicht, mehr Parallelitaet, Minuten-Takt). */
+  profileSofort: boolean;
   lastRunAt: string | null;
   lastOutcome: string | null;
 }
@@ -44,6 +47,7 @@ export interface RadarConfig {
 const DEFAULT_CONFIG: RadarConfig = {
   enabled: false,
   intervalHours: 24,
+  profileSofort: false,
   lastRunAt: null,
   lastOutcome: null,
 };
@@ -119,6 +123,7 @@ export class RadarSupervisor {
             : parsed.intervalHours === 6
               ? 6
               : 24,
+        profileSofort: parsed.profileSofort === true,
         lastRunAt: typeof parsed.lastRunAt === "string" ? parsed.lastRunAt : null,
         lastOutcome:
           typeof parsed.lastOutcome === "string" ? parsed.lastOutcome : null,
@@ -129,7 +134,7 @@ export class RadarSupervisor {
     return this.config;
   }
 
-  setConfig(patch: Partial<Pick<RadarConfig, "enabled" | "intervalHours">>): RadarConfig {
+  setConfig(patch: Partial<Pick<RadarConfig, "enabled" | "intervalHours" | "profileSofort">>): RadarConfig {
     const next = { ...this.getConfig(), ...patch };
     this.config = next;
     this.persistConfig();

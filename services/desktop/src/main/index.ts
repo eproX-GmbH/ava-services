@@ -1774,6 +1774,19 @@ const agentRegistry = buildReadOnlyRegistry({
   getTenantTier: () => getTenantTierCached(),
   getWatchlistStore: () => watchlistStore,
   getWatchlistSupervisor: () => watchlistSupervisor,
+  // v0.1.576 — Radar-Config per Chat (radar_config).
+  getRadar: () =>
+    radarSupervisor
+      ? {
+          getConfig: () => radarSupervisor!.getConfig(),
+          setConfig: (patch: { enabled?: boolean; intervalHours?: 6 | 24 | 168; profileSofort?: boolean }) => {
+            const next = radarSupervisor!.setConfig(patch);
+            profileWorker?.setSofort(next.profileSofort);
+            return next;
+          },
+          profileStatus: () => profileWorker?.getStatus() ?? null,
+        }
+      : null,
   getWatchlistKeyStore: () => watchlistKeyStore,
   onCompanyWindowChanged: () => recycleCompanyContactRef?.(),
   getPersonenRadarStore: () => personenRadarStore,
@@ -2917,6 +2930,8 @@ app.whenReady().then(async () => {
     },
   });
   radarSupervisor.start();
+  // v0.1.576 — Sofort-Modus des Profil-Workers aus der Radar-Config.
+  profileWorker.setSofort(radarSupervisor.getConfig().profileSofort);
   app.on("before-quit", () => quitStep("radarSupervisor.stop", () => radarSupervisor?.stop()));
 
   app.on("before-quit", () => {
@@ -5354,9 +5369,10 @@ app.whenReady().then(async () => {
   );
   ipcMain.handle(
     "discovery:setRadarConfig",
-    (_e, patch: { enabled?: boolean; intervalHours?: 6 | 24 | 168 }) => {
+    (_e, patch: { enabled?: boolean; intervalHours?: 6 | 24 | 168; profileSofort?: boolean }) => {
       if (!radarSupervisor) return null;
       const next = radarSupervisor.setConfig(patch ?? {});
+      profileWorker?.setSofort(next.profileSofort);
       audit({
         actorType: "user",
         actorId: null,
@@ -5365,10 +5381,11 @@ app.whenReady().then(async () => {
         severity: "info",
         subjectType: null,
         subjectId: null,
-        summary: next.enabled
-          ? `Radar-Automatik AN (${next.intervalHours === 168 ? "wöchentlich" : next.intervalHours === 6 ? "4x täglich" : "täglich"})`
-          : "Radar-Automatik AUS",
-        metadata: { enabled: next.enabled, intervalHours: next.intervalHours },
+        summary:
+          (next.enabled
+            ? `Radar-Automatik AN (${next.intervalHours === 168 ? "wöchentlich" : next.intervalHours === 6 ? "4x täglich" : "täglich"})`
+            : "Radar-Automatik AUS") + (next.profileSofort ? " · Mini-Profile sofort" : ""),
+        metadata: { enabled: next.enabled, intervalHours: next.intervalHours, profileSofort: next.profileSofort },
       });
       return next;
     },

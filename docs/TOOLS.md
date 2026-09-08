@@ -5,7 +5,7 @@ NICHT direkt bearbeiten — die Quelle der Wahrheit ist `services/desktop/src/ma
 Lauf via `pnpm -F @ava/desktop tools:doc` (oder automatisch via `build:typecheck`).
 
 Stand: 2026-09-08
-Anzahl Tools: 224
+Anzahl Tools: 225
 
 ## Firmen (17)
 
@@ -1059,7 +1059,7 @@ Lädt das Transkript einer früheren Chat-Sitzung anhand ihrer ID. Liefert die N
 
 _Parameter:_ keine.
 
-## discovery (5)
+## discovery (6)
 
 ### `discovery_candidates`
 
@@ -1103,6 +1103,17 @@ _Datei:_ `services/desktop/src/main/agent/tools/discovery.ts`
 Startet einen Discovery-Scan: findet Firmen im Umkreis eines Orts, die noch NICHT in AVA importiert sind (Quellen: OpenStreetMap-Gewerbeeintraege + Google-Places-Suche pro Branchenbegriff). Kandidaten landen im geteilten zentralen Bestand; bereits bekannte Firmen werden automatisch markiert. Dauert 30-90 Sekunden. Branchenbegriffe verbessern das Ergebnis deutlich — ohne Angabe werden die Branchen aus dem Nutzerprofil verwendet. Tageslimit pro Konto beachten (Fehlermeldung nennt es).
 
 _Parameter:_ keine.
+
+### `radar_config`
+
+_Datei:_ `services/desktop/src/main/agent/tools/discovery.ts`
+
+Liest oder aendert die Einstellungen des Firmen-Radars. Ohne Argumente: aktuelle Werte. Mit Argumenten (nach Bestaetigung): enabled = Radar-Automatik, intervalHours = 6 (4x taeglich, Pro), 24 (taeglich) oder 168 (woechentlich), profileSofort = sofortige Mini-Profil-Verarbeitung (alle offenen Kandidaten so schnell wie moeglich profilieren: mehr Parallelitaet, Minutentakt, keine Ruecksicht auf laufende Chats; verbraucht entsprechend mehr KI-Aufrufe).
+
+_Parameter:_
+- `enabled: boolean`
+- `intervalHours: number (enum: 6, 24, 168)`
+- `profileSofort: boolean` — true = sofortige Mini-Profil-Verarbeitung
 
 ## geo (1)
 

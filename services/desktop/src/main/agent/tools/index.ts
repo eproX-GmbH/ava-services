@@ -169,6 +169,8 @@ export function buildReadOnlyRegistry(deps: {
   /** WL4 — Personen-Watchlist (lazy, entsteht im App-Boot). */
   getWatchlistStore: () => import("../../linkedin/watchlist/store").WatchlistStore | null;
   getWatchlistSupervisor: () => import("../../linkedin/watchlist/supervisor").WatchlistSupervisor | null;
+  /** v0.1.576 — Firmen-Radar-Config (Automatik, Intervall, Sofort-Profile), lazy. */
+  getRadar: () => import("./discovery").RadarConfigAccess | null;
   getWatchlistKeyStore: () => import("../../linkedin/watchlist/key-store").WatchlistKeyStore | null;
   onCompanyWindowChanged?: () => void;
   getPersonenRadarStore: () => import("../../linkedin/personen-radar/store").PersonenRadarStore | null;
@@ -237,6 +239,7 @@ export function buildReadOnlyRegistry(deps: {
     matchStore: deps.discoveryMatches,
     customerStore: deps.discoveryCustomerProfiles,
     getRadarAlerts: deps.getRadarAlerts,
+    getRadar: deps.getRadar,
     getTier: deps.getTenantTier,
     onAudit: deps.discoveryAudit,
     getDefaultIndustries: () => {

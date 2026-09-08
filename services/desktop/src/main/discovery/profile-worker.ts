@@ -23,6 +23,14 @@ import { runProfiler, type ProfilerSummary } from "./profiler";
 
 const TICK_MS = 10 * 60_000;
 const FIRST_TICK_DELAY_MS = 2 * 60_000;
+// v0.1.576 — "Sofortige Mini-Profil-Verarbeitung": Nutzer wollen den
+// Backlog nicht ueber Stunden tröpfeln sehen. Im Sofort-Modus tickt der
+// Worker jede Minute, faehrt doppelt so viele Kandidaten parallel und
+// pausiert NICHT fuer laufende Chat-Turns. Am Ende werden ohnehin alle
+// Kandidaten profiliert — es geht nur um die Reihenfolge der Ruecksicht.
+const SOFORT_TICK_MS = 60_000;
+const CONCURRENCY_SCHONEND = 3;
+const CONCURRENCY_SOFORT = 6;
 const ROUND_LIMIT = 100;
 const MAX_ROUNDS_PER_DRAIN = 20;
 const FAIL_BACKOFF_MS = 24 * 3600_000;
@@ -50,6 +58,7 @@ export class ProfileWorker {
   private readonly failedAt = new Map<string, number>();
   private lastSummary: ProfilerSummary | null = null;
   private lastDrainAt: string | null = null;
+  private sofort = false;
 
   constructor(deps: ProfileWorkerDeps) {
     this.deps = deps;
@@ -57,8 +66,23 @@ export class ProfileWorker {
 
   start(): void {
     if (this.timer) return;
-    this.timer = setInterval(() => void this.drain(), TICK_MS);
-    setTimeout(() => void this.drain(), FIRST_TICK_DELAY_MS);
+    this.timer = setInterval(() => void this.drain(), this.sofort ? SOFORT_TICK_MS : TICK_MS);
+    setTimeout(() => void this.drain(), this.sofort ? 5_000 : FIRST_TICK_DELAY_MS);
+  }
+
+  /** v0.1.576 — Sofort-Modus umschalten; beim Einschalten sofort loslegen. */
+  setSofort(on: boolean): void {
+    if (this.sofort === on) return;
+    this.sofort = on;
+    if (this.timer) {
+      clearInterval(this.timer);
+      this.timer = setInterval(() => void this.drain(), on ? SOFORT_TICK_MS : TICK_MS);
+    }
+    if (on) void this.drain();
+  }
+
+  isSofort(): boolean {
+    return this.sofort;
   }
 
   stop(): void {
@@ -68,11 +92,13 @@ export class ProfileWorker {
 
   getStatus(): {
     running: boolean;
+    sofort: boolean;
     lastDrainAt: string | null;
     lastSummary: ProfilerSummary | null;
   } {
     return {
       running: this.current !== null,
+      sofort: this.sofort,
       lastDrainAt: this.lastDrainAt,
       lastSummary: this.lastSummary,
     };
@@ -118,7 +144,9 @@ export class ProfileWorker {
         limit: ROUND_LIMIT,
         prioritizeTerms: this.deps.getPrioritizeTerms(),
         exclude: this.exclude(),
-        shouldPause: this.deps.isLlmBusy,
+        // Sofort-Modus: keine Chat-Ruecksicht, mehr Parallelitaet.
+        shouldPause: this.sofort ? undefined : this.deps.isLlmBusy,
+        concurrency: this.sofort ? CONCURRENCY_SOFORT : CONCURRENCY_SCHONEND,
       });
       if ("error" in r) {
         if (total.betrachtet === 0) return r;
