@@ -424,6 +424,13 @@ const api = {
       profileSofort: boolean;
       lastRunAt: string | null;
       lastOutcome: string | null;
+      lastRunDetails?: {
+        quellen: { osm: number; serp: number; register: number };
+        neu: number;
+        bereitsBekannt: number;
+        serpQueries: string[];
+        hinweise: string[];
+      } | null;
     } | null> => ipcRenderer.invoke("discovery:getRadarConfig"),
     setRadarConfig: (patch: {
       enabled?: boolean;

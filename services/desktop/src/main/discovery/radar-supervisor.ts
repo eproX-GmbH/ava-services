@@ -42,6 +42,19 @@ export interface RadarConfig {
   profileSofort: boolean;
   lastRunAt: string | null;
   lastOutcome: string | null;
+  /** v0.1.582 — Details des letzten Laufs fuer die Radar-Seite. */
+  lastRunDetails: RadarRunDetails | null;
+  /** v0.1.582 — zuletzt verwendete SERP-Anfragen (Rotation, max 60). */
+  serpHistory: string[];
+  runCount: number;
+}
+
+export interface RadarRunDetails {
+  quellen: { osm: number; serp: number; register: number };
+  neu: number;
+  bereitsBekannt: number;
+  serpQueries: string[];
+  hinweise: string[];
 }
 
 const DEFAULT_CONFIG: RadarConfig = {
@@ -50,6 +63,9 @@ const DEFAULT_CONFIG: RadarConfig = {
   profileSofort: false,
   lastRunAt: null,
   lastOutcome: null,
+  lastRunDetails: null,
+  serpHistory: [],
+  runCount: 0,
 };
 
 export interface RadarSupervisorDeps {
@@ -124,6 +140,9 @@ export class RadarSupervisor {
               ? 6
               : 24,
         profileSofort: parsed.profileSofort === true,
+        lastRunDetails: parsed.lastRunDetails && typeof parsed.lastRunDetails === "object" ? parsed.lastRunDetails : null,
+        serpHistory: Array.isArray(parsed.serpHistory) ? parsed.serpHistory.filter((q): q is string => typeof q === "string").slice(-60) : [],
+        runCount: typeof parsed.runCount === "number" ? parsed.runCount : 0,
         lastRunAt: typeof parsed.lastRunAt === "string" ? parsed.lastRunAt : null,
         lastOutcome:
           typeof parsed.lastOutcome === "string" ? parsed.lastOutcome : null,
@@ -213,16 +232,31 @@ export class RadarSupervisor {
       }
       const ort = icp.orte[0]!;
 
+      const cfgVorLauf = this.getConfig();
       const scan = await runDiscoveryScan(this.deps.gateway, this.deps.providers, {
         ort,
         radiusKm: icp.radiusKm,
         branchen: icp.branchen,
         icpText: this.deps.icp.renderText(),
+        recentQueries: cfgVorLauf.serpHistory,
+        runIndex: cfgVorLauf.runCount,
       });
       if ("error" in scan) {
         this.finishRun(startedAt, `Scan: ${scan.error}`, trigger, "warning");
         return scan.error;
       }
+      // v0.1.582 — Verlauf fuer die Rotation + Details fuer die UI.
+      this.setConfigInternal({
+        serpHistory: [...cfgVorLauf.serpHistory, ...scan.serpQueries].slice(-60),
+        runCount: cfgVorLauf.runCount + 1,
+        lastRunDetails: {
+          quellen: scan.quellen,
+          neu: scan.added,
+          bereitsBekannt: scan.bereitsBekannt,
+          serpQueries: scan.serpQueries,
+          hinweise: scan.hinweise,
+        },
+      });
       const prof = await this.deps.profileWorker.drain();
       const profNote =
         "error" in prof
@@ -251,7 +285,8 @@ export class RadarSupervisor {
 
       const outcome =
         `${scan.kandidatenGesamt} Kandidaten (OSM ${scan.quellen.osm}, ` +
-        `SERP ${scan.quellen.serp}, Register ${scan.quellen.register}), ` +
+        `SERP ${scan.quellen.serp}, Register ${scan.quellen.register}; ` +
+        `${scan.added} neu, ${scan.bereitsBekannt} bereits bekannt), ` +
         `${profNote}, ${match.bewertet} bewertet, ` +
         `${emitted.neu} neue heisse Treffer` +
         (emitted.bereitsGemeldet > 0

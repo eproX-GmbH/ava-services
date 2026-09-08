@@ -61,6 +61,12 @@ export interface ScanArgs {
    *  Planner: gezielte Places-Suchen wie ein menschlicher Rechercheur
    *  statt stumpfem "Branche Ort". */
   icpText?: string;
+  /** v0.1.582 — zuletzt verwendete SERP-Suchanfragen (Rotation): der
+   *  Planner soll andere Synonyme/Orte waehlen, sonst liefert jeder Lauf
+   *  dieselben Treffer und der Zulauf versiegt. */
+  recentQueries?: string[];
+  /** v0.1.582 — fortlaufender Laufindex fuer die Orts-Rotation. */
+  runIndex?: number;
 }
 
 export interface ScanSummary {
@@ -144,13 +150,78 @@ export function domainFromUrl(url: string | undefined | null): string | null {
 }
 
 /** Kanal a: OSM Overpass — benannte Gewerbe-POIs in der bbox. */
+// v0.1.582 — Overpass kippt bei grossen Flaechen (ein 150-km-Radius ist
+// eine 300 x 300 km Box) in Timeouts/504 und lieferte dann "OSM 0". Die
+// Box wird deshalb in Kacheln von max. ~OSM_TILE_KM Kantenlaenge zerlegt
+// und mit begrenzter Parallelitaet abgefragt.
+const OSM_TILE_KM = 45;
+const OSM_MAX_TILES = 25;
+const OSM_TILE_PARALLEL = 3;
+
 async function fetchOsmCandidates(
   geo: GeoResponse,
   radiusKm: number,
   hinweise: string[],
 ): Promise<Candidate[]> {
   const { minLat, minLon, maxLat, maxLon } = geo.bbox;
-  const bbox = `${minLat},${minLon},${maxLat},${maxLon}`;
+  const midLat = (minLat + maxLat) / 2;
+  const hoeheKm = (maxLat - minLat) * 111;
+  const breiteKm = (maxLon - minLon) * 111 * Math.cos((midLat * Math.PI) / 180);
+  let nLat = Math.max(1, Math.ceil(hoeheKm / OSM_TILE_KM));
+  let nLon = Math.max(1, Math.ceil(breiteKm / OSM_TILE_KM));
+  while (nLat * nLon > OSM_MAX_TILES) {
+    if (nLat >= nLon) nLat--;
+    else nLon--;
+  }
+  const tiles: string[] = [];
+  for (let i = 0; i < nLat; i++) {
+    for (let j = 0; j < nLon; j++) {
+      const a = minLat + ((maxLat - minLat) * i) / nLat;
+      const b = minLat + ((maxLat - minLat) * (i + 1)) / nLat;
+      const c = minLon + ((maxLon - minLon) * j) / nLon;
+      const d = minLon + ((maxLon - minLon) * (j + 1)) / nLon;
+      tiles.push(`${a},${c},${b},${d}`);
+    }
+  }
+  const out: Candidate[] = [];
+  const gesehen = new Set<string>();
+  let fehler = 0;
+  let letzterFehler = "";
+  const queue = [...tiles];
+  await Promise.all(
+    Array.from({ length: Math.min(OSM_TILE_PARALLEL, queue.length) }, async () => {
+      for (;;) {
+        const bbox = queue.shift();
+        if (!bbox) return;
+        const r = await fetchOsmTile(geo, radiusKm, bbox);
+        if ("error" in r) {
+          fehler++;
+          letzterFehler = r.error;
+          continue;
+        }
+        for (const c of r) {
+          if (gesehen.has(c.domain)) continue;
+          gesehen.add(c.domain);
+          out.push(c);
+        }
+      }
+    }),
+  );
+  if (fehler > 0) {
+    hinweise.push(
+      fehler === tiles.length
+        ? `OSM-Kanal fehlgeschlagen (${letzterFehler}) — alle ${tiles.length} Kacheln.`
+        : `OSM-Kanal teilweise: ${fehler} von ${tiles.length} Kacheln fehlgeschlagen (${letzterFehler}).`,
+    );
+  }
+  return out;
+}
+
+async function fetchOsmTile(
+  geo: GeoResponse,
+  radiusKm: number,
+  bbox: string,
+): Promise<Candidate[] | { error: string }> {
   const query = `[out:json][timeout:30];
 (
   nwr["office"]["name"](${bbox});
@@ -171,10 +242,7 @@ out center 800;`;
       signal: AbortSignal.timeout(45_000),
     });
     if (!res.ok) {
-      hinweise.push(
-        `OSM-Kanal uebersprungen (Overpass antwortete ${res.status} — oeffentliche Instanz ggf. ausgelastet, spaeter erneut versuchen).`,
-      );
-      return [];
+      return { error: `Overpass antwortete ${res.status} — oeffentliche Instanz ggf. ausgelastet` };
     }
     const body = (await res.json()) as {
       elements?: Array<{
@@ -225,10 +293,7 @@ out center 800;`;
     }
     return out;
   } catch (err) {
-    hinweise.push(
-      `OSM-Kanal fehlgeschlagen (${err instanceof Error ? err.message : String(err)}).`,
-    );
-    return [];
+    return { error: err instanceof Error ? err.message : String(err) };
   }
 }
 
@@ -257,13 +322,25 @@ async function planSerpQueries(
   geo: GeoResponse,
   hinweise: string[],
   maxQueries: number = MAX_PLANNED_QUERIES,
+  rotation: { recentQueries: string[]; runIndex: number } = { recentQueries: [], runIndex: 0 },
 ): Promise<string[] | null> {
   if (!providers.getStatus().ready) return null;
-  // Groessere Orte zuerst (plz-Anzahl als Proxy), max 12 zur Auswahl.
-  const orte = [...geo.places]
+  // Groessere Orte zuerst (plz-Anzahl als Proxy). v0.1.582 — Orts-
+  // Rotation: nicht immer dieselben 12 groessten Orte, sondern ein
+  // wanderndes Fenster ueber alle Orte im Radius (Zentrum bleibt drin),
+  // sonst sucht jeder Lauf am selben Fleck und findet nichts Neues.
+  const sortiert = [...geo.places]
     .sort((a, b) => (b.plz?.length ?? 0) - (a.plz?.length ?? 0))
-    .slice(0, 12)
     .map((p) => p.name);
+  const fenster = 12;
+  const start = sortiert.length > fenster ? (rotation.runIndex * 6) % sortiert.length : 0;
+  const orte = [
+    ...new Set([
+      ...sortiert.slice(0, 3),
+      ...sortiert.slice(start, start + fenster),
+      ...sortiert.slice(0, Math.max(0, start + fenster - sortiert.length)),
+    ]),
+  ].slice(0, fenster + 3);
   const system =
     "Du planst eine B2B-Lead-Recherche ueber die Google-Places-Suche, " +
     "wie ein Mensch, der systematisch googelt. Erstelle 10 bis " +
@@ -280,9 +357,13 @@ async function planSerpQueries(
     "Orte bevorzugen), nicht alles auf den Zentrums-Ort.\n" +
     "- Ausschluesse im ICP respektieren: danach gar nicht erst suchen.\n" +
     'Antworte NUR als JSON: {"queries": ["...", "..."]}';
+  const zuletzt = rotation.recentQueries.slice(-40);
   const user =
     `ICP:\n${icpText}\n\nZentrums-Ort: ${ort}\n` +
-    `Orte im Radius (nach Groesse): ${orte.join(", ")}`;
+    `Orte im Radius (nach Groesse): ${orte.join(", ")}` +
+    (zuletzt.length > 0
+      ? `\n\nZuletzt bereits gesuchte Anfragen (NICHT wiederholen — andere Synonyme, andere Zielgruppen-Richtungen des ICP und andere Orte waehlen): ${zuletzt.join(" | ")}`
+      : "");
   try {
     const raw = await streamToText(
       providers,
@@ -636,6 +717,7 @@ export async function runDiscoveryScan(
       geo,
       hinweise,
       split.planner,
+      { recentQueries: args.recentQueries ?? [], runIndex: args.runIndex ?? 0 },
     );
     if (planned) {
       queries = planned;
@@ -643,11 +725,14 @@ export async function runDiscoveryScan(
     }
   }
   if (queries.length === 0 && args.branchen.length > 0) {
+    // v0.1.582 — auch der Fallback rotiert ueber die Orte im Radius.
+    const orte = geo.places.map((p) => p.name);
+    const idx = args.runIndex ?? 0;
     queries = args.branchen
       .map((b) => b.trim())
       .filter((b) => b.length >= 2)
       .slice(0, Math.min(MAX_SERP_QUERIES, split.planner))
-      .map((b) => `${b} ${args.ort}`);
+      .map((b, i) => `${b} ${orte.length > 1 ? orte[(idx + i) % orte.length] : args.ort}`);
     queryPlanung = "fallback";
   }
   if (queries.length === 0) {

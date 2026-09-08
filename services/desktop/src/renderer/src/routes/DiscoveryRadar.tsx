@@ -44,6 +44,13 @@ export function DiscoveryRadar(): JSX.Element {
     enabled: boolean;
     intervalHours: 6 | 24 | 168;
     profileSofort?: boolean;
+    lastRunDetails?: {
+      quellen: { osm: number; serp: number; register: number };
+      neu: number;
+      bereitsBekannt: number;
+      serpQueries: string[];
+      hinweise: string[];
+    } | null;
     lastRunAt: string | null;
     lastOutcome: string | null;
   } | null>(null);
@@ -358,6 +365,26 @@ export function DiscoveryRadar(): JSX.Element {
               ? `Letzter Lauf: ${new Date(radarConfig.lastRunAt).toLocaleString("de-DE")}${radarConfig.lastOutcome ? ` — ${radarConfig.lastOutcome}` : ""}`
               : "Noch kein Lauf."}
           </span>
+          {radarConfig.lastRunDetails && (
+            <details className="settings-collapse" style={{ width: "100%" }}>
+              <summary>Details zum letzten Lauf</summary>
+              <p className="muted small">
+                Neu im Bestand: {radarConfig.lastRunDetails.neu} · bereits bekannt: {radarConfig.lastRunDetails.bereitsBekannt}. Ein Scan
+                bringt nur Firmen, die noch nicht im geteilten Bestand sind; alles, was du ignoriert oder importiert hast, kommt nicht
+                wieder. Mehr Zulauf: weitere Orte oder Branchen im ICP, größerer Radius.
+              </p>
+              {radarConfig.lastRunDetails.serpQueries.length > 0 && (
+                <p className="muted small">Google-Suchen: {radarConfig.lastRunDetails.serpQueries.join(" · ")}</p>
+              )}
+              {radarConfig.lastRunDetails.hinweise.length > 0 && (
+                <ul className="muted small">
+                  {radarConfig.lastRunDetails.hinweise.map((h, i) => (
+                    <li key={i}>{h}</li>
+                  ))}
+                </ul>
+              )}
+            </details>
+          )}
         </div>
       )}
 
