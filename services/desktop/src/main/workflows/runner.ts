@@ -634,7 +634,14 @@ export class WorkflowRunner {
               if (run) (run.hinweise ??= []).push(`Gewartet auf: ${w.stufen.map((s) => STAGE_LABELS[s]).join(", ")}${w.automatisch ? " (automatisch aus den Folge-Schritten)" : ""}`);
               return [zuItems(befund, false)];
             }
-            if (Date.now() - start > maxMs) throw new Error(`Vorgang ${txId} nach ${Math.round(maxMs / 3600_000)} h nicht abgeschlossen (${befund.profilFertig}/${befund.gesamt} Profile fertig, ${befund.profilOffen} offen${offene.length ? `: ${offene.join(", ")}` : ""}).`);
+            if (Date.now() - start > maxMs) {
+              // v0.1.605 — kein Deadlock: Nach maxHours geht es mit den Firmen
+              // weiter, deren Stufen im Endzustand sind; offene bleiben
+              // state=pending (Filter „Nur fertige“ laesst sie aus).
+              const run = ctx.execution.nodeRuns[node.name]?.at(-1);
+              if (run) (run.hinweise ??= []).push(`Nach ${Math.round(maxMs / 3600_000)} h nicht vollstaendig: ${befund.profilOffen} von ${befund.gesamt} Firmen offen${offene.length ? ` (${offene.join(", ")})` : ""} — Lauf geht mit den fertigen Firmen weiter.`);
+              return [zuItems(befund, false)];
+            }
             if (ctx.execution.dryRun) {
               const run = ctx.execution.nodeRuns[node.name]?.at(-1);
               if (run) run.error = `Trockenlauf: Vorgang noch nicht abgeschlossen (${befund.profilFertig}/${befund.gesamt} Profile fertig${offene.length ? `; offen: ${offene.join(", ")}` : ""}) — Items mit aktuellem Stand weitergegeben.`;
