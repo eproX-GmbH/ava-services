@@ -16,7 +16,7 @@ import type { AgentMessage } from "../../../shared/types";
 import type { WorkflowDefinition, WorkflowNode, WorkflowTrigger } from "../../../shared/workflow-types";
 import type { WorkflowService } from "../../workflows";
 import { compileConversation } from "../../workflows/compiler";
-import { normalizeNodeInput, normalizeTrigger, normalizeVariables } from "../../workflows/store";
+import { freiesObjekt, normalizeNodeInput, normalizeTrigger, normalizeVariables } from "../../workflows/store";
 import { STAGE_LABELS, nodeRequirements } from "../../../shared/workflow-dependencies";
 
 export interface WorkflowToolDeps {
@@ -32,16 +32,16 @@ const nodeYup = yup.object({
   type: yup.string().required(),
   // v0.1.611 — Agenten legen Parameter gern auf Node-Ebene ab; wird normalisiert.
   tool: yup.string().optional(),
-  args: yup.object().optional(),
+  args: freiesObjekt().optional(),
   condition: yup.string().optional(),
   prompt: yup.string().optional(),
-  outputSchema: yup.object().optional(),
-  fields: yup.object().optional(),
+  outputSchema: freiesObjekt().optional(),
+  fields: freiesObjekt().optional(),
   transactionId: yup.string().optional(),
   workflowId: yup.string().optional(),
   outputPath: yup.string().optional(),
   position: yup.array().of(yup.number().required()).length(2).optional(),
-  parameters: yup.object().default({}),
+  parameters: freiesObjekt().default({}),
   mode: yup.string().oneOf(["perItem", "allItems"]).optional(),
   disabled: yup.boolean().optional(),
   onError: yup.string().oneOf(["stop", "continue", "errorOutput"]).optional(),
@@ -195,10 +195,10 @@ export function buildWorkflowTools(deps: WorkflowToolDeps): Tool[] {
         name: yup.string().trim().min(1).max(120).required(),
         description: yup.string().max(2000).optional(),
         nodes: yup.array().of(nodeYup).min(1).required(),
-        connections: yup.object().required(),
-        variables: yup.object().optional(),
+        connections: freiesObjekt().required(),
+        variables: freiesObjekt().optional(),
         trigger: yup.mixed().optional(),
-        settings: yup.object().optional(),
+        settings: freiesObjekt().optional(),
       })
       .noUnknown(true),
     preview: (r: Record<string, any>) =>
@@ -255,7 +255,7 @@ export function buildWorkflowTools(deps: WorkflowToolDeps): Tool[] {
             connections: args.connections as WorkflowDefinition["connections"],
             variables: normalizeVariables(args.variables ?? {}),
             trigger,
-            ...(args.settings ? { settings: args.settings as WorkflowDefinition["settings"] } : {}),
+            ...(args.settings ? { settings: args.settings as unknown as WorkflowDefinition["settings"] } : {}),
             origin: { kind: "chat" },
           },
           { createdBy: "agent" },
@@ -293,9 +293,9 @@ export function buildWorkflowTools(deps: WorkflowToolDeps): Tool[] {
         workflow: yup.string().trim().min(1).required(),
         enabled: yup.boolean().optional(),
         trigger: yup.mixed().optional(),
-        variables: yup.object().optional(),
-        settings: yup.object().optional(),
-        nodePatches: yup.array().of(yup.object({ name: yup.string().required(), parameters: yup.object().optional(), args: yup.object().optional(), condition: yup.string().optional(), prompt: yup.string().optional(), confirmed: yup.boolean().optional(), disabled: yup.boolean().optional(), mode: yup.string().oneOf(["perItem", "allItems"]).optional(), onError: yup.string().oneOf(["stop", "continue", "errorOutput"]).optional() })).optional(),
+        variables: freiesObjekt().optional(),
+        settings: freiesObjekt().optional(),
+        nodePatches: yup.array().of(yup.object({ name: yup.string().required(), parameters: freiesObjekt().optional(), args: freiesObjekt().optional(), condition: yup.string().optional(), prompt: yup.string().optional(), confirmed: yup.boolean().optional(), disabled: yup.boolean().optional(), mode: yup.string().oneOf(["perItem", "allItems"]).optional(), onError: yup.string().oneOf(["stop", "continue", "errorOutput"]).optional() })).optional(),
         name: yup.string().trim().min(1).max(120).optional(),
         description: yup.string().max(2000).optional(),
       })
@@ -348,7 +348,7 @@ export function buildWorkflowTools(deps: WorkflowToolDeps): Tool[] {
           ...(args.enabled !== undefined ? { enabled: args.enabled } : {}),
           ...(args.trigger ? { trigger: normalizeTrigger(args.trigger).trigger } : {}),
           ...(args.variables ? { variables: { ...def.variables, ...normalizeVariables(args.variables) } } : {}),
-          ...(args.settings ? { settings: { ...def.settings, ...(args.settings as Partial<WorkflowDefinition["settings"]>) } } : {}),
+          ...(args.settings ? { settings: { ...def.settings, ...(args.settings as unknown as Partial<WorkflowDefinition["settings"]>) } } : {}),
           ...(args.name ? { name: args.name } : {}),
           ...(args.description !== undefined ? { description: args.description } : {}),
         });

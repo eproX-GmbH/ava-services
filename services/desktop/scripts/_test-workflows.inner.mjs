@@ -182,6 +182,20 @@ console.log("Node-Normalisierung (Agent-Eingaben)");
   console.log("  ok");
 }
 
+console.log("freiesObjekt unter stripUnknown");
+{
+  const yup = (await import("yup")).default ?? (await import("yup"));
+  const { freiesObjekt } = await load("../src/main/workflows/store.ts");
+  const schema = yup.object({ parameters: freiesObjekt().default({}), connections: freiesObjekt().required(), alt: yup.object().optional() });
+  const r = schema.validateSync({ parameters: { tool: "telegram_send_message", args: { text: "x" } }, connections: { Start: { main: [[{ node: "B", index: 0 }]] } }, alt: { a: 1 } }, { stripUnknown: true });
+  if (r.parameters.tool !== "telegram_send_message" || r.parameters.args.text !== "x") throw new Error("parameters gestrippt: " + JSON.stringify(r));
+  if (!r.connections.Start) throw new Error("connections gestrippt");
+  if (r.alt && Object.keys(r.alt).length > 0) console.log("  (Hinweis: yup.object() ohne Shape behaelt Schluessel in dieser yup-Version)");
+  let fehler = null; try { schema.validateSync({ parameters: "nein", connections: {} }, { stripUnknown: true }); } catch (e) { fehler = e.message; }
+  if (!fehler) throw new Error("String als parameters muss scheitern");
+  console.log("  ok");
+}
+
 console.log("Validierung");
 const def = {
   id: "wf_1", name: "T", description: "", version: 1, enabled: true, createdAt: "x", updatedAt: "x", createdBy: "user",
