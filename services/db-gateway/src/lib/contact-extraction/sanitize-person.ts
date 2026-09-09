@@ -14,8 +14,13 @@
 
 /** Akademische/berufsstaendische Titel am Stringanfang (auch mehrere:
  *  "Prof. Dr. med."). Bewusst eng gehalten — nur eindeutige Titel. */
+//
+// 2026-09-09 (Live-Befund "naging Director"): Ohne Wortgrenze nach dem
+// Titel wurde "Ma" aus "Managing", "Dr" aus "Drews" oder "Ing" aus
+// "Ingrid" abgeschnitten. Ein Titel gilt nur, wenn danach ein Punkt,
+// Leerzeichen, Komma, Bindestrich oder das Ende folgt — nie ein Buchstabe.
 const HONORIFIC_RE =
-  /^(?:(?:prof|dr|med|jur|rer\s?\.?\s?(?:nat|pol|oec)|h\s?\.?\s?c|dipl\s?[.\-]?\s?(?:ing|kfm|kffr|inf|oec|wirt)|mag|ing|mba|llm|ll\s?\.?\s?m|ba|ma|msc|bsc)\s*\.?\s*[,\-]?\s*)+/i;
+  /^(?:(?:prof|dr|med|jur|rer\s?\.?\s?(?:nat|pol|oec)|h\s?\.?\s?c|dipl\s?[.\-]{0,2}\s?(?:ing|kfm|kffr|inf|oec|wirt)|mag|ing|mba|llm|ll\s?\.?\s?m|ba|ma|msc|bsc)(?![a-zäöüß])\s*\.?\s*[,\-]?\s*)+/i;
 
 /** Rechts-/Impressums-Floskeln, die als "Position" extrahiert werden,
  *  aber keine sind → Feld komplett verwerfen. */
