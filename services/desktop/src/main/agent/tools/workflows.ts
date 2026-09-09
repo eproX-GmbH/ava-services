@@ -16,7 +16,7 @@ import type { AgentMessage } from "../../../shared/types";
 import type { WorkflowDefinition, WorkflowNode, WorkflowTrigger } from "../../../shared/workflow-types";
 import type { WorkflowService } from "../../workflows";
 import { compileConversation } from "../../workflows/compiler";
-import { normalizeTrigger, normalizeVariables } from "../../workflows/store";
+import { normalizeNodeInput, normalizeTrigger, normalizeVariables } from "../../workflows/store";
 import { STAGE_LABELS, nodeRequirements } from "../../../shared/workflow-dependencies";
 
 export interface WorkflowToolDeps {
@@ -30,6 +30,16 @@ const nodeYup = yup.object({
   id: yup.string().optional(),
   name: yup.string().trim().min(1).max(80).required(),
   type: yup.string().required(),
+  // v0.1.611 — Agenten legen Parameter gern auf Node-Ebene ab; wird normalisiert.
+  tool: yup.string().optional(),
+  args: yup.object().optional(),
+  condition: yup.string().optional(),
+  prompt: yup.string().optional(),
+  outputSchema: yup.object().optional(),
+  fields: yup.object().optional(),
+  transactionId: yup.string().optional(),
+  workflowId: yup.string().optional(),
+  outputPath: yup.string().optional(),
   position: yup.array().of(yup.number().required()).length(2).optional(),
   parameters: yup.object().default({}),
   mode: yup.string().oneOf(["perItem", "allItems"]).optional(),
@@ -144,8 +154,31 @@ export function buildWorkflowTools(deps: WorkflowToolDeps): Tool[] {
         id: { type: "string", description: "Beim Ueberschreiben" },
         name: { type: "string" },
         description: { type: "string" },
-        nodes: { type: "array", items: { type: "object" } },
-        connections: { type: "object" },
+        nodes: {
+          type: "array",
+          description:
+            "Je Node: { name, type, parameters, mode?, confirmed? }. type ist einer von trigger|tool|filter|if|switch|transform|loop|merge|wait|human|stop|subworkflow|ai. " +
+            "Katalog-Eintraege „tool:<name>“ werden als type \"tool\" mit parameters.tool = <name> angelegt. Beispiele: " +
+            "{ name: 'Radar-Kandidaten', type: 'tool', mode: 'allItems', parameters: { tool: 'discovery_candidates', args: { limit: 200 } } } · " +
+            "{ name: 'Score-Filter', type: 'filter', parameters: { condition: \"{{ ($json.matchScore ?? 0) < 90 && !$json.bereitsInAva }}\" } } · " +
+            "{ name: 'Importieren', type: 'tool', mode: 'allItems', confirmed: true, parameters: { tool: 'discovery_decide', args: { decisions: \"{{ $input.all().map(i => ({ discoveryId: i.json.discoveryId, decision: 'imported' })) }}\" } } } · " +
+            "{ name: 'Warten', type: 'wait', parameters: { transactionId: '{{ $json.transactionId }}' } } (liefert ein Item je Firma, sobald sie fertig ist) · " +
+            "{ name: 'Kurzueberblick', type: 'ai', parameters: { prompt: '...', outputSchema: { type: 'object', required: ['text'], properties: { text: { type: 'string' } } } } } · " +
+            "{ name: 'Telegram', type: 'tool', confirmed: true, parameters: { tool: 'telegram_send_message', args: { text: '{{ $json.text }}' } } }",
+          items: {
+            type: "object",
+            required: ["name", "type"],
+            properties: {
+              name: { type: "string" },
+              type: { type: "string" },
+              parameters: { type: "object", description: "tool: { tool, args, outputPath? } · filter/if: { condition } · ai: { prompt, system?, outputSchema } · wait: { transactionId } oder { minutes } · transform: { fields } · subworkflow: { workflowId } · switch: { value, cases }" },
+              mode: { type: "string", enum: ["perItem", "allItems"] },
+              confirmed: { type: "boolean", description: "Schreib-Schritt fuer unbeaufsichtigte Laeufe freigegeben" },
+              onError: { type: "string", enum: ["stop", "continue", "errorOutput"] },
+            },
+          },
+        },
+        connections: { type: "object", description: "{ '<Node-Name>': { main: [[{ node: '<Ziel-Node>', index: 0 }]] } } — lineare Kette: jeder Node zeigt auf den naechsten" },
         variables: { type: "object", description: "{ name: { label, type, value } }" },
         trigger: {
           type: "object",
@@ -171,8 +204,17 @@ export function buildWorkflowTools(deps: WorkflowToolDeps): Tool[] {
     preview: (r: Record<string, any>) =>
       (r.error as string | undefined) ?? (r.abgebrochen ? "abgebrochen" : `Workflow „${r.workflow?.name}“ gespeichert (v${r.workflow?.version})${(r.problems?.length ?? 0) > 0 ? ` — ${r.problems.length} Hinweise` : ""}`),
     run: async (args, c) => {
+      // v0.1.611 — Node-Eingaben normalisieren (type "tool:x", Parameter auf Node-Ebene).
+      const normHinweise: string[] = [];
+      const normalisiert: Array<Record<string, unknown>> = [];
+      for (const raw of args.nodes as Array<Record<string, unknown>>) {
+        const r = normalizeNodeInput(raw);
+        if (r.fehler) return { error: r.fehler + " — Nichts gespeichert. Erwartet: { name, type: 'tool', parameters: { tool: '<name>', args: { ... } } }." };
+        if (r.hinweise.length) normHinweise.push(`„${String(raw.name)}“: ${r.hinweise.join("; ")}`);
+        normalisiert.push(r.node);
+      }
       const nodes = autoLayout(
-        args.nodes.map((n, i) => ({
+        (normalisiert as unknown as typeof args.nodes).map((n, i) => ({
           id: n.id ?? `n${i + 1}`,
           name: n.name,
           type: n.type as WorkflowNode["type"],
@@ -218,7 +260,7 @@ export function buildWorkflowTools(deps: WorkflowToolDeps): Tool[] {
           },
           { createdBy: "agent" },
         );
-        return { workflow: kompakt(workflow), problems, ...(norm.hinweis ? { triggerHinweis: norm.hinweis } : {}), hinweis: problems.length > 0 ? "Der Workflow ist gespeichert, kann aber erst laufen, wenn die Hinweise behoben sind (workflow_update)." : "Gespeichert. Mit workflow_run (dryRun=true) testen; unter Vorgaenge → Workflows ansehen." };
+        return { workflow: kompakt(workflow), problems, ...(norm.hinweis ? { triggerHinweis: norm.hinweis } : {}), ...(normHinweise.length ? { normalisiert: normHinweise } : {}), hinweis: problems.length > 0 ? "Der Workflow ist gespeichert, kann aber erst laufen, wenn die Hinweise behoben sind (workflow_update)." : "Gespeichert. Mit workflow_run (dryRun=true) testen; unter Vorgaenge → Workflows ansehen." };
       } catch (err) {
         return { error: `${err instanceof Error ? err.message : String(err)} — erhalten: trigger=${JSON.stringify(args.trigger ?? null).slice(0, 200)}, nodes=${nodes.length}` };
       }
@@ -253,7 +295,7 @@ export function buildWorkflowTools(deps: WorkflowToolDeps): Tool[] {
         trigger: yup.mixed().optional(),
         variables: yup.object().optional(),
         settings: yup.object().optional(),
-        nodePatches: yup.array().of(yup.object({ name: yup.string().required(), parameters: yup.object().optional(), confirmed: yup.boolean().optional(), disabled: yup.boolean().optional(), mode: yup.string().oneOf(["perItem", "allItems"]).optional(), onError: yup.string().oneOf(["stop", "continue", "errorOutput"]).optional() })).optional(),
+        nodePatches: yup.array().of(yup.object({ name: yup.string().required(), parameters: yup.object().optional(), args: yup.object().optional(), condition: yup.string().optional(), prompt: yup.string().optional(), confirmed: yup.boolean().optional(), disabled: yup.boolean().optional(), mode: yup.string().oneOf(["perItem", "allItems"]).optional(), onError: yup.string().oneOf(["stop", "continue", "errorOutput"]).optional() })).optional(),
         name: yup.string().trim().min(1).max(120).optional(),
         description: yup.string().max(2000).optional(),
       })
@@ -280,7 +322,17 @@ export function buildWorkflowTools(deps: WorkflowToolDeps): Tool[] {
         if (!p) return n;
         return {
           ...n,
-          ...(p.parameters ? { parameters: { ...n.parameters, ...(p.parameters as Record<string, unknown>) } } : {}),
+          ...(p.parameters || p.args || p.condition || p.prompt
+            ? {
+                parameters: {
+                  ...n.parameters,
+                  ...((p.parameters as Record<string, unknown> | undefined) ?? {}),
+                  ...(p.args ? { args: { ...((n.parameters.args as Record<string, unknown> | undefined) ?? {}), ...(p.args as Record<string, unknown>) } } : {}),
+                  ...(p.condition ? { condition: p.condition } : {}),
+                  ...(p.prompt ? { prompt: p.prompt } : {}),
+                },
+              }
+            : {}),
           ...(p.confirmed !== undefined ? { confirmed: p.confirmed } : {}),
           ...(p.disabled !== undefined ? { disabled: p.disabled } : {}),
           ...(p.mode ? { mode: p.mode as "perItem" | "allItems" } : {}),

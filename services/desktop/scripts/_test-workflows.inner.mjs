@@ -166,6 +166,22 @@ console.log("Abhaengigkeiten");
   console.log("  ok");
 }
 
+console.log("Node-Normalisierung (Agent-Eingaben)");
+{
+  const { normalizeNodeInput } = await load("../src/main/workflows/store.ts");
+  const a = normalizeNodeInput({ name: "Radar", type: "tool:discovery_candidates", args: { limit: 200 } });
+  if (a.fehler || a.node.type !== "tool" || a.node.parameters.tool !== "discovery_candidates" || a.node.parameters.args.limit !== 200) throw new Error("tool:x → tool: " + JSON.stringify(a));
+  const b = normalizeNodeInput({ name: "Radar", type: "tool", tool: "discovery_candidates", parameters: { limit: 200 } });
+  if (b.fehler || b.node.parameters.tool !== "discovery_candidates" || b.node.parameters.args.limit !== 200) throw new Error("tool auf Node-Ebene + Argumente ohne args: " + JSON.stringify(b));
+  const c = normalizeNodeInput({ name: "Filter", type: "filter", condition: "{{ $json.x < 90 }}" });
+  if (c.fehler || c.node.parameters.condition !== "{{ $json.x < 90 }}") throw new Error("condition auf Node-Ebene");
+  const d = normalizeNodeInput({ name: "Radar", type: "tool", parameters: { limit: 200 } });
+  if (!d.fehler || !/parameters\.tool/.test(d.fehler)) throw new Error("tool ohne Namen muss klar scheitern: " + JSON.stringify(d));
+  const e = normalizeNodeInput({ name: "Ok", type: "tool", parameters: { tool: "telegram_send_message", args: { text: "x" } } });
+  if (e.fehler || e.hinweise.length !== 0) throw new Error("korrekte Eingabe unveraendert");
+  console.log("  ok");
+}
+
 console.log("Validierung");
 const def = {
   id: "wf_1", name: "T", description: "", version: 1, enabled: true, createdAt: "x", updatedAt: "x", createdBy: "user",

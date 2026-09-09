@@ -136,6 +136,52 @@ export function normalizeTrigger(raw: unknown): { trigger: WorkflowDefinition["t
   return { trigger: { kind: "manual" }, hinweis: `Trigger ohne kind (${JSON.stringify(raw).slice(0, 120)}) — auf manuell gesetzt.` };
 }
 
+/** Parameter-Schluessel, die der Agent gern auf Node-Ebene statt in `parameters` legt. */
+const NODE_LEVEL_PARAM_KEYS = ["tool", "args", "outputPath", "itemKey", "skipProcessed", "condition", "prompt", "system", "outputSchema", "fields", "keepOnly", "transactionId", "bis", "maxDays", "minutes", "workflowId", "message", "value", "cases", "batchSize", "mode_", "previewFields", "text"];
+
+/**
+ * v0.1.611 — Node-Eingaben des Agenten tolerant normalisieren:
+ *   - type "tool:discovery_candidates" (Katalog-Schreibweise) → type "tool" + parameters.tool
+ *   - tool/args/condition/prompt/... auf Node-Ebene → in parameters
+ *   - type "tool" mit parameters ohne `tool`, aber `parameters.args` fehlt und
+ *     parameters sieht wie Argumente aus → bleibt Fehler (klar gemeldet)
+ * Gibt Hinweise zurueck, was umgebaut wurde.
+ */
+export function normalizeNodeInput(raw: Record<string, unknown>): { node: Record<string, unknown>; hinweise: string[]; fehler: string | null } {
+  const hinweise: string[] = [];
+  const n: Record<string, unknown> = { ...raw };
+  const params: Record<string, unknown> = { ...((n.parameters as Record<string, unknown> | undefined) ?? {}) };
+  let type = typeof n.type === "string" ? n.type.trim() : "";
+  if (/^tool:/i.test(type)) {
+    params.tool = params.tool ?? type.slice(5);
+    type = "tool";
+    hinweise.push(`type „${n.type}“ → type "tool" mit parameters.tool`);
+  }
+  for (const k of NODE_LEVEL_PARAM_KEYS) {
+    if (k in n && !(k in params) && k !== "mode_") {
+      params[k] = n[k];
+      delete n[k];
+      hinweise.push(`${k} von Node-Ebene nach parameters verschoben`);
+    }
+  }
+  // Tool-Node: Argumente ohne `args`-Huelle (parameters = { tool, limit: 200 }) → args
+  if (type === "tool" && typeof params.tool === "string" && !("args" in params)) {
+    const rest = Object.fromEntries(Object.entries(params).filter(([k]) => !["tool", "outputPath", "itemKey", "skipProcessed"].includes(k)));
+    if (Object.keys(rest).length > 0) {
+      for (const k of Object.keys(rest)) delete params[k];
+      params.args = rest;
+      hinweise.push(`Tool-Argumente (${Object.keys(rest).join(", ")}) in parameters.args gelegt`);
+    }
+  }
+  n.type = type;
+  n.parameters = params;
+  let fehler: string | null = null;
+  if (type === "tool" && typeof params.tool !== "string") {
+    fehler = `Node „${String(n.name ?? "?")}“: type "tool" braucht parameters.tool (Tool-Name, z. B. "discovery_candidates") — erhalten: ${JSON.stringify(raw).slice(0, 200)}`;
+  }
+  return { node: n, hinweise, fehler };
+}
+
 /** Fuer Tests: Definition gegen das Schema pruefen (wirft bei Fehlern). */
 export function parseDefinition(raw: unknown): WorkflowDefinition {
   return definitionSchema.validateSync(raw, { stripUnknown: false }) as unknown as WorkflowDefinition;
