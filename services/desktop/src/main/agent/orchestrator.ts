@@ -1733,8 +1733,19 @@ export class AgentOrchestrator extends EventEmitter {
     try {
       const parsed = tool.parseArgs(call.args);
       const result = await tool.run(parsed, ctx);
+      // v0.1.596 — Tools melden Fehler oft als { error: "..." } statt zu
+      // werfen. Live zeigte der Chat dann einen gruenen Haken, nach dem
+      // Neuladen ein rotes X (Replay-Heuristik). Gleiche Regel wie im
+      // Renderer: Top-Level-`error`-String = Fehler. Dadurch zaehlt der
+      // Anti-Loop-Waechter solche Aufrufe auch als Fehlversuche.
+      const istFehler =
+        result !== null &&
+        typeof result === "object" &&
+        !Array.isArray(result) &&
+        typeof (result as { error?: unknown }).error === "string" &&
+        ((result as { error: string }).error.length > 0);
       return {
-        ok: true,
+        ok: !istFehler,
         content: JSON.stringify(result),
         preview: tool.preview(result),
         ...(isUserDeclined(result) ? { declined: true } : {}),
