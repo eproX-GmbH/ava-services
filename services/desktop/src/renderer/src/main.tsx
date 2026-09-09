@@ -26,6 +26,8 @@ import { TransactionStream } from "./routes/TransactionStream";
 import { Companies } from "./routes/Companies";
 import { AllCompanies } from "./routes/AllCompanies";
 import { DiscoveryRadar } from "./routes/DiscoveryRadar";
+import { Workflows } from "./routes/Workflows";
+import { WorkflowEditor } from "./routes/WorkflowEditor";
 import { IcpAssistant } from "./routes/IcpAssistant";
 import { CompanyDetail } from "./routes/CompanyDetail";
 import { Evaluations } from "./routes/Evaluations";
@@ -81,6 +83,8 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
               <Route path="/companies" element={<Companies />} />
               <Route path="/alle-firmen" element={<AllCompanies />} />
               <Route path="/radar" element={<DiscoveryRadar />} />
+              <Route path="/workflows" element={<FeatureGate feature="workflows"><Workflows /></FeatureGate>} />
+              <Route path="/workflows/:id" element={<FeatureGate feature="workflows"><WorkflowEditor /></FeatureGate>} />
               <Route path="/icp-assistent" element={<IcpAssistant />} />
               <Route path="/companies/:id" element={<CompanyDetail />} />
               <Route path="/transactions/:id/evaluations" element={<Evaluations />} />

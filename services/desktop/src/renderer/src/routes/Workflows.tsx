@@ -1,0 +1,198 @@
+// W3 — Workflows: Liste + Offene Freigaben (docs/PLAN_WORKFLOWS.md §7).
+// AVA baut Workflows im Chat; hier: Ueberblick, starten, pausieren,
+// Freigaben entscheiden, in den Editor wechseln.
+
+import { useCallback, useEffect, useState } from "react";
+import { Link, useNavigate } from "react-router-dom";
+import type { WorkflowApproval, WorkflowListEntry, WorkflowProgressFrame, WorkflowTrigger } from "../../../shared/workflow-types";
+
+export function triggerText(t: WorkflowTrigger): string {
+  if (t.kind === "manual") return "manuell";
+  if (t.kind === "chat") return "per Chat";
+  if (t.kind === "event") return `Ereignis: ${t.event}`;
+  if (t.intervalMinutes) return t.intervalMinutes % 1440 === 0 ? `alle ${t.intervalMinutes / 1440} Tag(e)` : t.intervalMinutes % 60 === 0 ? `alle ${t.intervalMinutes / 60} Std.` : `alle ${t.intervalMinutes} Min.`;
+  if (t.at) {
+    const tage = t.weekdays && t.weekdays.length > 0 && t.weekdays.length < 7 ? ` (${t.weekdays.map((d) => ["So", "Mo", "Di", "Mi", "Do", "Fr", "Sa"][d]).join(", ")})` : "";
+    return `täglich ${t.at}${tage}`;
+  }
+  return "Zeitplan";
+}
+
+export function statusPill(status: string): JSX.Element {
+  const cls = status === "success" ? "pill--connected" : status === "error" ? "pill--error" : status === "running" ? "pill--polling" : status === "paused" ? "pill--paused" : "pill--connecting";
+  const label = status === "success" ? "erfolgreich" : status === "error" ? "Fehler" : status === "running" ? "läuft" : status === "paused" ? "wartet auf Freigabe" : status === "cancelled" ? "abgebrochen" : status;
+  return <span className={`pill ${cls}`}>{label}</span>;
+}
+
+export function Workflows(): JSX.Element {
+  const [rows, setRows] = useState<WorkflowListEntry[]>([]);
+  const [approvals, setApprovals] = useState<WorkflowApproval[]>([]);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+  const navigate = useNavigate();
+
+  const reload = useCallback(async () => {
+    try {
+      const [r, a] = await Promise.all([window.api.workflows.list(), window.api.workflows.approvals("open")]);
+      setRows(r);
+      setApprovals(a);
+    } catch (err) {
+      setNotice(err instanceof Error ? err.message : String(err));
+    }
+  }, []);
+
+  useEffect(() => {
+    void reload();
+    return window.api.workflows.onProgress((f: WorkflowProgressFrame) => {
+      if (f.kind === "execution-started" || f.kind === "execution-finished" || f.kind === "approval-open" || f.kind === "approvals-changed") void reload();
+    });
+  }, [reload]);
+
+  const run = async (id: string, dryRun: boolean): Promise<void> => {
+    setBusy(id);
+    setNotice(null);
+    try {
+      const r = await window.api.workflows.run(id, { dryRun });
+      setNotice(r.error ?? (dryRun ? "Trockenlauf gestartet." : "Workflow gestartet."));
+    } finally {
+      setBusy(null);
+      void reload();
+    }
+  };
+
+  const toggle = async (row: WorkflowListEntry): Promise<void> => {
+    await window.api.workflows.patch(row.id, { enabled: !row.enabled });
+    void reload();
+  };
+
+  const remove = async (row: WorkflowListEntry): Promise<void> => {
+    if (!window.confirm(`Workflow „${row.name}“ samt Lauf-Historie löschen?`)) return;
+    await window.api.workflows.delete(row.id);
+    void reload();
+  };
+
+  const decide = async (a: WorkflowApproval, approved: boolean): Promise<void> => {
+    setBusy(a.id);
+    try {
+      await window.api.workflows.approve(a.id, approved);
+    } finally {
+      setBusy(null);
+      void reload();
+    }
+  };
+
+  return (
+    <div className="radar-page wf-page">
+      <div className="radar-head">
+        <div>
+          <h1>Workflows</h1>
+          <p className="radar-sub">
+            Gespeicherte Abläufe aus Tool-Schritten. AVA baut sie im Chat („speicher das als Workflow“, „bau mir einen Workflow, der …“);
+            hier siehst du sie, startest sie, gibst Schritte frei und korrigierst Kleinigkeiten.
+          </p>
+        </div>
+        <div className="radar-actions">
+          <Link to="/chat" className="proc-toggle">
+            Im Chat bauen
+          </Link>
+          <button type="button" className="proc-toggle" onClick={() => void reload()}>
+            Aktualisieren
+          </button>
+        </div>
+      </div>
+
+      {notice && <div className="radar-notice">{notice}</div>}
+
+      {approvals.length > 0 && (
+        <section className="ct-card wf-approvals">
+          <h3>Offene Freigaben ({approvals.length})</h3>
+          <p className="muted small">Diese Workflows warten, bis du entscheidest. Ohne Entscheidung verfallen Freigaben nach 48 Stunden.</p>
+          <div className="org-list">
+            {approvals.map((a) => (
+              <div key={a.id} className="org-row">
+                <div className="org-row__main">
+                  <span className="org-row__title">
+                    {a.workflowName} · Schritt „{a.nodeName}“
+                  </span>
+                  <span className="org-row__meta">{a.prompt}</span>
+                  {a.items.length > 0 && (
+                    <details className="settings-collapse">
+                      <summary>{a.items.length} betroffene Einträge</summary>
+                      <pre className="wf-pre">{JSON.stringify(a.items.slice(0, 20).map((i) => i.json), null, 1)}</pre>
+                    </details>
+                  )}
+                </div>
+                <div className="org-row__actions">
+                  <button type="button" className="primary" disabled={busy === a.id} onClick={() => void decide(a, true)}>
+                    Freigeben
+                  </button>
+                  <button type="button" className="btn" disabled={busy === a.id} onClick={() => void decide(a, false)}>
+                    Ablehnen
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {rows.length === 0 ? (
+        <div className="radar-hint">
+          Noch keine Workflows. Erarbeite einen Ablauf im <Link to="/chat">Chat</Link> und sag dann „speicher die Schritte als Workflow“, oder beschreibe direkt, was
+          regelmäßig passieren soll.
+        </div>
+      ) : (
+        <div className="wf-grid">
+          {rows.map((w) => (
+            <div key={w.id} className={`ct-card ct-card-lift wf-card${w.enabled ? "" : " wf-card--aus"}`}>
+              <div className="wf-card__head">
+                <button type="button" className="wf-card__title" onClick={() => navigate(`/workflows/${w.id}`)}>
+                  {w.name}
+                </button>
+                <label className="field-inline" title={w.enabled ? "Aktiv — Trigger greifen" : "Pausiert — läuft nur manuell"}>
+                  <input type="checkbox" checked={w.enabled} onChange={() => void toggle(w)} />
+                  <span>aktiv</span>
+                </label>
+              </div>
+              {w.description && <p className="muted small">{w.description}</p>}
+              <div className="wf-card__meta">
+                <span>{w.nodeCount} Schritte</span>
+                <span>Trigger: {triggerText(w.trigger)}</span>
+                {w.nextRunAt && <span>Nächster Lauf: {new Date(w.nextRunAt).toLocaleString("de-DE", { dateStyle: "short", timeStyle: "short" })}</span>}
+              </div>
+              <div className="wf-card__meta">
+                {w.lastRun ? (
+                  <>
+                    {statusPill(w.lastRun.status)}
+                    <span className="muted">
+                      {new Date(w.lastRun.startedAt).toLocaleString("de-DE", { dateStyle: "short", timeStyle: "short" })}
+                      {w.lastRun.summary ? ` — ${w.lastRun.summary}` : ""}
+                    </span>
+                  </>
+                ) : (
+                  <span className="muted">Noch nicht gelaufen.</span>
+                )}
+                {w.openApprovals > 0 && <span className="pill pill--paused">{w.openApprovals} Freigabe(n) offen</span>}
+              </div>
+              {w.blocked && <p className="muted small warn">{w.blocked}</p>}
+              <div className="wf-card__actions">
+                <button type="button" className="proc-toggle" disabled={busy === w.id || Boolean(w.blocked)} onClick={() => void run(w.id, true)}>
+                  Trockenlauf
+                </button>
+                <button type="button" className="primary" disabled={busy === w.id || Boolean(w.blocked)} onClick={() => void run(w.id, false)}>
+                  Jetzt ausführen
+                </button>
+                <Link to={`/workflows/${w.id}`} className="proc-toggle">
+                  Öffnen
+                </Link>
+                <button type="button" className="link" onClick={() => void remove(w)}>
+                  Löschen
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}

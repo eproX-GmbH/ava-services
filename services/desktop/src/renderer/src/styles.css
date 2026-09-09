@@ -8057,3 +8057,53 @@ input, textarea, select, button, a, summary, details,
 .token-limit-banner, .quota-banner, .radar-bulkbar {
   -webkit-app-region: no-drag;
 }
+
+/* ---- W3 Workflows (docs/PLAN_WORKFLOWS.md) ---------------------------------- */
+.wf-page .wf-approvals { margin-bottom: 1rem; padding: 1rem; }
+.wf-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 1rem; }
+.wf-card { padding: 1rem; display: flex; flex-direction: column; gap: 0.5rem; }
+.wf-card--aus { opacity: 0.7; }
+.wf-card__head { display: flex; justify-content: space-between; align-items: center; gap: 0.5rem; }
+.wf-card__title { background: none; border: 0; padding: 0; font-weight: 700; font-size: 1rem; color: inherit; cursor: pointer; text-align: left; }
+.wf-card__meta { display: flex; flex-wrap: wrap; gap: 0.5rem 0.75rem; align-items: center; font-size: 12px; color: var(--muted); }
+.wf-card__actions { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; margin-top: 0.25rem; }
+.wf-pre { font-size: 11px; max-height: 240px; overflow: auto; background: var(--color-bg-0); border: 1px solid var(--color-border); border-radius: var(--radius-sm); padding: 0.5rem; white-space: pre-wrap; }
+
+.wf-editor { display: flex; flex-direction: column; height: calc(100vh - 56px); }
+.wf-editor__bar { display: flex; justify-content: space-between; align-items: center; gap: 1rem; padding: 0.6rem 1rem; border-bottom: 1px solid var(--color-border); background: var(--color-bg-1); flex-wrap: wrap; }
+.wf-editor__title { display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; }
+.wf-editor__actions { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+.wf-editor__notice { margin: 0.5rem 1rem 0; }
+.wf-editor__body { display: grid; grid-template-columns: 1fr 380px; flex: 1; min-height: 0; }
+.wf-canvas { position: relative; min-height: 0; background: var(--color-bg-0); }
+.wf-canvas .react-flow__edge-text { font-size: 10px; fill: var(--muted); }
+.wf-canvas .react-flow__edge-textbg { fill: var(--color-bg-0); }
+.wf-canvas .react-flow__controls button { background: var(--color-bg-1); border-bottom: 1px solid var(--color-border); color: inherit; }
+.wf-canvas .react-flow__minimap { background: var(--color-bg-1); }
+.wf-panel { border-left: 1px solid var(--color-border); background: var(--color-bg-1); overflow: auto; padding: 0.75rem; }
+.wf-panel__tabs { display: flex; gap: 0.35rem; flex-wrap: wrap; margin-bottom: 0.75rem; }
+.wf-tab--active { border-color: var(--color-indigo-500) !important; color: var(--color-indigo-600); }
+.wf-panel__section { display: flex; flex-direction: column; gap: 0.6rem; }
+.wf-params { font-family: "Geist Mono Variable", ui-monospace, monospace; font-size: 12px; width: 100%; }
+.wf-weekdays { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+.wf-run { text-align: left; background: none; cursor: pointer; }
+.wf-run--active { border-color: var(--color-indigo-500); }
+.wf-palette .org-row { cursor: pointer; text-align: left; background: none; }
+
+.wf-node { min-width: 200px; max-width: 240px; background: var(--color-bg-1); border: 1.5px solid var(--color-border-strong); border-radius: var(--radius-md); padding: 0.5rem 0.65rem; box-shadow: 0 1px 2px rgba(0,0,0,0.06); font-size: 12px; }
+.wf-node--selected { border-color: var(--color-indigo-500); box-shadow: 0 0 0 3px rgba(0,192,167,0.2); }
+.wf-node--trigger { border-radius: 999px 12px 12px 999px; border-color: var(--color-indigo-500); }
+.wf-node--aus { opacity: 0.5; }
+.wf-node--success { border-color: #22c55e; }
+.wf-node--error { border-color: #ef4444; }
+.wf-node--running, .wf-node--paused { border-color: #eab308; }
+.wf-node__title { font-weight: 700; font-size: 13px; }
+.wf-node__sub { color: var(--muted); font-size: 11px; font-family: "Geist Mono Variable", ui-monospace, monospace; }
+.wf-node__badges { display: flex; flex-wrap: wrap; gap: 0.25rem; margin-top: 0.35rem; }
+.wf-badge { display: inline-block; padding: 0 6px; border-radius: 8px; font-size: 10px; background: var(--color-bg-0); border: 1px solid var(--color-border); color: var(--muted); }
+.wf-badge--ok { background: #d1fae5; color: #047857; border-color: transparent; }
+.wf-badge--warn { background: #fef3c7; color: #92400e; border-color: transparent; }
+.wf-badge--err { background: #fee2e2; color: #b91c1c; border-color: transparent; }
+.wf-badge--items { background: var(--color-indigo-50); color: var(--color-indigo-700); border-color: transparent; }
+.wf-node .react-flow__handle { width: 10px; height: 10px; background: var(--color-indigo-500); border: 2px solid var(--color-bg-1); }
+.wf-handle-label { position: absolute; left: 14px; top: -7px; font-size: 10px; color: var(--muted); white-space: nowrap; pointer-events: none; }

@@ -639,6 +639,7 @@ function formatRelativeMinutes(ts: number): string {
 function TopBar() {
   // O3 — Organisationsvorgaben: abgeschaltete Module verschwinden aus der Navigation.
   const mailErlaubt = useFeature("mail");
+  const workflowsErlaubt = useFeature("workflows");
   // v0.1.546 — Hooks IMMER alle aufrufen (kein Kurzschluss mit ||): sonst
   // aendert sich die Hook-Anzahl, sobald der Beobachter abgeschaltet wird
   // → React-Abbruch, weisser Bildschirm (User-Befund beim Speichern).
@@ -666,6 +667,7 @@ function TopBar() {
           subItems={[
             { to: "/transactions", label: "Alle Vorgänge" },
             { to: "/ingest", label: "Importieren" },
+            ...(workflowsErlaubt ? [{ to: "/workflows", label: "Workflows" }] : []),
           ]}
         />
         <NavItem

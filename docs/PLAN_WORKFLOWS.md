@@ -433,26 +433,39 @@ W3 kann parallel starten, sobald die Typen aus W1 stehen.
 
 ---
 
+## 9a. Umsetzungsstand
+
+| Datum | Stand |
+|---|---|
+| 2026-09-09 | **W0 entschieden** (siehe §10). **W1 Kern** umgesetzt: Typen, Store, Validierung, Expressions (jsep + sichere Auswertung), Katalog, Engine mit allen Logik-Nodes inkl. Human-in-the-Loop (Freigaben mit 48-h-Verfall), Vollmacht/Node-Freigabe/mail_send-Regel/Tages-Deckel, Idempotenz-Schluessel, Trockenlauf, Zeitplan-Trigger ohne Nachholen, Ereignis-Haken (`emitEvent`, noch nicht angeschlossen). **W2** umgesetzt: Chat-Tools `workflow_*` inkl. `workflow_from_conversation` (Trace-Compiler ohne LLM; LLM-Nachbearbeitung uebernimmt der Agent selbst ueber `workflow_save`). **W3 erste Fassung**: Liste mit „Offene Freigaben“, Editor mit React Flow (Canvas, Kanten ziehen, Node-Panel mit JSON-Parametern, Trigger-Panel, Laeufe mit Node-Faerbung und Items je Kante, Palette). Offen in W3: Parameter-Formular aus dem Schema, Expression-Vorschlaege, Pin-Daten, „Schritt ausfuehren“, Undo/Redo. Tests: `pnpm test:workflows`. |
+
 ## 10. Offene Entscheidungen (vor W1)
 
-1. **Plan-Staffelung.** Workflows ab Starter (max 3, nur manuell/Zeitplan) und
-   Pro (unbegrenzt, Ereignis-Trigger)? Free: nur ansehen?
-2. **Mail-Versand unbeaufsichtigt.** Reicht Vollmacht `mutating` + Allowlist,
-   oder ist für `mail_send` in Workflows immer eine Node-Freigabe Pflicht?
-   Empfehlung: Freigabe Pflicht, zusätzlich Tages-Obergrenze je Workflow
-   (Default 20 Mails).
-3. **KI-Node und ChatGPT-Abo.** Workflows sind Hintergrund → Abo gilt nicht;
-   ein Nutzer ohne Schlüssel/lokales Modell kann keine KI-Nodes ausführen.
-   Klar in der Ansicht anzeigen.
-4. **Ausführung ohne laufende App.** Nicht in diesem Plan (Server-Worker ist
-   ein eigenes Vorhaben); Zeitplan-Trigger holen versäumte Läufe beim
-   App-Start nach (max 1 Nachholer je Workflow).
-5. **Expressions-Umfang.** Stufe 1 eigener Interpreter (sicher, klein) oder
-   direkt `jsep` + eigene Evaluation? Empfehlung: Stufe 1, Erweiterung bei
-   Bedarf; `$json`, `$('Node')`, `$input`, `$vars`, `$now`, `$run`.
-6. **Teilen in der Organisation** schon in W2 (Definition ins Gateway) oder
-   erst W7? Empfehlung: W7, da Definitionen Tool-Namen enthalten, die je
-   Mitglied durch Policy unsichtbar sein können.
+1. **Plan-Staffelung.** → Entschieden 2026-09-09: Free max. 1 Workflow, alle
+   anderen Plaene unbegrenzt (`WORKFLOW_LIMITS`).
+2. **Mail-Versand unbeaufsichtigt.** → Entschieden 2026-09-09: Freigabe
+   Pflicht (Node `confirmed` oder Human-in-the-Loop-Node davor), Tages-
+   Obergrenze je Workflow (Default 20). Zusaetzlich gewuenscht: ein
+   **Human-in-the-Loop-Node** (`human`) mit einer zentralen Liste aller
+   offenen Freigaben (Workflows-Seite, Chat-Tool `workflow_approvals`,
+   Meldung/Telegram), die man akzeptieren oder ablehnen kann, bevor der
+   Workflow weiterlaeuft. Umgesetzt in W1/W3.
+3. **KI-Node und ChatGPT-Abo.** → Bestaetigt 2026-09-09. Blockade wird in
+   der Liste als Grund angezeigt (`blocked`).
+4. **Ausführung ohne laufende App.** → Entschieden 2026-09-09: KEIN
+   Nachholen. Laeuft die App zur Trigger-Zeit nicht, faellt der Lauf aus
+   und der naechste Zeit-Trigger zaehlt (Fenster 20 Minuten nach der
+   Uhrzeit).
+5. **Expressions-Umfang.** → Entschieden (dem Assistenten ueberlassen):
+   `jsep` + Plugins (Pfeilfunktionen, Objekt-Literale, Templates) mit
+   eigener sicherer Auswertung. Syntax wie JavaScript (n8n-Gefuehl):
+   Vergleiche, Arithmetik, Ternaer, `??`, `in`, Array-/String-Methoden,
+   `$json`, `$('Node')`, `$input`, `$vars`, `$now`, `$today`, `$run`,
+   `Math`, `Date`. Kein eval/vm, keine Prototyp-Zugriffe, keine
+   Zuweisungen, Schrittgrenze.
+6. **Teilen in der Organisation** → Entschieden 2026-09-09: W7. Workflows
+   liegen lokal auf dem Geraet des Nutzers und koennen — wie Vorgaenge und
+   Radar-Firmen — mit der eigenen Organisation geteilt werden.
 
 ---
 
