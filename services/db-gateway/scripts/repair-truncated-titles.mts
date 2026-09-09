@@ -92,10 +92,45 @@ async function main(): Promise<void> {
     }
     await client.query("BEGIN");
     for (const e of plan.emp) await client.query(`UPDATE "Employment" SET title = $2 WHERE id = $1`, [e.id, e.neu]);
-    for (const f of plan.fact) await client.query(`UPDATE "Fact" SET value = $2, normalized = $3 WHERE id = $1`, [f.id, f.neu, normalize(f.neu)]);
-    for (const o of plan.obs) await client.query(`UPDATE "Observation" SET value = $2, normalized = $3, hash = $4 WHERE id = $1`, [o.id, o.neu, normalize(o.neu), o.hash]);
+    // Fact ist eindeutig je (entityType, entityId, field, normalized): Gibt es
+    // den korrigierten Wert schon (spaeterer, korrekter Lauf), wird der
+    // abgeschnittene Fakt in den bestehenden gemerged (Links umhaengen,
+    // Duplikat loeschen) statt eine Kollision zu erzeugen.
+    let factGemerged = 0;
+    for (const f of plan.fact) {
+      const norm = normalize(f.neu);
+      const dup = await client.query<{ id: string }>(
+        `SELECT g.id FROM "Fact" g JOIN "Fact" f ON f.id = $1 WHERE g.id <> f.id AND g."entityType" = f."entityType" AND g."entityId" = f."entityId" AND g.field = f.field AND g.normalized = $2 LIMIT 1`,
+        [f.id, norm],
+      );
+      const ziel = dup.rows[0]?.id;
+      if (ziel) {
+        await client.query(`INSERT INTO "FactObservationLink" (id, "factId", "observationId") SELECT gen_random_uuid()::text, $2, "observationId" FROM "FactObservationLink" WHERE "factId" = $1 ON CONFLICT ("factId", "observationId") DO NOTHING`, [f.id, ziel]);
+        await client.query(`INSERT INTO "FactSignalLink" (id, "factId", "signalId") SELECT gen_random_uuid()::text, $2, "signalId" FROM "FactSignalLink" WHERE "factId" = $1 ON CONFLICT ("factId", "signalId") DO NOTHING`, [f.id, ziel]);
+        await client.query(`DELETE FROM "FactObservationLink" WHERE "factId" = $1`, [f.id]);
+        await client.query(`DELETE FROM "FactSignalLink" WHERE "factId" = $1`, [f.id]);
+        await client.query(`UPDATE "Fact" SET "firstSeen" = LEAST("firstSeen", (SELECT "firstSeen" FROM "Fact" WHERE id = $1)) WHERE id = $2`, [f.id, ziel]);
+        await client.query(`DELETE FROM "Fact" WHERE id = $1`, [f.id]);
+        factGemerged++;
+      } else {
+        await client.query(`UPDATE "Fact" SET value = $2, normalized = $3 WHERE id = $1`, [f.id, f.neu, norm]);
+      }
+    }
+    // Observation ist eindeutig je hash: existiert die korrigierte Beobachtung
+    // schon, wird die abgeschnittene geloescht (Links zuerst).
+    let obsGeloescht = 0;
+    for (const o of plan.obs) {
+      const dup = await client.query<{ id: string }>(`SELECT id FROM "Observation" WHERE hash = $1 AND id <> $2 LIMIT 1`, [o.hash, o.id]);
+      if (dup.rows[0]) {
+        await client.query(`DELETE FROM "FactObservationLink" WHERE "observationId" = $1`, [o.id]);
+        await client.query(`DELETE FROM "Observation" WHERE id = $1`, [o.id]);
+        obsGeloescht++;
+      } else {
+        await client.query(`UPDATE "Observation" SET value = $2, normalized = $3, hash = $4 WHERE id = $1`, [o.id, o.neu, normalize(o.neu), o.hash]);
+      }
+    }
     await client.query("COMMIT");
-    console.log(`\nAngewendet: Employment ${plan.emp.length}, Fact ${plan.fact.length}, Observation ${plan.obs.length}.`);
+    console.log(`\nAngewendet: Employment ${plan.emp.length}, Fact ${plan.fact.length} (davon ${factGemerged} in bestehenden korrekten Fakt gemerged), Observation ${plan.obs.length} (davon ${obsGeloescht} Duplikate entfernt).`);
   } catch (err) {
     await client.query("ROLLBACK").catch(() => undefined);
     throw err;
