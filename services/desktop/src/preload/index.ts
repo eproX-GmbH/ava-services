@@ -501,7 +501,10 @@ const api = {
     patch: (id: string, patch: Partial<import("../shared/workflow-types").WorkflowDefinition>): Promise<{ workflow?: import("../shared/workflow-types").WorkflowDefinition | null; error?: string }> =>
       ipcRenderer.invoke("workflows:patch", id, patch),
     delete: (id: string): Promise<{ ok: boolean }> => ipcRenderer.invoke("workflows:delete", id),
-    run: (id: string, opts?: { dryRun?: boolean }): Promise<{ gestartet?: boolean; error?: string }> => ipcRenderer.invoke("workflows:run", id, opts),
+    run: (id: string, opts?: { dryRun?: boolean; companyId?: string; companyName?: string; discoveryId?: string; companyQuery?: string }): Promise<{ gestartet?: boolean; error?: string }> =>
+      ipcRenderer.invoke("workflows:run", id, opts),
+    resolveCompany: (query: string): Promise<{ kandidaten?: Array<{ companyId: string; name: string; ort: string | null }>; error?: string }> =>
+      ipcRenderer.invoke("workflows:resolveCompany", query),
     cancel: (executionId: string): Promise<{ ok: boolean }> => ipcRenderer.invoke("workflows:cancel", executionId),
     approve: (approvalId: string, approved: boolean, note?: string): Promise<{ ok: boolean }> => ipcRenderer.invoke("workflows:approve", approvalId, approved, note),
     onProgress: (cb: (frame: import("../shared/workflow-types").WorkflowProgressFrame) => void): (() => void) => {

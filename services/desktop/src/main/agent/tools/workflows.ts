@@ -100,7 +100,10 @@ export function buildWorkflowTools(deps: WorkflowToolDeps): Tool[] {
       "Liefert den Katalog aller Node-Typen fuer Workflows: Logik-Nodes (trigger, filter, if, switch, transform, loop, merge, ai, wait, human, stop, subworkflow) " +
       "und Tool-Nodes ('tool:<name>') mit Parametern, Wirkungsklasse (read/additive/mutating/destructive) und Kostenklasse. Vor workflow_save aufrufen. " +
       "Expressions: {{ $json.feld }}, {{ $('Node-Name').item.json.feld }}, {{ $input.all() }}, {{ $vars.name }}, {{ $now }}. " +
-      "Tool-Node: parameters = { tool: '<name>', args: {...}, outputPath?: 'items', itemKey?: 'discoveryId' }; mode perItem (Default) oder allItems.",
+      "Tool-Node: parameters = { tool: '<name>', args: {...}, outputPath?: 'items', itemKey?: 'discoveryId' }; mode perItem (Default) oder allItems. " +
+      "FIRMENBEZUG: Jeder Lauf gilt fuer GENAU EINE Firma; ihr vollstaendiger Kontext (Stammdaten, Profil, Finanzen/Kennzahlen, Kontakte, CRM) liegt dem Lauf vor. " +
+      "In Node-Parametern duerfen SEMANTISCHE PLATZHALTER stehen, frei benannt, z. B. $kassenbestand, $ansprechpartner_vertrieb, $umsatz_letztes_jahr — sie werden je Lauf per KI aus dem " +
+      "Firmen-Kontext nach Bedeutung befuellt. Immer einen Fallback mitgeben: $kassenbestand ?? \"Es liegt KEIN Kassenbestand vor\". Strukturiert: {{ $company }} (Objekt), {{ $context }} (Klartext).",
     parameters: { type: "object", properties: { suche: { type: "string", description: "Optionaler Filter (Name/Kategorie/Text)" } } },
     schema: yup.object({ suche: yup.string().trim().optional() }).noUnknown(true),
     preview: (r: { eintraege: number }) => `${r.eintraege} Node-Typen`,
@@ -120,7 +123,9 @@ export function buildWorkflowTools(deps: WorkflowToolDeps): Tool[] {
       "Speichert eine Workflow-Definition. nodes: Liste mit name (eindeutig), type, parameters, mode, confirmed; connections: { '<Node-Name>': { main: [[{ node, index }], ...] } } " +
       "(Ausgang 0 = erster Eintrag; if: 0 = wahr, 1 = falsch; loop: 0 = loop, 1 = done). Genau ein Node vom Typ trigger. " +
       "Schreib-Nodes laufen unbeaufsichtigt nur mit Vollmacht oder confirmed=true; mail_send braucht immer confirmed oder einen human-Node davor. " +
-      "Der Trigger ist beim Anlegen 'manual', ausser der Nutzer wuenscht ausdruecklich einen Zeitplan. Zeigt den Entwurf und fragt vor dem Speichern nach.",
+      "Der Trigger ist beim Anlegen 'manual', ausser der Nutzer wuenscht ausdruecklich einen Zeitplan (dann companyIds im Trigger, ein Lauf je Firma). " +
+      "settings.scope: 'company' (Default, Lauf je Firma mit vollem Kontext) oder 'none' (ohne Firmenbezug, z. B. nur Radar starten). " +
+      "Nutze semantische Platzhalter mit Fallback ($kassenbestand ?? \"kein Kassenbestand bekannt\") statt fester Feldnamen. Zeigt den Entwurf und fragt vor dem Speichern nach.",
     parameters: {
       type: "object",
       required: ["name", "nodes", "connections"],
@@ -286,10 +291,10 @@ export function buildWorkflowTools(deps: WorkflowToolDeps): Tool[] {
     summary: "Workflow jetzt starten — optional als Trockenlauf (Schreib-Schritte nur als Vorschau).",
     category: "workflow workflows starten ausfuehren testen trockenlauf",
     description:
-      "Startet einen Workflow. dryRun=true fuehrt Lese-Schritte echt aus, zeigt Schreib-Schritte (CRM, Mail, Import) aber nur als Vorschau — ideal zum Testen. " +
-      "Laeuft asynchron; das Ergebnis kommt als Meldung. Mit warten=true wartet das Tool bis zu 5 Minuten auf das Ende und liefert die Zusammenfassung.",
-    parameters: { type: "object", required: ["workflow"], properties: { workflow: { type: "string" }, dryRun: { type: "boolean" }, warten: { type: "boolean" } } },
-    schema: yup.object({ workflow: yup.string().trim().min(1).required(), dryRun: yup.boolean().optional(), warten: yup.boolean().optional() }).noUnknown(true),
+      "Startet einen Workflow fuer EINE Firma (firma = Name oder companyId; Pflicht, ausser settings.scope = 'none'). dryRun=true fuehrt Lese-Schritte echt aus, zeigt Schreib-Schritte (CRM, Mail, Import) aber nur als Vorschau — ideal zum Testen. " +
+      "Laeuft asynchron; das Ergebnis kommt als Meldung. Mit warten=true wartet das Tool bis zu 5 Minuten auf das Ende und liefert die Zusammenfassung inkl. befuellter Platzhalter.",
+    parameters: { type: "object", required: ["workflow"], properties: { workflow: { type: "string" }, firma: { type: "string", description: "Firmenname oder companyId (aus company_search)" }, discoveryId: { type: "string", description: "Alternativ: Radar-Kandidat" }, dryRun: { type: "boolean" }, warten: { type: "boolean" } } },
+    schema: yup.object({ workflow: yup.string().trim().min(1).required(), firma: yup.string().trim().optional(), discoveryId: yup.string().trim().optional(), dryRun: yup.boolean().optional(), warten: yup.boolean().optional() }).noUnknown(true),
     preview: (r: Record<string, any>) => (r.error as string | undefined) ?? (r.execution ? `${r.execution.status}: ${r.execution.summary ?? ""}` : r.gestartet ? "gestartet" : "–"),
     run: async (args, c) => {
       const def = svc().resolve(args.workflow);
@@ -303,10 +308,29 @@ export function buildWorkflowTools(deps: WorkflowToolDeps): Tool[] {
         if (value !== "ja") return { ...userDeclined(), abgebrochen: true };
       }
       try {
-        const p = svc().run(def.id, { trigger: args.dryRun ? "test" : "chat", dryRun: args.dryRun === true });
+        const firma = args.firma?.trim();
+        const istId = firma ? /^[A-Z0-9_]+_(HRB|HRA|GNR|PR|VR)_\d+$/i.test(firma) || firma.startsWith("cmp_") : false;
+        const p = svc().run(def.id, {
+          trigger: args.dryRun ? "test" : "chat",
+          dryRun: args.dryRun === true,
+          ...(args.discoveryId ? { company: { discoveryId: args.discoveryId } } : istId ? { company: { companyId: firma! } } : firma ? { companyQuery: firma } : {}),
+        });
         if (args.warten) {
           const ex = await Promise.race([p, new Promise<null>((r) => setTimeout(() => r(null), 5 * 60_000))]);
-          if (ex) return { execution: { id: ex.id, status: ex.status, summary: ex.summary, error: ex.error, schritte: Object.fromEntries(Object.entries(ex.nodeRuns).map(([n, runs]) => [n, runs.at(-1)?.outputItems])) , vorschau: args.dryRun ? Object.fromEntries(Object.entries(ex.nodeRuns).map(([n, runs]) => [n, (runs.at(-1)?.output?.[0] ?? []).slice(0, 5).map((i) => i.json)])) : undefined } };
+          if (ex)
+            return {
+              execution: {
+                id: ex.id,
+                status: ex.status,
+                firma: ex.scope,
+                summary: ex.summary,
+                error: ex.error,
+                schritte: Object.fromEntries(Object.entries(ex.nodeRuns).map(([n, runs]) => [n, runs.at(-1)?.outputItems])),
+                platzhalter: Object.fromEntries(Object.entries(ex.nodeRuns).filter(([, runs]) => runs.at(-1)?.platzhalter).map(([n, runs]) => [n, runs.at(-1)!.platzhalter])),
+                hinweise: Object.fromEntries(Object.entries(ex.nodeRuns).filter(([, runs]) => runs.at(-1)?.hinweise?.length).map(([n, runs]) => [n, runs.at(-1)!.hinweise])),
+                vorschau: args.dryRun ? Object.fromEntries(Object.entries(ex.nodeRuns).map(([n, runs]) => [n, (runs.at(-1)?.output?.[0] ?? []).slice(0, 5).map((i) => i.json)])) : undefined,
+              },
+            };
           return { gestartet: true, hinweis: "Laeuft noch — Ergebnis kommt als Meldung; workflow_get zeigt den Stand." };
         }
         void p.catch(() => {});

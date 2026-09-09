@@ -29,6 +29,8 @@ import type {
 import type { WorkflowStore } from "./store";
 import { isToolAllowedInWorkflows, toolActionKind } from "./catalog";
 import { resultToItems } from "./runner-items";
+import { buildCompanyContext, type CompanyContext, type CompanyScope } from "./context";
+import { applyPlaceholders, findPlaceholders, resolvePlaceholdersWithLlm } from "./placeholders";
 import { evaluate, resolveValue, type ExpressionContext } from "./expressions";
 
 const MAX_STORED_ITEMS = 200;
@@ -56,6 +58,8 @@ export interface RunOptions {
   inputItems?: WorkflowItem[];
   signal?: AbortSignal;
   depth?: number;
+  /** Firma des Laufs (Pflicht bei settings.scope === "company"). */
+  company?: CompanyScope;
 }
 
 interface PendingApproval {
@@ -104,7 +108,16 @@ export class WorkflowRunner {
   async run(def: WorkflowDefinition, opts: RunOptions): Promise<WorkflowExecution> {
     const depth = opts.depth ?? 0;
     if (depth > MAX_SUBWORKFLOW_DEPTH) throw new Error("Sub-Workflow-Tiefe ueberschritten.");
-    if (this.isRunning(def.id)) throw new Error(`Workflow „${def.name}“ laeuft bereits.`);
+    const scopePflicht = (def.settings.scope ?? "company") === "company";
+    if (scopePflicht && !opts.company?.companyId && !opts.company?.discoveryId) {
+      throw new Error(`Workflow „${def.name}“ braucht eine Firma (jeder Lauf bezieht sich auf genau eine Firma).`);
+    }
+    // Je Firma ein Lauf; parallel fuer verschiedene Firmen erlaubt (max 3).
+    const laufend = this.runningExecutions().filter((e) => e.workflowId === def.id);
+    if (laufend.some((e) => !opts.company || (e.scope?.companyId === opts.company.companyId && e.scope?.discoveryId === opts.company.discoveryId))) {
+      throw new Error(`Workflow „${def.name}“ laeuft fuer diese Firma bereits.`);
+    }
+    if (laufend.length >= 3) throw new Error(`Workflow „${def.name}“: bereits 3 Laeufe aktiv — bitte warten.`);
     const abort = new AbortController();
     if (opts.signal) opts.signal.addEventListener("abort", () => abort.abort(), { once: true });
     const timeout = setTimeout(() => abort.abort(), def.settings.timeoutMinutes * 60_000);
@@ -116,6 +129,7 @@ export class WorkflowRunner {
       workflowVersion: def.version,
       trigger: opts.trigger,
       dryRun: opts.dryRun === true,
+      ...(opts.company ? { scope: opts.company } : {}),
       status: "running",
       startedAt: new Date().toISOString(),
       nodeRuns: {},
@@ -141,11 +155,23 @@ export class WorkflowRunner {
       depth,
       mailsSent: 0,
       itemsProduced: 0,
+      company: null,
+      placeholderCache: new Map(),
     };
     try {
       const trigger = def.nodes.find((n) => n.type === "trigger");
       if (!trigger) throw new Error("Kein Start-Node.");
-      const start = opts.inputItems && opts.inputItems.length > 0 ? opts.inputItems : [{ json: {} }];
+      // Firmen-Kontext vollstaendig laden (Stammdaten, Profil, Finanzen, Kontakte, CRM, Radar).
+      if (opts.company?.companyId || opts.company?.discoveryId) {
+        ctx.company = await buildCompanyContext(this.deps.registry, opts.company, this.toolContext(ctx, trigger, "none", "read", []));
+        execution.scope = ctx.company.scope;
+        execution.contextQuellen = ctx.company.quellen;
+        this.deps.store.saveExecution(execution);
+      }
+      const start =
+        opts.inputItems && opts.inputItems.length > 0
+          ? opts.inputItems
+          : [{ json: ctx.company ? { ...ctx.company.scope, ...(ctx.company.json.name ? { name: ctx.company.json.name } : {}) } : {} }];
       await this.runGraph(ctx, new Set(def.nodes.map((n) => n.name)), [{ node: trigger.name, index: 0, items: start }], null);
       if (execution.status === "running") execution.status = "success";
     } catch (err) {
@@ -331,7 +357,38 @@ export class WorkflowRunner {
       pairedIndex: (name) => this.pairedIndexFor(ctx, node.name, name, item),
       vars: Object.fromEntries(Object.entries(ctx.def.variables).map(([k, v]) => [k, v.value])),
       run: { index: 0, executionId: ctx.execution.id, workflowName: ctx.def.name, dryRun: ctx.execution.dryRun },
+      ...(ctx.company ? { company: ctx.company.json, contextText: ctx.company.text } : {}),
     };
+  }
+
+  /**
+   * Semantische Platzhalter ($kassenbestand ?? "…") eines Nodes aus dem
+   * Firmen-Kontext befuellen. Ein Modell-Aufruf je Node und Lauf (Cache je
+   * Platzhalter-Name ueber alle Nodes des Laufs).
+   */
+  private async fillPlaceholders(ctx: RunContext, node: WorkflowNode, value: unknown): Promise<unknown> {
+    const refs = findPlaceholders(value);
+    if (refs.length === 0) return value;
+    const run = ctx.execution.nodeRuns[node.name]?.at(-1);
+    const hinweise: string[] = [];
+    const offen = refs.filter((r) => !ctx.placeholderCache.has(r.name));
+    if (offen.length > 0) {
+      if (!ctx.company) {
+        for (const r of offen) ctx.placeholderCache.set(r.name, null);
+        hinweise.push("Platzhalter ohne Firmen-Kontext (Lauf ohne Firma) — nur Fallbacks moeglich.");
+      } else {
+        const werte = await resolvePlaceholdersWithLlm(this.deps.providers, ctx.company.text, offen, ctx.signal);
+        for (const r of offen) ctx.placeholderCache.set(r.name, werte[r.name] ?? null);
+      }
+    }
+    const values: Record<string, unknown> = {};
+    for (const r of refs) values[r.name] = ctx.placeholderCache.get(r.name) ?? null;
+    const out = applyPlaceholders(value, values, hinweise);
+    if (run) {
+      run.platzhalter = { ...(run.platzhalter ?? {}), ...values };
+      if (hinweise.length > 0) run.hinweise = [...(run.hinweise ?? []), ...hinweise];
+    }
+    return out;
   }
 
   /** Paired-Item-Kette: Item → Vorgaenger-Item → … bis zum gesuchten Node. */
@@ -364,6 +421,8 @@ export class WorkflowRunner {
         if (!ctx.pairedFrom.has(node.name)) ctx.pairedFrom.set(node.name, from);
       }
     }
+    // Semantische Platzhalter in den Parametern dieses Nodes befuellen (je Lauf/Firma).
+    node = { ...node, parameters: (await this.fillPlaceholders(ctx, node, node.parameters)) as Record<string, unknown> };
     switch (node.type) {
       case "trigger":
         return [items];
@@ -542,7 +601,9 @@ export class WorkflowRunner {
 
   private async executeAi(ctx: RunContext, node: WorkflowNode, items: WorkflowItem[]): Promise<WorkflowItem[]> {
     if (!this.deps.providers.getStatus().ready) throw new Error("Kein Hintergrund-Modell bereit (API-Schluessel oder lokales Modell noetig; ein ChatGPT-Abo gilt nicht fuer Workflows).");
-    const system = String(node.parameters.system ?? "Du bist ein praeziser Assistent fuer B2B-Vertrieb. Antworte NUR mit JSON nach dem vorgegebenen Schema.");
+    const system =
+      String(node.parameters.system ?? "Du bist ein praeziser Assistent fuer B2B-Vertrieb. Antworte NUR mit JSON nach dem vorgegebenen Schema.") +
+      (ctx.company ? `\n\nVollstaendiger Kontext der Firma, um die es in diesem Lauf geht (nur daraus schoepfen, nichts erfinden):\n${ctx.company.text.slice(0, 40_000)}` : "");
     const schema = (node.parameters.outputSchema as Record<string, unknown> | undefined) ?? {};
     const required = ((schema as { required?: string[] }).required ?? []) as string[];
     const out: WorkflowItem[] = [];
@@ -678,6 +739,7 @@ export class WorkflowRunner {
     const runs = Object.entries(ctx.execution.nodeRuns);
     const last = runs.at(-1);
     const parts: string[] = [];
+    if (ctx.company?.scope.companyName) parts.push(ctx.company.scope.companyName);
     parts.push(`${runs.length} Schritte`);
     if (last) parts.push(`zuletzt „${last[0]}“ (${last[1].at(-1)?.outputItems.reduce((a, b) => a + b, 0) ?? 0} Items)`);
     if (ctx.mailsSent > 0) parts.push(`${ctx.mailsSent} Mails`);
@@ -696,6 +758,8 @@ interface RunContext {
   depth: number;
   mailsSent: number;
   itemsProduced: number;
+  company: CompanyContext | null;
+  placeholderCache: Map<string, unknown>;
 }
 
 function statusText(s: WorkflowExecution["status"]): string {

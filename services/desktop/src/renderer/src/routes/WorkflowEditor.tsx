@@ -33,7 +33,7 @@ import type {
   WorkflowProgressFrame,
   WorkflowTrigger,
 } from "../../../shared/workflow-types";
-import { statusPill, triggerText } from "./Workflows";
+import { FirmenAuswahl, statusPill, triggerText } from "./Workflows";
 
 type WfNodeData = {
   wf: WorkflowNode;
@@ -167,6 +167,7 @@ export function WorkflowEditor(): JSX.Element {
   const [paramText, setParamText] = useState("");
   const [paramError, setParamError] = useState<string | null>(null);
   const [addQuery, setAddQuery] = useState("");
+  const [firmaFuer, setFirmaFuer] = useState<{ dryRun: boolean } | null>(null);
 
   const load = useCallback(async () => {
     const [d, c, ex] = await Promise.all([window.api.workflows.get(id), window.api.workflows.catalog(), window.api.workflows.executions(id, 30)]);
@@ -289,8 +290,17 @@ export function WorkflowEditor(): JSX.Element {
 
   const run = async (dryRun: boolean): Promise<void> => {
     if (dirty) await save();
-    const r = await window.api.workflows.run(id, { dryRun });
-    setNotice(r.error ?? (dryRun ? "Trockenlauf gestartet." : "Lauf gestartet."));
+    if ((def?.settings.scope ?? "company") === "company") {
+      setFirmaFuer({ dryRun });
+      return;
+    }
+    await starte(dryRun, null);
+  };
+
+  const starte = async (dryRun: boolean, firma: { companyId: string; name: string } | null): Promise<void> => {
+    setFirmaFuer(null);
+    const r = await window.api.workflows.run(id, { dryRun, ...(firma ? { companyId: firma.companyId, companyName: firma.name } : {}) });
+    setNotice(r.error ?? (dryRun ? `Trockenlauf gestartet${firma ? ` für ${firma.name}` : ""}.` : `Lauf gestartet${firma ? ` für ${firma.name}` : ""}.`));
     setTab("runs");
   };
 
@@ -338,6 +348,11 @@ export function WorkflowEditor(): JSX.Element {
         </div>
       </div>
       {notice && <div className="radar-notice wf-editor__notice">{notice}</div>}
+      {firmaFuer && (
+        <div className="wf-editor__notice">
+          <FirmenAuswahl onAbbruch={() => setFirmaFuer(null)} onWahl={(f) => void starte(firmaFuer.dryRun, f)} />
+        </div>
+      )}
       {problems.length > 0 && (
         <div className="radar-hint wf-editor__notice">
           {problems.map((p, i) => (
@@ -436,6 +451,17 @@ export function WorkflowEditor(): JSX.Element {
                   Schritt entfernen
                 </button>
               </div>
+              {selectedNode && shownExecution?.nodeRuns[selectedNode.name]?.at(-1)?.platzhalter && (
+                <details className="settings-collapse" open>
+                  <summary>Befüllte Platzhalter</summary>
+                  <pre className="wf-pre">{JSON.stringify(shownExecution.nodeRuns[selectedNode.name]!.at(-1)!.platzhalter, null, 1)}</pre>
+                  {(shownExecution.nodeRuns[selectedNode.name]!.at(-1)!.hinweise ?? []).map((h, i) => (
+                    <div key={i} className="muted small warn">
+                      {h}
+                    </div>
+                  ))}
+                </details>
+              )}
               {selectedNode && shownExecution?.nodeRuns[selectedNode.name]?.at(-1) && (
                 <details className="settings-collapse" open>
                   <summary>Ausgabe im gezeigten Lauf</summary>
@@ -517,6 +543,23 @@ export function WorkflowEditor(): JSX.Element {
                 <span>Workflow aktiv (Trigger greifen)</span>
               </label>
               <label className="field">
+                <span>Firmenbezug</span>
+                <select value={def.settings.scope ?? "company"} onChange={(e) => { setDef({ ...def, settings: { ...def.settings, scope: e.target.value as "company" | "none" } }); setDirty(true); }}>
+                  <option value="company">je Lauf eine Firma (voller Kontext)</option>
+                  <option value="none">ohne Firma (z. B. nur Radar starten)</option>
+                </select>
+              </label>
+              {def.trigger.kind === "schedule" && (def.settings.scope ?? "company") === "company" && (
+                <label className="field">
+                  <span>Firmen für den Zeitplan (companyIds, eine je Zeile)</span>
+                  <textarea
+                    rows={4}
+                    value={(def.trigger.companyIds ?? []).join("\n")}
+                    onChange={(e) => setTrigger({ ...def.trigger, kind: "schedule", companyIds: e.target.value.split(/\n/).map((s) => s.trim()).filter(Boolean) } as WorkflowTrigger)}
+                  />
+                </label>
+              )}
+              <label className="field">
                 <span>Mails je Tag höchstens</span>
                 <input type="number" min={0} value={def.settings.maxMailsPerDay} onChange={(e) => { setDef({ ...def, settings: { ...def.settings, maxMailsPerDay: Number(e.target.value) } }); setDirty(true); }} />
               </label>
@@ -533,6 +576,7 @@ export function WorkflowEditor(): JSX.Element {
                       <span className="org-row__title">
                         {new Date(ex.startedAt).toLocaleString("de-DE", { dateStyle: "short", timeStyle: "short" })} · {ex.trigger}
                         {ex.dryRun ? " · Trockenlauf" : ""}
+                        {ex.scope?.companyName ? ` · ${ex.scope.companyName}` : ""}
                       </span>
                       <span className="org-row__meta">{ex.summary ?? ex.error ?? ""}</span>
                     </div>

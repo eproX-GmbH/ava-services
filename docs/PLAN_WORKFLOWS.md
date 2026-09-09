@@ -183,6 +183,45 @@ wird in W2 ergänzt). Node 11 unterliegt weiter der Mail-Allowlist.
 
 ---
 
+## 2a. Grundgedanke: Ein Lauf = eine Firma, voller Kontext, semantische Platzhalter
+
+Vorgabe des Operators (2026-09-09): **Ein Workflow-Lauf bezieht sich immer auf
+genau eine Firma.** Der vollständige Kontext dieser Firma liegt dem Lauf als
+Klartext vor, und die KI des Workflow-Laufs füllt Node-Parameter dynamisch
+mit den passenden Werten, nach semantischer Ähnlichkeit, nicht über feste
+Feldnamen.
+
+- **Kontext.** Beim Start lädt die Engine über die vorhandenen Lese-Tools
+  Stammdaten, Firmenprofil, Schlagworte, Kontakte, Jahresabschlüsse mit
+  Kennzahlen und den CRM-Stand (bei Radar-Kandidaten das Mini-Profil) und
+  rendert sie als Klartext (`# Firmen-Kontext …`, je Quelle ein Abschnitt,
+  gekürzt auf 70 000 Zeichen). Anbieter- und Feature-Sperren gelten dabei
+  automatisch, weil derselbe Tool-Pfad genutzt wird. In Expressions steht der
+  Kontext als `$company` (strukturiert) und `$context` (Text) bereit; jeder
+  KI-Node bekommt ihn in den System-Prompt.
+- **Semantische Platzhalter.** AVA erfindet beim Bauen frei benannte
+  Platzhalter wie `$kassenbestand`, `$ansprechpartner_vertrieb` oder
+  `$umsatz_letztes_jahr`. Vor der Ausführung eines Nodes sammelt die Engine
+  alle Platzhalter seiner Parameter und lässt sie in einem Modell-Aufruf aus
+  dem Firmen-Kontext befüllen (Regeln: nur Werte aus dem Kontext, nichts
+  erfinden, Zahlen als Zahl, sonst `null`). Ergebnisse werden je Lauf
+  gecacht, damit ein Name über alle Nodes denselben Wert hat.
+- **Fallback.** Syntax `$kassenbestand ?? "Es liegt KEIN Kassenbestand vor"`.
+  Fehlt der Wert, greift der Fallback; ohne Fallback bleibt der Wert leer und
+  der Node bekommt einen Hinweis. Innerhalb von `{{ }}` wird der Wert als
+  Literal eingesetzt (Zahlen bleiben Zahlen), außerhalb als Text.
+- **Abgrenzung.** `$json`, `$input`, `$vars`, `$company`, `$context`, `$now`,
+  `$today`, `$run`, `$itemIndex` und `$('Node')` sind Expression-Wurzeln,
+  keine Platzhalter.
+- **Firmenbezug je Trigger.** Manuell/Chat: Firma wird gewählt (Suche über
+  `company_search`, `workflow_run` mit `firma`). Ereignis: das Ereignis muss
+  eine Firma tragen (`companyId` oder `discoveryId`), sonst wird der Lauf
+  übersprungen und auditiert. Zeitplan: feste Firmenliste im Trigger
+  (`companyIds`), ein Lauf je Firma nacheinander; ohne Liste läuft ein
+  Zeitplan nur bei `settings.scope = "none"` (Abläufe ohne Firmenbezug, z. B.
+  „Radar starten“). Offen: dynamische Firmenquellen für Zeitpläne (alle
+  Firmen eines Vorgangs, Radar-Kandidaten über Schwelle).
+
 ## 3. Engine (Hauptprozess)
 
 Neues Modul `services/desktop/src/main/workflows/`:
@@ -437,7 +476,7 @@ W3 kann parallel starten, sobald die Typen aus W1 stehen.
 
 | Datum | Stand |
 |---|---|
-| 2026-09-09 | **W0 entschieden** (siehe §10). **W1 Kern** umgesetzt: Typen, Store, Validierung, Expressions (jsep + sichere Auswertung), Katalog, Engine mit allen Logik-Nodes inkl. Human-in-the-Loop (Freigaben mit 48-h-Verfall), Vollmacht/Node-Freigabe/mail_send-Regel/Tages-Deckel, Idempotenz-Schluessel, Trockenlauf, Zeitplan-Trigger ohne Nachholen, Ereignis-Haken `emitEvent` — **W4 teilweise**: `radar.newHot` (RadarAlertEmitter), `mail.inbound` (messageFinalized, nur eingehend), `alert.created` (AlertsStore) sind angeschlossen; `import.finished` fehlt noch (kein zentrales Abschluss-Signal je Vorgang), ebenso Telegram-Fortsetzung bei Freigaben und der Meldungen-Typ `workflow-run`. **W2** umgesetzt: Chat-Tools `workflow_*` inkl. `workflow_from_conversation` (Trace-Compiler ohne LLM; LLM-Nachbearbeitung uebernimmt der Agent selbst ueber `workflow_save`). **W3 erste Fassung**: Liste mit „Offene Freigaben“, Editor mit React Flow (Canvas, Kanten ziehen, Node-Panel mit JSON-Parametern, Trigger-Panel, Laeufe mit Node-Faerbung und Items je Kante, Palette). Offen in W3: Parameter-Formular aus dem Schema, Expression-Vorschlaege, Pin-Daten, „Schritt ausfuehren“, Undo/Redo. Tests: `pnpm test:workflows`. |
+| 2026-09-09 | **W0 entschieden** (siehe §10). **W1 Kern** umgesetzt: Typen, Store, Validierung, Expressions (jsep + sichere Auswertung), Katalog, Engine mit allen Logik-Nodes inkl. Human-in-the-Loop (Freigaben mit 48-h-Verfall), Vollmacht/Node-Freigabe/mail_send-Regel/Tages-Deckel, Idempotenz-Schluessel, Trockenlauf, Zeitplan-Trigger ohne Nachholen, Ereignis-Haken `emitEvent` — **W4 teilweise**: `radar.newHot` (RadarAlertEmitter), `mail.inbound` (messageFinalized, nur eingehend), `alert.created` (AlertsStore) sind angeschlossen; `import.finished` fehlt noch (kein zentrales Abschluss-Signal je Vorgang), ebenso Telegram-Fortsetzung bei Freigaben und der Meldungen-Typ `workflow-run`. **W2** umgesetzt: Chat-Tools `workflow_*` inkl. `workflow_from_conversation` (Trace-Compiler ohne LLM; LLM-Nachbearbeitung uebernimmt der Agent selbst ueber `workflow_save`). **W3 erste Fassung**: Liste mit „Offene Freigaben“, Editor mit React Flow (Canvas, Kanten ziehen, Node-Panel mit JSON-Parametern, Trigger-Panel, Laeufe mit Node-Faerbung und Items je Kante, Palette). Offen in W3: Parameter-Formular aus dem Schema, Expression-Vorschlaege, Pin-Daten, „Schritt ausfuehren“, Undo/Redo. Tests: `pnpm test:workflows`. **Grundgedanke §2a umgesetzt (v0.1.585):** Firmen-Kontext je Lauf (`context.ts`), semantische Platzhalter mit Fallback (`placeholders.ts`), Firmenauswahl in Liste/Editor, `workflow_run` mit `firma`, Zeitplan mit `companyIds`, Ereignisse nur mit Firma. |
 
 ## 10. Offene Entscheidungen (vor W1)
 

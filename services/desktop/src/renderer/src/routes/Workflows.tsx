@@ -24,6 +24,69 @@ export function statusPill(status: string): JSX.Element {
   return <span className={`pill ${cls}`}>{label}</span>;
 }
 
+/** Firmenauswahl vor dem Start: jeder Workflow-Lauf gilt fuer genau eine Firma. */
+export function FirmenAuswahl({ onWahl, onAbbruch }: { onWahl: (f: { companyId: string; name: string } | null) => void; onAbbruch: () => void }): JSX.Element {
+  const [q, setQ] = useState("");
+  const [kandidaten, setKandidaten] = useState<Array<{ companyId: string; name: string; ort: string | null }>>([]);
+  const [fehler, setFehler] = useState<string | null>(null);
+  const [laedt, setLaedt] = useState(false);
+  const suchen = async (): Promise<void> => {
+    if (q.trim().length < 2) return;
+    setLaedt(true);
+    setFehler(null);
+    try {
+      const r = await window.api.workflows.resolveCompany(q.trim());
+      if (r.error) setFehler(r.error);
+      setKandidaten(r.kandidaten ?? []);
+    } finally {
+      setLaedt(false);
+    }
+  };
+  return (
+    <div className="ct-card wf-firma">
+      <h3>Für welche Firma?</h3>
+      <p className="muted small">Jeder Lauf bezieht sich auf genau eine Firma; ihr vollständiger Kontext (Stammdaten, Profil, Finanzen, Kontakte, CRM) liegt dem Lauf vor.</p>
+      <div className="telegram-row">
+        <input
+          className="telegram-input"
+          placeholder="Firmenname suchen"
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") void suchen();
+          }}
+          autoFocus
+        />
+        <button type="button" className="btn" disabled={laedt || q.trim().length < 2} onClick={() => void suchen()}>
+          Suchen
+        </button>
+        <button type="button" className="link" onClick={onAbbruch}>
+          Abbrechen
+        </button>
+      </div>
+      {fehler && <p className="muted small warn">{fehler}</p>}
+      {kandidaten.length > 0 && (
+        <div className="org-list">
+          {kandidaten.map((k) => (
+            <button key={k.companyId} type="button" className="org-row wf-run" onClick={() => onWahl({ companyId: k.companyId, name: k.name })}>
+              <div className="org-row__main">
+                <span className="org-row__title">{k.name}</span>
+                <span className="org-row__meta">{k.ort ?? k.companyId}</span>
+              </div>
+            </button>
+          ))}
+        </div>
+      )}
+      <p className="muted small">
+        Ohne Firmenbezug starten (nur für Workflows mit Einstellung „ohne Firma“):{" "}
+        <button type="button" className="link" onClick={() => onWahl(null)}>
+          ohne Firma
+        </button>
+      </p>
+    </div>
+  );
+}
+
 export function Workflows(): JSX.Element {
   const [rows, setRows] = useState<WorkflowListEntry[]>([]);
   const [approvals, setApprovals] = useState<WorkflowApproval[]>([]);
@@ -48,12 +111,20 @@ export function Workflows(): JSX.Element {
     });
   }, [reload]);
 
+  const [firmaFuer, setFirmaFuer] = useState<{ id: string; dryRun: boolean } | null>(null);
+
   const run = async (id: string, dryRun: boolean): Promise<void> => {
+    // Jeder Lauf gilt fuer eine Firma: erst waehlen.
+    setFirmaFuer({ id, dryRun });
+  };
+
+  const starte = async (id: string, dryRun: boolean, firma: { companyId: string; name: string } | null): Promise<void> => {
     setBusy(id);
     setNotice(null);
+    setFirmaFuer(null);
     try {
-      const r = await window.api.workflows.run(id, { dryRun });
-      setNotice(r.error ?? (dryRun ? "Trockenlauf gestartet." : "Workflow gestartet."));
+      const r = await window.api.workflows.run(id, { dryRun, ...(firma ? { companyId: firma.companyId, companyName: firma.name } : {}) });
+      setNotice(r.error ?? (dryRun ? `Trockenlauf gestartet${firma ? ` für ${firma.name}` : ""}.` : `Workflow gestartet${firma ? ` für ${firma.name}` : ""}.`));
     } finally {
       setBusy(null);
       void reload();
@@ -102,6 +173,7 @@ export function Workflows(): JSX.Element {
       </div>
 
       {notice && <div className="radar-notice">{notice}</div>}
+      {firmaFuer && <FirmenAuswahl onAbbruch={() => setFirmaFuer(null)} onWahl={(f) => void starte(firmaFuer.id, firmaFuer.dryRun, f)} />}
 
       {approvals.length > 0 && (
         <section className="ct-card wf-approvals">

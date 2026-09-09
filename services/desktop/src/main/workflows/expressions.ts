@@ -34,6 +34,10 @@ export interface ExpressionContext {
   pairedIndex: (name: string) => number | undefined;
   vars: Record<string, unknown>;
   run: { index: number; executionId: string; workflowName: string; dryRun: boolean };
+  /** Firmen-Kontext des Laufs (strukturiert) — $company / $firma. */
+  company?: Record<string, unknown>;
+  /** Firmen-Kontext als Klartext — $context / $kontext. */
+  contextText?: string;
 }
 
 const MAX_STEPS = 20_000;
@@ -246,6 +250,12 @@ function resolveIdentifier(name: string, ctx: ExpressionContext): unknown {
       return new Date().toISOString().slice(0, 10);
     case "$run":
       return ctx.run;
+    case "$company":
+    case "$firma":
+      return ctx.company ?? {};
+    case "$context":
+    case "$kontext":
+      return ctx.contextText ?? "";
     case "$itemIndex":
       return ctx.itemIndex;
     case "true":

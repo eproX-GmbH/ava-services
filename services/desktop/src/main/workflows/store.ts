@@ -39,6 +39,7 @@ const triggerSchema = yup.object({
   intervalMinutes: yup.number().integer().min(15).max(60 * 24 * 30).optional(),
   at: yup.string().matches(/^\d{2}:\d{2}$/).optional(),
   weekdays: yup.array().of(yup.number().integer().min(0).max(6).required()).optional(),
+  companyIds: yup.array().of(yup.string().trim().min(1).required()).max(200).optional(),
   event: yup.string().oneOf(["radar.newHot", "mail.inbound", "alert.created", "import.finished"]).optional(),
   filter: yup.object().optional(),
 });
@@ -60,6 +61,7 @@ const definitionSchema = yup.object({
     maxMailsPerDay: yup.number().integer().min(0).max(1000).default(20),
     notifyOnFinish: yup.boolean().default(true),
     errorWorkflowId: yup.string().optional(),
+    scope: yup.string().oneOf(["company", "none"]).optional(),
   }).default(DEFAULT_WORKFLOW_SETTINGS),
   origin: yup.object({
     kind: yup.string().oneOf(["chat", "assistant", "manual", "import", "org"]).required(),

@@ -2222,7 +2222,7 @@ _Parameter:_
 
 _Datei:_ `services/desktop/src/main/agent/tools/workflows.ts`
 
-Liefert den Katalog aller Node-Typen fuer Workflows: Logik-Nodes (trigger, filter, if, switch, transform, loop, merge, ai, wait, human, stop, subworkflow) und Tool-Nodes ('tool:<name>') mit Parametern, Wirkungsklasse (read/additive/mutating/destructive) und Kostenklasse. Vor workflow_save aufrufen. Expressions: {{ $json.feld }}, {{ $('Node-Name').item.json.feld }}, {{ $input.all() }}, {{ $vars.name }}, {{ $now }}. Tool-Node: parameters = { tool: '<name>', args: {...}, outputPath?: 'items', itemKey?: 'discoveryId' }; mode perItem (Default) oder allItems.
+Liefert den Katalog aller Node-Typen fuer Workflows: Logik-Nodes (trigger, filter, if, switch, transform, loop, merge, ai, wait, human, stop, subworkflow) und Tool-Nodes ('tool:<name>') mit Parametern, Wirkungsklasse (read/additive/mutating/destructive) und Kostenklasse. Vor workflow_save aufrufen. Expressions: {{ $json.feld }}, {{ $('Node-Name').item.json.feld }}, {{ $input.all() }}, {{ $vars.name }}, {{ $now }}. Tool-Node: parameters = { tool: '<name>', args: {...}, outputPath?: 'items', itemKey?: 'discoveryId' }; mode perItem (Default) oder allItems. FIRMENBEZUG: Jeder Lauf gilt fuer GENAU EINE Firma; ihr vollstaendiger Kontext (Stammdaten, Profil, Finanzen/Kennzahlen, Kontakte, CRM) liegt dem Lauf vor. In Node-Parametern duerfen SEMANTISCHE PLATZHALTER stehen, frei benannt, z. B. $kassenbestand, $ansprechpartner_vertrieb, $umsatz_letztes_jahr — sie werden je Lauf per KI aus dem Firmen-Kontext nach Bedeutung befuellt. Immer einen Fallback mitgeben: $kassenbestand ?? "Es liegt KEIN Kassenbestand vor". Strukturiert: {{ $company }} (Objekt), {{ $context }} (Klartext).
 
 _Parameter:_
 - `suche: string` — Optionaler Filter (Name/Kategorie/Text)
@@ -2268,10 +2268,12 @@ _Parameter:_ keine.
 
 _Datei:_ `services/desktop/src/main/agent/tools/workflows.ts`
 
-Startet einen Workflow. dryRun=true fuehrt Lese-Schritte echt aus, zeigt Schreib-Schritte (CRM, Mail, Import) aber nur als Vorschau — ideal zum Testen. Laeuft asynchron; das Ergebnis kommt als Meldung. Mit warten=true wartet das Tool bis zu 5 Minuten auf das Ende und liefert die Zusammenfassung.
+Startet einen Workflow fuer EINE Firma (firma = Name oder companyId; Pflicht, ausser settings.scope = 'none'). dryRun=true fuehrt Lese-Schritte echt aus, zeigt Schreib-Schritte (CRM, Mail, Import) aber nur als Vorschau — ideal zum Testen. Laeuft asynchron; das Ergebnis kommt als Meldung. Mit warten=true wartet das Tool bis zu 5 Minuten auf das Ende und liefert die Zusammenfassung inkl. befuellter Platzhalter.
 
 _Parameter:_
 - `workflow: string` (required)
+- `firma: string` — Firmenname oder companyId (aus company_search)
+- `discoveryId: string` — Alternativ: Radar-Kandidat
 - `dryRun: boolean`
 - `warten: boolean`
 
@@ -2279,7 +2281,7 @@ _Parameter:_
 
 _Datei:_ `services/desktop/src/main/agent/tools/workflows.ts`
 
-Speichert eine Workflow-Definition. nodes: Liste mit name (eindeutig), type, parameters, mode, confirmed; connections: { '<Node-Name>': { main: [[{ node, index }], ...] } } (Ausgang 0 = erster Eintrag; if: 0 = wahr, 1 = falsch; loop: 0 = loop, 1 = done). Genau ein Node vom Typ trigger. Schreib-Nodes laufen unbeaufsichtigt nur mit Vollmacht oder confirmed=true; mail_send braucht immer confirmed oder einen human-Node davor. Der Trigger ist beim Anlegen 'manual', ausser der Nutzer wuenscht ausdruecklich einen Zeitplan. Zeigt den Entwurf und fragt vor dem Speichern nach.
+Speichert eine Workflow-Definition. nodes: Liste mit name (eindeutig), type, parameters, mode, confirmed; connections: { '<Node-Name>': { main: [[{ node, index }], ...] } } (Ausgang 0 = erster Eintrag; if: 0 = wahr, 1 = falsch; loop: 0 = loop, 1 = done). Genau ein Node vom Typ trigger. Schreib-Nodes laufen unbeaufsichtigt nur mit Vollmacht oder confirmed=true; mail_send braucht immer confirmed oder einen human-Node davor. Der Trigger ist beim Anlegen 'manual', ausser der Nutzer wuenscht ausdruecklich einen Zeitplan (dann companyIds im Trigger, ein Lauf je Firma). settings.scope: 'company' (Default, Lauf je Firma mit vollem Kontext) oder 'none' (ohne Firmenbezug, z. B. nur Radar starten). Nutze semantische Platzhalter mit Fallback ($kassenbestand ?? "kein Kassenbestand bekannt") statt fester Feldnamen. Zeigt den Entwurf und fragt vor dem Speichern nach.
 
 _Parameter:_ keine.
 

@@ -58,6 +58,21 @@ throws(() => evaluate("process.exit(1)", ctx), "unbekannter Bezeichner verboten"
 throws(() => evaluate("$json.name = 'x'", ctx), "Zuweisung verboten");
 assert(referencedNodeNames({ a: "{{ $('Kandidaten').item.json.x }}", b: ["{{ $('Mail').first() }}"] }).sort().join(",") === "Kandidaten,Mail", "referencedNodeNames");
 
+console.log("Platzhalter");
+const { findPlaceholders, applyPlaceholders } = await load("../src/main/workflows/placeholders.ts");
+const refs = findPlaceholders({ text: 'Kasse: $kassenbestand ?? "kein Kassenbestand bekannt", AP: $ansprechpartner_vertrieb', cond: "{{ $umsatz > 1000000 && $json.x }}", n: 1 });
+assert(refs.map((r) => r.name).sort().join(",") === "ansprechpartner_vertrieb,kassenbestand,umsatz", `Platzhalter erkannt (${refs.map((r) => r.name).join(",")})`);
+assert(refs.find((r) => r.name === "kassenbestand").fallback === "kein Kassenbestand bekannt", "Fallback geparst");
+assert(refs.every((r) => r.name !== "json"), "$json ist kein Platzhalter");
+const hw = [];
+const applied = applyPlaceholders({ text: 'Kasse: $kassenbestand ?? "kein Kassenbestand bekannt", AP: $ansprechpartner_vertrieb', cond: "{{ $umsatz > 1000000 && $json.x }}" }, { kassenbestand: null, ansprechpartner_vertrieb: "Jonas Bölter", umsatz: 2500000 }, hw);
+assert(applied.text === "Kasse: kein Kassenbestand bekannt, AP: Jonas Bölter", `Fallback + Text eingesetzt (${applied.text})`);
+assert(applied.cond === "{{ 2500000 > 1000000 && $json.x }}", `in Expression als Literal (${applied.cond})`);
+assert(hw.length === 0, "kein Hinweis, wenn Fallback greift");
+const hw2 = [];
+applyPlaceholders("$fehlt", {}, hw2);
+assert(hw2.length === 1, "Hinweis bei fehlendem Wert ohne Fallback");
+
 console.log("resultToItems");
 assert(resultToItems({ items: [{ id: 1 }, { id: 2 }] }, undefined, 0).length === 2, "Listen-Schluessel items");
 assert(resultToItems({ ok: true, transactionId: "t1" }, undefined, 3)[0].json.transactionId === "t1", "Objekt → ein Item");

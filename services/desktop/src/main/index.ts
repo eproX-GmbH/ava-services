@@ -5509,9 +5509,21 @@ app.whenReady().then(async () => {
     }
   });
   ipcMain.handle("workflows:delete", (_e, id: string) => ({ ok: wf().delete(String(id)) }));
-  ipcMain.handle("workflows:run", async (_e, id: string, opts?: { dryRun?: boolean }) => {
+  ipcMain.handle("workflows:resolveCompany", async (_e, query: string) => {
     try {
-      const p = wf().run(String(id), { trigger: opts?.dryRun ? "test" : "manual", dryRun: opts?.dryRun === true });
+      return { kandidaten: await wf().resolveCompany(String(query)) };
+    } catch (err) {
+      return { error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+  ipcMain.handle("workflows:run", async (_e, id: string, opts?: { dryRun?: boolean; companyId?: string; companyName?: string; discoveryId?: string; companyQuery?: string }) => {
+    try {
+      const p = wf().run(String(id), {
+        trigger: opts?.dryRun ? "test" : "manual",
+        dryRun: opts?.dryRun === true,
+        ...(opts?.companyId ? { company: { companyId: opts.companyId, companyName: opts.companyName } } : opts?.discoveryId ? { company: { discoveryId: opts.discoveryId } } : {}),
+        ...(opts?.companyQuery ? { companyQuery: opts.companyQuery } : {}),
+      });
       void p.catch(() => {});
       return { gestartet: true };
     } catch (err) {

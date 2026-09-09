@@ -18,6 +18,7 @@ import {
 import { WorkflowStore, validateDefinition, type ValidationProblem } from "./store";
 import { WorkflowRunner } from "./runner";
 import { buildCatalog, catalogForAgent, isToolAllowedInWorkflows } from "./catalog";
+import type { CompanyScope } from "./context";
 
 const TICK_MS = 60_000;
 /** Zeit-Trigger ohne Nachholen: nur innerhalb dieses Fensters nach der Uhrzeit. */
@@ -182,14 +183,48 @@ export class WorkflowService {
 
   // ---- Laeufe -----------------------------------------------------------------
 
-  async run(id: string, opts: { trigger: WorkflowExecution["trigger"]; dryRun?: boolean; inputItems?: WorkflowItem[] }): Promise<WorkflowExecution> {
+  async run(
+    id: string,
+    opts: { trigger: WorkflowExecution["trigger"]; dryRun?: boolean; inputItems?: WorkflowItem[]; company?: CompanyScope; companyQuery?: string },
+  ): Promise<WorkflowExecution> {
     const def = this.store.get(id);
     if (!def) throw new Error("Workflow nicht gefunden.");
     const blocked = this.blockedReason(def);
     if (blocked) throw new Error(blocked);
     const problems = this.validate(def);
     if (problems.length > 0) throw new Error(`Workflow unvollstaendig: ${problems.map((p) => (p.node ? `${p.node}: ` : "") + p.message).join("; ")}`);
-    return this.runner.run(def, { trigger: opts.trigger, dryRun: opts.dryRun, inputItems: opts.inputItems });
+    let company = opts.company;
+    if (!company?.companyId && !company?.discoveryId && opts.companyQuery) {
+      const kandidaten = await this.resolveCompany(opts.companyQuery);
+      if (kandidaten.length === 0) throw new Error(`Keine Firma zu „${opts.companyQuery}“ gefunden.`);
+      if (kandidaten.length > 1 && !kandidaten.some((k) => k.name.toLowerCase() === opts.companyQuery!.trim().toLowerCase())) {
+        throw new Error(`Mehrere Firmen passen zu „${opts.companyQuery}“: ${kandidaten.slice(0, 5).map((k) => `${k.name} (${k.companyId})`).join(", ")} — bitte companyId angeben.`);
+      }
+      const k = kandidaten.find((x) => x.name.toLowerCase() === opts.companyQuery!.trim().toLowerCase()) ?? kandidaten[0]!;
+      company = { companyId: k.companyId, companyName: k.name };
+    }
+    return this.runner.run(def, { trigger: opts.trigger, dryRun: opts.dryRun, inputItems: opts.inputItems, company });
+  }
+
+  /** Firma per Name suchen (ueber das company_search-Tool). */
+  async resolveCompany(query: string): Promise<Array<{ companyId: string; name: string; ort: string | null }>> {
+    const tool = this.deps.registry.get("company_search");
+    if (!tool) throw new Error("Firmensuche nicht verfuegbar.");
+    const ctx = {
+      signal: new AbortController().signal,
+      log: () => {},
+      ui: undefined as unknown as import("../agent/ui-bridge").UiBridge,
+      autonomousMode: true,
+    };
+    const r = (await tool.run(tool.parseArgs({ q: query, limit: 10 }), ctx)) as { matches?: Array<Record<string, unknown>>; items?: Array<Record<string, unknown>>; results?: Array<Record<string, unknown>> } | Array<Record<string, unknown>>;
+    const rows = Array.isArray(r) ? r : (r.matches ?? r.items ?? r.results ?? []);
+    return rows
+      .map((row) => ({
+        companyId: String(row.companyId ?? row.id ?? ""),
+        name: String(row.name ?? row.legalName ?? ""),
+        ort: (row.city as string | undefined) ?? (row.location as string | undefined) ?? (row.ort as string | undefined) ?? null,
+      }))
+      .filter((x) => x.companyId && x.name);
   }
 
   cancel(executionId: string): boolean {
@@ -225,8 +260,18 @@ export class WorkflowService {
     for (const w of this.store.list()) {
       if (!w.enabled || w.trigger.kind !== "event" || w.trigger.event !== event) continue;
       if (w.trigger.filter && !matchesFilter(payload, w.trigger.filter)) continue;
-      if (this.runner.isRunning(w.id)) continue;
-      void this.run(w.id, { trigger: "event", inputItems: [{ json: payload }] }).catch((err) =>
+      // Ein Lauf je Firma: das Ereignis muss eine Firma tragen (companyId oder discoveryId).
+      const company: CompanyScope | undefined =
+        typeof payload.companyId === "string" && payload.companyId
+          ? { companyId: payload.companyId, companyName: typeof payload.companyName === "string" ? payload.companyName : undefined }
+          : typeof payload.discoveryId === "string"
+            ? { discoveryId: payload.discoveryId, companyName: typeof payload.name === "string" ? payload.name : undefined }
+            : undefined;
+      if ((w.settings.scope ?? "company") === "company" && !company) {
+        this.deps.audit({ action: "workflow.run.skipped", severity: "warning", summary: `Workflow „${w.name}“ (Ereignis ${event}) uebersprungen: Ereignis traegt keine Firma`, metadata: { workflowId: w.id, event } });
+        continue;
+      }
+      void this.run(w.id, { trigger: "event", inputItems: [{ json: payload }], company }).catch((err) =>
         this.deps.audit({ action: "workflow.run.error", severity: "error", summary: `Workflow „${w.name}“ (Ereignis ${event}) nicht gestartet: ${err instanceof Error ? err.message : String(err)}`, metadata: { workflowId: w.id } }),
       );
     }
@@ -274,8 +319,21 @@ export class WorkflowService {
         due = okDay && now >= at.getTime() && now - at.getTime() < AT_WINDOW_MS && lastMs < at.getTime();
       }
       if (!due) continue;
+      // Ein Lauf je Firma: Zeitplan mit fester Firmenliste laeuft nacheinander je Firma.
+      const firmen = t.companyIds ?? [];
+      if ((w.settings.scope ?? "company") === "company" && firmen.length === 0) {
+        this.deps.audit({ action: "workflow.run.skipped", severity: "warning", summary: `Workflow „${w.name}“ (Zeitplan) uebersprungen: keine Firmen im Trigger (companyIds) — Zeitplan-Workflows brauchen eine Firmenliste oder scope "none"`, metadata: { workflowId: w.id } });
+        continue;
+      }
       try {
-        await this.run(w.id, { trigger: "schedule" });
+        if (firmen.length === 0) {
+          await this.run(w.id, { trigger: "schedule" });
+        } else {
+          for (const companyId of firmen) {
+            if (!w.enabled) break;
+            await this.run(w.id, { trigger: "schedule", company: { companyId } });
+          }
+        }
       } catch (err) {
         this.deps.audit({ action: "workflow.run.error", severity: "error", summary: `Workflow „${w.name}“ (Zeitplan) nicht gestartet: ${err instanceof Error ? err.message : String(err)}`, metadata: { workflowId: w.id } });
       }

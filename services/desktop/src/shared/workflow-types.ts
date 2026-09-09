@@ -66,6 +66,9 @@ export type WorkflowTrigger =
       /** "07:00" lokal; mit weekdays (0 = So … 6 = Sa). */
       at?: string;
       weekdays?: number[];
+      /** Ein Lauf je Firma: feste Firmenliste (companyIds). Ohne Liste laeuft
+       *  ein Zeitplan nur bei settings.scope === "none". */
+      companyIds?: string[];
     }
   | {
       kind: "event";
@@ -86,6 +89,16 @@ export interface WorkflowSettings {
   maxMailsPerDay: number;
   notifyOnFinish: boolean;
   errorWorkflowId?: string;
+  /** Grundgedanke 2026-09-09: ein Lauf = EINE Firma mit vollem Kontext (Default).
+   *  "none" nur fuer Ablaeufe ohne Firmenbezug (z. B. Radar-Scan starten). */
+  scope?: "company" | "none";
+}
+
+/** Firmenbezug eines Laufs. */
+export interface WorkflowScope {
+  companyId?: string;
+  discoveryId?: string;
+  companyName?: string;
 }
 
 export interface WorkflowDefinition {
@@ -133,6 +146,10 @@ export interface WorkflowNodeRun {
   error?: string;
   /** Tool-Node: Zahl der Tool-Aufrufe (perItem = Items). */
   toolCalls?: number;
+  /** Hinweise (z. B. Platzhalter ohne Wert, uebersprungene Items). */
+  hinweise?: string[];
+  /** Befuellte semantische Platzhalter dieses Nodes. */
+  platzhalter?: Record<string, unknown>;
 }
 
 export interface WorkflowExecution {
@@ -143,6 +160,10 @@ export interface WorkflowExecution {
   trigger: "manual" | "schedule" | "event" | "chat" | "test";
   /** Trockenlauf: Schreib-Nodes werden nur vorgeschaut. */
   dryRun: boolean;
+  /** Firma dieses Laufs (Kontext liegt dem Lauf als Klartext vor). */
+  scope?: WorkflowScope;
+  /** Quellen, aus denen der Kontext kam (Tool-Namen). */
+  contextQuellen?: string[];
   status: WorkflowExecutionStatus;
   startedAt: string;
   finishedAt?: string;
@@ -227,4 +248,5 @@ export const DEFAULT_WORKFLOW_SETTINGS: WorkflowSettings = {
   autonomy: "inherit",
   maxMailsPerDay: 20,
   notifyOnFinish: true,
+  scope: "company",
 };

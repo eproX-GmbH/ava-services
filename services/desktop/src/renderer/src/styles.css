@@ -8107,3 +8107,5 @@ input, textarea, select, button, a, summary, details,
 .wf-badge--items { background: var(--color-indigo-50); color: var(--color-indigo-700); border-color: transparent; }
 .wf-node .react-flow__handle { width: 10px; height: 10px; background: var(--color-indigo-500); border: 2px solid var(--color-bg-1); }
 .wf-handle-label { position: absolute; left: 14px; top: -7px; font-size: 10px; color: var(--muted); white-space: nowrap; pointer-events: none; }
+
+.wf-firma { padding: 1rem; margin: 0.5rem 0 1rem; }
