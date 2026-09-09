@@ -320,5 +320,25 @@ console.log("Passives Warten: Firmen einzeln weiterreichen, Lauf pausiert");
   check(ex3.status === "waiting" && c3.status === "cancelled", `Wartenden Lauf abbrechen: ${c3.status}`);
 }
 
+console.log("Leere Eingabe: Tool-/KI-/Warten-Node ueberspringen statt Fehler");
+{
+  calls.length = 0;
+  const nodes = [
+    { id: "n0", position: [0, 0], name: "Start", type: "trigger", parameters: {} },
+    { id: "n1", position: [200, 0], name: "Kandidaten", type: "tool", mode: "allItems", parameters: { tool: "discovery_candidates", args: {} } },
+    { id: "n2", position: [400, 0], name: "Nie", type: "filter", parameters: { condition: "{{ $json.matchScore > 1000 }}" } },
+    { id: "n3", position: [600, 0], name: "Import starten", type: "tool", mode: "allItems", confirmed: true, parameters: { tool: "discovery_decide", args: { decisions: "{{ $input.all().map(i => ({ discoveryId: i.json.discoveryId, decision: 'imported' })) }}" } } },
+    { id: "n4", position: [800, 0], name: "Warten", type: "wait", parameters: { transactionId: "{{ $json.transactionId }}" } },
+    { id: "n5", position: [1000, 0], name: "KI", type: "ai", mode: "allItems", parameters: { prompt: "x", outputSchema: { type: "object", required: ["text"], properties: { text: { type: "string" } } } } },
+    { id: "n6", position: [1200, 0], name: "Senden", type: "tool", mode: "perItem", confirmed: true, parameters: { tool: "telegram_send_message", args: { text: "{{ $json.text }}" } } },
+  ];
+  const conn = {}; for (let i = 0; i < nodes.length - 1; i++) conn[nodes[i].name] = { main: [[{ node: nodes[i + 1].name, index: 0 }]] };
+  const def = mkDef("wf_leer_eingabe", { name: "leer", description: "", nodes, connections: conn, trigger: { kind: "manual" }, variables: {}, origin: { kind: "manual" }, settings: { scope: "none" } });
+  const ex = await runner.run(def, { trigger: "manual" });
+  check(ex.status === "success", `Lauf endet erfolgreich mit 0 Firmen: ${ex.status} ${ex.error ?? ""}`);
+  check(!calls.some((c) => c.name === "discovery_decide" || c.name === "telegram_send_message"), `Import/Telegram nicht aufgerufen: ${calls.map((c) => c.name).join(",")}`);
+  check((ex.nodeRuns["Import starten"]?.at(-1)?.hinweise ?? []).some((h) => /Keine Eingabe-Items/.test(h)), `Hinweis am uebersprungenen Node: ${JSON.stringify(ex.nodeRuns["Import starten"]?.at(-1)?.hinweise)}`);
+}
+
 if (fails > 0) { console.log(`\n${fails} Fehler`); process.exit(1); }
 console.log("\nEngine-Tests ok");

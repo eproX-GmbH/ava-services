@@ -768,6 +768,12 @@ export class WorkflowRunner {
             ? String(items[0]!.json.transactionId)
             : "";
         const txGefordert = typeof node.parameters.transactionId === "string" && node.parameters.transactionId.trim().length > 0;
+        if (txGefordert && items.length === 0) {
+          // Nichts importiert (z. B. Filter ohne Treffer) → nichts, worauf zu warten waere.
+          const run0 = ctx.execution.nodeRuns[node.name]?.at(-1);
+          if (run0) (run0.hinweise ??= []).push("Keine Eingabe-Items — kein Vorgang, auf den gewartet werden muesste.");
+          return [[]];
+        }
         if (!txId && txGefordert) {
           const j = items[0]?.json ?? {};
           if (ctx.execution.dryRun) {
@@ -1015,6 +1021,7 @@ export class WorkflowRunner {
   }
 
   private async executeAi(ctx: RunContext, node: WorkflowNode, items: WorkflowItem[]): Promise<WorkflowItem[]> {
+    if (this.ohneEingabe(ctx, node, items)) return [];
     if (!this.deps.providers.getStatus().ready) throw new Error("Kein Hintergrund-Modell bereit (API-Schluessel oder lokales Modell noetig; ein ChatGPT-Abo gilt nicht fuer Workflows).");
     const system =
       String(node.parameters.system ?? "Du bist ein praeziser Assistent fuer B2B-Vertrieb. Antworte NUR mit JSON nach dem vorgegebenen Schema.") +
@@ -1041,7 +1048,16 @@ export class WorkflowRunner {
     return out;
   }
 
+  /** v0.1.615 — Ohne Eingabe-Items laeuft ein Tool-/KI-Node nicht (wie in n8n): kein Aufruf mit leeren Argumenten. */
+  private ohneEingabe(ctx: RunContext, node: WorkflowNode, items: WorkflowItem[]): boolean {
+    if (items.length > 0) return false;
+    const run = ctx.execution.nodeRuns[node.name]?.at(-1);
+    if (run) (run.hinweise ??= []).push("Keine Eingabe-Items — Schritt uebersprungen.");
+    return true;
+  }
+
   private async executeTool(ctx: RunContext, node: WorkflowNode, items: WorkflowItem[]): Promise<WorkflowItem[]> {
+    if (this.ohneEingabe(ctx, node, items)) return [];
     const toolName = String(node.parameters.tool ?? "");
     if (!isToolAllowedInWorkflows(toolName)) throw new Error(`Tool nicht fuer Workflows freigegeben: ${toolName}`);
     const tool = this.deps.registry.get(toolName);
