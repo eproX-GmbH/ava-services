@@ -1104,7 +1104,8 @@ export type AlertKind =
   | "reminder"         // v0.1.305: User-Reminder, vom ScheduledJob ausgelöst
   | "link-change"      // LM: überwachter Link hat sich geändert
   | "radar-match"      // Phase 4 Discovery: neuer heißer ICP-Kandidat im Radar
-  | "workflow";        // W4: Workflow-Lauf beendet / Freigabe offen
+  | "workflow"         // W4: Workflow-Lauf beendet / Freigabe offen
+  | "import-finished"; // v0.1.593: Vorgang fuer alle Firmen durchgelaufen (mit Fehleruebersicht)
 
 export interface Alert {
   id: string;

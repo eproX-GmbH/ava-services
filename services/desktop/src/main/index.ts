@@ -223,6 +223,7 @@ import { WatchlistKeyStore } from "./linkedin/watchlist/key-store";
 import { WatchlistStore, watchlistLimitsForTier } from "./linkedin/watchlist/store";
 import { buildApifyProvider } from "./linkedin/watchlist/providers/apify";
 import { WorkflowService } from "./workflows";
+import { TransactionWatcher } from "./transaction-watcher";
 import type { WorkflowProgressFrame } from "../shared/workflow-types";
 import { WatchlistSupervisor } from "./linkedin/watchlist/supervisor";
 import { PersonenRadarStore } from "./linkedin/personen-radar/store";
@@ -3039,6 +3040,26 @@ app.whenReady().then(async () => {
     getActorId: () => auth.getStatus().actorId ?? null,
   });
   workflowService.start();
+  // v0.1.593 — Vorgangs-Watcher: Meldung nach Abschluss eines Imports (mit
+  // Fehleruebersicht) und Quelle fuer das Workflow-Ereignis import.finished.
+  const transactionWatcher = new TransactionWatcher({
+    gatewayRequest: (path) => gatewayClient.request(path),
+    isSignedIn: () => auth.getStatus().signedIn,
+    addAlert: (input) => alerts.add({ tenantId: null, companyId: "", companyName: "Vorgang", ...input }),
+    notify: (a) => {
+      broadcastAlertsChanged();
+      notifications.notifyForAlert(a);
+    },
+    onCompleted: (tx, companies) => {
+      for (const c of companies) {
+        if (c.state !== "completed") continue;
+        void workflowService?.emitEvent("import.finished", { transactionId: tx.transactionId, transactionName: tx.name, companyId: c.companyId });
+      }
+    },
+    audit: ({ summary, severity, metadata }) =>
+      audit({ actorType: "system", actorId: null, category: "import", action: "transaction.finished", severity, subjectType: null, subjectId: (metadata.transactionId as string) ?? null, summary, metadata }),
+  });
+  transactionWatcher.start();
   // W4 — Workflow-Trigger alert.created.
   alerts.onCreated = (a) => {
     void workflowService?.emitEvent("alert.created", { alertId: a.id, kind: a.kind, severity: a.severity, headline: a.headline, companyId: a.companyId, companyName: a.companyName });

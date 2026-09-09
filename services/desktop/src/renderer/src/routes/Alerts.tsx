@@ -39,6 +39,7 @@ const KIND_LABEL: Record<AlertKind, string> = {
   "link-change": "Link-Änderung",
   "radar-match": "Radar-Treffer",
   workflow: "Workflow",
+  "import-finished": "Vorgang abgeschlossen",
 };
 
 const SEVERITY_LABEL: Record<AlertSeverity, string> = {
