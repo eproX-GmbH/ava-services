@@ -5597,6 +5597,14 @@ app.whenReady().then(async () => {
       return { error: err instanceof Error ? err.message : String(err) };
     }
   });
+  ipcMain.handle("workflows:templates", () => wf().templates());
+  ipcMain.handle("workflows:createFromTemplate", (_e, templateId: string) => {
+    try {
+      return wf().createFromTemplate(String(templateId));
+    } catch (err) {
+      return { error: err instanceof Error ? err.message : String(err) };
+    }
+  });
   ipcMain.handle("workflows:estimate", (_e, id: string) => {
     const def = wf().get(String(id));
     return def ? wf().estimate(def) : null;

@@ -507,6 +507,10 @@ const api = {
     runBatch: (id: string, firmen: Array<{ companyId?: string; discoveryId?: string; companyName?: string }>, opts?: { dryRun?: boolean }): Promise<{ gestartet?: number; error?: string }> =>
       ipcRenderer.invoke("workflows:runBatch", id, firmen, opts),
     share: (id: string): Promise<{ workflow?: import("../shared/workflow-types").OrgWorkflowRow; error?: string }> => ipcRenderer.invoke("workflows:share", id),
+    templates: (): Promise<Array<{ id: string; name: string; description: string; scope: "company" | "none"; trigger: string; verfuegbar: boolean; fehlendeTools: string[]; requires?: string }>> =>
+      ipcRenderer.invoke("workflows:templates"),
+    createFromTemplate: (templateId: string): Promise<{ workflow?: import("../shared/workflow-types").WorkflowDefinition; problems?: Array<{ node?: string; message: string }>; angelegt?: string[]; error?: string }> =>
+      ipcRenderer.invoke("workflows:createFromTemplate", templateId),
     orgList: (): Promise<{ items?: Array<import("../shared/workflow-types").OrgWorkflowRow & { vonMir: boolean }>; error?: string }> => ipcRenderer.invoke("workflows:orgList"),
     adopt: (orgId: string): Promise<{ workflow?: import("../shared/workflow-types").WorkflowDefinition; problems?: Array<{ node?: string; message: string }>; error?: string }> =>
       ipcRenderer.invoke("workflows:adopt", orgId),

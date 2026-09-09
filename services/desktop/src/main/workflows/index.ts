@@ -21,6 +21,7 @@ import { WorkflowStore, validateDefinition, type ValidationProblem } from "./sto
 import { WorkflowRunner } from "./runner";
 import { buildCatalog, catalogForAgent, isToolAllowedInWorkflows } from "./catalog";
 import type { CompanyScope } from "./context";
+import { WORKFLOW_TEMPLATES, templateToDefinition } from "./templates";
 
 const TICK_MS = 60_000;
 /** Zeit-Trigger ohne Nachholen: nur innerhalb dieses Fensters nach der Uhrzeit. */
@@ -211,6 +212,40 @@ export class WorkflowService {
       company = { companyId: k.companyId, companyName: k.name };
     }
     return this.runner.run(def, { trigger: opts.trigger, dryRun: opts.dryRun, inputItems: opts.inputItems, company, untilNode: opts.untilNode });
+  }
+
+  // ---- W8 — Vorlagen -------------------------------------------------------------
+
+  templates(): Array<{ id: string; name: string; description: string; scope: "company" | "none"; trigger: string; verfuegbar: boolean; fehlendeTools: string[]; requires?: string }> {
+    return WORKFLOW_TEMPLATES.map((t) => {
+      const fehlende = t.tools.filter((n) => !this.toolExists(n));
+      return { id: t.id, name: t.name, description: t.description, scope: t.scope, trigger: t.trigger.kind, verfuegbar: fehlende.length === 0, fehlendeTools: fehlende, requires: t.requires };
+    });
+  }
+
+  /** Vorlage anlegen; benoetigte Sub-Vorlage wird mit angelegt (oder wiederverwendet). */
+  createFromTemplate(templateId: string): { workflow: WorkflowDefinition; problems: ValidationProblem[]; angelegt: string[] } {
+    const t = WORKFLOW_TEMPLATES.find((x) => x.id === templateId);
+    if (!t) throw new Error("Vorlage nicht gefunden.");
+    const fehlende = t.tools.filter((n) => !this.toolExists(n));
+    if (fehlende.length > 0) throw new Error(`Vorlage braucht Tools, die nicht verfuegbar sind: ${fehlende.join(", ")}`);
+    const angelegt: string[] = [];
+    let subId: string | undefined;
+    if (t.requires) {
+      const subT = WORKFLOW_TEMPLATES.find((x) => x.id === t.requires);
+      if (subT) {
+        const vorhanden = this.store.list().find((w) => w.name === subT.name);
+        if (vorhanden) subId = vorhanden.id;
+        else {
+          const r = this.save(templateToDefinition(subT), { createdBy: "user" });
+          subId = r.workflow.id;
+          angelegt.push(r.workflow.name);
+        }
+      }
+    }
+    const r = this.save(templateToDefinition(t, subId), { createdBy: "user" });
+    angelegt.push(r.workflow.name);
+    return { ...r, angelegt };
   }
 
   // ---- W7 — Teilen mit der Organisation ----------------------------------------

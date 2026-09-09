@@ -299,6 +299,9 @@ export function WorkflowEditor(): JSX.Element {
   const [addQuery, setAddQuery] = useState("");
   const [firmaFuer, setFirmaFuer] = useState<{ dryRun: boolean; untilNode?: string } | null>(null);
   const [kosten, setKosten] = useState<{ hinweis: string } | null>(null);
+  // W8 — Undo/Redo: Schnappschuesse von Nodes+Kanten+Definition.
+  const [history, setHistory] = useState<Array<{ nodes: WfFlowNode[]; edges: Edge[]; def: WorkflowDefinition }>>([]);
+  const [future, setFuture] = useState<Array<{ nodes: WfFlowNode[]; edges: Edge[]; def: WorkflowDefinition }>>([]);
   const [andere, setAndere] = useState<Array<{ id: string; name: string }>>([]);
 
   const load = useCallback(async () => {
@@ -368,12 +371,53 @@ export function WorkflowEditor(): JSX.Element {
     setEdges((es) => applyEdgeChanges(changes, es));
     if (changes.some((c) => c.type === "remove")) setDirty(true);
   }, []);
-  const onConnect = useCallback((c: Connection) => {
+  const onConnect = (c: Connection): void => {
+    snapshot();
     setEdges((es) => addEdge({ ...c, id: `${c.source}:${c.sourceHandle}→${c.target}`, targetHandle: "in" }, es));
     setDirty(true);
-  }, []);
+  };
+
+  const snapshot = (): void => {
+    if (!def) return;
+    setHistory((h) => [...h.slice(-49), { nodes, edges, def }]);
+    setFuture([]);
+  };
+  const undo = (): void => {
+    const last = history[history.length - 1];
+    if (!last || !def) return;
+    setFuture((f) => [...f, { nodes, edges, def }]);
+    setHistory((h) => h.slice(0, -1));
+    setNodes(last.nodes);
+    setEdges(last.edges);
+    setDef(last.def);
+    setDirty(true);
+  };
+  const redo = (): void => {
+    const next = future[future.length - 1];
+    if (!next || !def) return;
+    setHistory((h) => [...h, { nodes, edges, def }]);
+    setFuture((f) => f.slice(0, -1));
+    setNodes(next.nodes);
+    setEdges(next.edges);
+    setDef(next.def);
+    setDirty(true);
+  };
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent): void => {
+      const mod = e.metaKey || e.ctrlKey;
+      if (!mod || e.key.toLowerCase() !== "z") return;
+      const t = e.target as HTMLElement | null;
+      if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
+      e.preventDefault();
+      if (e.shiftKey) redo();
+      else undo();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }); // eslint-disable-line react-hooks/exhaustive-deps
 
   const updateNode = (name: string, patch: Partial<WorkflowNode>): void => {
+    snapshot();
     setNodes((ns) => ns.map((n) => (n.id === name ? { ...n, data: { ...n.data, wf: { ...n.data.wf, ...patch } } } : n)));
     setDirty(true);
   };
@@ -390,6 +434,7 @@ export function WorkflowEditor(): JSX.Element {
   };
 
   const addNode = (entry: WorkflowCatalogEntry): void => {
+    snapshot();
     const base = entry.label.replace(/^tool:/, "");
     let name = base, i = 2;
     while (nodes.some((n) => n.id === name)) name = `${base} ${i++}`;
@@ -474,6 +519,12 @@ export function WorkflowEditor(): JSX.Element {
               Abbrechen
             </button>
           )}
+          <button type="button" className="proc-toggle" onClick={undo} disabled={history.length === 0} title="Rückgängig (Cmd/Strg+Z)">
+            ↶
+          </button>
+          <button type="button" className="proc-toggle" onClick={redo} disabled={future.length === 0} title="Wiederholen (Shift+Cmd/Strg+Z)">
+            ↷
+          </button>
           <button type="button" className="primary" onClick={() => void save()} disabled={!dirty}>
             Speichern
           </button>
@@ -595,6 +646,7 @@ export function WorkflowEditor(): JSX.Element {
                   type="button"
                   className="link"
                   onClick={() => {
+                    snapshot();
                     setNodes((ns) => ns.filter((n) => n.id !== selectedNode.name));
                     setEdges((es) => es.filter((e) => e.source !== selectedNode.name && e.target !== selectedNode.name));
                     setSelected(null);

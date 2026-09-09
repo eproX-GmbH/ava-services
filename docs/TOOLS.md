@@ -5,7 +5,7 @@ NICHT direkt bearbeiten — die Quelle der Wahrheit ist `services/desktop/src/ma
 Lauf via `pnpm -F @ava/desktop tools:doc` (oder automatisch via `build:typecheck`).
 
 Stand: 2026-09-09
-Anzahl Tools: 238
+Anzahl Tools: 239
 
 ## Firmen (17)
 
@@ -2197,7 +2197,7 @@ _Parameter:_
 - `profileUrl: string` (required)
 - `fokus: boolean` (required)
 
-## workflows (13)
+## workflows (14)
 
 ### `workflow_adopt`
 
@@ -2311,6 +2311,15 @@ Teilt einen Workflow (id oder Name) mit der Organisation. Mitglieder koennen ihn
 
 _Parameter:_
 - `workflow: string` (required)
+
+### `workflow_templates`
+
+_Datei:_ `services/desktop/src/main/agent/tools/workflows.ts`
+
+Ohne templateId: listet Vorlagen mit Verfuegbarkeit. Mit templateId: legt die Vorlage (und eine benoetigte Sub-Vorlage) als eigene Workflows an — Trigger manuell, Schreib-Schritte nicht freigegeben. Fragt vor dem Anlegen nach.
+
+_Parameter:_
+- `templateId: string`
 
 ### `workflow_update`
 

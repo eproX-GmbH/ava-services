@@ -503,5 +503,28 @@ export function buildWorkflowTools(deps: WorkflowToolDeps): Tool[] {
     },
   });
 
-  return [list, get, catalog, save, update, run, del, approvals, approve, fromConversation, share, orgList, adopt];
+  const templates = defineTool({
+    name: "workflow_templates",
+    summary: "Fertige Workflow-Vorlagen auflisten und anlegen (z. B. Radar-Import mit Telegram-Bericht).",
+    category: "workflow workflows vorlagen beispiele anlegen",
+    description: "Ohne templateId: listet Vorlagen mit Verfuegbarkeit. Mit templateId: legt die Vorlage (und eine benoetigte Sub-Vorlage) als eigene Workflows an — Trigger manuell, Schreib-Schritte nicht freigegeben. Fragt vor dem Anlegen nach.",
+    parameters: { type: "object", properties: { templateId: { type: "string" } } },
+    schema: yup.object({ templateId: yup.string().trim().optional() }).noUnknown(true),
+    preview: (r: Record<string, any>) => (r.error as string | undefined) ?? (r.angelegt ? `angelegt: ${r.angelegt.join(", ")}` : `${r.vorlagen?.length ?? 0} Vorlagen`),
+    run: async (args, c) => {
+      if (!args.templateId) return { vorlagen: svc().templates() };
+      const t = svc().templates().find((x) => x.id === args.templateId);
+      if (!t) return { error: `Vorlage nicht gefunden: ${args.templateId}` };
+      const value = await c.ui.confirmAction({ kind: "additive", prompt: `Vorlage „${t.name}“ als Workflow anlegen?${t.requires ? " (legt auch die Sub-Vorlage an)" : ""}`, confirmValue: "ja", options: [{ value: "ja", label: "Anlegen" }, { value: "nein", label: "Abbrechen" }] }, c.signal);
+      if (value !== "ja") return { ...userDeclined() };
+      try {
+        const r = svc().createFromTemplate(t.id);
+        return { angelegt: r.angelegt, workflow: kompakt(r.workflow), problems: r.problems };
+      } catch (err) {
+        return { error: err instanceof Error ? err.message : String(err) };
+      }
+    },
+  });
+
+  return [list, get, catalog, save, update, run, del, approvals, approve, fromConversation, share, orgList, adopt, templates];
 }

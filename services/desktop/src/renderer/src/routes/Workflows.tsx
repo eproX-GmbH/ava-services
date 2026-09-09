@@ -124,6 +124,8 @@ export function Workflows(): JSX.Element {
   const [rows, setRows] = useState<WorkflowListEntry[]>([]);
   const [approvals, setApprovals] = useState<WorkflowApproval[]>([]);
   const [orgRows, setOrgRows] = useState<Array<OrgWorkflowRow & { vonMir: boolean }>>([]);
+  const [vorlagen, setVorlagen] = useState<Array<{ id: string; name: string; description: string; verfuegbar: boolean; fehlendeTools: string[]; trigger: string }>>([]);
+  const [vorlagenOffen, setVorlagenOffen] = useState(false);
   // Organisation vorhanden? → Liste der geteilten Workflows laedt ohne Fehler.
   const [inOrg, setInOrg] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
@@ -138,6 +140,7 @@ export function Workflows(): JSX.Element {
       const o = await window.api.workflows.orgList();
       setInOrg(!o.error);
       setOrgRows(o.items ?? []);
+      setVorlagen(await window.api.workflows.templates());
     } catch (err) {
       setNotice(err instanceof Error ? err.message : String(err));
     }
@@ -319,10 +322,44 @@ export function Workflows(): JSX.Element {
         </section>
       )}
 
+      <details className="settings-collapse" open={vorlagenOffen || rows.length === 0} onToggle={(e) => setVorlagenOffen((e.target as HTMLDetailsElement).open)}>
+        <summary>Vorlagen ({vorlagen.length})</summary>
+        <div className="org-list">
+          {vorlagen.map((v) => (
+            <div key={v.id} className="org-row">
+              <div className="org-row__main">
+                <span className="org-row__title">
+                  {v.name} <span className="muted">· Trigger {v.trigger}</span>
+                </span>
+                <span className="org-row__meta">{v.description}</span>
+                {!v.verfuegbar && <span className="muted small warn">Nicht verfügbar: {v.fehlendeTools.join(", ")} (Funktion abgeschaltet oder nicht verbunden)</span>}
+              </div>
+              <div className="org-row__actions">
+                <button
+                  type="button"
+                  className="primary"
+                  disabled={!v.verfuegbar || busy === v.id}
+                  onClick={() => {
+                    setBusy(v.id);
+                    void window.api.workflows.createFromTemplate(v.id).then((r) => {
+                      setNotice(r.error ?? `Angelegt: ${(r.angelegt ?? []).join(", ")} — Trigger steht auf manuell, Schreib-Schritte sind nicht freigegeben.`);
+                      setBusy(null);
+                      void reload();
+                    });
+                  }}
+                >
+                  Anlegen
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      </details>
+
       {rows.length === 0 ? (
         <div className="radar-hint">
-          Noch keine Workflows. Erarbeite einen Ablauf im <Link to="/chat">Chat</Link> und sag dann „speicher die Schritte als Workflow“, oder beschreibe direkt, was
-          regelmäßig passieren soll.
+          Noch keine Workflows. Erarbeite einen Ablauf im <Link to="/chat">Chat</Link> und sag dann „speicher die Schritte als Workflow“, beschreibe direkt, was
+          regelmäßig passieren soll, oder starte mit einer Vorlage oben.
         </div>
       ) : (
         <div className="wf-grid">
