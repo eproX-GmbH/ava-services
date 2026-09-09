@@ -8093,6 +8093,22 @@ input, textarea, select, button, a, summary, details,
 .wf-weekdays { display: flex; gap: 0.5rem; flex-wrap: wrap; }
 .wf-deps { display: flex; flex-direction: column; gap: 0.4rem; }
 .wf-panel__section > .telegram-input { flex: none; width: 100%; box-sizing: border-box; }
+/* v0.1.612 — Lauf-Historie und Lauf-Detail */
+.wf-runhead { display: flex; gap: 1rem; align-items: center; flex-wrap: wrap; padding: 0.4rem 1rem; border-bottom: 1px solid var(--color-border); background: var(--color-bg-1); font-size: 13px; }
+.wf-runhead__actions { margin-left: auto; display: flex; gap: 0.5rem; align-items: center; }
+.wf-runs__filter { display: flex; gap: 1rem; flex-wrap: wrap; margin: 0.5rem 0 1rem; }
+.wf-runs__filter .field { min-width: 180px; }
+.wf-runs__tablewrap, .wf-items__wrap { overflow-x: auto; max-width: 100%; }
+.wf-runs__row { cursor: pointer; }
+.wf-runs__row:hover td { background: var(--color-bg-1); }
+.wf-runs__summary { max-width: 360px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wf-items { display: flex; flex-direction: column; gap: 0.35rem; }
+.wf-items__bar { display: flex; gap: 0.75rem; align-items: center; }
+.wf-items__table { font-size: 12px; }
+.wf-items__table td { max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wf-rundetail { display: flex; flex-direction: column; gap: 0.5rem; margin-top: 0.5rem; }
+.wf-rundetail__facts { display: flex; flex-direction: column; gap: 0.3rem; font-size: 13px; }
+.wf-rundetail__facts .muted { display: inline-block; min-width: 90px; }
 .wf-deps .wf-badge { margin-right: 0.25rem; }
 .wf-run { text-align: left; background: none; cursor: pointer; }
 .wf-run--active { border-color: var(--color-indigo-500); }

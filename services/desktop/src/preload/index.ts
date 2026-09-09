@@ -494,6 +494,8 @@ const api = {
     approvals: (status?: "open" | "all"): Promise<import("../shared/workflow-types").WorkflowApproval[]> => ipcRenderer.invoke("workflows:approvals", status),
     executions: (id: string, limit?: number): Promise<import("../shared/workflow-types").WorkflowExecution[]> => ipcRenderer.invoke("workflows:executions", id, limit),
     execution: (id: string, executionId: string): Promise<import("../shared/workflow-types").WorkflowExecution | null> => ipcRenderer.invoke("workflows:execution", id, executionId),
+    executionsAll: (opts?: { status?: string; workflowId?: string; sinceDays?: number; limit?: number }): Promise<import("../shared/workflow-types").WorkflowExecution[]> => ipcRenderer.invoke("workflows:executionsAll", opts),
+    rerun: (id: string, executionId: string): Promise<{ gestartet: boolean; executionId?: string; error?: string }> => ipcRenderer.invoke("workflows:rerun", id, executionId),
     save: (
       input: Partial<import("../shared/workflow-types").WorkflowDefinition> & Pick<import("../shared/workflow-types").WorkflowDefinition, "name" | "nodes" | "connections" | "trigger">,
     ): Promise<{ workflow: import("../shared/workflow-types").WorkflowDefinition; problems: Array<{ node?: string; message: string }> } | { error: string }> =>

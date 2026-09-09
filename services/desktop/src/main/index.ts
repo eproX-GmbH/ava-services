@@ -5535,6 +5535,8 @@ app.whenReady().then(async () => {
   ipcMain.handle("workflows:approvals", (_e, status?: string) => wf().approvals((status as "open" | "all" | undefined) ?? "open"));
   ipcMain.handle("workflows:executions", (_e, id: string, limit?: number) => wf().executions(String(id), limit ?? 50));
   ipcMain.handle("workflows:execution", (_e, id: string, executionId: string) => wf().execution(String(id), String(executionId)));
+  ipcMain.handle("workflows:executionsAll", (_e, opts?: { status?: string; workflowId?: string; sinceDays?: number; limit?: number }) => wf().executionsAll(opts ?? {}));
+  ipcMain.handle("workflows:rerun", (_e, id: string, executionId: string) => wf().rerun(String(id), String(executionId)));
   ipcMain.handle("workflows:save", (_e, input: Parameters<WorkflowService["save"]>[0]) => {
     try {
       return wf().save(input, { createdBy: "user" });

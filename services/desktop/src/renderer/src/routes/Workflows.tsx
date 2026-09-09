@@ -227,6 +227,9 @@ export function Workflows(): JSX.Element {
           </p>
         </div>
         <div className="radar-actions">
+          <Link to="/workflows/laeufe" className="proc-toggle">
+            Alle Läufe
+          </Link>
           <Link to="/chat" className="proc-toggle">
             Im Chat bauen
           </Link>

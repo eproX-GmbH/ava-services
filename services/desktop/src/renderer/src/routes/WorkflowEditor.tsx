@@ -4,7 +4,8 @@
 // kleine Korrekturen. Positionen ohne Wert werden per dagre gelegt.
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { dauerText, firmaText } from "./WorkflowRuns";
 import {
   Background,
   Controls,
@@ -25,6 +26,7 @@ import {
 import "@xyflow/react/dist/style.css";
 import dagre from "dagre";
 import type {
+  WorkflowItem,
   WorkflowCatalogEntry,
   WorkflowDefinition,
   WorkflowExecution,
@@ -286,8 +288,163 @@ function expressionVorschlaege(def: WorkflowDefinition, nodeName: string, ex: Wo
   return [...out];
 }
 
+// ---- v0.1.612 — Lauf-Detail je Node: Eingabe | Ausgabe | Details ------------
+
+function zelle(v: unknown): string {
+  if (v == null) return "";
+  if (typeof v === "string") return v.length > 80 ? `${v.slice(0, 80)}…` : v;
+  if (typeof v === "number" || typeof v === "boolean") return String(v);
+  try {
+    const j = JSON.stringify(v);
+    return j.length > 80 ? `${j.slice(0, 80)}…` : j;
+  } catch {
+    return String(v);
+  }
+}
+
+function ItemsTable({ items, leerText }: { items: WorkflowItem[]; leerText: string }): JSX.Element {
+  const [json, setJson] = useState(false);
+  const [alle, setAlle] = useState(false);
+  const gezeigt = alle ? items : items.slice(0, 25);
+  const spalten = useMemo(() => {
+    const keys: string[] = [];
+    for (const it of items.slice(0, 50)) for (const k of Object.keys(it.json ?? {})) if (!keys.includes(k)) keys.push(k);
+    return keys.slice(0, 14);
+  }, [items]);
+  if (items.length === 0) return <p className="muted small">{leerText}</p>;
+  return (
+    <div className="wf-items">
+      <div className="wf-items__bar">
+        <span className="muted small">{items.length} Items{spalten.length === 14 ? " · erste 14 Spalten" : ""}</span>
+        <button type="button" className="link" onClick={() => setJson((v) => !v)}>
+          {json ? "Tabelle" : "JSON"}
+        </button>
+        {items.length > 25 && (
+          <button type="button" className="link" onClick={() => setAlle((v) => !v)}>
+            {alle ? "nur 25" : `alle ${items.length}`}
+          </button>
+        )}
+      </div>
+      {json ? (
+        <pre className="wf-pre">{JSON.stringify(gezeigt.map((i) => i.json), null, 1)}</pre>
+      ) : (
+        <div className="wf-items__wrap">
+          <table className="radar-table wf-items__table">
+            <thead>
+              <tr>
+                <th>#</th>
+                {spalten.map((k) => (
+                  <th key={k}>{k}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {gezeigt.map((it, i) => (
+                <tr key={i}>
+                  <td className="muted">{i + 1}</td>
+                  {spalten.map((k) => (
+                    <td key={k} title={zelle((it.json ?? {})[k])}>
+                      {zelle((it.json ?? {})[k])}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function RunDetail({ def, execution, nodeName }: { def: WorkflowDefinition; execution: WorkflowExecution; nodeName: string }): JSX.Element | null {
+  const runs = execution.nodeRuns[nodeName] ?? [];
+  const [durchgang, setDurchgang] = useState(runs.length - 1);
+  const [tab, setTab] = useState<"eingabe" | "ausgabe" | "details">("ausgabe");
+  const idx = Math.min(Math.max(0, durchgang), runs.length - 1);
+  const run = runs[idx];
+  if (!run) return null;
+  // Eingabe = Ausgaben der Vorgaenger auf den Kanten zu diesem Node (gleicher Durchgang, sonst letzter).
+  const eingabe: WorkflowItem[] = [];
+  for (const [from, conn] of Object.entries(def.connections)) {
+    (conn?.main ?? []).forEach((targets, outIdx) => {
+      if (!(targets ?? []).some((t) => t.node === nodeName)) return;
+      const fr = execution.nodeRuns[from];
+      const r = fr?.[Math.min(idx, (fr?.length ?? 1) - 1)] ?? fr?.at(-1);
+      for (const it of r?.output?.[outIdx] ?? []) eingabe.push(it);
+    });
+  }
+  const ausgabe = (run.output ?? []).flat();
+  const dauer = run.finishedAt ? Math.max(0, Date.parse(run.finishedAt) - Date.parse(run.startedAt)) : null;
+  return (
+    <div className="wf-rundetail">
+      {runs.length > 1 && (
+        <label className="field">
+          <span>Durchgang</span>
+          <select value={idx} onChange={(e) => setDurchgang(Number(e.target.value))}>
+            {runs.map((r, i) => (
+              <option key={i} value={i}>
+                {i + 1} von {runs.length} · {new Date(r.startedAt).toLocaleTimeString("de-DE", { timeStyle: "short" })} · {r.status} · {r.outputItems.reduce((a, b) => a + b, 0)} Items
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
+      <div className="wf-panel__tabs">
+        <button type="button" className={`proc-toggle${tab === "eingabe" ? " wf-tab--active" : ""}`} onClick={() => setTab("eingabe")}>
+          Eingabe ({eingabe.length})
+        </button>
+        <button type="button" className={`proc-toggle${tab === "ausgabe" ? " wf-tab--active" : ""}`} onClick={() => setTab("ausgabe")}>
+          Ausgabe ({ausgabe.length})
+        </button>
+        <button type="button" className={`proc-toggle${tab === "details" ? " wf-tab--active" : ""}`} onClick={() => setTab("details")}>
+          Details
+        </button>
+      </div>
+      {tab === "eingabe" && <ItemsTable items={eingabe} leerText="Keine Eingabe-Items (Start-Node oder Vorgänger ohne Ausgabe)." />}
+      {tab === "ausgabe" && <ItemsTable items={ausgabe} leerText={run.status === "error" ? "Keine Ausgabe — Schritt ist fehlgeschlagen." : "Keine Ausgabe-Items."} />}
+      {tab === "details" && (
+        <div className="wf-rundetail__facts">
+          <div>
+            <span className="muted">Status</span> {statusPill(run.status)}
+          </div>
+          <div>
+            <span className="muted">Start</span> {new Date(run.startedAt).toLocaleString("de-DE", { dateStyle: "short", timeStyle: "medium" })}
+          </div>
+          {dauer != null && (
+            <div>
+              <span className="muted">Dauer</span> {dauer < 1000 ? `${dauer} ms` : dauer < 60_000 ? `${(dauer / 1000).toFixed(1)} s` : `${Math.round(dauer / 60_000)} min`}
+            </div>
+          )}
+          <div>
+            <span className="muted">Items</span> {run.inputItems} rein → {run.outputItems.join(" / ")} raus{run.outputItems.length > 1 ? " (je Ausgang)" : ""}
+          </div>
+          {run.toolCalls != null && (
+            <div>
+              <span className="muted">Tool-Aufrufe</span> {run.toolCalls}
+            </div>
+          )}
+          {run.error && <div className="warn">{run.error}</div>}
+          {(run.hinweise ?? []).map((h, i) => (
+            <div key={i} className="muted small">
+              {h}
+            </div>
+          ))}
+          {run.platzhalter && (
+            <details className="settings-collapse" open>
+              <summary>Befüllte Platzhalter</summary>
+              <pre className="wf-pre">{JSON.stringify(run.platzhalter, null, 1)}</pre>
+            </details>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function WorkflowEditor(): JSX.Element {
   const { id = "" } = useParams();
+  const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const [def, setDef] = useState<WorkflowDefinition | null>(null);
   const [catalog, setCatalog] = useState<WorkflowCatalogEntry[]>([]);
@@ -337,12 +494,16 @@ export function WorkflowEditor(): JSX.Element {
     setExecutions(ex);
     void window.api.workflows.estimate(id).then(setKosten);
     void window.api.workflows.list().then((l) => setAndere(l.filter((w) => w.id !== id).map((w) => ({ id: w.id, name: w.name }))));
-    const latest = ex[0] ?? null;
+    // v0.1.612 — ?lauf=<id> aus der Historie: genau diesen Lauf zeigen.
+    const gewuenscht = searchParams.get("lauf");
+    let latest = ex[0] ?? null;
+    if (gewuenscht) latest = ex.find((e) => e.id === gewuenscht) ?? (await window.api.workflows.execution(id, gewuenscht)) ?? latest;
     setShownExecution(latest);
     const f = toFlow(d, c, latest);
     setNodes(f.nodes);
     setEdges(f.edges);
     setDirty(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
   useEffect(() => {
@@ -556,6 +717,48 @@ export function WorkflowEditor(): JSX.Element {
         </div>
       </div>
       {notice && <div className="radar-notice wf-editor__notice">{notice}</div>}
+      {shownExecution && (
+        <div className="wf-runhead">
+          <span>
+            <strong>Lauf</strong> vom {new Date(shownExecution.startedAt).toLocaleString("de-DE", { dateStyle: "short", timeStyle: "short" })}
+          </span>
+          <span className="muted">Auslöser: {shownExecution.trigger === "test" ? "Trockenlauf" : shownExecution.trigger}</span>
+          <span className="muted">Firma: {firmaText(shownExecution)}</span>
+          <span className="muted">Dauer: {dauerText(shownExecution)}</span>
+          {statusPill(shownExecution.status)}
+          {shownExecution.waiting && (
+            <span className="muted">
+              {shownExecution.waiting.fertig ?? shownExecution.waiting.weitergegeben.length} Firmen weitergegeben, {shownExecution.waiting.offen ?? "?"} offen · wartet seit{" "}
+              {new Date(shownExecution.waiting.seit).toLocaleString("de-DE", { dateStyle: "short", timeStyle: "short" })}
+            </span>
+          )}
+          {shownExecution.error && <span className="warn small">{shownExecution.error}</span>}
+          <span className="wf-runhead__actions">
+            {(shownExecution.status === "running" || shownExecution.status === "waiting" || shownExecution.status === "paused") && (
+              <button type="button" className="proc-toggle" onClick={() => void window.api.workflows.cancel(shownExecution.id).then(() => load())}>
+                Lauf abbrechen
+              </button>
+            )}
+            {shownExecution.status !== "running" && (
+              <button
+                type="button"
+                className="proc-toggle"
+                title="Denselben Lauf mit denselben Eingaben (Firma, Start-Items) erneut starten"
+                onClick={() =>
+                  void window.api.workflows.rerun(id, shownExecution.id).then((r) => {
+                    setNotice(r.gestartet ? "Lauf wiederholt." : `Wiederholen nicht möglich: ${r.error ?? "unbekannt"}`);
+                  })
+                }
+              >
+                Lauf wiederholen
+              </button>
+            )}
+            <Link to="/workflows/laeufe" className="link">
+              Alle Läufe
+            </Link>
+          </span>
+        </div>
+      )}
       {firmaFuer && (
         <div className="wf-editor__notice">
           <FirmenAuswahl onAbbruch={() => setFirmaFuer(null)} onWahl={(f) => void starte(firmaFuer.dryRun, f, firmaFuer.untilNode)} />
@@ -776,23 +979,7 @@ export function WorkflowEditor(): JSX.Element {
                   )}
                 </div>
               )}
-              {selectedNode && shownExecution?.nodeRuns[selectedNode.name]?.at(-1)?.platzhalter && (
-                <details className="settings-collapse" open>
-                  <summary>Befüllte Platzhalter</summary>
-                  <pre className="wf-pre">{JSON.stringify(shownExecution.nodeRuns[selectedNode.name]!.at(-1)!.platzhalter, null, 1)}</pre>
-                  {(shownExecution.nodeRuns[selectedNode.name]!.at(-1)!.hinweise ?? []).map((h, i) => (
-                    <div key={i} className="muted small warn">
-                      {h}
-                    </div>
-                  ))}
-                </details>
-              )}
-              {selectedNode && shownExecution?.nodeRuns[selectedNode.name]?.at(-1) && (
-                <details className="settings-collapse" open>
-                  <summary>Ausgabe im gezeigten Lauf</summary>
-                  <pre className="wf-pre">{JSON.stringify((shownExecution.nodeRuns[selectedNode.name]!.at(-1)!.output ?? []).map((o) => o.slice(0, 10).map((i) => i.json)), null, 1)}</pre>
-                </details>
-              )}
+              {selectedNode && shownExecution?.nodeRuns[selectedNode.name] && <RunDetail def={def} execution={shownExecution} nodeName={selectedNode.name} />}
             </div>
           )}
 

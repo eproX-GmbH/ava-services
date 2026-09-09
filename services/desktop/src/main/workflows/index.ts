@@ -458,6 +458,43 @@ export class WorkflowService {
     return [...running, ...stored].slice(0, limit);
   }
 
+  /** v0.1.612 — Historie ueber alle Workflows (Laeufe-Seite). */
+  executionsAll(opts: { status?: string; workflowId?: string; sinceDays?: number; limit?: number } = {}): WorkflowExecution[] {
+    const limit = Math.min(1000, Math.max(1, opts.limit ?? 200));
+    const grenze = opts.sinceDays && opts.sinceDays > 0 ? Date.now() - opts.sinceDays * 86_400_000 : 0;
+    const running = this.runner.runningExecutions();
+    const out: WorkflowExecution[] = [];
+    for (const w of this.store.list()) {
+      if (opts.workflowId && w.id !== opts.workflowId) continue;
+      const stored = this.store.listExecutions(w.id, 500).filter((e) => !running.some((r) => r.id === e.id));
+      for (const e of [...running.filter((r) => r.workflowId === w.id), ...stored]) {
+        if (opts.status && e.status !== opts.status) continue;
+        if (grenze && Date.parse(e.startedAt) < grenze) continue;
+        out.push(e);
+      }
+    }
+    out.sort((a, b) => Date.parse(b.startedAt) - Date.parse(a.startedAt));
+    return out.slice(0, limit);
+  }
+
+  /** v0.1.612 — Lauf mit denselben Eingaben (Firma, Start-Items) erneut starten. */
+  async rerun(workflowId: string, executionId: string): Promise<{ gestartet: boolean; executionId?: string; error?: string }> {
+    const ex = this.execution(workflowId, executionId);
+    if (!ex) return { gestartet: false, error: "Lauf nicht gefunden." };
+    const start = Object.entries(ex.nodeRuns).find(([name]) => this.store.get(workflowId)?.nodes.find((n) => n.name === name)?.type === "trigger")?.[1]?.at(-1)?.output?.[0];
+    try {
+      const r = await this.run(workflowId, {
+        trigger: "manual",
+        dryRun: ex.dryRun,
+        ...(ex.scope ? { company: ex.scope } : {}),
+        ...(start && start.length > 0 ? { inputItems: start } : {}),
+      });
+      return { gestartet: true, executionId: r.id };
+    } catch (err) {
+      return { gestartet: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  }
+
   execution(workflowId: string, executionId: string): WorkflowExecution | null {
     return this.runner.runningExecutions().find((e) => e.id === executionId) ?? this.store.getExecution(workflowId, executionId);
   }
