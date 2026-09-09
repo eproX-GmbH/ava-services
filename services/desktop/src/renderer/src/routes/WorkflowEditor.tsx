@@ -541,6 +541,14 @@ export function WorkflowEditor(): JSX.Element {
   }, [shownExecution]);
 
   const selectedNode = useMemo(() => nodes.find((n) => n.id === selected)?.data.wf ?? null, [nodes, selected]);
+  // v0.1.616 — Name als lokaler Entwurf: Umbenennen erst beim Verlassen des
+  // Felds. Vorher aenderte jeder Tastendruck den Namen im Node, waehrend die
+  // Auswahl noch am alten Namen hing — nach dem ersten Zeichen war das Feld tot.
+  const [nameDraft, setNameDraft] = useState("");
+  useEffect(() => {
+    setNameDraft(nodes.find((n) => n.id === selected)?.data.wf.name ?? "");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selected]);
   useEffect(() => {
     setParamText(selectedNode ? JSON.stringify(selectedNode.parameters, null, 2) : "");
     setParamError(null);
@@ -811,7 +819,15 @@ export function WorkflowEditor(): JSX.Element {
             <div className="wf-panel__section">
               <label className="field">
                 <span>Name</span>
-                <input value={selectedNode.name} onChange={(e) => updateNode(selectedNode.name, { name: e.target.value })} onBlur={(e) => renameNode(selectedNode.name, e.target.value)} />
+                <input
+                  value={nameDraft}
+                  onChange={(e) => setNameDraft(e.target.value)}
+                  onBlur={() => selected && renameNode(selected, nameDraft)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+                    if (e.key === "Escape") setNameDraft(selectedNode.name);
+                  }}
+                />
               </label>
               <div className="muted small">Typ: {selectedNode.type === "tool" ? `Tool ${String(selectedNode.parameters.tool)}` : selectedNode.type}</div>
               <label className="field">
@@ -1171,9 +1187,10 @@ export function WorkflowEditor(): JSX.Element {
     if (!n || n === oldName) return;
     if (nodes.some((x) => x.id === n)) {
       setNotice(`Es gibt schon einen Schritt „${n}“.`);
-      updateNode(oldName, { name: oldName });
+      setNameDraft(oldName);
       return;
     }
+    snapshot();
     setNodes((ns) => ns.map((x) => (x.id === oldName ? { ...x, id: n, data: { ...x.data, wf: { ...x.data.wf, name: n } } } : x)));
     setEdges((es) => es.map((e) => ({ ...e, source: e.source === oldName ? n : e.source, target: e.target === oldName ? n : e.target })));
     setSelected(n);
