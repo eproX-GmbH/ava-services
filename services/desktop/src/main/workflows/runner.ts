@@ -252,11 +252,19 @@ export class WorkflowRunner {
     const inbox = new Map<string, Map<number, WorkflowItem[]>>();
     // Wie viele Vorgaenger-Kanten muss ein Node abwarten (nur innerhalb `allowed`)?
     const pendingPreds = new Map<string, number>();
+    // v0.1.601 — Rueckkanten aus dem Schleifenkoerper zum Loop-Node sind keine
+    // Vorgaenger (sonst wartet der Loop-Node ewig auf sich selbst).
+    const rueckkanten = new Set<string>();
+    for (const n of def.nodes) {
+      if (n.type !== "loop" || !allowed.has(n.name)) continue;
+      for (const b of this.loopBody(ctx, n.name, allowed)) rueckkanten.add(`${b}→${n.name}`);
+    }
     for (const [from, conn] of Object.entries(def.connections)) {
       if (!allowed.has(from) || from === collectAt) continue;
       for (const targets of conn.main ?? []) {
         for (const t of targets ?? []) {
           if (!allowed.has(t.node) || t.node === collectAt) continue;
+          if (rueckkanten.has(`${from}→${t.node}`)) continue;
           pendingPreds.set(t.node, (pendingPreds.get(t.node) ?? 0) + 1);
         }
       }
@@ -299,7 +307,10 @@ export class WorkflowRunner {
       // Deaktivierte/uebersprungene Nodes reichen Items durch (Ausgang 0).
       outputs.forEach((items, outIdx) => {
         const targets = def.connections[name]?.main?.[outIdx] ?? [];
-        for (const t of targets) deliver(t.node, t.index, items);
+        for (const t of targets) {
+          if (rueckkanten.has(`${name}→${t.node}`)) continue; // Schleife bedient ihren Koerper selbst
+          deliver(t.node, t.index, items);
+        }
       });
       // Nodes ohne Eingabe-Items, deren Vorgaenger fertig sind, muessen
       // trotzdem „laufen“ (leer), damit nachfolgende Merges nicht haengen.
@@ -515,6 +526,23 @@ export class WorkflowRunner {
           : items.length > 0 && typeof items[0]!.json.transactionId === "string"
             ? String(items[0]!.json.transactionId)
             : "";
+        const txGefordert = typeof node.parameters.transactionId === "string" && node.parameters.transactionId.trim().length > 0;
+        if (!txId && txGefordert) {
+          const j = items[0]?.json ?? {};
+          if (ctx.execution.dryRun) {
+            // Im Trockenlauf gibt es keinen echten Import → hier endet der Test sauber.
+            const run = ctx.execution.nodeRuns[node.name]?.at(-1);
+            if (run) run.error = "Trockenlauf endet hier: Der Vorgang entsteht erst beim echten Import (Schreib-Schritt). Nachfolgende Schritte wurden nicht getestet.";
+            ctx.gestoppt = true;
+            return [items];
+          }
+          const details = [
+            typeof j.importiert === "number" ? `importiert: ${j.importiert}` : null,
+            Array.isArray(j.ohneOrt) && j.ohneOrt.length > 0 ? `ohne Ort (nicht importierbar): ${(j.ohneOrt as unknown[]).slice(0, 5).join(", ")}` : null,
+            typeof j.error === "string" ? j.error : null,
+          ].filter(Boolean);
+          throw new Error(`Warten-Node: kein Vorgang vorhanden — der vorige Schritt hat keinen Import gestartet${details.length ? ` (${details.join(" · ")})` : ""}.`);
+        }
         if (txId) {
           if (!/^[A-Za-z0-9_-]{8,64}$/.test(txId)) {
             throw new Error(`Warten-Node: „${txId.slice(0, 80)}“ ist keine Vorgangs-ID. Erwartet wird z. B. {{ $json.transactionId }} aus dem Ergebnis von discovery_decide oder import_*.`);
@@ -617,17 +645,22 @@ export class WorkflowRunner {
     return a.map((it, i) => ({ json: { ...it.json, ...(byKey.get(String(it.json[key] ?? "")) ?? {}) }, pairedItem: { item: i } }));
   }
 
-  private async executeLoop(ctx: RunContext, node: WorkflowNode, items: WorkflowItem[], allowed: Set<string>): Promise<WorkflowItem[][]> {
-    const size = Math.max(1, Number(node.parameters.batchSize ?? 10));
-    // Schleifenkoerper: von Ausgang 0 erreichbar, bis zurueck zum Loop-Node.
+  /** Schleifenkoerper: von Ausgang 0 des Loop-Nodes erreichbar, bis zurueck zum Loop-Node. */
+  private loopBody(ctx: RunContext, loopName: string, allowed: Set<string>): Set<string> {
     const body = new Set<string>();
-    const stack = (ctx.def.connections[node.name]?.main?.[0] ?? []).map((t) => t.node);
+    const stack = (ctx.def.connections[loopName]?.main?.[0] ?? []).map((t) => t.node);
     while (stack.length > 0) {
       const n = stack.pop()!;
-      if (n === node.name || body.has(n) || !allowed.has(n)) continue;
+      if (n === loopName || body.has(n) || !allowed.has(n)) continue;
       body.add(n);
       for (const targets of ctx.def.connections[n]?.main ?? []) for (const t of targets ?? []) stack.push(t.node);
     }
+    return body;
+  }
+
+  private async executeLoop(ctx: RunContext, node: WorkflowNode, items: WorkflowItem[], allowed: Set<string>): Promise<WorkflowItem[][]> {
+    const size = Math.max(1, Number(node.parameters.batchSize ?? 10));
+    const body = this.loopBody(ctx, node.name, allowed);
     const doneItems: WorkflowItem[] = [];
     for (let i = 0; i < items.length; i += size) {
       if (ctx.signal.aborted) throw new Error("aborted");
@@ -776,6 +809,9 @@ export class WorkflowRunner {
       if (isMail) {
         ctx.state.mailsToday.count++;
         ctx.mailsSent++;
+      }
+      if (result && typeof result === "object" && !Array.isArray(result) && typeof (result as { error?: unknown }).error === "string") {
+        throw new Error(String((result as { error: string }).error));
       }
       if (keyValue) processed.add(keyValue);
       return resultToItems(result, outputPath, pairedIndex);

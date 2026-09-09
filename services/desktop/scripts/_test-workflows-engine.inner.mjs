@@ -1,0 +1,190 @@
+// v0.1.601 — End-to-End-Test der Workflow-Engine mit Stub-Tools (ohne Electron):
+// Radar-Import-Vorlage (Prime + Sub) und alle Logik-Nodes laufen wirklich durch.
+const load = async (p) => { const m = await import(p); return m.default && typeof m.default === "object" && Object.keys(m.default).length > 0 ? m.default : m; };
+const { WorkflowRunner } = await load("../src/main/workflows/runner.ts");
+const { WORKFLOW_TEMPLATES, templateToDefinition } = await load("../src/main/workflows/templates.ts");
+const { DEFAULT_WORKFLOW_SETTINGS } = await load("../src/shared/workflow-types.ts");
+
+const calls = [];
+const tool = (name, run, parse) => ({
+  name, description: name, parameters: { type: "object", properties: {} },
+  parseArgs: (raw) => { if (parse) parse(raw); return raw; },
+  run: async (args, ctx) => { calls.push({ name, args }); return run(args, ctx); },
+  preview: () => name,
+});
+const TX = "tx_0123456789abcdef";
+const tools = new Map([
+  ["discovery_candidates", tool("discovery_candidates", () => ({ rows: [
+    { discoveryId: "disc_aaaa", name: "Alpha GmbH", matchScore: 95, bereitsInAva: false },
+    { discoveryId: "disc_bbbb", name: "Beta AG", matchScore: 70, bereitsInAva: false },
+    { discoveryId: "disc_cccc", name: "Gamma KG", matchScore: 85, bereitsInAva: true },
+  ] }))],
+  ["discovery_decide", tool("discovery_decide", (a) => ({ entschieden: a.decisions.length, importiert: a.decisions.length, ignoriert: 0, transactionId: TX, ohneOrt: [], unbekannt: [] }),
+    (raw) => { if (!Array.isArray(raw?.decisions) || raw.decisions.length < 1) throw new Error("invalid args: decisions is a required field"); })],
+  ["transaction_entities", tool("transaction_entities", (a) => ({ items: [{ companyId: "c1", state: "completed", name: "Beta AG" }, { companyId: "c2", state: "failed" }] }),
+    (raw) => { if (typeof raw?.transactionId !== "string" || !raw.transactionId) throw new Error("invalid args: transactionId is a required field"); })],
+  ["telegram_send_message", tool("telegram_send_message", () => ({ ok: true }), (raw) => { if (!raw?.text) throw new Error("invalid args: text is a required field"); })],
+  ["company_get", tool("company_get", (a) => ({ id: a.companyId, name: "Beta AG", city: "Herford" }))],
+]);
+const registry = { get: (n) => tools.get(n), list: () => [...tools.values()] };
+
+const executions = new Map();
+const store = {
+  saveExecution: (e) => executions.set(e.id, structuredClone(e)),
+  getState: () => ({ processedKeys: {}, mailsToday: { day: "", count: 0 }, scopeRuns: {} }),
+  saveState: () => {}, pruneExecutions: () => {}, listApprovals: () => [], saveApproval: () => {}, getApproval: () => null,
+};
+// Stub-Modell: antwortet auf Platzhalter-Anfragen und KI-Nodes mit JSON.
+const llmPrompts = [];
+const providers = {
+  getStatus: () => ({ ready: true }),
+  getProducerModelOverride: () => undefined,
+  streamChat: async function* ({ messages }) {
+    const user = messages.map((m) => m.content).join("\n");
+    llmPrompts.push(user);
+    const antwort = /Platzhalter|placeholder/i.test(user) && /kassenbestand/.test(user)
+      ? JSON.stringify({ kassenbestand: "1,2 Mio. EUR", ansprechpartner_vertrieb: null })
+      : JSON.stringify({ text: "KI-Text zu " + (user.match(/zu ([^\n:]+)/)?.[1] ?? "?"), body: "ok" });
+    yield { contentDelta: antwort };
+    yield { done: true };
+  },
+};
+const defs = new Map();
+const frames = [];
+const runner = new WorkflowRunner({
+  registry, store, providers,
+  getAutonomyLevel: () => "mutating",
+  emit: (f) => frames.push(f),
+  audit: () => {},
+  getDefinition: (id) => defs.get(id) ?? null,
+  gatewayRequest: async (path) => {
+    if (path.includes(`/transactions/${TX}/entities`)) return { items: [{ companyId: "c1", state: "completed" }, { companyId: "c2", state: "failed" }], total: 2 };
+    throw new Error(`gateway 400 (${path})`);
+  },
+  notify: () => {},
+});
+
+let fails = 0;
+const check = (cond, msg) => { if (!cond) { fails++; console.log("  FAIL", msg); } else console.log("  ok", msg); };
+const mkDef = (id, partial) => ({ id, version: 1, enabled: true, createdAt: "2026-01-01", updatedAt: "2026-01-01", ...partial, settings: { ...DEFAULT_WORKFLOW_SETTINGS, ...(partial.settings ?? {}) } });
+
+console.log("Vorlage: Radar-Import-Bericht (Prime + Sub)");
+{
+  const sub = mkDef("wf_sub", templateToDefinition(WORKFLOW_TEMPLATES.find((t) => t.id === "firmen-kurzprofil-telegram")));
+  const prime = mkDef("wf_prime", templateToDefinition(WORKFLOW_TEMPLATES.find((t) => t.id === "radar-import-bericht"), "wf_sub"));
+  // Schreib-Nodes freigeben wie im Nutzer-Test
+  for (const n of prime.nodes) if (n.type === "tool") n.confirmed = true;
+  for (const n of sub.nodes) if (n.type === "tool") n.confirmed = true;
+  // KI-Node im Sub durch Felder-setzen ersetzen (kein Modell im Test)
+  const ai = sub.nodes.find((n) => n.type === "ai");
+  ai.type = "transform"; ai.parameters = { fields: { text: "Kurz: {{ $company.name ?? $json.name }}" } };
+  defs.set("wf_sub", sub); defs.set("wf_prime", prime);
+  const ex = await runner.run(prime, { trigger: "manual" });
+  check(ex.status === "success", `Lauf-Status: ${ex.status} ${ex.error ?? ""}`);
+  const runs = Object.fromEntries(Object.entries(ex.nodeRuns).map(([k, v]) => [k, v.at(-1)]));
+  check(runs["Score-Filter"]?.outputItems?.[0] === 1, `Score-Filter behaelt 1 von 3 (>=80, nicht in AVA): ${JSON.stringify(runs["Score-Filter"]?.outputItems)}`);
+  const decide = calls.find((c) => c.name === "discovery_decide");
+  check(decide && decide.args.decisions?.[0]?.discoveryId === "disc_aaaa", `discovery_decide mit decisions-Liste: ${JSON.stringify(decide?.args)}`);
+  const ent = calls.find((c) => c.name === "transaction_entities");
+  check(ent && ent.args.transactionId === TX, `transaction_entities bekommt transactionId: ${JSON.stringify(ent?.args)}`);
+  check(runs["Nur fertige"]?.outputItems?.[0] === 1, `Nur fertige: 1 von 2: ${JSON.stringify(runs["Nur fertige"]?.outputItems)}`);
+  const tg = calls.filter((c) => c.name === "telegram_send_message");
+  check(tg.length === 1 && /Beta AG/.test(tg[0].args.text), `Sub-Workflow je fertiger Firma → 1 Telegram mit Firmenname: ${JSON.stringify(tg.map((t) => t.args.text))}`);
+  check(runs["Auf Verarbeitung warten"]?.error == null, `Warten-Node ohne Fehler: ${runs["Auf Verarbeitung warten"]?.error ?? "-"}`);
+}
+
+console.log("Trockenlauf derselben Vorlage");
+{
+  calls.length = 0;
+  const prime = defs.get("wf_prime");
+  const ex = await runner.run(prime, { trigger: "test", dryRun: true });
+  check(ex.status === "success", `Status: ${ex.status} ${ex.error ?? ""}`);
+  check(!calls.some((c) => c.name === "discovery_decide" || c.name === "telegram_send_message"), `Schreib-Tools im Trockenlauf nicht aufgerufen: ${calls.map((c) => c.name).join(",")}`);
+}
+
+console.log("Alle Logik-Nodes");
+{
+  const kette = (names) => { const c = {}; for (let i = 0; i < names.length - 1; i++) c[names[i]] = { main: [[{ node: names[i + 1], index: 0 }]] }; return c; };
+  const nodes = [
+    { name: "Start", type: "trigger", parameters: {} },
+    { name: "Kandidaten", type: "tool", mode: "allItems", parameters: { tool: "discovery_candidates", args: {} } },
+    { name: "Felder", type: "transform", parameters: { fields: { scoreText: "{{ $json.matchScore + ' Punkte' }}", hoch: "{{ $json.matchScore >= 80 }}" } } },
+    { name: "Wenn", type: "if", parameters: { condition: "{{ $json.hoch }}" } },
+    { name: "Verzweigung", type: "switch", parameters: { value: "{{ $json.name.split(' ')[1] }}", cases: [{ label: "GmbH", match: "GmbH" }, { label: "AG", match: "AG" }] } },
+    { name: "Schleife", type: "loop", parameters: { batchSize: 1 } },
+    { name: "Warten kurz", type: "wait", parameters: { minutes: 0 } },
+    { name: "Zusammen", type: "merge", parameters: { mode: "append" } },
+    { name: "Ende", type: "transform", parameters: { fields: { fertig: "{{ true }}" } } },
+  ];
+  const connections = {
+    Start: { main: [[{ node: "Kandidaten", index: 0 }]] },
+    Kandidaten: { main: [[{ node: "Felder", index: 0 }]] },
+    Felder: { main: [[{ node: "Wenn", index: 0 }]] },
+    Wenn: { main: [[{ node: "Verzweigung", index: 0 }], [{ node: "Zusammen", index: 1 }]] },
+    Verzweigung: { main: [[{ node: "Schleife", index: 0 }], [{ node: "Schleife", index: 0 }], [{ node: "Schleife", index: 0 }]] },
+    Schleife: { main: [[{ node: "Warten kurz", index: 0 }], [{ node: "Zusammen", index: 0 }]] },
+    "Warten kurz": { main: [[{ node: "Schleife", index: 0 }]] },
+    Zusammen: { main: [[{ node: "Ende", index: 0 }]] },
+  };
+  const def = mkDef("wf_logic", { name: "Logik", description: "", nodes: nodes.map((n, i) => ({ id: `n${i}`, position: [i * 200, 0], ...n })), connections, trigger: { kind: "manual" }, variables: {}, origin: { kind: "manual" }, settings: { scope: "none" } });
+  const ex = await runner.run(def, { trigger: "manual" });
+  check(ex.status === "success", `Status: ${ex.status} ${ex.error ?? ""}`);
+  const runs = Object.fromEntries(Object.entries(ex.nodeRuns).map(([k, v]) => [k, v.at(-1)]));
+  for (const n of ["Felder", "Wenn", "Verzweigung", "Schleife", "Warten kurz", "Zusammen", "Ende"]) check(runs[n] && !runs[n].error, `Node ${n}: ${runs[n]?.error ?? "ok"} out=${JSON.stringify(runs[n]?.outputItems)}`);
+  check(runs["Ende"]?.outputItems?.[0] === 3, `Ende erhaelt alle 3 Items (2 ueber Schleife, 1 ueber sonst-Zweig): ${JSON.stringify(runs["Ende"]?.outputItems)}`);
+}
+
+console.log("Stop-Node und Fehlerpfad");
+{
+  const def = mkDef("wf_stop", { name: "Stop", description: "", nodes: [
+    { id: "n0", position: [0, 0], name: "Start", type: "trigger", parameters: {} },
+    { id: "n1", position: [200, 0], name: "Abbruch", type: "stop", parameters: { message: "Gewollt: {{ $run.workflowName }}" } },
+  ], connections: { Start: { main: [[{ node: "Abbruch", index: 0 }]] } }, trigger: { kind: "manual" }, variables: {}, origin: { kind: "manual" }, settings: { scope: "none" } });
+  const ex = await runner.run(def, { trigger: "manual" });
+  check(ex.status === "error" && /Gewollt: Stop/.test(ex.error ?? ""), `Stop bricht mit aufgeloester Meldung ab: ${ex.error}`);
+}
+
+console.log("KI-Node, Platzhalter und Firmen-Kontext");
+{
+  calls.length = 0;
+  const def = mkDef("wf_ai", { name: "KI", description: "", nodes: [
+    { id: "n0", position: [0, 0], name: "Start", type: "trigger", parameters: {} },
+    { id: "n1", position: [200, 0], name: "Kurz", type: "ai", mode: "allItems", parameters: { prompt: "Kurzuebersicht zu {{ $company.name }}: Kasse $kassenbestand ?? \"kein Kassenbestand\", Vertrieb $ansprechpartner_vertrieb ?? \"niemand bekannt\"", outputSchema: { type: "object", required: ["text"], properties: { text: { type: "string" } } } } },
+    { id: "n2", position: [400, 0], name: "Senden", type: "tool", mode: "allItems", confirmed: true, parameters: { tool: "telegram_send_message", args: { text: "{{ $json.text }}" } } },
+  ], connections: { Start: { main: [[{ node: "Kurz", index: 0 }]] }, Kurz: { main: [[{ node: "Senden", index: 0 }]] } }, trigger: { kind: "manual" }, variables: {}, origin: { kind: "manual" }, settings: { scope: "company" } });
+  let ohneFirma = null;
+  try { await runner.run(def, { trigger: "manual" }); } catch (e) { ohneFirma = e.message; }
+  check(/braucht eine Firma/.test(ohneFirma ?? ""), `Firmen-Workflow ohne Firma wird abgewiesen: ${ohneFirma}`);
+  const ex = await runner.run(def, { trigger: "manual", company: { companyId: "c1" } });
+  check(ex.status === "success", `Status: ${ex.status} ${ex.error ?? ""}`);
+  check(ex.contextQuellen?.includes("company_get"), `Firmen-Kontext geladen aus: ${JSON.stringify(ex.contextQuellen)}`);
+  const aiPrompt = llmPrompts.find((p) => /Kurzuebersicht zu/.test(p)) ?? "";
+  check(/Kurzuebersicht zu Beta AG/.test(aiPrompt), `$company.name im KI-Prompt aufgeloest: ${aiPrompt.slice(-160)}`);
+  check(/1,2 Mio\. EUR/.test(aiPrompt) && /niemand bekannt/.test(aiPrompt) && !/\$kassenbestand/.test(aiPrompt), `Platzhalter befuellt (Wert + Fallback): ${aiPrompt.slice(-160)}`);
+  const tg = calls.find((c) => c.name === "telegram_send_message");
+  check(tg && /KI-Text/.test(tg.args.text), `KI-Ausgabe erreicht den naechsten Node: ${tg?.args.text}`);
+}
+
+console.log("Fehlerpfade: kein Import, Tool-Fehler, Freigabe im Trockenlauf");
+{
+  tools.set("discovery_decide_leer", tool("discovery_decide_leer", () => ({ entschieden: 1, importiert: 0, ignoriert: 0, transactionId: null, ohneOrt: ["Alpha GmbH"], unbekannt: [] })));
+  tools.set("kaputt_tool", tool("kaputt_tool", () => ({ error: "Import fehlgeschlagen — Entscheidungen NICHT gespeichert: 503" })));
+  const mk = (id, toolName, extra = []) => mkDef(id, { name: id, description: "", nodes: [
+    { id: "n0", position: [0, 0], name: "Start", type: "trigger", parameters: {} },
+    { id: "n1", position: [200, 0], name: "Schritt", type: "tool", mode: "allItems", confirmed: true, parameters: { tool: toolName, args: {} } },
+    ...extra,
+  ], connections: { Start: { main: [[{ node: "Schritt", index: 0 }]] }, ...(extra.length ? { Schritt: { main: [[{ node: extra[0].name, index: 0 }]] } } : {}) }, trigger: { kind: "manual" }, variables: {}, origin: { kind: "manual" }, settings: { scope: "none" } });
+  const w = { id: "n2", position: [400, 0], name: "Warten", type: "wait", parameters: { transactionId: "{{ $json.transactionId }}", maxHours: 1 } };
+  const ex1 = await runner.run(mk("wf_leer", "discovery_decide_leer", [w]), { trigger: "manual" });
+  check(ex1.status === "error" && /kein Vorgang vorhanden/.test(ex1.error ?? "") && /Alpha GmbH/.test(ex1.error ?? ""), `Import ohne Firmen → klare Meldung mit Ursache: ${ex1.error}`);
+  const ex1d = await runner.run(mk("wf_leer2", "discovery_decide_leer", [w]), { trigger: "test", dryRun: true });
+  check(ex1d.status === "success" && /Trockenlauf endet hier/.test(ex1d.nodeRuns["Warten"]?.at(-1)?.error ?? ""), `Trockenlauf endet sauber am Warten-Node: ${ex1d.status} / ${ex1d.nodeRuns["Warten"]?.at(-1)?.error}`);
+  const ex2 = await runner.run(mk("wf_err", "kaputt_tool"), { trigger: "manual" });
+  check(ex2.status === "error" && /503/.test(ex2.error ?? ""), `Tool-Ergebnis mit error → Node-Fehler: ${ex2.error}`);
+  const h = { id: "n2", position: [400, 0], name: "Freigabe", type: "human", parameters: { prompt: "{{ $input.count }} Items freigeben?" } };
+  const ex3 = await runner.run(mk("wf_human", "discovery_candidates", [h]), { trigger: "test", dryRun: true });
+  check(ex3.status === "success" && ex3.nodeRuns["Freigabe"]?.at(-1)?.outputItems?.[0] === 3, `Freigabe-Node im Trockenlauf reicht Items durch: ${ex3.status} ${JSON.stringify(ex3.nodeRuns["Freigabe"]?.at(-1)?.outputItems)}`);
+}
+
+if (fails > 0) { console.log(`\n${fails} Fehler`); process.exit(1); }
+console.log("\nEngine-Tests ok");

@@ -36,5 +36,12 @@ const res = spawnSync(
   ["--import", "tsx", inner],
   { stdio: "inherit", cwd: root },
 );
+if ((res.status ?? 1) !== 0) process.exit(res.status ?? 1);
 
-process.exit(res.status ?? 1);
+// v0.1.601 — End-to-End-Test der Engine mit Stub-Tools.
+const engine = spawnSync(
+  process.execPath,
+  ["--import", "tsx", join(here, "_test-workflows-engine.inner.mjs")],
+  { stdio: "inherit", cwd: root },
+);
+process.exit(engine.status ?? 1);
