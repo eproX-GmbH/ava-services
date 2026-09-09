@@ -533,3 +533,4 @@ W3 kann parallel starten, sobald die Typen aus W1 stehen.
 - v0.1.598: Gateway-Limit pageSize 200 beachtet (Warten-Node, Vorgangs-Watcher, Firmenquelle Vorgang laden seitenweise); vorher 400 und stiller Watcher. Warten-Node prueft die Vorgangs-ID und nennt sie im Fehler.
 - v0.1.599: Firmen-Kontext um Handelsregister-Auszug (company_structured_content: Rechtsform, Stammkapital, Gruendungsjahr, Geschaeftsfuehrung) ergaenzt; fehlende Quellen (404) als „keine Daten vorhanden“ statt Fehler.
 - Ausfuehrung ohne laufende App: Plan in docs/PLAN_WORKFLOWS_OHNE_APP.md (Empfehlung: Desktop-Bereitschaft C1–C5 jetzt, Headless-Server spaeter; Betreiber-Worker verworfen). Wartet auf Entscheidung.
+- v0.1.600: Warten-Node wertet seine Parameter (transactionId, minutes, maxHours) als Expressions aus; vorher kam {{ $json.transactionId }} woertlich an.

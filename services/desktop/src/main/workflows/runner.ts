@@ -506,8 +506,12 @@ export class WorkflowRunner {
       case "wait": {
         // Warten auf Zeit ODER auf den Abschluss eines Vorgangs (Import):
         // "Watcher" — pollt die Firmen des Vorgangs, bis alle im Endzustand sind.
-        const txId = typeof node.parameters.transactionId === "string" && node.parameters.transactionId.trim()
-          ? node.parameters.transactionId.trim()
+        // v0.1.600 — Parameter des Warten-Nodes sind Expressions
+        // ({{ $json.transactionId }}); vorher kam der Text unaufgeloest an.
+        const wctx = this.exprContext(ctx, node, items, 0);
+        const txRaw = resolveValue(node.parameters.transactionId, wctx);
+        const txId = typeof txRaw === "string" && txRaw.trim()
+          ? txRaw.trim()
           : items.length > 0 && typeof items[0]!.json.transactionId === "string"
             ? String(items[0]!.json.transactionId)
             : "";
@@ -515,7 +519,7 @@ export class WorkflowRunner {
           if (!/^[A-Za-z0-9_-]{8,64}$/.test(txId)) {
             throw new Error(`Warten-Node: „${txId.slice(0, 80)}“ ist keine Vorgangs-ID. Erwartet wird z. B. {{ $json.transactionId }} aus dem Ergebnis von discovery_decide oder import_*.`);
           }
-          const maxMs = Math.min(72, Math.max(0.1, Number(node.parameters.maxHours ?? 6))) * 3600_000;
+          const maxMs = Math.min(72, Math.max(0.1, Number(resolveValue(node.parameters.maxHours, wctx) ?? 6))) * 3600_000;
           const start = Date.now();
           let ergebnis: { gesamt: number; fertig: number; fehler: number } = { gesamt: 0, fertig: 0, fehler: 0 };
           for (;;) {
@@ -544,7 +548,7 @@ export class WorkflowRunner {
             await sleep(60_000, ctx.signal);
           }
         }
-        const minutes = Math.min(10080, Math.max(0, Number(node.parameters.minutes ?? 0)));
+        const minutes = Math.min(10080, Math.max(0, Number(resolveValue(node.parameters.minutes, wctx) ?? 0)));
         if (minutes > 0) await sleep(minutes * 60_000, ctx.signal);
         return [items];
       }
