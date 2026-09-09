@@ -11,8 +11,9 @@
 // IMMER Freigabe oder `confirmed` und unterliegt dem Tages-Deckel.
 
 import { bewertePipeline, fetchPipeline, type VorgangsBefund } from "../transaction-pipeline";
-import { STAGE_LABELS, nodeRequirementsMitSub, waitStages, type PipelineStage } from "../../shared/workflow-dependencies";
+import { PIPELINE_STAGES, STAGE_LABELS, downstreamNodes, nodeRequirementsMitSub, waitStages, type PipelineStage } from "../../shared/workflow-dependencies";
 import { randomUUID } from "node:crypto";
+import type { WorkflowWaiting } from "../../shared/workflow-types";
 import type { ToolRegistry } from "../agent/tool-registry";
 import type { ToolContext } from "../agent/types";
 import { UiBridge, autonomyCovers, type ActionKind, type RemoteAskHandler } from "../agent/ui-bridge";
@@ -39,6 +40,8 @@ const MAX_STORED_ITEMS = 200;
 const MAX_STORED_ITEM_BYTES = 64 * 1024;
 /** Maximale Wartezeit auf Daten-Abhaengigkeiten je Node (Publikationen dauern lange). */
 const DEPENDENCY_WAIT_MS = 6 * 3600_000;
+/** Passives Warten auf einen Vorgang: spaetestens danach geht es mit den fertigen Firmen weiter. */
+const WAIT_MAX_DAYS_DEFAULT = 14;
 const MAX_SUBWORKFLOW_DEPTH = 3;
 const APPROVAL_TIMEOUT_MS = 48 * 3600_000;
 const ITEM_KEY_CANDIDATES = ["discoveryId", "messageId", "id", "companyId", "contactId", "dealId", "email", "domain", "url", "profileUrl"];
@@ -70,6 +73,8 @@ export interface RunOptions {
   untilNode?: string;
   /** Intern: unterbrochenen Lauf fortsetzen (siehe resume()). */
   resumeFrom?: { execution: WorkflowExecution; doneOutputs: Map<string, WorkflowItem[][]> };
+  /** Intern: wartenden Lauf am Warten-Node mit neu fertigen Firmen weiterfuehren (siehe continueWaiting()). */
+  continueAt?: { node: string; items: WorkflowItem[]; warten: WorkflowWaiting | null; hinweis: string };
 }
 
 interface PendingApproval {
@@ -138,6 +143,86 @@ export class WorkflowRunner {
       ...(stored.scope ? { company: stored.scope } : {}),
       resumeFrom: { execution: stored, doneOutputs },
     });
+  }
+
+  /**
+   * v0.1.610 — Wartenden Lauf pruefen und mit neu fertigen Firmen weiterfuehren.
+   * Wird vom Scheduler im Minutentakt aufgerufen. Gibt den (ggf. weiter
+   * wartenden) Lauf zurueck; null, wenn nichts zu tun war.
+   */
+  async continueWaiting(def: WorkflowDefinition, stored: WorkflowExecution): Promise<WorkflowExecution | null> {
+    const w = stored.waiting;
+    if (!w || stored.status !== "waiting" || this.running.has(stored.id)) return null;
+    const node = def.nodes.find((n) => n.name === w.node);
+    if (!node) {
+      const ex: WorkflowExecution = { ...stored, status: "cancelled", finishedAt: new Date().toISOString(), error: `Warten-Node „${w.node}“ existiert nicht mehr.`, waiting: undefined };
+      this.deps.store.saveExecution(ex);
+      this.deps.emit({ kind: "execution-finished", execution: ex });
+      return ex;
+    }
+    let befund: VorgangsBefund;
+    try {
+      befund = bewertePipeline(await fetchPipeline(this.deps.gatewayRequest, w.transactionId), w.stufen.filter((s): s is PipelineStage => (PIPELINE_STAGES as readonly string[]).includes(s)));
+    } catch {
+      return null; // Gateway gerade nicht erreichbar — naechster Tick
+    }
+    const bereits = new Set(w.weitergegeben);
+    const neu = befund.firmen.filter((f) => f.stufenFertig && !bereits.has(f.companyId));
+    const fristAbgelaufen = Date.now() > Date.parse(w.bis);
+    const offenFirmen = befund.firmen.filter((f) => !f.stufenFertig).length + Math.max(0, befund.gesamt - befund.firmen.length);
+    if (neu.length === 0 && !befund.abgeschlossen && !fristAbgelaufen) {
+      if (w.offen !== offenFirmen) {
+        stored.waiting = { ...w, offen: offenFirmen, fertig: w.weitergegeben.length };
+        this.deps.store.saveExecution(stored);
+      }
+      return null;
+    }
+    const items: WorkflowItem[] = neu.map((f, i) => ({
+      json: {
+        companyId: f.companyId,
+        state: f.state,
+        vollstaendig: f.vollstaendig,
+        fehlgeschlageneStufen: f.fehlgeschlageneStufen,
+        fehler: f.fehler,
+        gewarteteStufen: w.stufen,
+        transactionId: w.transactionId,
+        verarbeitung: { gesamt: befund.gesamt, fertig: befund.profilFertig, fehler: befund.profilFehlgeschlagen, offen: befund.profilOffen, teilfehler: befund.teilfehler },
+      },
+      pairedItem: { item: i },
+    }));
+    const weitergegeben = [...bereits, ...neu.map((f) => f.companyId)];
+    const fertigJetzt = befund.abgeschlossen || fristAbgelaufen;
+    const warten: WorkflowWaiting | null = fertigJetzt ? null : { ...w, weitergegeben, fertig: weitergegeben.length, offen: offenFirmen };
+    const hinweis = fertigJetzt
+      ? fristAbgelaufen && !befund.abgeschlossen
+        ? `Frist abgelaufen: ${neu.length} Firmen weitergegeben, ${offenFirmen} bleiben offen — Lauf endet.`
+        : `Letzte ${neu.length} Firmen weitergegeben — alle ${befund.gesamt} verarbeitet.`
+      : `${neu.length} weitere Firmen weitergegeben, ${offenFirmen} warten noch.`;
+    // Als erledigt gelten nur Nodes VOR dem Warten-Node; die Folge-Schritte
+    // laufen fuer die neuen Firmen erneut (sie haben aus frueheren Durchgaengen
+    // bereits Ausgaben, duerfen aber nicht als "fertig" uebersprungen werden).
+    const nachfolger = new Set(downstreamNodes(def, w.node).map((n) => n.name));
+    const doneOutputs = new Map<string, WorkflowItem[][]>();
+    for (const [name, runs] of Object.entries(stored.nodeRuns)) {
+      const r = runs.at(-1);
+      if (name === w.node || nachfolger.has(name)) continue;
+      if (r && (r.status === "success" || r.status === "skipped") && r.output) doneOutputs.set(name, r.output);
+    }
+    return this.run(def, {
+      trigger: stored.trigger,
+      dryRun: false,
+      ...(stored.scope ? { company: stored.scope } : {}),
+      resumeFrom: { execution: stored, doneOutputs },
+      continueAt: { node: w.node, items, warten, hinweis },
+    });
+  }
+
+  /** Wartenden Lauf abbrechen (kein Prozess aktiv → nur Status setzen). */
+  cancelWaiting(stored: WorkflowExecution): WorkflowExecution {
+    const ex: WorkflowExecution = { ...stored, status: "cancelled", finishedAt: new Date().toISOString(), error: "Vom Nutzer abgebrochen (waehrend des Wartens).", waiting: undefined };
+    this.deps.store.saveExecution(ex);
+    this.deps.emit({ kind: "execution-finished", execution: ex });
+    return ex;
   }
 
   runningExecutions(): WorkflowExecution[] {
@@ -224,6 +309,7 @@ export class WorkflowRunner {
       untilNode: opts.untilNode ?? null,
       gestoppt: false,
       stufenFertig: new Set(),
+      warten: opts.continueAt?.warten ?? null,
     };
     try {
       const trigger = def.nodes.find((n) => n.type === "trigger");
@@ -235,7 +321,23 @@ export class WorkflowRunner {
         execution.contextQuellen = ctx.company.quellen;
         this.deps.store.saveExecution(execution);
       }
-      if (opts.resumeFrom) {
+      if (opts.resumeFrom && opts.continueAt) {
+        // v0.1.610 — Wartender Lauf: neu fertige Firmen an die Nachfolger des
+        // Warten-Nodes geben; alle anderen fertigen Nodes liefern ihre
+        // gespeicherten Ausgaben (fuer $('Node')-Bezuege).
+        const c = opts.continueAt;
+        for (const [name, outs] of opts.resumeFrom.doneOutputs) ctx.nodeOutputs.set(name, outs);
+        ctx.nodeOutputs.set(c.node, [c.items]);
+        const now = new Date().toISOString();
+        (execution.nodeRuns[c.node] ??= []).push({ startedAt: now, finishedAt: now, status: "success", inputItems: 0, outputItems: [c.items.length], output: [truncateItems(c.items)], hinweise: [c.hinweis] });
+        this.deps.emit({ kind: "node-finished", executionId: execution.id, workflowId: def.id, node: c.node, run: execution.nodeRuns[c.node]!.at(-1)! });
+        const done = new Map(opts.resumeFrom.doneOutputs);
+        done.set(c.node, [[]]); // Warten-Node gilt als erledigt; seine Items kommen ueber die Eintraege
+        const entries = (def.connections[c.node]?.main?.[0] ?? []).map((t) => ({ node: t.node, index: t.index, items: c.items }));
+        if (c.items.length > 0 && entries.length > 0) {
+          await this.runGraph(ctx, new Set(def.nodes.map((n) => n.name)), entries, null, done);
+        }
+      } else if (opts.resumeFrom) {
         // Fortsetzung: fertige Nodes gelten als erledigt, ihre gespeicherten
         // Ausgaben werden an die Nachfolger geliefert; der unterbrochene Node
         // (Warten) laeuft neu an.
@@ -248,7 +350,13 @@ export class WorkflowRunner {
             : [{ json: ctx.company ? { ...ctx.company.scope, ...(ctx.company.json.name ? { name: ctx.company.json.name } : {}) } : {} }];
         await this.runGraph(ctx, new Set(def.nodes.map((n) => n.name)), [{ node: trigger.name, index: 0, items: start }], null);
       }
-      if (execution.status === "running") execution.status = "success";
+      if (execution.status === "running" && ctx.warten && !execution.dryRun) {
+        execution.status = "waiting";
+        execution.waiting = ctx.warten;
+      } else if (execution.status === "running") {
+        execution.status = "success";
+        execution.waiting = undefined;
+      }
     } catch (err) {
       if (abort.signal.aborted && execution.status === "running") {
         execution.status = "cancelled";
@@ -260,7 +368,8 @@ export class WorkflowRunner {
     } finally {
       clearTimeout(timeout);
       this.running.delete(execution.id);
-      execution.finishedAt = new Date().toISOString();
+      if (execution.status !== "waiting") execution.finishedAt = new Date().toISOString();
+      else execution.finishedAt = undefined;
       execution.summary = this.summarize(ctx);
       if (opts.company?.companyId || opts.company?.discoveryId) {
         state.scopeRuns[opts.company.companyId ? `companyId:${opts.company.companyId}` : `discoveryId:${opts.company.discoveryId}`] = execution.startedAt;
@@ -287,7 +396,7 @@ export class WorkflowRunner {
           }).catch(() => {});
         }
       }
-      if (def.settings.notifyOnFinish && depth === 0 && opts.trigger !== "test") {
+      if (def.settings.notifyOnFinish && depth === 0 && opts.trigger !== "test" && execution.status !== "waiting") {
         this.deps.notify({
           art: execution.status === "error" ? "fehler" : "fertig",
           title: `Workflow „${def.name}“ ${statusText(execution.status)}`,
@@ -679,14 +788,17 @@ export class WorkflowRunner {
           if (!/^[A-Za-z0-9_-]{8,64}$/.test(txId)) {
             throw new Error(`Warten-Node: „${txId.slice(0, 80)}“ ist keine Vorgangs-ID. Erwartet wird z. B. {{ $json.transactionId }} aus dem Ergebnis von discovery_decide oder import_*.`);
           }
-          const maxMs = Math.min(72, Math.max(0.1, Number(resolveValue(node.parameters.maxHours, wctx) ?? 6))) * 3600_000;
-          const start = Date.now();
-          // v0.1.602 — Abschluss = Firmenprofil je Firma im Endzustand (Pipeline-
-          // Matrix). Ausgabe: EIN Item je Firma (companyId, state = Profil-Zustand,
-          // fehlgeschlageneStufen, transactionId) — direkt fuer Filter + Sub-Workflow.
+          // v0.1.610 (Operator): Passives Warten. Der Lauf haelt keinen Timer
+          // und keinen Prozess: Firmen, deren Stufen fertig sind, gehen SOFORT
+          // an die Folge-Schritte; fuer den Rest pausiert der Lauf mit Status
+          // "wartet" und wird vom Scheduler im Minutentakt weitergefuehrt
+          // (continueWaiting) — auch nach Neustart/Update. Sicherheitsnetz:
+          // nach maxDays (Standard 14) geht es mit den fertigen Firmen weiter.
           const w = waitStages(ctx.def, node, (id) => this.deps.getDefinition(id));
-          const zuItems = (b: VorgangsBefund, dryRun: boolean): WorkflowItem[] =>
-            b.firmen.map((f, i) => ({
+          const maxDays = Math.min(60, Math.max(0.01, Number(resolveValue(node.parameters.maxDays, wctx) ?? WAIT_MAX_DAYS_DEFAULT)));
+          const run = ctx.execution.nodeRuns[node.name]?.at(-1);
+          const zuItems = (firmen: VorgangsBefund["firmen"], b: VorgangsBefund, dryRun: boolean): WorkflowItem[] =>
+            firmen.map((f, i) => ({
               json: {
                 companyId: f.companyId,
                 state: f.state,
@@ -699,35 +811,36 @@ export class WorkflowRunner {
               },
               pairedItem: { item: Math.min(i, Math.max(0, items.length - 1)) },
             }));
-          for (;;) {
-            if (ctx.signal.aborted) throw new Error("aborted");
-            let befund: VorgangsBefund;
-            try {
-              befund = bewertePipeline(await fetchPipeline(this.deps.gatewayRequest, txId), w.stufen);
-            } catch (err) {
-              throw new Error(`Vorgang ${txId} nicht abrufbar: ${err instanceof Error ? err.message : String(err)}`);
-            }
-            const offene = [...new Set(befund.firmen.flatMap((f) => f.offeneStufen))].map((s) => STAGE_LABELS[s]);
-            if (befund.abgeschlossen) {
-              const run = ctx.execution.nodeRuns[node.name]?.at(-1);
-              if (run) (run.hinweise ??= []).push(`Gewartet auf: ${w.stufen.map((s) => STAGE_LABELS[s]).join(", ")}${w.automatisch ? " (automatisch aus den Folge-Schritten)" : ""}`);
-              return [zuItems(befund, false)];
-            }
-            if (Date.now() - start > maxMs) {
-              // v0.1.605 — kein Deadlock: Nach maxHours geht es mit den Firmen
-              // weiter, deren Stufen im Endzustand sind; offene bleiben
-              // state=pending (Filter „Nur fertige“ laesst sie aus).
-              const run = ctx.execution.nodeRuns[node.name]?.at(-1);
-              if (run) (run.hinweise ??= []).push(`Nach ${Math.round(maxMs / 3600_000)} h nicht vollstaendig: ${befund.profilOffen} von ${befund.gesamt} Firmen offen${offene.length ? ` (${offene.join(", ")})` : ""} — Lauf geht mit den fertigen Firmen weiter.`);
-              return [zuItems(befund, false)];
-            }
-            if (ctx.execution.dryRun) {
-              const run = ctx.execution.nodeRuns[node.name]?.at(-1);
-              if (run) run.error = `Trockenlauf: Vorgang noch nicht abgeschlossen (${befund.profilFertig}/${befund.gesamt} Profile fertig${offene.length ? `; offen: ${offene.join(", ")}` : ""}) — Items mit aktuellem Stand weitergegeben.`;
-              return [befund.firmen.length > 0 ? zuItems(befund, true) : items];
-            }
-            await sleep(60_000, ctx.signal);
+          let befund: VorgangsBefund;
+          try {
+            befund = bewertePipeline(await fetchPipeline(this.deps.gatewayRequest, txId), w.stufen);
+          } catch (err) {
+            throw new Error(`Vorgang ${txId} nicht abrufbar: ${err instanceof Error ? err.message : String(err)}`);
           }
+          const offene = [...new Set(befund.firmen.flatMap((f) => f.offeneStufen))].map((s) => STAGE_LABELS[s]);
+          const gewartet = `Gewartet auf: ${w.stufen.map((s) => STAGE_LABELS[s]).join(", ")}${w.automatisch ? " (automatisch aus den Folge-Schritten)" : ""}`;
+          if (ctx.execution.dryRun) {
+            if (run) {
+              (run.hinweise ??= []).push(gewartet);
+              if (!befund.abgeschlossen) run.error = `Trockenlauf: Vorgang noch nicht abgeschlossen (${befund.profilFertig}/${befund.gesamt} Profile fertig${offene.length ? `; offen: ${offene.join(", ")}` : ""}) — Items mit aktuellem Stand weitergegeben.`;
+            }
+            return [befund.firmen.length > 0 ? zuItems(befund.firmen, befund, true) : items];
+          }
+          const bereits = new Set(ctx.warten?.node === node.name ? ctx.warten.weitergegeben : []);
+          const seit = ctx.warten?.node === node.name ? ctx.warten.seit : new Date().toISOString();
+          const bis = ctx.warten?.node === node.name ? ctx.warten.bis : new Date(Date.parse(seit) + maxDays * 86_400_000).toISOString();
+          const fristAbgelaufen = Date.now() > Date.parse(bis);
+          const neu = befund.firmen.filter((f) => f.stufenFertig && !bereits.has(f.companyId));
+          const weitergegeben = [...bereits, ...neu.map((f) => f.companyId)];
+          const offenFirmen = befund.firmen.filter((f) => !f.stufenFertig).length + Math.max(0, befund.gesamt - befund.firmen.length);
+          if (befund.abgeschlossen || fristAbgelaufen) {
+            ctx.warten = null;
+            if (run) (run.hinweise ??= []).push(gewartet, fristAbgelaufen && !befund.abgeschlossen ? `Frist von ${maxDays} Tagen abgelaufen: ${offenFirmen} Firmen offen — Lauf endet mit den fertigen Firmen.` : `Alle ${befund.gesamt} Firmen verarbeitet.`);
+            return [zuItems(neu, befund, false)];
+          }
+          ctx.warten = { node: node.name, transactionId: txId, stufen: w.stufen, weitergegeben, seit, bis, fertig: weitergegeben.length, offen: offenFirmen };
+          if (run) (run.hinweise ??= []).push(gewartet, `${neu.length} Firmen jetzt weitergegeben, ${offenFirmen} warten noch${offene.length ? ` (${offene.join(", ")})` : ""} — Lauf pausiert und wird automatisch fortgesetzt.`);
+          return [zuItems(neu, befund, false)];
         }
         const minutes = Math.min(10080, Math.max(0, Number(resolveValue(node.parameters.minutes, wctx) ?? 0)));
         if (minutes > 0) await sleep(minutes * 60_000, ctx.signal);
@@ -1069,6 +1182,8 @@ interface RunContext {
   gestoppt: boolean;
   /** Stufen, die fuer die Firma des Laufs bereits im Endzustand sind (Abhaengigkeiten). */
   stufenFertig: Set<PipelineStage>;
+  /** Gesetzt vom Warten-Node: Lauf pausiert nach diesem Durchgang passiv. */
+  warten: WorkflowWaiting | null;
 }
 
 /** Firmenbezug aus einem Item (companyId/discoveryId/name), sonst der Eltern-Scope. */
@@ -1084,7 +1199,7 @@ function scopeAusItem(it: WorkflowItem, fallback: CompanyScope | undefined): Com
 }
 
 function statusText(s: WorkflowExecution["status"]): string {
-  return s === "success" ? "abgeschlossen" : s === "error" ? "mit Fehler beendet" : s === "cancelled" ? "abgebrochen" : s;
+  return s === "success" ? "abgeschlossen" : s === "error" ? "mit Fehler beendet" : s === "cancelled" ? "abgebrochen" : s === "waiting" ? "wartet auf Vorgang" : s;
 }
 
 function sleep(ms: number, signal?: AbortSignal): Promise<void> {

@@ -68,6 +68,7 @@ const runner = new WorkflowRunner({
         { companyId: "c2", cells: { masterData: cell("completed"), structuredContent: cell("completed"), companyPublication: cell("completed"), website: cell("failed", "404"), companyProfile: cell("failed", "kein Inhalt"), companyContact: cell("skipped"), companyEvaluation: cell("skipped") } },
       ],
     };
+    if (path.includes(`/transactions/tx_stream/pipeline`)) return globalThis.__streamPipeline;
     if (path.includes(`/transactions/tx_publikation_offen/pipeline`)) return {
       transactionId: "tx_publikation_offen", totalCompanies: 1, stages: [], unavailableStages: [],
       rows: [{ companyId: "c1", cells: { masterData: cell("completed"), structuredContent: cell("completed"), companyPublication: cell("pending"), website: cell("completed"), companyProfile: cell("completed"), companyContact: cell("completed"), companyEvaluation: cell("pending") } }],
@@ -279,6 +280,44 @@ console.log("Fortsetzen nach Neustart");
   const stored2 = { ...stored, id: "ex_resume2", nodeRuns: { ...stored.nodeRuns, Warten: [{ startedAt: t, finishedAt: t, status: "success", inputItems: 1, outputItems: [2], output: [[{ json: { companyId: "c1", state: "completed", transactionId: TX } }, { json: { companyId: "c2", state: "failed" } }]] }], "Nur fertige": [{ startedAt: t, finishedAt: t, status: "success", inputItems: 2, outputItems: [1], output: [[{ json: { companyId: "c1", state: "completed" } }]] }], Senden: [{ startedAt: t, status: "running", inputItems: 1, outputItems: [] }] } };
   const ex2 = await runner.resume(def, stored2);
   check(ex2.status === "cancelled" && /Senden/.test(ex2.error ?? ""), `Unterbrochener Schreib-Node → abgebrochen mit Hinweis: ${ex2.status} ${ex2.error}`);
+}
+
+console.log("Passives Warten: Firmen einzeln weiterreichen, Lauf pausiert");
+{
+  calls.length = 0;
+  const cell = (state) => ({ state, errorCount: 0 });
+  const rowFor = (id, prof) => ({ companyId: id, cells: { masterData: cell("completed"), structuredContent: cell("completed"), companyPublication: cell("completed"), website: cell("completed"), companyProfile: cell(prof), companyContact: cell("completed"), companyEvaluation: cell("completed") } });
+  globalThis.__streamPipeline = { transactionId: "tx_stream", totalCompanies: 3, stages: [], unavailableStages: [], rows: [rowFor("s1", "completed"), rowFor("s2", "pending"), rowFor("s3", "pending")] };
+  const nodes = [
+    { id: "n0", position: [0, 0], name: "Start", type: "trigger", parameters: {} },
+    { id: "n1", position: [200, 0], name: "Importieren", type: "transform", parameters: { fields: { transactionId: "{{ 'tx_stream' }}" } } },
+    { id: "n2", position: [400, 0], name: "Warten", type: "wait", parameters: { transactionId: "{{ $json.transactionId }}" } },
+    { id: "n3", position: [600, 0], name: "Nur fertige", type: "filter", parameters: { condition: "{{ $json.state === 'completed' }}" } },
+    { id: "n4", position: [800, 0], name: "Senden", type: "tool", mode: "perItem", confirmed: true, parameters: { tool: "telegram_send_message", args: { text: "Bericht {{ $json.companyId }} ({{ $('Importieren').item.json.transactionId }})" } } },
+  ];
+  const conn = { Start: { main: [[{ node: "Importieren", index: 0 }]] }, Importieren: { main: [[{ node: "Warten", index: 0 }]] }, Warten: { main: [[{ node: "Nur fertige", index: 0 }]] }, "Nur fertige": { main: [[{ node: "Senden", index: 0 }]] } };
+  const def = mkDef("wf_stream", { name: "Stream", description: "", nodes, connections: conn, trigger: { kind: "manual" }, variables: {}, origin: { kind: "manual" }, settings: { scope: "none" } });
+  const ex1 = await runner.run(def, { trigger: "manual" });
+  const tg1 = calls.filter((c) => c.name === "telegram_send_message").map((c) => c.args.text);
+  check(ex1.status === "waiting" && !ex1.finishedAt, `Lauf pausiert mit Status wartet: ${ex1.status} ${ex1.error ?? ""}`);
+  check(ex1.waiting?.weitergegeben?.length === 1 && ex1.waiting.weitergegeben[0] === "s1" && ex1.waiting.offen === 2, `1 Firma weitergegeben, 2 offen: ${JSON.stringify(ex1.waiting)}`);
+  check(tg1.length === 1 && /Bericht s1 \(tx_stream\)/.test(tg1[0]), `Folge-Schritte liefen fuer s1 sofort: ${JSON.stringify(tg1)}`);
+  // nichts Neues → kein Weiterlauf
+  const none = await runner.continueWaiting(def, executions.get(ex1.id));
+  check(none === null, "ohne neue fertige Firmen passiert nichts");
+  // s2 fertig, s3 fehlgeschlagen (Endzustand) → alles abgeschlossen
+  globalThis.__streamPipeline.rows = [rowFor("s1", "completed"), rowFor("s2", "completed"), rowFor("s3", "failed")];
+  calls.length = 0;
+  const ex2 = await runner.continueWaiting(def, executions.get(ex1.id));
+  const tg2 = calls.filter((c) => c.name === "telegram_send_message").map((c) => c.args.text);
+  check(ex2 && ex2.id === ex1.id && ex2.status === "success" && !ex2.waiting, `Weitergefuehrt und abgeschlossen: ${ex2?.status} ${ex2?.error ?? ""}`);
+  check(tg2.length === 1 && /Bericht s2/.test(tg2[0]), `Nur s2 berichtet (s3 gescheitert, s1 nicht doppelt): ${JSON.stringify(tg2)}`);
+  check((ex2?.nodeRuns["Warten"]?.length ?? 0) === 2 && (ex2?.nodeRuns["Senden"]?.length ?? 0) === 2, `Warten/Senden je 2 Durchgaenge: ${ex2?.nodeRuns["Warten"]?.length}/${ex2?.nodeRuns["Senden"]?.length}`);
+  // Abbrechen waehrend des Wartens
+  globalThis.__streamPipeline.rows = [rowFor("s1", "completed"), rowFor("s2", "pending"), rowFor("s3", "pending")];
+  const ex3 = await runner.run({ ...def, id: "wf_stream2" }, { trigger: "manual" });
+  const c3 = runner.cancelWaiting(executions.get(ex3.id));
+  check(ex3.status === "waiting" && c3.status === "cancelled", `Wartenden Lauf abbrechen: ${c3.status}`);
 }
 
 if (fails > 0) { console.log(`\n${fails} Fehler`); process.exit(1); }

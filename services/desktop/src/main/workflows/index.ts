@@ -423,7 +423,33 @@ export class WorkflowService {
   }
 
   cancel(executionId: string): boolean {
-    return this.runner.cancel(executionId);
+    if (this.runner.cancel(executionId)) return true;
+    for (const w of this.store.list()) {
+      const ex = this.store.getExecution(w.id, executionId);
+      if (ex?.status === "waiting") {
+        this.runner.cancelWaiting(ex);
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /** v0.1.610 — wartende Laeufe (passives Warten auf Vorgaenge) weiterfuehren. */
+  async continueWaitingAll(): Promise<number> {
+    let n = 0;
+    for (const w of this.store.list()) {
+      for (const ex of this.store.listExecutions(w.id, 30)) {
+        if (ex.status !== "waiting") continue;
+        const def = this.store.get(w.id);
+        if (!def) continue;
+        const r = await this.runner.continueWaiting(def, ex).catch((err) => {
+          this.deps.audit({ action: "workflow.run.error", severity: "error", summary: `Workflow „${w.name}“: Weiterfuehren fehlgeschlagen: ${err instanceof Error ? err.message : String(err)}`, metadata: { workflowId: w.id, executionId: ex.id } });
+          return null;
+        });
+        if (r) n++;
+      }
+    }
+    return n;
   }
 
   executions(workflowId: string, limit = 50): WorkflowExecution[] {
@@ -539,6 +565,7 @@ export class WorkflowService {
 
   private async tick(): Promise<void> {
     if (!this.deps.isSignedIn() || !this.deps.featureEnabled()) return;
+    await this.continueWaitingAll();
     const now = Date.now();
     for (const w of this.store.list()) {
       if (!w.enabled || w.trigger.kind !== "schedule" || this.runner.isRunning(w.id)) continue;

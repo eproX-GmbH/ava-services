@@ -513,7 +513,7 @@ export function WorkflowEditor(): JSX.Element {
 
   if (!def) return <div className="radar-page">{notice ?? "Lädt…"}</div>;
 
-  const running = shownExecution?.status === "running" || shownExecution?.status === "paused";
+  const running = shownExecution?.status === "running" || shownExecution?.status === "paused" || shownExecution?.status === "waiting";
   const filteredCatalog = catalog.filter((c) => c.type !== "trigger" && (!addQuery || `${c.type} ${c.label} ${c.category} ${c.summary}`.toLowerCase().includes(addQuery.toLowerCase())));
 
   return (

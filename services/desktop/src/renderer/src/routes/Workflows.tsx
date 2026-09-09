@@ -20,8 +20,8 @@ export function triggerText(t: WorkflowTrigger): string {
 }
 
 export function statusPill(status: string): JSX.Element {
-  const cls = status === "success" ? "pill--connected" : status === "error" ? "pill--error" : status === "running" ? "pill--polling" : status === "paused" ? "pill--paused" : "pill--connecting";
-  const label = status === "success" ? "erfolgreich" : status === "error" ? "Fehler" : status === "running" ? "läuft" : status === "paused" ? "wartet auf Freigabe" : status === "cancelled" ? "abgebrochen" : status;
+  const cls = status === "success" ? "pill--connected" : status === "error" ? "pill--error" : status === "running" ? "pill--polling" : status === "paused" || status === "waiting" ? "pill--paused" : "pill--connecting";
+  const label = status === "success" ? "erfolgreich" : status === "error" ? "Fehler" : status === "running" ? "läuft" : status === "paused" ? "wartet auf Freigabe" : status === "waiting" ? "wartet auf Vorgang" : status === "cancelled" ? "abgebrochen" : status;
   return <span className={`pill ${cls}`}>{label}</span>;
 }
 

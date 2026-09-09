@@ -68,7 +68,7 @@ export const WORKFLOW_TEMPLATES: WorkflowTemplate[] = [
         mode: "allItems",
         parameters: { tool: "discovery_decide", args: { decisions: "{{ $input.all().map(i => ({ discoveryId: i.json.discoveryId, decision: 'imported' })) }}" } },
       },
-      { name: "Auf Verarbeitung warten", type: "wait", parameters: { transactionId: "{{ $json.transactionId }}", maxHours: 6 } },
+      { name: "Auf Verarbeitung warten", type: "wait", parameters: { transactionId: "{{ $json.transactionId }}" } },
       { name: "Nur fertige", type: "filter", parameters: { condition: "{{ $json.state === 'completed' }}" } },
       { name: "Bericht je Firma", type: "subworkflow", mode: "perItem", parameters: { workflowId: "" } },
     ],

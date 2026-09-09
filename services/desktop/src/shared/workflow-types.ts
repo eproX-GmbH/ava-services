@@ -145,6 +145,22 @@ export type WorkflowExecutionStatus =
   | "waiting"
   | "paused";
 
+/** Passives Warten auf einen Vorgang: Firmen werden weitergereicht, sobald ihre Stufen fertig sind. */
+export interface WorkflowWaiting {
+  /** Warten-Node, an dem der Lauf pausiert. */
+  node: string;
+  transactionId: string;
+  stufen: string[];
+  /** Firmen, die bereits an die Folge-Schritte weitergegeben wurden. */
+  weitergegeben: string[];
+  seit: string;
+  /** Spaetestens dann geht es mit den fertigen Firmen weiter (Sicherheitsnetz). */
+  bis: string;
+  /** Zuletzt beobachtet: fertig / offen (nur Anzeige). */
+  fertig?: number;
+  offen?: number;
+}
+
 export interface WorkflowNodeRun {
   startedAt: string;
   finishedAt?: string;
@@ -175,6 +191,8 @@ export interface WorkflowExecution {
   scope?: WorkflowScope;
   /** Quellen, aus denen der Kontext kam (Tool-Namen). */
   contextQuellen?: string[];
+  /** v0.1.610 — Lauf wartet passiv auf einen Vorgang (kein Timer, kein Prozess). */
+  waiting?: WorkflowWaiting;
   status: WorkflowExecutionStatus;
   startedAt: string;
   finishedAt?: string;
