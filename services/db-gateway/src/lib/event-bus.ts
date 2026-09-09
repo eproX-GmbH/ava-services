@@ -1,3 +1,4 @@
+import { RETRYABLE_ERROR_SQL_RE } from "./retry-policy";
 import {
   AMQPClient,
   EventTypeContext,
@@ -40,12 +41,20 @@ async function writeEntityProgressFromEvent(
     await pool.query(
       `INSERT INTO "EntityProgress"
          ("transactionId", "companyId", producer, state, "errorMessage",
-          "updatedAt", "createdAt")
-       VALUES ($1, $2, $3, $4, $5, NOW(), NOW())
+          "updatedAt", "createdAt", "giveUpAt")
+       VALUES ($1, $2, $3, $4, $5, NOW(), NOW(),
+         /* Operator 2026-09-09: dauerhafte Fehler nicht automatisch wiederholen
+          * (nur Zeitueberschreitung/nicht erreichbar/Rate-Limit/5xx). */
+         CASE WHEN $4 = 'failed' AND NOT (COALESCE($5, '') ~* $6) THEN NOW() ELSE NULL END)
        ON CONFLICT ("transactionId", "companyId", producer) DO UPDATE
        SET state = EXCLUDED.state,
            "errorMessage" = EXCLUDED."errorMessage",
-           "updatedAt" = EXCLUDED."updatedAt"
+           "updatedAt" = EXCLUDED."updatedAt",
+           "giveUpAt" = CASE
+             WHEN EXCLUDED.state = 'failed' AND NOT (COALESCE(EXCLUDED."errorMessage", '') ~* $6) THEN NOW()
+             WHEN EXCLUDED.state IN ('completed', 'skipped') THEN NULL
+             ELSE "EntityProgress"."giveUpAt"
+           END
        WHERE EXCLUDED."updatedAt" > "EntityProgress"."updatedAt"
          /* v0.1.80 — never regress a terminal state. The
           * company-evaluation producer publishes one in_progress per
@@ -64,6 +73,7 @@ async function writeEntityProgressFromEvent(
         payload.service,
         state,
         truncated,
+        RETRYABLE_ERROR_SQL_RE,
       ],
     );
   } catch (err) {

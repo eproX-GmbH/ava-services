@@ -34,6 +34,7 @@
 // company-profile/src/application/integration-events/v1/persist-worker.ts.
 // The remaining four are stubbed until the schemas are surveyed in §8.v3.2.
 
+import { RETRYABLE_ERROR_SQL_RE } from "./retry-policy";
 import { AMQPClient, type CloudEvent } from "@ava/event";
 import type pg from "pg";
 import { z } from "zod";
@@ -87,6 +88,7 @@ import { tierShouldWrite, type ModelTier } from "./tier";
 // gateway-bound DB, not the desktop). Tests assert the two stay in
 // sync.
 export const MAX_RETRY_ATTEMPTS = 5;
+
 export const RETRY_BACKOFF_SECONDS = {
   slow: [300, 1800, 7200, 28800, 86400] as const,
   fast: [60, 300, 900, 3600, 14400] as const,
@@ -214,7 +216,7 @@ async function recordEntityProgress(
               END) * INTERVAL '1 second'
            )
            ELSE NULL END,
-         NULL
+         CASE WHEN $4 = 'failed' AND NOT (COALESCE($5, '') ~* $6) THEN NOW() ELSE NULL END
        )
        ON CONFLICT ("transactionId", "companyId", producer) DO UPDATE
        SET state = EXCLUDED.state,
@@ -253,6 +255,9 @@ async function recordEntityProgress(
            END,
            "giveUpAt" = CASE
              WHEN EXCLUDED.state = 'failed'
+               AND NOT (COALESCE(EXCLUDED."errorMessage", '') ~* $6)
+               THEN NOW()
+             WHEN EXCLUDED.state = 'failed'
                AND "EntityProgress"."attempts" + 1 >= 5
                AND COALESCE("EntityProgress"."firstFailureAt", NOW())
                    < NOW() - INTERVAL '24 hours'
@@ -261,7 +266,7 @@ async function recordEntityProgress(
              ELSE "EntityProgress"."giveUpAt"
            END
        WHERE EXCLUDED."updatedAt" > "EntityProgress"."updatedAt"`,
-      [transactionId, companyId, producer, state, truncated],
+      [transactionId, companyId, producer, state, truncated, RETRYABLE_ERROR_SQL_RE],
     );
   } catch (err) {
     // Don't propagate — best-effort.
