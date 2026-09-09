@@ -136,17 +136,7 @@ export function normalizeTrigger(raw: unknown): { trigger: WorkflowDefinition["t
   return { trigger: { kind: "manual" }, hinweis: `Trigger ohne kind (${JSON.stringify(raw).slice(0, 120)}) — auf manuell gesetzt.` };
 }
 
-/**
- * v0.1.613 — Freies Objekt fuer Tool-Schemata. `yup.object()` OHNE Shape
- * verliert unter `stripUnknown: true` (defineTool.parseArgs) ALLE Schluessel:
- * parameters, args, connections kamen leer im Store an ("Konfiguration
- * verworfen", Nodes ohne Kanten). `mixed` wird nicht gestrippt.
- */
-export function freiesObjekt(): yup.MixedSchema<Record<string, unknown> | undefined> {
-  return yup
-    .mixed<Record<string, unknown>>()
-    .test("objekt", "muss ein Objekt sein", (v) => v === undefined || v === null || (typeof v === "object" && !Array.isArray(v)));
-}
+export { freiesObjekt } from "../agent/yup-helpers";
 
 /** Parameter-Schluessel, die der Agent gern auf Node-Ebene statt in `parameters` legt. */
 const NODE_LEVEL_PARAM_KEYS = ["tool", "args", "outputPath", "itemKey", "skipProcessed", "condition", "prompt", "system", "outputSchema", "fields", "keepOnly", "transactionId", "bis", "maxDays", "minutes", "workflowId", "message", "value", "cases", "batchSize", "mode_", "previewFields", "text"];

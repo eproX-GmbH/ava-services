@@ -13,6 +13,7 @@
 // Token plumbing happens entirely inside the main process. The chat
 // LLM never sees access tokens; tools return only metadata.
 
+import { freiesObjekt } from "../yup-helpers";
 import * as yup from "yup";
 import { defineTool, userDeclined } from "../define-tool";
 import type { Tool } from "../types";
@@ -2482,7 +2483,7 @@ export function buildCrmTools(deps: CrmToolDeps): Tool[] {
       .object({
         name: yup.string().trim().min(1).max(500).required(),
         domain: yup.string().trim().max(500).optional(),
-        properties: yup.object().optional(),
+        properties: freiesObjekt().optional(),
         linkToAvaCompanyId: yup.string().trim().optional(),
         rationale: yup.string().trim().max(500).optional(),
       })
@@ -2663,7 +2664,7 @@ export function buildCrmTools(deps: CrmToolDeps): Tool[] {
         lastname: yup.string().trim().max(500).optional(),
         jobtitle: yup.string().trim().max(500).optional(),
         phone: yup.string().trim().max(500).optional(),
-        properties: yup.object().optional(),
+        properties: freiesObjekt().optional(),
         linkToHubspotCompanyId: yup.string().trim().optional(),
         rationale: yup.string().trim().max(500).optional(),
       })
@@ -2808,7 +2809,7 @@ export function buildCrmTools(deps: CrmToolDeps): Tool[] {
         closedate: yup.string().trim().optional(),
         dealtype: yup.string().trim().optional(),
         hubspot_owner_id: yup.string().trim().optional(),
-        properties: yup.object().optional(),
+        properties: freiesObjekt().optional(),
         associations: yup
           .array()
           .of(

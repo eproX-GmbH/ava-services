@@ -1,3 +1,4 @@
+import { freiesObjekt } from "../yup-helpers";
 import * as yup from "yup";
 import { defineTool, userDeclined } from "../define-tool";
 import type { Tool } from "../types";
@@ -230,7 +231,7 @@ export function buildNotionTools(deps: {
         .required(
           "databaseId fehlt. Erst notion_list_databases aufrufen um die richtige Datenbank-ID zu finden, dann diese hier übergeben.",
         ),
-      filter: yup.object().optional(),
+      filter: freiesObjekt().optional(),
       sorts: yup.array().optional(),
       pageSize: yup.number().integer().min(1).max(100).optional(),
     }),
@@ -326,7 +327,7 @@ export function buildNotionTools(deps: {
     schema: yup.object({
       parentId: yup.string().required(),
       title: yup.string().optional(),
-      properties: yup.object().optional(),
+      properties: freiesObjekt().optional(),
       content: yup.string().optional(),
     }),
     run: async (args) => {
@@ -366,7 +367,7 @@ export function buildNotionTools(deps: {
     },
     schema: yup.object({
       pageId: yup.string().required(),
-      properties: yup.object().optional(),
+      properties: freiesObjekt().optional(),
       appendContent: yup.string().optional(),
     }),
     run: async (args) => {

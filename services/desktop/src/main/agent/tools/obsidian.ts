@@ -1,3 +1,4 @@
+import { freiesObjekt } from "../yup-helpers";
 import * as yup from "yup";
 import { defineTool, userDeclined } from "../define-tool";
 import type { Tool } from "../types";
@@ -340,7 +341,7 @@ export function buildObsidianTools(deps: {
     },
     schema: yup.object({
       path: yup.string().trim().required("path fehlt."),
-      properties: yup.object().required("properties fehlt."),
+      properties: freiesObjekt().required("properties fehlt."),
     }),
     run: async (args) => {
       const item = await km.updateItem("obsidian", args.path, {
