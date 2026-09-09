@@ -117,7 +117,22 @@ export class AlertsStore {
    * `sourceRef` already exists (dedup). Callers can treat `null` as
    * "already alerted, do nothing".
    */
+  /** W4 — Haken fuer Workflow-Ereignis alert.created. */
+  onCreated: ((alert: Alert) => void) | null = null;
+
   add(input: AlertCreateInput): Alert | null {
+    const alert = this.addInner(input);
+    if (alert && this.onCreated) {
+      try {
+        this.onCreated(alert);
+      } catch {
+        /* best-effort */
+      }
+    }
+    return alert;
+  }
+
+  private addInner(input: AlertCreateInput): Alert | null {
     this.loadCache();
     if (this.bySourceRef.has(input.sourceRef)) return null;
     const row: Alert = {

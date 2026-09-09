@@ -2308,6 +2308,19 @@ app.whenReady().then(async () => {
       }),
   });
   mailSupervisor.on("snapshot", broadcastMailSnapshot);
+  // W4 — Workflow-Trigger mail.inbound (nur eingehende, fertig geladene Mails).
+  mailSupervisor.on("messageFinalized", (msg: import("../shared/types").MailMessage) => {
+    if (msg.direction !== "inbound") return;
+    void workflowService?.emitEvent("mail.inbound", {
+      messageId: msg.id,
+      from: msg.from.address,
+      fromName: msg.from.name,
+      to: msg.to.map((t) => t.address),
+      subject: msg.subject,
+      date: msg.date,
+      folder: msg.folder,
+    });
+  });
   try {
     if (featureEnabled("mail")) await mailSupervisor.start();
     else console.log("[mail/supervisor] nicht gestartet — Organisationsvorgabe: Mail-Anbindung aus");
@@ -2743,6 +2756,10 @@ app.whenReady().then(async () => {
     onAlertsChanged: broadcastAlertsChanged,
     // v0.1.466 — Plan-Politik: Schwelle/Budget nach Abo-Stufe.
     getPolicy: () => policyForTier(getTenantTierCached()),
+    // W4 — Workflow-Trigger radar.newHot (je Treffer ein Ereignis).
+    onNeueHeisse: (rows) => {
+      for (const r of rows) void workflowService?.emitEvent("radar.newHot", { discoveryId: r.discoveryId, name: r.name, ort: r.ort, score: r.score, begruendung: r.begruendung });
+    },
   });
   // v0.1.474 — Paket a+c: kontinuierlicher Profil-Worker; nach jedem
   // Drain mit neuen Profilen laeuft ein INKREMENTELLER Match (nur die
@@ -3002,6 +3019,10 @@ app.whenReady().then(async () => {
     },
   });
   workflowService.start();
+  // W4 — Workflow-Trigger alert.created.
+  alerts.onCreated = (a) => {
+    void workflowService?.emitEvent("alert.created", { alertId: a.id, kind: a.kind, severity: a.severity, headline: a.headline, companyId: a.companyId, companyName: a.companyName });
+  };
   app.on("before-quit", () => quitStep("radarSupervisor.stop", () => radarSupervisor?.stop()));
 
   app.on("before-quit", () => {

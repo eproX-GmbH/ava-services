@@ -57,6 +57,8 @@ export interface RadarAlertEmitterDeps {
   /** v0.1.466 — Plan-Politik (synchron aus dem Tier-Cache in index.ts).
    *  Fehlt der Hook: Legacy-Verhalten. */
   getPolicy?: () => RadarAlertPolicy;
+  /** W4 — neue heisse Treffer als Workflow-Ereignis (radar.newHot). */
+  onNeueHeisse?: (rows: MatchResultRow[]) => void;
 }
 
 export interface EmitResult {
@@ -193,6 +195,11 @@ export class RadarAlertEmitter {
       }
       this.persist();
       this.deps.onAlertsChanged();
+      try {
+        this.deps.onNeueHeisse?.(neu);
+      } catch {
+        /* best-effort */
+      }
     }
     return { neu: neu.length, bereitsGemeldet };
   }
