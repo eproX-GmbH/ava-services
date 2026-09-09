@@ -344,8 +344,55 @@ export class WorkflowService {
     return null;
   }
 
+  /**
+   * W4 — import.finished: Es gibt kein zentrales Abschluss-Signal je Vorgang,
+   * daher Polling (nur, wenn ein Workflow darauf hoert): juengste Vorgaenge,
+   * alle Firmen in einem Endzustand → je abgeschlossener Firma ein Ereignis.
+   */
+  private async pollImports(): Promise<void> {
+    const hoerer = this.store.list().filter((w) => w.enabled && w.trigger.kind === "event" && w.trigger.event === "import.finished");
+    if (hoerer.length === 0) return;
+    const tool = this.deps.registry.get("transactions_list");
+    if (!tool) return;
+    const seen = this.store.getState("_imports");
+    const gesehen = new Set(seen.processedKeys.transactions ?? []);
+    let items: Array<{ id: string; startTime?: string | null }> = [];
+    try {
+      const r = (await tool.run(tool.parseArgs({ limit: 20 }), this.leseKontext())) as { items?: Array<{ id: string; startTime?: string | null }> };
+      items = r.items ?? [];
+    } catch {
+      return;
+    }
+    const grenze = Date.now() - 3 * 86_400_000;
+    for (const tx of items) {
+      if (!tx.id || gesehen.has(tx.id)) continue;
+      if (tx.startTime && Date.parse(tx.startTime) < grenze) {
+        gesehen.add(tx.id); // alt → nie mehr pruefen
+        continue;
+      }
+      let entities: Array<{ companyId: string; state?: string }> = [];
+      try {
+        const r = await this.deps.gatewayRequest<{ items?: Array<{ companyId: string; state?: string }> }>(`/v1/transactions/${encodeURIComponent(tx.id)}/entities?pageSize=500`);
+        entities = r.items ?? [];
+      } catch {
+        continue;
+      }
+      if (entities.length === 0) continue;
+      const fertig = entities.every((e) => e.state === "completed" || e.state === "failed" || e.state === "skipped");
+      if (!fertig) continue;
+      gesehen.add(tx.id);
+      for (const e of entities) {
+        if (e.state !== "completed") continue;
+        await this.emitEvent("import.finished", { transactionId: tx.id, companyId: e.companyId });
+      }
+    }
+    seen.processedKeys.transactions = [...gesehen].slice(-500);
+    this.store.saveState("_imports", seen);
+  }
+
   private async tick(): Promise<void> {
     if (!this.deps.isSignedIn() || !this.deps.featureEnabled()) return;
+    void this.pollImports().catch(() => {});
     const now = Date.now();
     for (const w of this.store.list()) {
       if (!w.enabled || w.trigger.kind !== "schedule" || this.runner.isRunning(w.id)) continue;
