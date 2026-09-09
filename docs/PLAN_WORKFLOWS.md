@@ -531,3 +531,4 @@ W3 kann parallel starten, sobald die Typen aus W1 stehen.
   Läufe-Tab lazy laden.
 - v0.1.597: workflow_save/workflow_update tolerant (Trigger ohne kind/`type`-Alias → normalisiert, Variablen als Skalar → {label,type,value}); Fehler nennen das erhaltene Objekt; workflow_update meldet geaenderte Node-Parameter zurueck; Vorlagen-Hinweis zur Filteranpassung; Editor-Ansicht ueber volle Breite.
 - v0.1.598: Gateway-Limit pageSize 200 beachtet (Warten-Node, Vorgangs-Watcher, Firmenquelle Vorgang laden seitenweise); vorher 400 und stiller Watcher. Warten-Node prueft die Vorgangs-ID und nennt sie im Fehler.
+- v0.1.599: Firmen-Kontext um Handelsregister-Auszug (company_structured_content: Rechtsform, Stammkapital, Gruendungsjahr, Geschaeftsfuehrung) ergaenzt; fehlende Quellen (404) als „keine Daten vorhanden“ statt Fehler.

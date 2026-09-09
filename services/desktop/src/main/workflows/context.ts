@@ -36,6 +36,10 @@ const COMPANY_SOURCES: Array<{ tool: string; titel: string; key: string }> = [
   { tool: "company_keywords", titel: "Schlagworte", key: "schlagworte" },
   { tool: "company_contacts", titel: "Kontakte und Ansprechpartner", key: "kontakte" },
   { tool: "company_publications", titel: "Jahresabschluesse und Kennzahlen (Finanzen)", key: "finanzen" },
+  // v0.1.599 — Handelsregister-Auszug: Rechtsform, Stammkapital, Gruendungsjahr,
+  // Geschaeftsfuehrung, letzte Registeraenderung (fuer Platzhalter wie
+  // $geschaeftsfuehrer oder $stammkapital). 404 = noch nicht extrahiert.
+  { tool: "company_structured_content", titel: "Handelsregister (Rechtsform, Kapital, Geschaeftsfuehrung)", key: "register" },
   { tool: "company_crm_summary", titel: "CRM-Stand", key: "crm" },
 ];
 
@@ -74,7 +78,12 @@ export async function buildCompanyContext(
           if (typeof name === "string") json.name = name;
         }
       } catch (err) {
-        parts.push(`## ${src.titel}\n[nicht verfuegbar: ${err instanceof Error ? err.message.slice(0, 160) : String(err)}]`);
+        const msg = err instanceof Error ? err.message : String(err);
+        if (/\b404\b|not_found/i.test(msg)) {
+          parts.push(`## ${src.titel}\n[keine Daten vorhanden]`);
+          continue;
+        }
+        parts.push(`## ${src.titel}\n[nicht verfuegbar: ${msg.slice(0, 160)}]`);
       }
     }
   } else if (scope.discoveryId) {

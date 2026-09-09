@@ -102,7 +102,7 @@ export function buildWorkflowTools(deps: WorkflowToolDeps): Tool[] {
       "und Tool-Nodes ('tool:<name>') mit Parametern, Wirkungsklasse (read/additive/mutating/destructive) und Kostenklasse. Vor workflow_save aufrufen. " +
       "Expressions: {{ $json.feld }}, {{ $('Node-Name').item.json.feld }}, {{ $input.all() }}, {{ $vars.name }}, {{ $now }}. " +
       "Tool-Node: parameters = { tool: '<name>', args: {...}, outputPath?: 'items', itemKey?: 'discoveryId' }; mode perItem (Default) oder allItems. " +
-      "FIRMENBEZUG: Jeder Lauf gilt fuer GENAU EINE Firma; ihr vollstaendiger Kontext (Stammdaten, Profil, Finanzen/Kennzahlen, Kontakte, CRM) liegt dem Lauf vor. " +
+      "FIRMENBEZUG: Jeder Lauf gilt fuer GENAU EINE Firma; ihr vollstaendiger Kontext (Stammdaten, Profil, Finanzen/Kennzahlen, Handelsregister inkl. Geschaeftsfuehrung, Kontakte, CRM) liegt dem Lauf vor. " +
       "WARTEN AUF VERARBEITUNG: Nach discovery_decide/import liefert das Ergebnis eine transactionId; ein wait-Node mit transactionId: '{{ $json.transactionId }}' haelt den Lauf an, bis alle Firmen des Vorgangs verarbeitet sind (Watcher, max maxHours). " +
       "Beispiel „Radar-Firmen importieren, danach je Firma Kurzuebersicht per Telegram“: Prime (scope none): discovery_candidates(allItems) → filter → discovery_decide(allItems, imported, confirmed) → wait(transactionId) → " +
       "tool company_search/transaction_entities → subworkflow(perItem) mit Sub: ai(Kurzuebersicht aus {{ $context }}) → telegram_send_message. " +
