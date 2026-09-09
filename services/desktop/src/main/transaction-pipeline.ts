@@ -79,7 +79,10 @@ export function bewertePipeline(p: PipelineSnapshot, stufen: Stage[] = [KEY_STAG
         if (cell.errorMessage) fehler[stage] = cell.errorMessage;
       }
     }
-    const state: StageState = keyVerfuegbar ? (key?.state ?? "pending") : alleFertig ? (fehlgeschlagen.length > 0 ? "failed" : "completed") : "pending";
+    // Operator 2026-09-09: "uebersprungen" (bereits verarbeitet / keine Daten
+    // vorhanden) gilt als erfolgreich — Workflows machen direkt weiter.
+    const roh: StageState = keyVerfuegbar ? (key?.state ?? "pending") : alleFertig ? (fehlgeschlagen.length > 0 ? "failed" : "completed") : "pending";
+    const state: StageState = roh === "skipped" ? "completed" : roh;
     const offeneStufen = gefordert.filter((s) => !TERMINAL.has(cells[s]?.state ?? "pending"));
     return { companyId: r.companyId, state, vollstaendig: alleFertig, fehlgeschlageneStufen: fehlgeschlagen, fehler, stufenFertig: offeneStufen.length === 0, offeneStufen };
   });
