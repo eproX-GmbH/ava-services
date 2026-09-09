@@ -297,7 +297,9 @@ export function WorkflowEditor(): JSX.Element {
   const [paramText, setParamText] = useState("");
   const [paramError, setParamError] = useState<string | null>(null);
   const [addQuery, setAddQuery] = useState("");
-  const [firmaFuer, setFirmaFuer] = useState<{ dryRun: boolean } | null>(null);
+  const [firmaFuer, setFirmaFuer] = useState<{ dryRun: boolean; untilNode?: string } | null>(null);
+  const [kosten, setKosten] = useState<{ hinweis: string } | null>(null);
+  const [andere, setAndere] = useState<Array<{ id: string; name: string }>>([]);
 
   const load = useCallback(async () => {
     const [d, c, ex] = await Promise.all([window.api.workflows.get(id), window.api.workflows.catalog(), window.api.workflows.executions(id, 30)]);
@@ -308,6 +310,8 @@ export function WorkflowEditor(): JSX.Element {
     setDef(d);
     setCatalog(c);
     setExecutions(ex);
+    void window.api.workflows.estimate(id).then(setKosten);
+    void window.api.workflows.list().then((l) => setAndere(l.filter((w) => w.id !== id).map((w) => ({ id: w.id, name: w.name }))));
     const latest = ex[0] ?? null;
     setShownExecution(latest);
     const f = toFlow(d, c, latest);
@@ -418,18 +422,18 @@ export function WorkflowEditor(): JSX.Element {
     setDirty(false);
   };
 
-  const run = async (dryRun: boolean): Promise<void> => {
+  const run = async (dryRun: boolean, untilNode?: string): Promise<void> => {
     if (dirty) await save();
     if ((def?.settings.scope ?? "company") === "company") {
-      setFirmaFuer({ dryRun });
+      setFirmaFuer({ dryRun, untilNode });
       return;
     }
-    await starte(dryRun, null);
+    await starte(dryRun, null, untilNode);
   };
 
-  const starte = async (dryRun: boolean, firma: { companyId: string; name: string } | null): Promise<void> => {
+  const starte = async (dryRun: boolean, firma: { companyId: string; name: string } | null, untilNode?: string): Promise<void> => {
     setFirmaFuer(null);
-    const r = await window.api.workflows.run(id, { dryRun, ...(firma ? { companyId: firma.companyId, companyName: firma.name } : {}) });
+    const r = await window.api.workflows.run(id, { dryRun, ...(untilNode ? { untilNode } : {}), ...(firma ? { companyId: firma.companyId, companyName: firma.name } : {}) });
     setNotice(r.error ?? (dryRun ? `Trockenlauf gestartet${firma ? ` für ${firma.name}` : ""}.` : `Lauf gestartet${firma ? ` für ${firma.name}` : ""}.`));
     setTab("runs");
   };
@@ -456,6 +460,7 @@ export function WorkflowEditor(): JSX.Element {
           <span className="muted">v{def.version} · Trigger: {triggerText(def.trigger)}</span>
           {shownExecution && statusPill(shownExecution.status)}
           {dirty && <span className="pill pill--paused">ungespeichert</span>}
+          {kosten && <span className="muted small" title="Grobe Kostenuebersicht je Lauf">{kosten.hinweis}</span>}
         </div>
         <div className="wf-editor__actions">
           <button type="button" className="proc-toggle" onClick={() => void run(true)} disabled={running}>
@@ -480,7 +485,7 @@ export function WorkflowEditor(): JSX.Element {
       {notice && <div className="radar-notice wf-editor__notice">{notice}</div>}
       {firmaFuer && (
         <div className="wf-editor__notice">
-          <FirmenAuswahl onAbbruch={() => setFirmaFuer(null)} onWahl={(f) => void starte(firmaFuer.dryRun, f)} />
+          <FirmenAuswahl onAbbruch={() => setFirmaFuer(null)} onWahl={(f) => void starte(firmaFuer.dryRun, f, firmaFuer.untilNode)} />
         </div>
       )}
       {problems.length > 0 && (
@@ -599,6 +604,45 @@ export function WorkflowEditor(): JSX.Element {
                   Schritt entfernen
                 </button>
               </div>
+              {selectedNode.type !== "trigger" && (
+                <div className="org-actions">
+                  <button type="button" className="proc-toggle" onClick={() => void run(true, selectedNode.name)} title="Testlauf bis einschließlich dieses Schritts (Trockenlauf, Pin-Daten werden genutzt)">
+                    Bis hierhin testen
+                  </button>
+                  {shownExecution?.nodeRuns[selectedNode.name]?.at(-1)?.output?.[0] && (
+                    <button
+                      type="button"
+                      className="proc-toggle"
+                      title="Ausgabe dieses Laufs als Pin speichern: Testläufe nutzen sie statt den Schritt auszuführen"
+                      onClick={() => {
+                        const out = shownExecution!.nodeRuns[selectedNode.name]!.at(-1)!.output![0]!;
+                        const pinData = { ...(def.pinData ?? {}), [selectedNode.name]: out };
+                        void window.api.workflows.patch(def.id, { pinData }).then((r) => {
+                          if (r.workflow) {
+                            setDef(r.workflow);
+                            setNotice(`Ausgabe von „${selectedNode.name}“ gepinnt (${out.length} Items).`);
+                          }
+                        });
+                      }}
+                    >
+                      Ausgabe pinnen
+                    </button>
+                  )}
+                  {def.pinData?.[selectedNode.name] && (
+                    <button
+                      type="button"
+                      className="link"
+                      onClick={() => {
+                        const pinData = { ...(def.pinData ?? {}) };
+                        delete pinData[selectedNode.name];
+                        void window.api.workflows.patch(def.id, { pinData }).then((r) => r.workflow && setDef(r.workflow));
+                      }}
+                    >
+                      Pin entfernen ({def.pinData[selectedNode.name]!.length} Items)
+                    </button>
+                  )}
+                </div>
+              )}
               {selectedNode && shownExecution?.nodeRuns[selectedNode.name]?.at(-1)?.platzhalter && (
                 <details className="settings-collapse" open>
                   <summary>Befüllte Platzhalter</summary>
@@ -740,6 +784,17 @@ export function WorkflowEditor(): JSX.Element {
                   />
                 </label>
               )}
+              <label className="field">
+                <span>Fehler-Workflow (läuft bei Fehler mit Fehler-Item)</span>
+                <select value={def.settings.errorWorkflowId ?? ""} onChange={(e) => { setDef({ ...def, settings: { ...def.settings, errorWorkflowId: e.target.value || undefined } }); setDirty(true); }}>
+                  <option value="">keiner</option>
+                  {andere.map((w) => (
+                    <option key={w.id} value={w.id}>
+                      {w.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
               <label className="field">
                 <span>Mails je Tag höchstens</span>
                 <input type="number" min={0} value={def.settings.maxMailsPerDay} onChange={(e) => { setDef({ ...def, settings: { ...def.settings, maxMailsPerDay: Number(e.target.value) } }); setDirty(true); }} />

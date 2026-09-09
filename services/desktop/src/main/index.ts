@@ -5535,11 +5535,16 @@ app.whenReady().then(async () => {
       return { error: err instanceof Error ? err.message : String(err) };
     }
   });
-  ipcMain.handle("workflows:run", async (_e, id: string, opts?: { dryRun?: boolean; companyId?: string; companyName?: string; discoveryId?: string; companyQuery?: string }) => {
+  ipcMain.handle("workflows:estimate", (_e, id: string) => {
+    const def = wf().get(String(id));
+    return def ? wf().estimate(def) : null;
+  });
+  ipcMain.handle("workflows:run", async (_e, id: string, opts?: { dryRun?: boolean; companyId?: string; companyName?: string; discoveryId?: string; companyQuery?: string; untilNode?: string }) => {
     try {
       const p = wf().run(String(id), {
         trigger: opts?.dryRun ? "test" : "manual",
         dryRun: opts?.dryRun === true,
+        ...(opts?.untilNode ? { untilNode: opts.untilNode } : {}),
         ...(opts?.companyId ? { company: { companyId: opts.companyId, companyName: opts.companyName } } : opts?.discoveryId ? { company: { discoveryId: opts.discoveryId } } : {}),
         ...(opts?.companyQuery ? { companyQuery: opts.companyQuery } : {}),
       });

@@ -187,7 +187,7 @@ export class WorkflowService {
 
   async run(
     id: string,
-    opts: { trigger: WorkflowExecution["trigger"]; dryRun?: boolean; inputItems?: WorkflowItem[]; company?: CompanyScope; companyQuery?: string },
+    opts: { trigger: WorkflowExecution["trigger"]; dryRun?: boolean; inputItems?: WorkflowItem[]; company?: CompanyScope; companyQuery?: string; untilNode?: string },
   ): Promise<WorkflowExecution> {
     const def = this.store.get(id);
     if (!def) throw new Error("Workflow nicht gefunden.");
@@ -205,7 +205,27 @@ export class WorkflowService {
       const k = kandidaten.find((x) => x.name.toLowerCase() === opts.companyQuery!.trim().toLowerCase()) ?? kandidaten[0]!;
       company = { companyId: k.companyId, companyName: k.name };
     }
-    return this.runner.run(def, { trigger: opts.trigger, dryRun: opts.dryRun, inputItems: opts.inputItems, company });
+    return this.runner.run(def, { trigger: opts.trigger, dryRun: opts.dryRun, inputItems: opts.inputItems, company, untilNode: opts.untilNode });
+  }
+
+  /** W6 — grobe Kostenuebersicht je Lauf (Anzahl Schritte je Kostenklasse). */
+  estimate(def: WorkflowDefinition): { frei: number; kontingent: number; ki: number; extern: number; platzhalter: number; hinweis: string } {
+    const cat = new Map(this.catalog().map((c) => [c.type, c]));
+    const out = { frei: 0, kontingent: 0, ki: 0, extern: 0, platzhalter: 0, hinweis: "" };
+    for (const n of def.nodes) {
+      if (n.disabled || n.type === "note" || n.type === "trigger") continue;
+      const entry = n.type === "tool" ? cat.get(`tool:${String(n.parameters.tool)}`) : cat.get(n.type);
+      const cls = entry?.costClass ?? "frei";
+      out[cls]++;
+      if (JSON.stringify(n.parameters).match(/\$[A-Za-zÄÖÜäöüß_][\wÄÖÜäöüß]*(?!\s*\()/)) out.platzhalter++;
+    }
+    const teile: string[] = [];
+    if (out.ki > 0) teile.push(`${out.ki} KI-Schritt${out.ki > 1 ? "e" : ""}`);
+    if (out.platzhalter > 0) teile.push(`${out.platzhalter} Schritt${out.platzhalter > 1 ? "e" : ""} mit Platzhaltern (je ein Modell-Aufruf)`);
+    if (out.kontingent > 0) teile.push(`${out.kontingent} Kontingent-Schritt${out.kontingent > 1 ? "e" : ""} (Scan/Import/Profil)`);
+    if (out.extern > 0) teile.push(`${out.extern} externe${out.extern > 1 ? "" : "r"} Aufruf${out.extern > 1 ? "e" : ""} (CRM/Mail/Apify)`);
+    out.hinweis = teile.length > 0 ? `Je Firma: ${teile.join(", ")}. Firmen-Kontext kostet keinen KI-Aufruf.` : "Je Firma: nur lokale/freie Schritte.";
+    return out;
   }
 
   /** Firma per Name suchen (ueber das company_search-Tool). */

@@ -60,6 +60,8 @@ export interface RunOptions {
   depth?: number;
   /** Firma des Laufs (Pflicht bei settings.scope === "company"). */
   company?: CompanyScope;
+  /** „Bis hierhin ausfuehren“: nach diesem Node stoppen. */
+  untilNode?: string;
 }
 
 interface PendingApproval {
@@ -157,6 +159,8 @@ export class WorkflowRunner {
       itemsProduced: 0,
       company: null,
       placeholderCache: new Map(),
+      untilNode: opts.untilNode ?? null,
+      gestoppt: false,
     };
     try {
       const trigger = def.nodes.find((n) => n.type === "trigger");
@@ -200,6 +204,18 @@ export class WorkflowRunner {
         summary: `Workflow „${def.name}“: ${execution.status} — ${execution.summary}`,
         metadata: { workflowId: def.id, executionId: execution.id, error: execution.error ?? null },
       });
+      // W5 — Fehler-Workflow: bei Fehler den hinterlegten Workflow mit Fehler-Item starten.
+      if (execution.status === "error" && def.settings.errorWorkflowId && depth === 0 && opts.trigger !== "test") {
+        const errDef = this.deps.getDefinition(def.settings.errorWorkflowId);
+        if (errDef && errDef.id !== def.id) {
+          void this.run(errDef, {
+            trigger: "event",
+            inputItems: [{ json: { fehler: execution.error, workflowId: def.id, workflowName: def.name, executionId: execution.id, firma: execution.scope ?? null } }],
+            company: opts.company,
+            depth: 1,
+          }).catch(() => {});
+        }
+      }
       if (def.settings.notifyOnFinish && depth === 0 && opts.trigger !== "test") {
         this.deps.notify({
           art: execution.status === "error" ? "fehler" : "fertig",
@@ -266,12 +282,17 @@ export class WorkflowRunner {
         const pa = byName.get(a)!.position, pb = byName.get(b)!.position;
         return pa[1] - pb[1] || pa[0] - pb[0];
       });
+      if (ctx.gestoppt) break;
       const name = ready[0]!;
       done.add(name);
       const node = byName.get(name)!;
       const inputs = inbox.get(name)!;
       const inputItems = [...inputs.keys()].sort((a, b) => a - b).flatMap((i) => inputs.get(i) ?? []);
       const outputs = await this.runNode(ctx, node, inputItems, inputs, allowed);
+      if (ctx.untilNode === name) {
+        ctx.gestoppt = true;
+        break;
+      }
       // Deaktivierte/uebersprungene Nodes reichen Items durch (Ausgang 0).
       outputs.forEach((items, outIdx) => {
         const targets = def.connections[name]?.main?.[outIdx] ?? [];
@@ -307,9 +328,15 @@ export class WorkflowRunner {
     this.deps.emit({ kind: "node-started", executionId: execution.id, workflowId: ctx.def.id, node: node.name });
     let outputs: WorkflowItem[][] = [[]];
     try {
+      const pin = ctx.execution.trigger === "test" ? ctx.def.pinData?.[node.name] : undefined;
       if (node.disabled || node.type === "note") {
         outputs = [inputItems];
         run.status = "skipped";
+      } else if (pin && pin.length > 0) {
+        // W6 — Pin-Daten im Testlauf: gespeicherte Ausgabe statt Ausfuehrung.
+        outputs = [pin.map((it, i) => ({ json: it.json, pairedItem: { item: i } }))];
+        run.status = "success";
+        run.hinweise = ["Pin-Daten verwendet (Testlauf)"];
       } else {
         outputs = await this.withRetry(node, () => this.executeNode(ctx, node, inputItems, inputsByIndex, allowed));
         run.status = "success";
@@ -776,6 +803,8 @@ interface RunContext {
   itemsProduced: number;
   company: CompanyContext | null;
   placeholderCache: Map<string, unknown>;
+  untilNode: string | null;
+  gestoppt: boolean;
 }
 
 function statusText(s: WorkflowExecution["status"]): string {

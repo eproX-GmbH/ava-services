@@ -501,8 +501,9 @@ const api = {
     patch: (id: string, patch: Partial<import("../shared/workflow-types").WorkflowDefinition>): Promise<{ workflow?: import("../shared/workflow-types").WorkflowDefinition | null; error?: string }> =>
       ipcRenderer.invoke("workflows:patch", id, patch),
     delete: (id: string): Promise<{ ok: boolean }> => ipcRenderer.invoke("workflows:delete", id),
-    run: (id: string, opts?: { dryRun?: boolean; companyId?: string; companyName?: string; discoveryId?: string; companyQuery?: string }): Promise<{ gestartet?: boolean; error?: string }> =>
+    run: (id: string, opts?: { dryRun?: boolean; companyId?: string; companyName?: string; discoveryId?: string; companyQuery?: string; untilNode?: string }): Promise<{ gestartet?: boolean; error?: string }> =>
       ipcRenderer.invoke("workflows:run", id, opts),
+    estimate: (id: string): Promise<{ frei: number; kontingent: number; ki: number; extern: number; platzhalter: number; hinweis: string } | null> => ipcRenderer.invoke("workflows:estimate", id),
     resolveCompany: (query: string): Promise<{ kandidaten?: Array<{ companyId: string; name: string; ort: string | null }>; error?: string }> =>
       ipcRenderer.invoke("workflows:resolveCompany", query),
     cancel: (executionId: string): Promise<{ ok: boolean }> => ipcRenderer.invoke("workflows:cancel", executionId),
