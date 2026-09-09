@@ -5,7 +5,9 @@ import type { ToolRegistry } from "../agent/tool-registry";
 import type { LlmProviderManager } from "../agent/providers";
 import type { AutonomyLevel } from "../../shared/types";
 import {
+  DEFAULT_WORKFLOW_SETTINGS,
   WORKFLOW_LIMITS,
+  type OrgWorkflowRow,
   type WorkflowApproval,
   type WorkflowCatalogEntry,
   type WorkflowDefinition,
@@ -36,7 +38,9 @@ export interface WorkflowServiceDeps {
   /** Feature-Vorgabe der Organisation. */
   featureEnabled: () => boolean;
   /** Gateway-Lesezugriff fuer dynamische Firmenquellen (Matrix, Vorgaenge). */
-  gatewayRequest: <T>(path: string) => Promise<T>;
+  gatewayRequest: <T>(path: string, opts?: { method?: string; body?: unknown }) => Promise<T>;
+  /** Eigene actorId (fuer „von mir geteilt“). */
+  getActorId: () => string | null;
 }
 
 export class WorkflowService {
@@ -206,6 +210,71 @@ export class WorkflowService {
       company = { companyId: k.companyId, companyName: k.name };
     }
     return this.runner.run(def, { trigger: opts.trigger, dryRun: opts.dryRun, inputItems: opts.inputItems, company, untilNode: opts.untilNode });
+  }
+
+  // ---- W7 — Teilen mit der Organisation ----------------------------------------
+
+  /** Kopie der Definition in den Tenant legen (erneut = aktualisieren). */
+  async shareToOrg(id: string): Promise<OrgWorkflowRow> {
+    const def = this.store.get(id);
+    if (!def) throw new Error("Workflow nicht gefunden.");
+    // Ohne lokale Bezuege: Pin-Daten, feste Firmenlisten, Sub-Workflow-IDs bleiben, Trigger wird manuell.
+    const { pinData: _pin, sharedFrom: _sf, ...rest } = def;
+    void _pin;
+    void _sf;
+    const definition: Record<string, unknown> = {
+      ...rest,
+      trigger: def.trigger.kind === "schedule" ? { ...def.trigger, companyIds: [] } : def.trigger,
+      enabled: true,
+    };
+    const r = await this.deps.gatewayRequest<{ workflow: OrgWorkflowRow }>("/v1/tenants/me/workflows", {
+      method: "POST",
+      body: { sourceId: def.id, name: def.name, description: def.description, version: def.version, definition },
+    });
+    this.deps.audit({ action: "workflow.share", severity: "info", summary: `Workflow „${def.name}“ mit der Organisation geteilt`, metadata: { workflowId: def.id, orgWorkflowId: r.workflow.id } });
+    return r.workflow;
+  }
+
+  async listOrgWorkflows(): Promise<OrgWorkflowRow[]> {
+    const r = await this.deps.gatewayRequest<{ items: OrgWorkflowRow[] }>("/v1/tenants/me/workflows");
+    return r.items ?? [];
+  }
+
+  async revokeOrgWorkflow(orgId: string): Promise<void> {
+    await this.deps.gatewayRequest(`/v1/tenants/me/workflows/${encodeURIComponent(orgId)}`, { method: "DELETE" });
+    this.deps.audit({ action: "workflow.share.revoke", severity: "info", summary: `Geteilter Workflow ${orgId} zurueckgezogen`, metadata: { orgWorkflowId: orgId } });
+  }
+
+  /** Geteilten Workflow als eigene Kopie uebernehmen (Trigger manuell, Freigaben zurueckgesetzt). */
+  async adoptFromOrg(orgId: string): Promise<{ workflow: WorkflowDefinition; problems: ValidationProblem[] }> {
+    const r = await this.deps.gatewayRequest<{ workflow: OrgWorkflowRow }>(`/v1/tenants/me/workflows/${encodeURIComponent(orgId)}`);
+    const src = r.workflow;
+    const d = (src.definition ?? {}) as Partial<WorkflowDefinition>;
+    if (!Array.isArray(d.nodes) || !d.connections || !d.trigger) throw new Error("Geteilte Definition ist unvollstaendig.");
+    const vorhanden = this.store.list().find((w) => w.sharedFrom?.orgWorkflowId === src.id);
+    const nodes = d.nodes.map((n) => ({ ...n, confirmed: false }));
+    const saved = this.save(
+      {
+        ...(vorhanden ? { id: vorhanden.id } : {}),
+        name: vorhanden?.name ?? src.name,
+        description: src.description,
+        nodes,
+        connections: d.connections,
+        variables: d.variables ?? {},
+        trigger: { kind: "manual" },
+        settings: { ...DEFAULT_WORKFLOW_SETTINGS, ...(d.settings ?? {}), errorWorkflowId: undefined },
+        origin: { kind: "org" },
+        enabled: true,
+        sharedFrom: { orgWorkflowId: src.id, sharedBy: src.sharedByName ?? src.sharedBy },
+      },
+      { createdBy: "user" },
+    );
+    this.deps.audit({ action: "workflow.adopt", severity: "info", summary: `Geteilter Workflow „${src.name}“ uebernommen`, metadata: { orgWorkflowId: src.id, workflowId: saved.workflow.id } });
+    return saved;
+  }
+
+  isSharedByMe(row: OrgWorkflowRow): boolean {
+    return row.sharedBy === this.deps.getActorId();
   }
 
   /** W6 — grobe Kostenuebersicht je Lauf (Anzahl Schritte je Kostenklasse). */

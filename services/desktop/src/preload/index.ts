@@ -504,6 +504,11 @@ const api = {
     run: (id: string, opts?: { dryRun?: boolean; companyId?: string; companyName?: string; discoveryId?: string; companyQuery?: string; untilNode?: string }): Promise<{ gestartet?: boolean; error?: string }> =>
       ipcRenderer.invoke("workflows:run", id, opts),
     estimate: (id: string): Promise<{ frei: number; kontingent: number; ki: number; extern: number; platzhalter: number; hinweis: string } | null> => ipcRenderer.invoke("workflows:estimate", id),
+    share: (id: string): Promise<{ workflow?: import("../shared/workflow-types").OrgWorkflowRow; error?: string }> => ipcRenderer.invoke("workflows:share", id),
+    orgList: (): Promise<{ items?: Array<import("../shared/workflow-types").OrgWorkflowRow & { vonMir: boolean }>; error?: string }> => ipcRenderer.invoke("workflows:orgList"),
+    adopt: (orgId: string): Promise<{ workflow?: import("../shared/workflow-types").WorkflowDefinition; problems?: Array<{ node?: string; message: string }>; error?: string }> =>
+      ipcRenderer.invoke("workflows:adopt", orgId),
+    orgRevoke: (orgId: string): Promise<{ ok?: boolean; error?: string }> => ipcRenderer.invoke("workflows:orgRevoke", orgId),
     resolveCompany: (query: string): Promise<{ kandidaten?: Array<{ companyId: string; name: string; ort: string | null }>; error?: string }> =>
       ipcRenderer.invoke("workflows:resolveCompany", query),
     cancel: (executionId: string): Promise<{ ok: boolean }> => ipcRenderer.invoke("workflows:cancel", executionId),

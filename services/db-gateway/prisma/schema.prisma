@@ -458,6 +458,7 @@ model Tenant {
   memberships TenantMembership[]
   seatTiers   SeatTierChange[]
   seatInvoices SeatInvoice[]
+  workflows   TenantWorkflow[]
 }
 
 /// O1 — Beitrittsanfrage: bis zur Freigabe bleibt der Nutzer in seinem
@@ -529,6 +530,25 @@ model OrgShare {
 
   @@unique([tenantId, kind, refId])
   @@index([tenantId, kind, sharedAt])
+}
+
+/// W7 — Mit der Organisation geteilte Workflows (Kopie der lokalen Definition).
+model TenantWorkflow {
+  id          String    @id
+  tenantId    String
+  sourceId    String
+  name        String
+  description String    @default("")
+  definition  Json
+  version     Int       @default(1)
+  sharedBy    String
+  sharedAt    DateTime  @default(now())
+  updatedAt   DateTime  @default(now())
+  revokedAt   DateTime?
+  tenant      Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, sourceId])
+  @@index([tenantId, sharedAt])
 }
 
 /// O8 — „gesehen"/„ausgeblendet" je Mitglied.

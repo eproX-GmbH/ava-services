@@ -16,6 +16,7 @@ import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
 import { HTTPException } from "hono/http-exception";
 import { getGatewayPool } from "../../lib/producer-pools";
 import { createShare, createRadarShares, listShares, revokeShare, markShare } from "../../lib/org-shares";
+import { getOrgWorkflow, listOrgWorkflows, revokeOrgWorkflow, shareWorkflow } from "../../lib/org-workflows";
 import { callUpstream } from "../../lib/upstream";
 import {
   createOrganisation,
@@ -188,6 +189,80 @@ tenantsRouter.openapi(
 // ---- O8 — Freigaben (Transaktionen, Radar-Firmen) ---------------------------
 
 const ShareKind = z.enum(["transaction", "radar_company"]);
+
+// ---- W7 — Workflows mit der Organisation teilen ------------------------------
+
+tenantsRouter.openapi(
+  createRoute({
+    method: "post",
+    path: "/tenants/me/workflows",
+    tags: ["tenants"],
+    summary: "Workflow-Definition mit der Organisation teilen (Kopie; erneutes Teilen aktualisiert).",
+    request: {
+      body: {
+        content: {
+          "application/json": {
+            schema: z.object({
+              sourceId: z.string().min(1).max(100),
+              name: z.string().min(1).max(120),
+              description: z.string().max(2000).default(""),
+              version: z.number().int().min(1).default(1),
+              definition: z.object({}).passthrough(),
+            }),
+          },
+        },
+      },
+    },
+    responses: { 201: { content: { "application/json": { schema: z.object({}).passthrough() } }, description: "geteilt" } },
+  }),
+  async (c) => {
+    const body = c.req.valid("json");
+    const row = await wrap(() => shareWorkflow(getGatewayPool(), c.get("auth"), { ...body, definition: body.definition as Record<string, unknown> }));
+    return c.json({ ok: true as const, workflow: row }, 201);
+  },
+);
+
+tenantsRouter.openapi(
+  createRoute({
+    method: "get",
+    path: "/tenants/me/workflows",
+    tags: ["tenants"],
+    summary: "Von der Organisation geteilte Workflows (ohne Definition).",
+    responses: { 200: { content: { "application/json": { schema: z.object({}).passthrough() } }, description: "ok" } },
+  }),
+  async (c) => c.json({ items: await listOrgWorkflows(getGatewayPool(), c.get("auth")) }),
+);
+
+tenantsRouter.openapi(
+  createRoute({
+    method: "get",
+    path: "/tenants/me/workflows/{id}",
+    tags: ["tenants"],
+    summary: "Geteilten Workflow mit Definition lesen.",
+    request: { params: z.object({ id: z.string().min(1).max(100) }) },
+    responses: { 200: { content: { "application/json": { schema: z.object({}).passthrough() } }, description: "ok" } },
+  }),
+  async (c) => {
+    const row = await getOrgWorkflow(getGatewayPool(), c.get("auth"), c.req.valid("param").id);
+    if (!row) throw new HTTPException(404, { message: "org_workflow_not_found" });
+    return c.json({ workflow: row });
+  },
+);
+
+tenantsRouter.openapi(
+  createRoute({
+    method: "delete",
+    path: "/tenants/me/workflows/{id}",
+    tags: ["tenants"],
+    summary: "Geteilten Workflow zurueckziehen (wer geteilt hat, oder Admin).",
+    request: { params: z.object({ id: z.string().min(1).max(100) }) },
+    responses: { 200: { content: { "application/json": { schema: z.object({}).passthrough() } }, description: "ok" } },
+  }),
+  async (c) => {
+    await wrap(() => revokeOrgWorkflow(getGatewayPool(), c.get("auth"), c.req.valid("param").id));
+    return c.json({ ok: true as const });
+  },
+);
 
 tenantsRouter.openapi(
   createRoute({

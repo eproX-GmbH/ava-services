@@ -4,7 +4,8 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import type { WorkflowApproval, WorkflowListEntry, WorkflowProgressFrame, WorkflowTrigger } from "../../../shared/workflow-types";
+import type { OrgWorkflowRow, WorkflowApproval, WorkflowListEntry, WorkflowProgressFrame, WorkflowTrigger } from "../../../shared/workflow-types";
+
 
 export function triggerText(t: WorkflowTrigger): string {
   if (t.kind === "manual") return "manuell";
@@ -90,6 +91,9 @@ export function FirmenAuswahl({ onWahl, onAbbruch }: { onWahl: (f: { companyId: 
 export function Workflows(): JSX.Element {
   const [rows, setRows] = useState<WorkflowListEntry[]>([]);
   const [approvals, setApprovals] = useState<WorkflowApproval[]>([]);
+  const [orgRows, setOrgRows] = useState<Array<OrgWorkflowRow & { vonMir: boolean }>>([]);
+  // Organisation vorhanden? → Liste der geteilten Workflows laedt ohne Fehler.
+  const [inOrg, setInOrg] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const navigate = useNavigate();
@@ -99,6 +103,9 @@ export function Workflows(): JSX.Element {
       const [r, a] = await Promise.all([window.api.workflows.list(), window.api.workflows.approvals("open")]);
       setRows(r);
       setApprovals(a);
+      const o = await window.api.workflows.orgList();
+      setInOrg(!o.error);
+      setOrgRows(o.items ?? []);
     } catch (err) {
       setNotice(err instanceof Error ? err.message : String(err));
     }
@@ -140,6 +147,28 @@ export function Workflows(): JSX.Element {
     if (!window.confirm(`Workflow „${row.name}“ samt Lauf-Historie löschen?`)) return;
     await window.api.workflows.delete(row.id);
     void reload();
+  };
+
+  const teilen = async (row: WorkflowListEntry): Promise<void> => {
+    setBusy(row.id);
+    try {
+      const r = await window.api.workflows.share(row.id);
+      setNotice(r.error ?? `„${row.name}“ mit der Organisation geteilt — Kolleginnen und Kollegen können ihn übernehmen.`);
+    } finally {
+      setBusy(null);
+      void reload();
+    }
+  };
+
+  const uebernehmen = async (o: OrgWorkflowRow): Promise<void> => {
+    setBusy(o.id);
+    try {
+      const r = await window.api.workflows.adopt(o.id);
+      setNotice(r.error ?? `„${o.name}“ übernommen — Trigger steht auf manuell, Schreib-Schritte sind nicht freigegeben.`);
+    } finally {
+      setBusy(null);
+      void reload();
+    }
   };
 
   const decide = async (a: WorkflowApproval, approved: boolean): Promise<void> => {
@@ -208,6 +237,43 @@ export function Workflows(): JSX.Element {
         </section>
       )}
 
+      {inOrg && orgRows.length > 0 && (
+        <section className="ct-card wf-approvals">
+          <h3>Von der Organisation geteilt</h3>
+          <p className="muted small">Übernehmen legt eine eigene Kopie an. Zugänge kommen aus deinen Einstellungen; Trigger und Freigaben setzt du selbst.</p>
+          <div className="org-list">
+            {orgRows.map((o) => (
+              <div key={o.id} className="org-row">
+                <div className="org-row__main">
+                  <span className="org-row__title">
+                    {o.name} <span className="muted">· v{o.version} · {o.nodeCount} Schritte</span>
+                  </span>
+                  <span className="org-row__meta">
+                    {o.description || "—"} · geteilt von {o.sharedByName ?? `${o.sharedBy.slice(0, 8)}…`} am {new Date(o.updatedAt).toLocaleDateString("de-DE")}
+                    {o.vonMir ? " · von dir" : ""}
+                  </span>
+                </div>
+                <div className="org-row__actions">
+                  <button type="button" className="primary" disabled={busy === o.id} onClick={() => void uebernehmen(o)}>
+                    Übernehmen
+                  </button>
+                  {o.vonMir && (
+                    <button
+                      type="button"
+                      className="link"
+                      disabled={busy === o.id}
+                      onClick={() => void window.api.workflows.orgRevoke(o.id).then(() => reload())}
+                    >
+                      Zurückziehen
+                    </button>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+
       {rows.length === 0 ? (
         <div className="radar-hint">
           Noch keine Workflows. Erarbeite einen Ablauf im <Link to="/chat">Chat</Link> und sag dann „speicher die Schritte als Workflow“, oder beschreibe direkt, was
@@ -257,6 +323,11 @@ export function Workflows(): JSX.Element {
                 <Link to={`/workflows/${w.id}`} className="proc-toggle">
                   Öffnen
                 </Link>
+                {inOrg && (
+                  <button type="button" className="proc-toggle" disabled={busy === w.id} onClick={() => void teilen(w)} title="Kopie der Definition für alle Mitglieder deiner Organisation">
+                    Mit Organisation teilen
+                  </button>
+                )}
                 <button type="button" className="link" onClick={() => void remove(w)}>
                   Löschen
                 </button>

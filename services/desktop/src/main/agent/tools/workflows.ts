@@ -415,5 +415,64 @@ export function buildWorkflowTools(deps: WorkflowToolDeps): Tool[] {
     },
   });
 
-  return [list, get, catalog, save, update, run, del, approvals, approve, fromConversation];
+  const share = defineTool({
+    name: "workflow_share",
+    summary: "Einen Workflow mit der eigenen Organisation teilen (Kopie der Definition; Bestaetigung).",
+    category: "workflow workflows teilen organisation kollegen",
+    description: "Teilt einen Workflow (id oder Name) mit der Organisation. Mitglieder koennen ihn als eigene Kopie uebernehmen; Zugaenge und Freigaben setzen sie selbst. Erneutes Teilen aktualisiert. Fragt vorher nach.",
+    parameters: { type: "object", required: ["workflow"], properties: { workflow: { type: "string" } } },
+    schema: yup.object({ workflow: yup.string().trim().min(1).required() }).noUnknown(true),
+    preview: (r: Record<string, any>) => (r.error as string | undefined) ?? (r.geteilt ? "geteilt" : "abgebrochen"),
+    run: async (args, c) => {
+      const def = svc().resolve(args.workflow);
+      if (!def) return { error: `Workflow nicht gefunden: ${args.workflow}` };
+      const value = await c.ui.confirmAction({ kind: "additive", prompt: `Workflow „${def.name}“ mit der Organisation teilen?`, confirmValue: "ja", options: [{ value: "ja", label: "Teilen" }, { value: "nein", label: "Abbrechen" }] }, c.signal);
+      if (value !== "ja") return { ...userDeclined(), geteilt: false };
+      try {
+        const w = await svc().shareToOrg(def.id);
+        return { geteilt: true, orgWorkflowId: w.id };
+      } catch (err) {
+        return { error: err instanceof Error ? err.message : String(err) };
+      }
+    },
+  });
+
+  const orgList = defineTool({
+    name: "workflow_org_list",
+    summary: "Von der Organisation geteilte Workflows auflisten (zum Uebernehmen).",
+    category: "workflow workflows organisation geteilt vorlagen",
+    description: "Listet Workflows, die Mitglieder der Organisation geteilt haben (Name, Beschreibung, Schritte, von wem). Uebernehmen mit workflow_adopt.",
+    parameters: { type: "object", properties: {} },
+    schema: yup.object({}).noUnknown(true),
+    preview: (r: Record<string, any>) => (r.error as string | undefined) ?? `${r.items?.length ?? 0} geteilte Workflows`,
+    run: async () => {
+      try {
+        return { items: (await svc().listOrgWorkflows()).map((i) => ({ id: i.id, name: i.name, description: i.description, schritte: i.nodeCount, von: i.sharedByName ?? i.sharedBy, geteiltAm: i.updatedAt })) };
+      } catch (err) {
+        return { error: err instanceof Error ? err.message : String(err) };
+      }
+    },
+  });
+
+  const adopt = defineTool({
+    name: "workflow_adopt",
+    summary: "Einen geteilten Workflow der Organisation als eigene Kopie uebernehmen (Bestaetigung).",
+    category: "workflow workflows organisation uebernehmen kopie",
+    description: "Uebernimmt einen von der Organisation geteilten Workflow (id aus workflow_org_list) als eigene Kopie: Trigger manuell, Schreib-Schritte nicht freigegeben. Fragt vorher nach.",
+    parameters: { type: "object", required: ["orgWorkflowId"], properties: { orgWorkflowId: { type: "string" } } },
+    schema: yup.object({ orgWorkflowId: yup.string().trim().min(1).required() }).noUnknown(true),
+    preview: (r: Record<string, any>) => (r.error as string | undefined) ?? (r.workflow ? `Workflow „${r.workflow.name}“ uebernommen` : "abgebrochen"),
+    run: async (args, c) => {
+      const value = await c.ui.confirmAction({ kind: "additive", prompt: `Geteilten Workflow ${args.orgWorkflowId} als eigene Kopie uebernehmen?`, confirmValue: "ja", options: [{ value: "ja", label: "Uebernehmen" }, { value: "nein", label: "Abbrechen" }] }, c.signal);
+      if (value !== "ja") return { ...userDeclined() };
+      try {
+        const r = await svc().adoptFromOrg(args.orgWorkflowId);
+        return { workflow: kompakt(r.workflow), problems: r.problems };
+      } catch (err) {
+        return { error: err instanceof Error ? err.message : String(err) };
+      }
+    },
+  });
+
+  return [list, get, catalog, save, update, run, del, approvals, approve, fromConversation, share, orgList, adopt];
 }

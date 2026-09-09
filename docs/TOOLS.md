@@ -5,7 +5,7 @@ NICHT direkt bearbeiten — die Quelle der Wahrheit ist `services/desktop/src/ma
 Lauf via `pnpm -F @ava/desktop tools:doc` (oder automatisch via `build:typecheck`).
 
 Stand: 2026-09-09
-Anzahl Tools: 235
+Anzahl Tools: 238
 
 ## Firmen (17)
 
@@ -2197,7 +2197,16 @@ _Parameter:_
 - `profileUrl: string` (required)
 - `fokus: boolean` (required)
 
-## workflows (10)
+## workflows (13)
+
+### `workflow_adopt`
+
+_Datei:_ `services/desktop/src/main/agent/tools/workflows.ts`
+
+Uebernimmt einen von der Organisation geteilten Workflow (id aus workflow_org_list) als eigene Kopie: Trigger manuell, Schreib-Schritte nicht freigegeben. Fragt vorher nach.
+
+_Parameter:_
+- `orgWorkflowId: string` (required)
 
 ### `workflow_approvals`
 
@@ -2264,6 +2273,14 @@ Listet alle Workflows des Nutzers: Name, Trigger, letzter Lauf, naechster Lauf, 
 
 _Parameter:_ keine.
 
+### `workflow_org_list`
+
+_Datei:_ `services/desktop/src/main/agent/tools/workflows.ts`
+
+Listet Workflows, die Mitglieder der Organisation geteilt haben (Name, Beschreibung, Schritte, von wem). Uebernehmen mit workflow_adopt.
+
+_Parameter:_ keine.
+
 ### `workflow_run`
 
 _Datei:_ `services/desktop/src/main/agent/tools/workflows.ts`
@@ -2284,6 +2301,15 @@ _Datei:_ `services/desktop/src/main/agent/tools/workflows.ts`
 Speichert eine Workflow-Definition. nodes: Liste mit name (eindeutig), type, parameters, mode, confirmed; connections: { '<Node-Name>': { main: [[{ node, index }], ...] } } (Ausgang 0 = erster Eintrag; if: 0 = wahr, 1 = falsch; loop: 0 = loop, 1 = done). Genau ein Node vom Typ trigger. Schreib-Nodes laufen unbeaufsichtigt nur mit Vollmacht oder confirmed=true; mail_send braucht immer confirmed oder einen human-Node davor. Der Trigger ist beim Anlegen 'manual', ausser der Nutzer wuenscht ausdruecklich einen Zeitplan (dann companyIds im Trigger, ein Lauf je Firma). settings.scope: 'company' (Default, Lauf je Firma mit vollem Kontext) oder 'none' (ohne Firmenbezug, z. B. nur Radar starten). Nutze semantische Platzhalter mit Fallback ($kassenbestand ?? "kein Kassenbestand bekannt") statt fester Feldnamen. Zeigt den Entwurf und fragt vor dem Speichern nach.
 
 _Parameter:_ keine.
+
+### `workflow_share`
+
+_Datei:_ `services/desktop/src/main/agent/tools/workflows.ts`
+
+Teilt einen Workflow (id oder Name) mit der Organisation. Mitglieder koennen ihn als eigene Kopie uebernehmen; Zugaenge und Freigaben setzen sie selbst. Erneutes Teilen aktualisiert. Fragt vorher nach.
+
+_Parameter:_
+- `workflow: string` (required)
 
 ### `workflow_update`
 

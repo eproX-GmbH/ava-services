@@ -233,6 +233,21 @@ export interface WorkflowListEntry {
   blocked?: string | null;
 }
 
+/** W7 — mit der Organisation geteilter Workflow (Gateway). */
+export interface OrgWorkflowRow {
+  id: string;
+  sourceId: string;
+  name: string;
+  description: string;
+  version: number;
+  sharedBy: string;
+  sharedByName: string | null;
+  sharedAt: string;
+  updatedAt: string;
+  nodeCount: number;
+  definition?: Record<string, unknown>;
+}
+
 /** Fortschritts-Frame Main → Renderer. */
 export type WorkflowProgressFrame =
   | { kind: "execution-started"; execution: WorkflowExecution }

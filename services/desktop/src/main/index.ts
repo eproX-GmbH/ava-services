@@ -3035,7 +3035,8 @@ app.whenReady().then(async () => {
         }
       }
     },
-    gatewayRequest: (path) => gatewayClient.request(path),
+    gatewayRequest: (path, opts) => gatewayClient.request(path, opts ? { method: opts.method as "GET" | "POST" | "PUT" | "DELETE" | undefined, body: opts.body } : undefined),
+    getActorId: () => auth.getStatus().actorId ?? null,
   });
   workflowService.start();
   // W4 — Workflow-Trigger alert.created.
@@ -5531,6 +5532,37 @@ app.whenReady().then(async () => {
   ipcMain.handle("workflows:resolveCompany", async (_e, query: string) => {
     try {
       return { kandidaten: await wf().resolveCompany(String(query)) };
+    } catch (err) {
+      return { error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+  // W7 — Teilen mit der Organisation.
+  ipcMain.handle("workflows:share", async (_e, id: string) => {
+    try {
+      return { workflow: await wf().shareToOrg(String(id)) };
+    } catch (err) {
+      return { error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+  ipcMain.handle("workflows:orgList", async () => {
+    try {
+      const items = await wf().listOrgWorkflows();
+      return { items: items.map((i) => ({ ...i, vonMir: wf().isSharedByMe(i) })) };
+    } catch (err) {
+      return { error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+  ipcMain.handle("workflows:adopt", async (_e, orgId: string) => {
+    try {
+      return await wf().adoptFromOrg(String(orgId));
+    } catch (err) {
+      return { error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+  ipcMain.handle("workflows:orgRevoke", async (_e, orgId: string) => {
+    try {
+      await wf().revokeOrgWorkflow(String(orgId));
+      return { ok: true };
     } catch (err) {
       return { error: err instanceof Error ? err.message : String(err) };
     }
