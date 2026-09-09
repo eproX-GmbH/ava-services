@@ -78,6 +78,19 @@ assert(resultToItems({ items: [{ id: 1 }, { id: 2 }] }, undefined, 0).length ===
 assert(resultToItems({ ok: true, transactionId: "t1" }, undefined, 3)[0].json.transactionId === "t1", "Objekt → ein Item");
 assert(resultToItems({ data: { rows: [{ a: 1 }] } }, "data.rows", 0).length === 1, "outputPath");
 
+{
+  const h = [];
+  const a = resultToItems({ hinweis: "nur offene", candidates: [{ discoveryId: "d1" }, { discoveryId: "d2" }] }, "rows", 0, h);
+  if (a.length !== 2 || !h.some((x) => /outputPath „rows“ nicht/.test(x))) throw new Error("outputPath-Fallback: " + JSON.stringify({ n: a.length, h }));
+  const h2 = [];
+  const b = resultToItems({ hinweis: "x", treffer: [{ a: 1 }] }, undefined, 0, h2);
+  if (b.length !== 1 || !h2.some((x) => /„treffer“ verwendet/.test(x))) throw new Error("einziges Array-Feld: " + JSON.stringify({ n: b.length, h2 }));
+  const h3 = [];
+  const c = resultToItems({ hinweis: "keine offenen", candidates: [] }, undefined, 0, h3);
+  if (c.length !== 0 || !h3.some((x) => /leere Liste „candidates“ — keine offenen/.test(x))) throw new Error("leere Liste: " + JSON.stringify(h3));
+  console.log("  ok  outputPath-Fallback + Diagnose");
+}
+
 console.log("Compiler");
 const messages = [
   { id: "m1", role: "user", content: "welche ansprechpartner bei aumann?", createdAt: 1 },

@@ -1097,7 +1097,11 @@ export class WorkflowRunner {
         throw new Error(String((result as { error: string }).error));
       }
       if (keyValue) processed.add(keyValue);
-      return resultToItems(result, outputPath, pairedIndex);
+      const run = ctx.execution.nodeRuns[node.name]?.at(-1);
+      const diag: string[] = [];
+      const out = resultToItems(result, outputPath, pairedIndex, diag);
+      if (run && diag.length) (run.hinweise ??= []).push(...diag);
+      return out;
     };
 
     let out: WorkflowItem[] = [];
