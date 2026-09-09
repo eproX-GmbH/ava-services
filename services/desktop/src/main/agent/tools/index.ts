@@ -364,6 +364,10 @@ export function buildReadOnlyRegistry(deps: {
   // W1 — Workflows per Chat (docs/PLAN_WORKFLOWS.md).
   for (const t of buildWorkflowTools({
     getService: () => deps.getWorkflows?.() ?? null,
+    getChatModel: () => {
+      const st = deps.providers.getStatus();
+      return { provider: st.kind, model: st.model };
+    },
     getConversationMessages: (id) => deps.memory.load(id),
   }))
     registry.register(t);

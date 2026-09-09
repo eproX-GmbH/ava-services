@@ -209,6 +209,17 @@ console.log("freiesObjekt unter stripUnknown");
   console.log("  ok");
 }
 
+console.log("Modellstufen-Gate");
+{
+  const { pruefeModellstufe } = await load("../src/main/workflows/modellstufe.ts");
+  const a = pruefeModellstufe("anthropic", "claude-opus-5"); if (!a.erlaubt) throw new Error("Opus muss erlaubt sein: " + JSON.stringify(a));
+  const b = pruefeModellstufe("openai", "gpt-5.6-sol"); if (!b.erlaubt) throw new Error("Sol muss erlaubt sein");
+  const c = pruefeModellstufe("openai", "gpt-4o-mini"); if (c.erlaubt || !/Stufe S/.test(c.meldung) || !/gpt-4o-mini/.test(c.meldung)) throw new Error("mini muss blockiert sein: " + JSON.stringify(c));
+  const d = pruefeModellstufe("ollama", "llama3.2:3b"); if (d.erlaubt) throw new Error("lokal blockiert");
+  const e = pruefeModellstufe("openai", null); if (e.erlaubt || !/kein Modell/.test(e.meldung)) throw new Error("ohne Modell blockiert");
+  console.log("  ok");
+}
+
 console.log("Validierung");
 const def = {
   id: "wf_1", name: "T", description: "", version: 1, enabled: true, createdAt: "x", updatedAt: "x", createdBy: "user",

@@ -17,11 +17,14 @@ import type { WorkflowDefinition, WorkflowNode, WorkflowTrigger } from "../../..
 import type { WorkflowService } from "../../workflows";
 import { compileConversation } from "../../workflows/compiler";
 import { freiesObjekt, normalizeNodeInput, normalizeTrigger, normalizeVariables } from "../../workflows/store";
+import { pruefeModellstufe } from "../../workflows/modellstufe";
 import { STAGE_LABELS, nodeRequirements } from "../../../shared/workflow-dependencies";
 
 export interface WorkflowToolDeps {
   /** Lazy — der Service entsteht im App-Boot. */
   getService: () => WorkflowService | null;
+  /** Aktives Chat-Modell (fuer das S-Stufen-Gate beim Anlegen/Aendern). */
+  getChatModel: () => { provider: string; model: string | null };
   /** Nachrichten der aktuellen Konversation (fuer workflow_from_conversation). */
   getConversationMessages: (conversationId: string) => AgentMessage[];
 }
@@ -75,6 +78,13 @@ function kompakt(def: WorkflowDefinition): Record<string, unknown> {
 }
 
 export function buildWorkflowTools(deps: WorkflowToolDeps): Tool[] {
+  /** S-Stufen-Gate: null = erlaubt, sonst Fehlermeldung fuer den Agenten. */
+  const modellGate = (): { error: string; blockiert: "modellstufe"; hinweis: string } | null => {
+    const m = deps.getChatModel();
+    const b = pruefeModellstufe(m.provider, m.model);
+    if (b.erlaubt) return null;
+    return { error: b.meldung ?? "blockiert", blockiert: "modellstufe", hinweis: "Sage dem Nutzer klar, dass das Anlegen blockiert ist, weil es ein staerkeres Modell (Stufe S) braucht, und nenne die beiden Wege: Modell wechseln oder im Editor anlegen. Nichts weiter versuchen." };
+  };
   const svc = (): WorkflowService => {
     const s = deps.getService();
     if (!s) throw new Error("Workflows noch nicht initialisiert.");
@@ -117,6 +127,7 @@ export function buildWorkflowTools(deps: WorkflowToolDeps): Tool[] {
       "Expressions: {{ $json.feld }}, {{ $('Node-Name').item.json.feld }}, {{ $input.all() }}, {{ $vars.name }}, {{ $now }}. " +
       "Tool-Node: parameters = { tool: '<name>', args: {...}, itemKey?: 'discoveryId' }; Listen im Ergebnis (items, rows, candidates, contacts, …) werden AUTOMATISCH zu Items — outputPath NUR setzen, wenn die Liste unter einem anderen Pfad liegt (falscher outputPath = 0 Items). mode perItem (Default) oder allItems. " +
       "FIRMENBEZUG: Jeder Lauf gilt fuer GENAU EINE Firma; ihr vollstaendiger Kontext (Stammdaten, Profil, Finanzen/Kennzahlen, Handelsregister inkl. Geschaeftsfuehrung, Kontakte, CRM) liegt dem Lauf vor. " +
+      "MODELLSTUFE: workflow_save, workflow_update und workflow_from_conversation funktionieren NUR mit einem Chat-Modell der Stufe S (Claude Opus/Fable, GPT-5.6 Sol/Terra, GPT-5.5 …). Kommt {blockiert:'modellstufe'} zurueck, sag dem Nutzer klar, dass das Anlegen blockiert ist, weil es ein staerkeres Modell braucht (Modell wechseln oder im Editor anlegen). " +
       "ABHAENGIGKEITEN: AVA leitet je Node ab, welche Producer-Stufe seine Daten liefert ($kassenbestand → Jahresabschluesse, $geschaeftsfuehrer → Handelsregister, $ansprechpartner → Kontakte). Ein Warten-Node mit transactionId wartet automatisch auf die Stufen, die die Folge-Schritte brauchen (mindestens Firmenprofil); parameters.bis kann das festlegen. Steckt die Firma eines Laufs noch in einem Vorgang, wartet ein Node vor der Ausfuehrung auf seine Stufen. " +
       "WARTEN AUF VERARBEITUNG: Nach discovery_decide/import liefert das Ergebnis eine transactionId; ein wait-Node mit transactionId: '{{ $json.transactionId }}' haelt den Lauf an, bis alle Firmen des Vorgangs verarbeitet sind (Watcher, max maxHours). " +
       "Beispiel „Radar-Firmen importieren, danach je Firma Kurzuebersicht per Telegram“: Prime (scope none): discovery_candidates(allItems) → filter → discovery_decide(allItems, imported, confirmed) → wait(transactionId) → " +
@@ -204,6 +215,8 @@ export function buildWorkflowTools(deps: WorkflowToolDeps): Tool[] {
     preview: (r: Record<string, any>) =>
       (r.error as string | undefined) ?? (r.abgebrochen ? "abgebrochen" : `Workflow „${r.workflow?.name}“ gespeichert (v${r.workflow?.version})${(r.problems?.length ?? 0) > 0 ? ` — ${r.problems.length} Hinweise` : ""}`),
     run: async (args, c) => {
+      const gate = modellGate();
+      if (gate) return gate;
       // v0.1.611 — Node-Eingaben normalisieren (type "tool:x", Parameter auf Node-Ebene).
       const normHinweise: string[] = [];
       const normalisiert: Array<Record<string, unknown>> = [];
@@ -302,6 +315,8 @@ export function buildWorkflowTools(deps: WorkflowToolDeps): Tool[] {
       .noUnknown(true),
     preview: (r: Record<string, any>) => (r.error as string | undefined) ?? (r.abgebrochen ? "abgebrochen" : `Workflow „${r.workflow?.name}“ geaendert (v${r.workflow?.version})`),
     run: async (args, c) => {
+      const gate = modellGate();
+      if (gate) return gate;
       const def = svc().resolve(args.workflow);
       if (!def) return { error: `Workflow nicht gefunden: ${args.workflow}` };
       const aenderungen: string[] = [];
@@ -504,6 +519,8 @@ export function buildWorkflowTools(deps: WorkflowToolDeps): Tool[] {
     schema: yup.object({ conversationId: yup.string().optional(), sinceMessageId: yup.string().optional(), name: yup.string().max(120).optional() }).noUnknown(true),
     preview: (r: Record<string, any>) => (r.error as string | undefined) ?? `Entwurf mit ${r.entwurf?.nodes?.length ?? 0} Schritten`,
     run: async (args, c) => {
+      const gate = modellGate();
+      if (gate) return gate;
       const convId = args.conversationId ?? c.conversationId ?? "";
       const messages = convId ? deps.getConversationMessages(convId) : [];
       if (messages.length === 0) return { error: "Keine Konversation gefunden — conversationId angeben." };
