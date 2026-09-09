@@ -8094,6 +8094,9 @@ input, textarea, select, button, a, summary, details,
 .wf-deps { display: flex; flex-direction: column; gap: 0.4rem; }
 .wf-panel__section > .telegram-input { flex: none; width: 100%; box-sizing: border-box; }
 /* v0.1.612 — Lauf-Historie und Lauf-Detail */
+.wf-title { cursor: text; border-bottom: 1px dashed transparent; }
+.wf-title:hover { border-bottom-color: var(--color-border-strong); }
+.wf-title-input { font-weight: 700; font-size: inherit; padding: 0.15rem 0.4rem; min-width: 22rem; border: 1px solid var(--color-indigo-500); border-radius: 6px; background: var(--color-bg-0); color: inherit; }
 .wf-runhead { display: flex; gap: 1rem; align-items: center; flex-wrap: wrap; padding: 0.4rem 1rem; border-bottom: 1px solid var(--color-border); background: var(--color-bg-1); font-size: 13px; }
 .wf-runhead__actions { margin-left: auto; display: flex; gap: 0.5rem; align-items: center; }
 .wf-runs__filter { display: flex; gap: 1rem; flex-wrap: wrap; margin: 0.5rem 0 1rem; }

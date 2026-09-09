@@ -546,6 +546,9 @@ export function WorkflowEditor(): JSX.Element {
   // Auswahl noch am alten Namen hing — nach dem ersten Zeichen war das Feld tot.
   const [nameDraft, setNameDraft] = useState("");
   const [cancelling, setCancelling] = useState(false);
+  // v0.1.618 — Workflow-Name direkt in der Kopfzeile bearbeiten (Klick → Feld).
+  const [titelEdit, setTitelEdit] = useState(false);
+  const [titelDraft, setTitelDraft] = useState("");
   useEffect(() => {
     if (shownExecution && shownExecution.status !== "running" && shownExecution.status !== "paused") setCancelling(false);
   }, [shownExecution]);
@@ -696,7 +699,41 @@ export function WorkflowEditor(): JSX.Element {
           <Link to="/workflows" className="link">
             ← Workflows
           </Link>
-          <strong>{def.name}</strong>
+          {titelEdit ? (
+            <input
+              className="wf-title-input"
+              autoFocus
+              value={titelDraft}
+              onChange={(e) => setTitelDraft(e.target.value)}
+              onBlur={() => {
+                const n = titelDraft.trim();
+                setTitelEdit(false);
+                if (n && n !== def.name) {
+                  snapshot();
+                  setDef({ ...def, name: n });
+                  setDirty(true);
+                }
+              }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+                if (e.key === "Escape") {
+                  setTitelDraft(def.name);
+                  setTitelEdit(false);
+                }
+              }}
+            />
+          ) : (
+            <strong
+              className="wf-title"
+              title="Klicken zum Umbenennen"
+              onClick={() => {
+                setTitelDraft(def.name);
+                setTitelEdit(true);
+              }}
+            >
+              {def.name}
+            </strong>
+          )}
           <span className="muted">v{def.version} · Trigger: {triggerText(def.trigger)}</span>
           {shownExecution && statusPill(shownExecution.status)}
           {dirty && <span className="pill pill--paused">ungespeichert</span>}
