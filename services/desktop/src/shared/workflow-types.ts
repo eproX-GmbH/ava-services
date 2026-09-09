@@ -193,6 +193,8 @@ export interface WorkflowExecution {
   contextQuellen?: string[];
   /** v0.1.610 — Lauf wartet passiv auf einen Vorgang (kein Timer, kein Prozess). */
   waiting?: WorkflowWaiting;
+  /** v0.1.619 — Stand des Workflows zum Startzeitpunkt (wie n8n): alte Laeufe zeigen ihre damaligen Nodes. */
+  snapshot?: { nodes: WorkflowNode[]; connections: WorkflowConnections };
   status: WorkflowExecutionStatus;
   startedAt: string;
   finishedAt?: string;

@@ -526,6 +526,37 @@ export function WorkflowEditor(): JSX.Element {
     [id],
   );
 
+  // v0.1.619 — Historische Ansicht: Zeigt der Lauf einen anderen Stand des
+  // Workflows (Nodes spaeter entfernt/umbenannt/hinzugefuegt), wird der
+  // Snapshot des Laufs gezeichnet; Bearbeiten/Speichern ist dann gesperrt.
+  const historisch = useMemo(() => {
+    if (!def || !shownExecution?.snapshot) return false;
+    const a = JSON.stringify({ n: shownExecution.snapshot.nodes.map((n) => [n.name, n.type, n.parameters]).sort(), c: shownExecution.snapshot.connections });
+    const b = JSON.stringify({ n: def.nodes.map((n) => [n.name, n.type, n.parameters]).sort(), c: def.connections });
+    return a !== b;
+  }, [def, shownExecution]);
+  const historischRef = useMemo(() => ({ war: false }), []);
+  useEffect(() => {
+    if (!def) return;
+    if (historisch && shownExecution?.snapshot) {
+      const f = toFlow({ ...def, nodes: shownExecution.snapshot.nodes, connections: shownExecution.snapshot.connections }, catalog, shownExecution);
+      setNodes(f.nodes);
+      setEdges(f.edges);
+      setSelected(null);
+      historischRef.war = true;
+      return;
+    }
+    if (historischRef.war) {
+      // zurueck zum aktuellen Stand
+      const f = toFlow(def, catalog, shownExecution);
+      setNodes(f.nodes);
+      setEdges(f.edges);
+      setSelected(null);
+      historischRef.war = false;
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [historisch, shownExecution?.id]);
+
   // Lauf-Ergebnisse an die Nodes haengen (ohne Positionen zu verlieren).
   useEffect(() => {
     setNodes((prev) => prev.map((n) => ({ ...n, data: { ...n.data, run: shownExecution?.nodeRuns[n.id]?.at(-1) } })));
@@ -615,6 +646,10 @@ export function WorkflowEditor(): JSX.Element {
   }); // eslint-disable-line react-hooks/exhaustive-deps
 
   const updateNode = (name: string, patch: Partial<WorkflowNode>): void => {
+    if (historisch) {
+      setNotice("Historische Ansicht eines alten Laufs — zum Bearbeiten „Zur aktuellen Version“ wählen.");
+      return;
+    }
     snapshot();
     setNodes((ns) => ns.map((n) => (n.id === name ? { ...n, data: { ...n.data, wf: { ...n.data.wf, ...patch } } } : n)));
     setDirty(true);
@@ -652,7 +687,7 @@ export function WorkflowEditor(): JSX.Element {
   };
 
   const save = async (): Promise<void> => {
-    if (!def) return;
+    if (!def || historisch) return;
     const next = fromFlow(def, nodes, edges);
     const r = await window.api.workflows.save({ ...next, id: def.id });
     if ("error" in r) {
@@ -740,10 +775,10 @@ export function WorkflowEditor(): JSX.Element {
           {kosten && <span className="muted small" title="Grobe Kostenuebersicht je Lauf">{kosten.hinweis}</span>}
         </div>
         <div className="wf-editor__actions">
-          <button type="button" className="proc-toggle" onClick={() => void run(true)} disabled={running}>
+          <button type="button" className="proc-toggle" onClick={() => void run(true)} disabled={running || historisch}>
             Testen (Trockenlauf)
           </button>
-          <button type="button" className="proc-toggle" onClick={() => void run(false)} disabled={running}>
+          <button type="button" className="proc-toggle" onClick={() => void run(false)} disabled={running || historisch}>
             Ausführen
           </button>
           {running && shownExecution && (
@@ -771,7 +806,7 @@ export function WorkflowEditor(): JSX.Element {
           <button type="button" className="proc-toggle" onClick={redo} disabled={future.length === 0} title="Wiederholen (Shift+Cmd/Strg+Z)">
             ↷
           </button>
-          <button type="button" className="primary" onClick={() => void save()} disabled={!dirty}>
+          <button type="button" className="primary" onClick={() => void save()} disabled={!dirty || historisch} title={historisch ? "Historische Ansicht — nicht speicherbar" : undefined}>
             Speichern
           </button>
           <button type="button" className="proc-toggle" onClick={() => navigate("/chat")} title="Größere Umbauten im Chat: „ändere im Workflow X …“">
@@ -796,7 +831,24 @@ export function WorkflowEditor(): JSX.Element {
             </span>
           )}
           {shownExecution.error && <span className="warn small">{shownExecution.error}</span>}
+          {historisch && (
+            <span className="pill pill--paused" title="Der Workflow wurde nach diesem Lauf geändert. Gezeigt wird der damalige Stand.">
+              historischer Stand (v{shownExecution.workflowVersion})
+            </span>
+          )}
           <span className="wf-runhead__actions">
+            {historisch && (
+              <button
+                type="button"
+                className="proc-toggle"
+                onClick={() => {
+                  const aktuell = executions.find((e) => e.workflowVersion === def.version && e.id !== shownExecution.id) ?? null;
+                  setShownExecution(aktuell);
+                }}
+              >
+                Zur aktuellen Version
+              </button>
+            )}
             {(shownExecution.status === "running" || shownExecution.status === "waiting" || shownExecution.status === "paused") && (
               <button type="button" className="proc-toggle" onClick={() => void window.api.workflows.cancel(shownExecution.id).then(() => load())}>
                 Lauf abbrechen
@@ -884,7 +936,45 @@ export function WorkflowEditor(): JSX.Element {
                   }}
                 />
               </label>
-              <div className="muted small">Typ: {selectedNode.type === "tool" ? `Tool ${String(selectedNode.parameters.tool)}` : selectedNode.type}</div>
+              {selectedNode.type !== "trigger" && (
+                <label className="field">
+                  <span>Typ</span>
+                  <select
+                    value={selectedNode.type === "tool" ? `tool:${String(selectedNode.parameters.tool ?? "")}` : selectedNode.type}
+                    onChange={(e) => {
+                      // v0.1.619 — Typ wechseln: Tool-Nodes bekommen das neue Tool mit leeren
+                      // Argumenten, Logik-Nodes leere Parameter; Modus/Freigabe/Name bleiben.
+                      const v = e.target.value;
+                      if (v.startsWith("tool:")) {
+                        const tool = v.slice(5);
+                        const alteArgs = selectedNode.type === "tool" ? ((selectedNode.parameters.args as Record<string, unknown> | undefined) ?? {}) : {};
+                        updateNode(selectedNode.name, { type: "tool", parameters: { tool, args: alteArgs } });
+                      } else {
+                        updateNode(selectedNode.name, { type: v as WorkflowNode["type"], parameters: {} });
+                      }
+                    }}
+                  >
+                    {(() => {
+                      const gruppen = new Map<string, WorkflowCatalogEntry[]>();
+                      for (const c of catalog) {
+                        if (c.type === "trigger" || c.type === "note") continue;
+                        const g = c.type.startsWith("tool:") ? c.category : "Ablauf und KI";
+                        gruppen.set(g, [...(gruppen.get(g) ?? []), c]);
+                      }
+                      return [...gruppen.entries()].map(([g, list]) => (
+                        <optgroup key={g} label={g}>
+                          {list.map((c) => (
+                            <option key={c.type} value={c.type}>
+                              {c.label}
+                            </option>
+                          ))}
+                        </optgroup>
+                      ));
+                    })()}
+                  </select>
+                  <span className="muted small">Beim Wechsel werden die Parameter zurückgesetzt; bei Tool → Tool bleiben die Argumente erhalten.</span>
+                </label>
+              )}
               <label className="field">
                 <span>Modus</span>
                 <select value={selectedNode.mode ?? "perItem"} onChange={(e) => updateNode(selectedNode.name, { mode: e.target.value as "perItem" | "allItems" })}>

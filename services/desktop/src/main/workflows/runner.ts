@@ -282,6 +282,7 @@ export class WorkflowRunner {
           status: "running",
           startedAt: new Date().toISOString(),
           nodeRuns: {},
+          snapshot: { nodes: def.nodes.map((n) => ({ ...n })), connections: JSON.parse(JSON.stringify(def.connections)) as WorkflowDefinition["connections"] },
         };
     this.running.set(execution.id, { abort, execution });
     this.deps.store.saveExecution(execution);
