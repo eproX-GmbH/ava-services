@@ -66,6 +66,8 @@ export interface ToolContext {
    * blocken.
    */
   autonomousMode?: boolean;
+  /** W2 — Konversation des Aufrufs (fuer workflow_from_conversation). */
+  conversationId?: string;
 }
 
 /**

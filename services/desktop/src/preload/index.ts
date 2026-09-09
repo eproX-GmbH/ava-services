@@ -486,6 +486,32 @@ const api = {
 
   // v0.1.412 — Telegram-Benachrichtigungskanal. Der Bot-Token wird NIE
   // zurückgegeben (nur `hasToken` im Snapshot).
+  // W1 — Workflows (docs/PLAN_WORKFLOWS.md).
+  workflows: {
+    list: (): Promise<import("../shared/workflow-types").WorkflowListEntry[]> => ipcRenderer.invoke("workflows:list"),
+    get: (id: string): Promise<import("../shared/workflow-types").WorkflowDefinition | null> => ipcRenderer.invoke("workflows:get", id),
+    catalog: (): Promise<import("../shared/workflow-types").WorkflowCatalogEntry[]> => ipcRenderer.invoke("workflows:catalog"),
+    approvals: (status?: "open" | "all"): Promise<import("../shared/workflow-types").WorkflowApproval[]> => ipcRenderer.invoke("workflows:approvals", status),
+    executions: (id: string, limit?: number): Promise<import("../shared/workflow-types").WorkflowExecution[]> => ipcRenderer.invoke("workflows:executions", id, limit),
+    execution: (id: string, executionId: string): Promise<import("../shared/workflow-types").WorkflowExecution | null> => ipcRenderer.invoke("workflows:execution", id, executionId),
+    save: (
+      input: Partial<import("../shared/workflow-types").WorkflowDefinition> & Pick<import("../shared/workflow-types").WorkflowDefinition, "name" | "nodes" | "connections" | "trigger">,
+    ): Promise<{ workflow: import("../shared/workflow-types").WorkflowDefinition; problems: Array<{ node?: string; message: string }> } | { error: string }> =>
+      ipcRenderer.invoke("workflows:save", input),
+    patch: (id: string, patch: Partial<import("../shared/workflow-types").WorkflowDefinition>): Promise<{ workflow?: import("../shared/workflow-types").WorkflowDefinition | null; error?: string }> =>
+      ipcRenderer.invoke("workflows:patch", id, patch),
+    delete: (id: string): Promise<{ ok: boolean }> => ipcRenderer.invoke("workflows:delete", id),
+    run: (id: string, opts?: { dryRun?: boolean }): Promise<{ gestartet?: boolean; error?: string }> => ipcRenderer.invoke("workflows:run", id, opts),
+    cancel: (executionId: string): Promise<{ ok: boolean }> => ipcRenderer.invoke("workflows:cancel", executionId),
+    approve: (approvalId: string, approved: boolean, note?: string): Promise<{ ok: boolean }> => ipcRenderer.invoke("workflows:approve", approvalId, approved, note),
+    onProgress: (cb: (frame: import("../shared/workflow-types").WorkflowProgressFrame) => void): (() => void) => {
+      const handler = (_e: unknown, frame: import("../shared/workflow-types").WorkflowProgressFrame): void => cb(frame);
+      ipcRenderer.on("workflows:progress", handler);
+      return () => {
+        ipcRenderer.removeListener("workflows:progress", handler);
+      };
+    },
+  },
   telegram: {
     snapshot: (): Promise<import("../shared/types").TelegramSnapshot> =>
       ipcRenderer.invoke("telegram:snapshot"),

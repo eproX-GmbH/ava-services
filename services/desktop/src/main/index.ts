@@ -8,6 +8,7 @@ import {
   session,
   shell,
   systemPreferences,
+  Notification,
 } from "electron";
 // Side-effect import — MUST be first. Installs the persistent file logger
 // (mirrors every main-process console.* + uncaught errors into a rotated
@@ -221,6 +222,8 @@ import { ProfileWorker } from "./discovery/profile-worker";
 import { WatchlistKeyStore } from "./linkedin/watchlist/key-store";
 import { WatchlistStore, watchlistLimitsForTier } from "./linkedin/watchlist/store";
 import { buildApifyProvider } from "./linkedin/watchlist/providers/apify";
+import { WorkflowService } from "./workflows";
+import type { WorkflowProgressFrame } from "../shared/workflow-types";
 import { WatchlistSupervisor } from "./linkedin/watchlist/supervisor";
 import { PersonenRadarStore } from "./linkedin/personen-radar/store";
 import { PersonenRadarSupervisor } from "./linkedin/personen-radar/supervisor";
@@ -1342,6 +1345,8 @@ let watchlistStore: WatchlistStore | null = null;
 let watchlistSupervisor: WatchlistSupervisor | null = null;
 let personenRadarStore: PersonenRadarStore | null = null;
 let personenRadarSupervisor: PersonenRadarSupervisor | null = null;
+/** W1 — Workflows (docs/PLAN_WORKFLOWS.md). */
+let workflowService: WorkflowService | null = null;
 
 /** v0.1.580 — Apify-Zugang fuer Watchlist/Personen-Radar im Hauptprozess:
  *  eigener Token gewinnt (ausser unter Anbieter-Sperre), sonst der
@@ -1798,6 +1803,7 @@ const agentRegistry = buildReadOnlyRegistry({
   getWatchlistSupervisor: () => watchlistSupervisor,
   // v0.1.576 — Radar-Config per Chat (radar_config).
   hatApifyZugang: async () => Boolean(await resolveApifyAccess()),
+  getWorkflows: () => workflowService,
   getRadar: () =>
     radarSupervisor
       ? {
@@ -2957,6 +2963,45 @@ app.whenReady().then(async () => {
   radarSupervisor.start();
   // v0.1.576 — Sofort-Modus des Profil-Workers aus der Radar-Config.
   profileWorker.setSofort(radarSupervisor.getConfig().profileSofort);
+
+  // W1 — Workflow-Service: Store, Engine, Zeitplan-Trigger, Freigaben.
+  workflowService = new WorkflowService({
+    registry: agentRegistry,
+    providers,
+    getAutonomyLevel: () => autonomyStore.asLevel(),
+    getTier: () => getTenantTierCached(),
+    isSignedIn: () => auth.getStatus().signedIn,
+    featureEnabled: () => featureEnabled("workflows"),
+    emit: (frame: WorkflowProgressFrame) => {
+      for (const win of BrowserWindow.getAllWindows()) {
+        try {
+          win.webContents.send("workflows:progress", frame);
+        } catch {
+          /* zerstoertes Fenster */
+        }
+      }
+    },
+    audit: (entry) =>
+      audit({
+        actorType: "system",
+        actorId: null,
+        category: "agent",
+        action: entry.action,
+        severity: entry.severity,
+        subjectType: null,
+        subjectId: (entry.metadata.workflowId as string | undefined) ?? null,
+        summary: entry.summary,
+        metadata: entry.metadata,
+      }),
+    notify: (title, body) => {
+      try {
+        if (Notification.isSupported()) new Notification({ title, body: body.slice(0, 200) }).show();
+      } catch {
+        /* keine Notifications */
+      }
+    },
+  });
+  workflowService.start();
   app.on("before-quit", () => quitStep("radarSupervisor.stop", () => radarSupervisor?.stop()));
 
   app.on("before-quit", () => {
@@ -5417,6 +5462,44 @@ app.whenReady().then(async () => {
       return next;
     },
   );
+  // ---- W1 Workflows -----------------------------------------------------------
+  const wf = (): WorkflowService => {
+    if (!workflowService) throw new Error("Workflows noch nicht initialisiert.");
+    return workflowService;
+  };
+  ipcMain.handle("workflows:list", () => wf().list());
+  ipcMain.handle("workflows:get", (_e, id: string) => wf().get(String(id)));
+  ipcMain.handle("workflows:catalog", () => wf().catalog());
+  ipcMain.handle("workflows:approvals", (_e, status?: string) => wf().approvals((status as "open" | "all" | undefined) ?? "open"));
+  ipcMain.handle("workflows:executions", (_e, id: string, limit?: number) => wf().executions(String(id), limit ?? 50));
+  ipcMain.handle("workflows:execution", (_e, id: string, executionId: string) => wf().execution(String(id), String(executionId)));
+  ipcMain.handle("workflows:save", (_e, input: Parameters<WorkflowService["save"]>[0]) => {
+    try {
+      return wf().save(input, { createdBy: "user" });
+    } catch (err) {
+      return { error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+  ipcMain.handle("workflows:patch", (_e, id: string, patch: Record<string, unknown>) => {
+    try {
+      return { workflow: wf().patch(String(id), patch) };
+    } catch (err) {
+      return { error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+  ipcMain.handle("workflows:delete", (_e, id: string) => ({ ok: wf().delete(String(id)) }));
+  ipcMain.handle("workflows:run", async (_e, id: string, opts?: { dryRun?: boolean }) => {
+    try {
+      const p = wf().run(String(id), { trigger: opts?.dryRun ? "test" : "manual", dryRun: opts?.dryRun === true });
+      void p.catch(() => {});
+      return { gestartet: true };
+    } catch (err) {
+      return { error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+  ipcMain.handle("workflows:cancel", (_e, executionId: string) => ({ ok: wf().cancel(String(executionId)) }));
+  ipcMain.handle("workflows:approve", (_e, approvalId: string, approved: boolean, note?: string) => ({ ok: wf().decideApproval(String(approvalId), approved === true, note) }));
+
   ipcMain.handle("discovery:radarRunNow", async () => {
     if (!radarSupervisor) return { error: "Radar noch nicht initialisiert." };
     return { outcome: await radarSupervisor.runNow("manuell") };

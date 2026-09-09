@@ -64,6 +64,7 @@ export const ORG_FEATURES = [
   { key: "kontakte", label: "Kontakt-Recherche", hinweis: "Mitarbeiter-Suche je Firma (Apify/LinkedIn), Kontakt-Tools, Profil-URLs" },
   { key: "mail", label: "Mail-Anbindung", hinweis: "IMAP-Konto, Mail-Triage, Mail-Tools" },
   { key: "telegram", label: "Telegram", hinweis: "Benachrichtigungen und Rueckfragen per Telegram" },
+  { key: "workflows", label: "Workflows", hinweis: "Gespeicherte Ablaeufe (Tool-Ketten) mit Zeitplan, Ereignis-Trigger und Freigaben" },
 ] as const;
 export type OrgFeatureKey = (typeof ORG_FEATURES)[number]["key"];
 

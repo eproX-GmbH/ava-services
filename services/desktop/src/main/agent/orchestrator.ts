@@ -1728,6 +1728,7 @@ export class AgentOrchestrator extends EventEmitter {
       // nicht-trusted Empfänger NICHT — sondern wirft hart) oder um
       // ihren Default-Pfad zu wählen.
       autonomousMode,
+      conversationId,
     };
     try {
       const parsed = tool.parseArgs(call.args);

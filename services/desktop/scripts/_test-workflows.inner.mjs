@@ -1,0 +1,111 @@
+// Inner runner (tsx) — W1 Workflows: Expressions, Trace-Compiler,
+// Struktur-Validierung. Die Engine selbst haengt an Electron (UiBridge)
+// und wird hier nicht instanziiert.
+
+// tsx liefert die TS-Module hier als CJS; Named-Imports scheitern am
+// CJS-Lexer fuer einige Dateien — daher ueber default/Namespace laden.
+const load = async (p) => {
+  const m = await import(p);
+  return m.default && typeof m.default === "object" && Object.keys(m.default).length > 0 ? m.default : m;
+};
+const { evaluate, resolveValue, referencedNodeNames } = await load("../src/main/workflows/expressions.ts");
+const { compileConversation } = await load("../src/main/workflows/compiler.ts");
+const { validateDefinition } = await load("../src/main/workflows/store.ts");
+const { resultToItems } = await load("../src/main/workflows/runner-items.ts");
+
+const failures = [];
+function assert(cond, msg) {
+  if (cond) console.log(`  ok  ${msg}`);
+  else {
+    console.log(`  FAIL ${msg}`);
+    failures.push(msg);
+  }
+}
+function throws(fn, msg) {
+  try {
+    fn();
+    assert(false, `${msg} (kein Fehler)`);
+  } catch {
+    assert(true, msg);
+  }
+}
+
+const ctx = {
+  json: { name: "Aumann Beelen GmbH", matchScore: 83, finanzen: { kassenbestand: 250000 }, tags: ["a", "b"] },
+  itemIndex: 0,
+  inputItems: [{ json: { name: "A", matchScore: 83 } }, { json: { name: "B", matchScore: 12 } }],
+  nodeOutput: (n) => (n === "Kandidaten" ? [{ json: { discoveryId: "aumann.com", stadt: "Beelen" } }] : undefined),
+  pairedIndex: () => 0,
+  vars: { mindestScore: 80 },
+  run: { index: 0, executionId: "ex_1", workflowName: "Test", dryRun: false },
+};
+
+console.log("Expressions");
+assert(evaluate("$json.matchScore >= $vars.mindestScore", ctx) === true, "Vergleich mit $vars");
+assert(evaluate("$json.finanzen.kassenbestand > 100000 && $json.name.includes('GmbH')", ctx) === true, "verschachtelt + String-Methode");
+assert(evaluate("$('Kandidaten').item.json.discoveryId", ctx) === "aumann.com", "$('Node').item.json");
+assert(evaluate("$input.all().filter(i => i.json.matchScore >= 80).length", ctx) === 1, "Pfeilfunktion in filter");
+assert(evaluate("$input.count", ctx) === 2, "$input.count");
+assert(evaluate("$json.tags.map(t => t.toUpperCase()).join(',')", ctx) === "A,B", "map + join");
+assert(evaluate("$json.fehlt ?? 'leer'", ctx) === "leer", "??-Operator");
+assert(evaluate("$json.matchScore > 50 ? 'heiss' : 'kalt'", ctx) === "heiss", "Ternaer");
+assert(typeof evaluate("$now", ctx) === "string", "$now");
+assert(resolveValue("Hallo {{ $json.name }}, Score {{ $json.matchScore }}", ctx) === "Hallo Aumann Beelen GmbH, Score 83", "Interpolation");
+assert(resolveValue("{{ $json.finanzen }}", ctx).kassenbestand === 250000, "reine Expression liefert Objekt");
+assert(resolveValue({ to: ["{{ $json.name }}"], n: 1 }, ctx).to[0] === "Aumann Beelen GmbH", "rekursiv in Objekten");
+throws(() => evaluate("$json.constructor.constructor('return 1')()", ctx), "Prototyp-Zugriff verboten");
+throws(() => evaluate("process.exit(1)", ctx), "unbekannter Bezeichner verboten");
+throws(() => evaluate("$json.name = 'x'", ctx), "Zuweisung verboten");
+assert(referencedNodeNames({ a: "{{ $('Kandidaten').item.json.x }}", b: ["{{ $('Mail').first() }}"] }).sort().join(",") === "Kandidaten,Mail", "referencedNodeNames");
+
+console.log("resultToItems");
+assert(resultToItems({ items: [{ id: 1 }, { id: 2 }] }, undefined, 0).length === 2, "Listen-Schluessel items");
+assert(resultToItems({ ok: true, transactionId: "t1" }, undefined, 3)[0].json.transactionId === "t1", "Objekt → ein Item");
+assert(resultToItems({ data: { rows: [{ a: 1 }] } }, "data.rows", 0).length === 1, "outputPath");
+
+console.log("Compiler");
+const messages = [
+  { id: "m1", role: "user", content: "welche ansprechpartner bei aumann?", createdAt: 1 },
+  { id: "m2", role: "assistant", content: "", createdAt: 2, toolCalls: [{ id: "c0", name: "tool_load", args: { names: ["x"] } }] },
+  { id: "m3", role: "tool", content: JSON.stringify({ loaded: 1 }), toolCallId: "c0", createdAt: 3 },
+  { id: "m4", role: "assistant", content: "", createdAt: 4, toolCalls: [{ id: "c1", name: "crm_search_hubspot_companies", args: { query: "Aumann Beelen" } }] },
+  { id: "m5", role: "tool", content: JSON.stringify({ items: [{ id: "8626", name: "Aumann Beelen GmbH", domain: "aumann.com" }] }), toolCallId: "c1", createdAt: 5 },
+  { id: "m6", role: "assistant", content: "", createdAt: 6, toolCalls: [{ id: "c2", name: "crm_list_hubspot_associations", args: { fromObjectType: "companies", fromObjectId: "8626", toObjectType: "contacts" } }] },
+  { id: "m7", role: "tool", content: JSON.stringify({ associations: [{ toObjectId: "111" }, { toObjectId: "222" }] }), toolCallId: "c2", createdAt: 7 },
+  { id: "m8", role: "assistant", content: "", createdAt: 8, toolCalls: [{ id: "c3", name: "crm_introspect_hubspot_contact", args: { objectId: "111" } }] },
+  { id: "m9", role: "tool", content: JSON.stringify({ properties: { firstname: "Jonas" } }), toolCallId: "c3", createdAt: 9 },
+  { id: "m10", role: "assistant", content: "", createdAt: 10, toolCalls: [{ id: "c4", name: "crm_introspect_hubspot_contact", args: { objectId: "222" } }] },
+  { id: "m11", role: "tool", content: JSON.stringify({ properties: { firstname: "Christian" } }), toolCallId: "c4", createdAt: 11 },
+];
+const draft = compileConversation(messages, { toolAllowed: () => true });
+assert(draft.nodes.length === 4, `Start + 3 Tool-Nodes (${draft.nodes.length})`);
+assert(draft.nodes.every((n) => n.type !== "tool" || n.parameters.tool !== "tool_load"), "Meta-Tool ausgelassen");
+const assoc = draft.nodes.find((n) => n.parameters.tool === "crm_list_hubspot_associations");
+assert(typeof assoc.parameters.args.fromObjectId === "string" && assoc.parameters.args.fromObjectId.includes("$('"), "ID aus Vorgaenger-Ergebnis → Expression");
+const intro = draft.nodes.find((n) => n.parameters.tool === "crm_introspect_hubspot_contact");
+assert(intro.mode === "perItem", "wiederholte Aufrufe zu einem perItem-Node gefaltet");
+assert(String(intro.parameters.args.objectId).includes("$('"), "variierendes Argument → Expression auf Vorgaenger");
+assert(Object.keys(draft.connections).length === 3, "lineare Kanten");
+
+console.log("Validierung");
+const def = {
+  id: "wf_1", name: "T", description: "", version: 1, enabled: true, createdAt: "x", updatedAt: "x", createdBy: "user",
+  origin: { kind: "manual" }, variables: {}, trigger: { kind: "manual" },
+  settings: { executionOrder: "v1", timeoutMinutes: 60, maxItemsPerRun: 500, autonomy: "inherit", maxMailsPerDay: 20, notifyOnFinish: true },
+  nodes: [
+    { id: "n0", name: "Start", type: "trigger", position: [0, 0], parameters: {} },
+    { id: "n1", name: "Scan", type: "tool", position: [1, 0], parameters: { tool: "discovery_candidates", args: {} } },
+    { id: "n2", name: "Filter", type: "filter", position: [2, 0], parameters: { condition: "{{ $('Scan').item.json.x }}" } },
+  ],
+  connections: { Start: { main: [[{ node: "Scan", index: 0 }]] }, Scan: { main: [[{ node: "Filter", index: 0 }]] } },
+};
+assert(validateDefinition(def, () => true).length === 0, "gueltige Definition ohne Probleme");
+assert(validateDefinition({ ...def, connections: { ...def.connections, Filter: { main: [[{ node: "Scan", index: 0 }]] } } }, () => true).some((p) => p.message.includes("Zyklus")), "Zyklus ohne Loop erkannt");
+assert(validateDefinition(def, (t) => t !== "discovery_candidates").some((p) => p.message.includes("nicht verfuegbar")), "unbekanntes Tool gemeldet");
+assert(validateDefinition({ ...def, nodes: [...def.nodes, { id: "n3", name: "X", type: "filter", position: [3, 0], parameters: { condition: "{{ $('Gibtsnicht').item }}" } }] }, () => true).some((p) => p.message.includes("unbekannten Node")), "Expression auf unbekannten Node gemeldet");
+
+if (failures.length > 0) {
+  console.error(`\n${failures.length} Fehler`);
+  process.exit(1);
+}
+console.log("\nalle Tests ok");

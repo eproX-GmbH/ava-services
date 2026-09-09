@@ -4,8 +4,8 @@ Auto-generiert von `services/desktop/scripts/generate-tools-md.mjs`.
 NICHT direkt bearbeiten — die Quelle der Wahrheit ist `services/desktop/src/main/agent/tools/*.ts`.
 Lauf via `pnpm -F @ava/desktop tools:doc` (oder automatisch via `build:typecheck`).
 
-Stand: 2026-09-08
-Anzahl Tools: 225
+Stand: 2026-09-09
+Anzahl Tools: 235
 
 ## Firmen (17)
 
@@ -2196,3 +2196,105 @@ Markiert eine Watchlist-Person als Fokus (jeden Lauf gecheckt, Meldungen mind. '
 _Parameter:_
 - `profileUrl: string` (required)
 - `fokus: boolean` (required)
+
+## workflows (10)
+
+### `workflow_approvals`
+
+_Datei:_ `services/desktop/src/main/agent/tools/workflows.ts`
+
+Listet offene Freigaben: welcher Workflow wartet an welchem Schritt worauf, mit Vorschau der betroffenen Items.
+
+_Parameter:_ keine.
+
+### `workflow_approve`
+
+_Datei:_ `services/desktop/src/main/agent/tools/workflows.ts`
+
+Entscheidet eine offene Freigabe (id aus workflow_approvals). approved=true laesst den Workflow weiterlaufen, false bricht den Lauf ab. Fragt vor der Entscheidung nach.
+
+_Parameter:_
+- `approvalId: string` (required)
+- `approved: boolean` (required)
+- `note: string`
+
+### `workflow_catalog`
+
+_Datei:_ `services/desktop/src/main/agent/tools/workflows.ts`
+
+Liefert den Katalog aller Node-Typen fuer Workflows: Logik-Nodes (trigger, filter, if, switch, transform, loop, merge, ai, wait, human, stop, subworkflow) und Tool-Nodes ('tool:<name>') mit Parametern, Wirkungsklasse (read/additive/mutating/destructive) und Kostenklasse. Vor workflow_save aufrufen. Expressions: {{ $json.feld }}, {{ $('Node-Name').item.json.feld }}, {{ $input.all() }}, {{ $vars.name }}, {{ $now }}. Tool-Node: parameters = { tool: '<name>', args: {...}, outputPath?: 'items', itemKey?: 'discoveryId' }; mode perItem (Default) oder allItems.
+
+_Parameter:_
+- `suche: string` — Optionaler Filter (Name/Kategorie/Text)
+
+### `workflow_delete`
+
+_Datei:_ `services/desktop/src/main/agent/tools/workflows.ts`
+
+Loescht einen Workflow und seine Lauf-Historie. Fragt vor dem Loeschen nach.
+
+_Parameter:_
+- `workflow: string` (required)
+
+### `workflow_from_conversation`
+
+_Datei:_ `services/desktop/src/main/agent/tools/workflows.ts`
+
+Kompiliert die bisherigen Tool-Aufrufe dieser Konversation zu einem Workflow-Entwurf: Meta-Tools raus, Fehlversuche gefaltet, wiederholte gleichartige Aufrufe zu EINEM Node je Item, wiederkehrende IDs zu Expressions auf den Vorgaenger-Node. Liefert den Entwurf (nodes, connections, hinweise) — pruefe ihn, ergaenze Namen/Filter/Variablen und speichere mit workflow_save. Optional sinceMessageId: nur Schritte ab dieser Nachricht.
+
+_Parameter:_
+- `conversationId: string` — Aktuelle Konversation (wird automatisch gesetzt, falls bekannt)
+- `sinceMessageId: string`
+- `name: string` — Vorschlag fuer den Workflow-Namen
+
+### `workflow_get`
+
+_Datei:_ `services/desktop/src/main/agent/tools/workflows.ts`
+
+Liefert die Definition eines Workflows (per id oder Name) plus die letzten 5 Laeufe mit Status und Zusammenfassung.
+
+_Parameter:_
+- `workflow: string` (required) — id oder Name
+
+### `workflow_list`
+
+_Datei:_ `services/desktop/src/main/agent/tools/workflows.ts`
+
+Listet alle Workflows des Nutzers: Name, Trigger, letzter Lauf, naechster Lauf, offene Freigaben, Blockaden.
+
+_Parameter:_ keine.
+
+### `workflow_run`
+
+_Datei:_ `services/desktop/src/main/agent/tools/workflows.ts`
+
+Startet einen Workflow. dryRun=true fuehrt Lese-Schritte echt aus, zeigt Schreib-Schritte (CRM, Mail, Import) aber nur als Vorschau — ideal zum Testen. Laeuft asynchron; das Ergebnis kommt als Meldung. Mit warten=true wartet das Tool bis zu 5 Minuten auf das Ende und liefert die Zusammenfassung.
+
+_Parameter:_
+- `workflow: string` (required)
+- `dryRun: boolean`
+- `warten: boolean`
+
+### `workflow_save`
+
+_Datei:_ `services/desktop/src/main/agent/tools/workflows.ts`
+
+Speichert eine Workflow-Definition. nodes: Liste mit name (eindeutig), type, parameters, mode, confirmed; connections: { '<Node-Name>': { main: [[{ node, index }], ...] } } (Ausgang 0 = erster Eintrag; if: 0 = wahr, 1 = falsch; loop: 0 = loop, 1 = done). Genau ein Node vom Typ trigger. Schreib-Nodes laufen unbeaufsichtigt nur mit Vollmacht oder confirmed=true; mail_send braucht immer confirmed oder einen human-Node davor. Der Trigger ist beim Anlegen 'manual', ausser der Nutzer wuenscht ausdruecklich einen Zeitplan. Zeigt den Entwurf und fragt vor dem Speichern nach.
+
+_Parameter:_ keine.
+
+### `workflow_update`
+
+_Datei:_ `services/desktop/src/main/agent/tools/workflows.ts`
+
+Aendert einen Workflow gezielt: enabled, trigger, variables, settings oder Node-Aenderungen (nodePatches: [{ name, parameters?, confirmed?, disabled?, mode?, onError? }]). Fuer Umbauten der Struktur workflow_save mit der vollen Definition nutzen. Fragt vor der Aenderung nach.
+
+_Parameter:_
+- `workflow: string` (required) — id oder Name
+- `enabled: boolean`
+- `trigger: object`
+- `variables: object`
+- `settings: object`
+- `nodePatches: array`
+- `name: string`
+- `description: string`

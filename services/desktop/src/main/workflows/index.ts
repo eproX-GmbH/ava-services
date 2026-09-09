@@ -1,0 +1,292 @@
+// W1 — WorkflowService: Fassade fuer Store, Engine, Zeitplan-Trigger,
+// Ereignis-Trigger (W4-Haken), Freigaben und Katalog. Eine Instanz je App.
+
+import type { ToolRegistry } from "../agent/tool-registry";
+import type { LlmProviderManager } from "../agent/providers";
+import type { AutonomyLevel } from "../../shared/types";
+import {
+  WORKFLOW_LIMITS,
+  type WorkflowApproval,
+  type WorkflowCatalogEntry,
+  type WorkflowDefinition,
+  type WorkflowEventKind,
+  type WorkflowExecution,
+  type WorkflowItem,
+  type WorkflowListEntry,
+  type WorkflowProgressFrame,
+} from "../../shared/workflow-types";
+import { WorkflowStore, validateDefinition, type ValidationProblem } from "./store";
+import { WorkflowRunner } from "./runner";
+import { buildCatalog, catalogForAgent, isToolAllowedInWorkflows } from "./catalog";
+
+const TICK_MS = 60_000;
+/** Zeit-Trigger ohne Nachholen: nur innerhalb dieses Fensters nach der Uhrzeit. */
+const AT_WINDOW_MS = 20 * 60_000;
+
+export interface WorkflowServiceDeps {
+  registry: ToolRegistry;
+  providers: LlmProviderManager;
+  getAutonomyLevel: () => AutonomyLevel;
+  getTier: () => string | null;
+  isSignedIn: () => boolean;
+  emit: (frame: WorkflowProgressFrame) => void;
+  audit: (entry: { action: string; severity: "info" | "warning" | "error"; summary: string; metadata: Record<string, unknown> }) => void;
+  notify: (title: string, body: string) => void;
+  /** Feature-Vorgabe der Organisation. */
+  featureEnabled: () => boolean;
+}
+
+export class WorkflowService {
+  readonly store: WorkflowStore;
+  readonly runner: WorkflowRunner;
+  private timer: NodeJS.Timeout | null = null;
+
+  constructor(private readonly deps: WorkflowServiceDeps, dir?: string) {
+    this.store = new WorkflowStore(dir);
+    this.runner = new WorkflowRunner({
+      registry: deps.registry,
+      store: this.store,
+      providers: deps.providers,
+      getAutonomyLevel: deps.getAutonomyLevel,
+      emit: deps.emit,
+      audit: deps.audit,
+      getDefinition: (id) => this.store.get(id),
+      notify: deps.notify,
+    });
+  }
+
+  start(): void {
+    if (this.timer) return;
+    // Beim Start: offene Freigaben aus einem frueheren Prozess verfallen
+    // (ihr Lauf lebt nicht mehr).
+    const open = this.store.listApprovals();
+    let changed = false;
+    for (const a of open) {
+      if (a.status === "open") {
+        a.status = "expired";
+        a.decidedAt = new Date().toISOString();
+        a.note = "App wurde beendet, bevor entschieden wurde";
+        changed = true;
+      }
+    }
+    if (changed) this.store.saveApprovals(open);
+    this.timer = setInterval(() => void this.tick(), TICK_MS);
+    setTimeout(() => void this.tick(), 30_000);
+  }
+
+  stop(): void {
+    if (this.timer) clearInterval(this.timer);
+    this.timer = null;
+    for (const ex of this.runner.runningExecutions()) this.runner.cancel(ex.id);
+  }
+
+  // ---- Katalog ---------------------------------------------------------------
+
+  catalog(): WorkflowCatalogEntry[] {
+    return buildCatalog(this.deps.registry);
+  }
+
+  catalogText(): string {
+    return catalogForAgent(this.catalog());
+  }
+
+  toolExists(name: string): boolean {
+    return isToolAllowedInWorkflows(name) && this.deps.registry.get(name) !== undefined;
+  }
+
+  // ---- Definitionen ----------------------------------------------------------
+
+  list(): WorkflowListEntry[] {
+    const approvals = this.store.listApprovals().filter((a) => a.status === "open");
+    return this.store.list().map((w) => {
+      const last = this.store.listExecutions(w.id, 1)[0];
+      return {
+        id: w.id,
+        name: w.name,
+        description: w.description,
+        version: w.version,
+        enabled: w.enabled,
+        trigger: w.trigger,
+        nodeCount: w.nodes.filter((n) => n.type !== "note").length,
+        lastRun: last ? { id: last.id, status: last.status, startedAt: last.startedAt, summary: last.summary } : null,
+        nextRunAt: this.nextRunAt(w, last?.startedAt ?? null),
+        openApprovals: approvals.filter((a) => a.workflowId === w.id).length,
+        blocked: this.blockedReason(w),
+      };
+    });
+  }
+
+  get(id: string): WorkflowDefinition | null {
+    return this.store.get(id);
+  }
+
+  resolve(idOrName: string): WorkflowDefinition | null {
+    return this.store.get(idOrName) ?? this.store.findByName(idOrName);
+  }
+
+  validate(def: WorkflowDefinition): ValidationProblem[] {
+    return validateDefinition(def, (n) => this.toolExists(n));
+  }
+
+  /** Grund, warum der Workflow gerade nicht laufen kann (Policy, Modell). */
+  blockedReason(def: WorkflowDefinition): string | null {
+    if (!this.deps.featureEnabled()) return "Workflows sind in deiner Organisation abgeschaltet.";
+    for (const n of def.nodes) {
+      if (n.type === "tool" && !n.disabled) {
+        const t = String(n.parameters.tool ?? "");
+        if (!this.toolExists(t)) return `Schritt „${n.name}“: Tool ${t} ist nicht verfuegbar (abgeschaltet oder unbekannt).`;
+      }
+      if (n.type === "ai" && !n.disabled && !this.deps.providers.getStatus().ready) {
+        return `Schritt „${n.name}“: kein Hintergrund-Modell bereit (API-Schluessel oder lokales Modell noetig).`;
+      }
+    }
+    return null;
+  }
+
+  save(input: Parameters<WorkflowStore["save"]>[0], opts: { createdBy: "user" | "agent" }): { workflow: WorkflowDefinition; problems: ValidationProblem[] } {
+    const isNew = !input.id || !this.store.get(input.id);
+    if (isNew) {
+      const tier = (this.deps.getTier() ?? "free").toLowerCase();
+      const limit = WORKFLOW_LIMITS[tier]?.maxWorkflows ?? null;
+      if (limit !== null && this.store.list().length >= limit) {
+        throw new Error(`Dein Plan (${tier}) erlaubt ${limit} Workflow${limit === 1 ? "" : "s"}. Mehr im Starter-Plan (Einstellungen → Abo).`);
+      }
+    }
+    const workflow = this.store.save(input, opts);
+    const problems = this.validate(workflow);
+    this.deps.audit({
+      action: isNew ? "workflow.create" : "workflow.update",
+      severity: "info",
+      summary: `Workflow „${workflow.name}“ ${isNew ? "angelegt" : `aktualisiert (v${workflow.version})`}`,
+      metadata: { workflowId: workflow.id, nodes: workflow.nodes.length, trigger: workflow.trigger.kind, createdBy: opts.createdBy, problems: problems.length },
+    });
+    return { workflow, problems };
+  }
+
+  patch(id: string, patch: Partial<WorkflowDefinition>): WorkflowDefinition | null {
+    const w = this.store.patch(id, patch);
+    if (w) this.deps.audit({ action: "workflow.update", severity: "info", summary: `Workflow „${w.name}“ geaendert (v${w.version})`, metadata: { workflowId: id, felder: Object.keys(patch) } });
+    return w;
+  }
+
+  delete(id: string): boolean {
+    const w = this.store.get(id);
+    if (!w) return false;
+    for (const ex of this.runner.runningExecutions()) if (ex.workflowId === id) this.runner.cancel(ex.id);
+    this.store.delete(id);
+    this.store.deleteExecutions(id);
+    this.store.deleteState(id);
+    this.deps.audit({ action: "workflow.delete", severity: "warning", summary: `Workflow „${w.name}“ geloescht`, metadata: { workflowId: id } });
+    return true;
+  }
+
+  // ---- Laeufe -----------------------------------------------------------------
+
+  async run(id: string, opts: { trigger: WorkflowExecution["trigger"]; dryRun?: boolean; inputItems?: WorkflowItem[] }): Promise<WorkflowExecution> {
+    const def = this.store.get(id);
+    if (!def) throw new Error("Workflow nicht gefunden.");
+    const blocked = this.blockedReason(def);
+    if (blocked) throw new Error(blocked);
+    const problems = this.validate(def);
+    if (problems.length > 0) throw new Error(`Workflow unvollstaendig: ${problems.map((p) => (p.node ? `${p.node}: ` : "") + p.message).join("; ")}`);
+    return this.runner.run(def, { trigger: opts.trigger, dryRun: opts.dryRun, inputItems: opts.inputItems });
+  }
+
+  cancel(executionId: string): boolean {
+    return this.runner.cancel(executionId);
+  }
+
+  executions(workflowId: string, limit = 50): WorkflowExecution[] {
+    const running = this.runner.runningExecutions().filter((e) => e.workflowId === workflowId);
+    const stored = this.store.listExecutions(workflowId, limit).filter((e) => !running.some((r) => r.id === e.id));
+    return [...running, ...stored].slice(0, limit);
+  }
+
+  execution(workflowId: string, executionId: string): WorkflowExecution | null {
+    return this.runner.runningExecutions().find((e) => e.id === executionId) ?? this.store.getExecution(workflowId, executionId);
+  }
+
+  // ---- Freigaben -------------------------------------------------------------
+
+  approvals(status: WorkflowApproval["status"] | "all" = "open"): WorkflowApproval[] {
+    const all = this.store.listApprovals();
+    return (status === "all" ? all : all.filter((a) => a.status === status)).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  }
+
+  decideApproval(approvalId: string, approved: boolean, note?: string): boolean {
+    return this.runner.resolveApproval(approvalId, approved, note);
+  }
+
+  // ---- Trigger ---------------------------------------------------------------
+
+  /** W4-Haken: interne Ereignisse starten passende Workflows. */
+  async emitEvent(event: WorkflowEventKind, payload: Record<string, unknown>): Promise<void> {
+    if (!this.deps.isSignedIn() || !this.deps.featureEnabled()) return;
+    for (const w of this.store.list()) {
+      if (!w.enabled || w.trigger.kind !== "event" || w.trigger.event !== event) continue;
+      if (w.trigger.filter && !matchesFilter(payload, w.trigger.filter)) continue;
+      if (this.runner.isRunning(w.id)) continue;
+      void this.run(w.id, { trigger: "event", inputItems: [{ json: payload }] }).catch((err) =>
+        this.deps.audit({ action: "workflow.run.error", severity: "error", summary: `Workflow „${w.name}“ (Ereignis ${event}) nicht gestartet: ${err instanceof Error ? err.message : String(err)}`, metadata: { workflowId: w.id } }),
+      );
+    }
+  }
+
+  private nextRunAt(w: WorkflowDefinition, lastStartedAt: string | null): string | null {
+    if (!w.enabled || w.trigger.kind !== "schedule") return null;
+    const t = w.trigger;
+    if (t.intervalMinutes) {
+      const base = lastStartedAt ? Date.parse(lastStartedAt) : Date.now();
+      return new Date(Math.max(Date.now(), base + t.intervalMinutes * 60_000)).toISOString();
+    }
+    if (t.at) {
+      const [hh, mm] = t.at.split(":").map(Number);
+      const d = new Date();
+      d.setHours(hh ?? 0, mm ?? 0, 0, 0);
+      for (let i = 0; i < 8; i++) {
+        const cand = new Date(d.getTime() + i * 86_400_000);
+        if (cand.getTime() <= Date.now()) continue;
+        if (t.weekdays && t.weekdays.length > 0 && !t.weekdays.includes(cand.getDay())) continue;
+        return cand.toISOString();
+      }
+    }
+    return null;
+  }
+
+  private async tick(): Promise<void> {
+    if (!this.deps.isSignedIn() || !this.deps.featureEnabled()) return;
+    const now = Date.now();
+    for (const w of this.store.list()) {
+      if (!w.enabled || w.trigger.kind !== "schedule" || this.runner.isRunning(w.id)) continue;
+      if (this.blockedReason(w)) continue;
+      const last = this.store.listExecutions(w.id, 1)[0];
+      const lastMs = last ? Date.parse(last.startedAt) : 0;
+      let due = false;
+      const t = w.trigger;
+      if (t.intervalMinutes) {
+        due = now - lastMs >= t.intervalMinutes * 60_000;
+      } else if (t.at) {
+        const [hh, mm] = t.at.split(":").map(Number);
+        const at = new Date();
+        at.setHours(hh ?? 0, mm ?? 0, 0, 0);
+        const okDay = !t.weekdays || t.weekdays.length === 0 || t.weekdays.includes(at.getDay());
+        // Entscheidung 2026-09-09: kein Nachholen — nur im Fenster nach der Uhrzeit.
+        due = okDay && now >= at.getTime() && now - at.getTime() < AT_WINDOW_MS && lastMs < at.getTime();
+      }
+      if (!due) continue;
+      try {
+        await this.run(w.id, { trigger: "schedule" });
+      } catch (err) {
+        this.deps.audit({ action: "workflow.run.error", severity: "error", summary: `Workflow „${w.name}“ (Zeitplan) nicht gestartet: ${err instanceof Error ? err.message : String(err)}`, metadata: { workflowId: w.id } });
+      }
+    }
+  }
+}
+
+function matchesFilter(payload: Record<string, unknown>, filter: Record<string, unknown>): boolean {
+  return Object.entries(filter).every(([k, v]) => {
+    const actual = payload[k];
+    if (Array.isArray(v)) return v.map(String).includes(String(actual));
+    return String(actual) === String(v);
+  });
+}
