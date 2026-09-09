@@ -10,6 +10,7 @@
 // an und legt eine Freigabe an (Human-in-the-Loop). `mail_send` braucht
 // IMMER Freigabe oder `confirmed` und unterliegt dem Tages-Deckel.
 
+import { fetchAllTransactionEntities } from "../transaction-entities";
 import { randomUUID } from "node:crypto";
 import type { ToolRegistry } from "../agent/tool-registry";
 import type { ToolContext } from "../agent/types";
@@ -511,13 +512,20 @@ export class WorkflowRunner {
             ? String(items[0]!.json.transactionId)
             : "";
         if (txId) {
+          if (!/^[A-Za-z0-9_-]{8,64}$/.test(txId)) {
+            throw new Error(`Warten-Node: „${txId.slice(0, 80)}“ ist keine Vorgangs-ID. Erwartet wird z. B. {{ $json.transactionId }} aus dem Ergebnis von discovery_decide oder import_*.`);
+          }
           const maxMs = Math.min(72, Math.max(0.1, Number(node.parameters.maxHours ?? 6))) * 3600_000;
           const start = Date.now();
           let ergebnis: { gesamt: number; fertig: number; fehler: number } = { gesamt: 0, fertig: 0, fehler: 0 };
           for (;;) {
             if (ctx.signal.aborted) throw new Error("aborted");
-            const r = await this.deps.gatewayRequest<{ items?: Array<{ companyId: string; state?: string }> }>(`/v1/transactions/${encodeURIComponent(txId)}/entities?pageSize=500`);
-            const ents = r.items ?? [];
+            let ents: Array<{ companyId: string; state?: string }> = [];
+            try {
+              ents = await fetchAllTransactionEntities(this.deps.gatewayRequest, txId);
+            } catch (err) {
+              throw new Error(`Vorgang ${txId} nicht abrufbar: ${err instanceof Error ? err.message : String(err)}`);
+            }
             ergebnis = {
               gesamt: ents.length,
               fertig: ents.filter((e) => e.state === "completed").length,

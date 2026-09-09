@@ -1,6 +1,7 @@
 // W1 — WorkflowService: Fassade fuer Store, Engine, Zeitplan-Trigger,
 // Ereignis-Trigger (W4-Haken), Freigaben und Katalog. Eine Instanz je App.
 
+import { fetchAllTransactionEntities } from "../transaction-entities";
 import type { ToolRegistry } from "../agent/tool-registry";
 import type { LlmProviderManager } from "../agent/providers";
 import type { AutonomyLevel } from "../../shared/types";
@@ -468,7 +469,7 @@ export class WorkflowService {
       return out;
     }
     if (src.kind === "transaction") {
-      const r = await this.deps.gatewayRequest<{ items?: Array<{ companyId: string; state?: string }> }>(`/v1/transactions/${encodeURIComponent(src.transactionId)}/entities?pageSize=500`);
+      const r = { items: await fetchAllTransactionEntities(this.deps.gatewayRequest, src.transactionId) };
       for (const e of r.items ?? []) if (e.companyId && (e.state === undefined || e.state === "completed")) out.push({ companyId: e.companyId });
       return out;
     }

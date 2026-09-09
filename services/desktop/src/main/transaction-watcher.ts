@@ -12,6 +12,7 @@ import { app } from "electron";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { Alert } from "../shared/types";
+import { fetchAllTransactionEntities } from "./transaction-entities";
 
 const TICK_MS = 60_000;
 const FIRST_TICK_MS = 45_000;
@@ -109,9 +110,9 @@ export class TransactionWatcher {
         }
         let entities: EntityRow[] = [];
         try {
-          const r = await this.deps.gatewayRequest<{ items?: EntityRow[] }>(`/v1/transactions/${encodeURIComponent(tx.id)}/entities?pageSize=500`);
-          entities = r.items ?? [];
-        } catch {
+          entities = await fetchAllTransactionEntities(this.deps.gatewayRequest, tx.id);
+        } catch (err) {
+          this.deps.audit({ summary: `Vorgangs-Watcher: Firmen von ${tx.id.slice(0, 8)} nicht ladbar: ${err instanceof Error ? err.message : String(err)}`, severity: "warning", metadata: { transactionId: tx.id } });
           continue;
         }
         if (entities.length === 0) continue;
