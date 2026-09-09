@@ -11,6 +11,7 @@
 // IMMER Freigabe oder `confirmed` und unterliegt dem Tages-Deckel.
 
 import { bewertePipeline, fetchPipeline, type VorgangsBefund } from "../transaction-pipeline";
+import { STAGE_LABELS, nodeRequirementsMitSub, waitStages, type PipelineStage } from "../../shared/workflow-dependencies";
 import { randomUUID } from "node:crypto";
 import type { ToolRegistry } from "../agent/tool-registry";
 import type { ToolContext } from "../agent/types";
@@ -36,6 +37,8 @@ import { evaluate, resolveValue, type ExpressionContext } from "./expressions";
 
 const MAX_STORED_ITEMS = 200;
 const MAX_STORED_ITEM_BYTES = 64 * 1024;
+/** Maximale Wartezeit auf Daten-Abhaengigkeiten je Node (Publikationen dauern lange). */
+const DEPENDENCY_WAIT_MS = 6 * 3600_000;
 const MAX_SUBWORKFLOW_DEPTH = 3;
 const APPROVAL_TIMEOUT_MS = 48 * 3600_000;
 const ITEM_KEY_CANDIDATES = ["discoveryId", "messageId", "id", "companyId", "contactId", "dealId", "email", "domain", "url", "profileUrl"];
@@ -164,6 +167,7 @@ export class WorkflowRunner {
       placeholderCache: new Map(),
       untilNode: opts.untilNode ?? null,
       gestoppt: false,
+      stufenFertig: new Set(),
     };
     try {
       const trigger = def.nodes.find((n) => n.type === "trigger");
@@ -352,6 +356,7 @@ export class WorkflowRunner {
         run.status = "success";
         run.hinweise = ["Pin-Daten verwendet (Testlauf)"];
       } else {
+        await this.awaitDependencies(ctx, node, run);
         outputs = await this.withRetry(node, () => this.executeNode(ctx, node, inputItems, inputsByIndex, allowed));
         run.status = "success";
       }
@@ -395,6 +400,54 @@ export class WorkflowRunner {
       }
     }
     throw lastErr;
+  }
+
+  /**
+   * v0.1.603 — Daten-Abhaengigkeiten: Braucht der Node Daten einer Producer-
+   * Stufe (z. B. $kassenbestand → Jahresabschluesse) und steckt die Firma des
+   * Laufs noch in einem laufenden Vorgang, wird gewartet, bis diese Stufen im
+   * Endzustand sind; danach wird der Firmen-Kontext neu geladen. Ausserhalb
+   * eines Vorgangs wird nicht gewartet (fehlende Daten → Fallback).
+   */
+  private async awaitDependencies(ctx: RunContext, node: WorkflowNode, run: WorkflowNodeRun): Promise<void> {
+    const txId = ctx.company?.scope.transactionId;
+    const companyId = ctx.company?.scope.companyId;
+    if (!txId || !companyId || node.type === "wait") return;
+    const reqs = nodeRequirementsMitSub(node, (id) => this.deps.getDefinition(id));
+    const offen = reqs.map((r) => r.stage).filter((s) => !ctx.stufenFertig.has(s));
+    if (offen.length === 0) return;
+    const start = Date.now();
+    let gewartet = false;
+    for (;;) {
+      if (ctx.signal.aborted) throw new Error("aborted");
+      let befund: VorgangsBefund;
+      try {
+        befund = bewertePipeline(await fetchPipeline(this.deps.gatewayRequest, txId), offen as PipelineStage[]);
+      } catch {
+        return; // Vorgang nicht abrufbar → nicht blockieren, Fallbacks greifen
+      }
+      const firma = befund.firmen.find((f) => f.companyId === companyId);
+      if (!firma) return; // Firma nicht Teil des Vorgangs
+      if (firma.stufenFertig) {
+        for (const s of offen) ctx.stufenFertig.add(s);
+        if (gewartet && ctx.company) {
+          // Kontext neu laden: die gewarteten Daten sind jetzt da (oder endgueltig nicht).
+          const trigger = ctx.def.nodes.find((n) => n.type === "trigger") ?? node;
+          ctx.company = await buildCompanyContext(this.deps.registry, ctx.company.scope, this.toolContext(ctx, trigger, "none", "read", []));
+          ctx.placeholderCache.clear();
+        }
+        const fehl = firma.fehlgeschlageneStufen.filter((s) => offen.includes(s));
+        (run.hinweise ??= []).push(`Abhaengigkeiten: ${reqs.map((r) => `${STAGE_LABELS[r.stage]} (${r.grund})`).join(", ")}${gewartet ? " — gewartet" : ""}${fehl.length ? `; fehlgeschlagen: ${fehl.map((s) => STAGE_LABELS[s]).join(", ")} → Fallbacks` : ""}`);
+        return;
+      }
+      if (ctx.execution.dryRun) {
+        (run.hinweise ??= []).push(`Trockenlauf: ${firma.offeneStufen.map((s) => STAGE_LABELS[s]).join(", ")} noch in Verarbeitung — echter Lauf wartet darauf.`);
+        return;
+      }
+      if (Date.now() - start > DEPENDENCY_WAIT_MS) throw new Error(`Abhaengigkeit nicht erfuellt: ${firma.offeneStufen.map((s) => STAGE_LABELS[s]).join(", ")} nach ${Math.round(DEPENDENCY_WAIT_MS / 3600_000)} h nicht verarbeitet.`);
+      gewartet = true;
+      await sleep(60_000, ctx.signal);
+    }
   }
 
   private exprContext(ctx: RunContext, node: WorkflowNode, items: WorkflowItem[], itemIndex: number): ExpressionContext {
@@ -552,6 +605,7 @@ export class WorkflowRunner {
           // v0.1.602 — Abschluss = Firmenprofil je Firma im Endzustand (Pipeline-
           // Matrix). Ausgabe: EIN Item je Firma (companyId, state = Profil-Zustand,
           // fehlgeschlageneStufen, transactionId) — direkt fuer Filter + Sub-Workflow.
+          const w = waitStages(ctx.def, node, (id) => this.deps.getDefinition(id));
           const zuItems = (b: VorgangsBefund, dryRun: boolean): WorkflowItem[] =>
             b.firmen.map((f, i) => ({
               json: {
@@ -560,6 +614,7 @@ export class WorkflowRunner {
                 vollstaendig: f.vollstaendig,
                 fehlgeschlageneStufen: f.fehlgeschlageneStufen,
                 fehler: f.fehler,
+                gewarteteStufen: w.stufen,
                 transactionId: txId,
                 verarbeitung: { gesamt: b.gesamt, fertig: b.profilFertig, fehler: b.profilFehlgeschlagen, offen: b.profilOffen, teilfehler: b.teilfehler, ...(dryRun ? { dryRun: true } : {}) },
               },
@@ -569,15 +624,20 @@ export class WorkflowRunner {
             if (ctx.signal.aborted) throw new Error("aborted");
             let befund: VorgangsBefund;
             try {
-              befund = bewertePipeline(await fetchPipeline(this.deps.gatewayRequest, txId));
+              befund = bewertePipeline(await fetchPipeline(this.deps.gatewayRequest, txId), w.stufen);
             } catch (err) {
               throw new Error(`Vorgang ${txId} nicht abrufbar: ${err instanceof Error ? err.message : String(err)}`);
             }
-            if (befund.abgeschlossen) return [zuItems(befund, false)];
-            if (Date.now() - start > maxMs) throw new Error(`Vorgang ${txId} nach ${Math.round(maxMs / 3600_000)} h nicht abgeschlossen (${befund.profilFertig}/${befund.gesamt} Profile fertig, ${befund.profilOffen} offen).`);
+            const offene = [...new Set(befund.firmen.flatMap((f) => f.offeneStufen))].map((s) => STAGE_LABELS[s]);
+            if (befund.abgeschlossen) {
+              const run = ctx.execution.nodeRuns[node.name]?.at(-1);
+              if (run) (run.hinweise ??= []).push(`Gewartet auf: ${w.stufen.map((s) => STAGE_LABELS[s]).join(", ")}${w.automatisch ? " (automatisch aus den Folge-Schritten)" : ""}`);
+              return [zuItems(befund, false)];
+            }
+            if (Date.now() - start > maxMs) throw new Error(`Vorgang ${txId} nach ${Math.round(maxMs / 3600_000)} h nicht abgeschlossen (${befund.profilFertig}/${befund.gesamt} Profile fertig, ${befund.profilOffen} offen${offene.length ? `: ${offene.join(", ")}` : ""}).`);
             if (ctx.execution.dryRun) {
               const run = ctx.execution.nodeRuns[node.name]?.at(-1);
-              if (run) run.error = `Trockenlauf: Vorgang noch nicht abgeschlossen (${befund.profilFertig}/${befund.gesamt} Profile fertig) — Items mit aktuellem Stand weitergegeben.`;
+              if (run) run.error = `Trockenlauf: Vorgang noch nicht abgeschlossen (${befund.profilFertig}/${befund.gesamt} Profile fertig${offene.length ? `; offen: ${offene.join(", ")}` : ""}) — Items mit aktuellem Stand weitergegeben.`;
               return [befund.firmen.length > 0 ? zuItems(befund, true) : items];
             }
             await sleep(60_000, ctx.signal);
@@ -921,6 +981,8 @@ interface RunContext {
   placeholderCache: Map<string, unknown>;
   untilNode: string | null;
   gestoppt: boolean;
+  /** Stufen, die fuer die Firma des Laufs bereits im Endzustand sind (Abhaengigkeiten). */
+  stufenFertig: Set<PipelineStage>;
 }
 
 /** Firmenbezug aus einem Item (companyId/discoveryId/name), sonst der Eltern-Scope. */
@@ -929,7 +991,8 @@ function scopeAusItem(it: WorkflowItem, fallback: CompanyScope | undefined): Com
   const companyId = typeof j.companyId === "string" ? j.companyId : typeof j.masterCompanyId === "string" ? j.masterCompanyId : undefined;
   const discoveryId = typeof j.discoveryId === "string" ? j.discoveryId : undefined;
   const companyName = typeof j.name === "string" ? j.name : typeof j.companyName === "string" ? j.companyName : undefined;
-  if (companyId) return { companyId, companyName };
+  const transactionId = typeof j.transactionId === "string" ? j.transactionId : fallback?.transactionId;
+  if (companyId) return { companyId, companyName, ...(transactionId ? { transactionId } : {}) };
   if (discoveryId) return { discoveryId, companyName };
   return fallback;
 }

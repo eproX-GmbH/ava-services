@@ -15,6 +15,7 @@ import type {
 } from "../../shared/workflow-types";
 import { DEFAULT_WORKFLOW_SETTINGS } from "../../shared/workflow-types";
 import { referencedNodeNames } from "./expressions";
+import { dependencyProblems } from "../../shared/workflow-dependencies";
 
 const NODE_TYPES = ["trigger", "tool", "filter", "transform", "if", "switch", "loop", "merge", "ai", "wait", "human", "stop", "subworkflow", "note"] as const;
 
@@ -32,6 +33,7 @@ const nodeSchema = yup.object({
   waitBetweenTriesSec: yup.number().min(0).max(600).optional(),
   confirmed: yup.boolean().optional(),
   notes: yup.string().max(2000).optional(),
+  dependsOn: yup.array().of(yup.string().required()).default(undefined).optional(),
 });
 
 const triggerSchema = yup.object({
@@ -145,8 +147,10 @@ export interface ValidationProblem {
 }
 
 /** Strukturpruefung ueber das Schema hinaus: Namen, Kanten, Trigger, Zyklen. */
-export function validateDefinition(def: WorkflowDefinition, toolExists: (name: string) => boolean): ValidationProblem[] {
+export function validateDefinition(def: WorkflowDefinition, toolExists: (name: string) => boolean, getDefinition?: (id: string) => WorkflowDefinition | null | undefined): ValidationProblem[] {
   const problems: ValidationProblem[] = [];
+  // v0.1.603 — Daten-Abhaengigkeiten: Warten-Node vs. Bedarf der Folge-Nodes.
+  problems.push(...dependencyProblems(def, getDefinition ?? (() => null)));
   const names = new Map<string, WorkflowNode>();
   for (const n of def.nodes) {
     if (names.has(n.name)) problems.push({ node: n.name, message: `Node-Name doppelt: „${n.name}“` });

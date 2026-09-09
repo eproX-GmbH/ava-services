@@ -40,6 +40,8 @@ export interface WorkflowNode {
   /** Schreib-Node vom Nutzer fuer unbeaufsichtigte Laeufe freigegeben. */
   confirmed?: boolean;
   notes?: string;
+  /** v0.1.603 — Daten-Abhaengigkeiten (Producer-Stufen) manuell ueberschreiben; sonst abgeleitet. */
+  dependsOn?: string[];
 }
 
 export interface WorkflowConnectionTarget {

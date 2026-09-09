@@ -6,8 +6,11 @@
 // Ist es je Firma im Endzustand, ist die Verarbeitung im Wesentlichen durch.
 // Teilfehler anderer Stufen werden als Ursache genannt, nicht als Totalausfall.
 
+import { KEY_STAGE, STAGE_LABELS, type PipelineStage } from "../shared/workflow-dependencies";
+
 export type StageState = "completed" | "failed" | "skipped" | "pending" | "in_progress";
-export type Stage = "masterData" | "structuredContent" | "companyPublication" | "website" | "companyProfile" | "companyContact" | "companyEvaluation";
+export type Stage = PipelineStage;
+export { KEY_STAGE, STAGE_LABELS };
 
 export interface PipelineCell {
   state: StageState;
@@ -26,17 +29,6 @@ export interface PipelineSnapshot {
   rows: PipelineRow[];
 }
 
-export const STAGE_LABELS: Record<Stage, string> = {
-  masterData: "Stammdaten",
-  structuredContent: "Handelsregister",
-  companyPublication: "Jahresabschluesse",
-  website: "Website",
-  companyProfile: "Firmenprofil",
-  companyContact: "Kontakte",
-  companyEvaluation: "Bewertung",
-};
-
-export const KEY_STAGE: Stage = "companyProfile";
 const TERMINAL = new Set<StageState>(["completed", "failed", "skipped"]);
 
 export interface FirmenBefund {
@@ -47,6 +39,10 @@ export interface FirmenBefund {
   vollstaendig: boolean;
   fehlgeschlageneStufen: Stage[];
   fehler: Partial<Record<Stage, string>>;
+  /** Alle geforderten Stufen im Endzustand? */
+  stufenFertig: boolean;
+  /** Geforderte Stufen, die noch laufen. */
+  offeneStufen: Stage[];
 }
 
 export interface VorgangsBefund {
@@ -64,9 +60,11 @@ export interface VorgangsBefund {
   firmen: FirmenBefund[];
 }
 
-export function bewertePipeline(p: PipelineSnapshot): VorgangsBefund {
+/** @param stufen Geforderte Stufen (Default: Firmenprofil). Abschluss = alle im Endzustand. */
+export function bewertePipeline(p: PipelineSnapshot, stufen: Stage[] = [KEY_STAGE]): VorgangsBefund {
   const unavailable = new Set(p.unavailableStages ?? []);
   const keyVerfuegbar = !unavailable.has(KEY_STAGE);
+  const gefordert = stufen.filter((s) => !unavailable.has(s));
   const firmen: FirmenBefund[] = p.rows.map((r) => {
     const cells = r.cells;
     const key = cells[KEY_STAGE];
@@ -82,7 +80,8 @@ export function bewertePipeline(p: PipelineSnapshot): VorgangsBefund {
       }
     }
     const state: StageState = keyVerfuegbar ? (key?.state ?? "pending") : alleFertig ? (fehlgeschlagen.length > 0 ? "failed" : "completed") : "pending";
-    return { companyId: r.companyId, state, vollstaendig: alleFertig, fehlgeschlageneStufen: fehlgeschlagen, fehler };
+    const offeneStufen = gefordert.filter((s) => !TERMINAL.has(cells[s]?.state ?? "pending"));
+    return { companyId: r.companyId, state, vollstaendig: alleFertig, fehlgeschlageneStufen: fehlgeschlagen, fehler, stufenFertig: offeneStufen.length === 0, offeneStufen };
   });
   const teilfehler: Partial<Record<Stage, number>> = {};
   const beispiele: Partial<Record<Stage, string>> = {};
@@ -94,7 +93,7 @@ export function bewertePipeline(p: PipelineSnapshot): VorgangsBefund {
   }
   const profilFertig = firmen.filter((f) => f.state === "completed").length;
   const profilFehlgeschlagen = firmen.filter((f) => f.state === "failed").length;
-  const profilOffen = firmen.filter((f) => !TERMINAL.has(f.state)).length;
+  const profilOffen = firmen.filter((f) => !TERMINAL.has(f.state) || !f.stufenFertig).length;
   const gesamt = Math.max(firmen.length, p.totalCompanies ?? 0);
   return {
     abgeschlossen: firmen.length > 0 && firmen.length >= (p.totalCompanies || firmen.length) && profilOffen === 0,

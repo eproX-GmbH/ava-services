@@ -537,7 +537,7 @@ W3 kann parallel starten, sobald die Typen aus W1 stehen.
 - v0.1.601: Engine-Pruefung aller Nodes (End-to-End-Test scripts/_test-workflows-engine.inner.mjs mit Stub-Tools, Teil von test:workflows). Behoben: Schleifen-Rueckkanten blockierten den Loop-Node (nie ausgefuehrt); Tool-Ergebnisse mit error-Feld galten als Erfolg; Warten-Node ohne Vorgang (Import ohne importierbare Firmen, z. B. ohne Ort) meldet die Ursache; Trockenlauf endet am Warten-Node sauber statt mit Folgefehler.
 - v0.1.602: Vorgangs-Abschluss anhand der Pipeline-Matrix je Stufe (transaction-pipeline.ts): massgeblich ist das Firmenprofil je Firma; Teilfehler (Handelsregister/Jahresabschluesse) werden als Ursache mit Beispiel-Fehler und Quellen-Hinweis gemeldet, nicht als Totalausfall. Warten-Node liefert ein Item je Firma (companyId, state, fehlgeschlageneStufen); Vorlage ohne transaction_entities-Schritt. Ereignis import.finished traegt fehlgeschlageneStufen.
 
-## 11. Idee (2026-09-09, noch nicht gebaut): Daten-Abhängigkeiten je Node
+## 11. Daten-Abhängigkeiten je Node (entschieden und umgesetzt 2026-09-09, v0.1.603)
 
 Anlass: Ein Node, der `$kassenbestand` braucht, muss den Publikations-Producer
 abwarten; das Firmenprofil ist oft deutlich früher fertig. Heute wartet der
@@ -576,7 +576,14 @@ Nutzer gepflegt. Manuelles Überschreiben bleibt möglich.
    brauchen → Hinweis in der Validierung („Node ‚Mail‘ braucht Jahresabschlüsse,
    der Warten-Node wartet nur auf das Firmenprofil“).
 
-Offene Entscheidungen: (a) Ableitung + Override oder nur explizit; (b) Standard
-für `bis` leer = automatisch oder = Firmenprofil; (c) maximale Wartezeit je
-Stufe (Publikationen dauern lange); (d) Anzeige der Stufen-Chips auch in der
-Läufe-Ansicht. Aufwand grob 3–4 Tage. Baut auf v0.1.602 (Pipeline-Matrix) auf.
+Umsetzung v0.1.603 (Operator-Go „Umsetzen“): (a) Ableitung + Override
+(`dependsOn` am Node); (b) `bis` leer = automatisch (Folge-Schritte inkl.
+Sub-Workflow, mindestens Firmenprofil); (c) Wartezeit je Node 6 h
+(`DEPENDENCY_WAIT_MS`), Warten-Node `maxHours`; (d) Chips „↳ Stufe“ auf den
+Node-Karten und im Schritt-Panel, Stufen-Auswahl am Warten-Node.
+Code: src/shared/workflow-dependencies.ts (Ableitung, waitStages,
+dependencyProblems), runner.ts awaitDependencies (Firma in laufendem Vorgang →
+warten, danach Kontext neu laden), transaction-pipeline.ts bewertePipeline mit
+geforderten Stufen, CompanyScope.transactionId (Ereignis import.finished,
+Warten-Node-Items, Sub-Workflow). Tests in test:workflows.
+- v0.1.603: Daten-Abhaengigkeiten je Node (§11): abgeleitet aus Platzhaltern/Expressions, Warten-Node `bis` (leer = automatisch), Node wartet in laufendem Vorgang auf seine Stufen, Editor-Chips, Validierungs-Hinweis, Chat-Tool zeigt benoetigteStufen.

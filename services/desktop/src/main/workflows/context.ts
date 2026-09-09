@@ -15,6 +15,8 @@ export interface CompanyScope {
   companyId?: string;
   discoveryId?: string;
   companyName?: string;
+  /** Laufender Vorgang (Import), in dem die Firma steckt — fuer Daten-Abhaengigkeiten. */
+  transactionId?: string;
 }
 
 export interface CompanyContext {

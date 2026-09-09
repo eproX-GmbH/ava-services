@@ -17,6 +17,7 @@ import type { WorkflowDefinition, WorkflowNode, WorkflowTrigger } from "../../..
 import type { WorkflowService } from "../../workflows";
 import { compileConversation } from "../../workflows/compiler";
 import { normalizeTrigger, normalizeVariables } from "../../workflows/store";
+import { STAGE_LABELS, nodeRequirements } from "../../../shared/workflow-dependencies";
 
 export interface WorkflowToolDeps {
   /** Lazy — der Service entsteht im App-Boot. */
@@ -55,7 +56,10 @@ function kompakt(def: WorkflowDefinition): Record<string, unknown> {
     trigger: def.trigger,
     variables: def.variables,
     settings: def.settings,
-    nodes: def.nodes.map((n) => ({ name: n.name, type: n.type, parameters: n.parameters, mode: n.mode, confirmed: n.confirmed, disabled: n.disabled, onError: n.onError })),
+    nodes: def.nodes.map((n) => {
+      const reqs = nodeRequirements(n);
+      return { name: n.name, type: n.type, parameters: n.parameters, mode: n.mode, confirmed: n.confirmed, disabled: n.disabled, onError: n.onError, ...(reqs.length ? { benoetigteStufen: reqs.map((r) => `${STAGE_LABELS[r.stage]} (${r.grund})`) } : {}) };
+    }),
     connections: def.connections,
   };
 }
@@ -103,6 +107,7 @@ export function buildWorkflowTools(deps: WorkflowToolDeps): Tool[] {
       "Expressions: {{ $json.feld }}, {{ $('Node-Name').item.json.feld }}, {{ $input.all() }}, {{ $vars.name }}, {{ $now }}. " +
       "Tool-Node: parameters = { tool: '<name>', args: {...}, outputPath?: 'items', itemKey?: 'discoveryId' }; mode perItem (Default) oder allItems. " +
       "FIRMENBEZUG: Jeder Lauf gilt fuer GENAU EINE Firma; ihr vollstaendiger Kontext (Stammdaten, Profil, Finanzen/Kennzahlen, Handelsregister inkl. Geschaeftsfuehrung, Kontakte, CRM) liegt dem Lauf vor. " +
+      "ABHAENGIGKEITEN: AVA leitet je Node ab, welche Producer-Stufe seine Daten liefert ($kassenbestand → Jahresabschluesse, $geschaeftsfuehrer → Handelsregister, $ansprechpartner → Kontakte). Ein Warten-Node mit transactionId wartet automatisch auf die Stufen, die die Folge-Schritte brauchen (mindestens Firmenprofil); parameters.bis kann das festlegen. Steckt die Firma eines Laufs noch in einem Vorgang, wartet ein Node vor der Ausfuehrung auf seine Stufen. " +
       "WARTEN AUF VERARBEITUNG: Nach discovery_decide/import liefert das Ergebnis eine transactionId; ein wait-Node mit transactionId: '{{ $json.transactionId }}' haelt den Lauf an, bis alle Firmen des Vorgangs verarbeitet sind (Watcher, max maxHours). " +
       "Beispiel „Radar-Firmen importieren, danach je Firma Kurzuebersicht per Telegram“: Prime (scope none): discovery_candidates(allItems) → filter → discovery_decide(allItems, imported, confirmed) → wait(transactionId) → " +
       "tool company_search/transaction_entities → subworkflow(perItem) mit Sub: ai(Kurzuebersicht aus {{ $context }}) → telegram_send_message. " +

@@ -34,6 +34,7 @@ import type {
   WorkflowTrigger,
 } from "../../../shared/workflow-types";
 import { FirmenAuswahl, statusPill, triggerText } from "./Workflows";
+import { PIPELINE_STAGES, STAGE_LABELS, nodeRequirementsMitSub, waitStages, type PipelineStage } from "../../../shared/workflow-dependencies";
 
 type WfNodeData = {
   wf: WorkflowNode;
@@ -68,6 +69,11 @@ function WfNode({ data, selected }: NodeProps<WfFlowNode>): JSX.Element {
       <div className="wf-node__badges">
         {data.write && <span className={`wf-badge ${n.confirmed ? "wf-badge--ok" : "wf-badge--warn"}`}>{n.confirmed ? "freigegeben" : "Schreib-Schritt"}</span>}
         {n.type === "ai" && <span className="wf-badge">KI</span>}
+        {nodeRequirementsMitSub(n, () => null).slice(0, 3).map((r) => (
+          <span key={r.stage} className="wf-badge" title={`Braucht ${STAGE_LABELS[r.stage]}: ${r.grund}`}>
+            ↳ {STAGE_LABELS[r.stage]}
+          </span>
+        ))}
         {n.type === "human" && <span className="wf-badge">Freigabe</span>}
         {n.mode === "allItems" && <span className="wf-badge">alle Items</span>}
         {data.run && <span className="wf-badge wf-badge--items">{data.run.outputItems.reduce((a, b) => a + b, 0)} Items</span>}
@@ -290,6 +296,22 @@ export function WorkflowEditor(): JSX.Element {
   const [selected, setSelected] = useState<string | null>(null);
   const [executions, setExecutions] = useState<WorkflowExecution[]>([]);
   const [shownExecution, setShownExecution] = useState<WorkflowExecution | null>(null);
+  // v0.1.603 — Sub-Workflows (fuer abgeleitete Daten-Abhaengigkeiten).
+  const [subDefs, setSubDefs] = useState<Record<string, WorkflowDefinition>>({});
+  useEffect(() => {
+    if (!def) return;
+    const ids = def.nodes.filter((n) => n.type === "subworkflow" && typeof n.parameters.workflowId === "string").map((n) => String(n.parameters.workflowId)).filter((id) => id && !subDefs[id]);
+    if (ids.length === 0) return;
+    void Promise.all(ids.map((id) => window.api.workflows.get(id).catch(() => null))).then((ds) => {
+      setSubDefs((prev) => {
+        const next = { ...prev };
+        ds.forEach((d, i) => { if (d) next[ids[i]!] = d; });
+        return next;
+      });
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [def]);
+  const getSubDef = (id: string): WorkflowDefinition | null => subDefs[id] ?? null;
   const [tab, setTab] = useState<"node" | "trigger" | "runs" | "add">("node");
   const [dirty, setDirty] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
@@ -615,6 +637,65 @@ export function WorkflowEditor(): JSX.Element {
                 <input type="checkbox" checked={selectedNode.disabled === true} onChange={(e) => updateNode(selectedNode.name, { disabled: e.target.checked })} />
                 <span>Deaktiviert (Items werden durchgereicht)</span>
               </label>
+              {(() => {
+                const reqs = nodeRequirementsMitSub(selectedNode, getSubDef);
+                if (reqs.length === 0 && selectedNode.type !== "wait") return null;
+                return (
+                  <div className="wf-deps">
+                    {reqs.length > 0 && (
+                      <div className="muted small">
+                        Braucht:{" "}
+                        {reqs.map((r) => (
+                          <span key={r.stage} className="wf-badge" title={r.grund}>
+                            {STAGE_LABELS[r.stage]}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                    <details className="settings-collapse">
+                      <summary>Abhängigkeiten festlegen</summary>
+                      <div className="wf-weekdays">
+                        {PIPELINE_STAGES.map((st) => {
+                          const list = (selectedNode.dependsOn ?? []).filter((x): x is PipelineStage => (PIPELINE_STAGES as readonly string[]).includes(x));
+                          const on = list.includes(st);
+                          return (
+                            <label key={st} className="org-check">
+                              <input type="checkbox" checked={on} onChange={(e) => updateNode(selectedNode.name, { dependsOn: e.target.checked ? [...list, st] : list.filter((x) => x !== st) })} />
+                              <span>{STAGE_LABELS[st]}</span>
+                            </label>
+                          );
+                        })}
+                      </div>
+                      <div className="muted small">Ohne Auswahl leitet AVA die Stufen aus Platzhaltern und Expressions ab (z. B. $kassenbestand → Jahresabschlüsse). Läuft die Firma noch in einem Vorgang, wartet der Schritt darauf.</div>
+                    </details>
+                    {selectedNode.type === "wait" && typeof selectedNode.parameters.transactionId === "string" && (() => {
+                      const w = waitStages(def, selectedNode, getSubDef);
+                      const bis = (Array.isArray(selectedNode.parameters.bis) ? selectedNode.parameters.bis : []).filter((x): x is PipelineStage => (PIPELINE_STAGES as readonly string[]).includes(String(x)));
+                      return (
+                        <div className="wf-panel__section">
+                          <div className="muted small">
+                            Wartet auf:{" "}
+                            {w.stufen.map((st) => (
+                              <span key={st} className="wf-badge wf-badge--ok">{STAGE_LABELS[st]}</span>
+                            ))}
+                            {w.automatisch ? " (automatisch aus den Folge-Schritten)" : " (festgelegt)"}
+                          </div>
+                          {w.gruende.length > 0 && <div className="muted small">Folge-Schritte brauchen: {w.gruende.map((g) => `${STAGE_LABELS[g.stage]} — ${g.grund}`).join(" · ")}</div>}
+                          <div className="wf-weekdays">
+                            {PIPELINE_STAGES.map((st) => (
+                              <label key={st} className="org-check">
+                                <input type="checkbox" checked={bis.includes(st)} onChange={(e) => updateNode(selectedNode.name, { parameters: { ...selectedNode.parameters, bis: e.target.checked ? [...bis, st] : bis.filter((x) => x !== st) } })} />
+                                <span>{STAGE_LABELS[st]}</span>
+                              </label>
+                            ))}
+                          </div>
+                          <div className="muted small">Keine Auswahl = automatisch. Gewartet wird auf den Endzustand (fertig oder fehlgeschlagen), damit eine ausgefallene Quelle den Lauf nicht ewig blockiert; fehlende Werte nutzen den Fallback des Platzhalters.</div>
+                        </div>
+                      );
+                    })()}
+                  </div>
+                );
+              })()}
               {(() => {
                 const entry = selectedNode.type === "tool" ? catalog.find((c) => c.type === `tool:${String(selectedNode.parameters.tool)}`) : catalog.find((c) => c.type === selectedNode.type);
                 const schema = (entry?.parameters ?? {}) as JsonSchema;

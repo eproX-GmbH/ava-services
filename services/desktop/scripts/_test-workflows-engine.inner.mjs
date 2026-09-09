@@ -68,6 +68,10 @@ const runner = new WorkflowRunner({
         { companyId: "c2", cells: { masterData: cell("completed"), structuredContent: cell("completed"), companyPublication: cell("completed"), website: cell("failed", "404"), companyProfile: cell("failed", "kein Inhalt"), companyContact: cell("skipped"), companyEvaluation: cell("skipped") } },
       ],
     };
+    if (path.includes(`/transactions/tx_publikation_offen/pipeline`)) return {
+      transactionId: "tx_publikation_offen", totalCompanies: 1, stages: [], unavailableStages: [],
+      rows: [{ companyId: "c1", cells: { masterData: cell("completed"), structuredContent: cell("completed"), companyPublication: cell("pending"), website: cell("completed"), companyProfile: cell("completed"), companyContact: cell("completed"), companyEvaluation: cell("pending") } }],
+    };
     throw new Error(`gateway 400 (${path})`);
   },
   notify: () => {},
@@ -208,6 +212,38 @@ console.log("Vorgangs-Bewertung (Pipeline-Matrix)");
   check(/5 von 5 Firmenprofile fertig, Teilfehler bei Handelsregister, Jahresabschluesse/.test(txt.headline("„X“")), `Headline nennt Teilfehler statt Totalausfall: ${txt.headline("„X“")}`);
   check(txt.zeilen.some((z) => /Zeitueberschreitung/.test(z)) && txt.zeilen.some((z) => /nicht erreichbar/.test(z)), `Meldung nennt Ursache + Quellen-Hinweis: ${txt.zeilen.join(" | ")}`);
   check(txt.warnung, "Teilfehler → Warnstufe");
+}
+
+console.log("Abhaengigkeiten zur Laufzeit");
+{
+  llmPrompts.length = 0;
+  const TX2 = "tx_publikation_offen";
+  const mk = (id, nodes, connections) => mkDef(id, { name: id, description: "", nodes, connections, trigger: { kind: "manual" }, variables: {}, origin: { kind: "manual" }, settings: { scope: "none" } });
+  const ai = { id: "n2", position: [400, 0], name: "Kasse", type: "ai", mode: "allItems", parameters: { prompt: "Kurzuebersicht zu {{ $json.companyId }}: Kasse $kassenbestand ?? \"unbekannt\"", outputSchema: { type: "object", required: ["text"], properties: { text: { type: "string" } } } } };
+  const nodes = [
+    { id: "n0", position: [0, 0], name: "Start", type: "trigger", parameters: {} },
+    { id: "n1", position: [200, 0], name: "Warten", type: "wait", parameters: { transactionId: TX2, maxHours: 0.1 } },
+    ai,
+  ];
+  const conn = { Start: { main: [[{ node: "Warten", index: 0 }]] }, Warten: { main: [[{ node: "Kasse", index: 0 }]] } };
+  // Trockenlauf: Profil fertig, Publikation offen → Warten (automatisch inkl. Jahresabschluesse) meldet "offen: Jahresabschluesse"
+  const ex = await runner.run(mk("wf_dep", nodes, conn), { trigger: "test", dryRun: true });
+  const hinweis = ex.nodeRuns["Warten"]?.at(-1)?.error ?? "";
+  check(/offen: Jahresabschluesse/.test(hinweis), `Warten-Node wartet automatisch auf Jahresabschluesse ($kassenbestand): ${hinweis}`);
+  // Nur Profil gefordert → gilt als abgeschlossen
+  const nodesBis = nodes.map((n) => (n.name === "Warten" ? { ...n, parameters: { ...n.parameters, bis: ["companyProfile"] } } : n));
+  const ex2 = await runner.run(mk("wf_dep2", nodesBis, conn), { trigger: "test", dryRun: true });
+  const h2 = ex2.nodeRuns["Warten"]?.at(-1);
+  check(!h2?.error && (h2?.hinweise ?? []).some((h) => /Gewartet auf: Firmenprofil/.test(h)), `bis=[Firmenprofil] → abgeschlossen: ${h2?.error ?? h2?.hinweise?.join("|")}`);
+  // Firmen-Lauf in laufendem Vorgang: Node mit $kassenbestand wartet (Trockenlauf → Hinweis)
+  const def3 = mkDef("wf_dep3", { name: "dep3", description: "", nodes: [{ id: "n0", position: [0, 0], name: "Start", type: "trigger", parameters: {} }, { ...ai, id: "n1", position: [200, 0] }], connections: { Start: { main: [[{ node: "Kasse", index: 0 }]] } }, trigger: { kind: "manual" }, variables: {}, origin: { kind: "manual" }, settings: { scope: "company" } });
+  const ex3 = await runner.run(def3, { trigger: "test", dryRun: true, company: { companyId: "c1", transactionId: TX2 } });
+  const h3 = ex3.nodeRuns["Kasse"]?.at(-1)?.hinweise ?? [];
+  check(ex3.status === "success" && h3.some((h) => /Jahresabschluesse noch in Verarbeitung/.test(h)), `Node mit $kassenbestand in laufendem Vorgang: ${JSON.stringify(h3)} ${ex3.error ?? ""}`);
+  // Vorgang mit fertiger Publikation (TX): keine Wartezeit, Hinweis mit Abhaengigkeit
+  const ex4 = await runner.run({ ...def3, id: "wf_dep4" }, { trigger: "manual", company: { companyId: "c1", transactionId: TX } });
+  const h4 = ex4.nodeRuns["Kasse"]?.at(-1)?.hinweise ?? [];
+  check(ex4.status === "success" && h4.some((h) => /Abhaengigkeiten: Jahresabschluesse/.test(h) && /fehlgeschlagen: Jahresabschluesse/.test(h)), `Publikation fehlgeschlagen (Endzustand) → laeuft mit Fallback: ${JSON.stringify(h4)} ${ex4.error ?? ""}`);
 }
 
 if (fails > 0) { console.log(`\n${fails} Fehler`); process.exit(1); }

@@ -125,7 +125,7 @@ export class TransactionWatcher {
               profilFertig: entities.filter((e) => e.state === "completed").length,
               profilFehlgeschlagen: entities.filter((e) => e.state === "failed").length,
               profilOffen: 0, vollstaendig: entities.length, teilfehler: {}, beispiele: {},
-              firmen: entities.map((e) => ({ companyId: e.companyId, state: (e.state ?? "pending") as VorgangsBefund["firmen"][number]["state"], vollstaendig: true, fehlgeschlageneStufen: [], fehler: {} })),
+              firmen: entities.map((e) => ({ companyId: e.companyId, state: (e.state ?? "pending") as VorgangsBefund["firmen"][number]["state"], vollstaendig: true, fehlgeschlageneStufen: [], fehler: {}, stufenFertig: true, offeneStufen: [] })),
             };
           } catch {
             this.deps.audit({ summary: `Vorgangs-Watcher: Vorgang ${tx.id.slice(0, 8)} nicht ladbar: ${err instanceof Error ? err.message : String(err)}`, severity: "warning", metadata: { transactionId: tx.id } });

@@ -135,7 +135,7 @@ export class WorkflowService {
   }
 
   validate(def: WorkflowDefinition): ValidationProblem[] {
-    return validateDefinition(def, (n) => this.toolExists(n));
+    return validateDefinition(def, (n) => this.toolExists(n), (id) => this.store.get(id));
   }
 
   /** Grund, warum der Workflow gerade nicht laufen kann (Policy, Modell). */
@@ -434,7 +434,7 @@ export class WorkflowService {
       // Ein Lauf je Firma: das Ereignis muss eine Firma tragen (companyId oder discoveryId).
       const company: CompanyScope | undefined =
         typeof payload.companyId === "string" && payload.companyId
-          ? { companyId: payload.companyId, companyName: typeof payload.companyName === "string" ? payload.companyName : undefined }
+          ? { companyId: payload.companyId, companyName: typeof payload.companyName === "string" ? payload.companyName : undefined, ...(typeof payload.transactionId === "string" ? { transactionId: payload.transactionId } : {}) }
           : typeof payload.discoveryId === "string"
             ? { discoveryId: payload.discoveryId, companyName: typeof payload.name === "string" ? payload.name : undefined }
             : undefined;

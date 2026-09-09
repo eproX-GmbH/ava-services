@@ -137,6 +137,35 @@ const { normalizeTrigger, normalizeVariables } = await load("../src/main/workflo
   console.log("  ok");
 }
 
+console.log("Abhaengigkeiten");
+{
+  const { nodeRequirements, waitStages, dependencyProblems, stagesForPlaceholder } = await load("../src/shared/workflow-dependencies.ts");
+  const eq = (a, b, msg) => { if (JSON.stringify(a) !== JSON.stringify(b)) throw new Error(`${msg}: ${JSON.stringify(a)} != ${JSON.stringify(b)}`); };
+  eq(stagesForPlaceholder("kassenbestand"), ["companyPublication"], "kassenbestand");
+  eq(stagesForPlaceholder("umsatz_letztes_jahr"), ["companyPublication"], "umsatz");
+  eq(stagesForPlaceholder("geschaeftsfuehrer"), ["structuredContent"], "gf");
+  eq(stagesForPlaceholder("ansprechpartner_vertrieb"), ["companyContact"], "ansprechpartner");
+  eq(stagesForPlaceholder("branche"), ["companyProfile"], "unbekannt → Profil");
+  const ai = { name: "Mail", type: "ai", parameters: { prompt: "Kasse: $kassenbestand ?? \"unbekannt\"; GF {{ $company.register.legalForm }}" } };
+  eq(nodeRequirements(ai).map((r) => r.stage).sort(), ["companyPublication", "structuredContent"], "Node-Anforderungen");
+  eq(nodeRequirements({ ...ai, dependsOn: ["website"] }).map((r) => r.stage).sort(), ["companyPublication", "structuredContent", "website"], "dependsOn ergaenzt");
+  eq(nodeRequirements({ name: "x", type: "filter", parameters: { condition: "{{ $json.a > 1 }}" } }), [], "keine Anforderung");
+  const def = { ...basis, nodes: [
+    { id: "n0", name: "Start", type: "trigger", position: [0, 0], parameters: {} },
+    { id: "n1", name: "Warten", type: "wait", position: [1, 0], parameters: { transactionId: "{{ $json.transactionId }}" } },
+    { id: "n2", name: "Bericht", type: "subworkflow", position: [2, 0], parameters: { workflowId: "sub1" } },
+  ], connections: { Start: { main: [[{ node: "Warten", index: 0 }]] }, Warten: { main: [[{ node: "Bericht", index: 0 }]] } } };
+  const sub1 = { ...basis, id: "sub1", name: "Sub", nodes: [{ id: "s0", name: "Start", type: "trigger", position: [0, 0], parameters: {} }, ai], connections: {} };
+  const w = waitStages(def, def.nodes[1], (id) => (id === "sub1" ? sub1 : null));
+  eq(w.stufen.sort(), ["companyProfile", "companyPublication", "structuredContent"], "Warten automatisch inkl. Sub-Workflow");
+  if (!w.automatisch) throw new Error("automatisch erwartet");
+  const defBis = { ...def, nodes: def.nodes.map((n) => (n.name === "Warten" ? { ...n, parameters: { ...n.parameters, bis: ["companyProfile"] } } : n)) };
+  const probs = dependencyProblems(defBis, (id) => (id === "sub1" ? sub1 : null));
+  if (probs.length !== 1 || !/Jahresabschluesse/.test(probs[0].message)) throw new Error("Validierungs-Hinweis erwartet: " + JSON.stringify(probs));
+  if (dependencyProblems(def, (id) => (id === "sub1" ? sub1 : null)).length !== 0) throw new Error("automatisch → kein Hinweis");
+  console.log("  ok");
+}
+
 console.log("Validierung");
 const def = {
   id: "wf_1", name: "T", description: "", version: 1, enabled: true, createdAt: "x", updatedAt: "x", createdBy: "user",
