@@ -551,6 +551,39 @@ export function WorkflowEditor(): JSX.Element {
               </label>
               {def.trigger.kind === "schedule" && (def.settings.scope ?? "company") === "company" && (
                 <label className="field">
+                  <span>Firmenquelle (je Firma ein Lauf)</span>
+                  <select
+                    value={def.trigger.companySource?.kind ?? "list"}
+                    onChange={(e) => {
+                      const k = e.target.value as "list" | "radarHot" | "transaction" | "allCompanies";
+                      const t = def.trigger as Extract<WorkflowTrigger, { kind: "schedule" }>;
+                      setTrigger({
+                        ...t,
+                        companySource: k === "list" ? { kind: "list" } : k === "radarHot" ? { kind: "radarHot", minScore: 70, nurNeue: true } : k === "transaction" ? { kind: "transaction", transactionId: "" } : { kind: "allCompanies", limit: 200 },
+                      });
+                    }}
+                  >
+                    <option value="list">feste Liste (companyIds unten)</option>
+                    <option value="radarHot">Radar: heiße Kandidaten (Score ab Schwelle, noch nicht importiert)</option>
+                    <option value="transaction">alle Firmen eines Vorgangs</option>
+                    <option value="allCompanies">alle meine Firmen</option>
+                  </select>
+                </label>
+              )}
+              {def.trigger.kind === "schedule" && def.trigger.companySource?.kind === "radarHot" && (
+                <label className="field">
+                  <span>Mindest-Score</span>
+                  <input type="number" min={0} max={100} value={def.trigger.companySource.minScore ?? 70} onChange={(e) => setTrigger({ ...(def.trigger as Extract<WorkflowTrigger, { kind: "schedule" }>), companySource: { kind: "radarHot", minScore: Number(e.target.value), nurNeue: true } })} />
+                </label>
+              )}
+              {def.trigger.kind === "schedule" && def.trigger.companySource?.kind === "transaction" && (
+                <label className="field">
+                  <span>Vorgangs-ID</span>
+                  <input value={def.trigger.companySource.transactionId} onChange={(e) => setTrigger({ ...(def.trigger as Extract<WorkflowTrigger, { kind: "schedule" }>), companySource: { kind: "transaction", transactionId: e.target.value.trim() } })} />
+                </label>
+              )}
+              {def.trigger.kind === "schedule" && (def.settings.scope ?? "company") === "company" && (
+                <label className="field">
                   <span>Firmen für den Zeitplan (companyIds, eine je Zeile)</span>
                   <textarea
                     rows={4}

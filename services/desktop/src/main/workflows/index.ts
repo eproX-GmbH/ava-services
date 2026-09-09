@@ -32,9 +32,11 @@ export interface WorkflowServiceDeps {
   isSignedIn: () => boolean;
   emit: (frame: WorkflowProgressFrame) => void;
   audit: (entry: { action: string; severity: "info" | "warning" | "error"; summary: string; metadata: Record<string, unknown> }) => void;
-  notify: (title: string, body: string) => void;
+  notify: (m: { art: "fertig" | "freigabe" | "fehler"; title: string; body: string; workflowId: string; executionId: string; approvalId?: string }) => void;
   /** Feature-Vorgabe der Organisation. */
   featureEnabled: () => boolean;
+  /** Gateway-Lesezugriff fuer dynamische Firmenquellen (Matrix, Vorgaenge). */
+  gatewayRequest: <T>(path: string) => Promise<T>;
 }
 
 export class WorkflowService {
@@ -277,6 +279,50 @@ export class WorkflowService {
     }
   }
 
+  /** Firmen fuer einen Zeitplan-Lauf: feste Liste + dynamische Quelle. */
+  async resolveCompanySource(w: WorkflowDefinition): Promise<CompanyScope[]> {
+    if (w.trigger.kind !== "schedule") return [];
+    const out: CompanyScope[] = (w.trigger.companyIds ?? []).map((companyId) => ({ companyId }));
+    const src = w.trigger.companySource;
+    if (!src || src.kind === "list") return out;
+    if (src.kind === "radarHot") {
+      const tool = this.deps.registry.get("discovery_candidates");
+      if (!tool) throw new Error("discovery_candidates nicht verfuegbar");
+      const r = (await tool.run(tool.parseArgs({ limit: 200 }), this.leseKontext())) as { rows?: Array<Record<string, unknown>>; candidates?: Array<Record<string, unknown>> };
+      const rows = r.rows ?? r.candidates ?? [];
+      const min = src.minScore ?? 70;
+      for (const row of rows) {
+        const score = typeof row.matchScore === "number" ? row.matchScore : null;
+        if (score === null || score < min) continue;
+        if (src.nurNeue !== false && row.bereitsInAva === true) continue;
+        if (typeof row.discoveryId === "string") out.push({ discoveryId: row.discoveryId, companyName: typeof row.name === "string" ? row.name : undefined });
+      }
+      return out;
+    }
+    if (src.kind === "transaction") {
+      const r = await this.deps.gatewayRequest<{ items?: Array<{ companyId: string; state?: string }> }>(`/v1/transactions/${encodeURIComponent(src.transactionId)}/entities?pageSize=500`);
+      for (const e of r.items ?? []) if (e.companyId && (e.state === undefined || e.state === "completed")) out.push({ companyId: e.companyId });
+      return out;
+    }
+    if (src.kind === "allCompanies") {
+      const limit = Math.min(src.limit ?? 200, 500);
+      let page = 1;
+      while (out.length < limit) {
+        const r = await this.deps.gatewayRequest<{ companies?: Array<{ companyId: string; name?: string }> }>(`/v1/companies/matrix?pageNumber=${page}&pageSize=100`);
+        const rows = r.companies ?? [];
+        for (const c of rows) if (out.length < limit) out.push({ companyId: c.companyId, companyName: c.name });
+        if (rows.length < 100) break;
+        page++;
+      }
+      return out;
+    }
+    return out;
+  }
+
+  private leseKontext(): import("../agent/types").ToolContext {
+    return { signal: new AbortController().signal, log: () => {}, ui: undefined as unknown as import("../agent/ui-bridge").UiBridge, autonomousMode: true };
+  }
+
   private nextRunAt(w: WorkflowDefinition, lastStartedAt: string | null): string | null {
     if (!w.enabled || w.trigger.kind !== "schedule") return null;
     const t = w.trigger;
@@ -319,19 +365,34 @@ export class WorkflowService {
         due = okDay && now >= at.getTime() && now - at.getTime() < AT_WINDOW_MS && lastMs < at.getTime();
       }
       if (!due) continue;
-      // Ein Lauf je Firma: Zeitplan mit fester Firmenliste laeuft nacheinander je Firma.
-      const firmen = t.companyIds ?? [];
-      if ((w.settings.scope ?? "company") === "company" && firmen.length === 0) {
-        this.deps.audit({ action: "workflow.run.skipped", severity: "warning", summary: `Workflow „${w.name}“ (Zeitplan) uebersprungen: keine Firmen im Trigger (companyIds) — Zeitplan-Workflows brauchen eine Firmenliste oder scope "none"`, metadata: { workflowId: w.id } });
+      // Ein Lauf je Firma: Firmen aus fester Liste und/oder dynamischer Quelle.
+      const scopePflicht = (w.settings.scope ?? "company") === "company";
+      let firmen: CompanyScope[] = [];
+      try {
+        firmen = scopePflicht ? await this.resolveCompanySource(w) : [];
+      } catch (err) {
+        this.deps.audit({ action: "workflow.run.error", severity: "error", summary: `Workflow „${w.name}“ (Zeitplan): Firmenquelle nicht lesbar — ${err instanceof Error ? err.message : String(err)}`, metadata: { workflowId: w.id } });
         continue;
       }
+      if (scopePflicht && firmen.length === 0) {
+        this.deps.audit({ action: "workflow.run.skipped", severity: "warning", summary: `Workflow „${w.name}“ (Zeitplan) uebersprungen: keine Firmen (Trigger ohne companyIds/companySource oder Quelle leer)`, metadata: { workflowId: w.id } });
+        continue;
+      }
+      // Firmen, die in diesem Zeitfenster schon liefen, ueberspringen (Zeitplan-Idempotenz).
+      const state = this.store.getState(w.id);
+      const fensterMs = t.intervalMinutes ? t.intervalMinutes * 60_000 : 20 * 3600_000;
+      const offen = firmen.filter((f) => {
+        const key = f.companyId ? `companyId:${f.companyId}` : `discoveryId:${f.discoveryId}`;
+        const last = state.scopeRuns[key];
+        return !last || now - Date.parse(last) >= fensterMs;
+      });
       try {
-        if (firmen.length === 0) {
+        if (!scopePflicht) {
           await this.run(w.id, { trigger: "schedule" });
         } else {
-          for (const companyId of firmen) {
-            if (!w.enabled) break;
-            await this.run(w.id, { trigger: "schedule", company: { companyId } });
+          for (const company of offen.slice(0, 100)) {
+            if (!this.store.get(w.id)?.enabled) break;
+            await this.run(w.id, { trigger: "schedule", company });
           }
         }
       } catch (err) {

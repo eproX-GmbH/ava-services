@@ -91,6 +91,8 @@ export interface TelegramInboundDeps {
     summary: string;
     metadata: Record<string, unknown>;
   }) => void;
+  /** W4 — Workflow-Freigaben per Telegram (lazy). */
+  getWorkflows?: () => import("../workflows").WorkflowService | null;
 }
 
 export class TelegramInbound {
@@ -98,6 +100,7 @@ export class TelegramInbound {
   private readonly orchestrator: AgentOrchestrator;
   private readonly onAudit?: TelegramInboundDeps["onAudit"];
   private readonly transcribe?: TelegramInboundDeps["transcribe"];
+  private readonly getWorkflows?: TelegramInboundDeps["getWorkflows"];
 
   private running = false;
   private loopHandle: Promise<void> | null = null;
@@ -116,6 +119,7 @@ export class TelegramInbound {
     this.orchestrator = deps.orchestrator;
     this.onAudit = deps.onAudit;
     this.transcribe = deps.transcribe;
+    this.getWorkflows = deps.getWorkflows;
   }
 
   /** Startet/stoppt anhand der aktuellen Konfiguration. Idempotent. */
@@ -190,6 +194,11 @@ export class TelegramInbound {
             );
             continue;
           }
+          // W4 — Workflow-Freigaben: /freigaben, /ja <id>, /nein <id>
+          if (/^\/(freigaben|ja|nein)\b/i.test(text)) {
+            await this.handleWorkflowCommand(text);
+            continue;
+          }
           await this.pace();
           if (u.chat.photoFileId) {
             // Bild: sammeln und auf die Erklärung warten.
@@ -209,6 +218,40 @@ export class TelegramInbound {
         await sleep(ERROR_BACKOFF_MS);
       }
     }
+  }
+
+  /** W4 — Offene Workflow-Freigaben lesen und entscheiden. */
+  private async handleWorkflowCommand(text: string): Promise<void> {
+    const svc = this.getWorkflows?.() ?? null;
+    if (!svc) {
+      await this.reply("Workflows sind gerade nicht verfügbar.");
+      return;
+    }
+    const m = /^\/(freigaben|ja|nein)\b\s*(\S+)?\s*([\s\S]*)$/i.exec(text);
+    const cmd = (m?.[1] ?? "").toLowerCase();
+    if (cmd === "freigaben") {
+      const offen = svc.approvals("open");
+      if (offen.length === 0) {
+        await this.reply("Keine offenen Freigaben.");
+        return;
+      }
+      await this.reply(
+        offen
+          .slice(0, 10)
+          .map((a) => `• ${a.workflowName} · „${a.nodeName}“: ${a.prompt}\n  /ja ${a.id}  oder  /nein ${a.id}`)
+          .join("\n\n"),
+      );
+      return;
+    }
+    const id = m?.[2];
+    if (!id) {
+      await this.reply(`Bitte die Freigabe-ID angeben, z. B. „/${cmd} ap_abc123“. Liste: /freigaben`);
+      return;
+    }
+    const approved = cmd === "ja";
+    const ok = svc.decideApproval(id, approved, m?.[3]?.trim() || undefined);
+    await this.reply(ok ? (approved ? `✅ Freigegeben (${id}) — der Workflow läuft weiter.` : `⛔ Abgelehnt (${id}) — der Workflow-Lauf wird abgebrochen.`) : `Freigabe ${id} nicht gefunden oder bereits entschieden.`);
+    this.onAudit?.({ severity: "info", summary: `Telegram: Workflow-Freigabe ${id} ${approved ? "erteilt" : "abgelehnt"}`, metadata: { approvalId: id, approved } });
   }
 
   /** Entzerrt aufeinanderfolgende Anfragen, ohne welche zu verwerfen. */

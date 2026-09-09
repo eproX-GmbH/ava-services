@@ -2052,6 +2052,8 @@ const agent = new AgentOrchestrator({
 telegramInbound = new TelegramInbound({
   store: telegramStore,
   orchestrator: agent,
+  // W4 — Freigaben per Telegram (/freigaben, /ja <id>, /nein <id>).
+  getWorkflows: () => workflowService,
   // v0.1.419 — Sprachnachrichten lokal transkribieren. Whisper ist bereits
   // gebuendelt; damit verlaesst auch die Sprache den Rechner nicht.
   // v0.1.470 — Boot-Rennen: Die Telegram-Schleife kann eine wartende
@@ -3010,13 +3012,30 @@ app.whenReady().then(async () => {
         summary: entry.summary,
         metadata: entry.metadata,
       }),
-    notify: (title, body) => {
-      try {
-        if (Notification.isSupported()) new Notification({ title, body: body.slice(0, 200) }).show();
-      } catch {
-        /* keine Notifications */
+    // Meldung unter „Meldungen“ + OS-Toast + Telegram (ueber den Alert-Fanout).
+    notify: (m) => {
+      const alert = alerts.add({
+        tenantId: null,
+        companyId: "",
+        companyName: "Workflow",
+        kind: "workflow",
+        severity: m.art === "freigabe" ? "warn" : m.art === "fehler" ? "warn" : "info",
+        headline: m.title,
+        rationale: m.body,
+        sourceRef: `workflow:${m.executionId}:${m.approvalId ?? m.art}`,
+      });
+      if (alert) {
+        broadcastAlertsChanged();
+        notifications.notifyForAlert(alert);
+      } else {
+        try {
+          if (Notification.isSupported()) new Notification({ title: m.title, body: m.body.slice(0, 200) }).show();
+        } catch {
+          /* keine Notifications */
+        }
       }
     },
+    gatewayRequest: (path) => gatewayClient.request(path),
   });
   workflowService.start();
   // W4 — Workflow-Trigger alert.created.

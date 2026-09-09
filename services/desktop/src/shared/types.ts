@@ -1103,7 +1103,8 @@ export type AlertKind =
   | "linkedin-signal"  // L6: LinkedIn-Beobachter strong signal
   | "reminder"         // v0.1.305: User-Reminder, vom ScheduledJob ausgelöst
   | "link-change"      // LM: überwachter Link hat sich geändert
-  | "radar-match";     // Phase 4 Discovery: neuer heißer ICP-Kandidat im Radar
+  | "radar-match"      // Phase 4 Discovery: neuer heißer ICP-Kandidat im Radar
+  | "workflow";        // W4: Workflow-Lauf beendet / Freigabe offen
 
 export interface Alert {
   id: string;

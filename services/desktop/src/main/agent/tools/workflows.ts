@@ -136,7 +136,12 @@ export function buildWorkflowTools(deps: WorkflowToolDeps): Tool[] {
         nodes: { type: "array", items: { type: "object" } },
         connections: { type: "object" },
         variables: { type: "object", description: "{ name: { label, type, value } }" },
-        trigger: { type: "object", description: "{ kind: 'manual' | 'schedule' | 'event' | 'chat', intervalMinutes?, at?: 'HH:MM', weekdays?, event? }" },
+        trigger: {
+          type: "object",
+          description:
+            "{ kind: 'manual' | 'schedule' | 'event' | 'chat', intervalMinutes?, at?: 'HH:MM', weekdays?, event?, companyIds?: string[], companySource?: " +
+            "{ kind: 'list' } | { kind: 'radarHot', minScore?: number, nurNeue?: boolean } | { kind: 'transaction', transactionId } | { kind: 'allCompanies', limit? } } — Zeitplan: je Firma ein Lauf",
+        },
         settings: { type: "object" },
       },
     },

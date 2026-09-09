@@ -69,6 +69,8 @@ export type WorkflowTrigger =
       /** Ein Lauf je Firma: feste Firmenliste (companyIds). Ohne Liste laeuft
        *  ein Zeitplan nur bei settings.scope === "none". */
       companyIds?: string[];
+      /** Dynamische Firmenquelle (statt/zusaetzlich zu companyIds). */
+      companySource?: WorkflowCompanySource;
     }
   | {
       kind: "event";
@@ -76,6 +78,13 @@ export type WorkflowTrigger =
       filter?: Record<string, unknown>;
     }
   | { kind: "chat" };
+
+/** Woher ein Zeitplan seine Firmen nimmt — je Firma ein Lauf. */
+export type WorkflowCompanySource =
+  | { kind: "list" }
+  | { kind: "radarHot"; minScore?: number; nurNeue?: boolean }
+  | { kind: "transaction"; transactionId: string }
+  | { kind: "allCompanies"; limit?: number };
 
 export type WorkflowEventKind = "radar.newHot" | "mail.inbound" | "alert.created" | "import.finished";
 

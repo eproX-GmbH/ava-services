@@ -26,7 +26,7 @@ import type {
   WorkflowNodeRun,
   WorkflowProgressFrame,
 } from "../../shared/workflow-types";
-import type { WorkflowStore } from "./store";
+import type { WorkflowStore, WorkflowState } from "./store";
 import { isToolAllowedInWorkflows, toolActionKind } from "./catalog";
 import { resultToItems } from "./runner-items";
 import { buildCompanyContext, type CompanyContext, type CompanyScope } from "./context";
@@ -48,8 +48,8 @@ export interface RunnerDeps {
   audit: (entry: { action: string; severity: "info" | "warning" | "error"; summary: string; metadata: Record<string, unknown> }) => void;
   /** Sub-Workflows: Definition nachladen. */
   getDefinition: (id: string) => WorkflowDefinition | null;
-  /** Meldung an den Nutzer (Notification / Meldungen). */
-  notify: (title: string, body: string) => void;
+  /** Meldung an den Nutzer (Meldungen-Panel, OS-Notification, Telegram). */
+  notify: (m: { art: "fertig" | "freigabe" | "fehler"; title: string; body: string; workflowId: string; executionId: string; approvalId?: string }) => void;
 }
 
 export interface RunOptions {
@@ -187,6 +187,9 @@ export class WorkflowRunner {
       this.running.delete(execution.id);
       execution.finishedAt = new Date().toISOString();
       execution.summary = this.summarize(ctx);
+      if (opts.company?.companyId || opts.company?.discoveryId) {
+        state.scopeRuns[opts.company.companyId ? `companyId:${opts.company.companyId}` : `discoveryId:${opts.company.discoveryId}`] = execution.startedAt;
+      }
       this.deps.store.saveState(def.id, state);
       this.deps.store.saveExecution(execution);
       this.deps.store.pruneExecutions(def.id);
@@ -198,7 +201,13 @@ export class WorkflowRunner {
         metadata: { workflowId: def.id, executionId: execution.id, error: execution.error ?? null },
       });
       if (def.settings.notifyOnFinish && depth === 0 && opts.trigger !== "test") {
-        this.deps.notify(`Workflow „${def.name}“ ${statusText(execution.status)}`, execution.summary ?? "");
+        this.deps.notify({
+          art: execution.status === "error" ? "fehler" : "fertig",
+          title: `Workflow „${def.name}“ ${statusText(execution.status)}`,
+          body: execution.summary ?? "",
+          workflowId: def.id,
+          executionId: execution.id,
+        });
       }
     }
     return execution;
@@ -565,7 +574,14 @@ export class WorkflowRunner {
     if (run) run.status = "paused";
     this.deps.store.saveExecution(ctx.execution);
     this.deps.emit({ kind: "approval-open", approval });
-    this.deps.notify(`Workflow „${ctx.def.name}“ wartet auf Freigabe`, prompt);
+    this.deps.notify({
+      art: "freigabe",
+      title: `Workflow „${ctx.def.name}“ wartet auf Freigabe`,
+      body: `${prompt}\nPer Telegram: /ja ${approval.id} oder /nein ${approval.id}`,
+      workflowId: ctx.def.id,
+      executionId: ctx.execution.id,
+      approvalId: approval.id,
+    });
     this.deps.audit({ action: "workflow.approval.open", severity: "info", summary: `Freigabe offen: ${prompt}`, metadata: { workflowId: ctx.def.id, executionId: ctx.execution.id, approvalId: approval.id, items: items.length } });
     const result = await new Promise<{ approved: boolean; note?: string }>((resolve, reject) => {
       const timer = setTimeout(() => {
@@ -754,7 +770,7 @@ interface RunContext {
   signal: AbortSignal;
   nodeOutputs: Map<string, WorkflowItem[][]>;
   pairedFrom: Map<string, string>;
-  state: { processedKeys: Record<string, string[]>; mailsToday: { day: string; count: number } };
+  state: WorkflowState;
   depth: number;
   mailsSent: number;
   itemsProduced: number;

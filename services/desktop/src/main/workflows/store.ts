@@ -40,6 +40,13 @@ const triggerSchema = yup.object({
   at: yup.string().matches(/^\d{2}:\d{2}$/).optional(),
   weekdays: yup.array().of(yup.number().integer().min(0).max(6).required()).optional(),
   companyIds: yup.array().of(yup.string().trim().min(1).required()).max(200).optional(),
+  companySource: yup.object({
+    kind: yup.string().oneOf(["list", "radarHot", "transaction", "allCompanies"]).required(),
+    minScore: yup.number().min(0).max(100).optional(),
+    nurNeue: yup.boolean().optional(),
+    transactionId: yup.string().optional(),
+    limit: yup.number().integer().min(1).max(500).optional(),
+  }).optional(),
   event: yup.string().oneOf(["radar.newHot", "mail.inbound", "alert.created", "import.finished"]).optional(),
   filter: yup.object().optional(),
 });
@@ -74,6 +81,14 @@ const definitionSchema = yup.object({
   pinData: yup.object().optional(),
   sharedFrom: yup.object().nullable().optional(),
 });
+
+/** Idempotenz-/Laufzustand je Workflow. */
+export interface WorkflowState {
+  processedKeys: Record<string, string[]>;
+  mailsToday: { day: string; count: number };
+  /** Firma (companyId:… / discoveryId:…) → letzter Zeitplan-Lauf (ISO). */
+  scopeRuns: Record<string, string>;
+}
 
 export interface ValidationProblem {
   node?: string;
@@ -324,21 +339,24 @@ export class WorkflowStore {
     return join(this.dir, "state", `${workflowId}.json`);
   }
 
-  getState(workflowId: string): { processedKeys: Record<string, string[]>; mailsToday: { day: string; count: number } } {
+  getState(workflowId: string): WorkflowState {
     const p = this.statePath(workflowId);
-    if (!existsSync(p)) return { processedKeys: {}, mailsToday: { day: "", count: 0 } };
+    if (!existsSync(p)) return { processedKeys: {}, mailsToday: { day: "", count: 0 }, scopeRuns: {} };
     try {
       const raw = JSON.parse(readFileSync(p, "utf8"));
       return {
         processedKeys: raw.processedKeys ?? {},
         mailsToday: raw.mailsToday ?? { day: "", count: 0 },
+        scopeRuns: raw.scopeRuns ?? {},
       };
     } catch {
-      return { processedKeys: {}, mailsToday: { day: "", count: 0 } };
+      return { processedKeys: {}, mailsToday: { day: "", count: 0 }, scopeRuns: {} };
     }
   }
 
-  saveState(workflowId: string, state: { processedKeys: Record<string, string[]>; mailsToday: { day: string; count: number } }): void {
+  saveState(workflowId: string, state: WorkflowState): void {
+    const keys = Object.keys(state.scopeRuns);
+    if (keys.length > 5000) for (const k of keys.slice(0, keys.length - 5000)) delete state.scopeRuns[k];
     // Schluessel je Node auf 5000 begrenzen.
     for (const k of Object.keys(state.processedKeys)) {
       const arr = state.processedKeys[k]!;

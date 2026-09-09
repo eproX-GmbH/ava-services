@@ -38,6 +38,7 @@ const KIND_LABEL: Record<AlertKind, string> = {
   reminder: "Erinnerung",
   "link-change": "Link-Änderung",
   "radar-match": "Radar-Treffer",
+  workflow: "Workflow",
 };
 
 const SEVERITY_LABEL: Record<AlertSeverity, string> = {
