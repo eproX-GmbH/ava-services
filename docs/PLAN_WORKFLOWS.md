@@ -536,3 +536,47 @@ W3 kann parallel starten, sobald die Typen aus W1 stehen.
 - v0.1.600: Warten-Node wertet seine Parameter (transactionId, minutes, maxHours) als Expressions aus; vorher kam {{ $json.transactionId }} woertlich an.
 - v0.1.601: Engine-Pruefung aller Nodes (End-to-End-Test scripts/_test-workflows-engine.inner.mjs mit Stub-Tools, Teil von test:workflows). Behoben: Schleifen-Rueckkanten blockierten den Loop-Node (nie ausgefuehrt); Tool-Ergebnisse mit error-Feld galten als Erfolg; Warten-Node ohne Vorgang (Import ohne importierbare Firmen, z. B. ohne Ort) meldet die Ursache; Trockenlauf endet am Warten-Node sauber statt mit Folgefehler.
 - v0.1.602: Vorgangs-Abschluss anhand der Pipeline-Matrix je Stufe (transaction-pipeline.ts): massgeblich ist das Firmenprofil je Firma; Teilfehler (Handelsregister/Jahresabschluesse) werden als Ursache mit Beispiel-Fehler und Quellen-Hinweis gemeldet, nicht als Totalausfall. Warten-Node liefert ein Item je Firma (companyId, state, fehlgeschlageneStufen); Vorlage ohne transaction_entities-Schritt. Ereignis import.finished traegt fehlgeschlageneStufen.
+
+## 11. Idee (2026-09-09, noch nicht gebaut): Daten-Abhängigkeiten je Node
+
+Anlass: Ein Node, der `$kassenbestand` braucht, muss den Publikations-Producer
+abwarten; das Firmenprofil ist oft deutlich früher fertig. Heute wartet der
+Warten-Node nur auf das Firmenprofil.
+
+**Grundsatz:** Abhängigkeiten werden aus den Nodes abgeleitet, nicht vom
+Nutzer gepflegt. Manuelles Überschreiben bleibt möglich.
+
+1. **Zuordnung Datenquelle → Stufe.** Jede Kontext-Sektion kommt aus einer
+   Producer-Stufe: Stammdaten → masterData, Firmenprofil → companyProfile,
+   Handelsregister → structuredContent, Jahresabschlüsse/Kennzahlen →
+   companyPublication, Kontakte → companyContact, Bewertung →
+   companyEvaluation, CRM → keine.
+2. **Ableitung je Node (Validierung, ohne Modell).** Expressions
+   (`$company.finanzen…`, `$company.register…`) sind eindeutig. Semantische
+   Platzhalter werden über Wortlisten zugeordnet (kasse/umsatz/bilanz/
+   eigenkapital/ebit → Jahresabschlüsse; geschäftsführer/stammkapital/
+   rechtsform/gründung → Handelsregister; ansprechpartner/e-mail/telefon →
+   Kontakte; sonst → Firmenprofil). Ergebnis: `benoetigteStufen` je Node,
+   im Editor als Chips „Braucht: Jahresabschlüsse ($kassenbestand)“ sichtbar;
+   Override-Feld `dependsOn` am Node.
+3. **Sub-Workflows vererben.** Der Sub-Workflow-Node übernimmt die Vereinigung
+   der Anforderungen des Sub-Workflows; so weiß der Prime-Workflow, worauf
+   er warten muss.
+4. **Warten-Node.** Neuer Parameter `bis` (Stufen-Liste). Leer = automatisch:
+   Vereinigung aller Anforderungen der nachfolgenden Nodes, mindestens
+   Firmenprofil. Abschluss je Firma = alle geforderten Stufen im
+   **Endzustand** (fertig ODER fehlgeschlagen/übersprungen), nicht „erfolgreich“;
+   sonst blockiert ein ausgefallenes Handelsregister den Lauf für immer. Bei
+   fehlgeschlagener Stufe greift der Fallback des Platzhalters
+   (`?? "kein Kassenbestand bekannt"`), der Node bekommt einen Hinweis.
+5. **Läufe ohne Vorgang** (Firma längst importiert, Ereignis, Zeitplan): keine
+   Wartezeit; fehlt die Sektion, greift der Fallback. Nur wenn die Firma in
+   einem laufenden Vorgang steckt, wartet der Node (Pipeline-Matrix je Firma).
+6. **Editor-Warnung.** Warten-Node wartet auf weniger, als nachfolgende Nodes
+   brauchen → Hinweis in der Validierung („Node ‚Mail‘ braucht Jahresabschlüsse,
+   der Warten-Node wartet nur auf das Firmenprofil“).
+
+Offene Entscheidungen: (a) Ableitung + Override oder nur explizit; (b) Standard
+für `bis` leer = automatisch oder = Firmenprofil; (c) maximale Wartezeit je
+Stufe (Publikationen dauern lange); (d) Anzeige der Stufen-Chips auch in der
+Läufe-Ansicht. Aufwand grob 3–4 Tage. Baut auf v0.1.602 (Pipeline-Matrix) auf.
