@@ -246,5 +246,37 @@ console.log("Abhaengigkeiten zur Laufzeit");
   check(ex4.status === "success" && h4.some((h) => /Abhaengigkeiten: Jahresabschluesse/.test(h) && /fehlgeschlagen: Jahresabschluesse/.test(h)), `Publikation fehlgeschlagen (Endzustand) → laeuft mit Fallback: ${JSON.stringify(h4)} ${ex4.error ?? ""}`);
 }
 
+console.log("Fortsetzen nach Neustart");
+{
+  calls.length = 0;
+  const nodes = [
+    { id: "n0", position: [0, 0], name: "Start", type: "trigger", parameters: {} },
+    { id: "n1", position: [200, 0], name: "Importieren", type: "transform", parameters: { fields: { transactionId: "{{ '" + TX + "' }}" } } },
+    { id: "n2", position: [400, 0], name: "Warten", type: "wait", parameters: { transactionId: "{{ $json.transactionId }}", maxHours: 1 } },
+    { id: "n3", position: [600, 0], name: "Nur fertige", type: "filter", parameters: { condition: "{{ $json.state === 'completed' }}" } },
+    { id: "n4", position: [800, 0], name: "Senden", type: "tool", mode: "perItem", confirmed: true, parameters: { tool: "telegram_send_message", args: { text: "fertig {{ $json.companyId }} aus {{ $('Importieren').item.json.transactionId }}" } } },
+  ];
+  const conn = { Start: { main: [[{ node: "Importieren", index: 0 }]] }, Importieren: { main: [[{ node: "Warten", index: 0 }]] }, Warten: { main: [[{ node: "Nur fertige", index: 0 }]] }, "Nur fertige": { main: [[{ node: "Senden", index: 0 }]] } };
+  const def = mkDef("wf_resume", { name: "Resume", description: "", nodes, connections: conn, trigger: { kind: "manual" }, variables: {}, origin: { kind: "manual" }, settings: { scope: "none" } });
+  // Gespeicherter Lauf, der im Warten-Node abgebrochen wurde (App beendet)
+  const t = "2026-09-09T10:00:00.000Z";
+  const stored = { id: "ex_resume1", workflowId: def.id, workflowName: def.name, workflowVersion: 1, trigger: "manual", dryRun: false, status: "running", startedAt: t, nodeRuns: {
+    Start: [{ startedAt: t, finishedAt: t, status: "success", inputItems: 1, outputItems: [1], output: [[{ json: {}, pairedItem: { item: 0 } }]] }],
+    Importieren: [{ startedAt: t, finishedAt: t, status: "success", inputItems: 1, outputItems: [1], output: [[{ json: { transactionId: TX }, pairedItem: { item: 0 } }]] }],
+    Warten: [{ startedAt: t, status: "running", inputItems: 1, outputItems: [] }],
+  } };
+  const ex = await runner.resume(def, stored);
+  check(ex.id === "ex_resume1" && ex.status === "success", `Lauf fortgesetzt und beendet: ${ex.id} ${ex.status} ${ex.error ?? ""}`);
+  const runs = Object.fromEntries(Object.entries(ex.nodeRuns).map(([k, v]) => [k, v.at(-1)]));
+  check(runs["Importieren"]?.finishedAt === t, "fertige Nodes liefen nicht erneut");
+  check(runs["Warten"]?.status === "success" && runs["Warten"]?.outputItems?.[0] === 2, `Warten-Node neu gelaufen: ${runs["Warten"]?.status} ${JSON.stringify(runs["Warten"]?.outputItems)}`);
+  const tg = calls.filter((c) => c.name === "telegram_send_message");
+  check(tg.length === 1 && tg[0].args.text === `fertig c1 aus ${TX}`, `Nachfolger mit gespeicherten Vorgaenger-Ausgaben ($('Importieren')): ${JSON.stringify(tg.map((c) => c.args.text))}`);
+  // Unterbrochen in einem Schreib-Node → abgebrochen mit Hinweis
+  const stored2 = { ...stored, id: "ex_resume2", nodeRuns: { ...stored.nodeRuns, Warten: [{ startedAt: t, finishedAt: t, status: "success", inputItems: 1, outputItems: [2], output: [[{ json: { companyId: "c1", state: "completed", transactionId: TX } }, { json: { companyId: "c2", state: "failed" } }]] }], "Nur fertige": [{ startedAt: t, finishedAt: t, status: "success", inputItems: 2, outputItems: [1], output: [[{ json: { companyId: "c1", state: "completed" } }]] }], Senden: [{ startedAt: t, status: "running", inputItems: 1, outputItems: [] }] } };
+  const ex2 = await runner.resume(def, stored2);
+  check(ex2.status === "cancelled" && /Senden/.test(ex2.error ?? ""), `Unterbrochener Schreib-Node → abgebrochen mit Hinweis: ${ex2.status} ${ex2.error}`);
+}
+
 if (fails > 0) { console.log(`\n${fails} Fehler`); process.exit(1); }
 console.log("\nEngine-Tests ok");

@@ -82,6 +82,30 @@ export class WorkflowService {
     if (changed) this.store.saveApprovals(open);
     this.timer = setInterval(() => void this.tick(), TICK_MS);
     setTimeout(() => void this.tick(), 30_000);
+    // v0.1.607 — Laeufe, die beim Beenden/Update noch liefen, fortsetzen
+    // (Warten-Node) oder als abgebrochen markieren.
+    setTimeout(() => void this.resumeInterrupted(), 20_000);
+  }
+
+  async resumeInterrupted(): Promise<{ fortgesetzt: number; abgebrochen: number }> {
+    let fortgesetzt = 0;
+    let abgebrochen = 0;
+    if (!this.deps.isSignedIn()) return { fortgesetzt, abgebrochen };
+    const laufend = new Set(this.runner.runningExecutions().map((e) => e.id));
+    for (const w of this.store.list()) {
+      for (const ex of this.store.listExecutions(w.id, 20)) {
+        if (ex.status !== "running" || laufend.has(ex.id)) continue;
+        const def = this.store.get(w.id);
+        if (!def) continue;
+        const r = await this.runner.resume(def, ex).catch(() => null);
+        if (r && r.status !== "cancelled") fortgesetzt++;
+        else abgebrochen++;
+      }
+    }
+    if (fortgesetzt + abgebrochen > 0) {
+      this.deps.audit({ action: "workflow.resume", severity: "info", summary: `Unterbrochene Workflow-Laeufe: ${fortgesetzt} fortgesetzt, ${abgebrochen} abgebrochen`, metadata: { fortgesetzt, abgebrochen } });
+    }
+    return { fortgesetzt, abgebrochen };
   }
 
   stop(): void {

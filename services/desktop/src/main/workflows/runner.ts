@@ -68,6 +68,8 @@ export interface RunOptions {
   company?: CompanyScope;
   /** „Bis hierhin ausfuehren“: nach diesem Node stoppen. */
   untilNode?: string;
+  /** Intern: unterbrochenen Lauf fortsetzen (siehe resume()). */
+  resumeFrom?: { execution: WorkflowExecution; doneOutputs: Map<string, WorkflowItem[][]> };
 }
 
 interface PendingApproval {
@@ -84,6 +86,58 @@ export class WorkflowRunner {
   isRunning(workflowId: string): boolean {
     for (const r of this.running.values()) if (r.execution.workflowId === workflowId) return true;
     return false;
+  }
+
+  /**
+   * v0.1.607 — Unterbrochenen Lauf (App beendet/aktualisiert) fortsetzen.
+   * Nur wenn der unterbrochene Schritt ein Warten-Node ist: Das Warten ist
+   * idempotent, die Eingaben liegen als gespeicherte Ausgabe der Vorgaenger
+   * vor. Sonst wird der Lauf als abgebrochen markiert (ein Schreib-Schritt
+   * koennte doppelt laufen).
+   */
+  async resume(def: WorkflowDefinition, stored: WorkflowExecution): Promise<WorkflowExecution> {
+    const abbrechen = (grund: string): WorkflowExecution => {
+      const ex: WorkflowExecution = { ...stored, status: "cancelled", finishedAt: new Date().toISOString(), error: grund };
+      for (const runs of Object.values(ex.nodeRuns)) {
+        const r = runs.at(-1);
+        if (r && r.status === "running") {
+          r.status = "error";
+          r.error = grund;
+          r.finishedAt = ex.finishedAt;
+        }
+      }
+      this.deps.store.saveExecution(ex);
+      this.deps.emit({ kind: "execution-finished", execution: ex });
+      this.deps.audit({ action: "workflow.run.cancelled", severity: "warning", summary: `Workflow „${def.name}“: ${grund}`, metadata: { workflowId: def.id, executionId: ex.id } });
+      return ex;
+    };
+    if (this.running.has(stored.id)) return stored;
+    const offen = Object.entries(stored.nodeRuns).filter(([, runs]) => runs.at(-1)?.status === "running");
+    const [nodeName] = offen[0] ?? [];
+    const node = nodeName ? def.nodes.find((n) => n.name === nodeName) : undefined;
+    if (!node) return abbrechen("Durch Neustart abgebrochen (kein fortsetzbarer Schritt) — bitte erneut starten.");
+    if (node.type !== "wait") return abbrechen(`Durch Neustart abgebrochen im Schritt „${node.name}“ — bitte erneut starten (nur ein Warten-Schritt wird automatisch fortgesetzt).`);
+    const doneOutputs = new Map<string, WorkflowItem[][]>();
+    for (const [name, runs] of Object.entries(stored.nodeRuns)) {
+      const r = runs.at(-1);
+      if (!r || name === nodeName) continue;
+      if ((r.status === "success" || r.status === "skipped") && r.output) doneOutputs.set(name, r.output);
+    }
+    // Vorgaenger des Warten-Nodes muessen Ausgaben haben, sonst fehlt die Eingabe.
+    const vorgaenger = Object.entries(def.connections).filter(([, c]) => (c.main ?? []).flat().some((t) => t.node === nodeName)).map(([from]) => from);
+    if (vorgaenger.length > 0 && !vorgaenger.some((v) => doneOutputs.has(v))) {
+      return abbrechen(`Durch Neustart abgebrochen: Eingaben fuer „${node.name}“ nicht gespeichert — bitte erneut starten.`);
+    }
+    const unterbrochen = stored.nodeRuns[node.name]!.at(-1)!;
+    unterbrochen.status = "error";
+    unterbrochen.error = "Durch Neustart unterbrochen — wird fortgesetzt.";
+    unterbrochen.finishedAt = new Date().toISOString();
+    return this.run(def, {
+      trigger: stored.trigger,
+      dryRun: stored.dryRun,
+      ...(stored.scope ? { company: stored.scope } : {}),
+      resumeFrom: { execution: stored, doneOutputs },
+    });
   }
 
   runningExecutions(): WorkflowExecution[] {
@@ -130,25 +184,27 @@ export class WorkflowRunner {
     if (opts.signal) opts.signal.addEventListener("abort", () => abort.abort(), { once: true });
     const timeout = setTimeout(() => abort.abort(), def.settings.timeoutMinutes * 60_000);
 
-    const execution: WorkflowExecution = {
-      id: `ex_${randomUUID().slice(0, 12)}`,
-      workflowId: def.id,
-      workflowName: def.name,
-      workflowVersion: def.version,
-      trigger: opts.trigger,
-      dryRun: opts.dryRun === true,
-      ...(opts.company ? { scope: opts.company } : {}),
-      status: "running",
-      startedAt: new Date().toISOString(),
-      nodeRuns: {},
-    };
+    const execution: WorkflowExecution = opts.resumeFrom
+      ? { ...opts.resumeFrom.execution, status: "running", finishedAt: undefined, error: undefined }
+      : {
+          id: `ex_${randomUUID().slice(0, 12)}`,
+          workflowId: def.id,
+          workflowName: def.name,
+          workflowVersion: def.version,
+          trigger: opts.trigger,
+          dryRun: opts.dryRun === true,
+          ...(opts.company ? { scope: opts.company } : {}),
+          status: "running",
+          startedAt: new Date().toISOString(),
+          nodeRuns: {},
+        };
     this.running.set(execution.id, { abort, execution });
     this.deps.store.saveExecution(execution);
     this.deps.emit({ kind: "execution-started", execution });
     this.deps.audit({
-      action: "workflow.run.start",
+      action: opts.resumeFrom ? "workflow.run.resume" : "workflow.run.start",
       severity: "info",
-      summary: `Workflow „${def.name}“ gestartet (${opts.trigger}${execution.dryRun ? ", Trockenlauf" : ""})`,
+      summary: `Workflow „${def.name}“ ${opts.resumeFrom ? "nach Neustart fortgesetzt" : "gestartet"} (${opts.trigger}${execution.dryRun ? ", Trockenlauf" : ""})`,
       metadata: { workflowId: def.id, executionId: execution.id, version: def.version },
     });
 
@@ -179,11 +235,19 @@ export class WorkflowRunner {
         execution.contextQuellen = ctx.company.quellen;
         this.deps.store.saveExecution(execution);
       }
-      const start =
-        opts.inputItems && opts.inputItems.length > 0
-          ? opts.inputItems
-          : [{ json: ctx.company ? { ...ctx.company.scope, ...(ctx.company.json.name ? { name: ctx.company.json.name } : {}) } : {} }];
-      await this.runGraph(ctx, new Set(def.nodes.map((n) => n.name)), [{ node: trigger.name, index: 0, items: start }], null);
+      if (opts.resumeFrom) {
+        // Fortsetzung: fertige Nodes gelten als erledigt, ihre gespeicherten
+        // Ausgaben werden an die Nachfolger geliefert; der unterbrochene Node
+        // (Warten) laeuft neu an.
+        for (const [name, outs] of opts.resumeFrom.doneOutputs) ctx.nodeOutputs.set(name, outs);
+        await this.runGraph(ctx, new Set(def.nodes.map((n) => n.name)), [], null, opts.resumeFrom.doneOutputs);
+      } else {
+        const start =
+          opts.inputItems && opts.inputItems.length > 0
+            ? opts.inputItems
+            : [{ json: ctx.company ? { ...ctx.company.scope, ...(ctx.company.json.name ? { name: ctx.company.json.name } : {}) } : {} }];
+        await this.runGraph(ctx, new Set(def.nodes.map((n) => n.name)), [{ node: trigger.name, index: 0, items: start }], null);
+      }
       if (execution.status === "running") execution.status = "success";
     } catch (err) {
       if (abort.signal.aborted && execution.status === "running") {
@@ -248,6 +312,7 @@ export class WorkflowRunner {
     allowed: Set<string>,
     entries: Array<{ node: string; index: number; items: WorkflowItem[] }>,
     collectAt: string | null,
+    doneOutputs?: Map<string, WorkflowItem[][]>,
   ): Promise<WorkflowItem[]> {
     const { def } = ctx;
     const byName = new Map(def.nodes.map((n) => [n.name, n]));
@@ -289,6 +354,20 @@ export class WorkflowRunner {
       pendingPreds.set(e.node, 0);
     }
     const done = new Set<string>();
+    // v0.1.607 — Fortsetzung nach Neustart: bereits fertige Nodes liefern
+    // ihre gespeicherten Ausgaben, ohne erneut zu laufen.
+    if (doneOutputs) {
+      for (const [name, outputs] of doneOutputs) {
+        if (!allowed.has(name)) continue;
+        done.add(name);
+        outputs.forEach((items, outIdx) => {
+          for (const t of def.connections[name]?.main?.[outIdx] ?? []) {
+            if (rueckkanten.has(`${name}→${t.node}`) || doneOutputs.has(t.node)) continue;
+            deliver(t.node, t.index, items);
+          }
+        });
+      }
+    }
     for (;;) {
       if (ctx.signal.aborted) throw new Error("aborted");
       const ready = [...inbox.keys()].filter((n) => !done.has(n) && (pendingPreds.get(n) ?? 0) <= 0);
