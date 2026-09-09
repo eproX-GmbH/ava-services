@@ -10,7 +10,7 @@ const load = async (p) => {
 };
 const { evaluate, resolveValue, referencedNodeNames } = await load("../src/main/workflows/expressions.ts");
 const { compileConversation } = await load("../src/main/workflows/compiler.ts");
-const { validateDefinition } = await load("../src/main/workflows/store.ts");
+const { validateDefinition, parseDefinition } = await load("../src/main/workflows/store.ts");
 const { resultToItems } = await load("../src/main/workflows/runner-items.ts");
 
 const failures = [];
@@ -101,6 +101,25 @@ const intro = draft.nodes.find((n) => n.parameters.tool === "crm_introspect_hubs
 assert(intro.mode === "perItem", "wiederholte Aufrufe zu einem perItem-Node gefaltet");
 assert(String(intro.parameters.args.objectId).includes("$('"), "variierendes Argument → Expression auf Vorgaenger");
 assert(Object.keys(draft.connections).length === 3, "lineare Kanten");
+
+console.log("Schema");
+const basis = {
+  id: "wf_s", name: "S", description: "", version: 1, enabled: true, createdAt: "x", updatedAt: "x", createdBy: "agent",
+  origin: { kind: "chat" }, variables: {}, connections: {},
+  nodes: [{ id: "n0", name: "Start", type: "trigger", position: [0, 0], parameters: {} }],
+};
+let schemaOk = true;
+try { parseDefinition({ ...basis, trigger: { kind: "manual" } }); } catch (e) { schemaOk = false; console.log("   ", e.message); }
+assert(schemaOk, "manueller Trigger ohne companySource/filter validiert (Regression v0.1.595)");
+schemaOk = true;
+try { parseDefinition({ ...basis, trigger: { kind: "schedule", at: "07:00", weekdays: [1, 2] } }); } catch (e) { schemaOk = false; console.log("   ", e.message); }
+assert(schemaOk, "Zeitplan ohne companySource validiert");
+schemaOk = true;
+try { parseDefinition({ ...basis, trigger: { kind: "event", event: "radar.newHot" } }); } catch (e) { schemaOk = false; console.log("   ", e.message); }
+assert(schemaOk, "Ereignis-Trigger ohne filter validiert");
+let schemaFehler = false;
+try { parseDefinition({ ...basis, trigger: { kind: "schedule", companySource: { minScore: 80 } } }); } catch { schemaFehler = true; }
+assert(schemaFehler, "companySource ohne kind wird abgelehnt");
 
 console.log("Validierung");
 const def = {

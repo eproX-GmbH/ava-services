@@ -40,16 +40,23 @@ const triggerSchema = yup.object({
   at: yup.string().matches(/^\d{2}:\d{2}$/).optional(),
   weekdays: yup.array().of(yup.number().integer().min(0).max(6).required()).optional(),
   companyIds: yup.array().of(yup.string().trim().min(1).required()).max(200).optional(),
-  companySource: yup.object({
-    kind: yup.string().oneOf(["list", "radarHot", "transaction", "allCompanies"]).required(),
-    minScore: yup.number().min(0).max(100).optional(),
-    nurNeue: yup.boolean().optional(),
-    transactionId: yup.string().optional(),
-    limit: yup.number().integer().min(1).max(500).optional(),
-  }).optional(),
+  // v0.1.595 — yup setzt fuer Objekt-Schemata standardmaessig {} ein, wenn
+  // der Wert fehlt; dann schlug `kind` als Pflichtfeld fehl, obwohl gar
+  // keine Firmenquelle angegeben war. `.default(undefined)` verhindert das.
+  companySource: yup
+    .object({
+      kind: yup.string().oneOf(["list", "radarHot", "transaction", "allCompanies"]).required(),
+      minScore: yup.number().min(0).max(100).optional(),
+      nurNeue: yup.boolean().optional(),
+      transactionId: yup.string().optional(),
+      limit: yup.number().integer().min(1).max(500).optional(),
+    })
+    .default(undefined)
+    .optional(),
   event: yup.string().oneOf(["radar.newHot", "mail.inbound", "alert.created", "import.finished"]).optional(),
-  filter: yup.object().optional(),
+  filter: yup.object().default(undefined).optional(),
 });
+
 
 const definitionSchema = yup.object({
   id: yup.string().trim().min(1).required(),
@@ -78,8 +85,8 @@ const definitionSchema = yup.object({
   createdAt: yup.string().required(),
   updatedAt: yup.string().required(),
   createdBy: yup.string().oneOf(["user", "agent"]).required(),
-  pinData: yup.object().optional(),
-  sharedFrom: yup.object().nullable().optional(),
+  pinData: yup.object().default(undefined).optional(),
+  sharedFrom: yup.object().default(undefined).nullable().optional(),
 });
 
 /** Idempotenz-/Laufzustand je Workflow. */
@@ -88,6 +95,11 @@ export interface WorkflowState {
   mailsToday: { day: string; count: number };
   /** Firma (companyId:… / discoveryId:…) → letzter Zeitplan-Lauf (ISO). */
   scopeRuns: Record<string, string>;
+}
+
+/** Fuer Tests: Definition gegen das Schema pruefen (wirft bei Fehlern). */
+export function parseDefinition(raw: unknown): WorkflowDefinition {
+  return definitionSchema.validateSync(raw, { stripUnknown: false }) as unknown as WorkflowDefinition;
 }
 
 export interface ValidationProblem {
