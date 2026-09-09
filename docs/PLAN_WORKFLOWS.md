@@ -1,0 +1,474 @@
+# Plan: Workflows — Abläufe aus dem Chat speichern, visualisieren, automatisch laufen lassen
+
+Stand: 2026-09-09 · Ausgangslage: Desktop v0.1.582, 225 Agent-Tools in 36 Dateien,
+Skills (SKILL.md, Prosa-Anleitungen), Scheduler (nur Mail-Loops und Erinnerungen),
+Radar-Automatik, Vollmacht-Stufen (none / additive / mutating), Audit-Trail.
+
+Leitszenario (vom Operator): *„Starte Firmenradar → importiere alle Firmen mit
+Score über 80 → identifiziere Firmen im Maschinenbau mit Kassenbestand über
+100.000 € → ermittle passenden Ansprechpartner aus dem Vertrieb → formuliere eine
+auf das Unternehmen zugeschnittene E-Mail → versende sie an den Vertriebsleiter
+oder die allgemeine Kontaktadresse."* Der Nutzer erarbeitet so einen Ablauf im
+Chat, sagt „speichere die Schritte als Workflow", lässt ihn regelmäßig laufen und
+korrigiert ihn bei Bedarf in einer n8n-artigen Ansicht.
+
+---
+
+## 0. Kurzfassung der Entscheidung
+
+- **Workflows sind gespeicherte, deterministische Tool-Ketten mit Parametern**,
+  keine Prosa. Ein Workflow ist JSON (Nodes + Kanten), das der Desktop-Hauptprozess
+  ohne LLM-Planung abarbeitet. LLM-Arbeit passiert nur in dafür markierten
+  Nodes („KI-Schritt"), mit festem Prompt und Ausgabeschema.
+- **Skills bleiben**, decken aber den anderen Fall ab: Wissen und Vorgehen in
+  Prosa, das der Agent interpretiert. Workflows sind das Gegenteil: exakt,
+  wiederholbar, auditierbar, ohne Interpretationsspielraum.
+- **AVA baut Workflows selbst**: aus dem Tool-Call-Trace einer Konversation
+  („speicher das als Workflow") oder aus einer Beschreibung („bau mir einen
+  Workflow, der …"). Die visuelle Ansicht dient der Kontrolle und kleinen
+  Korrekturen, nicht dem Bau von Null.
+- **Datenmodell nach n8n**: Nodes, Kanten mit Ausgangs-Index (für Verzweigungen),
+  Items-Strom zwischen Nodes (Array von `{ json }`), Expressions zum Verweisen auf
+  Vorgänger-Daten, Loop-/If-/Switch-/Merge-Nodes, Trigger-Node, Ausführungen mit
+  je Node gespeicherter Ein- und Ausgabe, Pin-Daten zum Testen.
+- **Sicherheit über die bestehende Vollmacht**: Schreib-Tools laufen im Workflow
+  nur, wenn die Vollmacht-Stufe die Klasse deckt oder der Node explizit als
+  „bestätigt" freigegeben wurde. Läuft ein Workflow zeitgesteuert, gibt es keinen
+  Dialog; nicht gedeckte Aktionen halten den Lauf an und melden sich.
+
+---
+
+## 1. Was wir von n8n übernehmen und was bewusst nicht
+
+Referenz: n8n-Datenmodell (`INode`, `IConnections`, `INodeExecutionData`),
+Dokumentation zu Data Structure, Loop, Fehlerbehandlung, Pin-Daten,
+Ausführungsreihenfolge v1.
+
+**Übernehmen**
+- **Nodes + Connections.** Jeder Node hat `id`, `name`, `type`, `position`,
+  `parameters`; Kanten sind je Node nach Ausgangs-Index gruppiert
+  (`connections[nodeName].main[outputIndex] = [{ node, index }]`). Das trägt
+  If/Switch (mehrere Ausgänge) und Merge (mehrere Eingänge) ohne Sonderfälle.
+- **Items als Datenstrom.** Zwischen Nodes fließt ein Array von Items
+  `{ json: {...} }`. Ein Node läuft standardmäßig einmal je Item (implizite
+  Schleife); Nodes können auch „einmal für alle Items" laufen. Damit ist
+  „importiere alle Firmen mit Score über 80" ein Filter-Node plus ein Tool-Node,
+  kein Loop-Node.
+- **Expressions.** `{{ $json.score }}`, `{{ $('Firmenradar').item.json.name }}`,
+  `{{ $input.all() }}`, `{{ $vars.mindestScore }}`. Sandbox ohne Netzwerk,
+  ohne Dateizugriff, mit Zeitlimit.
+- **Paired Items.** Jeder Ausgabe-Item merkt sich, aus welchem Eingabe-Item er
+  entstand. So kann ein späterer Node auf Felder eines früheren Nodes zugreifen,
+  ohne dass jeder Node alles durchreichen muss.
+- **Flow-Logik.** If (2 Ausgänge), Switch (n Ausgänge), Merge (Warten auf
+  mehrere Zweige), Loop Over Items mit Ausgängen „loop" und „done" für Batches,
+  Wait (Zeit), Stop-and-Error, Sub-Workflow.
+- **Fehlerverhalten je Node.** `onError: stop | continue | errorOutput`,
+  `retryOnFail`, `maxTries`, `waitBetweenTries`.
+- **Ausführungen als Objekt.** Jede Ausführung speichert je Node Ein- und
+  Ausgabe, Status, Dauer, Fehler; die Ansicht zeigt das am Node („3 Items").
+- **Pin-Daten.** Ausgabe eines Nodes einfrieren, damit beim Testen nicht jedes
+  Mal der Radar-Scan oder die Mail läuft.
+- **Ausführungsreihenfolge v1.** Zweig für Zweig, oben vor unten, links vor
+  rechts. Deterministisch und erklärbar.
+- **Editor-Erlebnis.** Canvas mit Pan/Zoom, Node-Panel mit Eingabe-Daten links,
+  Parametern in der Mitte, Ausgabe rechts; „Schritt ausführen", „Workflow
+  testen", Sticky Notes, Undo/Redo, Copy/Paste von Nodes als JSON.
+
+**Nicht übernehmen**
+- Kein allgemeiner HTTP-/Code-Node mit freiem JavaScript. Die Nodes sind
+  AVA-Tools mit Schema. Ein „Transformieren"-Node deckt Umformungen deklarativ
+  ab (Felder wählen, umbenennen, berechnen mit Expressions), ohne Code.
+- Keine Credentials im Workflow. Zugänge (CRM, Mail, Apify, KI) kommen aus den
+  AVA-Einstellungen; ein Workflow referenziert sie nie direkt. Damit ist ein
+  Workflow innerhalb der Organisation teilbar.
+- Kein Vue Flow (n8n ist Vue). Im React-Renderer nutzen wir **React Flow
+  (`@xyflow/react`)**: gleiche Abstraktionen (Nodes, Edges, Handles, Minimap,
+  Controls, Auto-Layout über `dagre`/`elkjs`), MIT-Lizenz, aktiv gepflegt.
+
+---
+
+## 2. Datenmodell
+
+Datei `services/desktop/src/shared/workflow-types.ts` (shared: Main, Preload,
+Renderer, Chat-Tools nutzen dieselben Typen; Validierung mit yup im Main).
+
+```ts
+export interface WorkflowDefinition {
+  id: string;                      // "wf_" + cuid
+  name: string;                    // "Maschinenbau-Outreach Herford"
+  description: string;
+  version: number;                 // hochgezählt bei jeder Änderung
+  nodes: WorkflowNode[];
+  connections: Record<string, { main: Array<Array<{ node: string; index: number }>> }>;
+  variables: Record<string, WorkflowVariable>;   // Parameter des Workflows ($vars)
+  trigger: WorkflowTrigger;        // genau einer, ist zugleich Node "Start"
+  settings: {
+    executionOrder: "v1";
+    timeoutMinutes: number;        // Default 60
+    maxItemsPerRun: number;        // Default 500 (Kontingent-/Kostenbremse)
+    autonomy: "inherit" | "none" | "additive" | "mutating"; // Deckel je Workflow
+    errorWorkflowId?: string;
+    notifyOnFinish: boolean;       // Meldung unter Meldungen/Telegram
+  };
+  origin: { kind: "chat" | "assistant" | "manual" | "import"; conversationId?: string };
+  createdAt: string; updatedAt: string; createdBy: "user" | "agent";
+  pinData?: Record<string, WorkflowItem[]>;
+}
+
+export interface WorkflowNode {
+  id: string; name: string;        // name eindeutig im Workflow (Expressions verweisen darauf)
+  type: WorkflowNodeType;          // "tool" | "trigger" | "if" | "switch" | "loop" | "merge"
+                                   // | "transform" | "filter" | "ai" | "wait" | "stop" | "subworkflow" | "note"
+  position: [number, number];
+  parameters: Record<string, unknown>;  // je type; bei "tool": { tool: "discovery_scan", args: {...} }
+  mode: "perItem" | "allItems";    // Default perItem
+  disabled?: boolean;
+  onError: "stop" | "continue" | "errorOutput";
+  retryOnFail?: boolean; maxTries?: number; waitBetweenTriesSec?: number;
+  confirmed?: boolean;             // Schreib-Node vom Nutzer für unbeaufsichtigte Läufe freigegeben
+  notes?: string;
+}
+
+export interface WorkflowItem { json: Record<string, unknown>; pairedItem?: { item: number; input?: number } }
+
+export type WorkflowTrigger =
+  | { kind: "manual" }
+  | { kind: "schedule"; intervalMinutes: number; at?: string; weekdays?: number[] }   // "täglich 07:00", "Mo–Fr"
+  | { kind: "event"; event: "radar.newHot" | "mail.inbound" | "alert.created" | "import.finished"; filter?: Record<string, unknown> }
+  | { kind: "chat" };              // Slash-Aufruf /workflow-name oder Tool workflow_run
+
+export interface WorkflowExecution {
+  id: string; workflowId: string; workflowVersion: number;
+  trigger: "manual" | "schedule" | "event" | "chat" | "test";
+  status: "running" | "success" | "error" | "cancelled" | "waiting" | "paused";
+  startedAt: string; finishedAt?: string;
+  nodeRuns: Record<string, Array<{                 // je Node, je Durchlauf (Loops)
+    startedAt: string; finishedAt?: string; status: "success" | "error" | "skipped";
+    inputItems: number; outputItems: number[];     // je Ausgang
+    output?: WorkflowItem[][]; error?: string;     // Ausgabe wird gekürzt gespeichert (max 200 Items, 64 KB je Item)
+    toolCallIds?: string[];                        // Verknüpfung zum Audit
+  }>>;
+  pausedAt?: { node: string; reason: "confirmation" | "wait" | "quota" };
+  summary?: string;                                // Einzeiler fürs Meldungen-Panel
+}
+```
+
+**Speicherung.** `<userData>/workflows/<id>.json` (Definition) und
+`<userData>/workflows/executions/<workflowId>/<executionId>.json` (Läufe,
+Aufbewahrung 90 Tage oder 200 Läufe je Workflow). Kein Gateway-Zwang in W1;
+Teilen in der Organisation (W7) legt die Definition zusätzlich im Gateway ab.
+
+**Beispiel-Workflow (Leitszenario) als Node-Kette**
+
+| # | Node | type | Parameter (gekürzt) | Ausgabe-Items |
+|---|---|---|---|---|
+| 1 | Start | trigger | schedule: täglich 07:00 | 1 leeres Item |
+| 2 | Firmenradar laufen lassen | tool `radar_run` (neu, kapselt Scan → Profile → Match) | – | 1 Item mit Lauf-Zusammenfassung |
+| 3 | Kandidaten lesen | tool `discovery_candidates` (allItems) | `{ minScore: {{ $vars.mindestScore }} }` | n Items (je Firma) |
+| 4 | Score ≥ 80? | filter | `{{ $json.matchScore >= 80 }}` | m Items |
+| 5 | Importieren | tool `discovery_decide` (allItems, Schreib-Node, confirmed) | `decisions: {{ $input.all().map(i => ({discoveryId: i.json.discoveryId, decision: "imported"})) }}` | 1 Item (transactionId) |
+| 6 | Auf Verarbeitung warten | wait `import.finished` | `{{ $json.transactionId }}`, max 6 h | 1 Item |
+| 7 | Firmen des Imports | tool `company_search` (allItems) | `{ transactionId: … }` | k Items |
+| 8 | Maschinenbau + Kasse > 100 T€ | filter | `{{ $json.branche === "Maschinenbau" && $json.finanzen.kassenbestand > 100000 }}` | k' Items |
+| 9 | Ansprechpartner Vertrieb | tool `company_contacts` (perItem) + transform (erster Treffer mit Rolle „Vertrieb", sonst allgemeine Adresse) | – | k' Items |
+| 10 | Mail formulieren | ai (perItem, Ausgabeschema `{ subject, text }`) | Prompt mit `{{ $json.name }}`, `{{ $json.profil.zusammenfassung }}`, Stilvorgabe aus Skill „outreach-stil" | k' Items |
+| 11 | Mail senden | tool `mail_send` (perItem, Schreib-Node) | `to: [{{ $json.empfaenger }}]`, `subject`, `text` | k' Items |
+| 12 | Meldung | tool `alert_create` | „12 Mails versendet" | – |
+
+Offen für die Umsetzung: Node 8 setzt voraus, dass Finanzkennzahlen aus den
+Jahresabschlüssen als strukturierte Felder am Firmenobjekt verfügbar sind
+(heute in `structured-content`; ein lesendes Tool `company_financials` fehlt und
+wird in W2 ergänzt). Node 11 unterliegt weiter der Mail-Allowlist.
+
+---
+
+## 3. Engine (Hauptprozess)
+
+Neues Modul `services/desktop/src/main/workflows/`:
+
+- `store.ts` — Laden/Speichern/Versionieren; Validierung (yup) beim Speichern:
+  Node-Namen eindeutig, alle Kanten zeigen auf existierende Nodes/Ausgänge,
+  genau ein Trigger, keine Zyklen außer über Loop-Node, jeder `tool`-Node
+  referenziert ein registriertes Tool und seine `args` passen zum
+  JSON-Schema des Tools (statisch prüfbar, sofern keine Expression).
+- `expressions.ts` — Expression-Auswertung. Erste Stufe: eigener kleiner
+  Ausdrucks-Interpreter für Pfade, Vergleiche, Arithmetik, String-Templates,
+  `map/filter/find/length` auf Arrays, Datumsfunktionen. Kein `eval`, kein
+  Node-`vm`. Zweite Stufe (falls nötig): `jsep`-Parser mit eigener sicherer
+  Evaluation.
+- `runner.ts` — Ausführung:
+  1. Topologische Reihenfolge nach n8n-v1 (Zweig für Zweig; Position als
+     Tie-Breaker).
+  2. Je Node: Eingabe-Items sammeln (Merge wartet auf alle Eingänge), Modus
+     `perItem` → Node je Item aufrufen, `pairedItem` setzen; `allItems` →
+     einmal mit `$input.all()`.
+  3. Tool-Node: Args aus Parametern und Expressions bauen, `tool.parseArgs`,
+     `tool.run(args, ctx)`. `ctx.ui` ist eine **Workflow-UiBridge**: Bestätigungen
+     werden nicht als Dialog gestellt, sondern gegen Vollmacht + `confirmed`-Flag
+     entschieden (siehe §5); `askChoice/askText` sind im Workflow nicht erlaubt
+     (Fehler „Node braucht Rückfrage — als Parameter festlegen").
+  4. Ergebnisse normalisieren: Tool-Ergebnis-Objekt → Items. Regel: liefert das
+     Tool ein Array unter einem bekannten Schlüssel (`items`, `rows`,
+     `candidates`, `companies`, `contacts`, `results`), wird je Element ein Item;
+     sonst ein Item mit dem ganzen Objekt. Der Node-Katalog (§4) kann das je Tool
+     überschreiben (`outputPath`).
+  5. Fehler je Node nach `onError`; Retry mit Backoff; Abbruch via
+     AbortController (Nutzer-Stopp, Timeout, App-Beenden → Lauf als
+     `cancelled`, Wiederaufnahme nicht in W1).
+  6. Fortschritt als Events (`workflow:progress`) an Renderer und Audit
+     (`workflow.run.*`, je Tool-Call die bestehenden Tool-Audits mit
+     `executionId`-Metadatum).
+- `triggers.ts` — Manuell, Zeitplan (nutzt den vorhandenen
+  `ScheduledJobsSupervisor` mit neuer `kind: "workflow"`), Ereignisse
+  (Abonnements auf interne Emitter: Radar-Alerts, Mail-Eingang, Import
+  abgeschlossen), Chat (Slash `/wf-name` und Tool `workflow_run`).
+- `compiler.ts` — **Trace → Workflow** (§6).
+- `catalog.ts` — Node-Katalog (§4).
+- Nebenläufigkeit: ein Workflow-Lauf zur Zeit je Workflow; global maximal 2
+  parallele Läufe; Workflow-Läufe haben niedrigere Priorität als der
+  interaktive Chat (bestehendes `isLlmBusy`-Muster für KI-Nodes).
+
+Wiederverwendung statt Neubau: Tools laufen über die vorhandene `ToolRegistry`
+(inkl. Anbieter-Sperre `setSperre`), Vollmacht über `autonomyCovers`, Audit über
+`audit()`, Zeitplan über `ScheduledJobsSupervisor`, KI-Node über
+`providers.streamChat({ channel: "background" })`.
+
+---
+
+## 4. Node-Katalog
+
+Der Katalog wird aus der `ToolRegistry` **generiert** plus einer Handvoll
+Logik-Nodes. Je Tool ein Node-Typ `tool:<name>` mit Label, Kategorie
+(aus `category`), Parametern (JSON-Schema des Tools → Formularfelder),
+Ausgabe-Beschreibung, `write: boolean` (aus `isWriteTool`), `outputPath`.
+
+Nicht als Node zulässig: `ask_user_*`, `tool_search`, `tool_load`,
+`skill_*`, `chat_history_*`, `workflow_*` (außer `workflow_run` als
+Sub-Workflow-Node), Tools mit Consent-Charakter (`connect_crm`,
+Schlüssel-Tools). Diese Liste ist ein Allowlist-Filter in `catalog.ts`.
+
+Logik-Nodes (eigene Implementierung, ohne LLM):
+
+| Node | Ausgänge | Zweck |
+|---|---|---|
+| Start (Trigger) | 1 | Auslöser; liefert Trigger-Daten als Item (z. B. eingehende Mail, neuer heißer Treffer) |
+| If | true / false | Bedingung als Expression je Item |
+| Switch | n benannte | Wert-Verzweigung (z. B. Branche) |
+| Filter | 1 | behält Items, für die die Bedingung gilt |
+| Transform | 1 | Felder setzen/umbenennen/entfernen, Werte berechnen |
+| Loop Over Items | loop / done | Batches (z. B. 10 Firmen je Runde, Kontingent-schonend) |
+| Merge | 1 | wartet auf mehrere Zweige; Modus append / nach Schlüssel verbinden |
+| Wait | 1 | Zeit (bis 7 Tage) oder Ereignis (`import.finished`, `transaction.stage`) |
+| Stop and Error | – | Lauf gezielt abbrechen |
+| Sub-Workflow | 1 | anderen Workflow mit Items aufrufen |
+| Note | – | Sticky Note |
+
+KI-Node (`ai`): fester System-Prompt, Nutzer-Prompt mit Expressions, optional
+Skill als Stilvorgabe, **Ausgabeschema Pflicht** (JSON-Schema → yup-Validierung,
+bis zu 2 Reparaturversuche), Modell = Hintergrund-Modell, Kanal `background`.
+Kein Tool-Zugriff innerhalb des KI-Nodes; wer Tools braucht, verbindet einen
+Tool-Node davor oder danach.
+
+---
+
+## 5. Sicherheit, Vollmacht, Kosten
+
+- **Vollmacht.** Beim Speichern klassifiziert der Store jeden Schreib-Node
+  (`isWriteTool` + Klasse `additive | mutating | destructive` aus dem
+  Confirm-Kind des Tools, in W1 als Tabelle gepflegt). Ein Node darf
+  unbeaufsichtigt laufen, wenn (a) die effektive Vollmacht die Klasse deckt
+  oder (b) der Nutzer den Node in der Ansicht als „freigegeben" markiert hat.
+  Löschende Aktionen sind im Workflow nie unbeaufsichtigt, nur mit
+  `confirmed` **und** Vollmacht `mutating`.
+- **Ohne Deckung** hält der Lauf am Node an (`status: paused`, Grund
+  `confirmation`), erzeugt eine Meldung („Workflow X wartet: Mail an 12
+  Empfänger versenden — freigeben?") und lässt sich aus der Ansicht, dem Chat
+  oder Telegram fortsetzen. Wartet ein Lauf länger als 48 h, bricht er ab.
+- **Organisation.** Anbieter-Sperre und Funktions-Vorgaben gelten unverändert:
+  Nodes zu abgeschalteten Funktionen sind im Katalog unsichtbar; ein
+  gespeicherter Workflow mit einem solchen Node ist „nicht ausführbar" mit
+  Begründung. Org-Admins können später (W7) Workflows für Mitglieder
+  bereitstellen und Trigger-Arten einschränken.
+- **Kosten und Kontingente.** `maxItemsPerRun` deckelt; Radar-Scans, Imports und
+  Deep Research zählen weiter gegen Plan-Kontingente und Org-Limits (Kanal
+  `background`). Vor dem Lauf zeigt die Ansicht eine Schätzung (Items × Tool-
+  Kostenklasse), aus dem Katalog gepflegt (frei / Kontingent / KI-Aufrufe /
+  externer Dienst).
+- **Audit.** Jeder Lauf ist ein Audit-Eintrag mit `executionId`; jeder Tool-Call
+  bleibt einzeln auditiert. Das Meldungen-Panel bekommt den Typ
+  `workflow-run`.
+- **Idempotenz.** Tool-Nodes mit natürlichen Schlüsseln (discoveryId, mail
+  Message-ID, HubSpot-ID) merken sich je Workflow verarbeitete Schlüssel
+  (`<userData>/workflows/state/<id>.json`), damit ein täglicher Lauf dieselbe
+  Firma nicht zweimal anschreibt. Der Node-Katalog markiert, welches Feld der
+  Schlüssel ist; die Ansicht zeigt „bereits verarbeitet: 37".
+
+---
+
+## 6. AVA baut Workflows: Trace → Workflow, Beschreibung → Workflow
+
+**A. Aus dem Chat speichern** („speichere die Schritte als Workflow")
+
+1. Tool `workflow_from_conversation` liest die Tool-Calls der Konversation
+   (`AgentMessage.toolCalls` + zugehörige `tool`-Ergebnisse) ab einer
+   Startmarke (Default: seit der letzten Nutzer-Nachricht, die einen neuen
+   Auftrag begann; optional `sinceMessageId`).
+2. **Kompilierung ohne LLM** (`compiler.ts`): Meta-Tools raus
+   (`tool_search`, `tool_load`, `skill_*`, `ask_user_*`), Fehlschläge mit
+   anschließendem erfolgreichem Retry auf den Retry reduziert, Reihenfolge
+   beibehalten, je Tool-Call ein Tool-Node. **Datenfluss-Rekonstruktion:**
+   Argumentwerte, die wörtlich in einem früheren Ergebnis vorkommen
+   (IDs, Domains, E-Mail-Adressen, Namen), werden zu Expressions auf diesen
+   Node (`{{ $('Kandidaten lesen').item.json.discoveryId }}`); wiederholte
+   gleichartige Calls über verschiedene IDs werden zu **einem** Node im Modus
+   `perItem` zusammengefaltet (das ist genau das Muster aus dem
+   `crm_search_hubspot_companies`-Vorfall). `ask_user_choice`-Antworten werden
+   zu Workflow-Variablen (`$vars`), damit sie beim nächsten Lauf gesetzt sind.
+3. **LLM-Nachbearbeitung** (ein Aufruf, Ausgabeschema Pflicht): Node-Namen in
+   Klartext, Beschreibung, Vorschlag für Variablen (was war ein Einmalwert,
+   was ein Parameter?), Vorschlag für Filter-Nodes, wo der Agent im Chat
+   Ergebnisse „im Kopf" gefiltert hat (z. B. Score-Schwelle aus dem Verlauf),
+   Trigger-Vorschlag.
+4. Entwurf wird dem Nutzer als Liste gezeigt (Bestätigungsdialog wie bei
+   `skill_create`) und nach „Speichern" in der Ansicht geöffnet. Nichts läuft
+   automatisch; Trigger ist zunächst `manual`.
+
+**B. Aus einer Beschreibung** („bau mir einen Workflow, der …")
+
+Tool `workflow_draft`: Der Agent bekommt den Node-Katalog (kompakt: Name,
+Zweck, Eingabe-/Ausgabe-Felder) und erzeugt die Definition direkt als JSON
+(Ausgabeschema = `WorkflowDefinition`, ohne Positionen; Auto-Layout im
+Renderer). Validierung wie beim Speichern; Fehler gehen als Liste zurück an
+den Agenten (max 3 Runden). Für unklare Parameter fragt der Agent den Nutzer
+vorher (im Chat, nicht im Workflow).
+
+**C. Testen und Korrigieren im Chat**
+
+`workflow_test_run` (führt aus, Schreib-Nodes im Trockenlauf: Vorschau statt
+Ausführung, wie `dryRun` bei Imports), `workflow_update` (Node-Parameter,
+Kanten, Trigger ändern, mit Bestätigung), `workflow_explain` (erklärt Ablauf
+und letzte Läufe in Prosa), `workflow_run`, `workflow_list`, `workflow_pause`.
+Jede Einstellung ist damit im Chat erreichbar (Regel „Self-Service im Chat").
+
+---
+
+## 7. Ansicht (Renderer)
+
+Route `/workflows` (Liste) und `/workflows/:id` (Editor). Navigation unter
+„Vorgänge → Workflows"; unsichtbar, solange die Org-Policy `workflows`
+abschaltet.
+
+**Liste.** Karten je Workflow: Name, Trigger („täglich 07:00"), letzter Lauf
+mit Status und Einzeiler, nächster Lauf, Schalter aktiv/pausiert, „Jetzt
+ausführen", „Im Chat öffnen".
+
+**Editor** (React Flow):
+- Canvas mit Pan/Zoom, Minimap, Auto-Layout (dagre, links nach rechts wie
+  n8n), Drag von Nodes, Kanten per Handle ziehen, Kanten mit Ausgangs-Label
+  (true/false, loop/done), Undo/Redo, Copy/Paste von Nodes.
+- Node-Karte: Icon nach Kategorie, Name, Untertitel (Tool-Name), Badges
+  (Schreib-Node, freigegeben, deaktiviert, KI), nach einem Lauf „12 Items"
+  am Ausgang; Fehler rot am Node.
+- Rechtes Panel bei Auswahl (n8n-Dreiteilung, hier zweispaltig wegen Platz):
+  **Parameter** als Formular aus dem JSON-Schema; jedes Feld hat einen
+  Umschalter „fester Wert / Expression"; Expression-Editor mit Autovervollständigung
+  aus den Ausgabe-Feldern der Vorgänger (aus Pin-Daten oder letztem Lauf).
+  **Eingabe/Ausgabe** als Tabelle oder JSON (letzter Lauf oder Pin), Pin-Knopf.
+- Aktionen: „Schritt ausführen" (bis zu diesem Node, Vorgänger aus Pin/letztem
+  Lauf), „Workflow testen" (Trockenlauf), „Speichern" (Version +1), „Im Chat
+  ändern" (öffnet Chat mit vorgefülltem Kontext „Workflow X").
+- Node hinzufügen: Palette mit Suche über den Katalog (Kategorien wie im
+  Chat), plus Vorschlagsliste „passt nach diesem Node" (gleiche Heuristik wie
+  `outputPath`/Eingabefelder).
+- Trigger-Panel: manuell / Zeitplan (Intervall, Uhrzeit, Wochentage) /
+  Ereignis / Chat.
+- Läufe-Tab: Tabelle der Ausführungen, Klick öffnet den Lauf auf dem Canvas
+  (Node-Färbung nach Status, Items je Kante).
+- Theme: bestehende Tokens (`--color-indigo-*`), Du-Form, keine
+  unterstrichenen Button-Texte, dunkel/hell wie die übrige App.
+
+Abhängigkeiten: `@xyflow/react` (~120 KB), `dagre` (Layout). Kein
+Monaco-Editor; Expression-Feld ist ein Textfeld mit Vorschlagsliste.
+
+---
+
+## 8. Phasen und Aufwand
+
+Reihenfolge so, dass ab W2 ein nutzbarer Kern existiert und die Ansicht die
+Engine nie blockiert.
+
+| Phase | Inhalt | Aufwand | Ergebnis für Nutzer |
+|---|---|---|---|
+| **W0 Entscheidungen** | §10 abhaken; Feature-Flag `workflows` in Org-Policy; Plan-Tier (Workflows ab Starter? Anzahl Workflows je Plan?) | 0,5 Tag | – |
+| **W1 Kern** | Typen, Store, Validierung, Expressions (Stufe 1), Runner mit Tool-/Filter-/Transform-/If-Nodes, Items-Normalisierung, Workflow-UiBridge, Audit, IPC (list/get/save/run/cancel/executions) | 5 Tage | Workflows als JSON ausführbar (Chat-Tool `workflow_run`), keine Ansicht |
+| **W2 Aus dem Chat** | `compiler.ts` (Trace → Nodes, Datenfluss-Rekonstruktion, Faltung zu perItem), LLM-Nachbearbeitung, Tools `workflow_from_conversation`, `workflow_draft`, `workflow_list/explain/update`; `company_financials`-Lesetool; `radar_run`-Tool | 5 Tage | „Speicher das als Workflow" funktioniert; Workflows per Beschreibung |
+| **W3 Ansicht** | Liste, Editor mit React Flow, Parameter-Formular aus Schema, Expression-Feld mit Vorschlägen, Läufe-Tab, Node-Palette | 7 Tage | Visualisierung und kleine Korrekturen |
+| **W4 Automatik** | Zeitplan-Trigger über ScheduledJobsSupervisor, Ereignis-Trigger (Radar heiß, Mail-Eingang, Import fertig), Wait-Node (Zeit + Ereignis), Meldungen-Typ `workflow-run`, Telegram-Fortsetzung bei `paused` | 4 Tage | Workflows laufen von selbst; Freigabe unterwegs |
+| **W5 Flow-Logik komplett** | Switch, Loop Over Items, Merge, Sub-Workflow, Stop-and-Error, Fehler-Workflow, Retry-Einstellungen, Idempotenz-Schlüssel | 4 Tage | Leitszenario vollständig abbildbar |
+| **W6 Testen** | Pin-Daten, „Schritt ausführen", Trockenlauf für Schreib-Nodes, Kostenschätzung vor dem Lauf | 3 Tage | Sicheres Iterieren ohne echte Mails |
+| **W7 Organisation** | Workflows teilen (Gateway-Ablage `TenantWorkflow`), Vorlagen der Organisation, Admin-Einschränkungen (erlaubte Trigger, Pflicht-Freigabe für Mail-Versand), Export/Import als JSON | 4 Tage | Team-Vorlagen |
+| **W8 Politur** | Undo/Redo, Copy/Paste, Sticky Notes, Auto-Layout-Feinschliff, Onboarding-Beispiele („Radar-Outreach", „Mail-Nachfass", „CRM-Pflege"), Website-Text | 3 Tage | n8n-Gefühl |
+
+Summe rund 35 Arbeitstage. W1 + W2 + W4 (14 Tage) sind der Wert für Nutzer,
+W3 kann parallel starten, sobald die Typen aus W1 stehen.
+
+---
+
+## 9. Was bestehende Bausteine dafür brauchen
+
+- `ToolRegistry`: `list()` liefert bereits alles; ergänzen: `write`-Klasse und
+  `outputPath` je Tool (Metadaten in `defineTool`, Default per Heuristik).
+- `defineTool`: neues optionales Feld `workflow: { outputPath?, itemKey?, costClass?, allowed?: boolean }`.
+- `UiBridge`: Interface extrahieren, damit `WorkflowUiBridge` dieselbe Form
+  hat (`confirmAction` entscheidet statt fragt, `askChoice/askText` werfen).
+- `ScheduledJobsSupervisor`: `kind: "workflow"` mit `workflowId`; Uhrzeit und
+  Wochentage (heute nur Intervall).
+- Ereignis-Quellen als Emitter: `RadarAlertEmitter` (vorhanden), Mail-Eingang
+  (`MailAgentBridge`, vorhanden), Import-Abschluss (Producer-Status →
+  neuer Emitter), Meldungen.
+- Org-Policy: Feature `workflows`; später Trigger-Einschränkungen.
+- Meldungen-Panel: Typ `workflow-run` mit Aktionen „Freigeben", „Öffnen".
+- Website: Abschnitt „Workflows" erst mit W4 („in Arbeit" bis dahin).
+
+---
+
+## 10. Offene Entscheidungen (vor W1)
+
+1. **Plan-Staffelung.** Workflows ab Starter (max 3, nur manuell/Zeitplan) und
+   Pro (unbegrenzt, Ereignis-Trigger)? Free: nur ansehen?
+2. **Mail-Versand unbeaufsichtigt.** Reicht Vollmacht `mutating` + Allowlist,
+   oder ist für `mail_send` in Workflows immer eine Node-Freigabe Pflicht?
+   Empfehlung: Freigabe Pflicht, zusätzlich Tages-Obergrenze je Workflow
+   (Default 20 Mails).
+3. **KI-Node und ChatGPT-Abo.** Workflows sind Hintergrund → Abo gilt nicht;
+   ein Nutzer ohne Schlüssel/lokales Modell kann keine KI-Nodes ausführen.
+   Klar in der Ansicht anzeigen.
+4. **Ausführung ohne laufende App.** Nicht in diesem Plan (Server-Worker ist
+   ein eigenes Vorhaben); Zeitplan-Trigger holen versäumte Läufe beim
+   App-Start nach (max 1 Nachholer je Workflow).
+5. **Expressions-Umfang.** Stufe 1 eigener Interpreter (sicher, klein) oder
+   direkt `jsep` + eigene Evaluation? Empfehlung: Stufe 1, Erweiterung bei
+   Bedarf; `$json`, `$('Node')`, `$input`, `$vars`, `$now`, `$run`.
+6. **Teilen in der Organisation** schon in W2 (Definition ins Gateway) oder
+   erst W7? Empfehlung: W7, da Definitionen Tool-Namen enthalten, die je
+   Mitglied durch Policy unsichtbar sein können.
+
+---
+
+## 11. Risiken
+
+- **Trace-Kompilierung liefert Murks**, wenn der Chat mäandert (Fehlversuche,
+  Themenwechsel). Gegenmittel: Startmarke wählbar, Entwurf immer als Liste
+  bestätigen, Faltung und Datenfluss-Rekonstruktion konservativ (im Zweifel
+  fester Wert statt falscher Expression, mit Hinweis „prüfen").
+- **Tool-Ergebnisse sind nicht auf Items ausgelegt** (Objekte mit
+  Zusammenfassung statt Listen). Gegenmittel: `outputPath` je Tool im Katalog,
+  in W1 für die 30 wichtigsten Tools gepflegt; Transform-Node für den Rest.
+- **Unbeaufsichtigte Schreibaktionen** erzeugen Vertrauensverlust bei einem
+  einzigen Fehlversand. Gegenmittel: Freigabe-Flag, Trockenlauf, Tages-Deckel,
+  Idempotenz-Schlüssel, Meldung nach jedem Lauf mit Zahlen.
+- **Ansicht wird zum Bau-Werkzeug**, das mit n8n verglichen wird. Gegenmittel:
+  Positionierung „AVA baut, du kontrollierst"; die Palette ist Ergänzung.
+- **Canvas-Leistung** bei Workflows mit vielen Läufen: Ausgaben gekürzt speichern,
+  Läufe-Tab lazy laden.
