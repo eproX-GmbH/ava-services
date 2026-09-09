@@ -5,9 +5,26 @@
 import type { ToolRegistry } from "../agent/tool-registry";
 import type { WorkflowCatalogEntry } from "../../shared/workflow-types";
 
-/** Nie als Node: Meta-, Rueckfrage-, Consent- und Schluessel-Tools. */
-const NOT_ALLOWED_RE =
-  /^(ask_user_|tool_search$|tool_load$|skill_|chat_history_|workflow_|connect_|disconnect_|settings_set_key|.*_key(_|$)|telegram_(connect|disconnect|token|link_chat|set_enabled)|voice_|updater_|producer_|ollama_(pull|delete)|org_(join|leave|create|member_)|profile_reset|report_self_correction$|memory_)/;
+/**
+ * Nie als Node (Operator 2026-09-09: Workflows duerfen nur fachliche
+ * Recherche-/CRM-/Mail-/Notiz-Schritte enthalten): Meta-, Rueckfrage-,
+ * Verbindungs-, Schluessel-, Einstellungs-, Konto-, Organisations-/
+ * Abrechnungs-, Update-, Modell-, Producer-, Gedaechtnis-, Skill-, Zeitplan-
+ * und Loesch-Tools sowie alles, was Konfiguration/Praeferenzen setzt.
+ */
+const NOT_ALLOWED_RE = new RegExp(
+  [
+    "^ask_user_", "^tool_(search|load)$", "^skill_", "^chat_history_", "^workflow_", "^navigate$", "^report_self_correction$",
+    "^(remember|recall_memory|forget_memory)$",
+    "^account_", "^profile_", "^settings_", "^org_", "^updater_", "^voice_", "^ollama_", "^producers?_", "^reachability_",
+    "^schedule_", "^alerts_(purge|set_prefs|get_prefs|trigger_heartbeat|dismiss_all|mark_all_seen)$",
+    "^(connect|disconnect)_", "_connect_", "_disconnect$", "_killswitch$", "_link_chat$", "_set_enabled$", "_set_key", "_key(_|$)",
+    "_config$", "_set_prefs$", "_set_fokus$", "^icp_set$", "^radar_share$", "^transaction_share$", "^transaction_adopt$",
+    "^mail_allowlist_", "^mail_triage_config$", "^publication_analysis_config$",
+    "^person_(delete|informed)$", "_delete(_|$)", "_remove$", "^crm_disassociate_", "^linkedin_(scan|signals)_cancel$", "^freshness_(un)?pin_",
+    "^linkedin_connect$", "_freigeben$", "_get_prefs$",
+  ].join("|"),
+);
 
 const DESTRUCTIVE_RE = /(_delete|_remove|_clear|_reset|_disconnect)/;
 const MUTATING_RE = /(_update|_sync|_enrich|_associate|_disassociate|_complete|_link|_archive|_mark|_decide|_set|_pause|_resume|_cancel|_approve|_reject|_pin|_unpin|_rename|_move)/;

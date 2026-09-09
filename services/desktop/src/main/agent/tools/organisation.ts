@@ -487,127 +487,9 @@ export function buildOrganisationTools(deps: OrgToolDeps): Tool[] {
     },
   });
 
-  const billingActivate = defineTool({
-    name: "org_billing_activate_seats",
-    summary: "Sammelabrechnung fuer die Organisation aktivieren (Owner, mit Bestaetigung).",
-    category: "organisation abrechnung seats aktivieren sammelabrechnung lizenzen",
-    description:
-      "Aktiviert die Sammelabrechnung: alle Mitglieder erhalten sofort dasselbe Tier (starter 49 EUR oder pro 149 EUR je " +
-      "Seat und Monat, netto), die Organisation bekommt eine Monatsrechnung ueber alle Seats, das Kontingent wird gepoolt. " +
-      "Der laufende Monat zaehlt voll. Persoenliche Abos der Mitglieder werden zum Ende ihrer Laufzeit gekuendigt (im " +
-      "Kunden-Portal widerrufbar). Nur Owner. Fragt vor der Ausfuehrung nach.",
-    parameters: {
-      type: "object",
-      required: ["tier"],
-      properties: { tier: { type: "string", enum: ["starter", "pro"] } },
-    },
-    schema: yup.object({ tier: yup.string().oneOf(["starter", "pro"]).required() }).noUnknown(true),
-    preview: (r: { ok?: boolean; abgebrochen?: boolean; memberCount?: number }) =>
-      r.abgebrochen ? "abgebrochen" : `Sammelabrechnung aktiv (${r.memberCount ?? 0} Seats)`,
-    run: async (args, c) => {
-      const b = await ladeBilling();
-      const tier = args.tier as "starter" | "pro";
-      const summe = b.memberCount * b.prices[tier];
-      const value = await c.ui.confirmAction(
-        {
-          kind: "additive",
-          prompt:
-            `Sammelabrechnung aktivieren: ${b.memberCount} Mitglied${b.memberCount === 1 ? "" : "er"} x ${eur(b.prices[tier])} (${tier}) = ` +
-            `${eur(summe)} pro Monat, bereits fuer den laufenden Monat (kein anteiliger Preis)? Persoenliche Abos der Mitglieder ` +
-            `werden zum Laufzeitende gekuendigt.`,
-          confirmValue: "ja",
-          options: [
-            { value: "ja", label: "Aktivieren" },
-            { value: "nein", label: "Abbrechen" },
-          ],
-        },
-        c.signal,
-      );
-      if (value !== "ja") return { ok: false, abgebrochen: true };
-      const r = await deps.gateway.request<{ memberCount: number; personalSubscriptionsScheduled: string[] }>(
-        "/v1/tenants/me/billing/seats/activate",
-        { method: "POST", body: { tier } },
-      );
-      return { ok: true, tier, memberCount: r.memberCount, monatlichNetto: eur(summe), persoenlicheAbosGekuendigt: r.personalSubscriptionsScheduled.length };
-    },
-  });
-
-  const billingDeactivate = defineTool({
-    name: "org_billing_deactivate_seats",
-    summary: "Sammelabrechnung zum naechsten Monatsersten beenden oder die Vormerkung zuruecknehmen (Owner, mit Bestaetigung).",
-    category: "organisation abrechnung seats beenden kuendigen sammelabrechnung",
-    description:
-      "Merkt die Beendigung der Sammelabrechnung zum naechsten Monatsersten vor (der laufende Monat wird noch voll " +
-      "abgerechnet; danach gilt fuer jedes Mitglied wieder sein eigenes Abo oder Free). Mit zuruecknehmen=true wird eine " +
-      "vorgemerkte Beendigung aufgehoben. Nur Owner. Fragt vor der Ausfuehrung nach.",
-    parameters: { type: "object", properties: { zuruecknehmen: { type: "boolean" } } },
-    schema: yup.object({ zuruecknehmen: yup.boolean().optional() }).noUnknown(true),
-    preview: (r: { ok?: boolean; abgebrochen?: boolean; endsAt?: string | null }) =>
-      r.abgebrochen ? "abgebrochen" : r.endsAt ? `Beendigung vorgemerkt zum ${r.endsAt.slice(0, 10)}` : "Beendigung zurueckgenommen",
-    run: async (args, c) => {
-      const revoke = args.zuruecknehmen === true;
-      const value = await c.ui.confirmAction(
-        {
-          kind: revoke ? "additive" : "destructive",
-          prompt: revoke
-            ? "Vorgemerkte Beendigung der Sammelabrechnung zuruecknehmen?"
-            : "Sammelabrechnung zum naechsten Monatsersten beenden? Der laufende Monat wird noch voll abgerechnet; danach zahlt jedes Mitglied selbst.",
-          confirmValue: "ja",
-          options: [
-            { value: "ja", label: revoke ? "Zuruecknehmen" : "Beenden" },
-            { value: "nein", label: "Abbrechen" },
-          ],
-        },
-        c.signal,
-      );
-      if (value !== "ja") return { ok: false, abgebrochen: true };
-      const r = await deps.gateway.request<{ endsAt: string | null }>("/v1/tenants/me/billing/seats/deactivate", {
-        method: "POST",
-        body: { revoke },
-      });
-      return { ok: true, endsAt: r.endsAt };
-    },
-  });
-
-  const billingTier = defineTool({
-    name: "org_billing_set_tier",
-    summary: "Organisations-Tier der Sammelabrechnung setzen: Upgrade sofort, Downgrade zum Monatsersten (Owner, mit Bestaetigung).",
-    category: "organisation abrechnung tier upgrade downgrade starter pro seats",
-    description:
-      "Setzt das Tier fuer alle Seats: 'pro' wirkt sofort (der laufende Monat wird als Pro berechnet), 'starter' wirkt zum " +
-      "naechsten Monatsersten (bis dahin bleibt Pro). Nur bei aktiver Sammelabrechnung, nur Owner. Fragt vor der Ausfuehrung nach.",
-    parameters: { type: "object", required: ["tier"], properties: { tier: { type: "string", enum: ["starter", "pro"] } } },
-    schema: yup.object({ tier: yup.string().oneOf(["starter", "pro"]).required() }).noUnknown(true),
-    preview: (r: { ok?: boolean; abgebrochen?: boolean; immediate?: boolean; tier?: string }) =>
-      r.abgebrochen ? "abgebrochen" : r.immediate ? `Upgrade auf ${r.tier} aktiv` : `Downgrade auf ${r.tier} vorgemerkt`,
-    run: async (args, c) => {
-      const tier = args.tier as "starter" | "pro";
-      const b = await ladeBilling();
-      if (b.mode !== "seats") return { ok: false, hinweis: "Sammelabrechnung ist nicht aktiv." };
-      if (b.seatTier === tier) return { ok: false, hinweis: `Die Organisation ist bereits auf ${tier}.` };
-      const upgrade = tier === "pro";
-      const value = await c.ui.confirmAction(
-        {
-          kind: "additive",
-          prompt: upgrade
-            ? `Auf Pro wechseln? Gilt sofort fuer alle ${b.memberCount} Mitglieder; der laufende Monat wird als Pro berechnet (${eur(b.prices.pro)} je Seat).`
-            : `Auf Starter wechseln? Gilt ab dem naechsten Monatsersten (${eur(b.prices.starter)} je Seat ab dann); bis dahin bleibt Pro.`,
-          confirmValue: "ja",
-          options: [
-            { value: "ja", label: upgrade ? "Upgraden" : "Vormerken" },
-            { value: "nein", label: "Abbrechen" },
-          ],
-        },
-        c.signal,
-      );
-      if (value !== "ja") return { ok: false, abgebrochen: true };
-      const r = await deps.gateway.request<{ effectiveFrom: string; immediate: boolean }>("/v1/tenants/me/billing/seats/tier", {
-        method: "PUT",
-        body: { tier },
-      });
-      return { ok: true, tier, ...r };
-    },
-  });
+  // v0.1.604 (Operator 2026-09-09): Sammelabrechnung aktivieren/beenden und
+  // Tier wechseln sind NICHT per Chat moeglich — Preisstufen-Wechsel ohne
+  // Zahlungsprozess darf kein Self-Service sein. Lesen (Info, Rechnungen) bleibt.
 
   const billingInvoices = defineTool({
     name: "org_billing_invoices",
@@ -638,5 +520,5 @@ export function buildOrganisationTools(deps: OrgToolDeps): Tool[] {
     },
   });
 
-  return [info, members, approve, remove, featuresSet, providerSet, limitsSet, usage, radarShare, billingInfo, billingActivate, billingDeactivate, billingTier, billingInvoices];
+  return [info, members, approve, remove, featuresSet, providerSet, limitsSet, usage, radarShare, billingInfo, billingInvoices];
 }

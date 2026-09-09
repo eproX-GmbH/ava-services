@@ -417,3 +417,5 @@ Skript (H7), Webhook-Fixture-Tests (H10), Seat-Tier je Mitglied (B4),
 `docs/DATENMODELL.md`. Deploy: Gateway-Migration + master-data-Bump
 (vendor/pin) + Desktop-Release zusammen ausrollen; bis der neue
 master-data live ist, laeuft try-reserve ohne userId im Altverhalten.
+
+**Nachtrag 2026-09-09 (v0.1.604):** Chat-Tools zum Aktivieren/Beenden der Sammelabrechnung und zum Tier-Wechsel entfernt (Operator: Preisstufen-Wechsel ohne Zahlungsprozess darf kein Self-Service sein). Offen: Die Seite Organisation → Abrechnung erlaubt dieselben Aktionen (Gateway-Routen `/v1/tenants/me/billing/seats*`, Owner) — Freischaltung durch den Betreiber (z. B. Spalte `selfServiceSeats`) oder Stripe Invoicing (B3) noetig, Entscheidung ausstehend.

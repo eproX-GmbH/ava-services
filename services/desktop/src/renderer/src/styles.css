@@ -8092,6 +8092,7 @@ input, textarea, select, button, a, summary, details,
 .wf-params { font-family: "Geist Mono Variable", ui-monospace, monospace; font-size: 12px; width: 100%; }
 .wf-weekdays { display: flex; gap: 0.5rem; flex-wrap: wrap; }
 .wf-deps { display: flex; flex-direction: column; gap: 0.4rem; }
+.wf-panel__section > .telegram-input { flex: none; width: 100%; box-sizing: border-box; }
 .wf-deps .wf-badge { margin-right: 0.25rem; }
 .wf-run { text-align: left; background: none; cursor: pointer; }
 .wf-run--active { border-color: var(--color-indigo-500); }

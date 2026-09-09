@@ -587,3 +587,4 @@ warten, danach Kontext neu laden), transaction-pipeline.ts bewertePipeline mit
 geforderten Stufen, CompanyScope.transactionId (Ereignis import.finished,
 Warten-Node-Items, Sub-Workflow). Tests in test:workflows.
 - v0.1.603: Daten-Abhaengigkeiten je Node (§11): abgeleitet aus Platzhaltern/Expressions, Warten-Node `bis` (leer = automatisch), Node wartet in laufendem Vorgang auf seine Stufen, Editor-Chips, Validierungs-Hinweis, Chat-Tool zeigt benoetigteStufen.
+- v0.1.604: Node-Katalog auf fachliche Schritte begrenzt (Operator 2026-09-09: Konto-, Organisations-, Abrechnungs-, Einstellungs-, Verbindungs-, Loesch-, Zeitplan- und Konfigurations-Tools sind keine Workflow-Nodes; 113 erlaubt / 120 gesperrt, Liste per `isToolAllowedInWorkflows`). Chat: Sammelabrechnung aktivieren/beenden/Tier wechseln nicht mehr per Chat-Tool. Palette-Suchfeld-Hoehe korrigiert.
