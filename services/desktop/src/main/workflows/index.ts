@@ -59,6 +59,7 @@ export class WorkflowService {
       audit: deps.audit,
       getDefinition: (id) => this.store.get(id),
       notify: deps.notify,
+      gatewayRequest: (path) => deps.gatewayRequest(path),
     });
   }
 

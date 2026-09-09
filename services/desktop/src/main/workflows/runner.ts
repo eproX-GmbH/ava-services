@@ -48,6 +48,8 @@ export interface RunnerDeps {
   audit: (entry: { action: string; severity: "info" | "warning" | "error"; summary: string; metadata: Record<string, unknown> }) => void;
   /** Sub-Workflows: Definition nachladen. */
   getDefinition: (id: string) => WorkflowDefinition | null;
+  /** Gateway-Lesezugriff (Warten auf Vorgangs-Abschluss). */
+  gatewayRequest: <T>(path: string) => Promise<T>;
   /** Meldung an den Nutzer (Meldungen-Panel, OS-Notification, Telegram). */
   notify: (m: { art: "fertig" | "freigabe" | "fehler"; title: string; body: string; workflowId: string; executionId: string; approvalId?: string }) => void;
 }
@@ -501,6 +503,39 @@ export class WorkflowRunner {
       case "merge":
         return [this.executeMerge(node, inputsByIndex)];
       case "wait": {
+        // Warten auf Zeit ODER auf den Abschluss eines Vorgangs (Import):
+        // "Watcher" — pollt die Firmen des Vorgangs, bis alle im Endzustand sind.
+        const txId = typeof node.parameters.transactionId === "string" && node.parameters.transactionId.trim()
+          ? node.parameters.transactionId.trim()
+          : items.length > 0 && typeof items[0]!.json.transactionId === "string"
+            ? String(items[0]!.json.transactionId)
+            : "";
+        if (txId) {
+          const maxMs = Math.min(72, Math.max(0.1, Number(node.parameters.maxHours ?? 6))) * 3600_000;
+          const start = Date.now();
+          let ergebnis: { gesamt: number; fertig: number; fehler: number } = { gesamt: 0, fertig: 0, fehler: 0 };
+          for (;;) {
+            if (ctx.signal.aborted) throw new Error("aborted");
+            const r = await this.deps.gatewayRequest<{ items?: Array<{ companyId: string; state?: string }> }>(`/v1/transactions/${encodeURIComponent(txId)}/entities?pageSize=500`);
+            const ents = r.items ?? [];
+            ergebnis = {
+              gesamt: ents.length,
+              fertig: ents.filter((e) => e.state === "completed").length,
+              fehler: ents.filter((e) => e.state === "failed" || e.state === "skipped").length,
+            };
+            const alleFertig = ents.length > 0 && ents.every((e) => e.state === "completed" || e.state === "failed" || e.state === "skipped");
+            if (alleFertig) {
+              return [
+                items.map((it, i) => ({ json: { ...it.json, transactionId: txId, verarbeitung: ergebnis }, pairedItem: { item: i } })),
+              ];
+            }
+            if (Date.now() - start > maxMs) throw new Error(`Vorgang ${txId} nach ${Math.round(maxMs / 3600_000)} h nicht abgeschlossen (${ergebnis.fertig}/${ergebnis.gesamt} fertig).`);
+            if (ctx.execution.dryRun) {
+              return [items.map((it, i) => ({ json: { ...it.json, transactionId: txId, verarbeitung: { ...ergebnis, dryRun: true } }, pairedItem: { item: i } }))];
+            }
+            await sleep(60_000, ctx.signal);
+          }
+        }
         const minutes = Math.min(10080, Math.max(0, Number(node.parameters.minutes ?? 0)));
         if (minutes > 0) await sleep(minutes * 60_000, ctx.signal);
         return [items];
