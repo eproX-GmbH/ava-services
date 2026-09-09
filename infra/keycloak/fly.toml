@@ -29,6 +29,16 @@ kill_timeout = '5s'
 [env]
   JAVA_OPTS = '-Djboss.bind.address.private=0.0.0.0 -Djboss.bind.address=0.0.0.0 -Djava.net.preferIPv6Addresses=true'
   KC_DB = 'postgres'
+  # v0.1.x — DB-Pool bewusst klein halten: Keycloak teilt sich EINEN
+  # basic-MPG-Cluster (ava-db) mit db-gateway, company-evaluation und einer
+  # weiteren Prod-App. Keycloaks Default wäre 100 Verbindungen — das würde
+  # den geteilten Slot-Pool sprengen (Fehler: "remaining connection slots
+  # are reserved for roles with the SUPERUSER attribute"). Auth-Traffic
+  # braucht sehr wenige Verbindungen; 6 ist reichlich. MUSS hier gesetzt
+  # bleiben, sonst greift beim nächsten Deploy wieder der 100er-Default.
+  KC_DB_POOL_INITIAL_SIZE = '2'
+  KC_DB_POOL_MIN_SIZE = '2'
+  KC_DB_POOL_MAX_SIZE = '6'
   KC_HOSTNAME_STRICT = 'false'
   KC_HTTP_ENABLED = 'true'
   KC_PROXY = 'edge'
