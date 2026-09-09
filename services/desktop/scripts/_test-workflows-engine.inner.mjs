@@ -58,7 +58,16 @@ const runner = new WorkflowRunner({
   audit: () => {},
   getDefinition: (id) => defs.get(id) ?? null,
   gatewayRequest: async (path) => {
-    if (path.includes(`/transactions/${TX}/entities`)) return { items: [{ companyId: "c1", state: "completed" }, { companyId: "c2", state: "failed" }], total: 2 };
+    const cell = (state, errorMessage) => ({ state, errorCount: state === "failed" ? 1 : 0, ...(errorMessage ? { errorMessage } : {}) });
+    if (path.includes(`/transactions/${TX}/pipeline`)) return {
+      transactionId: TX, totalCompanies: 2, stages: ["masterData", "structuredContent", "companyPublication", "website", "companyProfile", "companyContact", "companyEvaluation"], unavailableStages: [],
+      rows: [
+        // c1: Handelsregister/Jahresabschluss gescheitert, Profil aber fertig → zaehlt als fertig
+        { companyId: "c1", cells: { masterData: cell("completed"), structuredContent: cell("failed", "Zeitueberschreitung: Quelle nicht erreichbar"), companyPublication: cell("failed", "Zeitueberschreitung"), website: cell("completed"), companyProfile: cell("completed"), companyContact: cell("completed"), companyEvaluation: cell("completed") } },
+        // c2: Profil fehlgeschlagen
+        { companyId: "c2", cells: { masterData: cell("completed"), structuredContent: cell("completed"), companyPublication: cell("completed"), website: cell("failed", "404"), companyProfile: cell("failed", "kein Inhalt"), companyContact: cell("skipped"), companyEvaluation: cell("skipped") } },
+      ],
+    };
     throw new Error(`gateway 400 (${path})`);
   },
   notify: () => {},
@@ -85,9 +94,8 @@ console.log("Vorlage: Radar-Import-Bericht (Prime + Sub)");
   check(runs["Score-Filter"]?.outputItems?.[0] === 1, `Score-Filter behaelt 1 von 3 (>=80, nicht in AVA): ${JSON.stringify(runs["Score-Filter"]?.outputItems)}`);
   const decide = calls.find((c) => c.name === "discovery_decide");
   check(decide && decide.args.decisions?.[0]?.discoveryId === "disc_aaaa", `discovery_decide mit decisions-Liste: ${JSON.stringify(decide?.args)}`);
-  const ent = calls.find((c) => c.name === "transaction_entities");
-  check(ent && ent.args.transactionId === TX, `transaction_entities bekommt transactionId: ${JSON.stringify(ent?.args)}`);
-  check(runs["Nur fertige"]?.outputItems?.[0] === 1, `Nur fertige: 1 von 2: ${JSON.stringify(runs["Nur fertige"]?.outputItems)}`);
+  check(runs["Auf Verarbeitung warten"]?.outputItems?.[0] === 2, `Warten liefert ein Item je Firma (2): ${JSON.stringify(runs["Auf Verarbeitung warten"]?.outputItems)}`);
+  check(runs["Nur fertige"]?.outputItems?.[0] === 1, `Nur fertige (Profil completed trotz Teilfehler): 1 von 2: ${JSON.stringify(runs["Nur fertige"]?.outputItems)}`);
   const tg = calls.filter((c) => c.name === "telegram_send_message");
   check(tg.length === 1 && /Beta AG/.test(tg[0].args.text), `Sub-Workflow je fertiger Firma → 1 Telegram mit Firmenname: ${JSON.stringify(tg.map((t) => t.args.text))}`);
   check(runs["Auf Verarbeitung warten"]?.error == null, `Warten-Node ohne Fehler: ${runs["Auf Verarbeitung warten"]?.error ?? "-"}`);
@@ -184,6 +192,22 @@ console.log("Fehlerpfade: kein Import, Tool-Fehler, Freigabe im Trockenlauf");
   const h = { id: "n2", position: [400, 0], name: "Freigabe", type: "human", parameters: { prompt: "{{ $input.count }} Items freigeben?" } };
   const ex3 = await runner.run(mk("wf_human", "discovery_candidates", [h]), { trigger: "test", dryRun: true });
   check(ex3.status === "success" && ex3.nodeRuns["Freigabe"]?.at(-1)?.outputItems?.[0] === 3, `Freigabe-Node im Trockenlauf reicht Items durch: ${ex3.status} ${JSON.stringify(ex3.nodeRuns["Freigabe"]?.at(-1)?.outputItems)}`);
+}
+
+console.log("Vorgangs-Bewertung (Pipeline-Matrix)");
+{
+  const { bewertePipeline, beschreibeBefund } = await load("../src/main/transaction-pipeline.ts");
+  const cell = (state, errorMessage) => ({ state, errorCount: 0, ...(errorMessage ? { errorMessage } : {}) });
+  const row = (id, sc, pub, web, prof, kon, bew) => ({ companyId: id, cells: { masterData: cell("completed"), structuredContent: cell(sc, sc === "failed" ? "Zeitueberschreitung: Dieser Schritt hat zu lange gedauert" : undefined), companyPublication: cell(pub, pub === "failed" ? "Zeitueberschreitung" : undefined), website: cell(web), companyProfile: cell(prof), companyContact: cell(kon), companyEvaluation: cell(bew) } });
+  // Nutzer-Screenshot: 4 Firmen mit Register/Publikation fehlgeschlagen, Profil wartet → NICHT abgeschlossen
+  const offen = bewertePipeline({ transactionId: "t", totalCompanies: 5, stages: [], rows: [row("a", "failed", "failed", "pending", "pending", "pending", "pending"), row("b", "failed", "failed", "pending", "pending", "pending", "pending"), row("c", "failed", "failed", "completed", "completed", "completed", "completed"), row("d", "failed", "failed", "pending", "pending", "pending", "pending"), row("e", "skipped", "skipped", "completed", "completed", "failed", "skipped")] });
+  check(!offen.abgeschlossen && offen.profilOffen === 3 && offen.profilFertig === 2, `Teilfehler + Profil offen → Vorgang laeuft noch: abgeschlossen=${offen.abgeschlossen} offen=${offen.profilOffen} fertig=${offen.profilFertig}`);
+  const fertig = bewertePipeline({ transactionId: "t", totalCompanies: 5, stages: [], rows: [row("a", "failed", "failed", "completed", "completed", "completed", "completed"), row("b", "failed", "failed", "completed", "completed", "completed", "completed"), row("c", "failed", "failed", "completed", "completed", "completed", "completed"), row("d", "failed", "failed", "completed", "completed", "completed", "completed"), row("e", "skipped", "skipped", "completed", "completed", "failed", "skipped")] });
+  const txt = beschreibeBefund(fertig);
+  check(fertig.abgeschlossen && fertig.profilFertig === 5 && fertig.profilFehlgeschlagen === 0, `Alle Profile fertig → abgeschlossen, 5 fertig: ${JSON.stringify({ a: fertig.abgeschlossen, f: fertig.profilFertig })}`);
+  check(/5 von 5 Firmenprofile fertig, Teilfehler bei Handelsregister, Jahresabschluesse/.test(txt.headline("„X“")), `Headline nennt Teilfehler statt Totalausfall: ${txt.headline("„X“")}`);
+  check(txt.zeilen.some((z) => /Zeitueberschreitung/.test(z)) && txt.zeilen.some((z) => /nicht erreichbar/.test(z)), `Meldung nennt Ursache + Quellen-Hinweis: ${txt.zeilen.join(" | ")}`);
+  check(txt.warnung, "Teilfehler → Warnstufe");
 }
 
 if (fails > 0) { console.log(`\n${fails} Fehler`); process.exit(1); }

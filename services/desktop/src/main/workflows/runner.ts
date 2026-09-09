@@ -10,7 +10,7 @@
 // an und legt eine Freigabe an (Human-in-the-Loop). `mail_send` braucht
 // IMMER Freigabe oder `confirmed` und unterliegt dem Tages-Deckel.
 
-import { fetchAllTransactionEntities } from "../transaction-entities";
+import { bewertePipeline, fetchPipeline, type VorgangsBefund } from "../transaction-pipeline";
 import { randomUUID } from "node:crypto";
 import type { ToolRegistry } from "../agent/tool-registry";
 import type { ToolContext } from "../agent/types";
@@ -549,29 +549,36 @@ export class WorkflowRunner {
           }
           const maxMs = Math.min(72, Math.max(0.1, Number(resolveValue(node.parameters.maxHours, wctx) ?? 6))) * 3600_000;
           const start = Date.now();
-          let ergebnis: { gesamt: number; fertig: number; fehler: number } = { gesamt: 0, fertig: 0, fehler: 0 };
+          // v0.1.602 — Abschluss = Firmenprofil je Firma im Endzustand (Pipeline-
+          // Matrix). Ausgabe: EIN Item je Firma (companyId, state = Profil-Zustand,
+          // fehlgeschlageneStufen, transactionId) — direkt fuer Filter + Sub-Workflow.
+          const zuItems = (b: VorgangsBefund, dryRun: boolean): WorkflowItem[] =>
+            b.firmen.map((f, i) => ({
+              json: {
+                companyId: f.companyId,
+                state: f.state,
+                vollstaendig: f.vollstaendig,
+                fehlgeschlageneStufen: f.fehlgeschlageneStufen,
+                fehler: f.fehler,
+                transactionId: txId,
+                verarbeitung: { gesamt: b.gesamt, fertig: b.profilFertig, fehler: b.profilFehlgeschlagen, offen: b.profilOffen, teilfehler: b.teilfehler, ...(dryRun ? { dryRun: true } : {}) },
+              },
+              pairedItem: { item: Math.min(i, Math.max(0, items.length - 1)) },
+            }));
           for (;;) {
             if (ctx.signal.aborted) throw new Error("aborted");
-            let ents: Array<{ companyId: string; state?: string }> = [];
+            let befund: VorgangsBefund;
             try {
-              ents = await fetchAllTransactionEntities(this.deps.gatewayRequest, txId);
+              befund = bewertePipeline(await fetchPipeline(this.deps.gatewayRequest, txId));
             } catch (err) {
               throw new Error(`Vorgang ${txId} nicht abrufbar: ${err instanceof Error ? err.message : String(err)}`);
             }
-            ergebnis = {
-              gesamt: ents.length,
-              fertig: ents.filter((e) => e.state === "completed").length,
-              fehler: ents.filter((e) => e.state === "failed" || e.state === "skipped").length,
-            };
-            const alleFertig = ents.length > 0 && ents.every((e) => e.state === "completed" || e.state === "failed" || e.state === "skipped");
-            if (alleFertig) {
-              return [
-                items.map((it, i) => ({ json: { ...it.json, transactionId: txId, verarbeitung: ergebnis }, pairedItem: { item: i } })),
-              ];
-            }
-            if (Date.now() - start > maxMs) throw new Error(`Vorgang ${txId} nach ${Math.round(maxMs / 3600_000)} h nicht abgeschlossen (${ergebnis.fertig}/${ergebnis.gesamt} fertig).`);
+            if (befund.abgeschlossen) return [zuItems(befund, false)];
+            if (Date.now() - start > maxMs) throw new Error(`Vorgang ${txId} nach ${Math.round(maxMs / 3600_000)} h nicht abgeschlossen (${befund.profilFertig}/${befund.gesamt} Profile fertig, ${befund.profilOffen} offen).`);
             if (ctx.execution.dryRun) {
-              return [items.map((it, i) => ({ json: { ...it.json, transactionId: txId, verarbeitung: { ...ergebnis, dryRun: true } }, pairedItem: { item: i } }))];
+              const run = ctx.execution.nodeRuns[node.name]?.at(-1);
+              if (run) run.error = `Trockenlauf: Vorgang noch nicht abgeschlossen (${befund.profilFertig}/${befund.gesamt} Profile fertig) — Items mit aktuellem Stand weitergegeben.`;
+              return [befund.firmen.length > 0 ? zuItems(befund, true) : items];
             }
             await sleep(60_000, ctx.signal);
           }

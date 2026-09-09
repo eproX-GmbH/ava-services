@@ -53,8 +53,8 @@ export const WORKFLOW_TEMPLATES: WorkflowTemplate[] = [
   {
     id: "radar-import-bericht",
     name: "Radar-Firmen importieren, danach je Firma Bericht per Telegram",
-    description: "Prime-Workflow: Radar-Kandidaten ab Mindest-Score importieren, warten bis alle verarbeitet sind, dann je Firma den Sub-Workflow „Firmen-Kurzprofil per Telegram“ starten.",
-    tools: ["discovery_candidates", "discovery_decide", "transaction_entities", "telegram_send_message"],
+    description: "Prime-Workflow: Radar-Kandidaten ab Mindest-Score importieren, warten bis das Firmenprofil aller Firmen verarbeitet ist, dann je fertiger Firma den Sub-Workflow „Firmen-Kurzprofil per Telegram“ starten.",
+    tools: ["discovery_candidates", "discovery_decide", "telegram_send_message"],
     scope: "none",
     trigger: { kind: "manual" },
     requires: "firmen-kurzprofil-telegram",
@@ -69,11 +69,10 @@ export const WORKFLOW_TEMPLATES: WorkflowTemplate[] = [
         parameters: { tool: "discovery_decide", args: { decisions: "{{ $input.all().map(i => ({ discoveryId: i.json.discoveryId, decision: 'imported' })) }}" } },
       },
       { name: "Auf Verarbeitung warten", type: "wait", parameters: { transactionId: "{{ $json.transactionId }}", maxHours: 6 } },
-      { name: "Firmen des Vorgangs", type: "tool", mode: "allItems", parameters: { tool: "transaction_entities", args: { transactionId: "{{ $json.transactionId }}" }, outputPath: "items" } },
       { name: "Nur fertige", type: "filter", parameters: { condition: "{{ $json.state === 'completed' }}" } },
       { name: "Bericht je Firma", type: "subworkflow", mode: "perItem", parameters: { workflowId: "" } },
     ],
-    connections: kette(["Start", "Radar-Kandidaten", "Score-Filter", "Importieren", "Auf Verarbeitung warten", "Firmen des Vorgangs", "Nur fertige", "Bericht je Firma"]),
+    connections: kette(["Start", "Radar-Kandidaten", "Score-Filter", "Importieren", "Auf Verarbeitung warten", "Nur fertige", "Bericht je Firma"]),
     settings: { maxItemsPerRun: 1000 },
   },
   {

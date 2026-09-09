@@ -13,6 +13,7 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { Alert } from "../shared/types";
 import { fetchAllTransactionEntities } from "./transaction-entities";
+import { bewertePipeline, beschreibeBefund, fetchPipeline, type VorgangsBefund } from "./transaction-pipeline";
 
 const TICK_MS = 60_000;
 const FIRST_TICK_MS = 45_000;
@@ -42,7 +43,7 @@ export interface TransactionWatcherDeps {
   isSignedIn: () => boolean;
   addAlert: (input: { kind: Alert["kind"]; severity: Alert["severity"]; headline: string; rationale: string; sourceRef: string }) => Alert | null;
   notify: (alert: Alert) => void;
-  onCompleted: (tx: { transactionId: string; name: string | null }, companies: Array<{ companyId: string; state: string }>) => void;
+  onCompleted: (tx: { transactionId: string; name: string | null }, companies: Array<{ companyId: string; state: string; fehlgeschlageneStufen: string[] }>) => void;
   audit: (entry: { summary: string; severity: "info" | "warning"; metadata: Record<string, unknown> }) => void;
 }
 
@@ -108,23 +109,37 @@ export class TransactionWatcher {
           changed = true;
           continue;
         }
-        let entities: EntityRow[] = [];
+        // v0.1.602 — Abschluss = Firmenprofil je Firma im Endzustand (Pipeline-Matrix),
+        // nicht der Roll-up-Status der Entities (der meldet Teilfehler als Totalausfall).
+        let befund: VorgangsBefund | null = null;
         try {
-          entities = await fetchAllTransactionEntities(this.deps.gatewayRequest, tx.id);
+          befund = bewertePipeline(await fetchPipeline(this.deps.gatewayRequest, tx.id));
         } catch (err) {
-          this.deps.audit({ summary: `Vorgangs-Watcher: Firmen von ${tx.id.slice(0, 8)} nicht ladbar: ${err instanceof Error ? err.message : String(err)}`, severity: "warning", metadata: { transactionId: tx.id } });
-          continue;
+          // Fallback: Entities-Roll-up (aeltere Vorgaenge ohne Matrix).
+          try {
+            const entities: EntityRow[] = await fetchAllTransactionEntities(this.deps.gatewayRequest, tx.id);
+            if (entities.length === 0) continue;
+            if (!entities.every((e) => e.state === "completed" || e.state === "failed" || e.state === "skipped")) continue;
+            befund = {
+              abgeschlossen: true, gesamt: entities.length,
+              profilFertig: entities.filter((e) => e.state === "completed").length,
+              profilFehlgeschlagen: entities.filter((e) => e.state === "failed").length,
+              profilOffen: 0, vollstaendig: entities.length, teilfehler: {}, beispiele: {},
+              firmen: entities.map((e) => ({ companyId: e.companyId, state: (e.state ?? "pending") as VorgangsBefund["firmen"][number]["state"], vollstaendig: true, fehlgeschlageneStufen: [], fehler: {} })),
+            };
+          } catch {
+            this.deps.audit({ summary: `Vorgangs-Watcher: Vorgang ${tx.id.slice(0, 8)} nicht ladbar: ${err instanceof Error ? err.message : String(err)}`, severity: "warning", metadata: { transactionId: tx.id } });
+            continue;
+          }
         }
-        if (entities.length === 0) continue;
-        const fertig = entities.every((e) => e.state === "completed" || e.state === "failed" || e.state === "skipped");
-        if (!fertig) continue;
+        if (!befund || !befund.abgeschlossen) continue;
         seen.add(tx.id);
         changed = true;
         if (erstlauf) continue; // Altbestand still uebernehmen
-        await this.melden(tx, entities);
+        this.melden(tx, befund);
         this.deps.onCompleted(
           { transactionId: tx.id, name: tx.name ?? null },
-          entities.map((e) => ({ companyId: e.companyId, state: e.state ?? "unknown" })),
+          befund.firmen.map((f) => ({ companyId: f.companyId, state: f.state, fehlgeschlageneStufen: f.fehlgeschlageneStufen })),
         );
       }
       if (changed || erstlauf) this.persist();
@@ -133,46 +148,22 @@ export class TransactionWatcher {
     }
   }
 
-  private async melden(tx: TxRow, entities: EntityRow[]): Promise<void> {
-    const ok = entities.filter((e) => e.state === "completed").length;
-    const failed = entities.filter((e) => e.state === "failed").length;
-    const skipped = entities.filter((e) => e.state === "skipped").length;
-    let fehlerZeilen: string[] = [];
-    if (failed > 0) {
-      try {
-        const r = await this.deps.gatewayRequest<{ items?: ErrorRow[] }>(`/v1/transactions/${encodeURIComponent(tx.id)}/errors`);
-        const rows = r.items ?? [];
-        const jeQuelle = new Map<string, number>();
-        for (const e of rows) {
-          const q = e.producer ?? e.stage ?? "unbekannt";
-          jeQuelle.set(q, (jeQuelle.get(q) ?? 0) + 1);
-        }
-        fehlerZeilen = [...jeQuelle.entries()].sort((a, b) => b[1] - a[1]).slice(0, 6).map(([q, n]) => `${q}: ${n}`);
-        const beispiel = rows.find((e) => e.message || e.errorMessage);
-        if (beispiel) fehlerZeilen.push(`z. B. ${String(beispiel.message ?? beispiel.errorMessage).slice(0, 160)}`);
-      } catch {
-        /* Fehlerdetails optional */
-      }
-    }
+  private melden(tx: TxRow, b: VorgangsBefund): void {
     const name = tx.name ? `„${tx.name}“` : tx.id.slice(0, 8);
-    const headline = failed === 0 ? `Vorgang ${name} abgeschlossen: ${ok} von ${entities.length} Firmen fertig` : `Vorgang ${name} abgeschlossen: ${ok} fertig, ${failed} fehlgeschlagen`;
-    const rationale = [
-      `Firmen: ${entities.length} · fertig ${ok}${failed ? ` · fehlgeschlagen ${failed}` : ""}${skipped ? ` · uebersprungen ${skipped}` : ""}.`,
-      ...(fehlerZeilen.length > 0 ? ["Fehlerquellen: " + fehlerZeilen.join(" · ")] : []),
-      "Details unter Vorgaenge → Alle Vorgaenge.",
-    ].join("\n");
+    const { headline, zeilen, warnung } = beschreibeBefund(b);
+    const rationale = [...zeilen, "Details unter Vorgaenge → Alle Vorgaenge."].join("\n");
     const alert = this.deps.addAlert({
       kind: "import-finished",
-      severity: failed > 0 ? "warn" : "info",
-      headline: headline.slice(0, 120),
+      severity: warnung ? "warn" : "info",
+      headline: headline(name).slice(0, 120),
       rationale,
       sourceRef: `transaction:${tx.id}:finished`,
     });
     if (alert) this.deps.notify(alert);
     this.deps.audit({
-      summary: `Vorgang ${name} abgeschlossen: ${ok}/${entities.length} fertig, ${failed} fehlgeschlagen`,
-      severity: failed > 0 ? "warning" : "info",
-      metadata: { transactionId: tx.id, ok, failed, skipped, fehlerquellen: fehlerZeilen },
+      summary: `Vorgang ${name} abgeschlossen: ${b.profilFertig}/${b.gesamt} Profile fertig, ${b.profilFehlgeschlagen} fehlgeschlagen`,
+      severity: warnung ? "warning" : "info",
+      metadata: { transactionId: tx.id, ...b, firmen: undefined },
     });
   }
 }

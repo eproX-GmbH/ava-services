@@ -3053,7 +3053,7 @@ app.whenReady().then(async () => {
     onCompleted: (tx, companies) => {
       for (const c of companies) {
         if (c.state !== "completed") continue;
-        void workflowService?.emitEvent("import.finished", { transactionId: tx.transactionId, transactionName: tx.name, companyId: c.companyId });
+        void workflowService?.emitEvent("import.finished", { transactionId: tx.transactionId, transactionName: tx.name, companyId: c.companyId, fehlgeschlageneStufen: c.fehlgeschlageneStufen });
       }
     },
     audit: ({ summary, severity, metadata }) =>
