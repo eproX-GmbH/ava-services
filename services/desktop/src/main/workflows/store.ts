@@ -97,6 +97,43 @@ export interface WorkflowState {
   scopeRuns: Record<string, string>;
 }
 
+/** Variablen tolerant: Skalar oder {value} → vollstaendiges Objekt. */
+export function normalizeVariables(raw: unknown): WorkflowDefinition["variables"] {
+  const out: WorkflowDefinition["variables"] = {};
+  if (!raw || typeof raw !== "object") return out;
+  for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
+    if (v && typeof v === "object" && "value" in (v as object)) {
+      const o = v as { label?: string; type?: string; value: unknown; description?: string };
+      const type = (o.type === "number" || o.type === "boolean" || o.type === "list" ? o.type : typeof o.value === "number" ? "number" : typeof o.value === "boolean" ? "boolean" : Array.isArray(o.value) ? "list" : "string") as "string" | "number" | "boolean" | "list";
+      out[k] = { label: o.label ?? k, type, value: o.value, ...(o.description ? { description: o.description } : {}) };
+    } else {
+      const type = (typeof v === "number" ? "number" : typeof v === "boolean" ? "boolean" : Array.isArray(v) ? "list" : "string") as "string" | "number" | "boolean" | "list";
+      out[k] = { label: k, type, value: v };
+    }
+  }
+  return out;
+}
+
+/** Trigger tolerant: String ("manual"), `type`/`art` statt `kind`, fehlendes kind → manual. */
+export function normalizeTrigger(raw: unknown): { trigger: WorkflowDefinition["trigger"]; hinweis: string | null } {
+  if (typeof raw === "string") {
+    const k = raw.trim().toLowerCase();
+    if (k === "manual" || k === "manuell") return { trigger: { kind: "manual" }, hinweis: null };
+    if (k === "chat") return { trigger: { kind: "chat" }, hinweis: null };
+    return { trigger: { kind: "manual" }, hinweis: `Trigger „${raw}“ unbekannt — auf manuell gesetzt.` };
+  }
+  if (!raw || typeof raw !== "object") return { trigger: { kind: "manual" }, hinweis: null };
+  const o = { ...(raw as Record<string, unknown>) };
+  const kind = (o.kind ?? o.type ?? o.art) as string | undefined;
+  delete o.type;
+  delete o.art;
+  if (kind === "manual" || kind === "schedule" || kind === "event" || kind === "chat") return { trigger: { ...o, kind } as WorkflowDefinition["trigger"], hinweis: null };
+  if (kind === "manuell") return { trigger: { ...o, kind: "manual" } as WorkflowDefinition["trigger"], hinweis: null };
+  if (o.event) return { trigger: { ...o, kind: "event" } as WorkflowDefinition["trigger"], hinweis: null };
+  if (o.at || o.intervalMinutes || o.companySource || o.companyIds) return { trigger: { ...o, kind: "schedule" } as WorkflowDefinition["trigger"], hinweis: null };
+  return { trigger: { kind: "manual" }, hinweis: `Trigger ohne kind (${JSON.stringify(raw).slice(0, 120)}) — auf manuell gesetzt.` };
+}
+
 /** Fuer Tests: Definition gegen das Schema pruefen (wirft bei Fehlern). */
 export function parseDefinition(raw: unknown): WorkflowDefinition {
   return definitionSchema.validateSync(raw, { stripUnknown: false }) as unknown as WorkflowDefinition;
@@ -227,7 +264,7 @@ export class WorkflowStore {
       version: (existing?.version ?? 0) + 1,
       nodes: input.nodes,
       connections: input.connections,
-      variables: input.variables ?? existing?.variables ?? {},
+      variables: normalizeVariables(input.variables ?? existing?.variables ?? {}),
       trigger: input.trigger,
       settings: { ...DEFAULT_WORKFLOW_SETTINGS, ...(existing?.settings ?? {}), ...(input.settings ?? {}) },
       origin: input.origin ?? existing?.origin ?? { kind: "manual" },

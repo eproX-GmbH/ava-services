@@ -121,6 +121,22 @@ let schemaFehler = false;
 try { parseDefinition({ ...basis, trigger: { kind: "schedule", companySource: { minScore: 80 } } }); } catch { schemaFehler = true; }
 assert(schemaFehler, "companySource ohne kind wird abgelehnt");
 
+console.log("Normalisierung (Trigger/Variablen)");
+const { normalizeTrigger, normalizeVariables } = await load("../src/main/workflows/store.ts");
+{
+  const a = normalizeTrigger(undefined); if (a.trigger.kind !== "manual") throw new Error("trigger undefined → manual");
+  const b = normalizeTrigger({}); if (b.trigger.kind !== "manual" || !b.hinweis) throw new Error("trigger {} → manual + Hinweis");
+  const c = normalizeTrigger({ type: "schedule", at: "07:00" }); if (c.trigger.kind !== "schedule" || c.trigger.at !== "07:00" || "type" in c.trigger) throw new Error("type-Alias");
+  const d = normalizeTrigger({ event: "radar.newHot" }); if (d.trigger.kind !== "event") throw new Error("event ohne kind");
+  const e = normalizeTrigger("manuell"); if (e.trigger.kind !== "manual") throw new Error("string manuell");
+  const v = normalizeVariables({ mindestScore: 90, name: { value: "x" }, voll: { label: "L", type: "number", value: 1 } });
+  if (v.mindestScore.type !== "number" || v.mindestScore.value !== 90 || v.mindestScore.label !== "mindestScore") throw new Error("Skalar-Variable");
+  if (v.name.type !== "string" || v.name.label !== "name") throw new Error("{value}-Variable");
+  if (v.voll.label !== "L") throw new Error("volle Variable unveraendert");
+  parseDefinition({ ...basis, trigger: normalizeTrigger({ type: "manual" }).trigger, variables: v });
+  console.log("  ok");
+}
+
 console.log("Validierung");
 const def = {
   id: "wf_1", name: "T", description: "", version: 1, enabled: true, createdAt: "x", updatedAt: "x", createdBy: "user",

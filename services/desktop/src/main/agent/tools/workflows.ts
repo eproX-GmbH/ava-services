@@ -16,6 +16,7 @@ import type { AgentMessage } from "../../../shared/types";
 import type { WorkflowDefinition, WorkflowNode, WorkflowTrigger } from "../../../shared/workflow-types";
 import type { WorkflowService } from "../../workflows";
 import { compileConversation } from "../../workflows/compiler";
+import { normalizeTrigger, normalizeVariables } from "../../workflows/store";
 
 export interface WorkflowToolDeps {
   /** Lazy — der Service entsteht im App-Boot. */
@@ -158,7 +159,7 @@ export function buildWorkflowTools(deps: WorkflowToolDeps): Tool[] {
         nodes: yup.array().of(nodeYup).min(1).required(),
         connections: yup.object().required(),
         variables: yup.object().optional(),
-        trigger: yup.object().optional(),
+        trigger: yup.mixed().optional(),
         settings: yup.object().optional(),
       })
       .noUnknown(true),
@@ -181,7 +182,8 @@ export function buildWorkflowTools(deps: WorkflowToolDeps): Tool[] {
           ...(n.notes ? { notes: n.notes } : {}),
         })),
       );
-      const trigger = (args.trigger ?? { kind: "manual" }) as WorkflowTrigger;
+      const norm = normalizeTrigger(args.trigger);
+      const trigger: WorkflowTrigger = norm.trigger;
       const schritte = nodes.map((n, i) => `${i + 1}. ${n.name} (${n.type === "tool" ? String(n.parameters.tool) : n.type}${n.confirmed ? ", freigegeben" : ""})`).join("\n");
       const value = await c.ui.confirmAction(
         {
@@ -204,16 +206,16 @@ export function buildWorkflowTools(deps: WorkflowToolDeps): Tool[] {
             description: args.description ?? "",
             nodes,
             connections: args.connections as WorkflowDefinition["connections"],
-            variables: (args.variables ?? {}) as WorkflowDefinition["variables"],
+            variables: normalizeVariables(args.variables ?? {}),
             trigger,
             ...(args.settings ? { settings: args.settings as WorkflowDefinition["settings"] } : {}),
             origin: { kind: "chat" },
           },
           { createdBy: "agent" },
         );
-        return { workflow: kompakt(workflow), problems, hinweis: problems.length > 0 ? "Der Workflow ist gespeichert, kann aber erst laufen, wenn die Hinweise behoben sind (workflow_update)." : "Gespeichert. Mit workflow_run (dryRun=true) testen; unter Vorgaenge → Workflows ansehen." };
+        return { workflow: kompakt(workflow), problems, ...(norm.hinweis ? { triggerHinweis: norm.hinweis } : {}), hinweis: problems.length > 0 ? "Der Workflow ist gespeichert, kann aber erst laufen, wenn die Hinweise behoben sind (workflow_update)." : "Gespeichert. Mit workflow_run (dryRun=true) testen; unter Vorgaenge → Workflows ansehen." };
       } catch (err) {
-        return { error: err instanceof Error ? err.message : String(err) };
+        return { error: `${err instanceof Error ? err.message : String(err)} — erhalten: trigger=${JSON.stringify(args.trigger ?? null).slice(0, 200)}, nodes=${nodes.length}` };
       }
     },
   });
@@ -243,7 +245,7 @@ export function buildWorkflowTools(deps: WorkflowToolDeps): Tool[] {
       .object({
         workflow: yup.string().trim().min(1).required(),
         enabled: yup.boolean().optional(),
-        trigger: yup.object().optional(),
+        trigger: yup.mixed().optional(),
         variables: yup.object().optional(),
         settings: yup.object().optional(),
         nodePatches: yup.array().of(yup.object({ name: yup.string().required(), parameters: yup.object().optional(), confirmed: yup.boolean().optional(), disabled: yup.boolean().optional(), mode: yup.string().oneOf(["perItem", "allItems"]).optional(), onError: yup.string().oneOf(["stop", "continue", "errorOutput"]).optional() })).optional(),
@@ -282,17 +284,27 @@ export function buildWorkflowTools(deps: WorkflowToolDeps): Tool[] {
       });
       const unbekannt = (args.nodePatches ?? []).filter((p) => !def.nodes.some((n) => n.name === p.name)).map((p) => p.name);
       if (unbekannt.length > 0) return { error: `Unbekannte Nodes: ${unbekannt.join(", ")}` };
-      const w = svc().patch(def.id, {
-        nodes,
-        ...(args.enabled !== undefined ? { enabled: args.enabled } : {}),
-        ...(args.trigger ? { trigger: args.trigger as WorkflowTrigger } : {}),
-        ...(args.variables ? { variables: { ...def.variables, ...(args.variables as WorkflowDefinition["variables"]) } } : {}),
-        ...(args.settings ? { settings: { ...def.settings, ...(args.settings as Partial<WorkflowDefinition["settings"]>) } } : {}),
-        ...(args.name ? { name: args.name } : {}),
-        ...(args.description !== undefined ? { description: args.description } : {}),
-      });
+      let w: WorkflowDefinition | null = null;
+      try {
+        w = svc().patch(def.id, {
+          nodes,
+          ...(args.enabled !== undefined ? { enabled: args.enabled } : {}),
+          ...(args.trigger ? { trigger: normalizeTrigger(args.trigger).trigger } : {}),
+          ...(args.variables ? { variables: { ...def.variables, ...normalizeVariables(args.variables) } } : {}),
+          ...(args.settings ? { settings: { ...def.settings, ...(args.settings as Partial<WorkflowDefinition["settings"]>) } } : {}),
+          ...(args.name ? { name: args.name } : {}),
+          ...(args.description !== undefined ? { description: args.description } : {}),
+        });
+      } catch (err) {
+        return { error: `${err instanceof Error ? err.message : String(err)} — erhalten: ${JSON.stringify({ trigger: args.trigger ?? null, variables: args.variables ?? null }).slice(0, 300)}` };
+      }
       if (!w) return { error: "Speichern fehlgeschlagen." };
-      return { workflow: kompakt(w), problems: svc().validate(w) };
+      // Rueckmeldung: welche Node-Parameter jetzt gelten (damit der Agent Aenderungen verifizieren kann).
+      const geaendert = (args.nodePatches ?? []).map((p) => {
+        const n = w!.nodes.find((x) => x.name === p.name);
+        return { name: p.name, parameters: n?.parameters, confirmed: n?.confirmed, disabled: n?.disabled };
+      });
+      return { workflow: kompakt(w), problems: svc().validate(w), ...(geaendert.length > 0 ? { geaenderteNodes: geaendert } : {}) };
     },
   });
 
@@ -512,7 +524,7 @@ export function buildWorkflowTools(deps: WorkflowToolDeps): Tool[] {
     schema: yup.object({ templateId: yup.string().trim().optional() }).noUnknown(true),
     preview: (r: Record<string, any>) => (r.error as string | undefined) ?? (r.angelegt ? `angelegt: ${r.angelegt.join(", ")}` : `${r.vorlagen?.length ?? 0} Vorlagen`),
     run: async (args, c) => {
-      if (!args.templateId) return { vorlagen: svc().templates() };
+      if (!args.templateId) return { vorlagen: svc().templates(), hinweis: "Vorlagen sind Startpunkte: Filter-Bedingungen (z. B. Score-Filter mit >= $vars.mindestScore) per workflow_update nodePatches an den Wunsch anpassen — fuer „unter 90“ die condition auf {{ ($json.matchScore ?? 0) < 90 && !$json.bereitsInAva }} setzen." };
       const t = svc().templates().find((x) => x.id === args.templateId);
       if (!t) return { error: `Vorlage nicht gefunden: ${args.templateId}` };
       const value = await c.ui.confirmAction({ kind: "additive", prompt: `Vorlage „${t.name}“ als Workflow anlegen?${t.requires ? " (legt auch die Sub-Vorlage an)" : ""}`, confirmValue: "ja", options: [{ value: "ja", label: "Anlegen" }, { value: "nein", label: "Abbrechen" }] }, c.signal);

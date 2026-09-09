@@ -529,3 +529,4 @@ W3 kann parallel starten, sobald die Typen aus W1 stehen.
   Positionierung „AVA baut, du kontrollierst"; die Palette ist Ergänzung.
 - **Canvas-Leistung** bei Workflows mit vielen Läufen: Ausgaben gekürzt speichern,
   Läufe-Tab lazy laden.
+- v0.1.597: workflow_save/workflow_update tolerant (Trigger ohne kind/`type`-Alias → normalisiert, Variablen als Skalar → {label,type,value}); Fehler nennen das erhaltene Objekt; workflow_update meldet geaenderte Node-Parameter zurueck; Vorlagen-Hinweis zur Filteranpassung; Editor-Ansicht ueber volle Breite.
