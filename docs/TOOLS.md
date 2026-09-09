@@ -5,7 +5,7 @@ NICHT direkt bearbeiten — die Quelle der Wahrheit ist `services/desktop/src/ma
 Lauf via `pnpm -F @ava/desktop tools:doc` (oder automatisch via `build:typecheck`).
 
 Stand: 2026-09-09
-Anzahl Tools: 239
+Anzahl Tools: 236
 
 ## Firmen (17)
 
@@ -1705,25 +1705,7 @@ Liefert den Status des lokalen Ollama-Daemons: Zustand (idle / starting / ready 
 
 _Parameter:_ keine.
 
-## organisation (14)
-
-### `org_billing_activate_seats`
-
-_Datei:_ `services/desktop/src/main/agent/tools/organisation.ts`
-
-Aktiviert die Sammelabrechnung: alle Mitglieder erhalten sofort dasselbe Tier (starter 49 EUR oder pro 149 EUR je Seat und Monat, netto), die Organisation bekommt eine Monatsrechnung ueber alle Seats, das Kontingent wird gepoolt. Der laufende Monat zaehlt voll. Persoenliche Abos der Mitglieder werden zum Ende ihrer Laufzeit gekuendigt (im Kunden-Portal widerrufbar). Nur Owner. Fragt vor der Ausfuehrung nach.
-
-_Parameter:_
-- `tier: string (enum: starter, pro)` (required)
-
-### `org_billing_deactivate_seats`
-
-_Datei:_ `services/desktop/src/main/agent/tools/organisation.ts`
-
-Merkt die Beendigung der Sammelabrechnung zum naechsten Monatsersten vor (der laufende Monat wird noch voll abgerechnet; danach gilt fuer jedes Mitglied wieder sein eigenes Abo oder Free). Mit zuruecknehmen=true wird eine vorgemerkte Beendigung aufgehoben. Nur Owner. Fragt vor der Ausfuehrung nach.
-
-_Parameter:_
-- `zuruecknehmen: boolean`
+## organisation (11)
 
 ### `org_billing_info`
 
@@ -1741,15 +1723,6 @@ Liefert den Datensatz einer Periode (YYYY-MM): Positionen je Tier, Seats mit Nam
 
 _Parameter:_
 - `periode: string` — YYYY-MM, z. B. 2026-09
-
-### `org_billing_set_tier`
-
-_Datei:_ `services/desktop/src/main/agent/tools/organisation.ts`
-
-Setzt das Tier fuer alle Seats: 'pro' wirkt sofort (der laufende Monat wird als Pro berechnet), 'starter' wirkt zum naechsten Monatsersten (bis dahin bleibt Pro). Nur bei aktiver Sammelabrechnung, nur Owner. Fragt vor der Ausfuehrung nach.
-
-_Parameter:_
-- `tier: string (enum: starter, pro)` (required)
 
 ### `org_features_set`
 
@@ -2231,7 +2204,7 @@ _Parameter:_
 
 _Datei:_ `services/desktop/src/main/agent/tools/workflows.ts`
 
-Liefert den Katalog aller Node-Typen fuer Workflows: Logik-Nodes (trigger, filter, if, switch, transform, loop, merge, ai, wait, human, stop, subworkflow) und Tool-Nodes ('tool:<name>') mit Parametern, Wirkungsklasse (read/additive/mutating/destructive) und Kostenklasse. Vor workflow_save aufrufen. Expressions: {{ $json.feld }}, {{ $('Node-Name').item.json.feld }}, {{ $input.all() }}, {{ $vars.name }}, {{ $now }}. Tool-Node: parameters = { tool: '<name>', args: {...}, outputPath?: 'items', itemKey?: 'discoveryId' }; mode perItem (Default) oder allItems. FIRMENBEZUG: Jeder Lauf gilt fuer GENAU EINE Firma; ihr vollstaendiger Kontext (Stammdaten, Profil, Finanzen/Kennzahlen, Kontakte, CRM) liegt dem Lauf vor. WARTEN AUF VERARBEITUNG: Nach discovery_decide/import liefert das Ergebnis eine transactionId; ein wait-Node mit transactionId: '{{ $json.transactionId }}' haelt den Lauf an, bis alle Firmen des Vorgangs verarbeitet sind (Watcher, max maxHours). Beispiel „Radar-Firmen importieren, danach je Firma Kurzuebersicht per Telegram“: Prime (scope none): discovery_candidates(allItems) → filter → discovery_decide(allItems, imported, confirmed) → wait(transactionId) → tool company_search/transaction_entities → subworkflow(perItem) mit Sub: ai(Kurzuebersicht aus {{ $context }}) → telegram_send_message. MEHRERE FIRMEN: entweder workflow_run mit firmen[] (je Firma ein Lauf) ODER Prime/Sub-Muster: ein Prime-Workflow (settings.scope 'none') erzeugt Items mit companyId/discoveryId (z. B. discovery_candidates, company_search) und ruft einen subworkflow-Node im Modus perItem auf — jeder Sub-Lauf holt sich den vollen Kontext seiner Firma. In Node-Parametern duerfen SEMANTISCHE PLATZHALTER stehen, frei benannt, z. B. $kassenbestand, $ansprechpartner_vertrieb, $umsatz_letztes_jahr — sie werden je Lauf per KI aus dem Firmen-Kontext nach Bedeutung befuellt. Immer einen Fallback mitgeben: $kassenbestand ?? "Es liegt KEIN Kassenbestand vor". Strukturiert: {{ $company }} (Objekt), {{ $context }} (Klartext).
+Liefert den Katalog aller Node-Typen fuer Workflows: Logik-Nodes (trigger, filter, if, switch, transform, loop, merge, ai, wait, human, stop, subworkflow) und Tool-Nodes ('tool:<name>') mit Parametern, Wirkungsklasse (read/additive/mutating/destructive) und Kostenklasse. Vor workflow_save aufrufen. Expressions: {{ $json.feld }}, {{ $('Node-Name').item.json.feld }}, {{ $input.all() }}, {{ $vars.name }}, {{ $now }}. Tool-Node: parameters = { tool: '<name>', args: {...}, outputPath?: 'items', itemKey?: 'discoveryId' }; mode perItem (Default) oder allItems. FIRMENBEZUG: Jeder Lauf gilt fuer GENAU EINE Firma; ihr vollstaendiger Kontext (Stammdaten, Profil, Finanzen/Kennzahlen, Handelsregister inkl. Geschaeftsfuehrung, Kontakte, CRM) liegt dem Lauf vor. ABHAENGIGKEITEN: AVA leitet je Node ab, welche Producer-Stufe seine Daten liefert ($kassenbestand → Jahresabschluesse, $geschaeftsfuehrer → Handelsregister, $ansprechpartner → Kontakte). Ein Warten-Node mit transactionId wartet automatisch auf die Stufen, die die Folge-Schritte brauchen (mindestens Firmenprofil); parameters.bis kann das festlegen. Steckt die Firma eines Laufs noch in einem Vorgang, wartet ein Node vor der Ausfuehrung auf seine Stufen. WARTEN AUF VERARBEITUNG: Nach discovery_decide/import liefert das Ergebnis eine transactionId; ein wait-Node mit transactionId: '{{ $json.transactionId }}' haelt den Lauf an, bis alle Firmen des Vorgangs verarbeitet sind (Watcher, max maxHours). Beispiel „Radar-Firmen importieren, danach je Firma Kurzuebersicht per Telegram“: Prime (scope none): discovery_candidates(allItems) → filter → discovery_decide(allItems, imported, confirmed) → wait(transactionId) → tool company_search/transaction_entities → subworkflow(perItem) mit Sub: ai(Kurzuebersicht aus {{ $context }}) → telegram_send_message. MEHRERE FIRMEN: entweder workflow_run mit firmen[] (je Firma ein Lauf) ODER Prime/Sub-Muster: ein Prime-Workflow (settings.scope 'none') erzeugt Items mit companyId/discoveryId (z. B. discovery_candidates, company_search) und ruft einen subworkflow-Node im Modus perItem auf — jeder Sub-Lauf holt sich den vollen Kontext seiner Firma. In Node-Parametern duerfen SEMANTISCHE PLATZHALTER stehen, frei benannt, z. B. $kassenbestand, $ansprechpartner_vertrieb, $umsatz_letztes_jahr — sie werden je Lauf per KI aus dem Firmen-Kontext nach Bedeutung befuellt. Immer einen Fallback mitgeben: $kassenbestand ?? "Es liegt KEIN Kassenbestand vor". Strukturiert: {{ $company }} (Objekt), {{ $context }} (Klartext).
 
 _Parameter:_
 - `suche: string` — Optionaler Filter (Name/Kategorie/Text)
