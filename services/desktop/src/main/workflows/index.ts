@@ -297,6 +297,49 @@ export class WorkflowService {
     return out;
   }
 
+  /**
+   * Mehrere Firmen „in die Pipeline“: je Firma ein Lauf (Leitgedanke bleibt),
+   * bis zu 3 parallel, Ergebnis als Stapel-Zusammenfassung.
+   */
+  async runBatch(
+    id: string,
+    firmen: Array<CompanyScope | { companyQuery: string }>,
+    opts: { trigger: WorkflowExecution["trigger"]; dryRun?: boolean },
+  ): Promise<{ gestartet: number; fertig: Array<{ firma: CompanyScope | null; status: string; summary?: string; error?: string; executionId?: string }> }> {
+    const def = this.store.get(id);
+    if (!def) throw new Error("Workflow nicht gefunden.");
+    const scopes: CompanyScope[] = [];
+    const fehler: Array<{ firma: CompanyScope | null; status: string; error: string }> = [];
+    for (const f of firmen.slice(0, 200)) {
+      if ("companyQuery" in f) {
+        const k = await this.resolveCompany(f.companyQuery);
+        const exakt = k.find((x) => x.name.toLowerCase() === f.companyQuery.trim().toLowerCase()) ?? (k.length === 1 ? k[0] : undefined);
+        if (!exakt) {
+          fehler.push({ firma: null, status: "error", error: `Firma nicht eindeutig: „${f.companyQuery}“ (${k.slice(0, 3).map((x) => x.name).join(", ") || "kein Treffer"})` });
+          continue;
+        }
+        scopes.push({ companyId: exakt.companyId, companyName: exakt.name });
+      } else scopes.push(f);
+    }
+    const fertig: Array<{ firma: CompanyScope | null; status: string; summary?: string; error?: string; executionId?: string }> = [...fehler];
+    const queue = [...scopes];
+    const worker = async (): Promise<void> => {
+      for (;;) {
+        const company = queue.shift();
+        if (!company) return;
+        try {
+          const ex = await this.run(def.id, { trigger: opts.trigger, dryRun: opts.dryRun, company });
+          fertig.push({ firma: ex.scope ?? company, status: ex.status, summary: ex.summary, error: ex.error, executionId: ex.id });
+        } catch (err) {
+          fertig.push({ firma: company, status: "error", error: err instanceof Error ? err.message : String(err) });
+        }
+      }
+    };
+    await Promise.all(Array.from({ length: Math.min(3, queue.length) }, worker));
+    this.deps.audit({ action: "workflow.batch", severity: "info", summary: `Workflow „${def.name}“ fuer ${scopes.length} Firmen gestartet (${fertig.filter((f) => f.status === "success").length} erfolgreich)`, metadata: { workflowId: def.id, firmen: scopes.length } });
+    return { gestartet: scopes.length, fertig };
+  }
+
   /** Firma per Name suchen (ueber das company_search-Tool). */
   async resolveCompany(query: string): Promise<Array<{ companyId: string; name: string; ort: string | null }>> {
     const tool = this.deps.registry.get("company_search");

@@ -2231,7 +2231,7 @@ _Parameter:_
 
 _Datei:_ `services/desktop/src/main/agent/tools/workflows.ts`
 
-Liefert den Katalog aller Node-Typen fuer Workflows: Logik-Nodes (trigger, filter, if, switch, transform, loop, merge, ai, wait, human, stop, subworkflow) und Tool-Nodes ('tool:<name>') mit Parametern, Wirkungsklasse (read/additive/mutating/destructive) und Kostenklasse. Vor workflow_save aufrufen. Expressions: {{ $json.feld }}, {{ $('Node-Name').item.json.feld }}, {{ $input.all() }}, {{ $vars.name }}, {{ $now }}. Tool-Node: parameters = { tool: '<name>', args: {...}, outputPath?: 'items', itemKey?: 'discoveryId' }; mode perItem (Default) oder allItems. FIRMENBEZUG: Jeder Lauf gilt fuer GENAU EINE Firma; ihr vollstaendiger Kontext (Stammdaten, Profil, Finanzen/Kennzahlen, Kontakte, CRM) liegt dem Lauf vor. In Node-Parametern duerfen SEMANTISCHE PLATZHALTER stehen, frei benannt, z. B. $kassenbestand, $ansprechpartner_vertrieb, $umsatz_letztes_jahr — sie werden je Lauf per KI aus dem Firmen-Kontext nach Bedeutung befuellt. Immer einen Fallback mitgeben: $kassenbestand ?? "Es liegt KEIN Kassenbestand vor". Strukturiert: {{ $company }} (Objekt), {{ $context }} (Klartext).
+Liefert den Katalog aller Node-Typen fuer Workflows: Logik-Nodes (trigger, filter, if, switch, transform, loop, merge, ai, wait, human, stop, subworkflow) und Tool-Nodes ('tool:<name>') mit Parametern, Wirkungsklasse (read/additive/mutating/destructive) und Kostenklasse. Vor workflow_save aufrufen. Expressions: {{ $json.feld }}, {{ $('Node-Name').item.json.feld }}, {{ $input.all() }}, {{ $vars.name }}, {{ $now }}. Tool-Node: parameters = { tool: '<name>', args: {...}, outputPath?: 'items', itemKey?: 'discoveryId' }; mode perItem (Default) oder allItems. FIRMENBEZUG: Jeder Lauf gilt fuer GENAU EINE Firma; ihr vollstaendiger Kontext (Stammdaten, Profil, Finanzen/Kennzahlen, Kontakte, CRM) liegt dem Lauf vor. MEHRERE FIRMEN: entweder workflow_run mit firmen[] (je Firma ein Lauf) ODER Prime/Sub-Muster: ein Prime-Workflow (settings.scope 'none') erzeugt Items mit companyId/discoveryId (z. B. discovery_candidates, company_search) und ruft einen subworkflow-Node im Modus perItem auf — jeder Sub-Lauf holt sich den vollen Kontext seiner Firma. In Node-Parametern duerfen SEMANTISCHE PLATZHALTER stehen, frei benannt, z. B. $kassenbestand, $ansprechpartner_vertrieb, $umsatz_letztes_jahr — sie werden je Lauf per KI aus dem Firmen-Kontext nach Bedeutung befuellt. Immer einen Fallback mitgeben: $kassenbestand ?? "Es liegt KEIN Kassenbestand vor". Strukturiert: {{ $company }} (Objekt), {{ $context }} (Klartext).
 
 _Parameter:_
 - `suche: string` — Optionaler Filter (Name/Kategorie/Text)
@@ -2290,6 +2290,7 @@ Startet einen Workflow fuer EINE Firma (firma = Name oder companyId; Pflicht, au
 _Parameter:_
 - `workflow: string` (required)
 - `firma: string` — Firmenname oder companyId (aus company_search)
+- `firmen: array` — Mehrere Firmen (Namen oder companyIds): je Firma ein Lauf, bis zu 3 parallel, max 200
 - `discoveryId: string` — Alternativ: Radar-Kandidat
 - `dryRun: boolean`
 - `warten: boolean`

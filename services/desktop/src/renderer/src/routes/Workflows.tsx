@@ -26,9 +26,19 @@ export function statusPill(status: string): JSX.Element {
 }
 
 /** Firmenauswahl vor dem Start: jeder Workflow-Lauf gilt fuer genau eine Firma. */
-export function FirmenAuswahl({ onWahl, onAbbruch }: { onWahl: (f: { companyId: string; name: string } | null) => void; onAbbruch: () => void }): JSX.Element {
+export function FirmenAuswahl({
+  onWahl,
+  onAbbruch,
+  onMehrere,
+}: {
+  onWahl: (f: { companyId: string; name: string } | null) => void;
+  onAbbruch: () => void;
+  /** Optional: mehrere Firmen auf einmal (je Firma ein Lauf). */
+  onMehrere?: (f: Array<{ companyId: string; name: string }>) => void;
+}): JSX.Element {
   const [q, setQ] = useState("");
   const [kandidaten, setKandidaten] = useState<Array<{ companyId: string; name: string; ort: string | null }>>([]);
+  const [gewaehlt, setGewaehlt] = useState<Map<string, string>>(new Map());
   const [fehler, setFehler] = useState<string | null>(null);
   const [laedt, setLaedt] = useState(false);
   const suchen = async (): Promise<void> => {
@@ -69,13 +79,35 @@ export function FirmenAuswahl({ onWahl, onAbbruch }: { onWahl: (f: { companyId: 
       {kandidaten.length > 0 && (
         <div className="org-list">
           {kandidaten.map((k) => (
-            <button key={k.companyId} type="button" className="org-row wf-run" onClick={() => onWahl({ companyId: k.companyId, name: k.name })}>
-              <div className="org-row__main">
+            <div key={k.companyId} className="org-row">
+              {onMehrere && (
+                <input
+                  type="checkbox"
+                  checked={gewaehlt.has(k.companyId)}
+                  onChange={(e) =>
+                    setGewaehlt((m) => {
+                      const n = new Map(m);
+                      if (e.target.checked) n.set(k.companyId, k.name);
+                      else n.delete(k.companyId);
+                      return n;
+                    })
+                  }
+                  aria-label={`${k.name} auswählen`}
+                />
+              )}
+              <button type="button" className="org-row__main wf-run" onClick={() => onWahl({ companyId: k.companyId, name: k.name })}>
                 <span className="org-row__title">{k.name}</span>
                 <span className="org-row__meta">{k.ort ?? k.companyId}</span>
-              </div>
-            </button>
+              </button>
+            </div>
           ))}
+        </div>
+      )}
+      {onMehrere && gewaehlt.size > 0 && (
+        <div className="org-actions">
+          <button type="button" className="primary" onClick={() => onMehrere([...gewaehlt.entries()].map(([companyId, name]) => ({ companyId, name })))}>
+            Für {gewaehlt.size} Firmen starten (je Firma ein Lauf)
+          </button>
         </div>
       )}
       <p className="muted small">
@@ -202,7 +234,20 @@ export function Workflows(): JSX.Element {
       </div>
 
       {notice && <div className="radar-notice">{notice}</div>}
-      {firmaFuer && <FirmenAuswahl onAbbruch={() => setFirmaFuer(null)} onWahl={(f) => void starte(firmaFuer.id, firmaFuer.dryRun, f)} />}
+      {firmaFuer && (
+        <FirmenAuswahl
+          onAbbruch={() => setFirmaFuer(null)}
+          onWahl={(f) => void starte(firmaFuer.id, firmaFuer.dryRun, f)}
+          onMehrere={(fs) => {
+            const { id, dryRun } = firmaFuer;
+            setFirmaFuer(null);
+            void window.api.workflows.runBatch(id, fs, { dryRun }).then((r) => {
+              setNotice(r.error ?? `${dryRun ? "Trockenlauf" : "Workflow"} für ${fs.length} Firmen gestartet — je Firma ein Lauf, Ergebnisse kommen als Meldungen.`);
+              void reload();
+            });
+          }}
+        />
+      )}
 
       {approvals.length > 0 && (
         <section className="ct-card wf-approvals">

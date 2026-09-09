@@ -102,6 +102,8 @@ export function buildWorkflowTools(deps: WorkflowToolDeps): Tool[] {
       "Expressions: {{ $json.feld }}, {{ $('Node-Name').item.json.feld }}, {{ $input.all() }}, {{ $vars.name }}, {{ $now }}. " +
       "Tool-Node: parameters = { tool: '<name>', args: {...}, outputPath?: 'items', itemKey?: 'discoveryId' }; mode perItem (Default) oder allItems. " +
       "FIRMENBEZUG: Jeder Lauf gilt fuer GENAU EINE Firma; ihr vollstaendiger Kontext (Stammdaten, Profil, Finanzen/Kennzahlen, Kontakte, CRM) liegt dem Lauf vor. " +
+      "MEHRERE FIRMEN: entweder workflow_run mit firmen[] (je Firma ein Lauf) ODER Prime/Sub-Muster: ein Prime-Workflow (settings.scope 'none') erzeugt Items mit companyId/discoveryId " +
+      "(z. B. discovery_candidates, company_search) und ruft einen subworkflow-Node im Modus perItem auf — jeder Sub-Lauf holt sich den vollen Kontext seiner Firma. " +
       "In Node-Parametern duerfen SEMANTISCHE PLATZHALTER stehen, frei benannt, z. B. $kassenbestand, $ansprechpartner_vertrieb, $umsatz_letztes_jahr — sie werden je Lauf per KI aus dem " +
       "Firmen-Kontext nach Bedeutung befuellt. Immer einen Fallback mitgeben: $kassenbestand ?? \"Es liegt KEIN Kassenbestand vor\". Strukturiert: {{ $company }} (Objekt), {{ $context }} (Klartext).",
     parameters: { type: "object", properties: { suche: { type: "string", description: "Optionaler Filter (Name/Kategorie/Text)" } } },
@@ -298,8 +300,19 @@ export function buildWorkflowTools(deps: WorkflowToolDeps): Tool[] {
     description:
       "Startet einen Workflow fuer EINE Firma (firma = Name oder companyId; Pflicht, ausser settings.scope = 'none'). dryRun=true fuehrt Lese-Schritte echt aus, zeigt Schreib-Schritte (CRM, Mail, Import) aber nur als Vorschau — ideal zum Testen. " +
       "Laeuft asynchron; das Ergebnis kommt als Meldung. Mit warten=true wartet das Tool bis zu 5 Minuten auf das Ende und liefert die Zusammenfassung inkl. befuellter Platzhalter.",
-    parameters: { type: "object", required: ["workflow"], properties: { workflow: { type: "string" }, firma: { type: "string", description: "Firmenname oder companyId (aus company_search)" }, discoveryId: { type: "string", description: "Alternativ: Radar-Kandidat" }, dryRun: { type: "boolean" }, warten: { type: "boolean" } } },
-    schema: yup.object({ workflow: yup.string().trim().min(1).required(), firma: yup.string().trim().optional(), discoveryId: yup.string().trim().optional(), dryRun: yup.boolean().optional(), warten: yup.boolean().optional() }).noUnknown(true),
+    parameters: {
+      type: "object",
+      required: ["workflow"],
+      properties: {
+        workflow: { type: "string" },
+        firma: { type: "string", description: "Firmenname oder companyId (aus company_search)" },
+        firmen: { type: "array", items: { type: "string" }, description: "Mehrere Firmen (Namen oder companyIds): je Firma ein Lauf, bis zu 3 parallel, max 200" },
+        discoveryId: { type: "string", description: "Alternativ: Radar-Kandidat" },
+        dryRun: { type: "boolean" },
+        warten: { type: "boolean" },
+      },
+    },
+    schema: yup.object({ workflow: yup.string().trim().min(1).required(), firma: yup.string().trim().optional(), firmen: yup.array().of(yup.string().trim().min(1).required()).max(200).optional(), discoveryId: yup.string().trim().optional(), dryRun: yup.boolean().optional(), warten: yup.boolean().optional() }).noUnknown(true),
     preview: (r: Record<string, any>) => (r.error as string | undefined) ?? (r.execution ? `${r.execution.status}: ${r.execution.summary ?? ""}` : r.gestartet ? "gestartet" : "–"),
     run: async (args, c) => {
       const def = svc().resolve(args.workflow);
@@ -312,9 +325,22 @@ export function buildWorkflowTools(deps: WorkflowToolDeps): Tool[] {
         );
         if (value !== "ja") return { ...userDeclined(), abgebrochen: true };
       }
+      const istIdFn = (f: string): boolean => /^[A-Z0-9_]+_(HRB|HRA|GNR|PR|VR)_\d+$/i.test(f) || f.startsWith("cmp_");
+      if (args.firmen && args.firmen.length > 0) {
+        // Mehrere Firmen: je Firma ein Lauf (Leitgedanke), Stapel-Zusammenfassung.
+        const firmen = args.firmen.map((f) => (istIdFn(f.trim()) ? { companyId: f.trim() } : { companyQuery: f.trim() }));
+        const p = svc().runBatch(def.id, firmen, { trigger: args.dryRun ? "test" : "chat", dryRun: args.dryRun === true });
+        if (args.warten) {
+          const r = await Promise.race([p, new Promise<null>((res) => setTimeout(() => res(null), 5 * 60_000))]);
+          if (r) return { stapel: r };
+          return { gestartet: true, hinweis: "Stapel laeuft noch — Ergebnisse kommen als Meldungen; workflow_get zeigt die Laeufe." };
+        }
+        void p.catch(() => {});
+        return { gestartet: true, firmen: firmen.length, hinweis: "Stapel gestartet — je Firma ein Lauf; Ergebnisse kommen als Meldungen." };
+      }
       try {
         const firma = args.firma?.trim();
-        const istId = firma ? /^[A-Z0-9_]+_(HRB|HRA|GNR|PR|VR)_\d+$/i.test(firma) || firma.startsWith("cmp_") : false;
+        const istId = firma ? istIdFn(firma) : false;
         const p = svc().run(def.id, {
           trigger: args.dryRun ? "test" : "chat",
           dryRun: args.dryRun === true,

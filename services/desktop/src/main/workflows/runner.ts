@@ -514,12 +514,38 @@ export class WorkflowRunner {
       case "ai":
         return [await this.executeAi(ctx, node, items)];
       case "subworkflow": {
+        // Prime/Sub-Muster (Operator 2026-09-09): Der Prime-Workflow ist eine
+        // Schleife ueber Firmen (Items mit companyId/discoveryId); je Item
+        // startet der Sub-Workflow mit EIGENEM Firmenkontext. allItems =
+        // einmal mit allen Items (Firma des uebergeordneten Laufs).
         const sub = this.deps.getDefinition(String(node.parameters.workflowId));
         if (!sub) throw new Error("Sub-Workflow nicht gefunden.");
-        const ex = await this.run(sub, { trigger: ctx.execution.trigger, dryRun: ctx.execution.dryRun, inputItems: items, signal: ctx.signal, depth: ctx.depth + 1 });
-        if (ex.status !== "success") throw new Error(`Sub-Workflow „${sub.name}“: ${ex.status}${ex.error ? ` — ${ex.error}` : ""}`);
-        const last = Object.values(ex.nodeRuns).at(-1)?.at(-1)?.output?.[0] ?? [];
-        return [last];
+        const perItem = (node.mode ?? "perItem") === "perItem";
+        const gruppen: Array<{ items: WorkflowItem[]; company: CompanyScope | undefined; pairedIndex: number }> = perItem
+          ? items.map((it, i) => ({ items: [it], company: scopeAusItem(it, ctx.company?.scope), pairedIndex: i }))
+          : [{ items, company: ctx.company?.scope, pairedIndex: 0 }];
+        const out: WorkflowItem[] = [];
+        const fehler: string[] = [];
+        for (const g of gruppen) {
+          if (ctx.signal.aborted) throw new Error("aborted");
+          try {
+            const ex = await this.run(sub, { trigger: ctx.execution.trigger, dryRun: ctx.execution.dryRun, inputItems: g.items, signal: ctx.signal, depth: ctx.depth + 1, company: g.company });
+            if (ex.status !== "success") throw new Error(`${ex.status}${ex.error ? ` — ${ex.error}` : ""}`);
+            const last = Object.values(ex.nodeRuns).at(-1)?.at(-1)?.output?.[0] ?? [];
+            out.push({ json: { subExecutionId: ex.id, status: ex.status, firma: ex.scope ?? null, summary: ex.summary ?? null, ergebnis: last.slice(0, 20).map((i) => i.json) }, pairedItem: { item: g.pairedIndex } });
+          } catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            if (msg === "aborted") throw err;
+            fehler.push(`${g.company?.companyName ?? g.company?.companyId ?? g.company?.discoveryId ?? `Item ${g.pairedIndex + 1}`}: ${msg}`);
+            out.push({ json: { status: "error", firma: g.company ?? null, error: msg }, pairedItem: { item: g.pairedIndex } });
+          }
+        }
+        if (fehler.length > 0) {
+          const run = ctx.execution.nodeRuns[node.name]?.at(-1);
+          if (run) run.hinweise = [...(run.hinweise ?? []), ...fehler.slice(0, 20)];
+          if (fehler.length === gruppen.length) throw new Error(`Sub-Workflow „${sub.name}“ ist fuer alle ${gruppen.length} Firmen gescheitert: ${fehler[0]}`);
+        }
+        return [out];
       }
       case "tool":
         return [await this.executeTool(ctx, node, items)];
@@ -805,6 +831,17 @@ interface RunContext {
   placeholderCache: Map<string, unknown>;
   untilNode: string | null;
   gestoppt: boolean;
+}
+
+/** Firmenbezug aus einem Item (companyId/discoveryId/name), sonst der Eltern-Scope. */
+function scopeAusItem(it: WorkflowItem, fallback: CompanyScope | undefined): CompanyScope | undefined {
+  const j = it.json;
+  const companyId = typeof j.companyId === "string" ? j.companyId : typeof j.masterCompanyId === "string" ? j.masterCompanyId : undefined;
+  const discoveryId = typeof j.discoveryId === "string" ? j.discoveryId : undefined;
+  const companyName = typeof j.name === "string" ? j.name : typeof j.companyName === "string" ? j.companyName : undefined;
+  if (companyId) return { companyId, companyName };
+  if (discoveryId) return { discoveryId, companyName };
+  return fallback;
 }
 
 function statusText(s: WorkflowExecution["status"]): string {

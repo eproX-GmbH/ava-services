@@ -5567,6 +5567,15 @@ app.whenReady().then(async () => {
       return { error: err instanceof Error ? err.message : String(err) };
     }
   });
+  ipcMain.handle("workflows:runBatch", async (_e, id: string, firmen: Array<{ companyId?: string; discoveryId?: string; companyName?: string }>, opts?: { dryRun?: boolean }) => {
+    try {
+      const p = wf().runBatch(String(id), Array.isArray(firmen) ? firmen : [], { trigger: opts?.dryRun ? "test" : "manual", dryRun: opts?.dryRun === true });
+      void p.catch(() => {});
+      return { gestartet: Array.isArray(firmen) ? firmen.length : 0 };
+    } catch (err) {
+      return { error: err instanceof Error ? err.message : String(err) };
+    }
+  });
   ipcMain.handle("workflows:estimate", (_e, id: string) => {
     const def = wf().get(String(id));
     return def ? wf().estimate(def) : null;
