@@ -8109,3 +8109,7 @@ input, textarea, select, button, a, summary, details,
 .wf-handle-label { position: absolute; left: 14px; top: -7px; font-size: 10px; color: var(--muted); white-space: nowrap; pointer-events: none; }
 
 .wf-firma { padding: 1rem; margin: 0.5rem 0 1rem; }
+
+.wf-form { display: flex; flex-direction: column; gap: 0.5rem; }
+.wf-form__field input, .wf-form__field textarea, .wf-form__field select { width: 100%; }
+.wf-form__field > span:first-child { display: flex; gap: 0.4rem; align-items: center; }

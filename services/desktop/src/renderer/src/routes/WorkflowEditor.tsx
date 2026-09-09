@@ -150,6 +150,136 @@ function fromFlow(def: WorkflowDefinition, nodes: WfFlowNode[], edges: Edge[]): 
   };
 }
 
+type JsonSchema = {
+  type?: string;
+  description?: string;
+  enum?: unknown[];
+  properties?: Record<string, JsonSchema>;
+  required?: string[];
+  items?: JsonSchema;
+  default?: unknown;
+  minimum?: number;
+  maximum?: number;
+};
+
+/**
+ * W3 — Parameter-Formular aus dem JSON-Schema des Tools/Node-Typs. Jedes
+ * Feld nimmt feste Werte ODER Expressions ({{ … }}) ODER semantische
+ * Platzhalter ($kassenbestand ?? "…") an; die Vorschlagsliste kommt aus
+ * den Ausgaben der Vorgaenger-Schritte im gezeigten Lauf.
+ */
+function ParamForm({
+  schema,
+  value,
+  onChange,
+  vorschlaege,
+  listId,
+}: {
+  schema: JsonSchema;
+  value: Record<string, unknown>;
+  onChange: (next: Record<string, unknown>) => void;
+  vorschlaege: string[];
+  listId: string;
+}): JSX.Element {
+  const props = schema.properties ?? {};
+  const required = new Set(schema.required ?? []);
+  const setField = (k: string, v: unknown): void => {
+    const next = { ...value };
+    if (v === undefined || v === "") delete next[k];
+    else next[k] = v;
+    onChange(next);
+  };
+  const asText = (v: unknown): string => (v === undefined || v === null ? "" : typeof v === "string" ? v : JSON.stringify(v));
+  const parseLoose = (s: string, sch: JsonSchema): unknown => {
+    const t = s.trim();
+    if (t === "") return undefined;
+    if (/\{\{|\$[A-Za-zÄÖÜäöüß_]/.test(t)) return t; // Expression/Platzhalter bleibt Text
+    if (sch.type === "number" || sch.type === "integer") return Number.isFinite(Number(t)) ? Number(t) : t;
+    if (sch.type === "boolean") return t === "true" ? true : t === "false" ? false : t;
+    if (sch.type === "array" || sch.type === "object") {
+      try {
+        return JSON.parse(t);
+      } catch {
+        return sch.type === "array" ? t.split(",").map((x) => x.trim()).filter(Boolean) : t;
+      }
+    }
+    return t;
+  };
+  const keys = Object.keys(props);
+  if (keys.length === 0) return <p className="muted small">Keine Parameter.</p>;
+  return (
+    <div className="wf-form">
+      {keys.map((k) => {
+        const sch = props[k] ?? {};
+        const v = value[k];
+        const istExpr = typeof v === "string" && /\{\{|\$[A-Za-zÄÖÜäöüß_]/.test(v);
+        const label = `${k}${required.has(k) ? " *" : ""}`;
+        return (
+          <label key={k} className="field wf-form__field">
+            <span>
+              {label}
+              {sch.type && <span className="muted"> · {sch.type}{sch.type === "array" && sch.items?.type ? ` von ${sch.items.type}` : ""}</span>}
+              {istExpr && <span className="wf-badge wf-badge--items">Expression</span>}
+            </span>
+            {sch.enum && !istExpr ? (
+              <select value={asText(v)} onChange={(e) => setField(k, e.target.value)}>
+                <option value="">–</option>
+                {sch.enum.map((o) => (
+                  <option key={String(o)} value={String(o)}>
+                    {String(o)}
+                  </option>
+                ))}
+              </select>
+            ) : sch.type === "boolean" && !istExpr ? (
+              <select value={v === undefined ? "" : String(v)} onChange={(e) => setField(k, e.target.value === "" ? undefined : e.target.value === "true")}>
+                <option value="">–</option>
+                <option value="true">ja</option>
+                <option value="false">nein</option>
+              </select>
+            ) : sch.type === "object" || (sch.type === "array" && sch.items?.type === "object") || (typeof v === "string" && v.length > 80) ? (
+              <textarea rows={4} className="wf-params" value={asText(v)} onChange={(e) => setField(k, parseLoose(e.target.value, sch))} spellCheck={false} />
+            ) : (
+              <input value={asText(v)} list={listId} placeholder={sch.type === "array" ? "a, b, c oder {{ … }}" : "Wert, {{ Expression }} oder $platzhalter ?? \"Fallback\""} onChange={(e) => setField(k, parseLoose(e.target.value, sch))} />
+            )}
+            {sch.description && <span className="muted small">{sch.description}</span>}
+          </label>
+        );
+      })}
+      <datalist id={listId}>
+        {vorschlaege.map((s) => (
+          <option key={s} value={s} />
+        ))}
+      </datalist>
+    </div>
+  );
+}
+
+/** Vorschlaege fuer Expressions aus den Ausgaben der Vorgaenger im gezeigten Lauf. */
+function expressionVorschlaege(def: WorkflowDefinition, nodeName: string, ex: WorkflowExecution | null): string[] {
+  const out = new Set<string>(["{{ $json.name }}", "{{ $company.name }}", "{{ $vars.name }}", '$platzhalter ?? "Fallback"', "{{ $input.count }}", "{{ $now }}"]);
+  // Vorgaenger: alle Nodes, von denen eine Kante zu nodeName fuehrt (transitiv, max 50).
+  const vorgaenger = new Set<string>();
+  const stack = [nodeName];
+  while (stack.length > 0 && vorgaenger.size < 50) {
+    const cur = stack.pop()!;
+    for (const [from, c] of Object.entries(def.connections)) {
+      if ((c.main ?? []).some((targets) => (targets ?? []).some((t) => t.node === cur)) && !vorgaenger.has(from)) {
+        vorgaenger.add(from);
+        stack.push(from);
+      }
+    }
+  }
+  for (const v of vorgaenger) {
+    const first = ex?.nodeRuns[v]?.at(-1)?.output?.[0]?.[0]?.json;
+    if (!first) continue;
+    for (const k of Object.keys(first).slice(0, 25)) {
+      out.add(`{{ $('${v}').item.json.${k} }}`);
+      out.add(`{{ $json.${k} }}`);
+    }
+  }
+  return [...out];
+}
+
 export function WorkflowEditor(): JSX.Element {
   const { id = "" } = useParams();
   const navigate = useNavigate();
@@ -224,7 +354,7 @@ export function WorkflowEditor(): JSX.Element {
   useEffect(() => {
     setParamText(selectedNode ? JSON.stringify(selectedNode.parameters, null, 2) : "");
     setParamError(null);
-  }, [selectedNode?.name]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [selectedNode?.name, selectedNode?.parameters]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const onNodesChange = useCallback((changes: NodeChange<WfFlowNode>[]) => {
     setNodes((ns) => applyNodeChanges(changes, ns));
@@ -429,15 +559,33 @@ export function WorkflowEditor(): JSX.Element {
                 <input type="checkbox" checked={selectedNode.disabled === true} onChange={(e) => updateNode(selectedNode.name, { disabled: e.target.checked })} />
                 <span>Deaktiviert (Items werden durchgereicht)</span>
               </label>
-              <label className="field">
-                <span>Parameter (JSON, Expressions mit {"{{ }}"})</span>
-                <textarea className="wf-params" value={paramText} onChange={(e) => setParamText(e.target.value)} spellCheck={false} rows={14} />
-              </label>
-              {paramError && <div className="muted small warn">{paramError}</div>}
-              <div className="org-actions">
+              {(() => {
+                const entry = selectedNode.type === "tool" ? catalog.find((c) => c.type === `tool:${String(selectedNode.parameters.tool)}`) : catalog.find((c) => c.type === selectedNode.type);
+                const schema = (entry?.parameters ?? {}) as JsonSchema;
+                const vorschlaege = expressionVorschlaege(def, selectedNode.name, shownExecution);
+                if (selectedNode.type === "tool") {
+                  const args = (selectedNode.parameters.args as Record<string, unknown> | undefined) ?? {};
+                  return (
+                    <>
+                      <div className="muted small">Argumente für {String(selectedNode.parameters.tool)} — Werte, Expressions oder Platzhalter</div>
+                      <ParamForm schema={schema} value={args} onChange={(next) => updateNode(selectedNode.name, { parameters: { ...selectedNode.parameters, args: next } })} vorschlaege={vorschlaege} listId={`wf-sug-${selectedNode.id}`} />
+                    </>
+                  );
+                }
+                if (selectedNode.type !== "trigger" && selectedNode.type !== "note") {
+                  return <ParamForm schema={schema} value={selectedNode.parameters} onChange={(next) => updateNode(selectedNode.name, { parameters: next })} vorschlaege={vorschlaege} listId={`wf-sug-${selectedNode.id}`} />;
+                }
+                return null;
+              })()}
+              <details className="settings-collapse">
+                <summary>Erweitert: Parameter als JSON</summary>
+                <textarea className="wf-params" value={paramText} onChange={(e) => setParamText(e.target.value)} spellCheck={false} rows={12} />
+                {paramError && <div className="muted small warn">{paramError}</div>}
                 <button type="button" className="proc-toggle" onClick={applyParams}>
-                  Parameter übernehmen
+                  JSON übernehmen
                 </button>
+              </details>
+              <div className="org-actions">
                 <button
                   type="button"
                   className="link"
