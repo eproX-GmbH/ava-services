@@ -545,6 +545,10 @@ export function WorkflowEditor(): JSX.Element {
   // Felds. Vorher aenderte jeder Tastendruck den Namen im Node, waehrend die
   // Auswahl noch am alten Namen hing — nach dem ersten Zeichen war das Feld tot.
   const [nameDraft, setNameDraft] = useState("");
+  const [cancelling, setCancelling] = useState(false);
+  useEffect(() => {
+    if (shownExecution && shownExecution.status !== "running" && shownExecution.status !== "paused") setCancelling(false);
+  }, [shownExecution]);
   useEffect(() => {
     setNameDraft(nodes.find((n) => n.id === selected)?.data.wf.name ?? "");
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -706,8 +710,22 @@ export function WorkflowEditor(): JSX.Element {
             Ausführen
           </button>
           {running && shownExecution && (
-            <button type="button" className="proc-toggle" onClick={() => void window.api.workflows.cancel(shownExecution.id)}>
-              Abbrechen
+            <button
+              type="button"
+              className="proc-toggle"
+              disabled={cancelling}
+              onClick={() => {
+                setCancelling(true);
+                setNotice("Abbruch angefordert — der laufende Schritt wird verlassen …");
+                void window.api.workflows.cancel(shownExecution.id).then((r) => {
+                  if (!r.ok) {
+                    setNotice("Abbrechen nicht möglich: Lauf ist nicht mehr aktiv.");
+                    setCancelling(false);
+                  }
+                });
+              }}
+            >
+              {cancelling ? "Wird abgebrochen …" : "Abbrechen"}
             </button>
           )}
           <button type="button" className="proc-toggle" onClick={undo} disabled={history.length === 0} title="Rückgängig (Cmd/Strg+Z)">

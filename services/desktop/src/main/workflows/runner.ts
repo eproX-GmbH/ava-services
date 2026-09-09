@@ -316,7 +316,7 @@ export class WorkflowRunner {
       if (!trigger) throw new Error("Kein Start-Node.");
       // Firmen-Kontext vollstaendig laden (Stammdaten, Profil, Finanzen, Kontakte, CRM, Radar).
       if (opts.company?.companyId || opts.company?.discoveryId) {
-        ctx.company = await buildCompanyContext(this.deps.registry, opts.company, this.toolContext(ctx, trigger, "none", "read", []));
+        ctx.company = await withAbort(abort.signal, buildCompanyContext(this.deps.registry, opts.company, this.toolContext(ctx, trigger, "none", "read", [])));
         execution.scope = ctx.company.scope;
         execution.contextQuellen = ctx.company.quellen;
         this.deps.store.saveExecution(execution);
@@ -621,7 +621,7 @@ export class WorkflowRunner {
         if (gewartet && ctx.company) {
           // Kontext neu laden: die gewarteten Daten sind jetzt da (oder endgueltig nicht).
           const trigger = ctx.def.nodes.find((n) => n.type === "trigger") ?? node;
-          ctx.company = await buildCompanyContext(this.deps.registry, ctx.company.scope, this.toolContext(ctx, trigger, "none", "read", []));
+          ctx.company = await withAbort(ctx.signal, buildCompanyContext(this.deps.registry, ctx.company.scope, this.toolContext(ctx, trigger, "none", "read", [])));
           ctx.placeholderCache.clear();
         }
         const fehl = firma.fehlgeschlageneStufen.filter((s) => offen.includes(s));
@@ -1087,7 +1087,7 @@ export class WorkflowRunner {
         }
       }
       const parsed = tool.parseArgs(args);
-      const result = await tool.run(parsed, this.toolContext(ctx, node, level, kind, [ectx.inputItems[ectx.itemIndex] ?? { json: ectx.json }]));
+      const result = await withAbort(ctx.signal, tool.run(parsed, this.toolContext(ctx, node, level, kind, [ectx.inputItems[ectx.itemIndex] ?? { json: ectx.json }])));
       if (isMail) {
         ctx.state.mailsToday.count++;
         ctx.mailsSent++;
@@ -1216,6 +1216,30 @@ function scopeAusItem(it: WorkflowItem, fallback: CompanyScope | undefined): Com
 
 function statusText(s: WorkflowExecution["status"]): string {
   return s === "success" ? "abgeschlossen" : s === "error" ? "mit Fehler beendet" : s === "cancelled" ? "abgebrochen" : s === "waiting" ? "wartet auf Vorgang" : s;
+}
+
+/**
+ * v0.1.617 — Abbruch sofort wirksam: Ein laufender Tool-/Kontext-Aufruf wird
+ * nicht abgewartet, sondern per Race gegen das Abbruch-Signal verlassen (das
+ * Ergebnis wird verworfen). Vorher reagierte "Abbrechen" erst, wenn der
+ * aktuelle Aufruf (z. B. Gateway, Selenium-Producer) von selbst zurueckkam.
+ */
+function withAbort<T>(signal: AbortSignal, p: Promise<T>): Promise<T> {
+  if (signal.aborted) return Promise.reject(new Error("aborted"));
+  return new Promise<T>((resolve, reject) => {
+    const onAbort = (): void => reject(new Error("aborted"));
+    signal.addEventListener("abort", onAbort, { once: true });
+    p.then(
+      (v) => {
+        signal.removeEventListener("abort", onAbort);
+        resolve(v);
+      },
+      (e) => {
+        signal.removeEventListener("abort", onAbort);
+        reject(e);
+      },
+    );
+  });
 }
 
 function sleep(ms: number, signal?: AbortSignal): Promise<void> {
