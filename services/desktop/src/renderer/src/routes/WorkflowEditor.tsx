@@ -41,6 +41,10 @@ import { PIPELINE_STAGES, STAGE_LABELS, nodeRequirementsMitSub, waitStages, type
 type WfNodeData = {
   wf: WorkflowNode;
   run?: WorkflowNodeRun;
+  /** v0.1.624 — Summe ueber alle Durchgaenge (passives Warten) + Anzahl Durchgaenge. */
+  gesamt?: { items: number; durchgaenge: number };
+  /** Gesetzt am Warten-Node, solange der Lauf auf den Vorgang wartet. */
+  warten?: { weitergegeben: number; offen: number | null };
   write: boolean;
   label: string;
 };
@@ -78,7 +82,17 @@ function WfNode({ data, selected }: NodeProps<WfFlowNode>): JSX.Element {
         ))}
         {n.type === "human" && <span className="wf-badge">Freigabe</span>}
         {n.mode === "allItems" && <span className="wf-badge">alle Items</span>}
-        {data.run && <span className="wf-badge wf-badge--items">{data.run.outputItems.reduce((a, b) => a + b, 0)} Items</span>}
+        {data.warten ? (
+          <span className="wf-badge wf-badge--wait" title="Lauf wartet passiv auf den Vorgang; fertige Firmen gehen sofort an die Folge-Schritte">
+            wartet · {data.warten.weitergegeben} weitergegeben · {data.warten.offen ?? "?"} offen
+          </span>
+        ) : (
+          data.run && (
+            <span className="wf-badge wf-badge--items" title={data.gesamt && data.gesamt.durchgaenge > 1 ? `${data.gesamt.durchgaenge} Durchgaenge` : undefined}>
+              {data.gesamt && data.gesamt.durchgaenge > 1 ? `${data.gesamt.items} Items · ${data.gesamt.durchgaenge}×` : `${data.run.outputItems.reduce((a, b) => a + b, 0)} Items`}
+            </span>
+          )
+        )}
         {data.run?.error && <span className="wf-badge wf-badge--err" title={data.run.error}>Fehler</span>}
       </div>
       {outs.map((label, i) => (
@@ -403,6 +417,19 @@ function RunDetail({ def, execution, nodeName }: { def: WorkflowDefinition; exec
       </div>
       {tab === "eingabe" && <ItemsTable items={eingabe} leerText="Keine Eingabe-Items (Start-Node oder Vorgänger ohne Ausgabe)." />}
       {tab === "ausgabe" && <ItemsTable items={ausgabe} leerText={run.status === "error" ? "Keine Ausgabe — Schritt ist fehlgeschlagen." : "Keine Ausgabe-Items."} />}
+      {tab === "details" && execution.waiting?.node === nodeName && (
+        <div className="wf-rundetail__facts">
+          <div>
+            <span className="muted">Warten</span> {execution.waiting.fertig ?? execution.waiting.weitergegeben.length} Firmen weitergegeben, {execution.waiting.offen ?? "?"} offen · seit{" "}
+            {new Date(execution.waiting.seit).toLocaleString("de-DE", { dateStyle: "short", timeStyle: "short" })} · Stufen: {execution.waiting.stufen.join(", ")}
+          </div>
+          {execution.waiting.weitergegeben.length > 0 && (
+            <div>
+              <span className="muted">Weitergegeben</span> {execution.waiting.weitergegeben.join(", ")}
+            </div>
+          )}
+        </div>
+      )}
       {tab === "details" && (
         <div className="wf-rundetail__facts">
           <div>
@@ -559,11 +586,28 @@ export function WorkflowEditor(): JSX.Element {
 
   // Lauf-Ergebnisse an die Nodes haengen (ohne Positionen zu verlieren).
   useEffect(() => {
-    setNodes((prev) => prev.map((n) => ({ ...n, data: { ...n.data, run: shownExecution?.nodeRuns[n.id]?.at(-1) } })));
+    // v0.1.624 — Beim passiven Warten laufen Folge-Schritte in mehreren
+    // Durchgaengen: Badges und Kanten zeigen die SUMME, der Warten-Node den Stand.
+    const summe = (name: string, out: number): number => (shownExecution?.nodeRuns[name] ?? []).reduce((a, r) => a + (r.outputItems[out] ?? 0), 0);
+    setNodes((prev) =>
+      prev.map((n) => {
+        const runs = shownExecution?.nodeRuns[n.id] ?? [];
+        const w = shownExecution?.waiting;
+        return {
+          ...n,
+          data: {
+            ...n.data,
+            run: runs.at(-1),
+            gesamt: runs.length > 0 ? { items: runs.reduce((a, r) => a + r.outputItems.reduce((x, y) => x + y, 0), 0), durchgaenge: runs.length } : undefined,
+            warten: w && w.node === n.id && shownExecution?.status === "waiting" ? { weitergegeben: w.fertig ?? w.weitergegeben.length, offen: w.offen ?? null } : undefined,
+          },
+        };
+      }),
+    );
     setEdges((prev) =>
       prev.map((e) => {
         const run = shownExecution?.nodeRuns[e.source]?.at(-1);
-        const count = run?.outputItems[Number(e.sourceHandle ?? 0)];
+        const count = run ? summe(e.source, Number(e.sourceHandle ?? 0)) : undefined;
         const base = String(e.label ?? "").split(" · ")[0] ?? "";
         const label = [base, count !== undefined ? `${count} Items` : ""].filter(Boolean).join(" · ");
         return { ...e, label: label || undefined, animated: run?.status === "running" };

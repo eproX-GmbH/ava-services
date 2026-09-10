@@ -8132,6 +8132,8 @@ input, textarea, select, button, a, summary, details,
 .wf-badge--warn { background: #fef3c7; color: #92400e; border-color: transparent; }
 .wf-badge--err { background: #fee2e2; color: #b91c1c; border-color: transparent; }
 .wf-badge--items { background: var(--color-indigo-50); color: var(--color-indigo-700); border-color: transparent; }
+.wf-badge--wait { background: #fef3c7; color: #92400e; border-color: transparent; animation: wf-wait-pulse 2s ease-in-out infinite; }
+@keyframes wf-wait-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.55; } }
 .wf-node .react-flow__handle { width: 10px; height: 10px; background: var(--color-indigo-500); border: 2px solid var(--color-bg-1); }
 .wf-handle-label { position: absolute; left: 14px; top: -7px; font-size: 10px; color: var(--muted); white-space: nowrap; pointer-events: none; }
 
