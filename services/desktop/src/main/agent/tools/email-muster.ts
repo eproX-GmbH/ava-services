@@ -34,7 +34,8 @@ export function buildEmailMusterTools(deps: { get: () => EmailMusterSupervisor |
     description:
       "Zeigt, ob die Hintergrund-Ableitung von E-Mail-Adressen aktiv ist, ob die Mail-Pruefung in diesem Netz moeglich ist (Port 25), " +
       "wann zuletzt gelaufen und wie viele Adressen abgeleitet und verifiziert wurden. Die Ableitung laeuft lokal auf diesem Rechner, " +
-      "eine Firma je Durchgang, nur wenn kein Chat laeuft. Nur verifizierte Adressen werden gespeichert und als „abgeleitet · verifiziert“ angezeigt.",
+      "eine Firma je Durchgang, nur wenn kein Chat laeuft. Verifizierte Adressen werden als „abgeleitet · verifiziert“ gespeichert; bei Catch-all-Domains " +
+      "(Server nimmt jede Adresse an) nach Muster als „abgeleitet · unbestaetigt“ mit niedrigerer Zuverlaessigkeit — eine Antwort bestaetigt, ein Bounce entfernt sie.",
     parameters: { type: "object", properties: {} },
     schema: yup.object({}).noUnknown(true),
     preview: (r: Record<string, any>) => `E-Mail-Ableitung ${r.enabled ? "aktiv" : "aus"} · ${r.stats?.verifiziert ?? 0} verifiziert`,
@@ -61,7 +62,7 @@ export function buildEmailMusterTools(deps: { get: () => EmailMusterSupervisor |
     category: "kontakte email adresse muster verlauf historie geprueft verifiziert gespeichert",
     description:
       "Listet die einzelnen Adresspruefungen der lokalen E-Mail-Ableitung, juengste zuerst: Zeitpunkt, Firma, Person, Adresse, Muster, Ergebnis " +
-      "(verifiziert / abgelehnt / unklar / catch_all / gesperrt) und ob die Adresse am Server gespeichert wurde. Optional filterbar nach Ergebnis " +
+      "(verifiziert / abgelehnt / unklar / catch_all = unbestaetigt gespeichert / gesperrt) und ob die Adresse am Server gespeichert wurde. Optional filterbar nach Ergebnis " +
       "(nur = verifiziert|abgelehnt|unklar|catch_all|gesperrt|gespeichert) oder Firma (companyId).",
     parameters: {
       type: "object",

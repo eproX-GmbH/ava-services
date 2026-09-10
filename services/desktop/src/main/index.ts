@@ -1,3 +1,4 @@
+import { meldeAbgeleiteteAdressen } from "./contacts/email-muster/rueckmeldung";
 import { EmailMusterSupervisor } from "./contacts/email-muster/supervisor";
 import {
   app,
@@ -2317,6 +2318,8 @@ app.whenReady().then(async () => {
   // W4 — Workflow-Trigger mail.inbound (nur eingehende, fertig geladene Mails).
   mailSupervisor.on("messageFinalized", (msg: import("../shared/types").MailMessage) => {
     if (msg.direction !== "inbound") return;
+    // M4 — Rueckmeldung fuer abgeleitete Adressen: Bounce deaktiviert, Antwort bestaetigt.
+    void meldeAbgeleiteteAdressen(msg, (path, opts) => gatewayClient.request(path, opts as never)).catch(() => undefined);
     void workflowService?.emitEvent("mail.inbound", {
       messageId: msg.id,
       from: msg.from.address,

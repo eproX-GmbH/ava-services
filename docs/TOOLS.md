@@ -1138,7 +1138,7 @@ _Parameter:_ keine.
 
 _Datei:_ `services/desktop/src/main/agent/tools/email-muster.ts`
 
-Zeigt, ob die Hintergrund-Ableitung von E-Mail-Adressen aktiv ist, ob die Mail-Pruefung in diesem Netz moeglich ist (Port 25), wann zuletzt gelaufen und wie viele Adressen abgeleitet und verifiziert wurden. Die Ableitung laeuft lokal auf diesem Rechner, eine Firma je Durchgang, nur wenn kein Chat laeuft. Nur verifizierte Adressen werden gespeichert und als „abgeleitet · verifiziert“ angezeigt.
+Zeigt, ob die Hintergrund-Ableitung von E-Mail-Adressen aktiv ist, ob die Mail-Pruefung in diesem Netz moeglich ist (Port 25), wann zuletzt gelaufen und wie viele Adressen abgeleitet und verifiziert wurden. Die Ableitung laeuft lokal auf diesem Rechner, eine Firma je Durchgang, nur wenn kein Chat laeuft. Verifizierte Adressen werden als „abgeleitet · verifiziert“ gespeichert; bei Catch-all-Domains (Server nimmt jede Adresse an) nach Muster als „abgeleitet · unbestaetigt“ mit niedrigerer Zuverlaessigkeit — eine Antwort bestaetigt, ein Bounce entfernt sie.
 
 _Parameter:_ keine.
 
@@ -1146,7 +1146,7 @@ _Parameter:_ keine.
 
 _Datei:_ `services/desktop/src/main/agent/tools/email-muster.ts`
 
-Listet die einzelnen Adresspruefungen der lokalen E-Mail-Ableitung, juengste zuerst: Zeitpunkt, Firma, Person, Adresse, Muster, Ergebnis (verifiziert / abgelehnt / unklar / catch_all / gesperrt) und ob die Adresse am Server gespeichert wurde. Optional filterbar nach Ergebnis (nur = verifiziert|abgelehnt|unklar|catch_all|gesperrt|gespeichert) oder Firma (companyId).
+Listet die einzelnen Adresspruefungen der lokalen E-Mail-Ableitung, juengste zuerst: Zeitpunkt, Firma, Person, Adresse, Muster, Ergebnis (verifiziert / abgelehnt / unklar / catch_all = unbestaetigt gespeichert / gesperrt) und ob die Adresse am Server gespeichert wurde. Optional filterbar nach Ergebnis (nur = verifiziert|abgelehnt|unklar|catch_all|gesperrt|gespeichert) oder Firma (companyId).
 
 _Parameter:_
 - `nur: string (enum: verifiziert, abgelehnt, unklar, catch_all, gesperrt, gespeichert)`

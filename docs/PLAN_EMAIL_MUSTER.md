@@ -248,6 +248,29 @@ gespeichert, SMTP-Antwort, ggf. Speicherfehler. Sichtbar an drei Stellen:
 - Kontaktkarte: Badge „abgeleitet · verifiziert TT.MM.JJ“ mit Prüfdatum, Tooltip
   zeigt Muster, Beleg, MX und SMTP-Antwort aus dem Herkunftstext der Beobachtung.
 
+## 7b. Catch-all-Domains: speichern statt verwerfen (Operator 2026-09-10, v0.1.631)
+
+Nimmt ein Mailserver jede Adresse an, ist die Einzeladresse per SMTP nicht belegbar,
+das Muster aber oft sicher (z. B. basecom.de, `v.nachname`, 2 Belege, 95 Personen ohne
+Adresse). Beschluss: trotzdem speichern, ehrlich gekennzeichnet.
+
+1. **Speichern als `pattern:catchall`** (Route `derived-email`, `art: "catchall"`,
+   `belegAnzahl`). Konfidenz 0,6 bei 2 Belegen, 0,75 ab 3. SMTP-verifizierte Adressen
+   (`pattern:smtp`) bekommen jetzt 0,9 statt der Formel-0,6.
+   Ist der Catch-all vom Server bereits bekannt, entfällt die SMTP-Anfrage ganz.
+   Weiterhin höchstens 5 Personen je Firma und Durchgang; Catch-all-Domains mit
+   Muster werden nicht 90 Tage gesperrt, solange Personen ohne Adresse übrig sind.
+2. **Badge** auf der Kontaktkarte: „abgeleitet · unbestätigt TT.MM.JJ“ (gelb) mit
+   Tooltip; „abgeleitet · verifiziert“ und „abgeleitet · bestätigt“ (grün).
+3. **Rückmeldung aus dem Postfach** (`contacts/email-muster/rueckmeldung.ts`, hängt am
+   `messageFinalized`-Ereignis, nur eingehende Mails): Unzustellbarkeitsmeldung
+   (Absender mailer-daemon/postmaster oder Betreff „Undelivered/Unzustellbar/…“) →
+   Adressen aus dem Text → `POST /v1/email-patterns/feedback {ergebnis: "bounce"}`
+   deaktiviert den Fakt. Sonst Absender → `{ergebnis: "antwort"}`: liegt eine
+   abgeleitete Adresse vor, entsteht eine Beobachtung `pattern:reply`, Konfidenz 0,95.
+   Der Server ändert nur Fakten mit Quelle `pattern:*`, gefundene Adressen nie.
+4. **Deckel** bleibt: Tages-Deckel 50, 5 je Firma, eine Firma je 15 Minuten.
+
 ## 8. Ursprünglich offene Entscheidungen (historisch)
 
 1. Externer Verifizierungsdienst als optionaler Fallback vom Gerät aus

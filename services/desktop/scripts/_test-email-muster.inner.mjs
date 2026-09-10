@@ -37,6 +37,20 @@ check(P.bildeAdresse("v.nachname", "Anna-Lena Schmidt", "example.de") === "a.sch
 check(P.bildeAdresse("vorname.nachname", "Prof. Dr. Klaus von Berg", "example.de") === "klaus.berg@example.de", "Titel weg, Partikel weg (Kurzform zuerst)");
 check(P.bildeAdresse("vorname.nachname", "Madonna", "example.de") === null, "Einwort-Name → null");
 
+console.log("Rueckmeldung (Bounce/Antwort)");
+const R = await load("../src/main/contacts/email-muster/rueckmeldung.ts");
+const bounce = R.bounceAdressen({ from: { address: "MAILER-DAEMON@mx.example.de", name: null }, subject: "Undelivered Mail Returned to Sender", bodyText: "The following address failed: a.tepe@basecom.de\nReporting-MTA: mx.example.de" }, new Set(["joyce@quikk.de"]));
+check(bounce.length === 1 && bounce[0] === "a.tepe@basecom.de", "Bounce: betroffene Adresse aus Body: " + JSON.stringify(bounce));
+const bounce2 = R.bounceAdressen({ from: { address: "postmaster@firma.de", name: null }, subject: "Zustellung fehlgeschlagen", bodyText: "An: joyce@quikk.de — Empfaenger m.muster@firma.de unbekannt" }, new Set(["joyce@quikk.de"]));
+check(bounce2.length === 1 && bounce2[0] === "m.muster@firma.de", "Bounce (deutsch): eigene Adresse ausgeschlossen: " + JSON.stringify(bounce2));
+check(R.bounceAdressen({ from: { address: "anna@firma.de", name: "Anna" }, subject: "Re: Termin", bodyText: "Hallo, gerne. anna@firma.de" }).length === 0, "normale Antwort ist kein Bounce");
+const calls = [];
+await R.meldeAbgeleiteteAdressen({ from: { address: "Anna.Meier@firma.de", name: null }, to: [{ address: "joyce@quikk.de", name: null }], subject: "Re: Termin", bodyText: "ok" }, async (path, opts) => { calls.push({ path, body: opts?.body }); return { gefunden: true, aktion: "bestaetigt" }; });
+check(calls.length === 1 && calls[0].body.ergebnis === "antwort" && calls[0].body.email === "anna.meier@firma.de", "Antwort → feedback antwort (kleingeschrieben)");
+calls.length = 0;
+await R.meldeAbgeleiteteAdressen({ from: { address: "noreply@shop.de", name: null }, to: [{ address: "joyce@quikk.de", name: null }], subject: "Bestellung", bodyText: "x" }, async (path, opts) => { calls.push(1); return { gefunden: false, aktion: "keine" }; });
+check(calls.length === 0, "noreply-Absender loest keine Rueckmeldung aus");
+
 const S = await load("../src/main/contacts/email-muster/smtp-verify.ts");
 console.log("SMTP-Hilfen");
 check(/^ava-[a-z0-9]{10,}@example\.de$/.test(S.zufallsAdresse("example.de")), "Zufallsadresse fuer Catch-all-Test");

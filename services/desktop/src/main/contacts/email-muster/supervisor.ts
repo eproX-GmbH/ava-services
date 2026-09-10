@@ -28,7 +28,7 @@ const DEFAULT: EmailMusterConfig = {
   netz: null,
   tag: { day: "", count: 0 },
   domains: {},
-  stats: { firmen: 0, geprueft: 0, verifiziert: 0, abgelehnt: 0, unbekannt: 0, catchAll: 0 },
+  stats: { firmen: 0, geprueft: 0, verifiziert: 0, unbestaetigt: 0, abgelehnt: 0, unbekannt: 0, catchAll: 0 },
   verlauf: [],
 };
 
@@ -255,7 +255,10 @@ export class EmailMusterSupervisor {
       const frist = stand.catchAll ? CATCHALL_RECHECK_MS : DOMAIN_RECHECK_MS;
       // Regel (Operator 2026-09-10): erneut nur, wenn die Frist ablief ODER neue
       // Belege auftauchten (moeglicher Formatwechsel der Firma).
-      if (alter < frist && stand.belege === belegeAnzahl) return null;
+      // Catch-all mit Muster: solange Personen ohne Adresse uebrig sind, weiter
+      // ableiten (max. MAX_JE_FIRMA je Durchgang), nicht 90 Tage warten.
+      const catchAllOffen = stand.catchAll && !!stand.muster;
+      if (alter < frist && stand.belege === belegeAnzahl && !catchAllOffen) return null;
     }
     const befund = erkenneMuster(domain, belege);
     // Geteilten Serverstand einbeziehen: Muster/Catch-all anderer Nutzer.
@@ -265,10 +268,9 @@ export class EmailMusterSupervisor {
     } catch {
       server = null;
     }
-    if (server?.catchAllAt && Date.now() - Date.parse(server.catchAllAt) < CATCHALL_RECHECK_MS && !manuell) {
-      cfg.domains[domain] = { at: new Date().toISOString(), muster: server.muster, belege: belegeAnzahl, catchAll: true };
-      return null;
-    }
+    // Catch-all vom Server bekannt: keine SMTP-Pruefung noetig, Adressen werden
+    // nach Muster als "unbestaetigt" gespeichert (Operator 2026-09-10).
+    const catchAllBekannt = !!server?.catchAllAt && Date.now() - Date.parse(server.catchAllAt) < CATCHALL_RECHECK_MS && !manuell;
     const muster = befund.muster ?? server?.muster ?? null;
     if (!muster) {
       cfg.domains[domain] = { at: new Date().toISOString(), muster: null, belege: belegeAnzahl, catchAll: false };
@@ -283,9 +285,12 @@ export class EmailMusterSupervisor {
       return null;
     }
     cfg.stats.firmen++;
-    this.deps.log(`[email-muster] ${name} (${domain}): Muster ${muster}, ${kandidaten.length} Kandidaten`);
-    const ergebnisse = await pruefeAdressen(domain, kandidaten.map((k) => k.email), { catchAllProbe: zufallsAdresse(domain), log: this.deps.log });
-    let verifiziert = 0, abgelehnt = 0, unbekannt = 0, catchAll = false, gesperrt = false;
+    this.deps.log(`[email-muster] ${name} (${domain}): Muster ${muster}, ${kandidaten.length} Kandidaten${catchAllBekannt ? " (Catch-all bekannt)" : ""}`);
+    const ergebnisse = catchAllBekannt
+      ? new Map(kandidaten.map((k) => [k.email, { ergebnis: "catch_all" as PruefErgebnis, mx: null, code: null, antwort: null, dauerMs: 0 }]))
+      : await pruefeAdressen(domain, kandidaten.map((k) => k.email), { catchAllProbe: zufallsAdresse(domain), log: this.deps.log });
+    const belegBeispiel = befund.belege[0]?.email ?? kandidaten[0]!.email;
+    let verifiziert = 0, abgelehnt = 0, unbekannt = 0, unbestaetigt = 0, catchAll = false, gesperrt = false;
     for (const k of kandidaten) {
       const r = ergebnisse.get(k.email);
       const e: PruefErgebnis = r?.ergebnis ?? "unbekannt";
@@ -306,9 +311,23 @@ export class EmailMusterSupervisor {
         mx: r?.mx ?? null,
       };
       if (e === "catch_all") {
+        // Muster sicher, Adresse nicht einzeln belegbar → als "unbestaetigt" speichern.
         catchAll = true;
-        this.merke(cfg, { ...eintrag, ergebnis: "catch_all" });
-        break;
+        eintrag.ergebnis = "catch_all";
+        try {
+          await this.deps.gatewayRequest(`/v1/companies/${encodeURIComponent(companyId)}/contacts/derived-email`, {
+            method: "POST",
+            body: { personId: k.personId, email: k.email, muster, beleg: belegBeispiel, mx: r?.mx ?? null, checkedAt: eintrag.at, art: "catchall", belegAnzahl: befund.belege.length },
+          });
+          eintrag.gespeichert = true;
+          unbestaetigt++;
+          cfg.stats.unbestaetigt++;
+        } catch (err) {
+          eintrag.fehler = `Speichern fehlgeschlagen: ${err instanceof Error ? err.message : String(err)}`;
+          this.deps.log(`[email-muster] speichern fehlgeschlagen ${k.email}: ${err instanceof Error ? err.message : String(err)}`);
+        }
+        this.merke(cfg, eintrag);
+        continue;
       }
       if (e === "gesperrt") {
         gesperrt = true;
@@ -320,7 +339,7 @@ export class EmailMusterSupervisor {
         try {
           await this.deps.gatewayRequest(`/v1/companies/${encodeURIComponent(companyId)}/contacts/derived-email`, {
             method: "POST",
-            body: { personId: k.personId, email: k.email, muster, beleg: befund.belege[0]?.email ?? kandidaten[0]!.email, mx: r?.mx ?? null, checkedAt: eintrag.at, smtpCode: r?.code ?? undefined },
+            body: { personId: k.personId, email: k.email, muster, beleg: belegBeispiel, mx: r?.mx ?? null, checkedAt: eintrag.at, smtpCode: r?.code ?? undefined, art: "smtp" },
           });
           eintrag.gespeichert = true;
           verifiziert++;
@@ -343,15 +362,15 @@ export class EmailMusterSupervisor {
       cfg.netz = { erreichbar: false, grund: "Verbindung zum Mailserver nicht moeglich", at: new Date().toISOString() };
       return "Mail-Pruefung in diesem Netz nicht moeglich (Port 25 gesperrt)";
     }
-    if (catchAll) {
+    if (catchAll && !catchAllBekannt) {
       cfg.stats.catchAll++;
       await this.deps.gatewayRequest(`/v1/email-patterns/${encodeURIComponent(domain)}`, { method: "PUT", body: { muster, konfidenz: befund.konfidenz, belege: befund.belege.slice(0, 20), catchAll: true } }).catch(() => undefined);
     }
     cfg.domains[domain] = { at: new Date().toISOString(), muster, belege: belegeAnzahl, catchAll };
     const zusammenfassung = catchAll
-      ? `${name}: Domain ${domain} nimmt alle Adressen an (Catch-all) — keine Adresse verifizierbar`
+      ? `${name}: Domain ${domain} nimmt alle Adressen an (Catch-all) — ${unbestaetigt} Adresse(n) nach Muster ${muster} als unbestaetigt gespeichert`
       : `${name}: ${verifiziert} Adresse(n) abgeleitet und verifiziert, ${abgelehnt} abgelehnt, ${unbekannt} unklar (Muster ${muster})`;
-    this.deps.audit({ summary: `E-Mail-Ableitung — ${zusammenfassung}`, severity: "info", metadata: { companyId, domain, muster, verifiziert, abgelehnt, unbekannt, catchAll } });
+    this.deps.audit({ summary: `E-Mail-Ableitung — ${zusammenfassung}`, severity: "info", metadata: { companyId, domain, muster, verifiziert, unbestaetigt, abgelehnt, unbekannt, catchAll } });
     return zusammenfassung;
   }
 }

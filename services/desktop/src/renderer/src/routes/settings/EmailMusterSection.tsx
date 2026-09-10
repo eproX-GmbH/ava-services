@@ -10,7 +10,7 @@ const ERGEBNIS_LABEL: Record<VerlaufErgebnis, string> = {
   verifiziert: "verifiziert",
   abgelehnt: "abgelehnt",
   unklar: "unklar",
-  catch_all: "Catch-all",
+  catch_all: "Catch-all · unbestätigt",
   gesperrt: "Netz gesperrt",
 };
 const ERGEBNIS_PILL: Record<VerlaufErgebnis, string> = {
@@ -56,8 +56,9 @@ export function EmailMusterSection() {
       <h3>E-Mail-Ableitung</h3>
       <p className="muted">
         Kennt AVA von einer Firma eine persönliche E-Mail-Adresse, leitet sie daraus das Adressmuster ab und bildet Adressen für Kontakte ohne E-Mail.
-        Jede Adresse wird per Mail-Server-Anfrage auf Existenz geprüft, ohne eine E-Mail zu senden. Nur geprüfte Adressen werden gespeichert und als
-        „abgeleitet · verifiziert“ angezeigt. Läuft lokal auf diesem Rechner, eine Firma alle 15 Minuten, nicht während eines Chats und nicht im Akkubetrieb.
+        Jede Adresse wird per Mail-Server-Anfrage auf Existenz geprüft, ohne eine E-Mail zu senden. Geprüfte Adressen werden als „abgeleitet · verifiziert“
+        gespeichert. Nimmt ein Mailserver jede Adresse an (Catch-all), wird die Adresse nach dem Muster trotzdem gespeichert, aber als „abgeleitet · unbestätigt“
+        mit niedrigerer Zuverlässigkeit. Eine eingehende Antwort bestätigt sie, eine Unzustellbarkeitsmeldung entfernt sie wieder. Läuft lokal auf diesem Rechner, eine Firma alle 15 Minuten, nicht während eines Chats und nicht im Akkubetrieb.
       </p>
       <div className="alerts-prefs__row">
         <label className="alerts-prefs__check">
@@ -100,7 +101,7 @@ export function EmailMusterSection() {
         <div>
           <dt>Gesamt</dt>
           <dd>
-            {s.stats.verifiziert} verifiziert · {s.stats.abgelehnt} abgelehnt · {s.stats.unbekannt} unklar · {s.stats.catchAll} Catch-all-Domains · {domains.length} Domains geprüft
+            {s.stats.verifiziert} verifiziert · {s.stats.unbestaetigt ?? 0} unbestätigt gespeichert · {s.stats.abgelehnt} abgelehnt · {s.stats.unbekannt} unklar · {s.stats.catchAll} Catch-all-Domains · {domains.length} Domains geprüft
           </dd>
         </div>
       </dl>
@@ -162,7 +163,9 @@ export function EmailMusterSection() {
                     </td>
                     <td>
                       {r.gespeichert ? (
-                        <span title="Als Kontakt-E-Mail gespeichert, sichtbar auf der Kontaktkarte">✓ ja</span>
+                        <span title={r.ergebnis === "catch_all" ? "Als unbestätigte Kontakt-E-Mail gespeichert (Catch-all), sichtbar auf der Kontaktkarte" : "Als Kontakt-E-Mail gespeichert, sichtbar auf der Kontaktkarte"}>
+                          ✓ {r.ergebnis === "catch_all" ? "unbestätigt" : "ja"}
+                        </span>
                       ) : r.fehler ? (
                         <span className="em-verlauf__err" title={r.fehler}>
                           Fehler

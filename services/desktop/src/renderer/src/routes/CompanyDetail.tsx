@@ -256,12 +256,29 @@ function herkunftKarte(obs: Observation[] | undefined): Map<string, string> {
 function AbgeleitetBadge({ quellen, obsId, evidence }: { quellen?: Map<string, string>; obsId: string | null; evidence?: string | null }) {
   const src = obsId ? quellen?.get(obsId) : undefined;
   if (!src || !src.startsWith("pattern:")) return null;
-  // Pruefdatum aus dem Herkunftstext ("… geprueft am 2026-09-10 …").
-  const m = evidence?.match(/geprueft am (\d{4})-(\d{2})-(\d{2})/);
-  const datum = m ? `${m[3]}.${m[2]}.${m[1]!.slice(2)}` : null;
+  // Pruef-/Bestaetigungsdatum aus dem Herkunftstext ("… geprueft am 2026-09-10 …" / "… eingegangen am …").
+  const m = evidence?.match(/(?:geprueft|eingegangen) am (\d{4})-(\d{2})-(\d{2})/);
+  const datum = m ? ` ${m[3]}.${m[2]}.${m[1]!.slice(2)}` : "";
+  if (src === "pattern:catchall") {
+    return (
+      <span
+        className="pill pill--paused"
+        title={evidence ?? "Nach dem Adressmuster der Firma gebildet. Der Mailserver nimmt jede Adresse an (Catch-all), die Existenz ist daher nicht einzeln belegbar. Wird bei einer Antwort bestätigt, bei Unzustellbarkeit entfernt."}
+      >
+        abgeleitet · unbestätigt{datum}
+      </span>
+    );
+  }
+  if (src === "pattern:reply") {
+    return (
+      <span className="pill pill--active" title={evidence ?? "Abgeleitete Adresse, bestätigt durch eine eingegangene Antwort."}>
+        abgeleitet · bestätigt{datum}
+      </span>
+    );
+  }
   return (
-    <span className="pill pill--paused" title={evidence ?? "Nach dem Adressmuster der Firma gebildet und per Mail-Server-Anfrage auf Existenz geprüft (keine E-Mail zugestellt)."}>
-      abgeleitet · verifiziert{datum ? ` ${datum}` : ""}
+    <span className="pill pill--active" title={evidence ?? "Nach dem Adressmuster der Firma gebildet und per Mail-Server-Anfrage auf Existenz geprüft (keine E-Mail zugestellt)."}>
+      abgeleitet · verifiziert{datum}
     </span>
   );
 }

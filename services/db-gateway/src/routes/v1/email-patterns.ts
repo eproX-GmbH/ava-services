@@ -1,6 +1,8 @@
 // M3 (docs/PLAN_EMAIL_MUSTER.md) — Server speichert nur, verarbeitet nicht:
 //   GET/PUT /email-patterns/:domain        Adressmuster je Domain (geteilt)
-//   POST /companies/:id/contacts/derived-email  verifizierte, abgeleitete Adresse
+//   POST /companies/:id/contacts/derived-email  abgeleitete Adresse (art: smtp = verifiziert,
+//                                               catchall = Muster sicher, Adresse unbestaetigt)
+//   POST /email-patterns/feedback          Bounce (deaktivieren) / Antwort (bestaetigen)
 // Die Ableitung und die SMTP-Pruefung laufen lokal auf dem Geraet des Nutzers.
 
 import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
@@ -138,7 +140,7 @@ const derivedRoute = createRoute({
   method: "post",
   path: "/companies/{companyId}/contacts/derived-email",
   tags: [tag],
-  summary: "Abgeleitete UND verifizierte E-Mail-Adresse einer Person speichern",
+  summary: "Abgeleitete E-Mail-Adresse einer Person speichern (smtp = verifiziert, catchall = unbestaetigt)",
   request: {
     params: z.object({ companyId: z.string().min(1) }),
     body: {
@@ -152,6 +154,11 @@ const derivedRoute = createRoute({
             mx: z.string().max(253).nullable().optional(),
             checkedAt: z.string().datetime().optional(),
             smtpCode: z.number().int().optional(),
+            /** smtp (Standard): Existenz per RCPT TO belegt. catchall: Domain nimmt alles an,
+             *  Adresse nur nach Muster gebildet — wird als "unbestaetigt" gespeichert. */
+            art: z.enum(["smtp", "catchall"]).optional(),
+            /** Anzahl personengebundener Belege fuer das Muster (Konfidenz bei catchall). */
+            belegAnzahl: z.number().int().min(0).optional(),
           }),
         },
       },
@@ -178,7 +185,14 @@ emailPatternsRouter.openapi(derivedRoute, async (c) => {
   const prisma = getContactPrismaClient();
   const runId = `derived:${companyId}:${b.personId}:${Date.now()}`;
   const geprueft = b.checkedAt ?? new Date().toISOString();
-  const evidence = `Abgeleitet nach Adressmuster ${b.muster} (Beleg: ${b.beleg}); Existenz per SMTP geprueft am ${geprueft.slice(0, 10)}${b.mx ? ` (${b.mx}` : ""}${b.smtpCode ? `, Antwort ${b.smtpCode}` : ""}${b.mx ? ")" : ""}. Keine E-Mail zugestellt.`;
+  const art = b.art ?? "smtp";
+  const source = art === "catchall" ? "pattern:catchall" : "pattern:smtp";
+  const evidence =
+    art === "catchall"
+      ? `Abgeleitet nach Adressmuster ${b.muster} (${b.belegAnzahl ?? "?"} Belege, z. B. ${b.beleg}); geprueft am ${geprueft.slice(0, 10)}: Domain nimmt alle Adressen an (Catch-all${b.mx ? `, ${b.mx}` : ""}), Existenz daher nicht einzeln belegbar. Unbestaetigt; wird bei Antwort bestaetigt, bei Unzustellbarkeit entfernt.`
+      : `Abgeleitet nach Adressmuster ${b.muster} (Beleg: ${b.beleg}); Existenz per SMTP geprueft am ${geprueft.slice(0, 10)}${b.mx ? ` (${b.mx}` : ""}${b.smtpCode ? `, Antwort ${b.smtpCode}` : ""}${b.mx ? ")" : ""}. Keine E-Mail zugestellt.`;
+  // Konfidenz: SMTP-Beleg 0,9; Catch-all nach Beleglage 0,6 (2 Belege) / 0,75 (3+).
+  const konfidenz = art === "catchall" ? ((b.belegAnzahl ?? 0) >= 3 ? 0.75 : 0.6) : 0.9;
   const obs = await createObservationIdempotent(prisma, {
     entityType: "PERSON",
     entityId: b.personId,
@@ -186,7 +200,7 @@ emailPatternsRouter.openapi(derivedRoute, async (c) => {
     personId: b.personId,
     field: "email",
     value: email,
-    source: "pattern:smtp",
+    source,
     evidenceUrl: null,
     evidence,
     runId,
@@ -200,12 +214,97 @@ emailPatternsRouter.openapi(derivedRoute, async (c) => {
     field: "email",
     value: email,
     normalized: obs.normalized,
-    source: "pattern:smtp",
+    source,
     evidenceUrl: null,
     runId,
     policy: { multiValueFields: new Set(["email", "phone"]) },
   });
+  await prisma.fact.update({ where: { id: applied.factId }, data: { confidence: konfidenz } }).catch(() => undefined);
   await stampObservations(pool, [obs.id], auth?.tenantId ?? null, auth?.actorId ?? null).catch(() => undefined);
-  logger.info({ companyId, personId: b.personId, muster: b.muster, actorId: auth?.actorId }, "derived-email gespeichert");
+  logger.info({ companyId, personId: b.personId, muster: b.muster, art, actorId: auth?.actorId }, "derived-email gespeichert");
   return c.json({ factId: applied.factId, createdFact: applied.createdFact, observationId: obs.id }, 200);
+});
+
+// ---- Rueckmeldung aus dem Postfach: Bounce entfernt, Antwort bestaetigt -------------
+const feedbackRoute = createRoute({
+  method: "post",
+  path: "/email-patterns/feedback",
+  tags: [tag],
+  summary: "Rueckmeldung zu einer abgeleiteten Adresse: bounce = deaktivieren, antwort = bestaetigen",
+  request: {
+    body: {
+      content: {
+        "application/json": {
+          schema: z.object({
+            email: z.string().email().max(200),
+            ergebnis: z.enum(["bounce", "antwort"]),
+            /** Kurzer Kontext fuer den Herkunftstext (z. B. Betreff, Datum). */
+            hinweis: z.string().max(300).optional(),
+          }),
+        },
+      },
+    },
+  },
+  responses: {
+    200: {
+      content: { "application/json": { schema: z.object({ gefunden: z.boolean(), aktion: z.enum(["deaktiviert", "bestaetigt", "keine"]), factId: z.string().nullable() }) } },
+      description: "ok",
+    },
+    ...errorResponses,
+  },
+});
+emailPatternsRouter.openapi(feedbackRoute, async (c) => {
+  const auth = c.get("auth") as { tenantId?: string; actorId?: string } | undefined;
+  const b = c.req.valid("json");
+  const email = b.email.toLowerCase().trim();
+  const pool = getProducerPool("company-contact");
+  // Nur abgeleitete Adressen (Quelle pattern:*) — gefundene Adressen bleiben unangetastet.
+  const r = await pool.query(
+    `SELECT f."id", f."personId", f."companyId", o."source"
+       FROM "Fact" f JOIN "Observation" o ON o."id" = f."lastObsId"
+      WHERE f."field" = 'email' AND f."status" = 'ACTIVE' AND lower(f."value") = $1 AND o."source" LIKE 'pattern:%'
+      LIMIT 1`,
+    [email],
+  );
+  const row = r.rows[0] as { id: string; personId: string | null; companyId: string | null; source: string } | undefined;
+  if (!row) return c.json({ gefunden: false, aktion: "keine" as const, factId: null }, 200);
+  const prisma = getContactPrismaClient();
+  if (b.ergebnis === "bounce") {
+    await prisma.fact.update({ where: { id: row.id }, data: { status: "INACTIVE" } });
+    logger.info({ factId: row.id, email, actorId: auth?.actorId }, "derived-email nach Bounce deaktiviert");
+    return c.json({ gefunden: true, aktion: "deaktiviert" as const, factId: row.id }, 200);
+  }
+  if (row.source === "pattern:reply") return c.json({ gefunden: true, aktion: "keine" as const, factId: row.id }, 200);
+  if (!row.personId) return c.json({ gefunden: true, aktion: "keine" as const, factId: row.id }, 200);
+  const runId = `derived-reply:${row.personId}:${Date.now()}`;
+  const obs = await createObservationIdempotent(prisma, {
+    entityType: "PERSON",
+    entityId: row.personId,
+    companyId: row.companyId,
+    personId: row.personId,
+    field: "email",
+    value: email,
+    source: "pattern:reply",
+    evidenceUrl: null,
+    evidence: `Abgeleitete Adresse bestaetigt: Antwort von dieser Adresse eingegangen am ${new Date().toISOString().slice(0, 10)}${b.hinweis ? ` (${b.hinweis})` : ""}.`,
+    runId,
+  });
+  const applied = await applyObservation(prisma, {
+    observationId: obs.id,
+    entityType: "PERSON",
+    entityId: row.personId,
+    companyId: row.companyId,
+    personId: row.personId,
+    field: "email",
+    value: email,
+    normalized: obs.normalized,
+    source: "pattern:reply",
+    evidenceUrl: null,
+    runId,
+    policy: { multiValueFields: new Set(["email", "phone"]) },
+  });
+  await prisma.fact.update({ where: { id: applied.factId }, data: { confidence: 0.95 } }).catch(() => undefined);
+  await stampObservations(pool, [obs.id], auth?.tenantId ?? null, auth?.actorId ?? null).catch(() => undefined);
+  logger.info({ factId: applied.factId, email, actorId: auth?.actorId }, "derived-email durch Antwort bestaetigt");
+  return c.json({ gefunden: true, aktion: "bestaetigt" as const, factId: applied.factId }, 200);
 });
