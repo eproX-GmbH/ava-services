@@ -8,7 +8,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { bildeAdresse, domainVon, erkenneMuster, type MusterBeleg } from "./pattern";
-import type { EmailMusterConfig, Vorschau } from "../../../shared/email-muster-types";
+import { VERLAUF_MAX, type EmailMusterConfig, type VerlaufEintrag, type Vorschau } from "../../../shared/email-muster-types";
 export type { EmailMusterConfig, Vorschau } from "../../../shared/email-muster-types";
 import { pruefeAdressen, pruefePort25, zufallsAdresse, type PruefErgebnis } from "./smtp-verify";
 
@@ -29,6 +29,7 @@ const DEFAULT: EmailMusterConfig = {
   tag: { day: "", count: 0 },
   domains: {},
   stats: { firmen: 0, geprueft: 0, verifiziert: 0, abgelehnt: 0, unbekannt: 0, catchAll: 0 },
+  verlauf: [],
 };
 
 export interface EmailMusterDeps {
@@ -72,7 +73,7 @@ export class EmailMusterSupervisor {
     if (this.cfg) return this.cfg;
     try {
       const raw = existsSync(this.path) ? (JSON.parse(readFileSync(this.path, "utf8")) as Partial<EmailMusterConfig>) : {};
-      this.cfg = { ...DEFAULT, ...raw, tag: raw.tag ?? DEFAULT.tag, domains: raw.domains ?? {}, stats: { ...DEFAULT.stats, ...(raw.stats ?? {}) } };
+      this.cfg = { ...DEFAULT, ...raw, tag: raw.tag ?? DEFAULT.tag, domains: raw.domains ?? {}, stats: { ...DEFAULT.stats, ...(raw.stats ?? {}) }, verlauf: Array.isArray(raw.verlauf) ? raw.verlauf : [] };
     } catch {
       this.cfg = { ...DEFAULT };
     }
@@ -98,6 +99,19 @@ export class EmailMusterSupervisor {
 
   status(): EmailMusterConfig & { laeuft: boolean } {
     return { ...this.getConfig(), laeuft: this.running };
+  }
+
+  /** Verlauf der Adresspruefungen, juengste zuerst; optional gefiltert. */
+  verlauf(opts: { nur?: VerlaufEintrag["ergebnis"] | "gespeichert"; companyId?: string; limit?: number } = {}): VerlaufEintrag[] {
+    let rows = this.getConfig().verlauf;
+    if (opts.companyId) rows = rows.filter((r) => r.companyId === opts.companyId);
+    if (opts.nur === "gespeichert") rows = rows.filter((r) => r.gespeichert);
+    else if (opts.nur) rows = rows.filter((r) => r.ergebnis === opts.nur);
+    return rows.slice(0, Math.max(1, Math.min(opts.limit ?? 100, VERLAUF_MAX)));
+  }
+
+  private merke(cfg: EmailMusterConfig, e: VerlaufEintrag): void {
+    cfg.verlauf = [e, ...cfg.verlauf].slice(0, VERLAUF_MAX);
   }
 
   /** Manuell ausloesen (Einstellungen/Chat): ein Tick ohne Pausen-Ruecksicht. */
@@ -277,32 +291,53 @@ export class EmailMusterSupervisor {
       const e: PruefErgebnis = r?.ergebnis ?? "unbekannt";
       cfg.tag.count++;
       cfg.stats.geprueft++;
+      const eintrag: VerlaufEintrag = {
+        at: new Date().toISOString(),
+        companyId,
+        firma: name,
+        domain,
+        personId: k.personId,
+        fullName: k.fullName,
+        email: k.email,
+        muster,
+        ergebnis: "unklar",
+        gespeichert: false,
+        smtpCode: r?.code ?? undefined,
+        mx: r?.mx ?? null,
+      };
       if (e === "catch_all") {
         catchAll = true;
+        this.merke(cfg, { ...eintrag, ergebnis: "catch_all" });
         break;
       }
       if (e === "gesperrt") {
         gesperrt = true;
+        this.merke(cfg, { ...eintrag, ergebnis: "gesperrt" });
         break;
       }
       if (e === "existiert") {
+        eintrag.ergebnis = "verifiziert";
         try {
           await this.deps.gatewayRequest(`/v1/companies/${encodeURIComponent(companyId)}/contacts/derived-email`, {
             method: "POST",
-            body: { personId: k.personId, email: k.email, muster, beleg: befund.belege[0]?.email ?? kandidaten[0]!.email, mx: r?.mx ?? null, checkedAt: new Date().toISOString(), smtpCode: r?.code ?? undefined },
+            body: { personId: k.personId, email: k.email, muster, beleg: befund.belege[0]?.email ?? kandidaten[0]!.email, mx: r?.mx ?? null, checkedAt: eintrag.at, smtpCode: r?.code ?? undefined },
           });
+          eintrag.gespeichert = true;
           verifiziert++;
           cfg.stats.verifiziert++;
         } catch (err) {
+          eintrag.fehler = `Speichern fehlgeschlagen: ${err instanceof Error ? err.message : String(err)}`;
           this.deps.log(`[email-muster] speichern fehlgeschlagen ${k.email}: ${err instanceof Error ? err.message : String(err)}`);
         }
       } else if (e === "existiert_nicht") {
+        eintrag.ergebnis = "abgelehnt";
         abgelehnt++;
         cfg.stats.abgelehnt++;
       } else {
         unbekannt++;
         cfg.stats.unbekannt++;
       }
+      this.merke(cfg, eintrag);
     }
     if (gesperrt) {
       cfg.netz = { erreichbar: false, grund: "Verbindung zum Mailserver nicht moeglich", at: new Date().toISOString() };

@@ -233,6 +233,21 @@ _vorschau/_jetzt`, Badge „abgeleitet · verifiziert“ im Firmendetail,
 Tests `npm run test:email-muster`. Gateway: Routen `/v1/email-patterns/:domain`
 (GET/PUT) und `POST /v1/companies/:id/contacts/derived-email`, Art.-14-Text.
 
+## 7a. Nachvollziehbarkeit (v0.1.629)
+
+Jede Adressprüfung landet lokal im Verlauf (`email-muster.json`, max. 500 Einträge,
+jüngste zuerst): Zeitpunkt, Firma, Person, Adresse, Muster, Ergebnis
+(verifiziert / abgelehnt / unklar / Catch-all / Netz gesperrt), ob am Server
+gespeichert, SMTP-Antwort, ggf. Speicherfehler. Sichtbar an drei Stellen:
+
+- Einstellungen → Automatisierungen → E-Mail-Ableitung: Tabelle mit Filter-Chips
+  (Alle / Gespeichert / je Ergebnis), Link zur Firma, aufklappbare Domain-Liste
+  mit Muster, Belegen, letzter und frühester nächster Prüfung.
+- Chat: `email_muster_verlauf` (Filter `nur`, `companyId`, `limit`); `email_muster_status`
+  nennt die letzten zehn Prüfungen.
+- Kontaktkarte: Badge „abgeleitet · verifiziert TT.MM.JJ“ mit Prüfdatum, Tooltip
+  zeigt Muster, Beleg, MX und SMTP-Antwort aus dem Herkunftstext der Beobachtung.
+
 ## 8. Ursprünglich offene Entscheidungen (historisch)
 
 1. Externer Verifizierungsdienst als optionaler Fallback vom Gerät aus

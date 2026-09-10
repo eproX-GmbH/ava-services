@@ -5,6 +5,7 @@ import * as yup from "yup";
 import { defineTool } from "../define-tool";
 import type { Tool } from "../types";
 import type { EmailMusterSupervisor } from "../../contacts/email-muster/supervisor";
+import type { VerlaufEintrag } from "../../../shared/email-muster-types";
 
 export function buildEmailMusterTools(deps: { get: () => EmailMusterSupervisor | null }): Tool[] {
   const svc = (): EmailMusterSupervisor => {
@@ -12,6 +13,19 @@ export function buildEmailMusterTools(deps: { get: () => EmailMusterSupervisor |
     if (!s) throw new Error("E-Mail-Ableitung noch nicht initialisiert.");
     return s;
   };
+
+  const kurz = (e: VerlaufEintrag) => ({
+    at: e.at,
+    firma: e.firma,
+    companyId: e.companyId,
+    person: e.fullName,
+    email: e.email,
+    muster: e.muster,
+    ergebnis: e.ergebnis,
+    gespeichert: e.gespeichert,
+    ...(e.smtpCode ? { smtpCode: e.smtpCode } : {}),
+    ...(e.fehler ? { fehler: e.fehler } : {}),
+  });
 
   const status = defineTool({
     name: "email_muster_status",
@@ -35,7 +49,39 @@ export function buildEmailMusterTools(deps: { get: () => EmailMusterSupervisor |
         heute: s.tag,
         stats: s.stats,
         domainsGeprueft: Object.keys(s.domains).length,
+        letztePruefungen: svc().verlauf({ limit: 10 }).map(kurz),
+        hinweis: "Vollstaendiger Verlauf je Adresse: email_muster_verlauf oder Einstellungen → Automatisierungen → E-Mail-Ableitung.",
       };
+    },
+  });
+
+  const verlauf = defineTool({
+    name: "email_muster_verlauf",
+    summary: "Verlauf der E-Mail-Ableitung: welche Adresse wann geprueft, verifiziert und gespeichert wurde.",
+    category: "kontakte email adresse muster verlauf historie geprueft verifiziert gespeichert",
+    description:
+      "Listet die einzelnen Adresspruefungen der lokalen E-Mail-Ableitung, juengste zuerst: Zeitpunkt, Firma, Person, Adresse, Muster, Ergebnis " +
+      "(verifiziert / abgelehnt / unklar / catch_all / gesperrt) und ob die Adresse am Server gespeichert wurde. Optional filterbar nach Ergebnis " +
+      "(nur = verifiziert|abgelehnt|unklar|catch_all|gesperrt|gespeichert) oder Firma (companyId).",
+    parameters: {
+      type: "object",
+      properties: {
+        nur: { type: "string", enum: ["verifiziert", "abgelehnt", "unklar", "catch_all", "gesperrt", "gespeichert"] },
+        companyId: { type: "string" },
+        limit: { type: "number", description: "max. Eintraege (Standard 30)" },
+      },
+    },
+    schema: yup
+      .object({
+        nur: yup.string().oneOf(["verifiziert", "abgelehnt", "unklar", "catch_all", "gesperrt", "gespeichert"]).optional(),
+        companyId: yup.string().trim().optional(),
+        limit: yup.number().integer().min(1).max(500).optional(),
+      })
+      .noUnknown(true),
+    preview: (r: Record<string, any>) => `${r.eintraege?.length ?? 0} Pruefungen (${r.gesamt ?? 0} gesamt)`,
+    run: async (args) => {
+      const rows = svc().verlauf({ nur: args.nur as never, companyId: args.companyId || undefined, limit: args.limit ?? 30 });
+      return { gesamt: svc().status().verlauf.length, eintraege: rows.map(kurz) };
     },
   });
 
@@ -90,5 +136,5 @@ export function buildEmailMusterTools(deps: { get: () => EmailMusterSupervisor |
     run: async () => ({ ergebnis: await svc().runNow() }),
   });
 
-  return [status, config, vorschau, jetzt];
+  return [status, verlauf, config, vorschau, jetzt];
 }

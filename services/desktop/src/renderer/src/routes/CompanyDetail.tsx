@@ -243,12 +243,22 @@ function quellenKarte(obs: Observation[] | undefined): Map<string, string> {
   return map;
 }
 
+/** Beobachtungs-Id → Herkunftstext (fuer den Tooltip abgeleiteter Adressen). */
+function herkunftKarte(obs: Observation[] | undefined): Map<string, string> {
+  const map = new Map<string, string>();
+  for (const o of obs ?? []) if (typeof o.id === "string" && typeof o.evidence === "string" && o.evidence) map.set(o.id, o.evidence);
+  return map;
+}
+
 function AbgeleitetBadge({ quellen, obsId, evidence }: { quellen?: Map<string, string>; obsId: string | null; evidence?: string | null }) {
   const src = obsId ? quellen?.get(obsId) : undefined;
   if (!src || !src.startsWith("pattern:")) return null;
+  // Pruefdatum aus dem Herkunftstext ("… geprueft am 2026-09-10 …").
+  const m = evidence?.match(/geprueft am (\d{4})-(\d{2})-(\d{2})/);
+  const datum = m ? `${m[3]}.${m[2]}.${m[1]!.slice(2)}` : null;
   return (
     <span className="pill pill--paused" title={evidence ?? "Nach dem Adressmuster der Firma gebildet und per Mail-Server-Anfrage auf Existenz geprüft (keine E-Mail zugestellt)."}>
-      abgeleitet · verifiziert
+      abgeleitet · verifiziert{datum ? ` ${datum}` : ""}
     </span>
   );
 }
@@ -1141,6 +1151,7 @@ function ContactsTab({ id }: { id: string }) {
   // den ohnehin mitgelieferten Beobachtungen.
   const belege = belegKarte(data.companyObservations);
   const quellen = quellenKarte(data.companyObservations);
+  const obsHerkunft = herkunftKarte(data.companyObservations);
 
   const phones = (byField.phone ?? []).filter((f) => f.status === "ACTIVE");
   const emails = (byField.email ?? []).filter((f) => f.status === "ACTIVE");
@@ -1184,6 +1195,7 @@ function ContactsTab({ id }: { id: string }) {
                 companyId={id!}
                 belege={belege}
                 quellen={quellen}
+                obsHerkunft={obsHerkunft}
                 informiertAm={data.personNotices?.find((n) => n.personId === pid)?.informedAt ?? null}
               />
             ))}
@@ -1407,6 +1419,7 @@ function PersonCard({
   companyId,
   belege,
   quellen,
+  obsHerkunft,
   personId,
   informiertAm = null,
 }: {
@@ -1416,6 +1429,8 @@ function PersonCard({
   belege?: Map<string, string>;
   /** M4 — Beobachtungs-Id → Quelle (abgeleitete Adressen kennzeichnen). */
   quellen?: Map<string, string>;
+  /** Beobachtungs-Id → Herkunftstext (Pruefdatum abgeleiteter Adressen). */
+  obsHerkunft?: Map<string, string>;
   /** C1 — Person-ID (entityId der Personen-Fakten). */
   personId?: string;
   informiertAm?: string | null;
@@ -1635,7 +1650,7 @@ function PersonCard({
                   {variants.length > 0 && <PersonCardVariants variants={variants} kind={kindFor(field)} />}
                 </span>
                 <span className="pc__fact-meta">
-                  {field === "email" && <AbgeleitetBadge quellen={quellen} obsId={obsId} />}
+                  {field === "email" && <AbgeleitetBadge quellen={quellen} obsId={obsId} evidence={obsId ? obsHerkunft?.get(obsId) : undefined} />}
                   {quelleUrl && ["phone", "mobilePhone", "email", "address"].includes(field) && (
                     <ExternalLink href={quelleUrl} className="pc__src" title={`Gefunden auf ${quelleUrl}`}>
                       Quelle

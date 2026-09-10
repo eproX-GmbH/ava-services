@@ -8179,3 +8179,27 @@ input, textarea, select, button, a, summary, details,
 .wf-form { display: flex; flex-direction: column; gap: 0.5rem; }
 .wf-form__field input, .wf-form__field textarea, .wf-form__field select { width: 100%; }
 .wf-form__field > span:first-child { display: flex; gap: 0.4rem; align-items: center; }
+
+/* M4 — E-Mail-Ableitung: Verlauf der Adresspruefungen (Einstellungen). */
+.em-verlauf__h { margin: 1.25rem 0 0.5rem; font-size: 0.95rem; }
+.em-verlauf__filter { display: flex; flex-wrap: wrap; gap: 0.35rem; margin: 0 0 0.6rem; }
+.em-verlauf__chip {
+  border: 1px solid var(--border, #e5e7eb);
+  background: transparent;
+  color: inherit;
+  border-radius: 999px;
+  padding: 2px 10px;
+  font-size: 0.8rem;
+  cursor: pointer;
+  text-decoration: none;
+}
+.em-verlauf__chip:hover { background: var(--color-bg-1); }
+.em-verlauf__chip--on { background: var(--color-bg-1); border-color: var(--accent, #00c0a7); font-weight: 600; }
+.em-verlauf { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+.em-verlauf th, .em-verlauf td { text-align: left; padding: 0.35rem 0.6rem; border-bottom: 1px solid var(--border, #e5e7eb); vertical-align: middle; white-space: nowrap; }
+.em-verlauf th { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; font-weight: 600; }
+.em-verlauf__when { color: var(--muted); }
+.em-verlauf__mail { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.8rem; }
+.em-verlauf__err { color: #b91c1c; cursor: help; text-decoration: underline dotted; }
+.em-domains { margin-top: 1rem; }
+.em-domains > summary { cursor: pointer; font-weight: 600; font-size: 0.9rem; }

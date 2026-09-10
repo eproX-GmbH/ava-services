@@ -5658,6 +5658,9 @@ app.whenReady().then(async () => {
   ipcMain.handle("emailMuster:setConfig", (_e, patch: { enabled?: boolean }) => emailMuster?.setConfig({ ...(patch.enabled !== undefined ? { enabled: patch.enabled === true } : {}) }) ?? null);
   ipcMain.handle("emailMuster:runNow", async () => ({ ergebnis: (await emailMuster?.runNow()) ?? "nicht initialisiert" }));
   ipcMain.handle("emailMuster:vorschau", (_e, companyId: string) => emailMuster?.vorschau(String(companyId)) ?? null);
+  ipcMain.handle("emailMuster:verlauf", (_e, opts: { nur?: string; companyId?: string; limit?: number } | undefined) =>
+    emailMuster?.verlauf({ nur: opts?.nur as never, companyId: opts?.companyId ? String(opts.companyId) : undefined, limit: typeof opts?.limit === "number" ? opts.limit : undefined }) ?? [],
+  );
   ipcMain.handle("workflows:approve", (_e, approvalId: string, approved: boolean, note?: string) => ({ ok: wf().decideApproval(String(approvalId), approved === true, note) }));
 
   ipcMain.handle("discovery:radarRunNow", async () => {

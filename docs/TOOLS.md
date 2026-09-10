@@ -4,8 +4,8 @@ Auto-generiert von `services/desktop/scripts/generate-tools-md.mjs`.
 NICHT direkt bearbeiten — die Quelle der Wahrheit ist `services/desktop/src/main/agent/tools/*.ts`.
 Lauf via `pnpm -F @ava/desktop tools:doc` (oder automatisch via `build:typecheck`).
 
-Stand: 2026-09-09
-Anzahl Tools: 236
+Stand: 2026-09-10
+Anzahl Tools: 241
 
 ## Firmen (17)
 
@@ -1115,6 +1115,53 @@ _Parameter:_
 - `intervalHours: number (enum: 6, 24, 168)`
 - `profileSofort: boolean` — true = sofortige Mini-Profil-Verarbeitung
 
+## email-muster (5)
+
+### `email_muster_config`
+
+_Datei:_ `services/desktop/src/main/agent/tools/email-muster.ts`
+
+Schaltet die lokale Hintergrund-Ableitung von E-Mail-Adressen ein oder aus. Fragt vor der Aenderung nach.
+
+_Parameter:_
+- `enabled: boolean` (required)
+
+### `email_muster_jetzt`
+
+_Datei:_ `services/desktop/src/main/agent/tools/email-muster.ts`
+
+Startet sofort einen Durchgang: eine Firma mit Kontakten ohne E-Mail wird geprueft. Dauert bis zu einer Minute.
+
+_Parameter:_ keine.
+
+### `email_muster_status`
+
+_Datei:_ `services/desktop/src/main/agent/tools/email-muster.ts`
+
+Zeigt, ob die Hintergrund-Ableitung von E-Mail-Adressen aktiv ist, ob die Mail-Pruefung in diesem Netz moeglich ist (Port 25), wann zuletzt gelaufen und wie viele Adressen abgeleitet und verifiziert wurden. Die Ableitung laeuft lokal auf diesem Rechner, eine Firma je Durchgang, nur wenn kein Chat laeuft. Nur verifizierte Adressen werden gespeichert und als „abgeleitet · verifiziert“ angezeigt.
+
+_Parameter:_ keine.
+
+### `email_muster_verlauf`
+
+_Datei:_ `services/desktop/src/main/agent/tools/email-muster.ts`
+
+Listet die einzelnen Adresspruefungen der lokalen E-Mail-Ableitung, juengste zuerst: Zeitpunkt, Firma, Person, Adresse, Muster, Ergebnis (verifiziert / abgelehnt / unklar / catch_all / gesperrt) und ob die Adresse am Server gespeichert wurde. Optional filterbar nach Ergebnis (nur = verifiziert|abgelehnt|unklar|catch_all|gesperrt|gespeichert) oder Firma (companyId).
+
+_Parameter:_
+- `nur: string (enum: verifiziert, abgelehnt, unklar, catch_all, gesperrt, gespeichert)`
+- `companyId: string`
+- `limit: number` — max. Eintraege (Standard 30)
+
+### `email_muster_vorschau`
+
+_Datei:_ `services/desktop/src/main/agent/tools/email-muster.ts`
+
+Trockenlauf ohne Netzverkehr: erkennt aus den bekannten Personen-E-Mails der Firma das Adressmuster und listet die Kandidaten-Adressen fuer Kontakte ohne E-Mail. Es wird nichts gespeichert; die echte Ableitung mit Mail-Pruefung uebernimmt der Hintergrund-Job (oder email_muster_jetzt).
+
+_Parameter:_
+- `companyId: string` (required)
+
 ## geo (1)
 
 ### `geo_places_nearby`
@@ -2204,7 +2251,7 @@ _Parameter:_
 
 _Datei:_ `services/desktop/src/main/agent/tools/workflows.ts`
 
-Liefert den Katalog aller Node-Typen fuer Workflows: Logik-Nodes (trigger, filter, if, switch, transform, loop, merge, ai, wait, human, stop, subworkflow) und Tool-Nodes ('tool:<name>') mit Parametern, Wirkungsklasse (read/additive/mutating/destructive) und Kostenklasse. Vor workflow_save aufrufen. Expressions: {{ $json.feld }}, {{ $('Node-Name').item.json.feld }}, {{ $input.all() }}, {{ $vars.name }}, {{ $now }}. Tool-Node: parameters = { tool: '<name>', args: {...}, outputPath?: 'items', itemKey?: 'discoveryId' }; mode perItem (Default) oder allItems. FIRMENBEZUG: Jeder Lauf gilt fuer GENAU EINE Firma; ihr vollstaendiger Kontext (Stammdaten, Profil, Finanzen/Kennzahlen, Handelsregister inkl. Geschaeftsfuehrung, Kontakte, CRM) liegt dem Lauf vor. ABHAENGIGKEITEN: AVA leitet je Node ab, welche Producer-Stufe seine Daten liefert ($kassenbestand → Jahresabschluesse, $geschaeftsfuehrer → Handelsregister, $ansprechpartner → Kontakte). Ein Warten-Node mit transactionId wartet automatisch auf die Stufen, die die Folge-Schritte brauchen (mindestens Firmenprofil); parameters.bis kann das festlegen. Steckt die Firma eines Laufs noch in einem Vorgang, wartet ein Node vor der Ausfuehrung auf seine Stufen. WARTEN AUF VERARBEITUNG: Nach discovery_decide/import liefert das Ergebnis eine transactionId; ein wait-Node mit transactionId: '{{ $json.transactionId }}' haelt den Lauf an, bis alle Firmen des Vorgangs verarbeitet sind (Watcher, max maxHours). Beispiel „Radar-Firmen importieren, danach je Firma Kurzuebersicht per Telegram“: Prime (scope none): discovery_candidates(allItems) → filter → discovery_decide(allItems, imported, confirmed) → wait(transactionId) → tool company_search/transaction_entities → subworkflow(perItem) mit Sub: ai(Kurzuebersicht aus {{ $context }}) → telegram_send_message. MEHRERE FIRMEN: entweder workflow_run mit firmen[] (je Firma ein Lauf) ODER Prime/Sub-Muster: ein Prime-Workflow (settings.scope 'none') erzeugt Items mit companyId/discoveryId (z. B. discovery_candidates, company_search) und ruft einen subworkflow-Node im Modus perItem auf — jeder Sub-Lauf holt sich den vollen Kontext seiner Firma. In Node-Parametern duerfen SEMANTISCHE PLATZHALTER stehen, frei benannt, z. B. $kassenbestand, $ansprechpartner_vertrieb, $umsatz_letztes_jahr — sie werden je Lauf per KI aus dem Firmen-Kontext nach Bedeutung befuellt. Immer einen Fallback mitgeben: $kassenbestand ?? "Es liegt KEIN Kassenbestand vor". Strukturiert: {{ $company }} (Objekt), {{ $context }} (Klartext).
+Liefert den Katalog aller Node-Typen fuer Workflows: Logik-Nodes (trigger, filter, if, switch, transform, loop, merge, ai, wait, human, stop, subworkflow) und Tool-Nodes ('tool:<name>') mit Parametern, Wirkungsklasse (read/additive/mutating/destructive) und Kostenklasse. Vor workflow_save aufrufen. Expressions: {{ $json.feld }}, {{ $('Node-Name').item.json.feld }}, {{ $input.all() }}, {{ $vars.name }}, {{ $now }}. Tool-Node: parameters = { tool: '<name>', args: {...}, itemKey?: 'discoveryId' }; Listen im Ergebnis (items, rows, candidates, contacts, …) werden AUTOMATISCH zu Items — outputPath NUR setzen, wenn die Liste unter einem anderen Pfad liegt (falscher outputPath = 0 Items). mode perItem (Default) oder allItems. FIRMENBEZUG: Jeder Lauf gilt fuer GENAU EINE Firma; ihr vollstaendiger Kontext (Stammdaten, Profil, Finanzen/Kennzahlen, Handelsregister inkl. Geschaeftsfuehrung, Kontakte, CRM) liegt dem Lauf vor. MODELLSTUFE: workflow_save, workflow_update und workflow_from_conversation funktionieren NUR mit einem Chat-Modell der Stufe S (Claude Opus/Fable, GPT-5.6 Sol/Terra, GPT-5.5 …). Kommt {blockiert:'modellstufe'} zurueck, sag dem Nutzer klar, dass das Anlegen blockiert ist, weil es ein staerkeres Modell braucht (Modell wechseln oder im Editor anlegen). ABHAENGIGKEITEN: AVA leitet je Node ab, welche Producer-Stufe seine Daten liefert ($kassenbestand → Jahresabschluesse, $geschaeftsfuehrer → Handelsregister, $ansprechpartner → Kontakte). Ein Warten-Node mit transactionId wartet automatisch auf die Stufen, die die Folge-Schritte brauchen (mindestens Firmenprofil); parameters.bis kann das festlegen. Steckt die Firma eines Laufs noch in einem Vorgang, wartet ein Node vor der Ausfuehrung auf seine Stufen. WARTEN AUF VERARBEITUNG: Nach discovery_decide/import liefert das Ergebnis eine transactionId; ein wait-Node mit transactionId: '{{ $json.transactionId }}' haelt den Lauf an, bis alle Firmen des Vorgangs verarbeitet sind (Watcher, max maxHours). Beispiel „Radar-Firmen importieren, danach je Firma Kurzuebersicht per Telegram“: Prime (scope none): discovery_candidates(allItems) → filter → discovery_decide(allItems, imported, confirmed) → wait(transactionId) → tool company_search/transaction_entities → subworkflow(perItem) mit Sub: ai(Kurzuebersicht aus {{ $context }}) → telegram_send_message. MEHRERE FIRMEN: entweder workflow_run mit firmen[] (je Firma ein Lauf) ODER Prime/Sub-Muster: ein Prime-Workflow (settings.scope 'none') erzeugt Items mit companyId/discoveryId (z. B. discovery_candidates, company_search) und ruft einen subworkflow-Node im Modus perItem auf — jeder Sub-Lauf holt sich den vollen Kontext seiner Firma. In Node-Parametern duerfen SEMANTISCHE PLATZHALTER stehen, frei benannt, z. B. $kassenbestand, $ansprechpartner_vertrieb, $umsatz_letztes_jahr — sie werden je Lauf per KI aus dem Firmen-Kontext nach Bedeutung befuellt. Immer einen Fallback mitgeben: $kassenbestand ?? "Es liegt KEIN Kassenbestand vor". Strukturiert: {{ $company }} (Objekt), {{ $context }} (Klartext).
 
 _Parameter:_
 - `suche: string` — Optionaler Filter (Name/Kategorie/Text)
