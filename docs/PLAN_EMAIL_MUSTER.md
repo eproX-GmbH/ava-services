@@ -1,6 +1,6 @@
 # Plan: Abgeleitete E-Mail-Adressen für Kontakte (Muster + Verifizierung)
 
-Stand 2026-09-10. Idee des Operators: Ist von einer Firma eine persönliche
+Stand 2026-09-10 (überarbeitet: Verarbeitung lokal auf dem Nutzergerät). Idee des Operators: Ist von einer Firma eine persönliche
 E-Mail-Adresse bekannt (john.doe@example.com), lässt sich das Adressmuster
 der Firma ableiten und für die übrigen Kontakte anwenden (jane.doe@…).
 Weil das geraten ist, wird jede abgeleitete Adresse verifiziert. Nur
@@ -97,28 +97,70 @@ Stufe 2, SMTP-Prüfung ohne Zustellung:
 - Löschen/Tombstone der Person entfernt auch abgeleitete Adressen;
   die Aufbewahrungsfrist der Personen gilt unverändert.
 
-## 3. Wo der Job läuft
+## 3. Wo der Job läuft: lokal auf dem Gerät des Nutzers
 
-Der Kontaktbestand ist zentral im Gateway (Entscheidung „einer
-verarbeitet, alle profitieren“). Mustererkennung und Kandidaten sind reine
-Datenbankarbeit im Gateway. Die SMTP-Prüfung braucht ausgehenden Port 25
-und eine saubere Absender-Reputation:
+Vorgabe (Operator 2026-09-10, Compute-Lokalität): Mustererkennung,
+Kandidatenbildung und SMTP-Prüfung laufen auf dem Rechner des Nutzers,
+nur für die Firmen des Nutzers, und nur wenn Kapazität frei ist. Der
+Server bekommt keine Aufgabe, er speichert lediglich Ergebnisse, wie
+heute bei den Kontakten („einer verarbeitet, alle profitieren“).
 
-- **Fly.io** blockiert ausgehenden Port 25 standardmäßig, Freischaltung
-  auf Anfrage. Fly-IPs sind geteilt, Reputation nicht steuerbar. Machbar,
-  aber riskant für Blocklisten.
-- **Kleiner dedizierter Prüf-Host** (z. B. Hetzner, eine feste IPv4 mit
-  rDNS, SPF-Eintrag für die Prüf-Domain) mit einem schlanken Dienst, der
-  vom Gateway Prüfaufträge holt und Ergebnisse zurückmeldet. Empfehlung.
-- **Externer Verifizierungsdienst** (ZeroBounce, NeverBounce, Hunter u. a.):
-  je Prüfung 0,5 bis 1 Cent, Auftragsverarbeitung nötig, personenbezogene
-  Kandidaten gehen an Dritte. Nur als optionale Ergänzung.
+### 3.1 Lokaler Hintergrund-Job („im Hinterkopf“)
 
-Job-Steuerung als Gateway-Cron (Muster `billing-cron.ts`): wöchentlicher
-Lauf über alle Firmen mit Beschäftigungen, Priorität nach „Personen ohne
-E-Mail bei bekanntem Muster“, Wiederholung je Domain frühestens nach 30
-Tagen, Catch-all-Domains nach 90 Tagen, Metriken (Muster erkannt,
-Kandidaten, verifiziert, abgelehnt, unbekannt, Catch-all) im Audit.
+- Neuer Supervisor im Desktop-Hauptprozess, Muster wie
+  `freshness-scheduler.ts` und der Radar-Sofortmodus: Tick alle 15
+  Minuten, Single-Flight, pausiert bei aktivem Chat-Turn, bei laufenden
+  Producern mit hoher Last und im Akkubetrieb unter 30 Prozent.
+- Je Tick genau EINE Firma aus dem Bestand des Nutzers: Auswahl nach
+  „Beschäftigungen vorhanden, mindestens eine Person ohne E-Mail, Domain
+  seit 30 Tagen nicht geprüft“, zufällig gemischt, damit nicht alle Nutzer
+  dieselbe Domain zur selben Zeit prüfen.
+- Ablauf je Firma: Muster ableiten (2.1) aus den Kontakten, die der
+  Nutzer ohnehin sieht (`company_contacts`), Kandidaten bilden (2.2),
+  Catch-all-Test, dann höchstens fünf `RCPT TO`-Prüfungen, Ergebnisse
+  ans Gateway melden (3.3). Danach Tick beendet.
+- Tages-Deckel je Gerät 50 Prüfungen, Abstand zwischen `RCPT TO`
+  mindestens zwei Sekunden, eine Verbindung je Domain.
+- Ein-/Ausschalter in den Einstellungen unter Kontakte, Standard an,
+  plus Chat-Tool (`email_muster_config`) nach dem Self-Service-Prinzip.
+  Statusanzeige: „zuletzt geprüft: Firma X, 2 Adressen verifiziert“.
+
+### 3.2 Port 25 vom Nutzergerät: die eigentliche Hürde
+
+Viele Privat- und Firmennetze blockieren ausgehenden Port 25 (Telekom,
+Vodafone-Kabel, viele Gäste-WLANs, Firmen-Firewalls). Dynamische IPs
+haben schlechte Reputation, einige Mailserver lehnen sie pauschal ab
+oder greylisten.
+
+- Beim Start des Jobs ein Erreichbarkeitstest: TCP-Verbindung zu zwei
+  bekannten MX-Hosts (z. B. dem MX der Betreiber-Domain und einem großen
+  Anbieter) mit fünf Sekunden Timeout, `EHLO`, `QUIT`. Schlägt er fehl,
+  ist der Job auf diesem Netz still gestellt und die Einstellungen zeigen
+  „SMTP-Prüfung in diesem Netz nicht möglich (Port 25 gesperrt)“. Der Test
+  wird bei Netzwechsel wiederholt.
+- `EHLO` mit dem Hostnamen des Geräts ist unglaubwürdig; verwendet wird
+  ein neutraler Name (`ava-check.local`), `MAIL FROM:<>`. Antworten mit
+  4xx zählen als „unbekannt“, keine Wiederholungsschleife auf dem Gerät.
+- Ergebnisqualität von Heimnetzen ist schlechter als von einem
+  dedizierten Host. Das ist der Preis der Lokalität: Adressen, die von zu
+  Hause nicht verifizierbar sind, werden schlicht nicht angezeigt.
+- Optional und getrennt zu entscheiden: ein externer Verifizierungsdienst
+  als Fallback vom Gerät aus (Anfrage direkt vom Nutzer an den Dienst,
+  Schlüssel der Organisation wie bei Apify). Personenbezogene Kandidaten
+  gehen dann an Dritte; Auftragsverarbeitung nötig.
+
+### 3.3 Was der Server macht
+
+Nur speichern und teilen, keine Verarbeitung:
+- `EmailPattern` je Domain (Muster, Konfidenz, Belege, Catch-all-Datum,
+  geprüft von actorId), damit andere Nutzer derselben Firma das Muster
+  nicht neu ableiten und Catch-all-Domains überspringen.
+- Neue Route `POST /v1/companies/:id/contacts/derived-email`: nimmt je
+  Person die verifizierte Adresse samt Evidenz entgegen, prüft Plausibilität
+  (Domain passt zur Firma, Person gehört zur Firma, Muster stimmt), legt
+  Fakt und Observation an (`source = "pattern:smtp"`, actorId, tenantId).
+- Bestehende Retention, Tombstones und Herkunftsbericht greifen
+  unverändert.
 
 ## 4. Datenschutz
 
@@ -138,13 +180,13 @@ Kandidaten, verifiziert, abgelehnt, unbekannt, Catch-all) im Audit.
 
 | Phase | Inhalt | Aufwand |
 |---|---|---|
-| M1 Mustererkennung | `lib/email-pattern.ts` im Gateway: Funktionsadressen-Filter, Namensnormalisierung, Musterkatalog, Bewertung, Tabelle `EmailPattern`; Trockenlauf-Report über den Bestand (wie viele Domains mit Muster, Kandidaten) ohne Netzverkehr | 2 Tage |
-| M2 Prüf-Host | Schlanker Verifier-Dienst (Node, `smtp`-Handshake selbst implementiert, kein Versand), Auftrags-Queue im Gateway (`EmailVerifyJob`), Catch-all, Greylisting-Wiederholung, Drosselung, Ergebnis-Rückmeldung | 3 Tage |
-| M3 Persist + Anzeige | Fakt/Observation mit Quelle und Evidenz, Badge und Tooltip im Firmendetail, Chat-Tools, Herkunftsbericht und Art.-14-Text, Löschen | 1,5 Tage |
-| M4 Cron + Steuerung | Wöchentlicher Lauf, Prioritäten, Wiederholungsfristen, Metriken, Org-Schalter, Meldung „X Adressen abgeleitet“ | 1 Tag |
+| M1 Mustererkennung (Desktop, electron-frei) | `src/main/contacts/email-muster/pattern.ts`: Funktionsadressen-Filter, Namensnormalisierung, Musterkatalog, Bewertung; Tests; Trockenlauf-Tool im Chat („welche Adressen könnte AVA für Firma X ableiten“) ohne Netzverkehr | 1,5 Tage |
+| M2 SMTP-Prüfung lokal | `smtp-verify.ts`: MX-Auflösung, Handshake bis `RCPT TO`, STARTTLS, Catch-all-Test, Drosselung, Erreichbarkeitstest Port 25, Fehlerklassen (existiert / existiert nicht / unbekannt / catch-all / gesperrt) | 2 Tage |
+| M3 Gateway speichern | Tabelle `EmailPattern`, Route `derived-email` mit Plausibilitätsprüfung, Fakt + Observation mit Evidenz, Herkunftsbericht und Art.-14-Text ergänzt | 1,5 Tage |
+| M4 Hintergrund-Supervisor + UI | Tick-Logik mit Vorrang für Chat/Last/Akku, Firmenauswahl, Tages-Deckel, Einstellungen-Schalter + Chat-Tool, Badge „abgeleitet · verifiziert“ im Firmendetail, Statuszeile, Meldung bei neuen Adressen | 2 Tage |
 
-Gesamt etwa 7 bis 8 Tage. M1 lässt sich sofort starten und liefert den
-Trockenlauf-Report als Entscheidungsgrundlage für M2.
+Gesamt etwa 7 Tage. M1 und M2 sind ohne Server-Änderung testbar; M2 lässt
+sich mit dem eigenen Netz sofort auf Port-25-Erreichbarkeit prüfen.
 
 ## 6. Risiken
 
@@ -154,20 +196,26 @@ Trockenlauf-Report als Entscheidungsgrundlage für M2.
 - Server, die erst annehmen und später abweisen („accept-then-bounce“),
   erzeugen falsch positive Treffer. Ein späterer Bounce beim echten
   Versand über AVA sollte den Fakt deaktivieren.
-- Reputation des Prüf-Hosts: zu viele Prüfungen führen auf Blocklisten.
-  Deshalb die Drosselung und ein eigener Host.
+- Port 25 ist in vielen Nutzernetzen gesperrt; dort liefert der Job
+  nichts. Der Erreichbarkeitstest macht das sichtbar statt still zu
+  scheitern.
+- Dynamische Heim-IPs werden von manchen Mailservern abgelehnt oder
+  gegreylistet; die Drosselung (5 je Domain, 50 je Tag) hält das Gerät
+  von Blocklisten fern.
 - Musterfehler bei Namensbesonderheiten (Doppelnamen, Umlaute, Spitznamen
   wie „Alex“). Die Verifizierung fängt das ab, kostet aber Prüfungen.
 
 ## 7. Offene Entscheidungen
 
-1. Prüf-Host: eigener kleiner Server (Empfehlung) oder Fly mit
-   freigeschaltetem Port 25?
-2. Externer Verifizierungsdienst als Fallback für „unbekannt“: ja/nein?
-3. Mindestbelege für ein Muster: ein Beleg (mehr Abdeckung) oder zwei
-   (weniger Fehlversuche)? Empfehlung: ein Beleg, aber Konfidenz sichtbar.
-4. Laufrhythmus wöchentlich, Tages-Deckel 300 Prüfungen?
-5. Org-Schalter mit Standard „an“?
+1. Externer Verifizierungsdienst als optionaler Fallback vom Gerät aus
+   (Org-Schlüssel wie bei Apify), wenn Port 25 gesperrt ist: ja/nein?
+2. Mindestbelege für ein Muster: ein Beleg (mehr Abdeckung) oder zwei
+   (weniger Fehlversuche)? Empfehlung: ein Beleg, Konfidenz sichtbar.
+3. Tick alle 15 Minuten, eine Firma je Tick, Tages-Deckel 50 je Gerät?
+4. Schalter je Nutzer mit Standard „an“, zusätzlich Org-Vorgabe zum
+   Abschalten?
+5. Sollen Muster und Catch-all-Befunde organisationsübergreifend geteilt
+   werden (wie Kontakte) oder nur innerhalb der Organisation?
 
 ## Quellen
 
