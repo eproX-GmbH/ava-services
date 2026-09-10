@@ -25,8 +25,11 @@ import { parseNaceFromProfile } from "../../../shared/nace-divisions";
 import { ExternalLink } from "../components/ExternalLink";
 import { CompanyCrmPanel } from "../components/CompanyCrmPanel";
 import {
+  EyeIcon,
   GlobeIcon,
   LinkedInIcon,
+  MailIcon,
+  PhoneIcon,
   XingIcon,
 } from "../components/icons";
 
@@ -1593,24 +1596,26 @@ function PersonCard({
         <div className="pc__quick">
           {email?.value && (
             <a className="pc__iconbtn" href={`mailto:${email.value}`} title={`E-Mail an ${email.value}`}>
-              ✉
+              <span className="visually-hidden">E-Mail schreiben</span>
+              <MailIcon size={18} />
             </a>
           )}
           {phone?.value && (
             <a className="pc__iconbtn" href={`tel:${String(phone.value).replace(/\s+/g, "")}`} title={`Anrufen: ${phone.value}`}>
-              ☎
+              <span className="visually-hidden">Anrufen</span>
+              <PhoneIcon size={18} />
             </a>
           )}
           {linkedin?.value && (
             <ExternalLink href={linkedin.value} className="pc__iconbtn pc__iconbtn--brand" title="LinkedIn-Profil öffnen">
               <span className="visually-hidden">LinkedIn</span>
-              <LinkedInIcon size={16} />
+              <LinkedInIcon size={17} />
             </ExternalLink>
           )}
           {xing?.value && (
             <ExternalLink href={xing.value} className="pc__iconbtn pc__iconbtn--brand" title="XING-Profil öffnen">
               <span className="visually-hidden">XING</span>
-              <XingIcon size={16} />
+              <XingIcon size={17} />
             </ExternalLink>
           )}
           {linkedin?.value && linkedin.value.includes("/in/") && (
@@ -1624,7 +1629,8 @@ function PersonCard({
                   .then((r) => setWlNotice("error" in r && r.error ? r.error : "Auf der Watchlist ✓"))
               }
             >
-              👀
+              <span className="visually-hidden">Beobachten</span>
+              <EyeIcon size={18} />
             </button>
           )}
         </div>
