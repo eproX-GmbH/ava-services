@@ -86,7 +86,7 @@ const SLEEP_PENDING_MAX_MS = 600000;
 // aber NICHT neu gestartet: der Nutzer wollte die App schliessen.
 // Vorher: 20s Beachball, dann Kill + (wegen eines Race, s.u.) gar kein
 // Relaunch — vier Faelle am 1./2.9.2026.
-const QUIT_STALE_MS = 8000;
+const QUIT_STALE_MS = 5000; // v0.1.626: 8 s → 5 s, Nutzer sollen nicht "Sofort beenden" muessen
 
 function log(msg) {
   const line = new Date().toISOString() + " [watchdog] " + msg + "\n";
@@ -201,11 +201,16 @@ const timer = setInterval(function () {
     if (now - unchangedSince >= QUIT_STALE_MS && !recovering) {
       recovering = true;
       log("QUIT WEDGED: heartbeat frozen at '" + cur + "' for " +
-          (now - unchangedSince) + "ms; SIGKILL pid " + MAIN_PID + ", NO relaunch");
-      captureWedgeSample();
-      try { process.kill(MAIN_PID, "SIGKILL"); } catch (e) { log("kill failed: " + e); }
+          (now - unchangedSince) + "ms; SIGUSR2 (JS-Stack-Report), dann SIGKILL pid " + MAIN_PID + ", NO relaunch");
+      // v0.1.626 — erst JS-Stack-Report anfordern (Node report-on-signal,
+      // siehe file-logger), dann Sample, dann hart beenden.
+      try { process.kill(MAIN_PID, "SIGUSR2"); } catch (e) { log("SIGUSR2 failed: " + e); }
       clearInterval(timer);
-      setTimeout(function () { process.exit(0); }, 500);
+      setTimeout(function () {
+        captureWedgeSample();
+        try { process.kill(MAIN_PID, "SIGKILL"); } catch (e) { log("kill failed: " + e); }
+        setTimeout(function () { process.exit(0); }, 500);
+      }, 1500);
     }
     return;
   }
@@ -229,14 +234,17 @@ const timer = setInterval(function () {
   if (now - unchangedSince >= staleLimit && !recovering) {
     recovering = true;
     log("MAIN WEDGED: heartbeat frozen at '" + cur + "' for " +
-        (now - unchangedSince) + "ms of awake time; SIGKILL pid " +
+        (now - unchangedSince) + "ms of awake time; SIGUSR2 (JS-Stack-Report), dann SIGKILL pid " +
         MAIN_PID + " + relaunch");
-    captureWedgeSample();
-    try { process.kill(MAIN_PID, "SIGKILL"); } catch (e) { log("kill failed: " + e); }
+    try { process.kill(MAIN_PID, "SIGUSR2"); } catch (e) { log("SIGUSR2 failed: " + e); }
     setTimeout(function () {
-      relaunch();
-      clearInterval(timer);
-      process.exit(0);
+      captureWedgeSample();
+      try { process.kill(MAIN_PID, "SIGKILL"); } catch (e) { log("kill failed: " + e); }
+      setTimeout(function () {
+        relaunch();
+        clearInterval(timer);
+        process.exit(0);
+      }, 1500);
     }, 1500);
   }
 }, TICK_MS);

@@ -178,6 +178,21 @@ export function initFileLogger(): void {
   } catch {
     /* ignore */
   }
+  // v0.1.626 — Haengender Quit (Main-Thread busy in JS, sample(1) zeigt nur
+  // JIT-Frames): Node schreibt auf SIGUSR2 einen Diagnose-Report MIT
+  // JavaScript-Stack — per V8-Interrupt auch mitten in einer Busy-Schleife.
+  // Der Watchdog schickt SIGUSR2, bevor er SIGKILL setzt. Datei landet neben
+  // dem Log (report-*.json, Feld javascriptStack).
+  try {
+    const rep = (process as unknown as { report?: { reportOnSignal: boolean; signal: string; directory: string; filename: string } }).report;
+    if (rep) {
+      rep.directory = logDir;
+      rep.signal = "SIGUSR2";
+      rep.reportOnSignal = true;
+    }
+  } catch {
+    /* best-effort */
+  }
   logPath = join(logDir, BASENAME);
   openStream();
 
@@ -272,6 +287,23 @@ export function initFileLogger(): void {
     writeLineSync("INFO ", `[quit] before-quit begin (v${app.getVersion()} pid=${process.pid})`);
   });
   app.on("will-quit", () => writeLineSync("INFO ", "[quit] will-quit"));
+  // v0.1.626 — Breadcrumbs zwischen "before-quit handlers done" und will-quit:
+  // welche Fenster/WebContents Electron gerade schliesst.
+  app.on("browser-window-created", (_e, win) => {
+    const id = win.id;
+    win.on("close", () => {
+      if (quitting) writeLineSync("INFO ", `[quit] window ${id} close (${win.isVisible() ? "sichtbar" : "verborgen"})`);
+    });
+    win.on("closed", () => {
+      if (quitting) writeLineSync("INFO ", `[quit] window ${id} closed`);
+    });
+  });
+  app.on("web-contents-created", (_e, wc) => {
+    const id = wc.id;
+    wc.on("destroyed", () => {
+      if (quitting) writeLineSync("INFO ", `[quit] webContents ${id} destroyed`);
+    });
+  });
   app.on("quit", (_e, code) => writeLineSync("INFO ", `[quit] quit exitCode=${code}`));
   // Don't keep the event loop alive on quit just for the heartbeat.
   if (typeof heartbeatTimer.unref === "function") heartbeatTimer.unref();
