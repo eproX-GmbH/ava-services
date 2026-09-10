@@ -111,6 +111,15 @@ export function bewertePipeline(p: PipelineSnapshot, stufen: Stage[] = [KEY_STAG
   };
 }
 
+/** Technische Fehlertexte (Selenium/Chrome) fuer Nutzer lesbar machen. */
+export function lesbarerFehler(roh: string): string {
+  let t = roh.replace(/\s*\(Session info:[^)]*\)/g, "").replace(/\n\s*Stacktrace:[\s\S]*$/i, "").replace(/\s+/g, " ").trim();
+  if (/stale element|detached|not attached to the page/i.test(t)) t = "Seite hat sich während des Zugriffs geändert (Element veraltet) — wird wiederholt.";
+  else if (/no such element|unable to locate element/i.test(t)) t = "Erwartetes Seitenelement nicht gefunden (Seitenaufbau geändert?).";
+  else if (/net::ERR_|ECONNRESET|ETIMEDOUT|ECONNREFUSED/i.test(t)) t = "Netzwerkfehler beim Abruf der Quelle.";
+  return t.slice(0, 180);
+}
+
 /** Kurztext fuer Meldungen/Telegram: Ergebnis + konkrete Ursachen. */
 export function beschreibeBefund(b: VorgangsBefund): { headline: (name: string) => string; zeilen: string[]; warnung: boolean } {
   const teil = (Object.entries(b.teilfehler) as Array<[Stage, number]>).sort((x, y) => y[1] - x[1]);
@@ -120,7 +129,7 @@ export function beschreibeBefund(b: VorgangsBefund): { headline: (name: string) 
     zeilen.push("Teilfehler: " + teil.map(([s, n]) => `${STAGE_LABELS[s] ?? s} ${n}/${b.gesamt}`).join(" · "));
     for (const [s] of teil.slice(0, 2)) {
       const bsp = b.beispiele[s];
-      if (bsp) zeilen.push(`${STAGE_LABELS[s] ?? s}: ${bsp.slice(0, 180)}`);
+      if (bsp) zeilen.push(`${STAGE_LABELS[s] ?? s}: ${lesbarerFehler(bsp)}`);
     }
     const quellen = teil.filter(([s, n]) => (s === "structuredContent" || s === "companyPublication") && n >= Math.max(2, Math.ceil(b.gesamt * 0.6)));
     if (quellen.length > 0) {

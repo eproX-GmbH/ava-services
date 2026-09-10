@@ -311,6 +311,8 @@ export class WorkflowRunner {
       gestoppt: false,
       stufenFertig: new Set(),
       warten: opts.continueAt?.warten ?? null,
+      itemKontexte: new Map(),
+      itemPlatzhalter: new Map(),
     };
     try {
       const trigger = def.nodes.find((n) => n.type === "trigger");
@@ -639,8 +641,9 @@ export class WorkflowRunner {
     }
   }
 
-  private exprContext(ctx: RunContext, node: WorkflowNode, items: WorkflowItem[], itemIndex: number): ExpressionContext {
+  private exprContext(ctx: RunContext, node: WorkflowNode, items: WorkflowItem[], itemIndex: number, kontext?: CompanyContext | null): ExpressionContext {
     const item = items[itemIndex] ?? { json: {} };
+    const firma = kontext ?? ctx.company;
     return {
       json: item.json,
       itemIndex,
@@ -649,7 +652,7 @@ export class WorkflowRunner {
       pairedIndex: (name) => this.pairedIndexFor(ctx, node.name, name, item),
       vars: Object.fromEntries(Object.entries(ctx.def.variables).map(([k, v]) => [k, v.value])),
       run: { index: 0, executionId: ctx.execution.id, workflowName: ctx.def.name, dryRun: ctx.execution.dryRun },
-      ...(ctx.company ? { company: ctx.company.json, contextText: ctx.company.text } : {}),
+      ...(firma ? { company: firma.json, contextText: firma.text } : {}),
     };
   }
 
@@ -658,6 +661,59 @@ export class WorkflowRunner {
    * Firmen-Kontext befuellen. Ein Modell-Aufruf je Node und Lauf (Cache je
    * Platzhalter-Name ueber alle Nodes des Laufs).
    */
+  /**
+   * v0.1.625 — Firmen-Kontext fuer ein einzelnes Item (companyId/discoveryId im
+   * Item), wenn der Lauf keine feste Firma hat. Vorher lief z. B. ein KI-Node
+   * nach dem Warten-Node ohne jeden Kontext ("Keine Angaben verfuegbar").
+   */
+  private async itemKontext(ctx: RunContext, item: WorkflowItem | undefined): Promise<CompanyContext | null> {
+    if (ctx.company) return ctx.company;
+    if (!item) return null;
+    const scope = scopeAusItem(item, undefined);
+    if (!scope?.companyId && !scope?.discoveryId) return null;
+    const key = scope.companyId ? `c:${scope.companyId}` : `d:${scope.discoveryId}`;
+    if (ctx.itemKontexte.has(key)) return ctx.itemKontexte.get(key) ?? null;
+    const trigger = ctx.def.nodes.find((n) => n.type === "trigger") ?? ctx.def.nodes[0]!;
+    try {
+      const k = await withAbort(ctx.signal, buildCompanyContext(this.deps.registry, scope, this.toolContext(ctx, trigger, "none", "read", [])));
+      ctx.itemKontexte.set(key, k);
+      return k;
+    } catch (err) {
+      if (err instanceof Error && err.message === "aborted") throw err;
+      ctx.itemKontexte.set(key, null);
+      return null;
+    }
+  }
+
+  /** Platzhalter eines Nodes fuer EIN Item aus dessen Firmen-Kontext fuellen (Cache je Firma). */
+  private async fillPlaceholdersForItem(ctx: RunContext, node: WorkflowNode, value: unknown, kontext: CompanyContext | null): Promise<unknown> {
+    const refs = findPlaceholders(value);
+    if (refs.length === 0) return value;
+    const run = ctx.execution.nodeRuns[node.name]?.at(-1);
+    const hinweise: string[] = [];
+    const key = kontext?.scope.companyId ? `c:${kontext.scope.companyId}` : kontext?.scope.discoveryId ? `d:${kontext.scope.discoveryId}` : "-";
+    const cache = ctx.itemPlatzhalter.get(key) ?? {};
+    const offen = refs.filter((r) => !(r.name in cache));
+    if (offen.length > 0) {
+      if (!kontext) {
+        for (const r of offen) cache[r.name] = null;
+        hinweise.push("Platzhalter ohne Firmen-Kontext fuer dieses Item — nur Fallbacks moeglich.");
+      } else {
+        const werte = await resolvePlaceholdersWithLlm(this.deps.providers, kontext.text, offen, ctx.signal);
+        for (const r of offen) cache[r.name] = werte[r.name] ?? null;
+      }
+      ctx.itemPlatzhalter.set(key, cache);
+    }
+    const values: Record<string, unknown> = {};
+    for (const r of refs) values[r.name] = cache[r.name] ?? null;
+    const out = applyPlaceholders(value, values, hinweise);
+    if (run) {
+      run.platzhalter = { ...(run.platzhalter ?? {}), [kontext?.scope.companyName ?? kontext?.scope.companyId ?? "item"]: values };
+      if (hinweise.length > 0) run.hinweise = [...(run.hinweise ?? []), ...hinweise];
+    }
+    return out;
+  }
+
   private async fillPlaceholders(ctx: RunContext, node: WorkflowNode, value: unknown): Promise<unknown> {
     const refs = findPlaceholders(value);
     if (refs.length === 0) return value;
@@ -714,7 +770,10 @@ export class WorkflowRunner {
       }
     }
     // Semantische Platzhalter in den Parametern dieses Nodes befuellen (je Lauf/Firma).
-    node = { ...node, parameters: (await this.fillPlaceholders(ctx, node, node.parameters)) as Record<string, unknown> };
+    // v0.1.625 — Ohne feste Firma, aber mit Firmen-Items (nach Warten-Node/Import):
+    // Platzhalter je Item aus dem Kontext DIESER Firma fuellen (siehe itemKontext).
+    const perItemKontext = !ctx.company && findPlaceholders(node.parameters).length > 0 && items.some((it) => !!scopeAusItem(it, undefined));
+    if (!perItemKontext) node = { ...node, parameters: (await this.fillPlaceholders(ctx, node, node.parameters)) as Record<string, unknown> };
     switch (node.type) {
       case "trigger":
         return [items];
@@ -1024,16 +1083,22 @@ export class WorkflowRunner {
   private async executeAi(ctx: RunContext, node: WorkflowNode, items: WorkflowItem[]): Promise<WorkflowItem[]> {
     if (this.ohneEingabe(ctx, node, items)) return [];
     if (!this.deps.providers.getStatus().ready) throw new Error("Kein Hintergrund-Modell bereit (API-Schluessel oder lokales Modell noetig; ein ChatGPT-Abo gilt nicht fuer Workflows).");
-    const system =
-      String(node.parameters.system ?? "Du bist ein praeziser Assistent fuer B2B-Vertrieb. Antworte NUR mit JSON nach dem vorgegebenen Schema.") +
-      (ctx.company ? `\n\nVollstaendiger Kontext der Firma, um die es in diesem Lauf geht (nur daraus schoepfen, nichts erfinden):\n${ctx.company.text.slice(0, 40_000)}` : "");
+    const systemBasis = String(node.parameters.system ?? "Du bist ein praeziser Assistent fuer B2B-Vertrieb. Antworte NUR mit JSON nach dem vorgegebenen Schema.");
+    const systemFuer = (k: CompanyContext | null): string =>
+      systemBasis + (k ? `\n\nVollstaendiger Kontext der Firma, um die es in diesem Lauf geht (nur daraus schoepfen, nichts erfinden):\n${k.text.slice(0, 40_000)}` : "");
     const schema = (node.parameters.outputSchema as Record<string, unknown> | undefined) ?? {};
     const required = ((schema as { required?: string[] }).required ?? []) as string[];
     const out: WorkflowItem[] = [];
     const modelOverride = this.deps.providers.getProducerModelOverride();
+    let ohneKontext = 0;
     for (let i = 0; i < items.length; i++) {
       if (ctx.signal.aborted) throw new Error("aborted");
-      const prompt = String(resolveValue(String(node.parameters.prompt ?? ""), this.exprContext(ctx, node, items, i)));
+      // v0.1.625 — Kontext je Item (Firma aus dem Item), wenn der Lauf keine feste Firma hat.
+      const kontext = await this.itemKontext(ctx, items[i]);
+      if (!kontext) ohneKontext++;
+      const params = ctx.company ? node.parameters : ((await this.fillPlaceholdersForItem(ctx, node, node.parameters, kontext)) as Record<string, unknown>);
+      const system = systemFuer(kontext);
+      const prompt = String(resolveValue(String(params.prompt ?? ""), this.exprContext(ctx, node, items, i, kontext)));
       let parsed: Record<string, unknown> | null = null;
       let lastRaw = "";
       for (let versuch = 0; versuch < 3 && !parsed; versuch++) {
@@ -1044,7 +1109,11 @@ export class WorkflowRunner {
         if (obj && typeof obj === "object" && required.every((k) => (obj as Record<string, unknown>)[k] !== undefined)) parsed = obj as Record<string, unknown>;
       }
       if (!parsed) throw new Error(`KI-Schritt lieferte kein gueltiges JSON: ${lastRaw.slice(0, 200)}`);
-      out.push({ json: { ...items[i]!.json, ...parsed }, pairedItem: { item: i } });
+      out.push({ json: { ...items[i]!.json, ...(kontext?.json.name && !items[i]!.json.name ? { name: kontext.json.name } : {}), ...parsed }, pairedItem: { item: i } });
+    }
+    if (ohneKontext > 0 && !ctx.company) {
+      const run = ctx.execution.nodeRuns[node.name]?.at(-1);
+      if (run) (run.hinweise ??= []).push(`${ohneKontext} von ${items.length} Items ohne Firmen-Kontext (kein companyId/discoveryId im Item) — KI-Schritt lief ohne Firmendaten.`);
     }
     return out;
   }
@@ -1075,8 +1144,8 @@ export class WorkflowRunner {
     const level = this.effectiveLevel(ctx, node, kind);
     const isMail = toolName === "mail_send" || toolName === "mail_reply" || toolName === "mail_forward";
 
-    const runOnce = async (ectx: ExpressionContext, pairedIndex: number, keyValue: string | null): Promise<WorkflowItem[]> => {
-      const args = resolveValue(argsTemplate, ectx);
+    const runOnce = async (ectx: ExpressionContext, pairedIndex: number, keyValue: string | null, argsVorlage: unknown = argsTemplate): Promise<WorkflowItem[]> => {
+      const args = resolveValue(argsVorlage, ectx);
       if (ctx.execution.dryRun && kind !== "read") {
         return [{ json: { dryRun: true, tool: toolName, args: args as Record<string, unknown>, ...(keyValue ? { key: keyValue } : {}) }, pairedItem: { item: pairedIndex } }];
       }
@@ -1127,7 +1196,10 @@ export class WorkflowRunner {
           uebersprungen++;
           continue;
         }
-        out.push(...(await runOnce(this.exprContext(ctx, node, items, i), i, key)));
+        // v0.1.625 — je Item: Firmen-Kontext aus dem Item ($company, Platzhalter), wenn der Lauf keine feste Firma hat.
+        const kontext = ctx.company ? ctx.company : await this.itemKontext(ctx, items[i]);
+        const argsJeItem = ctx.company || !kontext ? argsTemplate : await this.fillPlaceholdersForItem(ctx, node, argsTemplate, kontext);
+        out.push(...(await runOnce(this.exprContext(ctx, node, items, i, kontext), i, key, argsJeItem)));
       }
       if (uebersprungen > 0) {
         const run = ctx.execution.nodeRuns[node.name]?.at(-1);
@@ -1215,6 +1287,10 @@ interface RunContext {
   stufenFertig: Set<PipelineStage>;
   /** Gesetzt vom Warten-Node: Lauf pausiert nach diesem Durchgang passiv. */
   warten: WorkflowWaiting | null;
+  /** v0.1.625 — Firmen-Kontext je Item (Laeufe ohne feste Firma, z. B. nach dem Warten-Node). */
+  itemKontexte: Map<string, CompanyContext | null>;
+  /** Platzhalter-Werte je Firma (Item-Kontext). */
+  itemPlatzhalter: Map<string, Record<string, unknown>>;
 }
 
 /** Firmenbezug aus einem Item (companyId/discoveryId/name), sonst der Eltern-Scope. */

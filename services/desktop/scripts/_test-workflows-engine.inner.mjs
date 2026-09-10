@@ -24,7 +24,7 @@ const tools = new Map([
   ["transaction_entities", tool("transaction_entities", (a) => ({ items: [{ companyId: "c1", state: "completed", name: "Beta AG" }, { companyId: "c2", state: "failed" }] }),
     (raw) => { if (typeof raw?.transactionId !== "string" || !raw.transactionId) throw new Error("invalid args: transactionId is a required field"); })],
   ["telegram_send_message", tool("telegram_send_message", () => ({ ok: true }), (raw) => { if (!raw?.text) throw new Error("invalid args: text is a required field"); })],
-  ["company_get", tool("company_get", (a) => ({ id: a.companyId, name: "Beta AG", city: "Herford" }))],
+  ["company_get", tool("company_get", (a) => ({ id: a.companyId, name: a.companyId === "c1" ? "Beta AG" : `Firma ${a.companyId}`, city: "Herford" }))],
 ]);
 const registry = { get: (n) => tools.get(n), list: () => [...tools.values()] };
 
@@ -338,6 +338,31 @@ console.log("Leere Eingabe: Tool-/KI-/Warten-Node ueberspringen statt Fehler");
   check(ex.status === "success", `Lauf endet erfolgreich mit 0 Firmen: ${ex.status} ${ex.error ?? ""}`);
   check(!calls.some((c) => c.name === "discovery_decide" || c.name === "telegram_send_message"), `Import/Telegram nicht aufgerufen: ${calls.map((c) => c.name).join(",")}`);
   check((ex.nodeRuns["Import starten"]?.at(-1)?.hinweise ?? []).some((h) => /Keine Eingabe-Items/.test(h)), `Hinweis am uebersprungenen Node: ${JSON.stringify(ex.nodeRuns["Import starten"]?.at(-1)?.hinweise)}`);
+}
+
+console.log("Firmen-Kontext je Item (flacher Workflow ohne feste Firma)");
+{
+  calls.length = 0; llmPrompts.length = 0;
+  const nodes = [
+    { id: "n0", position: [0, 0], name: "Start", type: "trigger", parameters: {} },
+    { id: "n1", position: [200, 0], name: "Importieren", type: "transform", parameters: { fields: { transactionId: "{{ '" + TX + "' }}" } } },
+    { id: "n2", position: [400, 0], name: "Warten", type: "wait", parameters: { transactionId: "{{ $json.transactionId }}", bis: ["companyProfile"] } },
+    { id: "n3", position: [600, 0], name: "Nur fertige", type: "filter", parameters: { condition: "{{ $json.state === 'completed' }}" } },
+    { id: "n4", position: [800, 0], name: "Kurz", type: "ai", mode: "perItem", parameters: { prompt: "Kurzuebersicht zu {{ $company.name }}: Kasse $kassenbestand ?? \"kein Kassenbestand\"", outputSchema: { type: "object", required: ["text"], properties: { text: { type: "string" } } } } },
+    { id: "n5", position: [1000, 0], name: "Senden", type: "tool", mode: "perItem", confirmed: true, parameters: { tool: "telegram_send_message", args: { text: "{{ $company.name }}: {{ $json.text }}" } } },
+  ];
+  const conn = {}; for (let i = 0; i < nodes.length - 1; i++) conn[nodes[i].name] = { main: [[{ node: nodes[i + 1].name, index: 0 }]] };
+  const def = mkDef("wf_itemkontext", { name: "flach", description: "", nodes, connections: conn, trigger: { kind: "manual" }, variables: {}, origin: { kind: "manual" }, settings: { scope: "none" } });
+  const ex = await runner.run(def, { trigger: "manual" });
+  check(ex.status === "success", `Status: ${ex.status} ${ex.error ?? ""}`);
+  const ai = llmPrompts.filter((p) => /Kurzuebersicht zu/.test(p));
+  check(ai.some((p) => /Kurzuebersicht zu Beta AG/.test(p) && /Beta AG/.test(p.split("Schema:")[0] ?? "")), `KI-Node bekommt Kontext + $company.name der Item-Firma: ${ai.map((p) => p.slice(-90)).join(" | ")}`);
+  check(ai.some((p) => /1,2 Mio\. EUR/.test(p)), `Platzhalter je Item aus Firmen-Kontext befuellt: ${ai.map((p) => p.slice(-60)).join(" | ")}`);
+  const tg = calls.filter((c) => c.name === "telegram_send_message").map((c) => c.args.text);
+  check(tg.length === 1 && /^Beta AG: KI-Text/.test(tg[0]), `Telegram je Firma mit $company.name: ${JSON.stringify(tg)}`);
+  const { lesbarerFehler } = await load("../src/main/transaction-pipeline.ts");
+  const l = lesbarerFehler("stale element reference: stale element not found in the current frame\n  (Session info: chrome=152.0.7977.83)");
+  check(/Element veraltet/.test(l) && !/Session info/.test(l), `Selenium-Fehler lesbar: ${l}`);
 }
 
 if (fails > 0) { console.log(`\n${fails} Fehler`); process.exit(1); }
