@@ -1100,7 +1100,17 @@ export class WorkflowRunner {
       const run = ctx.execution.nodeRuns[node.name]?.at(-1);
       const diag: string[] = [];
       const out = resultToItems(result, outputPath, pairedIndex, diag);
-      if (run && diag.length) (run.hinweise ??= []).push(...diag);
+      if (run) {
+        run.toolCalls = (run.toolCalls ?? 0) + 1;
+        // v0.1.623 — Ergebnis-Form immer protokollieren (Diagnose bei 0 Items).
+        if (mode === "allItems" || pairedIndex === 0) {
+          const form = result && typeof result === "object" && !Array.isArray(result)
+            ? Object.entries(result as Record<string, unknown>).map(([k, v]) => (Array.isArray(v) ? `${k} (${v.length})` : k)).join(", ")
+            : Array.isArray(result) ? `Liste (${result.length})` : typeof result;
+          (run.hinweise ??= []).push(`${toolName} → ${out.length} Items · Ergebnis: ${form}${outputPath ? ` · outputPath „${outputPath}“` : ""}`);
+        }
+        if (diag.length) run.hinweise!.push(...diag);
+      }
       return out;
     };
 
