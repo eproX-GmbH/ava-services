@@ -273,7 +273,15 @@ export class EmailMusterSupervisor {
     const catchAllBekannt = !!server?.catchAllAt && Date.now() - Date.parse(server.catchAllAt) < CATCHALL_RECHECK_MS && !manuell;
     const muster = befund.muster ?? server?.muster ?? null;
     if (!muster) {
-      cfg.domains[domain] = { at: new Date().toISOString(), muster: null, belege: belegeAnzahl, catchAll: false };
+      const personen = befund.belege.length + befund.unerklaert.length;
+      const grund =
+        personen === 0
+          ? `keine personengebundene Adresse als Beleg (${befund.funktionsadressen.length} Funktionsadressen, z. B. ${befund.funktionsadressen[0] ?? "–"})`
+          : `${personen} personengebundene Belege passen zu keinem gemeinsamen Muster (z. B. ${befund.unerklaert
+              .slice(0, 3)
+              .map((u) => `${u.fullName} → ${u.email}`)
+              .join("; ")})`;
+      cfg.domains[domain] = { at: new Date().toISOString(), muster: null, belege: belegeAnzahl, catchAll: false, grund };
       return null;
     }
     if (befund.muster && (befund.muster !== server?.muster || (befund.konfidenz > (server?.konfidenz ?? 0)))) {

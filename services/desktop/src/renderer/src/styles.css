@@ -8203,3 +8203,5 @@ input, textarea, select, button, a, summary, details,
 .em-verlauf__err { color: #b91c1c; cursor: help; text-decoration: underline dotted; }
 .em-domains { margin-top: 1rem; }
 .em-domains > summary { cursor: pointer; font-weight: 600; font-size: 0.9rem; }
+.em-verlauf__muster { white-space: normal; max-width: 420px; }
+.em-verlauf__grund { font-size: 11px; line-height: 1.3; margin-top: 2px; }

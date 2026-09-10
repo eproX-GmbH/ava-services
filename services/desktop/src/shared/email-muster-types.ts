@@ -41,7 +41,7 @@ export interface EmailMusterConfig {
   lastOutcome: string | null;
   netz: { erreichbar: boolean; grund: string; at: string } | null;
   tag: { day: string; count: number };
-  domains: Record<string, { at: string; muster: string | null; belege: number; catchAll: boolean }>;
+  domains: Record<string, { at: string; muster: string | null; belege: number; catchAll: boolean; grund?: string }>;
   stats: { firmen: number; geprueft: number; verifiziert: number; unbestaetigt: number; abgelehnt: number; unbekannt: number; catchAll: number };
   /** Juengste Pruefungen zuerst, begrenzt (VERLAUF_MAX). */
   verlauf: VerlaufEintrag[];

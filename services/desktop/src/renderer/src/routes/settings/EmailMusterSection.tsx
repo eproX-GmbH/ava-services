@@ -208,7 +208,10 @@ export function EmailMusterSection() {
                   return (
                     <tr key={d}>
                       <td>{d}</td>
-                      <td>{st.catchAll ? <span className="pill pill--paused">Catch-all</span> : st.muster ? <code>{st.muster}</code> : <span className="muted">kein Muster erkannt</span>}</td>
+                      <td className="em-verlauf__muster">
+                        {st.catchAll ? <span className="pill pill--paused">Catch-all</span> : st.muster ? <code>{st.muster}</code> : <span className="muted">kein Muster erkannt</span>}
+                        {!st.muster && st.grund && <div className="muted small em-verlauf__grund">{st.grund}</div>}
+                      </td>
                       <td>{st.belege}</td>
                       <td>{fmt(st.at)}</td>
                       <td className="muted">frühestens {next.toLocaleDateString("de-DE")} oder bei neuen Belegen</td>
