@@ -363,6 +363,20 @@ jobs:
             --clobber \
             --repo "${{ github.repository }}"
 
+      # 2026-09-09: Ein Re-Run eines aelteren Tags veroeffentlicht dessen Release
+      # erneut, und GitHub markiert es als "Latest" (v0.1.617 verdraengte v0.1.622;
+      # Download-Seite und Auto-Updater zeigten die alte Version). Deshalb nach
+      # jedem Publish die hoechste Versionsnummer explizit als Latest setzen.
+      - name: Latest-Markierung auf hoechste Version halten
+        if: always()
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          hoechste=$(gh release list --limit 100 --exclude-drafts --exclude-pre-releases --json tagName --jq '.[].tagName' | sort -V | tail -1)
+          if [ -n "$hoechste" ]; then
+            gh release edit "$hoechste" --latest && echo "Latest = $hoechste"
+          fi
       - name: Audit bundle for secret leaks
         working-directory: services/desktop
         run: node scripts/check-bundle-secrets.mjs
@@ -623,6 +637,20 @@ jobs:
           fi
           echo "OK: nur x64-Artefakte, Ollama darwin-x64 vorhanden"
 
+      # 2026-09-09: Ein Re-Run eines aelteren Tags veroeffentlicht dessen Release
+      # erneut, und GitHub markiert es als "Latest" (v0.1.617 verdraengte v0.1.622;
+      # Download-Seite und Auto-Updater zeigten die alte Version). Deshalb nach
+      # jedem Publish die hoechste Versionsnummer explizit als Latest setzen.
+      - name: Latest-Markierung auf hoechste Version halten
+        if: always()
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          hoechste=$(gh release list --limit 100 --exclude-drafts --exclude-pre-releases --json tagName --jq '.[].tagName' | sort -V | tail -1)
+          if [ -n "$hoechste" ]; then
+            gh release edit "$hoechste" --latest && echo "Latest = $hoechste"
+          fi
       - name: Audit bundle for secret leaks
         working-directory: services/desktop
         run: node scripts/check-bundle-secrets.mjs
@@ -864,6 +892,20 @@ jobs:
         run: |
           pnpm exec electron-builder --win --x64 --publish always
 
+      # 2026-09-09: Ein Re-Run eines aelteren Tags veroeffentlicht dessen Release
+      # erneut, und GitHub markiert es als "Latest" (v0.1.617 verdraengte v0.1.622;
+      # Download-Seite und Auto-Updater zeigten die alte Version). Deshalb nach
+      # jedem Publish die hoechste Versionsnummer explizit als Latest setzen.
+      - name: Latest-Markierung auf hoechste Version halten
+        if: always()
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          hoechste=$(gh release list --limit 100 --exclude-drafts --exclude-pre-releases --json tagName --jq '.[].tagName' | sort -V | tail -1)
+          if [ -n "$hoechste" ]; then
+            gh release edit "$hoechste" --latest && echo "Latest = $hoechste"
+          fi
       - name: Audit bundle for secret leaks
         working-directory: services/desktop
         run: node scripts/check-bundle-secrets.mjs
