@@ -3271,6 +3271,43 @@ a.heartbeat-decision__company:hover {
   opacity: 0.65;
 }
 
+/* ---- v0.1.628 — Kontaktkarte (PersonCard) neu: Kopf mit Initialen, Rolle,
+   Schnellaktionen; Kontaktzeilen mit Icon, Wert, Quelle, Zuverlaessigkeit;
+   Datenschutz/Herkunft und fruehere Angaben eingeklappt. ---------------- */
+.pc { padding: 1rem 1.1rem; display: flex; flex-direction: column; gap: 0.75rem; }
+.pc__head { display: flex; align-items: flex-start; gap: 0.75rem; }
+.pc__avatar { flex: none; width: 40px; height: 40px; border-radius: 50%; display: grid; place-items: center; font-weight: 700; font-size: 14px; letter-spacing: 0.02em; background: var(--color-indigo-50); color: var(--color-indigo-700); }
+.pc__ident { min-width: 0; flex: 1; }
+.pc__name { margin: 0; font-size: 15px; line-height: 1.25; overflow-wrap: anywhere; }
+.pc__role { margin: 0.15rem 0 0; font-size: 12.5px; color: var(--muted); line-height: 1.35; }
+.pc__informed { display: inline-block; margin-top: 0.3rem; font-size: 11px; color: #0f9d6f; }
+.pc__quick { display: flex; gap: 4px; flex: none; }
+.pc__iconbtn { display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px; border-radius: 8px; border: 1px solid var(--border); background: var(--color-bg-0); color: var(--fg); text-decoration: none; font-size: 14px; cursor: pointer; transition: var(--ctrl-transition); }
+.pc__iconbtn:hover { border-color: var(--accent); color: var(--accent); }
+.pc__iconbtn--brand { color: var(--muted); }
+.pc__notice { margin: 0; font-size: 11px; color: var(--muted); }
+.pc__facts { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.2rem; }
+.pc__fact { display: grid; grid-template-columns: 20px 1fr auto; align-items: center; gap: 0.5rem; padding: 0.3rem 0; border-top: 1px solid var(--border); }
+.pc__fact:first-child { border-top: 0; }
+.pc__fact-icon { color: var(--muted); font-size: 13px; text-align: center; }
+.pc__fact-value { min-width: 0; font-weight: 500; overflow-wrap: anywhere; }
+.pc__fact-value .fact-url__label { max-width: 100%; }
+.pc__fact-meta { display: flex; align-items: center; gap: 0.4rem; white-space: nowrap; }
+.pc__src { font-size: 11px; color: var(--muted); text-decoration: none; border: 1px solid var(--border); border-radius: 999px; padding: 0 7px; }
+.pc__src:hover { color: var(--accent); border-color: var(--accent); }
+.pc__conf { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.pc__conf i { width: 8px; height: 8px; border-radius: 50%; background: var(--pc-conf, var(--muted)); display: inline-block; }
+.pc__foot { display: flex; flex-direction: column; gap: 0.35rem; }
+.pc__more > summary { cursor: pointer; font-size: 12px; color: var(--muted); list-style: none; user-select: none; }
+.pc__more > summary::-webkit-details-marker { display: none; }
+.pc__more > summary::before { content: "▸ "; }
+.pc__more[open] > summary::before { content: "▾ "; }
+.pc__more-actions { display: flex; flex-wrap: wrap; gap: 0.75rem; align-items: center; margin-top: 0.4rem; }
+.pc__more-actions .link { font-size: 12px; }
+.pc__danger { color: #c0392b !important; }
+.pc__herkunft { font-size: 12px; margin-top: 0.5rem; max-height: 420px; overflow: auto; }
+.pc__facts--alt { margin-top: 0.4rem; opacity: 0.7; }
+
 /* ---- Social icons + external-link warning (Phase 8.f5) ----------------- */
 .person-card__socials {
   display: flex; gap: 8px;

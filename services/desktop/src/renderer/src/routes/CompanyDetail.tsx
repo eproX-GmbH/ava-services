@@ -1489,8 +1489,9 @@ function PersonCard({
   //      reconciler couldn't merge) get bundled into one row with a
   //      "+N Varianten" disclosure.
   //   3. Move INACTIVE history into a <details> "Historie (N)" block.
+  // v0.1.628 — Position/Abteilung stehen im Kopf der Karte, nicht nochmal als Zeile.
   const visibleFacts = facts.filter(
-    (f) => !["fullName", "identityKey", "employmentCompanyId"].includes(f.field ?? ""),
+    (f) => !["fullName", "identityKey", "employmentCompanyId", "jobTitle", "department"].includes(f.field ?? ""),
   );
   const activeFacts = visibleFacts.filter((f) => f.status === "ACTIVE");
   const inactiveFacts = visibleFacts.filter((f) => f.status !== "ACTIVE");
@@ -1538,161 +1539,168 @@ function PersonCard({
     }
   };
 
+  const initialen = name
+    .split(/\s+/)
+    .filter((t) => t && !/^(dr|prof|dipl|ing)\.?$/i.test(t))
+    .slice(0, 2)
+    .map((t) => t.charAt(0).toUpperCase())
+    .join("");
+  const email = activeGroups.find(([f]) => f === "email")?.[1][0];
+  const phone = activeGroups.find(([f]) => f === "phone" || f === "mobilePhone")?.[1][0];
+  const reihenfolge = ["email", "phone", "mobilePhone", "address", "linkedinUrl", "xingUrl"];
+  const sortierteGruppen = [...activeGroups]
+    .filter(([f]) => !["linkedinUrl", "xingUrl"].includes(f)) // Profile sind Icons im Kopf
+    .sort((a, b) => (reihenfolge.indexOf(a[0]) === -1 ? 99 : reihenfolge.indexOf(a[0])) - (reihenfolge.indexOf(b[0]) === -1 ? 99 : reihenfolge.indexOf(b[0])));
+  const konfidenzFarbe = (c?: number): string => (c === undefined ? "var(--muted)" : c >= 0.8 ? "#0f9d6f" : c >= 0.6 ? "#d98e04" : "#c0392b");
+  const iconFuer = (field: string): string => (field === "email" ? "✉" : field === "phone" || field === "mobilePhone" ? "☎" : field === "address" ? "⌂" : "•");
+
   return (
-    <article className="panel">
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "start" }}>
-        <div>
-          <h4 style={{ margin: 0 }}>{name}</h4>
-          {job && (
-            <p className="muted" style={{ margin: "0.25rem 0 0" }}>
-              {job.value}
-              {dept && ` · ${dept.value}`}
+    <article className="panel pc">
+      <header className="pc__head">
+        <div className="pc__avatar" aria-hidden="true">
+          {initialen || "?"}
+        </div>
+        <div className="pc__ident">
+          <h4 className="pc__name">{name}</h4>
+          {(job || dept) && (
+            <p className="pc__role">
+              {job?.value}
+              {job && dept ? " · " : ""}
+              {dept?.value}
             </p>
           )}
+          {informiertAm && (
+            <span className="pc__informed" title="Information nach Art. 14 DSGVO dokumentiert">
+              Art. 14 informiert am {new Date(informiertAm).toLocaleDateString("de-DE")}
+            </span>
+          )}
         </div>
-        <div className="person-card__socials">
-          {xing?.value && (
-            <ExternalLink
-              href={xing.value}
-              className="social-icon-link"
-              title="XING-Profil öffnen"
-            >
-              <span className="visually-hidden">XING</span>
-              <XingIcon size={18} />
-            </ExternalLink>
+        <div className="pc__quick">
+          {email?.value && (
+            <a className="pc__iconbtn" href={`mailto:${email.value}`} title={`E-Mail an ${email.value}`}>
+              ✉
+            </a>
+          )}
+          {phone?.value && (
+            <a className="pc__iconbtn" href={`tel:${String(phone.value).replace(/\s+/g, "")}`} title={`Anrufen: ${phone.value}`}>
+              ☎
+            </a>
           )}
           {linkedin?.value && (
-            <ExternalLink
-              href={linkedin.value}
-              className="social-icon-link"
-              title="LinkedIn-Profil öffnen"
-            >
+            <ExternalLink href={linkedin.value} className="pc__iconbtn pc__iconbtn--brand" title="LinkedIn-Profil öffnen">
               <span className="visually-hidden">LinkedIn</span>
-              <LinkedInIcon size={18} />
+              <LinkedInIcon size={16} />
+            </ExternalLink>
+          )}
+          {xing?.value && (
+            <ExternalLink href={xing.value} className="pc__iconbtn pc__iconbtn--brand" title="XING-Profil öffnen">
+              <span className="visually-hidden">XING</span>
+              <XingIcon size={16} />
             </ExternalLink>
           )}
           {linkedin?.value && linkedin.value.includes("/in/") && (
             <button
               type="button"
-              className="link"
-              style={{ fontSize: 11 }}
-              title="Öffentliche LinkedIn-Aktivität dieser Person beobachten (Personen-Watchlist)"
+              className="pc__iconbtn"
+              title="Öffentliche LinkedIn-Aktivität beobachten (Personen-Watchlist)"
               onClick={() =>
                 void window.api.linkedin.watchlist
-                  .add({
-                    profileUrl: linkedin.value ?? "",
-                    label: name,
-                    companyId: companyId ?? null,
-                    quelle: "kontakt",
-                  })
-                  .then((r) =>
-                    setWlNotice(
-                      "error" in r && r.error ? r.error : "Auf der Watchlist ✓",
-                    ),
-                  )
+                  .add({ profileUrl: linkedin.value ?? "", label: name, companyId: companyId ?? null, quelle: "kontakt" })
+                  .then((r) => setWlNotice("error" in r && r.error ? r.error : "Auf der Watchlist ✓"))
               }
             >
-              👀 Watchlist
+              👀
             </button>
           )}
-          {wlNotice && (
-            <span className="muted" style={{ fontSize: 11 }}>{wlNotice}</span>
-          )}
         </div>
-      </div>
-      {activeGroups.length > 0 && (
-        <ul className="list" style={{ marginTop: "0.75rem" }}>
-          {activeGroups.map(([field, group]) => {
+      </header>
+      {wlNotice && <p className="pc__notice">{wlNotice}</p>}
+
+      {sortierteGruppen.length > 0 ? (
+        <ul className="pc__facts">
+          {sortierteGruppen.map(([field, group]) => {
             const primary = group[0];
             if (!primary) return null;
             const variants = group.slice(1);
+            const obsId = typeof primary.lastObsId === "string" ? primary.lastObsId : null;
+            const quelleUrl = obsId ? belege?.get(obsId) : undefined;
+            const pct = primary.confidence !== undefined ? Math.round(primary.confidence * 100) : null;
             return (
-              <li key={field} className="fact-row">
-                <span className="muted">{fieldLabel(field)}:</span>
-                <span className="fact-value">
-                  {primary.value ? (
-                    <FactValue value={primary.value} kind={kindFor(field)} />
-                  ) : (
-                    ""
-                  )}
-                  {variants.length > 0 && (
-                    <PersonCardVariants
-                      variants={variants}
-                      kind={kindFor(field)}
-                    />
-                  )}
+              <li key={field} className="pc__fact" title={fieldLabel(field)}>
+                <span className="pc__fact-icon" aria-hidden="true">
+                  {iconFuer(field)}
                 </span>
-                <span className="fact-meta">
-                  {field === "email" && <AbgeleitetBadge quellen={quellen} obsId={typeof primary.lastObsId === "string" ? primary.lastObsId : null} />}
-                  {(() => {
-                    // v0.1.508 — Quelle nur bei direkten Kontaktdaten.
-                    // Profil-URLs sind ihre eigene Quelle, da waere der
-                    // Link nur Rauschen.
-                    if (!["phone", "mobilePhone", "email", "address"].includes(field))
-                      return null;
-                    const obsId =
-                      typeof primary.lastObsId === "string"
-                        ? primary.lastObsId
-                        : null;
-                    const url = obsId ? belege?.get(obsId) : undefined;
-                    return url ? <QuellenLink url={url} /> : null;
-                  })()}
-                  <ConfidenceBar confidence={primary.confidence} />
+                <span className="pc__fact-value">
+                  {primary.value ? <FactValue value={primary.value} kind={kindFor(field)} /> : ""}
+                  {variants.length > 0 && <PersonCardVariants variants={variants} kind={kindFor(field)} />}
+                </span>
+                <span className="pc__fact-meta">
+                  {field === "email" && <AbgeleitetBadge quellen={quellen} obsId={obsId} />}
+                  {quelleUrl && ["phone", "mobilePhone", "email", "address"].includes(field) && (
+                    <ExternalLink href={quelleUrl} className="pc__src" title={`Gefunden auf ${quelleUrl}`}>
+                      Quelle
+                    </ExternalLink>
+                  )}
+                  {pct !== null && (
+                    <span className="pc__conf" title={`Zuverlässigkeit ${pct} %`} style={{ ["--pc-conf" as string]: konfidenzFarbe(primary.confidence) }}>
+                      <i />
+                      {pct}%
+                    </span>
+                  )}
                 </span>
               </li>
             );
           })}
         </ul>
+      ) : (
+        <p className="muted small">Keine Kontaktdaten hinterlegt.</p>
       )}
-      <div className="org-actions" style={{ marginTop: "0.6rem", gap: "0.4rem" }}>
-        <button type="button" className="link" style={{ fontSize: 11 }} disabled={c1Busy} onClick={() => void zeigeHerkunft()} title="Herkunftsnachweis (Art. 15): alle Angaben mit Quelle, Beleg, Zeitpunkt">
-          {herkunft ? "Herkunft ausblenden" : "Herkunft"}
-        </button>
-        <button type="button" className="link" style={{ fontSize: 11 }} disabled={c1Busy} onClick={() => void hinweisKopieren()} title="Vorformulierten Hinweistext nach Art. 14 DSGVO kopieren">
-          Art.-14-Hinweis
-        </button>
-        {informiertAm ? (
-          <span className="muted" style={{ fontSize: 11 }} title="Information nach Art. 14 dokumentiert">
-            informiert am {new Date(informiertAm).toLocaleDateString("de-DE")}
-          </span>
-        ) : (
-          <button type="button" className="link" style={{ fontSize: 11 }} disabled={c1Busy} onClick={() => void informiert()} title="Dokumentieren, dass die Person nach Art. 14 informiert wurde">
-            als informiert markieren
-          </button>
-        )}
-        <button type="button" className="link" style={{ fontSize: 11 }} disabled={c1Busy} onClick={loeschen} title="Person global löschen (Löschwunsch, Art. 17)">
-          Löschen
-        </button>
-        {c1Notice && <span className="muted" style={{ fontSize: 11 }}>{c1Notice}</span>}
-      </div>
-      {herkunft && (
-        <details className="person-card__history" open>
-          <summary className="muted">Herkunftsnachweis</summary>
-          <div className="chat-markdown" style={{ fontSize: 12, marginTop: "0.5rem", maxHeight: 420, overflow: "auto" }}>
-            <ReactMarkdown>{herkunft}</ReactMarkdown>
+
+      <footer className="pc__foot">
+        <details className="pc__more">
+          <summary>Datenschutz &amp; Herkunft</summary>
+          <div className="pc__more-actions">
+            <button type="button" className="link" disabled={c1Busy} onClick={() => void zeigeHerkunft()} title="Herkunftsnachweis (Art. 15): alle Angaben mit Quelle, Beleg, Zeitpunkt">
+              {herkunft ? "Herkunft ausblenden" : "Herkunftsnachweis"}
+            </button>
+            <button type="button" className="link" disabled={c1Busy} onClick={() => void hinweisKopieren()} title="Vorformulierten Hinweistext nach Art. 14 DSGVO kopieren">
+              Art.-14-Hinweis kopieren
+            </button>
+            {!informiertAm && (
+              <button type="button" className="link" disabled={c1Busy} onClick={() => void informiert()} title="Dokumentieren, dass die Person nach Art. 14 informiert wurde">
+                als informiert markieren
+              </button>
+            )}
+            <button type="button" className="link pc__danger" disabled={c1Busy} onClick={loeschen} title="Person global löschen (Löschwunsch, Art. 17)">
+              Person löschen
+            </button>
+            {c1Notice && <span className="muted small">{c1Notice}</span>}
           </div>
+          {herkunft && (
+            <div className="chat-markdown pc__herkunft">
+              <ReactMarkdown>{herkunft}</ReactMarkdown>
+            </div>
+          )}
         </details>
-      )}
-      {inactiveFacts.length > 0 && (
-        <details className="person-card__history">
-          <summary className="muted">
-            Historie ({inactiveFacts.length})
-          </summary>
-          <ul className="list" style={{ marginTop: "0.5rem" }}>
-            {inactiveFacts.map((f, i) => (
-              <li key={f.id ?? `inactive-${i}`} className="fact-row">
-                <span className="muted">{fieldLabel(f.field ?? "")}:</span>
-                <span className="fact-value">
-                  {f.value ? <FactValue value={f.value} kind={kindFor(f.field)} /> : ""}
-                </span>
-                <span className="fact-meta">
-                  <ConfidenceBar confidence={f.confidence} />
-                </span>
-              </li>
-            ))}
-          </ul>
-        </details>
-      )}
+        {inactiveFacts.length > 0 && (
+          <details className="pc__more">
+            <summary>Frühere Angaben ({inactiveFacts.length})</summary>
+            <ul className="pc__facts pc__facts--alt">
+              {inactiveFacts.map((f, i) => (
+                <li key={f.id ?? `inactive-${i}`} className="pc__fact">
+                  <span className="pc__fact-icon" aria-hidden="true">
+                    {iconFuer(f.field ?? "")}
+                  </span>
+                  <span className="pc__fact-value">
+                    <span className="muted small">{fieldLabel(f.field ?? "")}: </span>
+                    {f.value ? <FactValue value={f.value} kind={kindFor(f.field)} /> : ""}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </details>
+        )}
+      </footer>
     </article>
   );
 }
