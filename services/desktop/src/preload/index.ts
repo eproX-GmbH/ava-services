@@ -1663,6 +1663,19 @@ const api = {
   // `recentTicks`) plus mutations (`setPrefs`, `triggerNow`). The
   // `onPrefsChanged` push is fired by main after every successful
   // `set` so the Settings panel can re-sync without polling.
+  emailMuster: {
+    status: (): Promise<import("../shared/email-muster-types").EmailMusterConfig & { laeuft: boolean }> => ipcRenderer.invoke("emailMuster:status"),
+    setConfig: (patch: { enabled?: boolean }): Promise<import("../shared/email-muster-types").EmailMusterConfig> => ipcRenderer.invoke("emailMuster:setConfig", patch),
+    runNow: (): Promise<{ ergebnis: string }> => ipcRenderer.invoke("emailMuster:runNow"),
+    vorschau: (companyId: string): Promise<import("../shared/email-muster-types").Vorschau | null> => ipcRenderer.invoke("emailMuster:vorschau", companyId),
+    onChanged: (cb: (cfg: unknown) => void): (() => void) => {
+      const h = (_e: unknown, cfg: unknown): void => cb(cfg);
+      ipcRenderer.on("emailMuster:changed", h);
+      return () => {
+        ipcRenderer.removeListener("emailMuster:changed", h);
+      };
+    },
+  },
   freshness: {
     getPrefs: (): Promise<FreshnessPrefs> =>
       ipcRenderer.invoke("freshness:getPrefs"),

@@ -1,3 +1,4 @@
+import { EmailMusterSupervisor } from "./contacts/email-muster/supervisor";
 import {
   app,
   BrowserWindow,
@@ -1348,6 +1349,7 @@ let personenRadarStore: PersonenRadarStore | null = null;
 let personenRadarSupervisor: PersonenRadarSupervisor | null = null;
 /** W1 — Workflows (docs/PLAN_WORKFLOWS.md). */
 let workflowService: WorkflowService | null = null;
+let emailMuster: EmailMusterSupervisor | null = null;
 
 /** v0.1.580 — Apify-Zugang fuer Watchlist/Personen-Radar im Hauptprozess:
  *  eigener Token gewinnt (ausser unter Anbieter-Sperre), sonst der
@@ -1805,6 +1807,7 @@ const agentRegistry = buildReadOnlyRegistry({
   // v0.1.576 — Radar-Config per Chat (radar_config).
   hatApifyZugang: async () => Boolean(await resolveApifyAccess()),
   getWorkflows: () => workflowService,
+  getEmailMuster: () => emailMuster,
   getRadar: () =>
     radarSupervisor
       ? {
@@ -3060,6 +3063,30 @@ app.whenReady().then(async () => {
       audit({ actorType: "system", actorId: null, category: "import", action: "transaction.finished", severity, subjectType: null, subjectId: (metadata.transactionId as string) ?? null, summary, metadata }),
   });
   transactionWatcher.start();
+  // M4 (docs/PLAN_EMAIL_MUSTER.md) — lokale E-Mail-Ableitung im Hintergrund.
+  emailMuster = new EmailMusterSupervisor(
+    {
+      gatewayRequest: (path, opts) => gatewayClient.request(path, opts as never),
+      isSignedIn: () => auth.getStatus().signedIn,
+      isLlmBusy: () => agent.getStatus().inFlightRequestId !== null,
+      isOnBattery: () => {
+        try {
+          return powerMonitor.isOnBatteryPower();
+        } catch {
+          return false;
+        }
+      },
+      audit: ({ summary, severity, metadata }) =>
+        audit({ actorType: "system", actorId: null, category: "import", action: "email-muster.run", severity, subjectType: null, subjectId: (metadata.companyId as string) ?? null, summary, metadata }),
+      log: (m) => console.log(m),
+      onChanged: (cfg) => {
+        for (const win of BrowserWindow.getAllWindows()) win.webContents.send("emailMuster:changed", cfg);
+      },
+    },
+    app.getPath("userData"),
+  );
+  emailMuster.start();
+  app.on("before-quit", () => quitStep("emailMuster.stop", () => emailMuster?.stop()));
   // W4 — Workflow-Trigger alert.created.
   alerts.onCreated = (a) => {
     void workflowService?.emitEvent("alert.created", { alertId: a.id, kind: a.kind, severity: a.severity, headline: a.headline, companyId: a.companyId, companyName: a.companyName });
@@ -5627,6 +5654,10 @@ app.whenReady().then(async () => {
     }
   });
   ipcMain.handle("workflows:cancel", (_e, executionId: string) => ({ ok: wf().cancel(String(executionId)) }));
+  ipcMain.handle("emailMuster:status", () => emailMuster?.status() ?? null);
+  ipcMain.handle("emailMuster:setConfig", (_e, patch: { enabled?: boolean }) => emailMuster?.setConfig({ ...(patch.enabled !== undefined ? { enabled: patch.enabled === true } : {}) }) ?? null);
+  ipcMain.handle("emailMuster:runNow", async () => ({ ergebnis: (await emailMuster?.runNow()) ?? "nicht initialisiert" }));
+  ipcMain.handle("emailMuster:vorschau", (_e, companyId: string) => emailMuster?.vorschau(String(companyId)) ?? null);
   ipcMain.handle("workflows:approve", (_e, approvalId: string, approved: boolean, note?: string) => ({ ok: wf().decideApproval(String(approvalId), approved === true, note) }));
 
   ipcMain.handle("discovery:radarRunNow", async () => {

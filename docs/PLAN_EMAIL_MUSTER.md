@@ -205,7 +205,35 @@ sich mit dem eigenen Netz sofort auf Port-25-Erreichbarkeit prüfen.
 - Musterfehler bei Namensbesonderheiten (Doppelnamen, Umlaute, Spitznamen
   wie „Alex“). Die Verifizierung fängt das ab, kostet aber Prüfungen.
 
-## 7. Offene Entscheidungen
+## 2.5 Beständigkeit (Operator 2026-09-10)
+
+- Eine verifizierte Adresse wird nie erneut geprüft. Der Job betrachtet nur
+  Personen OHNE aktive E-Mail; vorhandene Fakten bleiben unangetastet.
+- Erneut geprüft wird eine Domain nur, wenn die Frist abgelaufen ist (30
+  Tage, Catch-all 90 Tage) ODER neue Belege aufgetaucht sind. Widerspricht
+  ein neuer Beleg dem gespeicherten Muster, wird das Muster neu abgeleitet;
+  das alte bleibt als „vorher“ im Server-Datensatz (Formatwechsel der
+  Firma). Bereits verifizierte Adressen des alten Formats bleiben gültig,
+  sie existieren ja nachweislich.
+- Wortlaut bei gesperrtem Port 25: „Mail-Prüfung in diesem Netz nicht
+  möglich“. Kein externer Fallback-Dienst.
+
+## 7. Entscheidungen (2026-09-10, umgesetzt in v0.1.627)
+
+1. Kein externer Verifizierungsdienst. Geht es im Netz nicht, geht es nicht.
+2. Ein Beleg reicht (Konfidenz 0,6, sichtbar im Server-Datensatz).
+3. Tick alle 15 Minuten, eine Firma je Tick, 50 Prüfungen je Gerät und Tag.
+4. Schalter je Nutzer (Einstellungen → Automatisierungen → E-Mail-Ableitung,
+   Chat-Tool `email_muster_config`), Standard an.
+5. Muster und Catch-all-Befunde werden wie Kontakte geteilt (`EmailPattern`).
+
+Umsetzung: Desktop `src/main/contacts/email-muster/` (pattern.ts,
+smtp-verify.ts, supervisor.ts), Chat-Tools `email_muster_status/_config/
+_vorschau/_jetzt`, Badge „abgeleitet · verifiziert“ im Firmendetail,
+Tests `npm run test:email-muster`. Gateway: Routen `/v1/email-patterns/:domain`
+(GET/PUT) und `POST /v1/companies/:id/contacts/derived-email`, Art.-14-Text.
+
+## 8. Ursprünglich offene Entscheidungen (historisch)
 
 1. Externer Verifizierungsdienst als optionaler Fallback vom Gerät aus
    (Org-Schlüssel wie bei Apify), wenn Port 25 gesperrt ist: ja/nein?

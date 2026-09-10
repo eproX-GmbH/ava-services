@@ -236,6 +236,23 @@ interface CompanyContact {
 
 /** Fakt-Id → Belegseite. `lastObsId` zeigt auf die Beobachtung, die den
  *  Fakt zuletzt bestaetigt hat. */
+/** M4 — Beobachtungs-Id → Quelle (z. B. "pattern:smtp" = abgeleitet + verifiziert). */
+function quellenKarte(obs: Observation[] | undefined): Map<string, string> {
+  const map = new Map<string, string>();
+  for (const o of obs ?? []) if (typeof o.id === "string" && typeof o.source === "string") map.set(o.id, o.source);
+  return map;
+}
+
+function AbgeleitetBadge({ quellen, obsId, evidence }: { quellen?: Map<string, string>; obsId: string | null; evidence?: string | null }) {
+  const src = obsId ? quellen?.get(obsId) : undefined;
+  if (!src || !src.startsWith("pattern:")) return null;
+  return (
+    <span className="pill pill--paused" title={evidence ?? "Nach dem Adressmuster der Firma gebildet und per Mail-Server-Anfrage auf Existenz geprüft (keine E-Mail zugestellt)."}>
+      abgeleitet · verifiziert
+    </span>
+  );
+}
+
 function belegKarte(obs: Observation[] | undefined): Map<string, string> {
   const map = new Map<string, string>();
   for (const o of obs ?? []) {
@@ -1123,6 +1140,7 @@ function ContactsTab({ id }: { id: string }) {
   // v0.1.508 — Belegseiten je Fakt (Telefon/E-Mail/Adresse). Kommt aus
   // den ohnehin mitgelieferten Beobachtungen.
   const belege = belegKarte(data.companyObservations);
+  const quellen = quellenKarte(data.companyObservations);
 
   const phones = (byField.phone ?? []).filter((f) => f.status === "ACTIVE");
   const emails = (byField.email ?? []).filter((f) => f.status === "ACTIVE");
@@ -1165,6 +1183,7 @@ function ContactsTab({ id }: { id: string }) {
                 facts={pf}
                 companyId={id!}
                 belege={belege}
+                quellen={quellen}
                 informiertAm={data.personNotices?.find((n) => n.personId === pid)?.informedAt ?? null}
               />
             ))}
@@ -1387,6 +1406,7 @@ function PersonCard({
   facts,
   companyId,
   belege,
+  quellen,
   personId,
   informiertAm = null,
 }: {
@@ -1394,6 +1414,8 @@ function PersonCard({
   companyId?: string;
   /** v0.1.508 — Fakt-Id → Belegseite (Telefon/E-Mail an der Person). */
   belege?: Map<string, string>;
+  /** M4 — Beobachtungs-Id → Quelle (abgeleitete Adressen kennzeichnen). */
+  quellen?: Map<string, string>;
   /** C1 — Person-ID (entityId der Personen-Fakten). */
   personId?: string;
   informiertAm?: string | null;
@@ -1601,6 +1623,7 @@ function PersonCard({
                   )}
                 </span>
                 <span className="fact-meta">
+                  {field === "email" && <AbgeleitetBadge quellen={quellen} obsId={typeof primary.lastObsId === "string" ? primary.lastObsId : null} />}
                   {(() => {
                     // v0.1.508 — Quelle nur bei direkten Kontaktdaten.
                     // Profil-URLs sind ihre eigene Quelle, da waere der

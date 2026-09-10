@@ -26,6 +26,7 @@ import { companyStateRouter } from "./v1/company-state";
 import { companiesCrmRouter } from "./v1/companies-crm";
 import { geoRouter } from "./v1/geo";
 import { discoveryRouter } from "./v1/discovery";
+import { emailPatternsRouter } from "./v1/email-patterns";
 
 // /v1 router.
 //
@@ -62,6 +63,8 @@ v1.route("/", companiesMatrixRouter);
 v1.route("/", companiesCrmRouter);
 
 // §4.1 Company reads (W6-W13).
+// M3 (E-Mail-Muster) — vor dem generischen companiesRouter (Glob).
+v1.route("/", emailPatternsRouter);
 v1.route("/", companiesRouter);
 
 // §4.2 Transaction reads (W2-W5) + §6 SSE bridge (W4).

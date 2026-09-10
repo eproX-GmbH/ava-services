@@ -206,6 +206,9 @@ export function art14Hinweis(b: HerkunftBericht, opts: { organisation: string; k
     ``,
     `${opts.organisation} hat berufliche Kontaktdaten zu Ihrer Person aus oeffentlich zugaenglichen Quellen (${quellen}) erhoben${firmen ? `, im Zusammenhang mit ${firmen}` : ""}. Gespeichert sind: ${b.fakten.filter((f) => !["identityKey", "employmentCompanyId"].includes(f.field)).map((f) => FELD[f.field] ?? f.field).filter((v, i, a) => a.indexOf(v) === i).join(", ") || "Name und Position"}.`,
     ``,
+    ...(b.beobachtungen.some((o) => o.source.startsWith("pattern:"))
+      ? [`Hinweis: Ihre E-Mail-Adresse wurde nach dem Adressmuster Ihres Unternehmens gebildet und technisch auf Existenz geprueft (SMTP-Anfrage ohne Zustellung einer E-Mail).`]
+      : []),
     `Zweck: Recherche und Kontaktaufnahme im geschaeftlichen Kontext (Art. 6 Abs. 1 lit. f DSGVO, berechtigtes Interesse an B2B-Vertriebskommunikation).`,
     `Speicherdauer: Die Daten werden geloescht, wenn sie ${opts.retentionDays} Tage lang auf keiner Quelle mehr bestaetigt wurden, spaetestens jedoch auf Ihren Widerspruch hin.`,
     `Ihre Rechte: Auskunft, Berichtigung, Loeschung, Einschraenkung der Verarbeitung, Widerspruch (Art. 15–21 DSGVO) sowie Beschwerde bei einer Aufsichtsbehoerde.`,
