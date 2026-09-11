@@ -365,3 +365,26 @@ Watermarks, Audit).
   Umkreis, die der Nutzer nicht hat". Einschränkung: `location` ist
   Freitext ohne PLZ/Koordinaten → Abgleich über Ortsnamen-Matching
   gegen `GeoPlace` (Phase-4-Kanal, ersetzt den HR-API-Kanal).
+
+## Nachtrag 2026-09-11 (v0.1.636): Live-Aktivität und Backlog-Stillstand
+
+Nutzerfrage: „Läuft der Radar gerade, oder hängt er?“ Nach 50–60 Mini-Profilen
+schien Schluss zu sein.
+
+**Live-Aktivität** (`main/discovery/activity.ts`, IPC `discovery:activity`,
+Chat-Tool `radar_activity`): Scan, Profil-Worker und Matcher melden Phase,
+Schritt, aktuelle Google-Suchanfrage, Treffer je Quelle, Firmen in Arbeit und
+Zähler. Auf der Radar-Seite ein Punkt neben der Überschrift (grau Ruhe, grün
+pulsierend aktiv, rot Fehler); Klick öffnet ein Popup mit allem live. Kein
+neuer Seitenbereich (Operator-Vorgabe).
+
+**Zwei echte Stillstands-Ursachen behoben:**
+1. Der Profil-Worker holte `candidates?limit=500`, sortiert nach `updatedAt`.
+   Profilieren setzt `updatedAt`, also verdrängten profilierte Firmen die
+   offenen aus dem Fenster; bei über 500 Kandidaten blieb der Rest ewig ohne
+   Profil. Neu: Gateway-Parameter `withoutProfiles=true` (nur `profiledAt IS
+   NULL`), der Worker nutzt ihn.
+2. Der ICP-Match bewertete je Lauf nur 20 Firmen (TOP_K) und lief nur nach
+   einem Drain mit neuen Profilen. Neu: bis 120 je Lauf, Kandidatenfenster 500,
+   und der Worker stößt das inkrementelle Matching auch ohne neue Profile an,
+   damit ein Bewertungs-Backlog abgearbeitet wird.

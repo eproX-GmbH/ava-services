@@ -4,8 +4,8 @@ Auto-generiert von `services/desktop/scripts/generate-tools-md.mjs`.
 NICHT direkt bearbeiten — die Quelle der Wahrheit ist `services/desktop/src/main/agent/tools/*.ts`.
 Lauf via `pnpm -F @ava/desktop tools:doc` (oder automatisch via `build:typecheck`).
 
-Stand: 2026-09-10
-Anzahl Tools: 241
+Stand: 2026-09-11
+Anzahl Tools: 242
 
 ## Firmen (17)
 
@@ -1059,7 +1059,7 @@ Lädt das Transkript einer früheren Chat-Sitzung anhand ihrer ID. Liefert die N
 
 _Parameter:_ keine.
 
-## discovery (6)
+## discovery (7)
 
 ### `discovery_candidates`
 
@@ -1101,6 +1101,14 @@ _Parameter:_
 _Datei:_ `services/desktop/src/main/agent/tools/discovery.ts`
 
 Startet einen Discovery-Scan: findet Firmen im Umkreis eines Orts, die noch NICHT in AVA importiert sind (Quellen: OpenStreetMap-Gewerbeeintraege + Google-Places-Suche pro Branchenbegriff). Kandidaten landen im geteilten zentralen Bestand; bereits bekannte Firmen werden automatisch markiert. Dauert 30-90 Sekunden. Branchenbegriffe verbessern das Ergebnis deutlich — ohne Angabe werden die Branchen aus dem Nutzerprofil verwendet. Tageslimit pro Konto beachten (Fehlermeldung nennt es).
+
+_Parameter:_ keine.
+
+### `radar_activity`
+
+_Datei:_ `services/desktop/src/main/agent/tools/discovery.ts`
+
+Zeigt, was der Firmen-Radar in diesem Moment tut: Phase (Scan / Mini-Profile / ICP-Match / nichts), aktueller Schritt, aktuelle Google-Suchanfrage, gefundene Firmen je Quelle, Firmen, die gerade ein Mini-Profil oder ein ICP-Urteil bekommen, offene Zaehler, letzter Fehler, juengste Ereignisse und der letzte abgeschlossene Lauf. Dieselben Daten wie das Popup hinter dem Aktivitaets-Indikator auf der Radar-Seite.
 
 _Parameter:_ keine.
 

@@ -815,6 +815,8 @@ export async function listCandidates(
     /** Profil-Text + Embedding mitliefern (Match-Lauf). Impliziert
      *  "nur profilierte Kandidaten". */
     withProfiles?: boolean;
+    /** v0.1.636 — nur unprofilierte Kandidaten (Profil-Worker-Backlog). */
+    withoutProfiles?: boolean;
   },
 ): Promise<CandidateRow[]> {
   await ensureSchema(pool);
@@ -825,6 +827,9 @@ export async function listCandidates(
   }
   if (args.withProfiles) {
     conditions.push(`dc."profiledAt" IS NOT NULL`);
+  }
+  if (args.withoutProfiles && !args.withProfiles) {
+    conditions.push(`dc."profiledAt" IS NULL`);
   }
   if (
     args.lat !== undefined &&

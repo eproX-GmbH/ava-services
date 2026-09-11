@@ -466,6 +466,10 @@ const listRoute = createRoute({
       /** Profil-Text + Embedding mitliefern (nur profilierte Kandidaten;
        *  fuer den lokalen ICP-Match — Muster publication-blocks). */
       withProfiles: z.coerce.boolean().default(false),
+      /** v0.1.636 — nur Kandidaten OHNE Profil (Profil-Worker). Sonst
+       *  verdraengen frisch profilierte (updatedAt) die offenen aus dem
+       *  LIMIT-Fenster und der Backlog bleibt fuer immer liegen. */
+      withoutProfiles: z.coerce.boolean().default(false),
     }),
   },
   responses: {
@@ -489,7 +493,7 @@ discoveryRouter.openapi(listRoute, async (c) => {
   if (!auth?.tenantId) {
     throw new HTTPException(401, { message: "auth_context_missing" });
   }
-  const { lat, lon, radiusKm, limit, includeDecided, withProfiles } =
+  const { lat, lon, radiusKm, limit, includeDecided, withProfiles, withoutProfiles } =
     c.req.valid("query");
   const candidates = await listCandidates(getGatewayPool(), {
     userId: auth.actorId,
@@ -499,6 +503,7 @@ discoveryRouter.openapi(listRoute, async (c) => {
     limit,
     includeDecided,
     withProfiles,
+    withoutProfiles,
   });
   return c.json({ candidates }, 200);
 });

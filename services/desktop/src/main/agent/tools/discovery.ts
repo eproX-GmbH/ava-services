@@ -13,6 +13,7 @@ import type { Tool } from "../types";
 import { runDiscoveryScan } from "../../discovery/scan";
 import { runProfiler } from "../../discovery/profiler";
 import { runMatch } from "../../discovery/matcher";
+import { radarActivity } from "../../discovery/activity";
 import { decideCandidates } from "../../discovery/decide";
 import { listCandidatesWithMatches } from "../../discovery/list";
 import type { IcpStore } from "../icp-store";
@@ -468,5 +469,25 @@ export function buildDiscoveryTools(deps: DiscoveryToolDeps): Tool[] {
     },
   });
 
-  return [scan, list, profile, match, decide, radarConfig];
+  // v0.1.636 — "Laeuft der Radar gerade?" auch im Chat beantwortbar.
+  const activity = defineTool({
+    name: "radar_activity",
+    summary: "Live-Stand des Firmen-Radars: laeuft gerade ein Scan, eine Mini-Profil-Runde oder ein ICP-Match, und woran genau?",
+    category: "radar firmenradar status aktivitaet laeuft haengt live fortschritt",
+    description:
+      "Zeigt, was der Firmen-Radar in diesem Moment tut: Phase (Scan / Mini-Profile / ICP-Match / nichts), aktueller Schritt, " +
+      "aktuelle Google-Suchanfrage, gefundene Firmen je Quelle, Firmen, die gerade ein Mini-Profil oder ein ICP-Urteil bekommen, " +
+      "offene Zaehler, letzter Fehler, juengste Ereignisse und der letzte abgeschlossene Lauf. Dieselben Daten wie das Popup " +
+      "hinter dem Aktivitaets-Indikator auf der Radar-Seite.",
+    parameters: { type: "object", properties: {} },
+    schema: yup.object({}).noUnknown(true),
+    preview: (r: { phase?: string; schritt?: string | null }) =>
+      r.phase === "idle" ? "Radar: nichts in Arbeit" : `Radar: ${r.phase}${r.schritt ? ` — ${r.schritt}` : ""}`,
+    run: async () => {
+      const s = radarActivity.get();
+      return { ...s, ereignisse: s.ereignisse.slice(0, 15) };
+    },
+  });
+
+  return [scan, list, profile, match, decide, radarConfig, activity];
 }

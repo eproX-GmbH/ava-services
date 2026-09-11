@@ -20,6 +20,7 @@
 import type { GatewayClient } from "../agent/gateway-client";
 import type { LlmProviderManager } from "../agent/providers";
 import { runProfiler, type ProfilerSummary } from "./profiler";
+import { radarActivity } from "./activity";
 
 const TICK_MS = 10 * 60_000;
 const FIRST_TICK_DELAY_MS = 2 * 60_000;
@@ -125,8 +126,10 @@ export class ProfileWorker {
   private async drainInner(): Promise<ProfilerSummary | { error: string }> {
     if (!this.deps.isSignedIn()) return { error: "Nicht angemeldet." };
     if (!this.deps.providers.getStatus().ready) {
+      radarActivity.fehler("Mini-Profile: kein KI-Modell bereit");
       return { error: "Kein KI-Modell bereit." };
     }
+    radarActivity.profileStart(0);
     const total: ProfilerSummary = {
       betrachtet: 0,
       profiliert: 0,
@@ -149,7 +152,11 @@ export class ProfileWorker {
         concurrency: this.sofort ? CONCURRENCY_SOFORT : CONCURRENCY_SCHONEND,
       });
       if ("error" in r) {
-        if (total.betrachtet === 0) return r;
+        radarActivity.fehler(`Mini-Profile: ${r.error}`);
+        if (total.betrachtet === 0) {
+          radarActivity.profileEnde("Mini-Profile abgebrochen");
+          return r;
+        }
         break;
       }
       total.betrachtet += r.betrachtet;
@@ -173,6 +180,21 @@ export class ProfileWorker {
     total.dauerSek = Math.round((Date.now() - t0) / 1000);
     this.lastSummary = total;
     this.lastDrainAt = new Date().toISOString();
+    radarActivity.profileEnde(
+      total.betrachtet === 0
+        ? "Mini-Profile: nichts offen"
+        : `Mini-Profile: ${total.profiliert} erstellt, ${total.crawlFehler + total.llmFehler} fehlgeschlagen (${total.dauerSek} s)`,
+    );
+    // v0.1.636 — Matching auch ohne neue Profile anstossen: ein offener
+    // Bewertungs-Backlog (Match bewertet je Lauf nur eine Charge) darf
+    // nicht liegen bleiben, bis zufaellig wieder ein Profil entsteht.
+    if (total.profiliert === 0) {
+      try {
+        this.deps.onDrained(0);
+      } catch (err) {
+        console.warn("[profile-worker] onDrained failed:", err);
+      }
+    }
     if (total.profiliert > 0) {
       this.deps.onAudit?.({
         severity: "info",

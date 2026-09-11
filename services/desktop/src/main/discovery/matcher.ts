@@ -18,6 +18,7 @@ import type { IcpStore } from "../agent/icp-store";
 import { MatchStore, type MatchEntry } from "./match-store";
 import type { CustomerProfileStore } from "./customer-profiles";
 import { crawlSite, buildProfile, renderProfileText } from "./profiler";
+import { radarActivity } from "./activity";
 import {
   buildMessages,
   parseJsonObject,
@@ -25,7 +26,11 @@ import {
 } from "../link-monitor/llm";
 
 const OLLAMA_URL = process.env.OLLAMA_URL ?? "http://127.0.0.1:11434";
-const TOP_K = 20;
+// v0.1.636 — Vorher 20 je Lauf: bei 300 profilierten Kandidaten blieben die
+// meisten ohne Score ("nach 50-60 ist Schluss"). Jetzt bis zu 120 je Lauf,
+// bereits bewertete fallen im inkrementellen Modus ohnehin raus, der Rest
+// kommt im naechsten Worker-Tick dran.
+const TOP_K = 120;
 const JUDGE_BATCH = 8;
 
 interface ProfiledCandidate {
@@ -258,7 +263,7 @@ export async function runMatch(
   let candidates: ProfiledCandidate[];
   try {
     const r = await gateway.request<{ candidates: ProfiledCandidate[] }>(
-      `/v1/discovery/candidates?limit=300&withProfiles=true${geoParams}`,
+      `/v1/discovery/candidates?limit=500&withProfiles=true${geoParams}`,
     );
     candidates = r.candidates;
   } catch (err) {
@@ -331,6 +336,7 @@ export async function runMatch(
     );
   }
   const topK = ranked.slice(0, TOP_K);
+  radarActivity.matchStart(topK.length);
 
   // Feedback-Loop (Phase 4): juengste Verwerf-Gruende als Praeferenz-
   // Signal in den Urteils-Prompt. Best-effort.
@@ -357,16 +363,21 @@ export async function runMatch(
   // LLM-Urteil in Batches.
   const judged = new Map<string, { score: number; begruendung: string }>();
   for (let i = 0; i < topK.length; i += JUDGE_BATCH) {
+    const charge = topK.slice(i, i + JUDGE_BATCH);
+    radarActivity.matchBatch(charge.map((c) => c.name));
     const part = await judgeBatch(
       providers,
       icpText,
       feedbackText,
-      topK.slice(i, i + JUDGE_BATCH),
+      charge,
       hints,
     );
     for (const [k, v] of part) judged.set(k, v);
+    radarActivity.matchBewertet(part.size);
   }
   if (judged.size === 0 && topK.length > 0) {
+    radarActivity.fehler("ICP-Match: KI-Urteil fehlgeschlagen");
+    radarActivity.matchEnde("ICP-Match abgebrochen");
     return {
       error:
         "LLM-Urteil fehlgeschlagen (kein Provider bereit oder unparsbare Antwort) — bitte erneut versuchen.",
@@ -407,6 +418,7 @@ export async function runMatch(
   matchStore.setIcpHash(icpHash);
   ergebnisse.sort((a, b) => b.score - a.score);
 
+  radarActivity.matchEnde(`ICP-Match: ${ergebnisse.length} Firmen bewertet`);
   return {
     kandidatenMitProfil: gesamtMitProfil,
     bewertet: ergebnisse.length,

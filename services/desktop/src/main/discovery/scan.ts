@@ -18,6 +18,7 @@
 
 import * as yup from "yup";
 import type { GatewayClient } from "../agent/gateway-client";
+import { radarActivity } from "./activity";
 import type { LlmProviderManager } from "../agent/providers";
 import { sanitizeCategory } from "./category";
 import {
@@ -426,7 +427,10 @@ async function fetchSerpCandidates(
   const candidates: Candidate[] = [];
   const ohneWebsite: PlacesHitOhneWebsite[] = [];
   const skippedNames = new Set<string>();
+  radarActivity.scanQueries(queries);
   for (const q of queries) {
+    const vorher = candidates.length;
+    radarActivity.scanQuery(q);
     try {
       const body = await gateway.request<{
         places_results?: Array<{
@@ -485,6 +489,7 @@ async function fetchSerpCandidates(
           source: "serp",
         });
       }
+      radarActivity.scanQuery(q, candidates.length - vorher);
     } catch (err) {
       hinweise.push(
         `SERP-Query "${q}" fehlgeschlagen (${err instanceof Error ? err.message : String(err)}).`,
@@ -710,6 +715,7 @@ export async function runDiscoveryScan(
   let queries: string[] = [];
   let queryPlanung: "llm" | "fallback" | "keine" = "keine";
   if (args.icpText && providers && split.usePlanner) {
+    radarActivity.schritt("Suchanfragen planen (KI)");
     const planned = await planSerpQueries(
       providers,
       args.icpText,
@@ -742,8 +748,12 @@ export async function runDiscoveryScan(
   }
 
   // 3. Kanaele (parallel).
+  radarActivity.schritt("Karten-, Google- und Register-Suche");
   const [osm, serp, register] = await Promise.all([
-    fetchOsmCandidates(geo, args.radiusKm, hinweise),
+    fetchOsmCandidates(geo, args.radiusKm, hinweise).then((r) => {
+      radarActivity.scanQuelle("osm", r.length);
+      return r;
+    }),
     queries.length > 0
       ? fetchSerpCandidates(gateway, queries, hinweise)
       : Promise.resolve({
@@ -751,8 +761,12 @@ export async function runDiscoveryScan(
           queries: [] as string[],
           ohneWebsite: [] as PlacesHitOhneWebsite[],
         }),
-    fetchRegisterCandidates(gateway, args.ort, args.radiusKm, hinweise, split.register),
+    fetchRegisterCandidates(gateway, args.ort, args.radiusKm, hinweise, split.register).then((r) => {
+      radarActivity.scanQuelle("register", r.candidates.length);
+      return r;
+    }),
   ]);
+  radarActivity.scanQuery(null);
 
   // 3b. Website-Nachschlag — nur bei duenner Ausbeute. Budget: O1 laesst
   //     30 SERP-Calls pro Scan zu; Queries + Register-Lookups sind schon
@@ -813,6 +827,7 @@ export async function runDiscoveryScan(
   }
 
   // 5. Batches ans Gateway.
+  radarActivity.schritt(`${capped.length} Kandidaten speichern`);
   let added = 0;
   let updated = 0;
   let cappedRemote = 0;
@@ -832,6 +847,7 @@ export async function runDiscoveryScan(
       added += r.added;
       updated += r.updated;
       cappedRemote += r.capped;
+      radarActivity.scanHochgeladen(batch.length);
       bereitsBekannt += Object.keys(r.known).length;
     } catch (err) {
       hinweise.push(

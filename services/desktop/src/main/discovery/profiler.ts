@@ -18,6 +18,7 @@
 import * as yup from "yup";
 import { BrowserWindow } from "electron";
 import type { GatewayClient } from "../agent/gateway-client";
+import { radarActivity } from "./activity";
 import type { LlmProviderManager } from "../agent/providers";
 import {
   buildMessages,
@@ -465,8 +466,13 @@ export async function runProfiler(
   const t0 = Date.now();
   let all: CandidateForProfiling[];
   try {
+    // v0.1.636 — withoutProfiles: nur unprofilierte Kandidaten holen. Vorher
+    // kamen die 500 zuletzt GEAENDERTEN, und da Profilieren updatedAt setzt,
+    // verdraengten profilierte Firmen die offenen aus dem Fenster — bei
+    // >500 Kandidaten blieb der Rest fuer immer ohne Profil ("nach 50-60
+    // Mini-Profilen ist Schluss"). Aeltere Gateways ignorieren den Parameter.
     const r = await gateway.request<{ candidates: CandidateForProfiling[] }>(
-      "/v1/discovery/candidates?limit=500",
+      "/v1/discovery/candidates?limit=500&withoutProfiles=true",
     );
     all = r.candidates;
   } catch (err) {
@@ -483,6 +489,7 @@ export async function runProfiler(
       !opts.exclude?.has(c.discoveryId),
   );
   const batch = prioritize(due, opts.prioritizeTerms ?? []).slice(0, opts.limit);
+  radarActivity.profileOffen(due.length);
 
   const summary: ProfilerSummary = {
     betrachtet: batch.length,
@@ -510,19 +517,24 @@ export async function runProfiler(
       const cand = queue.shift();
       if (!cand) return;
       // Aktiver Chat-Turn hat Vorrang vor Hintergrund-Profilen.
+      if (opts.shouldPause?.()) radarActivity.profilePausiert(true);
       while (opts.shouldPause?.()) {
         await new Promise((r) => setTimeout(r, 5_000));
       }
+      radarActivity.profilePausiert(false);
+      radarActivity.profileFirma(cand.name, "start");
       const siteText = await crawlSite(cand.domain);
       if (!siteText) {
         summary.crawlFehler++;
         summary.fehlgeschlagenIds.push(cand.discoveryId);
+        radarActivity.profileFirma(cand.name, "fehler");
         continue;
       }
       const profile = await buildProfile(providers, cand, siteText);
       if (!profile) {
         summary.llmFehler++;
         summary.fehlgeschlagenIds.push(cand.discoveryId);
+        radarActivity.profileFirma(cand.name, "fehler");
         continue;
       }
       const profileText = renderProfileText(cand.name, cand.city, profile);
@@ -544,12 +556,14 @@ export async function runProfiler(
         } else {
           summary.uebersprungenFrisch++;
         }
+        radarActivity.profileFirma(cand.name, "ok");
       } catch (err) {
         console.warn(
           `[discovery] Profil-Upload fuer ${cand.discoveryId} fehlgeschlagen:`,
           err,
         );
         summary.llmFehler++;
+        radarActivity.profileFirma(cand.name, "fehler");
       }
     }
   });

@@ -1,4 +1,5 @@
 import { meldeAbgeleiteteAdressen } from "./contacts/email-muster/rueckmeldung";
+import { radarActivity } from "./discovery/activity";
 import { EmailMusterSupervisor } from "./contacts/email-muster/supervisor";
 import {
   app,
@@ -2987,6 +2988,10 @@ app.whenReady().then(async () => {
     },
   });
   radarSupervisor.start();
+  {
+    const rc = radarSupervisor.getConfig();
+    radarActivity.letzterLauf(rc.lastRunAt, rc.lastOutcome);
+  }
   // v0.1.576 — Sofort-Modus des Profil-Workers aus der Radar-Config.
   profileWorker.setSofort(radarSupervisor.getConfig().profileSofort);
 
@@ -5174,6 +5179,11 @@ app.whenReady().then(async () => {
   // Phase 3 Firmen-Discovery (PLAN_FIRMEN_DISCOVERY.md) — Radar-IPC
   // fuer die Kandidaten-Tabelle: Liste (mit lokalen Match-Scores),
   // Bulk-Entscheidung (Import/Ignorieren), Match-Lauf.
+  // v0.1.636 — Live-Aktivitaet des Radars (Indikator + Popup).
+  ipcMain.handle("discovery:activity", () => radarActivity.get());
+  radarActivity.on("changed", (state) => {
+    for (const win of BrowserWindow.getAllWindows()) win.webContents.send("discovery:activity:changed", state);
+  });
   ipcMain.handle("discovery:candidates", async () => {
     try {
       return {

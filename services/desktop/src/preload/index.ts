@@ -445,6 +445,15 @@ const api = {
     } | null> => ipcRenderer.invoke("discovery:setRadarConfig", patch),
     radarRunNow: (): Promise<{ outcome?: string; error?: string }> =>
       ipcRenderer.invoke("discovery:radarRunNow"),
+    // v0.1.636 — Live-Aktivitaet (Indikator + Popup auf der Radar-Seite).
+    activity: (): Promise<import("../shared/radar-activity-types").RadarActivityState> => ipcRenderer.invoke("discovery:activity"),
+    onActivity: (cb: (s: import("../shared/radar-activity-types").RadarActivityState) => void): (() => void) => {
+      const h = (_e: unknown, s: import("../shared/radar-activity-types").RadarActivityState) => cb(s);
+      ipcRenderer.on("discovery:activity:changed", h);
+      return () => {
+        ipcRenderer.removeListener("discovery:activity:changed", h);
+      };
+    },
     // I2 ICP-Assistent — URL-Analyse. Ergebnis ist ein ENTWURF fuer den
     // Review-Screen; gespeichert wird erst ueber setIcp.
     icpAnalyze: (args: {

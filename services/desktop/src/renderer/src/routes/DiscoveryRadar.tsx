@@ -9,6 +9,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { useUsage } from "../api/usage";
 import type { OrgShareRow } from "../../../shared/types";
+import { RadarActivityIndicator } from "../components/RadarActivityIndicator";
 
 interface RadarRow {
   discoveryId: string;
@@ -252,7 +253,10 @@ export function DiscoveryRadar(): JSX.Element {
     <div className="radar-page">
       <div className="radar-head">
         <div>
-          <h1>Firmen-Radar</h1>
+          <div className="radar-title">
+            <h1>Firmen-Radar</h1>
+            <RadarActivityIndicator />
+          </div>
           <p className="radar-sub">
             Neue Firmen aus deiner Region, die noch nicht in AVA sind —
             heißeste Kandidaten oben. Import startet die volle Verarbeitung,

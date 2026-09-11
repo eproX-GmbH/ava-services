@@ -25,6 +25,7 @@ import type { RadarAlertEmitter } from "./radar-alerts";
 import { runDiscoveryScan } from "./scan";
 import { runMatch } from "./matcher";
 import type { ProfileWorker } from "./profile-worker";
+import { radarActivity } from "./activity";
 
 const CHECK_INTERVAL_MS = 30 * 60 * 1000;
 
@@ -233,6 +234,8 @@ export class RadarSupervisor {
       const ort = icp.orte[0]!;
 
       const cfgVorLauf = this.getConfig();
+      radarActivity.scanStart();
+      radarActivity.schritt(`Ort auflösen: ${ort}`);
       const scan = await runDiscoveryScan(this.deps.gateway, this.deps.providers, {
         ort,
         radiusKm: icp.radiusKm,
@@ -242,9 +245,12 @@ export class RadarSupervisor {
         runIndex: cfgVorLauf.runCount,
       });
       if ("error" in scan) {
+        radarActivity.fehler(`Scan: ${scan.error}`);
+        radarActivity.scanEnde("Scan abgebrochen");
         this.finishRun(startedAt, `Scan: ${scan.error}`, trigger, "warning");
         return scan.error;
       }
+      radarActivity.scanEnde(`Scan fertig: ${scan.kandidatenGesamt} Kandidaten, ${scan.added} neu`);
       // v0.1.582 — Verlauf fuer die Rotation + Details fuer die UI.
       this.setConfigInternal({
         serpHistory: [...cfgVorLauf.serpHistory, ...scan.serpQueries].slice(-60),
@@ -303,6 +309,8 @@ export class RadarSupervisor {
       return outcome;
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
+      radarActivity.fehler(msg);
+      radarActivity.scanEnde("Radar-Lauf abgebrochen");
       this.finishRun(startedAt, `Fehler: ${msg}`, trigger, "error");
       return msg;
     } finally {
@@ -319,6 +327,7 @@ export class RadarSupervisor {
   ): void {
     this.config = { ...this.getConfig(), lastRunAt: startedAt, lastOutcome: outcome };
     this.persistConfig();
+    radarActivity.letzterLauf(startedAt, outcome);
     this.deps.onAudit({
       action: "discovery.radar-run",
       severity,
