@@ -522,11 +522,19 @@ jobs:
         working-directory: services/desktop
         run: pnpm fetch:whisper --platform=darwin-x64
 
+      # v0.1.634 — Cross-Build: Der Runner ist arm64, das Paket ist x64.
+      # `npm install` in den Producern kompiliert native Module (node-expat
+      # via xml2json in structured-content) sonst fuer die HOST-Architektur;
+      # Intel-Macs starben dann mit "incompatible architecture (have 'arm64',
+      # need 'x86_64')". npm_config_arch reicht node-gyp `--arch=x64` durch,
+      # PRISMA_CLI_BINARY_TARGETS erzwingt die darwin-x64-Query-Engine.
       - name: Vendor producer subprocesses
         working-directory: services/desktop
         shell: bash
         env:
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+          npm_config_arch: x64
+          PRISMA_CLI_BINARY_TARGETS: darwin
         run: |
           mkdir -p resources/p
           if [ ! -f ../../company-profile/package.json ]; then
@@ -534,6 +542,22 @@ jobs:
             exit 0
           fi
           pnpm fetch:producers
+
+      - name: Guard — vendored native modules are x86_64
+        working-directory: services/desktop
+        shell: bash
+        run: |
+          bad=0
+          while IFS= read -r f; do
+            case "$f" in *arm64*) continue;; esac
+            archs=$(lipo -archs "$f" 2>/dev/null || file "$f")
+            if ! printf '%s' "$archs" | grep -q "x86_64"; then
+              echo "::error::$f ist nicht x86_64 ($archs)"
+              bad=1
+            fi
+          done < <(find resources/p -name "*.node" -type f 2>/dev/null)
+          [ "$bad" = 0 ] && echo "OK: alle vendored .node-Module enthalten x86_64"
+          exit $bad
 
       - name: Build renderer + main bundles
         working-directory: services/desktop
