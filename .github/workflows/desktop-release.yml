@@ -547,16 +547,23 @@ jobs:
         working-directory: services/desktop
         shell: bash
         run: |
-          bad=0
+          bad=0; n=0
           while IFS= read -r f; do
             case "$f" in *arm64*) continue;; esac
+            n=$((n+1))
             archs=$(lipo -archs "$f" 2>/dev/null || file "$f")
+            echo "$f: $archs"
             if ! printf '%s' "$archs" | grep -q "x86_64"; then
               echo "::error::$f ist nicht x86_64 ($archs)"
               bad=1
             fi
           done < <(find resources/p -name "*.node" -type f 2>/dev/null)
-          [ "$bad" = 0 ] && echo "OK: alle vendored .node-Module enthalten x86_64"
+          # node-expat (structured-content) MUSS dabei sein, sonst prueft der Guard ins Leere.
+          if [ ! -f resources/p/sc/node_modules/node-expat/build/Release/node_expat.node ]; then
+            echo "::error::node_expat.node fehlt unter resources/p/sc — Vendoring unvollstaendig"
+            bad=1
+          fi
+          [ "$bad" = 0 ] && echo "OK: $n vendored .node-Module geprueft, alle enthalten x86_64"
           exit $bad
 
       - name: Build renderer + main bundles
