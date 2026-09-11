@@ -686,11 +686,16 @@ export async function runDiscoveryScan(
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     if (msg.includes("SCAN_QUOTA") || msg.includes("429")) {
+      // v0.1.637 — das Gateway nennt Limit, Fenster und (bei Organisationen)
+      // dass alle Mitglieder zusammen zaehlen; diese Meldung durchreichen.
+      const detail = msg.replace(/^.*?SCAN_QUOTA:\s*/, "").trim();
       return {
         error:
-          "Scan-Limit deines Plans erreicht — spaeter wieder verfuegbar. " +
-          "Mehr Scans, groessere Radien und mehrere Gebiete gibt es in " +
-          "hoeheren Plaenen (Einstellungen → Abo).",
+          detail && detail !== msg
+            ? `Scan-Limit erreicht: ${detail}`
+            : "Scan-Limit deines Plans erreicht — spaeter wieder verfuegbar. " +
+              "Mehr Scans, groessere Radien und mehrere Gebiete gibt es in " +
+              "hoeheren Plaenen (Einstellungen → Abo).",
       };
     }
     if (msg.includes("RADIUS_LIMIT") || msg.includes("GEBIETE_LIMIT")) {

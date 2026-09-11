@@ -18,7 +18,7 @@ function leer(): RadarActivityState {
     seit: null,
     schritt: null,
     scan: { laeuft: false, queries: [], aktuelleQuery: null, gefunden: { osm: 0, serp: 0, register: 0 }, hochgeladen: 0 },
-    profile: { laeuft: false, aktuell: [], offen: 0, fertig: 0, fehler: 0, pausiert: false },
+    profile: { laeuft: false, aktuell: [], offen: 0, fertig: 0, fehler: 0, fehlerGruende: { website: 0, ki: 0, speichern: 0 }, letzterGrund: null, pausiert: false },
     match: { laeuft: false, aktuell: [], offen: 0, bewertet: 0 },
     letzterFehler: null,
     ereignisse: [],
@@ -111,7 +111,7 @@ class RadarActivity extends EventEmitter {
 
   // ---- Mini-Profile -----------------------------------------------------
   profileStart(offen: number): void {
-    this.state.profile = { laeuft: true, aktuell: [], offen, fertig: 0, fehler: 0, pausiert: false };
+    this.state.profile = { laeuft: true, aktuell: [], offen, fertig: 0, fehler: 0, fehlerGruende: { website: 0, ki: 0, speichern: 0 }, letzterGrund: null, pausiert: false };
     this.state.schritt = `Mini-Profile: ${offen} offen`;
     this.phaseNeu();
     this.ereignis(`Mini-Profile: ${offen} Firmen anstehend`);
@@ -120,7 +120,7 @@ class RadarActivity extends EventEmitter {
     this.state.profile.offen = offen;
     this.touch();
   }
-  profileFirma(name: string, status: "start" | "ok" | "fehler"): void {
+  profileFirma(name: string, status: "start" | "ok" | "fehler", grund?: { art: "website" | "ki" | "speichern"; text: string }): void {
     const p = this.state.profile;
     if (status === "start") {
       if (!p.aktuell.includes(name)) p.aktuell = [...p.aktuell, name].slice(-12);
@@ -128,9 +128,19 @@ class RadarActivity extends EventEmitter {
       p.aktuell = p.aktuell.filter((n) => n !== name);
       p.offen = Math.max(0, p.offen - 1);
       if (status === "ok") p.fertig++;
-      else p.fehler++;
+      else {
+        p.fehler++;
+        if (grund) {
+          p.fehlerGruende[grund.art]++;
+          p.letzterGrund = grund.text;
+          // Jeden Fehlschlag mit Grund in den Verlauf; die KI-Meldung ist
+          // fuer den Nutzer die entscheidende Diagnose ("Kein Schluessel",
+          // "Abo deckt Hintergrund nicht", Timeout ...).
+          this.state.ereignisse = [{ at: new Date().toISOString(), text: `${name}: ${grund.text}` }, ...this.state.ereignisse].slice(0, MAX_EREIGNISSE);
+        }
+      }
     }
-    this.state.schritt = `Mini-Profile: ${p.fertig} fertig, ${p.offen} offen`;
+    this.state.schritt = `Mini-Profile: ${p.fertig} fertig, ${p.offen} offen${p.fehler > 0 ? `, ${p.fehler} fehlgeschlagen` : ""}`;
     this.touch();
   }
   profilePausiert(on: boolean): void {

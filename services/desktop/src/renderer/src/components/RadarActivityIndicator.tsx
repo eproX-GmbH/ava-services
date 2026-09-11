@@ -118,6 +118,12 @@ export function RadarActivityIndicator() {
             <p className="small">
               {s.profile.fertig} fertig · {s.profile.offen} offen{s.profile.fehler > 0 ? ` · ${s.profile.fehler} fehlgeschlagen` : ""}
             </p>
+            {s.profile.fehler > 0 && (
+              <p className="small radar-act__err">
+                Fehlschläge: Website {s.profile.fehlerGruende.website} · KI {s.profile.fehlerGruende.ki} · Speichern {s.profile.fehlerGruende.speichern}
+                {s.profile.letzterGrund ? ` · zuletzt: ${s.profile.letzterGrund}` : ""}
+              </p>
+            )}
             {s.profile.aktuell.length > 0 && (
               <ul className="radar-act__list">
                 {s.profile.aktuell.map((n) => (

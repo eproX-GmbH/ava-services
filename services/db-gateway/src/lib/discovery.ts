@@ -292,7 +292,10 @@ export async function startScan(
     if (args.radiusKm > limits.maxRadiusKm) {
       return { ok: false, reason: "radius", limits, scansUsedInWindow };
     }
-    if (scansUsedInWindow >= limits.maxScansPerWindow) {
+    // v0.1.637 — Enterprise ist laut billing.isUnlimited nicht zu drosseln.
+    // Vorher zaehlte die Organisation (alle Mitglieder zusammen) gegen die
+    // 10/Tag und ein Enterprise-Kunde sah "Scan-Limit deines Plans".
+    if (limits.tier !== "enterprise" && scansUsedInWindow >= limits.maxScansPerWindow) {
       return { ok: false, reason: "quota", limits, scansUsedInWindow };
     }
     // Gebiete-Gate: verschiedene Orte im 7-Tage-Fenster (Erst-Scan

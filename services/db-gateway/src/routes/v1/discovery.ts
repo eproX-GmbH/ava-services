@@ -113,9 +113,12 @@ discoveryRouter.openapi(startScanRoute, async (c) => {
         message: `GEBIETE_LIMIT: Der ${l.tier}-Plan erlaubt ${l.maxGebiete} verschiedene(s) Suchgebiet(e) pro Woche.`,
       });
     }
-    const fenster = l.windowDays === 1 ? "heute" : `in ${l.windowDays} Tagen`;
+    const fenster = l.windowDays === 1 ? "in 24 Stunden" : `in ${l.windowDays} Tagen`;
+    // v0.1.637 — bei Organisationen zaehlen alle Mitglieder zusammen; das
+    // muss in der Meldung stehen, sonst wundert sich der Einzelne.
+    const wer = auth.tenantId.startsWith("org_") ? " für die gesamte Organisation" : "";
     throw new HTTPException(429, {
-      message: `SCAN_QUOTA: Scan-Limit des ${l.tier}-Plans erreicht (${result.scansUsedInWindow}/${l.maxScansPerWindow} ${fenster}).`,
+      message: `SCAN_QUOTA: ${result.scansUsedInWindow} von ${l.maxScansPerWindow} Scans ${fenster} verbraucht${wer} (${l.tier}-Plan). Der nächste Scan ist möglich, sobald ein Scan aus dem Zeitfenster fällt.`,
     });
   }
   return c.json(

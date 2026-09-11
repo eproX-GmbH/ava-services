@@ -375,11 +375,27 @@ export async function buildProfile(
       },
     );
     const parsed = parseJsonObject(raw);
-    if (!parsed) return null;
+    if (!parsed) {
+      letzterProfilFehler = `KI-Antwort ohne JSON (${raw.trim().slice(0, 80) || "leer"})`;
+      console.warn(`[discovery] Mini-Profil ${candidate.name}: ${letzterProfilFehler}`);
+      return null;
+    }
     return profileSchema.validateSync(parsed, { abortEarly: true });
-  } catch {
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    letzterProfilFehler = /abort/i.test(msg) ? "KI-Zeitüberschreitung (60 s)" : `KI: ${msg.slice(0, 160)}`;
+    console.warn(`[discovery] Mini-Profil ${candidate.name}: ${letzterProfilFehler}`);
     return null;
   }
+}
+
+/** v0.1.637 — letzter LLM-Fehlergrund fuer die Live-Aktivitaet (Modul-Latch,
+ *  wird direkt nach buildProfile ausgelesen). */
+let letzterProfilFehler: string | null = null;
+export function profilFehlerGrund(): string {
+  const g = letzterProfilFehler ?? "KI-Antwort unbrauchbar";
+  letzterProfilFehler = null;
+  return g;
 }
 
 export function renderProfileText(name: string, city: string | null, p: MiniProfile): string {
@@ -527,14 +543,15 @@ export async function runProfiler(
       if (!siteText) {
         summary.crawlFehler++;
         summary.fehlgeschlagenIds.push(cand.discoveryId);
-        radarActivity.profileFirma(cand.name, "fehler");
+        console.warn(`[discovery] Mini-Profil ${cand.name}: Website ${cand.domain} nicht lesbar`);
+        radarActivity.profileFirma(cand.name, "fehler", { art: "website", text: `Website ${cand.domain} nicht lesbar (nicht erreichbar, kein Text oder Crawling untersagt)` });
         continue;
       }
       const profile = await buildProfile(providers, cand, siteText);
       if (!profile) {
         summary.llmFehler++;
         summary.fehlgeschlagenIds.push(cand.discoveryId);
-        radarActivity.profileFirma(cand.name, "fehler");
+        radarActivity.profileFirma(cand.name, "fehler", { art: "ki", text: profilFehlerGrund() });
         continue;
       }
       const profileText = renderProfileText(cand.name, cand.city, profile);
@@ -563,7 +580,7 @@ export async function runProfiler(
           err,
         );
         summary.llmFehler++;
-        radarActivity.profileFirma(cand.name, "fehler");
+        radarActivity.profileFirma(cand.name, "fehler", { art: "speichern", text: `Speichern fehlgeschlagen: ${err instanceof Error ? err.message.slice(0, 120) : String(err)}` });
       }
     }
   });

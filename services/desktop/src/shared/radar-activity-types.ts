@@ -29,6 +29,10 @@ export interface RadarActivityState {
     offen: number;
     fertig: number;
     fehler: number;
+    /** Aufschluesselung der Fehlschlaege dieses Laufs. */
+    fehlerGruende: { website: number; ki: number; speichern: number };
+    /** Letzte Fehlerursache im Klartext (z. B. KI-Fehlermeldung). */
+    letzterGrund: string | null;
     /** Pausiert, weil ein Chat-Turn Vorrang hat. */
     pausiert: boolean;
   };
