@@ -95,10 +95,11 @@ export async function pruneOldScreenshots(): Promise<void> {
   // v0.1.432 — P5: Regel statt pauschalem 7-Tage-TTL:
   //   Je (Producer × Firma) bleibt der NEUESTE Run-Ordner erhalten, bis
   //   ein neuerer Lauf existiert — der aktuellste Beweis-Screenshot einer
-  //   Firma verschwindet also nie durch reines Altern. Aeltere Runs
-  //   derselben Firma werden nach CAPTURE_TTL_MS geloescht; als Backstop
-  //   faellt ALLES nach 30 Tagen (sonst wachsen verwaiste Firmen ewig).
-  const BACKSTOP_MS = 30 * 24 * 60 * 60 * 1000;
+  //   Firma verschwindet also nie durch reines Altern (Operator 2026-09-11:
+  //   der letzte Lauf bleibt, bis ein neuer ihn ersetzt; geloescht wird er
+  //   nur mit der Firma, siehe deleteScreenshotsForCompany). Aeltere Runs
+  //   derselben Firma fallen nach ERSETZT_MS weg.
+  const ERSETZT_MS = 24 * 60 * 60 * 1000;
   const root = screenshotsRoot();
   if (!existsSync(root)) return;
   const now = Date.now();
@@ -139,9 +140,7 @@ export async function pruneOldScreenshots(): Promise<void> {
         const r = runs[i]!;
         const age = r.newest > 0 ? now - r.newest : Infinity;
         const isNewestOfCompany = i === 0;
-        const expired = isNewestOfCompany
-          ? age > BACKSTOP_MS
-          : age > CAPTURE_TTL_MS;
+        const expired = isNewestOfCompany ? false : age > Math.min(ERSETZT_MS, CAPTURE_TTL_MS);
         if (expired) {
           await fs
             .rm(r.dir, { recursive: true, force: true })

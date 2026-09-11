@@ -21,6 +21,7 @@ import {
   createWriteStream,
   existsSync,
   mkdirSync,
+  readFileSync,
   type WriteStream,
 } from "node:fs";
 import { join } from "node:path";
@@ -67,6 +68,11 @@ class ProducerLogBuffer extends EventEmitter {
   // a regular Terminal without launching AVA from the shell or going
   // through DevTools.
   private fileStreams: Map<string, WriteStream> = new Map();
+  // v0.1.633 — Lauf-Protokoll je (Producer × Firma) dauerhaft auf Platte:
+  // `<userData>/producer-logs/runs/<producer>/<companyKey>.log`. Wird beim
+  // naechsten Lauf derselben Firma ueberschrieben (Operator-Regel). Der
+  // Drill-Down liest daraus, wenn der Run nicht mehr im Speicher ist.
+  private runStreams: Map<string, { runId: string; stream: WriteStream }> = new Map();
   /** Resolved lazily on first push so unit tests that import this
    *  module without Electron's `app` ready don't blow up. */
   private fileLogDirCached: string | null = null;
@@ -106,6 +112,35 @@ class ProducerLogBuffer extends EventEmitter {
     }
   }
 
+  private static companyKey(runId: string): string {
+    const i = runId.lastIndexOf(":");
+    return (i >= 0 ? runId.slice(i + 1) : runId).replace(/[^A-Za-z0-9_.-]/g, "_");
+  }
+
+  private runFilePath(producer: string, runId: string): string | null {
+    const dir = this.fileLogDir();
+    if (!dir) return null;
+    return join(dir, "runs", producer.replace(/[^A-Za-z0-9_.-]/g, "_"), `${ProducerLogBuffer.companyKey(runId)}.log`);
+  }
+
+  /** Neuer Lauf → alte Datei derselben Firma ersetzen; Kopfzeile traegt die runId. */
+  private openRunStream(producer: string, runId: string): WriteStream | null {
+    const cur = this.runStreams.get(producer);
+    if (cur && cur.runId === runId) return cur.stream;
+    if (cur) cur.stream.end();
+    const path = this.runFilePath(producer, runId);
+    if (!path) return null;
+    try {
+      mkdirSync(join(path, ".."), { recursive: true });
+      const stream = createWriteStream(path, { flags: "w" });
+      stream.write(`# runId=${runId} started=${new Date().toISOString()}\n`);
+      this.runStreams.set(producer, { runId, stream });
+      return stream;
+    } catch {
+      return null;
+    }
+  }
+
   push(producer: string, stream: "stdout" | "stderr", raw: string): void {
     if (!raw) return;
     // amqplib / Selenium / chromedriver all emit multi-line bursts
@@ -133,9 +168,15 @@ class ProducerLogBuffer extends EventEmitter {
       const m = RUN_ID_RE.exec(line);
       if (m && m[1] && m[1].includes(":")) {
         this.currentRun.set(producer, m[1]);
+        this.openRunStream(producer, m[1]);
       }
       const runId = this.currentRun.get(producer);
       if (runId) {
+        const rs = this.runStreams.get(producer);
+        if (rs && rs.runId === runId) {
+          const tag = stream === "stderr" ? "ERR" : "OUT";
+          rs.stream.write(`${new Date(entry.ts).toISOString()} ${tag} ${line}\n`);
+        }
         const key = `${producer}\u0000${runId}`;
         let rbuf = this.runBuffers.get(key);
         if (!rbuf) {
@@ -203,13 +244,47 @@ class ProducerLogBuffer extends EventEmitter {
     limit = 1000,
   ): ProducerLogLine[] {
     const rbuf = this.runBuffers.get(`${producer}\u0000${runId}`) ?? [];
-    return rbuf.slice(-limit);
+    if (rbuf.length > 0) return rbuf.slice(-limit);
+    return this.readRunFile(producer, runId).slice(-limit);
+  }
+
+  /** v0.1.633 — Gespeichertes Lauf-Protokoll dieser Firma von Platte (nach App-Neustart).
+   *  Liefert den juengsten Lauf der Firma, auch wenn dessen runId (Vorgang) von der
+   *  angefragten abweicht; die Kopfzeile nennt die tatsaechliche runId. */
+  readRunFile(producer: string, runId: string): ProducerLogLine[] {
+    const path = this.runFilePath(producer, runId);
+    if (!path || !existsSync(path)) return [];
+    let text: string;
+    try {
+      text = readFileSync(path, "utf8");
+    } catch {
+      return [];
+    }
+    const out: ProducerLogLine[] = [];
+    let id = -1_000_000;
+    for (const raw of text.split(/\r?\n/)) {
+      if (!raw) continue;
+      if (raw.startsWith("# runId=")) {
+        out.push({ id: id++, ts: 0, stream: "stdout", text: `— gespeichertes Lauf-Protokoll (${raw.slice(2)}) —` });
+        continue;
+      }
+      const m = /^(\S+) (OUT|ERR) (.*)$/.exec(raw);
+      if (!m) continue;
+      out.push({ id: id++, ts: Date.parse(m[1]!) || 0, stream: m[2] === "ERR" ? "stderr" : "stdout", text: m[3] ?? "" });
+    }
+    return out;
   }
 
   tail(producer: string, limit = 500): ProducerLogLine[] {
     const buf = this.buffers.get(producer);
     if (!buf) return [];
     return buf.slice(Math.max(0, buf.length - limit));
+  }
+
+  /** v0.1.633 — Lauf-Dateien beim Beenden sauber schliessen (letzte Zeilen flushen). */
+  closeRunFiles(): void {
+    for (const rs of this.runStreams.values()) rs.stream.end();
+    this.runStreams.clear();
   }
 
   /** Clear a producer's buffer — used when a producer respawns and

@@ -7083,5 +7083,6 @@ app.on("before-quit", (e) => {
     }
   });
   quitStep("postgres.stop", () => postgres.stop());
+  quitStep("producerLogBuffer.closeRunFiles", () => producerLogBuffer.closeRunFiles());
   writeLineSync("INFO ", "[quit] before-quit handlers done");
 });

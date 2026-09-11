@@ -299,8 +299,8 @@ function LogsView({ producer, runId }: { producer: string; runId: string }) {
           </button>
           {mode === "run" && runEmpty && (
             <span className="muted small">
-              Kein Lauf-Protokoll im Speicher (entsteht ab dem nächsten Lauf
-              nach App-Start) — Live-Log nutzen.
+              Für diese Firma liegt noch kein gespeichertes Lauf-Protokoll vor.
+              Es entsteht beim nächsten Lauf dieses Schritts.
             </span>
           )}
         </div>
