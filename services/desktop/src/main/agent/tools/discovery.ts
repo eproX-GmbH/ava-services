@@ -57,13 +57,16 @@ const FREE_BLUR_HINWEIS = (n: number): string =>
 
 /** v0.1.576 — Zugriff auf die Radar-Automatik-Config aus dem Chat. */
 export interface RadarConfigAccess {
-  getConfig: () => { enabled: boolean; intervalHours: 6 | 24 | 168; profileSofort: boolean; lastRunAt: string | null; lastOutcome: string | null };
-  setConfig: (patch: { enabled?: boolean; intervalHours?: 6 | 24 | 168; profileSofort?: boolean }) => {
+  getConfig: () => { enabled: boolean; intervalHours: 6 | 24 | 168; profileSofort: boolean; maxOffeneKandidaten: number; lastRunAt: string | null; lastOutcome: string | null };
+  setConfig: (patch: { enabled?: boolean; intervalHours?: 6 | 24 | 168; profileSofort?: boolean; maxOffeneKandidaten?: number }) => {
     enabled: boolean;
     intervalHours: 6 | 24 | 168;
     profileSofort: boolean;
+    maxOffeneKandidaten: number;
   };
   profileStatus: () => { running: boolean; sofort: boolean; lastDrainAt: string | null } | null;
+  /** v0.1.638 — Radar-Deckel (offene Kandidaten vs. Limit). */
+  deckel: () => Promise<{ voll: boolean; offen: number; limit: number }>;
 }
 
 export interface DiscoveryToolDeps {
@@ -152,6 +155,13 @@ export function buildDiscoveryTools(deps: DiscoveryToolDeps): Tool[] {
             `Kein Radar-Scan: Das Idealkundenprofil ist unvollstaendig — es fehlt: ${fehlt.join("; ")}. ` +
             "Frag den Nutzer nach den fehlenden Angaben und speichere sie mit icp_set; danach den Scan starten.",
           icpUnvollstaendig: fehlt,
+        };
+      }
+      // v0.1.638 — Radar-Deckel gilt auch fuer manuelle Scans aus dem Chat.
+      const d = await deps.getRadar()?.deckel();
+      if (d?.voll) {
+        return {
+          error: `Kein Radar-Scan: ${d.offen} offene Kandidaten, Deckel ${d.limit}. Erst Kandidaten entscheiden (discovery_decide) oder den Deckel per radar_config maxOffeneKandidaten erhöhen (0 = unbegrenzt).`,
         };
       }
       const branchen =
@@ -413,13 +423,16 @@ export function buildDiscoveryTools(deps: DiscoveryToolDeps): Tool[] {
       "Liest oder aendert die Einstellungen des Firmen-Radars. Ohne Argumente: aktuelle Werte. Mit Argumenten (nach Bestaetigung): " +
       "enabled = Radar-Automatik, intervalHours = 6 (4x taeglich, Pro), 24 (taeglich) oder 168 (woechentlich), " +
       "profileSofort = sofortige Mini-Profil-Verarbeitung (alle offenen Kandidaten so schnell wie moeglich profilieren: " +
-      "mehr Parallelitaet, Minutentakt; laufende Chats haben weiterhin Vorrang; verbraucht entsprechend mehr KI-Aufrufe).",
+      "mehr Parallelitaet, Minutentakt; laufende Chats haben weiterhin Vorrang; verbraucht entsprechend mehr KI-Aufrufe), " +
+      "maxOffeneKandidaten = Deckel fuer offene, noch nicht entschiedene Kandidaten (Standard 300, 0 = unbegrenzt, nach oben keine Grenze): " +
+      "ist er erreicht, startet kein Scan, bis Kandidaten importiert oder ignoriert wurden.",
     parameters: {
       type: "object",
       properties: {
         enabled: { type: "boolean" },
         intervalHours: { type: "number", enum: [6, 24, 168] },
         profileSofort: { type: "boolean", description: "true = sofortige Mini-Profil-Verarbeitung" },
+        maxOffeneKandidaten: { type: "number", description: "Deckel offene Kandidaten, 0 = unbegrenzt (Standard 300)" },
       },
     },
     schema: yup
@@ -427,6 +440,7 @@ export function buildDiscoveryTools(deps: DiscoveryToolDeps): Tool[] {
         enabled: yup.boolean().optional(),
         intervalHours: yup.number().oneOf([6, 24, 168]).optional(),
         profileSofort: yup.boolean().optional(),
+        maxOffeneKandidaten: yup.number().integer().min(0).optional(),
       })
       .noUnknown(true),
     preview: (r: { error?: string; geaendert?: boolean; config?: { enabled: boolean; profileSofort: boolean } }) =>
@@ -434,7 +448,7 @@ export function buildDiscoveryTools(deps: DiscoveryToolDeps): Tool[] {
     run: async (args, c) => {
       const radar = deps.getRadar();
       if (!radar) return { error: "Radar noch nicht initialisiert." };
-      const patch: { enabled?: boolean; intervalHours?: 6 | 24 | 168; profileSofort?: boolean } = {};
+      const patch: { enabled?: boolean; intervalHours?: 6 | 24 | 168; profileSofort?: boolean; maxOffeneKandidaten?: number } = {};
       const aenderungen: string[] = [];
       if (args.enabled !== undefined) {
         patch.enabled = args.enabled;
@@ -447,6 +461,10 @@ export function buildDiscoveryTools(deps: DiscoveryToolDeps): Tool[] {
       if (args.profileSofort !== undefined) {
         patch.profileSofort = args.profileSofort;
         aenderungen.push(`Sofortige Mini-Profil-Verarbeitung → ${args.profileSofort ? "an" : "aus"}`);
+      }
+      if (args.maxOffeneKandidaten !== undefined) {
+        patch.maxOffeneKandidaten = args.maxOffeneKandidaten;
+        aenderungen.push(`Deckel offene Kandidaten → ${args.maxOffeneKandidaten === 0 ? "unbegrenzt" : args.maxOffeneKandidaten}`);
       }
       if (aenderungen.length === 0) {
         return { geaendert: false, config: radar.getConfig(), profile: radar.profileStatus() };

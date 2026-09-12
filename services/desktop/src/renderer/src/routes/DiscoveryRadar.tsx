@@ -45,6 +45,7 @@ export function DiscoveryRadar(): JSX.Element {
     enabled: boolean;
     intervalHours: 6 | 24 | 168;
     profileSofort?: boolean;
+    maxOffeneKandidaten?: number;
     lastRunDetails?: {
       quellen: { osm: number; serp: number; register: number };
       neu: number;
@@ -325,6 +326,25 @@ export function DiscoveryRadar(): JSX.Element {
               }
             />
             <strong>Sofortige Mini-Profil-Verarbeitung</strong> — Backlog ohne Schonung abarbeiten
+          </label>
+          <label
+            className="radar-auto-toggle radar-auto-deckel"
+            title="Höchstzahl offener, noch nicht entschiedener Kandidaten. Ist sie erreicht, startet kein Scan mehr, bis du Kandidaten importierst oder ignorierst. 0 = unbegrenzt."
+          >
+            <strong>Offene Kandidaten höchstens</strong>
+            <input
+              type="number"
+              min={0}
+              step={50}
+              value={radarConfig.maxOffeneKandidaten ?? 300}
+              onChange={(e) => setRadarConfig({ ...radarConfig, maxOffeneKandidaten: Math.max(0, Number(e.target.value) || 0) })}
+              onBlur={(e) =>
+                void window.api.discovery
+                  .setRadarConfig({ maxOffeneKandidaten: Math.max(0, Number(e.target.value) || 0) })
+                  .then((c) => c && setRadarConfig(c))
+              }
+            />
+            <span className="muted small">{(radarConfig.maxOffeneKandidaten ?? 300) === 0 ? "unbegrenzt" : "0 = unbegrenzt"}</span>
           </label>
           <select
             value={radarConfig.intervalHours}

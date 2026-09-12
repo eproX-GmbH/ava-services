@@ -388,3 +388,14 @@ neuer Seitenbereich (Operator-Vorgabe).
    einem Drain mit neuen Profilen. Neu: bis 120 je Lauf, Kandidatenfenster 500,
    und der Worker stößt das inkrementelle Matching auch ohne neue Profile an,
    damit ein Bewertungs-Backlog abgearbeitet wird.
+
+## Nachtrag 2026-09-12 (v0.1.638): Deckel für offene Kandidaten
+
+Die 300 sind eine Grenze je Scan, nicht für den Radar insgesamt; mit
+Enterprise ohne Scan-Deckel wuchs die Liste unbegrenzt. Neu, je Nutzer
+konfigurierbar (Radar-Seite, Chat `radar_config maxOffeneKandidaten`):
+Höchstzahl offener, noch nicht entschiedener Kandidaten, Standard 300, nach
+oben unbegrenzt, 0 = kein Deckel. Ist er erreicht, startet kein Scan
+(Automatik, Button, Chat), bis Kandidaten importiert oder ignoriert wurden.
+Zählung über `GET /v1/discovery/candidates/count`; ohne den Endpunkt
+(altes Gateway) zählt die 500er-Liste. Scan-Cap je Lauf bleibt.

@@ -422,6 +422,7 @@ const api = {
       enabled: boolean;
       intervalHours: 6 | 24 | 168;
       profileSofort: boolean;
+      maxOffeneKandidaten: number;
       lastRunAt: string | null;
       lastOutcome: string | null;
       lastRunDetails?: {
@@ -436,10 +437,12 @@ const api = {
       enabled?: boolean;
       intervalHours?: 6 | 24 | 168;
       profileSofort?: boolean;
+      maxOffeneKandidaten?: number;
     }): Promise<{
       enabled: boolean;
       intervalHours: 6 | 24 | 168;
       profileSofort: boolean;
+      maxOffeneKandidaten: number;
       lastRunAt: string | null;
       lastOutcome: string | null;
     } | null> => ipcRenderer.invoke("discovery:setRadarConfig", patch),

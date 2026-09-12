@@ -27,7 +27,7 @@ import {
   listDismissedWithReasons,
   discoveryIdFor,
   type CandidateInput,
-} from "../../lib/discovery";
+ countOpenCandidates } from "../../lib/discovery";
 import { findPlacesNearby } from "../../lib/geo-places";
 import { buildXlsx } from "../../lib/xlsx-mini";
 import { callUpstreamBinaryExpectJson } from "../../lib/upstream";
@@ -450,6 +450,23 @@ const CandidateRowShape = z
     embedding: z.array(z.number()).nullable().optional(),
   })
   .openapi("DiscoveryCandidate");
+
+// v0.1.638 — Zaehler fuer den Radar-Deckel (offene Kandidaten je Nutzer).
+const countRoute = createRoute({
+  method: "get",
+  path: "/discovery/candidates/count",
+  tags: ["discovery"],
+  summary: "Anzahl offener (unentschiedener) Discovery-Kandidaten des Nutzers",
+  responses: {
+    200: { content: { "application/json": { schema: z.object({ offen: z.number().int(), ohneProfil: z.number().int() }) } }, description: "ok" },
+    401: { content: { "application/json": { schema: ErrorShape } }, description: "unauthenticated" },
+  },
+});
+discoveryRouter.openapi(countRoute, async (c) => {
+  const auth = c.get("auth");
+  if (!auth?.tenantId) throw new HTTPException(401, { message: "auth_context_missing" });
+  return c.json(await countOpenCandidates(getGatewayPool(), auth.actorId), 200);
+});
 
 const listRoute = createRoute({
   method: "get",

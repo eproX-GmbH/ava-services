@@ -806,6 +806,22 @@ export async function saveDecisions(
  *  anfragenden Nutzers gejoint. Default: bereits ENTSCHIEDENE
  *  (importiert/verworfen) fliegen raus — Zielbild: die Kandidaten-
  *  Tabelle zeigt nur Offenes und macht nach einer Entscheidung Platz. */
+/** v0.1.638 — Anzahl offener (unentschiedener) Kandidaten des Nutzers;
+ *  Grundlage fuer den konfigurierbaren Radar-Deckel im Desktop. */
+export async function countOpenCandidates(pool: Pool, userId: string): Promise<{ offen: number; ohneProfil: number }> {
+  await ensureSchema(pool);
+  const r = await pool.query<{ offen: number; ohneprofil: number }>(
+    `SELECT COUNT(*)::int AS offen,
+            COUNT(*) FILTER (WHERE dc."profiledAt" IS NULL)::int AS ohneprofil
+       FROM "DiscoveredCompany" dc
+       LEFT JOIN "DiscoveryDecision" dd
+         ON dd."discoveryId" = dc."discoveryId" AND dd."userId" = $1
+      WHERE dd.decision IS NULL`,
+    [userId],
+  );
+  return { offen: r.rows[0]?.offen ?? 0, ohneProfil: r.rows[0]?.ohneprofil ?? 0 };
+}
+
 export async function listCandidates(
   pool: Pool,
   args: {

@@ -41,6 +41,10 @@ export interface RadarConfig {
   /** v0.1.576 — Sofortige Mini-Profil-Verarbeitung (Worker ohne Chat-
    *  Ruecksicht, mehr Parallelitaet, Minuten-Takt). */
   profileSofort: boolean;
+  /** v0.1.638 — Deckel fuer OFFENE (unentschiedene) Kandidaten. Ist er
+   *  erreicht, startet kein Scan mehr, bis der Nutzer Kandidaten
+   *  entscheidet. 0 = unbegrenzt. Operator-Default 300, nach oben offen. */
+  maxOffeneKandidaten: number;
   lastRunAt: string | null;
   lastOutcome: string | null;
   /** v0.1.582 — Details des letzten Laufs fuer die Radar-Seite. */
@@ -62,6 +66,7 @@ const DEFAULT_CONFIG: RadarConfig = {
   enabled: false,
   intervalHours: 24,
   profileSofort: false,
+  maxOffeneKandidaten: 300,
   lastRunAt: null,
   lastOutcome: null,
   lastRunDetails: null,
@@ -141,6 +146,10 @@ export class RadarSupervisor {
               ? 6
               : 24,
         profileSofort: parsed.profileSofort === true,
+        maxOffeneKandidaten:
+          typeof parsed.maxOffeneKandidaten === "number" && Number.isFinite(parsed.maxOffeneKandidaten) && parsed.maxOffeneKandidaten >= 0
+            ? Math.floor(parsed.maxOffeneKandidaten)
+            : 300,
         lastRunDetails: parsed.lastRunDetails && typeof parsed.lastRunDetails === "object" ? parsed.lastRunDetails : null,
         serpHistory: Array.isArray(parsed.serpHistory) ? parsed.serpHistory.filter((q): q is string => typeof q === "string").slice(-60) : [],
         runCount: typeof parsed.runCount === "number" ? parsed.runCount : 0,
@@ -154,8 +163,11 @@ export class RadarSupervisor {
     return this.config;
   }
 
-  setConfig(patch: Partial<Pick<RadarConfig, "enabled" | "intervalHours" | "profileSofort">>): RadarConfig {
+  setConfig(patch: Partial<Pick<RadarConfig, "enabled" | "intervalHours" | "profileSofort" | "maxOffeneKandidaten">>): RadarConfig {
     const next = { ...this.getConfig(), ...patch };
+    if (patch.maxOffeneKandidaten !== undefined) {
+      next.maxOffeneKandidaten = Number.isFinite(patch.maxOffeneKandidaten) && patch.maxOffeneKandidaten >= 0 ? Math.floor(patch.maxOffeneKandidaten) : 300;
+    }
     this.config = next;
     this.persistConfig();
     return next;
@@ -218,12 +230,40 @@ export class RadarSupervisor {
     this.persistConfig();
   }
 
+  /** v0.1.638 — Radar-Deckel pruefen: offene Kandidaten gegen
+   *  maxOffeneKandidaten (0 = unbegrenzt). Zaehlt am Gateway; faellt bei
+   *  altem Gateway (kein count-Endpunkt) auf die 500er-Liste zurueck. */
+  async deckel(): Promise<{ voll: boolean; offen: number; limit: number }> {
+    const limit = this.getConfig().maxOffeneKandidaten;
+    if (limit <= 0) return { voll: false, offen: 0, limit };
+    let offen = 0;
+    try {
+      const r = await this.deps.gateway.request<{ offen: number }>("/v1/discovery/candidates/count");
+      offen = r.offen;
+    } catch {
+      try {
+        const r = await this.deps.gateway.request<{ candidates: unknown[] }>("/v1/discovery/candidates?limit=500");
+        offen = r.candidates.length;
+      } catch {
+        return { voll: false, offen: 0, limit };
+      }
+    }
+    return { voll: offen >= limit, offen, limit };
+  }
+
   /** Ein voller Radar-Lauf. `trigger` nur fuers Audit. */
   async runNow(trigger: "automatik" | "manuell"): Promise<string> {
     if (this.running) return "Radar-Lauf laeuft bereits.";
     this.running = true;
     const startedAt = new Date().toISOString();
     try {
+      const d = await this.deckel();
+      if (d.voll) {
+        const msg = `Kein Radar-Scan: ${d.offen} offene Kandidaten, Deckel ${d.limit}. Erst Kandidaten importieren oder ignorieren, oder den Deckel unter Firmen → Radar erhöhen (0 = unbegrenzt).`;
+        radarActivity.ereignis(msg);
+        this.finishRun(startedAt, msg, trigger, "info", { offen: d.offen, limit: d.limit });
+        return msg;
+      }
       const icp = this.deps.icp.get();
       const fehlt = this.deps.icp.fehlendeFelder();
       if (fehlt.length > 0) {

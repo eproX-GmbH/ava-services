@@ -4,7 +4,7 @@ Auto-generiert von `services/desktop/scripts/generate-tools-md.mjs`.
 NICHT direkt bearbeiten — die Quelle der Wahrheit ist `services/desktop/src/main/agent/tools/*.ts`.
 Lauf via `pnpm -F @ava/desktop tools:doc` (oder automatisch via `build:typecheck`).
 
-Stand: 2026-09-11
+Stand: 2026-09-12
 Anzahl Tools: 242
 
 ## Firmen (17)
@@ -1116,12 +1116,13 @@ _Parameter:_ keine.
 
 _Datei:_ `services/desktop/src/main/agent/tools/discovery.ts`
 
-Liest oder aendert die Einstellungen des Firmen-Radars. Ohne Argumente: aktuelle Werte. Mit Argumenten (nach Bestaetigung): enabled = Radar-Automatik, intervalHours = 6 (4x taeglich, Pro), 24 (taeglich) oder 168 (woechentlich), profileSofort = sofortige Mini-Profil-Verarbeitung (alle offenen Kandidaten so schnell wie moeglich profilieren: mehr Parallelitaet, Minutentakt; laufende Chats haben weiterhin Vorrang; verbraucht entsprechend mehr KI-Aufrufe).
+Liest oder aendert die Einstellungen des Firmen-Radars. Ohne Argumente: aktuelle Werte. Mit Argumenten (nach Bestaetigung): enabled = Radar-Automatik, intervalHours = 6 (4x taeglich, Pro), 24 (taeglich) oder 168 (woechentlich), profileSofort = sofortige Mini-Profil-Verarbeitung (alle offenen Kandidaten so schnell wie moeglich profilieren: mehr Parallelitaet, Minutentakt; laufende Chats haben weiterhin Vorrang; verbraucht entsprechend mehr KI-Aufrufe), maxOffeneKandidaten = Deckel fuer offene, noch nicht entschiedene Kandidaten (Standard 300, 0 = unbegrenzt, nach oben keine Grenze): ist er erreicht, startet kein Scan, bis Kandidaten importiert oder ignoriert wurden.
 
 _Parameter:_
 - `enabled: boolean`
 - `intervalHours: number (enum: 6, 24, 168)`
 - `profileSofort: boolean` — true = sofortige Mini-Profil-Verarbeitung
+- `maxOffeneKandidaten: number` — Deckel offene Kandidaten, 0 = unbegrenzt (Standard 300)
 
 ## email-muster (5)
 
