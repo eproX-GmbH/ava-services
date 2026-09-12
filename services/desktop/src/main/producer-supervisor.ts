@@ -717,6 +717,8 @@ export class ProducerSupervisor extends EventEmitter {
       // Producer 0.0.0.0 und Windows legte Firewall-Inbound-Regeln fuer
       // ava.exe an ("Backdoor"-Eindruck beim Tester).
       LISTEN_HOST: "127.0.0.1",
+      // Nur fuer die Log-Zeile "Application running at" (sonst steht dort 0.0.0.0).
+      EXTERNAL_HOST: "127.0.0.1",
       // simple-probe k8s-style health-check ports. Producers
       // refuse to boot without them. Pin to PORT+100/+101 so each
       // producer has a unique liveness/readiness pair without
