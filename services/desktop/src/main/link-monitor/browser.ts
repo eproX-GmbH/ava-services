@@ -16,6 +16,7 @@
 //
 // Rein LOKAL: alles läuft im Desktop-Main-Process des Nutzers.
 
+import { hardenBackgroundWindow } from "../download-guard";
 import { BrowserWindow } from "electron";
 import type { LlmProviderManager } from "../agent/providers";
 import { checkTarget, clearInterstitials } from "./interstitial";
@@ -281,6 +282,7 @@ function createWindow(isLinkedIn: boolean): BrowserWindow {
     },
   });
   (win as unknown as { __avaLinkMonitor?: boolean }).__avaLinkMonitor = true;
+  hardenBackgroundWindow(win);
   if (!debugWindow) {
     try {
       (

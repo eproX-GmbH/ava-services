@@ -1,3 +1,4 @@
+import { guardSession } from "./download-guard";
 import { app, BrowserWindow, safeStorage, shell } from "electron";
 import { consumeForceLoginPrompt, readIdentity, getActiveSpaceId } from "./account-space";
 
@@ -485,6 +486,7 @@ export class Auth extends EventEmitter {
                 sandbox: true,
               },
             });
+            guardSession(loginWin.webContents.session);
             loginWin.on("closed", () => {
               loginWin = null;
               windowClosedEarly?.();

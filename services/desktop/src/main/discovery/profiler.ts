@@ -19,6 +19,7 @@ import * as yup from "yup";
 import { BrowserWindow } from "electron";
 import type { GatewayClient } from "../agent/gateway-client";
 import { radarActivity } from "./activity";
+import { hardenBackgroundWindow } from "../download-guard";
 import type { LlmProviderManager } from "../agent/providers";
 import {
   buildMessages,
@@ -230,6 +231,9 @@ async function fetchTextViaBrowser(url: string): Promise<string | null> {
         width: 1280,
         height: 900,
         webPreferences: {
+          // 2026-09-12 — eigene, nicht persistente Sitzung: keine Cookies
+          // des Hauptfensters, Download-Sperre (hardenBackgroundWindow).
+          partition: "ava-bg-fetch",
           backgroundThrottling: false,
           images: false,
           sandbox: true,
@@ -237,6 +241,7 @@ async function fetchTextViaBrowser(url: string): Promise<string | null> {
           nodeIntegration: false,
         },
       });
+      hardenBackgroundWindow(win);
       // v0.1.481 — Helfer-Fenster nie im macOS-Fenster-/Dock-Menue listen.
       win.excludedFromShownWindowsMenu = true;
       await Promise.race([

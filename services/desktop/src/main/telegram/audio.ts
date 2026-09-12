@@ -11,6 +11,7 @@
 // WAV daraus. Damit bleibt die Transkription vollständig auf dem Rechner —
 // kein Cloud-Dienst, kein zusätzliches Binary.
 
+import { hardenBackgroundWindow } from "../download-guard";
 import { BrowserWindow } from "electron";
 
 /** Obergrenze, damit eine Monster-Datei nicht den Speicher sprengt. */
@@ -38,6 +39,7 @@ export async function decodeToWav16k(input: Buffer): Promise<Buffer | null> {
   });
   // v0.1.481 — Helfer-Fenster nie im macOS-Fenster-/Dock-Menue listen.
   win.excludedFromShownWindowsMenu = true;
+  hardenBackgroundWindow(win);
 
   try {
     // Leere Seite laden — wir brauchen nur eine JS-Umgebung mit WebAudio.

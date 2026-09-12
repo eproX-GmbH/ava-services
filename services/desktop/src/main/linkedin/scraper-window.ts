@@ -25,6 +25,7 @@
 // Partition) war der Mix eigentlich verdächtiger: gleiche Cookies aber
 // jedes Mal ein neu gespawnter Renderer-Process mit identischen Headern.
 
+import { hardenBackgroundWindow } from "../download-guard";
 import { BrowserWindow } from "electron";
 import { read as readSettings } from "./store";
 import { buildStealthInjection } from "./stealth";
@@ -78,6 +79,7 @@ export function prewarmScraperWindow(): Promise<BrowserWindow> {
         offscreen: false,
       },
     });
+    hardenBackgroundWindow(win);
     // v0.1.387 — Fenster als LinkedIn-Scraper markieren, damit der
     // `activate`-Handler in main/index.ts es beim „AVA nach vorne holen"
     // sicher vom echten Hauptfenster unterscheiden kann.

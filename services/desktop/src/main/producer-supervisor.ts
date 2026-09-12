@@ -713,6 +713,10 @@ export class ProducerSupervisor extends EventEmitter {
       // result events.
       PRODUCER_MODE: "compute",
       PORT: String(this.opts.config.port),
+      // 2026-09-12 — nur loopback (HTTP-API + Probes). Ohne das banden die
+      // Producer 0.0.0.0 und Windows legte Firewall-Inbound-Regeln fuer
+      // ava.exe an ("Backdoor"-Eindruck beim Tester).
+      LISTEN_HOST: "127.0.0.1",
       // simple-probe k8s-style health-check ports. Producers
       // refuse to boot without them. Pin to PORT+100/+101 so each
       // producer has a unique liveness/readiness pair without

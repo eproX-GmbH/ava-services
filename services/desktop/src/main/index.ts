@@ -1,5 +1,6 @@
 import { meldeAbgeleiteteAdressen } from "./contacts/email-muster/rueckmeldung";
 import { radarActivity } from "./discovery/activity";
+import { guardAllKnownSessions, setDownloadBlockedListener } from "./download-guard";
 import { EmailMusterSupervisor } from "./contacts/email-muster/supervisor";
 import {
   app,
@@ -3701,6 +3702,23 @@ app.whenReady().then(async () => {
   // a getUserMedia. Returning `true` here mirrors the request grant.
   session.defaultSession.setPermissionCheckHandler((_wc, permission) =>
     ALLOWED_PERMS.has(permission),
+  );
+  // 2026-09-12 — harte Download-Sperre auf allen Sitzungen (Hauptfenster:
+  // nur eigene blob:/data:-Exporte; Hintergrund: gar nichts, ausser
+  // Handelsregister/Unternehmensregister).
+  guardAllKnownSessions(session);
+  setDownloadBlockedListener(({ url, host, hintergrund }) =>
+    audit({
+      actorType: "system",
+      actorId: null,
+      category: "watch",
+      action: "download.blocked",
+      severity: "warning",
+      subjectType: null,
+      subjectId: null,
+      summary: `Download blockiert (${hintergrund ? "Hintergrund-Browser" : "Hauptfenster"}): ${host || url.slice(0, 80)}`,
+      metadata: { url: url.slice(0, 500), host, hintergrund },
+    }),
   );
 
   // ---- IPC contract ---------------------------------------------------------
