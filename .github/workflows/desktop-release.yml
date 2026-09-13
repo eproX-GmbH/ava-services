@@ -406,16 +406,32 @@ jobs:
       # erneut, und GitHub markiert es als "Latest" (v0.1.617 verdraengte v0.1.622;
       # Download-Seite und Auto-Updater zeigten die alte Version). Deshalb nach
       # jedem Publish die hoechste Versionsnummer explizit als Latest setzen.
+      # v0.1.644 — Schritt darf den Build nicht mehr scheitern lassen
+      # (continue-on-error): bei v0.1.642/643 fiel `gh release edit <tag>`
+      # mit "Release.tag_name already exists", weil zwei Release-Objekte
+      # denselben Tag trugen, und riss beide Build-Jobs mit; der Intel-Job
+      # wurde uebersprungen und v0.1.643 blieb Entwurf. Jetzt wird das
+      # hoechste veroeffentlichte Release per ID adressiert (PATCH
+      # make_latest), nicht per Tag.
       - name: Latest-Markierung auf hoechste Version halten
         if: always()
+        continue-on-error: true
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          hoechste=$(gh release list --limit 100 --exclude-drafts --exclude-pre-releases --json tagName --jq '.[].tagName' | sort -V | tail -1)
-          if [ -n "$hoechste" ]; then
-            gh release edit "$hoechste" --latest && echo "Latest = $hoechste"
+          REPO="${{ github.repository }}"
+          eintrag=$(gh api "repos/$REPO/releases?per_page=100" \
+            --jq '[.[] | select(.draft == false and .prerelease == false)] | map("\(.tag_name) \(.id)") | .[]' \
+            | sort -V | tail -1)
+          if [ -z "$eintrag" ]; then
+            echo "Kein veroeffentlichtes Release gefunden — nichts zu tun"
+            exit 0
           fi
+          tag="${eintrag% *}"; id="${eintrag##* }"
+          gh api -X PATCH "repos/$REPO/releases/$id" -f make_latest=true --silent \
+            && echo "Latest = $tag (Release-ID $id)" \
+            || echo "::warning::Latest-Markierung fuer $tag (ID $id) fehlgeschlagen — manuell unter github.com/$REPO/releases pruefen"
       - name: Audit bundle for secret leaks
         working-directory: services/desktop
         run: node scripts/check-bundle-secrets.mjs
@@ -711,16 +727,32 @@ jobs:
       # erneut, und GitHub markiert es als "Latest" (v0.1.617 verdraengte v0.1.622;
       # Download-Seite und Auto-Updater zeigten die alte Version). Deshalb nach
       # jedem Publish die hoechste Versionsnummer explizit als Latest setzen.
+      # v0.1.644 — Schritt darf den Build nicht mehr scheitern lassen
+      # (continue-on-error): bei v0.1.642/643 fiel `gh release edit <tag>`
+      # mit "Release.tag_name already exists", weil zwei Release-Objekte
+      # denselben Tag trugen, und riss beide Build-Jobs mit; der Intel-Job
+      # wurde uebersprungen und v0.1.643 blieb Entwurf. Jetzt wird das
+      # hoechste veroeffentlichte Release per ID adressiert (PATCH
+      # make_latest), nicht per Tag.
       - name: Latest-Markierung auf hoechste Version halten
         if: always()
+        continue-on-error: true
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          hoechste=$(gh release list --limit 100 --exclude-drafts --exclude-pre-releases --json tagName --jq '.[].tagName' | sort -V | tail -1)
-          if [ -n "$hoechste" ]; then
-            gh release edit "$hoechste" --latest && echo "Latest = $hoechste"
+          REPO="${{ github.repository }}"
+          eintrag=$(gh api "repos/$REPO/releases?per_page=100" \
+            --jq '[.[] | select(.draft == false and .prerelease == false)] | map("\(.tag_name) \(.id)") | .[]' \
+            | sort -V | tail -1)
+          if [ -z "$eintrag" ]; then
+            echo "Kein veroeffentlichtes Release gefunden — nichts zu tun"
+            exit 0
           fi
+          tag="${eintrag% *}"; id="${eintrag##* }"
+          gh api -X PATCH "repos/$REPO/releases/$id" -f make_latest=true --silent \
+            && echo "Latest = $tag (Release-ID $id)" \
+            || echo "::warning::Latest-Markierung fuer $tag (ID $id) fehlgeschlagen — manuell unter github.com/$REPO/releases pruefen"
       - name: Audit bundle for secret leaks
         working-directory: services/desktop
         run: node scripts/check-bundle-secrets.mjs
@@ -1012,16 +1044,32 @@ jobs:
       # erneut, und GitHub markiert es als "Latest" (v0.1.617 verdraengte v0.1.622;
       # Download-Seite und Auto-Updater zeigten die alte Version). Deshalb nach
       # jedem Publish die hoechste Versionsnummer explizit als Latest setzen.
+      # v0.1.644 — Schritt darf den Build nicht mehr scheitern lassen
+      # (continue-on-error): bei v0.1.642/643 fiel `gh release edit <tag>`
+      # mit "Release.tag_name already exists", weil zwei Release-Objekte
+      # denselben Tag trugen, und riss beide Build-Jobs mit; der Intel-Job
+      # wurde uebersprungen und v0.1.643 blieb Entwurf. Jetzt wird das
+      # hoechste veroeffentlichte Release per ID adressiert (PATCH
+      # make_latest), nicht per Tag.
       - name: Latest-Markierung auf hoechste Version halten
         if: always()
+        continue-on-error: true
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          hoechste=$(gh release list --limit 100 --exclude-drafts --exclude-pre-releases --json tagName --jq '.[].tagName' | sort -V | tail -1)
-          if [ -n "$hoechste" ]; then
-            gh release edit "$hoechste" --latest && echo "Latest = $hoechste"
+          REPO="${{ github.repository }}"
+          eintrag=$(gh api "repos/$REPO/releases?per_page=100" \
+            --jq '[.[] | select(.draft == false and .prerelease == false)] | map("\(.tag_name) \(.id)") | .[]' \
+            | sort -V | tail -1)
+          if [ -z "$eintrag" ]; then
+            echo "Kein veroeffentlichtes Release gefunden — nichts zu tun"
+            exit 0
           fi
+          tag="${eintrag% *}"; id="${eintrag##* }"
+          gh api -X PATCH "repos/$REPO/releases/$id" -f make_latest=true --silent \
+            && echo "Latest = $tag (Release-ID $id)" \
+            || echo "::warning::Latest-Markierung fuer $tag (ID $id) fehlgeschlagen — manuell unter github.com/$REPO/releases pruefen"
       - name: Audit bundle for secret leaks
         working-directory: services/desktop
         run: node scripts/check-bundle-secrets.mjs
