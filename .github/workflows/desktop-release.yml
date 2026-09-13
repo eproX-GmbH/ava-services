@@ -52,8 +52,39 @@ permissions:
   contents: write   # Needed to upload release assets.
 
 jobs:
+  # v0.1.643 — Das GitHub-Release wird VOR den Build-Jobs als Entwurf
+  # angelegt. electron-publish 26 legt sonst je Publisher-Instanz
+  # (mehrere pro Job, dazu macOS und Windows parallel) ein eigenes
+  # Release fuer denselben Tag an: bei v0.1.642 entstanden zwei
+  # Release-Objekte in derselben Sekunde, `gh release edit` scheiterte
+  # danach mit "Release.tag_name already exists" und der Intel-Job fiel
+  # aus. Ein vorhandener Entwurf wird von electron-publish immer
+  # wiederverwendet (gitHubPublisher.getOrCreateRelease: `if
+  # (release.draft) return release`), damit gibt es genau ein Release.
+  prepare-release:
+    name: GitHub-Release (Entwurf) anlegen
+    runs-on: ubuntu-latest
+    steps:
+      - name: Draft-Release fuer den Tag sicherstellen
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${{ github.event.inputs.tag || github.ref_name }}"
+          REPO="${{ github.repository }}"
+          n=$(gh api "repos/$REPO/releases?per_page=100" --jq "[.[] | select(.tag_name==\"$TAG\")] | length")
+          if [ "$n" = "0" ]; then
+            gh release create "$TAG" --draft --title "${TAG#v}" --notes "AVA Desktop ${TAG#v}" --repo "$REPO"
+            echo "Draft-Release fuer $TAG angelegt"
+          elif [ "$n" = "1" ]; then
+            echo "Release fuer $TAG existiert bereits, wird wiederverwendet"
+          else
+            echo "::error::$n Release-Objekte fuer $TAG gefunden — Duplikate unter github.com/$REPO/releases zuerst aufraeumen"
+            exit 1
+          fi
+
   build-mac-arm64:
     name: Build & sign macOS (arm64)
+    needs: prepare-release
     runs-on: macos-14
     steps:
       - uses: actions/checkout@v4
@@ -779,6 +810,7 @@ jobs:
   # ---------------------------------------------------------------------------
   build-windows:
     name: Build & sign Windows (x64)
+    needs: prepare-release
     # v0.1.146 — Windows-Build wieder aktiviert. Hatte zwischenzeitlich
     # `if: false` während des Q-track-Refactor-Sturms, damit ein
     # Windows-Build nicht jeden Release blockt. Pipeline ist jetzt

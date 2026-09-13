@@ -93,6 +93,12 @@ veroeffentlicht **kein** unsigniertes Paket.
 
 ## Historie
 
+- 2026-09-13, v0.1.641–v0.1.643: erster Signier-Lauf. v0.1.641 scheiterte
+  am macOS-Schema (`mac.notarize` ist in electron-builder 26 nur noch ein
+  Boolean) und an einem falsch kopierten Client-Geheimnis (`AADSTS7000215`,
+  Geheimnis-ID statt Wert). v0.1.642 legte zwei Release-Objekte fuer einen
+  Tag an (electron-publish 26 ohne vorab existierenden Entwurf); seit
+  v0.1.643 erzeugt der Job `prepare-release` den Entwurf vorab.
 - 2026-09-13: Azure-Abonnement, Signier-Konto, Identitaetspruefung (zweiter
   Antrag, der erste scheiterte an einem versehentlich geklickten
   „Irrtum"-Link in der Bestaetigungsmail), Zertifikatsprofil,
