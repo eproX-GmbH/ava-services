@@ -261,6 +261,18 @@ async function resolveBottleFromApi(formula, bottleTag) {
     { redirect: "follow" },
   );
   if (!res.ok) {
+    // v0.1.645 — Homebrew hat `whisper-cpp` am 2026-09-12 in `whisper.cpp`
+    // umbenannt; die alte API-Adresse liefert seitdem 404 und die neue
+    // Formel hat sowieso keine Intel-(sonoma-)Bottle mehr. Die gepinnten
+    // Blobs bleiben auf ghcr.io erreichbar, also greift hier derselbe
+    // Rueckfall wie bei „Tag nicht mehr in der API".
+    const pin = PINNED_BOTTLES[bottleTag]?.[formula];
+    if (pin) {
+      console.warn(
+        `[whisper] brew API ${formula} → HTTP ${res.status} — using pinned ${pin.version} ${bottleTag} bottle`,
+      );
+      return { url: pin.url, sha256: pin.sha256, version: `${pin.version} (pinned)` };
+    }
     throw new Error(`brew API ${formula} → HTTP ${res.status}`);
   }
   const json = await res.json();
