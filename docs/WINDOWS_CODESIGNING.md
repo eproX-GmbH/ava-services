@@ -93,6 +93,13 @@ veroeffentlicht **kein** unsigniertes Paket.
 
 ## Historie
 
+- 2026-09-13, **v0.1.645: erstes vollstaendig gruenes Release** mit
+  signiertem Windows-Installer (`AVA-Setup-0.1.645.exe`, Signierer
+  `CN=eproX GmbH`), macOS arm64 + x64. Dazwischen: v0.1.644 scheiterte im
+  Intel-Job an der Homebrew-Umbenennung `whisper-cpp` → `whisper.cpp`
+  (Rueckfall auf gepinnte Bottles in `scripts/fetch-whisper.mjs`), und der
+  Schritt „Latest-Markierung" laeuft seit v0.1.644 mit continue-on-error
+  und adressiert Releases per ID.
 - 2026-09-13, v0.1.641–v0.1.643: erster Signier-Lauf. v0.1.641 scheiterte
   am macOS-Schema (`mac.notarize` ist in electron-builder 26 nur noch ein
   Boolean) und an einem falsch kopierten Client-Geheimnis (`AADSTS7000215`,
