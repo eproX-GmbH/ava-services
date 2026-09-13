@@ -19,13 +19,22 @@
 #                                    `base64 -i cert.p12 | pbcopy`
 #   MAC_CERTIFICATE_PASSWORD       Password used during the .p12
 #                                  export.
+#   AZURE_TENANT_ID                Windows-Signierung (v0.1.641) via
+#   AZURE_CLIENT_ID                Azure Artifact Signing (frueher
+#   AZURE_CLIENT_SECRET            "Trusted Signing"). Entra-ID-App
+#                                  "ava-desktop-codesign-ci" mit Rolle
+#                                  "Artifact Signing Certificate Profile
+#                                  Signer" auf dem Konto
+#                                  `eproxavasigning`. Details:
+#                                  docs/WINDOWS_CODESIGNING.md
 #
 # `GITHUB_TOKEN` is auto-provided by GitHub Actions and used by
 # electron-builder to upload the release artifacts.
 #
-# Windows builds ship UNSIGNED in this revision (Phase 8.u1 scope cut).
-# Users see SmartScreen's "unrecognized publisher" warning on first
-# launch and must click "More info → Run anyway". Add an OV cert later.
+# Windows-Builds werden seit v0.1.641 signiert (Zertifikat "eproX GmbH",
+# kurzlebig, RFC-3161-Zeitstempel). Fehlt AZURE_CLIENT_SECRET, bricht der
+# Windows-Job ab statt still ein unsigniertes Installer-Paket zu
+# veroeffentlichen.
 
 name: Desktop release
 
@@ -770,7 +779,7 @@ jobs:
   # The job body is left intact so re-enabling is a one-line change.
   # ---------------------------------------------------------------------------
   build-windows:
-    name: Build Windows (unsigned, x64)
+    name: Build & sign Windows (x64)
     # v0.1.146 — Windows-Build wieder aktiviert. Hatte zwischenzeitlich
     # `if: false` während des Q-track-Refactor-Sturms, damit ein
     # Windows-Build nicht jeden Release blockt. Pipeline ist jetzt
@@ -916,12 +925,57 @@ jobs:
           AVA_RELEASE_TOKEN: ${{ secrets.SUBMODULES_PAT }}
         run: pnpm build
 
-      - name: Build & publish (Windows, unsigned)
+      # v0.1.641 — Windows-Code-Signing via Azure Artifact Signing.
+      # electron-builder (>= 26) ruft dafuer das PowerShell-Modul
+      # `TrustedSigning` (Invoke-TrustedSigning) auf und installiert es
+      # selbst; die Anmeldung laeuft ueber die drei AZURE_*-Variablen
+      # (Azure EnvironmentCredential). Die Signier-Optionen kommen wie
+      # beim macOS-Notarize per CLI und NICHT aus electron-builder.yml,
+      # damit ein lokales `pnpm package:win` ohne Azure-Zugang weiter
+      # baut. Kurzlebiges Zertifikat (3 Tage) => der RFC-3161-Zeitstempel
+      # (Default http://timestamp.acs.microsoft.com) ist Pflicht und wird
+      # von electron-builder automatisch gesetzt.
+      - name: Build, sign & publish (Windows x64)
         working-directory: services/desktop
+        shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
         run: |
-          pnpm exec electron-builder --win --x64 --publish always
+          for v in AZURE_TENANT_ID AZURE_CLIENT_ID AZURE_CLIENT_SECRET; do
+            if [ -z "${!v}" ]; then
+              echo "::error::Repository-Secret $v fehlt — Windows-Build wird NICHT unsigniert veroeffentlicht. Siehe docs/WINDOWS_CODESIGNING.md"
+              exit 1
+            fi
+          done
+          pnpm exec electron-builder --win --x64 --publish always \
+            --config.win.azureSignOptions.publisherName="eproX GmbH" \
+            --config.win.azureSignOptions.endpoint="https://neu.codesigning.azure.net" \
+            --config.win.azureSignOptions.codeSigningAccountName="eproxavasigning" \
+            --config.win.azureSignOptions.certificateProfileName="ava-desktop-public"
+
+      # Wächter: der veroeffentlichte Installer muss eine gueltige
+      # Authenticode-Signatur von "eproX GmbH" tragen. Faengt stille
+      # Fehlkonfigurationen (falscher Profilname, abgelaufene Rolle)
+      # ab, bevor Nutzer ein unsigniertes Update ziehen.
+      - name: Verify Authenticode signature
+        working-directory: services/desktop
+        shell: pwsh
+        run: |
+          $tag = "${{ github.event.inputs.tag || github.ref_name }}"
+          $version = $tag.TrimStart("v")
+          $files = Get-ChildItem "release/$version" -Filter "*.exe" -File
+          if (-not $files) { Write-Error "Keine .exe in release/$version gefunden"; exit 1 }
+          foreach ($f in $files) {
+            $sig = Get-AuthenticodeSignature $f.FullName
+            $subject = $sig.SignerCertificate.Subject
+            Write-Host "$($f.Name): $($sig.Status) — $subject"
+            if ($sig.Status -ne "Valid") { Write-Error "Signatur ungueltig: $($f.Name) ($($sig.Status))"; exit 1 }
+            if ($subject -notmatch "CN=eproX GmbH") { Write-Error "Unerwarteter Signierer: $subject"; exit 1 }
+            if (-not $sig.TimeStamperCertificate) { Write-Error "Kein Zeitstempel: $($f.Name)"; exit 1 }
+          }
 
       # 2026-09-09: Ein Re-Run eines aelteren Tags veroeffentlicht dessen Release
       # erneut, und GitHub markiert es als "Latest" (v0.1.617 verdraengte v0.1.622;

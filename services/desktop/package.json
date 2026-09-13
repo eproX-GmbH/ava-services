@@ -1,6 +1,6 @@
 {
   "name": "@ava/desktop",
-  "version": "0.1.640",
+  "version": "0.1.641",
   "private": true,
   "description": "AVA Electron desktop app — replaces user-interface/ Next.js. Talks to db-gateway only.",
   "author": {
@@ -98,7 +98,7 @@
     "@types/react-dom": "^18.3.0",
     "@vitejs/plugin-react": "^4.3.0",
     "electron": "^31.0.0",
-    "electron-builder": "^24.13.0",
+    "electron-builder": "^26.16.1",
     "electron-vite": "^2.2.0",
     "typescript": "^5.4.0",
     "vite": "^5.2.0"

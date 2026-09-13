@@ -156,10 +156,18 @@ win:
   # Icon source: `resources/icon.ico` — 16/32/48/64/128/256 multi-res,
   # built from the same 1024×1024 source via Pillow.
   icon: icon.ico
-  # Phase 8.u1: Windows code-signing intentionally deferred. Builds
-  # ship unsigned; users see SmartScreen's "unrecognized publisher"
-  # warning on first launch and must click "More info → Run anyway".
-  # Acceptable for the initial B2B rollout; revisit OV cert later.
+  # v0.1.641 — Windows-Code-Signing via Azure Artifact Signing (Konto
+  # `eproxavasigning`, Profil `ava-desktop-public`, Zertifikat
+  # "eproX GmbH"). `win.azureSignOptions` steht ABSICHTLICH nicht hier,
+  # sondern wird in .github/workflows/desktop-release.yml per
+  # `--config.win.azureSignOptions.*` gesetzt — genau wie
+  # `mac.notarize`. Grund: mit den Optionen in der YAML wuerde jedes
+  # lokale `electron-builder --win` versuchen, PowerShell +
+  # Invoke-TrustedSigning aufzurufen, und ohne Azure-Zugang abbrechen.
+  # electron-builder schreibt den `publisherName` aus den Azure-
+  # Optionen in app-update.yml; electron-updater prueft damit die
+  # Signatur jedes heruntergeladenen Updates (verifyUpdateCodeSignature,
+  # Default true). Doku: docs/WINDOWS_CODESIGNING.md
 
 # v0.1.308 — Custom NSIS-Include forciert taskkill /F /T auf AVA.exe
 # + ollama.exe bevor der Installer entpackt. Real-Run-Bug:

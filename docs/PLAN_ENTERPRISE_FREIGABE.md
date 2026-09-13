@@ -67,7 +67,7 @@ Pen-Test, juristische Dokumente). Details in Abschnitt 5.
 | 3a | Bring-your-own-Endpoint (Azure OpenAI EU, vLLM, eigener AVV) | K.o. | ◐ | 8 Provider, 3 fest verdrahtete OpenAI-kompatible; **keine freie Base-URL fuer `openai`, kein Azure** |
 | 3b | Verarbeitungsort je Feld | Muss | ◐ | `llmTier`+`llmModel` nur je (Firma, Stage) in ContentFreshness; Observation ohne Modell/Provider/Ort |
 | 3c | Fakt vs. Interpretation als Feldtyp | Muss | ❌ | Nur `confidence`; Urteile in Extra-Tabellen, UI ohne Kennzeichnung |
-| 4a | Enterprise-Verteilkanal (MSI/PKG, Intune/Jamf, EV, Notarisierung) | K.o. | ◐ | macOS signiert+notarisiert; **Windows unsigniert**, nur NSIS, kein MSI/PKG, Linux ohne CI |
+| 4a | Enterprise-Verteilkanal (MSI/PKG, Intune/Jamf, EV, Notarisierung) | K.o. | ◐ | macOS signiert+notarisiert; Windows seit v0.1.641 signiert (Azure Artifact Signing, `docs/WINDOWS_CODESIGNING.md`); nur NSIS, kein MSI/PKG, Linux ohne CI |
 | 4b | Update-Kontrolle (Admin, Staging-Ring, kein Auto-Update) | K.o. | ❌ | autoDownload + autoInstallOnAppQuit, Check alle 15 min, Kanaele wirkungslos, **GitHub-PAT im Binary** |
 | 4c | Netzwerkdoku, Proxy inkl. NTLM/Kerberos, TLS-Inspection | Muss | ❌ | Node-fetch ignoriert System-Proxy; kein Custom-CA-Pfad; keine Zielliste |
 | 4d | EDR-Verhaltensprofil + Allowlist | Muss | ❌ | Versteckte Chromium-Fenster mit Stealth-Injection, 6 Node-Subprozesse, Selenium+User-Chrome, Watchdog mit SIGKILL, `taskkill /F` im Installer |
@@ -90,7 +90,7 @@ Pen-Test, juristische Dokumente). Details in Abschnitt 5.
 | Befund | Beleg | Massnahme |
 |---|---|---|
 | GitHub-PAT (`SUBMODULES_PAT` → `AVA_RELEASE_TOKEN`) wird in jedes Desktop-Binary eingebacken | `services/desktop/electron.vite.config.ts:43-46`, `src/main/updater.ts:125-128` | Generic-Update-Feed (E4.2), PAT entfernen, Token rotieren |
-| Windows-Builds unsigniert | `.github/workflows/desktop-release.yml:27-29` | EV/Azure Trusted Signing (E4.1) |
+| ~~Windows-Builds unsigniert~~ | erledigt v0.1.641: Azure Artifact Signing, Zertifikat eproX GmbH (`docs/WINDOWS_CODESIGNING.md`) | — |
 | JWT-Audience-Pruefung standardmaessig aus | `services/db-gateway/src/middleware/auth.ts:135-153` | `JWT_AUDIENCE_STRICT=1` Default |
 | Keycloak 20.0.3 (EOL), Admin-Passwort-Default `admin` in `fly.toml`, Registrierung offen, kein MFA, keine Passwort-Policy | `infra/keycloak/Dockerfile:27`, `infra/keycloak/fly.toml:51-52`, `infra/scripts/keycloak-config.mjs:97-110` | E0 |
 | Nutzer-LLM-Key transitiert das Gateway bei Excel-Import (`X-Ava-User-Llm-Key`) | `services/desktop/src/main/agent/gateway-client.ts:73-80`, `services/db-gateway/src/lib/upstream.ts:13-27` | Pfad pruefen: fuer Organisationen Org-Key (O4) statt Nutzer-Key; sonst dokumentieren |
@@ -301,7 +301,7 @@ Kein K.o.-Punkt, aber jeder ist ein Fragebogen-Treffer.
 ### E4 — Deployment und Endpoint [K.o. 4a, 4b; Muss 4c–4e] (≈ 14 Tage + externe Leistungen)
 
 **E4.1 Verteilkanal (Inf, 4 Tage + Zertifikat).**
-- Windows: Code-Signing mit EV oder Azure Trusted Signing (Antrag ist eine externe Leistung, 2–4 Wochen Vorlauf); Targets `nsis` + `msi` (electron-builder/WiX; `perMachine`, `/qn`-Silent, Properties `AVA_GATEWAY_URL`, `AVA_AUTH_ISSUER`, `AVA_UPDATE_MODE`); `installer.nsh` ohne `taskkill /F` (Graceful-Close mit Timeout).
+- Windows: ~~Code-Signing mit EV oder Azure Trusted Signing~~ **erledigt v0.1.641 (Azure Artifact Signing, siehe `docs/WINDOWS_CODESIGNING.md`)**; offen: Targets `nsis` + `msi` (electron-builder/WiX; `perMachine`, `/qn`-Silent, Properties `AVA_GATEWAY_URL`, `AVA_AUTH_ISSUER`, `AVA_UPDATE_MODE`); `installer.nsh` ohne `taskkill /F` (Graceful-Close mit Timeout).
 - macOS: Target `pkg` (signiert, notarisiert) fuer Jamf; `com.eprox.ava` Managed Preferences (Abschnitt E4.3).
 - Doku: Intune (`.intunewin`, Detection-Rules), Jamf (PKG + Config-Profile), SHA-256-Manifest je Release, Provenance-Attestation in CI.
 
@@ -429,8 +429,8 @@ dazu, statt als leeres Versprechen.
 
 - Dealfront/Cognism: Partnerschaft und Datenlizenz klaeren, bevor ein
   Adapter gebaut wird (E-2).
-- Windows-Zertifikat: EV vs. Azure Trusted Signing (Kosten, Vorlauf)
-  jetzt anstossen, unabhaengig vom Rest.
+- ~~Windows-Zertifikat: EV vs. Azure Trusted Signing (Kosten, Vorlauf)~~
+  erledigt 2026-09-13 (Azure Artifact Signing, Basic-Tarif).
 - Juristische Pruefung der `docs/compliance/`-Vorlagen und des
   Haftungspassus zur LinkedIn-Kontosperre.
 - Keycloak-26-Upgrade auf Fly: Migrationspfad fuer bestehende Sessions
