@@ -1,0 +1,20 @@
+# Betreiber-Fallback-Worker fuer das Register-Delta (S5). Kein HTTP-Dienst,
+# eine Maschine je Region = eine IP = 60 Abfragen je Stunde. Secrets:
+#   INTERNAL_HMAC_SECRET   gleicher Wert wie ava-db-gateway / ava-master-data
+app = 'ava-register-worker'
+primary_region = 'fra'
+
+[build]
+
+[env]
+  GATEWAY_URL = 'https://ava-db-gateway.fly.dev'
+  ABFRAGEN_JE_STUNDE = '60'
+  # WORKER_ID wird aus dem Hostnamen (Maschinen-Id) gebildet.
+
+[[vm]]
+  memory = '1gb'
+  cpu_kind = 'shared'
+  cpus = 1
+
+[processes]
+  worker = 'node dist/cli.js'

@@ -229,6 +229,21 @@ Live-Rauchtest: Bad Oeynhausen HRB 2400 → 3 Blätter (Herford, Minden als
 frühere Gerichte), HRB 9637 mit 4 Historie-Einträgen, Bekanntmachungen
 14.157 Einträge über 57 Tage, 2 ohne Registerblatt.
 
+**Lokaler Ende-zu-Ende-Lauf (2026-09-14, Mac des Betreibers, Refresh-Token der
+Desktop-Sitzung):** Refresh-Job über `POST /v1/register-jobs/refresh` → 2
+Abfragen, 4 Treffer, 2 neu (Altgerichts-Blätter), 1 geändert (HRB 9637 mit
+4 Historie-Einträgen), 1 unverändert. Bekanntmachungs-Job 2026-09-13 → 5
+Einträge, 1 Refresh-Job. Befund: GET zwischen Gateway und master-data ist
+nicht HMAC-fähig (Signatur über den Body), Front-Liste deshalb als POST.
+
+**S5 vorbereitet:** Gateway-Router `/internal/register-jobs/*` (HMAC, gleiche
+Semantik wie `/v1`), `GatewayClient` mit `hmacSecret`, CLI mit
+`INTERNAL_HMAC_SECRET`, `packages/register-delta/Dockerfile` (Alpine,
+Chromium + chromedriver, Nutzer `worker`) und `fly.toml` (App
+`ava-register-worker`, Region fra, kein HTTP). Secret
+`INTERNAL_HMAC_SECRET` muss auf der Worker-App denselben Wert wie Gateway
+und master-data haben.
+
 ## 5. Einmaliges Aufholen 2023 → heute
 
 Was du selbst laufen lassen kannst (`master-data/scripts/register-delta`,

@@ -36,7 +36,7 @@ const err = {
   409: { content: { "application/json": { schema: ErrorShape } }, description: "lease invalid" },
 };
 
-const WorkerId = z.string().min(8).max(120).regex(/^[A-Za-z0-9._:-]+$/);
+export const WorkerId = z.string().min(8).max(120).regex(/^[A-Za-z0-9._:-]+$/);
 const JobArtSchema = z.enum(["front", "bekanntmachungen", "refresh"]);
 
 const JobShape = z
@@ -79,7 +79,7 @@ const BekanntmachungShape = z.object({
   sitz: z.string().default(""),
 });
 
-const ErgebnisShape = z.object({
+export const ErgebnisShape = z.object({
   workerId: WorkerId,
   abfragen: z.number().int().nonnegative(),
   gesperrt: z.boolean().optional(),

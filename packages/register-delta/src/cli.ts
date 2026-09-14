@@ -2,6 +2,7 @@
 // Betreiber-Fallback-Worker (S5) und lokaler Testlauf.
 //   GATEWAY_URL            z. B. https://ava-db-gateway.fly.dev
 //   WORKER_ID              eindeutig je Maschine (Default: hostname)
+//   INTERNAL_HMAC_SECRET   Betreiber-Worker: HMAC-Kanal /internal/register-jobs/* (Fly) ODER
 //   WORKER_TOKEN           statisches Bearer-Token (Testlauf) ODER
 //   KEYCLOAK_TOKEN_URL + KEYCLOAK_CLIENT_ID + KEYCLOAK_CLIENT_SECRET  (Dienstkonto, client_credentials) ODER
 //   KEYCLOAK_TOKEN_URL + KEYCLOAK_CLIENT_ID + WORKER_REFRESH_TOKEN_FILE (lokaler Lauf mit Nutzer-Sitzung;
@@ -46,7 +47,7 @@ async function main() {
   const worker = new RegisterWorker({
     workerId: process.env.WORKER_ID ?? `betreiber-${os.hostname()}`,
     workerArt: "betreiber",
-    gateway: new GatewayClient({ baseUrl, token: tokenQuelle() }),
+    gateway: process.env.INTERNAL_HMAC_SECRET ? new GatewayClient({ baseUrl, hmacSecret: process.env.INTERNAL_HMAC_SECRET }) : new GatewayClient({ baseUrl, token: tokenQuelle() }),
     portal: async () => {
       const p = new RegisterPortal({ chromeBinaryPath: process.env.CHROME_BIN, log });
       await p.oeffnen();

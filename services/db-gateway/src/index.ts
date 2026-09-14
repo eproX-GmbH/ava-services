@@ -16,6 +16,7 @@ import { v1 } from "./routes/v1";
 import { billingWebhookRouter } from "./routes/v1/billing";
 import { publicAuthRouter } from "./routes/v1/auth";
 import { internalQuotaRouter } from "./routes/internal-quota";
+import { internalRegisterJobsRouter } from "./routes/internal-register-jobs";
 import { startQuotaResumeCron } from "./lib/quota-resume-worker";
 import { startStuckProgressReaperCron } from "./lib/stuck-progress-reaper";
 import { startPersonRetentionCron } from "./lib/person-retention-reaper";
@@ -86,6 +87,8 @@ app.route("/", publicAuthRouter);
 // bypasses the JWT auth + audit chain (the peer is a service, not a
 // user). HMAC middleware lives on the router itself.
 app.route("/internal", internalQuotaRouter);
+// Register-Delta S5 — Betreiber-Worker (Fly) ueber denselben HMAC-Kanal.
+app.route("/internal", internalRegisterJobsRouter);
 
 // Versioned API.
 app.route("/v1", v1);

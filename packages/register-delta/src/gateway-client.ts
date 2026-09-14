@@ -1,5 +1,6 @@
 // Gateway-Routen /v1/register-jobs/* (services/db-gateway/src/routes/v1/register-jobs.ts).
 
+import { createHmac } from "node:crypto";
 import type { Bekanntmachung, Treffer } from "./parser";
 
 export type JobArt = "front" | "bekanntmachungen" | "refresh";
@@ -39,8 +40,10 @@ export type Ergebnis = {
 
 export type GatewayClientOptionen = {
   baseUrl: string;
-  /** Liefert ein gueltiges Bearer-Token (Desktop: Keycloak-Session; Fallback: Dienstkonto). */
-  token: () => Promise<string>;
+  /** Desktop: Bearer-Token der Keycloak-Sitzung → Routen /v1/register-jobs/*. */
+  token?: () => Promise<string>;
+  /** Betreiber-Worker: HMAC-Geheimnis des internen Kanals → Routen /internal/register-jobs/*. */
+  hmacSecret?: string;
   fetchImpl?: typeof fetch;
 };
 
@@ -50,12 +53,22 @@ export class GatewayClient {
     this.f = opt.fetchImpl ?? fetch;
   }
 
+  private get praefix(): string {
+    return this.opt.hmacSecret ? "/internal" : "/v1";
+  }
+
   private async call<T>(method: "GET" | "POST", path: string, body?: unknown): Promise<{ status: number; data: T | null }> {
-    const res = await this.f(`${this.opt.baseUrl.replace(/\/$/, "")}${path}`, {
-      method,
-      headers: { "content-type": "application/json", authorization: `Bearer ${await this.opt.token()}` },
-      body: body === undefined ? undefined : JSON.stringify(body),
-    });
+    const headers: Record<string, string> = { "content-type": "application/json" };
+    let raw: string | undefined = body === undefined ? undefined : JSON.stringify(body);
+    if (this.opt.hmacSecret) {
+      raw ??= "{}";
+      headers["x-internal-signature"] = createHmac("sha256", this.opt.hmacSecret).update(raw, "utf8").digest("hex");
+    } else if (this.opt.token) {
+      headers.authorization = `Bearer ${await this.opt.token()}`;
+    } else {
+      throw new Error("GatewayClient: token oder hmacSecret noetig");
+    }
+    const res = await this.f(`${this.opt.baseUrl.replace(/\/$/, "")}${path}`, { method, headers, body: raw });
     if (res.status === 204) return { status: 204, data: null };
     const text = await res.text();
     if (!res.ok) throw new Error(`gateway ${method} ${path} → ${res.status} ${text.slice(0, 200)}`);
@@ -63,16 +76,16 @@ export class GatewayClient {
   }
 
   async lease(workerId: string, workerArt: "desktop" | "betreiber", arten?: JobArt[]): Promise<Job | null> {
-    const r = await this.call<Job>("POST", "/v1/register-jobs/lease", { workerId, workerArt, arten });
+    const r = await this.call<Job>("POST", `${this.praefix}/register-jobs/lease`, { workerId, workerArt, arten });
     return r.data;
   }
 
   async ergebnis(jobId: string, ergebnis: Ergebnis): Promise<Record<string, unknown>> {
-    return (await this.call<Record<string, unknown>>("POST", `/v1/register-jobs/${jobId}/ergebnis`, ergebnis)).data ?? {};
+    return (await this.call<Record<string, unknown>>("POST", `${this.praefix}/register-jobs/${jobId}/ergebnis`, ergebnis)).data ?? {};
   }
 
   async fehler(jobId: string, workerId: string, grund: string, abfragen = 0): Promise<void> {
-    await this.call("POST", `/v1/register-jobs/${jobId}/fehler`, { workerId, grund, abfragen });
+    await this.call("POST", `${this.praefix}/register-jobs/${jobId}/fehler`, { workerId, grund, abfragen });
   }
 
   async status(): Promise<Record<string, unknown>> {
