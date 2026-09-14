@@ -1,355 +1,291 @@
-# Plan: Stammdaten aktuell halten (Delta statt Vollabzug)
+# Stammdaten aktuell halten (Register-Delta)
 
-Stand 2026-09-14. Ausgangslage: master-data hält rund 1,8 Mio. Firmen aus
-einem Vollabzug des Unternehmensregisters (Stand 2023, Notebooks unter
-`master-data/scripts/de`). Ziel: neue Firmen, Umfirmierungen, Sitzwechsel und
-Löschungen laufend nachziehen, inklusive Auffrischung strukturierter Inhalte,
-ohne dass der Betreiber regelmäßig einen Vollabzug fährt.
+Stand 2026-09-14, abends. Alle Schritte S1 bis S7 sind umgesetzt und in
+Betrieb (master-data, Gateway, Fly-Worker `ava-register-worker`, Desktop
+v0.1.654). Dieses Dokument beschreibt den gebauten Stand; die Befunde vom
+Vormittag, auf denen die Entscheidungen beruhen, stehen in Abschnitt 1.
 
-## 1. Was heute geprüft wurde (Portale, 2026-09-14)
+Ausgangslage: master-data hält 1,84 Mio. Firmen aus einem Vollabzug des
+Unternehmensregisters (Stand 2023, Notebooks unter `master-data/scripts/de`,
+nur damals aktive Firmen). Ziel: neue Firmen, Umfirmierungen, Sitzwechsel und
+Löschungen laufend nachziehen, inklusive Erneuerung strukturierter Inhalte,
+ohne Vollabzug.
+
+## 1. Befunde (Portale, 2026-09-14)
 
 **Unternehmensregister (unternehmensregister.de)**
-- Die Listensuche „Registerinformationen“ je Amtsgericht und Registerart mit
-  100 Treffern je Seite, auf der die Notebooks beruhten, gibt es nicht mehr.
-  Die neue Oberfläche leitet jede Registersuche an das Registerportal weiter
-  („Hier werden Sie zu den Registerinformationen des Registergerichts
-  weitergeleitet“). Ein Vollabzug per Liste ist damit nicht mehr möglich.
+- Die Listensuche „Registerinformationen“ je Amtsgericht und Registerart, auf
+  der die Notebooks beruhten, gibt es nicht mehr. Jede Registersuche wird an
+  das Registerportal weitergeleitet. Ein Vollabzug per Liste ist unmöglich.
 
 **Registerportal (handelsregister.de), Erweiterte Suche**
-- Felder: Bundesland, Firma/Schlagwörter, Sitz, Registerart, Registernummer,
-  Registergericht, Rechtsform, Staat, „auch geschlossene Registerblätter“,
-  Ergebnisse je Seite (max. 100).
-- **Harte Obergrenze 100 Treffer je Suche** („Die maximale Trefferanzahl von
-  100 wurde überschritten“), keine Sortierung, keine Blätterung darüber
-  hinaus. Listen je Gericht sind damit ebenfalls unmöglich.
-- **Exakte Registernummer je Gericht funktioniert** und ist billig: eine
-  Anfrage, eine Ergebniszeile mit Bundesland, Gericht, Registerart, Nummer
-  inklusive Zusatz, Firma, Sitz, Status („aktuell“ oder „Geschlossenes
-  Registerblatt“, letzteres nur mit der Option „auch geschlossene“) und der
-  **Historie** früherer Namen und Sitze. Das ist genau der Datensatz, den
-  master-data führt.
-- **Nummernzusätze:** „HRA 100“ in Flensburg liefert 0 Treffer, „HRA 100 FL“
-  liefert das Registerblatt. Zusätze (zweistellige Kürzel aus Gerichts-
-  fusionen, historisch „B“ in Berlin) müssen beim Abfragen mitgegeben
-  werden; die Suche findet sie nicht über die reine Zahl.
-- Nutzungsgrenze: Die Hilfe nennt keine Zahl. Bekannt und im Producer
-  structured-content berücksichtigt ist die Praxis von etwa 60 Anfragen je
-  Stunde und IP. Diese Zahl ist zu messen, bevor Takte festgelegt werden.
+- Harte Obergrenze 100 Treffer je Suche, keine Sortierung, keine Blätterung.
+- Exakte Registernummer je Gericht funktioniert und ist billig: eine Anfrage,
+  Ergebniszeilen mit Bundesland, Gericht, Art, Nummer inklusive Zusatz,
+  Firma, Sitz, Status („aktuell“, „Geschlossenes Registerblatt“) und der
+  Historie früherer Namen und Sitze. Genau der Datensatz von master-data.
+- Mit „auch geschlossene Registerblätter“ liefert die reine Zahl alle
+  Zusatzvarianten (Flensburg HRA 100 → SL, NI, HU, FL) und alle Blätter
+  früherer Gerichte („HRB 2400 früher Amtsgericht Herford“). Ohne die
+  Option 0 Treffer. Eine Zusatz-Schleife ist deshalb unnötig, Mehrfachtreffer
+  je Nummer sind normal.
+- Nutzungsordnung: 60 Abfragen je Stunde und IP. Das ist der Takt je Worker;
+  ein Messlauf der tatsächlichen Sperrschwelle wurde bewusst nicht gemacht.
+- Ohne Systemlocale (Fly) liefert das Portal Englisch; der Treiber erzwingt
+  `de-DE` und klickt sonst den Umschalter DE.
 
-**Registerbekanntmachungen (im Registerportal; die Domain
-handelsregisterbekanntmachungen.de antwortet nicht mehr)**
-- Enthält seit 1.8.2022 nur die Fälle nach § 10 HGB: Löschungsankündigung,
-  Bekanntmachung nach dem Umwandlungsgesetz, Einreichung neuer Dokumente,
-  Sonstige, Sonderregister. **Keine Neueintragungen, keine Umfirmierungen.**
-  Seit DiRUG gelten Eintragungen mit der Abrufbarkeit als bekannt gemacht.
-- Menge im Fenster 20.07. bis 14.09.2026: rund 14.100 Einträge, davon
-  11.000 Umwandlungsgesetz, 1.900 Löschungsankündigungen, 800 Dokumente.
-  Also **rund 250 je Tag**, Fenster **8 Wochen**, filterbar nach Datum,
-  Bundesland, Gericht, Kategorie; alles auf einer Seite.
+**Registerbekanntmachungen (im Registerportal)**
+- Seit 1.8.2022 nur § 10 HGB: Löschungsankündigung, Umwandlungsgesetz,
+  Einreichung neuer Dokumente, Sonstige, Sonderregister. Keine
+  Neueintragungen, keine Umfirmierungen.
+- Rund 250 Einträge je Tag (Werktage 320 bis 390), Fenster 8 Wochen, alles
+  auf einer Seite (fast 2 MB Text, 14.000 Einträge). Die alte Domain
+  handelsregisterbekanntmachungen.de antwortet nicht mehr.
+
+**Bestand (Prod-DB, 1.835.854 Zeilen, 117 Gerichte, HRB 1,36 Mio., HRA 0,48 Mio.)**
+- Rund 89.000 `registerNumber` mit Float-Artefakt („93141.0“), Zehntausende
+  mit angehängtem Altgericht („12345früherAmtsgerichtMeppen“). Beides ist in
+  der Nummernfront über die führenden Ziffern abgefangen.
+- Keine companyId mit Leerzeichen, Punkt oder „FRÜHER“; 975 Sonderfälle
+  (leere Nummer, Umlaut-Zusatz wie `LUEBECK_HRB_264MÖ`).
 
 ## 2. Konsequenzen
 
-1. Ein „funktionales Skript, das ich einmal bei mir laufen lasse“ im Sinne
-   des alten Vollabzugs gibt es nicht mehr. Kein Portal liefert Listen.
-2. Der einzige vollständige Weg zu neuen Firmen ist die **Nummernfront je
-   Gericht und Registerart**: Registernummern werden fortlaufend vergeben,
-   Lücken sind selten und klein. Ab der höchsten bekannten Nummer wird
-   hochgezählt und jede Nummer exakt abgefragt, mit den Zusätzen, die für
-   das Gericht bekannt sind.
-3. Löschungen kommen aus den Löschungsankündigungen und aus dem Status bei
+1. Der einzige vollständige Weg zu neuen Firmen ist die Nummernfront je
+   Gericht und Registerart: ab der höchsten bekannten Nummer hochzählen und
+   jede Nummer exakt abfragen.
+2. Löschungen kommen aus den Löschungsankündigungen und aus dem Status bei
    jeder Abfrage. Umfirmierungen und Sitzwechsel liefert nur eine erneute
-   exakte Abfrage der Firma (Historie in der Ergebniszeile).
-4. Bei etwa 60 Anfragen je Stunde und IP ist das Aufholen der Jahre 2023
-   bis 2026 (grob 500.000 bis 700.000 neue Blätter) von einem Rechner aus
-   nicht machbar (über ein Jahr). Aufholen muss verteilt laufen oder über
-   mehrere Betreiber-IPs. Der laufende Tagesbetrieb danach ist klein:
-   grob 1.500 bis 2.500 Front-Abfragen und 250 Bekanntmachungen je Tag.
+   exakte Abfrage (Historie in der Ergebniszeile).
+3. Bei 60 Abfragen je Stunde und IP ist das Aufholen 2023 bis 2026 (grob
+   500.000 bis 700.000 neue Blätter) verteilt zu leisten: Betreiber-Worker
+   auf Fly plus Rechner der Nutzer (Opt-in „Mithelfen“).
 
-## 3. Zielbild
+## 3. Architektur, wie gebaut
 
 Drei Quellen, eine Queue, ein Datenmodell mit Aktualitätsspalten.
 
+```
+Registerportal <-- Worker (Desktop "Mithelfen" oder Fly) <-- lease -- Gateway-Queue RegisterJob
+                        | Ergebnis (Treffer, Front, Bekanntmachungen)         ^ Ersteller-Cron 02:00 UTC
+                        v                                                     |
+                  Gateway verarbeiteErgebnis --HMAC--> master-data Delta-Upsert + RegisterFront
+                        |                                    |
+                        v                                    v
+             StructuredContentStale (S7)              Elasticsearch (_id = companyId)
+```
+
 ### 3.1 Quelle A: Nummernfront (neue Firmen)
 
-- Tabelle `RegisterFront(districtCourt, registerType, maxNummer,
-  zusaetze[], zuletztGeprueftAt, offeneLuecken[])` in master-data, initial
-  aus `GermanCompany` berechnet (höchste rein numerische Nummer je Gericht
-  und Art, Menge der gesehenen Zusätze je Gericht).
-- Job „front“ je (Gericht, Art): fragt `maxNummer+1 … +N` ab, nur die reine
-  Zahl je Nummer (mit „auch gelöschte Registerblätter“ liefert das Portal
-  alle Zusatzvarianten und alle Blätter früherer Gerichte mit, Notebook
-  2026-09-14), bricht nach K=25 Fehltreffern in Folge ab und merkt sich die Lücken für einen späteren
-  zweiten Versuch (Nummern werden gelegentlich verzögert sichtbar).
-- Ergebnis je Treffer: neue Firma mit Name, Sitz, Status, Historie,
-  `source='registerportal'`, `firstSeenAt`, `lastSeenAt`.
+- `RegisterFront(districtCourt, registerType, maxNummer, zusaetze[],
+  offeneLuecken[], zuletztGeprueftAt)` in master-data, gesät aus dem Bestand
+  (Seed-Skript, Abschnitt 6): höchste plausible Nummer je Gericht und Art
+  (bis 10 % über dem 0,99-Quantil, Müllnummern wie 999999995 fallen weg).
+- Job `front` je (Gericht, Art): alte Lücken einmal nachprüfen, dann ab
+  `maxNummer+1` hochzählen, nur die reine Zahl, Abbruch nach 10 Fehltreffern
+  in Folge, höchstens 15 Abfragen je Job (passt in die 20-Minuten-Lease).
+  Fehltreffer unterhalb der neuen Front werden als Lücken gemerkt und beim
+  nächsten Job einmal nachgeprüft, danach verworfen.
+- Bei Treffern reiht das Gateway sofort den nächsten Abschnitt ein
+  (Aufholen ohne Wartezeit). Ohne Treffer prüft der Cron die Front täglich.
 
-### 3.2 Quelle B: Registerbekanntmachungen (Löschungen, Umwandlungen)
+### 3.2 Quelle B: Registerbekanntmachungen
 
-- Job „bekanntmachungen“ je (Tag, Bundesland): Seite abrufen, alle Einträge
-  parsen (Kategorie, Gericht, Art, Nummer, Firma, Sitz), Ergebnis:
-  - Löschungsankündigung → Firma als `state='LOESCHUNG_ANGEKUENDIGT'`
-    markieren und in Quelle C zur Bestätigung einreihen.
-  - Umwandlungsgesetz, Dokumente, Sonstige → Firma zur Auffrischung
-    einreihen (Quelle C) und strukturierte Inhalte als veraltet markieren.
-- Fenster 8 Wochen: Nach einer Pause von bis zu 8 Wochen lässt sich alles
-  nachholen. Der Job-Ersteller legt für jeden fehlenden Tag im Fenster
-  einen Job an.
+- Job `bekanntmachungen` je Tag im 56-Tage-Fenster (gestern rückwärts,
+  idempotent über den Schlüssel `bek:<Tag>`). Der Worker lädt die Seite
+  einmal je Prozess und hält den Text 30 Minuten vor; die Tages-Jobs
+  filtern nur.
+- Ergebnis: Einträge mit Registerblatt erzeugen Refresh-Jobs (Bündel zu 15),
+  Löschungsankündigungen mit Hinweis `loeschung_angekuendigt`. Einträge
+  außer Löschungsankündigung markieren die strukturierten Inhalte als
+  veraltet (S7).
 
 ### 3.3 Quelle C: Auffrischung bekannter Firmen
 
-- Job „refresh“ je Firma (gebündelt zu 25): exakte Abfrage, Vergleich von
-  Name, Sitz, Status, Historie mit dem Bestand. Änderung → `changedAt`,
-  neuer Verlaufseintrag in `GermanCompanyHistory`, `state` bei geschlossenem
-  Blatt auf `CLOSED`, Firma bleibt in der Tabelle (Verweise aus dem Pool
-  dürfen nie brechen).
-- Wer wird aufgefrischt: alle Firmen im geteilten Pool (haben Profil,
-  Kontakte oder Verarbeitung) alle 90 Tage, Firmen aus Quelle B sofort,
-  alle übrigen 1,8 Mio. nur bei Bedarf (Import, Radar-Treffer).
-- Strukturierte Inhalte: keine flächige Erneuerung. Der bestehende
-  Producer erneuert einen Datensatz, wenn er als veraltet markiert ist und
-  die Firma im aktiven Bestand eines Nutzers liegt oder beim nächsten
-  Zugriff. Damit ist „vollständig inklusive strukturiertem Inhalt“ für
-  alles erreicht, was tatsächlich benutzt wird.
+- Job `refresh` (bis 15 Blätter): exakte Abfrage, Ergebnis geht in den
+  Delta-Upsert. Geschlossenes Blatt → `registerStatus = CLOSED`, `closedAt`;
+  Löschungshinweis auf aktivem Blatt → `LOESCHUNG_ANGEKUENDIGT`. Firmen werden
+  nie gelöscht, Verweise aus dem Pool brechen nicht.
+- Anforderung von außen: `POST /v1/register-jobs/refresh { firmen, grund }`.
+- Geschlossene oder in Löschung befindliche Firmen, die noch nicht im
+  Bestand sind, werden angelegt (Entscheidung 2026-09-14). Der Bestand
+  wächst damit auch um geschlossene Blätter; die App kennzeichnet sie.
 
 ### 3.4 Queue mit Lease (Gateway)
 
-Tabelle `RegisterJob(id, art, schluessel, payload, status, prioritaet,
-leaseUntil, leasedBy, versuche, ergebnisAt, fehler)`. Regeln:
+Tabelle `RegisterJob(id, art, schluessel UNIQUE, payload, status, prioritaet,
+leaseUntil, leasedBy, versuche, ergebnis, ergebnisAt, fehler)` plus
+`RegisterWorker(workerId, tenantId, actorId, art, zuletztAt, jobsErledigt,
+abfragen, gesperrtAt)`.
 
-- **Ersteller** (Gateway-Cron, täglich 02:00): Front-Jobs je (Gericht,
-  Art), Bekanntmachungs-Jobs je fehlendem Tag im 8-Wochen-Fenster,
-  Refresh-Jobs nach Fälligkeit. Idempotent über `schluessel`.
-- **Lease**: `UPDATE … WHERE status='offen' AND (leaseUntil IS NULL OR
-  leaseUntil < now()) ORDER BY prioritaet, id FOR UPDATE SKIP LOCKED LIMIT 1`,
-  Lease 20 Minuten, Rückfall in die Queue bei Ablauf, maximal 5 Versuche,
-  danach `fehlgeschlagen` mit Grund.
-- **Ergebnis** wird als Batch an das Gateway gemeldet; das Gateway schreibt
-  über master-data (`upsert` mit Änderungserkennung, kein Delete/Create
-  mehr) und aktualisiert `RegisterFront`. Doppelte Verarbeitung ist
-  unschädlich, weil alles Upsert über die `companyId` ist.
-- **Ratenbudget je Worker**: 60 Abfragen je Stunde und Rechner (Grenze aus
-  der Nutzungsordnung des Registerportals, kein Messlauf nötig; Entscheidung
-  2026-09-14), mindestens 60 Sekunden Abstand zwischen zwei Jobs, Pause bei Chat, Akku, und wenn der
-  Nutzer den Producer structured-content gerade selbst braucht (dieselbe IP,
-  dasselbe Portal).
+- Ersteller-Cron stündlich, Erzeugung einmal täglich ab 02:00 UTC:
+  Front-Jobs für Fronten mit letzter Prüfung älter als 20 Stunden,
+  Bekanntmachungs-Jobs je fehlendem Tag. Prioritäten: Bekanntmachungen 1,
+  Refresh 2, Front 3 (große Gerichte) und 4.
+- Lease: `UPDATE … FOR UPDATE SKIP LOCKED LIMIT 1`, 20 Minuten, Rückfall in
+  die Queue bei Ablauf, maximal 5 Versuche, danach `fehlgeschlagen` mit
+  Grund. Wiedervorlage: endgültig fehlgeschlagene Jobs werden nach 12 Stunden
+  mit frischem Zähler erneut eingereiht.
+- Ergebnis: idempotent (meldet derselbe Worker ein bereits verbuchtes
+  Ergebnis erneut, kommt die gespeicherte Zusammenfassung). Treffer gehen in
+  1.000er-Blöcken an master-data; Portal-Sperre → Job zurück, Worker eine
+  Stunde markiert.
+- Routen (JWT, Scope `company:read`): `POST /v1/register-jobs/lease`,
+  `POST /v1/register-jobs/{id}/ergebnis`, `POST /v1/register-jobs/{id}/fehler`,
+  `GET /v1/register-jobs/status`, `POST /v1/register-jobs/refresh`. Für den
+  Betreiber-Worker dieselbe Semantik unter `/internal/register-jobs/*` über
+  den HMAC-Kanal (`INTERNAL_HMAC_SECRET`).
 
-### 3.5 Worker
+### 3.5 Worker (Paket `packages/register-delta`, `@ava/register-delta`)
 
-- **Desktop-Worker** (neuer Hintergrunddienst, Opt-in „Mithelfen“ in den
-  Einstellungen mit Chat-Tool, pausierbar, für Organisationen abschaltbar):
-  Lease holen, Job ausführen, Ergebnis melden. Läuft über den bereits
-  vorhandenen Webdriver-Code aus structured-content (Registerportal-
-  Navigation, Cookie-Banner, Erweiterte Suche), als eigener kleiner
-  Producer „register-delta“ oder als Modul im Hauptprozess mit dem
-  Hintergrund-Browser und Download-Sperre.
-- **Betreiber-Fallback-Worker**: derselbe Code als kleiner Dienst auf 1 bis
-  3 Fly-Maschinen mit eigenen IPs. Er nimmt nur Jobs, die älter als 24
-  Stunden sind oder deren Priorität hoch ist (Bekanntmachungen des
-  Vortags). Damit ist die Vollständigkeit unabhängig davon, ob Nutzer
-  mitmachen. Das ist eine bewusste Ausnahme von „Rechenarbeit lokal“:
-  kleine Menge, öffentliche Daten, Betreiber-IP.
+- Reiner Parser ohne Browser (`parser.ts`: Kopfzeile, Status, Historie,
+  Bekanntmachungen), `RegisterPortal` (Selenium, headless, Downloads hart
+  gesperrt, nur handelsregister.de), `Taktgeber` (60 je Stunde, gleitendes
+  Fenster, Mindestabstand mit Streuung), `GatewayClient` (Bearer oder HMAC,
+  eine Wiederholung bei Netzfehler), `fuehreJobAus`, `RegisterWorker`
+  (Schleife, Pause bei Sperre, Browser-Neustart bei Fehler), CLI
+  `register-delta-worker`. 13 Tests (`npm test`), Referenz bleibt das
+  Notebook `master-data/scripts/de/register_delta.ipynb`.
+- Betreiber-Fallback: Fly-App `ava-register-worker` (fra, eine Maschine
+  shared-cpu-1x 1 GB, läuft dauerhaft, kein HTTP, rund 1.400 Abfragen je
+  Tag). Dockerfile mit Alpine-Chromium und chromedriver, Nutzer `worker`.
+- Desktop „Mithelfen“ (S6): Opt-in unter Einstellungen → Automatisierungen
+  → „Stammdaten mitpflegen“, Option „nur im Netzbetrieb“. Kindprozess aus
+  dem vendierten Paket (`resources/p/rd`, ohne Prisma), Token-Datei mit
+  Rechten 600 alle 5 Minuten erneuert, Pausen bei Akku, Abmeldung,
+  Organisationssperre (Feature `stammdaten.mithelfen`), Neustart nach
+  Absturz, Logs unter „register-delta“ im Producer-Log. Chat-Tools
+  `register_delta_status` und `register_delta_config` (Fähigkeitsgruppe
+  „stammdaten“). Statuszeile zeigt aktuellen Job, Abfragen der letzten
+  Stunde und den Stand der geteilten Queue.
 
 ### 3.6 Was passiert, wenn tagelang niemand mitmacht
 
-- Front-Jobs verfallen nicht. Registernummern laufen nicht weg; ein Job, der
-  eine Woche liegen bleibt, holt beim nächsten Lauf einfach mehr Nummern.
-- Bekanntmachungs-Jobs sind bis 8 Wochen nachholbar (Portal-Fenster). Der
-  Ersteller legt fehlende Tage nach; erst nach 8 Wochen ginge etwas
-  verloren, und das fängt der Fallback-Worker vorher ab.
-- Refresh-Jobs haben keine Frist; sie werden schlicht später verarbeitet.
-- Der Fallback-Worker greift nach 24 Stunden Stillstand. Ziel „alle Daten
-  werden abgegriffen“ ist damit garantiert, nur die Latenz schwankt
-  zwischen Stunden (viele Teilnehmer) und wenigen Tagen (keiner).
-- Sichtbar unter Einstellungen → System: Queue-Länge, ältester offener Job,
-  Abfragen der letzten 24 Stunden, Anteil Nutzer/Betreiber.
+Der Fly-Worker läuft immer. Bekanntmachungen sind bis 8 Wochen nachholbar,
+Fronten laufen einfach weiter; nichts geht verloren, es dauert nur länger.
 
-## 4. Datenmodell (master-data)
+## 4. Datenmodell
 
+**master-data**
 ```
-GermanCompany        + firstSeenAt, lastSeenAt, changedAt, closedAt,
-                       source ('unternehmensregister-2023' | 'registerportal' | 'import'),
-                       registerStatus: 'ACTIVE' | 'CLOSED' | 'LOESCHUNG_ANGEKUENDIGT'
+GermanCompany        + registerStatus ('ACTIVE' | 'CLOSED' | 'LOESCHUNG_ANGEKUENDIGT')
                        (die Spalte `state` ist das Bundesland und bleibt),
-                       formerCourt ("früher Amtsgericht X")
-GermanCompanyHistory   unverändert (Verlauf aus der Ergebniszeile)
-RegisterFront          districtCourt, registerType, maxNummer, zusaetze[],
-                       offeneLuecken[], zuletztGeprueftAt
+                       source ('unternehmensregister-2023' | 'registerportal' | 'bekanntmachung' | 'import'),
+                       formerCourt, firstSeenAt, lastSeenAt, changedAt, closedAt
+GermanCompanyHistory   unverändert (Verlauf aus der Ergebniszeile, bei Änderung ersetzt)
+RegisterFront          districtCourt, registerType, maxNummer, zusaetze[], offeneLuecken[], zuletztGeprueftAt
 ```
+Migration `20260914120000_register_delta`. Delta-Upsert `upsertManyDelta`:
+Befund je Zeile (neu, geändert mit Feldliste, unverändert), nie löschen,
+`createdAt` und `firstSeenAt` bleiben, `lastSeenAt` immer, `changedAt` und
+`closedAt` nur bei Änderung. Auch der alte Import-Pfad (`PUT
+/api/germany/v1/companies`, Excel) läuft über diesen Upsert statt
+Delete/Create. Interne HMAC-Routen für das Gateway: `POST
+/internal/companies/register-delta` (bis 1.000 Zeilen), `POST
+/internal/register-front/list`, `PUT /internal/register-front`.
 
-Gateway: `RegisterJob` (3.4) und `StructuredContentStale(companyId, seit,
-grund)` für die Veraltet-Markierung, die der Producer beim nächsten Lauf
-auswertet.
+**Elasticsearch** (Index `german_companies`): Dokument-Id ist die companyId,
+Felder companyId, name, nameNormalized, location, registerStatus. Neue und
+geänderte Firmen werden indexiert, unveränderte nicht. Altbestand am
+2026-09-14 per `update_by_query` auf `registerStatus = ACTIVE` gesetzt
+(1.835.883 Dokumente). Der Sync-Befehl `POST /api/germany/v1/companies/sync`
+schreibt den Status ebenfalls.
 
-`companyId` folgt exakt der Formel des Original-Scrapers
-(`scripts/de/scraper_unternehmensregister.ipynb`): Gerichtsname aus dem
-Bestand (nicht aus der Kopfzeile), `strip().upper()`, Umlaute AE/OE/UE/SS,
-alles außer A-Z0-9 entfernt (auch Leerzeichen: `BADOEYNHAUSEN`,
-`KEMPTENALLGAEU`), dann `_ART_` und Nummer plus Zusatz ohne Leerzeichen,
-Zusatz in Großschreibung mit Umlaut (`LUEBECK_HRB_264MÖ`). Abgleich mit den
-1,84 Mio. Bestands-Ids am 2026-09-14: keine Id mit Leerzeichen, Punkt oder
-„FRÜHER“; 975 Sonderfälle (leere Nummer, Umlaut-Zusatz). Besonderheiten,
-die der Bestand vorgibt:
+**Gateway**: `RegisterJob`, `RegisterWorker`, `StructuredContentStale(companyId,
+seit, grund)`.
 
-- Bremen zeigt heute `HRB 2827 BHV`, der Bestand hat `BREMEN_HRB_2827BREMERHAVEN`
-  (799 Zeilen) → Zusatz-Alias BHV → BREMERHAVEN nur für Bremen.
-- Blätter früherer Gerichte („früher Amtsgericht Emden“) tragen im Bestand
-  die reine Nummer (`AURICH_HRB_100001`). Das bleibt so, solange die Nummer
-  nur dieses eine Blatt hat. Existiert zur selben Nummer auch ein aktuelles
-  Blatt (`Bad Oeynhausen HRB 2400`: aktuell plus Herford plus Minden), war
-  das im Original eine Kollision; nur dann bekommen die früheren Blätter den
-  Anhang `_F<ALTGERICHT>`. Die Entscheidung fällt aus dem Portal-Ergebnis
-  derselben Nummernabfrage, ist also reproduzierbar.
+**API-Antworten**: master-data liefert `registerStatus`, `closedAt`,
+`formerCourt` in Firmendetails, Liste, Suchtreffern und „Meine Firmen“; das
+Gateway reicht sie in `CompanyShape` und `CompanyMatrixRow` durch; der
+Desktop zeigt den Chip `RegisterStatusBadge` („gelöscht“ rot, „in Löschung“
+gelb) in Firmensuche, Meine Firmen, Vorgängen und Firmendetails. Das
+Chat-Tool `company_search` nennt den Status.
+
+### 4.1 companyId-Regel (reproduzierbar, exakt wie der Original-Scraper)
+
+Formel aus `scripts/de/scraper_unternehmensregister.ipynb`, gespiegelt in
+`packages/register-delta/src/ids.ts` und `services/db-gateway/src/lib/register-ids.ts`:
+
+- Gerichtsname in der Schreibweise des Bestands (aus dem Job, nicht aus der
+  Kopfzeile; Bekanntmachungs-Köpfe werden über die Fronten abgebildet),
+  `strip().upper()`, Ä/Ö/Ü/ß → AE/OE/UE/SS, alles außer A-Z0-9 entfernt
+  (auch Leerzeichen: `BADOEYNHAUSEN`, `KEMPTENALLGAEU`, `WEIDENIDOPF`).
+- `_ART_` plus Nummer plus Zusatz ohne Leerzeichen, Zusatz in Großschreibung
+  mit Umlaut (`FLENSBURG_HRA_100FL`, `LUEBECK_HRB_264MÖ`).
+- Bremen zeigt heute `HRB 2827 BHV`, der Bestand hat
+  `BREMEN_HRB_2827BREMERHAVEN` (799 Zeilen) → Alias BHV → BREMERHAVEN nur
+  für Bremen.
+- Blätter früherer Gerichte tragen die reine Nummer (`AURICH_HRB_100001`
+  für „früher Amtsgericht Emden“), wie im Bestand. Nur wenn zur selben
+  Nummer auch ein aktuelles Blatt existiert (Bad Oeynhausen HRB 2400:
+  aktuell plus Herford plus Minden, im Original eine Kollision), bekommen
+  die früheren Blätter `_F<ALTGERICHT>`. Die Entscheidung fällt aus dem
+  Ergebnis derselben Nummernabfrage und ist damit reproduzierbar.
 - `registerNumber` wird wie im Bestand ohne Leerzeichen geschrieben (`4851FL`).
 
-Upsert statt Delete/Create.
+## 5. Veraltet-Markierung strukturierter Inhalte (S7)
 
-**S1 umgesetzt (2026-09-14, master-data):** Migration
-`20260914120000_register_delta`, Repository `upsertManyDelta` (Befund je
-Zeile: neu, geändert mit Feldern, unverändert; Elastic-Index mit
-`_id = companyId`), auch der alte Import-Pfad `upsertMany` löscht nicht
-mehr. Interne HMAC-Routen für das Gateway:
-`POST /internal/companies/register-delta` (bis 1.000 Zeilen, Quelle,
-`gesehenAt`), `POST /internal/register-front/list`, `PUT /internal/register-front`.
-
-**S2 umgesetzt (2026-09-14):** `master-data/scripts/register-delta/seed-front.ts`
-(`npm run register-delta:seed-front -- --dry`), SQL-Aggregat über den Bestand,
-Ausreißerfilter „höchste Nummer bis 10 % über dem 0,99-Quantil“. Seed in Prod
-geschrieben: 234 Fronten, 8 Gerichte mit Zusätzen (Schleswig-Holstein).
-
-**S3 umgesetzt (2026-09-14, Gateway):** Migration `20260914_register_jobs`
-(`RegisterJob`, `RegisterWorker`), `lib/register-jobs.ts` (Lease per
-`FOR UPDATE SKIP LOCKED`, 20 Minuten, 5 Versuche; Ergebnis → master-data
-Delta-Upsert in 1.000er-Blöcken, Front-Fortschreibung, Folge-Front-Job bei
-Treffern; Bekanntmachungen → Refresh-Jobs zu 25 mit Hinweis
-`loeschung_angekuendigt`; Portal-Sperre → Job zurück, Worker markiert),
-Ersteller-Cron täglich ab 02:00 UTC (Front-Jobs für Fronten mit letzter
-Prüfung älter als 20 h, Bekanntmachungs-Jobs je Tag im 56-Tage-Fenster,
-Priorität: Bekanntmachungen 1, Refresh 2, Front 3/4). Routen
-`POST /v1/register-jobs/lease`, `POST /v1/register-jobs/{id}/ergebnis`,
-`POST /v1/register-jobs/{id}/fehler`, `GET /v1/register-jobs/status`,
-`POST /v1/register-jobs/refresh`. Budget-Hinweis an den Worker: 60 Abfragen
-je Stunde. Front-Jobs fragen nur die reine Zahl ab, `maxFehltreffer` 10.
-
-**S4 umgesetzt (2026-09-14):** Paket `packages/register-delta`
-(`@ava/register-delta`, CommonJS, einzige Abhängigkeit selenium-webdriver).
-Reiner Parser ohne Browser (`parser.ts`: Kopfzeile, Status, Historie,
-Bekanntmachungen; 11 Tests mit `node --test`), `RegisterPortal` (Selenium,
-headless, `download_restrictions: 3`, DOM-Extraktion per In-Page-Skript,
-Sperr- und Störungserkennung), `Taktgeber` (60/h gleitendes Fenster mit
-Mindestabstand und Streuung), `GatewayClient`, `fuehreJobAus` (front:
-Lücken einmal nachprüfen, dann hochzählen, max. 15 Abfragen je Job;
-bekanntmachungen: ein Seitenaufruf, Filter auf den Tag; refresh:
-Zusatzfilter, Löschungshinweis → `LOESCHUNG_ANGEKUENDIGT`), `RegisterWorker`
-(Schleife mit Pause bei Sperre, Browser-Neustart bei Fehler) und CLI
-`register-delta-worker` (Bearer statisch oder Keycloak client_credentials).
-Live-Rauchtest: Bad Oeynhausen HRB 2400 → 3 Blätter (Herford, Minden als
-frühere Gerichte), HRB 9637 mit 4 Historie-Einträgen, Bekanntmachungen
-14.157 Einträge über 57 Tage, 2 ohne Registerblatt.
-
-**Lokaler Ende-zu-Ende-Lauf (2026-09-14, Mac des Betreibers, Refresh-Token der
-Desktop-Sitzung):** Refresh-Job über `POST /v1/register-jobs/refresh` → 2
-Abfragen, 4 Treffer, 2 neu (Altgerichts-Blätter), 1 geändert (HRB 9637 mit
-4 Historie-Einträgen), 1 unverändert. Bekanntmachungs-Job 2026-09-13 → 5
-Einträge, 1 Refresh-Job. Befund: GET zwischen Gateway und master-data ist
-nicht HMAC-fähig (Signatur über den Body), Front-Liste deshalb als POST.
-
-**S5 vorbereitet:** Gateway-Router `/internal/register-jobs/*` (HMAC, gleiche
-Semantik wie `/v1`), `GatewayClient` mit `hmacSecret`, CLI mit
-`INTERNAL_HMAC_SECRET`, `packages/register-delta/Dockerfile` (Alpine,
-Chromium + chromedriver, Nutzer `worker`) und `fly.toml` (App
-`ava-register-worker`, Region fra, kein HTTP). Secret
-`INTERNAL_HMAC_SECRET` muss auf der Worker-App denselben Wert wie Gateway
-und master-data haben.
-
-**S5 umgesetzt (2026-09-14):** Fly-App `ava-register-worker` (fra, 1 Maschine
-shared-cpu-1x 1 GB, läuft dauerhaft, kein HTTP), Secret vom Gateway
-übertragen, erster Job wenige Sekunden nach dem Start. Der Worker fragt
-alle 5 Minuten die Queue ab, wenn sie leer ist. Kostenrahmen etwa 6 bis 7
-US-Dollar je Monat und Maschine. Weitere Regionen (= weitere IPs) über
-`fly scale count` je Region, sobald das Aufholen Tempo braucht. Befund auf
-Fly: ohne Systemlocale liefert das Portal Englisch, deshalb erzwingt der
-Treiber `intl.accept_languages de-DE` und klickt sonst den Umschalter DE.
-Erste Bekanntmachungs-Jobs vom Fly-Worker: 321 bis 390 Einträge je Werktag,
-21 bis 26 Refresh-Jobs daraus.
-
-**S6 umgesetzt (2026-09-14, Desktop v0.1.652):** „Stammdaten mitpflegen“
-als Opt-in unter Einstellungen → Automatisierungen (`MithelfenSection`),
-Kindprozess aus dem vendierten Paket `resources/p/rd` (fetch-producers.mjs,
-kein Prisma), `MithelfenSupervisor` (Token-Datei 0600 alle 5 Minuten neu,
-Pause bei Akku wenn gewünscht, bei Abmeldung, bei Organisations-Sperre,
-Neustart nach Absturz, Logs unter „register-delta“ im Producer-Log),
-Org-Feature `stammdaten.mithelfen`, Chat-Tools `register_delta_status` und
-`register_delta_config` (Fähigkeitsgruppe „stammdaten“), Statuszeile mit
-Queue-Stand. Lokaler Front-Lauf: Aurich HRA 15 von 15 Nummern neu, Aurich
-HRB 6 neu; die Antwort auf eine Ergebnismeldung nach 15 Minuten Leerlauf
-ging verloren (Proxy schließt die Verbindung), deshalb Client-Wiederholung
-und idempotente Ergebnisroute (gleicher Worker, bereits erledigt).
-
-**S7 umgesetzt (2026-09-14, Gateway):** Tabelle `StructuredContentStale`
-(companyId, seit, grund). Gesetzt, wenn der Delta-Upsert ein Registerblatt
+`StructuredContentStale` wird gesetzt, wenn der Delta-Upsert ein Registerblatt
 als geändert meldet (Name, Sitz, Status, Historie) oder eine Bekanntmachung
-mit Registerblatt außer Löschungsankündigung eingeht (Umwandlung, neue
-Dokumente, Sonstiges). `GET /v1/companies/{id}/state` meldet die Stufe
-structured-content dann mit `updatedAt = null` plus `veraltetSeit` und
-`veraltetGrund`; der bestehende F3-Vorab-Check des Producers läuft damit
-beim nächsten Zugriff neu, ohne Producer-Änderung. Der nächste
-structured-content-Lauf löscht die Markierung (persist-bus). Zahl der
-veralteten Firmen steht in `GET /v1/register-jobs/status` (`veraltet`) und
-damit im Chat-Tool `register_delta_status`. Keine flächige Erneuerung:
-erneuert wird, was benutzt wird (Import, Datenrefresh-Kadenz, Zugriff).
+mit Registerblatt außer Löschungsankündigung eingeht. `GET
+/v1/companies/{id}/state` meldet die Stufe structured-content dann mit
+`updatedAt = null` plus `veraltetSeit` und `veraltetGrund`; der bestehende
+Vorab-Check des Producers läuft beim nächsten Zugriff neu, ohne
+Producer-Änderung. Der nächste structured-content-Lauf löscht die Markierung
+(persist-bus). Keine flächige Erneuerung: erneuert wird, was benutzt wird
+(Import, Datenrefresh-Kadenz, Zugriff). Anzahl in `GET /v1/register-jobs/status`
+(`veraltet`).
 
-## 5. Einmaliges Aufholen 2023 → heute
+## 6. Betrieb
 
-Was du selbst laufen lassen kannst (`master-data/scripts/register-delta`,
-TypeScript, gleicher Code wie der Worker):
+| Was | Wo / Wie |
+|---|---|
+| Seed der Fronten | `master-data`: `npm run register-delta:seed-front -- --dry` (SQL-Aggregat, hebt bestehende Fronten nur an); gegen Prod über den MPG-Proxy mit `?sslmode=disable` |
+| Queue-Stand | `GET /v1/register-jobs/status` (Jobs je Art und Status, Worker aktiv, Abfragen heute, veraltet) oder Chat-Tool `register_delta_status` |
+| Fly-Worker | `fly logs -a ava-register-worker`; Secret `INTERNAL_HMAC_SECRET` = Wert von Gateway und master-data; weitere IPs per `fly scale count` je Region; Deploy aus `packages/register-delta` mit `fly deploy --remote-only --ha=false` |
+| Lokaler Worker (Test) | `packages/register-delta`: `GATEWAY_URL=… WORKER_ID=… WORKER_REFRESH_TOKEN_FILE=… KEYCLOAK_TOKEN_URL=… KEYCLOAK_CLIENT_ID=ava-desktop REGISTER_DELTA_EINMAL=1 REGISTER_DELTA_ARTEN=refresh node dist/cli.js`; PATH ohne alte chromedriver-Kopien |
+| Desktop-Vendoring | `services/desktop`: `node scripts/fetch-producers.mjs --name=register-delta` (bei root-Dateien im npm-Cache `npm_config_cache=/tmp/npm-cache-ava`) |
+| Gateway-Cron abschalten | `REGISTER_JOBS_DISABLED=1` |
+| Kosten | Fly-Worker rund 6 bis 7 US-Dollar je Monat und Maschine |
 
-1. **Seed:** `RegisterFront` aus der Datenbank berechnen, Zusätze je Gericht
-   ableiten, Front-Jobs erzeugen. Dauert Minuten, keine Portalabfragen.
-2. **Lokaler Worker im Betreibermodus:** nimmt Jobs mit deiner IP. Bei 60
-   Anfragen je Stunde schafft ein Rechner rund 1.400 am Tag. Für das
-   Aufholen reicht das nicht; für die Bekanntmachungen des Fensters (etwa
-   60 Seitenabrufe) und für Stichproben schon.
-3. **Aufholen:** entweder die 1 bis 3 Fallback-Maschinen auf Fly (bei drei
-   IPs rund 4.000 Abfragen je Tag, für 600.000 Nummern etwa fünf Monate)
-   oder verteilt über die Nutzer, sobald der Desktop-Worker ausgerollt ist
-   (bei 20 aktiven Rechnern rund zwei bis drei Wochen). Realistisch beides:
-   Fallback sofort, Nutzer beschleunigen.
-4. Priorität beim Aufholen: Gerichte nach Nutzer-Regionen (ICP-Orte, Radar-
-   Gebiete) zuerst, damit der Nutzen früh sichtbar wird.
+Ergebnisse vom 2026-09-14: Refresh Bad Oeynhausen (2 neue Altgerichts-
+Blätter, 1 Umfirmierung mit 4 Historie-Einträgen), Front Aurich HRA 15 von 15
+Nummern neu, Aurich HRB 6 neu, alle 56 Bekanntmachungs-Tage abgearbeitet
+(je Werktag 320 bis 390 Einträge, 21 bis 26 Refresh-Jobs), 116 Firmen als
+veraltet markiert. Stand der Queue am Abend: 234 Front-Jobs offen, rund 200
+Refresh-Jobs offen.
 
-## 6. Rechtliches und Höflichkeit
+## 7. Umsetzung (alle Schritte erledigt am 2026-09-14)
 
-- Nutzungsbedingungen des Registerportals zu automatisierten Abfragen
-  prüfen und den Takt daran ausrichten. Der Producer structured-content
-  macht heute schon exakte Abfragen im Auftrag des Nutzers; die Front-
-  Abfragen sind dieselbe Art Anfrage, nur ohne konkreten Anlass.
-- Nutzer-IPs: Opt-in mit klarer Erklärung, was der Rechner abfragt, und
-  eigenes Budget, damit der Nutzer selbst nie in die Portalgrenze läuft.
-
-## 7. Umsetzung in Schritten
-
-| Schritt | Inhalt | Wo |
+| Schritt | Inhalt | Stand |
 |---|---|---|
-| S1 | Schema: Aktualitätsspalten, `RegisterFront`, Upsert mit Änderungserkennung | master-data |
-| S2 | Seed-Skript: Front aus Bestand, Zusätze, Jobs | master-data/scripts/register-delta |
-| S3 | `RegisterJob`-Queue, Lease-Route, Ergebnis-Route, Ersteller-Cron | Gateway |
-| S4 | Worker-Kern: Registerportal-Abfrage (Front, Bekanntmachungen, Refresh) als Bibliothek, mit den Selektoren aus structured-content | Paket `register-delta` |
-| S5 | Betreiber-Fallback-Worker auf Fly, Metriken | Gateway/Fly |
-| S6 | Desktop-Worker „Mithelfen“, Einstellung, Chat-Tool, Org-Schalter, Systemseite | Desktop |
-| S7 | Veraltet-Markierung strukturierter Inhalte und Erneuerung im Producer | Gateway, structured-content |
+| S1 | Schema, Delta-Upsert, interne Routen | master-data, deployt |
+| S2 | Seed-Skript, 234 Fronten in Prod | master-data |
+| S3 | Queue, Lease, Ergebnis, Ersteller-Cron, Wiedervorlage | Gateway, deployt |
+| S4 | Worker-Kern als Paket | `packages/register-delta` |
+| S5 | Betreiber-Worker auf Fly | `ava-register-worker` v6 |
+| S6 | Desktop „Mithelfen“, Einstellung, Chat-Tools, Org-Schalter | Desktop v0.1.652 (ID-Regel korrigiert in v0.1.653) |
+| S7 | Veraltet-Markierung strukturierter Inhalte | Gateway, deployt |
+| Chip | Registerstatus in API, Index und App | master-data, Gateway, Desktop v0.1.654 |
 
-S1 bis S5 bringen die Daten unabhängig von Nutzern auf Stand, S6 skaliert.
+## 8. Entscheidungen
 
-Stand 2026-09-14: S1 bis S7 umgesetzt (Desktop v0.1.652, Gateway, master-data, Fly-Worker).
+1. Betreiber-Fallback-Worker auf Fly: ja (Ausnahme von der Lokalitätsregel
+   für Vollständigkeit).
+2. Ratenbudget: 60 Abfragen je Stunde und Worker nach Nutzungsordnung, kein
+   Messlauf.
+3. Desktop-Worker als Kindprozess des vendierten Pakets, nicht im
+   Hauptprozess (Selenium-Muster der Producer).
+4. Geschlossene und in Löschung befindliche Firmen werden angelegt; Firmen
+   werden nie gelöscht, die App kennzeichnet sie.
+5. companyId exakt nach der Original-Formel (Abschnitt 4.1); der Anhang
+   `_F<ALTGERICHT>` nur bei Kollision mit einem aktuellen Blatt.
 
-## 8. Offene Entscheidungen
+## 9. Offen
 
-1. Betreiber-Fallback-Worker auf Fly: entschieden, ja.
-2. Anzahl Fly-IPs fürs Aufholen (1 bis 3) und ob das Aufholen auf Regionen
-   priorisiert wird.
-3. Ratenbudget je Nutzer-Rechner: entschieden, 60 je Stunde nach
-   Nutzungsordnung, kein Messlauf.
-4. Ob der Desktop-Worker ein eigener Producer wird (eigener Chrome, wie
-   structured-content) oder im Hauptprozess mit dem Hintergrund-Browser
-   läuft (leichter, aber Registerportal ist JSF-lastig; Selenium-Code
-   existiert bereits).
+- Aufholen beobachten: bei einer Fly-Maschine rund 1.400 Abfragen je Tag;
+  zweite Region oder Nutzer mit „Mithelfen“ beschleunigen.
+- Selbstabschaltung des Fly-Workers bei leerer Queue, sobald das Aufholen
+  durch ist (dann reicht ein Start je Nacht).
+- Zusätze weiterer Gerichte prüfen, falls das Portal Kürzel anders anzeigt
+  als der Bestand (bisher nur Bremen bekannt).
