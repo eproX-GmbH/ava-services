@@ -75,9 +75,10 @@ Drei Quellen, eine Queue, ein Datenmodell mit Aktualitätsspalten.
   zusaetze[], zuletztGeprueftAt, offeneLuecken[])` in master-data, initial
   aus `GermanCompany` berechnet (höchste rein numerische Nummer je Gericht
   und Art, Menge der gesehenen Zusätze je Gericht).
-- Job „front“ je (Gericht, Art): fragt `maxNummer+1 … +N` ab, je Nummer alle
-  Zusatzvarianten des Gerichts plus die reine Zahl, bricht nach K=25
-  Fehltreffern in Folge ab und merkt sich die Lücken für einen späteren
+- Job „front“ je (Gericht, Art): fragt `maxNummer+1 … +N` ab, nur die reine
+  Zahl je Nummer (mit „auch gelöschte Registerblätter“ liefert das Portal
+  alle Zusatzvarianten und alle Blätter früherer Gerichte mit, Notebook
+  2026-09-14), bricht nach K=25 Fehltreffern in Folge ab und merkt sich die Lücken für einen späteren
   zweiten Versuch (Nummern werden gelegentlich verzögert sichtbar).
 - Ergebnis je Treffer: neue Firma mit Name, Sitz, Status, Historie,
   `source='registerportal'`, `firstSeenAt`, `lastSeenAt`.
@@ -126,8 +127,9 @@ leaseUntil, leasedBy, versuche, ergebnisAt, fehler)`. Regeln:
   über master-data (`upsert` mit Änderungserkennung, kein Delete/Create
   mehr) und aktualisiert `RegisterFront`. Doppelte Verarbeitung ist
   unschädlich, weil alles Upsert über die `companyId` ist.
-- **Ratenbudget je Worker**: 50 Abfragen je Stunde und Rechner, mindestens
-  60 Sekunden Abstand zwischen zwei Jobs, Pause bei Chat, Akku, und wenn der
+- **Ratenbudget je Worker**: 60 Abfragen je Stunde und Rechner (Grenze aus
+  der Nutzungsordnung des Registerportals, kein Messlauf nötig; Entscheidung
+  2026-09-14), mindestens 60 Sekunden Abstand zwischen zwei Jobs, Pause bei Chat, Akku, und wenn der
   Nutzer den Producer structured-content gerade selbst braucht (dieselbe IP,
   dasselbe Portal).
 
@@ -165,8 +167,10 @@ leaseUntil, leasedBy, versuche, ergebnisAt, fehler)`. Regeln:
 
 ```
 GermanCompany        + firstSeenAt, lastSeenAt, changedAt, closedAt,
-                       source ('unternehmensregister-2023' | 'registerportal'),
-                       state: 'ACTIVE' | 'CLOSED' | 'LOESCHUNG_ANGEKUENDIGT'
+                       source ('unternehmensregister-2023' | 'registerportal' | 'import'),
+                       registerStatus: 'ACTIVE' | 'CLOSED' | 'LOESCHUNG_ANGEKUENDIGT'
+                       (die Spalte `state` ist das Bundesland und bleibt),
+                       formerCourt ("früher Amtsgericht X")
 GermanCompanyHistory   unverändert (Verlauf aus der Ergebniszeile)
 RegisterFront          districtCourt, registerType, maxNummer, zusaetze[],
                        offeneLuecken[], zuletztGeprueftAt
@@ -177,7 +181,18 @@ grund)` für die Veraltet-Markierung, die der Producer beim nächsten Lauf
 auswertet.
 
 `companyId` bleibt `AMTSGERICHT_ART_NUMMER` inklusive Zusatz ohne
-Leerzeichen, exakt wie in den Notebooks. Upsert statt Delete/Create.
+Leerzeichen, exakt wie im Bestand (Gerichtsname ohne Leer- und
+Sonderzeichen: `BADOEYNHAUSEN`, `KEMPTENALLGAEU`). Blätter früherer
+Gerichte mit derselben Nummer bekommen den Anhang `_F<ALTGERICHT>`
+(`BADOEYNHAUSEN_HRB_2400_FHERFORD`). Upsert statt Delete/Create.
+
+**S1 umgesetzt (2026-09-14, master-data):** Migration
+`20260914120000_register_delta`, Repository `upsertManyDelta` (Befund je
+Zeile: neu, geändert mit Feldern, unverändert; Elastic-Index mit
+`_id = companyId`), auch der alte Import-Pfad `upsertMany` löscht nicht
+mehr. Interne HMAC-Routen für das Gateway:
+`POST /internal/companies/register-delta` (bis 1.000 Zeilen, Quelle,
+`gesehenAt`), `GET/PUT /internal/register-front`.
 
 ## 5. Einmaliges Aufholen 2023 → heute
 
@@ -223,12 +238,11 @@ S1 bis S5 bringen die Daten unabhängig von Nutzern auf Stand, S6 skaliert.
 
 ## 8. Offene Entscheidungen
 
-1. Betreiber-Fallback-Worker auf Fly ja oder nein (Ausnahme von der
-   Lokalitätsregel, dafür Garantie der Vollständigkeit).
+1. Betreiber-Fallback-Worker auf Fly: entschieden, ja.
 2. Anzahl Fly-IPs fürs Aufholen (1 bis 3) und ob das Aufholen auf Regionen
    priorisiert wird.
-3. Ratenbudget je Nutzer-Rechner (Vorschlag 50 je Stunde) nach Messung der
-   tatsächlichen Portalgrenze.
+3. Ratenbudget je Nutzer-Rechner: entschieden, 60 je Stunde nach
+   Nutzungsordnung, kein Messlauf.
 4. Ob der Desktop-Worker ein eigener Producer wird (eigener Chrome, wie
    structured-content) oder im Hauptprozess mit dem Hintergrund-Browser
    läuft (leichter, aber Registerportal ist JSF-lastig; Selenium-Code
