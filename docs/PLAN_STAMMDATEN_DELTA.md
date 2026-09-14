@@ -244,6 +244,13 @@ Chromium + chromedriver, Nutzer `worker`) und `fly.toml` (App
 `INTERNAL_HMAC_SECRET` muss auf der Worker-App denselben Wert wie Gateway
 und master-data haben.
 
+**S5 umgesetzt (2026-09-14):** Fly-App `ava-register-worker` (fra, 1 Maschine
+shared-cpu-1x 1 GB, läuft dauerhaft, kein HTTP), Secret vom Gateway
+übertragen, erster Job wenige Sekunden nach dem Start. Der Worker fragt
+alle 5 Minuten die Queue ab, wenn sie leer ist. Kostenrahmen etwa 6 bis 7
+US-Dollar je Monat und Maschine. Weitere Regionen (= weitere IPs) über
+`fly scale count` je Region, sobald das Aufholen Tempo braucht.
+
 ## 5. Einmaliges Aufholen 2023 → heute
 
 Was du selbst laufen lassen kannst (`master-data/scripts/register-delta`,
