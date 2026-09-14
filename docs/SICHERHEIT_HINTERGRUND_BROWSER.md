@@ -41,6 +41,15 @@ Stand 2026-09-12 (Desktop v0.1.639). Anlass: Rückmeldung eines Windows-Testers
   Browsing an. Der Handelsregister-Producer braucht Dateidownloads (SI-XML)
   und besucht ausschließlich handelsregister.de; er bleibt die einzige
   Stelle mit Downloads, in ein festes Temp-Verzeichnis.
+- **Register-Delta-Worker** (seit v0.1.652, Paket `packages/register-delta`,
+  Desktop-Einstellung „Stammdaten mitpflegen“ als Opt-in und Betreiber-App
+  `ava-register-worker` auf Fly): eigener Selenium-Chrome, headless,
+  `download_restrictions=3`, Safe Browsing an, besucht ausschließlich
+  handelsregister.de (Erweiterte Suche und Registerbekanntmachungen), lädt
+  nichts herunter und öffnet keinen Port. Kindprozess des Desktops mit
+  Bearer-Token aus einer Datei mit Rechten 600 im userData-Verzeichnis;
+  höchstens 60 Abfragen je Stunde (Nutzungsordnung des Registerportals).
+  Details: `docs/PLAN_STAMMDATEN_DELTA.md`.
 - **Allowlist** (`DOWNLOAD_ALLOW_HOSTS`): `handelsregister.de`,
   `unternehmensregister.de` inkl. Subdomains. Erweiterung nur mit
   Begründung hier im Dokument.
