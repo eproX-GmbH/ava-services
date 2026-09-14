@@ -200,7 +200,76 @@ Tests: Nutzerstand aus Fixtures, Katalog-Prädikate je Stufe, Auswahl
 (Erledigtes fehlt, Gesperrtes fehlt, Platzhalter gefüllt), Urteil-Parser
 mit leerer und ungültiger Antwort.
 
-## 7. Offene Entscheidungen
+## 7. Präzisierung nach Rückmeldung (2026-09-14)
+
+Der Operator hat drei Punkte geklärt; sie ersetzen die Abschnitte 3.2, 3.3,
+3.5 und 3.6, soweit sie widersprechen.
+
+**Chips sind Anstöße, keine vorberechneten Tool-Ketten.** Ein Chip ist ein
+kurzer Auftrag in Nutzersprache („HubSpot verbinden“, „Firmen-Radar für
+meine Region starten“, „ICP- und Marktanalyse zu Müller GmbH“). Klick sendet
+diesen Auftrag, angereichert um einen versteckten Kontextsatz (Stufe, Grund,
+relevante IDs wie discoveryId), als Nutzer-Nachricht in den Chat. Von da an
+arbeitet AVA wie bei jeder Anfrage: sie lädt und ruft alle Tools, die nötig
+sind, in der Reihenfolge, die sich ergibt. Es gibt keinen Katalog mit
+Tool-Zuordnung mehr.
+
+**AVA muss wissen, was möglich ist.** Damit kein Chip „Mit Facebook
+verbinden“ entsteht, bekommt das erzeugende Modell zwei Dinge:
+1. die **Fähigkeitenliste**: alle geladenen Tools als `kategorie: summary`
+   (aus der Registry, gefiltert um gesperrte Module und Anbieter, ohne
+   Verwaltungskategorien wie Abrechnung, Konto, Schlüssel), plus die
+   bekannten Integrationen mit Zustand;
+2. den **Nutzerstand** (3.1), inklusive „schon erledigt“. Die Anweisung
+   lautet ausdrücklich: „Schlage nichts vor, was bereits erledigt ist oder
+   keinen Nutzen hätte (HubSpot verbinden, wenn HubSpot verbunden ist).
+   Schlage nur vor, was mit den gelisteten Fähigkeiten tatsächlich geht.“
+   Kein Ausblenden-Speicher, kein „nie wieder“; der Stand ist die
+   Wahrheit.
+
+Nachgelagert prüft der Code jeden Chip gegen die Fähigkeitenliste: Nennt
+der Chip eine Integration oder Funktion, die nicht existiert oder gesperrt
+ist, fällt er weg. Das ist die harte Schranke gegen Erfindungen; das Modell
+ist die weiche.
+
+**Startseite ebenfalls KI-erzeugt, mit Cache.** Beim Öffnen der leeren
+Chat-Seite werden vier Chips erzeugt (Stufenlogik im Prompt: erst
+Anschluss, dann Aufbau, dann Routine, dazu ein Ausblick auf die nächste
+Stufe, Platzhalter wie der Top-Radar-Treffer aus dem Nutzerstand). Das
+Ergebnis wird gecacht und nur neu erzeugt, wenn sich der Nutzerstand
+ändert oder der Tag wechselt. Ist kein Modell bereit, zeigt die Seite
+eine kleine feste Liste (Modell einrichten, ICP erstellen, Radar starten),
+damit die Seite nie leer ist.
+
+**Im Gespräch** bleibt 3.4: nach jedem Turn ein kurzes Urteil, Standard
+leer. Auch hier erzeugt das Modell den Chip-Text frei, gestützt auf
+Fähigkeitenliste und Nutzerstand, und der Code prüft nach.
+
+**Modell:** Startseite und Gesprächs-Urteil laufen über den
+Hintergrundkanal mit dem günstigsten bereiten Modell (lokal bevorzugt),
+nie über das Chat-Modell des Nutzers. Zeitlimit 8 s, danach Cache bzw.
+kein Chip.
+
+**Organisation:** neuer Schalter in den Organisations-Vorgaben
+„Vorschläge im Chat“ (an/aus, Standard an). Aus heißt: keine Erzeugung,
+keine Chips, keine Kosten; die Startseite zeigt dann nur die feste Liste
+ohne Modellaufruf. Verbrauch über den Organisationsschlüssel wird in der
+Verbrauchsübersicht als „Vorschläge“ ausgewiesen.
+
+**Zusammengesetzte Aufträge wie „ICP- und Marktanalyse“** brauchen keinen
+eigenen Baustein: Der Chip löst den Auftrag aus, AVA plant die Kette aus
+Profil, Register, Publikationen, ICP-Urteil und Wettbewerb selbst, wie sie
+es heute bei einer entsprechenden Frage im Chat auch täte. Ob die Qualität
+solcher langen Ketten reicht, zeigt der Test; falls nicht, wird daraus
+später ein Workflow-Template.
+
+Umsetzungsschritte (ersetzt Tabelle in 6): V0 Welcome-Text; V1 Nutzerstand
++ Fähigkeitenliste; V2 Chip-Erzeugung Startseite mit Cache, Nachprüfung
+und fester Rückfalliste; V3 Renderer-Chips + Klick sendet Auftrag mit
+Kontextsatz; V4 Gesprächs-Urteil nach `done`; V5 Org-Schalter, Einstellung,
+Chat-Tools, Verbrauchs-Ausweis.
+
+## 8. Ursprünglich offene Entscheidungen (historisch)
 
 1. Modell für das Gesprächs-Urteil: Hintergrund-Standard des Nutzers oder
    bevorzugt lokal (Ollama), um Kosten je Turn bei null zu halten? Vorschlag:
