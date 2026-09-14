@@ -776,3 +776,10 @@ model RegisterWorker {
   abfragen     Int       @default(0)
   gesperrtAt   DateTime?
 }
+
+// Register-Delta S7 — strukturierte Inhalte veraltet (Migration 20260914_structured_content_stale).
+model StructuredContentStale {
+  companyId String   @id
+  seit      DateTime @default(now())
+  grund     String
+}

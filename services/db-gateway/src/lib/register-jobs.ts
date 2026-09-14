@@ -149,8 +149,8 @@ function trefferZuDelta(t: Treffer) {
 
 type DeltaAntwort = { neu: number; geaendert: number; unveraendert: number; befunde: Array<{ companyId: string; befund: string; felder?: string[] }> };
 
-async function schreibeTreffer(treffer: Treffer[], source: string): Promise<{ neu: number; geaendert: number; unveraendert: number }> {
-  const summe = { neu: 0, geaendert: 0, unveraendert: 0 };
+async function schreibeTreffer(treffer: Treffer[], source: string): Promise<{ neu: number; geaendert: number; unveraendert: number; geaenderteIds: string[] }> {
+  const summe = { neu: 0, geaendert: 0, unveraendert: 0, geaenderteIds: [] as string[] };
   const gesehenAt = new Date().toISOString();
   for (let i = 0; i < treffer.length; i += 1000) {
     const r = await masterData<DeltaAntwort>("POST", "/internal/companies/register-delta", {
@@ -161,8 +161,22 @@ async function schreibeTreffer(treffer: Treffer[], source: string): Promise<{ ne
     summe.neu += r.neu;
     summe.geaendert += r.geaendert;
     summe.unveraendert += r.unveraendert;
+    for (const b of r.befunde ?? []) if (b.befund === "geaendert") summe.geaenderteIds.push(b.companyId);
   }
   return summe;
+}
+
+/** S7 — strukturierte Inhalte als veraltet markieren (Producer erneuert beim naechsten Zugriff). */
+export async function markiereVeraltet(q: Q, companyIds: string[], grund: string): Promise<number> {
+  const ids = [...new Set(companyIds)].filter(Boolean);
+  if (ids.length === 0) return 0;
+  const r = await q.query(
+    `INSERT INTO "StructuredContentStale" ("companyId", "seit", "grund")
+       SELECT unnest($1::text[]), NOW(), $2
+     ON CONFLICT ("companyId") DO UPDATE SET "seit" = NOW(), "grund" = EXCLUDED."grund"`,
+    [ids, grund.slice(0, 120)],
+  );
+  return r.rowCount ?? 0;
 }
 
 // ---- Erzeugung ------------------------------------------------------------
@@ -314,7 +328,10 @@ export async function verarbeiteErgebnis(pool: pg.Pool, jobId: string, ergebnis:
   }
 
   if (ergebnis.treffer.length > 0) {
-    Object.assign(zusammenfassung, await schreibeTreffer(ergebnis.treffer, job.art === "bekanntmachungen" ? "bekanntmachung" : "registerportal"));
+    const { geaenderteIds, ...summe } = await schreibeTreffer(ergebnis.treffer, job.art === "bekanntmachungen" ? "bekanntmachung" : "registerportal");
+    Object.assign(zusammenfassung, summe);
+    // S7: geaendertes Registerblatt → strukturierte Inhalte veraltet.
+    if (geaenderteIds.length > 0) zusammenfassung.veraltet = await markiereVeraltet(pool, geaenderteIds, `register-${job.art}`);
   }
 
   if (job.art === "front" && ergebnis.front) {
@@ -360,6 +377,13 @@ export async function verarbeiteErgebnis(pool: pg.Pool, jobId: string, ergebnis:
     );
     zusammenfassung.bekanntmachungen = ergebnis.bekanntmachungen.length;
     zusammenfassung.refreshJobs = n;
+    // S7: Umwandlung, neue Dokumente, Sonstiges → strukturierte Inhalte veraltet (Loeschung kommt ueber den Refresh).
+    const dokumente = mitBlatt.filter((b) => !/Löschung|Loeschung/.test(b.kategorie));
+    zusammenfassung.veraltet = await markiereVeraltet(
+      pool,
+      dokumente.map((b) => companyIdAus(b.gericht as string, b.art as string, b.nummer as number, b.zusatz, b.frueher)),
+      `bekanntmachung-${p.tag}`,
+    );
   }
 
   await pool.query(
@@ -394,6 +418,8 @@ export async function registriereWorker(q: Q, workerId: string, tenantId: string
 
 export type Statistik = {
   jobs: Record<JobArt, Record<string, number>>;
+  /** S7 — Firmen mit veralteten strukturierten Inhalten. */
+  veraltet: number;
   workerAktiv: number;
   abfragenHeute: number;
   erledigtHeute: number;
@@ -411,8 +437,10 @@ export async function statistik(pool: pg.Pool): Promise<Statistik> {
             (SELECT min("createdAt") FROM "RegisterJob" WHERE "status" = 'offen') AS aeltester
        FROM "RegisterJob" WHERE "ergebnisAt" > date_trunc('day', NOW())`,
   );
+  const v = await pool.query<{ n: string }>(`SELECT count(*)::text AS n FROM "StructuredContentStale"`);
   return {
     jobs,
+    veraltet: Number(v.rows[0]?.n ?? 0),
     workerAktiv: Number(w.rows[0]?.n ?? 0),
     abfragenHeute: Number(h.rows[0]?.abfragen ?? 0),
     erledigtHeute: Number(h.rows[0]?.erledigt ?? 0),

@@ -404,6 +404,12 @@ async function recordFreshness(
        "updatedAt" = NOW()`,
     [companyId, stage, llmTier, llmModel, runId],
   );
+  // Register-Delta S7 — neuer structured-content-Lauf hebt die Veraltet-Markierung auf.
+  if (stage === "structured-content") {
+    await getGatewayPool()
+      .query(`DELETE FROM "StructuredContentStale" WHERE "companyId" = $1`, [companyId])
+      .catch(() => undefined);
+  }
 }
 
 /**

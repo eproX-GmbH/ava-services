@@ -30,6 +30,11 @@ const StageStateShape = z
      *  null for non-LLM stages OR rows written before the column
      *  landed. Surfaced on CompanyDetail tooltips + agent context. */
     llmModel: z.string().nullable(),
+    /** Register-Delta S7 — Registerblatt hat sich nach dem letzten Lauf
+     *  geaendert; updatedAt wird dann als null gemeldet, damit der
+     *  Producer neu laeuft. */
+    veraltetSeit: z.string().nullable().optional(),
+    veraltetGrund: z.string().nullable().optional(),
   })
   .openapi("StageState");
 
@@ -94,7 +99,7 @@ companyStateRouter.openapi(stateRoute, async (c) => {
   // index without optional-chaining. Missing rows surface as nulls.
   const stages: Record<
     string,
-    { updatedAt: string | null; llmTier: number | null; llmModel: string | null }
+    { updatedAt: string | null; llmTier: number | null; llmModel: string | null; veraltetSeit?: string | null; veraltetGrund?: string | null }
   > = {};
   for (const stage of KNOWN_STAGES) {
     stages[stage] = { updatedAt: null, llmTier: null, llmModel: null };
@@ -105,6 +110,23 @@ companyStateRouter.openapi(stateRoute, async (c) => {
       llmTier: row.llmTier,
       llmModel: row.llmModel,
     };
+  }
+
+  // Register-Delta S7 — Veraltet-Markierung: ist das Registerblatt nach dem
+  // letzten structured-content-Lauf geaendert worden, gilt die Stufe als
+  // nicht frisch (updatedAt null), der Producer laeuft beim naechsten
+  // Zugriff erneut. Die Markierung faellt mit dem naechsten Schreiben weg.
+  const stale = await getGatewayPool().query<{ seit: Date; grund: string }>(
+    `SELECT "seit", "grund" FROM "StructuredContentStale" WHERE "companyId" = $1`,
+    [companyId],
+  );
+  const st = stale.rows[0];
+  if (st) {
+    const cell = stages["structured-content"];
+    const alt = cell.updatedAt ? Date.parse(cell.updatedAt) : 0;
+    if (st.seit.getTime() > alt) {
+      stages["structured-content"] = { ...cell, updatedAt: null, veraltetSeit: st.seit.toISOString(), veraltetGrund: st.grund };
+    }
   }
 
   return c.json({ companyId, stages }, 200);

@@ -268,6 +268,19 @@ HRB 6 neu; die Antwort auf eine Ergebnismeldung nach 15 Minuten Leerlauf
 ging verloren (Proxy schließt die Verbindung), deshalb Client-Wiederholung
 und idempotente Ergebnisroute (gleicher Worker, bereits erledigt).
 
+**S7 umgesetzt (2026-09-14, Gateway):** Tabelle `StructuredContentStale`
+(companyId, seit, grund). Gesetzt, wenn der Delta-Upsert ein Registerblatt
+als geändert meldet (Name, Sitz, Status, Historie) oder eine Bekanntmachung
+mit Registerblatt außer Löschungsankündigung eingeht (Umwandlung, neue
+Dokumente, Sonstiges). `GET /v1/companies/{id}/state` meldet die Stufe
+structured-content dann mit `updatedAt = null` plus `veraltetSeit` und
+`veraltetGrund`; der bestehende F3-Vorab-Check des Producers läuft damit
+beim nächsten Zugriff neu, ohne Producer-Änderung. Der nächste
+structured-content-Lauf löscht die Markierung (persist-bus). Zahl der
+veralteten Firmen steht in `GET /v1/register-jobs/status` (`veraltet`) und
+damit im Chat-Tool `register_delta_status`. Keine flächige Erneuerung:
+erneuert wird, was benutzt wird (Import, Datenrefresh-Kadenz, Zugriff).
+
 ## 5. Einmaliges Aufholen 2023 → heute
 
 Was du selbst laufen lassen kannst (`master-data/scripts/register-delta`,
@@ -309,6 +322,8 @@ TypeScript, gleicher Code wie der Worker):
 | S7 | Veraltet-Markierung strukturierter Inhalte und Erneuerung im Producer | Gateway, structured-content |
 
 S1 bis S5 bringen die Daten unabhängig von Nutzern auf Stand, S6 skaliert.
+
+Stand 2026-09-14: S1 bis S7 umgesetzt (Desktop v0.1.652, Gateway, master-data, Fly-Worker).
 
 ## 8. Offene Entscheidungen
 
