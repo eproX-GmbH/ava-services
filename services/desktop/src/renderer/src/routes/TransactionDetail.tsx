@@ -1,3 +1,4 @@
+import { RegisterStatusBadge } from "../components/RegisterStatusBadge";
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate, useParams } from "react-router-dom";
@@ -181,21 +182,24 @@ export function TransactionDetail() {
     queryKey: ["companyNames", companyIds],
     queryFn: async () => {
       const map = new Map<string, string>();
+      const status = new Map<string, string>();
       await Promise.all(
         companyIds.map(async (cid) => {
           try {
             const data = await gatewayFetch<{
               name?: string | null;
               companyName?: string | null;
+              registerStatus?: string | null;
             }>(`/v1/companies/${encodeURIComponent(cid)}`);
             const n = data.name ?? data.companyName;
             if (n && n.trim().length > 0) map.set(cid, n.trim());
+            if (data.registerStatus) status.set(cid, data.registerStatus);
           } catch {
             // Leave the entry missing; nameFor falls back to the id.
           }
         }),
       );
-      return map;
+      return { map, status };
     },
     enabled: companyIds.length > 0,
     // Names are slow-changing master-data; 5 min keeps the cache warm
@@ -225,7 +229,8 @@ export function TransactionDetail() {
   });
 
   const nameFor = (cid: string): string =>
-    companyNames.data?.get(cid) ?? `${cid.slice(0, 12)}…`;
+    companyNames.data?.map.get(cid) ?? `${cid.slice(0, 12)}…`;
+  const statusFor = (cid: string): string | undefined => companyNames.data?.status.get(cid);
 
   // Live SSE binding — patch matching cells in-place.
   // We don't re-sort on each event: user-driven scroll position should stay
@@ -425,6 +430,7 @@ export function TransactionDetail() {
                   >
                     <td className="matrix-company">
                       {nameFor(row.companyId)}
+                      <RegisterStatusBadge status={statusFor(row.companyId)} />
                       <CrmBadgeRow
                         links={crmLinks.data?.links[row.companyId] ?? []}
                       />
@@ -448,7 +454,10 @@ export function TransactionDetail() {
       {openCompanyId && openRow && (
         <aside className="drill-panel">
           <header>
-            <h3>{nameFor(openCompanyId)}</h3>
+            <h3>
+              {nameFor(openCompanyId)}
+              <RegisterStatusBadge status={statusFor(openCompanyId)} />
+            </h3>
             <button
               type="button"
               className="link"
@@ -501,7 +510,7 @@ export function TransactionDetail() {
           <RetryStageForm
             transactionId={id!}
             companyId={openCompanyId}
-            defaultCompanyName={companyNames.data?.get(openCompanyId) ?? null}
+            defaultCompanyName={companyNames.data?.map.get(openCompanyId) ?? null}
             failedStages={RETRY_STAGES.map((s) => s.id).filter(
               (sid) => openRow.cells[sid]?.state === "failed",
             )}

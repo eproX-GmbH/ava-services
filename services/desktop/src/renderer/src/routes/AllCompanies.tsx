@@ -1,3 +1,4 @@
+import { RegisterStatusBadge } from "../components/RegisterStatusBadge";
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -86,6 +87,7 @@ interface CompanyMatrixRow {
   name: string;
   location: string;
   lastSeenAt: string;
+  registerStatus?: string;
   stages: Record<string, StageCell>;
 }
 
@@ -376,6 +378,7 @@ export function AllCompanies() {
                     >
                       {row.name}
                     </Link>
+                    <RegisterStatusBadge status={row.registerStatus} />
                     <CrmBadgeRow
                       links={crmLinks.data?.links[row.companyId] ?? []}
                     />
@@ -475,7 +478,10 @@ export function AllCompanies() {
       {openCompanyId && openRow && (
         <aside className="drill-panel">
           <header>
-            <h3>{openRow.name}</h3>
+            <h3>
+              {openRow.name}
+              <RegisterStatusBadge status={openRow.registerStatus} />
+            </h3>
             <button
               type="button"
               className="link"

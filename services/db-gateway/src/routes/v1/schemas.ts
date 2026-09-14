@@ -43,6 +43,10 @@ export const CompanyShape = z
     state: z.string().nullable().optional(),
     districtCourt: z.string().nullable().optional(),
     createdAt: z.string(),
+    /** Register-Delta: ACTIVE | CLOSED (Registerblatt geschlossen) | LOESCHUNG_ANGEKUENDIGT. */
+    registerStatus: z.string().nullable().optional(),
+    closedAt: z.string().nullable().optional(),
+    formerCourt: z.string().nullable().optional(),
   })
   .openapi("Company");
 

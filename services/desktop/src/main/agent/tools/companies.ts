@@ -32,7 +32,7 @@ export function buildCompanyTools(ctx: Ctx): Tool[] {
   const search = defineTool({
     name: "company_search",
     description:
-      "Fuzzy-search German companies by name. Returns up to `limit` candidate matches (id, name, location). Use this first when the user mentions a company by name.",
+      "Fuzzy-search German companies by name. Returns up to `limit` candidate matches (id, name, location, registerStatus: ACTIVE | CLOSED = Registerblatt geschlossen/geloescht | LOESCHUNG_ANGEKUENDIGT = Loeschung angekuendigt; nenne dem Nutzer geloeschte oder in Loeschung befindliche Firmen ausdruecklich). Use this first when the user mentions a company by name.",
     parameters: {
       type: "object",
       properties: {

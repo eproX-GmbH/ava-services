@@ -59,6 +59,8 @@ const CompanyMatrixRowShape = z
      *  company. Surfaced so the desktop can show "last seen 2 days
      *  ago" next to the row. */
     lastSeenAt: z.string(),
+    /** Register-Delta: ACTIVE | CLOSED | LOESCHUNG_ANGEKUENDIGT (Chip in der App). */
+    registerStatus: z.string().optional(),
     /** Per-producer latest state. Keys match PRODUCER_NAMES. */
     stages: z.record(z.string(), StageStateShape),
   })
@@ -84,6 +86,7 @@ interface UpstreamCompany {
   name: string;
   location: string;
   lastSeenAt: string;
+  registerStatus?: string;
 }
 interface UpstreamPage {
   pageNumber: number;
@@ -363,6 +366,7 @@ companiesMatrixRouter.openapi(matrixRoute, async (c) => {
       name: co.name,
       location: co.location,
       lastSeenAt: co.lastSeenAt,
+      registerStatus: co.registerStatus ?? "ACTIVE",
       stages,
     };
   });

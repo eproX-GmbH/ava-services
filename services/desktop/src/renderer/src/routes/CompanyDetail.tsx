@@ -1,3 +1,4 @@
+import { RegisterStatusBadge } from "../components/RegisterStatusBadge";
 import { useEffect, useState } from "react";
 import { useFeature } from "../store/policy";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -381,7 +382,10 @@ export function CompanyDetail() {
   // around. These are the same calls the legacy page eager-loaded.
   const summary = useQuery({
     queryKey: ["company", id],
-    queryFn: () => gatewayFetch<{ id: string; name?: string; city?: string }>(`/v1/companies/${id}`),
+    queryFn: () =>
+      gatewayFetch<{ id: string; name?: string; city?: string; registerStatus?: string | null; closedAt?: string | null; formerCourt?: string | null }>(
+        `/v1/companies/${id}`,
+      ),
     enabled: !!id,
   });
   const profile = useTabQuery<CompanyProfile>("profile", id!, `/v1/companies/${id}/profile`, !!id);
@@ -418,6 +422,7 @@ export function CompanyDetail() {
       <header className="company-hero">
         <h2 style={{ marginBottom: "0.25rem" }}>
           {structured.data?.name ?? summary.data?.name ?? "Firma"}
+          <RegisterStatusBadge status={summary.data?.registerStatus} closedAt={summary.data?.closedAt} />
         </h2>
 
         {/* Unter dem Namen primär die Keywords als Chips. Nur wenn KEINE
