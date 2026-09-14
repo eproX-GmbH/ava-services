@@ -731,6 +731,49 @@ interface QueueInfo {
   consumers: number;
 }
 
+/** Register-Delta S6 — der Mithelfen-Worker ist kein Producer (kein Port, keine
+ *  AMQP-Queue), gehoert aber in die Systemuebersicht: Zustand, aktueller Job,
+ *  Abfragen der letzten Stunde. Einstellung unter Automatisierungen. */
+function MithelfenZeile() {
+  const [s, setS] = useState<import("../../../shared/register-delta-types").MithelfenStatus | null>(null);
+  useEffect(() => {
+    void window.api.registerDelta.status().then(setS);
+    return window.api.registerDelta.onStatus(setS);
+  }, []);
+  if (!s) return null;
+  const grund: Record<string, string> = {
+    aus: "aus (Automatisierungen → Stammdaten mitpflegen)",
+    organisation: "von der Organisation abgeschaltet",
+    abgemeldet: "nicht angemeldet",
+    akku: "pausiert im Akkubetrieb",
+    nicht_installiert: "nicht installiert",
+    gesperrt: "Registerportal hat vorübergehend gesperrt",
+  };
+  const art: Record<string, string> = { front: "Nummernfront", bekanntmachungen: "Bekanntmachungen", refresh: "Auffrischung" };
+  const tone = s.pausenGrund === null && s.laeuft ? "ok" : s.pausenGrund === "organisation" || s.pausenGrund === "nicht_installiert" ? "err" : "muted";
+  return (
+    <p className="small" style={{ marginTop: "0.5rem" }}>
+      <span className="muted">register-delta (Stammdaten mitpflegen):</span>{" "}
+      <span className={`status-dot ${tone}`}>{s.pausenGrund ? grund[s.pausenGrund] : s.aktuellerJob ? "arbeitet" : "bereit, wartet auf Jobs"}</span>
+      {s.aktuellerJob && (
+        <>
+          {" · Job "}
+          <code>{art[s.aktuellerJob.art] ?? s.aktuellerJob.art}</code>
+        </>
+      )}
+      {s.aktiv && (
+        <>
+          {" · Abfragen letzte Stunde: "}
+          <code>{s.abfragenLetzteStunde}/60</code>
+          {" · erledigt: "}
+          <code>{s.jobsErledigt}</code>
+        </>
+      )}
+      {s.letzterFehler && <span className="muted"> · {s.letzterFehler}</span>}
+    </p>
+  );
+}
+
 export function ProducersSection() {
   const byName = useProducersStore((s) => s.byName);
   const list = Object.values(byName);
@@ -856,6 +899,7 @@ export function ProducersSection() {
           })}
         </ul>
       )}
+      <MithelfenZeile />
     </section>
   );
 }
