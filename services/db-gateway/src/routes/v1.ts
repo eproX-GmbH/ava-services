@@ -27,6 +27,7 @@ import { companiesCrmRouter } from "./v1/companies-crm";
 import { geoRouter } from "./v1/geo";
 import { discoveryRouter } from "./v1/discovery";
 import { emailPatternsRouter } from "./v1/email-patterns";
+import { registerJobsRouter } from "./v1/register-jobs";
 
 // /v1 router.
 //
@@ -135,6 +136,9 @@ v1.route("/", llmProxyRouter);
 
 // C1 — Personen: Herkunftsnachweis, Loeschung, Art. 14.
 v1.route("/", personsRouter);
+
+// Register-Delta S3 (docs/PLAN_STAMMDATEN_DELTA.md) — Job-Queue fuer Worker.
+v1.route("/", registerJobsRouter);
 
 // Retained for smoke-testing auth end-to-end. Safe to remove once clients
 // exist — no workflow reference.

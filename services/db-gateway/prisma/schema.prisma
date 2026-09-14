@@ -745,3 +745,34 @@ model StripeEvent {
   created     DateTime
   processedAt DateTime @default(now())
 }
+
+// Register-Delta S3 — Job-Queue mit Lease (Migration 20260914_register_jobs).
+model RegisterJob {
+  id         BigInt    @id @default(autoincrement())
+  art        String
+  schluessel String    @unique
+  payload    Json      @default("{}")
+  status     String    @default("offen")
+  prioritaet Int       @default(5)
+  leaseUntil DateTime?
+  leasedBy   String?
+  versuche   Int       @default(0)
+  ergebnis   Json?
+  ergebnisAt DateTime?
+  fehler     String?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @default(now())
+
+  @@index([status, prioritaet, id])
+}
+
+model RegisterWorker {
+  workerId     String    @id
+  tenantId     String?
+  actorId      String?
+  art          String    @default("desktop")
+  zuletztAt    DateTime  @default(now())
+  jobsErledigt Int       @default(0)
+  abfragen     Int       @default(0)
+  gesperrtAt   DateTime?
+}
