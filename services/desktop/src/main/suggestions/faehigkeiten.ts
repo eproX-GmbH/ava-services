@@ -45,7 +45,7 @@ export const FAEHIGKEITEN: Faehigkeit[] = [
   { id: "einstellungen", text: "KI-Anbieter, Schluessel, Modell, Token-Limit einstellen", tools: ["settings_*"], verwaltung: true },
   { id: "organisation", text: "Organisation verwalten: Mitglieder, Vorgaben, Anbieter-Sperre, Limits, Verbrauch, Abrechnung", tools: ["org_*"], verwaltung: true },
   { id: "konto", text: "Kontoinformationen", tools: ["account_info"], verwaltung: true },
-  { id: "system", text: "Producer-Status und -Logs, Erreichbarkeit, Updates, Selbstkorrektur, Tool-Suche", tools: ["producers_*", "reachability_*", "updater_*", "report_self_correction", "tool_search", "tool_load", "vorschlaege_status"], verwaltung: true },
+  { id: "system", text: "Producer-Status und -Logs, Erreichbarkeit, Updates, Selbstkorrektur, Tool-Suche", tools: ["producers_*", "reachability_*", "updater_*", "report_self_correction", "tool_search", "tool_load", "vorschlaege_status", "vorschlaege_config"], verwaltung: true },
 ];
 
 function passt(muster: string, name: string): boolean {

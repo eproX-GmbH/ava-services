@@ -15,7 +15,12 @@ erscheint. V4 umgesetzt in v0.1.649: Frame `suggestions`, Orchestrator ruft nach
 normalen Turn (nicht autonom, nicht abgebrochen, nicht Welcome) `gespraech()` in
 `erzeugung.ts` auf: Urteil ueber Hintergrundkanal, Standard leer, max. 3 Chips,
 Verwaltung nur, wenn der Nutzer sie selbst anspricht; Renderer haengt die Chips
-unter die Antwort, naechster Turn raeumt sie weg. V5 offen.
+unter die Antwort, naechster Turn raeumt sie weg.
+V5 umgesetzt in v0.1.650: persoenliche Einstellung (Startseite / Gespraech,
+Einstellungen → Automatisierungen → Vorschlaege im Chat), Chat-Tool
+`vorschlaege_config` mit Bestaetigung, LLM-Kanal `vorschlaege` (zaehlt bei Limits wie
+Hintergrund, im Verbrauch getrennt als „Vorschlaege“ ausgewiesen; Gateway-Deploy
+noetig). Damit sind V0 bis V5 komplett.
 
 ## 1. Ziel
 

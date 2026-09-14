@@ -15,7 +15,9 @@ import type { AuthContext } from "../middleware/auth";
 import { TenantError } from "./tenants";
 
 export type QuotaMode = "off" | "org_total" | "per_user_daily";
-export type LlmChannel = "chat" | "background";
+/** v0.1.650 — "vorschlaege": KI-Aufrufe fuer Chat-Vorschlaege (Startseite/Turn-Urteil).
+ *  Zaehlt bei Limits wie Hintergrund, wird im Verbrauch getrennt ausgewiesen. */
+export type LlmChannel = "chat" | "background" | "vorschlaege";
 
 export interface TenantQuotaShape {
   mode: QuotaMode;
@@ -43,7 +45,8 @@ export const DEFAULT_QUOTA: TenantQuotaShape = {
 /** Kanal aus dem Request-Header; alles Unbekannte ist Hintergrund (Producer
  *  und aeltere Desktop-Versionen senden keinen Header). */
 export function parseChannel(raw: string | undefined | null): LlmChannel {
-  return raw?.trim().toLowerCase() === "chat" ? "chat" : "background";
+  const v = raw?.trim().toLowerCase();
+  return v === "chat" ? "chat" : v === "vorschlaege" ? "vorschlaege" : "background";
 }
 
 const TTL_MS = 60_000;
@@ -162,9 +165,10 @@ async function summeCents(pool: pg.Pool, where: string, params: unknown[]): Prom
 export async function checkQuota(pool: pg.Pool, tenantId: string, actorId: string, channel: LlmChannel = "background"): Promise<QuotaCheck> {
   const q = await getQuota(pool, tenantId);
   if (q.mode === "off") return { allowed: true, scope: "off", channel: null, limitCents: null, usedCents: 0, resetAt: null, hardStop: q.hardStop };
-  const kanalFilter = q.split ? ` AND "channel" = $${q.mode === "org_total" ? 3 : 4}` : "";
-  const kanalParam = q.split ? [channel] : [];
-  const geprueft: LlmChannel | null = q.split ? channel : null;
+  // Getrennte Budgets: Chat vs. alles andere (Hintergrund + Vorschlaege).
+  const kanalFilter = q.split ? (channel === "chat" ? ` AND "channel" = 'chat'` : ` AND "channel" <> 'chat'`) : "";
+  const kanalParam: unknown[] = [];
+  const geprueft: LlmChannel | null = q.split ? (channel === "chat" ? "chat" : "background") : null;
   if (q.mode === "org_total") {
     const limit = q.split && channel === "chat" ? q.chatOrgMonthlyCents : q.orgMonthlyCents;
     if (limit == null) return { allowed: true, scope: "org_total", channel: geprueft, limitCents: null, usedCents: 0, resetAt: naechsterMonat().toISOString(), hardStop: q.hardStop };
@@ -197,6 +201,9 @@ export interface UsageSummary {
   monthBackgroundCents: number;
   todayChatCents: number;
   todayBackgroundCents: number;
+  /** v0.1.650 — Anteil der Chat-Vorschlaege. */
+  monthVorschlaegeCents: number;
+  todayVorschlaegeCents: number;
   adminView: boolean;
 }
 
@@ -228,13 +235,19 @@ export async function usageSummary(pool: pg.Pool, auth: AuthContext, days: numbe
     chatCents: Math.round(Number(x.chat ?? "0") / 10_000),
   }));
 
-  const kanalSumme = async (where: string, p: unknown[]): Promise<{ gesamt: number; chat: number }> => {
-    const s = await pool.query<{ sum: string | null; chat: string | null }>(
-      `SELECT SUM("costMicroUsd")::text AS sum, SUM(CASE WHEN "channel" = 'chat' THEN "costMicroUsd" ELSE 0 END)::text AS chat
+  const kanalSumme = async (where: string, p: unknown[]): Promise<{ gesamt: number; chat: number; vorschlaege: number }> => {
+    const s = await pool.query<{ sum: string | null; chat: string | null; vorschlaege: string | null }>(
+      `SELECT SUM("costMicroUsd")::text AS sum,
+              SUM(CASE WHEN "channel" = 'chat' THEN "costMicroUsd" ELSE 0 END)::text AS chat,
+              SUM(CASE WHEN "channel" = 'vorschlaege' THEN "costMicroUsd" ELSE 0 END)::text AS vorschlaege
        FROM "LlmUsage" WHERE ${where}`,
       p,
     );
-    return { gesamt: Math.round(Number(s.rows[0]?.sum ?? "0") / 10_000), chat: Math.round(Number(s.rows[0]?.chat ?? "0") / 10_000) };
+    return {
+      gesamt: Math.round(Number(s.rows[0]?.sum ?? "0") / 10_000),
+      chat: Math.round(Number(s.rows[0]?.chat ?? "0") / 10_000),
+      vorschlaege: Math.round(Number(s.rows[0]?.vorschlaege ?? "0") / 10_000),
+    };
   };
   const monat = admin
     ? await kanalSumme(`"tenantId" = $1 AND "createdAt" >= $2`, [auth.tenantId, monatsanfang()])
@@ -245,9 +258,11 @@ export async function usageSummary(pool: pg.Pool, auth: AuthContext, days: numbe
     monthCents: monat.gesamt,
     todayCents: heute.gesamt,
     monthChatCents: monat.chat,
-    monthBackgroundCents: monat.gesamt - monat.chat,
+    monthBackgroundCents: monat.gesamt - monat.chat - monat.vorschlaege,
+    monthVorschlaegeCents: monat.vorschlaege,
     todayChatCents: heute.chat,
-    todayBackgroundCents: heute.gesamt - heute.chat,
+    todayBackgroundCents: heute.gesamt - heute.chat - heute.vorschlaege,
+    todayVorschlaegeCents: heute.vorschlaege,
     adminView: admin,
   };
 }

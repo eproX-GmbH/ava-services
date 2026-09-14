@@ -28,7 +28,7 @@ export interface LlmStreamRequest {
    *  Chat, Default) oder "background" (Hintergrund-Jobs im Hauptprozess wie
    *  Discovery, Link-Monitor, Radar). Geht als Header x-ava-llm-channel an
    *  den Stellvertreter-Proxy; nur dort relevant. */
-  channel?: "chat" | "background";
+  channel?: "chat" | "background" | "vorschlaege";
 }
 
 export interface LlmStreamToolCall {

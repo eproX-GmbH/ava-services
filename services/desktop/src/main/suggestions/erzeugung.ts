@@ -210,6 +210,7 @@ ${ctx.antwortText.slice(0, 1600)}
     try {
       const raw = await streamToText(this.deps.providers, buildMessages(system, user, "vorschlaege-turn"), {
         timeoutMs: TIMEOUT_MS,
+      channel: "vorschlaege",
         ...(this.deps.providers.getProducerModelOverride() ? { modelOverride: this.deps.providers.getProducerModelOverride() } : {}),
       });
       const parsed = parseJsonObject(raw);
@@ -244,6 +245,7 @@ ${ctx.antwortText.slice(0, 1600)}
     const user = `NUTZERSTAND:\n${nutzerstandText(stand)}\n\nFAEHIGKEITEN (id: Beschreibung):\n${faehigkeitenText(faehigkeiten)}`;
     const raw = await streamToText(this.deps.providers, buildMessages(system, user, "vorschlaege"), {
       timeoutMs: TIMEOUT_MS,
+      channel: "vorschlaege",
       ...(this.deps.providers.getProducerModelOverride() ? { modelOverride: this.deps.providers.getProducerModelOverride() } : {}),
     });
     const parsed = parseJsonObject(raw);

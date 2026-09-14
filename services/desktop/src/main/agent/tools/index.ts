@@ -182,6 +182,7 @@ export function buildReadOnlyRegistry(deps: {
   getEmailMuster?: () => import("../../contacts/email-muster/supervisor").EmailMusterSupervisor | null;
   /** v0.1.646 — Nutzerstand fuer Chat-Vorschlaege (lazy, entsteht im Boot). */
   getNutzerstand?: () => import("../../suggestions/nutzerstand").NutzerstandService | null;
+  getVorschlaegeSettings?: () => import("../../suggestions/settings").VorschlaegeSettingsStore | null;
   getWatchlistKeyStore: () => import("../../linkedin/watchlist/key-store").WatchlistKeyStore | null;
   onCompanyWindowChanged?: () => void;
   getPersonenRadarStore: () => import("../../linkedin/personen-radar/store").PersonenRadarStore | null;
@@ -378,7 +379,7 @@ export function buildReadOnlyRegistry(deps: {
   }))
     registry.register(t);
   for (const t of buildEmailMusterTools({ get: () => deps.getEmailMuster?.() ?? null })) registry.register(t);
-  for (const t of buildVorschlaegeTools({ get: () => deps.getNutzerstand?.() ?? null, toolNamen: () => registry.list().map((x) => x.name) })) registry.register(t);
+  for (const t of buildVorschlaegeTools({ get: () => deps.getNutzerstand?.() ?? null, toolNamen: () => registry.list().map((x) => x.name), settings: () => deps.getVorschlaegeSettings?.() ?? null })) registry.register(t);
   for (const t of buildSkillsTools({
     getSkillStore: deps.getSkillStore,
     getTrustStore: deps.getSkillsTrust,

@@ -2,6 +2,7 @@ import { meldeAbgeleiteteAdressen } from "./contacts/email-muster/rueckmeldung";
 import { radarActivity } from "./discovery/activity";
 import { NutzerstandService } from "./suggestions/nutzerstand";
 import { ChipErzeugung } from "./suggestions/erzeugung";
+import { VorschlaegeSettingsStore } from "./suggestions/settings";
 import { verfuegbareFaehigkeiten, faehigkeitenText, nichtZugeordnet } from "./suggestions/faehigkeiten";
 import { ORG_FEATURES } from "../shared/types";
 import { pruefeModellstufe } from "./workflows/modellstufe";
@@ -1361,6 +1362,7 @@ let emailMuster: EmailMusterSupervisor | null = null;
 // v0.1.646 — Nutzerstand fuer Chat-Vorschlaege (PLAN_CHAT_VORSCHLAEGE V1).
 let nutzerstand: NutzerstandService | null = null;
 let chipErzeugung: ChipErzeugung | null = null;
+let vorschlaegeSettings: VorschlaegeSettingsStore | null = null;
 let skillStoreRef: { list(): unknown[] } | null = null;
 
 /** v0.1.580 — Apify-Zugang fuer Watchlist/Personen-Radar im Hauptprozess:
@@ -1821,6 +1823,7 @@ const agentRegistry = buildReadOnlyRegistry({
   getWorkflows: () => workflowService,
   getEmailMuster: () => emailMuster,
   getNutzerstand: () => nutzerstand,
+  getVorschlaegeSettings: () => vorschlaegeSettings,
   getRadar: () =>
     radarSupervisor
       ? {
@@ -1984,7 +1987,7 @@ const agent = new AgentOrchestrator({
   registry: agentRegistry,
   // v0.1.649 (Chat-Vorschlaege V4) — Urteil nach dem Turn; lazy, weil chipErzeugung spaeter entsteht.
   vorschlaegeNachTurn: (ctx: { conversationId: string; nutzerText: string; antwortText: string; toolNamen: string[] }) =>
-    chipErzeugung && featureEnabled("vorschlaege") ? chipErzeugung.gespraech(ctx) : Promise.resolve([]),
+    chipErzeugung && featureEnabled("vorschlaege") && (vorschlaegeSettings?.get().gespraech ?? true) ? chipErzeugung.gespraech(ctx) : Promise.resolve([]),
   memory: memoryProbe.writable ? memory : undefined,
   memoryError: memoryProbe.writable
     ? null
@@ -5250,9 +5253,18 @@ app.whenReady().then(async () => {
     dir: join(app.getPath("userData"), "suggestions"),
     log: (m) => console.log(m),
   });
+  vorschlaegeSettings = new VorschlaegeSettingsStore(join(app.getPath("userData"), "suggestions"));
   ipcMain.handle("suggestions:startseite", (_e, opts: { frisch?: boolean } | undefined) =>
-    chipErzeugung!.startseite({ frisch: opts?.frisch === true, ohneModell: !featureEnabled("vorschlaege") }),
+    chipErzeugung!.startseite({ frisch: opts?.frisch === true, ohneModell: !featureEnabled("vorschlaege") || !vorschlaegeSettings!.get().startseite }),
   );
+  ipcMain.handle("suggestions:getSettings", () => ({ ...vorschlaegeSettings!.get(), orgErlaubt: featureEnabled("vorschlaege") }));
+  ipcMain.handle("suggestions:setSettings", (_e, patch: { startseite?: boolean; gespraech?: boolean }) => {
+    const next = vorschlaegeSettings!.set({
+      ...(patch?.startseite !== undefined ? { startseite: patch.startseite === true } : {}),
+      ...(patch?.gespraech !== undefined ? { gespraech: patch.gespraech === true } : {}),
+    });
+    return { ...next, orgErlaubt: featureEnabled("vorschlaege") };
+  });
   ipcMain.handle("suggestions:faehigkeiten", async () => {
     const st = await nutzerstand!.get();
     const namen = agentRegistry.list().map((t) => t.name);

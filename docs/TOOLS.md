@@ -5,7 +5,7 @@ NICHT direkt bearbeiten — die Quelle der Wahrheit ist `services/desktop/src/ma
 Lauf via `pnpm -F @ava/desktop tools:doc` (oder automatisch via `build:typecheck`).
 
 Stand: 2026-09-14
-Anzahl Tools: 243
+Anzahl Tools: 244
 
 ## Firmen (17)
 
@@ -2167,7 +2167,17 @@ Liefert den Status der Spracherkennung: ist das whisper.cpp-Binary installiert, 
 
 _Parameter:_ keine.
 
-## vorschlaege (1)
+## vorschlaege (2)
+
+### `vorschlaege_config`
+
+_Datei:_ `services/desktop/src/main/agent/tools/vorschlaege.ts`
+
+Liest oder aendert, ob AVA naechste Schritte vorschlaegt: startseite = Chips auf der leeren Chat-Seite und unter der Willkommensnachricht, gespraech = Chips nach einer Antwort, wenn sich ein naechster Schritt anbietet. Ohne Argumente: aktuelle Werte. Schaltet die Organisation Vorschlaege ab, gilt das vorrangig.
+
+_Parameter:_
+- `startseite: boolean`
+- `gespraech: boolean`
 
 ### `vorschlaege_status`
 

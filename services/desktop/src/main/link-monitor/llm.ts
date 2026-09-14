@@ -13,7 +13,7 @@ import type { LlmProviderManager } from "../agent/providers";
 export async function streamToText(
   providers: LlmProviderManager,
   messages: AgentMessage[],
-  opts: { signal?: AbortSignal; timeoutMs?: number; modelOverride?: string } = {},
+  opts: { signal?: AbortSignal; timeoutMs?: number; modelOverride?: string; channel?: "background" | "vorschlaege" } = {},
 ): Promise<string> {
   const ctrl = new AbortController();
   const timeout = setTimeout(() => ctrl.abort(), opts.timeoutMs ?? 45_000);
@@ -27,7 +27,7 @@ export async function streamToText(
       // O6b — alle Aufrufer dieses Helfers sind Hintergrund-Jobs (Link-
       // Monitor, Discovery, Radar, Watchlist): zaehlen gegen das
       // Hintergrund-Budget der Organisation, nicht gegen den Chat.
-      channel: "background",
+      channel: opts.channel ?? "background",
       ...(opts.modelOverride ? { modelOverride: opts.modelOverride } : {}),
     });
     for await (const frame of stream) {

@@ -7,6 +7,7 @@ import { SchedulerSection } from "./SchedulerSection";
 import { LinkMonitorSection } from "./LinkMonitorSection";
 import { TelegramSection } from "./TelegramSection";
 import { EmailMusterSection } from "./EmailMusterSection";
+import { VorschlaegeSection } from "./VorschlaegeSection";
 import { useFeature } from "../../store/policy";
 
 // v0.1.273+ — Automatisierungen-Tab.
@@ -27,6 +28,7 @@ export function AutomatisierungenTab() {
       {mailErlaubt && <SchedulerSection />}
       <FreshnessSection />
       <EmailMusterSection />
+      <VorschlaegeSection />
       <AlertsSection />
       {telegramErlaubt && <TelegramSection />}
     </>

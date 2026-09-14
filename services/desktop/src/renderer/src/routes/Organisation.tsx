@@ -1292,12 +1292,14 @@ function Verbrauch({ st, me }: { st: OrgState; me: WhoamiLite }) {
         monthBackgroundCents?: number;
         todayChatCents?: number;
         todayBackgroundCents?: number;
+        monthVorschlaegeCents?: number;
+        todayVorschlaegeCents?: number;
         adminView: boolean;
       }>(`/v1/tenants/me/usage?days=${tage}`),
   });
   // O6b — Aufteilung Chat / Hintergrund (aeltere Gateways liefern sie nicht).
-  const kanal = (chat: number | undefined, hintergrund: number | undefined) =>
-    chat == null || hintergrund == null ? null : ` · Chat ${usd(chat)} · Hintergrund ${usd(hintergrund)}`;
+  const kanal = (chat: number | undefined, hintergrund: number | undefined, vorschlaege?: number) =>
+    chat == null || hintergrund == null ? null : ` · Chat ${usd(chat)} · Hintergrund ${usd(hintergrund)}${vorschlaege != null ? ` · Vorschläge ${usd(vorschlaege)}` : ""}`;
   const namen = new Map<string, string>();
   for (const m of st.members) namen.set(m.actorId, m.name ?? m.email ?? `${m.actorId.slice(0, 8)}…`);
   const rows = usage.data?.rows ?? [];
@@ -1319,14 +1321,14 @@ function Verbrauch({ st, me }: { st: OrgState; me: WhoamiLite }) {
           <span className="active-config-card__value">
             {usd(usage.data?.monthCents ?? 0)}
             {usage.data?.adminView ? " (Organisation)" : " (du)"}
-            {kanal(usage.data?.monthChatCents, usage.data?.monthBackgroundCents)}
+            {kanal(usage.data?.monthChatCents, usage.data?.monthBackgroundCents, usage.data?.monthVorschlaegeCents)}
           </span>
         </div>
         <div className="active-config-card__row">
           <span className="active-config-card__label">Heute (du)</span>
           <span className="active-config-card__value">
             {usd(usage.data?.todayCents ?? 0)}
-            {kanal(usage.data?.todayChatCents, usage.data?.todayBackgroundCents)}
+            {kanal(usage.data?.todayChatCents, usage.data?.todayBackgroundCents, usage.data?.todayVorschlaegeCents)}
           </span>
         </div>
       </div>
