@@ -1,8 +1,8 @@
 {
   "name": "@ava/desktop",
-  "version": "0.1.650",
+  "version": "0.1.651",
   "private": true,
-  "description": "AVA Electron desktop app — replaces user-interface/ Next.js. Talks to db-gateway only.",
+  "description": "AVA Electron desktop app",
   "author": {
     "name": "eproX GmbH",
     "email": "hello@pattern-paradise.shop"

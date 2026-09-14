@@ -8260,3 +8260,10 @@ input, textarea, select, button, a, summary, details,
 .vs-chips--kompakt { margin-top: 0.75rem; }
 .vs-chips--kompakt .vs-chip { padding: 6px 10px; border-radius: 10px; }
 .vs-chips__hinweis { margin-top: 2px; }
+
+/* v0.1.651 — Header: das gerade gehoverte Menue liegt ueber anderen offenen Menues */
+.topbar__menu:hover .topbar__submenu { z-index: 1001; }
+/* v0.1.651 — Organisationsname im Konto-Pill nicht umbrechen, mit Auslassung */
+.topbar__account { white-space: nowrap; max-width: 320px; }
+.topbar__user-tenant { display: inline-block; max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: bottom; }
+@media (max-width: 1100px) { .topbar__user-tenant { max-width: 90px; } .topbar__account-name { max-width: 120px; } }

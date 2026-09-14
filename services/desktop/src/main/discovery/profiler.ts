@@ -286,9 +286,12 @@ export async function crawlSite(
 ): Promise<string | null> {
   let homeHtml: string | null = null;
   let base: URL | null = null;
+  // v0.1.651 — auch http:// versuchen: viele kleine Firmenseiten (OSM-Kandidaten)
+  // haben kein oder ein kaputtes HTTPS; vorher war das pauschal "nicht lesbar".
   const starts = startUrl
-    ? [startUrl, `https://${coreDomain}`]
-    : [`https://${coreDomain}`, `https://www.${coreDomain}`];
+    ? [startUrl, `https://${coreDomain}`, `http://${coreDomain}`]
+    : [`https://${coreDomain}`, `https://www.${coreDomain}`, `http://${coreDomain}`, `http://www.${coreDomain}`];
+  letzterCrawlGrund = null;
   for (const candidate of starts) {
     homeHtml = await fetchPageText(candidate);
     if (homeHtml) {
@@ -296,6 +299,7 @@ export async function crawlSite(
       break;
     }
   }
+  if (!homeHtml) letzterCrawlGrund = "Website nicht erreichbar (https und http)";
   // Duennes/leeres statisches HTML (SPA, Bot-Gate) → Browser-Fallback:
   // gerendertes innerText aus einem versteckten Electron-Fenster. Das
   // Ergebnis ist bereits Text (kein HTML) und hat keine Links fuer den
@@ -307,11 +311,15 @@ export async function crawlSite(
       if (rendered) return rendered;
     }
   }
-  if (!homeHtml || !base) return null;
+  if (!homeHtml || !base) {
+    if (homeHtml) letzterCrawlGrund = "Website liefert zu wenig Text (unter 200 Zeichen, auch gerendert)";
+    return null;
+  }
 
   const disallows = await fetchDisallows(base.origin);
   if (disallows.includes("/")) {
     // Site verbietet Crawling komplett — respektieren, nur nicht crawlen.
+    letzterCrawlGrund = "Website untersagt Crawling (robots.txt)";
     return null;
   }
   const parts: string[] = [htmlToText(homeHtml)];
@@ -337,6 +345,7 @@ export async function crawlSite(
     }
   }
   const text = parts.join("\n\n").trim();
+  if (text.length < 200) letzterCrawlGrund = "Website liefert zu wenig Text (unter 200 Zeichen)";
   return text.length >= 200 ? text : null;
 }
 
@@ -392,6 +401,14 @@ export async function buildProfile(
     console.warn(`[discovery] Mini-Profil ${candidate.name}: ${letzterProfilFehler}`);
     return null;
   }
+}
+
+/** v0.1.651 — letzter Crawl-Fehlergrund (Modul-Latch, direkt nach crawlSite ausgelesen). */
+let letzterCrawlGrund: string | null = null;
+export function crawlFehlerGrund(): string {
+  const g = letzterCrawlGrund ?? "Website nicht lesbar";
+  letzterCrawlGrund = null;
+  return g;
 }
 
 /** v0.1.637 — letzter LLM-Fehlergrund fuer die Live-Aktivitaet (Modul-Latch,
@@ -548,8 +565,9 @@ export async function runProfiler(
       if (!siteText) {
         summary.crawlFehler++;
         summary.fehlgeschlagenIds.push(cand.discoveryId);
-        console.warn(`[discovery] Mini-Profil ${cand.name}: Website ${cand.domain} nicht lesbar`);
-        radarActivity.profileFirma(cand.name, "fehler", { art: "website", text: `Website ${cand.domain} nicht lesbar (nicht erreichbar, kein Text oder Crawling untersagt)` });
+        const grund = crawlFehlerGrund();
+        console.warn(`[discovery] Mini-Profil ${cand.name}: ${cand.domain}: ${grund}`);
+        radarActivity.profileFirma(cand.name, "fehler", { art: "website", text: `${cand.domain}: ${grund}` });
         continue;
       }
       const profile = await buildProfile(providers, cand, siteText);

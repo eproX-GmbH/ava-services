@@ -848,6 +848,15 @@ function NavItemWithSubMenu({
     openTimer.current = setTimeout(() => setOpen(true), 80);
   };
 
+  // v0.1.651 — Untermenue nach Navigation schliessen (blieb sonst durch den
+  // Fokus des Links offen und ueberlappte andere Header-Menues).
+  const menuLocation = useLocation();
+  useEffect(() => {
+    setOpen(false);
+    setActiveIndex(-1);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [menuLocation.pathname]);
+
   const scheduleClose = (): void => {
     cancelTimers();
     closeTimer.current = setTimeout(() => {
@@ -920,6 +929,13 @@ function NavItemWithSubMenu({
       ref={wrapperRef}
       onMouseEnter={scheduleOpen}
       onMouseLeave={scheduleClose}
+      onBlur={(ev) => {
+        // Fokus verlaesst das Menue (z. B. Klick auf einen anderen Header-Punkt) → zu.
+        if (!wrapperRef.current?.contains(ev.relatedTarget as Node | null)) {
+          setOpen(false);
+          setActiveIndex(-1);
+        }
+      }}
     >
       <NavLink
         to={to}
@@ -1072,7 +1088,7 @@ function UserBadge() {
         {tenantLabel && (
           <>
             <span className="topbar__user-sep">·</span>
-            <span className="topbar__user-tenant">{tenantLabel}</span>
+            <span className="topbar__user-tenant" title={tenantLabel ?? undefined}>{tenantLabel}</span>
           </>
         )}
       </button>
