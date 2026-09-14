@@ -52,6 +52,7 @@ import { buildGeoTools } from "./geo";
 import { buildDiscoveryTools } from "./discovery";
 import { buildWorkflowTools } from "./workflows";
 import { buildEmailMusterTools } from "./email-muster";
+import { buildVorschlaegeTools } from "./vorschlaege";
 import { buildWatchlistTools } from "./watchlist";
 import { buildLinkedInSelfserviceTools } from "./linkedin-selfservice";
 import { buildIcpTools } from "./icp";
@@ -179,6 +180,8 @@ export function buildReadOnlyRegistry(deps: {
   getWorkflows?: () => import("../../workflows").WorkflowService | null;
   /** M4 — lokale E-Mail-Ableitung (lazy, entsteht im App-Boot). */
   getEmailMuster?: () => import("../../contacts/email-muster/supervisor").EmailMusterSupervisor | null;
+  /** v0.1.646 — Nutzerstand fuer Chat-Vorschlaege (lazy, entsteht im Boot). */
+  getNutzerstand?: () => import("../../suggestions/nutzerstand").NutzerstandService | null;
   getWatchlistKeyStore: () => import("../../linkedin/watchlist/key-store").WatchlistKeyStore | null;
   onCompanyWindowChanged?: () => void;
   getPersonenRadarStore: () => import("../../linkedin/personen-radar/store").PersonenRadarStore | null;
@@ -375,6 +378,7 @@ export function buildReadOnlyRegistry(deps: {
   }))
     registry.register(t);
   for (const t of buildEmailMusterTools({ get: () => deps.getEmailMuster?.() ?? null })) registry.register(t);
+  for (const t of buildVorschlaegeTools({ get: () => deps.getNutzerstand?.() ?? null, toolNamen: () => registry.list().map((x) => x.name) })) registry.register(t);
   for (const t of buildSkillsTools({
     getSkillStore: deps.getSkillStore,
     getTrustStore: deps.getSkillsTrust,

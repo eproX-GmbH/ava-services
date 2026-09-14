@@ -1675,6 +1675,12 @@ const api = {
   // `recentTicks`) plus mutations (`setPrefs`, `triggerNow`). The
   // `onPrefsChanged` push is fired by main after every successful
   // `set` so the Settings panel can re-sync without polling.
+  // v0.1.646 — Nutzerstand + Faehigkeitsliste (Chat-Vorschlaege).
+  suggestions: {
+    nutzerstand: (opts?: { frisch?: boolean }): Promise<import("../shared/nutzerstand-types").Nutzerstand> => ipcRenderer.invoke("suggestions:nutzerstand", opts ?? {}),
+    faehigkeiten: (): Promise<{ gruppen: import("../shared/nutzerstand-types").Faehigkeit[]; text: string; nichtZugeordnet: string[] }> =>
+      ipcRenderer.invoke("suggestions:faehigkeiten"),
+  },
   emailMuster: {
     status: (): Promise<import("../shared/email-muster-types").EmailMusterConfig & { laeuft: boolean }> => ipcRenderer.invoke("emailMuster:status"),
     setConfig: (patch: { enabled?: boolean }): Promise<import("../shared/email-muster-types").EmailMusterConfig> => ipcRenderer.invoke("emailMuster:setConfig", patch),

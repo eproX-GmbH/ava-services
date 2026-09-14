@@ -6,36 +6,48 @@
 // verhindert, dass das Modell Funktionen halluziniert, die es nicht gibt.
 // Inhalt bewusst an den real ausgelieferten Funktionen orientiert.
 
-export const WELCOME_MESSAGE = `Hi, ich bin **AVA** — deine persönliche Sales-Assistentin. 👋
+/** v0.1.646 — Willkommenstext, Stand September 2026. Fester Text, keine
+ *  KI; die Tool-Zahl kommt aus der Registry. Jede Aussage entspricht dem
+ *  Website-Stand (docs/WEBSITE_PROMPT_*), nichts Geplantes. */
+export function welcomeMessage(toolCount: number): string {
+  const tools = toolCount > 0 ? `${Math.floor(toolCount / 10) * 10}+ Werkzeuge` : "viele Werkzeuge";
+  return `Hi, ich bin **AVA**, deine Assistentin für B2B-Vertrieb und Recherche im DACH-Raum. 👋
 
-Ich helfe dir, Vertrieb und Recherche im B2B von der lästigen Fleißarbeit zu befreien. Ein Überblick, was ich für dich tun kann:
+Ich nehme dir die Fleißarbeit ab. Ein Überblick, was ich für dich tun kann:
 
-**🔎 Recherche & Analyse**
-- Firmen aus ihrer Live-Website + Handelsregister-Daten profilieren
-- Zu einer Anfrage (RFQ) eine gerankte Best-Match-Firmenliste erstellen
-- Excel-Listen importieren und automatisch anreichern
+**🔎 Firmen recherchieren**
+- Firmen aus Handelsregister, Jahresabschlüssen, Website und Publikationen profilieren, mit Quelle und Datum zu jeder Angabe
+- Kontakte mit Beleg finden, E-Mail-Adressen nach dem Adressmuster der Firma ableiten und per Mail-Server-Anfrage prüfen
+- Excel-Listen oder dein CRM importieren und alle Firmen automatisch anreichern
+- Zu einer Anfrage die passendsten Firmen aus deinem Bestand ranken (Best-Match)
 
-**🤝 CRM & Wissensquellen**
-- **HubSpot** live: Firmen, Kontakte, Deals, Aufgaben & Notizen lesen, anlegen, aktualisieren, verknüpfen (mit Rückfrage vor jeder Änderung)
-- **Notion** & **Obsidian**: Datenbanken/Notizen lesen und pflegen
-- Daten zwischen den Systemen hin- und herbewegen
+**📡 Firmen-Radar**
+- Ich suche laufend neue Firmen in deiner Region, gleiche sie mit deinem Idealkundenprofil (ICP) ab und melde dir die Treffer mit Score. Importiert wird nur, was du freigibst.
 
-**📡 Monitoring & Signale**
-- **LinkedIn-Signale**: ich beobachte Feeds und erkenne Ereignisse wie Finanzierungsrunden, Führungswechsel oder Einstellungswellen — du gibst 👍/👎, ich kalibriere mich auf das, was für dich zählt
-- **Link-/Website-Überwachung**: ich behalte eine beliebige URL im Auge und melde mich, wenn sich etwas ändert
-- **Mail-Triage**: ich sortiere und bearbeite eingehende E-Mails vor
+**⚙️ Workflows**
+- Erklär mir einen Ablauf einmal im Chat und sag „speicher das als Workflow". Danach läuft er per Zeitplan oder Ereignis für jede Firma, schreibende Schritte nur nach deiner Freigabe.
 
-**🛠️ Tools & Skills**
-- Über 160 Werkzeuge, die ich in einem Chat kombinieren kann (Firmen, CRM, LinkedIn, Finanzdaten, Erinnerungen …)
-- **Skills** = wiederverwendbare Vertriebs-Routinen, die du per Slash-Befehl auslöst — und **du kannst dir eigene Skills anlegen**
-- **Automatisierungen**: geplante Aufgaben und Watches, die im Hintergrund laufen
+**🤝 CRM & Wissen**
+- **HubSpot**: Firmen, Kontakte, Deals, Aufgaben und Notizen lesen, anlegen, aktualisieren (Rückfrage vor jeder Änderung)
+- **Notion** und **Obsidian**: Datenbanken und Notizen lesen und pflegen
 
-**🔒 Lokal & privat**
-- Deine Berechnung läuft auf deiner Maschine. Du wählst deinen KI-Anbieter oder ein lokales Modell — deine Daten bleiben bei dir.
+**👀 Beobachten & Melden**
+- LinkedIn-Signale zu deinen Accounts, Personen-Watchlist, Website-Überwachung einer beliebigen URL
+- Meldungen und Freigaben unterwegs per **Telegram**, Mail-Triage für dein Postfach
 
-Damit ich dich gezielt unterstützen kann, lass uns kurz dein **Idealkundenprofil (ICP)** festhalten: **Welche Firmen sind für dich die perfekten Kunden?** Beschreib mir gern Branche, Größe, Region und was eine Firma zu einem guten Lead macht.
+**👥 Teams**
+- Recherchen und Radar-Firmen mit deiner Organisation teilen, zentrale KI-Schlüssel, Verbrauch je Person
 
-Noch schneller: Nenn mir einfach **deine Website-URL und die Websites deiner besten Kunden** — ich lese daraus dein Angebot, deinen Standort und was deine Top-Kunden gemeinsam haben, und erstelle dein ICP selbst (auch als Assistent unter Firmen → Radar → „ICP bearbeiten"). Oder frag mich einfach direkt etwas.`;
+**🔒 Deine Daten**
+- Chats, Schlüssel, Logins und dein ICP bleiben auf deinem Rechner. Öffentliche Firmendaten landen mit Quellenbeleg in einem geteilten Bestand. KI wahlweise lokal oder mit deinem eigenen Anbieter.
+
+Dahinter stehen ${tools}, die ich in einem Chat kombiniere, dazu **Skills** als wiederverwendbare Routinen per Slash-Befehl.
+
+Unten habe ich dir passende nächste Schritte vorbereitet. Oder sag mir einfach, woran du arbeitest.`;
+}
+
+/** @deprecated Nur noch fuer Tests/Alt-Aufrufer; der Orchestrator nutzt welcomeMessage(). */
+export const WELCOME_MESSAGE = welcomeMessage(0);
 
 /**
  * Erkennt eine bloße Begrüßung oder eine „Was kannst du?"-Frage. Bewusst

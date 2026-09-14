@@ -1,5 +1,9 @@
 import { meldeAbgeleiteteAdressen } from "./contacts/email-muster/rueckmeldung";
 import { radarActivity } from "./discovery/activity";
+import { NutzerstandService } from "./suggestions/nutzerstand";
+import { verfuegbareFaehigkeiten, faehigkeitenText, nichtZugeordnet } from "./suggestions/faehigkeiten";
+import { ORG_FEATURES } from "../shared/types";
+import { pruefeModellstufe } from "./workflows/modellstufe";
 import { guardAllKnownSessions, setDownloadBlockedListener } from "./download-guard";
 import { EmailMusterSupervisor } from "./contacts/email-muster/supervisor";
 import {
@@ -1353,6 +1357,9 @@ let personenRadarSupervisor: PersonenRadarSupervisor | null = null;
 /** W1 — Workflows (docs/PLAN_WORKFLOWS.md). */
 let workflowService: WorkflowService | null = null;
 let emailMuster: EmailMusterSupervisor | null = null;
+// v0.1.646 — Nutzerstand fuer Chat-Vorschlaege (PLAN_CHAT_VORSCHLAEGE V1).
+let nutzerstand: NutzerstandService | null = null;
+let skillStoreRef: { list(): unknown[] } | null = null;
 
 /** v0.1.580 — Apify-Zugang fuer Watchlist/Personen-Radar im Hauptprozess:
  *  eigener Token gewinnt (ausser unter Anbieter-Sperre), sonst der
@@ -1811,6 +1818,7 @@ const agentRegistry = buildReadOnlyRegistry({
   hatApifyZugang: async () => Boolean(await resolveApifyAccess()),
   getWorkflows: () => workflowService,
   getEmailMuster: () => emailMuster,
+  getNutzerstand: () => nutzerstand,
   getRadar: () =>
     radarSupervisor
       ? {
@@ -3932,6 +3940,7 @@ app.whenReady().then(async () => {
   const skillsTrust = new SkillsTrustStore();
   _skillsTrustRef = skillsTrust;
   const skillStore = await initSkills(app, {
+    // (skillStoreRef wird direkt nach der Initialisierung gesetzt, s. u.)
     evaluateGate: skillGate,
     trustStore: skillsTrust,
   }).catch((err: unknown) => {
@@ -3940,6 +3949,7 @@ app.whenReady().then(async () => {
     );
     return null;
   });
+  skillStoreRef = skillStore;
   // v0.1.236 — backfill the lazy ref used by the skill_*-tools.
   _skillStoreRef = skillStore;
   // S3 — per-user enabled-state for skills. Wire BEFORE the SkillStore
@@ -5198,6 +5208,40 @@ app.whenReady().then(async () => {
   // Phase 3 Firmen-Discovery (PLAN_FIRMEN_DISCOVERY.md) — Radar-IPC
   // fuer die Kandidaten-Tabelle: Liste (mit lokalen Match-Scores),
   // Bulk-Entscheidung (Import/Ignorieren), Match-Lauf.
+  // v0.1.646 — Nutzerstand + Faehigkeitsliste (Chat-Vorschlaege, V1).
+  nutzerstand = new NutzerstandService({
+    angemeldet: () => auth.getStatus().signedIn,
+    gatewayRequest: (path) => gatewayClient.request(path),
+    mailVerbunden: async () => (mailSupervisor ? (await mailSupervisor.snapshot()).account !== null : false),
+    telegramVerbunden: () => telegramStore.hasToken() && telegramStore.getConfig().chatId !== null,
+    crmStatus: () => crmManager.getAllStatuses().map((c) => ({ provider: String(c.provider), connected: c.connected })),
+    knowledgeStatus: () => KnowledgeProviderStore.shared().snapshot().providers.map((p) => ({ kind: String(p.kind), connected: p.connected })),
+    linkedinAktiv: () => readLinkedInSettings().enabled,
+    icp: () => ({ gesetzt: icpStore.isSet(), vollstaendig: icpStore.isComplete() }),
+    radarConfig: () => {
+      const c = radarSupervisor?.getConfig();
+      return { enabled: c?.enabled ?? false, lastRunAt: c?.lastRunAt ?? null };
+    },
+    matches: () => discoveryMatches.getAll(),
+    workflows: () => workflowService?.list() ?? [],
+    skillsEigene: () => skillStoreRef?.list().length ?? 0,
+    watchlistAnzahl: async () => (watchlistStore ? (await watchlistStore.list()).length : 0),
+    emailAbleitungAktiv: () => emailMuster?.getConfig().enabled ?? false,
+    modell: () => {
+      const s = providers.getStatus();
+      return { ready: s.ready, kind: s.kind ?? null, model: s.model, sStufe: s.model ? pruefeModellstufe(String(s.kind), s.model).erlaubt : false };
+    },
+    tier: () => getTenantTierCached(),
+    featureAn: (key) => featureEnabled(key as never),
+    featureKeys: () => ORG_FEATURES.map((f) => f.key),
+    organisation: () => (auth.getStatus().tenantId ?? "").startsWith("org_"),
+  });
+  ipcMain.handle("suggestions:nutzerstand", (_e, opts: { frisch?: boolean } | undefined) => nutzerstand!.get({ frisch: opts?.frisch === true }));
+  ipcMain.handle("suggestions:faehigkeiten", async () => {
+    const st = await nutzerstand!.get();
+    const namen = agentRegistry.list().map((t) => t.name);
+    return { gruppen: verfuegbareFaehigkeiten(namen, st.gesperrteModule), text: faehigkeitenText(verfuegbareFaehigkeiten(namen, st.gesperrteModule)), nichtZugeordnet: nichtZugeordnet(namen) };
+  });
   // v0.1.636 — Live-Aktivitaet des Radars (Indikator + Popup).
   ipcMain.handle("discovery:activity", () => radarActivity.get());
   radarActivity.on("changed", (state) => {

@@ -4,8 +4,8 @@ Auto-generiert von `services/desktop/scripts/generate-tools-md.mjs`.
 NICHT direkt bearbeiten — die Quelle der Wahrheit ist `services/desktop/src/main/agent/tools/*.ts`.
 Lauf via `pnpm -F @ava/desktop tools:doc` (oder automatisch via `build:typecheck`).
 
-Stand: 2026-09-12
-Anzahl Tools: 242
+Stand: 2026-09-14
+Anzahl Tools: 243
 
 ## Firmen (17)
 
@@ -2166,6 +2166,17 @@ _Datei:_ `services/desktop/src/main/agent/tools/voice.ts`
 Liefert den Status der Spracherkennung: ist das whisper.cpp-Binary installiert, ist das Sprachmodell heruntergeladen, läuft ein Download. Nutze das Tool, wenn der Nutzer fragt, ob Diktat / Spracheingabe einsatzbereit ist.
 
 _Parameter:_ keine.
+
+## vorschlaege (1)
+
+### `vorschlaege_status`
+
+_Datei:_ `services/desktop/src/main/agent/tools/vorschlaege.ts`
+
+Zeigt den Nutzerstand, auf dem die naechsten Schritte im Chat beruhen: Verbindungen (Mail, Telegram, HubSpot, Notion, Obsidian, LinkedIn), ICP-Stand, Radar (Automatik, bewertete und heisse Treffer, Top-Treffer), importierte Firmen, Workflows, Skills, Watchlist, E-Mail-Ableitung, Modell und Plan, Organisation, gesperrte Module. Dazu die Faehigkeitsgruppen, die mit den geladenen Tools und der Organisations-Policy verfuegbar sind. Nur lesend. Nutze es, um Erledigtes nicht erneut vorzuschlagen.
+
+_Parameter:_
+- `frisch: boolean` — Cache umgehen
 
 ## watchlist (6)
 

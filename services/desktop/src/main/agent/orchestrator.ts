@@ -17,7 +17,7 @@ import { buildMetaTools, ALWAYS_ON_CORE_TOOL_NAMES } from "./tools/meta";
 import type { ConversationToolLoadState } from "./tools/meta";
 import { buildSystemPrompt } from "./prompts";
 import { isUserDeclined } from "./define-tool";
-import { WELCOME_MESSAGE, isWelcomeTrigger } from "./welcome";
+import { welcomeMessage, isWelcomeTrigger } from "./welcome";
 import type { AgentMessageImage } from "../../shared/types";
 import {
   UiBridge,
@@ -1006,17 +1006,18 @@ export class AgentOrchestrator extends EventEmitter {
           typeof lastUser?.content === "string" ? lastUser.content : "";
         if (text && isWelcomeTrigger(text)) {
           const welcomeId = randomUUID();
+          const welcome = welcomeMessage(this.registry.size());
           this.emitFrame({
             kind: "token",
             requestId,
             conversationId: conversation.id,
             messageId: welcomeId,
-            delta: WELCOME_MESSAGE,
+            delta: welcome,
           });
           this.appendMessage(conversation, {
             id: welcomeId,
             role: "assistant",
-            content: WELCOME_MESSAGE,
+            content: welcome,
             createdAt: Date.now(),
           });
           this.emitFrame({
