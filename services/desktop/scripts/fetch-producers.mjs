@@ -135,6 +135,16 @@ const PRODUCERS = [
     entry: "dist/web/api/server.js",
     databaseName: "website",
   },
+  {
+    // Register-Delta S6 — Worker "Mithelfen" (docs/PLAN_STAMMDATEN_DELTA.md).
+    // Kein Server, kein PGlite: Kindprozess mit Selenium, gestartet vom
+    // MithelfenSupervisor. Einzige Laufzeitabhaengigkeit selenium-webdriver.
+    name: "register-delta",
+    dir: "rd",
+    workspaceDir: "packages/register-delta",
+    entry: "dist/cli.js",
+    databaseName: null,
+  },
 ];
 
 const argv = process.argv.slice(2);
@@ -465,8 +475,10 @@ async function main() {
     //     We still need to keep the prisma CLI around BEFORE prune
     //     --omit=dev (it's a devDep), so generation stays in this
     //     pre-prune window.
-    console.log(`[producers] ${target.name}: prisma generate…`);
-    runSyncStrict("npx", ["prisma", "generate"], { cwd: stageDir });
+    if (existsSync(join(stageDir, "prisma"))) {
+      console.log(`[producers] ${target.name}: prisma generate…`);
+      runSyncStrict("npx", ["prisma", "generate"], { cwd: stageDir });
+    }
 
     // 4b. Build into stage/dist.
     console.log(`[producers] ${target.name}: npm run build…`);
@@ -576,8 +588,9 @@ module.exports = require("../generated/prisma-client");
     // copied if present and silently skipped otherwise. `generated/`
     // is optional because not every producer overrides Prisma's
     // default output dir.
-    const REQUIRED = ["dist", "node_modules", "prisma", "package.json"];
-    const OPTIONAL = ["generated"];
+    // register-delta hat kein Prisma (kein PGlite): prisma ist dort optional.
+    const REQUIRED = target.databaseName ? ["dist", "node_modules", "prisma", "package.json"] : ["dist", "node_modules", "package.json"];
+    const OPTIONAL = target.databaseName ? ["generated"] : ["generated", "prisma"];
     for (const entry of [...REQUIRED, ...OPTIONAL]) {
       const from = join(stageDir, entry);
       if (!existsSync(from)) {

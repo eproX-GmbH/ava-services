@@ -184,6 +184,7 @@ const ANCHOR_FEATURE: Record<string, import("../../../shared/types").OrgFeatureK
   "mail-account-section": "mail",
   "scheduler-section": "mail",
   "telegram-section": "telegram",
+  "mithelfen-section": "stammdaten.mithelfen",
 };
 /** v0.1.561 — Sprungmarken, die unter Anbieter-Sperre keinen Inhalt haben. */
 const ANCHOR_HIDDEN_UNDER_LOCK = new Set(["installed-models"]);
@@ -224,6 +225,7 @@ export const SETTINGS_TAB_SUB_ITEMS: Record<
     { anchor: "scheduler-section", label: "Wiederkehrende Aufgaben" },
     { anchor: "freshness-section", label: "Datenrefresh" },
     { anchor: "email-muster-section", label: "E-Mail-Ableitung" },
+    { anchor: "mithelfen-section", label: "Stammdaten mitpflegen" },
     { anchor: "alerts-cadence", label: "Alerts / Heartbeat" },
     { anchor: "telegram-section", label: "Telegram" },
   ],
@@ -268,6 +270,7 @@ export const SETTINGS_ANCHOR_TO_TAB: Record<string, SettingsTabId> = {
   "alerts-severity":         "automatisierungen",
   "freshness-section":       "automatisierungen",
   "email-muster-section":    "automatisierungen",
+  "mithelfen-section":       "automatisierungen",
   "watches-section":         "automatisierungen",
   "link-monitor-section":    "automatisierungen",
   "scheduler-section":       "automatisierungen",

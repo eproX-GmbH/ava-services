@@ -249,7 +249,24 @@ shared-cpu-1x 1 GB, läuft dauerhaft, kein HTTP), Secret vom Gateway
 übertragen, erster Job wenige Sekunden nach dem Start. Der Worker fragt
 alle 5 Minuten die Queue ab, wenn sie leer ist. Kostenrahmen etwa 6 bis 7
 US-Dollar je Monat und Maschine. Weitere Regionen (= weitere IPs) über
-`fly scale count` je Region, sobald das Aufholen Tempo braucht.
+`fly scale count` je Region, sobald das Aufholen Tempo braucht. Befund auf
+Fly: ohne Systemlocale liefert das Portal Englisch, deshalb erzwingt der
+Treiber `intl.accept_languages de-DE` und klickt sonst den Umschalter DE.
+Erste Bekanntmachungs-Jobs vom Fly-Worker: 321 bis 390 Einträge je Werktag,
+21 bis 26 Refresh-Jobs daraus.
+
+**S6 umgesetzt (2026-09-14, Desktop v0.1.652):** „Stammdaten mitpflegen“
+als Opt-in unter Einstellungen → Automatisierungen (`MithelfenSection`),
+Kindprozess aus dem vendierten Paket `resources/p/rd` (fetch-producers.mjs,
+kein Prisma), `MithelfenSupervisor` (Token-Datei 0600 alle 5 Minuten neu,
+Pause bei Akku wenn gewünscht, bei Abmeldung, bei Organisations-Sperre,
+Neustart nach Absturz, Logs unter „register-delta“ im Producer-Log),
+Org-Feature `stammdaten.mithelfen`, Chat-Tools `register_delta_status` und
+`register_delta_config` (Fähigkeitsgruppe „stammdaten“), Statuszeile mit
+Queue-Stand. Lokaler Front-Lauf: Aurich HRA 15 von 15 Nummern neu, Aurich
+HRB 6 neu; die Antwort auf eine Ergebnismeldung nach 15 Minuten Leerlauf
+ging verloren (Proxy schließt die Verbindung), deshalb Client-Wiederholung
+und idempotente Ergebnisroute (gleicher Worker, bereits erledigt).
 
 ## 5. Einmaliges Aufholen 2023 → heute
 

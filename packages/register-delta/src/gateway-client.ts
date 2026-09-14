@@ -68,7 +68,17 @@ export class GatewayClient {
     } else {
       throw new Error("GatewayClient: token oder hmacSecret noetig");
     }
-    const res = await this.f(`${this.opt.baseUrl.replace(/\/$/, "")}${path}`, { method, headers, body: raw });
+    // Nach einem langen Job (15 Minuten Leerlauf) ist die Verbindung vom Proxy
+    // geschlossen; der erste Versuch scheitert mit "fetch failed". Einmal
+    // wiederholen; Ergebnis-Meldungen sind serverseitig idempotent.
+    let res: Response;
+    try {
+      res = await this.f(`${this.opt.baseUrl.replace(/\/$/, "")}${path}`, { method, headers, body: raw });
+    } catch (err) {
+      if (!(err instanceof TypeError)) throw err;
+      await new Promise((r) => setTimeout(r, 1500));
+      res = await this.f(`${this.opt.baseUrl.replace(/\/$/, "")}${path}`, { method, headers, body: raw });
+    }
     if (res.status === 204) return { status: 204, data: null };
     const text = await res.text();
     if (!res.ok) throw new Error(`gateway ${method} ${path} → ${res.status} ${text.slice(0, 200)}`);

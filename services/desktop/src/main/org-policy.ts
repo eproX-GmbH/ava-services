@@ -110,6 +110,7 @@ export function featureOfTool(name: string): OrgFeatureKey | undefined {
   if (name.startsWith("personen_radar_")) return "linkedin.radar";
   if (name.startsWith("linkedin_") || name === "company_linkedin_signals") return "linkedin.beobachter";
   if (name === "contact_linkedin_lookup" || name === "company_contacts") return "kontakte";
+  if (name.startsWith("register_delta_")) return "stammdaten.mithelfen";
   return undefined;
 }
 

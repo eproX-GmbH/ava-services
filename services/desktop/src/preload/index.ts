@@ -1685,6 +1685,18 @@ const api = {
     setSettings: (patch: { startseite?: boolean; gespraech?: boolean }): Promise<{ startseite: boolean; gespraech: boolean; orgErlaubt: boolean }> =>
       ipcRenderer.invoke("suggestions:setSettings", patch),
   },
+  // Register-Delta S6 — Mithelfen (Stammdaten mitpflegen).
+  registerDelta: {
+    status: (): Promise<import("../shared/register-delta-types").MithelfenStatus> => ipcRenderer.invoke("registerDelta:status"),
+    setSettings: (patch: { aktiv?: boolean; nurNetzbetrieb?: boolean }): Promise<import("../shared/register-delta-types").MithelfenStatus> =>
+      ipcRenderer.invoke("registerDelta:setSettings", patch),
+    queue: (): Promise<Record<string, unknown> | null> => ipcRenderer.invoke("registerDelta:queue"),
+    onStatus: (cb: (s: import("../shared/register-delta-types").MithelfenStatus) => void): (() => void) => {
+      const h = (_e: unknown, s: import("../shared/register-delta-types").MithelfenStatus) => cb(s);
+      ipcRenderer.on("register-delta:status:changed", h);
+      return () => ipcRenderer.removeListener("register-delta:status:changed", h);
+    },
+  },
   emailMuster: {
     status: (): Promise<import("../shared/email-muster-types").EmailMusterConfig & { laeuft: boolean }> => ipcRenderer.invoke("emailMuster:status"),
     setConfig: (patch: { enabled?: boolean }): Promise<import("../shared/email-muster-types").EmailMusterConfig> => ipcRenderer.invoke("emailMuster:setConfig", patch),

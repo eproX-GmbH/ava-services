@@ -17,6 +17,8 @@ export type WorkerOptionen = {
   /** Soll gerade pausiert werden (Chat aktiv, Akku, Nutzer will nicht)? */
   pausiert?: () => boolean;
   onJob?: (job: Job, ergebnis: Record<string, unknown>) => void;
+  /** Wird bei jeder Zustandsaenderung gerufen (Desktop: Statuskarte). */
+  onZustand?: (zustand: WorkerStatus) => void;
 };
 
 export type WorkerStatus = {
@@ -44,13 +46,23 @@ export class RegisterWorker {
     return { ...this.status, abfragenLetzteStunde: this.takt.verbraucht() };
   }
 
+  private melde(): void {
+    try {
+      this.o.onZustand?.(this.zustand());
+    } catch {
+      /* Zuhoerer-Fehler nicht in die Schleife tragen */
+    }
+  }
+
   start(): void {
     if (this.laufPromise) return;
     this.stopSignal = false;
     this.status.laeuft = true;
+    this.melde();
     this.laufPromise = this.schleife().finally(() => {
       this.status.laeuft = false;
       this.laufPromise = null;
+      this.melde();
     });
   }
 
@@ -81,6 +93,7 @@ export class RegisterWorker {
           continue;
         }
         this.status.aktuellerJob = job;
+        this.melde();
         this.log(`job ${job.id} ${job.art} ${job.schluessel}`);
         try {
           portal ??= await this.o.portal();
@@ -119,6 +132,7 @@ export class RegisterWorker {
           await this.warte(30_000);
         } finally {
           this.status.aktuellerJob = null;
+          this.melde();
         }
       }
     } finally {

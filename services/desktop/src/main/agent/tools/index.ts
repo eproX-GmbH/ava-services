@@ -53,6 +53,7 @@ import { buildDiscoveryTools } from "./discovery";
 import { buildWorkflowTools } from "./workflows";
 import { buildEmailMusterTools } from "./email-muster";
 import { buildVorschlaegeTools } from "./vorschlaege";
+import { buildRegisterDeltaTools } from "./register-delta";
 import { buildWatchlistTools } from "./watchlist";
 import { buildLinkedInSelfserviceTools } from "./linkedin-selfservice";
 import { buildIcpTools } from "./icp";
@@ -183,6 +184,9 @@ export function buildReadOnlyRegistry(deps: {
   /** v0.1.646 — Nutzerstand fuer Chat-Vorschlaege (lazy, entsteht im Boot). */
   getNutzerstand?: () => import("../../suggestions/nutzerstand").NutzerstandService | null;
   getVorschlaegeSettings?: () => import("../../suggestions/settings").VorschlaegeSettingsStore | null;
+  /** Register-Delta S6 — Mithelfen (lazy, entsteht im Boot). */
+  getMithelfen?: () => import("../../register-delta/supervisor").MithelfenSupervisor | null;
+  getRegisterQueueStatus?: () => Promise<Record<string, unknown> | null>;
   getWatchlistKeyStore: () => import("../../linkedin/watchlist/key-store").WatchlistKeyStore | null;
   onCompanyWindowChanged?: () => void;
   getPersonenRadarStore: () => import("../../linkedin/personen-radar/store").PersonenRadarStore | null;
@@ -379,6 +383,7 @@ export function buildReadOnlyRegistry(deps: {
   }))
     registry.register(t);
   for (const t of buildEmailMusterTools({ get: () => deps.getEmailMuster?.() ?? null })) registry.register(t);
+  for (const t of buildRegisterDeltaTools({ get: () => deps.getMithelfen?.() ?? null, queueStatus: () => deps.getRegisterQueueStatus?.() ?? Promise.resolve(null) })) registry.register(t);
   for (const t of buildVorschlaegeTools({ get: () => deps.getNutzerstand?.() ?? null, toolNamen: () => registry.list().map((x) => x.name), settings: () => deps.getVorschlaegeSettings?.() ?? null })) registry.register(t);
   for (const t of buildSkillsTools({
     getSkillStore: deps.getSkillStore,

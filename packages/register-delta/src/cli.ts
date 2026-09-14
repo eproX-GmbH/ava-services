@@ -4,6 +4,7 @@
 //   WORKER_ID              eindeutig je Maschine (Default: hostname)
 //   INTERNAL_HMAC_SECRET   Betreiber-Worker: HMAC-Kanal /internal/register-jobs/* (Fly) ODER
 //   WORKER_TOKEN           statisches Bearer-Token (Testlauf) ODER
+//   WORKER_TOKEN_FILE      Datei mit aktuellem Bearer-Token, wird bei jedem Aufruf gelesen (Desktop schreibt sie bei jeder Erneuerung) ODER
 //   KEYCLOAK_TOKEN_URL + KEYCLOAK_CLIENT_ID + KEYCLOAK_CLIENT_SECRET  (Dienstkonto, client_credentials) ODER
 //   KEYCLOAK_TOKEN_URL + KEYCLOAK_CLIENT_ID + WORKER_REFRESH_TOKEN_FILE (lokaler Lauf mit Nutzer-Sitzung;
 //                          die Datei enthaelt den Refresh-Token und wird bei Rotation ueberschrieben)
@@ -11,6 +12,8 @@
 //   CHROME_BIN             optional
 //   REGISTER_DELTA_EINMAL=1  nur einen Job ausfuehren (Smoke-Test)
 //   REGISTER_DELTA_ARTEN     z. B. "refresh,front" (Default alle)
+//   WORKER_ART               desktop | betreiber (Default betreiber)
+//   REGISTER_DELTA_STATUS=1  Zustand als Zeile "__AVA_RD_STATUS__{json}" auf stdout (Desktop-Statuskarte)
 
 import fs from "node:fs";
 import os from "node:os";
@@ -20,6 +23,7 @@ import { RegisterWorker } from "./worker";
 
 function tokenQuelle(): () => Promise<string> {
   if (process.env.WORKER_TOKEN) return async () => process.env.WORKER_TOKEN as string;
+  if (process.env.WORKER_TOKEN_FILE) return async () => fs.readFileSync(process.env.WORKER_TOKEN_FILE as string, "utf8").trim();
   const url = process.env.KEYCLOAK_TOKEN_URL;
   const id = process.env.KEYCLOAK_CLIENT_ID;
   const secret = process.env.KEYCLOAK_CLIENT_SECRET;
@@ -46,7 +50,7 @@ async function main() {
   const log = (z: string) => console.log(`${new Date().toISOString()} ${z}`);
   const worker = new RegisterWorker({
     workerId: process.env.WORKER_ID ?? `betreiber-${os.hostname()}`,
-    workerArt: "betreiber",
+    workerArt: process.env.WORKER_ART === "desktop" ? "desktop" : "betreiber",
     gateway: process.env.INTERNAL_HMAC_SECRET ? new GatewayClient({ baseUrl, hmacSecret: process.env.INTERNAL_HMAC_SECRET }) : new GatewayClient({ baseUrl, token: tokenQuelle() }),
     portal: async () => {
       const p = new RegisterPortal({ chromeBinaryPath: process.env.CHROME_BIN, log });
@@ -56,6 +60,9 @@ async function main() {
     abfragenJeStunde: Number(process.env.ABFRAGEN_JE_STUNDE ?? 60),
     arten: process.env.REGISTER_DELTA_ARTEN ? (process.env.REGISTER_DELTA_ARTEN.split(",").map((a) => a.trim()) as JobArt[]) : undefined,
     log,
+    onZustand: (z) => {
+      if (process.env.REGISTER_DELTA_STATUS === "1") console.log(`__AVA_RD_STATUS__${JSON.stringify(z)}`);
+    },
     onJob: (job, antwort) => {
       log(`erledigt ${job.id} ${job.art}: ${JSON.stringify(antwort)}`);
       if (process.env.REGISTER_DELTA_EINMAL === "1") void worker.stop();

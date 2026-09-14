@@ -86,7 +86,14 @@ export class RegisterPortal {
     if (bin) options.setChromeBinaryPath(bin);
     if (this.opt.headless !== false) options.addArguments("--headless=new");
     options.addArguments("--lang=de-DE", "--window-size=1400,1000", "--disable-gpu", "--disable-dev-shm-usage", "--no-sandbox");
-    options.setUserPreferences({ download_restrictions: 3, "download.prompt_for_download": true, "safebrowsing.enabled": true });
+    // Sprache erzwingen: auf Fly (kein Systemlocale) lieferte das Portal Englisch
+    // ("Register announcements", Cookie-Knopf "Okay"), die Parser erwarten Deutsch.
+    options.setUserPreferences({
+      download_restrictions: 3,
+      "download.prompt_for_download": true,
+      "safebrowsing.enabled": true,
+      "intl.accept_languages": "de-DE,de",
+    });
     this.driver = await new Builder().forBrowser("chrome").setChromeOptions(options).build();
     await this.driver.manage().setTimeouts({ pageLoad: 45_000 });
     await this.startseite();
@@ -97,17 +104,51 @@ export class RegisterPortal {
     await d.get(PORTAL_URL);
     await this.pruefeStoerung();
     try {
-      const btn = await d.wait(until.elementLocated(By.xpath("//button[contains(., 'Verstanden')] | //a[contains(., 'Verstanden')]")), 6_000);
+      const btn = await d.wait(
+        until.elementLocated(By.xpath("//button[contains(., 'Verstanden') or contains(., 'Okay')] | //a[contains(., 'Verstanden') or contains(., 'Okay')]")),
+        6_000,
+      );
       await btn.click();
       await schlafen(500);
     } catch {
       /* kein Cookie-Hinweis */
     }
+    await this.erzwingeDeutsch();
+  }
+
+  /** Zeigt das Portal Englisch, auf den Sprachumschalter "DE" klicken. */
+  private async erzwingeDeutsch(): Promise<void> {
+    const d = this.d();
+    const englisch = (await d.executeScript("return /Common register portal|Register announcements|Advanced search/.test(document.body.innerText)")) as boolean;
+    if (!englisch) return;
+    const geklickt = (await d.executeScript(`const el=[...document.querySelectorAll('a,button,span,li')].find(e=>e.children.length===0 && e.textContent.trim()==='DE'); if(!el) return false; el.click(); return true;`)) as boolean;
+    this.log(`Portal auf Englisch, Umschalter DE ${geklickt ? "geklickt" : "nicht gefunden"}`);
+    await schlafen(1500);
+    const nochEnglisch = (await d.executeScript("return /Common register portal|Register announcements/.test(document.body.innerText)")) as boolean;
+    if (nochEnglisch) throw new Error("Portal bleibt auf Englisch, Sprachumschalter wirkungslos");
   }
 
   private d(): WebDriver {
     if (!this.driver) throw new Error("Portal nicht geoeffnet");
     return this.driver;
+  }
+
+  /** Wartet auf eine Bedingung; bei Zeitueberschreitung Titel und Textanfang der Seite im Fehler (Diagnose auf Fly). */
+  private async warteAuf(bedingung: () => Promise<boolean>, timeoutMs: number, was: string): Promise<void> {
+    const d = this.d();
+    try {
+      await d.wait(bedingung, timeoutMs);
+    } catch (err) {
+      let title = "";
+      let text = "";
+      try {
+        title = await d.getTitle();
+        text = ((await d.executeScript("return document.body ? document.body.innerText : ''")) as string).replace(/\s+/g, " ").slice(0, 300);
+      } catch {
+        /* Browser weg */
+      }
+      throw new Error(`${was}: ${err instanceof Error ? err.message : String(err)} | Titel: "${title}" | Text: "${text}"`);
+    }
   }
 
   /** Fehlertitel oder fehlende Suche = Stoerung; ein Statushinweis "Wartungsarbeiten" allein nicht (structured-content v1.2.2). */
@@ -122,7 +163,7 @@ export class RegisterPortal {
     const d = this.d();
     await d.executeScript(`const a=[...document.querySelectorAll('a')].find(x=>/erweiterteSucheLink/.test(x.getAttribute('onclick')||''));
       if(!a) throw new Error('erweiterteSucheLink fehlt'); a.click();`);
-    await d.wait(until.elementLocated(By.id("form:registerNummer")), 20_000);
+    await this.warteAuf(async () => (await d.findElements(By.id("form:registerNummer"))).length > 0, 20_000, "Erweiterte Suche");
   }
 
   /** Exakte Nummernsuche; mit "auch geloeschte" kommen alle Zusatz- und Altgerichts-Varianten mit. */
@@ -138,12 +179,12 @@ export class RegisterPortal {
     const ok = (await d.executeScript(SUCHE_SKRIPT, portalGericht(gericht), art, String(nummer), auchGeschlossene)) as { gericht: boolean; art: boolean };
     if (!ok.gericht || !ok.art) throw new Error(`Gericht/Art nicht im Portal-Select: ${gericht} / ${art}`);
     this.anfragen++;
-    await d.wait(async () => {
+    await this.warteAuf(async () => {
       const title = await d.getTitle();
       if (title.includes("Suchergebnis")) return true;
       const text = (await d.executeScript("return document.body.innerText")) as string;
       return SPERR_RE.test(text);
-    }, 40_000);
+    }, 40_000, `Suche ${gericht} ${art} ${nummer}`);
     await schlafen(800);
     const title = await d.getTitle();
     const text = (await d.executeScript("return document.body.innerText")) as string;
@@ -161,7 +202,7 @@ export class RegisterPortal {
     await this.startseite();
     await d.executeScript(`const a=document.querySelector('[id$="bekanntmachungenLink"]'); if(!a) throw new Error('bekanntmachungenLink fehlt'); a.click();`);
     this.anfragen++;
-    await d.wait(async () => (await d.getTitle()).includes("Registerbekanntmachungen"), 40_000);
+    await this.warteAuf(async () => (await d.getTitle()).includes("Registerbekanntmachungen"), 40_000, "Bekanntmachungen");
     await schlafen(2000);
     const text = (await d.executeScript("return document.body.innerText")) as string;
     if (SPERR_RE.test(text) && text.length < 2000) return { gesperrt: true, text: "" };

@@ -3,6 +3,7 @@ import { radarActivity } from "./discovery/activity";
 import { NutzerstandService } from "./suggestions/nutzerstand";
 import { ChipErzeugung } from "./suggestions/erzeugung";
 import { VorschlaegeSettingsStore } from "./suggestions/settings";
+import { MithelfenSettingsStore, MithelfenSupervisor } from "./register-delta/supervisor";
 import { verfuegbareFaehigkeiten, faehigkeitenText, nichtZugeordnet } from "./suggestions/faehigkeiten";
 import { ORG_FEATURES } from "../shared/types";
 import { pruefeModellstufe } from "./workflows/modellstufe";
@@ -892,6 +893,19 @@ function buildProducer(
   }
 }
 
+/** Register-Delta S6 — Stand der geteilten Job-Queue (GET /v1/register-jobs/status). */
+async function registerQueueStatus(): Promise<Record<string, unknown> | null> {
+  try {
+    const token = await auth.getAccessToken();
+    if (!token) return null;
+    const res = await fetch(`${GATEWAY_URL}/v1/register-jobs/status`, { headers: { authorization: `Bearer ${token}` } });
+    if (!res.ok) return null;
+    return (await res.json()) as Record<string, unknown>;
+  } catch {
+    return null;
+  }
+}
+
 function broadcastProducerStatus(status: ProducerStatus): void {
   for (const win of BrowserWindow.getAllWindows()) {
     win.webContents.send("producer-status:changed", status);
@@ -1363,6 +1377,8 @@ let emailMuster: EmailMusterSupervisor | null = null;
 let nutzerstand: NutzerstandService | null = null;
 let chipErzeugung: ChipErzeugung | null = null;
 let vorschlaegeSettings: VorschlaegeSettingsStore | null = null;
+// Register-Delta S6 — Mithelfen (Desktop-Worker).
+let mithelfen: MithelfenSupervisor | null = null;
 let skillStoreRef: { list(): unknown[] } | null = null;
 
 /** v0.1.580 — Apify-Zugang fuer Watchlist/Personen-Radar im Hauptprozess:
@@ -1824,6 +1840,8 @@ const agentRegistry = buildReadOnlyRegistry({
   getEmailMuster: () => emailMuster,
   getNutzerstand: () => nutzerstand,
   getVorschlaegeSettings: () => vorschlaegeSettings,
+  getMithelfen: () => mithelfen,
+  getRegisterQueueStatus: () => registerQueueStatus(),
   getRadar: () =>
     radarSupervisor
       ? {
@@ -5254,6 +5272,28 @@ app.whenReady().then(async () => {
     log: (m) => console.log(m),
   });
   vorschlaegeSettings = new VorschlaegeSettingsStore(join(app.getPath("userData"), "suggestions"));
+  // Register-Delta S6 — Mithelfen: Kindprozess mit @ava/register-delta, Opt-in.
+  mithelfen = new MithelfenSupervisor({
+    userDataDir: app.getPath("userData"),
+    resourcesRoot: app.isPackaged ? (process.resourcesPath ?? "") : join(app.getAppPath(), "resources"),
+    gatewayUrl: APP_CONFIG.gatewayUrl,
+    getAccessToken: () => auth.getAccessToken(),
+    getActorId: () => auth.getStatus().actorId ?? null,
+    settings: new MithelfenSettingsStore(join(app.getPath("userData"), "register-delta")),
+  });
+  mithelfen.on("status", (st) => {
+    for (const win of BrowserWindow.getAllWindows()) win.webContents.send("register-delta:status:changed", st);
+  });
+  auth.on("status", (st: AuthStatus) => mithelfen?.setSignedIn(Boolean(st.signedIn)));
+  mithelfen.setSignedIn(Boolean(auth.getStatus().signedIn));
+  ipcMain.handle("registerDelta:status", () => mithelfen!.status());
+  ipcMain.handle("registerDelta:setSettings", (_e, patch: { aktiv?: boolean; nurNetzbetrieb?: boolean }) =>
+    mithelfen!.setSettings({
+      ...(patch?.aktiv !== undefined ? { aktiv: patch.aktiv === true } : {}),
+      ...(patch?.nurNetzbetrieb !== undefined ? { nurNetzbetrieb: patch.nurNetzbetrieb === true } : {}),
+    }),
+  );
+  ipcMain.handle("registerDelta:queue", () => registerQueueStatus());
   ipcMain.handle("suggestions:startseite", (_e, opts: { frisch?: boolean } | undefined) =>
     chipErzeugung!.startseite({ frisch: opts?.frisch === true, ohneModell: !featureEnabled("vorschlaege") || !vorschlaegeSettings!.get().startseite }),
   );

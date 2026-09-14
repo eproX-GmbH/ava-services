@@ -5,7 +5,7 @@ NICHT direkt bearbeiten — die Quelle der Wahrheit ist `services/desktop/src/ma
 Lauf via `pnpm -F @ava/desktop tools:doc` (oder automatisch via `build:typecheck`).
 
 Stand: 2026-09-14
-Anzahl Tools: 244
+Anzahl Tools: 246
 
 ## Firmen (17)
 
@@ -1912,6 +1912,26 @@ _Parameter:_ keine.
 _Datei:_ `services/desktop/src/main/agent/tools/reachability.ts`
 
 Liefert den aktuellen Erreichbarkeits-Status der externen Quellen (unternehmensregister.de, handelsregister.de). Pro Quelle Status (reachable / unreachable / unknown), Zeitpunkt der letzten Prüfung, Latenz und Fehlerursache. Nutze das Tool, wenn der Nutzer fragt, ob eine der Quellen gerade erreichbar ist oder warum Producer hängen.
+
+_Parameter:_ keine.
+
+## register-delta (2)
+
+### `register_delta_config`
+
+_Datei:_ `services/desktop/src/main/agent/tools/register-delta.ts`
+
+Liest oder aendert die Einstellung: aktiv = dieser Rechner arbeitet Register-Jobs der Organisation ab (Handelsregister-Abfragen mit der eigenen IP, hoechstens 60 je Stunde, Chrome im Hintergrund), nurNetzbetrieb = auf Akku pausieren. Ohne Argumente: aktuelle Werte. Schaltet die Organisation die Funktion ab, gilt das vorrangig.
+
+_Parameter:_
+- `aktiv: boolean`
+- `nurNetzbetrieb: boolean`
+
+### `register_delta_status`
+
+_Datei:_ `services/desktop/src/main/agent/tools/register-delta.ts`
+
+Zeigt, ob dieser Rechner Register-Jobs abarbeitet (Nummernfront neuer Firmen, Registerbekanntmachungen, Auffrischung bekannter Firmen), warum er gerade pausiert, welchen Job er bearbeitet, wie viele Abfragen in der letzten Stunde liefen (Budget 60), und den Stand der geteilten Queue (offene und erledigte Jobs, aktive Worker). Nur lesend.
 
 _Parameter:_ keine.
 

@@ -45,6 +45,7 @@ export const FAEHIGKEITEN: Faehigkeit[] = [
   { id: "einstellungen", text: "KI-Anbieter, Schluessel, Modell, Token-Limit einstellen", tools: ["settings_*"], verwaltung: true },
   { id: "organisation", text: "Organisation verwalten: Mitglieder, Vorgaben, Anbieter-Sperre, Limits, Verbrauch, Abrechnung", tools: ["org_*"], verwaltung: true },
   { id: "konto", text: "Kontoinformationen", tools: ["account_info"], verwaltung: true },
+  { id: "stammdaten", text: "Stammdaten mitpflegen: Register-Jobs auf diesem Rechner abarbeiten (Status, ein-/ausschalten)", tools: ["register_delta_*"], feature: "stammdaten.mithelfen", verwaltung: true },
   { id: "system", text: "Producer-Status und -Logs, Erreichbarkeit, Updates, Selbstkorrektur, Tool-Suche", tools: ["producers_*", "reachability_*", "updater_*", "report_self_correction", "tool_search", "tool_load", "vorschlaege_status", "vorschlaege_config"], verwaltung: true },
 ];
 

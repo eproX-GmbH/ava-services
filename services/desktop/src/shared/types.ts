@@ -66,6 +66,7 @@ export const ORG_FEATURES = [
   { key: "telegram", label: "Telegram", hinweis: "Benachrichtigungen und Rueckfragen per Telegram" },
   { key: "workflows", label: "Workflows", hinweis: "Gespeicherte Ablaeufe (Tool-Ketten) mit Zeitplan, Ereignis-Trigger und Freigaben" },
   { key: "vorschlaege", label: "Vorschlaege im Chat", hinweis: "KI-erzeugte naechste Schritte auf der Chat-Startseite und im Gespraech (aus = nur feste Liste, keine KI-Aufrufe)" },
+  { key: "stammdaten.mithelfen", label: "Stammdaten mitpflegen", hinweis: "Rechner der Mitglieder duerfen Register-Jobs abarbeiten (Handelsregister-Abfragen mit eigener IP, 60 je Stunde)" },
 ] as const;
 export type OrgFeatureKey = (typeof ORG_FEATURES)[number]["key"];
 

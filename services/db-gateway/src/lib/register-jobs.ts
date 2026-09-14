@@ -289,6 +289,14 @@ export class JobFehler extends Error {
 }
 
 export async function verarbeiteErgebnis(pool: pg.Pool, jobId: string, ergebnis: Ergebnis): Promise<Record<string, unknown>> {
+  // Idempotent: meldet derselbe Worker ein bereits verbuchtes Ergebnis erneut
+  // (Antwort ging verloren), bekommt er die gespeicherte Zusammenfassung.
+  const vorher = await pool.query<{ status: string; leasedBy: string | null; ergebnis: Record<string, unknown> | null }>(
+    `SELECT "status", "leasedBy", "ergebnis" FROM "RegisterJob" WHERE "id" = $1`,
+    [jobId],
+  );
+  const v = vorher.rows[0];
+  if (v && v.status === "erledigt" && v.leasedBy === ergebnis.workerId) return { ...(v.ergebnis ?? {}), status: "erledigt", wiederholt: true };
   const job = await ladeGeleastenJob(pool, jobId, ergebnis.workerId);
   const zusammenfassung: Record<string, unknown> = { abfragen: ergebnis.abfragen, treffer: ergebnis.treffer.length };
 
