@@ -452,6 +452,20 @@ export async function statistik(pool: pg.Pool): Promise<Statistik> {
 
 let letzterErstellTag: string | null = null;
 
+/**
+ * Wiedervorlage: endgueltig fehlgeschlagene Jobs (5 Versuche, z. B. Portal-
+ * Stoerung oder Sprachproblem eines Workers) bekommen nach 12 Stunden einen
+ * neuen Anlauf mit frischem Versuchszaehler. Bekanntmachungs-Tage sind
+ * idempotent ueber den Schluessel, ohne das blieben sie dauerhaft offen.
+ */
+export async function wiedervorlage(pool: pg.Pool): Promise<number> {
+  const r = await pool.query(
+    `UPDATE "RegisterJob" SET "status" = 'offen', "versuche" = 0, "leasedBy" = NULL, "leaseUntil" = NULL, "updatedAt" = NOW()
+      WHERE "status" = 'fehlgeschlagen' AND "updatedAt" < NOW() - interval '12 hours'`,
+  );
+  return r.rowCount ?? 0;
+}
+
 export async function runRegisterJobCronOnce(now: Date = new Date()): Promise<void> {
   const tag = tagIso(now);
   if (now.getUTCHours() >= 2 && letzterErstellTag !== tag) {
@@ -459,6 +473,8 @@ export async function runRegisterJobCronOnce(now: Date = new Date()): Promise<vo
     const r = await erzeugeJobs(getGatewayPool(), now);
     logger.info(r, "[register-jobs] Jobs erzeugt");
   }
+  const w = await wiedervorlage(getGatewayPool());
+  if (w > 0) logger.info({ wiedervorgelegt: w }, "[register-jobs] fehlgeschlagene Jobs erneut eingereiht");
 }
 
 /** Stuendlicher Tick; Erzeugung einmal taeglich ab 02:00 UTC. REGISTER_JOBS_DISABLED=1 schaltet ab. */
