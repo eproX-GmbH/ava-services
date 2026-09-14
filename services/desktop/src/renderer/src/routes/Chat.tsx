@@ -1,4 +1,6 @@
 import { useFeature } from "../store/policy";
+import { VorschlagChips, auftragMitKontext } from "../components/chat/VorschlagChips";
+import type { Chip, StartseitenChips } from "../../../shared/nutzerstand-types";
 import {
   useCallback,
   useEffect,
@@ -96,6 +98,9 @@ type Activity = {
  *  eckigen Klammern ("[Nachricht des Nutzers über Telegram …]") und einen
  *  Hinweis-Block fuers Modell. Fuer die Anzeige: Kopf → Badge, Hinweis weg. */
 function praesentiereNutzerText(content: string): { badge: string | null; text: string } {
+  // v0.1.648 — Vorschlags-Chip: Kontextsatz am Ende ausblenden, Badge zeigen.
+  const v = /\n*\[Vorschlag: "([^"]+)"[^\]]*\]\s*$/.exec(content);
+  if (v) return { badge: `Vorschlag: ${v[1]}`, text: content.slice(0, v.index).trim() };
   const m = /^\[Nachricht des Nutzers über (Telegram|Mail)([^\]]*)\]\s*/.exec(content);
   if (!m) return { badge: null, text: content };
   let text = content.slice(m[0].length);
@@ -1408,6 +1413,40 @@ export function Chat() {
   // long-form reading than chat shorthand). Tool activity rows and choice
   // cards keep their existing styling.
   const isEmpty = messages.length === 0 && !error && !thinking;
+  // v0.1.648 (V3) — Vorschlags-Chips fuer die Startseite und die Willkommensnachricht.
+  const [startChips, setStartChips] = useState<StartseitenChips | null>(null);
+  useEffect(() => {
+    let alive = true;
+    if (isEmpty || messages.some((m) => m.role === "assistant" && m.content.includes("nächste Schritte vorbereitet"))) {
+      void window.api.suggestions
+        .startseite()
+        .then((r) => {
+          if (alive) setStartChips(r);
+        })
+        .catch(() => undefined);
+    }
+    return () => {
+      alive = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isEmpty, messages.length]);
+
+  async function sendAuftrag(chip: Chip, ort: "startseite" | "gespraech") {
+    const id = conversationIdRef.current;
+    if (!id || thinking) return;
+    const composed = auftragMitKontext(chip, ort);
+    setError(null);
+    setMessages((prev) => [...prev, { id: `u-${Date.now().toString(36)}`, role: "user", content: composed }]);
+    setThinking(true);
+    try {
+      const { requestId } = await window.api.agent.send({ conversationId: id, message: composed });
+      activeRequestIdRef.current = requestId;
+      void refreshConversations();
+    } catch (err) {
+      setThinking(false);
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  }
   const statusLine =
     status === null
       ? "lädt…"
@@ -1858,11 +1897,9 @@ export function Chat() {
                 Womit fangen wir <span className="ct-gradient-text">heute</span> an?
               </h1>
               <p className="chat-welcome__lede">
-                Suche Informationen zu deinen Zielfirmen: Geschäftsdaten,
-                Ansprechpartner, Finanzkennzahlen, Website und aktuelle
-                Entwicklungen. Ich recherchiere für dich und bereite alles
-                so auf, dass du es direkt im Vertrieb nutzen kannst.
+                Sag mir, woran du arbeitest, oder nimm einen dieser Schritte. Sie passen zu dem, was du mit AVA schon eingerichtet hast.
               </p>
+              {startChips && <VorschlagChips chips={startChips.chips} quelle={startChips.quelle} onPick={(c) => void sendAuftrag(c, "startseite")} />}
             </div>
           )}
           {composer}
@@ -1951,6 +1988,9 @@ export function Chat() {
                       </>
                     ) : (
                       renderChatContent(m.content)
+                    )}
+                    {m.role === "assistant" && !m.pending && m.content.includes("nächste Schritte vorbereitet") && startChips && (
+                      <VorschlagChips chips={startChips.chips} quelle={startChips.quelle} onPick={(c) => void sendAuftrag(c, "gespraech")} kompakt />
                     )}
                     {m.pending && <span className="chat-cursor">▍</span>}
                   </div>

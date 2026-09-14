@@ -8,7 +8,10 @@ V2 umgesetzt in v0.1.647: `main/suggestions/erzeugung.ts` (KI-Chips ueber den
 Hintergrundkanal, Cache je Nutzerstand und Tag, harte Schranke gegen unbekannte
 Integrationen, gesperrte Module, Erledigtes und Verwaltung, feste Rueckfalliste),
 IPC `suggestions:startseite`, Org-Feature `vorschlaege` (aus = nur feste Liste).
-V3 bis V5 offen.
+V3 umgesetzt in v0.1.648: `components/chat/VorschlagChips.tsx`, Chips auf der
+Startseite (unter dem neuen Lede) und unter der Willkommensnachricht; Klick sendet
+den Auftrag plus versteckten Kontextsatz `[Vorschlag: …]`, der im Bubble als Badge
+erscheint. V4 und V5 offen.
 
 ## 1. Ziel
 

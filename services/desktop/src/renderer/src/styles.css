@@ -8240,3 +8240,23 @@ input, textarea, select, button, a, summary, details,
 /* v0.1.638 — Radar-Deckel */
 .radar-auto-deckel { display: inline-flex; align-items: center; gap: 0.5rem; }
 .radar-auto-deckel input[type="number"] { width: 6.5rem; padding: 3px 6px; border: 1px solid var(--border); border-radius: 6px; background: var(--color-bg-0); color: var(--fg); font: inherit; }
+
+/* v0.1.648 — Vorschlags-Chips (Chat-Startseite, Willkommensnachricht) */
+.vs-chips { display: flex; flex-direction: column; gap: 6px; margin: 0.9rem 0 0; max-width: 640px; }
+.vs-chips__titel { font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); margin-bottom: 2px; }
+.vs-chip {
+  display: grid; grid-template-columns: 26px 1fr auto; align-items: center; gap: 10px;
+  text-align: left; padding: 9px 12px; border: 1px solid var(--border); border-radius: 12px;
+  background: var(--color-bg-0); color: var(--fg); cursor: pointer; text-decoration: none; font: inherit;
+  transition: var(--ctrl-transition);
+}
+.vs-chip:hover { border-color: var(--accent); background: var(--color-bg-1); }
+.vs-chip__stufe { width: 26px; height: 26px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent); }
+.vs-chip__text { display: flex; flex-direction: column; min-width: 0; }
+.vs-chip__titel { font-weight: 600; font-size: 14px; }
+.vs-chip__auftrag { font-size: 12.5px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.vs-chip__aktion { font-size: 12.5px; color: var(--muted); white-space: nowrap; }
+.vs-chip:hover .vs-chip__aktion { color: var(--accent); }
+.vs-chips--kompakt { margin-top: 0.75rem; }
+.vs-chips--kompakt .vs-chip { padding: 6px 10px; border-radius: 10px; }
+.vs-chips__hinweis { margin-top: 2px; }
