@@ -194,6 +194,25 @@ mehr. Interne HMAC-Routen für das Gateway:
 `POST /internal/companies/register-delta` (bis 1.000 Zeilen, Quelle,
 `gesehenAt`), `GET/PUT /internal/register-front`.
 
+**S2 umgesetzt (2026-09-14):** `master-data/scripts/register-delta/seed-front.ts`
+(`npm run register-delta:seed-front -- --dry`), SQL-Aggregat über den Bestand,
+Ausreißerfilter „höchste Nummer bis 10 % über dem 0,99-Quantil“. Seed in Prod
+geschrieben: 234 Fronten, 8 Gerichte mit Zusätzen (Schleswig-Holstein).
+
+**S3 umgesetzt (2026-09-14, Gateway):** Migration `20260914_register_jobs`
+(`RegisterJob`, `RegisterWorker`), `lib/register-jobs.ts` (Lease per
+`FOR UPDATE SKIP LOCKED`, 20 Minuten, 5 Versuche; Ergebnis → master-data
+Delta-Upsert in 1.000er-Blöcken, Front-Fortschreibung, Folge-Front-Job bei
+Treffern; Bekanntmachungen → Refresh-Jobs zu 25 mit Hinweis
+`loeschung_angekuendigt`; Portal-Sperre → Job zurück, Worker markiert),
+Ersteller-Cron täglich ab 02:00 UTC (Front-Jobs für Fronten mit letzter
+Prüfung älter als 20 h, Bekanntmachungs-Jobs je Tag im 56-Tage-Fenster,
+Priorität: Bekanntmachungen 1, Refresh 2, Front 3/4). Routen
+`POST /v1/register-jobs/lease`, `POST /v1/register-jobs/{id}/ergebnis`,
+`POST /v1/register-jobs/{id}/fehler`, `GET /v1/register-jobs/status`,
+`POST /v1/register-jobs/refresh`. Budget-Hinweis an den Worker: 60 Abfragen
+je Stunde. Front-Jobs fragen nur die reine Zahl ab, `maxFehltreffer` 10.
+
 ## 5. Einmaliges Aufholen 2023 → heute
 
 Was du selbst laufen lassen kannst (`master-data/scripts/register-delta`,
