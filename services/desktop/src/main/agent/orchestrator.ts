@@ -132,6 +132,8 @@ export interface AgentOrchestratorOptions {
    *     the active skill's `allowedTools` is hard-enforced in runTool.
    */
   skillStore?: SkillStore;
+  /** v0.1.649 (Chat-Vorschlaege V4) — Urteil nach einem Turn: 0 bis 3 Chips. null/undefined = aus. */
+  vorschlaegeNachTurn?: (ctx: { conversationId: string; nutzerText: string; antwortText: string; toolNamen: string[] }) => Promise<import("../../shared/nutzerstand-types").Chip[]>;
   /**
    * S3 — per-user enabled/disabled state for skills. The orchestrator
    * filters the SkillStore output through this before exposing skills
@@ -215,6 +217,23 @@ export class AgentOrchestrator extends EventEmitter {
     | { list: () => import("./general-memory").GeneralMemoryEntry[] }
     | undefined;
   private skillStore: SkillStore | undefined;
+  private readonly vorschlaegeNachTurn: AgentOrchestratorOptions["vorschlaegeNachTurn"];
+
+  /** v0.1.649 — nach einem normalen Turn ein kurzes Urteil anstossen (best-effort, nie blockierend). */
+  private nachTurn(conversation: Conversation, requestId: string, messageId: string, antwortText: string, toolNamen: string[]): void {
+    if (!this.vorschlaegeNachTurn) return;
+    if (conversation.autonomousMode === true) return;
+    if (!antwortText.trim()) return;
+    const lastUser = [...conversation.messages].reverse().find((m) => m.role === "user" && !m.id.startsWith("__"));
+    const nutzerText = typeof lastUser?.content === "string" ? lastUser.content.replace(/\n*\[Vorschlag: "[^"]+"[^\]]*\]\s*$/, "") : "";
+    if (!nutzerText.trim()) return;
+    void this.vorschlaegeNachTurn({ conversationId: conversation.id, nutzerText, antwortText, toolNamen })
+      .then((chips) => {
+        if (chips.length === 0) return;
+        this.emitFrame({ kind: "suggestions", requestId, conversationId: conversation.id, messageId, chips });
+      })
+      .catch(() => undefined);
+  }
   private skillsPrefs: SkillsPrefsStore | undefined;
   /** v0.1.210 — Usage-Sink. Wird vom Provider-Wrapper aufgerufen,
    *  sobald ein Turn beendet ist und der Provider Token-Counts
@@ -260,6 +279,7 @@ export class AgentOrchestrator extends EventEmitter {
     this.getIcpText = opts.getIcpText;
     this.generalMemoryStore = opts.generalMemoryStore;
     this.skillStore = opts.skillStore;
+    this.vorschlaegeNachTurn = opts.vorschlaegeNachTurn;
     this.skillsPrefs = opts.skillsPrefs;
     this.onUsage = opts.onUsage;
     this.checkDailyLimit = opts.checkDailyLimit;
@@ -987,6 +1007,7 @@ export class AgentOrchestrator extends EventEmitter {
     // AUTONOMEN Konversation Vollzug, obwohl hier 0 steht, schreibt
     // auditWriteClaim eine Audit-Warnung (agent.claim.unverified).
     let writesExecuted = 0;
+    const turnToolNamen: string[] = [];
 
     // v0.1.346 — last system message built in the loop, reused for the
     // graceful wrap-up turn if the step budget is reached.
@@ -1205,6 +1226,7 @@ export class AgentOrchestrator extends EventEmitter {
             conversationId: conversation.id,
             messageId: assistantId,
           });
+          if (!signal.aborted) this.nachTurn(conversation, requestId, assistantId, assistantContent, turnToolNamen);
           return;
         }
 
@@ -1327,6 +1349,7 @@ export class AgentOrchestrator extends EventEmitter {
           );
           if (!result.ok) sigState.failures += 1;
           if (result.ok && isWriteTool(call.name)) writesExecuted++;
+          turnToolNamen.push(call.name);
           toolCallSignatures.set(callSignature, sigState);
           // v0.1.375 — Ablehnung merken, damit ein erneuter Aufruf desselben
           // Tools in diesem Turn oben hart abgefangen wird.
@@ -1442,6 +1465,7 @@ export class AgentOrchestrator extends EventEmitter {
         conversationId: conversation.id,
         messageId: wrapUpId,
       });
+      if (!signal.aborted) this.nachTurn(conversation, requestId, wrapUpId, wrapUpContent, turnToolNamen);
       return;
     } catch (err) {
       const raw =

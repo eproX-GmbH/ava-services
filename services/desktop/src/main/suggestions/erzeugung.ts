@@ -22,6 +22,7 @@ import { faehigkeitenText, verfuegbareFaehigkeiten } from "./faehigkeiten";
 import { nutzerstandText } from "./nutzerstand";
 
 const MAX_CHIPS = 4;
+const MAX_CHIPS_GESPRAECH = 3;
 const TIMEOUT_MS = 8_000;
 
 /** Integrationen, die es NICHT gibt — ein Chip, der sie nennt, ist falsch. */
@@ -175,6 +176,55 @@ export class ChipErzeugung {
     } catch (err) {
       this.deps.log?.(`[vorschlaege] Startseite: Rueckfall auf feste Liste (${err instanceof Error ? err.message : String(err)})`);
       return { chips: festeChips(stand, faehigkeiten), quelle: "fest", erzeugtAt: new Date().toISOString() };
+    }
+  }
+
+  /** v0.1.649 (V4) — Urteil nach einem Turn: 0 bis 3 Chips, Standard leer. */
+  async gespraech(ctx: { nutzerText: string; antwortText: string; toolNamen: string[] }): Promise<Chip[]> {
+    const stand = await this.deps.nutzerstand();
+    if (!stand.modell.bereit) return [];
+    const faehigkeiten = verfuegbareFaehigkeiten(this.deps.toolNamen(), stand.gesperrteModule, { mitVerwaltung: true });
+    const system =
+      "Du bist AVA. Der Nutzer hat gerade eine Antwort bekommen. Entscheide, ob sich aus DIESEM Gespraech ein offensichtlicher naechster Schritt ergibt, " +
+      "den du per Chip anbieten sollst. Standard ist: KEIN Vorschlag. Nur wenn der naechste Schritt aus Frage und Antwort klar folgt (z. B. Firma recherchiert → " +
+      "Ansprechpartner finden, Radar-Treffer besprochen → importieren oder analysieren, Nutzer erwaehnt Abo/Abrechnung → Abrechnung), schlage 1 bis 3 vor.\n\n" +
+      "REGELN: nur Faehigkeiten aus der Liste; nichts Erledigtes; Verwaltung (organisation, einstellungen, konto, system) nur, wenn der Nutzer sie selbst anspricht; " +
+      "Auftrag in Du-Form, ein Satz, konkret mit Namen aus dem Gespraech; kein Geviertstrich, keine Emojis.\n\n" +
+      'Antworte NUR als JSON: {"chips":[{"titel":"max 6 Woerter","auftrag":"1 Satz","gruppe":"<id>","aktion":"Starten|Anlegen|Analysieren|Importieren|Verbinden|Oeffnen"}]} oder {"chips":[]}.';
+    const user =
+      `NUTZERSTAND:
+${nutzerstandText(stand)}
+
+FAEHIGKEITEN:
+${faehigkeitenText(faehigkeiten)}
+
+` +
+      `LETZTE NUTZERNACHRICHT:
+${ctx.nutzerText.slice(0, 1200)}
+
+LETZTE ANTWORT (gekuerzt):
+${ctx.antwortText.slice(0, 1600)}
+
+` +
+      `WERKZEUGE IN DIESEM TURN: ${ctx.toolNamen.length ? ctx.toolNamen.join(", ") : "keine"}`;
+    try {
+      const raw = await streamToText(this.deps.providers, buildMessages(system, user, "vorschlaege-turn"), {
+        timeoutMs: TIMEOUT_MS,
+        ...(this.deps.providers.getProducerModelOverride() ? { modelOverride: this.deps.providers.getProducerModelOverride() } : {}),
+      });
+      const parsed = parseJsonObject(raw);
+      if (!parsed) return [];
+      const valid = antwortSchema.validateSync(parsed, { abortEarly: true, stripUnknown: true });
+      const roh = valid.chips.map((c) => ({ titel: c.titel, auftrag: c.auftrag, gruppe: c.gruppe, aktion: c.aktion ?? undefined, stufe: c.stufe ?? undefined }));
+      // Im Gespraech darf Verwaltung vorkommen, wenn das Modell sie fuer angesprochen haelt:
+      // Schranke daher mit Verwaltungsgruppen, aber nur, wenn der Nutzer das Thema nannte.
+      const nutzer = ctx.nutzerText.toLowerCase();
+      const verwaltungErlaubt = /abo|abrechnung|rechnung|plan|tarif|schl[uü]ssel|api-key|anbieter|modell|organisation|mitglied|konto|update|version/.test(nutzer);
+      const zulaessig = faehigkeiten.filter((f) => !f.verwaltung || verwaltungErlaubt);
+      return harteSchranke(roh, zulaessig.map((f) => ({ ...f, verwaltung: false })), stand).slice(0, MAX_CHIPS_GESPRAECH);
+    } catch (err) {
+      this.deps.log?.(`[vorschlaege] Gespraech: kein Urteil (${err instanceof Error ? err.message : String(err)})`);
+      return [];
     }
   }
 

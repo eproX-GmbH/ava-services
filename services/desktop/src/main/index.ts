@@ -1982,6 +1982,9 @@ const agent = new AgentOrchestrator({
   // blockt der Orchestrator den Turn mit Hinweis-Frame.
   checkDailyLimit: () => computeDailyLimitStatus(),
   registry: agentRegistry,
+  // v0.1.649 (Chat-Vorschlaege V4) — Urteil nach dem Turn; lazy, weil chipErzeugung spaeter entsteht.
+  vorschlaegeNachTurn: (ctx: { conversationId: string; nutzerText: string; antwortText: string; toolNamen: string[] }) =>
+    chipErzeugung && featureEnabled("vorschlaege") ? chipErzeugung.gespraech(ctx) : Promise.resolve([]),
   memory: memoryProbe.writable ? memory : undefined,
   memoryError: memoryProbe.writable
     ? null

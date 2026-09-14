@@ -11,7 +11,11 @@ IPC `suggestions:startseite`, Org-Feature `vorschlaege` (aus = nur feste Liste).
 V3 umgesetzt in v0.1.648: `components/chat/VorschlagChips.tsx`, Chips auf der
 Startseite (unter dem neuen Lede) und unter der Willkommensnachricht; Klick sendet
 den Auftrag plus versteckten Kontextsatz `[Vorschlag: …]`, der im Bubble als Badge
-erscheint. V4 und V5 offen.
+erscheint. V4 umgesetzt in v0.1.649: Frame `suggestions`, Orchestrator ruft nach jedem
+normalen Turn (nicht autonom, nicht abgebrochen, nicht Welcome) `gespraech()` in
+`erzeugung.ts` auf: Urteil ueber Hintergrundkanal, Standard leer, max. 3 Chips,
+Verwaltung nur, wenn der Nutzer sie selbst anspricht; Renderer haengt die Chips
+unter die Antwort, naechster Turn raeumt sie weg. V5 offen.
 
 ## 1. Ziel
 

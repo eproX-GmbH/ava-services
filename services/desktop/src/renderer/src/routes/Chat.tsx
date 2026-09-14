@@ -721,6 +721,8 @@ export function Chat() {
             },
           ];
         });
+      } else if (frame.kind === "suggestions") {
+        setTurnChips({ messageId: frame.messageId, chips: frame.chips });
       } else if (frame.kind === "done") {
         setMessages((prev) =>
           prev.map((m) =>
@@ -1316,6 +1318,7 @@ export function Chat() {
       },
     ]);
     setThinking(true);
+    setTurnChips(null);
     try {
       const { requestId } = await window.api.agent.send({
         conversationId: id,
@@ -1415,6 +1418,8 @@ export function Chat() {
   const isEmpty = messages.length === 0 && !error && !thinking;
   // v0.1.648 (V3) — Vorschlags-Chips fuer die Startseite und die Willkommensnachricht.
   const [startChips, setStartChips] = useState<StartseitenChips | null>(null);
+  // v0.1.649 (V4) — Chips aus dem Turn-Urteil, haengen unter einer Assistenten-Nachricht.
+  const [turnChips, setTurnChips] = useState<{ messageId: string; chips: Chip[] } | null>(null);
   useEffect(() => {
     let alive = true;
     if (isEmpty || messages.some((m) => m.role === "assistant" && m.content.includes("nächste Schritte vorbereitet"))) {
@@ -1436,6 +1441,7 @@ export function Chat() {
     if (!id || thinking) return;
     const composed = auftragMitKontext(chip, ort);
     setError(null);
+    setTurnChips(null);
     setMessages((prev) => [...prev, { id: `u-${Date.now().toString(36)}`, role: "user", content: composed }]);
     setThinking(true);
     try {
@@ -1991,6 +1997,9 @@ export function Chat() {
                     )}
                     {m.role === "assistant" && !m.pending && m.content.includes("nächste Schritte vorbereitet") && startChips && (
                       <VorschlagChips chips={startChips.chips} quelle={startChips.quelle} onPick={(c) => void sendAuftrag(c, "gespraech")} kompakt />
+                    )}
+                    {m.role === "assistant" && !m.pending && turnChips?.messageId === m.id && (
+                      <VorschlagChips chips={turnChips.chips} onPick={(c) => void sendAuftrag(c, "gespraech")} kompakt titel="Nächster Schritt?" />
                     )}
                     {m.pending && <span className="chat-cursor">▍</span>}
                   </div>

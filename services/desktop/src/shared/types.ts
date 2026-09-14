@@ -799,6 +799,9 @@ export type AgentStreamFrame =
    *  Mail): der Renderer haengt sie als Nutzer-Blase an, wenn die
    *  Konversation gerade offen ist, und frischt die Liste auf. */
   | { kind: "user-message"; requestId: string; conversationId: string; messageId: string; content: string; source: "telegram" | "mail" }
+  /** v0.1.649 (Chat-Vorschlaege V4) — 0 bis 3 Anstoesse nach einem Turn, haengen
+   *  unter der Assistenten-Nachricht messageId; verschwinden beim naechsten Turn. */
+  | { kind: "suggestions"; requestId: string; conversationId: string; messageId: string; chips: import("./nutzerstand-types").Chip[] }
   | { kind: "done"; requestId: string; conversationId: string; messageId: string };
 
 /** Renderer → main. Resolves a pending `choice-request`. */
