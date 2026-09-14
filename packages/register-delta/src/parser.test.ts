@@ -19,7 +19,11 @@ test("companyId wie im Bestand", () => {
   assert.equal(companyIdAus("Bad Oeynhausen", "HRB", 2400), "BADOEYNHAUSEN_HRB_2400");
   assert.equal(companyIdAus("Kempten (Allgäu)", "HRB", 1), "KEMPTENALLGAEU_HRB_1");
   assert.equal(companyIdAus("Flensburg", "HRA", 100, "FL"), "FLENSBURG_HRA_100FL");
-  assert.equal(companyIdAus("Bad Oeynhausen", "HRB", 2400, "", "Herford"), "BADOEYNHAUSEN_HRB_2400_FHERFORD");
+  assert.equal(companyIdAus("Bad Oeynhausen", "HRB", 2400, "", "Herford"), "BADOEYNHAUSEN_HRB_2400");
+  assert.equal(companyIdAus("Bad Oeynhausen", "HRB", 2400, "", "Herford", true), "BADOEYNHAUSEN_HRB_2400_FHERFORD");
+  assert.equal(companyIdAus("Bremen", "HRB", 2827, "BHV"), "BREMEN_HRB_2827BREMERHAVEN");
+  assert.equal(companyIdAus("Lübeck", "HRB", 264, "MÖ"), "LUEBECK_HRB_264MÖ");
+  assert.equal(KOPF_RE.exec("Schleswig-Holstein Amtsgericht Lübeck HRB 264 MÖ")!.groups!.zusatz, "MÖ");
 });
 
 test("Status und Historie", () => {

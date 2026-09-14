@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { fuehreJobAus, leereBekanntmachungsCache } from "./jobs";
+import { fuehreJobAus, leereBekanntmachungsCache, meldungenJeNummer } from "./jobs";
 import type { Treffer } from "./parser";
 
 function treffer(nummer: number, name = `Firma ${nummer}`, extra: Partial<Treffer> = {}): Treffer {
@@ -108,4 +108,14 @@ test("bekanntmachungen: nur der Tag des Jobs", async () => {
   assert.equal(e.abfragen, 1);
   assert.equal(e.bekanntmachungen?.length, 1);
   assert.equal(e.bekanntmachungen?.[0].nummer, 2);
+});
+
+test("Ids je Nummer: einzelnes Altgerichts-Blatt ohne Anhang, bei aktuellem Blatt mit Anhang", () => {
+  const allein = meldungenJeNummer([treffer(100001, "Stadtwerke Emden", { frueher: "Emden", gericht: "Aurich" })], "Aurich");
+  assert.equal(allein[0].frueherSuffix, false);
+  assert.equal(allein[0].gericht, "Aurich");
+  const drei = meldungenJeNummer([treffer(2400, "A"), treffer(2400, "B", { frueher: "Herford" }), treffer(2400, "C", { frueher: "Minden" })], "Bad Oeynhausen");
+  assert.deepEqual(drei.map((m) => m.frueherSuffix), [false, true, true]);
+  const zus = meldungenJeNummer([treffer(100, "A", { zusatz: "FL" }), treffer(100, "B", { zusatz: "SL" })], "Flensburg");
+  assert.deepEqual(zus.map((m) => m.frueherSuffix), [false, false]);
 });

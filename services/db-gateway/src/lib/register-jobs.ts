@@ -16,7 +16,7 @@ import type pg from "pg";
 import { loadEnv } from "./env";
 import { logger } from "./logger";
 import { getGatewayPool } from "./producer-pools";
-import { companyIdAus } from "./register-ids";
+import { companyIdAus, idTeil, zusatzBestand } from "./register-ids";
 
 export type JobArt = "front" | "bekanntmachungen" | "refresh";
 export const JOB_ARTEN: JobArt[] = ["front", "bekanntmachungen", "refresh"];
@@ -49,6 +49,7 @@ export type Treffer = {
   nummer: number;
   zusatz: string;
   frueher: string;
+  frueherSuffix?: boolean;
   bundesland: string;
   name: string;
   sitz: string;
@@ -126,18 +127,34 @@ export async function ladeFronten(): Promise<Front[]> {
   return r.fronts;
 }
 
+let gerichteCache: { map: Map<string, string>; at: number } | null = null;
+
+/** Gerichtsname der Portal-Kopfzeile → Schreibweise des Bestands (ueber die Fronten), sonst unveraendert. */
+export async function gerichtBestand(name: string): Promise<string> {
+  if (!gerichteCache || Date.now() - gerichteCache.at > 3_600_000) {
+    try {
+      const fronten = await ladeFronten();
+      gerichteCache = { map: new Map(fronten.map((f) => [idTeil(f.districtCourt), f.districtCourt])), at: Date.now() };
+    } catch {
+      gerichteCache = gerichteCache ?? { map: new Map(), at: 0 };
+    }
+  }
+  return gerichteCache.map.get(idTeil(name)) ?? name;
+}
+
 function nameNormalisiert(name: string): string {
   return name.toLowerCase().replace(/\s+/g, " ").trim();
 }
 
 function trefferZuDelta(t: Treffer) {
-  const companyId = companyIdAus(t.gericht, t.art, t.nummer, t.zusatz, t.frueher);
+  const companyId = companyIdAus(t.gericht, t.art, t.nummer, t.zusatz, t.frueher, t.frueherSuffix === true);
   return {
     companyId,
     name: t.name,
     nameNormalized: nameNormalisiert(t.name),
     registerType: t.art,
-    registerNumber: `${t.nummer}${t.zusatz ? ` ${t.zusatz}` : ""}`,
+    // Schreibweise des Bestands: Nummer und Zusatz ohne Leerzeichen ("4851FL").
+    registerNumber: `${t.nummer}${zusatzBestand(t.gericht, t.zusatz)}`,
     location: t.sitz,
     districtCourt: t.gericht,
     state: t.bundesland,
@@ -364,6 +381,7 @@ export async function verarbeiteErgebnis(pool: pg.Pool, jobId: string, ergebnis:
   if (job.art === "bekanntmachungen" && ergebnis.bekanntmachungen) {
     const p = job.payload as { tag: string };
     const mitBlatt = ergebnis.bekanntmachungen.filter((b) => b.gericht && b.art && b.nummer != null);
+    for (const b of mitBlatt) b.gericht = await gerichtBestand(b.gericht as string);
     const n = await refreshAnfordern(
       pool,
       mitBlatt.map((b) => ({

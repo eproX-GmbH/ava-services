@@ -18,8 +18,24 @@ export function idTeil(text: string): string {
     .replace(/[^A-Z0-9]/g, "");
 }
 
-export function companyIdAus(gericht: string, art: string, nummer: number | string, zusatz = "", frueher = ""): string {
-  let id = `${idTeil(gericht)}_${art.toUpperCase()}_${String(nummer)}${(zusatz || "").toUpperCase()}`;
-  if (frueher) id += `_F${idTeil(frueher)}`;
+/** Zusatz-Schreibweise des Bestands, wo das Portal heute anders anzeigt (Original-Scraper 2023). */
+export const ZUSATZ_ALIASE: Record<string, Record<string, string>> = {
+  Bremen: { BHV: "BREMERHAVEN" },
+};
+
+export function zusatzBestand(gericht: string, zusatz: string): string {
+  const z = (zusatz || "").toUpperCase();
+  return ZUSATZ_ALIASE[gericht]?.[z] ?? z;
+}
+
+/**
+ * Original-Regel: GERICHT_ART_NUMMERZUSATZ. Blaetter frueherer Gerichte tragen
+ * die reine Nummer (wie im Bestand von 2023); nur wenn der Worker meldet, dass
+ * zur Nummer auch ein aktuelles Blatt existiert (`mitFrueherSuffix`), kommt
+ * `_F<ALTGERICHT>` dazu. Muss identisch bleiben zu packages/register-delta/src/ids.ts.
+ */
+export function companyIdAus(gericht: string, art: string, nummer: number | string, zusatz = "", frueher = "", mitFrueherSuffix = false): string {
+  let id = `${idTeil(gericht)}_${art.toUpperCase()}_${String(nummer)}${zusatzBestand(gericht, zusatz)}`;
+  if (frueher && mitFrueherSuffix) id += `_F${idTeil(frueher)}`;
   return id;
 }

@@ -22,6 +22,8 @@ export type TrefferMeldung = {
   nummer: number;
   zusatz: string;
   frueher: string;
+  /** true = zur Nummer existiert auch ein aktuelles Blatt, Id bekommt _F<ALTGERICHT>. */
+  frueherSuffix?: boolean;
   bundesland: string;
   name: string;
   sitz: string;

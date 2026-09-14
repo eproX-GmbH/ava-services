@@ -36,9 +36,30 @@ export function leereBekanntmachungsCache(): void {
   bekCache = null;
 }
 
+/**
+ * Blaetter einer Nummer → Meldungen. Regel wie der Bestand: hat die Nummer nur
+ * ein Blatt (auch eines eines frueheren Gerichts), traegt es die reine Id;
+ * gibt es zur Nummer ein aktuelles Blatt UND Blaetter frueherer Gerichte,
+ * behalten nur die frueheren den Anhang _F<ALTGERICHT>. Das Gericht kommt
+ * aus dem Job (Schreibweise des Bestands), nicht aus der Kopfzeile.
+ */
+export function meldungenJeNummer(treffer: Treffer[], gericht: string): TrefferMeldung[] {
+  const gruppen = new Map<string, Treffer[]>();
+  for (const t of treffer) {
+    const k = `${t.art}|${t.nummer}|${t.zusatz}`;
+    gruppen.set(k, [...(gruppen.get(k) ?? []), t]);
+  }
+  const out: TrefferMeldung[] = [];
+  for (const g of gruppen.values()) {
+    const mehrere = g.length > 1;
+    for (const t of g) out.push({ ...trefferZuMeldung(t, gericht), gericht, frueherSuffix: mehrere && Boolean(t.frueher) });
+  }
+  return out;
+}
+
 export function trefferZuMeldung(t: Treffer, gerichtFallback?: string): TrefferMeldung {
   return {
-    gericht: t.gericht || gerichtFallback || "",
+    gericht: gerichtFallback || t.gericht || "",
     art: t.art,
     nummer: t.nummer,
     zusatz: t.zusatz,
@@ -85,7 +106,7 @@ export async function fuehreJobAus(job: Job, o: AusfuehrungsOptionen): Promise<E
       // Nur Blaetter dieser Nummer zaehlen (Zusatzvarianten, Altgerichte).
       const passend = r.treffer.filter((t) => t.kopfGeparst && t.nummer === k.n);
       if (passend.length > 0) {
-        basis.treffer.push(...passend.map((t) => trefferZuMeldung(t, p.gericht)));
+        basis.treffer.push(...meldungenJeNummer(passend, p.gericht));
         if (!k.luecke) {
           hoechsteMitTreffer = k.n;
           fehlInFolge = 0;
@@ -132,10 +153,8 @@ export async function fuehreJobAus(job: Job, o: AusfuehrungsOptionen): Promise<E
     const r = await o.portal.suche(f.gericht, f.art, f.nummer);
     basis.abfragen++;
     if (r.gesperrt) return { ...basis, gesperrt: true };
-    for (const t of r.treffer) {
-      if (!t.kopfGeparst || t.nummer !== f.nummer) continue;
-      if (f.zusatz && t.zusatz !== f.zusatz.toUpperCase()) continue;
-      const m = trefferZuMeldung(t, f.gericht);
+    const passend = r.treffer.filter((t) => t.kopfGeparst && t.nummer === f.nummer && (!f.zusatz || t.zusatz === f.zusatz.toUpperCase()));
+    for (const m of meldungenJeNummer(passend, f.gericht)) {
       if (f.hinweis === "loeschung_angekuendigt" && m.status === "ACTIVE") m.status = "LOESCHUNG_ANGEKUENDIGT";
       basis.treffer.push(m);
     }

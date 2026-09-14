@@ -180,11 +180,28 @@ Gateway: `RegisterJob` (3.4) und `StructuredContentStale(companyId, seit,
 grund)` für die Veraltet-Markierung, die der Producer beim nächsten Lauf
 auswertet.
 
-`companyId` bleibt `AMTSGERICHT_ART_NUMMER` inklusive Zusatz ohne
-Leerzeichen, exakt wie im Bestand (Gerichtsname ohne Leer- und
-Sonderzeichen: `BADOEYNHAUSEN`, `KEMPTENALLGAEU`). Blätter früherer
-Gerichte mit derselben Nummer bekommen den Anhang `_F<ALTGERICHT>`
-(`BADOEYNHAUSEN_HRB_2400_FHERFORD`). Upsert statt Delete/Create.
+`companyId` folgt exakt der Formel des Original-Scrapers
+(`scripts/de/scraper_unternehmensregister.ipynb`): Gerichtsname aus dem
+Bestand (nicht aus der Kopfzeile), `strip().upper()`, Umlaute AE/OE/UE/SS,
+alles außer A-Z0-9 entfernt (auch Leerzeichen: `BADOEYNHAUSEN`,
+`KEMPTENALLGAEU`), dann `_ART_` und Nummer plus Zusatz ohne Leerzeichen,
+Zusatz in Großschreibung mit Umlaut (`LUEBECK_HRB_264MÖ`). Abgleich mit den
+1,84 Mio. Bestands-Ids am 2026-09-14: keine Id mit Leerzeichen, Punkt oder
+„FRÜHER“; 975 Sonderfälle (leere Nummer, Umlaut-Zusatz). Besonderheiten,
+die der Bestand vorgibt:
+
+- Bremen zeigt heute `HRB 2827 BHV`, der Bestand hat `BREMEN_HRB_2827BREMERHAVEN`
+  (799 Zeilen) → Zusatz-Alias BHV → BREMERHAVEN nur für Bremen.
+- Blätter früherer Gerichte („früher Amtsgericht Emden“) tragen im Bestand
+  die reine Nummer (`AURICH_HRB_100001`). Das bleibt so, solange die Nummer
+  nur dieses eine Blatt hat. Existiert zur selben Nummer auch ein aktuelles
+  Blatt (`Bad Oeynhausen HRB 2400`: aktuell plus Herford plus Minden), war
+  das im Original eine Kollision; nur dann bekommen die früheren Blätter den
+  Anhang `_F<ALTGERICHT>`. Die Entscheidung fällt aus dem Portal-Ergebnis
+  derselben Nummernabfrage, ist also reproduzierbar.
+- `registerNumber` wird wie im Bestand ohne Leerzeichen geschrieben (`4851FL`).
+
+Upsert statt Delete/Create.
 
 **S1 umgesetzt (2026-09-14, master-data):** Migration
 `20260914120000_register_delta`, Repository `upsertManyDelta` (Befund je

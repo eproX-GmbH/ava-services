@@ -13,9 +13,26 @@ export function idTeil(text: string): string {
     .replace(/[^A-Z0-9]/g, "");
 }
 
-export function companyIdAus(gericht: string, art: string, nummer: number | string, zusatz = "", frueher = ""): string {
-  let id = `${idTeil(gericht)}_${art.toUpperCase()}_${String(nummer)}${(zusatz || "").toUpperCase()}`;
-  if (frueher) id += `_F${idTeil(frueher)}`;
+/** Zusatz-Schreibweise des Bestands (Original-Scraper 2023), wo das Portal heute anders anzeigt. */
+export const ZUSATZ_ALIASE: Record<string, Record<string, string>> = {
+  Bremen: { BHV: "BREMERHAVEN" },
+};
+
+export function zusatzBestand(gericht: string, zusatz: string): string {
+  const z = (zusatz || "").toUpperCase();
+  return ZUSATZ_ALIASE[gericht]?.[z] ?? z;
+}
+
+/**
+ * Original-Regel (scraper_unternehmensregister.ipynb): GERICHT_ART_NUMMERZUSATZ,
+ * Zusatz ohne Leerzeichen, Umlaute im Zusatz bleiben (LUEBECK_HRB_264MÖ).
+ * Blaetter frueherer Gerichte hatten im Original dieselbe Id wie die reine
+ * Nummer; `mitFrueherSuffix` haengt nur dann `_F<ALTGERICHT>` an, wenn zur
+ * selben Nummer auch ein aktuelles Blatt existiert (sonst Kollision).
+ */
+export function companyIdAus(gericht: string, art: string, nummer: number | string, zusatz = "", frueher = "", mitFrueherSuffix = false): string {
+  let id = `${idTeil(gericht)}_${art.toUpperCase()}_${String(nummer)}${zusatzBestand(gericht, zusatz)}`;
+  if (frueher && mitFrueherSuffix) id += `_F${idTeil(frueher)}`;
   return id;
 }
 

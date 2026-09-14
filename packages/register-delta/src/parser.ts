@@ -35,7 +35,7 @@ export type Treffer = {
 // "<Land> Amtsgericht <Gericht> <Art> <Nummer>[ <Zusatz>][ früher Amtsgericht <Alt>]"
 // Dieselbe Nummer kann bei fusionierten Gerichten mehrfach existieren.
 export const KOPF_RE =
-  /^(?<land>.+?)\s+Amtsgericht\s+(?<gericht>.+?)\s+(?<art>HRA|HRB|GnR|PR|VR|GsR)\s+(?<nummer>\d+)(?:\s+(?<zusatz>[A-Z]{1,3}))?(?:\s+früher Amtsgericht\s+(?<frueher>.+?))?\s*$/u;
+  /^(?<land>.+?)\s+Amtsgericht\s+(?<gericht>.+?)\s+(?<art>HRA|HRB|GnR|PR|VR|GsR)\s+(?<nummer>\d+)(?:\s+(?<zusatz>[A-ZÄÖÜ]{1,3}))?(?:\s+früher Amtsgericht\s+(?<frueher>.+?))?\s*$/u;
 
 export const SPERR_RE = /zu viele Anfragen|Anfragen pro Stunde|temporär gesperrt|Zugriff.*gesperrt|Too Many Requests|\b429\b/i;
 
