@@ -1691,6 +1691,12 @@ const api = {
     setSettings: (patch: { aktiv?: boolean; nurNetzbetrieb?: boolean }): Promise<import("../shared/register-delta-types").MithelfenStatus> =>
       ipcRenderer.invoke("registerDelta:setSettings", patch),
     queue: (): Promise<Record<string, unknown> | null> => ipcRenderer.invoke("registerDelta:queue"),
+    verlauf: (): Promise<import("../shared/register-delta-types").MithelfenVerlauf> => ipcRenderer.invoke("registerDelta:verlauf"),
+    onVerlauf: (cb: (v: import("../shared/register-delta-types").MithelfenVerlauf) => void): (() => void) => {
+      const h = (_e: unknown, v: import("../shared/register-delta-types").MithelfenVerlauf) => cb(v);
+      ipcRenderer.on("register-delta:verlauf:changed", h);
+      return () => ipcRenderer.removeListener("register-delta:verlauf:changed", h);
+    },
     onStatus: (cb: (s: import("../shared/register-delta-types").MithelfenStatus) => void): (() => void) => {
       const h = (_e: unknown, s: import("../shared/register-delta-types").MithelfenStatus) => cb(s);
       ipcRenderer.on("register-delta:status:changed", h);

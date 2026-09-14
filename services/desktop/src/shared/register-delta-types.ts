@@ -25,3 +25,24 @@ export interface MithelfenStatus {
   letzterFehler: string | null;
   workerId: string | null;
 }
+
+/** Ein erledigter Job dieses Rechners (Verlauf in den Einstellungen). */
+export interface MithelfenVerlaufEintrag {
+  at: string;
+  id: string;
+  art: string;
+  /** Kurzbeschreibung: "Aurich HRB ab 203892", "Tag 2026-09-13", "15 Blätter (bek-2026-09-10)". */
+  was: string;
+  abfragen: number;
+  treffer: number;
+  neu: number;
+  geaendert: number;
+  unveraendert: number;
+  bekanntmachungen: number;
+  status: string;
+}
+
+export interface MithelfenVerlauf {
+  eintraege: MithelfenVerlaufEintrag[];
+  summe: { jobs: number; abfragen: number; treffer: number; neu: number; geaendert: number; seit: string | null };
+}

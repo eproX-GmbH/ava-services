@@ -14,13 +14,22 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync, chmodSync } from "n
 import { hostname } from "node:os";
 import { join } from "node:path";
 import { powerMonitor } from "electron";
-import type { MithelfenSettings, MithelfenStatus } from "../../shared/register-delta-types";
+import type { MithelfenSettings, MithelfenStatus, MithelfenVerlauf, MithelfenVerlaufEintrag } from "../../shared/register-delta-types";
 import { producerLogBuffer } from "../producer-log-buffer";
 import { featureEnabled, onOrgPolicyChange } from "../org-policy";
 import { resolveProducerDirUnder } from "../producer-dirs";
 
 const LOG_NAME = "register-delta";
 const STATUS_MARKER = "__AVA_RD_STATUS__";
+const JOB_MARKER = "__AVA_RD_JOB__";
+const VERLAUF_MAX = 300;
+
+function beschreibeJob(art: string, payload: Record<string, unknown>): string {
+  if (art === "front") return `${String(payload.gericht ?? "?")} ${String(payload.art ?? "")} ab ${String(payload.abNummer ?? "?")}`;
+  if (art === "bekanntmachungen") return `Tag ${String(payload.tag ?? "?")}`;
+  const firmen = Array.isArray(payload.firmen) ? payload.firmen.length : 0;
+  return `${firmen} Blätter${payload.grund ? ` (${String(payload.grund)})` : ""}`;
+}
 const TOKEN_INTERVAL_MS = 5 * 60_000;
 
 export class MithelfenSettingsStore {
@@ -73,6 +82,8 @@ export class MithelfenSupervisor extends EventEmitter {
   private signedIn = false;
   private zustand: KindZustand = { laeuft: false, aktuellerJob: null, jobsErledigt: 0, abfragenLetzteStunde: 0, gesperrtBis: null, letzterFehler: null };
   private readonly tokenFile: string;
+  private readonly verlaufFile: string;
+  private verlaufCache: MithelfenVerlauf | null = null;
   private stopping = false;
 
   constructor(private readonly o: MithelfenSupervisorOptions) {
@@ -80,6 +91,7 @@ export class MithelfenSupervisor extends EventEmitter {
     const dir = join(o.userDataDir, "register-delta");
     mkdirSync(dir, { recursive: true });
     this.tokenFile = join(dir, "worker.token");
+    this.verlaufFile = join(dir, "verlauf.json");
     onOrgPolicyChange(() => void this.abgleichen("policy"));
     powerMonitor.on("on-battery", () => void this.abgleichen("akku"));
     powerMonitor.on("on-ac", () => void this.abgleichen("netz"));
@@ -112,6 +124,55 @@ export class MithelfenSupervisor extends EventEmitter {
     if (s.nurNetzbetrieb && powerMonitor.isOnBatteryPower()) return "akku";
     if (this.zustand.gesperrtBis && Date.parse(this.zustand.gesperrtBis) > Date.now()) return "gesperrt";
     return null;
+  }
+
+  verlauf(): MithelfenVerlauf {
+    if (this.verlaufCache) return this.verlaufCache;
+    let eintraege: MithelfenVerlaufEintrag[] = [];
+    let summe: MithelfenVerlauf["summe"] = { jobs: 0, abfragen: 0, treffer: 0, neu: 0, geaendert: 0, seit: null };
+    try {
+      const raw = JSON.parse(readFileSync(this.verlaufFile, "utf8")) as Partial<MithelfenVerlauf>;
+      eintraege = Array.isArray(raw.eintraege) ? raw.eintraege : [];
+      summe = { ...summe, ...(raw.summe ?? {}) };
+    } catch {
+      /* noch kein Verlauf */
+    }
+    this.verlaufCache = { eintraege, summe };
+    return this.verlaufCache;
+  }
+
+  private merkeJob(roh: { id: string; art: string; payload: Record<string, unknown>; antwort: Record<string, unknown>; at: string }): void {
+    const v = this.verlauf();
+    const a = roh.antwort ?? {};
+    const n = (k: string) => Number(a[k] ?? 0) || 0;
+    const e: MithelfenVerlaufEintrag = {
+      at: roh.at,
+      id: String(roh.id),
+      art: roh.art,
+      was: beschreibeJob(roh.art, roh.payload ?? {}),
+      abfragen: n("abfragen"),
+      treffer: n("treffer"),
+      neu: n("neu"),
+      geaendert: n("geaendert"),
+      unveraendert: n("unveraendert"),
+      bekanntmachungen: n("bekanntmachungen"),
+      status: String(a.status ?? "erledigt"),
+    };
+    v.eintraege = [e, ...v.eintraege].slice(0, VERLAUF_MAX);
+    v.summe = {
+      jobs: v.summe.jobs + 1,
+      abfragen: v.summe.abfragen + e.abfragen,
+      treffer: v.summe.treffer + e.treffer,
+      neu: v.summe.neu + e.neu,
+      geaendert: v.summe.geaendert + e.geaendert,
+      seit: v.summe.seit ?? roh.at,
+    };
+    try {
+      writeFileSync(this.verlaufFile, JSON.stringify(v), "utf8");
+    } catch {
+      /* Verlauf ist Komfort */
+    }
+    this.emit("verlauf", v);
   }
 
   status(): MithelfenStatus {
@@ -192,6 +253,15 @@ export class MithelfenSupervisor extends EventEmitter {
     const verarbeite = (kanal: "stdout" | "stderr", chunk: Buffer) => {
       const text = chunk.toString("utf8");
       for (const line of text.split("\n")) {
+        const j = line.indexOf(JOB_MARKER);
+        if (j >= 0) {
+          try {
+            this.merkeJob(JSON.parse(line.slice(j + JOB_MARKER.length)));
+          } catch {
+            /* unvollstaendige Zeile */
+          }
+          continue;
+        }
         const i = line.indexOf(STATUS_MARKER);
         if (i >= 0) {
           try {
@@ -203,7 +273,7 @@ export class MithelfenSupervisor extends EventEmitter {
           }
         }
       }
-      producerLogBuffer.push(LOG_NAME, kanal, text.replace(new RegExp(`${STATUS_MARKER}.*\\n?`, "g"), ""));
+      producerLogBuffer.push(LOG_NAME, kanal, text.replace(new RegExp(`(${STATUS_MARKER}|${JOB_MARKER}).*\\n?`, "g"), ""));
     };
     child.stdout?.on("data", (c: Buffer) => verarbeite("stdout", c));
     child.stderr?.on("data", (c: Buffer) => verarbeite("stderr", c));

@@ -5294,6 +5294,10 @@ app.whenReady().then(async () => {
     }),
   );
   ipcMain.handle("registerDelta:queue", () => registerQueueStatus());
+  ipcMain.handle("registerDelta:verlauf", () => mithelfen!.verlauf());
+  mithelfen.on("verlauf", (v) => {
+    for (const win of BrowserWindow.getAllWindows()) win.webContents.send("register-delta:verlauf:changed", v);
+  });
   ipcMain.handle("suggestions:startseite", (_e, opts: { frisch?: boolean } | undefined) =>
     chipErzeugung!.startseite({ frisch: opts?.frisch === true, ohneModell: !featureEnabled("vorschlaege") || !vorschlaegeSettings!.get().startseite }),
   );

@@ -65,6 +65,7 @@ async function main() {
     },
     onJob: (job, antwort) => {
       log(`erledigt ${job.id} ${job.art}: ${JSON.stringify(antwort)}`);
+      if (process.env.REGISTER_DELTA_STATUS === "1") console.log(`__AVA_RD_JOB__${JSON.stringify({ id: job.id, art: job.art, schluessel: job.schluessel, payload: job.payload, antwort, at: new Date().toISOString() })}`);
       if (process.env.REGISTER_DELTA_EINMAL === "1") void worker.stop();
     },
   });
