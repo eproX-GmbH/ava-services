@@ -192,7 +192,7 @@ Zeile: neu, geändert mit Feldern, unverändert; Elastic-Index mit
 `_id = companyId`), auch der alte Import-Pfad `upsertMany` löscht nicht
 mehr. Interne HMAC-Routen für das Gateway:
 `POST /internal/companies/register-delta` (bis 1.000 Zeilen, Quelle,
-`gesehenAt`), `GET/PUT /internal/register-front`.
+`gesehenAt`), `POST /internal/register-front/list`, `PUT /internal/register-front`.
 
 **S2 umgesetzt (2026-09-14):** `master-data/scripts/register-delta/seed-front.ts`
 (`npm run register-delta:seed-front -- --dry`), SQL-Aggregat über den Bestand,

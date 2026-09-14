@@ -98,7 +98,7 @@ function rowToJob(r: Record<string, unknown>): RegisterJob {
 
 // ---- master-data (HMAC) ----------------------------------------------------
 
-async function masterData<T>(method: "GET" | "POST" | "PUT", path: string, body?: unknown): Promise<T> {
+async function masterData<T>(method: "POST" | "PUT", path: string, body?: unknown): Promise<T> {
   const env = loadEnv();
   if (!env.INTERNAL_HMAC_SECRET) throw new Error("INTERNAL_HMAC_SECRET unset");
   const raw = JSON.stringify(body ?? {});
@@ -122,7 +122,7 @@ export type Front = {
 };
 
 export async function ladeFronten(): Promise<Front[]> {
-  const r = await masterData<{ fronts: Front[] }>("GET", "/internal/register-front");
+  const r = await masterData<{ fronts: Front[] }>("POST", "/internal/register-front/list", {});
   return r.fronts;
 }
 
