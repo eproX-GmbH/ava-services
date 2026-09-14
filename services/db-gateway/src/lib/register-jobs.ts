@@ -27,7 +27,7 @@ export const MAX_VERSUCHE = 5;
 export const ABFRAGEN_JE_STUNDE = 60;
 export const FRONT_MAX_FEHLTREFFER = 10;
 export const BEKANNTMACHUNGEN_FENSTER_TAGE = 56;
-export const REFRESH_BUENDEL = 25;
+export const REFRESH_BUENDEL = 15; // passt mit 60/h in eine 20-Minuten-Lease (Worker: MAX_ABFRAGEN_JE_JOB 15)
 export const REFRESH_INTERVALL_TAGE = 90;
 
 export type RegisterJob = {

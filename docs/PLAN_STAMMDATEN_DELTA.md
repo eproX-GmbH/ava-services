@@ -213,6 +213,22 @@ Priorität: Bekanntmachungen 1, Refresh 2, Front 3/4). Routen
 `POST /v1/register-jobs/refresh`. Budget-Hinweis an den Worker: 60 Abfragen
 je Stunde. Front-Jobs fragen nur die reine Zahl ab, `maxFehltreffer` 10.
 
+**S4 umgesetzt (2026-09-14):** Paket `packages/register-delta`
+(`@ava/register-delta`, CommonJS, einzige Abhängigkeit selenium-webdriver).
+Reiner Parser ohne Browser (`parser.ts`: Kopfzeile, Status, Historie,
+Bekanntmachungen; 11 Tests mit `node --test`), `RegisterPortal` (Selenium,
+headless, `download_restrictions: 3`, DOM-Extraktion per In-Page-Skript,
+Sperr- und Störungserkennung), `Taktgeber` (60/h gleitendes Fenster mit
+Mindestabstand und Streuung), `GatewayClient`, `fuehreJobAus` (front:
+Lücken einmal nachprüfen, dann hochzählen, max. 15 Abfragen je Job;
+bekanntmachungen: ein Seitenaufruf, Filter auf den Tag; refresh:
+Zusatzfilter, Löschungshinweis → `LOESCHUNG_ANGEKUENDIGT`), `RegisterWorker`
+(Schleife mit Pause bei Sperre, Browser-Neustart bei Fehler) und CLI
+`register-delta-worker` (Bearer statisch oder Keycloak client_credentials).
+Live-Rauchtest: Bad Oeynhausen HRB 2400 → 3 Blätter (Herford, Minden als
+frühere Gerichte), HRB 9637 mit 4 Historie-Einträgen, Bekanntmachungen
+14.157 Einträge über 57 Tage, 2 ohne Registerblatt.
+
 ## 5. Einmaliges Aufholen 2023 → heute
 
 Was du selbst laufen lassen kannst (`master-data/scripts/register-delta`,

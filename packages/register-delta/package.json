@@ -1,0 +1,24 @@
+{
+  "name": "@ava/register-delta",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Register-Delta Worker-Kern: Registerportal-Abfragen (Nummernfront, Bekanntmachungen, Auffrischung) fuer Desktop-Worker und Betreiber-Fallback. docs/PLAN_STAMMDATEN_DELTA.md S4.",
+  "license": "MIT",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "bin": { "register-delta-worker": "dist/cli.js" },
+  "files": ["dist", "src"],
+  "scripts": {
+    "build": "tsc",
+    "test": "tsc && node --test dist/*.test.js",
+    "worker": "node dist/cli.js"
+  },
+  "dependencies": {
+    "selenium-webdriver": "^4.40.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/selenium-webdriver": "^4.1.21",
+    "typescript": "^5.4.0"
+  }
+}

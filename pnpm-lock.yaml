@@ -808,6 +808,22 @@ importers:
         specifier: ^5.4.0
         version: 5.9.3
 
+  packages/register-delta:
+    dependencies:
+      selenium-webdriver:
+        specifier: ^4.40.0
+        version: 4.43.0
+    devDependencies:
+      '@types/node':
+        specifier: ^20.0.0
+        version: 20.19.39
+      '@types/selenium-webdriver':
+        specifier: ^4.1.21
+        version: 4.35.5
+      typescript:
+        specifier: ^5.4.0
+        version: 5.9.3
+
   services/db-gateway:
     dependencies:
       '@ava/event':
@@ -3219,6 +3235,7 @@ packages:
   '@xmldom/xmldom@0.8.13':
     resolution: {integrity: sha512-KRYzxepc14G/CEpEGc3Yn+JKaAeT63smlDr+vjB8jRfgTBBI9wRj/nkQEO+ucV8p8I9bfKLWp37uHgFrbntPvw==}
     engines: {node: '>=10.0.0'}
+    deprecated: this version has critical issues, please update to the latest version
 
   '@xmldom/xmldom@0.9.10':
     resolution: {integrity: sha512-A9gOqLdi6cV4ibazAjcQufGj0B1y/vDqYrcuP6d/6x8P27gRS8643Dj9o1dEKtB6O7fwxb2FgBmJS2mX7gpvdw==}
