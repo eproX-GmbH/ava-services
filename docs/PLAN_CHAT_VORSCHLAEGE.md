@@ -3,7 +3,12 @@
 Stand 2026-09-14, Desktop v0.1.646. V0 und V1 umgesetzt (Willkommenstext neu
 mit dynamischer Tool-Zahl; `main/suggestions/nutzerstand.ts`,
 `main/suggestions/faehigkeiten.ts` mit 34 Gruppen, IPC `suggestions:*`,
-Chat-Tool `vorschlaege_status`, Test `npm run test:suggestions`). V2 bis V5 offen.
+Chat-Tool `vorschlaege_status`, Test `npm run test:suggestions`).
+V2 umgesetzt in v0.1.647: `main/suggestions/erzeugung.ts` (KI-Chips ueber den
+Hintergrundkanal, Cache je Nutzerstand und Tag, harte Schranke gegen unbekannte
+Integrationen, gesperrte Module, Erledigtes und Verwaltung, feste Rueckfalliste),
+IPC `suggestions:startseite`, Org-Feature `vorschlaege` (aus = nur feste Liste).
+V3 bis V5 offen.
 
 ## 1. Ziel
 

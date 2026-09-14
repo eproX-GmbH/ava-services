@@ -1680,6 +1680,7 @@ const api = {
     nutzerstand: (opts?: { frisch?: boolean }): Promise<import("../shared/nutzerstand-types").Nutzerstand> => ipcRenderer.invoke("suggestions:nutzerstand", opts ?? {}),
     faehigkeiten: (): Promise<{ gruppen: import("../shared/nutzerstand-types").Faehigkeit[]; text: string; nichtZugeordnet: string[] }> =>
       ipcRenderer.invoke("suggestions:faehigkeiten"),
+    startseite: (opts?: { frisch?: boolean }): Promise<import("../shared/nutzerstand-types").StartseitenChips> => ipcRenderer.invoke("suggestions:startseite", opts ?? {}),
   },
   emailMuster: {
     status: (): Promise<import("../shared/email-muster-types").EmailMusterConfig & { laeuft: boolean }> => ipcRenderer.invoke("emailMuster:status"),

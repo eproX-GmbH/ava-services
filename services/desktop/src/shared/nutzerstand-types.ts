@@ -48,3 +48,21 @@ export interface Faehigkeit {
   /** Verwaltung: nie auf der Startseite vorschlagen, nur bei ausdruecklicher Absicht. */
   verwaltung?: boolean;
 }
+
+/** v0.1.647 (V2) — Ein Vorschlags-Chip: Anstoss in Nutzersprache, kein Tool. */
+export interface Chip {
+  titel: string;
+  /** Vollstaendiger Auftrag, der per Klick als Nachricht gesendet wird. */
+  auftrag: string;
+  /** Faehigkeitsgruppe (harte Schranke: muss verfuegbar sein). */
+  gruppe: string;
+  /** Kurzer Aktionsbegriff rechts im Chip ("Verbinden", "Starten"). */
+  aktion?: string;
+  stufe?: number;
+}
+
+export interface StartseitenChips {
+  chips: Chip[];
+  quelle: "ki" | "cache" | "fest";
+  erzeugtAt: string;
+}

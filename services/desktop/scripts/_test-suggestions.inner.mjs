@@ -62,5 +62,33 @@ check(s2 === s, "Cache greift");
 svc.invalidate();
 check((await svc.get()) !== s, "invalidate erzwingt Neuaufbau");
 
+console.log("Chip-Erzeugung: harte Schranke + feste Liste");
+const E = await load("../src/main/suggestions/erzeugung.ts");
+const fae = F.verfuegbareFaehigkeiten(namen, s.gesperrteModule);
+const roh = [
+  { titel: "HubSpot verbinden", auftrag: "Verbinde HubSpot.", gruppe: "hubspot" },
+  { titel: "Mit Facebook verbinden", auftrag: "Verbinde mein Facebook-Konto.", gruppe: "hubspot" },
+  { titel: "Telegram verbinden", auftrag: "Richte Telegram ein.", gruppe: "telegram" },
+  { titel: "Abo auf Pro wechseln", auftrag: "Wechsle mein Abrechnungsmodell.", gruppe: "organisation" },
+  { titel: "Radar starten", auftrag: "Starte den Firmen-Radar in Herford.", gruppe: "radar" },
+  { titel: "Radar starten", auftrag: "Nochmal.", gruppe: "radar" },
+  { titel: "Analyse Muster GmbH", auftrag: "Erstelle eine ICP- und Marktanalyse zu Muster GmbH.", gruppe: "radar" },
+  { titel: "Notion verbinden", auftrag: "Verbinde Notion.", gruppe: "notion" },
+];
+const gep = E.harteSchranke(roh, fae, s);
+const titel = gep.map((c) => c.titel);
+check(!titel.includes("HubSpot verbinden"), "erledigt (HubSpot verbunden) faellt weg");
+check(!titel.includes("Mit Facebook verbinden"), "unbekannte Integration faellt weg");
+check(!titel.includes("Telegram verbinden"), "gesperrtes Modul (Gruppe nicht verfuegbar) faellt weg");
+check(!titel.includes("Abo auf Pro wechseln"), "Verwaltungsgruppe faellt weg");
+check(titel.filter((t) => t === "Radar starten").length === 1, "Duplikate zusammengefasst");
+check(titel.includes("Analyse Muster GmbH") && titel.includes("Notion verbinden"), "gueltige Chips bleiben: " + titel.join(" | "));
+check(gep.length <= 4, "hoechstens vier Chips");
+const fest = E.festeChips(s, fae);
+check(fest.length > 0 && fest.length <= 4 && fest.every((c) => c.gruppe !== "hubspot"), "feste Liste ohne erledigte Verbindungen: " + fest.map((c) => c.titel).join(" | "));
+const standNeu = { ...s, modell: { ...s.modell, bereit: false }, verbindungen: { ...s.verbindungen, hubspot: "offen" }, icp: "fehlt", radar: { ...s.radar, heisseTreffer: 0, topTreffer: null } };
+const festNeu = E.festeChips(standNeu, fae);
+check(festNeu[0]?.titel === "KI-Modell einrichten" && festNeu.some((c) => c.titel === "HubSpot verbinden") && festNeu.some((c) => c.titel === "Idealkundenprofil erstellen"), "feste Liste fuer Neueinsteiger: " + festNeu.map((c) => c.titel).join(" | "));
+
 console.log(fails === 0 ? "\nSuggestions-Tests ok" : `\n${fails} Test(s) fehlgeschlagen`);
 process.exit(fails === 0 ? 0 : 1);

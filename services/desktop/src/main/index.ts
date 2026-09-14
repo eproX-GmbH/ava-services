@@ -1,6 +1,7 @@
 import { meldeAbgeleiteteAdressen } from "./contacts/email-muster/rueckmeldung";
 import { radarActivity } from "./discovery/activity";
 import { NutzerstandService } from "./suggestions/nutzerstand";
+import { ChipErzeugung } from "./suggestions/erzeugung";
 import { verfuegbareFaehigkeiten, faehigkeitenText, nichtZugeordnet } from "./suggestions/faehigkeiten";
 import { ORG_FEATURES } from "../shared/types";
 import { pruefeModellstufe } from "./workflows/modellstufe";
@@ -1359,6 +1360,7 @@ let workflowService: WorkflowService | null = null;
 let emailMuster: EmailMusterSupervisor | null = null;
 // v0.1.646 — Nutzerstand fuer Chat-Vorschlaege (PLAN_CHAT_VORSCHLAEGE V1).
 let nutzerstand: NutzerstandService | null = null;
+let chipErzeugung: ChipErzeugung | null = null;
 let skillStoreRef: { list(): unknown[] } | null = null;
 
 /** v0.1.580 — Apify-Zugang fuer Watchlist/Personen-Radar im Hauptprozess:
@@ -5237,6 +5239,17 @@ app.whenReady().then(async () => {
     organisation: () => (auth.getStatus().tenantId ?? "").startsWith("org_"),
   });
   ipcMain.handle("suggestions:nutzerstand", (_e, opts: { frisch?: boolean } | undefined) => nutzerstand!.get({ frisch: opts?.frisch === true }));
+  // v0.1.647 (V2) — Chips fuer die Startseite: KI ueber Hintergrundkanal, gecacht, feste Rueckfalliste.
+  chipErzeugung = new ChipErzeugung({
+    providers,
+    nutzerstand: () => nutzerstand!.get(),
+    toolNamen: () => agentRegistry.list().map((t) => t.name),
+    dir: join(app.getPath("userData"), "suggestions"),
+    log: (m) => console.log(m),
+  });
+  ipcMain.handle("suggestions:startseite", (_e, opts: { frisch?: boolean } | undefined) =>
+    chipErzeugung!.startseite({ frisch: opts?.frisch === true, ohneModell: !featureEnabled("vorschlaege") }),
+  );
   ipcMain.handle("suggestions:faehigkeiten", async () => {
     const st = await nutzerstand!.get();
     const namen = agentRegistry.list().map((t) => t.name);
