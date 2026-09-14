@@ -26,6 +26,16 @@ export type AusfuehrungsOptionen = {
 
 export const MAX_ABFRAGEN_JE_JOB = 15;
 
+// Die Bekanntmachungsseite enthaelt alle Tage des 8-Wochen-Fensters (rund
+// 14.000 Eintraege, fast 2 MB Text). Ein Job je Tag wuerde sie 56-mal laden;
+// stattdessen wird der Seitentext je Prozess 30 Minuten vorgehalten.
+const BEK_CACHE_MS = 30 * 60_000;
+let bekCache: { text: string; at: number } | null = null;
+
+export function leereBekanntmachungsCache(): void {
+  bekCache = null;
+}
+
 export function trefferZuMeldung(t: Treffer, gerichtFallback?: string): TrefferMeldung {
   return {
     gericht: t.gericht || gerichtFallback || "",
@@ -93,11 +103,19 @@ export async function fuehreJobAus(job: Job, o: AusfuehrungsOptionen): Promise<E
 
   if (job.art === "bekanntmachungen") {
     const p = job.payload as unknown as BekPayload;
-    await o.takt.warten();
-    const r = await o.portal.bekanntmachungenText();
-    basis.abfragen = 1;
-    if (r.gesperrt) return { ...basis, gesperrt: true };
-    const alle = parseBekanntmachungen(r.text);
+    let text: string;
+    if (bekCache && Date.now() - bekCache.at < BEK_CACHE_MS) {
+      text = bekCache.text;
+      basis.abfragen = 0;
+    } else {
+      await o.takt.warten();
+      const r = await o.portal.bekanntmachungenText();
+      basis.abfragen = 1;
+      if (r.gesperrt) return { ...basis, gesperrt: true };
+      text = r.text;
+      bekCache = { text, at: Date.now() };
+    }
+    const alle = parseBekanntmachungen(text);
     const desTages = alle.filter((b) => b.tagIso === p.tag);
     log(`bekanntmachungen ${p.tag}: ${desTages.length} von ${alle.length} Eintraegen`);
     return {

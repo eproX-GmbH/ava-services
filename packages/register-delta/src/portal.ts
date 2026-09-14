@@ -200,10 +200,17 @@ export class RegisterPortal {
   async bekanntmachungenText(): Promise<{ gesperrt: boolean; text: string }> {
     const d = this.d();
     await this.startseite();
-    await d.executeScript(`const a=document.querySelector('[id$="bekanntmachungenLink"]'); if(!a) throw new Error('bekanntmachungenLink fehlt'); a.click();`);
-    this.anfragen++;
-    await this.warteAuf(async () => (await d.getTitle()).includes("Registerbekanntmachungen"), 40_000, "Bekanntmachungen");
-    await schlafen(2000);
+    // Grosse Seite (fast 2 MB Text): auf kleinen Maschinen (Fly shared-cpu)
+    // dauert das Rendern laenger als die 45 s Standard-Ladezeit.
+    await d.manage().setTimeouts({ pageLoad: 180_000 });
+    try {
+      await d.executeScript(`const a=document.querySelector('[id$="bekanntmachungenLink"]'); if(!a) throw new Error('bekanntmachungenLink fehlt'); a.click();`);
+      this.anfragen++;
+      await this.warteAuf(async () => (await d.getTitle()).includes("Registerbekanntmachungen"), 150_000, "Bekanntmachungen");
+      await schlafen(2000);
+    } finally {
+      await d.manage().setTimeouts({ pageLoad: 45_000 }).catch(() => undefined);
+    }
     const text = (await d.executeScript("return document.body.innerText")) as string;
     if (SPERR_RE.test(text) && text.length < 2000) return { gesperrt: true, text: "" };
     return { gesperrt: false, text };
