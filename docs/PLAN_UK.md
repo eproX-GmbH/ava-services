@@ -140,6 +140,21 @@ Aufwand grob: Notebook 0,5 Tage, master-data 0,5 Tage, Gateway und
 Paket 1,5 Tage (Bulk-Job mit Vergleich ist der größte Teil),
 structured-content 1 Tag, App 0,5 Tage.
 
+## 4a. Stand der Umsetzung
+
+- **master-data (2026-09-15, Deploy offen):** Land `UK` im Validator und
+  im Listenfilter, companyId-Muster `UK_` plus 8 Zeichen (Präfix, Ziffern,
+  Suffix, führende Nullen erhalten), GB-UID. Neue optionale Spalten
+  `sicCodes` (Text-Array), `street`, `zipCode`, `incorporatedAt` (Migration
+  `20260915180000_uk_zusatzspalten`, reine Katalogänderung). Delta-Zeilen
+  dürfen `insolvencyStatus` (NONE, VERDACHT, EROEFFNET) mitgeben; der Wert
+  gilt beim Anlegen immer und bei Änderung nur, solange keine
+  InsolvencyEvent-Zeilen vorliegen, danach entscheidet die Ableitung aus
+  den Ereignissen. Insolvenzquellen `companieshouse` und `gazette`.
+  33 Unit-Tests grün.
+- **Nächster Schritt:** Gateway und Paket (`uk_bulk`, `uk_refresh`,
+  `uk_insolvenz`), dann structured-content und App.
+
 ## 5. Offene Entscheidungen
 
 1. **API-Schlüssel ja oder nein?** Web-HTML reicht für Detail, Officers
