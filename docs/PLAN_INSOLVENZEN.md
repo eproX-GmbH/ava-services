@@ -196,6 +196,30 @@ zugeordnet.
 Reihenfolge wie beim Register-Delta: I0 zuerst, jeder weitere Schritt mit
 Deploy-Freigabe.
 
+**I0 erledigt (2026-09-15, `master-data/scripts/de/insolvenz_delta.ipynb`,
+12 Portalanfragen):**
+- Suche über den Registereintrag mit geleertem Datum liefert die gesamte
+  Laufzeit: Hamburg HRA 90794 → 7 Zeilen (2023 bis 2026), Bad Oeynhausen
+  HRB 9637 → 0, Berlin (Charlottenburg) über Alias „Berlin“ → 3, Oldenburg
+  (Oldenburg) → 2, Münster über Alias „Münster (Westfalen)“ → 2. Alle fünf
+  Testfälle mit der erwarteten companyId.
+- Veröffentlichungstext kommt zuverlässig aus `frm_text:ihd_text`, wenn
+  `window.open` im Browser stillgelegt wird (2.400 bis 5.000 Zeichen, beginnt
+  mit „Amtsgericht Hamburg, Aktenzeichen: 67h IN 81/22 In dem
+  Insolvenzverfahren über das Vermögen der im Handelsregister des
+  Amtsgerichts Hamburg unter HRA 90794 eingetragenen …“). Das Register
+  steht also auch im Text.
+- Kategorie über den Gegenstand-Filter funktioniert (eine Suche je
+  Kategorie, Zeilen tragen dann die Kategorie); alternativ aus dem Text.
+- Tagesliste 14.09.2026: 4.481 Zeilen, 2.798 Aktenzeichen, 346 Zeilen mit
+  Registereintrag, 271 Firmen, davon 203 im Bestand (die 68 übrigen sind
+  jüngere Firmen, die die Nummernfront noch nicht erreicht hat). Alle
+  Gerichtsnamen der Tagesliste ließen sich abbilden.
+- Selektoren: Formular `frm_suche`, Trefferliste `tbl_ergebnis` mit
+  `tbody tr` (6 Spalten), Detail-Button `form[id='tbl_ergebnis:<i>:frm_detail']
+  input[type=image]`, Suchen-Knopf als `button/input[type=submit]` mit Text
+  „Suchen“.
+
 ## 7. Aufwand und Mengen
 
 - Modus A bei 5.000 Pool-Firmen alle 30 Tage: rund 170 Abfragen je Tag,
