@@ -21,7 +21,10 @@ const GEGENSTAND: Record<string, string> = {
   SONSTIGES: "Sonstiges",
 };
 
-export function InsolvenzAbschnitt({ companyId, status }: { companyId: string; status?: string | null }) {
+export function InsolvenzAbschnitt({ companyId, status, country }: { companyId: string; status?: string | null; country?: string | null }) {
+  // Oesterreich: Ereignisse kommen aus der Ediktsdatei ueber die monatlichen
+  // Pool-Jobs; eine Pruefung auf Knopfdruck gibt es hier nicht.
+  const istAt = country === "AT";
   const qc = useQueryClient();
   const [offen, setOffen] = useState<number | null>(null);
   const [angefordert, setAngefordert] = useState(false);
@@ -41,6 +44,7 @@ export function InsolvenzAbschnitt({ companyId, status }: { companyId: string; s
   const d = q.data;
   const t = insolvenzText(d?.insolvencyStatus ?? status);
   if (!d || (d.events.length === 0 && !t)) {
+    if (istAt) return null;
     return (
       <p className="muted small" style={{ marginBottom: "0.75rem" }}>
         Insolvenzportal: {d?.insolvencyCheckedAt ? `keine Veröffentlichung, zuletzt geprüft am ${new Date(d.insolvencyCheckedAt).toLocaleDateString("de-DE")}.` : "noch nicht geprüft."}{" "}
@@ -57,15 +61,17 @@ export function InsolvenzAbschnitt({ companyId, status }: { companyId: string; s
         {d.insolvencyAt ? <span className="muted small"> seit {new Date(d.insolvencyAt).toLocaleDateString("de-DE")}</span> : null}
       </h3>
       <p className="muted small">
-        Quelle: Insolvenzbekanntmachungen der Justiz. {d.insolvencyCheckedAt ? `Zuletzt geprüft am ${new Date(d.insolvencyCheckedAt).toLocaleDateString("de-DE")}.` : ""}{" "}
-        <button type="button" className="btn" disabled={angefordert} onClick={() => void pruefen().then(() => qc.invalidateQueries({ queryKey: ["insolvenz", companyId] }))}>
-          {angefordert ? "Prüfung eingereiht" : "Erneut prüfen"}
-        </button>
+        Quelle: {istAt ? "Ediktsdatei der österreichischen Justiz" : "Insolvenzbekanntmachungen der Justiz"}. {d.insolvencyCheckedAt ? `Zuletzt geprüft am ${new Date(d.insolvencyCheckedAt).toLocaleDateString("de-DE")}.` : ""}{" "}
+        {!istAt && (
+          <button type="button" className="btn" disabled={angefordert} onClick={() => void pruefen().then(() => qc.invalidateQueries({ queryKey: ["insolvenz", companyId] }))}>
+            {angefordert ? "Prüfung eingereiht" : "Erneut prüfen"}
+          </button>
+        )}
       </p>
       <ul className="kv">
         {d.events.map((e: Ereignis) => (
           <li key={e.id}>
-            <span className="muted">{new Date(e.datum).toLocaleDateString("de-DE")}</span> · {GEGENSTAND[e.gegenstand] ?? e.gegenstand} · Amtsgericht {e.insolvenzgericht}, {e.aktenzeichen}{" "}
+            <span className="muted">{new Date(e.datum).toLocaleDateString("de-DE")}</span> · {GEGENSTAND[e.gegenstand] ?? e.gegenstand} · {istAt ? "" : "Amtsgericht "}{e.insolvenzgericht}, {e.aktenzeichen}{" "}
             <button type="button" className="btn" onClick={() => setOffen(offen === e.id ? null : e.id)}>
               {offen === e.id ? "Text ausblenden" : "Text anzeigen"}
             </button>

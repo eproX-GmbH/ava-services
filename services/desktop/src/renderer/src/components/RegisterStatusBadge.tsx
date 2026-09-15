@@ -60,15 +60,17 @@ export function InsolvenzBadge({ status, seit }: { status: string | null | undef
 }
 
 // Laenderspalten (docs/PLAN_OESTERREICH.md): Land und amtliche Registerkennung.
-// Deutschland ist der Normalfall und bekommt keinen Chip; Oesterreich und die
-// Schweiz werden markiert, weil Register, Nummernsystem und Quellen abweichen.
+// Jedes Land bekommt seinen Chip (auch DE), damit die Herkunft in gemischten
+// Listen auf einen Blick erkennbar ist.
 const LAND_TEXT: Record<string, { kurz: string; lang: string; register: string }> = {
+  DE: { kurz: "DE", lang: "Deutschland", register: "Handelsregister" },
   AT: { kurz: "AT", lang: "Österreich", register: "Firmenbuch" },
   CH: { kurz: "CH", lang: "Schweiz", register: "Handelsregister" },
 };
 
 export function LandBadge({ country }: { country: string | null | undefined }) {
-  const l = country ? LAND_TEXT[country] : undefined;
+  // Fehlendes Land = Altbestand, also Deutschland.
+  const l = LAND_TEXT[country || "DE"];
   if (!l) return null;
   return (
     <span className="badge" title={`${l.lang} (${l.register})`} style={{ marginLeft: "0.4rem", verticalAlign: "middle" }}>

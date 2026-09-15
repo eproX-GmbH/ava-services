@@ -363,10 +363,6 @@ export function CompanyDetail() {
   const [tab, setTab] = useState<TabKey>("overview");
   // O3/v0.1.561 — Kontakte per Organisationsvorgabe abgeschaltet: Tab weg.
   const kontakteErlaubt = useFeature("kontakte");
-  const sichtbareTabs = kontakteErlaubt ? TABS : TABS.filter((t) => t.key !== "contacts");
-  useEffect(() => {
-    if (!kontakteErlaubt && tab === "contacts") setTab("overview");
-  }, [kontakteErlaubt, tab]);
 
   // Phase 8.r4 — interest signal. Pinging on every CompanyDetail mount
   // tells the freshness scheduler the user is paying attention to this
@@ -404,6 +400,13 @@ export function CompanyDetail() {
       ),
     enabled: !!id,
   });
+  // Finanzen kommen aus dem Bundesanzeiger; fuer oesterreichische Firmen gibt es diese Quelle nicht.
+  const istAt = summary.data?.country === "AT";
+  const sichtbareTabs = TABS.filter((t) => (kontakteErlaubt || t.key !== "contacts") && (!istAt || t.key !== "financials"));
+  useEffect(() => {
+    if (!kontakteErlaubt && tab === "contacts") setTab("overview");
+    if (istAt && tab === "financials") setTab("overview");
+  }, [kontakteErlaubt, istAt, tab]);
   const profile = useTabQuery<CompanyProfile>("profile", id!, `/v1/companies/${id}/profile`, !!id);
   const structured = useTabQuery<StructuredContent>(
     "structured",
@@ -445,14 +448,6 @@ export function CompanyDetail() {
         {summary.data && registerZeile(summary.data) && (
           <p className="muted small" style={{ marginTop: 0 }}>
             {registerZeile(summary.data)}
-            {summary.data.country === "AT" && (
-              <>
-                {" · "}
-                <a href="https://justizonline.gv.at/jop/web/firmenbuchabfrage" target="_blank" rel="noreferrer" title="Vollauszug kostenpflichtig bei JustizOnline">
-                  Firmenbuchauszug ↗
-                </a>
-              </>
-            )}
           </p>
         )}
 
@@ -558,7 +553,7 @@ export function CompanyDetail() {
           stages={stageState.data?.stages ?? null}
           stageKeys={STAGES_FOR_TAB[tab]}
         />
-        {tab === "overview" && <InsolvenzAbschnitt companyId={id!} status={summary.data?.insolvencyStatus} />}
+        {tab === "overview" && <InsolvenzAbschnitt companyId={id!} status={summary.data?.insolvencyStatus} country={summary.data?.country} />}
         {tab === "overview" && (
           <OverviewTab
             companyId={id!}
