@@ -220,6 +220,20 @@ Deploy-Freigabe.
   input[type=image]`, Suchen-Knopf als `button/input[type=submit]` mit Text
   „Suchen“.
 
+**I1 umgesetzt (2026-09-15, master-data, noch nicht deployt):** Migration
+`20260915090000_insolvency_events` (Tabelle `InsolvencyEvent` mit Unique
+über companyId, Aktenzeichen, Datum, Text-Hash; Spalten `insolvencyStatus`,
+`insolvencyAt`, `insolvencyCheckedAt` an `GermanCompany`). Statusableitung
+als reine Funktion (`status-ableitung.ts`: jüngstes Ereignis mit Wirkung
+gewinnt, nur Entscheidungen → VERDACHT; Kategorie aus Portal-Gegenstand
+oder Textmerkmalen; 6 Tests). Repository `upsertMany` (idempotent,
+unbekannte Firmen übersprungen, Elasticsearch-Dokument bei Statuswechsel
+aktualisiert) und `faellige`. Routen: `POST /internal/companies/insolvency-events`
+(HMAC, bis 2.000 Meldungen), `POST /internal/companies/insolvency-due`
+(fällige Firmen aus Kandidatenliste), `GET /api/germany/v1/companies/{id}/insolvency-events`
+(JWT, Status plus Ereignisse). `insolvencyStatus` in Firmendetails, Liste,
+Suchtreffern und „Meine Firmen“.
+
 ## 7. Aufwand und Mengen
 
 - Modus A bei 5.000 Pool-Firmen alle 30 Tage: rund 170 Abfragen je Tag,
