@@ -127,6 +127,28 @@ Weg.
   Leerlauf-Verbindungen je Datenbank an; genau das deckelt der eigene
   Bouncer.
 
+**Nachtrag 10:4x UTC, Ursache gefunden:** Die lokalen Producer auf den
+Nutzerrechnern verbinden sich direkt mit den sechs Producer-Datenbanken
+(Handout `GET /v1/local-credentials`, Prisma `connection_limit=2` je
+Producer). Bei 4 bis 6 Nutzern sind das die 12 bis 13 Server-Verbindungen
+je Producer-Datenbank, zusammen rund 60 von 100. Umgesetzt:
+
+- Bouncer öffentlich: dedizierte IPv4 (2 US-Dollar je Monat) plus IPv6,
+  rohes TCP auf 5432, der Bouncer beendet TLS selbst mit einem
+  selbstsignierten Zertifikat je Start (`client_tls_sslmode = allow`,
+  intern bleibt Klartext). Ein Fly-TLS-Handler geht nicht, weil das
+  Postgres-Protokoll TLS erst nach dem SSLRequest verhandelt.
+- Handout an die Producer: `PRODUCER_DATABASE_URL_PUBLIC` =
+  `ava-pgbouncer.fly.dev:5432` mit `sslmode=require&sslaccept=accept_invalid_certs&pgbouncer=true`,
+  `connection_limit=1`. Wirkt bei jedem Producer-Neustart (Handout wird
+  beim Spawn geholt). Geprüft mit einem Prisma-Client von außen.
+- Handout-Fehler nach dem ersten Umhängen (interne Adresse verteilt) war
+  15 Minuten wirksam und ist behoben (Gateway v150).
+- Erwartung: Producer-Datenbanken fallen von 12 bis 13 auf höchstens 6
+  Server-Verbindungen je Datenbank (Pool 4 plus Reserve 2), sobald die
+  Nutzer ihre App neu gestartet haben und der Anbieter-Bouncer die alten
+  Leerlaufverbindungen abgebaut hat.
+
 ## 5. Beobachtung und Betrieb
 
 - Wöchentlich (oder per Cron im Gateway als Log-Zeile): `SELECT datname,
