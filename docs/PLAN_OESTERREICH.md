@@ -173,6 +173,29 @@ bis 2 Tage, App 1 bis 2 Tage. Weg 2 (Auszug kaufen) separat 3 bis 5 Tage.
   Sicherungsmaßnahmen). Vorschlag: Modus A wie in Deutschland, je
   Pool-Firma alle 30 Tage 1 bis 2 Anfragen, Takt 1/s, kein Browser nötig.
 
+## 4b. Stand der Umsetzung
+
+- **master-data (2026-09-15, f4ee8be, Deploy offen):** Länderspalten
+  `country` (DE | AT | CH, Default DE, Index), `legalForm` (Langname),
+  `uid` (ATU…, CHE-…) an GermanCompany; Migration
+  `20260915140000_laenderspalten` (reine Katalogänderung, läuft per
+  `release_command`). Register-Delta-Route validiert mit Yup je Land:
+  companyId-Muster (DE Original-Scraper inkl. Umlaut-Zusatz und
+  `_F<ALT>`, `AT_FN<Nummer><Buchstabe>`, `CH_CHE<9 Ziffern>`),
+  Feldlängen, UID-Muster; `legalForm`/`uid` optional (Suchtreffer ohne
+  Detail behalten den Bestand). Elastic-Dokument trägt `country`;
+  DTOs get/list/fuzzy liefern `country`, `legalForm`, `uid`, Listenfilter
+  `country`. InsolvencyEvent kennt `quelle` je Meldung
+  (`insolvenzportal` | `ediktsdatei`). 31 Unit-Tests grün.
+- **Nächster Schritt (Gateway + Paket register-delta):** Job-Arten
+  `at_front` (Aufzählung je Gericht und Begriff `<Ziffer><Buchstabe>`,
+  16 Gerichte × 170 Begriffe), `at_refresh` (Detail je FN alle 30 Tage,
+  liefert legalForm, Adresse, Status) und `at_insolvenz` (Ediktsdatei je
+  FN, §7 Notebook); Abbildung Gericht → Bundesland aus `filterConfig`.
+  Kein Browser nötig, läuft im Fly-Worker und beim Mithelfen.
+- **Danach App:** Land und FN in Tabellen und Firmendetails, Hinweis auf
+  kostenpflichtigen Vollauszug.
+
 ## 5. Offene Entscheidungen
 
 1. Weg 1 (Stammdaten-only) jetzt, Weg 2 später?
