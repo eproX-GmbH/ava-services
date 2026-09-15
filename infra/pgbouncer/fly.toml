@@ -1,0 +1,32 @@
+# ava-pgbouncer (docs/PLAN_PGBOUNCER.md) — nur im privaten Fly-Netz erreichbar:
+# ava-pgbouncer.internal:6432. Kein oeffentlicher Port. Secrets:
+#   DB_HOST     pgbouncer.<cluster>.flympg.net (Anbieter-PgBouncer)
+#   DB_USER     fly-user
+#   DB_PASSWORD
+app = 'ava-pgbouncer'
+primary_region = 'fra'
+
+[build]
+
+[env]
+  POOL_MODE = 'transaction'
+  DEFAULT_POOL_SIZE = '4'
+  MAX_DB_CONNECTIONS = '6'
+  SERVER_IDLE_TIMEOUT = '60'
+  MAX_CLIENT_CONN = '500'
+
+[[vm]]
+  memory = '256mb'
+  cpu_kind = 'shared'
+  cpus = 1
+
+[processes]
+  bouncer = '/entrypoint.sh'
+
+[checks]
+  [checks.tcp]
+    type = 'tcp'
+    port = 6432
+    interval = '15s'
+    timeout = '3s'
+    processes = ['bouncer']
