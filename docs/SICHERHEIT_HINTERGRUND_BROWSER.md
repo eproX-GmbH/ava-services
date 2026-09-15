@@ -60,3 +60,12 @@ Stand 2026-09-12 (Desktop v0.1.639). Anlass: Rückmeldung eines Windows-Testers
 - Kein Prozess von AVA nimmt Verbindungen von außerhalb des Rechners an.
 - Ausgehend: Gateway (Frankfurt), KI-Anbieter des Nutzers, öffentliche
   Quellen (Register, Firmenwebsites, Google-Suche über das Gateway).
+
+## Nachtrag 2026-09-15: Österreich ohne Browser
+
+Die Job-Arten `at_front`, `at_refresh` und `at_insolvenz` (Firmenbuch
+JustizOnline, Ediktsdatei) laufen über reine HTTP-GETs mit `fetch` im
+Worker-Prozess: kein BrowserWindow, kein Selenium, kein Download. Die
+Antworten sind JSON beziehungsweise HTML-Text, der nur geparst wird.
+Damit gilt die Allowlist der Hintergrund-Browser dafür nicht; die
+Domains sind `justizonline.gv.at` und `edikte.justiz.gv.at`.

@@ -6,6 +6,8 @@ import type { Ergebnis, InsolvenzMeldung, Job, TrefferMeldung } from "./gateway-
 import { bereinigeText, kategorieAusText, type InsolvenzZeile } from "./insolvenz-parser";
 import { parseBekanntmachungen, type Treffer } from "./parser";
 import type { Suchergebnis } from "./portal";
+import { AT_SUCHE_SEITE, companyIdAt, trefferAt, type AtSuchseite, type AtDetail, type TrefferAt } from "./at-firmenbuch";
+import { meldungenAusVerfahren, type EdikteEintrag, type EdikteVerfahren } from "./at-edikte";
 
 export type PortalSchnittstelle = {
   suche(gericht: string, art: string, nummer: number | string): Promise<Suchergebnis>;
@@ -19,20 +21,33 @@ export type InsolvenzSchnittstelle = {
 
 export type TaktSchnittstelle = { warten(): Promise<void>; frei(): number };
 
+/** Oesterreich: JustizOnline-JSON und Ediktsdatei, jeweils mit eigenem Takt. */
+export type AtSchnittstelle = {
+  firmenbuch: { suche(term: string, page: number, gerichtId?: string, state?: string): Promise<AtSuchseite>; detail(fnr: string): Promise<{ detail: AtDetail | null; gesperrt: boolean }> };
+  edikte: { fnSuche(fnr: string): Promise<{ eintraege: EdikteEintrag[]; gesperrt: boolean }>; verfahren(docId: string): Promise<{ verfahren: EdikteVerfahren | null; gesperrt: boolean }> };
+  taktFirmenbuch: TaktSchnittstelle;
+  taktEdikte: TaktSchnittstelle;
+};
+
 export type AusfuehrungsOptionen = {
   workerId: string;
   portal: PortalSchnittstelle;
   /** Insolvenzportal (lazy; nur fuer Jobs der Art insolvenz). */
   insolvenz?: () => Promise<InsolvenzSchnittstelle>;
   takt: TaktSchnittstelle;
+  /** Oesterreich (nur fuer Jobs at_*). */
+  at?: AtSchnittstelle;
   /** Hoechstzahl Abfragen je Job; muss in die Lease (20 min) passen. */
   maxAbfragenJeJob?: number;
+  /** Oesterreich: Anfragen je Job bei 0,5/s (Default 300 ≈ 10 min). */
+  maxAbfragenJeAtJob?: number;
   log?: (zeile: string) => void;
   /** Abbruchsignal (Desktop: Nutzer pausiert, Akku, Chat aktiv). */
   abbrechen?: () => boolean;
 };
 
 export const MAX_ABFRAGEN_JE_JOB = 15;
+export const MAX_ABFRAGEN_JE_AT_JOB = 300;
 
 // Die Bekanntmachungsseite enthaelt alle Tage des 8-Wochen-Fensters (rund
 // 14.000 Eintraege, fast 2 MB Text). Ein Job je Tag wuerde sie 56-mal laden;
@@ -84,6 +99,8 @@ type FrontPayload = { gericht: string; art: string; abNummer: number; maxFehltre
 type RefreshPayload = { firmen: Array<{ gericht: string; art: string; nummer: number; zusatz?: string; hinweis?: string }>; grund?: string };
 type BekPayload = { tag: string };
 type InsolvenzPayload = { firmen: Array<{ companyId: string; gericht: string; art: string; nummer: string; zusatz?: string }>; grund?: string };
+type AtFrontPayload = { gerichtId: string; begriff: string; abSeite?: number; state?: string };
+type AtFirmenPayload = { firmen: Array<{ companyId: string; fnr: string }>; grund?: string };
 
 export async function fuehreJobAus(job: Job, o: AusfuehrungsOptionen): Promise<Ergebnis> {
   const log = o.log ?? (() => {});
@@ -183,6 +200,11 @@ export async function fuehreJobAus(job: Job, o: AusfuehrungsOptionen): Promise<E
     return { ...basis, insolvenz: { meldungen, geprueft } };
   }
 
+  if (job.art === "at_front" || job.art === "at_refresh" || job.art === "at_insolvenz") {
+    if (!o.at) throw new Error("Oesterreich-Schnittstellen nicht verfuegbar");
+    return fuehreAtJobAus(job, o, o.at, o.maxAbfragenJeAtJob ?? MAX_ABFRAGEN_JE_AT_JOB, log);
+  }
+
   // refresh
   const p = job.payload as unknown as RefreshPayload;
   for (const f of p.firmen.slice(0, max)) {
@@ -199,4 +221,89 @@ export async function fuehreJobAus(job: Job, o: AusfuehrungsOptionen): Promise<E
   }
   log(`refresh (${p.grund ?? "?"}): ${basis.abfragen} Abfragen, ${basis.treffer.length} Treffer`);
   return basis;
+}
+
+async function fuehreAtJobAus(job: Job, o: AusfuehrungsOptionen, at: AtSchnittstelle, max: number, log: (z: string) => void): Promise<Ergebnis> {
+  const basis: Ergebnis = { workerId: o.workerId, abfragen: 0, treffer: [] };
+
+  if (job.art === "at_front") {
+    // Aufzaehlung je (Gericht, Begriff): Seiten zu 10, bis numResults erreicht
+    // oder das Job-Budget aufgebraucht ist (dann Fortsetzung ueber atFront).
+    const p = job.payload as unknown as AtFrontPayload;
+    const trefferAt_: TrefferAt[] = [];
+    let seite = p.abSeite ?? 0;
+    let gesamt = 0;
+    let fertig = false;
+    while (basis.abfragen < max) {
+      if (o.abbrechen?.()) break;
+      await at.taktFirmenbuch.warten();
+      const r = await at.firmenbuch.suche(p.begriff, seite, p.gerichtId, p.state ?? "ACTIVE");
+      basis.abfragen++;
+      if (r.gesperrt) return { ...basis, gesperrt: true, trefferAt: trefferAt_, atFront: { begriff: p.begriff, naechsteSeite: seite, fertig: false, gesamt } };
+      gesamt = r.gesamt;
+      for (const t of r.treffer) trefferAt_.push(trefferAt(t, p.gerichtId));
+      seite++;
+      if (r.treffer.length < AT_SUCHE_SEITE || seite * AT_SUCHE_SEITE >= gesamt) {
+        fertig = true;
+        break;
+      }
+    }
+    log(`at_front ${p.gerichtId} "${p.begriff}": ${basis.abfragen} Seiten, ${trefferAt_.length} von ${gesamt} Firmen${fertig ? "" : ", Fortsetzung ab Seite " + seite}`);
+    return { ...basis, trefferAt: trefferAt_, atFront: { begriff: p.begriff, naechsteSeite: seite, fertig, gesamt } };
+  }
+
+  if (job.art === "at_refresh") {
+    // Detail je FN: Rechtsform, Adresse, Status (2 Anfragen je Firma: Suche nach Versions-Id, Detail).
+    const p = job.payload as unknown as AtFirmenPayload;
+    const trefferAt_: TrefferAt[] = [];
+    for (const f of p.firmen) {
+      if (o.abbrechen?.() || basis.abfragen + 2 > max) break;
+      await at.taktFirmenbuch.warten();
+      const r = await at.firmenbuch.detail(f.fnr);
+      basis.abfragen += 2;
+      if (r.gesperrt) return { ...basis, gesperrt: true, trefferAt: trefferAt_ };
+      if (!r.detail) continue; // unbekannt: Bestand bleibt, kein Loeschen
+      const gerichtId = gerichtIdAus(job.payload, f.companyId);
+      trefferAt_.push(trefferAt(r.detail, gerichtId));
+    }
+    log(`at_refresh (${p.grund ?? "?"}): ${basis.abfragen} Abfragen, ${trefferAt_.length} Treffer`);
+    return { ...basis, trefferAt: trefferAt_ };
+  }
+
+  // at_insolvenz: Ediktsdatei je FN, alle Bekanntmachungen jedes Verfahrens (idempotent im Gateway).
+  const p = job.payload as unknown as AtFirmenPayload;
+  const meldungen: InsolvenzMeldung[] = [];
+  const geprueft: string[] = [];
+  for (const f of p.firmen) {
+    if (o.abbrechen?.() || basis.abfragen >= max) break;
+    await at.taktEdikte.warten();
+    const r = await at.edikte.fnSuche(f.fnr);
+    basis.abfragen++;
+    if (r.gesperrt) return { ...basis, gesperrt: true, insolvenz: { meldungen, geprueft } };
+    for (const e of r.eintraege) {
+      await at.taktEdikte.warten();
+      const v = await at.edikte.verfahren(e.docId);
+      basis.abfragen++;
+      if (v.gesperrt) return { ...basis, gesperrt: true, insolvenz: { meldungen, geprueft } };
+      // Nur Verfahren, deren FN exakt unsere Firma ist.
+      if (!v.verfahren?.fn) continue;
+      let cid: string;
+      try {
+        cid = companyIdAt(v.verfahren.fn);
+      } catch {
+        continue;
+      }
+      if (cid !== f.companyId) continue;
+      meldungen.push(...meldungenAusVerfahren(v.verfahren, f.companyId));
+    }
+    geprueft.push(f.companyId);
+  }
+  log(`at_insolvenz (${p.grund ?? "?"}): ${geprueft.length} Firmen geprueft, ${meldungen.length} Bekanntmachungen, ${basis.abfragen} Abfragen`);
+  return { ...basis, insolvenz: { meldungen, geprueft } };
+}
+
+/** Gericht fuer den Refresh: aus dem Payload (je Firma oder je Job), sonst leer (Gateway behaelt den Bestand). */
+function gerichtIdAus(payload: Record<string, unknown>, companyId: string): string {
+  const firmen = payload.firmen as Array<{ companyId: string; gerichtId?: string }> | undefined;
+  return firmen?.find((f) => f.companyId === companyId)?.gerichtId ?? (typeof payload.gerichtId === "string" ? payload.gerichtId : "");
 }

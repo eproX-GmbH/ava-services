@@ -13,7 +13,8 @@ import { HTTPException } from "hono/http-exception";
 import { requireScope } from "../../middleware/auth";
 import { getGatewayPool } from "../../lib/producer-pools";
 import {
-  ABFRAGEN_JE_STUNDE,
+  abfragenJeStundeFuer,
+  atAnfordern,
   JOB_ARTEN_REGISTER,
   JobFehler,
   leaseJob,
@@ -39,7 +40,7 @@ const err = {
 };
 
 export const WorkerId = z.string().min(8).max(120).regex(/^[A-Za-z0-9._:-]+$/);
-const JobArtSchema = z.enum(["front", "bekanntmachungen", "refresh", "insolvenz"]);
+export const JobArtSchema = z.enum(["front", "bekanntmachungen", "refresh", "insolvenz", "at_front", "at_refresh", "at_insolvenz"]);
 
 const JobShape = z
   .object({
@@ -88,6 +89,19 @@ const InsolvenzMeldungShape = z.object({
   datum: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   gegenstand: z.enum(["EROEFFNUNG", "ABWEISUNG_MANGELS_MASSE", "SICHERUNGSMASSNAHME", "AUFHEBUNG", "EINSTELLUNG", "ENTSCHEIDUNG", "VERTEILUNG", "INSOLVENZPLAN", "SONSTIGES"]),
   text: z.string().max(50_000).default(""),
+  quelle: z.enum(["insolvenzportal", "ediktsdatei"]).optional(),
+});
+
+/** Oesterreich: Suchtreffer oder Detail aus JustizOnline (Paket register-delta, at-firmenbuch.ts). */
+const TrefferAtShape = z.object({
+  fnr: z.string().regex(/^\d{1,6}[a-z]$/),
+  name: z.string().min(1).max(500),
+  sitz: z.string().max(200).default(""),
+  status: z.enum(["ACTIVE", "CLOSED"]),
+  gericht: z.string().min(1).max(200),
+  bundesland: z.string().max(100).default(""),
+  legalForm: z.string().max(200).nullable().optional(),
+  uid: z.string().max(40).nullable().optional(),
 });
 
 export const ErgebnisShape = z.object({
@@ -98,6 +112,8 @@ export const ErgebnisShape = z.object({
   insolvenz: z.object({ meldungen: z.array(InsolvenzMeldungShape).max(2000), geprueft: z.array(z.string()).max(2000) }).optional(),
   front: z.object({ maxNummer: z.number().int().nonnegative(), offeneLuecken: z.array(z.number().int()).max(500), zusaetze: z.array(z.string()).optional() }).optional(),
   bekanntmachungen: z.array(BekanntmachungShape).max(5000).optional(),
+  trefferAt: z.array(TrefferAtShape).max(5000).optional(),
+  atFront: z.object({ begriff: z.string().min(2).max(4), naechsteSeite: z.number().int().nonnegative(), fertig: z.boolean(), gesamt: z.number().int().nonnegative() }).optional(),
 });
 
 function auth(c: { get: (k: "auth") => { tenantId: string; actorId: string } | undefined }) {
@@ -139,7 +155,7 @@ registerJobsRouter.openapi(leaseRoute, async (c) => {
   const job = await leaseJob(pool, body.workerId, (body.arten as JobArt[] | undefined) ?? JOB_ARTEN_REGISTER);
   if (!job) return c.body(null, 204);
   return c.json(
-    { id: job.id, art: job.art, schluessel: job.schluessel, payload: job.payload, prioritaet: job.prioritaet, leaseUntil: job.leaseUntil, versuche: job.versuche, abfragenJeStunde: ABFRAGEN_JE_STUNDE },
+    { id: job.id, art: job.art, schluessel: job.schluessel, payload: job.payload, prioritaet: job.prioritaet, leaseUntil: job.leaseUntil, versuche: job.versuche, abfragenJeStunde: abfragenJeStundeFuer(job.art) },
     200,
   );
 });
@@ -244,4 +260,27 @@ registerJobsRouter.openapi(insolvenzRoute, async (c) => {
   const body = c.req.valid("json");
   const firmen = await insolvenzFaellige(body.companyIds, 0);
   return c.json({ jobs: await insolvenzAnfordern(getGatewayPool(), firmen, body.grund, 1), firmen: firmen.length }, 200);
+});
+
+// Oesterreich — Detail-Refresh und Ediktsdatei fuer konkrete Firmen anfordern (Chat, Import, Firmendetail).
+const atRoute = createRoute({
+  method: "post",
+  path: "/register-jobs/at",
+  tags: [tag],
+  summary: "Oesterreich: Firmenbuch-Detail und Ediktsdatei fuer konkrete Firmen anfordern (AT_FN...)",
+  request: {
+    body: {
+      content: {
+        "application/json": {
+          schema: z.object({ companyIds: z.array(z.string().regex(/^AT_FN[1-9][0-9]{0,5}[A-Z]$/)).min(1).max(500), grund: z.string().min(1).max(40).regex(/^[a-z0-9-]+$/).default("anforderung") }),
+        },
+      },
+    },
+  },
+  responses: { 200: { content: { "application/json": { schema: z.object({ jobs: z.number().int(), firmen: z.number().int() }) } }, description: "ok" }, 401: err[401] },
+});
+registerJobsRouter.openapi(atRoute, async (c) => {
+  auth(c);
+  const body = c.req.valid("json");
+  return c.json(await atAnfordern(getGatewayPool(), body.companyIds, body.grund), 200);
 });

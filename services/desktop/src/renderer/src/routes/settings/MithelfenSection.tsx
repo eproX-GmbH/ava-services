@@ -11,7 +11,15 @@ const GRUND_TEXT: Record<string, string> = {
   gesperrt: "Das Registerportal hat die Abfragen vorübergehend gesperrt, es geht automatisch weiter.",
 };
 
-const ART_TEXT: Record<string, string> = { front: "Neue Firmen (Nummernfront)", bekanntmachungen: "Registerbekanntmachungen", refresh: "Auffrischung bekannter Firmen" };
+const ART_TEXT: Record<string, string> = {
+  front: "Neue Firmen (Nummernfront)",
+  bekanntmachungen: "Registerbekanntmachungen",
+  refresh: "Auffrischung bekannter Firmen",
+  insolvenz: "Insolvenzprüfung",
+  at_front: "Neue Firmen Österreich (Firmenbuch)",
+  at_refresh: "Auffrischung Österreich (Firmenbuch-Detail)",
+  at_insolvenz: "Insolvenzprüfung Österreich (Ediktsdatei)",
+};
 
 export function MithelfenSection() {
   const [s, setS] = useState<MithelfenStatus | null>(null);

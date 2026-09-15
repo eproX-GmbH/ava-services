@@ -2,9 +2,13 @@
 
 import { createHmac } from "node:crypto";
 import type { Bekanntmachung, Treffer } from "./parser";
+import type { TrefferAt } from "./at-firmenbuch";
+import type { InsolvenzGegenstand } from "./insolvenz-parser";
 
-export type JobArt = "front" | "bekanntmachungen" | "refresh" | "insolvenz";
-export const ALLE_JOB_ARTEN: JobArt[] = ["front", "bekanntmachungen", "refresh", "insolvenz"];
+export type JobArt = "front" | "bekanntmachungen" | "refresh" | "insolvenz" | "at_front" | "at_refresh" | "at_insolvenz";
+export const ALLE_JOB_ARTEN: JobArt[] = ["front", "bekanntmachungen", "refresh", "insolvenz", "at_front", "at_refresh", "at_insolvenz"];
+/** Oesterreich (docs/PLAN_OESTERREICH.md): JSON-API und Ediktsdatei, kein Browser. */
+export const JOB_ARTEN_AT: JobArt[] = ["at_front", "at_refresh", "at_insolvenz"];
 
 export type Job = {
   id: string;
@@ -32,7 +36,16 @@ export type TrefferMeldung = {
   historie: Array<{ name: string; sitz: string; order: number }>;
 };
 
-export type InsolvenzMeldung = { companyId: string; aktenzeichen: string; insolvenzgericht: string; datum: string; gegenstand: string; text: string };
+export type InsolvenzMeldung = {
+  companyId: string;
+  aktenzeichen: string;
+  insolvenzgericht: string;
+  datum: string;
+  gegenstand: InsolvenzGegenstand;
+  text: string;
+  /** Fehlt = insolvenzportal (DE); ediktsdatei (AT). */
+  quelle?: "insolvenzportal" | "ediktsdatei";
+};
 
 export type Ergebnis = {
   workerId: string;
@@ -43,6 +56,10 @@ export type Ergebnis = {
   /** insolvenz: Veroeffentlichungen plus alle in diesem Job geprueften Firmen. */
   insolvenz?: { meldungen: InsolvenzMeldung[]; geprueft: string[] };
   bekanntmachungen?: Array<Omit<Bekanntmachung, "tagIso" | "kopf" | "geparst">>;
+  /** at_front / at_refresh: Firmenbuch-Treffer (Oesterreich). */
+  trefferAt?: TrefferAt[];
+  /** at_front: Stand der Aufzaehlung (Fortsetzung, wenn nicht fertig). */
+  atFront?: { begriff: string; naechsteSeite: number; fertig: boolean; gesamt: number };
 };
 
 export type GatewayClientOptionen = {

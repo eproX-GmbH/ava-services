@@ -27,8 +27,9 @@ const VERLAUF_MAX = 300;
 function beschreibeJob(art: string, payload: Record<string, unknown>): string {
   if (art === "front") return `${String(payload.gericht ?? "?")} ${String(payload.art ?? "")} ab ${String(payload.abNummer ?? "?")}`;
   if (art === "bekanntmachungen") return `Tag ${String(payload.tag ?? "?")}`;
+  if (art === "at_front") return `Gericht ${String(payload.gerichtId ?? "?")} Begriff „${String(payload.begriff ?? "?")}“${payload.abSeite ? ` ab Seite ${String(payload.abSeite)}` : ""}`;
   const firmen = Array.isArray(payload.firmen) ? payload.firmen.length : 0;
-  return `${firmen} Blätter${payload.grund ? ` (${String(payload.grund)})` : ""}`;
+  return `${firmen} ${art.startsWith("at_") || art === "insolvenz" ? "Firmen" : "Blätter"}${payload.grund ? ` (${String(payload.grund)})` : ""}`;
 }
 const TOKEN_INTERVAL_MS = 5 * 60_000;
 

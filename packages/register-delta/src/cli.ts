@@ -14,6 +14,7 @@
 //   REGISTER_DELTA_ARTEN     z. B. "refresh,front" (Default alle)
 //   WORKER_ART               desktop | betreiber (Default betreiber)
 //   REGISTER_DELTA_STATUS=1  Zustand als Zeile "__AVA_RD_STATUS__{json}" auf stdout (Desktop-Statuskarte)
+//   REGISTER_DELTA_AT=0      Oesterreich-Jobs (JustizOnline, Ediktsdatei) nicht bedienen (Default: an)
 
 import fs from "node:fs";
 import os from "node:os";
@@ -21,6 +22,9 @@ import { GatewayClient, type JobArt } from "./gateway-client";
 import { RegisterPortal } from "./portal";
 import { InsolvenzPortal } from "./insolvenz-portal";
 import { RegisterWorker } from "./worker";
+import { AT_ABFRAGEN_JE_STUNDE, JustizOnlineClient } from "./at-firmenbuch";
+import { EDIKTE_ABFRAGEN_JE_STUNDE, EdikteClient } from "./at-edikte";
+import { Taktgeber } from "./takt";
 
 function tokenQuelle(): () => Promise<string> {
   if (process.env.WORKER_TOKEN) return async () => process.env.WORKER_TOKEN as string;
@@ -63,6 +67,15 @@ async function main() {
       await p.oeffnen();
       return p;
     },
+    at:
+      process.env.REGISTER_DELTA_AT === "0"
+        ? undefined
+        : {
+            firmenbuch: new JustizOnlineClient({ log }),
+            edikte: new EdikteClient({ log }),
+            taktFirmenbuch: new Taktgeber(AT_ABFRAGEN_JE_STUNDE),
+            taktEdikte: new Taktgeber(EDIKTE_ABFRAGEN_JE_STUNDE),
+          },
     abfragenJeStunde: Number(process.env.ABFRAGEN_JE_STUNDE ?? 60),
     arten: process.env.REGISTER_DELTA_ARTEN ? (process.env.REGISTER_DELTA_ARTEN.split(",").map((a) => a.trim()) as JobArt[]) : undefined,
     log,

@@ -1,0 +1,235 @@
+<!DOCTYPE html><html>
+<head>
+<meta name="robots" content="noindex">
+<meta http-equiv="Content-Language" content="de-at">
+<meta http-equiv="Content-Style-Type" content="text/css">
+<meta http-equiv="Content-Script-Type" content="text/javascript">
+<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+<script	 	src="/edikte/reposit.nsf/JS_Global?OpenJavaScriptLibrary"	language="JavaScript"		type="text/javascript"	></script>
+<script 	src="/edikte/reposit.nsf/JSValidation.js" 																				type="text/javascript"	></script>
+<script 	src="/edikte/reposit.nsf/Messages.js" 																				type="text/javascript"	></script>
+<!-- Bootstrap -->
+<link 		href="/edikte/reposit.nsf/css/bootstrap.min.css" 																	rel="stylesheet"			>
+<link 		href="/edikte/reposit.nsf/css/bootstrap-theme.min.css" 														rel="stylesheet"			>
+<script 	src="/edikte/reposit.nsf/js/jquery-3.3.1.slim.min.js"																type="text/javascript"	></script>
+<script 	src="https://cdnjs.cloudflare.com/ajax/libs/popper.js/1.14.3/umd/popper.min.js"			type="text/javascript"	></script>
+<script 	src="/edikte/reposit.nsf/js/bootstrap.min.js"																			type="text/javascript"	></script>
+<!-- Sortierung -->
+<link		href="/edikte/reposit.nsf/css/dataTables.bootstrap.min.css"												rel="stylesheet"			>
+<script		src="/edikte/reposit.nsf/js/jquery.dataTables.min.js"															type="text/javascript"	></script>
+<script		src="/edikte/reposit.nsf/js/dataTables.bootstrap.min.js"														type="text/javascript"	></script>
+<script		src="/edikte/reposit.nsf/moment.js"																						type="text/javascript"	></script>
+<script		src="/edikte/reposit.nsf/sorting/datetime-moment.js"															type="text/javascript"	></script>
+<!-- Bootstrap Datepicker -->
+<link 		href="/edikte/reposit.nsf/css/bootstrap-datepicker3.css" 													rel="stylesheet"			>
+<script 	src="/edikte/reposit.nsf/js/bootstrap-datepicker.min.js" 														type="text/javascript"	></script>
+<script 	src="/edikte/reposit.nsf/js/bootstrap-datepicker.de.min.js"													type="text/javascript"	></script>
+<!-- Jasny Bootstrap -->
+<link 		href="/edikte/reposit.nsf/css/jasny-bootstrap.min.css" 														rel="stylesheet"			>
+<script 	src="/edikte/reposit.nsf/js/jasny-bootstrap.min.js"																type="text/javascript"	></script>
+<!-- Anpassungen für Edikte -->
+<link 		href="/edikte/reposit.nsf/bootstrap_for_edikte.css" 																rel="stylesheet"			>
+<title>Insolvenzdatei - Firmenbuchnummer - Ergebnisliste</title>
+<meta name="robots" content="noindex"><meta name="*" content="noindex">
+<meta name="robots" content="nofollow"><meta name="*" content="nofollow">
+<meta name="robots" content="noarchive"><meta name="msnbot" content="nocache">
+<meta name="googlebot" content="nosnippet"><meta name="robots" content="noimageindex,nomediaindex"><meta name="robots" content="noodp"><meta name="robots" content="noydir">
+<script language="JavaScript" type="text/javascript">
+	var djConfig = {
+		isDebug: false,
+		//debugAtAllCosts: true,
+		preventBackButtonFix: false, 
+		dojoIframeHistoryUrl: "/edikte/dojo.nsf$files/dojo/resources/iframe_history.html"
+	}
+</script>
+<script  language="JavaScript" type="text/javascript" src="/edikte/dojo.nsf$files/dojo/dojo.js"></script>
+<script  language="JavaScript" type="text/javascript" src="/edikte/dojo.nsf$files/dojo/back.js"></script>
+
+<script language="JavaScript" type="text/javascript">
+	dojo.require("dojo.back");
+</script>
+<script language='JavaScript' type='text/javascript' src='/edikte/reposit.nsf/JS_XMLHTTP?OpenJavaScriptLibrary'></script>
+<script src="/edikte/reposit.nsf/Messages.js" type="text/javascript"></script>
+<script language='JavaScript' type='text/javascript' src='/edikte/ediktelog.nsf/OpenLogJavascript?OpenJavaScriptLibrary'></script>
+<script type="text/javascript">
+var openLogUrl = "/edikte/ediktelog.nsf/JavascriptErrorReport?OpenAgent";
+</script>
+<script language='JavaScript' type='text/javascript' src='/edikte/reposit.nsf/JS_SearchLib?OpenJavaScriptLibrary'></script>
+<script language='JavaScript' type='text/javascript' src='/edikte/reposit.nsf/JS_SearchUtilities?OpenJavaScriptLibrary'></script>
+<script language='JavaScript' type='text/javascript' src='/edikte/reposit.nsf/JS_Categories?OpenJavaScriptLibrary'></script>
+<script language='JavaScript' type='text/javascript' src='/edikte/id/idedi8.nsf/JS_AnwSearchLib?OpenJavaScriptLibrary'></script>
+<!--link href="/edikte/reposit.nsf/eintrag.css" rel="stylesheet" type="text/css"-->
+<!--link href="/edikte/reposit.nsf/suchen.css" rel="stylesheet" type="text/css"-->
+<!--link href="/edikte/reposit.nsf/druck.css" rel="stylesheet" type="text/css" media="print"--><link href="/edikte/reposit.nsf/edikte_screen.css" rel="stylesheet" type="text/css">
+<link href="/edikte/id/idedi8.nsf/anwstyles.css" rel="stylesheet" type="text/css">
+
+
+<script language="JavaScript" type="text/javascript">
+<!-- 
+$(function () {  $('[data-toggle="tooltip"]').tooltip()});
+// -->
+</script>
+</head>
+<body text="#000000" bgcolor="#FFFFFF" onload="initForm(this);">
+
+<form onsubmit="// onSubmit Event im Form Mainreturn onSubmitSuche(this);return true;" method="post" action="/edikte/id/idedi8.nsf/1ecd1faad016bf8cc125788e003f9860!CreateDocument" name="_suche"></form><script type="text/javascript"> 
+//aler('dojo')
+    dojo.back.init();
+</script><!--div class="idbody"-->
+<form  name="Parameters" action="">
+<input type="hidden" name="FieldList" value="FN~Firmenbuchnummer~true~regFN~~~~~~~~">
+
+<input name="simQuery" value="~[FN]=588123m~" type="hidden" size="80" id="simQuery">
+
+<input name="SearchWv" value="0" type="hidden">
+<input name="SearchThesaurus" value="0" type="hidden">
+<input name="SearchFuzzy" value="0" type="hidden">
+<input name="SearchOrder" value="4" type="hidden" id="SearchOrder">
+<input name="Start" value="0" type="hidden">
+<input name="Count" value="0" type="hidden">
+<input name="SearchMax" value="4999" type="hidden" id="SearchMax">
+<input name="SearchMessageString" value="" type="hidden">
+</form>
+<form name="AnwParameters" action=""></form>
+<!-- Header-->
+<a name="top"></a>
+<span class="show_screenreader_only">
+	<a href="#nav" title="zur Navigation springen">zur Navigation</a>
+</span>
+<header class="site-header">
+	<div id="nav_logo">
+		<a	 href="https://edikte.justiz.gv.at" title="zur Ediktsdatei" style="height:auto;"><img src="/edikte/reposit.nsf/justiz_edikte_2010.gif" title="Ediktsdatei der österreichischen Justiz" alt="Ediktsdatei-Logo der österreichischen Justiz"></a>
+	</div>
+	<div class="edikte-header">
+		<h1 title="Insolvenzdatei"><small>Insolvenzdatei</small></h1>
+		<span title="Firmenbuchnummer - Ergebnisliste (Server: Edikte131)" class="show_screen_only"><small id="title2">Firmenbuchnummer - Ergebnisliste</small></span>
+	</div>
+</header><!--header-->
+<!--Header-->
+<form class="form-horizontal" method="GET" action ="/edikte/id/idedi8.nsf/submitSuche" name="Main">
+<input name="OpenAgent" type="hidden" value="">
+<input name="subf" type="hidden" value="f">
+<input name="scope" type="hidden" value="edi">
+
+<input name="Hits" value="1" type="hidden">
+<input name="TotalHits" value="1" type="hidden"><input name="Anw" type="hidden" value="ID">
+<input name="AnwTitle" type="hidden" value="Insolvenzdatei">
+<input name="subfTitle" type="hidden" value="Firmenbuchnummer">
+<div id="spansuche"><div class="bootstrap-padding"><div id="suche" class="hidden-print">
+	<div id="contentsuche">
+		<!-- Hilfsfeld für Submit durch Enter --><input type="text" style="display:none">
+		<div class="container-fluid">
+			<!--Alert ID/RD -->
+					<!--Keine-->
+					<!--Frei-->
+					<div class="panel panel-default">
+						<div class="panel-heading">
+							<h2 class="show_screenreader_only"><a name="nav">Navigation</a></h2>
+							<ul class="nav nav-tabs">
+								<li role="presentation" class="feid"><a href="/edikte/id/idedi8.nsf/suche!OpenForm&amp;subf=eid" tabindex="90" title="Einfache Suche">Einfache Suche</a></li>
+			<li role="presentation" class="fa"><a href="/edikte/id/idedi8.nsf/suche!OpenForm&amp;subf=a" tabindex="90" title="Aktenzeichen">Aktenzeichen</a></li>
+			<li role="presentation" class="active"><a href="/edikte/id/idedi8.nsf/suche!OpenForm&amp;subf=f" tabindex="90" title="Firmenbuchnummer">Firmenbuchnummer</a></li>
+			<li role="presentation" class="fvid"><a href="/edikte/id/idedi8.nsf/suche!OpenForm&amp;subf=vid" tabindex="90" title="Erweiterte Suche">Erweiterte Suche</a></li>
+			
+							</ul>
+						</div>
+						<div class="panel-body">
+							<span id="ErrMsg"></span>
+							<div id="ValidationError" class="hide alert alert-danger"></div>
+							<div class="alert alert-danger hide" id="errormsg"></div>
+<!-- Mehrfache FN-->		<div id="msgtext"></div>
+		<div class="form-group">
+			<label class="col-sm-3 control-label text-right" for="FN">Firmenbuchnummer <a href="/edikte/ex/edparm3.nsf/hb/id_fn" style="cursor: help;" data-toggle="tooltip" data-placement="right" data-container="body" data-html="true" title="Geben Sie in das Feld die Firmenbuchnummer ein (Link öffnet in neuem Fenster)" target="hilfe" tabindex="50"><span class="glyphicon glyphicon-question-sign"></span></a></label>
+			<div class="col-sm-9">
+<input name="FN" value="588123m" tabindex="1" size="7" maxlength="7" autofocus id="FN" class="form-control"></div>
+		</div>							<div class="form-group form-group-sm">
+								<div class="col-sm-9 col-sm-offset-3">
+									<input type="submit" name="sebut" value="   Suchen   " class="btn btn-primary" tabindex="40" onClick="submitSuche(this);return false;">
+								</div>
+							</div><!--form-group-->
+						</div><!--panel-body-->
+					</div><!--panel panel-default-->
+		</div><!--container-fluid-->
+	</div><!--contentsuche-->
+</div><!--suche-->
+<div class="container-fluid">
+	<div id="querybalken" class="panel panel-info">
+		<div class="panel-body text-center bg-info">
+			
+			<span id="suchdatum">Ihre Suche vom 15.09.2026 um 13:01:38 MESZ (Edikte131)  hat <strong><span id="treffer">1 Eintrag</span></strong> gefunden.</span><br>
+			<span id="suchstring">Sie haben nach <span id="expquery">([Firmenbuchnummer]=(588123m))</span> gesucht.</span>
+			<small><span id="suchlog" class="small"><br>Log-Daten: <span id="logquery">ftquery= &query=([FN]=(588123m))</span></span></small>
+			<div class="hidden-print">
+				<div class="hide" id="printalldiv"><a class="btn btn-default btn-sm" href="javascript:printAll()" title="Alle drucken">Alle drucken</a></div>
+			</div>
+		</div>
+	</div>
+	<div id="ergebnisliste" class="table-responsive">
+		<a href="#" name="topergebnisliste"></a>
+		<table class="table table-striped table-bordered table-hover bs_sortierbar" summary="Liste aller Einträge, die Ihrer Suchanfrage entsprechen">
+			<!-- Überschrift für Ansichten--><colgroup>
+<col width="0px" class="nowrap"><col width="40%" class="">
+<col width="60%" class=""></colgroup>
+<thead>
+<tr>
+<th><span id="numhead" class="hide">Nr.</span></th>
+<th>Aktenzeichen</th>
+<th>Schuldner</th></tr>
+</thead>
+
+			<tbody data-link="row" class="rowlink">
+			
+<tr><td class="zentriert" ><script type="text/javascript">count();</script></td><td><a href="0/bd1061b3c2cf83acc1258d41007947a7!OpenDocument" onClick="subOpenXMLWithHistory('0/bd1061b3c2cf83acc1258d41007947a7');return false;" id="linkbd1061b3c2cf83acc1258d41007947a7">HG Wien, 5 S 191/25k</a></td><td>ACS Bus und Flughafentransfer GmbH <br>1120 Wien</td></tr> 
+			</tbody>
+		</table>
+		<a href="#" name="bottomergebnisliste"></a>
+	</div><!--ergebnisliste-->
+</div><!--container-fluid-->
+</div><!-- bootstrap-padding -->
+</div><!-- spansuche --><div id="divedikt">
+</div><!-- divedikt --><!--
+<input type="submit" value="Dummy">--></form><!-- Footer-->
+<footer class="site-footer hidden-print">
+	<nav class="site-footer__nav">
+		<ul class="breadcrumb">
+			<li><a href="/edikte/ex/edparm3.nsf/hb/id_glossar" title="Glossar (neues Fenster)" class="static_black" tabindex="101" target="hilfe">Glossar</a></li>
+			<li><a href="mailto:postmaster.edikte@justiz.gv.at" title="Kontakt (öffnet E-Mail Client)" class="static_black" tabindex="102">Kontakt</a></li>
+			<li><a href="https://www.justiz.gv.at/web2013/service_navigation/datenschutz~92.de.html" title="Datenschutz-Erklärung (neues Fenster)" class="static_black" tabindex="103" target="_blank">Datenschutz-Erklärung</a></li>
+			<li><a href="/edikte/ex/edparm3.nsf/hb/allg_impressum" title="Impressum (neues Fenster)" class="static_black" tabindex="104" target="hilfe">Impressum</a></li>
+			<li><a href="/edikte/ex/edparm3.nsf/hb/allg_wai" title="Barrierefreiheit (neues Fenster)" class="static_black" tabindex="105" target="hilfe">Barrierefreiheit</a></li>
+					</ul>
+	</nav>
+</footer><!--footer-->
+<nav class="navbar navbar-default navbar-fixed-bottom">
+	<div class="container-fluid">
+		<ul class="nav" style="text-align: center;">
+			<li class="hide previous" id="linkstop"></li>
+			<li class="hide" id="ajax_erg"><a href="javascript:toSearchXML('490390887B0BB64AC1258E73003C9313');" onClick="toSearchXML('490390887B0BB64AC1258E73003C9313'); return false;" title="zurück zur Suchergebnisliste" tabindex="92">zum Suchergebnis</a></li>
+			<li class="hide" id="ajax_link"><a href="0/490390887B0BB64AC1258E73003C9313" title="Eintrag zum Setzen eines Lesezeichens öffnen (neues Fenster)" target="_blank" tabindex="93">Lesezeichen</a></li>
+			<li class="hide next" id="rechtstop"></li>
+		</ul>
+	</div><!--container-fluid-->
+</nav>
+<a href="#top" title="zum Anfang der Seite springen" class="btn btn-primary btn-lg btn-to-top hidden-print js-to-top" tabindex="107">
+	<span class="glyphicon glyphicon-chevron-up"></span>
+</a>
+<!--Footer-->
+<div class="" id="loaderdiv"></div>
+<!-- printAll-->
+<form method="post" action="printAll!CreateDocument" target="helpwindow" name="_pqsform"  class="hidden" style="visibility: visible">
+<input type="hidden" name="Hits">
+<input type="hidden" name="foundUnids" size="180">
+<input type="hidden" name="foundUnids_1">
+<input type="hidden" name="foundUnids_2">
+<input type="hidden" name="foundUnids_3">
+<input type="hidden" name="foundUnids_4">
+<input type="hidden" name="foundUnids_5">
+<input type="hidden" name="Query" value="([FN]=(588123m))">
+<input type="hidden" name="expQuery" value="([Firmenbuchnummer]=(588123m))">
+<input type="hidden" name="rawQuery" value="ftquery= &query=([FN]=(588123m))">
+<input type="hidden" name="saveFields">
+<input type="hidden" name="QueryDat" value="15.09.2026 13:01:38 MESZ">
+<input type="hidden" name="ServerName" value="Edikte131"><!-- printAll-->
+</form>
+</body>
+</html>

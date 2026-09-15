@@ -18,8 +18,15 @@ import { logger } from "./logger";
 import { getGatewayPool } from "./producer-pools";
 import { companyIdAus, idTeil, zusatzBestand } from "./register-ids";
 
-export type JobArt = "front" | "bekanntmachungen" | "refresh" | "insolvenz";
-export const JOB_ARTEN: JobArt[] = ["front", "bekanntmachungen", "refresh", "insolvenz"];
+export type JobArt = "front" | "bekanntmachungen" | "refresh" | "insolvenz" | "at_front" | "at_refresh" | "at_insolvenz";
+export const JOB_ARTEN: JobArt[] = ["front", "bekanntmachungen", "refresh", "insolvenz", "at_front", "at_refresh", "at_insolvenz"];
+/**
+ * Oesterreich, Weg 1 (docs/PLAN_OESTERREICH.md): JustizOnline-JSON und
+ * Ediktsdatei, kein Browser. at_front = Aufzaehlung je (Gericht, Begriff
+ * <Ziffer><Buchstabe>) monatlich; at_refresh = Detail je FN der Pool-Firmen;
+ * at_insolvenz = Ediktsdatei je FN der Pool-Firmen.
+ */
+export const JOB_ARTEN_AT: JobArt[] = ["at_front", "at_refresh", "at_insolvenz"];
 /** Worker ohne ausdruecklich gemeldete Arten (Stand vor I3) bekommen nur Register-Jobs. */
 export const JOB_ARTEN_REGISTER: JobArt[] = ["front", "bekanntmachungen", "refresh"];
 
@@ -35,6 +42,43 @@ export const REFRESH_INTERVALL_TAGE = 90;
 export const INSOLVENZ_INTERVALL_TAGE = 30;
 export const INSOLVENZ_BUENDEL = 15;
 export const INSOLVENZ_POOL_MAX = 20_000;
+/** Oesterreich: 0,5 Anfragen je Sekunde und IP (429 ab 3/s); Buendel passen mit 2 Anfragen je Firma in die Lease. */
+export const AT_ABFRAGEN_JE_STUNDE = 1800;
+export const AT_REFRESH_BUENDEL = 50;
+export const AT_INSOLVENZ_BUENDEL = 30;
+export const AT_GERICHTE: Record<string, { name: string; bundesland: string }> = {
+  "007": { name: "Handelsgericht Wien", bundesland: "Wien" },
+  "309": { name: "Landesgericht Eisenstadt", bundesland: "Burgenland" },
+  "929": { name: "Landesgericht Feldkirch", bundesland: "Vorarlberg" },
+  "638": { name: "Landesgericht für ZRS Graz", bundesland: "Steiermark" },
+  "818": { name: "Landesgericht Innsbruck", bundesland: "Tirol" },
+  "729": { name: "Landesgericht Klagenfurt", bundesland: "Kärnten" },
+  "119": { name: "Landesgericht Korneuburg", bundesland: "Niederösterreich" },
+  "129": { name: "Landesgericht Krems an der Donau", bundesland: "Niederösterreich" },
+  "609": { name: "Landesgericht Leoben", bundesland: "Steiermark" },
+  "458": { name: "Landesgericht Linz", bundesland: "Oberösterreich" },
+  "469": { name: "Landesgericht Ried im Innkreis", bundesland: "Oberösterreich" },
+  "569": { name: "Landesgericht Salzburg", bundesland: "Salzburg" },
+  "499": { name: "Landesgericht Steyr", bundesland: "Oberösterreich" },
+  "199": { name: "Landesgericht St. Pölten", bundesland: "Niederösterreich" },
+  "519": { name: "Landesgericht Wels", bundesland: "Oberösterreich" },
+  "239": { name: "Landesgericht Wiener Neustadt", bundesland: "Niederösterreich" },
+};
+/** 260 Suffix-Begriffe <Ziffer><Buchstabe>: vollstaendig per Konstruktion, da jede FN so endet. */
+export const AT_BEGRIFFE: string[] = [];
+for (const z of "0123456789") for (const b of "abcdefghijklmnopqrstuvwxyz") AT_BEGRIFFE.push(`${z}${b}`);
+
+const AT_ID_RE = /^AT_FN([1-9][0-9]{0,5})([A-Z])$/;
+export function companyIdAt(fnr: string): string {
+  const m = /^(\d{1,6})([a-z])$/.exec(fnr.trim().toLowerCase().replace(/^fn\s*/, ""));
+  if (!m) throw new JobFehler(400, `ungueltige Firmenbuchnummer: ${fnr}`);
+  return `AT_FN${Number(m[1])}${m[2].toUpperCase()}`;
+}
+/** AT_FN588123M → 588123m; null fuer fremde Ids. */
+export function fnrAusCompanyId(companyId: string): string | null {
+  const m = AT_ID_RE.exec(companyId);
+  return m ? `${m[1]}${m[2].toLowerCase()}` : null;
+}
 
 export type RegisterJob = {
   id: string;
@@ -76,7 +120,7 @@ export type Bekanntmachung = {
   sitz: string;
 };
 
-/** Insolvenz-Delta: Veroeffentlichung des Insolvenzportals zu einer Firma. */
+/** Insolvenz-Delta: Veroeffentlichung des Insolvenzportals (DE) oder der Ediktsdatei (AT) zu einer Firma. */
 export type InsolvenzMeldung = {
   companyId: string;
   aktenzeichen: string;
@@ -84,6 +128,19 @@ export type InsolvenzMeldung = {
   datum: string;
   gegenstand: string;
   text: string;
+  quelle?: "insolvenzportal" | "ediktsdatei";
+};
+
+/** Oesterreich: Suchtreffer oder Detail aus JustizOnline. */
+export type TrefferAt = {
+  fnr: string;
+  name: string;
+  sitz: string;
+  status: "ACTIVE" | "CLOSED";
+  gericht: string;
+  bundesland: string;
+  legalForm?: string | null;
+  uid?: string | null;
 };
 
 export type Ergebnis = {
@@ -97,9 +154,19 @@ export type Ergebnis = {
   front?: { maxNummer: number; offeneLuecken: number[]; zusaetze?: string[] };
   /** bekanntmachungen: alle Eintraege des Tages. */
   bekanntmachungen?: Bekanntmachung[];
+  /** at_front / at_refresh: Firmenbuch-Treffer. */
+  trefferAt?: TrefferAt[];
+  /** at_front: Stand der Aufzaehlung; nicht fertig → Fortsetzungsjob ab naechsteSeite. */
+  atFront?: { begriff: string; naechsteSeite: number; fertig: boolean; gesamt: number };
 };
 
 type Q = { query: pg.Pool["query"] };
+
+export class JobFehler extends Error {
+  constructor(public readonly status: 404 | 409 | 400, message: string) {
+    super(message);
+  }
+}
 
 function rowToJob(r: Record<string, unknown>): RegisterJob {
   return {
@@ -182,14 +249,52 @@ function trefferZuDelta(t: Treffer) {
   };
 }
 
+function trefferAtZuDelta(t: TrefferAt) {
+  const fnr = t.fnr.trim().toLowerCase();
+  return {
+    companyId: companyIdAt(fnr),
+    name: t.name,
+    nameNormalized: nameNormalisiert(t.name),
+    registerType: "FN",
+    registerNumber: fnr,
+    location: t.sitz,
+    districtCourt: t.gericht,
+    state: t.bundesland,
+    registerStatus: t.status,
+    formerCourt: null,
+    country: "AT",
+    // Suchtreffer ohne Detail: legalForm/uid weglassen, master-data behaelt den Bestand.
+    ...(t.legalForm ? { legalForm: t.legalForm } : {}),
+    ...(t.uid ? { uid: t.uid } : {}),
+    history: [{ name: t.name, nameNormalized: nameNormalisiert(t.name), location: t.sitz, order: 1 }],
+  };
+}
+
 type DeltaAntwort = { neu: number; geaendert: number; unveraendert: number; befunde: Array<{ companyId: string; befund: string; felder?: string[] }> };
 
 async function schreibeTreffer(treffer: Treffer[], source: string): Promise<{ neu: number; geaendert: number; unveraendert: number; geaenderteIds: string[] }> {
+  return schreibeDelta(treffer.map(trefferZuDelta), source);
+}
+
+async function schreibeTrefferAt(treffer: TrefferAt[], source: string): Promise<{ neu: number; geaendert: number; unveraendert: number; geaenderteIds: string[] }> {
+  // Treffer mit unbrauchbarer FN (kommt bei der API nicht vor) still auslassen statt den Job zu verwerfen.
+  const zeilen = [];
+  for (const t of treffer) {
+    try {
+      zeilen.push(trefferAtZuDelta(t));
+    } catch {
+      /* ungueltige FN */
+    }
+  }
+  return schreibeDelta(zeilen, source);
+}
+
+async function schreibeDelta(zeilen: Array<ReturnType<typeof trefferZuDelta> | ReturnType<typeof trefferAtZuDelta>>, source: string): Promise<{ neu: number; geaendert: number; unveraendert: number; geaenderteIds: string[] }> {
   const summe = { neu: 0, geaendert: 0, unveraendert: 0, geaenderteIds: [] as string[] };
   const gesehenAt = new Date().toISOString();
-  for (let i = 0; i < treffer.length; i += 1000) {
+  for (let i = 0; i < zeilen.length; i += 1000) {
     const r = await masterData<DeltaAntwort>("POST", "/internal/companies/register-delta", {
-      companies: treffer.slice(i, i + 1000).map(trefferZuDelta),
+      companies: zeilen.slice(i, i + 1000),
       source,
       gesehenAt,
     });
@@ -349,7 +454,79 @@ export async function erzeugeInsolvenzJobs(pool: pg.Pool): Promise<number> {
   return insolvenzAnfordern(pool, faellig, `pool-${heute}`, 2);
 }
 
+// ---- Oesterreich ------------------------------------------------------------
+
+function monatIso(d: Date): string {
+  return d.toISOString().slice(0, 7);
+}
+
+/** Pool-Firmen aus Oesterreich (Verarbeitung in EntityProgress) als (companyId, fnr). */
+async function atPoolFirmen(pool: pg.Pool): Promise<Array<{ companyId: string; fnr: string }>> {
+  const r = await pool.query<{ companyId: string }>(
+    `SELECT DISTINCT "companyId" FROM "EntityProgress" WHERE "companyId" LIKE 'AT_FN%' ORDER BY "companyId" LIMIT $1`,
+    [INSOLVENZ_POOL_MAX],
+  );
+  const out: Array<{ companyId: string; fnr: string }> = [];
+  for (const row of r.rows) {
+    const fnr = fnrAusCompanyId(row.companyId);
+    if (fnr) out.push({ companyId: row.companyId, fnr });
+  }
+  return out;
+}
+
+/**
+ * Monatlich: Aufzaehlung je (Gericht, Begriff) (16 × 260 Jobs, rund 43.000
+ * Anfragen, ein Tag auf einer Maschine), Detail-Refresh und Ediktsdatei je
+ * Pool-Firma. Schluessel tragen den Monat, Wiederholung damit idempotent.
+ */
+export async function erzeugeAtJobs(pool: pg.Pool, now: Date = new Date()): Promise<{ front: number; refresh: number; insolvenz: number }> {
+  const monat = monatIso(now);
+  let front = 0;
+  for (const gerichtId of Object.keys(AT_GERICHTE)) {
+    for (const begriff of AT_BEGRIFFE) {
+      if (await legeJobAn(pool, "at_front", `at_front:${gerichtId}:${begriff}:${monat}`, { gerichtId, begriff, abSeite: 0, state: "ACTIVE" }, 5)) front++;
+    }
+  }
+  const firmen = await atPoolFirmen(pool);
+  let refresh = 0;
+  for (let i = 0; i < firmen.length; i += AT_REFRESH_BUENDEL) {
+    const b = firmen.slice(i, i + AT_REFRESH_BUENDEL);
+    if (await legeJobAn(pool, "at_refresh", `at_refresh:pool-${monat}:${b.map((f) => f.companyId).join(",")}`.slice(0, 900), { firmen: b, grund: `pool-${monat}` }, 3)) refresh++;
+  }
+  let insolvenz = 0;
+  for (let i = 0; i < firmen.length; i += AT_INSOLVENZ_BUENDEL) {
+    const b = firmen.slice(i, i + AT_INSOLVENZ_BUENDEL);
+    if (await legeJobAn(pool, "at_insolvenz", `at_insolvenz:pool-${monat}:${b.map((f) => f.companyId).join(",")}`.slice(0, 900), { firmen: b, grund: `pool-${monat}` }, 2)) insolvenz++;
+  }
+  return { front, refresh, insolvenz };
+}
+
+/** Oesterreich-Pruefung fuer konkrete Firmen (Chat, Import, Firmendetail): Refresh und Ediktsdatei sofort. */
+export async function atAnfordern(q: Q, companyIds: string[], grund: string): Promise<{ jobs: number; firmen: number }> {
+  const firmen: Array<{ companyId: string; fnr: string }> = [];
+  const gesehen = new Set<string>();
+  for (const id of companyIds) {
+    const fnr = fnrAusCompanyId(id);
+    if (!fnr || gesehen.has(id)) continue;
+    gesehen.add(id);
+    firmen.push({ companyId: id, fnr });
+  }
+  let jobs = 0;
+  for (let i = 0; i < firmen.length; i += AT_INSOLVENZ_BUENDEL) {
+    const b = firmen.slice(i, i + AT_INSOLVENZ_BUENDEL);
+    const ids = b.map((f) => f.companyId).join(",");
+    if (await legeJobAn(q, "at_refresh", `at_refresh:${grund}:${ids}`.slice(0, 900), { firmen: b, grund }, 1)) jobs++;
+    if (await legeJobAn(q, "at_insolvenz", `at_insolvenz:${grund}:${ids}`.slice(0, 900), { firmen: b, grund }, 1)) jobs++;
+  }
+  return { jobs, firmen: firmen.length };
+}
+
 // ---- Lease / Ergebnis -------------------------------------------------------
+
+/** Budget-Hinweis fuer den Worker je Portal. */
+export function abfragenJeStundeFuer(art: JobArt): number {
+  return art.startsWith("at_") ? AT_ABFRAGEN_JE_STUNDE : ABFRAGEN_JE_STUNDE;
+}
 
 export async function leaseJob(pool: pg.Pool, workerId: string, arten: JobArt[] = JOB_ARTEN): Promise<RegisterJob | null> {
   const r = await pool.query(
@@ -381,12 +558,6 @@ async function ladeGeleastenJob(q: Q, jobId: string, workerId: string): Promise<
   const job = rowToJob(r.rows[0] as Record<string, unknown>);
   if (job.status !== "laeuft" || job.leasedBy !== workerId) throw new JobFehler(409, "lease_nicht_gueltig");
   return job;
-}
-
-export class JobFehler extends Error {
-  constructor(public readonly status: 404 | 409 | 400, message: string) {
-    super(message);
-  }
 }
 
 export async function verarbeiteErgebnis(pool: pg.Pool, jobId: string, ergebnis: Ergebnis): Promise<Record<string, unknown>> {
@@ -431,7 +602,25 @@ export async function verarbeiteErgebnis(pool: pg.Pool, jobId: string, ergebnis:
     }
   }
 
-  if (job.art === "insolvenz" && ergebnis.insolvenz) {
+  if (ergebnis.trefferAt && ergebnis.trefferAt.length > 0) {
+    const { geaenderteIds, ...summe } = await schreibeTrefferAt(ergebnis.trefferAt, "justizonline");
+    Object.assign(zusammenfassung, summe);
+    if (geaenderteIds.length > 0) zusammenfassung.veraltet = await markiereVeraltet(pool, geaenderteIds, `register-${job.art}`);
+  }
+
+  if (job.art === "at_front" && ergebnis.atFront) {
+    const p = job.payload as { gerichtId: string; begriff: string; state?: string };
+    zusammenfassung.gesamt = ergebnis.atFront.gesamt;
+    zusammenfassung.fertig = ergebnis.atFront.fertig;
+    if (!ergebnis.atFront.fertig) {
+      // Budget des Jobs erschoepft (grosse Gerichte): ab der naechsten Seite weiter.
+      const basis = job.schluessel.replace(/:s\d+$/, "");
+      await legeJobAn(pool, "at_front", `${basis}:s${ergebnis.atFront.naechsteSeite}`, { ...p, abSeite: ergebnis.atFront.naechsteSeite }, job.prioritaet);
+      zusammenfassung.fortsetzung = ergebnis.atFront.naechsteSeite;
+    }
+  }
+
+  if ((job.art === "insolvenz" || job.art === "at_insolvenz") && ergebnis.insolvenz) {
     // Nur die vom Worker tatsaechlich bearbeiteten Firmen gelten als geprueft;
     // der Rest bleibt faellig und kommt mit dem naechsten Cron.
     const geprueft = [...new Set(ergebnis.insolvenz.geprueft)];
@@ -543,7 +732,7 @@ export type Statistik = {
 };
 
 export async function statistik(pool: pg.Pool): Promise<Statistik> {
-  const jobs: Record<JobArt, Record<string, number>> = { front: {}, bekanntmachungen: {}, refresh: {}, insolvenz: {} };
+  const jobs: Record<JobArt, Record<string, number>> = { front: {}, bekanntmachungen: {}, refresh: {}, insolvenz: {}, at_front: {}, at_refresh: {}, at_insolvenz: {} };
   const r = await pool.query<{ art: JobArt; status: string; n: string }>(`SELECT "art", "status", count(*)::text AS n FROM "RegisterJob" GROUP BY 1, 2`);
   for (const row of r.rows) if (jobs[row.art]) jobs[row.art][row.status] = Number(row.n);
   const w = await pool.query<{ n: string }>(`SELECT count(*)::text AS n FROM "RegisterWorker" WHERE "zuletztAt" > NOW() - interval '1 hour'`);
@@ -594,6 +783,14 @@ export async function runRegisterJobCronOnce(now: Date = new Date()): Promise<vo
         logger.info({ insolvenzJobs: n }, "[register-jobs] Insolvenz-Jobs erzeugt");
       } catch (err) {
         logger.warn({ err: err instanceof Error ? err.message : String(err) }, "[register-jobs] Insolvenz-Jobs nicht erzeugt");
+      }
+    }
+    if (process.env.AT_JOBS_DISABLED !== "1") {
+      try {
+        const at = await erzeugeAtJobs(getGatewayPool(), now);
+        logger.info(at, "[register-jobs] Oesterreich-Jobs erzeugt");
+      } catch (err) {
+        logger.warn({ err: err instanceof Error ? err.message : String(err) }, "[register-jobs] Oesterreich-Jobs nicht erzeugt");
       }
     }
   }

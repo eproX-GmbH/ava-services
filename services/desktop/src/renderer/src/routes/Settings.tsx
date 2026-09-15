@@ -749,7 +749,15 @@ function MithelfenZeile() {
     nicht_installiert: "nicht installiert",
     gesperrt: "Registerportal hat vorübergehend gesperrt",
   };
-  const art: Record<string, string> = { front: "Nummernfront", bekanntmachungen: "Bekanntmachungen", refresh: "Auffrischung" };
+  const art: Record<string, string> = {
+    front: "Nummernfront",
+    bekanntmachungen: "Bekanntmachungen",
+    refresh: "Auffrischung",
+    insolvenz: "Insolvenzprüfung",
+    at_front: "Firmenbuch Österreich",
+    at_refresh: "Firmenbuch Österreich (Detail)",
+    at_insolvenz: "Ediktsdatei Österreich",
+  };
   const tone = s.pausenGrund === null && s.laeuft ? "ok" : s.pausenGrund === "organisation" || s.pausenGrund === "nicht_installiert" ? "err" : "muted";
   return (
     <p className="small" style={{ marginTop: "0.5rem" }}>

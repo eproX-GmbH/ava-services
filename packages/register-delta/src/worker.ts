@@ -2,7 +2,7 @@
 // gerufen wird. Bei Portal-Sperre eine Stunde Pause; ohne Jobs Wartezeit.
 
 import { GatewayClient, type Job, type JobArt } from "./gateway-client";
-import { fuehreJobAus, MAX_ABFRAGEN_JE_JOB, type InsolvenzSchnittstelle, type PortalSchnittstelle } from "./jobs";
+import { fuehreJobAus, MAX_ABFRAGEN_JE_JOB, type AtSchnittstelle, type InsolvenzSchnittstelle, type PortalSchnittstelle } from "./jobs";
 import { Taktgeber } from "./takt";
 
 export type WorkerOptionen = {
@@ -12,6 +12,8 @@ export type WorkerOptionen = {
   portal: () => Promise<PortalSchnittstelle & { schliessen(): Promise<void> }>;
   /** Insolvenzportal (I3); ohne Angabe werden insolvenz-Jobs nicht geleast. */
   insolvenz?: () => Promise<InsolvenzSchnittstelle & { schliessen(): Promise<void> }>;
+  /** Oesterreich (JSON, kein Browser); ohne Angabe werden at_*-Jobs nicht geleast. */
+  at?: AtSchnittstelle;
   abfragenJeStunde?: number;
   arten?: JobArt[];
   leerlaufMs?: number;
@@ -30,6 +32,15 @@ export type WorkerStatus = {
   abfragenLetzteStunde: number;
   gesperrtBis: string | null;
   letzterFehler: string | null;
+};
+
+const portalFehlt: PortalSchnittstelle = {
+  suche: async () => {
+    throw new Error("Registerportal nicht geoeffnet");
+  },
+  bekanntmachungenText: async () => {
+    throw new Error("Registerportal nicht geoeffnet");
+  },
 };
 
 export class RegisterWorker {
@@ -76,7 +87,16 @@ export class RegisterWorker {
   private async schleife(): Promise<void> {
     let portal: (PortalSchnittstelle & { schliessen(): Promise<void> }) | null = null;
     let insolvenz: (InsolvenzSchnittstelle & { schliessen(): Promise<void> }) | null = null;
-    const arten = this.o.arten ?? (this.o.insolvenz ? undefined : (["front", "bekanntmachungen", "refresh"] as JobArt[]));
+    // Ohne ausdrueckliche Arten: alles, was dieser Worker bedienen kann.
+    const arten =
+      this.o.arten ??
+      ([
+        "front",
+        "bekanntmachungen",
+        "refresh",
+        ...(this.o.insolvenz ? (["insolvenz"] as JobArt[]) : []),
+        ...(this.o.at ? (["at_front", "at_refresh", "at_insolvenz"] as JobArt[]) : []),
+      ] as JobArt[]);
     try {
       while (!this.stopSignal) {
         if (this.o.pausiert?.() || (this.status.gesperrtBis && Date.parse(this.status.gesperrtBis) > Date.now())) {
@@ -100,10 +120,12 @@ export class RegisterWorker {
         this.melde();
         this.log(`job ${job.id} ${job.art} ${job.schluessel}`);
         try {
-          portal ??= await this.o.portal();
+          // Oesterreich-Jobs brauchen keinen Browser; das Registerportal nur bei Bedarf oeffnen.
+          if (!job.art.startsWith("at_")) portal ??= await this.o.portal();
           const ergebnis = await fuehreJobAus(job, {
             workerId: this.o.workerId,
-            portal,
+            portal: portal ?? portalFehlt,
+            at: this.o.at,
             insolvenz: this.o.insolvenz
               ? async () => {
                   insolvenz ??= await this.o.insolvenz!(); // eslint-disable-line @typescript-eslint/no-non-null-assertion
@@ -122,7 +144,7 @@ export class RegisterWorker {
           if (ergebnis.gesperrt) {
             this.status.gesperrtBis = new Date(Date.now() + 3_600_000).toISOString();
             this.log("Portal gesperrt, eine Stunde Pause");
-            await portal.schliessen();
+            if (portal) await portal.schliessen();
             portal = null;
           }
         } catch (err) {

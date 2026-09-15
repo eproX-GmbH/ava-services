@@ -187,12 +187,32 @@ bis 2 Tage, App 1 bis 2 Tage. Weg 2 (Auszug kaufen) separat 3 bis 5 Tage.
   DTOs get/list/fuzzy liefern `country`, `legalForm`, `uid`, Listenfilter
   `country`. InsolvencyEvent kennt `quelle` je Meldung
   (`insolvenzportal` | `ediktsdatei`). 31 Unit-Tests grün.
-- **Nächster Schritt (Gateway + Paket register-delta):** Job-Arten
-  `at_front` (Aufzählung je Gericht und Begriff `<Ziffer><Buchstabe>`,
-  16 Gerichte × 170 Begriffe), `at_refresh` (Detail je FN alle 30 Tage,
-  liefert legalForm, Adresse, Status) und `at_insolvenz` (Ediktsdatei je
-  FN, §7 Notebook); Abbildung Gericht → Bundesland aus `filterConfig`.
-  Kein Browser nötig, läuft im Fly-Worker und beim Mithelfen.
+- **Gateway + Paket register-delta (2026-09-15, Deploy offen):** Job-Arten
+  `at_front`, `at_refresh`, `at_insolvenz` in Queue, Routen und Worker.
+  - Paket: `at-firmenbuch.ts` (JustizOnline-JSON-Client, 429 einmal mit
+    Retry-After, zweites 429 = gesperrt; Gerichtstabelle 16 Ids →
+    Name/Bundesland; 260 Begriffe; `companyIdAt`) und `at-edikte.ts`
+    (Ediktsdatei: FN-Suche, Detailparser, Kategorien, `quelle:
+    ediktsdatei`). Eigene Taktgeber: JustizOnline 1800/h (0,5/s),
+    Ediktsdatei 3600/h; kein Browser, at_*-Jobs öffnen das Registerportal
+    nicht. Budget 300 Anfragen je Job, at_front meldet bei Budgetende
+    `atFront.fertig=false` und das Gateway legt die Fortsetzung ab
+    `naechsteSeite` an. `REGISTER_DELTA_AT=0` schaltet AT im Worker ab.
+    7 neue Tests (Fixtures aus der Ediktsdatei).
+  - Gateway: monatliche Erzeugung (`erzeugeAtJobs`, Cron 02:00 UTC,
+    `AT_JOBS_DISABLED=1` schaltet ab; sofort per HMAC
+    `POST /internal/register-jobs/at/erzeugen`): 16 × 260 `at_front`-Jobs
+    (Priorität 5, `state=ACTIVE`, Schlüssel mit Monat), `at_refresh`
+    (Bündel 50, 2 Anfragen je Firma) und `at_insolvenz` (Bündel 30) für
+    Pool-Firmen `AT_FN…` aus EntityProgress. `POST /v1/register-jobs/at`
+    reiht konkrete Firmen sofort ein (Priorität 1). Treffer gehen als
+    `country: AT`, `registerType: FN`, `registerNumber: <fnr>` an
+    master-data; Suchtreffer ohne Detail lassen legalForm/uid weg.
+    Lease meldet `abfragenJeStunde` je Portal (1800 für at_*).
+  - Desktop: Beschriftungen für die neuen Job-Arten in Mithelfen und
+    Systemzeile (kein Release nötig, kommt mit dem nächsten).
+  - Offen: Gateway und Fly-Worker deployen, Monatsjobs auslösen, ersten
+    Lauf (Burgenland-Gericht 309) gegen das Notebook-Ergebnis prüfen.
 - **Danach App:** Land und FN in Tabellen und Firmendetails, Hinweis auf
   kostenpflichtigen Vollauszug.
 
