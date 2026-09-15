@@ -158,14 +158,30 @@ bis 2 Tage, App 1 bis 2 Tage. Weg 2 (Auszug kaufen) separat 3 bis 5 Tage.
   einer Maschine; danach Wiederholung je Bundesland alle 30 Tage plus
   Detail-Refresh der Pool-Firmen.
 
+- **Ediktsdatei je FN (Notebook §7):** Weboberfläche ohne Login und ohne
+  Session per GET nutzbar. FN-Einzelabfrage
+  `suchedi?SearchView&subf=f&…&query=([FN]=(588123m))` (Prüfbuchstabe
+  Pflicht, Groß/Klein egal), Tagesliste `subf=eid` mit
+  `([DATBMA]>=Datum | [DATBMZ]>=Datum)` (alle Verfahren mit Bekanntmachung
+  ab Datum, Firmen und Privatpersonen, ohne FN-Spalte; rund 200 je Tag,
+  Stichprobe: 45 % mit FN). Detailseite `0/<docId>!OpenDocument` = eine
+  Seite je Verfahren mit allen Bekanntmachungen chronologisch, FN im Span
+  `Schuldner-Firmenbuchnummer`. Beispiel `AT_FN588123M`: Eröffnung
+  13.11.2025, Aufhebung mangels Kostendeckung 24.08.2026, Rechtskraft
+  14.09.2026. Kategorien wie DE abbildbar (Eröffnung, Abweisung mangels
+  Kostendeckung, Aufhebung, Sanierungs-/Zahlungsplan; keine
+  Sicherungsmaßnahmen). Vorschlag: Modus A wie in Deutschland, je
+  Pool-Firma alle 30 Tage 1 bis 2 Anfragen, Takt 1/s, kein Browser nötig.
+
 ## 5. Offene Entscheidungen
 
 1. Weg 1 (Stammdaten-only) jetzt, Weg 2 später?
 2. Welche Rechtsformen aufnehmen (Einzelunternehmen e.U. 52.000 ja/nein).
 3. Nutzungsbedingungen JustizOnline für automatisierte Abfragen einholen
    (Servicecenter), Takt danach festlegen.
-4. Ediktsdatei: Weboberfläche je FN (kostenlos, ohne Lizenz) oder
-   IWG-Lizenz mit JSON-Webservice (Antrag über Verrechnungsstelle).
+4. Ediktsdatei: Weboberfläche je FN (kostenlos, ohne Lizenz, im Notebook
+   belegt) oder IWG-Lizenz mit JSON-Webservice (Antrag über
+   Verrechnungsstelle). Vorschlag: Weboberfläche, Modus A.
 5. Länderspalten in master-data gemeinsam mit der Schweiz einführen
    (`country`, `legalForm`, `uid`), damit beide Länder dasselbe Modell
    nutzen.
