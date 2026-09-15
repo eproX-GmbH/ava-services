@@ -177,8 +177,17 @@ structured-content 1 Tag, App 0,5 Tage.
   für `UK_`-Firmen. `POST /v1/register-jobs/uk` für konkrete Firmen.
 - **Fly-Worker:** `worker_at` bedient jetzt auch `uk_*`, der DE-Worker
   nicht (`REGISTER_DELTA_UK=0`).
-- **Nächster Schritt:** Deploys, Monatsjobs auslösen (7 Teile, Erstimport
-  rund 5,7 Mio. Zeilen), danach structured-content (Officers) und App.
+- **Live seit 2026-09-15 15:09 UTC:** master-data, Gateway und Worker
+  deployt, 7 `uk_bulk`-Jobs für den Abzug 2026-09-01 eingereiht. Erster
+  Anlauf scheiterte am Delta-Validator (leere Orte in der Historie, und
+  parallel AT-Refresh ohne Gericht → leeres Bundesland); Hotfix master-data
+  2129fb6: leere `location`/`districtCourt`/`state` erlaubt, Bestand bleibt.
+  Danach Teil 1: 47.000 Zeilen in rund 2 Minuten (1.000 je 2,5 s), Teil 1
+  ≈ 35 min, alle 7 Teile ≈ 4 Stunden; Cluster bei 44 Verbindungen.
+  Beispiel `UK_00004606` mit PLZ, Gründung 1869, SIC 7499.
+- **Nächster Schritt:** Abschluss beobachten (fehlende Firmen → CLOSED
+  ist beim Erstimport 0), dann structured-content (Officers) und App
+  (Landeschip UK, „CRN“).
 
 ## 5. Offene Entscheidungen
 
