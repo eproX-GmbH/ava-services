@@ -16,5 +16,10 @@ primary_region = 'fra'
   cpu_kind = 'shared'
   cpus = 1
 
+# Zwei Prozesse (je eine Maschine): `worker` bedient alle Job-Arten mit dem
+# Registerportal-Takt (60/h, Browser); `worker_at` nur Oesterreich (JSON,
+# Ediktsdatei, 0,5/s, kein Browser), damit die Aufzaehlung nicht hinter den
+# deutschen Jobs wartet. REGISTER_DELTA_AT=0 haelt den DE-Worker von AT fern.
 [processes]
-  worker = 'node dist/cli.js'
+  worker = 'sh -c "REGISTER_DELTA_AT=0 node dist/cli.js"'
+  worker_at = 'sh -c "REGISTER_DELTA_ARTEN=at_front,at_refresh,at_insolvenz WORKER_ID=betreiber-at node dist/cli.js"'

@@ -211,8 +211,15 @@ bis 2 Tage, App 1 bis 2 Tage. Weg 2 (Auszug kaufen) separat 3 bis 5 Tage.
     Lease meldet `abfragenJeStunde` je Portal (1800 für at_*).
   - Desktop: Beschriftungen für die neuen Job-Arten in Mithelfen und
     Systemzeile (kein Release nötig, kommt mit dem nächsten).
-  - Offen: Gateway und Fly-Worker deployen, Monatsjobs auslösen, ersten
-    Lauf (Burgenland-Gericht 309) gegen das Notebook-Ergebnis prüfen.
+  - **Live seit 2026-09-15 11:36 UTC:** Gateway und Worker deployt,
+    4.160 `at_front`-Jobs für 2026-09 eingereiht. Fly-Worker hat zwei
+    Prozessgruppen: `worker` (DE, Browser, `REGISTER_DELTA_AT=0`) und
+    `worker_at` (nur AT, eigene Maschine, Worker-Id `betreiber-at`).
+    Erster Job: Korneuburg „0a“, 10 Seiten, 97 Firmen neu; nach 30 s
+    189 Firmen in master-data mit `country=AT`, `registerType=FN`,
+    `source=justizonline`, Historie je Firma. Kontrolle Eisenstadt (309)
+    gegen 8.813 Firmen aus dem Notebook steht aus, sobald das Gericht
+    durch ist.
 - **Danach App:** Land und FN in Tabellen und Firmendetails, Hinweis auf
   kostenpflichtigen Vollauszug.
 
