@@ -17,11 +17,11 @@ export interface StatusQuelle {
 }
 
 type LandInfo = { name: string; register: string; insolvenzquelle: string };
-const LAND_DE: LandInfo = { name: "Deutschland", register: "Handelsregister", insolvenzquelle: "Insolvenzportal" };
+const LAND_DE: LandInfo = { name: "Deutschland", register: "Handelsregister", insolvenzquelle: "im Insolvenzportal" };
 const LAND: Record<string, LandInfo> = {
   DE: LAND_DE,
-  AT: { name: "Österreich", register: "Firmenbuch", insolvenzquelle: "Ediktsdatei (Insolvenzdatei)" },
-  CH: { name: "Schweiz", register: "Handelsregister", insolvenzquelle: "SHAB" },
+  AT: { name: "Österreich", register: "Firmenbuch", insolvenzquelle: "in der Ediktsdatei (Insolvenzdatei)" },
+  CH: { name: "Schweiz", register: "Handelsregister", insolvenzquelle: "im SHAB" },
 };
 
 function land(f: StatusQuelle): LandInfo {
@@ -79,7 +79,7 @@ export function firmenStatusWarnungen(f: StatusQuelle): StatusWarnung[] {
       out.push({ stufe: "warn", kurz: "Insolvenz mangels Masse abgewiesen", text: `Insolvenzantrag mangels Masse abgewiesen${datum(f.insolvencyAt)}; die Firma ist in aller Regel zahlungsunfähig`, schluessel: "ins:ABGEWIESEN" });
       break;
     case "VERDACHT":
-      out.push({ stufe: "warn", kurz: "Insolvenzverfahren", text: `Veröffentlichungen im ${land(f).insolvenzquelle}${datum(f.insolvencyAt)}, Verfahrensstand unklar`, schluessel: "ins:VERDACHT" });
+      out.push({ stufe: "warn", kurz: "Insolvenzverfahren", text: `Veröffentlichungen ${land(f).insolvenzquelle}${datum(f.insolvencyAt)}, Verfahrensstand unklar`, schluessel: "ins:VERDACHT" });
       break;
     case "AUFGEHOBEN":
       out.push({ stufe: "warn", kurz: "Insolvenz beendet", text: `Insolvenzverfahren aufgehoben oder eingestellt${datum(f.insolvencyAt)}`, schluessel: "ins:AUFGEHOBEN" });
