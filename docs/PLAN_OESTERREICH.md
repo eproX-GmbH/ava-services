@@ -148,8 +148,15 @@ bis 2 Tage, App 1 bis 2 Tage. Weg 2 (Auszug kaufen) separat 3 bis 5 Tage.
   Erstimport dauert etwa einen Tag auf einer Maschine.
 - Prüfbuchstaben: nicht alle 26 Buchstaben kommen vor (`c`, `e`, `h` … sehr
   selten oder gar nicht); Begriffe ohne Treffer kosten je eine Anfrage.
-- Lauf `scripts/at/enumerate_bundesland.py 1` (Burgenland) gestartet; Ergebnis
-  (Firmen, Anfragen, Dauer) folgt im Notebook.
+- **Lauf Burgenland (`scripts/at/enumerate_bundesland.py 1`):** 8.813 aktive
+  Firmen, 1.053 Anfragen (8,4 Firmen je Anfrage), 44 Minuten bei 0,5 je
+  Sekunde, keine Sperre. Prüfbuchstaben: nur a b d f g h i k m p s t v w x y z
+  (17), das Skript lässt die übrigen 9 aus. 9 % der Firmen tragen keine
+  Rechtsform-Kennung im Namen („Konditorei - Cafe Harrer Anton“, „easypeak
+  FlexCo“), Namensbegriffe allein wären also unvollständig.
+  Hochrechnung: rund 360.000 Firmen, etwa 43.000 Anfragen, ein Tag auf
+  einer Maschine; danach Wiederholung je Bundesland alle 30 Tage plus
+  Detail-Refresh der Pool-Firmen.
 
 ## 5. Offene Entscheidungen
 
