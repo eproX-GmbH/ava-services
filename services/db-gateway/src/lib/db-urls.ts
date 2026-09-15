@@ -40,12 +40,18 @@ export const PRODUCER_NAMES: readonly ProducerName[] = Object.keys(
  * pool so 5 producers × pool_size + the gateway's own audit pool stay
  * under the cluster's pgbouncer limit.
  */
-export function buildProducerDatabaseUrls(): Record<ProducerName, string> {
+export function buildProducerDatabaseUrls(zweck: "gateway" | "handout" = "gateway"): Record<ProducerName, string> {
   const env = loadEnv();
   const result = {} as Record<ProducerName, string>;
+  // docs/PLAN_PGBOUNCER.md — das Gateway selbst geht ueber den eigenen PgBouncer
+  // (DATABASE_URL, nur im privaten Fly-Netz erreichbar). Die lokalen Producer
+  // auf den Nutzerrechnern bekommen ueber /v1/local-amqp eine von aussen
+  // erreichbare Adresse: PRODUCER_DATABASE_URL_PUBLIC, sonst DIRECT_URL
+  // (Anbieter-PgBouncer), sonst DATABASE_URL.
+  const basis = zweck === "handout" ? (env.PRODUCER_DATABASE_URL_PUBLIC ?? env.DIRECT_URL ?? env.DATABASE_URL) : env.DATABASE_URL;
   let parsed: URL;
   try {
-    parsed = new URL(env.DATABASE_URL);
+    parsed = new URL(basis);
   } catch {
     return result;
   }

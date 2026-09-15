@@ -11,6 +11,8 @@ const schema = z.object({
   // Gateway's own audit DB.
   DATABASE_URL: z.string().url(),
   DIRECT_URL: z.string().url().optional(),
+  /** docs/PLAN_PGBOUNCER.md — von aussen erreichbare Datenbankadresse fuer die lokalen Producer (Handout /v1/local-amqp). */
+  PRODUCER_DATABASE_URL_PUBLIC: z.string().url().optional(),
 
   // Upstream service base URLs. Gateway fans out to these over HTTP and
   // forwards the caller's Bearer token (service-to-service JWT hardening is

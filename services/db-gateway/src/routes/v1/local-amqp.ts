@@ -72,7 +72,7 @@ localAmqpRouter.get("/local-credentials", (c) => {
   }
   return c.json({
     amqpUrl: env.EVENT_BUS_URL,
-    databaseUrls: buildProducerDatabaseUrls(),
+    databaseUrls: buildProducerDatabaseUrls("handout"),
     jwksUri: env.JWKS_URI,
     expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
     isolation: "shared-vhost-pilot",
