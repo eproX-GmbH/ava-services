@@ -2,7 +2,7 @@
 // gerufen wird. Bei Portal-Sperre eine Stunde Pause; ohne Jobs Wartezeit.
 
 import { GatewayClient, type Job, type JobArt } from "./gateway-client";
-import { fuehreJobAus, MAX_ABFRAGEN_JE_JOB, type AtSchnittstelle, type InsolvenzSchnittstelle, type PortalSchnittstelle } from "./jobs";
+import { fuehreJobAus, MAX_ABFRAGEN_JE_JOB, type AtSchnittstelle, type InsolvenzSchnittstelle, type PortalSchnittstelle, type UkSchnittstelle } from "./jobs";
 import { Taktgeber } from "./takt";
 
 export type WorkerOptionen = {
@@ -14,6 +14,8 @@ export type WorkerOptionen = {
   insolvenz?: () => Promise<InsolvenzSchnittstelle & { schliessen(): Promise<void> }>;
   /** Oesterreich (JSON, kein Browser); ohne Angabe werden at_*-Jobs nicht geleast. */
   at?: AtSchnittstelle;
+  /** UK (Companies House, kein Browser); `teilergebnis` wird vom Worker an das Gateway gebunden. */
+  uk?: Omit<UkSchnittstelle, "teilergebnis">;
   abfragenJeStunde?: number;
   arten?: JobArt[];
   leerlaufMs?: number;
@@ -96,6 +98,7 @@ export class RegisterWorker {
         "refresh",
         ...(this.o.insolvenz ? (["insolvenz"] as JobArt[]) : []),
         ...(this.o.at ? (["at_front", "at_refresh", "at_insolvenz"] as JobArt[]) : []),
+        ...(this.o.uk ? (["uk_bulk", "uk_refresh", "uk_insolvenz"] as JobArt[]) : []),
       ] as JobArt[]);
     try {
       while (!this.stopSignal) {
@@ -121,11 +124,19 @@ export class RegisterWorker {
         this.log(`job ${job.id} ${job.art} ${job.schluessel}`);
         try {
           // Oesterreich-Jobs brauchen keinen Browser; das Registerportal nur bei Bedarf oeffnen.
-          if (!job.art.startsWith("at_")) portal ??= await this.o.portal();
+          if (!job.art.startsWith("at_") && !job.art.startsWith("uk_")) portal ??= await this.o.portal();
           const ergebnis = await fuehreJobAus(job, {
             workerId: this.o.workerId,
             portal: portal ?? portalFehlt,
             at: this.o.at,
+            uk: this.o.uk
+              ? {
+                  ...this.o.uk,
+                  teilergebnis: async (jobId, teil, trefferUk) => {
+                    await this.o.gateway.teilergebnis(jobId, { workerId: this.o.workerId, teil, trefferUk });
+                  },
+                }
+              : undefined,
             insolvenz: this.o.insolvenz
               ? async () => {
                   insolvenz ??= await this.o.insolvenz!(); // eslint-disable-line @typescript-eslint/no-non-null-assertion

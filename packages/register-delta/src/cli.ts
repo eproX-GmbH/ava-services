@@ -15,6 +15,7 @@
 //   WORKER_ART               desktop | betreiber (Default betreiber)
 //   REGISTER_DELTA_STATUS=1  Zustand als Zeile "__AVA_RD_STATUS__{json}" auf stdout (Desktop-Statuskarte)
 //   REGISTER_DELTA_AT=0      Oesterreich-Jobs (JustizOnline, Ediktsdatei) nicht bedienen (Default: an)
+//   REGISTER_DELTA_UK=0      UK-Jobs (Companies House, Gazette) nicht bedienen (Default: an)
 
 import fs from "node:fs";
 import os from "node:os";
@@ -24,6 +25,7 @@ import { InsolvenzPortal } from "./insolvenz-portal";
 import { RegisterWorker } from "./worker";
 import { AT_ABFRAGEN_JE_STUNDE, JustizOnlineClient } from "./at-firmenbuch";
 import { EDIKTE_ABFRAGEN_JE_STUNDE, EdikteClient } from "./at-edikte";
+import { CompaniesHouseClient, UK_ABFRAGEN_JE_STUNDE } from "./uk-companies-house";
 import { Taktgeber } from "./takt";
 
 function tokenQuelle(): () => Promise<string> {
@@ -76,6 +78,7 @@ async function main() {
             taktFirmenbuch: new Taktgeber(AT_ABFRAGEN_JE_STUNDE),
             taktEdikte: new Taktgeber(EDIKTE_ABFRAGEN_JE_STUNDE),
           },
+    uk: process.env.REGISTER_DELTA_UK === "0" ? undefined : { companiesHouse: new CompaniesHouseClient({ log }), takt: new Taktgeber(UK_ABFRAGEN_JE_STUNDE) },
     abfragenJeStunde: Number(process.env.ABFRAGEN_JE_STUNDE ?? 60),
     arten: process.env.REGISTER_DELTA_ARTEN ? (process.env.REGISTER_DELTA_ARTEN.split(",").map((a) => a.trim()) as JobArt[]) : undefined,
     log,

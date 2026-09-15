@@ -16,10 +16,11 @@ primary_region = 'fra'
   cpu_kind = 'shared'
   cpus = 1
 
-# Zwei Prozesse (je eine Maschine): `worker` bedient alle Job-Arten mit dem
-# Registerportal-Takt (60/h, Browser); `worker_at` nur Oesterreich (JSON,
-# Ediktsdatei, 0,5/s, kein Browser), damit die Aufzaehlung nicht hinter den
-# deutschen Jobs wartet. REGISTER_DELTA_AT=0 haelt den DE-Worker von AT fern.
+# Zwei Prozesse (je eine Maschine): `worker` bedient die deutschen Job-Arten
+# mit dem Registerportal-Takt (60/h, Browser); `worker_at` alles ohne Browser
+# (Oesterreich: JustizOnline, Ediktsdatei; UK: Companies House, Gazette), damit
+# diese Jobs nicht hinter den deutschen warten. REGISTER_DELTA_AT/UK=0 halten
+# den DE-Worker davon fern. uk_bulk laedt je Teil rund 70 MB nach /tmp.
 [processes]
-  worker = 'sh -c "REGISTER_DELTA_AT=0 node dist/cli.js"'
-  worker_at = 'sh -c "REGISTER_DELTA_ARTEN=at_front,at_refresh,at_insolvenz WORKER_ID=betreiber-at node dist/cli.js"'
+  worker = 'sh -c "REGISTER_DELTA_AT=0 REGISTER_DELTA_UK=0 node dist/cli.js"'
+  worker_at = 'sh -c "REGISTER_DELTA_ARTEN=at_front,at_refresh,at_insolvenz,uk_bulk,uk_refresh,uk_insolvenz WORKER_ID=betreiber-at node dist/cli.js"'

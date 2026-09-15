@@ -18,8 +18,14 @@ import { logger } from "./logger";
 import { getGatewayPool } from "./producer-pools";
 import { companyIdAus, idTeil, zusatzBestand } from "./register-ids";
 
-export type JobArt = "front" | "bekanntmachungen" | "refresh" | "insolvenz" | "at_front" | "at_refresh" | "at_insolvenz";
-export const JOB_ARTEN: JobArt[] = ["front", "bekanntmachungen", "refresh", "insolvenz", "at_front", "at_refresh", "at_insolvenz"];
+export type JobArt = "front" | "bekanntmachungen" | "refresh" | "insolvenz" | "at_front" | "at_refresh" | "at_insolvenz" | "uk_bulk" | "uk_refresh" | "uk_insolvenz";
+export const JOB_ARTEN: JobArt[] = ["front", "bekanntmachungen", "refresh", "insolvenz", "at_front", "at_refresh", "at_insolvenz", "uk_bulk", "uk_refresh", "uk_insolvenz"];
+/**
+ * UK (docs/PLAN_UK.md): uk_bulk = ein Teil des monatlichen Companies-House-
+ * Abzugs (Zeilen kommen als Teilergebnisse), uk_refresh = Firmenseite je
+ * Pool-Firma, uk_insolvenz = Insolvenzseite plus Gazette je Pool-Firma.
+ */
+export const JOB_ARTEN_UK: JobArt[] = ["uk_bulk", "uk_refresh", "uk_insolvenz"];
 /**
  * Oesterreich, Weg 1 (docs/PLAN_OESTERREICH.md): JustizOnline-JSON und
  * Ediktsdatei, kein Browser. at_front = Aufzaehlung je (Gericht, Begriff
@@ -46,6 +52,9 @@ export const INSOLVENZ_POOL_MAX = 20_000;
 export const AT_ABFRAGEN_JE_STUNDE = 1800;
 export const AT_REFRESH_BUENDEL = 50;
 export const AT_INSOLVENZ_BUENDEL = 30;
+export const UK_REFRESH_BUENDEL = 100;
+export const UK_INSOLVENZ_BUENDEL = 50;
+export const UK_DOWNLOAD_SEITE = "https://download.companieshouse.gov.uk/en_output.html";
 export const AT_GERICHTE: Record<string, { name: string; bundesland: string }> = {
   "007": { name: "Handelsgericht Wien", bundesland: "Wien" },
   "309": { name: "Landesgericht Eisenstadt", bundesland: "Burgenland" },
@@ -74,6 +83,13 @@ export function companyIdAt(fnr: string): string {
   if (!m) throw new JobFehler(400, `ungueltige Firmenbuchnummer: ${fnr}`);
   return `AT_FN${Number(m[1])}${m[2].toUpperCase()}`;
 }
+const UK_ID_RE = /^UK_(?=[A-Z0-9]{8}$)([A-Z]{0,2}[0-9]{4,8}[A-Z]{0,3})$/;
+/** UK_00077570 → 00077570; null fuer fremde Ids. */
+export function nummerAusCompanyIdUk(companyId: string): string | null {
+  const m = UK_ID_RE.exec(companyId);
+  return m ? m[1] : null;
+}
+
 /** AT_FN588123M → 588123m; null fuer fremde Ids. */
 export function fnrAusCompanyId(companyId: string): string | null {
   const m = AT_ID_RE.exec(companyId);
@@ -128,7 +144,24 @@ export type InsolvenzMeldung = {
   datum: string;
   gegenstand: string;
   text: string;
-  quelle?: "insolvenzportal" | "ediktsdatei";
+  quelle?: "insolvenzportal" | "ediktsdatei" | "companieshouse" | "gazette";
+};
+
+/** UK: Zeile des Bulk-Abzugs oder der Firmenseite (Paket register-delta, uk-companies-house.ts). */
+export type TrefferUk = {
+  nummer: string;
+  name: string;
+  sitz: string;
+  behoerde: string;
+  landesteil: string;
+  status: "ACTIVE" | "CLOSED" | "LOESCHUNG_ANGEKUENDIGT";
+  insolvenz: "NONE" | "VERDACHT" | "EROEFFNET";
+  legalForm?: string | null;
+  street?: string | null;
+  zipCode?: string | null;
+  incorporatedAt?: string | null;
+  sicCodes?: string[];
+  fruehereNamen?: string[];
 };
 
 /** Oesterreich: Suchtreffer oder Detail aus JustizOnline. */
@@ -158,7 +191,14 @@ export type Ergebnis = {
   trefferAt?: TrefferAt[];
   /** at_front: Stand der Aufzaehlung; nicht fertig → Fortsetzungsjob ab naechsteSeite. */
   atFront?: { begriff: string; naechsteSeite: number; fertig: boolean; gesamt: number };
+  /** uk_refresh: Firmen aus der Firmenseite. */
+  trefferUk?: TrefferUk[];
+  /** uk_bulk: Zusammenfassung; die Zeilen kamen als Teilergebnisse. */
+  ukBulk?: { datum: string; teil: number; teile: number; zeilen: number; teilergebnisse: number };
 };
+
+/** uk_bulk: Buendel Zeilen waehrend der Ausfuehrung. */
+export type Teilergebnis = { workerId: string; teil: number; trefferUk: TrefferUk[] };
 
 type Q = { query: pg.Pool["query"] };
 
@@ -270,6 +310,33 @@ function trefferAtZuDelta(t: TrefferAt) {
   };
 }
 
+function trefferUkZuDelta(t: TrefferUk) {
+  const nummer = t.nummer.trim().toUpperCase();
+  const companyId = `UK_${nummer.padStart(8, "0")}`;
+  if (!UK_ID_RE.test(companyId)) throw new JobFehler(400, `ungueltige Companies-House-Nummer: ${t.nummer}`);
+  const namen = [...(t.fruehereNamen ?? []), t.name];
+  return {
+    companyId,
+    name: t.name,
+    nameNormalized: nameNormalisiert(t.name),
+    registerType: "CRN",
+    registerNumber: nummer,
+    location: t.sitz || t.landesteil,
+    districtCourt: t.behoerde,
+    state: t.landesteil,
+    registerStatus: t.status,
+    formerCourt: null,
+    country: "UK",
+    insolvencyStatus: t.insolvenz,
+    ...(t.legalForm ? { legalForm: t.legalForm } : {}),
+    ...(t.street ? { street: t.street } : {}),
+    ...(t.zipCode ? { zipCode: t.zipCode } : {}),
+    ...(t.incorporatedAt ? { incorporatedAt: t.incorporatedAt } : {}),
+    ...(t.sicCodes ? { sicCodes: t.sicCodes.slice(0, 4) } : {}),
+    history: namen.map((n, i) => ({ name: n, nameNormalized: nameNormalisiert(n), location: "", order: i + 1 })),
+  };
+}
+
 type DeltaAntwort = { neu: number; geaendert: number; unveraendert: number; befunde: Array<{ companyId: string; befund: string; felder?: string[] }> };
 
 async function schreibeTreffer(treffer: Treffer[], source: string): Promise<{ neu: number; geaendert: number; unveraendert: number; geaenderteIds: string[] }> {
@@ -289,7 +356,19 @@ async function schreibeTrefferAt(treffer: TrefferAt[], source: string): Promise<
   return schreibeDelta(zeilen, source);
 }
 
-async function schreibeDelta(zeilen: Array<ReturnType<typeof trefferZuDelta> | ReturnType<typeof trefferAtZuDelta>>, source: string): Promise<{ neu: number; geaendert: number; unveraendert: number; geaenderteIds: string[] }> {
+async function schreibeTrefferUk(treffer: TrefferUk[], source: string): Promise<{ neu: number; geaendert: number; unveraendert: number; geaenderteIds: string[] }> {
+  const zeilen = [];
+  for (const t of treffer) {
+    try {
+      zeilen.push(trefferUkZuDelta(t));
+    } catch {
+      /* ungueltige Nummer */
+    }
+  }
+  return schreibeDelta(zeilen, source);
+}
+
+async function schreibeDelta(zeilen: Array<ReturnType<typeof trefferZuDelta> | ReturnType<typeof trefferAtZuDelta> | ReturnType<typeof trefferUkZuDelta>>, source: string): Promise<{ neu: number; geaendert: number; unveraendert: number; geaenderteIds: string[] }> {
   const summe = { neu: 0, geaendert: 0, unveraendert: 0, geaenderteIds: [] as string[] };
   const gesehenAt = new Date().toISOString();
   for (let i = 0; i < zeilen.length; i += 1000) {
@@ -521,11 +600,116 @@ export async function atAnfordern(q: Q, companyIds: string[], grund: string): Pr
   return { jobs, firmen: firmen.length };
 }
 
+// ---- UK ---------------------------------------------------------------------
+
+/** Download-Seite → Teil-Dateien des aktuellen Abzugs. */
+export function parseUkDownloadSeite(html: string): Array<{ url: string; datum: string; teil: number; teile: number }> {
+  const out = [];
+  const re = /href="(BasicCompanyData-(\d{4}-\d{2}-\d{2})-part(\d+)_(\d+)\.zip)"/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(html))) out.push({ url: `https://download.companieshouse.gov.uk/${m[1]}`, datum: m[2], teil: Number(m[3]), teile: Number(m[4]) });
+  return out.sort((a, b) => a.teil - b.teil);
+}
+
+async function ukPoolFirmen(pool: pg.Pool): Promise<Array<{ companyId: string; nummer: string }>> {
+  const r = await pool.query<{ companyId: string }>(`SELECT DISTINCT "companyId" FROM "EntityProgress" WHERE "companyId" LIKE 'UK\\_%' ORDER BY "companyId" LIMIT $1`, [INSOLVENZ_POOL_MAX]);
+  const out: Array<{ companyId: string; nummer: string }> = [];
+  for (const row of r.rows) {
+    const nummer = nummerAusCompanyIdUk(row.companyId);
+    if (nummer) out.push({ companyId: row.companyId, nummer });
+  }
+  return out;
+}
+
+/**
+ * Monatlich: je Teil des aktuellen Abzugs ein uk_bulk-Job (Schluessel mit
+ * Abzugsdatum, Wiederholung idempotent), dazu Refresh und Insolvenz je
+ * Pool-Firma. Nach dem letzten Teil schliesst master-data die Firmen, die im
+ * Abzug fehlen (uk-bulk-abschluss).
+ */
+export async function erzeugeUkJobs(pool: pg.Pool, now: Date = new Date(), html?: string): Promise<{ bulk: number; refresh: number; insolvenz: number; datum: string | null }> {
+  let bulk = 0;
+  let datum: string | null = null;
+  try {
+    const seite = html ?? (await (await fetch(UK_DOWNLOAD_SEITE, { headers: { "user-agent": "AVA-Recherche (Kontakt: joyce@quikk.de)" } })).text());
+    const teile = parseUkDownloadSeite(seite);
+    for (const t of teile) {
+      datum = t.datum;
+      if (await legeJobAn(pool, "uk_bulk", `uk_bulk:${t.datum}:${t.teil}`, { url: t.url, datum: t.datum, teil: t.teil, teile: t.teile, gestartetAt: now.toISOString() }, 4)) bulk++;
+    }
+  } catch (err) {
+    logger.warn({ err: err instanceof Error ? err.message : String(err) }, "[register-jobs] UK-Download-Seite nicht ladbar");
+  }
+  const monat = monatIso(now);
+  const firmen = await ukPoolFirmen(pool);
+  let refresh = 0;
+  for (let i = 0; i < firmen.length; i += UK_REFRESH_BUENDEL) {
+    const b = firmen.slice(i, i + UK_REFRESH_BUENDEL);
+    if (await legeJobAn(pool, "uk_refresh", `uk_refresh:pool-${monat}:${b.map((f) => f.companyId).join(",")}`.slice(0, 900), { firmen: b, grund: `pool-${monat}` }, 3)) refresh++;
+  }
+  let insolvenz = 0;
+  for (let i = 0; i < firmen.length; i += UK_INSOLVENZ_BUENDEL) {
+    const b = firmen.slice(i, i + UK_INSOLVENZ_BUENDEL);
+    if (await legeJobAn(pool, "uk_insolvenz", `uk_insolvenz:pool-${monat}:${b.map((f) => f.companyId).join(",")}`.slice(0, 900), { firmen: b, grund: `pool-${monat}` }, 2)) insolvenz++;
+  }
+  return { bulk, refresh, insolvenz, datum };
+}
+
+/** UK-Pruefung fuer konkrete Firmen (Chat, Import, Firmendetail): Firmenseite und Insolvenz sofort. */
+export async function ukAnfordern(q: Q, companyIds: string[], grund: string): Promise<{ jobs: number; firmen: number }> {
+  const firmen: Array<{ companyId: string; nummer: string }> = [];
+  const gesehen = new Set<string>();
+  for (const id of companyIds) {
+    const nummer = nummerAusCompanyIdUk(id);
+    if (!nummer || gesehen.has(id)) continue;
+    gesehen.add(id);
+    firmen.push({ companyId: id, nummer });
+  }
+  let jobs = 0;
+  for (let i = 0; i < firmen.length; i += UK_INSOLVENZ_BUENDEL) {
+    const b = firmen.slice(i, i + UK_INSOLVENZ_BUENDEL);
+    const ids = b.map((f) => f.companyId).join(",");
+    if (await legeJobAn(q, "uk_refresh", `uk_refresh:${grund}:${ids}`.slice(0, 900), { firmen: b, grund }, 1)) jobs++;
+    if (await legeJobAn(q, "uk_insolvenz", `uk_insolvenz:${grund}:${ids}`.slice(0, 900), { firmen: b, grund }, 1)) jobs++;
+  }
+  return { jobs, firmen: firmen.length };
+}
+
+/**
+ * uk_bulk: ein Buendel Zeilen waehrend der Ausfuehrung. Schreibt das Delta,
+ * merkt die Teilnummer (idempotent: dasselbe Buendel noch einmal → nur
+ * Bestaetigung) und verlaengert die Lease um 20 Minuten.
+ */
+export async function verarbeiteTeilergebnis(pool: pg.Pool, jobId: string, teil: Teilergebnis): Promise<Record<string, unknown>> {
+  const job = await ladeGeleastenJob(pool, jobId, teil.workerId);
+  if (job.art !== "uk_bulk") throw new JobFehler(400, "teilergebnis_nur_uk_bulk");
+  const stand = (job.payload.teile_verarbeitet as number[] | undefined) ?? [];
+  if (stand.includes(teil.teil)) return { teil: teil.teil, wiederholt: true };
+  const summe = await schreibeTrefferUk(teil.trefferUk, "companieshouse-bulk");
+  const p = job.payload as Record<string, unknown> & { summe?: { neu: number; geaendert: number; unveraendert: number; zeilen: number } };
+  const alt = p.summe ?? { neu: 0, geaendert: 0, unveraendert: 0, zeilen: 0 };
+  const neu = { neu: alt.neu + summe.neu, geaendert: alt.geaendert + summe.geaendert, unveraendert: alt.unveraendert + summe.unveraendert, zeilen: alt.zeilen + teil.trefferUk.length };
+  await pool.query(
+    `UPDATE "RegisterJob" SET "payload" = $2::jsonb, "leaseUntil" = NOW() + ($3 || ' minutes')::interval, "updatedAt" = NOW() WHERE "id" = $1`,
+    [jobId, JSON.stringify({ ...p, teile_verarbeitet: [...stand, teil.teil], summe: neu }), String(LEASE_MINUTEN)],
+  );
+  if (summe.geaenderteIds.length > 0) await markiereVeraltet(pool, summe.geaenderteIds, "register-uk_bulk");
+  return { teil: teil.teil, ...summe, geaenderteIds: undefined };
+}
+
+/** Alle Teile eines Abzugs erledigt? Dann fehlende UK-Firmen in master-data schliessen. */
+async function ukBulkAbschluss(pool: pg.Pool, datum: string, teile: number, gestartetAt: string): Promise<Record<string, unknown> | null> {
+  const r = await pool.query<{ n: string }>(`SELECT count(*)::text AS n FROM "RegisterJob" WHERE "art" = 'uk_bulk' AND "status" = 'erledigt' AND "schluessel" LIKE $1`, [`uk_bulk:${datum}:%`]);
+  if (Number(r.rows[0]?.n ?? 0) < teile) return null;
+  // Firmen, die seit Beginn des Abzugs nicht gesehen wurden, gelten als aufgeloest (der Abzug enthaelt nur lebende).
+  return masterData<Record<string, unknown>>("POST", "/internal/companies/uk-bulk-abschluss", { seitAt: gestartetAt, grund: `bulk-${datum}` });
+}
+
 // ---- Lease / Ergebnis -------------------------------------------------------
 
 /** Budget-Hinweis fuer den Worker je Portal. */
 export function abfragenJeStundeFuer(art: JobArt): number {
-  return art.startsWith("at_") ? AT_ABFRAGEN_JE_STUNDE : ABFRAGEN_JE_STUNDE;
+  return art.startsWith("at_") || art.startsWith("uk_") ? AT_ABFRAGEN_JE_STUNDE : ABFRAGEN_JE_STUNDE;
 }
 
 export async function leaseJob(pool: pg.Pool, workerId: string, arten: JobArt[] = JOB_ARTEN): Promise<RegisterJob | null> {
@@ -620,7 +804,30 @@ export async function verarbeiteErgebnis(pool: pg.Pool, jobId: string, ergebnis:
     }
   }
 
-  if ((job.art === "insolvenz" || job.art === "at_insolvenz") && ergebnis.insolvenz) {
+  if (ergebnis.trefferUk && ergebnis.trefferUk.length > 0) {
+    const { geaenderteIds, ...summe } = await schreibeTrefferUk(ergebnis.trefferUk, "companieshouse");
+    Object.assign(zusammenfassung, summe);
+    if (geaenderteIds.length > 0) zusammenfassung.veraltet = await markiereVeraltet(pool, geaenderteIds, `register-${job.art}`);
+  }
+
+  if (job.art === "uk_bulk" && ergebnis.ukBulk) {
+    const p = job.payload as { datum: string; teil: number; teile: number; gestartetAt?: string; summe?: Record<string, number>; teile_verarbeitet?: number[] };
+    Object.assign(zusammenfassung, p.summe ?? {}, { zeilenGemeldet: ergebnis.ukBulk.zeilen, teilergebnisse: (p.teile_verarbeitet ?? []).length });
+    if (ergebnis.ukBulk.teilergebnisse !== (p.teile_verarbeitet ?? []).length) {
+      // Worker hat Buendel gemeldet, die hier nicht angekommen sind → nicht abschliessen, Job faellt zurueck.
+      throw new JobFehler(409, "teilergebnisse_unvollstaendig");
+    }
+    // Erst als erledigt markieren, dann pruefen, ob der Abzug komplett ist.
+    await pool.query(`UPDATE "RegisterJob" SET "status" = 'erledigt', "ergebnis" = $2::jsonb, "ergebnisAt" = NOW(), "leaseUntil" = NULL, "fehler" = NULL, "updatedAt" = NOW() WHERE "id" = $1`, [jobId, JSON.stringify(zusammenfassung)]);
+    try {
+      const a = await ukBulkAbschluss(pool, ergebnis.ukBulk.datum, ergebnis.ukBulk.teile, p.gestartetAt ?? new Date(Date.now() - 86_400_000).toISOString());
+      if (a) zusammenfassung.abschluss = a;
+    } catch (err) {
+      logger.warn({ err: err instanceof Error ? err.message : String(err) }, "[register-jobs] uk-bulk-abschluss fehlgeschlagen");
+    }
+  }
+
+  if ((job.art === "insolvenz" || job.art === "at_insolvenz" || job.art === "uk_insolvenz") && ergebnis.insolvenz) {
     // Nur die vom Worker tatsaechlich bearbeiteten Firmen gelten als geprueft;
     // der Rest bleibt faellig und kommt mit dem naechsten Cron.
     const geprueft = [...new Set(ergebnis.insolvenz.geprueft)];
@@ -732,7 +939,7 @@ export type Statistik = {
 };
 
 export async function statistik(pool: pg.Pool): Promise<Statistik> {
-  const jobs: Record<JobArt, Record<string, number>> = { front: {}, bekanntmachungen: {}, refresh: {}, insolvenz: {}, at_front: {}, at_refresh: {}, at_insolvenz: {} };
+  const jobs: Record<JobArt, Record<string, number>> = { front: {}, bekanntmachungen: {}, refresh: {}, insolvenz: {}, at_front: {}, at_refresh: {}, at_insolvenz: {}, uk_bulk: {}, uk_refresh: {}, uk_insolvenz: {} };
   const r = await pool.query<{ art: JobArt; status: string; n: string }>(`SELECT "art", "status", count(*)::text AS n FROM "RegisterJob" GROUP BY 1, 2`);
   for (const row of r.rows) if (jobs[row.art]) jobs[row.art][row.status] = Number(row.n);
   const w = await pool.query<{ n: string }>(`SELECT count(*)::text AS n FROM "RegisterWorker" WHERE "zuletztAt" > NOW() - interval '1 hour'`);
@@ -783,6 +990,14 @@ export async function runRegisterJobCronOnce(now: Date = new Date()): Promise<vo
         logger.info({ insolvenzJobs: n }, "[register-jobs] Insolvenz-Jobs erzeugt");
       } catch (err) {
         logger.warn({ err: err instanceof Error ? err.message : String(err) }, "[register-jobs] Insolvenz-Jobs nicht erzeugt");
+      }
+    }
+    if (process.env.UK_JOBS_DISABLED !== "1") {
+      try {
+        const uk = await erzeugeUkJobs(getGatewayPool(), now);
+        logger.info(uk, "[register-jobs] UK-Jobs erzeugt");
+      } catch (err) {
+        logger.warn({ err: err instanceof Error ? err.message : String(err) }, "[register-jobs] UK-Jobs nicht erzeugt");
       }
     }
     if (process.env.AT_JOBS_DISABLED !== "1") {

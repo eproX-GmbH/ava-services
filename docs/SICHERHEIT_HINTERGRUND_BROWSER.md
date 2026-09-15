@@ -69,3 +69,12 @@ Worker-Prozess: kein BrowserWindow, kein Selenium, kein Download. Die
 Antworten sind JSON beziehungsweise HTML-Text, der nur geparst wird.
 Damit gilt die Allowlist der Hintergrund-Browser dafür nicht; die
 Domains sind `justizonline.gv.at` und `edikte.justiz.gv.at`.
+
+## Nachtrag 2026-09-15: UK ohne Browser
+
+`uk_bulk`, `uk_refresh` und `uk_insolvenz` laufen wie Österreich über
+`fetch`: Companies House (`download.companieshouse.gov.uk`,
+`find-and-update.company-information.service.gov.uk`) und The Gazette
+(`thegazette.co.uk`). Der Monatsabzug wird als ZIP nach `/tmp` geladen,
+gestreamt und danach gelöscht; es wird nichts ausgeführt und nichts in
+den Nutzerordner geschrieben.

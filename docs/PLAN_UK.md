@@ -152,8 +152,33 @@ structured-content 1 Tag, App 0,5 Tage.
   InsolvencyEvent-Zeilen vorliegen, danach entscheidet die Ableitung aus
   den Ereignissen. Insolvenzquellen `companieshouse` und `gazette`.
   33 Unit-Tests grün.
-- **Nächster Schritt:** Gateway und Paket (`uk_bulk`, `uk_refresh`,
-  `uk_insolvenz`), dann structured-content und App.
+- **master-data (2026-09-15, zweiter Teil, Deploy offen):** interne Route
+  `POST /internal/companies/uk-bulk-abschluss { seitAt, country }` setzt
+  Firmen des Landes, die seit `seitAt` nicht gesehen wurden, auf CLOSED
+  (in Blöcken zu 5.000, Index nachgezogen).
+- **Paket register-delta (2026-09-15):** `uk-companies-house.ts` mit
+  companyId-Regel, Registrar je Nummernkreis, Abbildung der Bulk-Zeile,
+  RFC-4180-Streaming-CSV-Parser, ZIP-Streaming (`yauzl`) nach `/tmp`,
+  Parser für Firmenseite, Insolvenzseite und Gazette-Feed (nur Einträge,
+  die die Nummer nennen), Kategorien. Job-Arten `uk_bulk` (Teil-ZIP
+  streamen, Bündel zu 1.000 als Teilergebnisse ans Gateway),
+  `uk_refresh` (Firmenseite, Bündel 100), `uk_insolvenz` (Insolvenzseite
+  plus Gazette, Bündel 50). Takt 0,5/s, kein Browser. `REGISTER_DELTA_UK=0`
+  schaltet ab. 7 neue Tests (31 gesamt).
+- **Gateway (2026-09-15, Deploy offen):** Route
+  `POST /register-jobs/{id}/teilergebnis` (v1 und intern): schreibt das
+  Delta, merkt die Teilnummer im Payload (idempotent), verlängert die Lease
+  um 20 Minuten. `uk_bulk`-Ergebnis prüft, dass alle gemeldeten Bündel
+  angekommen sind (sonst 409, Job fällt zurück) und stößt nach dem letzten
+  Teil des Abzugs den Abschluss in master-data an. Monatliche Erzeugung
+  (`erzeugeUkJobs`, Cron 02:00 UTC, `UK_JOBS_DISABLED=1`, sofort per HMAC
+  `POST /internal/register-jobs/uk/erzeugen`): liest die Download-Seite,
+  ein Job je Teil (Schlüssel mit Abzugsdatum), Pool-Refresh und Insolvenz
+  für `UK_`-Firmen. `POST /v1/register-jobs/uk` für konkrete Firmen.
+- **Fly-Worker:** `worker_at` bedient jetzt auch `uk_*`, der DE-Worker
+  nicht (`REGISTER_DELTA_UK=0`).
+- **Nächster Schritt:** Deploys, Monatsjobs auslösen (7 Teile, Erstimport
+  rund 5,7 Mio. Zeilen), danach structured-content (Officers) und App.
 
 ## 5. Offene Entscheidungen
 

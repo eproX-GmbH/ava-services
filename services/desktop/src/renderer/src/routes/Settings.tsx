@@ -757,6 +757,9 @@ function MithelfenZeile() {
     at_front: "Firmenbuch Österreich",
     at_refresh: "Firmenbuch Österreich (Detail)",
     at_insolvenz: "Ediktsdatei Österreich",
+    uk_bulk: "Companies House Monatsabzug",
+    uk_refresh: "Companies House (Firmenseite)",
+    uk_insolvenz: "Companies House Insolvenz und Gazette",
   };
   const tone = s.pausenGrund === null && s.laeuft ? "ok" : s.pausenGrund === "organisation" || s.pausenGrund === "nicht_installiert" ? "err" : "muted";
   return (

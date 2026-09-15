@@ -3,10 +3,13 @@
 import { createHmac } from "node:crypto";
 import type { Bekanntmachung, Treffer } from "./parser";
 import type { TrefferAt } from "./at-firmenbuch";
+import type { TrefferUk } from "./uk-companies-house";
 import type { InsolvenzGegenstand } from "./insolvenz-parser";
 
-export type JobArt = "front" | "bekanntmachungen" | "refresh" | "insolvenz" | "at_front" | "at_refresh" | "at_insolvenz";
-export const ALLE_JOB_ARTEN: JobArt[] = ["front", "bekanntmachungen", "refresh", "insolvenz", "at_front", "at_refresh", "at_insolvenz"];
+export type JobArt = "front" | "bekanntmachungen" | "refresh" | "insolvenz" | "at_front" | "at_refresh" | "at_insolvenz" | "uk_bulk" | "uk_refresh" | "uk_insolvenz";
+export const ALLE_JOB_ARTEN: JobArt[] = ["front", "bekanntmachungen", "refresh", "insolvenz", "at_front", "at_refresh", "at_insolvenz", "uk_bulk", "uk_refresh", "uk_insolvenz"];
+/** UK (docs/PLAN_UK.md): Bulk-Abzug, Firmenseite, Insolvenz und Gazette, kein Browser. */
+export const JOB_ARTEN_UK: JobArt[] = ["uk_bulk", "uk_refresh", "uk_insolvenz"];
 /** Oesterreich (docs/PLAN_OESTERREICH.md): JSON-API und Ediktsdatei, kein Browser. */
 export const JOB_ARTEN_AT: JobArt[] = ["at_front", "at_refresh", "at_insolvenz"];
 
@@ -44,7 +47,7 @@ export type InsolvenzMeldung = {
   gegenstand: InsolvenzGegenstand;
   text: string;
   /** Fehlt = insolvenzportal (DE); ediktsdatei (AT). */
-  quelle?: "insolvenzportal" | "ediktsdatei";
+  quelle?: "insolvenzportal" | "ediktsdatei" | "companieshouse" | "gazette";
 };
 
 export type Ergebnis = {
@@ -60,7 +63,14 @@ export type Ergebnis = {
   trefferAt?: TrefferAt[];
   /** at_front: Stand der Aufzaehlung (Fortsetzung, wenn nicht fertig). */
   atFront?: { begriff: string; naechsteSeite: number; fertig: boolean; gesamt: number };
+  /** uk_refresh: Firmen aus der Firmenseite; uk_bulk meldet Zeilen ueber Teilergebnisse. */
+  trefferUk?: TrefferUk[];
+  /** uk_bulk: Zusammenfassung des Teils. */
+  ukBulk?: { datum: string; teil: number; teile: number; zeilen: number; teilergebnisse: number };
 };
+
+/** uk_bulk: ein Buendel Zeilen waehrend der Ausfuehrung (verlaengert die Lease). */
+export type Teilergebnis = { workerId: string; teil: number; trefferUk: TrefferUk[] };
 
 export type GatewayClientOptionen = {
   baseUrl: string;
@@ -117,6 +127,11 @@ export class GatewayClient {
 
   async ergebnis(jobId: string, ergebnis: Ergebnis): Promise<Record<string, unknown>> {
     return (await this.call<Record<string, unknown>>("POST", `${this.praefix}/register-jobs/${jobId}/ergebnis`, ergebnis)).data ?? {};
+  }
+
+  /** uk_bulk: Buendel melden; idempotent je (Job, Teilnummer). */
+  async teilergebnis(jobId: string, teil: Teilergebnis): Promise<Record<string, unknown>> {
+    return (await this.call<Record<string, unknown>>("POST", `${this.praefix}/register-jobs/${jobId}/teilergebnis`, teil)).data ?? {};
   }
 
   async fehler(jobId: string, workerId: string, grund: string, abfragen = 0): Promise<void> {

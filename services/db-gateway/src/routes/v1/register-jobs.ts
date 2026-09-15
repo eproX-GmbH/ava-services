@@ -15,6 +15,8 @@ import { getGatewayPool } from "../../lib/producer-pools";
 import {
   abfragenJeStundeFuer,
   atAnfordern,
+  ukAnfordern,
+  verarbeiteTeilergebnis,
   JOB_ARTEN_REGISTER,
   JobFehler,
   leaseJob,
@@ -40,7 +42,7 @@ const err = {
 };
 
 export const WorkerId = z.string().min(8).max(120).regex(/^[A-Za-z0-9._:-]+$/);
-export const JobArtSchema = z.enum(["front", "bekanntmachungen", "refresh", "insolvenz", "at_front", "at_refresh", "at_insolvenz"]);
+export const JobArtSchema = z.enum(["front", "bekanntmachungen", "refresh", "insolvenz", "at_front", "at_refresh", "at_insolvenz", "uk_bulk", "uk_refresh", "uk_insolvenz"]);
 
 const JobShape = z
   .object({
@@ -89,8 +91,27 @@ const InsolvenzMeldungShape = z.object({
   datum: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   gegenstand: z.enum(["EROEFFNUNG", "ABWEISUNG_MANGELS_MASSE", "SICHERUNGSMASSNAHME", "AUFHEBUNG", "EINSTELLUNG", "ENTSCHEIDUNG", "VERTEILUNG", "INSOLVENZPLAN", "SONSTIGES"]),
   text: z.string().max(50_000).default(""),
-  quelle: z.enum(["insolvenzportal", "ediktsdatei"]).optional(),
+  quelle: z.enum(["insolvenzportal", "ediktsdatei", "companieshouse", "gazette"]).optional(),
 });
+
+/** UK: Zeile des Bulk-Abzugs oder der Firmenseite (Paket register-delta, uk-companies-house.ts). */
+const TrefferUkShape = z.object({
+  nummer: z.string().regex(/^[A-Z0-9]{1,8}$/),
+  name: z.string().min(1).max(500),
+  sitz: z.string().max(200),
+  behoerde: z.string().min(1).max(200),
+  landesteil: z.string().max(100),
+  status: z.enum(["ACTIVE", "CLOSED", "LOESCHUNG_ANGEKUENDIGT"]),
+  insolvenz: z.enum(["NONE", "VERDACHT", "EROEFFNET"]),
+  legalForm: z.string().max(200).nullable().optional(),
+  street: z.string().max(200).nullable().optional(),
+  zipCode: z.string().max(20).nullable().optional(),
+  incorporatedAt: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
+  sicCodes: z.array(z.string().regex(/^\d{4,5}$/)).max(4).optional(),
+  fruehereNamen: z.array(z.string().max(500)).max(10).optional(),
+});
+
+export const TeilergebnisShape = z.object({ workerId: WorkerId, teil: z.number().int().positive(), trefferUk: z.array(TrefferUkShape).min(1).max(1000) });
 
 /** Oesterreich: Suchtreffer oder Detail aus JustizOnline (Paket register-delta, at-firmenbuch.ts). */
 const TrefferAtShape = z.object({
@@ -114,6 +135,8 @@ export const ErgebnisShape = z.object({
   bekanntmachungen: z.array(BekanntmachungShape).max(5000).optional(),
   trefferAt: z.array(TrefferAtShape).max(5000).optional(),
   atFront: z.object({ begriff: z.string().min(2).max(4), naechsteSeite: z.number().int().nonnegative(), fertig: z.boolean(), gesamt: z.number().int().nonnegative() }).optional(),
+  trefferUk: z.array(TrefferUkShape).max(5000).optional(),
+  ukBulk: z.object({ datum: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), teil: z.number().int().positive(), teile: z.number().int().positive(), zeilen: z.number().int().nonnegative(), teilergebnisse: z.number().int().nonnegative() }).optional(),
 });
 
 function auth(c: { get: (k: "auth") => { tenantId: string; actorId: string } | undefined }) {
@@ -283,4 +306,47 @@ registerJobsRouter.openapi(atRoute, async (c) => {
   auth(c);
   const body = c.req.valid("json");
   return c.json(await atAnfordern(getGatewayPool(), body.companyIds, body.grund), 200);
+});
+
+// UK — uk_bulk: Buendel Zeilen waehrend der Ausfuehrung melden (verlaengert die Lease, idempotent je Teilnummer).
+const teilergebnisRoute = createRoute({
+  method: "post",
+  path: "/register-jobs/{id}/teilergebnis",
+  tags: [tag],
+  summary: "Teilergebnis eines uk_bulk-Jobs melden (Buendel bis 1.000 Zeilen)",
+  request: { params: z.object({ id: z.string().regex(/^\d+$/) }), body: { content: { "application/json": { schema: TeilergebnisShape } } } },
+  responses: { 200: { content: { "application/json": { schema: z.record(z.string(), z.unknown()) } }, description: "verarbeitet" }, ...err },
+});
+registerJobsRouter.openapi(teilergebnisRoute, async (c) => {
+  auth(c);
+  const { id } = c.req.valid("param");
+  const body = c.req.valid("json");
+  try {
+    return c.json(await verarbeiteTeilergebnis(getGatewayPool(), id, body), 200);
+  } catch (e) {
+    jobFehler(e);
+  }
+});
+
+// UK — Firmenseite und Insolvenz fuer konkrete Firmen anfordern (Chat, Import, Firmendetail).
+const ukRoute = createRoute({
+  method: "post",
+  path: "/register-jobs/uk",
+  tags: [tag],
+  summary: "UK: Companies-House-Firmenseite, Insolvenz und Gazette fuer konkrete Firmen anfordern (UK_...)",
+  request: {
+    body: {
+      content: {
+        "application/json": {
+          schema: z.object({ companyIds: z.array(z.string().regex(/^UK_[A-Z0-9]{8}$/)).min(1).max(500), grund: z.string().min(1).max(40).regex(/^[a-z0-9-]+$/).default("anforderung") }),
+        },
+      },
+    },
+  },
+  responses: { 200: { content: { "application/json": { schema: z.object({ jobs: z.number().int(), firmen: z.number().int() }) } }, description: "ok" }, 401: err[401] },
+});
+registerJobsRouter.openapi(ukRoute, async (c) => {
+  auth(c);
+  const body = c.req.valid("json");
+  return c.json(await ukAnfordern(getGatewayPool(), body.companyIds, body.grund), 200);
 });

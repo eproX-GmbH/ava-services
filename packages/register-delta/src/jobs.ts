@@ -8,6 +8,7 @@ import { parseBekanntmachungen, type Treffer } from "./parser";
 import type { Suchergebnis } from "./portal";
 import { AT_SUCHE_SEITE, companyIdAt, trefferAt, type AtSuchseite, type AtDetail, type TrefferAt } from "./at-firmenbuch";
 import { meldungenAusVerfahren, type EdikteEintrag, type EdikteVerfahren } from "./at-edikte";
+import { companyIdUk, firmaZuTreffer, meldungenAusFaellen, meldungenAusGazette, type BulkTeil, type FirmaUk, type GazetteEintrag, type InsolvenzFallUk, type TrefferUk } from "./uk-companies-house";
 
 export type PortalSchnittstelle = {
   suche(gericht: string, art: string, nummer: number | string): Promise<Suchergebnis>;
@@ -29,6 +30,20 @@ export type AtSchnittstelle = {
   taktEdikte: TaktSchnittstelle;
 };
 
+/** UK: Companies House (Bulk, Firmenseite, Insolvenz) und Gazette, ein Takt fuer alle Web-Aufrufe. */
+export type UkSchnittstelle = {
+  companiesHouse: {
+    bulkTeile(): Promise<BulkTeil[]>;
+    bulkTeilLesen(url: string, zeile: (t: TrefferUk) => Promise<void> | void): Promise<number>;
+    firma(nummer: string): Promise<{ firma: FirmaUk | null; gesperrt: boolean }>;
+    insolvenz(nummer: string): Promise<{ faelle: InsolvenzFallUk[]; gesperrt: boolean }>;
+    gazette(nummer: string): Promise<{ eintraege: GazetteEintrag[]; gesperrt: boolean }>;
+  };
+  takt: TaktSchnittstelle;
+  /** uk_bulk: Buendel an das Gateway melden (Worker: gateway.teilergebnis). */
+  teilergebnis: (jobId: string, teil: number, trefferUk: TrefferUk[]) => Promise<void>;
+};
+
 export type AusfuehrungsOptionen = {
   workerId: string;
   portal: PortalSchnittstelle;
@@ -37,6 +52,8 @@ export type AusfuehrungsOptionen = {
   takt: TaktSchnittstelle;
   /** Oesterreich (nur fuer Jobs at_*). */
   at?: AtSchnittstelle;
+  /** UK (nur fuer Jobs uk_*). */
+  uk?: UkSchnittstelle;
   /** Hoechstzahl Abfragen je Job; muss in die Lease (20 min) passen. */
   maxAbfragenJeJob?: number;
   /** Oesterreich: Anfragen je Job bei 0,5/s (Default 300 ≈ 10 min). */
@@ -48,6 +65,8 @@ export type AusfuehrungsOptionen = {
 
 export const MAX_ABFRAGEN_JE_JOB = 15;
 export const MAX_ABFRAGEN_JE_AT_JOB = 300;
+/** uk_bulk: Zeilen je Teilergebnis (ein Delta-Aufruf in master-data). */
+export const UK_BULK_BUENDEL = 1000;
 
 // Die Bekanntmachungsseite enthaelt alle Tage des 8-Wochen-Fensters (rund
 // 14.000 Eintraege, fast 2 MB Text). Ein Job je Tag wuerde sie 56-mal laden;
@@ -101,6 +120,8 @@ type BekPayload = { tag: string };
 type InsolvenzPayload = { firmen: Array<{ companyId: string; gericht: string; art: string; nummer: string; zusatz?: string }>; grund?: string };
 type AtFrontPayload = { gerichtId: string; begriff: string; abSeite?: number; state?: string };
 type AtFirmenPayload = { firmen: Array<{ companyId: string; fnr: string }>; grund?: string };
+type UkBulkPayload = { url: string; datum: string; teil: number; teile: number };
+type UkFirmenPayload = { firmen: Array<{ companyId: string; nummer: string }>; grund?: string };
 
 export async function fuehreJobAus(job: Job, o: AusfuehrungsOptionen): Promise<Ergebnis> {
   const log = o.log ?? (() => {});
@@ -198,6 +219,11 @@ export async function fuehreJobAus(job: Job, o: AusfuehrungsOptionen): Promise<E
     }
     log(`insolvenz (${p.grund ?? "?"}): ${geprueft.length} Firmen geprueft, ${meldungen.length} Veroeffentlichungen, ${basis.abfragen} Abfragen`);
     return { ...basis, insolvenz: { meldungen, geprueft } };
+  }
+
+  if (job.art === "uk_bulk" || job.art === "uk_refresh" || job.art === "uk_insolvenz") {
+    if (!o.uk) throw new Error("UK-Schnittstellen nicht verfuegbar");
+    return fuehreUkJobAus(job, o, o.uk, o.maxAbfragenJeAtJob ?? MAX_ABFRAGEN_JE_AT_JOB, log);
   }
 
   if (job.art === "at_front" || job.art === "at_refresh" || job.art === "at_insolvenz") {
@@ -306,4 +332,84 @@ async function fuehreAtJobAus(job: Job, o: AusfuehrungsOptionen, at: AtSchnittst
 function gerichtIdAus(payload: Record<string, unknown>, companyId: string): string {
   const firmen = payload.firmen as Array<{ companyId: string; gerichtId?: string }> | undefined;
   return firmen?.find((f) => f.companyId === companyId)?.gerichtId ?? (typeof payload.gerichtId === "string" ? payload.gerichtId : "");
+}
+
+async function fuehreUkJobAus(job: Job, o: AusfuehrungsOptionen, uk: UkSchnittstelle, max: number, log: (z: string) => void): Promise<Ergebnis> {
+  const basis: Ergebnis = { workerId: o.workerId, abfragen: 0, treffer: [] };
+
+  if (job.art === "uk_bulk") {
+    // Ein Teil des Monatsabzugs: ZIP laden, CSV streamen, in Buendeln an das
+    // Gateway melden (Teilergebnisse verlaengern die Lease). Abbruch ist
+    // erlaubt: das Gateway kennt die gemeldeten Buendel, der Job faellt zurueck.
+    const p = job.payload as unknown as UkBulkPayload;
+    let buendel: TrefferUk[] = [];
+    let teil = 0;
+    let abgebrochen = false;
+    const melden = async () => {
+      if (buendel.length === 0) return;
+      teil++;
+      await uk.teilergebnis(job.id, teil, buendel);
+      buendel = [];
+    };
+    await uk.takt.warten();
+    basis.abfragen++;
+    const zeilen = await uk.companiesHouse.bulkTeilLesen(p.url, async (t) => {
+      if (abgebrochen) return;
+      if (o.abbrechen?.()) {
+        abgebrochen = true;
+        return;
+      }
+      buendel.push(t);
+      if (buendel.length >= UK_BULK_BUENDEL) await melden();
+    });
+    if (abgebrochen) throw new Error(`uk_bulk Teil ${p.teil} abgebrochen nach ${teil} Buendeln`);
+    await melden();
+    log(`uk_bulk ${p.datum} Teil ${p.teil}/${p.teile}: ${zeilen} Zeilen in ${teil} Buendeln`);
+    return { ...basis, ukBulk: { datum: p.datum, teil: p.teil, teile: p.teile, zeilen, teilergebnisse: teil } };
+  }
+
+  if (job.art === "uk_refresh") {
+    const p = job.payload as unknown as UkFirmenPayload;
+    const trefferUk: TrefferUk[] = [];
+    for (const f of p.firmen) {
+      if (o.abbrechen?.() || basis.abfragen >= max) break;
+      await uk.takt.warten();
+      const r = await uk.companiesHouse.firma(f.nummer);
+      basis.abfragen++;
+      if (r.gesperrt) return { ...basis, gesperrt: true, trefferUk };
+      if (!r.firma) continue; // unbekannt: Bestand bleibt
+      const t = firmaZuTreffer(r.firma);
+      if (t) trefferUk.push(t);
+    }
+    log(`uk_refresh (${p.grund ?? "?"}): ${basis.abfragen} Abfragen, ${trefferUk.length} Treffer`);
+    return { ...basis, trefferUk };
+  }
+
+  // uk_insolvenz: Insolvenzseite plus Gazette je Firma.
+  const p = job.payload as unknown as UkFirmenPayload;
+  const meldungen: InsolvenzMeldung[] = [];
+  const geprueft: string[] = [];
+  for (const f of p.firmen) {
+    if (o.abbrechen?.() || basis.abfragen + 2 > max) break;
+    let cid: string;
+    try {
+      cid = companyIdUk(f.nummer);
+    } catch {
+      continue;
+    }
+    if (cid !== f.companyId) continue;
+    await uk.takt.warten();
+    const i = await uk.companiesHouse.insolvenz(f.nummer);
+    basis.abfragen++;
+    if (i.gesperrt) return { ...basis, gesperrt: true, insolvenz: { meldungen, geprueft } };
+    meldungen.push(...meldungenAusFaellen(i.faelle, f.companyId));
+    await uk.takt.warten();
+    const g = await uk.companiesHouse.gazette(f.nummer);
+    basis.abfragen++;
+    if (g.gesperrt) return { ...basis, gesperrt: true, insolvenz: { meldungen, geprueft } };
+    meldungen.push(...meldungenAusGazette(g.eintraege, f.companyId));
+    geprueft.push(f.companyId);
+  }
+  log(`uk_insolvenz (${p.grund ?? "?"}): ${geprueft.length} Firmen geprueft, ${meldungen.length} Meldungen, ${basis.abfragen} Abfragen`);
+  return { ...basis, insolvenz: { meldungen, geprueft } };
 }

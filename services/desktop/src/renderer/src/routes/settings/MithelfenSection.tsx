@@ -19,6 +19,9 @@ const ART_TEXT: Record<string, string> = {
   at_front: "Neue Firmen Österreich (Firmenbuch)",
   at_refresh: "Auffrischung Österreich (Firmenbuch-Detail)",
   at_insolvenz: "Insolvenzprüfung Österreich (Ediktsdatei)",
+  uk_bulk: "Monatsabzug Vereinigtes Königreich (Companies House)",
+  uk_refresh: "Auffrischung Vereinigtes Königreich (Firmenseite)",
+  uk_insolvenz: "Insolvenzprüfung Vereinigtes Königreich (Companies House, Gazette)",
 };
 
 export function MithelfenSection() {
