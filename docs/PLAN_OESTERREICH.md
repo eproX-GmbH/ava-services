@@ -132,6 +132,25 @@ Empfehlung: **Weg 1 zuerst**, Weg 2 als spätere Option.
 Aufwand grob: Notebook 1 Tag, master-data und Import 2 Tage, Queue-Jobs 1
 bis 2 Tage, App 1 bis 2 Tage. Weg 2 (Auszug kaufen) separat 3 bis 5 Tage.
 
+## 4a. Befunde zur Aufzählung (2026-09-15, Notebook-Schritt)
+
+- **Nummern sind durchsuchbar:** Der Suchbegriff trifft auch die
+  Firmenbuchnummer als Teilzeichenkette (`56` → `563165i`, `440256k`;
+  `47t` → `540747t`, `112347t`). Da jede Nummer auf Ziffer plus
+  Prüfbuchstabe endet, ist die Vereinigung der 260 Begriffe
+  `<Ziffer><Buchstabe>` **vollständig per Konstruktion**, ohne
+  Prüfbuchstaben-Regel und ohne Nummernfront. Kosten: rund eine Anfrage je
+  10 Firmen plus 260 Begriffe je Bundesland, für 360.000 aktive Firmen etwa
+  40.000 Anfragen einmalig.
+- **Ratengrenze gemessen:** 3 Anfragen je Sekunde → HTTP 429 mit
+  `Retry-After: 10`; 1 Anfrage je 2 Sekunden über 90 Anfragen ohne 429.
+  Betriebstakt 0,5 je Sekunde und IP, also rund 40.000 je Tag: der
+  Erstimport dauert etwa einen Tag auf einer Maschine.
+- Prüfbuchstaben: nicht alle 26 Buchstaben kommen vor (`c`, `e`, `h` … sehr
+  selten oder gar nicht); Begriffe ohne Treffer kosten je eine Anfrage.
+- Lauf `scripts/at/enumerate_bundesland.py 1` (Burgenland) gestartet; Ergebnis
+  (Firmen, Anfragen, Dauer) folgt im Notebook.
+
 ## 5. Offene Entscheidungen
 
 1. Weg 1 (Stammdaten-only) jetzt, Weg 2 später?
