@@ -2,7 +2,7 @@
 // gerufen wird. Bei Portal-Sperre eine Stunde Pause; ohne Jobs Wartezeit.
 
 import { GatewayClient, type Job, type JobArt } from "./gateway-client";
-import { fuehreJobAus, MAX_ABFRAGEN_JE_JOB, type PortalSchnittstelle } from "./jobs";
+import { fuehreJobAus, MAX_ABFRAGEN_JE_JOB, type InsolvenzSchnittstelle, type PortalSchnittstelle } from "./jobs";
 import { Taktgeber } from "./takt";
 
 export type WorkerOptionen = {
@@ -10,6 +10,8 @@ export type WorkerOptionen = {
   workerArt: "desktop" | "betreiber";
   gateway: GatewayClient;
   portal: () => Promise<PortalSchnittstelle & { schliessen(): Promise<void> }>;
+  /** Insolvenzportal (I3); ohne Angabe werden insolvenz-Jobs nicht geleast. */
+  insolvenz?: () => Promise<InsolvenzSchnittstelle & { schliessen(): Promise<void> }>;
   abfragenJeStunde?: number;
   arten?: JobArt[];
   leerlaufMs?: number;
@@ -73,6 +75,8 @@ export class RegisterWorker {
 
   private async schleife(): Promise<void> {
     let portal: (PortalSchnittstelle & { schliessen(): Promise<void> }) | null = null;
+    let insolvenz: (InsolvenzSchnittstelle & { schliessen(): Promise<void> }) | null = null;
+    const arten = this.o.arten ?? (this.o.insolvenz ? undefined : (["front", "bekanntmachungen", "refresh"] as JobArt[]));
     try {
       while (!this.stopSignal) {
         if (this.o.pausiert?.() || (this.status.gesperrtBis && Date.parse(this.status.gesperrtBis) > Date.now())) {
@@ -81,7 +85,7 @@ export class RegisterWorker {
         }
         let job: Job | null = null;
         try {
-          job = await this.o.gateway.lease(this.o.workerId, this.o.workerArt, this.o.arten);
+          job = await this.o.gateway.lease(this.o.workerId, this.o.workerArt, arten);
         } catch (err) {
           this.status.letzterFehler = String(err instanceof Error ? err.message : err);
           this.log(`lease fehlgeschlagen: ${this.status.letzterFehler}`);
@@ -100,6 +104,12 @@ export class RegisterWorker {
           const ergebnis = await fuehreJobAus(job, {
             workerId: this.o.workerId,
             portal,
+            insolvenz: this.o.insolvenz
+              ? async () => {
+                  insolvenz ??= await this.o.insolvenz!(); // eslint-disable-line @typescript-eslint/no-non-null-assertion
+                  return insolvenz;
+                }
+              : undefined,
             takt: this.takt,
             maxAbfragenJeJob: MAX_ABFRAGEN_JE_JOB,
             log: this.log,
@@ -129,6 +139,11 @@ export class RegisterWorker {
             await portal.schliessen();
             portal = null;
           }
+          const ip = insolvenz as (InsolvenzSchnittstelle & { schliessen(): Promise<void> }) | null;
+          if (ip) {
+            await ip.schliessen();
+            insolvenz = null;
+          }
           await this.warte(30_000);
         } finally {
           this.status.aktuellerJob = null;
@@ -137,6 +152,8 @@ export class RegisterWorker {
       }
     } finally {
       if (portal) await portal.schliessen();
+      const ip = insolvenz as (InsolvenzSchnittstelle & { schliessen(): Promise<void> }) | null;
+      if (ip) await ip.schliessen();
     }
   }
 

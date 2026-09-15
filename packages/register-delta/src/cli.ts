@@ -19,6 +19,7 @@ import fs from "node:fs";
 import os from "node:os";
 import { GatewayClient, type JobArt } from "./gateway-client";
 import { RegisterPortal } from "./portal";
+import { InsolvenzPortal } from "./insolvenz-portal";
 import { RegisterWorker } from "./worker";
 
 function tokenQuelle(): () => Promise<string> {
@@ -54,6 +55,11 @@ async function main() {
     gateway: process.env.INTERNAL_HMAC_SECRET ? new GatewayClient({ baseUrl, hmacSecret: process.env.INTERNAL_HMAC_SECRET }) : new GatewayClient({ baseUrl, token: tokenQuelle() }),
     portal: async () => {
       const p = new RegisterPortal({ chromeBinaryPath: process.env.CHROME_BIN, log });
+      await p.oeffnen();
+      return p;
+    },
+    insolvenz: async () => {
+      const p = new InsolvenzPortal({ chromeBinaryPath: process.env.CHROME_BIN, log });
       await p.oeffnen();
       return p;
     },

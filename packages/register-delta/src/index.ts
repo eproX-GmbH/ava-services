@@ -5,3 +5,5 @@ export * from "./portal";
 export * from "./gateway-client";
 export * from "./jobs";
 export * from "./worker";
+export * from "./insolvenz-parser";
+export * from "./insolvenz-portal";

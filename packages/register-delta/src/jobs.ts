@@ -2,7 +2,8 @@
 // Schnittstellen (Portal, Taktgeber) definiert, damit sie sich mit Attrappen
 // testen laesst (jobs.test.ts).
 
-import type { Ergebnis, Job, TrefferMeldung } from "./gateway-client";
+import type { Ergebnis, InsolvenzMeldung, Job, TrefferMeldung } from "./gateway-client";
+import { bereinigeText, kategorieAusText, type InsolvenzZeile } from "./insolvenz-parser";
 import { parseBekanntmachungen, type Treffer } from "./parser";
 import type { Suchergebnis } from "./portal";
 
@@ -11,11 +12,18 @@ export type PortalSchnittstelle = {
   bekanntmachungenText(): Promise<{ gesperrt: boolean; text: string }>;
 };
 
+export type InsolvenzSchnittstelle = {
+  sucheRegistereintrag(gerichtBestand: string, art: string, nummer: number | string): Promise<{ gesperrt: boolean; fehler: string; zeilen: InsolvenzZeile[] }>;
+  ladeText(index: number): Promise<string>;
+};
+
 export type TaktSchnittstelle = { warten(): Promise<void>; frei(): number };
 
 export type AusfuehrungsOptionen = {
   workerId: string;
   portal: PortalSchnittstelle;
+  /** Insolvenzportal (lazy; nur fuer Jobs der Art insolvenz). */
+  insolvenz?: () => Promise<InsolvenzSchnittstelle>;
   takt: TaktSchnittstelle;
   /** Hoechstzahl Abfragen je Job; muss in die Lease (20 min) passen. */
   maxAbfragenJeJob?: number;
@@ -75,6 +83,7 @@ export function trefferZuMeldung(t: Treffer, gerichtFallback?: string): TrefferM
 type FrontPayload = { gericht: string; art: string; abNummer: number; maxFehltreffer?: number; offeneLuecken?: number[]; zusaetze?: string[] };
 type RefreshPayload = { firmen: Array<{ gericht: string; art: string; nummer: number; zusatz?: string; hinweis?: string }>; grund?: string };
 type BekPayload = { tag: string };
+type InsolvenzPayload = { firmen: Array<{ companyId: string; gericht: string; art: string; nummer: string; zusatz?: string }>; grund?: string };
 
 export async function fuehreJobAus(job: Job, o: AusfuehrungsOptionen): Promise<Ergebnis> {
   const log = o.log ?? (() => {});
@@ -143,6 +152,35 @@ export async function fuehreJobAus(job: Job, o: AusfuehrungsOptionen): Promise<E
       ...basis,
       bekanntmachungen: desTages.map(({ tagIso: _t, kopf: _k, geparst: _g, ...rest }) => rest),
     };
+  }
+
+  if (job.art === "insolvenz") {
+    if (!o.insolvenz) throw new Error("Insolvenzportal nicht verfuegbar");
+    const p = job.payload as unknown as InsolvenzPayload;
+    const portal = await o.insolvenz();
+    const meldungen: InsolvenzMeldung[] = [];
+    const geprueft: string[] = [];
+    for (const f of p.firmen) {
+      if (o.abbrechen?.()) break;
+      if (basis.abfragen >= max) break; // Rest bleibt faellig und kommt mit dem naechsten Cron
+      await o.takt.warten();
+      const r = await portal.sucheRegistereintrag(f.gericht, f.art, f.nummer);
+      basis.abfragen++;
+      if (r.gesperrt) return { ...basis, gesperrt: true, insolvenz: { meldungen, geprueft } };
+      // Nur Zeilen, deren Registereintrag exakt unsere Firma ist (Zusatzvarianten ausschliessen).
+      const passend = r.zeilen.filter((z) => z.registereintrag && z.registereintrag.companyId === f.companyId);
+      for (const z of passend) {
+        if (basis.abfragen >= max + 10) break; // Texte zaehlen mit, kleiner Puffer je Job
+        await o.takt.warten();
+        const html = await portal.ladeText(z.index);
+        basis.abfragen++;
+        const text = bereinigeText(html);
+        meldungen.push({ companyId: f.companyId, aktenzeichen: z.aktenzeichen, insolvenzgericht: z.insolvenzgericht, datum: z.datumIso, gegenstand: kategorieAusText(text || z.name), text });
+      }
+      geprueft.push(f.companyId);
+    }
+    log(`insolvenz (${p.grund ?? "?"}): ${geprueft.length} Firmen geprueft, ${meldungen.length} Veroeffentlichungen, ${basis.abfragen} Abfragen`);
+    return { ...basis, insolvenz: { meldungen, geprueft } };
   }
 
   // refresh

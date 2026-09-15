@@ -432,8 +432,9 @@ export async function verarbeiteErgebnis(pool: pg.Pool, jobId: string, ergebnis:
   }
 
   if (job.art === "insolvenz" && ergebnis.insolvenz) {
-    const p = job.payload as { firmen?: InsolvenzFirma[] };
-    const geprueft = [...new Set([...(p.firmen ?? []).map((f) => f.companyId), ...ergebnis.insolvenz.geprueft])];
+    // Nur die vom Worker tatsaechlich bearbeiteten Firmen gelten als geprueft;
+    // der Rest bleibt faellig und kommt mit dem naechsten Cron.
+    const geprueft = [...new Set(ergebnis.insolvenz.geprueft)];
     const r = await masterData<{ befunde: Array<{ companyId: string; neu: number; status: string }>; neu: number }>("POST", "/internal/companies/insolvency-events", {
       meldungen: ergebnis.insolvenz.meldungen,
       geprueft,

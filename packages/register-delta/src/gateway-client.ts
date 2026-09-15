@@ -3,7 +3,8 @@
 import { createHmac } from "node:crypto";
 import type { Bekanntmachung, Treffer } from "./parser";
 
-export type JobArt = "front" | "bekanntmachungen" | "refresh";
+export type JobArt = "front" | "bekanntmachungen" | "refresh" | "insolvenz";
+export const ALLE_JOB_ARTEN: JobArt[] = ["front", "bekanntmachungen", "refresh", "insolvenz"];
 
 export type Job = {
   id: string;
@@ -31,12 +32,16 @@ export type TrefferMeldung = {
   historie: Array<{ name: string; sitz: string; order: number }>;
 };
 
+export type InsolvenzMeldung = { companyId: string; aktenzeichen: string; insolvenzgericht: string; datum: string; gegenstand: string; text: string };
+
 export type Ergebnis = {
   workerId: string;
   abfragen: number;
   gesperrt?: boolean;
   treffer: TrefferMeldung[];
   front?: { maxNummer: number; offeneLuecken: number[]; zusaetze?: string[] };
+  /** insolvenz: Veroeffentlichungen plus alle in diesem Job geprueften Firmen. */
+  insolvenz?: { meldungen: InsolvenzMeldung[]; geprueft: string[] };
   bekanntmachungen?: Array<Omit<Bekanntmachung, "tagIso" | "kopf" | "geparst">>;
 };
 
@@ -88,7 +93,8 @@ export class GatewayClient {
   }
 
   async lease(workerId: string, workerArt: "desktop" | "betreiber", arten?: JobArt[]): Promise<Job | null> {
-    const r = await this.call<Job>("POST", `${this.praefix}/register-jobs/lease`, { workerId, workerArt, arten });
+    // Arten immer ausdruecklich melden: das Gateway gibt insolvenz-Jobs nur an Worker, die sie kennen.
+    const r = await this.call<Job>("POST", `${this.praefix}/register-jobs/lease`, { workerId, workerArt, arten: arten ?? ALLE_JOB_ARTEN });
     return r.data;
   }
 
