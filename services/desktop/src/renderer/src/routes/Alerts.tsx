@@ -40,6 +40,7 @@ const KIND_LABEL: Record<AlertKind, string> = {
   "radar-match": "Radar-Treffer",
   workflow: "Workflow",
   "import-finished": "Vorgang abgeschlossen",
+  status: "Firmenstatus",
 };
 
 const SEVERITY_LABEL: Record<AlertSeverity, string> = {

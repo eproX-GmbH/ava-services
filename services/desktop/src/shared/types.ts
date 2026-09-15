@@ -1110,7 +1110,8 @@ export type AlertKind =
   | "link-change"      // LM: überwachter Link hat sich geändert
   | "radar-match"      // Phase 4 Discovery: neuer heißer ICP-Kandidat im Radar
   | "workflow"         // W4: Workflow-Lauf beendet / Freigabe offen
-  | "import-finished"; // v0.1.593: Vorgang fuer alle Firmen durchgelaufen (mit Fehleruebersicht)
+  | "import-finished" // v0.1.593: Vorgang fuer alle Firmen durchgelaufen (mit Fehleruebersicht)
+  | "status";          // Firmenstatus: Insolvenz, Loeschung, Loeschungsankuendigung, Liquidation
 
 export interface Alert {
   id: string;
@@ -2875,6 +2876,13 @@ export interface TelegramSnapshot {
   encryptionAvailable: boolean;
   /** Anzahl noch nicht zugestellter Meldungen in der Outbox. */
   pendingCount: number;
+  /** Letzte Zustellung, letzte Unterdrückung mit Grund, letzter Fehler. */
+  zustand?: {
+    letzteZustellungAt: string | null;
+    letzteZustellungText: string | null;
+    letzteUnterdrueckung: { at: string; grund: string; headline: string } | null;
+    letzterFehler: { at: string; text: string } | null;
+  };
 }
 
 export interface LinkMonitorSnapshot {

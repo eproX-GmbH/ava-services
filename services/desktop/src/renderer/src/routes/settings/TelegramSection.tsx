@@ -172,6 +172,18 @@ export function TelegramSection(): JSX.Element {
               </span>
             )}
           </div>
+          {snap.zustand && (
+            <p className="muted small">
+              {snap.zustand.letzteZustellungAt
+                ? `Zuletzt zugestellt ${new Date(snap.zustand.letzteZustellungAt).toLocaleString("de-DE", { dateStyle: "short", timeStyle: "short" })}: ${snap.zustand.letzteZustellungText ?? ""}. `
+                : "Seit dem App-Start noch nichts zugestellt. "}
+              {snap.zustand.letzteUnterdrueckung
+                ? `Zuletzt zurückgehalten ${new Date(snap.zustand.letzteUnterdrueckung.at).toLocaleString("de-DE", { dateStyle: "short", timeStyle: "short" })} (${snap.zustand.letzteUnterdrueckung.grund}): ${snap.zustand.letzteUnterdrueckung.headline}. `
+                : ""}
+              {snap.zustand.letzterFehler ? `Letzter Fehler: ${snap.zustand.letzterFehler.text}. ` : ""}
+              Dringende Meldungen (Insolvenz, Löschung) gehen immer raus, auch in Ruhezeiten.
+            </p>
+          )}
 
           {!cfg.chatId && (
             <p className="muted">

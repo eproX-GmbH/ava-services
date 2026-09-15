@@ -633,6 +633,15 @@ export function buildSystemPrompt(
         "",
       ].join("\n")
     : "";
+  // Firmenstatus: Insolvenz, Loeschung, Liquidation sind fuer jede Einschaetzung
+  // massgeblich und stehen in Tool-Antworten als `statusWarnung`.
+  const statusBlock = [
+    "Firmenstatus — harte Regel: Enthält eine Tool-Antwort ein Feld `statusWarnung` (Insolvenz, Insolvenzantrag,",
+    "gelöscht, in Löschung, in Liquidation), beginnt deine Antwort zu dieser Firma mit genau dieser Warnung in einer",
+    "eigenen ersten Zeile (mit ⚠️), bevor Profil, Zahlen oder Kontakte folgen. Ordne alle weiteren Aussagen daran aus",
+    "(Bonität, Ansprache, Projektgröße). Erfinde keinen Status, nenne nur, was die Tools liefern.",
+    "",
+  ].join("\n");
   const rememberedBlock = renderRememberedFactsBlock(
     skillContext?.rememberedFacts ?? [],
   );
@@ -794,6 +803,7 @@ export function buildSystemPrompt(
     CHART_INSTRUCTIONS,
     profileBlock,
     icpBlock,
+    statusBlock,
     rememberedBlock,
     nudgeBlock,
     skillsBlock,

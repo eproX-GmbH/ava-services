@@ -4,6 +4,7 @@ import type { GatewayClient } from "../gateway-client";
 import type { Tool } from "../types";
 import { getDb as getLinkedInDb, signalsForCompany } from "../../linkedin/db";
 import { read as readLinkedInSettings } from "../../linkedin/store";
+import { statusWarnungText } from "../../firmen-status";
 
 // Read-only company tools (Phase 8.b).
 //
@@ -59,12 +60,18 @@ export function buildCompanyTools(ctx: Ctx): Tool[] {
         query: { q: args.q, limit: args.limit },
         signal: c.signal,
       });
-      return { items: data.items ?? [], total: data.total ?? 0 };
+      // Statuswarnung je Treffer (Insolvenz, Loeschung, Liquidation) an erster Stelle.
+      const items = (data.items ?? []).map((it) => {
+        const w = statusWarnungText(it as never);
+        return w ? { statusWarnung: w, ...it } : it;
+      });
+      const mitWarnung = items.filter((it) => (it as { statusWarnung?: string }).statusWarnung).length;
+      return { items, total: data.total ?? 0, ...(mitWarnung > 0 ? { hinweis: `${mitWarnung} Treffer mit Statuswarnung (statusWarnung): dem Nutzer ausdruecklich nennen.` } : {}) };
     },
     preview: (r) =>
       r.total === 0
         ? "no matches"
-        : `${r.total} match${r.total === 1 ? "" : "es"}`,
+        : `${r.total} match${r.total === 1 ? "" : "es"}${(r as { hinweis?: string }).hinweis ? ", mit Statuswarnung" : ""}`,
   });
 
   const get = defineTool({
@@ -77,17 +84,22 @@ export function buildCompanyTools(ctx: Ctx): Tool[] {
       required: ["companyId"],
     },
     schema: yup.object({ companyId: yup.string().trim().min(1).required() }),
-    run: async (args, c) =>
-      gateway.request<Record<string, unknown>>(
+    run: async (args, c) => {
+      const r = await gateway.request<Record<string, unknown>>(
         `/v1/companies/${encodeURIComponent(args.companyId)}`,
         { signal: c.signal },
-      ),
+      );
+      // Status zuerst: Insolvenz, Loeschung, Liquidation muessen den Kontext dominieren.
+      const warnung = statusWarnungText(r as never);
+      return warnung ? { statusWarnung: warnung, ...r } : r;
+    },
     preview: (r) => {
       const name = pickFirst(
         (r as { name?: string }).name,
         (r as { legalName?: string }).legalName,
       );
-      return name ? `company: ${name}` : "company record";
+      const w = (r as { statusWarnung?: string }).statusWarnung;
+      return `${name ? `company: ${name}` : "company record"}${w ? ` — ${w.slice(0, 60)}` : ""}`;
     },
   });
 

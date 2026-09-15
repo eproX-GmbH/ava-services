@@ -235,6 +235,7 @@ import { WatchlistStore, watchlistLimitsForTier } from "./linkedin/watchlist/sto
 import { buildApifyProvider } from "./linkedin/watchlist/providers/apify";
 import { WorkflowService } from "./workflows";
 import { TransactionWatcher } from "./transaction-watcher";
+import { StatusWatcher } from "./status-watcher";
 import type { WorkflowProgressFrame } from "../shared/workflow-types";
 import { WatchlistSupervisor } from "./linkedin/watchlist/supervisor";
 import { PersonenRadarStore } from "./linkedin/personen-radar/store";
@@ -1098,6 +1099,11 @@ const publicationStore = new PublicationStore();
 const telegramChannel = new TelegramChannel({
   store: telegramStore,
   inQuietHours: () => notifications.isInQuietHours(),
+  onDisabled: (grund) => {
+    // Nutzer muss es sehen: sonst bleibt Telegram still, waehrend die Testnachricht weiter geht.
+    const a = alerts.add({ tenantId: null, companyId: "", companyName: "Telegram", kind: "reminder", severity: "warn", headline: "Telegram-Zustellung abgeschaltet", rationale: `Telegram hat eine Meldung endgültig abgelehnt (${grund}). Der Kanal wurde abgeschaltet. Prüfe Bot-Token und Chat in den Einstellungen und schalte ihn wieder ein.`, sourceRef: `telegram:disabled:${Date.now()}` });
+    if (a) broadcastAlertsChanged();
+  },
   onAudit: ({ severity, summary, metadata }) => {
     audit({
       actorType: "system",
@@ -3134,7 +3140,27 @@ app.whenReady().then(async () => {
   // W4 — Workflow-Trigger alert.created.
   alerts.onCreated = (a) => {
     void workflowService?.emitEvent("alert.created", { alertId: a.id, kind: a.kind, severity: a.severity, headline: a.headline, companyId: a.companyId, companyName: a.companyName });
+    // Zentraler Fan-out: jede Meldung erreicht OS-Push und Telegram, auch wenn
+    // der Ersteller (z. B. Watches) nicht selbst benachrichtigt. Idempotent.
+    broadcastAlertsChanged();
+    notifications.notifyForAlert(a);
   };
+  // Firmenstatus-Waechter: Insolvenz, Loeschung, Loeschungsankuendigung, Liquidation bei "Meine Firmen".
+  const statusWatcher = new StatusWatcher({
+    gatewayRequest: (path) => gatewayClient.request(path),
+    isSignedIn: () => auth.getStatus().signedIn,
+    tenantId: () => auth.getStatus().tenantId ?? null,
+    addAlert: (input) => alerts.add({ tenantId: auth.getStatus().tenantId ?? null, ...input }),
+    notify: (a) => {
+      broadcastAlertsChanged();
+      notifications.notifyForAlert(a);
+    },
+    audit: (entry) =>
+      audit({ actorType: "system", actorId: null, category: "watch", action: "status.check", severity: entry.severity, subjectType: "company", subjectId: null, summary: entry.summary, metadata: entry.metadata }),
+  });
+  statusWatcher.start();
+  app.on("before-quit", () => quitStep("statusWatcher.stop", () => statusWatcher.stop()));
+  ipcMain.handle("status:pruefen", () => statusWatcher.pruefeJetzt());
   app.on("before-quit", () => quitStep("radarSupervisor.stop", () => radarSupervisor?.stop()));
 
   app.on("before-quit", () => {
@@ -6152,6 +6178,7 @@ app.whenReady().then(async () => {
     hasToken: telegramStore.hasToken(),
     encryptionAvailable: telegramStore.isEncryptionAvailable(),
     pendingCount: telegramChannel.pendingCount(),
+    zustand: telegramChannel.zustand(),
   });
   ipcMain.handle("telegram:snapshot", async (): Promise<TelegramSnapshot> => {
     return telegramSnapshot();

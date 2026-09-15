@@ -59,6 +59,15 @@ export interface TelegramChannelDeps {
   }) => void;
   /** Wird gerufen, wenn sich die Anzahl offener Meldungen ändert (UI). */
   onPendingChanged?: (pending: number) => void;
+  /** Kanal wurde nach endgültigem Fehler abgeschaltet (Nutzer informieren). */
+  onDisabled?: (grund: string) => void;
+}
+
+export interface TelegramKanalZustand {
+  letzteZustellungAt: string | null;
+  letzteZustellungText: string | null;
+  letzteUnterdrueckung: { at: string; grund: string; headline: string } | null;
+  letzterFehler: { at: string; text: string } | null;
 }
 
 export class TelegramChannel {
@@ -66,6 +75,8 @@ export class TelegramChannel {
   private readonly inQuietHours: () => boolean;
   private readonly onAudit?: TelegramChannelDeps["onAudit"];
   private readonly onPendingChanged?: TelegramChannelDeps["onPendingChanged"];
+  private readonly onDisabled?: TelegramChannelDeps["onDisabled"];
+  private zustandIntern: TelegramKanalZustand = { letzteZustellungAt: null, letzteZustellungText: null, letzteUnterdrueckung: null, letzterFehler: null };
 
   private queue: QueueItem[] = [];
   private flushTimer: NodeJS.Timeout | null = null;
@@ -77,6 +88,12 @@ export class TelegramChannel {
     this.inQuietHours = deps.inQuietHours;
     this.onAudit = deps.onAudit;
     this.onPendingChanged = deps.onPendingChanged;
+    this.onDisabled = deps.onDisabled;
+  }
+
+  /** Letzte Zustellung, letzte Unterdrückung (mit Grund), letzter Fehler — für die Einstellungen. */
+  zustand(): TelegramKanalZustand {
+    return { ...this.zustandIntern };
   }
 
   pendingCount(): number {
@@ -101,6 +118,11 @@ export class TelegramChannel {
     const reason = this.shouldSuppress(alert);
     if (reason) {
       console.log(`[telegram] skipped (${reason}) for ${alert.id}`);
+      this.zustandIntern.letzteUnterdrueckung = { at: new Date().toISOString(), grund: reason, headline: alert.headline };
+      // Unterdrückungen ab "warn" ins Audit, damit "warum kam nichts an?" beantwortbar ist.
+      if (alert.severity !== "info") {
+        this.onAudit?.({ severity: "info", summary: `Telegram-Meldung unterdrückt (${reason}): ${alert.headline}`, metadata: { alertId: alert.id, reason, severity: alert.severity } });
+      }
       return false;
     }
     if (this.queue.length >= MAX_QUEUE) {
@@ -127,14 +149,17 @@ export class TelegramChannel {
 
   private shouldSuppress(alert: Alert): string | null {
     const cfg = this.store.getConfig();
-    if (!cfg.enabled) return "channel disabled";
-    if (!cfg.chatId) return "no chat id";
+    if (!cfg.enabled) return "Kanal abgeschaltet";
+    if (!cfg.chatId) return "keine Chat-ID";
+    // "urgent" (Insolvenz, Löschung, harte Signale) geht immer raus: weder
+    // Schwelle noch Ruhezeit halten es zurück.
+    if (alert.severity === "urgent") return null;
     if (
       SEVERITY_RANK[alert.severity] < SEVERITY_RANK[cfg.severityThreshold]
     ) {
-      return `below threshold (${alert.severity} < ${cfg.severityThreshold})`;
+      return `unter Schwelle (${alert.severity} < ${cfg.severityThreshold})`;
     }
-    if (cfg.respectQuietHours && this.inQuietHours()) return "quiet hours";
+    if (cfg.respectQuietHours && this.inQuietHours()) return "Ruhezeit";
     return null;
   }
 
@@ -182,6 +207,8 @@ export class TelegramChannel {
           await sendMessage(token, cfg.chatId, text, {
             silent: batch.every((b) => b.alert.severity === "info"),
           });
+          this.zustandIntern.letzteZustellungAt = new Date().toISOString();
+          this.zustandIntern.letzteZustellungText = batch.length === 1 ? first.alert.headline : `${batch.length} Meldungen gebündelt`;
           this.onAudit?.({
             severity: "info",
             summary:
@@ -194,10 +221,12 @@ export class TelegramChannel {
           const msg =
             err instanceof Error ? redactToken(err.message) : String(err);
           const status = (err as { status?: number }).status;
+          this.zustandIntern.letzterFehler = { at: new Date().toISOString(), text: msg };
           // Endgültige Fehler (Token ungültig, Chat gesperrt) → nicht erneut
           // versuchen, sonst laufen wir gegen eine Wand.
           const terminal = status === 401 || status === 403 || status === 400;
           if (terminal) {
+            this.onDisabled?.(msg);
             console.warn(`[telegram] terminal delivery error: ${msg}`);
             this.onAudit?.({
               severity: "error",

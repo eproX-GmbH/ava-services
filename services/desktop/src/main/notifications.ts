@@ -95,7 +95,16 @@ export class NotificationManager {
    * Decide + show. Returns true iff a toast was actually displayed,
    * false otherwise (with the reason logged in dev console).
    */
+  /** Bereits bediente Alert-Ids: der Fan-out darf von mehreren Stellen kommen (Ersteller, alerts.onCreated). */
+  private readonly bedient = new Set<string>();
+
   notifyForAlert(alert: Alert): boolean {
+    if (this.bedient.has(alert.id)) return false;
+    this.bedient.add(alert.id);
+    if (this.bedient.size > 2000) {
+      const erste = this.bedient.values().next().value;
+      if (erste) this.bedient.delete(erste);
+    }
     // v0.1.412 — Zusatzkanäle ZUERST und unabhängig vom OS-Push-Gate
     // bedienen: Telegram soll auch dann zustellen, wenn Desktop-Toasts
     // aus sind oder das OS keine Benachrichtigungen kann. Jeder Kanal
@@ -152,7 +161,8 @@ export class NotificationManager {
     ) {
       return `below threshold (${alert.severity} < ${prefs.pushSeverityThreshold})`;
     }
-    if (this.inQuietHours()) return "quiet hours";
+    // Insolvenz, Löschung und andere harte Signale auch nachts und am Wochenende.
+    if (alert.severity !== "urgent" && this.inQuietHours()) return "quiet hours";
     return null;
   }
 
