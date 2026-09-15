@@ -24,11 +24,16 @@ export const CompanyIdParam = z.object({
 export const PaginationQuery = z.object({
   page: z.coerce.number().int().min(1).default(1),
   pageSize: z.coerce.number().int().min(1).max(200).default(25),
+  country: z.enum(["DE", "AT", "CH", "UK"]).optional(),
 });
+
+export const CountryQuery = z.enum(["DE", "AT", "CH", "UK"]).optional();
 
 export const SearchQuery = z.object({
   q: z.string().min(1).max(200),
   limit: z.coerce.number().int().min(1).max(100).default(20),
+  /** Laenderfilter; fehlt = alle. */
+  country: CountryQuery,
 });
 
 // ---- Companies (master-data) -----------------------------------------------

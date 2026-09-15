@@ -69,9 +69,9 @@ const searchRoute = createRoute({
 });
 
 companiesRouter.openapi(searchRoute, async (c) => {
-  const { q, limit } = c.req.valid("query");
+  const { q, limit, country } = c.req.valid("query");
   const upstream = await callUpstream<unknown>(c, "masterData", "/api/germany/v1/companies/fuzzy/search", {
-    query: { q, limit },
+    query: { q, limit, ...(country ? { country } : {}) },
   });
   // master-data canonical shape is `{ count, germanCompanies }` (see
   // master-data/src/application/germany/companies/queries/fuzzy-search-companies).
@@ -107,7 +107,7 @@ const listRoute = createRoute({
 });
 
 companiesRouter.openapi(listRoute, async (c) => {
-  const { page, pageSize } = c.req.valid("query");
+  const { page, pageSize, country } = c.req.valid("query");
   // master-data list is POST /api/germany/v1/companies with pagination in query.
   // Canonical response shape is `{count, pageNumber, pageSize, germanCompanies}`
   // (see master-data list-companies query). Tolerate `items`/`total` as a
@@ -116,7 +116,7 @@ companiesRouter.openapi(listRoute, async (c) => {
     c,
     "masterData",
     "/api/germany/v1/companies",
-    { method: "POST", query: { pageNumber: page, pageSize }, body: {} },
+    { method: "POST", query: { pageNumber: page, pageSize }, body: country ? { country } : {} },
   );
   const u = upstream as
     | { germanCompanies?: unknown[]; items?: unknown[]; count?: number; total?: number }

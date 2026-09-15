@@ -1,4 +1,4 @@
-import { InsolvenzBadge, LandBadge, RegisterStatusBadge, registerKennung } from "../components/RegisterStatusBadge";
+import { InsolvenzBadge, LandBadge, LandFilter, RegisterStatusBadge, registerKennung } from "../components/RegisterStatusBadge";
 import { useState, useDeferredValue } from "react";
 import { useQuery, keepPreviousData } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
@@ -39,25 +39,26 @@ interface Page<T> {
 
 export function Companies() {
   const [q, setQ] = useState("");
+  const [land, setLand] = useState("");
   const [page, setPage] = useState(1);
   const pageSize = 25;
   const deferredQ = useDeferredValue(q);
 
   const search = useQuery({
-    queryKey: ["companies", "search", deferredQ],
+    queryKey: ["companies", "search", deferredQ, land],
     queryFn: () =>
       gatewayFetch<SearchResult<Company>>("/v1/companies/search", {
-        query: { q: deferredQ, limit: 25 },
+        query: { q: deferredQ, limit: 25, ...(land ? { country: land } : {}) },
       }),
     enabled: deferredQ.trim().length >= 2,
     placeholderData: keepPreviousData,
   });
 
   const list = useQuery({
-    queryKey: ["companies", "list", page, pageSize],
+    queryKey: ["companies", "list", page, pageSize, land],
     queryFn: () =>
       gatewayFetch<Page<Company>>("/v1/companies", {
-        query: { page, pageSize },
+        query: { page, pageSize, ...(land ? { country: land } : {}) },
       }),
     enabled: deferredQ.trim().length < 2,
     placeholderData: keepPreviousData,
@@ -91,6 +92,13 @@ export function Companies() {
             setPage(1);
           }}
           className="search"
+        />
+        <LandFilter
+          value={land}
+          onChange={(code) => {
+            setLand(code);
+            setPage(1);
+          }}
         />
       </div>
 

@@ -1,6 +1,6 @@
 {
   "name": "@ava/desktop",
-  "version": "0.1.661",
+  "version": "0.1.662",
   "private": true,
   "description": "AVA Electron desktop app",
   "author": {

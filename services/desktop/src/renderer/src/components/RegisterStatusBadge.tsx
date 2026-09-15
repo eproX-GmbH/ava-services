@@ -66,6 +66,7 @@ const LAND_TEXT: Record<string, { kurz: string; lang: string; register: string }
   DE: { kurz: "DE", lang: "Deutschland", register: "Handelsregister" },
   AT: { kurz: "AT", lang: "Österreich", register: "Firmenbuch" },
   CH: { kurz: "CH", lang: "Schweiz", register: "Handelsregister" },
+  UK: { kurz: "UK", lang: "Vereinigtes Königreich", register: "Companies House" },
 };
 
 export function LandBadge({ country }: { country: string | null | undefined }) {
@@ -85,11 +86,32 @@ export function registerKennung(c: { country?: string | null; registerType?: str
   if (!nr) return null;
   const art = (c.registerType ?? "").trim();
   if (c.country === "CH") return nr;
-  return art ? `${art} ${nr}` : nr;
+  return art ? `${art} ${nr}` : nr; // UK: "CRN 00077570" (Company Registration Number)
 }
 
 /** Registerzeile fuer Details: Kennung, Gericht, Rechtsform. */
 export function registerZeile(c: { country?: string | null; registerType?: string | null; registerNumber?: string | null; districtCourt?: string | null; legalForm?: string | null }): string | null {
   const teile = [registerKennung(c), (c.districtCourt ?? "").trim() || null, (c.legalForm ?? "").trim() || null].filter((t): t is string => Boolean(t));
   return teile.length > 0 ? teile.join(" · ") : null;
+}
+
+export const LAENDER: Array<{ code: string; name: string }> = [
+  { code: "DE", name: "Deutschland" },
+  { code: "AT", name: "Österreich" },
+  { code: "CH", name: "Schweiz" },
+  { code: "UK", name: "Vereinigtes Königreich" },
+];
+
+/** Auswahl fuer Listen und Suche; leer = alle Laender. */
+export function LandFilter({ value, onChange, id }: { value: string; onChange: (code: string) => void; id?: string }) {
+  return (
+    <select id={id} value={value} onChange={(e) => onChange(e.target.value)} aria-label="Land" className="land-filter" title="Nach Land filtern">
+      <option value="">Alle Länder</option>
+      {LAENDER.map((l) => (
+        <option key={l.code} value={l.code}>
+          {l.name}
+        </option>
+      ))}
+    </select>
+  );
 }

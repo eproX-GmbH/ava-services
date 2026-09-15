@@ -1,4 +1,4 @@
-import { InsolvenzBadge, LandBadge, RegisterStatusBadge, registerKennung } from "../components/RegisterStatusBadge";
+import { InsolvenzBadge, LandBadge, LandFilter, RegisterStatusBadge, registerKennung } from "../components/RegisterStatusBadge";
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -148,6 +148,7 @@ export function AllCompanies() {
   const [page, setPage] = useState(1);
   const [searchInput, setSearchInput] = useState("");
   const [search, setSearch] = useState("");
+  const [land, setLand] = useState("");
   // v0.1.337 — drill-down panel. Clicking a row opens a side panel with
   // the per-company processing log (pipeline timeline + per-stage errors +
   // live producer diagnostics), mirroring the Vorgänge detail view. The
@@ -167,12 +168,13 @@ export function AllCompanies() {
   }, [searchInput]);
 
   const matrix = useQuery<CompaniesMatrixResponse>({
-    queryKey: ["companies-matrix", page, search],
+    queryKey: ["companies-matrix", page, search, land],
     queryFn: () => {
       const qs = new URLSearchParams({
         pageNumber: String(page),
         pageSize: String(PAGE_SIZE),
         ...(search ? { search } : {}),
+        ...(land ? { country: land } : {}),
       });
       return gatewayFetch<CompaniesMatrixResponse>(
         `/v1/companies/matrix?${qs.toString()}`,
@@ -323,6 +325,13 @@ export function AllCompanies() {
             aria-label="Nach Firmenname suchen"
           />
         </div>
+        <LandFilter
+          value={land}
+          onChange={(code) => {
+            setLand(code);
+            setPage(1);
+          }}
+        />
         {matrix.data && (
           <span className="ct-pill all-companies__count">
             {matrix.data.count.toLocaleString("de-DE")} Firmen

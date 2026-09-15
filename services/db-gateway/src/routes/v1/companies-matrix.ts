@@ -84,6 +84,8 @@ const CompaniesMatrixQuery = z.object({
   pageNumber: z.coerce.number().int().min(1).default(1),
   pageSize: z.coerce.number().int().min(1).max(200).default(50),
   search: z.string().min(1).max(200).optional(),
+  /** Laenderfilter DE | AT | CH | UK; fehlt = alle. */
+  country: z.enum(["DE", "AT", "CH", "UK"]).optional(),
 });
 
 interface UpstreamCompany {
@@ -128,7 +130,7 @@ companiesMatrixRouter.openapi(matrixRoute, async (c) => {
   if (!auth?.tenantId) {
     throw new HTTPException(401, { message: "auth_context_missing" });
   }
-  const { pageNumber, pageSize, search } = c.req.valid("query");
+  const { pageNumber, pageSize, search, country } = c.req.valid("query");
 
   // ---- 1. master-data: page of {companyId, name, location, lastSeenAt} ----
   const upstream = await callUpstream<UpstreamPage>(c, "masterData", "/api/v1/tenants/me/companies", {
@@ -136,6 +138,7 @@ companiesMatrixRouter.openapi(matrixRoute, async (c) => {
       pageNumber,
       pageSize,
       ...(search ? { search } : {}),
+      ...(country ? { country } : {}),
     },
   });
   const companyIds = upstream.companies.map((c) => c.companyId);
