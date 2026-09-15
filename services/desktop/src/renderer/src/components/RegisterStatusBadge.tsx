@@ -58,3 +58,36 @@ export function InsolvenzBadge({ status, seit }: { status: string | null | undef
     </span>
   );
 }
+
+// Laenderspalten (docs/PLAN_OESTERREICH.md): Land und amtliche Registerkennung.
+// Deutschland ist der Normalfall und bekommt keinen Chip; Oesterreich und die
+// Schweiz werden markiert, weil Register, Nummernsystem und Quellen abweichen.
+const LAND_TEXT: Record<string, { kurz: string; lang: string; register: string }> = {
+  AT: { kurz: "AT", lang: "Österreich", register: "Firmenbuch" },
+  CH: { kurz: "CH", lang: "Schweiz", register: "Handelsregister" },
+};
+
+export function LandBadge({ country }: { country: string | null | undefined }) {
+  const l = country ? LAND_TEXT[country] : undefined;
+  if (!l) return null;
+  return (
+    <span className="badge" title={`${l.lang} (${l.register})`} style={{ marginLeft: "0.4rem", verticalAlign: "middle" }}>
+      {l.kurz}
+    </span>
+  );
+}
+
+/** "HRB 17968" (DE), "FN 56247t" (AT), "CHE-101.602.521" (CH); null ohne Nummer. */
+export function registerKennung(c: { country?: string | null; registerType?: string | null; registerNumber?: string | null }): string | null {
+  const nr = (c.registerNumber ?? "").trim();
+  if (!nr) return null;
+  const art = (c.registerType ?? "").trim();
+  if (c.country === "CH") return nr;
+  return art ? `${art} ${nr}` : nr;
+}
+
+/** Registerzeile fuer Details: Kennung, Gericht, Rechtsform. */
+export function registerZeile(c: { country?: string | null; registerType?: string | null; registerNumber?: string | null; districtCourt?: string | null; legalForm?: string | null }): string | null {
+  const teile = [registerKennung(c), (c.districtCourt ?? "").trim() || null, (c.legalForm ?? "").trim() || null].filter((t): t is string => Boolean(t));
+  return teile.length > 0 ? teile.join(" · ") : null;
+}

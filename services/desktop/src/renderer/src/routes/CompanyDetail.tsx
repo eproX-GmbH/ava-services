@@ -1,4 +1,4 @@
-import { InsolvenzBadge, RegisterStatusBadge } from "../components/RegisterStatusBadge";
+import { InsolvenzBadge, LandBadge, RegisterStatusBadge, registerKennung, registerZeile } from "../components/RegisterStatusBadge";
 import { InsolvenzAbschnitt } from "../components/InsolvenzAbschnitt";
 import { useEffect, useState } from "react";
 import { useFeature } from "../store/policy";
@@ -384,7 +384,22 @@ export function CompanyDetail() {
   const summary = useQuery({
     queryKey: ["company", id],
     queryFn: () =>
-      gatewayFetch<{ id: string; name?: string; city?: string; registerStatus?: string | null; closedAt?: string | null; formerCourt?: string | null; insolvencyStatus?: string | null; insolvencyAt?: string | null }>(
+      gatewayFetch<{
+        id: string;
+        name?: string;
+        city?: string;
+        registerStatus?: string | null;
+        closedAt?: string | null;
+        formerCourt?: string | null;
+        insolvencyStatus?: string | null;
+        insolvencyAt?: string | null;
+        country?: string | null;
+        registerType?: string | null;
+        registerNumber?: string | null;
+        districtCourt?: string | null;
+        legalForm?: string | null;
+        uid?: string | null;
+      }>(
         `/v1/companies/${id}`,
       ),
     enabled: !!id,
@@ -423,9 +438,23 @@ export function CompanyDetail() {
       <header className="company-hero">
         <h2 style={{ marginBottom: "0.25rem" }}>
           {structured.data?.name ?? summary.data?.name ?? "Firma"}
+          <LandBadge country={summary.data?.country} />
           <RegisterStatusBadge status={summary.data?.registerStatus} closedAt={summary.data?.closedAt} />
           <InsolvenzBadge status={summary.data?.insolvencyStatus} seit={summary.data?.insolvencyAt} />
         </h2>
+        {summary.data && registerZeile(summary.data) && (
+          <p className="muted small" style={{ marginTop: 0 }}>
+            {registerZeile(summary.data)}
+            {summary.data.country === "AT" && (
+              <>
+                {" · "}
+                <a href="https://justizonline.gv.at/jop/web/firmenbuchabfrage" target="_blank" rel="noreferrer" title="Vollauszug kostenpflichtig bei JustizOnline">
+                  Firmenbuchauszug ↗
+                </a>
+              </>
+            )}
+          </p>
+        )}
 
         {/* Unter dem Namen primär die Keywords als Chips. Nur wenn KEINE
             Keywords vorhanden sind, fällt der Hero auf den Geschäftszweck
@@ -452,6 +481,11 @@ export function CompanyDetail() {
               parts={[structured.data?.zipCode, structured.data?.city]}
             />
           </KpiTile>
+          {registerKennung(summary.data ?? {}) && (
+            <KpiTile label={summary.data?.country === "AT" ? "Firmenbuch" : summary.data?.country === "CH" ? "Handelsregister CH" : "Handelsregister"}>
+              {registerKennung(summary.data ?? {})}
+            </KpiTile>
+          )}
           {structured.data?.foundingYear && (
             <KpiTile label="Gegründet">
               {String(structured.data.foundingYear)}

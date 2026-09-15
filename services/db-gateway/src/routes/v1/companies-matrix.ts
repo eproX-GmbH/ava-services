@@ -62,6 +62,10 @@ const CompanyMatrixRowShape = z
     /** Register-Delta: ACTIVE | CLOSED | LOESCHUNG_ANGEKUENDIGT (Chip in der App). */
     registerStatus: z.string().optional(),
     insolvencyStatus: z.string().optional(),
+    /** DE | AT | CH und amtliche Kennung (HRB 1234, FN 56247t). */
+    country: z.string().optional(),
+    registerType: z.string().optional(),
+    registerNumber: z.string().optional(),
     /** Per-producer latest state. Keys match PRODUCER_NAMES. */
     stages: z.record(z.string(), StageStateShape),
   })
@@ -89,6 +93,9 @@ interface UpstreamCompany {
   lastSeenAt: string;
   registerStatus?: string;
   insolvencyStatus?: string;
+  country?: string;
+  registerType?: string;
+  registerNumber?: string;
 }
 interface UpstreamPage {
   pageNumber: number;
@@ -370,6 +377,9 @@ companiesMatrixRouter.openapi(matrixRoute, async (c) => {
       lastSeenAt: co.lastSeenAt,
       registerStatus: co.registerStatus ?? "ACTIVE",
       insolvencyStatus: co.insolvencyStatus ?? "NONE",
+      country: co.country ?? "DE",
+      registerType: co.registerType,
+      registerNumber: co.registerNumber,
       stages,
     };
   });

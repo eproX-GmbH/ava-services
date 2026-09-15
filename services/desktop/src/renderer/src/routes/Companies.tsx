@@ -1,4 +1,4 @@
-import { InsolvenzBadge, RegisterStatusBadge } from "../components/RegisterStatusBadge";
+import { InsolvenzBadge, LandBadge, RegisterStatusBadge, registerKennung } from "../components/RegisterStatusBadge";
 import { useState, useDeferredValue } from "react";
 import { useQuery, keepPreviousData } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
@@ -22,6 +22,9 @@ interface Company {
   location?: string | null;
   registerStatus?: string | null;
   insolvencyStatus?: string | null;
+  country?: string | null;
+  registerType?: string | null;
+  registerNumber?: string | null;
 }
 interface SearchResult<T> {
   items: T[];
@@ -104,6 +107,7 @@ export function Companies() {
             <tr>
               <th>Name</th>
               <th>Stadt</th>
+              <th>Register</th>
               <th>ID</th>
             </tr>
           </thead>
@@ -114,10 +118,12 @@ export function Companies() {
                   <Link to={`/companies/${c.companyId}`}>
                     {c.name ?? "(ohne Namen)"}
                   </Link>
+                  <LandBadge country={c.country} />
                   <RegisterStatusBadge status={c.registerStatus} />
                   <InsolvenzBadge status={c.insolvencyStatus} />
                 </td>
                 <td>{c.location ?? <span className="muted"></span>}</td>
+                <td className="muted small">{registerKennung(c) ?? ""}</td>
                 <td>
                   <code>{c.companyId.slice(0, 12)}…</code>
                 </td>

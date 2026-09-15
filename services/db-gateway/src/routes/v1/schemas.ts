@@ -50,6 +50,10 @@ export const CompanyShape = z
     /** Insolvenz-Delta: NONE | VERDACHT | SICHERUNG | EROEFFNET | ABGEWIESEN | AUFGEHOBEN. */
     insolvencyStatus: z.string().nullable().optional(),
     insolvencyAt: z.string().nullable().optional(),
+    /** Laenderspalten: DE | AT | CH (Firmenbuch AT: registerType FN). */
+    country: z.string().nullable().optional(),
+    legalForm: z.string().nullable().optional(),
+    uid: z.string().nullable().optional(),
   })
   .openapi("Company");
 

@@ -1,4 +1,4 @@
-import { InsolvenzBadge, RegisterStatusBadge } from "../components/RegisterStatusBadge";
+import { InsolvenzBadge, LandBadge, RegisterStatusBadge } from "../components/RegisterStatusBadge";
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate, useParams } from "react-router-dom";
@@ -184,6 +184,7 @@ export function TransactionDetail() {
       const map = new Map<string, string>();
       const status = new Map<string, string>();
       const insolvenz = new Map<string, string>();
+      const land = new Map<string, string>();
       await Promise.all(
         companyIds.map(async (cid) => {
           try {
@@ -192,17 +193,19 @@ export function TransactionDetail() {
               companyName?: string | null;
               registerStatus?: string | null;
               insolvencyStatus?: string | null;
+              country?: string | null;
             }>(`/v1/companies/${encodeURIComponent(cid)}`);
             const n = data.name ?? data.companyName;
             if (n && n.trim().length > 0) map.set(cid, n.trim());
             if (data.registerStatus) status.set(cid, data.registerStatus);
             if (data.insolvencyStatus) insolvenz.set(cid, data.insolvencyStatus);
+            if (data.country) land.set(cid, data.country);
           } catch {
             // Leave the entry missing; nameFor falls back to the id.
           }
         }),
       );
-      return { map, status, insolvenz };
+      return { map, status, insolvenz, land };
     },
     enabled: companyIds.length > 0,
     // Names are slow-changing master-data; 5 min keeps the cache warm
@@ -235,6 +238,7 @@ export function TransactionDetail() {
     companyNames.data?.map.get(cid) ?? `${cid.slice(0, 12)}…`;
   const statusFor = (cid: string): string | undefined => companyNames.data?.status.get(cid);
   const insolvenzFor = (cid: string): string | undefined => companyNames.data?.insolvenz.get(cid);
+  const landFor = (cid: string): string | undefined => companyNames.data?.land.get(cid);
 
   // Live SSE binding — patch matching cells in-place.
   // We don't re-sort on each event: user-driven scroll position should stay
@@ -434,6 +438,7 @@ export function TransactionDetail() {
                   >
                     <td className="matrix-company">
                       {nameFor(row.companyId)}
+                      <LandBadge country={landFor(row.companyId)} />
                       <RegisterStatusBadge status={statusFor(row.companyId)} />
                       <InsolvenzBadge status={insolvenzFor(row.companyId)} />
                       <CrmBadgeRow
@@ -461,6 +466,7 @@ export function TransactionDetail() {
           <header>
             <h3>
               {nameFor(openCompanyId)}
+              <LandBadge country={landFor(openCompanyId)} />
               <RegisterStatusBadge status={statusFor(openCompanyId)} />
               <InsolvenzBadge status={insolvenzFor(openCompanyId)} />
             </h3>
