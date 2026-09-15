@@ -111,6 +111,22 @@ einer Transaktion unkritisch; `SET` oder `LISTEN` sind im Code zu prüfen
 (Grep vor dem Umhängen). Prisma mit `pgbouncer=true` ist der dokumentierte
 Weg.
 
+## 4a. Stand der Umsetzung (2026-09-15)
+
+- `infra/pgbouncer` (Alpine, pgbouncer, Konfiguration aus Secrets), App
+  `ava-pgbouncer` in fra, TCP-Check auf 6432, erreichbar als
+  `ava-pgbouncer.internal:6432`. Transaktionsmodus, `default_pool_size 4`,
+  `max_db_connections 6`, `server_idle_timeout 60`, Wildcard-Datenbanken.
+- master-data umgehängt (10:2x UTC), Gateway umgehängt (10:3x UTC), jeweils
+  `DATABASE_URL` mit `pgbouncer=true&connection_limit=4&pool_timeout=20`;
+  `DIRECT_URL` (Migrationen) bleibt beim Anbieter-PgBouncer. Keycloak noch
+  nicht.
+- Befund bei der Wiederherstellung um 09:22 UTC (104 Verbindungen): je
+  Producer-Datenbank 12 bis 13 Server-Verbindungen im Anbieter-PgBouncer,
+  obwohl die Gateway-Pools nur 2 halten. Der Anbieter-Bouncer sammelt also
+  Leerlauf-Verbindungen je Datenbank an; genau das deckelt der eigene
+  Bouncer.
+
 ## 5. Beobachtung und Betrieb
 
 - Wöchentlich (oder per Cron im Gateway als Log-Zeile): `SELECT datname,
