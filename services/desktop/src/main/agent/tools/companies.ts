@@ -4,7 +4,7 @@ import type { GatewayClient } from "../gateway-client";
 import type { Tool } from "../types";
 import { getDb as getLinkedInDb, signalsForCompany } from "../../linkedin/db";
 import { read as readLinkedInSettings } from "../../linkedin/store";
-import { statusWarnungText } from "../../firmen-status";
+import { landText, statusWarnungText } from "../../firmen-status";
 
 // Read-only company tools (Phase 8.b).
 //
@@ -33,7 +33,7 @@ export function buildCompanyTools(ctx: Ctx): Tool[] {
   const search = defineTool({
     name: "company_search",
     description:
-      "Fuzzy-search German companies by name. Returns up to `limit` candidate matches (id, name, location, registerStatus: ACTIVE | CLOSED = Registerblatt geschlossen/geloescht | LOESCHUNG_ANGEKUENDIGT = Loeschung angekuendigt; nenne dem Nutzer geloeschte oder in Loeschung befindliche Firmen ausdruecklich). Use this first when the user mentions a company by name.",
+      "Fuzzy-search companies by name (Deutschland, Oesterreich, Schweiz). Returns up to `limit` candidate matches (id, name, location, country DE | AT | CH, registerStatus: ACTIVE | CLOSED = Registerblatt geschlossen/geloescht | LOESCHUNG_ANGEKUENDIGT = Loeschung angekuendigt; nenne dem Nutzer geloeschte oder in Loeschung befindliche Firmen ausdruecklich). Treffer ausserhalb Deutschlands tragen ein Feld `land` (z. B. \"Österreich, Firmenbuch FN 56247t\"): nenne das Land, wenn es fuer den Nutzer nicht offensichtlich ist. Use this first when the user mentions a company by name.",
     parameters: {
       type: "object",
       properties: {
@@ -63,7 +63,8 @@ export function buildCompanyTools(ctx: Ctx): Tool[] {
       // Statuswarnung je Treffer (Insolvenz, Loeschung, Liquidation) an erster Stelle.
       const items = (data.items ?? []).map((it) => {
         const w = statusWarnungText(it as never);
-        return w ? { statusWarnung: w, ...it } : it;
+        const l = (it as { country?: string }).country && (it as { country?: string }).country !== "DE" ? landText(it as never) : null;
+        return { ...(w ? { statusWarnung: w } : {}), ...(l ? { land: l } : {}), ...it };
       });
       const mitWarnung = items.filter((it) => (it as { statusWarnung?: string }).statusWarnung).length;
       return { items, total: data.total ?? 0, ...(mitWarnung > 0 ? { hinweis: `${mitWarnung} Treffer mit Statuswarnung (statusWarnung): dem Nutzer ausdruecklich nennen.` } : {}) };
@@ -77,7 +78,7 @@ export function buildCompanyTools(ctx: Ctx): Tool[] {
   const get = defineTool({
     name: "company_get",
     description:
-      "Fetch the canonical German-company record (legal name, register, address, industry codes) by its global companyId.",
+      "Fetch the canonical company record (legal name, register, address, country) by its global companyId. Field `land` fasst Land und Register zusammen (z. B. \"Österreich, Firmenbuch FN 56247t, Landesgericht Salzburg\"); country DE | AT | CH, registerType HRB/HRA (DE) oder FN (AT), legalForm = amtliche Rechtsform, uid = Umsatzsteuer-Id. Bei oesterreichischen Firmen gibt es keinen kostenlosen Vollauszug (JustizOnline, kostenpflichtig).",
     parameters: {
       type: "object",
       properties: { companyId: { type: "string" } },
@@ -91,7 +92,8 @@ export function buildCompanyTools(ctx: Ctx): Tool[] {
       );
       // Status zuerst: Insolvenz, Loeschung, Liquidation muessen den Kontext dominieren.
       const warnung = statusWarnungText(r as never);
-      return warnung ? { statusWarnung: warnung, ...r } : r;
+      const l = landText(r as never);
+      return { ...(warnung ? { statusWarnung: warnung } : {}), ...(l ? { land: l } : {}), ...r };
     },
     preview: (r) => {
       const name = pickFirst(
@@ -108,8 +110,8 @@ export function buildCompanyTools(ctx: Ctx): Tool[] {
     name: "company_insolvency",
     description:
       "Insolvenzstatus einer Firma (NONE, VERDACHT, SICHERUNG = vorlaeufiger Insolvenzverwalter, EROEFFNET, ABGEWIESEN mangels Masse, AUFGEHOBEN) " +
-      "mit den gespeicherten Veroeffentlichungen des Insolvenzportals (Datum, Aktenzeichen, Gegenstand, Text). Mit pruefen=true wird eine neue " +
-      "Abfrage des Insolvenzportals fuer diese Firma eingereiht (laeuft im Hintergrund ueber die Register-Worker, Ergebnis nach einigen Minuten bis Stunden).",
+      "mit den gespeicherten Veroeffentlichungen (Datum, Aktenzeichen, Gegenstand, Text; quelle insolvenzportal = Deutschland, ediktsdatei = Oesterreich). Mit pruefen=true wird eine neue " +
+      "Abfrage fuer diese Firma eingereiht (Insolvenzportal bei deutschen, Ediktsdatei bei oesterreichischen Firmen AT_FN...; laeuft im Hintergrund ueber die Register-Worker, Ergebnis nach einigen Minuten bis Stunden).",
     parameters: {
       type: "object",
       properties: { companyId: { type: "string" }, pruefen: { type: "boolean", description: "neue Pruefung im Insolvenzportal anfordern" } },
@@ -120,7 +122,9 @@ export function buildCompanyTools(ctx: Ctx): Tool[] {
       const daten = await gateway.request<Record<string, unknown>>(`/v1/companies/${encodeURIComponent(args.companyId)}/insolvency-events`, { signal: c.signal });
       let eingereiht: unknown = null;
       if (args.pruefen === true) {
-        eingereiht = await gateway.request<Record<string, unknown>>(`/v1/register-jobs/insolvenz`, { method: "POST", body: { companyIds: [args.companyId], grund: "chat" }, signal: c.signal });
+        // Oesterreich: Ediktsdatei und Firmenbuch-Detail ueber die AT-Route; sonst Insolvenzportal.
+        const route = /^AT_FN/.test(args.companyId) ? "/v1/register-jobs/at" : "/v1/register-jobs/insolvenz";
+        eingereiht = await gateway.request<Record<string, unknown>>(route, { method: "POST", body: { companyIds: [args.companyId], grund: "chat" }, signal: c.signal });
       }
       return { ...daten, pruefungEingereiht: eingereiht };
     },

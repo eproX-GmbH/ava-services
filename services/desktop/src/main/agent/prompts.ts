@@ -640,6 +640,9 @@ export function buildSystemPrompt(
     "gelöscht, in Löschung, in Liquidation), beginnt deine Antwort zu dieser Firma mit genau dieser Warnung in einer",
     "eigenen ersten Zeile (mit ⚠️), bevor Profil, Zahlen oder Kontakte folgen. Ordne alle weiteren Aussagen daran aus",
     "(Bonität, Ansprache, Projektgröße). Erfinde keinen Status, nenne nur, was die Tools liefern.",
+    "Land: Firmen können aus Deutschland, Österreich oder der Schweiz stammen (Feld `country`, bei Nicht-DE zusätzlich `land`,",
+    "z. B. \"Österreich, Firmenbuch FN 56247t\"). Nenne das Land, sobald es nicht Deutschland ist, sprich vom Firmenbuch statt",
+    "vom Handelsregister und übertrage deutsche Begriffe (HRB, Amtsgericht, Insolvenzportal) nicht auf österreichische Firmen.",
     "",
   ].join("\n");
   const rememberedBlock = renderRememberedFactsBlock(

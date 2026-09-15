@@ -10,13 +10,13 @@ import { app } from "electron";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { Alert } from "../shared/types";
-import { firmenStatusWarnungen, type StatusWarnung } from "./firmen-status";
+import { firmenStatusWarnungen, landText, type StatusWarnung } from "./firmen-status";
 
 const TICK_MS = 6 * 60 * 60_000;
 const FIRST_TICK_MS = 2 * 60_000;
 const SEITEN_MAX = 10; // 10 × 200 Firmen
 
-type MatrixRow = { companyId: string; name: string; registerStatus?: string; insolvencyStatus?: string };
+type MatrixRow = { companyId: string; name: string; registerStatus?: string; insolvencyStatus?: string; country?: string; registerType?: string; registerNumber?: string };
 
 export interface StatusWatcherDeps {
   gatewayRequest: <T>(path: string) => Promise<T>;
@@ -92,7 +92,7 @@ export class StatusWatcher {
       let gemeldet = 0;
       for (const row of rows) {
         if (!row.companyId) continue;
-        const warnungen = firmenStatusWarnungen({ name: row.name, registerStatus: row.registerStatus, insolvencyStatus: row.insolvencyStatus });
+        const warnungen = firmenStatusWarnungen({ name: row.name, registerStatus: row.registerStatus, insolvencyStatus: row.insolvencyStatus, country: row.country });
         const key = warnungen.map((w) => w.schluessel).join(",") || "ok";
         neu[row.companyId] = key;
         if (alt[row.companyId] === key) continue; // unveraendert
@@ -118,12 +118,18 @@ export class StatusWatcher {
     if (!schwerste) return false;
     const severity: Alert["severity"] = schwerste.stufe === "urgent" ? "urgent" : "warn";
     const headline = `${schwerste.kurz.charAt(0).toUpperCase()}${schwerste.kurz.slice(1)}: ${row.name}`.slice(0, 120);
+    const land = landText(row);
+    const quelle =
+      row.country === "AT"
+        ? "Quelle: Firmenbuch (JustizOnline) und Ediktsdatei über das Register-Delta."
+        : "Quelle: Handelsregister und Insolvenzbekanntmachungen über das Register-Delta.";
     const rationale = [
       `**${row.name}** (${row.companyId})`,
+      ...(land ? [land] : []),
       "",
       ...warnungen.map((w) => `- ${w.text}`),
       "",
-      "Quelle: Handelsregister und Insolvenzbekanntmachungen über das Register-Delta. Prüfe vor Ansprache, Angebot oder größerem Projekt die Details in den Firmendetails.",
+      `${quelle} Prüfe vor Ansprache, Angebot oder größerem Projekt die Details in den Firmendetails.`,
     ].join("\n");
     const alert = this.deps.addAlert({
       companyId: row.companyId,

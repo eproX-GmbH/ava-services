@@ -41,7 +41,7 @@ _Parameter:_
 
 _Datei:_ `services/desktop/src/main/agent/tools/companies.ts`
 
-Fetch the canonical German-company record (legal name, register, address, industry codes) by its global companyId.
+Fetch the canonical company record (legal name, register, address, country) by its global companyId. Field `land` fasst Land und Register zusammen (z. B. "Österreich, Firmenbuch FN 56247t, Landesgericht Salzburg"); country DE | AT | CH, registerType HRB/HRA (DE) oder FN (AT), legalForm = amtliche Rechtsform, uid = Umsatzsteuer-Id. Bei oesterreichischen Firmen gibt es keinen kostenlosen Vollauszug (JustizOnline, kostenpflichtig).
 
 _Parameter:_
 - `companyId: string` (required)
@@ -50,7 +50,7 @@ _Parameter:_
 
 _Datei:_ `services/desktop/src/main/agent/tools/companies.ts`
 
-Insolvenzstatus einer Firma (NONE, VERDACHT, SICHERUNG = vorlaeufiger Insolvenzverwalter, EROEFFNET, ABGEWIESEN mangels Masse, AUFGEHOBEN) mit den gespeicherten Veroeffentlichungen des Insolvenzportals (Datum, Aktenzeichen, Gegenstand, Text). Mit pruefen=true wird eine neue Abfrage des Insolvenzportals fuer diese Firma eingereiht (laeuft im Hintergrund ueber die Register-Worker, Ergebnis nach einigen Minuten bis Stunden).
+Insolvenzstatus einer Firma (NONE, VERDACHT, SICHERUNG = vorlaeufiger Insolvenzverwalter, EROEFFNET, ABGEWIESEN mangels Masse, AUFGEHOBEN) mit den gespeicherten Veroeffentlichungen (Datum, Aktenzeichen, Gegenstand, Text; quelle insolvenzportal = Deutschland, ediktsdatei = Oesterreich). Mit pruefen=true wird eine neue Abfrage fuer diese Firma eingereiht (Insolvenzportal bei deutschen, Ediktsdatei bei oesterreichischen Firmen AT_FN...; laeuft im Hintergrund ueber die Register-Worker, Ergebnis nach einigen Minuten bis Stunden).
 
 _Parameter:_
 - `companyId: string` (required)
@@ -97,7 +97,7 @@ _Parameter:_
 
 _Datei:_ `services/desktop/src/main/agent/tools/companies.ts`
 
-Fuzzy-search German companies by name. Returns up to `limit` candidate matches (id, name, location, registerStatus: ACTIVE | CLOSED = Registerblatt geschlossen/geloescht | LOESCHUNG_ANGEKUENDIGT = Loeschung angekuendigt; nenne dem Nutzer geloeschte oder in Loeschung befindliche Firmen ausdruecklich). Use this first when the user mentions a company by name.
+Fuzzy-search companies by name (Deutschland, Oesterreich, Schweiz). Returns up to `limit` candidate matches (id, name, location, country DE | AT | CH, registerStatus: ACTIVE | CLOSED = Registerblatt geschlossen/geloescht | LOESCHUNG_ANGEKUENDIGT = Loeschung angekuendigt; nenne dem Nutzer geloeschte oder in Loeschung befindliche Firmen ausdruecklich). Treffer ausserhalb Deutschlands tragen ein Feld `land` (z. B. "Österreich, Firmenbuch FN 56247t"): nenne das Land, wenn es fuer den Nutzer nicht offensichtlich ist. Use this first when the user mentions a company by name.
 
 _Parameter:_
 - `q: string` (required) — Company name (partial OK).
