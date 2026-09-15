@@ -1,4 +1,10 @@
-import { InsolvenzBadge, LandBadge, RegisterStatusBadge, registerKennung, registerZeile } from "../components/RegisterStatusBadge";
+import {
+  InsolvenzBadge,
+  LandBadge,
+  RegisterStatusBadge,
+  registerKennung,
+  registerZeile,
+} from "../components/RegisterStatusBadge";
 import { InsolvenzAbschnitt } from "../components/InsolvenzAbschnitt";
 import { useEffect, useState } from "react";
 import { useFeature } from "../store/policy";
@@ -129,6 +135,8 @@ interface CompanySerp {
   url?: string | null;
   category?: string | null;
   phone?: string | null;
+  /** Adresse aus der Websuche (Fallback fuer den Standort). */
+  address?: string | null;
   rating?: number | string | null;
   reviewCount?: number | null;
 }
@@ -198,8 +206,14 @@ interface Publication {
   year?: number | null;
   begin?: string | null;
   end?: string | null;
-  salesVolume?: { value?: number | null; currency?: string | null } | number | null;
-  revenueVolume?: { value?: number | null; currency?: string | null } | number | null;
+  salesVolume?:
+    | { value?: number | null; currency?: string | null }
+    | number
+    | null;
+  revenueVolume?:
+    | { value?: number | null; currency?: string | null }
+    | number
+    | null;
   totalAssetsVolume?:
     | { value?: number | null; currency?: string | null }
     | number
@@ -236,7 +250,11 @@ interface CompanyContact {
   companyFacts?: Fact[];
   companyObservations?: Observation[];
   /** C1 — „Informiert am" (Art. 14) je Person fuer meinen Tenant. */
-  personNotices?: Array<{ personId: string; informedAt: string; channel: string | null }>;
+  personNotices?: Array<{
+    personId: string;
+    informedAt: string;
+    channel: string | null;
+  }>;
 }
 
 /** Fakt-Id → Belegseite. `lastObsId` zeigt auf die Beobachtung, die den
@@ -244,28 +262,49 @@ interface CompanyContact {
 /** M4 — Beobachtungs-Id → Quelle (z. B. "pattern:smtp" = abgeleitet + verifiziert). */
 function quellenKarte(obs: Observation[] | undefined): Map<string, string> {
   const map = new Map<string, string>();
-  for (const o of obs ?? []) if (typeof o.id === "string" && typeof o.source === "string") map.set(o.id, o.source);
+  for (const o of obs ?? [])
+    if (typeof o.id === "string" && typeof o.source === "string")
+      map.set(o.id, o.source);
   return map;
 }
 
 /** Beobachtungs-Id → Herkunftstext (fuer den Tooltip abgeleiteter Adressen). */
 function herkunftKarte(obs: Observation[] | undefined): Map<string, string> {
   const map = new Map<string, string>();
-  for (const o of obs ?? []) if (typeof o.id === "string" && typeof o.evidence === "string" && o.evidence) map.set(o.id, o.evidence);
+  for (const o of obs ?? [])
+    if (
+      typeof o.id === "string" &&
+      typeof o.evidence === "string" &&
+      o.evidence
+    )
+      map.set(o.id, o.evidence);
   return map;
 }
 
-function AbgeleitetBadge({ quellen, obsId, evidence }: { quellen?: Map<string, string>; obsId: string | null; evidence?: string | null }) {
+function AbgeleitetBadge({
+  quellen,
+  obsId,
+  evidence,
+}: {
+  quellen?: Map<string, string>;
+  obsId: string | null;
+  evidence?: string | null;
+}) {
   const src = obsId ? quellen?.get(obsId) : undefined;
   if (!src || !src.startsWith("pattern:")) return null;
   // Pruef-/Bestaetigungsdatum aus dem Herkunftstext ("… geprueft am 2026-09-10 …" / "… eingegangen am …").
-  const m = evidence?.match(/(?:geprueft|eingegangen) am (\d{4})-(\d{2})-(\d{2})/);
+  const m = evidence?.match(
+    /(?:geprueft|eingegangen) am (\d{4})-(\d{2})-(\d{2})/
+  );
   const datum = m ? ` ${m[3]}.${m[2]}.${m[1]!.slice(2)}` : "";
   if (src === "pattern:catchall") {
     return (
       <span
         className="pill pill--paused"
-        title={evidence ?? "Nach dem Adressmuster der Firma gebildet. Der Mailserver nimmt jede Adresse an (Catch-all), die Existenz ist daher nicht einzeln belegbar. Wird bei einer Antwort bestätigt, bei Unzustellbarkeit entfernt."}
+        title={
+          evidence ??
+          "Nach dem Adressmuster der Firma gebildet. Der Mailserver nimmt jede Adresse an (Catch-all), die Existenz ist daher nicht einzeln belegbar. Wird bei einer Antwort bestätigt, bei Unzustellbarkeit entfernt."
+        }
       >
         abgeleitet · unbestätigt{datum}
       </span>
@@ -273,13 +312,25 @@ function AbgeleitetBadge({ quellen, obsId, evidence }: { quellen?: Map<string, s
   }
   if (src === "pattern:reply") {
     return (
-      <span className="pill pill--active" title={evidence ?? "Abgeleitete Adresse, bestätigt durch eine eingegangene Antwort."}>
+      <span
+        className="pill pill--active"
+        title={
+          evidence ??
+          "Abgeleitete Adresse, bestätigt durch eine eingegangene Antwort."
+        }
+      >
         abgeleitet · bestätigt{datum}
       </span>
     );
   }
   return (
-    <span className="pill pill--active" title={evidence ?? "Nach dem Adressmuster der Firma gebildet und per Mail-Server-Anfrage auf Existenz geprüft (keine E-Mail zugestellt)."}>
+    <span
+      className="pill pill--active"
+      title={
+        evidence ??
+        "Nach dem Adressmuster der Firma gebildet und per Mail-Server-Anfrage auf Existenz geprüft (keine E-Mail zugestellt)."
+      }
+    >
       abgeleitet · verifiziert{datum}
     </span>
   );
@@ -302,7 +353,10 @@ function QuellenLink({ url }: { url: string }) {
   try {
     const u = new URL(url);
     const pfad = u.pathname.replace(/\/$/, "");
-    label = pfad && pfad !== "" ? `Quelle: ${pfad.slice(0, 28)}` : `Quelle: ${u.hostname}`;
+    label =
+      pfad && pfad !== ""
+        ? `Quelle: ${pfad.slice(0, 28)}`
+        : `Quelle: ${u.hostname}`;
   } catch {
     /* Fallback bleibt "Quelle" */
   }
@@ -389,37 +443,57 @@ export function CompanyDetail() {
         formerCourt?: string | null;
         insolvencyStatus?: string | null;
         insolvencyAt?: string | null;
+        location?: string | null;
         country?: string | null;
         registerType?: string | null;
         registerNumber?: string | null;
         districtCourt?: string | null;
         legalForm?: string | null;
         uid?: string | null;
-      }>(
-        `/v1/companies/${id}`,
-      ),
+      }>(`/v1/companies/${id}`),
     enabled: !!id,
   });
   // Finanzen kommen aus dem Bundesanzeiger; fuer oesterreichische Firmen gibt es diese Quelle nicht.
   const istAt = summary.data?.country === "AT";
-  const sichtbareTabs = TABS.filter((t) => (kontakteErlaubt || t.key !== "contacts") && (!istAt || t.key !== "financials"));
+  const sichtbareTabs = TABS.filter(
+    (t) =>
+      (kontakteErlaubt || t.key !== "contacts") &&
+      (!istAt || t.key !== "financials")
+  );
   useEffect(() => {
     if (!kontakteErlaubt && tab === "contacts") setTab("overview");
     if (istAt && tab === "financials") setTab("overview");
   }, [kontakteErlaubt, istAt, tab]);
-  const profile = useTabQuery<CompanyProfile>("profile", id!, `/v1/companies/${id}/profile`, !!id);
+  const profile = useTabQuery<CompanyProfile>(
+    "profile",
+    id!,
+    `/v1/companies/${id}/profile`,
+    !!id
+  );
   const structured = useTabQuery<StructuredContent>(
     "structured",
     id!,
     `/v1/companies/${id}/structured-content`,
-    !!id,
+    !!id
   );
-  const website = useTabQuery<Website>("website", id!, `/v1/companies/${id}/website`, !!id);
+  const website = useTabQuery<Website>(
+    "website",
+    id!,
+    `/v1/companies/${id}/website`,
+    !!id
+  );
+  // Standort-Fallback aus den Kontaktdaten (Adress-Fakt), wenn das Register nichts liefert.
+  const contactFallback = useTabQuery<CompanyContact>(
+    "contacts",
+    id!,
+    `/v1/companies/${id}/contacts`,
+    !!id && kontakteErlaubt
+  );
   const publications = useTabQuery<{ items: Publication[] }>(
     "publications",
     id!,
     `/v1/companies/${id}/publications`,
-    !!id,
+    !!id
   );
   // v0.1.65 — per-stage LLM provenance for the "Datenqualität" banner
   // and per-cell tooltips. One row per stage in ContentFreshness;
@@ -428,9 +502,15 @@ export function CompanyDetail() {
     "state",
     id!,
     `/v1/companies/${id}/state`,
-    !!id,
+    !!id
   );
 
+  const adresse = ermittleAdresse({
+    structured: structured.data,
+    contact: contactFallback.data,
+    website: website.data,
+    summary: summary.data,
+  });
   const pubs = publications.data?.items ?? [];
   const sorted = [...pubs].sort((a, b) => (a.year ?? 0) - (b.year ?? 0));
   const latest = sorted.length > 0 ? sorted[sorted.length - 1] : undefined;
@@ -442,8 +522,14 @@ export function CompanyDetail() {
         <h2 style={{ marginBottom: "0.25rem" }}>
           {structured.data?.name ?? summary.data?.name ?? "Firma"}
           <LandBadge country={summary.data?.country} />
-          <RegisterStatusBadge status={summary.data?.registerStatus} closedAt={summary.data?.closedAt} />
-          <InsolvenzBadge status={summary.data?.insolvencyStatus} seit={summary.data?.insolvencyAt} />
+          <RegisterStatusBadge
+            status={summary.data?.registerStatus}
+            closedAt={summary.data?.closedAt}
+          />
+          <InsolvenzBadge
+            status={summary.data?.insolvencyStatus}
+            seit={summary.data?.insolvencyAt}
+          />
         </h2>
         {summary.data && registerZeile(summary.data) && (
           <p className="muted small" style={{ marginTop: 0 }}>
@@ -471,13 +557,27 @@ export function CompanyDetail() {
         ) : null}
 
         <div className="kpi-grid">
-          <KpiTile label="Standort">
-            <AddressLink
-              parts={[structured.data?.zipCode, structured.data?.city]}
-            />
-          </KpiTile>
+          {adresse && (
+            <KpiTile label="Standort">
+              <AddressLink
+                parts={
+                  adresse.quelle === "Handelsregister"
+                    ? [structured.data?.zipCode, structured.data?.city]
+                    : [adresse.zeilen[adresse.zeilen.length - 1] ?? ""]
+                }
+              />
+            </KpiTile>
+          )}
           {registerKennung(summary.data ?? {}) && (
-            <KpiTile label={summary.data?.country === "AT" ? "Firmenbuch" : summary.data?.country === "CH" ? "Handelsregister CH" : "Handelsregister"}>
+            <KpiTile
+              label={
+                summary.data?.country === "AT"
+                  ? "Firmenbuch"
+                  : summary.data?.country === "CH"
+                  ? "Handelsregister CH"
+                  : "Handelsregister"
+              }
+            >
               {registerKennung(summary.data ?? {})}
             </KpiTile>
           )}
@@ -493,7 +593,11 @@ export function CompanyDetail() {
           )}
           {website.data?.companySerp?.url && (
             <KpiTile label="Website">
-              <a href={website.data.companySerp.url} target="_blank" rel="noreferrer">
+              <a
+                href={website.data.companySerp.url}
+                target="_blank"
+                rel="noreferrer"
+              >
                 Aufrufen ↗
               </a>
             </KpiTile>
@@ -524,9 +628,10 @@ export function CompanyDetail() {
       </header>
 
       {/* ---- Deep-research strip ------------------------------------------ */}
-      {website.data?.deepResearches && website.data.deepResearches.length > 0 && (
-        <DeepResearchStrip items={website.data.deepResearches} />
-      )}
+      {website.data?.deepResearches &&
+        website.data.deepResearches.length > 0 && (
+          <DeepResearchStrip items={website.data.deepResearches} />
+        )}
 
       {/* ---- Tabs --------------------------------------------------------- */}
       <nav className="tabs">
@@ -553,7 +658,13 @@ export function CompanyDetail() {
           stages={stageState.data?.stages ?? null}
           stageKeys={STAGES_FOR_TAB[tab]}
         />
-        {tab === "overview" && <InsolvenzAbschnitt companyId={id!} status={summary.data?.insolvencyStatus} country={summary.data?.country} />}
+        {tab === "overview" && (
+          <InsolvenzAbschnitt
+            companyId={id!}
+            status={summary.data?.insolvencyStatus}
+            country={summary.data?.country}
+          />
+        )}
         {tab === "overview" && (
           <OverviewTab
             companyId={id!}
@@ -561,10 +672,17 @@ export function CompanyDetail() {
             profile={profile.data}
             structured={structured.data}
             website={website.data}
+            adresse={adresse}
+            rechtsform={summary.data?.legalForm ?? null}
           />
         )}
         {tab === "financials" && <FinancialsTab pubs={sorted} />}
-        {tab === "management" && <ManagementTab structured={structured.data} />}
+        {tab === "management" && (
+          <ManagementTab
+            structured={structured.data}
+            contact={contactFallback.data}
+          />
+        )}
         {tab === "contacts" && kontakteErlaubt && <ContactsTab id={id!} />}
         {tab === "insights" && (
           <InsightsTab
@@ -591,7 +709,13 @@ const STAGES_FOR_TAB: Record<TabKey, string[]> = {
   jobs: ["website"],
 };
 
-function KpiTile({ label, children }: { label: string; children: React.ReactNode }) {
+function KpiTile({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}) {
   return (
     <div className="kpi-tile">
       <div className="kpi-label">{label}</div>
@@ -621,8 +745,9 @@ function TabTierBadges({
   if (!stages || stageKeys.length === 0) return null;
   const visible = stageKeys
     .map((k) => ({ key: k, stage: stages[k] }))
-    .filter((x): x is { key: string; stage: StageState } =>
-      x.stage != null && x.stage.llmTier != null,
+    .filter(
+      (x): x is { key: string; stage: StageState } =>
+        x.stage != null && x.stage.llmTier != null
     );
   if (visible.length === 0) return null;
   return (
@@ -719,19 +844,32 @@ function DeepResearchStrip({ items }: { items: DeepResearch[] }) {
 
   return (
     <section style={{ marginTop: "1.5rem" }}>
-      <h3 style={{ marginBottom: "0.25rem" }}>Aktuelle Ereignisse &amp; Signale</h3>
+      <h3 style={{ marginBottom: "0.25rem" }}>
+        Aktuelle Ereignisse &amp; Signale
+      </h3>
       <p className="muted" style={{ marginTop: 0 }}>
         Expansionen, Ausschreibungen und Beschaffungschancen
       </p>
       <div className="grid-2" style={{ marginTop: "1rem" }}>
         {shown.map((r, i) => (
           <article key={i} className="panel">
-            <div style={{ display: "flex", justifyContent: "space-between", gap: "0.5rem" }}>
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                gap: "0.5rem",
+              }}
+            >
               <span className="badge">{labelFor(r.type)}</span>
               {r.company && <span className="muted">{r.company}</span>}
             </div>
-            <h4 style={{ margin: "0.5rem 0 0.25rem" }}>{r.title ?? "Ohne Titel"}</h4>
-            <div className="muted" style={{ fontSize: 12, marginBottom: "0.5rem" }}>
+            <h4 style={{ margin: "0.5rem 0 0.25rem" }}>
+              {r.title ?? "Ohne Titel"}
+            </h4>
+            <div
+              className="muted"
+              style={{ fontSize: 12, marginBottom: "0.5rem" }}
+            >
               {[r.country, r.date ? fmtDate(r.date) : null]
                 .filter(Boolean)
                 .join(" · ")}
@@ -757,7 +895,11 @@ function DeepResearchStrip({ items }: { items: DeepResearch[] }) {
       </div>
       {more && (
         <div style={{ marginTop: "0.75rem" }}>
-          <button type="button" className="tab" onClick={() => setExpanded((p) => !p)}>
+          <button
+            type="button"
+            className="tab"
+            onClick={() => setExpanded((p) => !p)}
+          >
             {expanded ? "Weniger anzeigen" : `Alle anzeigen (${items.length})`}
           </button>
         </div>
@@ -768,31 +910,90 @@ function DeepResearchStrip({ items }: { items: DeepResearch[] }) {
 
 // ---- Tabs ------------------------------------------------------------------
 
+/**
+ * Standort mit Fallback-Kette: Handelsregister (structured-content) →
+ * Adress-Fakt des Kontakt-Producers → Websuche (SERP) → Stammdaten (Ort).
+ * Oesterreichische Firmen haben kein Handelsregister, dort greift die Kette.
+ */
+export function ermittleAdresse(q: {
+  structured?: StructuredContent;
+  contact?: CompanyContact;
+  website?: Website;
+  summary?: { location?: string | null };
+}): {
+  zeilen: string[];
+  quelle: "Handelsregister" | "Kontaktdaten" | "Websuche" | "Stammdaten";
+} | null {
+  const street = [q.structured?.street, q.structured?.houseNumber]
+    .filter(Boolean)
+    .join(" ");
+  const cityLine = [q.structured?.zipCode, q.structured?.city]
+    .filter(Boolean)
+    .join(" ");
+  if (street || cityLine)
+    return {
+      zeilen: [street, cityLine].filter(Boolean),
+      quelle: "Handelsregister",
+    };
+  const fakt = (q.contact?.companyFacts ?? []).find(
+    (f) =>
+      f.entityType === "COMPANY" &&
+      f.field === "address" &&
+      f.status === "ACTIVE" &&
+      typeof f.value === "string" &&
+      f.value.trim()
+  );
+  if (fakt?.value) {
+    const teile = fakt.value
+      .split(/,\s*/)
+      .map((t) => t.trim())
+      .filter(Boolean);
+    const letzte = teile[teile.length - 1] ?? "";
+    return {
+      zeilen:
+        teile.length > 1
+          ? [teile.slice(0, -1).join(", "), letzte]
+          : [fakt.value.trim()],
+      quelle: "Kontaktdaten",
+    };
+  }
+  const serp = q.website?.companySerp?.address?.trim();
+  if (serp) return { zeilen: [serp], quelle: "Websuche" };
+  const ort = q.summary?.location?.trim();
+  if (ort) return { zeilen: [ort], quelle: "Stammdaten" };
+  return null;
+}
+
 function OverviewTab({
   companyId,
   companyName,
   profile,
   structured,
   website,
+  adresse,
+  rechtsform,
 }: {
   companyId: string;
   companyName: string;
   profile?: CompanyProfile;
   structured?: StructuredContent;
   website?: Website;
+  adresse: ReturnType<typeof ermittleAdresse>;
+  /** Rechtsform aus den Stammdaten (AT/CH), wenn das Register nichts liefert. */
+  rechtsform?: string | null;
 }) {
   if (!profile && !structured && !website) {
     return <p className="muted">Noch keine Daten.</p>;
   }
   // Address parts get reused for the maps link AND the visible string.
-  const street = [structured?.street, structured?.houseNumber]
-    .filter(Boolean)
-    .join(" ");
-  const cityLine = [structured?.zipCode, structured?.city]
-    .filter(Boolean)
-    .join(" ");
-  const mapsUrl = mapsHref([street, cityLine]);
-  const mapsEmbed = mapsEmbedUrl([street, cityLine]);
+  const street = adresse?.zeilen[0] ?? "";
+  const cityLine = adresse?.zeilen[1] ?? "";
+  const mapsUrl = adresse ? mapsHref(adresse.zeilen) : null;
+  const mapsEmbed = adresse ? mapsEmbedUrl(adresse.zeilen) : null;
+  const legalForm = structured?.legalForm || rechtsform || null;
+  const zeigeKontaktKarte = Boolean(
+    adresse || website?.companySerp?.phone || website?.website?.url
+  );
 
   return (
     <div className="grid-2">
@@ -814,18 +1015,24 @@ function OverviewTab({
           </>
         )}
         <dl className="tx-summary" style={{ marginTop: "1rem" }}>
-          <div>
-            <dt>Gründungsjahr</dt>
-            <dd>{structured?.foundingYear ?? ""}</dd>
-          </div>
-          <div>
-            <dt>Stammkapital</dt>
-            <dd>{fmtShareCapital(structured?.shareCapital)}</dd>
-          </div>
-          <div>
-            <dt>Rechtsform</dt>
-            <dd>{structured?.legalForm ?? ""}</dd>
-          </div>
+          {structured?.foundingYear && (
+            <div>
+              <dt>Gründungsjahr</dt>
+              <dd>{structured.foundingYear}</dd>
+            </div>
+          )}
+          {fmtShareCapital(structured?.shareCapital) && (
+            <div>
+              <dt>Stammkapital</dt>
+              <dd>{fmtShareCapital(structured?.shareCapital)}</dd>
+            </div>
+          )}
+          {legalForm && (
+            <div>
+              <dt>Rechtsform</dt>
+              <dd>{legalForm}</dd>
+            </div>
+          )}
           {/* v0.1.331 — SERP-Kategorie entfernt (Daten kommen seit
               v0.1.59 nicht mehr aus dem website-Producer, weil der
               LLM-Judge-Pfad keine places-category mehr liefert).
@@ -844,81 +1051,97 @@ function OverviewTab({
         </dl>
       </article>
 
-      <article className="panel">
-        <h3>Kontakt &amp; Standort</h3>
-        <h4>Adresse</h4>
-        <p>
-          {mapsUrl ? (
-            <a href={mapsUrl} target="_blank" rel="noreferrer">
-              {street || ""}
-              <br />
-              {cityLine || ""}{" "}
-              <span className="muted" style={{ fontSize: 12 }}>
-                (Karte ↗)
-              </span>
-            </a>
-          ) : (
+      {zeigeKontaktKarte && (
+        <article className="panel">
+          <h3>Kontakt &amp; Standort</h3>
+          {adresse && (
             <>
-              {street || ""}
-              <br />
-              {cityLine || ""}
+              <h4>Adresse</h4>
+              <p>
+                {mapsUrl ? (
+                  <a href={mapsUrl} target="_blank" rel="noreferrer">
+                    {street}
+                    {cityLine && <br />}
+                    {cityLine}{" "}
+                    <span className="muted" style={{ fontSize: 12 }}>
+                      (Karte ↗)
+                    </span>
+                  </a>
+                ) : (
+                  <>
+                    {street}
+                    {cityLine && <br />}
+                    {cityLine}
+                  </>
+                )}
+                {adresse.quelle !== "Handelsregister" && (
+                  <span
+                    className="muted small"
+                    style={{ display: "block" }}
+                    title="Kein Registereintrag mit Adresse; Angabe aus einer anderen Quelle"
+                  >
+                    Quelle: {adresse.quelle}
+                  </span>
+                )}
+              </p>
             </>
           )}
-        </p>
-        {mapsEmbed && (
-          // v0.1.319 — Google-Maps Basic-Embed direkt unter der Adresse.
-          // Kein API-Key (output=embed-Endpunkt). loading="lazy" damit
-          // der Iframe nicht beim ersten Render der Page lädt, sondern
-          // erst wenn er in den Viewport scrollt.
-          <iframe
-            title="Standort auf Google Maps"
-            src={mapsEmbed}
-            loading="lazy"
-            referrerPolicy="no-referrer-when-downgrade"
-            style={{
-              width: "100%",
-              height: 220,
-              border: "1px solid var(--border)",
-              borderRadius: 6,
-              marginTop: 4,
-              marginBottom: 8,
-            }}
-          />
-        )}
-        {website?.companySerp?.phone && (
-          <>
-            <h4>Telefon</h4>
-            <p>
-              <a href={telHref(website.companySerp.phone)}>
-                {website.companySerp.phone}
-              </a>
-            </p>
-          </>
-        )}
-        {website?.website?.url && (
-          <>
-            <h4>Website</h4>
-            <p>
-              <a href={website.website.url} target="_blank" rel="noreferrer">
-                {website.website.url.replace(/^https?:\/\//, "")} ↗
-              </a>
-            </p>
-          </>
-        )}
-        {website?.companySerp?.rating != null && (
-          <>
-            <h4>Bewertung</h4>
-            <p>
-              {String(website.companySerp.rating)} ★{" "}
-              {website.companySerp.reviewCount != null && (
-                <span className="muted">
-                  ({numFmt.format(website.companySerp.reviewCount)} Bewertungen)
-                </span>
-              )}
-            </p>
-          </>
-        )}
-      </article>
+          {mapsEmbed && (
+            // v0.1.319 — Google-Maps Basic-Embed direkt unter der Adresse.
+            // Kein API-Key (output=embed-Endpunkt). loading="lazy" damit
+            // der Iframe nicht beim ersten Render der Page lädt, sondern
+            // erst wenn er in den Viewport scrollt.
+            <iframe
+              title="Standort auf Google Maps"
+              src={mapsEmbed}
+              loading="lazy"
+              referrerPolicy="no-referrer-when-downgrade"
+              style={{
+                width: "100%",
+                height: 220,
+                border: "1px solid var(--border)",
+                borderRadius: 6,
+                marginTop: 4,
+                marginBottom: 8,
+              }}
+            />
+          )}
+          {website?.companySerp?.phone && (
+            <>
+              <h4>Telefon</h4>
+              <p>
+                <a href={telHref(website.companySerp.phone)}>
+                  {website.companySerp.phone}
+                </a>
+              </p>
+            </>
+          )}
+          {website?.website?.url && (
+            <>
+              <h4>Website</h4>
+              <p>
+                <a href={website.website.url} target="_blank" rel="noreferrer">
+                  {website.website.url.replace(/^https?:\/\//, "")} ↗
+                </a>
+              </p>
+            </>
+          )}
+          {website?.companySerp?.rating != null && (
+            <>
+              <h4>Bewertung</h4>
+              <p>
+                {String(website.companySerp.rating)} ★{" "}
+                {website.companySerp.reviewCount != null && (
+                  <span className="muted">
+                    ({numFmt.format(website.companySerp.reviewCount)}{" "}
+                    Bewertungen)
+                  </span>
+                )}
+              </p>
+            </>
+          )}
+        </article>
+      )}
 
       {/* Workstream C4 — CRM linkage. Spans both columns of the
        *  grid-2 layout so deals + contacts have horizontal room. */}
@@ -930,11 +1153,7 @@ function OverviewTab({
 }
 
 /** Render `parts` as a Google-Maps link when at least one part is non-empty. */
-function AddressLink({
-  parts,
-}: {
-  parts: Array<string | null | undefined>;
-}) {
+function AddressLink({ parts }: { parts: Array<string | null | undefined> }) {
   const text = parts.filter(Boolean).join(" ");
   const url = mapsHref(parts);
   if (!text) return <></>;
@@ -969,7 +1188,10 @@ function FinancialsTab({ pubs }: { pubs: Publication[] }) {
     {
       title: "Mitarbeiter",
       format: "num",
-      data: pubs.map((p) => ({ year: p.year ?? null, value: p.employeeCount ?? null })),
+      data: pubs.map((p) => ({
+        year: p.year ?? null,
+        value: p.employeeCount ?? null,
+      })),
     },
   ];
 
@@ -1046,7 +1268,10 @@ function PublicationCard({ pub }: { pub: Publication }) {
         <h3 style={{ margin: 0 }}>
           {pub.year ?? ""}
           {pub.name && (
-            <span className="muted" style={{ fontWeight: 400, marginLeft: "0.5rem" }}>
+            <span
+              className="muted"
+              style={{ fontWeight: 400, marginLeft: "0.5rem" }}
+            >
               {pub.name}
             </span>
           )}
@@ -1060,7 +1285,9 @@ function PublicationCard({ pub }: { pub: Publication }) {
           — kommt aus einem separaten, deterministischen Extraktor. */}
       {pub.employeeCount != null && (
         <div className="kpi-grid">
-          <KpiTile label="Mitarbeiter">{numFmt.format(pub.employeeCount)}</KpiTile>
+          <KpiTile label="Mitarbeiter">
+            {numFmt.format(pub.employeeCount)}
+          </KpiTile>
         </div>
       )}
 
@@ -1086,7 +1313,9 @@ function PublicationCard({ pub }: { pub: Publication }) {
                   legend below so visually related numbers cluster. */}
               <KpiCategoryLegend />
               <div className="kpi-grid">
-                {sortKpisByCategory(filterKpisToYear(soa.kpis, pub.year ?? null)).map((k, i) => {
+                {sortKpisByCategory(
+                  filterKpisToYear(soa.kpis, pub.year ?? null)
+                ).map((k, i) => {
                   const cat = resolveKpiCategory(k);
                   return (
                     <div key={i} className="kpi-tile">
@@ -1148,10 +1377,63 @@ function BarChart({
   );
 }
 
-function ManagementTab({ structured }: { structured?: StructuredContent }) {
+const LEITUNG_RE =
+  /geschäftsführ|geschaeftsfuehr|geschäftsleit|vorstand|\bceo\b|\bcfo\b|\bcoo\b|managing director|general manager|prokurist|inhaber|gründer|founder|verwaltungsrat|direktor/i;
+
+/**
+ * Fallback fuer Firmen ohne Registerdaten (Oesterreich, Schweiz): Personen
+ * aus dem Kontakt-Producer, deren Position nach Leitung aussieht. Register-
+ * daten (structured-content) gehen immer vor, sobald sie vorliegen.
+ */
+export function leitungAusKontakten(
+  contact?: CompanyContact
+): Array<{ id: string; name: string; position: string }> {
+  const personen = groupBy(
+    (contact?.companyFacts ?? []).filter(
+      (f) => f.entityType === "PERSON" && f.status === "ACTIVE"
+    ),
+    (f) => f.entityId ?? "?"
+  );
+  const out: Array<{ id: string; name: string; position: string }> = [];
+  for (const [id, facts] of Object.entries(personen)) {
+    const name = facts.find((f) => f.field === "fullName")?.value?.trim();
+    const position = facts.find((f) => f.field === "jobTitle")?.value?.trim();
+    if (name && position && LEITUNG_RE.test(position))
+      out.push({ id, name, position });
+  }
+  return out;
+}
+
+function ManagementTab({
+  structured,
+  contact,
+}: {
+  structured?: StructuredContent;
+  contact?: CompanyContact;
+}) {
   const dirs = structured?.managingDirectors ?? [];
   if (dirs.length === 0) {
-    return <p className="muted">Keine Angaben zur Geschäftsführung.</p>;
+    const leitung = leitungAusKontakten(contact);
+    if (leitung.length === 0)
+      return <p className="muted">Keine Angaben zur Geschäftsführung.</p>;
+    return (
+      <>
+        <p className="muted small">
+          Quelle: Kontaktdaten der Website (kein Registereintrag mit
+          Geschäftsführung).
+        </p>
+        <div className="grid-2">
+          {leitung.map((l) => (
+            <article key={l.id} className="panel">
+              <h3 style={{ margin: 0 }}>{l.name}</h3>
+              <p className="muted" style={{ marginTop: "0.25rem" }}>
+                {l.position}
+              </p>
+            </article>
+          ))}
+        </div>
+      </>
+    );
   }
   return (
     <div className="grid-2">
@@ -1184,7 +1466,11 @@ function ManagementTab({ structured }: { structured?: StructuredContent }) {
 // by entityId. Each fact row shows status + confidence.
 
 function ContactsTab({ id }: { id: string }) {
-  const q = useTabQuery<CompanyContact>("contacts", id, `/v1/companies/${id}/contacts`);
+  const q = useTabQuery<CompanyContact>(
+    "contacts",
+    id,
+    `/v1/companies/${id}/contacts`
+  );
 
   if (q.isLoading) return <p>Lädt…</p>;
   if (q.error) {
@@ -1194,7 +1480,11 @@ function ContactsTab({ id }: { id: string }) {
     return <p className="error">{(q.error as Error).message}</p>;
   }
   const data = q.data;
-  if (!data || !Array.isArray(data.companyFacts) || data.companyFacts.length === 0) {
+  if (
+    !data ||
+    !Array.isArray(data.companyFacts) ||
+    data.companyFacts.length === 0
+  ) {
     return <p className="muted">Noch keine Kontakte.</p>;
   }
 
@@ -1212,15 +1502,21 @@ function ContactsTab({ id }: { id: string }) {
 
   const phones = (byField.phone ?? []).filter((f) => f.status === "ACTIVE");
   const emails = (byField.email ?? []).filter((f) => f.status === "ACTIVE");
-  const addresses = (byField.address ?? []).filter((f) => f.status === "ACTIVE");
+  const addresses = (byField.address ?? []).filter(
+    (f) => f.status === "ACTIVE"
+  );
 
   return (
     <div style={{ display: "grid", gap: "1.5rem" }}>
       <article className="panel">
         <h3 style={{ marginTop: 0 }}>Kontakte &amp; Personen</h3>
         <div className="kpi-grid">
-          <KpiTile label="Telefonnummern">{numFmt.format(phones.length)}</KpiTile>
-          <KpiTile label="E-Mail-Adressen">{numFmt.format(emails.length)}</KpiTile>
+          <KpiTile label="Telefonnummern">
+            {numFmt.format(phones.length)}
+          </KpiTile>
+          <KpiTile label="E-Mail-Adressen">
+            {numFmt.format(emails.length)}
+          </KpiTile>
           <KpiTile label="Personen">
             {numFmt.format(Object.keys(byPerson).length)}
           </KpiTile>
@@ -1253,7 +1549,10 @@ function ContactsTab({ id }: { id: string }) {
                 belege={belege}
                 quellen={quellen}
                 obsHerkunft={obsHerkunft}
-                informiertAm={data.personNotices?.find((n) => n.personId === pid)?.informedAt ?? null}
+                informiertAm={
+                  data.personNotices?.find((n) => n.personId === pid)
+                    ?.informedAt ?? null
+                }
               />
             ))}
           </div>
@@ -1275,8 +1574,10 @@ function FactValue({
   value: string;
   kind?: "phone" | "email" | "address" | "url";
 }) {
-  const isPhone = kind === "phone" || (kind === undefined && looksLikePhone(value));
-  const isEmail = kind === "email" || (kind === undefined && looksLikeEmail(value));
+  const isPhone =
+    kind === "phone" || (kind === undefined && looksLikePhone(value));
+  const isEmail =
+    kind === "email" || (kind === undefined && looksLikeEmail(value));
   // URL kind sniff: explicit `kind === "url"` (set on linkedinUrl /
   // xingUrl / websiteUrl fields) wins; otherwise auto-detect any
   // http(s) value so a stray URL in a generic fact still becomes
@@ -1372,7 +1673,7 @@ function TechStackPanel({
   belege: Map<string, string>;
 }) {
   const tech = facts.filter(
-    (f) => (f.field ?? "").startsWith("tech:") && f.status === "ACTIVE",
+    (f) => (f.field ?? "").startsWith("tech:") && f.status === "ACTIVE"
   );
   if (tech.length === 0) return null;
 
@@ -1384,7 +1685,7 @@ function TechStackPanel({
     proKategorie.set(kat, arr);
   }
   const sortiert = TECH_REIHENFOLGE.filter((k) => proKategorie.has(k)).concat(
-    [...proKategorie.keys()].filter((k) => !TECH_REIHENFOLGE.includes(k)),
+    [...proKategorie.keys()].filter((k) => !TECH_REIHENFOLGE.includes(k))
   );
 
   return (
@@ -1393,17 +1694,15 @@ function TechStackPanel({
         Eingesetzte Systeme ({numFmt.format(tech.length)})
       </h3>
       <p className="muted" style={{ marginTop: 0, fontSize: 12 }}>
-        Aus der Datenschutzerklärung der Firma — dort müssen
-        Auftragsverarbeiter benannt werden. Eine Nennung belegt eine
-        Geschäftsbeziehung, nicht zwingend den aktiven Betrieb: solche
-        Seiten sind oft veraltet oder aus Vorlagen erzeugt.
+        Aus der Datenschutzerklärung der Firma — dort müssen Auftragsverarbeiter
+        benannt werden. Eine Nennung belegt eine Geschäftsbeziehung, nicht
+        zwingend den aktiven Betrieb: solche Seiten sind oft veraltet oder aus
+        Vorlagen erzeugt.
       </p>
       <ul className="list">
         {sortiert.map((kat) => (
           <li key={kat} className="fact-row">
-            <span className="muted">
-              {TECH_KATEGORIE_LABEL[kat] ?? kat}:
-            </span>
+            <span className="muted">{TECH_KATEGORIE_LABEL[kat] ?? kat}:</span>
             <span className="fact-value">
               {(proKategorie.get(kat) ?? [])
                 .map((f) => f.value ?? "")
@@ -1497,7 +1796,11 @@ function PersonCard({
   const [herkunft, setHerkunft] = useState<string | null>(null);
   const [c1Notice, setC1Notice] = useState<string | null>(null);
   const [c1Busy, setC1Busy] = useState(false);
-  const pid = personId ?? (typeof facts[0]?.personId === "string" ? (facts[0].personId as string) : facts[0]?.entityId ?? "");
+  const pid =
+    personId ??
+    (typeof facts[0]?.personId === "string"
+      ? (facts[0].personId as string)
+      : facts[0]?.entityId ?? "");
   const c1 = async (fn: () => Promise<void>) => {
     setC1Busy(true);
     setC1Notice(null);
@@ -1515,30 +1818,54 @@ function PersonCard({
         setHerkunft(null);
         return;
       }
-      const url = new URL(`/v1/persons/${encodeURIComponent(pid)}/herkunft`, getGatewayUrl());
+      const url = new URL(
+        `/v1/persons/${encodeURIComponent(pid)}/herkunft`,
+        getGatewayUrl()
+      );
       url.searchParams.set("format", "markdown");
       const token = await window.api.auth.getAccessToken();
-      const res = await fetch(url, { headers: token ? { authorization: `Bearer ${token}` } : {} });
+      const res = await fetch(url, {
+        headers: token ? { authorization: `Bearer ${token}` } : {},
+      });
       if (!res.ok) throw new Error(`Herkunft nicht abrufbar (${res.status})`);
       setHerkunft(await res.text());
     });
   const hinweisKopieren = () =>
     c1(async () => {
-      const r = await gatewayFetch<{ text: string }>(`/v1/persons/${encodeURIComponent(pid)}/hinweis`);
+      const r = await gatewayFetch<{ text: string }>(
+        `/v1/persons/${encodeURIComponent(pid)}/hinweis`
+      );
       await navigator.clipboard.writeText(r.text);
       setC1Notice("Art.-14-Hinweistext in die Zwischenablage kopiert.");
     });
   const informiert = () =>
     c1(async () => {
-      await gatewayFetch(`/v1/persons/${encodeURIComponent(pid)}/informed`, { method: "POST", body: { channel: "manuell" } });
+      await gatewayFetch(`/v1/persons/${encodeURIComponent(pid)}/informed`, {
+        method: "POST",
+        body: { channel: "manuell" },
+      });
       setC1Notice("Als informiert markiert.");
-      void qc.invalidateQueries({ queryKey: ["company", companyId ?? "", "contacts"] });
+      void qc.invalidateQueries({
+        queryKey: ["company", companyId ?? "", "contacts"],
+      });
     });
   const loeschen = () => {
-    if (!window.confirm(`${facts.find((f) => f.field === "fullName")?.value ?? "Diese Person"} im gesamten Bestand löschen? Die Person wird für alle Organisationen entfernt und gegen erneute Erfassung gesperrt.`)) return;
+    if (
+      !window.confirm(
+        `${
+          facts.find((f) => f.field === "fullName")?.value ?? "Diese Person"
+        } im gesamten Bestand löschen? Die Person wird für alle Organisationen entfernt und gegen erneute Erfassung gesperrt.`
+      )
+    )
+      return;
     void c1(async () => {
-      await gatewayFetch(`/v1/persons/${encodeURIComponent(pid)}`, { method: "DELETE", body: { reason: "Loeschwunsch" } });
-      void qc.invalidateQueries({ queryKey: ["company", companyId ?? "", "contacts"] });
+      await gatewayFetch(`/v1/persons/${encodeURIComponent(pid)}`, {
+        method: "DELETE",
+        body: { reason: "Loeschwunsch" },
+      });
+      void qc.invalidateQueries({
+        queryKey: ["company", companyId ?? "", "contacts"],
+      });
     });
   };
   // WL4 — "Auf die Watchlist": nur wenn eine LinkedIn-Profil-URL
@@ -1547,8 +1874,12 @@ function PersonCard({
   const [wlNotice, setWlNotice] = useState<string | null>(null);
   const find = (field: string) => facts.find((f) => f.field === field);
   const name = find("fullName")?.value ?? "Unbekannte Person";
-  const job = facts.find((f) => f.field === "jobTitle" && f.status === "ACTIVE");
-  const dept = facts.find((f) => f.field === "department" && f.status === "ACTIVE");
+  const job = facts.find(
+    (f) => f.field === "jobTitle" && f.status === "ACTIVE"
+  );
+  const dept = facts.find(
+    (f) => f.field === "department" && f.status === "ACTIVE"
+  );
   const xing = find("xingUrl");
   const linkedin = find("linkedinUrl");
 
@@ -1563,7 +1894,14 @@ function PersonCard({
   //   3. Move INACTIVE history into a <details> "Historie (N)" block.
   // v0.1.628 — Position/Abteilung stehen im Kopf der Karte, nicht nochmal als Zeile.
   const visibleFacts = facts.filter(
-    (f) => !["fullName", "identityKey", "employmentCompanyId", "jobTitle", "department"].includes(f.field ?? ""),
+    (f) =>
+      ![
+        "fullName",
+        "identityKey",
+        "employmentCompanyId",
+        "jobTitle",
+        "department",
+      ].includes(f.field ?? "")
   );
   const activeFacts = visibleFacts.filter((f) => f.status === "ACTIVE");
   const inactiveFacts = visibleFacts.filter((f) => f.status !== "ACTIVE");
@@ -1590,7 +1928,7 @@ function PersonCard({
   // also dial / open mail / open maps / open URL with the right icon
   // and (for LinkedIn) the warning gate.
   const kindFor = (
-    field?: string,
+    field?: string
   ): "phone" | "email" | "address" | "url" | undefined => {
     switch (field) {
       case "phone":
@@ -1618,13 +1956,40 @@ function PersonCard({
     .map((t) => t.charAt(0).toUpperCase())
     .join("");
   const email = activeGroups.find(([f]) => f === "email")?.[1][0];
-  const phone = activeGroups.find(([f]) => f === "phone" || f === "mobilePhone")?.[1][0];
-  const reihenfolge = ["email", "phone", "mobilePhone", "address", "linkedinUrl", "xingUrl"];
+  const phone = activeGroups.find(
+    ([f]) => f === "phone" || f === "mobilePhone"
+  )?.[1][0];
+  const reihenfolge = [
+    "email",
+    "phone",
+    "mobilePhone",
+    "address",
+    "linkedinUrl",
+    "xingUrl",
+  ];
   const sortierteGruppen = [...activeGroups]
     .filter(([f]) => !["linkedinUrl", "xingUrl"].includes(f)) // Profile sind Icons im Kopf
-    .sort((a, b) => (reihenfolge.indexOf(a[0]) === -1 ? 99 : reihenfolge.indexOf(a[0])) - (reihenfolge.indexOf(b[0]) === -1 ? 99 : reihenfolge.indexOf(b[0])));
-  const konfidenzFarbe = (c?: number): string => (c === undefined ? "var(--muted)" : c >= 0.8 ? "#0f9d6f" : c >= 0.6 ? "#d98e04" : "#c0392b");
-  const iconFuer = (field: string): string => (field === "email" ? "✉" : field === "phone" || field === "mobilePhone" ? "☎" : field === "address" ? "⌂" : "•");
+    .sort(
+      (a, b) =>
+        (reihenfolge.indexOf(a[0]) === -1 ? 99 : reihenfolge.indexOf(a[0])) -
+        (reihenfolge.indexOf(b[0]) === -1 ? 99 : reihenfolge.indexOf(b[0]))
+    );
+  const konfidenzFarbe = (c?: number): string =>
+    c === undefined
+      ? "var(--muted)"
+      : c >= 0.8
+      ? "#0f9d6f"
+      : c >= 0.6
+      ? "#d98e04"
+      : "#c0392b";
+  const iconFuer = (field: string): string =>
+    field === "email"
+      ? "✉"
+      : field === "phone" || field === "mobilePhone"
+      ? "☎"
+      : field === "address"
+      ? "⌂"
+      : "•";
 
   return (
     <article className="panel pc">
@@ -1642,32 +2007,52 @@ function PersonCard({
             </p>
           )}
           {informiertAm && (
-            <span className="pc__informed" title="Information nach Art. 14 DSGVO dokumentiert">
-              Art. 14 informiert am {new Date(informiertAm).toLocaleDateString("de-DE")}
+            <span
+              className="pc__informed"
+              title="Information nach Art. 14 DSGVO dokumentiert"
+            >
+              Art. 14 informiert am{" "}
+              {new Date(informiertAm).toLocaleDateString("de-DE")}
             </span>
           )}
         </div>
         <div className="pc__quick">
           {email?.value && (
-            <a className="pc__iconbtn" href={`mailto:${email.value}`} title={`E-Mail an ${email.value}`}>
+            <a
+              className="pc__iconbtn"
+              href={`mailto:${email.value}`}
+              title={`E-Mail an ${email.value}`}
+            >
               <span className="visually-hidden">E-Mail schreiben</span>
               <MailIcon size={18} />
             </a>
           )}
           {phone?.value && (
-            <a className="pc__iconbtn" href={`tel:${String(phone.value).replace(/\s+/g, "")}`} title={`Anrufen: ${phone.value}`}>
+            <a
+              className="pc__iconbtn"
+              href={`tel:${String(phone.value).replace(/\s+/g, "")}`}
+              title={`Anrufen: ${phone.value}`}
+            >
               <span className="visually-hidden">Anrufen</span>
               <PhoneIcon size={18} />
             </a>
           )}
           {linkedin?.value && (
-            <ExternalLink href={linkedin.value} className="pc__iconbtn pc__iconbtn--brand" title="LinkedIn-Profil öffnen">
+            <ExternalLink
+              href={linkedin.value}
+              className="pc__iconbtn pc__iconbtn--brand"
+              title="LinkedIn-Profil öffnen"
+            >
               <span className="visually-hidden">LinkedIn</span>
               <LinkedInIcon size={17} />
             </ExternalLink>
           )}
           {xing?.value && (
-            <ExternalLink href={xing.value} className="pc__iconbtn pc__iconbtn--brand" title="XING-Profil öffnen">
+            <ExternalLink
+              href={xing.value}
+              className="pc__iconbtn pc__iconbtn--brand"
+              title="XING-Profil öffnen"
+            >
               <span className="visually-hidden">XING</span>
               <XingIcon size={17} />
             </ExternalLink>
@@ -1679,8 +2064,17 @@ function PersonCard({
               title="Öffentliche LinkedIn-Aktivität beobachten (Personen-Watchlist)"
               onClick={() =>
                 void window.api.linkedin.watchlist
-                  .add({ profileUrl: linkedin.value ?? "", label: name, companyId: companyId ?? null, quelle: "kontakt" })
-                  .then((r) => setWlNotice("error" in r && r.error ? r.error : "Auf der Watchlist ✓"))
+                  .add({
+                    profileUrl: linkedin.value ?? "",
+                    label: name,
+                    companyId: companyId ?? null,
+                    quelle: "kontakt",
+                  })
+                  .then((r) =>
+                    setWlNotice(
+                      "error" in r && r.error ? r.error : "Auf der Watchlist ✓"
+                    )
+                  )
               }
             >
               <span className="visually-hidden">Beobachten</span>
@@ -1697,27 +2091,61 @@ function PersonCard({
             const primary = group[0];
             if (!primary) return null;
             const variants = group.slice(1);
-            const obsId = typeof primary.lastObsId === "string" ? primary.lastObsId : null;
+            const obsId =
+              typeof primary.lastObsId === "string" ? primary.lastObsId : null;
             const quelleUrl = obsId ? belege?.get(obsId) : undefined;
-            const pct = primary.confidence !== undefined ? Math.round(primary.confidence * 100) : null;
+            const pct =
+              primary.confidence !== undefined
+                ? Math.round(primary.confidence * 100)
+                : null;
             return (
               <li key={field} className="pc__fact" title={fieldLabel(field)}>
                 <span className="pc__fact-icon" aria-hidden="true">
                   {iconFuer(field)}
                 </span>
                 <span className="pc__fact-value">
-                  {primary.value ? <FactValue value={primary.value} kind={kindFor(field)} /> : ""}
-                  {variants.length > 0 && <PersonCardVariants variants={variants} kind={kindFor(field)} />}
+                  {primary.value ? (
+                    <FactValue value={primary.value} kind={kindFor(field)} />
+                  ) : (
+                    ""
+                  )}
+                  {variants.length > 0 && (
+                    <PersonCardVariants
+                      variants={variants}
+                      kind={kindFor(field)}
+                    />
+                  )}
                 </span>
                 <span className="pc__fact-meta">
-                  {field === "email" && <AbgeleitetBadge quellen={quellen} obsId={obsId} evidence={obsId ? obsHerkunft?.get(obsId) : undefined} />}
-                  {quelleUrl && ["phone", "mobilePhone", "email", "address"].includes(field) && (
-                    <ExternalLink href={quelleUrl} className="pc__src" title={`Gefunden auf ${quelleUrl}`}>
-                      Quelle
-                    </ExternalLink>
+                  {field === "email" && (
+                    <AbgeleitetBadge
+                      quellen={quellen}
+                      obsId={obsId}
+                      evidence={obsId ? obsHerkunft?.get(obsId) : undefined}
+                    />
                   )}
+                  {quelleUrl &&
+                    ["phone", "mobilePhone", "email", "address"].includes(
+                      field
+                    ) && (
+                      <ExternalLink
+                        href={quelleUrl}
+                        className="pc__src"
+                        title={`Gefunden auf ${quelleUrl}`}
+                      >
+                        Quelle
+                      </ExternalLink>
+                    )}
                   {pct !== null && (
-                    <span className="pc__conf" title={`Zuverlässigkeit ${pct} %`} style={{ ["--pc-conf" as string]: konfidenzFarbe(primary.confidence) }}>
+                    <span
+                      className="pc__conf"
+                      title={`Zuverlässigkeit ${pct} %`}
+                      style={{
+                        ["--pc-conf" as string]: konfidenzFarbe(
+                          primary.confidence
+                        ),
+                      }}
+                    >
                       <i />
                       {pct}%
                     </span>
@@ -1735,18 +2163,42 @@ function PersonCard({
         <details className="pc__more">
           <summary>Datenschutz &amp; Herkunft</summary>
           <div className="pc__more-actions">
-            <button type="button" className="link" disabled={c1Busy} onClick={() => void zeigeHerkunft()} title="Herkunftsnachweis (Art. 15): alle Angaben mit Quelle, Beleg, Zeitpunkt">
+            <button
+              type="button"
+              className="link"
+              disabled={c1Busy}
+              onClick={() => void zeigeHerkunft()}
+              title="Herkunftsnachweis (Art. 15): alle Angaben mit Quelle, Beleg, Zeitpunkt"
+            >
               {herkunft ? "Herkunft ausblenden" : "Herkunftsnachweis"}
             </button>
-            <button type="button" className="link" disabled={c1Busy} onClick={() => void hinweisKopieren()} title="Vorformulierten Hinweistext nach Art. 14 DSGVO kopieren">
+            <button
+              type="button"
+              className="link"
+              disabled={c1Busy}
+              onClick={() => void hinweisKopieren()}
+              title="Vorformulierten Hinweistext nach Art. 14 DSGVO kopieren"
+            >
               Art.-14-Hinweis kopieren
             </button>
             {!informiertAm && (
-              <button type="button" className="link" disabled={c1Busy} onClick={() => void informiert()} title="Dokumentieren, dass die Person nach Art. 14 informiert wurde">
+              <button
+                type="button"
+                className="link"
+                disabled={c1Busy}
+                onClick={() => void informiert()}
+                title="Dokumentieren, dass die Person nach Art. 14 informiert wurde"
+              >
                 als informiert markieren
               </button>
             )}
-            <button type="button" className="link pc__danger" disabled={c1Busy} onClick={loeschen} title="Person global löschen (Löschwunsch, Art. 17)">
+            <button
+              type="button"
+              className="link pc__danger"
+              disabled={c1Busy}
+              onClick={loeschen}
+              title="Person global löschen (Löschwunsch, Art. 17)"
+            >
               Person löschen
             </button>
             {c1Notice && <span className="muted small">{c1Notice}</span>}
@@ -1767,8 +2219,14 @@ function PersonCard({
                     {iconFuer(f.field ?? "")}
                   </span>
                   <span className="pc__fact-value">
-                    <span className="muted small">{fieldLabel(f.field ?? "")}: </span>
-                    {f.value ? <FactValue value={f.value} kind={kindFor(f.field)} /> : ""}
+                    <span className="muted small">
+                      {fieldLabel(f.field ?? "")}:{" "}
+                    </span>
+                    {f.value ? (
+                      <FactValue value={f.value} kind={kindFor(f.field)} />
+                    ) : (
+                      ""
+                    )}
                   </span>
                 </li>
               ))}
@@ -1829,7 +2287,13 @@ function relTimeDe(iso?: string): string | null {
 
 // Ehrliches Badge statt "ACTIVE": Der Status ist keine Verifikation,
 // sondern nur "zuletzt auf der Website gesehen und nicht verdraengt".
-function StatusPill({ status, lastSeen }: { status?: string; lastSeen?: string }) {
+function StatusPill({
+  status,
+  lastSeen,
+}: {
+  status?: string;
+  lastSeen?: string;
+}) {
   if (!status) return null;
   const active = status === "ACTIVE";
   const rel = relTimeDe(lastSeen);
@@ -1876,12 +2340,7 @@ function ConfidenceBar({ confidence }: { confidence?: number }) {
 // fall cleanly into one bucket without arguing over edge cases like
 // "Rechnungsabgrenzungsposten" (which can technically be ARAP or
 // PRAP). Unmatched names land in "sonstiges" with a grey dot.
-type KpiCategory =
-  | "guv"
-  | "aktiva"
-  | "passiva"
-  | "bilanzsumme"
-  | "sonstiges";
+type KpiCategory = "guv" | "aktiva" | "passiva" | "bilanzsumme" | "sonstiges";
 
 /**
  * v0.1.197 — prefer the LLM-assigned category on the KPI object;
@@ -1891,7 +2350,10 @@ type KpiCategory =
  * unrecognised legacy KPIs land in "sonstiges" rather than being
  * mis-categorised.
  */
-function resolveKpiCategory(kpi: { name: string; category?: string | null }): KpiCategory {
+function resolveKpiCategory(kpi: {
+  name: string;
+  category?: string | null;
+}): KpiCategory {
   const assigned = (kpi.category ?? "").toLowerCase();
   if (
     assigned === "bilanzsumme" ||
@@ -1915,7 +2377,7 @@ function kpiCategoryHeuristic(name: string): KpiCategory {
   // (that's equity → passiva).
   if (
     /JAHRES(ÜBERSCHUSS|FEHLBETRAG|ERGEBNIS)|UMSATZ|ERLÖSE?|BETRIEBSERGEBNIS|ABSCHREIBUNGEN|MATERIAL(?:AUFWAND|KOSTEN)|PERSONAL(?:AUFWAND|KOSTEN)/.test(
-      n,
+      n
     )
   )
     return "guv";
@@ -1923,14 +2385,14 @@ function kpiCategoryHeuristic(name: string): KpiCategory {
   // provisions, liabilities.
   if (
     /EIGENKAPITAL|GEZEICHNETES\s+KAPITAL|KAPITALR[ÜU]CKLAGE|GEWINNR[ÜU]CKLAGE|GEWINNVORTRAG|VERLUSTVORTRAG|R[ÜU]CKSTELLUNG|VERBINDLICHKEIT|ANLEIHE|DARLEHEN|GENUSSRECHTSKAPITAL|SONDERPOSTEN|FREMDKAPITAL/.test(
-      n,
+      n
     )
   )
     return "passiva";
   // Aktiva (left side): fixed assets, current assets, cash, inventory.
   if (
     /SACHANLAGE|IMMATERIELLE(?:N)?\s+VERMÖGEN|ANLAGEVERMÖGEN|FINANZANLAGEN|UMLAUFVERMÖGEN|FORDERUNG|KASSENBESTAND|GUTHABEN|BUNDESBANK|SCHECKS|VORR[ÄA]TE|WERTPAPIERE|BETEILIGUNG|GRUNDST[ÜU]CK/.test(
-      n,
+      n
     )
   )
     return "aktiva";
@@ -1978,7 +2440,7 @@ const KPI_CATEGORY_ORDER: KpiCategory[] = [
  */
 function filterKpisToYear<T extends { period?: string | null }>(
   kpis: T[],
-  pubYear: number | null,
+  pubYear: number | null
 ): T[] {
   if (pubYear == null) return kpis;
   return kpis.filter((k) => {
@@ -1989,9 +2451,9 @@ function filterKpisToYear<T extends { period?: string | null }>(
   });
 }
 
-function sortKpisByCategory<T extends { name: string; category?: string | null }>(
-  kpis: T[],
-): T[] {
+function sortKpisByCategory<
+  T extends { name: string; category?: string | null }
+>(kpis: T[]): T[] {
   // Stable sort by (category-index, original-position). Within a
   // category we preserve the LLM's natural order — the model usually
   // walks down the Bilanz so leaves things in a sensible reading
@@ -2050,7 +2512,7 @@ function normaliseProfileMarkdown(raw: string): string {
     "(?:^|\\s)(\\*\\*(?:" +
       labels.map((l) => l.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|") +
       ")(?::?\\*\\*|\\*\\*:))",
-    "g",
+    "g"
   );
   // Replace each occurrence with two newlines + the matched bold
   // label. Trim leading newlines that would render as an empty first
@@ -2074,14 +2536,11 @@ function fieldLabel(field: string): string {
 }
 
 function groupBy<T>(items: T[], key: (item: T) => string): Record<string, T[]> {
-  return items.reduce(
-    (acc, it) => {
-      const k = key(it);
-      (acc[k] ??= []).push(it);
-      return acc;
-    },
-    {} as Record<string, T[]>,
-  );
+  return items.reduce((acc, it) => {
+    const k = key(it);
+    (acc[k] ??= []).push(it);
+    return acc;
+  }, {} as Record<string, T[]>);
 }
 
 // Insights — derived signals (industry position, company age) plus a
@@ -2107,7 +2566,9 @@ function InsightsTab({
     ? Number(structured.foundingYear)
     : null;
   const age =
-    founding && Number.isFinite(founding) ? new Date().getFullYear() - founding : null;
+    founding && Number.isFinite(founding)
+      ? new Date().getFullYear() - founding
+      : null;
 
   return (
     <div className="grid-2">
@@ -2190,7 +2651,8 @@ function topicLabel(t?: string | null): string {
 
 function JobsTab({ jobs }: { jobs: JobPosting[] }) {
   const [expanded, setExpanded] = useState(false);
-  if (jobs.length === 0) return <p className="muted">Noch keine Stellenanzeigen.</p>;
+  if (jobs.length === 0)
+    return <p className="muted">Noch keine Stellenanzeigen.</p>;
   const more = jobs.length > 4;
   const shown = expanded ? jobs : jobs.slice(0, 4);
   return (
@@ -2243,7 +2705,11 @@ function JobsTab({ jobs }: { jobs: JobPosting[] }) {
       </div>
       {more && (
         <div style={{ marginTop: "0.75rem" }}>
-          <button type="button" className="tab" onClick={() => setExpanded((p) => !p)}>
+          <button
+            type="button"
+            className="tab"
+            onClick={() => setExpanded((p) => !p)}
+          >
             {expanded ? "Weniger anzeigen" : `Alle anzeigen (${jobs.length})`}
           </button>
         </div>
@@ -2251,7 +2717,6 @@ function JobsTab({ jobs }: { jobs: JobPosting[] }) {
     </>
   );
 }
-
 
 /** v0.1.429 — PB4: Im Sparmodus wissen lassen, dass Details nicht fehlen,
  *  sondern per Chat-Frage on-the-fly geholt werden (publication_search). */
@@ -2274,9 +2739,9 @@ function PublicationModeHint() {
     <p className="muted small" style={{ margin: 0 }}>
       Sparsame Analyse aktiv: Vorab extrahiert werden nur Kernzahlen und
       Lagebericht-Aussagen. Der vollständige Jahresabschluss ist trotzdem
-      durchsuchbar — stell deine Detailfrage einfach im Chat (z.&nbsp;B.
-      „Wie haben sich die Umsatzerlöse entwickelt?“). Vollständige
-      Voranalyse: Einstellungen&nbsp;→ Modelle&nbsp;→ Publikations-Analyse.
+      durchsuchbar — stell deine Detailfrage einfach im Chat (z.&nbsp;B. „Wie
+      haben sich die Umsatzerlöse entwickelt?“). Vollständige Voranalyse:
+      Einstellungen&nbsp;→ Modelle&nbsp;→ Publikations-Analyse.
     </p>
   );
 }
