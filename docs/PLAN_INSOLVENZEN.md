@@ -234,6 +234,20 @@ aktualisiert) und `faellige`. Routen: `POST /internal/companies/insolvency-event
 (JWT, Status plus Ereignisse). `insolvencyStatus` in Firmendetails, Liste,
 Suchtreffern und „Meine Firmen“.
 
+**I2 umgesetzt (2026-09-15, Gateway, noch nicht deployt):** Job-Art
+`insolvenz` (Payload `firmen[]` mit companyId, Gericht in
+Bestandsschreibweise, Art, Nummer, Zusatz; Bündel zu 15). Ersteller-Cron
+täglich: Pool = alle Firmen mit Verarbeitung (`EntityProgress`, bis
+20.000), fällig nach 30 Tagen laut master-data
+(`/internal/companies/insolvency-due` liefert Registerdaten;
+Müllnummern des Altbestands werden nicht abgefragt). Löschungsankündigung
+aus Refresh-Ergebnissen → Insolvenz-Job sofort mit Priorität 1. Ergebnis
+→ `POST /internal/companies/insolvency-events`; neue Veröffentlichung
+markiert die strukturierten Inhalte als veraltet. Route
+`POST /v1/register-jobs/insolvenz { companyIds }` (ohne Kadenz).
+Worker, die keine Arten melden, bekommen nur Register-Jobs; der Worker
+meldet `insolvenz` erst ab I3. Abschaltbar mit `INSOLVENZ_JOBS_DISABLED=1`.
+
 ## 7. Aufwand und Mengen
 
 - Modus A bei 5.000 Pool-Firmen alle 30 Tage: rund 170 Abfragen je Tag,

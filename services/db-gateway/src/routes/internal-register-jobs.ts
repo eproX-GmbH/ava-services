@@ -6,7 +6,7 @@ import { Hono } from "hono";
 import { z } from "zod";
 import { internalAuthMiddleware } from "../middleware/internal-auth";
 import { getGatewayPool } from "../lib/producer-pools";
-import { ABFRAGEN_JE_STUNDE, JOB_ARTEN, JobFehler, leaseJob, meldeFehler, registriereWorker, verarbeiteErgebnis, type Ergebnis, type JobArt } from "../lib/register-jobs";
+import { ABFRAGEN_JE_STUNDE, JOB_ARTEN_REGISTER, JobFehler, leaseJob, meldeFehler, registriereWorker, verarbeiteErgebnis, type Ergebnis, type JobArt } from "../lib/register-jobs";
 import { ErgebnisShape, WorkerId } from "./v1/register-jobs";
 
 export const internalRegisterJobsRouter = new Hono();
@@ -22,11 +22,11 @@ function parse<T>(raw: string, schema: z.ZodType<T>): T | null {
 }
 
 internalRegisterJobsRouter.post("/register-jobs/lease", async (c) => {
-  const body = parse(c.get("internalRawBody"), z.object({ workerId: WorkerId, arten: z.array(z.enum(["front", "bekanntmachungen", "refresh"])).optional() }));
+  const body = parse(c.get("internalRawBody"), z.object({ workerId: WorkerId, arten: z.array(z.enum(["front", "bekanntmachungen", "refresh", "insolvenz"])).optional() }));
   if (!body) return c.json({ error: "bad_request" }, 400);
   const pool = getGatewayPool();
   await registriereWorker(pool, body.workerId, null, null, "betreiber");
-  const job = await leaseJob(pool, body.workerId, (body.arten as JobArt[] | undefined) ?? JOB_ARTEN);
+  const job = await leaseJob(pool, body.workerId, (body.arten as JobArt[] | undefined) ?? JOB_ARTEN_REGISTER);
   if (!job) return c.body(null, 204);
   return c.json({ ...job, abfragenJeStunde: ABFRAGEN_JE_STUNDE });
 });

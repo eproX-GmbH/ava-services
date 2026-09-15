@@ -14,11 +14,13 @@ import { requireScope } from "../../middleware/auth";
 import { getGatewayPool } from "../../lib/producer-pools";
 import {
   ABFRAGEN_JE_STUNDE,
-  JOB_ARTEN,
+  JOB_ARTEN_REGISTER,
   JobFehler,
   leaseJob,
   meldeFehler,
   refreshAnfordern,
+  insolvenzAnfordern,
+  insolvenzFaellige,
   registriereWorker,
   statistik,
   verarbeiteErgebnis,
@@ -37,7 +39,7 @@ const err = {
 };
 
 export const WorkerId = z.string().min(8).max(120).regex(/^[A-Za-z0-9._:-]+$/);
-const JobArtSchema = z.enum(["front", "bekanntmachungen", "refresh"]);
+const JobArtSchema = z.enum(["front", "bekanntmachungen", "refresh", "insolvenz"]);
 
 const JobShape = z
   .object({
@@ -79,11 +81,21 @@ const BekanntmachungShape = z.object({
   sitz: z.string().default(""),
 });
 
+const InsolvenzMeldungShape = z.object({
+  companyId: z.string().min(3),
+  aktenzeichen: z.string().min(1).max(60),
+  insolvenzgericht: z.string().min(1).max(80),
+  datum: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  gegenstand: z.enum(["EROEFFNUNG", "ABWEISUNG_MANGELS_MASSE", "SICHERUNGSMASSNAHME", "AUFHEBUNG", "EINSTELLUNG", "ENTSCHEIDUNG", "VERTEILUNG", "INSOLVENZPLAN", "SONSTIGES"]),
+  text: z.string().max(50_000).default(""),
+});
+
 export const ErgebnisShape = z.object({
   workerId: WorkerId,
   abfragen: z.number().int().nonnegative(),
   gesperrt: z.boolean().optional(),
   treffer: z.array(TrefferShape).max(5000).default([]),
+  insolvenz: z.object({ meldungen: z.array(InsolvenzMeldungShape).max(2000), geprueft: z.array(z.string()).max(2000) }).optional(),
   front: z.object({ maxNummer: z.number().int().nonnegative(), offeneLuecken: z.array(z.number().int()).max(500), zusaetze: z.array(z.string()).optional() }).optional(),
   bekanntmachungen: z.array(BekanntmachungShape).max(5000).optional(),
 });
@@ -124,7 +136,7 @@ registerJobsRouter.openapi(leaseRoute, async (c) => {
   const body = c.req.valid("json");
   const pool = getGatewayPool();
   await registriereWorker(pool, body.workerId, a.tenantId, a.actorId, body.workerArt);
-  const job = await leaseJob(pool, body.workerId, (body.arten as JobArt[] | undefined) ?? JOB_ARTEN);
+  const job = await leaseJob(pool, body.workerId, (body.arten as JobArt[] | undefined) ?? JOB_ARTEN_REGISTER);
   if (!job) return c.body(null, 204);
   return c.json(
     { id: job.id, art: job.art, schluessel: job.schluessel, payload: job.payload, prioritaet: job.prioritaet, leaseUntil: job.leaseUntil, versuche: job.versuche, abfragenJeStunde: ABFRAGEN_JE_STUNDE },
@@ -208,4 +220,28 @@ registerJobsRouter.openapi(refreshRoute, async (c) => {
   auth(c);
   const body = c.req.valid("json");
   return c.json({ jobs: await refreshAnfordern(getGatewayPool(), body.firmen, body.grund) }, 200);
+});
+
+// Insolvenz-Delta — Pruefung konkreter Firmen anfordern (Chat, Import, Firmendetail).
+const insolvenzRoute = createRoute({
+  method: "post",
+  path: "/register-jobs/insolvenz",
+  tags: [tag],
+  summary: "Insolvenzpruefung fuer konkrete Firmen anfordern (Buendel zu 15, ohne Kadenz)",
+  request: {
+    body: {
+      content: {
+        "application/json": {
+          schema: z.object({ companyIds: z.array(z.string().min(3)).min(1).max(500), grund: z.string().min(1).max(40).regex(/^[a-z0-9-]+$/).default("anforderung") }),
+        },
+      },
+    },
+  },
+  responses: { 200: { content: { "application/json": { schema: z.object({ jobs: z.number().int(), firmen: z.number().int() }) } }, description: "ok" }, 401: err[401] },
+});
+registerJobsRouter.openapi(insolvenzRoute, async (c) => {
+  auth(c);
+  const body = c.req.valid("json");
+  const firmen = await insolvenzFaellige(body.companyIds, 0);
+  return c.json({ jobs: await insolvenzAnfordern(getGatewayPool(), firmen, body.grund, 1), firmen: firmen.length }, 200);
 });

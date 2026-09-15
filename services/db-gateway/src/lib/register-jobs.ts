@@ -18,8 +18,10 @@ import { logger } from "./logger";
 import { getGatewayPool } from "./producer-pools";
 import { companyIdAus, idTeil, zusatzBestand } from "./register-ids";
 
-export type JobArt = "front" | "bekanntmachungen" | "refresh";
-export const JOB_ARTEN: JobArt[] = ["front", "bekanntmachungen", "refresh"];
+export type JobArt = "front" | "bekanntmachungen" | "refresh" | "insolvenz";
+export const JOB_ARTEN: JobArt[] = ["front", "bekanntmachungen", "refresh", "insolvenz"];
+/** Worker ohne ausdruecklich gemeldete Arten (Stand vor I3) bekommen nur Register-Jobs. */
+export const JOB_ARTEN_REGISTER: JobArt[] = ["front", "bekanntmachungen", "refresh"];
 
 export const LEASE_MINUTEN = 20;
 export const MAX_VERSUCHE = 5;
@@ -29,6 +31,10 @@ export const FRONT_MAX_FEHLTREFFER = 10;
 export const BEKANNTMACHUNGEN_FENSTER_TAGE = 56;
 export const REFRESH_BUENDEL = 15; // passt mit 60/h in eine 20-Minuten-Lease (Worker: MAX_ABFRAGEN_JE_JOB 15)
 export const REFRESH_INTERVALL_TAGE = 90;
+/** Insolvenz-Delta (docs/PLAN_INSOLVENZEN.md): Pool-Firmen alle 30 Tage, Buendel zu 15. */
+export const INSOLVENZ_INTERVALL_TAGE = 30;
+export const INSOLVENZ_BUENDEL = 15;
+export const INSOLVENZ_POOL_MAX = 20_000;
 
 export type RegisterJob = {
   id: string;
@@ -70,11 +76,23 @@ export type Bekanntmachung = {
   sitz: string;
 };
 
+/** Insolvenz-Delta: Veroeffentlichung des Insolvenzportals zu einer Firma. */
+export type InsolvenzMeldung = {
+  companyId: string;
+  aktenzeichen: string;
+  insolvenzgericht: string;
+  datum: string;
+  gegenstand: string;
+  text: string;
+};
+
 export type Ergebnis = {
   workerId: string;
   abfragen: number;
   gesperrt?: boolean;
   treffer: Treffer[];
+  /** insolvenz: Meldungen plus alle geprueften Firmen (auch ohne Treffer). */
+  insolvenz?: { meldungen: InsolvenzMeldung[]; geprueft: string[] };
   /** front: neuer Stand nach dem Lauf. */
   front?: { maxNummer: number; offeneLuecken: number[]; zusaetze?: string[] };
   /** bekanntmachungen: alle Eintraege des Tages. */
@@ -279,6 +297,58 @@ export async function refreshAnfordern(
   return n;
 }
 
+export type InsolvenzFirma = { companyId: string; gericht: string; art: string; nummer: string; zusatz?: string };
+
+/** Insolvenz-Jobs fuer konkrete Firmen (Buendel zu 15). */
+export async function insolvenzAnfordern(q: Q, firmen: InsolvenzFirma[], grund: string, prioritaet = 2): Promise<number> {
+  let n = 0;
+  const gesehen = new Set<string>();
+  const eindeutig = firmen.filter((f) => {
+    if (gesehen.has(f.companyId)) return false;
+    gesehen.add(f.companyId);
+    return true;
+  });
+  for (let i = 0; i < eindeutig.length; i += INSOLVENZ_BUENDEL) {
+    const buendel = eindeutig.slice(i, i + INSOLVENZ_BUENDEL);
+    const schluessel = `insolvenz:${grund}:${buendel.map((f) => f.companyId).join(",")}`.slice(0, 900);
+    if (await legeJobAn(q, "insolvenz", schluessel, { firmen: buendel, grund }, prioritaet)) n++;
+  }
+  return n;
+}
+
+/** Registerdaten zu companyIds bei master-data holen; aelterAlsTage 0 = ohne Kadenz. */
+export async function insolvenzFaellige(companyIds: string[], aelterAlsTage: number): Promise<InsolvenzFirma[]> {
+  const out: InsolvenzFirma[] = [];
+  for (let i = 0; i < companyIds.length; i += 5000) {
+    const r = await masterData<{ firmen: Array<{ companyId: string; districtCourt: string; registerType: string; registerNumber: string }> }>(
+      "POST",
+      "/internal/companies/insolvency-due",
+      { companyIds: companyIds.slice(i, i + 5000), aelterAlsTage },
+    );
+    for (const f of r.firmen ?? []) {
+      const m = /^(\d+)\s?([A-ZÄÖÜ]{0,3})$/.exec(f.registerNumber.trim());
+      if (!m) continue; // Muellnummern des Altbestands ("93141.0", "12345frueher...") nicht abfragen
+      out.push({ companyId: f.companyId, gericht: f.districtCourt, art: f.registerType, nummer: m[1], zusatz: m[2] || undefined });
+    }
+  }
+  return out;
+}
+
+/**
+ * Pool fuer die Insolvenzpruefung: Firmen, mit denen Nutzer arbeiten
+ * (Verarbeitung in EntityProgress). Kein Blick auf den Gesamtbestand
+ * (Portal-Regel: nur Einzelabruf mit konkretem Bezug).
+ */
+export async function erzeugeInsolvenzJobs(pool: pg.Pool): Promise<number> {
+  const r = await pool.query<{ companyId: string }>(
+    `SELECT DISTINCT "companyId" FROM "EntityProgress" ORDER BY "companyId" LIMIT $1`,
+    [INSOLVENZ_POOL_MAX],
+  );
+  const faellig = await insolvenzFaellige(r.rows.map((x) => x.companyId), INSOLVENZ_INTERVALL_TAGE);
+  const heute = tagIso(new Date());
+  return insolvenzAnfordern(pool, faellig, `pool-${heute}`, 2);
+}
+
 // ---- Lease / Ergebnis -------------------------------------------------------
 
 export async function leaseJob(pool: pg.Pool, workerId: string, arten: JobArt[] = JOB_ARTEN): Promise<RegisterJob | null> {
@@ -349,6 +419,33 @@ export async function verarbeiteErgebnis(pool: pg.Pool, jobId: string, ergebnis:
     Object.assign(zusammenfassung, summe);
     // S7: geaendertes Registerblatt → strukturierte Inhalte veraltet.
     if (geaenderteIds.length > 0) zusammenfassung.veraltet = await markiereVeraltet(pool, geaenderteIds, `register-${job.art}`);
+    // Insolvenz-Delta: Loeschungsankuendigung → Insolvenzpruefung sofort (Loeschung folgt oft auf Insolvenz).
+    const loeschung = ergebnis.treffer.filter((t) => t.status === "LOESCHUNG_ANGEKUENDIGT");
+    if (loeschung.length > 0) {
+      zusammenfassung.insolvenzJobs = await insolvenzAnfordern(
+        pool,
+        loeschung.map((t) => ({ companyId: companyIdAus(t.gericht, t.art, t.nummer, t.zusatz, t.frueher, t.frueherSuffix === true), gericht: t.gericht, art: t.art, nummer: String(t.nummer), zusatz: t.zusatz || undefined })),
+        `loeschung-${tagIso(new Date())}`,
+        1,
+      );
+    }
+  }
+
+  if (job.art === "insolvenz" && ergebnis.insolvenz) {
+    const p = job.payload as { firmen?: InsolvenzFirma[] };
+    const geprueft = [...new Set([...(p.firmen ?? []).map((f) => f.companyId), ...ergebnis.insolvenz.geprueft])];
+    const r = await masterData<{ befunde: Array<{ companyId: string; neu: number; status: string }>; neu: number }>("POST", "/internal/companies/insolvency-events", {
+      meldungen: ergebnis.insolvenz.meldungen,
+      geprueft,
+      gesehenAt: new Date().toISOString(),
+    });
+    zusammenfassung.meldungen = ergebnis.insolvenz.meldungen.length;
+    zusammenfassung.geprueft = geprueft.length;
+    zusammenfassung.neu = r.neu;
+    zusammenfassung.mitVerfahren = (r.befunde ?? []).filter((b) => b.status !== "NONE" && b.status !== "unbekannt").length;
+    // Neue Veroeffentlichung → Publikationen/strukturierte Inhalte koennen sich aendern.
+    const neueIds = (r.befunde ?? []).filter((b) => b.neu > 0).map((b) => b.companyId);
+    if (neueIds.length > 0) zusammenfassung.veraltet = await markiereVeraltet(pool, neueIds, "insolvenz");
   }
 
   if (job.art === "front" && ergebnis.front) {
@@ -445,7 +542,7 @@ export type Statistik = {
 };
 
 export async function statistik(pool: pg.Pool): Promise<Statistik> {
-  const jobs: Record<JobArt, Record<string, number>> = { front: {}, bekanntmachungen: {}, refresh: {} };
+  const jobs: Record<JobArt, Record<string, number>> = { front: {}, bekanntmachungen: {}, refresh: {}, insolvenz: {} };
   const r = await pool.query<{ art: JobArt; status: string; n: string }>(`SELECT "art", "status", count(*)::text AS n FROM "RegisterJob" GROUP BY 1, 2`);
   for (const row of r.rows) if (jobs[row.art]) jobs[row.art][row.status] = Number(row.n);
   const w = await pool.query<{ n: string }>(`SELECT count(*)::text AS n FROM "RegisterWorker" WHERE "zuletztAt" > NOW() - interval '1 hour'`);
@@ -490,6 +587,14 @@ export async function runRegisterJobCronOnce(now: Date = new Date()): Promise<vo
     letzterErstellTag = tag;
     const r = await erzeugeJobs(getGatewayPool(), now);
     logger.info(r, "[register-jobs] Jobs erzeugt");
+    if (process.env.INSOLVENZ_JOBS_DISABLED !== "1") {
+      try {
+        const n = await erzeugeInsolvenzJobs(getGatewayPool());
+        logger.info({ insolvenzJobs: n }, "[register-jobs] Insolvenz-Jobs erzeugt");
+      } catch (err) {
+        logger.warn({ err: err instanceof Error ? err.message : String(err) }, "[register-jobs] Insolvenz-Jobs nicht erzeugt");
+      }
+    }
   }
   const w = await wiedervorlage(getGatewayPool());
   if (w > 0) logger.info({ wiedervorgelegt: w }, "[register-jobs] fehlgeschlagene Jobs erneut eingereiht");
