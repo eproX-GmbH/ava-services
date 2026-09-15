@@ -4,10 +4,10 @@ Auto-generiert von `services/desktop/scripts/generate-tools-md.mjs`.
 NICHT direkt bearbeiten — die Quelle der Wahrheit ist `services/desktop/src/main/agent/tools/*.ts`.
 Lauf via `pnpm -F @ava/desktop tools:doc` (oder automatisch via `build:typecheck`).
 
-Stand: 2026-09-14
-Anzahl Tools: 246
+Stand: 2026-09-15
+Anzahl Tools: 247
 
-## Firmen (17)
+## Firmen (18)
 
 ### `company_contacts`
 
@@ -45,6 +45,16 @@ Fetch the canonical German-company record (legal name, register, address, indust
 
 _Parameter:_
 - `companyId: string` (required)
+
+### `company_insolvency`
+
+_Datei:_ `services/desktop/src/main/agent/tools/companies.ts`
+
+Insolvenzstatus einer Firma (NONE, VERDACHT, SICHERUNG = vorlaeufiger Insolvenzverwalter, EROEFFNET, ABGEWIESEN mangels Masse, AUFGEHOBEN) mit den gespeicherten Veroeffentlichungen des Insolvenzportals (Datum, Aktenzeichen, Gegenstand, Text). Mit pruefen=true wird eine neue Abfrage des Insolvenzportals fuer diese Firma eingereiht (laeuft im Hintergrund ueber die Register-Worker, Ergebnis nach einigen Minuten bis Stunden).
+
+_Parameter:_
+- `companyId: string` (required)
+- `pruefen: boolean` — neue Pruefung im Insolvenzportal anfordern
 
 ### `company_keywords`
 

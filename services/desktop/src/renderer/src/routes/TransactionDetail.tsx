@@ -1,4 +1,4 @@
-import { RegisterStatusBadge } from "../components/RegisterStatusBadge";
+import { InsolvenzBadge, RegisterStatusBadge } from "../components/RegisterStatusBadge";
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate, useParams } from "react-router-dom";
@@ -183,6 +183,7 @@ export function TransactionDetail() {
     queryFn: async () => {
       const map = new Map<string, string>();
       const status = new Map<string, string>();
+      const insolvenz = new Map<string, string>();
       await Promise.all(
         companyIds.map(async (cid) => {
           try {
@@ -190,16 +191,18 @@ export function TransactionDetail() {
               name?: string | null;
               companyName?: string | null;
               registerStatus?: string | null;
+              insolvencyStatus?: string | null;
             }>(`/v1/companies/${encodeURIComponent(cid)}`);
             const n = data.name ?? data.companyName;
             if (n && n.trim().length > 0) map.set(cid, n.trim());
             if (data.registerStatus) status.set(cid, data.registerStatus);
+            if (data.insolvencyStatus) insolvenz.set(cid, data.insolvencyStatus);
           } catch {
             // Leave the entry missing; nameFor falls back to the id.
           }
         }),
       );
-      return { map, status };
+      return { map, status, insolvenz };
     },
     enabled: companyIds.length > 0,
     // Names are slow-changing master-data; 5 min keeps the cache warm
@@ -231,6 +234,7 @@ export function TransactionDetail() {
   const nameFor = (cid: string): string =>
     companyNames.data?.map.get(cid) ?? `${cid.slice(0, 12)}…`;
   const statusFor = (cid: string): string | undefined => companyNames.data?.status.get(cid);
+  const insolvenzFor = (cid: string): string | undefined => companyNames.data?.insolvenz.get(cid);
 
   // Live SSE binding — patch matching cells in-place.
   // We don't re-sort on each event: user-driven scroll position should stay
@@ -431,6 +435,7 @@ export function TransactionDetail() {
                     <td className="matrix-company">
                       {nameFor(row.companyId)}
                       <RegisterStatusBadge status={statusFor(row.companyId)} />
+                      <InsolvenzBadge status={insolvenzFor(row.companyId)} />
                       <CrmBadgeRow
                         links={crmLinks.data?.links[row.companyId] ?? []}
                       />
@@ -457,6 +462,7 @@ export function TransactionDetail() {
             <h3>
               {nameFor(openCompanyId)}
               <RegisterStatusBadge status={statusFor(openCompanyId)} />
+              <InsolvenzBadge status={insolvenzFor(openCompanyId)} />
             </h3>
             <button
               type="button"

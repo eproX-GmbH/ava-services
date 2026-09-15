@@ -91,6 +91,34 @@ export function buildCompanyTools(ctx: Ctx): Tool[] {
     },
   });
 
+  // Insolvenz-Delta — Status und Veroeffentlichungen des Insolvenzportals; Pruefung anfordern.
+  const insolvency = defineTool({
+    name: "company_insolvency",
+    description:
+      "Insolvenzstatus einer Firma (NONE, VERDACHT, SICHERUNG = vorlaeufiger Insolvenzverwalter, EROEFFNET, ABGEWIESEN mangels Masse, AUFGEHOBEN) " +
+      "mit den gespeicherten Veroeffentlichungen des Insolvenzportals (Datum, Aktenzeichen, Gegenstand, Text). Mit pruefen=true wird eine neue " +
+      "Abfrage des Insolvenzportals fuer diese Firma eingereiht (laeuft im Hintergrund ueber die Register-Worker, Ergebnis nach einigen Minuten bis Stunden).",
+    parameters: {
+      type: "object",
+      properties: { companyId: { type: "string" }, pruefen: { type: "boolean", description: "neue Pruefung im Insolvenzportal anfordern" } },
+      required: ["companyId"],
+    },
+    schema: yup.object({ companyId: yup.string().trim().min(1).required(), pruefen: yup.boolean().optional() }).noUnknown(true),
+    run: async (args, c) => {
+      const daten = await gateway.request<Record<string, unknown>>(`/v1/companies/${encodeURIComponent(args.companyId)}/insolvency-events`, { signal: c.signal });
+      let eingereiht: unknown = null;
+      if (args.pruefen === true) {
+        eingereiht = await gateway.request<Record<string, unknown>>(`/v1/register-jobs/insolvenz`, { method: "POST", body: { companyIds: [args.companyId], grund: "chat" }, signal: c.signal });
+      }
+      return { ...daten, pruefungEingereiht: eingereiht };
+    },
+    preview: (r) => {
+      const s = (r as { insolvencyStatus?: string }).insolvencyStatus ?? "NONE";
+      const n = ((r as { events?: unknown[] }).events ?? []).length;
+      return `Insolvenzstatus ${s}, ${n} Veroeffentlichungen`;
+    },
+  });
+
   const profile = defineTool({
     name: "company_profile",
     description:
@@ -704,6 +732,7 @@ export function buildCompanyTools(ctx: Ctx): Tool[] {
     personDelete,
     search,
     get,
+    insolvency,
     profile,
     keywords,
     website,

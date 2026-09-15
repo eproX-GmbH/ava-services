@@ -265,6 +265,24 @@ erkannt; die Eröffnung von 2023 steht in der älteren Zeile). Der Status
 leitet sich aus allen Ereignissen ab, deshalb genügt das; bei Bedarf
 Gegenstand-Filtersuche je Kategorie nachrüsten.
 
+**I4 umgesetzt (2026-09-15):** Fly-Worker v7 nimmt Insolvenz-Jobs; der
+Desktop-Worker ab v0.1.657 ebenso (vendiertes Paket). Einstellung
+„Stammdaten mitpflegen“ nennt das Insolvenzportal, Verlauf und
+Systemzeile kennen die Art „Insolvenzprüfung“.
+
+**I5 umgesetzt (2026-09-15, Desktop v0.1.657, Gateway noch nicht deployt):**
+Gateway reicht `insolvencyStatus` und `insolvencyAt` in Firma, Suche und
+Matrix durch und bietet `GET /v1/companies/{id}/insolvency-events`. Chip
+`InsolvenzBadge` („insolvent“ rot bei EROEFFNET, „Insolvenzantrag“ rot bei
+SICHERUNG, „Insolvenzverfahren“ gelb bei VERDACHT, „Insolvenz abgewiesen“
+gelb, „Insolvenz beendet“ grau) in Firmensuche, Meine Firmen, Vorgängen
+und Firmendetails. Übersicht der Firmendetails: Abschnitt „Insolvenz“ mit
+Status, Prüfdatum, Ereignissen (Datum, Gegenstand, Gericht, Aktenzeichen,
+aufklappbarer Text) und Knopf „Jetzt prüfen“ bzw. „Erneut prüfen“
+(`POST /v1/register-jobs/insolvenz`). Chat-Tool `company_insolvency`
+(Status und Ereignisse, optional Prüfung anfordern), Fähigkeitsgruppe
+„firmen“. Org-Feature bleibt `stammdaten.mithelfen`.
+
 ## 7. Aufwand und Mengen
 
 - Modus A bei 5.000 Pool-Firmen alle 30 Tage: rund 170 Abfragen je Tag,

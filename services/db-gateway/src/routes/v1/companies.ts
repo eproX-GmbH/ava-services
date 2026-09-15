@@ -154,6 +154,52 @@ companiesRouter.openapi(detailRoute, async (c) => {
   return c.json(upstream, 200);
 });
 
+// ---- GET /v1/companies/:companyId/insolvency-events -------------------------
+// Insolvenz-Delta (docs/PLAN_INSOLVENZEN.md): Status und Veroeffentlichungen des
+// Insolvenzportals, wie master-data sie gespeichert hat.
+
+const InsolvencyEventsShape = z
+  .object({
+    companyId: z.string(),
+    insolvencyStatus: z.string(),
+    insolvencyAt: z.string().nullable(),
+    insolvencyCheckedAt: z.string().nullable(),
+    events: z.array(
+      z.object({
+        id: z.number(),
+        aktenzeichen: z.string(),
+        insolvenzgericht: z.string(),
+        datum: z.string(),
+        gegenstand: z.string(),
+        text: z.string(),
+        gesehenAt: z.string(),
+      }),
+    ),
+  })
+  .openapi("InsolvencyEvents");
+
+const insolvencyRoute = createRoute({
+  method: "get",
+  path: "/companies/{companyId}/insolvency-events",
+  tags: [tag],
+  summary: "Insolvenzstatus und Veroeffentlichungen des Insolvenzportals zu einer Firma",
+  request: { params: CompanyIdParam },
+  responses: {
+    200: { content: { "application/json": { schema: InsolvencyEventsShape } }, description: "events" },
+    ...errorResponses,
+  },
+});
+
+companiesRouter.openapi(insolvencyRoute, async (c) => {
+  const { companyId } = c.req.valid("param");
+  const upstream = await callUpstream<z.infer<typeof InsolvencyEventsShape>>(
+    c,
+    "masterData",
+    `/api/germany/v1/companies/${encodeURIComponent(companyId)}/insolvency-events`,
+  );
+  return c.json(upstream, 200);
+});
+
 // ---- GET /v1/companies/:companyId/profile ----------------------------------
 
 const profileRoute = createRoute({

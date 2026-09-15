@@ -1,4 +1,4 @@
-import { RegisterStatusBadge } from "../components/RegisterStatusBadge";
+import { InsolvenzBadge, RegisterStatusBadge } from "../components/RegisterStatusBadge";
 import { useState, useDeferredValue } from "react";
 import { useQuery, keepPreviousData } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
@@ -21,6 +21,7 @@ interface Company {
   name?: string | null;
   location?: string | null;
   registerStatus?: string | null;
+  insolvencyStatus?: string | null;
 }
 interface SearchResult<T> {
   items: T[];
@@ -114,6 +115,7 @@ export function Companies() {
                     {c.name ?? "(ohne Namen)"}
                   </Link>
                   <RegisterStatusBadge status={c.registerStatus} />
+                  <InsolvenzBadge status={c.insolvencyStatus} />
                 </td>
                 <td>{c.location ?? <span className="muted"></span>}</td>
                 <td>

@@ -47,6 +47,9 @@ export const CompanyShape = z
     registerStatus: z.string().nullable().optional(),
     closedAt: z.string().nullable().optional(),
     formerCourt: z.string().nullable().optional(),
+    /** Insolvenz-Delta: NONE | VERDACHT | SICHERUNG | EROEFFNET | ABGEWIESEN | AUFGEHOBEN. */
+    insolvencyStatus: z.string().nullable().optional(),
+    insolvencyAt: z.string().nullable().optional(),
   })
   .openapi("Company");
 

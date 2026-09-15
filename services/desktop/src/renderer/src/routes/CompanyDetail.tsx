@@ -1,4 +1,5 @@
-import { RegisterStatusBadge } from "../components/RegisterStatusBadge";
+import { InsolvenzBadge, RegisterStatusBadge } from "../components/RegisterStatusBadge";
+import { InsolvenzAbschnitt } from "../components/InsolvenzAbschnitt";
 import { useEffect, useState } from "react";
 import { useFeature } from "../store/policy";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -383,7 +384,7 @@ export function CompanyDetail() {
   const summary = useQuery({
     queryKey: ["company", id],
     queryFn: () =>
-      gatewayFetch<{ id: string; name?: string; city?: string; registerStatus?: string | null; closedAt?: string | null; formerCourt?: string | null }>(
+      gatewayFetch<{ id: string; name?: string; city?: string; registerStatus?: string | null; closedAt?: string | null; formerCourt?: string | null; insolvencyStatus?: string | null; insolvencyAt?: string | null }>(
         `/v1/companies/${id}`,
       ),
     enabled: !!id,
@@ -423,6 +424,7 @@ export function CompanyDetail() {
         <h2 style={{ marginBottom: "0.25rem" }}>
           {structured.data?.name ?? summary.data?.name ?? "Firma"}
           <RegisterStatusBadge status={summary.data?.registerStatus} closedAt={summary.data?.closedAt} />
+          <InsolvenzBadge status={summary.data?.insolvencyStatus} seit={summary.data?.insolvencyAt} />
         </h2>
 
         {/* Unter dem Namen primär die Keywords als Chips. Nur wenn KEINE
@@ -522,6 +524,7 @@ export function CompanyDetail() {
           stages={stageState.data?.stages ?? null}
           stageKeys={STAGES_FOR_TAB[tab]}
         />
+        {tab === "overview" && <InsolvenzAbschnitt companyId={id!} status={summary.data?.insolvencyStatus} />}
         {tab === "overview" && (
           <OverviewTab
             companyId={id!}

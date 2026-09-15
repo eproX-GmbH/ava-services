@@ -21,3 +21,40 @@ export function RegisterStatusBadge({ status, closedAt }: { status: string | nul
     </span>
   );
 }
+
+// Insolvenz-Delta — Chip zum Insolvenzstatus (master-data GermanCompany.insolvencyStatus).
+export function insolvenzText(status: string | null | undefined): { text: string; ton: "bad" | "warn" | "muted" } | null {
+  switch (status) {
+    case "EROEFFNET":
+      return { text: "insolvent", ton: "bad" };
+    case "SICHERUNG":
+      return { text: "Insolvenzantrag", ton: "bad" };
+    case "VERDACHT":
+      return { text: "Insolvenzverfahren", ton: "warn" };
+    case "ABGEWIESEN":
+      return { text: "Insolvenz abgewiesen", ton: "warn" };
+    case "AUFGEHOBEN":
+      return { text: "Insolvenz beendet", ton: "muted" };
+    default:
+      return null;
+  }
+}
+
+const INSOLVENZ_TITEL: Record<string, string> = {
+  EROEFFNET: "Insolvenzverfahren eröffnet",
+  SICHERUNG: "Sicherungsmaßnahmen im Insolvenzantragsverfahren (vorläufiger Insolvenzverwalter)",
+  VERDACHT: "Veröffentlichungen im Insolvenzportal, Verfahrensstand unklar",
+  ABGEWIESEN: "Insolvenzantrag mangels Masse abgewiesen",
+  AUFGEHOBEN: "Insolvenzverfahren aufgehoben oder eingestellt",
+};
+
+export function InsolvenzBadge({ status, seit }: { status: string | null | undefined; seit?: string | null }) {
+  const t = insolvenzText(status);
+  if (!t) return null;
+  const titel = `${INSOLVENZ_TITEL[status as string] ?? ""}${seit ? ` (seit ${new Date(seit).toLocaleDateString("de-DE")})` : ""}`;
+  return (
+    <span className={`badge ${t.ton === "muted" ? "" : t.ton}`} title={titel} style={{ marginLeft: "0.4rem", verticalAlign: "middle" }}>
+      {t.text}
+    </span>
+  );
+}

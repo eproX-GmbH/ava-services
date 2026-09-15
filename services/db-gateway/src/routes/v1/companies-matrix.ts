@@ -61,6 +61,7 @@ const CompanyMatrixRowShape = z
     lastSeenAt: z.string(),
     /** Register-Delta: ACTIVE | CLOSED | LOESCHUNG_ANGEKUENDIGT (Chip in der App). */
     registerStatus: z.string().optional(),
+    insolvencyStatus: z.string().optional(),
     /** Per-producer latest state. Keys match PRODUCER_NAMES. */
     stages: z.record(z.string(), StageStateShape),
   })
@@ -87,6 +88,7 @@ interface UpstreamCompany {
   location: string;
   lastSeenAt: string;
   registerStatus?: string;
+  insolvencyStatus?: string;
 }
 interface UpstreamPage {
   pageNumber: number;
@@ -367,6 +369,7 @@ companiesMatrixRouter.openapi(matrixRoute, async (c) => {
       location: co.location,
       lastSeenAt: co.lastSeenAt,
       registerStatus: co.registerStatus ?? "ACTIVE",
+      insolvencyStatus: co.insolvencyStatus ?? "NONE",
       stages,
     };
   });
