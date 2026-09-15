@@ -248,6 +248,23 @@ markiert die strukturierten Inhalte als veraltet. Route
 Worker, die keine Arten melden, bekommen nur Register-Jobs; der Worker
 meldet `insolvenz` erst ab I3. Abschaltbar mit `INSOLVENZ_JOBS_DISABLED=1`.
 
+**I3 umgesetzt (2026-09-15, `packages/register-delta`, noch nicht deployt):**
+`insolvenz-parser.ts` (Registereintrag → companyId mit Alias-Tabelle in
+beide Richtungen, Trefferliste, Kategorie aus Textmerkmalen, Textbereinigung),
+`insolvenz-portal.ts` (Selenium, gleiche Härtung, Datum geleert, Text über
+`frm_text:ihd_text` mit stillgelegtem Popup), Job `insolvenz` in
+`fuehreJobAus` (je Firma eine Suche, je passender Zeile ein Text, nur exakt
+passender Registereintrag, höchstens 15 Suchen plus Texte je Job; nicht
+bearbeitete Firmen bleiben fällig), Worker öffnet das Insolvenzportal
+lazy, der Client meldet die Arten ausdrücklich. 17 Tests. Live-Rauchtest:
+Hamburg HRA 90794 → 7 Zeilen, Text 2.389 Zeichen; Bad Oeynhausen HRB 9637 →
+0; Berlin (Charlottenburg) über Alias → 3 Zeilen, Text 1.320 Zeichen; 5
+Anfragen. Befund: die Textkategorie trifft nicht immer (ein
+Verteilungstext wurde als VERTEILUNG, ein Terminbeschluss als ENTSCHEIDUNG
+erkannt; die Eröffnung von 2023 steht in der älteren Zeile). Der Status
+leitet sich aus allen Ereignissen ab, deshalb genügt das; bei Bedarf
+Gegenstand-Filtersuche je Kategorie nachrüsten.
+
 ## 7. Aufwand und Mengen
 
 - Modus A bei 5.000 Pool-Firmen alle 30 Tage: rund 170 Abfragen je Tag,
