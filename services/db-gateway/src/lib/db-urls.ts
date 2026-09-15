@@ -57,7 +57,7 @@ export function buildProducerDatabaseUrls(zweck: "gateway" | "handout" = "gatewa
   }
   for (const producer of PRODUCER_NAMES) {
     parsed.pathname = `/${PRODUCER_DATABASE_NAMES[producer]}`;
-    parsed.searchParams.set("connection_limit", "2");
+    parsed.searchParams.set("connection_limit", zweck === "handout" ? "1" : "2");
     parsed.searchParams.set("pool_timeout", "20");
     result[producer] = parsed.toString();
   }

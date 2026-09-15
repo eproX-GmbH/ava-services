@@ -13,6 +13,11 @@ SERVER_IDLE_TIMEOUT="${SERVER_IDLE_TIMEOUT:-60}"
 SERVER_LIFETIME="${SERVER_LIFETIME:-1800}"
 SERVER_TLS_SSLMODE="${SERVER_TLS_SSLMODE:-prefer}"
 CONF=/tmp/pgbouncer.ini; USERS=/tmp/userlist.txt
+# TLS fuer Clients von aussen: selbstsigniertes Zertifikat je Start (Verschluesselung;
+# Clients pruefen keine CA). Intern (ava-pgbouncer.internal) bleibt Klartext erlaubt.
+KEY=/tmp/client.key; CRT=/tmp/client.crt
+openssl req -x509 -newkey rsa:2048 -nodes -keyout "$KEY" -out "$CRT" -days 825 -subj "/CN=ava-pgbouncer.fly.dev" >/dev/null 2>&1
+chmod 600 "$KEY"
 # Passwort in der userlist mit doppelten Anfuehrungszeichen; Anfuehrungszeichen im Passwort verdoppeln.
 PW_ESC=$(printf '%s' "$DB_PASSWORD" | sed 's/"/""/g')
 printf '"%s" "%s"\n' "$DB_USER" "$PW_ESC" > "$USERS"
@@ -43,7 +48,9 @@ query_wait_timeout = 60
 client_idle_timeout = 0
 ignore_startup_parameters = extra_float_digits,search_path,options
 server_tls_sslmode = ${SERVER_TLS_SSLMODE}
-client_tls_sslmode = disable
+client_tls_sslmode = allow
+client_tls_key_file = ${KEY}
+client_tls_cert_file = ${CRT}
 log_connections = 0
 log_disconnections = 0
 log_pooler_errors = 1
