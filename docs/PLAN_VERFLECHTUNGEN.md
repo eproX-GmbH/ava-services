@@ -239,7 +239,7 @@ ausblenden“). Zusätzlich ein Betreiber-Schalter im Gateway
 | Schritt | Inhalt | Aufwand |
 |---|---|---|
 | V0 | Notebook (dieser Stand): DK-Weg, Formate, OCR, Beispiele | erledigt |
-| V1 | master-data: Tabellen Shareholding, ShareholderListCheck, Person, PersonRole; interne Routen; Yup | 1,5 Tage |
+| V1 | master-data: Tabellen Shareholding, ShareholderListCheck, ShareholderListDocument, Person, PersonRole; interne Routen; Yup und Qualitätsfilter | **erledigt 2026-09-16** (Migration `20260916100000_verflechtungen`, 41 Tests, Deploy offen) |
 | V2 | Paket: `gesellschafterliste()` im RegisterPortal (Download in Temp), Textgewinnung, OCR-Anbindung, Tests mit den vier Beispieldateien | 2 Tage |
 | V3 | LLM-Strukturierung (Prompt, Schema, Plausibilitäten) im Worker; Desktop nutzt das Nutzer-Modell, Fly das Betreiber-Modell | 1,5 Tage |
 | V4 | Gateway: Job-Art, Kontext mit Besuchsliste, Rekursion, Auflösung der Firmen-Gesellschafter, Anlage fehlender Firmen | 2 Tage |
