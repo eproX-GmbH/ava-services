@@ -345,10 +345,15 @@ async function fuehreUkJobAus(job: Job, o: AusfuehrungsOptionen, uk: UkSchnittst
     let buendel: TrefferUk[] = [];
     let teil = 0;
     let abgebrochen = false;
+    let tLetzte = Date.now();
     const melden = async () => {
       if (buendel.length === 0) return;
       teil++;
+      const tLesen = Date.now() - tLetzte;
+      const t0 = Date.now();
       await uk.teilergebnis(job.id, teil, buendel);
+      if (teil % 10 === 0) log(`uk_bulk Teil ${p.teil} Buendel ${teil}: lesen ${tLesen} ms, melden ${Date.now() - t0} ms`);
+      tLetzte = Date.now();
       buendel = [];
     };
     await uk.takt.warten();

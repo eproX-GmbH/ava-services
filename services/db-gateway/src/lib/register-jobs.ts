@@ -685,7 +685,9 @@ export async function verarbeiteTeilergebnis(pool: pg.Pool, jobId: string, teil:
   if (job.art !== "uk_bulk") throw new JobFehler(400, "teilergebnis_nur_uk_bulk");
   const stand = (job.payload.teile_verarbeitet as number[] | undefined) ?? [];
   if (stand.includes(teil.teil)) return { teil: teil.teil, wiederholt: true };
+  const t0 = Date.now();
   const summe = await schreibeTrefferUk(teil.trefferUk, "companieshouse-bulk");
+  const tMd = Date.now() - t0;
   const p = job.payload as Record<string, unknown> & { summe?: { neu: number; geaendert: number; unveraendert: number; zeilen: number } };
   const alt = p.summe ?? { neu: 0, geaendert: 0, unveraendert: 0, zeilen: 0 };
   const neu = { neu: alt.neu + summe.neu, geaendert: alt.geaendert + summe.geaendert, unveraendert: alt.unveraendert + summe.unveraendert, zeilen: alt.zeilen + teil.trefferUk.length };
@@ -694,6 +696,7 @@ export async function verarbeiteTeilergebnis(pool: pg.Pool, jobId: string, teil:
     [jobId, JSON.stringify({ ...p, teile_verarbeitet: [...stand, teil.teil], summe: neu }), String(LEASE_MINUTEN)],
   );
   if (summe.geaenderteIds.length > 0) await markiereVeraltet(pool, summe.geaenderteIds, "register-uk_bulk");
+  logger.info({ jobId, teil: teil.teil, zeilen: teil.trefferUk.length, masterDataMs: tMd, gesamtMs: Date.now() - t0 }, "[register-jobs] uk_bulk Teilergebnis");
   return { teil: teil.teil, ...summe, geaenderteIds: undefined };
 }
 
