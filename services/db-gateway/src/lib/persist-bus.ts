@@ -912,6 +912,25 @@ const applyStructuredContent: ApplyFn = async (pool, event, log) => {
     client.release();
   }
 
+  // Firmen-Verflechtungen V5 (docs/PLAN_VERFLECHTUNGEN.md §3, §7 V5): Geschaeftsfuehrer
+  // als Personen und Rollen in master-data spiegeln, damit sie im Netz erscheinen.
+  // Nur bei aktivem Org-Feature; Fehler hier lassen den Persist unberuehrt.
+  try {
+    if (tenantId && (await featureEnabledForEventTenant(getGatewayPool(), tenantId, "verflechtungen"))) {
+      const personen = (result.managingDirectors ?? [])
+        .filter((m) => m.lastName?.trim())
+        .map((m) => ({
+          vorname: m.firstName ?? "",
+          nachname: m.lastName,
+          geburtsdatum: typeof m.birthDay === "string" && /^\d{4}-\d{2}-\d{2}/.test(m.birthDay) ? m.birthDay.slice(0, 10) : null,
+          wohnort: m.city ?? null,
+        }));
+      await masterData("POST", "/internal/companies/roles", { companyId: result.companyId, rolle: "GESCHAEFTSFUEHRER", personen, quelle: "structured-content", gesehenAt: data.computedAt });
+    }
+  } catch (err) {
+    log.warn({ companyId: result.companyId, err: (err as Error).message }, "[verflechtungen] Rollen-Spiegel fehlgeschlagen");
+  }
+
   // M1 monetization — record a usage credit for this successful
   // persist. Failed structured-content scrapes never reach here (they
   // emit `transaction.progress` with state=failed but no persist

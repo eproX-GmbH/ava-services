@@ -105,6 +105,99 @@ export function buildCompanyTools(ctx: Ctx): Tool[] {
     },
   });
 
+  // Firmen-Verflechtungen (docs/PLAN_VERFLECHTUNGEN.md §5, V7): Gesellschafter,
+  // Netz und tieferer Lauf. Nur deutsche Firmen (HRB), Org-Feature verflechtungen.
+  const shareholders = defineTool({
+    name: "company_shareholders",
+    description:
+      "Gesellschafter einer deutschen Firma aus der neuesten Gesellschafterliste des Handelsregisters (Personen mit Geburtsjahr und Wohnort, Firmen mit Registerangabe, Nennbetrag, Prozent) " +
+      "sowie Beteiligungen der Firma an anderen Firmen. `stand` sagt, ob und wann die Liste gelesen wurde (LISTE, KEINE = keine Liste im Registerordner, UNSICHER/FEHLER = Lesung verworfen, mit Gruenden). " +
+      "Nur fuer HRB-Firmen; HRA-Firmen haben keine Gesellschafterliste.",
+    parameters: { type: "object", properties: { companyId: { type: "string" } }, required: ["companyId"] },
+    schema: yup.object({ companyId: yup.string().trim().min(1).required() }).noUnknown(true),
+    run: async (args, c) =>
+      gateway.request<Record<string, unknown>>(`/v1/companies/${encodeURIComponent(args.companyId)}/shareholders`, { signal: c.signal }),
+    preview: (r) => {
+      const g = ((r as { gesellschafter?: unknown[] }).gesellschafter ?? []).length;
+      const st = (r as { stand?: { ergebnis?: string } | null }).stand?.ergebnis ?? "ungeprueft";
+      return `${g} Gesellschafter, Stand ${st}`;
+    },
+  });
+
+  const network = defineTool({
+    name: "company_network",
+    description:
+      "Firmengeflecht um eine deutsche Firma: Knoten (Firmen, Personen) und Kanten (BETEILIGUNG mit Prozent, GESCHAEFTSFUEHRUNG, ADRESSE) per Breitensuche bis `tiefe` (1 bis 6, Standard 2). " +
+      "Zeigt, wer die Firma haelt, woran sie beteiligt ist und welche Personen mehrere Firmen verbinden. `abgeschnitten` = mehr als 300 Knoten.",
+    parameters: {
+      type: "object",
+      properties: { companyId: { type: "string" }, tiefe: { type: "integer", minimum: 1, maximum: 6 } },
+      required: ["companyId"],
+    },
+    schema: yup.object({ companyId: yup.string().trim().min(1).required(), tiefe: yup.number().integer().min(1).max(6).optional() }).noUnknown(true),
+    run: async (args, c) =>
+      gateway.request<Record<string, unknown>>(`/v1/companies/${encodeURIComponent(args.companyId)}/network`, { query: { tiefe: args.tiefe ?? 2 }, signal: c.signal }),
+    preview: (r) => `${((r as { knoten?: unknown[] }).knoten ?? []).length} Knoten, ${((r as { kanten?: unknown[] }).kanten ?? []).length} Kanten`,
+  });
+
+  const networkDeepen = defineTool({
+    name: "company_network_deepen",
+    description:
+      "Firmengeflecht ab einer deutschen HRB-Firma tiefer verfolgen: AVA liest die Gesellschafterliste der Firma und rekursiv die ihrer Firmen-Gesellschafter (Standard bis Tiefe 6, hoechstens 200 Firmen je Lauf). " +
+      "Laeuft im Hintergrund auf diesem Rechner mit dem eigenen KI-Modell (Bild-Modell ab Stufe A noetig) und legt den Vorgang 'Verflechtungen <Firma>' an. " +
+      "`ohneBremse` hebt Tiefen- und Firmengrenze auf (grosse Konstrukte) und wird vom Nutzer bestaetigt. Der Standardlauf ohne Aufruf liest automatisch eine Ebene.",
+    parameters: {
+      type: "object",
+      properties: {
+        companyId: { type: "string" },
+        name: { type: "string", description: "Firmenname fuer den Vorgangsnamen" },
+        maxTiefe: { type: "integer", minimum: 1, maximum: 12 },
+        ohneBremse: { type: "boolean" },
+      },
+      required: ["companyId"],
+    },
+    schema: yup
+      .object({
+        companyId: yup.string().trim().min(1).required(),
+        name: yup.string().trim().max(200).optional(),
+        maxTiefe: yup.number().integer().min(1).max(12).optional(),
+        ohneBremse: yup.boolean().optional(),
+      })
+      .noUnknown(true),
+    run: async (args, c) => {
+      if (!/^[A-Z0-9]+_HRB_/.test(args.companyId)) return { error: "Nur deutsche HRB-Firmen haben eine Gesellschafterliste." };
+      const tiefe = args.maxTiefe ?? 6;
+      const value = await c.ui.confirmAction(
+        {
+          kind: "additive",
+          prompt:
+            `Firmengeflecht ab ${args.name ?? args.companyId} tiefer verfolgen?\n\n` +
+            (args.ohneBremse
+              ? `OHNE Notbremse: unbegrenzte Tiefe und Firmenzahl. Bei grossen Konstrukten koennen hunderte Registerabrufe und Modellaufrufe entstehen.`
+              : `Bis Tiefe ${tiefe}, hoechstens 200 Firmen. Jede Firma kostet einen Registerabruf und zwei Modell-Lesungen.`),
+          confirmValue: "start",
+          options: [
+            { value: "start", label: "Starten", description: "Vorgang 'Verflechtungen' anlegen" },
+            { value: "cancel", label: "Abbrechen" },
+          ],
+        },
+        c.signal,
+      );
+      if (value !== "start") return { abgebrochen: true };
+      return gateway.request<Record<string, unknown>>("/v1/verflechtungen/kontexte", {
+        method: "POST",
+        body: { companyId: args.companyId, name: args.name, maxTiefe: tiefe, ohneBremse: args.ohneBremse === true },
+        signal: c.signal,
+      });
+    },
+    preview: (r) => {
+      const x = r as { abgebrochen?: boolean; error?: string; kontext?: string; unbekannt?: boolean };
+      if (x.error) return x.error;
+      if (x.abgebrochen) return "abgebrochen";
+      return x.unbekannt ? "Firma noch nicht in den Stammdaten, wird nachgezogen" : `Lauf gestartet (${x.kontext ?? ""})`;
+    },
+  });
+
   // Insolvenz-Delta — Status und Veroeffentlichungen des Insolvenzportals; Pruefung anfordern.
   const insolvency = defineTool({
     name: "company_insolvency",
@@ -760,5 +853,8 @@ export function buildCompanyTools(ctx: Ctx): Tool[] {
     crmSummary,
     linkedinLookup,
     techStack,
+    shareholders,
+    network,
+    networkDeepen,
   ];
 }

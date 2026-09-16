@@ -6,6 +6,7 @@ import {
   registerZeile,
 } from "../components/RegisterStatusBadge";
 import { InsolvenzAbschnitt } from "../components/InsolvenzAbschnitt";
+import { VerflechtungenTab } from "../components/VerflechtungenTab";
 import { useEffect, useState } from "react";
 import { useFeature } from "../store/policy";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -67,7 +68,8 @@ type TabKey =
   | "management"
   | "contacts"
   | "insights"
-  | "jobs";
+  | "jobs"
+  | "verflechtungen";
 
 const TABS: Array<{ key: TabKey; label: string; workflow: string }> = [
   { key: "overview", label: "Übersicht", workflow: "W8/W10" },
@@ -76,6 +78,7 @@ const TABS: Array<{ key: TabKey; label: string; workflow: string }> = [
   { key: "contacts", label: "Kontakte", workflow: "W12" },
   { key: "insights", label: "Erkenntnisse", workflow: "W11" },
   { key: "jobs", label: "Stellenanzeigen", workflow: "W10" },
+  { key: "verflechtungen", label: "Verflechtungen", workflow: "V6" },
 ];
 
 // ---- Shared hooks ----------------------------------------------------------
@@ -417,6 +420,7 @@ export function CompanyDetail() {
   const [tab, setTab] = useState<TabKey>("overview");
   // O3/v0.1.561 — Kontakte per Organisationsvorgabe abgeschaltet: Tab weg.
   const kontakteErlaubt = useFeature("kontakte");
+  const verflechtungenErlaubt = useFeature("verflechtungen");
 
   // Phase 8.r4 — interest signal. Pinging on every CompanyDetail mount
   // tells the freshness scheduler the user is paying attention to this
@@ -455,15 +459,20 @@ export function CompanyDetail() {
   });
   // Finanzen kommen aus dem Bundesanzeiger; fuer oesterreichische Firmen gibt es diese Quelle nicht.
   const istAt = summary.data?.country === "AT";
+  // Verflechtungen (Gesellschafterlisten) gibt es nur fuer deutsche Registerfirmen und nur mit Org-Feature.
+  const istDeRegister = /^[A-Z0-9]+_HR[AB]_/.test(id ?? "");
+  const verflechtungenSichtbar = verflechtungenErlaubt && istDeRegister;
   const sichtbareTabs = TABS.filter(
     (t) =>
       (kontakteErlaubt || t.key !== "contacts") &&
-      (!istAt || t.key !== "financials")
+      (!istAt || t.key !== "financials") &&
+      (verflechtungenSichtbar || t.key !== "verflechtungen")
   );
   useEffect(() => {
     if (!kontakteErlaubt && tab === "contacts") setTab("overview");
     if (istAt && tab === "financials") setTab("overview");
-  }, [kontakteErlaubt, istAt, tab]);
+    if (!verflechtungenSichtbar && tab === "verflechtungen") setTab("overview");
+  }, [kontakteErlaubt, istAt, verflechtungenSichtbar, tab]);
   const profile = useTabQuery<CompanyProfile>(
     "profile",
     id!,
@@ -692,6 +701,7 @@ export function CompanyDetail() {
           />
         )}
         {tab === "jobs" && <JobsTab jobs={website.data?.jobPostings ?? []} />}
+        {tab === "verflechtungen" && verflechtungenSichtbar && <VerflechtungenTab id={id!} name={summary.data?.name ?? null} />}
       </div>
     </section>
   );
@@ -707,6 +717,7 @@ const STAGES_FOR_TAB: Record<TabKey, string[]> = {
   contacts: ["company-contact"],
   insights: ["website", "company-evaluation"],
   jobs: ["website"],
+  verflechtungen: ["structured-content"],
 };
 
 function KpiTile({

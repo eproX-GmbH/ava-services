@@ -5,9 +5,9 @@ NICHT direkt bearbeiten — die Quelle der Wahrheit ist `services/desktop/src/ma
 Lauf via `pnpm -F @ava/desktop tools:doc` (oder automatisch via `build:typecheck`).
 
 Stand: 2026-09-16
-Anzahl Tools: 247
+Anzahl Tools: 250
 
-## Firmen (18)
+## Firmen (21)
 
 ### `company_contacts`
 
@@ -75,6 +75,28 @@ _Parameter:_
 - `companyId: string` (required)
 - `limit: integer` (default: 10) — Max signals to return.
 
+### `company_network`
+
+_Datei:_ `services/desktop/src/main/agent/tools/companies.ts`
+
+Firmengeflecht um eine deutsche Firma: Knoten (Firmen, Personen) und Kanten (BETEILIGUNG mit Prozent, GESCHAEFTSFUEHRUNG, ADRESSE) per Breitensuche bis `tiefe` (1 bis 6, Standard 2). Zeigt, wer die Firma haelt, woran sie beteiligt ist und welche Personen mehrere Firmen verbinden. `abgeschnitten` = mehr als 300 Knoten.
+
+_Parameter:_
+- `companyId: string` (required)
+- `tiefe: integer`
+
+### `company_network_deepen`
+
+_Datei:_ `services/desktop/src/main/agent/tools/companies.ts`
+
+Firmengeflecht ab einer deutschen HRB-Firma tiefer verfolgen: AVA liest die Gesellschafterliste der Firma und rekursiv die ihrer Firmen-Gesellschafter (Standard bis Tiefe 6, hoechstens 200 Firmen je Lauf). Laeuft im Hintergrund auf diesem Rechner mit dem eigenen KI-Modell (Bild-Modell ab Stufe A noetig) und legt den Vorgang 'Verflechtungen <Firma>' an. `ohneBremse` hebt Tiefen- und Firmengrenze auf (grosse Konstrukte) und wird vom Nutzer bestaetigt. Der Standardlauf ohne Aufruf liest automatisch eine Ebene.
+
+_Parameter:_
+- `companyId: string` (required)
+- `name: string` — Firmenname fuer den Vorgangsnamen
+- `maxTiefe: integer`
+- `ohneBremse: boolean`
+
 ### `company_profile`
 
 _Datei:_ `services/desktop/src/main/agent/tools/companies.ts`
@@ -102,6 +124,15 @@ Fuzzy-search companies by name (Deutschland, Oesterreich, Schweiz). Returns up t
 _Parameter:_
 - `q: string` (required) — Company name (partial OK).
 - `limit: integer` (default: 10) — Max matches to return.
+
+### `company_shareholders`
+
+_Datei:_ `services/desktop/src/main/agent/tools/companies.ts`
+
+Gesellschafter einer deutschen Firma aus der neuesten Gesellschafterliste des Handelsregisters (Personen mit Geburtsjahr und Wohnort, Firmen mit Registerangabe, Nennbetrag, Prozent) sowie Beteiligungen der Firma an anderen Firmen. `stand` sagt, ob und wann die Liste gelesen wurde (LISTE, KEINE = keine Liste im Registerordner, UNSICHER/FEHLER = Lesung verworfen, mit Gruenden). Nur fuer HRB-Firmen; HRA-Firmen haben keine Gesellschafterliste.
+
+_Parameter:_
+- `companyId: string` (required)
 
 ### `company_structured_content`
 

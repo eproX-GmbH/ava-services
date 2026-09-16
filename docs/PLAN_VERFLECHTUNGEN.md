@@ -281,9 +281,9 @@ ausblenden“). Zusätzlich ein Betreiber-Schalter im Gateway
 | V2 | structured-content: `gesellschafterliste()` im Handelsregister-Webdriver, Dokumentprüfung (Magic Bytes, ZIP im Speicher), Tests | **erledigt 2026-09-16** (structured-content 5d0ac71) |
 | V3 | LLM-Auswertung im Producer mit dem Modell des Nutzers (PDF/TIFF als Bild, Textebene, Yup, Qualitätsfilter), Persist-Ereignis, Gateway-Binding mit Feature-Gate, Desktop-Flag `AVA_VERFLECHTUNGEN` | **erledigt 2026-09-16** (Ende-zu-Ende-Test mit echter Firma offen) |
 | V4 | Gateway/master-data: Firmen-Gesellschafter auflösen, fehlende Firmen per Register-Refresh anlegen, structured-content-Trigger je Kontext mit Besuchsliste und Notbremse (ohne LLM) | **erledigt 2026-09-16** (Gateway `lib/verflechtungen.ts`, master-data `/internal/verflechtungen/anstossen`, structured-content Marker; Deploy und Ende-zu-Ende-Test offen) |
-| V5 | Geschäftsführer aus structured-content in Person/PersonRole spiegeln; Adress-Schlüssel für DE aus structured-content | 1 Tag |
-| V6 | App: Reiter Verflechtungen mit Netzgrafik, Gesellschaftertabelle, Personenseite | 3 Tage |
-| V7 | Chat-Tools, Statuswächter „Gesellschafterwechsel“, Fähigkeitsgruppe, Org-Feature `verflechtungen` und Betreiber-Schalter | 1,5 Tage |
+| V5 | Geschäftsführer aus structured-content in Person/PersonRole spiegeln; Adress-Schlüssel für DE aus structured-content | **Geschäftsführer erledigt 2026-09-16** (persist-bus → `/internal/companies/roles`, Feature-Gate); Adress-Schlüssel offen |
+| V6 | App: Reiter „Verflechtungen“ in den Firmendetails (Entscheidung 2026-09-16: kein eigener App-Reiter) mit Netzgrafik wie North Data, Gesellschaftertabelle, Beteiligungen, „Tiefer verfolgen“; Personenseite | **Reiter erledigt 2026-09-16** (`components/VerflechtungenTab.tsx`, Gateway `/v1/companies/{id}/shareholders` und `/network`); Personenseite offen |
+| V7 | Chat-Tools, Statuswächter „Gesellschafterwechsel“, Fähigkeitsgruppe, Org-Feature `verflechtungen` und Betreiber-Schalter | **Tools erledigt 2026-09-16** (`company_shareholders`, `company_network`, `company_network_deepen` mit Bestätigung; Gruppe „firmen“ über `company_*`; `featureOfTool`); Statuswächter offen |
 
 ## 8. Entscheidungen (2026-09-16)
 
