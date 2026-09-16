@@ -45,7 +45,8 @@
     "package:linux": "pnpm fetch:ollama --platform=linux-x64 && pnpm fetch:whisper --platform=linux-x64 && electron-vite build && electron-builder --linux",
     "prompt:dump": "node scripts/dump-prompt-context.mjs",
     "test:email-muster": "node scripts/test-email-muster.mjs",
-    "test:suggestions": "node scripts/test-suggestions.mjs"
+    "test:suggestions": "node scripts/test-suggestions.mjs",
+    "test:browser-sweep": "node scripts/test-browser-sweep.mjs"
   },
   "dependencies": {
     "@ai-sdk/openai": "^2.0.0",

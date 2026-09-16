@@ -42,7 +42,7 @@ export class InsolvenzPortal {
     const bin = findeChrome(this.opt.chromeBinaryPath);
     if (bin) options.setChromeBinaryPath(bin);
     if (this.opt.headless !== false) options.addArguments("--headless=new");
-    options.addArguments("--lang=de-DE", "--window-size=1400,1000", "--disable-gpu", "--disable-dev-shm-usage", "--no-sandbox");
+    options.addArguments(`--ava-owner=${process.pid}`, "--lang=de-DE", "--window-size=1400,1000", "--disable-gpu", "--disable-dev-shm-usage", "--no-sandbox");
     options.setUserPreferences({ download_restrictions: 3, "download.prompt_for_download": true, "safebrowsing.enabled": true, "intl.accept_languages": "de-DE,de" });
     this.driver = await new Builder().forBrowser("chrome").setChromeOptions(options).build();
     await this.driver.manage().setTimeouts({ pageLoad: 60_000 });

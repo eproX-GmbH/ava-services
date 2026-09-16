@@ -85,7 +85,7 @@ export class RegisterPortal {
     const bin = findeChrome(this.opt.chromeBinaryPath);
     if (bin) options.setChromeBinaryPath(bin);
     if (this.opt.headless !== false) options.addArguments("--headless=new");
-    options.addArguments("--lang=de-DE", "--window-size=1400,1000", "--disable-gpu", "--disable-dev-shm-usage", "--no-sandbox");
+    options.addArguments(`--ava-owner=${process.pid}`, "--lang=de-DE", "--window-size=1400,1000", "--disable-gpu", "--disable-dev-shm-usage", "--no-sandbox");
     // Sprache erzwingen: auf Fly (kein Systemlocale) lieferte das Portal Englisch
     // ("Register announcements", Cookie-Knopf "Okay"), die Parser erwarten Deutsch.
     options.setUserPreferences({

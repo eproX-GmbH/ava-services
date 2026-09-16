@@ -71,6 +71,7 @@ import {
   cleanupOrphanModels,
 } from "./storage-usage";
 import { sweepManagedTemp } from "./temp-sweep";
+import { beendeVerwaisteBrowser } from "./browser-sweep";
 import {
   producerLogBuffer,
   type ProducerLogEvent,
@@ -2324,8 +2325,11 @@ app.whenReady().then(async () => {
   } catch {
     /* best-effort */
   }
+  // Verwaiste chromedriver/Headless-Chrome aus frueheren Sitzungen beenden (browser-sweep.ts).
+  void beendeVerwaisteBrowser({ log: (z) => writeLineSync("INFO ", z) });
   setInterval(
     () => {
+      void beendeVerwaisteBrowser({ log: (z) => writeLineSync("INFO ", z) });
       try {
         sweepManagedTemp();
       } catch {
@@ -7280,17 +7284,23 @@ app.on("before-quit", (e) => {
     quitInProgress = true;
     const deadline = new Promise<void>((r) => setTimeout(r, 4000));
     const stops = Promise.all(producers.map((p) => p.stop().catch(() => undefined)));
-    void Promise.race([stops, deadline]).then(() => {
+    void Promise.race([stops, deadline]).then(async () => {
+      await beendeVerwaisteBrowser({ alle: true, log: (z) => writeLineSync("INFO ", z) }).catch(() => undefined);
       void postgres.stop();
       app.quit();
     });
     return;
   }
-  // Non-Windows: fire-and-forget, OS räumt den Prozess-Tree auf.
+  // Non-Windows: fire-and-forget. Das Betriebssystem raeumt NICHT den ganzen
+  // Baum auf: chromedriver und Chrome der Producer blieben als Waisen stehen
+  // (Befund 2026-09-16: 110 Prozesse, 2,7 GB). Deshalb nach dem Stop-Signal
+  // alle markierten AVA-Browser beenden und die Waisen kurz danach noch einmal.
   quitStep("producers.stop", () => {
     for (const p of producers) {
       void p.stop();
     }
+    void beendeVerwaisteBrowser({ alle: true, log: (z) => writeLineSync("INFO ", z) });
+    setTimeout(() => void beendeVerwaisteBrowser({ alle: true }), 1500);
   });
   quitStep("postgres.stop", () => postgres.stop());
   quitStep("producerLogBuffer.closeRunFiles", () => producerLogBuffer.closeRunFiles());
