@@ -4,7 +4,7 @@
 // Gesellschaftertabelle der neuesten Liste, Beteiligungen der Firma und der
 // Stand der Rekursion (Kontexte) mit "tiefer verfolgen".
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { gatewayFetch, GatewayError } from "../api/gateway";
@@ -57,7 +57,7 @@ function layout(knoten: Knoten[], kanten: Kante[], breite: number, hoehe: number
           dy = 0.5;
           d2 = 0.5;
         }
-        const f = 5200 / d2;
+        const f = 7000 / d2;
         const fx = (dx / Math.sqrt(d2)) * f;
         const fy = (dy / Math.sqrt(d2)) * f;
         vx[i] = (vx[i] ?? 0) - fx;
@@ -72,7 +72,7 @@ function layout(knoten: Knoten[], kanten: Kante[], breite: number, hoehe: number
       const dx = pb.x - pa.x;
       const dy = pb.y - pa.y;
       const d = Math.sqrt(dx * dx + dy * dy) || 1;
-      const f = (d - 150) * 0.02;
+      const f = (d - 190) * 0.02;
       vx[a] = (vx[a] ?? 0) + (dx / d) * f;
       vy[a] = (vy[a] ?? 0) + (dy / d) * f;
       vx[b] = (vx[b] ?? 0) - (dx / d) * f;
@@ -115,13 +115,56 @@ function NetzGrafik({ netz, wurzel, arten }: { netz: Netz; wurzel: string; arten
     }
     return netz.knoten.filter((k) => verbunden.has(k.id));
   }, [netz, kanten, wurzel]);
-  const pos = useMemo(() => layout(knoten, kanten, breite, hoehe, wurzel), [knoten, kanten, wurzel]);
+  const berechnet = useMemo(() => layout(knoten, kanten, breite, hoehe, wurzel), [knoten, kanten, wurzel]);
+  // Knoten lassen sich mit der Maus verschieben; die Positionen leben im State, das Layout ist nur der Startwert.
+  const [pos, setPos] = useState<Map<string, Punkt>>(berechnet);
+  useEffect(() => setPos(berechnet), [berechnet]);
   const [aktiv, setAktiv] = useState<string | null>(null);
+  const svgRef = useRef<SVGSVGElement | null>(null);
+  const drag = useRef<{ id: string; bewegt: boolean } | null>(null);
+  const svgPunkt = (e: React.PointerEvent): Punkt => {
+    const svg = svgRef.current;
+    if (!svg) return { x: 0, y: 0 };
+    const m = svg.getScreenCTM();
+    if (!m) return { x: 0, y: 0 };
+    const p = new DOMPoint(e.clientX, e.clientY).matrixTransform(m.inverse());
+    return { x: p.x, y: p.y };
+  };
+  const dragStart = (id: string) => (e: React.PointerEvent) => {
+    if (e.button !== 0) return;
+    drag.current = { id, bewegt: false };
+    (e.currentTarget as Element).setPointerCapture?.(e.pointerId);
+  };
+  const dragMove = (e: React.PointerEvent) => {
+    const d = drag.current;
+    if (!d) return;
+    const p = svgPunkt(e);
+    d.bewegt = true;
+    setPos((alt) => {
+      const neu = new Map(alt);
+      neu.set(d.id, { x: Math.min(breite - 70, Math.max(70, p.x)), y: Math.min(hoehe - 30, Math.max(30, p.y)) });
+      return neu;
+    });
+  };
+  const dragEnd = () => {
+    // Nach einem Ziehen den Klick (Link) unterdruecken; nach einem reinen Klick nicht.
+    if (drag.current?.bewegt) setTimeout(() => (drag.current = null), 0);
+    else drag.current = null;
+  };
+  const klickUnterdruecken = (e: React.MouseEvent) => {
+    if (drag.current?.bewegt) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+  };
 
   if (knoten.length <= 1) return <p className="muted">Noch keine Verbindungen bekannt.</p>;
   return (
-    <div style={{ overflowX: "auto" }}>
-      <svg viewBox={`0 0 ${breite} ${hoehe}`} width="100%" style={{ minWidth: 640, background: "var(--panel-bg, transparent)", borderRadius: 8 }} role="img" aria-label="Netzgrafik der Verflechtungen">
+    <div style={{ overflowX: "auto", position: "relative" }}>
+      <button type="button" className="secondary small" style={{ position: "absolute", right: 8, top: 8 }} onClick={() => setPos(berechnet)}>
+        Anordnung zurücksetzen
+      </button>
+      <svg ref={svgRef} viewBox={`0 0 ${breite} ${hoehe}`} width="100%" style={{ minWidth: 640, background: "var(--panel-bg, transparent)", borderRadius: 8, touchAction: "none" }} role="img" aria-label="Netzgrafik der Verflechtungen" onPointerMove={dragMove} onPointerUp={dragEnd} onPointerCancel={dragEnd}>
         <defs>
           <marker id="pfeil" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
             <path d="M 0 0 L 10 5 L 0 10 z" fill="#00C0A7" />
@@ -186,7 +229,7 @@ function NetzGrafik({ netz, wurzel, arten }: { netz: Netz; wurzel: string; arten
               </>
             );
           const g = (
-            <g key={k.id} opacity={hervor ? 1 : 0.25} onMouseEnter={() => setAktiv(k.id)} onMouseLeave={() => setAktiv(null)} style={{ cursor: istWurzel ? "default" : "pointer" }}>
+            <g key={k.id} opacity={hervor ? 1 : 0.25} onMouseEnter={() => setAktiv(k.id)} onMouseLeave={() => setAktiv(null)} onPointerDown={dragStart(k.id)} style={{ cursor: drag.current?.id === k.id ? "grabbing" : "grab" }}>
               <title>
                 {k.name}
                 {k.typ === "PERSON" && k.wohnort ? `, ${k.wohnort}` : ""}
@@ -198,12 +241,12 @@ function NetzGrafik({ netz, wurzel, arten }: { netz: Netz; wurzel: string; arten
           );
           if (k.typ === "PERSON")
             return (
-              <Link key={k.id} to={`/personen/${encodeURIComponent(k.id)}`}>
+              <Link key={k.id} to={`/personen/${encodeURIComponent(k.id)}`} onClick={klickUnterdruecken}>
                 {g}
               </Link>
             );
           return k.typ === "FIRMA" && !istWurzel ? (
-            <Link key={k.id} to={`/companies/${encodeURIComponent(k.id)}`}>
+            <Link key={k.id} to={`/companies/${encodeURIComponent(k.id)}`} onClick={klickUnterdruecken}>
               {g}
             </Link>
           ) : (
@@ -299,7 +342,7 @@ export function VerflechtungenTab({ id, name }: { id: string; name: string | nul
         {netz.data && <NetzGrafik netz={netz.data} wurzel={id} arten={arten} />}
         {netz.data?.abgeschnitten && <p className="muted small">Netz gekürzt: mehr als 300 Knoten. Tiefe verringern oder gezielt weiterklicken.</p>}
         <p className="muted small" style={{ marginBottom: 0 }}>
-          Pfeile zeigen vom Gesellschafter zur gehaltenen Firma. Gestrichelt = frühere Verbindung. Firmen anklicken öffnet die Firmendetails, Personen die Personenseite.
+          Pfeile zeigen vom Gesellschafter zur gehaltenen Firma. Gestrichelt = frühere Verbindung. Knoten lassen sich mit der Maus verschieben. Firmen anklicken öffnet die Firmendetails, Personen die Personenseite.
         </p>
       </article>
 
