@@ -22,6 +22,8 @@ import { companyIdAus } from "./register-ids";
 import { masterData, refreshAnfordern } from "./register-jobs";
 
 export const AUTO_TIEFE = 1;
+/** Sperre wie bei allen Producern: eine Gesellschafterliste wird fruehestens nach 30 Tagen erneut gelesen. */
+export const LISTE_SPERRE_TAGE = 30;
 export const MAX_TIEFE = 6;
 export const MAX_FIRMEN = 200;
 /** Firmen ohne Registereintrag in master-data: so lange wird nachgezogen. */
@@ -220,6 +222,7 @@ export async function kontextAnlegen(
     [k.kontext, k.tenantId, k.ursprungCompanyId, k.transactionId, k.userId, k.maxTiefe, k.maxFirmen, k.ohneBremse],
   );
   await q.query(`INSERT INTO "VerflechtungBesuch" ("kontext","companyId","tiefe","status") VALUES ($1,$2,0,'offen')`, [k.kontext, p.companyId]);
+  await erzwingen(q, p.companyId); // manueller Start: Sperre gilt nicht
   const a = await anstossen(k, [p.companyId], p.ursprungName);
   await anstossVerbuchen(q, k, a, new Map());
   return { kontext, transactionId: k.transactionId, angestossen: a.angestossen.includes(p.companyId), unbekannt: a.unbekannt.includes(p.companyId) };
@@ -298,4 +301,26 @@ export function startVerflechtungenCron(pool: pg.Pool): void {
     void tick();
     setInterval(() => void tick(), 60 * 60_000);
   }, 5 * 60_000);
+}
+
+/** Manueller Start: naechster Lauf liest die Liste trotz Sperre (eine Stunde gueltig). */
+export async function erzwingen(q: Q, companyId: string): Promise<void> {
+  await q.query(
+    `INSERT INTO "VerflechtungErzwungen" ("companyId","bis") VALUES ($1, NOW() + interval '1 hour')
+     ON CONFLICT ("companyId") DO UPDATE SET "bis" = EXCLUDED."bis"`,
+    [companyId],
+  );
+}
+
+/**
+ * Darf der Producer die Gesellschafterliste jetzt lesen? Manuell erzwungen
+ * (Eintrag wird verbraucht) oder letzte Pruefung aelter als LISTE_SPERRE_TAGE.
+ */
+export async function listeFaellig(q: Q, companyId: string): Promise<{ faellig: boolean; grund: string }> {
+  const e = await q.query(`DELETE FROM "VerflechtungErzwungen" WHERE "companyId" = $1 AND "bis" > NOW() RETURNING "companyId"`, [companyId]);
+  if ((e.rowCount ?? 0) > 0) return { faellig: true, grund: "manuell gestartet" };
+  await q.query(`DELETE FROM "VerflechtungErzwungen" WHERE "bis" <= NOW()`).catch(() => undefined);
+  const r = await masterData<{ companyIds: string[] }>("POST", "/internal/companies/shareholders/due", { companyIds: [companyId], aelterAlsTage: LISTE_SPERRE_TAGE });
+  const faellig = r.companyIds.includes(companyId);
+  return { faellig, grund: faellig ? `letzte Pruefung aelter als ${LISTE_SPERRE_TAGE} Tage oder nie` : `innerhalb der ${LISTE_SPERRE_TAGE}-Tage-Sperre` };
 }

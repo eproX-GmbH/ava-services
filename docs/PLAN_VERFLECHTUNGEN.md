@@ -197,9 +197,14 @@ Navigation bis „SI“/„DK“ schon vorhanden. Ein erster Ansatz über Job-Ar
    (§5). Der Graph füllt sich von unten nach oben mit jedem verarbeiteten
    Pool; „Firmen, an denen X beteiligt ist“ ist eine Abfrage über
    `gesellschafterCompanyId`.
-8. **Aktualität:** master-data `GET /internal/companies/shareholders/due`
-   liefert Firmen, deren Prüfung fehlt oder älter als 90 Tage ist; der
-   Gateway stößt dafür den structured-content-Refresh an (offen).
+8. **Aktualität (Entscheidung 2026-09-16):** dieselbe **30-Tage-Sperre**
+   wie bei allen Producern. Vor dem DK-Abruf fragt structured-content
+   `GET /v1/verflechtungen/faellig/{companyId}`; der Gateway prüft
+   master-data (`/internal/companies/shareholders/due`, 30 Tage) und die
+   Tabelle `VerflechtungErzwungen`. Ein **manueller Start** (Retry der
+   Registerstufe in der App, „Tiefer verfolgen“, Chat-Tool) trägt die Firma
+   dort ein und hebt die Sperre einmalig auf; der Eintrag wird beim Abruf
+   verbraucht. Auch Rekursionskinder unterliegen der Sperre.
 
 ## 5. Darstellung
 

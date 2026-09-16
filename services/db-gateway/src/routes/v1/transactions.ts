@@ -13,6 +13,7 @@ import {
   publishStructuredContentRetry,
   publishWebsiteRetry,
 } from "../../lib/retry-publish";
+import { erzwingen } from "../../lib/verflechtungen";
 import { heldSubset, isHeld } from "../../lib/company-holds";
 import { hiddenTransactionSubset } from "../../lib/company-tombstones";
 import { activeShareFor, listShares, copyEntityProgress } from "../../lib/org-shares";
@@ -1527,6 +1528,13 @@ transactionsRouter.openapi(retryRoute, async (c) => {
   // people=2 extrahiert, alle Persists verworfen). STAGE_TO_SERVICE
   // deckt auch die Sub-Pipelines ab (deepResearch/jobPostings → website).
   const producersToClear = new Set<string>([STAGE_TO_SERVICE[stage]]);
+  // Firmen-Verflechtungen: manueller Retry der Registerstufe liest auch die
+  // Gesellschafterliste erneut (hebt die 30-Tage-Sperre einmalig auf).
+  if (STAGE_TO_SERVICE[stage] === "structured-content") {
+    await erzwingen(getGatewayPool(), companyId).catch((err: unknown) =>
+      logger.warn({ companyId, err: err instanceof Error ? err.message : String(err) }, "verflechtungen: erzwingen fehlgeschlagen"),
+    );
+  }
   if (producersToClear.size > 0) {
     try {
       const pool = getGatewayPool();

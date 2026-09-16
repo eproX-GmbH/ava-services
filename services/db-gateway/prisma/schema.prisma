@@ -825,3 +825,10 @@ model VerflechtungBesuch {
   @@index([status, aktualisiertAt])
   @@index([companyId])
 }
+
+/// Firmen-Verflechtungen: manueller Start (Retry der Registerstufe, "Tiefer
+/// verfolgen") hebt die 30-Tage-Sperre der Gesellschafterliste einmalig auf.
+model VerflechtungErzwungen {
+  companyId String   @id
+  bis       DateTime
+}

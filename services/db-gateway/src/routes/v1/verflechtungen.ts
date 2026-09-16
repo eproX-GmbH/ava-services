@@ -7,7 +7,7 @@ import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
 import { HTTPException } from "hono/http-exception";
 import { requireScope } from "../../middleware/auth";
 import { getGatewayPool } from "../../lib/producer-pools";
-import { kontextAnlegen, kontextStand, kontexteVon, MAX_TIEFE } from "../../lib/verflechtungen";
+import { kontextAnlegen, kontextStand, kontexteVon, listeFaellig, MAX_TIEFE } from "../../lib/verflechtungen";
 import { ErrorShape } from "./schemas";
 
 export const verflechtungenRouter = new OpenAPIHono();
@@ -118,4 +118,19 @@ verflechtungenRouter.openapi(standRoute, async (c) => {
   const s = await kontextStand(getGatewayPool(), a.tenantId, c.req.valid("param").kontext);
   if (!s) throw new HTTPException(404, { message: "Kontext unbekannt" });
   return c.json({ kontext: s.kontext.kontext, ursprungCompanyId: s.kontext.ursprungCompanyId, transactionId: s.kontext.transactionId, maxTiefe: s.kontext.maxTiefe, maxFirmen: s.kontext.maxFirmen, ohneBremse: s.kontext.ohneBremse, zaehler: s.zaehler, besuche: s.besuche }, 200);
+});
+
+// Producer-Abfrage vor dem DK-Abruf: 30-Tage-Sperre wie bei allen Producern,
+// manueller Start (Retry, "Tiefer verfolgen") hebt sie einmalig auf.
+const faelligRoute = createRoute({
+  method: "get",
+  path: "/verflechtungen/faellig/{companyId}",
+  tags: [tag],
+  summary: "Darf die Gesellschafterliste dieser Firma jetzt gelesen werden? (30-Tage-Sperre, manuell erzwungen)",
+  request: { params: z.object({ companyId: z.string().min(3) }) },
+  responses: { 200: { content: { "application/json": { schema: z.object({ faellig: z.boolean(), grund: z.string() }) } }, description: "Stand" }, ...err },
+});
+verflechtungenRouter.openapi(faelligRoute, async (c) => {
+  auth(c);
+  return c.json(await listeFaellig(getGatewayPool(), c.req.valid("param").companyId), 200);
 });
