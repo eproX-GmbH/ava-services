@@ -6,8 +6,8 @@ import type { TrefferAt } from "./at-firmenbuch";
 import type { TrefferUk } from "./uk-companies-house";
 import type { InsolvenzGegenstand } from "./insolvenz-parser";
 
-export type JobArt = "front" | "bekanntmachungen" | "refresh" | "insolvenz" | "at_front" | "at_refresh" | "at_insolvenz" | "uk_bulk" | "uk_refresh" | "uk_insolvenz";
-export const ALLE_JOB_ARTEN: JobArt[] = ["front", "bekanntmachungen", "refresh", "insolvenz", "at_front", "at_refresh", "at_insolvenz", "uk_bulk", "uk_refresh", "uk_insolvenz"];
+export type JobArt = "front" | "bekanntmachungen" | "refresh" | "insolvenz" | "gesellschafter" | "at_front" | "at_refresh" | "at_insolvenz" | "uk_bulk" | "uk_refresh" | "uk_insolvenz";
+export const ALLE_JOB_ARTEN: JobArt[] = ["front", "bekanntmachungen", "refresh", "insolvenz", "gesellschafter", "at_front", "at_refresh", "at_insolvenz", "uk_bulk", "uk_refresh", "uk_insolvenz"];
 /** UK (docs/PLAN_UK.md): Bulk-Abzug, Firmenseite, Insolvenz und Gazette, kein Browser. */
 export const JOB_ARTEN_UK: JobArt[] = ["uk_bulk", "uk_refresh", "uk_insolvenz"];
 /** Oesterreich (docs/PLAN_OESTERREICH.md): JSON-API und Ediktsdatei, kein Browser. */
@@ -67,7 +67,26 @@ export type Ergebnis = {
   trefferUk?: TrefferUk[];
   /** uk_bulk: Zusammenfassung des Teils. */
   ukBulk?: { datum: string; teil: number; teile: number; zeilen: number; teilergebnisse: number };
+  /** gesellschafter (docs/PLAN_VERFLECHTUNGEN.md): Originaldatei der neuesten Liste oder KEINE. */
+  gesellschafter?: GesellschafterErgebnis;
+  gesellschafterAlle?: GesellschafterErgebnis[];
 };
+
+export type GesellschafterErgebnis =
+  | { companyId: string; ergebnis: "KEINE" }
+  | {
+      companyId: string;
+      ergebnis: "DOKUMENT";
+      listeDatum: string;
+      fassungen: string[];
+      format: "pdf" | "tiff";
+      dateiname: string;
+      mime: "application/pdf" | "image/tiff";
+      sha256: string;
+      groesse: number;
+      /** Base64 der geprueften Datei (PDF oder TIFF, bis 20 MB) */
+      inhalt: string;
+    };
 
 /** uk_bulk: ein Buendel Zeilen waehrend der Ausfuehrung (verlaengert die Lease). */
 export type Teilergebnis = { workerId: string; teil: number; trefferUk: TrefferUk[] };

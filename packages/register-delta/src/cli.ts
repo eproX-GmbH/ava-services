@@ -16,11 +16,12 @@
 //   REGISTER_DELTA_STATUS=1  Zustand als Zeile "__AVA_RD_STATUS__{json}" auf stdout (Desktop-Statuskarte)
 //   REGISTER_DELTA_AT=0      Oesterreich-Jobs (JustizOnline, Ediktsdatei) nicht bedienen (Default: an)
 //   REGISTER_DELTA_UK=0      UK-Jobs (Companies House, Gazette) nicht bedienen (Default: an)
+//   REGISTER_DELTA_GESELLSCHAFTER=0  Gesellschafterlisten (Download-Ausnahme) nicht bedienen (Default: an)
 
 import fs from "node:fs";
 import os from "node:os";
 import { GatewayClient, type JobArt } from "./gateway-client";
-import { RegisterPortal } from "./portal";
+import { RegisterPortal, neuesDownloadVerzeichnis } from "./portal";
 import { InsolvenzPortal } from "./insolvenz-portal";
 import { RegisterWorker } from "./worker";
 import { AT_ABFRAGEN_JE_STUNDE, JustizOnlineClient } from "./at-firmenbuch";
@@ -64,6 +65,15 @@ async function main() {
       await p.oeffnen();
       return p;
     },
+    gesellschafter:
+      process.env.REGISTER_DELTA_GESELLSCHAFTER === "0"
+        ? undefined
+        : async () => {
+            // Eigene Browser-Instanz mit Download-Ausnahme nur fuer diese Job-Art.
+            const p = new RegisterPortal({ chromeBinaryPath: process.env.CHROME_BIN, log, downloadVerzeichnis: neuesDownloadVerzeichnis() });
+            await p.oeffnen();
+            return p;
+          },
     insolvenz: async () => {
       const p = new InsolvenzPortal({ chromeBinaryPath: process.env.CHROME_BIN, log });
       await p.oeffnen();
