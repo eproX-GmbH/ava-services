@@ -926,6 +926,18 @@ const applyStructuredContent: ApplyFn = async (pool, event, log) => {
           wohnort: m.city ?? null,
         }));
       await masterData("POST", "/internal/companies/roles", { companyId: result.companyId, rolle: "GESCHAEFTSFUEHRER", personen, quelle: "structured-content", gesehenAt: data.computedAt });
+      // Adresse normalisiert ablegen (Kante ADRESSE im Netz): Original bleibt als Anzeige.
+      if (result.street || result.zipCode) {
+        await masterData("POST", "/internal/companies/address", {
+          companyId: result.companyId,
+          strasse: result.street ?? null,
+          hausnummer: result.houseNumber ?? null,
+          plz: result.zipCode ?? null,
+          ort: result.city ?? null,
+          quelle: "structured-content",
+          gesehenAt: data.computedAt,
+        });
+      }
     }
   } catch (err) {
     log.warn({ companyId: result.companyId, err: (err as Error).message }, "[verflechtungen] Rollen-Spiegel fehlgeschlagen");

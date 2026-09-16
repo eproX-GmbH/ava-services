@@ -136,6 +136,7 @@ function NetzGrafik({ netz, wurzel, arten }: { netz: Netz; wurzel: string; arten
           const my = (a.y + b.y) / 2;
           return (
             <g key={`${k.von}-${k.nach}-${k.art}-${i}`} opacity={hervor ? 1 : 0.15}>
+              <title>{k.art === "ADRESSE" ? `Gleiche Adresse: ${k.quelle}` : `${ART_LABEL[k.art]}${k.prozent != null ? ` ${k.prozent.toLocaleString("de-DE", { maximumFractionDigits: 2 })} %` : ""}${k.seit ? ` seit ${new Date(k.seit).toLocaleDateString("de-DE")}` : ""}${k.bis ? ` bis ${new Date(k.bis).toLocaleDateString("de-DE")}` : ""}`}</title>
               <line x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke={ART_FARBE[k.art]} strokeWidth={k.aktuell ? 1.8 : 1} strokeDasharray={k.aktuell ? undefined : "4 4"} markerEnd={k.art === "BETEILIGUNG" ? "url(#pfeil)" : undefined} />
               {k.art === "BETEILIGUNG" && k.prozent != null && (
                 <text x={mx} y={my - 4} fontSize={11} textAnchor="middle" fill="currentColor" opacity={0.85}>
