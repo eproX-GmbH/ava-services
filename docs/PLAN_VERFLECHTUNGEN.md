@@ -171,15 +171,28 @@ Navigation bis „SI“/„DK“ schon vorhanden. Ein erster Ansatz über Job-Ar
    `FEHLER` mit Gründen), `LISTE` speichert Beteiligungen, Personen, Rollen
    und den Beleg. Fehler im Producer werden nur geloggt; der normale
    Lauf bleibt davon unberührt.
-6. **Firmen-Gesellschafter und Rekursion (offen, ohne LLM im Gateway):**
-   master-data löst Firmen-Gesellschafter über die Registerangabe zur
-   companyId auf (`unbekannteFirmen`, `firmenIds` im Antwort-Body). Der
-   Gateway stößt für unbekannte Firmen einen Register-Refresh an (bestehende
-   Queue) und für bekannte, noch nicht besuchte Firmen einen
-   structured-content-Trigger im Pool des Nutzers. Besuchsliste je
-   Verarbeitungskontext (Ursprungs-companyId plus Datum) im Gateway,
-   Notbremse Tiefe 6 / 200 Firmen mit Opt-out für große Konstrukte. Das
-   Auslesen selbst bleibt immer beim Producer des Nutzers.
+6. **Firmen-Gesellschafter und Rekursion (umgesetzt 2026-09-16, ohne LLM
+   im Gateway):** Der Gateway löst Firmen-Gesellschafter über die Original-
+   Regel (`companyIdAus`, wie im Register-Delta) zur companyId auf, bevor
+   master-data die Liste speichert; master-data zieht die Kanten für
+   bekannte Firmen und meldet unbekannte. Danach `nachListe()` in
+   `lib/verflechtungen.ts`: offener Besuch dieser Firma im Tenant → dessen
+   Kontext, sonst neuer **Wurzelkontext** (automatischer Lauf je Pool-Firma,
+   `maxTiefe` 1). Kinder kommen in die **Besuchsliste** (`VerflechtungBesuch`,
+   je Kontext höchstens einmal, Schleifen enden hier) und werden über
+   master-data `POST /internal/verflechtungen/anstossen` für den Nutzer des
+   Ursprungslaufs angestoßen: eigener Vorgang „Verflechtungen <Firma>“, nur
+   der Register-Trigger mit Marker `verflechtungen` im `services`-Header, so
+   dass structured-content nur Register plus Liste liest (auch wenn der
+   Bestand frisch ist) und keine Folge-Producer (Website, Profil, Kontakte)
+   startet. Unbekannte Firmen bekommen einen Register-Refresh (Job-Art
+   `refresh`, Grund `verflechtungen`) und stehen als `wartetRegister`; ein
+   stündlicher Cron stößt sie erneut an, nach 14 Tagen `abgebrochen`.
+   Notbremsen je Kontext: `maxTiefe` (1 automatisch, 6 auf Wunsch, bis 12),
+   `maxFirmen` 200, `ohneBremse` hebt beides auf. Route
+   `POST /v1/verflechtungen/kontexte` (companyId, maxTiefe, ohneBremse) für
+   App und Chat, `GET /v1/verflechtungen/kontexte?companyId=` und
+   `GET /v1/verflechtungen/kontexte/{kontext}` für den Stand.
 7. **Aufwärts:** Wer hält die Ausgangsfirma? Das steht nur in *ihrer* Liste
    (§5). Der Graph füllt sich von unten nach oben mit jedem verarbeiteten
    Pool; „Firmen, an denen X beteiligt ist“ ist eine Abfrage über
@@ -267,7 +280,7 @@ ausblenden“). Zusätzlich ein Betreiber-Schalter im Gateway
 | V1 | master-data: Tabellen Shareholding, ShareholderListCheck, ShareholderListDocument, Person, PersonRole; interne Routen; Yup und Qualitätsfilter | **erledigt 2026-09-16** (Migration `20260916100000_verflechtungen`, 41 Tests, Deploy offen) |
 | V2 | structured-content: `gesellschafterliste()` im Handelsregister-Webdriver, Dokumentprüfung (Magic Bytes, ZIP im Speicher), Tests | **erledigt 2026-09-16** (structured-content 5d0ac71) |
 | V3 | LLM-Auswertung im Producer mit dem Modell des Nutzers (PDF/TIFF als Bild, Textebene, Yup, Qualitätsfilter), Persist-Ereignis, Gateway-Binding mit Feature-Gate, Desktop-Flag `AVA_VERFLECHTUNGEN` | **erledigt 2026-09-16** (Ende-zu-Ende-Test mit echter Firma offen) |
-| V4 | Gateway/master-data: Firmen-Gesellschafter auflösen, fehlende Firmen per Register-Refresh anlegen, structured-content-Trigger je Kontext mit Besuchsliste und Notbremse (ohne LLM) | 1,5 Tage |
+| V4 | Gateway/master-data: Firmen-Gesellschafter auflösen, fehlende Firmen per Register-Refresh anlegen, structured-content-Trigger je Kontext mit Besuchsliste und Notbremse (ohne LLM) | **erledigt 2026-09-16** (Gateway `lib/verflechtungen.ts`, master-data `/internal/verflechtungen/anstossen`, structured-content Marker; Deploy und Ende-zu-Ende-Test offen) |
 | V5 | Geschäftsführer aus structured-content in Person/PersonRole spiegeln; Adress-Schlüssel für DE aus structured-content | 1 Tag |
 | V6 | App: Reiter Verflechtungen mit Netzgrafik, Gesellschaftertabelle, Personenseite | 3 Tage |
 | V7 | Chat-Tools, Statuswächter „Gesellschafterwechsel“, Fähigkeitsgruppe, Org-Feature `verflechtungen` und Betreiber-Schalter | 1,5 Tage |

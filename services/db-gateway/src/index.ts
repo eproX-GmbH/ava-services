@@ -21,6 +21,8 @@ import { startQuotaResumeCron } from "./lib/quota-resume-worker";
 import { startStuckProgressReaperCron } from "./lib/stuck-progress-reaper";
 import { startPersonRetentionCron } from "./lib/person-retention-reaper";
 import { startBillingCron } from "./lib/billing-cron";
+import { startVerflechtungenCron } from "./lib/verflechtungen";
+import { getGatewayPool } from "./lib/producer-pools";
 import { startRegisterJobCron } from "./lib/register-jobs";
 
 const env = loadEnv();
@@ -118,6 +120,10 @@ import("./lib/persist-bus")
 // with parked rows + headroom and asks master-data to replay producer
 // triggers in batches. Stripe webhook trigger lives inside billing.ts.
 startQuotaResumeCron();
+
+// Firmen-Verflechtungen V4 — wartende und geparkte Firmen-Gesellschafter
+// stuendlich erneut anstossen (docs/PLAN_VERFLECHTUNGEN.md §4 Nr. 6).
+startVerflechtungenCron(getGatewayPool());
 
 // v0.1.378 — Stuck-progress reaper. Flips EntityProgress rows that hang
 // in `in_progress` past STUCK_PROGRESS_TIMEOUT_MINUTES to `failed`, so a

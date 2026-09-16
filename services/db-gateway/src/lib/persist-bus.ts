@@ -61,6 +61,7 @@ import {
 import { transactionProgressBus } from "./event-bus";
 import { featureEnabledForEventTenant } from "./policy-guard";
 import { masterData } from "./register-jobs";
+import { loeseFirmenAuf, nachListe } from "./verflechtungen";
 import { recordUsage } from "./billing";
 import { tierShouldWrite, type ModelTier } from "./tier";
 
@@ -1940,20 +1941,33 @@ const stubApply: (producer: ProducerName) => ApplyFn = (producer) =>
 // die Gesellschafterliste mit dem LLM des Nutzers ausgewertet; hier geht das
 // Ergebnis (LISTE, UNSICHER, KEINE) samt Beleg an master-data, wo der
 // Qualitaetsfilter erneut laeuft und Personen zusammengefuehrt werden.
-const applyShareholders: ApplyFn = async (_pool, event, log) => {
+const applyShareholders: ApplyFn = async (pool, event, log) => {
   const data = event.data as PersistEvent<Record<string, unknown>> | undefined;
   if (!data?.result || typeof data.result.companyId !== "string") throw new Error("missing result.companyId");
   const r = data.result as { companyId: string; ergebnis: string; listeDatum?: string; format?: string; liste?: Record<string, unknown> | null; gruende?: string[]; dokument?: Record<string, unknown> };
+  const quelleTransactionId = typeof (event as { transaction?: unknown }).transaction === "string" ? String((event as { transaction?: string }).transaction) : null;
+  const rekursion = async (firmen: Parameters<typeof nachListe>[1]["firmen"], ergebnis: "LISTE" | "KEINE" | "UNSICHER", ursprungName: string | null) => {
+    try {
+      await nachListe(pool, { tenantId: data.tenantId, companyId: r.companyId, ursprungName, quelleTransactionId, firmen, ergebnis });
+    } catch (err) {
+      log.warn({ companyId: r.companyId, err: (err as Error).message }, "[verflechtungen] Rekursion fehlgeschlagen");
+    }
+  };
   if (r.ergebnis === "KEINE") {
     await masterData("POST", "/internal/companies/shareholders", { companyId: r.companyId, ergebnis: "KEINE", gesehenAt: data.computedAt });
+    await rekursion([], "KEINE", null);
   } else if (r.ergebnis === "LISTE" && r.liste) {
-    const antwort = await masterData<{ ergebnis: string; unbekannteFirmen?: string[]; gruende?: string[] }>("POST", "/internal/companies/shareholders", {
-      liste: { ...r.liste, companyId: r.companyId },
+    // Firmen-Gesellschafter zur companyId aufloesen (Original-Regel), master-data zieht die Kanten.
+    const { liste, firmen } = loeseFirmenAuf(r.liste as { gesellschafter?: Array<Record<string, unknown>> });
+    const antwort = await masterData<{ ergebnis: string; unbekannteFirmen?: string[]; firmenIds?: string[]; gruende?: string[] }>("POST", "/internal/companies/shareholders", {
+      liste: { ...liste, companyId: r.companyId },
       format: r.format,
       dokument: r.dokument,
       gesehenAt: data.computedAt,
     });
-    log.info({ companyId: r.companyId, ergebnis: antwort.ergebnis, unbekannt: antwort.unbekannteFirmen?.length ?? 0, gruende: antwort.gruende }, "[verflechtungen] Liste uebernommen");
+    log.info({ companyId: r.companyId, ergebnis: antwort.ergebnis, firmen: firmen.length, unbekannt: antwort.unbekannteFirmen?.length ?? 0, gruende: antwort.gruende }, "[verflechtungen] Liste uebernommen");
+    const firmaName = (liste as { firma?: { name?: unknown } }).firma?.name;
+    await rekursion(firmen, antwort.ergebnis === "LISTE" ? "LISTE" : "UNSICHER", typeof firmaName === "string" ? firmaName : null);
   } else {
     await masterData("POST", "/internal/companies/shareholders", {
       companyId: r.companyId,
@@ -1963,6 +1977,7 @@ const applyShareholders: ApplyFn = async (_pool, event, log) => {
       gesehenAt: data.computedAt,
     });
     log.info({ companyId: r.companyId, gruende: r.gruende }, "[verflechtungen] Liste unsicher, verworfen");
+    await rekursion([], "UNSICHER", null);
   }
 };
 

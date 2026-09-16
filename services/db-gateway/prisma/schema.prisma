@@ -783,3 +783,45 @@ model StructuredContentStale {
   seit      DateTime @default(now())
   grund     String
 }
+
+/// Firmen-Verflechtungen V4 (docs/PLAN_VERFLECHTUNGEN.md §4 Nr. 6): ein
+/// Verarbeitungskontext ab einer Ursprungsfirma. `maxTiefe` 1 fuer den
+/// automatischen Lauf je Pool-Firma, 6 auf Wunsch; `ohneBremse` hebt Tiefe
+/// und Anzahl auf. `transactionId` ist der Vorgang "Verflechtungen …" in
+/// master-data, in dem die Firmen-Gesellschafter fuer den Nutzer laufen.
+model VerflechtungKontext {
+  kontext             String   @id
+  tenantId            String
+  ursprungCompanyId   String
+  transactionId       String
+  quelleTransactionId String?
+  userId              String?
+  maxTiefe            Int
+  maxFirmen           Int
+  ohneBremse          Boolean  @default(false)
+  erstelltAt          DateTime @default(now())
+  besuche             VerflechtungBesuch[]
+
+  @@index([tenantId, ursprungCompanyId])
+}
+
+/// Besuchsliste je Kontext: jede Firma hoechstens einmal (Schleifen A haelt B,
+/// B haelt A enden hier). status: erledigt | angestossen | wartetRegister |
+/// geparkt | abgebrochen.
+model VerflechtungBesuch {
+  kontext        String
+  companyId      String
+  tiefe          Int
+  status         String
+  grund          String?
+  gericht        String?
+  art            String?
+  nummer         String?
+  zusatz         String?
+  aktualisiertAt DateTime @default(now())
+  kontextRef     VerflechtungKontext @relation(fields: [kontext], references: [kontext], onDelete: Cascade)
+
+  @@id([kontext, companyId])
+  @@index([status, aktualisiertAt])
+  @@index([companyId])
+}
