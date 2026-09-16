@@ -164,3 +164,24 @@ je Producer-Datenbank, zusammen rund 60 von 100. Umgesetzt:
 Option B: ein halber Tag (App, Secrets, zwei Umhängungen, Beobachtung).
 Option C: zwei bis drei Tage. Option D: Entscheidung plus ein Umzug des
 anderen Produkts, außerhalb von AVA.
+
+## Nachtrag 2026-09-16 (Direktweg zum Primary)
+
+- `ava-pgbouncer` verbindet sich jetzt direkt mit dem Postgres-Primary
+  (`DB_HOST` = Direct IP des Clusters, `SERVER_TLS_SSLMODE=disable`; der
+  Primary bricht den TLS-Handshake ab, und pgbouncer fällt bei `prefer`
+  nicht auf Klartext zurück, was beim ersten Versuch einen 20-Minuten-Ausfall
+  verursacht hat). Klartext gilt nur im privaten Fly-Netz (WireGuard).
+- Grund: der Anbieter-Bouncer verwendet die von uns geschlossenen
+  Serververbindungen nicht wieder und hielt je Datenbank 10 bis 13
+  Leerlaufverbindungen; der Cluster stand mehrfach bei 94 bis 100 von 100
+  (App wurde langsam, Graph lud nicht).
+- Befund danach: unsere Cloud-Dienste halten zusammen 4 Serververbindungen.
+  Die verbleibenden rund 80 Sitzungen stammen von Nutzer-Desktops, deren
+  Producer noch die alte direkte Handout-Adresse nutzen; sie verschwinden mit
+  dem nächsten Producer-Neustart (Update auf v0.1.672).
+- Pattern Paradise (`cbj-backend-wandering-night-1250`, gleiche Datenbank)
+  läuft ebenfalls über `ava-pgbouncer` (`pgbouncer=true&connection_limit=2`).
+- Deploys mit zwei Maschinen je Dienst kollidieren mit `max_db_connections = 6`
+  (2 × Prisma 4); master-data hat deshalb eine Neustartschleife erlebt. Offen:
+  `MAX_DB_CONNECTIONS` 8 oder Prisma-Limit 2.
