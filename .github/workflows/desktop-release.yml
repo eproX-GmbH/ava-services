@@ -823,17 +823,11 @@ jobs:
             --clobber \
             --repo "${{ github.repository }}"
 
-      # The "Latest" promotion moves from the arm64 job (v0.1.0-0.1.173)
-      # to here — only after BOTH arches have artifacts on the release.
-      # An Intel user opening github.com/eproX-GmbH/ava-services/releases/latest
-      # before this step would otherwise see "no .dmg for my arch".
-      - name: Promote release to Latest
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          TAG="${{ github.event.inputs.tag || github.ref_name }}"
-          gh release edit "$TAG" --draft=false --latest \
-            --repo "${{ github.repository }}"
+      # v0.1.672 (Operator 2026-09-16): Die "Latest"-Schaltung liegt jetzt im
+      # eigenen Job `promote-release` nach arm64 + Windows. Der x64-Build laedt
+      # danach mit --clobber nach; bis dahin fehlt Intel-Nutzern die Datei
+      # (Updater meldet einmal "keine passende Datei" und findet sie beim
+      # naechsten Lauf), Silicon- und Windows-Nutzer warten nicht mehr.
 
   # ---------------------------------------------------------------------------
   # Windows build is currently DISABLED to conserve GitHub Actions
@@ -843,6 +837,23 @@ jobs:
   # pilot moves to Windows users or the Actions plan is upgraded.
   # The job body is left intact so re-enabling is a one-line change.
   # ---------------------------------------------------------------------------
+  # v0.1.672 — Release auf "Latest" schalten, sobald macOS arm64 und Windows
+  # hochgeladen sind. Der Intel-Build (build-mac-x64) haengt sich danach mit
+  # --clobber an dasselbe Release. Vorher (v0.1.174 bis 0.1.671) wartete die
+  # Schaltung auf beide macOS-Architekturen; ein Flake im x64-Job hielt dann
+  # alle Nutzer auf (Befund 2026-09-16, v0.1.671).
+  promote-release:
+    needs: [build-mac-arm64, build-windows]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Promote release to Latest
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${{ github.event.inputs.tag || github.ref_name }}"
+          gh release edit "$TAG" --draft=false --latest \
+            --repo "${{ github.repository }}"
+
   build-windows:
     name: Build & sign Windows (x64)
     needs: prepare-release

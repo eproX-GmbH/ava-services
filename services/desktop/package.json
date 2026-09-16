@@ -1,7 +1,8 @@
 {
   "name": "@ava/desktop",
-  "version": "0.1.671",
+  "version": "0.1.672",
   "private": true,
+  "license": "SEE LICENSE IN LICENSE",
   "description": "AVA Electron desktop app",
   "author": {
     "name": "eproX GmbH",
