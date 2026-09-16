@@ -5,13 +5,10 @@
 // gesperrt (download_restrictions 3), keine anderen Domains.
 
 import fs from "node:fs";
-import os from "node:os";
-import path from "node:path";
 import { Builder, By, until, type WebDriver } from "selenium-webdriver";
 import chrome from "selenium-webdriver/chrome";
 import { portalGericht } from "./ids";
 import { parseErgebnis, SPERR_RE, trefferzahl, type RohZeile, type Treffer } from "./parser";
-import { DOKUMENT_MAX_BYTES, pruefeDokument, type GeprueftesDokument } from "./dokument";
 
 export const PORTAL_URL = "https://www.handelsregister.de/rp_web/welcome.xhtml";
 
@@ -20,18 +17,7 @@ export type PortalOptionen = {
   headless?: boolean;
   /** Hook fuer Protokollzeilen (Desktop: Producer-Log). */
   log?: (zeile: string) => void;
-  /**
-   * Gesellschafterlisten (docs/PLAN_VERFLECHTUNGEN.md §8 Nr. 1): Downloads
-   * ausschliesslich in dieses temporaere Verzeichnis erlauben. Ohne Angabe
-   * bleibt jeder Download gesperrt (download_restrictions 3).
-   */
-  downloadVerzeichnis?: string;
 };
-
-export type GesellschafterlisteErgebnis =
-  | { ergebnis: "KEINE"; gesperrt: false; fassungen: [] }
-  | { ergebnis: "DOKUMENT"; gesperrt: false; listeDatum: string; fassungen: string[]; format: "pdf" | "tiff"; dokument: GeprueftesDokument; dateinameDownload: string }
-  | { ergebnis: "GESPERRT"; gesperrt: true };
 
 export type Suchergebnis = {
   gesperrt: boolean;
@@ -102,15 +88,9 @@ export class RegisterPortal {
     options.addArguments("--lang=de-DE", "--window-size=1400,1000", "--disable-gpu", "--disable-dev-shm-usage", "--no-sandbox");
     // Sprache erzwingen: auf Fly (kein Systemlocale) lieferte das Portal Englisch
     // ("Register announcements", Cookie-Knopf "Okay"), die Parser erwarten Deutsch.
-    // Download-Sperre: Standard 3 (alles blockiert). Nur fuer den Gesellschafter-
-    // listen-Abruf mit eigenem Temp-Verzeichnis freigegeben; Dateityp und Groesse
-    // prueft pruefeDokument() ueber die Magic Bytes, nie ueber den Namen.
-    const downloads = this.opt.downloadVerzeichnis;
-    if (downloads) fs.mkdirSync(downloads, { recursive: true });
     options.setUserPreferences({
-      download_restrictions: downloads ? 0 : 3,
-      "download.prompt_for_download": false,
-      ...(downloads ? { "download.default_directory": downloads, "plugins.always_open_pdf_externally": true } : {}),
+      download_restrictions: 3,
+      "download.prompt_for_download": true,
       "safebrowsing.enabled": true,
       "intl.accept_languages": "de-DE,de",
     });
@@ -236,87 +216,6 @@ export class RegisterPortal {
     return { gesperrt: false, text };
   }
 
-  /**
-   * Neueste "Liste der Gesellschafter" ueber den DK-Knopf laden (Notebook
-   * master-data/scripts/de/gesellschafterlisten.ipynb). 4 bis 5 Portalabfragen.
-   * Voraussetzung: Portal mit downloadVerzeichnis geoeffnet.
-   */
-  async gesellschafterliste(gericht: string, art: string, nummer: number | string): Promise<GesellschafterlisteErgebnis> {
-    const downloads = this.opt.downloadVerzeichnis;
-    if (!downloads) throw new Error("Portal ohne downloadVerzeichnis geoeffnet");
-    const d = this.d();
-    const s = await this.suche(gericht, art, nummer, true);
-    if (s.gesperrt) return { ergebnis: "GESPERRT", gesperrt: true };
-    // Trefferzeile der exakten Nummer (aktuelles Blatt, nicht Altgericht)
-    const geklickt = (await d.executeScript(
-      `const [nummer] = arguments;
-       const zeilen = [...document.querySelectorAll('tr[data-ri]')];
-       const tr = zeilen.find(t => (t.querySelector('td.fontTableNameSize')?.textContent || '').replace(/\s+/g,' ').trim().endsWith(' ' + nummer)) || zeilen[0];
-       if (!tr) return false;
-       const a = [...tr.querySelectorAll('a')].find(x => x.textContent.trim() === 'DK');
-       if (!a) return false; a.click(); return true;`,
-      String(nummer),
-    )) as boolean;
-    if (!geklickt) return { ergebnis: "KEINE", gesperrt: false, fassungen: [] };
-    this.anfragen++;
-    await this.warteAuf(async () => (await d.getTitle()).includes("Freigegebene Dokumente"), 60_000, "DK-Seite");
-    await schlafen(1500);
-    const baum = async () => (await d.executeScript(BAUM_SKRIPT)) as Array<{ label: string; leaf: boolean }>;
-    const toggle = async (label: string) => {
-      const ok = (await d.executeScript(TOGGLE_SKRIPT, label)) as boolean;
-      if (!ok) throw new Error(`Baumknoten fehlt: ${label}`);
-      this.anfragen++;
-      await schlafen(2500);
-    };
-    await toggle("Dokumente zur Registernummer");
-    if (!(await baum()).some((k) => k.label === "Liste der Gesellschafter")) return { ergebnis: "KEINE", gesperrt: false, fassungen: [] };
-    await toggle("Liste der Gesellschafter");
-    const fassungen = (await baum()).map((k) => k.label).filter((l) => l.startsWith("Liste der Gesellschafter -"));
-    if (fassungen.length === 0) return { ergebnis: "KEINE", gesperrt: false, fassungen: [] };
-    const datum = (l: string) => {
-      const m = /(\d{2})\.(\d{2})\.(\d{4})/.exec(l);
-      return m ? `${m[3]}-${m[2]}-${m[1]}` : "";
-    };
-    const neueste = fassungen.reduce((a, b) => (datum(b) > datum(a) ? b : a));
-    const gewaehlt = (await d.executeScript(SELECT_SKRIPT, neueste)) as boolean;
-    if (!gewaehlt) throw new Error("Blatt nicht waehlbar");
-    await schlafen(2500);
-    // Format: pdf bevorzugt, sonst zip (enthaelt TIFF)
-    const format = (await d.executeScript(
-      `const radios=[...document.querySelectorAll('#dk_form input[type=radio]')].map(r=>({r,l:(document.querySelector('label[for="'+r.id+'"]')?.textContent||'').trim().toLowerCase()}));
-       const pdf=radios.find(x=>x.l==='pdf'); const zip=radios.find(x=>x.l==='zip');
-       const w = pdf || zip; if(!w) return null; if(!w.r.checked) w.r.click(); return w.l;`,
-    )) as string | null;
-    if (!format) throw new Error("kein Download-Format angeboten");
-    await schlafen(1200);
-    const vorher = new Set(fs.readdirSync(downloads));
-    const knopf = (await d.executeScript(
-      `const b=[...document.querySelectorAll('#dk_form button, #dk_form a, #dk_form input[type=submit]')].find(b=>/download/i.test(b.textContent||b.value||'')); if(!b) return false; b.click(); return true;`,
-    )) as boolean;
-    if (!knopf) throw new Error("Download-Knopf fehlt");
-    this.anfragen++;
-    // Auf die fertige Datei warten (Chrome schreibt .crdownload und .com.google.Chrome.*)
-    let dateien: string[] = [];
-    await this.warteAuf(async () => {
-      const neu = fs.readdirSync(downloads).filter((n) => !vorher.has(n));
-      if (neu.length === 0 || neu.some((n) => n.endsWith(".crdownload") || n.startsWith(".com.google"))) return false;
-      dateien = neu;
-      return true;
-    }, 120_000, "Download");
-    await schlafen(500);
-    const pfad = path.join(downloads, dateien[0]);
-    try {
-      const stat = fs.statSync(pfad);
-      if (stat.size > DOKUMENT_MAX_BYTES) throw new Error(`Download zu gross: ${stat.size} Bytes`);
-      const bytes = fs.readFileSync(pfad);
-      const dokument = await pruefeDokument(bytes, dateien[0]);
-      this.log(`Gesellschafterliste ${gericht} ${art} ${nummer}: ${neueste.slice(-10)}, ${format} → ${dokument.art}, ${dokument.bytes.length} Bytes, ${fassungen.length} Fassung(en)`);
-      return { ergebnis: "DOKUMENT", gesperrt: false, listeDatum: datum(neueste), fassungen, format: dokument.art, dokument, dateinameDownload: dateien[0] };
-    } finally {
-      for (const n of dateien) fs.rmSync(path.join(downloads, n), { force: true });
-    }
-  }
-
   async schliessen(): Promise<void> {
     const d = this.driver;
     this.driver = null;
@@ -331,15 +230,6 @@ export class RegisterPortal {
 }
 
 export class PortalStoerung extends Error {}
-
-/** Temporaeres Download-Verzeichnis je Prozess (wird beim Schliessen geleert). */
-export function neuesDownloadVerzeichnis(): string {
-  return fs.mkdtempSync(path.join(os.tmpdir(), "ava-gesellschafter-"));
-}
-
-const BAUM_SKRIPT = `return [...document.querySelectorAll('li.ui-treenode')].map(li => ({label: li.querySelector(':scope > .ui-treenode-content .ui-treenode-label')?.textContent.trim() || '', leaf: li.classList.contains('ui-treenode-leaf')}));`;
-const TOGGLE_SKRIPT = `const [label]=arguments; const li=[...document.querySelectorAll('li.ui-treenode')].find(li => li.querySelector(':scope > .ui-treenode-content .ui-treenode-label')?.textContent.trim()===label); if(!li) return false; const t=li.querySelector(':scope > .ui-treenode-content .ui-tree-toggler'); if(!t) return false; t.click(); return true;`;
-const SELECT_SKRIPT = `const [label]=arguments; const li=[...document.querySelectorAll('li.ui-treenode')].find(li => li.querySelector(':scope > .ui-treenode-content .ui-treenode-label')?.textContent.trim()===label); if(!li) return false; li.querySelector(':scope > .ui-treenode-content .ui-treenode-label').click(); return true;`;
 
 function schlafen(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));

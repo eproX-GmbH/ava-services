@@ -5,8 +5,7 @@
 import type { Ergebnis, InsolvenzMeldung, Job, TrefferMeldung } from "./gateway-client";
 import { bereinigeText, kategorieAusText, type InsolvenzZeile } from "./insolvenz-parser";
 import { parseBekanntmachungen, type Treffer } from "./parser";
-import type { GesellschafterlisteErgebnis, Suchergebnis } from "./portal";
-import type { GesellschafterErgebnis } from "./gateway-client";
+import type { Suchergebnis } from "./portal";
 import { AT_SUCHE_SEITE, companyIdAt, trefferAt, type AtSuchseite, type AtDetail, type TrefferAt } from "./at-firmenbuch";
 import { meldungenAusVerfahren, type EdikteEintrag, type EdikteVerfahren } from "./at-edikte";
 import { companyIdUk, firmaZuTreffer, meldungenAusFaellen, meldungenAusGazette, type BulkTeil, type FirmaUk, type GazetteEintrag, type InsolvenzFallUk, type TrefferUk } from "./uk-companies-house";
@@ -14,11 +13,6 @@ import { companyIdUk, firmaZuTreffer, meldungenAusFaellen, meldungenAusGazette, 
 export type PortalSchnittstelle = {
   suche(gericht: string, art: string, nummer: number | string): Promise<Suchergebnis>;
   bekanntmachungenText(): Promise<{ gesperrt: boolean; text: string }>;
-};
-
-/** Portal mit Download-Ausnahme, nur fuer gesellschafter-Jobs (eigene Browser-Instanz). */
-export type GesellschafterSchnittstelle = {
-  gesellschafterliste(gericht: string, art: string, nummer: number | string): Promise<GesellschafterlisteErgebnis>;
 };
 
 export type InsolvenzSchnittstelle = {
@@ -60,8 +54,6 @@ export type AusfuehrungsOptionen = {
   at?: AtSchnittstelle;
   /** UK (nur fuer Jobs uk_*). */
   uk?: UkSchnittstelle;
-  /** Gesellschafterlisten (lazy; nur fuer Jobs der Art gesellschafter). */
-  gesellschafter?: () => Promise<GesellschafterSchnittstelle>;
   /** Hoechstzahl Abfragen je Job; muss in die Lease (20 min) passen. */
   maxAbfragenJeJob?: number;
   /** Oesterreich: Anfragen je Job bei 0,5/s (Default 300 ≈ 10 min). */
@@ -129,7 +121,6 @@ type InsolvenzPayload = { firmen: Array<{ companyId: string; gericht: string; ar
 type AtFrontPayload = { gerichtId: string; begriff: string; abSeite?: number; state?: string };
 type AtFirmenPayload = { firmen: Array<{ companyId: string; fnr: string }>; grund?: string };
 type UkBulkPayload = { url: string; datum: string; teil: number; teile: number };
-type GesellschafterPayload = { firmen: Array<{ companyId: string; gericht: string; art: string; nummer: string }>; grund?: string; kontext?: string };
 type UkFirmenPayload = { firmen: Array<{ companyId: string; nummer: string }>; grund?: string };
 
 export async function fuehreJobAus(job: Job, o: AusfuehrungsOptionen): Promise<Ergebnis> {
@@ -228,38 +219,6 @@ export async function fuehreJobAus(job: Job, o: AusfuehrungsOptionen): Promise<E
     }
     log(`insolvenz (${p.grund ?? "?"}): ${geprueft.length} Firmen geprueft, ${meldungen.length} Veroeffentlichungen, ${basis.abfragen} Abfragen`);
     return { ...basis, insolvenz: { meldungen, geprueft } };
-  }
-
-  if (job.art === "gesellschafter") {
-    // Je Firma 4 bis 5 Portalabfragen; Buendel klein halten (Gateway: 3 Firmen), damit es in die Lease passt.
-    if (!o.gesellschafter) throw new Error("Gesellschafterlisten-Portal nicht verfuegbar");
-    const p = job.payload as unknown as GesellschafterPayload;
-    const portal = await o.gesellschafter();
-    const ergebnisse: GesellschafterErgebnis[] = [];
-    for (const f of p.firmen) {
-      if (o.abbrechen?.() || basis.abfragen + 5 > max + 5) break;
-      await o.takt.warten();
-      const r = await portal.gesellschafterliste(f.gericht, f.art, f.nummer);
-      basis.abfragen += 5;
-      if (r.gesperrt) return { ...basis, gesperrt: true, gesellschafter: ergebnisse[0] };
-      if (r.ergebnis === "KEINE") ergebnisse.push({ companyId: f.companyId, ergebnis: "KEINE" });
-      else
-        ergebnisse.push({
-          companyId: f.companyId,
-          ergebnis: "DOKUMENT",
-          listeDatum: r.listeDatum,
-          fassungen: r.fassungen,
-          format: r.format,
-          dateiname: r.dokument.dateiname,
-          mime: r.dokument.mime,
-          sha256: r.dokument.sha256,
-          groesse: r.dokument.bytes.length,
-          inhalt: r.dokument.bytes.toString("base64"),
-        });
-    }
-    log(`gesellschafter (${p.grund ?? "?"}): ${ergebnisse.length} Firmen, ${ergebnisse.filter((e) => e.ergebnis === "DOKUMENT").length} Listen, ${basis.abfragen} Abfragen`);
-    // Ein Job = eine Firma im Regelfall; bei mehreren traegt das Gateway jedes Ergebnis einzeln ein.
-    return { ...basis, gesellschafter: ergebnisse[0], gesellschafterAlle: ergebnisse } as Ergebnis;
   }
 
   if (job.art === "uk_bulk" || job.art === "uk_refresh" || job.art === "uk_insolvenz") {

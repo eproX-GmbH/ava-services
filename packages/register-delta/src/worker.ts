@@ -2,7 +2,7 @@
 // gerufen wird. Bei Portal-Sperre eine Stunde Pause; ohne Jobs Wartezeit.
 
 import { GatewayClient, type Job, type JobArt } from "./gateway-client";
-import { fuehreJobAus, MAX_ABFRAGEN_JE_JOB, type AtSchnittstelle, type GesellschafterSchnittstelle, type InsolvenzSchnittstelle, type PortalSchnittstelle, type UkSchnittstelle } from "./jobs";
+import { fuehreJobAus, MAX_ABFRAGEN_JE_JOB, type AtSchnittstelle, type InsolvenzSchnittstelle, type PortalSchnittstelle, type UkSchnittstelle } from "./jobs";
 import { Taktgeber } from "./takt";
 
 export type WorkerOptionen = {
@@ -12,8 +12,6 @@ export type WorkerOptionen = {
   portal: () => Promise<PortalSchnittstelle & { schliessen(): Promise<void> }>;
   /** Insolvenzportal (I3); ohne Angabe werden insolvenz-Jobs nicht geleast. */
   insolvenz?: () => Promise<InsolvenzSchnittstelle & { schliessen(): Promise<void> }>;
-  /** Registerportal mit Download-Ausnahme fuer Gesellschafterlisten; ohne Angabe keine gesellschafter-Jobs. */
-  gesellschafter?: () => Promise<GesellschafterSchnittstelle & { schliessen(): Promise<void> }>;
   /** Oesterreich (JSON, kein Browser); ohne Angabe werden at_*-Jobs nicht geleast. */
   at?: AtSchnittstelle;
   /** UK (Companies House, kein Browser); `teilergebnis` wird vom Worker an das Gateway gebunden. */
@@ -91,7 +89,6 @@ export class RegisterWorker {
   private async schleife(): Promise<void> {
     let portal: (PortalSchnittstelle & { schliessen(): Promise<void> }) | null = null;
     let insolvenz: (InsolvenzSchnittstelle & { schliessen(): Promise<void> }) | null = null;
-    let gesellschafter: (GesellschafterSchnittstelle & { schliessen(): Promise<void> }) | null = null;
     // Ohne ausdrueckliche Arten: alles, was dieser Worker bedienen kann.
     const arten =
       this.o.arten ??
@@ -100,7 +97,6 @@ export class RegisterWorker {
         "bekanntmachungen",
         "refresh",
         ...(this.o.insolvenz ? (["insolvenz"] as JobArt[]) : []),
-        ...(this.o.gesellschafter ? (["gesellschafter"] as JobArt[]) : []),
         ...(this.o.at ? (["at_front", "at_refresh", "at_insolvenz"] as JobArt[]) : []),
         ...(this.o.uk ? (["uk_bulk", "uk_refresh", "uk_insolvenz"] as JobArt[]) : []),
       ] as JobArt[]);
@@ -128,17 +124,11 @@ export class RegisterWorker {
         this.log(`job ${job.id} ${job.art} ${job.schluessel}`);
         try {
           // Oesterreich-Jobs brauchen keinen Browser; das Registerportal nur bei Bedarf oeffnen.
-          if (!job.art.startsWith("at_") && !job.art.startsWith("uk_") && job.art !== "gesellschafter") portal ??= await this.o.portal();
+          if (!job.art.startsWith("at_") && !job.art.startsWith("uk_")) portal ??= await this.o.portal();
           const ergebnis = await fuehreJobAus(job, {
             workerId: this.o.workerId,
             portal: portal ?? portalFehlt,
             at: this.o.at,
-            gesellschafter: this.o.gesellschafter
-              ? async () => {
-                  gesellschafter ??= await this.o.gesellschafter!(); // eslint-disable-line @typescript-eslint/no-non-null-assertion
-                  return gesellschafter;
-                }
-              : undefined,
             uk: this.o.uk
               ? {
                   ...this.o.uk,
@@ -187,11 +177,6 @@ export class RegisterWorker {
             await ip.schliessen();
             insolvenz = null;
           }
-          const gp = gesellschafter as (GesellschafterSchnittstelle & { schliessen(): Promise<void> }) | null;
-          if (gp) {
-            await gp.schliessen();
-            gesellschafter = null;
-          }
           await this.warte(30_000);
         } finally {
           this.status.aktuellerJob = null;
@@ -202,8 +187,6 @@ export class RegisterWorker {
       if (portal) await portal.schliessen();
       const ip = insolvenz as (InsolvenzSchnittstelle & { schliessen(): Promise<void> }) | null;
       if (ip) await ip.schliessen();
-      const gp = gesellschafter as (GesellschafterSchnittstelle & { schliessen(): Promise<void> }) | null;
-      if (gp) await gp.schliessen();
     }
   }
 
