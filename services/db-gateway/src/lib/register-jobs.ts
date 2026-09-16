@@ -18,8 +18,8 @@ import { logger } from "./logger";
 import { getGatewayPool } from "./producer-pools";
 import { companyIdAus, idTeil, zusatzBestand } from "./register-ids";
 
-export type JobArt = "front" | "bekanntmachungen" | "refresh" | "insolvenz" | "gesellschafter" | "at_front" | "at_refresh" | "at_insolvenz" | "uk_bulk" | "uk_refresh" | "uk_insolvenz";
-export const JOB_ARTEN: JobArt[] = ["front", "bekanntmachungen", "refresh", "insolvenz", "gesellschafter", "at_front", "at_refresh", "at_insolvenz", "uk_bulk", "uk_refresh", "uk_insolvenz"];
+export type JobArt = "front" | "bekanntmachungen" | "refresh" | "insolvenz" | "at_front" | "at_refresh" | "at_insolvenz" | "uk_bulk" | "uk_refresh" | "uk_insolvenz";
+export const JOB_ARTEN: JobArt[] = ["front", "bekanntmachungen", "refresh", "insolvenz", "at_front", "at_refresh", "at_insolvenz", "uk_bulk", "uk_refresh", "uk_insolvenz"];
 /**
  * UK (docs/PLAN_UK.md): uk_bulk = ein Teil des monatlichen Companies-House-
  * Abzugs (Zeilen kommen als Teilergebnisse), uk_refresh = Firmenseite je
@@ -48,11 +48,6 @@ export const REFRESH_INTERVALL_TAGE = 90;
 export const INSOLVENZ_INTERVALL_TAGE = 30;
 export const INSOLVENZ_BUENDEL = 15;
 export const INSOLVENZ_POOL_MAX = 20_000;
-/** Firmen-Verflechtungen (docs/PLAN_VERFLECHTUNGEN.md): Gesellschafterliste je Pool-Firma alle 90 Tage, 3 Firmen je Job (4-5 Portalabfragen je Firma). */
-export const GESELLSCHAFTER_INTERVALL_TAGE = 90;
-export const GESELLSCHAFTER_BUENDEL = 3;
-export const VERFLECHTUNG_TIEFE_MAX = 6;
-export const VERFLECHTUNG_FIRMEN_MAX = 200;
 /** Oesterreich: 0,5 Anfragen je Sekunde und IP (429 ab 3/s); Buendel passen mit 2 Anfragen je Firma in die Lease. */
 export const AT_ABFRAGEN_JE_STUNDE = 1800;
 export const AT_REFRESH_BUENDEL = 50;
@@ -200,16 +195,7 @@ export type Ergebnis = {
   trefferUk?: TrefferUk[];
   /** uk_bulk: Zusammenfassung; die Zeilen kamen als Teilergebnisse. */
   ukBulk?: { datum: string; teil: number; teile: number; zeilen: number; teilergebnisse: number };
-  /** gesellschafter: je Firma Originaldatei oder KEINE. */
-  gesellschafter?: GesellschafterErgebnis;
-  gesellschafterAlle?: GesellschafterErgebnis[];
 };
-
-export type GesellschafterErgebnis =
-  | { companyId: string; ergebnis: "KEINE" }
-  | { companyId: string; ergebnis: "DOKUMENT"; listeDatum: string; fassungen: string[]; format: "pdf" | "tiff"; dateiname: string; mime: string; sha256: string; groesse: number; inhalt: string };
-
-export type GesellschafterFirma = { companyId: string; gericht: string; art: string; nummer: string };
 
 /** uk_bulk: Buendel Zeilen waehrend der Ausfuehrung. */
 export type Teilergebnis = { workerId: string; teil: number; trefferUk: TrefferUk[] };
@@ -722,95 +708,6 @@ async function ukBulkAbschluss(pool: pg.Pool, datum: string, teile: number, gest
   return masterData<Record<string, unknown>>("POST", "/internal/companies/uk-bulk-abschluss", { seitAt: gestartetAt, grund: `bulk-${datum}` });
 }
 
-// ---- Verflechtungen ------------------------------------------------------------
-
-/** Registerdaten zu companyIds fuer gesellschafter-Jobs (nur DE mit sauberer Nummer). */
-export async function gesellschafterFaellige(companyIds: string[], aelterAlsTage: number): Promise<GesellschafterFirma[]> {
-  const out: GesellschafterFirma[] = [];
-  for (let i = 0; i < companyIds.length; i += 5000) {
-    const r = await masterData<{ firmen: Array<{ companyId: string; districtCourt: string; registerType: string; registerNumber: string }> }>("POST", "/internal/companies/shareholders/due", {
-      companyIds: companyIds.slice(i, i + 5000),
-      aelterAlsTage,
-    });
-    for (const f of r.firmen ?? []) {
-      const m = /^(\d+)\s?([A-ZÄÖÜ]{0,3})$/.exec(f.registerNumber.trim());
-      if (!m || !/^HR[AB]$/.test(f.registerType)) continue; // nur GmbH/UG-Register (HRB) tragen Gesellschafterlisten; HRA meldet KEINE
-      out.push({ companyId: f.companyId, gericht: f.districtCourt, art: f.registerType, nummer: m[1] });
-    }
-  }
-  return out;
-}
-
-/** Jobs fuer konkrete Firmen; `kontext` = Verarbeitungskontext der Rekursion (Besuchsliste). */
-export async function gesellschafterAnfordern(q: Q, firmen: GesellschafterFirma[], grund: string, prioritaet = 2, kontext?: string): Promise<number> {
-  let n = 0;
-  const gesehen = new Set<string>();
-  const eindeutig = firmen.filter((f) => {
-    if (gesehen.has(f.companyId)) return false;
-    gesehen.add(f.companyId);
-    return true;
-  });
-  for (let i = 0; i < eindeutig.length; i += GESELLSCHAFTER_BUENDEL) {
-    const b = eindeutig.slice(i, i + GESELLSCHAFTER_BUENDEL);
-    const schluessel = `gesellschafter:${grund}:${b.map((f) => f.companyId).join(",")}`.slice(0, 900);
-    if (await legeJobAn(q, "gesellschafter", schluessel, { firmen: b, grund, ...(kontext ? { kontext } : {}) }, prioritaet)) n++;
-  }
-  return n;
-}
-
-/** Pool (EntityProgress, DE) alle 90 Tage; VERFLECHTUNGEN_DISABLED=1 stoppt die Erzeugung. */
-export async function erzeugeGesellschafterJobs(pool: pg.Pool): Promise<number> {
-  const r = await pool.query<{ companyId: string }>(`SELECT DISTINCT "companyId" FROM "EntityProgress" WHERE "companyId" NOT LIKE 'AT\\_%' AND "companyId" NOT LIKE 'UK\\_%' AND "companyId" NOT LIKE 'CH\\_%' ORDER BY "companyId" LIMIT $1`, [INSOLVENZ_POOL_MAX]);
-  const faellig = await gesellschafterFaellige(r.rows.map((x) => x.companyId), GESELLSCHAFTER_INTERVALL_TAGE);
-  return gesellschafterAnfordern(pool, faellig, `pool-${tagIso(new Date())}`, 3);
-}
-
-/**
- * Rekursion nach einer ausgewerteten Liste: Firmen-Gesellschafter, die im Kontext
- * noch nicht besucht wurden, bekommen einen gesellschafter-Job; unbekannte Firmen
- * zuerst einen Refresh (legt sie im Bestand an). Notbremse: Tiefe und Anzahl je
- * Kontext, abschaltbar (ohneBremse).
- */
-export async function verflechtungFortsetzen(
-  pool: pg.Pool,
-  kontext: string,
-  vonCompanyId: string,
-  firmen: Array<{ companyId: string; bekannt: boolean }>,
-  ohneBremse = false,
-): Promise<{ jobs: number; refresh: number; uebersprungen: number; gebremst: boolean }> {
-  const eigene = await pool.query<{ tiefe: number; ohneBremse: boolean }>(`SELECT "tiefe", "ohneBremse" FROM "VerflechtungKontext" WHERE "kontext" = $1 AND "companyId" = $2`, [kontext, vonCompanyId]);
-  const tiefe = (eigene.rows[0]?.tiefe ?? 0) + 1;
-  const bremseAus = ohneBremse || eigene.rows[0]?.ohneBremse === true;
-  const anzahl = await pool.query<{ n: string }>(`SELECT count(*)::text AS n FROM "VerflechtungKontext" WHERE "kontext" = $1`, [kontext]);
-  if (!bremseAus && (tiefe > VERFLECHTUNG_TIEFE_MAX || Number(anzahl.rows[0]?.n ?? 0) >= VERFLECHTUNG_FIRMEN_MAX)) {
-    logger.info({ kontext, tiefe, firmen: firmen.length }, "[verflechtungen] Notbremse: Kontext nicht weiter verfolgt");
-    return { jobs: 0, refresh: 0, uebersprungen: firmen.length, gebremst: true };
-  }
-  let uebersprungen = 0;
-  const neu: Array<{ companyId: string; bekannt: boolean }> = [];
-  for (const f of firmen) {
-    const r = await pool.query(`INSERT INTO "VerflechtungKontext" ("kontext", "companyId", "tiefe", "ohneBremse") VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING`, [kontext, f.companyId, tiefe, bremseAus]);
-    if ((r.rowCount ?? 0) === 0) uebersprungen++;
-    else neu.push(f);
-  }
-  let refresh = 0;
-  const jobFirmen: GesellschafterFirma[] = [];
-  for (const f of neu) {
-    const m = /^([A-Z0-9]+)_(HR[AB])_(\d+)/.exec(f.companyId);
-    if (!m) continue;
-    const gericht = await gerichtBestand(m[1]);
-    if (!f.bekannt) refresh += await refreshAnfordern(pool, [{ gericht, art: m[2], nummer: Number(m[3]) }], `verflechtung`, 1);
-    if (m[2] === "HRB") jobFirmen.push({ companyId: f.companyId, gericht, art: m[2], nummer: m[3] });
-  }
-  const jobs = await gesellschafterAnfordern(pool, jobFirmen, `kontext`, 2, kontext);
-  return { jobs, refresh, uebersprungen, gebremst: false };
-}
-
-/** Kontext anlegen (Ausgangsfirma, Tiefe 0). */
-export async function verflechtungStarten(pool: pg.Pool, kontext: string, companyId: string, ohneBremse: boolean): Promise<void> {
-  await pool.query(`INSERT INTO "VerflechtungKontext" ("kontext", "companyId", "tiefe", "ohneBremse") VALUES ($1, $2, 0, $3) ON CONFLICT ("kontext", "companyId") DO UPDATE SET "ohneBremse" = EXCLUDED."ohneBremse"`, [kontext, companyId, ohneBremse]);
-}
-
 // ---- Lease / Ergebnis -------------------------------------------------------
 
 /** Budget-Hinweis fuer den Worker je Portal. */
@@ -933,35 +830,6 @@ export async function verarbeiteErgebnis(pool: pg.Pool, jobId: string, ergebnis:
     }
   }
 
-  if (job.art === "gesellschafter") {
-    // Je Firma: KEINE oder das Dokument (Auswertung durch die Desktop-Seite mit dem LLM des Nutzers folgt).
-    const alle = ergebnis.gesellschafterAlle ?? (ergebnis.gesellschafter ? [ergebnis.gesellschafter] : []);
-    const p = job.payload as { firmen?: Array<{ companyId: string }>; kontext?: string };
-    let dokumente = 0;
-    let keine = 0;
-    for (const g of alle) {
-      if (g.ergebnis === "KEINE") {
-        await masterData("POST", "/internal/companies/shareholders", { companyId: g.companyId, ergebnis: "KEINE", gesehenAt: new Date().toISOString() });
-        keine++;
-      } else {
-        await masterData("POST", "/internal/companies/shareholders", {
-          companyId: g.companyId,
-          ergebnis: "DOKUMENT",
-          listeDatum: g.listeDatum,
-          format: g.format,
-          dokument: { dateiname: g.dateiname, mime: g.mime, inhalt: g.inhalt, sha256: g.sha256 },
-          gesehenAt: new Date().toISOString(),
-        });
-        dokumente++;
-        if (p.kontext) await pool.query(`UPDATE "RegisterJob" SET "payload" = "payload" || $2::jsonb WHERE "id" = $1`, [jobId, JSON.stringify({ kontextFirmen: { [g.companyId]: p.kontext } })]);
-      }
-    }
-    // Firmen, die der Worker nicht mehr geschafft hat (Budget), bleiben faellig.
-    zusammenfassung.dokumente = dokumente;
-    zusammenfassung.keine = keine;
-    zusammenfassung.offen = (p.firmen?.length ?? 0) - alle.length;
-  }
-
   if ((job.art === "insolvenz" || job.art === "at_insolvenz" || job.art === "uk_insolvenz") && ergebnis.insolvenz) {
     // Nur die vom Worker tatsaechlich bearbeiteten Firmen gelten als geprueft;
     // der Rest bleibt faellig und kommt mit dem naechsten Cron.
@@ -1074,7 +942,7 @@ export type Statistik = {
 };
 
 export async function statistik(pool: pg.Pool): Promise<Statistik> {
-  const jobs: Record<JobArt, Record<string, number>> = { front: {}, bekanntmachungen: {}, refresh: {}, insolvenz: {}, gesellschafter: {}, at_front: {}, at_refresh: {}, at_insolvenz: {}, uk_bulk: {}, uk_refresh: {}, uk_insolvenz: {} };
+  const jobs: Record<JobArt, Record<string, number>> = { front: {}, bekanntmachungen: {}, refresh: {}, insolvenz: {}, at_front: {}, at_refresh: {}, at_insolvenz: {}, uk_bulk: {}, uk_refresh: {}, uk_insolvenz: {} };
   const r = await pool.query<{ art: JobArt; status: string; n: string }>(`SELECT "art", "status", count(*)::text AS n FROM "RegisterJob" GROUP BY 1, 2`);
   for (const row of r.rows) if (jobs[row.art]) jobs[row.art][row.status] = Number(row.n);
   const w = await pool.query<{ n: string }>(`SELECT count(*)::text AS n FROM "RegisterWorker" WHERE "zuletztAt" > NOW() - interval '1 hour'`);
@@ -1125,14 +993,6 @@ export async function runRegisterJobCronOnce(now: Date = new Date()): Promise<vo
         logger.info({ insolvenzJobs: n }, "[register-jobs] Insolvenz-Jobs erzeugt");
       } catch (err) {
         logger.warn({ err: err instanceof Error ? err.message : String(err) }, "[register-jobs] Insolvenz-Jobs nicht erzeugt");
-      }
-    }
-    if (process.env.VERFLECHTUNGEN_DISABLED !== "1") {
-      try {
-        const n = await erzeugeGesellschafterJobs(getGatewayPool());
-        logger.info({ gesellschafterJobs: n }, "[register-jobs] Gesellschafter-Jobs erzeugt");
-      } catch (err) {
-        logger.warn({ err: err instanceof Error ? err.message : String(err) }, "[register-jobs] Gesellschafter-Jobs nicht erzeugt");
       }
     }
     if (process.env.UK_JOBS_DISABLED !== "1") {
