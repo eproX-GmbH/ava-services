@@ -247,33 +247,27 @@ ausblenden“). Zusätzlich ein Betreiber-Schalter im Gateway
 | V6 | App: Reiter Verflechtungen mit Netzgrafik, Gesellschaftertabelle, Personenseite | 3 Tage |
 | V7 | Chat-Tools, Statuswächter „Gesellschafterwechsel“, Fähigkeitsgruppe, Org-Feature `verflechtungen` und Betreiber-Schalter | 1,5 Tage |
 
-## 8. Offene Entscheidungen (Rückfragen)
+## 8. Entscheidungen (2026-09-16)
 
-1. **Download-Sperre der Hintergrund-Browser.** Die Sicherheitsregel
-   (`docs/SICHERHEIT_HINTERGRUND_BROWSER.md`) verbietet Downloads hart
-   (`download_restrictions 3`). Für die Listen braucht der Portal-Browser
-   eine **eng begrenzte Ausnahme**: nur Domain handelsregister.de, nur nach
-   Klick auf den Download-Knopf der DK-Seite, nur in ein temporäres
-   Verzeichnis, nur PDF/ZIP/TIFF bis 20 MB, ZIP nur mit Bilddateien, Datei
-   nach dem Lesen gelöscht, nie ausgeführt. Vorschlag: eigener
-   Chrome-Profilordner für diesen Job mit `download_restrictions 0` plus
-   Prüfung von Dateityp (Magic Bytes) und Größe im Worker. Bitte
-   bestätigen.
-2. **OCR-Modell.** Entschieden: Remote-Modelle erlaubt (Nutzer-Schlüssel).
-   Vorschlag bleibt RapidOCR-ONNX als lokale Vorstufe plus Vision-LLM;
-   ohne Vision-Modell nur OCR-Text. Offen nur noch: Standardmodell für
-   Nutzer ohne BYOK (lokales Ollama-Vision wie `qwen2.5vl`?).
-3. **Geburtsdaten speichern?** Sie stehen in den Listen und sind der
-   sicherste Schlüssel zur Personenzusammenführung. Vorschlag: speichern,
-   in der App nur Geburtsjahr zeigen, im Chat gar nicht, Art.-14-Hinweis
-   wie bei Kontakten. Alternativ nur Hash für die Zusammenführung.
-4. **Rekursionsgrenzen:** Besuchsliste je Kontext (bestätigt), dazu
-   Notbremse Tiefe 6 und 200 Firmen je Kontext?
-5. **Wer löst Verarbeitung aus?** Vorschlag: automatisch für jede Firma im
-   Pool eines Nutzers (Import, Suche-Übernahme), einmal je 90 Tage, plus
-   „Jetzt prüfen“ in der App und im Chat. Kosten je Firma 4 bis 5
-   Portalabfragen plus LLM-Aufruf; Rekursion nur Tiefe 1 automatisch,
-   tiefer nur auf Wunsch?
-6. **Bild-Aufbewahrung:** Original-PDF/TIFF nach der Verarbeitung löschen
-   (Vorschlag) oder je Firma die letzte Liste als Beleg behalten
-   (Speicher, Personendaten)?
+1. **Download-Ausnahme:** bestätigt. Für die Gesellschafterlisten gilt
+   dieselbe Freigabe wie für die bereits geladenen XML-Dateien des
+   Registerportals: nur handelsregister.de, nur nach Klick auf den
+   Download-Knopf, nur PDF/ZIP/TIFF bis 20 MB, temporäres Verzeichnis,
+   Magic-Bytes-Prüfung, nie ausgeführt. Nachtrag in
+   `docs/SICHERHEIT_HINTERGRUND_BROWSER.md` mit V2.
+2. **OCR/LLM:** Remote-Modelle erlaubt (Nutzer-Schlüssel), RapidOCR lokal als
+   Vorstufe; Standardmodell ohne BYOK offen.
+3. **Geburtsdaten:** speichern (App zeigt Geburtsjahr, Chat nichts) und
+   parallel einen SHA-256-Hash (`geburtsdatumHash` aus Nachname, Vorname,
+   Geburtsdatum), damit das Klartextdatum später entfernt werden kann,
+   ohne die Personenzusammenführung zu verlieren.
+4. **Auslöser (Annahme, nicht widersprochen):** automatisch für jede Firma
+   im Pool eines Nutzers alle 90 Tage, Rekursion automatisch eine Ebene;
+   tiefer nur auf Wunsch in App oder Chat.
+5. **Notbremsen:** Besuchsliste je Kontext ist die Hauptregel; dazu Tiefe 6
+   und 200 Firmen je Kontext als Standard, **abschaltbar je Auslösung**
+   (`ohneBremse: true` im Chat-Tool und in der App mit Bestätigung), damit
+   auch sehr große Konstrukte vollständig verarbeitet werden.
+6. **Originaldateien:** die neueste Liste je Firma als Beleg behalten
+   (Tabelle `ShareholderListDocument`, Bytes in Postgres, SHA-256); bei
+   Speicherproblemen später löschen.
