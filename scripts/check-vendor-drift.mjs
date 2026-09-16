@@ -46,6 +46,7 @@ const PRODUCERS = [
   "company-contact",
   "company-evaluation",
   "website",
+  "structured-content",
 ];
 
 /**
