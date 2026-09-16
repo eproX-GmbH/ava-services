@@ -1,0 +1,184 @@
+AVA Source-Available License
+Version 1.0, September 2026
+
+Licensor: eproX GmbH ("eproX", "we", "us")
+Software: AVA, as contained in this repository, including the desktop
+          application, the server components, shared packages, build
+          scripts and documentation, in source or object form.
+Terms:    The AVA Terms of Service published at https://www.ava.bi/agb,
+          including the plan descriptions referenced there.
+Free Plan: The plan offered by eproX under the Terms at no charge.
+Paid Plan: Any plan offered by eproX under the Terms against payment.
+
+This is not an open-source license as defined by the Open Source
+Initiative. It is a source-available license: you can read, build,
+change and improve the Software, but operating it and using it
+commercially beyond the Free Plan requires a Paid Plan from eproX.
+
+
+1. Acceptance
+
+By using the Software, you agree to all of the terms and conditions
+below. If you do not agree, you may not use the Software.
+
+
+2. Copyright License
+
+Subject to the limitations in Section 3, eproX grants you a
+non-exclusive, royalty-free, worldwide, non-transferable,
+non-sublicensable license to:
+
+  a) view, download, copy and study the Software;
+  b) build and run the Software on your own machines;
+  c) modify the Software and create derivative works of it;
+  d) run the server components locally for the purpose of developing,
+     testing and contributing changes;
+  e) redistribute the Software and your modifications free of charge,
+     for example as a fork on a public code-hosting platform, provided
+     that you include a copy of this license and keep all copyright,
+     license and attribution notices intact; and
+  f) use the Software within the scope of the Free Plan, or of a Paid
+     Plan you have obtained from eproX, in each case as described in
+     the Terms.
+
+
+3. Limitations
+
+  a) No operation beyond the Free Plan. You may not operate the
+     Software, in whole or in part, in production or for real-world
+     use in any way that goes beyond what the Free Plan allows under
+     the Terms, unless you hold a Paid Plan that covers that use. In
+     particular, you may not:
+
+       (i)   run your own instance of the server components (such as
+             the gateway, master-data or worker services) for
+             anything other than development, testing and
+             contribution under Section 2 d);
+       (ii)  connect the Software to a backend that is not operated
+             by eproX for production or real-world use;
+       (iii) move, change, disable or circumvent any plan, quota,
+             entitlement, seat, license or billing check in the
+             Software, or remove or obscure any functionality that is
+             protected by such a check.
+
+  b) No commercial use without a Paid Plan. Any use of the Software
+     for or on behalf of a business, or otherwise for commercial
+     advantage or monetary compensation, that goes beyond the Free
+     Plan requires a Paid Plan under the Terms. Whether, and to what
+     extent, the Free Plan is available for business use is governed
+     exclusively by the Terms.
+
+  c) No commercial redistribution. You may not sell the Software or
+     any derivative work, charge for access to it, offer it to third
+     parties as a hosted, managed or software-as-a-service offering,
+     or include it in a product or service that is offered against
+     payment or for commercial advantage. Redistribution is permitted
+     only free of charge under Section 2 e).
+
+  d) Notices. You may not remove, alter or obscure any copyright,
+     license, trademark or attribution notice in the Software.
+     Modified copies must carry prominent notices stating that the
+     files have been changed.
+
+  e) Trademarks. This license does not grant you any right to use the
+     names, logos or trademarks of eproX or AVA, except for the
+     purpose of describing the origin of the Software. Modified or
+     redistributed versions must not be presented as an official
+     release of AVA or as endorsed by eproX.
+
+
+4. Contributions
+
+We welcome issues and pull requests. When you submit a contribution
+(for example a pull request, patch, or code in an issue) to this
+repository or otherwise to eproX for inclusion in the Software:
+
+  a) you retain your copyright;
+  b) you grant eproX a perpetual, worldwide, irrevocable,
+     royalty-free, non-exclusive license to use, reproduce, modify,
+     distribute, sublicense and commercially exploit your
+     contribution as part of the Software or otherwise, under this
+     license or any other license terms eproX chooses, including
+     under Paid Plans;
+  c) your contribution is made available to all other recipients
+     under this license; and
+  d) you represent that you are entitled to grant these rights, that
+     the contribution is your own work or that you have the necessary
+     permissions, and that it does not knowingly infringe any third
+     party right.
+
+eproX may ask you to confirm these terms separately (for example by
+signing a contributor agreement) before merging a contribution.
+
+
+5. Patents
+
+eproX grants you a license, under any patent claims eproX can license
+or becomes able to license, to make, have made, use, sell, offer for
+sale and import the Software, but only to the extent necessary for the
+use permitted by this license. If you or your company make any written
+claim that the Software infringes or contributes to infringement of a
+patent, your patent license under this license ends immediately. If
+your company makes such a claim, your patent license ends immediately
+for work on behalf of your company.
+
+
+6. Third-Party Components
+
+The Software includes third-party components that are licensed under
+their own terms (for example MIT, Apache 2.0 or ISC). Those terms
+apply to the respective components, and nothing in this license
+restricts the rights those terms grant you. The applicable notices are
+contained in the respective package directories or dependency
+metadata.
+
+
+7. Termination
+
+If you use the Software in violation of this license, your rights
+under it end automatically. If eproX provides you with notice of your
+violation and you cease all violation within 30 days after receiving
+that notice, your rights are reinstated retroactively. However, if you
+violate this license after such reinstatement, any additional
+violation ends your rights under this license permanently. Sections 4
+to 9 survive termination.
+
+
+8. No Warranty; Limitation of Liability
+
+The Software is provided "as is" and free of charge. To the extent
+permitted by applicable law, eproX disclaims all warranties and
+conditions, express or implied, including any warranty of
+merchantability, fitness for a particular purpose, title and
+non-infringement, and eproX will not be liable to you for any damages
+arising out of this license or the use of or inability to use the
+Software. This does not limit liability for intent, gross negligence,
+injury to life, body or health, or any other liability that cannot be
+excluded under applicable law. Warranties and service levels for Paid
+Plans are governed exclusively by the Terms.
+
+
+9. Governing Law
+
+This license is governed by the laws of the Federal Republic of
+Germany, excluding its conflict-of-law rules and the UN Convention on
+Contracts for the International Sale of Goods. To the extent
+permitted, the courts at the registered seat of eproX have exclusive
+jurisdiction.
+
+
+10. Definitions
+
+"You" means the individual or entity agreeing to this license.
+"Your company" means any legal entity, sole proprietorship or other
+kind of organization that you work for, plus all organizations that
+have control over, are under the control of, or are under common
+control with that organization. "Control" means ownership of
+substantially all the assets of an entity, or the power to direct its
+management or policies by vote, contract or otherwise.
+"Software" and "Terms" have the meaning given above. In case of
+conflict between this license and the Terms with regard to the scope
+of a Free Plan or Paid Plan, the Terms prevail.
+
+
+Commercial licensing, Paid Plans and questions: info@eprox-gmbh.de

@@ -2,7 +2,7 @@
   "name": "@ava/queue-client",
   "version": "0.1.0",
   "description": "Driver-agnostic queue client (RabbitMQ today, NATS JetStream for desktop). Switched via QUEUE_DRIVER.",
-  "license": "MIT",
+  "license": "SEE LICENSE IN LICENSE",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "files": [

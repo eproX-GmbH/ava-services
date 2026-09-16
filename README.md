@@ -206,7 +206,13 @@ Einstieg über [`docs/README.md`](./docs/README.md). Wichtigste Dokumente:
 
 ## Lizenz
 
-Internes Projekt der eproX GmbH. Externe Beiträge derzeit nicht vorgesehen.
+AVA steht unter der [AVA Source-Available License](./LICENSE) der eproX GmbH. Das ist **keine Open-Source-Lizenz** im Sinne der OSI, sondern eine Source-Available-Lizenz. Kurz zusammengefasst (rechtlich maßgeblich ist allein der Text in `LICENSE`):
+
+- **Erlaubt:** Quellcode lesen, lokal bauen und ausführen, ändern, unentgeltlich forken; Server-Komponenten lokal zum Entwickeln und Testen betreiben; Nutzung im Rahmen des Free-Plans oder eines Bezahlplans laut [AGB](https://www.ava.bi/agb).
+- **Nicht erlaubt:** die App über den Free-Plan hinaus selbst betreiben (eigene Gateway-/Worker-Instanz produktiv, fremdes Backend, Umgehen von Plan-/Kontingent-Prüfungen); geschäftliche Nutzung über den Free-Plan hinaus ohne Bezahlplan; kommerzielle Weiterverbreitung (Verkauf, Hosting für Dritte, Einbau in kostenpflichtige Produkte).
+- **Beiträge:** Issues und Pull Requests sind ausdrücklich willkommen. Mit dem Einreichen räumst du eproX die in Abschnitt 4 der Lizenz beschriebenen Rechte an deinem Beitrag ein.
+
+Drittkomponenten behalten ihre jeweiligen Lizenzen. Fragen zu Bezahlplänen und kommerzieller Lizenzierung: [info@eprox-gmbh.de](mailto:info@eprox-gmbh.de).
 
 ---
 

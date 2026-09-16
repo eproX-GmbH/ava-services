@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "description": "Register-Delta Worker-Kern: Registerportal-Abfragen (Nummernfront, Bekanntmachungen, Auffrischung) fuer Desktop-Worker und Betreiber-Fallback; dazu Oesterreich (JustizOnline, Ediktsdatei) und UK (Companies House, Gazette) ohne Browser. docs/PLAN_STAMMDATEN_DELTA.md S4.",
-  "license": "MIT",
+  "license": "SEE LICENSE IN LICENSE",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "bin": {

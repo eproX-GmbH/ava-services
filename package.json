@@ -1,6 +1,7 @@
 {
   "name": "ava-meta",
   "private": true,
+  "license": "SEE LICENSE IN LICENSE",
   "version": "0.0.0",
   "description": "AVA meta-repo: shared packages + service workspace for local dev and desktop bundling (see DECISIONS.md D2).",
   "packageManager": "pnpm@9.0.0",

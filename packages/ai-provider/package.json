@@ -2,7 +2,7 @@
   "name": "@ava/ai-provider",
   "version": "0.1.0",
   "description": "Provider-agnostic LLM and embedding factory for AVA services (via Vercel AI SDK).",
-  "license": "MIT",
+  "license": "SEE LICENSE IN LICENSE",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "files": [
