@@ -5,184 +5,211 @@
 [![Service Health](https://img.shields.io/website?url=https%3A%2F%2Fava-db-gateway.fly.dev%2Fhealth&label=db-gateway&up_message=operational&down_message=offline)](https://ava-db-gateway.fly.dev/health)
 [![Master-Data](https://img.shields.io/website?url=https%3A%2F%2Fava-master-data.fly.dev%2Fhealth&label=master-data&up_message=operational&down_message=offline)](https://ava-master-data.fly.dev/health)
 
-> Recherche-App für deutsche B2B-Daten. Handelsregister-zentriert, KI-gestützt, CRM-fähig.
+> Sales Intelligence als Desktop-App: Firmen aus Deutschland, Österreich und dem Vereinigten Königreich recherchieren, beobachten und ins eigene CRM bringen. KI läuft auf dem Rechner des Nutzers oder mit eigenem Schlüssel.
 
-AVA ist eine Desktop-Anwendung, die deutsche Unternehmensdaten zu einem komplett ausgewerteten Firmenprofil verdichtet: vom Handelsregistereintrag über Veröffentlichungen, Webseite und Kontaktdaten bis zu einer LLM-basierten Bewertung. Importiert wird per Excel, einzelner Firma, direkt aus dem verbundenen CRM (gängige B2B-CRM-Systeme via OAuth) oder über den Firmen-Radar, der neue, noch unbekannte Firmen in der Region des Nutzers entdeckt.
+AVA verdichtet öffentliche Unternehmensdaten zu einem vollständigen Firmenbild: amtliches Register, Jahresabschlüsse und Bekanntmachungen, Firmenwebsite, Ansprechpartner mit Herkunftsnachweis und eine KI-Bewertung gegen das eigene Idealkundenprofil. Danach beobachtet AVA die Firmen weiter und meldet, was sich ändert: Insolvenzen, Löschungen, Geschäftsführerwechsel, neue Jahresabschlüsse, Website-Änderungen, LinkedIn-Signale.
 
-Im Gegensatz zu klassischen SaaS-Lösungen läuft die gesamte schwere Logik (Scraping, Crawling, Extraktion und LLM-Aufrufe) **lokal auf der Maschine des Nutzers**. Der Cloud-Anteil ist ein Gateway zur Stammdaten-Synchronisation und für operatorseitige Dienste. Diese Architektur ist bewusst gewählt: keine fremden Server, die Recherche-Anfragen mitlesen, keine Cloud-Quotas auf Threads, kein Wartungsaufwand bei Lastspitzen.
+Bedient wird AVA über einen Chat-Agenten mit rund 250 Werkzeugen, über die Firmenansichten in der App, über Telegram unterwegs und über gespeicherte Workflows. Alles Rechenintensive (Browser-Automatisierung, Extraktion, KI-Aufrufe) läuft **lokal auf der Maschine des Nutzers**. Die Cloud ist Substrat: Anmeldung, Stammdaten, Verarbeitungsstand, geteilte Korpora.
 
-## Was AVA tut
+## Inhalt
 
-Pro Firma teilt die Pipeline auf 6 spezialisierte Producer aus, die sich gegenseitig anstoßen:
+- [Was AVA heute kann](#was-ava-heute-kann)
+- [Architektur](#architektur)
+- [Cloud-Komponenten und Betrieb](#cloud-komponenten-und-betrieb)
+- [Sicherheit und Datenschutz](#sicherheit-und-datenschutz)
+- [Status](#status)
+- [Roadmap](#roadmap)
+- [Installation](#installation)
+- [Repository-Layout](#repository-layout)
+- [Entwicklung](#entwicklung)
+- [Dokumentation](#dokumentation)
 
-| Producer | Eingabe | Ergebnis |
+## Was AVA heute kann
+
+### Firmen aufnehmen und recherchieren
+
+- **Import** per Excel/CSV, einzeln per Name und Ort, aus HubSpot oder über den Firmen-Radar. Jede Firma wird öffentlichen Quellen zugeordnet (Fuzzy-Suche über den Stammdaten-Index).
+- **Sechs Producer** je Firma, die sich gegenseitig anstoßen. Status pro Firma und Stufe live als Matrix, mit Pause, Löschen, Wiederholen je Stufe, Logs und Screenshots je Lauf.
+
+| Producer | Quelle | Ergebnis |
 |---|---|---|
-| `structured-content` | Name + Stadt | Stammdaten + Geschäftsführer + Sitz aus dem amtlichen Unternehmensregister (mit Sekundär-Register-Fallback) |
-| `company-publication` | Name + Stadt | Geschäftsberichte, Bekanntmachungen, Bilanzen (wahlweise sparsame oder vollständige Analyse) |
-| `website` | Strukturdaten | Beste Treffer-Webseite |
-| `company-profile` | Webseite | Firmenprofil aus Webseiten-Inhalten |
-| `company-contact` | Webseite | Ansprechpartner + Kontaktwege |
-| `company-evaluation` | Alle obigen | LLM-basierte Gesamtbewertung |
+| `structured-content` | Handelsregister (Registerportal), Firmenbuch (AT) und Companies House (UK) über master-data | Stammdaten, Sitz, Geschäftsführung bzw. Officers; für deutsche HRB-Firmen zusätzlich die Gesellschafterliste (siehe Verflechtungen) |
+| `company-publication` | Unternehmensregister / Bundesanzeiger | Jahresabschlüsse, Lagebericht, Bekanntmachungen; Kennzahlen per Lazy-RAG auf Abruf statt Voranalyse |
+| `website` | Websuche + Firmenwebsite | Beste Treffer-Website, Inhalte, Stellenanzeigen, eingesetzte Systeme aus der Datenschutzerklärung |
+| `company-profile` | Website | Firmenprofil (Angebot, Branche, Größe, Standorte) |
+| `company-contact` | Website, Impressum | Ansprechpartner und Kontaktwege mit Beleg, Herkunftsnachweis und Art.-14-Hinweis |
+| `company-evaluation` | alles oben | KI-Bewertung gegen das Idealkundenprofil, Best-Match-Ranking, Angebotsvergleich |
 
-Status pro Firma × pro Stage liegt live als Matrix in der App, mit Pause/Löschen pro Firma, Drilldown auf Producer-Logs je Lauf und einem einblendbaren Verarbeitungs-Feed (aktive Prozesse plus Chronik, mit Firmennamen).
+- **Länder:** Deutschland (Handelsregister, Insolvenzbekanntmachungen), Österreich (Firmenbuch über JustizOnline, Ediktsdatei) und Vereinigtes Königreich (Companies House, Gazette). Länderfilter in Firmensuche und „Meine Firmen“, Landeschip und amtliche Kennung je Firma. Schweiz ist bewertet, aber nicht umgesetzt.
+- **Stammdaten aktuell halten (Register-Delta):** Neueintragungen, Änderungen und Löschungen kommen täglich aus den Registern. Die Arbeit teilen sich Betreiber-Worker in der Cloud und Nutzer, die „Stammdaten mitpflegen“ einschalten (Opt-in, höchstens 60 Abfragen je Stunde). Geänderte Registerblätter markieren die betroffene Firma als veraltet.
+- **Insolvenzen und Firmenstatus:** gezielte Prüfung je Pool-Firma alle 30 Tage; Insolvenz, Löschung, Löschungsankündigung und Liquidation erscheinen als Chip in den Tabellen, als Warnung in jedem Chat-Werkzeug und als Meldung des Firmenstatus-Wächters.
+- **Firmen-Verflechtungen (Deutschland):** Gesellschafterlisten werden über den Registerordner geladen, mit dem KI-Modell des Nutzers gelesen (zwei unabhängige Lesungen, harter Qualitätsfilter, Bild-Modell ab Stufe A Pflicht) und zu Beteiligungen, Personen und gemeinsamen Adressen verdichtet. Firmen-Gesellschafter werden rekursiv nachgezogen (Besuchsliste, Notbremse Tiefe 6 / 200 Firmen, abschaltbar). Reiter „Verflechtungen“ mit Netzgrafik, Gesellschaftertabelle und Personenseite; Meldung „Gesellschafterwechsel“. Als Org-Feature abschaltbar. Stand: umgesetzt, Ende-zu-Ende-Erprobung läuft.
+- **Neue Firmen finden (Firmen-Radar):** Scan in einer Region aus öffentlichen Firmeneinträgen, KI-geplanter Web-Recherche und unverarbeitetem Registerbestand; Mini-Profile, Score gegen das Idealkundenprofil, Import erst nach Entscheidung des Nutzers. Automatik täglich oder wöchentlich als Opt-in.
+- **Idealkundenprofil (ICP):** aus der eigenen Website und bis zu fünf Kunden-Websites abgeleitet oder als Fragebogen; bleibt lokal.
+
+### Beobachten und melden
+
+- **Heartbeat und Meldungen:** neue Veröffentlichungen, Profiländerungen, Bewertungs-Auffälligkeiten, Firmenstatus, Gesellschafterwechsel; Glocke in der App, OS-Benachrichtigung, Telegram. Ruhezeiten, dringende Meldungen umgehen sie.
+- **Beobachtungsregeln (Watches)** mit eigener Bewertungsvorschrift in Nutzersprache.
+- **Website-Überwachung** beliebiger URLs mit KI-Zusammenfassung der Änderung und Beweis-Screenshot; Bot-Schutz wird abgewartet, nie umgangen.
+- **LinkedIn (Opt-in, eigenes Konto):** Feed-Beobachter für Signale zu Firmen im Bestand, Personen-Watchlist, Personen-Radar aus Beitrags-Engagement. Bildanalyse per Vision-Modell.
+- **Safe Browsing** vor Website-Abrufen.
+
+### Kontakte und Kommunikation
+
+- **Ansprechpartner** mit Beleg, Herkunft und Löschfunktion; Datenschutzhinweise (Art. 14) als Text exportierbar.
+- **E-Mail-Muster:** Adressen nach dem Muster der Firma ableiten und gegen den Mail-Server prüfen (Hintergrund mit Vorrang für Chat, Last und Akku; verifizierte Adressen werden nie erneut geprüft, Bounces und Antworten fließen zurück).
+- **Mail-Postfach** anbinden (IMAP): lesen, antworten, weiterleiten, archivieren, Triage mit Kontext je Firma.
+- **Telegram:** Meldungen, Kurzprofile und Freigaben aufs Handy, vollwertiger Chat mit Sprachnachrichten und Bildern.
+
+### Arbeiten mit AVA
+
+- **Chat-Agent** mit rund 250 Werkzeugen in 36 Gruppen, Tool-Suche, Gedächtnis über Gespräche, Nutzerprofil, Vorschlags-Chips für die nächsten Schritte, Sprachmodus (lokale Whisper-Transkription).
+- **Workflows:** Abläufe aus dem Gespräch speichern, als Diagramm kontrollieren, per Zeitplan oder Ereignis ausführen (neuer Radar-Treffer, eingehende Mail, Import fertig). Schreibende Schritte nur nach Freigabe; Freigaben in App, Meldungen oder Telegram; Laufhistorie und Audit.
+- **Skills:** wiederverwendbare Routinen per Slash-Befehl, mit Trust-Modell.
+- **Integrationen:** HubSpot (lesen, anlegen, verknüpfen), Notion, Obsidian. Teilen von Recherchen, Radar-Firmen und Workflows mit der Organisation.
+- **KI-Modelle:** lokal (Ollama, kuratierte Modelle mit Hardware-Prüfung) oder mit eigenem Schlüssel bei OpenAI, Anthropic, Google, Mistral, DeepSeek, xAI, Qwen; ChatGPT-Abo und Anthropic-Abo per OAuth nutzbar. Jedes Modell hat eine Qualitätsstufe (S/A/B/C, `docs/MODEL_TIERS.md`), die entscheidet, ob ein Ergebnis bestehende Daten überschreiben darf und welche Funktionen es freischaltet. Getrenntes, günstigeres Modell für die Hintergrundverarbeitung, Token-Limit je Tag, Verbrauchsübersicht.
+
+### Organisationen
+
+- Mandanten mit Mitgliedern, Beitrittsanfragen, Vorgaben je Organisation: Anbieter-Sperre, vorgegebene Modelle, Organisationsschlüssel über den Gateway-Proxy, Limits, abschaltbare Module (LinkedIn, Bildanalyse, Kontakt-Recherche, Mail, Telegram, Workflows, Vorschläge, Stammdaten mitpflegen, Verflechtungen). Abgeschaltetes verschwindet vollständig aus der App.
+- Seat-Abrechnung je Belegungsmonat (Stripe), Kontingente je Plan mit Vorprüfung vor jedem Import, Verbrauch je Mitglied.
+- Mehrere Konten auf einem Gerät (Account-Spaces), Audit-Protokoll für sicherheits- und kostenrelevante Aktionen.
 
 ## Architektur
 
 ```
-┌──────────────────────────────────────────────┐    ┌──────────────────────────┐
-│  Desktop-App (Mac/Windows)                   │    │  Cloud-Substrat          │
-│                                              │    │                          │
-│  ┌─────────────────────┐  ┌────────────────┐ │    │  db-gateway              │
-│  │ AI-Chat (Agent)     │  │ Pipeline-View  │ │    │   • Auth (OIDC)          │
-│  │  • lokales LLM ODER │  │  • SSE live    │ │    │   • Audit-DB             │
-│  │    Hosted (BYO-Key) │  │  • Drilldown   │ │    │   • Operator-Proxies     │
-│  └─────────────────────┘  └────────────────┘ │    │     (Web-Search-API,     │
-│  ┌─────────────────────┐  ┌────────────────┐ │    │      CRM-OAuth-Exchange) │
-│  │ Firmen-Radar        │  │ Telegram-Kanal │ │    │   • Geteilte Korpora     │
-│  │  • ICP-Match lokal  │  │  • Alerts +    │ │    │     (Publikations-       │
-│  │  • Alerts           │  │    Chat mobil  │ │    │      Blöcke, Discovery-  │
-│  └─────────────────────┘  └────────────────┘ │    │      Kandidaten,         │
-│  ┌─────────────────────────────────────────┐ │    │      Ortsgraph)          │
-│  │  6× Producer-Subprozesse                │ │◄───┤                          │
-│  │  • Headless-Browser-Automatisierung     │ │    │  master-data             │
-│  │  • Lokale Embedded-DB + ORM             │ │AMQP│   • Stammdaten-Index     │
-│  │  • Eigene per-User Event-Queues         │ │    │   • Fuzzy-Suchmaschine   │
-│  └─────────────────────────────────────────┘ │    │                          │
-│  ┌─────────────────────────────────────────┐ │    │                          │
-│  │  Speech-to-Text Sidecar (Voice-Mode)    │ │    │  Sprachmodell- &         │
-│  │  Bundled binary, Modell auto-download   │ │    │  LLM-Model-Spiegel       │
-│  └─────────────────────────────────────────┘ │    │  (CDN, optional)         │
-└──────────────────────────────────────────────┘    └──────────────────────────┘
+┌────────────────────────────────────────────────┐   ┌────────────────────────────────┐
+│ Desktop-App (macOS arm64/x64, Windows x64)     │   │ Cloud-Substrat (Fly.io, EU)    │
+│                                                │   │                                │
+│  Chat-Agent · Firmen · Radar · Workflows       │   │ db-gateway                     │
+│  Meldungen · Mail · Telegram · Organisation    │   │  Auth (Keycloak OIDC), Policy  │
+│                                                │   │  Persist-Bus mit Tier-Gate     │
+│  6 Producer-Subprozesse (lokal)                │◄──┤  Register-Delta-Queue, Cron    │
+│  Register-Delta-Worker (Opt-in)                │AMQP  Verflechtungen-Kontexte      │
+│  LLM lokal (Ollama) oder eigener Schlüssel     │   │  Operator-Proxies (Suche, CRM) │
+│  Whisper-Sidecar für Sprache                   │   │  Abrechnung (Stripe)           │
+│  Hintergrund-Browser, gehärtet                 │   │                                │
+└────────────────────────────────────────────────┘   │ master-data                    │
+                                                     │  Stammdaten DE/AT/UK, Elastic  │
+                                                     │  Personen, Beteiligungen,      │
+                                                     │  Adressen, Insolvenz-Ereignisse│
+                                                     │                                │
+                                                     │ ava-register-worker (Fly)      │
+                                                     │ ava-pgbouncer (Verbindungs-    │
+                                                     │  trichter vor Postgres)        │
+                                                     └────────────────────────────────┘
 ```
 
-**Compute-Lokalität ist Invariante:** alle LLM-Aufrufe und alle Web-Scrapes laufen auf der Nutzer-Maschine. Cloud-seitig läuft ausschließlich Substrat: Auth, Stammdaten, geteilte abgeleitete Korpora (einer verarbeitet, alle profitieren) und der eine Service, der zwingend einen Operator-API-Key braucht (`website` → Google-Search-Provider, OAuth-Token-Exchange für die CRM-Anbindung). Private Daten wie das Idealkundenprofil, Match-Bewertungen und die Bestandskunden-Liste bleiben grundsätzlich lokal.
+**Compute-Lokalität ist Invariante** (`docs/DECISIONS.md`): jeder LLM-Aufruf und jeder Web-Abruf für die Recherche läuft auf der Maschine des Nutzers. Cloud-seitig läuft Substrat, die Register-Delta-Worker des Betreibers (nur öffentliche Register, kein LLM) und die wenigen Dienste, die einen Betreiber-Schlüssel brauchen (Websuche, CRM-OAuth-Austausch, optionaler Organisationsschlüssel-Proxy).
 
-## Funktionen im Überblick
+**Persist-Bus mit Tier-Gate:** Producer schreiben nicht direkt in die Datenbank, sondern schicken Ereignisse an den Gateway. Der prüft Mandant, Modul-Freigabe der Organisation und die Qualitätsstufe des Modells und verwirft Rückschritte („einer verarbeitet, alle profitieren“, aber nie mit schlechteren Daten).
 
-- **Bulk-Import** aus Excel/CSV, Einzelimport per Name + Stadt, oder direkter Import aus dem verbundenen CRM
-- **AI-Chat** als primäre Bedienoberfläche: der Agent treibt Pipelines, beantwortet Recherchefragen über die eigene Datenbank, stößt fehlende Anreicherungen proaktiv selbst an und lernt durch ein persistentes Profil + Standing-Watches
-- **Firmen-Radar (Discovery)**: findet neue Firmen im Umkreis, die noch nicht in AVA sind. Drei Quellen (Gewerbe-Kartendaten, KI-geplante Places-Recherchen wie von einem menschlichen Rechercheur, unverarbeiteter Register-Bestand), leichtgewichtige Mini-Profile aus der Firmen-Website, Match gegen das Idealkundenprofil mit Score und Warum-Begründung. Kandidaten-Tabelle mit Checkbox-Bulk-Import oder Ignorieren; Import startet erst nach expliziter Nutzer-Entscheidung. Opt-in-Automatik (täglich/wöchentlich) meldet neue heiße Treffer als Alert
-- **ICP-Assistent**: Idealkundenprofil in Minuten statt Fragebogen. Der Nutzer nennt die eigene Website plus bis zu 5 Websites seiner besten Kunden; AVA liest Angebot, Standort und Kunden-Gemeinsamkeiten selbst aus und erstellt einen ICP-Entwurf zum Review. Fallback: Fragenkatalog als Formular. Die Top-Kunden fließen als Ähnlichkeits-Signal ins Radar-Matching ein („ähnelt deinem Bestandskunden X")
-- **Telegram-Kanal**: Alerts aufs Handy plus vollwertiger mobiler Chat mit dem Agenten, inklusive Sprachnachrichten (lokale Transkription), Bildern und fortlaufendem Gesprächskontext
-- **Publikations-Wissen auf Abruf (Lazy-RAG)**: Jahresabschluss-Textblöcke werden zentral gespeichert und eingebettet; der Chat beantwortet Detailfragen per Hybrid-Suche (Volltext + Vektor) statt teurer Voranalyse aller Blöcke
-- **CRM-Anbindung** per OAuth (Tokens liegen verschlüsselt im OS-Schlüsselbund)
-- **Voice-Mode** über bundled Speech-to-Text-Engine mit deutschem Sprachmodell
-- **Heartbeat** scannt periodisch nach neuen Veröffentlichungen + Auffälligkeiten und meldet sie als Alerts in einer Bell + nativen OS-Push
-- **Standing-Watches**: der Nutzer formuliert wiederkehrende Kriterien („melde mir, wenn eine Firma eine Bilanz mit GuV-Gewinn > 1 Mio. veröffentlicht"), die Heartbeat-Auswertung wendet sie auf jeden Tick an
-- **Link-Überwachung**: beliebige URLs beobachten, KI fasst Änderungen zusammen, Beweis-Screenshot je Lauf im Audit-Trail; Bot-Challenges werden abgewartet, nie umgangen
-- **Professional-Network-Beobachter**: opt-in Feed-Beobachtung über eingebettetes Browser-Fenster, mit Vision-LLM-Bildanalyse und Entity-Linking auf Firmen im Bestand
-- **Multi-Source-Pipeline**: `structured-content` zieht primär aus dem amtlichen Unternehmensregister, fällt bei Ausfall automatisch auf das Sekundär-Register zurück; Status pro Quelle live im Whoami-Panel
-- **Kostenkontrolle**: konfigurierbares tägliches Token-Limit für Chat + Agent, separates (günstigeres) Modell für Producer-Hintergrundarbeit, Verbrauchsübersicht in den Einstellungen
-- **Audit-Trail**: sicherheits- und kostenrelevante Aktionen (Importe, Radar-Läufe inklusive der geplanten Suchanfragen, Überwachungs-Läufe, Konfig-Änderungen) sind in der App nachvollziehbar
-- **Abonnement & Quotas**: Checkout + Customer-Portal über externen Payment-Provider, Tier-aware Pre-Checks vor jedem Import, sichtbare „Kündigung zum X vorgemerkt"-Hinweise
-- **Werksreset** mit doppelter Bestätigung; heruntergeladene KI-Modelle und Provider-Konfiguration bleiben wahlweise erhalten
-- **OTA-Updates** über integrierten Auto-Updater + Release-Hosting
-- **Multi-Provider-LLM**: lokale LLM-Runtime (Standard) oder Bring-Your-Own-Key für gängige Hosted-LLM-Provider
+## Cloud-Komponenten und Betrieb
 
-## Status & Service Health
-
-Aktuell Pre-1.0 (Stand: **v0.1.451**). Die Architektur ist stabil, Featureflächen wachsen pro Release.
-
-Die Badges oben zeigen den Live-Status der Cloud-Komponenten:
-
-| Service | Rolle | Live-Endpoint |
+| Komponente | Rolle | Betrieb |
 |---|---|---|
-| `db-gateway` | Auth-Gate, Audit-DB, Operator-Proxies, geteilte Korpora | [ava-db-gateway.fly.dev/health](https://ava-db-gateway.fly.dev/health) |
-| `master-data` | Stammdaten-Index, Fuzzy-Suche | [ava-master-data.fly.dev/health](https://ava-master-data.fly.dev/health) |
-| Desktop-Build (CI) | Letzter Release-Run | siehe Badge oben |
+| `ava-db-gateway` | Auth-Gate, Policy, Persist-Bus, Register-Queue, Verflechtungen, Proxies, Abrechnung | Fly, [Health](https://ava-db-gateway.fly.dev/health) |
+| `ava-master-data` | Stammdaten-Index DE/AT/UK, Fuzzy-Suche (Elasticsearch), Personen, Beteiligungen, Adressen | Fly, [Health](https://ava-master-data.fly.dev/health) |
+| `ava-register-worker` | Betreiber-Worker für Register-Delta: DE mit Browser, AT und UK ohne | Fly, zwei Prozessgruppen |
+| `ava-pgbouncer` | Verbindungstrichter vor der geteilten Postgres (100 Verbindungen für alle Dienste) | Fly |
+| Keycloak | Anmeldung, Organisationen, Rollen | Fly |
+| Postgres, Elasticsearch, CloudAMQP | Daten, Suche, Ereignisse | managed |
 
-Die schwere Pipeline-Logik (Producer, LLM, Scraping) läuft auf der Maschine des Nutzers und ist deshalb nicht zentral „status-bar"-fähig. Ausfälle sind lokal sichtbar im Whoami-Panel der Desktop-App.
+Deploys von Gateway und master-data laufen manuell per `fly deploy --remote-only` nach Freigabe; master-data braucht den npm-Token als Build-Secret. Der Desktop-Release entsteht aus einem Tag `v0.1.X` über GitHub Actions: macOS arm64 und x64 (signiert, notarisiert), Windows x64 (Azure Artifact Signing, `docs/WINDOWS_CODESIGNING.md`), OTA-Updates über den integrierten Updater.
 
-Tiefere Dokumentation unter [`docs/`](./docs/): [`DECISIONS.md`](./docs/DECISIONS.md) (D1–D11-Architekturentscheidungen), [`INVENTORY.md`](./docs/INVENTORY.md) (Bestandsaufnahme), [`DESKTOP_DATA_FLOW.md`](./docs/DESKTOP_DATA_FLOW.md) (Workflows W1–W25, SSE-Bridge, IPC-Verträge), [`CHANGELOG.md`](./docs/CHANGELOG.md) (Release-Chronik), [`PLANS.md`](./docs/PLANS.md) sowie die Feature-Pläne (u. a. [`PLAN_FIRMEN_DISCOVERY.md`](./docs/PLAN_FIRMEN_DISCOVERY.md), [`PLAN_ICP_ASSISTENT.md`](./docs/PLAN_ICP_ASSISTENT.md)).
+## Sicherheit und Datenschutz
+
+- Schlüssel und Tokens liegen im Schlüsselbund des Betriebssystems; eigene KI-Schlüssel überschreiten nie die Grenze zur Oberfläche und werden nicht über den Chat gesetzt.
+- Hintergrund-Browser sind gehärtet: keine Downloads außer den amtlichen Registerdateien (XML, Gesellschafterlisten als PDF/TIFF, geprüft an den Magic Bytes, nach dem Lesen gelöscht), keine Web-Berechtigungen, Producer nur auf Loopback (`docs/SICHERHEIT_HINTERGRUND_BROWSER.md`).
+- Personendaten: Ansprechpartner mit Herkunftsnachweis, Art.-14-Hinweis und Löschfunktion; Aufbewahrungsfristen per Cron; Geburtsdaten aus Gesellschafterlisten nur als Jahr nach außen, intern mit Hash für eine spätere Entfernung.
+- Alle Ausgaben von Modellen und externen Quellen werden vor der Übernahme gegen Schemata geprüft (Yup). „Lieber keine Daten als falsche Daten“ ist Regel, nicht Ausnahme.
+- Compliance- und Enterprise-Stand mit offenen Punkten: `docs/PLAN_ENTERPRISE_FREIGABE.md`.
+
+## Status
+
+Pre-1.0, aktuell **v0.1.669** (September 2026). Die Architektur ist seit dem Umbau auf Desktop plus Substrat (April 2026) stabil; Funktionen kommen in kleinen Releases, oft mehrere am Tag. Die Badges oben zeigen den Live-Zustand der Cloud-Komponenten; Ausfälle der lokalen Producer sind im Whoami-Panel der App sichtbar.
+
+Was gerade in Erprobung ist und noch nicht beworben wird: Firmen-Verflechtungen Ende-zu-Ende, Workflows ohne laufende App.
 
 ## Roadmap
 
-Wohin sich AVA entwickelt. Granulare Tickets liegen im Tracker; hier nur die strategischen Linien, die AVA zu dem machen sollen, was es sein will.
+- **Verflechtungen abschließen:** Ende-zu-Ende-Test, Backfill der Adressen für den Bestand, Adressen aus AT/UK.
+- **Workflows ohne laufende App** (`docs/PLAN_WORKFLOWS_OHNE_APP.md`): Zeitpläne, die auch bei geschlossener App laufen.
+- **Enterprise-Freigabe** (`docs/PLAN_ENTERPRISE_FREIGABE.md`): SSO-Anbindung an Kundenverzeichnisse, Datenresidenz, Auftragsverarbeitung, Protokollexport.
+- **Weitere CRM-Systeme** neben HubSpot (Salesforce, Dynamics), perspektivisch bidirektional.
+- **Schweiz** (`docs/PLAN_SCHWEIZ.md`) als viertes Land, sobald die Registerquelle belastbar ist.
+- **Zeitreihen und Benchmarks** aus den Jahresabschluss-Blöcken.
 
-### Was AVA heute schon ist
-
-- Eine **lokal-laufende KI-Assistenz** für deutsche B2B-Recherche, die Excel-Importe, Handelsregister-Abfragen, Webseiten-Crawls und LLM-Bewertungen automatisch zu Firmenprofilen verdichtet
-- Ein **Chat-Agent** mit Tool-Use, eigenen Skills, Voice-Mode und Telegram-Anbindung als primäre Bedienoberfläche
-- Ein **Lead-Radar**, das neue Firmen in der Region entdeckt, gegen das Idealkundenprofil bewertet und heiße Treffer aktiv meldet, statt auf Importe zu warten
-- **HubSpot-integriert** mit Live-Enrichment auf Knopfdruck und Heartbeat-getriebenen Alerts bei neuen Veröffentlichungen
-- **Modellneutral**: lokales LLM als Standard, BYO-Key für gängige Hosted-Provider (Opus 4.7, GPT-5.5, Gemini 3.1 Pro, …)
-
-### Wohin wir wollen
-
-**Universelle CRM-Anbindung.** HubSpot war der Anfang; Salesforce und Microsoft Dynamics folgen, und perspektivisch wird der Schreibpfad bidirektional. AVA soll der intelligente Recherche-Layer über *deinem* CRM sein, nicht ein Parallelsystem, in das du zusätzlich pflegst.
-
-**Strukturiertes Wissen aus unstrukturierten Quellen.** Die Veröffentlichungen im Unternehmensregister enthalten Bilanzen, GuV, Umsatzentwicklung. Mit den zentral gespeicherten, durchsuchbaren Publikations-Blöcken ist der erste Schritt gemacht; als Nächstes werden daraus quantitative Zeitreihen, Branchen-Benchmarks und vergleichbare Kennzahlen.
-
-**Geteilte Recherche-Workflows.** Das Skills-System hat heute schon ein Trust-Modell. Als Nächstes: ein Marketplace, in dem Branchenexperten ihre Recherche-Templates für andere AVA-Nutzer veröffentlichen, vom „Solvenz-Check für Mittelstand" bis zum „Familienunternehmer-Nachfolge-Scan".
-
-**Mehr Märkte.** AVA ist heute auf deutsche Handelsregister-Daten optimiert. Österreichische und schweizer Quellen sind der naheliegende nächste Schritt; weiter draußen liegen die anderen EU-DACH-Registerstandards.
-
-**Vom Single-Seat zum Team.** Heute läuft AVA als persönliche Recherche-Assistenz. Geteilte Standing-Watches, geteilte CRM-Verknüpfungen, ein gemeinsames Recherche-Archiv für Teams stehen auf der mittelfristigen Karte.
-
-> Konkrete Wünsche, Lücken, Branchenanforderungen? Schreib an [info@eprox-gmbh.de](mailto:info@eprox-gmbh.de). Die Roadmap wird mit jeder Nutzer-Rückmeldung schärfer.
+> Wünsche und Lücken: [info@eprox-gmbh.de](mailto:info@eprox-gmbh.de).
 
 ## Installation
 
-Vorgefertigte Builds: [Releases](https://github.com/eproX-GmbH/ava-services/releases)
+Vorgefertigte Builds: [Releases](https://github.com/eproX-GmbH/ava-services/releases) oder über [ava.bi](https://ava.bi).
 
-Erste Installation:
-
-1. Aktuelles Installationspaket der Plattform herunterladen
-2. AVA in den Anwendungsordner verschieben
-3. Beim ersten Start läuft der Quarantäne-Scrub (siehe `services/desktop/src/main/scrub-quarantine.ts`); danach AVA einmal beenden und neu starten
-4. Nach dem zweiten Start funktionieren OTA-Updates ohne weiteren manuellen Eingriff
+1. Installationspaket der Plattform laden (macOS `.dmg`, Windows `.exe`).
+2. Installieren und starten, mit Konto anmelden oder registrieren.
+3. Beim ersten Start KI wählen: lokales Modell laden oder eigenen Schlüssel hinterlegen. Der Einrichtungsassistent führt durch.
+4. Updates kommen danach automatisch (OTA).
 
 ## Repository-Layout
 
 ```
 ava-services/
 ├── services/
-│   ├── desktop/             # Desktop-App (Main / Preload / Renderer)
-│   └── db-gateway/          # Cloud-API-Gateway + geteilte Korpora
-├── master-data/             # Stammdaten + Fuzzy-Suche (Submodul)
-├── company-contact/         # Producer (Submodul)
-├── company-evaluation/      # Producer (Submodul)
-├── company-profile/         # Producer (Submodul)
-├── company-publication/     # Producer (Submodul)
-├── structured-content/      # Producer (Submodul)
-├── website/                 # Producer (Submodul)
+│   ├── desktop/             # Desktop-App (Electron: Main / Preload / Renderer), Chat-Agent, Tools
+│   └── db-gateway/          # Cloud-Gateway: Auth, Policy, Persist-Bus, Register-Queue, Verflechtungen
+├── master-data/             # Stammdaten DE/AT/UK, Fuzzy-Suche, Personen/Beteiligungen/Adressen (Submodul)
+├── structured-content/      # Producer: Register, Officers, Gesellschafterlisten (Submodul)
+├── company-publication/     # Producer: Jahresabschlüsse, Bekanntmachungen (Submodul)
+├── website/                 # Producer: Websuche, Website, Stellen, Tech-Stack (Submodul)
+├── company-profile/         # Producer: Firmenprofil (Submodul)
+├── company-contact/         # Producer: Ansprechpartner (Submodul)
+├── company-evaluation/      # Producer: KI-Bewertung, Best-Match (Submodul)
 ├── packages/
-│   ├── ai-provider/         # Einheitliches LLM-Provider-Interface
-│   └── events/              # Event-Schema-Builder + Message-Broker-Client
-└── docs/                    # Architektur-Docs, Pläne, Tools-Referenz,
-                             # CHANGELOG; siehe `docs/README.md` für Index
+│   ├── ai-provider/         # Ein Interface für alle LLM-Anbieter, Katalog mit Qualitätsstufen
+│   ├── events/              # CloudEvents-Builder + AMQP-Client
+│   └── register-delta/      # Register-Worker (Desktop „Mithelfen“ und Fly): DE, AT, UK
+├── scripts/                 # vendor-sync, Drift-Prüfung, Hilfsskripte
+└── docs/                    # Entscheidungen, Pläne, Tools-Referenz, Sicherheit
 ```
 
-## Build aus dem Quelltext
+## Entwicklung
 
 ```bash
-# Voraussetzungen: aktuelle LTS-JS-Runtime, pnpm, signaturfähiger Build-Runner
 git clone --recurse-submodules https://github.com/eproX-GmbH/ava-services.git
-cd ava-services/services/desktop
-pnpm install
-pnpm build            # main + preload + renderer
-pnpm package:mac      # produziert Installationspaket in dist/
+cd ava-services && pnpm install          # Workspace: desktop, gateway, packages, Producer
+cd services/desktop
+pnpm dev                                  # App mit Hot-Reload
+npm run build:typecheck                   # Typecheck, regeneriert docs/TOOLS.md, prüft deutsche UI-Texte
+npm run test:suggestions                  # Vorschlags-Chips
+npm run test:email-muster                 # E-Mail-Muster
 ```
 
-Detaillierte Release- + Signatur-Schritte: `.github/workflows/desktop-release.yml`.
+Release: Version in `services/desktop/package.json` erhöhen, committen, Tag `v0.1.X` pushen. Der Workflow `.github/workflows/desktop-release.yml` baut, signiert und veröffentlicht.
 
-## Vendor-Sync für `@ava/ai-provider`
+Regeln, die im Code durchgesetzt werden: deutsche UI-Texte in Du-Form (`lint:german`), keine unterstrichenen Buttons, jede neue Einstellung bekommt auch ein Chat-Werkzeug mit Bestätigung, externe und Modell-Daten werden mit Yup geprüft, jedes Katalogmodell braucht eine Qualitätsstufe.
 
-Die Producer-Submodule tragen jeweils eine eingebaute Kopie von
-`@ava/ai-provider` unter `<producer>/vendor/ai-provider/`. Sobald du
-am Workspace-Paket etwas änderst, müssen die vendorierten Kopien
-nachgezogen werden, sonst schlägt der CI-Drift-Check beim nächsten
-Release-Build fehl.
+### Vendor-Sync für `@ava/ai-provider`
+
+Die Producer-Submodule tragen eine eingebaute Kopie von `@ava/ai-provider` unter `<producer>/vendor/ai-provider/`. Nach jeder Änderung am Paket:
 
 ```bash
-pnpm vendor:sync          # baut canonical + rsync't in jedes Producer-
-                          # Submodul + committet + pushed dort
-pnpm vendor:check         # nur prüfen, nichts ändern (read-only)
+pnpm vendor:sync          # baut, kopiert in alle Producer, committet und pusht dort
+pnpm vendor:check         # nur prüfen
 ```
 
-Ein Pre-Push-Hook (eingecheckt unter `.githooks/pre-push`,
-aktiviert durch `pnpm install` via `postinstall`) blockt Pushes
-mit Drift mit klarer Anweisung.
+Ein Pre-Push-Hook blockt Pushes mit Drift. Submodul-Pointer danach im Hauptrepo committen.
+
+## Dokumentation
+
+Einstieg über [`docs/README.md`](./docs/README.md). Wichtigste Dokumente:
+
+- [`DECISIONS.md`](./docs/DECISIONS.md): Architekturentscheidungen D1 bis D11 (Compute-Lokalität, Substrat-Umfang)
+- [`MODEL_TIERS.md`](./docs/MODEL_TIERS.md): Qualitätsstufen der Modelle und die Gates, die davon abhängen
+- [`TOOLS.md`](./docs/TOOLS.md): automatisch erzeugte Referenz aller Chat-Werkzeuge
+- [`SICHERHEIT_HINTERGRUND_BROWSER.md`](./docs/SICHERHEIT_HINTERGRUND_BROWSER.md): Härtung der Hintergrund-Browser, Download-Regeln
+- Feature-Pläne mit Stand: [`PLAN_STAMMDATEN_DELTA.md`](./docs/PLAN_STAMMDATEN_DELTA.md), [`PLAN_INSOLVENZEN.md`](./docs/PLAN_INSOLVENZEN.md), [`PLAN_OESTERREICH.md`](./docs/PLAN_OESTERREICH.md), [`PLAN_UK.md`](./docs/PLAN_UK.md), [`PLAN_VERFLECHTUNGEN.md`](./docs/PLAN_VERFLECHTUNGEN.md), [`PLAN_WORKFLOWS.md`](./docs/PLAN_WORKFLOWS.md), [`PLAN_FIRMEN_DISCOVERY.md`](./docs/PLAN_FIRMEN_DISCOVERY.md), [`PLAN_EMAIL_MUSTER.md`](./docs/PLAN_EMAIL_MUSTER.md), [`PLAN_ABRECHNUNG_SEATS.md`](./docs/PLAN_ABRECHNUNG_SEATS.md), [`PLAN_ENTERPRISE_FREIGABE.md`](./docs/PLAN_ENTERPRISE_FREIGABE.md)
 
 ## Lizenz
 
