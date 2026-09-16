@@ -41,6 +41,15 @@ Stand 2026-09-12 (Desktop v0.1.639). Anlass: Rückmeldung eines Windows-Testers
   Browsing an. Der Handelsregister-Producer braucht Dateidownloads (SI-XML)
   und besucht ausschließlich handelsregister.de; er bleibt die einzige
   Stelle mit Downloads, in ein festes Temp-Verzeichnis.
+  **Gesellschafterlisten (seit 2026-09-16, Freigabe des Betreibers):** Für
+  Firmen-Verflechtungen lädt derselbe Producer über den DK-Knopf die
+  neueste „Liste der Gesellschafter“ (PDF oder ZIP mit TIFF). Die Ausnahme
+  gilt wie für die XML-Dateien: nur handelsregister.de, nur nach Klick auf
+  den Download-Knopf, in dasselbe Temp-Verzeichnis, höchstens 20 MB, Typ
+  wird an den Magic Bytes geprüft (PDF/TIFF/ZIP, ZIP wird im Speicher
+  gelesen), die Datei wird nach dem Einlesen gelöscht und nie ausgeführt.
+  Nur aktiv, wenn das Org-Feature `verflechtungen` eingeschaltet ist
+  (`AVA_VERFLECHTUNGEN=1`). Details: `docs/PLAN_VERFLECHTUNGEN.md` §4.
 - **Register-Delta-Worker** (seit v0.1.652, Paket `packages/register-delta`,
   Desktop-Einstellung „Stammdaten mitpflegen“ als Opt-in und Betreiber-App
   `ava-register-worker` auf Fly): eigener Selenium-Chrome, headless,
