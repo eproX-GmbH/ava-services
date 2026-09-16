@@ -5,9 +5,9 @@ NICHT direkt bearbeiten — die Quelle der Wahrheit ist `services/desktop/src/ma
 Lauf via `pnpm -F @ava/desktop tools:doc` (oder automatisch via `build:typecheck`).
 
 Stand: 2026-09-16
-Anzahl Tools: 250
+Anzahl Tools: 251
 
-## Firmen (21)
+## Firmen (22)
 
 ### `company_contacts`
 
@@ -211,6 +211,15 @@ Setzt fuer meine Organisation den Vermerk 'Informiert am' an der Person (Kanal o
 _Parameter:_
 - `personId: string` (required)
 - `kanal: string`
+
+### `verflechtungen_person`
+
+_Datei:_ `services/desktop/src/main/agent/tools/companies.ts`
+
+Person aus Gesellschafterlisten und Geschaeftsfuehrung (Id aus company_network oder company_shareholders, Feld personId): Name, Geburtsjahr, Wohnort, Rollen je Firma (GESCHAEFTSFUEHRER, GESELLSCHAFTER, PROKURIST mit von/bis) und Beteiligungen mit Quote. Zeigt, in welchen Firmen dieselbe Person steckt.
+
+_Parameter:_
+- `personId: string` (required)
 
 ## Importe (6)
 

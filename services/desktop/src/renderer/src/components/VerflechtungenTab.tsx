@@ -177,7 +177,7 @@ function NetzGrafik({ netz, wurzel, arten }: { netz: Netz; wurzel: string; arten
               </>
             );
           const g = (
-            <g key={k.id} opacity={hervor ? 1 : 0.25} onMouseEnter={() => setAktiv(k.id)} onMouseLeave={() => setAktiv(null)} style={{ cursor: k.typ === "FIRMA" && !istWurzel ? "pointer" : "default" }}>
+            <g key={k.id} opacity={hervor ? 1 : 0.25} onMouseEnter={() => setAktiv(k.id)} onMouseLeave={() => setAktiv(null)} style={{ cursor: istWurzel ? "default" : "pointer" }}>
               <title>
                 {k.name}
                 {k.typ === "PERSON" && k.wohnort ? `, ${k.wohnort}` : ""}
@@ -187,6 +187,12 @@ function NetzGrafik({ netz, wurzel, arten }: { netz: Netz; wurzel: string; arten
               {inhalt}
             </g>
           );
+          if (k.typ === "PERSON")
+            return (
+              <Link key={k.id} to={`/personen/${encodeURIComponent(k.id)}`}>
+                {g}
+              </Link>
+            );
           return k.typ === "FIRMA" && !istWurzel ? (
             <Link key={k.id} to={`/companies/${encodeURIComponent(k.id)}`}>
               {g}
@@ -203,9 +209,10 @@ function NetzGrafik({ netz, wurzel, arten }: { netz: Netz; wurzel: string; arten
 function GesellschafterName({ g }: { g: Beteiligung }) {
   if (g.typ === "FIRMA" && g.gesellschafterCompanyId) return <Link to={`/companies/${encodeURIComponent(g.gesellschafterCompanyId)}`}>{g.gesellschafterFirmaText ?? g.gesellschafterCompanyId}</Link>;
   if (g.typ === "FIRMA") return <span>{g.gesellschafterFirmaText ?? "Firma"}</span>;
+  const name = g.personName ?? "Person";
   return (
     <span>
-      {g.personName ?? "Person"}
+      {g.personId ? <Link to={`/personen/${encodeURIComponent(g.personId)}`}>{name}</Link> : name}
       <span className="muted"> {[g.geburtsjahr ? `*${g.geburtsjahr}` : null, g.wohnort].filter(Boolean).join(", ")}</span>
     </span>
   );
@@ -272,7 +279,7 @@ export function VerflechtungenTab({ id, name }: { id: string; name: string | nul
         {netz.data && <NetzGrafik netz={netz.data} wurzel={id} arten={arten} />}
         {netz.data?.abgeschnitten && <p className="muted small">Netz gekürzt: mehr als 300 Knoten. Tiefe verringern oder gezielt weiterklicken.</p>}
         <p className="muted small" style={{ marginBottom: 0 }}>
-          Pfeile zeigen vom Gesellschafter zur gehaltenen Firma. Gestrichelt = frühere Verbindung. Firmen anklicken öffnet die Firmendetails.
+          Pfeile zeigen vom Gesellschafter zur gehaltenen Firma. Gestrichelt = frühere Verbindung. Firmen anklicken öffnet die Firmendetails, Personen die Personenseite.
         </p>
       </article>
 

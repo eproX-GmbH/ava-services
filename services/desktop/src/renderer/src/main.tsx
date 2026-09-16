@@ -31,6 +31,7 @@ import { WorkflowEditor } from "./routes/WorkflowEditor";
 import { WorkflowRuns } from "./routes/WorkflowRuns";
 import { IcpAssistant } from "./routes/IcpAssistant";
 import { CompanyDetail } from "./routes/CompanyDetail";
+import { PersonDetail } from "./routes/PersonDetail";
 import { Evaluations } from "./routes/Evaluations";
 import { BestMatchDetail } from "./routes/BestMatchDetail";
 import { ChatSession } from "./routes/ChatSession";
@@ -89,6 +90,7 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
               <Route path="/workflows/:id" element={<FeatureGate feature="workflows"><WorkflowEditor /></FeatureGate>} />
               <Route path="/icp-assistent" element={<IcpAssistant />} />
               <Route path="/companies/:id" element={<CompanyDetail />} />
+              <Route path="/personen/:id" element={<PersonDetail />} />
               <Route path="/transactions/:id/evaluations" element={<Evaluations />} />
               <Route path="/evaluations/best-matches/:id" element={<BestMatchDetail />} />
               <Route path="/evaluations/chats/:sessionId" element={<ChatSession />} />

@@ -198,6 +198,20 @@ export function buildCompanyTools(ctx: Ctx): Tool[] {
     },
   });
 
+  const verflechtungenPerson = defineTool({
+    name: "verflechtungen_person",
+    description:
+      "Person aus Gesellschafterlisten und Geschaeftsfuehrung (Id aus company_network oder company_shareholders, Feld personId): Name, Geburtsjahr, Wohnort, Rollen je Firma (GESCHAEFTSFUEHRER, GESELLSCHAFTER, PROKURIST mit von/bis) und Beteiligungen mit Quote. " +
+      "Zeigt, in welchen Firmen dieselbe Person steckt.",
+    parameters: { type: "object", properties: { personId: { type: "string" } }, required: ["personId"] },
+    schema: yup.object({ personId: yup.string().trim().min(3).required() }).noUnknown(true),
+    run: async (args, c) => gateway.request<Record<string, unknown>>(`/v1/verflechtungen/personen/${encodeURIComponent(args.personId)}`, { signal: c.signal }),
+    preview: (r) => {
+      const p = r as { vorname?: string; nachname?: string; rollen?: unknown[]; beteiligungen?: unknown[] };
+      return `${p.vorname ?? ""} ${p.nachname ?? ""}: ${(p.rollen ?? []).length} Rollen, ${(p.beteiligungen ?? []).length} Beteiligungen`;
+    },
+  });
+
   // Insolvenz-Delta — Status und Veroeffentlichungen des Insolvenzportals; Pruefung anfordern.
   const insolvency = defineTool({
     name: "company_insolvency",
@@ -856,5 +870,6 @@ export function buildCompanyTools(ctx: Ctx): Tool[] {
     shareholders,
     network,
     networkDeepen,
+    verflechtungenPerson,
   ];
 }

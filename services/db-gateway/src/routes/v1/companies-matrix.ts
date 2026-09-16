@@ -66,6 +66,8 @@ const CompanyMatrixRowShape = z
     country: z.string().optional(),
     registerType: z.string().optional(),
     registerNumber: z.string().optional(),
+    /** Firmen-Verflechtungen: "<listeDatum>|<Hash der Gesellschafter>" der neuesten Liste (Statuswaechter Gesellschafterwechsel). */
+    gesellschafterStand: z.string().nullable().optional(),
     /** Per-producer latest state. Keys match PRODUCER_NAMES. */
     stages: z.record(z.string(), StageStateShape),
   })
@@ -98,6 +100,7 @@ interface UpstreamCompany {
   country?: string;
   registerType?: string;
   registerNumber?: string;
+  gesellschafterStand?: string | null;
 }
 interface UpstreamPage {
   pageNumber: number;
@@ -383,6 +386,7 @@ companiesMatrixRouter.openapi(matrixRoute, async (c) => {
       country: co.country ?? "DE",
       registerType: co.registerType,
       registerNumber: co.registerNumber,
+      gesellschafterStand: co.gesellschafterStand ?? null,
       stages,
     };
   });

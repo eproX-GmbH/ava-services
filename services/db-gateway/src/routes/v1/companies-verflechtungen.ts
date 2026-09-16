@@ -49,3 +49,18 @@ companiesVerflechtungenRouter.openapi(networkRoute, async (c) => {
   const u = await callUpstream<Record<string, unknown>>(c, "masterData", `/api/germany/v1/companies/${encodeURIComponent(companyId)}/network`, { query: { tiefe } });
   return c.json(u, 200);
 });
+
+const personRoute = createRoute({
+  method: "get",
+  path: "/verflechtungen/personen/{id}",
+  tags: [tag],
+  summary: "Person aus Gesellschafterlisten und Geschaeftsfuehrung: Rollen und Beteiligungen (Personenseite)",
+  request: { params: z.object({ id: z.string().min(3).max(60) }) },
+  responses: { 200: { content: { "application/json": { schema: z.record(z.string(), z.unknown()) } }, description: "Person" }, ...err },
+});
+companiesVerflechtungenRouter.openapi(personRoute, async (c) => {
+  await requireFeature(getGatewayPool(), c.get("auth"), "verflechtungen");
+  const { id } = c.req.valid("param");
+  const u = await callUpstream<Record<string, unknown>>(c, "masterData", `/api/germany/v1/persons/${encodeURIComponent(id)}`);
+  return c.json(u, 200);
+});

@@ -11,7 +11,8 @@
 import type { Faehigkeit } from "../../shared/nutzerstand-types";
 
 export const FAEHIGKEITEN: Faehigkeit[] = [
-  { id: "firmen", text: "Firmen suchen und Profil, Website, Handelsregister-Daten, Publikationen, Kennzahlen, Tech-Stack und Datenqualitaet einer Firma abrufen", tools: ["company_*"] },
+  { id: "firmen", text: "Firmen suchen; Profil, Website, Registerdaten, Publikationen, Kennzahlen, Tech-Stack, Datenqualitaet abrufen", tools: ["company_*"] },
+  { id: "verflechtungen", text: "Verflechtungen (DE): Gesellschafter, Beteiligungen, Netz", tools: ["company_shareholders", "company_network", "company_network_deepen", "verflechtungen_*"], feature: "verflechtungen" },
   { id: "kontakte", text: "Kontaktpersonen einer Firma mit Beleg anzeigen, Herkunftsnachweis, Art.-14-Hinweis, Person loeschen", tools: ["contact_linkedin_lookup", "person_*"], feature: "kontakte" },
   { id: "email_ableitung", text: "E-Mail-Adressen nach dem Adressmuster der Firma ableiten und per Mail-Server-Anfrage pruefen (Hintergrund, Verlauf, Vorschau)", tools: ["email_muster_*"], feature: "kontakte" },
   { id: "import", text: "Excel-Listen oder Firmen aus dem CRM importieren und komplett anreichern; Importstand, Fehler und Wiederholung je Schritt", tools: ["import_*", "resolve_import_matches", "retry_stage", "transactions_list", "transaction_get", "transaction_entities", "transaction_errors", "transaction_pipeline"] },
