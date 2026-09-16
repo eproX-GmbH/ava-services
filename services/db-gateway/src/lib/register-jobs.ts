@@ -224,7 +224,7 @@ function rowToJob(r: Record<string, unknown>): RegisterJob {
 
 // ---- master-data (HMAC) ----------------------------------------------------
 
-async function masterData<T>(method: "POST" | "PUT", path: string, body?: unknown): Promise<T> {
+export async function masterData<T>(method: "POST" | "PUT", path: string, body?: unknown): Promise<T> {
   const env = loadEnv();
   if (!env.INTERNAL_HMAC_SECRET) throw new Error("INTERNAL_HMAC_SECRET unset");
   const raw = JSON.stringify(body ?? {});

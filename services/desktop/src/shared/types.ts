@@ -67,6 +67,7 @@ export const ORG_FEATURES = [
   { key: "workflows", label: "Workflows", hinweis: "Gespeicherte Ablaeufe (Tool-Ketten) mit Zeitplan, Ereignis-Trigger und Freigaben" },
   { key: "vorschlaege", label: "Vorschlaege im Chat", hinweis: "KI-erzeugte naechste Schritte auf der Chat-Startseite und im Gespraech (aus = nur feste Liste, keine KI-Aufrufe)" },
   { key: "stammdaten.mithelfen", label: "Stammdaten mitpflegen", hinweis: "Rechner der Mitglieder duerfen Register-Jobs abarbeiten (Handelsregister-Abfragen mit eigener IP, 60 je Stunde)" },
+  { key: "verflechtungen", label: "Firmen-Verflechtungen", hinweis: "Gesellschafterlisten aus dem Handelsregister laden und mit dem eigenen KI-Modell auswerten (Gesellschafter, Beteiligungen, Personen)" },
 ] as const;
 export type OrgFeatureKey = (typeof ORG_FEATURES)[number]["key"];
 

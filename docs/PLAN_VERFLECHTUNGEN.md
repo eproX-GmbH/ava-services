@@ -116,52 +116,64 @@ Adresse: `street` + `zipCode` normalisiert (Klein, ohne Leerraum,
 
 ## 4. Pipeline
 
-1. **Job-Art `gesellschafter`** in der Register-Queue (Gateway), Payload
-   `{ companyId, gericht, art, nummer, kontext }`. Läuft im Desktop
-   „Mithelfen“ und im Fly-Worker `worker` (Browser), 4 bis 5 Portal-Abfragen
-   je Job, damit im 60/h-Budget.
-2. **Worker (Paket register-delta, `RegisterPortal.gesellschafterliste()`):**
-   Suche, DK, Baum aufklappen, neuestes Blatt „Liste der Gesellschafter“,
-   Format `pdf` wenn angeboten, sonst `zip` (TIFF), Download in ein
-   temporäres Verzeichnis, sofort nach dem Lesen löschen. Ohne Knoten →
-   Ergebnis `KEINE`. Metadaten (Aufnahme-Datum, Größe) mitgeben.
-3. **Text gewinnen (lokal beim Worker):** PDF-Textebene per `pdf-parse`
-   oder pdftotext; ohne Textebene Seiten rendern und OCR (RapidOCR-ONNX im
-   Worker, Modell 15 MB, oder Tesseract wo vorhanden). Ergebnis: Rohtext je
-   Seite plus Seitenbilder als PNG in Base64 für den nächsten Schritt.
-4. **Strukturieren (LLM, entschieden 2026-09-16):** Remote-Modelle sind
-   hier ausdrücklich erlaubt, also das konfigurierte Modell des Nutzers
-   inklusive OpenAI/Codex über den eigenen Schlüssel; bevorzugt ein
-   Vision-Modell mit Seitenbild plus OCR-Text, sonst Text allein. Prompt →
-   JSON nach festem Schema (Yup-validiert, §6), danach der Qualitätsfilter
-   (§6a). Beim Fly-Worker: Betreiber-Modell. Listen können deutlich
-   komplexer sein als die vier Beispiele (Erbengemeinschaften,
-   Treuhand, Teilanteile, Nießbrauch, Vorlisten); was der Filter nicht
-   bestätigt, wird verworfen, nicht geraten.
-5. **Gateway → master-data** `POST /internal/companies/shareholders`:
-   Shareholding-Zeilen ersetzen den Stand der vorigen Liste (Historie bleibt
-   über `listeDatum`), Firmen-Gesellschafter über die Registerangabe zur
-   companyId auflösen (Original-Regel, Aliase wie beim Register-Delta),
-   Personen zusammenführen (§3).
-6. **Rekursion mit Besuchsliste:** Jede Firma unter den Gesellschaftern, die
-   noch nicht im Bestand ist, wird angelegt (Refresh-Job über das
-   Registerportal) und bekommt selbst einen `gesellschafter`-Job im selben
-   **Verarbeitungskontext** (`kontext` = Ursprungs-companyId plus Datum).
-   Besuchte companyIds je Kontext stehen im Gateway (`RegisterJob.payload`
-   plus Tabelle `VerflechtungKontext(kontext, companyId, tiefe)`); eine
-   schon besuchte Firma bekommt keinen weiteren Job. Damit enden Schleifen
-   (A hält B, B hält A) und Doppelarbeit. Zusätzlich eine weiche
-   Tiefengrenze (Vorschlag 6 Ebenen) und eine Kontextgrenze (Vorschlag 200
-   Firmen) als Notbremse gegen Konzernbäume.
+**Architektur (korrigiert 2026-09-16):** Die Gesellschafterliste wird im
+**structured-content-Producer** auf dem Rechner des Nutzers geholt und
+ausgewertet, nicht im Gateway oder Register-Worker. Nur dort liegt der
+KI-Schlüssel des Nutzers (Producer-Umgebung `LLM_PROVIDER`, `OPENAI_API_KEY`
+usw. aus dem ProducerSupervisor), und nur dort ist die Registerportal-
+Navigation bis „SI“/„DK“ schon vorhanden. Ein erster Ansatz über Job-Art
+`gesellschafter` im Gateway wurde vollständig zurückgenommen (Reverts
+6204c2f, f9d8216, master-data a04eb01).
+
+1. **Auslöser:** Jeder normale structured-content-Lauf einer deutschen
+   HRB-Firma (Pool-Aufnahme, Refresh). Bedingung: Org-Feature
+   `verflechtungen` aktiv (Desktop reicht `AVA_VERFLECHTUNGEN=1` in die
+   Producer-Umgebung). HRA-Firmen haben keine Liste und werden übersprungen.
+2. **Webdriver `gesellschafterliste()`** (`handelsregister-webdriver.ts`):
+   Erweiterte Suche, Trefferzeile, DK, Baum „Dokumente zur Registernummer“ →
+   „Liste der Gesellschafter“, neuestes Blatt nach Datum, Format `pdf`
+   wenn angeboten, sonst `zip` (TIFF), Download-Knopf. Der Download landet
+   im bestehenden `HR_DOWNLOAD_DIR` (Freigabe des Nutzers 2026-09-16: gleiche
+   Ausnahme wie für die XML-Dateien; nur handelsregister.de, nur nach Klick,
+   Magic-Bytes-Prüfung, bis 20 MB, Datei wird nach dem Lesen gelöscht, nie
+   ausgeführt). Ohne Knoten → Ergebnis `KEINE`.
+3. **Dokumentprüfung** (`verflechtungen/dokument.ts`): PDF, TIFF oder ZIP mit
+   PDF/TIFF, erkannt an den Magic Bytes; ZIP im Speicher ohne Bibliothek (die
+   Portal-ZIPs tragen einen fehlerhaften Kommentar-Längeneintrag). SHA-256
+   als Beleg-Schlüssel.
+4. **Auswertung mit dem Modell des Nutzers** (`verflechtungen/auswertung.ts`):
+   `getLLM()` aus `@ava/ai-provider`; PDF geht als Datei-Part an das
+   Vision-Modell, TIFF wird je Seite zu PNG (utif2 + fast-png); eine
+   vorhandene Textebene (pdf-parse) wird als Hilfstext beigelegt. Ohne
+   Vision-Modell und ohne Textebene → `UNSICHER`, nie geraten.
+   Antwort → JSON → Yup-Schema (§6) → Qualitätsfilter (§6a) → `LISTE` mit
+   gefilterten Zeilen oder `UNSICHER` mit Gründen. Remote-Modelle (OpenAI
+   über den Schlüssel des Nutzers) sind ausdrücklich erlaubt.
+5. **Persist-Ereignis** `tenant.persist.shareholders.v1` (nach den drei
+   Downstream-Ereignissen): `{ companyId, ergebnis: KEINE | LISTE | UNSICHER,
+   listeDatum, format, liste, gruende, warnungen, modell, dokument }`. Das
+   Gateway (`persist-bus.ts`, `applyShareholders`, Feature-Gate
+   `verflechtungen`) ruft `POST /internal/companies/shareholders` in
+   master-data: `KEINE` und `UNSICHER` setzen nur den Stand (UNSICHER als
+   `FEHLER` mit Gründen), `LISTE` speichert Beteiligungen, Personen, Rollen
+   und den Beleg. Fehler im Producer werden nur geloggt; der normale
+   Lauf bleibt davon unberührt.
+6. **Firmen-Gesellschafter und Rekursion (offen, ohne LLM im Gateway):**
+   master-data löst Firmen-Gesellschafter über die Registerangabe zur
+   companyId auf (`unbekannteFirmen`, `firmenIds` im Antwort-Body). Der
+   Gateway stößt für unbekannte Firmen einen Register-Refresh an (bestehende
+   Queue) und für bekannte, noch nicht besuchte Firmen einen
+   structured-content-Trigger im Pool des Nutzers. Besuchsliste je
+   Verarbeitungskontext (Ursprungs-companyId plus Datum) im Gateway,
+   Notbremse Tiefe 6 / 200 Firmen mit Opt-out für große Konstrukte. Das
+   Auslesen selbst bleibt immer beim Producer des Nutzers.
 7. **Aufwärts:** Wer hält die Ausgangsfirma? Das steht nur in *ihrer* Liste
-   (§5). Wer die Ausgangsfirma als Gesellschafter hat, weiß man erst, wenn
-   deren Listen verarbeitet sind. Der Graph füllt sich also von unten nach
-   oben mit jedem verarbeiteten Pool; die Suche „Firmen, an denen X
-   beteiligt ist“ ist eine Abfrage über `gesellschafterCompanyId`.
-8. **Aktualität:** wie Insolvenz je Pool-Firma alle 90 Tage prüfen, ob eine
-   neuere Liste vorliegt (nur Baum lesen, 3 Abfragen); Register-
-   bekanntmachungen zu „Liste der Gesellschafter“ gibt es nicht, aber
-   Änderungen der Geschäftsführung kommen weiter über den Register-Refresh.
+   (§5). Der Graph füllt sich von unten nach oben mit jedem verarbeiteten
+   Pool; „Firmen, an denen X beteiligt ist“ ist eine Abfrage über
+   `gesellschafterCompanyId`.
+8. **Aktualität:** master-data `GET /internal/companies/shareholders/due`
+   liefert Firmen, deren Prüfung fehlt oder älter als 90 Tage ist; der
+   Gateway stößt dafür den structured-content-Refresh an (offen).
 
 ## 5. Darstellung
 
@@ -240,9 +252,9 @@ ausblenden“). Zusätzlich ein Betreiber-Schalter im Gateway
 |---|---|---|
 | V0 | Notebook (dieser Stand): DK-Weg, Formate, OCR, Beispiele | erledigt |
 | V1 | master-data: Tabellen Shareholding, ShareholderListCheck, ShareholderListDocument, Person, PersonRole; interne Routen; Yup und Qualitätsfilter | **erledigt 2026-09-16** (Migration `20260916100000_verflechtungen`, 41 Tests, Deploy offen) |
-| V2 | Paket: `gesellschafterliste()` im RegisterPortal (Download in Temp), Textgewinnung, OCR-Anbindung, Tests mit den vier Beispieldateien | 2 Tage |
-| V3 | LLM-Strukturierung (Prompt, Schema, Plausibilitäten) im Worker; Desktop nutzt das Nutzer-Modell, Fly das Betreiber-Modell | 1,5 Tage |
-| V4 | Gateway: Job-Art, Kontext mit Besuchsliste, Rekursion, Auflösung der Firmen-Gesellschafter, Anlage fehlender Firmen | 2 Tage |
+| V2 | structured-content: `gesellschafterliste()` im Handelsregister-Webdriver, Dokumentprüfung (Magic Bytes, ZIP im Speicher), Tests | **erledigt 2026-09-16** (structured-content 5d0ac71) |
+| V3 | LLM-Auswertung im Producer mit dem Modell des Nutzers (PDF/TIFF als Bild, Textebene, Yup, Qualitätsfilter), Persist-Ereignis, Gateway-Binding mit Feature-Gate, Desktop-Flag `AVA_VERFLECHTUNGEN` | **erledigt 2026-09-16** (Ende-zu-Ende-Test mit echter Firma offen) |
+| V4 | Gateway/master-data: Firmen-Gesellschafter auflösen, fehlende Firmen per Register-Refresh anlegen, structured-content-Trigger je Kontext mit Besuchsliste und Notbremse (ohne LLM) | 1,5 Tage |
 | V5 | Geschäftsführer aus structured-content in Person/PersonRole spiegeln; Adress-Schlüssel für DE aus structured-content | 1 Tag |
 | V6 | App: Reiter Verflechtungen mit Netzgrafik, Gesellschaftertabelle, Personenseite | 3 Tage |
 | V7 | Chat-Tools, Statuswächter „Gesellschafterwechsel“, Fähigkeitsgruppe, Org-Feature `verflechtungen` und Betreiber-Schalter | 1,5 Tage |

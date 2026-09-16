@@ -3,6 +3,7 @@ import {
   execFile,
   type ChildProcessByStdio,
 } from "node:child_process";
+import { featureEnabled } from "./org-policy";
 import { promisify } from "node:util";
 import net from "node:net";
 import { producerLogBuffer } from "./producer-log-buffer";
@@ -734,6 +735,9 @@ export class ProducerSupervisor extends EventEmitter {
       // provider settings via the llmConfig() callback. Producer
       // crashes at boot without these, so we treat null as a
       // soft-skip ("nicht konfiguriert" status), not a try-anyway.
+      // Firmen-Verflechtungen (docs/PLAN_VERFLECHTUNGEN.md): structured-content laedt
+      // Gesellschafterlisten nur, wenn die Organisation das Feature erlaubt.
+      AVA_VERFLECHTUNGEN: featureEnabled("verflechtungen") ? "1" : "0",
       LLM_PROVIDER: llm.provider,
       ...(llm.model ? { LLM_MODEL: llm.model } : {}),
       ...(llm.openaiApiKey ? { OPENAI_API_KEY: llm.openaiApiKey } : {}),

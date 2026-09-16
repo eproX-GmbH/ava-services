@@ -45,6 +45,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = resolve(__dirname, "..");
 
 const PRODUCERS = [
+  "structured-content",
   "company-profile",
   "company-contact",
   "company-evaluation",

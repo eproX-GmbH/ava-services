@@ -60,6 +60,7 @@ import {
 } from "./profile-changes";
 import { transactionProgressBus } from "./event-bus";
 import { featureEnabledForEventTenant } from "./policy-guard";
+import { masterData } from "./register-jobs";
 import { recordUsage } from "./billing";
 import { tierShouldWrite, type ModelTier } from "./tier";
 
@@ -1935,7 +1936,43 @@ const stubApply: (producer: ProducerName) => ApplyFn = (producer) =>
 // the inner apply, and updates ContentFreshness on a successful write.
 // Skips emit a "skipped" EntityProgress row (visible on the matrix) and
 // ack the AMQP message — nothing to retry, the existing data is canonical.
+// Firmen-Verflechtungen (docs/PLAN_VERFLECHTUNGEN.md): structured-content hat
+// die Gesellschafterliste mit dem LLM des Nutzers ausgewertet; hier geht das
+// Ergebnis (LISTE, UNSICHER, KEINE) samt Beleg an master-data, wo der
+// Qualitaetsfilter erneut laeuft und Personen zusammengefuehrt werden.
+const applyShareholders: ApplyFn = async (_pool, event, log) => {
+  const data = event.data as PersistEvent<Record<string, unknown>> | undefined;
+  if (!data?.result || typeof data.result.companyId !== "string") throw new Error("missing result.companyId");
+  const r = data.result as { companyId: string; ergebnis: string; listeDatum?: string; format?: string; liste?: Record<string, unknown> | null; gruende?: string[]; dokument?: Record<string, unknown> };
+  if (r.ergebnis === "KEINE") {
+    await masterData("POST", "/internal/companies/shareholders", { companyId: r.companyId, ergebnis: "KEINE", gesehenAt: data.computedAt });
+  } else if (r.ergebnis === "LISTE" && r.liste) {
+    const antwort = await masterData<{ ergebnis: string; unbekannteFirmen?: string[]; gruende?: string[] }>("POST", "/internal/companies/shareholders", {
+      liste: { ...r.liste, companyId: r.companyId },
+      format: r.format,
+      dokument: r.dokument,
+      gesehenAt: data.computedAt,
+    });
+    log.info({ companyId: r.companyId, ergebnis: antwort.ergebnis, unbekannt: antwort.unbekannteFirmen?.length ?? 0, gruende: antwort.gruende }, "[verflechtungen] Liste uebernommen");
+  } else {
+    await masterData("POST", "/internal/companies/shareholders", {
+      companyId: r.companyId,
+      ergebnis: "FEHLER",
+      fehler: `UNSICHER: ${(r.gruende ?? []).join("; ").slice(0, 400)}`,
+      format: r.format,
+      gesehenAt: data.computedAt,
+    });
+    log.info({ companyId: r.companyId, gruende: r.gruende }, "[verflechtungen] Liste unsicher, verworfen");
+  }
+};
+
 const BINDINGS: ProducerBinding[] = [
+  {
+    producer: "structured-content",
+    routingKey: "tenant.persist.shareholders.v1",
+    queue: "db-gateway-persist-shareholders",
+    apply: withFeatureGate("structured-content", "verflechtungen", applyShareholders),
+  },
   {
     producer: "company-profile",
     routingKey: "tenant.persist.company-profile.v1",
