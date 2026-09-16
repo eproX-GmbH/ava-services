@@ -376,6 +376,39 @@ export function getCurrentTier(): ModelTier | null {
   return tierForModel(active.provider, active.model);
 }
 
+// ---- Firmen-Verflechtungen (docs/PLAN_VERFLECHTUNGEN.md §4) --------------
+//
+// Gesellschafterlisten sind gescannte, oft gedrehte Dokumente. Schwache
+// Modelle liefern plausible, aber falsche Namen, die keine Summenpruefung
+// erkennt. Entscheidung 2026-09-16 (Operator): unterhalb der Mindeststufe
+// wird die Verarbeitung komplett blockiert (kein Download, kein Aufruf),
+// und die App zeigt das an. Producer und Desktop nutzen dieselbe Funktion.
+
+/** Mindeststufe (docs/MODEL_TIERS.md): A = 3. */
+export const VERFLECHTUNGEN_MIN_TIER: ModelTier = 3;
+
+export interface VerflechtungenModellBefund {
+  erlaubt: boolean;
+  tier: ModelTier | null;
+  vision: boolean;
+  /** Kurzgrund fuer Log und App, null wenn erlaubt. */
+  grund: string | null;
+}
+
+export function pruefeVerflechtungenModell(
+  provider: string | null | undefined,
+  modelId: string | null | undefined,
+): VerflechtungenModellBefund {
+  if (!provider || !modelId) return { erlaubt: false, tier: null, vision: false, grund: "kein Modell konfiguriert" };
+  const tier = tierForModel(provider, modelId);
+  const vision = hasVision(provider, modelId);
+  const stufe = tier === null ? "unbekannte Stufe" : `Stufe ${["", "C", "B", "A", "S"][tier] ?? tier}`;
+  if (tier === null) return { erlaubt: false, tier, vision, grund: `${modelId} ist nicht im Katalog (${stufe})` };
+  if (!vision) return { erlaubt: false, tier, vision, grund: `${modelId} versteht keine Bilder` };
+  if (tier < VERFLECHTUNGEN_MIN_TIER) return { erlaubt: false, tier, vision, grund: `${modelId} hat ${stufe}, noetig ist mindestens Stufe A` };
+  return { erlaubt: true, tier, vision, grund: null };
+}
+
 /** Tier lookup for an explicit (provider, model) tuple. Useful when
  *  the caller already knows the model id (e.g. after a default
  *  resolution in getLLM()). Returns null on unknown model. */

@@ -306,7 +306,11 @@ const OPENAI_LLM: CatalogEntry[] = [
     role: "llm",
     capabilities: { tools: true, vision: true, contextWindow: 1_050_000 },
     costClass: "cheap",
-    tier: 2,
+    // 2026-09-16 (Operator): auf Tier 3 hochgestuft. Luna ist die Budget-
+    // Stufe der aktuellen Frontier-Generation und liest gescannte
+    // Gesellschafterlisten zuverlaessig genug fuer das Verflechtungen-Gate
+    // (Mindeststufe A). Die aelteren mini-Stufen bleiben bei 2.
+    tier: 3,
   },
   {
     provider: "openai",

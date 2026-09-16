@@ -50,7 +50,7 @@ TypeScript enforces this on `CatalogEntry`; CI fails if you forget.
 
 ### Tier A — high
 
-- `gpt-4.1`, `gpt-4o`, `o3-mini`, `o4-mini` (OpenAI)
+- `gpt-5.6-luna`, `gpt-4.1`, `gpt-4o`, `o3-mini`, `o4-mini` (OpenAI)
 - `claude-sonnet-4-6`, `claude-sonnet-4-5` (Anthropic)
 - `gemini-3.7-flash`, `gemini-3-flash-preview`, `gemini-2.5-flash` (Google)
 - `deepseek-v4-pro` (DeepSeek), `grok-4.5` (xAI)
@@ -59,7 +59,7 @@ TypeScript enforces this on `CatalogEntry`; CI fails if you forget.
 
 ### Tier B — mid
 
-- `gpt-5.6-luna`, `gpt-5.4-mini`, `gpt-5-mini`, `gpt-4.1-mini`, `gpt-4o-mini` (OpenAI)
+- `gpt-5.4-mini`, `gpt-5-mini`, `gpt-4.1-mini`, `gpt-4o-mini` (OpenAI)
 - `claude-haiku-4-5` (Anthropic)
 - `gemini-3.1-flash-lite`, `gemini-2.5-flash-lite`, `gemini-2.0-flash` (Google)
 - `mistral-small-latest`, `codestral-latest` (Mistral)
@@ -95,3 +95,14 @@ TypeScript enforces this on `CatalogEntry`; CI fails if you forget.
 - Set `tier: <1|2|3|4>` on its `CatalogEntry`
 - If unsure, default conservative (one tier lower than your best guess)
 - Re-evaluate annually as benchmarks shift
+
+## Gate: Firmen-Verflechtungen (2026-09-16)
+
+Gesellschafterlisten (docs/PLAN_VERFLECHTUNGEN.md) werden nur mit einem
+Bild-Modell **ab Tier A** ausgewertet (`pruefeVerflechtungenModell` in
+`@ava/ai-provider`). Darunter blockiert der structured-content-Producer
+den Schritt komplett (kein Download, kein Modellaufruf); die App zeigt in
+Einstellungen → Modelle den Grund. `gpt-5.6-luna` wurde dafür von B auf A
+gehoben (Budget-Stufe der aktuellen Frontier-Generation, liest gescannte
+Listen im Test sauber). Hintergrund: Tier-B-Modelle lieferten im Live-Test
+plausible, aber falsche Namen, die keine Summenprüfung erkennt.

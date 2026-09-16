@@ -2072,6 +2072,13 @@ export function ProviderSection() {
   const modelsByKind = groupBy(models.data, (m) => m.provider);
   const activeList = modelsByKind[activeKind] ?? [];
   const activeEntry = activeList.find((m) => m.id === activeModelId);
+  // Firmen-Verflechtungen (docs/MODEL_TIERS.md, Gate 2026-09-16): Gesellschafterlisten
+  // werden nur mit einem Bild-Modell ab Stufe A ausgewertet. Der Producer blockiert
+  // darunter komplett; hier steht der Grund, damit niemand auf Daten wartet.
+  const verflechtungenAn = useFeature("verflechtungen");
+  const producerModelId = cfg.data?.config.producerModels?.[activeKind] || activeModelId;
+  const producerEntry = activeList.find((m) => m.id === producerModelId);
+  const verflechtungenBlockiert = !producerEntry || !producerEntry.vision || producerEntry.tier < 3;
 
   const showOllamaDownload =
     activeKind === "ollama" &&
@@ -2320,6 +2327,18 @@ export function ProviderSection() {
           </select>
         </label>
       </div>
+
+      {verflechtungenAn && verflechtungenBlockiert && (
+        <p className="muted small" role="status">
+          <strong>Firmen-Verflechtungen sind mit diesem Modell blockiert.</strong>{" "}
+          {producerEntry
+            ? `${producerEntry.label} hat Stufe ${["", "C", "B", "A", "S"][producerEntry.tier] ?? producerEntry.tier}${producerEntry.vision ? "" : " und versteht keine Bilder"}.`
+            : "Kein Modell für die Hintergrund-Verarbeitung gewählt."}{" "}
+          Gesellschafterlisten sind gescannte Dokumente; schwächere Modelle lesen Namen falsch, deshalb lädt AVA sie erst ab einem
+          Bild-Modell der Stufe A (zum Beispiel GPT-5.6 Luna, Claude Sonnet, Gemini Flash). Wähle oben ein solches Modell für die
+          Hintergrund-Verarbeitung, dann läuft die Auswertung automatisch mit.
+        </p>
+      )}
 
       <p className="muted small">
         Die Hintergrund-Verarbeitung (Jahresabschlüsse, Firmenprofile,
