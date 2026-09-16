@@ -155,7 +155,12 @@ Navigation bis „SI“/„DK“ schon vorhanden. Ein erster Ansatz über Job-Ar
    eines Gesellschafters) → `LISTE` oder `UNSICHER` mit Gründen.
    Befund: gpt-5.4-mini liest eproX und tc85 korrekt; gpt-4o-mini liefert
    plausible, aber falsche Namen und wird über die abweichenden Lesungen
-   und den Kopf-Abgleich verworfen. Remote-Modelle (OpenAI über den
+   und den Kopf-Abgleich verworfen.
+   **Modell-Gate (Entscheidung 2026-09-16):** unterhalb Stufe A oder ohne
+   Bildverständnis wird der Schritt komplett blockiert (kein Download,
+   kein Aufruf; `pruefeVerflechtungenModell` in `@ava/ai-provider`), und
+   Einstellungen → Modelle zeigt den Grund. GPT-5.6 Luna wurde dafür auf
+   Stufe A gehoben (docs/MODEL_TIERS.md). Remote-Modelle (OpenAI über den
    Schlüssel des Nutzers) sind ausdrücklich erlaubt.
 5. **Persist-Ereignis** `tenant.persist.shareholders.v1` (nach den drei
    Downstream-Ereignissen): `{ companyId, ergebnis: KEINE | LISTE | UNSICHER,
