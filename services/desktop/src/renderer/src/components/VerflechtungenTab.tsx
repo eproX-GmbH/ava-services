@@ -12,7 +12,7 @@ import { gatewayFetch, GatewayError } from "../api/gateway";
 type Knoten = { id: string; typ: "FIRMA" | "PERSON"; name: string; land?: string | null; registerStatus?: string | null; insolvencyStatus?: string | null; geburtsjahr?: number | null; wohnort?: string | null; tiefe: number };
 type Kante = { von: string; nach: string; art: "BETEILIGUNG" | "GESCHAEFTSFUEHRUNG" | "ADRESSE"; prozent?: number | null; nennbetragEur?: number | null; aktuell: boolean; seit?: string | null; bis?: string | null; quelle: string };
 type Netz = { companyId: string; tiefe: number; knoten: Knoten[]; kanten: Kante[]; abgeschnitten: boolean };
-type Beteiligung = { id: number; companyId: string; listeDatum: string; typ: "PERSON" | "FIRMA"; personId: string | null; personName: string | null; geburtsjahr: number | null; wohnort: string | null; gesellschafterCompanyId: string | null; gesellschafterFirmaText: string | null; anteileNummern: string | null; nennbetragEur: number | null; prozent: number | null; veraenderung: string | null; konfidenz: number; unsicher: boolean };
+type Beteiligung = { id: number; companyId: string; listeDatum: string; typ: "PERSON" | "FIRMA"; personId: string | null; personName: string | null; geburtsjahr: number | null; wohnort: string | null; gesellschafterCompanyId: string | null; gesellschafterFirmaText: string | null; gesellschafterFirmaName?: string | null; anteileNummern: string | null; nennbetragEur: number | null; prozent: number | null; veraenderung: string | null; konfidenz: number; unsicher: boolean };
 type Stand = { geprueftAt: string; listeDatum: string | null; ergebnis: "LISTE" | "KEINE" | "UNSICHER" | "FEHLER"; format: string | null; modell: string | null; fehler: string | null; gruende: string[]; dokumentId: number | null };
 type Gesellschafter = { companyId: string; stand: Stand | null; gesellschafter: Beteiligung[]; beteiligungen: Beteiligung[] };
 type Kontext = { kontext: string; ursprungCompanyId: string; transactionId: string; maxTiefe: number; maxFirmen: number; ohneBremse: boolean; erstelltAt: string; offen: number; erledigt: number };
@@ -208,7 +208,18 @@ function NetzGrafik({ netz, wurzel, arten }: { netz: Netz; wurzel: string; arten
 }
 
 function GesellschafterName({ g }: { g: Beteiligung }) {
-  if (g.typ === "FIRMA" && g.gesellschafterCompanyId) return <Link to={`/companies/${encodeURIComponent(g.gesellschafterCompanyId)}`}>{g.gesellschafterFirmaText ?? g.gesellschafterCompanyId}</Link>;
+  if (g.typ === "FIRMA" && g.gesellschafterCompanyId) {
+    const aktuell = g.gesellschafterFirmaName ?? null;
+    const inListe = g.gesellschafterFirmaText ?? g.gesellschafterCompanyId;
+    return (
+      <span>
+        <Link to={`/companies/${encodeURIComponent(g.gesellschafterCompanyId)}`}>{aktuell ?? inListe}</Link>
+        {aktuell && g.gesellschafterFirmaText && !g.gesellschafterFirmaText.toLowerCase().startsWith(aktuell.toLowerCase()) && (
+          <span className="muted small"> (in der Liste: {g.gesellschafterFirmaText})</span>
+        )}
+      </span>
+    );
+  }
   if (g.typ === "FIRMA") return <span>{g.gesellschafterFirmaText ?? "Firma"}</span>;
   const name = g.personName ?? "Person";
   return (

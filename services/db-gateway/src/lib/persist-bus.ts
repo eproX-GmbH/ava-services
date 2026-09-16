@@ -1998,7 +1998,14 @@ const applyShareholders: ApplyFn = async (pool, event, log) => {
     });
     log.info({ companyId: r.companyId, ergebnis: antwort.ergebnis, firmen: firmen.length, unbekannt: antwort.unbekannteFirmen?.length ?? 0, gruende: antwort.gruende }, "[verflechtungen] Liste uebernommen");
     const firmaName = (liste as { firma?: { name?: unknown } }).firma?.name;
-    await rekursion(firmen, antwort.ergebnis === "LISTE" ? "LISTE" : "UNSICHER", typeof firmaName === "string" ? firmaName : null);
+    // Kinder: von master-data aufgeloeste Firmen (auch per Namenshistorie) plus die per
+    // Registerangabe abgeleiteten, die master-data noch nicht kennt (Register-Refresh).
+    const bekannt = new Set(antwort.firmenIds ?? []);
+    const kinder = [
+      ...firmen.filter((f) => !bekannt.has(f.companyId) && (antwort.unbekannteFirmen ?? []).includes(f.companyId)),
+      ...[...bekannt].map((id) => firmen.find((f) => f.companyId === id) ?? { companyId: id, gericht: "", art: "", nummer: "", zusatz: "", name: "" }),
+    ];
+    await rekursion(kinder, antwort.ergebnis === "LISTE" ? "LISTE" : "UNSICHER", typeof firmaName === "string" ? firmaName : null);
   } else {
     await masterData("POST", "/internal/companies/shareholders", {
       companyId: r.companyId,
