@@ -8267,3 +8267,43 @@ input, textarea, select, button, a, summary, details,
 .topbar__account { white-space: nowrap; max-width: 320px; }
 .topbar__user-tenant { display: inline-block; max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: bottom; }
 @media (max-width: 1100px) { .topbar__user-tenant { max-width: 90px; } .topbar__account-name { max-width: 120px; } }
+
+/* Beenden-Anzeige: deckt die App ab, waehrend Main die Prozesse beendet. */
+.beenden-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: color-mix(in srgb, var(--bg, #f2f7f6) 88%, transparent);
+  backdrop-filter: blur(6px);
+  -webkit-app-region: drag;
+}
+.beenden-overlay__karte {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 2rem 2.5rem;
+  border-radius: 14px;
+  background: var(--color-bg-0, #fff);
+  border: 1px solid var(--border, #dde5e3);
+  box-shadow: 0 12px 40px rgba(10, 31, 42, 0.12);
+}
+.beenden-overlay__kreis {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: 3px solid var(--border, #dde5e3);
+  border-top-color: var(--accent, #00c0a7);
+  animation: ava-spin 0.9s linear infinite;
+}
+.beenden-overlay__text {
+  margin: 0;
+  font-weight: 600;
+  font-size: 1.05rem;
+}
+.beenden-overlay__hinweis {
+  margin: 0;
+}

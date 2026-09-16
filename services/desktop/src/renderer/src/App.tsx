@@ -15,6 +15,7 @@ import { bindWatchesBridge } from "./store/watches";
 import { SignIn } from "./routes/SignIn";
 import { FirstRunWizard } from "./routes/FirstRunWizard";
 import { DownloadDock } from "./components/DownloadDock";
+import { BeendenOverlay } from "./components/BeendenOverlay";
 import { UpdateBanner } from "./components/UpdateBanner";
 import { OllamaUpdateBanner } from "./components/OllamaUpdateBanner";
 import type { LlmProviderKind } from "../../shared/types";
@@ -234,6 +235,7 @@ export function App({ children }: PropsWithChildren) {
       )}
       {children}
       <DownloadDock />
+      <BeendenOverlay />
       {/* v0.1.303 — UpdateBanner war bisher nur im First-Run-Pfad
           gemountet (oben). Nach abgeschlossenem Setup fehlte er, daher
           sah der User nie das „Neu starten, um zu aktualisieren"-

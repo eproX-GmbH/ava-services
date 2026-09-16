@@ -50,6 +50,8 @@ import {
   quitStep,
   traceStep,
   writeLineSync,
+  setQuitPhase,
+  istQuitAnzeigePhase,
 } from "./file-logger";
 import { startWatchdog, writeUpdatingFlag } from "./watchdog";
 import { Auth, type AuthStatus } from "./auth";
@@ -283,6 +285,39 @@ import { resolveConfig } from "../shared/config";
 // Absicht; Node warnt ab 10. Vorher stand bei jedem Start eine
 // MaxListenersExceededWarning im Log.
 setMaxListeners(40, app);
+
+// Beenden-Anzeige: Dieser Handler steht als ERSTER in der Kette. Beim ersten
+// before-quit unterbricht er das Beenden, laesst den Renderer das Overlay
+// „Wird beendet“ zeichnen und stoesst 150 ms spaeter app.quit() erneut an.
+// Alle quitStep-Schritte der Module sind in der Anzeige-Phase aufgeschoben
+// und laufen beim zweiten Durchlauf. Notausgang nach 20 s: app.exit(0).
+let beendenAnzeigeGezeigt = false;
+app.on("before-quit", (e) => {
+  if (beendenAnzeigeGezeigt) {
+    setQuitPhase("stoppen");
+    return;
+  }
+  const fenster = BrowserWindow.getAllWindows().filter((w) => !w.isDestroyed());
+  if (fenster.length === 0) {
+    setQuitPhase("stoppen");
+    return;
+  }
+  beendenAnzeigeGezeigt = true;
+  setQuitPhase("anzeige");
+  e.preventDefault();
+  for (const w of fenster) {
+    try {
+      w.webContents.send("app:wird-beendet");
+    } catch {
+      /* Fenster schon weg */
+    }
+  }
+  setTimeout(() => app.quit(), 150);
+  setTimeout(() => {
+    writeLineSync("WARN ", "[quit] Notausgang nach 20 s: app.exit(0)");
+    app.exit(0);
+  }, 20_000).unref();
+});
 
 const APP_CONFIG = resolveConfig({
   appVersion: app.getVersion(),
@@ -7192,6 +7227,9 @@ app.on("window-all-closed", () => {
 // das nicht warten — dort räumt der Process-Group-Tree von selbst auf.
 let quitInProgress = false;
 app.on("before-quit", (e) => {
+  // Beenden-Anzeige: im ersten Durchlauf nur das Overlay zeigen (siehe oben);
+  // der Update-Install-Pfad muss trotzdem sofort hart raus.
+  if (istQuitAnzeigePhase() && !updater.isInstallingUpdate()) return;
   // v0.1.520 — jeder Schritt mit synchroner Breadcrumb (siehe
   // file-logger.quitStep): benennt beim naechsten haengenden Quit den
   // Schritt, in dem der Main-Thread stecken bleibt.

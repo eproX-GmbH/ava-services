@@ -360,7 +360,28 @@ export function traceStep(prefix: string, name: string, fn: () => unknown): void
   writeLineSync("INFO ", `${prefix} < ${name} (${Date.now() - t0}ms sync)`);
 }
 
+/**
+ * Beenden-Anzeige (macOS): Beim ersten before-quit zeigt der Renderer nur
+ * das Overlay „Wird beendet“; alle Stop-Schritte werden aufgeschoben und
+ * laufen beim zweiten before-quit (Phase „stoppen“). So sitzt der Nutzer
+ * nicht vor einem eingefrorenen Fenster, waehrend Producer und Stores
+ * herunterfahren.
+ */
+export type QuitPhase = "keine" | "anzeige" | "stoppen";
+let quitPhase: QuitPhase = "keine";
+export function setQuitPhase(p: QuitPhase): void {
+  quitPhase = p;
+  writeLineSync("INFO ", `[quit] Phase ${p}`);
+}
+export function istQuitAnzeigePhase(): boolean {
+  return quitPhase === "anzeige";
+}
+
 export function quitStep(name: string, fn: () => unknown): void {
+  if (quitPhase === "anzeige") {
+    writeLineSync("INFO ", `[quit] (aufgeschoben) ${name}`);
+    return;
+  }
   traceStep("[quit]", name, fn);
 }
 

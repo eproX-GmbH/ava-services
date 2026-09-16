@@ -268,6 +268,12 @@ const api = {
     ipcRenderer.on("power:resumed", wrapped);
     return () => ipcRenderer.off("power:resumed", wrapped);
   },
+  /** Beenden-Anzeige: Main kuendigt das Beenden an, der Renderer zeigt das Overlay. */
+  onWirdBeendet: (handler: () => void): (() => void) => {
+    const wrapped = (): void => handler();
+    ipcRenderer.on("app:wird-beendet", wrapped);
+    return () => ipcRenderer.off("app:wird-beendet", wrapped);
+  },
   /** v0.1.335 — Renderer-Ack zurueck an Main: "ich lebe und habe das
    *  Resume-Event verarbeitet". Ohne diesen Aufruf force-reloaded
    *  Main den Window nach 6 Sekunden. */
