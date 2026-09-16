@@ -206,6 +206,32 @@ Navigation bis „SI“/„DK“ schon vorhanden. Ein erster Ansatz über Job-Ar
    dort ein und hebt die Sperre einmalig auf; der Eintrag wird beim Abruf
    verbraucht. Auch Rekursionskinder unterliegen der Sperre.
 
+### 4a. Befunde der Stichprobe (2026-09-16, 12 Zufallsfirmen plus Sonderfälle)
+
+- **Regelfall:** Knoten „Dokumente zur Registernummer“ → „Liste der Gesellschafter“ → Blätter
+  „Liste der Gesellschafter - Aufnahme in den Registerordner am dd.mm.yyyy“, Format pdf oder zip
+  (TIFF). In 8 von 12 Fällen direkt gefunden.
+- **Musterprotokoll:** UG/GmbH nach § 2 Abs. 1a GmbHG haben statt der Liste den Knoten
+  „Musterprotokoll“ mit Blatt „Musterprotokoll vom dd.mm.yyyy“; es gilt als Gesellschafterliste
+  (München, Aachen, Flensburg). AVA lädt es als Quelle `musterprotokoll`, der Prompt erklärt den
+  Aufbau (Gesellschafter Nr. 1, Anteile Nr. 3). Eigene Liste hat Vorrang.
+- **Leere Sammelmappe:** In Schleswig-Holstein (Flensburg) erscheint „Liste der Gesellschafter“
+  als Knoten ohne Unterknoten; das Formular zeigt „Sammelmappe, Enthaltene Dateien: 0“ und
+  gesperrte Format-Radios. AVA erkennt das und fällt auf das Musterprotokoll zurück.
+- **Registernummern mit Zusatz** („152981 B“, „16247 FL“) stehen in der Trefferliste mit
+  Leerzeichen; Vergleich ohne Leerraum.
+- **Portal-Tempo:** Berlin brauchte bis 153 s; Wartezeit für DK-Seite 180 s, Download 180 s.
+- **Junge GmbH ohne Liste** (Walsrode, nur Gesellschaftsvertrag, Anmeldung, Protokoll): KEINE ist
+  korrekt.
+- **Kein Treffer** (Göttingen HRB 2069, in master-data aktiv): das Portal liefert keine Zeile.
+  Betrifft auch den normalen Registerlauf; Ursache offen (Umzug oder Löschung).
+- **Lesequalität:** gpt-5.6 Luna liest Listen und Musterprotokolle korrekt; Verleser einzelner
+  Buchstaben („QUJKK“, „Johansen“) entscheidet eine dritte Lesung per Mehrheit. Zeilen werden über
+  Geburtsdatum bzw. Registernummer plus Betrag gepaart, nicht über den Namen.
+- **Umfirmierungen:** Verknüpfung über die Registernummer bleibt stabil; ohne lesbare
+  Registerangabe löst master-data über den normalisierten Namen (aktuell und Historie,
+  Funktionsindex) auf. Der Reiter zeigt den aktuellen Namen und den Listentext.
+
 ## 5. Darstellung
 
 - **Firmendetails, Reiter „Verflechtungen“ (neu):** Netzgrafik wie North
