@@ -129,12 +129,15 @@ Adresse: `street` + `zipCode` normalisiert (Klein, ohne Leerraum,
    oder pdftotext; ohne Textebene Seiten rendern und OCR (RapidOCR-ONNX im
    Worker, Modell 15 MB, oder Tesseract wo vorhanden). Ergebnis: Rohtext je
    Seite plus Seitenbilder als PNG in Base64 für den nächsten Schritt.
-4. **Strukturieren (LLM des Nutzers, Compute-Lokalität):** Prompt mit
-   Rohtext (und Bild bei Vision-Modellen) → JSON nach festem Schema
-   (Yup-validiert, siehe §6): Gesellschafter, Anteile, Stammkapital,
-   Veränderungen, Konfidenz je Zeile. Beim Fly-Worker: Betreiber-Modell
-   (Ollama auf Fly oder Betreiber-Key), Ergebnis geht wie Register-Treffer
-   an das Gateway.
+4. **Strukturieren (LLM, entschieden 2026-09-16):** Remote-Modelle sind
+   hier ausdrücklich erlaubt, also das konfigurierte Modell des Nutzers
+   inklusive OpenAI/Codex über den eigenen Schlüssel; bevorzugt ein
+   Vision-Modell mit Seitenbild plus OCR-Text, sonst Text allein. Prompt →
+   JSON nach festem Schema (Yup-validiert, §6), danach der Qualitätsfilter
+   (§6a). Beim Fly-Worker: Betreiber-Modell. Listen können deutlich
+   komplexer sein als die vier Beispiele (Erbengemeinschaften,
+   Treuhand, Teilanteile, Nießbrauch, Vorlisten); was der Filter nicht
+   bestätigt, wird verworfen, nicht geraten.
 5. **Gateway → master-data** `POST /internal/companies/shareholders`:
    Shareholding-Zeilen ersetzen den Stand der vorigen Liste (Historie bleibt
    über `listeDatum`), Firmen-Gesellschafter über die Registerangabe zur
@@ -189,6 +192,48 @@ Adresse: `street` + `zipCode` normalisiert (Klein, ohne Leerraum,
 Plausibilitäten: Summe Nennbeträge = Stammkapital (± 1 %), Summe Prozent
 ≈ 100, Geburtsdatum vor 1900 oder in der Zukunft → Zeile als unsicher.
 
+## 6a. Qualitätsfilter („lieber keine Daten als Schrottdaten“)
+
+Jede Liste durchläuft nach der Strukturierung diese Prüfungen; scheitert
+eine harte, wird die **ganze Liste** als `ergebnis: UNSICHER` abgelegt
+(Rohtext bleibt zur Nachsicht), es entstehen keine Shareholding-Zeilen:
+
+Harte Regeln (Liste verwerfen):
+- Firma stimmt: Registerangabe im Kopf (Gericht, Art, Nummer) muss zur
+  angefragten companyId passen, sonst falsches Dokument.
+- Summen: Nennbeträge addieren sich auf das Stammkapital (± 1 %), Prozent
+  auf 100 (± 1 Punkt); fehlt das Stammkapital, muss die Prozentsumme passen.
+- Jeder Gesellschafter hat Typ, Namen und mindestens eine Mengenangabe
+  (Nennbetrag oder Prozent).
+- Geburtsdaten zwischen 1900 und heute minus 14 Jahre; Prozent zwischen 0
+  und 100; Nennbeträge > 0 und Vielfache von 1 EUR (Cent nur bei alten
+  DM-Umstellungen, dann Hinweis).
+- Firmen-Gesellschafter: Registerangabe muss sich zu einer companyId
+  auflösen lassen (Gericht im Portal-Select, Nummer vorhanden) oder die
+  Firma wird als `gesellschafterFirmaText` ohne Kante gespeichert; eine
+  Kante gibt es nur mit aufgelöster companyId.
+- Modell-Konfidenz je Zeile ≥ 0,7; darunter Zeile streichen, Summe neu
+  prüfen.
+
+Weiche Regeln (Zeile markieren, App zeigt „unsicher“):
+- Namen ohne Vor- und Nachname, Namen mit Ziffern, Wohnort gleich
+  Namensbestandteil, Datum nur mit Monat.
+- OCR ohne Textebene und Konfidenz unter 0,85.
+
+Zweite Meinung: Bei UNSICHER wird einmal mit strengerem Prompt (nur Bild,
+Zeilenweise) wiederholt; stimmen beide Läufe in Namen und Summen überein,
+gilt die Liste, sonst bleibt sie UNSICHER. Ein Zähler je Notar-Layout hilft
+später, wiederkehrende Fehlermuster zu erkennen.
+
+## 6b. Abschaltbar auf Organisationsebene
+
+Neues Org-Feature `verflechtungen` (ORG_FEATURES, Feature-Policy wie
+`stammdaten.mithelfen`): abgeschaltet heißt kein Reiter, keine Chat-Tools,
+keine `gesellschafter`-Jobs aus dem Pool dieser Organisation, keine
+Meldungen. Gesperrtes wird komplett ausgeblendet (Regel „Gesperrte UI
+ausblenden“). Zusätzlich ein Betreiber-Schalter im Gateway
+(`VERFLECHTUNGEN_DISABLED=1`), der die Job-Erzeugung global stoppt.
+
 ## 7. Schritte und Aufwand
 
 | Schritt | Inhalt | Aufwand |
@@ -200,7 +245,7 @@ Plausibilitäten: Summe Nennbeträge = Stammkapital (± 1 %), Summe Prozent
 | V4 | Gateway: Job-Art, Kontext mit Besuchsliste, Rekursion, Auflösung der Firmen-Gesellschafter, Anlage fehlender Firmen | 2 Tage |
 | V5 | Geschäftsführer aus structured-content in Person/PersonRole spiegeln; Adress-Schlüssel für DE aus structured-content | 1 Tag |
 | V6 | App: Reiter Verflechtungen mit Netzgrafik, Gesellschaftertabelle, Personenseite | 3 Tage |
-| V7 | Chat-Tools, Statuswächter „Gesellschafterwechsel“, Fähigkeitsgruppe | 1 Tag |
+| V7 | Chat-Tools, Statuswächter „Gesellschafterwechsel“, Fähigkeitsgruppe, Org-Feature `verflechtungen` und Betreiber-Schalter | 1,5 Tage |
 
 ## 8. Offene Entscheidungen (Rückfragen)
 
@@ -214,11 +259,10 @@ Plausibilitäten: Summe Nennbeträge = Stammkapital (± 1 %), Summe Prozent
    Chrome-Profilordner für diesen Job mit `download_restrictions 0` plus
    Prüfung von Dateityp (Magic Bytes) und Größe im Worker. Bitte
    bestätigen.
-2. **OCR-Modell.** Vorschlag: RapidOCR-ONNX im Worker (lokal, klein, keine
-   Systemabhängigkeit), Ergebnis geht mit den Seitenbildern an das LLM des
-   Nutzers. Alternativ nur Vision-LLM ohne OCR (teurer, bei BYOK
-   kostenpflichtig je Seite). Welche Modelle sollen Vision dürfen (Codex/
-   OpenAI, Anthropic, lokales Ollama-Vision wie `qwen2.5vl`)?
+2. **OCR-Modell.** Entschieden: Remote-Modelle erlaubt (Nutzer-Schlüssel).
+   Vorschlag bleibt RapidOCR-ONNX als lokale Vorstufe plus Vision-LLM;
+   ohne Vision-Modell nur OCR-Text. Offen nur noch: Standardmodell für
+   Nutzer ohne BYOK (lokales Ollama-Vision wie `qwen2.5vl`?).
 3. **Geburtsdaten speichern?** Sie stehen in den Listen und sind der
    sicherste Schlüssel zur Personenzusammenführung. Vorschlag: speichern,
    in der App nur Geburtsjahr zeigen, im Chat gar nicht, Art.-14-Hinweis
