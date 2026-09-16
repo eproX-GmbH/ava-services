@@ -14,6 +14,7 @@ type Person = {
   nachname: string;
   geburtsjahr: number | null;
   wohnort: string | null;
+  namensvarianten?: string[];
   rollen: Array<{ companyId: string; name: string; location: string | null; registerStatus: string | null; insolvencyStatus: string | null; rolle: string; von: string | null; bis: string | null; quelle: string }>;
   beteiligungen: Array<{ companyId: string; name: string; location: string | null; registerStatus: string | null; insolvencyStatus: string | null; listeDatum: string; aktuell: boolean; prozent: number | null; nennbetragEur: number | null }>;
 };
@@ -65,6 +66,11 @@ export function PersonDetail() {
         <p className="muted" style={{ margin: 0 }}>
           {[p.geburtsjahr ? `Jahrgang ${p.geburtsjahr}` : null, p.wohnort].filter(Boolean).join(" · ") || "Keine weiteren Angaben"} · verbunden mit {firmen.size} {firmen.size === 1 ? "Firma" : "Firmen"}
         </p>
+        {(p.namensvarianten ?? []).filter((v) => v !== `${p.vorname} ${p.nachname}`).length > 0 && (
+          <p className="muted small" style={{ margin: "0.2rem 0 0" }}>
+            Im Register auch als {(p.namensvarianten ?? []).filter((v) => v !== `${p.vorname} ${p.nachname}`).join(", ")}
+          </p>
+        )}
       </header>
 
       <article className="panel">
