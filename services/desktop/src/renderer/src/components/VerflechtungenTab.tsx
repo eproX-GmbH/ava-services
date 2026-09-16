@@ -132,12 +132,20 @@ function NetzGrafik({ netz, wurzel, arten }: { netz: Netz; wurzel: string; arten
           const b = pos.get(k.nach);
           if (!a || !b) return null;
           const hervor = aktiv === null || aktiv === k.von || aktiv === k.nach;
-          const mx = (a.x + b.x) / 2;
-          const my = (a.y + b.y) / 2;
+          // Leicht gebogene Kante: Verbindungen ueber eine dazwischen liegende Firma hinweg
+          // bleiben sichtbar (kollineare Knoten), zwei Kanten desselben Paares trennen sich.
+          const dx = b.x - a.x;
+          const dy = b.y - a.y;
+          const len = Math.sqrt(dx * dx + dy * dy) || 1;
+          const bogen = (i % 2 === 0 ? 1 : -1) * Math.min(40, 0.12 * len);
+          const cx = (a.x + b.x) / 2 + (-dy / len) * bogen;
+          const cy = (a.y + b.y) / 2 + (dx / len) * bogen;
+          const mx = 0.25 * a.x + 0.5 * cx + 0.25 * b.x;
+          const my = 0.25 * a.y + 0.5 * cy + 0.25 * b.y;
           return (
             <g key={`${k.von}-${k.nach}-${k.art}-${i}`} opacity={hervor ? 1 : 0.15}>
               <title>{k.art === "ADRESSE" ? `Gleiche Adresse: ${k.quelle}` : `${ART_LABEL[k.art]}${k.prozent != null ? ` ${k.prozent.toLocaleString("de-DE", { maximumFractionDigits: 2 })} %` : ""}${k.seit ? ` seit ${new Date(k.seit).toLocaleDateString("de-DE")}` : ""}${k.bis ? ` bis ${new Date(k.bis).toLocaleDateString("de-DE")}` : ""}`}</title>
-              <line x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke={ART_FARBE[k.art]} strokeWidth={k.aktuell ? 1.8 : 1} strokeDasharray={k.aktuell ? undefined : "4 4"} markerEnd={k.art === "BETEILIGUNG" ? "url(#pfeil)" : undefined} />
+              <path d={`M ${a.x} ${a.y} Q ${cx} ${cy} ${b.x} ${b.y}`} fill="none" stroke={ART_FARBE[k.art]} strokeWidth={k.aktuell ? 1.8 : 1} strokeDasharray={k.aktuell ? undefined : "4 4"} markerEnd={k.art === "BETEILIGUNG" ? "url(#pfeil)" : undefined} />
               {k.art === "BETEILIGUNG" && k.prozent != null && (
                 <text x={mx} y={my - 4} fontSize={11} textAnchor="middle" fill="currentColor" opacity={0.85}>
                   {k.prozent.toLocaleString("de-DE", { maximumFractionDigits: 1 })} %

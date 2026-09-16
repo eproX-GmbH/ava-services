@@ -1972,7 +1972,10 @@ const stubApply: (producer: ProducerName) => ApplyFn = (producer) =>
 // die Gesellschafterliste mit dem LLM des Nutzers ausgewertet; hier geht das
 // Ergebnis (LISTE, UNSICHER, KEINE) samt Beleg an master-data, wo der
 // Qualitaetsfilter erneut laeuft und Personen zusammengefuehrt werden.
-const applyShareholders: ApplyFn = async (pool, event, log) => {
+const applyShareholders: ApplyFn = async (_producerPool, event, log) => {
+  // Die Verflechtungen-Tabellen (Kontext, Besuchsliste, Erzwungen) liegen in der Gateway-Datenbank,
+  // nicht in der Producer-Datenbank, die der Bus dem Handler uebergibt.
+  const pool = getGatewayPool();
   const data = event.data as PersistEvent<Record<string, unknown>> | undefined;
   if (!data?.result || typeof data.result.companyId !== "string") throw new Error("missing result.companyId");
   const r = data.result as { companyId: string; ergebnis: string; listeDatum?: string; format?: string; liste?: Record<string, unknown> | null; gruende?: string[]; dokument?: Record<string, unknown> };
