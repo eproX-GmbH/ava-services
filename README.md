@@ -17,7 +17,6 @@ Bedient wird AVA über einen Chat-Agenten mit rund 250 Werkzeugen, über die Fir
 - [Architektur](#architektur)
 - [Cloud-Komponenten und Betrieb](#cloud-komponenten-und-betrieb)
 - [Sicherheit und Datenschutz](#sicherheit-und-datenschutz)
-- [Status](#status)
 - [Roadmap](#roadmap)
 - [Installation](#installation)
 - [Repository-Layout](#repository-layout)
@@ -125,12 +124,6 @@ Deploys von Gateway und master-data laufen manuell per `fly deploy --remote-only
 - Personendaten: Ansprechpartner mit Herkunftsnachweis, Art.-14-Hinweis und Löschfunktion; Aufbewahrungsfristen per Cron; Geburtsdaten aus Gesellschafterlisten nur als Jahr nach außen, intern mit Hash für eine spätere Entfernung.
 - Alle Ausgaben von Modellen und externen Quellen werden vor der Übernahme gegen Schemata geprüft (Yup). „Lieber keine Daten als falsche Daten“ ist Regel, nicht Ausnahme.
 - Compliance- und Enterprise-Stand mit offenen Punkten: `docs/PLAN_ENTERPRISE_FREIGABE.md`.
-
-## Status
-
-Pre-1.0, aktuell **v0.1.669** (September 2026). Die Architektur ist seit dem Umbau auf Desktop plus Substrat (April 2026) stabil; Funktionen kommen in kleinen Releases, oft mehrere am Tag. Die Badges oben zeigen den Live-Zustand der Cloud-Komponenten; Ausfälle der lokalen Producer sind im Whoami-Panel der App sichtbar.
-
-Was gerade in Erprobung ist und noch nicht beworben wird: Firmen-Verflechtungen Ende-zu-Ende, Workflows ohne laufende App.
 
 ## Roadmap
 
