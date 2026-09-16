@@ -142,13 +142,21 @@ Navigation bis „SI“/„DK“ schon vorhanden. Ein erster Ansatz über Job-Ar
    Portal-ZIPs tragen einen fehlerhaften Kommentar-Längeneintrag). SHA-256
    als Beleg-Schlüssel.
 4. **Auswertung mit dem Modell des Nutzers** (`verflechtungen/auswertung.ts`):
-   `getLLM()` aus `@ava/ai-provider`; PDF geht als Datei-Part an das
-   Vision-Modell, TIFF wird je Seite zu PNG (utif2 + fast-png); eine
-   vorhandene Textebene (pdf-parse) wird als Hilfstext beigelegt. Ohne
-   Vision-Modell und ohne Textebene → `UNSICHER`, nie geraten.
-   Antwort → JSON → Yup-Schema (§6) → Qualitätsfilter (§6a) → `LISTE` mit
-   gefilterten Zeilen oder `UNSICHER` mit Gründen. Remote-Modelle (OpenAI
-   über den Schlüssel des Nutzers) sind ausdrücklich erlaubt.
+   `getLLM()` aus `@ava/ai-provider`. Seiten werden **lokal gerendert**
+   (`pdf-bild.ts`: pdfjs + @napi-rs/canvas, etwa 200 dpi, OpenAI
+   `imageDetail=high`; TIFF über utif2 auf dieselbe Canvas), weil die
+   Anbieter eingebettete PDFs stark verkleinern und Namen dann verlesen
+   werden (Live-Befund 2026-09-16). Eine vorhandene Textebene (pdf-parse)
+   wird als Hilfstext beigelegt. Ohne Vision-Modell und ohne Textebene →
+   `UNSICHER`, nie geraten. **Zwei unabhängige Lesungen** (Seitenreihenfolge
+   und Leseanweisung anders); nur was beide gleich lesen, gilt. Dann JSON →
+   Yup-Schema (§6) → Qualitätsfilter (§6a, inkl. Kopf-Abgleich mit dem
+   Firmennamen aus dem Registerlauf und Zusammenführen mehrerer Anteile
+   eines Gesellschafters) → `LISTE` oder `UNSICHER` mit Gründen.
+   Befund: gpt-5.4-mini liest eproX und tc85 korrekt; gpt-4o-mini liefert
+   plausible, aber falsche Namen und wird über die abweichenden Lesungen
+   und den Kopf-Abgleich verworfen. Remote-Modelle (OpenAI über den
+   Schlüssel des Nutzers) sind ausdrücklich erlaubt.
 5. **Persist-Ereignis** `tenant.persist.shareholders.v1` (nach den drei
    Downstream-Ereignissen): `{ companyId, ergebnis: KEINE | LISTE | UNSICHER,
    listeDatum, format, liste, gruende, warnungen, modell, dokument }`. Das

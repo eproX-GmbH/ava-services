@@ -589,6 +589,9 @@ jobs:
         env:
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
           npm_config_arch: x64
+          # @napi-rs/canvas (structured-content, PDF-Rendering) liefert je Plattform ein
+          # optionales Paket; npm waehlt es nach npm_config_cpu, nicht nach npm_config_arch.
+          npm_config_cpu: x64
           PRISMA_CLI_BINARY_TARGETS: darwin
         run: |
           mkdir -p resources/p
