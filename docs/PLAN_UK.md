@@ -185,9 +185,23 @@ structured-content 1 Tag, App 0,5 Tage.
   Danach Teil 1: 47.000 Zeilen in rund 2 Minuten (1.000 je 2,5 s), Teil 1
   ≈ 35 min, alle 7 Teile ≈ 4 Stunden; Cluster bei 44 Verbindungen.
   Beispiel `UK_00004606` mit PLZ, Gründung 1869, SIC 7499.
-- **Nächster Schritt:** Abschluss beobachten (fehlende Firmen → CLOSED
-  ist beim Erstimport 0), dann structured-content (Officers) und App
-  (Landeschip UK, „CRN“).
+- **2026-09-15 15:19 UTC, Abbruch bei 70.000 Zeilen:** master-data
+  `germanCompanyHistory.createMany` scheiterte an „Unique constraint failed
+  on (id)“. Ursache: die Sequenz `GermanCompanyHistory_id_seq` stand seit
+  dem Ursprungsimport bei 122.523, die Tabelle hatte Ids bis 1.587.521;
+  frühere Inserts trafen zufällig Lücken. Behoben am 2026-09-16 per
+  `setval` auf `max(id)` (mit Freigabe), Job 18490 neu eingereiht. Dazu
+  brauchte jeder Delta-Aufruf rund 20 s; mit Zeitmessung und Elastic-Refresh
+  nur bei kleinen Bündeln (b01e2a9) sind es 0,5 s Datenbank plus 0,3 s Index
+  je 1.000 Zeilen, Erstimport damit rund 3 bis 4 Stunden.
+- **structured-content (2026-09-16, e134ce9):** `UK_`-Firmen laden
+  Firmenseite und Officers per HTTP; aktive Directors werden zur
+  Geschäftsführung, Rechtsform, Gründung, Adresse und SIC kommen mit.
+- **App (v0.1.662):** Landeschip UK, Kennung „CRN“, Länderfilter in
+  Firmensuche und Meine Firmen (Gateway search/list/matrix mit `country`,
+  master-data Fuzzy-Filter in Elastic, Altbestand ohne Feld = DE).
+- **Nächster Schritt:** Abschluss des Abzugs beobachten, Eisenstadt-Kontrolle
+  (AT), UK-Pool-Jobs sobald Nutzer UK-Firmen importieren.
 
 ## 5. Offene Entscheidungen
 
