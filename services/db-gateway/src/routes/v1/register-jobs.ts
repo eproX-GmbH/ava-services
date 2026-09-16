@@ -17,6 +17,9 @@ import {
   atAnfordern,
   ukAnfordern,
   verarbeiteTeilergebnis,
+  gesellschafterAnfordern,
+  gesellschafterFaellige,
+  verflechtungStarten,
   JOB_ARTEN_REGISTER,
   JobFehler,
   leaseJob,
@@ -42,7 +45,7 @@ const err = {
 };
 
 export const WorkerId = z.string().min(8).max(120).regex(/^[A-Za-z0-9._:-]+$/);
-export const JobArtSchema = z.enum(["front", "bekanntmachungen", "refresh", "insolvenz", "at_front", "at_refresh", "at_insolvenz", "uk_bulk", "uk_refresh", "uk_insolvenz"]);
+export const JobArtSchema = z.enum(["front", "bekanntmachungen", "refresh", "insolvenz", "gesellschafter", "at_front", "at_refresh", "at_insolvenz", "uk_bulk", "uk_refresh", "uk_insolvenz"]);
 
 const JobShape = z
   .object({
@@ -111,6 +114,23 @@ const TrefferUkShape = z.object({
   fruehereNamen: z.array(z.string().max(500)).max(10).optional(),
 });
 
+/** Verflechtungen: Ergebnis je Firma eines gesellschafter-Jobs (Paket register-delta). */
+const GesellschafterErgebnisShape = z.discriminatedUnion("ergebnis", [
+  z.object({ companyId: z.string().min(3).max(120), ergebnis: z.literal("KEINE") }),
+  z.object({
+    companyId: z.string().min(3).max(120),
+    ergebnis: z.literal("DOKUMENT"),
+    listeDatum: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+    fassungen: z.array(z.string().max(200)).max(50),
+    format: z.enum(["pdf", "tiff"]),
+    dateiname: z.string().min(1).max(300),
+    mime: z.enum(["application/pdf", "image/tiff"]),
+    sha256: z.string().regex(/^[a-f0-9]{64}$/),
+    groesse: z.number().int().positive().max(20 * 1024 * 1024),
+    inhalt: z.string().min(1).max(28 * 1024 * 1024),
+  }),
+]);
+
 export const TeilergebnisShape = z.object({ workerId: WorkerId, teil: z.number().int().positive(), trefferUk: z.array(TrefferUkShape).min(1).max(1000) });
 
 /** Oesterreich: Suchtreffer oder Detail aus JustizOnline (Paket register-delta, at-firmenbuch.ts). */
@@ -137,6 +157,8 @@ export const ErgebnisShape = z.object({
   atFront: z.object({ begriff: z.string().min(2).max(4), naechsteSeite: z.number().int().nonnegative(), fertig: z.boolean(), gesamt: z.number().int().nonnegative() }).optional(),
   trefferUk: z.array(TrefferUkShape).max(5000).optional(),
   ukBulk: z.object({ datum: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), teil: z.number().int().positive(), teile: z.number().int().positive(), zeilen: z.number().int().nonnegative(), teilergebnisse: z.number().int().nonnegative() }).optional(),
+  gesellschafter: GesellschafterErgebnisShape.optional(),
+  gesellschafterAlle: z.array(GesellschafterErgebnisShape).max(10).optional(),
 });
 
 function auth(c: { get: (k: "auth") => { tenantId: string; actorId: string } | undefined }) {
@@ -349,4 +371,41 @@ registerJobsRouter.openapi(ukRoute, async (c) => {
   auth(c);
   const body = c.req.valid("json");
   return c.json(await ukAnfordern(getGatewayPool(), body.companyIds, body.grund), 200);
+});
+
+// Verflechtungen — Gesellschafterlisten fuer konkrete Firmen anfordern (Chat, Import, Firmendetail).
+// Mit `rekursion: true` entsteht ein Verarbeitungskontext (Besuchsliste); `ohneBremse` schaltet Tiefe/Anzahl-Grenze ab.
+const gesellschafterRoute = createRoute({
+  method: "post",
+  path: "/register-jobs/gesellschafter",
+  tags: [tag],
+  summary: "Gesellschafterlisten (Registerportal DK) fuer konkrete Firmen anfordern",
+  request: {
+    body: {
+      content: {
+        "application/json": {
+          schema: z.object({
+            companyIds: z.array(z.string().min(3).max(120)).min(1).max(200),
+            grund: z.string().min(1).max(40).regex(/^[a-z0-9-]+$/).default("anforderung"),
+            rekursion: z.boolean().default(false),
+            ohneBremse: z.boolean().default(false),
+          }),
+        },
+      },
+    },
+  },
+  responses: { 200: { content: { "application/json": { schema: z.object({ jobs: z.number().int(), firmen: z.number().int(), kontext: z.string().nullable() }) } }, description: "ok" }, 401: err[401] },
+});
+registerJobsRouter.openapi(gesellschafterRoute, async (c) => {
+  const a = auth(c);
+  const body = c.req.valid("json");
+  const pool = getGatewayPool();
+  const firmen = await gesellschafterFaellige(body.companyIds, 0);
+  let kontext: string | null = null;
+  if (body.rekursion) {
+    kontext = `${a.tenantId.slice(0, 8)}-${Date.now().toString(36)}`;
+    for (const f of firmen) await verflechtungStarten(pool, kontext, f.companyId, body.ohneBremse);
+  }
+  const jobs = await gesellschafterAnfordern(pool, firmen, body.grund, 1, kontext ?? undefined);
+  return c.json({ jobs, firmen: firmen.length, kontext }, 200);
 });

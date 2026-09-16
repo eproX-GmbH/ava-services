@@ -783,3 +783,16 @@ model StructuredContentStale {
   seit      DateTime @default(now())
   grund     String
 }
+
+/// Firmen-Verflechtungen: Besuchsliste je Verarbeitungskontext (Rekursion
+/// ueber Gesellschafterlisten, docs/PLAN_VERFLECHTUNGEN.md).
+model VerflechtungKontext {
+  kontext    String
+  companyId  String
+  tiefe      Int      @default(0)
+  ohneBremse Boolean  @default(false)
+  createdAt  DateTime @default(now())
+
+  @@id([kontext, companyId])
+  @@index([kontext])
+}
