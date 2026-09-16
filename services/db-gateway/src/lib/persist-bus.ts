@@ -2011,6 +2011,7 @@ const applyShareholders: ApplyFn = async (pool, event, log) => {
       companyId: r.companyId,
       ergebnis: "FEHLER",
       fehler: `UNSICHER: ${(r.gruende ?? []).join("; ").slice(0, 400)}`,
+      listeDatum: r.listeDatum ?? null,
       format: r.format,
       gesehenAt: data.computedAt,
     });

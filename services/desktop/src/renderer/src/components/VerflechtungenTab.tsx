@@ -303,7 +303,8 @@ export function VerflechtungenTab({ id, name }: { id: string; name: string | nul
           <p className="muted small">
             {stand.ergebnis === "LISTE" && `Liste vom ${datum(stand.listeDatum)}, gelesen am ${datum(stand.geprueftAt)}${stand.modell ? ` mit ${stand.modell}` : ""}.`}
             {stand.ergebnis === "KEINE" && `Im Registerordner liegt keine Gesellschafterliste (geprüft am ${datum(stand.geprueftAt)}).`}
-            {(stand.ergebnis === "UNSICHER" || stand.ergebnis === "FEHLER") && `Die Liste vom ${datum(stand.listeDatum)} wurde nicht übernommen (${stand.gruende.slice(0, 3).join("; ") || stand.fehler || "Lesung unsicher"}). Lieber keine Daten als falsche.`}
+            {(stand.ergebnis === "UNSICHER" || stand.ergebnis === "FEHLER") &&
+              `${stand.listeDatum ? `Die Liste vom ${datum(stand.listeDatum)}` : "Die zuletzt gelesene Liste"} wurde nicht übernommen (${stand.gruende.slice(0, 3).join("; ") || stand.fehler || "Lesung unsicher"}). Lieber keine Daten als falsche. Beim nächsten Registerlauf wird sie erneut gelesen.`}
           </p>
         )}
         {gesellschafter.data && gesellschafter.data.gesellschafter.length > 0 ? (
