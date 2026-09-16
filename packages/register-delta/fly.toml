@@ -23,4 +23,6 @@ primary_region = 'fra'
 # den DE-Worker davon fern. uk_bulk laedt je Teil rund 70 MB nach /tmp.
 [processes]
   worker = 'sh -c "REGISTER_DELTA_AT=0 REGISTER_DELTA_UK=0 node dist/cli.js"'
-  worker_at = 'sh -c "REGISTER_DELTA_ARTEN=at_front,at_refresh,at_insolvenz,uk_bulk,uk_refresh,uk_insolvenz WORKER_ID=betreiber-at node dist/cli.js"'
+  # uk_bulk schonend (2026-09-16): 250 Zeilen je Buendel, 20 s Pause; master-data war
+  # bei 1000 Zeilen ohne Pause dauerhaft CPU-gedrosselt (Erstimport dauert so ~3 Tage).
+  worker_at = 'sh -c "REGISTER_DELTA_ARTEN=at_front,at_refresh,at_insolvenz,uk_bulk,uk_refresh,uk_insolvenz REGISTER_DELTA_UK_BUENDEL=250 REGISTER_DELTA_UK_PAUSE_MS=20000 WORKER_ID=betreiber-at node dist/cli.js"'

@@ -65,8 +65,15 @@ export type AusfuehrungsOptionen = {
 
 export const MAX_ABFRAGEN_JE_JOB = 15;
 export const MAX_ABFRAGEN_JE_AT_JOB = 300;
-/** uk_bulk: Zeilen je Teilergebnis (ein Delta-Aufruf in master-data). */
-export const UK_BULK_BUENDEL = 1000;
+/**
+ * uk_bulk: Zeilen je Teilergebnis (ein Delta-Aufruf in master-data) und Pause danach.
+ * Entscheidung 2026-09-16: master-data (ein geteilter CPU-Kern) wurde vom Erstimport
+ * mit 11 Buendeln je Minute dauerhaft gedrosselt (79 % CPU-Steal), alle Nutzeranfragen
+ * standen dahinter an. Standard jetzt schonend: 250 Zeilen, dann 20 s Pause; per Umgebung
+ * (REGISTER_DELTA_UK_BUENDEL, REGISTER_DELTA_UK_PAUSE_MS) anpassbar.
+ */
+export const UK_BULK_BUENDEL = Math.max(50, Math.min(1000, Number(process.env.REGISTER_DELTA_UK_BUENDEL ?? 250) || 250));
+export const UK_BULK_PAUSE_MS = Math.max(0, Number(process.env.REGISTER_DELTA_UK_PAUSE_MS ?? 20_000) || 0);
 
 // Die Bekanntmachungsseite enthaelt alle Tage des 8-Wochen-Fensters (rund
 // 14.000 Eintraege, fast 2 MB Text). Ein Job je Tag wuerde sie 56-mal laden;
@@ -355,6 +362,8 @@ async function fuehreUkJobAus(job: Job, o: AusfuehrungsOptionen, uk: UkSchnittst
       if (teil % 10 === 0) log(`uk_bulk Teil ${p.teil} Buendel ${teil}: lesen ${tLesen} ms, melden ${Date.now() - t0} ms`);
       tLetzte = Date.now();
       buendel = [];
+      // Schonender Takt: master-data zwischen zwei Buendeln Luft lassen.
+      if (UK_BULK_PAUSE_MS > 0) await new Promise((r) => setTimeout(r, UK_BULK_PAUSE_MS));
     };
     await uk.takt.warten();
     basis.abfragen++;
