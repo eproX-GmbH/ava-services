@@ -163,7 +163,13 @@ export const ErgebnisShape = z.object({
   trefferUk: z.array(TrefferUkShape).max(5000).optional(),
   ukBulk: z.object({ datum: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), teil: z.number().int().positive(), teile: z.number().int().positive(), zeilen: z.number().int().nonnegative(), teilergebnisse: z.number().int().nonnegative() }).optional(),
   si: z.object({ geladen: z.number().int().nonnegative(), ohneLink: z.number().int().nonnegative(), fehler: z.number().int().nonnegative() }).optional().catch(undefined),
-  unbearbeitet: z.array(z.object({ gericht: z.string().min(1), art: z.string().min(2).max(4), nummer: z.number().int().nonnegative(), zusatz: z.string().max(3).optional(), hinweis: z.string().max(40).optional() })).max(500).optional(),
+  // Wie bei `si`: Diese Angabe ist Komfort (Folgejob fuer den Rest). Sie darf
+  // die Ergebnismeldung nie ungueltig machen.
+  unbearbeitet: z
+    .array(z.object({ gericht: z.string().min(1), art: z.string().min(2).max(4), nummer: z.number().int().nonnegative(), zusatz: z.string().max(3).optional(), hinweis: z.string().max(60).optional() }))
+    .max(500)
+    .optional()
+    .catch(undefined),
 });
 
 function auth(c: { get: (k: "auth") => { tenantId: string; actorId: string } | undefined }) {
