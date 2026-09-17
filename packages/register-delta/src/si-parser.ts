@@ -50,6 +50,21 @@ export function istSiXml(text: string): boolean {
   return kopf.startsWith("<") && /tns:|xjustiz/i.test(text.slice(0, 4000));
 }
 
+/**
+ * Grober Bauplan eines nicht lesbaren Auszugs: Wurzelelement und die aeusseren
+ * Tag-Namen, keine Inhalte. Nur fuer die Fehlersuche im Worker-Protokoll, damit
+ * ein unbekannter Aufbau sichtbar wird, ohne Daten zu protokollieren.
+ */
+export function siBauplan(xml: string): string {
+  const tags: string[] = [];
+  const re = /<([A-Za-z][\w.:-]*)[\s>]/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(xml)) !== null && tags.length < 25) {
+    if (!tags.includes(m[1])) tags.push(m[1]);
+  }
+  return tags.join(" ");
+}
+
 /** Liefert null, wenn das Dokument kein brauchbarer Auszug ist (kein Firmenname). */
 export function parseStrukturierterInhalt(xml: string): StrukturierterInhalt | null {
   if (!istSiXml(xml)) return null;
@@ -59,10 +74,12 @@ export function parseStrukturierterInhalt(xml: string): StrukturierterInhalt | n
   } catch {
     return null;
   }
-  // Firmendaten zuerst im Basisdaten-Block suchen: sonst kann bei fehlendem
-  // Firmennamen der Name einer beteiligten Gesellschaft durchrutschen.
+  // Firmendaten zuerst im Basisdaten-Block suchen. Fehlt der Block (bei
+  // Personengesellschaften heisst der Zweig anders), im ganzen Dokument suchen,
+  // aber nie unterhalb von tns:beteiligung: sonst rutscht der Name eines
+  // Gesellschafters als Firmenname durch.
   const basis = suche(baum, "tns:basisdatenRegister");
-  const firma = istObjekt(basis) ? basis : baum;
+  const firma = istObjekt(basis) && suche(basis, "tns:bezeichnung.aktuell") !== undefined ? basis : baum;
   const name = text(suche(firma, "tns:bezeichnung.aktuell"));
   if (!name) return null;
 
@@ -145,7 +162,11 @@ function isoDatum(s: string): string | null {
   return m ? m[1] : null;
 }
 
-/** Tiefensuche in Dokumentreihenfolge; erster Treffer gewinnt (wie der Producer). */
+/**
+ * Tiefensuche in Dokumentreihenfolge; erster Treffer gewinnt (wie der Producer).
+ * Beteiligungen werden uebersprungen: dort stehen die Daten der Gesellschafter,
+ * nicht die der Firma. Die Gesellschafter werden getrennt eingelesen.
+ */
 function suche(knoten: unknown, key: string): unknown {
   if (Array.isArray(knoten)) {
     for (const k of knoten) {
@@ -156,8 +177,9 @@ function suche(knoten: unknown, key: string): unknown {
   }
   if (!istObjekt(knoten)) return undefined;
   if (key in knoten) return knoten[key];
-  for (const v of Object.values(knoten)) {
+  for (const [k, v] of Object.entries(knoten)) {
     if (typeof v !== "object" || v === null) continue;
+    if (k === "tns:beteiligung" && key !== "tns:beteiligung") continue;
     const r = suche(v, key);
     if (r !== undefined) return r;
   }

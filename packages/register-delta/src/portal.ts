@@ -260,7 +260,10 @@ export class RegisterPortal {
     // Zwei Wege wie im structured-content-Producer: das Portal liefert den SI je
     // nach Antwort-Kopf entweder als Datei (Download) oder zeigt das XML in einem
     // neuen Fenster an. Beide Wege werden abwechselnd geprueft, der erste gewinnt.
-    const frist = Date.now() + 60_000;
+    // 25 s statt 60: ein Auszug ist wenige hundert Kilobyte gross. Kommt bis dahin
+    // nichts an, liefert das Portal ihn fuer dieses Blatt nicht, und jede weitere
+    // Wartezeit geht vom Abfragebudget des Jobs ab.
+    const frist = Date.now() + 25_000;
     let datei: string | null = null;
     let ausFenster: string | null = null;
     while (Date.now() < frist && !datei && !ausFenster) {
@@ -283,7 +286,7 @@ export class RegisterPortal {
     if (!datei) {
       const text = ((await d.executeScript("return document.body ? document.body.innerText : ''")) as string).replace(/\s+/g, " ");
       if (SPERR_RE.test(text)) throw new PortalStoerung("SI: Portal gesperrt");
-      throw new Error("SI: weder Datei noch XML-Fenster innerhalb von 60 s");
+      throw new Error("SI: weder Datei noch XML-Fenster innerhalb von 25 s");
     }
     const pfad = join(dir, datei);
     try {

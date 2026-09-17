@@ -5,7 +5,7 @@
 import type { Ergebnis, InsolvenzMeldung, Job, TrefferMeldung } from "./gateway-client";
 import { bereinigeText, kategorieAusText, type InsolvenzZeile } from "./insolvenz-parser";
 import { parseBekanntmachungen, type Treffer } from "./parser";
-import { parseStrukturierterInhalt } from "./si-parser";
+import { parseStrukturierterInhalt, siBauplan } from "./si-parser";
 import type { Suchergebnis } from "./portal";
 import { AT_SUCHE_SEITE, companyIdAt, trefferAt, type AtSuchseite, type AtDetail, type TrefferAt } from "./at-firmenbuch";
 import { meldungenAusVerfahren, type EdikteEintrag, type EdikteVerfahren } from "./at-edikte";
@@ -285,7 +285,7 @@ export async function fuehreJobAus(job: Job, o: AusfuehrungsOptionen): Promise<E
       const inhalt = parseStrukturierterInhalt(xml);
       if (!inhalt) {
         si.fehler++;
-        log(`refresh ${f.gericht} ${f.art} ${f.nummer}: SI-XML nicht lesbar`);
+        log(`refresh ${f.gericht} ${f.art} ${f.nummer}: SI-XML nicht lesbar (${xml.length} Zeichen, Aufbau: ${siBauplan(xml)})`);
         continue;
       }
       meldung.si = inhalt;
