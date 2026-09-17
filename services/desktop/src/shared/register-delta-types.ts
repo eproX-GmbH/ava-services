@@ -6,12 +6,20 @@ export interface MithelfenSettings {
   aktiv: boolean;
   /** Nur bei Netzbetrieb arbeiten (Akku schonen). Default an. */
   nurNetzbetrieb: boolean;
+  /**
+   * Worker-Modus: AVA arbeitet ausschliesslich Handelsregister-Jobs ab und
+   * laesst alles andere ruhen (kein Herzschlag, keine Vorgaenge, keine
+   * Producer, keine Workflows, keine Mail, kein Radar). Default aus.
+   */
+  nurRegister: boolean;
 }
 
 export interface MithelfenStatus {
   /** Einstellung des Nutzers. */
   aktiv: boolean;
   nurNetzbetrieb: boolean;
+  /** Worker-Modus: nur Handelsregister-Verarbeitung, alles andere ruht. */
+  nurRegister: boolean;
   /** Vorgabe der Organisation. */
   orgErlaubt: boolean;
   /** Kindprozess laeuft. */

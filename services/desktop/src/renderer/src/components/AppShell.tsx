@@ -12,6 +12,7 @@ import { DailyTokenLimitBanner } from "./DailyTokenLimitBanner";
 import { OrgQuotaBanner } from "./OrgQuotaBanner";
 import { ProducerModelBanner } from "./ProducerModelBanner";
 import { LinkedInActiveBanner } from "./LinkedInActiveBanner";
+import { WorkerModusBanner } from "./WorkerModusBanner";
 import {
   ChatSearchModal,
   useChatSearchHotkey,
@@ -154,6 +155,7 @@ export function AppShell({ children }: PropsWithChildren) {
       <ConnectionHealthBanner />
       <ExternalServiceBanner />
       {beobachterErlaubt && <LinkedInActiveBanner />}
+      <WorkerModusBanner />
       <main className="app-shell__main">{children}</main>
       <ChatSearchModal
         open={searchOpen}

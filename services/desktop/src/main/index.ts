@@ -4,6 +4,7 @@ import { NutzerstandService } from "./suggestions/nutzerstand";
 import { ChipErzeugung } from "./suggestions/erzeugung";
 import { VorschlaegeSettingsStore } from "./suggestions/settings";
 import { MithelfenSettingsStore, MithelfenSupervisor } from "./register-delta/supervisor";
+import { workerModus } from "./worker-modus";
 import { verfuegbareFaehigkeiten, faehigkeitenText, nichtZugeordnet } from "./suggestions/faehigkeiten";
 import { ORG_FEATURES } from "../shared/types";
 import { pruefeModellstufe } from "./workflows/modellstufe";
@@ -461,7 +462,7 @@ function broadcastAuthStatus(status: AuthStatus): void {
   // hammering a downed upstream. The monitor's own status listener
   // (set up below) handles the inverse transition (resume on
   // reachable). This branch only refuses to start them now.
-  if (status.signedIn && !processingControl.isPaused()) {
+  if (status.signedIn && !processingControl.isPaused() && !workerModus.aktiv()) {
     for (const p of producers) {
       const s = p.getStatus().state;
       if (s !== "idle" && s !== "error") continue;
@@ -1021,7 +1022,8 @@ externalServiceMonitor.on("status", (status: ExternalServicesStatus) => {
       }
     } else if (resumeCondition) {
       // v0.1.395 — Nutzer-Pause hat Vorrang: nicht wieder anlaufen lassen.
-      if (processingControl.isPaused()) continue;
+      // Im Worker-Modus laeuft ueberhaupt kein Producer.
+      if (processingControl.isPaused() || workerModus.aktiv()) continue;
       const s = p.getStatus().state;
       if ((s === "idle" || s === "error") && auth.getStatus().signedIn) {
         console.log(
@@ -2358,6 +2360,7 @@ app.whenReady().then(async () => {
   // probe runs synchronously inside start(); the recurring 60s
   // interval kicks in after.
   externalServiceMonitor.start();
+  workerModus.anmelden({ name: "Erreichbarkeit", anhalten: () => externalServiceMonitor.stop(), anlaufen: () => externalServiceMonitor.start() });
 
   // v0.1.181 — background OAuth refresh for the Anthropic In-App
   // subscription token. Without this, the access_token expires after
@@ -2415,6 +2418,12 @@ app.whenReady().then(async () => {
   try {
     if (featureEnabled("mail")) await mailSupervisor.start();
     else console.log("[mail/supervisor] nicht gestartet — Organisationsvorgabe: Mail-Anbindung aus");
+    workerModus.anmelden({
+      name: "Mail",
+      anhalten: () => mailSupervisor?.stop(),
+      anlaufen: () => mailSupervisor?.start(),
+      darfLaufen: () => featureEnabled("mail"),
+    });
   } catch (err) {
     console.warn(
       "[mail/supervisor] start fehlgeschlagen:",
@@ -2774,6 +2783,7 @@ app.whenReady().then(async () => {
   });
   try {
     await scheduledJobsSupervisor.start();
+    workerModus.anmelden({ name: "Geplante Aufgaben", anhalten: () => scheduledJobsSupervisor?.stop(), anlaufen: () => scheduledJobsSupervisor?.start() });
   } catch (err) {
     console.warn(
       "[scheduler] start fehlgeschlagen:",
@@ -2829,6 +2839,7 @@ app.whenReady().then(async () => {
   });
   try {
     await linkMonitorSupervisor.start();
+    workerModus.anmelden({ name: "Link-Beobachter", anhalten: () => linkMonitorSupervisor?.stop(), anlaufen: () => linkMonitorSupervisor?.start() });
   } catch (err) {
     console.warn(
       "[link-monitor] start fehlgeschlagen:",
@@ -2899,6 +2910,7 @@ app.whenReady().then(async () => {
       }),
   });
   profileWorker.start();
+  workerModus.anmelden({ name: "Mini-Profile", anhalten: () => profileWorker?.stop(), anlaufen: () => profileWorker?.start() });
 
   // WL3 (PLAN_LINKEDIN_WATCHLIST.md) — Personen-Watchlist: BYOK-
   // Beobachtung der oeffentlichen LinkedIn-Aktivitaet von
@@ -2959,6 +2971,12 @@ app.whenReady().then(async () => {
   });
   if (featureEnabled("linkedin.watchlist")) watchlistSupervisor.start();
   else console.log("[watchlist] nicht gestartet — Organisationsvorgabe: Personen-Watchlist aus");
+  workerModus.anmelden({
+    name: "Beobachtungsliste",
+    anhalten: () => watchlistSupervisor?.stop(),
+    anlaufen: () => watchlistSupervisor?.start(),
+    darfLaufen: () => featureEnabled("linkedin.watchlist"),
+  });
 
   // §8 Personen-Radar: Engagement auf beobachteten Posts → Firmen in
   // den normalen Radar-Trichter (Direkt-Kandidaten). Teilt sich den
@@ -2993,6 +3011,12 @@ app.whenReady().then(async () => {
   });
   if (featureEnabled("linkedin.radar")) personenRadarSupervisor.start();
   else console.log("[personen-radar] nicht gestartet — Organisationsvorgabe: Personen-Radar aus");
+  workerModus.anmelden({
+    name: "Personen-Radar",
+    anhalten: () => personenRadarSupervisor?.stop(),
+    anlaufen: () => personenRadarSupervisor?.start(),
+    darfLaufen: () => featureEnabled("linkedin.radar"),
+  });
 
   // O3 — Vorgaben aendern sich zur Laufzeit (Admin schaltet um, Tenant-
   // Wechsel): Hintergrunddienste je Funktion stoppen bzw. starten.
@@ -3069,6 +3093,7 @@ app.whenReady().then(async () => {
     },
   });
   radarSupervisor.start();
+  workerModus.anmelden({ name: "Radar", anhalten: () => radarSupervisor?.stop(), anlaufen: () => radarSupervisor?.start() });
   {
     const rc = radarSupervisor.getConfig();
     radarActivity.letzterLauf(rc.lastRunAt, rc.lastOutcome);
@@ -3132,6 +3157,7 @@ app.whenReady().then(async () => {
     getActorId: () => auth.getStatus().actorId ?? null,
   });
   workflowService.start();
+  workerModus.anmelden({ name: "Ablaeufe", anhalten: () => workflowService?.stop(), anlaufen: () => workflowService?.start() });
   // v0.1.593 — Vorgangs-Watcher: Meldung nach Abschluss eines Imports (mit
   // Fehleruebersicht) und Quelle fuer das Workflow-Ereignis import.finished.
   const transactionWatcher = new TransactionWatcher({
@@ -3152,6 +3178,7 @@ app.whenReady().then(async () => {
       audit({ actorType: "system", actorId: null, category: "import", action: "transaction.finished", severity, subjectType: null, subjectId: (metadata.transactionId as string) ?? null, summary, metadata }),
   });
   transactionWatcher.start();
+  workerModus.anmelden({ name: "Vorgaenge", anhalten: () => transactionWatcher.stop(), anlaufen: () => transactionWatcher.start() });
   // M4 (docs/PLAN_EMAIL_MUSTER.md) — lokale E-Mail-Ableitung im Hintergrund.
   emailMuster = new EmailMusterSupervisor(
     {
@@ -3175,6 +3202,7 @@ app.whenReady().then(async () => {
     app.getPath("userData"),
   );
   emailMuster.start();
+  workerModus.anmelden({ name: "E-Mail-Muster", anhalten: () => emailMuster?.stop(), anlaufen: () => emailMuster?.start() });
   app.on("before-quit", () => quitStep("emailMuster.stop", () => emailMuster?.stop()));
   // W4 — Workflow-Trigger alert.created.
   alerts.onCreated = (a) => {
@@ -3198,6 +3226,7 @@ app.whenReady().then(async () => {
       audit({ actorType: "system", actorId: null, category: "watch", action: "status.check", severity: entry.severity, subjectType: "company", subjectId: null, summary: entry.summary, metadata: entry.metadata }),
   });
   statusWatcher.start();
+  workerModus.anmelden({ name: "Statuswaechter", anhalten: () => statusWatcher.stop(), anlaufen: () => statusWatcher.start() });
   app.on("before-quit", () => quitStep("statusWatcher.stop", () => statusWatcher.stop()));
   ipcMain.handle("status:pruefen", () => statusWatcher.pruefeJetzt());
   app.on("before-quit", () => quitStep("radarSupervisor.stop", () => radarSupervisor?.stop()));
@@ -5352,12 +5381,23 @@ app.whenReady().then(async () => {
   auth.on("status", (st: AuthStatus) => mithelfen?.setSignedIn(Boolean(st.signedIn)));
   mithelfen.setSignedIn(Boolean(auth.getStatus().signedIn));
   ipcMain.handle("registerDelta:status", () => mithelfen!.status());
-  ipcMain.handle("registerDelta:setSettings", (_e, patch: { aktiv?: boolean; nurNetzbetrieb?: boolean }) =>
-    mithelfen!.setSettings({
+  ipcMain.handle("registerDelta:setSettings", async (_e, patch: { aktiv?: boolean; nurNetzbetrieb?: boolean; nurRegister?: boolean }) => {
+    const status = mithelfen!.setSettings({
       ...(patch?.aktiv !== undefined ? { aktiv: patch.aktiv === true } : {}),
       ...(patch?.nurNetzbetrieb !== undefined ? { nurNetzbetrieb: patch.nurNetzbetrieb === true } : {}),
-    }),
-  );
+      ...(patch?.nurRegister !== undefined ? { nurRegister: patch.nurRegister === true } : {}),
+    });
+    // Worker-Modus haelt die uebrigen Hintergrunddienste an oder laesst sie
+    // wieder anlaufen; erst danach den neuen Stand melden. Wird Mithelfen
+    // abgeschaltet, faellt der Worker-Modus mit weg (siehe setSettings).
+    if (patch?.nurRegister !== undefined || patch?.aktiv === false) {
+      await workerModus.setzen(status.nurRegister === true);
+      const neu = mithelfen!.status();
+      for (const win of BrowserWindow.getAllWindows()) win.webContents.send("register-delta:status:changed", neu);
+      return neu;
+    }
+    return status;
+  });
   ipcMain.handle("registerDelta:queue", () => registerQueueStatus());
   ipcMain.handle("registerDelta:verlauf", () => mithelfen!.verlauf());
   mithelfen.on("verlauf", (v) => {
@@ -7189,6 +7229,36 @@ app.whenReady().then(async () => {
   // not fatal — the rest of the app still runs; the Settings panel
   // surfaces the affordances to recover.
   void whisper.start();
+
+  // Worker-Modus (docs/PLAN_WORKER_MODUS.md): AVA arbeitet dann nur noch
+  // Handelsregister-Jobs ab. Alles, was von selbst wiederkehrt, meldet sich
+  // hier an; der Modus haelt es an und laesst es beim Ausschalten wieder an.
+  // Nicht angemeldet und deshalb weiter aktiv: Anmeldung (Mithelfen braucht
+  // den Token), Mithelfen selbst, Aktualisierung der App, Wachhund und die
+  // Aufraeumlaeufe, die nur einmal am Tag laufen.
+  workerModus.protokoll((zeile) => console.log(`[worker-modus] ${zeile}`));
+  workerModus.anmelden({ name: "Herzschlag", anhalten: () => heartbeat.stop(), anlaufen: () => heartbeat.start() });
+  workerModus.anmelden({ name: "Wiederholungen", anhalten: () => retryTicker.stop(), anlaufen: () => retryTicker.start() });
+  workerModus.anmelden({
+    name: "Auffrischung",
+    anhalten: () => freshness.stop(),
+    anlaufen: () => freshness.start(),
+    darfLaufen: () => freshnessPrefs.get().enabled,
+  });
+  workerModus.anmelden({ name: "Nachlauf haengender Schritte", anhalten: () => stopPeriodicResumeSweep(), anlaufen: () => startPeriodicResumeSweep() });
+  workerModus.anmelden({
+    name: "Producer",
+    anhalten: () => {
+      for (const p of producers) void p.stop();
+    },
+    // Wiederanlauf ueber denselben Weg wie der Verarbeitungs-Schalter: die
+    // Sign-in-Logik beachtet Anmeldung, Pause und Erreichbarkeit.
+    anlaufen: () => broadcastAuthStatus(auth.getStatus()),
+    darfLaufen: () => !processingControl.isPaused(),
+  });
+  // Stand aus den Einstellungen herstellen: bei aktivem Worker-Modus faellt
+  // gleich nach dem Start alles wieder in Ruhe, was oben angelaufen ist.
+  void workerModus.setzen(mithelfen?.status().nurRegister === true).catch(() => undefined);
 
   // Auto-updater. No-op in dev. In packaged builds: checks GitHub
   // Releases on launch + every 4h while the app is open.

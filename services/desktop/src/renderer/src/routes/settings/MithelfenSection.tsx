@@ -43,7 +43,7 @@ export function MithelfenSection() {
     };
   }, []);
   if (!s) return null;
-  const setze = (patch: { aktiv?: boolean; nurNetzbetrieb?: boolean }) => void window.api.registerDelta.setSettings(patch).then(setS);
+  const setze = (patch: { aktiv?: boolean; nurNetzbetrieb?: boolean; nurRegister?: boolean }) => void window.api.registerDelta.setSettings(patch).then(setS);
   const jobs = (queue?.jobs as Record<string, Record<string, number>> | undefined) ?? undefined;
   const offen = jobs ? Object.values(jobs).reduce((n, j) => n + (j.offen ?? 0), 0) : null;
   return (
@@ -68,6 +68,19 @@ export function MithelfenSection() {
           <span>Nur im Netzbetrieb, im Akkubetrieb pausieren</span>
         </label>
       </div>
+      <div className="alerts-prefs__row">
+        <label className="alerts-prefs__check">
+          <input type="checkbox" checked={s.nurRegister} disabled={!s.orgErlaubt || !s.aktiv} onChange={(e) => setze({ nurRegister: e.target.checked })} />
+          <span>Worker-Modus: nur Handelsregister verarbeiten, alles andere ruhen lassen</span>
+        </label>
+      </div>
+      {s.nurRegister && (
+        <p className="muted small">
+          Im Worker-Modus arbeitet AVA ausschließlich Handelsregister-Jobs ab: Registerblätter, strukturierter Registerinhalt und später
+          Gesellschafterlisten. Herzschlag, Vorgänge, Producer, Abläufe, Mail und Radar ruhen so lange. Du kannst die App normal bedienen, und
+          gespeicherte Daten bleiben sichtbar. Schalte den Modus aus, damit AVA wieder alles verarbeitet.
+        </p>
+      )}
       {s.aktiv && (
         <div className="alerts-prefs__row">
           <span className={`status-dot ${s.laeuft && !s.pausenGrund ? "ok" : "muted"}`} />

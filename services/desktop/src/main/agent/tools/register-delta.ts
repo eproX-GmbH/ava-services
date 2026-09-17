@@ -5,6 +5,7 @@ import * as yup from "yup";
 import { defineTool } from "../define-tool";
 import type { Tool } from "../types";
 import type { MithelfenSupervisor } from "../../register-delta/supervisor";
+import { workerModus } from "../../worker-modus";
 
 const GRUND_TEXT: Record<string, string> = {
   aus: "ausgeschaltet",
@@ -37,29 +38,38 @@ export function buildRegisterDeltaTools(deps: { get: () => MithelfenSupervisor |
   });
   const config = defineTool({
     name: "register_delta_config",
-    summary: "Stammdaten mitpflegen ein-/ausschalten oder nur im Netzbetrieb arbeiten lassen (mit Bestaetigung).",
-    category: "stammdaten mithelfen einstellung register worker netzbetrieb akku",
+    summary: "Stammdaten mitpflegen ein-/ausschalten, Akku schonen oder den Worker-Modus setzen (mit Bestaetigung).",
+    category: "stammdaten mithelfen einstellung register worker netzbetrieb akku worker-modus nur handelsregister",
     description:
       "Liest oder aendert die Einstellung: aktiv = dieser Rechner arbeitet Register-Jobs der Organisation ab (Handelsregister-Abfragen mit der " +
-      "eigenen IP, hoechstens 60 je Stunde, Chrome im Hintergrund), nurNetzbetrieb = auf Akku pausieren. Ohne Argumente: aktuelle Werte. " +
-      "Schaltet die Organisation die Funktion ab, gilt das vorrangig.",
-    parameters: { type: "object", properties: { aktiv: { type: "boolean" }, nurNetzbetrieb: { type: "boolean" } } },
-    schema: yup.object({ aktiv: yup.boolean().optional(), nurNetzbetrieb: yup.boolean().optional() }).noUnknown(true),
+      "eigenen IP, hoechstens 60 je Stunde, Chrome im Hintergrund), nurNetzbetrieb = auf Akku pausieren, nurRegister = Worker-Modus: AVA " +
+      "verarbeitet dann ausschliesslich Handelsregister-Jobs, alles andere (Herzschlag, Vorgaenge, Producer, Ablaeufe, Mail, Radar) ruht. " +
+      "Ohne Argumente: aktuelle Werte. Schaltet die Organisation die Funktion ab, gilt das vorrangig.",
+    parameters: { type: "object", properties: { aktiv: { type: "boolean" }, nurNetzbetrieb: { type: "boolean" }, nurRegister: { type: "boolean" } } },
+    schema: yup.object({ aktiv: yup.boolean().optional(), nurNetzbetrieb: yup.boolean().optional(), nurRegister: yup.boolean().optional() }).noUnknown(true),
     preview: (r: Record<string, any>) => (r.error ? r.error : r.geaendert ? "Mithelfen-Einstellung geaendert" : "Mithelfen-Einstellung gelesen"),
     run: async (args, c) => {
       const sup = deps.get();
       if (!sup) return { error: "Mithelfen noch nicht initialisiert." };
-      if (args.aktiv === undefined && args.nurNetzbetrieb === undefined) return { geaendert: false, ...sup.status() };
+      if (args.aktiv === undefined && args.nurNetzbetrieb === undefined && args.nurRegister === undefined) return { geaendert: false, ...sup.status() };
       const teile: string[] = [];
       if (args.aktiv !== undefined) teile.push(`Mithelfen → ${args.aktiv ? "an" : "aus"}`);
       if (args.nurNetzbetrieb !== undefined) teile.push(`nur Netzbetrieb → ${args.nurNetzbetrieb ? "an" : "aus"}`);
+      if (args.nurRegister !== undefined) teile.push(`Worker-Modus (nur Handelsregister, alles andere ruht) → ${args.nurRegister ? "an" : "aus"}`);
       const value = await c.ui.confirmAction(
         { kind: "additive", prompt: `Stammdaten mitpflegen ändern: ${teile.join(", ")}?`, confirmValue: "ja", options: [{ value: "ja", label: "Ändern" }, { value: "nein", label: "Abbrechen" }] },
         c.signal,
       );
       if (value !== "ja") return { geaendert: false, abgebrochen: true };
-      const next = sup.setSettings({ ...(args.aktiv !== undefined ? { aktiv: args.aktiv } : {}), ...(args.nurNetzbetrieb !== undefined ? { nurNetzbetrieb: args.nurNetzbetrieb } : {}) });
-      return { geaendert: true, ...next };
+      const next = sup.setSettings({
+        ...(args.aktiv !== undefined ? { aktiv: args.aktiv } : {}),
+        ...(args.nurNetzbetrieb !== undefined ? { nurNetzbetrieb: args.nurNetzbetrieb } : {}),
+        ...(args.nurRegister !== undefined ? { nurRegister: args.nurRegister } : {}),
+      });
+      // Der Worker-Modus haelt die uebrigen Hintergrunddienste an oder laesst
+      // sie wieder anlaufen; ohne diesen Schritt bliebe nur der Schalter gesetzt.
+      if (args.nurRegister !== undefined) await workerModus.setzen(args.nurRegister === true);
+      return { geaendert: true, ...sup.status(), ...(args.nurRegister !== undefined ? { ruhendeDienste: args.nurRegister ? workerModus.angemeldet() : [] } : {}) };
     },
   });
   return [status, config];

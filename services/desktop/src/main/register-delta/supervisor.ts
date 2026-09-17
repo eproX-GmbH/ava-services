@@ -49,7 +49,7 @@ export class MithelfenSettingsStore {
     } catch {
       /* Erststart */
     }
-    this.cache = { aktiv: raw.aktiv === true, nurNetzbetrieb: raw.nurNetzbetrieb !== false };
+    this.cache = { aktiv: raw.aktiv === true, nurNetzbetrieb: raw.nurNetzbetrieb !== false, nurRegister: raw.nurRegister === true };
     return this.cache;
   }
   set(patch: Partial<MithelfenSettings>): MithelfenSettings {
@@ -182,6 +182,7 @@ export class MithelfenSupervisor extends EventEmitter {
     return {
       aktiv: s.aktiv,
       nurNetzbetrieb: s.nurNetzbetrieb,
+      nurRegister: s.nurRegister,
       orgErlaubt: featureEnabled("stammdaten.mithelfen"),
       laeuft: this.child !== null,
       pausenGrund: this.pausenGrund(),
@@ -200,7 +201,11 @@ export class MithelfenSupervisor extends EventEmitter {
   }
 
   setSettings(patch: Partial<MithelfenSettings>): MithelfenStatus {
-    this.o.settings.set(patch);
+    // Ohne Mithelfen bliebe im Worker-Modus gar keine Verarbeitung uebrig:
+    // alles andere ruht, und Register-Jobs laufen auch nicht. Deshalb faellt
+    // der Worker-Modus mit dem Mithelfen zusammen weg.
+    const bereinigt: Partial<MithelfenSettings> = patch.aktiv === false ? { ...patch, nurRegister: false } : patch;
+    this.o.settings.set(bereinigt);
     void this.abgleichen("einstellung");
     return this.status();
   }

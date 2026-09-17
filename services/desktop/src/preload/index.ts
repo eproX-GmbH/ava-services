@@ -1694,7 +1694,7 @@ const api = {
   // Register-Delta S6 — Mithelfen (Stammdaten mitpflegen).
   registerDelta: {
     status: (): Promise<import("../shared/register-delta-types").MithelfenStatus> => ipcRenderer.invoke("registerDelta:status"),
-    setSettings: (patch: { aktiv?: boolean; nurNetzbetrieb?: boolean }): Promise<import("../shared/register-delta-types").MithelfenStatus> =>
+    setSettings: (patch: { aktiv?: boolean; nurNetzbetrieb?: boolean; nurRegister?: boolean }): Promise<import("../shared/register-delta-types").MithelfenStatus> =>
       ipcRenderer.invoke("registerDelta:setSettings", patch),
     queue: (): Promise<Record<string, unknown> | null> => ipcRenderer.invoke("registerDelta:queue"),
     verlauf: (): Promise<import("../shared/register-delta-types").MithelfenVerlauf> => ipcRenderer.invoke("registerDelta:verlauf"),

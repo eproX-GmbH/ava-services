@@ -8315,3 +8315,17 @@ input, textarea, select, button, a, summary, details,
 .beenden-overlay__hinweis {
   margin: 0;
 }
+
+/* Worker-Modus: dauerhaftes Hinweisband unter dem Kopf (nicht wegklickbar). */
+.worker-modus-banner {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 8px 16px;
+  background: color-mix(in srgb, var(--ct-accent, #00c0a7) 12%, transparent);
+  border-bottom: 1px solid color-mix(in srgb, var(--ct-accent, #00c0a7) 35%, transparent);
+  font-size: 13px;
+}
+.worker-modus-banner__icon { flex: none; }
+.worker-modus-banner__msg { margin: 0; flex: 1; }
+.worker-modus-banner__cta { flex: none; font-size: 12px; }
