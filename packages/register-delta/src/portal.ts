@@ -235,6 +235,7 @@ export class RegisterPortal {
     const dir = this.downloadDir;
     if (!dir) throw new Error("SI-Downloads nicht freigegeben");
     const vorher = new Set(fs.readdirSync(dir));
+    const fensterVorher = await d.getAllWindowHandles();
     const geklickt = (await d.executeScript(
       `const tr=[...document.querySelectorAll('tr[data-ri]')][arguments[0]]; if(!tr) return 'zeile';
        const a=[...tr.querySelectorAll('a')].find(a=>(a.textContent||'').trim()==='SI'); if(!a) return 'link';
@@ -244,24 +245,33 @@ export class RegisterPortal {
     if (geklickt === "zeile") throw new Error(`SI: Trefferzeile ${zeile} nicht mehr auf der Seite`);
     if (geklickt === "link") return null;
     this.anfragen++;
+    // Zwei Wege wie im structured-content-Producer: das Portal liefert den SI je
+    // nach Antwort-Kopf entweder als Datei (Download) oder zeigt das XML in einem
+    // neuen Fenster an. Beide Wege werden abwechselnd geprueft, der erste gewinnt.
     const frist = Date.now() + 60_000;
     let datei: string | null = null;
-    while (Date.now() < frist && !datei) {
+    let ausFenster: string | null = null;
+    while (Date.now() < frist && !datei && !ausFenster) {
       await schlafen(300);
       const jetzt = fs.readdirSync(dir).filter((n) => !vorher.has(n));
       if (jetzt.some((n) => n.endsWith(".crdownload") || n.startsWith(".com.google"))) continue;
       const xml = jetzt.filter((n) => n.toLowerCase().endsWith(".xml"));
-      if (xml.length > 0) datei = xml[0];
-      else if (jetzt.length > 0) {
+      if (xml.length > 0) {
+        datei = xml[0];
+        break;
+      }
+      if (jetzt.length > 0) {
         // Etwas anderes als XML: nicht anfassen, sofort loeschen.
         for (const n of jetzt) fs.rmSync(join(dir, n), { force: true });
         throw new Error(`SI: unerwarteter Download (${jetzt.join(", ")})`);
       }
+      ausFenster = await this.xmlAusNeuemFenster(fensterVorher);
     }
+    if (ausFenster) return ausFenster;
     if (!datei) {
       const text = ((await d.executeScript("return document.body ? document.body.innerText : ''")) as string).replace(/\s+/g, " ");
       if (SPERR_RE.test(text)) throw new PortalStoerung("SI: Portal gesperrt");
-      throw new Error("SI: keine XML-Datei innerhalb von 60 s");
+      throw new Error("SI: weder Datei noch XML-Fenster innerhalb von 60 s");
     }
     const pfad = join(dir, datei);
     try {
@@ -272,6 +282,42 @@ export class RegisterPortal {
       return text;
     } finally {
       for (const n of fs.readdirSync(dir).filter((n) => !vorher.has(n))) fs.rmSync(join(dir, n), { force: true });
+    }
+  }
+
+  /**
+   * Zeigt das Portal das SI-XML in einem neuen Fenster an (statt es als Datei zu
+   * liefern), den Text dort lesen. Das Fenster wird immer geschlossen und der
+   * Treiber kehrt zum Suchergebnis zurueck, sonst laufen die naechsten Firmen ins Leere.
+   */
+  private async xmlAusNeuemFenster(fensterVorher: string[]): Promise<string | null> {
+    const d = this.d();
+    let neu: string | undefined;
+    try {
+      const jetzt = await d.getAllWindowHandles();
+      neu = jetzt.find((h) => !fensterVorher.includes(h));
+    } catch {
+      return null;
+    }
+    if (!neu) return null;
+    const zurueck = fensterVorher[fensterVorher.length - 1];
+    try {
+      await d.switchTo().window(neu);
+      const text = (await d.executeScript("return document.body ? document.body.innerText : ''")) as string;
+      if (!text || !istSiXml(text)) return null;
+      if (Buffer.byteLength(text, "utf8") > SI_MAX_BYTES) throw new Error("SI: Fensterinhalt zu gross");
+      return text;
+    } finally {
+      try {
+        await d.close();
+      } catch {
+        /* Fenster schon zu */
+      }
+      try {
+        if (zurueck) await d.switchTo().window(zurueck);
+      } catch {
+        /* Suchergebnis weg; die naechste Suche oeffnet die Seite neu */
+      }
     }
   }
 
