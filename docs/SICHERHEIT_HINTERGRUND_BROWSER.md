@@ -50,6 +50,15 @@ Stand 2026-09-12 (Desktop v0.1.639). Anlass: Rückmeldung eines Windows-Testers
   gelesen), die Datei wird nach dem Einlesen gelöscht und nie ausgeführt.
   Nur aktiv, wenn das Org-Feature `verflechtungen` eingeschaltet ist
   (`AVA_VERFLECHTUNGEN=1`). Details: `docs/PLAN_VERFLECHTUNGEN.md` §4.
+  **Register-Delta (seit 2026-09-17, Freigabe des Betreibers):** Der
+  Delta-Worker (`packages/register-delta`, Fly-Worker und „Mithelfen“ im
+  Desktop) lädt in refresh-Jobs den strukturierten Registerinhalt (SI-XML)
+  mit. Gleiche Regeln: nur handelsregister.de, nur nach Klick auf „SI“ in
+  einer Trefferzeile, eigenes leeres Temp-Verzeichnis je Browser (wird beim
+  Schließen entfernt), nur `.xml` bis 5 MB, Inhalt muss als XJustiz-XML
+  erkennbar sein, alles andere wird sofort gelöscht, die Datei nach dem
+  Lesen ebenfalls. Abschaltbar mit `REGISTER_DELTA_SI=0`; dann gilt wieder
+  `download_restrictions=3`. Details: `docs/PLAN_STAMMDATEN_DELTA.md` §8a.
 - **Register-Delta-Worker** (seit v0.1.652, Paket `packages/register-delta`,
   Desktop-Einstellung „Stammdaten mitpflegen“ als Opt-in und Betreiber-App
   `ava-register-worker` auf Fly): eigener Selenium-Chrome, headless,

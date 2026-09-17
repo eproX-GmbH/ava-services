@@ -3,12 +3,22 @@
 // Selektoren aus dem Notebook (JSF-Formular "form:*"). Sicherheitsregeln
 // (docs/SICHERHEIT_HINTERGRUND_BROWSER.md): headless, Downloads hart
 // gesperrt (download_restrictions 3), keine anderen Domains.
+//
+// Ausnahme SI (2026-09-17, docs/PLAN_STAMMDATEN_DELTA.md S8): Mit `siDownloads`
+// darf der Browser den strukturierten Registerinhalt (XJustiz-XML) laden, so wie
+// der structured-content-Producer: nur nach Klick auf "SI" in einer Trefferzeile,
+// nur in ein eigenes Temp-Verzeichnis, nur XML bis SI_MAX_BYTES, Datei nach dem
+// Lesen geloescht, Verzeichnis beim Schliessen entfernt. Andere Domains werden
+// nie angesteuert.
 
 import fs from "node:fs";
+import os from "node:os";
+import { join } from "node:path";
 import { Builder, By, until, type WebDriver } from "selenium-webdriver";
 import chrome from "selenium-webdriver/chrome";
 import { portalGericht } from "./ids";
 import { parseErgebnis, SPERR_RE, trefferzahl, type RohZeile, type Treffer } from "./parser";
+import { istSiXml, SI_MAX_BYTES } from "./si-parser";
 
 export const PORTAL_URL = "https://www.handelsregister.de/rp_web/welcome.xhtml";
 
@@ -17,6 +27,8 @@ export type PortalOptionen = {
   headless?: boolean;
   /** Hook fuer Protokollzeilen (Desktop: Producer-Log). */
   log?: (zeile: string) => void;
+  /** SI-Downloads (strukturierter Registerinhalt) erlauben; siehe Kopfkommentar. */
+  siDownloads?: boolean;
 };
 
 export type Suchergebnis = {
@@ -72,6 +84,7 @@ const SUCHE_SKRIPT = `
 
 export class RegisterPortal {
   private driver: WebDriver | null = null;
+  private downloadDir: string | null = null;
   anfragen = 0;
   private readonly log: (z: string) => void;
 
@@ -88,12 +101,26 @@ export class RegisterPortal {
     options.addArguments(`--ava-owner=${process.pid}`, "--lang=de-DE", "--window-size=1400,1000", "--disable-gpu", "--disable-dev-shm-usage", "--no-sandbox");
     // Sprache erzwingen: auf Fly (kein Systemlocale) lieferte das Portal Englisch
     // ("Register announcements", Cookie-Knopf "Okay"), die Parser erwarten Deutsch.
-    options.setUserPreferences({
-      download_restrictions: 3,
-      "download.prompt_for_download": true,
-      "safebrowsing.enabled": true,
-      "intl.accept_languages": "de-DE,de",
-    });
+    if (this.opt.siDownloads) {
+      // Eigenes, leeres Verzeichnis je Browser; wird in schliessen() entfernt.
+      this.downloadDir = fs.mkdtempSync(join(os.tmpdir(), "ava-register-delta-si-"));
+      options.setUserPreferences({
+        "download.default_directory": this.downloadDir,
+        "download.prompt_for_download": false,
+        "download.directory_upgrade": true,
+        // Wie der structured-content-Producer: Safe Browsing haelt die XML-Anhaenge
+        // von handelsregister.de sonst zur "Pruefung" zurueck.
+        "safebrowsing.enabled": false,
+        "intl.accept_languages": "de-DE,de",
+      });
+    } else {
+      options.setUserPreferences({
+        download_restrictions: 3,
+        "download.prompt_for_download": true,
+        "safebrowsing.enabled": true,
+        "intl.accept_languages": "de-DE,de",
+      });
+    }
     this.driver = await new Builder().forBrowser("chrome").setChromeOptions(options).build();
     await this.driver.manage().setTimeouts({ pageLoad: 45_000 });
     await this.startseite();
@@ -196,6 +223,58 @@ export class RegisterPortal {
     return { gesperrt: false, treffer: parseErgebnis(zeilen), trefferRoh: trefferzahl(text), dauerMs: Date.now() - t0 };
   }
 
+  /**
+   * Strukturierter Registerinhalt (SI) der Trefferzeile `zeile` (Index wie in
+   * Suchergebnis.treffer) der zuletzt geladenen Ergebnisseite. Klickt "SI",
+   * wartet auf die XML-Datei im eigenen Download-Verzeichnis, liest und loescht
+   * sie. null = die Zeile hat keinen SI-Link (z. B. Altgericht, geloeschtes
+   * Blatt). Wirft bei Download-/Portalfehlern; der Aufrufer isoliert das je Firma.
+   */
+  async strukturierterInhalt(zeile: number): Promise<string | null> {
+    const d = this.d();
+    const dir = this.downloadDir;
+    if (!dir) throw new Error("SI-Downloads nicht freigegeben");
+    const vorher = new Set(fs.readdirSync(dir));
+    const geklickt = (await d.executeScript(
+      `const tr=[...document.querySelectorAll('tr[data-ri]')][arguments[0]]; if(!tr) return 'zeile';
+       const a=[...tr.querySelectorAll('a')].find(a=>(a.textContent||'').trim()==='SI'); if(!a) return 'link';
+       a.click(); return 'ok';`,
+      zeile,
+    )) as "ok" | "zeile" | "link";
+    if (geklickt === "zeile") throw new Error(`SI: Trefferzeile ${zeile} nicht mehr auf der Seite`);
+    if (geklickt === "link") return null;
+    this.anfragen++;
+    const frist = Date.now() + 60_000;
+    let datei: string | null = null;
+    while (Date.now() < frist && !datei) {
+      await schlafen(300);
+      const jetzt = fs.readdirSync(dir).filter((n) => !vorher.has(n));
+      if (jetzt.some((n) => n.endsWith(".crdownload") || n.startsWith(".com.google"))) continue;
+      const xml = jetzt.filter((n) => n.toLowerCase().endsWith(".xml"));
+      if (xml.length > 0) datei = xml[0];
+      else if (jetzt.length > 0) {
+        // Etwas anderes als XML: nicht anfassen, sofort loeschen.
+        for (const n of jetzt) fs.rmSync(join(dir, n), { force: true });
+        throw new Error(`SI: unerwarteter Download (${jetzt.join(", ")})`);
+      }
+    }
+    if (!datei) {
+      const text = ((await d.executeScript("return document.body ? document.body.innerText : ''")) as string).replace(/\s+/g, " ");
+      if (SPERR_RE.test(text)) throw new PortalStoerung("SI: Portal gesperrt");
+      throw new Error("SI: keine XML-Datei innerhalb von 60 s");
+    }
+    const pfad = join(dir, datei);
+    try {
+      const groesse = fs.statSync(pfad).size;
+      if (groesse > SI_MAX_BYTES) throw new Error(`SI: Datei zu gross (${groesse} Bytes)`);
+      const text = fs.readFileSync(pfad, "utf8");
+      if (!istSiXml(text)) throw new Error("SI: Datei ist kein XJustiz-XML");
+      return text;
+    } finally {
+      for (const n of fs.readdirSync(dir).filter((n) => !vorher.has(n))) fs.rmSync(join(dir, n), { force: true });
+    }
+  }
+
   /** Seitentext der Registerbekanntmachungen (alle Tage des Fensters, ein Aufruf). */
   async bekanntmachungenText(): Promise<{ gesperrt: boolean; text: string }> {
     const d = this.d();
@@ -225,6 +304,10 @@ export class RegisterPortal {
       } catch {
         /* egal */
       }
+    }
+    if (this.downloadDir) {
+      fs.rmSync(this.downloadDir, { recursive: true, force: true });
+      this.downloadDir = null;
     }
   }
 }

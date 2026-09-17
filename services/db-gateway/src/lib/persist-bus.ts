@@ -389,7 +389,7 @@ async function readFreshness(
 /** Upsert the ContentFreshness row after a successful write.
  *  v0.1.65: also stamps `llmModel` so CompanyDetail + the agent
  *  context can surface "produced by gpt-4o on …". */
-async function recordFreshness(
+export async function recordFreshness(
   companyId: string,
   stage: ProducerName,
   llmTier: ModelTier | null,
@@ -739,7 +739,7 @@ const applyCompanyProfile: ApplyFn = async (pool, event, log) => {
  *  local structured-content compute-worker. Mirrors the legacy
  *  `structuredContentsRepository.upsert` shape plus a normalized
  *  managingDirectors child list. */
-interface StructuredContentResult {
+export interface StructuredContentResult {
   companyId: string;
   name: string;
   legalForm: string;
@@ -769,17 +769,20 @@ interface StructuredContentResult {
  * If the parent row is older than the existing one (someone else
  * persisted a fresher copy first) we skip the children replace too.
  */
-const applyStructuredContent: ApplyFn = async (pool, event, log) => {
-  const data = event.data as
-    | PersistEvent<StructuredContentResult>
-    | undefined;
-  if (!data) throw new Error("empty payload");
-  const { result, computedAt, tenantId, runId } = data;
-  if (!result?.companyId) throw new Error("missing result.companyId");
-  if (!computedAt) throw new Error("missing computedAt");
-
-  const updatedAt = new Date(computedAt);
-
+/**
+ * Schreibt StructuredContent + ManagingDirector (last-write-wins ueber updatedAt,
+ * Geschaeftsfuehrer-Diff → ProfileChangeEvent). Gemeinsamer Kern fuer das
+ * Persist-Ereignis des Producers und den SI-Abruf im Register-Delta
+ * (lib/register-si.ts). Liefert false, wenn der Bestand neuer war.
+ */
+export async function schreibeStructuredContent(
+  pool: pg.Pool,
+  result: StructuredContentResult,
+  updatedAt: Date,
+  log: typeof logger,
+  ctx: { runId: string | null; tenantId: string | null },
+): Promise<boolean> {
+  const { runId, tenantId } = ctx;
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
@@ -831,7 +834,7 @@ const applyStructuredContent: ApplyFn = async (pool, event, log) => {
         { runId, tenantId, companyId: result.companyId },
         "structured-content persist skipped (existing row newer)",
       );
-      return;
+      return false;
     }
 
     // Replace-all children: simpler than computing the diff, and
@@ -905,39 +908,67 @@ const applyStructuredContent: ApplyFn = async (pool, event, log) => {
     if (directorDiff) {
       await recordManagingDirectorChange(log, result.companyId, directorDiff);
     }
+    return true;
   } catch (err) {
     await client.query("ROLLBACK").catch(() => {});
     throw err;
   } finally {
     client.release();
   }
+}
 
-  // Firmen-Verflechtungen V5 (docs/PLAN_VERFLECHTUNGEN.md §3, §7 V5): Geschaeftsfuehrer
-  // als Personen und Rollen in master-data spiegeln, damit sie im Netz erscheinen.
-  // Nur bei aktivem Org-Feature; Fehler hier lassen den Persist unberuehrt.
+/**
+ * Firmen-Verflechtungen V5 (docs/PLAN_VERFLECHTUNGEN.md §3, §7 V5): Geschaeftsfuehrer
+ * als Personen und Rollen sowie die normalisierte Adresse in master-data spiegeln,
+ * damit sie im Netz erscheinen. Wirft bei Fehlern; Aufrufer entscheiden.
+ */
+export async function spiegleStructuredContentNachMasterData(
+  result: StructuredContentResult,
+  gesehenAt: string,
+  quelle: string,
+): Promise<void> {
+  const personen = (result.managingDirectors ?? [])
+    .filter((m) => m.lastName?.trim())
+    .map((m) => ({
+      vorname: m.firstName ?? "",
+      nachname: m.lastName,
+      geburtsdatum: typeof m.birthDay === "string" && /^\d{4}-\d{2}-\d{2}/.test(m.birthDay) ? m.birthDay.slice(0, 10) : null,
+      wohnort: m.city ?? null,
+    }));
+  await masterData("POST", "/internal/companies/roles", { companyId: result.companyId, rolle: "GESCHAEFTSFUEHRER", personen, quelle, gesehenAt });
+  // Adresse normalisiert ablegen (Kante ADRESSE im Netz): Original bleibt als Anzeige.
+  if (result.street || result.zipCode) {
+    await masterData("POST", "/internal/companies/address", {
+      companyId: result.companyId,
+      strasse: result.street ?? null,
+      hausnummer: result.houseNumber ?? null,
+      plz: result.zipCode ?? null,
+      ort: result.city ?? null,
+      quelle,
+      gesehenAt,
+    });
+  }
+}
+
+const applyStructuredContent: ApplyFn = async (pool, event, log) => {
+  const data = event.data as
+    | PersistEvent<StructuredContentResult>
+    | undefined;
+  if (!data) throw new Error("empty payload");
+  const { result, computedAt, tenantId, runId } = data;
+  if (!result?.companyId) throw new Error("missing result.companyId");
+  if (!computedAt) throw new Error("missing computedAt");
+
+  const updatedAt = new Date(computedAt);
+
+  const geschrieben = await schreibeStructuredContent(pool, result, updatedAt, log, { runId: runId ?? null, tenantId: tenantId ?? null });
+  if (!geschrieben) return;
+
+  // Firmen-Verflechtungen V5: Rollen-/Adress-Spiegel nach master-data, nur bei
+  // aktivem Org-Feature; Fehler hier lassen den Persist unberuehrt.
   try {
     if (tenantId && (await featureEnabledForEventTenant(getGatewayPool(), tenantId, "verflechtungen"))) {
-      const personen = (result.managingDirectors ?? [])
-        .filter((m) => m.lastName?.trim())
-        .map((m) => ({
-          vorname: m.firstName ?? "",
-          nachname: m.lastName,
-          geburtsdatum: typeof m.birthDay === "string" && /^\d{4}-\d{2}-\d{2}/.test(m.birthDay) ? m.birthDay.slice(0, 10) : null,
-          wohnort: m.city ?? null,
-        }));
-      await masterData("POST", "/internal/companies/roles", { companyId: result.companyId, rolle: "GESCHAEFTSFUEHRER", personen, quelle: "structured-content", gesehenAt: data.computedAt });
-      // Adresse normalisiert ablegen (Kante ADRESSE im Netz): Original bleibt als Anzeige.
-      if (result.street || result.zipCode) {
-        await masterData("POST", "/internal/companies/address", {
-          companyId: result.companyId,
-          strasse: result.street ?? null,
-          hausnummer: result.houseNumber ?? null,
-          plz: result.zipCode ?? null,
-          ort: result.city ?? null,
-          quelle: "structured-content",
-          gesehenAt: data.computedAt,
-        });
-      }
+      await spiegleStructuredContentNachMasterData(result, data.computedAt, "structured-content");
     }
   } catch (err) {
     log.warn({ companyId: result.companyId, err: (err as Error).message }, "[verflechtungen] Rollen-Spiegel fehlgeschlagen");

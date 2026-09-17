@@ -19,13 +19,14 @@
     "worker": "node dist/cli.js"
   },
   "dependencies": {
+    "fast-xml-parser": "^4",
     "selenium-webdriver": "^4.40.0",
     "yauzl": "^3.4.0"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",
     "@types/selenium-webdriver": "^4.1.21",
-    "typescript": "^5.4.0",
-    "@types/yauzl": "^2.10.3"
+    "@types/yauzl": "^2.10.3",
+    "typescript": "^5.4.0"
   }
 }

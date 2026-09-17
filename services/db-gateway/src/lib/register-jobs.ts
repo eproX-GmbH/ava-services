@@ -121,6 +121,8 @@ export type Treffer = {
   sitz: string;
   status: "ACTIVE" | "CLOSED" | "LOESCHUNG_ANGEKUENDIGT";
   historie: Array<{ name: string; sitz: string; order: number }>;
+  /** refresh (S8): strukturierter Registerinhalt, wenn der Worker ihn laden konnte. */
+  si?: import("./register-si").SiAusDelta;
 };
 
 export type Bekanntmachung = {
@@ -193,6 +195,10 @@ export type Ergebnis = {
   atFront?: { begriff: string; naechsteSeite: number; fertig: boolean; gesamt: number };
   /** uk_refresh: Firmen aus der Firmenseite. */
   trefferUk?: TrefferUk[];
+  /** refresh (S8): Bilanz der SI-Abrufe des Workers. */
+  si?: { geladen: number; ohneLink: number; fehler: number };
+  /** refresh: Firmen, fuer die das Budget des Jobs nicht reichte → neu einreihen. */
+  unbearbeitet?: Array<{ gericht: string; art: string; nummer: number; zusatz?: string; hinweis?: string }>;
   /** uk_bulk: Zusammenfassung; die Zeilen kamen als Teilergebnisse. */
   ukBulk?: { datum: string; teil: number; teile: number; zeilen: number; teilergebnisse: number };
 };
@@ -777,6 +783,25 @@ export async function verarbeiteErgebnis(pool: pg.Pool, jobId: string, ergebnis:
     Object.assign(zusammenfassung, summe);
     // S7: geaendertes Registerblatt → strukturierte Inhalte veraltet.
     if (geaenderteIds.length > 0) zusammenfassung.veraltet = await markiereVeraltet(pool, geaenderteIds, `register-${job.art}`);
+    // S8: mitgelieferter strukturierter Inhalt → structured-content-Datenbank, Frische,
+    // Rollen-Spiegel. Je Firma isoliert; ein Fehler hier laesst den Registertreffer stehen.
+    const mitSi = ergebnis.treffer.filter((t) => t.si);
+    if (mitSi.length > 0) {
+      const { schreibeSiAusDelta } = await import("./register-si");
+      const si = { geschrieben: 0, uebersprungen: 0, fehler: 0 };
+      for (const t of mitSi) {
+        const companyId = companyIdAus(t.gericht, t.art, t.nummer, t.zusatz, t.frueher, t.frueherSuffix === true);
+        try {
+          si[await schreibeSiAusDelta(companyId, t.si!, jobId)]++; // eslint-disable-line @typescript-eslint/no-non-null-assertion
+        } catch (err) {
+          si.fehler++;
+          logger.warn({ companyId, jobId, err: err instanceof Error ? err.message : String(err) }, "[register-jobs] SI aus Delta nicht geschrieben");
+        }
+      }
+      zusammenfassung.si = { ...(ergebnis.si ?? {}), ...si };
+    } else if (ergebnis.si) {
+      zusammenfassung.si = ergebnis.si;
+    }
     // Insolvenz-Delta: Loeschungsankuendigung → Insolvenzpruefung sofort (Loeschung folgt oft auf Insolvenz).
     const loeschung = ergebnis.treffer.filter((t) => t.status === "LOESCHUNG_ANGEKUENDIGT");
     if (loeschung.length > 0) {
@@ -787,6 +812,13 @@ export async function verarbeiteErgebnis(pool: pg.Pool, jobId: string, ergebnis:
         1,
       );
     }
+  }
+
+  if (job.art === "refresh" && ergebnis.unbearbeitet && ergebnis.unbearbeitet.length > 0) {
+    // Budget des Jobs reichte nicht (mit SI kostet jede Firma zwei Abfragen): Rest neu einreihen.
+    const grund = String((job.payload as { grund?: string }).grund ?? "rest");
+    zusammenfassung.unbearbeitet = ergebnis.unbearbeitet.length;
+    zusammenfassung.folgejobs = await refreshAnfordern(pool, ergebnis.unbearbeitet, grund, job.prioritaet);
   }
 
   if (ergebnis.trefferAt && ergebnis.trefferAt.length > 0) {

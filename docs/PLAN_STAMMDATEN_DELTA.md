@@ -281,6 +281,51 @@ Refresh-Jobs offen.
 5. companyId exakt nach der Original-Formel (Abschnitt 4.1); der Anhang
    `_F<ALTGERICHT>` nur bei Kollision mit einem aktuellen Blatt.
 
+## 8a. Strukturierter Inhalt im Delta (S8, 2026-09-17)
+
+Entscheidung des Betreibers: Der refresh-Job lädt für jede Firma gleich den
+strukturierten Registerinhalt (SI-Link der Trefferzeile) mit. Bewusste
+Ausnahme vom Prinzip „Server nur Substrat“, aber ohne KI: der SI ist eine
+XML-Datei, kein Modell nötig.
+
+- **Worker** (`packages/register-delta`): `RegisterPortal` mit
+  `siDownloads` (Umgebung `REGISTER_DELTA_SI`, Standard an, gilt für den
+  Fly-Worker und für „Mithelfen“ im Desktop). `strukturierterInhalt(zeile)`
+  klickt „SI“ in der Trefferzeile des aktuellen Blatts (nicht die
+  Altgerichts-Variante), wartet auf die XML-Datei im eigenen
+  Temp-Verzeichnis, prüft Typ und Größe (höchstens 5 MB), liest und löscht
+  sie. `si-parser.ts` liest die Felder genau wie der Producer
+  (`parseStructuredContentObject`), ohne native Abhängigkeit
+  (fast-xml-parser). Ergebnis hängt als `si` an der Treffermeldung.
+- **Fehlertrennung:** fehlender SI-Link, Zeitüberschreitung, unlesbares
+  XML oder ein Portalfehler betreffen nur diese Firma. Der Registertreffer
+  wird trotzdem gemeldet, der Job läuft weiter; nur eine Portalsperre
+  stellt den Job zurück. Die Bilanz (`si: geladen / ohneLink / fehler`)
+  steht im Job-Ergebnis.
+- **Budget:** jede Firma kostet zwei Abfragen (Suche plus SI); bei 15
+  Abfragen je Job werden also rund sieben Firmen je Job bearbeitet. Firmen,
+  für die das Budget nicht reicht, meldet der Worker als `unbearbeitet`,
+  das Gateway reiht sie mit demselben Grund neu ein (Folgejob). front- und
+  bekanntmachungen-Jobs laden keinen SI (Front-Tempo).
+- **Gateway** (`lib/register-si.ts`): schreibt über denselben Kern wie das
+  Persist des Producers (`schreibeStructuredContent`: StructuredContent +
+  ManagingDirector, Geschäftsführer-Diff → Statuswächter), setzt die
+  Frische der Stufe structured-content (`runId register-delta:<job>`, hebt
+  die Veraltet-Markierung auf) und spiegelt Geschäftsführer und Adresse
+  nach master-data (`quelle register-delta`). Kein Mandant, keine Nutzung,
+  kein EntityProgress.
+- **Folge im Producer:** Ist die Stufe frisch (auch durch das Delta), holt
+  der structured-content-Producer im Frisch-Pfad jetzt trotzdem die
+  Gesellschafterliste, sofern `fetchVerflechtungenFaellig` zustimmt
+  (30-Tage-Sperre, Org-Feature). Vorher lief die Liste im Frisch-Pfad nur
+  mit dem Marker `verflechtungen`.
+- **Gesellschafterliste im Delta:** noch nicht. Die Liste braucht das
+  Modell des Nutzers (Bild-Lesung); der Betreiber-Worker hat keins. Möglicher
+  nächster Schritt: das DK-Dokument im Delta nur holen und als Beleg
+  ablegen, damit der Nutzer-Producer ohne Portalabruf liest. Die
+  Schleife in `jobs.ts` ist so gebaut, dass dieser Schritt als eigener,
+  ebenfalls isolierter Schritt neben dem SI stehen kann.
+
 ## 9. Offen
 
 - Aufholen beobachten: bei einer Fly-Maschine rund 1.400 Abfragen je Tag;

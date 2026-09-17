@@ -25,6 +25,8 @@ export type WorkerOptionen = {
   onJob?: (job: Job, ergebnis: Record<string, unknown>) => void;
   /** Wird bei jeder Zustandsaenderung gerufen (Desktop: Statuskarte). */
   onZustand?: (zustand: WorkerStatus) => void;
+  /** refresh: strukturierten Registerinhalt mitladen (Portal muss mit siDownloads geoeffnet sein). */
+  si?: boolean;
 };
 
 export type WorkerStatus = {
@@ -145,6 +147,7 @@ export class RegisterWorker {
               : undefined,
             takt: this.takt,
             maxAbfragenJeJob: MAX_ABFRAGEN_JE_JOB,
+            si: this.o.si === true,
             log: this.log,
             abbrechen: () => this.stopSignal || Boolean(this.o.pausiert?.()),
           });

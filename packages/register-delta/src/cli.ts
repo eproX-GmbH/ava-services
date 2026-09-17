@@ -16,6 +16,7 @@
 //   REGISTER_DELTA_STATUS=1  Zustand als Zeile "__AVA_RD_STATUS__{json}" auf stdout (Desktop-Statuskarte)
 //   REGISTER_DELTA_AT=0      Oesterreich-Jobs (JustizOnline, Ediktsdatei) nicht bedienen (Default: an)
 //   REGISTER_DELTA_UK=0      UK-Jobs (Companies House, Gazette) nicht bedienen (Default: an)
+//   REGISTER_DELTA_SI=0      refresh ohne strukturierten Registerinhalt (Default: an, S8)
 
 import fs from "node:fs";
 import os from "node:os";
@@ -55,15 +56,17 @@ async function main() {
   const baseUrl = process.env.GATEWAY_URL;
   if (!baseUrl) throw new Error("GATEWAY_URL fehlt");
   const log = (z: string) => console.log(`${new Date().toISOString()} ${z}`);
+  const si = process.env.REGISTER_DELTA_SI !== "0";
   const worker = new RegisterWorker({
     workerId: process.env.WORKER_ID ?? `betreiber-${os.hostname()}`,
     workerArt: process.env.WORKER_ART === "desktop" ? "desktop" : "betreiber",
     gateway: process.env.INTERNAL_HMAC_SECRET ? new GatewayClient({ baseUrl, hmacSecret: process.env.INTERNAL_HMAC_SECRET }) : new GatewayClient({ baseUrl, token: tokenQuelle() }),
     portal: async () => {
-      const p = new RegisterPortal({ chromeBinaryPath: process.env.CHROME_BIN, log });
+      const p = new RegisterPortal({ chromeBinaryPath: process.env.CHROME_BIN, log, siDownloads: si });
       await p.oeffnen();
       return p;
     },
+    si,
     insolvenz: async () => {
       const p = new InsolvenzPortal({ chromeBinaryPath: process.env.CHROME_BIN, log });
       await p.oeffnen();

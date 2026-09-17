@@ -5,6 +5,7 @@
 import type { Ergebnis, InsolvenzMeldung, Job, TrefferMeldung } from "./gateway-client";
 import { bereinigeText, kategorieAusText, type InsolvenzZeile } from "./insolvenz-parser";
 import { parseBekanntmachungen, type Treffer } from "./parser";
+import { parseStrukturierterInhalt } from "./si-parser";
 import type { Suchergebnis } from "./portal";
 import { AT_SUCHE_SEITE, companyIdAt, trefferAt, type AtSuchseite, type AtDetail, type TrefferAt } from "./at-firmenbuch";
 import { meldungenAusVerfahren, type EdikteEintrag, type EdikteVerfahren } from "./at-edikte";
@@ -13,6 +14,8 @@ import { companyIdUk, firmaZuTreffer, meldungenAusFaellen, meldungenAusGazette, 
 export type PortalSchnittstelle = {
   suche(gericht: string, art: string, nummer: number | string): Promise<Suchergebnis>;
   bekanntmachungenText(): Promise<{ gesperrt: boolean; text: string }>;
+  /** SI-XML der Trefferzeile der letzten Suche; null = kein SI-Link (portal.ts). */
+  strukturierterInhalt?(zeile: number): Promise<string | null>;
 };
 
 export type InsolvenzSchnittstelle = {
@@ -61,6 +64,12 @@ export type AusfuehrungsOptionen = {
   log?: (zeile: string) => void;
   /** Abbruchsignal (Desktop: Nutzer pausiert, Akku, Chat aktiv). */
   abbrechen?: () => boolean;
+  /**
+   * refresh: strukturierten Registerinhalt je Firma mitladen (S8). Kostet eine
+   * zweite Portalabfrage je Firma; Fehler oder fehlender SI-Link lassen den
+   * Registertreffer unberuehrt und brechen den Job nicht ab.
+   */
+  si?: boolean;
 };
 
 export const MAX_ABFRAGEN_JE_JOB = 15;
@@ -240,20 +249,56 @@ export async function fuehreJobAus(job: Job, o: AusfuehrungsOptionen): Promise<E
 
   // refresh
   const p = job.payload as unknown as RefreshPayload;
-  for (const f of p.firmen.slice(0, max)) {
-    if (o.abbrechen?.()) break;
+  const siAktiv = o.si === true && typeof o.portal.strukturierterInhalt === "function";
+  const si = { geladen: 0, ohneLink: 0, fehler: 0 };
+  const unbearbeitet: RefreshPayload["firmen"] = [];
+  const kostenJeFirma = siAktiv ? 2 : 1;
+  for (const f of p.firmen) {
+    if (o.abbrechen?.() || basis.abfragen + kostenJeFirma > max) {
+      unbearbeitet.push(f);
+      continue;
+    }
     await o.takt.warten();
     const r = await o.portal.suche(f.gericht, f.art, f.nummer);
     basis.abfragen++;
-    if (r.gesperrt) return { ...basis, gesperrt: true };
+    if (r.gesperrt) return { ...basis, gesperrt: true, unbearbeitet: [f, ...unbearbeitet] };
     const passend = r.treffer.filter((t) => t.kopfGeparst && t.nummer === f.nummer && (!f.zusatz || t.zusatz === f.zusatz.toUpperCase()));
-    for (const m of meldungenJeNummer(passend, f.gericht)) {
+    const meldungen = meldungenJeNummer(passend, f.gericht);
+    for (const m of meldungen) {
       if (f.hinweis === "loeschung_angekuendigt" && m.status === "ACTIVE") m.status = "LOESCHUNG_ANGEKUENDIGT";
       basis.treffer.push(m);
     }
+    if (!siAktiv || passend.length === 0) continue;
+    // SI nur fuer das aktuelle Blatt (nicht die Altgerichts-Variante) und nur,
+    // wenn es eine Meldung dazu gibt. Jeder Fehler bleibt bei dieser Firma.
+    const ziel = passend.find((t) => !t.frueher) ?? passend[0];
+    const meldung = meldungen.find((m) => m.zusatz === ziel.zusatz && m.frueher === ziel.frueher);
+    if (!meldung) continue;
+    try {
+      await o.takt.warten();
+      const xml = await o.portal.strukturierterInhalt!(r.treffer.indexOf(ziel)); // eslint-disable-line @typescript-eslint/no-non-null-assertion
+      if (xml === null) {
+        si.ohneLink++;
+        continue;
+      }
+      basis.abfragen++;
+      const inhalt = parseStrukturierterInhalt(xml);
+      if (!inhalt) {
+        si.fehler++;
+        log(`refresh ${f.gericht} ${f.art} ${f.nummer}: SI-XML nicht lesbar`);
+        continue;
+      }
+      meldung.si = inhalt;
+      si.geladen++;
+    } catch (err) {
+      const grund = err instanceof Error ? err.message : String(err);
+      if (/gesperrt/i.test(grund)) return { ...basis, gesperrt: true, si, unbearbeitet };
+      si.fehler++;
+      log(`refresh ${f.gericht} ${f.art} ${f.nummer}: SI fehlgeschlagen: ${grund}`);
+    }
   }
-  log(`refresh (${p.grund ?? "?"}): ${basis.abfragen} Abfragen, ${basis.treffer.length} Treffer`);
-  return basis;
+  log(`refresh (${p.grund ?? "?"}): ${basis.abfragen} Abfragen, ${basis.treffer.length} Treffer${siAktiv ? `, SI ${si.geladen} geladen / ${si.ohneLink} ohne Link / ${si.fehler} Fehler` : ""}${unbearbeitet.length ? `, ${unbearbeitet.length} unbearbeitet` : ""}`);
+  return { ...basis, ...(siAktiv ? { si } : {}), ...(unbearbeitet.length ? { unbearbeitet } : {}) };
 }
 
 async function fuehreAtJobAus(job: Job, o: AusfuehrungsOptionen, at: AtSchnittstelle, max: number, log: (z: string) => void): Promise<Ergebnis> {

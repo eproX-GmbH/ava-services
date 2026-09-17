@@ -5,6 +5,7 @@ import type { Bekanntmachung, Treffer } from "./parser";
 import type { TrefferAt } from "./at-firmenbuch";
 import type { TrefferUk } from "./uk-companies-house";
 import type { InsolvenzGegenstand } from "./insolvenz-parser";
+import type { StrukturierterInhalt } from "./si-parser";
 
 export type JobArt = "front" | "bekanntmachungen" | "refresh" | "insolvenz" | "at_front" | "at_refresh" | "at_insolvenz" | "uk_bulk" | "uk_refresh" | "uk_insolvenz";
 export const ALLE_JOB_ARTEN: JobArt[] = ["front", "bekanntmachungen", "refresh", "insolvenz", "at_front", "at_refresh", "at_insolvenz", "uk_bulk", "uk_refresh", "uk_insolvenz"];
@@ -37,6 +38,8 @@ export type TrefferMeldung = {
   sitz: string;
   status: Treffer["status"];
   historie: Array<{ name: string; sitz: string; order: number }>;
+  /** refresh: strukturierter Registerinhalt, wenn der SI-Abruf gelang (S8). */
+  si?: StrukturierterInhalt;
 };
 
 export type InsolvenzMeldung = {
@@ -67,6 +70,10 @@ export type Ergebnis = {
   trefferUk?: TrefferUk[];
   /** uk_bulk: Zusammenfassung des Teils. */
   ukBulk?: { datum: string; teil: number; teile: number; zeilen: number; teilergebnisse: number };
+  /** refresh: Bilanz der SI-Abrufe (nur Protokoll; Fehler brechen den Job nie ab). */
+  si?: { geladen: number; ohneLink: number; fehler: number };
+  /** refresh: Firmen, fuer die das Abfragebudget des Jobs nicht mehr reichte (Gateway reiht sie neu ein). */
+  unbearbeitet?: Array<{ gericht: string; art: string; nummer: number; zusatz?: string; hinweis?: string }>;
 };
 
 /** uk_bulk: ein Buendel Zeilen waehrend der Ausfuehrung (verlaengert die Lease). */

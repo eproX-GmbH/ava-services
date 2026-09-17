@@ -58,6 +58,25 @@ const JobShape = z
   })
   .openapi("RegisterJob");
 
+/** refresh (S8): strukturierter Registerinhalt aus dem SI-Abruf (Paket register-delta, si-parser.ts). */
+const SiShape = z.object({
+  name: z.string().min(1).max(500),
+  legalForm: z.string().max(200).default(""),
+  street: z.string().max(200).default(""),
+  houseNumber: z.string().max(40).default(""),
+  zipCode: z.string().max(20).default(""),
+  city: z.string().max(120).default(""),
+  foundingYear: z.number().int().min(1000).max(2100).nullable().default(null),
+  corporatePurpose: z.string().max(20_000).nullable().default(null),
+  shareCapital: z.number().nonnegative().nullable().default(null),
+  lastRegisterEntry: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().default(null),
+  lastRegisterModification: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().default(null),
+  managingDirectors: z
+    .array(z.object({ firstName: z.string().max(200).default(""), lastName: z.string().min(1).max(200), birthDay: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().default(null), city: z.string().max(120).nullable().default(null) }))
+    .max(200)
+    .default([]),
+});
+
 const TrefferShape = z.object({
   gericht: z.string().min(1),
   art: z.string().min(2).max(4),
@@ -69,6 +88,7 @@ const TrefferShape = z.object({
   sitz: z.string().default(""),
   status: z.enum(["ACTIVE", "CLOSED", "LOESCHUNG_ANGEKUENDIGT"]),
   historie: z.array(z.object({ name: z.string(), sitz: z.string().default(""), order: z.number().int() })).default([]),
+  si: SiShape.optional(),
 });
 
 const BekanntmachungShape = z.object({
@@ -137,6 +157,8 @@ export const ErgebnisShape = z.object({
   atFront: z.object({ begriff: z.string().min(2).max(4), naechsteSeite: z.number().int().nonnegative(), fertig: z.boolean(), gesamt: z.number().int().nonnegative() }).optional(),
   trefferUk: z.array(TrefferUkShape).max(5000).optional(),
   ukBulk: z.object({ datum: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), teil: z.number().int().positive(), teile: z.number().int().positive(), zeilen: z.number().int().nonnegative(), teilergebnisse: z.number().int().nonnegative() }).optional(),
+  si: z.object({ geladen: z.number().int().nonnegative(), ohneLink: z.number().int().nonnegative(), fehler: z.number().int().nonnegative() }).optional(),
+  unbearbeitet: z.array(z.object({ gericht: z.string().min(1), art: z.string().min(2).max(4), nummer: z.number().int().nonnegative(), zusatz: z.string().max(3).optional(), hinweis: z.string().max(40).optional() })).max(500).optional(),
 });
 
 function auth(c: { get: (k: "auth") => { tenantId: string; actorId: string } | undefined }) {

@@ -340,3 +340,13 @@ ausblenden“). Zusätzlich ein Betreiber-Schalter im Gateway
 6. **Originaldateien:** die neueste Liste je Firma als Beleg behalten
    (Tabelle `ShareholderListDocument`, Bytes in Postgres, SHA-256); bei
    Speicherproblemen später löschen.
+
+## 9. Nachtrag 2026-09-17: SI aus dem Register-Delta
+
+Das Register-Delta liefert den strukturierten Inhalt jetzt in refresh-Jobs
+vorab (`docs/PLAN_STAMMDATEN_DELTA.md` §8a); Geschäftsführer und Adresse
+kommen darüber mit `quelle register-delta` in den Rollen-Spiegel. Der
+Producer holt die Gesellschafterliste deshalb auch im Frisch-Pfad, wenn
+`fetchVerflechtungenFaellig` zustimmt. Die Liste selbst bleibt beim
+Nutzer (Modell nötig); das Dokument im Delta nur zu holen und als Beleg
+abzulegen ist ein möglicher nächster Schritt.

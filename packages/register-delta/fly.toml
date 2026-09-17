@@ -21,6 +21,8 @@ primary_region = 'fra'
 # (Oesterreich: JustizOnline, Ediktsdatei; UK: Companies House, Gazette), damit
 # diese Jobs nicht hinter den deutschen warten. REGISTER_DELTA_AT/UK=0 halten
 # den DE-Worker davon fern. uk_bulk laedt je Teil rund 70 MB nach /tmp.
+# S8 (2026-09-17): refresh-Jobs laden den strukturierten Registerinhalt mit
+# (REGISTER_DELTA_SI, Standard an; jede Firma kostet zwei Abfragen).
 [processes]
   worker = 'sh -c "REGISTER_DELTA_AT=0 REGISTER_DELTA_UK=0 node dist/cli.js"'
   # uk_bulk schonend (2026-09-16): 250 Zeilen je Buendel, 20 s Pause; master-data war
