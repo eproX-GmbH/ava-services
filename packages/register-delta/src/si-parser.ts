@@ -65,8 +65,16 @@ export function siBauplan(xml: string): string {
   return tags.join(" ");
 }
 
-/** Liefert null, wenn das Dokument kein brauchbarer Auszug ist (kein Firmenname). */
-export function parseStrukturierterInhalt(xml: string): StrukturierterInhalt | null {
+/**
+ * Liefert null, wenn das Dokument kein brauchbarer Auszug ist.
+ *
+ * `erwarteterName` ist der Firmenname aus der Trefferzeile des Registerportals.
+ * Er dient als Schutz: Steht der Rechtstraeger im Auszug nur als Beteiligung,
+ * laesst sich der Firmenname nicht sicher von dem einer Gesellschafterin
+ * unterscheiden. Nur wenn der gelesene Name zum erwarteten passt, wird der
+ * Auszug uebernommen; sonst lieber keine Daten als falsche.
+ */
+export function parseStrukturierterInhalt(xml: string, erwarteterName?: string): StrukturierterInhalt | null {
   if (!istSiXml(xml)) return null;
   let baum: Baum;
   try {
@@ -74,14 +82,32 @@ export function parseStrukturierterInhalt(xml: string): StrukturierterInhalt | n
   } catch {
     return null;
   }
-  // Firmendaten zuerst im Basisdaten-Block suchen. Fehlt der Block (bei
-  // Personengesellschaften heisst der Zweig anders), im ganzen Dokument suchen,
-  // aber nie unterhalb von tns:beteiligung: sonst rutscht der Name eines
-  // Gesellschafters als Firmenname durch.
+  // Den Firmennamen in fester Reihenfolge suchen. XJustiz kennt mehrere
+  // Bauarten: mal steht der Rechtstraeger in den Basisdaten, mal ist er selbst
+  // eine Beteiligung mit eigener Rolle. Eine natuerliche Person ist nie die
+  // Firma: sonst landet der Name eines Gesellschafters als Firmenname im
+  // Bestand. Deshalb wird nur ueber Organisationen ausgewichen.
   const basis = suche(baum, "tns:basisdatenRegister");
-  const firma = istObjekt(basis) && suche(basis, "tns:bezeichnung.aktuell") !== undefined ? basis : baum;
-  const name = text(suche(firma, "tns:bezeichnung.aktuell"));
+  const kandidaten: unknown[] = [
+    istObjekt(basis) ? basis : undefined,
+    suche(baum, "tns:rechtstraeger"),
+    // Nur mit erwartetem Namen, weil dieser Zweig auch eine Gesellschafterin
+    // sein kann; der Abgleich unten entscheidet.
+    erwarteterName ? organisationsZweig(baum) : undefined,
+  ];
+  let firma: unknown = undefined;
+  let name = "";
+  for (const k of kandidaten) {
+    if (k === undefined) continue;
+    const n = text(suche(k, "tns:bezeichnung.aktuell"));
+    if (n) {
+      firma = k;
+      name = n;
+      break;
+    }
+  }
   if (!name) return null;
+  if (erwarteterName && !namenPassen(name, erwarteterName)) return null;
 
   const managingDirectors: SiGeschaeftsfuehrer[] = [];
   const beteiligungen = suche(baum, "tns:beteiligung");
@@ -110,11 +136,13 @@ export function parseStrukturierterInhalt(xml: string): StrukturierterInhalt | n
 
   return {
     name,
-    legalForm: rechtsform(firma, xml),
-    street: text(suche(firma, "tns:strasse")),
-    houseNumber: text(suche(firma, "tns:hausnummer")),
-    zipCode: text(suche(firma, "tns:postleitzahl")),
-    city: text(suche(firma, "tns:ort")),
+    legalForm: rechtsform(istObjekt(firma) ? firma : baum, xml),
+    // Anschrift und Rechtsform stehen je nach Bauart neben dem Namen oder
+    // weiter oben; deshalb erst im gefundenen Zweig, dann im ganzen Dokument.
+    street: text(suche(firma, "tns:strasse")) || text(suche(baum, "tns:strasse")),
+    houseNumber: text(suche(firma, "tns:hausnummer")) || text(suche(baum, "tns:hausnummer")),
+    zipCode: text(suche(firma, "tns:postleitzahl")) || text(suche(baum, "tns:postleitzahl")),
+    city: text(suche(firma, "tns:ort")) || text(suche(baum, "tns:ort")),
     foundingYear: Number.isFinite(jahr) && jahr > 1000 ? jahr : null,
     corporatePurpose: gegenstand || null,
     shareCapital: Number.isFinite(kapital) ? kapital : null,
@@ -141,6 +169,51 @@ function rechtsform(baum: Baum, xml: string): string {
     "222110": "Aktiengesellschaft (AG)",
   };
   return bekannt[code] ?? code;
+}
+
+/**
+ * Passt der gelesene Firmenname zum Namen aus der Trefferzeile? Tolerant
+ * gegenueber Rechtsform-Schreibweisen und Zusaetzen: verglichen wird der
+ * Namenskern ohne Satzzeichen und Rechtsformkuerzel.
+ */
+export function namenPassen(gelesen: string, erwartet: string): boolean {
+  const kern = (s: string) =>
+    s
+      .toLowerCase()
+      .replace(/[äöüß]/g, (z) => ({ "ä": "ae", "ö": "oe", "ü": "ue", "ß": "ss" })[z] ?? z)
+      .replace(/\b(gmbh|ug|ag|kg|ohg|mbh|co|haftungsbeschraenkt|haftungsbeschrankt|e\.?\s?k|se|kgaa|gbr|eg)\b/g, " ")
+      .replace(/[^a-z0-9]+/g, " ")
+      .trim();
+  const a = kern(gelesen);
+  const b = kern(erwartet);
+  if (!a || !b) return false;
+  if (a === b || a.startsWith(b) || b.startsWith(a)) return true;
+  // Wortmengen-Vergleich: mindestens zwei Drittel der Woerter des kuerzeren
+  // Namens muessen im laengeren vorkommen (Zusaetze wie Standortangaben).
+  const wa = new Set(a.split(" ").filter(Boolean));
+  const wb = new Set(b.split(" ").filter(Boolean));
+  const [klein, gross] = wa.size <= wb.size ? [wa, wb] : [wb, wa];
+  if (klein.size === 0) return false;
+  let treffer = 0;
+  for (const w of klein) if (gross.has(w)) treffer++;
+  return treffer / klein.size >= 2 / 3;
+}
+
+/**
+ * Erste Beteiligung, die eine Organisation ist. In manchen Auszuegen ist der
+ * Rechtstraeger selbst als Beteiligung modelliert; natuerliche Personen werden
+ * dabei uebergangen, damit nie ein Personenname als Firmenname durchgeht.
+ */
+function organisationsZweig(baum: Baum): unknown {
+  const roh = suche(baum, "tns:beteiligung");
+  const liste = Array.isArray(roh) ? roh : roh ? [roh] : [];
+  for (const b of liste) {
+    if (!istObjekt(b)) continue;
+    if (suche(b, "tns:natuerlichePerson") !== undefined) continue;
+    const org = suche(b, "tns:organisation");
+    if (istObjekt(org) && suche(org, "tns:bezeichnung.aktuell") !== undefined) return org;
+  }
+  return undefined;
 }
 
 function istObjekt(v: unknown): v is Baum {

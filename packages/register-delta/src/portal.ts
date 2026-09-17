@@ -276,9 +276,18 @@ export class RegisterPortal {
         break;
       }
       if (jetzt.length > 0) {
-        // Etwas anderes als XML: nicht anfassen, sofort loeschen.
-        for (const n of jetzt) fs.rmSync(join(dir, n), { force: true });
-        throw new Error(`SI: unerwarteter Download (${jetzt.join(", ")})`);
+        // Etwas anderes als XML: nicht anfassen, sofort loeschen. Das Portal
+        // liefert hier gelegentlich seine eigene Startseite (welcome.xhtml),
+        // wenn die Sitzung abgelaufen ist. Das ist kein Fehler dieser Firma,
+        // sondern schlicht kein Auszug; deshalb wie ein fehlender SI-Link
+        // behandeln und zur naechsten Firma weitergehen.
+        const namen = [...jetzt];
+        for (const n of namen) fs.rmSync(join(dir, n), { force: true });
+        if (namen.every((n) => /\.x?html?$/i.test(n))) {
+          this.log(`SI: Portal lieferte eine Seite statt eines Auszugs (${namen.join(", ")})`);
+          return null;
+        }
+        throw new Error(`SI: unerwarteter Download (${namen.join(", ")})`);
       }
       ausFenster = await this.xmlAusNeuemFenster(fensterVorher);
     }

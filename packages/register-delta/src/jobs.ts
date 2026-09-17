@@ -282,7 +282,8 @@ export async function fuehreJobAus(job: Job, o: AusfuehrungsOptionen): Promise<E
         continue;
       }
       basis.abfragen++;
-      const inhalt = parseStrukturierterInhalt(xml);
+      // Firmenname der Trefferzeile als Schutz gegen verwechselte Rechtstraeger.
+      const inhalt = parseStrukturierterInhalt(xml, meldung.name);
       if (!inhalt) {
         si.fehler++;
         log(`refresh ${f.gericht} ${f.art} ${f.nummer}: SI-XML nicht lesbar (${xml.length} Zeichen, Aufbau: ${siBauplan(xml)})`);

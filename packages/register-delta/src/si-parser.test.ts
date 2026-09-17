@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { istSiXml, parseStrukturierterInhalt } from "./si-parser";
+import { istSiXml, namenPassen, parseStrukturierterInhalt } from "./si-parser";
 
 const XML = `<?xml version="1.0" encoding="UTF-8"?>
 <tns:nachricht.reg.0400003 xmlns:tns="http://www.xjustiz.de">
@@ -73,4 +73,35 @@ test("si-parser: kein XML, HTML-Fehlerseite oder ohne Firmenname → null", () =
   assert.equal(parseStrukturierterInhalt("<html><body>Fehler</body></html>"), null);
   assert.equal(parseStrukturierterInhalt("PK nicht xml"), null);
   assert.equal(parseStrukturierterInhalt(XML.replace(/<tns:bezeichnung.aktuell>QUIKK Software GmbH<\/tns:bezeichnung.aktuell>/, "")), null);
+});
+
+test("si-parser: Rechtstraeger nur als Beteiligung — nur mit passendem erwarteten Namen", () => {
+  // Auszug ohne Basisdaten-Namen: die Firma steht als beteiligte Organisation,
+  // daneben eine Gesellschafterin. Ohne erwarteten Namen darf nichts gelesen werden.
+  const xml = `<?xml version="1.0"?><tns:n xmlns:tns="http://www.xjustiz.de">
+    <tns:basisdatenRegister><tns:gegenstand>Handel</tns:gegenstand>
+      <tns:anschrift><tns:strasse>Weg</tns:strasse><tns:hausnummer>2</tns:hausnummer><tns:postleitzahl>28195</tns:postleitzahl><tns:ort>Bremen</tns:ort></tns:anschrift>
+    </tns:basisdatenRegister>
+    <tns:beteiligung><tns:natuerlichePerson><tns:vorname>Eva</tns:vorname><tns:nachname>Beispiel</tns:nachname></tns:natuerlichePerson></tns:beteiligung>
+    <tns:beteiligung><tns:organisation><tns:bezeichnung.aktuell>Nordlicht Handels GmbH</tns:bezeichnung.aktuell></tns:organisation></tns:beteiligung>
+  </tns:n>`;
+  assert.equal(parseStrukturierterInhalt(xml), null);
+  const si = parseStrukturierterInhalt(xml, "Nordlicht Handels GmbH");
+  assert.ok(si);
+  assert.equal(si.name, "Nordlicht Handels GmbH");
+  assert.equal(si.city, "Bremen");
+  assert.equal(si.managingDirectors[0]?.lastName, "Beispiel");
+  // Fremder erwarteter Name: der Auszug gehoert nicht zu dieser Firma.
+  assert.equal(parseStrukturierterInhalt(xml, "Suedwind Logistik GmbH"), null);
+});
+
+test("si-parser: Namensabgleich ist tolerant bei Rechtsform und Zusaetzen, aber nicht beliebig", () => {
+  assert.equal(namenPassen("QUIKK Software GmbH", "QUIKK Software GmbH"), true);
+  assert.equal(namenPassen("QUIKK Software GmbH", "QUIKK Software UG (haftungsbeschränkt)"), true);
+  // Kaufmaennisches Und und ausgeschriebenes Und meinen dieselbe Firma.
+  assert.equal(namenPassen("Meyer & Sohn KG", "Meyer und Sohn KG"), true);
+  // Ein einzelnes gemeinsames Wort reicht nicht.
+  assert.equal(namenPassen("Nordlicht Handels GmbH", "Nordlicht Immobilien Verwaltung GmbH"), false);
+  assert.equal(namenPassen("Nordlicht Handels GmbH", "Südwind Logistik GmbH"), false);
+  assert.equal(namenPassen("", "Irgendwas GmbH"), false);
 });
