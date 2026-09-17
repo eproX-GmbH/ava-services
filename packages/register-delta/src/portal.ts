@@ -123,6 +123,18 @@ export class RegisterPortal {
     }
     this.driver = await new Builder().forBrowser("chrome").setChromeOptions(options).build();
     await this.driver.manage().setTimeouts({ pageLoad: 45_000 });
+    if (this.downloadDir) {
+      // Headless-Chromium ignoriert die Download-Einstellungen des Profils und
+      // verwirft Anhaenge stillschweigend; erst dieser DevTools-Befehl erlaubt
+      // sie und legt das Zielverzeichnis fest. Ohne ihn kam das SI-XML auf Fly
+      // weder als Datei noch als Fenster an (2026-09-17).
+      try {
+        // setDownloadPath gibt es nur auf dem Chromium-Treiber, nicht im WebDriver-Typ.
+        await (this.driver as unknown as { setDownloadPath(p: string): Promise<void> }).setDownloadPath(this.downloadDir);
+      } catch (err) {
+        this.log(`SI: Download-Freigabe ueber DevTools fehlgeschlagen: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
     await this.startseite();
   }
 
