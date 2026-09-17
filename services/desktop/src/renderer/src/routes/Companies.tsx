@@ -3,6 +3,13 @@ import { useState, useDeferredValue } from "react";
 import { useQuery, keepPreviousData } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import { gatewayFetch } from "../api/gateway";
+import {
+  GRUENDUNG_LEER,
+  GruendungsjahrFilter,
+  gruendungAktiv,
+  gruendungAlsQuery,
+  type GruendungsWerte,
+} from "../components/GruendungsjahrFilter";
 
 // W6 — fuzzy search.
 // W7 — paginated list with filters (filters deferred to a follow-up; the
@@ -25,6 +32,8 @@ interface Company {
   country?: string | null;
   registerType?: string | null;
   registerNumber?: string | null;
+  /** Nur gesetzt, wenn nach Gruendungsjahr gefiltert oder sortiert wird. */
+  foundingYear?: number | null;
 }
 interface SearchResult<T> {
   items: T[];
@@ -40,31 +49,46 @@ interface Page<T> {
 export function Companies() {
   const [q, setQ] = useState("");
   const [land, setLand] = useState("");
+  const [gruendung, setGruendung] = useState<GruendungsWerte>(GRUENDUNG_LEER);
   const [page, setPage] = useState(1);
   const pageSize = 25;
   const deferredQ = useDeferredValue(q);
+  // Gruendungsjahr-Filter: beide Wege (Suche und Liste) kennen ihn, deshalb
+  // haengt er nur an der Anfrage und nicht an der Auswahl des Weges.
+  const gruendungQuery = gruendungAlsQuery(gruendung);
+  const gruendungAn = gruendungAktiv(gruendung);
 
   const search = useQuery({
-    queryKey: ["companies", "search", deferredQ, land],
+    queryKey: ["companies", "search", deferredQ, land, gruendungQuery],
     queryFn: () =>
       gatewayFetch<SearchResult<Company>>("/v1/companies/search", {
-        query: { q: deferredQ, limit: 25, ...(land ? { country: land } : {}) },
+        query: { q: deferredQ, limit: 25, ...(land ? { country: land } : {}), ...gruendungQuery },
       }),
-    enabled: deferredQ.trim().length >= 2,
+    enabled: deferredQ.trim().length >= 2 && !gruendungAn,
     placeholderData: keepPreviousData,
   });
 
   const list = useQuery({
-    queryKey: ["companies", "list", page, pageSize, land],
+    queryKey: ["companies", "list", page, pageSize, land, gruendungQuery],
     queryFn: () =>
       gatewayFetch<Page<Company>>("/v1/companies", {
-        query: { page, pageSize, ...(land ? { country: land } : {}) },
+        query: {
+          page,
+          pageSize,
+          ...(land ? { country: land } : {}),
+          ...gruendungQuery,
+          // Mit Gruendungsjahr-Filter laeuft auch die Namenssuche ueber diesen Weg,
+          // damit sich das Ergebnis blaettern laesst.
+          ...(gruendungAn && deferredQ.trim().length >= 2 ? { q: deferredQ.trim() } : {}),
+        },
       }),
-    enabled: deferredQ.trim().length < 2,
+    enabled: deferredQ.trim().length < 2 || gruendungAn,
     placeholderData: keepPreviousData,
   });
 
-  const showSearch = deferredQ.trim().length >= 2;
+  // Mit Gruendungsjahr-Filter immer der Listenweg: er kennt den Filter, liefert
+  // das Jahr mit und laesst sich blaettern.
+  const showSearch = deferredQ.trim().length >= 2 && !gruendungAn;
   const items = showSearch ? search.data?.items : list.data?.items;
   const loading = showSearch ? search.isLoading : list.isLoading;
   const error = showSearch ? search.error : list.error;
@@ -100,13 +124,30 @@ export function Companies() {
             setPage(1);
           }}
         />
+        <GruendungsjahrFilter
+          werte={gruendung}
+          onChange={(w) => {
+            setGruendung(w);
+            setPage(1);
+          }}
+        />
       </div>
+      {gruendungAn && (
+        <p className="muted small">
+          Der Filter zeigt nur Firmen, deren Gründungsjahr aus dem Handelsregister bekannt ist. Der
+          Suchbegriff wird dabei wörtlich im Firmennamen gesucht, nicht unscharf.
+        </p>
+      )}
 
       {loading && <p>Lädt…</p>}
       {error && <p className="error">{(error as Error).message}</p>}
       {items && items.length === 0 && (
         <p className="muted">
-          {showSearch ? "Keine Treffer." : "Keine Firmen vorhanden."}
+          {gruendungAn
+            ? "Keine Firma mit bekanntem Gründungsjahr passt zu diesem Filter."
+            : showSearch
+              ? "Keine Treffer."
+              : "Keine Firmen vorhanden."}
         </p>
       )}
       {items && items.length > 0 && (
@@ -115,6 +156,7 @@ export function Companies() {
             <tr>
               <th>Name</th>
               <th>Stadt</th>
+              {gruendungAn && <th>Gegründet</th>}
               <th>Register</th>
               <th>ID</th>
             </tr>
@@ -131,6 +173,7 @@ export function Companies() {
                   <InsolvenzBadge status={c.insolvencyStatus} />
                 </td>
                 <td>{c.location ?? <span className="muted"></span>}</td>
+                {gruendungAn && <td>{c.foundingYear ?? <span className="muted">unbekannt</span>}</td>}
                 <td className="muted small">{registerKennung(c) ?? ""}</td>
                 <td>
                   <code>{c.companyId.slice(0, 12)}…</code>

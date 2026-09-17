@@ -9,6 +9,7 @@ import { listProfileChanges } from "../../lib/profile-changes";
 import { applySingleEmployeeCandidate } from "../../lib/contact-extraction-apply";
 import { normalizeLinkedInProfileUrl } from "../../lib/contact-extraction/employee-contact";
 import { logger } from "../../lib/logger";
+import { firmenNachGruendungsjahr, gruendungsFilterAktiv } from "../../lib/companies-gruendungsjahr";
 import { requireFeature } from "../../lib/policy-guard";
 import { ensurePersonComplianceSchema } from "../../lib/person-compliance";
 import {
@@ -19,6 +20,7 @@ import {
   CompanyPublicationShape,
   CompanyShape,
   ErrorShape,
+  GruendungsjahrQuery,
   PaginatedShape,
   PaginationQuery,
   ProfileChangeShape,
@@ -58,7 +60,7 @@ const searchRoute = createRoute({
   path: "/companies/search",
   tags: [tag],
   summary: "Fuzzy search companies (W6)",
-  request: { query: SearchQuery },
+  request: { query: SearchQuery.merge(GruendungsjahrQuery) },
   responses: {
     200: {
       content: { "application/json": { schema: SearchResultShape(CompanyShape) } },
@@ -69,7 +71,23 @@ const searchRoute = createRoute({
 });
 
 companiesRouter.openapi(searchRoute, async (c) => {
-  const { q, limit, country } = c.req.valid("query");
+  const { q, limit, country, gruendungVon, gruendungBis, sortierung } = c.req.valid("query");
+  // Filter oder Sortierung nach Gruendungsjahr: Das Jahr steht in einer anderen
+  // Datenbank als der Suchindex, deshalb laeuft die Abfrage ueber
+  // structured-content (siehe lib/companies-gruendungsjahr.ts). Der Namensteil
+  // wird dort woertlich gesucht, nicht unscharf wie im Suchindex.
+  if (gruendungsFilterAktiv({ von: gruendungVon, bis: gruendungBis, sortierung })) {
+    const { items, total } = await firmenNachGruendungsjahr({
+      von: gruendungVon,
+      bis: gruendungBis,
+      sortierung,
+      suche: q,
+      country,
+      page: 1,
+      pageSize: limit,
+    });
+    return c.json({ items: items as Array<z.infer<typeof CompanyShape>>, total }, 200);
+  }
   const upstream = await callUpstream<unknown>(c, "masterData", "/api/germany/v1/companies/fuzzy/search", {
     query: { q, limit, ...(country ? { country } : {}) },
   });
@@ -96,7 +114,9 @@ const listRoute = createRoute({
   path: "/companies",
   tags: [tag],
   summary: "List companies (W7)",
-  request: { query: PaginationQuery },
+  // `q` wirkt nur zusammen mit dem Gruendungsjahr-Filter: dieser Weg sucht den
+  // Namensteil woertlich in structured-content, statt den Suchindex zu befragen.
+  request: { query: PaginationQuery.merge(GruendungsjahrQuery).extend({ q: z.string().max(200).optional() }) },
   responses: {
     200: {
       content: { "application/json": { schema: PaginatedShape(CompanyShape) } },
@@ -107,7 +127,11 @@ const listRoute = createRoute({
 });
 
 companiesRouter.openapi(listRoute, async (c) => {
-  const { page, pageSize, country } = c.req.valid("query");
+  const { page, pageSize, country, gruendungVon, gruendungBis, sortierung, q } = c.req.valid("query");
+  if (gruendungsFilterAktiv({ von: gruendungVon, bis: gruendungBis, sortierung })) {
+    const { items, total } = await firmenNachGruendungsjahr({ von: gruendungVon, bis: gruendungBis, sortierung, suche: q, country, page, pageSize });
+    return c.json({ items: items as Array<z.infer<typeof CompanyShape>>, page, pageSize, total }, 200);
+  }
   // master-data list is POST /api/germany/v1/companies with pagination in query.
   // Canonical response shape is `{count, pageNumber, pageSize, germanCompanies}`
   // (see master-data list-companies query). Tolerate `items`/`total` as a

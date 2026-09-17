@@ -119,11 +119,9 @@ _Parameter:_
 
 _Datei:_ `services/desktop/src/main/agent/tools/companies.ts`
 
-Fuzzy-search companies by name (Deutschland, Oesterreich, Schweiz). Returns up to `limit` candidate matches (id, name, location, country DE | AT | CH, registerStatus: ACTIVE | CLOSED = Registerblatt geschlossen/geloescht | LOESCHUNG_ANGEKUENDIGT = Loeschung angekuendigt; nenne dem Nutzer geloeschte oder in Loeschung befindliche Firmen ausdruecklich). Treffer ausserhalb Deutschlands tragen ein Feld `land` (z. B. "Österreich, Firmenbuch FN 56247t"): nenne das Land, wenn es fuer den Nutzer nicht offensichtlich ist. Use this first when the user mentions a company by name.
+Fuzzy-search companies by name (Deutschland, Oesterreich, Schweiz). Returns up to `limit` candidate matches (id, name, location, country DE | AT | CH, registerStatus: ACTIVE | CLOSED = Registerblatt geschlossen/geloescht | LOESCHUNG_ANGEKUENDIGT = Loeschung angekuendigt; nenne dem Nutzer geloeschte oder in Loeschung befindliche Firmen ausdruecklich). Treffer ausserhalb Deutschlands tragen ein Feld `land` (z. B. "Österreich, Firmenbuch FN 56247t"): nenne das Land, wenn es fuer den Nutzer nicht offensichtlich ist. Use this first when the user mentions a company by name. Mit gruendungVon/gruendungBis/sortierung laesst sich nach dem Gruendungsjahr filtern und sortieren; das Jahr ist nur fuer Firmen bekannt, deren Registerinhalt schon abgerufen wurde, und der Name wird dann woertlich gesucht.
 
-_Parameter:_
-- `q: string` (required) — Company name (partial OK).
-- `limit: integer` (default: 10) — Max matches to return.
+_Parameter:_ keine.
 
 ### `company_shareholders`
 

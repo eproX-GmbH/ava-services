@@ -33,7 +33,7 @@ export function buildCompanyTools(ctx: Ctx): Tool[] {
   const search = defineTool({
     name: "company_search",
     description:
-      "Fuzzy-search companies by name (Deutschland, Oesterreich, Schweiz). Returns up to `limit` candidate matches (id, name, location, country DE | AT | CH, registerStatus: ACTIVE | CLOSED = Registerblatt geschlossen/geloescht | LOESCHUNG_ANGEKUENDIGT = Loeschung angekuendigt; nenne dem Nutzer geloeschte oder in Loeschung befindliche Firmen ausdruecklich). Treffer ausserhalb Deutschlands tragen ein Feld `land` (z. B. \"Österreich, Firmenbuch FN 56247t\"): nenne das Land, wenn es fuer den Nutzer nicht offensichtlich ist. Use this first when the user mentions a company by name.",
+      "Fuzzy-search companies by name (Deutschland, Oesterreich, Schweiz). Returns up to `limit` candidate matches (id, name, location, country DE | AT | CH, registerStatus: ACTIVE | CLOSED = Registerblatt geschlossen/geloescht | LOESCHUNG_ANGEKUENDIGT = Loeschung angekuendigt; nenne dem Nutzer geloeschte oder in Loeschung befindliche Firmen ausdruecklich). Treffer ausserhalb Deutschlands tragen ein Feld `land` (z. B. \"Österreich, Firmenbuch FN 56247t\"): nenne das Land, wenn es fuer den Nutzer nicht offensichtlich ist. Use this first when the user mentions a company by name. Mit gruendungVon/gruendungBis/sortierung laesst sich nach dem Gruendungsjahr filtern und sortieren; das Jahr ist nur fuer Firmen bekannt, deren Registerinhalt schon abgerufen wurde, und der Name wird dann woertlich gesucht.",
     parameters: {
       type: "object",
       properties: {
@@ -45,19 +45,33 @@ export function buildCompanyTools(ctx: Ctx): Tool[] {
           maximum: 25,
           default: 10,
         },
+        gruendungVon: { type: "integer", description: "Nur Firmen, die in diesem Jahr oder spaeter gegruendet wurden.", minimum: 1000, maximum: 2100 },
+        gruendungBis: { type: "integer", description: "Nur Firmen, die in diesem Jahr oder frueher gegruendet wurden.", minimum: 1000, maximum: 2100 },
+        sortierung: { type: "string", description: "Nach Gruendungsjahr sortieren: gruendung_auf (aelteste zuerst) oder gruendung_ab (juengste zuerst).", enum: ["gruendung_auf", "gruendung_ab"] },
       },
       required: ["q"],
     },
     schema: yup.object({
       q: yup.string().trim().min(1).required(),
       limit: yup.number().integer().min(1).max(25).default(10),
+      gruendungVon: yup.number().integer().min(1000).max(2100).optional(),
+      gruendungBis: yup.number().integer().min(1000).max(2100).optional(),
+      sortierung: yup.string().oneOf(["gruendung_auf", "gruendung_ab"]).optional(),
     }),
     run: async (args, c) => {
+      // Gruendungsjahr-Filter: Das Jahr kommt aus dem strukturierten
+      // Registerinhalt, den nur abgerufene Firmen haben. Mit Filter sucht das
+      // Gateway den Namensteil woertlich statt unscharf.
+      const gruendung = {
+        ...(args.gruendungVon !== undefined ? { gruendungVon: args.gruendungVon } : {}),
+        ...(args.gruendungBis !== undefined ? { gruendungBis: args.gruendungBis } : {}),
+        ...(args.sortierung ? { sortierung: args.sortierung } : {}),
+      };
       const data = await gateway.request<{
         items?: Array<Record<string, unknown>>;
         total?: number;
       }>("/v1/companies/search", {
-        query: { q: args.q, limit: args.limit },
+        query: { q: args.q, limit: args.limit, ...gruendung },
         signal: c.signal,
       });
       // Statuswarnung je Treffer (Insolvenz, Loeschung, Liquidation) an erster Stelle.

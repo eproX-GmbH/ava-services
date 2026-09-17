@@ -755,8 +755,16 @@ code, pre { font-family: var(--font-mono); font-size: 12px; }
 
 /* Toolbar (search bar in Companies, etc.) — `.search` is just an input;
  * lean on the global input baseline and only set the flex behavior. */
-.toolbar { display: flex; gap: 0.5rem; margin: 0.5rem 0 1rem; }
-.search { flex: 1; }
+.toolbar { display: flex; gap: 0.5rem; margin: 0.5rem 0 1rem; flex-wrap: wrap; align-items: center; }
+.search { flex: 1; min-width: 200px; }
+
+/* Gruendungsjahr-Filter in der Firmensuche (Jahr von/bis plus Sortierung). */
+.gruendung-filter { display: flex; gap: 0.4rem; align-items: center; flex-wrap: wrap; }
+.gruendung-filter__label { font-size: 12px; opacity: 0.8; }
+.gruendung-filter__jahr { width: 5.5rem; }
+.gruendung-filter__bis { font-size: 12px; opacity: 0.7; }
+.gruendung-filter__zuruecksetzen { padding: 4px 10px; font-size: 12px; }
+.gruendung-filter__hinweis { font-size: 12px; color: var(--ct-warn, #b45309); }
 
 /* Pager — relies on the global button baseline, only tunes spacing/size. */
 .pager {

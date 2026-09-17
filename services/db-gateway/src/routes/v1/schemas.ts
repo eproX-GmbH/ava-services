@@ -27,6 +27,17 @@ export const PaginationQuery = z.object({
   country: z.enum(["DE", "AT", "CH", "UK"]).optional(),
 });
 
+/**
+ * Filter auf das Gruendungsjahr (aus dem strukturierten Registerinhalt).
+ * Sobald einer der drei Werte gesetzt ist, liefert die Firmensuche nur Firmen,
+ * deren Gruendungsjahr bekannt ist.
+ */
+export const GruendungsjahrQuery = z.object({
+  gruendungVon: z.coerce.number().int().min(1000).max(2100).optional(),
+  gruendungBis: z.coerce.number().int().min(1000).max(2100).optional(),
+  sortierung: z.enum(["gruendung_auf", "gruendung_ab"]).optional(),
+});
+
 export const CountryQuery = z.enum(["DE", "AT", "CH", "UK"]).optional();
 
 export const SearchQuery = z.object({
@@ -54,6 +65,8 @@ export const CompanyShape = z
     formerCourt: z.string().nullable().optional(),
     /** Insolvenz-Delta: NONE | VERDACHT | SICHERUNG | EROEFFNET | ABGEWIESEN | AUFGEHOBEN. */
     insolvencyStatus: z.string().nullable().optional(),
+    /** Gruendungsjahr aus dem strukturierten Registerinhalt; nur bei Filter/Sortierung nach Gruendungsjahr gesetzt. */
+    foundingYear: z.number().int().nullable().optional(),
     insolvencyAt: z.string().nullable().optional(),
     /** Laenderspalten: DE | AT | CH (Firmenbuch AT: registerType FN). */
     country: z.string().nullable().optional(),
