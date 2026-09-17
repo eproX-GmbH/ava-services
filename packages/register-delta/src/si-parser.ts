@@ -118,10 +118,10 @@ export function parseStrukturierterInhalt(xml: string, erwarteterName?: string):
     const lastName = text(suche(person, "tns:nachname"));
     if (!lastName) continue;
     managingDirectors.push({
-      firstName: text(suche(person, "tns:vorname")),
-      lastName,
+      firstName: kappe(text(suche(person, "tns:vorname")), 200),
+      lastName: kappe(lastName, 200),
       birthDay: isoDatum(text(suche(person, "tns:geburtsdatum"))),
-      city: text(suche(person, "tns:ort")) || null,
+      city: kappe(text(suche(person, "tns:ort")), 120) || null,
     });
   }
 
@@ -134,21 +134,26 @@ export function parseStrukturierterInhalt(xml: string, erwarteterName?: string):
 
   const gegenstand = text(objektFeld(basis, "tns:gegenstand"));
 
+  // Werte auf die Grenzen bringen, die das Gateway annimmt. Ein einzelner
+  // Ausreisser darf die Meldung des ganzen Jobs nicht ungueltig machen:
+  // Registerauszuege enthalten vereinzelt unsinnige Jahreszahlen (im Bestand
+  // fanden sich 219 und 2209) und sehr lange Texte.
+  const jahrGueltig = Number.isFinite(jahr) && jahr >= 1000 && jahr <= 2100 ? jahr : null;
   return {
-    name,
-    legalForm: rechtsform(istObjekt(firma) ? firma : baum, xml),
+    name: kappe(name, 500),
+    legalForm: kappe(rechtsform(istObjekt(firma) ? firma : baum, xml), 200),
     // Anschrift und Rechtsform stehen je nach Bauart neben dem Namen oder
     // weiter oben; deshalb erst im gefundenen Zweig, dann im ganzen Dokument.
-    street: text(suche(firma, "tns:strasse")) || text(suche(baum, "tns:strasse")),
-    houseNumber: text(suche(firma, "tns:hausnummer")) || text(suche(baum, "tns:hausnummer")),
-    zipCode: text(suche(firma, "tns:postleitzahl")) || text(suche(baum, "tns:postleitzahl")),
-    city: text(suche(firma, "tns:ort")) || text(suche(baum, "tns:ort")),
-    foundingYear: Number.isFinite(jahr) && jahr > 1000 ? jahr : null,
-    corporatePurpose: gegenstand || null,
-    shareCapital: Number.isFinite(kapital) ? kapital : null,
+    street: kappe(text(suche(firma, "tns:strasse")) || text(suche(baum, "tns:strasse")), 200),
+    houseNumber: kappe(text(suche(firma, "tns:hausnummer")) || text(suche(baum, "tns:hausnummer")), 40),
+    zipCode: kappe(text(suche(firma, "tns:postleitzahl")) || text(suche(baum, "tns:postleitzahl")), 20),
+    city: kappe(text(suche(firma, "tns:ort")) || text(suche(baum, "tns:ort")), 120),
+    foundingYear: jahrGueltig,
+    corporatePurpose: gegenstand ? kappe(gegenstand, 20_000) : null,
+    shareCapital: Number.isFinite(kapital) && kapital >= 0 ? kapital : null,
     lastRegisterEntry: isoDatum(text(suche(baum, "tns:letzteEintragung"))),
     lastRegisterModification: isoDatum(text(suche(baum, "tns:aenderungsdatum"))),
-    managingDirectors,
+    managingDirectors: managingDirectors.slice(0, 200),
   };
 }
 
@@ -222,6 +227,11 @@ function istObjekt(v: unknown): v is Baum {
 
 function objektFeld(v: unknown, key: string): unknown {
   return istObjekt(v) ? v[key] : undefined;
+}
+
+/** Auf die vom Gateway erlaubte Laenge kuerzen. */
+function kappe(s: string, max: number): string {
+  return s.length > max ? s.slice(0, max) : s;
 }
 
 function text(v: unknown): string {

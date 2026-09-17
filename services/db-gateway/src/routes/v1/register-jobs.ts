@@ -88,7 +88,12 @@ const TrefferShape = z.object({
   sitz: z.string().default(""),
   status: z.enum(["ACTIVE", "CLOSED", "LOESCHUNG_ANGEKUENDIGT"]),
   historie: z.array(z.object({ name: z.string(), sitz: z.string().default(""), order: z.number().int() })).default([]),
-  si: SiShape.optional(),
+  // `catch` ist hier wesentlich: Ein Registerauszug, der nicht ins Schema passt
+  // (unsinnige Jahreszahl, uebermaessig langer Text), darf niemals die ganze
+  // Ergebnismeldung ungueltig machen. Sonst verliert der Job auch seine
+  // Registertreffer und wird endlos wiederholt (Befund 2026-09-17: Job 1725
+  // scheiterte in Schleife mit 400 und verbrannte je Lauf 14 Abfragen).
+  si: SiShape.optional().catch(undefined),
 });
 
 const BekanntmachungShape = z.object({
@@ -157,7 +162,7 @@ export const ErgebnisShape = z.object({
   atFront: z.object({ begriff: z.string().min(2).max(4), naechsteSeite: z.number().int().nonnegative(), fertig: z.boolean(), gesamt: z.number().int().nonnegative() }).optional(),
   trefferUk: z.array(TrefferUkShape).max(5000).optional(),
   ukBulk: z.object({ datum: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), teil: z.number().int().positive(), teile: z.number().int().positive(), zeilen: z.number().int().nonnegative(), teilergebnisse: z.number().int().nonnegative() }).optional(),
-  si: z.object({ geladen: z.number().int().nonnegative(), ohneLink: z.number().int().nonnegative(), fehler: z.number().int().nonnegative() }).optional(),
+  si: z.object({ geladen: z.number().int().nonnegative(), ohneLink: z.number().int().nonnegative(), fehler: z.number().int().nonnegative() }).optional().catch(undefined),
   unbearbeitet: z.array(z.object({ gericht: z.string().min(1), art: z.string().min(2).max(4), nummer: z.number().int().nonnegative(), zusatz: z.string().max(3).optional(), hinweis: z.string().max(40).optional() })).max(500).optional(),
 });
 
