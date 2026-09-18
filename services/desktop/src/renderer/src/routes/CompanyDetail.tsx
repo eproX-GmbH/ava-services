@@ -33,6 +33,7 @@ import {
 import { parseNaceFromProfile } from "../../../shared/nace-divisions";
 import { ExternalLink } from "../components/ExternalLink";
 import { CompanyCrmPanel } from "../components/CompanyCrmPanel";
+import { quellenDerFakten } from "./kontakt-quellen";
 import {
   EyeIcon,
   GlobeIcon,
@@ -1893,6 +1894,7 @@ function PersonCard({
   );
   const xing = find("xingUrl");
   const linkedin = find("linkedinUrl");
+  const herkunftsGruppen = quellenDerFakten(facts, quellen);
 
   // The producer emits one "Fact" row per observation, so a person
   // typically has 3-6 ACTIVE rows + a tail of INACTIVE history. Dumping
@@ -2010,11 +2012,22 @@ function PersonCard({
         </div>
         <div className="pc__ident">
           <h4 className="pc__name">{name}</h4>
-          {(job || dept) && (
+          {(job || dept || herkunftsGruppen.length > 0) && (
             <p className="pc__role">
               {job?.value}
               {job && dept ? " · " : ""}
               {dept?.value}
+              {herkunftsGruppen.length > 0 && (
+                <>
+                  {job || dept ? " · " : ""}
+                  <span
+                    className="pc__quelle"
+                    title={`Gefunden über: ${herkunftsGruppen.join(", ")}`}
+                  >
+                    {herkunftsGruppen.join(" · ")}
+                  </span>
+                </>
+              )}
             </p>
           )}
           {informiertAm && (
