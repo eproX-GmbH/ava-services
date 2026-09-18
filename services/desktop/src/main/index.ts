@@ -306,6 +306,7 @@ import type {
 // Resolved here at module load using `app.isPackaged` + `app.getVersion()`
 // so the rest of main can treat config as static.
 import { resolveConfig } from "../shared/config";
+import { leiteLinksNachAussen } from "./externe-links";
 // v0.1.532 — 11 before-quit-Handler (Breadcrumbs je Modul) sind
 // Absicht; Node warnt ab 10. Vorher stand bei jedem Start eine
 // MaxListenersExceededWarning im Log.
@@ -2326,11 +2327,11 @@ function createMainWindow(): BrowserWindow {
 
   win.on("ready-to-show", () => win.show());
 
-  // External links open in the user's browser, not inside the app.
-  win.webContents.setWindowOpenHandler(({ url }) => {
-    void shell.openExternal(url);
-    return { action: "deny" };
-  });
+  // Externe Links gehoeren in den Browser des Nutzers. Deckt seit v0.1.692
+  // auch gewoehnliche Anker ab: `setWindowOpenHandler` allein faengt nur
+  // window.open und target="_blank", ein schlichtes <a href="https://…">
+  // ersetzte die App bis dahin durch die Seite.
+  leiteLinksNachAussen(win);
 
   if (process.env["ELECTRON_RENDERER_URL"]) {
     void win.loadURL(process.env["ELECTRON_RENDERER_URL"]);

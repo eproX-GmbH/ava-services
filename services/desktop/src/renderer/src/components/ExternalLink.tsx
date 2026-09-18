@@ -18,7 +18,11 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 // Implementation notes:
 //   - All clicks go through `window.open(href, '_blank')` so the
 //     Electron main-process `setWindowOpenHandler` bounces them to the
-//     OS browser (already wired in main/index.ts).
+//     OS browser (see main/externe-links.ts).
+//   - Seit v0.1.692 ist das kein Muss mehr: derselbe Wachposten faengt
+//     auch gewoehnliche Anker ab (`will-navigate`). Diese Komponente
+//     bleibt fuer die Warnung vor LinkedIn-Profilaufrufen zustaendig,
+//     nicht mehr fuer das Oeffnen an sich.
 //   - `target="_blank"` / `rel="noreferrer"` stay on the underlying <a>
 //     for keyboard-driven middle-click and right-click "open in new
 //     tab" — the JS handler is for the warning gate only, not auth.

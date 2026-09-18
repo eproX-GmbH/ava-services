@@ -1,6 +1,6 @@
 {
   "name": "@ava/desktop",
-  "version": "0.1.691",
+  "version": "0.1.692",
   "private": true,
   "license": "SEE LICENSE IN LICENSE",
   "description": "AVA Electron desktop app",
@@ -47,7 +47,8 @@
     "test:email-muster": "node scripts/test-email-muster.mjs",
     "test:suggestions": "node scripts/test-suggestions.mjs",
     "test:browser-sweep": "node scripts/test-browser-sweep.mjs",
-    "test:kontakt-quellen": "node scripts/test-kontakt-quellen.mjs"
+    "test:kontakt-quellen": "node scripts/test-kontakt-quellen.mjs",
+    "test:externe-links": "node scripts/test-externe-links.mjs"
   },
   "dependencies": {
     "@ai-sdk/openai": "^2.0.0",
