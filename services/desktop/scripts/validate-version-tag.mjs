@@ -3,7 +3,7 @@
 //
 // Catches the "I forgot to bump package.json before tagging" mistake
 // before electron-builder runs. The workflow passes the tag via the
-// GITHUB_REF_NAME env (or `--tag <value>` for local testing); we
+// AVA_RELEASE_TAG env (or `--tag <value>` for local testing); we
 // strip the `v` prefix and assert it equals package.json's `version`
 // field. Mismatch = exit 1 + a loud error so the run fails fast
 // instead of producing a release labelled with the wrong number.
@@ -19,11 +19,14 @@ const pkgVersion = pkg.version;
 
 const cliFlag = process.argv.find((a) => a.startsWith("--tag="));
 const tag =
-  (cliFlag ? cliFlag.split("=")[1] : process.env.GITHUB_REF_NAME) ?? "";
+  // AVA_RELEASE_TAG zuerst: Namen mit GITHUB_-Praefix lassen sich in einem
+  // Workflow-Schritt nicht setzen, weshalb beim manuellen Start frueher der
+  // Branchname ankam. GITHUB_REF_NAME bleibt als Rueckfall fuer den Tag-Push.
+  (cliFlag ? cliFlag.split("=")[1] : (process.env.AVA_RELEASE_TAG || process.env.GITHUB_REF_NAME)) ?? "";
 
 if (!tag) {
   console.error(
-    "[validate-version-tag] No tag supplied. Pass --tag=v1.2.3 or set GITHUB_REF_NAME.",
+    "[validate-version-tag] No tag supplied. Pass --tag=v1.2.3 or set AVA_RELEASE_TAG.",
   );
   process.exit(1);
 }

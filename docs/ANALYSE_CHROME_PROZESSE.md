@@ -269,8 +269,15 @@ schließen) und sechs für die Erkennung, darunter ausdrücklich: Der Browser de
 Person bleibt in jeder Betriebsart unberührt, auch mit einem eigenen Profil und
 auch bei einem ähnlich benannten Profilpfad.
 
-Weiterhin offen: D11, also was beim Beenden die Ereignisschleife blockiert. Das
-ist jetzt weniger dringend, weil das Aufräumen nicht mehr davon abhängt.
+**D11 ist am 18.09.2026 gefunden und behoben.** Es war das Schließen der
+eingebetteten Speicher (PGlite als WebAssembly im Hauptprozess) beim Beenden:
+Mail, geplante Aufgaben und Link-Beobachter. Deren `close()` blockiert die
+Ereignisschleife, der Wachhund schoss AVA deshalb jedes Mal ab, und genau dadurch
+blieben die Browser als Waisen stehen. Aufgefallen ist es über die Diagnose des
+Worker-Modus, die dreimal reproduzierbar bei "Mail anhalten" endete. Der
+Beendigungspfad schließt diese Speicher seit v0.1.685 nicht mehr, sondern
+pausiert nur; das `close()` wurde dort ohnehin nie fertig. Einzelheiten:
+`docs/PLAN_WORKER_MODUS.md`.
 **Nachtrag: L5 ist in v0.1.681 ebenfalls umgesetzt.** AVA bringt jetzt eine
 eigene Browserfassung mit (Chrome for Testing), die einmalig geladen wird. Sie
 trägt eine eigene Programmkennung und einen eigenen Namen, weshalb das

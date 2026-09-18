@@ -164,7 +164,12 @@ jobs:
       - name: Validate version tag matches package.json
         working-directory: services/desktop
         env:
-          GITHUB_REF_NAME: ${{ github.event.inputs.tag || github.ref_name }}
+          # Eigener Name, KEIN GITHUB_-Praefix: Namen mit diesem Praefix sind
+          # reserviert und lassen sich in einem Schritt nicht setzen. Bei einem
+          # Tag-Push fiel das nie auf, weil GITHUB_REF_NAME dann ohnehin der Tag
+          # ist — beim manuellen Start kam aber der Branchname an, und die
+          # Pruefung scheiterte mit "main" statt der Version (18.09.2026).
+          AVA_RELEASE_TAG: ${{ github.event.inputs.tag || github.ref_name }}
         run: node scripts/validate-version-tag.mjs
 
       # v0.1.412 — Preflight: GitLab-npm-Token VOR den teuren Schritten pruefen.
@@ -546,7 +551,12 @@ jobs:
       - name: Validate version tag matches package.json
         working-directory: services/desktop
         env:
-          GITHUB_REF_NAME: ${{ github.event.inputs.tag || github.ref_name }}
+          # Eigener Name, KEIN GITHUB_-Praefix: Namen mit diesem Praefix sind
+          # reserviert und lassen sich in einem Schritt nicht setzen. Bei einem
+          # Tag-Push fiel das nie auf, weil GITHUB_REF_NAME dann ohnehin der Tag
+          # ist — beim manuellen Start kam aber der Branchname an, und die
+          # Pruefung scheiterte mit "main" statt der Version (18.09.2026).
+          AVA_RELEASE_TAG: ${{ github.event.inputs.tag || github.ref_name }}
         run: node scripts/validate-version-tag.mjs
 
       # v0.1.412 — Preflight: GitLab-npm-Token VOR den teuren Schritten pruefen.
@@ -933,7 +943,12 @@ jobs:
       - name: Validate version tag matches package.json
         working-directory: services/desktop
         env:
-          GITHUB_REF_NAME: ${{ github.event.inputs.tag || github.ref_name }}
+          # Eigener Name, KEIN GITHUB_-Praefix: Namen mit diesem Praefix sind
+          # reserviert und lassen sich in einem Schritt nicht setzen. Bei einem
+          # Tag-Push fiel das nie auf, weil GITHUB_REF_NAME dann ohnehin der Tag
+          # ist — beim manuellen Start kam aber der Branchname an, und die
+          # Pruefung scheiterte mit "main" statt der Version (18.09.2026).
+          AVA_RELEASE_TAG: ${{ github.event.inputs.tag || github.ref_name }}
         run: node scripts/validate-version-tag.mjs
 
       # v0.1.412 — Preflight: GitLab-npm-Token VOR den teuren Schritten pruefen.

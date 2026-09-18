@@ -2492,7 +2492,10 @@ app.whenReady().then(async () => {
     else console.log("[mail/supervisor] nicht gestartet — Organisationsvorgabe: Mail-Anbindung aus");
     workerModus.anmelden({
       name: "Mail",
-      anhalten: () => mailSupervisor?.stop(),
+      // suspendConnections statt stop: stop() schliesst den eingebetteten
+      // Speicher. Genau daran blieb AVA im Worker-Modus haengen — das
+      // Protokoll endete dreimal reproduzierbar bei "> Mail anhalten".
+      anhalten: () => mailSupervisor?.suspendConnections(),
       anlaufen: () => mailSupervisor?.start(),
       darfLaufen: () => featureEnabled("mail"),
     });
@@ -2520,7 +2523,15 @@ app.whenReady().then(async () => {
     );
   }
   app.on("before-quit", () => {
-    quitStep("mailSupervisor.stop", () => mailSupervisor?.stop());
+    // 2026-09-18 — Beim Beenden NICHT den eingebetteten Speicher schliessen.
+    // PGlite laeuft als WebAssembly im Hauptprozess; sein close() blockiert die
+    // Ereignisschleife. Genau daran hing das Beenden bisher JEDES Mal, der
+    // Wachhund schoss AVA nach wenigen Sekunden ab, und dadurch blieben die
+    // Hintergrund-Browser als Waisen stehen (docs/ANALYSE_CHROME_PROZESSE.md,
+    // D11). Das close() wurde dabei ohnehin nie fertig — es weglassen ist
+    // strikt besser. Die Daten liegen auf der Platte; PGlite stellt beim
+    // naechsten Start wieder her, so wie nach jedem Absturz.
+    quitStep("mailSupervisor.suspendConnections", () => mailSupervisor?.suspendConnections());
   });
 
   // v0.1.307 — Sleep/Wake-Handler. macOS-Sleep-Cycles lassen TCP-Sockets
@@ -2855,7 +2866,9 @@ app.whenReady().then(async () => {
   });
   try {
     await scheduledJobsSupervisor.start();
-    workerModus.anmelden({ name: "Geplante Aufgaben", anhalten: () => scheduledJobsSupervisor?.stop(), anlaufen: () => scheduledJobsSupervisor?.start() });
+    // Nur die Zeitgeber anhalten: stop() wuerde den eingebetteten Speicher
+    // (PGlite/WASM) schliessen und dabei die Ereignisschleife blockieren.
+    workerModus.anmelden({ name: "Geplante Aufgaben", anhalten: () => scheduledJobsSupervisor?.suspendTimers(), anlaufen: () => scheduledJobsSupervisor?.start() });
   } catch (err) {
     console.warn(
       "[scheduler] start fehlgeschlagen:",
@@ -2863,7 +2876,7 @@ app.whenReady().then(async () => {
     );
   }
   app.on("before-quit", () => {
-    quitStep("scheduledJobsSupervisor.stop", () => scheduledJobsSupervisor?.stop());
+    quitStep("scheduledJobsSupervisor.suspendTimers", () => scheduledJobsSupervisor?.suspendTimers());
   });
 
   async function broadcastScheduledJobsChanged(): Promise<void> {
@@ -2911,7 +2924,7 @@ app.whenReady().then(async () => {
   });
   try {
     await linkMonitorSupervisor.start();
-    workerModus.anmelden({ name: "Link-Beobachter", anhalten: () => linkMonitorSupervisor?.stop(), anlaufen: () => linkMonitorSupervisor?.start() });
+    workerModus.anmelden({ name: "Link-Beobachter", anhalten: () => linkMonitorSupervisor?.suspendTimers(), anlaufen: () => linkMonitorSupervisor?.start() });
   } catch (err) {
     console.warn(
       "[link-monitor] start fehlgeschlagen:",
@@ -3314,7 +3327,7 @@ app.whenReady().then(async () => {
   app.on("before-quit", () => quitStep("radarSupervisor.stop", () => radarSupervisor?.stop()));
 
   app.on("before-quit", () => {
-    quitStep("linkMonitorSupervisor.stop", () => linkMonitorSupervisor?.stop());
+    quitStep("linkMonitorSupervisor.suspendTimers", () => linkMonitorSupervisor?.suspendTimers());
   });
 
   async function broadcastLinkMonitorsChanged(): Promise<void> {

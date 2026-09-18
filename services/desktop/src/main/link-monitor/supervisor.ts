@@ -130,6 +130,20 @@ export class LinkMonitorSupervisor extends EventEmitter {
     await this.store.stop();
   }
 
+  /**
+   * Nur die Zeitgeber anhalten, den Speicher (PGlite/WASM) offen lassen —
+   * wie ScheduledJobsSupervisor.suspendTimers und MailSupervisor.suspendConnections.
+   *
+   * Grund (2026-09-18): Ein close() auf PGlite laeuft als WebAssembly im
+   * Hauptprozess und blockiert dabei die Ereignisschleife. Im Worker-Modus
+   * blieb AVA genau daran haengen, und beim Beenden ebenso. Wer nur pausieren
+   * will, darf den Speicher nicht schliessen.
+   */
+  suspendTimers(): void {
+    for (const t of this.timers.values()) clearTimeout(t);
+    this.timers.clear();
+  }
+
   /** Monitor anlegen (über IPC/Tool). Leitet Label + LinkedIn-Flag aus
    *  der URL ab und armiert den Timer, falls aktiv angelegt. */
   async createMonitor(

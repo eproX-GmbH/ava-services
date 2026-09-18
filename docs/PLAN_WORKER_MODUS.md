@@ -88,3 +88,38 @@ Protokoll beantwortet das. Der Verdacht, dass dieselbe Ursache hinter dem
 Hänger beim Beenden steckt, liegt nahe: Auch dort blockiert nach dem Stoppen
 vieler Dienste synchrones JavaScript die Ereignisschleife, siehe
 `docs/ANALYSE_CHROME_PROZESSE.md` Punkt D11.
+
+## Ursache gefunden (v0.1.685)
+
+Die Diagnose aus v0.1.679 hat geliefert, wofür sie gebaut wurde. Das Protokoll
+endete dreimal reproduzierbar an derselben Stelle:
+
+```
+> Erreichbarkeit anhalten
+< Erreichbarkeit anhalten
+> Mail anhalten          ← danach nichts mehr
+```
+
+Der Mail-Dienst schließt beim Anhalten seinen eingebetteten Speicher. Das ist
+PGlite, ein Postgres als WebAssembly, das im Hauptprozess läuft. Sein `close()`
+blockiert dabei die Ereignisschleife. Deshalb half auch die Frist von drei
+Sekunden nicht: Ein blockierter Hauptthread kann keinen Zeitgeber mehr bedienen.
+
+Das Problem war im Haus bereits bekannt und für den Schlafmodus gelöst. In
+`ScheduledJobsSupervisor.suspendTimers` steht seit v0.1.538 die Begründung: Ein
+`close()` auf PGlite, das macOS mitten im Schlaf einfror, ließ den Hauptthread
+stundenlang hängen. Für Mail gibt es seitdem `suspendConnections`. Der
+Worker-Modus rief nur die falsche Methode.
+
+Behoben in v0.1.685: Die drei Dienste mit eingebettetem Speicher werden im
+Worker-Modus nur noch pausiert, nicht geschlossen. Mail trennt seine
+Verbindungen, geplante Aufgaben und der Link-Beobachter halten ihre Zeitgeber
+an. Für den Link-Beobachter war die schonende Variante neu zu bauen.
+
+**Dieselbe Ursache steckte hinter dem Hänger beim Beenden** (D11 in
+`docs/ANALYSE_CHROME_PROZESSE.md`). Auch dort wurden dieselben Dienste gestoppt,
+auch dort blockierte das Schließen, und der Wachhund schoss AVA jedes Mal ab —
+weshalb die Hintergrund-Browser als Waisen liegenblieben. Der Beendigungspfad
+schließt den Speicher deshalb nicht mehr. Das `close()` wurde dort ohnehin nie
+fertig; es wegzulassen ist strikt besser. Die Daten liegen auf der Platte, und
+PGlite stellt beim nächsten Start wieder her.
