@@ -187,6 +187,10 @@ export function buildReadOnlyRegistry(deps: {
   /** Register-Delta S6 — Mithelfen (lazy, entsteht im Boot). */
   getMithelfen?: () => import("../../register-delta/supervisor").MithelfenSupervisor | null;
   getRegisterQueueStatus?: () => Promise<Record<string, unknown> | null>;
+  /** Zustand des eigenen Browsers der Hintergrundverarbeitung. */
+  browserStand?: () => { zustand: string; version?: string; fortschritt?: number; meldung?: string };
+  /** Eigenen Browser laden, falls er fehlt. */
+  browserLaden?: () => Promise<{ zustand: string; version?: string; meldung?: string }>;
   getWatchlistKeyStore: () => import("../../linkedin/watchlist/key-store").WatchlistKeyStore | null;
   onCompanyWindowChanged?: () => void;
   getPersonenRadarStore: () => import("../../linkedin/personen-radar/store").PersonenRadarStore | null;
@@ -383,7 +387,10 @@ export function buildReadOnlyRegistry(deps: {
   }))
     registry.register(t);
   for (const t of buildEmailMusterTools({ get: () => deps.getEmailMuster?.() ?? null })) registry.register(t);
-  for (const t of buildRegisterDeltaTools({ get: () => deps.getMithelfen?.() ?? null, queueStatus: () => deps.getRegisterQueueStatus?.() ?? Promise.resolve(null) })) registry.register(t);
+  for (const t of buildRegisterDeltaTools({ get: () => deps.getMithelfen?.() ?? null, queueStatus: () => deps.getRegisterQueueStatus?.() ?? Promise.resolve(null) ,
+      browserStand: () => deps.browserStand?.() ?? { zustand: "aus" },
+      browserLaden: () => deps.browserLaden?.() ?? Promise.resolve({ zustand: "aus" }),
+    })) registry.register(t);
   for (const t of buildVorschlaegeTools({ get: () => deps.getNutzerstand?.() ?? null, toolNamen: () => registry.list().map((x) => x.name), settings: () => deps.getVorschlaegeSettings?.() ?? null })) registry.register(t);
   for (const t of buildSkillsTools({
     getSkillStore: deps.getSkillStore,

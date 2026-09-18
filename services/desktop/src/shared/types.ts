@@ -2934,3 +2934,14 @@ export const LINK_MONITOR_PRESET_MINUTES: Record<
   daily: 24 * 60,
   weekly: 7 * 24 * 60,
 };
+
+/**
+ * Zustand des eigenen Browsers fuer die Hintergrundverarbeitung
+ * (Chrome for Testing, main/chrome-for-testing.ts).
+ */
+export type BrowserStand =
+  | { zustand: "aus" }
+  | { zustand: "fehlt" }
+  | { zustand: "laedt"; fortschritt: number }
+  | { zustand: "bereit"; version: string; pfad: string; treiber: string | null }
+  | { zustand: "fehler"; meldung: string };

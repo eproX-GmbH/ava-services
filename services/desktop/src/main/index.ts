@@ -5,6 +5,7 @@ import { ChipErzeugung } from "./suggestions/erzeugung";
 import { VorschlaegeSettingsStore } from "./suggestions/settings";
 import { MithelfenSettingsStore, MithelfenSupervisor } from "./register-delta/supervisor";
 import { workerModus } from "./worker-modus";
+import { ChromeForTesting } from "./chrome-for-testing";
 import { existsSync as existsSyncMain, rmSync as rmSyncMain, writeFileSync as writeFileSyncMain } from "node:fs";
 
 /** Pfad des Worker-Modus-Merkers; im Start gesetzt (siehe dort). */
@@ -673,6 +674,13 @@ function makeDatabaseUrlGetter(
 }
 
 const producers: ProducerSupervisor[] = [];
+
+/**
+ * Eigener Browser fuer die Hintergrundverarbeitung (chrome-for-testing.ts).
+ * Wird im Start eingerichtet; bis dahin null, dann greift der Browser der
+ * Person wie bisher.
+ */
+let eigenerBrowser: ChromeForTesting | null = null;
 /** v0.1.99 — registered producers whose vendored bundle is missing.
  *  Broadcast as state="not_installed" so Settings can show them. */
 const missingProducers: Array<{
@@ -822,6 +830,10 @@ function buildProducer(
             : undefined;
   return new ProducerSupervisor({
     config: { name, entry, databaseName, port },
+    // Eigener Browser statt der Chrome-Installation der Person, sobald eine
+    // Fassung bereitliegt (docs/ANALYSE_CHROME_PROZESSE.md, L5).
+    browserPfad: () => eigenerBrowser?.browserPfad() ?? null,
+    treiberVerzeichnis: () => eigenerBrowser?.treiberVerzeichnis() ?? null,
     databaseUrl: makeDatabaseUrlGetter(name),
     amqpUrl: fetchAmqpUrl,
     jwksUri: `${APP_CONFIG.authIssuer}/protocol/openid-connect/certs`,
@@ -1907,6 +1919,8 @@ const agentRegistry = buildReadOnlyRegistry({
   getNutzerstand: () => nutzerstand,
   getVorschlaegeSettings: () => vorschlaegeSettings,
   getMithelfen: () => mithelfen,
+  browserStand: () => eigenerBrowser?.aktuellerStand() ?? { zustand: "aus" },
+  browserLaden: async () => (await eigenerBrowser?.stelleSicher()) ?? { zustand: "aus" },
   getRegisterQueueStatus: () => registerQueueStatus(),
   getRadar: () =>
     radarSupervisor
@@ -2349,6 +2363,31 @@ app.whenReady().then(async () => {
   } catch {
     /* best-effort */
   }
+  // Eigener Browser fuer die Hintergrundverarbeitung (chrome-for-testing.ts,
+  // docs/ANALYSE_CHROME_PROZESSE.md L5). Erst nachsehen, ob schon eine Fassung
+  // da ist; das ist billig und sagt sofort Bescheid. Das Laden selbst laeuft
+  // danach im Hintergrund weiter, damit der Start nie darauf wartet.
+  eigenerBrowser = new ChromeForTesting(
+    join(app.getPath("userData"), "chrome-for-testing"),
+    (zeile) => writeLineSync("INFO ", zeile),
+    (stand) => {
+      for (const win of BrowserWindow.getAllWindows()) win.webContents.send("browser:stand", stand);
+    },
+  );
+  void eigenerBrowser
+    .sucheVorhandene()
+    .then((stand) => {
+      if (stand.zustand === "bereit") {
+        writeLineSync("INFO ", `[browser] eigener Browser bereit: Chrome for Testing ${stand.version}`);
+        return;
+      }
+      if (stand.zustand === "aus") return; // Plattform ohne Fassung
+      // Rund 160 MB, einmalig. Schlaegt es fehl, bleibt der Browser der Person.
+      return eigenerBrowser?.stelleSicher().then(() => undefined);
+    })
+    .catch(() => undefined);
+  ipcMain.handle("browser:stand", () => eigenerBrowser?.aktuellerStand() ?? { zustand: "aus" });
+
   // Verwaiste chromedriver/Headless-Chrome aus frueheren Sitzungen beenden (browser-sweep.ts).
   void beendeVerwaisteBrowser({ log: (z) => writeLineSync("INFO ", z) });
   setInterval(
@@ -5396,6 +5435,8 @@ app.whenReady().then(async () => {
     getAccessToken: () => auth.getAccessToken(),
     getActorId: () => auth.getStatus().actorId ?? null,
     settings: new MithelfenSettingsStore(join(app.getPath("userData"), "register-delta")),
+    browserPfad: () => eigenerBrowser?.browserPfad() ?? null,
+    treiberVerzeichnis: () => eigenerBrowser?.treiberVerzeichnis() ?? null,
   });
   mithelfen.on("status", (st) => {
     for (const win of BrowserWindow.getAllWindows()) win.webContents.send("register-delta:status:changed", st);

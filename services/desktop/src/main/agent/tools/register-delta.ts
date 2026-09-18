@@ -16,7 +16,14 @@ const GRUND_TEXT: Record<string, string> = {
   gesperrt: "Registerportal hat die Abfragen vorübergehend gesperrt",
 };
 
-export function buildRegisterDeltaTools(deps: { get: () => MithelfenSupervisor | null; queueStatus: () => Promise<Record<string, unknown> | null> }): Tool[] {
+export function buildRegisterDeltaTools(deps: {
+  get: () => MithelfenSupervisor | null;
+  queueStatus: () => Promise<Record<string, unknown> | null>;
+  /** Zustand des eigenen Browsers (Chrome for Testing). */
+  browserStand?: () => { zustand: string; version?: string; fortschritt?: number; meldung?: string };
+  /** Eigenen Browser laden, falls er fehlt. */
+  browserLaden?: () => Promise<{ zustand: string; version?: string; meldung?: string }>;
+}): Tool[] {
   const status = defineTool({
     name: "register_delta_status",
     summary: "Stammdaten mitpflegen: Status des lokalen Register-Workers und der geteilten Job-Queue.",
@@ -72,5 +79,39 @@ export function buildRegisterDeltaTools(deps: { get: () => MithelfenSupervisor |
       return { geaendert: true, ...sup.status(), ...(args.nurRegister !== undefined ? { ruhendeDienste: args.nurRegister ? workerModus.angemeldet() : [] } : {}) };
     },
   });
-  return [status, config];
+  const browser = defineTool({
+    name: "browser_status",
+    summary: "Eigener Browser der Hintergrundverarbeitung: Zustand lesen, bei Bedarf laden.",
+    category: "browser chrome hintergrund verarbeitung handelsregister webseiten eigener browser",
+    description:
+      "AVA steuert fuer Handelsregister, Webseiten und Publikationen einen eigenen Browser im Hintergrund (Chrome for Testing, rund 160 MB, " +
+      "einmalig geladen). Der Browser der Person wird dabei nie gestartet, nie beendet und teilt weder Profil noch Anmeldungen. " +
+      "Ohne Argumente: aktueller Zustand. Mit laden=true wird eine fehlende Fassung geholt (mit Bestaetigung, weil es Daten kostet). " +
+      "Fehlt die Fassung, arbeitet AVA mit dem Browser, der auf dem Rechner installiert ist.",
+    parameters: { type: "object", properties: { laden: { type: "boolean", description: "Fehlende Fassung jetzt laden." } } },
+    schema: yup.object({ laden: yup.boolean().optional() }).noUnknown(true),
+    preview: (r: Record<string, any>) => (r.error ? r.error : r.zustand === "bereit" ? `eigener Browser bereit (${r.version ?? "?"})` : `eigener Browser: ${r.zustand}`),
+    run: async (args, c) => {
+      const stand = deps.browserStand?.();
+      if (!stand) return { error: "Der eigene Browser ist in dieser Installation nicht eingerichtet." };
+      if (!args.laden) return stand;
+      if (stand.zustand === "bereit") return { ...stand, hinweis: "Die Fassung liegt bereits bereit." };
+      if (!deps.browserLaden) return { ...stand, error: "Laden ist hier nicht moeglich." };
+      const value = await c.ui.confirmAction(
+        {
+          kind: "additive",
+          prompt: "Eigenen Browser fuer die Hintergrundverarbeitung laden? Rund 160 MB, einmalig.",
+          confirmValue: "ja",
+          options: [
+            { value: "ja", label: "Laden" },
+            { value: "nein", label: "Abbrechen" },
+          ],
+        },
+        c.signal,
+      );
+      if (value !== "ja") return { ...stand, abgebrochen: true };
+      return await deps.browserLaden();
+    },
+  });
+  return [status, config, browser];
 }

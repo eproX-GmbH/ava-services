@@ -9,6 +9,7 @@ import { TelegramSection } from "./TelegramSection";
 import { EmailMusterSection } from "./EmailMusterSection";
 import { VorschlaegeSection } from "./VorschlaegeSection";
 import { MithelfenSection } from "./MithelfenSection";
+import { BrowserSection } from "./BrowserSection";
 import { useFeature } from "../../store/policy";
 
 // v0.1.273+ — Automatisierungen-Tab.
@@ -31,6 +32,7 @@ export function AutomatisierungenTab() {
       <EmailMusterSection />
       <VorschlaegeSection />
       <MithelfenSection />
+      <BrowserSection />
       <AlertsSection />
       {telegramErlaubt && <TelegramSection />}
     </>

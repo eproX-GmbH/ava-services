@@ -96,3 +96,34 @@ Domains sind `justizonline.gv.at` und `edikte.justiz.gv.at`.
 (`thegazette.co.uk`). Der Monatsabzug wird als ZIP nach `/tmp` geladen,
 gestreamt und danach gelöscht; es wird nichts ausgeführt und nichts in
 den Nutzerordner geschrieben.
+
+## Nachtrag 2026-09-18: Eigener Browser statt der Installation der Person
+
+AVA bringt für die Hintergrundverarbeitung eine eigene Browserfassung mit
+(Chrome for Testing von Google). Sie wird nicht mitgeliefert, sondern einmalig
+geladen: rund 160 MB, in `<userData>/chrome-for-testing/<Fassung>/`.
+
+Regeln dieses einen Downloads:
+
+- **Er läuft im Hauptprozess, nicht in einem Hintergrund-Browser.** Die
+  Download-Sperre der Hintergrund-Browser bleibt unberührt.
+- **Zwei Hosts, beide von Google:** `googlechromelabs.github.io` für die
+  Fassungsliste und `storage.googleapis.com` für die Archive. Jede Adresse wird
+  vor dem Abruf gegen diese Liste und auf https geprüft; alles andere wird
+  abgelehnt.
+- **Höchstens 400 MB je Archiv**, geprüft am angekündigten und am tatsächlich
+  gelesenen Umfang. Der Strom wird abgebrochen, sobald die Grenze überschritten
+  ist.
+- **Entpackt wird in ein Verzeichnis unterhalb der Anwendungsdaten**, danach
+  wird das Archiv gelöscht. Auf macOS wird nur das Quarantäne-Merkmal entfernt;
+  die Signaturprüfung des Systems bleibt in Kraft, und die Fassung ist von
+  Google signiert.
+- **Nur eine Fassung wird behalten**, ältere werden entfernt.
+- **Fehlschlag ist folgenlos:** AVA arbeitet dann mit dem Browser weiter, der
+  auf dem Rechner installiert ist. Die Verarbeitung fällt nie aus.
+
+Warum überhaupt: Startete AVA die Chrome-Installation der Person, zählte
+macOS die Hintergrundinstanzen zur selben Anwendung wie ihr sichtbares Fenster
+und wartete beim Herunterfahren auf sie. Die eigene Fassung trägt eine eigene
+Programmkennung (`com.google.chrome.for.testing`) und einen eigenen Namen.
+Details: `docs/ANALYSE_CHROME_PROZESSE.md`, D10 und Abschnitt 9.

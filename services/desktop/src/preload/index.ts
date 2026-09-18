@@ -1691,6 +1691,16 @@ const api = {
     setSettings: (patch: { startseite?: boolean; gespraech?: boolean }): Promise<{ startseite: boolean; gespraech: boolean; orgErlaubt: boolean }> =>
       ipcRenderer.invoke("suggestions:setSettings", patch),
   },
+  // Eigener Browser fuer die Hintergrundverarbeitung (Chrome for Testing).
+  browser: {
+    stand: (): Promise<import("../shared/types").BrowserStand> => ipcRenderer.invoke("browser:stand"),
+    onStand: (cb: (s: import("../shared/types").BrowserStand) => void): (() => void) => {
+      const h = (_e: unknown, s: import("../shared/types").BrowserStand) => cb(s);
+      ipcRenderer.on("browser:stand", h);
+      return () => ipcRenderer.removeListener("browser:stand", h);
+    },
+  },
+
   // Register-Delta S6 — Mithelfen (Stammdaten mitpflegen).
   registerDelta: {
     status: (): Promise<import("../shared/register-delta-types").MithelfenStatus> => ipcRenderer.invoke("registerDelta:status"),

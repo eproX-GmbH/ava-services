@@ -12,7 +12,7 @@ import { EventEmitter } from "node:events";
 import { spawn, type ChildProcess } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync, chmodSync } from "node:fs";
 import { hostname } from "node:os";
-import { join } from "node:path";
+import { delimiter as pathDelimiter, join } from "node:path";
 import { powerMonitor } from "electron";
 import type { MithelfenSettings, MithelfenStatus, MithelfenVerlauf, MithelfenVerlaufEintrag } from "../../shared/register-delta-types";
 import { producerLogBuffer } from "../producer-log-buffer";
@@ -67,6 +67,10 @@ export interface MithelfenSupervisorOptions {
   getAccessToken: () => Promise<string | null>;
   getActorId: () => string | null;
   settings: MithelfenSettingsStore;
+  /** Eigener Browser (Chrome for Testing), wenn eine Fassung bereitliegt. */
+  browserPfad?: () => string | null;
+  /** Verzeichnis des passenden Treibers fuer den Suchpfad des Kindprozesses. */
+  treiberVerzeichnis?: () => string | null;
 }
 
 type KindZustand = {
@@ -251,6 +255,10 @@ export class MithelfenSupervisor extends EventEmitter {
         WORKER_ART: "desktop",
         WORKER_TOKEN_FILE: this.tokenFile,
         ABFRAGEN_JE_STUNDE: "60",
+        // Eigener Browser statt der Chrome-Installation der Person; der Worker
+        // bevorzugt CHROME_BIN (findeChrome in portal.ts).
+        ...(this.o.browserPfad?.() ? { CHROME_BIN: this.o.browserPfad()! } : {}),
+        ...(this.o.treiberVerzeichnis?.() ? { PATH: `${this.o.treiberVerzeichnis()}${pathDelimiter}${process.env.PATH ?? ""}` } : {}),
         REGISTER_DELTA_STATUS: "1",
       },
       stdio: ["ignore", "pipe", "pipe"],

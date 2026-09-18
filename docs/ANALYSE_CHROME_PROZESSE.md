@@ -271,6 +271,12 @@ auch bei einem ähnlich benannten Profilpfad.
 
 Weiterhin offen: D11, also was beim Beenden die Ereignisschleife blockiert. Das
 ist jetzt weniger dringend, weil das Aufräumen nicht mehr davon abhängt.
-Ebenfalls offen ist L5, ein eigener Browser statt der Installation der Person.
-Das bleibt die einzige Maßnahme, die auch den seltenen Fall abdeckt, dass beim
-Herunterfahren gerade ein AVA-Browser arbeitet.
+**Nachtrag: L5 ist in v0.1.681 ebenfalls umgesetzt.** AVA bringt jetzt eine
+eigene Browserfassung mit (Chrome for Testing), die einmalig geladen wird. Sie
+trägt eine eigene Programmkennung und einen eigenen Namen, weshalb das
+Betriebssystem sie nicht mehr der Anwendung der Person zurechnet. Damit ist auch
+der Fall abgedeckt, dass beim Herunterfahren gerade ein AVA-Browser arbeitet.
+Browser und Treiber stammen aus demselben Paket, was zugleich die
+wiederkehrenden Versionskonflikte beendet. Schlägt das Laden fehl, arbeitet AVA
+mit dem Browser der Person weiter; die Verarbeitung fällt nie aus. Regeln des
+Downloads: `docs/SICHERHEIT_HINTERGRUND_BROWSER.md`, Nachtrag 2026-09-18.

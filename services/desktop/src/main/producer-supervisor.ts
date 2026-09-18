@@ -12,7 +12,7 @@ import { resolveProducerDirUnder } from "./producer-dirs";
 import type { Readable } from "node:stream";
 import { EventEmitter } from "node:events";
 import { existsSync } from "node:fs";
-import { join } from "node:path";
+import { delimiter, join } from "node:path";
 import { app } from "electron";
 import type {
   ProducerStatus,
@@ -85,6 +85,11 @@ export interface ProducerConfig {
 }
 
 export interface ProducerSupervisorOptions {
+  /** Pfad zum eigenen Browser (Chrome for Testing), wenn eine Fassung bereitliegt. */
+  browserPfad?: () => string | null;
+  /** Verzeichnis des passenden Treibers; kommt dem Suchpfad des Producers voran. */
+  treiberVerzeichnis?: () => string | null;
+
   config: ProducerConfig;
   /**
    * DATABASE_URL for the producer — pulled from the gateway via
@@ -698,8 +703,17 @@ export class ProducerSupervisor extends EventEmitter {
     // a new userId is captured fresh.
     const userId = await this.opts.getUserId();
     const tenantId = this.opts.getTenantId ? await this.opts.getTenantId() : null;
+    // Eigener Browser (chrome-for-testing.ts): Liegt eine Fassung bereit, geben
+    // wir sie samt passendem Treiber an den Producer weiter. Die Producer
+    // bevorzugen CHROME_BIN vor der Installation der Person; der Treiber kommt
+    // ueber den Suchpfad, seine Version passt immer zum Browser. Fehlt die
+    // Fassung, bleibt alles wie bisher.
+    const eigenerBrowser = this.opts.browserPfad?.() ?? null;
+    const eigenerTreiber = this.opts.treiberVerzeichnis?.() ?? null;
     return {
       ...process.env,
+      ...(eigenerBrowser ? { CHROME_BIN: eigenerBrowser } : {}),
+      ...(eigenerTreiber ? { PATH: `${eigenerTreiber}${delimiter}${process.env.PATH ?? ""}` } : {}),
       // Cloud-managed Postgres URL fetched from gateway. The
       // producer's prisma client connects directly to fly's MPG
       // cluster; schema migrations were applied by the matching

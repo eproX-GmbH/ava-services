@@ -5,7 +5,7 @@ NICHT direkt bearbeiten — die Quelle der Wahrheit ist `services/desktop/src/ma
 Lauf via `pnpm -F @ava/desktop tools:doc` (oder automatisch via `build:typecheck`).
 
 Stand: 2026-09-18
-Anzahl Tools: 251
+Anzahl Tools: 252
 
 ## Firmen (22)
 
@@ -1963,7 +1963,16 @@ Liefert den aktuellen Erreichbarkeits-Status der externen Quellen (unternehmensr
 
 _Parameter:_ keine.
 
-## register-delta (2)
+## register-delta (3)
+
+### `browser_status`
+
+_Datei:_ `services/desktop/src/main/agent/tools/register-delta.ts`
+
+AVA steuert fuer Handelsregister, Webseiten und Publikationen einen eigenen Browser im Hintergrund (Chrome for Testing, rund 160 MB, einmalig geladen). Der Browser der Person wird dabei nie gestartet, nie beendet und teilt weder Profil noch Anmeldungen. Ohne Argumente: aktueller Zustand. Mit laden=true wird eine fehlende Fassung geholt (mit Bestaetigung, weil es Daten kostet). Fehlt die Fassung, arbeitet AVA mit dem Browser, der auf dem Rechner installiert ist.
+
+_Parameter:_
+- `laden: boolean` — Fehlende Fassung jetzt laden.
 
 ### `register_delta_config`
 
