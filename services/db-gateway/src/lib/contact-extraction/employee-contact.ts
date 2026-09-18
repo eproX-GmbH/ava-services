@@ -148,7 +148,12 @@ export async function upsertPersonByIdentity(
     keys.push(nameKey);
   }
 
-  const existing = await prisma.person.findFirst({
+  // findMany, nicht findFirst: Tragen mehrere Datensaetze einen der
+  // gesuchten Schluessel, sind das Dubletten derselben Person. findFirst gab
+  // einen beliebigen zurueck, und welcher es war, konnte von Lauf zu Lauf
+  // wechseln — dann wanderten Angaben zwischen zwei Karten hin und her.
+  // Die aelteste gewinnt: sie traegt die laengste Historie.
+  const treffer = await prisma.person.findMany({
     where: {
       personFacts: {
         some: {
@@ -157,8 +162,20 @@ export async function upsertPersonByIdentity(
         },
       },
     },
+    orderBy: { createdAt: "asc" },
   });
 
+  if (treffer.length > 1) {
+    // Nicht selbst zusammenfuehren: das Verschmelzen von Fakten, Belegen und
+    // Beschaeftigungen gehoert nicht in einen Schreibpfad, der nebenbei
+    // laeuft. Sichtbar machen genuegt, damit der Bestand bereinigt werden
+    // kann; ab hier entstehen jedenfalls keine neuen dazu.
+    console.warn(
+      `[kontakte] ${treffer.length} Datensaetze teilen sich einen Identitaetsschluessel (${key}) — genutzt wird der aelteste ${treffer[0]!.id}; Dublette(n): ${treffer.slice(1).map((t) => t.id).join(", ")}`,
+    );
+  }
+
+  const existing = treffer[0];
   if (existing)
     return { personId: existing.id, created: false, identityKey: key };
 
@@ -204,6 +221,30 @@ export function buildPersonObservations(args: {
     evidence: null,
     companyId: args.companyId,
   });
+
+  // Traegt die Person einen Profil-Schluessel, bekommt sie den
+  // Namens-Schluessel DAZU. Das ist die Wurzel der Dubletten vom
+  // 2026-09-01: Ein Lauf, der nur einen Namen kannte, suchte nach dem
+  // Namens-Schluessel, fand die laengst angelegte Person nicht — die trug
+  // ja nur den Profil-Schluessel — und legte sie ein zweites Mal an.
+  // Fuenf Minuten spaeter hing derselbe Profil-Schluessel an beiden.
+  //
+  // Die Suche kennt den umgekehrten Weg bereits (ein Profil-Schluessel
+  // sucht zusaetzlich nach dem Namens-Schluessel). Erst beide Schluessel am
+  // Datensatz machen daraus ein Paar, das in beide Richtungen findet.
+  if (args.identityKey.startsWith("url:")) {
+    obs.push({
+      entityType: "PERSON" as EntityType,
+      entityId: args.personId,
+      personId: args.personId,
+      field: "identityKey",
+      value: `name:${sha256(`${args.companyId}|${nameIdentityForm(args.candidate.fullName)}`)}`,
+      source: args.source,
+      evidenceUrl: args.evidenceUrl ?? null,
+      evidence: null,
+      companyId: args.companyId,
+    });
+  }
 
   obs.push({
     entityType: "PERSON" as EntityType,
