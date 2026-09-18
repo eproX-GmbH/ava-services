@@ -68,7 +68,14 @@ env:
   RELEASE_REPO: eproX-GmbH/ava-releases
   # Schreibrechte im Release-Repository. Das automatische GITHUB_TOKEN gilt nur
   # fuer dieses Repository und reicht dafuer nicht.
-  RELEASE_TOKEN_SECRET_NAME: SUBMODULES_PAT
+  #
+  # Genommen wird RELEASE_PAT, wenn es hinterlegt ist, sonst SUBMODULES_PAT.
+  # Damit gibt es zwei Wege, und beide funktionieren ohne weitere Aenderung:
+  #   a) ein eigenes Token nur fuer Releases als Secret RELEASE_PAT — es braucht
+  #      allein Zugriff auf eproX-GmbH/ava-releases mit "Contents: Read and
+  #      write". Das ist der sauberere Weg: Der Submodul-Token behaelt seine
+  #      Leserechte, der Release-Token seine Schreibrechte.
+  #   b) SUBMODULES_PAT um das Release-Repository erweitern.
 
 jobs:
   # v0.1.643 — Das GitHub-Release wird VOR den Build-Jobs als Entwurf
@@ -86,7 +93,7 @@ jobs:
     steps:
       - name: Draft-Release fuer den Tag sicherstellen
         env:
-          GH_TOKEN: ${{ secrets.SUBMODULES_PAT }}
+          GH_TOKEN: ${{ secrets.RELEASE_PAT || secrets.SUBMODULES_PAT }}
         run: |
           TAG="${{ github.event.inputs.tag || github.ref_name }}"
           REPO="$RELEASE_REPO"
@@ -290,7 +297,7 @@ jobs:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-          GH_TOKEN: ${{ secrets.SUBMODULES_PAT }}
+          GH_TOKEN: ${{ secrets.RELEASE_PAT || secrets.SUBMODULES_PAT }}
         run: |
           # macOS runners default to ulimit -n 256, which the
           # `readDirectoryAndSign` walker blows past once we vendor
@@ -402,7 +409,7 @@ jobs:
       - name: Ensure arm64 artifacts on release (bypass 2h skip)
         working-directory: services/desktop
         env:
-          GH_TOKEN: ${{ secrets.SUBMODULES_PAT }}
+          GH_TOKEN: ${{ secrets.RELEASE_PAT || secrets.SUBMODULES_PAT }}
         shell: bash
         run: |
           TAG="${{ github.event.inputs.tag || github.ref_name }}"
@@ -432,7 +439,7 @@ jobs:
         continue-on-error: true
         shell: bash
         env:
-          GH_TOKEN: ${{ secrets.SUBMODULES_PAT }}
+          GH_TOKEN: ${{ secrets.RELEASE_PAT || secrets.SUBMODULES_PAT }}
         run: |
           REPO="$RELEASE_REPO"
           eintrag=$(gh api "repos/$REPO/releases?per_page=100" \
@@ -754,7 +761,7 @@ jobs:
         continue-on-error: true
         shell: bash
         env:
-          GH_TOKEN: ${{ secrets.SUBMODULES_PAT }}
+          GH_TOKEN: ${{ secrets.RELEASE_PAT || secrets.SUBMODULES_PAT }}
         run: |
           REPO="$RELEASE_REPO"
           eintrag=$(gh api "repos/$REPO/releases?per_page=100" \
@@ -781,7 +788,7 @@ jobs:
       - name: Merge manifests and upload x64 artifacts to release
         working-directory: services/desktop
         env:
-          GH_TOKEN: ${{ secrets.SUBMODULES_PAT }}
+          GH_TOKEN: ${{ secrets.RELEASE_PAT || secrets.SUBMODULES_PAT }}
         shell: bash
         run: |
           TAG="${{ github.event.inputs.tag || github.ref_name }}"
@@ -860,7 +867,7 @@ jobs:
     steps:
       - name: Promote release to Latest
         env:
-          GH_TOKEN: ${{ secrets.SUBMODULES_PAT }}
+          GH_TOKEN: ${{ secrets.RELEASE_PAT || secrets.SUBMODULES_PAT }}
         run: |
           TAG="${{ github.event.inputs.tag || github.ref_name }}"
           gh release edit "$TAG" --draft=false --latest \
@@ -1023,7 +1030,7 @@ jobs:
         working-directory: services/desktop
         shell: bash
         env:
-          GH_TOKEN: ${{ secrets.SUBMODULES_PAT }}
+          GH_TOKEN: ${{ secrets.RELEASE_PAT || secrets.SUBMODULES_PAT }}
           AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
           AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
           AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
@@ -1077,7 +1084,7 @@ jobs:
         continue-on-error: true
         shell: bash
         env:
-          GH_TOKEN: ${{ secrets.SUBMODULES_PAT }}
+          GH_TOKEN: ${{ secrets.RELEASE_PAT || secrets.SUBMODULES_PAT }}
         run: |
           REPO="$RELEASE_REPO"
           eintrag=$(gh api "repos/$REPO/releases?per_page=100" \
