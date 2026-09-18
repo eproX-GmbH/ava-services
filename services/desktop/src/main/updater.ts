@@ -119,9 +119,14 @@ export class Updater extends EventEmitter {
       return;
     }
 
-    // Inject the build-time-baked GH_TOKEN so electron-updater can
-    // talk to the private repo's releases.atom feed. See
-    // electron.vite.config.ts's `define` block for the source.
+    // Den beim Bauen eingebackenen Token in die Umgebung legen, damit
+    // electron-updater die Releases des privaten Repositorys lesen darf.
+    // Quelle: `define`-Block in electron.vite.config.ts.
+    //
+    // 2026-09-18: Der Token allein genuegt nicht. In electron-builder.yml muss
+    // `publish.private: true` stehen, sonst fragt electron-updater den
+    // Atom-Feed unter github.com ab, der keine Token-Authentifizierung kennt
+    // und bei einem privaten Repository immer mit 404 antwortet.
     const bakedToken = process.env.AVA_RELEASE_TOKEN;
     if (bakedToken && !process.env.GH_TOKEN) {
       process.env.GH_TOKEN = bakedToken;

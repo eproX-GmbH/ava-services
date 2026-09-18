@@ -194,3 +194,16 @@ publish:
   provider: github
   releaseType: release
   vPrefixedTagName: true
+  # 2026-09-18 — `private: true` ist bei einem privaten Repository Pflicht.
+  # Ohne diese Angabe fragt electron-updater den Atom-Feed unter
+  # github.com/<owner>/<repo>/releases.atom ab. Dieser Weg kennt keine
+  # Token-Authentifizierung: Bei einem privaten Repository antwortet GitHub
+  # immer mit 404, auch mit einem gueltigen Token (nachgemessen am 18.09.2026:
+  # Atom-Feed 404 mit und ohne Token, waehrend die API 30 Releases lieferte).
+  # Die Update-Pruefung schlug deshalb bei jedem Start mit "404" fehl.
+  #
+  # Mit `private: true` nimmt electron-updater die GitHub-API
+  # (api.github.com/repos/…/releases) und schickt den eingebackenen Token als
+  # Authorization-Kopf mit. Das ist der Weg, der bei privaten Repositories
+  # funktioniert.
+  private: true
