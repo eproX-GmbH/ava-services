@@ -1,0 +1,13 @@
+{
+  "name": "@ava/admin-dashboard",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Betreiber-Dashboard: liest Kennzahlen aus den Produktionsdatenbanken. Rein lesend, nur lokal erreichbar.",
+  "type": "module",
+  "scripts": {
+    "start": "node server.mjs"
+  },
+  "dependencies": {
+    "pg": "^8.11.3"
+  }
+}

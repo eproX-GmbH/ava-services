@@ -1,0 +1,291 @@
+<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>AVA Betrieb</title>
+    <style>
+      :root {
+        --grund: #0a1f2a;
+        --flaeche: #ffffff;
+        --hintergrund: #f2f7f6;
+        --akzent: #00c0a7;
+        --rand: #dfe8e6;
+        --gedaempft: #5b6b70;
+        --warn: #c2410c;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        background: var(--hintergrund);
+        color: var(--grund);
+      }
+      header {
+        background: var(--grund);
+        color: #fff;
+        padding: 18px 24px;
+        display: flex;
+        align-items: center;
+        gap: 18px;
+        flex-wrap: wrap;
+      }
+      header h1 { font-size: 18px; margin: 0; font-weight: 600; }
+      header .stand { color: #9fb3ba; font-size: 13px; margin-left: auto; }
+      select, button {
+        font: inherit;
+        padding: 6px 10px;
+        border-radius: 6px;
+        border: 1px solid var(--rand);
+        background: #fff;
+        color: var(--grund);
+        cursor: pointer;
+      }
+      main { padding: 20px 24px 60px; max-width: 1500px; margin: 0 auto; }
+      h2 { font-size: 14px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--gedaempft); margin: 32px 0 12px; }
+      .karten { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; }
+      .karte {
+        background: var(--flaeche);
+        border: 1px solid var(--rand);
+        border-radius: 10px;
+        padding: 14px 16px;
+      }
+      .karte .wert { font-size: 26px; font-weight: 600; letter-spacing: -0.02em; }
+      .karte .bezeichnung { font-size: 13px; color: var(--gedaempft); margin-top: 2px; }
+      .block {
+        background: var(--flaeche);
+        border: 1px solid var(--rand);
+        border-radius: 10px;
+        padding: 16px;
+        margin-top: 12px;
+        overflow: auto;
+      }
+      .block h3 { margin: 0 0 12px; font-size: 15px; font-weight: 600; }
+      table { border-collapse: collapse; width: 100%; font-size: 14px; }
+      th, td { text-align: left; padding: 7px 10px; border-bottom: 1px solid var(--rand); white-space: nowrap; }
+      th { color: var(--gedaempft); font-weight: 500; font-size: 13px; }
+      td.zahl, th.zahl { text-align: right; font-variant-numeric: tabular-nums; }
+      tbody tr:last-child td { border-bottom: none; }
+      .fehler { color: var(--warn); font-size: 14px; }
+      .leer { color: var(--gedaempft); font-size: 14px; }
+      .zwei { display: grid; grid-template-columns: repeat(auto-fit, minmax(420px, 1fr)); gap: 12px; }
+      svg { display: block; width: 100%; height: 180px; }
+      .balken { fill: var(--akzent); }
+      .achse { stroke: var(--rand); stroke-width: 1; }
+      .beschriftung { fill: var(--gedaempft); font-size: 11px; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>AVA Betrieb</h1>
+      <label>
+        Zeitraum
+        <select id="zeitraum">
+          <option value="1">24 Stunden</option>
+          <option value="7">7 Tage</option>
+          <option value="30" selected>30 Tage</option>
+          <option value="90">90 Tage</option>
+          <option value="365">1 Jahr</option>
+        </select>
+      </label>
+      <button id="neu">Aktualisieren</button>
+      <span class="stand" id="stand">wird geladen …</span>
+    </header>
+    <main id="inhalt"><p class="leer">Wird geladen …</p></main>
+
+    <script>
+      const inhalt = document.getElementById("inhalt");
+      const standEl = document.getElementById("stand");
+      const zeitraumEl = document.getElementById("zeitraum");
+
+      const zahl = (v) =>
+        v === null || v === undefined ? "–" : typeof v === "number" || /^-?\d+(\.\d+)?$/.test(v) ? Number(v).toLocaleString("de-DE") : String(v);
+
+      function karte(wert, bezeichnung) {
+        return `<div class="karte"><div class="wert">${zahl(wert)}</div><div class="bezeichnung">${bezeichnung}</div></div>`;
+      }
+
+      function tabelle(zeilen) {
+        if (!zeilen || zeilen.length === 0) return `<p class="leer">Keine Daten im Zeitraum.</p>`;
+        const spalten = Object.keys(zeilen[0]);
+        const istZahl = (s) => zeilen.every((z) => z[s] === null || !isNaN(Number(z[s])));
+        const kopf = spalten.map((s) => `<th class="${istZahl(s) ? "zahl" : ""}">${s.replace(/_/g, " ")}</th>`).join("");
+        const koerper = zeilen
+          .map((z) => "<tr>" + spalten.map((s) => `<td class="${istZahl(s) ? "zahl" : ""}">${zahl(z[s])}</td>`).join("") + "</tr>")
+          .join("");
+        return `<table><thead><tr>${kopf}</tr></thead><tbody>${koerper}</tbody></table>`;
+      }
+
+      /** Einfaches Balkendiagramm als SVG — keine fremde Bibliothek nötig. */
+      function verlauf(zeilen) {
+        if (!zeilen || zeilen.length === 0) return `<p class="leer">Keine Daten im Zeitraum.</p>`;
+        const spalten = Object.keys(zeilen[0]);
+        const xs = spalten[0];
+        const ys = spalten[1];
+        const werte = zeilen.map((z) => Number(z[ys]) || 0);
+        const max = Math.max(...werte, 1);
+        const b = 100 / zeilen.length;
+        const balken = zeilen
+          .map((z, i) => {
+            const h = (Number(z[ys]) || 0) / max;
+            const y = (1 - h) * 150;
+            return `<rect class="balken" x="${i * b + b * 0.15}%" y="${y}" width="${b * 0.7}%" height="${Math.max(150 - y, 1)}" rx="2"><title>${z[xs]}: ${zahl(z[ys])}</title></rect>`;
+          })
+          .join("");
+        const ersteBeschriftung = zeilen[0][xs];
+        const letzteBeschriftung = zeilen[zeilen.length - 1][xs];
+        return `<svg viewBox="0 0 100 180" preserveAspectRatio="none" style="height:180px">
+            ${balken}
+            <line class="achse" x1="0" y1="150" x2="100" y2="150" vector-effect="non-scaling-stroke" />
+          </svg>
+          <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--gedaempft)">
+            <span>${ersteBeschriftung}</span><span>Höchstwert ${zahl(max)}</span><span>${letzteBeschriftung}</span>
+          </div>`;
+      }
+
+      function kennzahlKarten(k, felder) {
+        if (!k || k.fehler || !k.zeilen || !k.zeilen[0]) return "";
+        const z = k.zeilen[0];
+        return felder.map(([s, b]) => karte(z[s], b)).join("");
+      }
+
+      /**
+       * Jede Kachel laedt einzeln nach. Der Firmenbestand hat 5,2 Mio Zeilen;
+       * eine gemeinsame Anfrage haette die Seite je nach Zeitraum eine halbe
+       * Minute lang leer gelassen. So steht das Geruest sofort, und jede Zahl
+       * erscheint, sobald sie da ist.
+       */
+      async function hole(name, tage) {
+        const r = await fetch(`/api/kennzahlen?name=${encodeURIComponent(name)}&tage=${tage}`);
+        const d = await r.json();
+        if (d.fehler) throw new Error(d.fehler);
+        return d;
+      }
+
+      function fuelle(id, inhaltHtml) {
+        const el = document.getElementById(id);
+        if (el) el.innerHTML = inhaltHtml;
+      }
+
+      async function kachel(id, name, tage, aufbereiten) {
+        try {
+          const d = await hole(name, tage);
+          fuelle(id, aufbereiten(d));
+        } catch (e) {
+          fuelle(id, `<p class="fehler">${e.message}</p>`);
+        }
+      }
+
+      function blockGeruest(id, titel) {
+        return `<div class="block"><h3>${titel}</h3><div id="${id}"><p class="leer">wird geladen …</p></div></div>`;
+      }
+
+      async function laden() {
+        const tage = zeitraumEl.value;
+        standEl.textContent = "Stand " + new Date().toLocaleString("de-DE");
+
+        inhalt.innerHTML = `
+          <h2>Überblick</h2>
+          <div class="karten" id="k-ueberblick"><p class="leer">wird geladen …</p></div>
+
+          <h2>Registerinhalt</h2>
+          <div class="karten" id="k-si"><p class="leer">wird geladen …</p></div>
+          <div class="zwei">
+            ${blockGeruest("b-si-verlauf", "Neue Registerinhalte je Tag")}
+            ${blockGeruest("b-si-quellen", "Strukturierter Registerinhalt nach Quelle")}
+          </div>
+          ${blockGeruest("b-jobs", "Register-Jobs nach Art")}
+
+          <h2>Producer</h2>
+          ${blockGeruest("b-producer", "Producer im Zeitraum")}
+          <div class="zwei">
+            ${blockGeruest("b-producer-verlauf", "Verarbeitungen je Tag")}
+            ${blockGeruest("b-abdeckung", "Abdeckung im Bestand")}
+          </div>
+          ${blockGeruest("b-fehler", "Häufigste Fehler")}
+
+          <h2>Organisationen und Verbrauch</h2>
+          ${blockGeruest("b-orgs", "Organisationen")}
+          <div class="zwei">
+            ${blockGeruest("b-kosten", "Kosten je Tag (USD)")}
+            ${blockGeruest("b-kanaele", "Verbrauch nach Kanal")}
+          </div>
+          ${blockGeruest("b-modelle", "Modelle nach Verbrauch")}
+
+          <h2>Firmenbestand</h2>
+          <div class="zwei">
+            ${blockGeruest("b-laender", "Firmenbestand nach Land")}
+            ${blockGeruest("b-zuwachs", "Neue Firmen je Tag")}
+          </div>
+        `;
+
+        // Überblick: zwei Kennzahlen, gemeinsam in einer Kachelreihe.
+        (async () => {
+          const teile = [];
+          try {
+            const v = await hole("ueberblick_verarbeitung", tage);
+            teile.push(
+              kennzahlKarten(v, [
+                ["firmen", "Firmen verarbeitet"],
+                ["abgeschlossen", "Schritte abgeschlossen"],
+                ["fehlgeschlagen", "Schritte fehlgeschlagen"],
+                ["vorgaenge", "Vorgänge"],
+              ]),
+            );
+          } catch (e) {
+            teile.push(`<p class="fehler">${e.message}</p>`);
+          }
+          try {
+            const c = await hole("ueberblick_kosten", tage);
+            teile.push(
+              kennzahlKarten(c, [
+                ["token", "Token verbraucht"],
+                ["kosten_usd", "Kosten (USD)"],
+                ["aufrufe", "Modellaufrufe"],
+                ["fehler", "Aufrufe mit Fehler"],
+              ]),
+            );
+          } catch (e) {
+            teile.push(`<p class="fehler">${e.message}</p>`);
+          }
+          fuelle("k-ueberblick", teile.join(""));
+        })();
+
+        kachel("k-si", "si_bestand", tage, (d) =>
+          kennzahlKarten(d, [
+            ["firmen_gesamt", "Firmen mit Registerinhalt"],
+            ["im_zeitraum", "davon im Zeitraum"],
+            ["mit_gruendungsjahr", "mit Gründungsjahr"],
+            ["geschaeftsfuehrer", "Geschäftsführer erfasst"],
+          ]),
+        );
+        kachel("b-si-verlauf", "si_verlauf", tage, (d) => verlauf(d.zeilen));
+        kachel("b-si-quellen", "si_quellen", tage, (d) => tabelle(d.zeilen));
+        kachel("b-jobs", "register_jobs", tage, (d) => tabelle(d.zeilen));
+        kachel("b-producer", "producer_stand", tage, (d) => tabelle(d.zeilen));
+        kachel("b-producer-verlauf", "producer_verlauf", tage, (d) => verlauf(d.zeilen));
+        kachel("b-fehler", "producer_fehler", tage, (d) => tabelle(d.zeilen));
+        kachel("b-orgs", "organisationen", tage, (d) => tabelle(d.zeilen));
+        kachel("b-kosten", "kosten_verlauf", tage, (d) => verlauf(d.zeilen));
+        kachel("b-kanaele", "kanaele", tage, (d) => tabelle(d.zeilen));
+        kachel("b-modelle", "modelle", tage, (d) => tabelle(d.zeilen));
+        kachel("b-laender", "bestand_laender", tage, (d) => tabelle(d.zeilen));
+        kachel("b-zuwachs", "bestand_zuwachs", tage, (d) => verlauf(d.zeilen));
+
+        (async () => {
+          try {
+            const r = await fetch("/api/abdeckung");
+            const d = await r.json();
+            fuelle("b-abdeckung", tabelle(d.zeilen));
+          } catch (e) {
+            fuelle("b-abdeckung", `<p class="fehler">${e.message}</p>`);
+          }
+        })();
+      }
+
+      zeitraumEl.addEventListener("change", laden);
+      document.getElementById("neu").addEventListener("click", laden);
+      laden();
+    </script>
+  </body>
+</html>
