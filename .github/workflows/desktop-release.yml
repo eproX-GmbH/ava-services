@@ -426,7 +426,7 @@ jobs:
             "$RELEASE_DIR/AVA-${VERSION}-arm64.zip" \
             "$RELEASE_DIR/AVA-${VERSION}-arm64.zip.blockmap" \
             --clobber \
-            --repo "${{ github.repository }}"
+            --repo "$RELEASE_REPO"
 
       # 2026-09-09: Ein Re-Run eines aelteren Tags veroeffentlicht dessen Release
       # erneut, und GitHub markiert es als "Latest" (v0.1.617 verdraengte v0.1.622;
@@ -850,7 +850,7 @@ jobs:
             "$RELEASE_DIR/AVA-${VERSION}-x64.zip.blockmap" \
             "$RELEASE_DIR/latest-mac.yml" \
             --clobber \
-            --repo "${{ github.repository }}"
+            --repo "$RELEASE_REPO"
 
       # v0.1.672 (Operator 2026-09-16): Die "Latest"-Schaltung liegt jetzt im
       # eigenen Job `promote-release` nach arm64 + Windows. Der x64-Build laedt
@@ -881,7 +881,7 @@ jobs:
         run: |
           TAG="${{ github.event.inputs.tag || github.ref_name }}"
           gh release edit "$TAG" --draft=false --latest \
-            --repo "${{ github.repository }}"
+            --repo "$RELEASE_REPO"
 
   build-windows:
     name: Build & sign Windows (x64)
