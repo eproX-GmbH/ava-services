@@ -5,6 +5,7 @@
 
 import { Builder, By, type WebDriver } from "selenium-webdriver";
 import chrome from "selenium-webdriver/chrome";
+import { browserProtokoll, neuesProfilVerzeichnis, profilArgumente, ueberwache } from "./browser-lebenszyklus";
 import { findeChrome, type PortalOptionen } from "./portal";
 import { insolvenzPortalGericht, parseTrefferliste, type InsolvenzRohZeile, type InsolvenzZeile } from "./insolvenz-parser";
 
@@ -29,6 +30,8 @@ const ZEILEN_SKRIPT = `
 
 export class InsolvenzPortal {
   private driver: WebDriver | null = null;
+  /** Eigenes Profilverzeichnis dieses Browsers (browser-lebenszyklus.ts). */
+  private profil = "";
   anfragen = 0;
   private readonly log: (z: string) => void;
 
@@ -38,13 +41,14 @@ export class InsolvenzPortal {
 
   async oeffnen(): Promise<void> {
     if (this.driver) return;
+    this.profil = neuesProfilVerzeichnis();
     const options = new chrome.Options();
     const bin = findeChrome(this.opt.chromeBinaryPath);
     if (bin) options.setChromeBinaryPath(bin);
     if (this.opt.headless !== false) options.addArguments("--headless=new");
-    options.addArguments(`--ava-owner=${process.pid}`, "--lang=de-DE", "--window-size=1400,1000", "--disable-gpu", "--disable-dev-shm-usage", "--no-sandbox");
+    options.addArguments(...profilArgumente(this.profil), "--lang=de-DE", "--window-size=1400,1000", "--disable-gpu", "--disable-dev-shm-usage", "--no-sandbox");
     options.setUserPreferences({ download_restrictions: 3, "download.prompt_for_download": true, "safebrowsing.enabled": true, "intl.accept_languages": "de-DE,de" });
-    this.driver = await new Builder().forBrowser("chrome").setChromeOptions(options).build();
+    this.driver = ueberwache(await new Builder().forBrowser("chrome").setChromeOptions(options).build(), this.profil);
     await this.driver.manage().setTimeouts({ pageLoad: 60_000 });
   }
 

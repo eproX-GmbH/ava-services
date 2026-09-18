@@ -1,4 +1,4 @@
-// Verwaiste Hintergrund-Browser beenden (2026-09-16).
+// Verwaiste Hintergrund-Browser beenden (2026-09-16, ueberarbeitet 2026-09-18).
 //
 // Befund: Auf dem Rechner des Betreibers lagen 110 chromedriver- und Headless-
 // Chrome-Prozesse mit 2,7 GB RAM, teils sechs Tage alt, Elternprozess launchd.
@@ -18,6 +18,11 @@
 //      ohne Marker),
 // jeweils samt Kindprozessen. Fremde, sichtbare Chrome-Fenster des Nutzers
 // sind nie betroffen: sie sind weder headless noch markiert noch verwaist.
+//
+// Seit 2026-09-18 traegt jeder AVA-Browser den Schalter `--ava-browser` und ein
+// eigenes Profilverzeichnis. Der Schalter ist das sicherste Merkmal und die
+// erste Regel; das Profil haelt den Browser vom Profil der Person fern. Die
+// uebrigen Regeln bleiben fuer Altbestand aus frueheren Fassungen bestehen.
 
 import { execFile, spawn } from "node:child_process";
 import { promisify } from "node:util";
@@ -31,6 +36,18 @@ export interface Prozess {
 }
 
 const OWNER = /--ava-owner=(\d+)/;
+/**
+ * Eindeutiger Schalter jedes von AVA gestarteten Browsers (seit 2026-09-18,
+ * browser-lebenszyklus.ts in den Producern). Das ist das verlaessliche
+ * Erkennungsmerkmal: Es steht nur an unseren Browsern, und anders als die
+ * Besitzerkennung haengt es nicht an einer Prozessnummer, die das
+ * Betriebssystem neu vergeben kann.
+ *
+ * Ausdruecklich NICHT ueber das Profilverzeichnis: Ein Pfad ist kein sicheres
+ * Merkmal. Ein Profil der Person, dessen Pfad zufaellig aehnlich heisst, waere
+ * sonst erfasst worden.
+ */
+const AVA_BROWSER = /(^|\s)--ava-browser(\s|=|$)/;
 const CHROMEDRIVER = /(^|[\\/\s])chromedriver(\.exe)?(\s|$)/i;
 const CHROME = /(chrome|chromium)/i;
 
@@ -41,6 +58,14 @@ export function waehleVerwaiste(prozesse: Prozess[], opts: { alle?: boolean; eig
   const wurzeln = new Set<number>();
   for (const p of prozesse) {
     if (p.pid === opts.eigenePid) continue;
+    // 1. Browser mit dem AVA-Schalter: zweifelsfrei unserer. Verwaist ist er,
+    //    wenn sein Besitzerprozess nicht mehr lebt; beim App-Ende alle.
+    if (AVA_BROWSER.test(p.args)) {
+      const m = OWNER.exec(p.args);
+      const owner = m ? Number(m[1]) : 0;
+      if (opts.alle || !owner || !lebend.has(owner)) wurzeln.add(p.pid);
+      continue;
+    }
     const m = OWNER.exec(p.args);
     if (m && CHROME.test(p.args)) {
       const owner = Number(m[1]);

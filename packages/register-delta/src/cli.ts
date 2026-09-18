@@ -21,6 +21,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import { GatewayClient, type JobArt } from "./gateway-client";
+import { browserProtokoll } from "./browser-lebenszyklus";
 import { RegisterPortal } from "./portal";
 import { InsolvenzPortal } from "./insolvenz-portal";
 import { RegisterWorker } from "./worker";
@@ -56,6 +57,8 @@ async function main() {
   const baseUrl = process.env.GATEWAY_URL;
   if (!baseUrl) throw new Error("GATEWAY_URL fehlt");
   const log = (z: string) => console.log(`${new Date().toISOString()} ${z}`);
+  // Der Lebenszyklus der Browser meldet ueber dasselbe Protokoll.
+  browserProtokoll(log);
   const si = process.env.REGISTER_DELTA_SI !== "0";
   const worker = new RegisterWorker({
     workerId: process.env.WORKER_ID ?? `betreiber-${os.hostname()}`,

@@ -16,6 +16,7 @@ import os from "node:os";
 import { join } from "node:path";
 import { Builder, By, until, type WebDriver } from "selenium-webdriver";
 import chrome from "selenium-webdriver/chrome";
+import { browserProtokoll, neuesProfilVerzeichnis, profilArgumente, ueberwache } from "./browser-lebenszyklus";
 import { portalGericht } from "./ids";
 import { parseErgebnis, SPERR_RE, trefferzahl, type RohZeile, type Treffer } from "./parser";
 import { istSiXml, SI_MAX_BYTES } from "./si-parser";
@@ -84,6 +85,8 @@ const SUCHE_SKRIPT = `
 
 export class RegisterPortal {
   private driver: WebDriver | null = null;
+  /** Eigenes Profilverzeichnis dieses Browsers (browser-lebenszyklus.ts). */
+  private profil = "";
   private downloadDir: string | null = null;
   anfragen = 0;
   private readonly log: (z: string) => void;
@@ -94,11 +97,12 @@ export class RegisterPortal {
 
   async oeffnen(): Promise<void> {
     if (this.driver) return;
+    this.profil = neuesProfilVerzeichnis();
     const options = new chrome.Options();
     const bin = findeChrome(this.opt.chromeBinaryPath);
     if (bin) options.setChromeBinaryPath(bin);
     if (this.opt.headless !== false) options.addArguments("--headless=new");
-    options.addArguments(`--ava-owner=${process.pid}`, "--lang=de-DE", "--window-size=1400,1000", "--disable-gpu", "--disable-dev-shm-usage", "--no-sandbox");
+    options.addArguments(...profilArgumente(this.profil), "--lang=de-DE", "--window-size=1400,1000", "--disable-gpu", "--disable-dev-shm-usage", "--no-sandbox");
     // Sprache erzwingen: auf Fly (kein Systemlocale) lieferte das Portal Englisch
     // ("Register announcements", Cookie-Knopf "Okay"), die Parser erwarten Deutsch.
     if (this.opt.siDownloads) {
@@ -121,7 +125,7 @@ export class RegisterPortal {
         "intl.accept_languages": "de-DE,de",
       });
     }
-    this.driver = await new Builder().forBrowser("chrome").setChromeOptions(options).build();
+    this.driver = ueberwache(await new Builder().forBrowser("chrome").setChromeOptions(options).build(), this.profil);
     await this.driver.manage().setTimeouts({ pageLoad: 45_000 });
     if (this.downloadDir) {
       // Headless-Chromium ignoriert die Download-Einstellungen des Profils und

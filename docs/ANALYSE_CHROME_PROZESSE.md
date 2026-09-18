@@ -4,8 +4,8 @@ Stand 2026-09-17. Anlass: Mehrere Nutzerinnen und Nutzer melden, dass ihr Rechne
 einfriert oder sich nicht herunterfahren lässt, weil Google Chrome sich nicht
 beenden lässt. Bisher macOS, Windows nicht ausgeschlossen.
 
-Dieses Dokument beschreibt den Befund und die Lösungswege. Es wurde noch nichts
-umgesetzt.
+Dieses Dokument beschreibt den Befund und die Lösungswege. **Umgesetzt in
+v0.1.680**, siehe Abschnitt 9 am Ende.
 
 ## 1. Kurzfassung
 
@@ -223,3 +223,54 @@ Ursache beseitigen:
   Sitzungen und ist bisher nicht bestimmt.
 - Ob die Producer für Firmenprofile und Kontakte in ausgelieferten Fassungen
   überhaupt laufen und damit unkenntliche Browser erzeugen.
+
+## 9. Umsetzung in v0.1.680
+
+Zwei Zusagen waren zu erfüllen: Es dürfen keine verwaisten Browser mehr
+liegenbleiben, und AVA darf den Browser der Person in keiner Weise anfassen.
+
+**Eindeutiges Erkennungsmerkmal.** Jeder von AVA gestartete Browser trägt jetzt
+den Schalter `--ava-browser`. Chrome ignoriert unbekannte Schalter, der
+Aufräumer erkennt uns daran. Bewusst kein Pfad als Merkmal: Ein Test deckte auf,
+dass ein Profil der Person, dessen Pfad zufällig ähnlich heißt, sonst erfasst
+worden wäre. Der Browser der Person trägt diesen Schalter nie.
+
+**Eigenes Profil je Browser.** Jeder Browser bekommt ein frisches, leeres
+Profilverzeichnis, das nach dem Schließen entfernt wird. Damit gibt es keine
+Berührung mit dem Profil der Person: keine geteilten Anmeldungen, keine
+Sitzungskonflikte, keine Meldung über ein nicht ordnungsgemäßes Beenden. Vorher
+liefen alle AVA-Browser ohne eigenes Profil.
+
+**Beendigungssignale werden behandelt.** Alle sechs Pakete, die einen Browser
+starten, teilen sich dafür ein gemeinsames Modul (`browser-lebenszyklus.ts`).
+Kommt ein Signal, werden die offenen Browser geschlossen, bevor der Prozess
+endet. Vorher behandelte kein einziger Producer ein Signal, weshalb der
+Aufräumzweig nie lief. Jedes Schließen hat eine Frist von acht Sekunden, ein
+stummer chromedriver blockiert also nichts mehr.
+
+**Der Wachhund räumt auf.** Er ist die einzige Stelle, die sicher läuft, wenn
+die App stirbt, und er ist derjenige, der sie tötet. Nach jedem harten Beenden
+und wenn die App verschwunden ist, beendet er die Browser mit dem AVA-Schalter
+sowie chromedriver ohne lebenden Elternprozess. Das schließt die Lücke, an der
+das Aufräumen bisher scheiterte: Die App kam nach einem Abschuss nicht mehr
+dazu.
+
+**Fristen passen zusammen.** Die Frist des Wachhunds beim Beenden lag bei fünf
+Sekunden, die Zeit für das Beenden der Producer bei zehn. Ein sauberes Beenden
+war damit ausgeschlossen. Die Frist liegt jetzt bei zwölf Sekunden.
+
+**Der Register-Delta-Worker wird beim Beenden gestoppt.** Vorher bekam sein
+Kindprozess überhaupt kein Signal, obwohl er ebenfalls Chrome startet und im
+Worker-Modus dauerhaft läuft.
+
+**Abgedeckt durch Tests.** Sechs Tests für den Lebenszyklus (Profil anlegen und
+entfernen, Schließen, fehlschlagendes Schließen, hängendes Schließen, alle
+schließen) und sechs für die Erkennung, darunter ausdrücklich: Der Browser der
+Person bleibt in jeder Betriebsart unberührt, auch mit einem eigenen Profil und
+auch bei einem ähnlich benannten Profilpfad.
+
+Weiterhin offen: D11, also was beim Beenden die Ereignisschleife blockiert. Das
+ist jetzt weniger dringend, weil das Aufräumen nicht mehr davon abhängt.
+Ebenfalls offen ist L5, ein eigener Browser statt der Installation der Person.
+Das bleibt die einzige Maßnahme, die auch den seltenen Fall abdeckt, dass beim
+Herunterfahren gerade ein AVA-Browser arbeitet.

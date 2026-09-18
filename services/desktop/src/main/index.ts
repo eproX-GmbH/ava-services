@@ -7446,6 +7446,10 @@ app.on("before-quit", (e) => {
     void beendeVerwaisteBrowser({ alle: true, log: (z) => writeLineSync("INFO ", z) });
     setTimeout(() => void beendeVerwaisteBrowser({ alle: true }), 1500);
   });
+  // Register-Delta-Worker: Bis 2026-09-18 bekam sein Kindprozess beim App-Ende
+  // ueberhaupt kein Signal (docs/ANALYSE_CHROME_PROZESSE.md, D7). Er startet
+  // ebenfalls Chrome, und im Worker-Modus laeuft er dauerhaft.
+  quitStep("mithelfen.stop", () => mithelfen?.stop());
   quitStep("postgres.stop", () => postgres.stop());
   quitStep("producerLogBuffer.closeRunFiles", () => producerLogBuffer.closeRunFiles());
   writeLineSync("INFO ", "[quit] before-quit handlers done");

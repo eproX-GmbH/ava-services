@@ -86,7 +86,15 @@ const SLEEP_PENDING_MAX_MS = 600000;
 // aber NICHT neu gestartet: der Nutzer wollte die App schliessen.
 // Vorher: 20s Beachball, dann Kill + (wegen eines Race, s.u.) gar kein
 // Relaunch — vier Faelle am 1./2.9.2026.
-const QUIT_STALE_MS = 5000; // v0.1.626: 8 s → 5 s, Nutzer sollen nicht "Sofort beenden" muessen
+// v0.1.626: 8 s → 5 s, Nutzer sollen nicht "Sofort beenden" muessen.
+// 2026-09-18: 5 s → 12 s. Die Frist war kuerzer als die Zeit, die AVA ihren
+// Producern zum Beenden zugesteht (STOP_TIMEOUT_MS = 10 s in
+// producer-supervisor.ts). Dadurch wurde die App mitten im Aufraeumen
+// abgeschossen, und ihre Browser blieben jedes Mal stehen
+// (docs/ANALYSE_CHROME_PROZESSE.md, D3). Seitdem der Wachhund nach dem
+// Abschuss selbst aufraeumt, waere ein zu frueher Abschuss zwar nicht mehr
+// schaedlich — aber ein sauberes Beenden ist allemal besser als ein hartes.
+const QUIT_STALE_MS = 12000;
 
 function log(msg) {
   const line = new Date().toISOString() + " [watchdog] " + msg + "\n";
@@ -120,6 +128,70 @@ let lastTick = Date.now();
 let recovering = false;
 let postWakeUntil = 0;
 let sleepPendingSince = 0;
+
+// 2026-09-18 — Nach jedem harten Beenden die Browser von AVA aufraeumen.
+//
+// Der Wachhund ist die einzige Stelle, die in diesem Fall sicher laeuft: Er
+// ueberlebt die App und ist sogar derjenige, der sie toetet. Alles, was die App
+// selbst beim Beenden aufraeumen wollte, kommt nach einem SIGKILL nicht mehr
+// dazu — genau daran scheiterte das Aufraeumen bisher
+// (docs/ANALYSE_CHROME_PROZESSE.md, D2 und D9).
+//
+// Erkannt werden ausschliesslich Prozesse mit dem Schalter --ava-browser sowie
+// chromedriver ohne lebenden Elternprozess. Der Browser der Person traegt diesen
+// Schalter nie und bleibt darum immer unberuehrt.
+function raeumeAvaBrowser(grund) {
+  try {
+    var out = require("child_process").execFileSync(
+      process.platform === "win32" ? "powershell" : "ps",
+      process.platform === "win32"
+        ? ["-NoProfile", "-NonInteractive", "-Command", "Get-CimInstance Win32_Process | Select-Object ProcessId,ParentProcessId,CommandLine | ConvertTo-Json -Compress"]
+        : ["-Ao", "pid=,ppid=,args="],
+      { encoding: "utf8", maxBuffer: 32 * 1024 * 1024, timeout: 10000 }
+    );
+    var zeilen = [];
+    if (process.platform === "win32") {
+      var roh = JSON.parse(out || "[]");
+      if (!Array.isArray(roh)) roh = [roh];
+      for (var i = 0; i < roh.length; i++) zeilen.push({ pid: roh[i].ProcessId, ppid: roh[i].ParentProcessId, args: roh[i].CommandLine || "" });
+    } else {
+      var teile = out.split("\n");
+      for (var j = 0; j < teile.length; j++) {
+        var m = /^\s*(\d+)\s+(\d+)\s+(.*)$/.exec(teile[j]);
+        if (m) zeilen.push({ pid: Number(m[1]), ppid: Number(m[2]), args: m[3] || "" });
+      }
+    }
+    var lebend = {};
+    for (var k = 0; k < zeilen.length; k++) lebend[zeilen[k].pid] = true;
+    var wurzeln = {};
+    for (var n = 0; n < zeilen.length; n++) {
+      var z = zeilen[n];
+      if (z.pid === process.pid) continue;
+      if (/(^|\s)--ava-browser(\s|=|$)/.test(z.args)) { wurzeln[z.pid] = true; continue; }
+      if (/(^|[\/\\\s])chromedriver(\.exe)?(\s|$)/i.test(z.args) && !(z.ppid > 1 && lebend[z.ppid])) wurzeln[z.pid] = true;
+    }
+    var gewaehlt = Object.assign({}, wurzeln);
+    var neu = true;
+    while (neu) {
+      neu = false;
+      for (var q = 0; q < zeilen.length; q++) {
+        if (!gewaehlt[zeilen[q].pid] && gewaehlt[zeilen[q].ppid]) { gewaehlt[zeilen[q].pid] = true; neu = true; }
+      }
+    }
+    var pids = Object.keys(gewaehlt).map(Number);
+    if (pids.length === 0) return;
+    if (process.platform === "win32") {
+      var args = ["/F", "/T"];
+      for (var w = 0; w < pids.length; w++) { args.push("/PID"); args.push(String(pids[w])); }
+      try { require("child_process").execFileSync("taskkill", args, { timeout: 10000, windowsHide: true }); } catch (e) {}
+    } else {
+      for (var v = 0; v < pids.length; v++) { try { process.kill(pids[v], "SIGKILL"); } catch (e) {} }
+    }
+    log("AVA-Browser aufgeraeumt (" + grund + "): " + pids.length + " Prozesse");
+  } catch (e) {
+    log("Aufraeumen der AVA-Browser fehlgeschlagen: " + e);
+  }
+}
 
 // v0.1.485 — vor dem SIGKILL den eingefrorenen Prozess samplen. Der
 // v0.1.341-Befund ("ein identischer JIT-Stack") wurde nie einem
@@ -170,6 +242,11 @@ const timer = setInterval(function () {
     // Wedge-Faellen kam AVA deshalb nie zurueck.
     if (recovering) return;
     log("main pid " + MAIN_PID + " gone -> exiting watchdog");
+    // Auch hier aufraeumen: Wurde AVA abgeschossen oder ist sie abgestuerzt,
+    // kam sie nicht mehr dazu, ihre Browser zu schliessen. Nach einem
+    // regulaeren Beenden findet das hier nichts mehr, weil die App ihre Browser
+    // dann selbst geschlossen hat.
+    raeumeAvaBrowser("App beendet");
     clearInterval(timer);
     process.exit(0);
     return;
@@ -209,6 +286,7 @@ const timer = setInterval(function () {
       setTimeout(function () {
         captureWedgeSample();
         try { process.kill(MAIN_PID, "SIGKILL"); } catch (e) { log("kill failed: " + e); }
+        raeumeAvaBrowser("Quit haengt");
         setTimeout(function () { process.exit(0); }, 500);
       }, 1500);
     }
@@ -240,6 +318,7 @@ const timer = setInterval(function () {
     setTimeout(function () {
       captureWedgeSample();
       try { process.kill(MAIN_PID, "SIGKILL"); } catch (e) { log("kill failed: " + e); }
+      raeumeAvaBrowser("App haengt");
       setTimeout(function () {
         relaunch();
         clearInterval(timer);
