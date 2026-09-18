@@ -74,6 +74,12 @@ export type OrgFeatureKey = (typeof ORG_FEATURES)[number]["key"];
 export interface OrgPolicy {
   features: Record<string, boolean>;
   providerLock: boolean;
+  /**
+   * Duerfen Mitglieder den Apify-Token der Organisation mit einem eigenen
+   * ueberschreiben? true (Standard) = eigener Token zuerst, Organisation als
+   * Rueckfall. false = ausschliesslich der Token der Organisation.
+   */
+  apifyEigenerErlaubt?: boolean;
   chatModel: string | null;
   producerModel: string | null;
   /** Deep-Research-Modell (OpenAI, fester Satz aus shared/research-models.ts); null = Standard. */

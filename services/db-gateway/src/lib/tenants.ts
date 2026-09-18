@@ -31,6 +31,13 @@ export interface TenantPolicyShape {
   promptAudit: boolean;
   /** C1 — Personen ohne Beobachtung seit N Tagen tilgen; null = Standard (180). */
   personRetentionDays: number | null;
+  /**
+   * Duerfen Mitglieder den Apify-Token der Organisation mit einem eigenen
+   * ueberschreiben? true = eigener Token zuerst, Organisation als Rueckfall.
+   * false = ausschliesslich der Token der Organisation. Standard true, das
+   * entspricht dem Verhalten vor dieser Vorgabe.
+   */
+  apifyEigenerErlaubt: boolean;
 }
 
 export const DEFAULT_POLICY: TenantPolicyShape = {
@@ -41,6 +48,7 @@ export const DEFAULT_POLICY: TenantPolicyShape = {
   researchModel: null,
   promptAudit: false,
   personRetentionDays: null,
+  apifyEigenerErlaubt: true,
 };
 
 export interface WhoamiPayload {
@@ -63,8 +71,8 @@ export interface WhoamiPayload {
 type Q = { query: pg.Pool["query"] };
 
 async function readPolicy(q: Q, tenantId: string): Promise<TenantPolicyShape> {
-  const r = await q.query<{ features: unknown; providerLock: boolean; chatModel: string | null; producerModel: string | null; researchModel: string | null; promptAudit: boolean; personRetentionDays: number | null }>(
-    `SELECT "features", "providerLock", "chatModel", "producerModel", "researchModel", "promptAudit", "personRetentionDays" FROM "TenantPolicy" WHERE "tenantId" = $1`,
+  const r = await q.query<{ features: unknown; providerLock: boolean; chatModel: string | null; producerModel: string | null; researchModel: string | null; promptAudit: boolean; personRetentionDays: number | null; apifyEigenerErlaubt: boolean }>(
+    `SELECT "features", "providerLock", "chatModel", "producerModel", "researchModel", "promptAudit", "personRetentionDays", "apifyEigenerErlaubt" FROM "TenantPolicy" WHERE "tenantId" = $1`,
     [tenantId],
   );
   const row = r.rows[0];
@@ -73,7 +81,16 @@ async function readPolicy(q: Q, tenantId: string): Promise<TenantPolicyShape> {
   if (row.features && typeof row.features === "object") {
     for (const [k, v] of Object.entries(row.features as Record<string, unknown>)) feats[k] = v !== false;
   }
-  return { features: feats, providerLock: row.providerLock, chatModel: row.chatModel, producerModel: row.producerModel, researchModel: row.researchModel ?? null, promptAudit: row.promptAudit, personRetentionDays: row.personRetentionDays ?? null };
+  return {
+    features: feats,
+    providerLock: row.providerLock,
+    chatModel: row.chatModel,
+    producerModel: row.producerModel,
+    researchModel: row.researchModel ?? null,
+    promptAudit: row.promptAudit,
+    personRetentionDays: row.personRetentionDays ?? null,
+    apifyEigenerErlaubt: row.apifyEigenerErlaubt !== false,
+  };
 }
 
 /** Keycloak-Gruppe nachziehen — best-effort NACH dem DB-Commit; ein
@@ -499,6 +516,7 @@ export async function setPolicy(pool: pg.Pool, auth: AuthContext, patch: Partial
   const neu: TenantPolicyShape = {
     features: patch.features ? { ...alt.features, ...patch.features } : alt.features,
     providerLock: patch.providerLock ?? alt.providerLock,
+    apifyEigenerErlaubt: patch.apifyEigenerErlaubt ?? alt.apifyEigenerErlaubt,
     chatModel: patch.chatModel === undefined ? alt.chatModel : patch.chatModel,
     producerModel: patch.producerModel === undefined ? alt.producerModel : patch.producerModel,
     researchModel: patch.researchModel === undefined ? alt.researchModel : patch.researchModel,

@@ -71,6 +71,8 @@ export class LlmProviderManager extends EventEmitter {
     providers: Partial<Record<LlmProviderKind | "apify", string>>;
     gatewayUrl: string;
     getToken: () => Promise<string | null>;
+    /** Vorgabe der Organisation; fehlt sie, gilt "erlaubt" (bisheriges Verhalten). */
+    apifyEigenerErlaubt?: boolean;
   } = { providers: {}, gatewayUrl: "", getToken: async () => null };
 
   constructor(supervisor: OllamaSupervisor) {
@@ -223,10 +225,13 @@ export class LlmProviderManager extends EventEmitter {
     providers: Partial<Record<LlmProviderKind | "apify", string>>;
     gatewayUrl: string;
     getToken: () => Promise<string | null>;
+    apifyEigenerErlaubt?: boolean;
   }): void {
-    const vorher = JSON.stringify(this.org.providers);
+    // Die Apify-Vorgabe gehoert zum Vergleich: Wird sie umgestellt, muss die
+    // Auswahl neu berechnet werden, auch wenn sich kein Schluessel geaendert hat.
+    const vorher = JSON.stringify([this.org.providers, this.org.apifyEigenerErlaubt !== false]);
     this.org = ctx;
-    if (vorher !== JSON.stringify(ctx.providers)) {
+    if (vorher !== JSON.stringify([ctx.providers, ctx.apifyEigenerErlaubt !== false])) {
       this.emit("configChanged");
       this.recompute();
     }
@@ -319,11 +324,26 @@ export class LlmProviderManager extends EventEmitter {
     return { gatewayUrl: this.org.gatewayUrl, getToken: this.org.getToken };
   }
 
-  /** Apify: Organisations-Token nutzen, wenn lokal keiner hinterlegt ist (oder Sperre). */
+  /**
+   * Apify: Wann laeuft der Aufruf ueber den Token der Organisation?
+   *
+   * Reihenfolge:
+   *   1. Kein Token der Organisation hinterlegt → immer der eigene.
+   *   2. Anbieter-Sperre der Organisation → immer der Token der Organisation.
+   *   3. Vorgabe "eigener Token erlaubt" aus (seit 2026-09-18) → ebenfalls der
+   *      Token der Organisation, auch wenn ein eigener hinterlegt ist.
+   *   4. Sonst: der eigene Token zuerst, die Organisation als Rueckfall.
+   */
   apifyUeberOrganisation(hatEigenen: boolean): boolean {
     if (!this.org.providers.apify) return false;
     if (this.isProviderLocked()) return true;
+    if (!this.apifyEigenerErlaubt()) return true;
     return !hatEigenen;
+  }
+
+  /** Vorgabe der Organisation; ohne Angabe erlaubt (bisheriges Verhalten). */
+  apifyEigenerErlaubt(): boolean {
+    return this.org.apifyEigenerErlaubt !== false;
   }
 
   /** v0.1.405 — Tages-Token-Limit (Chat + Agent). `null` = kein Limit. */

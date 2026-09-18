@@ -250,6 +250,46 @@ export function buildOrganisationTools(deps: OrgToolDeps): Tool[] {
     },
   });
 
+  const apifyEigener = defineTool({
+    name: "org_apify_eigener_set",
+    summary: "Vorgabe: Duerfen Mitglieder einen eigenen Apify-Token nutzen? (Admin, mit Bestaetigung)",
+    category: "organisation vorgaben apify token eigener schluessel kontakte",
+    description:
+      "Legt fest, ob Mitglieder den Apify-Token der Organisation mit einem eigenen ueberschreiben duerfen. " +
+      "erlaubt=true: der eigene Token hat Vorrang, der Token der Organisation ist der Rueckfall. " +
+      "erlaubt=false: es gilt fuer alle ausschliesslich der Token der Organisation. " +
+      "Liegt weder eigener noch Organisations-Token vor, ist Apify nicht verfuegbar. " +
+      "Ohne Argument: aktuelle Vorgabe lesen. Betrifft die Mitarbeitersuche im Contact-Producer.",
+    parameters: { type: "object", properties: { erlaubt: { type: "boolean", description: "true = eigener Token erlaubt (Vorrang), false = nur Organisation." } } },
+    schema: yup.object({ erlaubt: yup.boolean().optional() }).noUnknown(true),
+    preview: (r: Record<string, any>) =>
+      r.abgebrochen ? "abgebrochen" : `eigener Apify-Token ${r.erlaubt ? "erlaubt" : "gesperrt"}${r.geaendert ? "" : " (gelesen)"}`,
+    run: async (args, c) => {
+      if (args.erlaubt === undefined) {
+        const p = await deps.gateway.request<OrgPolicy>("/v1/tenants/me/policy", {});
+        return { geaendert: false, erlaubt: p.apifyEigenerErlaubt !== false };
+      }
+      const value = await c.ui.confirmAction(
+        {
+          kind: "additive",
+          prompt: args.erlaubt
+            ? "Mitglieder duerfen kuenftig einen eigenen Apify-Token nutzen; er hat Vorrang vor dem der Organisation. Aendern?"
+            : "Kuenftig gilt fuer alle Mitglieder ausschliesslich der Apify-Token der Organisation. Aendern?",
+          confirmValue: "ja",
+          options: [
+            { value: "ja", label: "Setzen" },
+            { value: "nein", label: "Abbrechen" },
+          ],
+        },
+        c.signal,
+      );
+      if (value !== "ja") return { geaendert: false, abgebrochen: true };
+      const neu = await deps.gateway.request<OrgPolicy>("/v1/tenants/me/policy", { method: "PUT", body: { apifyEigenerErlaubt: args.erlaubt } });
+      await deps.refreshPolicy();
+      return { geaendert: true, erlaubt: neu.apifyEigenerErlaubt !== false };
+    },
+  });
+
   const providerSet = defineTool({
     name: "org_provider_set",
     summary: "Anbieter-Sperre, Modellvorgaben und Prompt-Audit der Organisation setzen (Admin, mit Bestaetigung).",
@@ -520,5 +560,5 @@ export function buildOrganisationTools(deps: OrgToolDeps): Tool[] {
     },
   });
 
-  return [info, members, approve, remove, featuresSet, providerSet, limitsSet, usage, radarShare, billingInfo, billingInvoices];
+  return [info, members, approve, remove, featuresSet, apifyEigener, providerSet, limitsSet, usage, radarShare, billingInfo, billingInvoices];
 }

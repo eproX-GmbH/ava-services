@@ -832,6 +832,7 @@ function Vorgaben({ st, admin, busy, aktion }: { st: OrgState; admin: boolean; b
           researchModel: entwurf.researchModel || null,
           promptAudit: entwurf.promptAudit,
           personRetentionDays: entwurf.personRetentionDays ?? null,
+          apifyEigenerErlaubt: entwurf.apifyEigenerErlaubt !== false,
         },
       });
       await window.api.org.refreshPolicy();
@@ -1101,8 +1102,8 @@ function Schluessel({ st, admin, busy, aktion }: { st: OrgState; admin: boolean;
       <section className="provider-section">
         <h3>Apify</h3>
         <p className="muted small">
-          Token für die LinkedIn-Mitarbeitersuche des Contact-Producers. Mitglieder ohne eigenen Apify-Token nutzen ihn
-          automatisch über das Gateway.
+          Token für die LinkedIn-Mitarbeitersuche. Mitglieder ohne eigenen Apify-Token nutzen ihn automatisch über das
+          Gateway.
         </p>
         <div className="api-keys">
           <OrgKeyCard
@@ -1112,9 +1113,10 @@ function Schluessel({ st, admin, busy, aktion }: { st: OrgState; admin: boolean;
             admin={admin}
             busy={busy}
             aktion={aktion}
-            beschreibung="Wird nur im Contact-Producer verwendet; Watchlist und Personen-Radar nutzen weiterhin den eigenen Token aus Einstellungen → Datenquellen."
+            beschreibung="Gilt für Mitarbeitersuche, Personen-Watchlist und Personen-Radar. Den eigenen Token hinterlegen Mitglieder unter Einstellungen → Datenquellen."
           />
         </div>
+        <ApifyEigenerSchalter st={st} admin={admin} busy={busy} aktion={aktion} />
       </section>
     </>
   );
@@ -1151,6 +1153,48 @@ function Verlassen({ st, me, busy, aktion }: { st: OrgState; me: WhoamiLite; bus
 
 function usd(cents: number | null | undefined): string {
   return cents == null ? "—" : `${(cents / 100).toLocaleString("de-DE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USD`;
+}
+
+/**
+ * Vorgabe: Duerfen Mitglieder den Apify-Token der Organisation mit einem
+ * eigenen ueberschreiben? Steht bewusst hier beim Token und nicht bei den
+ * uebrigen Vorgaben, weil sie nur diesen einen Schluessel betrifft.
+ */
+function ApifyEigenerSchalter({ st, admin, busy, aktion }: { st: OrgState; admin: boolean; busy: boolean; aktion: Aktion }) {
+  const erlaubt = st.policy.apifyEigenerErlaubt !== false;
+  if (!admin) {
+    return (
+      <p className="muted small">
+        {erlaubt
+          ? "Mitglieder dürfen einen eigenen Apify-Token verwenden; er hat dann Vorrang vor dem der Organisation."
+          : "Vorgabe der Organisation: Es gilt ausschließlich der Apify-Token der Organisation."}
+      </p>
+    );
+  }
+  const umschalten = (naechster: boolean) =>
+    aktion(
+      async () => {
+        await gatewayFetch("/v1/tenants/me/policy", { method: "PUT", body: { apifyEigenerErlaubt: naechster } });
+        await window.api.org.refreshPolicy();
+      },
+      naechster
+        ? "Eigene Apify-Token sind jetzt erlaubt. Mitglieder übernehmen die Vorgabe beim nächsten Abgleich."
+        : "Es gilt jetzt ausschließlich der Apify-Token der Organisation. Mitglieder übernehmen die Vorgabe beim nächsten Abgleich.",
+    );
+  return (
+    <div className="org-checks">
+      <label className="org-check">
+        <input type="checkbox" checked={erlaubt} disabled={busy} onChange={(e) => umschalten(e.target.checked)} />
+        <span>
+          Eigener Apify-Token erlaubt
+          <span className="org-check__hint">
+            Mitglieder mit eigenem Apify-Token nutzen diesen; der Token der Organisation ist der Rückfall. Ohne Haken gilt
+            für alle ausschließlich der Token der Organisation. Liegt nirgends einer, ist Apify nicht verfügbar.
+          </span>
+        </span>
+      </label>
+    </div>
+  );
 }
 
 function Limits({ st, admin, busy, aktion }: { st: OrgState; admin: boolean; busy: boolean; aktion: Aktion }) {

@@ -1469,6 +1469,10 @@ async function resolveApifyAccess(): Promise<import("./linkedin/apify-access").A
     const gw = providers.getOrgGateway();
     const jwt = await gw.getToken();
     if (gw.gatewayUrl && jwt) return organisationsApifyZugang(gw.gatewayUrl, jwt);
+    // Hat die Organisation den eigenen Token ausdruecklich untersagt, darf er
+    // auch dann nicht einspringen, wenn der Weg ueber die Organisation gerade
+    // nicht zustande kommt. Sonst waere die Vorgabe umgehbar.
+    if (!providers.apifyEigenerErlaubt()) return null;
   }
   return eigener ? eigenerApifyZugang(eigener) : null;
 }
@@ -1478,7 +1482,14 @@ function apifyZugangInfo(): { apifyQuelle: "eigen" | "organisation" | null; apif
   const eigener = watchlistKeyStore?.hasKey() ?? false;
   const org = providers.apifyUeberOrganisation(eigener) && Boolean(providers.getOrgGateway().gatewayUrl);
   const quelle = org ? "organisation" : eigener ? "eigen" : null;
-  return { apifyQuelle: quelle, apifyVerfuegbar: quelle !== null, eigenerTokenErlaubt: !providers.isProviderLocked() };
+  // Die Anzeige muss beide Vorgaben kennen: Anbieter-Sperre und die
+  // Apify-Vorgabe. Sonst stuende in den Einstellungen "eigener Token erlaubt",
+  // obwohl die Organisation ihn untersagt hat.
+  return {
+    apifyQuelle: quelle,
+    apifyVerfuegbar: quelle !== null,
+    eigenerTokenErlaubt: !providers.isProviderLocked() && providers.apifyEigenerErlaubt(),
+  };
 }
 // v0.1.490 — Bruecke: das Chat-Tool linkedin_watchlist_config aendert
 // companyWindow und muss den company-contact-Producer recyceln; die
@@ -3082,6 +3093,16 @@ app.whenReady().then(async () => {
   // O3 — Vorgaben aendern sich zur Laufzeit (Admin schaltet um, Tenant-
   // Wechsel): Hintergrunddienste je Funktion stoppen bzw. starten.
   onOrgPolicyChange((neu, alt) => {
+    // Apify-Vorgabe: Stellt die Organisation um, ob der eigene Token den ihren
+    // ueberschreiben darf, muss die Auswahl sofort neu berechnet werden.
+    if ((neu.apifyEigenerErlaubt !== false) !== (alt.apifyEigenerErlaubt !== false)) {
+      providers.setOrgContext({
+        providers: providers.getOrgProviders(),
+        gatewayUrl: APP_CONFIG.gatewayUrl,
+        getToken: () => auth.getAccessToken(),
+        apifyEigenerErlaubt: neu.apifyEigenerErlaubt !== false,
+      });
+    }
     const an = (k: string) => neu.features[k] !== false;
     const war = (k: string) => alt.features[k] !== false;
     const umschalten = (k: string, start: () => void | Promise<void>, stop: () => void | Promise<void>) => {
@@ -3996,6 +4017,9 @@ app.whenReady().then(async () => {
         providers: provs as Partial<Record<LlmProviderKind | "apify", string>>,
         gatewayUrl: APP_CONFIG.gatewayUrl,
         getToken: () => auth.getAccessToken(),
+        // Vorgabe der Organisation: Darf der eigene Apify-Token den der
+        // Organisation ueberschreiben? Fehlt sie, gilt "ja" wie bisher.
+        apifyEigenerErlaubt: getOrgPolicy().apifyEigenerErlaubt !== false,
       });
       // Deep Research ueber den OpenAI-Schluessel der Organisation.
       ResearchFeaturesStore.shared().setOrgOpenaiAvailable(Boolean(provs.openai));

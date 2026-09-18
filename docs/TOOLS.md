@@ -5,7 +5,7 @@ NICHT direkt bearbeiten — die Quelle der Wahrheit ist `services/desktop/src/ma
 Lauf via `pnpm -F @ava/desktop tools:doc` (oder automatisch via `build:typecheck`).
 
 Stand: 2026-09-18
-Anzahl Tools: 252
+Anzahl Tools: 253
 
 ## Firmen (22)
 
@@ -1809,7 +1809,16 @@ Liefert den Status des lokalen Ollama-Daemons: Zustand (idle / starting / ready 
 
 _Parameter:_ keine.
 
-## organisation (11)
+## organisation (12)
+
+### `org_apify_eigener_set`
+
+_Datei:_ `services/desktop/src/main/agent/tools/organisation.ts`
+
+Legt fest, ob Mitglieder den Apify-Token der Organisation mit einem eigenen ueberschreiben duerfen. erlaubt=true: der eigene Token hat Vorrang, der Token der Organisation ist der Rueckfall. erlaubt=false: es gilt fuer alle ausschliesslich der Token der Organisation. Liegt weder eigener noch Organisations-Token vor, ist Apify nicht verfuegbar. Ohne Argument: aktuelle Vorgabe lesen. Betrifft die Mitarbeitersuche im Contact-Producer.
+
+_Parameter:_
+- `erlaubt: boolean` — true = eigener Token erlaubt (Vorrang), false = nur Organisation.
 
 ### `org_billing_info`
 

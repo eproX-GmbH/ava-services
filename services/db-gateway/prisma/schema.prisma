@@ -493,6 +493,9 @@ model TenantPolicy {
   promptAudit   Boolean  @default(false)
   /// C1 — Personen ohne Beobachtung seit N Tagen tilgen (null = Standard 180).
   personRetentionDays Int?
+  /// Duerfen Mitglieder den Apify-Token der Organisation mit einem eigenen
+  /// ueberschreiben? true = eigener zuerst, Organisation als Rueckfall.
+  apifyEigenerErlaubt Boolean @default(true)
   updatedAt     DateTime @default(now())
   updatedBy     String?
   tenant        Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)

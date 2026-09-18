@@ -50,6 +50,8 @@ const PolicyShape = z.object({
   researchModel: z.string().max(120).nullable().optional(),
   promptAudit: z.boolean().optional(),
   personRetentionDays: z.number().int().min(30).max(3650).nullable().optional(),
+  /** Duerfen Mitglieder den Apify-Token der Organisation mit einem eigenen ueberschreiben? */
+  apifyEigenerErlaubt: z.boolean().optional(),
 });
 
 tenantsRouter.openapi(

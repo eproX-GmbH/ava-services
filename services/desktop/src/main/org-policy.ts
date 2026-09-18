@@ -12,6 +12,9 @@ import { join } from "node:path";
 import type { OrgPolicy, OrgFeatureKey } from "../shared/types";
 
 export const DEFAULT_ORG_POLICY: OrgPolicy = {
+  // Ohne ausdrueckliche Vorgabe darf der eigene Apify-Token den der
+  // Organisation ueberschreiben (Verhalten vor dieser Vorgabe).
+  apifyEigenerErlaubt: true,
   features: {},
   providerLock: false,
   chatModel: null,
@@ -55,6 +58,9 @@ function normalisiere(raw: Partial<OrgPolicy> | null | undefined): OrgPolicy {
     producerModel: typeof raw?.producerModel === "string" ? raw.producerModel : null,
     researchModel: typeof raw?.researchModel === "string" ? raw.researchModel : null,
     promptAudit: raw?.promptAudit === true,
+    // Fehlt die Angabe (aeltere Organisation, aelteres Gateway), gilt "erlaubt":
+    // das entspricht dem Verhalten vor dieser Vorgabe.
+    apifyEigenerErlaubt: raw?.apifyEigenerErlaubt !== false,
   };
 }
 
@@ -81,7 +87,7 @@ export function applyOrgPolicy(raw: Partial<OrgPolicy> | null | undefined): bool
     console.warn("[org-policy] org-policy.json nicht schreibbar:", err);
   }
   const aus = Object.entries(neu.features).filter(([, v]) => v === false).map(([k]) => k);
-  console.log(`[org-policy] Vorgaben aktualisiert — abgeschaltet: ${aus.length ? aus.join(", ") : "nichts"}; providerLock=${neu.providerLock}`);
+  console.log(`[org-policy] Vorgaben aktualisiert — abgeschaltet: ${aus.length ? aus.join(", ") : "nichts"}; providerLock=${neu.providerLock}, eigener Apify-Token ${neu.apifyEigenerErlaubt === false ? "gesperrt" : "erlaubt"}`);
   for (const l of listeners) {
     try {
       l(neu, alt);
