@@ -3297,11 +3297,20 @@ a.heartbeat-decision__company:hover {
 .pc__iconbtn { display: inline-flex; align-items: center; justify-content: center; width: 34px; height: 34px; border-radius: 9px; border: 1px solid var(--border); background: var(--color-bg-0); color: var(--fg); text-decoration: none; font-size: 14px; cursor: pointer; transition: var(--ctrl-transition); }
 .pc__iconbtn:hover { border-color: var(--accent); color: var(--accent); }
 .pc__iconbtn--brand { color: var(--muted); }
+/* Der Herkunftsnachweis bekommt seinen Kopierknopf in die obere rechte Ecke
+   des Textes. Position relativ zur Huelle, damit er beim Blaettern im
+   Nachweis nicht mitwandert. */
+.pc__herkunft-huelle { position: relative; }
+.pc__herkunft-kopieren { position: absolute; top: 14px; right: 6px; z-index: 1; width: 30px; height: 30px; }
+/* Ueberschrift und erster Absatz sollen nicht unter den Knopf laufen. */
+.pc__herkunft > :first-child { padding-right: 38px; }
 .pc__notice { margin: 0; font-size: 11px; color: var(--muted); }
 .pc__facts { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.2rem; }
 .pc__fact { display: grid; grid-template-columns: 20px 1fr auto; align-items: center; gap: 0.5rem; padding: 0.3rem 0; border-top: 1px solid var(--border); }
 .pc__fact:first-child { border-top: 0; }
-.pc__fact-icon { color: var(--muted); font-size: 13px; text-align: center; }
+/* Traegt seit v0.1.691 ein SVG statt eines Unicode-Zeichens: die Glyphen
+   der Schrift waren zu zierlich und je nach System verschieden gross. */
+.pc__fact-icon { color: var(--muted); display: inline-flex; align-items: center; justify-content: center; }
 .pc__fact-value { min-width: 0; font-weight: 500; overflow-wrap: anywhere; }
 .pc__fact-value .fact-url__label { max-width: 100%; }
 .pc__fact-meta { display: flex; align-items: center; gap: 0.4rem; white-space: nowrap; }

@@ -94,8 +94,8 @@ export function ExternalLinkIcon(props: IconProps) {
 export function MailIcon(props: IconProps) {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" {...withDefaults(props)}>
-      <rect x="3" y="5" width="18" height="14" rx="2" />
-      <path d="M3 7l9 6 9-6" />
+      <rect x="2" y="4" width="20" height="16" rx="2.5" />
+      <path d="M2 6.5l10 6.5 10-6.5" />
     </svg>
   );
 }
@@ -115,6 +115,35 @@ export function EyeIcon(props: IconProps) {
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" {...withDefaults(props)}>
       <path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z" />
       <circle cx="12" cy="12" r="3" />
+    </svg>
+  );
+}
+
+/** Zwei Blaetter (Outline) — Kopieren in die Zwischenablage. */
+export function CopyIcon(props: IconProps) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" {...withDefaults(props)}>
+      <rect x="9" y="9" width="12" height="12" rx="2" />
+      <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+    </svg>
+  );
+}
+
+/** Haus (Outline) — Kontaktkarte: Anschrift. */
+export function HomeIcon(props: IconProps) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" {...withDefaults(props)}>
+      <path d="M3 10.5 12 3l9 7.5" />
+      <path d="M5 9.5V20a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V9.5" />
+    </svg>
+  );
+}
+
+/** Punkt — Sammelzeichen fuer Felder ohne eigenes Glyph. */
+export function DotIcon(props: IconProps) {
+  return (
+    <svg viewBox="0 0 24 24" fill="currentColor" {...withDefaults(props)}>
+      <circle cx="12" cy="12" r="3.5" />
     </svg>
   );
 }

@@ -39,6 +39,9 @@ import {
   GlobeIcon,
   LinkedInIcon,
   MailIcon,
+  CopyIcon,
+  HomeIcon,
+  DotIcon,
   PhoneIcon,
   XingIcon,
 } from "../components/icons";
@@ -1995,14 +1998,20 @@ function PersonCard({
       : c >= 0.6
       ? "#d98e04"
       : "#c0392b";
-  const iconFuer = (field: string): string =>
-    field === "email"
-      ? "✉"
-      : field === "phone" || field === "mobilePhone"
-      ? "☎"
-      : field === "address"
-      ? "⌂"
-      : "•";
+  // Die Zeilen trugen bisher Unicode-Zeichen (U+2709 Briefumschlag,
+  // U+260E Telefon). Die zeichnet jede Schrift anders und meist viel zu
+  // zierlich — neben den SVG-Knoepfen der Karte sahen sie aus, als waeren
+  // sie versehentlich verkleinert worden. Jetzt dieselben Glyphen wie oben.
+  const iconFuer = (field: string) =>
+    field === "email" ? (
+      <MailIcon size={15} />
+    ) : field === "phone" || field === "mobilePhone" ? (
+      <PhoneIcon size={15} />
+    ) : field === "address" ? (
+      <HomeIcon size={15} />
+    ) : (
+      <DotIcon size={15} />
+    );
 
   return (
     <article className="panel pc">
@@ -2228,8 +2237,27 @@ function PersonCard({
             {c1Notice && <span className="muted small">{c1Notice}</span>}
           </div>
           {herkunft && (
-            <div className="chat-markdown pc__herkunft">
-              <ReactMarkdown>{herkunft}</ReactMarkdown>
+            <div className="pc__herkunft-huelle">
+              <button
+                type="button"
+                className="pc__iconbtn pc__herkunft-kopieren"
+                title="Herkunftsnachweis in die Zwischenablage kopieren"
+                onClick={() => {
+                  void navigator.clipboard
+                    .writeText(herkunft)
+                    .then(() => setC1Notice("Herkunftsnachweis in die Zwischenablage kopiert."))
+                    .catch(() => setC1Notice("Kopieren nicht moeglich."));
+                }}
+              >
+                <span className="visually-hidden">Herkunftsnachweis kopieren</span>
+                <CopyIcon size={16} />
+              </button>
+              {/* remarkGfm: der Nachweis enthaelt eine Tabelle der
+                  gespeicherten Angaben. Ohne das Plugin stand sie als
+                  Rohtext mit Strichen und Pipes in der Karte. */}
+              <div className="markdown pc__herkunft">
+                <ReactMarkdown remarkPlugins={[remarkGfm]}>{herkunft}</ReactMarkdown>
+              </div>
             </div>
           )}
         </details>
