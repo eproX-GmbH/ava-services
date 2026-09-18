@@ -41,10 +41,7 @@ export default defineConfig({
     // has access to the published .dmg files which is what the token
     // grants. Promote to runtime gateway-mediated token in 8.v1.6.
     define: {
-      "process.env.AVA_RELEASE_TOKEN": JSON.stringify(
-        process.env.AVA_RELEASE_TOKEN ?? process.env.GH_TOKEN ?? "",
-      ),
-    },
+          },
     build: {
       rollupOptions: {
         input: resolve(__dirname, "src/main/index.ts"),

@@ -192,18 +192,20 @@ linux:
 # rewrite. `vPrefixedTagName: true` matches our `v1.2.3` tag style.
 publish:
   provider: github
+  # 2026-09-18 — Die Installationsdateien liegen in einem eigenen, OEFFENTLICHEN
+  # Repository (eproX-GmbH/ava-releases); der Quellcode bleibt privat.
+  #
+  # Vorher zeigte `publish` auf das private Repository. Das konnte nicht
+  # funktionieren: Weder der Atom-Feed unter github.com noch die Adresse eines
+  # Anhangs sind dort ohne Anmeldung erreichbar. Gemessen am 18.09.2026 lieferte
+  # der Atom-Feed mit UND ohne gueltigen Token 404, waehrend die API mit
+  # demselben Token 30 Releases zurueckgab. Folge: Die Update-Pruefung der App
+  # schlug bei jedem Start mit 404 fehl, und die Download-Knoepfe auf ava.bi
+  # endeten fuer jeden Besucher bei einer 404-Seite.
+  #
+  # Mit einem oeffentlichen Release-Repository laden Website und App ohne jedes
+  # Geheimnis; der frueher in die App eingebackene Token entfaellt.
+  owner: eproX-GmbH
+  repo: ava-releases
   releaseType: release
   vPrefixedTagName: true
-  # 2026-09-18 — `private: true` ist bei einem privaten Repository Pflicht.
-  # Ohne diese Angabe fragt electron-updater den Atom-Feed unter
-  # github.com/<owner>/<repo>/releases.atom ab. Dieser Weg kennt keine
-  # Token-Authentifizierung: Bei einem privaten Repository antwortet GitHub
-  # immer mit 404, auch mit einem gueltigen Token (nachgemessen am 18.09.2026:
-  # Atom-Feed 404 mit und ohne Token, waehrend die API 30 Releases lieferte).
-  # Die Update-Pruefung schlug deshalb bei jedem Start mit "404" fehl.
-  #
-  # Mit `private: true` nimmt electron-updater die GitHub-API
-  # (api.github.com/repos/…/releases) und schickt den eingebackenen Token als
-  # Authorization-Kopf mit. Das ist der Weg, der bei privaten Repositories
-  # funktioniert.
-  private: true

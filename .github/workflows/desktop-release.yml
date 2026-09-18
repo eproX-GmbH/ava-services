@@ -51,6 +51,25 @@ on:
 permissions:
   contents: write   # Needed to upload release assets.
 
+# 2026-09-18 — Die Installationsdateien liegen in einem EIGENEN, OEFFENTLICHEN
+# Repository. Der Quellcode bleibt privat.
+#
+# Grund: Bei einem privaten Repository kommt niemand ohne Anmeldung an die
+# Dateien. Die Download-Knoepfe auf ava.bi endeten deshalb fuer jeden Besucher
+# bei 404, und die Update-Pruefung der App schlug bei jedem Start fehl
+# (gemessen am 18.09.2026). Ein Token in der App oder auf der Website waere nur
+# ein Pflaster: Auch die Adresse eines Anhangs verlangt bei einem privaten
+# Repository wieder eine Anmeldung.
+#
+# Mit einem oeffentlichen Release-Repository laden Website und App ohne jedes
+# Geheimnis. Der in die App eingebackene Token entfaellt damit ebenfalls.
+env:
+  # Ziel der Veroeffentlichung: Releases, Anhaenge und die Manifeste.
+  RELEASE_REPO: eproX-GmbH/ava-releases
+  # Schreibrechte im Release-Repository. Das automatische GITHUB_TOKEN gilt nur
+  # fuer dieses Repository und reicht dafuer nicht.
+  RELEASE_TOKEN_SECRET_NAME: SUBMODULES_PAT
+
 jobs:
   # v0.1.643 — Das GitHub-Release wird VOR den Build-Jobs als Entwurf
   # angelegt. electron-publish 26 legt sonst je Publisher-Instanz
@@ -67,10 +86,10 @@ jobs:
     steps:
       - name: Draft-Release fuer den Tag sicherstellen
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.SUBMODULES_PAT }}
         run: |
           TAG="${{ github.event.inputs.tag || github.ref_name }}"
-          REPO="${{ github.repository }}"
+          REPO="$RELEASE_REPO"
           n=$(gh api "repos/$REPO/releases?per_page=100" --jq "[.[] | select(.tag_name==\"$TAG\")] | length")
           if [ "$n" = "0" ]; then
             gh release create "$TAG" --draft --title "${TAG#v}" --notes "AVA Desktop ${TAG#v}" --repo "$REPO"
@@ -234,10 +253,6 @@ jobs:
       - name: Build renderer + main bundles
         working-directory: services/desktop
         env:
-          # Baked into the main bundle so electron-updater can read
-          # the private repo's release feed. See updater.ts +
-          # electron.vite.config.ts main.define block.
-          AVA_RELEASE_TOKEN: ${{ secrets.SUBMODULES_PAT }}
         run: pnpm build
 
       # Imports the Developer ID Application cert into a fresh
@@ -276,7 +291,7 @@ jobs:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.SUBMODULES_PAT }}
         run: |
           # macOS runners default to ulimit -n 256, which the
           # `readDirectoryAndSign` walker blows past once we vendor
@@ -388,7 +403,7 @@ jobs:
       - name: Ensure arm64 artifacts on release (bypass 2h skip)
         working-directory: services/desktop
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.SUBMODULES_PAT }}
         shell: bash
         run: |
           TAG="${{ github.event.inputs.tag || github.ref_name }}"
@@ -418,9 +433,9 @@ jobs:
         continue-on-error: true
         shell: bash
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.SUBMODULES_PAT }}
         run: |
-          REPO="${{ github.repository }}"
+          REPO="$RELEASE_REPO"
           eintrag=$(gh api "repos/$REPO/releases?per_page=100" \
             --jq '[.[] | select(.draft == false and .prerelease == false)] | map("\(.tag_name) \(.id)") | .[]' \
             | sort -V | tail -1)
@@ -627,7 +642,6 @@ jobs:
       - name: Build renderer + main bundles
         working-directory: services/desktop
         env:
-          AVA_RELEASE_TOKEN: ${{ secrets.SUBMODULES_PAT }}
         run: pnpm build
 
       - name: Import macOS code-signing certificate
@@ -742,9 +756,9 @@ jobs:
         continue-on-error: true
         shell: bash
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.SUBMODULES_PAT }}
         run: |
-          REPO="${{ github.repository }}"
+          REPO="$RELEASE_REPO"
           eintrag=$(gh api "repos/$REPO/releases?per_page=100" \
             --jq '[.[] | select(.draft == false and .prerelease == false)] | map("\(.tag_name) \(.id)") | .[]' \
             | sort -V | tail -1)
@@ -769,7 +783,7 @@ jobs:
       - name: Merge manifests and upload x64 artifacts to release
         working-directory: services/desktop
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.SUBMODULES_PAT }}
         shell: bash
         run: |
           TAG="${{ github.event.inputs.tag || github.ref_name }}"
@@ -848,7 +862,7 @@ jobs:
     steps:
       - name: Promote release to Latest
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.SUBMODULES_PAT }}
         run: |
           TAG="${{ github.event.inputs.tag || github.ref_name }}"
           gh release edit "$TAG" --draft=false --latest \
@@ -996,10 +1010,6 @@ jobs:
       - name: Build renderer + main bundles
         working-directory: services/desktop
         env:
-          # Baked into the main bundle so electron-updater can read
-          # the private repo's release feed. See updater.ts +
-          # electron.vite.config.ts main.define block.
-          AVA_RELEASE_TOKEN: ${{ secrets.SUBMODULES_PAT }}
         run: pnpm build
 
       # v0.1.641 — Windows-Code-Signing via Azure Artifact Signing.
@@ -1016,7 +1026,7 @@ jobs:
         working-directory: services/desktop
         shell: bash
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.SUBMODULES_PAT }}
           AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
           AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
           AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
@@ -1070,9 +1080,9 @@ jobs:
         continue-on-error: true
         shell: bash
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.SUBMODULES_PAT }}
         run: |
-          REPO="${{ github.repository }}"
+          REPO="$RELEASE_REPO"
           eintrag=$(gh api "repos/$REPO/releases?per_page=100" \
             --jq '[.[] | select(.draft == false and .prerelease == false)] | map("\(.tag_name) \(.id)") | .[]' \
             | sort -V | tail -1)

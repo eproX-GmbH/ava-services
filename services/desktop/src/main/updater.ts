@@ -119,18 +119,11 @@ export class Updater extends EventEmitter {
       return;
     }
 
-    // Den beim Bauen eingebackenen Token in die Umgebung legen, damit
-    // electron-updater die Releases des privaten Repositorys lesen darf.
-    // Quelle: `define`-Block in electron.vite.config.ts.
-    //
-    // 2026-09-18: Der Token allein genuegt nicht. In electron-builder.yml muss
-    // `publish.private: true` stehen, sonst fragt electron-updater den
-    // Atom-Feed unter github.com ab, der keine Token-Authentifizierung kennt
-    // und bei einem privaten Repository immer mit 404 antwortet.
-    const bakedToken = process.env.AVA_RELEASE_TOKEN;
-    if (bakedToken && !process.env.GH_TOKEN) {
-      process.env.GH_TOKEN = bakedToken;
-    }
+    // Kein Token noetig: Die Installationsdateien liegen seit dem 18.09.2026 in
+    // einem oeffentlichen Release-Repository (electron-builder.yml, publish).
+    // Frueher wurde hier ein beim Bauen eingebackener Token gesetzt — er half
+    // nicht (die Pruefung endete trotzdem bei 404) und war ein Geheimnis im
+    // ausgelieferten Programm.
 
     // v0.1.279 — autoDownload=true. Vorher false (User musste explizit
     // "Download" klicken); mit aktiven Release-Wellen mehrfach pro Tag
