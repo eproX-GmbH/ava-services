@@ -5511,7 +5511,12 @@ app.whenReady().then(async () => {
     for (const win of BrowserWindow.getAllWindows()) win.webContents.send("register-delta:verlauf:changed", v);
   });
   ipcMain.handle("suggestions:startseite", (_e, opts: { frisch?: boolean } | undefined) =>
-    chipErzeugung!.startseite({ frisch: opts?.frisch === true, ohneModell: !featureEnabled("vorschlaege") || !vorschlaegeSettings!.get().startseite }),
+    // Im Worker-Modus ohne Modell: Die Startseite wuerde sonst bei jedem Oeffnen
+    // Chips per KI erzeugen — genau die Kosten, die der Modus ausschliessen soll.
+    chipErzeugung!.startseite({
+      frisch: opts?.frisch === true,
+      ohneModell: !featureEnabled("vorschlaege") || !vorschlaegeSettings!.get().startseite || workerModus.aktiv(),
+    }),
   );
   ipcMain.handle("suggestions:getSettings", () => ({ ...vorschlaegeSettings!.get(), orgErlaubt: featureEnabled("vorschlaege") }));
   ipcMain.handle("suggestions:setSettings", (_e, patch: { startseite?: boolean; gespraech?: boolean }) => {
@@ -7347,6 +7352,22 @@ app.whenReady().then(async () => {
   // gepufferte Zeile verloren und man wuesste nicht, welcher es war.
   workerModus.protokoll((zeile) => writeLineSync("INFO ", `[worker-modus] ${zeile}`));
   workerModus.anmelden({ name: "Herzschlag", anhalten: () => heartbeat.stop(), anlaufen: () => heartbeat.start() });
+  // 2026-09-18 — Nachgezogen, damit im Worker-Modus wirklich keine Kosten
+  // entstehen koennen: Der LinkedIn-Zeitplan startet Feed-Scans von selbst, und
+  // der Telegram-Eingang kann ueber eine eingehende Nachricht den Agenten
+  // anstossen. Beides sind Hintergrundwege, die ohne Zutun Geld kosten.
+  workerModus.anmelden({
+    name: "LinkedIn-Zeitplan",
+    anhalten: () => stopLinkedInScheduler(),
+    anlaufen: () => startLinkedInScheduler(),
+    darfLaufen: () => featureEnabled("linkedin.beobachter"),
+  });
+  workerModus.anmelden({
+    name: "Telegram-Eingang",
+    anhalten: () => telegramInbound?.stop(),
+    anlaufen: () => telegramInbound?.sync(),
+    darfLaufen: () => featureEnabled("telegram"),
+  });
   workerModus.anmelden({ name: "Wiederholungen", anhalten: () => retryTicker.stop(), anlaufen: () => retryTicker.start() });
   workerModus.anmelden({
     name: "Auffrischung",

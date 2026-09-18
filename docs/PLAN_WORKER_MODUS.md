@@ -6,6 +6,31 @@ Ein Rechner soll nebenher als Verarbeiter laufen dürfen: AVA arbeitet dann
 ausschließlich Handelsregister-Jobs ab und lässt alles andere ruhen. Gedacht für
 den Betreiber und Kolleginnen und Kollegen, die einen Rechner dafür abstellen.
 
+## Zusage: keine Kosten im Worker-Modus
+
+Im Worker-Modus darf von selbst nichts laufen, das Geld kostet. Das betrifft
+Aufrufe an Modellanbieter ebenso wie bezahlte Dienste wie Apify oder die
+Suchschnittstelle. Geprüft und sichergestellt am 18.09.2026 (v0.1.688).
+
+Die Handelsregister-Verarbeitung selbst ist kostenfrei: Der Register-Delta-Worker
+ruft nur das Registerportal auf und liest den Auszug mit einem eigenen Parser,
+ohne jedes Modell. Die Gesellschafterlisten, die ein Modell brauchen, laufen im
+Producer, und der ruht in diesem Modus.
+
+Ausdrücklich weiter möglich sind nur Kosten, die du selbst auslöst, indem du im
+Chat etwas eingibst. Die App bleibt bedienbar, und eine Eingabe ist eine
+bewusste Entscheidung. Alles andere ist abgestellt.
+
+Drei Wege waren zunächst übersehen worden und sind seit v0.1.688 mit abgedeckt:
+der LinkedIn-Zeitplan, der von selbst Feed-Scans startet, der Telegram-Eingang,
+über den eine eingehende Nachricht den Agenten anstoßen kann, und die Vorschläge
+auf der Startseite, die beim Öffnen per Modell erzeugt werden. Letztere fallen im
+Worker-Modus auf die feste Liste zurück.
+
+**Regel für neue Funktionen:** Wer etwas ergänzt, das von selbst ein Modell oder
+einen bezahlten Dienst aufruft, meldet es hier mit an. Sonst läuft es im
+Worker-Modus weiter und verursacht genau die Kosten, die der Modus ausschließt.
+
 ## Was läuft, was ruht
 
 Weiter aktiv:
@@ -15,12 +40,15 @@ Weiter aktiv:
 - Anmeldung, weil der Worker dafür einen Token braucht.
 - Aktualisierung der App, Wachhund, die Aufräumläufe einmal am Tag.
 
-Angehalten, solange der Modus an ist:
+Angehalten, solange der Modus an ist (19 Dienste):
 
 Herzschlag, Wiederholungen, Auffrischung, Nachlauf hängender Schritte,
 Producer, Vorgänge, Statuswächter, E-Mail-Muster, Abläufe, Radar, Mini-Profile,
 Beobachtungsliste, Personen-Radar, geplante Aufgaben, Link-Beobachter, Mail,
-Erreichbarkeitsprüfung.
+Erreichbarkeitsprüfung, LinkedIn-Zeitplan, Telegram-Eingang.
+
+Der Herzschlag ist dabei besonders wichtig: Er beurteilt Meldungen mit einem
+Modell und wäre sonst eine laufende Kostenquelle ohne dein Zutun.
 
 Die App bleibt bedienbar. Gespeicherte Daten sind weiter sichtbar, nur es
 entstehen keine neuen.
