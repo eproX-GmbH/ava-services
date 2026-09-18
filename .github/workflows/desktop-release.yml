@@ -252,7 +252,6 @@ jobs:
       # separate vite-driven step.
       - name: Build renderer + main bundles
         working-directory: services/desktop
-        env:
         run: pnpm build
 
       # Imports the Developer ID Application cert into a fresh
@@ -641,7 +640,6 @@ jobs:
 
       - name: Build renderer + main bundles
         working-directory: services/desktop
-        env:
         run: pnpm build
 
       - name: Import macOS code-signing certificate
@@ -1009,7 +1007,6 @@ jobs:
 
       - name: Build renderer + main bundles
         working-directory: services/desktop
-        env:
         run: pnpm build
 
       # v0.1.641 — Windows-Code-Signing via Azure Artifact Signing.
