@@ -497,6 +497,9 @@ export async function runProfiler(
     /** v0.1.474 — true = LLM gerade anderweitig gebraucht (Chat-Turn)
      *  → Worker wartet zwischen Kandidaten, statt zu konkurrieren. */
     shouldPause?: () => boolean;
+    /** v0.1.689 — true = laufende Arbeit sofort beenden (Worker-Modus).
+     *  Anders als shouldPause wird nicht gewartet, sondern abgebrochen. */
+    shouldStop?: () => boolean;
     /** v0.1.576 — parallele Kandidaten (Default 3; Sofort-Modus mehr). */
     concurrency?: number;
   },
@@ -552,11 +555,15 @@ export async function runProfiler(
   const parallel = Math.max(1, Math.min(opts.concurrency ?? 3, 12));
   const workers = Array.from({ length: parallel }, async () => {
     for (;;) {
+      // Erst fragen, ob ueberhaupt noch gearbeitet werden soll: im
+      // Worker-Modus darf keine angefangene Liste zu Ende laufen.
+      if (opts.shouldStop?.()) return;
       const cand = queue.shift();
       if (!cand) return;
       // Aktiver Chat-Turn hat Vorrang vor Hintergrund-Profilen.
       if (opts.shouldPause?.()) radarActivity.profilePausiert(true);
       while (opts.shouldPause?.()) {
+        if (opts.shouldStop?.()) return;
         await new Promise((r) => setTimeout(r, 5_000));
       }
       radarActivity.profilePausiert(false);

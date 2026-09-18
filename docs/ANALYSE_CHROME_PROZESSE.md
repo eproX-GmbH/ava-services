@@ -287,3 +287,19 @@ Browser und Treiber stammen aus demselben Paket, was zugleich die
 wiederkehrenden Versionskonflikte beendet. Schlägt das Laden fehl, arbeitet AVA
 mit dem Browser der Person weiter; die Verarbeitung fällt nie aus. Regeln des
 Downloads: `docs/SICHERHEIT_HINTERGRUND_BROWSER.md`, Nachtrag 2026-09-18.
+
+## Nachtrag 2026-09-18 — der Update-Pfad des Wachhunds (v0.1.689)
+
+Nach dem Umbau blieb ein Austrittspfad ungedeckt. Beendet sich der Wachhund,
+weil gerade ein Update installiert wird (`update in progress (flag present)`),
+ließ er die Hintergrund-Browser der alten Fassung stehen. Die neue Fassung
+startet mit einem frischen Hauptprozess und kennt sie nicht mehr; sie hängen
+danach an `launchd`.
+
+Im Feld beobachtet: ein Chrome for Testing, Elternprozess 1, 39 Minuten alt,
+entstanden beim Update auf v0.1.688. Die drei anderen Austrittspfade ("App
+beendet", "Quit haengt", "App haengt") räumten korrekt auf — im Protokoll
+stehen dort 8 und 15 aufgeräumte Prozesse.
+
+Behoben: der Update-Pfad ruft `raeumeAvaBrowser("Update laeuft")`, bevor er
+sich beendet.

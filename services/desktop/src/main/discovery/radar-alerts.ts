@@ -16,6 +16,7 @@ import { app } from "electron";
 import type { Alert } from "../../shared/types";
 import type { AlertsStore } from "../agent/alerts-store";
 import type { MatchResultRow } from "./matcher";
+import { arbeitAbbrechen } from "../worker-modus";
 
 const HOT_SCORE = 70;
 const MAX_ALERTS_PER_EMIT = 5;
@@ -154,6 +155,13 @@ export class RadarAlertEmitter {
   /** Heisse Treffer aus einem Match-Lauf melden (Schwelle + Budget
    *  nach Plan-Politik; beste Scores zuerst). */
   emit(ergebnisse: MatchResultRow[]): EmitResult {
+    // Letzter Riegel vor dem Versand. Im Worker-Modus soll ausser der
+    // Registerverarbeitung nichts nach aussen gehen; am 2026-09-18 kamen
+    // ueber diesen Weg noch Radar-Treffer per Telegram an, weil ein vor dem
+    // Einschalten begonnener Profil-Lauf weiterlief und nachgelagert das
+    // Matching anstiess. Der Treffer geht nicht verloren: er ist weiterhin
+    // faellig und wird nach dem Ausschalten gemeldet.
+    if (arbeitAbbrechen()) return { neu: 0, bereitsGemeldet: 0 };
     const policy = this.deps.getPolicy?.() ?? policyForTier(null);
     const alerted = this.getAlerted();
     const hot = ergebnisse.filter((r) => r.score >= policy.threshold);

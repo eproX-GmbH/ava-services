@@ -226,6 +226,11 @@ const timer = setInterval(function () {
     try {
       if (fs.existsSync(UPDATING_FLAG)) {
         log("update in progress (flag present) -> exiting watchdog, no relaunch");
+        // Die neue Fassung startet mit einem frischen Hauptprozess; die
+        // Browser der alten haengen sonst als Waisen an launchd. Am
+        // 2026-09-18 blieb so einer nach einem Update 39 Minuten stehen,
+        // weil dieser Pfad als einziger nicht aufgeraeumt hat.
+        raeumeAvaBrowser("Update laeuft");
         clearInterval(timer);
         process.exit(0);
         return;

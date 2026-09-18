@@ -2954,6 +2954,9 @@ app.whenReady().then(async () => {
   let incrementalMatchRunning = false;
   const runIncrementalMatch = async (): Promise<void> => {
     if (incrementalMatchRunning || !icpStore.isSet()) return;
+    // Das Matching bewertet mit dem Modell und kostet damit Geld; im
+    // Worker-Modus faellt es aus.
+    if (workerModus.aktiv()) return;
     incrementalMatchRunning = true;
     try {
       const result = await runMatch(

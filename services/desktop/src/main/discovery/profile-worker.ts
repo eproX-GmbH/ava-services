@@ -21,6 +21,7 @@ import type { GatewayClient } from "../agent/gateway-client";
 import type { LlmProviderManager } from "../agent/providers";
 import { runProfiler, type ProfilerSummary } from "./profiler";
 import { radarActivity } from "./activity";
+import { arbeitAbbrechen } from "../worker-modus";
 
 const TICK_MS = 10 * 60_000;
 const FIRST_TICK_DELAY_MS = 2 * 60_000;
@@ -143,12 +144,17 @@ export class ProfileWorker {
     };
     const t0 = Date.now();
     for (let round = 0; round < MAX_ROUNDS_PER_DRAIN; round++) {
+      // Worker-Modus: keine weitere Runde anfangen.
+      if (arbeitAbbrechen()) break;
       const r = await runProfiler(this.deps.gateway, this.deps.providers, {
         limit: ROUND_LIMIT,
         prioritizeTerms: this.deps.getPrioritizeTerms(),
         exclude: this.exclude(),
         // Chat-Turns haben immer Vorrang, auch im Sofort-Modus.
         shouldPause: this.deps.isLlmBusy,
+        // Der Zeitgeber allein reicht nicht: eine schon laufende Runde muss
+        // selbst merken, dass sie aufhoeren soll.
+        shouldStop: () => arbeitAbbrechen(),
         concurrency: this.sofort ? CONCURRENCY_SOFORT : CONCURRENCY_SCHONEND,
       });
       if ("error" in r) {
@@ -188,7 +194,7 @@ export class ProfileWorker {
     // v0.1.636 — Matching auch ohne neue Profile anstossen: ein offener
     // Bewertungs-Backlog (Match bewertet je Lauf nur eine Charge) darf
     // nicht liegen bleiben, bis zufaellig wieder ein Profil entsteht.
-    if (total.profiliert === 0) {
+    if (total.profiliert === 0 && !arbeitAbbrechen()) {
       try {
         this.deps.onDrained(0);
       } catch (err) {
@@ -205,10 +211,14 @@ export class ProfileWorker {
           llmFehler: total.llmFehler,
         },
       });
-      try {
-        this.deps.onDrained(total.profiliert);
-      } catch (err) {
-        console.warn("[profile-worker] onDrained failed:", err);
+      // Im Worker-Modus nicht mehr: das anschliessende Matching kostet
+      // erneut Modellzeit und schickt Radar-Treffer per Telegram raus.
+      if (!arbeitAbbrechen()) {
+        try {
+          this.deps.onDrained(total.profiliert);
+        } catch (err) {
+          console.warn("[profile-worker] onDrained failed:", err);
+        }
       }
     }
     return total;

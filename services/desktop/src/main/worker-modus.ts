@@ -131,3 +131,16 @@ export const workerModus = new WorkerModus();
 export function nurRegisterVerarbeitung(): boolean {
   return workerModus.aktiv();
 }
+
+/**
+ * Fuer lange Schleifen: true, sobald das, was gerade laeuft, aufhoeren soll.
+ *
+ * Notwendig, weil `anhalten` nur den Zeitgeber loescht. Eine Arbeit, die beim
+ * Einschalten schon lief, arbeitet sonst ihre ganze Liste zu Ende — am
+ * 2026-09-18 waren das zwoelf Minuten Mini-Profile mit 41 Modellaufrufen und
+ * Radar-Treffern per Telegram, obwohl der Modus laengst an war. Wer eine
+ * Schleife ueber Einheiten laeuft, fragt hier zwischen zwei Einheiten nach.
+ */
+export function arbeitAbbrechen(): boolean {
+  return workerModus.aktiv();
+}

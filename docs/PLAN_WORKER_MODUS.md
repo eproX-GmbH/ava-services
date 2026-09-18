@@ -151,3 +151,51 @@ weshalb die Hintergrund-Browser als Waisen liegenblieben. Der Beendigungspfad
 schließt den Speicher deshalb nicht mehr. Das `close()` wurde dort ohnehin nie
 fertig; es wegzulassen ist strikt besser. Die Daten liegen auf der Platte, und
 PGlite stellt beim nächsten Start wieder her.
+
+## Anhalten heißt nicht aufhören (v0.1.689)
+
+Am 2026-09-18 meldete der Betreiber, dass er im Worker-Modus weiterhin
+Firmenradar-Treffer per Telegram bekommt. Die Protokolle bestätigten es: nach
+dem Einschalten um 09:27:29 standen dort noch 82 Discovery-Zeilen und **41
+Modellaufrufe**, über zwölf Minuten hinweg.
+
+Der Modus selbst war in Ordnung — alle 19 Dienste meldeten ihr Anhalten
+innerhalb von 33 Millisekunden. Die Lücke lag eine Ebene tiefer: `anhalten`
+löscht den Zeitgeber, damit nichts Neues anfängt. Was beim Einschalten schon
+lief, merkt davon nichts und arbeitet seine Liste zu Ende. Beim Profil-Worker
+ist diese Liste lang.
+
+Die Kette lief danach von selbst weiter:
+
+```
+ProfileWorker.drainInner()   → läuft fertig, Firma für Firma (Modell je Firma)
+  → onDrained
+    → runIncrementalMatch()  → bewertet mit dem Modell
+      → RadarAlertEmitter.emit()
+        → Alert-Fanout        → Glocke, Push, Telegram
+```
+
+Drei Riegel, absichtlich gestaffelt:
+
+1. **In der Schleife.** `runProfiler` kennt neben `shouldPause` jetzt
+   `shouldStop`. `shouldPause` wartet, `shouldStop` bricht ab — geprüft
+   zwischen zwei Kandidaten und in der Wartschleife. Der Profil-Worker fängt
+   außerdem keine neue Runde mehr an.
+2. **Am Übergang.** Nach einem Abbruch wird das nachgelagerte Matching nicht
+   mehr angestoßen. Es kostet erneut Modellzeit.
+3. **Vor dem Versand.** `RadarAlertEmitter.emit` gibt im Worker-Modus sofort
+   zurück. Das deckt auch Wege ab, die wir heute nicht kennen. Treffer gehen
+   nicht verloren: sie bleiben fällig und werden nach dem Ausschalten gemeldet.
+
+Für neue Hintergrunddienste gilt damit zweierlei: beim Worker-Modus anmelden
+**und**, wenn der Dienst eine Schleife über Einheiten läuft, zwischen zwei
+Einheiten `arbeitAbbrechen()` fragen.
+
+### Nebenbefund: eine Chrome-Waise nach dem Update
+
+Derselbe Durchgang förderte einen verwaisten Hintergrund-Browser zutage
+(Elternprozess `launchd`, 39 Minuten alt). Er stammte aus dem Update um
+09:23:44. Der Wachhund beendet sich auf diesem Pfad mit `update in progress ->
+exiting watchdog, no relaunch` — als einziger seiner Austrittspfade rief er
+dabei kein `raeumeAvaBrowser()`. Nachgezogen; siehe
+`docs/ANALYSE_CHROME_PROZESSE.md`.
