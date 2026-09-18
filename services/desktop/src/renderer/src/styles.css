@@ -858,11 +858,17 @@ code, pre { font-family: var(--font-mono); font-size: 12px; }
 /* Evaluation panels */
 .grid-2 {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  /* minmax(0, 1fr), nicht 1fr: "1fr" ist kurz fuer minmax(auto, 1fr), und
+     "auto" als Mindestbreite heisst, dass die Spalte nie schmaler wird als
+     ihr breitester Inhalt. Eine Tabelle im Herkunftsnachweis (811 px) hat
+     so die 628 px breite Spalte auf 861 px gedehnt und die ganze Seite
+     waagerecht ueberlaufen lassen — mit jedem geoeffneten Nachweis ein
+     Stueck mehr. */
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: 1.5rem;
 }
 @media (max-width: 900px) {
-  .grid-2 { grid-template-columns: 1fr; }
+  .grid-2 { grid-template-columns: minmax(0, 1fr); }
 }
 .panel {
   border: 1px solid var(--border);
@@ -3282,7 +3288,7 @@ a.heartbeat-decision__company:hover {
 /* ---- v0.1.628 — Kontaktkarte (PersonCard) neu: Kopf mit Initialen, Rolle,
    Schnellaktionen; Kontaktzeilen mit Icon, Wert, Quelle, Zuverlaessigkeit;
    Datenschutz/Herkunft und fruehere Angaben eingeklappt. ---------------- */
-.pc { padding: 1rem 1.1rem; display: flex; flex-direction: column; gap: 0.75rem; }
+.pc { padding: 1rem 1.1rem; display: flex; flex-direction: column; gap: 0.75rem; min-width: 0; }
 .pc__head { display: flex; align-items: flex-start; gap: 0.75rem; }
 .pc__avatar { flex: none; width: 40px; height: 40px; border-radius: 50%; display: grid; place-items: center; font-weight: 700; font-size: 14px; letter-spacing: 0.02em; background: var(--color-indigo-50); color: var(--color-indigo-700); }
 .pc__ident { min-width: 0; flex: 1; }
@@ -3294,19 +3300,28 @@ a.heartbeat-decision__company:hover {
 .pc__quelle { opacity: 0.75; font-variant: all-small-caps; letter-spacing: 0.03em; }
 .pc__informed { display: inline-block; margin-top: 0.3rem; font-size: 11px; color: #0f9d6f; }
 .pc__quick { display: flex; gap: 4px; flex: none; }
-.pc__iconbtn { display: inline-flex; align-items: center; justify-content: center; width: 34px; height: 34px; border-radius: 9px; border: 1px solid var(--border); background: var(--color-bg-0); color: var(--fg); text-decoration: none; font-size: 14px; cursor: pointer; transition: var(--ctrl-transition); }
+/* padding: 0 ist hier nicht kosmetisch, sondern noetig: <button> bringt
+   vom Browser 8px 14px mit. Bei border-box und 34px Breite blieben davon
+   6px Innenraum, und weil ein SVG als Flex-Kind schrumpfen darf, wurden
+   die Glyphen in Knoepfen zu schmalen Strichen zusammengedrueckt — im
+   Kopierknopf des Herkunftsnachweises (30px) auf 2px, also unsichtbar.
+   Bei <a class="pc__iconbtn"> fiel es nicht auf, weil Links kein
+   Standard-Padding haben. Daher beides: Padding zuruecksetzen UND dem
+   Glyph das Schrumpfen verbieten. */
+.pc__iconbtn { display: inline-flex; align-items: center; justify-content: center; width: 34px; height: 34px; padding: 0; border-radius: 9px; border: 1px solid var(--border); background: var(--color-bg-0); color: var(--fg); text-decoration: none; font-size: 14px; cursor: pointer; transition: var(--ctrl-transition); }
+.pc__iconbtn svg { flex: none; }
 .pc__iconbtn:hover { border-color: var(--accent); color: var(--accent); }
 .pc__iconbtn--brand { color: var(--muted); }
 /* Der Herkunftsnachweis bekommt seinen Kopierknopf in die obere rechte Ecke
    des Textes. Position relativ zur Huelle, damit er beim Blaettern im
    Nachweis nicht mitwandert. */
 .pc__herkunft-huelle { position: relative; }
-.pc__herkunft-kopieren { position: absolute; top: 14px; right: 6px; z-index: 1; width: 30px; height: 30px; }
+.pc__herkunft-kopieren { position: absolute; top: 14px; right: 14px; z-index: 2; width: 30px; height: 30px; background: var(--color-bg-0); }
 /* Ueberschrift und erster Absatz sollen nicht unter den Knopf laufen. */
 .pc__herkunft > :first-child { padding-right: 38px; }
 .pc__notice { margin: 0; font-size: 11px; color: var(--muted); }
 .pc__facts { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.2rem; }
-.pc__fact { display: grid; grid-template-columns: 20px 1fr auto; align-items: center; gap: 0.5rem; padding: 0.3rem 0; border-top: 1px solid var(--border); }
+.pc__fact { display: grid; grid-template-columns: 20px minmax(0, 1fr) auto; align-items: center; gap: 0.5rem; padding: 0.3rem 0; border-top: 1px solid var(--border); }
 .pc__fact:first-child { border-top: 0; }
 /* Traegt seit v0.1.691 ein SVG statt eines Unicode-Zeichens: die Glyphen
    der Schrift waren zu zierlich und je nach System verschieden gross. */
@@ -3326,7 +3341,15 @@ a.heartbeat-decision__company:hover {
 .pc__more-actions { display: flex; flex-wrap: wrap; gap: 0.75rem; align-items: center; margin-top: 0.4rem; }
 .pc__more-actions .link { font-size: 12px; }
 .pc__danger { color: #c0392b !important; }
-.pc__herkunft { font-size: 12px; margin-top: 0.5rem; max-height: 420px; overflow: auto; }
+/* Der Nachweis ist lang und enthaelt zwei breite Tabellen. Er bekommt
+   deshalb feste Grenzen in beide Richtungen und scrollt in sich, statt
+   die Karte zu dehnen. */
+.pc__herkunft { font-size: 12px; margin-top: 0.5rem; max-height: 360px; overflow: auto; max-width: 100%; }
+.pc__herkunft table { max-width: 100%; }
+/* Lange Kennungen und Adressen (Person-ID, Profil-URLs, Tenant-IDs)
+   brechen um, statt die Tabelle breit zu ziehen. */
+.pc__herkunft td, .pc__herkunft th { overflow-wrap: anywhere; }
+.pc__herkunft code { overflow-wrap: anywhere; }
 .pc__facts--alt { margin-top: 0.4rem; opacity: 0.7; }
 
 /* ---- Social icons + external-link warning (Phase 8.f5) ----------------- */
