@@ -342,9 +342,23 @@ export class ProducerSupervisor extends EventEmitter {
    * producers so they re-spawn with a fresh `PRODUCER_GATEWAY_TOKEN`.
    */
   private detectGatewayAuthError(text: string): void {
+    // Drei Schreibweisen, weil die Producer den Gateway unterschiedlich rufen:
+    //   1. axios (Suche ueber den Stellvertreter): "Request failed with status code 401"
+    //   2. allgemeine Form mit "status 401" / "status code: 401"
+    //   3. fetch im Kontakt-Producer: "apify <actor> error 401: {"error":"invalid_token"…}"
+    //
+    // Fall 3 fehlte bis zum 18.09.2026. Lief das Zugangstoken des Producers ab
+    // (15 Minuten), antwortete der Stellvertreter mit 401, der Kontakt-Producer
+    // fiel auf die Suche zurueck — und weil die Erkennung hier nicht ansprang,
+    // wurde der Producer nie mit frischem Token neu gestartet. Ab da fiel JEDE
+    // weitere Firma still auf die Suche zurueck, nicht nur die eine. Im
+    // Protokoll des Betreibers viermal belegt ("apify … error 401:
+    // {"error":"invalid_token"} — SERP-Fallback").
     if (
       !/request failed with status code 401/i.test(text) &&
-      !/\bstatus(?:\s*code)?[:\s]*401\b/i.test(text)
+      !/\bstatus(?:\s*code)?[:\s]*401\b/i.test(text) &&
+      !/\berror[:\s]+401\b/i.test(text) &&
+      !/\binvalid_token\b/i.test(text)
     ) {
       return;
     }
