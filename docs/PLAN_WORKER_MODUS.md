@@ -53,3 +53,38 @@ schreibenden Werkzeuge.
 Solange der Modus läuft, steht unter dem Kopf der App ein Band, das sich nicht
 wegklicken lässt. Sonst sucht man den Fehler an der falschen Stelle, wenn keine
 Vorgänge mehr laufen.
+
+## Vorfall 2026-09-18: Start im Worker-Modus blieb hängen
+
+In v0.1.678 hing AVA, nachdem der Modus eingeschaltet war. Beim nächsten Start
+kam kein Fenster mehr: Die App blieb kurz nach dem Anwenden des Modus stehen,
+der Wachhund erkannte den Stillstand und startete sie endlos neu. Der Schalter
+war damit nur noch von außen erreichbar, in
+`<userData>/accounts/<konto>/register-delta/settings.json`.
+
+Aus dem Sample des hängenden Prozesses: Der Hauptthread rechnete durchgehend
+JavaScript, und der Speicher lag nach 23 Sekunden Laufzeit bei 1,1 Gigabyte
+statt der üblichen paar hundert Megabyte. Es läuft dort also etwas, das Speicher
+anhäuft. Welcher der siebzehn Dienste das auslöst, war aus dem Sample nicht
+abzulesen, weil die Namen im übersetzten Code fehlen. Alle Stopp-Methoden für
+sich sind harmlos, sie löschen nur Zeitgeber.
+
+Gegenmaßnahmen in v0.1.679:
+
+- **Der Start hängt nicht mehr davon ab.** Der Modus wird erst fünf Sekunden
+  nach dem Hochfahren angewendet, nicht mehr mitten im Start.
+- **Ein Merker erkennt den Fehlschlag.** Vor dem Anwenden wird eine Datei
+  geschrieben und danach gelöscht. Liegt sie beim nächsten Start noch da, hat
+  AVA den Versuch nicht überlebt: Dann startet sie ohne den Modus und schaltet
+  ihn in den Einstellungen ab. Das gilt für den Start und für das Einschalten.
+- **Jeder Dienst hat eine Frist** von drei Sekunden und wird einzeln
+  protokolliert, mit einer Zeile davor und einer danach, synchron geschrieben.
+  Blockiert ein Dienst, steht sein Name als letzter im Protokoll.
+- **Die Dienstliste wird kopiert**, bevor sie durchlaufen wird. Meldet sich
+  währenddessen ein Dienst an, kann die Schleife sonst nicht enden.
+
+Bleibt offen: Welcher Dienst den Speicher treibt. Die nächste Meldung aus dem
+Protokoll beantwortet das. Der Verdacht, dass dieselbe Ursache hinter dem
+Hänger beim Beenden steckt, liegt nahe: Auch dort blockiert nach dem Stoppen
+vieler Dienste synchrones JavaScript die Ereignisschleife, siehe
+`docs/ANALYSE_CHROME_PROZESSE.md` Punkt D11.

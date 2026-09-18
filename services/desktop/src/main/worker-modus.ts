@@ -15,6 +15,30 @@
 
 import { EventEmitter } from "node:events";
 
+/** Hoechstzeit je Dienst. Laenger darf kein Anhalten den Start aufhalten. */
+const DIENST_FRIST_MS = 3000;
+
+/**
+ * Laesst einen Aufruf nicht laenger als `ms` dauern. Wirkt nur gegen haengende
+ * Zusagen; blockiert ein Dienst die Ereignisschleife synchron, hilft allein die
+ * Protokollzeile davor, ihn zu erkennen.
+ */
+async function mitFrist(fn: () => void | Promise<void>, ms: number, was: string): Promise<void> {
+  let zeiger: NodeJS.Timeout | undefined;
+  try {
+    await Promise.race([
+      Promise.resolve().then(fn),
+      new Promise<never>((_, ab) => {
+        zeiger = setTimeout(() => ab(new Error(`Frist von ${ms} ms ueberschritten`)), ms);
+        zeiger.unref?.();
+      }),
+    ]);
+  } finally {
+    if (zeiger) clearTimeout(zeiger);
+  }
+  void was;
+}
+
 export type WorkerModusDienst = {
   /** Kurzname fuer das Protokoll, z. B. "Herzschlag". */
   name: string;
@@ -69,19 +93,35 @@ class WorkerModus extends EventEmitter {
     this.emit("changed", an);
   }
 
-  /** Soll-Zustand herstellen (auch beim Start der App aufzurufen). */
+  /**
+   * Soll-Zustand herstellen (auch beim Start der App aufzurufen).
+   *
+   * Drei Vorkehrungen, alle aus dem Vorfall vom 2026-09-18 (v0.1.678 startete
+   * im Worker-Modus nicht mehr, die App hing beim Anwenden und der Wachhund
+   * startete sie endlos neu):
+   *   1. Es wird ueber eine Kopie der Liste gelaufen. Meldet sich waehrend des
+   *      Anwendens ein Dienst an, waechst die Liste sonst mit und die Schleife
+   *      kommt nie zum Ende.
+   *   2. Jeder Dienst bekommt eine Frist. Ein haengender Dienst haelt damit
+   *      nicht mehr den Start der App auf.
+   *   3. Vor und nach jedem Dienst wird eine Zeile geschrieben. Blockiert ein
+   *      Dienst die Ereignisschleife, steht sein Name als letzter im Protokoll.
+   *      Deshalb muss die Protokollfunktion synchron schreiben.
+   */
   async anwenden(): Promise<void> {
-    for (const d of this.dienste) {
+    const liste = [...this.dienste];
+    for (const d of liste) {
+      const was = this.an ? "anhalten" : "anlaufen";
+      if (!this.an && d.darfLaufen?.() === false) continue;
+      this.log(`> ${d.name} ${was}`);
       try {
-        if (this.an) {
-          await d.anhalten();
-        } else if (d.darfLaufen?.() !== false) {
-          await d.anlaufen();
-        }
+        await mitFrist(() => (this.an ? d.anhalten() : d.anlaufen()), DIENST_FRIST_MS, `${d.name} ${was}`);
+        this.log(`< ${d.name} ${was}`);
       } catch (err) {
-        this.log(`Worker-Modus: ${d.name} ${this.an ? "anhalten" : "anlaufen"} fehlgeschlagen: ${err instanceof Error ? err.message : String(err)}`);
+        this.log(`! ${d.name} ${was} fehlgeschlagen: ${err instanceof Error ? err.message : String(err)}`);
       }
     }
+    this.log(`fertig (${liste.length} Dienste, Modus ${this.an ? "an" : "aus"})`);
   }
 }
 

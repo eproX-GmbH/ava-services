@@ -5,6 +5,28 @@ import { ChipErzeugung } from "./suggestions/erzeugung";
 import { VorschlaegeSettingsStore } from "./suggestions/settings";
 import { MithelfenSettingsStore, MithelfenSupervisor } from "./register-delta/supervisor";
 import { workerModus } from "./worker-modus";
+import { existsSync as existsSyncMain, rmSync as rmSyncMain, writeFileSync as writeFileSyncMain } from "node:fs";
+
+/** Pfad des Worker-Modus-Merkers; im Start gesetzt (siehe dort). */
+let workerModusMerkerPfad: string | null = null;
+
+function workerModusMerkerSetzen(): void {
+  if (!workerModusMerkerPfad) return;
+  try {
+    writeFileSyncMain(workerModusMerkerPfad, new Date().toISOString(), "utf8");
+  } catch {
+    /* ohne Merker weiter, nur ohne Netz */
+  }
+}
+
+function workerModusMerkerLoeschen(): void {
+  if (!workerModusMerkerPfad) return;
+  try {
+    rmSyncMain(workerModusMerkerPfad, { force: true });
+  } catch {
+    /* egal */
+  }
+}
 import { verfuegbareFaehigkeiten, faehigkeitenText, nichtZugeordnet } from "./suggestions/faehigkeiten";
 import { ORG_FEATURES } from "../shared/types";
 import { pruefeModellstufe } from "./workflows/modellstufe";
@@ -5391,7 +5413,14 @@ app.whenReady().then(async () => {
     // wieder anlaufen; erst danach den neuen Stand melden. Wird Mithelfen
     // abgeschaltet, faellt der Worker-Modus mit weg (siehe setSettings).
     if (patch?.nurRegister !== undefined || patch?.aktiv === false) {
-      await workerModus.setzen(status.nurRegister === true);
+      // Merker wie beim Start: Stuerzt AVA beim Einschalten ab, startet sie
+      // beim naechsten Mal ohne den Modus statt in einer Schleife zu haengen.
+      if (status.nurRegister === true) workerModusMerkerSetzen();
+      try {
+        await workerModus.setzen(status.nurRegister === true);
+      } finally {
+        workerModusMerkerLoeschen();
+      }
       const neu = mithelfen!.status();
       for (const win of BrowserWindow.getAllWindows()) win.webContents.send("register-delta:status:changed", neu);
       return neu;
@@ -7236,7 +7265,9 @@ app.whenReady().then(async () => {
   // Nicht angemeldet und deshalb weiter aktiv: Anmeldung (Mithelfen braucht
   // den Token), Mithelfen selbst, Aktualisierung der App, Wachhund und die
   // Aufraeumlaeufe, die nur einmal am Tag laufen.
-  workerModus.protokoll((zeile) => console.log(`[worker-modus] ${zeile}`));
+  // Synchron schreiben: Blockiert ein Dienst die Ereignisschleife, waere eine
+  // gepufferte Zeile verloren und man wuesste nicht, welcher es war.
+  workerModus.protokoll((zeile) => writeLineSync("INFO ", `[worker-modus] ${zeile}`));
   workerModus.anmelden({ name: "Herzschlag", anhalten: () => heartbeat.stop(), anlaufen: () => heartbeat.start() });
   workerModus.anmelden({ name: "Wiederholungen", anhalten: () => retryTicker.stop(), anlaufen: () => retryTicker.start() });
   workerModus.anmelden({
@@ -7258,7 +7289,50 @@ app.whenReady().then(async () => {
   });
   // Stand aus den Einstellungen herstellen: bei aktivem Worker-Modus faellt
   // gleich nach dem Start alles wieder in Ruhe, was oben angelaufen ist.
-  void workerModus.setzen(mithelfen?.status().nurRegister === true).catch(() => undefined);
+  //
+  // Zwei Vorkehrungen aus dem Vorfall vom 2026-09-18 (v0.1.678 startete im
+  // Worker-Modus nicht mehr; die App hing, der Wachhund startete sie endlos neu
+  // und der Schalter war nur noch von aussen in der Einstellungsdatei
+  // erreichbar):
+  //   1. Erst anwenden, wenn die App oben ist. Der Start darf davon nie abhaengen.
+  //   2. Ein Merker haelt fest, dass gerade im Worker-Modus gestartet wird. Steht
+  //      er beim naechsten Start noch da, ist der letzte Versuch gescheitert:
+  //      dann startet AVA ohne den Modus und schaltet ihn in den Einstellungen ab.
+  // Merker: "Es wird gerade versucht, den Worker-Modus anzuwenden." Bleibt er
+  // liegen, hat die App den Versuch nicht ueberlebt. Wird beim Start UND beim
+  // Einschalten gesetzt, damit ein Absturz in beiden Faellen erkannt wird.
+  workerModusMerkerPfad = join(app.getPath("userData"), "worker-modus-start.flag");
+  const workerModusMerker = workerModusMerkerPfad;
+  if (mithelfen?.status().nurRegister === true) {
+    let letzterStartGescheitert = false;
+    try {
+      letzterStartGescheitert = existsSyncMain(workerModusMerker);
+    } catch {
+      /* Merker nicht lesbar: dann eben starten */
+    }
+    if (letzterStartGescheitert) {
+      writeLineSync("WARN ", "[worker-modus] Der letzte Start im Worker-Modus ist gescheitert — Modus wird abgeschaltet.");
+      try {
+        rmSyncMain(workerModusMerker, { force: true });
+      } catch {
+        /* egal */
+      }
+      mithelfen?.setSettings({ nurRegister: false });
+      for (const win of BrowserWindow.getAllWindows()) win.webContents.send("register-delta:status:changed", mithelfen?.status());
+    } else {
+      setTimeout(() => {
+        workerModusMerkerSetzen();
+        void workerModus
+          .setzen(true)
+          .catch((err) => writeLineSync("WARN ", `[worker-modus] Anwenden fehlgeschlagen: ${err instanceof Error ? err.message : String(err)}`))
+          .finally(() => {
+            // Die App hat den Modus ueberstanden: Merker weg, damit der naechste
+            // Start ihn nicht faelschlich als Absturz wertet.
+            workerModusMerkerLoeschen();
+          });
+      }, 5000).unref?.();
+    }
+  }
 
   // Auto-updater. No-op in dev. In packaged builds: checks GitHub
   // Releases on launch + every 4h while the app is open.
