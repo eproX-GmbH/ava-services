@@ -35,6 +35,7 @@ import { ExternalLink } from "../components/ExternalLink";
 import { CompanyCrmPanel } from "../components/CompanyCrmPanel";
 import { quellenDerFakten } from "./kontakt-quellen";
 import { sortiereNachRang, rangFuerTitel, RANG_TITEL } from "./kontakt-rang";
+import { FirmaUebernehmen, istUebernommen } from "./firma-uebernehmen";
 import {
   EyeIcon,
   GlobeIcon,
@@ -533,6 +534,11 @@ export function CompanyDetail() {
     <section>
       {/* ---- Hero ---------------------------------------------------------- */}
       <header className="company-hero">
+        {/* v0.1.699 — Weg in den eigenen Bestand. Oben rechts neben dem
+            Namen: praesent genug, um gefunden zu werden, aber ausserhalb
+            des Lesepfads von Name, Register und Kennzahlen. */}
+        <div className="company-hero__kopf">
+          <div className="company-hero__titel">
         <h2 style={{ marginBottom: "0.25rem" }}>
           {structured.data?.name ?? summary.data?.name ?? "Firma"}
           <LandBadge country={summary.data?.country} />
@@ -550,6 +556,14 @@ export function CompanyDetail() {
             {registerZeile(summary.data)}
           </p>
         )}
+          </div>
+          <FirmaUebernehmen
+            name={structured.data?.name ?? summary.data?.name}
+            ort={summary.data?.location ?? structured.data?.city}
+            uebernommen={istUebernommen(stageState.data?.stages)}
+            onFertig={() => void stageState.refetch?.()}
+          />
+        </div>
 
         {/* Unter dem Namen primär die Keywords als Chips. Nur wenn KEINE
             Keywords vorhanden sind, fällt der Hero auf den Geschäftszweck

@@ -1436,6 +1436,20 @@ code, pre { font-family: var(--font-mono); font-size: 12px; }
   border-bottom: 1px solid rgba(127,127,127,0.15);
   margin-bottom: 1rem;
 }
+/* Name links, Aktion rechts. Die Aktion bricht auf schmalen Fenstern unter
+   den Namen, statt ihn zusammenzuquetschen. */
+.company-hero__kopf { display: flex; align-items: flex-start; gap: 1rem; flex-wrap: wrap; }
+.company-hero__titel { min-width: 0; flex: 1 1 22rem; }
+.firma-aktion { flex: none; margin-left: auto; text-align: right; }
+.firma-aktion__knoepfe { display: flex; align-items: center; gap: 0.6rem; justify-content: flex-end; }
+.firma-aktion__verweis { font-size: 12px; color: var(--muted); text-decoration: none; white-space: nowrap; }
+.firma-aktion__verweis:hover { color: var(--accent); }
+.firma-aktion__hinweis { margin: 0.4rem 0 0; font-size: 12px; color: var(--muted); }
+.firma-aktion__fehler { margin: 0.4rem 0 0; font-size: 12px; color: var(--warn, #c2410c); }
+@media (max-width: 720px) {
+  .firma-aktion { margin-left: 0; text-align: left; }
+  .firma-aktion__knoepfe { justify-content: flex-start; }
+}
 .kpi-grid {
   display: grid; gap: 0.75rem;
   grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
