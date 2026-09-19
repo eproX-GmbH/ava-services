@@ -34,6 +34,7 @@ import { parseNaceFromProfile } from "../../../shared/nace-divisions";
 import { ExternalLink } from "../components/ExternalLink";
 import { CompanyCrmPanel } from "../components/CompanyCrmPanel";
 import { quellenDerFakten } from "./kontakt-quellen";
+import { sortiereNachRang, rangFuerTitel, RANG_TITEL } from "./kontakt-rang";
 import {
   EyeIcon,
   GlobeIcon,
@@ -1554,8 +1555,16 @@ function ContactsTab({ id }: { id: string }) {
           <h3>
             Zugeordnete Personen ({numFmt.format(Object.keys(byPerson).length)})
           </h3>
+          {/* v0.1.698 — nach Rolle sortiert statt nach Zufall: Die
+              Geschaeftsleitung steht oben, Namen ohne Rolle unten. Der
+              Rang wird aus dem Titel bestimmt und gilt damit fuer alle
+              Quellen, auch fuer die, die nie bewertet wurden. */}
           <div className="grid-2">
-            {Object.entries(byPerson).map(([pid, pf]) => (
+            {sortiereNachRang(
+              Object.entries(byPerson),
+              ([, pf]) => pf.find((f) => f.field === "jobTitle" && f.status === "ACTIVE")?.value,
+              ([, pf]) => pf.find((f) => f.field === "fullName")?.value ?? "",
+            ).map(([pid, pf]) => (
               <PersonCard
                 key={pid}
                 personId={pid}
@@ -1898,6 +1907,9 @@ function PersonCard({
   const xing = find("xingUrl");
   const linkedin = find("linkedinUrl");
   const herkunftsGruppen = quellenDerFakten(facts, quellen);
+  // Der Rang erklaert die Reihenfolge der Karten. Bei "Weitere" bleibt er
+  // weg — ein Abzeichen an jeder zweiten Karte sagt nichts.
+  const rang = rangFuerTitel(job?.value);
 
   // The producer emits one "Fact" row per observation, so a person
   // typically has 3-6 ACTIVE rows + a tail of INACTIVE history. Dumping
@@ -2021,6 +2033,11 @@ function PersonCard({
         </div>
         <div className="pc__ident">
           <h4 className="pc__name">{name}</h4>
+          {rang > 0 && (
+            <span className="pc__rang" title="Nach Rolle eingeordnet — bestimmt die Reihenfolge der Karten">
+              {RANG_TITEL[rang]}
+            </span>
+          )}
           {(job || dept || herkunftsGruppen.length > 0) && (
             <p className="pc__role">
               {job?.value}

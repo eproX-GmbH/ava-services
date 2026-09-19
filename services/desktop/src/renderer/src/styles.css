@@ -3298,6 +3298,9 @@ a.heartbeat-decision__company:hover {
    und Abteilung, aber eine Spur zurueckgenommen: die Angabe hilft beim
    Einordnen, sie ist nicht die Hauptsache an der Karte. */
 .pc__quelle { opacity: 0.75; font-variant: all-small-caps; letter-spacing: 0.03em; }
+/* Rolleneinordnung — erklaert, warum eine Karte oben steht. Zurueckhaltend:
+   die Information ordnet ein, sie ist nicht die Hauptsache. */
+.pc__rang { display: inline-block; margin-bottom: 0.2rem; font-size: 10.5px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--accent); }
 .pc__informed { display: inline-block; margin-top: 0.3rem; font-size: 11px; color: #0f9d6f; }
 .pc__quick { display: flex; gap: 4px; flex: none; }
 /* padding: 0 ist hier nicht kosmetisch, sondern noetig: <button> bringt
