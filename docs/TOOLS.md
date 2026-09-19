@@ -2297,7 +2297,7 @@ _Parameter:_ keine.
 
 _Datei:_ `services/desktop/src/main/agent/tools/watchlist.ts`
 
-Ohne Parameter: aktuelle Watchlist-Konfiguration inkl. Monats-Verbrauch. Mit Parametern: Einstellungen aendern (Wirkungsklasse mutating — fragt je nach Vollmacht nach). companyWindow steuert, wie viele Profile die Kontakt-Verarbeitung je Firma vom LinkedIn-Firmenprofil zieht (Short-Mode, 4 $ je 1.000 Profile — der Nutzer zahlt). Der Apify-Token selbst kann NUR im Signale-Panel gesetzt werden, nie per Chat.
+Ohne Parameter: aktuelle Watchlist-Konfiguration inkl. Monats-Verbrauch. Mit Parametern: Einstellungen aendern (Wirkungsklasse mutating — fragt je nach Vollmacht nach). companyWindow steuert, wie viele Profile die Kontakt-Verarbeitung je Firma vom LinkedIn-Firmenprofil zieht (Short-Mode, 4 $ je 1.000 Profile — der Nutzer zahlt). profilModus steuert, wie tief je Profil gegraben wird: 'kurz' (4 $ je 1.000) liefert die aktuelle Stellung, 'voll' (8 $ je 1.000) zusaetzlich die Stationen mit Rolle, Firma und Zeitraum — erst damit steht die Rolle bei genau dieser Firma fest. Der Apify-Token selbst kann NUR im Signale-Panel gesetzt werden, nie per Chat.
 
 _Parameter:_
 - `automatik: boolean` — Automatische Laeufe an/aus (braucht hinterlegten Token).
@@ -2306,6 +2306,7 @@ _Parameter:_
 - `bestandRotationEnabled: boolean` — Bestands-Rotation an/aus.
 - `maxBestandPerRun: number` — Rotierte Bestands-Kontakte je Lauf (1-50).
 - `companyWindow: number` — Kontakt-Suchfenster je Firma (25-1000 Profile).
+- `profilModus: string (enum: kurz, voll)` — Profiltiefe: kurz (4 $/1.000) oder voll (8 $/1.000, mit Stationen).
 
 ### `linkedin_watchlist_list`
 

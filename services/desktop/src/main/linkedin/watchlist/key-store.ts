@@ -45,6 +45,12 @@ export interface WatchlistConfig {
    *  Employees-Actor je Firmenlauf maximal liefert (Short-Mode,
    *  4 $ je 1.000 Profile — der Nutzer zahlt). Clamp 25..1000. */
   companyWindow: number;
+  /** v0.1.696 — Wie tief der Employees-Actor je Profil graebt.
+   *  "kurz" (4 $ je 1.000) nennt Name, Profil und die aktuelle Stellung;
+   *  "voll" (8 $ je 1.000) liefert zusaetzlich die Stationen mit Rolle,
+   *  Firma und Zeitraum — erst damit steht die Rolle bei GENAU dieser
+   *  Firma fest, statt aus einer Kopfzeile geraten zu werden. */
+  profilModus: "kurz" | "voll";
 }
 
 const DEFAULT_CONFIG: WatchlistConfig = {
@@ -61,6 +67,7 @@ const DEFAULT_CONFIG: WatchlistConfig = {
   bestandRotationEnabled: false,
   maxBestandPerRun: 5,
   companyWindow: 100,
+  profilModus: "kurz",
 };
 
 export class WatchlistKeyStore {
@@ -121,6 +128,9 @@ export class WatchlistKeyStore {
             Number.isFinite(p.companyWindow)
               ? Math.min(1000, Math.max(25, Math.round(p.companyWindow)))
               : DEFAULT_CONFIG.companyWindow,
+          // Nur die beiden bekannten Werte; alles andere faellt auf den
+          // guenstigen zurueck, damit ein Tippfehler nichts verteuert.
+          profilModus: p.profilModus === "voll" ? "voll" : "kurz",
         };
         return { ...this.configCache };
       }

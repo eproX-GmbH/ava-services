@@ -805,6 +805,8 @@ function buildProducer(
                   return {
                     AVA_APIFY_VIA_GATEWAY: "1",
                     APIFY_COMPANY_FENSTER: String(watchlistKeyStore?.getConfig().companyWindow ?? 100),
+                    APIFY_PROFIL_MODUS:
+                      watchlistKeyStore?.getConfig().profilModus === "voll" ? "full" : "short",
                   };
                 }
                 if (!apifyKey) return {};
@@ -813,6 +815,8 @@ function buildProducer(
                   APIFY_COMPANY_FENSTER: String(
                     watchlistKeyStore?.getConfig().companyWindow ?? 100,
                   ),
+                  APIFY_PROFIL_MODUS:
+                    watchlistKeyStore?.getConfig().profilModus === "voll" ? "full" : "short",
                 };
               }
           : name === "company-publication"
@@ -5657,14 +5661,18 @@ app.whenReady().then(async () => {
         "bestandRotationEnabled",
         "maxBestandPerRun",
         "companyWindow",
+        "profilModus",
       ]) {
         if (patch && k in patch) allowed[k] = patch[k];
       }
-      // §8b — Fenster-Aenderung muss den company-contact-Producer
-      // recyceln, damit extraEnvAsync den frischen Wert injiziert.
-      const vorher = watchlistKeyStore.getConfig().companyWindow;
+      // §8b — Fenster- und Modus-Aenderung muessen den company-contact-
+      // Producer recyceln, damit extraEnvAsync die frischen Werte injiziert.
+      const vorherFenster = watchlistKeyStore.getConfig().companyWindow;
+      const vorherModus = watchlistKeyStore.getConfig().profilModus;
       const result = watchlistKeyStore.setConfig(allowed);
-      if (result.companyWindow !== vorher) cycleCompanyContact();
+      if (result.companyWindow !== vorherFenster || result.profilModus !== vorherModus) {
+        cycleCompanyContact();
+      }
       return result;
     },
   );

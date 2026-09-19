@@ -250,7 +250,11 @@ export function buildWatchlistTools(deps: WatchlistToolDeps): Tool[] {
       "(Wirkungsklasse mutating — fragt je nach Vollmacht nach). " +
       "companyWindow steuert, wie viele Profile die Kontakt-Verarbeitung " +
       "je Firma vom LinkedIn-Firmenprofil zieht (Short-Mode, 4 $ je " +
-      "1.000 Profile — der Nutzer zahlt). Der Apify-Token selbst kann " +
+      "1.000 Profile — der Nutzer zahlt). profilModus steuert, wie tief " +
+      "je Profil gegraben wird: 'kurz' (4 $ je 1.000) liefert die " +
+      "aktuelle Stellung, 'voll' (8 $ je 1.000) zusaetzlich die " +
+      "Stationen mit Rolle, Firma und Zeitraum — erst damit steht die " +
+      "Rolle bei genau dieser Firma fest. Der Apify-Token selbst kann " +
       "NUR im Signale-Panel gesetzt werden, nie per Chat.",
     parameters: {
       type: "object",
@@ -261,6 +265,7 @@ export function buildWatchlistTools(deps: WatchlistToolDeps): Tool[] {
         bestandRotationEnabled: { type: "boolean", description: "Bestands-Rotation an/aus." },
         maxBestandPerRun: { type: "number", description: "Rotierte Bestands-Kontakte je Lauf (1-50)." },
         companyWindow: { type: "number", description: "Kontakt-Suchfenster je Firma (25-1000 Profile)." },
+        profilModus: { type: "string", enum: ["kurz", "voll"], description: "Profiltiefe: kurz (4 $/1.000) oder voll (8 $/1.000, mit Stationen)." },
       },
     },
     schema: yup.object({
@@ -270,6 +275,7 @@ export function buildWatchlistTools(deps: WatchlistToolDeps): Tool[] {
       bestandRotationEnabled: yup.boolean().optional(),
       maxBestandPerRun: yup.number().min(1).max(50).optional(),
       companyWindow: yup.number().min(25).max(1000).optional(),
+      profilModus: yup.string().oneOf(["kurz", "voll"]).optional(),
     }),
     preview: (r) => JSON.stringify(r).slice(0, 80),
     run: async (args, c) => {
@@ -283,6 +289,7 @@ export function buildWatchlistTools(deps: WatchlistToolDeps): Tool[] {
         "bestandRotationEnabled",
         "maxBestandPerRun",
         "companyWindow",
+        "profilModus",
       ] as const) {
         if (args[k] !== undefined) patch[k] = args[k];
       }
@@ -296,6 +303,7 @@ export function buildWatchlistTools(deps: WatchlistToolDeps): Tool[] {
           bestandRotationEnabled: vorher.bestandRotationEnabled,
           maxBestandPerRun: vorher.maxBestandPerRun,
           companyWindow: vorher.companyWindow,
+          profilModus: vorher.profilModus,
           monatsVerbrauchItems: vorher.monthItems,
           hinweis:
             "companyWindow kostet im Extremfall (companyWindow x 4 $ / 1000) je Firmenlauf.",
