@@ -1,7 +1,6 @@
 # AVA
 
-[![Desktop Release Build](https://github.com/eproX-GmbH/ava-services/actions/workflows/desktop-release.yml/badge.svg?event=push)](https://github.com/eproX-GmbH/ava-services/actions/workflows/desktop-release.yml)
-[![Latest Release](https://img.shields.io/github/v/release/eproX-GmbH/ava-services?include_prereleases&label=release&color=00c0a7)](https://github.com/eproX-GmbH/ava-services/releases/latest)
+[![Latest Release](https://img.shields.io/github/v/release/eproX-GmbH/ava-releases?include_prereleases&label=release&color=00c0a7)](https://github.com/eproX-GmbH/ava-releases/releases/latest)
 [![Service Health](https://img.shields.io/website?url=https%3A%2F%2Fava-db-gateway.fly.dev%2Fhealth&label=db-gateway&up_message=operational&down_message=offline)](https://ava-db-gateway.fly.dev/health)
 [![Master-Data](https://img.shields.io/website?url=https%3A%2F%2Fava-master-data.fly.dev%2Fhealth&label=master-data&up_message=operational&down_message=offline)](https://ava-master-data.fly.dev/health)
 
@@ -138,7 +137,7 @@ Deploys von Gateway und master-data laufen manuell per `fly deploy --remote-only
 
 ## Installation
 
-Vorgefertigte Builds: [Releases](https://github.com/eproX-GmbH/ava-services/releases) oder über [ava.bi](https://ava.bi).
+Vorgefertigte Builds: [Releases](https://github.com/eproX-GmbH/ava-releases/releases) oder über [ava.bi](https://ava.bi).
 
 1. Installationspaket der Plattform laden (macOS `.dmg`, Windows `.exe`).
 2. Installieren und starten, mit Konto anmelden oder registrieren.
