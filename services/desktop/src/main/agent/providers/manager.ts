@@ -329,14 +329,20 @@ export class LlmProviderManager extends EventEmitter {
    *
    * Reihenfolge:
    *   1. Kein Token der Organisation hinterlegt → immer der eigene.
-   *   2. Anbieter-Sperre der Organisation → immer der Token der Organisation.
-   *   3. Vorgabe "eigener Token erlaubt" aus (seit 2026-09-18) → ebenfalls der
-   *      Token der Organisation, auch wenn ein eigener hinterlegt ist.
-   *   4. Sonst: der eigene Token zuerst, die Organisation als Rueckfall.
+   *   2. Vorgabe "eigener Token erlaubt" aus → der Token der Organisation,
+   *      auch wenn ein eigener hinterlegt ist.
+   *   3. Sonst: der eigene Token zuerst, die Organisation als Rueckfall.
+   *
+   * Die Anbieter-Sperre zaehlt hier NICHT mit (Korrektur 2026-09-19). Sie
+   * schlug die Apify-Vorgabe zunaechst — damit war der Haken "eigener
+   * Apify-Token erlaubt" ausgerechnet bei den Organisationen wirkungslos,
+   * die ihn setzen: Der Betreiber hakte ihn an, und in der App erschien
+   * trotzdem kein Eingabefeld, ohne jeden Hinweis warum. Die Sperre regelt
+   * die Anbieter fuer die Sprachmodelle; fuer Apify gibt es seit 2026-09-18
+   * diese eigene, genauere Vorgabe, und die gilt.
    */
   apifyUeberOrganisation(hatEigenen: boolean): boolean {
     if (!this.org.providers.apify) return false;
-    if (this.isProviderLocked()) return true;
     if (!this.apifyEigenerErlaubt()) return true;
     return !hatEigenen;
   }

@@ -1483,13 +1483,14 @@ function apifyZugangInfo(): { apifyQuelle: "eigen" | "organisation" | null; apif
   const eigener = watchlistKeyStore?.hasKey() ?? false;
   const org = providers.apifyUeberOrganisation(eigener) && Boolean(providers.getOrgGateway().gatewayUrl);
   const quelle = org ? "organisation" : eigener ? "eigen" : null;
-  // Die Anzeige muss beide Vorgaben kennen: Anbieter-Sperre und die
-  // Apify-Vorgabe. Sonst stuende in den Einstellungen "eigener Token erlaubt",
-  // obwohl die Organisation ihn untersagt hat.
+  // Nur die Apify-Vorgabe zaehlt (Korrektur 2026-09-19). Die Anbieter-Sperre
+  // stand hier mit drin und blendete das Eingabefeld aus, obwohl die
+  // Organisation eigene Token ausdruecklich erlaubt hatte — siehe
+  // apifyUeberOrganisation in agent/providers/manager.ts.
   return {
     apifyQuelle: quelle,
     apifyVerfuegbar: quelle !== null,
-    eigenerTokenErlaubt: !providers.isProviderLocked() && providers.apifyEigenerErlaubt(),
+    eigenerTokenErlaubt: providers.apifyEigenerErlaubt(),
   };
 }
 // v0.1.490 — Bruecke: das Chat-Tool linkedin_watchlist_config aendert
