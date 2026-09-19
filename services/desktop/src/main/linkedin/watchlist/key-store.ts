@@ -51,6 +51,8 @@ export interface WatchlistConfig {
    *  Firma und Zeitraum — erst damit steht die Rolle bei GENAU dieser
    *  Firma fest, statt aus einer Kopfzeile geraten zu werden. */
   profilModus: "kurz" | "voll";
+  /** Intern: bis zu welchem Stand die Voreinstellungen nachgezogen wurden. */
+  konfigStand?: number;
 }
 
 const DEFAULT_CONFIG: WatchlistConfig = {
@@ -66,9 +68,19 @@ const DEFAULT_CONFIG: WatchlistConfig = {
   monthItems: 0,
   bestandRotationEnabled: false,
   maxBestandPerRun: 5,
-  companyWindow: 100,
-  profilModus: "kurz",
+  companyWindow: 50,
+  profilModus: "voll",
 };
+
+/**
+ * Stand der Voreinstellungen. Wird in der Datei mitgefuehrt, damit eine
+ * geaenderte Voreinstellung bestehende Installationen einmalig nachzieht.
+ *
+ * Noetig, weil die Datei bei jedem aktiven Nutzer existiert — der
+ * Verbrauchszaehler schreibt sie nach jedem Lauf. Eine neue Voreinstellung
+ * allein wuerde deshalb nirgends ankommen.
+ */
+const KONFIG_STAND = 1;
 
 export class WatchlistKeyStore {
   private readonly dir: string;
@@ -131,7 +143,33 @@ export class WatchlistKeyStore {
           // Nur die beiden bekannten Werte; alles andere faellt auf den
           // guenstigen zurueck, damit ein Tippfehler nichts verteuert.
           profilModus: p.profilModus === "voll" ? "voll" : "kurz",
+          konfigStand: typeof p.konfigStand === "number" ? p.konfigStand : 0,
         };
+        // Einmalig auf den Stand von v0.1.697 heben: volle Profiltiefe bei
+        // halbiertem Suchfenster. Kostet dasselbe wie vorher (50 Profile zu
+        // 8 $ je 1.000 statt 100 zu 4 $), liefert aber die Rolle bei GENAU
+        // dieser Firma statt einer aus der Kopfzeile geratenen. Gespeichert
+        // wurden ohnehin immer nur die besten 25.
+        //
+        // Nur angefasst, wer noch auf den alten Voreinstellungen sitzt — wer
+        // selbst etwas anderes gewaehlt hat, behaelt es.
+        if ((this.configCache.konfigStand ?? 0) < KONFIG_STAND) {
+          const unveraendert =
+            this.configCache.companyWindow === 100 && this.configCache.profilModus === "kurz";
+          this.configCache = {
+            ...this.configCache,
+            ...(unveraendert
+              ? { companyWindow: DEFAULT_CONFIG.companyWindow, profilModus: DEFAULT_CONFIG.profilModus }
+              : {}),
+            konfigStand: KONFIG_STAND,
+          };
+          const zuSchreiben = { ...this.configCache };
+          try {
+            this.setConfig(zuSchreiben);
+          } catch {
+            /* nicht schreibbar: dann gilt der Wert wenigstens zur Laufzeit */
+          }
+        }
         return { ...this.configCache };
       }
     } catch {
@@ -153,6 +191,7 @@ export class WatchlistKeyStore {
 
   setConfig(patch: Partial<WatchlistConfig>): WatchlistConfig {
     const next = { ...this.getConfig(), ...patch, providerId: "apify" as const };
+    next.konfigStand = KONFIG_STAND;
     // Kosten-Leitplanke: Suchfenster hart auf 25..1000 begrenzen
     // (1000 = Actor-Maximum je Firma).
     next.companyWindow = Math.max(
