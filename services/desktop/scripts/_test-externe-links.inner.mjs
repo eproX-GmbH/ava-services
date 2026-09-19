@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-const { entscheide } = await import("../src/main/externe-links.ts");
+const { entscheide, greiftEin } = await import("../src/main/externe-links.ts");
 
 const PAKET = "file:///Applications/AVA.app/Contents/Resources/app.asar/out/renderer/index.html";
 const DEV = "http://localhost:5173/";
@@ -52,5 +52,24 @@ assert.equal(entscheide("file:///Applications/AVA.app/Contents/Resources/andersw
 assert.equal(entscheide("http://localhost:5174/", DEV), "nach-aussen");
 assert.equal(entscheide("https://localhost:5173/", DEV), "nach-aussen");
 console.log("  ok   fremde Herkunft bleibt aussen, auch bei aehnlicher Adresse");
+
+// v0.1.693 — Rueckfall aus v0.1.692: Die Karte auf der Firmenseite ist ein
+// <iframe> auf Google Maps. Der Wachposten behandelte dessen Laden wie einen
+// Klick, warf die Karte aus der App und oeffnete die Einbettungs-Adresse im
+// Browser des Nutzers ("The Google Maps Embed API must be used in an iframe").
+const MAPS = "https://www.google.com/maps/embed?origin=mfe&pb=!1m21!1sGrailhoffstra%C3%9Fe+29+a,+32425+Minden";
+assert.equal(greiftEin({ istHauptrahmen: false, ziel: MAPS, aktuell: PAKET }), false,
+  "eingebettete Karte muss in der App bleiben");
+assert.equal(greiftEin({ istHauptrahmen: false, ziel: "https://www.youtube.com/embed/xyz", aktuell: PAKET }), false,
+  "eingebettete Inhalte allgemein bleiben, wo sie sind");
+console.log("  ok   eingebettete Rahmen (Karte, Video) bleiben in der App");
+
+// Derselbe Link, aber als echter Klick im Hauptrahmen: der gehoert nach aussen.
+assert.equal(greiftEin({ istHauptrahmen: true, ziel: MAPS, aktuell: PAKET }), true,
+  "ein Klick auf eine Kartenadresse gehoert weiterhin in den Browser");
+assert.equal(greiftEin({ istHauptrahmen: true, ziel: "https://www.picuscap.com", aktuell: PAKET }), true);
+assert.equal(greiftEin({ istHauptrahmen: true, ziel: PAKET, aktuell: PAKET }), false,
+  "die App selbst navigiert weiter im Fenster");
+console.log("  ok   im Hauptrahmen bleibt es beim Umleiten nach draussen");
 
 console.log("Externe-Links-Tests ok");

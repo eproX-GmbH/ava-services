@@ -70,6 +70,24 @@ export function entscheide(ziel: string, aktuell: string): Entscheidung {
 }
 
 /**
+ * Soll dieser Navigationsversuch abgefangen und nach draussen gegeben
+ * werden? Eigene Funktion, weil hier schon einmal etwas uebersehen wurde:
+ * v0.1.692 griff auch bei eingebetteten Rahmen ein und hat damit die
+ * Kartenansicht der Firmenseite aus der App in den Browser geworfen.
+ */
+export function greiftEin(args: {
+  istHauptrahmen: boolean;
+  ziel: string;
+  aktuell: string;
+}): boolean {
+  // Ein eingebetteter Rahmen ist Inhalt, den die Seite selbst laedt, kein
+  // Klick des Nutzers. Karten, Vorschauen und Videos gehoeren dorthin, wo
+  // sie eingebettet sind.
+  if (!args.istHauptrahmen) return false;
+  return entscheide(args.ziel, args.aktuell) !== "im-fenster";
+}
+
+/**
  * Fuer Fenster, die die App selbst zeigen (Hauptfenster, Anmeldefenster).
  *
  * Nicht zu verwechseln mit `hardenBackgroundWindow` aus download-guard.ts:
@@ -87,17 +105,26 @@ export function leiteLinksNachAussen(win: BrowserWindow): void {
   });
 
   // Gewoehnliche Anker: das Fenster darf die App nicht verlassen.
+  //
+  // NUR der Hauptrahmen. Eingebettete Rahmen sind Inhalt, kein Klick des
+  // Nutzers — die Karte auf der Firmenseite ist ein <iframe> auf Google
+  // Maps. Wuerde man die wie einen Klick behandeln, verschwindet die Karte
+  // und der Browser des Nutzers geht mit der Einbettungs-Adresse auf
+  // ("The Google Maps Embed API must be used in an iframe"). Genau das ist
+  // in v0.1.692 passiert.
   wc.on("will-navigate", (event, url) => {
-    if (entscheide(url, wc.getURL()) === "im-fenster") return;
+    if (!greiftEin({ istHauptrahmen: event.isMainFrame !== false, ziel: url, aktuell: wc.getURL() })) return;
     event.preventDefault();
     extern(url);
   });
 
   // Eine erlaubte Navigation, die anschliessend nach draussen umgeleitet
   // wird (Verkuerzer, Anmeldeumleitungen), darf die App ebenso wenig
-  // ersetzen.
+  // ersetzen. Auch hier nur der Hauptrahmen: die Karte kommt ueber eine
+  // serverseitige Umleitung herein, und ueber DIESES Ereignis ist sie
+  // damals hinausgeflogen.
   wc.on("will-redirect", (event, url) => {
-    if (entscheide(url, wc.getURL()) === "im-fenster") return;
+    if (!greiftEin({ istHauptrahmen: event.isMainFrame !== false, ziel: url, aktuell: wc.getURL() })) return;
     event.preventDefault();
     extern(url);
   });
