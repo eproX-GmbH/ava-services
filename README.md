@@ -16,7 +16,6 @@ Bedient wird AVA über einen Chat-Agenten mit rund 250 Werkzeugen, über die Fir
 - [Architektur](#architektur)
 - [Cloud-Komponenten und Betrieb](#cloud-komponenten-und-betrieb)
 - [Sicherheit und Datenschutz](#sicherheit-und-datenschutz)
-- [Roadmap](#roadmap)
 - [Installation](#installation)
 - [Repository-Layout](#repository-layout)
 - [Entwicklung](#entwicklung)
@@ -123,17 +122,6 @@ Deploys von Gateway und master-data laufen manuell per `fly deploy --remote-only
 - Personendaten: Ansprechpartner mit Herkunftsnachweis, Art.-14-Hinweis und Löschfunktion; Aufbewahrungsfristen per Cron; Geburtsdaten aus Gesellschafterlisten nur als Jahr nach außen, intern mit Hash für eine spätere Entfernung.
 - Alle Ausgaben von Modellen und externen Quellen werden vor der Übernahme gegen Schemata geprüft (Yup). „Lieber keine Daten als falsche Daten“ ist Regel, nicht Ausnahme.
 - Compliance- und Enterprise-Stand mit offenen Punkten: `docs/PLAN_ENTERPRISE_FREIGABE.md`.
-
-## Roadmap
-
-- **Verflechtungen abschließen:** Ende-zu-Ende-Test, Backfill der Adressen für den Bestand, Adressen aus AT/UK.
-- **Workflows ohne laufende App** (`docs/PLAN_WORKFLOWS_OHNE_APP.md`): Zeitpläne, die auch bei geschlossener App laufen.
-- **Enterprise-Freigabe** (`docs/PLAN_ENTERPRISE_FREIGABE.md`): SSO-Anbindung an Kundenverzeichnisse, Datenresidenz, Auftragsverarbeitung, Protokollexport.
-- **Weitere CRM-Systeme** neben HubSpot (Salesforce, Dynamics), perspektivisch bidirektional.
-- **Schweiz** (`docs/PLAN_SCHWEIZ.md`) als viertes Land, sobald die Registerquelle belastbar ist.
-- **Zeitreihen und Benchmarks** aus den Jahresabschluss-Blöcken.
-
-> Wünsche und Lücken: [info@eprox-gmbh.de](mailto:info@eprox-gmbh.de).
 
 ## Installation
 
