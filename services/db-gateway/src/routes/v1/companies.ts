@@ -901,7 +901,31 @@ companiesRouter.openapi(contactsRoute, async (c) => {
     // perspective (CompanyContactShape declares them as
     // record<string, unknown>[]) — we just SELECT * and pass through.
     const [facts, observations, signals, employments] = await Promise.all([
-      pool.query(`SELECT * FROM "Fact" WHERE "companyId" = $1`, [companyId]),
+      // Fakten der Firma UND alle Fakten der Personen, die zu ihr gehoeren.
+      //
+      // Befund 2026-09-19: In der Firmenansicht standen Karten mit
+      // "Unbekannte Person". Die Personen waren zuerst bei einer ANDEREN
+      // Firma erfasst worden — dort liegen Name, Position und Profil. Kam
+      // dieselbe Person spaeter hier dazu, entstand nur ein
+      // `employmentCompanyId`-Fakt mit dieser companyId. Ein Filter allein
+      // auf `companyId` fand den Namen deshalb nicht, und die Oberflaeche
+      // setzte ihren Platzhalter ein. Im Herkunftsnachweis stand der Name
+      // die ganze Zeit, weil der ueber die Person laedt statt ueber die
+      // Firma — genau das ist hier nachgezogen.
+      //
+      // Sortiert: Fakten DIESER Firma zuerst. Traegt eine Person bei
+      // mehreren Firmen eine Position, soll die hiesige gewinnen; die
+      // Oberflaeche nimmt den ersten passenden Eintrag.
+      pool.query(
+        `SELECT * FROM "Fact"
+          WHERE "companyId" = $1
+             OR ("entityType" = 'PERSON' AND "entityId" IN (
+                  SELECT DISTINCT "entityId" FROM "Fact"
+                   WHERE "companyId" = $1 AND "entityType" = 'PERSON'
+                ))
+          ORDER BY ("companyId" = $1) DESC, "lastSeen" DESC`,
+        [companyId],
+      ),
       pool.query(`SELECT * FROM "Observation" WHERE "companyId" = $1`, [companyId]),
       pool.query(`SELECT * FROM "SignalEvent" WHERE "companyId" = $1`, [companyId]),
       pool.query(`SELECT * FROM "Employment" WHERE "companyId" = $1`, [companyId]),
