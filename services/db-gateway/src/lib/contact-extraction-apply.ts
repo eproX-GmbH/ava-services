@@ -35,7 +35,7 @@ import { createObservationIdempotent } from "./contact-extraction/observation";
 import { emitRemovalsByTTL } from "./contact-extraction/emit-removals-by-ttl";
 import { getProducerPool } from "./producer-pools";
 import { isPersonTombstoned, stampObservations } from "./person-compliance";
-import { sanitizePersonName, sanitizeRole } from "./contact-extraction/sanitize-person";
+import { sanitizePersonName, sanitizeRole, istBrauchbarerName } from "./contact-extraction/sanitize-person";
 import { reconcileEntity } from "./contact-extraction/reconcile-entity";
 import type { ApplyObservationPolicy } from "./contact-extraction/observation";
 import type { PersistEvent } from "./persist-bus-types";
@@ -290,7 +290,14 @@ export async function applyCompanyContactPersist(
       source: source,
       sourceUrl: p.sourceUrl ?? evidenceUrl ?? undefined,
     };
-    if (!candidate.fullName) continue;
+    // Ein Eintrag ohne brauchbaren Namen hilft niemandem: Man kann ihn weder
+    // anschreiben noch zuordnen, und in der Firmenansicht stand dafuer
+    // "Unbekannte Person". Betrifft auch die Platzhalter, die LinkedIn und
+    // XING fuer nicht einsehbare Profile ausgeben (Befund 2026-09-19).
+    if (!istBrauchbarerName(candidate.fullName)) {
+      log.info({ runId, companyId, name: p.fullName ?? null }, "person ohne brauchbaren namen — uebersprungen");
+      continue;
+    }
     // C1 — Wiedererfassungs-Sperre (Personen-Tombstone).
     if (await isPersonTombstoned(contactPool, { fullName: candidate.fullName, linkedinUrl: candidate.linkedinUrl, xingUrl: candidate.xingUrl })) {
       log.info({ runId, companyId, name: candidate.fullName }, "person tombstoned — skipped (C1)");

@@ -175,9 +175,42 @@ export async function upsertPersonByIdentity(
     );
   }
 
-  const existing = treffer[0];
-  if (existing)
-    return { personId: existing.id, created: false, identityKey: key };
+  if (treffer[0])
+    return { personId: treffer[0].id, created: false, identityKey: key };
+
+  // Letzter Versuch vor dem Neuanlegen: dieselbe Person unter einem anderen
+  // Portal-Schluessel.
+  //
+  // Befund 2026-09-19: "Heiko Zimmer" lag zweimal bei derselben Firma — einmal
+  // unter `url:xing.com/profile/heiko_zimmer11`, einmal unter
+  // `url:linkedin.com/in/heiko-zimmer-...`. Zwei Portale, zwei Schluessel,
+  // kein Treffer. Der Namens-Schluessel haette geholfen, aber der aeltere
+  // Datensatz traegt ihn nicht: Er entstand, bevor beide Schluessel
+  // geschrieben wurden.
+  //
+  // Deshalb hier ueber den Namen selbst statt ueber einen Schluessel — und
+  // in der gefalteten Form, damit "Dr. Heiko Zimmer" und "Heiko Zimmer"
+  // zusammenfinden. Eingegrenzt auf Personen, die bei DIESER Firma
+  // beschaeftigt sind: Namensgleichheit im gesamten Bestand waere zu wenig,
+  // innerhalb einer Firma ist sie ein starkes Indiz.
+  const gesuchterName = nameIdentityForm(args.candidate.fullName);
+  if (gesuchterName.length >= 3) {
+    const beiDerFirma = await prisma.person.findMany({
+      where: { employments: { some: { companyId: args.companyId } } },
+      select: { id: true, fullName: true, createdAt: true },
+      orderBy: { createdAt: "asc" },
+      take: 500,
+    });
+    const namensgleich = beiDerFirma.find(
+      (p) => nameIdentityForm(p.fullName) === gesuchterName,
+    );
+    if (namensgleich) {
+      console.warn(
+        `[kontakte] ${args.candidate.fullName} ueber den Namen einer bestehenden Person zugeordnet (${namensgleich.id}) — die Schluessel stammen aus verschiedenen Portalen`,
+      );
+      return { personId: namensgleich.id, created: false, identityKey: key };
+    }
+  }
 
   const created = await prisma.person.create({
     data: {

@@ -89,3 +89,39 @@ export function nameIdentityForm(raw: string): string {
     .replace(/\s+/g, " ")
     .trim();
 }
+
+/**
+ * Taugt der Name als Name einer Person?
+ *
+ * Befund 2026-09-19: In der Firmenansicht standen Karten mit "Unbekannte
+ * Person" — dem Platzhalter der Oberflaeche fuer einen fehlenden Namen.
+ * Solche Eintraege helfen niemandem: Man kann sie weder anschreiben noch
+ * zuordnen, und sie verdraengen echte Kontakte aus dem Blick.
+ *
+ * Aussortiert werden zu kurze Namen, reine Ziffern- oder Zeichenfolgen und
+ * die Platzhalter, die LinkedIn und XING fuer nicht einsehbare Profile
+ * ausgeben. Im Zweifel wird der Name behalten — lieber ein ungewoehnlicher
+ * Name als ein verworfener Mensch.
+ */
+const PLATZHALTER = [
+  "linkedin member",
+  "linkedin user",
+  "xing mitglied",
+  "xing member",
+  "unbekannte person",
+  "unbekannt",
+  "unknown",
+  "anonymous",
+  "n a",
+  "k a",
+];
+
+export function istBrauchbarerName(raw: string | null | undefined): boolean {
+  if (!raw) return false;
+  const gefaltet = nameIdentityForm(raw);
+  if (gefaltet.length < 3) return false;
+  if (PLATZHALTER.includes(gefaltet)) return false;
+  // Mindestens ein Buchstabe — "12345" oder "--" ist kein Name.
+  if (!/\p{L}/u.test(gefaltet)) return false;
+  return true;
+}

@@ -129,7 +129,9 @@ export async function upsertCurrentEmployment(
     }
   }
 
-  const existing = await prisma.employment.findFirst({
+  // Zuerst die Beschaeftigung mit genau diesem Titel — das ist der Normalfall
+  // eines erneuten Laufs.
+  let existing = await prisma.employment.findFirst({
     where: {
       personId: args.personId,
       companyId,
@@ -138,6 +140,30 @@ export async function upsertCurrentEmployment(
     },
     orderBy: { lastSeen: "desc" },
   });
+
+  // Sonst eine, die noch GAR KEINEN Titel hat: anreichern statt daneben
+  // legen.
+  //
+  // Befund 2026-09-19: Ein Lauf ohne Rollenbezeichnung legte die
+  // Beschaeftigung titellos an; der naechste Lauf brachte den Titel mit,
+  // fand wegen `title` in der Suche nichts und legte eine zweite an. In der
+  // Datenbank standen danach zwei Beschaeftigungen derselben Person bei
+  // derselben Firma — eine leere und eine gefuellte.
+  //
+  // Nur in diese Richtung: Ein Titel, der einen anderen ABLOEST, ist ein
+  // Wechsel und soll weiterhin die alte Beschaeftigung beenden (das
+  // geschieht oben). Ein leeres Feld zu fuellen ist kein Wechsel.
+  if (!existing && title) {
+    existing = await prisma.employment.findFirst({
+      where: {
+        personId: args.personId,
+        companyId,
+        startDate: null,
+        OR: [{ title: null }, { title: "" }],
+      },
+      orderBy: { lastSeen: "desc" },
+    });
+  }
 
   const employment = existing
     ? await prisma.employment.update({

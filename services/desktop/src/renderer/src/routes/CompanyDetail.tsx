@@ -1524,6 +1524,15 @@ function ContactsTab({ id }: { id: string }) {
 
   const byField = groupBy(companyFacts, (f) => f.field ?? "other");
   const byPerson = groupBy(personFacts, (f) => f.entityId ?? "?");
+  // Eintraege ohne Namen sind nicht verwendbar — man kann sie weder
+  // anschreiben noch zuordnen. Sie standen als "Unbekannte Person" in der
+  // Liste und verdraengten echte Kontakte aus dem Blick. Der Producer legt
+  // sie seit v0.1.700 nicht mehr an; hier werden die uebrigen aus dem
+  // Bestand ausgeblendet, damit die Ansicht sofort stimmt.
+  for (const [pid, pf] of Object.entries(byPerson)) {
+    const name = pf.find((f) => f.field === "fullName")?.value?.trim();
+    if (!name) delete byPerson[pid];
+  }
   // v0.1.508 — Belegseiten je Fakt (Telefon/E-Mail/Adresse). Kommt aus
   // den ohnehin mitgelieferten Beobachtungen.
   const belege = belegKarte(data.companyObservations);
