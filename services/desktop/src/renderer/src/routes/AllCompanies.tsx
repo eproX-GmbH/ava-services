@@ -241,7 +241,10 @@ export function AllCompanies() {
   const hideCompany = (companyId: string, name: string) => {
     if (
       !window.confirm(
-        `„${name}" wirklich loeschen? Die Firma verschwindet aus deiner Firmen- und Vorgaenge-Ansicht; ihr Verarbeitungsfortschritt wird entfernt. Recherchierte Basisdaten bleiben zentral erhalten (geteilte Stammdaten).`,
+        // Der frühere Text sprach davon, dass „ihr Verarbeitungsfortschritt
+        // entfernt" werde — das klang nach Datenverlust. Entfernt wird nur
+        // die Firma aus der eigenen Übersicht.
+        `Du bist dabei, „${name}" aus deiner Übersicht zu entfernen.`,
       )
     )
       return;
