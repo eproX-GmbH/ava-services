@@ -7,7 +7,7 @@ import {
 } from "../components/RegisterStatusBadge";
 import { InsolvenzAbschnitt } from "../components/InsolvenzAbschnitt";
 import { VerflechtungenTab } from "../components/VerflechtungenTab";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useFeature } from "../store/policy";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useParams } from "react-router-dom";
@@ -35,6 +35,7 @@ import { ExternalLink } from "../components/ExternalLink";
 import { CompanyCrmPanel } from "../components/CompanyCrmPanel";
 import { quellenDerFakten } from "./kontakt-quellen";
 import { sortiereNachRang, rangFuerTitel, RANG_TITEL } from "./kontakt-rang";
+import { bewerte } from "./kontakt-suche";
 import { FirmaUebernehmen, istUebernommen } from "./firma-uebernehmen";
 import {
   EyeIcon,
@@ -1523,6 +1524,7 @@ function ContactsTab({ id }: { id: string }) {
   const personFacts = facts.filter((f) => f.entityType === "PERSON");
 
   const byField = groupBy(companyFacts, (f) => f.field ?? "other");
+  const [suche, setSuche] = useState("");
   const byPerson = groupBy(personFacts, (f) => f.entityId ?? "?");
   // Eintraege ohne Namen sind nicht verwendbar — man kann sie weder
   // anschreiben noch zuordnen. Sie standen als "Unbekannte Person" in der
@@ -1544,6 +1546,50 @@ function ContactsTab({ id }: { id: string }) {
   const addresses = (byField.address ?? []).filter(
     (f) => f.status === "ACTIVE"
   );
+
+  // Die Kontakte liegen vollstaendig vor — gesucht wird deshalb im Fenster,
+  // ohne Abfrage. Durchsucht werden Name, Position, Abteilung, Kontaktdaten,
+  // Profil-Adressen sowie Herkunft und Rolleneinordnung: So findet "linkedin"
+  // alle ueber LinkedIn gefundenen und "leitung" die Fuehrungsebene.
+  const wert = (pf: Fact[], feld: string) =>
+    pf.find((f) => f.field === feld && f.status === "ACTIVE")?.value ??
+    pf.find((f) => f.field === feld)?.value;
+  const gefundenePersonen: Array<[string, Fact[]]> = useMemo(() => {
+    const eintraege = Object.entries(byPerson);
+    const bewertet = eintraege.map((e) => {
+      const [, pf] = e;
+      const titel = wert(pf, "jobTitle");
+      const rang = rangFuerTitel(titel);
+      return {
+        eintrag: e,
+        rang,
+        name: wert(pf, "fullName") ?? "",
+        punkte: bewerte(
+          [
+            { wert: wert(pf, "fullName"), gewicht: 3 },
+            { wert: titel, gewicht: 2 },
+            { wert: wert(pf, "department"), gewicht: 1.5 },
+            { wert: wert(pf, "email"), gewicht: 1.5 },
+            { wert: wert(pf, "phone"), gewicht: 1 },
+            { wert: wert(pf, "linkedinUrl"), gewicht: 1 },
+            { wert: wert(pf, "xingUrl"), gewicht: 1 },
+            { wert: quellenDerFakten(pf, quellen).join(" "), gewicht: 1 },
+            { wert: RANG_TITEL[rang], gewicht: 1 },
+          ],
+          suche,
+        ),
+      };
+    });
+    const treffer = bewertet.filter((x) => x.punkte > 0);
+    // Ohne Eingabe bleibt die gewohnte Ordnung nach Rolle. Mit Eingabe zaehlt
+    // zuerst die Trefferguete — wer sucht, will das Gesuchte oben sehen.
+    treffer.sort((a, b) =>
+      suche.trim()
+        ? b.punkte - a.punkte || b.rang - a.rang || a.name.localeCompare(b.name, "de")
+        : b.rang - a.rang || a.name.localeCompare(b.name, "de"),
+    );
+    return treffer.map((x) => x.eintrag);
+  }, [byPerson, suche, quellen]);
 
   return (
     <div style={{ display: "grid", gap: "1.5rem" }}>
@@ -1575,19 +1621,52 @@ function ContactsTab({ id }: { id: string }) {
 
       {Object.keys(byPerson).length > 0 && (
         <section>
-          <h3>
-            Zugeordnete Personen ({numFmt.format(Object.keys(byPerson).length)})
-          </h3>
+          <div className="kontakt-suche__kopf">
+            <h3 style={{ margin: 0 }}>
+              Zugeordnete Personen (
+              {suche.trim()
+                ? `${numFmt.format(gefundenePersonen.length)} von ${numFmt.format(Object.keys(byPerson).length)}`
+                : numFmt.format(Object.keys(byPerson).length)}
+              )
+            </h3>
+            {/* Erst ab einer Handvoll Kontakte sichtbar: Bei drei Karten ist
+                ein Suchfeld nur im Weg. */}
+            {Object.keys(byPerson).length >= 6 && (
+              <div className="kontakt-suche">
+                <input
+                  type="search"
+                  className="kontakt-suche__feld"
+                  placeholder="Name, Position, Abteilung, Kontakt …"
+                  value={suche}
+                  onChange={(e) => setSuche(e.target.value)}
+                  aria-label="Ansprechpartner durchsuchen"
+                />
+                {suche && (
+                  <button
+                    type="button"
+                    className="kontakt-suche__leeren"
+                    onClick={() => setSuche("")}
+                    title="Suche zurücksetzen"
+                  >
+                    <span className="visually-hidden">Suche zurücksetzen</span>
+                    ×
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+          {suche.trim() && gefundenePersonen.length === 0 && (
+            <p className="muted small" style={{ marginTop: "0.75rem" }}>
+              Niemand gefunden. Gesucht wird in Name, Position, Abteilung,
+              Kontaktdaten, Profilen sowie Herkunft und Rolle.
+            </p>
+          )}
           {/* v0.1.698 — nach Rolle sortiert statt nach Zufall: Die
               Geschaeftsleitung steht oben, Namen ohne Rolle unten. Der
               Rang wird aus dem Titel bestimmt und gilt damit fuer alle
               Quellen, auch fuer die, die nie bewertet wurden. */}
           <div className="grid-2">
-            {sortiereNachRang(
-              Object.entries(byPerson),
-              ([, pf]) => pf.find((f) => f.field === "jobTitle" && f.status === "ACTIVE")?.value,
-              ([, pf]) => pf.find((f) => f.field === "fullName")?.value ?? "",
-            ).map(([pid, pf]) => (
+            {gefundenePersonen.map(([pid, pf]) => (
               <PersonCard
                 key={pid}
                 personId={pid}
