@@ -52,6 +52,8 @@ const PolicyShape = z.object({
   personRetentionDays: z.number().int().min(30).max(3650).nullable().optional(),
   /** Duerfen Mitglieder den Apify-Token der Organisation mit einem eigenen ueberschreiben? */
   apifyEigenerErlaubt: z.boolean().optional(),
+  relevanzSelbstbestimmt: z.boolean().optional(),
+  relevanzThemaSichtbar: z.boolean().optional(),
 });
 
 tenantsRouter.openapi(

@@ -38,6 +38,18 @@ export interface TenantPolicyShape {
    * entspricht dem Verhalten vor dieser Vorgabe.
    */
   apifyEigenerErlaubt: boolean;
+  /**
+   * Duerfen Mitglieder den Relevanz-Wert selbst ein- und ausschalten?
+   * true = die Setzung der Organisation ist Vorgabe, das Mitglied darf
+   * abweichen. false = sie gilt verbindlich, das Mitglied hat keinen
+   * Schalter. Standard true (docs/PLAN_RELEVANZ.md, 9.2).
+   */
+  relevanzSelbstbestimmt: boolean;
+  /**
+   * Sehen Mitglieder, wie viele Kolleginnen und Kollegen eine Firma gerade
+   * warm haben? Nur als Anzahl, nie mit Namen. Standard true.
+   */
+  relevanzThemaSichtbar: boolean;
 }
 
 export const DEFAULT_POLICY: TenantPolicyShape = {
@@ -49,6 +61,8 @@ export const DEFAULT_POLICY: TenantPolicyShape = {
   promptAudit: false,
   personRetentionDays: null,
   apifyEigenerErlaubt: true,
+  relevanzSelbstbestimmt: true,
+  relevanzThemaSichtbar: true,
 };
 
 export interface WhoamiPayload {
@@ -71,8 +85,8 @@ export interface WhoamiPayload {
 type Q = { query: pg.Pool["query"] };
 
 async function readPolicy(q: Q, tenantId: string): Promise<TenantPolicyShape> {
-  const r = await q.query<{ features: unknown; providerLock: boolean; chatModel: string | null; producerModel: string | null; researchModel: string | null; promptAudit: boolean; personRetentionDays: number | null; apifyEigenerErlaubt: boolean }>(
-    `SELECT "features", "providerLock", "chatModel", "producerModel", "researchModel", "promptAudit", "personRetentionDays", "apifyEigenerErlaubt" FROM "TenantPolicy" WHERE "tenantId" = $1`,
+  const r = await q.query<{ features: unknown; providerLock: boolean; chatModel: string | null; producerModel: string | null; researchModel: string | null; promptAudit: boolean; personRetentionDays: number | null; apifyEigenerErlaubt: boolean; relevanzSelbstbestimmt: boolean; relevanzThemaSichtbar: boolean }>(
+    `SELECT "features", "providerLock", "chatModel", "producerModel", "researchModel", "promptAudit", "personRetentionDays", "apifyEigenerErlaubt", "relevanzSelbstbestimmt", "relevanzThemaSichtbar" FROM "TenantPolicy" WHERE "tenantId" = $1`,
     [tenantId],
   );
   const row = r.rows[0];
@@ -90,6 +104,8 @@ async function readPolicy(q: Q, tenantId: string): Promise<TenantPolicyShape> {
     promptAudit: row.promptAudit,
     personRetentionDays: row.personRetentionDays ?? null,
     apifyEigenerErlaubt: row.apifyEigenerErlaubt !== false,
+    relevanzSelbstbestimmt: row.relevanzSelbstbestimmt !== false,
+    relevanzThemaSichtbar: row.relevanzThemaSichtbar !== false,
   };
 }
 
@@ -517,6 +533,8 @@ export async function setPolicy(pool: pg.Pool, auth: AuthContext, patch: Partial
     features: patch.features ? { ...alt.features, ...patch.features } : alt.features,
     providerLock: patch.providerLock ?? alt.providerLock,
     apifyEigenerErlaubt: patch.apifyEigenerErlaubt ?? alt.apifyEigenerErlaubt,
+    relevanzSelbstbestimmt: patch.relevanzSelbstbestimmt ?? alt.relevanzSelbstbestimmt,
+    relevanzThemaSichtbar: patch.relevanzThemaSichtbar ?? alt.relevanzThemaSichtbar,
     chatModel: patch.chatModel === undefined ? alt.chatModel : patch.chatModel,
     producerModel: patch.producerModel === undefined ? alt.producerModel : patch.producerModel,
     researchModel: patch.researchModel === undefined ? alt.researchModel : patch.researchModel,
@@ -526,14 +544,20 @@ export async function setPolicy(pool: pg.Pool, auth: AuthContext, patch: Partial
   if (neu.personRetentionDays !== null && (neu.personRetentionDays < 30 || neu.personRetentionDays > 3650)) {
     throw new TenantError(400, "Aufbewahrung fuer Personen: 30 bis 3650 Tage (oder leer = Standard 180).");
   }
+  // apifyEigenerErlaubt stand bis hierher zwar im berechneten Satz, fehlte
+  // aber in der Anweisung — die Vorgabe liess sich also setzen, ohne dass
+  // sie je gespeichert wurde. Mit aufgenommen.
   await pool.query(
-    `INSERT INTO "TenantPolicy" ("tenantId", "features", "providerLock", "chatModel", "producerModel", "promptAudit", "personRetentionDays", "researchModel", "updatedAt", "updatedBy")
-     VALUES ($1, $2::jsonb, $3, $4, $5, $6, $8, $9, CURRENT_TIMESTAMP, $7)
+    `INSERT INTO "TenantPolicy" ("tenantId", "features", "providerLock", "chatModel", "producerModel", "promptAudit", "personRetentionDays", "researchModel", "apifyEigenerErlaubt", "relevanzSelbstbestimmt", "relevanzThemaSichtbar", "updatedAt", "updatedBy")
+     VALUES ($1, $2::jsonb, $3, $4, $5, $6, $8, $9, $10, $11, $12, CURRENT_TIMESTAMP, $7)
      ON CONFLICT ("tenantId") DO UPDATE SET "features" = EXCLUDED."features", "providerLock" = EXCLUDED."providerLock",
        "chatModel" = EXCLUDED."chatModel", "producerModel" = EXCLUDED."producerModel", "promptAudit" = EXCLUDED."promptAudit",
        "personRetentionDays" = EXCLUDED."personRetentionDays", "researchModel" = EXCLUDED."researchModel",
+       "apifyEigenerErlaubt" = EXCLUDED."apifyEigenerErlaubt",
+       "relevanzSelbstbestimmt" = EXCLUDED."relevanzSelbstbestimmt",
+       "relevanzThemaSichtbar" = EXCLUDED."relevanzThemaSichtbar",
        "updatedAt" = CURRENT_TIMESTAMP, "updatedBy" = EXCLUDED."updatedBy"`,
-    [auth.tenantId, JSON.stringify(neu.features), neu.providerLock, neu.chatModel, neu.producerModel, neu.promptAudit, auth.actorId, neu.personRetentionDays, neu.researchModel],
+    [auth.tenantId, JSON.stringify(neu.features), neu.providerLock, neu.chatModel, neu.producerModel, neu.promptAudit, auth.actorId, neu.personRetentionDays, neu.researchModel, neu.apifyEigenerErlaubt, neu.relevanzSelbstbestimmt, neu.relevanzThemaSichtbar],
   );
   invalidateFeatures(auth.tenantId);
   return neu;

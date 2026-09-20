@@ -30,6 +30,7 @@ import { geoRouter } from "./v1/geo";
 import { discoveryRouter } from "./v1/discovery";
 import { emailPatternsRouter } from "./v1/email-patterns";
 import { registerJobsRouter } from "./v1/register-jobs";
+import { relevanzRouter } from "./v1/relevanz";
 
 // /v1 router.
 //
@@ -68,6 +69,8 @@ v1.route("/", companiesCrmRouter);
 // §4.1 Company reads (W6-W13).
 // M3 (E-Mail-Muster) — vor dem generischen companiesRouter (Glob).
 v1.route("/", emailPatternsRouter);
+// Relevanz (docs/PLAN_RELEVANZ.md) — eigener Pfad, keine Glob-Kollision.
+v1.route("/", relevanzRouter);
 v1.route("/", companiesRouter);
 
 // §4.2 Transaction reads (W2-W5) + §6 SSE bridge (W4).

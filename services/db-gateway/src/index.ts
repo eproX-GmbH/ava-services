@@ -21,6 +21,7 @@ import { startQuotaResumeCron } from "./lib/quota-resume-worker";
 import { startStuckProgressReaperCron } from "./lib/stuck-progress-reaper";
 import { startPersonRetentionCron } from "./lib/person-retention-reaper";
 import { startBillingCron } from "./lib/billing-cron";
+import { startRelevanzCron } from "./lib/relevanz-cron";
 import { startVerflechtungenCron } from "./lib/verflechtungen";
 import { getGatewayPool } from "./lib/producer-pools";
 import { startRegisterJobCron } from "./lib/register-jobs";
@@ -137,6 +138,10 @@ startPersonRetentionCron();
 // B1/B2 — Abrechnung: Seat-Monatsabschluss, vorgemerkte Tier-Aenderungen,
 // Zahlungsstoerungen (Karenz → Sperre), taeglicher Stripe-Abgleich.
 startBillingCron();
+
+// Relevanz — taegliche Tilgung der Rohsignale (400 Tage), abgelaufene
+// Sperren aufraeumen, verfallene Werte nachrechnen.
+startRelevanzCron();
 
 // Register-Delta S3 — Ersteller-Cron: Front-Jobs je Gericht, Bekanntmachungs-
 // Jobs je Tag im 8-Wochen-Fenster (taeglich ab 02:00 UTC, idempotent).

@@ -441,39 +441,39 @@ model AuditLog {
 /// CompanyCrmLink ohne Umschluesselung gueltig bleiben. Pflege vorerst
 /// manuell durch den Operator (Entscheidung 2026-09-03).
 model Tenant {
-  id          String   @id
-  name        String?
+  id           String              @id
+  name         String?
   /// O1 — "personal" (Tenant = User, Default) | "organisation".
-  kind        String   @default("personal")
+  kind         String              @default("personal")
   /// O1 — Einladungslink-Token (ava://join/<token>), rotierbar.
-  inviteToken String?  @unique
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @default(now())
-  members     TenantMember[]
+  inviteToken  String?             @unique
+  createdAt    DateTime            @default(now())
+  updatedAt    DateTime            @default(now())
+  members      TenantMember[]
   joinRequests TenantJoinRequest[]
-  policy      TenantPolicy?
-  providers   TenantProvider[]
-  quota       TenantQuota?
-  shares      OrgShare[]
-  memberships TenantMembership[]
-  seatTiers   SeatTierChange[]
+  policy       TenantPolicy?
+  providers    TenantProvider[]
+  quota        TenantQuota?
+  shares       OrgShare[]
+  memberships  TenantMembership[]
+  seatTiers    SeatTierChange[]
   seatInvoices SeatInvoice[]
-  workflows   TenantWorkflow[]
+  workflows    TenantWorkflow[]
 }
 
 /// O1 — Beitrittsanfrage: bis zur Freigabe bleibt der Nutzer in seinem
 /// bisherigen Tenant. Ein Nutzer hat hoechstens eine offene Anfrage.
 model TenantJoinRequest {
-  id          String   @id @default(cuid())
+  id          String    @id @default(cuid())
   tenantId    String
   actorId     String
   email       String?
   name        String?
-  status      String   @default("open") // open | approved | rejected | withdrawn
-  requestedAt DateTime @default(now())
+  status      String    @default("open") // open | approved | rejected | withdrawn
+  requestedAt DateTime  @default(now())
   decidedAt   DateTime?
   decidedBy   String?
-  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tenant      Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   @@index([tenantId, status])
   @@index([actorId, status])
@@ -484,21 +484,28 @@ model TenantJoinRequest {
 /// Ueberschreibung von Anbieter/Schluessel/Modell. promptAudit ist das
 /// Opt-in fuer die Speicherung von Prompts im Stellvertreter-Proxy (O4).
 model TenantPolicy {
-  tenantId      String   @id
-  features      Json     @default("{}")
-  providerLock  Boolean  @default(false)
-  chatModel     String?
-  producerModel String?
-  researchModel String? // Deep-Research-Modell (OpenAI)
-  promptAudit   Boolean  @default(false)
+  tenantId               String   @id
+  features               Json     @default("{}")
+  providerLock           Boolean  @default(false)
+  chatModel              String?
+  producerModel          String?
+  researchModel          String? // Deep-Research-Modell (OpenAI)
+  promptAudit            Boolean  @default(false)
   /// C1 — Personen ohne Beobachtung seit N Tagen tilgen (null = Standard 180).
-  personRetentionDays Int?
+  personRetentionDays    Int?
   /// Duerfen Mitglieder den Apify-Token der Organisation mit einem eigenen
   /// ueberschreiben? true = eigener zuerst, Organisation als Rueckfall.
-  apifyEigenerErlaubt Boolean @default(true)
-  updatedAt     DateTime @default(now())
-  updatedBy     String?
-  tenant        Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  apifyEigenerErlaubt    Boolean  @default(true)
+  /// Duerfen Mitglieder den Relevanz-Wert selbst ein- und ausschalten?
+  /// true = die Setzung der Organisation ist Vorgabe, das Mitglied darf
+  /// abweichen. false = die Setzung gilt verbindlich, kein Schalter.
+  relevanzSelbstbestimmt Boolean  @default(true)
+  /// Sehen Mitglieder, wie viele Kolleginnen und Kollegen eine Firma gerade
+  /// warm haben? Nur als Anzahl, nie mit Namen (Plan Abschnitt 10).
+  relevanzThemaSichtbar  Boolean  @default(true)
+  updatedAt              DateTime @default(now())
+  updatedBy              String?
+  tenant                 Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 }
 
 /// O4 — Organisationsschluessel je Anbieter, verschluesselt (AES-256-GCM
@@ -506,7 +513,7 @@ model TenantPolicy {
 /// Proxy entschluesselt beim Aufruf. keyHint = letzte 4 Zeichen.
 model TenantProvider {
   tenantId      String
-  kind          String   // openai | anthropic | google | mistral | deepseek | xai | qwen | apify
+  kind          String // openai | anthropic | google | mistral | deepseek | xai | qwen | apify
   keyCiphertext String
   keyHint       String
   updatedAt     DateTime @default(now())
@@ -520,15 +527,15 @@ model TenantProvider {
 /// Gilt fuer die ganze Organisation; revokedAt = zurueckgenommen (bereits
 /// uebernommene Kopien bleiben). refId = transactionId bzw. discoveryId.
 model OrgShare {
-  id        String    @id @default(cuid())
+  id        String         @id @default(cuid())
   tenantId  String
-  kind      String    // transaction | radar_company
+  kind      String // transaction | radar_company
   refId     String
   sharedBy  String
-  sharedAt  DateTime  @default(now())
+  sharedAt  DateTime       @default(now())
   note      String?
   revokedAt DateTime?
-  tenant    Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tenant    Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   seen      OrgShareSeen[]
 
   @@unique([tenantId, kind, refId])
@@ -580,9 +587,9 @@ model TenantQuota {
   split               Boolean  @default(false)
   chatOrgMonthlyCents Int?
   chatUserDailyCents  Int?
-  updatedAt       DateTime @default(now())
-  updatedBy       String?
-  tenant          Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  updatedAt           DateTime @default(now())
+  updatedBy           String?
+  tenant              Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 }
 
 /// O4 — Metering je Stellvertreter-Aufruf (nur Zaehler, keine Inhalte).
@@ -676,22 +683,22 @@ model SeatTierChange {
 /// TenantMembership + SeatTierChange jederzeit reproduzierbar
 /// (computeHash). status: recorded | issued | paid | void | enterprise_export.
 model SeatInvoice {
-  id              String    @id
+  id              String            @id
   tenantId        String
   periodKey       String
-  status          String    @default("recorded")
-  currency        String    @default("EUR")
-  subtotalCents   Int       @default(0)
+  status          String            @default("recorded")
+  currency        String            @default("EUR")
+  subtotalCents   Int               @default(0)
   taxCents        Int?
-  totalCents      Int       @default(0)
-  seatCount       Int       @default(0)
-  computedAt      DateTime  @default(now())
+  totalCents      Int               @default(0)
+  seatCount       Int               @default(0)
+  computedAt      DateTime          @default(now())
   computeHash     String
   stripeInvoiceId String?
   issuedAt        DateTime?
   paidAt          DateTime?
   note            String?
-  tenant          Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tenant          Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   lines           SeatInvoiceLine[]
   seats           SeatInvoiceSeat[]
 
@@ -793,7 +800,7 @@ model StructuredContentStale {
 /// und Anzahl auf. `transactionId` ist der Vorgang "Verflechtungen …" in
 /// master-data, in dem die Firmen-Gesellschafter fuer den Nutzer laufen.
 model VerflechtungKontext {
-  kontext             String   @id
+  kontext             String               @id
   tenantId            String
   ursprungCompanyId   String
   transactionId       String
@@ -801,8 +808,8 @@ model VerflechtungKontext {
   userId              String?
   maxTiefe            Int
   maxFirmen           Int
-  ohneBremse          Boolean  @default(false)
-  erstelltAt          DateTime @default(now())
+  ohneBremse          Boolean              @default(false)
+  erstelltAt          DateTime             @default(now())
   besuche             VerflechtungBesuch[]
 
   @@index([tenantId, ursprungCompanyId])
@@ -821,7 +828,7 @@ model VerflechtungBesuch {
   art            String?
   nummer         String?
   zusatz         String?
-  aktualisiertAt DateTime @default(now())
+  aktualisiertAt DateTime            @default(now())
   kontextRef     VerflechtungKontext @relation(fields: [kontext], references: [kontext], onDelete: Cascade)
 
   @@id([kontext, companyId])
@@ -834,4 +841,63 @@ model VerflechtungBesuch {
 model VerflechtungErzwungen {
   companyId String   @id
   bis       DateTime
+}
+
+// ---- Relevanz (docs/PLAN_RELEVANZ.md) --------------------------------------
+// Naehe = wie nah ein Nutzer an einer Firma oder Person dran ist, abgeleitet
+// aus seinem eigenen Verhalten. Streng getrennt nach tenantId UND actorId:
+// Zwei Mitglieder derselben Organisation haben getrennte Werte fuer dieselbe
+// Firma, und keine Abfrage mischt sie. Die einzige Ausnahme ist das Aggregat
+// aus Abschnitt 10 des Plans, das ueber tenantId zaehlt und nur eine Anzahl
+// ohne Namen liefert.
+
+/// Rohsignal: eine Handlung des Nutzers an einer Firma oder Person.
+/// `geraetRef` ist die vom Geraet vergebene Kennung — sie macht den
+/// Buendel-Versand wiederholbar, ohne doppelt zu schreiben.
+model RelevanzSignal {
+  id        BigInt   @id @default(autoincrement())
+  tenantId  String
+  actorId   String
+  geraetRef String
+  zielArt   String // 'firma' | 'person'
+  zielId    String
+  firmaId   String? // bei Personen: Firma, ueber die sie kam
+  art       String // Schluessel aus dem Signalkatalog (Plan 3.1/3.2)
+  punkte    Float
+  halbwertT Float // Tage
+  zeitpunkt DateTime @default(now())
+
+  @@unique([actorId, geraetRef])
+  @@index([tenantId, actorId, zielArt, zielId, zeitpunkt])
+  @@index([zeitpunkt])
+}
+
+/// Abgeleitet. Wird neu berechnet, nie von Hand gepflegt.
+model RelevanzWert {
+  tenantId      String
+  actorId       String
+  zielArt       String
+  zielId        String
+  naehe         Float
+  gewicht       Float     @default(1)
+  rang          Float
+  begruendung   Json // die drei staerksten Beitraege, fuer die Erklaerung in der Oberflaeche
+  letztesSignal DateTime?
+  berechnet     DateTime  @default(now())
+
+  @@id([tenantId, actorId, zielArt, zielId])
+  @@index([tenantId, actorId, rang])
+  @@index([tenantId, zielArt, naehe])
+}
+
+/// Nach dem Entfernen einer Firma aus der Uebersicht: kein Wiederaufwaermen
+/// durch Automatik, bis die Sperre ablaeuft.
+model RelevanzSperre {
+  tenantId String
+  actorId  String
+  zielArt  String
+  zielId   String
+  bis      DateTime
+
+  @@id([tenantId, actorId, zielArt, zielId])
 }
