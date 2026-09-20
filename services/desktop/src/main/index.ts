@@ -1560,8 +1560,9 @@ const heartbeat = new Heartbeat({
   store: alerts,
   // BC5 — Fokuskunden (eigenes aktives Buying Center) im Alarmweg und die
   // monatliche Nachfrage, ob ein Buying Center noch stimmt.
-  fokusFirmen: () => fokusFirmen(gatewayClient),
-  faelligeNachfragen: (now) => faelligeNachfragen(gatewayClient, now),
+  // BC6 — abgeschaltet heisst: keine Fokuskunden im Alarmweg, keine Nachfrage.
+  fokusFirmen: () => (featureEnabled("buyingcenter") ? fokusFirmen(gatewayClient) : Promise.resolve(new Set<string>())),
+  faelligeNachfragen: (now) => (featureEnabled("buyingcenter") ? faelligeNachfragen(gatewayClient, now) : Promise.resolve([])),
   // 8.f3 — read cadence from persisted prefs (default 15 min). The
   // store fires `changed` on every patch; we re-route that into
   // `setIntervalMs` below so the cadence radio in Settings takes

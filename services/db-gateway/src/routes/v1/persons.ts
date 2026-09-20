@@ -20,6 +20,7 @@ import {
   art14Hinweis,
   deletePerson,
   setInformed,
+  buyingCenterEinschaetzungen,
   DEFAULT_PERSON_RETENTION_DAYS,
 } from "../../lib/person-compliance";
 import { logger } from "../../lib/logger";
@@ -50,6 +51,8 @@ personsRouter.openapi(
     const { format } = c.req.valid("query");
     const b = await personHerkunft(getProducerPool("company-contact"), id);
     if (!b) throw new HTTPException(404, { message: "person_not_found" });
+    // BC6 — die Einschaetzungen der anfragenden Organisation gehoeren in die Auskunft.
+    b.einschaetzungen = await buyingCenterEinschaetzungen(getGatewayPool(), getProducerPool("company-contact"), { personId: id, tenantId: c.get("auth").tenantId });
     if (format === "markdown") {
       return c.text(herkunftAlsMarkdown(b, { tenantName: await tenantName(c.get("auth").tenantId) }), 200, { "content-type": "text/markdown; charset=utf-8" }) as never;
     }
@@ -72,6 +75,7 @@ personsRouter.openapi(
     const auth = c.get("auth");
     const b = await personHerkunft(getProducerPool("company-contact"), id);
     if (!b) throw new HTTPException(404, { message: "person_not_found" });
+    b.einschaetzungen = await buyingCenterEinschaetzungen(getGatewayPool(), getProducerPool("company-contact"), { personId: id, tenantId: auth.tenantId });
     const org = (await tenantName(auth.tenantId)) ?? auth.email ?? "die verantwortliche Organisation";
     return c.json({ text: art14Hinweis(b, { organisation: org, kontaktEmail: kontaktEmail ?? auth.email ?? null, retentionDays: await retentionDays(auth.tenantId) }) });
   },
@@ -115,6 +119,19 @@ personsRouter.openapi(
       throw new HTTPException(403, { message: "Nur eine Organisation, die diese Person erhoben hat, darf sie loeschen." });
     }
     const r = await deletePerson(pool, { personId: id, tenantId: auth.tenantId, actorId: auth.actorId, reason: body?.reason ?? null });
+    // BC6 — die Loeschung ist global, also auch hier: Ein Buying-Center-
+    // Mitglied traegt Name und Einschaetzungen der Person. Kanten haengen
+    // nicht per Fremdschluessel am Mitglied, deshalb zuerst sie.
+    try {
+      const g = getGatewayPool();
+      const mids = (await g.query<{ id: string }>(`SELECT "id" FROM "BuyingCenterMitglied" WHERE "personId" = $1`, [id])).rows.map((x) => x.id);
+      if (mids.length > 0) {
+        await g.query(`DELETE FROM "BuyingCenterKante" WHERE "vonMitgliedId" = ANY($1::text[]) OR "nachMitgliedId" = ANY($1::text[])`, [mids]);
+        await g.query(`DELETE FROM "BuyingCenterMitglied" WHERE "id" = ANY($1::text[])`, [mids]);
+      }
+    } catch (err) {
+      logger.warn({ err: err instanceof Error ? err.message : String(err), personId: id }, "buying-center cleanup after person delete failed");
+    }
     try {
       await getGatewayPool().query(
         `INSERT INTO "AuditLog" ("tenantId", "actorId", "method", "path", "statusCode", "requestId", "durationMs", "errorMessage")

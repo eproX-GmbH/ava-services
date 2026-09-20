@@ -5,8 +5,12 @@
 // heutigen Stand, keinen Schnappschuss von damals.
 
 import { BuyingCenterKarte } from "./BuyingCenterKarte";
+import { useFeature } from "../store/policy";
 
 export function BuyingCenterBlock({ raw }: { raw: string }) {
+  // BC6 — hat die Organisation das Buying Center abgeschaltet, bleibt auch
+  // ein alter Zaun im Verlauf leer: nichts Ausgegrautes, kein Hinweis.
+  const erlaubt = useFeature("buyingcenter");
   let id: string | null = null;
   try {
     const parsed = JSON.parse(raw) as { id?: unknown };
@@ -14,6 +18,7 @@ export function BuyingCenterBlock({ raw }: { raw: string }) {
   } catch {
     /* unten behandelt */
   }
+  if (!erlaubt) return null;
   if (!id) {
     return (
       <div className="chart-fallback">

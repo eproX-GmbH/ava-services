@@ -21,7 +21,8 @@
 
 import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
 import { HTTPException } from "hono/http-exception";
-import { requireScope } from "../../middleware/auth";
+import { requireScope, type AuthContext } from "../../middleware/auth";
+import { requireFeature } from "../../lib/policy-guard";
 import { getGatewayPool, getProducerPool } from "../../lib/producer-pools";
 import { ErrorShape } from "./schemas";
 import {
@@ -32,6 +33,13 @@ import { HERVORHEBUNG_FELD, hervorhebungAusWert } from "../../lib/contact-extrac
 
 export const buyingCenterRouter = new OpenAPIHono();
 buyingCenterRouter.use("*", requireScope("company:read"));
+// BC6 — Organisationsschalter `buyingcenter`: abgeschaltet heisst 403 fuer
+// jede Route, auch fuer das Lesen. Der Desktop blendet Reiter, Karte und
+// Werkzeuge aus; hier steht die Schranke, die ohne Desktop gilt.
+buyingCenterRouter.use("*", async (c, next) => {
+  await requireFeature(getGatewayPool(), c.get("auth") as AuthContext, "buyingcenter");
+  await next();
+});
 
 const tag = "buying-center";
 const errorResponses = {

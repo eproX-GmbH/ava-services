@@ -434,6 +434,8 @@ export function CompanyDetail() {
   // O3/v0.1.561 — Kontakte per Organisationsvorgabe abgeschaltet: Tab weg.
   const kontakteErlaubt = useFeature("kontakte");
   const verflechtungenErlaubt = useFeature("verflechtungen");
+  // BC6 — Buying Center per Organisationsvorgabe abgeschaltet: kein Reiter, keine Abfrage.
+  const buyingcenterErlaubt = useFeature("buyingcenter");
 
   // Phase 8.r4 — interest signal. Pinging on every CompanyDetail mount
   // tells the freshness scheduler the user is paying attention to this
@@ -522,7 +524,7 @@ export function CompanyDetail() {
   const eigenesBc = useQuery({
     queryKey: ["buying-center", "firma", id],
     queryFn: () => gatewayFetch<{ items: Array<{ id: string; status: string }> }>(`/v1/buying-center?companyId=${encodeURIComponent(id!)}&status=aktiv`),
-    enabled: Boolean(id),
+    enabled: Boolean(id) && buyingcenterErlaubt,
     staleTime: 30_000,
   });
   const eigenesBcId = eigenesBc.data?.items[0]?.id ?? null;
@@ -555,7 +557,7 @@ export function CompanyDetail() {
     // gaebe es keinen Weg mehr, die Gesellschafterliste ueberhaupt zu
     // holen — der Reiter waere genau dann weg, wenn man ihn braucht.
     verflechtungen: true,
-    buyingcenter: eigenesBcId !== null,
+    buyingcenter: buyingcenterErlaubt && eigenesBcId !== null,
   };
 
   // Erst urteilen, wenn die Daten da sind. Sonst erschiene ein Reiter kurz
@@ -567,7 +569,7 @@ export function CompanyDetail() {
     !website.isLoading &&
     !profile.isLoading &&
     (!kontakteErlaubt || !contactFallback.isLoading) &&
-    !eigenesBc.isLoading;
+    (!buyingcenterErlaubt || !eigenesBc.isLoading);
 
   const sichtbareTabs = TABS.filter(
     (t) =>

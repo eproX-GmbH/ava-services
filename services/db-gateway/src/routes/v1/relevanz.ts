@@ -31,6 +31,7 @@ import {
   WARM_AB,
   type Signal,
 } from "../../lib/relevanz-score";
+import { loadFeatures } from "../../lib/policy-guard";
 import { ErrorShape } from "./schemas";
 
 export const relevanzRouter = new OpenAPIHono();
@@ -129,7 +130,10 @@ async function werteNeu(
     }
 
     // BC5: Fokuskunden und ihre Buying-Center-Mitglieder sind nie kalt.
-    naehe = naeheMitFokus(naehe, await istFokus(pool, tenantId, actorId, ziel));
+    // BC6: ausser die Organisation hat das Buying Center abgeschaltet — dann
+    // gibt es keine Fokuskunden, auch wenn alte Kennzeichen noch stehen.
+    const fokusErlaubt = (await loadFeatures(pool, tenantId)).buyingcenter !== false;
+    naehe = naeheMitFokus(naehe, fokusErlaubt && (await istFokus(pool, tenantId, actorId, ziel)));
 
     const schluessel = `${ziel.zielArt}:${ziel.zielId}`;
     const gewicht = gewichte.get(schluessel) ?? 1;

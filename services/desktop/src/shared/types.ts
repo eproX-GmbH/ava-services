@@ -62,6 +62,7 @@ export const ORG_FEATURES = [
   { key: "linkedin.radar", label: "Personen-Radar", hinweis: "Engagement auf Beitraegen als Firmenkandidaten" },
   { key: "bildanalyse", label: "Bildanalyse", hinweis: "Bilder aus LinkedIn-Beitraegen auswerten (lokal oder Cloud)" },
   { key: "kontakte", label: "Kontakt-Recherche", hinweis: "Mitarbeiter-Suche je Firma (Apify/LinkedIn), Kontakt-Tools, Profil-URLs" },
+  { key: "buyingcenter", label: "Buying Center", hinweis: "Power Map je Firma: Einschaetzungen zu benannten Personen (Rolle, Einstellung, Kontakt, Einfluss), Fokuskunden, Chat-Werkzeuge, Reiter in der Firmenansicht. Aus = keine Karte, keine Werkzeuge, keine Nachfragen" },
   { key: "mail", label: "Mail-Anbindung", hinweis: "IMAP-Konto, Mail-Triage, Mail-Tools" },
   { key: "telegram", label: "Telegram", hinweis: "Benachrichtigungen und Rueckfragen per Telegram" },
   { key: "workflows", label: "Workflows", hinweis: "Gespeicherte Ablaeufe (Tool-Ketten) mit Zeitplan, Ereignis-Trigger und Freigaben" },

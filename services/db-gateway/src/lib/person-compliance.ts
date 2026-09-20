@@ -97,6 +97,114 @@ export interface HerkunftBericht {
   erhebendeTenants: string[];
   letzteBeobachtung: string | null;
   informiert: Array<{ tenantId: string; informedAt: string; channel: string | null }>;
+  /** BC6 — Einschaetzungen im Buying Center der anfragenden Organisation (Art. 15). */
+  einschaetzungen?: BuyingCenterEinschaetzung[];
+}
+
+/**
+ * BC6 (docs/PLAN_BUYING_CENTER.md, Abschnitt 10) — Was ein Buying Center
+ * ueber diese Person festhaelt: die vier Dimensionen, die Belegkette mit
+ * Autor und Grund, die Beziehungen. Samt "Feind", wenn es so drinsteht —
+ * Auskunft heisst Auskunft. Nur die Buying Center der ANFRAGENDEN
+ * Organisation: Fuer die anderen ist sie nicht verantwortlich.
+ */
+export interface BuyingCenterEinschaetzung {
+  buyingCenterId: string;
+  companyId: string;
+  companyName: string | null;
+  anlass: string;
+  status: string;
+  /** Eigentuemer als E-Mail oder Name, sonst die Kennung — Autorenschaft ist Pflicht. */
+  eigentuemer: string;
+  angelegtAt: string;
+  updatedAt: string;
+  name: string;
+  funktion: string | null;
+  rollen: string[];
+  einstellung: string | null;
+  kontakt: string | null;
+  einfluss: string | null;
+  angaben: Array<{ dimension: string; wert: string | null; herkunft: string; grund: string; entschieden: string | null; von: string | null; erfasstAt: string }>;
+  beziehungen: Array<{ richtung: "von" | "zu"; andere: string; art: string; staerke: string | null; grund: string | null; von: string | null; erfasstAt: string }>;
+}
+
+export async function buyingCenterEinschaetzungen(
+  gateway: pg.Pool,
+  kontakte: pg.Pool,
+  args: { personId: string; tenantId: string },
+): Promise<BuyingCenterEinschaetzung[]> {
+  const iso = (d: Date | string | null | undefined) => (d ? new Date(d).toISOString() : null);
+  const m = await gateway.query<{
+    mitgliedId: string; name: string; funktion: string | null; rollen: string[] | null; einstellung: string | null; kontakt: string | null; einfluss: string | null;
+    buyingCenterId: string; companyId: string; anlass: string; status: string; eigentuemerActorId: string; angelegtAt: Date; updatedAt: Date;
+    eigentuemerEmail: string | null; eigentuemerName: string | null;
+  }>(
+    `SELECT m."id" AS "mitgliedId", m."name", m."funktion", m."rollen", m."einstellung", m."kontakt", m."einfluss",
+            b."id" AS "buyingCenterId", b."companyId", b."anlass", b."status", b."eigentuemerActorId", b."angelegtAt", b."updatedAt",
+            t."email" AS "eigentuemerEmail", t."name" AS "eigentuemerName"
+       FROM "BuyingCenterMitglied" m
+       JOIN "BuyingCenter" b ON b."id" = m."buyingCenterId"
+       LEFT JOIN "TenantMember" t ON t."actorId" = b."eigentuemerActorId"
+      WHERE m."personId" = $1 AND b."tenantId" = $2
+      ORDER BY b."angelegtAt"`,
+    [args.personId, args.tenantId],
+  );
+  if (m.rows.length === 0) return [];
+  const mitgliedIds = m.rows.map((r) => r.mitgliedId);
+  const [a, k, c] = await Promise.all([
+    gateway.query<{ mitgliedId: string; dimension: string; wert: string | null; herkunft: string; grund: string; entschieden: string | null; erfasstAt: Date; vonActorId: string | null; vonEmail: string | null; vonName: string | null }>(
+      `SELECT a."mitgliedId", a."dimension", a."wert", a."herkunft", a."grund", a."entschieden", a."erfasstAt", a."vonActorId",
+              t."email" AS "vonEmail", t."name" AS "vonName"
+         FROM "BuyingCenterAngabe" a LEFT JOIN "TenantMember" t ON t."actorId" = a."vonActorId"
+        WHERE a."mitgliedId" = ANY($1::text[]) ORDER BY a."erfasstAt" DESC`,
+      [mitgliedIds],
+    ),
+    gateway.query<{ vonMitgliedId: string; nachMitgliedId: string; vonNameM: string; nachNameM: string; art: string; staerke: string | null; grund: string | null; erfasstAt: Date; vonActorId: string | null; vonEmail: string | null; vonName: string | null }>(
+      `SELECT k."vonMitgliedId", k."nachMitgliedId", mv."name" AS "vonNameM", mn."name" AS "nachNameM", k."art", k."staerke", k."grund", k."erfasstAt", k."vonActorId",
+              t."email" AS "vonEmail", t."name" AS "vonName"
+         FROM "BuyingCenterKante" k
+         JOIN "BuyingCenterMitglied" mv ON mv."id" = k."vonMitgliedId"
+         JOIN "BuyingCenterMitglied" mn ON mn."id" = k."nachMitgliedId"
+         LEFT JOIN "TenantMember" t ON t."actorId" = k."vonActorId"
+        WHERE k."vonMitgliedId" = ANY($1::text[]) OR k."nachMitgliedId" = ANY($1::text[])
+        ORDER BY k."erfasstAt"`,
+      [mitgliedIds],
+    ),
+    kontakte.query<{ id: string; name: string | null }>(
+      `SELECT "id", "name" FROM "Company" WHERE "id" = ANY($1::text[])`,
+      [Array.from(new Set(m.rows.map((r) => r.companyId)))],
+    ).catch(() => ({ rows: [] as Array<{ id: string; name: string | null }> })),
+  ]);
+  const firmenname = new Map(c.rows.map((r) => [r.id, r.name]));
+  const wer = (email: string | null, name: string | null, actorId: string | null) => email ?? name ?? actorId;
+  return m.rows.map((r) => ({
+    buyingCenterId: r.buyingCenterId,
+    companyId: r.companyId,
+    companyName: firmenname.get(r.companyId) ?? null,
+    anlass: r.anlass,
+    status: r.status,
+    eigentuemer: wer(r.eigentuemerEmail, r.eigentuemerName, r.eigentuemerActorId) ?? r.eigentuemerActorId,
+    angelegtAt: iso(r.angelegtAt)!,
+    updatedAt: iso(r.updatedAt)!,
+    name: r.name,
+    funktion: r.funktion,
+    rollen: r.rollen ?? [],
+    einstellung: r.einstellung,
+    kontakt: r.kontakt,
+    einfluss: r.einfluss,
+    angaben: a.rows.filter((x) => x.mitgliedId === r.mitgliedId).map((x) => ({
+      dimension: x.dimension, wert: x.wert, herkunft: x.herkunft, grund: x.grund, entschieden: x.entschieden,
+      von: wer(x.vonEmail, x.vonName, x.vonActorId), erfasstAt: iso(x.erfasstAt)!,
+    })),
+    beziehungen: k.rows
+      .filter((x) => x.vonMitgliedId === r.mitgliedId || x.nachMitgliedId === r.mitgliedId)
+      .map((x) => ({
+        richtung: x.vonMitgliedId === r.mitgliedId ? ("von" as const) : ("zu" as const),
+        andere: x.vonMitgliedId === r.mitgliedId ? x.nachNameM : x.vonNameM,
+        art: x.art, staerke: x.staerke, grund: x.grund,
+        von: wer(x.vonEmail, x.vonName, x.vonActorId), erfasstAt: iso(x.erfasstAt)!,
+      })),
+  }));
 }
 
 export async function personHerkunft(pool: pg.Pool, personId: string): Promise<HerkunftBericht | null> {
@@ -154,6 +262,20 @@ const FELD: Record<string, string> = {
 };
 const d = (iso: string | null) => (iso ? iso.slice(0, 10) : "—");
 
+/** Buying-Center-Kuerzel ausgeschrieben, damit die betroffene Person sie versteht. */
+const BC_WORT: Record<string, string> = {
+  E: "Entscheider", B: "Beeinflusser", N: "Nutzer/Anwender", R: "Ratifizierer", S: "Spezifizierer", EK: "Einkaeufer", GK: "Gatekeeper",
+  C: "Coach", "+": "positiv", "=": "neutral", "-": "negativ", F: "Feind",
+  "0": "kein Kontakt", I: "intensiv", G: "gering", M: "mittel", H: "hoch",
+};
+function bcWort(v: string | null | undefined): string {
+  if (v === null || v === undefined || v === "") return "offen";
+  // "S" und "R" sind je nach Dimension Spezifizierer/selten bzw. Ratifizierer/regelmaessig;
+  // das Kuerzel bleibt sichtbar, damit nichts verwechselt wird.
+  const w = BC_WORT[v];
+  return w ? `${v} (${w})` : v;
+}
+
 /** Druckbarer Herkunftsnachweis (Markdown) — Antwort auf ein Auskunftsersuchen nach Art. 15 DSGVO. */
 export function herkunftAlsMarkdown(b: HerkunftBericht, opts: { tenantName?: string | null } = {}): string {
   const L: string[] = [];
@@ -189,6 +311,37 @@ export function herkunftAlsMarkdown(b: HerkunftBericht, opts: { tenantName?: str
   for (const o of b.beobachtungen.filter((x) => !["identityKey", "employmentCompanyId"].includes(x.field))) {
     L.push(`| ${d(o.observedAt)} | ${FELD[o.field] ?? o.field} | ${o.value.replace(/\|/g, "\\|")} | ${o.source} | ${o.evidenceUrl ?? "—"} | ${o.runId ? o.runId.slice(0, 8) : "—"} | ${o.tenantId ?? "—"} |`);
   }
+  if (b.einschaetzungen) {
+    L.push("");
+    L.push("## Einschaetzungen im Buying Center");
+    L.push("");
+    L.push("Ein Buying Center ist die persoenliche Arbeitshypothese EINES Vertriebsmitarbeiters darueber, wer bei einem Unternehmen am Kauf beteiligt ist. Die folgenden Angaben sind Einschaetzungen, keine Tatsachen; jede traegt Autor, Zeitpunkt und Begruendung. Vorschlaege von AVA (Herkunft ava:…) gelten erst, wenn ein Mitarbeiter sie angenommen hat.");
+    L.push("");
+    if (b.einschaetzungen.length === 0) L.push("keine");
+    for (const e of b.einschaetzungen) {
+      L.push(`### ${e.companyName ?? e.companyId}${e.anlass ? ` · Anlass "${e.anlass}"` : ""} · Stand: ${e.status} · Eigentuemer: ${e.eigentuemer} · angelegt ${d(e.angelegtAt)}, zuletzt geaendert ${d(e.updatedAt)}`);
+      L.push("");
+      L.push(`- Name im Buying Center: ${e.name}${e.funktion ? ` · Funktion: ${e.funktion}` : ""}`);
+      L.push(`- Rolle: ${e.rollen.length ? e.rollen.map(bcWort).join(", ") : "offen"} · Einstellung: ${bcWort(e.einstellung)} · Kontaktintensitaet: ${bcWort(e.kontakt)} · Einfluss: ${bcWort(e.einfluss)}`);
+      if (e.angaben.length) {
+        L.push("");
+        L.push("| Zeitpunkt | Dimension | Wert | Herkunft | Begruendung | Entscheidung | Autor |");
+        L.push("|---|---|---|---|---|---|---|");
+        for (const a of e.angaben) {
+          L.push(`| ${d(a.erfasstAt)} | ${a.dimension} | ${a.wert === null ? "—" : bcWort(a.wert)} | ${a.herkunft} | ${a.grund.replace(/\|/g, "\\|")} | ${a.entschieden ?? (a.herkunft === "nutzer" ? "gesetzt" : "offen")} | ${a.von ?? "AVA"} |`);
+        }
+      }
+      if (e.beziehungen.length) {
+        L.push("");
+        L.push("Beziehungen:");
+        for (const r of e.beziehungen) {
+          const was = r.art === "EINFLUSS" ? (r.richtung === "von" ? "beeinflusst" : "wird beeinflusst von") : r.art === "VERTRAUT" ? "vertraut mit" : "Animositaet mit";
+          L.push(`- ${was} ${r.andere}${r.staerke ? ` (${bcWort(r.staerke)})` : ""}${r.grund ? ` — ${r.grund}` : ""} · ${d(r.erfasstAt)} · ${r.von ?? "AVA"}`);
+        }
+      }
+      L.push("");
+    }
+  }
   L.push("");
   L.push("## Rechte der betroffenen Person");
   L.push("");
@@ -209,6 +362,9 @@ export function art14Hinweis(b: HerkunftBericht, opts: { organisation: string; k
     ``,
     ...(b.beobachtungen.some((o) => o.source.startsWith("pattern:"))
       ? [`Hinweis: Ihre E-Mail-Adresse wurde nach dem Adressmuster Ihres Unternehmens gebildet und technisch auf Existenz geprueft (SMTP-Anfrage ohne Zustellung einer E-Mail).`]
+      : []),
+    ...(b.einschaetzungen && b.einschaetzungen.length > 0
+      ? [`Zudem sind interne Einschaetzungen zu Ihrer Rolle in einem Kaufprozess (Buying Center: Rolle, Einstellung, Kontaktintensitaet, Einfluss) gespeichert, die ein Mitarbeiter mit Begruendung erfasst hat.`]
       : []),
     `Zweck: Recherche und Kontaktaufnahme im geschaeftlichen Kontext (Art. 6 Abs. 1 lit. f DSGVO, berechtigtes Interesse an B2B-Vertriebskommunikation).`,
     `Speicherdauer: Die Daten werden geloescht, wenn sie ${opts.retentionDays} Tage lang auf keiner Quelle mehr bestaetigt wurden, spaetestens jedoch auf Ihren Widerspruch hin.`,

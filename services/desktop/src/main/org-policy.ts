@@ -122,6 +122,7 @@ export function featureOfTool(name: string): OrgFeatureKey | undefined {
   if (name === "contact_linkedin_lookup" || name === "company_contacts") return "kontakte";
   if (name.startsWith("register_delta_")) return "stammdaten.mithelfen";
   if (name === "company_shareholders" || name === "company_network" || name === "company_network_deepen" || name.startsWith("verflechtungen_")) return "verflechtungen";
+  if (name.startsWith("buying_center_")) return "buyingcenter";
   return undefined;
 }
 

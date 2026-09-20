@@ -5,7 +5,7 @@ NICHT direkt bearbeiten — die Quelle der Wahrheit ist `services/desktop/src/ma
 Lauf via `pnpm -F @ava/desktop tools:doc` (oder automatisch via `build:typecheck`).
 
 Stand: 2026-09-20
-Anzahl Tools: 265
+Anzahl Tools: 267
 
 ## Firmen (22)
 
@@ -1079,7 +1079,7 @@ Liefert das angemeldete Konto (Name, E-Mail, Nutzer-ID), den Tenant (Name, Rolle
 
 _Parameter:_ keine.
 
-## buying-center (7)
+## buying-center (9)
 
 ### `buying_center_abschliessen`
 
@@ -1108,6 +1108,17 @@ Zeigt das Buying Center zu einer Firma: die Karte im Chat (anzeigen-Feld → ```
 _Parameter:_
 - `companyId: string`
 - `buyingCenterId: string`
+
+### `buying_center_beobachten`
+
+_Datei:_ `services/desktop/src/main/agent/tools/buying-center.ts`
+
+LinkedIn-Checkliste zum Buying Center: Welche Mitglieder haben eine bekannte Profil-URL, wer ist schon auf der Personen-Watchlist, wer fehlt? Mit aufnehmen=true werden alle Mitglieder mit Profil-URL nach Rueckfrage auf die Watchlist gesetzt (Firma zugeordnet; fokus=true macht sie zu Fokus-Personen). Fuer Mitglieder ohne Profil-URL biete contact_linkedin_lookup an.
+
+_Parameter:_
+- `buyingCenterId: string` (required)
+- `aufnehmen: boolean` — Fehlende Mitglieder mit Profil-URL auf die Watchlist setzen (Rueckfrage).
+- `fokus: boolean` — Als Fokus-Personen aufnehmen (jeder Lauf, Meldungen mind. warn).
 
 ### `buying_center_kante`
 
@@ -1151,11 +1162,23 @@ _Parameter:_
 - `vorschlagId: string`
 - `entscheidung: string (enum: angenommen, verworfen)`
 
+### `buying_center_verknuepfen`
+
+_Datei:_ `services/desktop/src/main/agent/tools/buying-center.ts`
+
+Verbindet ein frei (nur mit Namen) aufgenommenes Mitglied mit einer Person aus dem Kontakt-Bestand (personId, z. B. aus `verknuepfbar` von buying_center_vorschlaege). Fragt vorher nach. Danach zaehlen Personensignale, Watchlist und Herkunftsnachweis fuer dieses Mitglied.
+
+_Parameter:_
+- `buyingCenterId: string` (required)
+- `mitgliedId: string` (required)
+- `personId: string` (required)
+- `name: string` — Name der Bestandsperson, fuer die Rueckfrage.
+
 ### `buying_center_vorschlaege`
 
 _Datei:_ `services/desktop/src/main/agent/tools/buying-center.ts`
 
-Listet, was AVA zum Buying Center vermutet und der Nutzer noch nicht entschieden hat, sowie die Leitfragen: unbesetzte Rollen und Personen ohne Kontakt. Nutze das, um das Gespraech weiterzufuehren ('Ein Einkaeufer fehlt noch — wer verhandelt den Vertrag?').
+Listet, was AVA zum Buying Center vermutet und der Nutzer noch nicht entschieden hat, sowie die Leitfragen: unbesetzte Rollen und Personen ohne Kontakt. Dazu `verknuepfbar`: frei aufgenommene Mitglieder, zu denen im Kontakt-Bestand eine gleichnamige Person liegt (dann buying_center_verknuepfen anbieten). Nutze das, um das Gespraech weiterzufuehren ('Ein Einkaeufer fehlt noch — wer verhandelt den Vertrag?').
 
 _Parameter:_
 - `buyingCenterId: string` (required)
