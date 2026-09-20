@@ -133,3 +133,16 @@ export function naeheMitVererbung(eigene: number, firmenNaehe: number | null): n
   if (firmenNaehe === null) return eigene;
   return Math.max(eigene, Math.round((firmenNaehe / 2) * 10) / 10);
 }
+
+/** Untergrenze der Naehe fuer Fokuskunden und ihre Buying-Center-Mitglieder. */
+export const FOKUS_NAEHE = 7;
+
+/**
+ * Buying-Center-Mitgliedschaft ist das staerkste Personensignal, und ein
+ * Fokuskunde ist per Definition eine Firma, an der gearbeitet wird
+ * (docs/PLAN_BUYING_CENTER.md, Abschnitt 4). Beides hebt die Naehe auf
+ * mindestens 7 — nie darunter, auch wenn lange niemand geklickt hat.
+ */
+export function naeheMitFokus(eigene: number, fokus: boolean): number {
+  return fokus ? Math.max(eigene, FOKUS_NAEHE) : eigene;
+}

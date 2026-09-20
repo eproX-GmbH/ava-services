@@ -25,6 +25,7 @@ import { logger } from "../../lib/logger";
 import {
   naehe as berechneNaehe,
   naeheMitVererbung,
+  naeheMitFokus,
   begruendung as berechneBegruendung,
   rang as berechneRang,
   WARM_AB,
@@ -58,6 +59,28 @@ function auth(c: { get: (k: "auth") => unknown }): { tenantId: string; actorId: 
  * nicht fuer alle. Die Rechnung liest nur die Signale eines Ziels; das
  * bleibt billig, auch wenn ein Nutzer Jahre an Signalen angesammelt hat.
  */
+/** Fokuskunde des Nutzers (Firma) oder Mitglied eines seiner aktiven Buying Center (Person)? */
+async function istFokus(
+  pool: ReturnType<typeof getGatewayPool>,
+  tenantId: string,
+  actorId: string,
+  ziel: { zielArt: string; zielId: string },
+): Promise<boolean> {
+  const r = ziel.zielArt === "firma"
+    ? await pool.query(
+        `SELECT 1 FROM "FokusKunde" WHERE "tenantId" = $1 AND "actorId" = $2 AND "companyId" = $3 LIMIT 1`,
+        [tenantId, actorId, ziel.zielId],
+      )
+    : await pool.query(
+        `SELECT 1 FROM "BuyingCenterMitglied" m
+           JOIN "BuyingCenter" b ON b."id" = m."buyingCenterId"
+          WHERE b."tenantId" = $1 AND b."eigentuemerActorId" = $2 AND b."status" = 'aktiv'
+            AND m."personId" = $3 LIMIT 1`,
+        [tenantId, actorId, ziel.zielId],
+      );
+  return (r.rowCount ?? 0) > 0;
+}
+
 async function werteNeu(
   tenantId: string,
   actorId: string,
@@ -104,6 +127,9 @@ async function werteNeu(
         if (fw.rows[0]) naehe = naeheMitVererbung(naehe, Number(fw.rows[0].naehe));
       }
     }
+
+    // BC5: Fokuskunden und ihre Buying-Center-Mitglieder sind nie kalt.
+    naehe = naeheMitFokus(naehe, await istFokus(pool, tenantId, actorId, ziel));
 
     const schluessel = `${ziel.zielArt}:${ziel.zielId}`;
     const gewicht = gewichte.get(schluessel) ?? 1;

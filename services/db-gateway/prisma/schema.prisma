@@ -921,6 +921,8 @@ model BuyingCenter {
   status             String                 @default("aktiv") // aktiv | abgeschlossen | archiviert
   angelegtAt         DateTime               @default(now())
   updatedAt          DateTime               @updatedAt
+  /// BC5 — wann AVA zuletzt gefragt hat, ob das Buying Center noch stimmt.
+  nachgefragtAt      DateTime?
   mitglieder         BuyingCenterMitglied[]
   kanten             BuyingCenterKante[]
   freigaben          BuyingCenterFreigabe[]

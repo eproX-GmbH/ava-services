@@ -140,6 +140,7 @@ import {
 } from "./organisation";
 import { featureEnabled, getOrgPolicy, onOrgPolicyChange } from "./org-policy";
 import * as relevanz from "./relevanz";
+import { fokusFirmen, faelligeNachfragen } from "./buying-center/fokus";
 import { ladeInteraktionen } from "./buying-center/interaktionen";
 import { initLinkedIn } from "./linkedin";
 import { startScheduler as startLinkedInScheduler, stopScheduler as stopLinkedInScheduler } from "./linkedin/scheduler";
@@ -1557,6 +1558,10 @@ async function recordLinkedInTickVerdicts(info: AlertTickInfo): Promise<void> {
 
 const heartbeat = new Heartbeat({
   store: alerts,
+  // BC5 — Fokuskunden (eigenes aktives Buying Center) im Alarmweg und die
+  // monatliche Nachfrage, ob ein Buying Center noch stimmt.
+  fokusFirmen: () => fokusFirmen(gatewayClient),
+  faelligeNachfragen: (now) => faelligeNachfragen(gatewayClient, now),
   // 8.f3 — read cadence from persisted prefs (default 15 min). The
   // store fires `changed` on every patch; we re-route that into
   // `setIntervalMs` below so the cadence radio in Settings takes

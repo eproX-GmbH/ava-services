@@ -17,6 +17,7 @@ import type { Tool } from "../types";
 import type { GatewayClient } from "../gateway-client";
 import type { WatchlistStore } from "../../linkedin/watchlist/store";
 import { gleicherName } from "../../buying-center/interaktionen";
+import { fokusVergessen } from "../../buying-center/fokus";
 
 const ROLLEN = ["E", "B", "N", "R", "S", "EK", "GK"];
 const ROLLEN_TEXT: Record<string, string> = {
@@ -238,12 +239,19 @@ export function buildBuyingCenterTools(deps: BuyingCenterToolDeps): Tool[] {
   const vorschlaege = defineTool({
     name: "buying_center_vorschlaege",
     description:
-      "Listet, was AVA zum Buying Center vermutet und der Nutzer noch nicht entschieden hat, sowie die Leitfragen: unbesetzte Rollen und Personen ohne Kontakt. Nutze das, um das Gespraech weiterzufuehren ('Ein Einkaeufer fehlt noch — wer verhandelt den Vertrag?').",
+      "Listet, was AVA zum Buying Center vermutet und der Nutzer noch nicht entschieden hat, sowie die Leitfragen: unbesetzte Rollen und Personen ohne Kontakt. Dazu `verknuepfbar`: frei aufgenommene Mitglieder, zu denen im Kontakt-Bestand eine gleichnamige Person liegt (dann buying_center_verknuepfen anbieten). Nutze das, um das Gespraech weiterzufuehren ('Ein Einkaeufer fehlt noch — wer verhandelt den Vertrag?').",
     parameters: { type: "object", properties: { buyingCenterId: { type: "string" } }, required: ["buyingCenterId"] },
     schema: yup.object({ buyingCenterId: yup.string().trim().required() }).noUnknown(true),
     run: async (args) => {
-      const vs = await gateway.request<{ offen: unknown[]; unbesetzteRollen: string[]; ohneKontakt: string[] }>(`/v1/buying-center/${encodeURIComponent(args.buyingCenterId)}/vorschlaege`);
-      return { offen: vs.offen, unbesetzteRollen: vs.unbesetzteRollen.map((r) => ROLLEN_TEXT[r] ?? r), ohneKontakt: vs.ohneKontakt };
+      const vs = await gateway.request<{ offen: unknown[]; unbesetzteRollen: string[]; ohneKontakt: string[]; verknuepfbar: Array<{ mitgliedId: string; name: string; personId: string; fullName: string; title: string | null }> }>(`/v1/buying-center/${encodeURIComponent(args.buyingCenterId)}/vorschlaege`);
+      return {
+        offen: vs.offen,
+        unbesetzteRollen: vs.unbesetzteRollen.map((r) => ROLLEN_TEXT[r] ?? r),
+        ohneKontakt: vs.ohneKontakt,
+        // BC5: frei aufgenommene Mitglieder, zu denen es eine gleichnamige
+        // Person im Bestand gibt — Verbinden mit buying_center_verknuepfen.
+        verknuepfbar: vs.verknuepfbar ?? [],
+      };
     },
     preview: (r) => `${(r.offen as unknown[]).length} offene Vorschlaege`,
   });
@@ -269,6 +277,7 @@ export function buildBuyingCenterTools(deps: BuyingCenterToolDeps): Tool[] {
       if (value !== "ja") return { abgebrochen: true };
       try {
         const r = await gateway.request<{ ok: boolean; fokus: boolean }>(`/v1/buying-center/${encodeURIComponent(args.buyingCenterId)}/status`, { method: "POST", body: { status: args.status }, signal: c.signal });
+        fokusVergessen();
         return { status: args.status, fokuskunde: r.fokus };
       } catch (err) {
         return { error: fehlertext(err) };
@@ -364,7 +373,43 @@ export function buildBuyingCenterTools(deps: BuyingCenterToolDeps): Tool[] {
     },
   });
 
-  return [anlegen, anzeigen, setzen, aufnehmen, kante, vorschlaege, abschliessen, beobachten];
+  // BC5 — freies Mitglied an eine Person aus dem Bestand binden. Danach
+  // gibt es Personensignale, Watchlist und Herkunftsnachweis. Bewusst mit
+  // Rueckfrage: Gleicher Name ist ein Indiz, kein Beweis.
+  const verknuepfen = defineTool({
+    name: "buying_center_verknuepfen",
+    summary: "Ein frei aufgenommenes Buying-Center-Mitglied mit einer Person aus dem Kontakt-Bestand verbinden.",
+    category: "buying center kontakte",
+    description:
+      "Verbindet ein frei (nur mit Namen) aufgenommenes Mitglied mit einer Person aus dem Kontakt-Bestand (personId, z. B. aus `verknuepfbar` von buying_center_vorschlaege). Fragt vorher nach. Danach zaehlen Personensignale, Watchlist und Herkunftsnachweis fuer dieses Mitglied.",
+    parameters: {
+      type: "object",
+      properties: { buyingCenterId: { type: "string" }, mitgliedId: { type: "string" }, personId: { type: "string" }, name: { type: "string", description: "Name der Bestandsperson, fuer die Rueckfrage." } },
+      required: ["buyingCenterId", "mitgliedId", "personId"],
+    },
+    schema: yup.object({ buyingCenterId: yup.string().trim().required(), mitgliedId: yup.string().trim().required(), personId: yup.string().trim().required(), name: yup.string().trim().max(200).optional() }).noUnknown(true),
+    run: async (args, c) => {
+      const value = await c.ui.confirmAction(
+        {
+          kind: "additive",
+          prompt: `Mitglied mit der Bestandsperson${args.name ? ` "${args.name}"` : ""} verbinden? Ab dann zaehlen ihre Signale und Nachweise fuer das Buying Center.`,
+          confirmValue: "ja",
+          options: [{ value: "ja", label: "Verbinden" }, { value: "cancel", label: "Abbrechen" }],
+        },
+        c.signal,
+      );
+      if (value !== "ja") return userDeclined("Verknuepfen");
+      try {
+        const m = await gateway.request<Mitglied>(`/v1/buying-center/${encodeURIComponent(args.buyingCenterId)}/mitglieder/${encodeURIComponent(args.mitgliedId)}/verknuepfen`, { method: "POST", body: { personId: args.personId }, signal: c.signal });
+        return { verbunden: true, name: m.name, personId: m.personId, anzeigen: args.buyingCenterId };
+      } catch (err) {
+        return { error: fehlertext(err) };
+      }
+    },
+    preview: (r) => ("verbunden" in r ? `verbunden: ${r.name}` : "nicht verbunden"),
+  });
+
+  return [anlegen, anzeigen, setzen, aufnehmen, kante, vorschlaege, abschliessen, beobachten, verknuepfen];
 }
 
 export { ROLLEN };

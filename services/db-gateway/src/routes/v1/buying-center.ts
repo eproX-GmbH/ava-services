@@ -9,7 +9,9 @@
 //   POST   /buying-center/{id}/kanten           Einfluss / Vertraut / Animositaet
 //   DELETE /buying-center/{id}/kanten/{kid}
 //   POST   /buying-center/{id}/status           abschliessen / archivieren / aktiv
-//   GET    /buying-center/{id}/vorschlaege      offene Vorschlaege + Leitfragen
+//   GET    /buying-center/{id}/vorschlaege      offene Vorschlaege + Leitfragen (+ verknuepfbare Personen, BC5)
+//   POST   /buying-center/{id}/mitglieder/{mid}/verknuepfen   freies Mitglied an eine Bestandsperson binden (BC5)
+//   POST   /buying-center/{id}/nachgefragt      monatliche Nachfrage vermerken (BC5)
 //
 // Zugriffsregel, HIER erzwungen und nirgends sonst:
 //   lesen      Eigentuemer ODER Freigabe fuer mich
@@ -24,7 +26,7 @@ import { getGatewayPool, getProducerPool } from "../../lib/producer-pools";
 import { ErrorShape } from "./schemas";
 import {
   ROLLEN, EINSTELLUNGEN, KONTAKTE, EINFLUESSE, KANTEN_ARTEN,
-  vorschlaegeAusTitel, unbesetzteRollen, ohneKontakt,
+  vorschlaegeAusTitel, unbesetzteRollen, ohneKontakt, gleicherName,
 } from "../../lib/buying-center-vorschlag";
 
 export const buyingCenterRouter = new OpenAPIHono();
@@ -41,6 +43,8 @@ const errorResponses = {
 
 /** Deckel je Nutzer: Fokuskunden sollen wenige sein — das ist ihr Zweck. */
 const FOKUS_DECKEL = 25;
+/** BC5: Nach so vielen Tagen ohne Aenderung fragt AVA, ob das Buying Center noch stimmt. */
+const NACHFRAGE_TAGE = 30;
 
 function auth(c: { get: (k: "auth") => unknown }): { tenantId: string; actorId: string } {
   const a = c.get("auth") as { tenantId?: string; actorId?: string } | undefined;
@@ -58,6 +62,7 @@ function cuid(): string {
 interface BcKopf {
   id: string; tenantId: string; eigentuemerActorId: string; companyId: string;
   anlass: string; status: string; angelegtAt: Date; updatedAt: Date;
+  nachgefragtAt: Date | null;
 }
 
 /** Laedt den Kopf und prueft: Eigentuemer, oder (bei lesend) Freigabe. */
@@ -95,7 +100,7 @@ const KanteShape = z.object({
 const BuyingCenterShape = z.object({
   id: z.string(), companyId: z.string(), anlass: z.string(), status: z.string(),
   eigenes: z.boolean(), eigentuemerActorId: z.string(),
-  angelegtAt: z.string(), updatedAt: z.string(),
+  angelegtAt: z.string(), updatedAt: z.string(), nachgefragtAt: z.string().nullable(),
   mitglieder: z.array(MitgliedShape), kanten: z.array(KanteShape),
 });
 
@@ -121,6 +126,7 @@ async function ladeVoll(bc: BcKopf & { eigenes: boolean }): Promise<z.infer<type
     id: bc.id, companyId: bc.companyId, anlass: bc.anlass, status: bc.status, eigenes: bc.eigenes,
     eigentuemerActorId: bc.eigentuemerActorId,
     angelegtAt: bc.angelegtAt.toISOString(), updatedAt: bc.updatedAt.toISOString(),
+    nachgefragtAt: bc.nachgefragtAt ? bc.nachgefragtAt.toISOString() : null,
     mitglieder: (m.rows as Record<string, unknown>[]).map((r) => ({
       id: String(r.id), personId: (r.personId as string | null) ?? null, name: String(r.name),
       funktion: (r.funktion as string | null) ?? null, rollen: (r.rollen as string[]) ?? [],
@@ -271,26 +277,37 @@ buyingCenterRouter.openapi(anlegenRoute, async (c) => {
 const listeRoute = createRoute({
   method: "get", path: "/buying-center", tags: [tag],
   summary: "Eigene Buying Center, optional je Firma",
-  request: { query: z.object({ companyId: z.string().max(200).optional(), status: z.string().max(20).optional() }) },
+  request: { query: z.object({
+    companyId: z.string().max(200).optional(), status: z.string().max(20).optional(),
+    // BC5: nur die, bei denen die monatliche Nachfrage ansteht (aktiv, seit
+    // NACHFRAGE_TAGE unveraendert, nicht innerhalb dieser Frist gefragt).
+    faellig: z.enum(["true"]).optional(),
+  }) },
   responses: { 200: { content: { "application/json": { schema: z.object({ items: z.array(BuyingCenterShape.omit({ mitglieder: true, kanten: true }).extend({ mitglieder: z.number() })) }) } }, description: "ok" }, ...errorResponses },
 });
 
 buyingCenterRouter.openapi(listeRoute, async (c) => {
   const wer = auth(c);
-  const { companyId, status } = c.req.valid("query");
+  const { companyId, status, faellig } = c.req.valid("query");
   const r = await getGatewayPool().query(
     `SELECT b.*, (SELECT COUNT(*)::int FROM "BuyingCenterMitglied" m WHERE m."buyingCenterId" = b."id") AS "anzahl"
        FROM "BuyingCenter" b
       WHERE b."tenantId" = $1 AND b."eigentuemerActorId" = $2
         AND ($3::text IS NULL OR b."companyId" = $3)
         AND ($4::text IS NULL OR b."status" = $4)
+        AND ($5::boolean IS NOT TRUE OR (
+          b."status" = 'aktiv'
+          AND b."updatedAt" < NOW() - ($6::int || ' days')::interval
+          AND (b."nachgefragtAt" IS NULL OR b."nachgefragtAt" < NOW() - ($6::int || ' days')::interval)
+        ))
       ORDER BY b."updatedAt" DESC`,
-    [wer.tenantId, wer.actorId, companyId ?? null, status ?? null],
+    [wer.tenantId, wer.actorId, companyId ?? null, status ?? null, faellig === "true", NACHFRAGE_TAGE],
   );
   return c.json({
     items: (r.rows as Array<BcKopf & { anzahl: number }>).map((b) => ({
       id: b.id, companyId: b.companyId, anlass: b.anlass, status: b.status, eigenes: true,
       eigentuemerActorId: b.eigentuemerActorId, angelegtAt: b.angelegtAt.toISOString(), updatedAt: b.updatedAt.toISOString(),
+      nachgefragtAt: b.nachgefragtAt ? b.nachgefragtAt.toISOString() : null,
       mitglieder: b.anzahl,
     })),
   }, 200);
@@ -545,15 +562,99 @@ const vorschlaegeRoute = createRoute({
     offen: z.array(z.object({ vorschlagId: z.string(), mitgliedId: z.string(), name: z.string(), dimension: z.string(), wert: z.string().nullable(), grund: z.string() })),
     unbesetzteRollen: z.array(z.string()),
     ohneKontakt: z.array(z.string()),
+    // BC5: frei aufgenommene Mitglieder, zu denen im Kontakt-Bestand eine
+    // gleichnamige Person bei dieser Firma liegt.
+    verknuepfbar: z.array(z.object({ mitgliedId: z.string(), name: z.string(), personId: z.string(), fullName: z.string(), title: z.string().nullable() })),
   }) } }, description: "ok" }, ...errorResponses },
 });
 buyingCenterRouter.openapi(vorschlaegeRoute, async (c) => {
   const bc = await ladeMitZugriff(c.req.valid("param").id, auth(c), false);
   const voll = await ladeVoll(bc);
+  const verknuepfbar = await verknuepfbarePersonen(bc.companyId, voll.mitglieder);
   const offen = voll.mitglieder.flatMap((m) =>
     m.angaben
       .filter((a) => a.herkunft.startsWith("ava:") && a.entschieden === null)
       .map((a) => ({ vorschlagId: a.id, mitgliedId: m.id, name: m.name, dimension: a.dimension, wert: a.wert, grund: a.grund })),
   );
-  return c.json({ offen, unbesetzteRollen: unbesetzteRollen(voll.mitglieder), ohneKontakt: ohneKontakt(voll.mitglieder) }, 200);
+  return c.json({ offen, unbesetzteRollen: unbesetzteRollen(voll.mitglieder), ohneKontakt: ohneKontakt(voll.mitglieder), verknuepfbar }, 200);
+});
+
+/**
+ * BC5 — Verknuepfen freier Personen mit dem Bestand. Ein im Chat frei
+ * aufgenommenes Mitglied ("Frau Meier aus dem Einkauf") bekommt keine
+ * Personensignale, keine Watchlist, keinen Herkunftsnachweis. Taucht
+ * spaeter eine gleichnamige Person bei der Firma im Kontakt-Bestand auf,
+ * wird das hier vorgeschlagen — verbunden wird erst auf Zuruf.
+ */
+async function verknuepfbarePersonen(
+  companyId: string,
+  mitglieder: Array<{ id: string; personId: string | null; name: string }>,
+): Promise<Array<{ mitgliedId: string; name: string; personId: string; fullName: string; title: string | null }>> {
+  const frei = mitglieder.filter((m) => m.personId === null);
+  if (frei.length === 0) return [];
+  const schonVerbunden = new Set(mitglieder.map((m) => m.personId).filter((p): p is string => p !== null));
+  const kontakte = getProducerPool("company-contact");
+  const personen = await kontakte.query<{ personId: string; fullName: string; title: string | null }>(
+    `SELECT DISTINCT ON (p.id) p.id AS "personId", p."fullName", e.title
+       FROM "Employment" e JOIN "Person" p ON p.id = e."personId"
+      WHERE e."companyId" = $1 AND (e."isCurrent" IS DISTINCT FROM false)
+      ORDER BY p.id, e."lastSeen" DESC NULLS LAST
+      LIMIT 200`,
+    [companyId],
+  );
+  const treffer: Array<{ mitgliedId: string; name: string; personId: string; fullName: string; title: string | null }> = [];
+  for (const m of frei) {
+    const p = personen.rows.find((x) => !schonVerbunden.has(x.personId) && gleicherName(x.fullName, m.name));
+    if (p) treffer.push({ mitgliedId: m.id, name: m.name, personId: p.personId, fullName: p.fullName, title: p.title });
+  }
+  return treffer;
+}
+
+// ---- POST /buying-center/{id}/mitglieder/{mid}/verknuepfen -----------------
+
+const verknuepfenRoute = createRoute({
+  method: "post", path: "/buying-center/{id}/mitglieder/{mid}/verknuepfen", tags: [tag],
+  summary: "Freies Mitglied an eine Person aus dem Kontakt-Bestand binden",
+  request: {
+    params: z.object({ id: z.string(), mid: z.string() }),
+    body: { content: { "application/json": { schema: z.object({ personId: z.string().min(1).max(64) }) } } },
+  },
+  responses: { 200: { content: { "application/json": { schema: MitgliedShape } }, description: "ok" }, ...errorResponses },
+});
+buyingCenterRouter.openapi(verknuepfenRoute, async (c) => {
+  const { id, mid } = c.req.valid("param");
+  const { personId } = c.req.valid("json");
+  const bc = await ladeMitZugriff(id, auth(c), true);
+  const pool = getGatewayPool();
+  const m = await pool.query(`SELECT "id", "personId" FROM "BuyingCenterMitglied" WHERE "id" = $1 AND "buyingCenterId" = $2`, [mid, bc.id]);
+  if (m.rowCount === 0) throw new HTTPException(404, { message: "mitglied_not_found" });
+  const d = await pool.query(`SELECT 1 FROM "BuyingCenterMitglied" WHERE "buyingCenterId" = $1 AND "personId" = $2 AND "id" <> $3`, [bc.id, personId, mid]);
+  if ((d.rowCount ?? 0) > 0) throw new HTTPException(409, { message: "Diese Person ist bereits als anderes Mitglied im Buying Center." });
+  const p = await getProducerPool("company-contact").query<{ fullName: string }>(`SELECT "fullName" FROM "Person" WHERE "id" = $1`, [personId]);
+  if (p.rowCount === 0) throw new HTTPException(404, { message: "person_not_found" });
+  await pool.query(`UPDATE "BuyingCenterMitglied" SET "personId" = $1, "updatedAt" = NOW() WHERE "id" = $2`, [personId, mid]);
+  await pool.query(`UPDATE "BuyingCenter" SET "updatedAt" = NOW() WHERE "id" = $1`, [bc.id]);
+  const voll = await ladeVoll(bc);
+  const neu = voll.mitglieder.find((x) => x.id === mid);
+  if (!neu) throw new HTTPException(404, { message: "mitglied_not_found" });
+  return c.json(neu, 200);
+});
+
+// ---- POST /buying-center/{id}/nachgefragt ----------------------------------
+//
+// BC5: Der Heartbeat fragt einmal im Monat, ob ein unveraendertes Buying
+// Center noch stimmt, und vermerkt das hier — sonst fragt er jeden Tag.
+
+const nachgefragtRoute = createRoute({
+  method: "post", path: "/buying-center/{id}/nachgefragt", tags: [tag],
+  summary: "Monatliche Nachfrage vermerken",
+  request: { params: IdParam },
+  responses: { 200: { content: { "application/json": { schema: z.object({ ok: z.boolean(), nachgefragtAt: z.string() }) } }, description: "ok" }, ...errorResponses },
+});
+buyingCenterRouter.openapi(nachgefragtRoute, async (c) => {
+  const bc = await ladeMitZugriff(c.req.valid("param").id, auth(c), true);
+  const r = await getGatewayPool().query<{ nachgefragtAt: Date }>(
+    `UPDATE "BuyingCenter" SET "nachgefragtAt" = NOW() WHERE "id" = $1 RETURNING "nachgefragtAt"`, [bc.id],
+  );
+  return c.json({ ok: true, nachgefragtAt: r.rows[0].nachgefragtAt.toISOString() }, 200);
 });

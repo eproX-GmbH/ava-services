@@ -91,3 +91,28 @@ export function unbesetzteRollen(mitglieder: Array<{ rollen: string[] }>): Rolle
 export function ohneKontakt(mitglieder: Array<{ name: string; kontakt: string | null }>): string[] {
   return mitglieder.filter((m) => m.kontakt === null || m.kontakt === "0").map((m) => m.name);
 }
+
+/** Namen vergleichbar machen: Titel weg, Umlaute aufloesen, nur Buchstaben. */
+export function falteName(v: string | null | undefined): string {
+  return (v ?? "")
+    .toLowerCase()
+    .replace(/\b(dr|prof|dipl|ing|mba|ba|ma|msc|bsc)\.?\s*/g, "")
+    .replace(/ä/g, "ae").replace(/ö/g, "oe").replace(/ü/g, "ue").replace(/ß/g, "ss")
+    .normalize("NFD").replace(/\p{M}+/gu, "")
+    .replace(/[^a-z\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/**
+ * BC5 — Verknuepfen freier Personen mit dem Bestand: gleicher Name, auch
+ * in anderer Reihenfolge ("Rafflenbeul Joyce"). Nur bei mindestens zwei
+ * Namensteilen, damit "Meier" nicht jeden Meier trifft.
+ */
+export function gleicherName(a: string, b: string): boolean {
+  const fa = falteName(a), fb = falteName(b);
+  if (!fa || !fb) return false;
+  if (fa === fb) return true;
+  const ta = fa.split(" "), tb = fb.split(" ");
+  return ta.length >= 2 && tb.length >= 2 && [...ta].sort().join(" ") === [...tb].sort().join(" ");
+}

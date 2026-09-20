@@ -51,6 +51,8 @@ export interface AlarmwegEingang {
   rang: number | null;
   severity: AlertSeverity;
   kind: AlertKind;
+  /** BC5: Firma ist Fokuskunde (eigenes aktives Buying Center). */
+  fokus?: boolean;
 }
 
 export interface AlarmwegErgebnis {
@@ -59,6 +61,8 @@ export interface AlarmwegErgebnis {
   severity: AlertSeverity;
   /** true, wenn der Wert die Stufe angehoben hat (fuer die Begruendung). */
   hochgestuft: boolean;
+  /** BC5: true, wenn der Fokuskunden-Status den Weg bestimmt hat. */
+  fokus?: boolean;
 }
 
 const RANG: AlertSeverity[] = ["info", "warn", "urgent"];
@@ -85,9 +89,16 @@ export function stufeHoch(severity: AlertSeverity, rang: number | null): AlertSe
   return severity;
 }
 
-export function alarmweg({ rang, severity, kind }: AlarmwegEingang): AlarmwegErgebnis {
-  const neu = stufeHoch(severity, rang);
+export function alarmweg({ rang, severity, kind, fokus }: AlarmwegEingang): AlarmwegErgebnis {
+  let neu = stufeHoch(severity, rang);
+
+  // BC5, Positivliste: Bei einem Fokuskunden (eigenes aktives Buying
+  // Center) wird nichts gesammelt und nichts kommt leiser als "warn". Ein
+  // Positionswechsel oder ein Beitrag eines Buying-Center-Mitglieds ist
+  // dort keine Randnotiz, sondern der Grund, warum die Firma im Fokus ist.
+  if (fokus && neu === "info") neu = "warn";
   const hochgestuft = neu !== severity;
+  if (fokus) return { weg: "sofort", severity: neu, hochgestuft, fokus: true };
 
   // Gesammelt wird nur Rauschen: eine blosse Information aus Feed oder
   // Website-Ueberwachung, bei einer Firma, an der gerade niemand arbeitet.
@@ -108,6 +119,10 @@ export function wegBegruendung(e: AlarmwegErgebnis, rang: number | null): string
   if (e.weg === "sammeln") {
     return `Randnotiz bei einer Firma, an der du gerade nicht arbeitest${r} — kommt in die Tageszusammenfassung.`;
   }
+  if (e.fokus && e.hochgestuft) {
+    return `Fokuskunde mit eigenem Buying Center — deshalb sofort und als "${e.severity}" statt nur als Hinweis.`;
+  }
+  if (e.fokus) return "Fokuskunde mit eigenem Buying Center — deshalb sofort.";
   if (e.hochgestuft) {
     return `Du arbeitest gerade an dieser Firma${r} — deshalb als "${e.severity}" statt nur als Hinweis.`;
   }

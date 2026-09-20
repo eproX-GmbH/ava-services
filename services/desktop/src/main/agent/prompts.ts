@@ -865,6 +865,11 @@ export const BUYING_CENTER_INSTRUCTIONS = [
   "  Mitglieder mit buying_center_beobachten auf die LinkedIn-Watchlist zu",
   "  setzen. Fuer Mitglieder ohne Profil-URL erst contact_linkedin_lookup",
   "  anbieten, nicht ungefragt suchen.",
+  "- Meldet buying_center_vorschlaege `verknuepfbar`, biete an, das freie",
+  "  Mitglied mit der Bestandsperson zu verbinden (buying_center_verknuepfen).",
+  "- Fragt AVA per Erinnerung, ob ein Buying Center noch stimmt, geh die",
+  "  Personen kurz durch und trage Aenderungen ein; bestaetigt der Nutzer",
+  "  alles, reicht ein Satz — nichts umschreiben.",
   "",
 ].join("\n");
 

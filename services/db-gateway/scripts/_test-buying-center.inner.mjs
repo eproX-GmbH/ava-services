@@ -5,7 +5,7 @@
 // Titel laesst sich Engagement ablesen, nicht Wohlwollen uns gegenueber.
 import assert from "node:assert/strict";
 import V from "../src/lib/buying-center-vorschlag.ts";
-const { vorschlaegeAusTitel, unbesetzteRollen, ohneKontakt } = V;
+const { vorschlaegeAusTitel, unbesetzteRollen, ohneKontakt, gleicherName } = V;
 
 let fehler = 0;
 const pruefe = (name, fn) => { try { fn(); console.log(`  ok   ${name}`); } catch (e) { fehler++; console.log(`  FEHL ${name}\n       ${e.message}`); } };
@@ -45,3 +45,9 @@ pruefe("ohne Kontakt: null und 0 zaehlen, S nicht", () => {
 
 console.log(fehler === 0 ? "\nAlles gruen." : `\n${fehler} Pruefung(en) fehlgeschlagen.`);
 process.exit(fehler === 0 ? 0 : 1);
+
+console.log("Verknuepfen freier Personen (BC5)");
+pruefe("gleicher Name trotz Titel und Umlaut", () => assert.ok(gleicherName("Dr. Jörg Müller", "Joerg Mueller")));
+pruefe("Reihenfolge egal", () => assert.ok(gleicherName("Rafflenbeul Joyce", "Joyce Rafflenbeul")));
+pruefe("Nachname allein reicht nicht", () => assert.ok(!gleicherName("Meier", "Anna Meier")));
+pruefe("andere Person", () => assert.ok(!gleicherName("Anna Meier", "Anne Meier")));

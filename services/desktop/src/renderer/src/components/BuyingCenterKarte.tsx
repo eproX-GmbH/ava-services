@@ -22,6 +22,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { gatewayFetch } from "../api/gateway";
 import { kraftLayout, type Punkt } from "../lib/kraft-layout";
 import type { BcInteraktionenErgebnis, BcMitgliedInteraktionen } from "../../../shared/types";
+import { Waermeanzeige } from "../routes/waermeanzeige";
+import { useFeature } from "../store/policy";
 
 export interface BcAngabe {
   id: string; dimension: string; wert: string | null; herkunft: string; grund: string;
@@ -314,6 +316,10 @@ function Seitenleiste({ bc, m, onSchliessen, onGeaendert, interaktionen, interak
 }) {
   const offen = m.angaben.filter((a) => a.herkunft.startsWith("ava:") && a.entschieden === null);
   const belegt = m.angaben.filter((a) => !(a.herkunft.startsWith("ava:") && a.entschieden === null));
+  // BC5: Personensignale am Knoten — die Naehe der Person, sofern die
+  // Organisation die Relevanz nicht abgeschaltet hat. Freie Mitglieder
+  // (ohne personId) haben keine; das sagt die Leiste ehrlich.
+  const relevanzErlaubt = useFeature("relevanz");
   const antworten = useMutation({
     mutationFn: (p: { vorschlagId: string; entscheidung: "angenommen" | "verworfen" }) =>
       gatewayFetch(`/v1/buying-center/${encodeURIComponent(bc.id)}/mitglieder/${encodeURIComponent(m.id)}/angaben`, {
@@ -329,6 +335,8 @@ function Seitenleiste({ bc, m, onSchliessen, onGeaendert, interaktionen, interak
         <div>
           <div className="bc-seite__name">{m.personId ? <Link to={`/personen/${encodeURIComponent(m.personId)}`}>{m.name}</Link> : m.name}</div>
           {m.funktion && <div className="muted small">{m.funktion}</div>}
+          {relevanzErlaubt && m.personId && <Waermeanzeige zielArt="person" zielId={m.personId} />}
+          {!m.personId && <div className="muted small">Nicht mit dem Kontakt-Bestand verbunden — keine Personensignale. Im Chat: „verbinde … mit …".</div>}
         </div>
         <button type="button" className="btn small" onClick={onSchliessen} aria-label="Seitenleiste schließen">Schließen</button>
       </div>

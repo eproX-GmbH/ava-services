@@ -98,6 +98,12 @@ export interface HeartbeatOptions {
     candidates: HeartbeatCandidate[],
     now: Date,
   ) => Promise<void>;
+  /** BC5 — Firmen mit eigenem aktiven Buying Center: Positivliste im Alarmweg. */
+  fokusFirmen?: () => Promise<Set<string>>;
+  /** BC5 — Buying Center, die seit einem Monat unveraendert sind; einmal
+   *  taeglich abgefragt, je Treffer eine Erinnerung. Der Aufruf gilt als
+   *  "gefragt" — was zurueckkommt, wird gemeldet. */
+  faelligeNachfragen?: (now: Date) => Promise<Array<{ buyingCenterId: string; companyId: string; companyName: string; tage: number }>>;
 }
 
 // `DecisionOutcome`, `CandidateDecision`, and `TickInfo` live in
@@ -133,6 +139,10 @@ export class Heartbeat extends EventEmitter {
   private readonly judge: Judge;
   private readonly maxPerTick: number;
   private readonly onTick?: (info: TickInfo) => void;
+  private readonly fokusFirmen?: () => Promise<Set<string>>;
+  private readonly faelligeNachfragen?: HeartbeatOptions["faelligeNachfragen"];
+  /** Datum (JJJJ-MM-TT) der letzten Nachfrage-Pruefung — einmal am Tag reicht. */
+  private nachfrageGeprueftAm: string | null = null;
   private readonly postCandidateHook:
     | ((candidates: HeartbeatCandidate[], now: Date) => Promise<void>)
     | null;
@@ -160,6 +170,8 @@ export class Heartbeat extends EventEmitter {
     this.judge = options.judge ?? defaultStubJudge;
     this.maxPerTick = options.maxPerTick ?? 20;
     this.postCandidateHook = options.postCandidateHook ?? null;
+    this.fokusFirmen = options.fokusFirmen;
+    this.faelligeNachfragen = options.faelligeNachfragen;
     this.onTick = options.onTick;
   }
 
@@ -282,6 +294,12 @@ export class Heartbeat extends EventEmitter {
       // Naehe, sonst wird AVA blind fuer alles, was noch niemand
       // angesehen hat.
       const candidates = await this.sortiereNachRelevanz(roh);
+      // BC5: Fokuskunden einmal je Durchgang lesen; ohne Netz eine leere
+      // Menge, und dann gilt der normale Weg.
+      let fokus = new Set<string>();
+      if (this.fokusFirmen && candidates.length > 0) {
+        try { fokus = await this.fokusFirmen(); } catch { /* normaler Weg */ }
+      }
       for (const c of candidates.slice(0, this.maxPerTick)) {
         // Dedup first — cheap and avoids burning an LLM call to re-decide
         // a candidate we've already alerted on.
@@ -324,7 +342,7 @@ export class Heartbeat extends EventEmitter {
         // Feed und Website-Ueberwachung bei ruhenden Firmen, und auch das
         // wird nicht weggeworfen.
         const rang = this.rangImDurchgang.get(c.companyId) ?? null;
-        const einstufung = alarmweg({ rang, severity: verdict.severity, kind: c.kind });
+        const einstufung = alarmweg({ rang, severity: verdict.severity, kind: c.kind, fokus: fokus.has(c.companyId) });
         if (einstufung.weg === "sammeln") {
           sammlung.sammle({
             companyId: c.companyId,
@@ -425,6 +443,42 @@ export class Heartbeat extends EventEmitter {
       // Eine misslungene Zusammenfassung darf den Durchgang nicht kippen;
       // die Sammlung bleibt dann bis morgen liegen.
       console.warn("[heartbeat] Tageszusammenfassung fehlgeschlagen:", err);
+    }
+
+    // BC5 (docs/PLAN_BUYING_CENTER.md, 9): Ein Buying Center veraltet nicht
+    // leise. Ist eines seit einem Monat unveraendert, fragt AVA einmal nach
+    // — als Erinnerung, nicht als Alarm. Einmal am Tag pruefen reicht; das
+    // Gateway merkt sich, wann gefragt wurde.
+    const heute = startedAt.toISOString().slice(0, 10);
+    if (this.faelligeNachfragen && !providerUnavailable && this.nachfrageGeprueftAm !== heute) {
+      this.nachfrageGeprueftAm = heute;
+      try {
+        for (const n of await this.faelligeNachfragen(startedAt)) {
+          const firma = n.companyName || "dieser Firma";
+          const row = this.store.add({
+            tenantId: null,
+            companyId: n.companyId,
+            companyName: n.companyName,
+            kind: "reminder",
+            severity: "info",
+            headline: `Stimmt dein Buying Center bei ${firma} noch? Seit ${n.tage} Tagen unveraendert.`,
+            rationale:
+              "Ein Buying Center ist eine Hypothese und veraltet: Personen wechseln, Einstellungen aendern sich, " +
+              "Kontakte schlafen ein. Sag im Chat, was sich getan hat — oder dass alles stimmt.",
+            sourceRef: `buying-center:nachfrage:${n.buyingCenterId}:${heute.slice(0, 7)}`,
+            url: null,
+          });
+          if (row) {
+            alertsCreated += 1;
+            created.push(row);
+          }
+        }
+      } catch (err) {
+        // Naechster Tag, naechster Versuch — das Gateway hat nichts vermerkt,
+        // wenn der Aufruf selbst scheiterte.
+        this.nachfrageGeprueftAm = null;
+        console.warn("[heartbeat] Buying-Center-Nachfrage fehlgeschlagen:", err);
+      }
     }
 
     // 8.t2 — post-candidate hook (WatchExecutor). Runs AFTER the

@@ -268,6 +268,16 @@ pruefe("urgent bleibt urgent, es gibt nichts darueber", () => {
   assert.equal(e(9.9, "urgent").hochgestuft, false);
 });
 
+pruefe("BC5: Fokuskunde wird nie gesammelt und kommt mindestens als warn", () => {
+  const f = alarmweg({ rang: 2, severity: "info", kind: "linkedin-signal", fokus: true });
+  assert.equal(f.weg, "sofort");
+  assert.equal(f.severity, "warn");
+  const u = alarmweg({ rang: null, severity: "urgent", kind: "register-change", fokus: true });
+  assert.equal(u.severity, "urgent");
+});
+pruefe("BC5: ohne Fokus bleibt der alte Weg", () => {
+  assert.equal(alarmweg({ rang: 2, severity: "info", kind: "linkedin-signal", fokus: false }).weg, "sammeln");
+});
 pruefe("der Positionswechsel-Fall aus der Ausgangsfrage", () => {
   // Bei 2000 Firmen soll nicht jeder neue Titel eines beliebigen
   // Mitarbeiters stoeren — bei DER Firma, an der gerade gearbeitet wird,
