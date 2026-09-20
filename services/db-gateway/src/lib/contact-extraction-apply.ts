@@ -32,6 +32,7 @@ import {
   reconcilePersonAndProjectEmployment,
 } from "./contact-extraction/employment";
 import { createObservationIdempotent } from "./contact-extraction/observation";
+import { istTeilenKnopf } from "./contact-extraction/teilen-knopf";
 import { emitRemovalsByTTL } from "./contact-extraction/emit-removals-by-ttl";
 import { getProducerPool } from "./producer-pools";
 import { isPersonTombstoned, stampObservations } from "./person-compliance";
@@ -194,10 +195,16 @@ export async function applyCompanyContactPersist(
       ...(ce.emails ?? []).map((v) => ({ field: "email", value: v })),
       ...(ce.phones ?? []).map((v) => ({ field: "phone", value: v })),
       ...(ce.addresses ?? []).map((v) => ({ field: "address", value: v })),
-      ...(ce.socials ?? []).map((s) => ({
-        field: `social:${(s.platform ?? "unknown").toLowerCase()}`,
-        value: s.url,
-      })),
+      // Teilen-Knoepfe sind keine Profile der Firma: Ein
+      // "facebook.com/sharer/sharer.php?u=…" aus der Teilen-Leiste der
+      // Website landete bisher als vermeintliches Facebook-Profil in der
+      // Firmenansicht und fuehrte niemanden irgendwohin.
+      ...(ce.socials ?? [])
+        .filter((s) => !istTeilenKnopf(s.url))
+        .map((s) => ({
+          field: `social:${(s.platform ?? "unknown").toLowerCase()}`,
+          value: s.url,
+        })),
     ];
 
     for (const o of companyObs) {

@@ -12,7 +12,8 @@
     "prisma:migrate:dev": "prisma migrate dev",
     "prisma:migrate:deploy": "prisma migrate deploy",
     "test:namen": "node scripts/test-namen.mjs",
-    "test:relevanz": "node scripts/test-relevanz.mjs"
+    "test:relevanz": "node scripts/test-relevanz.mjs",
+    "test:teilen-knopf": "node scripts/test-teilen-knopf.mjs"
   },
   "dependencies": {
     "@ava/event": "^1.1.40",
