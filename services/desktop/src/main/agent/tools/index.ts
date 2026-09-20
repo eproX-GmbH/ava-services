@@ -358,7 +358,8 @@ export function buildReadOnlyRegistry(deps: {
     for (const t of buildRelevanzTools()) registry.register(t);
   }
   // Buying Center (docs/PLAN_BUYING_CENTER.md): Power Map je Firma, gehoert
-  // dem Nutzer. Organisationsschalter kommt mit BC6.
+  // dem Nutzer. Organisationsschalter `buyingcenter` sperrt die Werkzeuge
+  // ueber featureOfTool (BC6).
   for (const t of buildBuyingCenterTools({
     gateway: deps.gateway,
     getWatchlistStore: deps.getWatchlistStore,

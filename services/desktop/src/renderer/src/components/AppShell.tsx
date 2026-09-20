@@ -5,6 +5,7 @@ import { AlertCircle, Loader2, RefreshCw, Lightbulb, X } from "lucide-react";
 import { AlertBell } from "./AlertBell";
 import { useAuthStore } from "../store/auth";
 import { useFeature, usePolicyStore } from "../store/policy";
+import { useGeteilteBuyingCenter } from "../routes/BuyingCenterGeteilt";
 import { WatchChip } from "./WatchChip";
 import { UsageChip } from "./UsageChip";
 import { QuotaExhaustedBanner } from "./QuotaExhaustedBanner";
@@ -650,6 +651,12 @@ function TopBar() {
     (s) => s.policy.relevanzThemaSichtbar !== false,
   );
   const themaSichtbar = relevanzErlaubt && themaFreigegeben;
+  // BC7 — "Mit dir geteilte Buying Center" nur, wenn mindestens eine
+  // Freigabe existiert (docs/PLAN_BUYING_CENTER.md, 8.3). Ohne Freigaben
+  // gibt es den Bereich nicht; ohne Organisationsschalter erst recht nicht.
+  const buyingcenterErlaubt = useFeature("buyingcenter");
+  const geteilt = useGeteilteBuyingCenter(buyingcenterErlaubt);
+  const geteiltSichtbar = buyingcenterErlaubt && (geteilt.data?.items.length ?? 0) > 0;
   // v0.1.546 — Hooks IMMER alle aufrufen (kein Kurzschluss mit ||): sonst
   // aendert sich die Hook-Anzahl, sobald der Beobachter abgeschaltet wird
   // → React-Abbruch, weisser Bildschirm (User-Befund beim Speichern).
@@ -693,6 +700,7 @@ function TopBar() {
             // Seite selbst — das ist ein voruebergehender Zustand und kein
             // Verbot, und sie taucht auf, sobald ein Dritter dazukommt.
             ...(themaSichtbar ? [{ to: "/thema", label: "Gerade Thema" }] : []),
+            ...(geteiltSichtbar ? [{ to: "/buying-center/geteilt", label: "Geteilte Buying Center" }] : []),
           ]}
         />
         <NavItem

@@ -12,6 +12,10 @@
 //   GET    /buying-center/{id}/vorschlaege      offene Vorschlaege + Leitfragen (+ verknuepfbare Personen, BC5)
 //   POST   /buying-center/{id}/mitglieder/{mid}/verknuepfen   freies Mitglied an eine Bestandsperson binden (BC5)
 //   POST   /buying-center/{id}/nachgefragt      monatliche Nachfrage vermerken (BC5)
+//   GET    /buying-center/{id}/freigaben        wer ansehen darf (BC7, nur Eigentuemer)
+//   POST   /buying-center/{id}/freigaben        Sicht erteilen {actorId} (BC7)
+//   DELETE /buying-center/{id}/freigaben/{actorId}   Sicht entziehen (BC7)
+//   GET    /buying-center-geteilt?companyId=    was Kollegen mir freigegeben haben (BC7)
 //
 // Zugriffsregel, HIER erzwungen und nirgends sonst:
 //   lesen      Eigentuemer ODER Freigabe fuer mich
@@ -326,9 +330,122 @@ buyingCenterRouter.openapi(listeRoute, async (c) => {
   }, 200);
 });
 
-// ---- GET /buying-center/{id} -----------------------------------------------
-
 const IdParam = z.object({ id: z.string().min(1).max(64) });
+
+// ---- GET /buying-center-geteilt (BC7) --------------------------------------
+//
+// Was Kollegen mir zum Ansehen freigegeben haben — getrennt von allem
+// Eigenen (Abschnitt 8.3). Eigener Pfad statt /buying-center/geteilt, damit
+// er nie mit /buying-center/{id} kollidiert. Nur innerhalb der eigenen
+// Organisation: Wer die Organisation verlaesst, sieht nichts mehr, auch
+// wenn die Freigabe-Zeile noch steht.
+
+const EigentuemerShape = z.object({ actorId: z.string(), email: z.string().nullable(), name: z.string().nullable() });
+const GeteiltShape = z.object({
+  id: z.string(), companyId: z.string(), companyName: z.string().nullable(), anlass: z.string(), status: z.string(),
+  eigentuemer: EigentuemerShape, angelegtAt: z.string(), updatedAt: z.string(), mitglieder: z.number(),
+});
+
+const geteiltRoute = createRoute({
+  method: "get", path: "/buying-center-geteilt", tags: [tag],
+  summary: "Buying Center, die Kollegen mir zum Ansehen freigegeben haben",
+  request: { query: z.object({ companyId: z.string().max(200).optional() }) },
+  responses: { 200: { content: { "application/json": { schema: z.object({ items: z.array(GeteiltShape) }) } }, description: "ok" }, ...errorResponses },
+});
+buyingCenterRouter.openapi(geteiltRoute, async (c) => {
+  const wer = auth(c);
+  const { companyId } = c.req.valid("query");
+  const r = await getGatewayPool().query<BcKopf & { email: string | null; name: string | null; anzahl: number }>(
+    `SELECT b.*, t."email", t."name",
+            (SELECT COUNT(*)::int FROM "BuyingCenterMitglied" m WHERE m."buyingCenterId" = b."id") AS "anzahl"
+       FROM "BuyingCenterFreigabe" f
+       JOIN "BuyingCenter" b ON b."id" = f."buyingCenterId"
+       LEFT JOIN "TenantMember" t ON t."actorId" = b."eigentuemerActorId"
+      WHERE f."actorId" = $1 AND b."tenantId" = $2
+        AND ($3::text IS NULL OR b."companyId" = $3)
+      ORDER BY b."companyId", b."updatedAt" DESC`,
+    [wer.actorId, wer.tenantId, companyId ?? null],
+  );
+  const firmenIds = Array.from(new Set(r.rows.map((b) => b.companyId)));
+  const namen = firmenIds.length
+    ? await getProducerPool("company-contact").query<{ id: string; name: string | null }>(`SELECT "id", "name" FROM "Company" WHERE "id" = ANY($1::text[])`, [firmenIds]).catch(() => ({ rows: [] as Array<{ id: string; name: string | null }> }))
+    : { rows: [] as Array<{ id: string; name: string | null }> };
+  const firmenname = new Map(namen.rows.map((x) => [x.id, x.name]));
+  return c.json({
+    items: r.rows.map((b) => ({
+      id: b.id, companyId: b.companyId, companyName: firmenname.get(b.companyId) ?? null, anlass: b.anlass, status: b.status,
+      eigentuemer: { actorId: b.eigentuemerActorId, email: b.email, name: b.name },
+      angelegtAt: b.angelegtAt.toISOString(), updatedAt: b.updatedAt.toISOString(), mitglieder: b.anzahl,
+    })),
+  }, 200);
+});
+
+// ---- Freigaben (BC7) --------------------------------------------------------
+//
+// Sichtfreigabe an einzelne Mitglieder der eigenen Organisation. Nur der
+// Eigentuemer erteilt und entzieht; der Freigegebene liest (ladeMitZugriff)
+// und schreibt nie. Eine Freigabe gibt Einschaetzungen ueber Menschen
+// weiter — der Desktop fragt deshalb vorher nach.
+
+const FreigabeShape = z.object({ actorId: z.string(), email: z.string().nullable(), name: z.string().nullable(), erteiltAt: z.string() });
+
+async function ladeFreigaben(bcId: string): Promise<z.infer<typeof FreigabeShape>[]> {
+  const r = await getGatewayPool().query<{ actorId: string; email: string | null; name: string | null; erteiltAt: Date }>(
+    `SELECT f."actorId", t."email", t."name", f."erteiltAt"
+       FROM "BuyingCenterFreigabe" f LEFT JOIN "TenantMember" t ON t."actorId" = f."actorId"
+      WHERE f."buyingCenterId" = $1 ORDER BY f."erteiltAt"`,
+    [bcId],
+  );
+  return r.rows.map((x) => ({ actorId: x.actorId, email: x.email, name: x.name, erteiltAt: x.erteiltAt.toISOString() }));
+}
+
+const freigabenRoute = createRoute({
+  method: "get", path: "/buying-center/{id}/freigaben", tags: [tag],
+  summary: "Wer dieses Buying Center ansehen darf (nur Eigentuemer)",
+  request: { params: IdParam },
+  responses: { 200: { content: { "application/json": { schema: z.object({ items: z.array(FreigabeShape) }) } }, description: "ok" }, ...errorResponses },
+});
+buyingCenterRouter.openapi(freigabenRoute, async (c) => {
+  const bc = await ladeMitZugriff(c.req.valid("param").id, auth(c), true);
+  return c.json({ items: await ladeFreigaben(bc.id) }, 200);
+});
+
+const freigebenRoute = createRoute({
+  method: "post", path: "/buying-center/{id}/freigaben", tags: [tag],
+  summary: "Sicht fuer ein Organisationsmitglied erteilen (nur Eigentuemer)",
+  request: { params: IdParam, body: { content: { "application/json": { schema: z.object({ actorId: z.string().min(1).max(128) }) } } } },
+  responses: { 200: { content: { "application/json": { schema: z.object({ items: z.array(FreigabeShape) }) } }, description: "ok" }, ...errorResponses },
+});
+buyingCenterRouter.openapi(freigebenRoute, async (c) => {
+  const wer = auth(c);
+  const bc = await ladeMitZugriff(c.req.valid("param").id, wer, true);
+  const { actorId } = c.req.valid("json");
+  if (actorId === wer.actorId) throw new HTTPException(400, { message: "Dir selbst musst du nichts freigeben." });
+  const pool = getGatewayPool();
+  // Nur an Mitglieder der EIGENEN Organisation — nie darueber hinaus (Abschnitt 10.3).
+  const m = await pool.query(`SELECT 1 FROM "TenantMember" WHERE "tenantId" = $1 AND "actorId" = $2`, [wer.tenantId, actorId]);
+  if (!m.rowCount) throw new HTTPException(404, { message: "Kein Mitglied deiner Organisation." });
+  await pool.query(
+    `INSERT INTO "BuyingCenterFreigabe" ("buyingCenterId","actorId","erteiltVon") VALUES ($1,$2,$3) ON CONFLICT DO NOTHING`,
+    [bc.id, actorId, wer.actorId],
+  );
+  return c.json({ items: await ladeFreigaben(bc.id) }, 200);
+});
+
+const freigabeEntziehenRoute = createRoute({
+  method: "delete", path: "/buying-center/{id}/freigaben/{actorId}", tags: [tag],
+  summary: "Sicht entziehen (nur Eigentuemer)",
+  request: { params: IdParam.extend({ actorId: z.string().min(1).max(128) }) },
+  responses: { 200: { content: { "application/json": { schema: z.object({ items: z.array(FreigabeShape) }) } }, description: "ok" }, ...errorResponses },
+});
+buyingCenterRouter.openapi(freigabeEntziehenRoute, async (c) => {
+  const { id, actorId } = c.req.valid("param");
+  const bc = await ladeMitZugriff(id, auth(c), true);
+  await getGatewayPool().query(`DELETE FROM "BuyingCenterFreigabe" WHERE "buyingCenterId" = $1 AND "actorId" = $2`, [bc.id, actorId]);
+  return c.json({ items: await ladeFreigaben(bc.id) }, 200);
+});
+
+// ---- GET /buying-center/{id} -----------------------------------------------
 
 const lesenRoute = createRoute({
   method: "get", path: "/buying-center/{id}", tags: [tag],

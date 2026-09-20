@@ -18,6 +18,7 @@ import type { GatewayClient } from "../gateway-client";
 import type { WatchlistStore } from "../../linkedin/watchlist/store";
 import { gleicherName } from "../../buying-center/interaktionen";
 import { fokusVergessen } from "../../buying-center/fokus";
+import { findeMitglied, mitgliedAnzeige, type OrgMitglied } from "../../buying-center/freigabe";
 
 const ROLLEN = ["E", "B", "N", "R", "S", "EK", "GK"];
 const ROLLEN_TEXT: Record<string, string> = {
@@ -33,6 +34,11 @@ interface Mitglied {
   rollen: string[]; einstellung: string | null; kontakt: string | null; einfluss: string | null;
   angaben: Array<{ id: string; dimension: string; wert: string | null; herkunft: string; grund: string; entschieden: string | null; erfasstAt: string }>;
 }
+interface Geteilt {
+  id: string; companyId: string; companyName: string | null; anlass: string; status: string;
+  eigentuemer: OrgMitglied; updatedAt: string; mitglieder: number;
+}
+interface Freigabe { actorId: string; email: string | null; name: string | null; erteiltAt: string }
 interface BuyingCenter {
   id: string; companyId: string; anlass: string; status: string; eigenes: boolean;
   mitglieder: Mitglied[];
@@ -132,12 +138,24 @@ export function buildBuyingCenterTools(deps: BuyingCenterToolDeps): Tool[] {
   const anzeigen = defineTool({
     name: "buying_center_anzeigen",
     description:
-      "Zeigt das Buying Center zu einer Firma: die Karte im Chat (anzeigen-Feld → ```buying-center-Zaun) und den Stand je Person. Nutze das bei 'zeig mir das Buying Center', 'wie steht es bei X', oder vor jeder Aenderung, um Mitglieds-IDs zu bekommen. Ohne buyingCenterId wird das eigene aktive zur Firma genommen.",
+      "Zeigt das Buying Center zu einer Firma: die Karte im Chat (anzeigen-Feld → ```buying-center-Zaun) und den Stand je Person. Nutze das bei 'zeig mir das Buying Center', 'wie steht es bei X', oder vor jeder Aenderung, um Mitglieds-IDs zu bekommen. Ohne buyingCenterId wird das eigene aktive zur Firma genommen; gibt es keines, ein von Kollegen freigegebenes (nur ansehen) — bei mehreren kommt die Auswahl zurueck.",
     parameters: { type: "object", properties: { companyId: { type: "string" }, buyingCenterId: { type: "string" } } },
     schema: yup.object({ companyId: yup.string().trim().optional(), buyingCenterId: yup.string().trim().optional() }).noUnknown(true),
     run: async (args) => {
       let id = args.buyingCenterId;
       if (!id && args.companyId) id = (await eigenesZu(args.companyId))?.id;
+      if (!id && args.companyId) {
+        // BC7 — kein eigenes: vielleicht hat ein Kollege eines freigegeben.
+        const g = await gateway.request<{ items: Geteilt[] }>("/v1/buying-center-geteilt", { query: { companyId: args.companyId } });
+        const einziges = g.items.length === 1 ? g.items[0] : undefined;
+        if (einziges) id = einziges.id;
+        else if (g.items.length > 1) {
+          return {
+            auswahl: g.items.map((x) => ({ buyingCenterId: x.id, eigentuemer: mitgliedAnzeige(x.eigentuemer), anlass: x.anlass || null, stand: x.updatedAt.slice(0, 10) })),
+            hinweis: "Kein eigenes Buying Center, aber mehrere von Kollegen freigegebene. Frag, welches gemeint ist, und rufe dann mit buyingCenterId auf.",
+          };
+        }
+      }
       if (!id) return { error: "Zu dieser Firma gibt es noch kein Buying Center. Mit buying_center_anlegen anlegen." };
       const bc = await gateway.request<BuyingCenter>(`/v1/buying-center/${encodeURIComponent(id)}`);
       const vs = await gateway.request<{ offen: Array<{ vorschlagId: string; name: string; dimension: string; wert: string | null; grund: string }>; unbesetzteRollen: string[]; ohneKontakt: string[] }>(`/v1/buying-center/${encodeURIComponent(id)}/vorschlaege`);
@@ -150,7 +168,7 @@ export function buildBuyingCenterTools(deps: BuyingCenterToolDeps): Tool[] {
         ...(bc.eigenes ? {} : { hinweis: "Dieses Buying Center gehoert jemand anderem — nur ansehen, nicht aendern." }),
       };
     },
-    preview: (r) => ("stand" in r ? "Buying Center angezeigt" : "kein Buying Center"),
+    preview: (r) => ("stand" in r ? "Buying Center angezeigt" : "auswahl" in r ? "mehrere freigegebene" : "kein Buying Center"),
   });
 
   const setzen = defineTool({
@@ -409,7 +427,98 @@ export function buildBuyingCenterTools(deps: BuyingCenterToolDeps): Tool[] {
     preview: (r) => ("verbunden" in r ? `verbunden: ${r.name}` : "nicht verbunden"),
   });
 
-  return [anlegen, anzeigen, setzen, aufnehmen, kante, vorschlaege, abschliessen, beobachten, verknuepfen];
+  // BC7 — Sichtfreigabe. Eine Freigabe gibt Einschaetzungen ueber Menschen
+  // an einen Kollegen weiter; deshalb Rueckfrage, und deshalb nur an
+  // Mitglieder der eigenen Organisation (das prueft das Gateway). Der
+  // Kollege bekommt das Buying Center zum Ansehen, nie zum Aendern.
+  const freigeben = defineTool({
+    name: "buying_center_freigeben",
+    summary: "Ein eigenes Buying Center fuer ein Organisationsmitglied zum Ansehen freigeben oder die Freigabe entziehen (mit Rueckfrage).",
+    category: "buying center organisation freigabe teilen",
+    description:
+      "Sichtfreigabe: Ein Mitglied der eigenen Organisation darf das Buying Center SEHEN, nie aendern. `mitglied` ist E-Mail, Name oder Kennung des Kollegen; ohne `mitglied` werden die bestehenden Freigaben gelistet. entziehen=true nimmt die Freigabe zurueck. Fragt vor dem Erteilen nach — es werden Einschaetzungen ueber Menschen weitergegeben. Nur fuer eigene Buying Center; passt der Name auf mehrere Mitglieder, kommt die Auswahl zurueck.",
+    parameters: {
+      type: "object",
+      properties: {
+        buyingCenterId: { type: "string" },
+        mitglied: { type: "string", description: "E-Mail, Name oder Kennung des Organisationsmitglieds." },
+        entziehen: { type: "boolean", description: "true = Freigabe zuruecknehmen." },
+      },
+      required: ["buyingCenterId"],
+    },
+    schema: yup.object({ buyingCenterId: yup.string().trim().required(), mitglied: yup.string().trim().max(200).optional(), entziehen: yup.boolean().optional() }).noUnknown(true),
+    run: async (args, c) => {
+      const pfad = `/v1/buying-center/${encodeURIComponent(args.buyingCenterId)}/freigaben`;
+      const liste = (items: Freigabe[]) => items.map((f) => mitgliedAnzeige(f));
+      try {
+        if (!args.mitglied) {
+          const r = await gateway.request<{ items: Freigabe[] }>(pfad, { signal: c.signal });
+          return { freigaben: liste(r.items), hinweis: r.items.length ? undefined : "Noch niemandem freigegeben." };
+        }
+        const org = await gateway.request<{ members?: OrgMitglied[] }>("/v1/tenants/me", { signal: c.signal });
+        const mitglieder = org.members ?? [];
+        const treffer = findeMitglied(mitglieder, args.mitglied);
+        if (treffer.length === 0) {
+          return { error: `Kein Mitglied deiner Organisation passt zu "${args.mitglied}".`, mitglieder: mitglieder.map(mitgliedAnzeige) };
+        }
+        if (treffer.length > 1) {
+          return { mehrdeutig: treffer.map((m) => ({ actorId: m.actorId, anzeige: mitgliedAnzeige(m) })), hinweis: "Frag, wer gemeint ist, und rufe mit der Kennung (actorId) erneut auf." };
+        }
+        const ziel = treffer[0];
+        if (!ziel) return { error: `Kein Mitglied deiner Organisation passt zu "${args.mitglied}".` };
+        const wer = mitgliedAnzeige(ziel);
+        if (args.entziehen) {
+          const value = await c.ui.confirmAction(
+            { kind: "destructive", prompt: `Freigabe fuer ${wer} entziehen? ${ziel.name ?? "Das Mitglied"} sieht das Buying Center danach nicht mehr.`, confirmValue: "ja", options: [{ value: "ja", label: "Entziehen" }, { value: "cancel", label: "Abbrechen" }] },
+            c.signal,
+          );
+          if (value !== "ja") return userDeclined("Freigabe entziehen");
+          const r = await gateway.request<{ items: Freigabe[] }>(`${pfad}/${encodeURIComponent(ziel.actorId)}`, { method: "DELETE", signal: c.signal });
+          return { entzogen: wer, freigaben: liste(r.items) };
+        }
+        const value = await c.ui.confirmAction(
+          {
+            kind: "additive",
+            prompt:
+              `Buying Center fuer ${wer} zum Ansehen freigeben?\n\n` +
+              `Damit sieht ${ziel.name ?? "das Mitglied"} deine Einschaetzungen zu den Personen — Rolle, Einstellung, Kontakt, Einfluss samt Gruenden. Aendern kann es nur du; die Freigabe laesst sich jederzeit entziehen.`,
+            confirmValue: "ja",
+            options: [{ value: "ja", label: "Freigeben" }, { value: "cancel", label: "Abbrechen" }],
+          },
+          c.signal,
+        );
+        if (value !== "ja") return userDeclined("Freigabe");
+        const r = await gateway.request<{ items: Freigabe[] }>(pfad, { method: "POST", body: { actorId: ziel.actorId }, signal: c.signal });
+        return { freigegeben: wer, freigaben: liste(r.items) };
+      } catch (err) {
+        return { error: fehlertext(err) };
+      }
+    },
+    preview: (r) => ("freigegeben" in r ? `freigegeben: ${r.freigegeben}` : "entzogen" in r ? `entzogen: ${r.entzogen}` : "freigaben" in r ? `${(r.freigaben as string[]).length} Freigabe(n)` : "keine Aenderung"),
+  });
+
+  const geteilt = defineTool({
+    name: "buying_center_geteilt",
+    summary: "Buying Center, die Kollegen dem Nutzer zum Ansehen freigegeben haben.",
+    category: "buying center organisation geteilt",
+    description:
+      "Listet Buying Center, die Kollegen fuer den Nutzer zum Ansehen freigegeben haben — je Firma mit Eigentuemer, Anlass und Stand. Optional nach companyId. Zum Anzeigen dann buying_center_anzeigen mit der buyingCenterId; aendern lassen sie sich nie.",
+    parameters: { type: "object", properties: { companyId: { type: "string" } } },
+    schema: yup.object({ companyId: yup.string().trim().optional() }).noUnknown(true),
+    run: async (args, c) => {
+      const r = await gateway.request<{ items: Geteilt[] }>("/v1/buying-center-geteilt", { query: args.companyId ? { companyId: args.companyId } : {}, signal: c.signal });
+      return {
+        items: r.items.map((x) => ({
+          buyingCenterId: x.id, companyId: x.companyId, firma: x.companyName ?? x.companyId, eigentuemer: mitgliedAnzeige(x.eigentuemer),
+          anlass: x.anlass || null, status: x.status, personen: x.mitglieder, stand: x.updatedAt.slice(0, 10),
+        })),
+        hinweis: r.items.length ? "Nur ansehen — die Einschaetzungen gehoeren dem jeweiligen Kollegen." : "Niemand hat dir ein Buying Center freigegeben.",
+      };
+    },
+    preview: (r) => `${r.items.length} freigegebene(s) Buying Center`,
+  });
+
+  return [anlegen, anzeigen, setzen, aufnehmen, kante, vorschlaege, abschliessen, beobachten, verknuepfen, freigeben, geteilt];
 }
 
 export { ROLLEN };

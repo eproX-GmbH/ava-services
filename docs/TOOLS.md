@@ -5,7 +5,7 @@ NICHT direkt bearbeiten — die Quelle der Wahrheit ist `services/desktop/src/ma
 Lauf via `pnpm -F @ava/desktop tools:doc` (oder automatisch via `build:typecheck`).
 
 Stand: 2026-09-20
-Anzahl Tools: 267
+Anzahl Tools: 269
 
 ## Firmen (22)
 
@@ -1079,7 +1079,7 @@ Liefert das angemeldete Konto (Name, E-Mail, Nutzer-ID), den Tenant (Name, Rolle
 
 _Parameter:_ keine.
 
-## buying-center (9)
+## buying-center (11)
 
 ### `buying_center_abschliessen`
 
@@ -1103,7 +1103,7 @@ _Parameter:_ keine.
 
 _Datei:_ `services/desktop/src/main/agent/tools/buying-center.ts`
 
-Zeigt das Buying Center zu einer Firma: die Karte im Chat (anzeigen-Feld → ```buying-center-Zaun) und den Stand je Person. Nutze das bei 'zeig mir das Buying Center', 'wie steht es bei X', oder vor jeder Aenderung, um Mitglieds-IDs zu bekommen. Ohne buyingCenterId wird das eigene aktive zur Firma genommen.
+Zeigt das Buying Center zu einer Firma: die Karte im Chat (anzeigen-Feld → ```buying-center-Zaun) und den Stand je Person. Nutze das bei 'zeig mir das Buying Center', 'wie steht es bei X', oder vor jeder Aenderung, um Mitglieds-IDs zu bekommen. Ohne buyingCenterId wird das eigene aktive zur Firma genommen; gibt es keines, ein von Kollegen freigegebenes (nur ansehen) — bei mehreren kommt die Auswahl zurueck.
 
 _Parameter:_
 - `companyId: string`
@@ -1119,6 +1119,26 @@ _Parameter:_
 - `buyingCenterId: string` (required)
 - `aufnehmen: boolean` — Fehlende Mitglieder mit Profil-URL auf die Watchlist setzen (Rueckfrage).
 - `fokus: boolean` — Als Fokus-Personen aufnehmen (jeder Lauf, Meldungen mind. warn).
+
+### `buying_center_freigeben`
+
+_Datei:_ `services/desktop/src/main/agent/tools/buying-center.ts`
+
+Sichtfreigabe: Ein Mitglied der eigenen Organisation darf das Buying Center SEHEN, nie aendern. `mitglied` ist E-Mail, Name oder Kennung des Kollegen; ohne `mitglied` werden die bestehenden Freigaben gelistet. entziehen=true nimmt die Freigabe zurueck. Fragt vor dem Erteilen nach — es werden Einschaetzungen ueber Menschen weitergegeben. Nur fuer eigene Buying Center; passt der Name auf mehrere Mitglieder, kommt die Auswahl zurueck.
+
+_Parameter:_
+- `buyingCenterId: string` (required)
+- `mitglied: string` — E-Mail, Name oder Kennung des Organisationsmitglieds.
+- `entziehen: boolean` — true = Freigabe zuruecknehmen.
+
+### `buying_center_geteilt`
+
+_Datei:_ `services/desktop/src/main/agent/tools/buying-center.ts`
+
+Listet Buying Center, die Kollegen fuer den Nutzer zum Ansehen freigegeben haben — je Firma mit Eigentuemer, Anlass und Stand. Optional nach companyId. Zum Anzeigen dann buying_center_anzeigen mit der buyingCenterId; aendern lassen sie sich nie.
+
+_Parameter:_
+- `companyId: string`
 
 ### `buying_center_kante`
 

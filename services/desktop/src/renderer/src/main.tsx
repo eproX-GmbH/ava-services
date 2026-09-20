@@ -32,6 +32,7 @@ import { WorkflowRuns } from "./routes/WorkflowRuns";
 import { IcpAssistant } from "./routes/IcpAssistant";
 import { CompanyDetail } from "./routes/CompanyDetail";
 import { PersonDetail } from "./routes/PersonDetail";
+import { BuyingCenterGeteilt, BuyingCenterGeteiltDetail } from "./routes/BuyingCenterGeteilt";
 import { Evaluations } from "./routes/Evaluations";
 import { BestMatchDetail } from "./routes/BestMatchDetail";
 import { ChatSession } from "./routes/ChatSession";
@@ -93,6 +94,8 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
               <Route path="/icp-assistent" element={<IcpAssistant />} />
               <Route path="/companies/:id" element={<CompanyDetail />} />
               <Route path="/personen/:id" element={<PersonDetail />} />
+              <Route path="/buying-center/geteilt" element={<FeatureGate feature="buyingcenter"><BuyingCenterGeteilt /></FeatureGate>} />
+              <Route path="/buying-center/geteilt/:id" element={<FeatureGate feature="buyingcenter"><BuyingCenterGeteiltDetail /></FeatureGate>} />
               <Route path="/transactions/:id/evaluations" element={<Evaluations />} />
               <Route path="/evaluations/best-matches/:id" element={<BestMatchDetail />} />
               <Route path="/evaluations/chats/:sessionId" element={<ChatSession />} />
