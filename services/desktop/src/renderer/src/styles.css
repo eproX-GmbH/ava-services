@@ -782,6 +782,12 @@ code, pre { font-family: var(--font-mono); font-size: 12px; }
   gap: 0.25rem;
   border-bottom: 1px solid var(--border);
   margin: 1rem 0;
+  /* Die Firmenansicht blendet Reiter ohne Inhalt aus und weiss erst nach
+     dem Laden, welche das sind. Bis dahin ist die Leiste leer — ohne
+     Mindesthoehe spraenge der Inhalt darunter um knapp 38 Pixel nach oben
+     und gleich wieder zurueck. Gemessen an einer gefuellten Leiste. */
+  min-height: 2.43rem;
+  align-items: flex-end;
 }
 .tabs .tab {
   font: inherit;

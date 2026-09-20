@@ -472,17 +472,6 @@ export function CompanyDetail() {
   // Verflechtungen (Gesellschafterlisten) gibt es nur fuer deutsche Registerfirmen und nur mit Org-Feature.
   const istDeRegister = /^[A-Z0-9]+_HR[AB]_/.test(id ?? "");
   const verflechtungenSichtbar = verflechtungenErlaubt && istDeRegister;
-  const sichtbareTabs = TABS.filter(
-    (t) =>
-      (kontakteErlaubt || t.key !== "contacts") &&
-      (!istAt || t.key !== "financials") &&
-      (verflechtungenSichtbar || t.key !== "verflechtungen")
-  );
-  useEffect(() => {
-    if (!kontakteErlaubt && tab === "contacts") setTab("overview");
-    if (istAt && tab === "financials") setTab("overview");
-    if (!verflechtungenSichtbar && tab === "verflechtungen") setTab("overview");
-  }, [kontakteErlaubt, istAt, verflechtungenSichtbar, tab]);
   const profile = useTabQuery<CompanyProfile>(
     "profile",
     id!,
@@ -523,6 +512,63 @@ export function CompanyDetail() {
     `/v1/companies/${id}/state`,
     !!id
   );
+
+  // Ein Reiter ohne Inhalt ist eine Einladung ins Leere: Man klickt ihn an
+  // und bekommt "Keine Angaben". Deshalb erscheinen nur Reiter, hinter denen
+  // wirklich etwas steht.
+  //
+  // Dafuer muessen die Daten ALLER Reiter schon beim Oeffnen vorliegen —
+  // das tun sie: Die Abfragen oben laufen samt und sonders im Elternteil,
+  // und die Unter-Reiter greifen ueber denselben Abfrageschluessel auf den
+  // Zwischenspeicher zu, ohne ein zweites Mal zu holen.
+  const hatDaten: Record<TabKey, boolean> = {
+    // Die Uebersicht traegt Name, Register und Anschrift — die gibt es immer.
+    overview: true,
+    financials: (publications.data?.items ?? []).length > 0,
+    management:
+      (structured.data?.managingDirectors ?? []).length > 0 ||
+      leitungAusKontakten(contactFallback.data).length > 0,
+    contacts: (contactFallback.data?.companyFacts ?? []).length > 0,
+    // Erkenntnisse leben von Branche und Gruendungsjahr; ohne beides bleibt
+    // eine Seite mit Gedankenstrichen.
+    insights: Boolean(
+      parseNaceFromProfile(profile.data?.profile) || structured.data?.foundingYear,
+    ),
+    jobs: (website.data?.jobPostings ?? []).length > 0,
+    // Ausnahme, und zwar eine bewusste: Verflechtungen ist kein reiner
+    // Anzeige-Reiter, sondern der einzige Ort, an dem sich "Tiefer
+    // verfolgen" anstossen laesst. Waere er bei leerem Stand verborgen,
+    // gaebe es keinen Weg mehr, die Gesellschafterliste ueberhaupt zu
+    // holen — der Reiter waere genau dann weg, wenn man ihn braucht.
+    verflechtungen: true,
+  };
+
+  // Erst urteilen, wenn die Daten da sind. Sonst erschiene ein Reiter kurz
+  // und verschwaende wieder, sobald die Antwort eintrifft — das ist
+  // unruhiger als einen Wimpernschlag zu warten.
+  const tabsBereit =
+    !publications.isLoading &&
+    !structured.isLoading &&
+    !website.isLoading &&
+    !profile.isLoading &&
+    (!kontakteErlaubt || !contactFallback.isLoading);
+
+  const sichtbareTabs = TABS.filter(
+    (t) =>
+      (kontakteErlaubt || t.key !== "contacts") &&
+      (!istAt || t.key !== "financials") &&
+      (verflechtungenSichtbar || t.key !== "verflechtungen") &&
+      hatDaten[t.key],
+  );
+  useEffect(() => {
+    if (!kontakteErlaubt && tab === "contacts") setTab("overview");
+    if (istAt && tab === "financials") setTab("overview");
+    if (!verflechtungenSichtbar && tab === "verflechtungen") setTab("overview");
+    // Auch dann zurueck zur Uebersicht, wenn der gewaehlte Reiter leer ist —
+    // etwa weil die Ansicht ueber einen Verweis direkt dort geoeffnet wurde.
+    if (tabsBereit && !hatDaten[tab]) setTab("overview");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [kontakteErlaubt, istAt, verflechtungenSichtbar, tab, tabsBereit]);
 
   // Relevanz (docs/PLAN_RELEVANZ.md): dieselbe Ansicht, aber als dauerhafte
   // Naehe — und erst, wenn die Firmendaten da sind. Dann kann das GEWICHT
@@ -694,7 +740,10 @@ export function CompanyDetail() {
 
       {/* ---- Tabs --------------------------------------------------------- */}
       <nav className="tabs">
-        {sichtbareTabs.map((t) => (
+        {/* Bis die Daten da sind, bleibt die Leiste leer, behaelt aber ihre
+            Hoehe — sonst springt der Inhalt darunter. */}
+        {tabsBereit &&
+          sichtbareTabs.map((t) => (
           <button
             key={t.key}
             type="button"
@@ -704,7 +753,7 @@ export function CompanyDetail() {
           >
             {t.label}
           </button>
-        ))}
+          ))}
       </nav>
 
       <div className="tab-body">
