@@ -47,19 +47,31 @@ den Alert-Judge einfach und macht das Verhalten erklaerbar. Der Umkehrweg
 — der Score erzeugt eigene Alarmarten — waere schwer zu begruenden und
 noch schwerer abzuschalten.
 
-**Drittens: Die Daten duerfen das Geraet nicht verlassen — dann darf die
-Funktion aber auch von Anfang an laufen.** Die Rohsignale bleiben
-**lokal beim Nutzer**, sie gehen nie ans Gateway, nie an die
-Organisation, nie in Telemetrie; es gibt keine Auswertung ueber Nutzer
-hinweg. Genau deshalb ist der richtige Standardzustand **an**, nicht aus:
-Was niemand sonst sehen kann, muss niemand erst erlauben, und eine
-Fassung, die ohne Haken nicht arbeitet, waere fuer die meisten Nutzer
-einfach die schlechtere Fassung. Wer es nicht will, schaltet es ab
-(Opt-out), und eine Organisation kann es fuer ihre Mitglieder
-abschalten — das ist der Weg fuer eine Betriebsvereinbarung, und ein
-Enterprise-Thema, kein Grund, allen anderen die Funktion vorzuenthalten.
-Es passt ausserdem exakt zur bestehenden Rechenlokalitaet: Der Nutzer
-rechnet alles auf seiner Maschine.
+**Drittens: Die Signale liegen zentral — und damit haengt alles an der
+Trennung je Nutzer.** Die Daten gehen in die zentrale Datenbank, nicht
+auf das Geraet. Das macht den Wert geraeteuebergreifend und
+neuinstallationsfest, es macht ihn aber auch zu einem eigenen
+Verarbeitungszweck: Verhaltensdaten namentlich bekannter Beschaeftigter
+auf dem Server des Betreibers. Die naheliegende Zusage "verlaesst dein
+Geraet nicht" steht damit nicht zur Verfuegung, und an ihre Stelle muss
+etwas Belastbares treten:
+
+- Trennung nach `tenantId` **und** `actorId`, aus dem JWT abgeleitet.
+  Kein Endpunkt, ueber den ein anderer Nutzer adressierbar waere, auch
+  nicht von Administratoren der Organisation.
+- Keine Auswertung ueber Nutzer hinweg. Keine Bestenliste, kein Export,
+  kein Aggregat.
+- Einsicht und Loeschung fuer den Nutzer, jederzeit und vollstaendig.
+- Eintrag in Verarbeitungsverzeichnis, AV-Vertrag und
+  Enterprise-Freigabe.
+
+Damit bleibt der Standardzustand **an** (Opt-out) vertretbar: Der Nutzer
+sieht seine Daten, niemand sonst sieht sie, und die Organisation kann die
+Funktion fuer ihre Mitglieder abschalten — das ist der Weg fuer eine
+Betriebsvereinbarung. Was ich nicht verschweige: Der Aufwand dieser
+Entscheidung faellt nicht in der Technik an, sondern in der
+Dokumentation, und er faellt vor der ersten Enterprise-Freigabe an, nicht
+danach.
 
 Eine vierte, kleinere Meinung: **Nicht jedes Signal ist gleich viel wert,
 und die teuersten Signale sind die besten.** Eine Firmenansicht kostet
@@ -96,7 +108,7 @@ dieser Plan.
 
 ## 2. Zielbild
 
-Fuer jedes Paar (Nutzer, Firma) und (Nutzer, Person) fuehrt AVA lokal:
+Fuer jedes Paar (Nutzer, Firma) und (Nutzer, Person) fuehrt AVA:
 
 ```
 Naehe    1..10   aus Verhalten, mit Halbwertszeit
@@ -190,64 +202,145 @@ falschen Treffer, die das Ranking spaeter unerklaerlich machen.
 
 ---
 
-## 4. Datenmodell (lokal, PGlite)
+## 4. Datenmodell (zentral, Gateway)
 
-Neuer Speicher `main/relevanz/` nach dem Muster von
-`main/linkedin/db.ts`: eigene PGlite-Instanz unter
-`userData/relevanz/db/`, Schema als `CREATE TABLE IF NOT EXISTS` beim
-ersten Zugriff, kein Migrationslaeufer, nur Hauptprozess, Renderer
-ausschliesslich ueber IPC.
+Die Signale liegen in der zentralen Datenbank, nicht auf dem Geraet.
+Das ist eine bewusste Setzung; was sie bringt und was sie kostet, steht
+am Ende dieses Abschnitts und in Abschnitt 9.
 
-```sql
-CREATE TABLE IF NOT EXISTS signal (
-  id          BIGSERIAL PRIMARY KEY,
-  ziel_art    TEXT        NOT NULL,   -- 'firma' | 'person'
-  ziel_id     TEXT        NOT NULL,
-  firma_id    TEXT,                   -- bei Personen: Firma, ueber die sie kam
-  art         TEXT        NOT NULL,   -- Schluessel aus dem Signalkatalog
-  punkte      REAL        NOT NULL,
-  halbwert_t  REAL        NOT NULL,   -- Tage
-  zeitpunkt   TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-CREATE INDEX IF NOT EXISTS signal_ziel ON signal (ziel_art, ziel_id, zeitpunkt DESC);
+### 4.1 Tabellen (Prisma, `services/db-gateway/prisma/schema.prisma`)
 
--- Abgeleitet, wird neu berechnet, nie von Hand gepflegt.
-CREATE TABLE IF NOT EXISTS relevanz (
-  ziel_art    TEXT        NOT NULL,
-  ziel_id     TEXT        NOT NULL,
-  naehe       REAL        NOT NULL,
-  gewicht     REAL        NOT NULL,
-  rang        REAL        NOT NULL,
-  begruendung JSONB       NOT NULL,   -- die drei staerksten Beitraege
-  berechnet   TIMESTAMPTZ NOT NULL DEFAULT now(),
-  PRIMARY KEY (ziel_art, ziel_id)
-);
+Streng nach `tenantId` **und** `actorId` getrennt, wie AuditLog und
+UsageEntry. Der Nutzer ist die Einheit, nicht die Organisation: Zwei
+Mitglieder derselben Organisation haben getrennte Werte fuer dieselbe
+Firma, und keine Abfrage mischt sie.
 
--- Nach dem Entfernen einer Firma: kein Wiederaufwaermen durch Automatik.
-CREATE TABLE IF NOT EXISTS relevanz_sperre (
-  ziel_art  TEXT        NOT NULL,
-  ziel_id   TEXT        NOT NULL,
-  bis       TIMESTAMPTZ NOT NULL,
-  PRIMARY KEY (ziel_art, ziel_id)
-);
+```prisma
+/// Rohsignal: eine Handlung des Nutzers an einer Firma oder Person.
+model RelevanzSignal {
+  id        BigInt   @id @default(autoincrement())
+  tenantId  String
+  actorId   String
+  zielArt   String   // 'firma' | 'person'
+  zielId    String
+  firmaId   String?  // bei Personen: Firma, ueber die sie kam
+  art       String   // Schluessel aus dem Signalkatalog
+  punkte    Float
+  halbwertT Float    // Tage
+  zeitpunkt DateTime @default(now())
+
+  @@index([tenantId, actorId, zielArt, zielId, zeitpunkt])
+  @@index([zeitpunkt])                       // fuer die Tilgung
+}
+
+/// Abgeleitet. Wird neu berechnet, nie von Hand gepflegt.
+model RelevanzWert {
+  tenantId    String
+  actorId     String
+  zielArt     String
+  zielId      String
+  naehe       Float
+  gewicht     Float
+  rang        Float
+  begruendung Json     // die drei staerksten Beitraege
+  berechnet   DateTime @default(now())
+
+  @@id([tenantId, actorId, zielArt, zielId])
+  @@index([tenantId, actorId, rang])         // Arbeitsvorschau des Heartbeats
+}
+
+/// Nach dem Entfernen einer Firma: kein Wiederaufwaermen durch Automatik.
+model RelevanzSperre {
+  tenantId String
+  actorId  String
+  zielArt  String
+  zielId   String
+  bis      DateTime
+
+  @@id([tenantId, actorId, zielArt, zielId])
+}
 ```
 
-**Aufbewahrung:** Rohsignale werden nach 400 Tagen geloescht (ein Jahr
-plus Puffer, damit Jahresvergleiche moeglich bleiben). Der abgeleitete
-Wert bleibt. Der Nutzer kann beides jederzeit loeschen, siehe Abschnitt 9.
+Migration nach bestehendem Muster unter
+`prisma/migrations/2026…_relevanz/`.
 
-**Warum nicht im Gateway:** Verhaltensdaten eines namentlich bekannten
-Beschaeftigten auf dem Server des Betreibers waeren ein neuer, schwer zu
-rechtfertigender Verarbeitungszweck — und sie muessten dann im
-Verzeichnis der Verarbeitungstaetigkeiten stehen, im AV-Vertrag, in der
-Betriebsvereinbarung. Lokal gibt es diesen ganzen Zweig nicht. Das ist
-derselbe Grund, aus dem der ICP-Score lokal liegt.
+### 4.2 Endpunkte
 
-**Preis dafuer, offen benannt:** Der Score gilt je Geraet. Wer AVA auf
-Notebook und Standrechner nutzt, hat zwei Profile, und ein
-Geraetewechsel setzt alles zurueck. Ich halte das fuer vertretbar
-(Abschnitt 12 hat die Gegenposition als offene Entscheidung); der
-Kaltstart in Abschnitt 8 faengt den Fall ab.
+| Route | Zweck |
+| --- | --- |
+| `POST /v1/relevanz/signale` | Buendel von Signalen schreiben (siehe 4.3) |
+| `GET /v1/relevanz?zielArt=&ids=` | Werte fuer bestimmte Ziele lesen |
+| `GET /v1/relevanz/vorschau?limit=` | nach Rang sortierte Arbeitsvorschau fuer den Heartbeat |
+| `GET /v1/relevanz/signale?zielId=` | Rohsignale eines Ziels, fuer die Einsicht in den Einstellungen |
+| `DELETE /v1/relevanz/signale` | alles oder ein Ziel vergessen |
+
+Alle Routen leiten `tenantId` und `actorId` **ausschliesslich aus dem
+JWT** ab. Kein Parameter, mit dem sich ein anderer Nutzer adressieren
+liesse — auch nicht fuer Administratoren der Organisation. Wer den
+Endpunkt kennt, kommt trotzdem nur an die eigenen Daten.
+
+### 4.3 Ausgang auf dem Geraet (wichtig)
+
+Ein Netzaufruf je Klick waere dreifach falsch: er haengt die Oberflaeche
+an die Netzverbindung, er erzeugt Last fuer Daten, die niemand in der
+Sekunde braucht, und er macht AVA ohne Netz stumpf. Also:
+
+- Signale gehen zuerst in eine kleine lokale Warteschlange
+  (`userData/relevanz/ausgang.json`, gedeckelt auf 5000 Eintraege).
+- Uebertragen wird gebuendelt: alle 60 Sekunden, spaetestens bei 50
+  Eintraegen, und beim ordentlichen Beenden.
+- Scheitert die Uebertragung, bleibt der Eintrag liegen und wird beim
+  naechsten Versuch mitgenommen. Jedes Signal traegt eine vom Geraet
+  vergebene Kennung, damit ein wiederholter Versuch nichts doppelt
+  schreibt.
+- Umgekehrt haelt das Geraet die gelesenen Werte im Speicher vor
+  (Neuladen alle 15 Minuten, angestossen vom Heartbeat). Ohne Netz
+  arbeitet AVA mit dem zuletzt bekannten Stand weiter, statt so zu tun,
+  als waere alles kalt.
+
+Die Warteschlange ist ein Puffer, kein zweiter Speicher: Uebertragenes
+wird geloescht.
+
+### 4.4 Wo gerechnet wird
+
+Im Gateway. Das ist kein Bruch der Rechenlokalitaet — die gilt fuer
+Sprachmodelle und das Einsammeln von Daten, nicht fuer eine gewichtete
+Summe ueber ein paar tausend Zeilen. Der Wert dort zu bilden, wo die
+Signale liegen, erspart das Herunterladen aller Rohsignale auf jedes
+Geraet und haelt die Werte ueber Geraete hinweg gleich.
+
+Das **Gewicht** (Abschnitt 5.2) entsteht weiterhin lokal aus ICP und
+Firmenstatus und wird beim Buendel-Schreiben mitgeschickt. Ein ICP-Profil
+gehoert nicht in die zentrale Datenbank, nur seine Wirkung als Zahl.
+
+### 4.5 Aufbewahrung und Tilgung
+
+- Rohsignale aelter als **400 Tage** werden geloescht. Ein taeglicher
+  Lauf im bestehenden Cron des Gateways, nach dem Muster von
+  `billing-cron.ts`.
+- Der abgeleitete Wert bleibt, bis der Nutzer ihn loescht.
+- Verlaesst ein Mitglied die Organisation oder wird ein Konto geloescht,
+  fallen seine Zeilen mit. Das gehoert in denselben Ablauf, der heute
+  schon Mitgliedschaften aufloest — nicht in einen Handgriff, an den
+  sich jemand erinnern muss.
+
+### 4.6 Was das bringt und was es kostet
+
+**Dafuer:** Der Wert gilt geraeteuebergreifend — Notebook und
+Standrechner sehen dasselbe, eine Neuinstallation verliert nichts, ein
+Geraetewechsel auch nicht. Damit ist die offene Entscheidung 2 aus der
+ersten Fassung erledigt. Ausserdem waere eine Organisationsauswertung
+damit technisch moeglich; sie bleibt trotzdem gesperrt (9.3).
+
+**Dagegen, offen benannt:** Verhaltensdaten namentlich bekannter
+Beschaeftigter auf dem Server des Betreibers sind ein eigener
+Verarbeitungszweck. Er muss ins Verzeichnis der
+Verarbeitungstaetigkeiten, in den AV-Vertrag und in die Unterlagen fuer
+die Enterprise-Freigabe. Die Zusage "verlaesst dein Geraet nicht" steht
+nicht mehr zur Verfuegung; an ihre Stelle treten die Zusagen aus
+Abschnitt 9.3. Das ist eine Entscheidung mit Folgekosten in der
+Dokumentation, nicht in der Technik — die Technik wird dadurch eher
+einfacher.
 
 ---
 
@@ -314,12 +407,18 @@ wurde, bekommt +1 auf den Rang, gedeckelt bei +3. Verhungern soll nichts.
 
 ### 5.4 Wann gerechnet wird
 
-Nicht bei jedem Signal. Der Wert wird neu bestimmt
-- beim Schreiben eines Signals fuer genau dieses eine Ziel (billig, nur
-  eine Summe),
-- fuer alle Ziele einmal taeglich beim ersten Start nach Mitternacht
-  (der Verfall allein aendert Werte auch ohne neue Signale),
+Im Gateway, nicht bei jedem Signal:
+
+- beim Eintreffen eines Signalbuendels fuer genau die betroffenen Ziele
+  (billig, nur eine Summe je Ziel),
+- fuer alle Ziele eines Nutzers einmal taeglich im Cron-Lauf (der Verfall
+  allein aendert Werte auch ohne neue Signale),
 - auf Anforderung aus der Oberflaeche.
+
+Das Geraet rechnet nicht mit, es liest. Zwischen zwei Abrufen arbeitet
+es mit dem zuletzt bekannten Stand (4.3) — bei einer Groesse, die sich
+ueber Tage bewegt, faellt ein Viertelstuendchen Verzug nicht ins
+Gewicht.
 
 ---
 
@@ -412,10 +511,13 @@ eine Fassung, die erst nach einem Haken zu arbeiten beginnt, waere fuer
 die meisten Nutzer schlicht eine schlechtere Fassung. Opt-out, nicht
 Opt-in.
 
-Beim ersten Start wird einmal im Klartext erklaert, was erfasst wird und
-wo es bleibt (auf diesem Geraet), mit dem Schalter gleich daneben. Kein
-Dialog, der den Weg versperrt, aber auch kein stilles Anschalten: Wer es
-nicht will, findet es in derselben Sekunde, in der er davon erfaehrt.
+Beim ersten Start wird einmal im Klartext erklaert, was erfasst wird,
+wo es gespeichert wird (in der zentralen Datenbank von AVA, getrennt je
+Nutzer) und wer es sehen kann (nur der Nutzer selbst), mit dem Schalter
+gleich daneben. Kein Dialog, der den Weg versperrt, aber auch kein
+stilles Anschalten: Wer es nicht will, findet es in derselben Sekunde, in
+der er davon erfaehrt. Weil die Daten den Rechner verlassen, ist dieser
+Hinweis hier keine Hoeflichkeit, sondern Pflicht.
 
 ### 9.2 Organisation bestimmt, kann aber Selbstbestimmung erlauben
 
@@ -458,22 +560,30 @@ noch Frage: an, mit Schalter in den Einstellungen.
 
 ### 9.3 Was unabhaengig vom Schalter gilt
 
-1. **Lokal, nie ausgeliefert.** Kein Signal verlaesst das Geraet — nicht
-   ans Gateway, nicht an die Organisation, nicht in Telemetrie. Auch die
-   Organisation, die die Funktion vorschreibt, sieht **nichts** davon.
-   Das ist der Grund, aus dem sie standardmaessig an sein darf.
-2. **Jederzeit abschaltbar**, sofern die Organisation es nicht bindend
+Da die Daten zentral liegen, tragen diese fuenf Punkte das, was frueher
+die Ortswahl getragen haette. Sie sind deshalb keine guten Vorsaetze,
+sondern Bedingungen:
+
+1. **Nur der Nutzer selbst.** `tenantId` und `actorId` kommen aus dem
+   JWT; es gibt keinen Parameter, ueber den ein anderer Nutzer
+   adressierbar waere. Auch der Administrator der Organisation sieht die
+   Signale seiner Mitglieder **nicht** — weder in der Oberflaeche noch
+   ueber einen Endpunkt. Genau das macht den Standardzustand "an"
+   vertretbar; faellt es weg, faellt auch er.
+2. **Keine Auswertung ueber Nutzer hinweg.** Kein Aggregat, kein Export,
+   keine Bestenliste, keine Kennzahl im Abrechnungsbereich. Sollte das je
+   gewuenscht werden, ist es ein eigener Plan mit eigener
+   Rechtsgrundlage — nicht ein Nebenprodukt von diesem.
+3. **Jederzeit abschaltbar**, sofern die Organisation es nicht bindend
    gesetzt hat, mit sofortiger Wirkung. Beim Abschalten fragt AVA, ob die
-   gesammelten Signale geloescht werden sollen.
-3. **Einsehbar.** Vollstaendige Liste der Rohsignale in den
+   gesammelten Signale geloescht werden sollen; "ja" loescht sie in der
+   zentralen Datenbank, nicht nur die Anzeige.
+4. **Einsehbar.** Vollstaendige Liste der Rohsignale in den
    Einstellungen, exportierbar. Was der Nutzer nicht nachlesen kann,
    sollte er nicht hinnehmen muessen — das gilt besonders dort, wo die
-   Organisation die Funktion vorgibt.
-4. **Punktuelles Vergessen** je Firma und je Person.
-5. **Keine Organisationsauswertung.** Kein Endpunkt, kein Export, keine
-   Aggregation ueber Nutzer hinweg. Sollte das je gewuenscht werden, ist
-   es ein eigener Plan mit eigener Rechtsgrundlage — nicht ein
-   Nebenprodukt von diesem.
+   Organisation die Funktion vorgibt und die Daten nicht bei ihm liegen.
+5. **Punktuelles Vergessen** je Firma und je Person, sowie Tilgung nach
+   400 Tagen und beim Ausscheiden aus der Organisation (4.5).
 
 ### 9.4 Mitbestimmung: ein Enterprise-Thema, kein Standard-Thema
 
@@ -487,9 +597,16 @@ braucht. Aufzunehmen in `docs/PLAN_ENTERPRISE_FREIGABE.md`:
 - der Schalter `relevanz` als Punkt der Freigabecheckliste,
 - eine Musterbeschreibung dessen, was erfasst wird und was nicht
   (Abschnitt 3.3 ist dafuer schon geschrieben),
-- die Feststellung, dass die Daten das Geraet nicht verlassen und die
-  Organisation sie nicht einsehen kann. Das ist in der Praxis das
-  Argument, das eine Betriebsvereinbarung ueberhaupt erst einfach macht.
+- **ein Eintrag im Verzeichnis der Verarbeitungstaetigkeiten und im
+  AV-Vertrag.** Das ist die unmittelbare Folge der zentralen Ablage und
+  keine Formalie: Ohne ihn ist die Funktion in einem Unternehmen nicht
+  sauber einsetzbar. Zweck, Kategorien, Speicherdauer (400 Tage),
+  Empfaenger (keine), Ort der Verarbeitung.
+- die Feststellung, dass weder die Organisation noch ihre
+  Administratoren die Signale einsehen koennen und keine Auswertung
+  ueber Mitarbeiter hinweg existiert. Das ist in der Praxis das
+  Argument, das eine Betriebsvereinbarung ueberhaupt erst einfach macht —
+  und es traegt nur, solange 9.3.1 und 9.3.2 unangetastet bleiben.
 
 Die Erfassung von Kontaktpersonen beruehrt zusaetzlich deren Rechte.
 Neue personenbezogene Daten entstehen dabei aber nicht: Erfasst wird,
@@ -522,17 +639,22 @@ heisst nicht registriert, nicht im Prompt erwaehnt, nicht vorgeschlagen.
 
 | Stufe | Inhalt | Ergebnis |
 | --- | --- | --- |
-| **R0** | Speicher `main/relevanz/` mit Schema, Signal schreiben, Naehe rechnen, Schalter, `ORG_FEATURES`-Schluessel `relevanz` + `relevanzSelbstbestimmt`, Erst-Hinweis. Noch ohne Wirkung. | Erfassung laeuft, nichts aendert sich sichtbar |
+| **R0** | Gateway: Prisma-Modelle + Migration, die fuenf Routen aus 4.2, Tilgungslauf. Desktop: Warteschlange und Buendel-Versand (4.3), Schalter, `ORG_FEATURES`-Schluessel `relevanz` + `relevanzSelbstbestimmt`, Erst-Hinweis. Noch ohne Wirkung. | Erfassung laeuft, nichts aendert sich sichtbar |
 | **R1** | Vorhandene Signale anschliessen: Detailansicht, Chat-Link, Uebernehmen, Import, Workflow, Watchlist. `InterestStore` liest neu, schreibt nicht mehr selbst. | Erste echte Werte |
-| **R2** | Gewicht aus ICP/Status/Pipeline; Rang; Anzeige in der Firmenansicht mit Begruendung. | Nutzer sieht und versteht den Wert |
+| **R2** | Gewicht aus ICP/Status/Pipeline lokal bilden und mitschicken; Rang im Gateway; Anzeige in der Firmenansicht mit Begruendung. | Nutzer sieht und versteht den Wert |
 | **R3** | Heartbeat-Priorisierung inklusive Entdeckungsspur und Alterung. | Beobachtung folgt dem Rang |
 | **R4** | Personensignale: Profilklick, DSGVO-Hinweis, CRM, E-Mail, Kontaktsuche. Vererbung von der Firma. | Personen werden unterscheidbar |
 | **R5** | Alarmschwellen je Rang, Tageszusammenfassung fuer Gesammeltes, feste Ausnahmen (Statuswarnungen). | Der Positionswechsel-Fall ist geloest |
-| **R6** | Chat-Tools, Einsicht und Export in den Einstellungen, punktuelles Vergessen. | Vollstaendig bedienbar |
+| **R6** | Chat-Tools, Einsicht und Export in den Einstellungen, punktuelles Vergessen, Tilgung beim Ausscheiden aus der Organisation. | Vollstaendig bedienbar |
 
 R0–R2 sind die Grundlage und sollten zusammen kommen. R3 und R5 tragen
 den Nutzen. R4 ist der Teil, nach dem gefragt wurde, braucht aber R0–R2
 darunter.
+
+**Ausserhalb der Stufen, aber vor der ersten Enterprise-Freigabe
+faellig:** der Eintrag im Verarbeitungsverzeichnis und im AV-Vertrag
+(9.4). Das ist keine Programmierarbeit und geraet deshalb leicht aus dem
+Blick; mit der zentralen Ablage ist es aber Voraussetzung, nicht Kuer.
 
 ---
 
@@ -543,14 +665,20 @@ darunter.
    anhand echter Verteilungen nachziehen. Keine Einstellmoeglichkeit fuer
    Nutzer — sonst justiert niemand, und jede Fehlersuche braucht zuerst
    eine Konfigurationsabfrage.
-2. **Geraeteuebergreifend?** Heute: nein, lokal je Geraet. Eine
-   verschluesselte Ablage im Gateway waere technisch machbar (Schluessel
-   beim Nutzer), widerspricht aber Abschnitt 9.3.1 dem Geist nach. Meine
-   Empfehlung: erst bauen, wenn jemand es vermisst.
+2. **Geraeteuebergreifend?** Entschieden: ja, durch die zentrale Ablage
+   (Abschnitt 4). Bleibt zu klaeren, ob die Signale im Ruhezustand
+   zusaetzlich verschluesselt werden sollen. Eine Verschluesselung mit
+   Schluessel beim Nutzer waere das staerkste Versprechen, schliesst aber
+   die Berechnung im Gateway (4.4) aus und faellt damit praktisch weg.
+   Mein Vorschlag: Verschluesselung der Datenbank wie bei allem anderen
+   auch, keine Sonderbehandlung, dafuer die Zusagen aus 9.3 hart halten.
 3. **Organisationsaggregat.** "Diese Firma interessiert 4 Kollegen" waere
    sehr nuetzlich fuer den Vertrieb und sehr heikel fuer den Betriebsrat.
-   Wenn ueberhaupt, dann: nur Anzahl, nie Namen, Mindestzahl 3, und nur
-   wenn die Organisation es ausdruecklich einschaltet. Eigener Plan.
+   Mit der zentralen Ablage ist es nur noch eine Abfrage weit weg — und
+   genau deshalb muss die Sperre aus 9.3.2 ausdruecklich sein, nicht
+   beilaeufig. Wenn ueberhaupt, dann: nur Anzahl, nie Namen, Mindestzahl
+   3, und nur wenn die Organisation es ausdruecklich einschaltet. Eigener
+   Plan mit eigener Rechtsgrundlage.
 4. **Saettigung bei 60.** Bestimmt, wie schnell eine 10 erreicht wird.
    Nach den ersten Wochen an der tatsaechlichen Verteilung pruefen.
 5. **Alarm weggewischt = negativ.** Ich halte es fuer richtig, es ist
@@ -575,7 +703,10 @@ darunter.
   Firma wird bald kaufen" braucht Abschlussdaten, die AVA nicht hat, und
   waere ohne sie geraten.
 - **Kein Score ueber Nutzer hinweg.** Siehe Abschnitt 9.3.
-- **Keine Uebermittlung, auch nicht "anonym zur Verbesserung".** Die
-  Daten bleiben auf dem Geraet. Genau diese Zusage traegt den
-  Standardzustand "an" — sie aufzuweichen hiesse, ihn neu zu
-  verhandeln.
+- **Keine Weitergabe an Dritte und keine Telemetrie**, auch nicht
+  "anonym zur Verbesserung". Die Signale dienen dem einen Zweck, fuer
+  den sie erhoben werden.
+- **Kein Einblick fuer Administratoren.** Die Versuchung ist mit der
+  zentralen Ablage groesser geworden, die Antwort bleibt dieselbe. Diese
+  Zusage traegt den Standardzustand "an"; sie aufzuweichen hiesse, ihn
+  neu zu verhandeln.
