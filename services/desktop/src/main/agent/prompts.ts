@@ -861,6 +861,10 @@ export const BUYING_CENTER_INSTRUCTIONS = [
   "  den Anbieter X'. KEINE Charakterurteile ('schwierig', 'unfaehig').",
   "  Diese Texte koennen der Person in einer Auskunft vorgelegt werden.",
   "- Nicht nachfragen, wenn der Nutzer etwas klar gesagt hat — eintragen.",
+  "- Fokuskunde heisst mehr Aufwand: Biete nach dem Anlegen einmal an, die",
+  "  Mitglieder mit buying_center_beobachten auf die LinkedIn-Watchlist zu",
+  "  setzen. Fuer Mitglieder ohne Profil-URL erst contact_linkedin_lookup",
+  "  anbieten, nicht ungefragt suchen.",
   "",
 ].join("\n");
 

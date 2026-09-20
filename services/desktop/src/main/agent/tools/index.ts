@@ -359,7 +359,12 @@ export function buildReadOnlyRegistry(deps: {
   }
   // Buying Center (docs/PLAN_BUYING_CENTER.md): Power Map je Firma, gehoert
   // dem Nutzer. Organisationsschalter kommt mit BC6.
-  for (const t of buildBuyingCenterTools({ gateway: deps.gateway })) registry.register(t);
+  for (const t of buildBuyingCenterTools({
+    gateway: deps.gateway,
+    getWatchlistStore: deps.getWatchlistStore,
+    watchlistErlaubt: () => featureEnabled("linkedin.watchlist"),
+  }))
+    registry.register(t);
   // v0.1.284 — Self-Correction-Reporting (always-on Telemetrie).
   for (const t of buildSelfCorrectionTools({
     store: deps.selfCorrectionsStore,

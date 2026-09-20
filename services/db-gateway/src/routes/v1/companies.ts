@@ -609,6 +609,9 @@ const linkedinProfilesRoute = createRoute({
           schema: z.object({
             items: z.array(
               z.object({
+                // BC4 — personId, damit Buying-Center-Mitglieder ohne
+                // Namensvergleich zugeordnet werden koennen.
+                personId: z.string(),
                 fullName: z.string(),
                 companyId: z.string(),
                 linkedinUrl: z.string(),
@@ -629,12 +632,14 @@ companiesRouter.openapi(linkedinProfilesRoute, async (c) => {
   const { companyIds } = c.req.valid("json");
   const pool = getProducerPool("company-contact");
   const r = await pool.query<{
+    personId: string;
     fullName: string;
     companyId: string;
     linkedinUrl: string;
     title: string | null;
   }>(
     `SELECT DISTINCT ON (f.value, e."companyId")
+            p.id AS "personId",
             p."fullName" AS "fullName",
             e."companyId" AS "companyId",
             f.value AS "linkedinUrl",

@@ -487,6 +487,15 @@ Buying Center im Chat erarbeiten und ansehen. BC3 macht es aus Daten
 klueger, BC4 macht den Fokuskunden zum Fokuskunden, BC5 haelt es am
 Leben.
 
+### Stand der Umsetzung (2026-09-20)
+
+| Stufe | Stand |
+| --- | --- |
+| BC0–BC2 | gebaut, Gateway deployt, Desktop v0.1.705 |
+| BC3 | gebaut (CRM-Interaktionen je Mitglied, Kontaktintensitaets-Vorschlaege `ava:crm`, Gespraechsmuster-Hinweis, Route `POST …/mitglieder/{mid}/vorschlaege`); Gateway-Deploy und Desktop-Release folgen mit BC4 |
+| BC4 | teilweise: Werkzeug `buying_center_beobachten` (LinkedIn-Checkliste je Mitglied: Profil bekannt / auf der Watchlist / Fokus / aufnehmbar; Aufnahme aller aufnehmbaren Mitglieder nach EINER Rueckfrage, Firma zugeordnet, optional Fokus; Mitglieder ohne Profil-URL werden benannt → `contact_linkedin_lookup` anbieten). `/v1/contacts/linkedin-profiles` liefert dafuer jetzt `personId`. **Offen:** der gezielte Website-Personenlauf mit Hervorhebung (Reihenfolge auf der Team-Seite, Foto/Zitat) — dafuer muesste der company-contact-Producer die Seitenreihenfolge mitliefern (`analyzed.people` traegt heute keinen Index, Observation.evidence ist Freitext); Producer-Aenderung, Auslieferung mit einem Desktop-Release. Ebenso offen: Buch-Checkliste aus LinkedIn-Profildaten (neu in der Position, frueherer Arbeitgeber) — braucht Profildaten, nicht nur Aktivitaet. |
+| BC5–BC7 | offen |
+
 ---
 
 ## 12. Offene Entscheidungen

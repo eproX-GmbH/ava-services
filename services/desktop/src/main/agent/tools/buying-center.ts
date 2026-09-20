@@ -12,9 +12,11 @@
 // den heutigen Stand zeigt.
 
 import * as yup from "yup";
-import { defineTool } from "../define-tool";
+import { defineTool, userDeclined } from "../define-tool";
 import type { Tool } from "../types";
 import type { GatewayClient } from "../gateway-client";
+import type { WatchlistStore } from "../../linkedin/watchlist/store";
+import { gleicherName } from "../../buying-center/interaktionen";
 
 const ROLLEN = ["E", "B", "N", "R", "S", "EK", "GK"];
 const ROLLEN_TEXT: Record<string, string> = {
@@ -58,7 +60,15 @@ function fehlertext(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
-export function buildBuyingCenterTools(deps: { gateway: GatewayClient }): Tool[] {
+export interface BuyingCenterToolDeps {
+  gateway: GatewayClient;
+  /** BC4 — Watchlist-Aufnahme; lazy, weil der Store erst im App-Boot entsteht. */
+  getWatchlistStore?: () => WatchlistStore | null;
+  /** BC4 — false, wenn die Organisation die Personen-Watchlist abgeschaltet hat. */
+  watchlistErlaubt?: () => boolean;
+}
+
+export function buildBuyingCenterTools(deps: BuyingCenterToolDeps): Tool[] {
   const { gateway } = deps;
 
   /** Das eigene Buying Center zu einer Firma finden — oder null. */
@@ -267,7 +277,94 @@ export function buildBuyingCenterTools(deps: { gateway: GatewayClient }): Tool[]
     preview: (r) => ("status" in r ? `Status ${r.status}` : "unveraendert"),
   });
 
-  return [anlegen, anzeigen, setzen, aufnehmen, kante, vorschlaege, abschliessen];
+  // BC4 — Fokuskunden-Aufwand: die LinkedIn-Checkliste je Mitglied und die
+  // Aufnahme in die Personen-Watchlist. Die Watchlist ist gedeckelt, deshalb
+  // eine Rueckfrage mit der vollstaendigen Liste, nicht je Person eine.
+  // Mitglieder ohne Profil-URL werden benannt, damit das Modell
+  // contact_linkedin_lookup anbieten kann — nicht stillschweigend suchen,
+  // das kostet SERP-Abfragen.
+  const beobachten = defineTool({
+    name: "buying_center_beobachten",
+    summary: "Buying-Center-Mitglieder auf die LinkedIn-Watchlist setzen (mit Rueckfrage); zeigt je Person, ob ein Profil bekannt ist.",
+    category: "buying center linkedin watchlist",
+    description:
+      "LinkedIn-Checkliste zum Buying Center: Welche Mitglieder haben eine bekannte Profil-URL, wer ist schon auf der Personen-Watchlist, wer fehlt? Mit aufnehmen=true werden alle Mitglieder mit Profil-URL nach Rueckfrage auf die Watchlist gesetzt (Firma zugeordnet; fokus=true macht sie zu Fokus-Personen). Fuer Mitglieder ohne Profil-URL biete contact_linkedin_lookup an.",
+    parameters: {
+      type: "object",
+      properties: {
+        buyingCenterId: { type: "string" },
+        aufnehmen: { type: "boolean", description: "Fehlende Mitglieder mit Profil-URL auf die Watchlist setzen (Rueckfrage)." },
+        fokus: { type: "boolean", description: "Als Fokus-Personen aufnehmen (jeder Lauf, Meldungen mind. warn)." },
+      },
+      required: ["buyingCenterId"],
+    },
+    schema: yup.object({ buyingCenterId: yup.string().trim().required(), aufnehmen: yup.boolean().optional(), fokus: yup.boolean().optional() }).noUnknown(true),
+    run: async (args, c) => {
+      if (deps.watchlistErlaubt && !deps.watchlistErlaubt()) return { error: "Die Personen-Watchlist ist in deiner Organisation nicht freigeschaltet." };
+      const bc = await gateway.request<BuyingCenter>(`/v1/buying-center/${encodeURIComponent(args.buyingCenterId)}`, { signal: c.signal });
+      const profile = await gateway.request<{ items: Array<{ personId: string; fullName: string; linkedinUrl: string }> }>(
+        "/v1/contacts/linkedin-profiles",
+        { method: "POST", body: { companyIds: [bc.companyId] }, signal: c.signal },
+      );
+      const store = deps.getWatchlistStore?.() ?? null;
+      const eintraege = store ? await store.list() : [];
+      const aufListe = new Map(eintraege.map((e) => [e.profileUrl.toLowerCase().replace(/\/+$/, ""), e]));
+      const kanon = (u: string) => u.toLowerCase().replace(/^https?:\/\/(www\.)?/, "https://www.").replace(/\/+$/, "");
+
+      const checkliste = bc.mitglieder.map((m) => {
+        const treffer =
+          (m.personId ? profile.items.find((p) => p.personId === m.personId) : undefined) ??
+          profile.items.find((p) => gleicherName(p.fullName, m.name));
+        const url = treffer?.linkedinUrl ?? null;
+        const eintrag = url ? aufListe.get(kanon(url)) ?? null : null;
+        return {
+          mitgliedId: m.id, name: m.name, funktion: m.funktion,
+          linkedinUrl: url,
+          stand: !url ? "ohne-profil" : eintrag ? (eintrag.fokus ? "fokus" : "beobachtet") : "aufnehmbar",
+        } as const;
+      });
+      const aufnehmbar = checkliste.filter((z) => z.stand === "aufnehmbar");
+      const ohneProfil = checkliste.filter((z) => z.stand === "ohne-profil").map((z) => z.name);
+
+      if (!args.aufnehmen || aufnehmbar.length === 0) {
+        return { checkliste, ohneProfil, aufnehmbar: aufnehmbar.length, hinweis: !store && args.aufnehmen ? "Watchlist nicht initialisiert." : undefined };
+      }
+      if (!store) return { checkliste, ohneProfil, error: "Watchlist nicht initialisiert." };
+      if (!bc.eigenes) return { checkliste, ohneProfil, error: "Nur der Eigentuemer des Buying Centers nimmt Personen auf." };
+
+      const value = await c.ui.confirmAction(
+        {
+          kind: "additive",
+          prompt:
+            `${aufnehmbar.length} ${aufnehmbar.length === 1 ? "Person" : "Personen"} aus dem Buying Center auf die LinkedIn-Watchlist setzen?\n\n` +
+            aufnehmbar.map((z) => `- ${z.name}${z.funktion ? ` (${z.funktion})` : ""}\n  ${z.linkedinUrl}`).join("\n") +
+            (args.fokus ? "\n\nAls FOKUS-Personen (jeder Lauf, Meldungen mind. warn)." : "") +
+            (ohneProfil.length ? `\n\nOhne bekanntes Profil (nicht dabei): ${ohneProfil.join(", ")}` : ""),
+          confirmValue: "add",
+          options: [{ value: "add", label: "Aufnehmen" }, { value: "cancel", label: "Verwerfen" }],
+        },
+        c.signal,
+      );
+      if (value !== "add") return userDeclined("Watchlist-Aufnahme");
+
+      const aufgenommen: string[] = [];
+      const fehler: Array<{ name: string; error: string }> = [];
+      for (const z of aufnehmbar) {
+        const r = await store.add({ profileUrl: z.linkedinUrl!, label: z.name, companyId: bc.companyId, fokus: args.fokus, quelle: "manuell" });
+        if ("error" in r) fehler.push({ name: z.name, error: r.error });
+        else aufgenommen.push(z.name);
+      }
+      return { aufgenommen, fehler, ohneProfil, anzeigen: bc.id };
+    },
+    preview: (r) => {
+      const res = r as { aufgenommen?: string[]; aufnehmbar?: number; error?: string; checkliste?: unknown[] };
+      if (res.error) return res.error;
+      if (res.aufgenommen) return `${res.aufgenommen.length} auf der Watchlist`;
+      return `${res.checkliste?.length ?? 0} Mitglieder, ${res.aufnehmbar ?? 0} aufnehmbar`;
+    },
+  });
+
+  return [anlegen, anzeigen, setzen, aufnehmen, kante, vorschlaege, abschliessen, beobachten];
 }
 
 export { ROLLEN };
