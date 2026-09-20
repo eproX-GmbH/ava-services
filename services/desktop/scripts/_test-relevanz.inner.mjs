@@ -10,6 +10,10 @@ import assert from "node:assert/strict";
 // Standard-Export und nicht als benannte.
 import W from "../src/main/relevanz/aus-werkzeugen.ts";
 const { ausArgumenten, ausErgebnis, ausAufruf, TREFFER_GRENZE } = W;
+import G from "../src/main/relevanz/gewicht.ts";
+const { gewichtFuer } = G;
+import R from "../src/main/relevanz/reihenfolge.ts";
+const { reihenfolge, alterung } = R;
 
 let fehler = 0;
 function pruefe(name, fn) {
@@ -101,6 +105,96 @@ pruefe("bei mehreren Firmen keine geratene Zuordnung", () => {
 pruefe("ein Bulk-Aufruf erzeugt hoechstens fuenf Signale", () => {
   const viele = Array.from({ length: 100 }, (_, i) => `DE-10${String(i).padStart(2, "0")}`);
   assert.ok(ausAufruf({ companyIds: viele }, "").length <= 5);
+});
+
+console.log("Gewicht");
+
+pruefe("ohne Merkmale: 1 — unbekannt, nicht schlecht", () => {
+  assert.equal(gewichtFuer({}), 1);
+});
+
+pruefe("ICP traegt bis zu 4", () => {
+  assert.equal(gewichtFuer({ icpScore: 100 }), 5);
+  assert.equal(gewichtFuer({ icpScore: 0 }), 1);
+});
+
+pruefe("Statuswarnung allein macht eine Firma beachtlich", () => {
+  // Der Punkt: Eine Insolvenz geht den Nutzer an, auch wenn er die Firma
+  // nie angesehen hat.
+  assert.ok(gewichtFuer({ statusWarnung: true }) >= 4);
+});
+
+pruefe("Gewicht bleibt zwischen 1 und 10", () => {
+  const alles = gewichtFuer({
+    icpScore: 100, statusWarnung: true, meineFirma: true,
+    crmVerknuepft: true, groesseImKorridor: true,
+  });
+  assert.ok(alles <= 10 && alles >= 1);
+  assert.equal(gewichtFuer({ icpScore: -50 }), 1, "Unfug darf nicht unter 1 druecken");
+  assert.equal(gewichtFuer({ icpScore: NaN }), 1);
+});
+
+console.log("Reihenfolge des Heartbeats");
+
+const w = (naehe, gewicht) => ({ naehe, gewicht, rang: 0.6 * naehe + 0.4 * gewicht });
+
+pruefe("heiss zuerst", () => {
+  const k = ["kalt", "heiss"];
+  const werte = { heiss: w(9, 5), kalt: w(2, 1) };
+  assert.equal(reihenfolge(k, (x) => werte[x])[0], "heiss");
+});
+
+pruefe("jeder vierte Platz gehoert der Entdeckungsspur", () => {
+  // Acht heisse und zwei sachlich starke, nie angesehene Firmen. Ohne die
+  // Spur kaemen die beiden nie dran.
+  const heiss = Array.from({ length: 8 }, (_, i) => `h${i}`);
+  const neu = ["neu1", "neu2"];
+  const werte = {};
+  for (const h of heiss) werte[h] = w(9, 5);
+  for (const n of neu) werte[n] = w(1, 8);
+  const r = reihenfolge([...heiss, ...neu], (x) => werte[x]);
+  assert.equal(r[3], "neu1", "Platz 4 gehoert der Entdeckungsspur");
+  assert.equal(r[7], "neu2", "Platz 8 ebenso");
+  assert.ok(r.indexOf("neu1") < 6, "eine kalte Firma mit hohem Gewicht darf nicht hinten liegen");
+});
+
+pruefe("leere Entdeckungsspur verschenkt keinen Platz", () => {
+  const k = ["a", "b", "c", "d", "e"];
+  const werte = Object.fromEntries(k.map((x) => [x, w(9, 5)]));
+  const r = reihenfolge(k, (x) => werte[x]);
+  assert.equal(r.length, 5, "alle Kandidaten muessen vorkommen");
+  assert.equal(new Set(r).size, 5, "keiner doppelt");
+});
+
+pruefe("jeder Kandidat kommt genau einmal vor", () => {
+  const k = Array.from({ length: 23 }, (_, i) => `k${i}`);
+  const werte = Object.fromEntries(
+    k.map((x, i) => [x, i % 3 === 0 ? w(1, 9) : w(8, 4)]),
+  );
+  const r = reihenfolge(k, (x) => werte[x]);
+  assert.equal(r.length, 23);
+  assert.equal(new Set(r).size, 23);
+});
+
+pruefe("Kandidaten ohne Wert gehen nicht verloren", () => {
+  const r = reihenfolge(["neu", "heiss", "kalt"], (x) =>
+    x === "heiss" ? w(9, 5) : x === "kalt" ? w(1, 1) : undefined);
+  assert.equal(r.length, 3);
+  assert.ok(r.indexOf("neu") < r.indexOf("kalt"), "Unbekanntes steht vor nachweislich Kaltem");
+});
+
+pruefe("Alterung hebt Liegengebliebenes, gedeckelt bei +3", () => {
+  assert.equal(alterung(null), 0);
+  assert.equal(alterung(30), 0);
+  assert.ok(alterung(60) > 0);
+  assert.equal(alterung(9999), 3);
+});
+
+pruefe("lange nicht beobachtet schlaegt gleichwertig frisch", () => {
+  const werte = { alt: w(5, 5), frisch: w(5, 5) };
+  const tage = { alt: 400, frisch: 1 };
+  const r = reihenfolge(["frisch", "alt"], (x) => werte[x], (x) => tage[x]);
+  assert.equal(r[0], "alt");
 });
 
 console.log(fehler === 0 ? "\nAlles gruen." : `\n${fehler} Pruefung(en) fehlgeschlagen.`);

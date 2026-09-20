@@ -6282,11 +6282,15 @@ app.whenReady().then(async () => {
   ipcMain.handle("interest:record", (_e, companyId: string, art?: string) => {
     if (typeof companyId === "string" && companyId.length > 0) {
       interest.record(companyId);
-      // Derselbe Klick speist jetzt auch die dauerhafte Naehe. Der
-      // InterestStore bleibt daneben bestehen: Er ist der Sofort-Schub
+      // Der InterestStore bleibt daneben bestehen: Er ist der Sofort-Schub
       // fuer den Frischeplaner innerhalb einer Sitzung, die Naehe die
       // langfristige Groesse ueber Wochen.
-      relevanz.erfasse(art === "chatlink" ? "firma.chatlink" : "firma.ansicht", companyId);
+      //
+      // Nur der Chat-Klick wird hier erfasst. Die Firmenansicht meldet sich
+      // selbst, sobald ihre Daten geladen sind — dann kann sie das Gewicht
+      // (Status, Uebernahme) gleich mitschicken, und die Entprellung wuerde
+      // ein zweites Signal in derselben Stunde ohnehin schlucken.
+      if (art === "chatlink") relevanz.erfasse("firma.chatlink", companyId);
     }
   });
 

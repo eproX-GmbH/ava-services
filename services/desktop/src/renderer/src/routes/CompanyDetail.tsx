@@ -37,6 +37,8 @@ import { quellenDerFakten } from "./kontakt-quellen";
 import { sortiereNachRang, rangFuerTitel, RANG_TITEL } from "./kontakt-rang";
 import { bewerte } from "./kontakt-suche";
 import { FirmaUebernehmen, istUebernommen } from "./firma-uebernehmen";
+import { Waermeanzeige } from "./waermeanzeige";
+import { gewichtFuer } from "./relevanz-gewicht";
 import {
   EyeIcon,
   GlobeIcon,
@@ -521,6 +523,27 @@ export function CompanyDetail() {
     !!id
   );
 
+  // Relevanz (docs/PLAN_RELEVANZ.md): dieselbe Ansicht, aber als dauerhafte
+  // Naehe — und erst, wenn die Firmendaten da sind. Dann kann das GEWICHT
+  // mit: die sachliche Passung, die ohne jedes Verhalten zustande kommt und
+  // verhindert, dass der Heartbeat nur noch dorthin sieht, wo er schon war.
+  const uebernommen = istUebernommen(stageState.data?.stages);
+  useEffect(() => {
+    if (!id || !summary.data) return;
+    const d = summary.data;
+    const statusWarnung =
+      Boolean(d.insolvencyStatus) ||
+      Boolean(d.closedAt) ||
+      (d.registerStatus ?? "").toLowerCase().includes("gelöscht");
+    void window.api.relevanz.erfasse("firma.ansicht", id, {
+      gewicht: gewichtFuer({ statusWarnung, meineFirma: uebernommen }),
+    });
+    // Absichtlich nur an `id` haengend: Ein Nachladen derselben Firma soll
+    // kein zweites Signal ausloesen. Die Entprellung im Hauptprozess faengt
+    // den Rest ab.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id, Boolean(summary.data)]);
+
   const adresse = ermittleAdresse({
     structured: structured.data,
     contact: contactFallback.data,
@@ -551,6 +574,10 @@ export function CompanyDetail() {
             status={summary.data?.insolvencyStatus}
             seit={summary.data?.insolvencyAt}
           />
+          {/* Relevanz: erscheint erst, wenn es etwas zu zeigen gibt. Eine
+              frische Firma mit "1 von 10" saehe aus wie ein Urteil, ist
+              aber nur fehlendes Wissen. */}
+          <Waermeanzeige zielArt="firma" zielId={id} />
         </h2>
         {summary.data && registerZeile(summary.data) && (
           <p className="muted small" style={{ marginTop: 0 }}>
@@ -561,7 +588,8 @@ export function CompanyDetail() {
           <FirmaUebernehmen
             name={structured.data?.name ?? summary.data?.name}
             ort={summary.data?.location ?? structured.data?.city}
-            uebernommen={istUebernommen(stageState.data?.stages)}
+            uebernommen={uebernommen}
+            companyId={id}
             onFertig={() => void stageState.refetch?.()}
           />
         </div>

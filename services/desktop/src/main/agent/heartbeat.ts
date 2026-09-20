@@ -1,5 +1,7 @@
 import { EventEmitter } from "node:events";
 import type { AlertsStore, AlertCreateInput } from "./alerts-store";
+import * as relevanz from "../relevanz";
+import { reihenfolge } from "../relevanz/reihenfolge";
 import { JudgeProviderUnavailable } from "./alert-judge";
 import type {
   Alert,
@@ -390,6 +392,40 @@ export class Heartbeat extends EventEmitter {
     this.emit("tick", info);
     this.onTick?.(info);
     return info;
+  }
+
+  /**
+   * Kandidaten in Arbeitsreihenfolge bringen (docs/PLAN_RELEVANZ.md, 5.3).
+   *
+   * Faellt aus irgendeinem Grund kein Wert an — Funktion abgeschaltet, kein
+   * Netz, noch nichts erfasst —, bleibt die bisherige Reihenfolge. Die
+   * Priorisierung ist eine Verbesserung, keine Voraussetzung: Ein
+   * Durchgang darf daran nicht scheitern.
+   */
+  private async sortiereNachRelevanz(
+    kandidaten: HeartbeatCandidate[],
+  ): Promise<HeartbeatCandidate[]> {
+    if (kandidaten.length < 2) return kandidaten;
+    try {
+      const ids = Array.from(new Set(kandidaten.map((c) => c.companyId).filter(Boolean)));
+      if (ids.length === 0) return kandidaten;
+      const werte = await relevanz.werte("firma", ids);
+      if (werte.size === 0) return kandidaten;
+      return reihenfolge(
+        kandidaten,
+        (c) => {
+          const w = werte.get(c.companyId);
+          return w ? { rang: w.rang, naehe: w.naehe, gewicht: w.gewicht } : undefined;
+        },
+        (c) => {
+          const w = werte.get(c.companyId);
+          if (!w?.letztesSignal) return null;
+          return (Date.now() - new Date(w.letztesSignal).getTime()) / 86_400_000;
+        },
+      );
+    } catch {
+      return kandidaten;
+    }
   }
 
   /**

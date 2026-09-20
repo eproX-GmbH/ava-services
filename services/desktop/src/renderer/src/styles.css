@@ -1443,6 +1443,31 @@ code, pre { font-family: var(--font-mono); font-size: 12px; }
 .firma-aktion { flex: none; margin-left: auto; text-align: right; }
 .firma-aktion__knoepfe { display: flex; align-items: center; gap: 0.6rem; justify-content: flex-end; }
 .firma-aktion__verweis { font-size: 12px; color: var(--muted); text-decoration: none; white-space: nowrap; }
+
+/* Waermeanzeige (docs/PLAN_RELEVANZ.md): wie nah der Nutzer an dieser Firma
+   dran ist. Klein und zurueckhaltend — eine Hilfe beim Sortieren, keine
+   Bewertung der Firma. Farbe kommt aus dem Akzent, nicht aus Rot/Gruen:
+   "kalt" ist kein Mangel. */
+.waerme {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 12px;
+  color: var(--muted);
+  white-space: nowrap;
+  vertical-align: middle;
+  margin-left: 0.5rem;
+  cursor: default;
+}
+.waerme__punkte { display: inline-flex; gap: 2px; }
+.waerme__punkt {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: currentColor;
+  opacity: 0.25;
+}
+.waerme__punkt--voll { opacity: 1; color: var(--accent); }
 .firma-aktion__verweis:hover { color: var(--accent); }
 .firma-aktion__hinweis { margin: 0.4rem 0 0; font-size: 12px; color: var(--muted); }
 .firma-aktion__fehler { margin: 0.4rem 0 0; font-size: 12px; color: var(--warn, #c2410c); }

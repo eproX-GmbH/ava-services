@@ -26,6 +26,9 @@ export interface UebernehmenProps {
   uebernommen: boolean;
   /** Nach erfolgreichem Anstoß: Ansicht neu laden. */
   onFertig?: () => void;
+  /** Für die Relevanz: Ein Import ist eine der teuersten Handlungen, die
+   *  ein Nutzer an einer Firma vornimmt — entsprechend schwer wiegt sie. */
+  companyId?: string;
 }
 
 /** Wurde die Firma im eigenen Mandanten schon verarbeitet? */
@@ -33,7 +36,7 @@ export function istUebernommen(stages: Record<string, unknown> | null | undefine
   return Boolean(stages) && Object.keys(stages as object).length > 0;
 }
 
-export function FirmaUebernehmen({ name, ort, uebernommen, onFertig }: UebernehmenProps) {
+export function FirmaUebernehmen({ name, ort, uebernommen, onFertig, companyId }: UebernehmenProps) {
   const [laeuft, setLaeuft] = useState(false);
   const [meldung, setMeldung] = useState<string | null>(null);
   const [fehler, setFehler] = useState<string | null>(null);
@@ -59,6 +62,15 @@ export function FirmaUebernehmen({ name, ort, uebernommen, onFertig }: Uebernehm
         },
       );
       setVorgang(r.transactionId);
+      // Relevanz: Uebernehmen wiegt schwerer als ein erneuter Anstoss —
+      // beim ersten Mal entscheidet sich der Nutzer fuer diese Firma,
+      // danach pflegt er sie nur.
+      if (companyId) {
+        void window.api.relevanz.erfasse(
+          uebernommen ? "firma.import" : "firma.uebernommen",
+          companyId,
+        );
+      }
       setMeldung(
         uebernommen
           ? "Verarbeitung erneut angestoßen."
