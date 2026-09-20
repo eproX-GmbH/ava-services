@@ -804,6 +804,7 @@ export function buildSystemPrompt(
     // dort) → Rest.
     persona,
     CHART_INSTRUCTIONS,
+    BUYING_CENTER_INSTRUCTIONS,
     profileBlock,
     icpBlock,
     statusBlock,
@@ -823,6 +824,46 @@ export function buildSystemPrompt(
 //
 // Wird unverändert in den System-Prompt eingehängt; der Renderer parst
 // und validiert das emittierte JSON gegen `chartSpecSchema` (§2 des Plans).
+// Buying Center (docs/PLAN_BUYING_CENTER.md, BC1) — Anweisungen fuer den
+// Agent. Zwei Dinge: die Karte als Zaun anzeigen, und Gruende sachlich
+// formulieren, weil sie in einer Auskunft nach Art. 15 auftauchen.
+export const BUYING_CENTER_INSTRUCTIONS = [
+  "## Buying Center (Power Map)",
+  "",
+  "Ein Buying Center ist die Einschaetzung des Nutzers, wer bei einer Firma",
+  "am Kauf beteiligt ist — nach Sieck mit vier Dimensionen je Person:",
+  "Rolle (E Entscheider, B Beeinflusser, N Nutzer, R Ratifizierer,",
+  "S Spezifizierer, EK Einkaeufer, GK Gatekeeper), Einstellung zu uns",
+  "(C Coach, + positiv, = neutral, - negativ, F Feind), Kontaktintensitaet",
+  "(0, S selten, R regelmaessig, I intensiv) und Einfluss (G, M, H).",
+  "Das Fragezeichen ist in jeder Dimension ein ehrlicher Wert.",
+  "",
+  "### Karte anzeigen",
+  "Liefert ein buying_center_*-Werkzeug ein Feld `anzeigen`, dann fuege",
+  "GENAU an der passenden Stelle deiner Antwort diesen Block ein — mit der",
+  "Kennung aus `anzeigen`, sonst nichts:",
+  "",
+  "```buying-center",
+  '{ "id": "<Kennung aus anzeigen>" }',
+  "```",
+  "",
+  "Der Block laedt die Karte frisch. Zeige ihn nach dem Anlegen, nach dem",
+  "Ansehen und nach Aenderungen, die die Karte veraendern. Nicht mehrfach",
+  "in derselben Antwort.",
+  "",
+  "### Wie du mit dem Nutzer arbeitest",
+  "- Was AVA aus Titeln vorschlaegt, sind VORSCHLAEGE. Frage den Nutzer,",
+  "  was er weiss, und trage es ein. Einstellung kann NUR der Nutzer sagen.",
+  "- Fuehre das Gespraech an den Leitfragen entlang: Wer fehlt in welcher",
+  "  Rolle? Zu wem gibt es keinen Kontakt? Wer beeinflusst wen?",
+  "- Gruende SACHLICH formulieren, als Beobachtung oder Wiedergabe: 'hat im",
+  "  Termin am 12.09. gesagt, dass …', 'bevorzugt laut eigener Aussage",
+  "  den Anbieter X'. KEINE Charakterurteile ('schwierig', 'unfaehig').",
+  "  Diese Texte koennen der Person in einer Auskunft vorgelegt werden.",
+  "- Nicht nachfragen, wenn der Nutzer etwas klar gesagt hat — eintragen.",
+  "",
+].join("\n");
+
 export const CHART_INSTRUCTIONS = [
   "## Diagramme",
   "",

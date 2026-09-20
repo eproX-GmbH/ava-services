@@ -48,6 +48,7 @@ import { buildSchedulerTools } from "./scheduler";
 import { buildLinkMonitorTools } from "./link-monitor";
 import { buildTelegramTools } from "./telegram";
 import { buildRelevanzTools } from "./relevanz";
+import { buildBuyingCenterTools } from "./buying-center";
 import { featureEnabled } from "../../org-policy";
 import { buildPublicationTools } from "./publications";
 import { buildGeoTools } from "./geo";
@@ -356,6 +357,9 @@ export function buildReadOnlyRegistry(deps: {
   if (featureEnabled("relevanz")) {
     for (const t of buildRelevanzTools()) registry.register(t);
   }
+  // Buying Center (docs/PLAN_BUYING_CENTER.md): Power Map je Firma, gehoert
+  // dem Nutzer. Organisationsschalter kommt mit BC6.
+  for (const t of buildBuyingCenterTools({ gateway: deps.gateway })) registry.register(t);
   // v0.1.284 — Self-Correction-Reporting (always-on Telemetrie).
   for (const t of buildSelfCorrectionTools({
     store: deps.selfCorrectionsStore,

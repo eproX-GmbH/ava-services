@@ -5,7 +5,7 @@ NICHT direkt bearbeiten — die Quelle der Wahrheit ist `services/desktop/src/ma
 Lauf via `pnpm -F @ava/desktop tools:doc` (oder automatisch via `build:typecheck`).
 
 Stand: 2026-09-20
-Anzahl Tools: 258
+Anzahl Tools: 265
 
 ## Firmen (22)
 
@@ -1078,6 +1078,87 @@ _Datei:_ `services/desktop/src/main/agent/tools/account.ts`
 Liefert das angemeldete Konto (Name, E-Mail, Nutzer-ID), den Tenant (Name, Rolle, Mitgliederzahl, ob die Tenant-ID aus dem Token-Claim oder dem Kompatibilitaets-Fallback stammt) und die weiteren Konten, die auf diesem Geraet bekannt sind. Read-only. Kontowechsel und 'Anderes Konto hinzufuegen' laufen ueber das Konto-Menue in der Kopfzeile, weil AVA dafuer neu startet.
 
 _Parameter:_ keine.
+
+## buying-center (7)
+
+### `buying_center_abschliessen`
+
+_Datei:_ `services/desktop/src/main/agent/tools/buying-center.ts`
+
+Setzt den Status eines Buying Centers: 'abgeschlossen' (Kaufprozess vorbei) oder 'archiviert' nimmt der Firma den Fokus, 'aktiv' setzt ihn wieder. Die Daten bleiben. Fragt vorher nach.
+
+_Parameter:_
+- `buyingCenterId: string` (required)
+- `status: string (enum: aktiv, abgeschlossen, archiviert)` (required)
+
+### `buying_center_anlegen`
+
+_Datei:_ `services/desktop/src/main/agent/tools/buying-center.ts`
+
+Legt fuer eine Firma ein Buying Center (Power Map nach Sieck) an und macht sie damit zum Fokuskunden des Nutzers. Zieht die bekannten Kontakte der Firma als Entwurf hinein, mit Vorschlaegen fuer Rolle und Einfluss aus dem Titel — als OFFENE Vorschlaege, nicht als Fakten. Nutze das, wenn der Nutzer sagt 'lass uns ein Buying Center machen', 'Power Map', 'wer entscheidet bei X'. Gibt es schon eines, wird es zurueckgegeben statt verdoppelt. Fragt vorher nach. Zeige danach die Karte (anzeigen-Feld) und nenne die offenen Punkte.
+
+_Parameter:_ keine.
+
+### `buying_center_anzeigen`
+
+_Datei:_ `services/desktop/src/main/agent/tools/buying-center.ts`
+
+Zeigt das Buying Center zu einer Firma: die Karte im Chat (anzeigen-Feld → ```buying-center-Zaun) und den Stand je Person. Nutze das bei 'zeig mir das Buying Center', 'wie steht es bei X', oder vor jeder Aenderung, um Mitglieds-IDs zu bekommen. Ohne buyingCenterId wird das eigene aktive zur Firma genommen.
+
+_Parameter:_
+- `companyId: string`
+- `buyingCenterId: string`
+
+### `buying_center_kante`
+
+_Datei:_ `services/desktop/src/main/agent/tools/buying-center.ts`
+
+Traegt eine Beziehung zwischen zwei Personen ein: EINFLUSS ('der IT-Leiter hat beim GF das letzte Wort' → von IT-Leiter nach GF, staerke H), VERTRAUT ('die beiden sind eng'), ANIMOSITAET ('die koennen nicht miteinander'). Ersetzt eine bestehende Beziehung derselben Art zwischen denselben Personen.
+
+_Parameter:_
+- `buyingCenterId: string` (required)
+- `vonMitgliedId: string` (required)
+- `nachMitgliedId: string` (required)
+- `art: string (enum: EINFLUSS, VERTRAUT, ANIMOSITAET)` (required)
+- `staerke: string (enum: G, M, H)`
+- `grund: string`
+
+### `buying_center_person_aufnehmen`
+
+_Datei:_ `services/desktop/src/main/agent/tools/buying-center.ts`
+
+Nimmt eine Person ins Buying Center auf — aus dem Kontakt-Bestand (personId) oder frei mit Name und Funktion, wenn AVA sie nicht kennt ('die Assistentin des GF, Frau Kowalski'). Aus der Funktion werden Rollen vorgeschlagen. Danach mit buying_center_setzen eintragen, was der Nutzer weiss.
+
+_Parameter:_
+- `buyingCenterId: string` (required)
+- `name: string` (required)
+- `funktion: string`
+- `personId: string`
+- `grund: string`
+
+### `buying_center_setzen`
+
+_Datei:_ `services/desktop/src/main/agent/tools/buying-center.ts`
+
+Traegt ein, was der Nutzer ueber eine Person im Buying Center weiss: rolle (E Entscheider, B Beeinflusser, N Nutzer, R Ratifizierer, S Spezifizierer, EK Einkaeufer, GK Gatekeeper; '-B' nimmt eine Rolle weg), einstellung (C Coach, + positiv, = neutral, - negativ, F Feind), kontakt (0 keiner, S selten, R regelmaessig, I intensiv), einfluss (G gering, M mittel, H hoch), oder notiz. Der GRUND ist Pflicht und soll SACHLICH das wiedergeben, was der Nutzer gesagt hat ('hat im Termin gesagt, dass …'), keine Charakterurteile. Alternativ einen offenen AVA-Vorschlag beantworten (vorschlagId + entscheidung). Nicht nachfragen — der Nutzer hat es gerade gesagt.
+
+_Parameter:_
+- `buyingCenterId: string` (required)
+- `mitgliedId: string` (required) — Aus buying_center_anzeigen (in eckigen Klammern).
+- `dimension: string (enum: rolle, einstellung, kontakt, einfluss, notiz)` (required)
+- `wert: string` — Kuerzel; null loescht. Bei notiz weglassen.
+- `grund: string` (required)
+- `vorschlagId: string`
+- `entscheidung: string (enum: angenommen, verworfen)`
+
+### `buying_center_vorschlaege`
+
+_Datei:_ `services/desktop/src/main/agent/tools/buying-center.ts`
+
+Listet, was AVA zum Buying Center vermutet und der Nutzer noch nicht entschieden hat, sowie die Leitfragen: unbesetzte Rollen und Personen ohne Kontakt. Nutze das, um das Gespraech weiterzufuehren ('Ein Einkaeufer fehlt noch — wer verhandelt den Vertrag?').
+
+_Parameter:_
+- `buyingCenterId: string` (required)
 
 ## Chat-Verlauf (3)
 

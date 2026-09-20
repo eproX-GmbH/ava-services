@@ -901,3 +901,129 @@ model RelevanzSperre {
 
   @@id([tenantId, actorId, zielArt, zielId])
 }
+
+// ---- Buying Center / Power Map (docs/PLAN_BUYING_CENTER.md) ----------------
+// Vier Dimensionen je Person nach Sieck: Rolle, Einstellung,
+// Kontaktintensitaet, Einfluss. Gehoert IMMER der Person, die es angelegt
+// hat — keine Organisationssicht. Zwei Kollegen an derselben Firma haben
+// zwei Buying Center, die sich widersprechen duerfen. Sichtfreigabe an
+// einzelne Mitglieder ist eine spaetere Stufe (BC7) und nur lesend.
+
+/// Ein Buying Center je Firma und Eigentuemer. Entsteht nur auf Wunsch.
+model BuyingCenter {
+  id                 String                 @id @default(cuid())
+  tenantId           String
+  /// Nur er liest (ohne Freigabe) und nur er schreibt. Aus dem JWT.
+  eigentuemerActorId String
+  companyId          String
+  /// Anlass — "Angebot Lager 2026". Leer = das eine je Firma.
+  anlass             String                 @default("")
+  status             String                 @default("aktiv") // aktiv | abgeschlossen | archiviert
+  angelegtAt         DateTime               @default(now())
+  updatedAt          DateTime               @updatedAt
+  mitglieder         BuyingCenterMitglied[]
+  kanten             BuyingCenterKante[]
+  freigaben          BuyingCenterFreigabe[]
+
+  @@unique([tenantId, eigentuemerActorId, companyId, anlass])
+  @@index([tenantId, eigentuemerActorId])
+  @@index([tenantId, companyId])
+}
+
+/// Eine Person im Buying Center mit dem AKTUELLEN Stand der vier
+/// Dimensionen. Die Geschichte mit Begruendung steht in BuyingCenterAngabe.
+model BuyingCenterMitglied {
+  id                    String               @id @default(cuid())
+  buyingCenterId        String
+  /// Verweis in den Kontakt-Bestand, wenn die Person dort existiert.
+  personId              String?
+  /// Sonst frei erfasst ("die Assistentin des GF, Frau Kowalski").
+  name                  String
+  funktion              String?
+  /// E,B,N,R,S,EK,GK — mehrere moeglich, leer = unbekannt.
+  rollen                String[]             @default([])
+  /// C,+,=,-,F — null = unbekannt. Reine Nutzerangabe, nie Vorschlag.
+  einstellung           String?
+  /// 0,S,R,I — null = unbekannt.
+  kontakt               String?
+  /// G,M,H — null = unbekannt.
+  einfluss              String?
+  /// Leitfrage 6: wer von uns kuemmert sich (actorId).
+  ansprechpartnerBeiUns String?
+  /// Position auf der Karte, damit sie nach dem Neuladen so aussieht wie
+  /// verlassen.
+  x                     Float?
+  y                     Float?
+  angelegtAt            DateTime             @default(now())
+  updatedAt             DateTime             @updatedAt
+  buyingCenter          BuyingCenter         @relation(fields: [buyingCenterId], references: [id], onDelete: Cascade)
+  angaben               BuyingCenterAngabe[]
+
+  @@index([buyingCenterId])
+  @@index([personId])
+}
+
+/// Jede Dimension einzeln mit Herkunft und Grund — die Belegkette. Wird
+/// nie ueberschrieben, nur ergaenzt; die juengste Nutzerangabe gilt.
+model BuyingCenterAngabe {
+  id          String               @id @default(cuid())
+  mitgliedId  String
+  /// rolle | einstellung | kontakt | einfluss | ansprechpartner | notiz
+  dimension   String
+  wert        String?
+  /// nutzer | ava:titel | ava:website | ava:linkedin | ava:crm
+  herkunft    String
+  /// Klartext. Sachlich formulieren — das landet in einer Auskunft.
+  grund       String
+  /// Bei herkunft = nutzer: wer. Sonst null.
+  vonActorId  String?
+  /// Vorschlag angenommen / verworfen / offen (nur bei ava:*).
+  entschieden String? // angenommen | verworfen
+  erfasstAt   DateTime             @default(now())
+  mitglied    BuyingCenterMitglied @relation(fields: [mitgliedId], references: [id], onDelete: Cascade)
+
+  @@index([mitgliedId, dimension, erfasstAt])
+}
+
+/// Leitfrage 5: Wer beeinflusst wen, wer mag wen nicht.
+model BuyingCenterKante {
+  id             String       @id @default(cuid())
+  buyingCenterId String
+  vonMitgliedId  String
+  nachMitgliedId String
+  /// EINFLUSS | VERTRAUT | ANIMOSITAET
+  art            String
+  /// G,M,H — bei EINFLUSS
+  staerke        String?
+  grund          String?
+  herkunft       String       @default("nutzer")
+  vonActorId     String?
+  erfasstAt      DateTime     @default(now())
+  buyingCenter   BuyingCenter @relation(fields: [buyingCenterId], references: [id], onDelete: Cascade)
+
+  @@index([buyingCenterId])
+}
+
+/// Sichtfreigabe (BC7): Ein Organisationsmitglied darf sehen, nicht aendern.
+model BuyingCenterFreigabe {
+  buyingCenterId String
+  actorId        String
+  erteiltVon     String
+  erteiltAt      DateTime     @default(now())
+  buyingCenter   BuyingCenter @relation(fields: [buyingCenterId], references: [id], onDelete: Cascade)
+
+  @@id([buyingCenterId, actorId])
+  @@index([actorId])
+}
+
+/// Fokuskunde je NUTZER: Fuer diese Firma darf AVA Aufwand treiben, den
+/// sie fuer die uebrigen nicht treibt. Entsteht mit dem Buying Center.
+model FokusKunde {
+  tenantId  String
+  actorId   String
+  companyId String
+  seit      DateTime @default(now())
+
+  @@id([tenantId, actorId, companyId])
+  @@index([tenantId, companyId])
+}

@@ -30,6 +30,7 @@ export const FAEHIGKEITEN: Faehigkeit[] = [
   { id: "link_monitor", text: "Website-Ueberwachung: beliebige URL beobachten und bei Aenderung melden", tools: ["link_monitor_*"] },
   { id: "meldungen", text: "Meldungen (Alerts) ansehen, verwerfen, Einstellungen fuer Benachrichtigungen", tools: ["alerts_*"] },
   { id: "watches", text: "Beobachtungsregeln (Watches) mit eigener Bewertungsvorschrift anlegen und verwalten", tools: ["watch_*"] },
+  { id: "buying_center", text: "Buying Center (Power Map nach Sieck) zu einer Firma im Gespraech erarbeiten: Personen mit Rolle, Einstellung, Kontaktintensitaet und Einfluss, Beziehungen zwischen Personen, Karte im Chat; die Firma wird damit Fokuskunde", tools: ["buying_center_*"] },
   { id: "relevanz", text: "Relevanz: wie nah du an einer Firma oder Person dran bist (1-10), was AVA als naechstes beobachtet, welche Firmen im Team gerade Thema sind, Erfassung ein- und ausschalten oder loeschen", tools: ["relevanz_*"], feature: "relevanz" },
   { id: "mail", text: "Mail-Postfach verbinden, Posteingang lesen, antworten, weiterleiten, archivieren, Mail-Triage einstellen", tools: ["mail_*"], feature: "mail" },
   { id: "telegram", text: "Telegram verbinden: Meldungen, Kurzprofile und Freigaben aufs Handy, Nachrichten senden", tools: ["telegram_*"], feature: "telegram" },
