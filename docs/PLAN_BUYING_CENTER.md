@@ -26,10 +26,22 @@ Ich halte sie fest, damit sie nicht wieder aufgemacht werden:
    ersten Entwurf und spaeter Vorschlaege. Was der Nutzer gesetzt hat,
    ueberschreibt kein Lauf. Das ist die wichtigste technische Festlegung
    im ganzen Plan, siehe Abschnitt 5.
-4. **Es gehoert der Organisation, nicht dem Nutzer** — anders als der
-   Relevanz-Wert. Wer herausgefunden hat, dass der IT-Leiter das Sagen
-   hat, soll das nicht fuer sich behalten muessen. Jede Angabe traegt,
-   wer sie wann gemacht hat.
+4. **Es gehoert IMMER der Person, die es angelegt hat.** Keine
+   Organisationsweite Teilung, kein gemeinsames Bearbeiten. Ein Buying
+   Center ist hoch individuell: Es ist die Einschaetzung EINES
+   Vertrieblers, mit seinen Gespraechen, seinen Gruenden, seiner
+   Beziehung zu den Personen. Zwei Kollegen an derselben Firma haben zwei
+   Buying Center, und die duerfen sich widersprechen — das ist kein
+   Fehler, sondern Information.
+
+   Spaeter kommt eine **Sichtfreigabe**: Der Eigentuemer kann Mitgliedern
+   seiner Organisation erlauben, das Buying Center zu SEHEN. Aendern kann
+   es weiterhin nur er. Geteilte Buying Center leben in einem eigenen
+   Bereich, nicht in der Firmenansicht (Abschnitt 8.3).
+
+   (Mein erster Vorschlag war Organisationseigentum. Der Einwand
+   ueberzeugt: Was einer ueber Menschen denkt, ist nicht das, was das
+   Team denkt.)
 
 Meine Meinung zu dem, was das Buch nicht sagt: **Einfluss ist ein
 Graph.** Leitfrage 5 ("Wer hat welchen Einfluss auf wen?") laesst sich
@@ -100,10 +112,14 @@ beantworten (Abschnitt 4).
 ## 3. Datenmodell (Gateway, je Organisation)
 
 ```prisma
-/// Ein Buying Center je Firma und Organisation. Entsteht nur auf Wunsch.
+/// Ein Buying Center je Firma und EIGENTUEMER. Entsteht nur auf Wunsch.
+/// Zwei Mitglieder derselben Organisation haben zwei getrennte Buying
+/// Center zu derselben Firma.
 model BuyingCenter {
   id          String   @id @default(cuid())
   tenantId    String
+  /// Der Eigentuemer. Nur er liest (ohne Freigabe) und nur er schreibt.
+  eigentuemerActorId String
   companyId   String
   /// Anlass — "Angebot Lagerverwaltung 2026". Ein Buying Center gilt
   /// fuer einen Kaufprozess; eine Firma kann mehrere haben.
@@ -114,8 +130,22 @@ model BuyingCenter {
   updatedAt   DateTime @updatedAt
   mitglieder  BuyingCenterMitglied[]
   kanten      BuyingCenterKante[]
-  @@unique([tenantId, companyId, anlass])
+  freigaben   BuyingCenterFreigabe[]
+  @@unique([tenantId, eigentuemerActorId, companyId, anlass])
+  @@index([tenantId, eigentuemerActorId])
   @@index([tenantId, companyId])
+}
+
+/// Sichtfreigabe (spaetere Stufe): Ein Organisationsmitglied darf sehen,
+/// nicht aendern. Nur der Eigentuemer erteilt und entzieht sie.
+model BuyingCenterFreigabe {
+  buyingCenterId String
+  actorId        String   // wer sehen darf
+  erteiltVon     String   // = Eigentuemer
+  erteiltAt      DateTime @default(now())
+  buyingCenter   BuyingCenter @relation(...)
+  @@id([buyingCenterId, actorId])
+  @@index([actorId])
 }
 
 /// Eine Person im Buying Center mit den vier Dimensionen.
@@ -172,6 +202,18 @@ model BuyingCenterKante {
 }
 ```
 
+**Zugriffsregel, im Gateway erzwungen, nicht im Client:**
+
+```
+lesen     eigentuemerActorId = ich  ODER  Freigabe fuer mich vorhanden
+schreiben eigentuemerActorId = ich
+```
+
+Kein Parameter, ueber den ein anderer Eigentuemer adressierbar waere;
+`actorId` kommt aus dem JWT. Ein Freigegebener bekommt die Karte und die
+Seitenleiste, aber jeder Schreibversuch endet mit 403 — auch aus dem Chat
+heraus, und das Werkzeug sagt es dann klar statt still nichts zu tun.
+
 Warum `BuyingCenterAngabe` als eigene Tabelle und nicht vier Spalten am
 Mitglied: Die vier Spalten am Mitglied sind der **aktuelle Stand**, die
 Angaben sind die **Geschichte mit Begruendung**. Beim Darueberfahren im
@@ -188,10 +230,10 @@ zu tun.
 
 ## 4. Fokuskunde
 
-Ein Buying Center anzulegen macht die Firma zum Fokuskunden. Das ist ein
-Kennzeichen an der Firma je Organisation (`FokusKunde(tenantId,
-companyId, seit, von)`), und es schaltet Aufwand frei, der sonst zu
-teuer waere:
+Ein Buying Center anzulegen macht die Firma zum Fokuskunden — **fuer
+diesen Nutzer**. Das Kennzeichen haengt am Nutzer, nicht an der
+Organisation (`FokusKunde(tenantId, actorId, companyId, seit)`), und es
+schaltet Aufwand frei, der sonst zu teuer waere:
 
 | Was AVA fuer Fokuskunden zusaetzlich tut | Warum nicht fuer alle |
 | --- | --- |
@@ -205,9 +247,11 @@ Fokus ist umkehrbar: Status "abgeschlossen" oder "archiviert" nimmt das
 Kennzeichen wieder weg, die Daten bleiben.
 
 **Wichtig fuer die Kosten:** Fokuskunden werden wenige sein — das ist
-der Zweck. Ein Deckel je Organisation (Vorschlag: 50 aktive) verhindert,
-dass jemand den ganzen Bestand zum Fokus erklaert und die Watchlist
-sprengt.
+der Zweck. Ein Deckel je Nutzer (Vorschlag: 25 aktive) verhindert, dass
+jemand den ganzen Bestand zum Fokus erklaert und die Watchlist sprengt.
+Der Website-Personenlauf ist dabei je Firma nur einmal je Tag faellig,
+auch wenn drei Kollegen dieselbe Firma im Fokus haben — die Daten landen
+ohnehin im gemeinsamen Kontakt-Bestand.
 
 ---
 
@@ -270,6 +314,11 @@ ist.
 | `buying_center_kante` | "X beeinflusst Y stark", "A und B koennen nicht miteinander" | nein |
 | `buying_center_vorschlaege` | Offene AVA-Vorschlaege und Hinweise (Leitfragen 1, 3, Gespraechsmuster) | nein |
 | `buying_center_abschliessen` | Status setzen, Fokus aufheben | ja |
+| `buying_center_freigeben` *(spaeter)* | Sicht fuer ein Organisationsmitglied erteilen oder entziehen | ja — es gibt Einschaetzungen ueber Menschen weiter |
+
+Alle Werkzeuge arbeiten nur auf den **eigenen** Buying Centern. Wer ein
+freigegebenes anspricht, bekommt es angezeigt; jeder Versuch, es zu
+aendern, wird mit Begruendung abgelehnt.
 
 Der Gespraechsfluss, den das ergibt:
 
@@ -335,9 +384,43 @@ Bereichen:
 Eine leere Seitenleiste ist erlaubt. Sie sagt dann: "Zu dieser Person
 liegt nichts vor. Du kannst im Chat ergaenzen, was du weisst."
 
-Denselben Graphen gibt es auch in der Firmenansicht als eigenen Reiter
-"Buying Center" — nur fuer Fokuskunden, sonst verschwindet er (Regel:
-Abgeschaltetes wird ausgeblendet).
+### 8.2 Reiter in der Firmenansicht: nur das eigene
+
+Denselben Graphen gibt es in der Firmenansicht als Reiter "Buying
+Center" — **nur, wenn der Nutzer selbst eines zu dieser Firma hat.**
+Sonst gibt es den Reiter nicht (Regel: Abgeschaltetes wird ausgeblendet,
+und leere Reiter erscheinen ohnehin nicht mehr). Die Buying Center von
+Kollegen erscheinen dort NIE — sonst wird die Firmenansicht
+unuebersichtlich, und sie gehoeren dem Nutzer auch nicht.
+
+### 8.3 Geteilte Buying Center: ein eigener Bereich
+
+Was Kollegen freigegeben haben, bekommt einen eigenen Ort, getrennt von
+allem Eigenen:
+
+```
+Mit dir geteilte Buying Center
+  ▸ Zimmer Group GmbH                       2 Buying Center
+      Henning Johnsen  ·  "Angebot Lager 2026"  ·  zuletzt 18.09.
+      Patrick Dettley  ·  (ohne Anlass)          ·  zuletzt 02.09.
+  ▸ Mueller KG                              1 Buying Center
+      Henning Johnsen  ·  (ohne Anlass)          ·  zuletzt 11.09.
+```
+
+Eine Liste von Firmen, aufklappbar; darunter je Firma die freigegebenen
+Buying Center der einzelnen Kollegen mit Eigentuemer, Anlass und Stand.
+Ein Klick oeffnet einen **eigenen Bildschirm**, der nur dieses eine
+Buying Center zeigt — dieselbe Karte, dieselbe Seitenleiste, aber ohne
+jede Bearbeitung: keine Werkzeuge, kein Verschieben, das Verschieben
+der Knoten wird nicht gespeichert. Oben steht, wem es gehoert.
+
+Der Bereich erscheint in der Navigation nur, wenn mindestens eine
+Freigabe fuer den Nutzer existiert. Ohne Freigaben gibt es ihn nicht.
+
+Aus dem Chat heraus laesst sich ein geteiltes Buying Center ebenfalls
+anzeigen ("zeig mir Hennings Buying Center zur Zimmer Group"); die
+Setz-Werkzeuge lehnen dann mit dem Hinweis ab, dass es nicht das eigene
+ist.
 
 ---
 
@@ -375,9 +458,11 @@ Konsequenzen, die sich daraus ergeben und in den Bau gehoeren:
    Center".
 2. **Autorenschaft ist Pflicht.** Jede Angabe traegt, wer sie gemacht
    hat. Wer "Feind" schreibt, steht dazu.
-3. **Nie ueber die Organisation hinaus.** Kein Aggregat, kein Teilen
+3. **Nie ueber den Eigentuemer hinaus — ausser durch seine ausdrueckliche
+   Freigabe.** Kein Aggregat, keine Organisationssicht, kein Teilen
    zwischen Organisationen, keine Verwendung in Modell-Prompts fuer
-   andere Firmen.
+   andere Firmen. Eine Freigabe ist eine Weitergabe von Einschaetzungen
+   ueber Menschen und fragt deshalb nach.
 
 Der bestehende Art.-14-Ablauf bleibt unberuehrt: Personen im Buying
 Center sind dieselben Personen wie im Kontakt-Bestand.
@@ -395,6 +480,7 @@ Center sind dieselben Personen wie im Kontakt-Bestand.
 | **BC4** | Fokuskunden-Aufwand: gezielter Personen-Lauf ueber die Website (Hervorhebung), LinkedIn-Checkliste je Mitglied, Watchlist-Aufnahme mit Rueckfrage. | Leitfrage 1 und Buch-Checkliste aus Daten |
 | **BC5** | Lebendigkeit: Personensignale am Knoten, Alarmweg-Positivliste, monatliche Nachfrage, Verknuepfen freier Personen mit dem Bestand. | Veraltet nicht leise |
 | **BC6** | Auskunfts-Export, Faehigkeitsgruppe fuer die Vorschlaege, Organisationsschalter `buyingcenter` in `ORG_FEATURES`. | Vollstaendig |
+| **BC7** *(spaeter)* | Sichtfreigabe: Freigabe-Werkzeug, Bereich "Mit dir geteilte Buying Center" mit aufklappbaren Firmen, eigener Nur-Lese-Bildschirm. | Kollegen koennen sehen, nicht aendern |
 
 BC0–BC2 sind der Kern und gehoeren zusammen; damit laesst sich das
 Buying Center im Chat erarbeiten und ansehen. BC3 macht es aus Daten
@@ -409,7 +495,7 @@ Leben.
    erlaubt mehrere (Feld `anlass`). Mein Vorschlag: im Chat standardmaessig
    eines je Firma, ein zweites nur auf ausdruecklichen Wunsch ("fuer das
    Projekt X ein eigenes").
-2. **Deckel fuer Fokuskunden je Organisation.** Vorschlag 50. Bei
+2. **Deckel fuer Fokuskunden je Nutzer.** Vorschlag 25. Bei
    Ueberschreitung: Hinweis, kein hartes Nein.
 3. **Kontaktintensitaets-Schwellen aus dem CRM** (0 / 1–2 / 3–8 / > 8 in
    90 Tagen). Geschaetzt; nach vier Wochen an echten Daten pruefen.
@@ -417,7 +503,7 @@ Leben.
    Repost lasst sich Engagement ablesen, nicht Wohlwollen uns gegenueber.
    Einstellung bleibt reine Nutzerangabe — das ist auch die Dimension,
    die im Auskunftsfall am heikelsten ist.
-5. **Sichtbarkeit in der Organisation.** Alle Mitglieder sehen alle
-   Buying Center (mein Vorschlag, das ist der Zweck) — oder nur die, die
-   an der Firma arbeiten? Falls Letzteres, waere die Relevanz-Naehe die
-   natuerliche Schranke.
+5. ~~**Sichtbarkeit in der Organisation.**~~ Entschieden: Ein Buying
+   Center gehoert immer nur seinem Ersteller. Sichtfreigabe an einzelne
+   Mitglieder als spaetere Stufe BC7, nur lesend, in einem eigenen
+   Bereich.
