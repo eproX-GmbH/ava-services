@@ -42,6 +42,26 @@ const XING_HOSTS = ["xing.com"];
  * Kurzlinks (lnkd.in) sind KEINE Profil-Belege — sie werden verworfen.
  * Liefert null fuer alles, was kein Profil ist.
  */
+/**
+ * Umlaute und Schaerfe-S in einer Profil-Adresse vereinheitlichen.
+ *
+ * Befund 2026-09-19: "robin rögner" lag zweimal bei derselben Firma, einmal
+ * unter `xing.com/profile/robin_roegner`, einmal unter
+ * `xing.com/profile/robin_rögner`. Beide Portale erlauben beide
+ * Schreibweisen und leiten aufeinander um — es ist dasselbe Profil, aber
+ * zwei verschiedene Zeichenketten, also zwei Schluessel.
+ *
+ * Gefaltet wird in die ausgeschriebene Form (ö → oe), weil Portale ihre
+ * Slugs so bilden, wenn der Nutzer keine Umlaute setzt.
+ */
+export function falteUmlaute(v: string): string {
+  return v
+    .replace(/ä/g, "ae")
+    .replace(/ö/g, "oe")
+    .replace(/ü/g, "ue")
+    .replace(/ß/g, "ss");
+}
+
 export function normalizeLinkedInProfileUrl(
   raw: string | null | undefined,
 ): string | null {
@@ -75,7 +95,7 @@ export function normalizeLinkedInProfileUrl(
   // menschenlesbar, taugen nicht zur Namenspruefung und veralten mit
   // dem Account. 52 davon lagen aktiv im Bestand (Befund 2026-09-01).
   if (/^ac[owy]a[a-z0-9_-]{25,}$/i.test(slug)) return null;
-  return `https://www.linkedin.com/in/${encodeURIComponent(slug)}`;
+  return `https://www.linkedin.com/in/${encodeURIComponent(falteUmlaute(slug))}`;
 }
 
 export function personIdentityKey(args: {
@@ -89,7 +109,7 @@ export function personIdentityKey(args: {
   const gatedUrl =
     normalizeLinkedInProfileUrl(args.linkedinUrl) ??
     (isHostFor(args.xingUrl, XING_HOSTS) ? args.xingUrl : null);
-  const url = (gatedUrl ?? "").trim().toLowerCase();
+  const url = falteUmlaute((gatedUrl ?? "").trim().toLowerCase());
   if (url) return `url:${url}`;
   // Titel-/Diakritik-gefaltete Namensform: "Dr. Anna Meier" und
   // "Anna Meier" sind dieselbe Person. Fuer schlichte Namen identisch
