@@ -3168,6 +3168,27 @@ a.heartbeat-decision__company:hover {
    aber nicht so stumm wie ein Duplikat — es ist etwas passiert. */
 .heartbeat-decision__outcome--gesammelt  { background: rgba(0, 192, 167, 0.10); color: var(--muted); }
 .heartbeat-decision__outcome--zu-kalt    { background: var(--color-slate-100); color: var(--muted); }
+
+/* Einsicht in die erfassten Relevanz-Signale. Bewusst eine schlichte
+   Tabelle: Der Nutzer soll nachlesen koennen, was ueber ihn erfasst wird,
+   und dafuer ist Lesbarkeit alles. Eigene Breite und Polsterung, Farben
+   kommen aus den globalen Regeln. */
+.relevanz-signale { margin-top: 0.75rem; max-height: 22rem; overflow-y: auto; }
+.relevanz-signale__tabelle { width: 100%; border-collapse: collapse; font-size: 13px; }
+.relevanz-signale__tabelle th {
+  text-align: left;
+  font-weight: 600;
+  font-size: 12px;
+  color: var(--muted);
+  padding: 0.3rem 0.6rem 0.3rem 0;
+  border-bottom: 1px solid rgba(127,127,127,0.2);
+}
+.relevanz-signale__tabelle td {
+  padding: 0.3rem 0.6rem 0.3rem 0;
+  border-bottom: 1px solid rgba(127,127,127,0.08);
+  /* Lange Kennungen duerfen die Tabelle nicht breiter machen als die Karte. */
+  overflow-wrap: anywhere;
+}
 .heartbeat-decision__summary {
   margin-top: 2px;
   /* Two-line clamp keeps long demo summaries from blowing up the panel. */

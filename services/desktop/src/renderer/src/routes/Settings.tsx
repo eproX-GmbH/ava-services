@@ -227,6 +227,7 @@ export const SETTINGS_TAB_SUB_ITEMS: Record<
     { anchor: "email-muster-section", label: "E-Mail-Ableitung" },
     { anchor: "mithelfen-section", label: "Stammdaten mitpflegen" },
     { anchor: "alerts-cadence", label: "Alerts / Heartbeat" },
+    { anchor: "relevanz-section", label: "Relevanz" },
     { anchor: "telegram-section", label: "Telegram" },
   ],
   wissensquellen: [],
@@ -267,6 +268,7 @@ export const SETTINGS_ANCHOR_TO_TAB: Record<string, SettingsTabId> = {
   // umgezogen. Bestehende Deep-Links (z. B. WatchChip → watches-section)
   // funktionieren weiter dank dieses Mappings.
   "alerts-cadence":          "automatisierungen",
+  "relevanz-section":        "automatisierungen",
   "alerts-severity":         "automatisierungen",
   "freshness-section":       "automatisierungen",
   "email-muster-section":    "automatisierungen",

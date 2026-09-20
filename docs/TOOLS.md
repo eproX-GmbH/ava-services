@@ -5,7 +5,7 @@ NICHT direkt bearbeiten — die Quelle der Wahrheit ist `services/desktop/src/ma
 Lauf via `pnpm -F @ava/desktop tools:doc` (oder automatisch via `build:typecheck`).
 
 Stand: 2026-09-20
-Anzahl Tools: 253
+Anzahl Tools: 258
 
 ## Firmen (22)
 
@@ -2001,6 +2001,55 @@ _Datei:_ `services/desktop/src/main/agent/tools/register-delta.ts`
 Zeigt, ob dieser Rechner Register-Jobs abarbeitet (Nummernfront neuer Firmen, Registerbekanntmachungen, Auffrischung bekannter Firmen), warum er gerade pausiert, welchen Job er bearbeitet, wie viele Abfragen in der letzten Stunde liefen (Budget 60), und den Stand der geteilten Queue (offene und erledigte Jobs, aktive Worker). Nur lesend.
 
 _Parameter:_ keine.
+
+## relevanz (5)
+
+### `relevanz_einstellen`
+
+_Datei:_ `services/desktop/src/main/agent/tools/relevanz.ts`
+
+Schaltet die Relevanz-Erfassung ein oder aus. Aus bedeutet: AVA merkt sich nicht mehr, welche Firmen und Personen der Nutzer ansieht, und beobachtet im Hintergrund wieder nach reiner Sachlage. Nutze das, wenn der Nutzer die Erfassung nicht will. Ohne Argument kommt nur der aktuelle Stand. Fragt vor einer Aenderung nach.
+
+_Parameter:_
+- `an: boolean` — Weglassen = nur nachsehen.
+
+### `relevanz_status`
+
+_Datei:_ `services/desktop/src/main/agent/tools/relevanz.ts`
+
+Zeigt, wie nah der Nutzer an einer Firma oder Person dran ist: Naehe 1-10 (aus seinem eigenen Verhalten), Gewicht 1-10 (sachliche Passung aus ICP und Firmenstatus) und die staerksten Gruende. Nutze das, wenn der Nutzer fragt, warum eine Firma als wichtig gilt, warum er zu ihr Meldungen bekommt (oder keine), oder wie 'heiss' sie ist. Ohne Argumente kommt der eigene Gesamtstand.
+
+_Parameter:_
+- `zielArt: string (enum: firma, person)` — Standard: firma.
+- `ids: array` — companyIds oder personIds. Leer = die obersten Eintraege.
+
+### `relevanz_thema`
+
+_Datei:_ `services/desktop/src/main/agent/tools/relevanz.ts`
+
+Zeigt, welche Firmen die Organisation gerade beschaeftigen: je Firma die ANZAHL der Mitglieder, die sie derzeit warm haben. Ohne Namen — wer genau dranhaengt, steht hier bewusst nicht. Nutze das, wenn der Nutzer wissen will, woran das Team gerade arbeitet oder ob sich jemand mit derselben Firma befasst.
+
+_Parameter:_
+- `limit: integer`
+
+### `relevanz_vergessen`
+
+_Datei:_ `services/desktop/src/main/agent/tools/relevanz.ts`
+
+Loescht die gesammelten Relevanz-Signale — entweder zu einer bestimmten Firma oder Person, oder alle. Nutze das, wenn der Nutzer sagt, AVA solle eine Firma 'vergessen', sich nicht mehr merken, was er angesehen hat, oder wenn er seine Daten loeschen will. Fragt vorher nach. Die Loeschung ist endgueltig.
+
+_Parameter:_
+- `zielArt: string (enum: firma, person)`
+- `zielId: string` — Weglassen, um ALLES zu loeschen.
+
+### `relevanz_vorschau`
+
+_Datei:_ `services/desktop/src/main/agent/tools/relevanz.ts`
+
+Listet die Firmen, die AVA im Hintergrund als naechstes beobachtet, nach Rang sortiert. Nutze das, wenn der Nutzer wissen will, worauf AVA gerade achtet oder warum eine bestimmte Firma nicht vorkommt. Das ist KEINE Rangliste ueber Nutzer, sondern die Arbeitsvorschau des eigenen Hintergrundlaufs.
+
+_Parameter:_
+- `limit: integer`
 
 ## scheduler (4)
 

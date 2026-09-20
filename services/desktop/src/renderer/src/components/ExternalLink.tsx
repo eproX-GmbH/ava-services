@@ -42,6 +42,12 @@ interface ExternalLinkProps {
   warning?: { headline: string; body: string } | null;
   /** Override the per-host suppression key. Defaults to the URL host. */
   suppressKey?: string;
+  /**
+   * Faellt, wenn der Link tatsaechlich geoeffnet wird — nicht schon beim
+   * Klick. Bricht der Nutzer die Warnung ab, faellt nichts. Genutzt fuer
+   * die Relevanz: Ein abgebrochener Profilaufruf ist kein Interesse.
+   */
+  onOpen?: () => void;
 }
 
 export function ExternalLink({
@@ -51,6 +57,7 @@ export function ExternalLink({
   title,
   warning,
   suppressKey,
+  onOpen,
 }: ExternalLinkProps) {
   const effectiveWarning =
     warning === undefined ? defaultWarningFor(href) : warning;
@@ -58,9 +65,11 @@ export function ExternalLink({
   const [open, setOpen] = useState(false);
 
   const onClick = (e: React.MouseEvent<HTMLAnchorElement>) => {
-    if (!effectiveWarning) return; // open natively
-    if (e.metaKey || e.ctrlKey || e.shiftKey || e.button === 1) return;
-    if (isSuppressed(key)) return;
+    // Alle drei Rueckgaben oeffnen den Link nativ — also gilt er als
+    // geoeffnet. Nur der Weg ueber die Warnung wartet auf "Weiter".
+    if (!effectiveWarning) { onOpen?.(); return; }
+    if (e.metaKey || e.ctrlKey || e.shiftKey || e.button === 1) { onOpen?.(); return; }
+    if (isSuppressed(key)) { onOpen?.(); return; }
     e.preventDefault();
     setOpen(true);
   };
@@ -82,6 +91,7 @@ export function ExternalLink({
           href={href}
           warning={effectiveWarning}
           suppressKey={key}
+          onOpen={onOpen}
           onClose={() => setOpen(false)}
         />
       )}
@@ -94,11 +104,13 @@ function ExternalLinkConfirm({
   warning,
   suppressKey,
   onClose,
+  onOpen,
 }: {
   href: string;
   warning: { headline: string; body: string };
   suppressKey: string;
   onClose: () => void;
+  onOpen?: () => void;
 }) {
   const [suppress, setSuppress] = useState(false);
   const dialogRef = useRef<HTMLDivElement | null>(null);
@@ -116,6 +128,7 @@ function ExternalLinkConfirm({
 
   const onContinue = () => {
     if (suppress) markSuppressed(suppressKey);
+    onOpen?.();
     onClose();
     // window.open with _blank routes through Electron's
     // setWindowOpenHandler, which redirects to the OS browser.

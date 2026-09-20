@@ -1619,6 +1619,25 @@ function ContactsTab({ id }: { id: string }) {
     return treffer.map((x) => x.eintrag);
   }, [byPerson, suche, quellen]);
 
+  // Relevanz (docs/PLAN_RELEVANZ.md, 3.2): Wer sucht und wenige Treffer
+  // bekommt, hat genau die gemeint — dieselbe Regel wie bei
+  // Werkzeugergebnissen. Eine Eingabe, die halbe Belegschaften trifft, ist
+  // ein Durchblaettern und zaehlt nicht.
+  //
+  // Verzoegert, damit nicht jeder Tastendruck auf dem Weg zum Wort ein
+  // Signal wirft: "m", "me", "mei" treffen zwischendurch immer mal wenige.
+  useEffect(() => {
+    if (!suche.trim() || gefundenePersonen.length === 0 || gefundenePersonen.length > 3) {
+      return;
+    }
+    const t = setTimeout(() => {
+      for (const [pid] of gefundenePersonen) {
+        void window.api.relevanz.erfasse("person.gesucht", pid, { firmaId: id });
+      }
+    }, 1200);
+    return () => clearTimeout(t);
+  }, [suche, gefundenePersonen, id]);
+
   return (
     <div style={{ display: "grid", gap: "1.5rem" }}>
       <article className="panel">
@@ -2040,6 +2059,18 @@ function PersonCard({
   const xing = find("xingUrl");
   const linkedin = find("linkedinUrl");
   const herkunftsGruppen = quellenDerFakten(facts, quellen);
+  // Relevanz (docs/PLAN_RELEVANZ.md, 3.2): Was der Nutzer an dieser Person
+  // TUT, sagt mehr als das, was ueber sie bekannt ist. Die Aufrufe sind
+  // folgenlos, wenn die Erfassung aus ist, und werfen nie.
+  const merke = (art: string) => {
+    if (personId || facts[0]?.entityId) {
+      void window.api.relevanz.erfasse(
+        art,
+        personId ?? (facts[0]?.entityId as string),
+        { firmaId: companyId ?? null },
+      );
+    }
+  };
   // Der Rang erklaert die Reihenfolge der Karten. Bei "Weitere" bleibt er
   // weg — ein Abzeichen an jeder zweiten Karte sagt nichts.
   const rang = rangFuerTitel(job?.value);
@@ -2205,6 +2236,7 @@ function PersonCard({
               className="pc__iconbtn"
               href={`mailto:${email.value}`}
               title={`E-Mail an ${email.value}`}
+              onClick={() => merke("person.mail")}
             >
               <span className="visually-hidden">E-Mail schreiben</span>
               <MailIcon size={18} />
@@ -2225,6 +2257,7 @@ function PersonCard({
               href={linkedin.value}
               className="pc__iconbtn pc__iconbtn--brand"
               title="LinkedIn-Profil öffnen"
+              onOpen={() => merke("person.profil")}
             >
               <span className="visually-hidden">LinkedIn</span>
               <LinkedInIcon size={17} />
@@ -2235,6 +2268,7 @@ function PersonCard({
               href={xing.value}
               className="pc__iconbtn pc__iconbtn--brand"
               title="XING-Profil öffnen"
+              onOpen={() => merke("person.profil")}
             >
               <span className="visually-hidden">XING</span>
               <XingIcon size={17} />

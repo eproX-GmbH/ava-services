@@ -490,6 +490,23 @@ export async function removeMember(pool: pg.Pool, auth: AuthContext, actorId: st
     )).rows[0]?.email ?? null;
     // B1 — Historie schliessen (Seat bleibt fuer den Monat gezaehlt, R5).
     await closeMembership(client, { actorId, tenantId: auth.tenantId, reason: selbst ? "left" : "removed" });
+    // Relevanz (docs/PLAN_RELEVANZ.md, 4.5): Das Verhaltensprofil des
+    // Mitglieds in DIESER Organisation faellt mit der Mitgliedschaft. Es
+    // gehoert in denselben Ablauf und nicht in einen Handgriff, an den
+    // sich jemand erinnern muss — und es waere schwer zu begruenden,
+    // Verhaltensdaten eines Ausgeschiedenen weiter vorzuhalten.
+    await client.query(
+      `DELETE FROM "RelevanzSignal" WHERE "tenantId" = $1 AND "actorId" = $2`,
+      [auth.tenantId, actorId],
+    );
+    await client.query(
+      `DELETE FROM "RelevanzWert" WHERE "tenantId" = $1 AND "actorId" = $2`,
+      [auth.tenantId, actorId],
+    );
+    await client.query(
+      `DELETE FROM "RelevanzSperre" WHERE "tenantId" = $1 AND "actorId" = $2`,
+      [auth.tenantId, actorId],
+    );
     await setzeAufPersoenlichenTenant(client, actorId, email);
     const acc = await readBillingAccount(client, auth.tenantId);
     if (acc?.mode === "seats") {

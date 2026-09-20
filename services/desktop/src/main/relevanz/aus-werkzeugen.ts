@@ -20,6 +20,40 @@ export const TREFFER_GRENZE = 3;
 /** Wie viele Ziele ein einzelner Aufruf hoechstens beisteuern darf. */
 const JE_AUFRUF_MAX = 5;
 
+/**
+ * Werkzeuge, deren Aufruf mehr bedeutet als "danach gefragt".
+ *
+ * Der Normalfall ist `firma.chat` / `person.chat` — der Nutzer hat ueber
+ * die Firma gesprochen. Diese hier sind Handlungen: Wer eine Firma ins CRM
+ * verknuepft oder einen Workflow auf sie loslaesst, hat sich fuer sie
+ * entschieden, und das soll entsprechend schwerer wiegen.
+ *
+ * Bewusst eine kurze, benannte Liste statt einer Heuristik ueber
+ * Werkzeugnamen: Ein Muster wie "alles mit crm_" wuerde auch das blosse
+ * Suchen und Nachschlagen einfangen.
+ */
+const HANDLUNGEN: Record<string, string> = {
+  crm_link_manual: "firma.crm",
+  crm_enrich_now: "firma.crm",
+  crm_update_hubspot_company: "firma.crm",
+  workflow_run: "firma.workflow",
+  import_companies: "firma.import",
+  import_companies_from_crm: "firma.import",
+  import_excel: "firma.import",
+};
+
+/**
+ * Welche Signalart ein Werkzeugaufruf ausloest.
+ *
+ * Personen bleiben bei `person.chat`: Die CRM-Werkzeuge arbeiten mit
+ * HubSpot-Kennungen, nicht mit unseren Personen-Ids — eine Zuordnung waere
+ * geraten, und ein geratenes Signal ist schlechter als keines.
+ */
+export function signalArtFuer(werkzeug: string, zielArt: "firma" | "person"): string {
+  if (zielArt === "person") return "person.chat";
+  return HANDLUNGEN[werkzeug] ?? "firma.chat";
+}
+
 export interface Fund {
   zielArt: "firma" | "person";
   zielId: string;

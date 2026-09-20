@@ -10,6 +10,7 @@ import { EmailMusterSection } from "./EmailMusterSection";
 import { VorschlaegeSection } from "./VorschlaegeSection";
 import { MithelfenSection } from "./MithelfenSection";
 import { BrowserSection } from "./BrowserSection";
+import { RelevanzSection } from "./RelevanzSection";
 import { useFeature } from "../../store/policy";
 
 // v0.1.273+ — Automatisierungen-Tab.
@@ -23,6 +24,8 @@ export function AutomatisierungenTab() {
   const telegramErlaubt = useFeature("telegram");
   // v0.1.561 — der Scheduler kennt nur Mail-Loops → ohne Mail-Funktion ausblenden.
   const mailErlaubt = useFeature("mail");
+  // Abgeschaltet heisst verschwunden, nicht ausgegraut.
+  const relevanzErlaubt = useFeature("relevanz");
   return (
     <>
       <WatchesSection />
@@ -34,6 +37,7 @@ export function AutomatisierungenTab() {
       <MithelfenSection />
       <BrowserSection />
       <AlertsSection />
+      {relevanzErlaubt && <RelevanzSection />}
       {telegramErlaubt && <TelegramSection />}
     </>
   );

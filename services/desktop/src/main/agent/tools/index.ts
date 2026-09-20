@@ -47,6 +47,8 @@ import { buildMailTools } from "./mail";
 import { buildSchedulerTools } from "./scheduler";
 import { buildLinkMonitorTools } from "./link-monitor";
 import { buildTelegramTools } from "./telegram";
+import { buildRelevanzTools } from "./relevanz";
+import { featureEnabled } from "../../org-policy";
 import { buildPublicationTools } from "./publications";
 import { buildGeoTools } from "./geo";
 import { buildDiscoveryTools } from "./discovery";
@@ -347,6 +349,13 @@ export function buildReadOnlyRegistry(deps: {
     getChannel: deps.getTelegramChannel,
   }))
     registry.register(t);
+  // Relevanz (docs/PLAN_RELEVANZ.md): Naehe je Firma und Person. Hat die
+  // Organisation die Funktion abgeschaltet, werden die Werkzeuge gar nicht
+  // erst registriert — kein Eintrag im Prompt, kein Vorschlag, keine
+  // Erwaehnung. Gesperrtes soll verschwinden, nicht ausgegraut dastehen.
+  if (featureEnabled("relevanz")) {
+    for (const t of buildRelevanzTools()) registry.register(t);
+  }
   // v0.1.284 — Self-Correction-Reporting (always-on Telemetrie).
   for (const t of buildSelfCorrectionTools({
     store: deps.selfCorrectionsStore,

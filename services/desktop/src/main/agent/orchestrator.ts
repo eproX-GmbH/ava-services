@@ -1,7 +1,7 @@
 import { EventEmitter } from "node:events";
 import { randomUUID } from "node:crypto";
 import * as relevanz from "../relevanz";
-import { ausAufruf } from "../relevanz/aus-werkzeugen";
+import { ausAufruf, signalArtFuer } from "../relevanz/aus-werkzeugen";
 import { hasVision } from "@ava/ai-provider";
 import type {
   AgentMessage,
@@ -1390,7 +1390,7 @@ export class AgentOrchestrator extends EventEmitter {
             try {
               for (const fund of ausAufruf(call.args, result.content)) {
                 relevanz.erfasse(
-                  fund.zielArt === "firma" ? "firma.chat" : "person.chat",
+                  signalArtFuer(call.name, fund.zielArt),
                   fund.zielId,
                   { firmaId: fund.firmaId ?? null },
                 );
