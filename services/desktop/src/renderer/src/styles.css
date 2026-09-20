@@ -3400,7 +3400,16 @@ a.heartbeat-decision__company:hover {
    die Information ordnet ein, sie ist nicht die Hauptsache. */
 /* Suche ueber die Ansprechpartner. Steht in der Zeile der Ueberschrift:
    praesent, wo man sie braucht, ohne eine eigene Leiste zu belegen. */
-.kontakt-suche__kopf { display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; margin-bottom: 0.25rem; }
+/* Luft nach unten: Ueberschrift und Suchfeld standen bisher direkt auf den
+   Karten. Der Abstand gilt fuer die ganze Zeile, damit Titel und Feld
+   gemeinsam abgesetzt sind und nicht das eine enger sitzt als das andere. */
+.kontakt-suche__kopf {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+  margin-bottom: 1.1rem;
+}
 .kontakt-suche { position: relative; margin-left: auto; flex: 0 1 22rem; min-width: 12rem; }
 /* Mit Elementnamen, damit die Regel die globale input[type="search"] erreicht
    — sonst blieben Polsterung und Groesse der allgemeinen Regel bestehen.
@@ -3413,12 +3422,33 @@ input.kontakt-suche__feld {
 }
 input.kontakt-suche__feld:focus { border-color: var(--accent); }
 .kontakt-suche__feld::-webkit-search-cancel-button { display: none; }
+/* Das Zeichen mittig im Knopf UND der Knopf mittig im Feld.
+   Flex statt blosser line-height: Die Schriftmetrik von "×" sitzt je nach
+   Schnitt hoeher oder tiefer in der Zeile, und dann steht das Zeichen
+   sichtbar schief. Ein Flex-Kasten zentriert das Glyphen-Rechteck
+   unabhaengig davon. */
 .kontakt-suche__leeren {
-  position: absolute; top: 50%; right: 4px; transform: translateY(-50%);
-  width: 22px; height: 22px; padding: 0; line-height: 1;
-  border: 0; background: none; color: var(--muted); cursor: pointer; font-size: 16px;
+  position: absolute;
+  top: 50%;
+  right: 4px;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  line-height: 1;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
 }
 .kontakt-suche__leeren:hover { color: var(--accent); }
+/* display:block nimmt dem SVG die Grundlinien-Luecke, die es als
+   Inline-Element sonst unten anhaengt — sonst waere der Knopf wieder
+   ein, zwei Pixel daneben. */
+.kontakt-suche__leeren svg { display: block; }
 @media (max-width: 720px) {
   .kontakt-suche { margin-left: 0; flex-basis: 100%; }
 }

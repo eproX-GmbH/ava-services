@@ -49,6 +49,7 @@ import {
   DotIcon,
   PhoneIcon,
   XingIcon,
+  XIcon,
 } from "../components/icons";
 
 // W8–W13 — single company drill-down, ported from the legacy ava-v2 web app.
@@ -1697,7 +1698,7 @@ function ContactsTab({ id }: { id: string }) {
                     title="Suche zurücksetzen"
                   >
                     <span className="visually-hidden">Suche zurücksetzen</span>
-                    ×
+                    <XIcon size={14} />
                   </button>
                 )}
               </div>

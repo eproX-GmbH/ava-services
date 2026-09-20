@@ -119,6 +119,22 @@ export function EyeIcon(props: IconProps) {
   );
 }
 
+/**
+ * Kreuz (Outline) — Eingabe leeren.
+ *
+ * Bewusst gezeichnet statt als Zeichen "×": Dessen Tinte sitzt je nach
+ * Schriftschnitt rund anderthalb Pixel unter der optischen Zeilenmitte, und
+ * dann steht es in einem zentrierten Knopf sichtbar schief. Ein SVG ist
+ * geometrisch symmetrisch und in einem Flex-Kasten exakt mittig.
+ */
+export function XIcon(props: IconProps) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" {...withDefaults(props)}>
+      <path d="M18 6 6 18M6 6l12 12" />
+    </svg>
+  );
+}
+
 /** Zwei Blaetter (Outline) — Kopieren in die Zwischenablage. */
 export function CopyIcon(props: IconProps) {
   return (
