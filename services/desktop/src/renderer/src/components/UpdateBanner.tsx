@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useUpdaterStore } from "../store/updater";
+import { XIcon } from "./icons";
 
 // Floating update notification, bottom-right (Claude-Code style).
 //
@@ -222,7 +223,7 @@ function SilentFailureBanner({ version }: { version: string }) {
           onClick={onDismiss}
           aria-label="Hinweis schließen"
         >
-          ×
+          <XIcon size={14} />
         </button>
       </span>
     </div>

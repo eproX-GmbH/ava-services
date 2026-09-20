@@ -827,6 +827,9 @@ code, pre { font-family: var(--font-mono); font-size: 12px; }
   background: rgba(127, 127, 127, 0.08);
 }
 .chip-remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   background: transparent;
   border: 0;
   color: inherit;
@@ -1202,6 +1205,7 @@ code, pre { font-family: var(--font-mono); font-size: 12px; }
 .dl-dock__head strong { font-weight: 600; }
 .dl-dock__head-spacer { flex: 1; }
 .dl-dock__icon-btn {
+  display: inline-flex; align-items: center; justify-content: center;
   background: none; border: none; color: inherit;
   font-size: 14px; line-height: 1; padding: 2px 6px;
   cursor: pointer; opacity: 0.65; border-radius: 3px;
@@ -3455,6 +3459,13 @@ input.kontakt-suche__feld:focus { border-color: var(--accent); }
    Inline-Element sonst unten anhaengt — sonst waere der Knopf wieder
    ein, zwei Pixel daneben. */
 .kontakt-suche__leeren svg { display: block; }
+/* Dieselbe Falle an allen Schliessen-Knoepfen: Ein Inline-SVG haengt unten
+   die Grundlinien-Luecke an und sitzt dann ein bis zwei Pixel zu tief. */
+.ollama-update-banner__dismiss svg,
+.update-banner__dismiss svg,
+.upstream-banner__close svg,
+.dl-dock__icon-btn svg,
+.chip-remove svg { display: block; }
 @media (max-width: 720px) {
   .kontakt-suche { margin-left: 0; flex-basis: 100%; }
 }
@@ -4061,6 +4072,9 @@ input.kontakt-suche__feld:focus { border-color: var(--accent); }
   margin-left: 0.25rem;
 }
 .update-banner__dismiss {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   background: none;
   border: none;
   color: var(--color-fg-faint);
@@ -6668,6 +6682,9 @@ html.dark .producer-error__pre { background: rgba(255, 255, 255, 0.05); }
 }
 
 .ollama-update-banner__dismiss {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   background: transparent;
   color: inherit;
   border: 0;

@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { compareVersions } from "./OllamaVersionSection";
+import { XIcon } from "./icons";
 
 // v0.1.222 — Boot-Hint: prüft kurz nach App-Start, ob eine neuere
 // Ollama-Version verfügbar ist als die installierte. Wenn ja, zeigt
@@ -134,7 +135,7 @@ export function OllamaUpdateBanner() {
           aria-label="Hinweis 7 Tage ausblenden"
           title="7 Tage ausblenden"
         >
-          ×
+          <XIcon size={14} />
         </button>
       </div>
     </div>

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { pullModelTracked, useOllamaStore } from "../store/ollama";
 import { classifyOllamaPullError } from "../lib/ollama-pull-error";
 import type { OllamaPullProgress } from "../../../shared/types";
+import { XIcon } from "./icons";
 
 // v0.1.220 — Status des Self-Updaters, geteilt vom OllamaUpdater.
 type UpdaterState =
@@ -191,7 +192,7 @@ function DockRow({
             aria-label="Ausblenden"
             title="Ausblenden"
           >
-            ✕
+            <XIcon size={13} />
           </button>
         )}
       </div>

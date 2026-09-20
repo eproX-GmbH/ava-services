@@ -11,6 +11,7 @@ import {
 } from "../components/ImportConfirmDialog";
 import { estimateImportCost } from "../../../shared/research-cost";
 import type { ResearchSettingsBundle } from "../../../shared/types";
+import { XIcon } from "../components/icons";
 
 // W1 — Upload company Excel.
 //
@@ -349,7 +350,7 @@ function ChipsField({ label, hint, values, onChange, placeholder }: ChipsFieldPr
               aria-label={`${v} entfernen`}
               onClick={() => remove(i)}
             >
-              ×
+              <XIcon size={12} />
             </button>
           </span>
         ))}

@@ -34,6 +34,7 @@ import {
   watchSystemPreference,
   type ThemeMode,
 } from "../lib/theme";
+import { XIcon } from "./icons";
 
 // Top-level chrome for the routed app (Phase 8.l2).
 //
@@ -348,7 +349,7 @@ function ConnectionHealthBanner() {
             aria-label="Hinweis schließen"
             onClick={() => onDismiss(p.signature)}
           >
-            ✕
+            <XIcon size={14} />
           </button>
         </div>
       ))}
