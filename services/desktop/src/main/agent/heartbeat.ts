@@ -2,6 +2,8 @@ import { EventEmitter } from "node:events";
 import type { AlertsStore, AlertCreateInput } from "./alerts-store";
 import * as relevanz from "../relevanz";
 import { reihenfolge } from "../relevanz/reihenfolge";
+import { alarmweg, wegBegruendung } from "../relevanz/alarmweg";
+import * as sammlung from "../relevanz/sammlung";
 import { JudgeProviderUnavailable } from "./alert-judge";
 import type {
   Alert,
@@ -270,9 +272,16 @@ export class Heartbeat extends EventEmitter {
     let providerUnavailable = false;
     let candidatesForHook: HeartbeatCandidate[] = [];
     try {
-      const candidates = await this.source(this.lastTickAt);
-      candidatesForHook = candidates;
-      candidatesSeen = candidates.length;
+      const roh = await this.source(this.lastTickAt);
+      candidatesForHook = roh;
+      candidatesSeen = roh.length;
+      // Relevanz (docs/PLAN_RELEVANZ.md, 5.3): Der knappe Stoff ist die
+      // Zahl der Urteile je Durchgang — was hinten abgeschnitten wird,
+      // sieht der Nutzer nie. Also erst sortieren, dann kappen. Jeder
+      // vierte Platz gehoert Firmen mit hohem Gewicht und niedriger
+      // Naehe, sonst wird AVA blind fuer alles, was noch niemand
+      // angesehen hat.
+      const candidates = await this.sortiereNachRelevanz(roh);
       for (const c of candidates.slice(0, this.maxPerTick)) {
         // Dedup first — cheap and avoids burning an LLM call to re-decide
         // a candidate we've already alerted on.
@@ -305,6 +314,37 @@ export class Heartbeat extends EventEmitter {
               c,
               "not-worth",
               verdict.rationale || "Kein Grund vom Modell gemeldet.",
+            ),
+          );
+          continue;
+        }
+        // Relevanz (Abschnitt 6): Der Wert entscheidet nicht, OB etwas eine
+        // Meldung ist — der Judge hat gerade "ja" gesagt —, sondern nur, ob
+        // sie sofort kommt, gesammelt wird oder im Datensatz bleibt.
+        // Statuswarnungen und Dringendes gehen immer durch; das regelt
+        // alarmweg() selbst.
+        const rang = this.rangImDurchgang.get(c.companyId) ?? null;
+        const weg = alarmweg({ rang, severity: verdict.severity, kind: c.kind });
+        if (weg !== "sofort") {
+          if (weg === "sammeln") {
+            sammlung.sammle({
+              companyId: c.companyId,
+              companyName: c.companyName,
+              kind: c.kind,
+              severity: verdict.severity,
+              headline: verdict.headline,
+              sourceRef: c.sourceRef,
+              occurredAt: c.occurredAt,
+            });
+          }
+          // In beiden Faellen in die Transparenzliste: Zurueckhalten ist
+          // etwas anderes als Wegwerfen, und der Nutzer soll nachlesen
+          // koennen, was AVA gesammelt oder liegen gelassen hat.
+          decisions.push(
+            decisionFor(
+              c,
+              weg === "sammeln" ? "gesammelt" : "zu-kalt",
+              wegBegruendung(weg, rang) || verdict.rationale,
             ),
           );
           continue;
@@ -355,6 +395,42 @@ export class Heartbeat extends EventEmitter {
       if (!providerUnavailable) this.lastTickAt = startedAt;
     }
 
+    // Relevanz (docs/PLAN_RELEVANZ.md, 6): Was zu lauwarmen Firmen
+    // gesammelt wurde, geht einmal taeglich als EINE Meldung raus. Der
+    // Unterschied zum Wegwerfen ist der ganze Punkt: Wer eine Firma
+    // lauwarm hat, will nicht bei jedem Fund aufschrecken, aber am Abend
+    // sehen, dass es ihn gab.
+    //
+    // Bewusst hier und nicht in einem eigenen Zeitgeber: Der Heartbeat
+    // laeuft ohnehin alle 15 Minuten, und ein zweiter Wecker waere eine
+    // weitere Stelle, die nach einem Ruhezustand nachholen muesste.
+    try {
+      if (sammlung.faelligkeit(startedAt)) {
+        const z = sammlung.zusammenfassen(startedAt);
+        if (z) {
+          const row = this.store.add({
+            tenantId: null,
+            companyId: "",
+            companyName: "",
+            kind: "reminder",
+            severity: z.severity,
+            headline: z.headline,
+            rationale: z.rationale,
+            sourceRef: z.sourceRef,
+            url: null,
+          });
+          if (row) {
+            alertsCreated += 1;
+            created.push(row);
+          }
+        }
+      }
+    } catch (err) {
+      // Eine misslungene Zusammenfassung darf den Durchgang nicht kippen;
+      // die Sammlung bleibt dann bis morgen liegen.
+      console.warn("[heartbeat] Tageszusammenfassung fehlgeschlagen:", err);
+    }
+
     // 8.t2 — post-candidate hook (WatchExecutor). Runs AFTER the
     // primary alert judge so any alerts the judge created are already
     // in the store; the watch executor's own dedup uses
@@ -402,6 +478,9 @@ export class Heartbeat extends EventEmitter {
    * Priorisierung ist eine Verbesserung, keine Voraussetzung: Ein
    * Durchgang darf daran nicht scheitern.
    */
+  /** Rang je Firma, gefuellt beim Sortieren, gelesen beim Alarmweg. */
+  private readonly rangImDurchgang = new Map<string, number>();
+
   private async sortiereNachRelevanz(
     kandidaten: HeartbeatCandidate[],
   ): Promise<HeartbeatCandidate[]> {
@@ -410,6 +489,10 @@ export class Heartbeat extends EventEmitter {
       const ids = Array.from(new Set(kandidaten.map((c) => c.companyId).filter(Boolean)));
       if (ids.length === 0) return kandidaten;
       const werte = await relevanz.werte("firma", ids);
+      // Fuer den Alarmweg weiter oben merken: Der Rang entscheidet, ob eine
+      // Meldung sofort kommt oder in die Tageszusammenfassung geht.
+      this.rangImDurchgang.clear();
+      for (const [id, w] of werte) this.rangImDurchgang.set(id, w.rang);
       if (werte.size === 0) return kandidaten;
       return reihenfolge(
         kandidaten,

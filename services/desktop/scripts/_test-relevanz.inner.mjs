@@ -14,6 +14,8 @@ import G from "../src/main/relevanz/gewicht.ts";
 const { gewichtFuer } = G;
 import R from "../src/main/relevanz/reihenfolge.ts";
 const { reihenfolge, alterung } = R;
+import A from "../src/main/relevanz/alarmweg.ts";
+const { alarmweg } = A;
 
 let fehler = 0;
 function pruefe(name, fn) {
@@ -195,6 +197,60 @@ pruefe("lange nicht beobachtet schlaegt gleichwertig frisch", () => {
   const tage = { alt: 400, frisch: 1 };
   const r = reihenfolge(["frisch", "alt"], (x) => werte[x], (x) => tage[x]);
   assert.equal(r[0], "alt");
+});
+
+console.log("Alarmweg");
+
+const weg = (rang, severity, kind = "profile-change") => alarmweg({ rang, severity, kind });
+
+pruefe("heisse Firma: alles sofort", () => {
+  assert.equal(weg(9, "info"), "sofort");
+  assert.equal(weg(9, "warn"), "sofort");
+});
+
+pruefe("lauwarm: warn sofort, info gesammelt", () => {
+  assert.equal(weg(6.5, "warn"), "sofort");
+  assert.equal(weg(6.5, "info"), "sammeln");
+});
+
+pruefe("kuehl: warn gesammelt, info bleibt im Datensatz", () => {
+  assert.equal(weg(4.5, "warn"), "sammeln");
+  assert.equal(weg(4.5, "info"), "nein");
+});
+
+pruefe("kalt: nichts ausser Dringendem", () => {
+  assert.equal(weg(2, "warn"), "nein");
+  assert.equal(weg(2, "info"), "nein");
+});
+
+console.log("Alarmweg — die harten Ausnahmen");
+
+pruefe("Statuswarnung geht IMMER durch, auch bei eiskalter Firma", () => {
+  // Es waere absurd, die Insolvenz eines Kunden zu verschweigen, weil ihn
+  // noch niemand angeklickt hat. Faellt diese Pruefung, ist der Schaden
+  // groesser als alles, was der Score je einspart.
+  assert.equal(weg(1, "info", "status"), "sofort");
+  assert.equal(weg(1, "warn", "status"), "sofort");
+});
+
+pruefe("urgent geht immer durch", () => {
+  assert.equal(weg(1, "urgent"), "sofort");
+  assert.equal(weg(1, "urgent", "linkedin-signal"), "sofort");
+});
+
+pruefe("ohne Wert im Zweifel melden", () => {
+  // Eine Firma, ueber die AVA nichts weiss, ist nicht dasselbe wie eine,
+  // die der Nutzer abgelehnt hat.
+  assert.equal(weg(null, "info"), "sofort");
+  assert.equal(weg(null, "warn"), "sofort");
+});
+
+pruefe("der Positionswechsel-Fall aus der Ausgangsfrage", () => {
+  // Bei 2000 Firmen darf nicht jeder neue Titel stoeren — bei DER Firma,
+  // an der gerade gearbeitet wird, aber schon.
+  assert.equal(weg(8.6, "info", "linkedin-signal"), "sofort", "heisse Firma: sofort");
+  assert.equal(weg(5, "info", "linkedin-signal"), "nein", "kalte Firma: still");
+  assert.equal(weg(6.5, "info", "linkedin-signal"), "sammeln", "dazwischen: gesammelt");
 });
 
 console.log(fehler === 0 ? "\nAlles gruen." : `\n${fehler} Pruefung(en) fehlgeschlagen.`);

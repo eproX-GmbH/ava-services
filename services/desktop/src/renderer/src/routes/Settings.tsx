@@ -3849,6 +3849,10 @@ const OUTCOME_LABEL: Record<AlertCandidateDecision["outcome"], string> = {
   duplicate: "Duplikat",
   "not-worth": "nicht alarmwürdig",
   "judge-error": "Fehler",
+  // Relevanz: zurückgehalten, nicht verworfen. Steht bewusst in der Liste —
+  // der Nutzer soll sehen, was AVA gesammelt oder liegen gelassen hat.
+  gesammelt: "gesammelt",
+  "zu-kalt": "Firma zu kalt",
 };
 
 function HeartbeatHistory({

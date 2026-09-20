@@ -3164,6 +3164,10 @@ a.heartbeat-decision__company:hover {
 .heartbeat-decision__outcome--duplicate  { background: var(--color-slate-100); color: var(--muted); }
 .heartbeat-decision__outcome--not-worth  { background: var(--color-slate-100); color: var(--muted); }
 .heartbeat-decision__outcome--judge-error { background: rgba(244, 114, 114, 0.16); color: var(--error); }
+/* Relevanz: zurueckgehalten, nicht verworfen. Gedeckter als "gemeldet",
+   aber nicht so stumm wie ein Duplikat — es ist etwas passiert. */
+.heartbeat-decision__outcome--gesammelt  { background: rgba(0, 192, 167, 0.10); color: var(--muted); }
+.heartbeat-decision__outcome--zu-kalt    { background: var(--color-slate-100); color: var(--muted); }
 .heartbeat-decision__summary {
   margin-top: 2px;
   /* Two-line clamp keeps long demo summaries from blowing up the panel. */
