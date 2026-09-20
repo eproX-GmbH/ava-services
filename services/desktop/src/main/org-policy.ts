@@ -61,6 +61,10 @@ function normalisiere(raw: Partial<OrgPolicy> | null | undefined): OrgPolicy {
     // Fehlt die Angabe (aeltere Organisation, aelteres Gateway), gilt "erlaubt":
     // das entspricht dem Verhalten vor dieser Vorgabe.
     apifyEigenerErlaubt: raw?.apifyEigenerErlaubt !== false,
+    // Ebenso: fehlende Angabe heisst "Mitglied darf selbst entscheiden"
+    // bzw. "Aggregat sichtbar". Beides ist der Standard.
+    relevanzSelbstbestimmt: raw?.relevanzSelbstbestimmt !== false,
+    relevanzThemaSichtbar: raw?.relevanzThemaSichtbar !== false,
   };
 }
 

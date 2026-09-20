@@ -1,6 +1,9 @@
 import { contextBridge, ipcRenderer } from "electron";
 import type {
   AgentChoiceAnswer,
+  RelevanzWert,
+  RelevanzThema,
+  RelevanzStatus,
   AgentMessage,
   AgentPendingPrompt,
   AgentSendInput,
@@ -1327,8 +1330,40 @@ const api = {
   // scheduler reads the resulting boost during scoring. Fire-and-
   // forget; the IPC return is `void`.
   interest: {
-    record: (companyId: string): Promise<void> =>
-      ipcRenderer.invoke("interest:record", companyId),
+    record: (companyId: string, art?: "ansicht" | "chatlink"): Promise<void> =>
+      ipcRenderer.invoke("interest:record", companyId, art),
+  },
+
+  // Relevanz (docs/PLAN_RELEVANZ.md) — Naehe je Firma und Person aus dem
+  // eigenen Verhalten. `erfasse` ist absichtlich folgenlos, wenn die
+  // Funktion aus ist: Aufrufer muessen das nicht pruefen.
+  relevanz: {
+    erfasse: (
+      art: string,
+      zielId: string,
+      opt?: { firmaId?: string | null; gewicht?: number; alarmArt?: string },
+    ): Promise<void> => ipcRenderer.invoke("relevanz:erfasse", art, zielId, opt),
+    werte: (
+      zielArt: "firma" | "person",
+      ids: string[],
+    ): Promise<Record<string, RelevanzWert>> =>
+      ipcRenderer.invoke("relevanz:werte", zielArt, ids),
+    thema: (limit?: number): Promise<RelevanzThema> =>
+      ipcRenderer.invoke("relevanz:thema", limit),
+    rohsignale: (
+      zielArt?: "firma" | "person",
+      zielId?: string,
+    ): Promise<Array<{ zielArt: string; zielId: string; art: string; punkte: number; zeitpunkt: string }>> =>
+      ipcRenderer.invoke("relevanz:rohsignale", zielArt, zielId),
+    vergessen: (
+      zielArt?: "firma" | "person",
+      zielId?: string,
+      sperreTage?: number,
+    ): Promise<boolean> =>
+      ipcRenderer.invoke("relevanz:vergessen", zielArt, zielId, sperreTage),
+    status: (): Promise<RelevanzStatus> => ipcRenderer.invoke("relevanz:status"),
+    setzeAn: (an: boolean): Promise<RelevanzStatus> =>
+      ipcRenderer.invoke("relevanz:setzeAn", an),
   },
 
   // Standing watches (Phase 8.t2). Read + simple mutations only —

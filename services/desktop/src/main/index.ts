@@ -139,6 +139,7 @@ import {
   refreshOrgContext as orgRefreshContext,
 } from "./organisation";
 import { featureEnabled, getOrgPolicy, onOrgPolicyChange } from "./org-policy";
+import * as relevanz from "./relevanz";
 import { initLinkedIn } from "./linkedin";
 import { startScheduler as startLinkedInScheduler, stopScheduler as stopLinkedInScheduler } from "./linkedin/scheduler";
 import { MailSupervisor } from "./mail/supervisor";
@@ -1205,6 +1206,8 @@ telegramStore.on("changed", () => {
 });
 // Beim Beenden die Zustell-Timer stoppen, damit kein Retry mehr feuert.
 app.on("before-quit", () => quitStep("telegramChannel.stop", () => telegramChannel.stop()));
+// Relevanz: was noch in der Warteschlange liegt, beim Beenden rausschicken.
+app.on("before-quit", () => quitStep("relevanz.beende", () => { void relevanz.beendeRelevanz(); }));
 // v0.1.417 — Gegenrichtung: Nachrichten aus dem Telegram-Chat lesen und
 // beantworten. Wird erst nach der Orchestrator-Konstruktion gesetzt
 // (siehe unten) und folgt danach der Konfiguration.
@@ -4020,6 +4023,13 @@ app.whenReady().then(async () => {
     gatewayUrl: APP_CONFIG.gatewayUrl,
     getAccessToken: () => auth.getAccessToken(),
   });
+  // Relevanz (docs/PLAN_RELEVANZ.md) — Signale gebuendelt ans Gateway.
+  // Standardmaessig an; die Organisation kann es abschalten oder
+  // verbindlich setzen.
+  relevanz.initRelevanz({
+    gatewayUrl: APP_CONFIG.gatewayUrl,
+    getAccessToken: () => auth.getAccessToken(),
+  });
   // O6 — Limit der Organisation erreicht → Banner im Renderer.
   setOrgQuotaExceededHandler((info) => {
     for (const win of BrowserWindow.getAllWindows()) {
@@ -6269,10 +6279,43 @@ app.whenReady().then(async () => {
   // the user opens CompanyDetail or clicks a `[…](company:id)` link
   // in chat. No-op return; the scheduler picks the signal up on the
   // next tick.
-  ipcMain.handle("interest:record", (_e, companyId: string) => {
+  ipcMain.handle("interest:record", (_e, companyId: string, art?: string) => {
     if (typeof companyId === "string" && companyId.length > 0) {
       interest.record(companyId);
+      // Derselbe Klick speist jetzt auch die dauerhafte Naehe. Der
+      // InterestStore bleibt daneben bestehen: Er ist der Sofort-Schub
+      // fuer den Frischeplaner innerhalb einer Sitzung, die Naehe die
+      // langfristige Groesse ueber Wochen.
+      relevanz.erfasse(art === "chatlink" ? "firma.chatlink" : "firma.ansicht", companyId);
     }
+  });
+
+  // ---- Relevanz (docs/PLAN_RELEVANZ.md) ------------------------------------
+  ipcMain.handle(
+    "relevanz:erfasse",
+    (_e, art: string, zielId: string, opt?: relevanz.ErfassenOptionen) => {
+      relevanz.erfasse(art, zielId, opt ?? {});
+    },
+  );
+  ipcMain.handle("relevanz:werte", (_e, zielArt: "firma" | "person", ids: string[]) =>
+    relevanz.werte(zielArt, Array.isArray(ids) ? ids : []).then((m) => Object.fromEntries(m)),
+  );
+  ipcMain.handle("relevanz:thema", (_e, limit?: number) => relevanz.thema(limit ?? 50));
+  ipcMain.handle("relevanz:rohsignale", (_e, zielArt?: "firma" | "person", zielId?: string) =>
+    relevanz.rohsignale(zielArt, zielId),
+  );
+  ipcMain.handle(
+    "relevanz:vergessen",
+    (_e, zielArt?: "firma" | "person", zielId?: string, sperreTage?: number) =>
+      relevanz.vergessen(zielArt, zielId, sperreTage),
+  );
+  ipcMain.handle("relevanz:status", () => ({
+    an: relevanz.aktiv(),
+    selbstbestimmt: relevanz.selbstbestimmt(),
+  }));
+  ipcMain.handle("relevanz:setzeAn", (_e, an: boolean) => {
+    relevanz.setzeAn(an === true);
+    return { an: relevanz.aktiv(), selbstbestimmt: relevanz.selbstbestimmt() };
   });
 
   // User profile IPC (Phase 8.t1). Read-only views + direct writes

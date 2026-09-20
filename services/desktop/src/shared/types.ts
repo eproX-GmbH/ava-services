@@ -67,6 +67,7 @@ export const ORG_FEATURES = [
   { key: "workflows", label: "Workflows", hinweis: "Gespeicherte Ablaeufe (Tool-Ketten) mit Zeitplan, Ereignis-Trigger und Freigaben" },
   { key: "vorschlaege", label: "Vorschlaege im Chat", hinweis: "KI-erzeugte naechste Schritte auf der Chat-Startseite und im Gespraech (aus = nur feste Liste, keine KI-Aufrufe)" },
   { key: "stammdaten.mithelfen", label: "Stammdaten mitpflegen", hinweis: "Rechner der Mitglieder duerfen Register-Jobs abarbeiten (Handelsregister-Abfragen mit eigener IP, 60 je Stunde)" },
+  { key: "relevanz", label: "Relevanz", hinweis: "Naehe-Wert je Firma und Person aus dem eigenen Verhalten des Mitglieds (Ansichten, Chat, Uebernahmen). Aus = keine Erfassung, keine Anzeige, keine Chat-Tools" },
   { key: "verflechtungen", label: "Firmen-Verflechtungen", hinweis: "Gesellschafterlisten aus dem Handelsregister laden und mit dem eigenen KI-Modell auswerten (Gesellschafter, Beteiligungen, Personen)" },
 ] as const;
 export type OrgFeatureKey = (typeof ORG_FEATURES)[number]["key"];
@@ -80,6 +81,17 @@ export interface OrgPolicy {
    * Rueckfall. false = ausschliesslich der Token der Organisation.
    */
   apifyEigenerErlaubt?: boolean;
+  /**
+   * Duerfen Mitglieder den Relevanz-Wert selbst ein- und ausschalten?
+   * true (Standard) = die Setzung der Organisation ist Vorgabe, das
+   * Mitglied darf abweichen. false = sie gilt verbindlich, kein Schalter.
+   */
+  relevanzSelbstbestimmt?: boolean;
+  /**
+   * Sehen Mitglieder, wie viele Kolleginnen und Kollegen eine Firma gerade
+   * warm haben? Nur als Anzahl, nie mit Namen (docs/PLAN_RELEVANZ.md, 10).
+   */
+  relevanzThemaSichtbar?: boolean;
   chatModel: string | null;
   producerModel: string | null;
   /** Deep-Research-Modell (OpenAI, fester Satz aus shared/research-models.ts); null = Standard. */
@@ -2951,3 +2963,34 @@ export type BrowserStand =
   | { zustand: "laedt"; fortschritt: number }
   | { zustand: "bereit"; version: string; pfad: string; treiber: string | null }
   | { zustand: "fehler"; meldung: string };
+
+// ---- Relevanz (docs/PLAN_RELEVANZ.md) --------------------------------------
+
+/** Naehe und Gewicht eines Ziels fuer den angemeldeten Nutzer. */
+export interface RelevanzWert {
+  zielArt: "firma" | "person";
+  zielId: string;
+  /** 1 (kalt) bis 10 (heiss), aus dem eigenen Verhalten. */
+  naehe: number;
+  /** 1 bis 10, sachliche Passung aus ICP, Firmenstatus, Pipeline. */
+  gewicht: number;
+  /** Arbeitsreihenfolge des Heartbeats: 0,6 * naehe + 0,4 * gewicht. */
+  rang: number;
+  /** Die drei staerksten Treiber — ohne sie ist die Zahl eine Zumutung. */
+  begruendung: Array<{ art: string; anteil: number; anzahl: number }>;
+  letztesSignal: string | null;
+}
+
+/** Organisationsaggregat: welche Firmen gerade Thema sind. Anzahl, keine Namen. */
+export interface RelevanzThema {
+  verfuegbar: boolean;
+  /** Warum nichts kommt: funktion_abgeschaltet | aggregat_abgeschaltet | organisation_zu_klein | nicht_erreichbar */
+  grund: string | null;
+  firmen: Array<{ companyId: string; anzahl: number; zuletzt: string | null }>;
+}
+
+export interface RelevanzStatus {
+  an: boolean;
+  /** false = die Organisation hat verbindlich gesetzt, kein Schalter. */
+  selbstbestimmt: boolean;
+}

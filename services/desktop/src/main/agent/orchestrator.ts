@@ -1,5 +1,7 @@
 import { EventEmitter } from "node:events";
 import { randomUUID } from "node:crypto";
+import * as relevanz from "../relevanz";
+import { ausAufruf } from "../relevanz/aus-werkzeugen";
 import { hasVision } from "@ava/ai-provider";
 import type {
   AgentMessage,
@@ -1378,6 +1380,25 @@ export class AgentOrchestrator extends EventEmitter {
             ok: result.ok,
             preview: result.preview,
           });
+
+          // Relevanz (docs/PLAN_RELEVANZ.md, 3.4): Firmen und Personen, um
+          // die es in diesem Zug ging, aus IDs herauslesen — nicht aus
+          // Namen. Nur bei Zuegen, die ein Mensch ausgeloest hat:
+          // autonomousMode heisst Heartbeat, Mail-Triage oder Telegram,
+          // und Automatik darf sich nicht selbst interessant finden.
+          if (result.ok && conversation.autonomousMode !== true) {
+            try {
+              for (const fund of ausAufruf(call.args, result.content)) {
+                relevanz.erfasse(
+                  fund.zielArt === "firma" ? "firma.chat" : "person.chat",
+                  fund.zielId,
+                  { firmaId: fund.firmaId ?? null },
+                );
+              }
+            } catch {
+              /* Erfassung darf einen Zug nie stoeren. */
+            }
+          }
         }
       }
 

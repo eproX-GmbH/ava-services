@@ -3258,7 +3258,7 @@ const MARKDOWN_COMPONENTS: Components = {
           // ping on mount, but recording here too means the scheduler
           // sees the click even if the user never lands on the page.
           onClick={() => {
-            void window.api.interest.record(companyId);
+            void window.api.interest.record(companyId, "chatlink");
           }}
         >
           {children}

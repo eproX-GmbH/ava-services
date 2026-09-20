@@ -1962,6 +1962,9 @@ function PersonCard({
         `/v1/persons/${encodeURIComponent(pid)}/hinweis`
       );
       await navigator.clipboard.writeText(r.text);
+      // Das staerkste Absichtssignal, das AVA kennt: Wer den Hinweis
+      // kopiert, schreibt diese Person an.
+      void window.api.relevanz.erfasse("person.hinweis", pid, { firmaId: companyId ?? null });
       setC1Notice("Art.-14-Hinweistext in die Zwischenablage kopiert.");
     });
   const informiert = () =>
