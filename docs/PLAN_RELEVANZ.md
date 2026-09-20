@@ -47,18 +47,19 @@ den Alert-Judge einfach und macht das Verhalten erklaerbar. Der Umkehrweg
 — der Score erzeugt eigene Alarmarten — waere schwer zu begruenden und
 noch schwerer abzuschalten.
 
-**Drittens: Das ist eine Verhaltenserfassung von Beschaeftigten.** In
-einer Organisation mit Betriebsrat ist "wir zeichnen auf, welche Firmen
-Mitarbeiter X ansieht" mitbestimmungspflichtig, unabhaengig davon, wie
-gut es gemeint ist. Entsprechend: Die Rohsignale bleiben **lokal auf dem
-Geraet des Nutzers** und werden **nie** an den Server oder an andere
-Mitglieder der Organisation uebertragen. Was die Organisation hoechstens
-sieht, ist ein anonymer Aggregatwert, und auch der nur, wenn die
-Organisation ihn ausdruecklich einschaltet. Das ist keine Vorsicht aus
-Prinzip, sondern die Bedingung dafuer, dass die Funktion in einem
-Unternehmen ueberhaupt eingeschaltet bleiben darf. Es passt ausserdem
-exakt zur bestehenden Rechenlokalitaet: Der Nutzer rechnet alles auf
-seiner Maschine.
+**Drittens: Die Daten duerfen das Geraet nicht verlassen — dann darf die
+Funktion aber auch von Anfang an laufen.** Die Rohsignale bleiben
+**lokal beim Nutzer**, sie gehen nie ans Gateway, nie an die
+Organisation, nie in Telemetrie; es gibt keine Auswertung ueber Nutzer
+hinweg. Genau deshalb ist der richtige Standardzustand **an**, nicht aus:
+Was niemand sonst sehen kann, muss niemand erst erlauben, und eine
+Fassung, die ohne Haken nicht arbeitet, waere fuer die meisten Nutzer
+einfach die schlechtere Fassung. Wer es nicht will, schaltet es ab
+(Opt-out), und eine Organisation kann es fuer ihre Mitglieder
+abschalten — das ist der Weg fuer eine Betriebsvereinbarung, und ein
+Enterprise-Thema, kein Grund, allen anderen die Funktion vorzuenthalten.
+Es passt ausserdem exakt zur bestehenden Rechenlokalitaet: Der Nutzer
+rechnet alles auf seiner Maschine.
 
 Eine vierte, kleinere Meinung: **Nicht jedes Signal ist gleich viel wert,
 und die teuersten Signale sind die besten.** Eine Firmenansicht kostet
@@ -373,8 +374,11 @@ neuen Judge und ohne zusaetzlichen LLM-Aufruf.
   staerksten Beitraege stehen in `begruendung` — ohne sie ist die Zahl
   eine Zumutung.
 - **Kontakt-Tab:** dieselbe Anzeige je Person, klein, neben dem Rang.
-- **Einstellungen → Relevanz:** Schalter, Rohsignale ansehen,
-  "Alles loeschen", "Fuer diese Firma vergessen".
+- **Einstellungen → Relevanz:** Schalter (an, solange die Organisation
+  nichts anderes setzt), Rohsignale ansehen, "Alles loeschen", "Fuer
+  diese Firma vergessen". Hat die Organisation bindend gesetzt, steht
+  dort statt des Schalters ein Satz, der das sagt — und wenn sie die
+  Funktion abgeschaltet hat, ist der ganze Abschnitt weg.
 - **Keine Bestenliste.** Eine Liste "deine heissesten Firmen" klingt
   reizvoll und waere in einer Organisation der schnellste Weg zu
   Leistungsvergleichen zwischen Mitarbeitern. Nicht bauen.
@@ -387,7 +391,7 @@ Am ersten Tag ist jede Naehe 1. Damit AVA nicht wirkungslos wirkt:
 
 - Solange weniger als 20 Signale vorliegen, zaehlt allein das **Gewicht**.
   AVA verhaelt sich dann wie heute — sachlich sortiert.
-- Beim ersten Start nach dem Einschalten wird die Naehe einmalig aus
+- Beim allerersten Start wird die Naehe einmalig aus
   **vorhandenen Spuren** geschaetzt, ohne neue Erfassung: Firmen in
   "Meine Firmen" starten bei 4, Watchlist-Fokus bei 7, Firmen mit
   laufendem Workflow bei 6, CRM-verknuepfte bei 6. Das sind Handlungen,
@@ -398,28 +402,94 @@ Am ersten Tag ist jede Naehe 1. Damit AVA nicht wirkungslos wirkt:
 
 ---
 
-## 9. Datenschutz und Abschaltbarkeit
+## 9. Standardzustand, Organisation und Abschaltbarkeit
 
-Nicht verhandelbar, sonst faellt die Funktion in Unternehmen aus:
+### 9.1 An, sofern niemand widerspricht
 
-1. **Standardmaessig aus.** Erst-Einwilligung im Klartext mit Aufzaehlung
-   dessen, was erfasst wird. Kein vorangekreuztes Kaestchen.
-2. **Jederzeit abschaltbar**, mit sofortiger Wirkung. Beim Abschalten
-   fragt AVA, ob die gesammelten Signale geloescht werden sollen.
-3. **Lokal, nie ausgeliefert.** Kein Signal verlaesst das Geraet — nicht
-   ans Gateway, nicht an die Organisation, nicht in Telemetrie.
-4. **Einsehbar.** Vollstaendige Liste der Rohsignale in den
+Die Funktion ist **standardmaessig eingeschaltet** — beim Einzelnutzer wie
+in der Organisation. Sie ist der Kern dessen, was AVA nuetzlich macht;
+eine Fassung, die erst nach einem Haken zu arbeiten beginnt, waere fuer
+die meisten Nutzer schlicht eine schlechtere Fassung. Opt-out, nicht
+Opt-in.
+
+Beim ersten Start wird einmal im Klartext erklaert, was erfasst wird und
+wo es bleibt (auf diesem Geraet), mit dem Schalter gleich daneben. Kein
+Dialog, der den Weg versperrt, aber auch kein stilles Anschalten: Wer es
+nicht will, findet es in derselben Sekunde, in der er davon erfaehrt.
+
+### 9.2 Organisation bestimmt, kann aber Selbstbestimmung erlauben
+
+Es gilt dasselbe Muster wie bei den uebrigen Organisationsfunktionen:
+**Die Organisation setzt fuer ihre Mitglieder, kann die Entscheidung aber
+an sie abgeben.**
+
+- Neuer Schluessel in `ORG_FEATURES`: `relevanz` mit dem Hinweistext
+  "Naehe-Wert je Firma und Person aus dem eigenen Verhalten (bleibt auf
+  dem Geraet des Mitglieds)". Fehlender Schluessel bedeutet wie ueberall
+  **erlaubt** — die Funktion laeuft also ohne jedes Zutun.
+- Neues Feld in `OrgPolicy`, nach dem Vorbild von `apifyEigenerErlaubt`:
+
+  ```ts
+  /** Duerfen Mitglieder den Relevanz-Wert selbst ein- und ausschalten?
+   *  true (Standard) = die Einstellung der Organisation ist Vorgabe, das
+   *  Mitglied darf abweichen. false = die Setzung der Organisation gilt
+   *  fuer alle, der Schalter des Mitglieds ist nicht vorhanden. */
+  relevanzSelbstbestimmt?: boolean;
+  ```
+
+Daraus ergeben sich genau drei Zustaende:
+
+| Organisation | Mitglied | Ergebnis |
+| --- | --- | --- |
+| `relevanz` erlaubt (Standard), `relevanzSelbstbestimmt` = true | frei | An, das Mitglied kann abschalten |
+| `relevanz` erlaubt, `relevanzSelbstbestimmt` = false | kein Schalter | An fuer alle, verbindlich |
+| `relevanz` abgeschaltet | kein Schalter | Aus fuer alle; der Weg fuer die Betriebsvereinbarung |
+
+Schaltet die Organisation `relevanz` ab, verschwindet die Funktion nach
+der bestehenden Regel **vollstaendig** aus der Oberflaeche: keine
+ausgegrauten Karten, keine Waermeanzeige ohne Wert, keine Menuepunkte,
+keine Erwaehnung im Chat-Prompt, keine Chat-Tools. Der Heartbeat
+arbeitet dann wie heute allein nach dem Gewicht. Vorhandene Signale des
+Mitglieds werden beim Abschalten auf dem Geraet geloescht — eine
+stillgelegte Sammlung waere das Schlechteste aus beiden Welten.
+
+Fuer den Einzelnutzer (Tenant-Art `personal`) gibt es weder Richtlinie
+noch Frage: an, mit Schalter in den Einstellungen.
+
+### 9.3 Was unabhaengig vom Schalter gilt
+
+1. **Lokal, nie ausgeliefert.** Kein Signal verlaesst das Geraet — nicht
+   ans Gateway, nicht an die Organisation, nicht in Telemetrie. Auch die
+   Organisation, die die Funktion vorschreibt, sieht **nichts** davon.
+   Das ist der Grund, aus dem sie standardmaessig an sein darf.
+2. **Jederzeit abschaltbar**, sofern die Organisation es nicht bindend
+   gesetzt hat, mit sofortiger Wirkung. Beim Abschalten fragt AVA, ob die
+   gesammelten Signale geloescht werden sollen.
+3. **Einsehbar.** Vollstaendige Liste der Rohsignale in den
    Einstellungen, exportierbar. Was der Nutzer nicht nachlesen kann,
-   sollte er nicht hinnehmen muessen.
-5. **Punktuelles Vergessen** je Firma und je Person.
-6. **Keine Organisationsauswertung.** Kein Endpunkt, kein Export, keine
+   sollte er nicht hinnehmen muessen — das gilt besonders dort, wo die
+   Organisation die Funktion vorgibt.
+4. **Punktuelles Vergessen** je Firma und je Person.
+5. **Keine Organisationsauswertung.** Kein Endpunkt, kein Export, keine
    Aggregation ueber Nutzer hinweg. Sollte das je gewuenscht werden, ist
    es ein eigener Plan mit eigener Rechtsgrundlage — nicht ein
    Nebenprodukt von diesem.
-7. **Betriebsvereinbarungs-Hinweis** in der Dokumentation: Beim Einsatz
-   in Unternehmen mit Betriebsrat ist diese Funktion mitbestimmungs-
-   pflichtig. Das gehoert in die Freigabedokumente
-   (`PLAN_ENTERPRISE_FREIGABE.md`), nicht nur in eine Fussnote.
+
+### 9.4 Mitbestimmung: ein Enterprise-Thema, kein Standard-Thema
+
+Beim Einsatz in einem Unternehmen mit Betriebsrat ist eine Erfassung
+dieser Art mitbestimmungspflichtig. Der richtige Ort dafuer ist die
+Enterprise-Freigabe, nicht der Standardzustand fuer alle anderen: Die
+Organisation kann die Funktion fuer ihre Mitglieder abschalten
+(9.2, dritte Zeile), und genau das ist der Hebel, den ein Betriebsrat
+braucht. Aufzunehmen in `docs/PLAN_ENTERPRISE_FREIGABE.md`:
+
+- der Schalter `relevanz` als Punkt der Freigabecheckliste,
+- eine Musterbeschreibung dessen, was erfasst wird und was nicht
+  (Abschnitt 3.3 ist dafuer schon geschrieben),
+- die Feststellung, dass die Daten das Geraet nicht verlassen und die
+  Organisation sie nicht einsehen kann. Das ist in der Praxis das
+  Argument, das eine Betriebsvereinbarung ueberhaupt erst einfach macht.
 
 Die Erfassung von Kontaktpersonen beruehrt zusaetzlich deren Rechte.
 Neue personenbezogene Daten entstehen dabei aber nicht: Erfasst wird,
@@ -438,9 +508,13 @@ Agent-Tool:
   keine Bestenliste ueber Nutzer, sondern die Arbeitsvorschau des
   Heartbeats).
 - `relevanz_vergessen` — Signale eines Ziels loeschen (`confirmAction`).
-- `relevanz_einstellen` — ein/aus, Schwellen (`confirmAction`).
+- `relevanz_einstellen` — ein/aus, Schwellen (`confirmAction`). Bei
+  bindender Setzung der Organisation lehnt das Tool mit Begruendung ab,
+  statt still nichts zu tun.
 
 Dazu ein Eintrag in der Faehigkeitsgruppen-Pflege der Chat-Vorschlaege.
+Alle vier Tools sind an `ORG_FEATURES.relevanz` gebunden: abgeschaltet
+heisst nicht registriert, nicht im Prompt erwaehnt, nicht vorgeschlagen.
 
 ---
 
@@ -448,7 +522,7 @@ Dazu ein Eintrag in der Faehigkeitsgruppen-Pflege der Chat-Vorschlaege.
 
 | Stufe | Inhalt | Ergebnis |
 | --- | --- | --- |
-| **R0** | Speicher `main/relevanz/` mit Schema, Signal schreiben, Naehe rechnen, Einwilligung, Schalter. Noch ohne Wirkung. | Erfassung laeuft, nichts aendert sich sichtbar |
+| **R0** | Speicher `main/relevanz/` mit Schema, Signal schreiben, Naehe rechnen, Schalter, `ORG_FEATURES`-Schluessel `relevanz` + `relevanzSelbstbestimmt`, Erst-Hinweis. Noch ohne Wirkung. | Erfassung laeuft, nichts aendert sich sichtbar |
 | **R1** | Vorhandene Signale anschliessen: Detailansicht, Chat-Link, Uebernehmen, Import, Workflow, Watchlist. `InterestStore` liest neu, schreibt nicht mehr selbst. | Erste echte Werte |
 | **R2** | Gewicht aus ICP/Status/Pipeline; Rang; Anzeige in der Firmenansicht mit Begruendung. | Nutzer sieht und versteht den Wert |
 | **R3** | Heartbeat-Priorisierung inklusive Entdeckungsspur und Alterung. | Beobachtung folgt dem Rang |
@@ -471,7 +545,7 @@ darunter.
    eine Konfigurationsabfrage.
 2. **Geraeteuebergreifend?** Heute: nein, lokal je Geraet. Eine
    verschluesselte Ablage im Gateway waere technisch machbar (Schluessel
-   beim Nutzer), widerspricht aber Abschnitt 9.3 dem Geist nach. Meine
+   beim Nutzer), widerspricht aber Abschnitt 9.3.1 dem Geist nach. Meine
    Empfehlung: erst bauen, wenn jemand es vermisst.
 3. **Organisationsaggregat.** "Diese Firma interessiert 4 Kollegen" waere
    sehr nuetzlich fuer den Vertrieb und sehr heikel fuer den Betriebsrat.
@@ -500,6 +574,8 @@ darunter.
 - **Keine Vorhersage.** Der Score sagt, was war, nicht was kommt. "Diese
   Firma wird bald kaufen" braucht Abschlussdaten, die AVA nicht hat, und
   waere ohne sie geraten.
-- **Kein Score ueber Nutzer hinweg.** Siehe Abschnitt 9.6.
-- **Keine Erfassung ohne Einwilligung**, auch nicht "anonym zur
-  Verbesserung".
+- **Kein Score ueber Nutzer hinweg.** Siehe Abschnitt 9.3.
+- **Keine Uebermittlung, auch nicht "anonym zur Verbesserung".** Die
+  Daten bleiben auf dem Geraet. Genau diese Zusage traegt den
+  Standardzustand "an" — sie aufzuweichen hiesse, ihn neu zu
+  verhandeln.
