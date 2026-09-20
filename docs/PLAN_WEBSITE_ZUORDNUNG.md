@@ -286,11 +286,22 @@ aussehen — als eine ohne Website.
 
 ## 7. Offene Entscheidungen
 
-1. **Woher kommt der Geschaeftsfuehrer?** Entweder der Aufrufer schickt
-   ihn im Befehl mit (dann muessen alle vier Aufrufpfade angefasst
-   werden), oder der Website-Dienst holt ihn beim Gateway. Ich neige zum
-   Gateway-Abruf: eine Stelle statt vier, und der Dienst bleibt
-   unabhaengig davon, was der Aufrufer weiss.
+1. ~~**Woher kommt der Geschaeftsfuehrer?**~~ Geklaert beim Sichten der
+   Produktionsdaten: Beides liegt in `ava_structured_content` und ist
+   registergestuetzt, also genau die Wahrheit, gegen die wir pruefen
+   wollen.
+
+   - `StructuredContent` je `companyId`: `name`, `street`, `houseNumber`,
+     `zipCode`, `city` — fuer die JR GmbH "Am Hahler Hafen 14, 32427
+     Minden".
+   - `ManagingDirector` je `companyId`: `firstName`, `lastName`,
+     `birthDay`, `city` — dort steht Justin Rafflenbeul.
+
+   Damit ist der Gateway-Abruf die klare Wahl: eine Stelle statt vier
+   Aufrufpfade, und der Website-Dienst bleibt unabhaengig davon, was der
+   Aufrufer weiss. Offen bleibt nur, ob das Gateway dafuer einen eigenen
+   schlanken Endpunkt bekommt oder ob die bestehende Firmenabfrage
+   reicht.
 2. **Wie streng ist "klarer Widerspruch"?** Mein Vorschlag: andere PLZ
    UND kein uebereinstimmender Personenname. Nur eines von beidem
    reicht nicht.
