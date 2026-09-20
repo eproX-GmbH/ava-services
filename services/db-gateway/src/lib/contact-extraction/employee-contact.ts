@@ -6,7 +6,7 @@ import {
   CreateObservationInput,
 } from "./observation";
 import { reconcileEntity } from "./reconcile-entity";
-import { nameIdentityForm } from "./sanitize-person";
+import { nameIdentityForm, falteUmlaute } from "./sanitize-person";
 
 export function sha256(input: string): string {
   return createHash("sha256").update(input).digest("hex");
@@ -42,26 +42,6 @@ const XING_HOSTS = ["xing.com"];
  * Kurzlinks (lnkd.in) sind KEINE Profil-Belege — sie werden verworfen.
  * Liefert null fuer alles, was kein Profil ist.
  */
-/**
- * Umlaute und Schaerfe-S in einer Profil-Adresse vereinheitlichen.
- *
- * Befund 2026-09-19: "robin rögner" lag zweimal bei derselben Firma, einmal
- * unter `xing.com/profile/robin_roegner`, einmal unter
- * `xing.com/profile/robin_rögner`. Beide Portale erlauben beide
- * Schreibweisen und leiten aufeinander um — es ist dasselbe Profil, aber
- * zwei verschiedene Zeichenketten, also zwei Schluessel.
- *
- * Gefaltet wird in die ausgeschriebene Form (ö → oe), weil Portale ihre
- * Slugs so bilden, wenn der Nutzer keine Umlaute setzt.
- */
-export function falteUmlaute(v: string): string {
-  return v
-    .replace(/ä/g, "ae")
-    .replace(/ö/g, "oe")
-    .replace(/ü/g, "ue")
-    .replace(/ß/g, "ss");
-}
-
 export function normalizeLinkedInProfileUrl(
   raw: string | null | undefined,
 ): string | null {

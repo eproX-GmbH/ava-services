@@ -80,8 +80,30 @@ export function sanitizePersonName(raw: string): string {
  *  Person. Fuer schlichte Namen identisch zum bisherigen
  *  lowercase(trim(name)) → bestehende Identitaetsschluessel bleiben
  *  fuer den Normalfall stabil. */
+/**
+ * Umlaute und Schaerfe-S ausschreiben.
+ *
+ * Zwei Befunde vom 2026-09-19, dieselbe Ursache:
+ *   - "robin rögner" lag zweimal vor, unter xing.com/profile/robin_roegner
+ *     und unter …/robin_rögner. Beide Portale erlauben beide Schreibweisen
+ *     und leiten aufeinander um — dasselbe Profil, zwei Zeichenketten.
+ *   - "Müller" und "Mueller" galten als verschiedene Menschen, weil die
+ *     Namensfaltung Diakritika nur ENTFERNT (ü → u) statt auszuschreiben.
+ *     LinkedIn schreibt oft "Mueller", die Firmenwebsite "Müller".
+ *
+ * Ausgeschrieben statt entfernt, weil Portale ihre Adressen so bilden und
+ * weil "mueller" die Form ist, die beide Schreibweisen erreichen.
+ */
+export function falteUmlaute(v: string): string {
+  return v
+    .replace(/ä/g, "ae")
+    .replace(/ö/g, "oe")
+    .replace(/ü/g, "ue")
+    .replace(/ß/g, "ss");
+}
+
 export function nameIdentityForm(raw: string): string {
-  const base = splitHonorific(sanitizePersonName(raw)).rest;
+  const base = falteUmlaute(splitHonorific(sanitizePersonName(raw)).rest.toLowerCase());
   return base
     .normalize("NFD")
     .replace(/\p{M}+/gu, "")

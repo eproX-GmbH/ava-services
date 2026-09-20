@@ -2,7 +2,8 @@ import assert from "node:assert/strict";
 const { istBrauchbarerName, nameIdentityForm } = await import(
   "../src/lib/contact-extraction/sanitize-person.ts"
 );
-const { falteUmlaute, normalizeLinkedInProfileUrl, personIdentityKey } = await import(
+const { falteUmlaute } = await import("../src/lib/contact-extraction/sanitize-person.ts");
+const { normalizeLinkedInProfileUrl, personIdentityKey } = await import(
   "../src/lib/contact-extraction/employee-contact.ts"
 );
 
@@ -88,5 +89,28 @@ const k1 = personIdentityKey({ companyId: "X", fullName: "Robin Rögner", xingUr
 const k2 = personIdentityKey({ companyId: "X", fullName: "Robin Roegner", xingUrl: "https://www.xing.com/profile/robin_roegner" });
 assert.equal(k1, k2, "derselbe Schluessel trotz verschiedener Schreibweise");
 console.log("  ok   der Identitaets-Schluessel faellt fuer beide Schreibweisen gleich aus");
+
+// Befund 2026-09-19: Die Namensfaltung ENTFERNTE Diakritika (ü → u), statt
+// sie auszuschreiben (ü → ue). "Müller" und "Mueller" galten damit als zwei
+// Menschen — bei deutschen Firmen der haeufigste Fall, weil LinkedIn oft
+// "Mueller" fuehrt und die Firmenwebsite "Müller".
+for (const [a, b] of [
+  ["Müller", "Mueller"],
+  ["Jörg Schäfer", "Joerg Schaefer"],
+  ["Weiß", "Weiss"],
+  ["Dr. Jürgen Groß", "Juergen Gross"],
+]) {
+  assert.equal(nameIdentityForm(a), nameIdentityForm(b), `"${a}" und "${b}" sind derselbe Mensch`);
+}
+console.log("  ok   Umlaut-Schreibweisen eines Namens fallen zusammen");
+
+// Akzente ohne deutsche Entsprechung weiterhin ueber die Zerlegung.
+assert.equal(nameIdentityForm("José Luis Barragán"), nameIdentityForm("Jose Luis Barragan"));
+console.log("  ok   Akzente werden weiterhin abgetragen");
+
+// Und verschiedene Menschen bleiben verschieden.
+assert.notEqual(nameIdentityForm("Müller"), nameIdentityForm("Miller"));
+assert.notEqual(nameIdentityForm("Schäfer"), nameIdentityForm("Schaffer"));
+console.log("  ok   aehnliche, aber andere Namen fallen nicht zusammen");
 
 console.log("Namens-Tests ok");
