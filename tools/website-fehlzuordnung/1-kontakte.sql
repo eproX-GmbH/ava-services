@@ -1,4 +1,13 @@
--- Kontakte entfernen, die aus einer falsch zugeordneten Website stammen.
+-- Kontaktdaten entfernen, die aus einer falsch zugeordneten Website stammen.
+--
+-- Betroffen sind ZWEI Ebenen, und die zweite ist beim ersten Entwurf
+-- untergegangen:
+--   a) die Personen samt ihrer Beschaeftigung,
+--   b) die Kontaktdaten der FIRMA selbst — Telefon, E-Mail, Anschrift,
+--      Profil-Adressen. Bei der JR GmbH stand dort die Mobilnummer und die
+--      Bremer Anschrift der Einzelunternehmerin. Das ist genauso falsch wie
+--      die Personen und faellt nicht mit ihnen, weil diese Fakten an der
+--      Firma haengen (entityType = 'COMPANY', personId leer).
 -- Hintergrund und Faelle: siehe README.md daneben.
 --
 -- Datenbank: ava_company_contact
@@ -104,6 +113,39 @@ DELETE FROM "EmploymentSource" es
 DELETE FROM "Employment" e
  WHERE e.id IN (SELECT employment_id FROM betroffen);
 
+-- ---- Kontaktdaten der Firma selbst -----------------------------------------
+-- Telefon, E-Mail, Anschrift und Profil-Adressen, die an der FIRMA haengen
+-- und deren Belege saemtlich von der falschen Domain stammen. Dieselbe
+-- Regel wie oben: Gibt es auch nur einen Beleg von woanders, bleibt der
+-- Fakt stehen.
+CREATE TEMP TABLE firma_obs_weg ON COMMIT DROP AS
+SELECT DISTINCT o.id
+FROM "Observation" o
+JOIN fehl f ON f.companyId = o."companyId"
+WHERE o."entityType" = 'COMPANY'
+  AND o."evidenceUrl" ILIKE '%' || f.domain || '%';
+
+CREATE TEMP TABLE firma_fakt_weg ON COMMIT DROP AS
+SELECT fa.id, fa."companyId", fa.field, fa.value
+FROM "Fact" fa
+JOIN fehl f ON f.companyId = fa."companyId"
+WHERE fa."entityType" = 'COMPANY'
+  AND EXISTS (SELECT 1 FROM "FactObservationLink" l
+               WHERE l."factId" = fa.id AND l."observationId" IN (SELECT id FROM firma_obs_weg))
+  AND NOT EXISTS (SELECT 1 FROM "FactObservationLink" l
+                   WHERE l."factId" = fa.id AND l."observationId" NOT IN (SELECT id FROM firma_obs_weg));
+
+INSERT INTO "_website_fehl_protokoll" (companyId, domain, gegenstand, kennung, hinweis)
+SELECT ffw."companyId", f.domain, 'firmenfakt', ffw.id, ffw.field || ' = ' || left(ffw.value, 80)
+FROM firma_fakt_weg ffw JOIN fehl f ON f.companyId = ffw."companyId";
+
+DELETE FROM "FactObservationLink" l WHERE l."factId" IN (SELECT id FROM firma_fakt_weg);
+DELETE FROM "FactSignalLink"      l WHERE l."factId" IN (SELECT id FROM firma_fakt_weg);
+DELETE FROM "Fact" fa WHERE fa.id IN (SELECT id FROM firma_fakt_weg);
+
+DELETE FROM "FactObservationLink" l WHERE l."observationId" IN (SELECT id FROM firma_obs_weg);
+DELETE FROM "Observation" o WHERE o.id IN (SELECT id FROM firma_obs_weg);
+
 -- ---- Personen, die dadurch heimatlos werden --------------------------------
 -- Wer nach dem vorigen Schritt NIRGENDWO mehr beschaeftigt ist, war
 -- ausschliesslich ueber die falsche Website bei uns. Eine Person, die auch
@@ -150,6 +192,12 @@ SELECT e."companyId", p."fullName",
 FROM "Employment" e
 JOIN "Person" p ON p.id = e."personId"
 WHERE e."companyId" IN ('BADOEYNHAUSEN_HRB_18331','BADOEYNHAUSEN_HRB_17629','PADERBORN_HRB_12935');
+
+-- Firmen-Kontaktdaten: 0 Zeilen erwartet.
+SELECT "companyId", field, left(value, 50) AS wert
+FROM "Fact"
+WHERE "entityType" = 'COMPANY'
+  AND "companyId" IN ('BADOEYNHAUSEN_HRB_18331','BADOEYNHAUSEN_HRB_17629','PADERBORN_HRB_12935');
 
 -- Was dieser Lauf angefasst hat.
 SELECT gegenstand, count(*) FROM "_website_fehl_protokoll"

@@ -19,7 +19,16 @@ Alle drei wurden von Hand im Impressum geprueft.
 
 - die Website-Zeile (URL, Seitenname, Beschreibung, Social-Links),
 - das daraus erzeugte Firmenprofil,
-- die Kontakte, die AUS DIESER WEBSITE stammen.
+- die Personen, die AUS DIESER WEBSITE stammen,
+- die **Kontaktdaten der Firma selbst** — Telefon, E-Mail, Anschrift,
+  Profil-Adressen. Bei der JR GmbH standen dort die Mobilnummer und die
+  Bremer Anschrift der Einzelunternehmerin.
+
+Der letzte Punkt fehlte im ersten Entwurf. Diese Angaben haengen an der
+Firma (`entityType = 'COMPANY'`), nicht an einer Person, und fielen
+deshalb nicht mit den Personen. Skript 1 ist wiederholbar: Ein erneuter
+Lauf raeumt sie nach, ohne an den bereits erledigten Teilen etwas zu
+aendern.
 
 ## Was bleibt
 
