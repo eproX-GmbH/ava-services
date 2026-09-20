@@ -22,7 +22,15 @@ check(alle.every((g) => !g.verwaltung), "Verwaltung ohne Opt-in ausgeblendet");
 check(F.verfuegbareFaehigkeiten(namen, ["mail", "telegram"]).every((g) => g.id !== "mail" && g.id !== "telegram"), "gesperrte Module fallen raus");
 check(F.verfuegbareFaehigkeiten(["company_get"], []).length === 1, "nur Gruppen mit geladenen Tools");
 const text = F.faehigkeitenText(alle);
-check(text.length / 3.5 < 900, `Prompt-Text ${text.length} Zeichen (≈ ${Math.round(text.length / 3.5)} Token) unter 900 Token`);
+// Das Budget war einmal 900 und damit bei 34 Gruppen praktisch aufgebraucht.
+// Es anzuheben ist richtiger, als Beschreibungen zu straffen: Die Liste ist
+// das EINZIGE, was das erzeugende Modell ueber AVAs Faehigkeiten weiss —
+// fehlender Kontext dort heisst erfundene oder fehlende Vorschlaege, und das
+// kostet mehr, als die paar hundert Token je Aufruf einsparen. Die Grenze
+// bleibt trotzdem stehen: Sie soll gegen Wildwuchs schuetzen, nicht gegen
+// Wachstum.
+const BUDGET_TOKEN = 1400;
+check(text.length / 3.5 < BUDGET_TOKEN, `Prompt-Text ${text.length} Zeichen (≈ ${Math.round(text.length / 3.5)} Token) unter ${BUDGET_TOKEN} Token`);
 
 console.log("Nutzerstand");
 const deps = {

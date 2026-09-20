@@ -1234,12 +1234,10 @@ export type AlertDecisionOutcome =
   | "duplicate"
   | "not-worth"
   | "judge-error"
-  /** Relevanz: alarmwuerdig, aber die Firma steht nicht im Vordergrund —
-   *  kommt in die Tageszusammenfassung statt sofort (PLAN_RELEVANZ.md, 6). */
-  | "gesammelt"
-  /** Relevanz: alarmwuerdig, aber die Firma ist kalt. Bleibt im Datensatz.
-   *  Statuswarnungen und Dringendes sind davon ausgenommen. */
-  | "zu-kalt";
+  /** Relevanz: eine Randnotiz (Feed, Website-Aenderung) bei einer Firma,
+   *  an der gerade niemand arbeitet — kommt in die Tageszusammenfassung
+   *  statt sofort. Nichts wird verworfen (PLAN_RELEVANZ.md, 6). */
+  | "gesammelt";
 
 export interface AlertCandidateDecision {
   kind: AlertKind;

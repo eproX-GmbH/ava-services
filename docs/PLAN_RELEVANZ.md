@@ -38,14 +38,24 @@ Firmen mit hohem Gewicht und niedriger Naehe. Das ist die
 Entdeckungsspur, und sie ist nicht verhandelbar — ohne sie wird das
 System blind fuer alles, was der Nutzer noch nicht kennt.
 
-**Zweitens: Der Score darf die Alarmschwelle verschieben, nicht die
-Alarmart erfinden.** Ein Positionswechsel bleibt ein Positionswechsel.
-Was sich aendert, ist nur, ab welcher Naehe er den Weg bis zum Nutzer
-findet: bei Naehe 9 sofort per Telegram, bei Naehe 5 gesammelt in der
-Tageszusammenfassung, bei Naehe 2 gar nicht (nur im Datensatz). Das haelt
-den Alert-Judge einfach und macht das Verhalten erklaerbar. Der Umkehrweg
-— der Score erzeugt eigene Alarmarten — waere schwer zu begruenden und
-noch schwerer abzuschalten.
+**Zweitens: Der Score stuft hoch, er unterdrueckt nicht.** Das ist die
+wichtigste Festlegung im ganzen Plan, und mein erster Entwurf hatte sie
+falsch herum. Eine kalte Firma meldet weiterhin alles, was sie heute
+meldet — Geschaeftsfuehrerwechsel, Insolvenz, starke Zahlen im
+Jahresabschluss, ICP-Treffer gehen immer sofort durch. Was der Wert tut,
+ist das Gegenteil von Filtern: Bei einer Firma, an der gerade gearbeitet
+wird, wiegt dieselbe Beobachtung schwerer — aus einem Hinweis wird eine
+Warnung, aus einer Warnung eine dringende Meldung.
+
+Der Grund ist eine Asymmetrie der Fehler. Eine Meldung zu viel kostet
+einen Klick. Eine unterdrueckte Meldung ueber die Insolvenz eines Kunden
+kostet den Kunden — und der Nutzer merkt nie, dass sie fehlte, kann den
+Fehler also auch nicht melden. Ein System, dessen Fehler unsichtbar
+sind, korrigiert sich nie.
+
+Gesammelt statt sofort zugestellt wird deshalb genau eine Sache: das
+Rauschen aus Feed und Website-Ueberwachung bei Firmen, an denen gerade
+niemand arbeitet. Und auch das wird gesammelt, nicht verworfen.
 
 **Drittens: Die Signale liegen zentral — und damit haengt alles an der
 Trennung je Nutzer.** Die Daten gehen in die zentrale Datenbank, nicht
@@ -476,40 +486,75 @@ Gewicht.
 ## 6. Wirkung auf den Heartbeat
 
 Heute zieht der Heartbeat Kandidaten vom Gateway und laesst den Judge
-urteilen. Kuenftig sortiert er die Kandidaten vorher nach `rang` und
-arbeitet in Stufen:
+urteilen. Kuenftig sortiert er sie vorher nach `rang` — und behandelt
+die Funde danach unterschiedlich.
 
-| Rang | Beobachtung | Alarmweg |
+**Die Richtung ist wichtig, und die erste Fassung dieses Plans hatte sie
+falsch herum: Der Wert unterdrueckt nichts. Er stuft hoch.**
+
+Eine kalte Firma meldet weiterhin alles, was sie heute meldet. Ein
+Geschaeftsfuehrerwechsel, eine Insolvenz, ein starkes Signal im
+Jahresabschluss, ein ICP- oder Best-Match-Treffer gehen **immer** sofort
+durch, egal wie lange niemand hingesehen hat. Alles andere waere ein
+Datenverlust, den der Nutzer nicht bemerkt und deshalb auch nicht
+korrigieren kann — der schlimmste Fehler, den ein System wie dieses
+machen kann.
+
+Was der Wert stattdessen tut: Bei einer Firma, an der gerade gearbeitet
+wird, wird **genauer hingesehen**. Dieselbe Beobachtung wiegt dort
+schwerer.
+
+| Rang | Beobachtung | Einstufung |
 | --- | --- | --- |
-| 8–10 | jeder Durchlauf (15 min) | Alle Funde ab `info`, Push sofort |
-| 6–8 | jeder zweite Durchlauf | ab `warn` sofort, `info` in die Tageszusammenfassung |
-| 4–6 | taeglich | nur `warn`/`urgent`, gesammelt |
-| 1–4 | woechentlich (plus Entdeckungsspur) | nur `urgent` |
+| ab 9 (brennend) | jeder Durchlauf (15 min) | **alles wird `urgent`** — auch eine Nebensaechlichkeit |
+| ab 7 (heiss) | jeder Durchlauf | eine Stufe hoch: `info` → `warn`, `warn` → `urgent` |
+| 4–7 | jeder zweite Durchlauf | unveraendert |
+| unter 4 | taeglich (plus Entdeckungsspur) | unveraendert |
 
-`urgent` umgeht wie bisher die Ruhezeiten — daran aendert der Score
-nichts. Und: Statuswarnungen (Insolvenz, Loeschung) gehen **immer**
-durch, egal wie kalt die Firma ist. Es waere absurd, die Insolvenz eines
-Kunden zu verschweigen, weil ihn niemand angeklickt hat. Solche
-Ausnahmen gehoeren fest verdrahtet, nicht in eine Gewichtstabelle.
+Die Beobachtungshaeufigkeit bleibt also gestaffelt — heisse Firmen werden
+oefter angesehen —, die Zustellung wird aber nie schwaecher als ohne den
+Wert.
 
-Der Judge bekommt die Naehe als Zusatzangabe im Prompt ("Der Nutzer hat
-sich mit dieser Firma zuletzt intensiv befasst") — nicht als
-Entscheidung, sondern als Kontext fuer die Begruendung.
+### 6.1 Das Einzige, was gesammelt wird
 
-### 6.1 Positionswechsel als Beispiel
+Genau eine Sache geht nicht sofort raus: **Rauschen aus Feed und
+Website-Ueberwachung bei Firmen, an denen gerade niemand arbeitet** — also
+`linkedin-signal` und `link-change` auf Stufe `info` bei Rang unter 6.
+Das war die urspruengliche Frage: Bei 2000 Firmen waere ein Ping bei jedem
+neuen Positionstitel irgendeines Mitarbeiters uebertrieben.
 
-Der Fall aus deiner Frage, einmal durchgespielt. Eine Person bekommt
-einen neuen Titel:
+Auch das wird **gesammelt, nicht verworfen**, und erscheint am selben Tag
+in einer Zusammenfassung. Die Liste der sammelbaren Arten ist eine
+**Positivliste**: Eine kuenftig neue Meldungsart ist damit im Zweifel
+sofort zustellbar und nicht versehentlich still.
 
-1. Person hat eigene Naehe ≥ 7 (Profil angesehen, Hinweis kopiert) → Alarm
-   `linkedin-signal`, Stufe `warn`, sofort. Das ist der Fall, fuer den es
-   die Funktion gibt.
-2. Person 4–7 → sammeln, Tageszusammenfassung.
-3. Person < 4, aber **Kontaktrang Leitung** und Firma im Gewicht ≥ 7 →
-   Tageszusammenfassung. Ein Geschaeftsfuehrerwechsel bei einer gut
-   passenden Firma ist sachlich relevant, auch ohne Vorgeschichte.
-4. Sonst → nur im Datensatz, kein Alarm. Bei 2000 Firmen ist das die
-   grosse Mehrheit, und genau das ist der Punkt.
+Ein unbekannter Rang zaehlt dabei NICHT als kalt. Eine Firma, ueber die
+AVA nichts weiss, ist nicht dasselbe wie eine, die niemanden
+interessiert.
+
+### 6.2 Folge, die man kennen muss
+
+`urgent` umgeht die Ruhezeiten (19–07 und Wochenende). Eine brennend
+heisse Firma kann deshalb auch nachts melden. Das ist gewollt — wer eine
+Firma so eng verfolgt, will nicht am naechsten Morgen erfahren, dass
+etwas passiert ist —, aber es ist eine echte Verhaltensaenderung. Deshalb
+steht die Hochstufung auch in der Begruendung der Meldung: Sonst kaeme
+nachts eine dringende Meldung, deren Text nach einer Nebensaechlichkeit
+klingt, und niemand verstuende warum.
+
+### 6.3 Der Positionswechsel, einmal durchgespielt
+
+Eine Person bekommt einen neuen Titel:
+
+1. Firma brennend heiss (Rang ≥ 9, gerade in Bearbeitung) → `urgent`,
+   sofort, auch nachts. Das ist der Fall, fuer den es die Funktion gibt.
+2. Firma heiss (Rang ≥ 7) → aus `info` wird `warn`, sofort.
+3. Firma dazwischen (4–7) → wie bisher, sofort als `info`.
+4. Firma ruht (unter 6) und es ist nur ein Feed-Signal → Tages-
+   zusammenfassung. Bei 2000 Firmen ist das die grosse Mehrheit.
+5. Es ist aber ein **Geschaeftsfuehrerwechsel aus dem Handelsregister**
+   (`profile-change`) → sofort, auch bei einer Firma, die seit Monaten
+   ruht. Das ist kein Rauschen.
 
 Das loest das "jedes Mal wenn irgendjemand" ohne neue Alarmart, ohne
 neuen Judge und ohne zusaetzlichen LLM-Aufruf.
@@ -779,7 +824,7 @@ heisst nicht registriert, nicht im Prompt erwaehnt, nicht vorgeschlagen.
 | **R2** | Gewicht aus ICP/Status/Pipeline lokal bilden und mitschicken; Rang im Gateway; Anzeige in der Firmenansicht mit Begruendung. | Nutzer sieht und versteht den Wert |
 | **R3** | Heartbeat-Priorisierung inklusive Entdeckungsspur und Alterung. | Beobachtung folgt dem Rang |
 | **R4** | Personensignale: Profilklick, DSGVO-Hinweis, CRM, E-Mail, Kontaktsuche. Vererbung von der Firma. | Personen werden unterscheidbar |
-| **R5** | Alarmschwellen je Rang, Tageszusammenfassung fuer Gesammeltes, feste Ausnahmen (Statuswarnungen). | Der Positionswechsel-Fall ist geloest |
+| **R5** | Hochstufung bei heissen Firmen, Tageszusammenfassung fuer das gesammelte Rauschen. Nichts wird unterdrueckt. | Der Positionswechsel-Fall ist geloest |
 | **R6** | Chat-Tools, Einsicht und Export in den Einstellungen, punktuelles Vergessen, Tilgung beim Ausscheiden aus der Organisation. | Vollstaendig bedienbar |
 | **R7** | Organisationsaggregat: Route `/v1/relevanz/thema`, Hinweis in der Firmenansicht, Seite "Gerade Thema", `relevanzThemaSichtbar`. | Kollegen sehen, was Thema ist |
 

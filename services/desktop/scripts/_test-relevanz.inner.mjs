@@ -199,58 +199,84 @@ pruefe("lange nicht beobachtet schlaegt gleichwertig frisch", () => {
   assert.equal(r[0], "alt");
 });
 
-console.log("Alarmweg");
+console.log("Alarmweg — nichts wird unterdrueckt");
 
-const weg = (rang, severity, kind = "profile-change") => alarmweg({ rang, severity, kind });
+const e = (rang, severity, kind = "linkedin-signal") => alarmweg({ rang, severity, kind });
 
-pruefe("heisse Firma: alles sofort", () => {
-  assert.equal(weg(9, "info"), "sofort");
-  assert.equal(weg(9, "warn"), "sofort");
+pruefe("eine eiskalte Firma meldet Registeraenderungen sofort", () => {
+  // Der Geschaeftsfuehrerwechsel aus dem Handelsregister. Er darf NIE
+  // zurueckgehalten werden, egal wie kalt die Firma ist.
+  assert.equal(e(1, "info", "profile-change").weg, "sofort");
+  assert.equal(e(1, "warn", "profile-change").weg, "sofort");
 });
 
-pruefe("lauwarm: warn sofort, info gesammelt", () => {
-  assert.equal(weg(6.5, "warn"), "sofort");
-  assert.equal(weg(6.5, "info"), "sammeln");
+pruefe("Insolvenz und Statuswarnung immer sofort", () => {
+  assert.equal(e(1, "info", "status").weg, "sofort");
 });
 
-pruefe("kuehl: warn gesammelt, info bleibt im Datensatz", () => {
-  assert.equal(weg(4.5, "warn"), "sammeln");
-  assert.equal(weg(4.5, "info"), "nein");
+pruefe("Jahresabschluesse und Kennzahlen immer sofort", () => {
+  assert.equal(e(1, "info", "publication").weg, "sofort");
+  assert.equal(e(1, "info", "financial-delta").weg, "sofort");
 });
 
-pruefe("kalt: nichts ausser Dringendem", () => {
-  assert.equal(weg(2, "warn"), "nein");
-  assert.equal(weg(2, "info"), "nein");
+pruefe("ICP- und Best-Match-Treffer immer sofort", () => {
+  assert.equal(e(1, "info", "radar-match").weg, "sofort");
+  assert.equal(e(1, "info", "evaluation-flag").weg, "sofort");
 });
 
-console.log("Alarmweg — die harten Ausnahmen");
-
-pruefe("Statuswarnung geht IMMER durch, auch bei eiskalter Firma", () => {
-  // Es waere absurd, die Insolvenz eines Kunden zu verschweigen, weil ihn
-  // noch niemand angeklickt hat. Faellt diese Pruefung, ist der Schaden
-  // groesser als alles, was der Score je einspart.
-  assert.equal(weg(1, "info", "status"), "sofort");
-  assert.equal(weg(1, "warn", "status"), "sofort");
+pruefe("nur Feed- und Website-Rauschen bei ruhenden Firmen wird gesammelt", () => {
+  assert.equal(e(2, "info", "linkedin-signal").weg, "sammeln");
+  assert.equal(e(2, "info", "link-change").weg, "sammeln");
+  // Und auch das nur als Information — sobald der Judge warnt, geht es raus.
+  assert.equal(e(2, "warn", "linkedin-signal").weg, "sofort");
 });
 
-pruefe("urgent geht immer durch", () => {
-  assert.equal(weg(1, "urgent"), "sofort");
-  assert.equal(weg(1, "urgent", "linkedin-signal"), "sofort");
-});
-
-pruefe("ohne Wert im Zweifel melden", () => {
+pruefe("ohne Wert wird nie gesammelt", () => {
   // Eine Firma, ueber die AVA nichts weiss, ist nicht dasselbe wie eine,
-  // die der Nutzer abgelehnt hat.
-  assert.equal(weg(null, "info"), "sofort");
-  assert.equal(weg(null, "warn"), "sofort");
+  // die niemanden interessiert.
+  assert.equal(e(null, "info", "linkedin-signal").weg, "sofort");
+});
+
+console.log("Alarmweg — bei heissen Firmen wird hochgestuft");
+
+pruefe("heiss: eine Information wird zur Warnung", () => {
+  const r = e(8, "info");
+  assert.equal(r.severity, "warn");
+  assert.ok(r.hochgestuft);
+  assert.equal(r.weg, "sofort");
+});
+
+pruefe("heiss: eine Warnung wird dringend", () => {
+  assert.equal(e(8, "warn").severity, "urgent");
+});
+
+pruefe("brennend: alles wird dringend", () => {
+  // Der Fall, um den es geht: An einer Firma, an der gerade gearbeitet
+  // wird, ist auch eine Nebensaechlichkeit dringend.
+  assert.equal(e(9.5, "info").severity, "urgent");
+  assert.equal(e(9.5, "info", "link-change").severity, "urgent");
+});
+
+pruefe("lauwarm und kalt aendern die Stufe nicht", () => {
+  assert.equal(e(5, "info").severity, "info");
+  assert.equal(e(5, "info").hochgestuft, false);
+  assert.equal(e(1, "warn", "profile-change").severity, "warn");
+});
+
+pruefe("urgent bleibt urgent, es gibt nichts darueber", () => {
+  assert.equal(e(9.9, "urgent").severity, "urgent");
+  assert.equal(e(9.9, "urgent").hochgestuft, false);
 });
 
 pruefe("der Positionswechsel-Fall aus der Ausgangsfrage", () => {
-  // Bei 2000 Firmen darf nicht jeder neue Titel stoeren — bei DER Firma,
-  // an der gerade gearbeitet wird, aber schon.
-  assert.equal(weg(8.6, "info", "linkedin-signal"), "sofort", "heisse Firma: sofort");
-  assert.equal(weg(5, "info", "linkedin-signal"), "nein", "kalte Firma: still");
-  assert.equal(weg(6.5, "info", "linkedin-signal"), "sammeln", "dazwischen: gesammelt");
+  // Bei 2000 Firmen soll nicht jeder neue Titel eines beliebigen
+  // Mitarbeiters stoeren — bei DER Firma, an der gerade gearbeitet wird,
+  // aber sehr wohl, und dort sogar dringend.
+  assert.equal(e(2, "info", "linkedin-signal").weg, "sammeln", "ruhende Firma: gesammelt");
+  assert.equal(e(9.2, "info", "linkedin-signal").severity, "urgent", "brennende Firma: dringend");
+  // Ein Geschaeftsfuehrerwechsel ist kein Rauschen, auch nicht bei einer
+  // Firma, die seit Monaten ruht.
+  assert.equal(e(2, "info", "profile-change").weg, "sofort", "GF-Wechsel: immer sofort");
 });
 
 console.log(fehler === 0 ? "\nAlles gruen." : `\n${fehler} Pruefung(en) fehlgeschlagen.`);

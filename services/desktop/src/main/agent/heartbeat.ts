@@ -318,34 +318,25 @@ export class Heartbeat extends EventEmitter {
           );
           continue;
         }
-        // Relevanz (Abschnitt 6): Der Wert entscheidet nicht, OB etwas eine
-        // Meldung ist — der Judge hat gerade "ja" gesagt —, sondern nur, ob
-        // sie sofort kommt, gesammelt wird oder im Datensatz bleibt.
-        // Statuswarnungen und Dringendes gehen immer durch; das regelt
-        // alarmweg() selbst.
+        // Relevanz (Abschnitt 6): Der Wert unterdrueckt nichts — er stuft
+        // hoch. Bei einer Firma, an der der Nutzer gerade arbeitet, wiegt
+        // dieselbe Beobachtung schwerer. Gesammelt wird nur Rauschen aus
+        // Feed und Website-Ueberwachung bei ruhenden Firmen, und auch das
+        // wird nicht weggeworfen.
         const rang = this.rangImDurchgang.get(c.companyId) ?? null;
-        const weg = alarmweg({ rang, severity: verdict.severity, kind: c.kind });
-        if (weg !== "sofort") {
-          if (weg === "sammeln") {
-            sammlung.sammle({
-              companyId: c.companyId,
-              companyName: c.companyName,
-              kind: c.kind,
-              severity: verdict.severity,
-              headline: verdict.headline,
-              sourceRef: c.sourceRef,
-              occurredAt: c.occurredAt,
-            });
-          }
-          // In beiden Faellen in die Transparenzliste: Zurueckhalten ist
-          // etwas anderes als Wegwerfen, und der Nutzer soll nachlesen
-          // koennen, was AVA gesammelt oder liegen gelassen hat.
+        const einstufung = alarmweg({ rang, severity: verdict.severity, kind: c.kind });
+        if (einstufung.weg === "sammeln") {
+          sammlung.sammle({
+            companyId: c.companyId,
+            companyName: c.companyName,
+            kind: c.kind,
+            severity: einstufung.severity,
+            headline: verdict.headline,
+            sourceRef: c.sourceRef,
+            occurredAt: c.occurredAt,
+          });
           decisions.push(
-            decisionFor(
-              c,
-              weg === "sammeln" ? "gesammelt" : "zu-kalt",
-              wegBegruendung(weg, rang) || verdict.rationale,
-            ),
+            decisionFor(c, "gesammelt", wegBegruendung(einstufung, rang) || verdict.rationale),
           );
           continue;
         }
@@ -354,9 +345,14 @@ export class Heartbeat extends EventEmitter {
           companyId: c.companyId,
           companyName: c.companyName,
           kind: c.kind,
-          severity: verdict.severity,
+          severity: einstufung.severity,
           headline: verdict.headline,
-          rationale: verdict.rationale,
+          // Die Hochstufung gehoert in die Begruendung: Sonst steht da eine
+          // dringende Meldung, deren Text nach einer Nebensaechlichkeit
+          // klingt, und niemand versteht, warum sie nachts kam.
+          rationale: einstufung.hochgestuft
+            ? `${verdict.rationale} ${wegBegruendung(einstufung, rang)}`.trim()
+            : verdict.rationale,
           sourceRef: c.sourceRef,
           // v0.1.369 — externe Quell-URL durchreichen (z. B. der
           // LinkedIn-Permalink aus dem Kandidaten-Payload), damit die
@@ -374,7 +370,7 @@ export class Heartbeat extends EventEmitter {
           created.push(row);
           decisions.push({
             ...decisionFor(c, "alerted", verdict.rationale),
-            severity: verdict.severity,
+            severity: einstufung.severity,
           });
         } else {
           // Add returned null because of a sourceRef collision detected
