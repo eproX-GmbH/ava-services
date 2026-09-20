@@ -116,3 +116,42 @@ export function gleicherName(a: string, b: string): boolean {
   const ta = fa.split(" "), tb = fb.split(" ");
   return ta.length >= 2 && tb.length >= 2 && [...ta].sort().join(" ") === [...tb].sort().join(" ");
 }
+
+/**
+ * BC4 — Hervorhebung auf der Website (Abschnitt 6): "Auf der Team-Seite an
+ * erster Stelle / mit Foto und Zitat → Einfluss M–H, 'wird hervorgehoben'".
+ *
+ * Aus mehreren Seiten zaehlt die staerkste. Ein Vorschlag entsteht nur, wenn
+ * die Seite etwas hergibt: Platz 1 von 2 sagt nichts, Platz 1 von 12 mit
+ * Foto und Zitat sagt viel. Auch das ist NUR ein Vorschlag — die Firma hebt
+ * hervor, wen sie zeigen will, nicht, wer entscheidet.
+ */
+export interface Hervorhebung { platz: number; von: number; foto: boolean; zitat: boolean; url: string | null }
+
+export function vorschlagAusHervorhebung(hs: Hervorhebung[]): Vorschlag | null {
+  let bester: { wert: "M" | "H"; grund: string; punkte: number } | null = null;
+  for (const h of hs) {
+    const stufe = einflussStufe(h);
+    if (!stufe) continue;
+    // H vor M; bei gleicher Stufe die Seite mit mehr Belegen und mehr Personen.
+    const punkte = (stufe === "H" ? 10 : 5) + (h.foto ? 1 : 0) + (h.zitat ? 1 : 0) + Math.min(h.von, 20) / 100;
+    if (!bester || punkte > bester.punkte) bester = { wert: stufe, grund: hervorhebungGrund(h), punkte };
+  }
+  return bester ? { dimension: "einfluss", wert: bester.wert, grund: bester.grund } : null;
+}
+
+function einflussStufe(h: Hervorhebung): "M" | "H" | null {
+  const erste = h.platz === 1 && h.von >= 3;
+  const vorn = h.platz <= 3 && h.von >= 6;
+  const gezeigt = h.foto && h.zitat;
+  if (erste && (h.foto || h.zitat)) return "H";
+  if (erste || vorn || gezeigt) return "M";
+  return null;
+}
+
+function hervorhebungGrund(h: Hervorhebung): string {
+  const wo = h.url ? `Website ${h.url}` : "Website";
+  const lage = h.platz === 1 ? `an erster Stelle von ${h.von} Personen` : `an ${h.platz}. Stelle von ${h.von} Personen`;
+  const mit = h.foto && h.zitat ? ", mit Foto und Zitat" : h.foto ? ", mit Foto" : h.zitat ? ", mit Zitat" : "";
+  return `${wo}: ${lage}${mit} — die Firma hebt die Person hervor (nur ein Vorschlag, Sichtbarkeit ist nicht gleich Einfluss)`;
+}

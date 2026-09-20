@@ -33,6 +33,7 @@ import {
 } from "./contact-extraction/employment";
 import { createObservationIdempotent } from "./contact-extraction/observation";
 import { istTeilenKnopf } from "./contact-extraction/teilen-knopf";
+import { HERVORHEBUNG_FELD, hervorhebungAlsWert } from "./contact-extraction/hervorhebung";
 import { emitRemovalsByTTL } from "./contact-extraction/emit-removals-by-ttl";
 import { getProducerPool } from "./producer-pools";
 import { isPersonTombstoned, stampObservations } from "./person-compliance";
@@ -79,6 +80,13 @@ export interface CompanyContactPersistRequest {
       email?: string;
       phone?: string;
       sourceUrl?: string | null;
+      /** BC4 — Hervorhebung auf der Seite (nur Website-Quellen): Platz von
+       *  oben, Personen auf der Seite, Foto, Zitat. Wird zum Fakt
+       *  "websiteHervorhebung" (lib/contact-extraction/hervorhebung.ts). */
+      reihenfolge?: number;
+      anzahlAufSeite?: number;
+      mitFoto?: boolean;
+      mitZitat?: boolean;
     }>;
     /** When set, run cleanupEmploymentsByTTL after processing. The
      *  compute-worker emits this on the LAST event of a dispatch
@@ -320,6 +328,32 @@ export async function applyCompanyContactPersist(
       evidenceUrl: evidenceUrl ?? undefined,
       defaultCountryCode: result.defaultCountryCode,
     });
+    // BC4 — Hervorhebung auf der Seite als eigener Fakt je Person und
+    // Seite. Bewusst ohne Abloesung: "Platz 1 von 12" und spaeter "Platz 1
+    // von 13" sind zwei Fakten, und wer sie liest (das Buying Center), haelt
+    // sich an lastSeen. Kein Signal — eine Team-Seite ist kein Ereignis.
+    if (
+      Number.isInteger(p.reihenfolge) &&
+      Number.isInteger(p.anzahlAufSeite) &&
+      (p.reihenfolge as number) >= 1
+    ) {
+      obs.push({
+        entityType: EntityType.PERSON,
+        entityId: up.personId,
+        personId: up.personId,
+        companyId,
+        field: HERVORHEBUNG_FELD,
+        value: hervorhebungAlsWert({
+          platz: p.reihenfolge as number,
+          von: p.anzahlAufSeite as number,
+          foto: p.mitFoto === true,
+          zitat: p.mitZitat === true,
+        }),
+        source,
+        evidenceUrl: candidate.sourceUrl ?? evidenceUrl ?? null,
+        evidence: null,
+      });
+    }
     const obsIds = await persistObservations(prisma, { runId, observations: obs });
     await stampObservations(contactPool, obsIds, tenantId && tenantId !== "pilot" ? tenantId : null, actorId).catch((err: unknown) =>
       log.warn({ err: err instanceof Error ? err.message : String(err) }, "observation stamp failed"),

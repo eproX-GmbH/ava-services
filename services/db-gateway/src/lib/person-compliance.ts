@@ -150,6 +150,7 @@ export async function personHerkunft(pool: pg.Pool, personId: string): Promise<H
 const FELD: Record<string, string> = {
   fullName: "Name", jobTitle: "Position", department: "Abteilung", linkedinUrl: "LinkedIn-Profil", xingUrl: "XING-Profil",
   email: "E-Mail", phone: "Telefon", identityKey: "Identitaetsschluessel (intern)", employmentCompanyId: "Firmenzuordnung (intern)",
+  websiteHervorhebung: "Hervorhebung auf der Firmenwebsite (Platz, Foto, Zitat)",
 };
 const d = (iso: string | null) => (iso ? iso.slice(0, 10) : "—");
 

@@ -26,8 +26,9 @@ import { getGatewayPool, getProducerPool } from "../../lib/producer-pools";
 import { ErrorShape } from "./schemas";
 import {
   ROLLEN, EINSTELLUNGEN, KONTAKTE, EINFLUESSE, KANTEN_ARTEN,
-  vorschlaegeAusTitel, unbesetzteRollen, ohneKontakt, gleicherName,
+  vorschlaegeAusTitel, unbesetzteRollen, ohneKontakt, gleicherName, vorschlagAusHervorhebung,
 } from "../../lib/buying-center-vorschlag";
+import { HERVORHEBUNG_FELD, hervorhebungAusWert } from "../../lib/contact-extraction/hervorhebung";
 
 export const buyingCenterRouter = new OpenAPIHono();
 buyingCenterRouter.use("*", requireScope("company:read"));
@@ -254,12 +255,14 @@ buyingCenterRouter.openapi(anlegenRoute, async (c) => {
       LIMIT 25`,
     [companyId],
   );
+  const neueMitglieder: Array<{ id: string; personId: string | null; einfluss: string | null }> = [];
   for (const p of personen.rows) {
     const mid = cuid();
     await pool.query(
       `INSERT INTO "BuyingCenterMitglied" ("id","buyingCenterId","personId","name","funktion","updatedAt") VALUES ($1,$2,$3,$4,$5,NOW())`,
       [mid, id, p.personId, p.fullName, p.title],
     );
+    neueMitglieder.push({ id: mid, personId: p.personId, einfluss: null });
     // Vorschlaege landen als OFFENE Angaben (nicht uebernommen). Der Stand
     // bleibt bei Fragezeichen, bis der Nutzer entscheidet — ein Buying
     // Center aus duennen Daten ist gefaehrlicher als keins.
@@ -267,6 +270,8 @@ buyingCenterRouter.openapi(anlegenRoute, async (c) => {
       await angabeSetzen({ mitgliedId: mid, dimension: v.dimension, wert: v.wert, herkunft: "ava:titel", grund: v.grund, vonActorId: null, uebernehmen: false });
     }
   }
+  // BC4 — was die Website hervorhebt, als Einfluss-Vorschlag dazu.
+  await websiteVorschlaege(neueMitglieder);
 
   const kopf = (await pool.query<BcKopf>(`SELECT * FROM "BuyingCenter" WHERE "id" = $1`, [id])).rows[0]!;
   return c.json(await ladeVoll({ ...kopf, eigenes: true }), 200);
@@ -411,11 +416,70 @@ buyingCenterRouter.openapi(angabeRoute, async (c) => {
 
 // ---- POST /buying-center/{id}/mitglieder/{mid}/vorschlaege ------------------
 //
-// AVA-Vorschlaege aus Daten (BC3: CRM, spaeter Website/LinkedIn). Landen als
-// OFFENE Angaben, aendern den Stand nicht. Zwei Schranken, damit die
-// Seitenleiste nicht zumuellt: Hat der Nutzer die Dimension selbst gesetzt,
-// wird nichts vorgeschlagen; gibt es denselben offenen Vorschlag schon,
-// wird er nicht wiederholt.
+// AVA-Vorschlaege aus Daten (BC3: CRM aus dem Desktop; BC4: Website aus dem
+// Gateway selbst). Landen als OFFENE Angaben, aendern den Stand nicht.
+
+/**
+ * Legt einen AVA-Vorschlag ab — mit drei Schranken, damit die Seitenleiste
+ * nicht zumuellt: nicht, wenn der Nutzer die Dimension selbst gesetzt hat;
+ * nicht, wenn derselbe Vorschlag schon offen ist; nicht, wenn er bereits
+ * verworfen wurde. Der eine Weg fuer alle Herkuenfte.
+ */
+async function vorschlagAblegen(p: { mitgliedId: string; dimension: string; wert: string; herkunft: string; grund: string }): Promise<{ abgelegt: boolean; grund?: string }> {
+  const pool = getGatewayPool();
+  // Vom Nutzer gesetzt? Dann kein Vorschlag — seine Angabe gilt.
+  const gesetzt = await pool.query(
+    `SELECT 1 FROM "BuyingCenterAngabe" WHERE "mitgliedId" = $1 AND "dimension" = $2 AND "herkunft" = 'nutzer' AND "wert" IS NOT NULL LIMIT 1`,
+    [p.mitgliedId, p.dimension],
+  );
+  if (gesetzt.rowCount) return { abgelegt: false, grund: "vom Nutzer gesetzt" };
+  // Denselben offenen Vorschlag nicht wiederholen.
+  const doppelt = await pool.query(
+    `SELECT 1 FROM "BuyingCenterAngabe" WHERE "mitgliedId" = $1 AND "dimension" = $2 AND "wert" = $3 AND "herkunft" LIKE 'ava:%' AND "entschieden" IS NULL LIMIT 1`,
+    [p.mitgliedId, p.dimension, p.wert],
+  );
+  if (doppelt.rowCount) return { abgelegt: false, grund: "liegt schon vor" };
+  // Bereits verworfen? Dann auch nicht — der Nutzer hat entschieden.
+  const verworfen = await pool.query(
+    `SELECT 1 FROM "BuyingCenterAngabe" WHERE "mitgliedId" = $1 AND "dimension" = $2 AND "wert" = $3 AND "entschieden" = 'verworfen' LIMIT 1`,
+    [p.mitgliedId, p.dimension, p.wert],
+  );
+  if (verworfen.rowCount) return { abgelegt: false, grund: "bereits verworfen" };
+
+  await angabeSetzen({ mitgliedId: p.mitgliedId, dimension: p.dimension, wert: p.wert, herkunft: p.herkunft, grund: p.grund, vonActorId: null, uebernehmen: false });
+  return { abgelegt: true };
+}
+
+/**
+ * BC4 — Hervorhebung auf der Website als Einfluss-Vorschlag. Liest je
+ * Bestandsperson die "websiteHervorhebung"-Fakten aus dem Kontakt-Bestand
+ * (Seite in Observation.evidenceUrl; hoechstens 180 Tage alt, aeltere
+ * Team-Seiten sind laengst umgebaut) und legt einen offenen Vorschlag ab,
+ * wenn die Seite etwas hergibt. Nur fuer Mitglieder, deren Einfluss noch
+ * offen ist. Liefert, wie viele Vorschlaege neu abgelegt wurden.
+ */
+async function websiteVorschlaege(mitglieder: Array<{ id: string; personId: string | null; einfluss: string | null }>): Promise<number> {
+  const offen = mitglieder.filter((m) => m.personId !== null && m.einfluss === null);
+  if (offen.length === 0) return 0;
+  const r = await getProducerPool("company-contact").query<{ personId: string; value: string; url: string | null }>(
+    `SELECT f."personId", f."value", o."evidenceUrl" AS url
+       FROM "Fact" f LEFT JOIN "Observation" o ON o."id" = f."lastObsId"
+      WHERE f."personId" = ANY($1::text[]) AND f."field" = $2 AND f."status" = 'ACTIVE'
+        AND f."lastSeen" > NOW() - INTERVAL '180 days'`,
+    [offen.map((m) => m.personId), HERVORHEBUNG_FELD],
+  );
+  let abgelegt = 0;
+  for (const m of offen) {
+    const hs = r.rows
+      .filter((x) => x.personId === m.personId)
+      .flatMap((x) => { const h = hervorhebungAusWert(x.value); return h ? [{ ...h, url: x.url }] : []; });
+    const v = vorschlagAusHervorhebung(hs);
+    if (!v) continue;
+    const ergebnis = await vorschlagAblegen({ mitgliedId: m.id, dimension: v.dimension, wert: v.wert, herkunft: "ava:website", grund: v.grund });
+    if (ergebnis.abgelegt) abgelegt++;
+  }
+  return abgelegt;
+}
 
 const vorschlagRoute = createRoute({
   method: "post", path: "/buying-center/{id}/mitglieder/{mid}/vorschlaege", tags: [tag],
@@ -434,32 +498,9 @@ buyingCenterRouter.openapi(vorschlagRoute, async (c) => {
   const bc = await ladeMitZugriff(id, wer, true);
   const { dimension, wert, herkunft, grund } = c.req.valid("json");
   pruefeWert(dimension, wert);
-  const pool = getGatewayPool();
-  const m = await pool.query(`SELECT "rollen","kontakt","einfluss" FROM "BuyingCenterMitglied" WHERE "id" = $1 AND "buyingCenterId" = $2`, [mid, bc.id]);
-  const mitglied = m.rows[0] as { rollen: string[]; kontakt: string | null; einfluss: string | null } | undefined;
-  if (!mitglied) throw new HTTPException(404, { message: "mitglied_not_found" });
-
-  // Vom Nutzer gesetzt? Dann kein Vorschlag — seine Angabe gilt.
-  const gesetzt = await pool.query(
-    `SELECT 1 FROM "BuyingCenterAngabe" WHERE "mitgliedId" = $1 AND "dimension" = $2 AND "herkunft" = 'nutzer' AND "wert" IS NOT NULL LIMIT 1`,
-    [mid, dimension],
-  );
-  if (gesetzt.rowCount) return c.json({ abgelegt: false, grund: "vom Nutzer gesetzt" }, 200);
-  // Denselben offenen Vorschlag nicht wiederholen.
-  const doppelt = await pool.query(
-    `SELECT 1 FROM "BuyingCenterAngabe" WHERE "mitgliedId" = $1 AND "dimension" = $2 AND "wert" = $3 AND "herkunft" LIKE 'ava:%' AND "entschieden" IS NULL LIMIT 1`,
-    [mid, dimension, wert],
-  );
-  if (doppelt.rowCount) return c.json({ abgelegt: false, grund: "liegt schon vor" }, 200);
-  // Bereits verworfen? Dann auch nicht — der Nutzer hat entschieden.
-  const verworfen = await pool.query(
-    `SELECT 1 FROM "BuyingCenterAngabe" WHERE "mitgliedId" = $1 AND "dimension" = $2 AND "wert" = $3 AND "entschieden" = 'verworfen' LIMIT 1`,
-    [mid, dimension, wert],
-  );
-  if (verworfen.rowCount) return c.json({ abgelegt: false, grund: "bereits verworfen" }, 200);
-
-  await angabeSetzen({ mitgliedId: mid, dimension, wert, herkunft, grund, vonActorId: null, uebernehmen: false });
-  return c.json({ abgelegt: true }, 200);
+  const m = await getGatewayPool().query(`SELECT 1 FROM "BuyingCenterMitglied" WHERE "id" = $1 AND "buyingCenterId" = $2`, [mid, bc.id]);
+  if (!m.rows[0]) throw new HTTPException(404, { message: "mitglied_not_found" });
+  return c.json(await vorschlagAblegen({ mitgliedId: mid, dimension, wert, herkunft, grund }), 200);
 });
 
 // ---- PUT /buying-center/{id}/positionen ------------------------------------
@@ -569,7 +610,11 @@ const vorschlaegeRoute = createRoute({
 });
 buyingCenterRouter.openapi(vorschlaegeRoute, async (c) => {
   const bc = await ladeMitZugriff(c.req.valid("param").id, auth(c), false);
-  const voll = await ladeVoll(bc);
+  let voll = await ladeVoll(bc);
+  // BC4 — Website-Hervorhebung beim Oeffnen nachziehen: Ein Kontakte-Lauf
+  // nach dem Anlegen bringt neue Fakten, die hier ankommen sollen. Nur im
+  // eigenen — ein Freigegebener loest keine Schreibvorgaenge aus.
+  if (bc.eigenes && (await websiteVorschlaege(voll.mitglieder)) > 0) voll = await ladeVoll(bc);
   const verknuepfbar = await verknuepfbarePersonen(bc.companyId, voll.mitglieder);
   const offen = voll.mitglieder.flatMap((m) =>
     m.angaben
