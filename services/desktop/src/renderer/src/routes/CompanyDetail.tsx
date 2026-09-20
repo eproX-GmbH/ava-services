@@ -38,6 +38,7 @@ import { sortiereNachRang, rangFuerTitel, RANG_TITEL } from "./kontakt-rang";
 import { bewerte } from "./kontakt-suche";
 import { FirmaUebernehmen, useIstUebernommen } from "./firma-uebernehmen";
 import { Waermeanzeige, ThemaHinweis } from "./waermeanzeige";
+import { BuyingCenterKarte } from "../components/BuyingCenterKarte";
 import { gewichtFuer } from "./relevanz-gewicht";
 import {
   EyeIcon,
@@ -79,7 +80,8 @@ type TabKey =
   | "contacts"
   | "insights"
   | "jobs"
-  | "verflechtungen";
+  | "verflechtungen"
+  | "buyingcenter";
 
 const TABS: Array<{ key: TabKey; label: string; workflow: string }> = [
   { key: "overview", label: "Übersicht", workflow: "W8/W10" },
@@ -89,6 +91,7 @@ const TABS: Array<{ key: TabKey; label: string; workflow: string }> = [
   { key: "insights", label: "Erkenntnisse", workflow: "W11" },
   { key: "jobs", label: "Stellenanzeigen", workflow: "W10" },
   { key: "verflechtungen", label: "Verflechtungen", workflow: "V6" },
+  { key: "buyingcenter", label: "Buying Center", workflow: "BC2" },
 ];
 
 // ---- Shared hooks ----------------------------------------------------------
@@ -513,6 +516,17 @@ export function CompanyDetail() {
     !!id
   );
 
+  // Buying Center (docs/PLAN_BUYING_CENTER.md): Der Reiter erscheint NUR,
+  // wenn der Nutzer selbst eines zu dieser Firma hat. Die der Kollegen
+  // gehoeren nicht hierher — sie gehoeren ihm auch nicht.
+  const eigenesBc = useQuery({
+    queryKey: ["buying-center", "firma", id],
+    queryFn: () => gatewayFetch<{ items: Array<{ id: string; status: string }> }>(`/v1/buying-center?companyId=${encodeURIComponent(id!)}&status=aktiv`),
+    enabled: Boolean(id),
+    staleTime: 30_000,
+  });
+  const eigenesBcId = eigenesBc.data?.items[0]?.id ?? null;
+
   // Ein Reiter ohne Inhalt ist eine Einladung ins Leere: Man klickt ihn an
   // und bekommt "Keine Angaben". Deshalb erscheinen nur Reiter, hinter denen
   // wirklich etwas steht.
@@ -541,6 +555,7 @@ export function CompanyDetail() {
     // gaebe es keinen Weg mehr, die Gesellschafterliste ueberhaupt zu
     // holen — der Reiter waere genau dann weg, wenn man ihn braucht.
     verflechtungen: true,
+    buyingcenter: eigenesBcId !== null,
   };
 
   // Erst urteilen, wenn die Daten da sind. Sonst erschiene ein Reiter kurz
@@ -551,7 +566,8 @@ export function CompanyDetail() {
     !structured.isLoading &&
     !website.isLoading &&
     !profile.isLoading &&
-    (!kontakteErlaubt || !contactFallback.isLoading);
+    (!kontakteErlaubt || !contactFallback.isLoading) &&
+    !eigenesBc.isLoading;
 
   const sichtbareTabs = TABS.filter(
     (t) =>
@@ -801,6 +817,7 @@ export function CompanyDetail() {
         )}
         {tab === "jobs" && <JobsTab jobs={website.data?.jobPostings ?? []} />}
         {tab === "verflechtungen" && verflechtungenSichtbar && <VerflechtungenTab id={id!} name={summary.data?.name ?? null} />}
+        {tab === "buyingcenter" && eigenesBcId && <BuyingCenterKarte id={eigenesBcId} />}
       </div>
     </section>
   );
@@ -817,6 +834,7 @@ const STAGES_FOR_TAB: Record<TabKey, string[]> = {
   insights: ["website", "company-evaluation"],
   jobs: ["website"],
   verflechtungen: ["structured-content"],
+  buyingcenter: [],
 };
 
 function KpiTile({

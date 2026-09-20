@@ -3205,6 +3205,48 @@ a.heartbeat-decision__company:hover {
 
 /* Hinweis in der Firmenansicht. Zurueckhaltend: eine Beilaeufigkeit, die
    man bemerkt, wenn man sie braucht — kein Banner. */
+/* ---- Buying Center / Power Map (docs/PLAN_BUYING_CENTER.md) ---------------
+   Die Karte, ihre Seitenleiste und die Legende. Farben kommen aus den Tokens;
+   die Legende ist bewusst gedeckt, sie erklaert, sie schmueckt nicht. */
+.bc-karte { display: flex; flex-direction: column; gap: 0.6rem; }
+.bc-karte--kompakt { margin: 0.75rem 0; padding: 0.75rem; border: 1px solid rgba(127,127,127,0.2); border-radius: 10px; }
+.bc-karte__kopf { display: flex; align-items: baseline; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
+.bc-karte__titel { font-weight: 600; }
+.bc-karte__fremd { color: var(--muted); font-weight: 400; }
+.bc-karte__flaeche { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0.75rem; }
+/* Ab mittlerer Breite Karte links, Seitenleiste rechts. minmax(0,…) statt
+   1fr: sonst schiebt das SVG die Leiste aus dem Kasten. */
+@media (min-width: 900px) {
+  .bc-karte__flaeche:has(.bc-seite) { grid-template-columns: minmax(0, 1fr) 20rem; }
+}
+.bc-grafik { position: relative; overflow-x: auto; }
+.bc-grafik__reset { position: absolute; right: 8px; top: 8px; z-index: 1; }
+.bc-grafik svg { min-width: 560px; background: var(--panel-bg, transparent); border-radius: 8px; display: block; }
+.bc-platzhalter { padding: 1rem; color: var(--muted); }
+
+.bc-seite {
+  border: 1px solid rgba(127,127,127,0.2);
+  border-radius: 10px;
+  padding: 0.85rem;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  max-height: 560px;
+  overflow-y: auto;
+}
+.bc-seite__kopf { display: flex; align-items: flex-start; justify-content: space-between; gap: 0.6rem; margin-bottom: 0.5rem; }
+.bc-seite__name { font-weight: 600; font-size: 15px; }
+.bc-seite h4 { margin: 0.9rem 0 0.35rem; font-size: 12px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
+.bc-seite__dims { display: grid; grid-template-columns: auto 1fr; gap: 0.15rem 0.75rem; margin: 0; font-size: 13px; }
+.bc-seite__dims dt { color: var(--muted); }
+.bc-seite__dims dd { margin: 0; }
+.bc-seite__belege, .bc-seite__vorschlaege { list-style: none; margin: 0.4rem 0 0; padding: 0; display: grid; gap: 0.55rem; font-size: 13px; }
+.bc-seite__beleg-kopf { font-weight: 600; }
+.bc-seite__grund { margin-top: 0.15rem; }
+.bc-seite__knoepfe { display: flex; gap: 0.5rem; margin-top: 0.4rem; }
+
+.bc-legende { display: flex; flex-wrap: wrap; gap: 0.4rem 1.1rem; font-size: 11.5px; }
+.bc-legende b { font-weight: 600; color: var(--fg); }
+
 .thema-hinweis {
   display: inline-block;
   margin-top: 0.15rem;

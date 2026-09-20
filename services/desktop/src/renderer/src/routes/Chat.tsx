@@ -28,6 +28,7 @@ import {
 import { openChatSearch } from "../components/AppShell";
 import { onChatSearchPick } from "../components/ChatSearchModal";
 import { ChartBlock } from "../components/ChartBlock";
+import { BuyingCenterBlock } from "../components/BuyingCenterBlock";
 import { chartFenceState } from "../lib/chart-spec";
 import { useOllamaStore } from "../store/ollama";
 import { useVoiceStore } from "../store/voice";
@@ -3129,10 +3130,69 @@ function AttachmentDisclosure({ block }: { block: AttachmentBlock }) {
 const CHART_FENCE_RE = /```chart\s*\n([\s\S]*?)\n```/g;
 const CHART_OPEN_RE = /```chart\b/;
 
+// Buying Center (docs/PLAN_BUYING_CENTER.md, BC2): derselbe Mechanismus wie
+// beim Diagramm, aber der Zaun traegt nur die Kennung. Wird VOR dem
+// Chart-Pass abgefangen, damit die Chart-Logik den Rest unveraendert sieht.
+const BC_FENCE_RE = /```buying-center\s*\n([\s\S]*?)\n```/g;
+const BC_OPEN_RE = /```buying-center\b/;
+
 function renderChatContent(text: string): ReactNode {
   if (!text) return null;
   const nodes: ReactNode[] = [];
   let segKey = 0;
+
+  // 0) ```buying-center-Zaeune: Karte einspleissen, Text davor/dazwischen
+  //    durch den gewohnten Pfad (samt Charts) schicken.
+  BC_FENCE_RE.lastIndex = 0;
+  let bcCursor = 0;
+  let bcMatch: RegExpExecArray | null;
+  let bcGefunden = false;
+  while ((bcMatch = BC_FENCE_RE.exec(text)) !== null) {
+    bcGefunden = true;
+    const davor = text.slice(bcCursor, bcMatch.index);
+    if (davor) nodes.push(<span key={`bcseg-${segKey++}`}>{renderChartAware(davor, `bc${segKey}`)}</span>);
+    nodes.push(<BuyingCenterBlock key={`bc-${segKey++}`} raw={bcMatch[1] ?? ""} />);
+    bcCursor = bcMatch.index + bcMatch[0].length;
+  }
+  if (bcGefunden) {
+    const rest = text.slice(bcCursor);
+    if (rest) {
+      if (BC_OPEN_RE.test(rest) && chartFenceStateFuer(rest, BC_OPEN_RE) === "open") {
+        const openerAt = rest.search(BC_OPEN_RE);
+        const head = openerAt > 0 ? rest.slice(0, openerAt) : "";
+        if (head) nodes.push(<span key={`bcseg-${segKey++}`}>{renderChartAware(head, `bc${segKey}`)}</span>);
+        nodes.push(<div key={`bcph-${segKey++}`} className="chart-placeholder">Buying Center wird geladen…</div>);
+      } else {
+        nodes.push(<span key={`bcseg-${segKey++}`}>{renderChartAware(rest, `bc${segKey}`)}</span>);
+      }
+    }
+    return nodes;
+  }
+  // Offener Zaun ohne einen einzigen geschlossenen (Streaming).
+  if (BC_OPEN_RE.test(text) && chartFenceStateFuer(text, BC_OPEN_RE) === "open") {
+    const openerAt = text.search(BC_OPEN_RE);
+    const head = openerAt > 0 ? text.slice(0, openerAt) : "";
+    if (head) nodes.push(<span key={`bcseg-${segKey++}`}>{renderChartAware(head, `bc${segKey}`)}</span>);
+    nodes.push(<div key={`bcph-${segKey++}`} className="chart-placeholder">Buying Center wird geladen…</div>);
+    return nodes;
+  }
+  return renderChartAware(text, "top");
+}
+
+/** Offen/geschlossen fuer einen beliebigen Zaun — Gegenstueck zu chartFenceState. */
+function chartFenceStateFuer(text: string, opener: RegExp): "complete" | "open" | "none" {
+  const opens = [...text.matchAll(new RegExp(opener.source, "g"))].length;
+  const closes = [...text.matchAll(/^```$/gm)].length;
+  if (opens === 0) return "none";
+  return closes >= opens ? "complete" : "open";
+}
+
+/** Der bisherige Renderer: Text mit ```chart-Zaeunen. */
+function renderChartAware(text: string, praefix: string): ReactNode {
+  if (!text) return null;
+  const nodes: ReactNode[] = [];
+  let segKey = 0;
+  const seg = (n: number) => `${praefix}-seg-${n}`;
 
   // 1) Vollständige ```chart-Fences einsammeln.
   CHART_FENCE_RE.lastIndex = 0;
@@ -3140,9 +3200,9 @@ function renderChatContent(text: string): ReactNode {
   let match: RegExpExecArray | null;
   while ((match = CHART_FENCE_RE.exec(text)) !== null) {
     const before = text.slice(cursor, match.index);
-    if (before) nodes.push(renderTextSegment(before, `seg-${segKey++}`));
+    if (before) nodes.push(renderTextSegment(before, seg(segKey++)));
     const raw = match[1] ?? "";
-    nodes.push(<ChartBlock key={`chart-${segKey++}`} raw={raw} />);
+    nodes.push(<ChartBlock key={`${praefix}-chart-${segKey++}`} raw={raw} />);
     cursor = match.index + match[0].length;
   }
 
@@ -3155,14 +3215,14 @@ function renderChatContent(text: string): ReactNode {
       // Inhalt bis zum Öffner normal rendern; alles ab dem Öffner → Platzhalter.
       const openerAt = trailing.search(CHART_OPEN_RE);
       const head = openerAt > 0 ? trailing.slice(0, openerAt) : "";
-      if (head) nodes.push(renderTextSegment(head, `seg-${segKey++}`));
+      if (head) nodes.push(renderTextSegment(head, seg(segKey++)));
       nodes.push(
-        <div key={`ph-${segKey++}`} className="chart-placeholder">
+        <div key={`${praefix}-ph-${segKey++}`} className="chart-placeholder">
           Diagramm wird gerendert…
         </div>,
       );
     } else {
-      nodes.push(renderTextSegment(trailing, `seg-${segKey++}`));
+      nodes.push(renderTextSegment(trailing, seg(segKey++)));
     }
   }
 
