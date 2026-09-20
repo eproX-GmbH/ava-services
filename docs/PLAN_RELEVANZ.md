@@ -127,7 +127,7 @@ durchkommen.
 ## 3. Signalkatalog
 
 Gewichte als Grundpunkte je Ereignis. Die Zahlen sind ein Vorschlag zum
-Nachjustieren, kein Naturgesetz — Abschnitt 12 nennt sie als offene
+Nachjustieren, kein Naturgesetz — Abschnitt 13 nennt sie als offene
 Entscheidung. Halbwertszeit heisst: nach dieser Zeit wiegt das Ereignis
 noch die Haelfte.
 
@@ -145,7 +145,7 @@ noch die Haelfte.
 | Firma auf die Watchlist / Fokus | 18 | kein Verfall, solange gesetzt | Watchlist |
 | Kontakt der Firma ins CRM uebernommen | 16 | 120 Tage | CRM-Tools |
 | Alarm zu dieser Firma geoeffnet | 4 | 30 Tage | Alarmliste |
-| Alarm zu dieser Firma weggewischt | **-3** | 30 Tage | Alarmliste |
+| Alarm weggewischt, ab dem 3. Mal derselben Art | **-3** | 30 Tage | Alarmliste |
 | Firma aus der Uebersicht entfernt | **Naehe auf 1, Sperre 90 Tage** | — | Loeschknopf |
 
 Die beiden negativen Eintraege sind mir wichtig. Ein System, das nur
@@ -187,18 +187,40 @@ Bildschirmprotokoll auswaechst, wird ausdruecklich nicht erfasst:
 
 ### 3.4 Firmen im Chat erkennen
 
-Ohne eigenen LLM-Aufruf, aus zwei Quellen:
+Entscheidend ist nicht der Name, sondern die **companyId** — nur ueber
+sie laesst sich der Wert ueberhaupt verknuepfen. Ein erkannter Name ohne
+ID ist wertlos. Und die ID liegt ohnehin vor: Nennt der Nutzer eine
+Firma, sucht der Agent sie per Werkzeug, und ab da ist sie eindeutig.
 
-1. **Firmenlinks** `[Name](company:ID)` im Chatverlauf — eindeutige
-   Zuordnung, kostenlos, deckt alles ab, was AVA selbst genannt hat.
-2. **Werkzeugaufrufe** der laufenden Antwort: Jedes Tool, das mit einer
-   `companyId` oder `personId` arbeitet, meldet sie mit. Damit zaehlt
-   auch, wonach der Nutzer gefragt hat, ohne dass irgendjemand den
-   Fliesstext durchsuchen muss.
+Erfasst wird deshalb an drei Stellen, alle ohne zusaetzlichen
+LLM-Aufruf:
 
-Freitext-Erkennung ("die Zimmer aus Rheinau") bleibt bewusst aussen vor:
-ein unscharfer Abgleich gegen 2000 Firmennamen produziert genau die
-falschen Treffer, die das Ranking spaeter unerklaerlich machen.
+1. **IDs in den Argumenten eines Werkzeugaufrufs.** Wer ein Tool mit
+   `companyId` oder `personId` aufruft, zeigt genau auf dieses Ziel.
+   Zaehlt immer.
+2. **IDs im Ergebnis einer Firmensuche — aber nur bei wenigen Treffern.**
+   Loest `company_search("Zimmer Rheinau")` zu einem oder zwei Treffern
+   auf, ist gemeint, was der Nutzer gesucht hat. Ab **mehr als drei**
+   Treffern zaehlt nichts: Eine Liste ist eine Liste, kein Interesse an
+   jedem Eintrag (dieselbe Regel wie fuer Listenansichten in 3.3).
+3. **Firmenlinks** `[Name](company:ID)` im Chatverlauf, wenn sie geklickt
+   werden — deckt ab, was AVA selbst genannt hat.
+
+Praktisch heisst das: Das Werkzeugprotokoll des laufenden Zuges wird
+nach `companyId`/`personId` durchsucht, am Ende des Zuges gebuendelt und
+in die Warteschlange gelegt. Kein Durchsuchen von Fliesstext, kein
+zweites Modell, keine Namensaufloesung.
+
+Freitext-Erkennung ("die Zimmer aus Rheinau" ohne vorangegangenen
+Werkzeugaufruf) bleibt bewusst aussen vor: Ein unscharfer Abgleich gegen
+2000 Firmennamen liefert genau die falschen Treffer, die das Ranking
+spaeter unerklaerlich machen — und er wird kaum gebraucht, weil der
+Agent bei einer genannten Firma ohnehin sucht.
+
+**Was der Agent selbst anstoesst, zaehlt nicht.** Ruft der Heartbeat
+oder ein Workflow ein Tool mit einer `companyId` auf, entsteht kein
+Signal (3.3, letzter Punkt). Erfasst wird nur, was an einem Zug haengt,
+den ein Mensch ausgeloest hat.
 
 ---
 
@@ -349,31 +371,60 @@ einfacher.
 ### 5.1 Naehe
 
 ```
-roh(ziel) = Σ  punkte_i · 2^(-alter_i / halbwert_i)
+roh(ziel) = Σ punkte_i · 2^(-alter_i / halbwert_i)   +   wiederkehr(ziel)
 ```
 
-Summiert ueber alle Signale des Ziels. Dann auf 1–10 abgebildet — nicht
-linear, denn die Rohwerte sind stark rechtsschief (wenige Firmen
-sammeln sehr viel):
+**Wiederkehr ist der wichtigste Teil.** Ein einzelner Aufruf heisst
+wenig — vielleicht hat jemand danebengeklickt. Wer aber an einem zweiten
+und dritten Tag zurueckkommt, hat eine Entscheidung getroffen. Genau das
+war in der ersten Fassung zu schwach:
 
 ```
-naehe = 1 + 9 · min(1, log(1 + roh) / log(1 + SAETTIGUNG))
-SAETTIGUNG = 60      (Rohwert, ab dem 10 erreicht ist)
+wiederkehr(ziel) = 4 · min(5, anzahl_verschiedener_tage_mit_signal - 1)
 ```
 
-Zur Einordnung: Eine einmal geoeffnete Firma landet bei rund 2. Eine
-uebernommene Firma mit drei Ansichten und einer Chat-Erwaehnung bei rund
-6. Eine Firma mit Watchlist-Fokus, CRM-Uebernahme und laufendem Workflow
-erreicht 10. Ohne neues Signal faellt eine 8 in etwa drei Wochen auf 6
-und in zwei Monaten auf 4.
+Also nichts am ersten Tag, +4 am zweiten, +8 am dritten, gedeckelt bei
++20. Verschiedene **Tage**, nicht verschiedene Aufrufe: Zehnmal
+neuladen ist kein Interesse, am naechsten Morgen wiederkommen schon.
+Der Deckel verhindert, dass eine Firma, die jemand taeglich streift,
+alles andere verdraengt.
+
+Die Abbildung auf 1–10 ist logarithmisch, denn die Rohwerte sind stark
+rechtsschief:
+
+```
+naehe = 1 + 9 · min(1, ln(1 + roh) / ln(1 + SAETTIGUNG))
+SAETTIGUNG = 30      (Rohwert, ab dem 10 erreicht ist)
+```
+
+Was dabei herauskommt — diesmal nachgerechnet, nicht geschaetzt:
+
+| Verhalten | roh | Naehe |
+| --- | --- | --- |
+| einmal geoeffnet | 3 | 4,6 |
+| dreimal am selben Tag geoeffnet | 9 | 7,0 |
+| an zwei Tagen geoeffnet | 10 | 7,2 |
+| **an drei Tagen geoeffnet** | **17** | **8,6** |
+| an drei Tagen, davon einmal im Chat erwaehnt | 22 | 9,2 |
+| Watchlist-Fokus | 18 | 8,7 |
+| uebernommen + Kontakt ins CRM | 28 | 9,8 |
+
+Drei Aufrufe an drei Tagen landen also bei 8,6 — brennend heiss, wie du
+es beschrieben hast, und ohne dass der Nutzer irgendetwas erklaeren
+muss. Ein einzelner Aufruf bei 4,6 ist lauwarm: genug, um beobachtet zu
+werden, zu wenig fuer sofortige Alarme.
+
+Ohne neues Signal faellt eine 8,6 in etwa drei Wochen auf 7 und in zwei
+Monaten auf 5,5. Der Wiederkehr-Anteil verfaellt mit, gerechnet ab dem
+letzten Signal — sonst bliebe eine vor einem Jahr intensiv bearbeitete
+Firma fuer immer warm.
 
 Personen zusaetzlich: `naehe = max(eigene_naehe, firmen_naehe / 2)`.
 
-**Kein Stapeln innerhalb einer Sitzung:** Dasselbe Signal fuer dasselbe
-Ziel zaehlt einmal pro Stunde. Wer eine Ansicht zehnmal neu laedt, hat
-nicht zehnmal Interesse. Der heutige `InterestStore` loest das ueber
-Saettigung bei 1.0; die Ein-Stunde-Regel ist dieselbe Idee, nur
-erklaerbarer.
+**Kein Stapeln innerhalb einer Stunde:** Dasselbe Signal fuer dasselbe
+Ziel zaehlt einmal je Stunde. Wer eine Ansicht zehnmal neu laedt, hat
+nicht zehnmal Interesse. Zwei Aufrufe am Vormittag und am Nachmittag
+zaehlen dagegen beide — das ist echtes Wiederaufgreifen.
 
 ### 5.2 Gewicht
 
@@ -478,9 +529,11 @@ neuen Judge und ohne zusaetzlichen LLM-Aufruf.
   diese Firma vergessen". Hat die Organisation bindend gesetzt, steht
   dort statt des Schalters ein Satz, der das sagt — und wenn sie die
   Funktion abgeschaltet hat, ist der ganze Abschnitt weg.
-- **Keine Bestenliste.** Eine Liste "deine heissesten Firmen" klingt
-  reizvoll und waere in einer Organisation der schnellste Weg zu
-  Leistungsvergleichen zwischen Mitarbeitern. Nicht bauen.
+- **Keine Bestenliste ueber Mitglieder.** Eine eigene Liste "deine
+  heissesten Firmen" ist in Ordnung und faellt mit der Sortierung nach
+  Rang ohnehin ab. Was es nicht gibt, ist eine Ansicht, die **Mitglieder**
+  vergleichbar macht — das Aggregat aus Abschnitt 10 zaehlt Firmen, nicht
+  Menschen.
 
 ---
 
@@ -570,10 +623,13 @@ sondern Bedingungen:
    Signale seiner Mitglieder **nicht** — weder in der Oberflaeche noch
    ueber einen Endpunkt. Genau das macht den Standardzustand "an"
    vertretbar; faellt es weg, faellt auch er.
-2. **Keine Auswertung ueber Nutzer hinweg.** Kein Aggregat, kein Export,
-   keine Bestenliste, keine Kennzahl im Abrechnungsbereich. Sollte das je
-   gewuenscht werden, ist es ein eigener Plan mit eigener
-   Rechtsgrundlage — nicht ein Nebenprodukt von diesem.
+2. **Keine personenbezogene Auswertung ueber Nutzer hinweg.** Kein
+   Export, keine Bestenliste, keine Kennzahl im Abrechnungsbereich, und
+   nichts, woraus sich ablesen laesst, was eine **bestimmte** Person tut.
+   Erlaubt ist allein das Aggregat aus Abschnitt 10: eine blosse Anzahl,
+   ohne Namen, mit Mindestzahlen gegen Rueckschluss. Die Grenze verlaeuft
+   nicht bei "Zahl ja/nein", sondern dort, wo aus der Zahl eine Person
+   wird.
 3. **Jederzeit abschaltbar**, sofern die Organisation es nicht bindend
    gesetzt hat, mit sofortiger Wirkung. Beim Abschalten fragt AVA, ob die
    gesammelten Signale geloescht werden sollen; "ja" loescht sie in der
@@ -615,7 +671,86 @@ saubere Trennlinie, und sie sollte in der Dokumentation genau so stehen.
 
 ---
 
-## 10. Chat-Tool (Pflicht)
+## 10. Was gerade Thema ist (Organisationsaggregat)
+
+Aus den einzelnen Werten laesst sich etwas machen, das keiner allein
+sehen kann: **welche Firmen die Organisation gerade beschaeftigen.** Das
+ist der Teil, der Kollegen zusammenbringt — zwei Leute, die
+unabhaengig voneinander an derselben Firma arbeiten, erfahren sonst
+nie voneinander.
+
+### 10.1 Was gezeigt wird
+
+Je Firma eine Zahl: **wie viele Mitglieder** der Organisation diese Firma
+derzeit warm haben (Naehe ≥ 6). Mehr nicht.
+
+- In der Firmenansicht ein Hinweis: "Bei 3 Kolleginnen und Kollegen
+  gerade Thema."
+- Eine Seite "Gerade Thema" mit den Firmen der Organisation, nach dieser
+  Zahl sortiert, dann nach Aktualitaet.
+
+**Ohne Namen.** Die Zahl beantwortet "woran arbeitet mein Team gerade?",
+und das ist die nuetzliche Frage. "Wer genau?" waere etwas anderes: eine
+Auswertung einzelner Mitarbeiter durch ihre Kollegen, und es wuerde die
+Zusage aus 9.3.1 aufgeben, die den Standardzustand traegt. Wer wissen
+will, wer dranhaengt, fragt im Team — und erfaehrt es dann von einem
+Menschen, der zustimmt.
+
+Falls du Namen doch willst, ist das eine bewusste Entscheidung mit
+eigener Folge (dann braucht jedes Mitglied eine eigene Zustimmung dafuer,
+und die Betriebsvereinbarung sieht anders aus). Sag Bescheid, dann baue
+ich es als zusaetzlichen, getrennt schaltbaren Schritt.
+
+### 10.2 Schutz vor Rueckschluss
+
+Eine Zahl kann verraten, wer gemeint ist. In einer Organisation mit zwei
+Mitgliedern heisst "bei 1 Kollegen Thema" genau eine Person. Deshalb:
+
+- Die Zahl erscheint erst **ab 2 Mitgliedern** mit warmem Wert.
+- Und nur in Organisationen mit **mindestens 3 Mitgliedern**. Darunter
+  gibt es das Aggregat nicht, auch nicht als "0".
+- Keine Zeitreihe, kein Verlauf ("letzte Woche waren es 5"). Aus einem
+  Verlauf lassen sich Einzelne herausrechnen.
+
+### 10.3 Technik
+
+Kein neuer Speicher noetig — `RelevanzWert` hat den Index
+`[tenantId, actorId, rang]`, gezaehlt wird ueber `tenantId`:
+
+```
+GET /v1/relevanz/thema?limit=50
+  → [{ companyId, anzahl, zuletzt }]
+```
+
+Die Route zaehlt `DISTINCT actorId` je `zielId` mit `naehe >= 6` und
+liefert Zeilen erst ab `anzahl >= 2`. Der eigene Beitrag ist
+mitgezaehlt — sonst waere er durch Differenzbildung sichtbar.
+
+Gesteuert ueber ein eigenes Feld in `OrgPolicy`:
+
+```ts
+/** Duerfen Mitglieder sehen, wie viele Kolleginnen und Kollegen eine
+ *  Firma gerade warm haben? true (Standard) = ja, als blosse Anzahl
+ *  ohne Namen. false = die Seite "Gerade Thema" und der Hinweis in der
+ *  Firmenansicht entfallen vollstaendig. */
+relevanzThemaSichtbar?: boolean;
+```
+
+Schaltet die Organisation `relevanz` ganz ab, entfaellt das Aggregat
+ohnehin — ohne Werte gibt es nichts zu zaehlen.
+
+### 10.4 Was sich dadurch in Abschnitt 9 aendert
+
+Die frueher pauschale Sperre "keine Auswertung ueber Nutzer hinweg"
+(9.3.2) wird praeziser gefasst: **Aggregate ohne Personenbezug ja,
+personenbezogene Auswertung nein.** Die Grenze verlaeuft nicht zwischen
+"eine Zahl" und "keine Zahl", sondern dort, wo sich aus einer Zahl eine
+Person ableiten laesst — genau das regeln die Schranken in 10.2. Der
+Abschnitt 9.3 ist entsprechend angepasst.
+
+---
+
+## 11. Chat-Tool (Pflicht)
 
 Nach der bestehenden Regel braucht jede neue Einstellung auch ein
 Agent-Tool:
@@ -635,7 +770,7 @@ heisst nicht registriert, nicht im Prompt erwaehnt, nicht vorgeschlagen.
 
 ---
 
-## 11. Umsetzungsstufen
+## 12. Umsetzungsstufen
 
 | Stufe | Inhalt | Ergebnis |
 | --- | --- | --- |
@@ -646,10 +781,15 @@ heisst nicht registriert, nicht im Prompt erwaehnt, nicht vorgeschlagen.
 | **R4** | Personensignale: Profilklick, DSGVO-Hinweis, CRM, E-Mail, Kontaktsuche. Vererbung von der Firma. | Personen werden unterscheidbar |
 | **R5** | Alarmschwellen je Rang, Tageszusammenfassung fuer Gesammeltes, feste Ausnahmen (Statuswarnungen). | Der Positionswechsel-Fall ist geloest |
 | **R6** | Chat-Tools, Einsicht und Export in den Einstellungen, punktuelles Vergessen, Tilgung beim Ausscheiden aus der Organisation. | Vollstaendig bedienbar |
+| **R7** | Organisationsaggregat: Route `/v1/relevanz/thema`, Hinweis in der Firmenansicht, Seite "Gerade Thema", `relevanzThemaSichtbar`. | Kollegen sehen, was Thema ist |
 
 R0–R2 sind die Grundlage und sollten zusammen kommen. R3 und R5 tragen
 den Nutzen. R4 ist der Teil, nach dem gefragt wurde, braucht aber R0–R2
 darunter.
+
+R7 braucht mehrere aktive Mitglieder, um ueberhaupt etwas zu zeigen —
+es lohnt erst, wenn R0–R2 ein paar Wochen in einer echten Organisation
+gelaufen sind.
 
 **Ausserhalb der Stufen, aber vor der ersten Enterprise-Freigabe
 faellig:** der Eintrag im Verarbeitungsverzeichnis und im AV-Vertrag
@@ -658,7 +798,7 @@ Blick; mit der zentralen Ablage ist es aber Voraussetzung, nicht Kuer.
 
 ---
 
-## 12. Offene Entscheidungen
+## 13. Offene Entscheidungen
 
 1. **Gewichte und Halbwertszeiten.** Die Zahlen in Abschnitt 3 sind
    geschaetzt. Vorschlag: fest verdrahtet starten, nach vier Wochen
@@ -672,29 +812,33 @@ Blick; mit der zentralen Ablage ist es aber Voraussetzung, nicht Kuer.
    die Berechnung im Gateway (4.4) aus und faellt damit praktisch weg.
    Mein Vorschlag: Verschluesselung der Datenbank wie bei allem anderen
    auch, keine Sonderbehandlung, dafuer die Zusagen aus 9.3 hart halten.
-3. **Organisationsaggregat.** "Diese Firma interessiert 4 Kollegen" waere
-   sehr nuetzlich fuer den Vertrieb und sehr heikel fuer den Betriebsrat.
-   Mit der zentralen Ablage ist es nur noch eine Abfrage weit weg — und
-   genau deshalb muss die Sperre aus 9.3.2 ausdruecklich sein, nicht
-   beilaeufig. Wenn ueberhaupt, dann: nur Anzahl, nie Namen, Mindestzahl
-   3, und nur wenn die Organisation es ausdruecklich einschaltet. Eigener
-   Plan mit eigener Rechtsgrundlage.
-4. **Saettigung bei 60.** Bestimmt, wie schnell eine 10 erreicht wird.
-   Nach den ersten Wochen an der tatsaechlichen Verteilung pruefen.
-5. **Alarm weggewischt = negativ.** Ich halte es fuer richtig, es ist
-   aber eine Wertung: Wegwischen kann auch "gesehen, erledigt" heissen.
-   Vorschlag: erst ab dem dritten Wegwischen derselben Alarmart bei
-   derselben Firma zaehlen.
+3. ~~**Organisationsaggregat.**~~ Entschieden: wird gebaut, als
+   Abschnitt 10. Anzahl ohne Namen, erst ab 2 warmen Mitgliedern und nur
+   in Organisationen ab 3 Mitgliedern, kein Verlauf. Offen bleibt allein,
+   ob spaeter auch **Namen** gezeigt werden sollen — das waere eine
+   eigene Entscheidung mit eigener Zustimmung je Mitglied (10.1).
+4. **Saettigung bei 30 und Wiederkehr-Bonus +4 je Tag (Deckel +20).**
+   Damit landen drei Aufrufe an drei Tagen bei 8,6 (5.1). Die Zahlen sind
+   auf genau dieses Gefuehl hin gewaehlt und nach den ersten Wochen an
+   der tatsaechlichen Verteilung zu pruefen.
+5. ~~**Alarm weggewischt = negativ.**~~ Entschieden: Wegwischen zaehlt,
+   aber **erst ab dem dritten Mal** derselben Alarmart bei derselben
+   Firma. Einmal wegwischen heisst meist "gesehen, erledigt"; dreimal
+   dieselbe Art wegwischen heisst "damit will ich nicht behelligt
+   werden". Der Malus von -3 faellt also nur auf das dritte und jedes
+   weitere Wegwischen an. Im Signalkatalog (3.1) entsprechend vermerkt.
 6. **Entdeckungsspur ein Viertel.** Der Anteil bestimmt, wie stark AVA
    ueber den Tellerrand sieht. Zu klein und sie ist wirkungslos; zu gross
    und der Heartbeat vernachlaessigt das Wichtige.
-7. **Freitext-Erkennung von Firmennamen im Chat.** Bewusst draussen
-   (3.4). Falls die Abdeckung ohne sie zu duenn ist, waere der saubere
-   Weg ein Abgleich nur gegen "Meine Firmen", nicht gegen den Gesamtbestand.
+7. ~~**Freitext-Erkennung von Firmennamen im Chat.**~~ Entschieden:
+   nicht noetig. Erfasst wird die `companyId` aus Werkzeugaufrufen und
+   aus Suchergebnissen mit wenigen Treffern (3.4). Nennt der Nutzer eine
+   Firma, sucht der Agent sie ohnehin — die ID liegt also vor, und nur
+   ueber sie laesst sich ein Wert verknuepfen.
 
 ---
 
-## 13. Was wir bewusst nicht bauen
+## 14. Was wir bewusst nicht bauen
 
 - **Keine Champions.** Das Nachverfolgen von Firmenwechseln bekannter
   Kontakte ist eine eigene Funktion mit eigenem Nutzen; sie gehoert nicht
@@ -702,7 +846,9 @@ Blick; mit der zentralen Ablage ist es aber Voraussetzung, nicht Kuer.
 - **Keine Vorhersage.** Der Score sagt, was war, nicht was kommt. "Diese
   Firma wird bald kaufen" braucht Abschlussdaten, die AVA nicht hat, und
   waere ohne sie geraten.
-- **Kein Score ueber Nutzer hinweg.** Siehe Abschnitt 9.3.
+- **Keine Rangliste von Mitarbeitern.** Das Aggregat aus Abschnitt 10
+  zaehlt Firmen, nicht Menschen. Eine Ansicht, die Mitglieder nach
+  Aktivitaet sortiert, waere das Gegenteil davon.
 - **Keine Weitergabe an Dritte und keine Telemetrie**, auch nicht
   "anonym zur Verbesserung". Die Signale dienen dem einen Zweck, fuer
   den sie erhoben werden.
