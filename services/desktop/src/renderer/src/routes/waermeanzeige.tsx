@@ -11,6 +11,7 @@
 // keine Bewertung der Firma. Wer ihn ignoriert, verliert nichts.
 
 import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import type { RelevanzWert } from "../../../shared/types";
 
 /** Klartext je Signalart — dieselbe Sprache wie im Katalog. */
@@ -102,5 +103,48 @@ export function Waermeanzeige({
       </span>
       {stufe(wert.naehe)}
     </span>
+  );
+}
+
+/**
+ * "Bei 3 Kolleginnen und Kollegen gerade Thema."
+ *
+ * Der Teil, der Kollegen zusammenbringt (docs/PLAN_RELEVANZ.md, 10): Zwei
+ * Leute, die unabhaengig voneinander an derselben Firma arbeiten, erfahren
+ * sonst nie voneinander.
+ *
+ * Nur eine Anzahl, nie Namen. Die eigene Person ist mitgezaehlt — sonst
+ * waere sie durch Differenzbildung sichtbar, und aus einer Uebersicht
+ * wuerde eine Auswertung.
+ */
+export function ThemaHinweis({ companyId }: { companyId: string | undefined }) {
+  const [anzahl, setAnzahl] = useState<number | null>(null);
+
+  useEffect(() => {
+    let abgebrochen = false;
+    if (!companyId) return;
+    void window.api.relevanz
+      .thema(200)
+      .then((r) => {
+        if (abgebrochen || !r.verfuegbar) return;
+        const treffer = r.firmen.find((f) => f.companyId === companyId);
+        setAnzahl(treffer?.anzahl ?? null);
+      })
+      .catch(() => {
+        /* Ohne Uebersicht kein Hinweis — das ist kein Fehler. */
+      });
+    return () => {
+      abgebrochen = true;
+    };
+  }, [companyId]);
+
+  // Unter zwei zeigt das Gateway ohnehin nichts; die Pruefung hier ist die
+  // zweite Schranke, falls sich das je aendert.
+  if (anzahl === null || anzahl < 2) return null;
+
+  return (
+    <Link to="/thema" className="thema-hinweis" title="Übersicht: was im Team gerade Thema ist">
+      Bei {anzahl} Kolleginnen und Kollegen gerade Thema
+    </Link>
   );
 }

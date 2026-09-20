@@ -642,6 +642,13 @@ function TopBar() {
   // O3 — Organisationsvorgaben: abgeschaltete Module verschwinden aus der Navigation.
   const mailErlaubt = useFeature("mail");
   const workflowsErlaubt = useFeature("workflows");
+  // Relevanz-Aggregat: braucht die Funktion UND die Freigabe der
+  // Organisation. Beides fehlt = Eintrag verschwindet.
+  const relevanzErlaubt = useFeature("relevanz");
+  const themaFreigegeben = usePolicyStore(
+    (s) => s.policy.relevanzThemaSichtbar !== false,
+  );
+  const themaSichtbar = relevanzErlaubt && themaFreigegeben;
   // v0.1.546 — Hooks IMMER alle aufrufen (kein Kurzschluss mit ||): sonst
   // aendert sich die Hook-Anzahl, sobald der Beobachter abgeschaltet wird
   // → React-Abbruch, weisser Bildschirm (User-Befund beim Speichern).
@@ -679,6 +686,12 @@ function TopBar() {
             { to: "/alle-firmen", label: "Meine Firmen" },
             { to: "/companies", label: "Firmensuche" },
             { to: "/radar", label: "Radar" },
+            // "Gerade Thema" nur, wenn die Organisation es zulaesst.
+            // Abgeschaltetes wird ausgeblendet, nicht ausgegraut. Dass die
+            // Uebersicht erst ab drei Mitgliedern etwas zeigt, erklaert die
+            // Seite selbst — das ist ein voruebergehender Zustand und kein
+            // Verbot, und sie taucht auf, sobald ein Dritter dazukommt.
+            ...(themaSichtbar ? [{ to: "/thema", label: "Gerade Thema" }] : []),
           ]}
         />
         <NavItem

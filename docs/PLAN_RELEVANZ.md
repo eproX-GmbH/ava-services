@@ -784,6 +784,14 @@ relevanzThemaSichtbar?: boolean;
 Schaltet die Organisation `relevanz` ganz ab, entfaellt das Aggregat
 ohnehin — ohne Werte gibt es nichts zu zaehlen.
 
+**Sichtbarkeit der Navigation:** Der Eintrag "Gerade Thema" erscheint,
+wenn die Funktion erlaubt UND `relevanzThemaSichtbar` gesetzt ist — beides
+sind Setzungen der Organisation, und Abgeschaltetes wird ausgeblendet,
+nicht ausgegraut. Dass die Uebersicht erst ab drei Mitgliedern etwas
+zeigt, erklaert dagegen die Seite selbst: Das ist ein voruebergehender
+Zustand und kein Verbot, und der Eintrag soll auftauchen, sobald ein
+Dritter dazukommt — nicht erst, wenn jemand ihn vermisst.
+
 ### 10.4 Was sich dadurch in Abschnitt 9 aendert
 
 Die frueher pauschale Sperre "keine Auswertung ueber Nutzer hinweg"
@@ -826,7 +834,7 @@ heisst nicht registriert, nicht im Prompt erwaehnt, nicht vorgeschlagen.
 | **R4** | Personensignale: Profilklick, DSGVO-Hinweis, CRM, E-Mail, Kontaktsuche. Vererbung von der Firma. | Personen werden unterscheidbar |
 | **R5** | Hochstufung bei heissen Firmen, Tageszusammenfassung fuer das gesammelte Rauschen. Nichts wird unterdrueckt. | Der Positionswechsel-Fall ist geloest |
 | **R6** | Chat-Tools, Einsicht und Export in den Einstellungen, punktuelles Vergessen, Tilgung beim Ausscheiden aus der Organisation. | Vollstaendig bedienbar |
-| **R7** | Organisationsaggregat: Route `/v1/relevanz/thema`, Hinweis in der Firmenansicht, Seite "Gerade Thema", `relevanzThemaSichtbar`. | Kollegen sehen, was Thema ist |
+| **R7** | Organisationsaggregat: Route `/v1/relevanz/thema`, Hinweis in der Firmenansicht, Seite "Gerade Thema", `relevanzThemaSichtbar` als Admin-Schalter. | Kollegen sehen, was Thema ist |
 
 R0–R2 sind die Grundlage und sollten zusammen kommen. R3 und R5 tragen
 den Nutzen. R4 ist der Teil, nach dem gefragt wurde, braucht aber R0–R2

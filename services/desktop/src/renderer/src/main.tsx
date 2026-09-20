@@ -36,6 +36,7 @@ import { Evaluations } from "./routes/Evaluations";
 import { BestMatchDetail } from "./routes/BestMatchDetail";
 import { ChatSession } from "./routes/ChatSession";
 import { Alerts } from "./routes/Alerts";
+import { Thema } from "./routes/Thema";
 import { LinkedIn } from "./routes/LinkedIn";
 import { TriageInbox } from "./routes/TriageInbox";
 import { bootstrapTheme } from "./lib/theme";
@@ -85,6 +86,7 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
               <Route path="/companies" element={<Companies />} />
               <Route path="/alle-firmen" element={<AllCompanies />} />
               <Route path="/radar" element={<DiscoveryRadar />} />
+              <Route path="/thema" element={<FeatureGate feature="relevanz"><Thema /></FeatureGate>} />
               <Route path="/workflows" element={<FeatureGate feature="workflows"><Workflows /></FeatureGate>} />
               <Route path="/workflows/laeufe" element={<FeatureGate feature="workflows"><WorkflowRuns /></FeatureGate>} />
               <Route path="/workflows/:id" element={<FeatureGate feature="workflows"><WorkflowEditor /></FeatureGate>} />

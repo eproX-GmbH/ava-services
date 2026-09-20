@@ -3168,6 +3168,41 @@ a.heartbeat-decision__company:hover {
    aber nicht so stumm wie ein Duplikat — es ist etwas passiert. */
 .heartbeat-decision__outcome--gesammelt  { background: rgba(0, 192, 167, 0.10); color: var(--muted); }
 
+/* "Gerade Thema" (docs/PLAN_RELEVANZ.md, 10): je Firma eine Anzahl, nie ein
+   Name. Bewusst eine ruhige Liste und kein Balkendiagramm — die Zahlen sind
+   klein (zwei, drei, vier Kollegen), und ein Diagramm wuerde aus einem
+   Hinweis einen Wettbewerb machen. */
+.thema-liste { list-style: none; margin: 1rem 0 0; padding: 0; max-width: 46rem; }
+.thema-eintrag {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.55rem 0;
+  border-bottom: 1px solid rgba(127,127,127,0.12);
+}
+/* minmax(0,…) statt auto: Sonst schiebt ein langer Firmenname die Anzahl
+   aus der Zeile, statt selbst umzubrechen. */
+.thema-eintrag__name {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  /* Eine Liste durchgehend unterstrichener Namen ist unruhig; der Strich
+     kommt erst beim Darueberfahren, wo er etwas bedeutet. */
+  text-decoration: none;
+}
+.thema-eintrag__name:hover { text-decoration: underline; }
+.thema-eintrag__anzahl { flex: none; font-variant-numeric: tabular-nums; }
+
+/* Hinweis in der Firmenansicht. Zurueckhaltend: eine Beilaeufigkeit, die
+   man bemerkt, wenn man sie braucht — kein Banner. */
+.thema-hinweis {
+  display: inline-block;
+  margin-top: 0.15rem;
+  font-size: 12px;
+  color: var(--accent);
+  text-decoration: none;
+}
+
 /* Einsicht in die erfassten Relevanz-Signale. Bewusst eine schlichte
    Tabelle: Der Nutzer soll nachlesen koennen, was ueber ihn erfasst wird,
    und dafuer ist Lesbarkeit alles. Eigene Breite und Polsterung, Farben

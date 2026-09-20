@@ -833,6 +833,8 @@ function Vorgaben({ st, admin, busy, aktion }: { st: OrgState; admin: boolean; b
           promptAudit: entwurf.promptAudit,
           personRetentionDays: entwurf.personRetentionDays ?? null,
           apifyEigenerErlaubt: entwurf.apifyEigenerErlaubt !== false,
+          relevanzSelbstbestimmt: entwurf.relevanzSelbstbestimmt !== false,
+          relevanzThemaSichtbar: entwurf.relevanzThemaSichtbar !== false,
         },
       });
       await window.api.org.refreshPolicy();
@@ -897,6 +899,48 @@ function Vorgaben({ st, admin, busy, aktion }: { st: OrgState; admin: boolean; b
               </span>
             </label>
           ))}
+        </div>
+      </section>
+
+      <section className="provider-section">
+        <h3>Relevanz</h3>
+        <p className="muted small">
+          AVA leitet aus dem Verhalten jedes Mitglieds ab, wie nah es an einer Firma dran ist. Diese Signale liegen getrennt je
+          Mitglied; weder du noch andere Mitglieder können sie einsehen, und es gibt keine Auswertung über Mitglieder hinweg.
+          Beim Einsatz mit Betriebsrat ist die Erfassung mitbestimmungspflichtig — dafür lässt sie sich oben unter „Funktionen"
+          ganz abschalten.
+        </p>
+        <div className="org-checks">
+          <label className="org-check">
+            <input
+              type="checkbox"
+              checked={entwurf.relevanzSelbstbestimmt !== false}
+              disabled={busy || entwurf.features["relevanz"] === false}
+              onChange={(e) => setEntwurf({ ...entwurf, relevanzSelbstbestimmt: e.target.checked })}
+            />
+            <span>
+              Mitglieder dürfen selbst entscheiden
+              <span className="org-check__hint">
+                An: deine Einstellung ist die Vorgabe, jedes Mitglied darf abweichen. Aus: sie gilt verbindlich, das Mitglied
+                hat keinen Schalter.
+              </span>
+            </span>
+          </label>
+          <label className="org-check">
+            <input
+              type="checkbox"
+              checked={entwurf.relevanzThemaSichtbar !== false}
+              disabled={busy || entwurf.features["relevanz"] === false}
+              onChange={(e) => setEntwurf({ ...entwurf, relevanzThemaSichtbar: e.target.checked })}
+            />
+            <span>
+              „Gerade Thema" anzeigen
+              <span className="org-check__hint">
+                Je Firma die Anzahl der Mitglieder, die sie warm haben — ohne Namen, erst ab zwei, und nur in Organisationen ab
+                drei Mitgliedern. Aus: die Seite und der Hinweis in der Firmenansicht entfallen.
+              </span>
+            </span>
+          </label>
         </div>
       </section>
 

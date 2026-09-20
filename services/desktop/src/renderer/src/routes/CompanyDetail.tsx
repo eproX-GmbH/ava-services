@@ -37,7 +37,7 @@ import { quellenDerFakten } from "./kontakt-quellen";
 import { sortiereNachRang, rangFuerTitel, RANG_TITEL } from "./kontakt-rang";
 import { bewerte } from "./kontakt-suche";
 import { FirmaUebernehmen, istUebernommen } from "./firma-uebernehmen";
-import { Waermeanzeige } from "./waermeanzeige";
+import { Waermeanzeige, ThemaHinweis } from "./waermeanzeige";
 import { gewichtFuer } from "./relevanz-gewicht";
 import {
   EyeIcon,
@@ -584,6 +584,7 @@ export function CompanyDetail() {
             {registerZeile(summary.data)}
           </p>
         )}
+        <ThemaHinweis companyId={id} />
           </div>
           <FirmaUebernehmen
             name={structured.data?.name ?? summary.data?.name}
