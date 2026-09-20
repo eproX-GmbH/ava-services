@@ -22,6 +22,7 @@ import { startStuckProgressReaperCron } from "./lib/stuck-progress-reaper";
 import { startPersonRetentionCron } from "./lib/person-retention-reaper";
 import { startBillingCron } from "./lib/billing-cron";
 import { startRelevanzCron } from "./lib/relevanz-cron";
+import { startGfRollenNachtrag } from "./lib/gf-rollen-nachtrag";
 import { startVerflechtungenCron } from "./lib/verflechtungen";
 import { getGatewayPool } from "./lib/producer-pools";
 import { startRegisterJobCron } from "./lib/register-jobs";
@@ -138,6 +139,10 @@ startPersonRetentionCron();
 // B1/B2 — Abrechnung: Seat-Monatsabschluss, vorgemerkte Tier-Aenderungen,
 // Zahlungsstoerungen (Karenz → Sperre), taeglicher Stripe-Abgleich.
 startBillingCron();
+
+// Verflechtungen V5 — Geschaeftsfuehrer-Rollen des Altbestands nachtragen.
+// Einmaliger Durchgang in kleinen Buendeln; endet von selbst.
+startGfRollenNachtrag();
 
 // Relevanz — taegliche Tilgung der Rohsignale (400 Tage), abgelaufene
 // Sperren aufraeumen, verfallene Werte nachrechnen.
