@@ -392,6 +392,59 @@ buyingCenterRouter.openapi(angabeRoute, async (c) => {
   return c.json(voll.mitglieder.find((x) => x.id === mid)!, 200);
 });
 
+// ---- POST /buying-center/{id}/mitglieder/{mid}/vorschlaege ------------------
+//
+// AVA-Vorschlaege aus Daten (BC3: CRM, spaeter Website/LinkedIn). Landen als
+// OFFENE Angaben, aendern den Stand nicht. Zwei Schranken, damit die
+// Seitenleiste nicht zumuellt: Hat der Nutzer die Dimension selbst gesetzt,
+// wird nichts vorgeschlagen; gibt es denselben offenen Vorschlag schon,
+// wird er nicht wiederholt.
+
+const vorschlagRoute = createRoute({
+  method: "post", path: "/buying-center/{id}/mitglieder/{mid}/vorschlaege", tags: [tag],
+  summary: "AVA-Vorschlag ablegen (offen, aendert den Stand nicht)",
+  request: { params: IdParam.extend({ mid: z.string().min(1).max(64) }), body: { content: { "application/json": { schema: z.object({
+    dimension: z.enum(["rolle", "kontakt", "einfluss"]),
+    wert: z.string().min(1).max(20),
+    herkunft: z.enum(["ava:titel", "ava:website", "ava:linkedin", "ava:crm"]),
+    grund: z.string().min(1).max(500),
+  }) } } } },
+  responses: { 200: { content: { "application/json": { schema: z.object({ abgelegt: z.boolean(), grund: z.string().optional() }) } }, description: "ok" }, ...errorResponses },
+});
+buyingCenterRouter.openapi(vorschlagRoute, async (c) => {
+  const wer = auth(c);
+  const { id, mid } = c.req.valid("param");
+  const bc = await ladeMitZugriff(id, wer, true);
+  const { dimension, wert, herkunft, grund } = c.req.valid("json");
+  pruefeWert(dimension, wert);
+  const pool = getGatewayPool();
+  const m = await pool.query(`SELECT "rollen","kontakt","einfluss" FROM "BuyingCenterMitglied" WHERE "id" = $1 AND "buyingCenterId" = $2`, [mid, bc.id]);
+  const mitglied = m.rows[0] as { rollen: string[]; kontakt: string | null; einfluss: string | null } | undefined;
+  if (!mitglied) throw new HTTPException(404, { message: "mitglied_not_found" });
+
+  // Vom Nutzer gesetzt? Dann kein Vorschlag — seine Angabe gilt.
+  const gesetzt = await pool.query(
+    `SELECT 1 FROM "BuyingCenterAngabe" WHERE "mitgliedId" = $1 AND "dimension" = $2 AND "herkunft" = 'nutzer' AND "wert" IS NOT NULL LIMIT 1`,
+    [mid, dimension],
+  );
+  if (gesetzt.rowCount) return c.json({ abgelegt: false, grund: "vom Nutzer gesetzt" }, 200);
+  // Denselben offenen Vorschlag nicht wiederholen.
+  const doppelt = await pool.query(
+    `SELECT 1 FROM "BuyingCenterAngabe" WHERE "mitgliedId" = $1 AND "dimension" = $2 AND "wert" = $3 AND "herkunft" LIKE 'ava:%' AND "entschieden" IS NULL LIMIT 1`,
+    [mid, dimension, wert],
+  );
+  if (doppelt.rowCount) return c.json({ abgelegt: false, grund: "liegt schon vor" }, 200);
+  // Bereits verworfen? Dann auch nicht — der Nutzer hat entschieden.
+  const verworfen = await pool.query(
+    `SELECT 1 FROM "BuyingCenterAngabe" WHERE "mitgliedId" = $1 AND "dimension" = $2 AND "wert" = $3 AND "entschieden" = 'verworfen' LIMIT 1`,
+    [mid, dimension, wert],
+  );
+  if (verworfen.rowCount) return c.json({ abgelegt: false, grund: "bereits verworfen" }, 200);
+
+  await angabeSetzen({ mitgliedId: mid, dimension, wert, herkunft, grund, vonActorId: null, uebernehmen: false });
+  return c.json({ abgelegt: true }, 200);
+});
+
 // ---- PUT /buying-center/{id}/positionen ------------------------------------
 
 const positionenRoute = createRoute({

@@ -3244,6 +3244,9 @@ a.heartbeat-decision__company:hover {
 .bc-seite__grund { margin-top: 0.15rem; }
 .bc-seite__knoepfe { display: flex; gap: 0.5rem; margin-top: 0.4rem; }
 
+/* Das Gespraechsmuster: ein Hinweis, der eine Handlung empfiehlt. Gedeckt
+   gelb, damit er auffaellt, ohne zu schreien. */
+.bc-muster { margin: 0; padding: 0.55rem 0.75rem; border-radius: 8px; background: rgba(245, 158, 11, 0.12); font-size: 13px; }
 .bc-legende { display: flex; flex-wrap: wrap; gap: 0.4rem 1.1rem; font-size: 11.5px; }
 .bc-legende b { font-weight: 600; color: var(--fg); }
 

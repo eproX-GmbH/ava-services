@@ -922,6 +922,11 @@ const ASSOCIATED_RECORD_PROPERTIES: Partial<Record<HubspotObjectType, string[]>>
   deals: ["dealname", "amount", "dealstage", "pipeline", "closedate", "hubspot_owner_id", "lastmodifieddate"],
   notes: ["hs_note_body", "hs_timestamp", "hubspot_owner_id"],
   tasks: ["hs_task_subject", "hs_task_status", "hs_task_priority", "hs_timestamp", "hubspot_owner_id"],
+  // Buying Center BC3 — Interaktionsverlauf je Person: Titel und Zeitpunkt
+  // reichen fuer eine Zeile in der Seitenleiste.
+  calls: ["hs_call_title", "hs_call_body", "hs_timestamp", "hubspot_owner_id"],
+  emails: ["hs_email_subject", "hs_timestamp", "hubspot_owner_id"],
+  meetings: ["hs_meeting_title", "hs_meeting_start_time", "hs_timestamp", "hubspot_owner_id"],
 };
 
 export interface AssociatedRecord {

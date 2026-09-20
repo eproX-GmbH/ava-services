@@ -2998,3 +2998,27 @@ export interface RelevanzStatus {
   /** false = die Organisation hat verbindlich gesetzt, kein Schalter. */
   selbstbestimmt: boolean;
 }
+
+// ---- Buying Center (docs/PLAN_BUYING_CENTER.md, BC3) -----------------------
+
+export interface BcInteraktion {
+  art: "notiz" | "anruf" | "email" | "termin";
+  zeitpunkt: string | null;
+  titel: string | null;
+}
+export interface BcMitgliedInteraktionen {
+  mitgliedId: string;
+  hubspotContactId: string | null;
+  anzahl90Tage: number;
+  letzte: BcInteraktion[];
+  /** 0 / S / R / I aus den Schwellen — null, wenn die Person im CRM fehlt. */
+  kontaktVorschlag: "0" | "S" | "R" | "I" | null;
+}
+export interface BcInteraktionenErgebnis {
+  verfuegbar: boolean;
+  /** keine_crm_verknuepfung | hubspot_nicht_verbunden */
+  grund?: string;
+  mitglieder: BcMitgliedInteraktionen[];
+  /** Das Muster "immer dieselben zwei" als Klartext, sonst null. */
+  gespraechsmuster: string | null;
+}

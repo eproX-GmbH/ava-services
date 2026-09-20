@@ -21,6 +21,7 @@ import { Link } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { gatewayFetch } from "../api/gateway";
 import { kraftLayout, type Punkt } from "../lib/kraft-layout";
+import type { BcInteraktionenErgebnis, BcMitgliedInteraktionen } from "../../../shared/types";
 
 export interface BcAngabe {
   id: string; dimension: string; wert: string | null; herkunft: string; grund: string;
@@ -113,6 +114,20 @@ export function BuyingCenterKarte({ id, kompakt = false }: { id: string; kompakt
     staleTime: 15_000,
   });
   const [aktiv, setAktiv] = useState<string | null>(null);
+  // BC3: CRM-Abgleich beim Oeffnen. Einmal je Karte, nicht je Person — der
+  // Abgleich holt die Kontakte der Firma ohnehin auf einen Schlag.
+  const interaktionen = useQuery<BcInteraktionenErgebnis>({
+    queryKey: ["buying-center", id, "interaktionen"],
+    queryFn: async () => {
+      const r = await window.api.buyingCenter.interaktionen(id);
+      // Der Abgleich kann Kontakt-Vorschlaege abgelegt haben.
+      if (r.verfuegbar) void qc.invalidateQueries({ queryKey: ["buying-center", id] });
+      return r;
+    },
+    enabled: Boolean(q.data),
+    staleTime: 5 * 60_000,
+    retry: false,
+  });
 
   if (q.isLoading) return <div className="bc-platzhalter">Buying Center wird geladen …</div>;
   if (q.error || !q.data) {
@@ -131,6 +146,9 @@ export function BuyingCenterKarte({ id, kompakt = false }: { id: string; kompakt
         </span>
         <span className="muted small">{bc.mitglieder.length} Personen · Stand {new Date(bc.updatedAt).toLocaleDateString("de-DE")}</span>
       </div>
+      {interaktionen.data?.gespraechsmuster && (
+        <p className="bc-muster">{interaktionen.data.gespraechsmuster}</p>
+      )}
       {bc.mitglieder.length === 0 ? (
         <p className="muted">Noch keine Personen. Nimm im Chat auf, wer beteiligt ist.</p>
       ) : (
@@ -140,6 +158,8 @@ export function BuyingCenterKarte({ id, kompakt = false }: { id: string; kompakt
             <Seitenleiste
               bc={bc}
               m={gewaehlt}
+              interaktionen={interaktionen.data?.mitglieder.find((x) => x.mitgliedId === gewaehlt.id) ?? null}
+              interaktionenStand={interaktionen.isLoading ? "laedt" : interaktionen.data?.verfuegbar ? "da" : (interaktionen.data?.grund ?? "fehler")}
               onSchliessen={() => setAktiv(null)}
               onGeaendert={() => void qc.invalidateQueries({ queryKey: ["buying-center", id] })}
             />
@@ -285,7 +305,13 @@ function Grafik({ bc, aktiv, onWahl }: { bc: BuyingCenter; aktiv: string | null;
 
 // ---- Seitenleiste --------------------------------------------------------------
 
-function Seitenleiste({ bc, m, onSchliessen, onGeaendert }: { bc: BuyingCenter; m: BcMitglied; onSchliessen: () => void; onGeaendert: () => void }) {
+const ART_TEXT: Record<string, string> = { notiz: "Notiz", anruf: "Anruf", email: "E-Mail", termin: "Termin" };
+
+function Seitenleiste({ bc, m, onSchliessen, onGeaendert, interaktionen, interaktionenStand }: {
+  bc: BuyingCenter; m: BcMitglied; onSchliessen: () => void; onGeaendert: () => void;
+  interaktionen: BcMitgliedInteraktionen | null;
+  interaktionenStand: string;
+}) {
   const offen = m.angaben.filter((a) => a.herkunft.startsWith("ava:") && a.entschieden === null);
   const belegt = m.angaben.filter((a) => !(a.herkunft.startsWith("ava:") && a.entschieden === null));
   const antworten = useMutation({
@@ -353,7 +379,31 @@ function Seitenleiste({ bc, m, onSchliessen, onGeaendert }: { bc: BuyingCenter; 
       )}
 
       <h4>Interaktionen</h4>
-      <p className="muted small">Der Abgleich mit dem CRM (Notizen, Anrufe, Termine) kommt mit der nächsten Stufe.</p>
+      {interaktionenStand === "laedt" && <p className="muted small">CRM wird abgeglichen …</p>}
+      {interaktionenStand === "keine_crm_verknuepfung" && <p className="muted small">Die Firma ist mit keinem CRM verknüpft.</p>}
+      {interaktionenStand === "hubspot_nicht_verbunden" && <p className="muted small">HubSpot ist nicht verbunden.</p>}
+      {interaktionenStand === "fehler" && <p className="muted small">Der CRM-Abgleich ist gerade nicht möglich.</p>}
+      {interaktionenStand === "da" && interaktionen && !interaktionen.hubspotContactId && (
+        <p className="muted small">Im CRM gibt es keinen Kontakt mit diesem Namen.</p>
+      )}
+      {interaktionenStand === "da" && interaktionen?.hubspotContactId && (
+        <>
+          <p className="small">{interaktionen.anzahl90Tage} in den letzten 90 Tagen{interaktionen.kontaktVorschlag ? ` · Vorschlag: ${KONTAKT_TEXT[interaktionen.kontaktVorschlag]}` : ""}</p>
+          {interaktionen.letzte.length > 0 ? (
+            <ul className="bc-seite__belege">
+              {interaktionen.letzte.map((i, n) => (
+                <li key={n}>
+                  <span className="bc-seite__beleg-kopf">{ART_TEXT[i.art] ?? i.art}</span>
+                  <span className="muted small"> — {i.zeitpunkt ? new Date(i.zeitpunkt).toLocaleDateString("de-DE") : "ohne Datum"}</span>
+                  {i.titel && <div className="bc-seite__grund">{i.titel}</div>}
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="muted small">Keine Notizen, Anrufe, E-Mails oder Termine im CRM.</p>
+          )}
+        </>
+      )}
     </aside>
   );
 }

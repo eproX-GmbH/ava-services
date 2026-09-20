@@ -140,6 +140,7 @@ import {
 } from "./organisation";
 import { featureEnabled, getOrgPolicy, onOrgPolicyChange } from "./org-policy";
 import * as relevanz from "./relevanz";
+import { ladeInteraktionen } from "./buying-center/interaktionen";
 import { initLinkedIn } from "./linkedin";
 import { startScheduler as startLinkedInScheduler, stopScheduler as stopLinkedInScheduler } from "./linkedin/scheduler";
 import { MailSupervisor } from "./mail/supervisor";
@@ -6312,6 +6313,10 @@ app.whenReady().then(async () => {
     "relevanz:vergessen",
     (_e, zielArt?: "firma" | "person", zielId?: string, sperreTage?: number) =>
       relevanz.vergessen(zielArt, zielId, sperreTage),
+  );
+  // Buying Center (docs/PLAN_BUYING_CENTER.md, BC3)
+  ipcMain.handle("buyingCenter:interaktionen", (_e, buyingCenterId: string) =>
+    ladeInteraktionen({ crm: crmManager, gateway: gatewayClient }, String(buyingCenterId)),
   );
   ipcMain.handle("relevanz:status", () => ({
     an: relevanz.aktiv(),

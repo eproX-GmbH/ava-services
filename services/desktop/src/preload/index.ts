@@ -4,6 +4,7 @@ import type {
   RelevanzWert,
   RelevanzThema,
   RelevanzStatus,
+  BcInteraktionenErgebnis,
   AgentMessage,
   AgentPendingPrompt,
   AgentSendInput,
@@ -1337,6 +1338,13 @@ const api = {
   // Relevanz (docs/PLAN_RELEVANZ.md) — Naehe je Firma und Person aus dem
   // eigenen Verhalten. `erfasse` ist absichtlich folgenlos, wenn die
   // Funktion aus ist: Aufrufer muessen das nicht pruefen.
+  // Buying Center (docs/PLAN_BUYING_CENTER.md, BC3): Interaktionen aus dem
+  // CRM je Person. Laeuft im Hauptprozess, weil die CRM-Anmeldung dort liegt.
+  buyingCenter: {
+    interaktionen: (buyingCenterId: string): Promise<BcInteraktionenErgebnis> =>
+      ipcRenderer.invoke("buyingCenter:interaktionen", buyingCenterId),
+  },
+
   relevanz: {
     erfasse: (
       art: string,
