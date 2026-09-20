@@ -36,7 +36,7 @@ import { CompanyCrmPanel } from "../components/CompanyCrmPanel";
 import { quellenDerFakten } from "./kontakt-quellen";
 import { sortiereNachRang, rangFuerTitel, RANG_TITEL } from "./kontakt-rang";
 import { bewerte } from "./kontakt-suche";
-import { FirmaUebernehmen, istUebernommen } from "./firma-uebernehmen";
+import { FirmaUebernehmen, useIstUebernommen } from "./firma-uebernehmen";
 import { Waermeanzeige, ThemaHinweis } from "./waermeanzeige";
 import { gewichtFuer } from "./relevanz-gewicht";
 import {
@@ -528,7 +528,7 @@ export function CompanyDetail() {
   // Naehe — und erst, wenn die Firmendaten da sind. Dann kann das GEWICHT
   // mit: die sachliche Passung, die ohne jedes Verhalten zustande kommt und
   // verhindert, dass der Heartbeat nur noch dorthin sieht, wo er schon war.
-  const uebernommen = istUebernommen(stageState.data?.stages);
+  const uebernommen = useIstUebernommen(id);
   useEffect(() => {
     if (!id || !summary.data) return;
     const d = summary.data;
