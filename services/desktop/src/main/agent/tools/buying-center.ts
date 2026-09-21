@@ -30,7 +30,7 @@ const KONTAKT_TEXT: Record<string, string> = { "0": "kein Kontakt", S: "selten",
 const EINFLUSS_TEXT: Record<string, string> = { G: "gering", M: "mittel", H: "hoch" };
 
 interface Mitglied {
-  id: string; personId: string | null; name: string; funktion: string | null;
+  id: string; personId: string | null; name: string; funktion: string | null; seit?: string | null;
   rollen: string[]; einstellung: string | null; kontakt: string | null; einfluss: string | null;
   angaben: Array<{ id: string; dimension: string; wert: string | null; herkunft: string; grund: string; entschieden: string | null; erfasstAt: string }>;
 }
@@ -53,7 +53,7 @@ function zusammenfassung(bc: BuyingCenter): string {
     const k = m.kontakt ? KONTAKT_TEXT[m.kontakt] ?? m.kontakt : "Kontakt ?";
     const f = m.einfluss ? EINFLUSS_TEXT[m.einfluss] ?? m.einfluss : "Einfluss ?";
     const offen = m.angaben.filter((a) => a.herkunft.startsWith("ava:") && a.entschieden === null).length;
-    return `- ${m.name}${m.funktion ? ` (${m.funktion})` : ""} [${m.id}]: ${rollen} · ${e} · ${k} · ${f}${offen ? ` · ${offen} offene Vorschlaege` : ""}`;
+    return `- ${m.name}${m.funktion ? ` (${m.funktion})` : ""}${m.seit ? `, seit ${m.seit}` : ""} [${m.id}]: ${rollen} · ${e} · ${k} · ${f}${offen ? ` · ${offen} offene Vorschlaege` : ""}`;
   });
   const kanten = bc.kanten.map((k) => {
     const von = bc.mitglieder.find((m) => m.id === k.vonMitgliedId)?.name ?? k.vonMitgliedId;
@@ -261,7 +261,7 @@ export function buildBuyingCenterTools(deps: BuyingCenterToolDeps): Tool[] {
     parameters: { type: "object", properties: { buyingCenterId: { type: "string" } }, required: ["buyingCenterId"] },
     schema: yup.object({ buyingCenterId: yup.string().trim().required() }).noUnknown(true),
     run: async (args) => {
-      const vs = await gateway.request<{ offen: unknown[]; unbesetzteRollen: string[]; ohneKontakt: string[]; verknuepfbar: Array<{ mitgliedId: string; name: string; personId: string; fullName: string; title: string | null }> }>(`/v1/buying-center/${encodeURIComponent(args.buyingCenterId)}/vorschlaege`);
+      const vs = await gateway.request<{ offen: unknown[]; unbesetzteRollen: string[]; ohneKontakt: string[]; verknuepfbar: Array<{ mitgliedId: string; name: string; personId: string; fullName: string; title: string | null }>; hinweise?: string[] }>(`/v1/buying-center/${encodeURIComponent(args.buyingCenterId)}/vorschlaege`);
       return {
         offen: vs.offen,
         unbesetzteRollen: vs.unbesetzteRollen.map((r) => ROLLEN_TEXT[r] ?? r),
@@ -269,6 +269,8 @@ export function buildBuyingCenterTools(deps: BuyingCenterToolDeps): Tool[] {
         // BC5: frei aufgenommene Mitglieder, zu denen es eine gleichnamige
         // Person im Bestand gibt — Verbinden mit buying_center_verknuepfen.
         verknuepfbar: vs.verknuepfbar ?? [],
+        // Buch-Checkliste: "neu in der Position" u. ae. — Hinweise, keine Zuordnung.
+        hinweise: vs.hinweise ?? [],
       };
     },
     preview: (r) => `${(r.offen as unknown[]).length} offene Vorschlaege`,

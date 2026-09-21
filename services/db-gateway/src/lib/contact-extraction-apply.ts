@@ -33,6 +33,7 @@ import {
 } from "./contact-extraction/employment";
 import { createObservationIdempotent } from "./contact-extraction/observation";
 import { istTeilenKnopf } from "./contact-extraction/teilen-knopf";
+import { istAusgeschieden } from "./contact-extraction/ausgeschieden";
 import { HERVORHEBUNG_FELD, hervorhebungAlsWert } from "./contact-extraction/hervorhebung";
 import { emitRemovalsByTTL } from "./contact-extraction/emit-removals-by-ttl";
 import { getProducerPool } from "./producer-pools";
@@ -80,6 +81,10 @@ export interface CompanyContactPersistRequest {
       email?: string;
       phone?: string;
       sourceUrl?: string | null;
+      /** Beginn der Beschaeftigung bei dieser Firma, "JJJJ-MM" oder "JJJJ"
+       *  (Apify Full-Modus). Wird zum Fakt "employmentSince" und zum
+       *  Startdatum der Beschaeftigung. */
+      seit?: string;
       /** BC4 — Hervorhebung auf der Seite (nur Website-Quellen): Platz von
        *  oben, Personen auf der Seite, Foto, Zitat. Wird zum Fakt
        *  "websiteHervorhebung" (lib/contact-extraction/hervorhebung.ts). */
@@ -292,6 +297,12 @@ export async function applyCompanyContactPersist(
     // Der bereinigte Kandidat geht auch in die Observations (vorher
     // floss dort das rohe `p` ein — latenter Drift zum Identity-Pfad).
     const rohTitle = sanitizeRole(p.title) ?? undefined;
+    // Nicht mehr beschaeftigt ("Retired", "ehemaliger …", "i. R.") —
+    // gehoert nicht in die Kontaktliste, aus keiner Quelle.
+    if (istAusgeschieden(p.title)) {
+      log.info({ runId, companyId, name: p.fullName ?? null, title: p.title }, "person ausgeschieden — uebersprungen");
+      continue;
+    }
     const candidate: EmployeeCandidate = {
       fullName: sanitizePersonName(p.fullName),
       // v0.1.497 — Firmenname ist kein Titel und keine Abteilung;
@@ -302,6 +313,7 @@ export async function applyCompanyContactPersist(
       xingUrl: p.xingUrl,
       email: p.email,
       phone: p.phone,
+      seit: p.seit,
       source: source,
       sourceUrl: p.sourceUrl ?? evidenceUrl ?? undefined,
     };

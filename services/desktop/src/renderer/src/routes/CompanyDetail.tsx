@@ -2393,7 +2393,11 @@ function PersonCard({
                 </span>
                 <span className="pc__fact-value">
                   {primary.value ? (
-                    <FactValue value={primary.value} kind={kindFor(field)} />
+                    field === "employmentSince" ? (
+                      <span title={fieldLabel(field)}>{seitText(primary.value)}</span>
+                    ) : (
+                      <FactValue value={primary.value} kind={kindFor(field)} />
+                    )
                   ) : (
                     ""
                   )}
@@ -2838,8 +2842,26 @@ function fieldLabel(field: string): string {
     department: "Abteilung",
     xingUrl: "XING",
     linkedinUrl: "LinkedIn",
+    employmentSince: "Im Unternehmen seit",
   };
   return labels[field] ?? field;
+}
+
+/** "2015-03" → "seit März 2015 (10 Jahre)"; "2010" → "seit 2010 (16 Jahre)". */
+export function seitText(wert: string, jetzt = new Date()): string {
+  const m = /^(\d{4})(?:-(\d{2}))?$/.exec(wert.trim());
+  if (!m) return wert;
+  const jahr = Number(m[1]);
+  const monat = m[2] ? Number(m[2]) : null;
+  const wann = monat
+    ? new Date(Date.UTC(jahr, monat - 1, 1)).toLocaleDateString("de-DE", { month: "long", year: "numeric", timeZone: "UTC" })
+    : String(jahr);
+  const monate = (jetzt.getUTCFullYear() - jahr) * 12 + (jetzt.getUTCMonth() + 1 - (monat ?? 1));
+  const dauer =
+    monate < 1 ? "diesen Monat" :
+    monate < 12 ? `${monate} ${monate === 1 ? "Monat" : "Monate"}` :
+    `${Math.floor(monate / 12)} ${Math.floor(monate / 12) === 1 ? "Jahr" : "Jahre"}`;
+  return `seit ${wann} (${dauer})`;
 }
 
 function groupBy<T>(items: T[], key: (item: T) => string): Record<string, T[]> {

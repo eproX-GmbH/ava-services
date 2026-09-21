@@ -13,7 +13,17 @@ export type PersonEmploymentFacts = {
   } | null;
   jobTitle?: { value: string; normalized: string; factId: string } | null;
   department?: { value: string; normalized: string; factId: string } | null;
+  /** Beschaeftigungsbeginn "JJJJ-MM" oder "JJJJ" (Apify Full-Modus). */
+  seit?: { value: string; normalized: string; factId: string } | null;
 };
+
+/** "JJJJ-MM" / "JJJJ" → erster Tag des Monats bzw. Jahres, sonst null. */
+export function seitAlsDatum(v: string | null | undefined): Date | null {
+  const m = /^(\d{4})(?:-(\d{2}))?$/.exec((v ?? "").trim());
+  if (!m) return null;
+  const d = new Date(Date.UTC(Number(m[1]), m[2] ? Number(m[2]) - 1 : 0, 1));
+  return Number.isNaN(d.getTime()) ? null : d;
+}
 
 export type EmploymentEvidence = {
   source: string;
@@ -31,7 +41,7 @@ export async function getActivePersonEmploymentFacts(
     where: {
       entityType: "PERSON",
       entityId: args.personId,
-      field: { in: ["employmentCompanyId", "jobTitle", "department"] },
+      field: { in: ["employmentCompanyId", "jobTitle", "department", "employmentSince"] },
       status: "ACTIVE",
     },
     orderBy: { lastSeen: "desc" },
@@ -49,6 +59,7 @@ export async function getActivePersonEmploymentFacts(
     employmentCompanyId: pick("employmentCompanyId"),
     jobTitle: pick("jobTitle"),
     department: pick("department"),
+    seit: pick("employmentSince"),
   };
 
   return out;
@@ -109,6 +120,7 @@ export async function upsertCurrentEmployment(
 
   const title = facts.jobTitle?.value ?? null;
   const department = facts.department?.value ?? null;
+  const startDate = seitAlsDatum(facts.seit?.value);
   const confidence = args.confidence ?? 0.7;
 
   const activeEmployments = await prisma.employment.findMany({
@@ -131,12 +143,14 @@ export async function upsertCurrentEmployment(
 
   // Zuerst die Beschaeftigung mit genau diesem Titel — das ist der Normalfall
   // eines erneuten Laufs.
+  // Bewusst OHNE startDate in der Suche: Ein spaeterer Lauf, der erstmals
+  // den Beginn mitbringt, soll die vorhandene Beschaeftigung ergaenzen,
+  // nicht eine zweite daneben legen.
   let existing = await prisma.employment.findFirst({
     where: {
       personId: args.personId,
       companyId,
       title,
-      startDate: null,
     },
     orderBy: { lastSeen: "desc" },
   });
@@ -158,7 +172,6 @@ export async function upsertCurrentEmployment(
       where: {
         personId: args.personId,
         companyId,
-        startDate: null,
         OR: [{ title: null }, { title: "" }],
       },
       orderBy: { lastSeen: "desc" },
@@ -174,6 +187,9 @@ export async function upsertCurrentEmployment(
           confidence,
           isCurrent: true,
           lastSeen: new Date(),
+          // Der Beginn wird nur ergaenzt, nie ueberschrieben: Der erste
+          // belegte Wert bleibt, spaetere Laeufe runden hoechstens auf.
+          ...(startDate && !existing.startDate ? { startDate } : {}),
         },
       })
     : await prisma.employment.create({
@@ -184,7 +200,7 @@ export async function upsertCurrentEmployment(
           department,
           seniority: null,
           isCurrent: true,
-          startDate: null,
+          startDate,
           endDate: null,
           confidence,
         },

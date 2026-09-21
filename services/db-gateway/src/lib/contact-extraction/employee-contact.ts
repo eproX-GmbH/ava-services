@@ -107,9 +107,15 @@ export type EmployeeCandidate = {
   xingUrl?: string;
   email?: string;
   phone?: string;
+  /** Beginn der Beschaeftigung, "JJJJ-MM" oder "JJJJ". */
+  seit?: string;
   sourceUrl?: string;
   source?: string;
 };
+
+/** Fakt-Feld fuer den Beschaeftigungsbeginn; Wert "JJJJ-MM" oder "JJJJ". */
+export const SEIT_FELD = "employmentSince";
+export const SEIT_RE = /^(19|20)\d{2}(-(0[1-9]|1[0-2]))?$/;
 
 export async function upsertPersonByIdentity(
   prisma: PrismaClient,
@@ -236,6 +242,7 @@ export function buildPersonObservations(args: {
     xingUrl?: string;
     email?: string;
     phone?: string;
+    seit?: string;
   };
   source: string;
   evidenceUrl?: string | null;
@@ -330,6 +337,20 @@ export function buildPersonObservations(args: {
       personId: args.personId,
       field: "jobTitle",
       value: args.candidate.title,
+      source: args.source,
+      evidenceUrl: args.evidenceUrl ?? null,
+      evidence: null,
+      companyId: args.companyId,
+    });
+  }
+
+  if (args.candidate.seit && SEIT_RE.test(args.candidate.seit)) {
+    obs.push({
+      entityType: "PERSON" as EntityType,
+      entityId: args.personId,
+      personId: args.personId,
+      field: SEIT_FELD,
+      value: args.candidate.seit,
       source: args.source,
       evidenceUrl: args.evidenceUrl ?? null,
       evidence: null,

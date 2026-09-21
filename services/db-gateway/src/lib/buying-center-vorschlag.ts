@@ -42,13 +42,13 @@ export function vorschlaegeAusTitel(titel: string | null | undefined): Vorschlag
   // "Geschaeftsfuehrung" und wuerde sonst zur Entscheiderin — genau die
   // Verwechslung, vor der das Buch beim Gatekeeper warnt.
   if (/assisten|sekret|office manag|empfang|vorzimmer/.test(t)) {
-    aus.push({ dimension: "rolle", wert: "GK", grund: grund("Assistenz oeffnet oder verschliesst den Zugang") });
+    aus.push({ dimension: "rolle", wert: "GK", grund: grund("Assistenz öffnet oder verschliesst den Zugang") });
     return aus;
   }
 
   if (/gesch(ä|ae)ftsf|managing director|\bceo\b|\bcfo\b|\bcoo\b|vorstand|inhaber|\bowner\b|founder|gr(ü|ue)nder/.test(t)) {
-    aus.push({ dimension: "rolle", wert: "E", grund: grund("Geschaeftsleitung trifft in der Regel die Entscheidung") });
-    aus.push({ dimension: "einfluss", wert: "H", grund: grund("Geschaeftsleitung — nur ein Vorschlag, Hierarchie ist nicht gleich Einfluss") });
+    aus.push({ dimension: "rolle", wert: "E", grund: grund("Geschäftsleitung trifft in der Regel die Entscheidung") });
+    aus.push({ dimension: "einfluss", wert: "H", grund: grund("Geschäftsleitung — nur ein Vorschlag, Hierarchie ist nicht gleich Einfluss") });
     return aus;
   }
   if (/prokurist/.test(t)) {
@@ -56,7 +56,7 @@ export function vorschlaegeAusTitel(titel: string | null | undefined): Vorschlag
     return aus;
   }
   if (/eink(a|ä|ae)uf|purchas|procurement|beschaffung/.test(t)) {
-    aus.push({ dimension: "rolle", wert: "EK", grund: grund("Einkauf fuehrt den Einkaufsvorgang und die Verhandlung") });
+    aus.push({ dimension: "rolle", wert: "EK", grund: grund("Einkauf führt den Einkaufsvorgang und die Verhandlung") });
     return aus;
   }
   if (/\bcto\b|\bcio\b|leiter it|it-leit|head of it|it leit|technischer leiter|technical director/.test(t)) {
@@ -70,13 +70,13 @@ export function vorschlaegeAusTitel(titel: string | null | undefined): Vorschlag
     return aus;
   }
   if (/controll|finanz|buchhalt|qualit(ä|ae)t|\bqm\b/.test(t)) {
-    aus.push({ dimension: "rolle", wert: "B", grund: grund("Controlling/Qualitaet wirkt als interner Beeinflusser") });
+    aus.push({ dimension: "rolle", wert: "B", grund: grund("Controlling/Qualität wirkt als interner Beeinflusser") });
     return aus;
   }
   // Alles Uebrige: vermutlich Anwender. Bewusst KEIN Einfluss-Vorschlag —
   // gerade hier sitzen die "Schluesselnutzer", die das Buch beschreibt, und
   // die erkennt nur der Nutzer.
-  aus.push({ dimension: "rolle", wert: "N", grund: grund("Fachkraft, vermutlich Anwender der Loesung") });
+  aus.push({ dimension: "rolle", wert: "N", grund: grund("Fachkraft, vermutlich Anwender der Lösung") });
   return aus;
 }
 

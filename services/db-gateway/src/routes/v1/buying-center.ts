@@ -102,6 +102,8 @@ const AngabeShape = z.object({
 });
 const MitgliedShape = z.object({
   id: z.string(), personId: z.string().nullable(), name: z.string(), funktion: z.string().nullable(),
+  /** Beschaeftigungsbeginn "JJJJ-MM" / "JJJJ" aus dem Kontakt-Bestand, sonst null. */
+  seit: z.string().nullable(),
   rollen: z.array(z.string()), einstellung: z.string().nullable(), kontakt: z.string().nullable(),
   einfluss: z.string().nullable(), ansprechpartnerBeiUns: z.string().nullable(),
   x: z.number().nullable(), y: z.number().nullable(), angaben: z.array(AngabeShape),
@@ -117,6 +119,29 @@ const BuyingCenterShape = z.object({
   mitglieder: z.array(MitgliedShape), kanten: z.array(KanteShape),
 });
 
+/** Beschaeftigungsbeginn je Bestandsperson (Fakt employmentSince, Apify Full-Modus). */
+async function seitJePerson(personIds: Array<string | null>): Promise<Map<string, string>> {
+  const ids = personIds.filter((p): p is string => !!p);
+  const aus = new Map<string, string>();
+  if (ids.length === 0) return aus;
+  const r = await getProducerPool("company-contact").query<{ personId: string; value: string }>(
+    `SELECT DISTINCT ON ("personId") "personId", "value" FROM "Fact"
+      WHERE "personId" = ANY($1::text[]) AND "field" = 'employmentSince' AND "status" = 'ACTIVE'
+      ORDER BY "personId", "lastSeen" DESC`,
+    [ids],
+  );
+  for (const row of r.rows) aus.set(row.personId, row.value);
+  return aus;
+}
+
+/** Monate zwischen "JJJJ-MM"/"JJJJ" und jetzt; null bei unlesbarem Wert. */
+export function monateSeit(seit: string, jetzt = new Date()): number | null {
+  const m = /^(\d{4})(?:-(\d{2}))?$/.exec(seit);
+  if (!m) return null;
+  const jahr = Number(m[1]), monat = m[2] ? Number(m[2]) : 1;
+  return (jetzt.getUTCFullYear() - jahr) * 12 + (jetzt.getUTCMonth() + 1 - monat);
+}
+
 async function ladeVoll(bc: BcKopf & { eigenes: boolean }): Promise<z.infer<typeof BuyingCenterShape>> {
   const pool = getGatewayPool();
   const m = await pool.query(`SELECT * FROM "BuyingCenterMitglied" WHERE "buyingCenterId" = $1 ORDER BY "angelegtAt"`, [bc.id]);
@@ -125,6 +150,7 @@ async function ladeVoll(bc: BcKopf & { eigenes: boolean }): Promise<z.infer<type
     ? await pool.query(`SELECT * FROM "BuyingCenterAngabe" WHERE "mitgliedId" = ANY($1::text[]) ORDER BY "erfasstAt" DESC`, [ids])
     : { rows: [] as Record<string, unknown>[] };
   const k = await pool.query(`SELECT * FROM "BuyingCenterKante" WHERE "buyingCenterId" = $1 ORDER BY "erfasstAt"`, [bc.id]);
+  const seitJe = await seitJePerson((m.rows as Array<{ personId: string | null }>).map((r) => r.personId));
   const angabenJe = new Map<string, z.infer<typeof AngabeShape>[]>();
   for (const r of a.rows as Record<string, unknown>[]) {
     const liste = angabenJe.get(r.mitgliedId as string) ?? [];
@@ -143,6 +169,7 @@ async function ladeVoll(bc: BcKopf & { eigenes: boolean }): Promise<z.infer<type
     mitglieder: (m.rows as Record<string, unknown>[]).map((r) => ({
       id: String(r.id), personId: (r.personId as string | null) ?? null, name: String(r.name),
       funktion: (r.funktion as string | null) ?? null, rollen: (r.rollen as string[]) ?? [],
+      seit: r.personId ? seitJe.get(r.personId as string) ?? null : null,
       einstellung: (r.einstellung as string | null) ?? null, kontakt: (r.kontakt as string | null) ?? null,
       einfluss: (r.einfluss as string | null) ?? null, ansprechpartnerBeiUns: (r.ansprechpartnerBeiUns as string | null) ?? null,
       x: (r.x as number | null) ?? null, y: (r.y as number | null) ?? null,
@@ -731,6 +758,8 @@ const vorschlaegeRoute = createRoute({
     // BC5: frei aufgenommene Mitglieder, zu denen im Kontakt-Bestand eine
     // gleichnamige Person bei dieser Firma liegt.
     verknuepfbar: z.array(z.object({ mitgliedId: z.string(), name: z.string(), personId: z.string(), fullName: z.string(), title: z.string().nullable() })),
+    // Buch-Checkliste (Sieck): Hinweise ohne Zuordnung, z. B. "neu in der Position".
+    hinweise: z.array(z.string()),
   }) } }, description: "ok" }, ...errorResponses },
 });
 buyingCenterRouter.openapi(vorschlaegeRoute, async (c) => {
@@ -741,12 +770,20 @@ buyingCenterRouter.openapi(vorschlaegeRoute, async (c) => {
   // eigenen — ein Freigegebener loest keine Schreibvorgaenge aus.
   if (bc.eigenes && (await websiteVorschlaege(voll.mitglieder)) > 0) voll = await ladeVoll(bc);
   const verknuepfbar = await verknuepfbarePersonen(bc.companyId, voll.mitglieder);
+  // Neu in der Position (< 6 Monate): Wer gerade angefangen hat, kennt die
+  // alten Lieferanten nicht und hat noch keine Loyalitaeten — laut Buch ein
+  // moeglicher Informationsvorsprung. Nur ein Hinweis, keine Zuordnung.
+  const hinweise = voll.mitglieder.flatMap((m) => {
+    const monate = m.seit ? monateSeit(m.seit) : null;
+    if (monate === null || monate >= 6 || monate < 0) return [];
+    return [`${m.name} ist erst seit ${m.seit} bei der Firma (${monate === 0 ? "diesen Monat" : `${monate} Monate`}) — neu in der Position, Informationsvorsprung möglich.`];
+  });
   const offen = voll.mitglieder.flatMap((m) =>
     m.angaben
       .filter((a) => a.herkunft.startsWith("ava:") && a.entschieden === null)
       .map((a) => ({ vorschlagId: a.id, mitgliedId: m.id, name: m.name, dimension: a.dimension, wert: a.wert, grund: a.grund })),
   );
-  return c.json({ offen, unbesetzteRollen: unbesetzteRollen(voll.mitglieder), ohneKontakt: ohneKontakt(voll.mitglieder), verknuepfbar }, 200);
+  return c.json({ offen, unbesetzteRollen: unbesetzteRollen(voll.mitglieder), ohneKontakt: ohneKontakt(voll.mitglieder), verknuepfbar, hinweise }, 200);
 });
 
 /**
