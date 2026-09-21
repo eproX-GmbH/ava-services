@@ -12,6 +12,8 @@
 //   GET    /buying-center/{id}/vorschlaege      offene Vorschlaege + Leitfragen (+ verknuepfbare Personen, BC5)
 //   POST   /buying-center/{id}/mitglieder/{mid}/verknuepfen   freies Mitglied an eine Bestandsperson binden (BC5)
 //   POST   /buying-center/{id}/nachgefragt      monatliche Nachfrage vermerken (BC5)
+//   GET    /buying-center/{id}/verlauf          Protokoll der Laeufe (Eigentuemer oder Freigabe)
+//   POST   /buying-center/{id}/verlauf          Lauf vom Desktop protokollieren (CRM-Abgleich, Watchlist)
 //   GET    /buying-center/{id}/freigaben        wer ansehen darf (BC7, nur Eigentuemer)
 //   POST   /buying-center/{id}/freigaben        Sicht erteilen {actorId} (BC7)
 //   DELETE /buying-center/{id}/freigaben/{actorId}   Sicht entziehen (BC7)
@@ -68,6 +70,23 @@ function auth(c: { get: (k: "auth") => unknown }): { tenantId: string; actorId: 
 function cuid(): string {
   // Gleiche Form wie Prisma-cuid, ohne Prisma-Client: Zeit + Zufall.
   return "c" + Date.now().toString(36) + Math.random().toString(36).slice(2, 12);
+}
+
+/** Arten der protokollierten Laeufe — der Desktop darf nur seine eigenen melden. */
+const LAUF_ARTEN = ["entwurf", "crm-abgleich", "website-abgleich", "nachfrage", "watchlist", "verknuepfung", "status", "freigabe"] as const;
+const DESKTOP_LAUF_ARTEN = ["crm-abgleich", "watchlist"] as const;
+
+/**
+ * Protokoll: eine Zeile je Lauf. Nie ein Fehler nach aussen — ein
+ * misslungener Eintrag darf den Lauf selbst nicht kippen.
+ */
+async function lauf(buyingCenterId: string, art: (typeof LAUF_ARTEN)[number], ergebnis: string, details?: Record<string, unknown>): Promise<void> {
+  try {
+    await getGatewayPool().query(
+      `INSERT INTO "BuyingCenterLauf" ("id","buyingCenterId","art","ergebnis","details") VALUES ($1,$2,$3,$4,$5::jsonb)`,
+      [cuid(), buyingCenterId, art, ergebnis.slice(0, 500), details ? JSON.stringify(details) : null],
+    );
+  } catch { /* Protokoll ist Beiwerk. */ }
 }
 
 // ---- Zugriff ---------------------------------------------------------------
@@ -295,6 +314,7 @@ buyingCenterRouter.openapi(anlegenRoute, async (c) => {
     [companyId],
   );
   const neueMitglieder: Array<{ id: string; personId: string | null; einfluss: string | null }> = [];
+  let titelVorschlaege = 0;
   for (const p of personen.rows) {
     const mid = cuid();
     await pool.query(
@@ -307,10 +327,14 @@ buyingCenterRouter.openapi(anlegenRoute, async (c) => {
     // Center aus duennen Daten ist gefaehrlicher als keins.
     for (const v of vorschlaegeAusTitel(p.title)) {
       await angabeSetzen({ mitgliedId: mid, dimension: v.dimension, wert: v.wert, herkunft: "ava:titel", grund: v.grund, vonActorId: null, uebernehmen: false });
+      titelVorschlaege++;
     }
   }
   // BC4 — was die Website hervorhebt, als Einfluss-Vorschlag dazu.
-  await websiteVorschlaege(neueMitglieder);
+  const websiteAbgelegt = await websiteVorschlaege(neueMitglieder);
+  await lauf(id, "entwurf",
+    `Entwurf aus dem Kontakt-Bestand: ${personen.rows.length} Personen, ${titelVorschlaege} Vorschläge aus Titeln, ${websiteAbgelegt} von der Website${fokusFrei ? "" : " — Fokus-Deckel erreicht, kein Fokuskunde"}`,
+    { personen: personen.rows.length, titelVorschlaege, websiteAbgelegt, fokus: fokusFrei });
 
   const kopf = (await pool.query<BcKopf>(`SELECT * FROM "BuyingCenter" WHERE "id" = $1`, [id])).rows[0]!;
   return c.json(await ladeVoll({ ...kopf, eigenes: true }), 200);
@@ -456,6 +480,7 @@ buyingCenterRouter.openapi(freigebenRoute, async (c) => {
     `INSERT INTO "BuyingCenterFreigabe" ("buyingCenterId","actorId","erteiltVon") VALUES ($1,$2,$3) ON CONFLICT DO NOTHING`,
     [bc.id, actorId, wer.actorId],
   );
+  await lauf(bc.id, "freigabe", "Sicht freigegeben", { actorId });
   return c.json({ items: await ladeFreigaben(bc.id) }, 200);
 });
 
@@ -469,6 +494,7 @@ buyingCenterRouter.openapi(freigabeEntziehenRoute, async (c) => {
   const { id, actorId } = c.req.valid("param");
   const bc = await ladeMitZugriff(id, auth(c), true);
   await getGatewayPool().query(`DELETE FROM "BuyingCenterFreigabe" WHERE "buyingCenterId" = $1 AND "actorId" = $2`, [bc.id, actorId]);
+  await lauf(bc.id, "freigabe", "Sicht entzogen", { actorId });
   return c.json({ items: await ladeFreigaben(bc.id) }, 200);
 });
 
@@ -742,6 +768,7 @@ buyingCenterRouter.openapi(statusRoute, async (c) => {
   const fokus = (aktive.rows[0]?.n ?? 0) > 0;
   if (fokus) await pool.query(`INSERT INTO "FokusKunde" ("tenantId","actorId","companyId") VALUES ($1,$2,$3) ON CONFLICT DO NOTHING`, [wer.tenantId, wer.actorId, bc.companyId]);
   else await pool.query(`DELETE FROM "FokusKunde" WHERE "tenantId" = $1 AND "actorId" = $2 AND "companyId" = $3`, [wer.tenantId, wer.actorId, bc.companyId]);
+  await lauf(bc.id, "status", `Status "${status}" gesetzt — Firma ${fokus ? "bleibt" : "ist kein"} Fokuskunde`, { status, fokus });
   return c.json({ ok: true, fokus }, 200);
 });
 
@@ -768,7 +795,13 @@ buyingCenterRouter.openapi(vorschlaegeRoute, async (c) => {
   // BC4 — Website-Hervorhebung beim Oeffnen nachziehen: Ein Kontakte-Lauf
   // nach dem Anlegen bringt neue Fakten, die hier ankommen sollen. Nur im
   // eigenen — ein Freigegebener loest keine Schreibvorgaenge aus.
-  if (bc.eigenes && (await websiteVorschlaege(voll.mitglieder)) > 0) voll = await ladeVoll(bc);
+  if (bc.eigenes) {
+    const neu = await websiteVorschlaege(voll.mitglieder);
+    if (neu > 0) {
+      await lauf(bc.id, "website-abgleich", `Website-Hervorhebung: ${neu} ${neu === 1 ? "Vorschlag" : "Vorschläge"} abgelegt`, { abgelegt: neu });
+      voll = await ladeVoll(bc);
+    }
+  }
   const verknuepfbar = await verknuepfbarePersonen(bc.companyId, voll.mitglieder);
   // Neu in der Position (< 6 Monate): Wer gerade angefangen hat, kennt die
   // alten Lieferanten nicht und hat noch keine Loyalitaeten — laut Buch ein
@@ -840,6 +873,7 @@ buyingCenterRouter.openapi(verknuepfenRoute, async (c) => {
   const p = await getProducerPool("company-contact").query<{ fullName: string }>(`SELECT "fullName" FROM "Person" WHERE "id" = $1`, [personId]);
   if (p.rowCount === 0) throw new HTTPException(404, { message: "person_not_found" });
   await pool.query(`UPDATE "BuyingCenterMitglied" SET "personId" = $1, "updatedAt" = NOW() WHERE "id" = $2`, [personId, mid]);
+  await lauf(bc.id, "verknuepfung", `Mitglied mit Bestandsperson "${p.rows[0]!.fullName}" verbunden`, { mitgliedId: mid, personId });
   await pool.query(`UPDATE "BuyingCenter" SET "updatedAt" = NOW() WHERE "id" = $1`, [bc.id]);
   const voll = await ladeVoll(bc);
   const neu = voll.mitglieder.find((x) => x.id === mid);
@@ -863,5 +897,47 @@ buyingCenterRouter.openapi(nachgefragtRoute, async (c) => {
   const r = await getGatewayPool().query<{ nachgefragtAt: Date }>(
     `UPDATE "BuyingCenter" SET "nachgefragtAt" = NOW() WHERE "id" = $1 RETURNING "nachgefragtAt"`, [bc.id],
   );
+  await lauf(bc.id, "nachfrage", "Monatliche Nachfrage gestellt: Stimmt das Buying Center noch?");
   return c.json({ ok: true, nachgefragtAt: r.rows[0].nachgefragtAt.toISOString() }, 200);
+});
+
+// ---- GET/POST /buying-center/{id}/verlauf ----------------------------------
+
+const LaufShape = z.object({ id: z.string(), art: z.string(), ergebnis: z.string(), details: z.record(z.string(), z.unknown()).nullable(), zeitpunkt: z.string() });
+
+const verlaufRoute = createRoute({
+  method: "get", path: "/buying-center/{id}/verlauf", tags: [tag],
+  summary: "Protokoll der Laeufe (neueste zuerst)",
+  request: { params: IdParam, query: z.object({ limit: z.coerce.number().int().min(1).max(200).optional() }) },
+  responses: { 200: { content: { "application/json": { schema: z.object({ items: z.array(LaufShape) }) } }, description: "ok" }, ...errorResponses },
+});
+buyingCenterRouter.openapi(verlaufRoute, async (c) => {
+  const bc = await ladeMitZugriff(c.req.valid("param").id, auth(c), false);
+  const limit = c.req.valid("query").limit ?? 50;
+  const r = await getGatewayPool().query(
+    `SELECT "id","art","ergebnis","details","zeitpunkt" FROM "BuyingCenterLauf" WHERE "buyingCenterId" = $1 ORDER BY "zeitpunkt" DESC LIMIT $2`,
+    [bc.id, limit],
+  );
+  return c.json({
+    items: (r.rows as Array<Record<string, unknown>>).map((x) => ({
+      id: String(x.id), art: String(x.art), ergebnis: String(x.ergebnis),
+      details: (x.details as Record<string, unknown> | null) ?? null,
+      zeitpunkt: new Date(x.zeitpunkt as string).toISOString(),
+    })),
+  }, 200);
+});
+
+const laufMeldenRoute = createRoute({
+  method: "post", path: "/buying-center/{id}/verlauf", tags: [tag],
+  summary: "Lauf vom Desktop protokollieren (CRM-Abgleich, Watchlist)",
+  request: { params: IdParam, body: { content: { "application/json": { schema: z.object({
+    art: z.enum(DESKTOP_LAUF_ARTEN), ergebnis: z.string().min(1).max(500), details: z.record(z.string(), z.unknown()).optional(),
+  }) } } } },
+  responses: { 200: { content: { "application/json": { schema: z.object({ ok: z.boolean() }) } }, description: "ok" }, ...errorResponses },
+});
+buyingCenterRouter.openapi(laufMeldenRoute, async (c) => {
+  const bc = await ladeMitZugriff(c.req.valid("param").id, auth(c), true);
+  const { art, ergebnis, details } = c.req.valid("json");
+  await lauf(bc.id, art, ergebnis, details);
+  return c.json({ ok: true }, 200);
 });

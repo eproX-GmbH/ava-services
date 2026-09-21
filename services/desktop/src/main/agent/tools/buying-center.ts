@@ -78,6 +78,14 @@ export interface BuyingCenterToolDeps {
 export function buildBuyingCenterTools(deps: BuyingCenterToolDeps): Tool[] {
   const { gateway } = deps;
 
+  /** Die letzten Laeufe als Zeilen ("21.09. 13:02 CRM-Abgleich: …") — fuer "was hat AVA hier getan?". */
+  async function verlauf(id: string, n = 5): Promise<string[]> {
+    try {
+      const r = await gateway.request<{ items: Array<{ art: string; ergebnis: string; zeitpunkt: string }> }>(`/v1/buying-center/${encodeURIComponent(id)}/verlauf`, { query: { limit: String(n) } });
+      return r.items.map((l) => `${new Date(l.zeitpunkt).toLocaleString("de-DE", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })} ${l.ergebnis}`);
+    } catch { return []; }
+  }
+
   /** Das eigene Buying Center zu einer Firma finden — oder null. */
   async function eigenesZu(companyId: string, anlass?: string): Promise<{ id: string; anlass: string; status: string } | null> {
     const r = await gateway.request<{ items: Array<{ id: string; anlass: string; status: string }> }>("/v1/buying-center", { query: { companyId } });
@@ -128,6 +136,7 @@ export function buildBuyingCenterTools(deps: BuyingCenterToolDeps): Tool[] {
         offeneVorschlaege: vs.offen.length,
         unbesetzteRollen: vs.unbesetzteRollen.map((r) => ROLLEN_TEXT[r] ?? r),
         ohneKontakt: vs.ohneKontakt,
+        verlauf: await verlauf(bc.id),
         hinweis:
           "Alle Rollen und Einfluesse sind Vorschlaege aus Titeln. Frage den Nutzer, was er ueber diese Personen weiss, und trage es mit buying_center_setzen ein. Einstellung (Coach bis Feind) kann NUR der Nutzer sagen.",
       };
@@ -138,7 +147,7 @@ export function buildBuyingCenterTools(deps: BuyingCenterToolDeps): Tool[] {
   const anzeigen = defineTool({
     name: "buying_center_anzeigen",
     description:
-      "Zeigt das Buying Center zu einer Firma: die Karte im Chat (anzeigen-Feld → ```buying-center-Zaun) und den Stand je Person. Nutze das bei 'zeig mir das Buying Center', 'wie steht es bei X', oder vor jeder Aenderung, um Mitglieds-IDs zu bekommen. Ohne buyingCenterId wird das eigene aktive zur Firma genommen; gibt es keines, ein von Kollegen freigegebenes (nur ansehen) — bei mehreren kommt die Auswahl zurueck.",
+      "Zeigt das Buying Center zu einer Firma: die Karte im Chat (anzeigen-Feld → ```buying-center-Zaun), den Stand je Person und `verlauf` (was AVA zuletzt im Hintergrund getan hat: Entwurf, CRM-Abgleich, Website-Abgleich, Nachfrage, Watchlist). Bei 'was hat AVA hier gemacht' den Verlauf nennen. Nutze das bei 'zeig mir das Buying Center', 'wie steht es bei X', oder vor jeder Aenderung, um Mitglieds-IDs zu bekommen. Ohne buyingCenterId wird das eigene aktive zur Firma genommen; gibt es keines, ein von Kollegen freigegebenes (nur ansehen) — bei mehreren kommt die Auswahl zurueck.",
     parameters: { type: "object", properties: { companyId: { type: "string" }, buyingCenterId: { type: "string" } } },
     schema: yup.object({ companyId: yup.string().trim().optional(), buyingCenterId: yup.string().trim().optional() }).noUnknown(true),
     run: async (args) => {
@@ -162,6 +171,7 @@ export function buildBuyingCenterTools(deps: BuyingCenterToolDeps): Tool[] {
       return {
         buyingCenterId: bc.id, anzeigen: bc.id, eigenes: bc.eigenes, status: bc.status,
         stand: zusammenfassung(bc),
+        verlauf: await verlauf(id!),
         offeneVorschlaege: vs.offen,
         unbesetzteRollen: vs.unbesetzteRollen.map((r) => ROLLEN_TEXT[r] ?? r),
         ohneKontakt: vs.ohneKontakt,
@@ -382,6 +392,14 @@ export function buildBuyingCenterTools(deps: BuyingCenterToolDeps): Tool[] {
         const r = await store.add({ profileUrl: z.linkedinUrl!, label: z.name, companyId: bc.companyId, fokus: args.fokus, quelle: "manuell" });
         if ("error" in r) fehler.push({ name: z.name, error: r.error });
         else aufgenommen.push(z.name);
+      }
+      if (aufgenommen.length > 0) {
+        try {
+          await gateway.request(`/v1/buying-center/${encodeURIComponent(bc.id)}/verlauf`, {
+            method: "POST",
+            body: { art: "watchlist", ergebnis: `${aufgenommen.length} ${aufgenommen.length === 1 ? "Mitglied" : "Mitglieder"} auf die LinkedIn-Watchlist gesetzt${args.fokus ? " (Fokus)" : ""}: ${aufgenommen.join(", ")}`, details: { aufgenommen, fokus: !!args.fokus } },
+          });
+        } catch { /* Protokoll ist Beiwerk. */ }
       }
       return { aufgenommen, fehler, ohneProfil, anzeigen: bc.id };
     },

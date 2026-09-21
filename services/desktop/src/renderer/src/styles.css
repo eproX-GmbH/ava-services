@@ -3274,6 +3274,13 @@ a.heartbeat-decision__company:hover {
 /* Das Gespraechsmuster: ein Hinweis, der eine Handlung empfiehlt. Gedeckt
    gelb, damit er auffaellt, ohne zu schreien. */
 .bc-muster { margin: 0; padding: 0.55rem 0.75rem; border-radius: 8px; background: rgba(245, 158, 11, 0.12); font-size: 13px; }
+.bc-verlauf summary { cursor: pointer; list-style: none; }
+.bc-verlauf summary::before { content: "› "; display: inline-block; transition: transform 0.15s; }
+.bc-verlauf[open] summary::before { transform: rotate(90deg); }
+.bc-verlauf__liste { list-style: none; margin: 0.4rem 0 0; padding: 0; display: grid; gap: 0.3rem; }
+.bc-verlauf__liste li { display: grid; grid-template-columns: 7.5rem 6.5rem 1fr; gap: 0.5rem; align-items: baseline; }
+.bc-verlauf__art { font-weight: 600; }
+@media (max-width: 600px) { .bc-verlauf__liste li { grid-template-columns: 1fr; gap: 0.1rem; } }
 .bc-legende { display: flex; flex-direction: column; gap: 0.5rem; align-items: flex-start; }
 .bc-legende__raster { display: grid; grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr)); gap: 0.35rem 1rem; width: 100%; font-size: 12px; }
 .bc-legende__raster > span { display: flex; align-items: center; gap: 0.5rem; min-height: 26px; }

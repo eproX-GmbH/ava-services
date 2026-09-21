@@ -3015,6 +3015,15 @@ export interface BcMitgliedInteraktionen {
   /** 0 / S / R / I aus den Schwellen — null, wenn die Person im CRM fehlt. */
   kontaktVorschlag: "0" | "S" | "R" | "I" | null;
 }
+/** Protokollzeile eines Hintergrundlaufs am Buying Center. */
+export interface BcLauf {
+  id: string;
+  /** entwurf | crm-abgleich | website-abgleich | nachfrage | watchlist | verknuepfung | status | freigabe */
+  art: string;
+  ergebnis: string;
+  details: Record<string, unknown> | null;
+  zeitpunkt: string;
+}
 export interface BcInteraktionenErgebnis {
   verfuegbar: boolean;
   /** keine_crm_verknuepfung | hubspot_nicht_verbunden */

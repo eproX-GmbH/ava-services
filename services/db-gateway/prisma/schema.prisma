@@ -926,6 +926,7 @@ model BuyingCenter {
   mitglieder         BuyingCenterMitglied[]
   kanten             BuyingCenterKante[]
   freigaben          BuyingCenterFreigabe[]
+  laeufe             BuyingCenterLauf[]
 
   @@unique([tenantId, eigentuemerActorId, companyId, anlass])
   @@index([tenantId, eigentuemerActorId])
@@ -1016,6 +1017,20 @@ model BuyingCenterFreigabe {
 
   @@id([buyingCenterId, actorId])
   @@index([actorId])
+}
+
+/// Protokoll der Hintergrundlaeufe je Buying Center: was AVA wann getan hat
+/// (Entwurf, CRM-Abgleich, Website-Abgleich, Nachfrage, Watchlist, …).
+model BuyingCenterLauf {
+  id             String       @id @default(cuid())
+  buyingCenterId String
+  art            String
+  ergebnis       String
+  details        Json?
+  zeitpunkt      DateTime     @default(now())
+  buyingCenter   BuyingCenter @relation(fields: [buyingCenterId], references: [id], onDelete: Cascade)
+
+  @@index([buyingCenterId, zeitpunkt])
 }
 
 /// Fokuskunde je NUTZER: Fuer diese Firma darf AVA Aufwand treiben, den

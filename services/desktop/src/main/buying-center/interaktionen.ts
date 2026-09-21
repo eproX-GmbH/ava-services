@@ -75,6 +75,7 @@ export async function ladeInteraktionen(deps: Deps, buyingCenterId: string): Pro
   });
   const seit = Date.now() - TAGE * 86_400_000;
   const ergebnis: BcMitgliedInteraktionen[] = [];
+  let abgelegt = 0;
 
   for (const m of bc.mitglieder) {
     const treffer = kontakte.records.find((r) =>
@@ -113,14 +114,29 @@ export async function ladeInteraktionen(deps: Deps, buyingCenterId: string): Pro
     // Widerspruch von hier: Das waere ein Hinweis, kein Vorschlag (BC5).
     if (bc.eigenes && m.kontakt === null) {
       try {
-        await deps.gateway.request(`/v1/buying-center/${encodeURIComponent(bc.id)}/mitglieder/${encodeURIComponent(m.id)}/vorschlaege`, {
+        const r = await deps.gateway.request<{ abgelegt: boolean }>(`/v1/buying-center/${encodeURIComponent(bc.id)}/mitglieder/${encodeURIComponent(m.id)}/vorschlaege`, {
           method: "POST",
           body: { dimension: "kontakt", wert: vorschlag, herkunft: "ava:crm", grund: `${anzahl} Interaktion${anzahl === 1 ? "" : "en"} im CRM in den letzten ${TAGE} Tagen` },
         });
+        if (r.abgelegt) abgelegt++;
       } catch { /* Vorschlag ist Beiwerk; der Verlauf kommt trotzdem an. */ }
     }
   }
 
+  // Protokoll: Was der Abgleich getan hat, sieht der Nutzer im Verlauf der
+  // Karte — sonst bleibt ein CRM-Lauf unsichtbar, bis ein Vorschlag auffaellt.
+  if (bc.eigenes) {
+    try {
+      await deps.gateway.request(`/v1/buying-center/${encodeURIComponent(bc.id)}/verlauf`, {
+        method: "POST",
+        body: {
+          art: "crm-abgleich",
+          ergebnis: `CRM-Abgleich (HubSpot): ${ergebnis.length} von ${bc.mitglieder.length} Mitgliedern im CRM gefunden, ${abgelegt} ${abgelegt === 1 ? "Vorschlag" : "Vorschläge"} zur Kontaktintensität abgelegt`,
+          details: { gefunden: ergebnis.length, mitglieder: bc.mitglieder.length, abgelegt },
+        },
+      });
+    } catch { /* Protokoll ist Beiwerk. */ }
+  }
   return { verfuegbar: true, mitglieder: ergebnis, gespraechsmuster: gespraechsmuster(ergebnis, bc.mitglieder.length) };
 }
 

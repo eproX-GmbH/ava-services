@@ -21,7 +21,7 @@ import { Link } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { gatewayFetch } from "../api/gateway";
 import { kraftLayout, type Punkt } from "../lib/kraft-layout";
-import type { BcInteraktionenErgebnis, BcMitgliedInteraktionen } from "../../../shared/types";
+import type { BcInteraktionenErgebnis, BcMitgliedInteraktionen, BcLauf } from "../../../shared/types";
 import { Waermeanzeige } from "../routes/waermeanzeige";
 import { seitText } from "../routes/CompanyDetail";
 import { useFeature } from "../store/policy";
@@ -198,6 +198,7 @@ export function BuyingCenterKarte({ id, kompakt = false }: { id: string; kompakt
         </div>
       )}
       <Legende offen={legende} onToggle={legendeUmschalten} />
+      <Verlauf id={id} stand={bc.updatedAt} />
     </div>
   );
 }
@@ -553,6 +554,47 @@ function Seitenleiste({ bc, m, onSchliessen, onGeaendert, interaktionen, interak
 }
 
 // ---- Legende --------------------------------------------------------------------
+
+// ---- Verlauf --------------------------------------------------------------------
+//
+// Was AVA im Hintergrund getan hat — Entwurf, CRM-Abgleich, Website-
+// Abgleich, Nachfrage, Watchlist. Zugeklappt, weil es Nachschlagewerk ist,
+// kein Arbeitsmittel; die Kopfzeile nennt den juengsten Lauf.
+
+const LAUF_ART_TEXT: Record<string, string> = {
+  entwurf: "Entwurf", "crm-abgleich": "CRM-Abgleich", "website-abgleich": "Website", nachfrage: "Nachfrage",
+  watchlist: "Watchlist", verknuepfung: "Verknüpfung", status: "Status", freigabe: "Freigabe",
+};
+
+function Verlauf({ id, stand }: { id: string; stand: string }) {
+  const q = useQuery<{ items: BcLauf[] }>({
+    // `stand` im Schluessel: Nach jeder Aenderung der Karte wird neu geladen.
+    queryKey: ["buying-center", id, "verlauf", stand],
+    queryFn: () => gatewayFetch<{ items: BcLauf[] }>(`/v1/buying-center/${encodeURIComponent(id)}/verlauf?limit=50`),
+    retry: false,
+    staleTime: 60_000,
+  });
+  const items = q.data?.items ?? [];
+  const wann = (iso: string) => new Date(iso).toLocaleString("de-DE", { day: "2-digit", month: "2-digit", year: "2-digit", hour: "2-digit", minute: "2-digit" });
+  return (
+    <details className="bc-verlauf">
+      <summary className="muted small">
+        Verlauf{items.length ? ` · zuletzt ${wann(items[0]!.zeitpunkt)}: ${LAUF_ART_TEXT[items[0]!.art] ?? items[0]!.art}` : " · noch keine Läufe"}
+      </summary>
+      {items.length > 0 && (
+        <ul className="bc-verlauf__liste small">
+          {items.map((l) => (
+            <li key={l.id}>
+              <span className="bc-verlauf__zeit muted">{wann(l.zeitpunkt)}</span>
+              <span className="bc-verlauf__art">{LAUF_ART_TEXT[l.art] ?? l.art}</span>
+              <span>{l.ergebnis}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </details>
+  );
+}
 
 function Legende({ offen, onToggle }: { offen: boolean; onToggle: () => void }) {
   // Jede Bedeutung wird gezeigt, nicht beschrieben: ein kleiner Knoten, eine
