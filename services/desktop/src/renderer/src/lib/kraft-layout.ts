@@ -52,7 +52,9 @@ export function kraftLayout(
         let dy = p[j]!.y - p[i]!.y;
         let d2 = dx * dx + dy * dy;
         if (d2 < 1) { dx = 0.5; dy = 0.5; d2 = 0.5; }
-        const f = 9000 / d2;
+        // Staerker als im Verflechtungen-Graphen: Hier haengt unter jedem
+        // Knoten zweizeilig Text, der Platz braucht.
+        const f = 16000 / d2;
         const fx = (dx / Math.sqrt(d2)) * f;
         const fy = (dy / Math.sqrt(d2)) * f;
         vx[i]! -= fx; vy[i]! -= fy; vx[j]! += fx; vy[j]! += fy;
@@ -62,14 +64,16 @@ export function kraftLayout(
       const dx = p[b]!.x - p[a]!.x;
       const dy = p[b]!.y - p[a]!.y;
       const d = Math.sqrt(dx * dx + dy * dy) || 1;
-      const f = (d - 200) * 0.02;
+      const f = (d - 230) * 0.02;
       vx[a]! += (dx / d) * f; vy[a]! += (dy / d) * f;
       vx[b]! -= (dx / d) * f; vy[b]! -= (dy / d) * f;
     }
     for (let i = 0; i < p.length; i++) {
       if (fest[i]) { vx[i] = 0; vy[i] = 0; continue; }
-      const sx = vx[i]! + (cx - p[i]!.x) * 0.004;
-      const sy = vy[i]! + (cy - p[i]!.y) * 0.004;
+      // Zur Mitte ziehen, senkrecht staerker als waagerecht: Die Karte ist
+      // breiter als hoch, und ein rundes Knaeuel verschenkt die Breite.
+      const sx = vx[i]! + (cx - p[i]!.x) * 0.0025;
+      const sy = vy[i]! + (cy - p[i]!.y) * 0.007;
       p[i] = {
         x: Math.min(breite - 80, Math.max(80, p[i]!.x + Math.max(-12, Math.min(12, sx * temp)))),
         y: Math.min(hoehe - 40, Math.max(40, p[i]!.y + Math.max(-12, Math.min(12, sy * temp)))),

@@ -3214,26 +3214,44 @@ a.heartbeat-decision__company:hover {
 .bc-karte__titel { font-weight: 600; }
 .bc-karte__fremd { color: var(--muted); font-weight: 400; }
 .bc-karte__flaeche { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0.75rem; }
-/* Ab mittlerer Breite Karte links, Seitenleiste rechts. minmax(0,…) statt
-   1fr: sonst schiebt das SVG die Leiste aus dem Kasten. */
-@media (min-width: 900px) {
-  .bc-karte__flaeche:has(.bc-seite) { grid-template-columns: minmax(0, 1fr) 20rem; }
-}
-.bc-grafik { position: relative; overflow-x: auto; }
-.bc-grafik__reset { position: absolute; right: 8px; top: 8px; z-index: 1; }
-.bc-grafik svg { min-width: 560px; background: var(--panel-bg, transparent); border-radius: 8px; display: block; }
+.bc-grafik { position: relative; min-width: 0; }
+/* Ueber der Karte, nicht darauf: Auf der Karte verdeckten die Knoepfe Personen. */
+.bc-grafik__werkzeuge { display: flex; justify-content: flex-end; gap: 4px; margin-bottom: 4px; }
+/* Kompakte Knoepfe: Sie liegen auf der Karte und sollen keine Person verdecken. */
+.bc-grafik__werkzeuge .btn, .bc-legende__knopf { min-height: 26px; padding: 2px 9px; font-size: 12px; line-height: 1.2; min-width: 26px; justify-content: center; }
+/* Feste Hoehe: Die viewBox ist die Kamera, nicht die Leinwand — die Karte
+   darf beim Zoomen nicht mitwachsen. Im Chat etwas niedriger. */
+.bc-grafik svg { width: 100%; height: 480px; background: var(--panel-bg, transparent); border-radius: 8px; display: block; outline: none; }
+.bc-grafik svg:focus-visible { box-shadow: inset 0 0 0 2px var(--accent); }
+.bc-grafik--kompakt svg { height: 400px; }
 .bc-platzhalter { padding: 1rem; color: var(--muted); }
 
+/* Personen-Dialog: gleiches Overlay-Muster wie .danger-modal. */
+.bc-dialog__overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5rem;
+  background: rgba(0, 0, 0, 0.55);
+}
 .bc-seite {
-  border: 1px solid rgba(127,127,127,0.2);
-  border-radius: 10px;
-  padding: 0.85rem;
+  width: min(560px, 100%);
+  max-height: 85vh;
+  overflow-y: auto;
+  border: 1px solid var(--border, rgba(127,127,127,0.25));
+  border-radius: 12px;
+  padding: 1rem 1.2rem;
   min-width: 0;
   overflow-wrap: anywhere;
-  max-height: 560px;
-  overflow-y: auto;
+  background: var(--bg, #fff);
+  color: var(--fg);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.35);
 }
 .bc-seite__kopf { display: flex; align-items: flex-start; justify-content: space-between; gap: 0.6rem; margin-bottom: 0.5rem; }
+.bc-seite__kopf .btn { flex: none; white-space: nowrap; }
 .bc-seite__name { font-weight: 600; font-size: 15px; }
 .bc-seite h4 { margin: 0.9rem 0 0.35rem; font-size: 12px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
 .bc-seite__dims { display: grid; grid-template-columns: auto 1fr; gap: 0.15rem 0.75rem; margin: 0; font-size: 13px; }
@@ -3247,8 +3265,11 @@ a.heartbeat-decision__company:hover {
 /* Das Gespraechsmuster: ein Hinweis, der eine Handlung empfiehlt. Gedeckt
    gelb, damit er auffaellt, ohne zu schreien. */
 .bc-muster { margin: 0; padding: 0.55rem 0.75rem; border-radius: 8px; background: rgba(245, 158, 11, 0.12); font-size: 13px; }
-.bc-legende { display: flex; flex-wrap: wrap; gap: 0.4rem 1.1rem; font-size: 11.5px; }
-.bc-legende b { font-weight: 600; color: var(--fg); }
+.bc-legende { display: flex; flex-direction: column; gap: 0.5rem; align-items: flex-start; }
+.bc-legende__raster { display: grid; grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr)); gap: 0.35rem 1rem; width: 100%; font-size: 12px; }
+.bc-legende__raster > span { display: flex; align-items: center; gap: 0.5rem; min-height: 26px; }
+.bc-legende__titel { font-weight: 600; color: var(--fg); grid-column: 1 / -1; margin-top: 0.25rem; }
+.bc-legende__muster { flex: none; display: block; }
 
 .thema-hinweis {
   display: inline-block;

@@ -116,6 +116,22 @@ export function BuyingCenterKarte({ id, kompakt = false }: { id: string; kompakt
     staleTime: 15_000,
   });
   const [aktiv, setAktiv] = useState<string | null>(null);
+  // Legende auf Klick; im Chat standardmaessig zu, in der Firmenansicht auf.
+  // Die Wahl bleibt im Browser — eine Bequemlichkeit, kein Zustand.
+  const [legende, setLegende] = useState<boolean>(() => {
+    try {
+      const v = localStorage.getItem("bc-legende");
+      if (v === "1") return true;
+      if (v === "0") return false;
+    } catch { /* ohne Speicher: Vorgabe */ }
+    return !kompakt;
+  });
+  const legendeUmschalten = () => {
+    setLegende((v) => {
+      try { localStorage.setItem("bc-legende", v ? "0" : "1"); } catch { /* egal */ }
+      return !v;
+    });
+  };
   // BC3: CRM-Abgleich beim Oeffnen. Einmal je Karte, nicht je Person — der
   // Abgleich holt die Kontakte der Firma ohnehin auf einen Schlag.
   const interaktionen = useQuery<BcInteraktionenErgebnis>({
@@ -155,29 +171,52 @@ export function BuyingCenterKarte({ id, kompakt = false }: { id: string; kompakt
         <p className="muted">Noch keine Personen. Nimm im Chat auf, wer beteiligt ist.</p>
       ) : (
         <div className="bc-karte__flaeche">
-          <Grafik bc={bc} aktiv={aktiv} onWahl={setAktiv} />
-          {gewaehlt && (
-            <Seitenleiste
-              bc={bc}
-              m={gewaehlt}
-              interaktionen={interaktionen.data?.mitglieder.find((x) => x.mitgliedId === gewaehlt.id) ?? null}
-              interaktionenStand={interaktionen.isLoading ? "laedt" : interaktionen.data?.verfuegbar ? "da" : (interaktionen.data?.grund ?? "fehler")}
-              onSchliessen={() => setAktiv(null)}
-              onGeaendert={() => void qc.invalidateQueries({ queryKey: ["buying-center", id] })}
-            />
-          )}
+          <Grafik bc={bc} aktiv={aktiv} onWahl={setAktiv} kompakt={kompakt} />
         </div>
       )}
-      <Legende />
+      {gewaehlt && (
+        // Als Dialog, nicht als Spalte: Neben der Karte war fuer Belegkette,
+        // Vorschlaege und Interaktionen kein Platz — im Chat schon gar nicht.
+        <div
+          className="bc-dialog__overlay"
+          role="dialog"
+          aria-modal="true"
+          aria-label={`${gewaehlt.name} im Buying Center`}
+          onClick={(e) => { if (e.target === e.currentTarget) setAktiv(null); }}
+        >
+          <Seitenleiste
+            bc={bc}
+            m={gewaehlt}
+            interaktionen={interaktionen.data?.mitglieder.find((x) => x.mitgliedId === gewaehlt.id) ?? null}
+            interaktionenStand={interaktionen.isLoading ? "laedt" : interaktionen.data?.verfuegbar ? "da" : (interaktionen.data?.grund ?? "fehler")}
+            onSchliessen={() => setAktiv(null)}
+            onGeaendert={() => void qc.invalidateQueries({ queryKey: ["buying-center", id] })}
+          />
+        </div>
+      )}
+      <Legende offen={legende} onToggle={legendeUmschalten} />
     </div>
   );
 }
 
 // ---- Grafik ------------------------------------------------------------------
 
-function Grafik({ bc, aktiv, onWahl }: { bc: BuyingCenter; aktiv: string | null; onWahl: (id: string) => void }) {
-  const breite = 880;
-  const hoehe = 520;
+/**
+ * Leinwand je Personenzahl: 25 Personen brauchen mehr Flaeche als 6, sonst
+ * kleben Namen aneinander. Die Anfangsansicht passt sich ein (viewBox),
+ * danach kann man ziehen und zoomen — die Leinwandgroesse sieht man nicht.
+ */
+function leinwand(n: number): { breite: number; hoehe: number } {
+  const breite = Math.max(880, Math.round(Math.sqrt(Math.max(n, 1)) * 340));
+  return { breite, hoehe: Math.round(breite * 0.5) };
+}
+
+type Ansicht = { x: number; y: number; w: number; h: number };
+/** Weiteste Anfangsansicht in Leinwand-Einheiten (bei ~720 px Breite Massstab ≥ 0,6). */
+const ANSICHT_MAX = 1200;
+
+function Grafik({ bc, aktiv, onWahl, kompakt }: { bc: BuyingCenter; aktiv: string | null; onWahl: (id: string) => void; kompakt: boolean }) {
+  const { breite, hoehe } = useMemo(() => leinwand(bc.mitglieder.length), [bc.mitglieder.length]);
   const ids = useMemo(() => bc.mitglieder.map((m) => m.id), [bc.mitglieder]);
   const bekannt = useMemo(() => {
     const map = new Map<string, Punkt>();
@@ -185,7 +224,7 @@ function Grafik({ bc, aktiv, onWahl }: { bc: BuyingCenter; aktiv: string | null;
     return map;
   }, [bc.mitglieder]);
   const kanten = useMemo(() => bc.kanten.map((k) => ({ von: k.vonMitgliedId, nach: k.nachMitgliedId })), [bc.kanten]);
-  const berechnet = useMemo(() => kraftLayout(ids, kanten, breite, hoehe, bekannt), [ids, kanten, bekannt]);
+  const berechnet = useMemo(() => kraftLayout(ids, kanten, breite, hoehe, bekannt), [ids, kanten, bekannt, breite, hoehe]);
   const [pos, setPos] = useState<Map<string, Punkt>>(berechnet);
   useEffect(() => setPos(berechnet), [berechnet]);
 
@@ -194,60 +233,146 @@ function Grafik({ bc, aktiv, onWahl }: { bc: BuyingCenter; aktiv: string | null;
       gatewayFetch(`/v1/buying-center/${encodeURIComponent(bc.id)}/positionen`, { method: "PUT", body: { positionen } }),
   });
 
+  // ---- Ansicht: einpassen, zoomen, ziehen -----------------------------------
+  //
+  // Die viewBox ist die Kamera. "Einpassen" legt sie um alle Personen samt
+  // Beschriftung; Rad/Pinch zoomen um den Zeiger, Ziehen auf dem Hintergrund
+  // verschiebt. Das Rad zoomt nur, wenn die Karte den Fokus hat (Klick) oder
+  // Strg/Cmd gedrueckt ist — sonst frisst die Karte im Chat das Scrollen.
+  const einpassen = (p: Map<string, Punkt>): Ansicht => {
+    const werte = Array.from(p.values());
+    if (werte.length === 0) return { x: 0, y: 0, w: breite, h: hoehe };
+    const rand = 90;
+    const minX = Math.min(...werte.map((q) => q.x)) - rand;
+    const maxX = Math.max(...werte.map((q) => q.x)) + rand;
+    const minY = Math.min(...werte.map((q) => q.y)) - rand;
+    const maxY = Math.max(...werte.map((q) => q.y)) + rand + 20;
+    // Nie so weit heraus, dass die Namen unlesbar werden: hoechstens
+    // ANSICHT_MAX Einheiten breit, dann lieber mittig und zum Ziehen.
+    const w = Math.min(ANSICHT_MAX, Math.max(400, maxX - minX));
+    const h = Math.min(ANSICHT_MAX * 0.56, Math.max(240, maxY - minY));
+    return { x: (minX + maxX) / 2 - w / 2, y: (minY + maxY) / 2 - h / 2, w, h };
+  };
+  const [ansicht, setAnsicht] = useState<Ansicht>(() => einpassen(berechnet));
+  useEffect(() => setAnsicht(einpassen(berechnet)), [berechnet]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const svgRef = useRef<SVGSVGElement | null>(null);
-  const drag = useRef<{ id: string; bewegt: boolean } | null>(null);
-  const svgPunkt = (e: React.PointerEvent): Punkt => {
+  const ansichtRef = useRef(ansicht);
+  ansichtRef.current = ansicht;
+
+  const zoomen = (faktor: number, um?: Punkt) => {
+    setAnsicht((a) => {
+      const w = Math.min(breite * 3, Math.max(200, a.w * faktor));
+      const h = a.h * (w / a.w);
+      const ux = um ? um.x : a.x + a.w / 2;
+      const uy = um ? um.y : a.y + a.h / 2;
+      // Der Punkt unter dem Zeiger bleibt unter dem Zeiger.
+      const fx = (ux - a.x) / a.w, fy = (uy - a.y) / a.h;
+      return { x: ux - fx * w, y: uy - fy * h, w, h };
+    });
+  };
+
+  const svgPunkt = (clientX: number, clientY: number): Punkt => {
     const svg = svgRef.current;
     const m = svg?.getScreenCTM();
     if (!svg || !m) return { x: 0, y: 0 };
-    const p = new DOMPoint(e.clientX, e.clientY).matrixTransform(m.inverse());
+    const p = new DOMPoint(clientX, clientY).matrixTransform(m.inverse());
     return { x: p.x, y: p.y };
   };
+
+  useEffect(() => {
+    const svg = svgRef.current;
+    if (!svg) return;
+    // React haengt onWheel passiv an; preventDefault braucht den nativen Weg.
+    const aufRad = (e: WheelEvent) => {
+      const hatFokus = document.activeElement === svg;
+      if (!hatFokus && !e.ctrlKey && !e.metaKey) return;
+      e.preventDefault();
+      const faktor = Math.exp((e.ctrlKey || e.metaKey ? 0.01 : 0.002) * e.deltaY);
+      zoomen(faktor, svgPunkt(e.clientX, e.clientY));
+    };
+    svg.addEventListener("wheel", aufRad, { passive: false });
+    return () => svg.removeEventListener("wheel", aufRad);
+  }, [breite]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const drag = useRef<{ id: string; bewegt: boolean } | null>(null);
+  const pan = useRef<{ x: number; y: number; bewegt: boolean } | null>(null);
   const dragStart = (id: string) => (e: React.PointerEvent) => {
     if (e.button !== 0) return;
+    e.stopPropagation();
     drag.current = { id, bewegt: false };
     (e.currentTarget as Element).setPointerCapture?.(e.pointerId);
   };
-  const dragMove = (e: React.PointerEvent) => {
-    const d = drag.current;
-    if (!d) return;
-    const p = svgPunkt(e);
-    d.bewegt = true;
-    setPos((alt) => {
-      const neu = new Map(alt);
-      neu.set(d.id, { x: Math.min(breite - 80, Math.max(80, p.x)), y: Math.min(hoehe - 40, Math.max(40, p.y)) });
-      return neu;
-    });
+  const panStart = (e: React.PointerEvent) => {
+    if (e.button !== 0) return;
+    svgRef.current?.focus();
+    pan.current = { x: e.clientX, y: e.clientY, bewegt: false };
+    (e.currentTarget as Element).setPointerCapture?.(e.pointerId);
   };
-  const dragEnd = () => {
+  const move = (e: React.PointerEvent) => {
     const d = drag.current;
-    if (d?.bewegt) {
-      // Nur der Eigentuemer speichert. Beim Fremden bleibt das Verschieben
-      // eine Sache des Augenblicks.
-      if (bc.eigenes) {
-        const alle = Array.from(pos.entries()).map(([mitgliedId, p]) => ({ mitgliedId, x: Math.round(p.x), y: Math.round(p.y) }));
-        speichern.mutate(alle);
-      }
-      setTimeout(() => (drag.current = null), 0);
-    } else {
-      if (d) onWahl(d.id);
-      drag.current = null;
+    if (d) {
+      const p = svgPunkt(e.clientX, e.clientY);
+      d.bewegt = true;
+      setPos((alt) => {
+        const neu = new Map(alt);
+        neu.set(d.id, { x: Math.min(breite - 80, Math.max(80, p.x)), y: Math.min(hoehe - 40, Math.max(40, p.y)) });
+        return neu;
+      });
+      return;
     }
+    const q = pan.current;
+    if (q) {
+      const svg = svgRef.current;
+      if (!svg) return;
+      const massstab = ansichtRef.current.w / svg.clientWidth;
+      const dx = (e.clientX - q.x) * massstab, dy = (e.clientY - q.y) * massstab;
+      if (Math.abs(e.clientX - q.x) + Math.abs(e.clientY - q.y) > 2) q.bewegt = true;
+      q.x = e.clientX; q.y = e.clientY;
+      setAnsicht((a) => ({ ...a, x: a.x - dx, y: a.y - dy }));
+    }
+  };
+  const ende = () => {
+    const d = drag.current;
+    if (d) {
+      if (d.bewegt) {
+        // Nur der Eigentuemer speichert. Beim Fremden bleibt das Verschieben
+        // eine Sache des Augenblicks.
+        if (bc.eigenes) {
+          const alle = Array.from(pos.entries()).map(([mitgliedId, p]) => ({ mitgliedId, x: Math.round(p.x), y: Math.round(p.y) }));
+          speichern.mutate(alle);
+        }
+        setTimeout(() => (drag.current = null), 0);
+      } else {
+        onWahl(d.id);
+        drag.current = null;
+      }
+      return;
+    }
+    pan.current = null;
   };
 
   const zuruecksetzen = () => {
     const frisch = kraftLayout(ids, kanten, breite, hoehe);
     setPos(frisch);
+    setAnsicht(einpassen(frisch));
     if (bc.eigenes) speichern.mutate(Array.from(frisch.entries()).map(([mitgliedId, p]) => ({ mitgliedId, x: Math.round(p.x), y: Math.round(p.y) })));
   };
 
   const name = (mid: string) => bc.mitglieder.find((m) => m.id === mid)?.name ?? "";
 
   return (
-    <div className="bc-grafik">
-      <button type="button" className="btn small bc-grafik__reset" onClick={zuruecksetzen}>Anordnung zurücksetzen</button>
-      <svg ref={svgRef} viewBox={`0 0 ${breite} ${hoehe}`} width="100%" role="img" aria-label="Buying Center als Karte"
-        onPointerMove={dragMove} onPointerUp={dragEnd} onPointerCancel={dragEnd} style={{ touchAction: "none" }}>
+    <div className={`bc-grafik ${kompakt ? "bc-grafik--kompakt" : ""}`}>
+      <div className="bc-grafik__werkzeuge">
+        <button type="button" className="btn small" onClick={() => zoomen(0.8)} aria-label="Vergrößern" title="Vergrößern">+</button>
+        <button type="button" className="btn small" onClick={() => zoomen(1.25)} aria-label="Verkleinern" title="Verkleinern">−</button>
+        <button type="button" className="btn small" onClick={() => setAnsicht(einpassen(pos))} title="Alle Personen ins Bild">Einpassen</button>
+        <button type="button" className="btn small" onClick={zuruecksetzen} title="Personen neu anordnen">Neu anordnen</button>
+      </div>
+      <svg ref={svgRef} viewBox={`${ansicht.x} ${ansicht.y} ${ansicht.w} ${ansicht.h}`} preserveAspectRatio="xMidYMid meet"
+        role="img" aria-label="Buying Center als Karte — ziehen verschiebt, Rad zoomt" tabIndex={0}
+        onPointerDown={panStart} onPointerMove={move} onPointerUp={ende} onPointerCancel={ende}
+        style={{ touchAction: "none", cursor: pan.current ? "grabbing" : "grab" }}>
         <defs>
           <marker id="bc-pfeil" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
             <path d="M0 0 L10 5 L0 10 z" fill="var(--accent)" />
@@ -320,6 +445,11 @@ function Seitenleiste({ bc, m, onSchliessen, onGeaendert, interaktionen, interak
   // Organisation die Relevanz nicht abgeschaltet hat. Freie Mitglieder
   // (ohne personId) haben keine; das sagt die Leiste ehrlich.
   const relevanzErlaubt = useFeature("relevanz");
+  useEffect(() => {
+    const aufTaste = (e: KeyboardEvent) => { if (e.key === "Escape") onSchliessen(); };
+    window.addEventListener("keydown", aufTaste);
+    return () => window.removeEventListener("keydown", aufTaste);
+  }, [onSchliessen]);
   const antworten = useMutation({
     mutationFn: (p: { vorschlagId: string; entscheidung: "angenommen" | "verworfen" }) =>
       gatewayFetch(`/v1/buying-center/${encodeURIComponent(bc.id)}/mitglieder/${encodeURIComponent(m.id)}/angaben`, {
@@ -338,7 +468,7 @@ function Seitenleiste({ bc, m, onSchliessen, onGeaendert, interaktionen, interak
           {relevanzErlaubt && m.personId && <Waermeanzeige zielArt="person" zielId={m.personId} />}
           {!m.personId && <div className="muted small">Nicht mit dem Kontakt-Bestand verbunden — keine Personensignale. Im Chat: „verbinde … mit …".</div>}
         </div>
-        <button type="button" className="btn small" onClick={onSchliessen} aria-label="Seitenleiste schließen">Schließen</button>
+        <button type="button" className="btn small" onClick={onSchliessen} aria-label="Schließen">Schließen</button>
       </div>
 
       <h4>Einordnung</h4>
@@ -418,14 +548,39 @@ function Seitenleiste({ bc, m, onSchliessen, onGeaendert, interaktionen, interak
 
 // ---- Legende --------------------------------------------------------------------
 
-function Legende() {
+function Legende({ offen, onToggle }: { offen: boolean; onToggle: () => void }) {
+  // Jede Bedeutung wird gezeigt, nicht beschrieben: ein kleiner Knoten, eine
+  // kleine Linie — so wie sie auf der Karte aussehen.
+  const Muster = ({ children, w = 44 }: { children: React.ReactNode; w?: number }) => (
+    <svg width={w} height={26} viewBox={`0 0 ${w} 26`} aria-hidden="true" className="bc-legende__muster">{children}</svg>
+  );
+  const Knoten = ({ r = 9, rand, dash, fuell }: { r?: number; rand: string; dash?: string; fuell?: number }) => (
+    <>
+      {fuell !== undefined && fuell > 0 && (
+        <rect x={22 - r} y={13 + r - 2 * r * fuell} width={2 * r} height={2 * r * fuell} fill="var(--accent)" opacity={0.28} clipPath="inset(0 round 50%)" />
+      )}
+      <circle cx={22} cy={13} r={r} fill="none" stroke={rand} strokeWidth={2} strokeDasharray={dash} />
+    </>
+  );
   return (
-    <div className="bc-legende muted small">
-      <span><b>Größe</b> Einfluss</span>
-      <span><b>Rand</b> Einstellung (grün Coach · rot Feind · gestrichelt unbekannt)</span>
-      <span><b>Füllung</b> Kontaktintensität</span>
-      <span><b>Kürzel</b> Rollen</span>
-      <span><b>Pfeil</b> Einfluss · <b>Doppellinie</b> vertraut · <b>gestrichelt rot</b> Animosität</span>
+    <div className="bc-legende">
+      <button type="button" className="btn small bc-legende__knopf" onClick={onToggle} aria-expanded={offen}>
+        {offen ? "Legende ausblenden" : "Legende"}
+      </button>
+      {offen && (
+        <div className="bc-legende__raster muted small">
+          <span className="bc-legende__titel">Personen</span>
+          <span><Muster><circle cx={12} cy={13} r={5} fill="none" stroke="var(--muted)" strokeWidth={2} /><circle cx={32} cy={13} r={11} fill="none" stroke="var(--muted)" strokeWidth={2} /></Muster>Größe: Einfluss</span>
+          <span><Muster w={80}><circle cx={12} cy={13} r={8} fill="none" stroke="var(--color-emerald-500, #10b981)" strokeWidth={2} /><circle cx={40} cy={13} r={8} fill="none" stroke="var(--error, #ef4444)" strokeWidth={2} /><circle cx={68} cy={13} r={8} fill="none" stroke="var(--muted)" strokeWidth={2} strokeDasharray="4 3" /></Muster>Rand: Einstellung (Coach · Feind · unbekannt)</span>
+          <span><Muster><Knoten rand="var(--muted)" fuell={0.6} /></Muster>Füllung: Kontaktintensität</span>
+          <span><Muster><text x={22} y={16} textAnchor="middle" fontSize={10} fontWeight={700} fill="var(--accent)" letterSpacing="0.06em">E GK</text></Muster>Kürzel: Rollen</span>
+          <span><Muster><circle cx={30} cy={7} r={4} fill="var(--color-amber-500, #f59e0b)" /><circle cx={22} cy={14} r={8} fill="none" stroke="var(--muted)" strokeWidth={2} /></Muster>Punkt: offene Vorschläge</span>
+          <span className="bc-legende__titel">Beziehungen</span>
+          <span><Muster><line x1={4} y1={13} x2={36} y2={13} stroke="var(--accent)" strokeWidth={2.2} markerEnd="url(#bc-pfeil)" /></Muster>Einfluss</span>
+          <span><Muster><line x1={4} y1={13} x2={40} y2={13} stroke="var(--muted)" strokeWidth={5} opacity={0.35} /><line x1={4} y1={13} x2={40} y2={13} stroke="var(--panel-bg, #111)" strokeWidth={1.5} /></Muster>vertraut</span>
+          <span><Muster><line x1={4} y1={13} x2={40} y2={13} stroke="var(--error, #ef4444)" strokeWidth={2} strokeDasharray="6 5" /></Muster>Animosität</span>
+        </div>
+      )}
     </div>
   );
 }
