@@ -400,7 +400,7 @@ function Grafik({ bc, aktiv, onWahl, kompakt }: { bc: BuyingCenter; aktiv: strin
           if (k.art === "VERTRAUT") {
             return <g key={k.id}><title>{titel}</title>
               <line x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke="var(--muted)" strokeWidth={5} opacity={0.35} />
-              <line x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke="var(--panel-bg, #111)" strokeWidth={1.5} /></g>;
+              <line x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke="var(--color-bg-1, var(--bg))" strokeWidth={1.5} /></g>;
           }
           return <line key={k.id} x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke="var(--error, #ef4444)" strokeWidth={2} strokeDasharray="6 5"><title>{titel}</title></line>;
         })}
@@ -416,7 +416,7 @@ function Grafik({ bc, aktiv, onWahl, kompakt }: { bc: BuyingCenter; aktiv: strin
               <title>{`${m.name}${m.funktion ? ` · ${m.funktion}` : ""}\nRolle: ${m.rollen.length ? m.rollen.map((x) => ROLLE_TEXT[x] ?? x).join(", ") : "?"}\nEinstellung: ${wertText("einstellung", m.einstellung)}\nKontakt: ${wertText("kontakt", m.kontakt)}\nEinfluss: ${wertText("einfluss", m.einfluss)}`}</title>
               {/* Fuellung = Kontaktintensitaet: eine Scheibe, die von unten volllaeuft. */}
               <clipPath id={`bc-clip-${m.id}`}><circle r={r} /></clipPath>
-              <circle r={r} fill="var(--panel-bg, #1b2230)" />
+              <circle r={r} fill="var(--color-bg-1, var(--bg))" />
               {f > 0 && <rect x={-r} y={r - 2 * r * f} width={2 * r} height={2 * r * f} fill="var(--accent)" opacity={0.28} clipPath={`url(#bc-clip-${m.id})`} />}
               <circle r={r} fill="none" stroke={randFarbe(m.einstellung)} strokeWidth={istAktiv ? 4 : m.einstellung ? 3 : 2}
                 strokeDasharray={m.einstellung ? undefined : "4 3"} opacity={m.einfluss ? 1 : 0.8} />
@@ -583,7 +583,7 @@ function Legende({ offen, onToggle }: { offen: boolean; onToggle: () => void }) 
           <span><Muster><circle cx={30} cy={7} r={4} fill="var(--color-amber-500, #f59e0b)" /><circle cx={22} cy={14} r={8} fill="none" stroke="var(--muted)" strokeWidth={2} /></Muster>Punkt: offene Vorschläge</span>
           <span className="bc-legende__titel">Beziehungen</span>
           <span><Muster><line x1={4} y1={13} x2={36} y2={13} stroke="var(--accent)" strokeWidth={2.2} markerEnd="url(#bc-pfeil)" /></Muster>Einfluss</span>
-          <span><Muster><line x1={4} y1={13} x2={40} y2={13} stroke="var(--muted)" strokeWidth={5} opacity={0.35} /><line x1={4} y1={13} x2={40} y2={13} stroke="var(--panel-bg, #111)" strokeWidth={1.5} /></Muster>vertraut</span>
+          <span><Muster><line x1={4} y1={13} x2={40} y2={13} stroke="var(--muted)" strokeWidth={5} opacity={0.35} /><line x1={4} y1={13} x2={40} y2={13} stroke="var(--color-bg-1, var(--bg))" strokeWidth={1.5} /></Muster>vertraut</span>
           <span><Muster><line x1={4} y1={13} x2={40} y2={13} stroke="var(--error, #ef4444)" strokeWidth={2} strokeDasharray="6 5" /></Muster>Animosität</span>
         </div>
       )}
