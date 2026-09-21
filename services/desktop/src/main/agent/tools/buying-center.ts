@@ -174,7 +174,7 @@ export function buildBuyingCenterTools(deps: BuyingCenterToolDeps): Tool[] {
   const setzen = defineTool({
     name: "buying_center_setzen",
     description:
-      "Traegt ein, was der Nutzer ueber eine Person im Buying Center weiss: rolle (E Entscheider, B Beeinflusser, N Nutzer, R Ratifizierer, S Spezifizierer, EK Einkaeufer, GK Gatekeeper; '-B' nimmt eine Rolle weg), einstellung (C Coach, + positiv, = neutral, - negativ, F Feind), kontakt (0 keiner, S selten, R regelmaessig, I intensiv), einfluss (G gering, M mittel, H hoch), oder notiz. Der GRUND ist Pflicht und soll SACHLICH das wiedergeben, was der Nutzer gesagt hat ('hat im Termin gesagt, dass …'), keine Charakterurteile. Alternativ einen offenen AVA-Vorschlag beantworten (vorschlagId + entscheidung). Nicht nachfragen — der Nutzer hat es gerade gesagt.",
+      "Traegt ein, was der Nutzer ueber eine Person im Buying Center weiss: rolle (E Entscheider, B Beeinflusser, N Nutzer, R Ratifizierer, S Spezifizierer, EK Einkaeufer, GK Gatekeeper; '-B' nimmt eine Rolle weg), einstellung (C Coach, + positiv, = neutral, - negativ, F Feind), kontakt (0 keiner, S selten, R regelmaessig, I intensiv), einfluss (G gering, M mittel, H hoch), oder notiz. Der GRUND ist Pflicht und soll SACHLICH das wiedergeben, was der Nutzer gesagt hat ('hat im Termin gesagt, dass …'), keine Charakterurteile. Alternativ einen offenen AVA-Vorschlag beantworten (vorschlagId + entscheidung). Nicht nachfragen — der Nutzer hat es gerade gesagt. Nennt der Nutzer dabei, WEN die Person beeinflusst, zusaetzlich buying_center_kante je Paar.",
     parameters: {
       type: "object",
       properties: {
@@ -233,7 +233,7 @@ export function buildBuyingCenterTools(deps: BuyingCenterToolDeps): Tool[] {
   const kante = defineTool({
     name: "buying_center_kante",
     description:
-      "Traegt eine Beziehung zwischen zwei Personen ein: EINFLUSS ('der IT-Leiter hat beim GF das letzte Wort' → von IT-Leiter nach GF, staerke H), VERTRAUT ('die beiden sind eng'), ANIMOSITAET ('die koennen nicht miteinander'). Ersetzt eine bestehende Beziehung derselben Art zwischen denselben Personen.",
+      "Traegt eine Beziehung zwischen zwei Personen ein: EINFLUSS ('der IT-Leiter hat beim GF das letzte Wort' → von IT-Leiter nach GF, staerke H), VERTRAUT ('die beiden sind eng'), ANIMOSITAET ('die koennen nicht miteinander'). Ersetzt eine bestehende Beziehung derselben Art zwischen denselben Personen. IMMER sofort aufrufen, wenn der Nutzer sagt, dass jemand auf jemanden einwirkt ('A beeinflusst B, C und D' → drei Aufrufe) — nicht nur die Rolle 'Beeinflusser' setzen.",
     parameters: {
       type: "object",
       properties: {
