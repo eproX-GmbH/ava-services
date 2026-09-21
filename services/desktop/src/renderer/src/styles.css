@@ -3228,7 +3228,9 @@ a.heartbeat-decision__company:hover {
 .bc-grafik__werkzeuge .btn, .bc-legende__knopf { min-height: 26px; padding: 2px 9px; font-size: 12px; line-height: 1.2; min-width: 26px; justify-content: center; }
 /* Feste Hoehe: Die viewBox ist die Kamera, nicht die Leinwand — die Karte
    darf beim Zoomen nicht mitwachsen. Im Chat etwas niedriger. */
-.bc-grafik svg { width: 100%; height: 480px; background: var(--panel-bg, transparent); border-radius: 8px; display: block; outline: none; }
+/* user-select: none — beim Ziehen der Karte darf kein Name markiert werden. */
+.bc-grafik svg { width: 100%; height: 480px; background: var(--panel-bg, transparent); border-radius: 8px; display: block; outline: none; user-select: none; -webkit-user-select: none; }
+.bc-grafik svg text { pointer-events: none; }
 .bc-grafik svg:focus-visible { box-shadow: inset 0 0 0 2px var(--accent); }
 .bc-grafik--kompakt svg { height: 400px; }
 .bc-platzhalter { padding: 1rem; color: var(--muted); }

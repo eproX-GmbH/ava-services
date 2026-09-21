@@ -305,6 +305,8 @@ function Grafik({ bc, aktiv, onWahl, kompakt }: { bc: BuyingCenter; aktiv: strin
   };
   const panStart = (e: React.PointerEvent) => {
     if (e.button !== 0) return;
+    // Sonst beginnt der Browser beim Ziehen eine Textauswahl ueber die Karte hinaus.
+    e.preventDefault();
     svgRef.current?.focus();
     pan.current = { x: e.clientX, y: e.clientY, bewegt: false };
     (e.currentTarget as Element).setPointerCapture?.(e.pointerId);
