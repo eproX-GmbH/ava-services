@@ -3281,6 +3281,24 @@ a.heartbeat-decision__company:hover {
 .bc-verlauf__liste li { display: grid; grid-template-columns: 7.5rem 6.5rem 1fr; gap: 0.5rem; align-items: baseline; }
 .bc-verlauf__art { font-weight: 600; }
 @media (max-width: 600px) { .bc-verlauf__liste li { grid-template-columns: 1fr; gap: 0.1rem; } }
+/* LinkedIn: Watchlist- und Radar-Reiter (2026-09-21). Ein Kasten, drei
+   Bloecke mit kleinen Ueberschriften, Seltenes zugeklappt. */
+.wl { padding: 1rem 1.25rem; margin-top: 0.25rem; }
+.wl__stand { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem 0.6rem; }
+.wl__stand-trenner { width: 1px; height: 1rem; background: var(--border); margin: 0 0.25rem; }
+.wl__hinweis { margin: 0.75rem 0 0; padding: 0.55rem 0.75rem; border-radius: 8px; background: rgba(245, 158, 11, 0.12); font-size: 13px; }
+.wl__titel { margin: 1.25rem 0 0.5rem; font-size: 12px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
+.wl__aufnahme { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; }
+.wl__aufnahme .telegram-input { flex: 1 1 260px; }
+.wl__aufnahme .wl__aufnahme-name { flex: 0 1 180px; }
+.wl__tabelle { margin-top: 0.5rem; }
+.wl__zeile { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 0.9rem; }
+.wl__zeile .telegram-input { flex: 1 1 220px; }
+.wl__erweitert { margin-top: 1.25rem; }
+.wl__erweitert summary { cursor: pointer; }
+.wl__erweitert > label, .wl__erweitert > .wl__zeile { margin-top: 0.6rem; }
+.wl__eingerueckt { margin-left: 1.5rem; }
+.wl__datenschutz { margin-top: 1.25rem; padding-top: 0.75rem; border-top: 1px solid var(--border); }
 .bc-legende { display: flex; flex-direction: column; gap: 0.5rem; align-items: flex-start; }
 .bc-legende__raster { display: grid; grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr)); gap: 0.35rem 1rem; width: 100%; font-size: 12px; }
 .bc-legende__raster > span { display: flex; align-items: center; gap: 0.5rem; min-height: 26px; }

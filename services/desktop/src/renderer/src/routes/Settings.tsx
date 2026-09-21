@@ -258,6 +258,7 @@ export const SETTINGS_ANCHOR_TO_TAB: Record<string, SettingsTabId> = {
   "linkedin-image-analysis": "datenquellen",
   "crm-connections":         "datenquellen",
   "mail-account-section":    "datenquellen",
+  "apify-section":           "datenquellen",
   "verbrauch-limit":         "verbrauch",
   "telegram-section":        "automatisierungen",
   "danger-zone":             "system",

@@ -348,6 +348,34 @@ export function LinkedIn() {
   const watchlistErlaubt = useFeature("linkedin.watchlist");
   const radarErlaubt = useFeature("linkedin.radar");
 
+  // 2026-09-21 — Drei Themen, drei Reiter. Vorher standen Watchlist,
+  // Personen-Radar und der Signal-Feed untereinander auf einer Seite, und
+  // die eigentlichen Signale kamen erst nach zwei Bildschirmen Einstellungen.
+  // Gesperrte Themen erscheinen gar nicht (kein ausgegrauter Reiter).
+  const reiter = useMemo(
+    () =>
+      [
+        beobachterErlaubt && { key: "signale" as const, label: "Signale", lede: "Was sich in den Beiträgen aus deinem LinkedIn-Feed zu deinen Zielfirmen tut — Stärke, Art und gematchte Firmen aus deinem Bestand." },
+        watchlistErlaubt && { key: "watchlist" as const, label: "Personen-Watchlist", lede: "Öffentliche LinkedIn-Aktivität deiner Ansprechpartner beobachten und relevante Signale melden." },
+        radarErlaubt && { key: "radar" as const, label: "Personen-Radar", lede: "Wer auf beobachtete Posts reagiert, zeigt Interesse — AVA löst diese Personen zu Firmen auf und legt Kandidaten ins Firmen-Radar." },
+      ].filter((r): r is Exclude<typeof r, false> => Boolean(r)),
+    [beobachterErlaubt, watchlistErlaubt, radarErlaubt],
+  );
+  type ReiterKey = "signale" | "watchlist" | "radar";
+  const [tab, setTab] = useState<ReiterKey>(() => {
+    try {
+      const v = localStorage.getItem("linkedin-tab");
+      if (v === "signale" || v === "watchlist" || v === "radar") return v;
+    } catch { /* ohne Speicher: erster Reiter */ }
+    return "signale";
+  });
+  // Ein gesperrter oder nicht mehr vorhandener Reiter faellt auf den ersten zurueck.
+  const aktiverReiter = reiter.find((r) => r.key === tab) ?? reiter[0];
+  const waehle = (key: ReiterKey) => {
+    setTab(key);
+    try { localStorage.setItem("linkedin-tab", key); } catch { /* egal */ }
+  };
+
   return (
     <section className="page" style={{ paddingBottom: "2rem" }}>
       <header className="ct-page-header">
@@ -355,19 +383,25 @@ export function LinkedIn() {
           <Activity className="ct-icon-sm" aria-hidden="true" /> Portfolio
         </p>
         <h2 className="ct-page-header__title">
-          <span className="ct-gradient-text">LinkedIn-Signale</span>
+          <span className="ct-gradient-text">LinkedIn</span>
         </h2>
-        <p className="ct-page-header__lede">
-          Was sich in den Beiträgen aus deinem LinkedIn-Feed zu deinen
-          Zielfirmen tut. Stärke, Art und gematchte Firmen aus deinem
-          Stammdaten-Bestand.
-        </p>
+        <p className="ct-page-header__lede">{aktiverReiter?.lede}</p>
       </header>
 
-      {watchlistErlaubt && <WatchlistPanel />}
-      {radarErlaubt && <PersonenRadarPanel />}
+      {reiter.length > 1 && (
+        <nav className="tabs" aria-label="LinkedIn-Bereiche">
+          {reiter.map((r) => (
+            <button key={r.key} type="button" className={`tab ${aktiverReiter?.key === r.key ? "active" : ""}`} onClick={() => waehle(r.key)}>
+              {r.label}
+            </button>
+          ))}
+        </nav>
+      )}
 
-      {beobachterErlaubt && (<>
+      {aktiverReiter?.key === "watchlist" && <WatchlistPanel />}
+      {aktiverReiter?.key === "radar" && <PersonenRadarPanel />}
+
+      {aktiverReiter?.key === "signale" && (<>
       {!settingsQuery.isLoading && !enabled && (
         <div
           className="ct-card"

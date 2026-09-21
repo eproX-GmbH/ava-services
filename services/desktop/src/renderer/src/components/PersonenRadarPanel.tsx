@@ -64,30 +64,26 @@ export function PersonenRadarPanel(): JSX.Element {
   const cfg = state.config!;
 
   return (
-    <div className="ct-card" style={{ padding: "1rem", marginTop: "1.5rem" }}>
-      <h3 style={{ marginTop: 0 }}>Personen-Radar (Engagement)</h3>
-      <p className="muted" style={{ fontSize: 13 }}>
-        Wer auf beobachtete LinkedIn-Posts reagiert oder kommentiert, hat
-        Interesse am Thema gezeigt. AVA löst diese Personen (budgetiert) zu
-        ihrer Firma auf — über die Berufserfahrung und die Website der
-        Unternehmensseite, nie geraten — und legt passende Firmen als
-        Kandidaten in dein <Link to="/radar">Firmen-Radar</Link>, samt
-        Auslöser-Person. Kosten: ~1 Cent pro aufgelöster Person (dein
-        Apify-Guthaben).
+    <div className="ct-card wl">
+      <p className="muted small">
+        AVA löst reagierende Personen zu ihrer Firma auf — über Berufserfahrung und
+        Unternehmensseite, nie geraten — und legt passende Firmen samt Auslöser-Person als
+        Kandidaten in dein <Link to="/radar">Firmen-Radar</Link>. Kosten: ~1 Cent je aufgelöster
+        Person (dein Apify-Guthaben).
       </p>
 
       {!(state.apifyVerfuegbar ?? state.hasKey) ? (
-        <p className="muted">
-          Erst den Apify-Zugang in der Personen-Watchlist oben hinterlegen
-          (eigener Token oder Organisationsschlüssel) — der Personen-Radar
-          nutzt denselben Zugang.
+        <p className="wl__hinweis">
+          Ohne Apify-Zugang läuft der Personen-Radar nicht. Hinterlege einen Token unter{" "}
+          <Link to="/settings#apify-section" className="link">Einstellungen → Datenquellen</Link>
+          {" "}— der Radar nutzt denselben Zugang wie die Watchlist.
         </p>
       ) : (
         <>
+          <h4 className="wl__titel">Beobachtete Posts</h4>
           <label className="field" style={{ display: "block" }}>
-            <span className="muted" style={{ fontSize: 12 }}>
-              Beobachtete Posts (eine URL pro Zeile — z. B. deine eigenen
-              Posts oder relevante Branchen-Posts):
+            <span className="muted small">
+              Eine URL je Zeile — z. B. deine eigenen Posts oder relevante Branchen-Posts.
             </span>
             <textarea
               className="telegram-input"
@@ -109,7 +105,8 @@ export function PersonenRadarPanel(): JSX.Element {
             />
           </label>
 
-          <div className="telegram-row">
+          <h4 className="wl__titel">Automatik</h4>
+          <div className="wl__zeile">
             <label className="field-inline">
               <input
                 type="checkbox"
@@ -123,7 +120,7 @@ export function PersonenRadarPanel(): JSX.Element {
                   )
                 }
               />
-              <span>Automatik</span>
+              <span>Regelmäßig prüfen</span>
             </label>
             <select
               value={cfg.intervalHours}
@@ -140,7 +137,7 @@ export function PersonenRadarPanel(): JSX.Element {
               <option value={24}>täglich</option>
             </select>
             <label className="field-inline" title="Personen-Auflösungen je Lauf — der teuerste Schritt (~1 Cent/Person)">
-              <span className="muted" style={{ fontSize: 12 }}>Auflösungen/Lauf:</span>
+              <span className="muted small">Auflösungen je Lauf</span>
               <input
                 type="number"
                 min={1}
@@ -159,7 +156,7 @@ export function PersonenRadarPanel(): JSX.Element {
             </label>
             <button
               type="button"
-              className="proc-toggle"
+              className="btn"
               disabled={busy || state.running || cfg.postUrls.length === 0}
               onClick={() => void run(() => window.api.linkedin.personenRadar.runNow())}
             >

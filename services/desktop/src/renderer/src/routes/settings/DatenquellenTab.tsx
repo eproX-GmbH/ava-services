@@ -14,13 +14,17 @@ export function DatenquellenTab() {
   const linkedin = useFeature("linkedin.beobachter");
   const mail = useFeature("mail");
   const kontakte = useFeature("kontakte");
+  // Apify braucht auch, wer nur Watchlist oder Personen-Radar nutzt —
+  // seit 2026-09-21 wird der Token NUR noch hier gesetzt.
+  const watchlist = useFeature("linkedin.watchlist");
+  const radar = useFeature("linkedin.radar");
   return (
     <>
       {linkedin && <LinkedInSection />}
       {/* Apify gehoert zu "wo kommen Daten her": es liefert die
           Ansprechpartner. Der Token war bisher nur im LinkedIn-Bereich
           setzbar und dort nicht zu finden. */}
-      {kontakte && <ApifySection />}
+      {(kontakte || watchlist || radar) && <ApifySection />}
       <CrmSection />
       {mail && <MailAccountSection />}
     </>
