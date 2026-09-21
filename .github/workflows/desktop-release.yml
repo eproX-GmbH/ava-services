@@ -262,6 +262,25 @@ jobs:
       # so electron-builder's asar packer has something to bundle.
       # electron-builder itself doesn't trigger this — it's a
       # separate vite-driven step.
+      # 2026-09-21 — Electron-Archiv VORAB mit Wiederholungen in den
+      # @electron/get-Cache legen. electron-builder laedt es sonst ohne
+      # Retry; bei v0.1.714 brach der x64-Job dreimal mit "Response code 504
+      # (Gateway Time-out)" von GitHub ab. Cache-Pfad wie @electron/get:
+      # ~/Library/Caches/electron/<sha256 des Release-Verzeichnisses>/<Datei>.
+      - name: Electron-Archiv vorab laden (darwin-arm64, mit Wiederholung)
+        working-directory: services/desktop
+        shell: bash
+        run: |
+          EV=$(sed -n 's/^electronVersion: *"\{0,1\}\([0-9.]*\)"\{0,1\}.*/\1/p' electron-builder.yml)
+          BASE="https://github.com/electron/electron/releases/download/v$EV"
+          DIR="$HOME/Library/Caches/electron/$(printf '%s' "$BASE" | shasum -a 256 | cut -c1-64)"
+          mkdir -p "$DIR"
+          for f in "electron-v$EV-darwin-arm64.zip" "SHASUMS256.txt"; do
+            curl -fL --retry 10 --retry-delay 15 --retry-all-errors --max-time 900 -o "$DIR/$f" "$BASE/$f"
+          done
+          grep "electron-v$EV-darwin-arm64.zip" "$DIR/SHASUMS256.txt" | sed "s#electron-v#$DIR/electron-v#" | shasum -a 256 -c -
+          ls -la "$DIR"
+
       - name: Build renderer + main bundles
         working-directory: services/desktop
         run: pnpm build
@@ -654,6 +673,25 @@ jobs:
           # oben deckt alle verbliebenen .node-Module ab.
           [ "$bad" = 0 ] && echo "OK: $n vendored .node-Module geprueft, alle enthalten x86_64"
           exit $bad
+
+      # 2026-09-21 — Electron-Archiv VORAB mit Wiederholungen in den
+      # @electron/get-Cache legen. electron-builder laedt es sonst ohne
+      # Retry; bei v0.1.714 brach der x64-Job dreimal mit "Response code 504
+      # (Gateway Time-out)" von GitHub ab. Cache-Pfad wie @electron/get:
+      # ~/Library/Caches/electron/<sha256 des Release-Verzeichnisses>/<Datei>.
+      - name: Electron-Archiv vorab laden (darwin-x64, mit Wiederholung)
+        working-directory: services/desktop
+        shell: bash
+        run: |
+          EV=$(sed -n 's/^electronVersion: *"\{0,1\}\([0-9.]*\)"\{0,1\}.*/\1/p' electron-builder.yml)
+          BASE="https://github.com/electron/electron/releases/download/v$EV"
+          DIR="$HOME/Library/Caches/electron/$(printf '%s' "$BASE" | shasum -a 256 | cut -c1-64)"
+          mkdir -p "$DIR"
+          for f in "electron-v$EV-darwin-x64.zip" "SHASUMS256.txt"; do
+            curl -fL --retry 10 --retry-delay 15 --retry-all-errors --max-time 900 -o "$DIR/$f" "$BASE/$f"
+          done
+          grep "electron-v$EV-darwin-x64.zip" "$DIR/SHASUMS256.txt" | sed "s#electron-v#$DIR/electron-v#" | shasum -a 256 -c -
+          ls -la "$DIR"
 
       - name: Build renderer + main bundles
         working-directory: services/desktop
