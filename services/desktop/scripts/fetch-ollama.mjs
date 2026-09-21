@@ -47,7 +47,9 @@ import { pipeline } from "node:stream/promises";
 // 0.30.0 mit; Bestandsinstallationen bekommen das ohnehin über den
 // In-App-Updater angeboten (latest-Lookup). Asset-Layout (Ollama-darwin.zip
 // mit Ollama.app/Contents/Resources/ollama) ist unverändert — geprüft.
-const VERSION = process.env.OLLAMA_VERSION ?? "v0.30.0";
+// 2026-09-21 — v0.34.2 (mit dem Electron-44-Umstieg). Asset-Layout fuer
+// macOS und Windows unveraendert; Linux liegt jetzt als .tar.zst vor.
+const VERSION = process.env.OLLAMA_VERSION ?? "v0.34.2";
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const RESOURCES_ROOT = resolve(__dirname, "..", "resources", "ollama");
 
@@ -64,7 +66,8 @@ const TARGETS = [
   },
   {
     id: "linux-x64",
-    asset: `ollama-linux-amd64.tgz`,
+    // Seit v0.5+ als .tar.zst (v0.34: kein .tgz mehr im Release).
+    asset: `ollama-linux-amd64.tar.zst`,
     extract: extractLinuxTgz,
   },
   {
@@ -179,7 +182,9 @@ async function extractMacApp(archive, outDir, exeName, targetId) {
 }
 
 async function extractLinuxTgz(archive, outDir, exeName) {
-  await runCmd("tar", ["-xzf", archive, "-C", outDir]);
+  // .tar.zst — GNU tar erkennt die Kompression an der Endung; ausdruecklich
+  // angeben, damit es auch mit aelterem tar klappt (braucht `zstd` im PATH).
+  await runCmd("tar", ["--zstd", "-xf", archive, "-C", outDir]);
   const inner = join(outDir, "bin", "ollama");
   if (!existsSync(inner)) {
     throw new Error(`expected ${inner} after tar — release layout changed?`);

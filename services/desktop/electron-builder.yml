@@ -5,7 +5,7 @@ appId: com.ava.desktop
 # install on CI (`--filter "@ava/desktop..."`) electron is hoisted
 # to the workspace root and the lookup from services/desktop fails.
 # Setting it explicitly here removes the ambiguity entirely.
-electronVersion: "31.7.7"
+electronVersion: "44.4.3"
 # Display name everywhere the OS surfaces it: macOS Dock + Applications,
 # Windows Start menu + uninstall list, Linux menu, the .dmg / .exe
 # installer titles. Bundle id stays `com.ava.desktop` so existing
