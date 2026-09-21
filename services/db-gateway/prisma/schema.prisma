@@ -923,6 +923,8 @@ model BuyingCenter {
   updatedAt          DateTime               @updatedAt
   /// BC5 — wann AVA zuletzt gefragt hat, ob das Buying Center noch stimmt.
   nachgefragtAt      DateTime?
+  /// Auto-Modus: offene AVA-Vorschlaege werden sofort uebernommen (Opt-in).
+  automatik          Boolean                @default(false)
   mitglieder         BuyingCenterMitglied[]
   kanten             BuyingCenterKante[]
   freigaben          BuyingCenterFreigabe[]

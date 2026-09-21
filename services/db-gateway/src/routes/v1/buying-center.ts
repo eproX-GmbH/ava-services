@@ -13,6 +13,8 @@
 //   POST   /buying-center/{id}/mitglieder/{mid}/verknuepfen   freies Mitglied an eine Bestandsperson binden (BC5)
 //   POST   /buying-center/{id}/nachgefragt      monatliche Nachfrage vermerken (BC5)
 //   GET    /buying-center/{id}/verlauf          Protokoll der Laeufe (Eigentuemer oder Freigabe)
+//   POST   /buying-center/{id}/automatik        Auto-Modus an/aus; an = alle offenen Vorschlaege sofort uebernehmen
+//   POST   /buying-center/{id}/recherche        Recherche jetzt: Website-Abgleich (+ Auto-Modus), protokolliert
 //   POST   /buying-center/{id}/verlauf          Lauf vom Desktop protokollieren (CRM-Abgleich, Watchlist)
 //   GET    /buying-center/{id}/freigaben        wer ansehen darf (BC7, nur Eigentuemer)
 //   POST   /buying-center/{id}/freigaben        Sicht erteilen {actorId} (BC7)
@@ -73,7 +75,7 @@ function cuid(): string {
 }
 
 /** Arten der protokollierten Laeufe — der Desktop darf nur seine eigenen melden. */
-const LAUF_ARTEN = ["entwurf", "crm-abgleich", "website-abgleich", "nachfrage", "watchlist", "verknuepfung", "status", "freigabe"] as const;
+const LAUF_ARTEN = ["entwurf", "crm-abgleich", "website-abgleich", "nachfrage", "watchlist", "verknuepfung", "status", "freigabe", "automatik", "recherche"] as const;
 const DESKTOP_LAUF_ARTEN = ["crm-abgleich", "watchlist"] as const;
 
 /**
@@ -95,6 +97,7 @@ interface BcKopf {
   id: string; tenantId: string; eigentuemerActorId: string; companyId: string;
   anlass: string; status: string; angelegtAt: Date; updatedAt: Date;
   nachgefragtAt: Date | null;
+  automatik: boolean;
 }
 
 /** Laedt den Kopf und prueft: Eigentuemer, oder (bei lesend) Freigabe. */
@@ -135,6 +138,7 @@ const BuyingCenterShape = z.object({
   id: z.string(), companyId: z.string(), anlass: z.string(), status: z.string(),
   eigenes: z.boolean(), eigentuemerActorId: z.string(),
   angelegtAt: z.string(), updatedAt: z.string(), nachgefragtAt: z.string().nullable(),
+  automatik: z.boolean(),
   mitglieder: z.array(MitgliedShape), kanten: z.array(KanteShape),
 });
 
@@ -185,6 +189,7 @@ async function ladeVoll(bc: BcKopf & { eigenes: boolean }): Promise<z.infer<type
     eigentuemerActorId: bc.eigentuemerActorId,
     angelegtAt: bc.angelegtAt.toISOString(), updatedAt: bc.updatedAt.toISOString(),
     nachgefragtAt: bc.nachgefragtAt ? bc.nachgefragtAt.toISOString() : null,
+    automatik: bc.automatik === true,
     mitglieder: (m.rows as Record<string, unknown>[]).map((r) => ({
       id: String(r.id), personId: (r.personId as string | null) ?? null, name: String(r.name),
       funktion: (r.funktion as string | null) ?? null, rollen: (r.rollen as string[]) ?? [],
@@ -376,6 +381,7 @@ buyingCenterRouter.openapi(listeRoute, async (c) => {
       id: b.id, companyId: b.companyId, anlass: b.anlass, status: b.status, eigenes: true,
       eigentuemerActorId: b.eigentuemerActorId, angelegtAt: b.angelegtAt.toISOString(), updatedAt: b.updatedAt.toISOString(),
       nachgefragtAt: b.nachgefragtAt ? b.nachgefragtAt.toISOString() : null,
+      automatik: b.automatik === true,
       mitglieder: b.anzahl,
     })),
   }, 200);
@@ -625,7 +631,42 @@ async function vorschlagAblegen(p: { mitgliedId: string; dimension: string; wert
   if (verworfen.rowCount) return { abgelegt: false, grund: "bereits verworfen" };
 
   await angabeSetzen({ mitgliedId: p.mitgliedId, dimension: p.dimension, wert: p.wert, herkunft: p.herkunft, grund: p.grund, vonActorId: null, uebernehmen: false });
+
+  // Auto-Modus: nicht warten lassen, sondern gleich uebernehmen.
+  const auto = await pool.query<{ automatik: boolean; eigentuemerActorId: string }>(
+    `SELECT b."automatik", b."eigentuemerActorId" FROM "BuyingCenterMitglied" m JOIN "BuyingCenter" b ON b."id" = m."buyingCenterId" WHERE m."id" = $1`,
+    [p.mitgliedId],
+  );
+  if (auto.rows[0]?.automatik) {
+    const neu = await pool.query<{ id: string }>(
+      `SELECT "id" FROM "BuyingCenterAngabe" WHERE "mitgliedId" = $1 AND "dimension" = $2 AND "wert" = $3 AND "herkunft" = $4 AND "entschieden" IS NULL ORDER BY "erfasstAt" DESC LIMIT 1`,
+      [p.mitgliedId, p.dimension, p.wert, p.herkunft],
+    );
+    if (neu.rows[0]) await vorschlagUebernehmen({ id: neu.rows[0].id, mitgliedId: p.mitgliedId, dimension: p.dimension, wert: p.wert, grund: p.grund }, auto.rows[0].eigentuemerActorId);
+  }
   return { abgelegt: true };
+}
+
+/** Einen offenen Vorschlag annehmen, wie es der Nutzer per Klick taete — nur mit dem Vermerk "automatisch". */
+async function vorschlagUebernehmen(v: { id: string; mitgliedId: string; dimension: string; wert: string | null; grund: string }, actorId: string): Promise<void> {
+  const pool = getGatewayPool();
+  await pool.query(`UPDATE "BuyingCenterAngabe" SET "entschieden" = 'angenommen' WHERE "id" = $1 AND "entschieden" IS NULL`, [v.id]);
+  await angabeSetzen({ mitgliedId: v.mitgliedId, dimension: v.dimension, wert: v.wert, herkunft: "nutzer", grund: `Automatisch übernommen (Auto-Modus): ${v.grund}`, vonActorId: actorId, uebernehmen: true });
+}
+
+/** Alle offenen AVA-Vorschlaege eines Buying Centers uebernehmen; liefert die Anzahl. */
+async function offeneUebernehmen(bcId: string, actorId: string): Promise<number> {
+  const pool = getGatewayPool();
+  const offen = await pool.query<{ id: string; mitgliedId: string; dimension: string; wert: string | null; grund: string }>(
+    `SELECT a."id", a."mitgliedId", a."dimension", a."wert", a."grund"
+       FROM "BuyingCenterAngabe" a JOIN "BuyingCenterMitglied" m ON m."id" = a."mitgliedId"
+      WHERE m."buyingCenterId" = $1 AND a."herkunft" LIKE 'ava:%' AND a."entschieden" IS NULL
+      ORDER BY a."erfasstAt"`,
+    [bcId],
+  );
+  for (const v of offen.rows) await vorschlagUebernehmen(v, actorId);
+  if (offen.rows.length > 0) await pool.query(`UPDATE "BuyingCenter" SET "updatedAt" = NOW() WHERE "id" = $1`, [bcId]);
+  return offen.rows.length;
 }
 
 /**
@@ -941,3 +982,53 @@ buyingCenterRouter.openapi(laufMeldenRoute, async (c) => {
   await lauf(bc.id, art, ergebnis, details);
   return c.json({ ok: true }, 200);
 });
+
+// ---- POST /buying-center/{id}/automatik ------------------------------------
+//
+// Auto-Modus (2026-09-21): Opt-in je Buying Center. Einschalten uebernimmt
+// sofort alles, was gerade offen ist; danach uebernimmt vorschlagAblegen
+// jeden neuen Vorschlag direkt. Die Belegkette bleibt vollstaendig — jede
+// Uebernahme steht mit dem Vermerk "automatisch" darin.
+
+const automatikRoute = createRoute({
+  method: "post", path: "/buying-center/{id}/automatik", tags: [tag],
+  summary: "Auto-Modus an/aus (nur Eigentuemer); an = offene Vorschlaege sofort uebernehmen",
+  request: { params: IdParam, body: { content: { "application/json": { schema: z.object({ an: z.boolean() }) } } } },
+  responses: { 200: { content: { "application/json": { schema: z.object({ automatik: z.boolean(), uebernommen: z.number() }) } }, description: "ok" }, ...errorResponses },
+});
+buyingCenterRouter.openapi(automatikRoute, async (c) => {
+  const wer = auth(c);
+  const bc = await ladeMitZugriff(c.req.valid("param").id, wer, true);
+  const { an } = c.req.valid("json");
+  await getGatewayPool().query(`UPDATE "BuyingCenter" SET "automatik" = $2, "updatedAt" = NOW() WHERE "id" = $1`, [bc.id, an]);
+  const uebernommen = an ? await offeneUebernehmen(bc.id, wer.actorId) : 0;
+  await lauf(bc.id, "automatik", an ? `Auto-Modus eingeschaltet — ${uebernommen} offene ${uebernommen === 1 ? "Vorschlag" : "Vorschläge"} übernommen` : "Auto-Modus ausgeschaltet", { an, uebernommen });
+  return c.json({ automatik: an, uebernommen }, 200);
+});
+
+// ---- POST /buying-center/{id}/recherche ------------------------------------
+//
+// "Recherche jetzt": alles, was das Gateway selbst kann — Website-
+// Hervorhebung als Vorschlag, Verknuepfungskandidaten zaehlen, im
+// Auto-Modus uebernehmen. Den CRM-Abgleich faehrt der Desktop danach
+// (eigene Zugangsdaten), er meldet sich ueber /verlauf.
+
+const rechercheRoute = createRoute({
+  method: "post", path: "/buying-center/{id}/recherche", tags: [tag],
+  summary: "Recherche jetzt anstossen (nur Eigentuemer)",
+  request: { params: IdParam },
+  responses: { 200: { content: { "application/json": { schema: z.object({ website: z.number(), verknuepfbar: z.number(), uebernommen: z.number(), automatik: z.boolean() }) } }, description: "ok" }, ...errorResponses },
+});
+buyingCenterRouter.openapi(rechercheRoute, async (c) => {
+  const wer = auth(c);
+  const bc = await ladeMitZugriff(c.req.valid("param").id, wer, true);
+  const voll = await ladeVoll(bc);
+  const website = await websiteVorschlaege(voll.mitglieder);
+  const verknuepfbar = (await verknuepfbarePersonen(bc.companyId, voll.mitglieder)).length;
+  const uebernommen = bc.automatik ? await offeneUebernehmen(bc.id, wer.actorId) : 0;
+  await lauf(bc.id, "recherche",
+    `Recherche gestartet: Website-Abgleich ${website} ${website === 1 ? "Vorschlag" : "Vorschläge"}, ${verknuepfbar} verknüpfbare ${verknuepfbar === 1 ? "Person" : "Personen"}${bc.automatik ? `, ${uebernommen} automatisch übernommen` : ""} — CRM-Abgleich folgt vom Rechner`,
+    { website, verknuepfbar, uebernommen });
+  return c.json({ website, verknuepfbar, uebernommen, automatik: bc.automatik === true }, 200);
+});
+

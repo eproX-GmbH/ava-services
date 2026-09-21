@@ -49,6 +49,7 @@ import { buildLinkMonitorTools } from "./link-monitor";
 import { buildTelegramTools } from "./telegram";
 import { buildRelevanzTools } from "./relevanz";
 import { buildBuyingCenterTools } from "./buying-center";
+import { ladeInteraktionen } from "../../buying-center/interaktionen";
 import { featureEnabled } from "../../org-policy";
 import { buildPublicationTools } from "./publications";
 import { buildGeoTools } from "./geo";
@@ -364,6 +365,7 @@ export function buildReadOnlyRegistry(deps: {
     gateway: deps.gateway,
     getWatchlistStore: deps.getWatchlistStore,
     watchlistErlaubt: () => featureEnabled("linkedin.watchlist"),
+    ladeInteraktionen: (id) => ladeInteraktionen({ crm: deps.crm, gateway: deps.gateway }, id),
   }))
     registry.register(t);
   // v0.1.284 — Self-Correction-Reporting (always-on Telemetrie).

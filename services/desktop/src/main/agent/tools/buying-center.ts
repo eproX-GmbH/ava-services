@@ -40,7 +40,7 @@ interface Geteilt {
 }
 interface Freigabe { actorId: string; email: string | null; name: string | null; erteiltAt: string }
 interface BuyingCenter {
-  id: string; companyId: string; anlass: string; status: string; eigenes: boolean;
+  id: string; companyId: string; anlass: string; status: string; eigenes: boolean; automatik?: boolean;
   mitglieder: Mitglied[];
   kanten: Array<{ id: string; vonMitgliedId: string; nachMitgliedId: string; art: string; staerke: string | null; grund: string | null }>;
 }
@@ -69,6 +69,8 @@ function fehlertext(err: unknown): string {
 
 export interface BuyingCenterToolDeps {
   gateway: GatewayClient;
+  /** CRM-Abgleich vom Rechner (BC3) — fuer "Recherche jetzt". */
+  ladeInteraktionen?: (buyingCenterId: string) => Promise<{ verfuegbar: boolean; grund?: string; mitglieder: unknown[] }>;
   /** BC4 — Watchlist-Aufnahme; lazy, weil der Store erst im App-Boot entsteht. */
   getWatchlistStore?: () => WatchlistStore | null;
   /** BC4 — false, wenn die Organisation die Personen-Watchlist abgeschaltet hat. */
@@ -538,7 +540,66 @@ export function buildBuyingCenterTools(deps: BuyingCenterToolDeps): Tool[] {
     preview: (r) => `${r.items.length} freigegebene(s) Buying Center`,
   });
 
-  return [anlegen, anzeigen, setzen, aufnehmen, kante, vorschlaege, abschliessen, beobachten, verknuepfen, freigeben, geteilt];
+  // Auto-Modus (2026-09-21): Opt-in je Buying Center. Einschalten uebernimmt
+  // sofort alle offenen Vorschlaege — deshalb Rueckfrage.
+  const automatik = defineTool({
+    name: "buying_center_automatik",
+    summary: "Auto-Modus eines Buying Centers ein- oder ausschalten (offene AVA-Vorschlaege werden sofort uebernommen).",
+    category: "buying center",
+    description:
+      "Schaltet den Auto-Modus eines Buying Centers ein oder aus. An: alle offenen AVA-Vorschlaege (Titel, Website, CRM) werden sofort uebernommen, auch kuenftige — jede Uebernahme steht mit Vermerk in der Belegkette. Aus: Vorschlaege warten wieder in der Seitenleiste. Fragt vorher nach.",
+    parameters: { type: "object", properties: { buyingCenterId: { type: "string" }, an: { type: "boolean" } }, required: ["buyingCenterId", "an"] },
+    schema: yup.object({ buyingCenterId: yup.string().trim().required(), an: yup.boolean().required() }).noUnknown(true),
+    run: async (args, c) => {
+      const value = await c.ui.confirmAction(
+        {
+          kind: "additive",
+          prompt: args.an
+            ? "Auto-Modus einschalten? Alle offenen AVA-Vorschlaege werden sofort uebernommen, kuenftige ebenfalls."
+            : "Auto-Modus ausschalten? Neue Vorschlaege warten dann wieder auf deine Entscheidung.",
+          confirmValue: "ja",
+          options: [{ value: "ja", label: args.an ? "Einschalten" : "Ausschalten" }, { value: "cancel", label: "Abbrechen" }],
+        },
+        c.signal,
+      );
+      if (value !== "ja") return userDeclined("Auto-Modus");
+      try {
+        const r = await gateway.request<{ automatik: boolean; uebernommen: number }>(`/v1/buying-center/${encodeURIComponent(args.buyingCenterId)}/automatik`, { method: "POST", body: { an: args.an }, signal: c.signal });
+        return { automatik: r.automatik, uebernommen: r.uebernommen, anzeigen: args.buyingCenterId };
+      } catch (err) {
+        return { error: fehlertext(err) };
+      }
+    },
+    preview: (r) => ("automatik" in r ? `Auto-Modus ${r.automatik ? "an" : "aus"}, ${r.uebernommen} übernommen` : "unverändert"),
+  });
+
+  // "Recherche jetzt": Gateway-Teil (Website, Verknuepfbar, Auto-Modus) und
+  // der CRM-Abgleich vom Rechner. Beides steht danach im Verlauf.
+  const recherche = defineTool({
+    name: "buying_center_recherche",
+    summary: "Recherche zu einem Buying Center jetzt anstossen (Website-Abgleich, Verknuepfungskandidaten, CRM-Abgleich).",
+    category: "buying center",
+    description:
+      "Stoesst die Hintergrund-Recherche zu einem Buying Center sofort an: Website-Hervorhebung als Vorschlag, verknuepfbare Bestandspersonen, CRM-Abgleich (Kontaktintensitaet). Im Auto-Modus werden neue Vorschlaege direkt uebernommen. Ergebnis erscheint im Verlauf der Karte.",
+    parameters: { type: "object", properties: { buyingCenterId: { type: "string" } }, required: ["buyingCenterId"] },
+    schema: yup.object({ buyingCenterId: yup.string().trim().required() }).noUnknown(true),
+    run: async (args, c) => {
+      try {
+        const r = await gateway.request<{ website: number; verknuepfbar: number; uebernommen: number; automatik: boolean }>(`/v1/buying-center/${encodeURIComponent(args.buyingCenterId)}/recherche`, { method: "POST", body: {}, signal: c.signal });
+        let crm = "nicht ausgefuehrt";
+        if (deps.ladeInteraktionen) {
+          const i = await deps.ladeInteraktionen(args.buyingCenterId);
+          crm = i.verfuegbar ? `${i.mitglieder.length} Mitglieder im CRM gefunden` : (i.grund ?? "nicht verfuegbar");
+        }
+        return { website: r.website, verknuepfbar: r.verknuepfbar, uebernommen: r.uebernommen, automatik: r.automatik, crm, anzeigen: args.buyingCenterId };
+      } catch (err) {
+        return { error: fehlertext(err) };
+      }
+    },
+    preview: (r) => ("website" in r ? `Recherche: Website ${r.website}, verknüpfbar ${r.verknuepfbar}, CRM ${r.crm}` : "fehlgeschlagen"),
+  });
+
+  return [anlegen, anzeigen, setzen, aufnehmen, kante, vorschlaege, abschliessen, beobachten, verknuepfen, freigeben, geteilt, automatik, recherche];
 }
 
 export { ROLLEN };

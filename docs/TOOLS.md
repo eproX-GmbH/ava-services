@@ -4,8 +4,8 @@ Auto-generiert von `services/desktop/scripts/generate-tools-md.mjs`.
 NICHT direkt bearbeiten — die Quelle der Wahrheit ist `services/desktop/src/main/agent/tools/*.ts`.
 Lauf via `pnpm -F @ava/desktop tools:doc` (oder automatisch via `build:typecheck`).
 
-Stand: 2026-09-20
-Anzahl Tools: 269
+Stand: 2026-09-21
+Anzahl Tools: 271
 
 ## Firmen (22)
 
@@ -1079,7 +1079,7 @@ Liefert das angemeldete Konto (Name, E-Mail, Nutzer-ID), den Tenant (Name, Rolle
 
 _Parameter:_ keine.
 
-## buying-center (11)
+## buying-center (13)
 
 ### `buying_center_abschliessen`
 
@@ -1103,11 +1103,21 @@ _Parameter:_ keine.
 
 _Datei:_ `services/desktop/src/main/agent/tools/buying-center.ts`
 
-Zeigt das Buying Center zu einer Firma: die Karte im Chat (anzeigen-Feld → ```buying-center-Zaun) und den Stand je Person. Nutze das bei 'zeig mir das Buying Center', 'wie steht es bei X', oder vor jeder Aenderung, um Mitglieds-IDs zu bekommen. Ohne buyingCenterId wird das eigene aktive zur Firma genommen; gibt es keines, ein von Kollegen freigegebenes (nur ansehen) — bei mehreren kommt die Auswahl zurueck.
+Zeigt das Buying Center zu einer Firma: die Karte im Chat (anzeigen-Feld → ```buying-center-Zaun), den Stand je Person und `verlauf` (was AVA zuletzt im Hintergrund getan hat: Entwurf, CRM-Abgleich, Website-Abgleich, Nachfrage, Watchlist). Bei 'was hat AVA hier gemacht' den Verlauf nennen. Nutze das bei 'zeig mir das Buying Center', 'wie steht es bei X', oder vor jeder Aenderung, um Mitglieds-IDs zu bekommen. Ohne buyingCenterId wird das eigene aktive zur Firma genommen; gibt es keines, ein von Kollegen freigegebenes (nur ansehen) — bei mehreren kommt die Auswahl zurueck.
 
 _Parameter:_
 - `companyId: string`
 - `buyingCenterId: string`
+
+### `buying_center_automatik`
+
+_Datei:_ `services/desktop/src/main/agent/tools/buying-center.ts`
+
+Schaltet den Auto-Modus eines Buying Centers ein oder aus. An: alle offenen AVA-Vorschlaege (Titel, Website, CRM) werden sofort uebernommen, auch kuenftige — jede Uebernahme steht mit Vermerk in der Belegkette. Aus: Vorschlaege warten wieder in der Seitenleiste. Fragt vorher nach.
+
+_Parameter:_
+- `buyingCenterId: string` (required)
+- `an: boolean` (required)
 
 ### `buying_center_beobachten`
 
@@ -1144,7 +1154,7 @@ _Parameter:_
 
 _Datei:_ `services/desktop/src/main/agent/tools/buying-center.ts`
 
-Traegt eine Beziehung zwischen zwei Personen ein: EINFLUSS ('der IT-Leiter hat beim GF das letzte Wort' → von IT-Leiter nach GF, staerke H), VERTRAUT ('die beiden sind eng'), ANIMOSITAET ('die koennen nicht miteinander'). Ersetzt eine bestehende Beziehung derselben Art zwischen denselben Personen.
+Traegt eine Beziehung zwischen zwei Personen ein: EINFLUSS ('der IT-Leiter hat beim GF das letzte Wort' → von IT-Leiter nach GF, staerke H), VERTRAUT ('die beiden sind eng'), ANIMOSITAET ('die koennen nicht miteinander'). Ersetzt eine bestehende Beziehung derselben Art zwischen denselben Personen. IMMER sofort aufrufen, wenn der Nutzer sagt, dass jemand auf jemanden einwirkt ('A beeinflusst B, C und D' → drei Aufrufe) — nicht nur die Rolle 'Beeinflusser' setzen.
 
 _Parameter:_
 - `buyingCenterId: string` (required)
@@ -1167,11 +1177,20 @@ _Parameter:_
 - `personId: string`
 - `grund: string`
 
+### `buying_center_recherche`
+
+_Datei:_ `services/desktop/src/main/agent/tools/buying-center.ts`
+
+Stoesst die Hintergrund-Recherche zu einem Buying Center sofort an: Website-Hervorhebung als Vorschlag, verknuepfbare Bestandspersonen, CRM-Abgleich (Kontaktintensitaet). Im Auto-Modus werden neue Vorschlaege direkt uebernommen. Ergebnis erscheint im Verlauf der Karte.
+
+_Parameter:_
+- `buyingCenterId: string` (required)
+
 ### `buying_center_setzen`
 
 _Datei:_ `services/desktop/src/main/agent/tools/buying-center.ts`
 
-Traegt ein, was der Nutzer ueber eine Person im Buying Center weiss: rolle (E Entscheider, B Beeinflusser, N Nutzer, R Ratifizierer, S Spezifizierer, EK Einkaeufer, GK Gatekeeper; '-B' nimmt eine Rolle weg), einstellung (C Coach, + positiv, = neutral, - negativ, F Feind), kontakt (0 keiner, S selten, R regelmaessig, I intensiv), einfluss (G gering, M mittel, H hoch), oder notiz. Der GRUND ist Pflicht und soll SACHLICH das wiedergeben, was der Nutzer gesagt hat ('hat im Termin gesagt, dass …'), keine Charakterurteile. Alternativ einen offenen AVA-Vorschlag beantworten (vorschlagId + entscheidung). Nicht nachfragen — der Nutzer hat es gerade gesagt.
+Traegt ein, was der Nutzer ueber eine Person im Buying Center weiss: rolle (E Entscheider, B Beeinflusser, N Nutzer, R Ratifizierer, S Spezifizierer, EK Einkaeufer, GK Gatekeeper; '-B' nimmt eine Rolle weg), einstellung (C Coach, + positiv, = neutral, - negativ, F Feind), kontakt (0 keiner, S selten, R regelmaessig, I intensiv), einfluss (G gering, M mittel, H hoch), oder notiz. Der GRUND ist Pflicht und soll SACHLICH das wiedergeben, was der Nutzer gesagt hat ('hat im Termin gesagt, dass …'), keine Charakterurteile. Alternativ einen offenen AVA-Vorschlag beantworten (vorschlagId + entscheidung). Nicht nachfragen — der Nutzer hat es gerade gesagt. Nennt der Nutzer dabei, WEN die Person beeinflusst, zusaetzlich buying_center_kante je Paar.
 
 _Parameter:_
 - `buyingCenterId: string` (required)
@@ -2336,7 +2355,7 @@ _Parameter:_ keine.
 
 _Datei:_ `services/desktop/src/main/agent/tools/telegram.ts`
 
-Send a free-form message to the user's connected Telegram chat. Use this when the user explicitly asks to be sent something via Telegram, or inside a skill that delivers a digest/summary to Telegram. Plain text only — keep it short and readable on a phone. Requires a connected bot and linked chat.
+Send a free-form message to the user's connected Telegram chat. Use this when the user explicitly asks to be sent something via Telegram, or inside a skill that delivers a digest/summary to Telegram. It is a TEXT MESSAGE on a phone: NO Markdown (no **, #, tables, code fences, bullet markers), no headings, a few short sentences at most, bare links. Formatting is stripped before sending anyway. Requires a connected bot and linked chat.
 
 _Parameter:_
 - `text: string` (required) — Message body as plain text (max ~3500 characters).

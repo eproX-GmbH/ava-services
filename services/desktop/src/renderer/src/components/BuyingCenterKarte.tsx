@@ -44,6 +44,8 @@ export interface BcKante {
 export interface BuyingCenter {
   id: string; companyId: string; anlass: string; status: string; eigenes: boolean;
   eigentuemerActorId: string; angelegtAt: string; updatedAt: string;
+  /** Auto-Modus: offene AVA-Vorschlaege werden sofort uebernommen. */
+  automatik?: boolean;
   mitglieder: BcMitglied[]; kanten: BcKante[];
 }
 
@@ -150,6 +152,24 @@ export function BuyingCenterKarte({ id, kompakt = false }: { id: string; kompakt
     retry: false,
   });
 
+  // Auto-Modus: Opt-in je Buying Center, direkt an der Karte schaltbar.
+  const automatik = useMutation({
+    mutationFn: (an: boolean) =>
+      gatewayFetch<{ automatik: boolean; uebernommen: number }>(`/v1/buying-center/${encodeURIComponent(id)}/automatik`, { method: "POST", body: { an } }),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ["buying-center", id] }),
+  });
+  // "Recherche jetzt": Gateway (Website-Abgleich, Auto-Modus) und danach der
+  // CRM-Abgleich vom Rechner — beides landet im Verlauf.
+  const recherche = useMutation({
+    mutationFn: async () => {
+      const r = await gatewayFetch<{ website: number; verknuepfbar: number; uebernommen: number }>(`/v1/buying-center/${encodeURIComponent(id)}/recherche`, { method: "POST", body: {} });
+      await qc.invalidateQueries({ queryKey: ["buying-center", id, "interaktionen"] });
+      await qc.refetchQueries({ queryKey: ["buying-center", id, "interaktionen"] });
+      return r;
+    },
+    onSettled: () => void qc.invalidateQueries({ queryKey: ["buying-center", id] }),
+  });
+
   if (q.isLoading) return <div className="bc-platzhalter">Buying Center wird geladen …</div>;
   if (q.error || !q.data) {
     return <div className="bc-platzhalter muted">Dieses Buying Center ist nicht abrufbar — es gehört vielleicht jemand anderem oder wurde entfernt.</div>;
@@ -165,8 +185,24 @@ export function BuyingCenterKarte({ id, kompakt = false }: { id: string; kompakt
           {!bc.eigenes && <span className="bc-karte__fremd"> · nur ansehen</span>}
           {bc.status !== "aktiv" && <span className="bc-karte__fremd"> · {bc.status}</span>}
         </span>
-        <span className="muted small">{bc.mitglieder.length} Personen · Stand {new Date(bc.updatedAt).toLocaleDateString("de-DE")}</span>
+        <span className="bc-karte__rechts">
+          <span className="muted small">{bc.mitglieder.length} Personen · Stand {new Date(bc.updatedAt).toLocaleDateString("de-DE")}</span>
+          {bc.eigenes && (
+            <label className="field-inline bc-karte__auto" title="Offene AVA-Vorschläge (Titel, Website, CRM) sofort übernehmen statt sie in der Seitenleiste zu sammeln. Einschalten übernimmt alles, was gerade offen ist; jede Übernahme steht in der Belegkette.">
+              <input
+                type="checkbox"
+                checked={bc.automatik === true}
+                disabled={automatik.isPending}
+                onChange={(e) => automatik.mutate(e.target.checked)}
+              />
+              <span>Auto-Modus</span>
+            </label>
+          )}
+        </span>
       </div>
+      {automatik.data && automatik.data.uebernommen > 0 && (
+        <p className="bc-muster">{automatik.data.uebernommen} offene {automatik.data.uebernommen === 1 ? "Vorschlag" : "Vorschläge"} automatisch übernommen.</p>
+      )}
       {interaktionen.data?.gespraechsmuster && (
         <p className="bc-muster">{interaktionen.data.gespraechsmuster}</p>
       )}
@@ -198,7 +234,14 @@ export function BuyingCenterKarte({ id, kompakt = false }: { id: string; kompakt
         </div>
       )}
       <Legende offen={legende} onToggle={legendeUmschalten} />
-      <Verlauf id={id} stand={bc.updatedAt} />
+      <Verlauf
+        id={id}
+        stand={`${bc.updatedAt}:${recherche.status}`}
+        eigenes={bc.eigenes}
+        laeuft={recherche.isPending}
+        onRecherche={() => recherche.mutate()}
+        ergebnis={recherche.data ? `Website ${recherche.data.website}, verknüpfbar ${recherche.data.verknuepfbar}${recherche.data.uebernommen ? `, ${recherche.data.uebernommen} übernommen` : ""}` : recherche.error ? "Recherche fehlgeschlagen" : null}
+      />
     </div>
   );
 }
@@ -564,9 +607,12 @@ function Seitenleiste({ bc, m, onSchliessen, onGeaendert, interaktionen, interak
 const LAUF_ART_TEXT: Record<string, string> = {
   entwurf: "Entwurf", "crm-abgleich": "CRM-Abgleich", "website-abgleich": "Website", nachfrage: "Nachfrage",
   watchlist: "Watchlist", verknuepfung: "Verknüpfung", status: "Status", freigabe: "Freigabe",
+  automatik: "Auto-Modus", recherche: "Recherche",
 };
 
-function Verlauf({ id, stand }: { id: string; stand: string }) {
+function Verlauf({ id, stand, eigenes, laeuft, onRecherche, ergebnis }: {
+  id: string; stand: string; eigenes: boolean; laeuft: boolean; onRecherche: () => void; ergebnis: string | null;
+}) {
   const q = useQuery<{ items: BcLauf[] }>({
     // `stand` im Schluessel: Nach jeder Aenderung der Karte wird neu geladen.
     queryKey: ["buying-center", id, "verlauf", stand],
@@ -579,7 +625,21 @@ function Verlauf({ id, stand }: { id: string; stand: string }) {
   return (
     <details className="bc-verlauf">
       <summary className="muted small">
-        Verlauf{items.length ? ` · zuletzt ${wann(items[0]!.zeitpunkt)}: ${LAUF_ART_TEXT[items[0]!.art] ?? items[0]!.art}` : " · noch keine Läufe"}
+        <span className="bc-verlauf__kopf">
+          <span>Verlauf{items.length ? ` · zuletzt ${wann(items[0]!.zeitpunkt)}: ${LAUF_ART_TEXT[items[0]!.art] ?? items[0]!.art}` : " · noch keine Läufe"}</span>
+          {eigenes && (
+            <button
+              type="button"
+              className="btn small"
+              disabled={laeuft}
+              title="Website-Abgleich, Verknüpfungskandidaten und CRM-Abgleich jetzt ausführen"
+              onClick={(e) => { e.preventDefault(); e.stopPropagation(); onRecherche(); }}
+            >
+              {laeuft ? "Recherche läuft …" : "Recherche starten"}
+            </button>
+          )}
+          {ergebnis && <span className="muted small">{ergebnis}</span>}
+        </span>
       </summary>
       {items.length > 0 && (
         <ul className="bc-verlauf__liste small">
