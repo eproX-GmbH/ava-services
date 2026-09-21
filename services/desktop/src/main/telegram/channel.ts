@@ -17,6 +17,7 @@
 
 import type { Alert, AlertSeverity } from "../../shared/types";
 import { escapeHtml, redactToken, sendMessage } from "./client";
+import { markdownZuText } from "./text";
 import type { TelegramStore } from "./store";
 
 /** Mindestabstand zwischen zwei Nachrichten an denselben Chat. */
@@ -142,7 +143,7 @@ export class TelegramChannel {
     const token = await this.store.getToken();
     if (!token) throw new Error("Kein Telegram-Bot-Token hinterlegt.");
     if (!cfg.chatId) throw new Error("Keine Telegram-Chat-ID hinterlegt.");
-    await sendMessage(token, cfg.chatId, escapeHtml(text));
+    await sendMessage(token, cfg.chatId, escapeHtml(markdownZuText(text)));
   }
 
   // ---- intern -------------------------------------------------------------
@@ -318,14 +319,4 @@ function formatBatch(alerts: Alert[]): string {
 }
 
 
-/** v0.1.522 — Meldungs-Beschreibungen sind Markdown (Meldungs-Seite);
- *  Telegram bekommt lesbaren Text: Links als "Label: URL", Listen mit
- *  Punkt, Fettung entfernt. */
-export function markdownZuText(md: string): string {
-  return md
-    .replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g, "$1: $2")
-    .replace(/\*\*([^*]+)\*\*/g, "$1")
-    .replace(/^\s*[-*]\s+/gm, "• ")
-    .replace(/\n{3,}/g, "\n\n")
-    .trim();
-}
+export { markdownZuText } from "./text";

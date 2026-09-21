@@ -35,6 +35,7 @@ import {
   redactToken,
   sendMessage,
 } from "./client";
+import { markdownZuText } from "./text";
 import { decodeToWav16k } from "./audio";
 import type { TelegramStore } from "./store";
 import type { AgentMessageImage } from "../../shared/types";
@@ -295,12 +296,21 @@ export class TelegramInbound {
     // die Konversation einen RemoteAsk-Kanal und der Hinweis-Text ändert
     // sich entsprechend. Der Nutzer sitzt ja gerade am Handy.
     const confirmEnabled = this.store.getConfig().inboundConfirmEnabled;
+    // Der Nutzer liest die Antwort als Textnachricht auf dem Handy: kein
+    // Markdown (Telegram zeigt ** und # als Zeichen), wenige Saetze, keine
+    // Zwischenueberschriften. Das Sicherheitsnetz in reply() entfernt
+    // Formatierung trotzdem noch einmal.
+    const form =
+      `Das ist eine TEXTNACHRICHT auf dem Handy: KEIN Markdown (keine **, ` +
+      `#, Tabellen, Codebloecke, Aufzaehlungszeichen), keine ` +
+      `Zwischenueberschriften, keine Emojis als Gliederung. Hoechstens ` +
+      `wenige kurze Saetze, Links nackt. `;
     const hint = confirmEnabled
-      ? `[Hinweis: Antworte knapp und handyfreundlich. Wenn eine Aktion ` +
+      ? `[Hinweis: ${form}Wenn eine Aktion ` +
         `eine Bestätigung oder Auswahl braucht, nutze ask_user_choice/` +
         `ask_user_text — die Rückfrage wird dem Nutzer direkt in Telegram ` +
         `gestellt.]`
-      : `[Hinweis: Antworte knapp und handyfreundlich. Es gibt hier keinen ` +
+      : `[Hinweis: ${form}Es gibt hier keinen ` +
         `Bestätigungsdialog — Aktionen, die eine Rückfrage brauchen, kannst ` +
         `du nicht ausführen; sag in dem Fall, dass es am Rechner erledigt ` +
         `werden muss.]`;
@@ -771,7 +781,8 @@ export class TelegramInbound {
     const cfg = this.store.getConfig();
     const token = await this.store.getToken();
     if (!token || !cfg.chatId) return;
-    const payload = escapeHtml(text).slice(0, 3900);
+    // Sicherheitsnetz: Formatierung raus, auch wenn der Prompt darum bat.
+    const payload = escapeHtml(markdownZuText(text)).slice(0, 3900);
     const delays = [0, 2_000, 5_000];
     let lastErr = "";
     for (let attempt = 0; attempt < delays.length; attempt++) {

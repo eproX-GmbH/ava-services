@@ -186,7 +186,7 @@ export function buildTelegramTools(deps: TelegramToolDeps): Tool[] {
   const sendMessageTool = defineTool({
     name: "telegram_send_message",
     description:
-      "Send a free-form message to the user's connected Telegram chat. Use this when the user explicitly asks to be sent something via Telegram, or inside a skill that delivers a digest/summary to Telegram. Plain text only — keep it short and readable on a phone. Requires a connected bot and linked chat.",
+      "Send a free-form message to the user's connected Telegram chat. Use this when the user explicitly asks to be sent something via Telegram, or inside a skill that delivers a digest/summary to Telegram. It is a TEXT MESSAGE on a phone: NO Markdown (no **, #, tables, code fences, bullet markers), no headings, a few short sentences at most, bare links. Formatting is stripped before sending anyway. Requires a connected bot and linked chat.",
     parameters: {
       type: "object",
       properties: {

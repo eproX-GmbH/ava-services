@@ -29,6 +29,7 @@
     "build:typecheck": "node scripts/generate-tools-md.mjs && tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json && node scripts/check-german.mjs",
     "lint:german": "node scripts/check-german.mjs",
     "test:buying-center": "node scripts/test-buying-center.mjs",
+    "test:telegram-text": "node scripts/test-telegram-text.mjs",
     "test:relevanz": "node scripts/test-relevanz.mjs",
     "test:skills": "node scripts/test-skills-loader.mjs",
     "test:skills:agent": "node scripts/test-skills-agent.mjs",
