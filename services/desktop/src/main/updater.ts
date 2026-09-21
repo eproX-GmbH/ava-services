@@ -262,13 +262,29 @@ export class Updater extends EventEmitter {
       );
       return;
     }
-    try {
-      await autoUpdater.checkForUpdates();
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      console.warn(`[updater] check() threw: ${msg}`);
-      this.errorMessage = msg;
-      this.setState("error");
+    // 2026-09-21 — GitHub lieferte fuer Release-Dateien minutenlang
+    // "504 Gateway Time-out" (auch fuer latest.yml); electron-updater
+    // meldet das sofort als "Cannot parse releases feed", und der Nutzer
+    // sah eine rote Fehlermeldung, obwohl nur der Server kurz hustete.
+    // Deshalb bis zu drei Versuche mit wachsendem Abstand, bevor der
+    // Fehler gezeigt wird.
+    const VERSUCHE = 3;
+    for (let versuch = 1; versuch <= VERSUCHE; versuch++) {
+      try {
+        await autoUpdater.checkForUpdates();
+        return;
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        if (versuch < VERSUCHE) {
+          const pause = 5_000 * versuch;
+          console.warn(`[updater] check() Versuch ${versuch}/${VERSUCHE} fehlgeschlagen (${msg}) — naechster in ${pause / 1000} s`);
+          await new Promise((r) => setTimeout(r, pause));
+          continue;
+        }
+        console.warn(`[updater] check() threw: ${msg}`);
+        this.errorMessage = msg;
+        this.setState("error");
+      }
     }
   }
 
