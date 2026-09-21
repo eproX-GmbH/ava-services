@@ -43,6 +43,7 @@ import {
   existsSync,
   mkdirSync,
   readdirSync,
+  realpathSync,
   rmSync,
   readFileSync,
   writeFileSync,
@@ -610,6 +611,14 @@ module.exports = require("../generated/prisma-client");
         recursive: true,
         dereference: true,
       });
+      // 2026-09-21 — Seit Node 22 laesst cpSync({dereference:true})
+      // Symlinks in Unterordnern stehen (node_modules/.bin/*, file:-Deps
+      // wie @ava/ai-provider zeigen ABSOLUT ins Staging-Verzeichnis).
+      // codesign --deep --strict lehnt das ab: "invalid destination for
+      // symbolic link in bundle" (Release v0.1.714, erster Lauf mit
+      // Node 22). Deshalb hier nachziehen: jeden verbliebenen Symlink
+      // durch eine Kopie seines Ziels ersetzen, haengende entfernen.
+      symlinksAufloesen(join(dstDir, entry));
     }
 
     // 7. Drop the .npmrc copy — it might carry a token-bearing line,
@@ -625,6 +634,39 @@ module.exports = require("../generated/prisma-client");
     writeFileSync(fingerprintFile, sourceFingerprint, "utf8");
 
     console.log(`[producers] ${target.name}: done → ${dstDir}`);
+  }
+}
+
+/**
+ * Verbliebene Symlinks unterhalb von `dir` durch Kopien ersetzen.
+ * Zeigt ein Link ins Leere, faellt er weg. Laeuft nach cpSync, weil
+ * dessen `dereference` seit Node 22 verschachtelte Links uebergeht.
+ */
+function symlinksAufloesen(dir) {
+  let entries;
+  try {
+    entries = readdirSync(dir, { withFileTypes: true });
+  } catch {
+    return;
+  }
+  for (const e of entries) {
+    const p = join(dir, e.name);
+    if (e.isSymbolicLink()) {
+      let ziel = null;
+      try {
+        ziel = realpathSync(p);
+      } catch {
+        ziel = null;
+      }
+      rmSync(p, { force: true });
+      if (ziel && existsSync(ziel)) {
+        cpSync(ziel, p, { recursive: true, dereference: true });
+        // Das kopierte Ziel kann selbst wieder Links enthalten.
+        if (statSync(p).isDirectory()) symlinksAufloesen(p);
+      }
+    } else if (e.isDirectory()) {
+      symlinksAufloesen(p);
+    }
   }
 }
 
