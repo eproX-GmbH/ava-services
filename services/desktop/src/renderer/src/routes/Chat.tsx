@@ -215,6 +215,16 @@ export function Chat() {
   const [input, setInput] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [thinking, setThinking] = useState(false);
+  // Werkzeug-Laeufe, die der Nutzer nach dem Zusammenklappen wieder
+  // aufgeklappt hat (Schluessel: erste Schritt-Kennung). Nicht persistiert:
+  // Beim erneuten Oeffnen eines Chats ist alles zu.
+  const [aufgeklappteLaeufe, setAufgeklappteLaeufe] = useState<Set<string>>(() => new Set());
+  const zugLaeuft = thinking || messages.some((m) => m.pending || m.activity?.status === "running");
+  const logEintraege = useMemo(() => gruppiereLaeufe(messages), [messages]);
+  const letzterLaufId = useMemo(() => {
+    const laeufe = logEintraege.filter((e) => e.lauf);
+    return laeufe[laeufe.length - 1]?.id ?? null;
+  }, [logEintraege]);
   // 8.k10i — attached spreadsheets pending the next Send. Cleared on
   // submit (the metadata is folded into the outgoing user message).
   const [attachments, setAttachments] = useState<SpreadsheetAttachment[]>([]);
@@ -1914,18 +1924,31 @@ export function Chat() {
       ) : (
         <>
           <div className="chat-log" ref={scrollRef}>
-            {messages.map((m) => {
-              if (m.activity) {
+            {logEintraege.map((eintrag) => {
+              if (eintrag.lauf) {
+                // Werkzeug-Schritte eines Zuges als ein Lauf: Solange AVA
+                // arbeitet, sieht man jeden Schritt; danach klappt der Lauf zu
+                // einer Zeile zusammen (Muster: Claude Code). Der letzte Lauf
+                // bleibt offen, solange der Zug laeuft.
+                const istLetzter = eintrag.id === letzterLaufId;
+                const aktiv = eintrag.lauf.some((a) => a.activity?.status === "running") || (istLetzter && zugLaeuft);
                 return (
-                  <ActivityRow
-                    key={m.id}
-                    toolName={m.activity.toolName}
-                    args={m.activity.args}
-                    status={m.activity.status}
-                    preview={m.activity.preview}
+                  <AktivitaetenLauf
+                    key={eintrag.id}
+                    schritte={eintrag.lauf}
+                    offen={aktiv || aufgeklappteLaeufe.has(eintrag.id)}
+                    umschaltbar={!aktiv}
+                    onToggle={() =>
+                      setAufgeklappteLaeufe((alt) => {
+                        const neu = new Set(alt);
+                        if (neu.has(eintrag.id)) neu.delete(eintrag.id); else neu.add(eintrag.id);
+                        return neu;
+                      })
+                    }
                   />
                 );
               }
+              const m = eintrag.m;
               if (m.choice) {
                 return (
                   <ChoiceCardWithOther
@@ -2664,6 +2687,77 @@ function MatchResolutionCard(props: {
         </div>
       </div>
     </div>
+  );
+}
+
+type LogEintrag =
+  | { id: string; m: UiMessage; lauf?: undefined }
+  | { id: string; lauf: UiMessage[]; m?: undefined };
+
+/** Aufeinanderfolgende Werkzeug-Schritte zu einem Lauf buendeln. */
+function gruppiereLaeufe(messages: UiMessage[]): LogEintrag[] {
+  const aus: LogEintrag[] = [];
+  for (const m of messages) {
+    if (m.activity) {
+      const letzter = aus[aus.length - 1];
+      if (letzter?.lauf) letzter.lauf.push(m);
+      else aus.push({ id: m.id, lauf: [m] });
+    } else {
+      aus.push({ id: m.id, m });
+    }
+  }
+  return aus;
+}
+
+function AktivitaetenLauf(props: {
+  schritte: UiMessage[];
+  offen: boolean;
+  umschaltbar: boolean;
+  onToggle: () => void;
+}) {
+  const { schritte, offen, umschaltbar } = props;
+  const werkzeuge = new Set(schritte.map((s) => s.activity!.toolName)).size;
+  const fehler = schritte.filter((s) => s.activity!.status === "error").length;
+  const zeile =
+    `${schritte.length} ${schritte.length === 1 ? "Schritt" : "Schritte"} ausgeführt, ` +
+    `${werkzeuge} ${werkzeuge === 1 ? "Werkzeug" : "Werkzeuge"} verwendet` +
+    (fehler ? `, ${fehler} ${fehler === 1 ? "Fehler" : "Fehler"}` : "");
+  if (!offen) {
+    return (
+      <div className="activity activity-lauf">
+        <div className="activity-marker">
+          <span className={`activity-icon ${fehler ? "bad" : "ok"}`}>{fehler ? "✗" : "✓"}</span>
+        </div>
+        <div className="activity-body">
+          <button type="button" className="activity-lauf__zeile" onClick={props.onToggle} aria-expanded={false}>
+            {zeile} <span aria-hidden="true">›</span>
+          </button>
+        </div>
+      </div>
+    );
+  }
+  return (
+    <>
+      {schritte.map((m) => (
+        <ActivityRow
+          key={m.id}
+          toolName={m.activity!.toolName}
+          args={m.activity!.args}
+          status={m.activity!.status}
+          preview={m.activity!.preview}
+        />
+      ))}
+      {umschaltbar && (
+        <div className="activity activity-lauf">
+          <div className="activity-marker" />
+          <div className="activity-body">
+            <button type="button" className="activity-lauf__zeile" onClick={props.onToggle} aria-expanded={true}>
+              Schritte einklappen <span aria-hidden="true">‹</span>
+            </button>
+          </div>
+        </div>
+      )}
+    </>
   );
 }
 

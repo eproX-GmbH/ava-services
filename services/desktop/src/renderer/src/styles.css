@@ -2312,6 +2312,13 @@ code, pre { font-family: var(--font-mono); font-size: 12px; }
 .activity-thinking {
   color: var(--muted); font-style: italic; font-size: 13px;
 }
+/* Zusammengeklappter Werkzeug-Lauf: eine Zeile, Klick klappt auf. */
+.activity-lauf__zeile {
+  background: none; border: 0; padding: 2px 0;
+  font: inherit; font-size: 13px; color: var(--muted);
+  cursor: pointer; text-align: left;
+}
+.activity-lauf__zeile:hover { color: var(--fg); }
 
 /* Settings tab shell (U1 of UX redesign).
  *
