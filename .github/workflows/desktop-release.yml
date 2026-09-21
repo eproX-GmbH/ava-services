@@ -609,8 +609,8 @@ jobs:
         run: pnpm fetch:whisper --platform=darwin-x64
 
       # v0.1.634 — Cross-Build: Der Runner ist arm64, das Paket ist x64.
-      # `npm install` in den Producern kompiliert native Module (node-expat
-      # via xml2json in structured-content) sonst fuer die HOST-Architektur;
+      # `npm install` in den Producern kompiliert native Module (frueher
+      # node-expat via xml2json in structured-content) sonst fuer die HOST-Architektur;
       # Intel-Macs starben dann mit "incompatible architecture (have 'arm64',
       # need 'x86_64')". npm_config_arch reicht node-gyp `--arch=x64` durch,
       # PRISMA_CLI_BINARY_TARGETS erzwingt die darwin-x64-Query-Engine.
@@ -648,10 +648,10 @@ jobs:
             fi
           done < <(find resources/p -name "*.node" -type f 2>/dev/null)
           # node-expat (structured-content) MUSS dabei sein, sonst prueft der Guard ins Leere.
-          if [ ! -f resources/p/sc/node_modules/node-expat/build/Release/node_expat.node ]; then
-            echo "::error::node_expat.node fehlt unter resources/p/sc — Vendoring unvollstaendig"
-            bad=1
-          fi
+          # 2026-09-21 — node-expat gibt es nicht mehr (xml2json durch
+          # fast-xml-parser ersetzt, Electron 44); die frueher hier geprüfte
+          # Datei existiert deshalb bewusst nicht. Die Architektur-Pruefung
+          # oben deckt alle verbliebenen .node-Module ab.
           [ "$bad" = 0 ] && echo "OK: $n vendored .node-Module geprueft, alle enthalten x86_64"
           exit $bad
 
