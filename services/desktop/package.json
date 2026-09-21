@@ -98,7 +98,7 @@
     "zustand": "^4.5.0"
   },
   "devDependencies": {
-    "@electron/rebuild": "^4.0.4",
+    "@electron/rebuild": "^4.2.0",
     "@types/adm-zip": "^0.5.5",
     "@types/dagre": "0.7.52",
     "@types/mailparser": "^3.4.4",

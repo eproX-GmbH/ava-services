@@ -31,6 +31,7 @@
   },
   "pnpm": {
     "overrides": {
+      "node-abi": "^4.35.0",
       "@ava/auth": "workspace:*",
       "@ava/event": "workspace:*",
       "@ava/ai-provider": "workspace:*"
