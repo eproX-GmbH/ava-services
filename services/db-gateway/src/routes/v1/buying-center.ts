@@ -37,9 +37,10 @@ import { getGatewayPool, getProducerPool } from "../../lib/producer-pools";
 import { ErrorShape } from "./schemas";
 import {
   ROLLEN, EINSTELLUNGEN, KONTAKTE, EINFLUESSE, KANTEN_ARTEN,
-  vorschlaegeAusTitel, unbesetzteRollen, ohneKontakt, gleicherName, vorschlagAusHervorhebung,
+  vorschlaegeAusTitel, vorschlaegeAusBeschreibung, unbesetzteRollen, ohneKontakt, gleicherName, vorschlagAusHervorhebung,
 } from "../../lib/buying-center-vorschlag";
 import { HERVORHEBUNG_FELD, hervorhebungAusWert } from "../../lib/contact-extraction/hervorhebung";
+import { BESCHREIBUNG_FELD, SEIT_FELD } from "../../lib/contact-extraction/employee-contact";
 import { publishWebsiteRetry } from "../../lib/retry-publish";
 import { isHeld } from "../../lib/company-holds";
 import { transactionProgressBus } from "../../lib/event-bus";
@@ -132,6 +133,8 @@ const MitgliedShape = z.object({
   id: z.string(), personId: z.string().nullable(), name: z.string(), funktion: z.string().nullable(),
   /** Beschaeftigungsbeginn "JJJJ-MM" / "JJJJ" aus dem Kontakt-Bestand, sonst null. */
   seit: z.string().nullable(),
+  /** Ein Satz von der Website dazu, was die Person bei der Firma tut (Fakt websiteBeschreibung), sonst null. */
+  beschreibung: z.string().nullable(),
   rollen: z.array(z.string()), einstellung: z.string().nullable(), kontakt: z.string().nullable(),
   einfluss: z.string().nullable(), ansprechpartnerBeiUns: z.string().nullable(),
   x: z.number().nullable(), y: z.number().nullable(), angaben: z.array(AngabeShape),
@@ -148,16 +151,17 @@ const BuyingCenterShape = z.object({
   mitglieder: z.array(MitgliedShape), kanten: z.array(KanteShape),
 });
 
-/** Beschaeftigungsbeginn je Bestandsperson (Fakt employmentSince, Apify Full-Modus). */
-async function seitJePerson(personIds: Array<string | null>): Promise<Map<string, string>> {
+/** Juengster aktiver Fakt eines Felds je Bestandsperson (employmentSince aus
+ *  Apify oder Website, websiteBeschreibung von der Website). */
+async function faktJePerson(personIds: Array<string | null>, field: string): Promise<Map<string, string>> {
   const ids = personIds.filter((p): p is string => !!p);
   const aus = new Map<string, string>();
   if (ids.length === 0) return aus;
   const r = await getProducerPool("company-contact").query<{ personId: string; value: string }>(
     `SELECT DISTINCT ON ("personId") "personId", "value" FROM "Fact"
-      WHERE "personId" = ANY($1::text[]) AND "field" = 'employmentSince' AND "status" = 'ACTIVE'
+      WHERE "personId" = ANY($1::text[]) AND "field" = $2 AND "status" = 'ACTIVE'
       ORDER BY "personId", "lastSeen" DESC`,
-    [ids],
+    [ids, field],
   );
   for (const row of r.rows) aus.set(row.personId, row.value);
   return aus;
@@ -179,7 +183,9 @@ async function ladeVoll(bc: BcKopf & { eigenes: boolean }): Promise<z.infer<type
     ? await pool.query(`SELECT * FROM "BuyingCenterAngabe" WHERE "mitgliedId" = ANY($1::text[]) ORDER BY "erfasstAt" DESC`, [ids])
     : { rows: [] as Record<string, unknown>[] };
   const k = await pool.query(`SELECT * FROM "BuyingCenterKante" WHERE "buyingCenterId" = $1 ORDER BY "erfasstAt"`, [bc.id]);
-  const seitJe = await seitJePerson((m.rows as Array<{ personId: string | null }>).map((r) => r.personId));
+  const personIds = (m.rows as Array<{ personId: string | null }>).map((r) => r.personId);
+  const seitJe = await faktJePerson(personIds, SEIT_FELD);
+  const beschreibungJe = await faktJePerson(personIds, BESCHREIBUNG_FELD);
   const angabenJe = new Map<string, z.infer<typeof AngabeShape>[]>();
   for (const r of a.rows as Record<string, unknown>[]) {
     const liste = angabenJe.get(r.mitgliedId as string) ?? [];
@@ -200,6 +206,7 @@ async function ladeVoll(bc: BcKopf & { eigenes: boolean }): Promise<z.infer<type
       id: String(r.id), personId: (r.personId as string | null) ?? null, name: String(r.name),
       funktion: (r.funktion as string | null) ?? null, rollen: (r.rollen as string[]) ?? [],
       seit: r.personId ? seitJe.get(r.personId as string) ?? null : null,
+      beschreibung: r.personId ? beschreibungJe.get(r.personId as string) ?? null : null,
       einstellung: (r.einstellung as string | null) ?? null, kontakt: (r.kontakt as string | null) ?? null,
       einfluss: (r.einfluss as string | null) ?? null, ansprechpartnerBeiUns: (r.ansprechpartnerBeiUns as string | null) ?? null,
       x: (r.x as number | null) ?? null, y: (r.y as number | null) ?? null,
@@ -324,7 +331,7 @@ buyingCenterRouter.openapi(anlegenRoute, async (c) => {
       LIMIT 25`,
     [companyId],
   );
-  const neueMitglieder: Array<{ id: string; personId: string | null; einfluss: string | null }> = [];
+  const neueMitglieder: Array<{ id: string; personId: string | null; einfluss: string | null; funktion: string | null; rollen: string[] }> = [];
   let titelVorschlaege = 0;
   for (const p of personen.rows) {
     const mid = cuid();
@@ -332,7 +339,7 @@ buyingCenterRouter.openapi(anlegenRoute, async (c) => {
       `INSERT INTO "BuyingCenterMitglied" ("id","buyingCenterId","personId","name","funktion","updatedAt") VALUES ($1,$2,$3,$4,$5,NOW())`,
       [mid, id, p.personId, p.fullName, p.title],
     );
-    neueMitglieder.push({ id: mid, personId: p.personId, einfluss: null });
+    neueMitglieder.push({ id: mid, personId: p.personId, einfluss: null, funktion: p.title, rollen: [] });
     // Vorschlaege landen als OFFENE Angaben (nicht uebernommen). Der Stand
     // bleibt bei Fragezeichen, bis der Nutzer entscheidet — ein Buying
     // Center aus duennen Daten ist gefaehrlicher als keins.
@@ -555,6 +562,8 @@ buyingCenterRouter.openapi(mitgliedRoute, async (c) => {
   for (const v of vorschlaegeAusTitel(funktion)) {
     await angabeSetzen({ mitgliedId: mid, dimension: v.dimension, wert: v.wert, herkunft: "ava:titel", grund: v.grund, vonActorId: null, uebernehmen: false });
   }
+  // Was die Website ueber die Person sagt (Hervorhebung, Beschreibung), gleich dazu.
+  if (personId) await websiteVorschlaege([{ id: mid, personId, einfluss: null, funktion: funktion?.trim() || null, rollen: [] }]);
   await pool.query(`UPDATE "BuyingCenter" SET "updatedAt" = NOW() WHERE "id" = $1`, [bc.id]);
   const voll = await ladeVoll(bc);
   return c.json(voll.mitglieder.find((m) => m.id === mid)!, 200);
@@ -683,9 +692,10 @@ async function offeneUebernehmen(bcId: string, actorId: string): Promise<number>
  * wenn die Seite etwas hergibt. Nur fuer Mitglieder, deren Einfluss noch
  * offen ist. Liefert, wie viele Vorschlaege neu abgelegt wurden.
  */
-async function websiteVorschlaege(mitglieder: Array<{ id: string; personId: string | null; einfluss: string | null }>): Promise<number> {
+async function websiteVorschlaege(mitglieder: Array<{ id: string; personId: string | null; einfluss: string | null; funktion: string | null; rollen: string[] }>): Promise<number> {
+  let abgelegt = await beschreibungVorschlaege(mitglieder);
   const offen = mitglieder.filter((m) => m.personId !== null && m.einfluss === null);
-  if (offen.length === 0) return 0;
+  if (offen.length === 0) return abgelegt;
   const r = await getProducerPool("company-contact").query<{ personId: string; value: string; url: string | null }>(
     `SELECT f."personId", f."value", o."evidenceUrl" AS url
        FROM "Fact" f LEFT JOIN "Observation" o ON o."id" = f."lastObsId"
@@ -693,7 +703,6 @@ async function websiteVorschlaege(mitglieder: Array<{ id: string; personId: stri
         AND f."lastSeen" > NOW() - INTERVAL '180 days'`,
     [offen.map((m) => m.personId), HERVORHEBUNG_FELD],
   );
-  let abgelegt = 0;
   for (const m of offen) {
     const hs = r.rows
       .filter((x) => x.personId === m.personId)
@@ -702,6 +711,29 @@ async function websiteVorschlaege(mitglieder: Array<{ id: string; personId: stri
     if (!v) continue;
     const ergebnis = await vorschlagAblegen({ mitgliedId: m.id, dimension: v.dimension, wert: v.wert, herkunft: "ava:website", grund: v.grund });
     if (ergebnis.abgelegt) abgelegt++;
+  }
+  return abgelegt;
+}
+
+/**
+ * Taetigkeitsbeschreibung von der Website (Fakt websiteBeschreibung, ein Satz
+ * je Person) als Rollen-Vorschlag — nur fuer Mitglieder ohne feste Rolle und
+ * nur, wenn der Titel nichts Konkretes hergab (lib/buying-center-vorschlag.ts).
+ * Die Beschreibung kommt aus jeder Art von Seite, die der Kontaktlauf gelesen
+ * hat; hier wird nichts nachgeladen.
+ */
+async function beschreibungVorschlaege(mitglieder: Array<{ id: string; personId: string | null; funktion: string | null; rollen: string[] }>): Promise<number> {
+  const offen = mitglieder.filter((m) => m.personId !== null && m.rollen.length === 0);
+  if (offen.length === 0) return 0;
+  const beschreibungJe = await faktJePerson(offen.map((m) => m.personId), BESCHREIBUNG_FELD);
+  let abgelegt = 0;
+  for (const m of offen) {
+    const b = beschreibungJe.get(m.personId as string);
+    if (!b) continue;
+    for (const v of vorschlaegeAusBeschreibung(b, vorschlaegeAusTitel(m.funktion))) {
+      const ergebnis = await vorschlagAblegen({ mitgliedId: m.id, dimension: v.dimension, wert: v.wert, herkunft: "ava:website", grund: v.grund });
+      if (ergebnis.abgelegt) abgelegt++;
+    }
   }
   return abgelegt;
 }

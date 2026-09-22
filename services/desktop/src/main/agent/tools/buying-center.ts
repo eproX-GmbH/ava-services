@@ -30,7 +30,7 @@ const KONTAKT_TEXT: Record<string, string> = { "0": "kein Kontakt", S: "selten",
 const EINFLUSS_TEXT: Record<string, string> = { G: "gering", M: "mittel", H: "hoch" };
 
 interface Mitglied {
-  id: string; personId: string | null; name: string; funktion: string | null; seit?: string | null;
+  id: string; personId: string | null; name: string; funktion: string | null; seit?: string | null; beschreibung?: string | null;
   rollen: string[]; einstellung: string | null; kontakt: string | null; einfluss: string | null;
   angaben: Array<{ id: string; dimension: string; wert: string | null; herkunft: string; grund: string; entschieden: string | null; erfasstAt: string }>;
 }
@@ -53,7 +53,7 @@ function zusammenfassung(bc: BuyingCenter): string {
     const k = m.kontakt ? KONTAKT_TEXT[m.kontakt] ?? m.kontakt : "Kontakt ?";
     const f = m.einfluss ? EINFLUSS_TEXT[m.einfluss] ?? m.einfluss : "Einfluss ?";
     const offen = m.angaben.filter((a) => a.herkunft.startsWith("ava:") && a.entschieden === null).length;
-    return `- ${m.name}${m.funktion ? ` (${m.funktion})` : ""}${m.seit ? `, seit ${m.seit}` : ""} [${m.id}]: ${rollen} · ${e} · ${k} · ${f}${offen ? ` · ${offen} offene Vorschlaege` : ""}`;
+    return `- ${m.name}${m.funktion ? ` (${m.funktion})` : ""}${m.seit ? `, seit ${m.seit}` : ""} [${m.id}]: ${rollen} · ${e} · ${k} · ${f}${offen ? ` · ${offen} offene Vorschlaege` : ""}${m.beschreibung ? `\n  Website: ${m.beschreibung}` : ""}`;
   });
   const kanten = bc.kanten.map((k) => {
     const von = bc.mitglieder.find((m) => m.id === k.vonMitgliedId)?.name ?? k.vonMitgliedId;

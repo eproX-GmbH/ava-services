@@ -34,6 +34,8 @@ export interface BcMitglied {
   id: string; personId: string | null; name: string; funktion: string | null;
   /** Beschaeftigungsbeginn "JJJJ-MM" / "JJJJ" aus dem Kontakt-Bestand. */
   seit?: string | null;
+  /** Ein Satz von der Website dazu, was die Person bei der Firma tut. */
+  beschreibung?: string | null;
   rollen: string[]; einstellung: string | null; kontakt: string | null; einfluss: string | null;
   ansprechpartnerBeiUns: string | null; x: number | null; y: number | null; angaben: BcAngabe[];
 }
@@ -551,6 +553,7 @@ function Seitenleiste({ bc, m, onSchliessen, onGeaendert, interaktionen, interak
           <div className="bc-seite__name">{m.personId ? <Link to={`/personen/${encodeURIComponent(m.personId)}`}>{m.name}</Link> : m.name}</div>
           {m.funktion && <div className="muted small">{m.funktion}</div>}
           {m.seit && <div className="muted small">Im Unternehmen {seitText(m.seit)}</div>}
+          {m.beschreibung && <p className="bc-seite__beschreibung small" title="Von der Website der Firma">{m.beschreibung}</p>}
           {relevanzErlaubt && m.personId && <Waermeanzeige zielArt="person" zielId={m.personId} />}
           {!m.personId && <div className="muted small">Nicht mit dem Kontakt-Bestand verbunden — keine Personensignale. Im Chat: „verbinde … mit …".</div>}
         </div>

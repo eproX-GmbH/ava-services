@@ -35,8 +35,29 @@ export interface Vorschlag {
 export function vorschlaegeAusTitel(titel: string | null | undefined): Vorschlag[] {
   const t = (titel ?? "").toLowerCase();
   if (!t.trim()) return [];
+  return regeln(t, (was: string) => `Titel "${titel}": ${was}`, { fachkraftAlsNutzer: true });
+}
+
+/**
+ * Aus der Taetigkeitsbeschreibung von der Website (Fakt websiteBeschreibung)
+ * ableiten, was der Titel nicht hergab. Dieselben Regeln wie beim Titel,
+ * aber OHNE den Rueckfall "Fachkraft = Anwender": Ein Satz, der nichts
+ * Konkretes sagt, ergibt keinen Vorschlag. Gedacht fuer Mitglieder, deren
+ * Titel nur "N" oder nichts ergab — sonst wuerde der Titel doppelt sprechen.
+ */
+export function vorschlaegeAusBeschreibung(beschreibung: string | null | undefined, titelVorschlaege: Vorschlag[] = []): Vorschlag[] {
+  const b = (beschreibung ?? "").replace(/\s+/g, " ").trim();
+  if (!b) return [];
+  const titelKonkret = titelVorschlaege.some((v) => v.dimension === "rolle" && v.wert !== "N");
+  if (titelKonkret) return [];
+  const kurz = b.length > 90 ? `${b.slice(0, 87).trimEnd()}…` : b;
+  const aus = regeln(b.toLowerCase(), (was: string) => `Website-Beschreibung „${kurz}“: ${was}`, { fachkraftAlsNutzer: false });
+  // Was der Titel schon vorschlaegt, nicht nochmal.
+  return aus.filter((v) => !titelVorschlaege.some((t) => t.dimension === v.dimension && t.wert === v.wert));
+}
+
+function regeln(t: string, grund: (was: string) => string, opts: { fachkraftAlsNutzer: boolean }): Vorschlag[] {
   const aus: Vorschlag[] = [];
-  const grund = (was: string) => `Titel "${titel}": ${was}`;
 
   // Assistenz ZUERST: "Assistentin der Geschaeftsfuehrung" enthaelt
   // "Geschaeftsfuehrung" und wuerde sonst zur Entscheiderin — genau die
@@ -64,7 +85,13 @@ export function vorschlaegeAusTitel(titel: string | null | undefined): Vorschlag
     aus.push({ dimension: "rolle", wert: "B", grund: grund("Technische Leitung beeinflusst die Entscheidung") });
     return aus;
   }
-  if (/leit|\bhead\b|direktor|director|bereichs|abteilungs/.test(t)) {
+  // Im Titel reicht "leit" ("Leiter Vertrieb", "Vertriebsleitung"); in einem
+  // ganzen Satz traefe das auch "Begleitung" und "Anleitung" — dort nur
+  // ganze Woerter.
+  const leitung = opts.fachkraftAlsNutzer
+    ? /leit|\bhead\b|direktor|director|bereichs|abteilungs/
+    : /\b(leite|leitet|leitung|leiter|leiterin|verantworte|verantwortet|verantwortlich|head of|director|direktor|direktorin|bereichsleit\w*|abteilungsleit\w*|teamlead|team lead)\b/;
+  if (leitung.test(t)) {
     aus.push({ dimension: "rolle", wert: "B", grund: grund("Leitungsebene beeinflusst die Entscheidung") });
     aus.push({ dimension: "einfluss", wert: "M", grund: grund("Leitungsebene — nur ein Vorschlag") });
     return aus;
@@ -76,7 +103,7 @@ export function vorschlaegeAusTitel(titel: string | null | undefined): Vorschlag
   // Alles Uebrige: vermutlich Anwender. Bewusst KEIN Einfluss-Vorschlag —
   // gerade hier sitzen die "Schluesselnutzer", die das Buch beschreibt, und
   // die erkennt nur der Nutzer.
-  aus.push({ dimension: "rolle", wert: "N", grund: grund("Fachkraft, vermutlich Anwender der Lösung") });
+  if (opts.fachkraftAlsNutzer) aus.push({ dimension: "rolle", wert: "N", grund: grund("Fachkraft, vermutlich Anwender der Lösung") });
   return aus;
 }
 

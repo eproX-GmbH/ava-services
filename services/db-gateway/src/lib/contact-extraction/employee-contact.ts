@@ -109,6 +109,8 @@ export type EmployeeCandidate = {
   phone?: string;
   /** Beginn der Beschaeftigung, "JJJJ-MM" oder "JJJJ". */
   seit?: string;
+  /** Ein Satz von der Website dazu, was die Person bei der Firma tut. */
+  beschreibung?: string;
   sourceUrl?: string;
   source?: string;
 };
@@ -116,6 +118,11 @@ export type EmployeeCandidate = {
 /** Fakt-Feld fuer den Beschaeftigungsbeginn; Wert "JJJJ-MM" oder "JJJJ". */
 export const SEIT_FELD = "employmentSince";
 export const SEIT_RE = /^(19|20)\d{2}(-(0[1-9]|1[0-2]))?$/;
+/** Fakt-Feld fuer die Taetigkeitsbeschreibung von der Website (ein Satz,
+ *  hoechstens BESCHREIBUNG_MAX Zeichen). Quelle ist die Seite in
+ *  Observation.evidenceUrl; das Buying Center leitet daraus Rollen ab. */
+export const BESCHREIBUNG_FELD = "websiteBeschreibung";
+export const BESCHREIBUNG_MAX = 300;
 
 export async function upsertPersonByIdentity(
   prisma: PrismaClient,
@@ -243,6 +250,7 @@ export function buildPersonObservations(args: {
     email?: string;
     phone?: string;
     seit?: string;
+    beschreibung?: string;
   };
   source: string;
   evidenceUrl?: string | null;
@@ -351,6 +359,21 @@ export function buildPersonObservations(args: {
       personId: args.personId,
       field: SEIT_FELD,
       value: args.candidate.seit,
+      source: args.source,
+      evidenceUrl: args.evidenceUrl ?? null,
+      evidence: null,
+      companyId: args.companyId,
+    });
+  }
+
+  const beschreibung = (args.candidate.beschreibung ?? "").replace(/\s+/g, " ").trim();
+  if (beschreibung.length >= 10 && beschreibung.length <= BESCHREIBUNG_MAX) {
+    obs.push({
+      entityType: "PERSON" as EntityType,
+      entityId: args.personId,
+      personId: args.personId,
+      field: BESCHREIBUNG_FELD,
+      value: beschreibung,
       source: args.source,
       evidenceUrl: args.evidenceUrl ?? null,
       evidence: null,

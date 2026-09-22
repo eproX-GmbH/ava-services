@@ -7,7 +7,7 @@
 import assert from "node:assert/strict";
 import V from "../src/lib/buying-center-vorschlag.ts";
 import HV from "../src/lib/contact-extraction/hervorhebung.ts";
-const { vorschlaegeAusTitel, unbesetzteRollen, ohneKontakt, gleicherName, vorschlagAusHervorhebung } = V;
+const { vorschlaegeAusTitel, vorschlaegeAusBeschreibung, unbesetzteRollen, ohneKontakt, gleicherName, vorschlagAusHervorhebung } = V;
 const { hervorhebungAlsWert, hervorhebungAusWert } = HV;
 
 let fehler = 0;
@@ -89,4 +89,32 @@ pruefe("fremde Werte werden nicht geparst", () => {
 });
 
 console.log(fehler === 0 ? "\nAlles gruen." : `\n${fehler} Pruefung(en) fehlgeschlagen.`);
+console.log("Beschreibung von der Website");
+pruefe("Beschreibung ergaenzt, was der Titel nicht hergab", () => {
+  const titel = vorschlaegeAusTitel("Solution Architecture");
+  assert.deepEqual(titel.map((v) => v.wert), ["N"]);
+  const aus = vorschlaegeAusBeschreibung("Aktuell bin ich als Solution Architect für unsere Kundenprojekte verantwortlich und betreue die Weiterentwicklung.", titel);
+  assert.deepEqual(aus.filter((v) => v.dimension === "rolle").map((v) => v.wert), ["B"]);
+  assert.match(aus[0].grund, /^Website-Beschreibung „/);
+  assert.ok(aus[0].grund.length < 220, aus[0].grund);
+});
+pruefe("kein Rueckfall auf N aus einem Satz ohne Aussage", () => {
+  assert.deepEqual(vorschlaegeAusBeschreibung("Ich habe immer ein offenes Ohr für unsere Kundinnen und Kunden.", vorschlaegeAusTitel("Customer Service")), []);
+});
+pruefe("ganze Woerter: Begleitung und Anleitung sind keine Leitung", () => {
+  assert.deepEqual(vorschlaegeAusBeschreibung("Ich unterstütze bei der Begleitung von Projekten und schreibe Anleitungen.", []), []);
+  assert.deepEqual(vorschlaegeAusBeschreibung("Ich leite das Team Data Analytics.", []).map((v) => v.dimension + v.wert), ["rolleB", "einflussM"]);
+});
+pruefe("konkreter Titel: Beschreibung schweigt", () => {
+  assert.deepEqual(vorschlaegeAusBeschreibung("Gründer und Gesellschafter der Firma.", vorschlaegeAusTitel("Geschäftsführung")), []);
+});
+pruefe("Assistenz in der Beschreibung → Gatekeeper, nichts doppelt", () => {
+  const titel = vorschlaegeAusTitel("Backoffice");
+  const aus = vorschlaegeAusBeschreibung("Als Assistentin der Geschäftsführung halte ich den Rücken frei.", titel);
+  assert.deepEqual(aus.map((v) => v.wert), ["GK"]);
+});
+pruefe("leer / null → nichts", () => {
+  assert.deepEqual(vorschlaegeAusBeschreibung("", []), []);
+  assert.deepEqual(vorschlaegeAusBeschreibung(null, []), []);
+});
 process.exit(fehler === 0 ? 0 : 1);

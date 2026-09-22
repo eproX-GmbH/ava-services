@@ -2843,6 +2843,8 @@ function fieldLabel(field: string): string {
     xingUrl: "XING",
     linkedinUrl: "LinkedIn",
     employmentSince: "Im Unternehmen seit",
+    websiteBeschreibung: "Auf der Website",
+    websiteHervorhebung: "Hervorhebung auf der Website",
   };
   return labels[field] ?? field;
 }

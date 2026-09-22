@@ -3262,6 +3262,7 @@ a.heartbeat-decision__company:hover {
 .bc-seite__kopf { display: flex; align-items: flex-start; justify-content: space-between; gap: 0.6rem; margin-bottom: 0.5rem; }
 .bc-seite__kopf .btn { flex: none; white-space: nowrap; }
 .bc-seite__name { font-weight: 600; font-size: 15px; }
+.bc-seite__beschreibung { margin: 4px 0 0; line-height: 1.4; max-width: 46ch; }
 .bc-seite h4 { margin: 0.9rem 0 0.35rem; font-size: 12px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
 .bc-seite__dims { display: grid; grid-template-columns: auto 1fr; gap: 0.15rem 0.75rem; margin: 0; font-size: 13px; }
 .bc-seite__dims dt { color: var(--muted); }

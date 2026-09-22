@@ -92,6 +92,9 @@ export interface CompanyContactPersistRequest {
       anzahlAufSeite?: number;
       mitFoto?: boolean;
       mitZitat?: boolean;
+      /** Ein Satz von der Seite, was die Person bei der Firma tut → Fakt
+       *  "websiteBeschreibung" (lib/contact-extraction/employee-contact.ts). */
+      beschreibung?: string;
     }>;
     /** When set, run cleanupEmploymentsByTTL after processing. The
      *  compute-worker emits this on the LAST event of a dispatch
@@ -314,6 +317,7 @@ export async function applyCompanyContactPersist(
       email: p.email,
       phone: p.phone,
       seit: p.seit,
+      beschreibung: p.beschreibung,
       source: source,
       sourceUrl: p.sourceUrl ?? evidenceUrl ?? undefined,
     };
