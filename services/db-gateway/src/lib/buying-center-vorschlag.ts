@@ -141,7 +141,83 @@ export function gleicherName(a: string, b: string): boolean {
   if (!fa || !fb) return false;
   if (fa === fb) return true;
   const ta = fa.split(" "), tb = fb.split(" ");
-  return ta.length >= 2 && tb.length >= 2 && [...ta].sort().join(" ") === [...tb].sort().join(" ");
+  if (ta.length < 2 || tb.length < 2) return false;
+  if ([...ta].sort().join(" ") === [...tb].sort().join(" ")) return true;
+  // Zweitnamen: Das Register fuehrt "Michael Erwin Basler", LinkedIn
+  // "Michael Basler". Erster und letzter Name gleich, und die kuerzere
+  // Schreibweise steckt ganz in der laengeren → dieselbe Person. Kein
+  // Duplikat im Buying Center, wenn beide Quellen sie kennen.
+  if (ta[0] !== tb[0] || ta[ta.length - 1] !== tb[tb.length - 1]) return false;
+  const [kurz, lang] = ta.length <= tb.length ? [ta, tb] : [tb, ta];
+  return kurz.every((t) => lang.includes(t));
+}
+
+// ---- Handelsregister und Gesellschafterliste ---------------------------------
+//
+// Befund 2026-09-22: Der Entwurf kam nur aus dem Kontakt-Bestand; die
+// eingetragenen Geschaeftsfuehrer (structured-content) und die
+// Gesellschafter (Gesellschafterliste, Orga-Feature verflechtungen) fehlten
+// ganz, wenn sie nicht zufaellig auf der Website standen. Dabei sind sie
+// laut Buch die sichersten Kandidaten fuer Entscheider und Ratifizierer.
+
+export interface RegisterPerson {
+  name: string;
+  geschaeftsfuehrer: boolean;
+  /** Anteil laut aktueller Gesellschafterliste; null = Gesellschafter ohne bekannten Anteil. */
+  gesellschafter: { prozent: number | null; listeDatum: string | null } | null;
+}
+
+/** Funktionstext fuer ein Mitglied, das nur aus dem Register bekannt ist. */
+export function registerFunktion(r: RegisterPerson): string {
+  const teile: string[] = [];
+  if (r.geschaeftsfuehrer) teile.push("Geschäftsführer laut Handelsregister");
+  if (r.gesellschafter) teile.push(r.gesellschafter.prozent !== null ? `Gesellschafter (${prozentText(r.gesellschafter.prozent)} %)` : "Gesellschafter");
+  return teile.join(", ");
+}
+
+function prozentText(p: number): string {
+  return (Math.round(p * 10) / 10).toLocaleString("de-DE");
+}
+
+/**
+ * Vorschlaege aus der Register-Stellung. Geschaeftsfuehrer → Entscheider,
+ * Gesellschafter → Ratifizierer (er zeichnet ab, was die Geschaeftsfuehrung
+ * will; bei Mehrheit ist er faktisch Entscheider). Einfluss "H" in beiden
+ * Faellen — mit der Warnung des Buchs, dass Stellung nicht Einfluss ist.
+ */
+export function vorschlaegeAusRegister(r: RegisterPerson): Vorschlag[] {
+  const aus: Vorschlag[] = [];
+  if (r.geschaeftsfuehrer) {
+    aus.push({ dimension: "rolle", wert: "E", grund: "Handelsregister: eingetragener Geschäftsführer — trifft in der Regel die Entscheidung" });
+  }
+  if (r.gesellschafter) {
+    const wann = r.gesellschafter.listeDatum ? ` vom ${r.gesellschafter.listeDatum}` : "";
+    const anteil = r.gesellschafter.prozent !== null ? `${prozentText(r.gesellschafter.prozent)} % der Anteile` : "Anteil unbekannt";
+    if (r.gesellschafter.prozent !== null && r.gesellschafter.prozent > 50 && !r.geschaeftsfuehrer) {
+      aus.push({ dimension: "rolle", wert: "E", grund: `Gesellschafterliste${wann}: ${anteil} — Mehrheitsgesellschafter entscheidet faktisch mit` });
+    }
+    aus.push({ dimension: "rolle", wert: "R", grund: `Gesellschafterliste${wann}: ${anteil} — Gesellschafter zeichnen Entscheidungen ab` });
+  }
+  if (aus.length) {
+    aus.push({ dimension: "einfluss", wert: "H", grund: `${r.geschaeftsfuehrer ? "Geschäftsführung" : "Gesellschafter"} laut Register — nur ein Vorschlag, Stellung ist nicht gleich Einfluss` });
+  }
+  return aus;
+}
+
+/**
+ * Rang eines Kontakts fuer den Deckel von 25 im Entwurf: 0 Register, 1
+ * Geschaeftsleitung laut Titel, 2 Leitungsebene/Prokura/Einkauf/IT-Leitung/
+ * Controlling, 3 sonstiger Titel, 4 kein Titel. Vorher entschied die
+ * Erfassungsreihenfolge — und schnitt die "Managing Directors" ab.
+ */
+export function rangDesTitels(titel: string | null | undefined): number {
+  const t = (titel ?? "").trim().toLowerCase();
+  if (!t) return 4;
+  // Assistenz zuerst — "Assistentin der Geschaeftsfuehrung" ist keine Geschaeftsleitung.
+  if (/assisten|sekret|office manag|empfang|vorzimmer/.test(t)) return 3;
+  if (/gesch(ä|ae)ftsf|managing director|\bceo\b|\bcfo\b|\bcoo\b|vorstand|inhaber|\bowner\b|founder|gr(ü|ue)nder|gesellschafter|partner\b/.test(t)) return 1;
+  if (/prokur|eink(a|ä|ae)uf|purchas|procurement|beschaffung|\bcto\b|\bcio\b|leit|\bhead\b|direktor|director|bereichs|abteilungs|controll|finanz|\bvp\b|vice president/.test(t)) return 2;
+  return 3;
 }
 
 /**

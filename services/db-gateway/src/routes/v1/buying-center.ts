@@ -31,6 +31,7 @@
 
 import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
 import { HTTPException } from "hono/http-exception";
+import type { Context } from "hono";
 import { requireScope, type AuthContext } from "../../middleware/auth";
 import { requireFeature } from "../../lib/policy-guard";
 import { getGatewayPool, getProducerPool } from "../../lib/producer-pools";
@@ -38,7 +39,10 @@ import { ErrorShape } from "./schemas";
 import {
   ROLLEN, EINSTELLUNGEN, KONTAKTE, EINFLUESSE, KANTEN_ARTEN,
   vorschlaegeAusTitel, vorschlaegeAusBeschreibung, unbesetzteRollen, ohneKontakt, gleicherName, vorschlagAusHervorhebung,
+  vorschlaegeAusRegister, registerFunktion, rangDesTitels, type RegisterPerson,
 } from "../../lib/buying-center-vorschlag";
+import { registerPersonenLaden } from "../../lib/buying-center-register";
+import { istAusgeschieden } from "../../lib/contact-extraction/ausgeschieden";
 import { HERVORHEBUNG_FELD, hervorhebungAusWert } from "../../lib/contact-extraction/hervorhebung";
 import { BESCHREIBUNG_FELD, SEIT_FELD } from "../../lib/contact-extraction/employee-contact";
 import { publishWebsiteRetry } from "../../lib/retry-publish";
@@ -82,7 +86,7 @@ function cuid(): string {
 }
 
 /** Arten der protokollierten Laeufe — der Desktop darf nur seine eigenen melden. */
-const LAUF_ARTEN = ["entwurf", "crm-abgleich", "website-abgleich", "nachfrage", "watchlist", "verknuepfung", "status", "freigabe", "automatik", "recherche", "auswertung"] as const;
+const LAUF_ARTEN = ["entwurf", "crm-abgleich", "website-abgleich", "register-abgleich", "nachfrage", "watchlist", "verknuepfung", "status", "freigabe", "automatik", "recherche", "auswertung"] as const;
 const DESKTOP_LAUF_ARTEN = ["crm-abgleich", "watchlist"] as const;
 
 /**
@@ -320,39 +324,54 @@ buyingCenterRouter.openapi(anlegenRoute, async (c) => {
     );
   }
 
-  // Entwurf: Personen aus dem Kontakt-Bestand mit Titel-Vorschlaegen.
-  // Hoechstens 25 — ein Buying Center mit achtzig Namen ist keins.
-  const kontakte = getProducerPool("company-contact");
-  const personen = await kontakte.query<{ personId: string; fullName: string; title: string | null }>(
-    `SELECT DISTINCT ON (p.id) p.id AS "personId", p."fullName", e.title
-       FROM "Employment" e JOIN "Person" p ON p.id = e."personId"
-      WHERE e."companyId" = $1 AND (e."isCurrent" IS DISTINCT FROM false)
-      ORDER BY p.id, e."lastSeen" DESC NULLS LAST
-      LIMIT 25`,
-    [companyId],
-  );
+  // Entwurf: zuerst die Register-Personen (Geschaeftsfuehrer, Gesellschafter),
+  // dann der Kontakt-Bestand nach Rang des Titels. Hoechstens 25 — ein
+  // Buying Center mit achtzig Namen ist keins. Wer in beiden Quellen steht,
+  // wird EIN Mitglied (Namensabgleich mit Zweitnamen-Toleranz).
+  const register = await registerPersonenLaden(c, wer.tenantId, companyId);
+  const kontakte = await kontaktPersonen(companyId);
   const neueMitglieder: Array<{ id: string; personId: string | null; einfluss: string | null; funktion: string | null; rollen: string[] }> = [];
-  let titelVorschlaege = 0;
-  for (const p of personen.rows) {
+  const genommen = new Set<string>();
+  let titelVorschlaege = 0, registerVorschlaege = 0;
+  const aufnehmen = async (name: string, personId: string | null, funktion: string | null, reg: RegisterPerson | null): Promise<void> => {
     const mid = cuid();
     await pool.query(
       `INSERT INTO "BuyingCenterMitglied" ("id","buyingCenterId","personId","name","funktion","updatedAt") VALUES ($1,$2,$3,$4,$5,NOW())`,
-      [mid, id, p.personId, p.fullName, p.title],
+      [mid, id, personId, name, funktion],
     );
-    neueMitglieder.push({ id: mid, personId: p.personId, einfluss: null, funktion: p.title, rollen: [] });
+    neueMitglieder.push({ id: mid, personId, einfluss: null, funktion, rollen: [] });
     // Vorschlaege landen als OFFENE Angaben (nicht uebernommen). Der Stand
     // bleibt bei Fragezeichen, bis der Nutzer entscheidet — ein Buying
     // Center aus duennen Daten ist gefaehrlicher als keins.
-    for (const v of vorschlaegeAusTitel(p.title)) {
+    if (reg) {
+      for (const v of vorschlaegeAusRegister(reg)) {
+        await angabeSetzen({ mitgliedId: mid, dimension: v.dimension, wert: v.wert, herkunft: "ava:register", grund: v.grund, vonActorId: null, uebernehmen: false });
+        registerVorschlaege++;
+      }
+    }
+    for (const v of vorschlaegeAusTitel(funktion)) {
+      // Was das Register schon sagt, sagt der Titel nicht nochmal.
+      if (reg && (v.dimension === "einfluss" || (v.dimension === "rolle" && (v.wert === "E" || v.wert === "N")))) continue;
       await angabeSetzen({ mitgliedId: mid, dimension: v.dimension, wert: v.wert, herkunft: "ava:titel", grund: v.grund, vonActorId: null, uebernehmen: false });
       titelVorschlaege++;
     }
+  };
+  for (const reg of register) {
+    const k = kontakte.find((x) => !genommen.has(x.personId) && gleicherName(x.fullName, reg.name));
+    if (k) genommen.add(k.personId);
+    await aufnehmen(k?.fullName ?? reg.name, k?.personId ?? null, k?.title?.trim() || registerFunktion(reg), reg);
   }
+  const rest = kontakte
+    .filter((k) => !genommen.has(k.personId))
+    .map((k, i) => ({ ...k, rang: rangDesTitels(k.title), i }))
+    .sort((a, b) => a.rang - b.rang || a.i - b.i)
+    .slice(0, Math.max(0, ENTWURF_DECKEL - neueMitglieder.length));
+  for (const k of rest) await aufnehmen(k.fullName, k.personId, k.title, null);
   // BC4 — was die Website hervorhebt, als Einfluss-Vorschlag dazu.
   const websiteAbgelegt = await websiteVorschlaege(neueMitglieder);
   await lauf(id, "entwurf",
-    `Entwurf aus dem Kontakt-Bestand: ${personen.rows.length} Personen, ${titelVorschlaege} Vorschläge aus Titeln, ${websiteAbgelegt} von der Website${fokusFrei ? "" : " — Fokus-Deckel erreicht, kein Fokuskunde"}`,
-    { personen: personen.rows.length, titelVorschlaege, websiteAbgelegt, fokus: fokusFrei });
+    `Entwurf: ${register.length} aus dem Handelsregister${register.some((r) => r.gesellschafter) ? " und der Gesellschafterliste" : ""}, ${rest.length} aus dem Kontakt-Bestand (${kontakte.length} vorhanden), ${registerVorschlaege} Vorschläge aus dem Register, ${titelVorschlaege} aus Titeln, ${websiteAbgelegt} von der Website${fokusFrei ? "" : " — Fokus-Deckel erreicht, kein Fokuskunde"}`,
+    { register: register.length, kontakte: rest.length, registerVorschlaege, titelVorschlaege, websiteAbgelegt, fokus: fokusFrei });
 
   const kopf = (await pool.query<BcKopf>(`SELECT * FROM "BuyingCenter" WHERE "id" = $1`, [id])).rows[0]!;
   return c.json(await ladeVoll({ ...kopf, eigenes: true }), 200);
@@ -548,10 +567,24 @@ buyingCenterRouter.openapi(mitgliedRoute, async (c) => {
   const bc = await ladeMitZugriff(c.req.valid("param").id, wer, true);
   const { personId, name, funktion, grund } = c.req.valid("json");
   const pool = getGatewayPool();
-  // Dieselbe Person nicht zweimal.
+  // Dieselbe Person nicht zweimal — weder ueber die Kontakt-Person noch
+  // ueber den Namen (Register-Mitglied ohne Kontakt vs. LinkedIn-Person).
   if (personId) {
     const d = await pool.query(`SELECT "id" FROM "BuyingCenterMitglied" WHERE "buyingCenterId" = $1 AND "personId" = $2`, [bc.id, personId]);
     if (d.rows[0]) throw new HTTPException(409, { message: "Diese Person ist bereits im Buying Center." });
+  }
+  const namen = await pool.query<{ id: string; name: string; personId: string | null }>(`SELECT "id", "name", "personId" FROM "BuyingCenterMitglied" WHERE "buyingCenterId" = $1`, [bc.id]);
+  const gleich = namen.rows.find((m) => gleicherName(m.name, name));
+  if (gleich) {
+    // Freies Mitglied (z. B. aus dem Register) + jetzt die Kontakt-Person dazu: verknuepfen statt verdoppeln.
+    if (personId && gleich.personId === null) {
+      await pool.query(`UPDATE "BuyingCenterMitglied" SET "personId" = $2, "funktion" = COALESCE(NULLIF($3, ''), "funktion"), "updatedAt" = NOW() WHERE "id" = $1`, [gleich.id, personId, funktion?.trim() ?? ""]);
+      await angabeSetzen({ mitgliedId: gleich.id, dimension: "notiz", wert: null, herkunft: "nutzer", grund: `mit Kontakt-Person verknüpft (${name.trim()})`, vonActorId: wer.actorId, uebernehmen: false });
+      await websiteVorschlaege([{ id: gleich.id, personId, einfluss: null, funktion: funktion?.trim() || null, rollen: [] }]);
+      const voll = await ladeVoll(bc);
+      return c.json(voll.mitglieder.find((m) => m.id === gleich.id)!, 200);
+    }
+    throw new HTTPException(409, { message: `„${gleich.name}“ ist bereits im Buying Center.` });
   }
   const mid = cuid();
   await pool.query(
@@ -715,6 +748,68 @@ async function websiteVorschlaege(mitglieder: Array<{ id: string; personId: stri
   return abgelegt;
 }
 
+/** Deckel fuer den Entwurf: Register-Personen zaehlen mit. */
+const ENTWURF_DECKEL = 25;
+
+/** Aktuelle Kontakt-Personen der Firma ohne Ausgeschiedene, hoechstens 200. */
+async function kontaktPersonen(companyId: string): Promise<Array<{ personId: string; fullName: string; title: string | null }>> {
+  const r = await getProducerPool("company-contact").query<{ personId: string; fullName: string; title: string | null }>(
+    `SELECT DISTINCT ON (p.id) p.id AS "personId", p."fullName", e.title
+       FROM "Employment" e JOIN "Person" p ON p.id = e."personId"
+      WHERE e."companyId" = $1 AND (e."isCurrent" IS DISTINCT FROM false)
+      ORDER BY p.id, e."lastSeen" DESC NULLS LAST
+      LIMIT 200`,
+    [companyId],
+  );
+  return r.rows.filter((p) => !istAusgeschieden(p.title));
+}
+
+/**
+ * Register-Personen nachziehen (Oeffnen, Recherche-Auswertung): Wer im
+ * Handelsregister oder auf der Gesellschafterliste steht und noch nicht
+ * Mitglied ist, wird aufgenommen — mit Kontakt-Person, wenn der Name passt;
+ * wer schon Mitglied ist, bekommt die Register-Vorschlaege (vorschlagAblegen
+ * wiederholt nichts und respektiert Nutzerentscheidungen). Bestehende Buying
+ * Center bekommen so die Geschaeftsfuehrer ohne Neuanlage.
+ */
+async function registerNachziehen(
+  c: Context, tenantId: string, bc: BcKopf,
+  mitglieder: Array<{ id: string; personId: string | null; name: string; rollen: string[] }>,
+): Promise<{ neu: number; vorschlaege: number }> {
+  const register = await registerPersonenLaden(c, tenantId, bc.companyId);
+  if (register.length === 0) return { neu: 0, vorschlaege: 0 };
+  const pool = getGatewayPool();
+  const kontakte = await kontaktPersonen(bc.companyId);
+  const verbunden = new Set(mitglieder.map((m) => m.personId).filter((p): p is string => p !== null));
+  let neu = 0, vorschlaege = 0;
+  const namen: string[] = [];
+  for (const reg of register) {
+    let mid = mitglieder.find((m) => gleicherName(m.name, reg.name))?.id ?? null;
+    if (!mid) {
+      const k = kontakte.find((x) => !verbunden.has(x.personId) && gleicherName(x.fullName, reg.name));
+      if (k) verbunden.add(k.personId);
+      mid = cuid();
+      await pool.query(
+        `INSERT INTO "BuyingCenterMitglied" ("id","buyingCenterId","personId","name","funktion","updatedAt") VALUES ($1,$2,$3,$4,$5,NOW())`,
+        [mid, bc.id, k?.personId ?? null, k?.fullName ?? reg.name, k?.title?.trim() || registerFunktion(reg)],
+      );
+      neu++;
+      namen.push(k?.fullName ?? reg.name);
+    }
+    for (const v of vorschlaegeAusRegister(reg)) {
+      const e = await vorschlagAblegen({ mitgliedId: mid, dimension: v.dimension, wert: v.wert, herkunft: "ava:register", grund: v.grund });
+      if (e.abgelegt) vorschlaege++;
+    }
+  }
+  if (neu > 0 || vorschlaege > 0) {
+    await pool.query(`UPDATE "BuyingCenter" SET "updatedAt" = NOW() WHERE "id" = $1`, [bc.id]);
+    await lauf(bc.id, "register-abgleich",
+      `Handelsregister/Gesellschafterliste: ${neu} ${neu === 1 ? "Person" : "Personen"} aufgenommen${namen.length ? ` (${namen.join(", ")})` : ""}, ${vorschlaege} ${vorschlaege === 1 ? "Vorschlag" : "Vorschläge"} abgelegt`,
+      { neu, vorschlaege });
+  }
+  return { neu, vorschlaege };
+}
+
 /**
  * Taetigkeitsbeschreibung von der Website (Fakt websiteBeschreibung, ein Satz
  * je Person) als Rollen-Vorschlag — nur fuer Mitglieder ohne feste Rolle und
@@ -744,7 +839,7 @@ const vorschlagRoute = createRoute({
   request: { params: IdParam.extend({ mid: z.string().min(1).max(64) }), body: { content: { "application/json": { schema: z.object({
     dimension: z.enum(["rolle", "kontakt", "einfluss"]),
     wert: z.string().min(1).max(20),
-    herkunft: z.enum(["ava:titel", "ava:website", "ava:linkedin", "ava:crm"]),
+    herkunft: z.enum(["ava:titel", "ava:website", "ava:linkedin", "ava:crm", "ava:register"]),
     grund: z.string().min(1).max(500),
   }) } } } },
   responses: { 200: { content: { "application/json": { schema: z.object({ abgelegt: z.boolean(), grund: z.string().optional() }) } }, description: "ok" }, ...errorResponses },
@@ -875,6 +970,8 @@ buyingCenterRouter.openapi(vorschlaegeRoute, async (c) => {
   // nach dem Anlegen bringt neue Fakten, die hier ankommen sollen. Nur im
   // eigenen — ein Freigegebener loest keine Schreibvorgaenge aus.
   if (bc.eigenes) {
+    const reg = await registerNachziehen(c, auth(c).tenantId, bc, voll.mitglieder);
+    if (reg.neu > 0 || reg.vorschlaege > 0) voll = await ladeVoll(bc);
     const neu = await websiteVorschlaege(voll.mitglieder);
     if (neu > 0) {
       await lauf(bc.id, "website-abgleich", `Website-Hervorhebung: ${neu} ${neu === 1 ? "Vorschlag" : "Vorschläge"} abgelegt`, { abgelegt: neu });
@@ -1167,13 +1264,15 @@ const auswertungRoute = createRoute({
 buyingCenterRouter.openapi(auswertungRoute, async (c) => {
   const wer = auth(c);
   const bc = await ladeMitZugriff(c.req.valid("param").id, wer, true);
-  const voll = await ladeVoll(bc);
+  let voll = await ladeVoll(bc);
+  const reg = await registerNachziehen(c, wer.tenantId, bc, voll.mitglieder);
+  if (reg.neu > 0 || reg.vorschlaege > 0) voll = await ladeVoll(bc);
   const website = await websiteVorschlaege(voll.mitglieder);
   const verknuepfbar = (await verknuepfbarePersonen(bc.companyId, voll.mitglieder)).length;
   const uebernommen = bc.automatik ? await offeneUebernehmen(bc.id, wer.actorId) : 0;
   const neuePersonen = await nichtAufgenommenePersonen(bc.companyId, voll.mitglieder);
   await lauf(bc.id, "auswertung",
-    `Auswertung: Website-Abgleich ${website} ${website === 1 ? "Vorschlag" : "Vorschläge"}, ${verknuepfbar} verknüpfbare ${verknuepfbar === 1 ? "Person" : "Personen"}${bc.automatik ? `, ${uebernommen} automatisch übernommen` : ""}${neuePersonen.length ? `, ${neuePersonen.length} ${neuePersonen.length === 1 ? "Person" : "Personen"} im Bestand noch nicht im Buying Center (${neuePersonen.slice(0, 5).map((p) => p.fullName).join(", ")}${neuePersonen.length > 5 ? ", …" : ""})` : ""}`,
+    `Auswertung: ${reg.neu ? `${reg.neu} aus dem Register aufgenommen, ` : ""}Website-Abgleich ${website} ${website === 1 ? "Vorschlag" : "Vorschläge"}, ${verknuepfbar} verknüpfbare ${verknuepfbar === 1 ? "Person" : "Personen"}${bc.automatik ? `, ${uebernommen} automatisch übernommen` : ""}${neuePersonen.length ? `, ${neuePersonen.length} ${neuePersonen.length === 1 ? "Person" : "Personen"} im Bestand noch nicht im Buying Center (${neuePersonen.slice(0, 5).map((p) => p.fullName).join(", ")}${neuePersonen.length > 5 ? ", …" : ""})` : ""}`,
     { website, verknuepfbar, uebernommen, neuePersonen: neuePersonen.length });
   return c.json({ website, verknuepfbar, uebernommen, automatik: bc.automatik === true, neuePersonen }, 200);
 });

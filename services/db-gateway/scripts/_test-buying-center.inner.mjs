@@ -7,7 +7,7 @@
 import assert from "node:assert/strict";
 import V from "../src/lib/buying-center-vorschlag.ts";
 import HV from "../src/lib/contact-extraction/hervorhebung.ts";
-const { vorschlaegeAusTitel, vorschlaegeAusBeschreibung, unbesetzteRollen, ohneKontakt, gleicherName, vorschlagAusHervorhebung } = V;
+const { vorschlaegeAusTitel, vorschlaegeAusBeschreibung, unbesetzteRollen, ohneKontakt, gleicherName, vorschlagAusHervorhebung, vorschlaegeAusRegister, registerFunktion, rangDesTitels } = V;
 const { hervorhebungAlsWert, hervorhebungAusWert } = HV;
 
 let fehler = 0;
@@ -116,5 +116,37 @@ pruefe("Assistenz in der Beschreibung → Gatekeeper, nichts doppelt", () => {
 pruefe("leer / null → nichts", () => {
   assert.deepEqual(vorschlaegeAusBeschreibung("", []), []);
   assert.deepEqual(vorschlaegeAusBeschreibung(null, []), []);
+});
+console.log("Register und Rangfolge");
+pruefe("Zweitnamen: Register vs. LinkedIn ist dieselbe Person", () => {
+  assert.ok(gleicherName("Michael Erwin Basler", "Michael Basler"));
+  assert.ok(gleicherName("Dr. Günter Zimmer", "Guenter Zimmer"));
+  assert.ok(!gleicherName("Martin Zimmer", "Jonas Sebastian Zimmer"));
+  assert.ok(!gleicherName("Michael Basler", "Michael Erwin Bauer"));
+  assert.ok(!gleicherName("Erina B.", "Erina Buck"));
+});
+pruefe("Geschaeftsfuehrer laut Register → E + Einfluss H", () => {
+  const aus = vorschlaegeAusRegister({ name: "x", geschaeftsfuehrer: true, gesellschafter: null });
+  assert.deepEqual(aus.map((v) => v.dimension + v.wert), ["rolleE", "einflussH"]);
+  assert.match(aus[0].grund, /Handelsregister/);
+});
+pruefe("Mehrheitsgesellschafter → E + R, Minderheit nur R", () => {
+  assert.deepEqual(vorschlaegeAusRegister({ name: "x", geschaeftsfuehrer: false, gesellschafter: { prozent: 51, listeDatum: "2026-01-01" } }).map((v) => v.wert), ["E", "R", "H"]);
+  assert.deepEqual(vorschlaegeAusRegister({ name: "x", geschaeftsfuehrer: false, gesellschafter: { prozent: 10, listeDatum: null } }).map((v) => v.wert), ["R", "H"]);
+  assert.deepEqual(vorschlaegeAusRegister({ name: "x", geschaeftsfuehrer: true, gesellschafter: { prozent: 60, listeDatum: null } }).map((v) => v.wert), ["E", "R", "H"]);
+  assert.deepEqual(vorschlaegeAusRegister({ name: "x", geschaeftsfuehrer: false, gesellschafter: null }), []);
+});
+pruefe("Funktionstext fuer reine Register-Mitglieder", () => {
+  assert.equal(registerFunktion({ name: "x", geschaeftsfuehrer: true, gesellschafter: { prozent: 33.33, listeDatum: null } }), "Geschäftsführer laut Handelsregister, Gesellschafter (33,3 %)");
+  assert.equal(registerFunktion({ name: "x", geschaeftsfuehrer: false, gesellschafter: { prozent: null, listeDatum: null } }), "Gesellschafter");
+});
+pruefe("Rang: Geschaeftsleitung vor Leitung vor Fachkraft vor ohne Titel", () => {
+  assert.equal(rangDesTitels("Managing Director"), 1);
+  assert.equal(rangDesTitels("Assistentin der Geschäftsführung"), 3);
+  assert.equal(rangDesTitels("Head of Software Engineering"), 2);
+  assert.equal(rangDesTitels("Projektleiter"), 2);
+  assert.equal(rangDesTitels("Design Engineer"), 3);
+  assert.equal(rangDesTitels(""), 4);
+  assert.equal(rangDesTitels(null), 4);
 });
 process.exit(fehler === 0 ? 0 : 1);

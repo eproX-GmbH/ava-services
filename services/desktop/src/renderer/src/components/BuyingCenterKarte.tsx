@@ -63,7 +63,7 @@ const DIMENSION_TEXT: Record<string, string> = {
 };
 const HERKUNFT_TEXT: Record<string, string> = {
   nutzer: "von dir", "ava:titel": "AVA, aus dem Titel", "ava:website": "AVA, von der Website",
-  "ava:linkedin": "AVA, von LinkedIn", "ava:crm": "AVA, aus dem CRM",
+  "ava:linkedin": "AVA, von LinkedIn", "ava:crm": "AVA, aus dem CRM", "ava:register": "AVA, aus dem Handelsregister",
 };
 
 /** Wert einer Dimension in Worten — fuer Seitenleiste und Titel. */
@@ -291,6 +291,18 @@ export function BuyingCenterKarte({ id, kompakt = false }: { id: string; kompakt
  * kleben Namen aneinander. Die Anfangsansicht passt sich ein (viewBox),
  * danach kann man ziehen und zoomen — die Leinwandgroesse sieht man nicht.
  */
+/** 0 = innen (E, R, Register), 1 = mittlerer Ring (B, S, EK), 2 = aussen. */
+function ringFuer(m: BcMitglied): 0 | 1 | 2 {
+  const rollen = new Set(m.rollen);
+  if (rollen.has("E") || rollen.has("R")) return 0;
+  const vorgeschlagen = new Set(m.angaben.filter((a) => a.dimension === "rolle" && a.wert && a.entschieden !== "verworfen").map((a) => a.wert));
+  if (m.angaben.some((a) => a.herkunft === "ava:register" && a.entschieden !== "verworfen")) return 0;
+  if (rollen.size === 0 && (vorgeschlagen.has("E") || vorgeschlagen.has("R"))) return 0;
+  if (rollen.has("B") || rollen.has("S") || rollen.has("EK")) return 1;
+  if (rollen.size === 0 && (vorgeschlagen.has("B") || vorgeschlagen.has("S") || vorgeschlagen.has("EK"))) return 1;
+  return 2;
+}
+
 function leinwand(n: number): { breite: number; hoehe: number } {
   const breite = Math.max(880, Math.round(Math.sqrt(Math.max(n, 1)) * 340));
   return { breite, hoehe: Math.round(breite * 0.5) };
@@ -309,7 +321,11 @@ function Grafik({ bc, aktiv, onWahl, kompakt }: { bc: BuyingCenter; aktiv: strin
     return map;
   }, [bc.mitglieder]);
   const kanten = useMemo(() => bc.kanten.map((k) => ({ von: k.vonMitgliedId, nach: k.nachMitgliedId })), [bc.kanten]);
-  const berechnet = useMemo(() => kraftLayout(ids, kanten, breite, hoehe, bekannt), [ids, kanten, bekannt, breite, hoehe]);
+  // Mitte fuer die, die entscheiden: Entscheider/Ratifizierer und Register-
+  // Personen innen, Beeinflusser/Spezifizierer/Einkauf im mittleren Ring,
+  // Anwender/Gatekeeper/Unbekannte aussen.
+  const ringe = useMemo(() => new Map(bc.mitglieder.map((m) => [m.id, ringFuer(m)])), [bc.mitglieder]);
+  const berechnet = useMemo(() => kraftLayout(ids, kanten, breite, hoehe, bekannt, ringe), [ids, kanten, bekannt, breite, hoehe, ringe]);
   const [pos, setPos] = useState<Map<string, Punkt>>(berechnet);
   useEffect(() => setPos(berechnet), [berechnet]);
 
@@ -440,7 +456,7 @@ function Grafik({ bc, aktiv, onWahl, kompakt }: { bc: BuyingCenter; aktiv: strin
   };
 
   const zuruecksetzen = () => {
-    const frisch = kraftLayout(ids, kanten, breite, hoehe);
+    const frisch = kraftLayout(ids, kanten, breite, hoehe, new Map(), ringe);
     setPos(frisch);
     setAnsicht(einpassen(frisch));
     if (bc.eigenes) speichern.mutate(Array.from(frisch.entries()).map(([mitgliedId, p]) => ({ mitgliedId, x: Math.round(p.x), y: Math.round(p.y) })));
@@ -644,7 +660,7 @@ function Seitenleiste({ bc, m, onSchliessen, onGeaendert, interaktionen, interak
 // kein Arbeitsmittel; die Kopfzeile nennt den juengsten Lauf.
 
 const LAUF_ART_TEXT: Record<string, string> = {
-  entwurf: "Entwurf", "crm-abgleich": "CRM-Abgleich", "website-abgleich": "Website", nachfrage: "Nachfrage",
+  entwurf: "Entwurf", "crm-abgleich": "CRM-Abgleich", "website-abgleich": "Website", "register-abgleich": "Handelsregister", nachfrage: "Nachfrage",
   watchlist: "Watchlist", verknuepfung: "Verknüpfung", status: "Status", freigabe: "Freigabe",
   automatik: "Auto-Modus", recherche: "Recherche", auswertung: "Auswertung",
 };

@@ -99,7 +99,7 @@ export function buildBuyingCenterTools(deps: BuyingCenterToolDeps): Tool[] {
   const anlegen = defineTool({
     name: "buying_center_anlegen",
     description:
-      "Legt fuer eine Firma ein Buying Center (Power Map nach Sieck) an und macht sie damit zum Fokuskunden des Nutzers. Zieht die bekannten Kontakte der Firma als Entwurf hinein, mit Vorschlaegen fuer Rolle und Einfluss aus dem Titel — als OFFENE Vorschlaege, nicht als Fakten. Nutze das, wenn der Nutzer sagt 'lass uns ein Buying Center machen', 'Power Map', 'wer entscheidet bei X'. Gibt es schon eines, wird es zurueckgegeben statt verdoppelt. Fragt vorher nach. Zeige danach die Karte (anzeigen-Feld) und nenne die offenen Punkte.",
+      "Legt fuer eine Firma ein Buying Center (Power Map nach Sieck) an und macht sie damit zum Fokuskunden des Nutzers. Entwurf: zuerst die eingetragenen Geschaeftsfuehrer (Handelsregister) und Gesellschafter (Gesellschafterliste, falls vorhanden) mit Vorschlag Entscheider/Ratifizierer, dann die bekannten Kontakte der Firma nach Rang des Titels, mit Vorschlaegen fuer Rolle und Einfluss — als OFFENE Vorschlaege, nicht als Fakten. Wer in Register und Kontakten steht, ist EIN Mitglied. Nutze das, wenn der Nutzer sagt 'lass uns ein Buying Center machen', 'Power Map', 'wer entscheidet bei X'. Gibt es schon eines, wird es zurueckgegeben statt verdoppelt. Fragt vorher nach. Zeige danach die Karte (anzeigen-Feld) und nenne die offenen Punkte.",
     parameters: {
       type: "object",
       properties: {

@@ -18,20 +18,32 @@ export function kraftLayout(
   breite: number,
   hoehe: number,
   bekannt: Map<string, Punkt> = new Map(),
+  /** Ring je Knoten (0 innen, 1 mitte, 2 aussen); ohne Angabe liegt alles auf einem Kreis. */
+  ringe: Map<string, 0 | 1 | 2> = new Map(),
 ): Map<string, Punkt> {
   const cx = breite / 2;
   const cy = hoehe / 2;
   const pos = new Map<string, Punkt>();
-  // Start: Kreis um die Mitte, Bekanntes bleibt liegen.
-  const r = Math.min(breite, hoehe) * 0.32;
-  ids.forEach((id, i) => {
-    const b = bekannt.get(id);
-    if (b) pos.set(id, b);
-    else {
-      const w = (2 * Math.PI * i) / Math.max(ids.length, 1) - Math.PI / 2;
-      pos.set(id, { x: cx + r * Math.cos(w), y: cy + r * Math.sin(w) });
-    }
-  });
+  // Start: Kreise um die Mitte, je Ring einer, Bekanntes bleibt liegen. Die
+  // Ringe sind breiter als hoch (Ellipse), weil die Leinwand es auch ist.
+  const rMax = Math.min(breite, hoehe) * 0.42;
+  const radius = (ring: 0 | 1 | 2 | undefined): number => (ring === 0 ? rMax * 0.22 : ring === 1 ? rMax * 0.62 : ring === 2 ? rMax : rMax * 0.76);
+  const jeRing = new Map<0 | 1 | 2 | undefined, string[]>();
+  for (const id of ids) {
+    const rg = ringe.get(id);
+    jeRing.set(rg, [...(jeRing.get(rg) ?? []), id]);
+  }
+  for (const [rg, liste] of jeRing) {
+    const rr = radius(rg);
+    liste.forEach((id, i) => {
+      const b = bekannt.get(id);
+      if (b) pos.set(id, b);
+      else {
+        const w = (2 * Math.PI * i) / Math.max(liste.length, 1) - Math.PI / 2 + (rg === 1 ? 0.3 : 0);
+        pos.set(id, { x: cx + rr * 1.6 * Math.cos(w), y: cy + rr * Math.sin(w) });
+      }
+    });
+  }
   // Alles bekannt: nichts rechnen — sonst wandert Gespeichertes.
   if (ids.every((id) => bekannt.has(id))) return pos;
 
@@ -72,8 +84,19 @@ export function kraftLayout(
       if (fest[i]) { vx[i] = 0; vy[i] = 0; continue; }
       // Zur Mitte ziehen, senkrecht staerker als waagerecht: Die Karte ist
       // breiter als hoch, und ein rundes Knaeuel verschenkt die Breite.
-      const sx = vx[i]! + (cx - p[i]!.x) * 0.0025;
-      const sy = vy[i]! + (cy - p[i]!.y) * 0.007;
+      // Mit Ring: Feder auf den Ringradius (Ellipse 1,6:1), damit die
+      // Entscheider innen bleiben und die Anwender aussen.
+      const rg = ringe.get(ids[i]!);
+      let sx = vx[i]! + (cx - p[i]!.x) * 0.0025;
+      let sy = vy[i]! + (cy - p[i]!.y) * 0.007;
+      if (rg !== undefined) {
+        const dx = (p[i]!.x - cx) / 1.6, dy = p[i]!.y - cy;
+        const d = Math.sqrt(dx * dx + dy * dy) || 1;
+        const ziel = radius(rg);
+        const f = (ziel - d) * (rg === 0 ? 0.08 : 0.04);
+        sx += (dx / d) * f * 1.6;
+        sy += (dy / d) * f;
+      }
       p[i] = {
         x: Math.min(breite - 80, Math.max(80, p[i]!.x + Math.max(-12, Math.min(12, sx * temp)))),
         y: Math.min(hoehe - 40, Math.max(40, p[i]!.y + Math.max(-12, Math.min(12, sy * temp)))),
