@@ -229,8 +229,10 @@ export async function publishWebsiteRetry(opts: {
   /** v0.1.53 — JWT subject for per-user AMQP routing. */
   userId: string;
   /** Fokus-Lauf (Buying Center, 2026-09-22): doppeltes Crawl-Budget, URL-
-   *  Richter immer, Personen-Durchgang immer. Reist als Zusatzfeld in den
-   *  Nutzdaten; der Producer liest es aus dem rohen JSON. */
+   *  Richter immer, Personen-Durchgang immer. Reist im CloudEvent-Attribut
+   *  `source` als Suffix "#fokus": Der AMQP-Client des Producers laesst
+   *  Nutzdaten durch den Payload-Generator (nur url + companyName
+   *  ueberleben), `source` kommt aber unveraendert an. */
   fokus?: boolean;
 }): Promise<{ published: number }> {
   const { stage, transactionId, companyId, companyName, source, userId, fokus } = opts;
@@ -245,7 +247,7 @@ export async function publishWebsiteRetry(opts: {
     );
   }
   const url = websiteRes.rows[0].url as string;
-  const header = baseHeader(transactionId, companyId, source);
+  const header = baseHeader(transactionId, companyId, fokus ? `${source}#fokus` : source);
   const env = loadEnv();
   const client = await getGatewayAmqpPublisher();
 
@@ -277,7 +279,7 @@ export async function publishWebsiteRetry(opts: {
     const event: CloudEvent<CompanyContactUpsertPayload> =
       new EventBuilder().website.upsertCompanyContact
         .header(header)
-        .data({ url, companyName: resolvedName, ...(fokus ? { fokus: true } : {}) } as CompanyContactUpsertPayload)
+        .data({ url, companyName: resolvedName })
         .build();
     await client.publish(env.EVENT_BUS_EXCHANGE, targetUserRoutingKey(event, userId));
     return { published: 1 };

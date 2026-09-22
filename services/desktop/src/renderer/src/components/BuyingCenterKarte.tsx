@@ -174,20 +174,11 @@ export function BuyingCenterKarte({ id, kompakt = false }: { id: string; kompakt
       let kontaktlauf: string = start.angestossen ? "läuft" : `nicht gestartet (${start.grund ?? "unbekannt"})`;
       if (start.angestossen) {
         setRechercheSchritt("kontaktlauf");
-        const bis = Date.now() + 15 * 60_000;
-        kontaktlauf = "Zeitüberschreitung";
-        while (Date.now() < bis) {
-          await new Promise((r) => setTimeout(r, 5_000));
-          const st = await gatewayFetch<{ state: string }>(`/v1/buying-center/${encodeURIComponent(id)}/recherche`).catch(() => null);
-          if (st && st.state !== "in_progress" && st.state !== "pending") {
-            kontaktlauf = st.state === "completed" ? "abgeschlossen" : st.state === "failed" ? "fehlgeschlagen" : st.state;
-            break;
-          }
-        }
+        kontaktlauf = await aufKontaktlaufWarten(id, 15 * 60_000);
       }
       // 3. Auswertung im Gateway (Website-Hervorhebung, Verknuepfbare, Auto-Modus).
       setRechercheSchritt("auswertung");
-      const r = await gatewayFetch<{ website: number; verknuepfbar: number; uebernommen: number }>(`/v1/buying-center/${encodeURIComponent(id)}/auswertung`, { method: "POST", body: {} });
+      const r = await gatewayFetch<{ website: number; verknuepfbar: number; uebernommen: number; neuePersonen: Array<{ personId: string; fullName: string; title: string | null }> }>(`/v1/buying-center/${encodeURIComponent(id)}/auswertung`, { method: "POST", body: {} });
       // 4. CRM-Abgleich vom Rechner.
       setRechercheSchritt("crm");
       await qc.invalidateQueries({ queryKey: ["buying-center", id, "interaktionen"] });
@@ -283,7 +274,7 @@ export function BuyingCenterKarte({ id, kompakt = false }: { id: string; kompakt
         onRecherche={() => recherche.mutate()}
         ergebnis={
           recherche.data
-            ? `Abgeschlossen ${new Date().toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" })} · Kontaktlauf ${recherche.data.kontaktlauf} · Website ${recherche.data.website}, verknüpfbar ${recherche.data.verknuepfbar}${recherche.data.uebernommen ? `, ${recherche.data.uebernommen} übernommen` : ""} · CRM: ${recherche.data.crm.verfuegbar ? `${recherche.data.crm.mitglieder.filter((m) => m.hubspotContactId).length} gefunden` : "übersprungen"}`
+            ? `Abgeschlossen ${new Date().toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" })} · Kontaktlauf ${recherche.data.kontaktlauf} · Website ${recherche.data.website}, verknüpfbar ${recherche.data.verknuepfbar}${recherche.data.uebernommen ? `, ${recherche.data.uebernommen} übernommen` : ""} · CRM: ${recherche.data.crm.verfuegbar ? `${recherche.data.crm.mitglieder.filter((m) => m.hubspotContactId).length} gefunden` : "übersprungen"}${recherche.data.neuePersonen?.length ? ` · ${recherche.data.neuePersonen.length} ${recherche.data.neuePersonen.length === 1 ? "Person" : "Personen"} im Bestand noch nicht im Buying Center — im Chat aufnehmen` : ""}`
             : recherche.error ? "Recherche fehlgeschlagen" : null
         }
       />
@@ -656,6 +647,32 @@ const LAUF_ART_TEXT: Record<string, string> = {
 };
 
 type RechercheSchritt = "anstossen" | "kontaktlauf" | "auswertung" | "crm" | null;
+
+/**
+ * Auf das ENDE des Kontaktlaufs warten. Der Fortschrittsstatus im Gateway
+ * springt schon beim ersten Persist auf "completed" (Befund 2026-09-22: die
+ * Auswertung lief, bevor die Team-Seite geschrieben war). Deshalb gilt der
+ * Lauf erst als vorbei, wenn der Status nicht mehr "laeuft" ist UND sich die
+ * juengste Beobachtung im Bestand 45 s lang nicht mehr geaendert hat.
+ */
+async function aufKontaktlaufWarten(id: string, maxMs: number): Promise<string> {
+  const bis = Date.now() + maxMs;
+  let letzte: string | null = null;
+  let ruhigSeit = 0;
+  let stand = "Zeitüberschreitung";
+  while (Date.now() < bis) {
+    await new Promise((r) => setTimeout(r, 5_000));
+    const st = await gatewayFetch<{ state: string; letzteAenderung: string | null }>(`/v1/buying-center/${encodeURIComponent(id)}/recherche`).catch(() => null);
+    if (!st) continue;
+    const laeuft = st.state === "in_progress" || st.state === "pending";
+    if (st.letzteAenderung !== letzte) { letzte = st.letzteAenderung; ruhigSeit = Date.now(); }
+    if (!laeuft && Date.now() - ruhigSeit >= 45_000) {
+      stand = st.state === "completed" ? "abgeschlossen" : st.state === "failed" ? "fehlgeschlagen" : st.state;
+      break;
+    }
+  }
+  return stand;
+}
 const SCHRITT_TEXT: Record<Exclude<RechercheSchritt, null>, string> = {
   anstossen: "Kontaktlauf wird angestoßen …",
   kontaktlauf: "Kontaktlauf läuft (Website-Personen, LinkedIn) — das dauert ein paar Minuten …",

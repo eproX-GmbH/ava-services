@@ -580,7 +580,7 @@ export function buildBuyingCenterTools(deps: BuyingCenterToolDeps): Tool[] {
     summary: "Recherche zu einem Buying Center jetzt anstossen (Website-Abgleich, Verknuepfungskandidaten, CRM-Abgleich).",
     category: "buying center",
     description:
-      "Stoesst die Recherche zu einem Buying Center an: erst den Kontaktlauf der Firma (Website-Personen, LinkedIn/Apify — laeuft auf dem Rechner des Nutzers, ein paar Minuten), dann die Auswertung (Website-Hervorhebung als Vorschlag, verknuepfbare Bestandspersonen) und den CRM-Abgleich. Wartet bis zu 4 Minuten auf den Kontaktlauf; dauert er laenger, wird trotzdem ausgewertet und der Rest landet spaeter im Verlauf. Im Auto-Modus werden neue Vorschlaege direkt uebernommen.",
+      "Stoesst die Recherche zu einem Buying Center an: erst den Fokus-Kontaktlauf der Firma (Website-Personen, LinkedIn/Apify — laeuft auf dem Rechner des Nutzers, ein paar Minuten), dann die Auswertung (Website-Hervorhebung als Vorschlag, verknuepfbare Bestandspersonen, `neuePersonen` = Bestandspersonen, die noch nicht im Buying Center sind) und den CRM-Abgleich. Wartet bis zu 4 Minuten auf den Kontaktlauf; dauert er laenger, wird trotzdem ausgewertet und der Rest landet spaeter im Verlauf. Biete bei `neuePersonen` an, sie mit buying_center_person_aufnehmen (personId) aufzunehmen. Im Auto-Modus werden neue Vorschlaege direkt uebernommen.",
     parameters: { type: "object", properties: { buyingCenterId: { type: "string" } }, required: ["buyingCenterId"] },
     schema: yup.object({ buyingCenterId: yup.string().trim().required() }).noUnknown(true),
     run: async (args, c) => {
@@ -589,20 +589,32 @@ export function buildBuyingCenterTools(deps: BuyingCenterToolDeps): Tool[] {
         const start = await gateway.request<{ angestossen: boolean; grund?: string }>(`${bcPfad}/recherche`, { method: "POST", body: {}, signal: c.signal });
         let kontaktlauf = start.angestossen ? "Zeitüberschreitung (läuft weiter)" : `nicht gestartet: ${start.grund ?? "unbekannt"}`;
         if (start.angestossen) {
+          // Ende = Status nicht mehr "laeuft" UND 45 s keine neue Beobachtung
+          // (der Status wird schon beim ersten Persist "completed").
           const bis = Date.now() + 4 * 60_000;
+          let letzte: string | null = null, ruhigSeit = 0;
           while (Date.now() < bis && !c.signal?.aborted) {
             await new Promise((r) => setTimeout(r, 5_000));
-            const st = await gateway.request<{ state: string }>(`${bcPfad}/recherche`, { signal: c.signal }).catch(() => null);
-            if (st && st.state !== "in_progress" && st.state !== "pending") { kontaktlauf = st.state; break; }
+            const st = await gateway.request<{ state: string; letzteAenderung: string | null }>(`${bcPfad}/recherche`, { signal: c.signal }).catch(() => null);
+            if (!st) continue;
+            if (st.letzteAenderung !== letzte) { letzte = st.letzteAenderung; ruhigSeit = Date.now(); }
+            const laeuft = st.state === "in_progress" || st.state === "pending";
+            if (!laeuft && Date.now() - ruhigSeit >= 45_000) { kontaktlauf = st.state; break; }
           }
         }
-        const r = await gateway.request<{ website: number; verknuepfbar: number; uebernommen: number; automatik: boolean }>(`${bcPfad}/auswertung`, { method: "POST", body: {}, signal: c.signal });
+        const r = await gateway.request<{ website: number; verknuepfbar: number; uebernommen: number; automatik: boolean; neuePersonen: Array<{ personId: string; fullName: string; title: string | null }> }>(`${bcPfad}/auswertung`, { method: "POST", body: {}, signal: c.signal });
         let crm = "nicht ausgefuehrt";
         if (deps.ladeInteraktionen) {
           const i = await deps.ladeInteraktionen(args.buyingCenterId);
           crm = i.verfuegbar ? `${i.mitglieder.length} Mitglieder im CRM gefunden` : (i.grund ?? "nicht verfuegbar");
         }
-        return { kontaktlauf, website: r.website, verknuepfbar: r.verknuepfbar, uebernommen: r.uebernommen, automatik: r.automatik, crm, anzeigen: args.buyingCenterId };
+        return {
+          kontaktlauf, website: r.website, verknuepfbar: r.verknuepfbar, uebernommen: r.uebernommen, automatik: r.automatik, crm,
+          // Bestandspersonen, die nicht im Buying Center sind — anbieten, sie
+          // mit buying_center_person_aufnehmen (personId) aufzunehmen.
+          neuePersonen: r.neuePersonen ?? [],
+          anzeigen: args.buyingCenterId,
+        };
       } catch (err) {
         return { error: fehlertext(err) };
       }

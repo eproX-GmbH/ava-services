@@ -1181,7 +1181,7 @@ _Parameter:_
 
 _Datei:_ `services/desktop/src/main/agent/tools/buying-center.ts`
 
-Stoesst die Recherche zu einem Buying Center an: erst den Kontaktlauf der Firma (Website-Personen, LinkedIn/Apify — laeuft auf dem Rechner des Nutzers, ein paar Minuten), dann die Auswertung (Website-Hervorhebung als Vorschlag, verknuepfbare Bestandspersonen) und den CRM-Abgleich. Wartet bis zu 4 Minuten auf den Kontaktlauf; dauert er laenger, wird trotzdem ausgewertet und der Rest landet spaeter im Verlauf. Im Auto-Modus werden neue Vorschlaege direkt uebernommen.
+Stoesst die Recherche zu einem Buying Center an: erst den Fokus-Kontaktlauf der Firma (Website-Personen, LinkedIn/Apify — laeuft auf dem Rechner des Nutzers, ein paar Minuten), dann die Auswertung (Website-Hervorhebung als Vorschlag, verknuepfbare Bestandspersonen, `neuePersonen` = Bestandspersonen, die noch nicht im Buying Center sind) und den CRM-Abgleich. Wartet bis zu 4 Minuten auf den Kontaktlauf; dauert er laenger, wird trotzdem ausgewertet und der Rest landet spaeter im Verlauf. Biete bei `neuePersonen` an, sie mit buying_center_person_aufnehmen (personId) aufzunehmen. Im Auto-Modus werden neue Vorschlaege direkt uebernommen.
 
 _Parameter:_
 - `buyingCenterId: string` (required)

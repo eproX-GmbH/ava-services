@@ -1026,6 +1026,11 @@ const RechercheStandShape = z.object({
   state: z.enum(["pending", "in_progress", "completed", "failed", "skipped", "unbekannt"]),
   updatedAt: z.string().nullable(),
   transactionId: z.string().nullable(),
+  /** Juengste Beobachtung im Kontakt-Bestand der Firma. EntityProgress
+   *  springt schon beim ERSTEN Persist auf "completed" (Befund 2026-09-22:
+   *  Auswertung lief, bevor die Team-Seite geschrieben war) — wer das Ende
+   *  des Laufs will, wartet, bis sich dieser Wert nicht mehr aendert. */
+  letzteAenderung: z.string().nullable(),
 });
 
 async function kontaktlaufStand(companyId: string): Promise<z.infer<typeof RechercheStandShape>> {
@@ -1034,10 +1039,14 @@ async function kontaktlaufStand(companyId: string): Promise<z.infer<typeof Reche
       WHERE "companyId" = $1 AND "producer" = 'company-contact' ORDER BY "updatedAt" DESC LIMIT 1`,
     [companyId],
   );
+  const o = await getProducerPool("company-contact").query<{ letzte: Date | null }>(
+    `SELECT MAX("observedAt") AS letzte FROM "Observation" WHERE "companyId" = $1`, [companyId],
+  );
+  const letzteAenderung = o.rows[0]?.letzte ? new Date(o.rows[0].letzte).toISOString() : null;
   const row = r.rows[0];
-  if (!row) return { state: "unbekannt", updatedAt: null, transactionId: null };
+  if (!row) return { state: "unbekannt", updatedAt: null, transactionId: null, letzteAenderung };
   const state = (["pending", "in_progress", "completed", "failed", "skipped"] as const).find((x) => x === row.state) ?? "unbekannt";
-  return { state, updatedAt: row.updatedAt.toISOString(), transactionId: row.transactionId };
+  return { state, updatedAt: row.updatedAt.toISOString(), transactionId: row.transactionId, letzteAenderung };
 }
 
 const rechercheRoute = createRoute({
@@ -1116,7 +1125,12 @@ const auswertungRoute = createRoute({
   method: "post", path: "/buying-center/{id}/auswertung", tags: [tag],
   summary: "Auswertung des Bestands (nur Eigentuemer)",
   request: { params: IdParam },
-  responses: { 200: { content: { "application/json": { schema: z.object({ website: z.number(), verknuepfbar: z.number(), uebernommen: z.number(), automatik: z.boolean() }) } }, description: "ok" }, ...errorResponses },
+  responses: { 200: { content: { "application/json": { schema: z.object({
+    website: z.number(), verknuepfbar: z.number(), uebernommen: z.number(), automatik: z.boolean(),
+    // Personen im Kontakt-Bestand der Firma, die (noch) nicht im Buying Center
+    // sind — typisch nach einem Kontaktlauf, der die Team-Seite gelesen hat.
+    neuePersonen: z.array(z.object({ personId: z.string(), fullName: z.string(), title: z.string().nullable() })),
+  }) } }, description: "ok" }, ...errorResponses },
 });
 buyingCenterRouter.openapi(auswertungRoute, async (c) => {
   const wer = auth(c);
@@ -1125,8 +1139,28 @@ buyingCenterRouter.openapi(auswertungRoute, async (c) => {
   const website = await websiteVorschlaege(voll.mitglieder);
   const verknuepfbar = (await verknuepfbarePersonen(bc.companyId, voll.mitglieder)).length;
   const uebernommen = bc.automatik ? await offeneUebernehmen(bc.id, wer.actorId) : 0;
+  const neuePersonen = await nichtAufgenommenePersonen(bc.companyId, voll.mitglieder);
   await lauf(bc.id, "auswertung",
-    `Auswertung: Website-Abgleich ${website} ${website === 1 ? "Vorschlag" : "Vorschläge"}, ${verknuepfbar} verknüpfbare ${verknuepfbar === 1 ? "Person" : "Personen"}${bc.automatik ? `, ${uebernommen} automatisch übernommen` : ""}`,
-    { website, verknuepfbar, uebernommen });
-  return c.json({ website, verknuepfbar, uebernommen, automatik: bc.automatik === true }, 200);
+    `Auswertung: Website-Abgleich ${website} ${website === 1 ? "Vorschlag" : "Vorschläge"}, ${verknuepfbar} verknüpfbare ${verknuepfbar === 1 ? "Person" : "Personen"}${bc.automatik ? `, ${uebernommen} automatisch übernommen` : ""}${neuePersonen.length ? `, ${neuePersonen.length} ${neuePersonen.length === 1 ? "Person" : "Personen"} im Bestand noch nicht im Buying Center (${neuePersonen.slice(0, 5).map((p) => p.fullName).join(", ")}${neuePersonen.length > 5 ? ", …" : ""})` : ""}`,
+    { website, verknuepfbar, uebernommen, neuePersonen: neuePersonen.length });
+  return c.json({ website, verknuepfbar, uebernommen, automatik: bc.automatik === true, neuePersonen }, 200);
 });
+
+/** Bestandspersonen der Firma, die nicht Mitglied sind — nach Namen unterscheidbar, hoechstens 25. */
+async function nichtAufgenommenePersonen(
+  companyId: string,
+  mitglieder: Array<{ personId: string | null; name: string }>,
+): Promise<Array<{ personId: string; fullName: string; title: string | null }>> {
+  const personen = await getProducerPool("company-contact").query<{ personId: string; fullName: string; title: string | null }>(
+    `SELECT DISTINCT ON (p.id) p.id AS "personId", p."fullName", e.title
+       FROM "Employment" e JOIN "Person" p ON p.id = e."personId"
+      WHERE e."companyId" = $1 AND (e."isCurrent" IS DISTINCT FROM false)
+      ORDER BY p.id, e."lastSeen" DESC NULLS LAST
+      LIMIT 200`,
+    [companyId],
+  );
+  const ids = new Set(mitglieder.map((m) => m.personId).filter((p): p is string => p !== null));
+  return personen.rows
+    .filter((p) => !ids.has(p.personId) && !mitglieder.some((m) => gleicherName(m.name, p.fullName)))
+    .slice(0, 25);
+}
