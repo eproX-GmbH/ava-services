@@ -1069,7 +1069,8 @@ buyingCenterRouter.openapi(rechercheRoute, async (c) => {
       // Wie beim Wiederanlauf: Freshness-Sperre loeschen, damit der neue
       // Lauf seine Fakten auch schreiben darf.
       await pool.query(`DELETE FROM "ContentFreshness" WHERE "companyId" = $1 AND stage = 'company-contact'`, [bc.companyId]);
-      await publishWebsiteRetry({ stage: "companyContact", transactionId, companyId: bc.companyId, source: c.req.url, userId: wer.actorId });
+      // Fokus-Lauf: Fokuskunden duerfen mehr kosten (Budget, Richter, Personen-Durchgang).
+      await publishWebsiteRetry({ stage: "companyContact", transactionId, companyId: bc.companyId, source: c.req.url, userId: wer.actorId, fokus: true });
       transactionProgressBus.publishLocal({
         transactionId, tenantId: wer.tenantId, service: "company-contact", companyId: bc.companyId,
         state: "in_progress" as never, updatedAt: new Date().toISOString(),
@@ -1090,7 +1091,7 @@ buyingCenterRouter.openapi(rechercheRoute, async (c) => {
     }
   }
 
-  await lauf(bc.id, "recherche", grund ? `Recherche: Kontaktlauf nicht angestoßen — ${grund}` : "Recherche: Kontaktlauf angestoßen (Website-Personen, LinkedIn/Apify) — Auswertung folgt nach dem Lauf", { angestossen: !grund, transactionId });
+  await lauf(bc.id, "recherche", grund ? `Recherche: Kontaktlauf nicht angestoßen — ${grund}` : "Recherche: Fokus-Kontaktlauf angestoßen (Sitemap-Richter, 20 Seiten, Personen-Durchgang, LinkedIn/Apify) — Auswertung folgt nach dem Lauf", { angestossen: !grund, transactionId, fokus: true });
   return c.json({ angestossen: !grund, grund, transactionId }, 200);
 });
 

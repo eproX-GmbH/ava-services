@@ -228,8 +228,12 @@ export async function publishWebsiteRetry(opts: {
   source: string;
   /** v0.1.53 — JWT subject for per-user AMQP routing. */
   userId: string;
+  /** Fokus-Lauf (Buying Center, 2026-09-22): doppeltes Crawl-Budget, URL-
+   *  Richter immer, Personen-Durchgang immer. Reist als Zusatzfeld in den
+   *  Nutzdaten; der Producer liest es aus dem rohen JSON. */
+  fokus?: boolean;
 }): Promise<{ published: number }> {
-  const { stage, transactionId, companyId, companyName, source, userId } = opts;
+  const { stage, transactionId, companyId, companyName, source, userId, fokus } = opts;
   const pool = getProducerPool("website");
   const websiteRes = await pool.query<{ url: string | null }>(
     `SELECT url FROM "Website" WHERE "companyId" = $1 LIMIT 1`,
@@ -273,7 +277,7 @@ export async function publishWebsiteRetry(opts: {
     const event: CloudEvent<CompanyContactUpsertPayload> =
       new EventBuilder().website.upsertCompanyContact
         .header(header)
-        .data({ url, companyName: resolvedName })
+        .data({ url, companyName: resolvedName, ...(fokus ? { fokus: true } : {}) } as CompanyContactUpsertPayload)
         .build();
     await client.publish(env.EVENT_BUS_EXCHANGE, targetUserRoutingKey(event, userId));
     return { published: 1 };
