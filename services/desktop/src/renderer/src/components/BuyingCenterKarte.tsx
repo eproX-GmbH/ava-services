@@ -160,14 +160,33 @@ export function BuyingCenterKarte({ id, kompakt = false }: { id: string; kompakt
   });
   // "Recherche jetzt": Gateway (Website-Abgleich, Auto-Modus) und danach der
   // CRM-Abgleich vom Rechner — beides landet im Verlauf.
+  // Der Nutzer soll sehen, WAS gerade laeuft (2026-09-22): erst der
+  // Gateway-Teil, dann der CRM-Abgleich vom Rechner. Danach bleibt das
+  // Ergebnis stehen, bis die naechste Recherche startet.
+  const [rechercheSchritt, setRechercheSchritt] = useState<"website" | "crm" | null>(null);
   const recherche = useMutation({
     mutationFn: async () => {
+      setRechercheSchritt("website");
       const r = await gatewayFetch<{ website: number; verknuepfbar: number; uebernommen: number }>(`/v1/buying-center/${encodeURIComponent(id)}/recherche`, { method: "POST", body: {} });
+      setRechercheSchritt("crm");
       await qc.invalidateQueries({ queryKey: ["buying-center", id, "interaktionen"] });
-      await qc.refetchQueries({ queryKey: ["buying-center", id, "interaktionen"] });
-      return r;
+      const crm = (await qc.fetchQuery<BcInteraktionenErgebnis>({
+        queryKey: ["buying-center", id, "interaktionen"],
+        queryFn: () => window.api.buyingCenter.interaktionen(id),
+        staleTime: 0,
+      }));
+      // Ohne CRM-Verknuepfung schreibt der Abgleich nichts ins Protokoll —
+      // dann soll der Verlauf trotzdem sagen, dass er gelaufen ist.
+      if (!crm.verfuegbar) {
+        const grund = crm.grund === "keine_crm_verknuepfung" ? "Die Firma ist mit keinem CRM verknüpft" : crm.grund === "hubspot_nicht_verbunden" ? "HubSpot ist nicht verbunden" : "nicht möglich";
+        await gatewayFetch(`/v1/buying-center/${encodeURIComponent(id)}/verlauf`, { method: "POST", body: { art: "crm-abgleich", ergebnis: `CRM-Abgleich übersprungen: ${grund}`, details: { grund: crm.grund ?? null } } }).catch(() => undefined);
+      }
+      return { ...r, crm };
     },
-    onSettled: () => void qc.invalidateQueries({ queryKey: ["buying-center", id] }),
+    onSettled: () => {
+      setRechercheSchritt(null);
+      void qc.invalidateQueries({ queryKey: ["buying-center", id] });
+    },
   });
 
   if (q.isLoading) return <div className="bc-platzhalter">Buying Center wird geladen …</div>;
@@ -239,8 +258,13 @@ export function BuyingCenterKarte({ id, kompakt = false }: { id: string; kompakt
         stand={`${bc.updatedAt}:${recherche.status}`}
         eigenes={bc.eigenes}
         laeuft={recherche.isPending}
+        schritt={rechercheSchritt}
         onRecherche={() => recherche.mutate()}
-        ergebnis={recherche.data ? `Website ${recherche.data.website}, verknüpfbar ${recherche.data.verknuepfbar}${recherche.data.uebernommen ? `, ${recherche.data.uebernommen} übernommen` : ""}` : recherche.error ? "Recherche fehlgeschlagen" : null}
+        ergebnis={
+          recherche.data
+            ? `Abgeschlossen ${new Date().toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" })} · Website ${recherche.data.website}, verknüpfbar ${recherche.data.verknuepfbar}${recherche.data.uebernommen ? `, ${recherche.data.uebernommen} übernommen` : ""} · CRM: ${recherche.data.crm.verfuegbar ? `${recherche.data.crm.mitglieder.filter((m) => m.hubspotContactId).length} gefunden` : "übersprungen"}`
+            : recherche.error ? "Recherche fehlgeschlagen" : null
+        }
       />
     </div>
   );
@@ -610,8 +634,8 @@ const LAUF_ART_TEXT: Record<string, string> = {
   automatik: "Auto-Modus", recherche: "Recherche",
 };
 
-function Verlauf({ id, stand, eigenes, laeuft, onRecherche, ergebnis }: {
-  id: string; stand: string; eigenes: boolean; laeuft: boolean; onRecherche: () => void; ergebnis: string | null;
+function Verlauf({ id, stand, eigenes, laeuft, schritt, onRecherche, ergebnis }: {
+  id: string; stand: string; eigenes: boolean; laeuft: boolean; schritt: "website" | "crm" | null; onRecherche: () => void; ergebnis: string | null;
 }) {
   const q = useQuery<{ items: BcLauf[] }>({
     // `stand` im Schluessel: Nach jeder Aenderung der Karte wird neu geladen.
@@ -635,10 +659,16 @@ function Verlauf({ id, stand, eigenes, laeuft, onRecherche, ergebnis }: {
               title="Website-Abgleich, Verknüpfungskandidaten und CRM-Abgleich jetzt ausführen"
               onClick={(e) => { e.preventDefault(); e.stopPropagation(); onRecherche(); }}
             >
-              {laeuft ? "Recherche läuft …" : "Recherche starten"}
+              {laeuft ? "Läuft …" : "Recherche starten"}
             </button>
           )}
-          {ergebnis && <span className="muted small">{ergebnis}</span>}
+          {laeuft && (
+            <span className="bc-verlauf__status" role="status" aria-live="polite">
+              <span className="activity-spinner" aria-hidden="true" />
+              {schritt === "crm" ? "CRM-Abgleich läuft …" : "Website-Abgleich läuft …"}
+            </span>
+          )}
+          {!laeuft && ergebnis && <span className="muted small">{ergebnis}</span>}
         </span>
       </summary>
       {items.length > 0 && (

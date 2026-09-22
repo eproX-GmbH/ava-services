@@ -3277,6 +3277,7 @@ a.heartbeat-decision__company:hover {
 .bc-verlauf summary { cursor: pointer; list-style: none; display: flex; align-items: center; gap: 0.5rem; }
 .bc-verlauf summary::before { content: "›"; display: inline-block; flex: none; transition: transform 0.15s; }
 .bc-verlauf__kopf { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 0.75rem; }
+.bc-verlauf__status { display: inline-flex; align-items: center; gap: 0.4rem; color: var(--accent); font-size: 12px; }
 .bc-karte__rechts { display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; }
 .bc-karte__auto { font-size: 13px; }
 .bc-verlauf[open] summary::before { transform: rotate(90deg); }
