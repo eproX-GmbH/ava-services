@@ -4,7 +4,7 @@ Auto-generiert von `services/desktop/scripts/generate-tools-md.mjs`.
 NICHT direkt bearbeiten — die Quelle der Wahrheit ist `services/desktop/src/main/agent/tools/*.ts`.
 Lauf via `pnpm -F @ava/desktop tools:doc` (oder automatisch via `build:typecheck`).
 
-Stand: 2026-09-21
+Stand: 2026-09-22
 Anzahl Tools: 271
 
 ## Firmen (22)
@@ -1181,7 +1181,7 @@ _Parameter:_
 
 _Datei:_ `services/desktop/src/main/agent/tools/buying-center.ts`
 
-Stoesst die Hintergrund-Recherche zu einem Buying Center sofort an: Website-Hervorhebung als Vorschlag, verknuepfbare Bestandspersonen, CRM-Abgleich (Kontaktintensitaet). Im Auto-Modus werden neue Vorschlaege direkt uebernommen. Ergebnis erscheint im Verlauf der Karte.
+Stoesst die Recherche zu einem Buying Center an: erst den Kontaktlauf der Firma (Website-Personen, LinkedIn/Apify — laeuft auf dem Rechner des Nutzers, ein paar Minuten), dann die Auswertung (Website-Hervorhebung als Vorschlag, verknuepfbare Bestandspersonen) und den CRM-Abgleich. Wartet bis zu 4 Minuten auf den Kontaktlauf; dauert er laenger, wird trotzdem ausgewertet und der Rest landet spaeter im Verlauf. Im Auto-Modus werden neue Vorschlaege direkt uebernommen.
 
 _Parameter:_
 - `buyingCenterId: string` (required)

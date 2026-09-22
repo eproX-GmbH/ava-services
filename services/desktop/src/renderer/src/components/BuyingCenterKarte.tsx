@@ -163,11 +163,32 @@ export function BuyingCenterKarte({ id, kompakt = false }: { id: string; kompakt
   // Der Nutzer soll sehen, WAS gerade laeuft (2026-09-22): erst der
   // Gateway-Teil, dann der CRM-Abgleich vom Rechner. Danach bleibt das
   // Ergebnis stehen, bis die naechste Recherche startet.
-  const [rechercheSchritt, setRechercheSchritt] = useState<"website" | "crm" | null>(null);
+  const [rechercheSchritt, setRechercheSchritt] = useState<RechercheSchritt>(null);
   const recherche = useMutation({
     mutationFn: async () => {
-      setRechercheSchritt("website");
-      const r = await gatewayFetch<{ website: number; verknuepfbar: number; uebernommen: number }>(`/v1/buying-center/${encodeURIComponent(id)}/recherche`, { method: "POST", body: {} });
+      // 1. Kontaktlauf anstossen (Website-Personen, LinkedIn/Apify) …
+      setRechercheSchritt("anstossen");
+      const start = await gatewayFetch<{ angestossen: boolean; grund?: string; transactionId: string | null }>(`/v1/buying-center/${encodeURIComponent(id)}/recherche`, { method: "POST", body: {} });
+      // 2. … und auf sein Ende warten (der Producer laeuft auf diesem
+      //    Rechner; je nach Firma ein bis einige Minuten).
+      let kontaktlauf: string = start.angestossen ? "läuft" : `nicht gestartet (${start.grund ?? "unbekannt"})`;
+      if (start.angestossen) {
+        setRechercheSchritt("kontaktlauf");
+        const bis = Date.now() + 15 * 60_000;
+        kontaktlauf = "Zeitüberschreitung";
+        while (Date.now() < bis) {
+          await new Promise((r) => setTimeout(r, 5_000));
+          const st = await gatewayFetch<{ state: string }>(`/v1/buying-center/${encodeURIComponent(id)}/recherche`).catch(() => null);
+          if (st && st.state !== "in_progress" && st.state !== "pending") {
+            kontaktlauf = st.state === "completed" ? "abgeschlossen" : st.state === "failed" ? "fehlgeschlagen" : st.state;
+            break;
+          }
+        }
+      }
+      // 3. Auswertung im Gateway (Website-Hervorhebung, Verknuepfbare, Auto-Modus).
+      setRechercheSchritt("auswertung");
+      const r = await gatewayFetch<{ website: number; verknuepfbar: number; uebernommen: number }>(`/v1/buying-center/${encodeURIComponent(id)}/auswertung`, { method: "POST", body: {} });
+      // 4. CRM-Abgleich vom Rechner.
       setRechercheSchritt("crm");
       await qc.invalidateQueries({ queryKey: ["buying-center", id, "interaktionen"] });
       const crm = (await qc.fetchQuery<BcInteraktionenErgebnis>({
@@ -181,7 +202,7 @@ export function BuyingCenterKarte({ id, kompakt = false }: { id: string; kompakt
         const grund = crm.grund === "keine_crm_verknuepfung" ? "Die Firma ist mit keinem CRM verknüpft" : crm.grund === "hubspot_nicht_verbunden" ? "HubSpot ist nicht verbunden" : "nicht möglich";
         await gatewayFetch(`/v1/buying-center/${encodeURIComponent(id)}/verlauf`, { method: "POST", body: { art: "crm-abgleich", ergebnis: `CRM-Abgleich übersprungen: ${grund}`, details: { grund: crm.grund ?? null } } }).catch(() => undefined);
       }
-      return { ...r, crm };
+      return { ...r, crm, kontaktlauf };
     },
     onSettled: () => {
       setRechercheSchritt(null);
@@ -255,14 +276,14 @@ export function BuyingCenterKarte({ id, kompakt = false }: { id: string; kompakt
       <Legende offen={legende} onToggle={legendeUmschalten} />
       <Verlauf
         id={id}
-        stand={`${bc.updatedAt}:${recherche.status}`}
+        stand={`${bc.updatedAt}:${recherche.status}:${rechercheSchritt ?? ""}`}
         eigenes={bc.eigenes}
         laeuft={recherche.isPending}
         schritt={rechercheSchritt}
         onRecherche={() => recherche.mutate()}
         ergebnis={
           recherche.data
-            ? `Abgeschlossen ${new Date().toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" })} · Website ${recherche.data.website}, verknüpfbar ${recherche.data.verknuepfbar}${recherche.data.uebernommen ? `, ${recherche.data.uebernommen} übernommen` : ""} · CRM: ${recherche.data.crm.verfuegbar ? `${recherche.data.crm.mitglieder.filter((m) => m.hubspotContactId).length} gefunden` : "übersprungen"}`
+            ? `Abgeschlossen ${new Date().toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" })} · Kontaktlauf ${recherche.data.kontaktlauf} · Website ${recherche.data.website}, verknüpfbar ${recherche.data.verknuepfbar}${recherche.data.uebernommen ? `, ${recherche.data.uebernommen} übernommen` : ""} · CRM: ${recherche.data.crm.verfuegbar ? `${recherche.data.crm.mitglieder.filter((m) => m.hubspotContactId).length} gefunden` : "übersprungen"}`
             : recherche.error ? "Recherche fehlgeschlagen" : null
         }
       />
@@ -631,11 +652,19 @@ function Seitenleiste({ bc, m, onSchliessen, onGeaendert, interaktionen, interak
 const LAUF_ART_TEXT: Record<string, string> = {
   entwurf: "Entwurf", "crm-abgleich": "CRM-Abgleich", "website-abgleich": "Website", nachfrage: "Nachfrage",
   watchlist: "Watchlist", verknuepfung: "Verknüpfung", status: "Status", freigabe: "Freigabe",
-  automatik: "Auto-Modus", recherche: "Recherche",
+  automatik: "Auto-Modus", recherche: "Recherche", auswertung: "Auswertung",
+};
+
+type RechercheSchritt = "anstossen" | "kontaktlauf" | "auswertung" | "crm" | null;
+const SCHRITT_TEXT: Record<Exclude<RechercheSchritt, null>, string> = {
+  anstossen: "Kontaktlauf wird angestoßen …",
+  kontaktlauf: "Kontaktlauf läuft (Website-Personen, LinkedIn) — das dauert ein paar Minuten …",
+  auswertung: "Auswertung läuft …",
+  crm: "CRM-Abgleich läuft …",
 };
 
 function Verlauf({ id, stand, eigenes, laeuft, schritt, onRecherche, ergebnis }: {
-  id: string; stand: string; eigenes: boolean; laeuft: boolean; schritt: "website" | "crm" | null; onRecherche: () => void; ergebnis: string | null;
+  id: string; stand: string; eigenes: boolean; laeuft: boolean; schritt: RechercheSchritt; onRecherche: () => void; ergebnis: string | null;
 }) {
   const q = useQuery<{ items: BcLauf[] }>({
     // `stand` im Schluessel: Nach jeder Aenderung der Karte wird neu geladen.
@@ -665,7 +694,7 @@ function Verlauf({ id, stand, eigenes, laeuft, schritt, onRecherche, ergebnis }:
           {laeuft && (
             <span className="bc-verlauf__status" role="status" aria-live="polite">
               <span className="activity-spinner" aria-hidden="true" />
-              {schritt === "crm" ? "CRM-Abgleich läuft …" : "Website-Abgleich läuft …"}
+              {schritt ? SCHRITT_TEXT[schritt] : "Läuft …"}
             </span>
           )}
           {!laeuft && ergebnis && <span className="muted small">{ergebnis}</span>}

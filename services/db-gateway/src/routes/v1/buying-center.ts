@@ -14,7 +14,9 @@
 //   POST   /buying-center/{id}/nachgefragt      monatliche Nachfrage vermerken (BC5)
 //   GET    /buying-center/{id}/verlauf          Protokoll der Laeufe (Eigentuemer oder Freigabe)
 //   POST   /buying-center/{id}/automatik        Auto-Modus an/aus; an = alle offenen Vorschlaege sofort uebernehmen
-//   POST   /buying-center/{id}/recherche        Recherche jetzt: Website-Abgleich (+ Auto-Modus), protokolliert
+//   POST   /buying-center/{id}/recherche        Recherche: Kontaktlauf der Firma anstossen (Website-Personen, LinkedIn)
+//   GET    /buying-center/{id}/recherche        Stand des Kontaktlaufs (EntityProgress company-contact)
+//   POST   /buying-center/{id}/auswertung       Auswertung: Website-Abgleich, Verknuepfbare, Auto-Modus — protokolliert
 //   POST   /buying-center/{id}/verlauf          Lauf vom Desktop protokollieren (CRM-Abgleich, Watchlist)
 //   GET    /buying-center/{id}/freigaben        wer ansehen darf (BC7, nur Eigentuemer)
 //   POST   /buying-center/{id}/freigaben        Sicht erteilen {actorId} (BC7)
@@ -38,6 +40,10 @@ import {
   vorschlaegeAusTitel, unbesetzteRollen, ohneKontakt, gleicherName, vorschlagAusHervorhebung,
 } from "../../lib/buying-center-vorschlag";
 import { HERVORHEBUNG_FELD, hervorhebungAusWert } from "../../lib/contact-extraction/hervorhebung";
+import { publishWebsiteRetry } from "../../lib/retry-publish";
+import { isHeld } from "../../lib/company-holds";
+import { transactionProgressBus } from "../../lib/event-bus";
+import { logger } from "../../lib/logger";
 
 export const buyingCenterRouter = new OpenAPIHono();
 buyingCenterRouter.use("*", requireScope("company:read"));
@@ -75,7 +81,7 @@ function cuid(): string {
 }
 
 /** Arten der protokollierten Laeufe — der Desktop darf nur seine eigenen melden. */
-const LAUF_ARTEN = ["entwurf", "crm-abgleich", "website-abgleich", "nachfrage", "watchlist", "verknuepfung", "status", "freigabe", "automatik", "recherche"] as const;
+const LAUF_ARTEN = ["entwurf", "crm-abgleich", "website-abgleich", "nachfrage", "watchlist", "verknuepfung", "status", "freigabe", "automatik", "recherche", "auswertung"] as const;
 const DESKTOP_LAUF_ARTEN = ["crm-abgleich", "watchlist"] as const;
 
 /**
@@ -1008,27 +1014,118 @@ buyingCenterRouter.openapi(automatikRoute, async (c) => {
 
 // ---- POST /buying-center/{id}/recherche ------------------------------------
 //
-// "Recherche jetzt": alles, was das Gateway selbst kann — Website-
-// Hervorhebung als Vorschlag, Verknuepfungskandidaten zaehlen, im
-// Auto-Modus uebernehmen. Den CRM-Abgleich faehrt der Desktop danach
-// (eigene Zugangsdaten), er meldet sich ueber /verlauf.
+// "Recherche starten" (2026-09-22): Bis hierhin las die Recherche nur, was
+// schon da war — und fand bei Firmen ohne frischen Kontaktlauf naturgemaess
+// nichts. Jetzt stoesst sie den Kontaktlauf der Firma wirklich an
+// (derselbe Weg wie "Stufe erneut ausfuehren": Website-Ereignis
+// upsertCompanyContact → company-contact-Producer auf dem Rechner des
+// Nutzers liest Team-Seiten und LinkedIn/Apify neu). Der Desktop wartet
+// auf das Ende (GET …/recherche) und ruft dann /auswertung.
+
+const RechercheStandShape = z.object({
+  state: z.enum(["pending", "in_progress", "completed", "failed", "skipped", "unbekannt"]),
+  updatedAt: z.string().nullable(),
+  transactionId: z.string().nullable(),
+});
+
+async function kontaktlaufStand(companyId: string): Promise<z.infer<typeof RechercheStandShape>> {
+  const r = await getGatewayPool().query<{ state: string; updatedAt: Date; transactionId: string }>(
+    `SELECT "state", "updatedAt", "transactionId" FROM "EntityProgress"
+      WHERE "companyId" = $1 AND "producer" = 'company-contact' ORDER BY "updatedAt" DESC LIMIT 1`,
+    [companyId],
+  );
+  const row = r.rows[0];
+  if (!row) return { state: "unbekannt", updatedAt: null, transactionId: null };
+  const state = (["pending", "in_progress", "completed", "failed", "skipped"] as const).find((x) => x === row.state) ?? "unbekannt";
+  return { state, updatedAt: row.updatedAt.toISOString(), transactionId: row.transactionId };
+}
 
 const rechercheRoute = createRoute({
   method: "post", path: "/buying-center/{id}/recherche", tags: [tag],
-  summary: "Recherche jetzt anstossen (nur Eigentuemer)",
+  summary: "Recherche starten: Kontaktlauf der Firma anstossen (nur Eigentuemer)",
+  request: { params: IdParam },
+  responses: { 200: { content: { "application/json": { schema: z.object({ angestossen: z.boolean(), grund: z.string().optional(), transactionId: z.string().nullable() }) } }, description: "ok" }, ...errorResponses },
+});
+buyingCenterRouter.openapi(rechercheRoute, async (c) => {
+  const wer = auth(c);
+  const bc = await ladeMitZugriff(c.req.valid("param").id, wer, true);
+  const pool = getGatewayPool();
+
+  // Der Lauf haengt an einer Transaktion; die juengste der Firma reicht.
+  const tx = await pool.query<{ transactionId: string }>(
+    `SELECT "transactionId" FROM "EntityProgress" WHERE "companyId" = $1 ORDER BY "updatedAt" DESC LIMIT 1`,
+    [bc.companyId],
+  );
+  const transactionId = tx.rows[0]?.transactionId ?? null;
+  const stand = await kontaktlaufStand(bc.companyId);
+
+  let grund: string | undefined;
+  if (!transactionId) grund = "Die Firma wurde noch nie verarbeitet — erst importieren und verarbeiten lassen.";
+  else if (stand.state === "in_progress" || stand.state === "pending") grund = "Ein Kontaktlauf läuft bereits.";
+  else if (await isHeld(pool, bc.companyId)) grund = "Die Verarbeitung dieser Firma ist pausiert.";
+
+  if (!grund && transactionId) {
+    try {
+      // Wie beim Wiederanlauf: Freshness-Sperre loeschen, damit der neue
+      // Lauf seine Fakten auch schreiben darf.
+      await pool.query(`DELETE FROM "ContentFreshness" WHERE "companyId" = $1 AND stage = 'company-contact'`, [bc.companyId]);
+      await publishWebsiteRetry({ stage: "companyContact", transactionId, companyId: bc.companyId, source: c.req.url, userId: wer.actorId });
+      transactionProgressBus.publishLocal({
+        transactionId, tenantId: wer.tenantId, service: "company-contact", companyId: bc.companyId,
+        state: "in_progress" as never, updatedAt: new Date().toISOString(),
+      });
+      await pool.query(
+        `INSERT INTO "EntityProgress" ("transactionId","companyId",producer,state,"errorMessage","updatedAt","createdAt")
+         VALUES ($1,$2,'company-contact','in_progress',NULL,NOW(),NOW())
+         ON CONFLICT ("transactionId","companyId",producer) DO UPDATE
+           SET state = 'in_progress', "errorMessage" = NULL, "updatedAt" = NOW()`,
+        [transactionId, bc.companyId],
+      );
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      logger.warn({ companyId: bc.companyId, err: msg }, "buying-center: kontaktlauf konnte nicht angestossen werden");
+      grund = /No website/.test(msg) ? "Zur Firma ist keine Website bekannt — ohne sie gibt es keinen Kontaktlauf."
+        : /No companyName/.test(msg) ? "Zur Firma fehlt der Name im Register-Stand."
+        : "Der Kontaktlauf konnte nicht angestoßen werden.";
+    }
+  }
+
+  await lauf(bc.id, "recherche", grund ? `Recherche: Kontaktlauf nicht angestoßen — ${grund}` : "Recherche: Kontaktlauf angestoßen (Website-Personen, LinkedIn/Apify) — Auswertung folgt nach dem Lauf", { angestossen: !grund, transactionId });
+  return c.json({ angestossen: !grund, grund, transactionId }, 200);
+});
+
+const rechercheStandRoute = createRoute({
+  method: "get", path: "/buying-center/{id}/recherche", tags: [tag],
+  summary: "Stand des Kontaktlaufs zur Firma des Buying Centers",
+  request: { params: IdParam },
+  responses: { 200: { content: { "application/json": { schema: RechercheStandShape } }, description: "ok" }, ...errorResponses },
+});
+buyingCenterRouter.openapi(rechercheStandRoute, async (c) => {
+  const bc = await ladeMitZugriff(c.req.valid("param").id, auth(c), false);
+  return c.json(await kontaktlaufStand(bc.companyId), 200);
+});
+
+// ---- POST /buying-center/{id}/auswertung -----------------------------------
+//
+// Auswertung: alles, was das Gateway aus dem Bestand ableiten kann —
+// Website-Hervorhebung als Vorschlag, Verknuepfungskandidaten, im Auto-
+// Modus die Uebernahme. Den CRM-Abgleich faehrt der Desktop danach.
+
+const auswertungRoute = createRoute({
+  method: "post", path: "/buying-center/{id}/auswertung", tags: [tag],
+  summary: "Auswertung des Bestands (nur Eigentuemer)",
   request: { params: IdParam },
   responses: { 200: { content: { "application/json": { schema: z.object({ website: z.number(), verknuepfbar: z.number(), uebernommen: z.number(), automatik: z.boolean() }) } }, description: "ok" }, ...errorResponses },
 });
-buyingCenterRouter.openapi(rechercheRoute, async (c) => {
+buyingCenterRouter.openapi(auswertungRoute, async (c) => {
   const wer = auth(c);
   const bc = await ladeMitZugriff(c.req.valid("param").id, wer, true);
   const voll = await ladeVoll(bc);
   const website = await websiteVorschlaege(voll.mitglieder);
   const verknuepfbar = (await verknuepfbarePersonen(bc.companyId, voll.mitglieder)).length;
   const uebernommen = bc.automatik ? await offeneUebernehmen(bc.id, wer.actorId) : 0;
-  await lauf(bc.id, "recherche",
-    `Recherche gestartet: Website-Abgleich ${website} ${website === 1 ? "Vorschlag" : "Vorschläge"}, ${verknuepfbar} verknüpfbare ${verknuepfbar === 1 ? "Person" : "Personen"}${bc.automatik ? `, ${uebernommen} automatisch übernommen` : ""} — CRM-Abgleich folgt vom Rechner`,
+  await lauf(bc.id, "auswertung",
+    `Auswertung: Website-Abgleich ${website} ${website === 1 ? "Vorschlag" : "Vorschläge"}, ${verknuepfbar} verknüpfbare ${verknuepfbar === 1 ? "Person" : "Personen"}${bc.automatik ? `, ${uebernommen} automatisch übernommen` : ""}`,
     { website, verknuepfbar, uebernommen });
   return c.json({ website, verknuepfbar, uebernommen, automatik: bc.automatik === true }, 200);
 });
-

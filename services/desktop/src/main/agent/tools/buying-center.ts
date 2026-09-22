@@ -580,23 +580,34 @@ export function buildBuyingCenterTools(deps: BuyingCenterToolDeps): Tool[] {
     summary: "Recherche zu einem Buying Center jetzt anstossen (Website-Abgleich, Verknuepfungskandidaten, CRM-Abgleich).",
     category: "buying center",
     description:
-      "Stoesst die Hintergrund-Recherche zu einem Buying Center sofort an: Website-Hervorhebung als Vorschlag, verknuepfbare Bestandspersonen, CRM-Abgleich (Kontaktintensitaet). Im Auto-Modus werden neue Vorschlaege direkt uebernommen. Ergebnis erscheint im Verlauf der Karte.",
+      "Stoesst die Recherche zu einem Buying Center an: erst den Kontaktlauf der Firma (Website-Personen, LinkedIn/Apify — laeuft auf dem Rechner des Nutzers, ein paar Minuten), dann die Auswertung (Website-Hervorhebung als Vorschlag, verknuepfbare Bestandspersonen) und den CRM-Abgleich. Wartet bis zu 4 Minuten auf den Kontaktlauf; dauert er laenger, wird trotzdem ausgewertet und der Rest landet spaeter im Verlauf. Im Auto-Modus werden neue Vorschlaege direkt uebernommen.",
     parameters: { type: "object", properties: { buyingCenterId: { type: "string" } }, required: ["buyingCenterId"] },
     schema: yup.object({ buyingCenterId: yup.string().trim().required() }).noUnknown(true),
     run: async (args, c) => {
       try {
-        const r = await gateway.request<{ website: number; verknuepfbar: number; uebernommen: number; automatik: boolean }>(`/v1/buying-center/${encodeURIComponent(args.buyingCenterId)}/recherche`, { method: "POST", body: {}, signal: c.signal });
+        const bcPfad = `/v1/buying-center/${encodeURIComponent(args.buyingCenterId)}`;
+        const start = await gateway.request<{ angestossen: boolean; grund?: string }>(`${bcPfad}/recherche`, { method: "POST", body: {}, signal: c.signal });
+        let kontaktlauf = start.angestossen ? "Zeitüberschreitung (läuft weiter)" : `nicht gestartet: ${start.grund ?? "unbekannt"}`;
+        if (start.angestossen) {
+          const bis = Date.now() + 4 * 60_000;
+          while (Date.now() < bis && !c.signal?.aborted) {
+            await new Promise((r) => setTimeout(r, 5_000));
+            const st = await gateway.request<{ state: string }>(`${bcPfad}/recherche`, { signal: c.signal }).catch(() => null);
+            if (st && st.state !== "in_progress" && st.state !== "pending") { kontaktlauf = st.state; break; }
+          }
+        }
+        const r = await gateway.request<{ website: number; verknuepfbar: number; uebernommen: number; automatik: boolean }>(`${bcPfad}/auswertung`, { method: "POST", body: {}, signal: c.signal });
         let crm = "nicht ausgefuehrt";
         if (deps.ladeInteraktionen) {
           const i = await deps.ladeInteraktionen(args.buyingCenterId);
           crm = i.verfuegbar ? `${i.mitglieder.length} Mitglieder im CRM gefunden` : (i.grund ?? "nicht verfuegbar");
         }
-        return { website: r.website, verknuepfbar: r.verknuepfbar, uebernommen: r.uebernommen, automatik: r.automatik, crm, anzeigen: args.buyingCenterId };
+        return { kontaktlauf, website: r.website, verknuepfbar: r.verknuepfbar, uebernommen: r.uebernommen, automatik: r.automatik, crm, anzeigen: args.buyingCenterId };
       } catch (err) {
         return { error: fehlertext(err) };
       }
     },
-    preview: (r) => ("website" in r ? `Recherche: Website ${r.website}, verknüpfbar ${r.verknuepfbar}, CRM ${r.crm}` : "fehlgeschlagen"),
+    preview: (r) => ("website" in r ? `Recherche: Kontaktlauf ${r.kontaktlauf}, Website ${r.website}, verknüpfbar ${r.verknuepfbar}, CRM ${r.crm}` : "fehlgeschlagen"),
   });
 
   return [anlegen, anzeigen, setzen, aufnehmen, kante, vorschlaege, abschliessen, beobachten, verknuepfen, freigeben, geteilt, automatik, recherche];
