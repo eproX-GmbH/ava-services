@@ -55,3 +55,26 @@ export function quellenDerFakten(
   }
   return REIHENFOLGE.filter((g) => gefunden.has(g));
 }
+
+/**
+ * Wie quellenDerFakten, aber je Gruppe mit der Belegseite (2026-09-24):
+ * "Firmenwebsite" soll anklickbar sein und auf die Seite fuehren, auf der
+ * die Person gefunden wurde. Je Gruppe die Seite des zuerst genannten
+ * Fakts mit Beleg; ohne Beleg bleibt die Gruppe ein blosser Text.
+ */
+export function quellenMitBelegen(
+  facts: ReadonlyArray<{ lastObsId?: unknown; [k: string]: unknown }>,
+  quellen: Map<string, string> | undefined,
+  belege: Map<string, string> | undefined,
+): Array<{ gruppe: string; url: string | null }> {
+  if (!quellen || quellen.size === 0) return [];
+  const urlJe = new Map<string, string | null>();
+  for (const f of facts) {
+    const obsId = typeof f.lastObsId === "string" ? f.lastObsId : null;
+    const gruppe = quellenGruppe(obsId ? quellen.get(obsId) : null);
+    if (!gruppe) continue;
+    const url = (obsId && belege?.get(obsId)) || null;
+    if (!urlJe.has(gruppe) || (url && !urlJe.get(gruppe))) urlJe.set(gruppe, url);
+  }
+  return REIHENFOLGE.filter((g) => urlJe.has(g)).map((g) => ({ gruppe: g, url: urlJe.get(g) ?? null }));
+}

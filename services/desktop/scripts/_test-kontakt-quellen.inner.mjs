@@ -51,3 +51,15 @@ assert.deepEqual(quellenDerFakten([{ lastObsId: "fehlt" }], quellen), [], "Beleg
 console.log("  ok   fehlende Belege und leere Karten ergeben keine Angabe");
 
 console.log("Kontakt-Quellen-Tests ok");
+
+// 2026-09-24 — Belegseite je Gruppe: "Firmenwebsite" wird anklickbar.
+{
+  const { quellenMitBelegen } = await import("../src/renderer/src/routes/kontakt-quellen.ts");
+  const q = new Map([["o1", "agent:website_people"], ["o2", "apify:company-profile"], ["o3", "agent:website"]]);
+  const b = new Map([["o3", "https://firma.de/team"], ["o2", "https://www.linkedin.com/company/firma"]]);
+  const aus = quellenMitBelegen([{ lastObsId: "o1" }, { lastObsId: "o2" }, { lastObsId: "o3" }], q, b);
+  assert.deepEqual(aus, [{ gruppe: "LinkedIn", url: "https://www.linkedin.com/company/firma" }, { gruppe: "Firmenwebsite", url: "https://firma.de/team" }]);
+  assert.deepEqual(quellenMitBelegen([{ lastObsId: "o1" }], q, new Map()), [{ gruppe: "Firmenwebsite", url: null }]);
+  assert.deepEqual(quellenMitBelegen([{ lastObsId: "o1" }], undefined, b), []);
+  console.log("  ok   Belegseite je Quellgruppe, ohne Beleg nur Text");
+}

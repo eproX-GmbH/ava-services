@@ -3511,6 +3511,8 @@ a.heartbeat-decision__company:hover {
    und Abteilung, aber eine Spur zurueckgenommen: die Angabe hilft beim
    Einordnen, sie ist nicht die Hauptsache an der Karte. */
 .pc__quelle { opacity: 0.75; font-variant: all-small-caps; letter-spacing: 0.03em; }
+.pc__quelle-link { color: inherit; text-decoration: none; border-bottom: 1px dotted currentColor; }
+.pc__quelle-link:hover { color: var(--accent); border-bottom-style: solid; }
 /* Rolleneinordnung — erklaert, warum eine Karte oben steht. Zurueckhaltend:
    die Information ordnet ein, sie ist nicht die Hauptsache. */
 /* Suche ueber die Ansprechpartner. Steht in der Zeile der Ueberschrift:

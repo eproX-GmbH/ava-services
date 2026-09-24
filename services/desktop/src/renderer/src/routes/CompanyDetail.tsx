@@ -33,7 +33,7 @@ import {
 import { parseNaceFromProfile } from "../../../shared/nace-divisions";
 import { ExternalLink } from "../components/ExternalLink";
 import { CompanyCrmPanel } from "../components/CompanyCrmPanel";
-import { quellenDerFakten } from "./kontakt-quellen";
+import { quellenDerFakten, quellenMitBelegen } from "./kontakt-quellen";
 import { sortiereNachRang, rangFuerTitel, RANG_TITEL } from "./kontakt-rang";
 import { bewerte } from "./kontakt-suche";
 import { FirmaUebernehmen, useIstUebernommen } from "./firma-uebernehmen";
@@ -2130,6 +2130,8 @@ function PersonCard({
   const xing = find("xingUrl");
   const linkedin = find("linkedinUrl");
   const herkunftsGruppen = quellenDerFakten(facts, quellen);
+  // 2026-09-24 — "Firmenwebsite" fuehrt auf die Belegseite der Person.
+  const herkunftsLinks = quellenMitBelegen(facts, quellen, belege);
   // Relevanz (docs/PLAN_RELEVANZ.md, 3.2): Was der Nutzer an dieser Person
   // TUT, sagt mehr als das, was ueber sie bekannt ist. Die Aufrufe sind
   // folgenlos, wenn die Erfassung aus ist, und werfen nie.
@@ -2289,7 +2291,18 @@ function PersonCard({
                     className="pc__quelle"
                     title={`Gefunden über: ${herkunftsGruppen.join(", ")}`}
                   >
-                    {herkunftsGruppen.join(" · ")}
+                    {herkunftsLinks.map((h, i) => (
+                      <span key={h.gruppe}>
+                        {i > 0 ? " · " : ""}
+                        {h.url ? (
+                          <ExternalLink href={h.url} className="pc__quelle-link" title={`Belegseite öffnen: ${h.url}`}>
+                            {h.gruppe}
+                          </ExternalLink>
+                        ) : (
+                          h.gruppe
+                        )}
+                      </span>
+                    ))}
                   </span>
                 </>
               )}
