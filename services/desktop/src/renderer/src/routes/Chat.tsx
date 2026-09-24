@@ -118,6 +118,8 @@ interface UiMessage {
   /** v0.1.257 — Bilder, die diese Message mitgeschickt hat (nur USER).
    *  Lokal-only — bei Conversation-Reload nicht persistiert. */
   images?: Array<{ base64: string; mimeType: string; filename?: string }>;
+  /** Sprachmodus: Zug wurde gesprochen bzw. kam ueber den Relay. */
+  quelle?: "sprache";
   pending?: boolean;
   /** Inline tool-action row. When set, the message is rendered as a
    *  timeline step instead of a chat bubble. */
@@ -349,7 +351,7 @@ export function Chat() {
         // v0.1.579 — reine Modell-Hinweise ("[Hinweis: …]") nicht als
         // Nutzer-Blase zeigen.
         if (/^\[Hinweis:[\s\S]*\]\s*$/.test(m.content.trim())) continue;
-        out.push({ id: m.id, role: "user", content: m.content });
+        out.push({ id: m.id, role: "user", content: m.content, ...(m.quelle ? { quelle: m.quelle } : {}) });
         continue;
       }
       if (m.role === "assistant") {
@@ -1991,6 +1993,9 @@ export function Chat() {
                   <div className="chat-content">
                     {m.role === "user" ? (
                       <>
+                        {m.quelle === "sprache" && (
+                          <div className="muted small chat-msg__sprache" style={{ marginBottom: "0.25rem" }}>Im Sprachmodus gesprochen</div>
+                        )}
                         {(() => {
                           const p = praesentiereNutzerText(m.content);
                           return (

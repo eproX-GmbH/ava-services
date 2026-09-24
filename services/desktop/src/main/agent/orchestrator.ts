@@ -519,6 +519,7 @@ export class AgentOrchestrator extends EventEmitter {
       ...(input.images && input.images.length > 0
         ? { images: input.images }
         : {}),
+      ...(input.quelle ? { quelle: input.quelle } : {}),
     };
     this.appendMessage(convo, userMessage);
     if (warAutonom) {

@@ -8717,3 +8717,6 @@ input, textarea, select, button, a, summary, details,
 /* Die App darunter darf nicht durchscheinen, auch im Dunkelmodus: echtes Weiss (Entscheidung 2026-09-24). */
 .sm .panel, .sm .bc-karte { background: #fff; color: #0a1f2a; }
 @media (prefers-reduced-motion: reduce) { .sm, .sm__kugel-knopf, .sk-kugel { transition: none; } .sm__block { animation: none; } }
+/* Sprachmodus: Hinweise der App zurueckhalten, bis das Gespraech vorbei ist. */
+body.sprachmodus .upstream-banner, body.sprachmodus .tier-banner, body.sprachmodus .app-shell > [role="status"] { display: none !important; }
+.sm__transkript--meldung { color: #b42318; }

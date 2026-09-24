@@ -71,7 +71,7 @@ export class SpracheRelay {
   auftrag(input: { conversationId: string; text: string; images?: import("../../shared/types").AgentMessageImage[] }): { laeuft: boolean; requestId: string | null; grund?: string } {
     if (this.laufend) return { laeuft: false, requestId: null, grund: "Ein Auftrag läuft noch. Warte auf sein Ergebnis." };
     try {
-      const r = this.orchestrator.send({ conversationId: input.conversationId, message: input.text, images: input.images });
+      const r = this.orchestrator.send({ conversationId: input.conversationId, message: input.text, images: input.images, quelle: "sprache" });
       this.laufend = { requestId: r.requestId, conversationId: input.conversationId, text: "", toolPreviews: [] };
       return { laeuft: true, requestId: r.requestId };
     } catch (err) {

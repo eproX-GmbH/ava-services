@@ -88,3 +88,44 @@ export class WachwortLauscher {
       .finally(() => { this.laeuft = false; });
   }
 }
+
+/**
+ * Audio-Puffer waehrend des Verbindungsaufbaus (S4b): Was der Nutzer nach
+ * dem Wecken sagt, bevor die Sitzung steht, wird lokal aufgenommen, mit
+ * Whisper transkribiert und der Sitzung als Text nachgereicht.
+ */
+export class PufferAufnahme {
+  private stream: MediaStream | null = null;
+  private ctx: AudioContext | null = null;
+  private proc: ScriptProcessorNode | null = null;
+  private chunks: Float32Array[] = [];
+  private stimme = false;
+
+  async starten(): Promise<void> {
+    this.stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    this.ctx = new AudioContext();
+    const src = this.ctx.createMediaStreamSource(this.stream);
+    this.proc = this.ctx.createScriptProcessor(4096, 1, 1);
+    src.connect(this.proc);
+    this.proc.connect(this.ctx.destination);
+    this.proc.onaudioprocess = (ev) => {
+      const d = ev.inputBuffer.getChannelData(0);
+      let sum = 0;
+      for (let i = 0; i < d.length; i++) sum += d[i]! * d[i]!;
+      if (Math.sqrt(sum / d.length) > SCHWELLE) this.stimme = true;
+      this.chunks.push(new Float32Array(d));
+      if (this.chunks.length > 400) this.chunks.shift(); // ~35 s Deckel
+    };
+  }
+
+  /** Beendet die Aufnahme; WAV nur, wenn wirklich gesprochen wurde. */
+  stoppen(): Uint8Array | null {
+    const rate = this.ctx?.sampleRate ?? 48000;
+    try { this.proc?.disconnect(); } catch { /* egal */ }
+    for (const t of this.stream?.getAudioTracks() ?? []) t.stop();
+    void this.ctx?.close().catch(() => undefined);
+    const wav = this.stimme && this.chunks.length > 3 ? encodeWav(this.chunks, rate) : null;
+    this.chunks = []; this.proc = null; this.stream = null; this.ctx = null;
+    return wav;
+  }
+}

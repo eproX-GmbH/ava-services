@@ -13,8 +13,8 @@ Stand 2026-09-24 (v0.1.728). Plan und Entscheidungen: docs/PLAN_SPRACHMODUS.md.
 - **Starten:** der Wellen-Knopf im Chat neben dem Mikrofon. Der Bildschirm
   wird weiss, die Kugel erscheint, AVA ist sofort verbunden.
 - **Sprechen:** einfach reden; AVA erkennt Satzenden selbst und laesst sich
-  unterbrechen. Tippen geht unten in der Zeile, Bilder ueber + oder
-  Einfuegen (bis zu vier).
+  unterbrechen. Tippen geht unten in der Zeile, Bilder (bis vier) und Dokumente (PDF,
+  Excel, CSV; bis drei) ueber + oder Einfuegen.
 - **Kugel:** atmet im Leerlauf, dehnt sich wenn AVA spricht, zieht sich beim
   Zuhoeren zusammen und wird dunkler, pulsiert wenn AVA arbeitet. Diagramme
   und Buying Center erscheinen unter der Kugel, die dabei nach oben faehrt.
@@ -65,6 +65,4 @@ Stand 2026-09-24 (v0.1.728). Plan und Entscheidungen: docs/PLAN_SPRACHMODUS.md.
 
 ## Offen
 
-Dokumente (PDF/Excel) als Anhang, Markierung der Sprach-Zuege im
-Chatverlauf, Alerts im Sprachmodus zurueckhalten, Audio-Puffer waehrend des
-Verbindungsaufbaus beim Wecken.
+Nichts aus dem Plan; Praxistest mit echtem Mikrofon und OpenAI steht aus.

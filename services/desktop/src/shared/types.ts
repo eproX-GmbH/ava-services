@@ -727,6 +727,8 @@ export interface AgentMessage {
    * Skills speichern.
    */
   images?: AgentMessageImage[];
+  /** Sprachmodus (docs/PLAN_SPRACHMODUS.md): Zug kam gesprochen bzw. ueber den Relay. */
+  quelle?: "sprache";
 }
 
 /** Inline-Bild als base64. mimeType ist immer `image/<format>`
@@ -771,6 +773,8 @@ export interface AgentSendInput {
    *  eingehängt. Werden in den ersten user-AgentMessage des Turns
    *  übernommen. Nur sinnvoll bei Vision-Modellen. */
   images?: AgentMessageImage[];
+  /** Sprachmodus: Zug stammt aus dem Relay; wird an der Nachricht markiert. */
+  quelle?: "sprache";
 }
 
 export interface AgentSendResult {

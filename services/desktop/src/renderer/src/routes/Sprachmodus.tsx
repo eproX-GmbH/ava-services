@@ -14,7 +14,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import type { SpracheBlock, SpracheErgebnis, SpracheRueckfrage, SpracheSitzung, SpracheStand } from "../../../shared/types";
 import { RealtimeVerbindung, signalton, fehlerEinordnen, type RealtimeEreignis, type SpracheFehlerArt } from "../lib/realtime";
-import { WachwortLauscher } from "../lib/wachwort";
+import { WachwortLauscher, PufferAufnahme } from "../lib/wachwort";
+import { composePromptWithAttachments, isSupportedAttachment, parseAttachment, ScanPdfDetectedError, type SpreadsheetAttachment } from "../lib/attachment";
 import { SprachKugel, type KugelZustand } from "../components/SprachKugel";
 import { ChartBlock } from "../components/ChartBlock";
 import { BuyingCenterBlock } from "../components/BuyingCenterBlock";
@@ -252,8 +253,34 @@ export function Sprachmodus() {
     lauscher.current?.stoppen(); lauscher.current = null;
     if (stand?.einstellungen.signalton !== false) signalton();
     aktiv();
+    // S4b — was waehrend des Aufbaus gesagt wird, lokal puffern und danach
+    // als Text nachreichen (Whisper), damit der erste Satz nicht verloren geht.
+    let puffer: PufferAufnahme | null = null;
+    if (stand?.whisperBereit) {
+      puffer = new PufferAufnahme();
+      await puffer.starten().catch(() => { puffer = null; });
+    }
     await verbinden(true);
+    const wav = puffer?.stoppen() ?? null;
+    if (wav && (zustandRef.current.phase as Phase) === "wach") {
+      try {
+        const { text } = await window.api.voice.transcribe(wav);
+        const t = text.trim();
+        if (t.length > 3 && !/^(hey|hallo|hi|he|ey)?[\s,]*(ava|afa|eva)[.!?]*$/i.test(t)) {
+          logge("du", t);
+          nachrichtEinlegen(`Der Nutzer sagte, während die Verbindung aufgebaut wurde: "${t}"`);
+        }
+      } catch { /* kein Text */ }
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [stand, verbinden]);
+
+  // Alerts/Banner der App bleiben waehrend des Gespraechs verborgen (CSS
+  // ueber body.sprachmodus); sie erscheinen wieder beim Verlassen.
+  useEffect(() => {
+    document.body.classList.add("sprachmodus");
+    return () => document.body.classList.remove("sprachmodus");
+  }, []);
 
   useEffect(() => {
     let weg = false;
@@ -338,21 +365,30 @@ export function Sprachmodus() {
   const dateiRef = useRef<HTMLInputElement>(null);
   const anhaengen = async (files: FileList | null) => {
     if (!files || files.length === 0) return;
-    const bilder = await Promise.all(Array.from(files).filter((f) => f.type.startsWith("image/")).slice(0, 4).map(bildAusDatei));
-    if (bilder.length === 0) { setFehler("Im Sprachmodus gehen bisher nur Bilder als Anhang."); return; }
+    const alle = Array.from(files);
+    const bilder = await Promise.all(alle.filter((f) => f.type.startsWith("image/")).slice(0, 4).map(bildAusDatei));
+    const dokumente: SpreadsheetAttachment[] = [];
+    for (const f of alle.filter((f) => !f.type.startsWith("image/") && isSupportedAttachment(f)).slice(0, 3)) {
+      try { dokumente.push(await parseAttachment(f)); }
+      catch (err) { setMeldungKurz(err instanceof ScanPdfDetectedError ? `${f.name}: gescanntes PDF ohne Text — im Sprachmodus nicht lesbar.` : `${f.name}: ${err instanceof Error ? err.message : String(err)}`); }
+    }
+    if (bilder.length === 0 && dokumente.length === 0) { setMeldungKurz("Unterstützt: Bilder, PDF, Excel, CSV."); return; }
     if (zustandRef.current.phase === "ruhe") await wecken();
-    const text = eingabe.trim() || "Sieh dir das angehängte Bild an und sag mir, was darauf für die Recherche wichtig ist.";
+    const frage = eingabe.trim() || (dokumente.length ? "Sieh dir das angehängte Dokument an und sag mir, was darin für die Recherche wichtig ist." : "Sieh dir das angehängte Bild an und sag mir, was darauf für die Recherche wichtig ist.");
     setEingabe("");
     aktiv();
-    logge("du", `${text} (${bilder.length} ${bilder.length === 1 ? "Bild" : "Bilder"})`);
-    const r = await window.api.sprache.auftrag({ conversationId, text, images: bilder });
+    const was = [bilder.length ? `${bilder.length} ${bilder.length === 1 ? "Bild" : "Bilder"}` : "", dokumente.length ? dokumente.map((d) => d.filename).join(", ") : ""].filter(Boolean).join(", ");
+    logge("du", `${frage} (${was})`);
+    const r = await window.api.sprache.auftrag({ conversationId, text: composePromptWithAttachments(frage, dokumente), images: bilder });
     if (r.laeuft) {
       setAuftragLaeuft(true);
-      nachrichtEinlegen(`Der Nutzer hat ${bilder.length === 1 ? "ein Bild" : `${bilder.length} Bilder`} angehängt mit der Frage: "${text}". AVA arbeitet daran; sag einen kurzen Satz und warte auf 'ERGEBNIS von AVA'.`);
+      nachrichtEinlegen(`Der Nutzer hat angehängt: ${was}. Frage: "${frage}". AVA arbeitet daran; sag einen kurzen Satz und warte auf 'ERGEBNIS von AVA'.`);
     } else {
-      setFehler(r.grund ?? "Auftrag nicht gestartet.");
+      setMeldungKurz(r.grund ?? "Auftrag nicht gestartet.");
     }
   };
+  const [meldungKurz, setMeldungKurz] = useState<string | null>(null);
+  useEffect(() => { if (!meldungKurz) return; const id = setTimeout(() => setMeldungKurz(null), 6000); return () => clearTimeout(id); }, [meldungKurz]);
 
   const beenden = () => {
     setSichtbar(false);
@@ -442,14 +478,14 @@ export function Sprachmodus() {
           </div>
         )}
       </div>
-      {(laufendeZeile || transkript.length > 0) && (
-        <p className="sm__transkript">{laufendeZeile || transkript[transkript.length - 1]?.text}</p>
+      {(meldungKurz || laufendeZeile || transkript.length > 0) && (
+        <p className={`sm__transkript ${meldungKurz ? "sm__transkript--meldung" : ""}`}>{meldungKurz ?? (laufendeZeile || transkript[transkript.length - 1]?.text)}</p>
       )}
       <div className="sm__leiste">
         <form className="sm__eingabe" onSubmit={(e) => { e.preventDefault(); void tippen(); }}>
           <button type="button" className="sm__plus" onClick={() => dateiRef.current?.click()} title="Bild anhängen" aria-label="Bild anhängen">+</button>
           <input value={eingabe} onChange={(e) => setEingabe(e.target.value)} placeholder="AVA fragen" aria-label="AVA fragen" onPaste={(e) => { const f = e.clipboardData?.files; if (f && f.length) { e.preventDefault(); void anhaengen(f); } }} />
-          <input ref={dateiRef} type="file" accept="image/png,image/jpeg,image/webp,image/gif" multiple style={{ display: "none" }} onChange={(e) => { void anhaengen(e.target.files); e.target.value = ""; }} />
+          <input ref={dateiRef} type="file" accept="image/png,image/jpeg,image/webp,image/gif,.pdf,application/pdf,.xlsx,.xls,.csv,.tsv" multiple style={{ display: "none" }} onChange={(e) => { void anhaengen(e.target.files); e.target.value = ""; }} />
         </form>
         <button type="button" className={`sm__rund ${stumm ? "sm__rund--aus" : ""}`} onClick={stummSchalten} title={stumm ? "Mikrofon einschalten" : "Mikrofon stummschalten"} aria-label={stumm ? "Mikrofon einschalten" : "Mikrofon stummschalten"}>
           <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><rect x="9" y="3" width="6" height="11" rx="3" /><path d="M5 11a7 7 0 0 0 14 0M12 18v3" />{stumm && <path d="M4 4l16 16" />}</svg>
