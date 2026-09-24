@@ -118,8 +118,9 @@ Renderer (Sprachmodus-Overlay)
 1. `ava_bearbeiten({ auftrag: string })` – alles, was Daten, Recherche,
    Aktionen oder Wissen ueber Firmen braucht.
 2. `ava_rueckfrage_beantworten({ choiceId, wert })`.
-3. `ava_anzeigen({ was: "verlauf" | "bloecke_schliessen" })` – Kugel zurueck
-   in die Mitte, Bloecke wegraeumen.
+3. `ava_anzeigen({ zeigen?: id[], entfernen?: id[], alle_entfernen?: true })`
+   – die Sprach-KI bestimmt, was auf dem Bildschirm bleibt (Abschnitt 5,
+   "Bildschirm folgt dem Gespraech").
 
 **Turn-Erkennung:** `semantic_vad` (Standard), Unterbrechung erlaubt
 (`interrupt_response: true`); bei stummgeschaltetem Mikrofon `turn_detection:
@@ -211,6 +212,27 @@ uebergibt die letzten Zuege als Kontext (Punkt 8.6).
 - Anhaenge: Bilder als `images` im `AgentSendInput`, Dokumente ueber die
   bestehende Anhangs-Logik (`composePromptWithAttachments`).
 
+**Bildschirm folgt dem Gespraech (Zusatz 2026-09-24):** Bloecke bleiben so
+lange sichtbar, wie das Gespraech sie braucht, und verschwinden oder
+wechseln von selbst, wenn der Fokus sich verschiebt. Drei Ebenen:
+1. Jeder Block bekommt eine Kennung, einen Titel und einen Bezug
+   (companyId, Personenname, Thema). Die Sprach-KI kennt jederzeit die
+   Liste "Auf dem Bildschirm: …" (sie wird jedem Ergebnis von
+   `ava_bearbeiten` angehaengt und nach jeder Aenderung als kurzer
+   Systemhinweis in die Sitzung gelegt).
+2. Die Sprach-KI raeumt aktiv auf: Instruktion "Wenn das Gespraech zu
+   einer anderen Firma, Person oder Frage wechselt, entferne Bloecke, die
+   dazu nichts beitragen (`ava_anzeigen`), bevor du antwortest; ein Block,
+   ueber den gerade gesprochen wird, bleibt." Kein Nachfragen dafuer, kein
+   Ankuendigen; es passiert nebenbei.
+3. Der Relay raeumt passiv auf, ohne Modell: Kommt ein neuer Block zu
+   einer anderen Firma als die sichtbaren, ersetzen die neuen die alten
+   (gleiche Firma: anhaengen, gleicher Typ zur gleichen Firma: ersetzen).
+   Bloecke, die 10 Minuten lang weder erwaehnt noch angefasst wurden,
+   blenden aus; die Kugel faehrt zurueck in die Mitte, wenn nichts mehr da
+   ist. Der Nutzer kann jeden Block per Klick festpinnen (bleibt, bis er
+   ihn schliesst) oder wegwischen.
+
 ---
 
 ## 6. Prompting der Sprach-KI (Instruktionen)
@@ -228,6 +250,10 @@ Kern (Deutsch, wird als `session.instructions` gesetzt):
   hoechstens vier Saetze; biete Vertiefung an.
 - Ist ein Diagramm oder Buying Center auf dem Bildschirm: sag, dass es zu
   sehen ist, beschreibe in einem Satz, was es zeigt.
+- Der Bildschirm folgt dem Gespraech: Wechselt das Thema (andere Firma,
+  andere Person, andere Frage), entferne Bloecke, die nichts mehr beitragen,
+  mit `ava_anzeigen`, ohne es anzukuendigen. Was gerade besprochen wird,
+  bleibt. Fragt der Nutzer nach etwas Frueherem, zeige es wieder.
 - Rueckfragen des Systems (Bestaetigungen) stellst du woertlich; ein Ja
   gibst du nur weiter, wenn der Nutzer eindeutig zustimmt.
 - Verlassen des Sprachmodus geht nur ueber das X; du bietest keine
@@ -242,7 +268,7 @@ Kern (Deutsch, wird als `session.instructions` gesetzt):
 | S0 | Einstellung (Schalter, Stimme, Kostenhinweis), Orga-Schalter `sprachmodus`, Chat-Werkzeug `sprachmodus_konfigurieren`, Praegung des Client-Schluessels im Hauptprozess (eigen/Organisation), IPC `sprache:session` | 1 Tag |
 | S1 | Overlay `/sprache`: Fade, Kugel mit Pegeln, WebRTC-Verbindung, Datenkanal, Mikrofon stumm/laut, X, Esc; Transkriptzeile | 2 Tage |
 | S2 | Relay: `ava_bearbeiten` → Orchestrator-Zug, Ergebnis nachreichen, `ava_rueckfrage_beantworten`, Rueckfragen-Karte unter der Kugel | 2 Tage |
-| S3 | Bloecke unter der Kugel (Chart, Buying Center, Textkarte ohne Links), Kugel faehrt hoch, `ava_anzeigen` | 1 Tag |
+| S3 | Bloecke unter der Kugel (Chart, Buying Center, Textkarte ohne Links), Kugel faehrt hoch; "Bildschirm folgt dem Gespraech": Block-Kennungen mit Bezug, `ava_anzeigen`, Liste "Auf dem Bildschirm" fuer die Sprach-KI, passives Aufraeumen im Relay, Pinnen/Wegwischen | 1,5 Tage |
 | S4 | Eingabezeile + Anhaenge im Sprachmodus, Zuege im Chatverlauf markiert, Alerts zurueckhalten | 1 Tag |
 | S5 | Verbrauchsmeldung an das Gateway (Organisationsschluessel), 55-Minuten-Neuverbindung, Prompt-Tests (Fangfragen, Ja-Weitergabe, Tabellenvermeidung) | 1 Tag |
 | S6 | Feinschliff: reduzierte Bewegung, Fehlerbilder (kein Mikrofon, Netz weg, Schluessel ungueltig), Doku | 0,5 Tag |
