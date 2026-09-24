@@ -8701,9 +8701,11 @@ input, textarea, select, button, a, summary, details,
 @keyframes sm-auf { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
 .sm__transkript { margin: 0 auto; max-width: 760px; padding: 0 16px; color: #5a6b76; font-size: 14px; text-align: center; min-height: 20px; }
 .sm__leiste { display: flex; align-items: center; gap: 10px; padding: 14px 16px 22px; justify-content: center; }
-.sm__eingabe { flex: 0 1 560px; }
-.sm__eingabe input { width: 100%; box-sizing: border-box; border: 1px solid #dde3ea; background: #f4f6f9; color: #0a1f2a; border-radius: 999px; padding: 14px 20px; font-size: 16px; outline: none; }
+.sm__eingabe { flex: 0 1 560px; position: relative; display: flex; align-items: center; }
+.sm__eingabe input[type="text"], .sm__eingabe input:not([type]) { width: 100%; box-sizing: border-box; border: 1px solid #dde3ea; background: #f4f6f9; color: #0a1f2a; border-radius: 999px; padding: 14px 20px 14px 48px; font-size: 16px; outline: none; }
 .sm__eingabe input:focus { border-color: #9aa7ff; }
+.sm__plus { position: absolute; left: 8px; width: 34px; height: 34px; border-radius: 50%; border: 0; background: transparent; color: #5a6b76; font-size: 24px; line-height: 1; cursor: pointer; }
+.sm__plus:hover { background: #e9edf3; color: #0a1f2a; }
 .sm__rund { width: 50px; height: 50px; border-radius: 50%; border: 1px solid #dde3ea; background: #f4f6f9; color: #0a1f2a; display: inline-flex; align-items: center; justify-content: center; cursor: pointer; }
 .sm__rund:hover { background: #e9edf3; }
 .sm__rund--aus { color: #b42318; }

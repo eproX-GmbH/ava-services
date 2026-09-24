@@ -43,6 +43,19 @@ export function verbrauchAus(usage: Record<string, unknown> | undefined): Record
   };
 }
 
+function bildAusDatei(file: File): Promise<import("../../../shared/types").AgentMessageImage> {
+  return new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onerror = () => reject(new Error("Datei nicht lesbar"));
+    r.onload = () => {
+      const url = String(r.result ?? "");
+      const i = url.indexOf(",");
+      resolve({ base64: i >= 0 ? url.slice(i + 1) : url, mimeType: file.type || "image/png", filename: file.name });
+    };
+    r.readAsDataURL(file);
+  });
+}
+
 function neueId(): string {
   return typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : `c-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 }
@@ -284,16 +297,60 @@ export function Sprachmodus() {
     return () => clearInterval(id);
   }, []);
 
-  // Tastatur: Esc = X, Leertaste im Ruhezustand = wecken
+  // Tastatur: Esc = X, Leertaste im Ruhezustand = wecken; bei stummem
+  // Mikrofon = Push-to-Talk (gedrueckt halten: sprechen, loslassen: senden).
+  const pttAktiv = useRef(false);
   useEffect(() => {
     const h = (ev: KeyboardEvent) => {
-      if (ev.key === "Escape") { ev.preventDefault(); beenden(); }
-      if (ev.key === " " && zustandRef.current.phase === "ruhe" && (ev.target as HTMLElement | null)?.tagName !== "INPUT") { ev.preventDefault(); void wecken(); }
+      if (ev.key === "Escape") { ev.preventDefault(); beenden(); return; }
+      if (ev.key !== " " || (ev.target as HTMLElement | null)?.tagName === "INPUT") return;
+      const z = zustandRef.current;
+      if (z.phase === "ruhe") { ev.preventDefault(); void wecken(); return; }
+      if (z.phase === "wach" && z.stumm && !pttAktiv.current) {
+        ev.preventDefault();
+        pttAktiv.current = true;
+        verbindung.current?.mikrofon(true);
+        senden({ type: "input_audio_buffer.clear" });
+        setNutzerSpricht(true);
+        aktiv();
+      }
+    };
+    const u = (ev: KeyboardEvent) => {
+      if (ev.key !== " " || !pttAktiv.current) return;
+      pttAktiv.current = false;
+      verbindung.current?.mikrofon(false);
+      senden({ type: "input_audio_buffer.commit" });
+      senden({ type: "response.create" });
+      setNutzerSpricht(false);
+      aktiv();
     };
     window.addEventListener("keydown", h);
-    return () => window.removeEventListener("keydown", h);
+    window.addEventListener("keyup", u);
+    return () => { window.removeEventListener("keydown", h); window.removeEventListener("keyup", u); };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [wecken]);
+
+  // Anhaenge: Bilder gehen direkt als Auftrag an den Orchestrator (mit dem
+  // getippten Text als Frage); die Sprach-KI erfaehrt es und wartet auf das
+  // Ergebnis wie bei jedem Auftrag.
+  const dateiRef = useRef<HTMLInputElement>(null);
+  const anhaengen = async (files: FileList | null) => {
+    if (!files || files.length === 0) return;
+    const bilder = await Promise.all(Array.from(files).filter((f) => f.type.startsWith("image/")).slice(0, 4).map(bildAusDatei));
+    if (bilder.length === 0) { setFehler("Im Sprachmodus gehen bisher nur Bilder als Anhang."); return; }
+    if (zustandRef.current.phase === "ruhe") await wecken();
+    const text = eingabe.trim() || "Sieh dir das angehängte Bild an und sag mir, was darauf für die Recherche wichtig ist.";
+    setEingabe("");
+    aktiv();
+    logge("du", `${text} (${bilder.length} ${bilder.length === 1 ? "Bild" : "Bilder"})`);
+    const r = await window.api.sprache.auftrag({ conversationId, text, images: bilder });
+    if (r.laeuft) {
+      setAuftragLaeuft(true);
+      nachrichtEinlegen(`Der Nutzer hat ${bilder.length === 1 ? "ein Bild" : `${bilder.length} Bilder`} angehängt mit der Frage: "${text}". AVA arbeitet daran; sag einen kurzen Satz und warte auf 'ERGEBNIS von AVA'.`);
+    } else {
+      setFehler(r.grund ?? "Auftrag nicht gestartet.");
+    }
+  };
 
   const beenden = () => {
     setSichtbar(false);
@@ -321,7 +378,7 @@ export function Sprachmodus() {
   const hinweis = phase === "ruhe"
     ? (stand?.einstellungen.wachwort && stand.whisperBereit ? "Sag „Hey AVA“, um AVA zu aktivieren" : "Tippe auf die Kugel oder drücke die Leertaste, um AVA zu aktivieren")
     : phase === "verbindet" || phase === "start" ? "AVA kommt …"
-    : countdown !== null ? `AVA hört noch ${countdown} s zu` : auftragLaeuft ? "AVA arbeitet …" : null;
+    : countdown !== null ? `AVA hört noch ${countdown} s zu` : auftragLaeuft ? "AVA arbeitet …" : stumm ? "Mikrofon stumm. Leertaste gedrückt halten, um zu sprechen." : null;
   const hatBloecke = bloecke.length > 0 || rueckfrage !== null;
 
   return (
@@ -371,7 +428,9 @@ export function Sprachmodus() {
       )}
       <div className="sm__leiste">
         <form className="sm__eingabe" onSubmit={(e) => { e.preventDefault(); void tippen(); }}>
-          <input value={eingabe} onChange={(e) => setEingabe(e.target.value)} placeholder="AVA fragen" aria-label="AVA fragen" />
+          <button type="button" className="sm__plus" onClick={() => dateiRef.current?.click()} title="Bild anhängen" aria-label="Bild anhängen">+</button>
+          <input value={eingabe} onChange={(e) => setEingabe(e.target.value)} placeholder="AVA fragen" aria-label="AVA fragen" onPaste={(e) => { const f = e.clipboardData?.files; if (f && f.length) { e.preventDefault(); void anhaengen(f); } }} />
+          <input ref={dateiRef} type="file" accept="image/png,image/jpeg,image/webp,image/gif" multiple style={{ display: "none" }} onChange={(e) => { void anhaengen(e.target.files); e.target.value = ""; }} />
         </form>
         <button type="button" className={`sm__rund ${stumm ? "sm__rund--aus" : ""}`} onClick={stummSchalten} title={stumm ? "Mikrofon einschalten" : "Mikrofon stummschalten"} aria-label={stumm ? "Mikrofon einschalten" : "Mikrofon stummschalten"}>
           <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><rect x="9" y="3" width="6" height="11" rx="3" /><path d="M5 11a7 7 0 0 0 14 0M12 18v3" />{stumm && <path d="M4 4l16 16" />}</svg>
