@@ -12,6 +12,7 @@ import type { Faehigkeit } from "../../shared/nutzerstand-types";
 
 export const FAEHIGKEITEN: Faehigkeit[] = [
   { id: "firmen", text: "Firmen suchen; Profil, Website, Registerdaten, Publikationen, Kennzahlen, Tech-Stack, Datenqualitaet abrufen", tools: ["company_*"] },
+  { id: "recherche_lauf", text: "Stellenanzeigen oder Ausschreibungen/Expansion fuer EINE Firma gezielt suchen lassen (Standard oder Deep Research), unabhaengig von der globalen Einstellung", tools: ["research_run"] },
   { id: "verflechtungen", text: "Verflechtungen (DE): Gesellschafter, Beteiligungen, Netz", tools: ["company_shareholders", "company_network", "company_network_deepen", "verflechtungen_*"], feature: "verflechtungen" },
   { id: "kontakte", text: "Kontaktpersonen einer Firma mit Beleg anzeigen, Herkunftsnachweis, Art.-14-Hinweis, Person loeschen", tools: ["contact_linkedin_lookup", "person_*"], feature: "kontakte" },
   { id: "email_ableitung", text: "E-Mail-Adressen nach dem Adressmuster der Firma ableiten und per Mail-Server-Anfrage pruefen (Hintergrund, Verlauf, Vorschau)", tools: ["email_muster_*"], feature: "kontakte" },

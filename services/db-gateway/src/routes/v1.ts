@@ -25,6 +25,7 @@ import { companiesMatrixRouter } from "./v1/companies-matrix";
 import { companyStateRouter } from "./v1/company-state";
 import { verflechtungenRouter } from "./v1/verflechtungen";
 import { companiesVerflechtungenRouter } from "./v1/companies-verflechtungen";
+import { companiesResearchRouter } from "./v1/companies-research";
 import { companiesCrmRouter } from "./v1/companies-crm";
 import { geoRouter } from "./v1/geo";
 import { discoveryRouter } from "./v1/discovery";
@@ -126,6 +127,7 @@ v1.route("/", billingRouter);
 v1.route("/", companyStateRouter);
 v1.route("/", verflechtungenRouter);
 v1.route("/", companiesVerflechtungenRouter);
+v1.route("/", companiesResearchRouter);
 
 // Phase 0 Firmen-Discovery (PLAN_FIRMEN_DISCOVERY.md) — Ortsgraph.
 // GET /geo/places?near=…&radiusKm=… (GeoPlace lazy-geseedet aus dem

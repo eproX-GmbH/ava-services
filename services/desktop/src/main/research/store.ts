@@ -484,6 +484,37 @@ export class ResearchFeaturesStore extends EventEmitter {
     return { tier: cfg.tier, provider: cfg.provider, apiKey: plaintext };
   }
 
+  // ---- Manueller Lauf je Firma (2026-09-24) -------------------------------
+  //
+  // Der Nutzer stoesst Stellenanzeigen oder Ausschreibungen fuer EINE Firma
+  // an — unabhaengig von der Stufe (auch bei "Aus"). Dafuer braucht der
+  // Producer IMMER einen OpenAI-Schluessel in der Umgebung. Vorrang wie im
+  // Chat (Entscheidung 2026-09-24): eigener Schluessel zuerst, der der
+  // Organisation als Rueckfall, die Anbieter-Sperre erzwingt ihn.
+
+  /** Woher der OpenAI-Schluessel fuer manuelle Laeufe kaeme; null = keiner. */
+  manuellerStand(opts: { providerLocked: boolean }): { verfuegbar: boolean; quelle: "eigen" | "organisation" | null } {
+    if (opts.providerLocked) return this.orgOpenai ? { verfuegbar: true, quelle: "organisation" } : { verfuegbar: false, quelle: null };
+    if (ProviderConfigStore.shared().hasKey("openai") || this.listKeys().some((k) => k.provider === "openai")) return { verfuegbar: true, quelle: "eigen" };
+    if (this.orgOpenai) return { verfuegbar: true, quelle: "organisation" };
+    return { verfuegbar: false, quelle: null };
+  }
+
+  /** Schluessel fuer manuelle Laeufe als Umgebung des Website-Producers. */
+  async resolveManuellOpenai(opts: { providerLocked: boolean }): Promise<{ apiKey: string; viaGateway: boolean } | null> {
+    const stand = this.manuellerStand(opts);
+    if (!stand.verfuegbar) return null;
+    if (stand.quelle === "organisation") return { apiKey: "", viaGateway: true };
+    const global = await ProviderConfigStore.shared().getKey("openai");
+    if (global) return { apiKey: global, viaGateway: false };
+    for (const k of this.listKeys()) {
+      if (k.provider !== "openai") continue;
+      const text = await this.__getPlaintextKeyForProbe(k.id);
+      if (text) return { apiKey: text, viaGateway: false };
+    }
+    return null;
+  }
+
   // ---- Probe support (Phase G) ---------------------------------------------
 
   /**

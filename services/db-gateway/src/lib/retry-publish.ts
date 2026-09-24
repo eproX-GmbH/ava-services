@@ -127,6 +127,10 @@ export async function publishStructuredContentRetry(opts: {
   source: string;
   /** v0.1.53 — JWT subject for per-user AMQP routing. */
   userId: string;
+  /** Nur diese Producer sollen das Ereignis verarbeiten (Standard: alle,
+   *  damit die Kaskade laeuft). Der manuelle Recherche-Lauf setzt
+   *  ["website"], weil er keine Folgeereignisse will. */
+  services?: string[];
 }): Promise<{ published: number }> {
   const { stage, transactionId, companyId, source, userId } = opts;
   const loaded = await loadStructuredContent(companyId);
@@ -140,7 +144,7 @@ export async function publishStructuredContentRetry(opts: {
     lastName: md.lastName,
     firstName: md.firstName,
   }));
-  const header = baseHeader(transactionId, companyId, source);
+  const header = { ...baseHeader(transactionId, companyId, source), ...(opts.services ? { services: opts.services } : {}) };
   const env = loadEnv();
   const client = await getGatewayAmqpPublisher();
 

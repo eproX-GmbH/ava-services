@@ -8658,3 +8658,18 @@ input, textarea, select, button, a, summary, details,
 .bcg-eintraege { list-style: none; margin: 0.5rem 0 0 1rem; padding: 0; display: flex; flex-direction: column; gap: 0.35rem; }
 .bcg-eintrag a { text-decoration: none; }
 .bcg-eintrag a:hover strong { text-decoration: underline; }
+
+/* ---- Gezielte Recherche je Firma (2026-09-24) ---------------------------- */
+.rl { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 6px 0 10px; }
+.rl--kompakt { margin: 0; }
+.rl__laeuft { display: inline-flex; align-items: center; gap: 8px; }
+.rl__spinner { width: 12px; height: 12px; border-radius: 50%; border: 2px solid var(--muted); border-top-color: var(--accent); animation: rl-drehen 0.9s linear infinite; }
+@keyframes rl-drehen { to { transform: rotate(360deg); } }
+.rl__meldung { flex-basis: 100%; }
+.rl__hinweis { margin: 6px 0 10px; }
+.rl-block { margin-top: 1.25rem; }
+.rl-block__titel { margin-bottom: 0.25rem; }
+.rl-block__liste { display: grid; grid-template-columns: minmax(200px, max-content) 1fr; gap: 8px 16px; align-items: center; margin: 0.6rem 0 0; }
+.rl-block__liste dt { margin: 0; }
+.rl-block__liste dd { margin: 0; }
+@media (max-width: 640px) { .rl-block__liste { grid-template-columns: 1fr; } }

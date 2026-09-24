@@ -32,6 +32,7 @@ import {
 } from "../lib/format";
 import { parseNaceFromProfile } from "../../../shared/nace-divisions";
 import { ExternalLink } from "../components/ExternalLink";
+import { RechercheBlock, RechercheLaufKnoepfe } from "../components/RechercheLauf";
 import { CompanyCrmPanel } from "../components/CompanyCrmPanel";
 import { quellenDerFakten, quellenMitBelegen } from "./kontakt-quellen";
 import { sortiereNachRang, rangFuerTitel, RANG_TITEL } from "./kontakt-rang";
@@ -755,6 +756,8 @@ export function CompanyDetail() {
         website.data.deepResearches.length > 0 && (
           <DeepResearchStrip items={website.data.deepResearches} />
         )}
+      {/* 2026-09-24 — gezielte Recherche je Firma (Standard / Deep Research) */}
+      {id && <RechercheBlock companyId={id} />}
 
       {/* ---- Tabs --------------------------------------------------------- */}
       <nav className="tabs">
@@ -817,7 +820,7 @@ export function CompanyDetail() {
             latest={latest}
           />
         )}
-        {tab === "jobs" && <JobsTab jobs={website.data?.jobPostings ?? []} />}
+        {tab === "jobs" && <JobsTab jobs={website.data?.jobPostings ?? []} companyId={id!} />}
         {tab === "verflechtungen" && verflechtungenSichtbar && <VerflechtungenTab id={id!} name={summary.data?.name ?? null} />}
         {tab === "buyingcenter" && eigenesBcId && <BuyingCenterKarte id={eigenesBcId} />}
       </div>
@@ -2997,14 +3000,20 @@ function topicLabel(t?: string | null): string {
   }
 }
 
-function JobsTab({ jobs }: { jobs: JobPosting[] }) {
+function JobsTab({ jobs, companyId }: { jobs: JobPosting[]; companyId: string }) {
   const [expanded, setExpanded] = useState(false);
   if (jobs.length === 0)
-    return <p className="muted">Noch keine Stellenanzeigen.</p>;
+    return (
+      <>
+        <p className="muted">Noch keine Stellenanzeigen.</p>
+        <RechercheLaufKnoepfe companyId={companyId} feature="jobs" />
+      </>
+    );
   const more = jobs.length > 4;
   const shown = expanded ? jobs : jobs.slice(0, 4);
   return (
     <>
+      <RechercheLaufKnoepfe companyId={companyId} feature="jobs" />
       <div className="grid-2">
         {shown.map((j, i) => (
           <article key={i} className="panel">

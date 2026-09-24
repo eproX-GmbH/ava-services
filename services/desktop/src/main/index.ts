@@ -753,6 +753,12 @@ function buildProducer(
             } else {
               env.RESEARCH_JOBS_TIER = "off";
             }
+            // 2026-09-24 — manueller Lauf je Firma: Schluessel IMMER mitgeben,
+            // auch bei Stufe "Aus" (der Producer nimmt ihn nur fuer Laeufe
+            // mit Stufe im Ereignis). Vorrang wie im Chat: eigener zuerst.
+            const manuell = await store.resolveManuellOpenai({ providerLocked: locked });
+            if (manuell?.viaGateway) env.RESEARCH_OPENAI_VIA_GATEWAY = "1";
+            else if (manuell?.apiKey) env.RESEARCH_OPENAI_API_KEY = manuell.apiKey;
             // v0.1.270 — wenn das Haupt-LLM nicht OpenAI ist (also kein
             // OPENAI_API_KEY in llmConfig steckt), aber Research auf
             // OpenAI läuft, projizieren wir den ersten verfügbaren
@@ -1932,6 +1938,7 @@ const customerProfiles = new CustomerProfileStore();
 const agentRegistry = buildReadOnlyRegistry({
   gateway: gatewayClient,
   providers,
+  getResearchStand: () => ResearchFeaturesStore.shared().manuellerStand({ providerLocked: providers.isProviderLocked() }),
   icp: icpStore,
   discoveryMatches,
   discoveryCustomerProfiles: customerProfiles,
@@ -5225,6 +5232,10 @@ app.whenReady().then(async () => {
   }
 
   ipcMain.handle("research:getBundle", () => researchBundle());
+  // 2026-09-24 — manueller Lauf je Firma: Gibt es einen OpenAI-Schluessel
+  // (eigener oder Organisation)? Ohne ihn zeigt die Firmenansicht statt der
+  // Knoepfe den Hinweis auf die Einstellungen.
+  ipcMain.handle("research:manuellerStand", () => researchStore.manuellerStand({ providerLocked: providers.isProviderLocked() }));
 
   ipcMain.handle(
     "research:setFeatureConfig",

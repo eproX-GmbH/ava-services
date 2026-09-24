@@ -22,6 +22,7 @@ import type { ProducerLogLine } from "../../../shared/types";
 import type { MemoryStore } from "../memory";
 import { ToolRegistry } from "../tool-registry";
 import { buildCompanyTools } from "./companies";
+import { buildResearchLaufTools } from "./research-lauf";
 import { buildTransactionTools } from "./transactions";
 import { buildEvaluationTools } from "./evaluations";
 import { buildUiTools } from "./ui";
@@ -205,6 +206,8 @@ export function buildReadOnlyRegistry(deps: {
   setPublicationMode?: (mode: "lazy" | "eager") => "lazy" | "eager";
   /** v0.1.475 — Plan-Tier fuer das Chat-Blur-Gate der Discovery-Tools. */
   getTenantTier: () => string | null;
+  /** 2026-09-24 — manueller Recherche-Lauf: OpenAI-Schluessel vorhanden, und woher? */
+  getResearchStand?: () => { verfuegbar: boolean; quelle: "eigen" | "organisation" | null };
   /** Audit-Trail-Sink fuer Discovery-Aktionen (Scan-Queries etc.). */
   discoveryAudit: (entry: {
     action: string;
@@ -222,6 +225,7 @@ export function buildReadOnlyRegistry(deps: {
     getTenantCompanyIds: deps.getTenantCompanyIds,
   };
   for (const t of buildCompanyTools(ctx)) registry.register(t);
+  for (const t of buildResearchLaufTools({ gateway: deps.gateway, getResearchStand: deps.getResearchStand ?? (() => ({ verfuegbar: false, quelle: null })) })) registry.register(t);
   // T5 — Konto + Tenant (read-only).
   for (const t of buildAccountTools({
     gateway: deps.gateway,

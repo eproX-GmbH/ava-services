@@ -2087,6 +2087,9 @@ const api = {
   research: {
     getBundle: (): Promise<ResearchSettingsBundle> =>
       ipcRenderer.invoke("research:getBundle"),
+    /** 2026-09-24 — manueller Lauf je Firma: gibt es einen OpenAI-Schluessel, und woher? */
+    manuellerStand: (): Promise<{ verfuegbar: boolean; quelle: "eigen" | "organisation" | null }> =>
+      ipcRenderer.invoke("research:manuellerStand"),
     setFeatureConfig: (args: {
       feature: ResearchFeature;
       partial: {
