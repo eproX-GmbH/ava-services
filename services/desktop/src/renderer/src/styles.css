@@ -8667,8 +8667,12 @@ input, textarea, select, button, a, summary, details,
 @keyframes rl-drehen { to { transform: rotate(360deg); } }
 .rl__meldung { flex-basis: 100%; }
 .rl__hinweis { margin: 6px 0 10px; }
-.rl-block { margin-top: 1.25rem; }
-.rl-block__titel { margin-bottom: 0.25rem; }
+.rl__fehler { color: var(--error, #ef4444); }
+.rl-block { grid-column: 1 / -1; margin-top: 0.5rem; }
+.rl-block__kopf { display: flex; justify-content: space-between; gap: 1rem; align-items: flex-start; }
+.rl-block__titel { margin: 0 0 0.25rem; }
+.rl-verlauf { margin-top: 0.9rem; }
+.rl-verlauf .bc-verlauf__liste li { grid-template-columns: 7.5rem minmax(12rem, max-content) 1fr; }
 .rl-block__liste { display: grid; grid-template-columns: minmax(200px, max-content) 1fr; gap: 8px 16px; align-items: center; margin: 0.6rem 0 0; }
 .rl-block__liste dt { margin: 0; }
 .rl-block__liste dd { margin: 0; }

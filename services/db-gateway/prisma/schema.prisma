@@ -1046,3 +1046,24 @@ model FokusKunde {
   @@id([tenantId, actorId, companyId])
   @@index([tenantId, companyId])
 }
+
+/// Manueller Recherche-Lauf je Firma (2026-09-24): eine Zeile je Start,
+/// abgeschlossen ueber das company-evaluation-Persist-Ereignis (Anzahl
+/// Ergebnisse) oder ueber ein "failed"-Fortschrittsereignis des Website-
+/// Producers. state: laufend | fertig | fehler.
+model CompanyResearchLauf {
+  id            String    @id @default(cuid())
+  tenantId      String
+  actorId       String
+  companyId     String
+  transactionId String?
+  feature       String
+  stufe         String
+  state         String    @default("laufend")
+  ergebnisse    Int?
+  fehler        String?
+  gestartetAt   DateTime  @default(now())
+  beendetAt     DateTime?
+
+  @@index([tenantId, companyId, gestartetAt])
+}

@@ -53,6 +53,7 @@ import { loadEnv } from "./env";
 import { logger } from "./logger";
 import { PRODUCER_NAMES, type ProducerName } from "./db-urls";
 import { getProducerPool, getGatewayPool } from "./producer-pools";
+import { laufAbschliessen, researchFeaturesAusSource } from "./research-lauf";
 import {
   diffManagingDirectors,
   recordManagingDirectorChange,
@@ -1921,6 +1922,18 @@ const applyCompanyEvaluation: ApplyFn = async (pool, event, log) => {
     }
 
     await client.query("COMMIT");
+    // 2026-09-24 — manueller Recherche-Lauf: Anzahl ins Protokoll, und der
+    // Website-Producer gilt damit als fertig (er schickt in diesem Modus
+    // kein eigenes Website-Persist, und sein Fortschrittsereignis kam in
+    // der Praxis nicht an — die Zelle blieb gelb).
+    if (researchFeaturesAusSource(event.source)) {
+      await laufAbschliessen(companyId, event.source, {
+        jobs: Array.isArray(result.jobPostings) ? result.jobPostings.length : undefined,
+        expansion: Array.isArray(result.deepResearches) ? result.deepResearches.length : undefined,
+      });
+      const tx = (event as unknown as { transaction?: string }).transaction ?? "";
+      await recordEntityProgress("website", tx, companyId, "completed", null, log);
+    }
     log.info(
       {
         runId,

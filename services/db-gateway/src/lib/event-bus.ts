@@ -9,6 +9,7 @@ import {
 
 import { loadEnv } from "./env";
 import { logger } from "./logger";
+import { laufFehler } from "./research-lauf";
 import { getGatewayPool } from "./producer-pools";
 
 // EntityProgress write helper, isolated here so the event-bus can
@@ -33,6 +34,11 @@ async function writeEntityProgressFromEvent(
   const acceptedStates = new Set(["completed", "failed", "skipped", "in_progress"]);
   const state = payload.state as string;
   if (!acceptedStates.has(state)) return;
+  // 2026-09-24 — manueller Recherche-Lauf: ein Fehler des Website-Producers
+  // schliesst offene Protokollzeilen der Firma als "fehler" ab.
+  if (payload.service === "website" && state === "failed") {
+    void laufFehler(payload.companyId, payload.transactionId ?? null, payload.errorMessage ?? null);
+  }
   const truncated = payload.errorMessage
     ? payload.errorMessage.slice(0, 500)
     : null;
