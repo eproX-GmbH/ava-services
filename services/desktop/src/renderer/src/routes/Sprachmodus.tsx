@@ -25,6 +25,23 @@ interface BlockAnzeige extends SpracheBlock { gepinnt: boolean; seit: number }
 
 const COUNTDOWN_AB = 8;
 const KONTEXT_ZEILEN = 10;
+/** OpenAI beendet Realtime-Sitzungen nach 60 Minuten; vorher still neu verbinden. */
+const NEUVERBINDUNG_MS = 55 * 60 * 1000;
+
+/** Token-Zahlen aus response.done.usage in die Meldung ans Gateway uebersetzen. */
+export function verbrauchAus(usage: Record<string, unknown> | undefined): Record<string, number> | null {
+  if (!usage) return null;
+  const n = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? Math.max(0, Math.round(v)) : 0);
+  const inD = (usage["input_token_details"] ?? {}) as Record<string, unknown>;
+  const outD = (usage["output_token_details"] ?? {}) as Record<string, unknown>;
+  const cached = (inD["cached_tokens_details"] ?? {}) as Record<string, unknown>;
+  return {
+    inputTokens: n(usage["input_tokens"]), outputTokens: n(usage["output_tokens"]),
+    inputTextTokens: n(inD["text_tokens"]), inputAudioTokens: n(inD["audio_tokens"]),
+    outputTextTokens: n(outD["text_tokens"]), outputAudioTokens: n(outD["audio_tokens"]),
+    cachedTextTokens: n(cached["text_tokens"]), cachedAudioTokens: n(cached["audio_tokens"]),
+  };
+}
 
 function neueId(): string {
   return typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : `c-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
@@ -54,6 +71,9 @@ export function Sprachmodus() {
   const verbindung = useRef<RealtimeVerbindung | null>(null);
   const lauscher = useRef<WachwortLauscher | null>(null);
   const letzteAktivitaet = useRef(Date.now());
+  const sitzungSeit = useRef(Date.now());
+  const modellRef = useRef("gpt-realtime-2.1");
+  const antwortSeit = useRef(0);
   const zustandRef = useRef({ phase, aiSpricht, auftragLaeuft, antwortet, stumm });
   zustandRef.current = { phase, aiSpricht, auftragLaeuft, antwortet, stumm };
   const bloeckeRef = useRef(bloecke);
@@ -125,7 +145,7 @@ export function Sprachmodus() {
     switch (e.type) {
       case "input_audio_buffer.speech_started": setNutzerSpricht(true); aktiv(); return;
       case "input_audio_buffer.speech_stopped": setNutzerSpricht(false); aktiv(); return;
-      case "response.created": setAntwortet(true); aktiv(); return;
+      case "response.created": setAntwortet(true); antwortSeit.current = Date.now(); aktiv(); return;
       case "output_audio_buffer.started": setAiSpricht(true); aktiv(); return;
       case "output_audio_buffer.stopped": case "output_audio_buffer.cleared": setAiSpricht(false); aktiv(); return;
       case "response.output_audio_transcript.delta": setLaufendeZeile((z) => z + String(e["delta"] ?? "")); return;
@@ -137,7 +157,10 @@ export function Sprachmodus() {
       }
       case "response.done": {
         setAntwortet(false);
-        const out = ((e["response"] as { output?: Array<Record<string, unknown>> } | undefined)?.output ?? []);
+        const resp = e["response"] as { output?: Array<Record<string, unknown>>; usage?: Record<string, unknown> } | undefined;
+        const usage = verbrauchAus(resp?.usage);
+        if (usage && (usage.inputTokens || usage.outputTokens)) void window.api.sprache.verbrauch({ model: modellRef.current, latencyMs: antwortSeit.current ? Date.now() - antwortSeit.current : 0, usage });
+        const out = (resp?.output ?? []);
         for (const item of out) {
           if (item["type"] === "function_call") void werkzeug(String(item["name"] ?? ""), String(item["arguments"] ?? ""), String(item["call_id"] ?? ""));
         }
@@ -188,6 +211,8 @@ export function Sprachmodus() {
       },
     });
     verbindung.current = v;
+    modellRef.current = sitzung.model;
+    sitzungSeit.current = Date.now();
     try { await v.verbinden(sitzung.clientSecret, sitzung.model); } catch { return; }
     if (zustandRef.current.stumm) v.mikrofon(false);
     if (mitKontext) {
@@ -238,13 +263,20 @@ export function Sprachmodus() {
       const z = zustandRef.current;
       if (z.phase !== "wach") { setCountdown(null); return; }
       if (z.aiSpricht || z.auftragLaeuft || z.antwortet) { letzteAktivitaet.current = Date.now(); setCountdown(null); return; }
+      // 55 Minuten: still neu verbinden, solange niemand spricht; Kontext geht mit.
+      if (Date.now() - sitzungSeit.current > NEUVERBINDUNG_MS) {
+        sitzungSeit.current = Date.now();
+        verbindung.current?.schliessen(); verbindung.current = null;
+        void verbinden(true);
+        return;
+      }
       const ruhe = stand?.einstellungen.ruheSekunden ?? 20;
       const rest = ruhe - (Date.now() - letzteAktivitaet.current) / 1000;
       setCountdown(rest <= COUNTDOWN_AB ? Math.max(0, Math.ceil(rest)) : null);
       if (rest <= 0) schlafen();
     }, 100);
     return () => clearInterval(id);
-  }, [stand, schlafen]);
+  }, [stand, schlafen, verbinden]);
 
   // Bloecke ohne Erwaehnung nach 10 Minuten ausblenden
   useEffect(() => {

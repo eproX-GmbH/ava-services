@@ -54,3 +54,33 @@ export function estimateMicroUsd(args: {
   usd += (cache / M) * (p.cacheReadPerMTok ?? p.inputPerMTok);
   return Math.max(0, Math.round(usd * 1_000_000));
 }
+
+// ---- Sprachmodus (docs/PLAN_SPRACHMODUS.md, S5) -----------------------------
+//
+// Realtime-Modelle rechnen Audio- und Text-Token getrennt ab. Listenpreise
+// gpt-realtime (USD je 1M Token, Stand Juni 2026, im Zweifel zu hoch statt
+// zu niedrig geschaetzt): Text 4 / 16, Audio 32 / 64, gecacht 0,40.
+interface RealtimePricing { modelIdPrefix: string; textIn: number; textOut: number; audioIn: number; audioOut: number; cachedText: number; cachedAudio: number }
+const REALTIME_PRICING: readonly RealtimePricing[] = [
+  { modelIdPrefix: "gpt-realtime-mini", textIn: 0.6, textOut: 2.4, audioIn: 10, audioOut: 20, cachedText: 0.06, cachedAudio: 0.3 },
+  { modelIdPrefix: "gpt-realtime", textIn: 4, textOut: 16, audioIn: 32, audioOut: 64, cachedText: 0.4, cachedAudio: 0.4 },
+];
+
+export interface RealtimeUsage {
+  inputTextTokens: number; inputAudioTokens: number;
+  outputTextTokens: number; outputAudioTokens: number;
+  cachedTextTokens?: number; cachedAudioTokens?: number;
+}
+
+/** Kosten eines Realtime-Umsatzes in Mikro-USD; null bei unbekanntem Modell. */
+export function estimateRealtimeMicroUsd(model: string | null, u: RealtimeUsage): number | null {
+  if (!model) return null;
+  const p = REALTIME_PRICING.filter((x) => model.startsWith(x.modelIdPrefix)).reduce<RealtimePricing | null>((b, x) => (!b || x.modelIdPrefix.length > b.modelIdPrefix.length ? x : b), null);
+  if (!p) return null;
+  const M = 1_000_000;
+  const ct = u.cachedTextTokens ?? 0, ca = u.cachedAudioTokens ?? 0;
+  let usd = (Math.max(0, u.inputTextTokens - ct) / M) * p.textIn + (ct / M) * p.cachedText;
+  usd += (Math.max(0, u.inputAudioTokens - ca) / M) * p.audioIn + (ca / M) * p.cachedAudio;
+  usd += (u.outputTextTokens / M) * p.textOut + (u.outputAudioTokens / M) * p.audioOut;
+  return Math.max(0, Math.round(usd * 1_000_000));
+}

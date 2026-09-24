@@ -30,6 +30,7 @@
     "lint:german": "node scripts/check-german.mjs",
     "test:buying-center": "node scripts/test-buying-center.mjs",
     "test:telegram-text": "node scripts/test-telegram-text.mjs",
+    "test:sprachmodus": "node scripts/test-sprachmodus.mjs",
     "test:relevanz": "node scripts/test-relevanz.mjs",
     "test:skills": "node scripts/test-skills-loader.mjs",
     "test:skills:agent": "node scripts/test-skills-agent.mjs",

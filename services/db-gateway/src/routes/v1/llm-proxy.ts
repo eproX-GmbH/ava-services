@@ -27,7 +27,7 @@ import {
   getProviderKey,
   type ProviderKind,
 } from "../../lib/tenant-providers";
-import { estimateMicroUsd } from "../../lib/llm-pricing";
+import { estimateMicroUsd, estimateRealtimeMicroUsd } from "../../lib/llm-pricing";
 import { parseUsageFromJson, parseUsageFromSse, extractTextFromSse, type UsageCounts } from "../../lib/llm-usage-parse";
 import { checkQuota, getQuota, parseChannel, setQuota, usageSummary, type LlmChannel } from "../../lib/quota";
 
@@ -327,6 +327,62 @@ async function recordUsage(
     logger.warn({ err: err instanceof Error ? err.message : String(err) }, "llm-usage insert failed");
   }
 }
+
+// ---- Sprachmodus (docs/PLAN_SPRACHMODUS.md, S5): Verbrauch melden --------
+//
+// Die Realtime-Sitzung laeuft per WebRTC direkt zwischen Desktop und OpenAI;
+// der Proxy sieht nur die Praegung des Client-Schluessels. Damit die
+// Gespraechsminuten trotzdem im Verbrauch und Kontingent der Organisation
+// landen, meldet der Desktop je Antwort die Token-Zahlen aus
+// `response.done.usage`. Nur fuer den Organisationsschluessel gedacht; mit
+// eigenem Schluessel meldet der Desktop nichts.
+const usageRoute = createRoute({
+  method: "post", path: "/llm-usage", tags: ["llm"],
+  summary: "Verbrauch einer Realtime-Antwort (Sprachmodus) erfassen",
+  request: { body: { content: { "application/json": { schema: z.object({
+    provider: z.enum(["openai"]),
+    model: z.string().min(1).max(100),
+    channel: z.enum(["chat", "background", "vorschlaege"]).optional(),
+    latencyMs: z.number().int().min(0).max(3_600_000).optional(),
+    usage: z.object({
+      inputTokens: z.number().int().min(0),
+      outputTokens: z.number().int().min(0),
+      inputTextTokens: z.number().int().min(0).optional(),
+      inputAudioTokens: z.number().int().min(0).optional(),
+      outputTextTokens: z.number().int().min(0).optional(),
+      outputAudioTokens: z.number().int().min(0).optional(),
+      cachedTextTokens: z.number().int().min(0).optional(),
+      cachedAudioTokens: z.number().int().min(0).optional(),
+    }),
+  }) } } } },
+  responses: { 200: { content: { "application/json": { schema: z.object({ ok: z.boolean(), costMicroUsd: z.number().nullable() }) } }, description: "erfasst" } },
+});
+llmProxyRouter.openapi(usageRoute, async (c) => {
+  const auth = c.get("auth");
+  const b = c.req.valid("json");
+  const u = b.usage;
+  const realtime = b.model.startsWith("gpt-realtime");
+  const cost = realtime
+    ? estimateRealtimeMicroUsd(b.model, {
+        inputTextTokens: u.inputTextTokens ?? Math.max(0, u.inputTokens - (u.inputAudioTokens ?? 0)),
+        inputAudioTokens: u.inputAudioTokens ?? 0,
+        outputTextTokens: u.outputTextTokens ?? Math.max(0, u.outputTokens - (u.outputAudioTokens ?? 0)),
+        outputAudioTokens: u.outputAudioTokens ?? 0,
+        cachedTextTokens: u.cachedTextTokens, cachedAudioTokens: u.cachedAudioTokens,
+      })
+    : estimateMicroUsd({ provider: b.provider, model: b.model, inputTokens: u.inputTokens, outputTokens: u.outputTokens, cacheReadTokens: (u.cachedTextTokens ?? 0) + (u.cachedAudioTokens ?? 0) });
+  try {
+    await getGatewayPool().query(
+      `INSERT INTO "LlmUsage" ("id", "tenantId", "actorId", "kind", "model", "inputTokens", "outputTokens", "cacheReadTokens", "costMicroUsd", "status", "latencyMs", "streamed", "channel")
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 200, $10, false, $11)`,
+      [`lu_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`, auth.tenantId, auth.actorId, b.provider, b.model, u.inputTokens, u.outputTokens, (u.cachedTextTokens ?? 0) + (u.cachedAudioTokens ?? 0), cost, b.latencyMs ?? 0, b.channel ?? "chat"],
+    );
+  } catch (err) {
+    logger.warn({ err: err instanceof Error ? err.message : String(err) }, "llm-usage (sprachmodus) insert failed");
+    return c.json({ ok: false, costMicroUsd: cost }, 200);
+  }
+  return c.json({ ok: true, costMicroUsd: cost }, 200);
+});
 
 llmProxyRouter.all("/llm/:kind/*", async (c) => {
   const kind = c.req.param("kind");

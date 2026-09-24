@@ -381,7 +381,7 @@ Aktivierungswort ueber Whisper, aber nur pegelgesteuert (kein Dauerlauf).
 | S3 | gebaut: Chart-/Buying-Center-Bloecke unter der Kugel, Kugel schrumpft/faehrt hoch, `ava_anzeigen`, Liste "Auf dem Bildschirm", passives Aufraeumen (andere Firma ersetzt, 10 Min ohne Erwaehnung), Pinnen/Schliessen, Anker-Klicks abgefangen |
 | S4 | teilweise: Eingabezeile (Text geht als Nachricht an die Sprach-KI, die entscheidet ueber `ava_bearbeiten`); OFFEN: Anhaenge (Bilder/Dokumente), Markierung der Zuege im Chatverlauf, Alerts zurueckhalten |
 | S4b | gebaut: Ruhezustand nach `ruheSekunden` (Verbindung zu), Countdown-Ring, Wecken per Kugel/Leertaste/Tippen, Aktivierungswort `lib/wachwort.ts` (Pegel-Detektor + Whisper-Fenster), Signalton, Kontext-Uebergabe an die neue Sitzung; OFFEN: Audio-Puffer waehrend des Aufbaus |
-| S5 | OFFEN: Verbrauchsmeldung ans Gateway (Orga-Schluessel), 55-Minuten-Neuverbindung, Prompt-Tests |
+| S5 | gebaut (v0.1.728): Gateway `POST /v1/llm-usage` (Realtime-Preise je Audio-/Text-Token, `estimateRealtimeMicroUsd`, Kanal chat → Kontingent der Organisation), Desktop meldet je `response.done` NUR beim Organisationsschluessel; stille Neuverbindung nach 55 Minuten mit Kontext, sobald niemand spricht; `npm run test:sprachmodus` (Relay-Text, Bloecke, Wachwort, Instruktionsregeln, Werkzeuge) |
 | S6 | OFFEN: Push-to-Talk bei stummem Mikrofon, Fehlerbilder, Doku |
 
 Nicht im laufenden Programm geprueft (nur Typecheck und Build): erster

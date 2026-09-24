@@ -5277,6 +5277,18 @@ app.whenReady().then(async () => {
   ipcMain.handle("sprache:auftrag", (_e, input: { conversationId: string; text: string; images?: import("../shared/types").AgentMessageImage[] }) => spracheRelay.auftrag(input));
   ipcMain.handle("sprache:rueckfrage", (_e, a: { choiceId: string; wert: string }) => spracheRelay.rueckfrage(a.choiceId, a.wert));
   ipcMain.handle("sprache:abbrechen", () => { spracheRelay.abbrechen(); return true; });
+  // S5 — Verbrauch je Realtime-Antwort ans Gateway, NUR beim Organisations-
+  // schluessel (mit eigenem Schluessel zahlt der Nutzer direkt bei OpenAI).
+  ipcMain.handle("sprache:verbrauch", async (_e, v: { model: string; latencyMs?: number; usage: Record<string, number> }) => {
+    if (providers.keySource("openai") !== "organisation") return { gemeldet: false };
+    try {
+      await gatewayClient.request("/v1/llm-usage", { method: "POST", body: { provider: "openai", model: v.model, channel: "chat", latencyMs: v.latencyMs ?? 0, usage: v.usage } });
+      return { gemeldet: true };
+    } catch (err) {
+      console.warn("[sprache] Verbrauchsmeldung fehlgeschlagen:", err instanceof Error ? err.message : String(err));
+      return { gemeldet: false };
+    }
+  });
   // 2026-09-24 — manueller Lauf je Firma: Gibt es einen OpenAI-Schluessel
   // (eigener oder Organisation)? Ohne ihn zeigt die Firmenansicht statt der
   // Knoepfe den Hinweis auf die Einstellungen.

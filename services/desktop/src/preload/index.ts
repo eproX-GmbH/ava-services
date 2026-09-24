@@ -1673,6 +1673,8 @@ const api = {
       ipcRenderer.invoke("sprache:auftrag", input),
     rueckfrage: (choiceId: string, wert: string): Promise<{ ok: boolean; grund?: string }> => ipcRenderer.invoke("sprache:rueckfrage", { choiceId, wert }),
     abbrechen: (): Promise<boolean> => ipcRenderer.invoke("sprache:abbrechen"),
+    /** S5 — Token-Zahlen einer Realtime-Antwort (nur beim Organisationsschluessel gemeldet). */
+    verbrauch: (v: { model: string; latencyMs?: number; usage: Record<string, number> }): Promise<{ gemeldet: boolean }> => ipcRenderer.invoke("sprache:verbrauch", v),
     onErgebnis: (handler: (e: SpracheErgebnis) => void) => {
       const l = (_: unknown, e: SpracheErgebnis) => handler(e);
       ipcRenderer.on("sprache:ergebnis", l);
