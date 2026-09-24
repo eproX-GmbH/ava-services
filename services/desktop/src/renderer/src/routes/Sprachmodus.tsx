@@ -13,7 +13,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import type { SpracheBlock, SpracheErgebnis, SpracheRueckfrage, SpracheSitzung, SpracheStand } from "../../../shared/types";
-import { RealtimeVerbindung, signalton, type RealtimeEreignis } from "../lib/realtime";
+import { RealtimeVerbindung, signalton, fehlerEinordnen, type RealtimeEreignis, type SpracheFehlerArt } from "../lib/realtime";
 import { WachwortLauscher } from "../lib/wachwort";
 import { SprachKugel, type KugelZustand } from "../components/SprachKugel";
 import { ChartBlock } from "../components/ChartBlock";
@@ -65,6 +65,7 @@ export function Sprachmodus() {
   const [stand, setStand] = useState<SpracheStand | null>(null);
   const [phase, setPhase] = useState<Phase>("start");
   const [fehler, setFehler] = useState<string | null>(null);
+  const [fehlerArt, setFehlerArt] = useState<SpracheFehlerArt | null>(null);
   const [sichtbar, setSichtbar] = useState(false);
   const [aiSpricht, setAiSpricht] = useState(false);
   const [nutzerSpricht, setNutzerSpricht] = useState(false);
@@ -215,18 +216,19 @@ export function Sprachmodus() {
   const verbinden = useCallback(async (mitKontext: boolean) => {
     setPhase("verbindet"); setFehler(null);
     let sitzung: SpracheSitzung;
-    try { sitzung = await window.api.sprache.sitzung(); } catch (err) { setFehler(err instanceof Error ? err.message : String(err)); setPhase("fehler"); return; }
+    try { sitzung = await window.api.sprache.sitzung(); } catch (err) { const f = fehlerEinordnen(err); setFehler(f.message); setFehlerArt(f.art); setPhase("fehler"); return; }
     const v = new RealtimeVerbindung({
       onEreignis: ereignis,
       onZustand: (z, d) => {
         if (z === "offen") { setPhase("wach"); aktiv(); }
-        if (z === "fehler") { setFehler(d ?? "Verbindung verloren"); setPhase("fehler"); }
+        if (z === "fehler") { const f = fehlerEinordnen(new Error(d ?? "Verbindung verloren")); setFehler(f.message); setFehlerArt(f.art); setPhase("fehler"); }
       },
     });
     verbindung.current = v;
     modellRef.current = sitzung.model;
     sitzungSeit.current = Date.now();
-    try { await v.verbinden(sitzung.clientSecret, sitzung.model); } catch { return; }
+    try { await v.verbinden(sitzung.clientSecret, sitzung.model); } catch (err) { const f = fehlerEinordnen(err); setFehler(f.message); setFehlerArt(f.art); setPhase("fehler"); return; }
+    setFehlerArt(null);
     if (zustandRef.current.stumm) v.mikrofon(false);
     if (mitKontext) {
       const letzte = transkriptRef.current.slice(-KONTEXT_ZEILEN).map((z) => `${z.wer === "ava" ? "AVA" : z.wer === "du" ? "Nutzer" : "System"}: ${z.text}`).join("\n");
@@ -392,7 +394,24 @@ export function Sprachmodus() {
         </button>
         {hinweis && <p className={`sm__hinweis ${countdown !== null ? "sm__hinweis--countdown" : ""}`}>{hinweis}</p>}
         {phase === "fehler" && fehler && (
-          <p className="sm__fehler">{fehler} <button type="button" className="btn small" onClick={() => void verbinden(true)}>Erneut verbinden</button></p>
+          <div className="sm__fehler">
+            <p className="sm__fehler-text">{fehler}</p>
+            <p className="sm__fehler-hilfe">
+              {fehlerArt === "mikrofon-verweigert" && "AVA braucht das Mikrofon. Erlaube den Zugriff in den Systemeinstellungen und versuche es erneut."}
+              {fehlerArt === "kein-mikrofon" && "Schließe ein Mikrofon an oder wähle eines in den Systemeinstellungen aus."}
+              {fehlerArt === "netz" && "Prüfe die Internetverbindung. Hinter einem Firmen-Proxy oder einer Firewall kann WebRTC blockiert sein; dann hilft oft ein anderes Netz."}
+              {fehlerArt === "schluessel" && "Prüfe den OpenAI-Schlüssel in den Einstellungen unter Modelle. Läuft der Sprachmodus über die Organisation, muss der Administrator den Schlüssel erneuern."}
+              {fehlerArt === "kontingent" && "Bei OpenAI ist das Guthaben oder das Limit erschöpft. Lade Guthaben nach oder warte, bis das Limit zurückgesetzt wird."}
+              {fehlerArt === "sonstiges" && "Versuche es erneut. Bleibt der Fehler, hilft ein Blick in die Protokolle."}
+            </p>
+            <div className="sm__fehler-knoepfe">
+              <button type="button" className="btn small" onClick={() => void verbinden(true)}>Erneut verbinden</button>
+              {(fehlerArt === "mikrofon-verweigert" || fehlerArt === "kein-mikrofon") && (
+                <button type="button" className="btn small" onClick={() => void window.api.voice.openMicSettings()}>Mikrofon-Einstellungen öffnen</button>
+              )}
+              <button type="button" className="btn small" onClick={beenden}>Sprachmodus beenden</button>
+            </div>
+          </div>
         )}
         {hatBloecke && (
           <div className="sm__bloecke">

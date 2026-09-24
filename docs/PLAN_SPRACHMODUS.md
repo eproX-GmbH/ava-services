@@ -382,7 +382,7 @@ Aktivierungswort ueber Whisper, aber nur pegelgesteuert (kein Dauerlauf).
 | S4 | gebaut: Eingabezeile (Text geht als Nachricht an die Sprach-KI), Bilder als Anhang (+ oder Einfuegen; gehen direkt als Auftrag an den Orchestrator, hoechstens 4); OFFEN: Dokumente (PDF/Excel) als Anhang, Markierung der Zuege im Chatverlauf, Alerts zurueckhalten |
 | S4b | gebaut: Ruhezustand nach `ruheSekunden` (Verbindung zu), Countdown-Ring, Wecken per Kugel/Leertaste/Tippen, Aktivierungswort `lib/wachwort.ts` (Pegel-Detektor + Whisper-Fenster), Signalton, Kontext-Uebergabe an die neue Sitzung; OFFEN: Audio-Puffer waehrend des Aufbaus |
 | S5 | gebaut (v0.1.728): Gateway `POST /v1/llm-usage` (Realtime-Preise je Audio-/Text-Token, `estimateRealtimeMicroUsd`, Kanal chat → Kontingent der Organisation), Desktop meldet je `response.done` NUR beim Organisationsschluessel; stille Neuverbindung nach 55 Minuten mit Kontext, sobald niemand spricht; `npm run test:sprachmodus` (Relay-Text, Bloecke, Wachwort, Instruktionsregeln, Werkzeuge) |
-| S6 | teilweise: Push-to-Talk bei stummem Mikrofon (Leertaste halten), Hinweiszeile; OFFEN: Fehlerbilder ausfuehrlich (kein Mikrofon, Netz weg), Doku |
+| S6 | gebaut (v0.1.728): Push-to-Talk bei stummem Mikrofon (Leertaste halten), Fehlerbilder mit Ursache/Hilfe/Knoepfen (Mikrofon verweigert, kein Mikrofon, Netz/Proxy, Schluessel, Kontingent; `fehlerEinordnen`), Doku docs/SPRACHMODUS.md |
 
 Nicht im laufenden Programm geprueft (nur Typecheck und Build): erster
 Praxistest durch den Nutzer nach dem Release.

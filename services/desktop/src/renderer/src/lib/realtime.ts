@@ -8,6 +8,25 @@
 
 export interface RealtimeEreignis { type: string; [k: string]: unknown }
 
+/** Fehlerbild fuer die Oberflaeche (S6): Ursache, Text, was hilft. */
+export type SpracheFehlerArt = "mikrofon-verweigert" | "kein-mikrofon" | "netz" | "schluessel" | "kontingent" | "sonstiges";
+export class SpracheFehler extends Error {
+  constructor(public readonly art: SpracheFehlerArt, message: string) { super(message); this.name = "SpracheFehler"; }
+}
+
+export function fehlerEinordnen(err: unknown): SpracheFehler {
+  if (err instanceof SpracheFehler) return err;
+  const e = err as { name?: string; message?: string } | null;
+  const name = e?.name ?? "";
+  const msg = e?.message ?? String(err);
+  if (name === "NotAllowedError" || name === "SecurityError" || /permission|verweigert|denied/i.test(msg)) return new SpracheFehler("mikrofon-verweigert", "Der Zugriff auf das Mikrofon wurde verweigert.");
+  if (name === "NotFoundError" || name === "OverconstrainedError" || /kein mikrofon|no audio|device not found/i.test(msg)) return new SpracheFehler("kein-mikrofon", "Kein Mikrofon gefunden.");
+  if (/HTTP 401|HTTP 403|invalid_api_key|incorrect api key|schl(ü|ue)ssel/i.test(msg)) return new SpracheFehler("schluessel", "Der OpenAI-Schlüssel wurde abgelehnt.");
+  if (/HTTP 429|quota|kontingent|insufficient_quota|rate limit/i.test(msg)) return new SpracheFehler("kontingent", "Das Kontingent bei OpenAI ist erschöpft oder das Limit erreicht.");
+  if (/Failed to fetch|NetworkError|ECONN|ENOTFOUND|Verbindung (failed|disconnected)|ice|timeout|upstream_unreachable|HTTP 5\d\d/i.test(msg)) return new SpracheFehler("netz", "Keine Verbindung zu OpenAI.");
+  return new SpracheFehler("sonstiges", msg || "Unbekannter Fehler.");
+}
+
 export interface RealtimeCallbacks {
   onEreignis: (e: RealtimeEreignis) => void;
   onZustand: (z: "verbindet" | "offen" | "geschlossen" | "fehler", detail?: string) => void;
@@ -79,8 +98,9 @@ export class RealtimeVerbindung {
       await pc.setRemoteDescription({ type: "answer", sdp: await res.text() });
     } catch (err) {
       this.schliessen();
-      this.cb.onZustand("fehler", err instanceof Error ? err.message : String(err));
-      throw err;
+      const f = fehlerEinordnen(err);
+      this.cb.onZustand("fehler", f.message);
+      throw f;
     }
   }
 

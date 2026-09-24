@@ -8690,7 +8690,10 @@ input, textarea, select, button, a, summary, details,
 .sk-kugel { display: block; transition: width 0.5s ease, height 0.5s ease; }
 .sm__hinweis { margin: 0; color: #5a6b76; font-size: 15px; min-height: 22px; transition: color 0.3s; }
 .sm__hinweis--countdown { color: #3f4fd6; }
-.sm__fehler { color: #b42318; font-size: 14px; display: flex; gap: 8px; align-items: center; }
+.sm__fehler { max-width: 520px; text-align: center; font-size: 14px; }
+.sm__fehler-text { margin: 0 0 6px; color: #b42318; font-weight: 600; }
+.sm__fehler-hilfe { margin: 0 0 10px; color: #5a6b76; }
+.sm__fehler-knoepfe { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
 .sm__bloecke { width: min(920px, 100%); display: grid; gap: 14px; margin-top: 8px; padding-bottom: 24px; user-select: text; }
 .sm__block { background: #f4f6f9; border: 1px solid #e3e8ee; border-radius: 14px; padding: 12px 14px; color: #0a1f2a; animation: sm-auf 0.4s ease; }
 .sm__block--gepinnt { border-color: #b9c4ff; }
