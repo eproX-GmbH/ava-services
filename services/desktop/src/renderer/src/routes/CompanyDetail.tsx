@@ -2156,6 +2156,9 @@ function PersonCard({
   //      "+N Varianten" disclosure.
   //   3. Move INACTIVE history into a <details> "Historie (N)" block.
   // v0.1.628 — Position/Abteilung stehen im Kopf der Karte, nicht nochmal als Zeile.
+  // v0.1.723 — "Platz x von y" (websiteHervorhebung) ist ein Beleg fuer den
+  // Einfluss-Vorschlag im Buying Center und die Sortierung, keine Auskunft
+  // fuer die Karte; er bleibt im Herkunftsnachweis und in der Belegkette.
   const visibleFacts = facts.filter(
     (f) =>
       ![
@@ -2164,6 +2167,7 @@ function PersonCard({
         "employmentCompanyId",
         "jobTitle",
         "department",
+        "websiteHervorhebung",
       ].includes(f.field ?? "")
   );
   const activeFacts = visibleFacts.filter((f) => f.status === "ACTIVE");
