@@ -19,6 +19,7 @@ import { Organisation } from "./routes/Organisation";
 import { FeatureGate } from "./components/FeatureGate";
 import { Settings } from "./routes/Settings";
 import { Chat } from "./routes/Chat";
+import { Sprachmodus } from "./routes/Sprachmodus";
 import { Ingest } from "./routes/Ingest";
 import { Transactions } from "./routes/Transactions";
 import { TransactionDetail } from "./routes/TransactionDetail";
@@ -73,6 +74,7 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
             <Routes>
               <Route path="/" element={<Navigate to="/chat" replace />} />
               <Route path="/chat" element={<Chat />} />
+              <Route path="/sprache" element={<FeatureGate feature="sprachmodus"><Sprachmodus /></FeatureGate>} />
               <Route path="/whoami" element={<Whoami />} />
               <Route path="/organisation" element={<Organisation />} />
               <Route path="/settings" element={<Settings />} />

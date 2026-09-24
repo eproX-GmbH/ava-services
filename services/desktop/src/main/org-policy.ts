@@ -123,6 +123,7 @@ export function featureOfTool(name: string): OrgFeatureKey | undefined {
   if (name.startsWith("register_delta_")) return "stammdaten.mithelfen";
   if (name === "company_shareholders" || name === "company_network" || name === "company_network_deepen" || name.startsWith("verflechtungen_")) return "verflechtungen";
   if (name.startsWith("buying_center_")) return "buyingcenter";
+  if (name.startsWith("sprachmodus_")) return "sprachmodus";
   return undefined;
 }
 

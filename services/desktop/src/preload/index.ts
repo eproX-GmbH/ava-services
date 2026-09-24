@@ -92,6 +92,11 @@ import type {
   LinkMonitorSnapshot,
   AccountsSnapshot,
   OrgPolicy,
+  SpracheStand,
+  SpracheEinstellungen,
+  SpracheSitzung,
+  SpracheErgebnis,
+  AgentMessageImage,
 } from "../shared/types";
 export type {
   AgentChoiceAnswer,
@@ -1654,6 +1659,26 @@ const api = {
   // calling it gets a placeholder string so the mic-button → IPC →
   // textarea round-trip can be exercised before whisper.cpp itself
   // is bundled.
+  /** Sprachmodus (docs/PLAN_SPRACHMODUS.md): Stand, Einstellungen, Sitzung, Relay. */
+  sprache: {
+    stand: (): Promise<SpracheStand> => ipcRenderer.invoke("sprache:stand"),
+    setzen: (teil: Partial<SpracheEinstellungen>): Promise<SpracheStand> => ipcRenderer.invoke("sprache:setzen", teil),
+    onStandChanged: (handler: (s: SpracheStand) => void) => {
+      const l = (_: unknown, s: SpracheStand) => handler(s);
+      ipcRenderer.on("sprache:standChanged", l);
+      return () => { ipcRenderer.removeListener("sprache:standChanged", l); };
+    },
+    sitzung: (): Promise<SpracheSitzung> => ipcRenderer.invoke("sprache:sitzung"),
+    auftrag: (input: { conversationId: string; text: string; images?: AgentMessageImage[] }): Promise<{ laeuft: boolean; requestId: string | null; grund?: string }> =>
+      ipcRenderer.invoke("sprache:auftrag", input),
+    rueckfrage: (choiceId: string, wert: string): Promise<{ ok: boolean; grund?: string }> => ipcRenderer.invoke("sprache:rueckfrage", { choiceId, wert }),
+    abbrechen: (): Promise<boolean> => ipcRenderer.invoke("sprache:abbrechen"),
+    onErgebnis: (handler: (e: SpracheErgebnis) => void) => {
+      const l = (_: unknown, e: SpracheErgebnis) => handler(e);
+      ipcRenderer.on("sprache:ergebnis", l);
+      return () => { ipcRenderer.removeListener("sprache:ergebnis", l); };
+    },
+  },
   voice: {
     getStatus: (): Promise<VoiceStatus> =>
       ipcRenderer.invoke("voice:getStatus"),

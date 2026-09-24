@@ -170,6 +170,9 @@ import type {
   MailSnapshot,
 } from "../shared/types";
 import { ResearchFeaturesStore } from "./research/store";
+import { SpracheStore } from "./sprache/store";
+import { praegeSitzung } from "./sprache/session";
+import { SpracheRelay } from "./sprache/relay";
 import { ProviderConfigStore } from "./agent/providers/store";
 import {
   initSkills,
@@ -1939,6 +1942,15 @@ const agentRegistry = buildReadOnlyRegistry({
   gateway: gatewayClient,
   providers,
   getResearchStand: () => ResearchFeaturesStore.shared().manuellerStand({ providerLocked: providers.isProviderLocked() }),
+  sprache: {
+    get: () => SpracheStore.shared().get(),
+    setzen: (teil) => SpracheStore.shared().setzen(teil),
+    stand: () => {
+      const q = providers.keySource("openai");
+      const hat = q === "organisation" ? Boolean(providers.getOrgProviders().openai) : providers.hasKey("openai") || Boolean(providers.getOrgProviders().openai);
+      return { verfuegbar: hat, quelle: hat ? (q === "organisation" || !providers.hasKey("openai") ? "organisation" : "eigen") : null };
+    },
+  },
   icp: icpStore,
   discoveryMatches,
   discoveryCustomerProfiles: customerProfiles,
@@ -5232,6 +5244,39 @@ app.whenReady().then(async () => {
   }
 
   ipcMain.handle("research:getBundle", () => researchBundle());
+
+  // ---- Sprachmodus (docs/PLAN_SPRACHMODUS.md) -----------------------------
+  const spracheStore = SpracheStore.shared();
+  const spracheRelay = new SpracheRelay(agent, (e) => {
+    for (const win of BrowserWindow.getAllWindows()) win.webContents.send("sprache:ergebnis", e);
+  });
+  const spracheStand = () => {
+    const q = providers.keySource("openai");
+    const orgHat = Boolean(providers.getOrgProviders().openai);
+    const eigenHat = providers.hasKey("openai");
+    const verfuegbar = q === "organisation" ? orgHat : eigenHat || orgHat;
+    const quelle: "eigen" | "organisation" | null = !verfuegbar ? null : q === "organisation" || !eigenHat ? "organisation" : "eigen";
+    return { einstellungen: spracheStore.get(), verfuegbar, quelle, whisperBereit: whisper.getStatus().state === "ready" };
+  };
+  ipcMain.handle("sprache:stand", () => spracheStand());
+  ipcMain.handle("sprache:setzen", (_e, teil: Partial<import("../shared/types").SpracheEinstellungen>) => {
+    spracheStore.setzen(teil);
+    return spracheStand();
+  });
+  spracheStore.on("changed", () => {
+    for (const win of BrowserWindow.getAllWindows()) win.webContents.send("sprache:standChanged", spracheStand());
+  });
+  ipcMain.handle("sprache:sitzung", async () => {
+    const st = spracheStand();
+    if (!st.einstellungen.aktiv) throw new Error("Der Sprachmodus ist ausgeschaltet.");
+    if (!st.verfuegbar) throw new Error("Kein OpenAI-Schlüssel hinterlegt.");
+    const prof = userProfile.get() as { name?: string | null; firstName?: string | null };
+    const name = prof.firstName ?? prof.name ?? null;
+    return praegeSitzung({ providers, stimme: st.einstellungen.stimme, nutzerName: name, actorId: auth.getStatus().actorId ?? null });
+  });
+  ipcMain.handle("sprache:auftrag", (_e, input: { conversationId: string; text: string; images?: import("../shared/types").AgentMessageImage[] }) => spracheRelay.auftrag(input));
+  ipcMain.handle("sprache:rueckfrage", (_e, a: { choiceId: string; wert: string }) => spracheRelay.rueckfrage(a.choiceId, a.wert));
+  ipcMain.handle("sprache:abbrechen", () => { spracheRelay.abbrechen(); return true; });
   // 2026-09-24 — manueller Lauf je Firma: Gibt es einen OpenAI-Schluessel
   // (eigener oder Organisation)? Ohne ihn zeigt die Firmenansicht statt der
   // Knoepfe den Hinweis auf die Einstellungen.

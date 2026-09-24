@@ -23,6 +23,7 @@ import type { MemoryStore } from "../memory";
 import { ToolRegistry } from "../tool-registry";
 import { buildCompanyTools } from "./companies";
 import { buildResearchLaufTools } from "./research-lauf";
+import { buildSprachmodusTools } from "./sprachmodus";
 import { buildTransactionTools } from "./transactions";
 import { buildEvaluationTools } from "./evaluations";
 import { buildUiTools } from "./ui";
@@ -208,6 +209,12 @@ export function buildReadOnlyRegistry(deps: {
   getTenantTier: () => string | null;
   /** 2026-09-24 — manueller Recherche-Lauf: OpenAI-Schluessel vorhanden, und woher? */
   getResearchStand?: () => { verfuegbar: boolean; quelle: "eigen" | "organisation" | null };
+  /** Sprachmodus (docs/PLAN_SPRACHMODUS.md): Einstellungen lesen/setzen, Schluessel-Stand. */
+  sprache?: {
+    get: () => import("../../../shared/types").SpracheEinstellungen;
+    setzen: (teil: Partial<import("../../../shared/types").SpracheEinstellungen>) => import("../../../shared/types").SpracheEinstellungen;
+    stand: () => { verfuegbar: boolean; quelle: "eigen" | "organisation" | null };
+  };
   /** Audit-Trail-Sink fuer Discovery-Aktionen (Scan-Queries etc.). */
   discoveryAudit: (entry: {
     action: string;
@@ -226,6 +233,7 @@ export function buildReadOnlyRegistry(deps: {
   };
   for (const t of buildCompanyTools(ctx)) registry.register(t);
   for (const t of buildResearchLaufTools({ gateway: deps.gateway, getResearchStand: deps.getResearchStand ?? (() => ({ verfuegbar: false, quelle: null })) })) registry.register(t);
+  if (deps.sprache) for (const t of buildSprachmodusTools(deps.sprache)) registry.register(t);
   // T5 — Konto + Tenant (read-only).
   for (const t of buildAccountTools({
     gateway: deps.gateway,

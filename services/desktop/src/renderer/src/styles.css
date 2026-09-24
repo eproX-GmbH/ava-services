@@ -8677,3 +8677,38 @@ input, textarea, select, button, a, summary, details,
 .rl-block__liste dt { margin: 0; }
 .rl-block__liste dd { margin: 0; }
 @media (max-width: 640px) { .rl-block__liste { grid-template-columns: 1fr; } }
+
+/* ---- Sprachmodus (docs/PLAN_SPRACHMODUS.md) ------------------------------- */
+.chat-composer__sprache { color: var(--accent); }
+.sm { position: fixed; inset: 0; z-index: 1000; background: #fff; color: #0a1f2a; display: flex; flex-direction: column; opacity: 0; transition: opacity 0.4s ease; user-select: none; }
+.sm--sichtbar { opacity: 1; }
+.sm__buehne { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; padding: 24px 16px 0; overflow: hidden; transition: justify-content 0.5s; }
+.sm--mit-bloecken .sm__buehne { justify-content: flex-start; padding-top: 32px; overflow-y: auto; }
+.sm__kugel-knopf { background: none; border: 0; padding: 0; cursor: default; opacity: 0; transform: scale(0.9); transition: opacity 0.6s ease 0.25s, transform 0.6s ease 0.25s; }
+.sm--sichtbar .sm__kugel-knopf { opacity: 1; transform: scale(1); }
+.sm__kugel-knopf--ruhe { cursor: pointer; }
+.sk-kugel { display: block; transition: width 0.5s ease, height 0.5s ease; }
+.sm__hinweis { margin: 0; color: #5a6b76; font-size: 15px; min-height: 22px; transition: color 0.3s; }
+.sm__hinweis--countdown { color: #3f4fd6; }
+.sm__fehler { color: #b42318; font-size: 14px; display: flex; gap: 8px; align-items: center; }
+.sm__bloecke { width: min(920px, 100%); display: grid; gap: 14px; margin-top: 8px; padding-bottom: 24px; user-select: text; }
+.sm__block { background: #f4f6f9; border: 1px solid #e3e8ee; border-radius: 14px; padding: 12px 14px; color: #0a1f2a; animation: sm-auf 0.4s ease; }
+.sm__block--gepinnt { border-color: #b9c4ff; }
+.sm__block-kopf { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 6px; }
+.sm__block-knoepfe { display: inline-flex; gap: 6px; }
+.sm__rueckfrage p { margin: 0 0 8px; font-size: 15px; }
+.sm__rueckfrage-optionen { display: flex; flex-wrap: wrap; gap: 8px; }
+@keyframes sm-auf { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+.sm__transkript { margin: 0 auto; max-width: 760px; padding: 0 16px; color: #5a6b76; font-size: 14px; text-align: center; min-height: 20px; }
+.sm__leiste { display: flex; align-items: center; gap: 10px; padding: 14px 16px 22px; justify-content: center; }
+.sm__eingabe { flex: 0 1 560px; }
+.sm__eingabe input { width: 100%; box-sizing: border-box; border: 1px solid #dde3ea; background: #f4f6f9; color: #0a1f2a; border-radius: 999px; padding: 14px 20px; font-size: 16px; outline: none; }
+.sm__eingabe input:focus { border-color: #9aa7ff; }
+.sm__rund { width: 50px; height: 50px; border-radius: 50%; border: 1px solid #dde3ea; background: #f4f6f9; color: #0a1f2a; display: inline-flex; align-items: center; justify-content: center; cursor: pointer; }
+.sm__rund:hover { background: #e9edf3; }
+.sm__rund--aus { color: #b42318; }
+.sm__rund--x { background: #0a1f2a; color: #fff; border-color: #0a1f2a; }
+.sm__rund--x:hover { background: #1d3340; }
+/* Die App darunter darf nicht durchscheinen, auch im Dunkelmodus: echtes Weiss (Entscheidung 2026-09-24). */
+.sm .panel, .sm .bc-karte { background: #fff; color: #0a1f2a; }
+@media (prefers-reduced-motion: reduce) { .sm, .sm__kugel-knopf, .sk-kugel { transition: none; } .sm__block { animation: none; } }

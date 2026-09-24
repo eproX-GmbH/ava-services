@@ -237,6 +237,26 @@ export class LlmProviderManager extends EventEmitter {
     }
   }
 
+  /**
+   * Sprachmodus (2026-09-24): OpenAI-Zugang fuer HTTP-Aufrufe aus dem
+   * Hauptprozess, mit demselben Vorrang wie im Chat (eigener Schluessel
+   * zuerst, Organisation als Rueckfall, Sperre erzwingt sie). Bei der
+   * Organisation ist der Schluessel das Nutzer-Token und die Basis der
+   * Gateway-Proxy; der eigentliche Schluessel bleibt im Gateway.
+   */
+  async openaiZugang(): Promise<{ apiKey: string; baseURL: string; quelle: KeySource } | null> {
+    const quelle = this.keySource("openai");
+    if (quelle === "organisation") {
+      const token = await this.org.getToken();
+      const baseURL = this.org.gatewayUrl ? gatewayProxyBaseURL(this.org.gatewayUrl, "openai") : null;
+      if (!token || !baseURL) return null;
+      return { apiKey: token, baseURL, quelle };
+    }
+    const key = await this.store.getKey("openai");
+    if (!key) return null;
+    return { apiKey: key, baseURL: "https://api.openai.com/v1", quelle };
+  }
+
   /** Anbieter, die die Organisation mit Schluessel bereitstellt (Hinweis). */
   getOrgProviders(): Partial<Record<LlmProviderKind | "apify", string>> {
     return { ...this.org.providers };

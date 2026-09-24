@@ -70,7 +70,62 @@ export const ORG_FEATURES = [
   { key: "stammdaten.mithelfen", label: "Stammdaten mitpflegen", hinweis: "Rechner der Mitglieder duerfen Register-Jobs abarbeiten (Handelsregister-Abfragen mit eigener IP, 60 je Stunde)" },
   { key: "relevanz", label: "Relevanz", hinweis: "Naehe-Wert je Firma und Person aus dem eigenen Verhalten des Mitglieds (Ansichten, Chat, Uebernahmen). Aus = keine Erfassung, keine Anzeige, keine Chat-Tools" },
   { key: "verflechtungen", label: "Firmen-Verflechtungen", hinweis: "Gesellschafterlisten aus dem Handelsregister laden und mit dem eigenen KI-Modell auswerten (Gesellschafter, Beteiligungen, Personen)" },
+  { key: "sprachmodus", label: "Sprachmodus", hinweis: "Mit AVA sprechen (OpenAI Realtime, Speech-to-Speech). Braucht einen OpenAI-Schluessel; Gespraechsminuten kosten mehr als Chat. Aus = kein Knopf, keine Einstellung, kein Werkzeug" },
 ] as const;
+
+// ---- Sprachmodus (docs/PLAN_SPRACHMODUS.md) ---------------------------------
+export type SpracheStimme = "marin" | "coral" | "sage" | "shimmer";
+export interface SpracheEinstellungen {
+  aktiv: boolean;
+  stimme: SpracheStimme;
+  /** Stille bis zum Ruhezustand (Sekunden). */
+  ruheSekunden: number;
+  signalton: boolean;
+  /** Aktivierungswort "Hey AVA" lokal ueber Whisper erkennen. */
+  wachwort: boolean;
+}
+export interface SpracheStand {
+  einstellungen: SpracheEinstellungen;
+  /** OpenAI-Schluessel vorhanden (eigener oder Organisation)? */
+  verfuegbar: boolean;
+  quelle: "eigen" | "organisation" | null;
+  /** Lokales Whisper-Modell einsatzbereit (fuer das Aktivierungswort)? */
+  whisperBereit: boolean;
+}
+export interface SpracheSitzung {
+  clientSecret: string;
+  expiresAt: number | null;
+  model: string;
+  stimme: SpracheStimme;
+  /** Werkzeuge der Realtime-Sitzung (Function-Calling-Schema). */
+  tools: Array<Record<string, unknown>>;
+  instructions: string;
+}
+export interface SpracheBlock {
+  id: string;
+  art: "chart" | "buying-center";
+  raw: string;
+  titel: string;
+  /** Bezug fuer das Aufraeumen: companyId oder Thema. */
+  bezug: string | null;
+}
+export interface SpracheRueckfrage {
+  choiceId: string;
+  art: "choice" | "text" | "match";
+  prompt: string;
+  options?: AgentChoiceOption[];
+}
+/** Ergebnis eines Auftrags an den Orchestrator, per Ereignis `sprache:ergebnis`. */
+export interface SpracheErgebnis {
+  requestId: string;
+  conversationId: string;
+  /** Antworttext ohne Zaeune und ohne Links (fuer die Sprach-KI). */
+  text: string;
+  bloecke: SpracheBlock[];
+  rueckfrage: SpracheRueckfrage | null;
+  fehler: string | null;
+  fertig: boolean;
+}
 export type OrgFeatureKey = (typeof ORG_FEATURES)[number]["key"];
 
 export interface OrgPolicy {

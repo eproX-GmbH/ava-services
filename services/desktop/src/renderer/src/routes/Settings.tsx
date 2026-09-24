@@ -251,6 +251,7 @@ export const SETTINGS_ANCHOR_TO_TAB: Record<string, SettingsTabId> = {
   "general-memory":          "konto",
   "erscheinung":             "konto",
   "provider-section":        "modelle",
+  "sprachmodus-section":     "modelle",
   "voice-settings":          "modelle",
   "installed-models":        "modelle",
   "publication-analysis":    "modelle",

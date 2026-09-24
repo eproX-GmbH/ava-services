@@ -378,7 +378,7 @@ function classifyMediaError(err: unknown): RecorderError {
  * RIFF header + raw little-endian Int16 data). Whisper.cpp's
  * `whisper-cli -f` accepts this format directly — no ffmpeg detour.
  */
-function encodeWav(chunks: Float32Array[], sampleRate: number): Uint8Array {
+export function encodeWav(chunks: Float32Array[], sampleRate: number): Uint8Array {
   let total = 0;
   for (const c of chunks) total += c.length;
   if (total === 0) {

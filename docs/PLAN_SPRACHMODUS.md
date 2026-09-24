@@ -361,3 +361,28 @@ S1/S3/S4 bleibt unveraendert.
   "Verbindung nicht moeglich" mit Hinweis.
 - Kosten: Gespraechsminuten sind teurer als Chat; Kostenhinweis an der
   Einstellung, Verbrauchsmeldung (S5), kein automatischer Start.
+
+---
+
+## 11. Stand der Umsetzung (2026-09-24, v0.1.727)
+
+Entscheidungen des Nutzers: Architektur Stimme-plus-Relay; Orga-Schluessel
+erlaubt (Orga-Schalter `sprachmodus`); frisch geoeffnet = neue Unterhaltung,
+offener Bildschirm fuehrt den Faden fort (auch nach Ruhezustand); echtes
+Weiss; Stimme fest `marin` (keine Auswahl); stille Neuverbindung; Transkript
+vollstaendig; 20 s Stille, letzte 8 s sichtbar (Ring + Countdown-Text);
+Aktivierungswort ueber Whisper, aber nur pegelgesteuert (kein Dauerlauf).
+
+| Stufe | Stand |
+| --- | --- |
+| S0 | gebaut: `main/sprache/store.ts` (sprache.json), `session.ts` (Client-Schluessel eigen/Organisation ueber `providers.openaiZugang()`), Orga-Schalter, Einstellung in Modelle → Sprachmodus, Werkzeug `sprachmodus_konfigurieren`, IPC `sprache:*` |
+| S1 | gebaut: Route `/sprache` (Vollbild, Weiss-Fade), `lib/realtime.ts` (WebRTC, Datenkanal, Pegel), `components/SprachKugel.tsx`, Mikrofon stumm (turn_detection null), X/Esc, Transkriptzeile |
+| S2 | gebaut: `main/sprache/relay.ts` (Orchestrator-Zug, Ergebnis per `sprache:ergebnis`, Rueckfragen), Werkzeuge `ava_bearbeiten`, `ava_rueckfrage_beantworten`, Rueckfrage-Karte unter der Kugel |
+| S3 | gebaut: Chart-/Buying-Center-Bloecke unter der Kugel, Kugel schrumpft/faehrt hoch, `ava_anzeigen`, Liste "Auf dem Bildschirm", passives Aufraeumen (andere Firma ersetzt, 10 Min ohne Erwaehnung), Pinnen/Schliessen, Anker-Klicks abgefangen |
+| S4 | teilweise: Eingabezeile (Text geht als Nachricht an die Sprach-KI, die entscheidet ueber `ava_bearbeiten`); OFFEN: Anhaenge (Bilder/Dokumente), Markierung der Zuege im Chatverlauf, Alerts zurueckhalten |
+| S4b | gebaut: Ruhezustand nach `ruheSekunden` (Verbindung zu), Countdown-Ring, Wecken per Kugel/Leertaste/Tippen, Aktivierungswort `lib/wachwort.ts` (Pegel-Detektor + Whisper-Fenster), Signalton, Kontext-Uebergabe an die neue Sitzung; OFFEN: Audio-Puffer waehrend des Aufbaus |
+| S5 | OFFEN: Verbrauchsmeldung ans Gateway (Orga-Schluessel), 55-Minuten-Neuverbindung, Prompt-Tests |
+| S6 | OFFEN: Push-to-Talk bei stummem Mikrofon, Fehlerbilder, Doku |
+
+Nicht im laufenden Programm geprueft (nur Typecheck und Build): erster
+Praxistest durch den Nutzer nach dem Release.

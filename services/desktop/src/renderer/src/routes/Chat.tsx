@@ -1763,6 +1763,7 @@ export function Chat() {
               onChange={handleFileInput}
             />
             <VoiceMicButton onActivate={() => void startRecording()} />
+            <SprachmodusButton />
             {inFlight ? (
               <button
                 type="button"
@@ -2051,6 +2052,27 @@ function PlusIcon() {
     <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
       <path d="M10 4v12M4 10h12" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
     </svg>
+  );
+}
+
+/** Sprachmodus (docs/PLAN_SPRACHMODUS.md): Wellen-Knopf neben dem Mikrofon,
+ *  nur wenn die Organisation ihn erlaubt, er aktiviert ist und ein OpenAI-
+ *  Schluessel vorhanden ist (Gesperrtes wird ausgeblendet). */
+function SprachmodusButton() {
+  const erlaubt = useFeature("sprachmodus");
+  const navigate = useNavigate();
+  const [stand, setStand] = useState<{ aktiv: boolean; verfuegbar: boolean } | null>(null);
+  useEffect(() => {
+    if (!erlaubt) return;
+    const setze = (s: { einstellungen: { aktiv: boolean }; verfuegbar: boolean }) => setStand({ aktiv: s.einstellungen.aktiv, verfuegbar: s.verfuegbar });
+    void window.api.sprache.stand().then(setze);
+    return window.api.sprache.onStandChanged(setze);
+  }, [erlaubt]);
+  if (!erlaubt || !stand?.aktiv || !stand.verfuegbar) return null;
+  return (
+    <button type="button" className="chat-composer__icon-btn chat-composer__sprache" title="Mit AVA sprechen" aria-label="Mit AVA sprechen" onClick={() => navigate("/sprache")}>
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><path d="M5 10v4M9 6v12M13 9v6M17 4v16M21 10v4" /></svg>
+    </button>
   );
 }
 
