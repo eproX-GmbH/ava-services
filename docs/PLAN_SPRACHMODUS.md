@@ -187,6 +187,38 @@ uebergibt die letzten Zuege als Kontext (Punkt 8.6).
   Saetze als dezente Zeile ueber der Leiste (aus
   `response.output_audio_transcript.delta`), abschaltbar.
 - Tastatur: Esc = X, Leertaste gedrueckt = sprechen bei stummem Mikrofon.
+
+**Ruhezustand und Aktivierungswort (Zusatz 2026-09-24):**
+- Beim Start des Sprachmodus ist AVA sofort da: Die Realtime-Sitzung wird
+  beim Einblenden aufgebaut (Schluessel praegen, WebRTC verbinden, ca. 1 s),
+  die Kugel wacht mit dem Fade auf.
+- Nach einer Stille von 20 Sekunden (Entscheidung 8.8) ohne laufenden
+  Auftrag geht AVA in den Ruhezustand: Die WebRTC-Verbindung wird
+  geschlossen, es laeuft nichts mehr bei OpenAI, es entstehen keine Kosten.
+  Die Kugel schrumpft und dunkelt ab (Transition 600 ms), darunter steht
+  "Sag „Hey AVA", um AVA zu aktivieren". Laeuft ein Auftrag, schlaeft AVA
+  nicht; die Ansage des Ergebnisses weckt sie nicht extra, sie ist noch
+  wach.
+- Aktivierungswort lokal, ohne Cloud: Im Ruhezustand hoert nur das Geraet
+  zu. Ein Energie-VAD im Renderer (WebAudio) schneidet bei Sprache ein
+  Fenster von etwa zwei Sekunden aus, das lokale Whisper-Modell (bereits
+  fuer Sprachnachrichten gebuendelt, `main/voice/whisper-sidecar.ts`)
+  transkribiert es, und ein toleranter Vergleich erkennt "Hey AVA" (auch
+  "he Ava", "hey Afa", "hallo AVA"). Audio verlaesst das Geraet dabei nicht.
+  Kein Whisper-Modell installiert: Der Hinweis lautet stattdessen "Tippe
+  auf die Kugel oder druecke die Leertaste", und der Ruhezustand bleibt
+  trotzdem (Kosten).
+- Wecken: Aktivierungswort, Klick auf die Kugel, Leertaste oder Tippen in
+  die Eingabezeile. Beim Wecken: kurzer Signalton (wie bei Alexa, eigener
+  Klang, etwa 300 ms, abschaltbar), Kugel waechst und hellt auf (Transition
+  600 ms), Sitzung wird neu aufgebaut; die Kugel zeigt "denkt", bis die
+  Verbindung steht, dann "hoert". Der Nutzer spricht nach dem Ton; was er
+  waehrend des Aufbaus sagt, wird lokal gepuffert und als erster
+  Audio-Puffer an die Sitzung gegeben (`input_audio_buffer.append`), damit
+  nichts verloren geht.
+- Beim Wecken bekommt die neue Sitzung die letzten Zuege der Unterhaltung
+  als Kontext (wie bei der 55-Minuten-Neuverbindung), damit "und was ist
+  mit deren Umsatz?" nach einer Pause noch funktioniert.
 - Kein Link, kein Menue, keine Navigation. `navigate`-Frames ignoriert;
   Alerts/Toasts der App werden im Sprachmodus zurueckgehalten und beim
   Verlassen gezeigt.
@@ -270,6 +302,7 @@ Kern (Deutsch, wird als `session.instructions` gesetzt):
 | S2 | Relay: `ava_bearbeiten` → Orchestrator-Zug, Ergebnis nachreichen, `ava_rueckfrage_beantworten`, Rueckfragen-Karte unter der Kugel | 2 Tage |
 | S3 | Bloecke unter der Kugel (Chart, Buying Center, Textkarte ohne Links), Kugel faehrt hoch; "Bildschirm folgt dem Gespraech": Block-Kennungen mit Bezug, `ava_anzeigen`, Liste "Auf dem Bildschirm" fuer die Sprach-KI, passives Aufraeumen im Relay, Pinnen/Wegwischen | 1,5 Tage |
 | S4 | Eingabezeile + Anhaenge im Sprachmodus, Zuege im Chatverlauf markiert, Alerts zurueckhalten | 1 Tag |
+| S4b | Ruhezustand nach Stille (Verbindung zu, keine Kosten), Aktivierungswort lokal ueber Whisper, Wecken per Kugel/Leertaste/Tippen, Signalton, Audio-Puffer beim Aufbau, Kontext-Uebergabe | 1,5 Tage |
 | S5 | Verbrauchsmeldung an das Gateway (Organisationsschluessel), 55-Minuten-Neuverbindung, Prompt-Tests (Fangfragen, Ja-Weitergabe, Tabellenvermeidung) | 1 Tag |
 | S6 | Feinschliff: reduzierte Bewegung, Fehlerbilder (kein Mikrofon, Netz weg, Schluessel ungueltig), Doku | 0,5 Tag |
 
@@ -296,6 +329,13 @@ Werkzeugen; S3–S6 danach. Gateway-Deploy nur fuer S5 (Usage-Endpunkt).
    Hinweis und Ende?
 7. **Transkript im Chatverlauf:** gesprochene Zuege vollstaendig speichern
    (Empfehlung, Nachvollziehbarkeit) oder nur die Auftraege?
+8. **Stille bis zum Ruhezustand:** 20 Sekunden (Empfehlung; kurz genug,
+   dass eine Denkpause des Nutzers nicht laufend Geld kostet, lang genug
+   fuer eine Antwort auf eine Rueckfrage) oder einstellbar 10–60 s?
+9. **Aktivierungswort:** "Hey AVA" ueber das lokale Whisper (Empfehlung,
+   kein zusaetzliches Modell, Audio bleibt lokal; Erkennung braucht etwa
+   eine Sekunde) oder ein eigener Wake-Word-Detektor (schneller, aber
+   neues Modell samt Training auf "Hey AVA")?
 
 ---
 
