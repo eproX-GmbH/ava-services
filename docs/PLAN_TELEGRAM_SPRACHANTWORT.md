@@ -15,10 +15,14 @@ Sprachnachricht. Der Nutzer steuert das in der Nachricht selbst:
 | "gerne per Sprachnachricht" | diese eine Antwort gesprochen, auch wenn Text Standard ist |
 | "gerne immer per Sprachnachricht" | Standard = Sprachnachricht |
 
-Auch "ab jetzt", "ab sofort", "kuenftig" gelten als "immer"; "als/mit/in
-Sprachnachricht", "Audio", "Voice", "Sprachmemo" bzw. "Text",
-"schriftlich" werden erkannt. Die Anweisung wird aus der Nachricht
-entfernt, bevor sie an den Agenten geht. Besteht die Nachricht nur aus der
+Die Absicht bestimmt das Modell des Nutzers, nicht ein Wortmuster
+(`antwortSteuerungErmitteln`): Auch "sag's mir lieber muendlich", "ich kann
+gerade nicht lesen, bin im Auto" oder "schreib mir ab jetzt wieder" werden
+verstanden. Klare Formulierungen ("gerne per Sprachnachricht") trifft ein
+Muster vorweg, dann faellt kein Modellaufruf an. Das Urteil ist JSON, mit
+yup geprueft; ohne Modell oder bei Fehler gilt "keine Anweisung". Das
+guenstige Hintergrund-Modell wird genutzt, falls eines vorgegeben ist. Die
+Anweisung wird aus der Nachricht entfernt, bevor sie an den Agenten geht. Besteht die Nachricht nur aus der
 Anweisung, bestaetigt AVA kurz und startet keinen Zug.
 
 ## Umsetzung

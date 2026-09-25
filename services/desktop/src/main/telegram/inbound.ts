@@ -37,7 +37,8 @@ import {
   sendVoice,
 } from "./client";
 import { markdownZuText } from "./text";
-import { parseAntwortSteuerung, sprachantwortErzeugen, type AntwortModus } from "./sprachantwort";
+import { antwortSteuerungErmitteln, sprachantwortErzeugen, type AntwortModus } from "./sprachantwort";
+import type { LlmProviderManager } from "../agent/providers/manager";
 import { decodeToWav16k } from "./audio";
 import type { TelegramStore } from "./store";
 import type { AgentMessageImage } from "../../shared/types";
@@ -99,6 +100,8 @@ export interface TelegramInboundDeps {
   /** Sprachantwort (docs/PLAN_TELEGRAM_SPRACHANTWORT.md): OpenAI-Zugang fuer
    *  die Stimme; null = kein Schluessel → Text mit Hinweis. */
   openaiZugang?: () => Promise<{ apiKey: string; baseURL: string } | null>;
+  /** Modell des Nutzers fuer das Urteil "Text oder Sprache?" bei freien Formulierungen. */
+  providers?: LlmProviderManager;
 }
 
 export class TelegramInbound {
@@ -107,6 +110,7 @@ export class TelegramInbound {
   private readonly onAudit?: TelegramInboundDeps["onAudit"];
   private readonly transcribe?: TelegramInboundDeps["transcribe"];
   private readonly openaiZugang?: TelegramInboundDeps["openaiZugang"];
+  private readonly providers?: LlmProviderManager;
   /** Modus fuer die Antwort auf die gerade laufende Nachricht. */
   private antwortModus: AntwortModus = "text";
   private readonly getWorkflows?: TelegramInboundDeps["getWorkflows"];
@@ -129,6 +133,7 @@ export class TelegramInbound {
     this.onAudit = deps.onAudit;
     this.transcribe = deps.transcribe;
     this.openaiZugang = deps.openaiZugang;
+    this.providers = deps.providers;
     this.getWorkflows = deps.getWorkflows;
   }
 
@@ -295,7 +300,7 @@ export class TelegramInbound {
 
     // Antwortform (docs/PLAN_TELEGRAM_SPRACHANTWORT.md): Anweisung in der
     // Nachricht schlaegt den Standard; "immer" stellt den Standard um.
-    const steuerung = parseAntwortSteuerung(text);
+    const steuerung = await antwortSteuerungErmitteln(text, this.providers);
     if (steuerung.dauerhaft && steuerung.modus) {
       this.store.setConfig({ antwortModus: steuerung.modus });
       this.onAudit?.({ severity: "info", summary: `Telegram-Antwortmodus auf ${steuerung.modus === "sprache" ? "Sprachnachricht" : "Text"} umgestellt`, metadata: {} });

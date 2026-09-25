@@ -2223,6 +2223,7 @@ telegramInbound = new TelegramInbound({
   // Sprachantwort (docs/PLAN_TELEGRAM_SPRACHANTWORT.md): OpenAI-Stimme,
   // Schluessel wie im Chat (eigener zuerst, Organisation ueber den Proxy).
   openaiZugang: () => providers.openaiZugang(),
+  providers,
   // W4 — Freigaben per Telegram (/freigaben, /ja <id>, /nein <id>).
   getWorkflows: () => workflowService,
   // v0.1.419 — Sprachnachrichten lokal transkribieren. Whisper ist bereits
