@@ -28,6 +28,7 @@ import type { AlertSeverity, TelegramConfig } from "../../shared/types";
 
 const DEFAULT_CONFIG: TelegramConfig = {
   enabled: false,
+  antwortModus: "text",
   chatId: null,
   botUsername: null,
   severityThreshold: "warn",

@@ -2922,6 +2922,10 @@ export interface LinkMonitorRun {
 export interface TelegramConfig {
   /** Kanal aktiv? Erst nach erfolgreichem Test sinnvoll einschaltbar. */
   enabled: boolean;
+  /** docs/PLAN_TELEGRAM_SPRACHANTWORT.md — Standard fuer Antworten aus dem
+   *  Chat: Text oder Sprachnachricht (OpenAI-Stimme). Je Nachricht per
+   *  Anweisung ("gerne per Sprachnachricht") uebersteuerbar. */
+  antwortModus?: "text" | "sprache";
   /** Ziel-Chat (privat, Gruppe oder Kanal). `null` = noch nicht ermittelt. */
   chatId: string | null;
   /** Anzeigename des Bots aus `getMe` — reine UI-Information. */

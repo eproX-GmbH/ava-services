@@ -138,6 +138,38 @@ export async function getMe(token: string): Promise<TelegramBotInfo> {
   };
 }
 
+/**
+ * Sprachnachricht senden (OGG/Opus). Multipart statt JSON, weil die Datei
+ * mitgeht; Fehlerbehandlung wie bei `call`, ein Versuch mit Wiederholung.
+ */
+export async function sendVoice(
+  token: string,
+  chatId: string,
+  ogg: Buffer,
+  opts?: { caption?: string; silent?: boolean },
+): Promise<void> {
+  let lastErr: Error | null = null;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      const fd = new FormData();
+      fd.append("chat_id", chatId);
+      fd.append("voice", new Blob([new Uint8Array(ogg)], { type: "audio/ogg" }), "antwort.ogg");
+      if (opts?.caption) fd.append("caption", opts.caption.slice(0, 1000));
+      if (opts?.silent) fd.append("disable_notification", "true");
+      const res = await fetch(`${API_BASE}/bot${token}/sendVoice`, { method: "POST", body: fd, signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS * 2) });
+      const json = (await res.json().catch(() => null)) as { ok?: boolean; description?: string } | null;
+      if (res.ok && json?.ok === true) return;
+      lastErr = new Error(`sendVoice: ${json?.description ?? `HTTP ${res.status}`}`);
+      if (res.status >= 400 && res.status < 500 && res.status !== 429) throw lastErr;
+    } catch (err) {
+      lastErr = err instanceof Error ? err : new Error(String(err));
+      if (/sendVoice: .*(chat not found|bot was blocked|voice)/i.test(lastErr.message)) throw lastErr;
+    }
+    await new Promise((r) => setTimeout(r, 1000 * (attempt + 1)));
+  }
+  throw lastErr ?? new Error("sendVoice fehlgeschlagen");
+}
+
 /** Nachricht senden. `text` ist bereits HTML-escaped. */
 export async function sendMessage(
   token: string,

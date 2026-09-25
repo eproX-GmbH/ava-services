@@ -34,8 +34,10 @@ import {
   getUpdates,
   redactToken,
   sendMessage,
+  sendVoice,
 } from "./client";
 import { markdownZuText } from "./text";
+import { parseAntwortSteuerung, sprachantwortErzeugen, type AntwortModus } from "./sprachantwort";
 import { decodeToWav16k } from "./audio";
 import type { TelegramStore } from "./store";
 import type { AgentMessageImage } from "../../shared/types";
@@ -94,6 +96,9 @@ export interface TelegramInboundDeps {
   }) => void;
   /** W4 — Workflow-Freigaben per Telegram (lazy). */
   getWorkflows?: () => import("../workflows").WorkflowService | null;
+  /** Sprachantwort (docs/PLAN_TELEGRAM_SPRACHANTWORT.md): OpenAI-Zugang fuer
+   *  die Stimme; null = kein Schluessel → Text mit Hinweis. */
+  openaiZugang?: () => Promise<{ apiKey: string; baseURL: string } | null>;
 }
 
 export class TelegramInbound {
@@ -101,6 +106,9 @@ export class TelegramInbound {
   private readonly orchestrator: AgentOrchestrator;
   private readonly onAudit?: TelegramInboundDeps["onAudit"];
   private readonly transcribe?: TelegramInboundDeps["transcribe"];
+  private readonly openaiZugang?: TelegramInboundDeps["openaiZugang"];
+  /** Modus fuer die Antwort auf die gerade laufende Nachricht. */
+  private antwortModus: AntwortModus = "text";
   private readonly getWorkflows?: TelegramInboundDeps["getWorkflows"];
 
   private running = false;
@@ -120,6 +128,7 @@ export class TelegramInbound {
     this.orchestrator = deps.orchestrator;
     this.onAudit = deps.onAudit;
     this.transcribe = deps.transcribe;
+    this.openaiZugang = deps.openaiZugang;
     this.getWorkflows = deps.getWorkflows;
   }
 
@@ -284,6 +293,22 @@ export class TelegramInbound {
     }
     if (!this.running) return;
 
+    // Antwortform (docs/PLAN_TELEGRAM_SPRACHANTWORT.md): Anweisung in der
+    // Nachricht schlaegt den Standard; "immer" stellt den Standard um.
+    const steuerung = parseAntwortSteuerung(text);
+    if (steuerung.dauerhaft && steuerung.modus) {
+      this.store.setConfig({ antwortModus: steuerung.modus });
+      this.onAudit?.({ severity: "info", summary: `Telegram-Antwortmodus auf ${steuerung.modus === "sprache" ? "Sprachnachricht" : "Text"} umgestellt`, metadata: {} });
+    }
+    this.antwortModus = steuerung.modus ?? this.store.getConfig().antwortModus ?? "text";
+    if (steuerung.modus && !steuerung.bereinigt && (images?.length ?? 0) === 0 && this.bufferedImagesLeer()) {
+      // Nur die Anweisung, kein Auftrag: bestaetigen, kein Agenten-Zug.
+      const wie = steuerung.modus === "sprache" ? "per Sprachnachricht" : "per Textnachricht";
+      await this.antworten(steuerung.dauerhaft ? `Alles klar, ab jetzt antworte ich hier ${wie}.` : `Alles klar, die nächste Antwort kommt ${wie}.`);
+      return;
+    }
+    text = steuerung.bereinigt || text;
+
     // v0.1.420 — Wartende Bilder gehören zu DIESER Anweisung.
     const buffered = this.takeBufferedImages();
     const allImages = [...(buffered.images ?? []), ...(images ?? [])];
@@ -300,11 +325,16 @@ export class TelegramInbound {
     // Markdown (Telegram zeigt ** und # als Zeichen), wenige Saetze, keine
     // Zwischenueberschriften. Das Sicherheitsnetz in reply() entfernt
     // Formatierung trotzdem noch einmal.
-    const form =
-      `Das ist eine TEXTNACHRICHT auf dem Handy: KEIN Markdown (keine **, ` +
-      `#, Tabellen, Codebloecke, Aufzaehlungszeichen), keine ` +
-      `Zwischenueberschriften, keine Emojis als Gliederung. Hoechstens ` +
-      `wenige kurze Saetze, Links nackt. `;
+    const form = this.antwortModus === "sprache"
+      ? `Deine Antwort wird dem Nutzer als SPRACHNACHRICHT vorgelesen: ` +
+        `Sprich wie in einem Gespraech, kurze Saetze, hoechstens etwa sechs ` +
+        `Saetze, das Wichtigste zuerst. KEIN Markdown, keine Aufzaehlungen, ` +
+        `keine Tabellen, keine Links oder Kennungen vorlesen, Zahlen gerundet ` +
+        `mit Einheit. `
+      : `Das ist eine TEXTNACHRICHT auf dem Handy: KEIN Markdown (keine **, ` +
+        `#, Tabellen, Codebloecke, Aufzaehlungszeichen), keine ` +
+        `Zwischenueberschriften, keine Emojis als Gliederung. Hoechstens ` +
+        `wenige kurze Saetze, Links nackt. `;
     const hint = confirmEnabled
       ? `[Hinweis: ${form}Wenn eine Aktion ` +
         `eine Bestätigung oder Auswahl braucht, nutze ask_user_choice/` +
@@ -416,7 +446,31 @@ export class TelegramInbound {
         },
       });
     }
-    await this.reply(finalText);
+    await this.antworten(finalText);
+  }
+
+  /**
+   * Antwort in der gewuenschten Form: Text, oder Sprachnachricht ueber die
+   * OpenAI-Stimme. Ohne Schluessel oder bei einem Fehler der Stimme kommt
+   * Text mit einem kurzen Hinweis — die Antwort geht nie verloren.
+   */
+  private async antworten(text: string): Promise<void> {
+    if (this.antwortModus !== "sprache") { await this.reply(text); return; }
+    const cfg = this.store.getConfig();
+    const token = await this.store.getToken();
+    if (!token || !cfg.chatId) return;
+    const gesprochen = markdownZuText(text).replace(/https?:\/\/\S+/g, "").replace(/\s+/g, " ").trim();
+    try {
+      const zugang = (await this.openaiZugang?.()) ?? null;
+      if (!zugang) throw new Error("kein OpenAI-Schlüssel");
+      const ogg = await sprachantwortErzeugen(gesprochen, zugang);
+      await sendVoice(token, cfg.chatId, ogg);
+    } catch (err) {
+      const grund = err instanceof Error ? redactToken(err.message) : String(err);
+      console.warn("[telegram] Sprachantwort fehlgeschlagen, sende Text:", grund);
+      this.onAudit?.({ severity: "warning", summary: `Telegram-Sprachantwort fehlgeschlagen: ${grund.slice(0, 120)}`, metadata: {} });
+      await this.reply(`${text}\n\n(Sprachnachricht nicht möglich: ${grund.includes("Schlüssel") ? "kein OpenAI-Schlüssel hinterlegt" : "Stimme gerade nicht erreichbar"}.)`);
+    }
   }
 
   /** Sammelt die Antwort des Agenten aus den Stream-Frames — plus die
@@ -566,6 +620,10 @@ export class TelegramInbound {
   }
 
   /** Gepufferte Bilder entnehmen (und das Sammelfenster beenden). */
+  private bufferedImagesLeer(): boolean {
+    return this.pendingImages.length === 0 && this.pendingCaptions.length === 0;
+  }
+
   private takeBufferedImages(): {
     images: AgentMessageImage[];
     captions: string[];

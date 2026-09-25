@@ -160,6 +160,39 @@ export function buildTelegramTools(deps: TelegramToolDeps): Tool[] {
           : "Telegram-Meldungen aus (kein Chat verknüpft)",
   });
 
+  // docs/PLAN_TELEGRAM_SPRACHANTWORT.md — Standard-Antwortform im Telegram-Chat.
+  const antwortmodus = defineTool({
+    name: "telegram_antwortmodus",
+    description:
+      "Stellt ein, ob AVA im Telegram-Chat standardmaessig per Textnachricht oder per Sprachnachricht (OpenAI-Stimme) antwortet. Der Nutzer kann das auch direkt in Telegram sagen ('gerne immer per Sprachnachricht'). Fragt vorher nach.",
+    parameters: {
+      type: "object",
+      properties: { modus: { type: "string", enum: ["text", "sprache"] } },
+      required: ["modus"],
+    },
+    schema: yup.object({ modus: yup.mixed<"text" | "sprache">().oneOf(["text", "sprache"]).required() }).noUnknown(true),
+    run: async (args, c) => {
+      const store = requireStore();
+      const value = await c.ui.confirmAction(
+        {
+          kind: "additive",
+          prompt: `Telegram-Antworten ab jetzt standardmäßig ${args.modus === "sprache" ? "als Sprachnachricht (braucht einen OpenAI-Schlüssel; je Antwort wenige Cent)" : "als Textnachricht"}?`,
+          confirmValue: "ja",
+          options: [{ value: "ja", label: "Übernehmen" }, { value: "nein", label: "Abbrechen" }],
+        },
+        c.signal,
+      );
+      if (value !== "ja") return { abgebrochen: true };
+      const cfg = store.setConfig({ antwortModus: args.modus });
+      return { antwortModus: cfg.antwortModus ?? "text" };
+    },
+    preview: (r) => {
+      const x = r as { abgebrochen?: boolean; antwortModus?: string };
+      if (x.abgebrochen) return "abgebrochen";
+      return x.antwortModus === "sprache" ? "Telegram antwortet jetzt per Sprachnachricht" : "Telegram antwortet jetzt per Text";
+    },
+  });
+
   const status = defineTool({
     name: "telegram_status",
     description:
@@ -239,5 +272,6 @@ export function buildTelegramTools(deps: TelegramToolDeps): Tool[] {
     status,
     sendMessageTool,
     disconnect,
+    antwortmodus,
   ];
 }

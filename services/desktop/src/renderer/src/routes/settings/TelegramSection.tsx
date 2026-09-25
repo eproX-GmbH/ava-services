@@ -287,6 +287,22 @@ export function TelegramSection(): JSX.Element {
                 />
                 <span>Rückfragen aufs Handy erlauben</span>
               </label>
+              <label className="field-inline">
+                <input
+                  type="checkbox"
+                  checked={cfg.antwortModus === "sprache"}
+                  disabled={busy}
+                  onChange={(e) =>
+                    void patch({ antwortModus: e.target.checked ? "sprache" : "text" })
+                  }
+                />
+                <span>Standardmäßig als Sprachnachricht antworten</span>
+              </label>
+              <p className="muted small">
+                AVA antwortet dann mit ihrer Stimme (OpenAI, braucht einen OpenAI-Schlüssel; wenige Cent je Antwort).
+                In Telegram steuerst du es je Nachricht: „gerne per Sprachnachricht“ oder „gerne per Textnachricht“;
+                mit „immer“ stellst du den Standard um.
+              </p>
               {cfg.inboundConfirmEnabled && (
                 <p className="muted small">
                   Braucht eine Aktion eine Bestätigung oder Auswahl, stellt
