@@ -55,7 +55,7 @@ const COST_PER_FIRMA: Record<ResearchProvider, Record<ResearchTier, string>> = {
 const MODEL_LABEL: Record<ResearchProvider, Record<ResearchTier, string>> = {
   openai: {
     off: "—",
-    standard: "gpt-5-mini + web_search_preview",
+    standard: "gpt-6-luna + web_search",
     deep: "o4-mini-deep-research-2025-06-26 + web_search",
   },
   anthropic: {

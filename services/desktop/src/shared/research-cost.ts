@@ -10,7 +10,7 @@
 //      research features for that import.
 //
 // The numbers are deliberately rough ranges. Sources:
-//   • openai/standard  — gpt-5-mini + web_search_preview, ~0.02 €/firma
+//   • openai/standard  — gpt-6-luna + web_search, ~0.01 €/firma
 //     (production observation, ~2k input + 0.5k output tokens per call)
 //   • openai/deep      — o4-mini-deep-research-2025-06-26 + web_search,
 //     1–5 €/firma (no production data yet; OpenAI's own docs cite

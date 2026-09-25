@@ -92,7 +92,7 @@ export const PROVIDER_LABEL: Record<LlmProviderKind, string> = {
 const PROVIDER_FEATURES: Record<HostedProviderKind, string> = {
   openai:
     "Schaltet im website-Producer Deep Research (o4-mini-deep-research) " +
-    "sowie Google-Maps-Entity-Resolution + Quellen-Discovery (gpt-5-mini) " +
+    "sowie Google-Maps-Entity-Resolution + Quellen-Discovery (gpt-6-luna) " +
     "frei. Ohne Schlüssel bootet der Producer trotzdem, aber diese " +
     "spezifischen Calls werden zur Laufzeit übersprungen.",
   anthropic:
