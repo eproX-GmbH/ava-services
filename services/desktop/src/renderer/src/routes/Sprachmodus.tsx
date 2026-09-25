@@ -12,7 +12,9 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import type { SpracheBlock, SpracheErgebnis, SpracheRueckfrage, SpracheSitzung, SpracheStand } from "../../../shared/types";
+import { createPortal } from "react-dom";
+import type { SpracheBlock, SpracheErgebnis, SpracheFortschritt, SpracheRueckfrage, SpracheSitzung, SpracheStand } from "../../../shared/types";
+import { LaufStatus, VerbrauchZeile } from "../components/Verbrauch";
 import { RealtimeVerbindung, signalton, fehlerEinordnen, type RealtimeEreignis, type SpracheFehlerArt } from "../lib/realtime";
 import { LiveVerbindung, inHappen } from "../lib/live";
 import { WachwortLauscher, PufferAufnahme } from "../lib/wachwort";
@@ -68,6 +70,7 @@ export function Sprachmodus() {
   const [phase, setPhase] = useState<Phase>("start");
   const [fehler, setFehler] = useState<string | null>(null);
   const [fehlerArt, setFehlerArt] = useState<SpracheFehlerArt | null>(null);
+  const [fehlerDetail, setFehlerDetail] = useState<string | null>(null);
   const [sichtbar, setSichtbar] = useState(false);
   const [aiSpricht, setAiSpricht] = useState(false);
   const [nutzerSpricht, setNutzerSpricht] = useState(false);
@@ -82,6 +85,10 @@ export function Sprachmodus() {
   const [transkript, setTranskript] = useState<Zeile[]>([]);
   const [laufendeZeile, setLaufendeZeile] = useState("");
   const [eingabe, setEingabe] = useState("");
+  // Fortschritt des laufenden Auftrags: Werkzeuge und Verbrauch (wie Claude Code).
+  const [fortschritt, setFortschritt] = useState<SpracheFortschritt | null>(null);
+  const [auftragStart, setAuftragStart] = useState<number | null>(null);
+  const [schritteOffen, setSchritteOffen] = useState(false);
 
   const conversationId = useMemo(() => neueId(), []);
   const verbindung = useRef<RealtimeVerbindung | LiveVerbindung | null>(null);
@@ -279,6 +286,15 @@ export function Sprachmodus() {
     }
   }, [logge, werkzeug]);
 
+  useEffect(() => window.api.sprache.onFortschritt((f) => {
+    if (f.conversationId !== conversationId) return;
+    setFortschritt((alt) => (alt && alt.requestId !== f.requestId ? f : f));
+  }), [conversationId]);
+  useEffect(() => {
+    if (auftragLaeuft) { setAuftragStart((alt) => alt ?? Date.now()); setFortschritt((f) => (f?.fertig ? null : f)); }
+    else setAuftragStart(null);
+  }, [auftragLaeuft]);
+
   // ---- Ergebnisse vom Relay ------------------------------------------------
   useEffect(() => window.api.sprache.onErgebnis((erg: SpracheErgebnis) => {
     if (erg.conversationId !== conversationId) return;
@@ -311,7 +327,7 @@ export function Sprachmodus() {
       onEreignis: ereignis,
       onZustand: (z: "verbindet" | "offen" | "geschlossen" | "fehler", d?: string) => {
         if (z === "offen") { setPhase("wach"); aktiv(); }
-        if (z === "fehler") { const f = fehlerEinordnen(new Error(d ?? "Verbindung verloren")); setFehler(f.message); setFehlerArt(f.art); setPhase("fehler"); }
+        if (z === "fehler") { const f = fehlerEinordnen(new Error(d ?? "Verbindung verloren")); setFehler(f.message); setFehlerArt(f.art); setFehlerDetail(f.detail); setPhase("fehler"); }
       },
     };
     sitzungSeit.current = Date.now();
@@ -328,18 +344,18 @@ export function Sprachmodus() {
       const f = fehlerEinordnen(err);
       // Nur wenn OpenAI die Live-Sitzung ablehnt (400/404), auf Realtime ausweichen;
       // Mikrofon- oder Netzfehler bleiben Fehler.
-      if (!/HTTP 40[04]|Live-Sitzung/.test(f.message)) { setFehler(f.message); setFehlerArt(f.art); setPhase("fehler"); return; }
+      if (!/HTTP 40[04]|Live-Sitzung/.test(f.message)) { setFehler(f.message); setFehlerArt(f.art); setFehlerDetail(f.detail); setPhase("fehler"); return; }
       console.warn("[sprache] GPT Live nicht verfügbar, Rückfall auf Realtime:", f.message);
       // 2) Realtime API (Rueckfall)
       let sitzung: SpracheSitzung;
-      try { sitzung = await window.api.sprache.sitzung(); } catch (e2) { const g = fehlerEinordnen(e2); setFehler(g.message); setFehlerArt(g.art); setPhase("fehler"); return; }
+      try { sitzung = await window.api.sprache.sitzung(); } catch (e2) { const g = fehlerEinordnen(e2); setFehler(g.message); setFehlerArt(g.art); setFehlerDetail(g.detail); setPhase("fehler"); return; }
       const v = new RealtimeVerbindung(callbacks);
       verbindung.current = v;
       protoRef.current = "realtime";
       modellRef.current = sitzung.model;
-      try { await v.verbinden(sitzung.clientSecret, sitzung.model); } catch (e3) { const g = fehlerEinordnen(e3); setFehler(g.message); setFehlerArt(g.art); setPhase("fehler"); return; }
+      try { await v.verbinden(sitzung.clientSecret, sitzung.model); } catch (e3) { const g = fehlerEinordnen(e3); setFehler(g.message); setFehlerArt(g.art); setFehlerDetail(g.detail); setPhase("fehler"); return; }
     }
-    setFehlerArt(null);
+    setFehlerArt(null); setFehlerDetail(null);
     if (zustandRef.current.stumm) verbindung.current?.mikrofon(false);
     if (mitKontext) {
       const letzte = transkriptRef.current.slice(-KONTEXT_ZEILEN).map((z) => `${z.wer === "ava" ? "AVA" : z.wer === "du" ? "Nutzer" : "System"}: ${z.text}`).join("\n");
@@ -543,10 +559,12 @@ export function Sprachmodus() {
   const hinweis = phase === "ruhe"
     ? (stand?.einstellungen.wachwort && stand.whisperBereit ? "Sag „Hey AVA“, um AVA zu aktivieren" : "Tippe auf die Kugel oder drücke die Leertaste, um AVA zu aktivieren")
     : phase === "verbindet" || phase === "start" ? "AVA kommt …"
-    : countdown !== null ? `AVA hört noch ${countdown} s zu` : auftragLaeuft ? "AVA arbeitet …" : stumm ? "Mikrofon stumm. Leertaste gedrückt halten, um zu sprechen." : null;
+    : countdown !== null ? `AVA hört noch ${countdown} s zu` : auftragLaeuft ? null : stumm ? "Mikrofon stumm. Leertaste gedrückt halten, um zu sprechen." : null;
   const hatBloecke = bloecke.length > 0 || rueckfrage !== null;
 
-  return (
+  // Ueber der GANZEN App rendern (Portal an body): innerhalb des Inhalts-
+  // bereichs blieben Kopfzeile und Seitenleiste sichtbar.
+  return createPortal(
     <div className={`sm ${sichtbar ? "sm--sichtbar" : ""} ${hatBloecke ? "sm--mit-bloecken" : ""}`} onClickCapture={(e) => {
       const a = (e.target as HTMLElement).closest("a");
       if (a) { e.preventDefault(); e.stopPropagation(); }
@@ -556,9 +574,43 @@ export function Sprachmodus() {
           <SprachKugel zustand={kugelZustand} pegel={pegel} eingang={eingang} countdown={countdown} size={hatBloecke ? 220 : 360} />
         </button>
         {hinweis && <p className={`sm__hinweis ${countdown !== null ? "sm__hinweis--countdown" : ""}`}>{hinweis}</p>}
+        {(auftragLaeuft || fortschritt) && (
+          <div className="sm__arbeit">
+            {auftragLaeuft && auftragStart !== null ? (
+              <LaufStatus
+                start={auftragStart}
+                usage={fortschritt?.usage ?? null}
+                laufend={(fortschritt?.schritte ?? []).filter((s) => s.status === "laeuft").length}
+                text={(() => { const l = [...(fortschritt?.schritte ?? [])].reverse().find((s) => s.status === "laeuft"); return l ? `${l.label} …` : "AVA arbeitet …"; })()}
+              />
+            ) : fortschritt?.usage ? (
+              <VerbrauchZeile usage={fortschritt.usage} />
+            ) : null}
+            {(fortschritt?.schritte.length ?? 0) > 0 && (
+              <div className="sm__schritte">
+                <button type="button" className="sm__schritte-kopf" onClick={() => setSchritteOffen((o) => !o)} aria-expanded={schritteOffen}>
+                  {auftragLaeuft ? "Führt aus" : "Ausgeführt"}: {fortschritt!.schritte.length} {fortschritt!.schritte.length === 1 ? "Schritt" : "Schritte"}
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" style={{ transform: schritteOffen ? "rotate(90deg)" : "none", transition: "transform 0.15s" }} aria-hidden="true"><path d="M9 6l6 6-6 6" /></svg>
+                </button>
+                {schritteOffen && (
+                  <ul className="sm__schritte-liste">
+                    {fortschritt!.schritte.map((s) => (
+                      <li key={s.id} className={`sm__schritt sm__schritt--${s.status}`}>
+                        <span className="sm__schritt-marke" aria-hidden="true">{s.status === "laeuft" ? <span className="rl__spinner" /> : s.status === "ok" ? "✓" : "✗"}</span>
+                        <span className="sm__schritt-name">{s.label}</span>
+                        {s.preview && <span className="sm__schritt-preview">{s.preview}</span>}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            )}
+          </div>
+        )}
         {phase === "fehler" && fehler && (
           <div className="sm__fehler">
             <p className="sm__fehler-text">{fehler}</p>
+            {fehlerDetail && fehlerDetail !== fehler && <p className="sm__fehler-detail">{fehlerDetail}</p>}
             <p className="sm__fehler-hilfe">
               {fehlerArt === "mikrofon-verweigert" && "AVA braucht das Mikrofon. Erlaube den Zugriff in den Systemeinstellungen und versuche es erneut."}
               {fehlerArt === "kein-mikrofon" && "Schließe ein Mikrofon an oder wähle eines in den Systemeinstellungen aus."}
@@ -610,7 +662,9 @@ export function Sprachmodus() {
       )}
       <div className="sm__leiste">
         <form className="sm__eingabe" onSubmit={(e) => { e.preventDefault(); void tippen(); }}>
-          <button type="button" className="sm__plus" onClick={() => dateiRef.current?.click()} title="Bild anhängen" aria-label="Bild anhängen">+</button>
+          <button type="button" className="sm__plus" onClick={() => dateiRef.current?.click()} title="Bild oder Dokument anhängen" aria-label="Bild oder Dokument anhängen">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>
+          </button>
           <input value={eingabe} onChange={(e) => setEingabe(e.target.value)} placeholder="AVA fragen" aria-label="AVA fragen" onPaste={(e) => { const f = e.clipboardData?.files; if (f && f.length) { e.preventDefault(); void anhaengen(f); } }} />
           <input ref={dateiRef} type="file" accept="image/png,image/jpeg,image/webp,image/gif,.pdf,application/pdf,.xlsx,.xls,.csv,.tsv" multiple style={{ display: "none" }} onChange={(e) => { void anhaengen(e.target.files); e.target.value = ""; }} />
         </form>
@@ -621,6 +675,7 @@ export function Sprachmodus() {
           <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><path d="M6 6l12 12M18 6L6 18" /></svg>
         </button>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

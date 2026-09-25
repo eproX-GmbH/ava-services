@@ -52,22 +52,30 @@ export function SprachKugel({ zustand, pegel, eingang, countdown, size = 360 }: 
       g.clearRect(0, 0, size, size);
       const cx = size / 2, cy = size / 2;
       const hell = w.hell;
+      const dunkel = document.documentElement.classList.contains("dark");
+      // AVA-Aqua (Brand-Palette: 50 #e6faf6, 200 #7ee2cf, 400 #14c8ad,
+      // 500 #00c0a7, 600 #009f8a). Im Ruhezustand entsaettigt und gedaempft.
+      const s = z === "ruhe" ? 0.35 : 1;
+      const mix = (a: number[], b: number[], t: number) => a.map((x, i) => Math.round(x + (b[i]! - x) * t));
+      const grau = [148, 163, 184];
+      const hl = mix(grau, [230, 250, 246], s), mitte = mix(grau, [126, 226, 207], s), rand = mix(grau, [0, 159, 138], s), glanz = mix(grau, [0, 192, 167], s);
+      const f = (c: number[], m: number) => `rgb(${c.map((x) => Math.round(x * m)).join(",")})`;
+      const lum = 0.55 + 0.45 * hell;
       // Aussenschein
-      const schein = g.createRadialGradient(cx, cy, radius * 0.85, cx, cy, radius * 1.35);
-      schein.addColorStop(0, `rgba(120, 140, 255, ${0.18 * hell})`);
-      schein.addColorStop(1, "rgba(120, 140, 255, 0)");
-      g.fillStyle = schein; g.beginPath(); g.arc(cx, cy, radius * 1.35, 0, Math.PI * 2); g.fill();
-      // Kugel: hell blau-weiss wie das Vorbild, im Ruhezustand grau-blau
-      const grad = g.createRadialGradient(cx - radius * 0.35, cy - radius * 0.45, radius * 0.1, cx, cy, radius);
-      const s = z === "ruhe" ? 0.45 : 1;
-      grad.addColorStop(0, `rgba(${Math.round(250 * hell)}, ${Math.round(252 * hell)}, 255, 1)`);
-      grad.addColorStop(0.55, `rgba(${Math.round((200 + 20 * s) * hell)}, ${Math.round((212 + 10 * s) * hell)}, ${Math.round(255 * Math.max(hell, 0.6))}, 1)`);
-      grad.addColorStop(1, `rgba(${Math.round((140 - 40 * (1 - s)) * hell)}, ${Math.round((160 - 30 * (1 - s)) * hell)}, ${Math.round(245 * Math.max(hell, 0.55))}, 1)`);
+      const schein = g.createRadialGradient(cx, cy, radius * 0.8, cx, cy, radius * 1.4);
+      schein.addColorStop(0, `rgba(${glanz.join(",")}, ${(dunkel ? 0.32 : 0.22) * hell})`);
+      schein.addColorStop(1, `rgba(${glanz.join(",")}, 0)`);
+      g.fillStyle = schein; g.beginPath(); g.arc(cx, cy, radius * 1.4, 0, Math.PI * 2); g.fill();
+      // Kugel mit Lichtpunkt oben links
+      const grad = g.createRadialGradient(cx - radius * 0.35, cy - radius * 0.42, radius * 0.08, cx, cy, radius);
+      grad.addColorStop(0, f(hl, lum));
+      grad.addColorStop(0.5, f(mitte, lum));
+      grad.addColorStop(1, f(rand, lum));
       g.fillStyle = grad; g.beginPath(); g.arc(cx, cy, radius, 0, Math.PI * 2); g.fill();
       // Countdown-Ring in den letzten Sekunden vor dem Ruhezustand
       if (cd !== null && cd > 0) {
         const anteil = Math.min(1, cd / 8);
-        g.strokeStyle = `rgba(90, 110, 240, ${0.35 + 0.4 * (1 - anteil)})`;
+        g.strokeStyle = `rgba(0, 159, 138, ${0.35 + 0.45 * (1 - anteil)})`;
         g.lineWidth = 3;
         g.beginPath(); g.arc(cx, cy, radius * 1.12, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * anteil); g.stroke();
       }

@@ -11,7 +11,9 @@ export interface RealtimeEreignis { type: string; [k: string]: unknown }
 /** Fehlerbild fuer die Oberflaeche (S6): Ursache, Text, was hilft. */
 export type SpracheFehlerArt = "mikrofon-verweigert" | "kein-mikrofon" | "netz" | "schluessel" | "kontingent" | "sonstiges";
 export class SpracheFehler extends Error {
-  constructor(public readonly art: SpracheFehlerArt, message: string) { super(message); this.name = "SpracheFehler"; }
+  /** Originalmeldung (z. B. von OpenAI), klein unter der Erklaerung gezeigt. */
+  public readonly detail: string | null;
+  constructor(public readonly art: SpracheFehlerArt, message: string, detail?: string | null) { super(message); this.name = "SpracheFehler"; this.detail = detail ?? null; }
 }
 
 export function fehlerEinordnen(err: unknown): SpracheFehler {
@@ -19,11 +21,11 @@ export function fehlerEinordnen(err: unknown): SpracheFehler {
   const e = err as { name?: string; message?: string } | null;
   const name = e?.name ?? "";
   const msg = e?.message ?? String(err);
-  if (name === "NotAllowedError" || name === "SecurityError" || /permission|verweigert|denied/i.test(msg)) return new SpracheFehler("mikrofon-verweigert", "Der Zugriff auf das Mikrofon wurde verweigert.");
-  if (name === "NotFoundError" || name === "OverconstrainedError" || /kein mikrofon|no audio|device not found/i.test(msg)) return new SpracheFehler("kein-mikrofon", "Kein Mikrofon gefunden.");
-  if (/HTTP 401|HTTP 403|invalid_api_key|incorrect api key|schl(ü|ue)ssel/i.test(msg)) return new SpracheFehler("schluessel", "Der OpenAI-Schlüssel wurde abgelehnt.");
-  if (/HTTP 429|quota|kontingent|insufficient_quota|rate limit/i.test(msg)) return new SpracheFehler("kontingent", "Das Kontingent bei OpenAI ist erschöpft oder das Limit erreicht.");
-  if (/Failed to fetch|NetworkError|ECONN|ENOTFOUND|Verbindung (failed|disconnected)|ice|timeout|upstream_unreachable|HTTP 5\d\d/i.test(msg)) return new SpracheFehler("netz", "Keine Verbindung zu OpenAI.");
+  if (name === "NotAllowedError" || name === "SecurityError" || /permission|verweigert|denied/i.test(msg)) return new SpracheFehler("mikrofon-verweigert", "Der Zugriff auf das Mikrofon wurde verweigert.", msg.slice(0, 240));
+  if (name === "NotFoundError" || name === "OverconstrainedError" || /kein mikrofon|no audio|device not found/i.test(msg)) return new SpracheFehler("kein-mikrofon", "Kein Mikrofon gefunden.", msg.slice(0, 240));
+  if (/HTTP 401|HTTP 403|invalid_api_key|incorrect api key|schl(ü|ue)ssel/i.test(msg)) return new SpracheFehler("schluessel", "Der OpenAI-Schlüssel wurde abgelehnt.", msg.slice(0, 240));
+  if (/HTTP 429|quota|kontingent|insufficient_quota|rate limit/i.test(msg)) return new SpracheFehler("kontingent", "Das Kontingent bei OpenAI ist erschöpft oder das Limit erreicht.", msg.slice(0, 240));
+  if (/Failed to fetch|NetworkError|ECONN|ENOTFOUND|Verbindung (failed|disconnected)|\bICE\b|timeout|upstream_unreachable|HTTP 5\d\d/i.test(msg)) return new SpracheFehler("netz", "Keine Verbindung zu OpenAI.", msg.slice(0, 240));
   return new SpracheFehler("sonstiges", msg || "Unbekannter Fehler.");
 }
 

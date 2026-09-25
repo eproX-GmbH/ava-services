@@ -115,6 +115,22 @@ export interface SpracheRueckfrage {
   prompt: string;
   options?: AgentChoiceOption[];
 }
+/** Ein Werkzeugschritt eines laufenden Auftrags (Sprachmodus-Anzeige). */
+export interface SpracheSchritt {
+  id: string;
+  name: string;
+  label: string;
+  status: "laeuft" | "ok" | "fehler";
+  preview: string | null;
+}
+/** Laufender Fortschritt eines Auftrags, per Ereignis `sprache:fortschritt`. */
+export interface SpracheFortschritt {
+  requestId: string;
+  conversationId: string;
+  schritte: SpracheSchritt[];
+  usage: AgentTurnUsage | null;
+  fertig: boolean;
+}
 /** Ergebnis eines Auftrags an den Orchestrator, per Ereignis `sprache:ergebnis`. */
 export interface SpracheErgebnis {
   requestId: string;
@@ -729,6 +745,22 @@ export interface AgentMessage {
   images?: AgentMessageImage[];
   /** Sprachmodus (docs/PLAN_SPRACHMODUS.md): Zug kam gesprochen bzw. ueber den Relay. */
   quelle?: "sprache";
+  /** Verbrauch der ganzen Anfrage (alle Schritte), an der letzten Antwort. */
+  usage?: AgentTurnUsage;
+}
+
+/** Verbrauch einer Anfrage ueber alle Modellschritte (2026-09-25). */
+export interface AgentTurnUsage {
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  cacheWriteTokens: number;
+  /** Geschaetzte Kosten in USD; null = unbekannt oder Abo (kein API-Guthaben). */
+  costUsd: number | null;
+  durationMs: number;
+  model: string;
+  /** Modellaufrufe in dieser Anfrage. */
+  steps: number;
 }
 
 /** Inline-Bild als base64. mimeType ist immer `image/<format>`
@@ -882,7 +914,8 @@ export type AgentStreamFrame =
   /** v0.1.649 (Chat-Vorschlaege V4) — 0 bis 3 Anstoesse nach einem Turn, haengen
    *  unter der Assistenten-Nachricht messageId; verschwinden beim naechsten Turn. */
   | { kind: "suggestions"; requestId: string; conversationId: string; messageId: string; chips: import("./nutzerstand-types").Chip[] }
-  | { kind: "done"; requestId: string; conversationId: string; messageId: string };
+  | { kind: "usage"; requestId: string; conversationId: string; usage: AgentTurnUsage }
+  | { kind: "done"; requestId: string; conversationId: string; messageId: string; usage?: AgentTurnUsage };
 
 /** Renderer → main. Resolves a pending `choice-request`. */
 export interface AgentChoiceAnswer {

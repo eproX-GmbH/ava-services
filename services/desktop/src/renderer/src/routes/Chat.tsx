@@ -1,4 +1,5 @@
 import { useFeature } from "../store/policy";
+import { LaufStatus, VerbrauchZeile } from "../components/Verbrauch";
 import { VorschlagChips, auftragMitKontext } from "../components/chat/VorschlagChips";
 import type { Chip, StartseitenChips } from "../../../shared/nutzerstand-types";
 import {
@@ -120,6 +121,8 @@ interface UiMessage {
   images?: Array<{ base64: string; mimeType: string; filename?: string }>;
   /** Sprachmodus: Zug wurde gesprochen bzw. kam ueber den Relay. */
   quelle?: "sprache";
+  /** Verbrauch der ganzen Anfrage, an der letzten Antwort (dauerhaft). */
+  usage?: import("../../../shared/types").AgentTurnUsage;
   pending?: boolean;
   /** Inline tool-action row. When set, the message is rendered as a
    *  timeline step instead of a chat bubble. */
@@ -217,6 +220,9 @@ export function Chat() {
   const [input, setInput] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [thinking, setThinking] = useState(false);
+  // Verbrauch der laufenden Anfrage (live aus den usage-Frames).
+  const [laufUsage, setLaufUsage] = useState<import("../../../shared/types").AgentTurnUsage | null>(null);
+  const [laufStart, setLaufStart] = useState<number | null>(null);
   // Werkzeug-Laeufe, die der Nutzer nach dem Zusammenklappen wieder
   // aufgeklappt hat (Schluessel: erste Schritt-Kennung). Nicht persistiert:
   // Beim erneuten Oeffnen eines Chats ist alles zu.
@@ -357,7 +363,7 @@ export function Chat() {
       if (m.role === "assistant") {
         // If the assistant emitted any text content, render it as a bubble.
         if (m.content && m.content.trim().length > 0) {
-          out.push({ id: m.id, role: "assistant", content: m.content });
+          out.push({ id: m.id, role: "assistant", content: m.content, ...(m.usage ? { usage: m.usage } : {}) });
         }
         for (const tc of m.toolCalls ?? []) {
           // ask_user_choice was a transient prompt — skip on replay.
@@ -736,12 +742,15 @@ export function Chat() {
         });
       } else if (frame.kind === "suggestions") {
         setTurnChips({ messageId: frame.messageId, chips: frame.chips });
+      } else if (frame.kind === "usage") {
+        setLaufUsage(frame.usage);
       } else if (frame.kind === "done") {
         setMessages((prev) =>
           prev.map((m) =>
-            m.id === frame.messageId ? { ...m, pending: false } : m,
+            m.id === frame.messageId ? { ...m, pending: false, ...(frame.usage ? { usage: frame.usage } : {}) } : m,
           ),
         );
+        setLaufUsage(null);
         // Clear the spinner. Critical on abort + tool-only turns
         // (no `token` frame ever arrives, so without this the
         // "denkt nach…" indicator stays forever).
@@ -962,6 +971,11 @@ export function Chat() {
   const inFlight =
     !!status?.inFlightRequestId &&
     status?.inFlightConversationId === conversationId;
+  // Laufzeit ab Beginn der Anfrage; Verbrauch zuruecksetzen.
+  useEffect(() => {
+    if (inFlight) { setLaufStart((alt) => alt ?? Date.now()); }
+    else { setLaufStart(null); setLaufUsage(null); }
+  }, [inFlight]);
   const canSend = useMemo(
     () =>
       !!status?.ready &&
@@ -2032,11 +2046,21 @@ export function Chat() {
                       <VorschlagChips chips={turnChips.chips} onPick={(c) => void sendAuftrag(c, "gespraech")} kompakt titel="Nächster Schritt?" />
                     )}
                     {m.pending && <span className="chat-cursor">▍</span>}
+                    {m.role === "assistant" && !m.pending && m.usage && <VerbrauchZeile usage={m.usage} />}
                   </div>
                 </div>
               );
             })}
-            {thinking && <ThinkingRow />}
+            {inFlight && laufStart !== null ? (
+              <LaufStatus
+                start={laufStart}
+                usage={laufUsage}
+                laufend={messages.filter((m) => m.activity?.status === "running").length}
+                text={thinking ? "Denkt nach …" : "Arbeitet …"}
+              />
+            ) : (
+              thinking && <ThinkingRow />
+            )}
             {error && <ChatErrorBanner message={error} onCleared={() => setError(null)} />}
           </div>
           {composer}

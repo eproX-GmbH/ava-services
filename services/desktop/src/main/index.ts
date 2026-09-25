@@ -2158,6 +2158,13 @@ const agent = new AgentOrchestrator({
   // keine API-Kosten anfallen; Ollama → USD=null, weil lokal). Fire-
   // and-forget; jeder Fehler wird intern gefangen, damit der Chat
   // niemals an einem Logging-Issue scheitert.
+  estimateCost: ({ provider, model, inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens }) => {
+    if (provider === "ollama") return 0;
+    // Abo-Zugaenge (Claude-/ChatGPT-Abo) zaehlen nicht gegen API-Guthaben.
+    if (provider === "anthropic" && (providers.getConfig().anthropicAuthMode ?? "api-key") === "subscription") return null;
+    if (provider === "openai" && (providers.getConfig().openaiAuthMode ?? "api-key") === "subscription") return null;
+    return estimateUsd({ provider: provider as never, model, inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens });
+  },
   onUsage: ({ provider, model, conversationId, usage }) => {
     try {
       const inputTokens = usage.inputTokens ?? 0;
@@ -5252,9 +5259,12 @@ app.whenReady().then(async () => {
 
   // ---- Sprachmodus (docs/PLAN_SPRACHMODUS.md) -----------------------------
   const spracheStore = SpracheStore.shared();
-  const spracheRelay = new SpracheRelay(agent, (e) => {
-    for (const win of BrowserWindow.getAllWindows()) win.webContents.send("sprache:ergebnis", e);
-  });
+  const spracheRelay = new SpracheRelay(
+    agent,
+    (e) => { for (const win of BrowserWindow.getAllWindows()) win.webContents.send("sprache:ergebnis", e); },
+    (f) => { for (const win of BrowserWindow.getAllWindows()) win.webContents.send("sprache:fortschritt", f); },
+    (name) => agentRegistry.get(name)?.summary ?? name,
+  );
   const spracheStand = () => {
     const q = providers.keySource("openai");
     const orgHat = Boolean(providers.getOrgProviders().openai);

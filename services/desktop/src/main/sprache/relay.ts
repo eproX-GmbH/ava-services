@@ -8,7 +8,7 @@
 // ohne dass etwas davon ein zweites Mal gebaut wird.
 
 import type { AgentOrchestrator } from "../agent/orchestrator";
-import type { AgentStreamFrame, SpracheBlock, SpracheErgebnis, SpracheRueckfrage } from "../../shared/types";
+import type { AgentStreamFrame, SpracheBlock, SpracheErgebnis, SpracheRueckfrage, SpracheSchritt, SpracheFortschritt } from "../../shared/types";
 
 const CHART_RE = /```chart\s*\n([\s\S]*?)\n```/g;
 const BC_RE = /```buying-center\s*\n([\s\S]*?)\n```/g;
@@ -55,6 +55,8 @@ interface Lauf {
   conversationId: string;
   text: string;
   toolPreviews: string[];
+  schritte: SpracheSchritt[];
+  usage: import("../../shared/types").AgentTurnUsage | null;
 }
 
 export class SpracheRelay {
@@ -63,6 +65,10 @@ export class SpracheRelay {
   constructor(
     private readonly orchestrator: AgentOrchestrator,
     private readonly senden: (e: SpracheErgebnis) => void,
+    /** Laufender Fortschritt (Werkzeuge, Tokens) fuer die Anzeige unter der Kugel. */
+    private readonly fortschritt: (f: SpracheFortschritt) => void = () => undefined,
+    /** Lesbarer Name eines Werkzeugs (Tool.summary), sonst der technische Name. */
+    private readonly werkzeugName: (name: string) => string = (n) => n,
   ) {
     orchestrator.on("stream", (f: AgentStreamFrame) => this.frame(f));
   }
@@ -72,7 +78,7 @@ export class SpracheRelay {
     if (this.laufend) return { laeuft: false, requestId: null, grund: "Ein Auftrag läuft noch. Warte auf sein Ergebnis." };
     try {
       const r = this.orchestrator.send({ conversationId: input.conversationId, message: input.text, images: input.images, quelle: "sprache" });
-      this.laufend = { requestId: r.requestId, conversationId: input.conversationId, text: "", toolPreviews: [] };
+      this.laufend = { requestId: r.requestId, conversationId: input.conversationId, text: "", toolPreviews: [], schritte: [], usage: null };
       return { laeuft: true, requestId: r.requestId };
     } catch (err) {
       return { laeuft: false, requestId: null, grund: err instanceof Error ? err.message : String(err) };
@@ -93,6 +99,10 @@ export class SpracheRelay {
     this.laufend = null;
   }
 
+  private melden(l: Lauf, fertig = false): void {
+    this.fortschritt({ requestId: l.requestId, conversationId: l.conversationId, schritte: l.schritte.map((s) => ({ ...s })), usage: l.usage, fertig });
+  }
+
   private frame(f: AgentStreamFrame): void {
     const l = this.laufend;
     if (!l || f.requestId !== l.requestId) return;
@@ -100,8 +110,20 @@ export class SpracheRelay {
       case "token":
         l.text += f.delta;
         return;
-      case "tool-result":
+      case "tool-call":
+        l.schritte.push({ id: f.toolCall.id, name: f.toolCall.name, label: this.werkzeugName(f.toolCall.name), status: "laeuft", preview: null });
+        this.melden(l);
+        return;
+      case "tool-result": {
         l.toolPreviews.push(f.preview);
+        const s = l.schritte.find((x) => x.id === f.toolCallId);
+        if (s) { s.status = f.ok ? "ok" : "fehler"; s.preview = f.preview.slice(0, 160); }
+        this.melden(l);
+        return;
+      }
+      case "usage":
+        l.usage = f.usage;
+        this.melden(l);
         return;
       case "choice-request":
       case "text-request":
@@ -120,6 +142,8 @@ export class SpracheRelay {
         this.laufend = null;
         return;
       case "done": {
+        if (f.usage) l.usage = f.usage;
+        this.melden(l, true);
         const bloecke = bloeckeAus(l.text);
         let text = textFuerSprache(l.text);
         if (!text && l.toolPreviews.length) text = l.toolPreviews.join("\n");

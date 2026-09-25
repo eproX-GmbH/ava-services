@@ -156,6 +156,8 @@ export interface AgentOrchestratorOptions {
     conversationId: string;
     usage: import("./providers/types").LlmUsageSnapshot;
   }) => void;
+  /** 2026-09-25 — Kosten einer Anfrage schaetzen (USD; null = Abo/unbekannt). */
+  estimateCost?: (args: { provider: string; model: string; inputTokens: number; outputTokens: number; cacheReadTokens: number; cacheWriteTokens: number }) => number | null;
   /**
    * v0.1.405 — Tages-Token-Limit-Gate. Vor jedem Turn (Chat UND Agent)
    * aufgerufen; liefert den aktuellen Tagesstand. Ist `exceeded === true`,
@@ -241,6 +243,7 @@ export class AgentOrchestrator extends EventEmitter {
    *  sobald ein Turn beendet ist und der Provider Token-Counts
    *  geliefert hat. */
   private readonly onUsage?: AgentOrchestratorOptions["onUsage"];
+  private readonly estimateCost?: AgentOrchestratorOptions["estimateCost"];
   /** v0.1.405 — Tages-Token-Limit-Gate (siehe Options-Doc). */
   private readonly checkDailyLimit?: AgentOrchestratorOptions["checkDailyLimit"];
   private readonly onAudit?: AgentOrchestratorOptions["onAudit"];
@@ -284,6 +287,7 @@ export class AgentOrchestrator extends EventEmitter {
     this.vorschlaegeNachTurn = opts.vorschlaegeNachTurn;
     this.skillsPrefs = opts.skillsPrefs;
     this.onUsage = opts.onUsage;
+    this.estimateCost = opts.estimateCost;
     this.checkDailyLimit = opts.checkDailyLimit;
     this.onAudit = opts.onAudit;
     this.getAutonomyLevel = opts.getAutonomyLevel;
@@ -977,6 +981,29 @@ export class AgentOrchestrator extends EventEmitter {
     slashNudgedTool?: string | null;
   }): Promise<void> {
     const { requestId, conversation, provider, signal, slashNudgedTool } = args;
+    // 2026-09-25 — Verbrauch der ganzen Anfrage (alle Schritte) fuer die
+    // Anzeige im Chat ("12 s · 8.450 Tokens · ≈ 0,02 $").
+    const turnStart = Date.now();
+    const turnUsage = { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, steps: 0, model: "", providerKind: "" };
+    const turnUsageSnapshot = (): import("../../shared/types").AgentTurnUsage => ({
+      inputTokens: turnUsage.inputTokens, outputTokens: turnUsage.outputTokens,
+      cacheReadTokens: turnUsage.cacheReadTokens, cacheWriteTokens: turnUsage.cacheWriteTokens,
+      costUsd: turnUsage.providerKind === "ollama" ? 0 : this.estimateCost
+        ? this.estimateCost({ provider: turnUsage.providerKind, model: turnUsage.model, inputTokens: turnUsage.inputTokens, outputTokens: turnUsage.outputTokens, cacheReadTokens: turnUsage.cacheReadTokens, cacheWriteTokens: turnUsage.cacheWriteTokens })
+        : null,
+      durationMs: Date.now() - turnStart, model: turnUsage.model, steps: turnUsage.steps,
+    });
+    const turnUsageAddieren = (u: import("./providers/types").LlmUsageSnapshot): void => {
+      const st = provider.getStatus();
+      turnUsage.inputTokens += u.inputTokens ?? 0;
+      turnUsage.outputTokens += u.outputTokens ?? 0;
+      turnUsage.cacheReadTokens += u.cacheReadTokens ?? 0;
+      turnUsage.cacheWriteTokens += u.cacheWriteTokens ?? 0;
+      turnUsage.steps += 1;
+      turnUsage.model = st.model ?? turnUsage.model;
+      turnUsage.providerKind = st.kind;
+      this.emitFrame({ kind: "usage", requestId, conversationId: conversation.id, usage: turnUsageSnapshot() });
+    };
 
     // v0.1.227 — Tracking pro Turn für den Anti-Loop-Wächter unten:
     // wie oft kam dieselbe (Tool-Name + serialisierte Args)-Kombi vor,
@@ -1190,6 +1217,7 @@ export class AgentOrchestrator extends EventEmitter {
           // v0.1.210 — Usage einer fertigen Turn (kommt nur auf done-Frame).
           // Fire-and-forget — schluckt Fehler intern, der Chat-Loop läuft
           // weiter, egal ob der Store gerade aufnimmt oder nicht.
+          if (frame.usage) turnUsageAddieren(frame.usage);
           if (frame.usage && this.onUsage) {
             try {
               const status = provider.getStatus();
@@ -1217,6 +1245,7 @@ export class AgentOrchestrator extends EventEmitter {
           content: assistantContent,
           toolCalls,
           createdAt: Date.now(),
+          ...(!toolCalls || toolCalls.length === 0 ? { usage: turnUsageSnapshot() } : {}),
         };
         this.appendMessage(conversation, assistantMessage);
 
@@ -1228,6 +1257,7 @@ export class AgentOrchestrator extends EventEmitter {
             requestId,
             conversationId: conversation.id,
             messageId: assistantId,
+            usage: assistantMessage.usage,
           });
           if (!signal.aborted) this.nachTurn(conversation, requestId, assistantId, assistantContent, turnToolNamen);
           return;
@@ -1444,6 +1474,7 @@ export class AgentOrchestrator extends EventEmitter {
             delta: frame.contentDelta,
           });
         }
+        if (frame.usage) turnUsageAddieren(frame.usage);
         if (frame.usage && this.onUsage) {
           try {
             const status = provider.getStatus();
@@ -1474,11 +1505,13 @@ export class AgentOrchestrator extends EventEmitter {
           delta: wrapUpContent,
         });
       }
+      const wrapUpUsage = turnUsageSnapshot();
       this.appendMessage(conversation, {
         id: wrapUpId,
         role: "assistant",
         content: wrapUpContent,
         createdAt: Date.now(),
+        usage: wrapUpUsage,
       });
       this.auditWriteClaim(conversation, wrapUpContent, writesExecuted);
       this.emitFrame({
@@ -1486,6 +1519,7 @@ export class AgentOrchestrator extends EventEmitter {
         requestId,
         conversationId: conversation.id,
         messageId: wrapUpId,
+        usage: wrapUpUsage,
       });
       if (!signal.aborted) this.nachTurn(conversation, requestId, wrapUpId, wrapUpContent, turnToolNamen);
       return;

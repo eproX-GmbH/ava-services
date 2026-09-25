@@ -8678,45 +8678,82 @@ input, textarea, select, button, a, summary, details,
 .rl-block__liste dd { margin: 0; }
 @media (max-width: 640px) { .rl-block__liste { grid-template-columns: 1fr; } }
 
-/* ---- Sprachmodus (docs/PLAN_SPRACHMODUS.md) ------------------------------- */
+/* ---- Sprachmodus (docs/PLAN_SPRACHMODUS.md) -------------------------------
+ * Eigene Flaeche ueber der ganzen App (Portal an body). Folgt dem Farbmodus:
+ * hell = Weiss, dunkel = App-Hintergrund. Akzent = AVA-Aqua. */
+.sm {
+  --sm-bg: #ffffff; --sm-fg: #0a1f2a; --sm-muted: #5a6b76; --sm-feld: #f2f7f6; --sm-rand: #dde6e4;
+  --sm-feld-hover: #e6efed; --sm-akzent: var(--color-brand-600, #009f8a); --sm-fehler: #b42318;
+  --sm-x-bg: #0a1f2a; --sm-x-fg: #ffffff; --sm-block: #f6f9f8;
+}
+:root.dark .sm {
+  --sm-bg: var(--color-bg-0, #0f172a); --sm-fg: #f1f5f9; --sm-muted: #94a3b8; --sm-feld: var(--color-bg-1, #1e293b); --sm-rand: #334155;
+  --sm-feld-hover: #273449; --sm-akzent: var(--color-brand-400, #14c8ad); --sm-fehler: #f87171;
+  --sm-x-bg: #f1f5f9; --sm-x-fg: #0f172a; --sm-block: #162033;
+}
 .chat-composer__sprache { color: var(--accent); }
-.sm { position: fixed; inset: 0; z-index: 1000; background: #fff; color: #0a1f2a; display: flex; flex-direction: column; opacity: 0; transition: opacity 0.4s ease; user-select: none; }
+.sm { position: fixed; inset: 0; z-index: 5000; background: var(--sm-bg); color: var(--sm-fg); display: flex; flex-direction: column; opacity: 0; transition: opacity 0.4s ease; user-select: none; -webkit-app-region: no-drag; }
 .sm--sichtbar { opacity: 1; }
-.sm__buehne { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; padding: 24px 16px 0; overflow: hidden; transition: justify-content 0.5s; }
-.sm--mit-bloecken .sm__buehne { justify-content: flex-start; padding-top: 32px; overflow-y: auto; }
+.sm__buehne { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; padding: 40px 16px 0; overflow: hidden; }
+.sm--mit-bloecken .sm__buehne { justify-content: flex-start; padding-top: 48px; overflow-y: auto; }
 .sm__kugel-knopf { background: none; border: 0; padding: 0; cursor: default; opacity: 0; transform: scale(0.9); transition: opacity 0.6s ease 0.25s, transform 0.6s ease 0.25s; }
 .sm--sichtbar .sm__kugel-knopf { opacity: 1; transform: scale(1); }
 .sm__kugel-knopf--ruhe { cursor: pointer; }
 .sk-kugel { display: block; transition: width 0.5s ease, height 0.5s ease; }
-.sm__hinweis { margin: 0; color: #5a6b76; font-size: 15px; min-height: 22px; transition: color 0.3s; }
-.sm__hinweis--countdown { color: #3f4fd6; }
-.sm__fehler { max-width: 520px; text-align: center; font-size: 14px; }
-.sm__fehler-text { margin: 0 0 6px; color: #b42318; font-weight: 600; }
-.sm__fehler-hilfe { margin: 0 0 10px; color: #5a6b76; }
+.sm__hinweis { margin: 0; color: var(--sm-muted); font-size: 15px; min-height: 22px; transition: color 0.3s; }
+.sm__hinweis--countdown { color: var(--sm-akzent); }
+.sm__fehler { max-width: 540px; text-align: center; font-size: 14px; }
+.sm__fehler-text { margin: 0 0 6px; color: var(--sm-fehler); font-weight: 600; }
+.sm__fehler-hilfe { margin: 0 0 6px; color: var(--sm-muted); }
+.sm__fehler-detail { margin: 0 0 10px; color: var(--sm-muted); font-size: 12px; font-family: var(--font-mono, ui-monospace, monospace); word-break: break-word; user-select: text; }
 .sm__fehler-knoepfe { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
+/* Knoepfe im Sprachmodus: eigene Farben, damit sie in beiden Modi lesbar sind. */
+.sm .btn { background: var(--sm-feld); color: var(--sm-fg); border: 1px solid var(--sm-rand); text-decoration: none; }
+.sm .btn:hover { background: var(--sm-feld-hover); color: var(--sm-fg); }
 .sm__bloecke { width: min(920px, 100%); display: grid; gap: 14px; margin-top: 8px; padding-bottom: 24px; user-select: text; }
-.sm__block { background: #f4f6f9; border: 1px solid #e3e8ee; border-radius: 14px; padding: 12px 14px; color: #0a1f2a; animation: sm-auf 0.4s ease; }
-.sm__block--gepinnt { border-color: #b9c4ff; }
+.sm__block { background: var(--sm-block); border: 1px solid var(--sm-rand); border-radius: 14px; padding: 12px 14px; color: var(--sm-fg); animation: sm-auf 0.4s ease; }
+.sm__block--gepinnt { border-color: var(--sm-akzent); }
 .sm__block-kopf { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 6px; }
 .sm__block-knoepfe { display: inline-flex; gap: 6px; }
 .sm__rueckfrage p { margin: 0 0 8px; font-size: 15px; }
 .sm__rueckfrage-optionen { display: flex; flex-wrap: wrap; gap: 8px; }
 @keyframes sm-auf { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
-.sm__transkript { margin: 0 auto; max-width: 760px; padding: 0 16px; color: #5a6b76; font-size: 14px; text-align: center; min-height: 20px; }
+.sm__transkript { margin: 0 auto; max-width: 760px; padding: 0 16px; color: var(--sm-muted); font-size: 14px; text-align: center; min-height: 20px; }
+.sm__transkript--meldung { color: var(--sm-fehler); }
 .sm__leiste { display: flex; align-items: center; gap: 10px; padding: 14px 16px 22px; justify-content: center; }
 .sm__eingabe { flex: 0 1 560px; position: relative; display: flex; align-items: center; }
-.sm__eingabe input[type="text"], .sm__eingabe input:not([type]) { width: 100%; box-sizing: border-box; border: 1px solid #dde3ea; background: #f4f6f9; color: #0a1f2a; border-radius: 999px; padding: 14px 20px 14px 48px; font-size: 16px; outline: none; }
-.sm__eingabe input:focus { border-color: #9aa7ff; }
-.sm__plus { position: absolute; left: 8px; width: 34px; height: 34px; border-radius: 50%; border: 0; background: transparent; color: #5a6b76; font-size: 24px; line-height: 1; cursor: pointer; }
-.sm__plus:hover { background: #e9edf3; color: #0a1f2a; }
-.sm__rund { width: 50px; height: 50px; border-radius: 50%; border: 1px solid #dde3ea; background: #f4f6f9; color: #0a1f2a; display: inline-flex; align-items: center; justify-content: center; cursor: pointer; }
-.sm__rund:hover { background: #e9edf3; }
-.sm__rund--aus { color: #b42318; }
-.sm__rund--x { background: #0a1f2a; color: #fff; border-color: #0a1f2a; }
-.sm__rund--x:hover { background: #1d3340; }
-/* Die App darunter darf nicht durchscheinen, auch im Dunkelmodus: echtes Weiss (Entscheidung 2026-09-24). */
-.sm .panel, .sm .bc-karte { background: #fff; color: #0a1f2a; }
+.sm__eingabe input:not([type="file"]) { width: 100%; box-sizing: border-box; height: 50px; border: 1px solid var(--sm-rand); background: var(--sm-feld); color: var(--sm-fg); border-radius: 999px; padding: 0 20px 0 50px; font-size: 16px; outline: none; }
+.sm__eingabe input:not([type="file"])::placeholder { color: var(--sm-muted); }
+.sm__eingabe input:not([type="file"]):focus { border-color: var(--sm-akzent); }
+.sm__plus { position: absolute; left: 8px; top: 50%; transform: translateY(-50%); width: 34px; height: 34px; border-radius: 50%; border: 0; padding: 0; background: transparent; color: var(--sm-muted); display: flex; align-items: center; justify-content: center; cursor: pointer; }
+.sm__plus:hover { background: var(--sm-feld-hover); color: var(--sm-fg); }
+.sm__rund { width: 50px; height: 50px; flex: none; border-radius: 50%; border: 1px solid var(--sm-rand); background: var(--sm-feld); color: var(--sm-fg); display: inline-flex; align-items: center; justify-content: center; padding: 0; cursor: pointer; }
+.sm__rund:hover { background: var(--sm-feld-hover); }
+.sm__rund--aus { color: var(--sm-fehler); }
+.sm__rund--x { background: var(--sm-x-bg); color: var(--sm-x-fg); border-color: var(--sm-x-bg); }
+.sm__rund--x:hover { background: var(--sm-x-bg); filter: brightness(1.15); }
+.sm .panel, .sm .bc-karte { background: var(--sm-block); color: var(--sm-fg); }
 @media (prefers-reduced-motion: reduce) { .sm, .sm__kugel-knopf, .sk-kugel { transition: none; } .sm__block { animation: none; } }
 /* Sprachmodus: Hinweise der App zurueckhalten, bis das Gespraech vorbei ist. */
-body.sprachmodus .upstream-banner, body.sprachmodus .tier-banner, body.sprachmodus .app-shell > [role="status"] { display: none !important; }
+body.sprachmodus .upstream-banner, body.sprachmodus .tier-banner, body.sprachmodus .update-banner, body.sprachmodus .ollama-update-banner, body.sprachmodus .app-shell > [role="status"] { display: none !important; }
 .sm__transkript--meldung { color: #b42318; }
+
+/* ---- Verbrauch je Anfrage und Laufstatus (2026-09-25, wie Claude Code) ---- */
+.verbrauch-zeile { margin-top: 6px; font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; cursor: default; }
+.lauf-status { display: flex; align-items: center; gap: 10px; padding: 6px 2px; font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.lauf-status__stern { width: 14px; height: 14px; flex: none; border-radius: 50%; background: conic-gradient(var(--color-brand-500, #00c0a7) 0 25%, transparent 0 50%, var(--color-brand-500, #00c0a7) 0 75%, transparent 0); animation: lauf-drehen 1.2s linear infinite; }
+@keyframes lauf-drehen { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .lauf-status__stern { animation: none; } }
+.sm .lauf-status, .sm .verbrauch-zeile { color: var(--sm-muted); justify-content: center; }
+.sm .lauf-status__stern { background: conic-gradient(var(--sm-akzent) 0 25%, transparent 0 50%, var(--sm-akzent) 0 75%, transparent 0); }
+.sm__arbeit { display: flex; flex-direction: column; align-items: center; gap: 6px; width: min(560px, 100%); }
+.sm__schritte { width: 100%; }
+.sm__schritte-kopf { display: inline-flex; align-items: center; gap: 6px; margin: 0 auto; background: none; border: 0; color: var(--sm-muted); font-size: 13px; cursor: pointer; padding: 2px 6px; }
+.sm__schritte-kopf:hover { color: var(--sm-fg); }
+.sm__schritte { display: flex; flex-direction: column; align-items: center; }
+.sm__schritte-liste { list-style: none; margin: 6px 0 0; padding: 0; width: 100%; border: 1px solid var(--sm-rand); border-radius: 12px; overflow: hidden; user-select: text; }
+.sm__schritt { display: grid; grid-template-columns: 18px minmax(0, max-content) 1fr; gap: 8px; align-items: center; padding: 8px 12px; font-size: 13px; color: var(--sm-fg); }
+.sm__schritt + .sm__schritt { border-top: 1px solid var(--sm-rand); }
+.sm__schritt-marke { display: flex; align-items: center; justify-content: center; color: var(--sm-akzent); }
+.sm__schritt--fehler .sm__schritt-marke { color: var(--sm-fehler); }
+.sm__schritt-preview { color: var(--sm-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

@@ -46,7 +46,8 @@ export const DEFAULT_QUOTA: TenantQuotaShape = {
  *  und aeltere Desktop-Versionen senden keinen Header). */
 export function parseChannel(raw: string | undefined | null): LlmChannel {
   const v = raw?.trim().toLowerCase();
-  return v === "chat" ? "chat" : v === "vorschlaege" ? "vorschlaege" : "background";
+  // Sprachmodus (Desktop-Header "sprache") ist Nutzer-Interaktion wie der Chat.
+  return v === "chat" || v === "sprache" ? "chat" : v === "vorschlaege" ? "vorschlaege" : "background";
 }
 
 const TTL_MS = 60_000;

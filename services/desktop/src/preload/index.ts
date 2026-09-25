@@ -97,6 +97,7 @@ import type {
   SpracheSitzung,
   SpracheErgebnis,
   AgentMessageImage,
+  SpracheFortschritt,
 } from "../shared/types";
 export type {
   AgentChoiceAnswer,
@@ -1677,6 +1678,11 @@ const api = {
     abbrechen: (): Promise<boolean> => ipcRenderer.invoke("sprache:abbrechen"),
     /** S5 — Token-Zahlen einer Realtime-Antwort (nur beim Organisationsschluessel gemeldet). */
     verbrauch: (v: { model: string; latencyMs?: number; usage: Record<string, number>; sekunden?: number }): Promise<{ gemeldet: boolean }> => ipcRenderer.invoke("sprache:verbrauch", v),
+    onFortschritt: (handler: (f: SpracheFortschritt) => void) => {
+      const l = (_: unknown, f: SpracheFortschritt) => handler(f);
+      ipcRenderer.on("sprache:fortschritt", l);
+      return () => { ipcRenderer.removeListener("sprache:fortschritt", l); };
+    },
     onErgebnis: (handler: (e: SpracheErgebnis) => void) => {
       const l = (_: unknown, e: SpracheErgebnis) => handler(e);
       ipcRenderer.on("sprache:ergebnis", l);
