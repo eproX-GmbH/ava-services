@@ -13,7 +13,7 @@ import type { LlmProviderManager } from "../agent/providers";
 export async function streamToText(
   providers: LlmProviderManager,
   messages: AgentMessage[],
-  opts: { signal?: AbortSignal; timeoutMs?: number; modelOverride?: string; channel?: "background" | "vorschlaege" } = {},
+  opts: { signal?: AbortSignal; timeoutMs?: number; modelOverride?: string; channel?: "background" | "vorschlaege"; quelle?: string; interaktiv?: boolean } = {},
 ): Promise<string> {
   const ctrl = new AbortController();
   const timeout = setTimeout(() => ctrl.abort(), opts.timeoutMs ?? 45_000);
@@ -28,6 +28,9 @@ export async function streamToText(
       // Monitor, Discovery, Radar, Watchlist): zaehlen gegen das
       // Hintergrund-Budget der Organisation, nicht gegen den Chat.
       channel: opts.channel ?? "background",
+      // Quelle fuer den Verbrauch: ausdruecklich, sonst aus buildMessages' tag.
+      quelle: opts.quelle ?? quelleAusNachrichten(messages),
+      ...(opts.interaktiv ? { interaktiv: true } : {}),
       ...(opts.modelOverride ? { modelOverride: opts.modelOverride } : {}),
     });
     for await (const frame of stream) {
@@ -40,6 +43,11 @@ export async function streamToText(
     opts.signal?.removeEventListener("abort", onAbort);
   }
   return buf;
+}
+
+function quelleAusNachrichten(messages: AgentMessage[]): string | undefined {
+  const m = /^lm-(.+)-(?:sys|usr)$/.exec(messages[0]?.id ?? "");
+  return m?.[1];
 }
 
 /** Baut die zwei Standard-Nachrichten (system + user). */

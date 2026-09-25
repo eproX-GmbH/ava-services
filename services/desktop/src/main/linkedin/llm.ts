@@ -15,6 +15,7 @@ import type { LanguageModel } from "ai";
 import type { LlmProviderManager } from "../agent/providers";
 import type { ProviderConfigStore } from "../agent/providers/store";
 import { createOpenAISubscriptionModel } from "../agent/providers/openai-subscription-model";
+import { nurRegisterVerarbeitung } from "../worker-modus";
 
 export interface ResolvedLlm {
   provider:
@@ -47,6 +48,8 @@ export async function resolveActiveLlm(
 ): Promise<ResolvedLlm | null> {
   const status = providers.getStatus();
   if (!status.ready || !status.model) return null;
+  // Worker-Modus: LinkedIn-Auswertung ist Hintergrundarbeit, kein Modell.
+  if (nurRegisterVerarbeitung()) return null;
   const kind = status.kind;
 
   if (kind === "ollama") {

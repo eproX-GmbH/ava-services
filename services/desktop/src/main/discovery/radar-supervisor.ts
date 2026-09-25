@@ -26,6 +26,7 @@ import { runDiscoveryScan } from "./scan";
 import { runMatch } from "./matcher";
 import type { ProfileWorker } from "./profile-worker";
 import { radarActivity } from "./activity";
+import { arbeitAbbrechen } from "../worker-modus";
 
 const CHECK_INTERVAL_MS = 30 * 60 * 1000;
 
@@ -118,14 +119,18 @@ export class RadarSupervisor {
       void this.tick();
     }, CHECK_INTERVAL_MS);
     // Erster Check kurz nach Boot (nicht sofort — Provider/Auth brauchen
-    // einen Moment).
-    setTimeout(() => void this.tick(), 90_000);
+    // einen Moment). Gemerkt, damit stop() ihn mit abraeumt: vorher lief
+    // dieser erste Lauf im Worker-Modus trotzdem (2026-09-25).
+    this.ersterLauf = setTimeout(() => void this.tick(), 90_000);
   }
 
   stop(): void {
     if (this.timer) clearInterval(this.timer);
     this.timer = null;
+    if (this.ersterLauf) clearTimeout(this.ersterLauf);
+    this.ersterLauf = null;
   }
+  private ersterLauf: ReturnType<typeof setTimeout> | null = null;
 
   getConfig(): RadarConfig {
     if (this.config) return this.config;
@@ -185,6 +190,7 @@ export class RadarSupervisor {
   private async tick(): Promise<void> {
     const cfg = this.getConfig();
     if (!cfg.enabled || this.running) return;
+    if (arbeitAbbrechen()) return;
     if (!this.deps.isSignedIn()) return;
     if (!this.deps.providers.getStatus().ready) return;
     // v0.1.574 — Automatik nur mit vollstaendigem ICP (Ort, Branchen,

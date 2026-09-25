@@ -49,6 +49,17 @@ function fehlerText(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
+
+/** Lesbare Namen der Hintergrund-Quellen (Header x-ava-llm-quelle, 2026-09-25). */
+const QUELLE_TEXT: Record<string, string> = {
+  discprofile: "Mini-Profile", discmatch: "Radar-Bewertung", serpplan: "Radar-Suche",
+  extract: "Link-Beobachter", diff: "Link-Beobachter", interstitial: "Link-Beobachter",
+  wlclassify: "Beobachtungsliste", vorschlaege: "Vorschläge", "vorschlaege-turn": "Vorschläge",
+  "wf-placeholders": "Abläufe", pubsearch: "Publikationssuche", "alarm-urteil": "Alarm-Bewertung",
+  beobachtung: "Beobachtungen", "pradar-headline": "Personen-Radar", "wf-ai": "Abläufe",
+  "ohne Angabe": "ohne Angabe (Producer, ältere Versionen)",
+};
+
 export function Organisation() {
   const qc = useQueryClient();
   const [params, setParams] = useSearchParams();
@@ -1382,6 +1393,7 @@ function Verbrauch({ st, me }: { st: OrgState; me: WhoamiLite }) {
         todayBackgroundCents?: number;
         monthVorschlaegeCents?: number;
         todayVorschlaegeCents?: number;
+        monthBackgroundByQuelle?: Array<{ quelle: string; cents: number; calls: number }>;
         adminView: boolean;
       }>(`/v1/tenants/me/usage?days=${tage}`),
   });
@@ -1419,6 +1431,14 @@ function Verbrauch({ st, me }: { st: OrgState; me: WhoamiLite }) {
             {kanal(usage.data?.todayChatCents, usage.data?.todayBackgroundCents, usage.data?.todayVorschlaegeCents)}
           </span>
         </div>
+        {(usage.data?.monthBackgroundByQuelle ?? []).length > 0 && (
+          <div className="active-config-card__row">
+            <span className="active-config-card__label">Hintergrund nach Quelle</span>
+            <span className="active-config-card__value">
+              {(usage.data?.monthBackgroundByQuelle ?? []).map((q) => `${QUELLE_TEXT[q.quelle] ?? q.quelle} ${usd(q.cents)} (${q.calls})`).join(" · ")}
+            </span>
+          </div>
+        )}
       </div>
       <div className="org-actions">
         <label className="field" style={{ minWidth: 160 }}>

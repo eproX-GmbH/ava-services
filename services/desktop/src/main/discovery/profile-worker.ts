@@ -69,8 +69,9 @@ export class ProfileWorker {
   start(): void {
     if (this.timer) return;
     this.timer = setInterval(() => void this.drain(), this.sofort ? SOFORT_TICK_MS : TICK_MS);
-    setTimeout(() => void this.drain(), this.sofort ? 5_000 : FIRST_TICK_DELAY_MS);
+    this.ersterLauf = setTimeout(() => void this.drain(), this.sofort ? 5_000 : FIRST_TICK_DELAY_MS);
   }
+  private ersterLauf: ReturnType<typeof setTimeout> | null = null;
 
   /** v0.1.576 — Sofort-Modus umschalten; beim Einschalten sofort loslegen. */
   setSofort(on: boolean): void {
@@ -90,6 +91,8 @@ export class ProfileWorker {
   stop(): void {
     if (this.timer) clearInterval(this.timer);
     this.timer = null;
+    if (this.ersterLauf) clearTimeout(this.ersterLauf);
+    this.ersterLauf = null;
   }
 
   getStatus(): {
@@ -125,6 +128,8 @@ export class ProfileWorker {
   }
 
   private async drainInner(): Promise<ProfilerSummary | { error: string }> {
+    // Worker-Modus: gar nicht erst anfangen (auch nicht der erste Lauf).
+    if (arbeitAbbrechen()) return { error: "Worker-Modus aktiv." };
     if (!this.deps.isSignedIn()) return { error: "Nicht angemeldet." };
     if (!this.deps.providers.getStatus().ready) {
       radarActivity.fehler("Mini-Profile: kein KI-Modell bereit");

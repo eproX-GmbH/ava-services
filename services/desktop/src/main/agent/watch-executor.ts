@@ -292,7 +292,7 @@ async function streamToText(
   const timeout = setTimeout(() => ctrl.abort(), 30_000);
   let buf = "";
   try {
-    const stream = providers.streamChat({ messages, signal: ctrl.signal });
+    const stream = providers.streamChat({ messages, signal: ctrl.signal, channel: "background", quelle: "beobachtung" });
     for await (const frame of stream) {
       if (frame.contentDelta) buf += frame.contentDelta;
       if (frame.done) break;

@@ -147,6 +147,8 @@ async function llmJson<T>(
         buildMessages(system, user, tag),
         {
           timeoutMs: 90_000,
+          // ICP-Assistent: vom Nutzer angestossen.
+          interaktiv: true,
           ...(modelOverride ? { modelOverride } : {}),
         },
       );

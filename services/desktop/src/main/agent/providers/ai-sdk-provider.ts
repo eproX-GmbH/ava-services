@@ -384,7 +384,7 @@ export class AiSdkProvider extends EventEmitter implements LlmProvider {
         : gatewayProxy?.baseURL;
     // O6b — Kanal fuer getrennte Limits (Chat vs. Hintergrund) im Gateway.
     const proxyHeaders = gatewayProxy
-      ? { authorization: `Bearer ${gatewayProxy.token}`, "x-ava-llm-channel": req.channel ?? "chat" }
+      ? { authorization: `Bearer ${gatewayProxy.token}`, "x-ava-llm-channel": req.channel ?? "chat", ...(req.quelle ? { "x-ava-llm-quelle": req.quelle.slice(0, 40) } : {}) }
       : undefined;
     // v0.1.7 diagnostic: log key shape (length + masked head/tail) and
     // request shape so we can tell, post-mortem in DevTools, whether

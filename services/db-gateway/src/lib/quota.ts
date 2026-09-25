@@ -205,6 +205,8 @@ export interface UsageSummary {
   /** v0.1.650 — Anteil der Chat-Vorschlaege. */
   monthVorschlaegeCents: number;
   todayVorschlaegeCents: number;
+  /** 2026-09-25 — Hintergrundkosten des Monats nach ausloesender Funktion. */
+  monthBackgroundByQuelle: Array<{ quelle: string; cents: number; calls: number }>;
   adminView: boolean;
 }
 
@@ -253,6 +255,14 @@ export async function usageSummary(pool: pg.Pool, auth: AuthContext, days: numbe
   const monat = admin
     ? await kanalSumme(`"tenantId" = $1 AND "createdAt" >= $2`, [auth.tenantId, monatsanfang()])
     : await kanalSumme(`"tenantId" = $1 AND "createdAt" >= $2 AND "actorId" = $3`, [auth.tenantId, monatsanfang(), auth.actorId]);
+  const qWhere = admin ? `"tenantId" = $1 AND "createdAt" >= $2` : `"tenantId" = $1 AND "createdAt" >= $2 AND "actorId" = $3`;
+  const qParams = admin ? [auth.tenantId, monatsanfang()] : [auth.tenantId, monatsanfang(), auth.actorId];
+  const nachQuelle = await pool.query<{ quelle: string | null; cost: string | null; calls: string }>(
+    `SELECT "quelle", SUM("costMicroUsd")::text AS cost, COUNT(*)::text AS calls
+       FROM "LlmUsage" WHERE ${qWhere} AND "channel" = 'background'
+      GROUP BY "quelle" ORDER BY SUM("costMicroUsd") DESC NULLS LAST LIMIT 20`,
+    qParams,
+  );
   const heute = await kanalSumme(`"tenantId" = $1 AND "actorId" = $2 AND "createdAt" >= $3`, [auth.tenantId, auth.actorId, tagesanfang()]);
   return {
     rows,
@@ -264,6 +274,7 @@ export async function usageSummary(pool: pg.Pool, auth: AuthContext, days: numbe
     todayChatCents: heute.chat,
     todayBackgroundCents: heute.gesamt - heute.chat - heute.vorschlaege,
     todayVorschlaegeCents: heute.vorschlaege,
+    monthBackgroundByQuelle: nachQuelle.rows.map((r) => ({ quelle: r.quelle ?? "ohne Angabe", cents: Math.round(Number(r.cost ?? "0") / 10_000), calls: Number(r.calls) })),
     adminView: admin,
   };
 }

@@ -29,6 +29,14 @@ export interface LlmStreamRequest {
    *  Discovery, Link-Monitor, Radar). Geht als Header x-ava-llm-channel an
    *  den Stellvertreter-Proxy; nur dort relevant. */
   channel?: "chat" | "background" | "vorschlaege";
+  /** Wer den Aufruf ausloest (z. B. "radar", "mini-profile", "herzschlag").
+   *  Geht als Header x-ava-llm-quelle an den Proxy und steht dort im
+   *  Verbrauch; so sieht man, welche Funktion die Kosten verursacht. */
+  quelle?: string;
+  /** Vom Nutzer angestossen (Chat-Werkzeug, ICP-Assistent): darf auch im
+   *  Worker-Modus laufen. Hintergrundaufrufe ohne dieses Merkmal werden im
+   *  Worker-Modus vor dem Netz abgewiesen. */
+  interaktiv?: boolean;
 }
 
 export interface LlmStreamToolCall {

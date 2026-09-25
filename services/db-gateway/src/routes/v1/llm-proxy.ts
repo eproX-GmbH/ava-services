@@ -168,6 +168,8 @@ llmProxyRouter.openapi(
 const HOP_BY_HOP = new Set([
   "authorization", "host", "connection", "content-length", "keep-alive", "proxy-authorization",
   "te", "trailer", "transfer-encoding", "upgrade", "x-api-key", "x-goog-api-key", "cookie",
+  // Interne AVA-Kopfzeilen nicht an den Anbieter weitergeben.
+  "x-ava-llm-channel", "x-ava-llm-quelle",
 ]);
 const RESPONSE_DROP = new Set(["content-encoding", "content-length", "transfer-encoding", "connection", "set-cookie"]);
 
@@ -194,6 +196,8 @@ async function passthrough(c: Context, kind: ProviderKind, base: string, rest: s
   // O6b — Kanal des Aufrufs: Desktop-Chat sendet `x-ava-llm-channel: chat`,
   // Producer und aeltere Desktop-Versionen nichts (= background).
   const channel: LlmChannel = parseChannel(c.req.header("x-ava-llm-channel"));
+  // Ausloesende Funktion (Desktop setzt sie fuer Hintergrundaufrufe).
+  const quelle = (c.req.header("x-ava-llm-quelle") ?? "").replace(/[^a-z0-9._-]/gi, "").slice(0, 40) || null;
 
   // O6 — Vorabpruefung des Limits (nur messbare Stellvertreter-Aufrufe).
   let quotaWarnung: string | null = null;
@@ -263,11 +267,11 @@ async function passthrough(c: Context, kind: ProviderKind, base: string, rest: s
   const abschluss = (text: string, status: number) => {
     const latencyMs = Date.now() - start;
     if (!meter) {
-      void recordUsage(pool, { tenantId: auth.tenantId, actorId: auth.actorId, kind, channel, model: rest.split("/")[0] ?? null, usage: null, status, latencyMs, streamed: false });
+      void recordUsage(pool, { tenantId: auth.tenantId, actorId: auth.actorId, kind, channel, model: rest.split("/")[0] ?? null, usage: null, status, latencyMs, streamed: false, quelle });
       return;
     }
     const usage = streamed ? parseUsageFromSse(text) : parseUsageFromJson(text);
-    void recordUsage(pool, { tenantId: auth.tenantId, actorId: auth.actorId, kind, channel, model: usage?.model ?? model, usage, status, latencyMs, streamed });
+    void recordUsage(pool, { tenantId: auth.tenantId, actorId: auth.actorId, kind, channel, model: usage?.model ?? model, usage, status, latencyMs, streamed, quelle });
     if (promptAudit && status < 400) {
       const response = streamed ? extractTextFromSse(text) : text.slice(0, AUDIT_MAX_CHARS);
       void pool
@@ -311,7 +315,7 @@ async function promptAuditAktiv(pool: ReturnType<typeof getGatewayPool>, tenantI
 
 async function recordUsage(
   pool: ReturnType<typeof getGatewayPool>,
-  e: { tenantId: string; actorId: string; kind: ProviderKind; channel: LlmChannel; model: string | null; usage: UsageCounts | null; status: number; latencyMs: number; streamed: boolean },
+  e: { tenantId: string; actorId: string; kind: ProviderKind; channel: LlmChannel; model: string | null; usage: UsageCounts | null; status: number; latencyMs: number; streamed: boolean; quelle?: string | null },
 ): Promise<void> {
   const input = e.usage?.inputTokens ?? 0;
   const output = e.usage?.outputTokens ?? 0;
@@ -319,9 +323,9 @@ async function recordUsage(
   const cost = e.kind === "apify" ? null : estimateMicroUsd({ provider: e.kind, model: e.model, inputTokens: input, outputTokens: output, cacheReadTokens: cache });
   try {
     await pool.query(
-      `INSERT INTO "LlmUsage" ("id", "tenantId", "actorId", "kind", "model", "inputTokens", "outputTokens", "cacheReadTokens", "costMicroUsd", "status", "latencyMs", "streamed", "channel")
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
-      [`lu_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`, e.tenantId, e.actorId, e.kind, e.model, input, output, cache, cost, e.status, e.latencyMs, e.streamed, e.channel],
+      `INSERT INTO "LlmUsage" ("id", "tenantId", "actorId", "kind", "model", "inputTokens", "outputTokens", "cacheReadTokens", "costMicroUsd", "status", "latencyMs", "streamed", "channel", "quelle")
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
+      [`lu_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`, e.tenantId, e.actorId, e.kind, e.model, input, output, cache, cost, e.status, e.latencyMs, e.streamed, e.channel, e.quelle ?? null],
     );
   } catch (err) {
     logger.warn({ err: err instanceof Error ? err.message : String(err) }, "llm-usage insert failed");

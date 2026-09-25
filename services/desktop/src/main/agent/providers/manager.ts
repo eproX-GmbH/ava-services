@@ -32,6 +32,7 @@ import type {
   LlmStreamFrame,
   LlmStreamRequest,
 } from "./types";
+import { nurRegisterVerarbeitung } from "../../worker-modus";
 
 // LlmProviderManager (Phase 8.j, expanded in 8.k1).
 //
@@ -59,6 +60,15 @@ const ALL_KINDS: readonly LlmProviderKind[] = [
   "google",
   "mistral",
 ];
+
+
+/** Hintergrundaufruf im Worker-Modus abgewiesen (kein Fehler des Modells). */
+export class WorkerModusSperre extends Error {
+  constructor(public readonly quelle: string) {
+    super(`Worker-Modus: KI-Hintergrundaufruf unterdrückt (${quelle})`);
+    this.name = "WorkerModusSperre";
+  }
+}
 
 export class LlmProviderManager extends EventEmitter {
   private readonly store: ProviderConfigStore;
@@ -860,8 +870,24 @@ export class LlmProviderManager extends EventEmitter {
   async *streamChat(
     req: LlmStreamRequest,
   ): AsyncGenerator<LlmStreamFrame, void, void> {
+    // Worker-Modus (2026-09-25): Hintergrundaufrufe werden hier abgewiesen,
+    // BEVOR etwas ans Netz geht. Vorher liefen Laeufe an der Pause vorbei
+    // (erster Radar-Lauf nach dem Start, Neustart durch Orga-Vorgaben) oder
+    // wurden erst mitten in der Anfrage abgebrochen. Chat, Telegram und
+    // vom Nutzer angestossene Werkzeuge bleiben erlaubt.
+    const hintergrund = req.channel === "background" || req.channel === "vorschlaege";
+    if (hintergrund && !req.interaktiv && nurRegisterVerarbeitung()) {
+      const schluessel = req.quelle ?? "unbekannt";
+      const jetzt = Date.now();
+      if ((this.workerSperreGemeldet.get(schluessel) ?? 0) < jetzt - 10 * 60_000) {
+        this.workerSperreGemeldet.set(schluessel, jetzt);
+        console.info(`[worker-modus] KI-Hintergrundaufruf unterdrueckt (Quelle: ${schluessel})`);
+      }
+      throw new WorkerModusSperre(schluessel);
+    }
     yield* this.activeProvider().streamChat(req);
   }
+  private readonly workerSperreGemeldet = new Map<string, number>();
 
   dispose(): void {
     for (const kind of ALL_KINDS) {

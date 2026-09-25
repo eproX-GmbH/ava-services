@@ -256,6 +256,8 @@ async function streamToText(
     const stream = providers.streamChat({
       messages,
       signal: ctrl.signal,
+      channel: "background",
+      quelle: "alarm-urteil",
     });
     for await (const frame of stream) {
       if (frame.contentDelta) buf += frame.contentDelta;

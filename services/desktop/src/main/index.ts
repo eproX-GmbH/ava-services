@@ -3171,6 +3171,12 @@ app.whenReady().then(async () => {
     const umschalten = (k: string, start: () => void | Promise<void>, stop: () => void | Promise<void>) => {
       if (an(k) === war(k)) return;
       console.log(`[org-policy] ${k}: ${an(k) ? "freigegeben → starten" : "abgeschaltet → stoppen"}`);
+      // Worker-Modus: abschalten ja, anlaufen nein (sonst liefen LinkedIn-
+      // Dienste nach einer Aenderung der Orga-Vorgaben wieder, 2026-09-25).
+      if (an(k) && workerModus.aktiv()) {
+        console.log(`[org-policy] ${k}: Worker-Modus aktiv, Start zurueckgestellt`);
+        return;
+      }
       void Promise.resolve()
         .then(() => (an(k) ? start() : stop()))
         .catch((err) => console.warn(`[org-policy] ${k} umschalten fehlgeschlagen:`, err instanceof Error ? err.message : String(err)));

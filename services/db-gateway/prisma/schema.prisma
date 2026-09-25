@@ -608,6 +608,8 @@ model LlmUsage {
   streamed        Boolean  @default(false)
   /// O6b — chat | background (Header x-ava-llm-channel; Default background).
   channel         String   @default("background")
+  /// Ausloesende Funktion (Header x-ava-llm-quelle), z. B. radar, discprofile.
+  quelle          String?
   createdAt       DateTime @default(now())
 
   @@index([tenantId, createdAt])

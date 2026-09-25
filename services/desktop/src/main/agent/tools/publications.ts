@@ -70,7 +70,8 @@ async function decomposeQuestion(
     const raw = await streamToText(
       providers,
       buildMessages(system, user, "pubsearch"),
-      { timeoutMs: 25_000 },
+      // Chat-Werkzeug: vom Nutzer angestossen, darf auch im Worker-Modus laufen.
+      { timeoutMs: 25_000, interaktiv: true },
     );
     const parsed = parseJsonObject(raw) as { queries?: unknown } | null;
     if (parsed && Array.isArray(parsed.queries)) {
