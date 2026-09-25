@@ -43,16 +43,16 @@ TypeScript enforces this on `CatalogEntry`; CI fails if you forget.
 
 ### Tier S — premium
 
-- `gpt-5.6-sol`, `gpt-5.6-terra`, `gpt-5.5-pro`, `gpt-5.5`, `gpt-5.4-pro`, `gpt-5.4`, `gpt-5-pro`, `gpt-5`, `o3` (OpenAI)
-- `claude-fable-5`, `claude-opus-5`, `claude-sonnet-5`, `claude-opus-4-7`, `claude-opus-4-6`, `claude-opus-4-5`, `claude-opus-4-1` (Anthropic)
+- `gpt-6-astra`, `gpt-6-sol`, `gpt-5.6-sol`, `gpt-5.6-terra`, `gpt-5.5-pro`, `gpt-5.5`, `gpt-5.4-pro`, `gpt-5.4`, `gpt-5-pro`, `gpt-5`, `o3` (OpenAI)
+- `claude-fable-5-1`, `claude-fable-5`, `claude-opus-5-5`, `claude-opus-5`, `claude-sonnet-5`, `claude-opus-4-8`, `claude-opus-4-7`, `claude-opus-4-6`, `claude-opus-4-5`, `claude-opus-4-1` (Anthropic)
 - `gemini-3.1-pro-preview`, `gemini-3-pro-preview`, `gemini-2.5-pro` (Google)
 - `grok-4.6` (xAI), `qwen3.8-max` (Qwen)
 
 ### Tier A — high
 
-- `gpt-5.6-luna`, `gpt-4.1`, `gpt-4o`, `o3-mini`, `o4-mini` (OpenAI)
+- `gpt-6-luna` (Empfehlung seit 2026-09-25), `gpt-5.6-luna`, `gpt-4.1`, `gpt-4o`, `o3-mini`, `o4-mini` (OpenAI)
 - `claude-sonnet-4-6`, `claude-sonnet-4-5` (Anthropic)
-- `gemini-3.7-flash`, `gemini-3-flash-preview`, `gemini-2.5-flash` (Google)
+- `gemini-3.8-flash` (Empfehlung seit 2026-09-25), `gemini-3.7-flash`, `gemini-3.6-flash`, `gemini-3.5-flash`, `gemini-3-flash-preview`, `gemini-2.5-flash` (Google)
 - `deepseek-v4-pro` (DeepSeek), `grok-4.5` (xAI)
 - `mistral-large-latest`, `mistral-medium-latest`, `devstral-medium-latest`, `pixtral-large-latest` (Mistral)
 - `gemma4:31b`, `gemma4:26b`, `qwen2.5:14b` (Ollama, local)
@@ -61,8 +61,8 @@ TypeScript enforces this on `CatalogEntry`; CI fails if you forget.
 
 - `gpt-5.4-mini`, `gpt-5-mini`, `gpt-4.1-mini`, `gpt-4o-mini` (OpenAI)
 - `claude-haiku-4-5` (Anthropic)
-- `gemini-3.1-flash-lite`, `gemini-2.5-flash-lite`, `gemini-2.0-flash` (Google)
-- `mistral-small-latest`, `codestral-latest` (Mistral)
+- `gemini-3.5-flash-lite`, `gemini-3.1-flash-lite`, `gemini-2.5-flash-lite`, `gemini-2.0-flash` (Google)
+- `mistral-small-latest`, `ministral-14b-latest`, `codestral-latest` (Mistral)
 - `deepseek-v4-flash` (DeepSeek), `qwen3.8-flash` (Qwen)
 - `gemma4:e4b` (Ollama, local — current default)
 - `qwen2.5:7b`, `mistral-nemo:12b`, `llama3.1:8b` (Ollama, local)

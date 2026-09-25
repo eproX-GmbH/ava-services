@@ -6,7 +6,12 @@
 // `ava_bearbeiten` in den Chat-Orchestrator. Deshalb hier kein Werkzeug-
 // Katalog und keine Skills, nur Haltung und Sprechweise.
 
-export const SPRACHE_MODELL = "gpt-realtime-2.1";
+// 2026-09-25: gpt-realtime-2.1-mini (destilliert, Function Calling, Audio
+// 10 $ / 20 $ statt 32 $ / 64 $ je 1 M Token) ist der Standard; lehnt
+// OpenAI die Sitzung ab (z. B. Stimme nicht verfuegbar), faellt session.ts
+// auf das grosse Modell zurueck.
+export const SPRACHE_MODELL = "gpt-realtime-2.1-mini";
+export const SPRACHE_MODELL_RUECKFALL = "gpt-realtime-2.1";
 
 export function spracheInstruktionen(opts: { nutzerName?: string | null }): string {
   const name = opts.nutzerName?.trim();

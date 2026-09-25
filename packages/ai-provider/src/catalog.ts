@@ -281,6 +281,41 @@ const OPENAI_LLM: CatalogEntry[] = [
   // Generation neuer und mit 1,05 M statt 400 k Kontext. Tier 2 (wie die
   // mini-Stufen) bleibt: der Preis sagt nichts ueber die Qualitaet, und
   // beim Tier-Gate ist Untertreiben die sichere Richtung.
+  // GPT-6 (Stand 2026-09-25, developers.openai.com/api/docs/models):
+  // Astra = Flaggschiff (10 $ / 50 $ je 1 M), Sol = Mittelklasse fuer
+  // agentische Ablaeufe (2 $ / 10 $), Luna = Budget fuer Massenaufgaben
+  // (0,10 $ / 0,50 $). Luna ist die neue Empfehlung: eine Generation
+  // neuer als 5.6 Luna und guenstiger als 5.4 mini, das bisher empfohlen
+  // war. Kontextfenster bei OpenAI nicht ausgewiesen; wie die 5.6-Linie
+  // angenommen (1,05 M) — bei Abweichung hier korrigieren.
+  {
+    provider: "openai",
+    id: "gpt-6-astra",
+    label: "GPT-6 Astra (frontier)",
+    role: "llm",
+    capabilities: { tools: true, vision: true, contextWindow: 1_050_000 },
+    costClass: "high",
+    tier: 4,
+  },
+  {
+    provider: "openai",
+    id: "gpt-6-sol",
+    label: "GPT-6 Sol",
+    role: "llm",
+    capabilities: { tools: true, vision: true, contextWindow: 1_050_000 },
+    costClass: "mid",
+    tier: 4,
+  },
+  {
+    provider: "openai",
+    id: "gpt-6-luna",
+    label: "GPT-6 Luna (guenstig)",
+    role: "llm",
+    capabilities: { tools: true, vision: true, contextWindow: 1_050_000 },
+    costClass: "cheap",
+    tier: 3,
+    recommended: true,
+  },
   {
     provider: "openai",
     id: "gpt-5.6-sol",
@@ -356,7 +391,7 @@ const OPENAI_LLM: CatalogEntry[] = [
     capabilities: { tools: true, vision: true, contextWindow: 400_000 },
     costClass: "cheap",
     tier: 2,
-    recommended: true,
+    // bis 2026-09-25 die Empfehlung; abgeloest durch gpt-6-luna.
   },
   {
     provider: "openai",
@@ -534,6 +569,29 @@ const ANTHROPIC_LLM: CatalogEntry[] = [
   // Claude-5-Generation (2026). Fable 5 und Opus 5 teilen das Modell;
   // Fable ist die allgemein verfuegbare Variante mit zusaetzlichen
   // Sicherheitsmassnahmen fuer Dual-Use-Faehigkeiten.
+  // Stand 2026-09-25: Fable 5.1 ist das faehigste allgemein verfuegbare
+  // Modell (10 $ / 50 $), Opus 5.5 der neue Opus zum niedrigeren Preis
+  // (4 $ / 20 $; Denken laesst sich nicht abschalten, erzwungene
+  // Werkzeugwahl gibt 400), Opus 4.8 die letzte 4er-Stufe. Sonnet 5
+  // bleibt die Empfehlung (2 $ / 10 $).
+  {
+    provider: "anthropic",
+    id: "claude-fable-5-1",
+    label: "Claude Fable 5.1 (frontier)",
+    role: "llm",
+    capabilities: { tools: true, vision: true, contextWindow: 1_000_000 },
+    costClass: "high",
+    tier: 4,
+  },
+  {
+    provider: "anthropic",
+    id: "claude-opus-5-5",
+    label: "Claude Opus 5.5 (neu)",
+    role: "llm",
+    capabilities: { tools: true, vision: true, contextWindow: 1_000_000 },
+    costClass: "mid",
+    tier: 4,
+  },
   {
     provider: "anthropic",
     id: "claude-fable-5",
@@ -564,8 +622,17 @@ const ANTHROPIC_LLM: CatalogEntry[] = [
   },
   {
     provider: "anthropic",
+    id: "claude-opus-4-8",
+    label: "Claude Opus 4.8",
+    role: "llm",
+    capabilities: { tools: true, vision: true, contextWindow: 1_000_000 },
+    costClass: "high",
+    tier: 4,
+  },
+  {
+    provider: "anthropic",
     id: "claude-opus-4-7",
-    label: "Claude Opus 4.7 (frontier)",
+    label: "Claude Opus 4.7",
     role: "llm",
     capabilities: { tools: true, vision: true, contextWindow: 1_000_000 },
     costClass: "high",
@@ -642,6 +709,48 @@ const GOOGLE_LLM: CatalogEntry[] = [
   // Gemini 3.7 Flash (GA 2026-08-13): 1 M Kontext, multimodal,
   // Function Calling. Achtung: einen 3.5/3.7 **Pro** gibt es NICHT —
   // die hoechste Pro-Stufe bleibt 3.1 Pro.
+  // Stand 2026-09-25 (ai.google.dev/gemini-api/docs/models): 3.8 Flash ist
+  // das staerkste Flash-Modell (0,75 $ / 3,75 $ bis Ende 2026, danach
+  // doppelt) und die neue Empfehlung — die 2.5-Reihe ist fuer neue Projekte
+  // nicht mehr freigeschaltet. 3.5 Flash ist teurer als 3.6/3.7/3.8, weil
+  // die Aktionspreise nur fuer die neueren gelten.
+  {
+    provider: "google",
+    id: "gemini-3.8-flash",
+    label: "Gemini 3.8 Flash",
+    role: "llm",
+    capabilities: { tools: true, vision: true, contextWindow: 1_000_000 },
+    costClass: "cheap",
+    tier: 3,
+    recommended: true,
+  },
+  {
+    provider: "google",
+    id: "gemini-3.6-flash",
+    label: "Gemini 3.6 Flash",
+    role: "llm",
+    capabilities: { tools: true, vision: true, contextWindow: 1_000_000 },
+    costClass: "cheap",
+    tier: 3,
+  },
+  {
+    provider: "google",
+    id: "gemini-3.5-flash",
+    label: "Gemini 3.5 Flash",
+    role: "llm",
+    capabilities: { tools: true, vision: true, contextWindow: 1_000_000 },
+    costClass: "mid",
+    tier: 3,
+  },
+  {
+    provider: "google",
+    id: "gemini-3.5-flash-lite",
+    label: "Gemini 3.5 Flash-Lite",
+    role: "llm",
+    capabilities: { tools: true, vision: true, contextWindow: 1_000_000 },
+    costClass: "cheap",
+    tier: 2,
+  },
   {
     provider: "google",
     id: "gemini-3.7-flash",
@@ -690,12 +799,12 @@ const GOOGLE_LLM: CatalogEntry[] = [
   {
     provider: "google",
     id: "gemini-2.5-pro",
-    label: "Gemini 2.5 Pro",
+    label: "Gemini 2.5 Pro (nur Bestandskonten)",
     role: "llm",
     capabilities: { tools: true, vision: true, contextWindow: 2_000_000 },
     costClass: "mid",
     tier: 4,
-    recommended: true,
+    // bis 2026-09-25 die Empfehlung; abgeloest durch gemini-3.8-flash.
   },
   {
     provider: "google",
@@ -775,6 +884,15 @@ const MISTRAL_LLM: CatalogEntry[] = [
     provider: "mistral",
     id: "mistral-small-latest",
     label: "Mistral Small 4",
+    role: "llm",
+    capabilities: { tools: true, vision: true, contextWindow: 262_000 },
+    costClass: "cheap",
+    tier: 2,
+  },
+  {
+    provider: "mistral",
+    id: "ministral-14b-latest",
+    label: "Ministral 3 14B",
     role: "llm",
     capabilities: { tools: true, vision: true, contextWindow: 262_000 },
     costClass: "cheap",

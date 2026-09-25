@@ -102,7 +102,7 @@ const PROVIDER_FEATURES: Record<HostedProviderKind, string> = {
     "ein Claude-Pro/Max-Abo wird nicht mehr unterstützt.",
   google:
     "Wird als Chat-LLM und in allen LLM-getriebenen Producer-Stages " +
-    "verwendet (z. B. Gemini 2.5 Pro für anspruchsvolle Recherche).",
+    "verwendet (z. B. Gemini 3.8 Flash für anspruchsvolle Recherche).",
   mistral:
     "Wird als Chat-LLM und in allen LLM-getriebenen Producer-Stages " +
     "verwendet (z. B. Mistral Large 3 für deutschsprachige Inhalte).",

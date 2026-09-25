@@ -143,7 +143,7 @@ export function buildSettingsTools(deps: SettingsToolDeps): Tool[] {
         model: {
           type: "string",
           description:
-            "Optional model id for this provider (e.g. 'llama3.2:3b', 'gpt-4o-mini', 'claude-sonnet-4-6', 'gemini-2.5-pro', 'mistral-large-latest').",
+            "Optional model id for this provider (e.g. 'llama3.2:3b', 'gpt-6-luna', 'claude-sonnet-5', 'gemini-2.5-pro', 'mistral-large-latest').",
         },
       },
       required: ["kind"],
