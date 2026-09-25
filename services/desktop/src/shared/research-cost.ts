@@ -15,9 +15,9 @@
 //   • openai/deep      — o4-mini-deep-research-2025-06-26 + web_search,
 //     1–5 €/firma (no production data yet; OpenAI's own docs cite
 //     "complex multi-turn research" pricing in that band)
-//   • anthropic/standard — claude-sonnet-4-6 + web_search, 0.08–0.15 €
+//   • anthropic/standard — claude-sonnet-5 + web_search, 0.08–0.15 €
 //     (Phase 2a smoke-test calibrated, single-turn)
-//   • anthropic/deep   — claude-opus-4-7 + web_search + extended
+//   • anthropic/deep   — claude-opus-5 + web_search + adaptivem
 //     thinking, observed $0.28 on SAP SE, ~0.25–0.80 €/firma
 //
 // Update these constants together with the corresponding strings in
