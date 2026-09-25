@@ -5,6 +5,7 @@ import type { Tool } from "../types";
 import { getDb as getLinkedInDb, signalsForCompany } from "../../linkedin/db";
 import { read as readLinkedInSettings } from "../../linkedin/store";
 import { landText, statusWarnungText } from "../../firmen-status";
+import { kompakteKontakte } from "./kontakte-kompakt";
 
 // Read-only company tools (Phase 8.b).
 //
@@ -341,19 +342,28 @@ export function buildCompanyTools(ctx: Ctx): Tool[] {
   const contacts = defineTool({
     name: "company_contacts",
     description:
-      "Get the contact aggregate for a company (board members, generic emails, phone numbers).",
+      "Kontakte einer Firma, kompakt: Firmen-E-Mails/-Telefon/-Adresse und je Person Name, Rolle, Abteilung, E-Mail, Telefon, Profil-URLs, seit wann dabei, Kurzbeschreibung und Quelle (LinkedIn, Firmenwebsite, Websuche). Ausgeschiedene sind nicht enthalten. " +
+      "Belegketten (einzelne Beobachtungen mit Fundstelle) und den Verlauf (Signale, fruehere Stationen) NUR laden, wenn der Nutzer ausdruecklich nach Belegen, Herkunft oder Verlauf fragt: dann mitBelegen: true. Das ist bei grossen Firmen sehr umfangreich.",
     parameters: {
       type: "object",
-      properties: { companyId: { type: "string" } },
+      properties: {
+        companyId: { type: "string" },
+        mitBelegen: { type: "boolean", description: "Nur auf ausdrueckliche Nachfrage nach Belegen/Herkunft/Verlauf: volle Rohdaten statt der kompakten Fassung." },
+      },
       required: ["companyId"],
     },
-    schema: yup.object({ companyId: yup.string().trim().min(1).required() }),
-    run: async (args, c) =>
-      gateway.request<Record<string, unknown>>(
+    schema: yup.object({ companyId: yup.string().trim().min(1).required(), mitBelegen: yup.boolean().optional() }),
+    run: async (args, c) => {
+      const roh = await gateway.request<Record<string, unknown>>(
         `/v1/companies/${encodeURIComponent(args.companyId)}/contacts`,
         { signal: c.signal },
-      ),
-    preview: () => "contacts fetched",
+      );
+      return args.mitBelegen === true ? roh : kompakteKontakte(roh);
+    },
+    preview: (r) => {
+      const x = r as { anzahlPersonen?: number };
+      return typeof x.anzahlPersonen === "number" ? `${x.anzahlPersonen} Personen (kompakt)` : "Kontakte mit Belegen geladen";
+    },
   });
 
   // T5 (v0.1.510) — firmenuebergreifend: "Welche meiner Firmen nutzen
