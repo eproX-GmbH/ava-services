@@ -14,6 +14,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import type { SpracheBlock, SpracheErgebnis, SpracheRueckfrage, SpracheSitzung, SpracheStand } from "../../../shared/types";
 import { RealtimeVerbindung, signalton, fehlerEinordnen, type RealtimeEreignis, type SpracheFehlerArt } from "../lib/realtime";
+import { LiveVerbindung, inHappen } from "../lib/live";
 import { WachwortLauscher, PufferAufnahme } from "../lib/wachwort";
 import { composePromptWithAttachments, isSupportedAttachment, parseAttachment, ScanPdfDetectedError, type SpreadsheetAttachment } from "../lib/attachment";
 import { SprachKugel, type KugelZustand } from "../components/SprachKugel";
@@ -83,7 +84,17 @@ export function Sprachmodus() {
   const [eingabe, setEingabe] = useState("");
 
   const conversationId = useMemo(() => neueId(), []);
-  const verbindung = useRef<RealtimeVerbindung | null>(null);
+  const verbindung = useRef<RealtimeVerbindung | LiveVerbindung | null>(null);
+  // GPT Live ist der Standard (Delegation an den Relay, Abrechnung je
+  // Sekunde); die Realtime API bleibt Rueckfall, wenn Live nicht angelegt
+  // werden kann. Beide Wege teilen Kugel, Bloecke und Relay.
+  const protoRef = useRef<"live" | "realtime">("live");
+  const delegationRef = useRef<string | null>(null);
+  const nutzerTranskript = useRef("");
+  const rueckfrageRef = useRef<SpracheRueckfrage | null>(null);
+  const sprichtTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const hoertTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const liveSekunden = useRef({ gesamt: 0, gemeldet: 0 });
   const lauscher = useRef<WachwortLauscher | null>(null);
   const letzteAktivitaet = useRef(Date.now());
   const sitzungSeit = useRef(Date.now());
@@ -117,9 +128,26 @@ export function Sprachmodus() {
 
   // ---- Realtime-Ereignisse -------------------------------------------------
   const senden = (e: RealtimeEreignis) => verbindung.current?.senden(e);
+  /**
+   * Text an die Sprach-KI geben. Live: Commentary (soll gesprochen werden)
+   * oder Thinking (nur Kontext), jeweils in Happen von ≈ 500 Token und mit
+   * der laufenden Delegation verknuepft. Realtime: als Nutzer-Nachricht
+   * plus response.create.
+   */
   const nachrichtEinlegen = (text: string, antworten = true) => {
+    if (protoRef.current === "live") {
+      const art = antworten ? "commentary" : "thinking";
+      for (const h of inHappen(text)) senden({ type: `session.${art}.append`, delegation_id: delegationRef.current, content: h });
+      return;
+    }
     senden({ type: "conversation.item.create", item: { type: "message", role: "user", content: [{ type: "input_text", text }] } });
     if (antworten) senden({ type: "response.create" });
+  };
+  const liveVerbrauchMelden = () => {
+    const delta = liveSekunden.current.gesamt - liveSekunden.current.gemeldet;
+    if (delta <= 0) return;
+    liveSekunden.current.gemeldet = liveSekunden.current.gesamt;
+    void window.api.sprache.verbrauch({ model: modellRef.current, usage: { inputTokens: 0, outputTokens: 0 }, sekunden: delta });
   };
   const werkzeugErgebnis = (callId: string, output: unknown, antworten = true) => {
     senden({ type: "conversation.item.create", item: { type: "function_call_output", call_id: callId, output: JSON.stringify(output) } });
@@ -141,7 +169,7 @@ export function Sprachmodus() {
     }
     if (name === "ava_rueckfrage_beantworten") {
       const r = await window.api.sprache.rueckfrage(String(args["choiceId"] ?? ""), String(args["wert"] ?? ""));
-      if (r.ok) { setRueckfrage(null); setAuftragLaeuft(true); }
+      if (r.ok) { setRueckfrage(null); rueckfrageRef.current = null; setAuftragLaeuft(true); }
       werkzeugErgebnis(callId, r.ok ? { status: "weitergegeben", hinweis: "AVA arbeitet weiter; warte auf 'ERGEBNIS von AVA'." } : { error: r.grund ?? "nicht angenommen" });
       return;
     }
@@ -158,6 +186,66 @@ export function Sprachmodus() {
 
   const ereignis = useCallback((e: RealtimeEreignis) => {
     switch (e.type) {
+      // ---- GPT Live --------------------------------------------------------
+      case "session.started": setPhase("wach"); aktiv(); return;
+      case "session.input_transcript.delta": {
+        nutzerTranskript.current += String(e["delta"] ?? "");
+        setNutzerSpricht(true); aktiv();
+        if (hoertTimer.current) clearTimeout(hoertTimer.current);
+        hoertTimer.current = setTimeout(() => setNutzerSpricht(false), 900);
+        return;
+      }
+      case "session.output_transcript.delta": {
+        setLaufendeZeile((z) => z + String(e["delta"] ?? ""));
+        setAiSpricht(true); aktiv();
+        if (sprichtTimer.current) clearTimeout(sprichtTimer.current);
+        sprichtTimer.current = setTimeout(() => {
+          setAiSpricht(false);
+          setLaufendeZeile((z) => { if (z.trim()) logge("ava", z); return ""; });
+        }, 1400);
+        return;
+      }
+      case "session.delegation.created": {
+        // Die Delegation traegt den Auftrag nicht; er steht im Gesagten seit
+        // der letzten Delegation. Offene Rueckfrage: das Gesagte ist die Antwort.
+        const d = (e["delegation"] as { id?: string } | undefined)?.id ?? null;
+        delegationRef.current = d;
+        const gesagt = nutzerTranskript.current.replace(/\s+/g, " ").trim();
+        nutzerTranskript.current = "";
+        aktiv();
+        if (!gesagt) { senden({ type: "session.thinking.append", delegation_id: d, content: "Kein verstaendlicher Auftrag; bitte den Nutzer, es noch einmal zu sagen." }); return; }
+        const rf = rueckfrageRef.current;
+        if (rf) {
+          void window.api.sprache.rueckfrage(rf.choiceId, gesagt).then((r) => {
+            if (r.ok) { setRueckfrage(null); rueckfrageRef.current = null; setAuftragLaeuft(true); senden({ type: "session.thinking.append", delegation_id: d, content: "Antwort an AVA weitergegeben; AVA arbeitet weiter. Ergebnis folgt." }); }
+            else senden({ type: "session.commentary.append", delegation_id: d, content: `Die Antwort konnte nicht weitergegeben werden: ${r.grund ?? "unbekannt"}.` });
+          });
+          return;
+        }
+        logge("du", gesagt);
+        void window.api.sprache.auftrag({ conversationId, text: gesagt }).then((r) => {
+          if (r.laeuft) { setAuftragLaeuft(true); senden({ type: "session.thinking.append", delegation_id: d, content: `Auftrag angenommen: "${gesagt.slice(0, 200)}". AVA arbeitet; sag einen kurzen Satz und warte auf das Ergebnis.` }); }
+          else senden({ type: "session.commentary.append", delegation_id: d, content: `Das ging gerade nicht: ${r.grund ?? "Auftrag nicht gestartet"}.` });
+        });
+        return;
+      }
+      case "session.usage.updated": {
+        const sek = (e["usage"] as { seconds?: number } | undefined)?.seconds;
+        if (typeof sek === "number") liveSekunden.current.gesamt = sek;
+        return;
+      }
+      case "session.closed": {
+        const sek = (e["usage"] as { seconds?: number } | undefined)?.seconds;
+        if (typeof sek === "number") liveSekunden.current.gesamt = sek;
+        liveVerbrauchMelden();
+        const grund = String(e["reason"] ?? "");
+        if ((grund === "expired" || grund === "connection_lost") && zustandRef.current.phase === "wach") {
+          verbindung.current?.schliessen(); verbindung.current = null;
+          void verbindenRef.current?.(true);
+        }
+        return;
+      }
+      // ---- Realtime API (Rueckfall) --------------------------------------
       case "input_audio_buffer.speech_started": setNutzerSpricht(true); aktiv(); return;
       case "input_audio_buffer.speech_stopped": setNutzerSpricht(false); aktiv(); return;
       case "response.created": setAntwortet(true); antwortSeit.current = Date.now(); aktiv(); return;
@@ -197,6 +285,7 @@ export function Sprachmodus() {
     aktiv();
     if (erg.rueckfrage) {
       setRueckfrage(erg.rueckfrage);
+      rueckfrageRef.current = erg.rueckfrage;
       const opts = erg.rueckfrage.options?.length ? ` Optionen: ${erg.rueckfrage.options.map((o) => `${o.label} [${o.value}]`).join(", ")}.` : "";
       nachrichtEinlegen(`RÜCKFRAGE von AVA (choiceId ${erg.rueckfrage.choiceId}): ${erg.rueckfrage.prompt}${opts} Stelle die Frage kurz; die Antwort des Nutzers gibst du mit ava_rueckfrage_beantworten weiter.`);
       logge("system", `Rückfrage: ${erg.rueckfrage.prompt}`);
@@ -204,6 +293,7 @@ export function Sprachmodus() {
     }
     if (erg.fertig) {
       setAuftragLaeuft(false);
+      rueckfrageRef.current = null;
       bloeckeAufnehmen(erg.bloecke);
       const liste = bildschirmListe([...bloeckeRef.current.filter((b) => b.gepinnt || !erg.bloecke.some((n) => n.bezug && n.bezug !== b.bezug)), ...erg.bloecke.map((b) => ({ ...b, gepinnt: false, seit: 0 }))]);
       if (erg.fehler) { nachrichtEinlegen(`ERGEBNIS von AVA: Fehler: ${erg.fehler}`); logge("system", `Fehler: ${erg.fehler}`); return; }
@@ -214,31 +304,54 @@ export function Sprachmodus() {
   }), [conversationId, logge, bloeckeAufnehmen]);
 
   // ---- Verbindung, Ruhezustand, Wecken -------------------------------------
+  const verbindenRef = useRef<((mitKontext: boolean) => Promise<void>) | null>(null);
   const verbinden = useCallback(async (mitKontext: boolean) => {
     setPhase("verbindet"); setFehler(null);
-    let sitzung: SpracheSitzung;
-    try { sitzung = await window.api.sprache.sitzung(); } catch (err) { const f = fehlerEinordnen(err); setFehler(f.message); setFehlerArt(f.art); setPhase("fehler"); return; }
-    const v = new RealtimeVerbindung({
+    const callbacks = {
       onEreignis: ereignis,
-      onZustand: (z, d) => {
+      onZustand: (z: "verbindet" | "offen" | "geschlossen" | "fehler", d?: string) => {
         if (z === "offen") { setPhase("wach"); aktiv(); }
         if (z === "fehler") { const f = fehlerEinordnen(new Error(d ?? "Verbindung verloren")); setFehler(f.message); setFehlerArt(f.art); setPhase("fehler"); }
       },
-    });
-    verbindung.current = v;
-    modellRef.current = sitzung.model;
+    };
     sitzungSeit.current = Date.now();
-    try { await v.verbinden(sitzung.clientSecret, sitzung.model); } catch (err) { const f = fehlerEinordnen(err); setFehler(f.message); setFehlerArt(f.art); setPhase("fehler"); return; }
+    delegationRef.current = null; nutzerTranskript.current = "";
+    // 1) GPT Live (Standard)
+    const live = new LiveVerbindung(callbacks);
+    verbindung.current = live;
+    protoRef.current = "live";
+    try {
+      await live.verbinden((sdp) => window.api.sprache.liveSitzung(sdp));
+      modellRef.current = live.model;
+      liveSekunden.current = { gesamt: 0, gemeldet: 0 };
+    } catch (err) {
+      const f = fehlerEinordnen(err);
+      // Nur wenn OpenAI die Live-Sitzung ablehnt (400/404), auf Realtime ausweichen;
+      // Mikrofon- oder Netzfehler bleiben Fehler.
+      if (!/HTTP 40[04]|Live-Sitzung/.test(f.message)) { setFehler(f.message); setFehlerArt(f.art); setPhase("fehler"); return; }
+      console.warn("[sprache] GPT Live nicht verfügbar, Rückfall auf Realtime:", f.message);
+      // 2) Realtime API (Rueckfall)
+      let sitzung: SpracheSitzung;
+      try { sitzung = await window.api.sprache.sitzung(); } catch (e2) { const g = fehlerEinordnen(e2); setFehler(g.message); setFehlerArt(g.art); setPhase("fehler"); return; }
+      const v = new RealtimeVerbindung(callbacks);
+      verbindung.current = v;
+      protoRef.current = "realtime";
+      modellRef.current = sitzung.model;
+      try { await v.verbinden(sitzung.clientSecret, sitzung.model); } catch (e3) { const g = fehlerEinordnen(e3); setFehler(g.message); setFehlerArt(g.art); setPhase("fehler"); return; }
+    }
     setFehlerArt(null);
-    if (zustandRef.current.stumm) v.mikrofon(false);
+    if (zustandRef.current.stumm) verbindung.current?.mikrofon(false);
     if (mitKontext) {
       const letzte = transkriptRef.current.slice(-KONTEXT_ZEILEN).map((z) => `${z.wer === "ava" ? "AVA" : z.wer === "du" ? "Nutzer" : "System"}: ${z.text}`).join("\n");
       if (letzte) nachrichtEinlegen(`KONTEXT (Gespräch wird nach einer Pause fortgeführt; nicht wiederholen, nur beachten):\n${letzte}\nAuf dem Bildschirm: ${bildschirmListe(bloeckeRef.current)}`, false);
+      liveSekunden.current = { gesamt: 0, gemeldet: 0 };
     }
   }, [ereignis]);
+  verbindenRef.current = verbinden;
 
   const schlafen = useCallback(() => {
-    verbindung.current?.schliessen(); verbindung.current = null;
+    const v = verbindung.current; verbindung.current = null;
+    if (v instanceof LiveVerbindung) { liveVerbrauchMelden(); void v.beenden(); } else v?.schliessen();
     setPhase("ruhe"); setAiSpricht(false); setNutzerSpricht(false); setAntwortet(false); setCountdown(null);
     if (stand?.einstellungen.wachwort && stand.whisperBereit) {
       const l = new WachwortLauscher(() => { void wecken(); }, async (wav) => (await window.api.voice.transcribe(wav)).text);
@@ -292,7 +405,12 @@ export function Sprachmodus() {
       await verbinden(false);
     })();
     const ab = window.api.sprache.onStandChanged(setStand);
-    return () => { weg = true; ab(); verbindung.current?.schliessen(); lauscher.current?.stoppen(); void window.api.sprache.abbrechen(); };
+    return () => {
+      weg = true; ab();
+      const v = verbindung.current; verbindung.current = null;
+      if (v instanceof LiveVerbindung) { liveVerbrauchMelden(); void v.beenden(); } else v?.schliessen();
+      lauscher.current?.stoppen(); void window.api.sprache.abbrechen();
+    };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -306,7 +424,7 @@ export function Sprachmodus() {
       if (z.phase !== "wach") { setCountdown(null); return; }
       if (z.aiSpricht || z.auftragLaeuft || z.antwortet) { letzteAktivitaet.current = Date.now(); setCountdown(null); return; }
       // 55 Minuten: still neu verbinden, solange niemand spricht; Kontext geht mit.
-      if (Date.now() - sitzungSeit.current > NEUVERBINDUNG_MS) {
+      if (protoRef.current === "realtime" && Date.now() - sitzungSeit.current > NEUVERBINDUNG_MS) {
         sitzungSeit.current = Date.now();
         verbindung.current?.schliessen(); verbindung.current = null;
         void verbinden(true);
@@ -339,7 +457,7 @@ export function Sprachmodus() {
         ev.preventDefault();
         pttAktiv.current = true;
         verbindung.current?.mikrofon(true);
-        senden({ type: "input_audio_buffer.clear" });
+        if (protoRef.current === "realtime") senden({ type: "input_audio_buffer.clear" });
         setNutzerSpricht(true);
         aktiv();
       }
@@ -348,8 +466,7 @@ export function Sprachmodus() {
       if (ev.key !== " " || !pttAktiv.current) return;
       pttAktiv.current = false;
       verbindung.current?.mikrofon(false);
-      senden({ type: "input_audio_buffer.commit" });
-      senden({ type: "response.create" });
+      if (protoRef.current === "realtime") { senden({ type: "input_audio_buffer.commit" }); senden({ type: "response.create" }); }
       setNutzerSpricht(false);
       aktiv();
     };
@@ -402,6 +519,16 @@ export function Sprachmodus() {
     if (zustandRef.current.phase === "ruhe") await wecken();
     aktiv();
     logge("du", text);
+    if (protoRef.current === "live") {
+      // Kein Text-Eingang bei GPT Live: getippte Auftraege gehen direkt an
+      // den Relay, die Stimme erfaehrt es als Kontext und liest das Ergebnis.
+      const rf = rueckfrageRef.current;
+      if (rf) { const r = await window.api.sprache.rueckfrage(rf.choiceId, text); if (r.ok) { setRueckfrage(null); rueckfrageRef.current = null; setAuftragLaeuft(true); } return; }
+      const r = await window.api.sprache.auftrag({ conversationId, text });
+      if (r.laeuft) { setAuftragLaeuft(true); delegationRef.current = null; nachrichtEinlegen(`Der Nutzer hat getippt: "${text.slice(0, 300)}". AVA arbeitet daran; sag einen kurzen Satz und warte auf das Ergebnis.`, false); }
+      else setMeldungKurz(r.grund ?? "Auftrag nicht gestartet.");
+      return;
+    }
     nachrichtEinlegen(text);
   };
 
@@ -409,7 +536,7 @@ export function Sprachmodus() {
     const neu = !stumm;
     setStumm(neu);
     verbindung.current?.mikrofon(!neu);
-    senden({ type: "session.update", session: { audio: { input: { turn_detection: neu ? null : { type: "semantic_vad", interrupt_response: true, create_response: true } } } } });
+    if (protoRef.current === "realtime") senden({ type: "session.update", session: { audio: { input: { turn_detection: neu ? null : { type: "semantic_vad", interrupt_response: true, create_response: true } } } } });
   };
 
   const kugelZustand: KugelZustand = phase === "ruhe" ? "ruhe" : phase === "verbindet" || phase === "start" ? "verbindet" : aiSpricht ? "spricht" : nutzerSpricht ? "hoert" : auftragLaeuft || antwortet ? "denkt" : "wach";

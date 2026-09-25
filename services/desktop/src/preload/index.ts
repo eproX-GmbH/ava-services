@@ -1669,12 +1669,14 @@ const api = {
       return () => { ipcRenderer.removeListener("sprache:standChanged", l); };
     },
     sitzung: (): Promise<SpracheSitzung> => ipcRenderer.invoke("sprache:sitzung"),
+    /** GPT Live: Sitzung mit SDP-Angebot anlegen; Antwort = SDP-Answer. */
+    liveSitzung: (sdpOffer: string): Promise<{ sessionId: string; sdpAnswer: string; model: string }> => ipcRenderer.invoke("sprache:liveSitzung", { sdpOffer }),
     auftrag: (input: { conversationId: string; text: string; images?: AgentMessageImage[] }): Promise<{ laeuft: boolean; requestId: string | null; grund?: string }> =>
       ipcRenderer.invoke("sprache:auftrag", input),
     rueckfrage: (choiceId: string, wert: string): Promise<{ ok: boolean; grund?: string }> => ipcRenderer.invoke("sprache:rueckfrage", { choiceId, wert }),
     abbrechen: (): Promise<boolean> => ipcRenderer.invoke("sprache:abbrechen"),
     /** S5 — Token-Zahlen einer Realtime-Antwort (nur beim Organisationsschluessel gemeldet). */
-    verbrauch: (v: { model: string; latencyMs?: number; usage: Record<string, number> }): Promise<{ gemeldet: boolean }> => ipcRenderer.invoke("sprache:verbrauch", v),
+    verbrauch: (v: { model: string; latencyMs?: number; usage: Record<string, number>; sekunden?: number }): Promise<{ gemeldet: boolean }> => ipcRenderer.invoke("sprache:verbrauch", v),
     onErgebnis: (handler: (e: SpracheErgebnis) => void) => {
       const l = (_: unknown, e: SpracheErgebnis) => handler(e);
       ipcRenderer.on("sprache:ergebnis", l);

@@ -46,20 +46,22 @@ Stand 2026-09-24 (v0.1.728). Plan und Entscheidungen: docs/PLAN_SPRACHMODUS.md.
 
 ## Technik (kurz)
 
-- Realtime-Modell `gpt-realtime-2.1`, Stimme fest `marin`, WebRTC direkt
-  zwischen Desktop und OpenAI; Ereignisse ueber den Datenkanal.
-- Der Standardschluessel bleibt im Hauptprozess: `POST /v1/realtime/
-  client_secrets` (direkt oder ueber den Gateway-Proxy) liefert den
-  ephemeren Client-Schluessel fuer den Renderer.
+- Sprachmodell `gpt-live-1` (GPT Live, 0,05 $/Min, Abrechnung je Sekunde),
+  Stimme fest `marin`, WebRTC zwischen Desktop und OpenAI; Ereignisse ueber
+  den Datenkanal. Der Standardschluessel bleibt im Hauptprozess: er legt die
+  Live-Sitzung mit dem SDP-Angebot des Renderers an (`POST /v1/live/
+  sessions`, direkt oder ueber den Gateway-Proxy). Kann OpenAI die Live-
+  Sitzung nicht anlegen, laeuft die Realtime API (`gpt-realtime-2.1-mini`)
+  als Rueckfall.
 - Die Sprach-KI ist nur die Stimme. Werkzeuge, Skills, Gedaechtnis und
   Rueckfragen laufen ueber den Relay (`main/sprache/relay.ts`) in den
-  Chat-Orchestrator; die Sprach-KI hat nur `ava_bearbeiten`,
-  `ava_rueckfrage_beantworten`, `ava_anzeigen`.
-- Verbrauch beim Organisationsschluessel: je Antwort `POST /v1/llm-usage`
-  (Token-Zahlen aus `response.done.usage`, Realtime-Preise je Audio-/Text-
-  Token, Kanal chat).
-- Sitzungen enden bei OpenAI nach 60 Minuten; der Desktop verbindet nach
-  55 Minuten still neu und gibt die letzten Zuege als Kontext mit.
+  Chat-Orchestrator. GPT Live delegiert per `session.delegation.created`;
+  der Auftrag ist das Gesagte seit der letzten Delegation, das Ergebnis
+  kommt als Commentary zurueck und wird vorgelesen.
+- Verbrauch beim Organisationsschluessel: `POST /v1/llm-usage` mit den
+  Gespraechssekunden (GPT Live) bzw. Token-Zahlen (Realtime-Rueckfall).
+- Laeuft eine Sitzung bei OpenAI ab (`session.closed`, reason expired),
+  verbindet der Desktop still neu und gibt die letzten Zuege als Kontext mit.
 - Tests: `npm run test:sprachmodus` (Relay-Text, Bloecke, Wachwort,
   Instruktionsregeln, Werkzeuge).
 

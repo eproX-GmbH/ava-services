@@ -344,6 +344,8 @@ const usageRoute = createRoute({
     model: z.string().min(1).max(100),
     channel: z.enum(["chat", "background", "vorschlaege"]).optional(),
     latencyMs: z.number().int().min(0).max(3_600_000).optional(),
+    /** GPT Live: Gespraechssekunden (Abrechnung je Sekunde, 0,05 $/Min). */
+    sekunden: z.number().min(0).max(86_400).optional(),
     usage: z.object({
       inputTokens: z.number().int().min(0),
       outputTokens: z.number().int().min(0),
@@ -362,7 +364,10 @@ llmProxyRouter.openapi(usageRoute, async (c) => {
   const b = c.req.valid("json");
   const u = b.usage;
   const realtime = b.model.startsWith("gpt-realtime");
-  const cost = realtime
+  const live = b.model.startsWith("gpt-live");
+  const cost = live
+    ? Math.round(((b.sekunden ?? 0) / 60) * 0.05 * 1_000_000)
+    : realtime
     ? estimateRealtimeMicroUsd(b.model, {
         inputTextTokens: u.inputTextTokens ?? Math.max(0, u.inputTokens - (u.inputAudioTokens ?? 0)),
         inputAudioTokens: u.inputAudioTokens ?? 0,

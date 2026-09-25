@@ -386,3 +386,32 @@ Aktivierungswort ueber Whisper, aber nur pegelgesteuert (kein Dauerlauf).
 
 Nicht im laufenden Programm geprueft (nur Typecheck und Build): erster
 Praxistest durch den Nutzer nach dem Release.
+
+### Nachtrag 2026-09-25 (v0.1.732): GPT Live statt Realtime API
+
+Nutzerwunsch: das aktuellste Sprachmodell. Das ist `gpt-live-1` (OpenAI
+"GPT Live", eigener Endpunkt `POST /v1/live/sessions`, Abrechnung je
+Sekunde: 0,05 $/Min statt Audio-Token). GPT Live delegiert Denken und
+Werkzeuge an ein Backend — bei uns per "client delegation" an den Relay,
+also exakt die Architektur aus Abschnitt 0.1.
+
+- Sitzung serverseitig: Renderer erzeugt das SDP-Angebot, Hauptprozess
+  legt die Sitzung mit dem Schluessel an (`main/sprache/live.ts`, auch ueber
+  den Gateway-Proxy) und gibt die SDP-Antwort zurueck. Kein ephemerer
+  Schluessel mehr noetig. Stimme `marin`.
+- Ereignisse (`lib/live.ts`, Sprachmodus.tsx): `session.started`,
+  `session.input_transcript.delta` (hoert), `session.output_transcript.delta`
+  (spricht), `session.delegation.created` → Auftrag = Gesagtes seit der
+  letzten Delegation → Relay; Ergebnis als `session.commentary.append`
+  (wird vorgelesen), Kontext als `session.thinking.append`, jeweils in
+  Happen von ≈ 500 Token. Offene Rueckfrage: das naechste Gesagte ist die
+  Antwort. Getippter Text geht direkt an den Relay (GPT Live hat keinen
+  Text-Eingang). `session.usage.updated`/`session.closed` → Sekunden ans
+  Gateway (`POST /v1/llm-usage` mit `sekunden`), `expired` → stille
+  Neuverbindung mit Kontext.
+- Kein Function Calling bei GPT Live: `ava_anzeigen` (aktives Aufraeumen
+  durch die Sprach-KI) entfaellt; das passive Aufraeumen im Relay bleibt.
+- Rueckfall: Lehnt OpenAI die Live-Sitzung ab (HTTP 400/404), laeuft die
+  bisherige Realtime-Fassung (`gpt-realtime-2.1-mini`, dann `-2.1`) weiter.
+- Instruktionen nach OpenAIs Live-Leitfaden (`liveInstruktionen`):
+  Persona, Rueckmeldelaute, Unterbrechung, Delegationsregeln.
