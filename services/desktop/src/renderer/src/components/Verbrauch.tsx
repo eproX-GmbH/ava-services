@@ -1,4 +1,5 @@
-// Verbrauch einer Anfrage (2026-09-25): "12 s · 8.450 Tokens · ≈ 0,02 $",
+// Verbrauch einer Anfrage (2026-09-25): "12 s · 8.450 Tokens" — ohne
+// Kostenschaetzung (Nutzerwunsch: Betraege weglassen, nur Tokens),
 // waehrend der Arbeit live mit Laufzeit, danach dauerhaft an der Antwort.
 // Vorbild ist die Statuszeile von Claude Code.
 
@@ -31,13 +32,12 @@ function titel(u: AgentTurnUsage): string {
     `Eingabe: ${zahl.format(u.inputTokens)} Tokens${u.cacheReadTokens ? ` (davon ${zahl.format(u.cacheReadTokens)} aus dem Cache)` : ""}`,
     `Ausgabe: ${zahl.format(u.outputTokens)} Tokens`,
     `Modellaufrufe: ${u.steps}`,
-    u.costUsd === null ? "Kosten: nicht zu beziffern (Abo oder unbekanntes Modell)" : null,
   ].filter(Boolean).join("\n");
 }
 
 /** Dauerhafte Zeile unter einer Antwort. */
 export function VerbrauchZeile({ usage }: { usage: AgentTurnUsage }) {
-  const teile = [dauerText(usage.durationMs), `${zahl.format(tokensGesamt(usage))} Tokens`, kostenText(usage.costUsd)].filter(Boolean);
+  const teile = [dauerText(usage.durationMs), `${zahl.format(tokensGesamt(usage))} Tokens`];
   return <div className="verbrauch-zeile" title={titel(usage)}>{teile.join(" · ")}</div>;
 }
 
