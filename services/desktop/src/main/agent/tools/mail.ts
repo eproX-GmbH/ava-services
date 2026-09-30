@@ -23,6 +23,7 @@ import * as yup from "yup";
 import { defineTool, userDeclined } from "../define-tool";
 import type { Tool } from "../types";
 import type { MailSupervisor } from "../../mail/supervisor";
+import type { AttachmentStore } from "../attachment-store";
 import type {
   MailAllowlistEntry,
   MailMessage,
@@ -38,6 +39,43 @@ export interface MailToolDeps {
    *  zur Registry-Zeit registriert, damit der Agent sie kennt — beim
    *  ersten run() prüft jedes Tool die Verfügbarkeit. */
   getSupervisor: () => MailSupervisor | null;
+  /** M1 (docs/PLAN_CHAT_DATEIEN_KONTEXT.md): Chat-Uploads als Mail-Anhaenge. */
+  attachments?: AttachmentStore;
+}
+
+/** Summe aller Anhaenge je Mail; SMTP-uebliche Grenze. */
+const ANHANG_MAX_BYTES = 20 * 1024 * 1024;
+const ANHAENGE_SCHEMA = yup.array().of(yup.string().trim().min(1).required()).max(20).optional();
+const ANHAENGE_PARAM = {
+  type: "array",
+  items: { type: "string" },
+  description: "Im Chat hochgeladene Dateien als Anhang: Handle (att-…), Dateiname oder eindeutiger Namensteil. Nur die vom Nutzer genannten Dateien, nicht alle Uploads.",
+} as const;
+
+type SmtpAnhang = { filename: string; content: Buffer; contentType?: string };
+/** Loest die genannten Dateien auf; Fehler nennen Kandidaten (D3). */
+function anhaengeAufloesen(
+  deps: MailToolDeps,
+  angaben: string[] | undefined,
+  conversationId: string | undefined,
+): { anhaenge: SmtpAnhang[]; beschreibung: string } | { error: string; kandidaten?: string[] } {
+  if (!angaben || angaben.length === 0) return { anhaenge: [], beschreibung: "" };
+  if (!deps.attachments) return { error: "Anhaenge sind in dieser Umgebung nicht verfuegbar." };
+  const anhaenge: SmtpAnhang[] = [];
+  const namen: string[] = [];
+  let summe = 0;
+  for (const a of angaben) {
+    const r = deps.attachments.aufloesen(conversationId, a);
+    if ("fehler" in r) return { error: r.fehler, kandidaten: r.kandidaten };
+    if (anhaenge.some((x) => x.filename === r.datei.filename)) continue;
+    summe += r.datei.sizeBytes;
+    if (summe > ANHANG_MAX_BYTES) {
+      return { error: `Anhaenge zu gross: ${r.datei.filename} bringt die Summe auf ${(summe / 1024 / 1024).toFixed(1)} MB (Grenze 20 MB). Weniger Dateien anhaengen.` };
+    }
+    anhaenge.push({ filename: r.datei.filename, content: Buffer.from(r.datei.bytes), contentType: r.datei.mimeType });
+    namen.push(`${r.datei.filename} (${(r.datei.sizeBytes / 1024).toFixed(0)} KB)`);
+  }
+  return { anhaenge, beschreibung: namen.length > 0 ? `\nAnhaenge: ${namen.join(", ")}` : "" };
 }
 
 function requireSupervisor(
@@ -162,6 +200,7 @@ export function buildMailTools(deps: MailToolDeps): Tool[] {
           type: "string",
           description: "Plain-Text-Body. Markdown wird NICHT konvertiert.",
         },
+        anhaenge: ANHAENGE_PARAM,
       },
     },
     schema: yup
@@ -174,6 +213,7 @@ export function buildMailTools(deps: MailToolDeps): Tool[] {
         cc: yup.array().of(yup.string().email().required()).optional(),
         subject: yup.string().max(998).required(),
         text: yup.string().min(1).max(100_000).required(),
+        anhaenge: ANHAENGE_SCHEMA,
       })
       .noUnknown(true),
     preview: (r: { sent: boolean; to?: string[]; error?: string }) =>
@@ -201,12 +241,14 @@ export function buildMailTools(deps: MailToolDeps): Tool[] {
       const untrusted = recipients.filter(
         (addr) => !isInAllowlist(addr, allowlist),
       );
+      const anh = anhaengeAufloesen(deps, args.anhaenge, ctx.conversationId);
+      if ("error" in anh) return { sent: false, error: anh.error, ...(anh.kandidaten ? { kandidaten: anh.kandidaten } : {}) };
 
       if (untrusted.length > 0) {
         const value = await ctx.ui.askChoice(
           `Ich möchte folgende Mail verschicken:\n\nAn: ${args.to.join(", ")}\n${
             args.cc && args.cc.length > 0 ? `CC: ${args.cc.join(", ")}\n` : ""
-          }Betreff: ${args.subject}\n\n${args.text.slice(0, 1500)}${
+          }Betreff: ${args.subject}${anh.beschreibung}\n\n${args.text.slice(0, 1500)}${
             args.text.length > 1500 ? "\n\n[…gekürzt]" : ""
           }\n\nNicht in Allowlist: ${untrusted.join(", ")}`,
           [
@@ -225,6 +267,7 @@ export function buildMailTools(deps: MailToolDeps): Tool[] {
           cc: args.cc,
           subject: args.subject,
           text: args.text,
+          ...(anh.anhaenge.length > 0 ? { attachments: anh.anhaenge } : {}),
         });
         // v0.1.465 — M1 Zuverlässigkeit: "sent" heißt ZUGESTELLT AN ALLE.
         // Teilweise abgelehnte Empfänger sind KEIN Erfolg — sie werden
@@ -268,12 +311,14 @@ export function buildMailTools(deps: MailToolDeps): Tool[] {
       properties: {
         messageId: { type: "string", description: "Die ID der Quellmail." },
         text: { type: "string", description: "Plain-Text-Antwort." },
+        anhaenge: ANHAENGE_PARAM,
       },
     },
     schema: yup
       .object({
         messageId: yup.string().required(),
         text: yup.string().min(1).max(100_000).required(),
+        anhaenge: ANHAENGE_SCHEMA,
       })
       .noUnknown(true),
     preview: (r: { sent: boolean; error?: string }) =>
@@ -291,11 +336,13 @@ export function buildMailTools(deps: MailToolDeps): Tool[] {
         return { sent: false, error: "Mail-Outbound ist deaktiviert." };
       }
 
+      const anh = anhaengeAufloesen(deps, args.anhaenge, ctx.conversationId);
+      if ("error" in anh) return { sent: false, error: anh.error, ...(anh.kandidaten ? { kandidaten: anh.kandidaten } : {}) };
       if (source.trustLevel !== "trusted") {
         const value = await ctx.ui.askChoice(
           `Antwort an ${source.from.address}${
             source.from.name ? ` (${source.from.name})` : ""
-          }\nBetreff: Re: ${source.subject}\nTrust: ${source.trustLevel}\n\n${args.text.slice(0, 1500)}${
+          }\nBetreff: Re: ${source.subject}\nTrust: ${source.trustLevel}${anh.beschreibung}\n\n${args.text.slice(0, 1500)}${
             args.text.length > 1500 ? "\n\n[…gekürzt]" : ""
           }`,
           [
@@ -320,6 +367,7 @@ export function buildMailTools(deps: MailToolDeps): Tool[] {
           text: args.text,
           inReplyTo: source.messageIdHeader ?? undefined,
           references,
+          ...(anh.anhaenge.length > 0 ? { attachments: anh.anhaenge } : {}),
         });
         // v0.1.465 — M1: abgelehnter Empfänger = NICHT gesendet.
         if (result.rejected.length > 0) {
@@ -367,6 +415,7 @@ export function buildMailTools(deps: MailToolDeps): Tool[] {
           description:
             "Optionaler Begleittext, wird vor dem Forward-Quote eingefügt.",
         },
+        anhaenge: ANHAENGE_PARAM,
       },
     },
     schema: yup
@@ -378,6 +427,7 @@ export function buildMailTools(deps: MailToolDeps): Tool[] {
           .min(1)
           .required(),
         text: yup.string().max(50_000).optional(),
+        anhaenge: ANHAENGE_SCHEMA,
       })
       .noUnknown(true),
     preview: (r: { sent: boolean; to?: string[]; error?: string }) =>
@@ -404,9 +454,11 @@ export function buildMailTools(deps: MailToolDeps): Tool[] {
 
       const allowlist = await store.listAllowlist();
       const untrusted = args.to.filter((addr) => !isInAllowlist(addr, allowlist));
+      const anh = anhaengeAufloesen(deps, args.anhaenge, ctx.conversationId);
+      if ("error" in anh) return { sent: false, error: anh.error, ...(anh.kandidaten ? { kandidaten: anh.kandidaten } : {}) };
       if (untrusted.length > 0) {
         const value = await ctx.ui.askChoice(
-          `Soll ich folgende Mail weiterleiten?\n\nAn: ${args.to.join(", ")}\nNicht in Allowlist: ${untrusted.join(", ")}\n\nOriginal: ${source.from.address} · ${source.subject}\n${(args.text ?? "").slice(0, 800)}`,
+          `Soll ich folgende Mail weiterleiten?\n\nAn: ${args.to.join(", ")}\nNicht in Allowlist: ${untrusted.join(", ")}${anh.beschreibung}\n\nOriginal: ${source.from.address} · ${source.subject}\n${(args.text ?? "").slice(0, 800)}`,
           [
             { value: "send", label: "Weiterleiten", description: "Mail wird verschickt" },
             { value: "cancel", label: "Abbrechen" },
@@ -431,6 +483,7 @@ export function buildMailTools(deps: MailToolDeps): Tool[] {
           subject,
           text: body,
           references,
+          ...(anh.anhaenge.length > 0 ? { attachments: anh.anhaenge } : {}),
         });
         // v0.1.465 — M1: abgelehnte Empfänger = kein (voller) Erfolg.
         if (result.rejected.length > 0) {

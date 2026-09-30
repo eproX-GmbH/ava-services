@@ -1125,6 +1125,12 @@ export class AgentOrchestrator extends EventEmitter {
         // text, even though only ~6 were exposed structurally — a
         // ~10k-token leak per turn.
         const availableToolNames = new Set<string>(ALWAYS_ON_CORE_TOOL_NAMES);
+        // D2: Liegen Uploads im Verlauf, sind die Datei-Werkzeuge da, ohne
+        // dass das Modell sie erst suchen muss.
+        if (conversation.messages.some((m) => m.role === "user" && m.content.includes("[attachment:"))) {
+          conversation.loadedToolNames ??= new Set<string>();
+          for (const n of ["datei_info", "datei_lesen", "datei_suchen"]) conversation.loadedToolNames.add(n);
+        }
         if (conversation.loadedToolNames) {
           for (const n of conversation.loadedToolNames) availableToolNames.add(n);
         }

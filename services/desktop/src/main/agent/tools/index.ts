@@ -46,6 +46,7 @@ import { buildNotionTools } from "./notion";
 import { buildObsidianTools } from "./obsidian";
 import { buildSkillsTools } from "./skills";
 import { buildMailTools } from "./mail";
+import { buildDateiTools } from "./dateien";
 import { buildSchedulerTools } from "./scheduler";
 import { buildLinkMonitorTools } from "./link-monitor";
 import { buildTelegramTools } from "./telegram";
@@ -343,8 +344,10 @@ export function buildReadOnlyRegistry(deps: {
   // ziierung in main/index.ts, d.h. getMailSupervisor() würde hier
   // immer null liefern → Tools wären nie registriert. Jetzt registrieren
   // wir die Tools immer und prüfen Verfügbarkeit beim run().
-  for (const t of buildMailTools({ getSupervisor: deps.getMailSupervisor }))
+  for (const t of buildMailTools({ getSupervisor: deps.getMailSupervisor, attachments: deps.attachments }))
     registry.register(t);
+  // D2 (docs/PLAN_CHAT_DATEIEN_KONTEXT.md): Uploads gezielt lesen.
+  for (const t of buildDateiTools({ attachments: deps.attachments })) registry.register(t);
   // v0.1.267 — Scheduler-Tools, gleiche Lazy-Getter-Logik.
   for (const t of buildSchedulerTools({
     getSupervisor: deps.getScheduledJobsSupervisor,

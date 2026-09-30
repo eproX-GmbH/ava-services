@@ -1043,7 +1043,7 @@ export function Chat() {
     const rejected = nonImage.length - accepted.length;
     if (rejected > 0 && accepted.length === 0 && imageFiles.length === 0) {
       setError(
-        `Nicht unterstützter Dateityp. Bitte .xlsx-, .xls-, .csv-, .tsv-, .pdf-Dateien oder Bilder (PNG/JPEG) ablegen.`,
+        `Datei zu groß (mehr als 25 MB).`,
       );
       return;
     }
@@ -1286,6 +1286,8 @@ export function Chat() {
               headers: s.headers,
               totalRows: s.totalRows,
             })),
+            conversationId: id,
+            ...(att.seiten ? { seiten: att.seiten } : {}),
           });
           return { ...att, stagedId };
         }),
@@ -1774,7 +1776,7 @@ export function Chat() {
               ref={fileInputRef}
               type="file"
               multiple
-              accept=".xlsx,.xls,.csv,.tsv,.pdf,application/pdf,image/png,image/jpeg,image/webp,image/gif"
+              accept="*/*"
               style={{ display: "none" }}
               onChange={handleFileInput}
             />
@@ -3230,9 +3232,12 @@ function AttachmentDisclosure({ block }: { block: AttachmentBlock }) {
   // Best-effort meta: pluck the first "(N data rows)" we see; gives the
   // chip something concrete next to the filename.
   const rowMatch = /\((\d+) data rows?\)/.exec(block.body);
+  const seitenMatch = /(\d+) Seiten?/.exec(block.body);
   const rowSummary = rowMatch
     ? `${rowMatch[1]} ${rowMatch[1] === "1" ? "Zeile" : "Zeilen"}`
-    : null;
+    : seitenMatch
+      ? `${seitenMatch[1]} ${seitenMatch[1] === "1" ? "Seite" : "Seiten"}`
+      : null;
   return (
     <details
       className="chat-attachment-disclosure"

@@ -261,6 +261,12 @@ damit Fehler auch ohne Renderer nachvollziehbar sind.
 
 ---
 
+## Stand
+
+- v0.1.738 (2026-09-30): Schritt 1 (K1, K3, V6-Log) und Schritt 2 (V1–V4 Prompt-Regeln).
+- v0.1.739 (2026-09-30): Schritte 3–5 (D1 Handle fuer alle Typen, Ablage userData/anhaenge 7 Tage, Kurzansicht; D2 datei_info/datei_lesen/datei_suchen, automatisch geladen bei Uploads; D3 Aufloesen nach Handle/Name/Namensteil; M1 anhaenge in mail_send/mail_reply/mail_forward, Rueckfrage nennt Anhaenge). PDF und DOCX werden im Hauptprozess seitenweise extrahiert.
+- Offen: K2 ansicht kompakt/voll, M2 Weiterleitung mit Original-Anhaengen (Bytes empfangener Mails liegen nicht vor, muessten per IMAP nachgeladen werden), V5 Musterpruefung, K4 Fehlertexte, V6 Protokoll-Aufklapper.
+
 ## Reihenfolge und Aufwand
 
 | Schritt | Inhalt | Aufwand | Release |

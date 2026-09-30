@@ -1099,6 +1099,8 @@ const api = {
       filename: string;
       bytes: Uint8Array;
       sheets: Array<{ name: string; headers: string[]; totalRows: number }>;
+      conversationId?: string;
+      seiten?: string[];
     }): Promise<{ id: string; filename: string; sizeBytes: number }> =>
       ipcRenderer.invoke("agent:stageAttachment", input),
     discardAttachment: (id: string): Promise<boolean> =>
@@ -1116,6 +1118,7 @@ const api = {
       numPages: number;
       filename: string;
       truncated: boolean;
+      seiten: string[];
     }> => ipcRenderer.invoke("agent:extractPdfText", input),
 
     // General memory (Phase 8.k10h). Long-term facts the agent can

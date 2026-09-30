@@ -51,6 +51,12 @@ export interface SpreadsheetAttachment {
   sheets: SheetSummary[];
   /** Optional parse-warning surfaced as a chip subtext (e.g. truncation). */
   warning?: string;
+  /** 2026-09-30 (D1): Dateityp; Text je Seite geht NUR an den Store, nie in den Prompt. */
+  typ?: "tabelle" | "pdf" | "text" | "docx" | "bild" | "sonstige";
+  seiten?: string[];
+  numPages?: number;
+  /** Erste ~600 Zeichen fuer den Marker. */
+  kurzansicht?: string;
   /**
    * Set by `Chat.tsx` after `window.api.agent.stageAttachment` returns —
    * the main-process id we weave into the user prompt so the agent has
@@ -80,10 +86,24 @@ export const ATTACHMENT_MAX_BYTES = 25 * 1024 * 1024; // 25 MB
  *  to letting SheetJS try (it'll throw on garbage). v0.1.301 — .pdf
  *  hinzugefügt, parsing geht über IPC ans main (pdf-parse). */
 const SUPPORTED_EXT = [".xlsx", ".xls", ".csv", ".tsv", ".pdf"] as const;
+const TEXT_EXT = [".txt", ".md", ".markdown", ".json", ".xml", ".html", ".htm"] as const;
+const KURZANSICHT_ZEICHEN = 600;
 
+/** 2026-09-30 (D1): jede Datei ist erlaubt; ohne Textextraktion nur als Handle (Mail-Anhang). */
 export function isSupportedAttachment(file: File): boolean {
-  const name = file.name.toLowerCase();
-  return SUPPORTED_EXT.some((ext) => name.endsWith(ext));
+  return file.size <= ATTACHMENT_MAX_BYTES;
+}
+function typVon(name: string): NonNullable<SpreadsheetAttachment["typ"]> {
+  const n = name.toLowerCase();
+  if (SUPPORTED_EXT.some((e) => e.endsWith(".pdf") ? false : n.endsWith(e))) return "tabelle";
+  if (n.endsWith(".pdf")) return "pdf";
+  if (n.endsWith(".docx")) return "docx";
+  if (TEXT_EXT.some((e) => n.endsWith(e))) return "text";
+  if (/\.(png|jpe?g|webp|gif)$/.test(n)) return "bild";
+  return "sonstige";
+}
+function kurz(text: string): string {
+  return text.replace(/\s+/g, " ").trim().slice(0, KURZANSICHT_ZEICHEN);
 }
 
 export async function parseAttachment(
@@ -99,10 +119,18 @@ export async function parseAttachment(
   // throwt parsePdfAttachment einen ScanPdfDetected-Error mit den
   // Original-Bytes. Der Chat.tsx-ingest-Pfad fängt den ab, fragt den
   // User nach dem Page-Cap, und rendert dann via pdfjs-dist.
-  if (file.name.toLowerCase().endsWith(".pdf")) {
+  const typ = typVon(file.name);
+  if (typ === "pdf" || typ === "docx") {
     return parsePdfAttachment(file);
   }
   const buf = await file.arrayBuffer();
+  if (typ === "text") {
+    const text = new TextDecoder("utf-8").decode(buf);
+    return { id: makeAttachmentId(), filename: file.name, sizeBytes: file.size, bytes: new Uint8Array(buf), sheets: [], typ, seiten: [text], numPages: 1, kurzansicht: kurz(text) };
+  }
+  if (typ !== "tabelle") {
+    return { id: makeAttachmentId(), filename: file.name, sizeBytes: file.size, bytes: new Uint8Array(buf), sheets: [], typ };
+  }
   let workbook: XLSX.WorkBook;
   try {
     workbook = XLSX.read(buf, { type: "array" });
@@ -182,6 +210,14 @@ export function renderAttachmentForPrompt(
   lines.push(
     `[attachment: ${attachment.filename}${idSegment}${nameSegment}]`,
   );
+  // 2026-09-30 (D1): Nicht-Tabellen tragen nur Typ, Umfang und Kurzansicht.
+  if (attachment.typ && attachment.typ !== "tabelle") {
+    const umfang = attachment.numPages ? ` · ${attachment.numPages} Seite${attachment.numPages === 1 ? "" : "n"}` : "";
+    lines.push(`Typ: ${attachment.typ}${umfang} · ${formatBytes(attachment.sizeBytes)}`);
+    if (attachment.kurzansicht) lines.push(`Kurzansicht: ${attachment.kurzansicht}`);
+    else lines.push("Kein Text extrahierbar; nur als Anhang weiterreichbar.");
+    return lines.join("\n");
+  }
   for (const sheet of attachment.sheets) {
     lines.push("");
     // v0.1.301 — PDF-Spezialform: ein „Sheet" mit Header
@@ -277,6 +313,7 @@ async function parsePdfAttachment(file: File): Promise<SpreadsheetAttachment> {
           numPages: number;
           filename: string;
           truncated: boolean;
+          seiten?: string[];
         }>;
       };
     };
@@ -292,28 +329,23 @@ async function parsePdfAttachment(file: File): Promise<SpreadsheetAttachment> {
   // aber pdf-parse fast nichts zurückgibt, ist's mit hoher Wahrscheinlich-
   // keit ein Scan ohne OCR-Layer. Wir signalisieren das mit einem
   // spezifischen Error, den der Caller abfangen + den User fragen kann.
-  if (textLen < SCAN_PDF_TEXT_THRESHOLD && result.numPages > 0) {
+  if (textLen < SCAN_PDF_TEXT_THRESHOLD && result.numPages > 0 && file.name.toLowerCase().endsWith(".pdf")) {
     throw new ScanPdfDetectedError(file.name, u8, result.numPages);
   }
-  // Token-Limit-Schutz: das Render-Format unten cap't die Sample-Zeile
-  // bei 80 Zeichen — für PDFs nicht sinnvoll, weil dann der Agent
-  // nichts sieht. Stattdessen renderPdfAttachment unten via Override.
+  // 2026-09-30 (D1): Volltext NICHT mehr in den Prompt. Seiten gehen beim
+  // Senden an den Store (datei_lesen/datei_suchen), der Marker bekommt
+  // nur die Kurzansicht.
+  const seiten = result.seiten && result.seiten.length > 0 ? result.seiten : [result.text ?? ""];
   return {
     id: makeAttachmentId(),
     filename: file.name,
     sizeBytes: file.size,
     bytes: u8,
-    sheets: [
-      {
-        name: `PDF-Inhalt (${result.numPages} Seite${result.numPages === 1 ? "" : "n"})`,
-        headers: ["__pdf_text__"], // Marker — rendert anders, siehe renderAttachmentForPrompt
-        sampleRows: [[result.text]],
-        totalRows: result.numPages,
-      },
-    ],
-    warning: result.truncated
-      ? `PDF-Text auf 200k Zeichen gekürzt — bei langen Verträgen ggf. nicht der vollständige Inhalt.`
-      : undefined,
+    sheets: [],
+    typ: file.name.toLowerCase().endsWith(".docx") ? "docx" : "pdf",
+    seiten,
+    numPages: result.numPages,
+    kurzansicht: kurz(seiten.find((s) => s.trim()) ?? ""),
   };
 }
 
