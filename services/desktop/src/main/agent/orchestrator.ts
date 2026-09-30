@@ -1,5 +1,6 @@
 import { EventEmitter } from "node:events";
 import { randomUUID } from "node:crypto";
+import { ergebnisBegrenzen, verlaufFuerModell } from "./kontext-kuerzung";
 import * as relevanz from "../relevanz";
 import { ausAufruf, signalArtFuer } from "../relevanz/aus-werkzeugen";
 import { hasVision } from "@ava/ai-provider";
@@ -1170,7 +1171,9 @@ export class AgentOrchestrator extends EventEmitter {
           createdAt: 0,
         };
         lastSystemMessage = systemMessage;
-        const messages = [systemMessage, ...conversation.messages];
+        // K3 (docs/PLAN_CHAT_DATEIEN_KONTEXT.md): alte Werkzeugergebnisse
+        // gehen nur als Platzhalter ans Modell; gespeichert bleibt alles.
+        const messages = [systemMessage, ...verlaufFuerModell(conversation.messages)];
 
         const assistantId = randomUUID();
         let assistantContent = "";
@@ -1396,10 +1399,19 @@ export class AgentOrchestrator extends EventEmitter {
                 `bei ${TOOL_REPEAT_HARD_LIMIT} Aufrufen wird das Tool gesperrt. Antworte dem Nutzer, wenn du genug weißt.]`
               : "";
 
+          // K1: Obergrenze je Werkzeugergebnis (Notbremse fuer Werkzeuge
+          // ohne kompakte Ansicht). V6: Fehler auch im Hauptprozess-Log.
+          const begrenzt = ergebnisBegrenzen(result.content);
+          if (begrenzt.gekuerzt) {
+            console.warn(`[agent] tool_result_gekuerzt convo=${conversation.id} tool=${call.name} zeichen=${result.content.length}`);
+          }
+          if (!result.ok) {
+            console.warn(`[agent] tool_error convo=${conversation.id} tool=${call.name} msg=${result.preview.slice(0, 300)}`);
+          }
           this.appendMessage(conversation, {
             id: randomUUID(),
             role: "tool",
-            content: result.content + wiederholungsHinweis,
+            content: begrenzt.content + wiederholungsHinweis,
             toolCallId: call.id,
             createdAt: Date.now(),
           });
@@ -1409,7 +1421,7 @@ export class AgentOrchestrator extends EventEmitter {
             conversationId: conversation.id,
             toolCallId: call.id,
             ok: result.ok,
-            preview: result.preview,
+            preview: begrenzt.gekuerzt ? `${result.preview} (gekürzt, ${Math.round(result.content.length / 1000)} k Zeichen)` : result.preview,
           });
 
           // Relevanz (docs/PLAN_RELEVANZ.md, 3.4): Firmen und Personen, um
@@ -1456,8 +1468,8 @@ export class AgentOrchestrator extends EventEmitter {
         createdAt: Date.now(),
       };
       const wrapUpMessages = lastSystemMessage
-        ? [lastSystemMessage, ...conversation.messages, wrapUpNudge]
-        : [...conversation.messages, wrapUpNudge];
+        ? [lastSystemMessage, ...verlaufFuerModell(conversation.messages), wrapUpNudge]
+        : [...verlaufFuerModell(conversation.messages), wrapUpNudge];
       for await (const frame of provider.streamChat({
         messages: wrapUpMessages,
         tools: undefined, // keine Tools → erzwingt eine Text-Antwort
