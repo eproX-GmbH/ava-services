@@ -99,35 +99,6 @@ export function buildCompanyTools(ctx: Ctx): Tool[] {
         : `${r.total} match${r.total === 1 ? "" : "es"}${(r as { hinweis?: string }).hinweis ? ", mit Statuswarnung" : ""}`,
   });
 
-  const get = defineTool({
-    name: "company_get",
-    description:
-      "Fetch the canonical company record (legal name, register, address, country) by its global companyId. Field `land` fasst Land und Register zusammen (z. B. \"Österreich, Firmenbuch FN 56247t, Landesgericht Salzburg\"); country DE | AT | CH, registerType HRB/HRA (DE) oder FN (AT), legalForm = amtliche Rechtsform, uid = Umsatzsteuer-Id. Bei oesterreichischen Firmen gibt es keinen kostenlosen Vollauszug (JustizOnline, kostenpflichtig).",
-    parameters: {
-      type: "object",
-      properties: { companyId: { type: "string" } },
-      required: ["companyId"],
-    },
-    schema: yup.object({ companyId: yup.string().trim().min(1).required() }),
-    run: async (args, c) => {
-      const r = await gateway.request<Record<string, unknown>>(
-        `/v1/companies/${encodeURIComponent(args.companyId)}`,
-        { signal: c.signal },
-      );
-      // Status zuerst: Insolvenz, Loeschung, Liquidation muessen den Kontext dominieren.
-      const warnung = statusWarnungText(r as never);
-      const l = landText(r as never);
-      return { ...(warnung ? { statusWarnung: warnung } : {}), ...(l ? { land: l } : {}), ...r };
-    },
-    preview: (r) => {
-      const name = pickFirst(
-        (r as { name?: string }).name,
-        (r as { legalName?: string }).legalName,
-      );
-      const w = (r as { statusWarnung?: string }).statusWarnung;
-      return `${name ? `company: ${name}` : "company record"}${w ? ` — ${w.slice(0, 60)}` : ""}`;
-    },
-  });
 
   // Firmen-Verflechtungen (docs/PLAN_VERFLECHTUNGEN.md §5, V7): Gesellschafter,
   // Netz und tieferer Lauf. Nur deutsche Firmen (HRB), Org-Feature verflechtungen.
@@ -699,6 +670,87 @@ export function buildCompanyTools(ctx: Ctx): Tool[] {
       return null;
     }
   };
+
+  // K5 / W1 (docs/PLAN_WERKZEUGE_ZUSAMMENLEGEN.md, 2026-09-30): EIN Aufruf
+  // statt fuenf. Der Betzemeier-Test lud website, structured_content,
+  // keywords, crm_summary und data_quality einzeln (tool_search + tool_load
+  // + fuenf Aufrufe). `bereiche` holt die Abschnitte in einem Zug; jeder
+  // Abschnitt scheitert fuer sich (fehler je Bereich, nie der ganze Aufruf).
+  const BEREICHE = {
+    profil: profile,
+    website,
+    register: structuredContent,
+    stichworte: keywords,
+    publikationen: publications,
+    kontakte: contacts,
+    crm: crmSummary,
+    datenqualitaet: dataQuality,
+    technik: techStack,
+    insolvenz: insolvency,
+    linkedin: linkedInSignals,
+    gesellschafter: shareholders,
+  } as const;
+  type Bereich = keyof typeof BEREICHE;
+  const BEREICH_NAMEN = Object.keys(BEREICHE) as Bereich[];
+
+  const get = defineTool({
+    name: "company_get",
+    description:
+      "Stammdaten einer Firma (Name, Register, Anschrift, Land, Rechtsform, USt-Id; `statusWarnung` bei Insolvenz/Loeschung/Liquidation; `land` fasst Land und Register zusammen). " +
+      "Mit `bereiche` holst du in DEMSELBEN Aufruf weitere Abschnitte, statt einzelne company_*-Werkzeuge zu laden: " +
+      "profil (Kurzprofil, Branche), website (Website-Fakten), register (Registerinhalt: Geschaeftsfuehrer, Kapital, Gegenstand), stichworte, publikationen (Jahresabschluesse, kompakt), kontakte (Personen, kompakt), crm (HubSpot-Stand), datenqualitaet, technik (Tech-Stack), insolvenz, linkedin (Signale), gesellschafter (nur DE/HRB). " +
+      "Fuer eine Firmenfrage: EIN company_get mit den passenden Bereichen, nicht mehrere Einzelaufrufe. Bei oesterreichischen Firmen gibt es keinen kostenlosen Vollauszug.",
+    parameters: {
+      type: "object",
+      properties: {
+        companyId: { type: "string" },
+        bereiche: { type: "array", items: { type: "string", enum: BEREICH_NAMEN }, description: "Zusaetzliche Abschnitte, z. B. [\"profil\", \"register\", \"kontakte\"]." },
+        ansicht: { type: "string", enum: ["kompakt", "voll"], description: "Gilt fuer publikationen und kontakte. Standard kompakt." },
+      },
+      required: ["companyId"],
+    },
+    schema: yup.object({
+      companyId: yup.string().trim().min(1).required(),
+      bereiche: yup.array().of(yup.string().oneOf(BEREICH_NAMEN).required()).max(BEREICH_NAMEN.length).optional(),
+      ansicht: yup.string().oneOf(["kompakt", "voll"]).optional(),
+    }),
+    run: async (args, c) => {
+      const r = await gateway.request<Record<string, unknown>>(
+        `/v1/companies/${encodeURIComponent(args.companyId)}`,
+        { signal: c.signal },
+      );
+      // Status zuerst: Insolvenz, Loeschung, Liquidation muessen den Kontext dominieren.
+      const warnung = statusWarnungText(r as never);
+      const l = landText(r as never);
+      const stamm = { ...(warnung ? { statusWarnung: warnung } : {}), ...(l ? { land: l } : {}), ...r };
+      const gewuenscht = [...new Set(args.bereiche ?? [])] as Bereich[];
+      if (gewuenscht.length === 0) return stamm;
+      const ergebnisse = await Promise.all(
+        gewuenscht.map(async (b) => {
+          const tool = BEREICHE[b] as { run: (a: Record<string, unknown>, ctx: typeof c) => Promise<unknown> };
+          try {
+            return await tool.run({ companyId: args.companyId, ...(args.ansicht ? { ansicht: args.ansicht } : {}) }, c);
+          } catch (err) {
+            return { fehler: err instanceof Error ? err.message : String(err) };
+          }
+        }),
+      );
+      // In der angefragten Reihenfolge, nicht in der Reihenfolge des Eintreffens.
+      const abschnitte: Record<string, unknown> = {};
+      gewuenscht.forEach((b, i) => { abschnitte[b] = ergebnisse[i]; });
+      return { ...stamm, bereiche: abschnitte };
+    },
+    preview: (r) => {
+      const name = pickFirst(
+        (r as { name?: string }).name,
+        (r as { legalName?: string }).legalName,
+      );
+      const w = (r as { statusWarnung?: string }).statusWarnung;
+      const b = (r as { bereiche?: Record<string, unknown> }).bereiche;
+      const teile = b ? ` (+ ${Object.keys(b).join(", ")})` : "";
+      return `${name ? `company: ${name}` : "company record"}${teile}${w ? ` — ${w.slice(0, 60)}` : ""}`;
+    },
+  });
 
   const linkedinLookup = defineTool({
     name: "contact_linkedin_lookup",

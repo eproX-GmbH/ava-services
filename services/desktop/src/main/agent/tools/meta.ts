@@ -269,10 +269,11 @@ export const ALWAYS_ON_CORE_TOOL_NAMES: ReadonlySet<string> = new Set<string>([
   // Token-Kosten: ca. +3-5k pro Turn (Schemas der 6 Tools). Bei
   // Anthropic-Subscription (User-Setup) irrelevant. Bei API-Abrechnung
   // ist der Trade-off zugunsten "weniger Halluzinationen" klar.
+  // 2026-09-30 (W1): company_profile und company_publications sind ueber
+  // company_get { bereiche } erreichbar und nicht mehr im Kern (spart ihre
+  // Schemas je Zug); einzeln weiter ladbar.
   "company_search",
   "company_get",
-  "company_profile",
-  "company_publications",
   "company_contacts",
   "crm_search_hubspot_companies",
 ]);
