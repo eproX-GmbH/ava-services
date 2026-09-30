@@ -132,6 +132,29 @@ export class EmailMusterSupervisor {
     return out;
   }
 
+  /**
+   * V5 (docs/PLAN_CHAT_DATEIEN_KONTEXT.md, 2026-09-30): frei gewaehlte
+   * Lokalteile (rechnung, buchhaltung, invoice) an der Firmendomain
+   * pruefen. Nichts wird gespeichert; Funktionsadressen sind keine Personen.
+   */
+  async pruefeLokalteile(companyId: string, lokalteile: string[]): Promise<{ domain: string | null; ergebnisse: Array<{ email: string; ergebnis: PruefErgebnis; antwort: string | null }>; hinweis?: string }> {
+    const { websiteUrl, personen } = await this.kontakte(companyId);
+    const domain = this.domainAus(websiteUrl, personen);
+    if (!domain) return { domain: null, ergebnisse: [], hinweis: "Keine Domain bekannt (weder Website noch Personen-E-Mails). Erst die Website der Firma ermitteln." };
+    const adressen = [...new Set(lokalteile.map((l) => l.trim().toLowerCase()).filter((l) => /^[a-z0-9._+-]{1,40}$/.test(l)))].slice(0, 10).map((l) => `${l}@${domain}`);
+    if (adressen.length === 0) return { domain, ergebnisse: [], hinweis: "Keine gueltigen Lokalteile." };
+    const r = await pruefeAdressen(domain, adressen, { catchAllProbe: zufallsAdresse(domain), log: this.deps.log });
+    const ergebnisse = adressen.map((email) => ({ email, ergebnis: r.get(email)?.ergebnis ?? "unbekannt", antwort: r.get(email)?.antwort ?? null }));
+    const catchAll = ergebnisse.some((e) => e.ergebnis === "catch_all");
+    const gesperrt = ergebnisse.some((e) => e.ergebnis === "gesperrt");
+    return {
+      domain,
+      ergebnisse,
+      ...(catchAll ? { hinweis: "Der Mailserver nimmt jede Adresse an (Catch-all); ein 'catch_all' belegt die Adresse nicht. Dem Nutzer als unbestaetigt nennen." } : {}),
+      ...(gesperrt ? { hinweis: "Der Mailserver blockt Pruefanfragen; keine Aussage moeglich." } : {}),
+    };
+  }
+
   private async kontakte(companyId: string): Promise<{ websiteUrl: string | null; personen: PersonInfo[] }> {
     const r = await this.deps.gatewayRequest<{ websiteUrl?: string | null; companyFacts?: Array<Record<string, unknown>>; employments?: Array<Record<string, unknown>> }>(
       `/v1/companies/${encodeURIComponent(companyId)}/contacts`,

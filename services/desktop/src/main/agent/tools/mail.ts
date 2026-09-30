@@ -416,6 +416,7 @@ export function buildMailTools(deps: MailToolDeps): Tool[] {
             "Optionaler Begleittext, wird vor dem Forward-Quote eingefügt.",
         },
         anhaenge: ANHAENGE_PARAM,
+        originalAnhaenge: { type: "boolean", description: "true = die Anhaenge der Originalmail mitschicken (werden vom Mailserver nachgeladen). Standard false." },
       },
     },
     schema: yup
@@ -428,6 +429,7 @@ export function buildMailTools(deps: MailToolDeps): Tool[] {
           .required(),
         text: yup.string().max(50_000).optional(),
         anhaenge: ANHAENGE_SCHEMA,
+        originalAnhaenge: yup.boolean().optional(),
       })
       .noUnknown(true),
     preview: (r: { sent: boolean; to?: string[]; error?: string }) =>
@@ -454,8 +456,21 @@ export function buildMailTools(deps: MailToolDeps): Tool[] {
 
       const allowlist = await store.listAllowlist();
       const untrusted = args.to.filter((addr) => !isInAllowlist(addr, allowlist));
-      const anh = anhaengeAufloesen(deps, args.anhaenge, ctx.conversationId);
-      if ("error" in anh) return { sent: false, error: anh.error, ...(anh.kandidaten ? { kandidaten: anh.kandidaten } : {}) };
+      const anhChat = anhaengeAufloesen(deps, args.anhaenge, ctx.conversationId);
+      if ("error" in anhChat) return { sent: false, error: anhChat.error, ...(anhChat.kandidaten ? { kandidaten: anhChat.kandidaten } : {}) };
+      const anh = { anhaenge: [...anhChat.anhaenge], beschreibung: anhChat.beschreibung };
+      if (args.originalAnhaenge === true) {
+        try {
+          const orig = await sup.originalAnhaenge(args.messageId);
+          const summe = [...anh.anhaenge, ...orig].reduce((n, a) => n + a.content.length, 0);
+          if (summe > ANHANG_MAX_BYTES) return { sent: false, error: `Anhaenge zu gross (${(summe / 1024 / 1024).toFixed(1)} MB, Grenze 20 MB).` };
+          anh.anhaenge.push(...orig);
+          if (orig.length > 0) anh.beschreibung += `\nOriginal-Anhaenge: ${orig.map((a) => `${a.filename} (${(a.content.length / 1024).toFixed(0)} KB)`).join(", ")}`;
+          else anh.beschreibung += "\n(Die Originalmail hat keine Anhaenge.)";
+        } catch (err) {
+          return { sent: false, error: err instanceof Error ? err.message : String(err) };
+        }
+      }
       if (untrusted.length > 0) {
         const value = await ctx.ui.askChoice(
           `Soll ich folgende Mail weiterleiten?\n\nAn: ${args.to.join(", ")}\nNicht in Allowlist: ${untrusted.join(", ")}${anh.beschreibung}\n\nOriginal: ${source.from.address} · ${source.subject}\n${(args.text ?? "").slice(0, 800)}`,

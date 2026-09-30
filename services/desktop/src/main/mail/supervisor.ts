@@ -253,6 +253,15 @@ export class MailSupervisor extends EventEmitter {
    *  den Mail-Tools nutzen ausschließlich diese Methode statt
    *  smtp.send direkt, damit die Sent-Folder-Spiegelung garantiert
    *  ist. Sync-Fehler sind nicht-fatal — Mail ist gesendet. */
+  /** M2: Original-Anhaenge einer gespeicherten Mail (per IMAP-UID). */
+  async originalAnhaenge(messageId: string): Promise<Array<{ filename: string; content: Buffer; contentType?: string }>> {
+    if (!this.imap) throw new Error("IMAP nicht verbunden; Original-Anhaenge koennen nicht geladen werden.");
+    const msg = await this.getStore().getMessage(messageId);
+    if (!msg) throw new Error(`Mail ${messageId} nicht gefunden.`);
+    if (msg.imapUid == null) throw new Error("Diese Mail hat keine IMAP-UID (z. B. selbst gesendet); Original-Anhaenge nicht verfuegbar.");
+    return this.imap.fetchAttachments(Number(msg.imapUid));
+  }
+
   async sendAndSync(input: SmtpSendInput): Promise<SmtpSendResult> {
     if (!this.smtp) throw new Error("SMTP nicht initialisiert.");
     const result = await this.smtp.send(input);

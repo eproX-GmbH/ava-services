@@ -137,5 +137,29 @@ export function buildEmailMusterTools(deps: { get: () => EmailMusterSupervisor |
     run: async () => ({ ergebnis: await svc().runNow() }),
   });
 
-  return [status, verlauf, config, vorschau, jetzt];
+  // V5 (docs/PLAN_CHAT_DATEIEN_KONTEXT.md): Funktionsadressen pruefen.
+  const adressePruefen = defineTool({
+    name: "email_adresse_pruefen",
+    summary: "Frei gewaehlte Adressen an der Firmendomain per Mail-Server-Anfrage pruefen (z. B. rechnung@, buchhaltung@, bewerbung@).",
+    category: "kontakte email adresse rechnung buchhaltung pruefen",
+    description:
+      "Prueft bis zu 10 Lokalteile (ohne @) an der Domain der Firma per SMTP-Anfrage, ohne eine Mail zu senden. Ergebnis je Adresse: existiert, existiert_nicht, unbekannt, catch_all (Server nimmt alles an, kein Beleg), gesperrt. " +
+      "Nutze es, wenn der Nutzer eine Adresse braucht, die nicht vorliegt (Rechnung, Buchhaltung, Bewerbung, Presse). Dauert einige Sekunden. Nichts wird gespeichert.",
+    parameters: {
+      type: "object",
+      required: ["companyId", "lokalteile"],
+      properties: {
+        companyId: { type: "string" },
+        lokalteile: { type: "array", items: { type: "string" }, description: "z. B. [\"rechnung\", \"buchhaltung\", \"invoice\", \"accounting\"]" },
+      },
+    },
+    schema: yup.object({ companyId: yup.string().trim().min(1).required(), lokalteile: yup.array().of(yup.string().trim().min(1).max(40).required()).min(1).max(10).required() }).noUnknown(true),
+    preview: (r: Record<string, any>) => {
+      const e = (r.ergebnisse ?? []) as Array<{ ergebnis: string }>;
+      const ok = e.filter((x) => x.ergebnis === "existiert").length;
+      return r.domain ? `${ok} von ${e.length} Adressen belegt (@${r.domain})` : String(r.hinweis ?? "keine Domain");
+    },
+    run: async (args) => svc().pruefeLokalteile(args.companyId, args.lokalteile),
+  });
+  return [status, verlauf, config, vorschau, jetzt, adressePruefen];
 }

@@ -265,7 +265,8 @@ damit Fehler auch ohne Renderer nachvollziehbar sind.
 
 - v0.1.738 (2026-09-30): Schritt 1 (K1, K3, V6-Log) und Schritt 2 (V1–V4 Prompt-Regeln).
 - v0.1.739 (2026-09-30): Schritte 3–5 (D1 Handle fuer alle Typen, Ablage userData/anhaenge 7 Tage, Kurzansicht; D2 datei_info/datei_lesen/datei_suchen, automatisch geladen bei Uploads; D3 Aufloesen nach Handle/Name/Namensteil; M1 anhaenge in mail_send/mail_reply/mail_forward, Rueckfrage nennt Anhaenge). PDF und DOCX werden im Hauptprozess seitenweise extrahiert.
-- Offen: K2 ansicht kompakt/voll, M2 Weiterleitung mit Original-Anhaengen (Bytes empfangener Mails liegen nicht vor, muessten per IMAP nachgeladen werden), V5 Musterpruefung, K4 Fehlertexte, V6 Protokoll-Aufklapper.
+- v0.1.740 (2026-09-30): Schritte 6 und 7. K2 `ansicht: kompakt|voll` fuer company_publications (neueste 8 Jahre, Kernaussagen, Kennzahlen) und company_contacts (`mitBelegen` bleibt Alias), company_search ohne Score/Normalwerte. Messung PromptAudit 14 Tage vorab: company_contacts 93 % aller Werkzeug-Bytes (seit v0.1.737 behoben), dann company_publications (12,8 KB je Aufruf) und company_search (13.600 Aufrufe). K4: Gateway-Fehler 404/403/429/4xx/5xx nennen den naechsten Schritt. V5: `email_adresse_pruefen` (freie Lokalteile per SMTP, nichts gespeichert) + Prompt-Regel. M2: `mail_forward` mit `originalAnhaenge: true` laedt die Anhaenge der Originalmail per IMAP-UID nach.
+- Offen: K5 Werkzeuge zusammenlegen (eigener Plan), V6 Protokoll-Aufklapper zeigt heute die Vorschau `error: …` und die Log-Zeile; ein eigener Fehlerblock ist nicht gebaut.
 
 ## Reihenfolge und Aufwand
 

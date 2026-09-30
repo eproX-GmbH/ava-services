@@ -79,7 +79,16 @@ export function buildCompanyTools(ctx: Ctx): Tool[] {
       const items = (data.items ?? []).map((it) => {
         const w = statusWarnungText(it as never);
         const l = (it as { country?: string }).country && (it as { country?: string }).country !== "DE" ? landText(it as never) : null;
-        return { ...(w ? { statusWarnung: w } : {}), ...(l ? { land: l } : {}), ...it };
+        // K2: Suchscore und Normalwerte (keine Insolvenz, Land DE) tragen
+        // dem Modell nichts; 13.600 Aufrufe in 14 Tagen.
+        const { score: _score, insolvencyStatus, country, ...rest } = it as { score?: number; insolvencyStatus?: string; country?: string };
+        return {
+          ...(w ? { statusWarnung: w } : {}),
+          ...(l ? { land: l } : {}),
+          ...rest,
+          ...(insolvencyStatus && insolvencyStatus !== "NONE" ? { insolvencyStatus } : {}),
+          ...(country && country !== "DE" ? { country } : {}),
+        };
       });
       const mitWarnung = items.filter((it) => (it as { statusWarnung?: string }).statusWarnung).length;
       return { items, total: data.total ?? 0, ...(mitWarnung > 0 ? { hinweis: `${mitWarnung} Treffer mit Statuswarnung (statusWarnung): dem Nutzer ausdruecklich nennen.` } : {}) };
@@ -319,46 +328,73 @@ export function buildCompanyTools(ctx: Ctx): Tool[] {
     },
   });
 
+  // K2 (docs/PLAN_CHAT_DATEIEN_KONTEXT.md): Standard kompakt, voll nur
+  // ausdruecklich. Messung 2026-09-30: zweitgroesstes Werkzeugergebnis
+  // (12,8 KB je Aufruf) wegen Lagebericht-Listen je Jahr.
   const publications = defineTool({
     name: "company_publications",
     description:
-      "List financial publications (annual reports etc.) for a company. Each item carries year, KPIs, and stateOfAffairs narrative.",
+      "Jahresabschluesse und Publikationen einer Firma: je Jahr Name, Mitarbeiterzahl, Umsatz, Bilanzsumme, Kernaussagen des Lageberichts und Kennzahlen (kompakt, neueste 8 Jahre). " +
+      "ansicht: 'voll' nur, wenn der Nutzer ausdruecklich nach Prognose, Chancen/Risiken, Zeitraeumen oder allen Jahren fragt.",
     parameters: {
       type: "object",
-      properties: { companyId: { type: "string" } },
+      properties: {
+        companyId: { type: "string" },
+        ansicht: { type: "string", enum: ["kompakt", "voll"], description: "Standard kompakt." },
+      },
       required: ["companyId"],
     },
-    schema: yup.object({ companyId: yup.string().trim().min(1).required() }),
+    schema: yup.object({ companyId: yup.string().trim().min(1).required(), ansicht: yup.string().oneOf(["kompakt", "voll"]).optional() }),
     run: async (args, c) => {
-      const data = await gateway.request<{ items?: unknown[] }>(
+      const data = await gateway.request<{ items?: Array<Record<string, unknown>> }>(
         `/v1/companies/${encodeURIComponent(args.companyId)}/publications`,
         { signal: c.signal },
       );
-      return { items: data.items ?? [] };
+      const items = data.items ?? [];
+      if (args.ansicht === "voll") return { items, anzahlGesamt: items.length };
+      const betrag = (v: unknown) => {
+        const x = v as { value?: number; currency?: string } | null;
+        return x && typeof x.value === "number" ? `${Math.round(x.value).toLocaleString("de-DE")} ${x.currency === "EURO" ? "EUR" : (x.currency ?? "")}`.trim() : null;
+      };
+      const kompakt = items.slice(0, 8).map((it) => {
+        const soa = it["stateOfAffairs"] as { topic?: string; bullets?: string[]; kpis?: Array<{ name: string; value: string; period?: string }> } | null;
+        return {
+          jahr: it["year"] ?? null,
+          name: it["name"] ?? null,
+          mitarbeiter: it["employeeCount"] ?? null,
+          umsatz: betrag(it["salesVolume"]) ?? betrag(it["revenueVolume"]),
+          bilanzsumme: betrag(it["totalAssetsVolume"]),
+          ...(soa && soa.topic && soa.topic !== "NOTHING" ? { lage: soa.topic } : {}),
+          ...(soa?.bullets?.length ? { kernaussagen: soa.bullets.slice(0, 5).map((b) => String(b).slice(0, 200)) } : {}),
+          ...(soa?.kpis?.length ? { kennzahlen: soa.kpis.slice(0, 10).map((k) => `${k.name}: ${k.value}${k.period ? ` (${k.period})` : ""}`) } : {}),
+        };
+      });
+      return { items: kompakt, anzahlGesamt: items.length, ...(items.length > 8 ? { hinweis: `Nur die neuesten 8 von ${items.length} Jahren; alle mit ansicht: 'voll'.` } : {}) };
     },
-    preview: (r) => `${r.items.length} publications`,
+    preview: (r) => `${(r as { anzahlGesamt: number }).anzahlGesamt} Publikationen`,
   });
 
   const contacts = defineTool({
     name: "company_contacts",
     description:
       "Kontakte einer Firma, kompakt: Firmen-E-Mails/-Telefon/-Adresse und je Person Name, Rolle, Abteilung, E-Mail, Telefon, Profil-URLs, seit wann dabei, Kurzbeschreibung und Quelle (LinkedIn, Firmenwebsite, Websuche). Ausgeschiedene sind nicht enthalten. " +
-      "Belegketten (einzelne Beobachtungen mit Fundstelle) und den Verlauf (Signale, fruehere Stationen) NUR laden, wenn der Nutzer ausdruecklich nach Belegen, Herkunft oder Verlauf fragt: dann mitBelegen: true. Das ist bei grossen Firmen sehr umfangreich.",
+      "Belegketten (einzelne Beobachtungen mit Fundstelle) und den Verlauf (Signale, fruehere Stationen) NUR laden, wenn der Nutzer ausdruecklich nach Belegen, Herkunft oder Verlauf fragt: dann ansicht: 'voll'. Das ist bei grossen Firmen sehr umfangreich.",
     parameters: {
       type: "object",
       properties: {
         companyId: { type: "string" },
-        mitBelegen: { type: "boolean", description: "Nur auf ausdrueckliche Nachfrage nach Belegen/Herkunft/Verlauf: volle Rohdaten statt der kompakten Fassung." },
+        ansicht: { type: "string", enum: ["kompakt", "voll"], description: "Standard kompakt. 'voll' nur auf ausdrueckliche Nachfrage nach Belegen/Herkunft/Verlauf." },
       },
       required: ["companyId"],
     },
-    schema: yup.object({ companyId: yup.string().trim().min(1).required(), mitBelegen: yup.boolean().optional() }),
+    schema: yup.object({ companyId: yup.string().trim().min(1).required(), ansicht: yup.string().oneOf(["kompakt", "voll"]).optional(), mitBelegen: yup.boolean().optional() }),
     run: async (args, c) => {
       const roh = await gateway.request<Record<string, unknown>>(
         `/v1/companies/${encodeURIComponent(args.companyId)}/contacts`,
         { signal: c.signal },
       );
-      return args.mitBelegen === true ? roh : kompakteKontakte(roh);
+      // `mitBelegen` (v0.1.737) bleibt als Alias.
+      return args.ansicht === "voll" || args.mitBelegen === true ? roh : kompakteKontakte(roh);
     },
     preview: (r) => {
       const x = r as { anzahlPersonen?: number };

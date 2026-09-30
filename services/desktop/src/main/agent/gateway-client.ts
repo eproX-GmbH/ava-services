@@ -179,7 +179,24 @@ export class GatewayClient {
       } catch {
         if (text) message += `: ${text.slice(0, 160)}`;
       }
-      throw new Error(message);
+      // K4 (docs/PLAN_CHAT_DATEIEN_KONTEXT.md): der Fehlertext nennt dem
+      // Modell den naechsten Schritt statt nur den Status.
+      const pfad = path.split("?")[0] ?? path;
+      const rat =
+        res.status === 404
+          ? pfad.startsWith("/v1/companies/")
+            ? " Nicht gefunden: Die Firma ist nicht in deinem Pool oder die ID stimmt nicht. Nutze company_search mit dem Namen und die companyId aus dem Treffer."
+            : " Nicht gefunden: pruefe die ID; suche das Objekt zuerst ueber das passende Such-Werkzeug."
+          : res.status === 403
+            ? " Kein Zugriff: die Funktion ist fuer diese Organisation gesperrt oder gehoert einem anderen Nutzer. Dem Nutzer sagen, nicht erneut versuchen."
+            : res.status === 429
+              ? " Kontingent erschoepft: dem Nutzer sagen und nicht erneut versuchen."
+              : res.status === 400 || res.status === 422
+                ? " Ungueltige Eingabe: die Meldung nennt das Feld; Argument korrigieren und einmal erneut aufrufen."
+                : res.status >= 500
+                  ? " Serverfehler: einmal erneut versuchen, dann dem Nutzer melden."
+                  : "";
+      throw new Error(message + rat);
     }
     if (!text) return undefined as unknown as T;
     try {

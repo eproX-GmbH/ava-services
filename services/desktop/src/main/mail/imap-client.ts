@@ -333,6 +333,27 @@ export class ImapClient extends EventEmitter {
     }
   }
 
+  /**
+   * M2 (docs/PLAN_CHAT_DATEIEN_KONTEXT.md, 2026-09-30): Original-Anhaenge
+   * einer gespeicherten Mail nachladen. Der Store haelt nur extrahierten
+   * Text, nicht die Bytes; fuer eine Weiterleitung mit Anhang holen wir
+   * die Quelle per UID erneut (INBOX ist nach connect offen).
+   */
+  async fetchAttachments(uid: number): Promise<Array<{ filename: string; content: Buffer; contentType?: string }>> {
+    if (!this.client) throw new Error("IMAP nicht verbunden.");
+    const msg = await this.client.fetchOne(String(uid), { source: true }, { uid: true });
+    if (!msg || !msg.source) throw new Error(`Mail mit UID ${uid} nicht mehr im Postfach.`);
+    const { simpleParser } = (await import("mailparser")) as {
+      simpleParser: (input: Buffer | string) => Promise<ParsedMail>;
+    };
+    const parsed = await simpleParser(msg.source);
+    return (parsed.attachments ?? []).map((a) => ({
+      filename: a.filename ?? "anhang",
+      content: a.content as Buffer,
+      ...(a.contentType ? { contentType: a.contentType } : {}),
+    }));
+  }
+
   private async handleFetchedMessage(msg: FetchMessageObject): Promise<void> {
     if (!msg.source) return;
     const { simpleParser } = (await import("mailparser")) as {
