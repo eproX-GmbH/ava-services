@@ -6,7 +6,8 @@
 // verhindert, dass das Modell Funktionen halluziniert, die es nicht gibt.
 // Inhalt bewusst an den real ausgelieferten Funktionen orientiert.
 
-/** v0.1.646 — Willkommenstext, Stand September 2026. Fester Text, keine
+/** v0.1.742 (2026-10-03) — Willkommenstext nach Vorgabe des Operators
+ *  (sieben Faehigkeitsbloecke). Vorher v0.1.646. Fester Text, keine
  *  KI; die Tool-Zahl kommt aus der Registry. Jede Aussage entspricht dem
  *  Website-Stand (docs/WEBSITE_PROMPT_*), nichts Geplantes. */
 export function welcomeMessage(toolCount: number): string {
@@ -15,33 +16,49 @@ export function welcomeMessage(toolCount: number): string {
 
 Ich nehme dir die Fleißarbeit ab. Ein Überblick, was ich für dich tun kann:
 
-**🔎 Firmen recherchieren**
-- Firmen aus Handelsregister, Jahresabschlüssen, Website und Publikationen profilieren, mit Quelle und Datum zu jeder Angabe
-- Kontakte mit Beleg finden, E-Mail-Adressen nach dem Adressmuster der Firma ableiten und per Mail-Server-Anfrage prüfen
-- Excel-Listen oder dein CRM importieren und alle Firmen automatisch anreichern
-- Zu einer Anfrage die passendsten Firmen aus deinem Bestand ranken (Best-Match)
+**🔎 Recherchieren**
+- Firmen automatisch recherchieren
+- Unternehmensdaten und Ansprechpartner finden
+- Firmenwissen direkt per Chat abfragen
+- Informationen aus verschiedenen Quellen zusammenführen
 
-**📡 Firmen-Radar**
-- Ich suche laufend neue Firmen in deiner Region, gleiche sie mit deinem Idealkundenprofil (ICP) ab und melde dir die Treffer mit Score. Importiert wird nur, was du freigibst.
+**🎯 Neue Kunden finden**
+- Passende Zielkunden identifizieren
+- Ähnliche Unternehmen zu bestehenden Kunden finden
+- Wunschkunden nach Region und Kriterien suchen
+- Neue Vertriebschancen entdecken
 
-**⚙️ Workflows**
-- Erklär mir einen Ablauf einmal im Chat und sag „speicher das als Workflow". Danach läuft er per Zeitplan oder Ereignis für jede Firma, schreibende Schritte nur nach deiner Freigabe.
+**📡 Kunden beobachten**
+- Kunden und Leads laufend überwachen
+- Relevante Veränderungen frühzeitig erkennen
+- Wachstum, Wechsel und neue Aktivitäten erkennen
+- LinkedIn auf Verkaufssignale prüfen
 
-**🤝 CRM & Wissen**
-- **HubSpot**: Firmen, Kontakte, Deals, Aufgaben und Notizen lesen, anlegen, aktualisieren (Rückfrage vor jeder Änderung)
-- **Notion** und **Obsidian**: Datenbanken und Notizen lesen und pflegen
+**⚡ Chancen priorisieren**
+- Vertriebssignale automatisch bewerten
+- Interessante Accounts priorisieren
+- Relevante Ereignisse hervorheben
+- Konkrete nächste Schritte ableiten
 
-**👀 Beobachten & Melden**
-- LinkedIn-Signale zu deinen Accounts, Personen-Watchlist, Website-Überwachung einer beliebigen URL
-- Meldungen und Freigaben unterwegs per **Telegram**, Mail-Triage für dein Postfach
+**🤝 Gespräche vorbereiten**
+- Kundentermine automatisch vorbereiten
+- Aktuelle Firmenentwicklungen zusammenfassen
+- Ansprechpartner und Kontext bereitstellen
+- Gesprächsanlässe und Chancen aufzeigen
 
-**👥 Teams**
-- Recherchen und Radar-Firmen mit deiner Organisation teilen, zentrale KI-Schlüssel, Verbrauch je Person
+**⚙️ Vertriebsarbeit automatisieren**
+- Wiederkehrende Workflows automatisieren
+- CRM-Daten ergänzen und aktualisieren
+- Recherche automatisch dokumentieren
+- Aufgaben und Folgeaktionen auslösen
 
-**🔒 Deine Daten**
-- Chats, Schlüssel, Logins und dein ICP bleiben auf deinem Rechner. Öffentliche Firmendaten landen mit Quellenbeleg in einem geteilten Bestand. KI wahlweise lokal oder mit deinem eigenen Anbieter.
+**✉️ Kommunikation vorbereiten**
+- Personalisierte E-Mail-Entwürfe erstellen
+- Nachrichten auf Basis des Kundenkontexts vorbereiten
+- Relevante Updates und Chancen melden
+- Ergebnisse direkt an den Vertrieb weitergeben
 
-Dahinter stehen ${tools}, die ich in einem Chat kombiniere, dazu **Skills** als wiederverwendbare Routinen per Slash-Befehl.
+Dahinter stehen ${tools}, die ich in einem Chat kombiniere, dazu **Skills** als wiederverwendbare Routinen per Slash-Befehl. Deine Chats, Schlüssel und Logins bleiben auf deinem Rechner.
 
 Unten habe ich dir passende nächste Schritte vorbereitet. Oder sag mir einfach, woran du arbeitest.`;
 }
