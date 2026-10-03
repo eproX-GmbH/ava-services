@@ -15,7 +15,8 @@
     "test:relevanz": "node scripts/test-relevanz.mjs",
     "test:teilen-knopf": "node scripts/test-teilen-knopf.mjs",
     "test:buying-center": "node scripts/test-buying-center.mjs",
-    "test:ausgeschieden": "node scripts/test-ausgeschieden.mjs"
+    "test:ausgeschieden": "node scripts/test-ausgeschieden.mjs",
+    "test:persist-reconnect": "node scripts/test-persist-reconnect.mjs"
   },
   "dependencies": {
     "@ava/event": "^1.1.40",

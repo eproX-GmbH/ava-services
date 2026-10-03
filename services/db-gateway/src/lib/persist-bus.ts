@@ -2129,27 +2129,146 @@ for (const b of BINDINGS) {
 
 // ---- Bus ------------------------------------------------------------------
 
+// 2026-10-03 — Ausfall vom 27.09. bis 03.10.: Der AMQPClient aus @ava/event
+// verbindet sich nach einem Abbruch selbst neu, haengt dabei aber nur
+// Konsumenten wieder an, die ueber SEINE Listener-API registriert sind. Der
+// Persist-Bus konsumiert direkt auf dem rohen Kanal (siehe Kommentar unten)
+// und war nach dem Wiederverbinden still: Verbindung da, niemand hoert zu.
+// Kein Producer-Ergebnis wurde sechs Tage lang gespeichert, /health blieb gruen.
+//
+// Jetzt: je Bindung ein Zustand mit dem Kanal, auf dem konsumiert wird. Ein
+// Waechter prueft alle 15 s, ob der Client einen NEUEN Kanal hat oder der
+// Konsument weg ist, und abonniert dann neu. Ist eine Bindung laenger als
+// WATCHDOG_EXIT_MS ohne Konsumenten, beendet sich der Prozess; Fly startet die
+// Maschine neu (restart on-failure). `status()` speist /health/persist.
+
+type RawChannel = {
+  consume: (
+    queue: string,
+    handler: (msg: { content: Buffer } | null) => void,
+  ) => Promise<unknown>;
+  ack: (msg: { content: Buffer }) => void;
+  assertQueue?: unknown;
+};
+
+interface BindungsZustand {
+  producer: string;
+  queue: string;
+  client: AMQPClient;
+  kanal: RawChannel | null;
+  konsumentAktiv: boolean;
+  seit: number;
+  letzteNachricht: number | null;
+  neuAbonniert: number;
+  letzterFehler: string | null;
+}
+
+const WAECHTER_MS = 15_000;
+const WATCHDOG_EXIT_MS = 5 * 60_000;
+
 class PersistBus {
   private connecting?: Promise<void>;
-  private clients: AMQPClient[] = [];
+  private zustaende: BindungsZustand[] = [];
+  private waechter?: NodeJS.Timeout;
 
   /** Idempotent. Connects + binds + subscribes all producer queues. */
   public async ensureConnected(): Promise<void> {
     if (this.connecting) return this.connecting;
-    if (this.clients.length > 0) return;
+    if (this.zustaende.length > 0) return;
 
     this.connecting = (async () => {
       const env = loadEnv();
       for (const binding of BINDINGS) {
         const client = new AMQPClient(binding.queue);
         await client.connect(env.EVENT_BUS_URL);
-        await client.assertExchange(env.EVENT_BUS_EXCHANGE);
-        await client.assertQueue(binding.queue);
-        await client.bindQueue(
-          env.EVENT_BUS_EXCHANGE,
-          binding.routingKey,
-          binding.queue,
+        const zustand: BindungsZustand = {
+          producer: binding.producer,
+          queue: binding.queue,
+          client,
+          kanal: null,
+          konsumentAktiv: false,
+          seit: Date.now(),
+          letzteNachricht: null,
+          neuAbonniert: 0,
+          letzterFehler: null,
+        };
+        this.zustaende.push(zustand);
+        await this.abonnieren(binding, zustand);
+      }
+      this.waechterStarten();
+    })();
+
+    try {
+      await this.connecting;
+    } finally {
+      this.connecting = undefined;
+    }
+  }
+
+  /** Zustand je Bindung fuer /health/persist. */
+  public status(): { ok: boolean; bindungen: Array<{ producer: string; aktiv: boolean; seitSek: number; letzteNachricht: string | null; neuAbonniert: number; letzterFehler: string | null }> } {
+    const jetzt = Date.now();
+    const bindungen = this.zustaende.map((z) => ({
+      producer: z.producer,
+      aktiv: z.konsumentAktiv && z.client.isConnected,
+      seitSek: Math.round((jetzt - z.seit) / 1000),
+      letzteNachricht: z.letzteNachricht ? new Date(z.letzteNachricht).toISOString() : null,
+      neuAbonniert: z.neuAbonniert,
+      letzterFehler: z.letzterFehler,
+    }));
+    return { ok: bindungen.length === BINDINGS.length && bindungen.every((b) => b.aktiv), bindungen };
+  }
+
+  private waechterStarten(): void {
+    if (this.waechter) return;
+    this.waechter = setInterval(() => {
+      void this.pruefen();
+    }, WAECHTER_MS);
+    this.waechter.unref?.();
+  }
+
+  private async pruefen(): Promise<void> {
+    const jetzt = Date.now();
+    for (const z of this.zustaende) {
+      const binding = BINDINGS.find((b) => b.queue === z.queue);
+      if (!binding) continue;
+      const aktuellerKanal = (z.client as unknown as { _channel?: RawChannel })._channel ?? null;
+      const kanalNeu = aktuellerKanal !== null && aktuellerKanal !== z.kanal;
+      if (z.konsumentAktiv && !kanalNeu && z.client.isConnected) continue;
+      if (z.konsumentAktiv) {
+        z.konsumentAktiv = false;
+        z.seit = jetzt;
+      }
+      if (aktuellerKanal && z.client.isConnected) {
+        // Client hat sich selbst neu verbunden (oder Konsument wurde
+        // beendet): auf dem aktuellen Kanal neu abonnieren.
+        try {
+          await this.abonnieren(binding, z);
+          z.neuAbonniert++;
+          logger.warn({ producer: z.producer, queue: z.queue, neuAbonniert: z.neuAbonniert }, "persist-bus: nach Verbindungsverlust neu abonniert");
+        } catch (err) {
+          z.letzterFehler = (err as Error).message;
+          logger.error({ producer: z.producer, err: z.letzterFehler }, "persist-bus: neu abonnieren fehlgeschlagen");
+        }
+      }
+      if (!z.konsumentAktiv && jetzt - z.seit > WATCHDOG_EXIT_MS) {
+        logger.fatal(
+          { producer: z.producer, queue: z.queue, ohneKonsumentSek: Math.round((jetzt - z.seit) / 1000), letzterFehler: z.letzterFehler },
+          "persist-bus: Bindung zu lange ohne Konsument, Prozess endet fuer einen sauberen Neustart",
         );
+        // Fly startet die Maschine neu (restart policy on-failure).
+        setTimeout(() => process.exit(1), 500);
+        return;
+      }
+    }
+  }
+
+  private async abonnieren(binding: (typeof BINDINGS)[number], zustand: BindungsZustand): Promise<void> {
+    const env = loadEnv();
+    const client = zustand.client;
+    await client.assertExchange(env.EVENT_BUS_EXCHANGE);
+    await client.assertQueue(binding.queue);
+    await client.bindQueue(env.EVENT_BUS_EXCHANGE, binding.routingKey, binding.queue);
 
         // Use the raw amqplib channel directly. We CANNOT go through
         // @ava/event's getListener/subscribe path: its
@@ -2158,28 +2277,20 @@ class PersistBus {
         // family isn't registered in @ava/event's catalog → fromAny
         // returns `event.data = undefined`, every apply throws
         // "empty payload", and no EntityProgress rows ever get written.
-        // (This was the silent v0.1.39/40 bug — Excel imports created
-        // master-data Transaction rows but the desktop saw zero
-        // entities for them.) Reading msg.content directly gives us
-        // the unmodified CloudEvent JSON the producer sent.
-        //
-        // The cast through unknown is the only ergonomic way to reach
-        // the underlying amqplib channel that @ava/event holds private.
-        // Acceptable — we're already coupled to the exact AMQPClient
-        // implementation by virtue of vendoring it.
-        // Structural type — we don't depend on @types/amqplib (only
-        // @ava/event has it transitively). The two methods we need.
-        type RawChannel = {
-          consume: (
-            queue: string,
-            handler: (msg: { content: Buffer } | null) => void,
-          ) => Promise<unknown>;
-          ack: (msg: { content: Buffer }) => void;
-        };
-        const channel = (client as unknown as { _channel: RawChannel })
-          ._channel;
+        // (This was the silent v0.1.39/40 bug.) Reading msg.content
+        // directly gives us the unmodified CloudEvent JSON the producer
+        // sent. Folge: Der Client haengt diesen Konsumenten beim
+        // Wiederverbinden NICHT selbst an; das macht pruefen().
+        const channel = (client as unknown as { _channel?: RawChannel })._channel;
+        if (!channel) throw new Error("kein AMQP-Kanal");
         await channel.consume(binding.queue, async (msg) => {
-          if (!msg) return;
+          if (!msg) {
+            // Broker hat den Konsumenten beendet (Queue geloescht/Failover).
+            logger.warn({ producer: binding.producer, queue: binding.queue }, "persist-bus: Konsument vom Broker beendet");
+            zustand.konsumentAktiv = false;
+            return;
+          }
+          zustand.letzteNachricht = Date.now();
           let event: CloudEvent<PersistEvent<unknown>>;
           try {
             event = JSON.parse(msg.content.toString()) as CloudEvent<
@@ -2190,7 +2301,7 @@ class PersistBus {
               { err, producer: binding.producer },
               "persist message: invalid JSON; dropping",
             );
-            channel.ack(msg);
+            try { channel.ack(msg); } catch { /* Kanal weg; Broker stellt neu zu */ }
             return;
           }
           const log = logger.child({
@@ -2255,23 +2366,21 @@ class PersistBus {
             // and a redelivery loop on a poisoned event would block
             // the queue.
           } finally {
-            channel.ack(msg);
+            // Ack auf DEM Kanal, der die Nachricht geliefert hat. Ist er
+            // inzwischen zu, stellt der Broker sie neu zu (idempotent).
+            try { channel.ack(msg); } catch (err) {
+              log.warn({ err: (err as Error).message }, "persist-bus: ack fehlgeschlagen (Kanal geschlossen)");
+            }
           }
         });
-
-        this.clients.push(client);
-        logger.info(
-          { producer: binding.producer, queue: binding.queue },
-          "persist-bus subscribed",
-        );
-      }
-    })();
-
-    try {
-      await this.connecting;
-    } finally {
-      this.connecting = undefined;
-    }
+    zustand.kanal = channel;
+    zustand.konsumentAktiv = true;
+    zustand.seit = Date.now();
+    zustand.letzterFehler = null;
+    logger.info(
+      { producer: binding.producer, queue: binding.queue },
+      "persist-bus subscribed",
+    );
   }
 
   private getPool(producer: ProducerName): pg.Pool {
