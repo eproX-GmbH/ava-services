@@ -934,6 +934,16 @@ const api = {
   // `onStream` for token / tool-call / tool-result / done / error frames.
   // Status changes (Ollama up, model picked, in-flight) push via
   // `onStatusChanged`, mirroring the auth/ollama channels above.
+  // Hintergrundaufgaben (docs/PLAN_HINTERGRUNDAUFGABEN.md).
+  aufgaben: {
+    liste: (conversationId?: string): Promise<unknown[]> => ipcRenderer.invoke("aufgaben:liste", conversationId),
+    abbrechen: (id: string): Promise<boolean> => ipcRenderer.invoke("aufgaben:abbrechen", id),
+    onAenderung: (cb: (liste: unknown[]) => void): (() => void) => {
+      const handler = (_e: Electron.IpcRendererEvent, liste: unknown[]) => cb(liste);
+      ipcRenderer.on("aufgaben:aenderung", handler);
+      return () => ipcRenderer.removeListener("aufgaben:aenderung", handler);
+    },
+  },
   agent: {
     getStatus: (): Promise<AgentStatus> =>
       ipcRenderer.invoke("agent:getStatus"),

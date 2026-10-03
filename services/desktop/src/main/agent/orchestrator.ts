@@ -193,6 +193,8 @@ export interface AgentOrchestratorOptions {
 export interface AgentOrchestratorEvents {
   stream: (frame: AgentStreamFrame) => void;
   status: (status: AgentStatus) => void;
+  /** Nach jedem Werkzeugergebnis (Hintergrundaufgaben registrieren). */
+  "werkzeug-ergebnis": (e: { conversationId: string; toolName: string; ok: boolean; content: string; args: Record<string, unknown> }) => void;
 }
 
 export declare interface AgentOrchestrator {
@@ -639,6 +641,59 @@ export class AgentOrchestrator extends EventEmitter {
     });
 
     return { requestId };
+  }
+
+  /**
+   * Hintergrundaufgaben (docs/PLAN_HINTERGRUNDAUFGABEN.md, 2026-10-03): Der
+   * Aufgaben-Waechter meldet eine abgeschlossene Verarbeitung. Die Notiz geht
+   * als Nutzer-Rolle mit quelle "aufgabe" in die Unterhaltung (wie die
+   * task-notification in Claude Code), der Renderer zeigt sie als Hinweis,
+   * und das Modell antwortet von sich aus mit dem Ergebnis.
+   * Liefert false, wenn gerade ein Zug laeuft oder kein Modell bereit ist;
+   * der Waechter versucht es dann beim naechsten Takt erneut.
+   */
+  meldeAufgabe(conversationId: string, text: string): boolean {
+    if (this.inFlightRequestId !== null) return false;
+    if (!this.getStatus().ready) return false;
+    const requestId = randomUUID();
+    const convo = this.getOrCreateConversation(conversationId);
+    const notiz: AgentMessage = {
+      id: randomUUID(),
+      role: "user",
+      content: text,
+      createdAt: Date.now(),
+      quelle: "aufgabe",
+    };
+    this.appendMessage(convo, notiz);
+    this.activeSkill = null;
+    this.inFlightRequestId = requestId;
+    this.inFlightConversationId = convo.id;
+    this.errorMessage = null;
+    this.emit("status", this.getStatus());
+    this.emitFrame({
+      kind: "user-message",
+      requestId,
+      conversationId: convo.id,
+      messageId: notiz.id,
+      content: notiz.content,
+      source: "aufgabe",
+    });
+    const abort = new AbortController();
+    this.currentAbort = abort;
+    const provider = this.providers.activeProvider();
+    void this.runLoop({
+      requestId,
+      conversation: convo,
+      provider,
+      signal: abort.signal,
+      slashNudgedTool: null,
+    }).finally(() => {
+      this.inFlightRequestId = null;
+      this.inFlightConversationId = null;
+      this.currentAbort = null;
+      this.emit("status", this.getStatus());
+    });
+    return true;
   }
 
   /**
@@ -1428,6 +1483,16 @@ export class AgentOrchestrator extends EventEmitter {
             toolCallId: call.id,
             ok: result.ok,
             preview: begrenzt.gekuerzt ? `${result.preview} (gekürzt, ${Math.round(result.content.length / 1000)} k Zeichen)` : result.preview,
+          });
+
+          // Hintergrundaufgaben (docs/PLAN_HINTERGRUNDAUFGABEN.md): der
+          // Aufgaben-Waechter registriert Transaktionen aus Werkzeugergebnissen.
+          this.emit("werkzeug-ergebnis", {
+            conversationId: conversation.id,
+            toolName: call.name,
+            ok: result.ok,
+            content: result.content,
+            args: (call.args ?? {}) as Record<string, unknown>,
           });
 
           // Relevanz (docs/PLAN_RELEVANZ.md, 3.4): Firmen und Personen, um

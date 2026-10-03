@@ -43,6 +43,7 @@ import {
   type SpreadsheetAttachment,
 } from "../lib/attachment";
 import { renderPdfPagesToImages } from "../lib/pdf-to-images";
+import { AufgabenLeiste, aufgabenNotiz } from "../components/AufgabenLeiste";
 import { IcpProposalCard } from "../components/IcpProposalCard";
 import type {
   AgentChoiceOption,
@@ -120,7 +121,7 @@ interface UiMessage {
    *  Lokal-only — bei Conversation-Reload nicht persistiert. */
   images?: Array<{ base64: string; mimeType: string; filename?: string }>;
   /** Sprachmodus: Zug wurde gesprochen bzw. kam ueber den Relay. */
-  quelle?: "sprache";
+  quelle?: "sprache" | "aufgabe";
   /** Verbrauch der ganzen Anfrage, an der letzten Antwort (dauerhaft). */
   usage?: import("../../../shared/types").AgentTurnUsage;
   pending?: boolean;
@@ -714,7 +715,7 @@ export function Chat() {
         setMessages((prev) =>
           prev.some((m) => m.id === frame.messageId)
             ? prev
-            : [...prev, { id: frame.messageId, role: "user", content: frame.content }],
+            : [...prev, { id: frame.messageId, role: "user", content: frame.content, ...(frame.source === "aufgabe" ? { quelle: "aufgabe" as const } : {}) }],
         );
         setThinking(true);
         void refreshConversations();
@@ -1548,6 +1549,7 @@ export function Chat() {
 
   const composer = (
     <div className="chat-composer-wrap">
+      <AufgabenLeiste conversationId={conversationId} />
       {attachments.length > 0 && !isRecording && (
         <div className="chat-attachments">
           {attachments.map((a) => (
@@ -2003,11 +2005,25 @@ export function Chat() {
                 <div
                   key={m.id}
                   data-message-id={m.id}
-                  className={`chat-msg chat-msg-${m.role}`}
-                  aria-label={roleLabel(m.role)}
+                  className={`chat-msg chat-msg-${m.role}${m.role === "user" && (m.quelle === "aufgabe" || aufgabenNotiz(m.content)) ? " chat-msg-notiz" : ""}`}
+                  aria-label={m.role === "user" && (m.quelle === "aufgabe" || aufgabenNotiz(m.content)) ? "Hintergrundaufgabe" : roleLabel(m.role)}
                 >
                   <div className="chat-content">
-                    {m.role === "user" ? (
+                    {m.role === "user" && (m.quelle === "aufgabe" || aufgabenNotiz(m.content)) ? (
+                      (() => {
+                        const n = aufgabenNotiz(m.content);
+                        return (
+                          <div className={`auf-notiz${n?.haengt ? " auf-notiz--haengt" : ""}`}>
+                            <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden>
+                              {n?.haengt
+                                ? <path d="M8 3v6M8 12v.5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+                                : <path d="M3.5 8.5l3 3 6-7" stroke="currentColor" strokeWidth="1.8" fill="none" strokeLinecap="round" strokeLinejoin="round" />}
+                            </svg>
+                            <span>{n?.text ?? m.content}</span>
+                          </div>
+                        );
+                      })()
+                    ) : m.role === "user" ? (
                       <>
                         {m.quelle === "sprache" && (
                           <div className="muted small chat-msg__sprache" style={{ marginBottom: "0.25rem" }}>Im Sprachmodus gesprochen</div>

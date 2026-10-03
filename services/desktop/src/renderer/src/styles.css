@@ -8757,3 +8757,32 @@ body.sprachmodus .upstream-banner, body.sprachmodus .tier-banner, body.sprachmod
 .sm__schritt-marke { display: flex; align-items: center; justify-content: center; color: var(--sm-akzent); }
 .sm__schritt--fehler .sm__schritt-marke { color: var(--sm-fehler); }
 .sm__schritt-preview { color: var(--sm-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* Hintergrundaufgaben (docs/PLAN_HINTERGRUNDAUFGABEN.md, 2026-10-03) */
+.auf-leiste { display: flex; flex-direction: column; gap: 6px; margin: 0 0 8px; }
+.auf-item {
+  display: grid; grid-template-columns: 12px 1fr auto; align-items: center; gap: 10px;
+  padding: 8px 10px 8px 12px; border: 1px solid var(--border); border-radius: 12px;
+  background: var(--color-bg-0); color: var(--fg); font-size: 13px;
+}
+.auf-item--laeuft { border-color: color-mix(in srgb, var(--color-brand-500, #00c0a7) 55%, var(--border)); background: color-mix(in srgb, var(--color-brand-500, #00c0a7) 6%, var(--color-bg-0)); }
+.auf-item--haengt { border-color: color-mix(in srgb, #d97706 55%, var(--border)); }
+.auf-item__punkt { width: 10px; height: 10px; border-radius: 50%; background: var(--muted); }
+.auf-item--laeuft .auf-item__punkt { background: var(--color-brand-500, #00c0a7); animation: auf-puls 1.6s ease-in-out infinite; }
+.auf-item--fertig .auf-item__punkt { background: var(--color-brand-500, #00c0a7); }
+.auf-item--haengt .auf-item__punkt { background: #d97706; }
+.auf-item__text { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.auf-item__titel { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.auf-item__stand { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.auf-item__balken { height: 4px; border-radius: 2px; background: color-mix(in srgb, var(--muted) 22%, transparent); overflow: hidden; }
+.auf-item__balken > div { height: 100%; background: var(--color-brand-500, #00c0a7); border-radius: 2px; transition: width 0.6s ease; }
+.auf-item__x { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; border: 0; border-radius: 6px; background: transparent; color: var(--muted); cursor: pointer; text-decoration: none; }
+.auf-item__x:hover { background: var(--color-bg-1); color: var(--fg); text-decoration: none; }
+@keyframes auf-puls { 0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--color-brand-500, #00c0a7) 55%, transparent); } 50% { box-shadow: 0 0 0 5px color-mix(in srgb, var(--color-brand-500, #00c0a7) 0%, transparent); } }
+@media (prefers-reduced-motion: reduce) { .auf-item--laeuft .auf-item__punkt { animation: none; } }
+.auf-notiz { display: flex; align-items: center; gap: 8px; padding: 7px 12px; border-radius: 10px; font-size: 13px; color: var(--muted); background: color-mix(in srgb, var(--color-brand-500, #00c0a7) 8%, transparent); border: 1px solid color-mix(in srgb, var(--color-brand-500, #00c0a7) 30%, transparent); }
+.auf-notiz svg { flex: none; color: var(--color-brand-500, #00c0a7); }
+.auf-notiz--haengt { background: color-mix(in srgb, #d97706 8%, transparent); border-color: color-mix(in srgb, #d97706 30%, transparent); }
+.auf-notiz--haengt svg { color: #d97706; }
+.chat-msg-notiz { align-items: stretch; }
+.chat-msg-notiz .chat-content { background: transparent; padding: 0; border: 0; box-shadow: none; max-width: 100%; color: inherit; }

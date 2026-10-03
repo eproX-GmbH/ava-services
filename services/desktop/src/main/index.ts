@@ -4,6 +4,7 @@ import { NutzerstandService } from "./suggestions/nutzerstand";
 import { ChipErzeugung } from "./suggestions/erzeugung";
 import { VorschlaegeSettingsStore } from "./suggestions/settings";
 import { MithelfenSettingsStore, MithelfenSupervisor } from "./register-delta/supervisor";
+import { HintergrundAufgaben, AUTO_WERKZEUGE, setzeAufgabenInstanz } from "./aufgaben/aufgaben";
 import { workerModus } from "./worker-modus";
 import { ChromeForTesting } from "./chrome-for-testing";
 import { existsSync as existsSyncMain, rmSync as rmSyncMain, writeFileSync as writeFileSyncMain } from "node:fs";
@@ -2298,6 +2299,52 @@ function broadcastAgentStatus(status: AgentStatus): void {
 }
 agent.on("stream", broadcastAgentStream);
 agent.on("status", broadcastAgentStatus);
+
+// Hintergrundaufgaben (docs/PLAN_HINTERGRUNDAUFGABEN.md, 2026-10-03): laufende
+// Verarbeitungen im Chat verfolgen und bei Abschluss von selbst melden.
+const hintergrundAufgaben = new HintergrundAufgaben({
+  gateway: gatewayClient,
+  datei: join(app.getPath("userData"), "hintergrund-aufgaben.json"),
+  melden: (conversationId, text) => {
+    try {
+      return agent.meldeAufgabe(conversationId, text);
+    } catch (err) {
+      console.warn("[aufgaben] melden fehlgeschlagen:", err instanceof Error ? err.message : err);
+      return false;
+    }
+  },
+  benachrichtigen: (titel, text) => {
+    if (BrowserWindow.getFocusedWindow()) return;
+    try {
+      if (Notification.isSupported()) new Notification({ title: titel, body: text }).show();
+    } catch {
+      /* Systembenachrichtigung ist ein Zusatz */
+    }
+  },
+  aktiv: () => auth.getStatus().signedIn && !workerModus.aktiv(),
+  log: (m) => console.log(m),
+});
+setzeAufgabenInstanz(hintergrundAufgaben);
+agent.on("werkzeug-ergebnis", (e) => {
+  if (!e.ok) return;
+  const titel = AUTO_WERKZEUGE[e.toolName];
+  if (!titel) return;
+  try {
+    const r = JSON.parse(e.content) as { transactionId?: unknown; companyCount?: unknown; filename?: unknown };
+    if (typeof r.transactionId !== "string" || !r.transactionId) return;
+    const anzahl = typeof r.companyCount === "number" ? ` (${r.companyCount} Firmen)` : "";
+    const datei = typeof r.filename === "string" ? ` ${r.filename}` : "";
+    hintergrundAufgaben.registrieren({ conversationId: e.conversationId, transactionId: r.transactionId, titel: `${titel}${datei}${anzahl}`, quelle: e.toolName });
+  } catch {
+    /* kein JSON → keine Transaktion */
+  }
+});
+hintergrundAufgaben.on("aenderung", (liste) => {
+  for (const win of BrowserWindow.getAllWindows()) win.webContents.send("aufgaben:aenderung", liste);
+});
+hintergrundAufgaben.start();
+ipcMain.handle("aufgaben:liste", (_e, conversationId?: string) => hintergrundAufgaben.sichtbar(conversationId));
+ipcMain.handle("aufgaben:abbrechen", (_e, id: string) => hintergrundAufgaben.abbrechen(String(id)));
 
 /**
  * v0.1.387 — Das echte AVA-Hauptfenster finden, ohne das persistente

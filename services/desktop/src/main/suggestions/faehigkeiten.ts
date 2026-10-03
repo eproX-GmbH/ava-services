@@ -35,6 +35,7 @@ export const FAEHIGKEITEN: Faehigkeit[] = [
   { id: "buying_center", text: "Buying Center (Power Map nach Sieck) zu einer Firma im Gespraech erarbeiten: Personen mit Rolle, Einstellung, Kontaktintensitaet und Einfluss, Beziehungen zwischen Personen, Karte im Chat; die Firma wird damit Fokuskunde", tools: ["buying_center_*"], feature: "buyingcenter" },
   { id: "relevanz", text: "Relevanz: wie nah du an einer Firma oder Person dran bist (1-10), was AVA als naechstes beobachtet, welche Firmen im Team gerade Thema sind, Erfassung ein- und ausschalten oder loeschen", tools: ["relevanz_*"], feature: "relevanz" },
   { id: "mail", text: "Mail-Postfach verbinden, Posteingang lesen, antworten, weiterleiten (auch mit im Chat hochgeladenen Dateien als Anhang), archivieren, Mail-Triage einstellen", tools: ["mail_*"], feature: "mail" },
+  { id: "hintergrundaufgaben", text: "Laufende Verarbeitungen im Chat verfolgen und automatisch melden, sobald sie fertig sind", tools: ["aufgabe_beobachten", "aufgaben_liste"] },
   { id: "dateien", text: "Im Chat hochgeladene Dateien (PDF, Word, Text, Tabellen) gezielt lesen und durchsuchen, ohne sie ganz in den Kontext zu laden", tools: ["datei_*"] },
   { id: "telegram", text: "Telegram verbinden: Meldungen, Kurzprofile und Freigaben aufs Handy, Nachrichten senden", tools: ["telegram_*"], feature: "telegram" },
   { id: "workflows", text: "Workflows: Ablaeufe aus dem Gespraech speichern, mit Zeitplan oder Ereignis ausfuehren, Freigaben, Vorlagen, Laufhistorie", tools: ["workflow_*"], feature: "workflows" },

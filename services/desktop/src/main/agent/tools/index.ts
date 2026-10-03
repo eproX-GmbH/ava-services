@@ -47,6 +47,7 @@ import { buildObsidianTools } from "./obsidian";
 import { buildSkillsTools } from "./skills";
 import { buildMailTools } from "./mail";
 import { buildDateiTools } from "./dateien";
+import { buildAufgabenTools } from "./aufgaben";
 import { buildSchedulerTools } from "./scheduler";
 import { buildLinkMonitorTools } from "./link-monitor";
 import { buildTelegramTools } from "./telegram";
@@ -348,6 +349,8 @@ export function buildReadOnlyRegistry(deps: {
     registry.register(t);
   // D2 (docs/PLAN_CHAT_DATEIEN_KONTEXT.md): Uploads gezielt lesen.
   for (const t of buildDateiTools({ attachments: deps.attachments })) registry.register(t);
+  // Hintergrundaufgaben (docs/PLAN_HINTERGRUNDAUFGABEN.md).
+  for (const t of buildAufgabenTools()) registry.register(t);
   // v0.1.267 — Scheduler-Tools, gleiche Lazy-Getter-Logik.
   for (const t of buildSchedulerTools({
     getSupervisor: deps.getScheduledJobsSupervisor,
