@@ -379,7 +379,9 @@ proxyRouter.post(
     // ---- 2. Cache lookup ---------------------------------------------------
     const canonical = canonicalizeBody(body);
     const qHash = sha256(canonical);
-    const cacheKey = sha256(`${PROXY_NAME}:${canonical}`);
+    // ":de1" — seit 2026-10-03 lokalisiert die organische Suche (siehe unten);
+    // alte, unlokalisierte Cache-Eintraege duerfen nicht mehr greifen.
+    const cacheKey = sha256(`${PROXY_NAME}:de1:${canonical}`);
 
     const cacheStart = Date.now();
     const cached = await readCache(pool, cacheKey);
@@ -411,13 +413,19 @@ proxyRouter.post(
     // um deutsche Einträge zu finden — dort bleibt sie aktiv.
     // (Caller-Overrides unten greifen weiterhin, falls jemand bewusst
     // lokalisieren will.)
+    //
+    // 2026-10-03 — Gegenprobe an 20 Firmen mit bekannter Website (Anlass:
+    // QUIKK Software GmbH Minden, Treffer ohne Lokalisierung waren Fachartikel
+    // und US-Produktseiten): ohne Lokalisierung fand die Suche die echte
+    // Website bei 8 von 20, mit google.de + gl=de + hl=de bei 19 von 20
+    // (18 davon auf Platz 1-3). Die Verschlechterung von damals kam vom
+    // Orts-Parameter `location`; der bleibt der Places-Suche vorbehalten.
+    // Domain, Land und Sprache gelten jetzt auch fuer die organische Suche.
     const isPlaces = body.search_type === "places";
-    if (isPlaces) {
-      if (env.VALUESERP_DOMAIN) params.set("google_domain", env.VALUESERP_DOMAIN);
-      if (env.VALUESERP_UI_LANGUAGE) params.set("hl", env.VALUESERP_UI_LANGUAGE);
-      if (env.VALUESERP_LOCATION) params.set("gl", env.VALUESERP_LOCATION);
-      if (env.VALUESERP_COUNTRY) params.set("location", env.VALUESERP_COUNTRY);
-    }
+    if (env.VALUESERP_DOMAIN) params.set("google_domain", env.VALUESERP_DOMAIN);
+    if (env.VALUESERP_UI_LANGUAGE) params.set("hl", env.VALUESERP_UI_LANGUAGE);
+    if (env.VALUESERP_LOCATION) params.set("gl", env.VALUESERP_LOCATION);
+    if (isPlaces && env.VALUESERP_COUNTRY) params.set("location", env.VALUESERP_COUNTRY);
     if (env.VALUESERP_PAGINATION_SIZE) {
       params.set("num", String(env.VALUESERP_PAGINATION_SIZE));
     }
