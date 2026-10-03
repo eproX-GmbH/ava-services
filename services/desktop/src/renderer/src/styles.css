@@ -8766,11 +8766,11 @@ body.sprachmodus .upstream-banner, body.sprachmodus .tier-banner, body.sprachmod
   background: var(--color-bg-0); color: var(--fg); font-size: 13px;
 }
 .auf-item--laeuft { border-color: color-mix(in srgb, var(--color-brand-500, #00c0a7) 55%, var(--border)); background: color-mix(in srgb, var(--color-brand-500, #00c0a7) 6%, var(--color-bg-0)); }
-.auf-item--haengt { border-color: color-mix(in srgb, #d97706 55%, var(--border)); }
+.auf-item--abgebrochen { border-color: color-mix(in srgb, #d97706 55%, var(--border)); }
 .auf-item__punkt { width: 10px; height: 10px; border-radius: 50%; background: var(--muted); }
 .auf-item--laeuft .auf-item__punkt { background: var(--color-brand-500, #00c0a7); animation: auf-puls 1.6s ease-in-out infinite; }
 .auf-item--fertig .auf-item__punkt { background: var(--color-brand-500, #00c0a7); }
-.auf-item--haengt .auf-item__punkt { background: #d97706; }
+.auf-item--abgebrochen .auf-item__punkt { background: #d97706; }
 .auf-item__text { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
 .auf-item__titel { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .auf-item__stand { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }

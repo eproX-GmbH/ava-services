@@ -88,7 +88,7 @@ import {
 import { PostgresSupervisor } from "./postgres-supervisor";
 import { ProducerSupervisor } from "./producer-supervisor";
 import { processingControl } from "./processing-control";
-import { resumeStuckStages } from "./producer-resume";
+import { resumeStuckStages, NeustartZaehler } from "./producer-resume";
 import { resolveProducerDirUnder } from "./producer-dirs";
 import {
   buildStorageOverview,
@@ -427,7 +427,7 @@ function maybeRunResumeSweep(): void {
   if (resumeSweepDispatched) return;
   if (!auth.getStatus().signedIn) return;
   resumeSweepDispatched = true;
-  void resumeStuckStages({ gateway: gatewayClient }).catch((err) => {
+  void resumeStuckStages({ gateway: gatewayClient, neustartZaehler: neustartZaehler() }).catch((err) => {
     console.warn(
       "[producer-resume] sweep rejected:",
       err instanceof Error ? err.message : err,
@@ -447,6 +447,12 @@ function maybeRunResumeSweep(): void {
 // kein False-Positive feuert; kurz genug, dass ein Crash maximal
 // 15 Min. „stuck-Pille" auf der Matrix sichtbar bleibt.
 const PERIODIC_RESUME_INTERVAL_MS = 15 * 60 * 1000;
+// Begrenzung automatischer Neuanstoesse je Schritt (docs/PLAN_HINTERGRUNDAUFGABEN.md, Stufe 2).
+let neustartZaehlerInstanz: NeustartZaehler | null = null;
+function neustartZaehler(): NeustartZaehler {
+  neustartZaehlerInstanz ??= new NeustartZaehler(join(app.getPath("userData"), "auto-neustarts.json"));
+  return neustartZaehlerInstanz;
+}
 let periodicResumeTimer: NodeJS.Timeout | null = null;
 function startPeriodicResumeSweep(): void {
   if (periodicResumeTimer) return;
@@ -454,6 +460,7 @@ function startPeriodicResumeSweep(): void {
     if (!auth.getStatus().signedIn) return;
     void resumeStuckStages({
       gateway: gatewayClient,
+      neustartZaehler: neustartZaehler(),
       // v0.1.360 — verklemmte Producer (lange in_progress) neu starten,
       // damit ein frischer AMQP-Consumer das re-dispatchte Event abholt.
       // Behebt „Pipeline komplett eingefroren". Nur im periodischen Sweep
@@ -2307,6 +2314,10 @@ const hintergrundAufgaben = new HintergrundAufgaben({
   datei: join(app.getPath("userData"), "hintergrund-aufgaben.json"),
   melden: (conversationId, text) => {
     try {
+      // Ueber Telegram gestartet → Ergebnis aufs Handy (Stufe 2).
+      if (conversationId.startsWith("telegram-") && telegramInbound && featureEnabled("telegram")) {
+        return telegramInbound.meldeHintergrundaufgabe(conversationId, text);
+      }
       return agent.meldeAufgabe(conversationId, text);
     } catch (err) {
       console.warn("[aufgaben] melden fehlgeschlagen:", err instanceof Error ? err.message : err);

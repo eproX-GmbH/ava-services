@@ -480,6 +480,37 @@ export class TelegramInbound {
 
   /** Sammelt die Antwort des Agenten aus den Stream-Frames — plus die
    *  Zahl der ERFOLGREICH gelaufenen Schreib-Tools (Write-Claim-Guard). */
+  /**
+   * Hintergrundaufgaben (docs/PLAN_HINTERGRUNDAUFGABEN.md, Stufe 2): Ein ueber
+   * Telegram gestarteter Import ist fertig oder abgebrochen. Der Abschluss-
+   * Zug laeuft in derselben Telegram-Unterhaltung, die Antwort geht als
+   * Nachricht (oder Sprachnachricht, je nach Antwortform) aufs Handy. Den
+   * Fortschritt bekommt Telegram bewusst nicht, nur das Ergebnis.
+   * false = Telegram nicht verbunden oder Modell nicht bereit (Waechter
+   * versucht es spaeter erneut).
+   */
+  meldeHintergrundaufgabe(conversationId: string, notiz: string): boolean {
+    const cfg = this.store.getConfig();
+    if (!cfg.chatId) return false;
+    const confirmEnabled = cfg.inboundConfirmEnabled;
+    this.antwortModus = cfg.antwortModus ?? "text";
+    const form = this.antwortModus === "sprache"
+      ? "Deine Antwort wird dem Nutzer als SPRACHNACHRICHT vorgelesen: kurze Saetze, hoechstens etwa sechs, kein Markdown, keine Links oder Kennungen. "
+      : "Das ist eine TEXTNACHRICHT auf dem Handy: KEIN Markdown, keine Aufzaehlungszeichen, wenige kurze Saetze. ";
+    const started = this.orchestrator.startAutonomousConversation({
+      conversationId,
+      source: "aufgabe",
+      initialMessage: `${notiz}\n\n[Hinweis: Der Nutzer hat diese Verarbeitung ueber Telegram gestartet; deine Antwort geht als Telegram-Nachricht an ihn. ${form}]`,
+      ...(confirmEnabled ? { remoteAsk: this.buildRemoteAsk() } : {}),
+    });
+    if (!started) return false;
+    void (async () => {
+      const r = await this.awaitAnswer(started.requestId);
+      if (r.text && r.text.trim()) await this.antworten(r.text);
+    })().catch((err) => console.warn("[telegram] Aufgaben-Meldung fehlgeschlagen:", err instanceof Error ? err.message : err));
+    return true;
+  }
+
   private awaitAnswer(
     requestId: string,
   ): Promise<{ text: string; writesExecuted: number }> {

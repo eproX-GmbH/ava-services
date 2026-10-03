@@ -732,7 +732,7 @@ export class AgentOrchestrator extends EventEmitter {
      */
     remoteAsk?: RemoteAskHandler;
     /** v0.1.578 — Herkunft fuer die App-Anzeige (user-message-Frame). */
-    source?: "telegram" | "mail";
+    source?: "telegram" | "mail" | "aufgabe";
   }): { conversationId: string; requestId: string } | null {
     const status = this.getStatus();
     if (!status.ready) {
@@ -777,7 +777,7 @@ export class AgentOrchestrator extends EventEmitter {
      */
     remoteAsk?: RemoteAskHandler;
     /** v0.1.578 — Herkunft fuer die App-Anzeige (user-message-Frame). */
-    source?: "telegram" | "mail";
+    source?: "telegram" | "mail" | "aufgabe";
   }> = [];
 
   private runAutonomousNow(input: {
@@ -800,7 +800,7 @@ export class AgentOrchestrator extends EventEmitter {
      */
     remoteAsk?: RemoteAskHandler;
     /** v0.1.578 — Herkunft fuer die App-Anzeige (user-message-Frame). */
-    source?: "telegram" | "mail";
+    source?: "telegram" | "mail" | "aufgabe";
   }): { conversationId: string; requestId: string } {
     const conversationId = input.conversationId ?? randomUUID();
     const existing = this.conversations.get(conversationId);

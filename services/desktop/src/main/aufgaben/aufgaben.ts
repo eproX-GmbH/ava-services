@@ -14,8 +14,12 @@
 //   3. Melden: sind alle Firmen fertig (completed/failed/skipped), schiebt
 //      der Waechter eine Notiz in die Unterhaltung und startet einen Zug.
 //      Laeuft gerade ein anderer Zug, wird beim naechsten Takt erneut versucht.
-//   4. Haengt eine Aufgabe 2 Stunden ohne Fortschritt, meldet AVA das einmal
-//      (siehe Persist-Bus-Ausfall 27.09.–03.10.).
+//   4. Lebendigkeit (Stufe 2, Nutzervorgabe 2026-10-03): Jede Veraenderung
+//      zaehlt, also neue Schritte, Endzustaende und die Lebenszeichen, die
+//      Producer alle 5 Minuten waehrend der Arbeit senden. Solange sich
+//      etwas bewegt, wird nie abgebrochen. Bewegt sich STILLSTAND_MS lang gar
+//      nichts, bricht der Waechter die offenen Schritte im Gateway mit Fehler
+//      ab und meldet das.
 //
 // Kosten: Das Beobachten ist reiner Gateway-Abruf ohne KI. Erst die Meldung
 // ist ein Modellzug, und der ist das, worum der Nutzer gebeten hat.
@@ -24,15 +28,25 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { EventEmitter } from "node:events";
 import type { GatewayClient } from "../agent/gateway-client";
 
-export type AufgabeStatus = "laeuft" | "fertig" | "haengt" | "abgebrochen";
+/** abgebrochen = vom Waechter nach Stillstand beendet; nicht_verfolgt = Nutzer hat × gedrueckt. */
+export type AufgabeStatus = "laeuft" | "fertig" | "abgebrochen" | "nicht_verfolgt";
 
 export interface AufgabenStand {
+  /** Firmen der Transaktion. */
   total: number;
+  /** Firmen ohne offenen Schritt. */
   fertig: number;
+  /** Firmen ohne offenen Schritt und ohne Fehler. */
   abgeschlossen: number;
+  /** Firmen mit mindestens einem fehlgeschlagenen Schritt. */
   fehlgeschlagen: number;
   uebersprungen: number;
+  /** Firmen mit mindestens einem offenen Schritt. */
   laufend: number;
+  /** Offene Schritte (pending/in_progress) ueber alle Firmen. */
+  offeneSchritte: number;
+  /** Juengste Aenderung an irgendeinem Schritt (ISO). */
+  letztesLebenszeichen: string | null;
   fehlerBeispiele: Array<{ companyId?: string; meldung: string }>;
 }
 
@@ -45,8 +59,12 @@ export interface HintergrundAufgabe {
   gestartet: number;
   status: AufgabeStatus;
   stand: AufgabenStand | null;
-  /** Zeitpunkt der letzten Aenderung am Fortschritt (fuer "haengt"). */
+  /** Zeitpunkt der letzten beobachteten Veraenderung (Lebendigkeit). */
   fortschrittAm: number;
+  /** Fingerabdruck des letzten Stands (Zaehler + letztes Lebenszeichen). */
+  fingerabdruck?: string;
+  /** Wie oft hintereinander "alles fertig" gesehen (Uebergang zwischen Schritten abwarten). */
+  fertigGesehen?: number;
   geprueftAm: number | null;
   /** true, sobald die Meldung im Chat angekommen ist. */
   gemeldet: boolean;
@@ -62,41 +80,41 @@ export const AUTO_WERKZEUGE: Record<string, string> = {
 };
 
 const TAKT_MS = 20_000;
-const HAENGT_NACH_MS = 2 * 60 * 60_000;
+/** Nutzervorgabe 2026-10-03: 60 Minuten ohne jede Veraenderung = Abbruch. */
+export const STILLSTAND_MS = 60 * 60_000;
 /** Erledigte Aufgaben bleiben so lange in der Leiste sichtbar. */
 const SICHTBAR_NACH_ENDE_MS = 30 * 60_000;
 const AUFBEWAHREN_MS = 7 * 24 * 60 * 60_000;
 const SEITEN_GROESSE = 200;
 const MAX_SEITEN = 25;
 
-type EntityRow = { companyId?: string; state?: string; errorMessage?: string };
+type FortschrittAntwort = {
+  firmen: number;
+  firmenFertig: number;
+  firmenMitFehler: number;
+  schritte: { gesamt: number; offen: number; abgeschlossen: number; fehlgeschlagen: number; uebersprungen: number };
+  letztesLebenszeichen: string | null;
+  fehlerBeispiele: Array<{ companyId: string; producer: string; meldung: string }>;
+};
 
-/** Stand einer Transaktion; geteilt mit dem Werkzeug `import_status`. */
+/** Stand einer Transaktion auf Schritt-Ebene (Gateway /fortschritt). */
 export async function transaktionsStand(gateway: GatewayClient, transactionId: string, signal?: AbortSignal): Promise<AufgabenStand> {
-  const s: AufgabenStand = { total: 0, fertig: 0, abgeschlossen: 0, fehlgeschlagen: 0, uebersprungen: 0, laufend: 0, fehlerBeispiele: [] };
-  let gesehen = 0;
-  let total: number | undefined;
-  for (let page = 1; page <= MAX_SEITEN; page++) {
-    const data = await gateway.request<{ items?: EntityRow[]; total?: number }>(
-      `/v1/transactions/${encodeURIComponent(transactionId)}/entities`,
-      { query: { page, pageSize: SEITEN_GROESSE }, ...(signal ? { signal } : {}) },
-    );
-    const items = data.items ?? [];
-    if (typeof data.total === "number") total = data.total;
-    for (const r of items) {
-      gesehen++;
-      if (r.state === "completed") s.abgeschlossen++;
-      else if (r.state === "failed") {
-        s.fehlgeschlagen++;
-        if (r.errorMessage && s.fehlerBeispiele.length < 5) s.fehlerBeispiele.push({ ...(r.companyId ? { companyId: r.companyId } : {}), meldung: r.errorMessage.slice(0, 200) });
-      } else if (r.state === "skipped") s.uebersprungen++;
-      else s.laufend++;
-    }
-    if (items.length < SEITEN_GROESSE || (total !== undefined && gesehen >= total)) break;
-  }
-  s.total = total ?? gesehen;
-  s.fertig = s.abgeschlossen + s.fehlgeschlagen + s.uebersprungen;
-  return s;
+  const f = await gateway.request<FortschrittAntwort>(
+    `/v1/transactions/${encodeURIComponent(transactionId)}/fortschritt`,
+    signal ? { signal } : {},
+  );
+  const fertigOhneFehler = Math.max(0, f.firmenFertig - f.firmenMitFehler);
+  return {
+    total: f.firmen,
+    fertig: f.firmenFertig,
+    abgeschlossen: fertigOhneFehler,
+    fehlgeschlagen: f.firmenMitFehler,
+    uebersprungen: 0,
+    laufend: Math.max(0, f.firmen - f.firmenFertig),
+    offeneSchritte: f.schritte.offen,
+    letztesLebenszeichen: f.letztesLebenszeichen,
+    fehlerBeispiele: f.fehlerBeispiele.map((x) => ({ companyId: x.companyId, meldung: `${x.producer}: ${x.meldung}` })),
+  };
 }
 
 /** Text, der bei Abschluss als Notiz in die Unterhaltung geht. Das Praefix
@@ -106,15 +124,15 @@ export const MELDUNG_PRAEFIX = "[Hintergrundaufgabe";
 export function meldungsText(a: HintergrundAufgabe): string {
   const s = a.stand;
   const dauerMin = Math.max(1, Math.round(((a.beendet ?? Date.now()) - a.gestartet) / 60_000));
-  const kopf = a.status === "haengt"
-    ? `${MELDUNG_PRAEFIX} haengt] ${a.titel} (Transaktion ${a.transactionId}) kommt seit über 2 Stunden nicht voran.`
+  const kopf = a.status === "abgebrochen"
+    ? `${MELDUNG_PRAEFIX} abgebrochen] ${a.titel} (Transaktion ${a.transactionId}) kam ${Math.round(STILLSTAND_MS / 60_000)} Minuten lang gar nicht weiter und wurde nach ${dauerMin} Min. mit Fehler abgebrochen.`
     : `${MELDUNG_PRAEFIX} abgeschlossen] ${a.titel} (Transaktion ${a.transactionId}) ist nach ${dauerMin} Min. fertig.`;
   const zahlen = s
-    ? `Firmen: ${s.total}, abgeschlossen ${s.abgeschlossen}${s.fehlgeschlagen > 0 ? `, fehlgeschlagen ${s.fehlgeschlagen}` : ""}${s.uebersprungen > 0 ? `, übersprungen ${s.uebersprungen}` : ""}${s.laufend > 0 ? `, noch offen ${s.laufend}` : ""}.`
+    ? `Firmen: ${s.total}, ohne Fehler fertig ${s.abgeschlossen}${s.fehlgeschlagen > 0 ? `, mit Fehler ${s.fehlgeschlagen}` : ""}${s.laufend > 0 ? `, noch offen ${s.laufend}` : ""}.`
     : "";
   const fehler = s && s.fehlerBeispiele.length > 0 ? ` Fehlerbeispiele: ${s.fehlerBeispiele.map((f) => `${f.companyId ?? "?"}: ${f.meldung}`).join(" | ")}.` : "";
-  const auftrag = a.status === "haengt"
-    ? " Sag dem Nutzer kurz, welche Schritte haengen, und biete an, sie neu anzustossen (retry_stage). Nicht von dir aus neu starten."
+  const auftrag = a.status === "abgebrochen"
+    ? " Sag dem Nutzer kurz, dass und wo die Verarbeitung stehen geblieben ist (lies bei Bedarf transaction_errors), nenne die wahrscheinliche Ursache und biete an, die betroffenen Schritte neu anzustossen (retry_stage). Nicht von dir aus neu starten."
     : " Melde dem Nutzer jetzt von dir aus das Ergebnis: knapp, mit den wichtigsten Erkenntnissen zu den Firmen (lies sie bei Bedarf mit company_get bzw. transaction_entities nach), nenne Fehlschlaege und schlage einen sinnvollen naechsten Schritt vor.";
   return `${kopf} ${zahlen}${fehler}${auftrag}`;
 }
@@ -181,10 +199,11 @@ export class HintergrundAufgaben extends EventEmitter {
     return a;
   }
 
+  /** × in der Leiste: nur nicht mehr verfolgen, die Verarbeitung laeuft weiter. */
   abbrechen(id: string): boolean {
     const a = this.liste.find((x) => x.id === id);
     if (!a || a.status !== "laeuft") return false;
-    a.status = "abgebrochen";
+    a.status = "nicht_verfolgt";
     a.beendet = Date.now();
     a.gemeldet = true;
     this.speichern();
@@ -217,17 +236,39 @@ export class HintergrundAufgaben extends EventEmitter {
         if (a.status !== "laeuft") continue;
         try {
           const s = await transaktionsStand(this.deps.gateway, a.transactionId);
-          const vorher = a.stand;
-          if (!vorher || vorher.fertig !== s.fertig || vorher.total !== s.total) a.fortschrittAm = jetzt;
+          // Lebendigkeit: jede Veraenderung zaehlt (Zaehler, neue Schritte,
+          // Endzustaende, Lebenszeichen der Producer).
+          const abdruck = `${s.total}|${s.fertig}|${s.fehlgeschlagen}|${s.offeneSchritte}|${s.letztesLebenszeichen ?? ""}`;
+          if (abdruck !== a.fingerabdruck) {
+            a.fingerabdruck = abdruck;
+            a.fortschrittAm = jetzt;
+          }
           a.stand = s;
           a.geprueftAm = jetzt;
           a.letzterFehler = null;
-          if (s.total > 0 && s.laufend === 0 && s.fertig >= s.total) {
-            a.status = "fertig";
-            a.beendet = jetzt;
-          } else if (jetzt - a.fortschrittAm > HAENGT_NACH_MS) {
-            a.status = "haengt";
-            a.beendet = jetzt;
+          const zuletzt = s.letztesLebenszeichen ? Date.parse(s.letztesLebenszeichen) : 0;
+          if (s.total > 0 && s.offeneSchritte === 0) {
+            // Zwischen zwei Schritten (Register fertig, Website noch nicht
+            // angelegt) ist kurz nichts offen. Erst nach zwei Takten und
+            // 90 s Ruhe als fertig werten.
+            a.fertigGesehen = (a.fertigGesehen ?? 0) + 1;
+            if (a.fertigGesehen >= 2 && jetzt - zuletzt > 90_000) {
+              a.status = "fertig";
+              a.beendet = jetzt;
+            }
+          } else {
+            a.fertigGesehen = 0;
+            if (jetzt - a.fortschrittAm > STILLSTAND_MS) {
+              const grund = `seit ${Math.round(STILLSTAND_MS / 60_000)} Minuten kein Fortschritt`;
+              try {
+                await this.deps.gateway.request(`/v1/transactions/${encodeURIComponent(a.transactionId)}/abbrechen`, { method: "POST", body: { grund } });
+                a.stand = await transaktionsStand(this.deps.gateway, a.transactionId).catch(() => s);
+              } catch (err) {
+                this.deps.log?.(`[aufgaben] abbrechen im Gateway fehlgeschlagen: ${err instanceof Error ? err.message : String(err)}`);
+              }
+              a.status = "abgebrochen";
+              a.beendet = jetzt;
+            }
           }
           geaendert = true;
         } catch (err) {
@@ -237,7 +278,7 @@ export class HintergrundAufgaben extends EventEmitter {
         }
       }
       // Zustellen: je Takt hoechstens eine Meldung, damit Zuege nicht kollidieren.
-      const offen = this.liste.find((a) => (a.status === "fertig" || a.status === "haengt") && !a.gemeldet);
+      const offen = this.liste.find((a) => (a.status === "fertig" || a.status === "abgebrochen") && !a.gemeldet);
       if (offen) {
         const ok = this.deps.melden(offen.conversationId, meldungsText(offen));
         if (ok) {
@@ -246,7 +287,7 @@ export class HintergrundAufgaben extends EventEmitter {
           this.deps.log?.(`[aufgaben] gemeldet ${offen.id} (${offen.status}) tx=${offen.transactionId}`);
           const s = offen.stand;
           this.deps.benachrichtigen?.(
-            offen.status === "fertig" ? `${offen.titel} fertig` : `${offen.titel} haengt`,
+            offen.status === "fertig" ? `${offen.titel} fertig` : `${offen.titel} abgebrochen`,
             s ? `${s.abgeschlossen} von ${s.total} Firmen verarbeitet${s.fehlgeschlagen > 0 ? `, ${s.fehlgeschlagen} fehlgeschlagen` : ""}.` : "",
           );
         }
@@ -272,7 +313,15 @@ export class HintergrundAufgaben extends EventEmitter {
     try {
       if (!existsSync(this.deps.datei)) return;
       const roh = JSON.parse(readFileSync(this.deps.datei, "utf8")) as unknown;
-      if (Array.isArray(roh)) this.liste = roh.filter((x): x is HintergrundAufgabe => !!x && typeof (x as HintergrundAufgabe).transactionId === "string");
+      if (Array.isArray(roh)) {
+        this.liste = roh.filter((x): x is HintergrundAufgabe => !!x && typeof (x as HintergrundAufgabe).transactionId === "string");
+        // v0.1.743 kannte "haengt" (nur gemeldet) und "abgebrochen" (= ×).
+        for (const a of this.liste) {
+          const alt = a.status as string;
+          if (alt === "haengt") a.status = "abgebrochen";
+          else if (alt === "abgebrochen" && a.gemeldet && !a.stand) a.status = "nicht_verfolgt";
+        }
+      }
     } catch {
       this.liste = [];
     }

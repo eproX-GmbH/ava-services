@@ -15,6 +15,7 @@
 // partway done.
 
 import { randomUUID } from "node:crypto";
+import { readFileSync, writeFileSync } from "node:fs";
 import type { GatewayClient } from "./agent/gateway-client";
 
 /**
@@ -60,7 +61,50 @@ const RECENT_UPDATE_GUARD_MS = 60 * 1000;
  * Event abholt. Großzügig bemessen, damit ein langsamer, aber echt
  * arbeitender Producer (großer LLM-Call) nicht abgewürgt wird.
  */
-const STALE_IN_PROGRESS_RESTART_MS = 10 * 60 * 1000;
+const STALE_IN_PROGRESS_RESTART_MS = 15 * 60 * 1000;
+/**
+ * 2026-10-03 (docs/PLAN_HINTERGRUNDAUFGABEN.md, Stufe 2): Ein laufender
+ * Schritt sendet alle 5 Minuten ein Lebenszeichen. Neu angestossen wird er
+ * nur, wenn er 15 Minuten (drei verpasste Lebenszeichen) still war, und
+ * hoechstens MAX_AUTO_NEUSTARTS-mal. Vorher stiess der Sweep jeden Schritt
+ * an, der aelter als 60 s war; das setzte die Uhr des Gateway-Zeitwaechters
+ * jedes Mal zurueck, und eine Firma lief endlos ohne Fehler (Patrick,
+ * 03.10.: alle 15 Minuten Neustart, eine Stunde lang).
+ */
+const MAX_AUTO_NEUSTARTS = 2;
+
+/** Zaehler je (Transaktion, Firma, Schritt); optional auf Platte. */
+export class NeustartZaehler {
+  private werte = new Map<string, number>();
+  constructor(private readonly datei?: string) {
+    if (!datei) return;
+    try {
+      const roh = JSON.parse(readFileSync(datei, "utf8")) as Record<string, number>;
+      for (const [k, v] of Object.entries(roh)) if (typeof v === "number") this.werte.set(k, v);
+    } catch {
+      /* neu */
+    }
+  }
+  anzahl(k: string): number {
+    return this.werte.get(k) ?? 0;
+  }
+  erhoehen(k: string): void {
+    this.werte.set(k, this.anzahl(k) + 1);
+    // Auf 2.000 Eintraege begrenzen, aelteste zuerst raus.
+    while (this.werte.size > 2000) {
+      const erster = this.werte.keys().next().value;
+      if (erster === undefined) break;
+      this.werte.delete(erster);
+    }
+    if (this.datei) {
+      try {
+        writeFileSync(this.datei, JSON.stringify(Object.fromEntries(this.werte)));
+      } catch {
+        /* nur Komfort */
+      }
+    }
+  }
+}
 /** Pull a generous window of recent transactions to scan. */
 const TRANSACTIONS_PAGE_SIZE = 50;
 /** Inter-call pacing so we don't hammer the gateway on a big sweep. */
@@ -99,6 +143,8 @@ export interface ResumeStuckStagesDeps {
    * ohnehin frisch).
    */
   restartProducer?: (producerName: string) => Promise<void>;
+  /** Begrenzung automatischer Neuanstoesse je Schritt (2026-10-03). */
+  neustartZaehler?: NeustartZaehler;
 }
 
 export interface ResumeStuckStagesResult {
@@ -217,6 +263,18 @@ export async function resumeStuckStages(
         // double-launch it. Skipped naturally for `pending` cells
         // with no updatedAt.
         if (cell && isRecentlyUpdated(cell, now)) continue;
+        // Laufender Schritt mit Lebenszeichen innerhalb von 15 Min.: arbeitet,
+        // nicht anfassen (sonst doppelter Lauf).
+        if (cell && cell.state === "in_progress") {
+          const ts = cell.updatedAt ? Date.parse(cell.updatedAt) : NaN;
+          if (!Number.isNaN(ts) && now - ts < STALE_IN_PROGRESS_RESTART_MS) continue;
+        }
+        const zKey = `${transactionId}:${companyId}:${stage}`;
+        if (deps.neustartZaehler && deps.neustartZaehler.anzahl(zKey) >= MAX_AUTO_NEUSTARTS) {
+          // Genug versucht: der Gateway-Zeitwaechter beendet den Schritt
+          // mit Fehler, statt dass er endlos neu startet.
+          continue;
+        }
         // v0.1.360 — Stage hängt lange in `in_progress`? Dann ist der
         // Producer vermutlich verklemmt (lebt, konsumiert aber kein AMQP
         // mehr). Owner-Producer für einen Restart vormerken — sonst holt
@@ -279,6 +337,7 @@ export async function resumeStuckStages(
       );
       result.resumed += 1;
       result.byStage[job.stage] = (result.byStage[job.stage] ?? 0) + 1;
+      deps.neustartZaehler?.erhoehen(`${job.transactionId}:${job.companyId}:${job.stage}`);
       log.debug?.(
         `resumed ${job.stage} for ${job.transactionId}/${job.companyId}`,
       );

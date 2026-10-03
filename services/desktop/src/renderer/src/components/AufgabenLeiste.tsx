@@ -8,9 +8,10 @@ export interface AufgabeAnzeige {
   conversationId: string;
   transactionId: string;
   titel: string;
-  status: "laeuft" | "fertig" | "haengt" | "abgebrochen";
+  status: "laeuft" | "fertig" | "abgebrochen" | "nicht_verfolgt";
   gestartet: number;
-  stand: { total: number; fertig: number; abgeschlossen: number; fehlgeschlagen: number; uebersprungen: number; laufend: number } | null;
+  stand: { total: number; fertig: number; abgeschlossen: number; fehlgeschlagen: number; uebersprungen: number; laufend: number; offeneSchritte?: number; letztesLebenszeichen?: string | null } | null;
+  fortschrittAm?: number;
   gemeldet: boolean;
   letzterFehler: string | null;
 }
@@ -73,9 +74,10 @@ export function AufgabenLeiste({ conversationId }: { conversationId: string }) {
               <div className="auf-item__stand">
                 {laeuft && !s && "Stand wird geladen …"}
                 {laeuft && s && `${s.fertig} von ${s.total} Firmen fertig${s.fehlgeschlagen > 0 ? `, ${s.fehlgeschlagen} mit Fehler` : ""} · ${dauer(Date.now() - a.gestartet)}`}
-                {a.status === "fertig" && s && `Fertig: ${s.abgeschlossen} von ${s.total} verarbeitet${s.fehlgeschlagen > 0 ? `, ${s.fehlgeschlagen} mit Fehler` : ""}${a.gemeldet ? "" : " · Ergebnis folgt"}`}
-                {a.status === "haengt" && "Kommt seit über 2 Stunden nicht voran"}
-                {a.status === "abgebrochen" && "Wird nicht mehr verfolgt"}
+                {laeuft && s && a.fortschrittAm && Date.now() - a.fortschrittAm > 15 * 60_000 && ` · seit ${Math.floor((Date.now() - a.fortschrittAm) / 60_000)} Min. keine Bewegung`}
+                {a.status === "fertig" && s && `Fertig: ${s.fertig} von ${s.total} verarbeitet${s.fehlgeschlagen > 0 ? `, ${s.fehlgeschlagen} mit Fehler` : ""}${a.gemeldet ? "" : " · Ergebnis folgt"}`}
+                {a.status === "abgebrochen" && "Abgebrochen: 60 Minuten ohne jeden Fortschritt"}
+                {a.status === "nicht_verfolgt" && "Wird nicht mehr verfolgt"}
                 {laeuft && a.letzterFehler && " · Stand gerade nicht abrufbar"}
               </div>
               {(laeuft || a.status === "fertig") && (
@@ -104,9 +106,9 @@ export function AufgabenLeiste({ conversationId }: { conversationId: string }) {
 
 /** Notiz des Aufgaben-Waechters fuer die Anzeige kuerzen (ohne Auftrag ans Modell). */
 export function aufgabenNotiz(content: string): { haengt: boolean; text: string } | null {
-  const m = /^\[Hintergrundaufgabe (abgeschlossen|haengt)\]\s*([\s\S]*)$/.exec(content.trim());
+  const m = /^\[Hintergrundaufgabe (abgeschlossen|haengt|abgebrochen)\]\s*([\s\S]*)$/.exec(content.trim());
   if (!m) return null;
-  const rest = (m[2] ?? "").split(/\s(?:Melde dem Nutzer|Sag dem Nutzer)/)[0] ?? "";
+  const rest = (m[2] ?? "").split(/\s(?:Melde dem Nutzer|Sag dem Nutzer|\[Hinweis:)/)[0] ?? "";
   const ohneTx = rest.replace(/\s*\(Transaktion [^)]+\)/, "").replace(/\s*Fehlerbeispiele:[\s\S]*$/, "");
-  return { haengt: m[1] === "haengt", text: ohneTx.trim() };
+  return { haengt: m[1] !== "abgeschlossen", text: ohneTx.trim() };
 }

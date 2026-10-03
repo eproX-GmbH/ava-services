@@ -30,11 +30,31 @@ auch wenn man den Chat verlässt, und meldet sich bei Abschluss.
 Kosten: Beobachten ist ein reiner Gateway-Abruf ohne KI. Erst die Meldung ist
 ein Modellzug. Im Worker-Modus und abgemeldet pausiert der Wächter.
 
+## Stufe 2: Lebendigkeit und Abbruch, Telegram (v0.1.744)
+
+Nutzervorgabe: Solange sich irgendetwas bewegt, nie abbrechen. Kommt ein
+Vorgang eine Stunde gar nicht weiter, automatisch mit Fehler beenden. Über
+Telegram gestartete Vorgänge melden das Ergebnis in Telegram.
+
+| Ebene | Regel |
+| --- | --- |
+| Producer (5 von 6) | Lebenszeichen: alle 5 Min. erneut `in_progress`, solange ein Lauf arbeitet. company-evaluation sendet bewusst kein in_progress (8 parallele Teile, kurze LLM-Aufrufe) |
+| Gateway-Zeitwächter | unverändert: Schritt ohne Lebenszeichen seit 30 Min. → failed. Mit Lebenszeichen trifft das nur noch tote Läufe |
+| Desktop-Aufräumer | Neuanstoß nur bei Schritten, die 15 Min. still sind (vorher: alle älter als 60 s, auch gesunde), höchstens 2-mal je Schritt (`userData/auto-neustarts.json`). Vorher setzte jeder Neuanstoß die Uhr des Zeitwächters zurück: Endlosschleife ohne Fehler |
+| Aufgaben-Wächter | Lebendigkeit = jede Änderung an Zählern oder am jüngsten Zeitstempel eines Schritts (`GET /v1/transactions/{id}/fortschritt`). 60 Min. ohne jede Änderung → `POST /v1/transactions/{id}/abbrechen` setzt offene Schritte auf failed, Meldung `[Hintergrundaufgabe abgebrochen]`. Fertig erst, wenn zwei Takte lang kein Schritt offen ist und 90 s Ruhe herrscht (Übergang zwischen Schritten) |
+| Telegram | Unterhaltungen `telegram-…`: Abschluss-Zug als Telegram-Zug, Antwort als Nachricht bzw. Sprachnachricht aufs Handy; Fortschritt nur in der App |
+
+Warum 30 und 60 Minuten: Der längste legitime Einzelschritt ist Deep
+Research mit bis zu 35 Minuten, sendet aber alle 5 Minuten ein
+Lebenszeichen. 30 Minuten Funkstille sind also sechs verpasste
+Lebenszeichen, der Lauf ist sicher tot. Auf Vorgangsebene bewegt sich bei
+einem lebenden Import praktisch immer etwas; 60 Minuten völliger Stillstand
+heißt, dass nichts mehr kommt (z. B. App zu, Producer gestoppt, Gateway
+gestört). Ein später echter Abschluss überschreibt den Fehler trotzdem.
+
 ## Grenzen
 
 - Die Meldung braucht eine laufende App. Ist die App zu, meldet AVA beim
   nächsten Start (der Wächter liest den Stand nach).
 - Nur Vorgänge mit transactionId. Best-Match-Jobs und Recherche-Läufe je
   Firma haben eigene IDs; Kandidaten für eine zweite Ausbaustufe.
-- Telegram: Meldungen aus Telegram gestarteter Importe gehen heute in die
-  Unterhaltung, nicht aufs Handy. Kandidat für die nächste Stufe.

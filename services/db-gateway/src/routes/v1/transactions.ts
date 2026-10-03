@@ -529,6 +529,141 @@ transactionsRouter.openapi(entitiesRoute, async (c) => {
   return c.json({ items, page, pageSize, total: localTotal }, 200);
 });
 
+// ---- GET /v1/transactions/:transactionId/fortschritt -----------------------
+// Hintergrundaufgaben (docs/PLAN_HINTERGRUNDAUFGABEN.md, Stufe 2, 2026-10-03):
+// Stand auf SCHRITT-Ebene. Die Firmenliste oben aggregiert "schlimmster
+// Zustand zuerst" und zeigt eine Firma als failed, sobald EIN Schritt
+// scheitert, auch wenn andere noch laufen. Fuer "fertig?" zaehlt hier nur:
+// kein Schritt mehr offen. `letztesLebenszeichen` = juengste Aenderung an
+// irgendeinem Schritt (Producer-Ereignis oder Lebenszeichen waehrend der
+// Arbeit); daran misst der Desktop, ob der Vorgang noch lebt.
+
+const fortschrittRoute = createRoute({
+  method: "get",
+  path: "/transactions/{transactionId}/fortschritt",
+  tags: [tag],
+  summary: "Fortschritt einer Transaktion auf Schritt-Ebene",
+  request: { params: TransactionIdParam },
+  responses: {
+    200: {
+      content: {
+        "application/json": {
+          schema: z.object({
+            firmen: z.number(),
+            firmenFertig: z.number(),
+            firmenMitFehler: z.number(),
+            schritte: z.object({ gesamt: z.number(), offen: z.number(), abgeschlossen: z.number(), fehlgeschlagen: z.number(), uebersprungen: z.number() }),
+            letztesLebenszeichen: z.string().nullable(),
+            fehlerBeispiele: z.array(z.object({ companyId: z.string(), producer: z.string(), meldung: z.string() })),
+          }),
+        },
+      },
+      description: "Fortschritt",
+    },
+    ...errorResponses,
+  },
+});
+
+transactionsRouter.openapi(fortschrittRoute, async (c) => {
+  const { transactionId } = c.req.valid("param");
+  await assertTransactionOwnershipById(c, transactionId);
+  const pool = getGatewayPool();
+  const agg = await pool.query<{ firmen: string; firmen_fertig: string; firmen_fehler: string; gesamt: string; offen: string; ok: string; fehl: string; skip: string; zuletzt: Date | null }>(
+    `WITH je_firma AS (
+       SELECT "companyId",
+              bool_and(state IN ('completed','failed','skipped')) AS fertig,
+              bool_or(state = 'failed') AS fehler
+         FROM "EntityProgress" WHERE "transactionId" = $1 GROUP BY "companyId"
+     )
+     SELECT (SELECT count(*) FROM je_firma)::text AS firmen,
+            (SELECT count(*) FROM je_firma WHERE fertig)::text AS firmen_fertig,
+            (SELECT count(*) FROM je_firma WHERE fehler)::text AS firmen_fehler,
+            count(*)::text AS gesamt,
+            count(*) FILTER (WHERE state NOT IN ('completed','failed','skipped'))::text AS offen,
+            count(*) FILTER (WHERE state = 'completed')::text AS ok,
+            count(*) FILTER (WHERE state = 'failed')::text AS fehl,
+            count(*) FILTER (WHERE state = 'skipped')::text AS skip,
+            max("updatedAt") AS zuletzt
+       FROM "EntityProgress" WHERE "transactionId" = $1`,
+    [transactionId],
+  );
+  const fehler = await pool.query<{ companyId: string; producer: string; errorMessage: string | null }>(
+    `SELECT "companyId", producer, "errorMessage" FROM "EntityProgress"
+      WHERE "transactionId" = $1 AND state = 'failed'
+      ORDER BY "updatedAt" DESC LIMIT 5`,
+    [transactionId],
+  );
+  const r = agg.rows[0];
+  const zuletzt = r?.zuletzt ? (r.zuletzt instanceof Date ? r.zuletzt.toISOString() : String(r.zuletzt)) : null;
+  return c.json(
+    {
+      firmen: Number(r?.firmen ?? 0),
+      firmenFertig: Number(r?.firmen_fertig ?? 0),
+      firmenMitFehler: Number(r?.firmen_fehler ?? 0),
+      schritte: {
+        gesamt: Number(r?.gesamt ?? 0),
+        offen: Number(r?.offen ?? 0),
+        abgeschlossen: Number(r?.ok ?? 0),
+        fehlgeschlagen: Number(r?.fehl ?? 0),
+        uebersprungen: Number(r?.skip ?? 0),
+      },
+      letztesLebenszeichen: zuletzt,
+      fehlerBeispiele: fehler.rows.map((f) => ({ companyId: f.companyId, producer: f.producer, meldung: (f.errorMessage ?? "").slice(0, 200) })),
+    },
+    200,
+  );
+});
+
+// ---- POST /v1/transactions/:transactionId/abbrechen ------------------------
+// Bricht alle noch offenen Schritte einer Transaktion mit Fehler ab (Nutzer-
+// vorgabe 2026-10-03: kommt ein Vorgang 60 Minuten gar nicht weiter, wird er
+// automatisch mit Fehler beendet). Ein spaeterer echter Abschluss gewinnt
+// trotzdem (completed ueberschreibt failed, siehe event-bus).
+
+const abbrechenRoute = createRoute({
+  method: "post",
+  path: "/transactions/{transactionId}/abbrechen",
+  tags: [tag],
+  summary: "Offene Schritte einer Transaktion mit Fehler abbrechen",
+  request: {
+    params: TransactionIdParam,
+    body: { content: { "application/json": { schema: z.object({ grund: z.string().min(1).max(300) }) } } },
+  },
+  responses: {
+    200: { content: { "application/json": { schema: z.object({ abgebrochen: z.number() }) } }, description: "abgebrochen" },
+    ...errorResponses,
+  },
+});
+
+transactionsRouter.openapi(abbrechenRoute, async (c) => {
+  const { transactionId } = c.req.valid("param");
+  const { grund } = c.req.valid("json");
+  await assertTransactionOwnershipById(c, transactionId);
+  const pool = getGatewayPool();
+  const res = await pool.query<{ companyId: string; producer: string }>(
+    `UPDATE "EntityProgress"
+        SET state = 'failed', "errorMessage" = $2, "updatedAt" = NOW(),
+            "lastFailureAt" = NOW(), "firstFailureAt" = COALESCE("firstFailureAt", NOW())
+      WHERE "transactionId" = $1 AND state NOT IN ('completed','failed','skipped')
+      RETURNING "companyId", producer`,
+    [transactionId, `Abgebrochen: ${grund}`],
+  );
+  const auth = c.get("auth");
+  for (const row of res.rows) {
+    transactionProgressBus.publishLocal({
+      transactionId,
+      tenantId: auth.tenantId,
+      service: row.producer as never,
+      companyId: row.companyId,
+      state: "failed",
+      errorMessage: `Abgebrochen: ${grund}`,
+      updatedAt: new Date().toISOString(),
+    } as never);
+  }
+  logger.warn({ transactionId, abgebrochen: res.rowCount ?? 0, grund }, "transaktion: offene Schritte abgebrochen");
+  return c.json({ abgebrochen: res.rowCount ?? 0 }, 200);
+});
+
 // ---- GET /v1/transactions/:transactionId/entities/:companyId ---------------
 
 const entityDetailRoute = createRoute({
