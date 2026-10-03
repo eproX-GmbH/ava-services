@@ -118,6 +118,27 @@ import("./lib/persist-bus")
     logger.error({ err }, "persist-bus failed to start");
   });
 
+// 2026-10-03: Statusmeldungen der Producer (transaction.progress) beim Start
+// abonnieren. Vorher verband sich der Bus erst, wenn jemand die SSE-
+// Detailansicht einer Transaktion oeffnete; nach jedem Neustart/Deploy gingen
+// "laeuft", "uebersprungen" und Producer-Fehler bis dahin nicht in die
+// Datenbank (letzte Meldung vor der Entdeckung: 30.09. 07:12).
+{
+  const verbinden = (): void => {
+    void import("./lib/event-bus")
+      .then(({ transactionProgressBus }) => transactionProgressBus.ensureConnected())
+      .catch((err) => {
+        logger.error({ err: err instanceof Error ? err.message : String(err) }, "progress-bus Start fehlgeschlagen, neuer Versuch in 30 s");
+        setTimeout(verbinden, 30_000).unref?.();
+      });
+  };
+  // Nach einem Verbindungsabbruch verbindet der AMQPClient sich selbst neu
+  // und haengt getListener-Konsumenten wieder an (anders als beim Persist-Bus,
+  // der roh auf dem Kanal konsumiert). Kein eigener Waechter, sonst laufen
+  // zwei Konsumenten parallel.
+  verbinden();
+}
+
 // Q-track v0.1.137 — Resume-worker 5-min cron tick. Scans for tenants
 // with parked rows + headroom and asks master-data to replay producer
 // triggers in batches. Stripe webhook trigger lives inside billing.ts.

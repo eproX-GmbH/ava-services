@@ -13,6 +13,9 @@ export const healthRouter = new Hono()
   .get("/", (c) => c.json({ status: "ok", service: "db-gateway", version: "0.1.0" }))
   .get("/persist", async (c) => {
     const { persistBus } = await import("../lib/persist-bus");
+    const { transactionProgressBus } = await import("../lib/event-bus");
     const s = persistBus.status();
-    return c.json({ status: s.ok ? "ok" : "gestoert", ...s }, s.ok ? 200 : 503);
+    const fortschritt = transactionProgressBus.istVerbunden();
+    const ok = s.ok && fortschritt;
+    return c.json({ status: ok ? "ok" : "gestoert", ...s, ok, statusmeldungen: fortschritt }, ok ? 200 : 503);
   });

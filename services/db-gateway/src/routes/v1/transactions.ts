@@ -568,47 +568,69 @@ transactionsRouter.openapi(fortschrittRoute, async (c) => {
   const { transactionId } = c.req.valid("param");
   await assertTransactionOwnershipById(c, transactionId);
   const pool = getGatewayPool();
-  const agg = await pool.query<{ firmen: string; firmen_fertig: string; firmen_fehler: string; gesamt: string; offen: string; ok: string; fehl: string; skip: string; zuletzt: Date | null }>(
-    `WITH je_firma AS (
-       SELECT "companyId",
-              bool_and(state IN ('completed','failed','skipped')) AS fertig,
-              bool_or(state = 'failed') AS fehler
-         FROM "EntityProgress" WHERE "transactionId" = $1 GROUP BY "companyId"
-     )
-     SELECT (SELECT count(*) FROM je_firma)::text AS firmen,
-            (SELECT count(*) FROM je_firma WHERE fertig)::text AS firmen_fertig,
-            (SELECT count(*) FROM je_firma WHERE fehler)::text AS firmen_fehler,
-            count(*)::text AS gesamt,
-            count(*) FILTER (WHERE state NOT IN ('completed','failed','skipped'))::text AS offen,
-            count(*) FILTER (WHERE state = 'completed')::text AS ok,
-            count(*) FILTER (WHERE state = 'failed')::text AS fehl,
-            count(*) FILTER (WHERE state = 'skipped')::text AS skip,
-            max("updatedAt") AS zuletzt
-       FROM "EntityProgress" WHERE "transactionId" = $1`,
+  const res = await pool.query<{ companyId: string; producer: string; state: string; errorMessage: string | null; updatedAt: Date }>(
+    `SELECT "companyId", producer, state, "errorMessage", "updatedAt" FROM "EntityProgress" WHERE "transactionId" = $1`,
     [transactionId],
   );
-  const fehler = await pool.query<{ companyId: string; producer: string; errorMessage: string | null }>(
-    `SELECT "companyId", producer, "errorMessage" FROM "EntityProgress"
-      WHERE "transactionId" = $1 AND state = 'failed'
-      ORDER BY "updatedAt" DESC LIMIT 5`,
-    [transactionId],
-  );
-  const r = agg.rows[0];
-  const zuletzt = r?.zuletzt ? (r.zuletzt instanceof Date ? r.zuletzt.toISOString() : String(r.zuletzt)) : null;
+  // Gleiche Ableitungen wie Firmenmatrix und Pipeline-Ansicht:
+  //  - Profil/Kontakt laufen nur bei gefundener Website. Website failed/
+  //    skipped und eigene Zeile pending → skipped (sonst ewig "offen").
+  //  - Bewertung wird aus den Vorstufen abgeleitet, nicht aus ihrer Zeile:
+  //    sind alle Vorstufen terminal, ist sie fuer den Fortschritt erledigt.
+  const TERMINAL = new Set(["completed", "failed", "skipped"]);
+  const jeFirma = new Map<string, Map<string, { state: string; errorMessage: string | null; updatedAt: Date }>>();
+  let zuletzt: Date | null = null;
+  for (const r of res.rows) {
+    const m = jeFirma.get(r.companyId) ?? new Map();
+    m.set(r.producer, { state: r.state, errorMessage: r.errorMessage, updatedAt: r.updatedAt });
+    jeFirma.set(r.companyId, m);
+    if (!zuletzt || r.updatedAt > zuletzt) zuletzt = r.updatedAt;
+  }
+  const schritte = { gesamt: 0, offen: 0, abgeschlossen: 0, fehlgeschlagen: 0, uebersprungen: 0 };
+  let firmenFertig = 0;
+  let firmenMitFehler = 0;
+  const fehlerBeispiele: Array<{ companyId: string; producer: string; meldung: string }> = [];
+  for (const [companyId, m] of jeFirma) {
+    const web = m.get("website");
+    const webOhneErgebnis = !!web && (web.state === "failed" || web.state === "skipped");
+    const effektiv = new Map<string, string>();
+    for (const [producer, z] of m) {
+      if (producer === "company-evaluation") continue;
+      let st = z.state;
+      if ((producer === "company-profile" || producer === "company-contact") && st === "pending" && webOhneErgebnis) st = "skipped";
+      effektiv.set(producer, st);
+    }
+    if (m.has("company-evaluation")) {
+      const vor = [...effektiv.values()];
+      const roh = m.get("company-evaluation")!.state;
+      effektiv.set("company-evaluation", TERMINAL.has(roh) || (vor.length > 0 && vor.every((v) => TERMINAL.has(v))) ? (TERMINAL.has(roh) ? roh : "skipped") : roh);
+    }
+    let offen = false;
+    let fehler = false;
+    for (const [producer, st] of effektiv) {
+      schritte.gesamt++;
+      if (st === "completed") schritte.abgeschlossen++;
+      else if (st === "failed") {
+        schritte.fehlgeschlagen++;
+        fehler = true;
+        if (fehlerBeispiele.length < 5) fehlerBeispiele.push({ companyId, producer, meldung: (m.get(producer)?.errorMessage ?? "").slice(0, 200) });
+      } else if (st === "skipped") schritte.uebersprungen++;
+      else {
+        schritte.offen++;
+        offen = true;
+      }
+    }
+    if (!offen) firmenFertig++;
+    if (fehler) firmenMitFehler++;
+  }
   return c.json(
     {
-      firmen: Number(r?.firmen ?? 0),
-      firmenFertig: Number(r?.firmen_fertig ?? 0),
-      firmenMitFehler: Number(r?.firmen_fehler ?? 0),
-      schritte: {
-        gesamt: Number(r?.gesamt ?? 0),
-        offen: Number(r?.offen ?? 0),
-        abgeschlossen: Number(r?.ok ?? 0),
-        fehlgeschlagen: Number(r?.fehl ?? 0),
-        uebersprungen: Number(r?.skip ?? 0),
-      },
-      letztesLebenszeichen: zuletzt,
-      fehlerBeispiele: fehler.rows.map((f) => ({ companyId: f.companyId, producer: f.producer, meldung: (f.errorMessage ?? "").slice(0, 200) })),
+      firmen: jeFirma.size,
+      firmenFertig,
+      firmenMitFehler,
+      schritte,
+      letztesLebenszeichen: zuletzt ? (zuletzt instanceof Date ? zuletzt.toISOString() : String(zuletzt)) : null,
+      fehlerBeispiele,
     },
     200,
   );
@@ -1298,7 +1320,11 @@ transactionsRouter.openapi(pipelineRoute, async (c) => {
     websiteCell: Cell,
   ): Cell => {
     const own = byStage.get(stage)?.get(companyId);
-    if (own) return cellFromRow(own);
+    // 2026-10-03: Der Import legt fuer jede Stufe eine pending-Zeile an. Eine
+    // eigene Zeile, die noch pending ist, wird nach einer Website ohne
+    // Ergebnis nie mehr laufen → wie in der Firmenmatrix als skipped ableiten.
+    const ownCell = own ? cellFromRow(own) : null;
+    if (ownCell && ownCell.state !== "pending") return ownCell;
     if (websiteCell.state === "failed" || websiteCell.state === "skipped") {
       return {
         state: "skipped",
@@ -1306,7 +1332,7 @@ transactionsRouter.openapi(pipelineRoute, async (c) => {
         errorCount: 0,
       };
     }
-    return { state: "pending", errorCount: 0 };
+    return ownCell ?? { state: "pending", errorCount: 0 };
   };
 
   const rows = Array.from(allCompanyIds).map((companyId) => {

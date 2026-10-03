@@ -39,6 +39,9 @@ async function writeEntityProgressFromEvent(
   if (payload.service === "website" && state === "failed") {
     void laufFehler(payload.companyId, payload.transactionId ?? null, payload.errorMessage ?? null);
   }
+  // 2026-10-03: Zeitpunkt des Ereignisses statt Eingangszeit. Nach einer
+  // Unterbrechung arbeitet der Bus einen Rueckstau ab; mit NOW() bekaemen
+  // alte "laeuft"-Meldungen einen frischen Zeitstempel und sahen lebendig aus.
   const truncated = payload.errorMessage
     ? payload.errorMessage.slice(0, 500)
     : null;
@@ -48,7 +51,7 @@ async function writeEntityProgressFromEvent(
       `INSERT INTO "EntityProgress"
          ("transactionId", "companyId", producer, state, "errorMessage",
           "updatedAt", "createdAt", "giveUpAt")
-       VALUES ($1, $2, $3, $4, $5, NOW(), NOW(),
+       VALUES ($1, $2, $3, $4, $5, $7::timestamptz, NOW(),
          /* Operator 2026-09-09: dauerhafte Fehler nicht automatisch wiederholen
           * (nur Zeitueberschreitung/nicht erreichbar/Rate-Limit/5xx). */
          CASE WHEN $4 = 'failed' AND NOT (COALESCE($5, '') ~* $6) THEN NOW() ELSE NULL END)
@@ -80,6 +83,7 @@ async function writeEntityProgressFromEvent(
         state,
         truncated,
         RETRYABLE_ERROR_SQL_RE,
+        ereignisZeit(payload.updatedAt),
       ],
     );
   } catch (err) {
@@ -94,6 +98,13 @@ async function writeEntityProgressFromEvent(
       "event-bus: entity-progress write failed",
     );
   }
+}
+
+/** Ereigniszeit aus der Nutzlast, hoechstens jetzt; sonst jetzt. */
+function ereignisZeit(roh: unknown): string {
+  const jetzt = Date.now();
+  const t = typeof roh === "string" ? Date.parse(roh) : NaN;
+  return new Date(Number.isFinite(t) && t <= jetzt ? t : jetzt).toISOString();
 }
 
 // In-process fan-out for transaction.progress events.
@@ -112,7 +123,12 @@ class TransactionProgressBus {
   private connecting?: Promise<void>;
   private handlers: Map<string, Set<ProgressHandler>> = new Map();
 
-  /** Idempotent. First caller triggers connect; subsequent callers wait. */
+  /** Fuer /health/persist: haengt der Konsument fuer transaction.progress? */
+  public istVerbunden(): boolean {
+    return this.client?.isConnected === true;
+  }
+
+    /** Idempotent. First caller triggers connect; subsequent callers wait. */
   public async ensureConnected(): Promise<void> {
     if (this.client?.isConnected) return;
     if (this.connecting) return this.connecting;
