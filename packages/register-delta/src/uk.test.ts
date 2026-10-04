@@ -174,3 +174,15 @@ test("uk_bulk meldet Buendel als Teilergebnisse; uk_refresh und uk_insolvenz lie
   assert.equal(i.insolvenz?.meldungen.length, 3);
   assert.equal(i.abfragen, 2);
 });
+
+test("uk_bulk ueberspringt bereits verbuchte Buendel ohne Meldung (Neustart mitten im Teil)", async () => {
+  const a = ukAttrappe();
+  const t0 = Date.now();
+  const e = await fuehreJobAus(
+    { id: "12", art: "uk_bulk", schluessel: "x", payload: { url: "u", datum: "2026-10-01", teil: 1, teile: 7, teile_verarbeitet: [1] }, prioritaet: 5, leaseUntil: null, versuche: 2, abfragenJeStunde: 1800 },
+    { ...basisOpt, uk: a.uk },
+  );
+  assert.equal(a.teile.length, 0, "Buendel 1 war schon verbucht → keine Meldung");
+  assert.equal(e.ukBulk?.teilergebnisse, 1, "zaehlt trotzdem als Teil des Laufs");
+  assert.ok(Date.now() - t0 < 5_000, "keine 20-s-Pause fuer uebersprungene Buendel");
+});

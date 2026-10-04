@@ -399,9 +399,25 @@ async function fuehreUkJobAus(job: Job, o: AusfuehrungsOptionen, uk: UkSchnittst
     let teil = 0;
     let abgebrochen = false;
     let tLetzte = Date.now();
+    // 2026-10-04: Nach einem Neustart liest der Worker den Teil von vorn. Schon
+    // verbuchte Buendel (payload.teile_verarbeitet) ueberspringen, ohne Meldung
+    // und ohne Pause. Vorher brauchte allein das erneute Bestaetigen von 360
+    // Buendeln zwei Stunden (20 s Pause je Buendel).
+    const schonVerbucht = new Set<number>(((job.payload as { teile_verarbeitet?: number[] }).teile_verarbeitet ?? []).filter((n) => Number.isInteger(n)));
+    let uebersprungen = 0;
     const melden = async () => {
       if (buendel.length === 0) return;
       teil++;
+      if (schonVerbucht.has(teil)) {
+        uebersprungen++;
+        buendel = [];
+        tLetzte = Date.now();
+        return;
+      }
+      if (uebersprungen > 0) {
+        log(`uk_bulk Teil ${p.teil}: ${uebersprungen} bereits verbuchte Buendel uebersprungen`);
+        uebersprungen = 0;
+      }
       const tLesen = Date.now() - tLetzte;
       const t0 = Date.now();
       await uk.teilergebnis(job.id, teil, buendel);
