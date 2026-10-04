@@ -36,7 +36,38 @@ import type {
 const DEFAULT_INTERVAL_MS = 30 * 60_000;
 const JITTER = 0.15;
 const MAX_HISTORY = 10;
-const MAX_TRANSACTIONS = 25;
+/** Firmenmatrix seitenweise; 50 Seiten à 200 = 10.000 Firmen je Nutzer. */
+const MATRIX_SEITE = 200;
+const MAX_MATRIX_SEITEN = 50;
+/** Schlug ein Retry fehl (z. B. "keine Website, Profil nicht moeglich"), Zelle 24 h ruhen lassen. */
+const FEHLVERSUCH_PAUSE_MS = 24 * 60 * 60_000;
+const STAGE_ZU_PRODUCER: Record<FreshnessStage, string> = {
+  structuredContent: "structured-content",
+  companyPublication: "company-publication",
+  website: "website",
+  companyProfile: "company-profile",
+  companyContact: "company-contact",
+  companyEvaluation: "company-evaluation",
+};
+interface MatrixZeile {
+  companyId: string;
+  name?: string | null;
+  held?: boolean;
+  registerStatus?: string;
+  stages?: Record<string, { state?: string; updatedAt?: string | null; transactionId?: string | null } | undefined>;
+}
+/**
+ * Relevanz als Verstaerker (Nutzerwunsch 2026-10-04: alter Zeitstempel +
+ * wie heiss die Firma ist). Rang-Stufen wie im Alarmweg (relevanz/alarmweg.ts):
+ * ab 9 sehr heiss ×3, ab 7 heiss ×2, ab 4 lauwarm ×1,5, sonst ×1.
+ */
+export function relevanzFaktor(rang: number | null | undefined): number {
+  if (rang == null) return 1;
+  if (rang >= 9) return 3;
+  if (rang >= 7) return 2;
+  if (rang >= 4) return 1.5;
+  return 1;
+}
 const NEVER_RUN_DAYS = 365 * 5; // synthetic large value for cells that never produced a timestamp
 /**
  * Upper bound on how long we hold a per-company in-flight lock before
@@ -66,6 +97,8 @@ export interface FreshnessSchedulerOptions {
   /** Recent-interest signals from the renderer (8.r4). Optional — when
    *  absent the score formula falls back to its r2 shape (no boost). */
   interest?: InterestStore;
+  /** 2026-10-04: Relevanz-Rang (0-10) je Firma, hoechstens 200 Ids je Aufruf. */
+  relevanz?: (companyIds: string[]) => Promise<Map<string, number>>;
   /** Override the wall clock (test seam). */
   now?: () => Date;
   /** Override the cadence (test seam). 0 disables the timer. */
@@ -92,27 +125,21 @@ export declare interface FreshnessScheduler {
   ): boolean;
 }
 
-interface TxRow {
-  id: string;
-  createdAt?: string;
-}
 
 interface PipelineRow {
   companyId: string;
   cells: Record<string, { state?: string; updatedAt?: string | null }>;
 }
 
-interface PipelineResp {
-  transactionId: string;
-  rows?: PipelineRow[];
-  unavailableStages?: string[];
-}
 
 export class FreshnessScheduler extends EventEmitter {
   private readonly gateway: GatewayClient;
   private readonly prefs: FreshnessPrefsStore;
   private readonly cursor: FreshnessCursorStore;
   private readonly interest: InterestStore | null;
+  private readonly relevanz: ((companyIds: string[]) => Promise<Map<string, number>>) | null;
+  /** Zuletzt fehlgeschlagener Retry je Firma::Stufe (ms), siehe FEHLVERSUCH_PAUSE_MS. */
+  private readonly fehlversuche = new Map<string, number>();
   private readonly now: () => Date;
   private intervalMs: number;
   private readonly dispatch: (
@@ -131,6 +158,7 @@ export class FreshnessScheduler extends EventEmitter {
     this.prefs = opts.prefs;
     this.cursor = opts.cursor;
     this.interest = opts.interest ?? null;
+    this.relevanz = opts.relevanz ?? null;
     this.now = opts.now ?? (() => new Date());
     this.intervalMs = opts.intervalMs ?? DEFAULT_INTERVAL_MS;
     // Default dispatcher: the same /retry endpoint the chat
@@ -324,6 +352,9 @@ export class FreshnessScheduler extends EventEmitter {
           err instanceof Error ? err.message : err,
         );
         this.cursor.releaseSlot(row.stage, row.companyId, now);
+        // Nicht laufbare Zelle (z. B. Profil ohne Website) nicht jeden Takt
+        // erneut versuchen und damit die Spitze blockieren.
+        this.fehlversuche.set(`${row.companyId}::${row.stage}`, now.getTime());
       }
     }
     return out;
@@ -349,120 +380,97 @@ export class FreshnessScheduler extends EventEmitter {
     );
   }
 
-  /** Walk recent transactions → pipeline matrices → score every cell. */
+  /**
+   * 2026-10-04 (docs/PLAN_AUFFRISCHUNG.md): Kandidaten aus der GANZEN
+   * Firmenliste des Nutzers (/v1/companies/matrix), nicht mehr aus den 25
+   * neuesten Transaktionen. Befund: Bei 70 Transaktionen sah der Planer nur
+   * 11 von 43 Firmen; 32 wurden nie automatisch aufgefrischt.
+   *
+   * Prioritaet = Ueberfaelligkeit (in Takten) × Relevanz × Merkliste/Interesse.
+   * Die Ueberfaelligkeit waechst mit jedem Tag, deshalb kommen auch kalte
+   * Firmen sicher dran; heisse Firmen (Relevanz-Rang) nur frueher.
+   */
   private async scan(
     prefs: FreshnessPrefs,
     startedAt: Date,
     onInspected: (n: number) => void,
   ): Promise<StalenessRow[]> {
-    const txList = await this.gateway.request<{ items?: TxRow[] }>(
-      "/v1/transactions",
-      { query: { page: 1, pageSize: MAX_TRANSACTIONS } },
-    );
-    const txs = (txList.items ?? []).slice(0, MAX_TRANSACTIONS);
-    if (txs.length === 0) return [];
-
     const pinned = new Set(prefs.pinned);
     const startMs = startedAt.getTime();
     const inFlight = this.cursor.get().inFlight;
-    /**
-     * Per-(companyId, stage) the best (highest-scoring) row across all
-     * transactions. A company can land in multiple imports — we want
-     * the freshest cell to anchor the score, and the source
-     * transactionId is recorded for the future retry call.
-     */
-    const best = new Map<string, StalenessRow>();
-    const companyName = new Map<string, string | null>();
+    const zeilen: MatrixZeile[] = [];
+    for (let seite = 1; seite <= MAX_MATRIX_SEITEN; seite++) {
+      const r = await this.gateway.request<{ companies?: MatrixZeile[]; count?: number }>(
+        "/v1/companies/matrix",
+        { query: { pageNumber: seite, pageSize: MATRIX_SEITE } },
+      );
+      const teil = r.companies ?? [];
+      zeilen.push(...teil);
+      if (teil.length < MATRIX_SEITE) break;
+    }
+    if (zeilen.length === 0) return [];
+    const rangJeFirma = await this.relevanzRaenge(zeilen.map((z) => z.companyId));
+    const jetzt = startMs;
+    const out: StalenessRow[] = [];
+    for (const z of zeilen) {
+      if (!z.companyId || z.held) continue;
+      // Geschlossene Firmen (Register) nicht mehr auffrischen.
+      if (z.registerStatus === "CLOSED") continue;
+      if (inFlight[z.companyId]) continue;
+      // Fuer den Retry braucht es eine Transaktion; jede der Firma genuegt.
+      const irgendeineTx = Object.values(z.stages ?? {}).find((c) => c?.transactionId)?.transactionId ?? null;
+      const rang = rangJeFirma.get(z.companyId) ?? null;
+      for (const stage of ALL_STAGES) {
+        const cad = prefs.cadenceDays[stage] ?? 0;
+        if (cad <= 0) continue;
+        const cell = z.stages?.[STAGE_ZU_PRODUCER[stage]];
+        if (!cell) continue;
+        const sperre = this.fehlversuche.get(`${z.companyId}::${stage}`);
+        if (sperre && jetzt - sperre < FEHLVERSUCH_PAUSE_MS) continue;
+        const tx = cell.transactionId ?? irgendeineTx;
+        if (!tx) continue;
+        const lastUpdatedAt = cell.updatedAt ?? null;
+        const days = lastUpdatedAt
+          ? Math.max(0, (startMs - new Date(lastUpdatedAt).getTime()) / 86_400_000)
+          : NEVER_RUN_DAYS;
+        onInspected(1);
+        if (days <= cad) continue;
+        // Nie gelaufene Stufen nicht unendlich hoch werten (sonst blockieren
+        // dauerhaft nicht laufbare Zellen die Spitze): wie 3 Takte ueberfaellig.
+        const takteUeber = lastUpdatedAt ? (days - cad) / cad : 3;
+        const isPinned = pinned.has(z.companyId);
+        const interestBoost = this.interest ? this.interest.getBoost(z.companyId, startedAt) : 0;
+        const score = takteUeber * relevanzFaktor(rang) * (isPinned ? 10 : 1) * (1 + interestBoost);
+        out.push({
+          companyId: z.companyId,
+          companyName: z.name ?? null,
+          transactionId: tx,
+          stage,
+          lastUpdatedAt,
+          daysSinceLastRun: days,
+          cadenceDays: cad,
+          score,
+          pinned: isPinned,
+          rang,
+        });
+      }
+    }
+    return out.sort((a, b) => b.score - a.score);
+  }
 
-    // Pipeline fetches are independent — fan out with a small pool
-    // (mirror real-candidate-source.ts; same gateway, same etiquette).
-    await runWithConcurrency(txs, 5, async (tx) => {
-      let pipeline: PipelineResp;
+  /** Relevanz-Rang je Firma (0-10); ohne Relevanz-Erfassung leer. */
+  private async relevanzRaenge(ids: string[]): Promise<Map<string, number>> {
+    const m = new Map<string, number>();
+    if (!this.relevanz) return m;
+    for (let i = 0; i < ids.length; i += 200) {
       try {
-        pipeline = await this.gateway.request<PipelineResp>(
-          `/v1/transactions/${encodeURIComponent(tx.id)}/pipeline`,
-        );
-      } catch (err) {
-        console.warn(
-          `[freshness] pipeline ${tx.id} failed:`,
-          err instanceof Error ? err.message : err,
-        );
-        return;
+        const w = await this.relevanz(ids.slice(i, i + 200));
+        for (const [id, rang] of w) m.set(id, rang);
+      } catch {
+        /* Relevanz ist ein Verstaerker, kein Muss */
       }
-      const rows = pipeline.rows ?? [];
-      for (const row of rows) {
-        if (!row.companyId) continue;
-        // A company already mid-retry is skipped at the scoring stage —
-        // dispatch reservation would refuse it anyway, but suppressing
-        // it here keeps the candidate list (which the Settings panel
-        // shows) free of rows the user can't act on this tick.
-        if (inFlight[row.companyId]) continue;
-        if (!companyName.has(row.companyId)) {
-          // Pipeline doesn't carry the name; we leave null and let
-          // the Settings panel resolve it via a lookup the same way
-          // TransactionDetail does. Keeps the scheduler dependency-
-          // free of the master-data endpoint.
-          companyName.set(row.companyId, null);
-        }
-        for (const stage of ALL_STAGES) {
-          const cad = prefs.cadenceDays[stage] ?? 0;
-          if (cad <= 0) continue; // user opted this stage out
-
-          const cell = row.cells?.[stage];
-          if (!cell) continue;
-
-          // `pending` cells haven't run; treat them as never-run only
-          // if they're orphaned in a transaction old enough that we'd
-          // expect them done by now. For 8.r1 we always count pending
-          // as never-run — gives the scheduler something to log even
-          // on a fresh import. 8.r2 will refine if it produces noise.
-          const lastUpdatedAt = cell.updatedAt ?? null;
-          const days = lastUpdatedAt
-            ? Math.max(
-                0,
-                (startMs - new Date(lastUpdatedAt).getTime()) / 86_400_000,
-              )
-            : NEVER_RUN_DAYS;
-          onInspected(1);
-          if (days <= cad) continue;
-
-          const overdue = days - cad;
-          const stageWeight = 1 / cad; // weekly stages move fastest
-          const isPinned = pinned.has(row.companyId);
-          // Recent-interest boost (8.r4): 0..1, decaying linearly from
-          // a fresh CompanyDetail mount or chat company-link click.
-          // Doubles a touched-today company's score (×2 at boost=1)
-          // without overpowering an explicit pin (×10).
-          const interestBoost = this.interest
-            ? this.interest.getBoost(row.companyId, startedAt)
-            : 0;
-          const score =
-            overdue *
-            stageWeight *
-            (isPinned ? 10 : 1) *
-            (1 + interestBoost);
-
-          const key = `${row.companyId}::${stage}`;
-          const candidate: StalenessRow = {
-            companyId: row.companyId,
-            companyName: companyName.get(row.companyId) ?? null,
-            transactionId: tx.id,
-            stage,
-            lastUpdatedAt,
-            daysSinceLastRun: days,
-            cadenceDays: cad,
-            score,
-            pinned: isPinned,
-          };
-          const prev = best.get(key);
-          if (!prev || score > prev.score) {
-            best.set(key, candidate);
-          }
-        }
-      }
-    });
-
-    return Array.from(best.values()).sort((a, b) => b.score - a.score);
+    }
+    return m;
   }
 
   private recordAndEmit(info: FreshnessTickInfo): void {
@@ -472,26 +480,4 @@ export class FreshnessScheduler extends EventEmitter {
     }
     this.emit("tick", info);
   }
-}
-
-// Tiny concurrency-limited map — same shape as in real-candidate-source.ts;
-// kept local to avoid cross-module wiring.
-async function runWithConcurrency<T>(
-  items: T[],
-  limit: number,
-  fn: (item: T) => Promise<void>,
-): Promise<void> {
-  let cursor = 0;
-  const workers: Promise<void>[] = [];
-  for (let i = 0; i < Math.min(limit, items.length); i++) {
-    workers.push(
-      (async () => {
-        while (cursor < items.length) {
-          const idx = cursor++;
-          await fn(items[idx]!);
-        }
-      })(),
-    );
-  }
-  await Promise.all(workers);
 }

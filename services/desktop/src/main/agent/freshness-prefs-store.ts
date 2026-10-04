@@ -27,8 +27,9 @@ import type {
 //     (slow-changing aggregate; monthly is enough).
 //   - companyEvaluation: 14 days
 //     (LLM-derived view; refresh after the producers above stabilise).
-//   - companyPublication: 75 days
-//     (annual reports + filings cluster quarterly at most).
+//   - companyPublication: 30 days (2026-10-04, vorher 75)
+//     Passt zur 30-Tage-Sperre der Producer; ein unveraenderter Abschluss
+//     wird nur gelesen und uebersprungen, neue Abschluesse kommen schneller.
 //
 // Throttle defaults: 3 retries per stage per hour, 10 globally per
 // hour, top-K-per-tick = 5.
@@ -37,7 +38,7 @@ const DEFAULT_PREFS: FreshnessPrefs = {
   enabled: true,
   cadenceDays: {
     structuredContent: 30,
-    companyPublication: 75,
+    companyPublication: 30,
     website: 7,
     companyProfile: 7,
     companyContact: 7,
@@ -140,6 +141,10 @@ export class FreshnessPrefsStore extends EventEmitter {
           ? Math.round(v)
           : DEFAULT_PREFS.cadenceDays[stage];
     }
+    // 2026-10-04: alter Standard 75 Tage fuer Jahresabschluesse → neuer
+    // Standard 30. Nur den unveraenderten alten Standard ersetzen; eigene
+    // Werte des Nutzers bleiben.
+    if (cadenceDays.companyPublication === 75) cadenceDays.companyPublication = 30;
     const throttleIn: Partial<FreshnessPrefs["throttle"]> =
       input.throttle ?? {};
     const perStagePerHour =

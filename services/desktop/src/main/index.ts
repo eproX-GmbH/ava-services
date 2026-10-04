@@ -1859,6 +1859,11 @@ const freshness = new FreshnessScheduler({
   prefs: freshnessPrefs,
   cursor: freshnessCursor,
   interest,
+  // 2026-10-04: heisse Firmen frueher auffrischen (Relevanz-Rang 0-10).
+  relevanz: async (ids) => {
+    const w = await relevanz.werte("firma", ids);
+    return new Map([...w].map(([id, x]) => [id, x.rang]));
+  },
 });
 function broadcastFreshnessPrefsChanged(): void {
   const next = freshnessPrefs.get();

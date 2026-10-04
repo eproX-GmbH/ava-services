@@ -1432,6 +1432,8 @@ export interface StalenessRow {
   /** Truthy when the company is in the prefs `pinned` list — pinned
    *  rows always sort to the top regardless of score. */
   pinned: boolean;
+  /** 2026-10-04: Relevanz-Rang der Firma fuer den Nutzer (0-10), falls bekannt. */
+  rang?: number | null;
 }
 
 /** Per-tick diagnostic info, mirrors `AlertTickInfo` for transparency. */
