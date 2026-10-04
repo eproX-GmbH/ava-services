@@ -3,6 +3,7 @@ import { LaufStatus, VerbrauchZeile } from "../components/Verbrauch";
 import { VorschlagChips, auftragMitKontext } from "../components/chat/VorschlagChips";
 import type { Chip, StartseitenChips } from "../../../shared/nutzerstand-types";
 import {
+  Fragment,
   useCallback,
   useEffect,
   useLayoutEffect,
@@ -43,7 +44,7 @@ import {
   type SpreadsheetAttachment,
 } from "../lib/attachment";
 import { renderPdfPagesToImages } from "../lib/pdf-to-images";
-import { AufgabenLeiste, aufgabenNotiz } from "../components/AufgabenLeiste";
+import { AufgabenKarten, aufgabenNotiz, useAufgaben } from "../components/AufgabenLeiste";
 import { IcpProposalCard } from "../components/IcpProposalCard";
 import type {
   AgentChoiceOption,
@@ -277,6 +278,19 @@ export function Chat() {
   );
   const [conversationId, setConversationId] = useState<string>("");
   const conversationIdRef = useRef<string>("");
+  // Hintergrundaufgaben im Verlauf: Karte hinter dem Lauf mit dem
+  // ausloesenden Werkzeugaufruf; ohne gefundenen Anker am Ende des Verlaufs.
+  const aufgaben = useAufgaben(conversationId);
+  const aufgabenJeLauf = useMemo(() => {
+    const jeLauf = new Map<string, typeof aufgaben>();
+    const ohneAnker: typeof aufgaben = [];
+    for (const a of aufgaben) {
+      const lauf = a.ankerToolCallId ? logEintraege.find((e) => e.lauf?.some((m) => m.id === `act-${a.ankerToolCallId}`)) : undefined;
+      if (lauf) jeLauf.set(lauf.id, [...(jeLauf.get(lauf.id) ?? []), a]);
+      else ohneAnker.push(a);
+    }
+    return { jeLauf, ohneAnker };
+  }, [aufgaben, logEintraege]);
   useEffect(() => {
     conversationIdRef.current = conversationId;
   }, [conversationId]);
@@ -1549,7 +1563,6 @@ export function Chat() {
 
   const composer = (
     <div className="chat-composer-wrap">
-      <AufgabenLeiste conversationId={conversationId} />
       {attachments.length > 0 && !isRecording && (
         <div className="chat-attachments">
           {attachments.map((a) => (
@@ -1953,9 +1966,10 @@ export function Chat() {
                 // bleibt offen, solange der Zug laeuft.
                 const istLetzter = eintrag.id === letzterLaufId;
                 const aktiv = eintrag.lauf.some((a) => a.activity?.status === "running") || (istLetzter && zugLaeuft);
+                const karten = aufgabenJeLauf.jeLauf.get(eintrag.id);
                 return (
+                  <Fragment key={eintrag.id}>
                   <AktivitaetenLauf
-                    key={eintrag.id}
                     schritte={eintrag.lauf}
                     offen={aktiv || aufgeklappteLaeufe.has(eintrag.id)}
                     umschaltbar={!aktiv}
@@ -1967,6 +1981,8 @@ export function Chat() {
                       })
                     }
                   />
+                  {karten && <AufgabenKarten liste={karten} />}
+                  </Fragment>
                 );
               }
               const m = eintrag.m;
@@ -2069,6 +2085,7 @@ export function Chat() {
                 </div>
               );
             })}
+            {aufgabenJeLauf.ohneAnker.length > 0 && <AufgabenKarten liste={aufgabenJeLauf.ohneAnker} />}
             {inFlight && laufStart !== null ? (
               <LaufStatus
                 start={laufStart}

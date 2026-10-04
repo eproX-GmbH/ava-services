@@ -2338,6 +2338,12 @@ const hintergrundAufgaben = new HintergrundAufgaben({
 setzeAufgabenInstanz(hintergrundAufgaben);
 agent.on("werkzeug-ergebnis", (e) => {
   if (!e.ok) return;
+  // aufgabe_beobachten registriert selbst; hier nur die Stelle im Verlauf merken.
+  if (e.toolName === "aufgabe_beobachten") {
+    const tx = typeof e.args.transactionId === "string" ? e.args.transactionId : "";
+    if (tx) hintergrundAufgaben.verankern(e.conversationId, tx, e.toolCallId);
+    return;
+  }
   const titel = AUTO_WERKZEUGE[e.toolName];
   if (!titel) return;
   try {
@@ -2345,7 +2351,7 @@ agent.on("werkzeug-ergebnis", (e) => {
     if (typeof r.transactionId !== "string" || !r.transactionId) return;
     const anzahl = typeof r.companyCount === "number" ? ` (${r.companyCount} Firmen)` : "";
     const datei = typeof r.filename === "string" ? ` ${r.filename}` : "";
-    hintergrundAufgaben.registrieren({ conversationId: e.conversationId, transactionId: r.transactionId, titel: `${titel}${datei}${anzahl}`, quelle: e.toolName });
+    hintergrundAufgaben.registrieren({ conversationId: e.conversationId, transactionId: r.transactionId, titel: `${titel}${datei}${anzahl}`, quelle: e.toolName, ankerToolCallId: e.toolCallId });
   } catch {
     /* kein JSON → keine Transaktion */
   }
@@ -2354,7 +2360,7 @@ hintergrundAufgaben.on("aenderung", (liste) => {
   for (const win of BrowserWindow.getAllWindows()) win.webContents.send("aufgaben:aenderung", liste);
 });
 hintergrundAufgaben.start();
-ipcMain.handle("aufgaben:liste", (_e, conversationId?: string) => hintergrundAufgaben.sichtbar(conversationId));
+ipcMain.handle("aufgaben:liste", (_e, conversationId?: string) => hintergrundAufgaben.alle(conversationId));
 ipcMain.handle("aufgaben:abbrechen", (_e, id: string) => hintergrundAufgaben.abbrechen(String(id)));
 
 /**

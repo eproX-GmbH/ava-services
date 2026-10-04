@@ -194,7 +194,7 @@ export interface AgentOrchestratorEvents {
   stream: (frame: AgentStreamFrame) => void;
   status: (status: AgentStatus) => void;
   /** Nach jedem Werkzeugergebnis (Hintergrundaufgaben registrieren). */
-  "werkzeug-ergebnis": (e: { conversationId: string; toolName: string; ok: boolean; content: string; args: Record<string, unknown> }) => void;
+  "werkzeug-ergebnis": (e: { conversationId: string; toolName: string; toolCallId: string; ok: boolean; content: string; args: Record<string, unknown> }) => void;
 }
 
 export declare interface AgentOrchestrator {
@@ -1490,6 +1490,7 @@ export class AgentOrchestrator extends EventEmitter {
           this.emit("werkzeug-ergebnis", {
             conversationId: conversation.id,
             toolName: call.name,
+            toolCallId: call.id,
             ok: result.ok,
             content: result.content,
             args: (call.args ?? {}) as Record<string, unknown>,

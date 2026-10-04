@@ -1,6 +1,7 @@
 // Hintergrundaufgaben im Chat (docs/PLAN_HINTERGRUNDAUFGABEN.md, 2026-10-03).
-// Leiste ueber dem Eingabefeld: laufende Verarbeitungen dieser Unterhaltung
-// mit Fortschritt; laufende pulsieren, fertige bleiben kurz mit Haken stehen.
+// 2026-10-04 (Nutzerwunsch): Die Karte steht im VERLAUF hinter dem Schritt,
+// der die Verarbeitung gestartet hat (ankerToolCallId), und scrollt mit. Sie
+// bleibt dort auch nach dem Abschluss stehen wie eine Nachricht.
 import { useEffect, useState } from "react";
 
 export interface AufgabeAnzeige {
@@ -9,6 +10,7 @@ export interface AufgabeAnzeige {
   transactionId: string;
   titel: string;
   status: "laeuft" | "fertig" | "abgebrochen" | "nicht_verfolgt";
+  ankerToolCallId?: string;
   gestartet: number;
   stand: { total: number; fertig: number; abgeschlossen: number; fehlgeschlagen: number; uebersprungen: number; laufend: number; offeneSchritte?: number; letztesLebenszeichen?: string | null } | null;
   fortschrittAm?: number;
@@ -33,10 +35,10 @@ function dauer(ms: number): string {
   return `seit ${Math.floor(min / 60)} Std. ${min % 60} Min.`;
 }
 
-export function AufgabenLeiste({ conversationId }: { conversationId: string }) {
+/** Alle Aufgaben einer Unterhaltung, live aktualisiert. */
+export function useAufgaben(conversationId: string): AufgabeAnzeige[] {
   const [liste, setListe] = useState<AufgabeAnzeige[]>([]);
   const [, setTick] = useState(0);
-
   useEffect(() => {
     const a = api();
     if (!a || !conversationId) {
@@ -58,10 +60,14 @@ export function AufgabenLeiste({ conversationId }: { conversationId: string }) {
       clearInterval(t);
     };
   }, [conversationId]);
+  return liste;
+}
 
+/** Karten fuer eine Stelle im Verlauf. */
+export function AufgabenKarten({ liste }: { liste: AufgabeAnzeige[] }) {
   if (liste.length === 0) return null;
   return (
-    <div className="auf-leiste" role="status" aria-live="polite">
+    <div className="auf-leiste auf-leiste--verlauf" role="status" aria-live="polite">
       {liste.map((a) => {
         const s = a.stand;
         const pct = s && s.total > 0 ? Math.round((s.fertig / s.total) * 100) : 0;

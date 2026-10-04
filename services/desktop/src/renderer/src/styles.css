@@ -8786,3 +8786,5 @@ body.sprachmodus .upstream-banner, body.sprachmodus .tier-banner, body.sprachmod
 .auf-notiz--haengt svg { color: #d97706; }
 .chat-msg-notiz { align-items: stretch; }
 .chat-msg-notiz .chat-content { background: transparent; padding: 0; border: 0; box-shadow: none; max-width: 100%; color: inherit; }
+/* 2026-10-04: Karten im Verlauf, eingerueckt wie die Werkzeug-Schritte */
+.auf-leiste--verlauf { margin: 6px 0 10px; max-width: 640px; }

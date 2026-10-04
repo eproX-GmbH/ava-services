@@ -61,7 +61,7 @@ tx.t2 = { zuletzt: new Date().toISOString(), schritte: [{ c: "C", p: "website", 
 const b = aufgaben.registrieren({ conversationId: "conv2", transactionId: "t2", titel: "Deep Research", quelle: "x" });
 await aufgaben.takt();
 b.fortschrittAm = Date.now() - STILLSTAND_MS - 60_000; // lange nichts gesehen …
-tx.t2.zuletzt = new Date().toISOString();               // … aber neues Lebenszeichen
+tx.t2.zuletzt = new Date(Date.now() + 5_000).toISOString(); // … aber neues Lebenszeichen (sicher verschieden)
 await aufgaben.takt();
 assert.equal(b.status, "laeuft", "Lebenszeichen = lebt, kein Abbruch");
 assert.equal(abgebrochen.length, 0);

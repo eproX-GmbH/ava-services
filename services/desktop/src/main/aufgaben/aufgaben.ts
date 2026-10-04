@@ -56,6 +56,8 @@ export interface HintergrundAufgabe {
   transactionId: string;
   titel: string;
   quelle: string;
+  /** Werkzeugaufruf, der die Aufgabe gestartet hat: dort steht die Karte im Verlauf. */
+  ankerToolCallId?: string;
   gestartet: number;
   status: AufgabeStatus;
   stand: AufgabenStand | null;
@@ -84,7 +86,8 @@ const TAKT_MS = 20_000;
 export const STILLSTAND_MS = 60 * 60_000;
 /** Erledigte Aufgaben bleiben so lange in der Leiste sichtbar. */
 const SICHTBAR_NACH_ENDE_MS = 30 * 60_000;
-const AUFBEWAHREN_MS = 7 * 24 * 60 * 60_000;
+/** Karten stehen im Verlauf wie Nachrichten; so lange bleiben sie erhalten. */
+const AUFBEWAHREN_MS = 180 * 24 * 60 * 60_000;
 const SEITEN_GROESSE = 200;
 const MAX_SEITEN = 25;
 
@@ -172,9 +175,16 @@ export class HintergrundAufgaben extends EventEmitter {
   }
 
   /** Registriert eine Transaktion; doppelte Registrierung je Unterhaltung ist ein No-op. */
-  registrieren(input: { conversationId: string; transactionId: string; titel: string; quelle: string }): HintergrundAufgabe {
+  registrieren(input: { conversationId: string; transactionId: string; titel: string; quelle: string; ankerToolCallId?: string }): HintergrundAufgabe {
     const vorhanden = this.liste.find((a) => a.transactionId === input.transactionId && a.conversationId === input.conversationId);
-    if (vorhanden) return vorhanden;
+    if (vorhanden) {
+      if (input.ankerToolCallId && !vorhanden.ankerToolCallId) {
+        vorhanden.ankerToolCallId = input.ankerToolCallId;
+        this.speichern();
+        this.aenderung();
+      }
+      return vorhanden;
+    }
     const jetzt = Date.now();
     const a: HintergrundAufgabe = {
       id: `auf-${jetzt.toString(36)}-${Math.random().toString(36).slice(2, 7)}`,
@@ -182,6 +192,7 @@ export class HintergrundAufgaben extends EventEmitter {
       transactionId: input.transactionId,
       titel: input.titel.slice(0, 120),
       quelle: input.quelle,
+      ...(input.ankerToolCallId ? { ankerToolCallId: input.ankerToolCallId } : {}),
       gestartet: jetzt,
       status: "laeuft",
       stand: null,
@@ -305,8 +316,17 @@ export class HintergrundAufgaben extends EventEmitter {
     }
   }
 
+  /** Anker nachtragen (aufgabe_beobachten kennt seine eigene Aufruf-Id nicht). */
+  verankern(conversationId: string, transactionId: string, toolCallId: string): void {
+    const a = this.liste.find((x) => x.conversationId === conversationId && x.transactionId === transactionId);
+    if (!a || a.ankerToolCallId) return;
+    a.ankerToolCallId = toolCallId;
+    this.speichern();
+    this.aenderung();
+  }
+
   private aenderung(): void {
-    this.emit("aenderung", this.sichtbar());
+    this.emit("aenderung", this.liste);
   }
 
   private laden(): void {

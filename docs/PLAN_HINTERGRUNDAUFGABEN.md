@@ -52,6 +52,15 @@ einem lebenden Import praktisch immer etwas; 60 Minuten völliger Stillstand
 heißt, dass nichts mehr kommt (z. B. App zu, Producer gestoppt, Gateway
 gestört). Ein später echter Abschluss überschreibt den Fehler trotzdem.
 
+## Stufe 3: Karte im Verlauf (v0.1.746)
+
+Nutzerwunsch 2026-10-04: Die Fortschrittskarte steht nicht mehr fest ueber
+dem Eingabefeld, sondern im Verlauf hinter dem Werkzeugschritt, der die
+Verarbeitung gestartet hat (`ankerToolCallId` aus dem Orchestrator-Ereignis,
+bei `aufgabe_beobachten` nachgetragen). Sie scrollt mit und bleibt nach dem
+Abschluss dort stehen; Aufgaben ohne Anker erscheinen am Ende des Verlaufs.
+Aufbewahrung 180 Tage.
+
 ## Grenzen
 
 - Die Meldung braucht eine laufende App. Ist die App zu, meldet AVA beim
