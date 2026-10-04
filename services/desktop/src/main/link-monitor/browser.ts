@@ -16,6 +16,7 @@
 //
 // Rein LOKAL: alles läuft im Desktop-Main-Process des Nutzers.
 
+import { appWirdBeendet } from "../file-logger";
 import { hardenBackgroundWindow } from "../download-guard";
 import { BrowserWindow } from "electron";
 import type { LlmProviderManager } from "../agent/providers";
@@ -256,6 +257,8 @@ function wantsPagination(instructions: string | undefined): boolean {
 }
 
 function createWindow(isLinkedIn: boolean): BrowserWindow {
+  // Beim Beenden keine neuen Fenster mehr (Absturz beim Beenden, 2026-10-04).
+  if (appWirdBeendet()) throw new Error("AVA wird beendet");
   const fp = readLinkedInSettings().fingerprint;
   const width = fp?.viewport.width ?? 1440;
   const height = fp?.viewport.height ?? 900;

@@ -15,6 +15,7 @@
 // Co.), wird die Firma in diesem Lauf einfach uebersprungen —
 // profiledAt bleibt leer, ein spaeterer Lauf versucht es erneut.
 
+import { appWirdBeendet } from "../file-logger";
 import * as yup from "yup";
 import { BrowserWindow } from "electron";
 import type { GatewayClient } from "../agent/gateway-client";
@@ -224,6 +225,8 @@ let browserFetchChain: Promise<unknown> = Promise.resolve();
 
 async function fetchTextViaBrowser(url: string): Promise<string | null> {
   const run = async (): Promise<string | null> => {
+    // Beim Beenden keine neuen Fenster mehr (Absturz beim Beenden, 2026-10-04).
+    if (appWirdBeendet()) return null;
     let win: BrowserWindow | null = null;
     try {
       win = new BrowserWindow({

@@ -291,6 +291,23 @@ export function initFileLogger(): void {
   // welche Fenster/WebContents Electron gerade schliesst.
   app.on("browser-window-created", (_e, win) => {
     const id = win.id;
+    // 2026-10-04 (Absturzbericht beim Beenden): Hintergrund-Helfer (Radar-
+    // Website-Lesen, Link-Monitor) oeffneten NACH dem Schliess-Durchgang
+    // neue verborgene Fenster. Die hielten die App am Leben, bis der
+    // Notausgang nach 20 s app.exit(0) mitten im Seitenladen ausloeste →
+    // SIGTRAP im V8-Abbau. Waehrend des Beendens entstehende Fenster werden
+    // sofort zerstoert.
+    if (quitting) {
+      writeLineSync("INFO ", `[quit] window ${id} waehrend des Beendens erzeugt → zerstoert`);
+      setImmediate(() => {
+        try {
+          if (!win.isDestroyed()) win.destroy();
+        } catch {
+          /* schon weg */
+        }
+      });
+      return;
+    }
     win.on("close", () => {
       if (quitting) writeLineSync("INFO ", `[quit] window ${id} close (${win.isVisible() ? "sichtbar" : "verborgen"})`);
     });
@@ -372,6 +389,10 @@ let quitPhase: QuitPhase = "keine";
 export function setQuitPhase(p: QuitPhase): void {
   quitPhase = p;
   writeLineSync("INFO ", `[quit] Phase ${p}`);
+}
+/** true ab dem ersten before-quit: keine neuen Hintergrund-Fenster mehr oeffnen. */
+export function appWirdBeendet(): boolean {
+  return quitting;
 }
 export function istQuitAnzeigePhase(): boolean {
   return quitPhase === "anzeige";

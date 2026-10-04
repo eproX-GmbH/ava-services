@@ -11,6 +11,7 @@
 // WAV daraus. Damit bleibt die Transkription vollständig auf dem Rechner —
 // kein Cloud-Dienst, kein zusätzliches Binary.
 
+import { appWirdBeendet } from "../file-logger";
 import { hardenBackgroundWindow } from "../download-guard";
 import { BrowserWindow } from "electron";
 
@@ -24,6 +25,7 @@ const MAX_INPUT_BYTES = 12 * 1024 * 1024;
  */
 export async function decodeToWav16k(input: Buffer): Promise<Buffer | null> {
   if (input.byteLength === 0 || input.byteLength > MAX_INPUT_BYTES) return null;
+  if (appWirdBeendet()) return null;
 
   const win = new BrowserWindow({
     show: false,

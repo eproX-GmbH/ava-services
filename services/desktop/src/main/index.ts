@@ -329,6 +329,20 @@ let beendenAnzeigeGezeigt = false;
 app.on("before-quit", (e) => {
   if (beendenAnzeigeGezeigt) {
     setQuitPhase("stoppen");
+    // 2026-10-04: zweiter Aufraeum-Durchgang. Verborgene Helfer-Fenster, die
+    // noch laden, duerfen das Beenden nicht bis zum Notausgang aufhalten.
+    setTimeout(() => {
+      for (const w of BrowserWindow.getAllWindows()) {
+        try {
+          if (!w.isDestroyed() && !w.isVisible()) {
+            writeLineSync("INFO ", `[quit] verborgenes Fenster ${w.id} haengt noch → zerstoert`);
+            w.destroy();
+          }
+        } catch {
+          /* schon weg */
+        }
+      }
+    }, 1_500).unref();
     return;
   }
   const fenster = BrowserWindow.getAllWindows().filter((w) => !w.isDestroyed());
