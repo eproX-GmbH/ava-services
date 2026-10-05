@@ -46,17 +46,35 @@ const { kandidatAus, buildRealCandidateSource } = S;
   assert.equal(c.kind, "contact-change");
   assert.equal(c.sourceRef, "contact-change:s1");
   assert.match(c.summary, /Max Muster bei Beispiel GmbH hat eine neue Funktion/);
+  assert.match(c.summary, /Wechsel bemerkt bis 2026-10-05, Beginn unbekannt/);
+}
+// 4b) Zeitbezug: belegter Beginn und Beobachtungsfenster landen im Text
+{
+  const c = kandidatAus(
+    { art: "contact-change", id: "s2", companyId: "X_HRB_1", typ: "job-changed", personName: "Eva Neu", title: "CTO",
+      before: "Entwicklerin", after: "CTO", occurredAt: "2026-10-05T06:00:00.000Z", seit: "2026-09-01T00:00:00.000Z",
+      bekanntSeit: "2026-05-01T00:00:00.000Z", vorherGesehenAm: "2026-09-20T00:00:00.000Z" },
+    "Beispiel GmbH",
+  );
+  assert.match(c.summary, /Position belegt seit 09\/2026/);
+  assert.equal(c.payload.zeitfenster, "zwischen 2026-09-20 und 2026-10-05");
+  const g = kandidatAus(
+    { art: "profile-change", id: "e3", companyId: "X_HRB_1", kind: "managing-directors",
+      added: [{ firstName: "A", lastName: "B" }], removed: [], occurredAt: "2026-10-04T10:00:00.000Z", bestandVon: "2026-09-04T10:00:00.000Z" },
+    "Beispiel GmbH",
+  );
+  assert.match(g.summary, /Eingetreten zwischen 2026-09-04 und 2026-10-04/);
 }
 // 5) Neue Ansprechpartner gebuendelt
 {
   const c = kandidatAus(
     { art: "new-contacts", id: "X_HRB_1:2026-10-05", companyId: "X_HRB_1", anzahl: 10,
-      personen: [{ name: "A B", title: "Geschäftsführer" }, { name: "C D", title: null }], occurredAt: "2026-10-05T06:00:00.000Z" },
+      personen: [{ name: "A B", title: "Geschäftsführer", seit: "2026-03-01T00:00:00.000Z" }, { name: "C D", title: null }], occurredAt: "2026-10-05T06:00:00.000Z" },
     "Beispiel GmbH",
   );
   assert.equal(c.kind, "contact-change");
   assert.equal(c.sourceRef, "new-contacts:X_HRB_1:2026-10-05");
-  assert.match(c.summary, /10 neue Ansprechpartner .* A B \(Geschäftsführer\), C D und 8 weitere/);
+  assert.match(c.summary, /10 neue Ansprechpartner .* A B \(Geschäftsführer, seit 03\/2026\), C D und 8 weitere/);
 }
 // 6) Quelle: Firmenliste seitenweise + Buendel ans Gateway, Namen aus der Matrix
 {

@@ -795,6 +795,8 @@ export async function schreibeStructuredContent(
     // und Umfirmierungen sieht. Nur mit Bestand; Erstbefuellung ist
     // kein Wechsel. Geschrieben wird erst nach dem COMMIT.
     let stammdatenDiff: FeldAenderung[] = [];
+    // Wann der alte Stand zuletzt bestaetigt wurde: Zeitfenster des Wechsels.
+    let bestandVon: Date | null = null;
     try {
       const bestand = await client.query<{
         name: string | null;
@@ -805,13 +807,17 @@ export async function schreibeStructuredContent(
         city: string | null;
         shareCapital: string | null;
         corporatePurpose: string | null;
+        updatedAt: Date | null;
       }>(
         `SELECT name, "legalForm", street, "houseNumber", "zipCode", city,
-                "shareCapital"::text AS "shareCapital", "corporatePurpose"
+                "shareCapital"::text AS "shareCapital", "corporatePurpose", "updatedAt"
            FROM "StructuredContent" WHERE "companyId" = $1`,
         [result.companyId],
       );
-      if (bestand.rows[0]) stammdatenDiff = diffStammdaten(bestand.rows[0], result);
+      if (bestand.rows[0]) {
+        stammdatenDiff = diffStammdaten(bestand.rows[0], result);
+        bestandVon = bestand.rows[0].updatedAt ? new Date(bestand.rows[0].updatedAt) : null;
+      }
     } catch (err) {
       log.warn({ err, companyId: result.companyId }, "stammdaten diff skipped");
     }
@@ -935,10 +941,10 @@ export async function schreibeStructuredContent(
 
     // Nach dem COMMIT, damit ein Fehler hier den Persist nie anfasst.
     if (directorDiff) {
-      await recordManagingDirectorChange(log, result.companyId, directorDiff);
+      await recordManagingDirectorChange(log, result.companyId, directorDiff, bestandVon);
     }
     if (stammdatenDiff.length > 0) {
-      await recordStammdatenAenderungen(log, result.companyId, stammdatenDiff);
+      await recordStammdatenAenderungen(log, result.companyId, stammdatenDiff, bestandVon);
     }
     return true;
   } catch (err) {

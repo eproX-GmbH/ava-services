@@ -243,6 +243,9 @@ interface Fact {
   id?: string;
   entityType?: "COMPANY" | "PERSON" | string;
   entityId?: string;
+  /** Firma, bei der der Fakt beobachtet wurde. Die Route liefert fuer
+   *  Personen auch Fakten anderer Firmen mit (Name, Profil-URL). */
+  companyId?: string;
   field?: string;
   value?: string;
   normalized?: string;
@@ -251,6 +254,23 @@ interface Fact {
   lastSeen?: string;
   [k: string]: unknown;
 }
+/**
+ * 2026-10-05 — Rollenfakten gehoeren zur Firma. Die Kontakte-Route liefert
+ * fuer jede Person ALLE ihre Fakten (auch die bei anderen Firmen), damit
+ * Name und Profil-URL da sind, wenn die Person hier spaeter dazukam. Position,
+ * Abteilung und Beginn duerfen aber nur von DIESER Firma stammen: Sonst
+ * stand bei Joyce (AI Solutions Engineer bei Strategic IT) die Position
+ * „Founder & Managing Director“ ihrer eigenen Firma QUIKK. Identitaets-
+ * fakten (Name, LinkedIn, XING, E-Mail, Telefon) bleiben firmenuebergreifend.
+ */
+const ROLLENFELDER = new Set(["jobTitle", "department", "employmentSince", "seniority"]);
+function nurRollenDieserFirma(facts: Fact[], companyId: string | undefined): Fact[] {
+  if (!companyId) return facts;
+  return facts.filter(
+    (f) => !ROLLENFELDER.has(f.field ?? "") || !f.companyId || f.companyId === companyId
+  );
+}
+
 /** v0.1.508 — Beobachtung hinter einem Fakt. Der Persist-Weg schreibt
  *  zu jedem Fakt die Belegseite mit (`evidenceUrl`); die Route liefert
  *  die Beobachtungen ohnehin schon mit, sie wurden nur nie angezeigt. */
@@ -1524,7 +1544,7 @@ export function leitungAusKontakten(
   contact?: CompanyContact
 ): Array<{ id: string; name: string; position: string }> {
   const personen = groupBy(
-    (contact?.companyFacts ?? []).filter(
+    nurRollenDieserFirma(contact?.companyFacts ?? [], contact?.id).filter(
       (f) => f.entityType === "PERSON" && f.status === "ACTIVE"
     ),
     (f) => f.entityId ?? "?"
@@ -1623,7 +1643,7 @@ function ContactsTab({ id }: { id: string }) {
     return <p className="muted">Noch keine Kontakte.</p>;
   }
 
-  const facts = data.companyFacts;
+  const facts = nurRollenDieserFirma(data.companyFacts, id);
   const companyFacts = facts.filter((f) => f.entityType === "COMPANY");
   const personFacts = facts.filter((f) => f.entityType === "PERSON");
 

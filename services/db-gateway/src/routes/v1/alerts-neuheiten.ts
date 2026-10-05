@@ -40,6 +40,16 @@ alertsNeuheitenRouter.use("*", requireScope("company:read"));
 const tag = "alerts";
 const FENSTER_TAGE = 30;
 const MAX_FIRMEN = 500;
+/**
+ * Zeitbezug (Vorgabe 2026-10-05): Eine Meldung muss in zeitlichem
+ * Zusammenhang stehen. Ist belegt, dass eine Position schon laenger als
+ * so viele Tage besteht (seit/startDate), oder ist das Fenster, in dem
+ * der Wechsel passiert sein kann (letzte Bestaetigung des alten Stands bis
+ * Beobachtung des neuen), breiter als das, hat AVA den Wechsel nur spaet
+ * bemerkt. Das ist keine Neuigkeit und erscheint gar nicht erst.
+ */
+const ZEITBEZUG_TAGE = 180;
+const ZEITBEZUG_MS = ZEITBEZUG_TAGE * 86_400_000;
 
 const Body = z.object({
   companyIds: z.array(z.string().min(1)).min(1).max(MAX_FIRMEN),
@@ -57,6 +67,8 @@ const Item = z.discriminatedUnion("art", [
     added: z.array(z.record(z.string(), z.unknown())),
     removed: z.array(z.record(z.string(), z.unknown())),
     occurredAt: z.string(),
+    /** Letzte Bestaetigung des alten Stands; der Wechsel liegt dazwischen. */
+    bestandVon: z.string().nullable(),
   }),
   z.object({
     art: z.literal("publication"),
@@ -84,13 +96,19 @@ const Item = z.discriminatedUnion("art", [
     before: z.string().nullable(),
     after: z.string().nullable(),
     occurredAt: z.string(),
+    /** Belegter Beginn der aktuellen Position (JJJJ-MM-01), wenn bekannt. */
+    seit: z.string().nullable(),
+    /** Seit wann die Person bei dieser Firma bekannt ist. */
+    bekanntSeit: z.string().nullable(),
+    /** Letzte Beobachtung des ALTEN Werts; der Wechsel liegt dazwischen. */
+    vorherGesehenAm: z.string().nullable(),
   }),
   z.object({
     art: z.literal("new-contacts"),
     id: z.string(),
     companyId: z.string(),
     anzahl: z.number(),
-    personen: z.array(z.object({ name: z.string(), title: z.string().nullable() })),
+    personen: z.array(z.object({ name: z.string(), title: z.string().nullable(), seit: z.string().nullable() })),
     occurredAt: z.string(),
   }),
 ]);
@@ -188,20 +206,40 @@ async function publikationen(ids: string[], seit: Date): Promise<NeuheitItem[]> 
   }));
 }
 
+/** Nur Buchstaben, klein: „Geschäftsleitung“ ≙ „Geschaeftsleitung“ etc. */
+function schreibweise(v: string | null): string {
+  return (v ?? "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z]/g, "");
+}
+
 async function kontaktAenderungen(ids: string[], seit: Date): Promise<NeuheitItem[]> {
   const pool = getProducerPool("company-contact");
   const out: NeuheitItem[] = [];
+  const jetzt = Date.now();
   const signale = await pool.query<{
-    id: string; companyId: string; type: string; before: string | null; after: string | null;
-    observedAt: Date; fullName: string | null; title: string | null;
+    id: string; companyId: string; personId: string | null; type: string; before: string | null; after: string | null;
+    observedAt: Date; fullName: string | null; title: string | null; startDate: Date | null;
+    bekanntSeit: Date | null; vorherGesehenAm: Date | null; hinUndHer: boolean;
   }>(
-    `SELECT s.id, s."companyId", s.type, s.before, s.after, s."observedAt",
+    `SELECT s.id, s."companyId", s."personId", s.type, s.before, s.after, s."observedAt",
             p."fullName",
-            (SELECT e.title FROM "Employment" e
-              WHERE e."personId" = s."personId" AND e."companyId" = s."companyId"
-              ORDER BY e."isCurrent" DESC, e."lastSeen" DESC LIMIT 1) AS title
+            e.title, e."startDate",
+            (SELECT min(e0."firstSeen") FROM "Employment" e0
+              WHERE e0."personId" = s."personId" AND e0."companyId" = s."companyId") AS "bekanntSeit",
+            -- Wann wurde der ALTE Wert zuletzt gesehen? Dazwischen liegt der Wechsel.
+            (SELECT max(o."observedAt") FROM "Observation" o
+              WHERE o."personId" = s."personId" AND o.field = s.field
+                AND o.value = s.before AND o."observedAt" < s."observedAt") AS "vorherGesehenAm",
+            -- Hin und her (A→B und B→A derselben Person) ist Schreibweise, kein Wechsel.
+            EXISTS (SELECT 1 FROM "SignalEvent" t
+                     WHERE t."personId" = s."personId" AND t.type = s.type
+                       AND t.before = s.after AND t.after = s.before) AS "hinUndHer"
        FROM "SignalEvent" s
        LEFT JOIN "Person" p ON p.id = s."personId"
+       LEFT JOIN LATERAL (
+         SELECT e.title, e."startDate" FROM "Employment" e
+          WHERE e."personId" = s."personId" AND e."companyId" = s."companyId"
+          ORDER BY e."isCurrent" DESC, e."lastSeen" DESC LIMIT 1
+       ) e ON TRUE
       WHERE s."companyId" = ANY($1::text[])
         AND s."observedAt" > $2
         AND s.type::text = ANY($3::text[])
@@ -218,6 +256,20 @@ async function kontaktAenderungen(ids: string[], seit: Date): Promise<NeuheitIte
   for (const s of signale.rows) {
     const typ = SIGNAL_TYPEN[s.type];
     if (!typ) continue;
+    if (typ === "job-changed") {
+      // Umformulierung derselben Rolle oder Hin-und-her zwischen zwei
+      // Schreibweisen: kein Wechsel.
+      if (schreibweise(s.before) === schreibweise(s.after)) continue;
+      if (s.hinUndHer) continue;
+    }
+    // Zeitbezug: belegter Beginn aelter als das Fenster → nur spaet bemerkt.
+    if (s.startDate && jetzt - new Date(s.startDate).getTime() > ZEITBEZUG_MS) continue;
+    // Zeitbezug: der alte Wert wurde zuletzt vor sehr langer Zeit gesehen →
+    // der Wechsel kann irgendwann in diesem Fenster passiert sein.
+    if (
+      s.vorherGesehenAm &&
+      new Date(s.observedAt).getTime() - new Date(s.vorherGesehenAm).getTime() > ZEITBEZUG_MS
+    ) continue;
     out.push({
       art: "contact-change",
       id: s.id,
@@ -228,10 +280,13 @@ async function kontaktAenderungen(ids: string[], seit: Date): Promise<NeuheitIte
       before: s.before ?? null,
       after: s.after ?? null,
       occurredAt: iso(s.observedAt) ?? new Date().toISOString(),
+      seit: iso(s.startDate),
+      bekanntSeit: iso(s.bekanntSeit),
+      vorherGesehenAm: iso(s.vorherGesehenAm),
     });
   }
-  const neue = await pool.query<{ companyId: string; title: string | null; firstSeen: Date; fullName: string }>(
-    `SELECT e."companyId", e.title, e."firstSeen", p."fullName"
+  const neue = await pool.query<{ companyId: string; title: string | null; firstSeen: Date; startDate: Date | null; fullName: string }>(
+    `SELECT e."companyId", e.title, e."firstSeen", e."startDate", p."fullName"
        FROM "Employment" e
        JOIN "Person" p ON p.id = e."personId"
       WHERE e."companyId" = ANY($1::text[]) AND e."firstSeen" > $2 AND e."isCurrent"
@@ -246,15 +301,18 @@ async function kontaktAenderungen(ids: string[], seit: Date): Promise<NeuheitIte
       LIMIT 3000`,
     [ids, seit],
   );
-  const jeFirma = new Map<string, { anzahl: number; personen: Array<{ name: string; title: string | null }>; juengst: Date }>();
+  const jeFirma = new Map<string, { anzahl: number; personen: Array<{ name: string; title: string | null; seit: string | null }>; juengst: Date }>();
   for (const e of neue.rows) {
+    // Zeitbezug: wer belegt schon lange in der Position ist, ist nicht neu,
+    // AVA hat ihn nur jetzt erst gefunden.
+    if (e.startDate && jetzt - new Date(e.startDate).getTime() > ZEITBEZUG_MS) continue;
     let g = jeFirma.get(e.companyId);
     if (!g) {
       g = { anzahl: 0, personen: [], juengst: e.firstSeen };
       jeFirma.set(e.companyId, g);
     }
     g.anzahl += 1;
-    if (g.personen.length < 8) g.personen.push({ name: e.fullName, title: e.title ?? null });
+    if (g.personen.length < 8) g.personen.push({ name: e.fullName, title: e.title ?? null, seit: iso(e.startDate) });
     if (e.firstSeen > g.juengst) g.juengst = e.firstSeen;
   }
   for (const [companyId, g] of jeFirma) {
@@ -277,15 +335,25 @@ alertsNeuheitenRouter.openapi(route, async (c) => {
   const seit = fensterStart(since);
   const quellen = await Promise.allSettled([
     listeProfilAenderungen(ids, seit).then((rows) =>
-      rows.map<NeuheitItem>((r) => ({
-        art: "profile-change",
-        id: r.id,
-        companyId: r.companyId,
-        kind: r.kind,
-        added: r.added as unknown as Array<Record<string, unknown>>,
-        removed: r.removed as unknown as Array<Record<string, unknown>>,
-        occurredAt: r.createdAt,
-      })),
+      rows
+        // Zeitbezug: Lag die letzte Bestaetigung des alten Stands sehr lange
+        // zurueck, kann der Wechsel irgendwann in diesem Fenster passiert
+        // sein — zu alt, um ihn als Neuigkeit zu melden.
+        .filter(
+          (r) =>
+            !r.bestandVon ||
+            new Date(r.createdAt).getTime() - new Date(r.bestandVon).getTime() <= ZEITBEZUG_MS,
+        )
+        .map<NeuheitItem>((r) => ({
+          art: "profile-change",
+          id: r.id,
+          companyId: r.companyId,
+          kind: r.kind,
+          added: r.added as unknown as Array<Record<string, unknown>>,
+          removed: r.removed as unknown as Array<Record<string, unknown>>,
+          occurredAt: r.createdAt,
+          bestandVon: r.bestandVon,
+        })),
     ),
     publikationen(ids, seit),
     kontaktAenderungen(ids, seit),

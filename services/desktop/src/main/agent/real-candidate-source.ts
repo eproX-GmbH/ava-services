@@ -54,6 +54,7 @@ type Neuheit =
       added: Array<Record<string, unknown>>;
       removed: Array<Record<string, unknown>>;
       occurredAt: string;
+      bestandVon?: string | null;
     }
   | {
       art: "publication";
@@ -81,15 +82,35 @@ type Neuheit =
       before: string | null;
       after: string | null;
       occurredAt: string;
+      seit?: string | null;
+      bekanntSeit?: string | null;
+      vorherGesehenAm?: string | null;
     }
   | {
       art: "new-contacts";
       id: string;
       companyId: string;
       anzahl: number;
-      personen: Array<{ name: string; title: string | null }>;
+      personen: Array<{ name: string; title: string | null; seit?: string | null }>;
       occurredAt: string;
     };
+
+/** „seit 2009“ / „seit 03/2026“ aus einem ISO-Datum. */
+function seitText(iso: string | null | undefined): string | null {
+  if (!iso) return null;
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return null;
+  // Der Gateway-Persist legt „2009“ als 1. Januar ab; nur ein anderer
+  // Monat ist wirklich belegt.
+  const m = d.getUTCMonth() + 1;
+  return m !== 1 ? `${String(m).padStart(2, "0")}/${d.getUTCFullYear()}` : String(d.getUTCFullYear());
+}
+
+/** Zeitfenster „zwischen A und B“ fuer den Judge, tagesgenau. */
+function fensterText(von: string | null | undefined, bis: string): string {
+  const b = bis.slice(0, 10);
+  return von ? `zwischen ${von.slice(0, 10)} und ${b}` : `bis ${b}, Beginn unbekannt`;
+}
 
 export function buildRealCandidateSource(
   gateway: GatewayClient,
@@ -189,8 +210,8 @@ export function kandidatAus(n: Neuheit, companyName: string): HeartbeatCandidate
           companyName,
           sourceRef: `profile-change:${n.id}`,
           occurredAt: n.occurredAt,
-          summary: `Geschäftsführer-Wechsel laut Handelsregister bei ${companyName} — ${parts.join("; ")}.`,
-          payload: { aenderung: "managing-directors", added, removed, source: "handelsregister" },
+          summary: `Geschäftsführer-Wechsel laut Handelsregister bei ${companyName} — ${parts.join("; ")}. Eingetreten ${fensterText(n.bestandVon, n.occurredAt)}.`,
+          payload: { aenderung: "managing-directors", added, removed, source: "handelsregister", zeitfenster: fensterText(n.bestandVon, n.occurredAt) },
         };
       }
       const feld = PROFIL_KIND_TEXT[n.kind] ?? n.kind;
@@ -203,8 +224,8 @@ export function kandidatAus(n: Neuheit, companyName: string): HeartbeatCandidate
         companyName,
         sourceRef: `profile-change:${n.id}`,
         occurredAt: n.occurredAt,
-        summary: `${feld} von ${companyName} laut Handelsregister geändert: „${vorher}“ → „${nachher}“.`,
-        payload: { aenderung: n.kind, vorher, nachher, source: "handelsregister" },
+        summary: `${feld} von ${companyName} laut Handelsregister geändert: „${vorher}“ → „${nachher}“. Eingetreten ${fensterText(n.bestandVon, n.occurredAt)}.`,
+        payload: { aenderung: n.kind, vorher, nachher, source: "handelsregister", zeitfenster: fensterText(n.bestandVon, n.occurredAt) },
       };
     }
     case "publication": {
@@ -245,19 +266,31 @@ export function kandidatAus(n: Neuheit, companyName: string): HeartbeatCandidate
         default:
           summary = `Zentrale E-Mail-Adresse von ${companyName} geändert: ${n.before ?? "?"} → ${n.after ?? "?"}.`;
       }
+      const seit = seitText(n.seit);
+      const zeit =
+        seit
+          ? `Position belegt seit ${seit}.`
+          : `Wechsel bemerkt ${fensterText(n.vorherGesehenAm, n.occurredAt)}.`;
       return {
         kind: "contact-change",
         companyId: n.companyId,
         companyName,
         sourceRef: `contact-change:${n.id}`,
         occurredAt: n.occurredAt,
-        summary,
-        payload: { typ: n.typ, person: n.personName, title: n.title, vorher: n.before, nachher: n.after, source: "website" },
+        summary: `${summary} ${zeit}`,
+        payload: {
+          typ: n.typ, person: n.personName, title: n.title, vorher: n.before, nachher: n.after, source: "website",
+          seit, bekanntSeit: n.bekanntSeit?.slice(0, 10) ?? null, zeitfenster: fensterText(n.vorherGesehenAm, n.occurredAt),
+        },
       };
     }
     case "new-contacts": {
       const liste = n.personen
-        .map((p) => (p.title ? `${p.name} (${p.title})` : p.name))
+        .map((p) => {
+          const s = seitText(p.seit);
+          const t = [p.title, s ? `seit ${s}` : null].filter(Boolean).join(", ");
+          return t ? `${p.name} (${t})` : p.name;
+        })
         .join(", ");
       const rest = n.anzahl - n.personen.length;
       return {

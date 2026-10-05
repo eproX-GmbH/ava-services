@@ -72,6 +72,32 @@ eine Meldung geben. Außerdem kannte der Herzschlag nur zwei Quellen
   Zentrale, Titel-Umformulierungen ohne Funktionswechsel.
 - Bewertung bleibt lokal (Compute-Lokalität); das Gateway sammelt nur.
 
+### Zeitbezug (v0.1.753, 2026-10-05)
+
+Befund: „Nils Frohloff übernimmt Geschäftsführung bei Strategic IT“, obwohl er
+seit 2006 Gründer und Geschäftsführer ist. Die Meldung kam aus einem
+Titel-Wechsel „Gründer“ → „Geschäftsführer“ (verschiedene Website-Seiten
+nennen ihn verschieden); `startDate` 2009 lag in der Datenbank.
+
+- **Regel:** Eine Meldung muss in zeitlichem Zusammenhang stehen. Ist der
+  Beginn einer Position belegt (seit/startDate, aus Website „seit …“ oder
+  LinkedIn-Erfahrung über Apify) und älter als 180 Tage, oder ist das
+  Fenster, in dem der Wechsel passiert sein kann, breiter als 180 Tage,
+  erscheint nichts. Das greift im Gateway vor dem Judge (kein LLM-Aufruf).
+- **Fenster:** Kontakt-Wechsel = letzte Beobachtung des alten Werts bis
+  Beobachtung des neuen; Registerwechsel = letzte Bestätigung des alten
+  Registerstands (`ProfileChangeEvent.bestandVon`, neue Spalte) bis Persist.
+- **Schreibweisen:** Umformulierungen derselben Rolle (nur Buchstaben
+  verglichen) und Hin-und-her zwischen zwei Schreibweisen derselben Person
+  sind keine Wechsel.
+- **Judge:** Regel (c) „Zeitlicher Zusammenhang“; jeder Kandidat nennt
+  „belegt seit …“ oder „zwischen A und B“.
+- **Positionen je Firma (Desktop):** Die Kontakte-Route liefert für eine
+  Person auch Fakten anderer Firmen (für Name und Profil). Position,
+  Abteilung und Beginn werden seit v0.1.753 nur aus Fakten DIESER Firma
+  genommen (`nurRollenDieserFirma`), sonst stand bei Joyce an der Strategic
+  IT die Position ihrer eigenen Firma QUIKK.
+
 Offen: Sichtbarkeit der laufenden Auffrischung in Liste/Detail/Chat
 („zuletzt geprüft“, Tagesbericht), Insolvenz/Status laufen weiter über den
 Status-Wächter.
