@@ -36,6 +36,42 @@ Tag bei einem Nutzer). Deshalb: Planer und Aufräumer stoßen die Bewertung
 nie einzeln an, Takt-Standard 0 (gespeicherte 14 werden migriert), kein
 Eintrag mehr in den Einstellungen.
 
+## Alarme über alle Firmen (v0.1.752, 2026-10-05)
+
+Befund (Patrick, 43 Firmen): Die Auffrischung lief seit v0.1.748 über die
+ganze Firmenliste, der **Herzschlag für Alarme** aber noch über die 20
+jüngsten Transaktionen. Patricks jüngste 20 Transaktionen (Verflechtungen,
+Einzelrecherchen) deckten 7 seiner 43 Firmen; für 36 Firmen konnte es nie
+eine Meldung geben. Außerdem kannte der Herzschlag nur zwei Quellen
+(Geschäftsführer-Wechsel, Publikationen); Stellenwechsel wurden nie bewertet.
+
+- **Kandidatenquelle** (`real-candidate-source.ts`): Firmenliste aus
+  `/v1/companies/matrix` (seitenweise, Namen gleich mit), dann
+  `POST /v1/alerts/neuheiten` in Bündeln zu 300 Firmen. Ein Aufruf je Bündel
+  statt drei je Firma.
+- **Gateway `POST /v1/alerts/neuheiten`** (`routes/v1/alerts-neuheiten.ts`):
+  `{ companyIds, since }` → alle Neuheiten seit `since` (gedeckelt auf 30 Tage):
+  `profile-change` (ProfileChangeEvent, jetzt auch Name, Rechtsform, Anschrift,
+  Stammkapital, Gegenstand: der structured-content-Persist diffte bisher nur
+  Geschäftsführer), `publication` (nach Eingang), `contact-change`
+  (SignalEvent der Kontakt-DB: Stellenwechsel, Arbeitgeberwechsel, geänderte
+  Firmen-Telefon/-E-Mail) und `new-contacts` (neue Beschäftigungen je Firma zu
+  EINEM Eintrag gebündelt, sonst flutet ein Re-Crawl den Judge).
+- **Neue Alert-Art `contact-change`** („Kontakt-Wechsel“).
+- **Judge** (`alert-judge.ts`): Leitfrage „Was könnte DIESEN Nutzer
+  interessieren, und ist jetzt der Moment?“ Nutzerprofil vollständig (Bio,
+  Rolle, Branchen, Regionen, Themen, eigene Signal-Interessen, ICP) plus
+  Beziehung zur Firma (Relevanz-Rang, Fokuskunde) aus dem Herzschlag. Regeln
+  für Kontakt-Wechsel (Weggang Entscheider = warn, neuer Entscheider = info/warn,
+  GF-Ebene = urgent; Sachbearbeitung nicht) und Stammdaten (Umfirmierung/
+  Rechtsform = warn, Umzug = info). Nicht alarmwürdig: Telefon/E-Mail der
+  Zentrale, Titel-Umformulierungen ohne Funktionswechsel.
+- Bewertung bleibt lokal (Compute-Lokalität); das Gateway sammelt nur.
+
+Offen: Sichtbarkeit der laufenden Auffrischung in Liste/Detail/Chat
+(„zuletzt geprüft“, Tagesbericht), Insolvenz/Status laufen weiter über den
+Status-Wächter.
+
 ## Grenzen
 
 - Im Worker-Modus ruht die Auffrischung bewusst; auf einem reinen

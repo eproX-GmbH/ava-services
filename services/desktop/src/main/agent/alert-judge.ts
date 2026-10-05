@@ -154,10 +154,15 @@ function buildSystemPrompt(today: Date, userContext: string | null): string {
   const todayIso = today.toISOString().slice(0, 10);
   return [
     "Du bist die Alarm-Bewertungsstufe von AVA, einer Recherche-App für",
-    "deutsche Unternehmen.",
+    "deutsche Unternehmen im B2B-Vertrieb.",
     "",
     "Aufgabe: Entscheide, ob der folgende Datenpunkt eine Benachrichtigung",
-    "an die Analystin rechtfertigt.",
+    "an den Nutzer rechtfertigt. Leitfrage: Was könnte DIESEN Nutzer mit",
+    "SEINEM Profil, seinen Branchen, Regionen und Idealkunden an dieser",
+    "Firma interessieren, und ist jetzt der richtige Moment, es ihm zu",
+    "sagen? Ziel ist die richtige Information zur richtigen Zeit im",
+    "vertrieblichen Kontext: ein Anlass für ein Gespräch, ein Risiko für",
+    "eine laufende Beziehung, eine Tür, die sich öffnet oder schließt.",
     "",
     "Alarmwürdig ist ein Punkt nur, wenn BEIDES gilt:",
     "  (a) Aktualitätsregel — kontextabhängig:",
@@ -179,9 +184,26 @@ function buildSystemPrompt(today: Date, userContext: string | null): string {
     "      - LinkedIn-Signal Stärke 4-5 mit gematchter Zielfirma ist häufig",
     "        alarmwürdig, sofern der Beitrag nicht reine Selbstdarstellung",
     "        ist. Substanz-Test (a)/(b) gilt weiterhin.",
+    "      - Kontakt-Wechsel (kind=contact-change): Ein bekannter",
+    "        Ansprechpartner wechselt Funktion oder Arbeitgeber, eine neue",
+    "        Führungskraft oder ein neuer Entscheider (Leitung, Einkauf,",
+    "        Geschäftsführung, fachlich passend zum Nutzer) taucht auf.",
+    "        Weggang eines Entscheiders = warn, neuer Entscheider = info",
+    "        bis warn, Wechsel auf Geschäftsführungsebene = urgent.",
+    "        Neue Ansprechpartner ohne Entscheidungsnähe (Sachbearbeitung,",
+    "        Azubis) sind NICHT alarmwürdig.",
+    "      - Stammdaten-Änderungen (kind=profile-change ohne Geschäfts-",
+    "        führer): Umfirmierung oder Rechtsformwechsel = warn (oft",
+    "        Übernahme, Nachfolge, Umstrukturierung), Umzug = info (neuer",
+    "        Standort, Expansion oder Verkleinerung), Kapitalerhöhung =",
+    "        info bis warn, geänderter Unternehmensgegenstand = info.",
     "",
     "Nicht alarmwürdig sind:",
     "  - Routine-HRB-Updates ohne inhaltliche Folgen",
+    "  - Geänderte Telefonnummern oder E-Mail-Adressen der Zentrale",
+    "    (außer der Nutzer hat erkennbar eine laufende Beziehung)",
+    "  - Titel-Umformulierungen ohne echten Funktionswechsel",
+    "    (z. B. „Geschäftsleitung“ → „Geschäftsführer“)",
     "  - Marketing- und PR-Selbstdarstellung",
     "  - Firmenjubiläen, Sponsoring, Stellenanzeigen",
     "  - Jahresabschlüsse 5 Jahre und älter (zu alt)",
@@ -216,10 +238,10 @@ function buildSystemPrompt(today: Date, userContext: string | null): string {
     ...(userContext
       ? [
           "",
-          "Kontext der Analystin (beruecksichtige ihn bei der Relevanz-",
-          "Einschaetzung — Naehe zu ihren Branchen/Regionen/Idealkunden",
-          "erhoeht die Alarmwuerdigkeit, voellig fachfremde Punkte senken",
-          "sie):",
+          "Profil des Nutzers (beruecksichtige es bei der Relevanz-",
+          "Einschaetzung — Naehe zu seinen Branchen/Regionen/Idealkunden",
+          "und zu seinem Angebot erhoeht die Alarmwuerdigkeit, voellig",
+          "fachfremde Punkte senken sie):",
           ...userContext.slice(0, 1200).split("\n").map((l) => `  ${l}`),
         ]
       : []),
@@ -229,12 +251,31 @@ function buildSystemPrompt(today: Date, userContext: string | null): string {
 }
 
 function buildUserPrompt(c: HeartbeatCandidate): string {
+  // 2026-10-05: Naehe des Nutzers zur Firma (Relevanz-Rang 0..10, aus
+  // seinem Verhalten) und Fokuskunde (eigenes Buying Center) kommen vom
+  // Heartbeat in den Payload. Beides sagt dem Judge, ob hier eine
+  // laufende Beziehung betroffen ist oder eine kalte Firma.
+  const { nutzerNaehe, fokuskunde, ...rohdaten } = c.payload as {
+    nutzerNaehe?: number | null;
+    fokuskunde?: boolean;
+  } & Record<string, unknown>;
+  const beziehung =
+    fokuskunde
+      ? "Fokuskunde (der Nutzer bearbeitet diese Firma aktiv)"
+      : typeof nutzerNaehe === "number"
+        ? nutzerNaehe >= 7
+          ? `hohe Nähe (Rang ${nutzerNaehe}/10, zuletzt viel Kontakt)`
+          : nutzerNaehe >= 4
+            ? `mittlere Nähe (Rang ${nutzerNaehe}/10)`
+            : `geringe Nähe (Rang ${nutzerNaehe}/10, lange nicht angesehen)`
+        : "unbekannt";
   return [
     `Kandidat (kind=${c.kind}):`,
     `  Firma:        ${c.companyName} (id: ${c.companyId})`,
+    `  Beziehung des Nutzers zur Firma: ${beziehung}`,
     `  Datum:        ${c.occurredAt}`,
     `  Zusammenfassung: ${c.summary}`,
-    `  Rohdaten:     ${JSON.stringify(c.payload)}`,
+    `  Rohdaten:     ${JSON.stringify(rohdaten)}`,
     "",
     "Bewerte diesen Kandidaten gemäß System-Prompt.",
   ].join("\n");

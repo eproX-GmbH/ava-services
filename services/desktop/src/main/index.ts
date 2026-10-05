@@ -1613,10 +1613,17 @@ const heartbeat = new Heartbeat({
       const p = userProfile.get();
       const lines: string[] = [];
       if (p.bio?.trim()) lines.push(`Bio: ${p.bio.trim()}`);
+      if (p.role?.trim()) lines.push(`Rolle: ${p.role.trim()}`);
       if ((p.industries ?? []).length > 0)
         lines.push(`Branchen: ${p.industries.join(", ")}`);
       if ((p.geographies ?? []).length > 0)
         lines.push(`Regionen: ${p.geographies.join(", ")}`);
+      if ((p.topics ?? []).length > 0)
+        lines.push(`Themen: ${p.topics.join(", ")}`);
+      // 2026-10-05: Was der Nutzer selbst als starkes Signal benannt hat,
+      // gilt auch fuer Alarme — nicht nur fuer LinkedIn.
+      if (p.signalInterests?.trim())
+        lines.push(`Besonders interessant laut Nutzer: ${p.signalInterests.trim()}`);
       if (icpStore.isSet()) lines.push(`ICP: ${icpStore.renderText()}`);
       return lines.length > 0 ? lines.join("\n") : null;
     },

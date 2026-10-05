@@ -1,68 +1,43 @@
 import type { GatewayClient } from "./gateway-client";
 import type { CandidateSource, HeartbeatCandidate } from "./heartbeat";
 
-// Real candidate source (Phase 8.f4 — replaces the 8.f1 demo stub).
+// Kandidatenquelle des Heartbeats (2026-10-05, Neufassung).
 //
-// Walks the existing gateway endpoints (no new server-side route yet) to
-// collect candidate signals from the *user's actual corpus*:
+// Vorher: 20 juengste Transaktionen → deren Firmen → je Firma drei
+// Einzelabfragen. Befund bei Patrick: die 20 juengsten Transaktionen
+// (Verflechtungen, Einzelrecherchen) deckten 7 von 43 Firmen; fuer 36
+// Firmen konnte es nie einen Alarm geben. Dieselbe Luecke hatte die
+// Auffrischung (v0.1.748) — jetzt gehen beide ueber die Firmenliste.
 //
-//   1. List recent transactions      (`GET /v1/transactions`)
-//   2. Per transaction → companies   (`GET /v1/transactions/:id/entities`)
-//   3. Per company → publications    (`GET /v1/companies/:id/publications`)
-//      + master-data for the name    (`GET /v1/companies/:id`)
+// Jetzt: Firmenliste des Nutzers (/v1/companies/matrix, seitenweise) →
+// POST /v1/alerts/neuheiten in Buendeln → EIN Antwortstrom mit allem,
+// was sich seit dem letzten Takt getan hat:
 //
-// Each surviving publication becomes one candidate. We deliberately do
-// NOT shell out to a custom gateway endpoint yet — the spec calls for
-// `GET /v1/alerts/candidates` (8.f5) but that's a meaningful server-side
-// fan-out and the user is asking for real data NOW. Doing it here keeps
-// the heartbeat self-sufficient with the endpoints we already have.
+//   profile-change   Geschaeftsfuehrer, Name, Rechtsform, Adresse,
+//                    Stammkapital, Gegenstand (aus dem Register)
+//   publication      neu eingegangene Jahresabschluesse/Publikationen
+//   contact-change   Stellenwechsel, Arbeitgeberwechsel, geaenderte
+//                    Firmen-Telefon/-E-Mail (Kontakt-Signale)
+//   new-contacts     neue Ansprechpartner je Firma, gebuendelt
 //
-// Filtering happens in three stages, cheapest first:
-//   a) Freshness gate: drop publications older than FRESHNESS_MONTHS
-//      months — keeps token spend off 2011-vintage filings.
-//   b) Delta gate: when `since` is provided, only candidates whose
-//      `updatedAt` post-dates the previous tick survive. Across process
-//      restarts `since` is null on the first tick, so we DO re-emit
-//      ~30 days of recent items; the AlertsStore's sourceRef dedup
-//      stops them from being alerted twice and the LLM judge has its
-//      own per-session "judged-already" memory inside the process.
-//   c) Cap gate: hard cap at MAX_CANDIDATES so a 10k-company corpus
-//      can't wedge a tick. Anything past the cap rolls forward to
-//      the next tick (since `since` advances).
-//
-// Concurrency: the inner per-company fetches go through a tiny manual
-// pool (no library) limited to CONCURRENCY parallel requests so a tick
-// can't accidentally DDoS the gateway from a fast laptop.
+// Bewertet wird weiterhin lokal durch den Alarm-Judge mit dem Profil des
+// Nutzers ("Was koennte ihn interessieren?"). Hier wird nur eingesammelt
+// und in die Kandidatenform gebracht. Ohne `since` (erster Takt nach dem
+// Start) deckelt das Gateway auf 30 Tage; Dedup ueber sourceRef faengt
+// Wiederholungen ab.
 
-const FRESHNESS_MONTHS = 18;
-const MAX_TRANSACTIONS = 20;
-const MAX_COMPANIES = 50;
-const MAX_CANDIDATES = 30;
-const CONCURRENCY = 5;
+const MATRIX_SEITE = 200;
+const MAX_MATRIX_SEITEN = 50;
+const BUENDEL = 300;
+/** Obergrenze je Takt; der Heartbeat sortiert nach Relevanz und kappt
+ *  weiter (maxPerTick). Was hier abgeschnitten wird, kommt im naechsten
+ *  Takt wieder, solange das 30-Tage-Fenster es traegt. */
+const MAX_CANDIDATES = 200;
 
-interface TxRow {
-  id: string;
-  createdAt?: string;
-}
-
-interface EntityRow {
-  companyId: string;
-  state?: string;
-}
-
-interface PubRow {
+interface MatrixZeile {
   companyId: string;
   name?: string | null;
-  year?: number | null;
-  begin?: string | null;
-  end?: string | null;
-  salesVolume?: VolumeShape | null;
-  revenueVolume?: VolumeShape | null;
-  totalAssetsVolume?: VolumeShape | null;
-  stateOfAffairs?: { value?: string; affirmed?: boolean } | null;
-  employeeCount?: number | null;
-  createdAt?: string;
-  updatedAt?: string;
+  held?: boolean;
 }
 
 interface VolumeShape {
@@ -70,255 +45,254 @@ interface VolumeShape {
   currency?: string | null;
 }
 
-/** v0.1.460 — Geschäftsführer-Wechsel aus dem Gateway
- *  (`ProfileChangeEvent`, geschrieben vom structured-content-Persist). */
-interface ProfileChangeRow {
-  id: string;
-  companyId: string;
-  kind: string;
-  added?: Array<{ firstName?: string; lastName?: string }>;
-  removed?: Array<{ firstName?: string; lastName?: string }>;
-  createdAt?: string;
-}
-
-interface CompanyMeta {
-  /** Master-data sometimes calls this `name`, sometimes `companyName`. We
-   *  accept either and fall back to a truncated id if both are absent. */
-  name?: string | null;
-  companyName?: string | null;
-}
+type Neuheit =
+  | {
+      art: "profile-change";
+      id: string;
+      companyId: string;
+      kind: string;
+      added: Array<Record<string, unknown>>;
+      removed: Array<Record<string, unknown>>;
+      occurredAt: string;
+    }
+  | {
+      art: "publication";
+      id: string;
+      companyId: string;
+      name: string | null;
+      year: number | null;
+      begin: string | null;
+      end: string | null;
+      employeeCount: number | null;
+      revenueVolume: VolumeShape | null;
+      salesVolume: VolumeShape | null;
+      totalAssetsVolume: VolumeShape | null;
+      stateOfAffairs: { value: string } | null;
+      createdAt: string;
+      updatedAt: string;
+    }
+  | {
+      art: "contact-change";
+      id: string;
+      companyId: string;
+      typ: "job-changed" | "employer-changed" | "company-phone-changed" | "company-email-changed";
+      personName: string | null;
+      title: string | null;
+      before: string | null;
+      after: string | null;
+      occurredAt: string;
+    }
+  | {
+      art: "new-contacts";
+      id: string;
+      companyId: string;
+      anzahl: number;
+      personen: Array<{ name: string; title: string | null }>;
+      occurredAt: string;
+    };
 
 export function buildRealCandidateSource(
   gateway: GatewayClient,
 ): CandidateSource {
   return async (since: Date | null) => {
-    const cutoff = new Date();
-    cutoff.setMonth(cutoff.getMonth() - FRESHNESS_MONTHS);
-    const sinceIso = since ? since.toISOString() : null;
-
-    const transactions = await listTransactions(gateway);
-    const companyIds = await collectCompanyIds(gateway, transactions);
-
+    const firmen = await ladeFirmenliste(gateway);
+    if (firmen.size === 0) return [];
+    const ids = [...firmen.keys()];
     const out: HeartbeatCandidate[] = [];
-    await runWithConcurrency(
-      Array.from(companyIds).slice(0, MAX_COMPANIES),
-      CONCURRENCY,
-      async (companyId) => {
-        if (out.length >= MAX_CANDIDATES) return;
-        try {
-          const candidates = await fetchCandidatesForCompany(
-            gateway,
-            companyId,
-            cutoff,
-            sinceIso,
-          );
-          for (const c of candidates) {
-            if (out.length >= MAX_CANDIDATES) break;
-            out.push(c);
-          }
-        } catch (err) {
-          // One bad company shouldn't kill the tick. Log and move on;
-          // the heartbeat tick info will reflect a smaller candidate set
-          // than expected.
-          console.warn(
-            `[real-source] company ${companyId} failed:`,
-            err instanceof Error ? err.message : err,
-          );
-        }
-      },
-    );
-
+    for (let i = 0; i < ids.length && out.length < MAX_CANDIDATES; i += BUENDEL) {
+      const teil = ids.slice(i, i + BUENDEL);
+      let items: Neuheit[] = [];
+      try {
+        const r = await gateway.request<{ items?: Neuheit[] }>("/v1/alerts/neuheiten", {
+          method: "POST",
+          body: { companyIds: teil, since: since ? since.toISOString() : null },
+        });
+        items = r.items ?? [];
+      } catch (err) {
+        console.warn(
+          `[real-source] neuheiten-buendel ${i / BUENDEL + 1} fehlgeschlagen:`,
+          err instanceof Error ? err.message : err,
+        );
+        continue;
+      }
+      for (const n of items) {
+        if (out.length >= MAX_CANDIDATES) break;
+        const name = firmen.get(n.companyId) ?? `${n.companyId.slice(0, 12)}…`;
+        const c = kandidatAus(n, name);
+        if (c) out.push(c);
+      }
+    }
     return out;
   };
 }
 
 /**
- * v0.1.479 — Firmen des Tenants einsammeln (Transaktionen → Entities).
- * Exportiert fuer die Watchlist-Bestands-Rotation: "alle Firmen, die
- * ich verarbeitet habe". Gleiche Mechanik wie der Heartbeat oben.
+ * Firmenliste des Nutzers: companyId → Name. Gehaltene (held) Firmen
+ * bleiben drin — Alarme sind kein Verarbeitungsschritt.
+ */
+export async function ladeFirmenliste(gateway: GatewayClient): Promise<Map<string, string>> {
+  const out = new Map<string, string>();
+  for (let seite = 1; seite <= MAX_MATRIX_SEITEN; seite++) {
+    const r = await gateway.request<{ companies?: MatrixZeile[] }>(
+      "/v1/companies/matrix",
+      { query: { pageNumber: seite, pageSize: MATRIX_SEITE } },
+    );
+    const teil = r.companies ?? [];
+    for (const z of teil) {
+      if (!z.companyId) continue;
+      out.set(z.companyId, (z.name ?? "").trim() || z.companyId);
+    }
+    if (teil.length < MATRIX_SEITE) break;
+  }
+  return out;
+}
+
+/**
+ * v0.1.479 — Firmen des Nutzers einsammeln (Watchlist-Bestands-Rotation).
+ * Seit 2026-10-05 aus der Firmenliste statt aus Transaktionen.
  */
 export async function collectTenantCompanyIds(
   gateway: GatewayClient,
   maxCompanies = 200,
 ): Promise<string[]> {
-  const transactions = await listTransactions(gateway);
-  const seen = new Set<string>();
-  await runWithConcurrency(transactions, CONCURRENCY, async (tx) => {
-    if (seen.size >= maxCompanies) return;
-    try {
-      const data = await gateway.request<{ items?: EntityRow[] }>(
-        `/v1/transactions/${encodeURIComponent(tx.id)}/entities`,
-      );
-      for (const e of data.items ?? []) {
-        if (!e.companyId) continue;
-        seen.add(e.companyId);
-        if (seen.size >= maxCompanies) return;
+  const firmen = await ladeFirmenliste(gateway);
+  return [...firmen.keys()].slice(0, maxCompanies);
+}
+
+// ---- Kandidatenform --------------------------------------------------------
+
+const PROFIL_KIND_TEXT: Record<string, string> = {
+  name: "Firmenname",
+  "legal-form": "Rechtsform",
+  address: "Anschrift",
+  "share-capital": "Stammkapital",
+  purpose: "Unternehmensgegenstand",
+};
+
+export function kandidatAus(n: Neuheit, companyName: string): HeartbeatCandidate | null {
+  switch (n.art) {
+    case "profile-change": {
+      if (n.kind === "managing-directors") {
+        const fmt = (list: Array<Record<string, unknown>>): string[] =>
+          list
+            .map((p) => `${String(p.firstName ?? "")} ${String(p.lastName ?? "")}`.trim())
+            .filter((x) => x.length > 0);
+        const added = fmt(n.added);
+        const removed = fmt(n.removed);
+        if (added.length === 0 && removed.length === 0) return null;
+        const parts: string[] = [];
+        if (added.length > 0) parts.push(`neu: ${added.join(", ")}`);
+        if (removed.length > 0) parts.push(`ausgeschieden: ${removed.join(", ")}`);
+        return {
+          kind: "profile-change",
+          companyId: n.companyId,
+          companyName,
+          sourceRef: `profile-change:${n.id}`,
+          occurredAt: n.occurredAt,
+          summary: `Geschäftsführer-Wechsel laut Handelsregister bei ${companyName} — ${parts.join("; ")}.`,
+          payload: { aenderung: "managing-directors", added, removed, source: "handelsregister" },
+        };
       }
-    } catch {
-      /* eine kaputte Transaktion kippt die Sammlung nicht */
-    }
-  });
-  return [...seen];
-}
-
-// ---- Stages ---------------------------------------------------------------
-
-async function listTransactions(gateway: GatewayClient): Promise<TxRow[]> {
-  const data = await gateway.request<{ items?: TxRow[] }>("/v1/transactions", {
-    query: { page: 1, pageSize: MAX_TRANSACTIONS },
-  });
-  return (data.items ?? []).slice(0, MAX_TRANSACTIONS);
-}
-
-async function collectCompanyIds(
-  gateway: GatewayClient,
-  transactions: TxRow[],
-): Promise<Set<string>> {
-  const seen = new Set<string>();
-  await runWithConcurrency(transactions, CONCURRENCY, async (tx) => {
-    if (seen.size >= MAX_COMPANIES) return;
-    try {
-      const data = await gateway.request<{ items?: EntityRow[] }>(
-        `/v1/transactions/${encodeURIComponent(tx.id)}/entities`,
-      );
-      for (const e of data.items ?? []) {
-        if (!e.companyId) continue;
-        seen.add(e.companyId);
-        if (seen.size >= MAX_COMPANIES) return;
-      }
-    } catch (err) {
-      console.warn(
-        `[real-source] entities for ${tx.id} failed:`,
-        err instanceof Error ? err.message : err,
-      );
-    }
-  });
-  return seen;
-}
-
-async function fetchCandidatesForCompany(
-  gateway: GatewayClient,
-  companyId: string,
-  cutoff: Date,
-  sinceIso: string | null,
-): Promise<HeartbeatCandidate[]> {
-  const [metaResult, pubsResult, changesResult] = await Promise.allSettled([
-    gateway.request<CompanyMeta>(
-      `/v1/companies/${encodeURIComponent(companyId)}`,
-    ),
-    gateway.request<{ items?: PubRow[] }>(
-      `/v1/companies/${encodeURIComponent(companyId)}/publications`,
-    ),
-    gateway.request<{ items?: ProfileChangeRow[] }>(
-      `/v1/companies/${encodeURIComponent(companyId)}/profile-changes`,
-    ),
-  ]);
-
-  const meta = metaResult.status === "fulfilled" ? metaResult.value : {};
-  const companyName =
-    meta.name ?? meta.companyName ?? `${companyId.slice(0, 12)}…`;
-
-  const out: HeartbeatCandidate[] = [];
-
-  // v0.1.460 — Geschäftsführer-Wechsel zuerst: Das sind die seltenen,
-  // hochrelevanten Signale; sie sollen nicht hinter dem Kandidaten-Cap
-  // eines publikationsreichen Korpus verschwinden. Ein 404 (älteres
-  // Gateway ohne die Route) fällt still auf "keine Ereignisse" zurück.
-  if (changesResult.status === "fulfilled") {
-    for (const ch of changesResult.value.items ?? []) {
-      if (ch.kind !== "managing-directors" || !ch.id) continue;
-      const created =
-        typeof ch.createdAt === "string" && ch.createdAt.length > 0
-          ? new Date(ch.createdAt)
-          : null;
-      if (!created || Number.isNaN(created.getTime())) continue;
-      if (created < cutoff) continue;
-      if (sinceIso && created.toISOString() <= sinceIso) continue;
-      const fmt = (
-        list: Array<{ firstName?: string; lastName?: string }> | undefined,
-      ): string[] =>
-        (list ?? [])
-          .map((p) => `${p.firstName ?? ""} ${p.lastName ?? ""}`.trim())
-          .filter((n) => n.length > 0);
-      const added = fmt(ch.added);
-      const removed = fmt(ch.removed);
-      if (added.length === 0 && removed.length === 0) continue;
-      const parts: string[] = [];
-      if (added.length > 0) parts.push(`neu: ${added.join(", ")}`);
-      if (removed.length > 0) parts.push(`ausgeschieden: ${removed.join(", ")}`);
-      out.push({
+      const feld = PROFIL_KIND_TEXT[n.kind] ?? n.kind;
+      const vorher = String(n.removed[0]?.value ?? "");
+      const nachher = String(n.added[0]?.value ?? "");
+      if (!nachher) return null;
+      return {
         kind: "profile-change",
-        companyId,
+        companyId: n.companyId,
         companyName,
-        sourceRef: `profile-change:${ch.id}`,
-        occurredAt: created.toISOString(),
-        summary: `Geschäftsführer-Wechsel laut Handelsregister bei ${companyName} — ${parts.join("; ")}.`,
-        payload: { added, removed, source: "handelsregister" },
-      });
+        sourceRef: `profile-change:${n.id}`,
+        occurredAt: n.occurredAt,
+        summary: `${feld} von ${companyName} laut Handelsregister geändert: „${vorher}“ → „${nachher}“.`,
+        payload: { aenderung: n.kind, vorher, nachher, source: "handelsregister" },
+      };
     }
+    case "publication": {
+      const occurred = pickOccurredAt(n);
+      if (!occurred) return null;
+      return {
+        kind: "publication",
+        companyId: n.companyId,
+        companyName,
+        sourceRef: stableSourceRef(n.companyId, n),
+        occurredAt: occurred.toISOString(),
+        summary: summarisePublication(companyName, n),
+        payload: {
+          year: n.year ?? null,
+          revenue: n.revenueVolume ?? null,
+          sales: n.salesVolume ?? null,
+          totalAssets: n.totalAssetsVolume ?? null,
+          employees: n.employeeCount ?? null,
+          stateOfAffairs: n.stateOfAffairs ?? null,
+          period: n.begin && n.end ? `${n.begin} → ${n.end}` : null,
+          eingegangenAm: n.createdAt,
+        },
+      };
+    }
+    case "contact-change": {
+      const person = n.personName ?? "Eine Kontaktperson";
+      let summary: string;
+      switch (n.typ) {
+        case "job-changed":
+          summary = `${person} bei ${companyName} hat eine neue Funktion: „${n.before ?? "?"}“ → „${n.after ?? "?"}“.`;
+          break;
+        case "employer-changed":
+          summary = `${person} (${n.title ?? "Funktion unbekannt"}) hat den Arbeitgeber gewechselt; ${companyName} ist betroffen.`;
+          break;
+        case "company-phone-changed":
+          summary = `Zentrale Telefonnummer von ${companyName} geändert: ${n.before ?? "?"} → ${n.after ?? "?"}.`;
+          break;
+        default:
+          summary = `Zentrale E-Mail-Adresse von ${companyName} geändert: ${n.before ?? "?"} → ${n.after ?? "?"}.`;
+      }
+      return {
+        kind: "contact-change",
+        companyId: n.companyId,
+        companyName,
+        sourceRef: `contact-change:${n.id}`,
+        occurredAt: n.occurredAt,
+        summary,
+        payload: { typ: n.typ, person: n.personName, title: n.title, vorher: n.before, nachher: n.after, source: "website" },
+      };
+    }
+    case "new-contacts": {
+      const liste = n.personen
+        .map((p) => (p.title ? `${p.name} (${p.title})` : p.name))
+        .join(", ");
+      const rest = n.anzahl - n.personen.length;
+      return {
+        kind: "contact-change",
+        companyId: n.companyId,
+        companyName,
+        sourceRef: `new-contacts:${n.id}`,
+        occurredAt: n.occurredAt,
+        summary: `${n.anzahl} neue Ansprechpartner bei ${companyName} erkannt: ${liste}${rest > 0 ? ` und ${rest} weitere` : ""}.`,
+        payload: { typ: "new-contacts", anzahl: n.anzahl, personen: n.personen, source: "website" },
+      };
+    }
+    default:
+      return null;
   }
-
-  if (pubsResult.status !== "fulfilled") return out;
-  const pubs = pubsResult.value.items ?? [];
-  for (const p of pubs) {
-    const occurred = pickOccurredAt(p);
-    if (!occurred) continue;
-    if (occurred < cutoff) continue;
-    // Delta gate: skip rows we've already considered. We compare against
-    // ingestion timestamps (updatedAt → createdAt), NOT `occurred` —
-    // the latter is a report-period end (e.g. 2024-12-31) and would
-    // mis-filter every annual report newer than today's tick wall-clock.
-    const ingested = pickIngestedAt(p);
-    if (sinceIso && ingested && ingested.toISOString() <= sinceIso) continue;
-
-    out.push({
-      kind: "publication",
-      companyId,
-      companyName,
-      sourceRef: stableSourceRef(companyId, p),
-      occurredAt: occurred.toISOString(),
-      summary: summarisePublication(companyName, p),
-      payload: {
-        year: p.year ?? null,
-        revenue: p.revenueVolume ?? null,
-        sales: p.salesVolume ?? null,
-        totalAssets: p.totalAssetsVolume ?? null,
-        employees: p.employeeCount ?? null,
-        stateOfAffairs: p.stateOfAffairs ?? null,
-        period: p.begin && p.end ? `${p.begin} → ${p.end}` : null,
-      },
-    });
-  }
-  return out;
 }
 
 // ---- Helpers --------------------------------------------------------------
 
-/**
- * Pick the most meaningful date for the freshness gate. Prefer the
- * publication's reporting period end, then the year (treated as
- * 31 December of that year), then `updatedAt`, then `createdAt`. Some
- * upstream rows arrive without any of these — those rows are dropped.
- */
-/**
- * Ingestion timestamp — when AVA learned about this row. Used by the
- * delta gate so re-ingesting the same publication produces a "new"
- * candidate. Prefers `updatedAt` over `createdAt` so a re-pull updates
- * the cursor even if the original creation was months ago.
- */
-function pickIngestedAt(p: PubRow): Date | null {
-  for (const v of [p.updatedAt, p.createdAt]) {
-    if (typeof v === "string" && v.length > 0) {
-      const d = new Date(v);
-      if (!Number.isNaN(d.getTime())) return d;
-    }
-  }
-  return null;
+interface PubLike {
+  year: number | null;
+  begin: string | null;
+  end: string | null;
+  createdAt: string;
+  updatedAt: string;
+  employeeCount: number | null;
+  revenueVolume: VolumeShape | null;
+  salesVolume: VolumeShape | null;
+  totalAssetsVolume: VolumeShape | null;
+  stateOfAffairs: { value: string } | null;
 }
 
-function pickOccurredAt(p: PubRow): Date | null {
-  const candidates = [p.end, p.updatedAt, p.createdAt];
-  for (const v of candidates) {
+/** Berichtsperioden-Ende, sonst Jahr (31.12.), sonst Eingang. */
+function pickOccurredAt(p: PubLike): Date | null {
+  for (const v of [p.end, p.updatedAt, p.createdAt]) {
     if (typeof v === "string" && v.length > 0) {
       const d = new Date(v);
       if (!Number.isNaN(d.getTime())) return d;
@@ -330,27 +304,19 @@ function pickOccurredAt(p: PubRow): Date | null {
   return null;
 }
 
-/**
- * Build a stable dedup key. The publication shape lacks an explicit id,
- * so we hash the natural composite (companyId + year + begin/end). Two
- * runs of the same publication produce the same key.
- */
-function stableSourceRef(companyId: string, p: PubRow): string {
-  const parts = [
+/** Stabil ueber Takte hinweg (Dedup); unveraendert zur alten Quelle. */
+function stableSourceRef(companyId: string, p: PubLike): string {
+  return [
     "publication",
     companyId,
     String(p.year ?? "?"),
     p.begin ?? "",
     p.end ?? "",
-    // Final tiebreaker so two same-period rows that happen to have a
-    // different updatedAt still collapse — fall back to createdAt only
-    // when both period markers are missing.
-    !p.begin && !p.end ? (p.createdAt ?? "") : "",
-  ];
-  return parts.join(":");
+    !p.begin && !p.end ? p.createdAt : "",
+  ].join(":");
 }
 
-function summarisePublication(companyName: string, p: PubRow): string {
+function summarisePublication(companyName: string, p: PubLike): string {
   const lines: string[] = [];
   const period =
     p.year != null
@@ -359,20 +325,11 @@ function summarisePublication(companyName: string, p: PubRow): string {
         ? `Berichtsperiode ${p.begin} → ${p.end}`
         : "Publikation";
   lines.push(`${period} – ${companyName}.`);
-  if (p.revenueVolume?.value != null) {
-    lines.push(`Umsatz: ${fmtMoney(p.revenueVolume)}.`);
-  } else if (p.salesVolume?.value != null) {
-    lines.push(`Erlöse: ${fmtMoney(p.salesVolume)}.`);
-  }
-  if (p.totalAssetsVolume?.value != null) {
-    lines.push(`Bilanzsumme: ${fmtMoney(p.totalAssetsVolume)}.`);
-  }
-  if (p.employeeCount != null) {
-    lines.push(`Beschäftigte: ${p.employeeCount}.`);
-  }
-  if (p.stateOfAffairs?.value) {
-    lines.push(`Lage: ${p.stateOfAffairs.value}.`);
-  }
+  if (p.revenueVolume?.value != null) lines.push(`Umsatz: ${fmtMoney(p.revenueVolume)}.`);
+  else if (p.salesVolume?.value != null) lines.push(`Erlöse: ${fmtMoney(p.salesVolume)}.`);
+  if (p.totalAssetsVolume?.value != null) lines.push(`Bilanzsumme: ${fmtMoney(p.totalAssetsVolume)}.`);
+  if (p.employeeCount != null) lines.push(`Beschäftigte: ${p.employeeCount}.`);
+  if (p.stateOfAffairs?.value) lines.push(`Lage: ${p.stateOfAffairs.value}.`);
   return lines.join(" ");
 }
 
@@ -382,31 +339,5 @@ function fmtMoney(v: VolumeShape): string {
     minimumFractionDigits: 0,
     maximumFractionDigits: 0,
   }).format(v.value);
-  const ccy = v.currency ?? "EUR";
-  return `${formatted} ${ccy}`;
-}
-
-/**
- * Tiny concurrency-limited map. We don't want to add a dependency just
- * for this and the use-site is single — keeping it inline so the source
- * stays a one-file module.
- */
-async function runWithConcurrency<T>(
-  items: T[],
-  limit: number,
-  fn: (item: T) => Promise<void>,
-): Promise<void> {
-  let cursor = 0;
-  const workers: Promise<void>[] = [];
-  for (let i = 0; i < Math.min(limit, items.length); i++) {
-    workers.push(
-      (async () => {
-        while (cursor < items.length) {
-          const idx = cursor++;
-          await fn(items[idx]!);
-        }
-      })(),
-    );
-  }
-  await Promise.all(workers);
+  return `${formatted} ${v.currency ?? "EUR"}`;
 }

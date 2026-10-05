@@ -32,6 +32,7 @@ import { discoveryRouter } from "./v1/discovery";
 import { emailPatternsRouter } from "./v1/email-patterns";
 import { registerJobsRouter } from "./v1/register-jobs";
 import { relevanzRouter } from "./v1/relevanz";
+import { alertsNeuheitenRouter } from "./v1/alerts-neuheiten";
 import { buyingCenterRouter } from "./v1/buying-center";
 
 // /v1 router.
@@ -73,6 +74,8 @@ v1.route("/", companiesCrmRouter);
 v1.route("/", emailPatternsRouter);
 // Relevanz (docs/PLAN_RELEVANZ.md) — eigener Pfad, keine Glob-Kollision.
 v1.route("/", relevanzRouter);
+// Neuheiten fuer den Heartbeat (2026-10-05) — eigener Pfad /alerts/…
+v1.route("/", alertsNeuheitenRouter);
 // Buying Center (docs/PLAN_BUYING_CENTER.md) — eigener Pfad.
 v1.route("/", buyingCenterRouter);
 v1.route("/", companiesRouter);

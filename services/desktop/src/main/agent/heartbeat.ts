@@ -310,7 +310,18 @@ export class Heartbeat extends EventEmitter {
         }
         let verdict;
         try {
-          verdict = await this.judge(c, startedAt);
+          // 2026-10-05: Naehe + Fokuskunde mit in die Bewertung geben,
+          // damit der Judge "laufende Beziehung" von "kalte Firma"
+          // unterscheiden kann. Der Kandidat selbst bleibt unveraendert.
+          const mitBeziehung: HeartbeatCandidate = {
+            ...c,
+            payload: {
+              ...c.payload,
+              nutzerNaehe: this.rangImDurchgang.get(c.companyId) ?? null,
+              fokuskunde: fokus.has(c.companyId),
+            },
+          };
+          verdict = await this.judge(mitBeziehung, startedAt);
         } catch (err) {
           if (err instanceof JudgeProviderUnavailable) {
             // No LLM ready — abandon the rest of the tick rather than

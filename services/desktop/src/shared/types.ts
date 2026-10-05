@@ -1224,7 +1224,8 @@ export type AlertKind =
   | "radar-match"      // Phase 4 Discovery: neuer heißer ICP-Kandidat im Radar
   | "workflow"         // W4: Workflow-Lauf beendet / Freigabe offen
   | "import-finished" // v0.1.593: Vorgang fuer alle Firmen durchgelaufen (mit Fehleruebersicht)
-  | "status";          // Firmenstatus: Insolvenz, Loeschung, Loeschungsankuendigung, Liquidation
+  | "status"           // Firmenstatus: Insolvenz, Loeschung, Loeschungsankuendigung, Liquidation
+  | "contact-change";  // 2026-10-05: Stellen-/Arbeitgeberwechsel, neue Ansprechpartner, geaenderte Firmenkontakte
 
 export interface Alert {
   id: string;

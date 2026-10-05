@@ -41,6 +41,7 @@ const KIND_LABEL: Record<AlertKind, string> = {
   workflow: "Workflow",
   "import-finished": "Vorgang abgeschlossen",
   status: "Firmenstatus",
+  "contact-change": "Kontakt-Wechsel",
 };
 
 const SEVERITY_LABEL: Record<AlertSeverity, string> = {

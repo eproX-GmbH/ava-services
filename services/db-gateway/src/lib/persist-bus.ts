@@ -57,6 +57,9 @@ import { laufAbschliessen, researchFeaturesAusSource } from "./research-lauf";
 import {
   diffManagingDirectors,
   recordManagingDirectorChange,
+  diffStammdaten,
+  recordStammdatenAenderungen,
+  type FeldAenderung,
   type ManagingDirectorDiff,
 } from "./profile-changes";
 import { transactionProgressBus } from "./event-bus";
@@ -787,6 +790,31 @@ export async function schreibeStructuredContent(
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
+    // 2026-10-05: Stammdaten-Diff (Name, Rechtsform, Adresse, Kapital,
+    // Gegenstand) gegen den Bestand, damit der Heartbeat auch Umzuege
+    // und Umfirmierungen sieht. Nur mit Bestand; Erstbefuellung ist
+    // kein Wechsel. Geschrieben wird erst nach dem COMMIT.
+    let stammdatenDiff: FeldAenderung[] = [];
+    try {
+      const bestand = await client.query<{
+        name: string | null;
+        legalForm: string | null;
+        street: string | null;
+        houseNumber: string | null;
+        zipCode: string | null;
+        city: string | null;
+        shareCapital: string | null;
+        corporatePurpose: string | null;
+      }>(
+        `SELECT name, "legalForm", street, "houseNumber", "zipCode", city,
+                "shareCapital"::text AS "shareCapital", "corporatePurpose"
+           FROM "StructuredContent" WHERE "companyId" = $1`,
+        [result.companyId],
+      );
+      if (bestand.rows[0]) stammdatenDiff = diffStammdaten(bestand.rows[0], result);
+    } catch (err) {
+      log.warn({ err, companyId: result.companyId }, "stammdaten diff skipped");
+    }
 
     const upsertRes = await client.query(
       `INSERT INTO "StructuredContent" (
@@ -908,6 +936,9 @@ export async function schreibeStructuredContent(
     // Nach dem COMMIT, damit ein Fehler hier den Persist nie anfasst.
     if (directorDiff) {
       await recordManagingDirectorChange(log, result.companyId, directorDiff);
+    }
+    if (stammdatenDiff.length > 0) {
+      await recordStammdatenAenderungen(log, result.companyId, stammdatenDiff);
     }
     return true;
   } catch (err) {
