@@ -4104,11 +4104,8 @@ const FRESHNESS_STAGES: Array<{
     label: "Website-Crawl",
     hint: "Webseite-Änderungen; ~wöchentlich.",
   },
-  {
-    stage: "companyEvaluation",
-    label: "Bewertung",
-    hint: "LLM-abgeleitete Sicht; aktualisiert sich nach Profil/Kontakt.",
-  },
+  // Bewertung hat keinen eigenen Takt (2026-10-05): sie wird aus den
+  // Vorstufen abgeleitet und laeuft mit, sobald eine davon neu laeuft.
   {
     stage: "structuredContent",
     label: "Strukturierte Inhalte",
@@ -4117,7 +4114,7 @@ const FRESHNESS_STAGES: Array<{
   {
     stage: "companyPublication",
     label: "Publikationen",
-    hint: "Geschäftsberichte; ~quartalsweise.",
+    hint: "Jahresabschlüsse; monatlich (Producer-Sperre 30 Tage).",
   },
 ];
 

@@ -27,6 +27,15 @@ und Bewertung ausnahmslos überfällig.
 - **Drossel unverändert:** 3 Neuanstöße je Stufe und 10 insgesamt pro Stunde,
   5 je Takt (30 Minuten).
 
+## Bewertung (v0.1.751)
+
+Die Bewertung wird in Firmenmatrix und Pipeline aus den Vorstufen abgeleitet
+und läuft mit, sobald eine Vorstufe neu läuft. Ein eigener Anstoß setzt nur
+„läuft“, das nie abgeschlossen wird (Zeitwächter → failed, 29 Fälle an einem
+Tag bei einem Nutzer). Deshalb: Planer und Aufräumer stoßen die Bewertung
+nie einzeln an, Takt-Standard 0 (gespeicherte 14 werden migriert), kein
+Eintrag mehr in den Einstellungen.
+
 ## Grenzen
 
 - Im Worker-Modus ruht die Auffrischung bewusst; auf einem reinen

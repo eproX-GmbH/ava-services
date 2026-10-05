@@ -25,7 +25,7 @@ import type {
 //     most of these without hammering producers).
 //   - structuredContent: 30 days
 //     (slow-changing aggregate; monthly is enough).
-//   - companyEvaluation: 14 days
+//   - companyEvaluation: 0 = nie einzeln (2026-10-05, vorher 14); abgeleitet
 //     (LLM-derived view; refresh after the producers above stabilise).
 //   - companyPublication: 30 days (2026-10-04, vorher 75)
 //     Passt zur 30-Tage-Sperre der Producer; ein unveraenderter Abschluss
@@ -42,7 +42,7 @@ const DEFAULT_PREFS: FreshnessPrefs = {
     website: 7,
     companyProfile: 7,
     companyContact: 7,
-    companyEvaluation: 14,
+    companyEvaluation: 0,
   },
   throttle: {
     perStagePerHour: 3,
@@ -145,6 +145,8 @@ export class FreshnessPrefsStore extends EventEmitter {
     // Standard 30. Nur den unveraenderten alten Standard ersetzen; eigene
     // Werte des Nutzers bleiben.
     if (cadenceDays.companyPublication === 75) cadenceDays.companyPublication = 30;
+    // 2026-10-05: Bewertung wird abgeleitet, eigener Takt sinnlos (alter Standard 14 → 0).
+    if (cadenceDays.companyEvaluation === 14) cadenceDays.companyEvaluation = 0;
     const throttleIn: Partial<FreshnessPrefs["throttle"]> =
       input.throttle ?? {};
     const perStagePerHour =
