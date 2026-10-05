@@ -191,7 +191,7 @@ async function kontaktAenderungen(ids: string[], seit: Date): Promise<NeuheitIte
        LEFT JOIN "Person" p ON p.id = s."personId"
       WHERE s."companyId" = ANY($1::text[])
         AND s."observedAt" > $2
-        AND s.type = ANY($3::text[])
+        AND s.type::text = ANY($3::text[])
       ORDER BY s."observedAt" DESC
       LIMIT 1000`,
     [ids, seit, Object.keys(SIGNAL_TYPEN)],
@@ -216,6 +216,13 @@ async function kontaktAenderungen(ids: string[], seit: Date): Promise<NeuheitIte
        FROM "Employment" e
        JOIN "Person" p ON p.id = e."personId"
       WHERE e."companyId" = ANY($1::text[]) AND e."firstSeen" > $2 AND e."isCurrent"
+        -- Erstbefuellung ist kein Wechsel: nur Firmen, die vor dem Fenster
+        -- schon Ansprechpartner hatten (Befund: 69 "neue" bei einem
+        -- Erst-Crawl).
+        AND EXISTS (
+          SELECT 1 FROM "Employment" e0
+           WHERE e0."companyId" = e."companyId" AND e0."firstSeen" <= $2
+        )
       ORDER BY e."firstSeen" DESC
       LIMIT 3000`,
     [ids, seit],
