@@ -57,6 +57,10 @@ eine Meldung geben. Außerdem kannte der Herzschlag nur zwei Quellen
   (SignalEvent der Kontakt-DB: Stellenwechsel, Arbeitgeberwechsel, geänderte
   Firmen-Telefon/-E-Mail) und `new-contacts` (neue Beschäftigungen je Firma zu
   EINEM Eintrag gebündelt, sonst flutet ein Re-Crawl den Judge).
+- **Grundregel: Ein Erst-Crawl führt nie zu einer Neuheit**, egal welche
+  Daten er bringt. Jede Quelle prüft, ob die Firma vor `since` dort schon
+  Bestand hatte (Publikationen, Ansprechpartner); Registerereignisse
+  entstehen im Persist ohnehin nur mit Bestand.
 - **Neue Alert-Art `contact-change`** („Kontakt-Wechsel“).
 - **Judge** (`alert-judge.ts`): Leitfrage „Was könnte DIESEN Nutzer
   interessieren, und ist jetzt der Moment?“ Nutzerprofil vollständig (Bio,

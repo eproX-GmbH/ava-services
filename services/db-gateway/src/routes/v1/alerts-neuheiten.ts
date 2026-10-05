@@ -16,6 +16,12 @@
 //   new-contacts     neue Beschaeftigungen je Firma, gebuendelt zu EINEM
 //                    Eintrag (sonst flutet ein Re-Crawl den Judge)
 //
+// Grundregel (Vorgabe 2026-10-05): Ein Erst-Crawl fuehrt NIE zu einer
+// Neuheit, egal welche Daten er bringt. Jede Quelle prueft deshalb, ob die
+// Firma vor `since` in dieser Quelle schon Bestand hatte (Publikationen,
+// Ansprechpartner). ProfileChangeEvent entsteht im Persist ohnehin nur mit
+// Bestand (Erstbefuellung = kein Wechsel).
+//
 // Das Zeitfenster ist auf 30 Tage gedeckelt: Der erste Takt nach einem
 // Neustart kommt ohne `since`, und die Dedup-Liste im Desktop faengt
 // Wiederholungen ab. Bewertet wird NICHT hier, sondern lokal beim Nutzer
@@ -153,6 +159,13 @@ async function publikationen(ids: string[], seit: Date): Promise<NeuheitItem[]> 
        LEFT JOIN "TotalAssetsVolume" tv ON tv."companyPublicationId" = cp.id
        LEFT JOIN "StateOfAffairsAggregate" soa ON soa."companyPublicationId" = cp.id
       WHERE cp."companyId" = ANY($1::text[]) AND cp."createdAt" > $2
+        -- Erst-Crawl ist keine Neuheit: nur Firmen, die vor dem Zeitpunkt
+        -- schon Publikationen hatten. Sonst meldet ein Import saemtliche
+        -- Altjahrgaenge auf einmal.
+        AND EXISTS (
+          SELECT 1 FROM "CompanyPublication" cp0
+           WHERE cp0."companyId" = cp."companyId" AND cp0."createdAt" <= $2
+        )
       ORDER BY cp."createdAt" DESC
       LIMIT 1000`,
     [ids, seit],
@@ -192,6 +205,12 @@ async function kontaktAenderungen(ids: string[], seit: Date): Promise<NeuheitIte
       WHERE s."companyId" = ANY($1::text[])
         AND s."observedAt" > $2
         AND s.type::text = ANY($3::text[])
+        -- Erst-Crawl ist keine Neuheit: Signale nur fuer Firmen, die vor
+        -- dem Zeitpunkt schon Ansprechpartner hatten.
+        AND EXISTS (
+          SELECT 1 FROM "Employment" e0
+           WHERE e0."companyId" = s."companyId" AND e0."firstSeen" <= $2
+        )
       ORDER BY s."observedAt" DESC
       LIMIT 1000`,
     [ids, seit, Object.keys(SIGNAL_TYPEN)],
