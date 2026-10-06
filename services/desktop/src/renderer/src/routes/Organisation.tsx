@@ -845,6 +845,7 @@ function Vorgaben({ st, admin, busy, aktion }: { st: OrgState; admin: boolean; b
           personRetentionDays: entwurf.personRetentionDays ?? null,
           apifyEigenerErlaubt: entwurf.apifyEigenerErlaubt !== false,
           relevanzSelbstbestimmt: entwurf.relevanzSelbstbestimmt !== false,
+          chatgptPlanErlaubt: entwurf.chatgptPlanErlaubt !== false,
           relevanzThemaSichtbar: entwurf.relevanzThemaSichtbar !== false,
         },
       });
@@ -1172,6 +1173,7 @@ function Schluessel({ st, admin, busy, aktion }: { st: OrgState; admin: boolean;
           />
         </div>
         <ApifyEigenerSchalter st={st} admin={admin} busy={busy} aktion={aktion} />
+        <ChatgptPlanSchalter st={st} admin={admin} busy={busy} aktion={aktion} />
       </section>
     </>
   );
@@ -1245,6 +1247,49 @@ function ApifyEigenerSchalter({ st, admin, busy, aktion }: { st: OrgState; admin
           <span className="org-check__hint">
             Mitglieder mit eigenem Apify-Token nutzen diesen; der Token der Organisation ist der Rückfall. Ohne Haken gilt
             für alle ausschließlich der Token der Organisation. Liegt nirgends einer, ist Apify nicht verfügbar.
+          </span>
+        </span>
+      </label>
+    </div>
+  );
+}
+
+/**
+ * Vorgabe (docs/PLAN_SIGN_IN_WITH_CHATGPT.md): Duerfen Mitglieder ihr
+ * persoenliches ChatGPT-Abo (Sign in with ChatGPT) in AVA nutzen? Standard an.
+ * Es gibt keinen zentralen Account; jedes Mitglied meldet sich selbst an.
+ */
+function ChatgptPlanSchalter({ st, admin, busy, aktion }: { st: OrgState; admin: boolean; busy: boolean; aktion: Aktion }) {
+  const erlaubt = st.policy.chatgptPlanErlaubt !== false;
+  if (!admin) {
+    return (
+      <p className="muted small">
+        {erlaubt
+          ? "Mitglieder dürfen ihr persönliches ChatGPT-Abo (Plus/Pro) für AVA verwenden."
+          : "Vorgabe der Organisation: Persönliche ChatGPT-Abos werden in AVA nicht verwendet."}
+      </p>
+    );
+  }
+  const umschalten = (naechster: boolean) =>
+    aktion(
+      async () => {
+        await gatewayFetch("/v1/tenants/me/policy", { method: "PUT", body: { chatgptPlanErlaubt: naechster } });
+        await window.api.org.refreshPolicy();
+      },
+      naechster
+        ? "Persönliche ChatGPT-Abos sind jetzt erlaubt. Mitglieder übernehmen die Vorgabe beim nächsten Abgleich."
+        : "Persönliche ChatGPT-Abos sind jetzt gesperrt. Bestehende Verbindungen ruhen; Mitglieder übernehmen die Vorgabe beim nächsten Abgleich.",
+    );
+  return (
+    <div className="org-checks">
+      <label className="org-check">
+        <input type="checkbox" checked={erlaubt} disabled={busy} onChange={(e) => umschalten(e.target.checked)} />
+        <span>
+          Persönliches ChatGPT-Abo erlaubt
+          <span className="org-check__hint">
+            Mitglieder melden sich mit ihrem eigenen ChatGPT-Konto (Plus oder Pro) an; Aufrufe laufen dann über ihr
+            Abo-Kontingent statt über einen Schlüssel. Es gibt keinen gemeinsamen Account der Organisation. Ohne Haken
+            ist die Anmeldung ausgeblendet und bestehende Verbindungen ruhen.
           </span>
         </span>
       </label>

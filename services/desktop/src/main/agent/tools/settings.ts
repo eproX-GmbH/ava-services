@@ -361,6 +361,42 @@ export function buildSettingsTools(deps: SettingsToolDeps): Tool[] {
     },
   });
 
+  // docs/PLAN_SIGN_IN_WITH_CHATGPT.md — Stand der ChatGPT-Verbindung lesen,
+  // Modelle des Kontos laden, Modell waehlen. Die Anmeldung selbst ist
+  // Erst-Consent und bleibt in den Einstellungen (Fenster von OpenAI).
+  const chatgptPlan = defineTool({
+    name: "settings_chatgpt_plan",
+    summary: "ChatGPT-Abo (Sign in with ChatGPT): Stand ansehen, freigegebene Modelle laden, Modell fuer den Chat waehlen.",
+    category: "einstellungen anbieter",
+    description:
+      "ChatGPT-Abo des Nutzers (Sign in with ChatGPT, Plan-Nutzung). `aktion` 'stand' liefert Verbindung, Konto, gewaehltes Modell " +
+      "und die fuer das Konto freigegebenen Modelle; 'modelle' laedt die Liste frisch von OpenAI; 'modell' setzt das Chat-Modell " +
+      "(`modell` = Slug aus der Liste, leer = Standard des Kontos). Die Anmeldung selbst macht der Nutzer in den Einstellungen " +
+      "(Knopf 'Continue with ChatGPT'); verweise dorthin, wenn keine Verbindung besteht. Nutzungslimits verwaltet der Nutzer unter " +
+      "chatgpt.com/settings/usage.",
+    parameters: {
+      type: "object",
+      properties: {
+        aktion: { type: "string", enum: ["stand", "modelle", "modell"] },
+        modell: { type: "string", description: "Modell-Slug fuer aktion 'modell'; leer = Standard" },
+      },
+      required: ["aktion"],
+    },
+    schema: yup
+      .object({
+        aktion: yup.string().oneOf(["stand", "modelle", "modell"]).required(),
+        modell: yup.string().trim().max(120).optional(),
+      })
+      .noUnknown(true),
+    preview: (r: { verbunden?: boolean; modell?: string | null }) =>
+      r.verbunden ? `ChatGPT-Abo verbunden${r.modell ? ` · ${r.modell}` : ""}` : "ChatGPT-Abo nicht verbunden",
+    run: async (args) => {
+      if (args.aktion === "modell") return providers.setChatgptPlanModell(args.modell ?? null);
+      if (args.aktion === "modelle") return providers.ladeChatgptPlanModelle();
+      return providers.chatgptPlanStand();
+    },
+  });
+
   return [
     getProvider,
     setProvider,
@@ -369,5 +405,6 @@ export function buildSettingsTools(deps: SettingsToolDeps): Tool[] {
     setDailyTokenLimit,
     publicationAnalysis,
     setKeySource,
+    chatgptPlan,
   ];
 }

@@ -78,6 +78,43 @@ Was gleich bleibt: Embeddings, Realtime (Sprachmodus), Deep Research und
 Audio laufen **nicht** über den Plan. Dafür braucht es weiter einen
 API-Schlüssel (eigener oder Organisation) oder lokale Modelle.
 
+## Stand (v0.1.761, 2026-10-06)
+
+Entscheidungen des Operators: Interessenformular eingereicht; bis zur
+Antwort laeuft der dynamische Flow; Hintergrund-KI nutzt das Abo
+**standardmaessig mit**, mit Hinweis-Dialog vor der Anmeldung (Limit in
+ChatGPT setzen).
+
+Umgesetzt S1–S4:
+
+- `main/auth/siwc-oauth.ts` (Parameter, PKCE, Host-ID, Callback,
+  Token-Tausch, Refresh) und `main/auth/siwc-oauth-flow.ts`
+  (Anmeldefenster, Redirect-Abfang ohne lokalen Server). Redirect
+  `http://127.0.0.1:1456/auth/callback`.
+- Speicher: `OpenAISubscriptionRecord.flow` „codex“ | „plan“ plus
+  `clientId`, `subject`, `email`, `idToken`, `scopes`, `planModel`.
+  Refresher verzweigt nach `flow`. Altbestand bleibt Codex, bis der Nutzer
+  neu verbindet.
+- Provider: `createOpenAIPlanModel` (api.openai.com/v1, Bearer,
+  `store:false`), `listePlanModelle` (GET /v1/models, 30 Minuten gecacht),
+  Fehlerabbildung `subscription_sharing_*` in verstaendliche Saetze.
+  Gewaehltes Modell je Verbindung, sonst `is_default` bzw. erstes.
+- Organisation: `TenantPolicy.chatgptPlanErlaubt` (Standard an),
+  Schalter in der Organisation, Desktop blendet Karte und Modus ohne
+  Freigabe aus; eine gespeicherte Verbindung ruht dann.
+- Oberflaeche: Karte „ChatGPT-Abo“ mit „Continue with ChatGPT“ (offizielles
+  Logo, englischer Pflichttext), zweistufig mit Limit-Hinweis, Konto,
+  Modellauswahl aus der Kontoliste, „Manage usage“, Trennen; Erstlauf-
+  Assistent und Fehlerbanner nutzen den neuen Flow. Chat-Werkzeug
+  `settings_chatgpt_plan` (stand | modelle | modell).
+
+Offen: S5 Verbrauchsanzeige (Kennzeichnung „ChatGPT-Abo“ je Aufruf), S6
+Abloesung Codex nach zwei stabilen Releases, S7 manuelle Tests mit einem
+Plus/Pro-Konto (Erstanmeldung, Wiederanmeldung, 429-Pfad, Trennen in
+ChatGPT). Producer (website, profile, contact …) laufen weiter ueber
+Schluessel oder lokale Modelle: Sie nutzen generateObject ohne Streaming,
+was der Plan nicht erlaubt.
+
 ## Umsetzung
 
 ### S1 OAuth-Client (Desktop main)

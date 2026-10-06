@@ -146,6 +146,22 @@ export interface OpenAISubscriptionRecord {
   expiresAt: number;
   /** ChatGPT-Account-ID aus dem OAuth-JWT. Optional. */
   accountId?: string;
+  /**
+   * docs/PLAN_SIGN_IN_WITH_CHATGPT.md — Herkunft der Verbindung:
+   * "codex" = alter Umweg ueber chatgpt.com/backend-api (Standard fuer
+   * Altbestand), "plan" = offizieller Sign-in-with-ChatGPT-Flow mit
+   * Plan-Nutzung ueber api.openai.com.
+   */
+  flow?: "codex" | "plan";
+  /** Ausgegebene oaiapp_-Client-ID dieser Installation (nur plan). */
+  clientId?: string;
+  /** `sub` des ID-Tokens: Kontoidentitaet (nur plan). */
+  subject?: string;
+  email?: string;
+  idToken?: string;
+  scopes?: string[];
+  /** Vom Nutzer gewaehltes Plan-Modell (Slug aus /v1/models). */
+  planModel?: string;
 }
 
 export interface ProviderConfigStoreEvents {
@@ -696,6 +712,13 @@ export class ProviderConfigStore extends EventEmitter {
               parsed.accountId.length > 0
                 ? parsed.accountId
                 : undefined,
+            flow: parsed.flow === "plan" ? "plan" : "codex",
+            clientId: typeof parsed.clientId === "string" && parsed.clientId.length > 0 ? parsed.clientId : undefined,
+            subject: typeof parsed.subject === "string" ? parsed.subject : undefined,
+            email: typeof parsed.email === "string" ? parsed.email : undefined,
+            idToken: typeof parsed.idToken === "string" ? parsed.idToken : undefined,
+            scopes: Array.isArray(parsed.scopes) ? parsed.scopes.filter((x): x is string => typeof x === "string") : undefined,
+            planModel: typeof parsed.planModel === "string" && parsed.planModel.length > 0 ? parsed.planModel : undefined,
           };
         }
       } catch {

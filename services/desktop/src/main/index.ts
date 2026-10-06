@@ -3249,12 +3249,16 @@ app.whenReady().then(async () => {
   onOrgPolicyChange((neu, alt) => {
     // Apify-Vorgabe: Stellt die Organisation um, ob der eigene Token den ihren
     // ueberschreiben darf, muss die Auswahl sofort neu berechnet werden.
-    if ((neu.apifyEigenerErlaubt !== false) !== (alt.apifyEigenerErlaubt !== false)) {
+    if (
+      (neu.apifyEigenerErlaubt !== false) !== (alt.apifyEigenerErlaubt !== false) ||
+      (neu.chatgptPlanErlaubt !== false) !== (alt.chatgptPlanErlaubt !== false)
+    ) {
       providers.setOrgContext({
         providers: providers.getOrgProviders(),
         gatewayUrl: APP_CONFIG.gatewayUrl,
         getToken: () => auth.getAccessToken(),
         apifyEigenerErlaubt: neu.apifyEigenerErlaubt !== false,
+        chatgptPlanErlaubt: neu.chatgptPlanErlaubt !== false,
       });
     }
     const an = (k: string) => neu.features[k] !== false;
@@ -4187,6 +4191,7 @@ app.whenReady().then(async () => {
         // Vorgabe der Organisation: Darf der eigene Apify-Token den der
         // Organisation ueberschreiben? Fehlt sie, gilt "ja" wie bisher.
         apifyEigenerErlaubt: getOrgPolicy().apifyEigenerErlaubt !== false,
+        chatgptPlanErlaubt: getOrgPolicy().chatgptPlanErlaubt !== false,
       });
       // Deep Research ueber den OpenAI-Schluessel der Organisation.
       ResearchFeaturesStore.shared().setOrgOpenaiAvailable(Boolean(provs.openai));
@@ -6345,6 +6350,78 @@ app.whenReady().then(async () => {
   ipcMain.handle("agent:clearOpenAISubscriptionToken", () => {
     providers.clearOpenAISubscriptionToken();
     return { ok: true };
+  });
+
+  // docs/PLAN_SIGN_IN_WITH_CHATGPT.md — offizieller „Sign in with ChatGPT“-
+  // Flow mit Plan-Nutzung. Konten sind persoenlich; die Installations-ID
+  // liegt je Geraet, die Verbindung je Account (verschluesselt).
+  ipcMain.handle(
+    "agent:connectChatgptPlan",
+    async (event): Promise<{ ok: true; email: string | null; planScope: boolean } | { ok: false; error: string }> => {
+      if (providers.isProviderLocked()) {
+        return { ok: false, error: "Organisationsvorgabe: Anbieter und Schlüssel legt deine Organisation fest; ein eigenes ChatGPT-Abo ist gesperrt." };
+      }
+      if (!providers.chatgptPlanErlaubt()) {
+        return { ok: false, error: "Organisationsvorgabe: Das persönliche ChatGPT-Abo ist in dieser Organisation nicht erlaubt." };
+      }
+      try {
+        const parent =
+          BrowserWindow.fromWebContents(event.sender) ??
+          BrowserWindow.getFocusedWindow() ??
+          BrowserWindow.getAllWindows()[0] ??
+          null;
+        const { ladeOderErzeugeHostId } = await import("./auth/siwc-oauth");
+        const { runSiwcOAuth } = await import("./auth/siwc-oauth-flow");
+        const hostId = ladeOderErzeugeHostId(join(app.getPath("userData"), "siwc-host.json"));
+        const alt = await providerConfigStore.getOpenAISubscriptionRecord().catch(() => null);
+        const vorherige = alt && alt.flow === "plan" ? alt : null;
+        const ergebnis = await runSiwcOAuth({
+          hostId,
+          clientId: vorherige?.clientId ?? null,
+          idTokenHint: vorherige?.idToken ?? null,
+          loginHint: vorherige?.email ?? null,
+          parent,
+        });
+        providers.setOpenAISubscriptionRecord({
+          accessToken: ergebnis.accessToken,
+          refreshToken: ergebnis.refreshToken,
+          expiresIn: ergebnis.expiresIn,
+          flow: "plan",
+          clientId: ergebnis.clientId,
+          subject: ergebnis.subject,
+          email: ergebnis.email,
+          idToken: ergebnis.idToken,
+          scopes: (ergebnis.scope ?? "").split(/[\s+]+/).filter(Boolean),
+          // Gewaehltes Modell behalten, wenn dasselbe Konto neu verbunden wird.
+          planModel: vorherige && vorherige.subject === ergebnis.subject ? vorherige.planModel : undefined,
+        });
+        try {
+          providers.setProvider("openai");
+        } catch {
+          /* Token gespeichert, Modus auf subscription — reicht fuer die Karte */
+        }
+        // Modellliste gleich laden, damit die Auswahl sofort da ist (best-effort).
+        await providers.ladeChatgptPlanModelle().catch(() => undefined);
+        return { ok: true, email: ergebnis.email ?? null, planScope: ergebnis.planScope };
+      } catch (err) {
+        return { ok: false, error: err instanceof Error ? err.message : String(err) };
+      }
+    },
+  );
+  ipcMain.handle("agent:chatgptPlanStand", () => providers.chatgptPlanStand());
+  ipcMain.handle("agent:ladeChatgptPlanModelle", async () => {
+    try {
+      return { ok: true as const, stand: await providers.ladeChatgptPlanModelle() };
+    } catch (err) {
+      return { ok: false as const, error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+  ipcMain.handle("agent:setChatgptPlanModell", async (_e, modell: string | null) => {
+    try {
+      return { ok: true as const, stand: await providers.setChatgptPlanModell(modell) };
+    } catch (err) {
+      return { ok: false as const, error: err instanceof Error ? err.message : String(err) };
+    }
   });
 
   // Memory IPC (Phase 8.d). The probe is cached on the MemoryStore — these

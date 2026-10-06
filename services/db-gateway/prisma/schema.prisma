@@ -500,6 +500,9 @@ model TenantPolicy {
   /// true = die Setzung der Organisation ist Vorgabe, das Mitglied darf
   /// abweichen. false = die Setzung gilt verbindlich, kein Schalter.
   relevanzSelbstbestimmt Boolean  @default(true)
+  /// Duerfen Mitglieder ihr persoenliches ChatGPT-Abo (Sign in with ChatGPT)
+  /// in AVA nutzen? Standard true (docs/PLAN_SIGN_IN_WITH_CHATGPT.md).
+  chatgptPlanErlaubt     Boolean  @default(true)
   /// Sehen Mitglieder, wie viele Kolleginnen und Kollegen eine Firma gerade
   /// warm haben? Nur als Anzahl, nie mit Namen (Plan Abschnitt 10).
   relevanzThemaSichtbar  Boolean  @default(true)

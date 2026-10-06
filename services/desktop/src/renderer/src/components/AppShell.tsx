@@ -230,7 +230,7 @@ function ConnectionHealthBanner() {
           signature: `llm:${kind}:${bundle.status.errorMessage ?? "not-ready"}`,
           message: `ChatGPT-Abo ist nicht verbunden — AVA kann gerade keine Anfragen verarbeiten.`,
           fixLabel: "Neu anmelden",
-          fix: () => window.api.agent.connectOpenAISubscription(),
+          fix: () => window.api.agent.connectChatgptPlan(),
         });
       }
     } catch {

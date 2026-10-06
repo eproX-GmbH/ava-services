@@ -6,7 +6,14 @@ import type {
   ToolSet,
 } from "ai";
 import { createLLM, type RuntimeProvider } from "@ava/ai-provider";
-import { createOpenAISubscriptionModel } from "./openai-subscription-model";
+import {
+  createOpenAIPlanModel,
+  createOpenAISubscriptionModel,
+  getCachedPlanModelle,
+  listePlanModelle,
+  standardPlanModell,
+} from "./openai-subscription-model";
+import type { OpenAISubscriptionRecord } from "./store";
 import type { OllamaSupervisor } from "../../ollama-supervisor";
 import type { AgentMessage, LlmProviderKind, OrgQuotaExceeded } from "../../../shared/types";
 
@@ -149,6 +156,8 @@ export interface AiSdkProviderOptions {
    */
   getOpenAIAuthMode?: () => "api-key" | "subscription";
   getOpenAISubscriptionToken?: () => Promise<string | null>;
+  /** docs/PLAN_SIGN_IN_WITH_CHATGPT.md — ganzer Record (flow, planModel). */
+  getOpenAISubscriptionRecord?: () => Promise<OpenAISubscriptionRecord | null>;
   getOpenAISubscriptionAccountId?: () => Promise<string | null>;
   hasStoredOpenAISubscriptionToken?: () => boolean;
   onOpenAISubscriptionTokenChanged?: (cb: () => void) => () => void;
@@ -173,6 +182,7 @@ export class AiSdkProvider extends EventEmitter implements LlmProvider {
   private readonly hasStoredAnthropicSubscriptionToken?: () => boolean;
   private readonly getOpenAIAuthMode?: () => "api-key" | "subscription";
   private readonly getOpenAISubscriptionToken?: () => Promise<string | null>;
+  private readonly getOpenAISubscriptionRecord?: () => Promise<OpenAISubscriptionRecord | null>;
   private readonly getOpenAISubscriptionAccountId?: () => Promise<string | null>;
   private readonly hasStoredOpenAISubscriptionToken?: () => boolean;
 
@@ -190,6 +200,7 @@ export class AiSdkProvider extends EventEmitter implements LlmProvider {
       opts.hasStoredAnthropicSubscriptionToken;
     this.getOpenAIAuthMode = opts.getOpenAIAuthMode;
     this.getOpenAISubscriptionToken = opts.getOpenAISubscriptionToken;
+    this.getOpenAISubscriptionRecord = opts.getOpenAISubscriptionRecord;
     this.getOpenAISubscriptionAccountId = opts.getOpenAISubscriptionAccountId;
     this.hasStoredOpenAISubscriptionToken =
       opts.hasStoredOpenAISubscriptionToken;
@@ -341,6 +352,7 @@ export class AiSdkProvider extends EventEmitter implements LlmProvider {
     let anthropicSubscriptionToken: string | undefined;
     let openaiSubscriptionToken: string | undefined;
     let openaiSubscriptionAccountId: string | undefined;
+    let openaiPlanRecord: OpenAISubscriptionRecord | null = null;
     // O5 — Organisationsschluessel: Aufruf ueber das Gateway mit dem
     // Nutzer-JWT; Abo-/Key-Pfade werden dann nicht angefasst.
     const gatewayProxy = this.kind === "ollama" ? null : ((await this.getGatewayProxy?.()) ?? null);
@@ -362,6 +374,8 @@ export class AiSdkProvider extends EventEmitter implements LlmProvider {
         (await this.getOpenAISubscriptionToken?.()) ?? undefined;
       openaiSubscriptionAccountId =
         (await this.getOpenAISubscriptionAccountId?.()) ?? undefined;
+      openaiPlanRecord = (await this.getOpenAISubscriptionRecord?.()) ?? null;
+      if (openaiPlanRecord && openaiPlanRecord.flow !== "plan") openaiPlanRecord = null;
       if (
         !openaiSubscriptionToken &&
         this.hasStoredOpenAISubscriptionToken?.()
@@ -413,7 +427,20 @@ export class AiSdkProvider extends EventEmitter implements LlmProvider {
     // v0.1.353 — ChatGPT-Abo-Pfad läuft über den Desktop-lokalen Builder
     // (Codex-Endpunkt), NICHT über createLLM — siehe
     // openai-subscription-model.ts für den Grund (CI-vendor-drift-Guard).
-    const model = openaiSubscriptionToken
+    // docs/PLAN_SIGN_IN_WITH_CHATGPT.md — Plan-Nutzung: oeffentliche Responses
+    // API mit dem vom Nutzer gewaehlten Modell (sonst Standard des Kontos).
+    let planModellId: string | null = null;
+    if (openaiSubscriptionToken && openaiPlanRecord) {
+      planModellId = openaiPlanRecord.planModel ?? null;
+      if (!planModellId) {
+        const liste = getCachedPlanModelle(openaiSubscriptionToken) ?? (await listePlanModelle(openaiSubscriptionToken).catch(() => []));
+        planModellId = standardPlanModell(liste);
+      }
+      if (!planModellId) throw new Error("Dein ChatGPT-Konto gibt fuer AVA kein Modell frei. Pruefe chatgpt.com/settings/usage oder waehle einen API-Schluessel.");
+    }
+    const model = openaiSubscriptionToken && openaiPlanRecord && planModellId
+      ? createOpenAIPlanModel({ model: planModellId, accessToken: openaiSubscriptionToken })
+      : openaiSubscriptionToken
       ? createOpenAISubscriptionModel({
           model: effectiveModel,
           accessToken: openaiSubscriptionToken,

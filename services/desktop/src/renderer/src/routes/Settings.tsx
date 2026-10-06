@@ -27,7 +27,8 @@ import { useConfigStore } from "../store/config";
 import { useUpdaterStore } from "../store/updater";
 import { humanizeUpdaterError } from "../lib/updater-error";
 import { classifyProducerError } from "../lib/producer-error";
-import { USER_PROFILE_BIO_CAP } from "../../../shared/types";
+import { USER_PROFILE_BIO_CAP, type ChatgptPlanStand } from "../../../shared/types";
+import chatgptLogo from "../assets/chatgpt-logo-white.svg";
 import type {
   AlertCadenceMinutes,
   AlertCandidateDecision,
@@ -2069,7 +2070,9 @@ export function ProviderSection() {
     hasKey.anthropic || hasAnthropicSubscriptionToken;
   // v0.1.353 — analog: OpenAI hat eine Credential, wenn ein API-Key ODER
   // eine ChatGPT-Abo-Verbindung existiert.
-  const hasOpenAISubscriptionToken = cfg.data.hasOpenAISubscriptionToken;
+  const chatgptPlan = cfg.data.chatgptPlan ?? { flow: null, email: null, modell: null, planScope: false, erlaubt: true, modelle: [] };
+  // Vorgabe der Organisation: ohne Freigabe zaehlt eine gespeicherte Verbindung nicht.
+  const hasOpenAISubscriptionToken = cfg.data.hasOpenAISubscriptionToken && chatgptPlan.erlaubt;
   const openaiHasAnyCredential = hasKey.openai || hasOpenAISubscriptionToken;
   const activeKind = config.kind;
   const activeModelId = config.models[activeKind] || "";
@@ -2135,7 +2138,9 @@ export function ProviderSection() {
           (siehe Provider-Liste unten). */}
       {/* v0.1.553 — unter Anbieter-Sperre gibt es keinen Abo-Weg: die
           Organisation legt Schluessel fest, eigene Abos sind gesperrt. */}
-      {!providerLock && (
+      {/* docs/PLAN_SIGN_IN_WITH_CHATGPT.md — ohne Freigabe der Organisation
+          ist die Karte ganz weg (Regel: Gesperrtes komplett ausblenden). */}
+      {!providerLock && chatgptPlan.erlaubt && (
         <div className="subscription-hero-grid">
           <div className="subscription-hero-card">
             <OpenAISubscriptionContent
@@ -2143,6 +2148,7 @@ export function ProviderSection() {
               hasOpenAIApiKey={hasKey.openai}
               openaiAuthMode={config.openaiAuthMode ?? "api-key"}
               activeKind={activeKind}
+              plan={chatgptPlan}
             />
           </div>
         </div>
@@ -2158,7 +2164,9 @@ export function ProviderSection() {
           <span className="active-config-card__label">{chatUeberAbo ? "Chat-Modell" : "Aktives Modell"}</span>
           <span className="active-config-card__value">
             {chatUeberAbo
-              ? (codexChatModel ? `${codexChatModel} · wählt dein ChatGPT-Abo (Codex)` : "wählt dein ChatGPT-Abo (Codex) beim ersten Aufruf")
+              ? chatgptPlan.flow === "plan"
+                ? `${chatgptPlan.modelle.find((m) => m.id === chatgptPlan.modell)?.label ?? chatgptPlan.modell ?? "Standard des Kontos"} · ChatGPT-Abo`
+                : (codexChatModel ? `${codexChatModel} · wählt dein ChatGPT-Abo (Codex)` : "wählt dein ChatGPT-Abo (Codex) beim ersten Aufruf")
               : <>{activeEntry?.label ?? activeModelId ?? "—"}{" · "}{PROVIDER_LABEL[activeKind]}</>}
           </span>
         </div>
@@ -2257,8 +2265,9 @@ export function ProviderSection() {
           <div className="field">
             <span>Chat-Modell</span>
             <p className="muted small" style={{ margin: 0 }}>
-              Bestimmt dein ChatGPT-Abo: Codex wählt aus den für dein Konto freigeschalteten Modellen
-              {codexChatModel ? ` (aktuell ${codexChatModel})` : ""}. Eine eigene Auswahl greift hier nicht.
+              {chatgptPlan.flow === "plan"
+                ? "Wählst du oben in der ChatGPT-Abo-Karte aus den für dein Konto freigegebenen Modellen."
+                : <>Bestimmt dein ChatGPT-Abo: Codex wählt aus den für dein Konto freigeschalteten Modellen{codexChatModel ? ` (aktuell ${codexChatModel})` : ""}. Eine eigene Auswahl greift hier nicht.</>}
             </p>
           </div>
         ) : (
@@ -2431,29 +2440,66 @@ interface OpenAISubscriptionCardProps {
   hasOpenAIApiKey: boolean;
   openaiAuthMode: "api-key" | "subscription";
   activeKind: LlmProviderKind;
+  /** docs/PLAN_SIGN_IN_WITH_CHATGPT.md — Kurzfassung aus dem Bundle. */
+  plan: { flow: "codex" | "plan" | null; email: string | null; modell: string | null; planScope: boolean; erlaubt: boolean; modelle: Array<{ id: string; label: string; istStandard: boolean }> };
 }
 
+const CHATGPT_USAGE_URL = "https://chatgpt.com/settings/usage";
+
+/**
+ * ChatGPT-Abo ueber „Sign in with ChatGPT“ (docs/PLAN_SIGN_IN_WITH_CHATGPT.md).
+ * Pflichten aus den OpenAI-Richtlinien: Button „Continue with ChatGPT“ mit
+ * dem offiziellen Logo, Hinweis auf die Plan-Nutzung, Link zu Nutzung und
+ * Limits in ChatGPT. Die deutsche Erklaerung steht darunter.
+ */
 function OpenAISubscriptionContent({
   hasToken,
   hasOpenAIApiKey,
   openaiAuthMode,
   activeKind,
+  plan,
 }: OpenAISubscriptionCardProps) {
   const qc = useQueryClient();
   const [hint, setHint] = useState<string | null>(null);
   const [hintKind, setHintKind] = useState<"ok" | "warn" | "error">("ok");
+  // Zwei Schritte: erst der Hinweis auf Limits (Hintergrund-KI nutzt das Abo
+  // mit), dann das Anmeldefenster von OpenAI.
+  const [hinweisOffen, setHinweisOffen] = useState(false);
+  const [stand, setStand] = useState<ChatgptPlanStand | null>(null);
+
+  const istPlan = hasToken && plan.flow === "plan";
+  const istCodex = hasToken && plan.flow === "codex";
+
+  useEffect(() => {
+    if (!istPlan) return;
+    let aktiv = true;
+    void window.api.agent.ladeChatgptPlanModelle().then((r) => {
+      if (!aktiv) return;
+      if (r.ok) setStand(r.stand);
+      else { setHint(r.error); setHintKind("warn"); }
+    });
+    return () => { aktiv = false; };
+  }, [istPlan, plan.email]);
 
   const connect = useMutation({
     mutationFn: async () => {
-      const result = await window.api.agent.connectOpenAISubscription();
+      const result = await window.api.agent.connectChatgptPlan();
       if (!result.ok) throw new Error(result.error);
+      return result;
     },
-    onSuccess: () => {
-      setHint("Mit ChatGPT verbunden.");
-      setHintKind("ok");
+    onSuccess: (r) => {
+      setHinweisOffen(false);
+      if (r.planScope) {
+        setHint(`Mit ChatGPT verbunden${r.email ? ` (${r.email})` : ""}. Aufrufe laufen über dein Abo.`);
+        setHintKind("ok");
+      } else {
+        setHint("Angemeldet, aber ohne Freigabe für die Plan-Nutzung. Erlaube AVA in ChatGPT → Settings → Usage, dein Abo zu nutzen, und verbinde erneut.");
+        setHintKind("warn");
+      }
       qc.invalidateQueries({ queryKey: ["agent", "providerConfig"] });
     },
     onError: (err) => {
+      setHinweisOffen(false);
       setHint(err instanceof Error ? err.message : String(err));
       setHintKind("error");
     },
@@ -2462,84 +2508,132 @@ function OpenAISubscriptionContent({
   const clear = useMutation({
     mutationFn: () => window.api.agent.clearOpenAISubscriptionToken(),
     onSuccess: () => {
-      setHint("ChatGPT-Verbindung getrennt.");
+      setHint("ChatGPT-Verbindung getrennt. In ChatGPT → Settings → Usage kannst du AVA zusätzlich entfernen.");
       setHintKind("ok");
+      setStand(null);
       qc.invalidateQueries({ queryKey: ["agent", "providerConfig"] });
     },
   });
 
-  const isActiveSubscription =
-    activeKind === "openai" && openaiAuthMode === "subscription";
+  const waehleModell = useMutation({
+    mutationFn: async (modell: string) => {
+      const r = await window.api.agent.setChatgptPlanModell(modell || null);
+      if (!r.ok) throw new Error(r.error);
+      return r.stand;
+    },
+    onSuccess: (st) => {
+      setStand(st);
+      qc.invalidateQueries({ queryKey: ["agent", "providerConfig"] });
+    },
+    onError: (err) => {
+      setHint(err instanceof Error ? err.message : String(err));
+      setHintKind("error");
+    },
+  });
+
+  const isActiveSubscription = activeKind === "openai" && openaiAuthMode === "subscription";
+  const modelle = stand?.modelle ?? plan.modelle;
+  const gewaehlt = stand?.modell ?? plan.modell ?? "";
+
+  const siwcButton = (label: string) => (
+    <button
+      type="button"
+      className="siwc-button"
+      onClick={() => (hasToken ? connect.mutate() : setHinweisOffen(true))}
+      disabled={connect.isPending}
+      title="Continue with ChatGPT"
+    >
+      <img src={chatgptLogo} alt="" width={18} height={18} aria-hidden="true" />
+      <span>{connect.isPending ? "Connecting…" : label}</span>
+    </button>
+  );
 
   return (
     <div className="provider-subscription" id="chatgpt-abo">
-      <h4>ChatGPT-Abo — nur für den Chat</h4>
+      <h4>ChatGPT-Abo</h4>
       <p className="muted small">
-        Optionaler Zusatz: Gespräche mit AVA laufen über dein ChatGPT-Plus/Pro/Team-Abo
-        ohne Extra-Kosten. <strong>Das Abo ersetzt keinen API-Schlüssel:</strong> Die
-        Hintergrund-Verarbeitung (Firmenprofile, Jahresabschlüsse, Publikationen) braucht
-        einen eigenen API-Schlüssel, ein lokales Modell oder den Schlüssel deiner
-        Organisation. AVA spricht denselben Codex-Endpunkt an wie OpenAIs Codex-CLI
-        (Abo-Kontingent im rollierenden 5-Stunden-Fenster; experimentell, der Endpunkt
-        ist von OpenAI nicht offiziell dokumentiert).
+        Melde dich mit deinem persönlichen ChatGPT-Konto an. <strong>Eligible AI requests in this app use your ChatGPT plan.</strong>{" "}
+        Chat und Hintergrund-KI von AVA laufen dann über dein Plus- oder Pro-Kontingent, mit einem Modell deiner Wahl.
+        Nicht über das Abo laufen Embeddings, Sprachmodus, Deep Research und die Verarbeitungs-Producer
+        (Firmenprofile, Jahresabschlüsse); dafür braucht es weiter einen API-Schlüssel, den Schlüssel deiner
+        Organisation oder ein lokales Modell. Nutzung und Limits verwaltest du in{" "}
+        <a href={CHATGPT_USAGE_URL} target="_blank" rel="noreferrer">ChatGPT → Settings → Usage</a>.
       </p>
 
       {hasToken ? (
         <div className="subscription-connected">
           <p className="muted">
-            Status:{" "}
-            <span className="badge ok">Verbunden</span>
-            {isActiveSubscription ? " · aktiv für den Chat" : ""}
+            Status: <span className="badge ok">Verbunden</span>
+            {plan.email ? ` · ${plan.email}` : ""}
+            {isActiveSubscription ? " · aktiv" : ""}
+            {istCodex && (
+              <>
+                {" "}· <span className="badge warn" title="Alter Codex-Umweg; bitte neu verbinden">Alte Verbindung</span>
+              </>
+            )}
+            {istPlan && !plan.planScope && (
+              <>
+                {" "}· <span className="badge warn">ohne Plan-Freigabe</span>
+              </>
+            )}
           </p>
+          {istCodex && (
+            <p className="muted small">
+              Diese Verbindung nutzt noch den alten Codex-Weg mit automatischer Modellwahl. Verbinde dich neu über
+              „Continue with ChatGPT“, um dein Modell selbst zu wählen und den offiziellen Weg zu nutzen.
+            </p>
+          )}
+          {istPlan && (
+            <label className="field" style={{ maxWidth: 420 }}>
+              <span>Modell für AVA</span>
+              <select
+                value={gewaehlt}
+                onChange={(e) => waehleModell.mutate(e.target.value)}
+                disabled={waehleModell.isPending || modelle.length === 0}
+              >
+                {modelle.length === 0 && <option value="">Modelle werden geladen…</option>}
+                {modelle.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.label}{m.istStandard ? " (Standard des Kontos)" : ""}
+                  </option>
+                ))}
+              </select>
+              <span className="muted small">
+                Für dein Konto freigegebene Modelle, in der Reihenfolge von OpenAI. Gilt für Chat und Hintergrund-KI.
+              </span>
+            </label>
+          )}
           <div className="row">
-            <button
-              type="button"
-              className="secondary"
-              onClick={() => connect.mutate()}
-              disabled={connect.isPending}
-            >
-              {connect.isPending ? "Verbinde…" : "Neu verbinden"}
-            </button>
-            <button
-              type="button"
-              className="danger"
-              onClick={() => clear.mutate()}
-              disabled={clear.isPending}
-            >
+            {siwcButton(istCodex ? "Continue with ChatGPT" : "Reconnect with ChatGPT")}
+            <a className="btn" href={CHATGPT_USAGE_URL} target="_blank" rel="noreferrer">Manage usage</a>
+            <button type="button" className="danger" onClick={() => clear.mutate()} disabled={clear.isPending}>
               Trennen
             </button>
           </div>
         </div>
+      ) : hinweisOffen ? (
+        <div className="siwc-hinweis" role="note">
+          <p style={{ marginTop: 0 }}>
+            <strong>Bevor du dich anmeldest:</strong> AVA nutzt dein ChatGPT-Abo nicht nur im Chat, sondern auch für die
+            Hintergrund-KI (Meldungen, Vorschläge, Auffrischung). Das verbraucht dein wöchentliches Kontingent, das du
+            mit allen verbundenen Apps teilst. Setze deshalb in{" "}
+            <a href={CHATGPT_USAGE_URL} target="_blank" rel="noreferrer">ChatGPT → Settings → Usage</a> ein Limit für
+            AVA, zum Beispiel 30 Prozent. Du kannst die Verbindung dort jederzeit trennen.
+          </p>
+          <div className="row">
+            {siwcButton("Continue with ChatGPT")}
+            <button type="button" className="btn" onClick={() => setHinweisOffen(false)}>Abbrechen</button>
+          </div>
+        </div>
       ) : (
-        <button
-          type="button"
-          className="primary"
-          onClick={() => connect.mutate()}
-          disabled={connect.isPending}
-        >
-          {connect.isPending ? "Verbinde…" : "Mit ChatGPT verbinden"}
-        </button>
+        <div className="row">{siwcButton("Continue with ChatGPT")}</div>
       )}
 
       {!hasOpenAIApiKey && !hasToken && (
-        <p className="muted small">
-          Alternativ kannst du oben einen OpenAI-API-Schlüssel hinterlegen.
-        </p>
+        <p className="muted small">Alternativ kannst du unten einen OpenAI-API-Schlüssel hinterlegen.</p>
       )}
 
-      {hint && (
-        <p
-          className={
-            hintKind === "error"
-              ? "error"
-              : hintKind === "warn"
-                ? "muted"
-                : "muted"
-          }
-        >
-          {hint}
-        </p>
-      )}
+      {hint && <p className={hintKind === "error" ? "error" : "muted"}>{hint}</p>}
     </div>
   );
 }

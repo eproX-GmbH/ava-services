@@ -1053,6 +1053,19 @@ const api = {
     > => ipcRenderer.invoke("agent:connectOpenAISubscription"),
     clearOpenAISubscriptionToken: (): Promise<{ ok: true }> =>
       ipcRenderer.invoke("agent:clearOpenAISubscriptionToken"),
+    /** docs/PLAN_SIGN_IN_WITH_CHATGPT.md — offizieller Flow mit Plan-Nutzung. */
+    connectChatgptPlan: (): Promise<
+      { ok: true; email: string | null; planScope: boolean } | { ok: false; error: string }
+    > => ipcRenderer.invoke("agent:connectChatgptPlan"),
+    chatgptPlanStand: (): Promise<import("../shared/types").ChatgptPlanStand> =>
+      ipcRenderer.invoke("agent:chatgptPlanStand"),
+    ladeChatgptPlanModelle: (): Promise<
+      { ok: true; stand: import("../shared/types").ChatgptPlanStand } | { ok: false; error: string }
+    > => ipcRenderer.invoke("agent:ladeChatgptPlanModelle"),
+    setChatgptPlanModell: (
+      modell: string | null,
+    ): Promise<{ ok: true; stand: import("../shared/types").ChatgptPlanStand } | { ok: false; error: string }> =>
+      ipcRenderer.invoke("agent:setChatgptPlanModell", modell),
 
     // Memory (Phase 8.d). The probe is the FirstRunWizard's signal that
     // transcripts will (or won't) survive a restart; `listConversations`

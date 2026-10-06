@@ -164,6 +164,13 @@ export interface OrgPolicy {
    * warm haben? Nur als Anzahl, nie mit Namen (docs/PLAN_RELEVANZ.md, 10).
    */
   relevanzThemaSichtbar?: boolean;
+  /**
+   * Duerfen Mitglieder ihr persoenliches ChatGPT-Abo (Sign in with ChatGPT,
+   * Plan-Nutzung) in AVA verwenden? true (Standard). false = Karte und
+   * Modus ausgeblendet, bestehende Verbindung ruht
+   * (docs/PLAN_SIGN_IN_WITH_CHATGPT.md).
+   */
+  chatgptPlanErlaubt?: boolean;
   chatModel: string | null;
   producerModel: string | null;
   /** Deep-Research-Modell (OpenAI, fester Satz aus shared/research-models.ts); null = Standard. */
@@ -991,6 +998,25 @@ export type LlmProviderKind =
 export type HostedProviderKind = Exclude<LlmProviderKind, "ollama">;
 
 /**
+ * docs/PLAN_SIGN_IN_WITH_CHATGPT.md — Stand der ChatGPT-Verbindung fuer
+ * Einstellungen und Chat-Werkzeuge. `flow` "codex" ist der alte Umweg,
+ * "plan" der offizielle Sign-in-with-ChatGPT-Flow mit Plan-Nutzung.
+ */
+export interface ChatgptPlanStand {
+  verbunden: boolean;
+  flow: "codex" | "plan" | null;
+  email: string | null;
+  /** Gewaehltes Plan-Modell (Slug) oder null = Standard des Kontos. */
+  modell: string | null;
+  /** Fuer das Konto freigegebene Modelle (leer, solange nicht geladen). */
+  modelle: Array<{ id: string; label: string; istStandard: boolean }>;
+  /** Plan-Scope erteilt? Ohne ihn ist die Anmeldung gueltig, aber ohne Plan-Nutzung. */
+  planScope: boolean;
+  /** Organisationsvorgabe: darf das persoenliche Abo genutzt werden? */
+  erlaubt: boolean;
+}
+
+/**
  * Authentication mode for the Anthropic provider.
  *
  *   - "api-key":      x-api-key header, classic API-Credits billing.
@@ -1120,6 +1146,15 @@ export interface ProviderConfigBundle {
   policyModels?: { chatModel: string | null; producerModel: string | null };
   /** v0.1.567 — im ChatGPT-Abo-Modus: vom Konto aufgeloestes Codex-Modell fuer den Chat. */
   codexChatModel?: string | null;
+  /** docs/PLAN_SIGN_IN_WITH_CHATGPT.md — Kurzfassung der ChatGPT-Verbindung. */
+  chatgptPlan?: {
+    flow: "codex" | "plan" | null;
+    email: string | null;
+    modell: string | null;
+    planScope: boolean;
+    erlaubt: boolean;
+    modelle: Array<{ id: string; label: string; istStandard: boolean }>;
+  };
 }
 
 /**

@@ -8807,3 +8807,12 @@ body.sprachmodus .upstream-banner, body.sprachmodus .tier-banner, body.sprachmod
 .firma-aktion--kompakt button { padding: 0.2rem 0.6rem; font-size: 12px; font-weight: 500; }
 .firma-aktion--kompakt .firma-aktion__verweis { font-size: 11px; }
 .firma-aktion--kompakt .firma-aktion__hinweis { font-size: 11px; margin: 0.2rem 0 0; white-space: normal; }
+
+
+/* Sign in with ChatGPT (docs/PLAN_SIGN_IN_WITH_CHATGPT.md): offizieller Knopf
+   „Continue with ChatGPT“ mit weissem Logo auf dunklem Grund, wie von OpenAI
+   vorgegeben; Text bleibt englisch. */
+.siwc-button { display: inline-flex; align-items: center; gap: 0.55rem; background: #0d0d0d; color: #ffffff; border: 1px solid #0d0d0d; border-radius: var(--ctrl-radius); padding: 0.5rem 0.95rem; font-weight: 600; }
+.siwc-button:where(:hover:not(:disabled)) { background: #262626; border-color: #262626; color: #ffffff; }
+.siwc-button img { display: block; }
+.siwc-hinweis { border: 1px solid var(--border); border-radius: var(--ctrl-radius); padding: 0.8rem 1rem; margin: 0.4rem 0; }

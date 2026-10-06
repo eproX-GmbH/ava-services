@@ -37,6 +37,7 @@
 
 import type { ProviderConfigStore } from "../agent/providers/store";
 import { refreshAccessToken as refreshOpenAIAccessToken } from "./openai-oauth";
+import { refreshSiwcToken, refreshEndgueltigGescheitert } from "./siwc-oauth";
 
 const POLL_INTERVAL_MS = 5 * 60 * 1000; // 5 min
 const REFRESH_LEAD_MS = 15 * 60 * 1000; // refresh when <15 min remain
@@ -86,6 +87,26 @@ export class OpenAITokenRefresher {
         `[openai-refresh] tick: token expires in ${Math.round(msUntilExpiry / 1000)}s, refreshing now`,
       );
       try {
+        // docs/PLAN_SIGN_IN_WITH_CHATGPT.md: Plan-Verbindungen refreshen
+        // ueber den offiziellen Endpunkt mit der ausgegebenen Client-ID
+        // (Refresh-Token rotiert, 30 Tage). Codex-Altbestand wie bisher.
+        if (record.flow === "plan") {
+          if (!record.clientId) throw Object.assign(new Error("Plan-Verbindung ohne Client-ID"), { status: 400, detail: "invalid_client" });
+          const r = await refreshSiwcToken({ refreshToken: record.refreshToken, clientId: record.clientId });
+          const newExpiresAt = r.expiresIn != null ? Date.now() + r.expiresIn * 1000 : Date.now() + 60 * 60 * 1000;
+          this.store.setOpenAISubscriptionRecord({
+            ...record,
+            accessToken: r.accessToken,
+            refreshToken: r.refreshToken ?? record.refreshToken,
+            expiresAt: newExpiresAt,
+            idToken: r.idToken ?? record.idToken,
+            scopes: r.scope ? r.scope.split(/\s+/) : record.scopes,
+          });
+          this.lastError = null;
+          this.lastSuccessAt = Date.now();
+          console.info(`[openai-refresh] plan refreshed OK, new expiry in ${Math.round((newExpiresAt - Date.now()) / 1000)}s`);
+          return;
+        }
         const refreshed = await refreshOpenAIAccessToken({
           refreshToken: record.refreshToken,
         });
@@ -94,6 +115,7 @@ export class OpenAITokenRefresher {
             ? Date.now() + refreshed.expiresIn * 1000
             : Date.now() + 60 * 60 * 1000;
         this.store.setOpenAISubscriptionRecord({
+          ...record,
           accessToken: refreshed.accessToken,
           refreshToken: refreshed.refreshToken ?? record.refreshToken,
           expiresAt: newExpiresAt,
@@ -109,7 +131,7 @@ export class OpenAITokenRefresher {
         const msg = err instanceof Error ? err.message : String(err);
         const status = (err as Error & { status?: number }).status;
         this.lastError = msg;
-        if (status === 400 || status === 401) {
+        if (status === 400 || status === 401 || refreshEndgueltigGescheitert(err)) {
           console.warn(
             `[openai-refresh] refresh rejected (HTTP ${status}): ${msg}. User must re-connect via Settings → ChatGPT.`,
           );

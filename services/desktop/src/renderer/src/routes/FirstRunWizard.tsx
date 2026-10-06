@@ -774,12 +774,13 @@ function ProviderChooserGrid({
           Schluessel oder lokales Modell. */}
       <div className="first-run__option-card">
         <h3 className="first-run__option-title">
-          Zusatz für den Chat: ChatGPT-Abo verbinden
+          ChatGPT-Abo verbinden
         </h3>
         <p className="first-run__option-sub">
-          Optional. Nutzt dein ChatGPT-Plus/Pro/Team-Abo für Gespräche mit AVA ohne
-          Extra-Kosten. <strong>Gilt nur für den Chat</strong> — die Hintergrund-Verarbeitung
-          läuft weiterhin über einen API-Schlüssel oder ein lokales Modell.
+          Optional. Melde dich mit deinem persönlichen ChatGPT-Konto an (Plus oder Pro):{" "}
+          <strong>Eligible AI requests in this app use your ChatGPT plan.</strong> Chat und Hintergrund-KI
+          von AVA laufen dann über dein Abo, mit einem Modell deiner Wahl. Die Verarbeitungs-Producer
+          (Firmenprofile, Jahresabschlüsse) brauchen weiterhin einen API-Schlüssel oder ein lokales Modell.
           {orgKarte ? " Ist der Organisationsschlüssel gewählt, übernimmt er den Hintergrund." : ""}
         </p>
         {aboVerbunden ? (
@@ -970,7 +971,8 @@ function OpenAISubscriptionHeroCTA({
     setBusy(true);
     setError(null);
     try {
-      const result = await window.api.agent.connectOpenAISubscription();
+      // docs/PLAN_SIGN_IN_WITH_CHATGPT.md — offizieller Flow mit Plan-Nutzung.
+      const result = await window.api.agent.connectChatgptPlan();
       if (result.ok) {
         await onDone();
         return;
@@ -991,7 +993,7 @@ function OpenAISubscriptionHeroCTA({
         onClick={() => void onConnect()}
         disabled={busy}
       >
-        {busy ? "Öffne Anmeldung…" : "Mit ChatGPT verbinden →"}
+        {busy ? "Öffne Anmeldung…" : "Continue with ChatGPT →"}
       </button>
       {error && <p className="error small">{error}</p>}
     </>
