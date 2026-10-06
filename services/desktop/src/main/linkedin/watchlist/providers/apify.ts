@@ -164,6 +164,23 @@ export function buildApifyProvider(
       signal: signal ?? AbortSignal.timeout(RUN_TIMEOUT_MS),
     });
     if (res.status === 401 || res.status === 403) {
+      // 2026-10-06: Ueber den Organisations-Proxy heisst 401/403 fast immer
+      // „AVA-Anmeldung abgelaufen“ oder „Proxy nicht erreichbar“, NICHT
+      // „Apify-Token ungueltig“. Vorher schaltete der Supervisor darauf die
+      // Automatik ab — bei Patrick und Joyce stand sie deshalb still, waehrend
+      // manuelle Laeufe (frisches Token) funktionierten. Nur beim eigenen
+      // Token ist 401/403 ein echter Token-Fehler.
+      if (access.quelle === "organisation") {
+        throw new Error(`GATEWAY_AUTH: Organisations-Proxy antwortete ${res.status} (Anmeldung abgelaufen oder Schluessel der Organisation fehlt).`);
+      }
+      // Eigener Token: 401 = Token ungueltig. 403 heisst bei Apify meist
+      // „Actor nicht im Plan freigeschaltet“ oder „Monatskontingent
+      // erschoepft“ — das ist kein Token-Fehler und darf die Automatik
+      // nicht abschalten.
+      if (res.status === 403) {
+        const body = await res.text().catch(() => "");
+        throw new Error(`APIFY_FORBIDDEN: Apify lehnt ${actorId} ab (403${body ? `: ${body.slice(0, 140)}` : ""}) — Plan/Kontingent pruefen.`);
+      }
       throw new Error("APIFY_AUTH: Token ungueltig oder abgelaufen.");
     }
     if (res.status === 402) {
@@ -248,8 +265,8 @@ export function buildApifyProvider(
           for (const p of list) {
             fehlgeschlagen.push({ profileUrl: p, grund: `${lauf.kind}: ${grund}` });
           }
-          if (grund.startsWith("APIFY_AUTH") || grund.startsWith("APIFY_CREDITS")) {
-            throw err; // Key-Probleme sofort hochreichen (Supervisor stoppt).
+          if (grund.startsWith("APIFY_AUTH") || grund.startsWith("APIFY_CREDITS") || grund.startsWith("APIFY_FORBIDDEN") || grund.startsWith("GATEWAY_AUTH")) {
+            throw err; // Zugangs-Probleme sofort hochreichen (Supervisor entscheidet).
           }
           continue;
         }

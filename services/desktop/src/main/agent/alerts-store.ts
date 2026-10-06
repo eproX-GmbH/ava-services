@@ -145,7 +145,9 @@ export class AlertsStore {
       headline: input.headline.trim().slice(0, 120),
       // v0.1.522 — 500 → 2000: Sammel-Meldungen (bis 10 Signale mit
       // Snippet + Link) wurden sonst nach dem zweiten Eintrag gekappt.
-      rationale: input.rationale.trim().slice(0, 2000),
+      // 2026-10-06: 6000 statt 2000 — Sammelmeldungen (Watchlist, 15 Signale
+      // mit Link) wurden sonst mitten in der Liste abgeschnitten.
+      rationale: input.rationale.trim().slice(0, 6000),
       sourceRef: input.sourceRef,
       createdAt: new Date().toISOString(),
       seenAt: null,

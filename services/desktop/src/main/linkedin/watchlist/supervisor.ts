@@ -110,13 +110,34 @@ export class WatchlistSupervisor {
     return this.running;
   }
 
+  /** Letzte Protokollzeile je Grund, damit das Audit nicht alle 30 Minuten dasselbe sagt. */
+  private readonly zuletztGemeldet = new Map<string, number>();
+  private ueberspringen(grund: string): void {
+    const vor = this.zuletztGemeldet.get(grund) ?? 0;
+    if (Date.now() - vor < 6 * 3600_000) return;
+    this.zuletztGemeldet.set(grund, Date.now());
+    this.deps.onAudit({
+      action: "linkedin.watchlist.uebersprungen",
+      severity: "warning",
+      summary: `Watchlist-Automatik uebersprungen: ${grund}`,
+      metadata: {},
+    });
+  }
   private async tick(): Promise<void> {
     const cfg = this.deps.keyStore.getConfig();
     if (!cfg.enabled || this.running) return;
-    if (!this.deps.isSignedIn()) return;
-    if (!(await this.deps.getApifyAccess())) return;
     const last = cfg.lastRunAt ? Date.parse(cfg.lastRunAt) : 0;
     if (Date.now() - last < cfg.intervalHours * 3600_000) return;
+    // 2026-10-06: Die Gruende fuers Ueberspringen waren unsichtbar — Nutzer
+    // sahen nur, dass nichts passierte. Jetzt stehen sie im Protokoll.
+    if (!this.deps.isSignedIn()) {
+      this.ueberspringen("nicht angemeldet");
+      return;
+    }
+    if (!(await this.deps.getApifyAccess())) {
+      this.ueberspringen("kein Apify-Zugang (weder eigener Token noch Organisationsschluessel erreichbar)");
+      return;
+    }
     await this.runNow("automatik");
   }
 
@@ -286,6 +307,12 @@ export class WatchlistSupervisor {
       const grund = err instanceof Error ? err.message : String(err);
       if (grund.startsWith("APIFY_AUTH")) return "auth";
       if (grund.startsWith("APIFY_CREDITS")) return "credits";
+      if (grund.startsWith("GATEWAY_AUTH") || grund.startsWith("APIFY_FORBIDDEN")) {
+        // Voruebergehend (Anmeldung/Proxy): kein Backoff fuer das Profil,
+        // Automatik bleibt an, naechster Takt versucht es erneut.
+        probleme.push(grund.slice(0, 160));
+        return "fehler";
+      }
       this.failedAt.set(entry.profileUrl, Date.now());
       probleme.push(`${entry.label}: ${grund.slice(0, 120)}`);
       return "fehler";
@@ -427,7 +454,10 @@ export class WatchlistSupervisor {
     ].filter(Boolean);
     // v0.1.522 — Markdown (Meldungs-Seite rendert es, Telegram wandelt
     // es in Text): eine Liste, je Signal Art, Zitat und Beitrags-Link.
-    const MAX_ZEILEN = 10;
+    // 2026-10-06: Alle Signale der Meldung aufzaehlen (vorher 10 von bis zu
+    // 15, und der Speicher kappte den Text bei 2000 Zeichen — Patrick sah
+    // „15 neue Signale“ mit 7 Zeilen). Zitate kuerzer, Speicher-Deckel hoeher.
+    const MAX_ZEILEN = MAX_ALERTS_PER_RUN;
     const kuerze = (t: string, n: number): string =>
       t.replace(/\s+/g, " ").trim().length > n
         ? `${t.replace(/\s+/g, " ").trim().slice(0, n).trimEnd()} …`
@@ -437,9 +467,9 @@ export class WatchlistSupervisor {
       const autor = s.targetAuthorName ? ` bei ${s.targetAuthorName}` : "";
       const art =
         s.activityType === "comment"
-          ? `**Kommentar**${autor}${s.commentText ? `: „${kuerze(s.commentText, 100)}“` : ""}`
+          ? `**Kommentar**${autor}${s.commentText ? `: „${kuerze(s.commentText, 80)}“` : ""}`
           : `**Reaktion**${s.reactionType ? ` (${s.reactionType.toLowerCase()})` : ""}${autor}`;
-      const thema = s.targetSnippet ? ` — „${kuerze(s.targetSnippet, 90)}“` : "";
+      const thema = s.targetSnippet ? ` — „${kuerze(s.targetSnippet, 70)}“` : "";
       const link = s.targetPostUrl ? ` — [Beitrag öffnen](${s.targetPostUrl})` : "";
       return `- ${art}${thema}${link}`;
     });

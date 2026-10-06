@@ -171,19 +171,57 @@ export async function sendVoice(
 }
 
 /** Nachricht senden. `text` ist bereits HTML-escaped. */
+/** Telegram nimmt hoechstens 4096 Zeichen je Nachricht. */
+const TELEGRAM_MAX_TEXT = 4000;
+
+/**
+ * Lange Texte an Zeilengrenzen in mehrere Nachrichten teilen. Zeilen sind
+ * einzeln HTML-escaped, deshalb ist ein Schnitt zwischen Zeilen sicher.
+ * Eine einzelne ueberlange Zeile wird hart geteilt.
+ */
+export function teileNachricht(text: string, max = TELEGRAM_MAX_TEXT): string[] {
+  if (text.length <= max) return [text];
+  const teile: string[] = [];
+  let aktuell = "";
+  for (const zeile of text.split("\n")) {
+    let rest = zeile;
+    while (rest.length > max) {
+      if (aktuell) {
+        teile.push(aktuell);
+        aktuell = "";
+      }
+      teile.push(rest.slice(0, max));
+      rest = rest.slice(max);
+    }
+    const kandidat = aktuell ? `${aktuell}\n${rest}` : rest;
+    if (kandidat.length > max) {
+      teile.push(aktuell);
+      aktuell = rest;
+    } else {
+      aktuell = kandidat;
+    }
+  }
+  if (aktuell) teile.push(aktuell);
+  return teile;
+}
+
 export async function sendMessage(
   token: string,
   chatId: string,
   text: string,
   opts?: { disablePreview?: boolean; silent?: boolean },
 ): Promise<void> {
-  await call(token, "sendMessage", {
-    chat_id: chatId,
-    text,
-    parse_mode: "HTML",
-    link_preview_options: { is_disabled: opts?.disablePreview !== false },
-    disable_notification: opts?.silent === true,
-  });
+  const teile = teileNachricht(text);
+  for (let i = 0; i < teile.length; i++) {
+    await call(token, "sendMessage", {
+      chat_id: chatId,
+      text: teile[i],
+      parse_mode: "HTML",
+      link_preview_options: { is_disabled: opts?.disablePreview !== false },
+      // Nur die erste Teilnachricht darf klingeln.
+      disable_notification: opts?.silent === true || i > 0,
+    });
+  }
 }
 
 /**
