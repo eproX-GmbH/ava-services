@@ -2537,11 +2537,14 @@ function OpenAISubscriptionContent({
   const modelle = stand?.modelle ?? plan.modelle;
   const gewaehlt = stand?.modell ?? plan.modell ?? "";
 
-  const siwcButton = (label: string) => (
+  // `anmelden` = Anmeldefenster oeffnen; ohne Verbindung zeigt der erste
+  // Klick erst den Limit-Hinweis, der Knopf IM Hinweis meldet dann an.
+  // (Befund 2026-10-06: der Knopf im Hinweis setzte nur den Hinweis erneut.)
+  const siwcButton = (label: string, anmelden: boolean) => (
     <button
       type="button"
       className="siwc-button"
-      onClick={() => (hasToken ? connect.mutate() : setHinweisOffen(true))}
+      onClick={() => (anmelden ? connect.mutate() : setHinweisOffen(true))}
       disabled={connect.isPending}
       title="Continue with ChatGPT"
     >
@@ -2606,7 +2609,7 @@ function OpenAISubscriptionContent({
             </label>
           )}
           <div className="row">
-            {siwcButton(istCodex ? "Continue with ChatGPT" : "Reconnect with ChatGPT")}
+            {siwcButton(istCodex ? "Continue with ChatGPT" : "Reconnect with ChatGPT", true)}
             <a className="btn" href={CHATGPT_USAGE_URL} target="_blank" rel="noreferrer">Manage usage</a>
             <button type="button" className="danger" onClick={() => clear.mutate()} disabled={clear.isPending}>
               Trennen
@@ -2623,12 +2626,12 @@ function OpenAISubscriptionContent({
             AVA, zum Beispiel 30 Prozent. Du kannst die Verbindung dort jederzeit trennen.
           </p>
           <div className="row">
-            {siwcButton("Continue with ChatGPT")}
+            {siwcButton("Continue with ChatGPT", true)}
             <button type="button" className="btn" onClick={() => setHinweisOffen(false)}>Abbrechen</button>
           </div>
         </div>
       ) : (
-        <div className="row">{siwcButton("Continue with ChatGPT")}</div>
+        <div className="row">{siwcButton("Continue with ChatGPT", false)}</div>
       )}
 
       {!hasOpenAIApiKey && !hasToken && (
