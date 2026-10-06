@@ -6312,41 +6312,6 @@ app.whenReady().then(async () => {
 
   // Claude-Abo-OAuth (connectAnthropicSubscription) wurde entfernt.
 
-  // v0.1.353 — „Sign in with ChatGPT" (Codex-OAuth).
-  ipcMain.handle(
-    "agent:connectOpenAISubscription",
-    async (event): Promise<{ ok: true } | { ok: false; error: string }> => {
-      // v0.1.553 — Anbieter-Sperre der Organisation: kein Abo-Login.
-      if (providers.isProviderLocked()) {
-        return { ok: false, error: "Organisationsvorgabe: Anbieter und Schlüssel legt deine Organisation fest; ein eigenes ChatGPT-Abo ist gesperrt." };
-      }
-      try {
-        const parent =
-          BrowserWindow.fromWebContents(event.sender) ??
-          BrowserWindow.getFocusedWindow() ??
-          BrowserWindow.getAllWindows()[0] ??
-          null;
-        const { runOpenAIOAuth } = await import("./auth/openai-oauth-flow");
-        const token = await runOpenAIOAuth({ parent });
-        providers.setOpenAISubscriptionRecord({
-          accessToken: token.accessToken,
-          refreshToken: token.refreshToken,
-          expiresIn: token.expiresIn,
-          accountId: token.accountId,
-        });
-        try {
-          providers.setProvider("openai");
-        } catch {
-          // Token bleibt gespeichert + Auth-Modus auf "subscription" —
-          // reicht für die Settings-Karte ("Verbunden").
-        }
-        return { ok: true };
-      } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-        return { ok: false, error: message };
-      }
-    },
-  );
   ipcMain.handle("agent:clearOpenAISubscriptionToken", () => {
     providers.clearOpenAISubscriptionToken();
     return { ok: true };

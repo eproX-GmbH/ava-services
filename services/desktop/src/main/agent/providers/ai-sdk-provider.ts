@@ -8,7 +8,6 @@ import type {
 import { createLLM, type RuntimeProvider } from "@ava/ai-provider";
 import {
   createOpenAIPlanModel,
-  createOpenAISubscriptionModel,
   getCachedPlanModelle,
   listePlanModelle,
   standardPlanModell,
@@ -147,18 +146,10 @@ export interface AiSdkProviderOptions {
    * (set / clear). Returns an unsubscribe handle.
    */
   onAnthropicSubscriptionTokenChanged?: (cb: () => void) => () => void;
-  /**
-   * v0.1.353 — OpenAI-„Sign in with ChatGPT"-Pendant. Only wired for
-   * `kind === "openai"`. When the active auth mode is "subscription",
-   * the provider pulls the OAuth access token + account id and forwards
-   * them to `createLLM` as `openaiSubscriptionToken` /
-   * `openaiSubscriptionAccountId` (Codex-Backend-Pfad).
-   */
   getOpenAIAuthMode?: () => "api-key" | "subscription";
   getOpenAISubscriptionToken?: () => Promise<string | null>;
   /** docs/PLAN_SIGN_IN_WITH_CHATGPT.md — ganzer Record (flow, planModel). */
   getOpenAISubscriptionRecord?: () => Promise<OpenAISubscriptionRecord | null>;
-  getOpenAISubscriptionAccountId?: () => Promise<string | null>;
   hasStoredOpenAISubscriptionToken?: () => boolean;
   onOpenAISubscriptionTokenChanged?: (cb: () => void) => () => void;
   /** O5 — Stellvertreter-Proxy (Organisationsschluessel): baseURL + JWT,
@@ -183,7 +174,6 @@ export class AiSdkProvider extends EventEmitter implements LlmProvider {
   private readonly getOpenAIAuthMode?: () => "api-key" | "subscription";
   private readonly getOpenAISubscriptionToken?: () => Promise<string | null>;
   private readonly getOpenAISubscriptionRecord?: () => Promise<OpenAISubscriptionRecord | null>;
-  private readonly getOpenAISubscriptionAccountId?: () => Promise<string | null>;
   private readonly hasStoredOpenAISubscriptionToken?: () => boolean;
 
   constructor(opts: AiSdkProviderOptions) {
@@ -201,7 +191,6 @@ export class AiSdkProvider extends EventEmitter implements LlmProvider {
     this.getOpenAIAuthMode = opts.getOpenAIAuthMode;
     this.getOpenAISubscriptionToken = opts.getOpenAISubscriptionToken;
     this.getOpenAISubscriptionRecord = opts.getOpenAISubscriptionRecord;
-    this.getOpenAISubscriptionAccountId = opts.getOpenAISubscriptionAccountId;
     this.hasStoredOpenAISubscriptionToken =
       opts.hasStoredOpenAISubscriptionToken;
 
@@ -351,7 +340,6 @@ export class AiSdkProvider extends EventEmitter implements LlmProvider {
     let apiKey: string | undefined;
     let anthropicSubscriptionToken: string | undefined;
     let openaiSubscriptionToken: string | undefined;
-    let openaiSubscriptionAccountId: string | undefined;
     let openaiPlanRecord: OpenAISubscriptionRecord | null = null;
     // O5 — Organisationsschluessel: Aufruf ueber das Gateway mit dem
     // Nutzer-JWT; Abo-/Key-Pfade werden dann nicht angefasst.
@@ -372,10 +360,7 @@ export class AiSdkProvider extends EventEmitter implements LlmProvider {
     } else if (this.kind === "openai" && openaiAuthMode === "subscription") {
       openaiSubscriptionToken =
         (await this.getOpenAISubscriptionToken?.()) ?? undefined;
-      openaiSubscriptionAccountId =
-        (await this.getOpenAISubscriptionAccountId?.()) ?? undefined;
       openaiPlanRecord = (await this.getOpenAISubscriptionRecord?.()) ?? null;
-      if (openaiPlanRecord && openaiPlanRecord.flow !== "plan") openaiPlanRecord = null;
       if (
         !openaiSubscriptionToken &&
         this.hasStoredOpenAISubscriptionToken?.()
@@ -424,9 +409,6 @@ export class AiSdkProvider extends EventEmitter implements LlmProvider {
     // v0.1.442 — optionale Modell-Override pro Request (Hintergrund-Jobs
     // nutzen das guenstige Producer-Modell). Kind/Credentials unveraendert.
     const effectiveModel = req.modelOverride?.trim() || status.model;
-    // v0.1.353 — ChatGPT-Abo-Pfad läuft über den Desktop-lokalen Builder
-    // (Codex-Endpunkt), NICHT über createLLM — siehe
-    // openai-subscription-model.ts für den Grund (CI-vendor-drift-Guard).
     // docs/PLAN_SIGN_IN_WITH_CHATGPT.md — Plan-Nutzung: oeffentliche Responses
     // API mit dem vom Nutzer gewaehlten Modell (sonst Standard des Kontos).
     let planModellId: string | null = null;
@@ -438,16 +420,11 @@ export class AiSdkProvider extends EventEmitter implements LlmProvider {
       }
       if (!planModellId) throw new Error("Dein ChatGPT-Konto gibt fuer AVA kein Modell frei. Pruefe chatgpt.com/settings/usage oder waehle einen API-Schluessel.");
     }
-    const model = openaiSubscriptionToken && openaiPlanRecord && planModellId
+    if (openaiSubscriptionToken && !openaiPlanRecord) {
+      throw new Error("Die ChatGPT-Verbindung ist veraltet. Bitte in den Einstellungen trennen und ueber „Continue with ChatGPT“ neu anmelden.");
+    }
+    const model = openaiSubscriptionToken && planModellId
       ? createOpenAIPlanModel({ model: planModellId, accessToken: openaiSubscriptionToken })
-      : openaiSubscriptionToken
-      ? createOpenAISubscriptionModel({
-          model: effectiveModel,
-          accessToken: openaiSubscriptionToken,
-          ...(openaiSubscriptionAccountId
-            ? { accountId: openaiSubscriptionAccountId }
-            : {}),
-        })
       : createLLM({
           provider: this.kind as RuntimeProvider,
           model: effectiveModel,
@@ -1065,35 +1042,6 @@ function humanizeProviderError(
     return (
       `${label}: Das gewählte Modell ist mit deinem Konto nicht verfügbar. ` +
       `Bitte in den Einstellungen ein anderes Modell wählen.`
-    );
-  }
-
-  // v0.1.382 — ChatGPT-Abo (Codex-Endpunkt): ein 400 „Bad Request" kam
-  // bisher aus einer nicht-Codex-fähigen Modell-ID (der Abo-Default
-  // `gpt-5.4-mini` ist auf dem Codex-Backend ungültig). Seit v0.1.382
-  // mappen wir die ID automatisch auf eine Codex-ID — bleibt der Fehler
-  // trotzdem, ist die häufigste Ursache eine abgelaufene/unvollständige
-  // Abo-Verbindung. Statt des opaken „Bad Request" eine handlungsleitende
-  // Meldung.
-  if (
-    kind === "openai" &&
-    authMode === "subscription" &&
-    (lower.includes("400") ||
-      lower.includes("bad request") ||
-      upstream?.status === 400)
-  ) {
-    // v0.1.384 — Den echten Codex-Grund mit anhängen, damit ohne Log-Zugriff
-    // klar wird, WORAN es scheitert (Feldgröße, Tool-Typ, Codex-Zugang …).
-    const reason = detail
-      ? `\n\nTechnischer Grund (Codex-Antwort): ${detail}`
-      : "";
-    return (
-      `${label} (ChatGPT-Abo): Der Codex-Endpunkt hat die Anfrage abgelehnt ` +
-      `(Bad Request). Bitte in Einstellungen → Modelle die ChatGPT-Verbindung ` +
-      `einmal trennen und neu verbinden. Bleibt es bestehen, hat dein Abo den ` +
-      `Codex-Zugang evtl. (noch) nicht freigeschaltet — dann auf einen ` +
-      `OpenAI-API-Schlüssel oder ein lokales Ollama-Modell ausweichen.` +
-      reason
     );
   }
 

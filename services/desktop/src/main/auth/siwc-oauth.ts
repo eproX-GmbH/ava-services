@@ -13,8 +13,8 @@
 //     Token-Antwort den letzten Scope enthaelt.
 //   * Access-Token 1 h, Refresh-Token 30 Tage rollierend.
 //
-// Das ersetzt den Codex-Umweg (openai-oauth.ts, chatgpt.com/backend-api);
-// der bleibt als Rueckfall, bis die Nutzer neu angemeldet sind.
+// Der fruehere Codex-Umweg (chatgpt.com/backend-api) ist seit v0.1.770
+// entfernt; Altbestand raeumt der Store beim Lesen weg.
 
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";

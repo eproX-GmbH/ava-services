@@ -1,5 +1,5 @@
 import { EventEmitter } from "node:events";
-import { getCachedCodexModel, getCachedPlanModelle, listePlanModelle, standardPlanModell } from "./openai-subscription-model";
+import { getCachedPlanModelle, listePlanModelle, standardPlanModell } from "./openai-subscription-model";
 import type { OpenAISubscriptionRecord } from "./store";
 import type { ChatgptPlanStand } from "../../../shared/types";
 import { listCatalog, recommendedFor, gatewayProxyBaseURL } from "@ava/ai-provider";
@@ -90,7 +90,7 @@ export class LlmProviderManager extends EventEmitter {
   } = { providers: {}, gatewayUrl: "", getToken: async () => null };
 
   /** Letzte bekannte Kurzfassung der ChatGPT-Verbindung (sync fuer das Bundle). */
-  private planZusammenfassung: { flow: "codex" | "plan"; email: string | null; modell: string | null; planScope: boolean; token: string | null } | null = null;
+  private planZusammenfassung: { flow: "plan"; email: string | null; modell: string | null; planScope: boolean; token: string | null } | null = null;
 
   constructor(supervisor: OllamaSupervisor) {
     super();
@@ -157,8 +157,6 @@ export class LlmProviderManager extends EventEmitter {
                     : (this.store.getConfig().openaiAuthMode ?? "api-key"),
               getOpenAISubscriptionToken: () =>
                 this.chatgptPlanErlaubt() ? this.store.getOpenAISubscriptionToken() : Promise.resolve(null),
-              getOpenAISubscriptionAccountId: () =>
-                this.store.getOpenAISubscriptionAccountId(),
               getOpenAISubscriptionRecord: () =>
                 this.chatgptPlanErlaubt() ? this.store.getOpenAISubscriptionRecord() : Promise.resolve(null),
               hasStoredOpenAISubscriptionToken: () => this.aboNutzbar(),
@@ -408,8 +406,7 @@ export class LlmProviderManager extends EventEmitter {
    * Abo-Verbindung vorhanden UND von der Organisation erlaubt. Die
    * Anbieter-Sperre schliesst das persoenliche Abo NICHT aus, wenn die
    * Organisation es ausdruecklich freigibt (Schalter „Persoenliches
-   * ChatGPT-Abo erlaubt“) — unter Sperre aber nur ueber den offiziellen
-   * Plan-Flow, nicht ueber den alten Codex-Umweg.
+   * ChatGPT-Abo erlaubt“).
    */
   private aboNutzbar(): boolean {
     if (!this.chatgptPlanErlaubt() || !this.store.hasOpenAISubscriptionToken()) return false;
@@ -417,8 +414,7 @@ export class LlmProviderManager extends EventEmitter {
     // Plan-Verbindung ohne erteilten Plan-Scope (z. B. Team-Konto, Freigabe
     // in ChatGPT verweigert): Anmeldung gueltig, aber keine Plan-Nutzung —
     // dann zaehlt sie nicht, und der bisherige Weg (Schluessel) bleibt aktiv.
-    if (z?.flow === "plan" && !z.planScope) return false;
-    if (this.isProviderLocked()) return z?.flow === "plan";
+    if (!z || !z.planScope) return false;
     return true;
   }
 
@@ -427,7 +423,7 @@ export class LlmProviderManager extends EventEmitter {
     const r = await this.store.getOpenAISubscriptionRecord().catch(() => null);
     this.planZusammenfassung = r
       ? {
-          flow: r.flow ?? "codex",
+          flow: "plan",
           email: r.email ?? null,
           modell: r.planModel ?? null,
           planScope: (r.scopes ?? []).includes("chatgpt.tokens.use.direct"),
@@ -439,10 +435,10 @@ export class LlmProviderManager extends EventEmitter {
   async chatgptPlanStand(): Promise<ChatgptPlanStand> {
     await this.planZusammenfassungLaden();
     const z = this.planZusammenfassung;
-    const modelle = z?.flow === "plan" ? (getCachedPlanModelle(z.token) ?? []) : [];
+    const modelle = z ? (getCachedPlanModelle(z.token) ?? []) : [];
     return {
       verbunden: Boolean(z),
-      flow: z?.flow ?? null,
+      flow: z ? "plan" : null,
       email: z?.email ?? null,
       modell: z?.modell ?? (modelle.length > 0 ? standardPlanModell(modelle) : null),
       modelle,
@@ -454,15 +450,13 @@ export class LlmProviderManager extends EventEmitter {
   /** Modelle des Kontos laden (GET /v1/models mit dem Plan-Token). */
   async ladeChatgptPlanModelle(): Promise<ChatgptPlanStand> {
     const r = await this.store.getOpenAISubscriptionRecord();
-    if (r && r.flow === "plan") {
-      await listePlanModelle(r.accessToken);
-    }
+    if (r) await listePlanModelle(r.accessToken);
     return this.chatgptPlanStand();
   }
 
   async setChatgptPlanModell(modell: string | null): Promise<ChatgptPlanStand> {
     const r = await this.store.getOpenAISubscriptionRecord();
-    if (!r || r.flow !== "plan") throw new Error("Keine ChatGPT-Plan-Verbindung vorhanden.");
+    if (!r) throw new Error("Keine ChatGPT-Verbindung vorhanden.");
     const id = (modell ?? "").trim();
     if (id) {
       const liste = getCachedPlanModelle(r.accessToken) ?? (await listePlanModelle(r.accessToken));
@@ -556,10 +550,8 @@ export class LlmProviderManager extends EventEmitter {
     keySource: Record<LlmProviderKind, KeySource>;
     providerLock: boolean;
     policyModels: { chatModel: string | null; producerModel: string | null };
-    /** v0.1.567 — im ChatGPT-Abo-Modus das vom Konto aufgeloeste Codex-Modell (null = noch kein Aufruf). */
-    codexChatModel: string | null;
     /** docs/PLAN_SIGN_IN_WITH_CHATGPT.md — Kurzfassung der Verbindung (sync, letzter Stand). */
-    chatgptPlan: { flow: "codex" | "plan" | null; email: string | null; modell: string | null; planScope: boolean; erlaubt: boolean; modelle: Array<{ id: string; label: string; istStandard: boolean }> };
+    chatgptPlan: { flow: "plan" | null; email: string | null; modell: string | null; planScope: boolean; erlaubt: boolean; modelle: Array<{ id: string; label: string; istStandard: boolean }> };
   } {
     const pol = getOrgPolicy();
     return {
@@ -570,12 +562,11 @@ export class LlmProviderManager extends EventEmitter {
       keySource: this.keySources(),
       providerLock: pol.providerLock,
       policyModels: { chatModel: pol.chatModel, producerModel: pol.producerModel },
-      codexChatModel: getCachedCodexModel(),
       chatgptPlan: (() => {
         const z = this.planZusammenfassung;
-        const modelle = z?.flow === "plan" ? (getCachedPlanModelle(z.token) ?? []) : [];
+        const modelle = z ? (getCachedPlanModelle(z.token) ?? []) : [];
         return {
-          flow: z?.flow ?? null,
+          flow: z ? "plan" : null,
           email: z?.email ?? null,
           modell: z?.modell ?? (modelle.length > 0 ? standardPlanModell(modelle) : null),
           planScope: z?.planScope ?? false,
@@ -911,8 +902,6 @@ export class LlmProviderManager extends EventEmitter {
     accountId?: string;
   } & Partial<Pick<OpenAISubscriptionRecord, "flow" | "clientId" | "subject" | "email" | "idToken" | "scopes" | "planModel">>): void {
     if (!this.chatgptPlanErlaubt()) throw new Error("Organisationsvorgabe: Das persoenliche ChatGPT-Abo ist in dieser Organisation nicht erlaubt.");
-    // Unter Anbieter-Sperre nur der offizielle Plan-Flow (Freigabe der Organisation).
-    if (args.flow !== "plan") this.sperrePruefen("die Abo-Anmeldung");
     const accessToken = args.accessToken.trim();
     if (accessToken.length === 0) throw new Error("Access-Token ist leer.");
     const expiresAt =
@@ -924,7 +913,7 @@ export class LlmProviderManager extends EventEmitter {
       refreshToken: args.refreshToken,
       expiresAt,
       accountId: args.accountId,
-      flow: args.flow,
+      flow: "plan",
       clientId: args.clientId,
       subject: args.subject,
       email: args.email,

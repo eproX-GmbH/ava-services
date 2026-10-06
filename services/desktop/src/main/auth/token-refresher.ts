@@ -36,7 +36,6 @@
 //                          we don't miss the window)
 
 import type { ProviderConfigStore } from "../agent/providers/store";
-import { refreshAccessToken as refreshOpenAIAccessToken } from "./openai-oauth";
 import { refreshSiwcToken, refreshEndgueltigGescheitert } from "./siwc-oauth";
 
 const POLL_INTERVAL_MS = 5 * 60 * 1000; // 5 min
@@ -45,7 +44,7 @@ const RETRY_BACKOFF_MS = 60 * 1000; // brief backoff after a transient fail
 
 /**
  * v0.1.353 — Pendant zu `AnthropicTokenRefresher` für den ChatGPT-Abo-
- * OAuth-Flow („Sign in with ChatGPT"). Hält das kurzlebige Codex-
+ * OAuth-Flow („Sign in with ChatGPT"). Hält das kurzlebige Plan-
  * Access-Token via gespeichertem refresh_token frisch. Account-ID
  * bleibt über Refreshs hinweg stabil (sie hängt am Konto, nicht am
  * Token), also tragen wir sie unverändert in den neuen Record.
@@ -87,46 +86,27 @@ export class OpenAITokenRefresher {
         `[openai-refresh] tick: token expires in ${Math.round(msUntilExpiry / 1000)}s, refreshing now`,
       );
       try {
-        // docs/PLAN_SIGN_IN_WITH_CHATGPT.md: Plan-Verbindungen refreshen
-        // ueber den offiziellen Endpunkt mit der ausgegebenen Client-ID
-        // (Refresh-Token rotiert, 30 Tage). Codex-Altbestand wie bisher.
-        if (record.flow === "plan") {
-          if (!record.clientId) throw Object.assign(new Error("Plan-Verbindung ohne Client-ID"), { status: 400, detail: "invalid_client" });
-          const r = await refreshSiwcToken({ refreshToken: record.refreshToken, clientId: record.clientId });
-          const newExpiresAt = r.expiresIn != null ? Date.now() + r.expiresIn * 1000 : Date.now() + 60 * 60 * 1000;
-          this.store.setOpenAISubscriptionRecord({
-            ...record,
-            accessToken: r.accessToken,
-            refreshToken: r.refreshToken ?? record.refreshToken,
-            expiresAt: newExpiresAt,
-            idToken: r.idToken ?? record.idToken,
-            scopes: r.scope ? r.scope.split(/\s+/) : record.scopes,
-          });
-          this.lastError = null;
-          this.lastSuccessAt = Date.now();
-          console.info(`[openai-refresh] plan refreshed OK, new expiry in ${Math.round((newExpiresAt - Date.now()) / 1000)}s`);
+        // docs/PLAN_SIGN_IN_WITH_CHATGPT.md: Refresh ueber den offiziellen
+        // Endpunkt mit der ausgegebenen Client-ID (Refresh-Token rotiert,
+        // 30 Tage). Ohne Plan-Kennzeichnung gibt es nichts zu erneuern — den
+        // Codex-Altbestand raeumt der Store beim Lesen weg.
+        if (record.flow !== "plan" || !record.clientId) {
+          console.info("[openai-refresh] Verbindung ohne Plan-Kennzeichnung — kein Refresh, Neuanmeldung noetig.");
           return;
         }
-        const refreshed = await refreshOpenAIAccessToken({
-          refreshToken: record.refreshToken,
-        });
-        const newExpiresAt =
-          refreshed.expiresIn != null
-            ? Date.now() + refreshed.expiresIn * 1000
-            : Date.now() + 60 * 60 * 1000;
+        const r = await refreshSiwcToken({ refreshToken: record.refreshToken, clientId: record.clientId });
+        const newExpiresAt = r.expiresIn != null ? Date.now() + r.expiresIn * 1000 : Date.now() + 60 * 60 * 1000;
         this.store.setOpenAISubscriptionRecord({
           ...record,
-          accessToken: refreshed.accessToken,
-          refreshToken: refreshed.refreshToken ?? record.refreshToken,
+          accessToken: r.accessToken,
+          refreshToken: r.refreshToken ?? record.refreshToken,
           expiresAt: newExpiresAt,
-          // Account-ID bevorzugt aus dem frischen Token, sonst die alte.
-          accountId: refreshed.accountId ?? record.accountId,
+          idToken: r.idToken ?? record.idToken,
+          scopes: r.scope ? r.scope.split(/\s+/) : record.scopes,
         });
         this.lastError = null;
         this.lastSuccessAt = Date.now();
-        console.info(
-          `[openai-refresh] refreshed OK, new expiry in ${Math.round((newExpiresAt - Date.now()) / 1000)}s`,
-        );
+        console.info(`[openai-refresh] refreshed OK, new expiry in ${Math.round((newExpiresAt - Date.now()) / 1000)}s`);
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         const status = (err as Error & { status?: number }).status;

@@ -1042,15 +1042,6 @@ const api = {
     // Claude-Abo-OAuth wurde entfernt — keine Anthropic-Subscription-
     // Bridge mehr (set/validate/clear/connect/setAuthMode). Anthropic
     // läuft nur noch per API-Key über validateApiKey/setKey/clearKey.
-    /**
-     * v0.1.353 — „Sign in with ChatGPT" (Codex-OAuth). Öffnet ein
-     * Electron-`BrowserWindow` mit OpenAIs Authorize-Endpunkt, fängt den
-     * localhost:1455-Redirect ab, tauscht den Code gegen Access-/Refresh-
-     * Token + ChatGPT-Account-ID und persistiert alles verschlüsselt.
-     */
-    connectOpenAISubscription: (): Promise<
-      { ok: true } | { ok: false; error: string }
-    > => ipcRenderer.invoke("agent:connectOpenAISubscription"),
     clearOpenAISubscriptionToken: (): Promise<{ ok: true }> =>
       ipcRenderer.invoke("agent:clearOpenAISubscriptionToken"),
     /** docs/PLAN_SIGN_IN_WITH_CHATGPT.md — offizieller Flow mit Plan-Nutzung. */

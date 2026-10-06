@@ -999,12 +999,12 @@ export type HostedProviderKind = Exclude<LlmProviderKind, "ollama">;
 
 /**
  * docs/PLAN_SIGN_IN_WITH_CHATGPT.md — Stand der ChatGPT-Verbindung fuer
- * Einstellungen und Chat-Werkzeuge. `flow` "codex" ist der alte Umweg,
- * "plan" der offizielle Sign-in-with-ChatGPT-Flow mit Plan-Nutzung.
+ * Einstellungen und Chat-Werkzeuge. `flow` ist "plan" (offizieller
+ * Sign-in-with-ChatGPT-Flow) oder null ohne Verbindung.
  */
 export interface ChatgptPlanStand {
   verbunden: boolean;
-  flow: "codex" | "plan" | null;
+  flow: "plan" | null;
   email: string | null;
   /** Gewaehltes Plan-Modell (Slug) oder null = Standard des Kontos. */
   modell: string | null;
@@ -1035,7 +1035,7 @@ export type AnthropicAuthMode = "api-key" | "subscription";
 
 /**
  * v0.1.353 — wie `AnthropicAuthMode`, aber für OpenAI. "subscription"
- * meint den „Sign in with ChatGPT"-Codex-OAuth-Pfad (ChatGPT-Plus/Pro-
+ * meint den „Sign in with ChatGPT"-Pfad mit Plan-Nutzung (ChatGPT-Plus/Pro-
  * Abo) statt eines API-Keys. Nur relevant wenn `kind === "openai"`.
  */
 export type OpenAIAuthMode = "api-key" | "subscription";
@@ -1144,11 +1144,9 @@ export interface ProviderConfigBundle {
   providerLock?: boolean;
   /** O5 — Modellvorgaben der Organisation (nur informativ; Manager setzt sie durch). */
   policyModels?: { chatModel: string | null; producerModel: string | null };
-  /** v0.1.567 — im ChatGPT-Abo-Modus: vom Konto aufgeloestes Codex-Modell fuer den Chat. */
-  codexChatModel?: string | null;
   /** docs/PLAN_SIGN_IN_WITH_CHATGPT.md — Kurzfassung der ChatGPT-Verbindung. */
   chatgptPlan?: {
-    flow: "codex" | "plan" | null;
+    flow: "plan" | null;
     email: string | null;
     modell: string | null;
     planScope: boolean;

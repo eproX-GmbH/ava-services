@@ -137,8 +137,7 @@ export interface AnthropicSubscriptionRecord {
 
 /**
  * v0.1.353 — Vollständiger ChatGPT-Abo-Record. Wie der Anthropic-
- * Pendant, plus `accountId` (die als `chatgpt-account-id`-Header an den
- * Codex-Endpunkt geht).
+ * Pendant, plus die Felder des Sign-in-with-ChatGPT-Flows.
  */
 export interface OpenAISubscriptionRecord {
   accessToken: string;
@@ -147,12 +146,11 @@ export interface OpenAISubscriptionRecord {
   /** ChatGPT-Account-ID aus dem OAuth-JWT. Optional. */
   accountId?: string;
   /**
-   * docs/PLAN_SIGN_IN_WITH_CHATGPT.md — Herkunft der Verbindung:
-   * "codex" = alter Umweg ueber chatgpt.com/backend-api (Standard fuer
-   * Altbestand), "plan" = offizieller Sign-in-with-ChatGPT-Flow mit
-   * Plan-Nutzung ueber api.openai.com.
+   * docs/PLAN_SIGN_IN_WITH_CHATGPT.md — immer "plan" (offizieller
+   * Sign-in-with-ChatGPT-Flow). Datensaetze ohne diese Kennzeichnung sind
+   * Codex-Altbestand und werden beim Lesen entfernt.
    */
-  flow?: "codex" | "plan";
+  flow?: "plan";
   /** Ausgegebene oaiapp_-Client-ID dieser Installation (nur plan). */
   clientId?: string;
   /** `sub` des ID-Tokens: Kontoidentitaet (nur plan). */
@@ -678,10 +676,6 @@ export class ProviderConfigStore extends EventEmitter {
     return record?.accessToken ?? null;
   }
 
-  async getOpenAISubscriptionAccountId(): Promise<string | null> {
-    const record = await this.getOpenAISubscriptionRecord();
-    return record?.accountId ?? null;
-  }
 
   async getOpenAISubscriptionRecord(): Promise<OpenAISubscriptionRecord | null> {
     const path = this.openaiSubscriptionPath();
@@ -691,6 +685,19 @@ export class ProviderConfigStore extends EventEmitter {
       const plaintext = safeStorage.decryptString(buf);
       try {
         const parsed = JSON.parse(plaintext) as Partial<OpenAISubscriptionRecord>;
+        // 2026-10-06: Nur Plan-Verbindungen (Sign in with ChatGPT) gelten.
+        // Codex-Altbestand ohne `flow: "plan"` wird einmalig entfernt; der
+        // Nutzer meldet sich ueber „Continue with ChatGPT“ neu an.
+        if (parsed.flow !== "plan") {
+          console.info("[provider-store] alte Codex-Verbindung entfernt — Neuanmeldung ueber Sign in with ChatGPT noetig");
+          try {
+            unlinkSync(path);
+          } catch {
+            /* schon weg */
+          }
+          this.emit("openaiSubscriptionTokenChanged");
+          return null;
+        }
         if (
           typeof parsed.accessToken === "string" &&
           parsed.accessToken.length > 0
@@ -712,7 +719,7 @@ export class ProviderConfigStore extends EventEmitter {
               parsed.accountId.length > 0
                 ? parsed.accountId
                 : undefined,
-            flow: parsed.flow === "plan" ? "plan" : "codex",
+            flow: "plan",
             clientId: typeof parsed.clientId === "string" && parsed.clientId.length > 0 ? parsed.clientId : undefined,
             subject: typeof parsed.subject === "string" ? parsed.subject : undefined,
             email: typeof parsed.email === "string" ? parsed.email : undefined,
@@ -722,9 +729,16 @@ export class ProviderConfigStore extends EventEmitter {
           };
         }
       } catch {
-        /* fall through — legacy raw-string format */
+        /* unlesbar — unten als kaputt behandeln */
       }
-      return { accessToken: plaintext, expiresAt: 0 };
+      // Kein JSON mit Plan-Kennzeichnung: Altformat, weg damit.
+      try {
+        unlinkSync(path);
+      } catch {
+        /* schon weg */
+      }
+      this.emit("openaiSubscriptionTokenChanged");
+      return null;
     } catch (err) {
       console.warn(
         "[provider-store] failed to decrypt openai-subscription token — removing broken blob:",

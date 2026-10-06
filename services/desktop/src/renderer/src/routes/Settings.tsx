@@ -2113,10 +2113,9 @@ export function ProviderSection() {
           : `${PROVIDER_LABEL[activeKind]} API-Schlüssel`;
   const aboNurChat =
     activeKind === "openai" && !viaOrgActive && hasOpenAISubscriptionToken && !hasKey.openai;
-  // v0.1.567 — Chat laeuft ueber das Abo: Codex waehlt das Modell selbst; die
-  // lokale Hauptmodell-Auswahl ist dann fuer den Chat wirkungslos.
+  // Chat laeuft ueber das ChatGPT-Abo: das Modell kommt aus der Abo-Karte
+  // (Kontoliste), die lokale Hauptmodell-Auswahl ist fuer den Chat wirkungslos.
   const chatUeberAbo = activeKind === "openai" && !viaOrgActive && hasOpenAISubscriptionToken;
-  const codexChatModel = cfg.data.codexChatModel ?? null;
   const producerChannel: string | null = !aboNurChat
     ? null
     : orgProviders.openai
@@ -2164,9 +2163,7 @@ export function ProviderSection() {
           <span className="active-config-card__label">{chatUeberAbo ? "Chat-Modell" : "Aktives Modell"}</span>
           <span className="active-config-card__value">
             {chatUeberAbo
-              ? chatgptPlan.flow === "plan"
-                ? `${chatgptPlan.modelle.find((m) => m.id === chatgptPlan.modell)?.label ?? chatgptPlan.modell ?? "Standard des Kontos"} · ChatGPT-Abo`
-                : (codexChatModel ? `${codexChatModel} · wählt dein ChatGPT-Abo (Codex)` : "wählt dein ChatGPT-Abo (Codex) beim ersten Aufruf")
+              ? `${chatgptPlan.modelle.find((m) => m.id === chatgptPlan.modell)?.label ?? chatgptPlan.modell ?? "Standard des Kontos"} · ChatGPT-Abo`
               : <>{activeEntry?.label ?? activeModelId ?? "—"}{" · "}{PROVIDER_LABEL[activeKind]}</>}
           </span>
         </div>
@@ -2210,11 +2207,9 @@ export function ProviderSection() {
               {policyModels?.chatModel && <> Chat: <code>{policyModels.chatModel}</code>.</>}
               {policyModels?.producerModel && <> Hintergrund: <code>{policyModels.producerModel}</code>.</>}{" "}
               Aufrufe laufen über den Schlüssel der Organisation.
-              {hasOpenAISubscriptionToken && chatgptPlan.flow === "plan" ? (
+              {hasOpenAISubscriptionToken && (
                 <> Dein persönliches ChatGPT-Abo ist freigegeben und hat im Chat und in der Hintergrund-KI Vorrang; die Verarbeitungs-Producer laufen über den Schlüssel der Organisation.</>
-              ) : hasOpenAISubscriptionToken ? (
-                <> Deine alte ChatGPT-Verbindung (Codex) wird unter der Vorgabe nicht verwendet. Verbinde dich oben neu über „Continue with ChatGPT“.</>
-              ) : null}
+              )}
             </span>
           </div>
         </div>
@@ -2267,9 +2262,7 @@ export function ProviderSection() {
           <div className="field">
             <span>Chat-Modell</span>
             <p className="muted small" style={{ margin: 0 }}>
-              {chatgptPlan.flow === "plan"
-                ? "Wählst du oben in der ChatGPT-Abo-Karte aus den für dein Konto freigegebenen Modellen."
-                : <>Bestimmt dein ChatGPT-Abo: Codex wählt aus den für dein Konto freigeschalteten Modellen{codexChatModel ? ` (aktuell ${codexChatModel})` : ""}. Eine eigene Auswahl greift hier nicht.</>}
+              Wählst du oben in der ChatGPT-Abo-Karte aus den für dein Konto freigegebenen Modellen.
             </p>
           </div>
         ) : (
@@ -2443,7 +2436,7 @@ interface OpenAISubscriptionCardProps {
   openaiAuthMode: "api-key" | "subscription";
   activeKind: LlmProviderKind;
   /** docs/PLAN_SIGN_IN_WITH_CHATGPT.md — Kurzfassung aus dem Bundle. */
-  plan: { flow: "codex" | "plan" | null; email: string | null; modell: string | null; planScope: boolean; erlaubt: boolean; modelle: Array<{ id: string; label: string; istStandard: boolean }> };
+  plan: { flow: "plan" | null; email: string | null; modell: string | null; planScope: boolean; erlaubt: boolean; modelle: Array<{ id: string; label: string; istStandard: boolean }> };
 }
 
 const CHATGPT_USAGE_URL = "https://chatgpt.com/settings/usage";
@@ -2469,8 +2462,7 @@ function OpenAISubscriptionContent({
   const [hinweisOffen, setHinweisOffen] = useState(false);
   const [stand, setStand] = useState<ChatgptPlanStand | null>(null);
 
-  const istPlan = hasToken && plan.flow === "plan";
-  const istCodex = hasToken && plan.flow === "codex";
+  const istPlan = hasToken;
 
   useEffect(() => {
     if (!istPlan) return;
@@ -2571,23 +2563,12 @@ function OpenAISubscriptionContent({
             Status: <span className="badge ok">Verbunden</span>
             {plan.email ? ` · ${plan.email}` : ""}
             {isActiveSubscription ? " · aktiv" : ""}
-            {istCodex && (
-              <>
-                {" "}· <span className="badge warn" title="Alter Codex-Umweg; bitte neu verbinden">Alte Verbindung</span>
-              </>
-            )}
             {istPlan && !plan.planScope && (
               <>
                 {" "}· <span className="badge warn">ohne Plan-Freigabe</span>
               </>
             )}
           </p>
-          {istCodex && (
-            <p className="muted small">
-              Diese Verbindung nutzt noch den alten Codex-Weg mit automatischer Modellwahl. Verbinde dich neu über
-              „Continue with ChatGPT“, um dein Modell selbst zu wählen und den offiziellen Weg zu nutzen.
-            </p>
-          )}
           {istPlan && !plan.planScope && (
             <p className="muted small">
               Die Anmeldung ist gültig, aber ChatGPT hat die Plan-Nutzung für AVA nicht freigegeben. Das passiert bei
@@ -2619,7 +2600,7 @@ function OpenAISubscriptionContent({
             </label>
           )}
           <div className="row">
-            {siwcButton(istCodex ? "Continue with ChatGPT" : "Reconnect with ChatGPT", true)}
+            {siwcButton("Reconnect with ChatGPT", true)}
             <a className="btn" href={CHATGPT_USAGE_URL} target="_blank" rel="noreferrer">Manage usage</a>
             <button type="button" className="danger" onClick={() => clear.mutate()} disabled={clear.isPending}>
               Trennen

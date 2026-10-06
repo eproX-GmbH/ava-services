@@ -113,10 +113,17 @@ Umgesetzt S1–S4:
   Assistent und Fehlerbanner nutzen den neuen Flow. Chat-Werkzeug
   `settings_chatgpt_plan` (stand | modelle | modell).
 
-Offen: S5 Verbrauchsanzeige (Kennzeichnung „ChatGPT-Abo“ je Aufruf), S6
-Abloesung Codex nach zwei stabilen Releases, S7 manuelle Tests mit einem
-Plus/Pro-Konto (Erstanmeldung, Wiederanmeldung, 429-Pfad, Trennen in
-ChatGPT). Producer (website, profile, contact …) laufen weiter ueber
+S6 erledigt (v0.1.770, Operator-Entscheidung): Codex-Pfad komplett entfernt
+(`auth/openai-oauth*.ts`, Codex-Builder, Account-ID-Header, IPC
+`connectOpenAISubscription`). Gespeicherte Verbindungen ohne
+`flow: "plan"` entfernt der Store beim ersten Lesen; der Nutzer meldet sich
+einmal neu ueber „Continue with ChatGPT“ an. v0.1.769: Speicher schreibt
+alle Felder (Befund: `flow` ging verloren, Plan-Token ging an Codex → 401);
+Plan-Verbindung ohne Plan-Scope zaehlt nicht (Team/Business/Free).
+
+Offen: S5 Verbrauchsanzeige (Kennzeichnung „ChatGPT-Abo“ je Aufruf), S7
+manuelle Tests mit einem Plus/Pro-Konto (Erstanmeldung, Wiederanmeldung,
+429-Pfad, Trennen in ChatGPT). Producer (website, profile, contact …) laufen weiter ueber
 Schluessel oder lokale Modelle: Sie nutzen generateObject ohne Streaming,
 was der Plan nicht erlaubt.
 

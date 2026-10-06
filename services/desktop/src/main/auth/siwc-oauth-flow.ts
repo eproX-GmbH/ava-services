@@ -1,7 +1,7 @@
 // Anmelde-Fenster fuer „Sign in with ChatGPT“ (docs/PLAN_SIGN_IN_WITH_CHATGPT.md).
 //
-// Wie der Codex-Flow (openai-oauth-flow.ts): ein Electron-BrowserWindow
-// laedt die Authorize-Seite; den Redirect auf den Loopback faengt
+// Ein Electron-BrowserWindow laedt die Authorize-Seite; den Redirect auf
+// den Loopback faengt
 // `will-redirect`/`will-navigate` ab, BEVOR er an einen Port geht. Darum
 // braucht es keinen lokalen HTTP-Server (Regel: neue Server nur
 // 127.0.0.1 — hier gar keiner). Der Rest ist der dokumentierte Ablauf:

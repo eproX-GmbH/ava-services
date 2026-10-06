@@ -7,14 +7,14 @@
 // Nutzer. Und keiner von beiden kannte den ChatGPT-Abo-Pfad.
 //
 // Diese Datei vereinheitlicht beides: API-Key (alle Provider),
-// Anthropic-Abo (OAuth-Bearer) UND ChatGPT-Abo (Codex-OAuth). Beide
+// Anthropic-Abo (OAuth-Bearer) UND ChatGPT-Abo (Sign in with ChatGPT). Beide
 // Extractoren nutzen jetzt `resolveActiveLlm` + `buildLinkedInModel`.
 
 import { createLLM } from "@ava/ai-provider";
 import type { LanguageModel } from "ai";
 import type { LlmProviderManager } from "../agent/providers";
 import type { ProviderConfigStore } from "../agent/providers/store";
-import { createOpenAISubscriptionModel } from "../agent/providers/openai-subscription-model";
+import { createOpenAIPlanModel, getCachedPlanModelle, listePlanModelle, standardPlanModell } from "../agent/providers/openai-subscription-model";
 import { nurRegisterVerarbeitung } from "../worker-modus";
 
 export interface ResolvedLlm {
@@ -32,9 +32,8 @@ export interface ResolvedLlm {
   baseURL?: string;
   /** Anthropic-Abo (Claude Pro/Max OAuth-Bearer). */
   anthropicSubscriptionToken?: string;
-  /** ChatGPT-Abo (Codex-OAuth). */
+  /** ChatGPT-Abo (Sign in with ChatGPT, Plan-Nutzung). */
   openaiSubscriptionToken?: string;
-  openaiSubscriptionAccountId?: string;
 }
 
 /**
@@ -70,17 +69,22 @@ export async function resolveActiveLlm(
     };
   }
 
-  // ChatGPT-Abo: kein API-Key, Auth via Codex-OAuth + Account-ID.
+  // ChatGPT-Abo: kein API-Key, Plan-Token gegen api.openai.com mit dem
+  // gewaehlten Plan-Modell (sonst Standard des Kontos).
   if (kind === "openai" && (cfg.openaiAuthMode ?? "api-key") === "subscription") {
-    const token = await store.getOpenAISubscriptionToken();
-    if (!token) return null;
-    const accountId = await store.getOpenAISubscriptionAccountId();
+    const record = await store.getOpenAISubscriptionRecord();
+    if (!record) return null;
+    let modell = record.planModel ?? null;
+    if (!modell) {
+      const liste = getCachedPlanModelle(record.accessToken) ?? (await listePlanModelle(record.accessToken).catch(() => []));
+      modell = standardPlanModell(liste);
+    }
+    if (!modell) return null;
     return {
       provider: "openai",
-      model: status.model,
+      model: modell,
       apiKey: null,
-      openaiSubscriptionToken: token,
-      ...(accountId ? { openaiSubscriptionAccountId: accountId } : {}),
+      openaiSubscriptionToken: record.accessToken,
     };
   }
 
@@ -91,18 +95,12 @@ export async function resolveActiveLlm(
 
 /**
  * Baut aus einem ResolvedLlm das AI-SDK-Modell — mit korrektem Pfad für
- * beide Abos (ChatGPT-Abo geht über den Codex-Builder, Claude-Abo über
+ * beide Abos (ChatGPT-Abo geht über den Plan-Builder, Claude-Abo über
  * den OAuth-Bearer in createLLM).
  */
 export function buildLinkedInModel(llm: ResolvedLlm): LanguageModel {
   if (llm.openaiSubscriptionToken) {
-    return createOpenAISubscriptionModel({
-      model: llm.model,
-      accessToken: llm.openaiSubscriptionToken,
-      ...(llm.openaiSubscriptionAccountId
-        ? { accountId: llm.openaiSubscriptionAccountId }
-        : {}),
-    });
+    return createOpenAIPlanModel({ model: llm.model, accessToken: llm.openaiSubscriptionToken });
   }
   return createLLM({
     provider: llm.provider,
