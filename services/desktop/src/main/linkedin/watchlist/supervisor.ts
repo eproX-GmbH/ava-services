@@ -50,6 +50,8 @@ const FAIL_BACKOFF_MS = 24 * 3600_000;
 const CLASSIFY_BATCH = 5;
 const BESTAND_POOL_MAX_AGE_MS = 7 * 24 * 3600_000;
 const MAX_ALERTS_PER_RUN = 15;
+/** Erstpruefung einer Person: nur Signale aus diesem Fenster melden. */
+const ERSTPRUEFUNG_FENSTER_MS = 7 * 24 * 3600_000;
 
 const classifySchema = yup.array().of(
   yup
@@ -261,7 +263,7 @@ export class WatchlistSupervisor {
       const teile = [
         `${profileOk}/${selected.length + bestandGeprueft} Profile geprueft` +
           (bestandGeprueft > 0 ? ` (davon ${bestandGeprueft} Bestand)` : ""),
-        baselines > 0 ? `${baselines} Baseline(s) aufgenommen` : null,
+        baselines > 0 ? `${baselines} Erstpruefung(en)` : null,
         `${neueSignale} neue Signale`,
         `${alertsNeu} Meldungen`,
       ].filter(Boolean);
@@ -318,16 +320,26 @@ export class WatchlistSupervisor {
       return "fehler";
     }
 
+    // Erstpruefung (2026-10-06): Vorher nahm der erste Lauf nur eine
+    // Baseline auf und meldete nichts — bei Patrick lief dieser erste Lauf
+    // automatisch („1 Baseline, 0 Signale“), erst der manuelle zweite
+    // brachte Meldungen. Jetzt gelten beim ersten Lauf die Signale der
+    // letzten 7 Tage als neu; aeltere werden still als Bestand gemerkt.
     const isBaseline = entry.lastCheckedAt === null;
+    let kandidaten = signals;
     if (isBaseline) {
-      await this.deps.watchlist.markSeen(signals);
-      await markChecked(entry.profileUrl);
+      const grenze = Date.now() - ERSTPRUEFUNG_FENSTER_MS;
+      const aktuell = signals.filter((s) => {
+        const t = s.observedAtIso ? Date.parse(s.observedAtIso) : NaN;
+        return Number.isFinite(t) && t >= grenze;
+      });
+      const alt = signals.filter((s) => !aktuell.includes(s));
+      if (alt.length > 0) await this.deps.watchlist.markSeen(alt);
       zaehler.baselines++;
-      zaehler.profileOk++;
-      return "ok";
+      kandidaten = aktuell;
     }
 
-    const neu = await this.deps.watchlist.filterNew(signals);
+    const neu = await this.deps.watchlist.filterNew(kandidaten);
     zaehler.neueSignale += neu.length;
     if (neu.length > 0 && zaehler.alertsNeu < MAX_ALERTS_PER_RUN) {
       const bewertet = await this.classify(neu.slice(0, MAX_ALERTS_PER_RUN));
