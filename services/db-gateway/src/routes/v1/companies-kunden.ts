@@ -1,6 +1,7 @@
 // Kunden und Referenzen einer Firma (docs/PLAN_KUNDEN.md, K2).
 //
-//   GET /companies/{companyId}/kunden
+//   GET  /companies/{companyId}/kunden
+//   POST /kunden/suche            Umkehrsuche: wer nennt X als Kunden?
 //
 // Liest die vom Kontakt-Producer erkannten Kunden/Partner und gleicht sie
 // gegen die Stammdaten ab — mit demselben Weg wie das Firmenradar: Dry-Run
@@ -10,7 +11,7 @@
 
 import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
 import { requireScope } from "../../middleware/auth";
-import { listeKunden, setzeMatch, type KundeRow } from "../../lib/kunden";
+import { listeKunden, listeNennungen, setzeMatch, type KundeRow } from "../../lib/kunden";
 import { buildXlsx } from "../../lib/xlsx-mini";
 import { callUpstreamBinaryExpectJson } from "../../lib/upstream";
 import { logger } from "../../lib/logger";
@@ -140,6 +141,59 @@ companiesKundenRouter.openapi(route, async (c) => {
     {
       items: zeilen.map((z) => ({
         id: z.id,
+        name: z.name,
+        art: z.art,
+        beleg: z.beleg,
+        quelle: z.quelle,
+        konfidenz: z.konfidenz,
+        erstGesehen: z.erstGesehen,
+        zuletztGesehen: z.zuletztGesehen,
+        match: z.match,
+      })),
+    },
+    200,
+  );
+});
+
+// ---- Umkehrsuche --------------------------------------------------------------
+//
+// „Wer nennt X als Kunden?“ ueber die Firmenliste des Aufrufers (seine
+// eigenen Firmen, wie beim Neuheiten-Endpunkt). Trifft ueber den
+// Stammdaten-Treffer oder den genannten Namen.
+
+const SucheBody = z.object({
+  companyIds: z.array(z.string().min(1)).min(1).max(500),
+  name: z.string().trim().min(2).max(120).optional(),
+  zielCompanyId: z.string().min(1).optional(),
+});
+
+const NennungShape = KundeShape.extend({ companyId: z.string() });
+
+const sucheRoute = createRoute({
+  method: "post",
+  path: "/kunden/suche",
+  tags: [tag],
+  summary: "Umkehrsuche: welche Firmen nennen eine Firma als Kunde, Partner oder Referenz",
+  request: { body: { content: { "application/json": { schema: SucheBody } }, required: true } },
+  responses: {
+    200: { content: { "application/json": { schema: z.object({ items: z.array(NennungShape) }) } }, description: "ok" },
+    400: { content: { "application/json": { schema: ErrorShape } }, description: "bad request" },
+    401: { content: { "application/json": { schema: ErrorShape } }, description: "unauthenticated" },
+    403: { content: { "application/json": { schema: ErrorShape } }, description: "forbidden" },
+  },
+});
+
+companiesKundenRouter.openapi(sucheRoute, async (c) => {
+  const { companyIds, name, zielCompanyId } = c.req.valid("json");
+  if (!name && !zielCompanyId) {
+    return c.json({ error: "bad_request", message: "name oder zielCompanyId angeben" }, 400);
+  }
+  const zeilen = await listeNennungen({ companyIds: Array.from(new Set(companyIds)), name, zielCompanyId });
+  return c.json(
+    {
+      items: zeilen.map((z) => ({
+        id: z.id,
+        companyId: z.companyId,
         name: z.name,
         art: z.art,
         beleg: z.beleg,

@@ -6,6 +6,7 @@ import { getDb as getLinkedInDb, signalsForCompany } from "../../linkedin/db";
 import { read as readLinkedInSettings } from "../../linkedin/store";
 import { landText, statusWarnungText } from "../../firmen-status";
 import { kompakteKontakte } from "./kontakte-kompakt";
+import { ladeFirmenliste } from "../real-candidate-source";
 
 // Read-only company tools (Phase 8.b).
 //
@@ -281,6 +282,69 @@ export function buildCompanyTools(ctx: Ctx): Tool[] {
       };
     },
     preview: (r) => `${(r as { anzahl?: number }).anzahl ?? 0} Kunden/Partner`,
+  });
+
+  // Umkehrsuche (docs/PLAN_KUNDEN.md): Welche meiner Firmen nennen X als
+  // Kunden, Partner oder Referenz? Laeuft ueber die eigene Firmenliste.
+  const kundenUmkehrsuche = defineTool({
+    name: "kunden_umkehrsuche",
+    summary: "Welche eigenen Firmen nennen eine bestimmte Firma als Kunde, Partner oder Referenz auf ihrer Website?",
+    category: "firmen kunden referenzen",
+    description:
+      "Umkehrsuche ueber die Kunden-/Referenznennungen aller eigenen Firmen: Wer nennt X als Kunden, Partner oder Referenzprojekt? " +
+      "Suche per `name` (Teiltreffer auf den genannten Namen, z. B. 'Audi') oder per `companyId` der gesuchten Firma " +
+      "(trifft ueber den Stammdaten-Abgleich). Ergebnis je nennender Firma mit Art und Beleg. " +
+      "Vertrieblich: Wettbewerber oder Partner, die denselben Kunden bedienen; Referenzkunden einer Branche. " +
+      "Selbstauskuenfte der Websites, keine bestaetigten Geschaeftsbeziehungen.",
+    parameters: {
+      type: "object",
+      properties: {
+        name: { type: "string", description: "Firmenname oder Teil davon, wie er auf Websites stehen koennte" },
+        companyId: { type: "string", description: "companyId der gesuchten Firma (Stammdaten-Treffer)" },
+      },
+    },
+    schema: yup
+      .object({ name: yup.string().trim().min(2).max(120).optional(), companyId: yup.string().trim().min(1).optional() })
+      .noUnknown(true)
+      .test("eins", "name oder companyId angeben", (v) => Boolean(v?.name || v?.companyId)),
+    run: async (args, c) => {
+      const firmen = await ladeFirmenliste(gateway);
+      const ids = [...firmen.keys()];
+      if (ids.length === 0) return { nennungen: [], hinweis: "Noch keine eigenen Firmen — erst Firmen importieren und verarbeiten lassen." };
+      type Zeile = {
+        companyId: string; name: string; art: string; beleg: string | null; quelle: string | null;
+        konfidenz: string | null; zuletztGesehen: string;
+        match: { companyId: string; name: string; location: string | null } | null;
+      };
+      const alle: Zeile[] = [];
+      for (let i = 0; i < ids.length; i += 500) {
+        const r = await gateway.request<{ items: Zeile[] }>("/v1/kunden/suche", {
+          method: "POST",
+          body: { companyIds: ids.slice(i, i + 500), ...(args.name ? { name: args.name } : {}), ...(args.companyId ? { zielCompanyId: args.companyId } : {}) },
+          signal: c.signal,
+        });
+        alle.push(...r.items);
+      }
+      const jeFirma = new Map<string, { companyId: string; firma: string; nennungen: Array<Record<string, unknown>> }>();
+      for (const z of alle) {
+        let g = jeFirma.get(z.companyId);
+        if (!g) {
+          g = { companyId: z.companyId, firma: firmen.get(z.companyId) ?? z.companyId, nennungen: [] };
+          jeFirma.set(z.companyId, g);
+        }
+        g.nennungen.push({
+          genannt: z.name,
+          art: z.art,
+          ...(z.konfidenz === "mittel" ? { konfidenz: "mittel" } : {}),
+          ...(z.match ? { stammdaten: z.match } : {}),
+          ...(z.beleg ? { beleg: z.beleg } : {}),
+          ...(z.quelle ? { quelle: z.quelle } : {}),
+          zuletztGesehen: z.zuletztGesehen.slice(0, 10),
+        });
+      }
+      return { anzahlFirmen: jeFirma.size, nennungen: [...jeFirma.values()] };
+    },
+    preview: (r) => `${(r as { anzahlFirmen?: number }).anzahlFirmen ?? 0} nennende Firmen`,
   });
 
   const profile = defineTool({
@@ -1027,6 +1091,7 @@ export function buildCompanyTools(ctx: Ctx): Tool[] {
     linkedinLookup,
     techStack,
     kunden,
+    kundenUmkehrsuche,
     shareholders,
     network,
     networkDeepen,

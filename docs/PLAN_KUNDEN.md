@@ -92,8 +92,16 @@ der Datenschutz-Pass.
   den eigenen Firmen = warn; viele neue Referenzen bei heißer Firma = info;
   lauter fachfremde Namen = nichts.
 
+## Umkehrsuche (v0.1.756, 2026-10-06)
+
+- Gateway `POST /v1/kunden/suche` `{ companyIds, name?, zielCompanyId? }`:
+  Nennungen über die Firmenliste des Aufrufers, Treffer über den
+  Stammdaten-Abgleich oder den genannten Namen (Normalform, Teiltreffer).
+- Chat-Werkzeug `kunden_umkehrsuche` (`name` oder `companyId`): je nennender
+  Firma Art, Beleg, Quelle, Stammdaten-Treffer. Fähigkeitsgruppe „firmen“
+  um `kunden_*` ergänzt.
+
 ## Später
 
-- Umkehrsuche „Wer nennt X als Kunden?“ über alle Firmen des Nutzers.
 - Gemeinsame Kunden im Vertriebsblick.
 - Zertifikate und Technologie-Partner als eigene Arten.

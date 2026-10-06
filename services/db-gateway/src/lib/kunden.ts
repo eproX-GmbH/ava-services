@@ -168,3 +168,62 @@ export async function setzeMatch(
     [id, match?.companyId ?? null, match?.name ?? null, match?.location ?? null],
   );
 }
+
+/**
+ * Umkehrsuche (docs/PLAN_KUNDEN.md): Welche der uebergebenen Firmen nennen
+ * eine bestimmte Firma als Kunde, Partner oder Referenz? Trifft ueber den
+ * Stammdaten-Treffer (companyId) ODER den genannten Namen (Normalform,
+ * Teiltreffer). Die Firmenliste kommt vom Aufrufer — seine eigenen Firmen.
+ */
+export async function listeNennungen(args: {
+  companyIds: string[];
+  name?: string | null;
+  zielCompanyId?: string | null;
+  limit?: number;
+}): Promise<KundeRow[]> {
+  if (args.companyIds.length === 0) return [];
+  const pool = getGatewayPool();
+  await ensureSchema(pool);
+  const norm = args.name ? normalisiereKundenname(args.name) : "";
+  if (!norm && !args.zielCompanyId) return [];
+  const bedingungen: string[] = [];
+  const werte: unknown[] = [args.companyIds];
+  if (args.zielCompanyId) {
+    werte.push(args.zielCompanyId);
+    bedingungen.push(`"matchCompanyId" = $${werte.length}`);
+  }
+  if (norm.length >= 3) {
+    werte.push(`%${norm}%`);
+    bedingungen.push(`"nameNormalized" LIKE $${werte.length}`);
+  } else if (norm) {
+    werte.push(norm);
+    bedingungen.push(`"nameNormalized" = $${werte.length}`);
+  }
+  werte.push(Math.max(1, Math.min(500, args.limit ?? 200)));
+  const r = await pool.query<{
+    id: string; companyId: string; name: string; art: string; beleg: string | null; quelle: string | null;
+    konfidenz: string | null; erstGesehen: Date; zuletztGesehen: Date;
+    matchCompanyId: string | null; matchName: string | null; matchLocation: string | null; matchGeprueftAt: Date | null;
+  }>(
+    `SELECT id, "companyId", name, art, beleg, quelle, konfidenz, "erstGesehen", "zuletztGesehen",
+            "matchCompanyId", "matchName", "matchLocation", "matchGeprueftAt"
+       FROM "CompanyKunde"
+      WHERE "companyId" = ANY($1::text[]) AND (${bedingungen.join(" OR ")})
+      ORDER BY "zuletztGesehen" DESC
+      LIMIT $${werte.length}`,
+    werte,
+  );
+  return r.rows.map((x) => ({
+    id: x.id,
+    companyId: x.companyId,
+    name: x.name,
+    art: x.art as KundenArt,
+    beleg: x.beleg,
+    quelle: x.quelle,
+    konfidenz: x.konfidenz,
+    erstGesehen: iso(x.erstGesehen)!,
+    zuletztGesehen: iso(x.zuletztGesehen)!,
+    match: x.matchCompanyId ? { companyId: x.matchCompanyId, name: x.matchName ?? x.matchCompanyId, location: x.matchLocation } : null,
+    matchGeprueftAt: iso(x.matchGeprueftAt),
+  }));
+}
