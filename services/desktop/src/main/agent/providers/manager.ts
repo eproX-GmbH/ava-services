@@ -150,13 +150,11 @@ export class LlmProviderManager extends EventEmitter {
               // v0.1.368 — wie Anthropic: ChatGPT-Abo hat Vorrang vor
               // einem hinterlegten OpenAI-API-Key.
               getOpenAIAuthMode: () =>
-                this.isProviderLocked()
-                  ? "api-key"
-                  : this.aboNutzbar()
-                    ? "subscription"
-                    : this.chatgptPlanErlaubt()
-                      ? (this.store.getConfig().openaiAuthMode ?? "api-key")
-                      : "api-key",
+                this.aboNutzbar()
+                  ? "subscription"
+                  : this.isProviderLocked() || !this.chatgptPlanErlaubt()
+                    ? "api-key"
+                    : (this.store.getConfig().openaiAuthMode ?? "api-key"),
               getOpenAISubscriptionToken: () =>
                 this.chatgptPlanErlaubt() ? this.store.getOpenAISubscriptionToken() : Promise.resolve(null),
               getOpenAISubscriptionAccountId: () =>
@@ -316,6 +314,8 @@ export class LlmProviderManager extends EventEmitter {
   keySource(kind: LlmProviderKind): KeySource {
     if (kind === "ollama") return "eigen";
     if (!this.org.providers[kind]) return "eigen";
+    // Freigegebenes persoenliches ChatGPT-Abo zaehlt auch unter Sperre als eigener Zugang.
+    if (kind === "openai" && this.aboNutzbar()) return "eigen";
     if (this.isProviderLocked()) return "organisation";
     const explicit = this.store.getConfig().keySource?.[kind];
     if (explicit) return explicit;
@@ -404,9 +404,17 @@ export class LlmProviderManager extends EventEmitter {
     return this.org.chatgptPlanErlaubt !== false;
   }
 
-  /** Abo-Verbindung vorhanden UND von der Organisation erlaubt. */
+  /**
+   * Abo-Verbindung vorhanden UND von der Organisation erlaubt. Die
+   * Anbieter-Sperre schliesst das persoenliche Abo NICHT aus, wenn die
+   * Organisation es ausdruecklich freigibt (Schalter „Persoenliches
+   * ChatGPT-Abo erlaubt“) — unter Sperre aber nur ueber den offiziellen
+   * Plan-Flow, nicht ueber den alten Codex-Umweg.
+   */
   private aboNutzbar(): boolean {
-    return this.chatgptPlanErlaubt() && this.store.hasOpenAISubscriptionToken();
+    if (!this.chatgptPlanErlaubt() || !this.store.hasOpenAISubscriptionToken()) return false;
+    if (this.isProviderLocked()) return this.planZusammenfassung?.flow === "plan";
+    return true;
   }
 
   /** Kurzfassung fuer das Bundle nachziehen (nach jeder Token-Aenderung). */
@@ -596,7 +604,11 @@ export class LlmProviderManager extends EventEmitter {
     // v0.1.556 — Unter Sperre ist NUR der Wechsel auf einen Anbieter erlaubt,
     // den die Organisation mit Schluessel bereitstellt (Onboarding
     // „Organisationsschluessel verwenden" scheiterte sonst an der Sperre).
-    if (this.isProviderLocked() && !(kind !== "ollama" && this.org.providers[kind])) {
+    if (
+      this.isProviderLocked() &&
+      !(kind !== "ollama" && this.org.providers[kind]) &&
+      !(kind === "openai" && this.aboNutzbar())
+    ) {
       this.sperrePruefen("der Anbieterwechsel");
     }
     if (kind !== "ollama" && this.keySource(kind) === "organisation") {
@@ -893,8 +905,9 @@ export class LlmProviderManager extends EventEmitter {
     expiresIn?: number;
     accountId?: string;
   } & Partial<Pick<OpenAISubscriptionRecord, "flow" | "clientId" | "subject" | "email" | "idToken" | "scopes" | "planModel">>): void {
-    this.sperrePruefen("die Abo-Anmeldung");
     if (!this.chatgptPlanErlaubt()) throw new Error("Organisationsvorgabe: Das persoenliche ChatGPT-Abo ist in dieser Organisation nicht erlaubt.");
+    // Unter Anbieter-Sperre nur der offizielle Plan-Flow (Freigabe der Organisation).
+    if (args.flow !== "plan") this.sperrePruefen("die Abo-Anmeldung");
     const accessToken = args.accessToken.trim();
     if (accessToken.length === 0) throw new Error("Access-Token ist leer.");
     const expiresAt =

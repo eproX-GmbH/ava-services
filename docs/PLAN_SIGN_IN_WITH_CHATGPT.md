@@ -101,7 +101,12 @@ Umgesetzt S1–S4:
   Gewaehltes Modell je Verbindung, sonst `is_default` bzw. erstes.
 - Organisation: `TenantPolicy.chatgptPlanErlaubt` (Standard an),
   Schalter in der Organisation, Desktop blendet Karte und Modus ohne
-  Freigabe aus; eine gespeicherte Verbindung ruht dann.
+  Freigabe aus; eine gespeicherte Verbindung ruht dann. **Unter
+  Anbieter-Sperre** (v0.1.765): Die Freigabe gilt trotzdem; ein
+  verbundenes Abo (nur Plan-Flow, nicht Codex) hat im Chat und in der
+  Hintergrund-KI Vorrang vor dem Organisationsschluessel, die Producer
+  bleiben beim Schluessel der Organisation. Befund: Operator-Organisation
+  hat die Sperre an, Karte war unsichtbar.
 - Oberflaeche: Karte „ChatGPT-Abo“ mit „Continue with ChatGPT“ (offizielles
   Logo, englischer Pflichttext), zweistufig mit Limit-Hinweis, Konto,
   Modellauswahl aus der Kontoliste, „Manage usage“, Trennen; Erstlauf-

@@ -6358,9 +6358,8 @@ app.whenReady().then(async () => {
   ipcMain.handle(
     "agent:connectChatgptPlan",
     async (event): Promise<{ ok: true; email: string | null; planScope: boolean } | { ok: false; error: string }> => {
-      if (providers.isProviderLocked()) {
-        return { ok: false, error: "Organisationsvorgabe: Anbieter und Schlüssel legt deine Organisation fest; ein eigenes ChatGPT-Abo ist gesperrt." };
-      }
+      // Die Anbieter-Sperre hindert nicht, wenn die Organisation das
+      // persoenliche Abo ausdruecklich freigibt (Standard an).
       if (!providers.chatgptPlanErlaubt()) {
         return { ok: false, error: "Organisationsvorgabe: Das persönliche ChatGPT-Abo ist in dieser Organisation nicht erlaubt." };
       }

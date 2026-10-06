@@ -2140,7 +2140,7 @@ export function ProviderSection() {
           Organisation legt Schluessel fest, eigene Abos sind gesperrt. */}
       {/* docs/PLAN_SIGN_IN_WITH_CHATGPT.md — ohne Freigabe der Organisation
           ist die Karte ganz weg (Regel: Gesperrtes komplett ausblenden). */}
-      {!providerLock && chatgptPlan.erlaubt && (
+      {chatgptPlan.erlaubt && (
         <div className="subscription-hero-grid">
           <div className="subscription-hero-card">
             <OpenAISubscriptionContent
@@ -2210,9 +2210,11 @@ export function ProviderSection() {
               {policyModels?.chatModel && <> Chat: <code>{policyModels.chatModel}</code>.</>}
               {policyModels?.producerModel && <> Hintergrund: <code>{policyModels.producerModel}</code>.</>}{" "}
               Aufrufe laufen über den Schlüssel der Organisation.
-              {hasOpenAISubscriptionToken && (
-                <> Dein verbundenes ChatGPT-Abo wird in dieser Organisation nicht verwendet, weder im Chat noch im Hintergrund.</>
-              )}
+              {hasOpenAISubscriptionToken && chatgptPlan.flow === "plan" ? (
+                <> Dein persönliches ChatGPT-Abo ist freigegeben und hat im Chat und in der Hintergrund-KI Vorrang; die Verarbeitungs-Producer laufen über den Schlüssel der Organisation.</>
+              ) : hasOpenAISubscriptionToken ? (
+                <> Deine alte ChatGPT-Verbindung (Codex) wird unter der Vorgabe nicht verwendet. Verbinde dich oben neu über „Continue with ChatGPT“.</>
+              ) : null}
             </span>
           </div>
         </div>
