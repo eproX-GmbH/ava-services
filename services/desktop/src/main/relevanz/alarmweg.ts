@@ -119,12 +119,9 @@ export function wegBegruendung(e: AlarmwegErgebnis, rang: number | null): string
   if (e.weg === "sammeln") {
     return `Randnotiz bei einer Firma, an der du gerade nicht arbeitest${r} — kommt in die Tageszusammenfassung.`;
   }
-  if (e.fokus && e.hochgestuft) {
-    return `Fokuskunde mit eigenem Buying Center — deshalb sofort und als "${e.severity}" statt nur als Hinweis.`;
-  }
-  if (e.fokus) return "Fokuskunde mit eigenem Buying Center — deshalb sofort.";
-  if (e.hochgestuft) {
-    return `Du arbeitest gerade an dieser Firma${r} — deshalb als "${e.severity}" statt nur als Hinweis.`;
-  }
+  // Nutzer-Text (2026-10-06): keine internen Stufen wie "warn" und kein
+  // Erklaeren der Einstufung; nur der Bezug, den der Nutzer kennt.
+  if (e.fokus) return "Du bearbeitest diese Firma aktiv in deinem Buying Center.";
+  if (e.hochgestuft) return `Du arbeitest gerade an dieser Firma${r}.`;
   return "";
 }
