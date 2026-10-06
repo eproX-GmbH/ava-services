@@ -752,11 +752,23 @@ export class ProviderConfigStore extends EventEmitter {
         "[provider-store] safeStorage encryption not available — falling back to basic cipher (openai-subscription)",
       );
     }
+    // docs/PLAN_SIGN_IN_WITH_CHATGPT.md — ALLE Felder schreiben. Befund
+    // 2026-10-06 (Patrick): nur vier Felder wurden gespeichert, `flow`
+    // ging verloren, die Plan-Verbindung galt beim naechsten Lesen als
+    // Codex-Altbestand ("Alte Verbindung") und der Plan-Token ging an den
+    // Codex-Endpunkt → 401 "Authentifizierung fehlgeschlagen".
     const envelope = JSON.stringify({
       accessToken: record.accessToken,
       refreshToken: record.refreshToken,
       expiresAt: record.expiresAt,
       accountId: record.accountId,
+      flow: record.flow,
+      clientId: record.clientId,
+      subject: record.subject,
+      email: record.email,
+      idToken: record.idToken,
+      scopes: record.scopes,
+      planModel: record.planModel,
     });
     const enc = safeStorage.encryptString(envelope);
     writeFileSync(this.openaiSubscriptionPath(), enc, { mode: 0o600 });

@@ -413,7 +413,12 @@ export class LlmProviderManager extends EventEmitter {
    */
   private aboNutzbar(): boolean {
     if (!this.chatgptPlanErlaubt() || !this.store.hasOpenAISubscriptionToken()) return false;
-    if (this.isProviderLocked()) return this.planZusammenfassung?.flow === "plan";
+    const z = this.planZusammenfassung;
+    // Plan-Verbindung ohne erteilten Plan-Scope (z. B. Team-Konto, Freigabe
+    // in ChatGPT verweigert): Anmeldung gueltig, aber keine Plan-Nutzung —
+    // dann zaehlt sie nicht, und der bisherige Weg (Schluessel) bleibt aktiv.
+    if (z?.flow === "plan" && !z.planScope) return false;
+    if (this.isProviderLocked()) return z?.flow === "plan";
     return true;
   }
 

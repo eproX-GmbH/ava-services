@@ -2588,6 +2588,16 @@ function OpenAISubscriptionContent({
               „Continue with ChatGPT“, um dein Modell selbst zu wählen und den offiziellen Weg zu nutzen.
             </p>
           )}
+          {istPlan && !plan.planScope && (
+            <p className="muted small">
+              Die Anmeldung ist gültig, aber ChatGPT hat die Plan-Nutzung für AVA nicht freigegeben. Das passiert bei
+              Team-, Business- und Free-Konten (nur Plus und Pro können ihr Abo teilen) oder wenn du die Freigabe im
+              Anmeldefenster abgelehnt hast. Bis dahin nutzt AVA weiter deinen Schlüssel beziehungsweise den deiner
+              Organisation. Freigabe prüfen unter{" "}
+              <a href={CHATGPT_USAGE_URL} target="_blank" rel="noreferrer">ChatGPT → Settings → Usage</a>, dann
+              „Reconnect with ChatGPT“.
+            </p>
+          )}
           {istPlan && (
             <label className="field" style={{ maxWidth: 420 }}>
               <span>Modell für AVA</span>

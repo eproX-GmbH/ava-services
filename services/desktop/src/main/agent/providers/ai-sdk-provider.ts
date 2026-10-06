@@ -925,6 +925,15 @@ function humanizeProviderError(
   const label = labelFor(kind);
   const detail = upstream?.detail;
 
+  // docs/PLAN_SIGN_IN_WITH_CHATGPT.md — Fehler der Plan-Nutzung tragen
+  // code "chatgpt_plan" und einen fertigen deutschen Text (planFehlerText).
+  // Der darf nicht in der API-Key-Sprache enden („API-Key pruefen“).
+  const planQuelle = `${raw} ${detail ?? ""}`;
+  if (planQuelle.includes("chatgpt_plan")) {
+    const m = /"message"\s*:\s*"([^"]{10,400})"/.exec(planQuelle);
+    return `ChatGPT-Abo: ${m?.[1] ?? "Die Anfrage ueber dein ChatGPT-Abo wurde abgelehnt. Pruefe chatgpt.com/settings/usage oder verbinde dich in den Einstellungen neu."}`;
+  }
+
   // Rate-limit (both Anthropic "exceed your organization's rate limit"
   // and OpenAI "rate_limit_exceeded" / "429").
   if (
