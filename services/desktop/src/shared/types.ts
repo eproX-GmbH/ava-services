@@ -1225,7 +1225,8 @@ export type AlertKind =
   | "workflow"         // W4: Workflow-Lauf beendet / Freigabe offen
   | "import-finished" // v0.1.593: Vorgang fuer alle Firmen durchgelaufen (mit Fehleruebersicht)
   | "status"           // Firmenstatus: Insolvenz, Loeschung, Loeschungsankuendigung, Liquidation
-  | "contact-change";  // 2026-10-05: Stellen-/Arbeitgeberwechsel, neue Ansprechpartner, geaenderte Firmenkontakte
+  | "contact-change"   // 2026-10-05: Stellen-/Arbeitgeberwechsel, neue Ansprechpartner, geaenderte Firmenkontakte
+  | "customer-change"; // 2026-10-06: neue Kunden/Referenzen laut Website (docs/PLAN_KUNDEN.md K4)
 
 export interface Alert {
   id: string;

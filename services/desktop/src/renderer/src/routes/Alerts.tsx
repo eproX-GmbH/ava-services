@@ -42,6 +42,7 @@ const KIND_LABEL: Record<AlertKind, string> = {
   "import-finished": "Vorgang abgeschlossen",
   status: "Firmenstatus",
   "contact-change": "Kontakt-Wechsel",
+  "customer-change": "Neue Kunden",
 };
 
 const SEVERITY_LABEL: Record<AlertSeverity, string> = {

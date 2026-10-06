@@ -79,9 +79,21 @@ der Datenschutz-Pass.
 - Chat: `company_get` mit Bereich `kunden` (kompakt: Name, Art, Treffer),
   Werkzeugbeschreibung ergänzt.
 
-## Später (K4)
+## K4 Alarm „neuer Kunde“ (v0.1.755, 2026-10-06)
+
+- `POST /v1/alerts/neuheiten` liefert `new-customers`: Einträge aus
+  `CompanyKunde` mit `erstGesehen` nach `since`, je Firma gebündelt (bis 8
+  Namen mit Stammdaten-Treffer). Erst-Crawl ist keine Neuheit: nur Firmen,
+  die vor `since` schon Kunden hatten.
+- Desktop: Alert-Art `customer-change` („Neue Kunden“). Der Kandidat
+  markiert Kunden, die selbst in der eigenen Firmenliste stehen („in deinen
+  Firmen“: Wettbewerber oder Partner bedient den eigenen Kunden).
+- Judge: passt ein Kunde zu Branche, Region, Idealkunde oder steht er in
+  den eigenen Firmen = warn; viele neue Referenzen bei heißer Firma = info;
+  lauter fachfremde Namen = nichts.
+
+## Später
 
 - Umkehrsuche „Wer nennt X als Kunden?“ über alle Firmen des Nutzers.
-- Alarm „neuer Kunde“ über `/v1/alerts/neuheiten` mit Bestandsprüfung.
 - Gemeinsame Kunden im Vertriebsblick.
 - Zertifikate und Technologie-Partner als eigene Arten.

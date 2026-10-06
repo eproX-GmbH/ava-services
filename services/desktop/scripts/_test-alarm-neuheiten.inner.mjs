@@ -76,6 +76,24 @@ const { kandidatAus, buildRealCandidateSource } = S;
   assert.equal(c.sourceRef, "new-contacts:X_HRB_1:2026-10-05");
   assert.match(c.summary, /10 neue Ansprechpartner .* A B \(Geschäftsführer, seit 03\/2026\), C D und 8 weitere/);
 }
+// 5b) Neue Kunden gebuendelt, eigene Firma markiert
+{
+  const eigene = new Map([["Y_HRB_9", "Meine Kundin GmbH"]]);
+  const c = kandidatAus(
+    { art: "new-customers", id: "X_HRB_1:2026-10-06", companyId: "X_HRB_1", anzahl: 3,
+      kunden: [
+        { name: "Audi", art: "kunde", match: { companyId: "INGOLSTADT_HRB_1", name: "AUDI AG", location: "Ingolstadt" } },
+        { name: "Meine Kundin", art: "referenzprojekt", match: { companyId: "Y_HRB_9", name: "Meine Kundin GmbH", location: "Minden" } },
+        { name: "Ohne Treffer", art: "partner", match: null },
+      ], occurredAt: "2026-10-06T06:00:00.000Z" },
+    "Beispiel GmbH",
+    eigene,
+  );
+  assert.equal(c.kind, "customer-change");
+  assert.equal(c.sourceRef, "new-customers:X_HRB_1:2026-10-06");
+  assert.match(c.summary, /3 neue Kunden\/Referenzen .* Audi, Meine Kundin \(referenzprojekt, in deinen Firmen\), Ohne Treffer \(partner\)/);
+  assert.deepEqual(c.payload.eigeneFirmenDarunter, ["Y_HRB_9"]);
+}
 // 6) Quelle: Firmenliste seitenweise + Buendel ans Gateway, Namen aus der Matrix
 {
   const calls = [];

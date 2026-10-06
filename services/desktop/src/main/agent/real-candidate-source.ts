@@ -87,6 +87,14 @@ type Neuheit =
       vorherGesehenAm?: string | null;
     }
   | {
+      art: "new-customers";
+      id: string;
+      companyId: string;
+      anzahl: number;
+      kunden: Array<{ name: string; art: string; match: { companyId: string; name: string; location: string | null } | null }>;
+      occurredAt: string;
+    }
+  | {
       art: "new-contacts";
       id: string;
       companyId: string;
@@ -139,7 +147,7 @@ export function buildRealCandidateSource(
       for (const n of items) {
         if (out.length >= MAX_CANDIDATES) break;
         const name = firmen.get(n.companyId) ?? `${n.companyId.slice(0, 12)}…`;
-        const c = kandidatAus(n, name);
+        const c = kandidatAus(n, name, firmen);
         if (c) out.push(c);
       }
     }
@@ -190,8 +198,41 @@ const PROFIL_KIND_TEXT: Record<string, string> = {
   purpose: "Unternehmensgegenstand",
 };
 
-export function kandidatAus(n: Neuheit, companyName: string): HeartbeatCandidate | null {
+export function kandidatAus(
+  n: Neuheit,
+  companyName: string,
+  /** companyId → Name der eigenen Firmenliste; ein neuer Kunde, der selbst
+   *  eine eigene Firma ist, wiegt im Vertrieb besonders (Wettbewerber oder
+   *  Partner bedient den eigenen Kunden). */
+  eigeneFirmen?: Map<string, string>,
+): HeartbeatCandidate | null {
   switch (n.art) {
+    case "new-customers": {
+      const liste = n.kunden
+        .map((k) => {
+          const eigene = k.match && eigeneFirmen?.has(k.match.companyId);
+          const zusatz = [k.art !== "kunde" ? k.art : null, eigene ? "in deinen Firmen" : null].filter(Boolean).join(", ");
+          return zusatz ? `${k.name} (${zusatz})` : k.name;
+        })
+        .join(", ");
+      const rest = n.anzahl - n.kunden.length;
+      const eigeneTreffer = n.kunden.filter((k) => k.match && eigeneFirmen?.has(k.match.companyId)).map((k) => k.match!.companyId);
+      return {
+        kind: "customer-change",
+        companyId: n.companyId,
+        companyName,
+        sourceRef: `new-customers:${n.id}`,
+        occurredAt: n.occurredAt,
+        summary: `${companyName} nennt ${n.anzahl} neue Kunden/Referenzen auf der Website: ${liste}${rest > 0 ? ` und ${rest} weitere` : ""}.`,
+        payload: {
+          typ: "new-customers",
+          anzahl: n.anzahl,
+          kunden: n.kunden,
+          eigeneFirmenDarunter: eigeneTreffer,
+          source: "website",
+        },
+      };
+    }
     case "profile-change": {
       if (n.kind === "managing-directors") {
         const fmt = (list: Array<Record<string, unknown>>): string[] =>

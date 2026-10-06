@@ -15,6 +15,8 @@
 //                    wechsel, geaenderte Firmen-Telefon/-E-Mail
 //   new-contacts     neue Beschaeftigungen je Firma, gebuendelt zu EINEM
 //                    Eintrag (sonst flutet ein Re-Crawl den Judge)
+//   new-customers    neue Kunden/Referenzen laut Website je Firma gebuendelt
+//                    (docs/PLAN_KUNDEN.md K4), nur mit Kunden-Bestand
 //
 // Grundregel (Vorgabe 2026-10-05): Ein Erst-Crawl fuehrt NIE zu einer
 // Neuheit, egal welche Daten er bringt. Jede Quelle prueft deshalb, ob die
@@ -31,6 +33,7 @@ import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
 import { requireScope } from "../../middleware/auth";
 import { getProducerPool } from "../../lib/producer-pools";
 import { listeProfilAenderungen } from "../../lib/profile-changes";
+import { getGatewayPool } from "../../lib/producer-pools";
 import { logger } from "../../lib/logger";
 import { ErrorShape } from "./schemas";
 
@@ -102,6 +105,20 @@ const Item = z.discriminatedUnion("art", [
     bekanntSeit: z.string().nullable(),
     /** Letzte Beobachtung des ALTEN Werts; der Wechsel liegt dazwischen. */
     vorherGesehenAm: z.string().nullable(),
+  }),
+  z.object({
+    art: z.literal("new-customers"),
+    id: z.string(),
+    companyId: z.string(),
+    anzahl: z.number(),
+    kunden: z.array(
+      z.object({
+        name: z.string(),
+        art: z.string(),
+        match: z.object({ companyId: z.string(), name: z.string(), location: z.string().nullable() }).nullable(),
+      }),
+    ),
+    occurredAt: z.string(),
   }),
   z.object({
     art: z.literal("new-contacts"),
@@ -329,6 +346,63 @@ async function kontaktAenderungen(ids: string[], seit: Date): Promise<NeuheitIte
   return out;
 }
 
+/**
+ * Neue Kunden/Referenzen (docs/PLAN_KUNDEN.md, K4): Eintraege der Tabelle
+ * CompanyKunde, die seit `seit` erstmals gesehen wurden, je Firma gebuendelt.
+ * Erst-Crawl ist keine Neuheit: nur Firmen, die vor `seit` schon Kunden
+ * hatten. Der Abgleich gegen die Stammdaten steht mit drin, sofern die
+ * Kunden-Route ihn schon gemacht hat.
+ */
+async function neueKunden(ids: string[], seit: Date): Promise<NeuheitItem[]> {
+  const pool = getGatewayPool();
+  const r = await pool.query<{
+    companyId: string; name: string; art: string; erstGesehen: Date;
+    matchCompanyId: string | null; matchName: string | null; matchLocation: string | null;
+  }>(
+    `SELECT k."companyId", k.name, k.art, k."erstGesehen", k."matchCompanyId", k."matchName", k."matchLocation"
+       FROM "CompanyKunde" k
+      WHERE k."companyId" = ANY($1::text[]) AND k."erstGesehen" > $2
+        AND EXISTS (SELECT 1 FROM "CompanyKunde" k0
+                     WHERE k0."companyId" = k."companyId" AND k0."erstGesehen" <= $2)
+      ORDER BY k."erstGesehen" DESC
+      LIMIT 2000`,
+    [ids, seit],
+  ).catch((err) => {
+    // Tabelle entsteht erst mit dem ersten Kunden-Persist.
+    logger.info({ err: err instanceof Error ? err.message : err }, "neuheiten: CompanyKunde noch nicht vorhanden");
+    return { rows: [] as never[] };
+  });
+  const jeFirma = new Map<string, { anzahl: number; kunden: Array<{ name: string; art: string; match: { companyId: string; name: string; location: string | null } | null }>; juengst: Date }>();
+  for (const k of r.rows) {
+    let g = jeFirma.get(k.companyId);
+    if (!g) {
+      g = { anzahl: 0, kunden: [], juengst: k.erstGesehen };
+      jeFirma.set(k.companyId, g);
+    }
+    g.anzahl += 1;
+    if (g.kunden.length < 8) {
+      g.kunden.push({
+        name: k.name,
+        art: k.art,
+        match: k.matchCompanyId ? { companyId: k.matchCompanyId, name: k.matchName ?? k.matchCompanyId, location: k.matchLocation } : null,
+      });
+    }
+    if (k.erstGesehen > g.juengst) g.juengst = k.erstGesehen;
+  }
+  const out: NeuheitItem[] = [];
+  for (const [companyId, g] of jeFirma) {
+    out.push({
+      art: "new-customers",
+      id: `${companyId}:${g.juengst.toISOString().slice(0, 10)}`,
+      companyId,
+      anzahl: g.anzahl,
+      kunden: g.kunden,
+      occurredAt: g.juengst.toISOString(),
+    });
+  }
+  return out;
+}
+
 alertsNeuheitenRouter.openapi(route, async (c) => {
   const { companyIds, since } = c.req.valid("json");
   const ids = Array.from(new Set(companyIds));
@@ -357,9 +431,10 @@ alertsNeuheitenRouter.openapi(route, async (c) => {
     ),
     publikationen(ids, seit),
     kontaktAenderungen(ids, seit),
+    neueKunden(ids, seit),
   ]);
   const items: NeuheitItem[] = [];
-  const namen = ["profile-change", "publication", "contact"];
+  const namen = ["profile-change", "publication", "contact", "customers"];
   quellen.forEach((q, i) => {
     if (q.status === "fulfilled") items.push(...q.value);
     else logger.warn({ err: q.reason, quelle: namen[i] }, "neuheiten: quelle ausgefallen");
