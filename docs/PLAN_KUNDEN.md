@@ -111,6 +111,18 @@ der Datenschutz-Pass.
   Kunde. Vertriebsblick-Prompt: gemeinsame Kunden als Anlass nennen und
   `kunden` bei Vertriebs-, Ansprache- und Wettbewerbsfragen mitladen.
 
+## Zertifikate und Technologiepartner (v0.1.759, 2026-10-06)
+
+- Zwei neue Arten: `technologiepartner` (Herstellerprogramme wie SAP-,
+  Microsoft-, Siemens-Partner; Name = Hersteller) und `zertifikat` (ISO,
+  TÜV, Siegel, Auszeichnungen der Firma selbst). `partner` bleibt für
+  Vertriebs-, Kooperations- und Netzwerkpartner. Deckel 80 je Firma.
+- Zertifikate sind keine Firmen: kein Stammdaten-Abgleich, im Reiter ohne
+  Treffer und Aktion. Technologiepartner werden abgeglichen und sind
+  übernehmbar.
+- Judge: neue Zertifikate oder Herstellerprogramme sind Anlässe, wenn sie
+  zum Angebot des Nutzers passen (info).
+
 ## Später
 
 - Gemeinsame Kunden im Vertriebsblick.

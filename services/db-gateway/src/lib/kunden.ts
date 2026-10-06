@@ -14,8 +14,10 @@ import type { Pool } from "pg";
 import type { Logger } from "pino";
 import { getGatewayPool } from "./producer-pools";
 
-export type KundenArt = "kunde" | "partner" | "referenzprojekt";
-export const KUNDEN_ARTEN: KundenArt[] = ["kunde", "partner", "referenzprojekt"];
+export type KundenArt = "kunde" | "partner" | "referenzprojekt" | "zertifikat" | "technologiepartner";
+export const KUNDEN_ARTEN: KundenArt[] = ["kunde", "partner", "referenzprojekt", "zertifikat", "technologiepartner"];
+/** Zertifikate sind keine Firmen: kein Stammdaten-Abgleich, keine Uebernahme. */
+export const OHNE_ABGLEICH: KundenArt[] = ["zertifikat"];
 
 export interface KundeEingang {
   name: string;

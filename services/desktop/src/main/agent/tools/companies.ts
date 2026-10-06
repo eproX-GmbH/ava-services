@@ -243,7 +243,8 @@ export function buildCompanyTools(ctx: Ctx): Tool[] {
   const kunden = defineTool({
     name: "company_kunden",
     description:
-      "Kunden, Partner und Referenzprojekte, die eine Firma auf ihrer Website nennt (Referenzseiten, Logowaende, Fallstudien), " +
+      "Kunden, Partner, Referenzprojekte, Technologiepartner (Herstellerprogramme wie SAP/Microsoft-Partner) und Zertifikate/Siegel " +
+      "(ISO, TUEV, Auszeichnungen), die eine Firma auf ihrer Website nennt (Referenzseiten, Logowaende, Fallstudien), " +
       "je mit Stammdaten-Treffer (companyId, Name, Ort), wenn die genannte Firma in den Stammdaten gefunden wurde. " +
       "Ein Treffer laesst sich mit import_companies uebernehmen. Dazu fuer den Vertriebsblick: `gemeinsameKunden` (Kunden dieser Firma, " +
       "die auch andere eigene Firmen nennen: Wettbewerber oder Partner bedienen denselben Kunden), `wirdGenanntVon` (eigene Firmen, die " +

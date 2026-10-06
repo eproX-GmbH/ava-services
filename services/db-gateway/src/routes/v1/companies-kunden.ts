@@ -12,7 +12,7 @@
 
 import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
 import { requireScope } from "../../middleware/auth";
-import { listeGemeinsameKunden, listeKunden, listeNennungen, setzeMatch, type KundeRow } from "../../lib/kunden";
+import { KUNDEN_ARTEN, OHNE_ABGLEICH, listeGemeinsameKunden, listeKunden, listeNennungen, setzeMatch, type KundeRow } from "../../lib/kunden";
 import { buildXlsx } from "../../lib/xlsx-mini";
 import { callUpstreamBinaryExpectJson } from "../../lib/upstream";
 import { logger } from "../../lib/logger";
@@ -28,7 +28,7 @@ const MAX_ABGLEICH = 40;
 const KundeShape = z.object({
   id: z.string(),
   name: z.string(),
-  art: z.enum(["kunde", "partner", "referenzprojekt"]),
+  art: z.enum(KUNDEN_ARTEN as [string, ...string[]]),
   beleg: z.string().nullable(),
   quelle: z.string().nullable(),
   konfidenz: z.string().nullable(),
@@ -122,6 +122,7 @@ companiesKundenRouter.openapi(route, async (c) => {
   const zeilen = await listeKunden(companyId);
   const jetzt = Date.now();
   const offen = zeilen
+    .filter((z) => !OHNE_ABGLEICH.includes(z.art))
     .filter((z) => !z.matchGeprueftAt || jetzt - new Date(z.matchGeprueftAt).getTime() > PRUEFUNG_GUELTIG_MS)
     .slice(0, MAX_ABGLEICH);
   if (offen.length > 0) {
@@ -230,9 +231,9 @@ const gemeinsamRoute = createRoute({
             items: z.array(
               z.object({
                 name: z.string(),
-                art: z.enum(["kunde", "partner", "referenzprojekt"]),
+                art: z.enum(KUNDEN_ARTEN as [string, ...string[]]),
                 match: z.object({ companyId: z.string(), name: z.string(), location: z.string().nullable() }).nullable(),
-                firmen: z.array(z.object({ companyId: z.string(), name: z.string(), art: z.enum(["kunde", "partner", "referenzprojekt"]) })),
+                firmen: z.array(z.object({ companyId: z.string(), name: z.string(), art: z.enum(KUNDEN_ARTEN as [string, ...string[]]) })),
               }),
             ),
           }),

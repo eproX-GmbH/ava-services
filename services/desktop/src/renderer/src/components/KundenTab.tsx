@@ -9,7 +9,7 @@ import { FirmaUebernehmen, useIstUebernommen } from "../routes/firma-uebernehmen
 export interface Kunde {
   id: string;
   name: string;
-  art: "kunde" | "partner" | "referenzprojekt";
+  art: "kunde" | "partner" | "referenzprojekt" | "zertifikat" | "technologiepartner";
   beleg: string | null;
   quelle: string | null;
   konfidenz: string | null;
@@ -20,9 +20,13 @@ export interface Kunde {
 
 const ART_LABEL: Record<Kunde["art"], string> = {
   kunde: "Kunden",
-  partner: "Partner",
   referenzprojekt: "Referenzprojekte",
+  partner: "Partner",
+  technologiepartner: "Technologiepartner",
+  zertifikat: "Zertifikate und Siegel",
 };
+/** Zertifikate sind keine Firmen: ohne Stammdaten-Spalte und ohne Aktion. */
+const OHNE_STAMMDATEN = new Set<Kunde["art"]>(["zertifikat"]);
 
 function TrefferLink({ match }: { match: NonNullable<Kunde["match"]> }) {
   const navigate = useNavigate();
@@ -56,14 +60,15 @@ function Aktion({ match, onFertig }: { match: NonNullable<Kunde["match"]>; onFer
 
 export function KundenTab({ items, onFertig }: { items: Kunde[]; onFertig: () => void }) {
   if (items.length === 0) return <p className="muted">Noch keine Kunden oder Referenzen erkannt.</p>;
-  const gruppen: Array<[Kunde["art"], Kunde[]]> = (["kunde", "referenzprojekt", "partner"] as const)
+  const gruppen: Array<[Kunde["art"], Kunde[]]> = (["kunde", "referenzprojekt", "partner", "technologiepartner", "zertifikat"] as const)
     .map((art) => [art, items.filter((k) => k.art === art)] as [Kunde["art"], Kunde[]])
     .filter(([, l]) => l.length > 0);
   return (
     <>
       <p className="muted small" style={{ marginTop: 0 }}>
-        Von der Website der Firma erkannt (Referenzseiten, Logowände, Fallstudien). Der Stammdaten-Treffer ist ein
-        Vorschlag; „Übernehmen“ importiert die Firma in „Meine Firmen“ und startet die Verarbeitung.
+        Von der Website der Firma erkannt (Referenzseiten, Logowände, Fallstudien, Partner- und Zertifikatslogos). Der
+        Stammdaten-Treffer ist ein Vorschlag; „Übernehmen“ importiert die Firma in „Meine Firmen“ und startet die
+        Verarbeitung.
       </p>
       {gruppen.map(([art, liste]) => (
         <section key={art} style={{ marginBottom: 20 }}>
@@ -107,9 +112,15 @@ export function KundenTab({ items, onFertig }: { items: Kunde[]; onFertig: () =>
                     )}
                   </td>
                   <td>
-                    {k.match ? <TrefferLink match={k.match} /> : <span className="muted small">nicht gefunden</span>}
+                    {OHNE_STAMMDATEN.has(art) ? (
+                      <span className="muted small">–</span>
+                    ) : k.match ? (
+                      <TrefferLink match={k.match} />
+                    ) : (
+                      <span className="muted small">nicht gefunden</span>
+                    )}
                   </td>
-                  <td className="kunden-aktion">{k.match && <Aktion match={k.match} onFertig={onFertig} />}</td>
+                  <td className="kunden-aktion">{k.match && !OHNE_STAMMDATEN.has(art) && <Aktion match={k.match} onFertig={onFertig} />}</td>
                 </tr>
               ))}
             </tbody>
