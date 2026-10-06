@@ -8795,7 +8795,6 @@ body.sprachmodus .upstream-banner, body.sprachmodus .tier-banner, body.sprachmod
 .kunden-tabelle { table-layout: fixed; }
 .kunden-tabelle td { vertical-align: top; padding-top: 0.55rem; padding-bottom: 0.55rem; }
 .kunden-tabelle th { font-size: 12px; color: var(--muted); font-weight: 500; }
-.kunden-badge { margin-left: 0.5rem; font-size: 11px; vertical-align: middle; }
 .kunden-beleg { color: var(--muted); line-height: 1.45; }
 .kunden-beleg .kunden-zitat { display: block; }
 .kunden-beleg a { white-space: nowrap; }

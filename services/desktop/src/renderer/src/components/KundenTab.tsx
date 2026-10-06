@@ -97,11 +97,6 @@ export function KundenTab({ items, onFertig }: { items: Kunde[]; onFertig: () =>
                 <tr key={k.id}>
                   <td>
                     <strong>{k.name}</strong>
-                    {k.konfidenz === "mittel" && (
-                      <span className="badge warn kunden-badge" title="Nur als Logo ohne Kontext gefunden">
-                        unsicher
-                      </span>
-                    )}
                   </td>
                   <td className="small kunden-beleg">
                     {k.beleg && <span className="kunden-zitat">„{k.beleg}“</span>}
