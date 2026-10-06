@@ -69,6 +69,12 @@ export function sanitizeRole(raw: string | undefined | null): string | null {
  *  weg (siehe nameIdentityForm). */
 export function sanitizePersonName(raw: string): string {
   return raw
+    // 2026-10-06: Unsichtbare Zeichen aus Website-HTML (Zero-Width-Space
+    // als weicher Umbruch, Soft-Hyphen, BOM, Wortverbinder) entfernen und
+    // geschuetzte Leerzeichen zu normalen machen. Befund: "Mara Thümm\u200b\u200bler"
+    // lag als zweite Person neben "Mara Thümmler" — gleicher Name, zwei Karten.
+    .replace(/[\p{Cf}\u00AD]/gu, "")
+    .replace(/\u00A0/g, " ")
     .replace(/\s+/g, " ")
     .replace(/^[,\-\s]+|[,\-\s]+$/g, "")
     .trim()

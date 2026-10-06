@@ -2324,8 +2324,9 @@ function PersonCard({
           {(job || dept || herkunftsGruppen.length > 0) && (
             <p className="pc__role">
               {job?.value}
-              {job && dept ? " · " : ""}
-              {dept?.value}
+              {/* Abteilung nur, wenn sie nicht bloss die Position wiederholt
+                  („Consultant · Consultant“, Befund 2026-10-06). */}
+              {job && dept && dept.value?.trim().toLowerCase() !== job.value?.trim().toLowerCase() ? ` · ${dept.value}` : !job ? dept?.value : ""}
               {herkunftsGruppen.length > 0 && (
                 <>
                   {job || dept ? " · " : ""}
