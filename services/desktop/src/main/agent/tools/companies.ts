@@ -245,7 +245,9 @@ export function buildCompanyTools(ctx: Ctx): Tool[] {
     description:
       "Kunden, Partner und Referenzprojekte, die eine Firma auf ihrer Website nennt (Referenzseiten, Logowaende, Fallstudien), " +
       "je mit Stammdaten-Treffer (companyId, Name, Ort), wenn die genannte Firma in den Stammdaten gefunden wurde. " +
-      "Ein Treffer laesst sich mit import_companies uebernehmen. Hinweis fuer die Antwort: Das sind Selbstauskuenfte der Firma; " +
+      "Ein Treffer laesst sich mit import_companies uebernehmen. Dazu fuer den Vertriebsblick: `gemeinsameKunden` (Kunden dieser Firma, " +
+      "die auch andere eigene Firmen nennen: Wettbewerber oder Partner bedienen denselben Kunden), `wirdGenanntVon` (eigene Firmen, die " +
+      "diese Firma als Kunden/Partner nennen) und `inMeinenFirmen` je Kunde. Hinweis fuer die Antwort: Das sind Selbstauskuenfte der Firma; " +
       "konfidenz 'mittel' heisst nur ein Logo ohne Kontext.",
     parameters: {
       type: "object",
@@ -270,6 +272,33 @@ export function buildCompanyTools(ctx: Ctx): Tool[] {
         }>;
       }>(`/v1/companies/${encodeURIComponent(args.companyId)}/kunden`, { signal: c.signal });
       const voll = args.ansicht === "voll";
+      // Vertriebsblick (docs/PLAN_KUNDEN.md): Bezug zur eigenen Firmenliste —
+      // gemeinsame Kunden und eigene Firmen, die diese Firma nennen. Beides
+      // best-effort; ohne Firmenliste bleibt es bei der reinen Kundenliste.
+      let firmen = new Map<string, string>();
+      try { firmen = await ladeFirmenliste(gateway); } catch { /* ohne Bezug */ }
+      const ids = [...firmen.keys()];
+      type Gemeinsam = { name: string; art: string; match: { companyId: string; name: string; location: string | null } | null; firmen: Array<{ companyId: string; name: string; art: string }> };
+      type Nennung = { companyId: string; name: string; art: string };
+      const gemeinsam: Gemeinsam[] = [];
+      const genanntVon: Nennung[] = [];
+      for (let i = 0; i < ids.length; i += 500) {
+        const teil = ids.slice(i, i + 500);
+        if (r.items.length > 0) {
+          try {
+            const g = await gateway.request<{ items: Gemeinsam[] }>("/v1/kunden/gemeinsam", {
+              method: "POST", body: { companyId: args.companyId, companyIds: teil }, signal: c.signal,
+            });
+            gemeinsam.push(...g.items);
+          } catch { /* best-effort */ }
+        }
+        try {
+          const n = await gateway.request<{ items: Nennung[] }>("/v1/kunden/suche", {
+            method: "POST", body: { companyIds: teil, zielCompanyId: args.companyId }, signal: c.signal,
+          });
+          genanntVon.push(...n.items);
+        } catch { /* best-effort */ }
+      }
       return {
         anzahl: r.items.length,
         kunden: r.items.map((k) => ({
@@ -277,8 +306,23 @@ export function buildCompanyTools(ctx: Ctx): Tool[] {
           art: k.art,
           ...(k.konfidenz === "mittel" ? { konfidenz: "mittel" } : {}),
           ...(k.match ? { stammdaten: k.match } : {}),
+          ...(k.match && firmen.has(k.match.companyId) ? { inMeinenFirmen: true } : {}),
           ...(voll ? { beleg: k.beleg, quelle: k.quelle } : {}),
         })),
+        ...(gemeinsam.length > 0
+          ? {
+              gemeinsameKunden: gemeinsam.map((g) => ({
+                kunde: g.name,
+                ...(g.match ? { stammdaten: g.match } : {}),
+                auchGenanntVon: g.firmen.map((f) => ({ companyId: f.companyId, firma: firmen.get(f.companyId) ?? f.companyId, art: f.art })),
+              })),
+            }
+          : {}),
+        ...(genanntVon.length > 0
+          ? {
+              wirdGenanntVon: genanntVon.map((n) => ({ companyId: n.companyId, firma: firmen.get(n.companyId) ?? n.companyId, als: n.art, genannt: n.name })),
+            }
+          : {}),
       };
     },
     preview: (r) => `${(r as { anzahl?: number }).anzahl ?? 0} Kunden/Partner`,

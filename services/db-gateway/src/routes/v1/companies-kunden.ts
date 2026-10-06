@@ -2,6 +2,7 @@
 //
 //   GET  /companies/{companyId}/kunden
 //   POST /kunden/suche            Umkehrsuche: wer nennt X als Kunden?
+//   POST /kunden/gemeinsam        Kunden von X, die auch andere eigene Firmen nennen
 //
 // Liest die vom Kontakt-Producer erkannten Kunden/Partner und gleicht sie
 // gegen die Stammdaten ab — mit demselben Weg wie das Firmenradar: Dry-Run
@@ -11,7 +12,7 @@
 
 import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
 import { requireScope } from "../../middleware/auth";
-import { listeKunden, listeNennungen, setzeMatch, type KundeRow } from "../../lib/kunden";
+import { listeGemeinsameKunden, listeKunden, listeNennungen, setzeMatch, type KundeRow } from "../../lib/kunden";
 import { buildXlsx } from "../../lib/xlsx-mini";
 import { callUpstreamBinaryExpectJson } from "../../lib/upstream";
 import { logger } from "../../lib/logger";
@@ -206,4 +207,46 @@ companiesKundenRouter.openapi(sucheRoute, async (c) => {
     },
     200,
   );
+});
+
+// ---- Gemeinsame Kunden (Vertriebsblick) ------------------------------------
+
+const GemeinsamBody = z.object({
+  companyId: z.string().min(1),
+  companyIds: z.array(z.string().min(1)).min(1).max(500),
+});
+
+const gemeinsamRoute = createRoute({
+  method: "post",
+  path: "/kunden/gemeinsam",
+  tags: [tag],
+  summary: "Kunden einer Firma, die auch andere Firmen der Liste nennen",
+  request: { body: { content: { "application/json": { schema: GemeinsamBody } }, required: true } },
+  responses: {
+    200: {
+      content: {
+        "application/json": {
+          schema: z.object({
+            items: z.array(
+              z.object({
+                name: z.string(),
+                art: z.enum(["kunde", "partner", "referenzprojekt"]),
+                match: z.object({ companyId: z.string(), name: z.string(), location: z.string().nullable() }).nullable(),
+                firmen: z.array(z.object({ companyId: z.string(), name: z.string(), art: z.enum(["kunde", "partner", "referenzprojekt"]) })),
+              }),
+            ),
+          }),
+        },
+      },
+      description: "ok",
+    },
+    401: { content: { "application/json": { schema: ErrorShape } }, description: "unauthenticated" },
+    403: { content: { "application/json": { schema: ErrorShape } }, description: "forbidden" },
+  },
+});
+
+companiesKundenRouter.openapi(gemeinsamRoute, async (c) => {
+  const { companyId, companyIds } = c.req.valid("json");
+  const items = await listeGemeinsameKunden({ companyId, companyIds: Array.from(new Set(companyIds)) });
+  return c.json({ items }, 200);
 });

@@ -227,3 +227,64 @@ export async function listeNennungen(args: {
     matchGeprueftAt: iso(x.matchGeprueftAt),
   }));
 }
+
+export interface GemeinsamerKunde {
+  /** Name, wie die betrachtete Firma ihn nennt. */
+  name: string;
+  art: KundenArt;
+  match: { companyId: string; name: string; location: string | null } | null;
+  /** Firmen aus der Liste des Aufrufers, die denselben Kunden nennen. */
+  firmen: Array<{ companyId: string; name: string; art: KundenArt }>;
+}
+
+/**
+ * Gemeinsame Kunden (docs/PLAN_KUNDEN.md, Vertriebsblick): Welche Kunden der
+ * Firma X nennen auch andere Firmen aus der Liste des Aufrufers? Gleich ist
+ * ein Kunde ueber den Stammdaten-Treffer oder die Normalform des Namens.
+ */
+export async function listeGemeinsameKunden(args: {
+  companyId: string;
+  companyIds: string[];
+}): Promise<GemeinsamerKunde[]> {
+  const andere = args.companyIds.filter((id) => id !== args.companyId);
+  if (andere.length === 0) return [];
+  const pool = getGatewayPool();
+  await ensureSchema(pool);
+  const r = await pool.query<{
+    name: string; art: string; matchCompanyId: string | null; matchName: string | null; matchLocation: string | null;
+    andereCompanyId: string; andererName: string; andereArt: string;
+  }>(
+    `SELECT k.name, k.art, k."matchCompanyId", k."matchName", k."matchLocation",
+            a."companyId" AS "andereCompanyId", a.name AS "andererName", a.art AS "andereArt"
+       FROM "CompanyKunde" k
+       JOIN "CompanyKunde" a
+         ON a."companyId" = ANY($2::text[])
+        AND a."companyId" <> k."companyId"
+        AND (
+          (k."matchCompanyId" IS NOT NULL AND a."matchCompanyId" = k."matchCompanyId")
+          OR a."nameNormalized" = k."nameNormalized"
+        )
+      WHERE k."companyId" = $1
+      ORDER BY k.name, a."companyId"
+      LIMIT 500`,
+    [args.companyId, andere],
+  );
+  const jeKunde = new Map<string, GemeinsamerKunde>();
+  for (const z of r.rows) {
+    const key = z.matchCompanyId ?? normalisiereKundenname(z.name);
+    let g = jeKunde.get(key);
+    if (!g) {
+      g = {
+        name: z.name,
+        art: z.art as KundenArt,
+        match: z.matchCompanyId ? { companyId: z.matchCompanyId, name: z.matchName ?? z.matchCompanyId, location: z.matchLocation } : null,
+        firmen: [],
+      };
+      jeKunde.set(key, g);
+    }
+    if (!g.firmen.some((f) => f.companyId === z.andereCompanyId)) {
+      g.firmen.push({ companyId: z.andereCompanyId, name: z.andererName, art: z.andereArt as KundenArt });
+    }
+  }
+  return [...jeKunde.values()];
+}

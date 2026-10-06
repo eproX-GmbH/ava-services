@@ -101,6 +101,16 @@ der Datenschutz-Pass.
   Firma Art, Beleg, Quelle, Stammdaten-Treffer. Fähigkeitsgruppe „firmen“
   um `kunden_*` ergänzt.
 
+## Gemeinsame Kunden im Vertriebsblick (v0.1.757, 2026-10-06)
+
+- Gateway `POST /v1/kunden/gemeinsam` `{ companyId, companyIds }`: Kunden
+  von X, die auch andere Firmen der Liste nennen (gleich über
+  Stammdaten-Treffer oder Normalform des Namens).
+- `company_kunden` (Bereich `kunden`) liefert dazu `gemeinsameKunden`,
+  `wirdGenanntVon` (eigene Firmen, die X nennen) und `inMeinenFirmen` je
+  Kunde. Vertriebsblick-Prompt: gemeinsame Kunden als Anlass nennen und
+  `kunden` bei Vertriebs-, Ansprache- und Wettbewerbsfragen mitladen.
+
 ## Später
 
 - Gemeinsame Kunden im Vertriebsblick.
