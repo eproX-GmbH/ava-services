@@ -107,6 +107,14 @@ export interface CompanyContactPersistRequest {
       kategorie: string;
       beleg?: string;
     }>;
+    /** Kunden/Referenzen/Partner von der Website (docs/PLAN_KUNDEN.md). */
+    kunden?: Array<{
+      name: string;
+      art: string;
+      beleg?: string;
+      quelle?: string;
+      konfidenz?: string;
+    }>;
     cleanupTtlMs?: number;
   };
 }
@@ -115,6 +123,7 @@ type Log = typeof Logger;
 
 /** Single-entry orchestrator the persist-bus calls. */
 import { behandleFirmenwert } from "./contact-extraction/firmenname-filter";
+import { schreibeKunden } from "./kunden";
 
 export async function applyCompanyContactPersist(
   data: PersistEvent<CompanyContactPersistRequest["result"]>,
@@ -289,6 +298,12 @@ export async function applyCompanyContactPersist(
         policy: COMPANY_POLICY,
       });
     }
+  }
+
+  // ---- Kunden/Referenzen (docs/PLAN_KUNDEN.md): eigene Tabelle in der
+  //      Gateway-DB, Abgleich gegen Stammdaten beim Lesen. Best-effort.
+  if (result.kunden && result.kunden.length > 0) {
+    await schreibeKunden(log, companyId, result.kunden);
   }
 
   // ---- 2. Per-person upsert + reconciliation -------------------------------

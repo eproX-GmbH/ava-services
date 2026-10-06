@@ -33,6 +33,7 @@ import { emailPatternsRouter } from "./v1/email-patterns";
 import { registerJobsRouter } from "./v1/register-jobs";
 import { relevanzRouter } from "./v1/relevanz";
 import { alertsNeuheitenRouter } from "./v1/alerts-neuheiten";
+import { companiesKundenRouter } from "./v1/companies-kunden";
 import { buyingCenterRouter } from "./v1/buying-center";
 
 // /v1 router.
@@ -78,6 +79,8 @@ v1.route("/", relevanzRouter);
 v1.route("/", alertsNeuheitenRouter);
 // Buying Center (docs/PLAN_BUYING_CENTER.md) — eigener Pfad.
 v1.route("/", buyingCenterRouter);
+// Kunden/Referenzen (docs/PLAN_KUNDEN.md) — vor dem generischen companiesRouter (Glob).
+v1.route("/", companiesKundenRouter);
 v1.route("/", companiesRouter);
 
 // §4.2 Transaction reads (W2-W5) + §6 SSE bridge (W4).

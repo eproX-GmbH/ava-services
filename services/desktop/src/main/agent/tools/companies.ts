@@ -237,6 +237,52 @@ export function buildCompanyTools(ctx: Ctx): Tool[] {
     },
   });
 
+  // Kunden/Referenzen (docs/PLAN_KUNDEN.md): von der Website erkannt,
+  // mit Stammdaten-Treffer. Kompakt — Belege nur mit ansicht "voll".
+  const kunden = defineTool({
+    name: "company_kunden",
+    description:
+      "Kunden, Partner und Referenzprojekte, die eine Firma auf ihrer Website nennt (Referenzseiten, Logowaende, Fallstudien), " +
+      "je mit Stammdaten-Treffer (companyId, Name, Ort), wenn die genannte Firma in den Stammdaten gefunden wurde. " +
+      "Ein Treffer laesst sich mit import_companies uebernehmen. Hinweis fuer die Antwort: Das sind Selbstauskuenfte der Firma; " +
+      "konfidenz 'mittel' heisst nur ein Logo ohne Kontext.",
+    parameters: {
+      type: "object",
+      properties: {
+        companyId: { type: "string" },
+        ansicht: { type: "string", enum: ["kompakt", "voll"], description: "voll = mit Beleg und Quelle je Eintrag" },
+      },
+      required: ["companyId"],
+    },
+    schema: yup
+      .object({ companyId: yup.string().trim().min(1).required(), ansicht: yup.string().oneOf(["kompakt", "voll"]).optional() })
+      .noUnknown(true),
+    run: async (args, c) => {
+      const r = await gateway.request<{
+        items: Array<{
+          name: string;
+          art: string;
+          beleg: string | null;
+          quelle: string | null;
+          konfidenz: string | null;
+          match: { companyId: string; name: string; location: string | null } | null;
+        }>;
+      }>(`/v1/companies/${encodeURIComponent(args.companyId)}/kunden`, { signal: c.signal });
+      const voll = args.ansicht === "voll";
+      return {
+        anzahl: r.items.length,
+        kunden: r.items.map((k) => ({
+          name: k.name,
+          art: k.art,
+          ...(k.konfidenz === "mittel" ? { konfidenz: "mittel" } : {}),
+          ...(k.match ? { stammdaten: k.match } : {}),
+          ...(voll ? { beleg: k.beleg, quelle: k.quelle } : {}),
+        })),
+      };
+    },
+    preview: (r) => `${(r as { anzahl?: number }).anzahl ?? 0} Kunden/Partner`,
+  });
+
   const profile = defineTool({
     name: "company_profile",
     description:
@@ -689,6 +735,7 @@ export function buildCompanyTools(ctx: Ctx): Tool[] {
     insolvenz: insolvency,
     linkedin: linkedInSignals,
     gesellschafter: shareholders,
+    kunden,
   } as const;
   type Bereich = keyof typeof BEREICHE;
   const BEREICH_NAMEN = Object.keys(BEREICHE) as Bereich[];
@@ -698,7 +745,7 @@ export function buildCompanyTools(ctx: Ctx): Tool[] {
     description:
       "Stammdaten einer Firma (Name, Register, Anschrift, Land, Rechtsform, USt-Id; `statusWarnung` bei Insolvenz/Loeschung/Liquidation; `land` fasst Land und Register zusammen). " +
       "Mit `bereiche` holst du in DEMSELBEN Aufruf weitere Abschnitte, statt einzelne company_*-Werkzeuge zu laden: " +
-      "profil (Kurzprofil, Branche), website (Website-Fakten), register (Registerinhalt: Geschaeftsfuehrer, Kapital, Gegenstand), stichworte, publikationen (Jahresabschluesse, kompakt), kontakte (Personen, kompakt), crm (HubSpot-Stand), datenqualitaet, technik (Tech-Stack), insolvenz, linkedin (Signale), gesellschafter (nur DE/HRB). " +
+      "profil (Kurzprofil, Branche), website (Website-Fakten), register (Registerinhalt: Geschaeftsfuehrer, Kapital, Gegenstand), stichworte, publikationen (Jahresabschluesse, kompakt), kontakte (Personen, kompakt), crm (HubSpot-Stand), datenqualitaet, technik (Tech-Stack), insolvenz, linkedin (Signale), gesellschafter (nur DE/HRB), kunden (Kunden/Partner laut Website mit Stammdaten-Treffer). " +
       "Fuer eine Firmenfrage: EIN company_get mit den passenden Bereichen, nicht mehrere Einzelaufrufe. Bei oesterreichischen Firmen gibt es keinen kostenlosen Vollauszug.",
     parameters: {
       type: "object",
@@ -979,6 +1026,7 @@ export function buildCompanyTools(ctx: Ctx): Tool[] {
     crmSummary,
     linkedinLookup,
     techStack,
+    kunden,
     shareholders,
     network,
     networkDeepen,

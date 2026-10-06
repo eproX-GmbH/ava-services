@@ -7,6 +7,7 @@ import {
 } from "../components/RegisterStatusBadge";
 import { InsolvenzAbschnitt } from "../components/InsolvenzAbschnitt";
 import { VerflechtungenTab } from "../components/VerflechtungenTab";
+import { KundenTab, type Kunde } from "../components/KundenTab";
 import { useEffect, useMemo, useState } from "react";
 import { useFeature } from "../store/policy";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -82,7 +83,8 @@ type TabKey =
   | "insights"
   | "jobs"
   | "verflechtungen"
-  | "buyingcenter";
+  | "buyingcenter"
+  | "kunden";
 
 const TABS: Array<{ key: TabKey; label: string; workflow: string }> = [
   { key: "overview", label: "Übersicht", workflow: "W8/W10" },
@@ -93,6 +95,7 @@ const TABS: Array<{ key: TabKey; label: string; workflow: string }> = [
   { key: "jobs", label: "Stellenanzeigen", workflow: "W10" },
   { key: "verflechtungen", label: "Verflechtungen", workflow: "V6" },
   { key: "buyingcenter", label: "Buying Center", workflow: "BC2" },
+  { key: "kunden", label: "Kunden", workflow: "K3" },
 ];
 
 // ---- Shared hooks ----------------------------------------------------------
@@ -523,6 +526,14 @@ export function CompanyDetail() {
     `/v1/companies/${id}/contacts`,
     !!id && kontakteErlaubt
   );
+  // Kunden/Referenzen (docs/PLAN_KUNDEN.md): eigene Route, Abgleich gegen
+  // die Stammdaten passiert beim Lesen im Gateway.
+  const kunden = useTabQuery<{ items: Kunde[] }>(
+    "kunden",
+    id!,
+    `/v1/companies/${id}/kunden`,
+    Boolean(id),
+  );
   const publications = useTabQuery<{ items: Publication[] }>(
     "publications",
     id!,
@@ -579,6 +590,7 @@ export function CompanyDetail() {
     // holen — der Reiter waere genau dann weg, wenn man ihn braucht.
     verflechtungen: true,
     buyingcenter: buyingcenterErlaubt && eigenesBcId !== null,
+    kunden: (kunden.data?.items ?? []).length > 0,
   };
 
   // Erst urteilen, wenn die Daten da sind. Sonst erschiene ein Reiter kurz
@@ -589,6 +601,7 @@ export function CompanyDetail() {
     !structured.isLoading &&
     !website.isLoading &&
     !profile.isLoading &&
+    !kunden.isLoading &&
     (!kontakteErlaubt || !contactFallback.isLoading) &&
     (!buyingcenterErlaubt || !eigenesBc.isLoading);
 
@@ -839,6 +852,9 @@ export function CompanyDetail() {
           />
         )}
         {tab === "jobs" && <JobsTab jobs={website.data?.jobPostings ?? []} />}
+        {tab === "kunden" && (
+          <KundenTab items={kunden.data?.items ?? []} onFertig={() => void kunden.refetch()} />
+        )}
         {tab === "verflechtungen" && verflechtungenSichtbar && <VerflechtungenTab id={id!} name={summary.data?.name ?? null} />}
         {tab === "buyingcenter" && eigenesBcId && <BuyingCenterKarte id={eigenesBcId} />}
       </div>
@@ -854,6 +870,7 @@ const STAGES_FOR_TAB: Record<TabKey, string[]> = {
   financials: [],
   management: [],
   contacts: ["company-contact"],
+  kunden: ["company-contact"],
   insights: ["website", "company-evaluation"],
   jobs: ["website"],
   verflechtungen: ["structured-content"],
