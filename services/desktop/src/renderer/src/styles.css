@@ -8789,8 +8789,21 @@ body.sprachmodus .upstream-banner, body.sprachmodus .tier-banner, body.sprachmod
 /* 2026-10-04: Karten im Verlauf, eingerueckt wie die Werkzeug-Schritte */
 .auf-leiste--verlauf { margin: 6px 0 10px; max-width: 640px; }
 
-/* Kunden-Reiter (docs/PLAN_KUNDEN.md): Treffer als Link + Übernehmen-Knopf nebeneinander. */
-.kunden-treffer { display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; }
-.link-button { background: none; border: 0; padding: 0; color: var(--accent, inherit); cursor: pointer; font: inherit; text-align: left; }
-.link-button:hover { opacity: 0.85; }
-.kunden-tabelle td { vertical-align: top; }
+/* Kunden-Reiter (docs/PLAN_KUNDEN.md). Gruppen sind eigene Tabellen mit
+   festen Spaltenbreiten, damit die Kanten über alle Gruppen gleich sind.
+   Treffer: Link zur Firma, darunter linksbündig der kompakte Knopf. */
+.kunden-tabelle { table-layout: fixed; }
+.kunden-tabelle td { vertical-align: top; padding-top: 0.55rem; padding-bottom: 0.55rem; }
+.kunden-tabelle th { font-size: 12px; color: var(--muted); font-weight: 500; }
+.kunden-badge { margin-left: 0.5rem; font-size: 11px; vertical-align: middle; }
+.kunden-beleg { color: var(--muted); line-height: 1.45; }
+.kunden-beleg .kunden-zitat { display: block; }
+.kunden-beleg a { white-space: nowrap; }
+.kunden-aktion { text-align: right; white-space: nowrap; }
+.kunden-aktion .firma-aktion__knoepfe { justify-content: flex-end; flex-direction: column; align-items: flex-end; gap: 0.2rem; }
+.link-button { background: none; border: 0; padding: 0; color: var(--accent, inherit); cursor: pointer; font: inherit; text-align: left; box-shadow: none; }
+.link-button:where(:hover:not(:disabled)) { background: none; border: 0; transform: none; box-shadow: none; opacity: 0.85; }
+.firma-aktion--kompakt { margin-left: 0; }
+.firma-aktion--kompakt button { padding: 0.2rem 0.6rem; font-size: 12px; font-weight: 500; }
+.firma-aktion--kompakt .firma-aktion__verweis { font-size: 11px; }
+.firma-aktion--kompakt .firma-aktion__hinweis { font-size: 11px; margin: 0.2rem 0 0; white-space: normal; }

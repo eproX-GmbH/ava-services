@@ -31,6 +31,9 @@ export interface UebernehmenProps {
   /** Für die Relevanz: Ein Import ist eine der teuersten Handlungen, die
    *  ein Nutzer an einer Firma vornimmt — entsprechend schwer wiegt sie. */
   companyId?: string;
+  /** Kompakte Form für Tabellen (Kunden-Reiter): kleiner Knopf, kurze
+   *  Beschriftung, linksbündig statt an den rechten Rand gerückt. */
+  kompakt?: boolean;
 }
 
 /**
@@ -62,7 +65,7 @@ export function useIstUebernommen(companyId: string | undefined): boolean | unde
   return q.data ? q.data.count > 0 : undefined;
 }
 
-export function FirmaUebernehmen({ name, ort, uebernommen, onFertig, companyId }: UebernehmenProps) {
+export function FirmaUebernehmen({ name, ort, uebernommen, onFertig, companyId, kompakt }: UebernehmenProps) {
   const qc = useQueryClient();
   const [laeuft, setLaeuft] = useState(false);
   const [meldung, setMeldung] = useState<string | null>(null);
@@ -116,11 +119,11 @@ export function FirmaUebernehmen({ name, ort, uebernommen, onFertig, companyId }
   };
 
   return (
-    <div className="firma-aktion">
+    <div className={kompakt ? "firma-aktion firma-aktion--kompakt" : "firma-aktion"}>
       <div className="firma-aktion__knoepfe">
         <button
           type="button"
-          className={uebernommen === true ? "btn" : "primary"}
+          className={uebernommen === true || kompakt ? "btn" : "primary"}
           disabled={laeuft || uebernommen === undefined}
           onClick={() => void anstossen()}
           title={
@@ -138,7 +141,9 @@ export function FirmaUebernehmen({ name, ort, uebernommen, onFertig, companyId }
               ? "Wird geprüft …"
               : uebernommen
                 ? "Neu verarbeiten"
-                : "Übernehmen und verarbeiten"}
+                : kompakt
+                  ? "Übernehmen"
+                  : "Übernehmen und verarbeiten"}
         </button>
         {uebernommen === true && (
           <Link className="firma-aktion__verweis" to="/alle-firmen">
