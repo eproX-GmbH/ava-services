@@ -235,7 +235,7 @@ async function kontaktAenderungen(ids: string[], seit: Date): Promise<NeuheitIte
   const signale = await pool.query<{
     id: string; companyId: string; personId: string | null; type: string; before: string | null; after: string | null;
     observedAt: Date; fullName: string | null; title: string | null; startDate: Date | null;
-    bekanntSeit: Date | null; vorherGesehenAm: Date | null; hinUndHer: boolean;
+    bekanntSeit: Date | null; vorherGesehenAm: Date | null; neuErstGesehen: Date | null; hinUndHer: boolean;
   }>(
     `SELECT s.id, s."companyId", s."personId", s.type, s.before, s.after, s."observedAt",
             p."fullName",
@@ -246,6 +246,12 @@ async function kontaktAenderungen(ids: string[], seit: Date): Promise<NeuheitIte
             (SELECT max(o."observedAt") FROM "Observation" o
               WHERE o."personId" = s."personId" AND o.field = s.field
                 AND o.value = s.before AND o."observedAt" < s."observedAt") AS "vorherGesehenAm",
+            -- Wann wurde der NEUE Wert erstmals gesehen? Liegt das VOR der letzten
+            -- Sichtung des alten, standen beide nebeneinander (verschiedene
+            -- Seiten derselben Website): kein Wechsel, nur Varianten.
+            (SELECT min(o."observedAt") FROM "Observation" o
+              WHERE o."personId" = s."personId" AND o.field = s.field
+                AND o.value = s.after) AS "neuErstGesehen",
             -- Hin und her (A→B und B→A derselben Person) ist Schreibweise, kein Wechsel.
             EXISTS (SELECT 1 FROM "SignalEvent" t
                      WHERE t."personId" = s."personId" AND t.type = s.type
@@ -279,14 +285,22 @@ async function kontaktAenderungen(ids: string[], seit: Date): Promise<NeuheitIte
       if (schreibweise(s.before) === schreibweise(s.after)) continue;
       if (s.hinUndHer) continue;
     }
-    // Zeitbezug: belegter Beginn aelter als das Fenster → nur spaet bemerkt.
-    if (s.startDate && jetzt - new Date(s.startDate).getTime() > ZEITBEZUG_MS) continue;
-    // Zeitbezug: der alte Wert wurde zuletzt vor sehr langer Zeit gesehen →
-    // der Wechsel kann irgendwann in diesem Fenster passiert sein.
-    if (
-      s.vorherGesehenAm &&
-      new Date(s.observedAt).getTime() - new Date(s.vorherGesehenAm).getTime() > ZEITBEZUG_MS
-    ) continue;
+    // Zeitbezug (nachgeschaerft 2026-10-06, Befund: fuenf Meldungen zu
+    // Personen, die seit Jahrzehnten im Amt sind): Eine Meldung braucht
+    // einen POSITIVEN Beleg fuer Aktualitaet. Entweder ein belegter Beginn
+    // innerhalb des Fensters — oder ein echter Uebergang auf der Website:
+    // der alte Wert wurde zuletzt gesehen, BEVOR der neue erstmals auftauchte,
+    // und beides liegt innerhalb des Fensters. Fehlt der Beleg, erscheint
+    // nichts; "AVA hat es jetzt erst gelesen" ist keine Neuigkeit.
+    const beginnAktuell = s.startDate ? jetzt - new Date(s.startDate).getTime() <= ZEITBEZUG_MS : null;
+    if (beginnAktuell === false) continue;
+    if (beginnAktuell === null) {
+      if (!s.vorherGesehenAm || !s.neuErstGesehen) continue;
+      const alt = new Date(s.vorherGesehenAm).getTime();
+      const neu = new Date(s.neuErstGesehen).getTime();
+      if (neu <= alt) continue; // Varianten nebeneinander, kein Uebergang
+      if (new Date(s.observedAt).getTime() - alt > ZEITBEZUG_MS) continue; // Fenster zu breit
+    }
     out.push({
       art: "contact-change",
       id: s.id,
@@ -320,9 +334,11 @@ async function kontaktAenderungen(ids: string[], seit: Date): Promise<NeuheitIte
   );
   const jeFirma = new Map<string, { anzahl: number; personen: Array<{ name: string; title: string | null; seit: string | null }>; juengst: Date }>();
   for (const e of neue.rows) {
-    // Zeitbezug: wer belegt schon lange in der Position ist, ist nicht neu,
-    // AVA hat ihn nur jetzt erst gefunden.
-    if (e.startDate && jetzt - new Date(e.startDate).getTime() > ZEITBEZUG_MS) continue;
+    // Zeitbezug (2026-10-06): "Erstmals gesehen" heisst nur, dass AVA die
+    // Person jetzt gefunden hat — nicht, dass sie neu ist. Ohne belegten,
+    // aktuellen Beginn (seit/startDate aus Website oder LinkedIn) gibt es
+    // keine Meldung "neuer Ansprechpartner".
+    if (!e.startDate || jetzt - new Date(e.startDate).getTime() > ZEITBEZUG_MS) continue;
     let g = jeFirma.get(e.companyId);
     if (!g) {
       g = { anzahl: 0, personen: [], juengst: e.firstSeen };
@@ -413,9 +429,11 @@ alertsNeuheitenRouter.openapi(route, async (c) => {
         // Zeitbezug: Lag die letzte Bestaetigung des alten Stands sehr lange
         // zurueck, kann der Wechsel irgendwann in diesem Fenster passiert
         // sein — zu alt, um ihn als Neuigkeit zu melden.
+        // Ohne bestandVon (Altbestand vor 2026-10-05) ist das Fenster
+        // unbekannt — dann lieber keine Meldung.
         .filter(
           (r) =>
-            !r.bestandVon ||
+            !!r.bestandVon &&
             new Date(r.createdAt).getTime() - new Date(r.bestandVon).getTime() <= ZEITBEZUG_MS,
         )
         .map<NeuheitItem>((r) => ({

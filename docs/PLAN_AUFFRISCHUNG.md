@@ -92,6 +92,15 @@ nennen ihn verschieden); `startDate` 2009 lag in der Datenbank.
   sind keine Wechsel.
 - **Judge:** Regel (c) „Zeitlicher Zusammenhang“; jeder Kandidat nennt
   „belegt seit …“ oder „zwischen A und B“.
+- **Nachgeschärft 2026-10-06** (Befund: fünf Meldungen zu Personen, die seit
+  Jahrzehnten im Amt sind): Eine Kontakt-Meldung braucht einen POSITIVEN
+  Beleg für Aktualität. Titelwechsel: belegter Beginn im Fenster, oder ein
+  echter Übergang auf der Website (alter Wert zuletzt gesehen, BEVOR der neue
+  erstmals auftauchte, beides im Fenster). Stehen beide Werte nebeneinander
+  (verschiedene Seiten derselben Website), ist es kein Wechsel. Neue
+  Ansprechpartner: nur mit belegtem, aktuellem Beginn; „erstmals gesehen“
+  heißt nur, dass AVA die Person jetzt gefunden hat. Registerwechsel ohne
+  bekanntes Fenster (Altbestand ohne `bestandVon`) werden nicht gemeldet.
 - **Positionen je Firma (Desktop):** Die Kontakte-Route liefert für eine
   Person auch Fakten anderer Firmen (für Name und Profil). Position,
   Abteilung und Beginn werden seit v0.1.753 nur aus Fakten DIESER Firma
