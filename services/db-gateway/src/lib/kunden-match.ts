@@ -2,6 +2,7 @@
 // Operator 2026-10-07). Reine Funktionen ohne Datenbank, testbar.
 
 import type { KundenMatch } from "./kunden";
+import { getMasterDataPool } from "./discovery";
 
 type Treffer = KundenMatch;
 
@@ -67,3 +68,48 @@ export function waehleBestMatch(kunde: string, kandidaten: Array<{ companyId: st
   return alle ? mach(best, "unsicher") : null;
 }
 
+
+/**
+ * Stufe 0 (Operator 2026-10-07): normalisierte Namenssuche direkt in den
+ * Stammdaten, bevor Elasticsearch gefragt wird. Beide Seiten nutzen die
+ * SQL-Funktion firmen_schluessel (Umlaute ausgeschrieben, nur [a-z0-9]), mit
+ * Ausdrucksindex auf GermanCompany und GermanCompanyHistory (fruehere Namen).
+ * Genau EIN aktiver Treffer → "sicher". Null oder mehrere → null, der Aufrufer
+ * weicht auf Elasticsearch mit Score aus.
+ */
+export async function schluesselTreffer(namen: string[]): Promise<Map<string, KundenMatch | null>> {
+  const out = new Map<string, KundenMatch | null>();
+  const eindeutig = [...new Set(namen.map((n) => n.trim()).filter((n) => n.length >= 3))];
+  if (eindeutig.length === 0) return out;
+  const r = await getMasterDataPool().query<{ gesucht: string; companyId: string; name: string; location: string | null; anzahl: string }>(
+    `WITH gesucht AS (SELECT unnest($1::text[]) AS n),
+          direkt AS (
+            SELECT g.n AS gesucht, c."companyId", c.name, c.location
+              FROM gesucht g JOIN "GermanCompany" c ON firmen_schluessel(c.name) = firmen_schluessel(g.n)
+             WHERE c."registerStatus" = 'ACTIVE'
+          ),
+          frueher AS (
+            SELECT g.n AS gesucht, c."companyId", c.name, c.location
+              FROM gesucht g
+              JOIN "GermanCompanyHistory" h ON firmen_schluessel(h.name) = firmen_schluessel(g.n)
+              JOIN "GermanCompany" c ON c."companyId" = h."companyId"
+             WHERE c."registerStatus" = 'ACTIVE'
+               AND NOT EXISTS (SELECT 1 FROM direkt d WHERE d.gesucht = g.n)
+          ),
+          alle AS (SELECT DISTINCT * FROM direkt UNION SELECT DISTINCT * FROM frueher)
+     SELECT gesucht, "companyId", name, location, count(*) OVER (PARTITION BY gesucht)::text AS anzahl
+       FROM alle`,
+    [eindeutig],
+  );
+  const treffer = new Map<string, Array<{ companyId: string; name: string; location: string | null }>>();
+  for (const z of r.rows) {
+    const l = treffer.get(z.gesucht) ?? [];
+    l.push({ companyId: z.companyId, name: z.name, location: z.location });
+    treffer.set(z.gesucht, l);
+  }
+  for (const n of eindeutig) {
+    const l = treffer.get(n) ?? [];
+    out.set(n, l.length === 1 ? { companyId: l[0]!.companyId, name: l[0]!.name, location: l[0]!.location, stufe: "sicher", score: null } : null);
+  }
+  return out;
+}

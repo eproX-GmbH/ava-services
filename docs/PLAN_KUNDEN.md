@@ -145,6 +145,26 @@ Neu (`lib/kunden-match.ts`, Spalten `matchStufe`, `matchScore`):
   `stufe` und soll sie vor dem Übernehmen nennen.
 - Prüfung: `npx tsx scripts/test-kunden-match.mts` im Gateway.
 
+## Stufe 0: normalisierte Namenssuche vor Elasticsearch (2026-10-07)
+
+Vorgabe: Firmennamen auf Kleinschrift und [a-z0-9] reduzieren (ä→ae, ß→ss,
+Akzente abgelegt, alles andere raus), damit Schreibvarianten derselben Firma
+zusammenfallen („Öhrmann - Maschinenbaufabrik GmbH“ = „Oehrmann-
+Maschinenbaufabrik GmbH“). Erst wenn das keinen oder mehrere Treffer liefert,
+kommt Elasticsearch mit Score dran.
+
+Umsetzung ohne Nachfüllen und ohne master-data-Codeänderung:
+- SQL-Funktion `firmen_schluessel(text)` (IMMUTABLE) in ava_master_data,
+  Ausdrucksindizes auf GermanCompany.name und GermanCompanyHistory.name
+  (CONCURRENTLY), siehe `services/db-gateway/sql/master-data-firmen-schluessel.sql`.
+  Postgres pflegt die Indizes bei jedem Upsert.
+- Gateway `kunden-match.ts` → `schluesselTreffer`: ein Aufruf je Liste,
+  aktive Firmen, auch über frühere Namen; genau ein Treffer = „sicher“
+  (score null). Sonst Elasticsearch wie bisher. Beide Seiten nutzen dieselbe
+  SQL-Funktion, die Normalform kann nicht auseinanderlaufen.
+- Die vorhandene Spalte nameNormalized war dafür unbrauchbar (1,8 Mio. leer,
+  anderes Format, kein Index).
+
 ## Später
 
 - Gemeinsame Kunden im Vertriebsblick.

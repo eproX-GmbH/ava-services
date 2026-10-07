@@ -494,7 +494,7 @@ export async function addCandidates(
 
 let masterPool: Pool | null = null;
 
-function getMasterDataPool(): Pool {
+export function getMasterDataPool(): Pool {
   if (masterPool) return masterPool;
   const url = new URL(loadEnv().DATABASE_URL);
   url.pathname = "/ava_master_data";
