@@ -410,12 +410,21 @@ export class OllamaSupervisor extends EventEmitter {
           modified_at: string;
         }>;
       };
-      this.installed = (body.models ?? []).map((m) => ({
-        name: m.name,
-        size: m.size,
-        digest: m.digest,
-        modifiedAt: m.modified_at,
-      }));
+      // Ollama 0.40 (2026-10-07): die "compat GGUF migration" legt je
+      // Modell einen zweiten Eintrag gleichen Namens (anderer Digest, runner
+      // llamacpp) und ein internes Pseudo-Modell `llamacpp:<digest>` an.
+      // Beides wuerde die Modellliste doppeln bzw. mit Laufzeit-Artefakten
+      // fuellen — je Name nur der erste Eintrag, interne Namen raus.
+      const gesehen = new Set<string>();
+      this.installed = (body.models ?? [])
+        .filter((m) => typeof m.name === "string" && !/^(llamacpp|mlx|ggml):/.test(m.name))
+        .filter((m) => (gesehen.has(m.name) ? false : (gesehen.add(m.name), true)))
+        .map((m) => ({
+          name: m.name,
+          size: m.size,
+          digest: m.digest,
+          modifiedAt: m.modified_at,
+        }));
       // Re-emit status so the missing-models list updates after a pull.
       this.emit("status", this.getStatus());
     } catch (err) {

@@ -49,7 +49,12 @@ import { pipeline } from "node:stream/promises";
 // mit Ollama.app/Contents/Resources/ollama) ist unverändert — geprüft.
 // 2026-09-21 — v0.34.2 (mit dem Electron-44-Umstieg). Asset-Layout fuer
 // macOS und Windows unveraendert; Linux liegt jetzt als .tar.zst vor.
-const VERSION = process.env.OLLAMA_VERSION ?? "v0.34.2";
+// 2026-10-07 — v0.40.0: auf Apple Silicon laufen unterstuetzte Modelle
+// (gemma4, qwen3.x, embeddinggemma-2) jetzt standardmaessig auf MLX;
+// /api/show liefert thinking-Werte, Decision-Modelle tragen nur die
+// Faehigkeit "decision" (werden im Katalog nicht als Chat angeboten).
+// Asset-Layout unveraendert (Ollama-darwin.zip, ollama-windows-amd64.zip).
+const VERSION = process.env.OLLAMA_VERSION ?? "v0.40.0";
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const RESOURCES_ROOT = resolve(__dirname, "..", "resources", "ollama");
 

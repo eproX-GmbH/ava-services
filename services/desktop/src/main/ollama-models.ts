@@ -115,5 +115,8 @@ function looksLikeToolCapableLlm(name: string): boolean {
   // Skip the embedder so a user with only embeddinggemma installed
   // doesn't accidentally satisfy the LLM requirement.
   if (tag.startsWith("embedding")) return false;
+  // Ollama 0.35+: Decision-Modelle (nimble, tev1, clef, clef-flash) tragen nur
+  // die Faehigkeit "decision" und antworten nicht ueber /api/chat — sie
+  // fallen hier bewusst durch die Familienliste.
   return /^(qwen|gemma|llama|mistral|phi|deepseek|granite|command-r)/i.test(tag);
 }

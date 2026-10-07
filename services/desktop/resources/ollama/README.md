@@ -20,7 +20,7 @@ the packaged app's `Resources/ollama/`. The runtime supervisor
 
 ```sh
 pnpm fetch:ollama                          # all platforms, default version
-OLLAMA_VERSION=v0.3.14 pnpm fetch:ollama   # pin a version
+OLLAMA_VERSION=v0.40.0 pnpm fetch:ollama   # pin a version (Standard seit 2026-10-07: v0.40.0)
 pnpm fetch:ollama --platform=darwin-arm64  # one platform only
 ```
 
