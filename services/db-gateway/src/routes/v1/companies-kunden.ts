@@ -12,8 +12,9 @@
 
 import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
 import { requireScope } from "../../middleware/auth";
-import { KUNDEN_ARTEN, OHNE_ABGLEICH, listeGemeinsameKunden, listeKunden, listeNennungen, setzeMatch, type KundeRow } from "../../lib/kunden";
+import { KUNDEN_ARTEN, OHNE_ABGLEICH, listeGemeinsameKunden, listeKunden, listeNennungen, setzeMatch, type KundeRow, type KundenMatch } from "../../lib/kunden";
 import { buildXlsx } from "../../lib/xlsx-mini";
+import { norm, waehleBestMatch } from "../../lib/kunden-match";
 import { callUpstreamBinaryExpectJson } from "../../lib/upstream";
 import { logger } from "../../lib/logger";
 import { ErrorShape } from "./schemas";
@@ -34,7 +35,16 @@ const KundeShape = z.object({
   konfidenz: z.string().nullable(),
   erstGesehen: z.string(),
   zuletztGesehen: z.string(),
-  match: z.object({ companyId: z.string(), name: z.string(), location: z.string().nullable() }).nullable(),
+  match: z
+    .object({
+      companyId: z.string(),
+      name: z.string(),
+      location: z.string().nullable(),
+      /** sicher = eindeutiger Namenstreffer; unsicher = Best Match (Konzern/Toechter, Wortueberdeckung). */
+      stufe: z.enum(["sicher", "unsicher"]).optional(),
+      score: z.number().nullable().optional(),
+    })
+    .nullable(),
 });
 
 const route = createRoute({
@@ -52,22 +62,15 @@ const route = createRoute({
   },
 });
 
-type Treffer = { companyId: string; name: string; location: string | null };
-
-/** Vergleichsform ohne Rechtsform: „AUDI AG“ und „Audi“ treffen sich. */
-function norm(s: string): string {
-  return s
-    .toLowerCase()
-    .replace(/\b(inc|llc|ltd|gmbh|ag|se|b\.?v|s\.?a|corp|co|kg|mbh|ohg|e\.?v)\b\.?/g, " ")
-    .replace(/[^\p{L}\p{N}]+/gu, "");
-}
+type Treffer = KundenMatch;
 
 /**
  * Abgleich wie im Radar: Dry-Run der unscharfen Zuordnung in master-data.
  * `matched` sind exakte Treffer (Name + Ort); ohne Ort landet fast alles in
- * `unmatched` mit Kandidaten nach Suchtreffer. Ein Kandidat gilt, wenn sein
- * Name (ohne Rechtsform) mit dem genannten Kunden beginnt — „Audi“ findet
- * „AUDI AG“, aber nicht „Audio Service GmbH“ wegen des Wortendes.
+ * `unmatched` mit bis zu 5 Kandidaten samt Elasticsearch-Score. Daraus
+ * waehlt waehleBestMatch den Treffer und die Stufe.
+ * Hinweis 2026-10-07: master-data verlangt den Parameter `city` (Spaltenname),
+ * ohne ihn antwortet es 400 — der Abgleich lief deshalb bis dahin nie.
  */
 async function gleicheAb(
   c: Parameters<typeof callUpstreamBinaryExpectJson>[0],
@@ -79,7 +82,7 @@ async function gleicheAb(
     const xlsx = buildXlsx({ headers: ["company", "city"], rows: zeilen.map((z) => [z.name, ""]) });
     const { body } = await callUpstreamBinaryExpectJson(c, "masterData", "/api/v1/data-care", xlsx, {
       contentType: "application/octet-stream",
-      query: { companyNameIdentifiers: "company", isFuzzy: "true", dryRun: "true" },
+      query: { companyNameIdentifiers: "company", city: "city", isFuzzy: "true", dryRun: "true" },
     });
     const preview = body as {
       matched?: Array<{ name: string; location: string; companyId: string }>;
@@ -91,21 +94,11 @@ async function gleicheAb(
     };
     const exakt = new Map<string, Treffer>();
     for (const m of preview.matched ?? []) {
-      exakt.set(norm(m.name), { companyId: m.companyId, name: m.name, location: m.location ?? null });
+      exakt.set(norm(m.name), { companyId: m.companyId, name: m.name, location: m.location ?? null, stufe: "sicher", score: null });
     }
     const kandidaten = new Map<string, Treffer | null>();
     for (const u of preview.unmatched ?? []) {
-      const n = norm(u.name);
-      const passend = (u.candidates ?? []).find((k) => {
-        const kn = norm(k.name);
-        // Wortgrenze: nach dem Kundennamen muss der Kandidat enden oder ein
-        // Wort beginnen (im Original), sonst ist „Audi“ auch „Audio …“.
-        if (kn === n) return true;
-        if (!kn.startsWith(n) || n.length < 3) return false;
-        const rest = k.name.slice(k.name.toLowerCase().indexOf(u.name.toLowerCase()) + u.name.length);
-        return /^[\s\-–,.&(]/.test(rest) || rest.length === 0;
-      });
-      kandidaten.set(n, passend ? { companyId: passend.companyId, name: passend.name, location: passend.location ?? null } : null);
+      kandidaten.set(norm(u.name), waehleBestMatch(u.name, u.candidates ?? []));
     }
     for (const z of zeilen) {
       const n = norm(z.name);

@@ -245,7 +245,7 @@ export function buildCompanyTools(ctx: Ctx): Tool[] {
     description:
       "Kunden, Partner, Referenzprojekte, Technologiepartner (Herstellerprogramme wie SAP/Microsoft-Partner) und Zertifikate/Siegel " +
       "(ISO, TUEV, Auszeichnungen), die eine Firma auf ihrer Website nennt (Referenzseiten, Logowaende, Fallstudien), " +
-      "je mit Stammdaten-Treffer (companyId, Name, Ort), wenn die genannte Firma in den Stammdaten gefunden wurde. " +
+      "je mit Stammdaten-Treffer (companyId, Name, Ort, stufe: sicher = eindeutiger Namenstreffer, unsicher = bester Treffer bei mehreren passenden Firmen wie Konzern und Toechter — vor dem Uebernehmen nennen). " +
       "Ein Treffer laesst sich mit import_companies uebernehmen. Dazu fuer den Vertriebsblick: `gemeinsameKunden` (Kunden dieser Firma, " +
       "die auch andere eigene Firmen nennen: Wettbewerber oder Partner bedienen denselben Kunden), `wirdGenanntVon` (eigene Firmen, die " +
       "diese Firma als Kunden/Partner nennen) und `inMeinenFirmen` je Kunde. Hinweis fuer die Antwort: Das sind Selbstauskuenfte der Firma; " +
@@ -269,7 +269,7 @@ export function buildCompanyTools(ctx: Ctx): Tool[] {
           beleg: string | null;
           quelle: string | null;
           konfidenz: string | null;
-          match: { companyId: string; name: string; location: string | null } | null;
+          match: { companyId: string; name: string; location: string | null; stufe?: "sicher" | "unsicher" } | null;
         }>;
       }>(`/v1/companies/${encodeURIComponent(args.companyId)}/kunden`, { signal: c.signal });
       const voll = args.ansicht === "voll";
@@ -279,7 +279,7 @@ export function buildCompanyTools(ctx: Ctx): Tool[] {
       let firmen = new Map<string, string>();
       try { firmen = await ladeFirmenliste(gateway); } catch { /* ohne Bezug */ }
       const ids = [...firmen.keys()];
-      type Gemeinsam = { name: string; art: string; match: { companyId: string; name: string; location: string | null } | null; firmen: Array<{ companyId: string; name: string; art: string }> };
+      type Gemeinsam = { name: string; art: string; match: { companyId: string; name: string; location: string | null; stufe?: "sicher" | "unsicher" } | null; firmen: Array<{ companyId: string; name: string; art: string }> };
       type Nennung = { companyId: string; name: string; art: string };
       const gemeinsam: Gemeinsam[] = [];
       const genanntVon: Nennung[] = [];
@@ -359,7 +359,7 @@ export function buildCompanyTools(ctx: Ctx): Tool[] {
       type Zeile = {
         companyId: string; name: string; art: string; beleg: string | null; quelle: string | null;
         konfidenz: string | null; zuletztGesehen: string;
-        match: { companyId: string; name: string; location: string | null } | null;
+        match: { companyId: string; name: string; location: string | null; stufe?: "sicher" | "unsicher" } | null;
       };
       const alle: Zeile[] = [];
       for (let i = 0; i < ids.length; i += 500) {

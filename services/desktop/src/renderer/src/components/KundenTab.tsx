@@ -15,7 +15,7 @@ export interface Kunde {
   konfidenz: string | null;
   erstGesehen: string;
   zuletztGesehen: string;
-  match: { companyId: string; name: string; location: string | null } | null;
+  match: { companyId: string; name: string; location: string | null; stufe?: "sicher" | "unsicher"; score?: number | null } | null;
 }
 
 const ART_LABEL: Record<Kunde["art"], string> = {
@@ -28,18 +28,33 @@ const ART_LABEL: Record<Kunde["art"], string> = {
 /** Zertifikate sind keine Firmen: ohne Stammdaten-Spalte und ohne Aktion. */
 const OHNE_STAMMDATEN = new Set<Kunde["art"]>(["zertifikat"]);
 
+/** Best Match (2026-10-07): Treffer plus Stufe. „unsicher“ = bester Suchtreffer
+ *  bei mehreren passenden Firmen (Konzern mit Töchtern) oder nur Wortüberdeckung. */
 function TrefferLink({ match }: { match: NonNullable<Kunde["match"]> }) {
   const navigate = useNavigate();
+  const unsicher = match.stufe === "unsicher";
   return (
-    <button
-      type="button"
-      className="link-button"
-      onClick={() => navigate(`/companies/${encodeURIComponent(match.companyId)}`)}
-      title="Firma öffnen"
-    >
-      {match.name}
-      {match.location ? `, ${match.location}` : ""}
-    </button>
+    <span className="kunden-treffer">
+      <button
+        type="button"
+        className="link-button"
+        onClick={() => navigate(`/companies/${encodeURIComponent(match.companyId)}`)}
+        title="Firma öffnen"
+      >
+        {match.name}
+        {match.location ? `, ${match.location}` : ""}
+      </button>
+      <span
+        className={`pill ${unsicher ? "pill--paused" : "pill--active"}`}
+        title={
+          unsicher
+            ? "Bester Treffer in den Stammdaten, aber nicht eindeutig: mehrere Firmen passen zum Namen (z. B. Konzern und Töchter) oder nur die Wörter stimmen überein. Vor dem Übernehmen prüfen."
+            : "Eindeutiger Treffer: genau eine Firma in den Stammdaten passt zum genannten Namen."
+        }
+      >
+        {unsicher ? "unsicher" : "sicher"}
+      </span>
+    </span>
   );
 }
 
@@ -67,7 +82,7 @@ export function KundenTab({ items, onFertig }: { items: Kunde[]; onFertig: () =>
     <>
       <p className="muted small" style={{ marginTop: 0 }}>
         Von der Website der Firma erkannt (Referenzseiten, Logowände, Fallstudien, Partner- und Zertifikatslogos). Der
-        Stammdaten-Treffer ist ein Vorschlag; „Übernehmen“ importiert die Firma in „Meine Firmen“ und startet die
+        Stammdaten-Treffer ist ein Vorschlag (Best Match, „sicher“ bei eindeutigem Namen, sonst „unsicher“); „Übernehmen“ importiert die Firma in „Meine Firmen“ und startet die
         Verarbeitung.
       </p>
       {gruppen.map(([art, liste]) => (

@@ -123,6 +123,28 @@ der Datenschutz-Pass.
 - Judge: neue Zertifikate oder Herstellerprogramme sind Anlässe, wenn sie
   zum Angebot des Nutzers passen (info).
 
+## Best Match im Stammdaten-Abgleich (v0.1.772, 2026-10-07)
+
+Befund: Der Abgleich lief seit K2 nie. master-data verlangt beim Data-Care-
+Trockenlauf den Parameter `city` (Spaltenname); ohne ihn antwortet es 400,
+der Fehler wurde als „best-effort“ geschluckt und keine Zeile als geprüft
+markiert (EnKo Engineering GmbH stand deshalb auf „nicht gefunden“).
+
+Neu (`lib/kunden-match.ts`, Spalten `matchStufe`, `matchScore`):
+- Aus den bis zu 5 Kandidaten (mit Elasticsearch-Score) wird immer ein
+  Best Match gewählt und eingestuft.
+- **sicher**: genau ein Kandidat trifft den Namen ohne Rechtsform an einer
+  Wortgrenze, oder ein Mehrwortname wird exakt getroffen (EnKo Engineering
+  GmbH).
+- **unsicher**: mehrere Kandidaten treffen den Namen (KUKA AG, KUKA
+  Deutschland GmbH …) → der exakte, sonst der mit dem höchsten Score; oder
+  kein Namenstreffer, aber alle Wörter des Kundennamens kommen im besten
+  Kandidaten vor (Hettich → Paul Hettich GmbH & Co. KG).
+- sonst „nicht gefunden“ (Audi ≠ Audio Service).
+- Reiter: Pille „sicher“/„unsicher“ neben dem Treffer; Chat-Tool liefert
+  `stufe` und soll sie vor dem Übernehmen nennen.
+- Prüfung: `npx tsx scripts/test-kunden-match.mts` im Gateway.
+
 ## Später
 
 - Gemeinsame Kunden im Vertriebsblick.

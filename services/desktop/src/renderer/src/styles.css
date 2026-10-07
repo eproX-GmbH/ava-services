@@ -8798,6 +8798,7 @@ body.sprachmodus .upstream-banner, body.sprachmodus .tier-banner, body.sprachmod
 .kunden-beleg { color: var(--muted); line-height: 1.45; }
 .kunden-beleg .kunden-zitat { display: block; }
 .kunden-beleg a { white-space: nowrap; }
+.kunden-treffer { display: inline-flex; align-items: center; gap: 0.4rem; flex-wrap: wrap; }
 .kunden-aktion { text-align: right; white-space: nowrap; }
 .kunden-aktion .firma-aktion__knoepfe { justify-content: flex-end; flex-direction: column; align-items: flex-end; gap: 0.2rem; }
 .link-button { background: none; border: 0; padding: 0; color: var(--accent, inherit); cursor: pointer; font: inherit; text-align: left; box-shadow: none; }

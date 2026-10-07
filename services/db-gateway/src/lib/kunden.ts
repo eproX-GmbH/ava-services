@@ -37,8 +37,22 @@ export interface KundeRow {
   konfidenz: string | null;
   erstGesehen: string;
   zuletztGesehen: string;
-  match: { companyId: string; name: string; location: string | null } | null;
+  match: KundenMatch | null;
   matchGeprueftAt: string | null;
+}
+
+/**
+ * Stammdaten-Treffer (Best Match, 2026-10-07): stufe "sicher" = Name ohne
+ * Rechtsform eindeutig (genau ein Kandidat), "unsicher" = bester Suchtreffer
+ * bei mehreren passenden Kandidaten (Konzern mit Toechtern) oder nur nach
+ * Wortueberdeckung. score = Elasticsearch-Score des Kandidaten.
+ */
+export interface KundenMatch {
+  companyId: string;
+  name: string;
+  location: string | null;
+  stufe?: "sicher" | "unsicher";
+  score?: number | null;
 }
 
 let schemaReady: Promise<void> | null = null;
@@ -64,6 +78,8 @@ async function ensureSchema(pool: Pool): Promise<void> {
            "matchGeprueftAt" TIMESTAMPTZ,
            UNIQUE ("companyId", "nameNormalized")
          );
+         ALTER TABLE "CompanyKunde" ADD COLUMN IF NOT EXISTS "matchStufe" TEXT;
+         ALTER TABLE "CompanyKunde" ADD COLUMN IF NOT EXISTS "matchScore" DOUBLE PRECISION;
          CREATE INDEX IF NOT EXISTS "CompanyKunde_company_idx"
            ON "CompanyKunde" ("companyId", "zuletztGesehen" DESC);
          CREATE INDEX IF NOT EXISTS "CompanyKunde_name_idx"
@@ -134,10 +150,10 @@ export async function listeKunden(companyId: string): Promise<KundeRow[]> {
   const r = await pool.query<{
     id: string; companyId: string; name: string; art: string; beleg: string | null; quelle: string | null;
     konfidenz: string | null; erstGesehen: Date; zuletztGesehen: Date;
-    matchCompanyId: string | null; matchName: string | null; matchLocation: string | null; matchGeprueftAt: Date | null;
+    matchCompanyId: string | null; matchName: string | null; matchLocation: string | null; matchGeprueftAt: Date | null; matchStufe: string | null; matchScore: number | null;
   }>(
     `SELECT id, "companyId", name, art, beleg, quelle, konfidenz, "erstGesehen", "zuletztGesehen",
-            "matchCompanyId", "matchName", "matchLocation", "matchGeprueftAt"
+            "matchCompanyId", "matchName", "matchLocation", "matchGeprueftAt", "matchStufe", "matchScore"
        FROM "CompanyKunde" WHERE "companyId" = $1
       ORDER BY (konfidenz = 'hoch') DESC, art, name`,
     [companyId],
@@ -152,22 +168,29 @@ export async function listeKunden(companyId: string): Promise<KundeRow[]> {
     konfidenz: x.konfidenz,
     erstGesehen: iso(x.erstGesehen)!,
     zuletztGesehen: iso(x.zuletztGesehen)!,
-    match: x.matchCompanyId ? { companyId: x.matchCompanyId, name: x.matchName ?? x.matchCompanyId, location: x.matchLocation } : null,
+    match: x.matchCompanyId ? matchAus(x) : null,
     matchGeprueftAt: iso(x.matchGeprueftAt),
   }));
 }
 
+function matchAus(x: { matchCompanyId: string | null; matchName: string | null; matchLocation: string | null; matchStufe?: string | null; matchScore?: number | null }): KundenMatch {
+  return {
+    companyId: x.matchCompanyId!,
+    name: x.matchName ?? x.matchCompanyId!,
+    location: x.matchLocation,
+    stufe: x.matchStufe === "unsicher" ? "unsicher" : "sicher",
+    score: typeof x.matchScore === "number" ? x.matchScore : null,
+  };
+}
+
 /** Abgleich-Ergebnis festhalten; `null` heisst geprueft, nichts gefunden. */
-export async function setzeMatch(
-  id: string,
-  match: { companyId: string; name: string; location: string | null } | null,
-): Promise<void> {
+export async function setzeMatch(id: string, match: KundenMatch | null): Promise<void> {
   const pool = getGatewayPool();
   await pool.query(
     `UPDATE "CompanyKunde"
-        SET "matchCompanyId" = $2, "matchName" = $3, "matchLocation" = $4, "matchGeprueftAt" = NOW()
+        SET "matchCompanyId" = $2, "matchName" = $3, "matchLocation" = $4, "matchGeprueftAt" = NOW(), "matchStufe" = $5, "matchScore" = $6
       WHERE id = $1`,
-    [id, match?.companyId ?? null, match?.name ?? null, match?.location ?? null],
+    [id, match?.companyId ?? null, match?.name ?? null, match?.location ?? null, match ? (match.stufe ?? "sicher") : null, match?.score ?? null],
   );
 }
 
@@ -205,10 +228,10 @@ export async function listeNennungen(args: {
   const r = await pool.query<{
     id: string; companyId: string; name: string; art: string; beleg: string | null; quelle: string | null;
     konfidenz: string | null; erstGesehen: Date; zuletztGesehen: Date;
-    matchCompanyId: string | null; matchName: string | null; matchLocation: string | null; matchGeprueftAt: Date | null;
+    matchCompanyId: string | null; matchName: string | null; matchLocation: string | null; matchGeprueftAt: Date | null; matchStufe: string | null; matchScore: number | null;
   }>(
     `SELECT id, "companyId", name, art, beleg, quelle, konfidenz, "erstGesehen", "zuletztGesehen",
-            "matchCompanyId", "matchName", "matchLocation", "matchGeprueftAt"
+            "matchCompanyId", "matchName", "matchLocation", "matchGeprueftAt", "matchStufe", "matchScore"
        FROM "CompanyKunde"
       WHERE "companyId" = ANY($1::text[]) AND (${bedingungen.join(" OR ")})
       ORDER BY "zuletztGesehen" DESC
@@ -225,7 +248,7 @@ export async function listeNennungen(args: {
     konfidenz: x.konfidenz,
     erstGesehen: iso(x.erstGesehen)!,
     zuletztGesehen: iso(x.zuletztGesehen)!,
-    match: x.matchCompanyId ? { companyId: x.matchCompanyId, name: x.matchName ?? x.matchCompanyId, location: x.matchLocation } : null,
+    match: x.matchCompanyId ? matchAus(x) : null,
     matchGeprueftAt: iso(x.matchGeprueftAt),
   }));
 }
@@ -234,7 +257,7 @@ export interface GemeinsamerKunde {
   /** Name, wie die betrachtete Firma ihn nennt. */
   name: string;
   art: KundenArt;
-  match: { companyId: string; name: string; location: string | null } | null;
+  match: KundenMatch | null;
   /** Firmen aus der Liste des Aufrufers, die denselben Kunden nennen. */
   firmen: Array<{ companyId: string; name: string; art: KundenArt }>;
 }
@@ -253,10 +276,10 @@ export async function listeGemeinsameKunden(args: {
   const pool = getGatewayPool();
   await ensureSchema(pool);
   const r = await pool.query<{
-    name: string; art: string; matchCompanyId: string | null; matchName: string | null; matchLocation: string | null;
+    name: string; art: string; matchCompanyId: string | null; matchName: string | null; matchLocation: string | null; matchStufe: string | null; matchScore: number | null;
     andereCompanyId: string; andererName: string; andereArt: string;
   }>(
-    `SELECT k.name, k.art, k."matchCompanyId", k."matchName", k."matchLocation",
+    `SELECT k.name, k.art, k."matchCompanyId", k."matchName", k."matchLocation", k."matchStufe", k."matchScore",
             a."companyId" AS "andereCompanyId", a.name AS "andererName", a.art AS "andereArt"
        FROM "CompanyKunde" k
        JOIN "CompanyKunde" a
@@ -279,7 +302,7 @@ export async function listeGemeinsameKunden(args: {
       g = {
         name: z.name,
         art: z.art as KundenArt,
-        match: z.matchCompanyId ? { companyId: z.matchCompanyId, name: z.matchName ?? z.matchCompanyId, location: z.matchLocation } : null,
+        match: z.matchCompanyId ? matchAus(z) : null,
         firmen: [],
       };
       jeKunde.set(key, g);
