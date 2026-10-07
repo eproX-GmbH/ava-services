@@ -286,8 +286,11 @@ const OPENAI_LLM: CatalogEntry[] = [
   // agentische Ablaeufe (2 $ / 10 $), Luna = Budget fuer Massenaufgaben
   // (0,10 $ / 0,50 $). Luna ist die neue Empfehlung: eine Generation
   // neuer als 5.6 Luna und guenstiger als 5.4 mini, das bisher empfohlen
-  // war. Kontextfenster bei OpenAI nicht ausgewiesen; wie die 5.6-Linie
-  // angenommen (1,05 M) — bei Abweichung hier korrigieren.
+  // war. Kontextfenster 1,05 M (922 k Eingabe, 128 k Ausgabe) laut
+  // Modellseite von GPT-6.1 Sol; fuer die Reihe uebernommen.
+  // Rundumschlag 2026-10-07: GPT-6.1 Sol neu (2 $ / 10 $, gecacht 0,10 $),
+  // "nahe an Astra fuer komplexe Arbeit zum Sol-Preis"; gpt-6-sol bleibt
+  // aufrufbar. Empfehlung bleibt gpt-6-luna.
   {
     provider: "openai",
     id: "gpt-6-astra",
@@ -295,6 +298,15 @@ const OPENAI_LLM: CatalogEntry[] = [
     role: "llm",
     capabilities: { tools: true, vision: true, contextWindow: 1_050_000 },
     costClass: "high",
+    tier: 4,
+  },
+  {
+    provider: "openai",
+    id: "gpt-6.1-sol",
+    label: "GPT-6.1 Sol (neu)",
+    role: "llm",
+    capabilities: { tools: true, vision: true, contextWindow: 1_050_000 },
+    costClass: "mid",
     tier: 4,
   },
   {
@@ -572,8 +584,12 @@ const ANTHROPIC_LLM: CatalogEntry[] = [
   // Stand 2026-09-25: Fable 5.1 ist das faehigste allgemein verfuegbare
   // Modell (10 $ / 50 $), Opus 5.5 der neue Opus zum niedrigeren Preis
   // (4 $ / 20 $; Denken laesst sich nicht abschalten, erzwungene
-  // Werkzeugwahl gibt 400), Opus 4.8 die letzte 4er-Stufe. Sonnet 5
-  // bleibt die Empfehlung (2 $ / 10 $).
+  // Werkzeugwahl gibt 400), Opus 4.8 die letzte 4er-Stufe.
+  // Rundumschlag 2026-10-07: Sonnet 5.5 (erschienen 2026-09-28, 2 $ / 10 $,
+  // 1 M Kontext) loest Sonnet 5 als Empfehlung ab. Wie Opus 5.5: erzwungene
+  // Werkzeugwahl gibt 400, Text zwischen Werkzeugaufrufen kommt als
+  // thinking-Block, temperature/top_p nicht setzbar. Anthropic empfiehlt
+  // Opus 5.5 als Standard; wir bleiben beim Sonnet-Preis als Standard.
   {
     provider: "anthropic",
     id: "claude-fable-5-1",
@@ -612,13 +628,23 @@ const ANTHROPIC_LLM: CatalogEntry[] = [
   },
   {
     provider: "anthropic",
+    id: "claude-sonnet-5-5",
+    label: "Claude Sonnet 5.5 (neu)",
+    role: "llm",
+    capabilities: { tools: true, vision: true, contextWindow: 1_000_000 },
+    costClass: "mid",
+    tier: 4,
+    recommended: true,
+  },
+  {
+    provider: "anthropic",
     id: "claude-sonnet-5",
     label: "Claude Sonnet 5",
     role: "llm",
     capabilities: { tools: true, vision: true, contextWindow: 1_000_000 },
     costClass: "mid",
     tier: 4,
-    recommended: true,
+    // bis 2026-10-07 die Empfehlung; abgeloest durch claude-sonnet-5-5.
   },
   {
     provider: "anthropic",
@@ -855,8 +881,9 @@ const GOOGLE_EMBED: CatalogEntry[] = [
 
 // ---- Mistral ---------------------------------------------------------------
 
-// Mistral 2026 generation: Large 3 is the flagship open-weight
-// general-purpose model; Medium 3.5 is the frontier multimodal
+// Mistral 2026 generation: Large 4 (v26.10, Oktober 2026) ist das neue
+// offene Flaggschiff hinter dem Alias mistral-large-latest (Large 3
+// bleibt als mistral-large-2512 aufrufbar); Medium 3.5 is the frontier multimodal
 // optimized for agentic + coding; Small 4 is a hybrid instruct +
 // reasoning model. All three got native vision in this generation
 // (previously only Pixtral). Context windows expanded to 262k.
@@ -864,7 +891,7 @@ const MISTRAL_LLM: CatalogEntry[] = [
   {
     provider: "mistral",
     id: "mistral-large-latest",
-    label: "Mistral Large 3",
+    label: "Mistral Large 4",
     role: "llm",
     capabilities: { tools: true, vision: true, contextWindow: 262_000 },
     costClass: "mid",

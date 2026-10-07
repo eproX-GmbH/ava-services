@@ -60,7 +60,7 @@ const MODEL_LABEL: Record<ResearchProvider, Record<ResearchTier, string>> = {
   },
   anthropic: {
     off: "—",
-    standard: "claude-sonnet-5 + web_search",
+    standard: "claude-sonnet-5-5 + web_search",
     deep: "claude-opus-5 + web_search + adaptives Denken",
   },
 };

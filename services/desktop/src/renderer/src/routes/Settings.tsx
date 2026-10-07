@@ -106,7 +106,7 @@ const PROVIDER_FEATURES: Record<HostedProviderKind, string> = {
     "verwendet (z. B. Gemini 3.8 Flash für anspruchsvolle Recherche).",
   mistral:
     "Wird als Chat-LLM und in allen LLM-getriebenen Producer-Stages " +
-    "verwendet (z. B. Mistral Large 3 für deutschsprachige Inhalte).",
+    "verwendet (z. B. Mistral Large 4 für deutschsprachige Inhalte).",
   deepseek:
     "Wird als Chat-LLM und in allen LLM-getriebenen Producer-Stages " +
     "verwendet. Mit Abstand der günstigste Anbieter (V4 Flash), " +

@@ -43,8 +43,8 @@ TypeScript enforces this on `CatalogEntry`; CI fails if you forget.
 
 ### Tier S — premium
 
-- `gpt-6-astra`, `gpt-6-sol`, `gpt-5.6-sol`, `gpt-5.6-terra`, `gpt-5.5-pro`, `gpt-5.5`, `gpt-5.4-pro`, `gpt-5.4`, `gpt-5-pro`, `gpt-5`, `o3` (OpenAI)
-- `claude-fable-5-1`, `claude-fable-5`, `claude-opus-5-5`, `claude-opus-5`, `claude-sonnet-5`, `claude-opus-4-8`, `claude-opus-4-7`, `claude-opus-4-6`, `claude-opus-4-5`, `claude-opus-4-1` (Anthropic)
+- `gpt-6-astra`, `gpt-6.1-sol` (neu 2026-10-07), `gpt-6-sol`, `gpt-5.6-sol`, `gpt-5.6-terra`, `gpt-5.5-pro`, `gpt-5.5`, `gpt-5.4-pro`, `gpt-5.4`, `gpt-5-pro`, `gpt-5`, `o3` (OpenAI)
+- `claude-fable-5-1`, `claude-fable-5`, `claude-opus-5-5`, `claude-opus-5`, `claude-sonnet-5-5` (Empfehlung seit 2026-10-07), `claude-sonnet-5`, `claude-opus-4-8`, `claude-opus-4-7`, `claude-opus-4-6`, `claude-opus-4-5`, `claude-opus-4-1` (Anthropic)
 - `gemini-3.1-pro-preview`, `gemini-3-pro-preview`, `gemini-2.5-pro` (Google)
 - `grok-4.6` (xAI), `qwen3.8-max` (Qwen)
 
@@ -54,7 +54,7 @@ TypeScript enforces this on `CatalogEntry`; CI fails if you forget.
 - `claude-sonnet-4-6`, `claude-sonnet-4-5` (Anthropic)
 - `gemini-3.8-flash` (Empfehlung seit 2026-09-25), `gemini-3.7-flash`, `gemini-3.6-flash`, `gemini-3.5-flash`, `gemini-3-flash-preview`, `gemini-2.5-flash` (Google)
 - `deepseek-v4-pro` (DeepSeek), `grok-4.5` (xAI)
-- `mistral-large-latest`, `mistral-medium-latest`, `devstral-medium-latest`, `pixtral-large-latest` (Mistral)
+- `mistral-large-latest` (= Mistral Large 4 seit 2026-10), `mistral-medium-latest`, `devstral-medium-latest`, `pixtral-large-latest` (Mistral)
 - `gemma4:31b`, `gemma4:26b`, `qwen2.5:14b` (Ollama, local)
 
 ### Tier B — mid

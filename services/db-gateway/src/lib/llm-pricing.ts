@@ -30,6 +30,9 @@ const PRICING: readonly ModelPricing[] = [
   { provider: "mistral", modelIdPrefix: "mistral-small", inputPerMTok: 0.15, outputPerMTok: 0.6 },
   // ---- Nachtrag 2026-09-25 (Listenpreise Stand September 2026; laengster Praefix gewinnt)
   { provider: "openai", modelIdPrefix: "gpt-6-astra", inputPerMTok: 10, outputPerMTok: 50, cacheReadPerMTok: 1 },
+  // Rundumschlag 2026-10-07: GPT-6.1 Sol, Claude Sonnet 5.5.
+  { provider: "openai", modelIdPrefix: "gpt-6.1-sol", inputPerMTok: 2, outputPerMTok: 10, cacheReadPerMTok: 0.1 },
+  { provider: "anthropic", modelIdPrefix: "claude-sonnet-5-5", inputPerMTok: 2, outputPerMTok: 10, cacheReadPerMTok: 0.2 },
   { provider: "openai", modelIdPrefix: "gpt-6-sol", inputPerMTok: 2, outputPerMTok: 10, cacheReadPerMTok: 0.2 },
   { provider: "openai", modelIdPrefix: "gpt-6-luna", inputPerMTok: 0.1, outputPerMTok: 0.5, cacheReadPerMTok: 0.01 },
   { provider: "openai", modelIdPrefix: "gpt-5.6-sol", inputPerMTok: 4, outputPerMTok: 20, cacheReadPerMTok: 0.4 },
