@@ -34,6 +34,7 @@ import { ORG_FEATURES } from "../shared/types";
 import { pruefeModellstufe } from "./workflows/modellstufe";
 import { guardAllKnownSessions, setDownloadBlockedListener } from "./download-guard";
 import { EmailMusterSupervisor } from "./contacts/email-muster/supervisor";
+import { streamToText as hintergrundUrteil } from "./link-monitor/llm";
 import {
   app,
   BrowserWindow,
@@ -3444,6 +3445,24 @@ app.whenReady().then(async () => {
       onChanged: (cfg) => {
         for (const win of BrowserWindow.getAllWindows()) win.webContents.send("emailMuster:changed", cfg);
       },
+      // Stufe 2 (docs/PLAN_EMAIL_MUSTER_2.md): KI-Urteil fuer Zuordnung und Muster,
+      // Hintergrund-Kanal (Budget der Organisation, zentrale KI-Sperre greift).
+      urteil: async (system, user) => {
+        try {
+          const text = await hintergrundUrteil(
+            providers,
+            [
+              { id: `em-sys-${Date.now()}`, role: "system", content: system, createdAt: Date.now() },
+              { id: `em-usr-${Date.now()}`, role: "user", content: user, createdAt: Date.now() },
+            ],
+            { channel: "background", quelle: "email-zuordnung", timeoutMs: 30_000 },
+          );
+          return text || null;
+        } catch (err) {
+          console.log(`[email-muster] Urteil nicht moeglich: ${err instanceof Error ? err.message : String(err)}`);
+          return null;
+        }
+      },
     },
     app.getPath("userData"),
   );
@@ -6243,7 +6262,13 @@ app.whenReady().then(async () => {
   });
   ipcMain.handle("workflows:cancel", (_e, executionId: string) => ({ ok: wf().cancel(String(executionId)) }));
   ipcMain.handle("emailMuster:status", () => emailMuster?.status() ?? null);
-  ipcMain.handle("emailMuster:setConfig", (_e, patch: { enabled?: boolean }) => emailMuster?.setConfig({ ...(patch.enabled !== undefined ? { enabled: patch.enabled === true } : {}) }) ?? null);
+  ipcMain.handle("emailMuster:setConfig", (_e, patch: { enabled?: boolean; zuordnungAktiv?: boolean; ungeprueftAnzeigen?: boolean }) =>
+    emailMuster?.setConfig({
+      ...(patch.enabled !== undefined ? { enabled: patch.enabled === true } : {}),
+      ...(patch.zuordnungAktiv !== undefined ? { zuordnungAktiv: patch.zuordnungAktiv === true } : {}),
+      ...(patch.ungeprueftAnzeigen !== undefined ? { ungeprueftAnzeigen: patch.ungeprueftAnzeigen === true } : {}),
+    }) ?? null,
+  );
   ipcMain.handle("emailMuster:runNow", async () => ({ ergebnis: (await emailMuster?.runNow()) ?? "nicht initialisiert" }));
   ipcMain.handle("emailMuster:vorschau", (_e, companyId: string) => emailMuster?.vorschau(String(companyId)) ?? null);
   ipcMain.handle("emailMuster:verlauf", (_e, opts: { nur?: string; companyId?: string; limit?: number } | undefined) =>

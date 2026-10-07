@@ -16,7 +16,7 @@ export interface MusterBefundShared {
 }
 
 /** Ergebnis einer einzelnen Adresspruefung (Verlauf in den Einstellungen / Chat). */
-export type VerlaufErgebnis = "verifiziert" | "abgelehnt" | "unklar" | "catch_all" | "gesperrt";
+export type VerlaufErgebnis = "verifiziert" | "abgelehnt" | "unklar" | "catch_all" | "gesperrt" | "zugeordnet";
 
 export interface VerlaufEintrag {
   at: string;
@@ -28,8 +28,10 @@ export interface VerlaufEintrag {
   email: string;
   muster: string;
   ergebnis: VerlaufErgebnis;
-  /** true = am Server als Fakt gespeichert ("verifiziert" oder "catch_all" = unbestaetigt). */
+  /** true = am Server als Fakt gespeichert (Stufe 2: auch unklar/abgelehnt, klar gekennzeichnet). */
   gespeichert: boolean;
+  /** Stufe 2: Baseline-Adresse, aus der abgeleitet wurde. */
+  baseline?: string;
   smtpCode?: number;
   mx?: string | null;
   fehler?: string;
@@ -37,12 +39,18 @@ export interface VerlaufEintrag {
 
 export interface EmailMusterConfig {
   enabled: boolean;
+  /** Stufe 2 (docs/PLAN_EMAIL_MUSTER_2.md): Firmenadressen per Namensabgleich/Urteil Personen zuordnen. */
+  zuordnungAktiv?: boolean;
+  /** Stufe 2: Ableitungen auch speichern, wenn die Pruefung nicht moeglich war oder ablehnte (gekennzeichnet). */
+  ungeprueftAnzeigen?: boolean;
+  /** Stufe 2: Wiederholungen offener Adressen (E-Mail → Versuche, letzter Versuch). */
+  offen?: Record<string, { versuche: number; at: string }>;
   lastRunAt: string | null;
   lastOutcome: string | null;
   netz: { erreichbar: boolean; grund: string; at: string } | null;
   tag: { day: string; count: number };
-  domains: Record<string, { at: string; muster: string | null; belege: number; catchAll: boolean; grund?: string }>;
-  stats: { firmen: number; geprueft: number; verifiziert: number; unbestaetigt: number; abgelehnt: number; unbekannt: number; catchAll: number };
+  domains: Record<string, { at: string; muster: string | null; belege: number; catchAll: boolean; grund?: string; /** Stufe 2: noch Personen unversorgt → naechster Durchgang ohne Frist. */ offen?: boolean }>;
+  stats: { firmen: number; geprueft: number; verifiziert: number; unbestaetigt: number; abgelehnt: number; unbekannt: number; catchAll: number; zugeordnet?: number };
   /** Juengste Pruefungen zuerst, begrenzt (VERLAUF_MAX). */
   verlauf: VerlaufEintrag[];
 }
@@ -54,6 +62,10 @@ export interface Vorschau {
   domain: string | null;
   befund: MusterBefundShared | null;
   kandidaten: Array<{ personId: string; fullName: string; email: string }>;
+  /** Stufe 2: Firmenadressen, die (deterministisch) einer Person zugeordnet wuerden. */
+  zuordnungen?: Array<{ personId: string; fullName: string; email: string; begruendung: string }>;
+  /** Stufe 2: Adresse, aus der das Muster abgeleitet wird. */
+  baseline?: string | null;
   personenMitMail: number;
   personenOhneMail: number;
   hinweis: string | null;

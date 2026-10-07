@@ -51,6 +51,9 @@ Lücken, die Patricks Beispiel (info@, rechnung@, pdettlev@) treffen:
    **Baseline** (pdettlev@), aus der sie gebildet wurde.
 4. Abgeleitete Adressen werden verifiziert; der Stand (verifiziert,
    unbestätigt, ungeprüft, abgelehnt) ist in der App sichtbar.
+5. **Entscheidung 2026-10-07:** ALLE Personen bekommen eine abgeleitete
+   Adresse angezeigt, auch wenn die Prüfung nicht möglich war, dann klar
+   als „abgeleitet · unverifiziert“ mit Verweis auf die Baseline-Adresse.
 
 ## 3. Umsetzung
 
@@ -142,16 +145,35 @@ Lücken, die Patricks Beispiel (info@, rechnung@, pdettlev@) treffen:
 
 Aufwand: E1–E2 zwei Tage, E3–E5 ein Tag, E6–E7 ein Tag.
 
-## 4. Rückfragen
+## 4. Stand der Umsetzung (v0.1.771, 2026-10-07)
 
-1. **Port 25 bei Patrick:** Zeigt seine App unter Einstellungen →
-   Automatisierungen → E-Mail-Ableitung „Mail-Prüfung in diesem Netz
-   nicht möglich“? Dann läuft der Job bei ihm gar nicht, und E4 (ungeprüft
-   speichern) ist der sichtbare Unterschied.
-2. **Ungeprüfte Ableitungen anzeigen** (E4): gewollt? Sie sind geraten,
-   aber gekennzeichnet. Vorschlag: ja, Standard an, abschaltbar.
-3. **LLM-Kosten:** Zuordnung und Judge laufen über den Hintergrund-Kanal
-   des Nutzers (eigener Schlüssel, Organisation oder ChatGPT-Abo), ein bis
-   zwei kleine Aufrufe je Firma. In Ordnung?
-4. **Zuordnung nur bei eindeutigem Namen:** „martin@“ bei Firma mit einem
-   Martin Müller wird zugeordnet, bei zwei Martins nicht. Einverstanden?
+Umgesetzt, Gateway deployt:
+
+- **E1** `contacts/email-muster/zuordnung.ts`: deterministisch (Lokalteil =
+  Name, Initial + Name, Name enthalten; genau eine Person) und KI-Urteil
+  über den Hintergrund-Kanal (Quelle `email-zuordnung`, Deps `urteil`).
+  Zwei Kandidaten → nie zuordnen; Urteil ohne Namensanklang wird verworfen.
+  Gespeichert als `zuordnung:<art>` (smtp 0,95 / catchall 0,8 / offen 0,7).
+- **E2** `beurteileMuster`: nur wenn der Katalog kein Muster findet oder ein
+  einzelner Beleg mehrere zulässt; Vorlagen `{v}{nachname}` erlaubt, nur
+  gültig wenn alle Belege reproduziert werden; Muster am Server mit
+  `stats.quelle = judge`.
+- **E3** 10 Kandidaten je Durchgang, Domain bleibt „offen“ (kein Warten auf
+  die 30-Tage-Frist), bis alle Personen versorgt sind. Offene Adressen werden
+  höchstens 3-mal im Abstand von 24 h nachgeprüft (`cfg.offen`).
+- **E4** Arten `offen` (Konfidenz 0,4) und `abgelehnt` (0,2) am Gateway;
+  Badge „abgeleitet · unverifiziert · aus <Baseline>“ bzw. „vom Server
+  abgelehnt“; eine offene/abgelehnte Adresse darf durch eine bessere
+  Prüfung ersetzt werden (409 nur bei gefundener/verifizierter Adresse).
+  Ohne Port 25 läuft der Job jetzt trotzdem und speichert als `offen`.
+- **E5** Baseline im Herkunftstext („Abgeleitet aus pdettlev@… nach
+  Adressmuster vnachname“), im Verlauf (`baseline`) und in der Vorschau.
+- **E6** Schalter `zuordnungAktiv` und `ungeprueftAnzeigen` (beide Standard
+  an) in Einstellungen → E-Mail-Ableitung und im Tool `email_muster_config`.
+- **E7** `npm run test:email-zuordnung` (Zuordnung, Judge-Reproduktion,
+  Vorlagen); bestehende Muster-Tests unverändert grün.
+
+Beantwortete Rückfragen: 2 ja (Standard an, abschaltbar), 3 ja
+(Hintergrund-Kanal), 4 ja (nur eindeutig). Offen: 1 (Port-25-Stand bei
+Patrick, nebenbei klären; mit E4 sichtbar, da Adressen jetzt auch ohne
+Prüfung erscheinen).

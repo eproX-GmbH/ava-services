@@ -12,6 +12,7 @@ const ERGEBNIS_LABEL: Record<VerlaufErgebnis, string> = {
   unklar: "unklar",
   catch_all: "Catch-all · unbestätigt",
   gesperrt: "Netz gesperrt",
+  zugeordnet: "Firmenadresse zugeordnet",
 };
 const ERGEBNIS_PILL: Record<VerlaufErgebnis, string> = {
   verifiziert: "pill--active",
@@ -19,6 +20,7 @@ const ERGEBNIS_PILL: Record<VerlaufErgebnis, string> = {
   unklar: "pill--paused",
   catch_all: "pill--paused",
   gesperrt: "pill--error",
+  zugeordnet: "pill--active",
 };
 
 export function EmailMusterSection() {
@@ -55,15 +57,24 @@ export function EmailMusterSection() {
     <section className="provider-section alerts-prefs" id="email-muster-section">
       <h3>E-Mail-Ableitung</h3>
       <p className="muted">
-        Kennt AVA von einer Firma eine persönliche E-Mail-Adresse, leitet sie daraus das Adressmuster ab und bildet Adressen für Kontakte ohne E-Mail.
-        Jede Adresse wird per Mail-Server-Anfrage auf Existenz geprüft, ohne eine E-Mail zu senden. Geprüfte Adressen werden als „abgeleitet · verifiziert“
-        gespeichert. Nimmt ein Mailserver jede Adresse an (Catch-all), wird die Adresse nach dem Muster trotzdem gespeichert, aber als „abgeleitet · unbestätigt“
-        mit niedrigerer Zuverlässigkeit. Eine eingehende Antwort bestätigt sie, eine Unzustellbarkeitsmeldung entfernt sie wieder. Läuft lokal auf diesem Rechner, eine Firma alle 15 Minuten, nicht während eines Chats und nicht im Akkubetrieb.
+        Kennt AVA von einer Firma eine persönliche E-Mail-Adresse, leitet sie daraus das Adressmuster ab und bildet Adressen für alle Kontakte ohne E-Mail.
+        Firmenadressen mit Namen (etwa pdettlev@…) werden der passenden Person zugeordnet und zählen als Beleg. Jede gebildete Adresse wird per Mail-Server-Anfrage
+        auf Existenz geprüft, ohne eine E-Mail zu senden: „abgeleitet · verifiziert“. Nimmt ein Mailserver jede Adresse an (Catch-all), heißt sie „abgeleitet · unbestätigt“.
+        Ist die Prüfung in diesem Netz nicht möglich oder bleibt sie ohne Antwort, wird die Adresse trotzdem gespeichert, als „abgeleitet · unverifiziert“ mit Verweis auf die Baseline-Adresse,
+        und später nachgeprüft. Eine eingehende Antwort bestätigt sie, eine Unzustellbarkeitsmeldung entfernt sie wieder. Läuft lokal auf diesem Rechner, eine Firma alle 15 Minuten, nicht während eines Chats und nicht im Akkubetrieb.
       </p>
       <div className="alerts-prefs__row">
         <label className="alerts-prefs__check">
           <input type="checkbox" checked={s.enabled} onChange={(e) => void window.api.emailMuster.setConfig({ enabled: e.target.checked }).then(() => reload())} />
           <span>E-Mail-Ableitung aktiv</span>
+        </label>
+        <label className="alerts-prefs__check">
+          <input type="checkbox" disabled={!s.enabled} checked={s.zuordnungAktiv !== false} onChange={(e) => void window.api.emailMuster.setConfig({ zuordnungAktiv: e.target.checked }).then(() => reload())} />
+          <span>Firmenadressen Personen zuordnen (mit KI-Urteil)</span>
+        </label>
+        <label className="alerts-prefs__check">
+          <input type="checkbox" disabled={!s.enabled} checked={s.ungeprueftAnzeigen !== false} onChange={(e) => void window.api.emailMuster.setConfig({ ungeprueftAnzeigen: e.target.checked }).then(() => reload())} />
+          <span>Unverifizierte Ableitungen anzeigen</span>
         </label>
         <button
           type="button"
@@ -101,7 +112,7 @@ export function EmailMusterSection() {
         <div>
           <dt>Gesamt</dt>
           <dd>
-            {s.stats.verifiziert} verifiziert · {s.stats.unbestaetigt ?? 0} unbestätigt gespeichert · {s.stats.abgelehnt} abgelehnt · {s.stats.unbekannt} unklar · {s.stats.catchAll} Catch-all-Domains · {domains.length} Domains geprüft
+            {s.stats.verifiziert} verifiziert · {s.stats.unbestaetigt ?? 0} unbestätigt · {s.stats.unbekannt} unverifiziert · {s.stats.abgelehnt} abgelehnt · {s.stats.zugeordnet ?? 0} zugeordnet · {s.stats.catchAll} Catch-all-Domains · {domains.length} Domains geprüft
           </dd>
         </div>
       </dl>
@@ -113,7 +124,7 @@ export function EmailMusterSection() {
       ) : (
         <>
           <div className="em-verlauf__filter" role="tablist" aria-label="Verlauf filtern">
-            {(["alle", "gespeichert", "verifiziert", "abgelehnt", "unklar", "catch_all", "gesperrt"] as Filter[]).map((f) => (
+            {(["alle", "gespeichert", "verifiziert", "zugeordnet", "abgelehnt", "unklar", "catch_all", "gesperrt"] as Filter[]).map((f) => (
               <button
                 key={f}
                 type="button"
@@ -157,14 +168,24 @@ export function EmailMusterSection() {
                       <code>{r.muster}</code>
                     </td>
                     <td>
-                      <span className={`pill ${ERGEBNIS_PILL[r.ergebnis]}`} title={r.smtpCode ? `Mail-Server-Antwort ${r.smtpCode}${r.mx ? ` (${r.mx})` : ""}` : undefined}>
+                      <span className={`pill ${ERGEBNIS_PILL[r.ergebnis]}`} title={[r.smtpCode ? `Mail-Server-Antwort ${r.smtpCode}${r.mx ? ` (${r.mx})` : ""}` : "", r.baseline ? `Baseline ${r.baseline}` : ""].filter(Boolean).join(" · ") || undefined}>
                         {ERGEBNIS_LABEL[r.ergebnis]}
                       </span>
                     </td>
                     <td>
                       {r.gespeichert ? (
-                        <span title={r.ergebnis === "catch_all" ? "Als unbestätigte Kontakt-E-Mail gespeichert (Catch-all), sichtbar auf der Kontaktkarte" : "Als Kontakt-E-Mail gespeichert, sichtbar auf der Kontaktkarte"}>
-                          ✓ {r.ergebnis === "catch_all" ? "unbestätigt" : "ja"}
+                        <span
+                          title={
+                            r.ergebnis === "catch_all"
+                              ? "Als unbestätigte Kontakt-E-Mail gespeichert (Catch-all), sichtbar auf der Kontaktkarte"
+                              : r.ergebnis === "unklar" || r.ergebnis === "gesperrt"
+                                ? "Als unverifizierte Kontakt-E-Mail gespeichert, sichtbar auf der Kontaktkarte; wird später nachgeprüft"
+                                : r.ergebnis === "abgelehnt"
+                                  ? "Gespeichert, aber als vom Server abgelehnt gekennzeichnet"
+                                  : "Als Kontakt-E-Mail gespeichert, sichtbar auf der Kontaktkarte"
+                          }
+                        >
+                          ✓ {r.ergebnis === "catch_all" ? "unbestätigt" : r.ergebnis === "unklar" || r.ergebnis === "gesperrt" ? "unverifiziert" : r.ergebnis === "abgelehnt" ? "abgelehnt" : "ja"}
                         </span>
                       ) : r.fehler ? (
                         <span className="em-verlauf__err" title={r.fehler}>

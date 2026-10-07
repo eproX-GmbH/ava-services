@@ -1816,7 +1816,7 @@ const api = {
   },
   emailMuster: {
     status: (): Promise<import("../shared/email-muster-types").EmailMusterConfig & { laeuft: boolean }> => ipcRenderer.invoke("emailMuster:status"),
-    setConfig: (patch: { enabled?: boolean }): Promise<import("../shared/email-muster-types").EmailMusterConfig> => ipcRenderer.invoke("emailMuster:setConfig", patch),
+    setConfig: (patch: { enabled?: boolean; zuordnungAktiv?: boolean; ungeprueftAnzeigen?: boolean }): Promise<import("../shared/email-muster-types").EmailMusterConfig> => ipcRenderer.invoke("emailMuster:setConfig", patch),
     runNow: (): Promise<{ ergebnis: string }> => ipcRenderer.invoke("emailMuster:runNow"),
     vorschau: (companyId: string): Promise<import("../shared/email-muster-types").Vorschau | null> => ipcRenderer.invoke("emailMuster:vorschau", companyId),
     verlauf: (opts?: { nur?: import("../shared/email-muster-types").VerlaufErgebnis | "gespeichert"; companyId?: string; limit?: number }): Promise<import("../shared/email-muster-types").VerlaufEintrag[]> =>

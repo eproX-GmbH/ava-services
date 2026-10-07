@@ -1,6 +1,6 @@
 {
   "name": "@ava/desktop",
-  "version": "0.1.770",
+  "version": "0.1.771",
   "private": true,
   "license": "SEE LICENSE IN LICENSE",
   "description": "AVA Electron desktop app",
@@ -40,6 +40,7 @@
     "test:auffrischung": "node scripts/test-auffrischung.mjs",
     "test:alarm-neuheiten": "node scripts/test-alarm-neuheiten.mjs",
     "test:siwc-oauth": "node scripts/test-siwc-oauth.mjs",
+    "test:email-zuordnung": "node scripts/test-email-zuordnung.mjs",
     "test:telegram-sprachantwort": "node scripts/test-telegram-sprachantwort.mjs",
     "test:relevanz": "node scripts/test-relevanz.mjs",
     "test:skills": "node scripts/test-skills-loader.mjs",

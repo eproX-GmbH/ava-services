@@ -331,13 +331,35 @@ function AbgeleitetBadge({
   evidence?: string | null;
 }) {
   const src = obsId ? quellen?.get(obsId) : undefined;
-  if (!src || !src.startsWith("pattern:")) return null;
+  if (!src || !(src.startsWith("pattern:") || src.startsWith("zuordnung:"))) return null;
+  // Stufe 2 (docs/PLAN_EMAIL_MUSTER_2.md): zugeordnete Firmenadressen und
+  // unverifizierte/abgelehnte Ableitungen sichtbar, klar gekennzeichnet; der
+  // Herkunftstext (Tooltip) nennt die Baseline-Adresse.
+  const zugeordnet = src.startsWith("zuordnung:");
+  const art = src.split(":")[1] ?? "";
+  const praefix = zugeordnet ? "zugeordnet" : "abgeleitet";
+  const baseline = evidence?.match(/Abgeleitet aus ([^\s;]+@[^\s;]+)/)?.[1];
+  const baselineText = baseline ? ` · aus ${baseline}` : "";
+  if (art === "offen") {
+    return (
+      <span className="pill pill--paused" title={evidence ?? "Nach dem Adressmuster der Firma gebildet; die Existenz konnte noch nicht geprüft werden."}>
+        {praefix} · unverifiziert{baselineText}
+      </span>
+    );
+  }
+  if (art === "abgelehnt") {
+    return (
+      <span className="pill pill--error" title={evidence ?? "Nach dem Adressmuster der Firma gebildet; der Mailserver hat die Adresse abgelehnt."}>
+        {praefix} · vom Server abgelehnt{baselineText}
+      </span>
+    );
+  }
   // Pruef-/Bestaetigungsdatum aus dem Herkunftstext ("… geprueft am 2026-09-10 …" / "… eingegangen am …").
   const m = evidence?.match(
     /(?:geprueft|eingegangen) am (\d{4})-(\d{2})-(\d{2})/
   );
   const datum = m ? ` ${m[3]}.${m[2]}.${m[1]!.slice(2)}` : "";
-  if (src === "pattern:catchall") {
+  if (art === "catchall") {
     return (
       <span
         className="pill pill--paused"
@@ -346,11 +368,11 @@ function AbgeleitetBadge({
           "Nach dem Adressmuster der Firma gebildet. Der Mailserver nimmt jede Adresse an (Catch-all), die Existenz ist daher nicht einzeln belegbar. Wird bei einer Antwort bestätigt, bei Unzustellbarkeit entfernt."
         }
       >
-        abgeleitet · unbestätigt{datum}
+        {praefix} · unbestätigt{datum}
       </span>
     );
   }
-  if (src === "pattern:reply") {
+  if (art === "reply") {
     return (
       <span
         className="pill pill--active"
@@ -359,7 +381,7 @@ function AbgeleitetBadge({
           "Abgeleitete Adresse, bestätigt durch eine eingegangene Antwort."
         }
       >
-        abgeleitet · bestätigt{datum}
+        {praefix} · bestätigt{datum}
       </span>
     );
   }
@@ -371,7 +393,7 @@ function AbgeleitetBadge({
         "Nach dem Adressmuster der Firma gebildet und per Mail-Server-Anfrage auf Existenz geprüft (keine E-Mail zugestellt)."
       }
     >
-      abgeleitet · verifiziert{datum}
+      {praefix} · verifiziert{datum}
     </span>
   );
 }

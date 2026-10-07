@@ -1,7 +1,8 @@
 // M3 (docs/PLAN_EMAIL_MUSTER.md) — Server speichert nur, verarbeitet nicht:
 //   GET/PUT /email-patterns/:domain        Adressmuster je Domain (geteilt)
 //   POST /companies/:id/contacts/derived-email  abgeleitete Adresse (art: smtp = verifiziert,
-//                                               catchall = Muster sicher, Adresse unbestaetigt)
+//                                               catchall = unbestaetigt, offen = unverifiziert,
+//                                               abgelehnt = Server lehnte ab; herkunft muster|zuordnung)
 //   POST /email-patterns/feedback          Bounce (deaktivieren) / Antwort (bestaetigen)
 // Die Ableitung und die SMTP-Pruefung laufen lokal auf dem Geraet des Nutzers.
 
@@ -155,8 +156,19 @@ const derivedRoute = createRoute({
             checkedAt: z.string().datetime().optional(),
             smtpCode: z.number().int().optional(),
             /** smtp (Standard): Existenz per RCPT TO belegt. catchall: Domain nimmt alles an,
-             *  Adresse nur nach Muster gebildet — wird als "unbestaetigt" gespeichert. */
-            art: z.enum(["smtp", "catchall"]).optional(),
+             *  Adresse nur nach Muster gebildet — "unbestaetigt". offen (Stufe 2, 2026-10-07):
+             *  abgeleitet, Pruefung nicht moeglich (Port 25, 4xx) — "unverifiziert".
+             *  abgelehnt: Server antwortete 550 — bleibt sichtbar, als abgelehnt markiert. */
+            art: z.enum(["smtp", "catchall", "offen", "abgelehnt"]).optional(),
+            /** muster (Standard): nach dem Adressmuster gebildet. zuordnung: eine
+             *  firmenweite Adresse wurde per Namensabgleich dieser Person zugeordnet. */
+            herkunft: z.enum(["muster", "zuordnung"]).optional(),
+            /** Baseline: die Adresse, aus der das Muster stammt (Stufe 2). */
+            baseline: z.string().email().max(200).optional(),
+            /** Woher das Muster kam: Katalog oder KI-Urteil. */
+            musterQuelle: z.enum(["katalog", "judge"]).optional(),
+            /** Kurze Begruendung (Urteil/Zuordnung) fuer den Herkunftstext. */
+            hinweis: z.string().max(300).optional(),
             /** Anzahl personengebundener Belege fuer das Muster (Konfidenz bei catchall). */
             belegAnzahl: z.number().int().min(0).optional(),
           }),
@@ -177,22 +189,48 @@ emailPatternsRouter.openapi(derivedRoute, async (c) => {
   const domain = email.split("@")[1] ?? "";
   if (domain !== (b.beleg.split("@")[1] ?? "").toLowerCase()) throw new HTTPException(400, { message: "domain_mismatch" });
   const pool = getProducerPool("company-contact");
-  // Plausibilitaet: Person gehoert zur Firma, hat noch keine aktive E-Mail.
+  // Plausibilitaet: Person gehoert zur Firma.
   const emp = await pool.query(`SELECT 1 FROM "Employment" WHERE "personId" = $1 AND "companyId" = $2 LIMIT 1`, [b.personId, companyId]);
   if (!emp.rows[0]) throw new HTTPException(404, { message: "person_not_in_company" });
-  const vorhanden = await pool.query(`SELECT "value" FROM "Fact" WHERE "personId" = $1 AND "field" = 'email' AND "status" = 'ACTIVE' LIMIT 1`, [b.personId]);
-  if (vorhanden.rows[0]) throw new HTTPException(409, { message: "email_exists", cause: vorhanden.rows[0].value });
+  // Stufe 2 (2026-10-07): Eine "offene"/"abgelehnte" Ableitung darf durch eine bessere
+  // Pruefung ersetzt werden. Eine gefundene, zugeordnete oder verifizierte Adresse bleibt (409).
+  const vorhanden = await pool.query<{ value: string; source: string | null }>(
+    `SELECT f."value", o."source"
+       FROM "Fact" f LEFT JOIN "Observation" o ON o."id" = f."lastObsId"
+      WHERE f."personId" = $1 AND f."field" = 'email' AND f."status" = 'ACTIVE'`,
+    [b.personId],
+  );
+  const fest = vorhanden.rows.find((r) => !/^(pattern|zuordnung):(offen|abgelehnt)$/.test(r.source ?? ""));
+  if (fest) throw new HTTPException(409, { message: "email_exists", cause: fest.value });
   const prisma = getContactPrismaClient();
   const runId = `derived:${companyId}:${b.personId}:${Date.now()}`;
   const geprueft = b.checkedAt ?? new Date().toISOString();
   const art = b.art ?? "smtp";
-  const source = art === "catchall" ? "pattern:catchall" : "pattern:smtp";
-  const evidence =
+  const herkunft = b.herkunft ?? "muster";
+  const source = `${herkunft === "zuordnung" ? "zuordnung" : "pattern"}:${art}`;
+  const baseline = b.baseline ?? b.beleg;
+  const wie =
+    herkunft === "zuordnung"
+      ? `Firmenadresse ${email} nach Namensabgleich dieser Person zugeordnet${b.hinweis ? ` (${b.hinweis})` : ""}`
+      : `Abgeleitet aus ${baseline} nach Adressmuster ${b.muster}${b.musterQuelle === "judge" ? " (Muster per KI-Urteil)" : ""}${(b.belegAnzahl ?? 0) > 1 ? `, ${b.belegAnzahl} Belege` : ""}`;
+  const pruefung =
     art === "catchall"
-      ? `Abgeleitet nach Adressmuster ${b.muster} (${b.belegAnzahl ?? "?"} Belege, z. B. ${b.beleg}); geprueft am ${geprueft.slice(0, 10)}: Domain nimmt alle Adressen an (Catch-all${b.mx ? `, ${b.mx}` : ""}), Existenz daher nicht einzeln belegbar. Unbestaetigt; wird bei Antwort bestaetigt, bei Unzustellbarkeit entfernt.`
-      : `Abgeleitet nach Adressmuster ${b.muster} (Beleg: ${b.beleg}); Existenz per SMTP geprueft am ${geprueft.slice(0, 10)}${b.mx ? ` (${b.mx}` : ""}${b.smtpCode ? `, Antwort ${b.smtpCode}` : ""}${b.mx ? ")" : ""}. Keine E-Mail zugestellt.`;
-  // Konfidenz: SMTP-Beleg 0,9; Catch-all nach Beleglage 0,6 (2 Belege) / 0,75 (3+).
-  const konfidenz = art === "catchall" ? ((b.belegAnzahl ?? 0) >= 3 ? 0.75 : 0.6) : 0.9;
+      ? `geprueft am ${geprueft.slice(0, 10)}: Domain nimmt alle Adressen an (Catch-all${b.mx ? `, ${b.mx}` : ""}), Existenz daher nicht einzeln belegbar. Unbestaetigt; wird bei Antwort bestaetigt, bei Unzustellbarkeit entfernt`
+      : art === "offen"
+        ? `Existenz noch nicht geprueft (${herkunft !== "zuordnung" && b.hinweis ? b.hinweis : "Pruefung in diesem Netz nicht moeglich oder Server ohne Antwort"}), Stand ${geprueft.slice(0, 10)}. Unverifiziert`
+        : art === "abgelehnt"
+          ? `Mailserver hat die Adresse am ${geprueft.slice(0, 10)} abgelehnt${b.smtpCode ? ` (Antwort ${b.smtpCode}` : ""}${b.mx && b.smtpCode ? `, ${b.mx})` : b.mx ? ` (${b.mx})` : b.smtpCode ? ")" : ""}`
+          : `Existenz per SMTP geprueft am ${geprueft.slice(0, 10)}${b.mx ? ` (${b.mx}` : ""}${b.smtpCode ? `, Antwort ${b.smtpCode}` : ""}${b.mx ? ")" : ""}`;
+  const evidence = `${wie}; ${pruefung}. Keine E-Mail zugestellt.`;
+  // Konfidenz: SMTP 0,9 (zugeordnet 0,95); Catch-all 0,6/0,75 (zugeordnet 0,8); offen 0,4 (zugeordnet 0,7); abgelehnt 0,2/0,3.
+  const konfidenz =
+    art === "smtp"
+      ? herkunft === "zuordnung" ? 0.95 : 0.9
+      : art === "catchall"
+        ? herkunft === "zuordnung" ? 0.8 : (b.belegAnzahl ?? 0) >= 3 ? 0.75 : 0.6
+        : art === "offen"
+          ? herkunft === "zuordnung" ? 0.7 : 0.4
+          : herkunft === "zuordnung" ? 0.3 : 0.2;
   const obs = await createObservationIdempotent(prisma, {
     entityType: "PERSON",
     entityId: b.personId,
@@ -262,7 +300,7 @@ emailPatternsRouter.openapi(feedbackRoute, async (c) => {
   const r = await pool.query(
     `SELECT f."id", f."personId", f."companyId", o."source"
        FROM "Fact" f JOIN "Observation" o ON o."id" = f."lastObsId"
-      WHERE f."field" = 'email' AND f."status" = 'ACTIVE' AND lower(f."value") = $1 AND o."source" LIKE 'pattern:%'
+      WHERE f."field" = 'email' AND f."status" = 'ACTIVE' AND lower(f."value") = $1 AND (o."source" LIKE 'pattern:%' OR o."source" LIKE 'zuordnung:%')
       LIMIT 1`,
     [email],
   );
