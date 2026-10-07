@@ -74,9 +74,11 @@ export function waehleBestMatch(kunde: string, kandidaten: Array<{ companyId: st
  * Elasticsearch, OHNE Normalisierung (Index-Thema zurueckgestellt: zwei
  * Aufbauversuche eines Ausdrucksindex haben den kleinen Cluster per OOM
  * zum Absturz gebracht). Genau EIN aktiver Treffer mit identischem Namen
- * (Gross-/Kleinschreibung egal) → "sicher". Null oder mehrere → null, der
- * Aufrufer weicht auf Elasticsearch mit Score aus. Harte Zeitgrenze, damit
- * ein fehlender Index den Reiter nicht blockiert.
+ * (Gross-/Kleinschreibung und Mehrfach-Leerzeichen egal) → "sicher". Null
+ * oder mehrere → null, der Aufrufer weicht auf Elasticsearch mit Score aus.
+ * Der Ausdruck entspricht exakt dem Index GermanCompany_name_norm_idx aus
+ * master-data (Migration 20260916160000_name_index), sonst wird es ein
+ * Volltabellen-Scan. Harte Zeitgrenze als Sicherung.
  */
 export async function direktTreffer(namen: string[]): Promise<Map<string, KundenMatch | null>> {
   const out = new Map<string, KundenMatch | null>();
@@ -88,7 +90,9 @@ export async function direktTreffer(namen: string[]): Promise<Map<string, Kunden
     const r = await client.query<{ gesucht: string; companyId: string; name: string; location: string | null }>(
       `WITH gesucht AS (SELECT unnest($1::text[]) AS n)
        SELECT g.n AS gesucht, c."companyId", c.name, c.location
-         FROM gesucht g JOIN "GermanCompany" c ON lower(c.name) = lower(g.n)
+         FROM gesucht g
+         JOIN "GermanCompany" c
+           ON lower(trim(regexp_replace(c.name, '\\s+', ' ', 'g'))) = lower(trim(regexp_replace(g.n, '\\s+', ' ', 'g')))
         WHERE c."registerStatus" = 'ACTIVE'`,
       [eindeutig],
     );

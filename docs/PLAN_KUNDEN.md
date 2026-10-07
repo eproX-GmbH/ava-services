@@ -157,8 +157,9 @@ Wiederaufnahme nur mit groesserem Cluster oder einer Hilfstabelle, die
 master-data beim monatlichen Abgleich befuellt.
 
 Stattdessen (`kunden-match.ts` → `direktTreffer`): Direktsuche ohne
-Normalisierung, `lower(name) = lower($1)` auf aktiven Firmen, harte
-Zeitgrenze 8 s. Genau ein Treffer = „sicher“ (score null); null oder
+Normalisierung über den bestehenden Index `GermanCompany_name_norm_idx`
+(lower, trim, Mehrfach-Leerzeichen; master-data-Migration 20260916160000)
+auf aktiven Firmen, harte Zeitgrenze 8 s. Genau ein Treffer = „sicher“ (score null); null oder
 mehrere → Elasticsearch mit Score wie zuvor.
 
 ## Später
