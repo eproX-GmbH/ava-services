@@ -14,7 +14,7 @@ import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
 import { requireScope } from "../../middleware/auth";
 import { KUNDEN_ARTEN, OHNE_ABGLEICH, listeGemeinsameKunden, listeKunden, listeNennungen, setzeMatch, type KundeRow, type KundenMatch } from "../../lib/kunden";
 import { buildXlsx } from "../../lib/xlsx-mini";
-import { norm, schluesselTreffer, waehleBestMatch } from "../../lib/kunden-match";
+import { direktTreffer, norm, waehleBestMatch } from "../../lib/kunden-match";
 import { callUpstreamBinaryExpectJson } from "../../lib/upstream";
 import { logger } from "../../lib/logger";
 import { ErrorShape } from "./schemas";
@@ -65,8 +65,8 @@ const route = createRoute({
 type Treffer = KundenMatch;
 
 /**
- * Abgleich: erst Stufe 0 (normalisierter Name, firmen_schluessel in der
- * Stammdaten-DB, genau ein aktiver Treffer = sicher), dann wie im Radar der
+ * Abgleich: erst Stufe 0 (Name direkt in der Stammdaten-DB, genau ein
+ * aktiver Treffer = sicher), dann wie im Radar der
  * Dry-Run der unscharfen Zuordnung in master-data.
  * `matched` sind exakte Treffer (Name + Ort); ohne Ort landet fast alles in
  * `unmatched` mit bis zu 5 Kandidaten samt Elasticsearch-Score. Daraus
@@ -80,17 +80,17 @@ async function gleicheAb(
 ): Promise<Map<string, Treffer | null>> {
   const out = new Map<string, Treffer | null>();
   if (zeilen.length === 0) return out;
-  // Stufe 0: normalisierter Name direkt in den Stammdaten (ohne Elasticsearch).
+  // Stufe 0: Name direkt in den Stammdaten (ohne Normalisierung, ohne Elasticsearch).
   let rest = zeilen;
   try {
-    const direkt = await schluesselTreffer(zeilen.map((z) => z.name));
+    const direkt = await direktTreffer(zeilen.map((z) => z.name));
     rest = zeilen.filter((z) => {
       const t = direkt.get(z.name.trim());
       if (t) out.set(z.id, t);
       return !t;
     });
   } catch (err) {
-    logger.warn({ err }, "kunden: schluessel-abgleich fehlgeschlagen (weiter mit Elasticsearch)");
+    logger.warn({ err }, "kunden: direktsuche fehlgeschlagen (weiter mit Elasticsearch)");
   }
   if (rest.length === 0) return out;
   try {

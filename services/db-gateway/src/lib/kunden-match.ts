@@ -70,37 +70,40 @@ export function waehleBestMatch(kunde: string, kandidaten: Array<{ companyId: st
 
 
 /**
- * Stufe 0 (Operator 2026-10-07): normalisierte Namenssuche direkt in den
- * Stammdaten, bevor Elasticsearch gefragt wird. Beide Seiten nutzen die
- * SQL-Funktion firmen_schluessel (Umlaute ausgeschrieben, nur [a-z0-9]), mit
- * Ausdrucksindex auf GermanCompany.name (Historie bewusst nicht, Operator 2026-10-07).
- * Genau EIN aktiver Treffer → "sicher". Null oder mehrere → null, der Aufrufer
- * weicht auf Elasticsearch mit Score aus.
+ * Stufe 0 (Operator 2026-10-07): Direktsuche in den Stammdaten vor
+ * Elasticsearch, OHNE Normalisierung (Index-Thema zurueckgestellt: zwei
+ * Aufbauversuche eines Ausdrucksindex haben den kleinen Cluster per OOM
+ * zum Absturz gebracht). Genau EIN aktiver Treffer mit identischem Namen
+ * (Gross-/Kleinschreibung egal) → "sicher". Null oder mehrere → null, der
+ * Aufrufer weicht auf Elasticsearch mit Score aus. Harte Zeitgrenze, damit
+ * ein fehlender Index den Reiter nicht blockiert.
  */
-export async function schluesselTreffer(namen: string[]): Promise<Map<string, KundenMatch | null>> {
+export async function direktTreffer(namen: string[]): Promise<Map<string, KundenMatch | null>> {
   const out = new Map<string, KundenMatch | null>();
   const eindeutig = [...new Set(namen.map((n) => n.trim()).filter((n) => n.length >= 3))];
   if (eindeutig.length === 0) return out;
-  const r = await getMasterDataPool().query<{ gesucht: string; companyId: string; name: string; location: string | null; anzahl: string }>(
-    `WITH gesucht AS (SELECT unnest($1::text[]) AS n),
-          alle AS (
-            SELECT DISTINCT g.n AS gesucht, c."companyId", c.name, c.location
-              FROM gesucht g JOIN "GermanCompany" c ON firmen_schluessel(c.name) = firmen_schluessel(g.n)
-             WHERE c."registerStatus" = 'ACTIVE'
-          )
-     SELECT gesucht, "companyId", name, location, count(*) OVER (PARTITION BY gesucht)::text AS anzahl
-       FROM alle`,
-    [eindeutig],
-  );
-  const treffer = new Map<string, Array<{ companyId: string; name: string; location: string | null }>>();
-  for (const z of r.rows) {
-    const l = treffer.get(z.gesucht) ?? [];
-    l.push({ companyId: z.companyId, name: z.name, location: z.location });
-    treffer.set(z.gesucht, l);
-  }
-  for (const n of eindeutig) {
-    const l = treffer.get(n) ?? [];
-    out.set(n, l.length === 1 ? { companyId: l[0]!.companyId, name: l[0]!.name, location: l[0]!.location, stufe: "sicher", score: null } : null);
+  const client = await getMasterDataPool().connect();
+  try {
+    await client.query("SET LOCAL statement_timeout = '8s'");
+    const r = await client.query<{ gesucht: string; companyId: string; name: string; location: string | null }>(
+      `WITH gesucht AS (SELECT unnest($1::text[]) AS n)
+       SELECT g.n AS gesucht, c."companyId", c.name, c.location
+         FROM gesucht g JOIN "GermanCompany" c ON lower(c.name) = lower(g.n)
+        WHERE c."registerStatus" = 'ACTIVE'`,
+      [eindeutig],
+    );
+    const treffer = new Map<string, Array<{ companyId: string; name: string; location: string | null }>>();
+    for (const z of r.rows) {
+      const l = treffer.get(z.gesucht) ?? [];
+      if (!l.some((x) => x.companyId === z.companyId)) l.push({ companyId: z.companyId, name: z.name, location: z.location });
+      treffer.set(z.gesucht, l);
+    }
+    for (const n of eindeutig) {
+      const l = treffer.get(n) ?? [];
+      out.set(n, l.length === 1 ? { companyId: l[0]!.companyId, name: l[0]!.name, location: l[0]!.location, stufe: "sicher", score: null } : null);
+    }
+  } finally {
+    client.release();
   }
   return out;
 }

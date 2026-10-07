@@ -145,27 +145,21 @@ Neu (`lib/kunden-match.ts`, Spalten `matchStufe`, `matchScore`):
   `stufe` und soll sie vor dem Übernehmen nennen.
 - Prüfung: `npx tsx scripts/test-kunden-match.mts` im Gateway.
 
-## Stufe 0: normalisierte Namenssuche vor Elasticsearch (2026-10-07)
+## Stufe 0: Direktsuche vor Elasticsearch (2026-10-07)
 
-Vorgabe: Firmennamen auf Kleinschrift und [a-z0-9] reduzieren (ä→ae, ß→ss,
-Akzente abgelegt, alles andere raus), damit Schreibvarianten derselben Firma
-zusammenfallen („Öhrmann - Maschinenbaufabrik GmbH“ = „Oehrmann-
-Maschinenbaufabrik GmbH“). Erst wenn das keinen oder mehrere Treffer liefert,
-kommt Elasticsearch mit Score dran.
+Vorgabe war eine normalisierte Namenssuche ([a-z0-9], Umlaute ausgeschrieben)
+mit Ausdrucksindex `firmen_schluessel(name)` in ava_master_data. **On hold:**
+zwei Aufbauversuche (Standard, dann gedrosselt mit 32 MB ohne
+Parallelarbeiter) haben den Cluster (shared_buffers 256 MB) jeweils per OOM
+zum Absturz gebracht; Indizes wurden entfernt, die SQL-Funktion bleibt
+harmlos liegen (`services/db-gateway/sql/master-data-firmen-schluessel.sql`).
+Wiederaufnahme nur mit groesserem Cluster oder einer Hilfstabelle, die
+master-data beim monatlichen Abgleich befuellt.
 
-Umsetzung ohne Nachfüllen und ohne master-data-Codeänderung:
-- SQL-Funktion `firmen_schluessel(text)` (IMMUTABLE) in ava_master_data,
-  Ausdrucksindex auf GermanCompany.name (CONCURRENTLY, gedrosselt mit
-  32 MB und ohne Parallelarbeiter; der erste Versuch mit Standardwerten hat
-  den Cluster per OOM zum Absturz gebracht). Historie bewusst nicht
-  indexiert. Siehe `services/db-gateway/sql/master-data-firmen-schluessel.sql`.
-  Postgres pflegt den Index bei jedem Upsert.
-- Gateway `kunden-match.ts` → `schluesselTreffer`: ein Aufruf je Liste,
-  aktive Firmen; genau ein Treffer = „sicher“
-  (score null). Sonst Elasticsearch wie bisher. Beide Seiten nutzen dieselbe
-  SQL-Funktion, die Normalform kann nicht auseinanderlaufen.
-- Die vorhandene Spalte nameNormalized war dafür unbrauchbar (1,8 Mio. leer,
-  anderes Format, kein Index).
+Stattdessen (`kunden-match.ts` → `direktTreffer`): Direktsuche ohne
+Normalisierung, `lower(name) = lower($1)` auf aktiven Firmen, harte
+Zeitgrenze 8 s. Genau ein Treffer = „sicher“ (score null); null oder
+mehrere → Elasticsearch mit Score wie zuvor.
 
 ## Später
 
