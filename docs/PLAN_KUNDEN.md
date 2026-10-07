@@ -155,11 +155,13 @@ kommt Elasticsearch mit Score dran.
 
 Umsetzung ohne Nachfüllen und ohne master-data-Codeänderung:
 - SQL-Funktion `firmen_schluessel(text)` (IMMUTABLE) in ava_master_data,
-  Ausdrucksindizes auf GermanCompany.name und GermanCompanyHistory.name
-  (CONCURRENTLY), siehe `services/db-gateway/sql/master-data-firmen-schluessel.sql`.
-  Postgres pflegt die Indizes bei jedem Upsert.
+  Ausdrucksindex auf GermanCompany.name (CONCURRENTLY, gedrosselt mit
+  32 MB und ohne Parallelarbeiter; der erste Versuch mit Standardwerten hat
+  den Cluster per OOM zum Absturz gebracht). Historie bewusst nicht
+  indexiert. Siehe `services/db-gateway/sql/master-data-firmen-schluessel.sql`.
+  Postgres pflegt den Index bei jedem Upsert.
 - Gateway `kunden-match.ts` → `schluesselTreffer`: ein Aufruf je Liste,
-  aktive Firmen, auch über frühere Namen; genau ein Treffer = „sicher“
+  aktive Firmen; genau ein Treffer = „sicher“
   (score null). Sonst Elasticsearch wie bisher. Beide Seiten nutzen dieselbe
   SQL-Funktion, die Normalform kann nicht auseinanderlaufen.
 - Die vorhandene Spalte nameNormalized war dafür unbrauchbar (1,8 Mio. leer,
