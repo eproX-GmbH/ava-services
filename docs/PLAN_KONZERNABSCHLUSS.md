@@ -151,8 +151,16 @@ die Kosten der Einzelabschlüsse.
   der Muttergesellschaft", Mutter-Umsatz auf der Jahreskarte; Chat-Tool
   `company_publications` mit `art` und Hinweis; Alarm-Zusammenfassung benennt
   Konzernabschluss.
+- **K1b umgesetzt (company-publication 6a807f0, v0.1.776):** Bloecke werden vor dem
+  Routing lokal eingebettet (Vektoren fliessen in den Suchkorpus weiter);
+  semantische Nachsuche je Thema (Prototyp-Saetze, Kosinus, k je Thema,
+  Mindestaehnlichkeit 0,45) ergaenzt die Ueberschriften-Treffer unter dem
+  gleichen Budget; das Log nennt die Anteile beider Quellen. Ohne Embedder
+  bleibt es beim Ueberschriften-Routing.
 - **Offen:** K4 (Toechter, Konzernmutter, GF — Schemafreigabe), Live-Test mit
-  Strama-MPS nach Release (Neuverarbeitung der Publikationen).
+  Strama-MPS nach Release (Neuverarbeitung der Publikationen; Log-Zeilen
+  "Semantische Nachsuche" und "Geroutete Analyse" pruefen, Schwelle 0,45 ggf.
+  nachziehen).
 
 ## 6. Reihenfolge
 
