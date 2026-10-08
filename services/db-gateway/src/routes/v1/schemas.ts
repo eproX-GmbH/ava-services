@@ -228,10 +228,20 @@ export const CompanyPublicationShape = z
     totalAssetsVolume: VolumeShape.nullable().optional(),
     stateOfAffairs: StateOfAffairsShape.nullable().optional(),
     employeeCount: z.number().int().nullable().optional(),
+    /** K1 (docs/PLAN_KONZERNABSCHLUSS.md): einzel = Jahresabschluss der Gesellschaft,
+     *  konzern = Konzernabschluss. Bei konzern sind employeeCount/salesVolume/revenueVolume
+     *  NUR Angaben zur Muttergesellschaft (nie konsolidierte Summen); Lagebericht-
+     *  Stichpunkte tragen Konzernzahlen mit Praefix "Konzern:". Abgeleitet aus `name`. */
+    art: z.enum(["einzel", "konzern"]).optional(),
     createdAt: z.string(),
     updatedAt: z.string(),
   })
   .openapi("CompanyPublication");
+
+/** Art einer Publikation aus ihrem Titel (kein eigenes Feld in der Tabelle). */
+export function publikationsArt(name: string | null | undefined): "einzel" | "konzern" {
+  return /konzern/i.test(name ?? "") ? "konzern" : "einzel";
+}
 
 // ---- Profile changes (v0.1.460 — Geschäftsführer-Wechsel) ------------------
 //

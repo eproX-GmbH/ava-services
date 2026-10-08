@@ -139,7 +139,22 @@ die Kosten der Einzelabschlüsse.
 - Rohblöcke der Konzernabschlüsse vergrößern den Suchkorpus (PublicationBlock);
   Disk des Clusters beobachten (10 GB).
 
-## 5. Reihenfolge
+## 5. Stand
+
+- **K1 umgesetzt (2026-10-08, company-publication 22fe0d0):** DOM-Walker mit
+  Ueberschriftenpfad, `block-router.ts` (Routing, Pakete, Mutter-Kennzahlen),
+  Konzernauswahl je Art bis 3, `art` im Ergebnis/Persist-Event, Lagebericht des
+  neuesten Konzernjahres mit Konzern-Hinweis. Tests: `block-router.test.ts`
+  (lokal via ts-jest mit `diagnostics: false`, da @types/jest im Submodul fehlt).
+- **K2/K3 umgesetzt:** Gateway liefert `art` (aus dem Titel), Einzel vor
+  Konzern bei gleichem Jahr; App zeigt Badge „Konzernabschluss · Kennzahlen
+  der Muttergesellschaft", Mutter-Umsatz auf der Jahreskarte; Chat-Tool
+  `company_publications` mit `art` und Hinweis; Alarm-Zusammenfassung benennt
+  Konzernabschluss.
+- **Offen:** K4 (Toechter, Konzernmutter, GF — Schemafreigabe), Live-Test mit
+  Strama-MPS nach Release (Neuverarbeitung der Publikationen).
+
+## 6. Reihenfolge
 
 1. K1 Block-Router + Auswahl + Mutter-Kennzahlen (Producer, lokal testbar
    mit den Strama-Fixtures) → Release.

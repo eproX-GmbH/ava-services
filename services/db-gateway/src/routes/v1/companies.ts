@@ -27,8 +27,7 @@ import {
   SearchQuery,
   SearchResultShape,
   StructuredContentShape,
-  WebsiteShape,
-} from "./schemas";
+  WebsiteShape, publikationsArt } from "./schemas";
 
 // §4.1 Company reads.
 //
@@ -486,7 +485,7 @@ companiesRouter.openapi(publicationsRoute, async (c) => {
      LEFT JOIN "TotalAssetsVolume" tv ON tv."companyPublicationId" = cp.id
      LEFT JOIN "StateOfAffairsAggregate" soa ON soa."companyPublicationId" = cp.id
      WHERE cp."companyId" = $1
-     ORDER BY cp.year DESC NULLS LAST, cp.name`,
+     ORDER BY cp.year DESC NULLS LAST, (cp.name ILIKE '%konzern%') ASC, cp.name`,
     [companyId],
   );
 
@@ -542,6 +541,7 @@ companiesRouter.openapi(publicationsRoute, async (c) => {
       begin: r.begin ? r.begin.toISOString() : null,
       end: r.end ? r.end.toISOString() : null,
       employeeCount: r.employeeCount ?? null,
+      art: publikationsArt(r.name),
       salesVolume: r.salesValue
         ? { value: Number(r.salesValue), currency: r.salesCurrency ?? "EURO" }
         : null,

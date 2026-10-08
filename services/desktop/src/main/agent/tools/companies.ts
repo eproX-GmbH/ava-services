@@ -460,7 +460,8 @@ export function buildCompanyTools(ctx: Ctx): Tool[] {
   const publications = defineTool({
     name: "company_publications",
     description:
-      "Jahresabschluesse und Publikationen einer Firma: je Jahr Name, Mitarbeiterzahl, Umsatz, Bilanzsumme, Kernaussagen des Lageberichts und Kennzahlen (kompakt, neueste 8 Jahre). " +
+      "Jahresabschluesse und Konzernabschluesse einer Firma: je Jahr Name, art (einzel | konzern), Mitarbeiterzahl, Umsatz, Bilanzsumme, Kernaussagen des Lageberichts und Kennzahlen (kompakt, neueste 8 Jahre). " +
+      "WICHTIG bei art konzern: Mitarbeiter/Umsatz sind die Angaben zur Muttergesellschaft selbst (nicht konsolidiert); Konzernsummen stehen nur in Kernaussagen/Kennzahlen mit Vorsatz 'Konzern:' und gelten fuer den gesamten Konzern inkl. Toechter — in der Antwort immer so benennen. " +
       "ansicht: 'voll' nur, wenn der Nutzer ausdruecklich nach Prognose, Chancen/Risiken, Zeitraeumen oder allen Jahren fragt.",
     parameters: {
       type: "object",
@@ -487,6 +488,7 @@ export function buildCompanyTools(ctx: Ctx): Tool[] {
         return {
           jahr: it["year"] ?? null,
           name: it["name"] ?? null,
+          art: it["art"] ?? "einzel",
           mitarbeiter: it["employeeCount"] ?? null,
           umsatz: betrag(it["salesVolume"]) ?? betrag(it["revenueVolume"]),
           bilanzsumme: betrag(it["totalAssetsVolume"]),

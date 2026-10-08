@@ -352,6 +352,7 @@ export function kandidatAus(
 // ---- Helpers --------------------------------------------------------------
 
 interface PubLike {
+  name?: string | null;
   year: number | null;
   begin: string | null;
   end: string | null;
@@ -399,6 +400,8 @@ function summarisePublication(companyName: string, p: PubLike): string {
         ? `Berichtsperiode ${p.begin} → ${p.end}`
         : "Publikation";
   lines.push(`${period} – ${companyName}.`);
+  // K1: Konzernabschluss benennen; Kennzahlen darin sind Angaben zur Muttergesellschaft.
+  if (/konzern/i.test(p.name ?? "")) lines.push("Konzernabschluss (Kennzahlen der Muttergesellschaft, Konzernsummen nur im Lagebericht).");
   if (p.revenueVolume?.value != null) lines.push(`Umsatz: ${fmtMoney(p.revenueVolume)}.`);
   else if (p.salesVolume?.value != null) lines.push(`Erlöse: ${fmtMoney(p.salesVolume)}.`);
   if (p.totalAssetsVolume?.value != null) lines.push(`Bilanzsumme: ${fmtMoney(p.totalAssetsVolume)}.`);

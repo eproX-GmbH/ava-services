@@ -240,6 +240,22 @@ interface Publication {
     | null;
   stateOfAffairs?: StateOfAffairs | null;
   employeeCount?: number | null;
+  /** K1: einzel | konzern. Bei konzern sind die Kennzahlen Angaben zur
+   *  Muttergesellschaft (nie konsolidierte Summen). */
+  art?: "einzel" | "konzern" | null;
+}
+
+/** K1 (docs/PLAN_KONZERNABSCHLUSS.md): Kennzeichnung eines Konzernabschlusses. */
+function KonzernBadge({ pub, kurz }: { pub?: Publication | null; kurz?: boolean }) {
+  if (pub?.art !== "konzern") return null;
+  return (
+    <span
+      className="pill pill--paused"
+      title="Konzernabschluss. Die hier gezeigten Kennzahlen sind die Angaben zur Muttergesellschaft selbst (z. B. Einzelergebnisse, Mitarbeiter am Stammsitz), nicht die konsolidierten Konzernsummen. Konzernzahlen stehen im Lagebericht-Auszug mit dem Vorsatz „Konzern:“."
+    >
+      {kurz ? "Konzern" : "Konzernabschluss · Kennzahlen der Muttergesellschaft"}
+    </span>
+  );
 }
 
 interface Fact {
@@ -766,7 +782,7 @@ export function CompanyDetail() {
             </KpiTile>
           )}
           {latest?.employeeCount != null && (
-            <KpiTile label="Mitarbeiter">
+            <KpiTile label={latest.art === "konzern" ? `Mitarbeiter (${latest.year ?? ""}, lt. Konzernabschluss)` : "Mitarbeiter"}>
               {numFmt.format(latest.employeeCount)}
             </KpiTile>
           )}
@@ -1417,7 +1433,9 @@ function FinancialsTab({ pubs }: { pubs: Publication[] }) {
             <tbody>
               {[...pubs].reverse().map((p, i) => (
                 <tr key={i}>
-                  <td>{p.year ?? ""}</td>
+                  <td>
+                    {p.year ?? ""} <KonzernBadge pub={p} kurz />
+                  </td>
                   <td>
                     {p.employeeCount != null
                       ? numFmt.format(p.employeeCount)
@@ -1470,18 +1488,30 @@ function PublicationCard({ pub }: { pub: Publication }) {
             </span>
           )}
         </h3>
-        {period && <span className="muted">{period}</span>}
+        <span style={{ display: "inline-flex", gap: "0.5rem", alignItems: "center" }}>
+          <KonzernBadge pub={pub} />
+          {period && <span className="muted">{period}</span>}
+        </span>
       </header>
 
       {/* Finanz-KPI-Tiles (Umsatz/Erlöse/Bilanzsumme) wurden ausgeblendet
           weil das LLM in der Numeric-Extraktion zu oft halluziniert hat
           (Producer-Side seit Jan 2026 deaktiviert). Mitarbeiterzahl bleibt
           — kommt aus einem separaten, deterministischen Extraktor. */}
-      {pub.employeeCount != null && (
+      {(pub.employeeCount != null || (pub.art === "konzern" && pub.salesVolume && typeof pub.salesVolume === "object" && pub.salesVolume.value != null)) && (
         <div className="kpi-grid">
-          <KpiTile label="Mitarbeiter">
-            {numFmt.format(pub.employeeCount)}
-          </KpiTile>
+          {pub.employeeCount != null && (
+            <KpiTile label={pub.art === "konzern" ? "Mitarbeiter (Muttergesellschaft)" : "Mitarbeiter"}>
+              {numFmt.format(pub.employeeCount)}
+            </KpiTile>
+          )}
+          {/* K1: Umsatz der Muttergesellschaft aus der Einzelergebnisse-Tabelle
+              des Konzernabschlusses (deterministisch gelesen, kein LLM). */}
+          {pub.art === "konzern" && pub.salesVolume && typeof pub.salesVolume === "object" && pub.salesVolume.value != null && (
+            <KpiTile label="Umsatz (Muttergesellschaft)">
+              {numFmt.format(Math.round(pub.salesVolume.value / 1_000_000))} Mio. EUR
+            </KpiTile>
+          )}
         </div>
       )}
 
@@ -3011,7 +3041,9 @@ function InsightsTab({
           <dl className="tx-summary">
             <div>
               <dt>Letztes Berichtsjahr</dt>
-              <dd>{latest.year ?? ""}</dd>
+              <dd>
+                {latest.year ?? ""} <KonzernBadge pub={latest} kurz />
+              </dd>
             </div>
             <div>
               <dt>Mitarbeiter</dt>
