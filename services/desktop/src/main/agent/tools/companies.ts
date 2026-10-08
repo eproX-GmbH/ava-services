@@ -833,6 +833,35 @@ export function buildCompanyTools(ctx: Ctx): Tool[] {
   // keywords, crm_summary und data_quality einzeln (tool_search + tool_load
   // + fuenf Aufrufe). `bereiche` holt die Abschnitte in einem Zug; jeder
   // Abschnitt scheitert fuer sich (fehler je Bereich, nie der ganze Aufruf).
+  // K4 (docs/PLAN_KONZERNABSCHLUSS.md): Toechter, Konzernmutter und
+  // Geschaeftsfuehrung laut juengstem Konzernabschluss. Kein eigenes
+  // Werkzeug (docs/PLAN_WERKZEUGE_ZUSAMMENLEGEN.md), nur als Bereich.
+  const konzern = {
+    run: async (args: { companyId: string }, c: { signal?: AbortSignal }) => {
+      type Zeile = { name: string; sitz: string | null; land: string | null; anteilProzent: number | null; verbundenSeit: string | null; kerngeschaeft: string | null; match: { companyId: string; name: string; location: string | null; stufe?: string } | null };
+      const r = await gateway.request<{ quelle: string | null; jahr: number | null; toechter: Zeile[]; konzernmutter: Zeile | null; geschaeftsfuehrung: Array<{ name: string; status: string; datum: string | null }> }>(
+        `/v1/companies/${encodeURIComponent(args.companyId)}/konzern-angaben`, { signal: c.signal },
+      );
+      if (!r.quelle) return { hinweis: "Kein Konzernabschluss verarbeitet (Firma stellt keinen auf oder noch nicht gelesen)." };
+      return {
+        quelle: r.quelle,
+        jahr: r.jahr,
+        hinweis: "Angaben der Firma selbst im Konzernabschluss. `stammdaten` ist ein Stufe-0-Treffer (nur eindeutiger Name); Toechter lassen sich mit import_companies uebernehmen. Geschaeftsfuehrung ist der Stand des Abschlussjahres, nicht des Registers.",
+        ...(r.konzernmutter ? { konzernmutter: { name: r.konzernmutter.name, ...(r.konzernmutter.sitz ? { ort: r.konzernmutter.sitz } : {}) } } : {}),
+        toechter: r.toechter.map((t) => ({
+          name: t.name,
+          ...(t.sitz ? { sitz: t.sitz } : {}),
+          ...(t.land ? { land: t.land } : {}),
+          ...(t.anteilProzent != null ? { anteilProzent: t.anteilProzent } : {}),
+          ...(t.verbundenSeit ? { verbundenSeit: t.verbundenSeit } : {}),
+          ...(t.kerngeschaeft ? { kerngeschaeft: t.kerngeschaeft } : {}),
+          ...(t.match ? { stammdaten: t.match } : {}),
+        })),
+        geschaeftsfuehrung: r.geschaeftsfuehrung.map((g) => ({ name: g.name, status: g.status, ...(g.datum ? { datum: g.datum } : {}) })),
+      };
+    },
+  };
+
   const BEREICHE = {
     profil: profile,
     website,
@@ -847,6 +876,7 @@ export function buildCompanyTools(ctx: Ctx): Tool[] {
     linkedin: linkedInSignals,
     gesellschafter: shareholders,
     kunden,
+    konzern,
   } as const;
   type Bereich = keyof typeof BEREICHE;
   const BEREICH_NAMEN = Object.keys(BEREICHE) as Bereich[];
@@ -856,7 +886,7 @@ export function buildCompanyTools(ctx: Ctx): Tool[] {
     description:
       "Stammdaten einer Firma (Name, Register, Anschrift, Land, Rechtsform, USt-Id; `statusWarnung` bei Insolvenz/Loeschung/Liquidation; `land` fasst Land und Register zusammen). " +
       "Mit `bereiche` holst du in DEMSELBEN Aufruf weitere Abschnitte, statt einzelne company_*-Werkzeuge zu laden: " +
-      "profil (Kurzprofil, Branche), website (Website-Fakten), register (Registerinhalt: Geschaeftsfuehrer, Kapital, Gegenstand), stichworte, publikationen (Jahresabschluesse, kompakt), kontakte (Personen, kompakt), crm (HubSpot-Stand), datenqualitaet, technik (Tech-Stack), insolvenz, linkedin (Signale), gesellschafter (nur DE/HRB), kunden (Kunden/Partner laut Website mit Stammdaten-Treffer). " +
+      "profil (Kurzprofil, Branche), website (Website-Fakten), register (Registerinhalt: Geschaeftsfuehrer, Kapital, Gegenstand), stichworte, publikationen (Jahresabschluesse, kompakt), kontakte (Personen, kompakt), crm (HubSpot-Stand), datenqualitaet, technik (Tech-Stack), insolvenz, linkedin (Signale), gesellschafter (nur DE/HRB), kunden (Kunden/Partner laut Website mit Stammdaten-Treffer), konzern (Toechter, Konzernmutter, Geschaeftsfuehrung laut juengstem Konzernabschluss). " +
       "Fuer eine Firmenfrage: EIN company_get mit den passenden Bereichen, nicht mehrere Einzelaufrufe. Bei oesterreichischen Firmen gibt es keinen kostenlosen Vollauszug.",
     parameters: {
       type: "object",

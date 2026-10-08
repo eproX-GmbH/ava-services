@@ -234,7 +234,12 @@ export function kandidatAus(
       };
     }
     case "profile-change": {
-      if (n.kind === "managing-directors") {
+      if (n.kind.startsWith("managing-directors")) {
+        // K4: kind "managing-directors:konzernabschluss 2023" = Abgleich des
+        // Konzernabschlusses gegen das Register (Namen, die der Abschluss
+        // nennt und das Register nicht kennt, bzw. Austritte laut Abschluss).
+        const ausAbschluss = n.kind.startsWith("managing-directors:konzernabschluss");
+        const quelleText = ausAbschluss ? `laut ${n.kind.slice("managing-directors:".length)}` : "laut Handelsregister";
         const fmt = (list: Array<Record<string, unknown>>): string[] =>
           list
             .map((p) => `${String(p.firstName ?? "")} ${String(p.lastName ?? "")}`.trim())
@@ -251,8 +256,10 @@ export function kandidatAus(
           companyName,
           sourceRef: `profile-change:${n.id}`,
           occurredAt: n.occurredAt,
-          summary: `Geschäftsführer-Wechsel laut Handelsregister bei ${companyName} — ${parts.join("; ")}. Eingetreten ${fensterText(n.bestandVon, n.occurredAt)}.`,
-          payload: { aenderung: "managing-directors", added, removed, source: "handelsregister", zeitfenster: fensterText(n.bestandVon, n.occurredAt) },
+          summary: ausAbschluss
+            ? `Geschäftsführung ${quelleText} bei ${companyName} weicht vom Handelsregister ab — ${parts.join("; ")}. Bitte im Register gegenprüfen.`
+            : `Geschäftsführer-Wechsel laut Handelsregister bei ${companyName} — ${parts.join("; ")}. Eingetreten ${fensterText(n.bestandVon, n.occurredAt)}.`,
+          payload: { aenderung: "managing-directors", added, removed, source: ausAbschluss ? "konzernabschluss" : "handelsregister", zeitfenster: fensterText(n.bestandVon, n.occurredAt) },
         };
       }
       const feld = PROFIL_KIND_TEXT[n.kind] ?? n.kind;

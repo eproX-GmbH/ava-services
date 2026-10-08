@@ -157,7 +157,26 @@ die Kosten der Einzelabschlüsse.
   Mindestaehnlichkeit 0,45) ergaenzt die Ueberschriften-Treffer unter dem
   gleichen Budget; das Log nennt die Anteile beider Quellen. Ohne Embedder
   bleibt es beim Ueberschriften-Routing.
-- **Offen:** K4 (Toechter, Konzernmutter, GF — Schemafreigabe), Live-Test mit
+- **K4 umgesetzt (2026-10-08, v0.1.777):** Producer `konzern-angaben.ts`
+  (deterministisch, kein Modellaufruf): Toechter aus Beteiligungstabellen
+  (Name/Sitz/Land/Anteil/seit/Kerngeschaeft, Mutterzeile faellt weg),
+  Konzernmutter aus dem Satz „in den Konzernabschluss der … einbezogen",
+  Geschaeftsfuehrung aus Liste + Wechselsaetzen (Titel/Anreden entfernt,
+  Status amtierend|ausgeschieden|bestellt mit Datum); Feld `konzern` im
+  Ergebnis/Persist-Event. Gateway `lib/konzern-angaben.ts`: lazy Tabellen
+  `CompanyBeteiligung` (richtung tochter|mutter, Stufe-0-Direkttreffer nur
+  fuer deutsche Toechter, kein Elasticsearch im Persist-Pfad) und
+  `CompanyKonzernGeschaeftsfuehrer` in ava_company_publication, Replace je
+  Firma+Quelle; GF-Abgleich gegen ManagingDirector → ProfileChangeEvent
+  kind `managing-directors:konzernabschluss <Jahr>` nur mit Registerbestand
+  und Zeitbezug ≤ 180 Tage. Route `GET /v1/companies/{id}/konzern-angaben`
+  (ohne Org-Feature, oeffentliche Daten). App: Panel „Laut Konzernabschluss
+  <Jahr>" im Reiter Verflechtungen (Konzernmutter, Toechter-Tabelle mit
+  Stammdaten-Treffer und Uebernehmen, GF-Liste); `company_get` bereich
+  `konzern`; Heartbeat formuliert Abweichungen „laut Konzernabschluss …
+  bitte im Register gegenpruefen". Abweichung vom Plan: Konzernmutter liegt
+  in derselben Tabelle (richtung mutter) statt als Firmen-Fakt im Profil.
+- **Offen:** Live-Test mit
   Strama-MPS nach Release (Neuverarbeitung der Publikationen; Log-Zeilen
   "Semantische Nachsuche" und "Geroutete Analyse" pruefen, Schwelle 0,45 ggf.
   nachziehen).

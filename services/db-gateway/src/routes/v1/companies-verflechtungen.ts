@@ -9,6 +9,7 @@ import { callUpstream } from "../../lib/upstream";
 import { getGatewayPool } from "../../lib/producer-pools";
 import { requireFeature } from "../../lib/policy-guard";
 import { ErrorShape, CompanyIdParam } from "./schemas";
+import { listeKonzernAngaben } from "../../lib/konzern-angaben";
 
 export const companiesVerflechtungenRouter = new OpenAPIHono();
 companiesVerflechtungenRouter.use("*", requireScope("company:read"));
@@ -63,4 +64,20 @@ companiesVerflechtungenRouter.openapi(personRoute, async (c) => {
   const { id } = c.req.valid("param");
   const u = await callUpstream<Record<string, unknown>>(c, "masterData", `/api/germany/v1/persons/${encodeURIComponent(id)}`);
   return c.json(u, 200);
+});
+
+// K4 (docs/PLAN_KONZERNABSCHLUSS.md): Toechter, Konzernmutter und
+// Geschaeftsfuehrung laut juengstem Konzernabschluss. Oeffentliche
+// Bundesanzeiger-Daten, daher ohne Org-Feature (nur company:read).
+const konzernRoute = createRoute({
+  method: "get",
+  path: "/companies/{companyId}/konzern-angaben",
+  tags: [tag],
+  summary: "Tochtergesellschaften, Konzernmutter und Geschaeftsfuehrung laut juengstem Konzernabschluss",
+  request: { params: CompanyIdParam },
+  responses: { 200: { content: { "application/json": { schema: z.record(z.string(), z.unknown()) } }, description: "Konzernangaben (quelle null = keine)" }, 401: err[401] },
+});
+companiesVerflechtungenRouter.openapi(konzernRoute, async (c) => {
+  const { companyId } = c.req.valid("param");
+  return c.json(await listeKonzernAngaben(companyId), 200);
 });

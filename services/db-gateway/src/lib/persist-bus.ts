@@ -63,6 +63,7 @@ import {
   type ManagingDirectorDiff,
 } from "./profile-changes";
 import { transactionProgressBus } from "./event-bus";
+import { schreibeKonzernAngaben, type KonzernAngabenEingang } from "./konzern-angaben";
 import { featureEnabledForEventTenant } from "./policy-guard";
 import { masterData } from "./register-jobs";
 import { loeseFirmenAuf, nachListe } from "./verflechtungen";
@@ -1218,6 +1219,10 @@ interface CompanyPublicationsResult {
     begin: string;
     end: string;
     employeeCount?: number;
+    /** K1: einzel | konzern. */
+    art?: string;
+    /** K4: Toechter, Konzernmutter, Geschaeftsfuehrung aus dem Konzernabschluss. */
+    konzern?: KonzernAngabenEingang;
     salesVolume?: { value: number; currency: string };
     revenueVolume?: { value: number; currency: string };
     totalAssets?: { value: number; currency: string };
@@ -1534,6 +1539,22 @@ const applyCompanyPublication: ApplyFn = async (pool, event, log) => {
 
       await client.query("COMMIT");
       upsertedCount++;
+
+      // K4: Angaben aus dem Konzernabschluss (eigene Tabellen, best-effort,
+      // nach dem COMMIT — ein Fehler hier laesst die Publikation stehen).
+      if (pub.konzern && Array.isArray(pub.konzern.toechter) && Array.isArray(pub.konzern.geschaeftsfuehrung)) {
+        try {
+          const k = await schreibeKonzernAngaben(
+            pool, log, result.companyId, pub.name, pub.year ?? null, pub.end ? new Date(pub.end) : null, pub.konzern,
+          );
+          log.info(
+            { runId, companyId: result.companyId, year: pub.year, toechter: k.toechter, treffer: k.treffer, gf: k.gfAbgleich },
+            "[konzern] angaben gespeichert",
+          );
+        } catch (err) {
+          log.warn({ runId, companyId: result.companyId, year: pub.year, err: (err as Error).message }, "[konzern] angaben nicht gespeichert (best-effort)");
+        }
+      }
     } catch (err) {
       await client.query("ROLLBACK").catch(() => {});
       log.error(

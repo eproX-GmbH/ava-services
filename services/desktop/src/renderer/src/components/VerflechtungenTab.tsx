@@ -8,6 +8,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { gatewayFetch, GatewayError } from "../api/gateway";
+import { FirmaUebernehmen, useIstUebernommen } from "../routes/firma-uebernehmen";
 
 type Knoten = { id: string; typ: "FIRMA" | "PERSON"; name: string; land?: string | null; registerStatus?: string | null; insolvencyStatus?: string | null; geburtsjahr?: number | null; wohnort?: string | null; tiefe: number };
 type Kante = { von: string; nach: string; art: "BETEILIGUNG" | "GESCHAEFTSFUEHRUNG" | "ADRESSE"; prozent?: number | null; nennbetragEur?: number | null; aktuell: boolean; seit?: string | null; bis?: string | null; quelle: string };
@@ -15,6 +16,9 @@ type Netz = { companyId: string; tiefe: number; knoten: Knoten[]; kanten: Kante[
 type Beteiligung = { id: number; companyId: string; listeDatum: string; typ: "PERSON" | "FIRMA"; personId: string | null; personName: string | null; geburtsjahr: number | null; wohnort: string | null; gesellschafterCompanyId: string | null; gesellschafterFirmaText: string | null; gesellschafterFirmaName?: string | null; anteileNummern: string | null; nennbetragEur: number | null; prozent: number | null; veraenderung: string | null; konfidenz: number; unsicher: boolean };
 type Stand = { geprueftAt: string; listeDatum: string | null; ergebnis: "LISTE" | "KEINE" | "UNSICHER" | "FEHLER"; format: string | null; modell: string | null; fehler: string | null; gruende: string[]; dokumentId: number | null };
 type Gesellschafter = { companyId: string; stand: Stand | null; gesellschafter: Beteiligung[]; beteiligungen: Beteiligung[] };
+// K4: Angaben laut juengstem Konzernabschluss (Gateway /konzern-angaben).
+type KonzernTochter = { id: number; name: string; sitz: string | null; land: string | null; anteilProzent: number | null; verbundenSeit: string | null; kerngeschaeft: string | null; match: { companyId: string; name: string; location: string | null; stufe?: "sicher" | "unsicher" } | null };
+type KonzernAngaben = { quelle: string | null; jahr: number | null; toechter: KonzernTochter[]; konzernmutter: KonzernTochter | null; geschaeftsfuehrung: Array<{ name: string; status: string; datum: string | null }> };
 type Kontext = { kontext: string; ursprungCompanyId: string; transactionId: string; maxTiefe: number; maxFirmen: number; ohneBremse: boolean; erstelltAt: string; offen: number; erledigt: number };
 
 const ART_LABEL: Record<Kante["art"], string> = { BETEILIGUNG: "Beteiligung", GESCHAEFTSFUEHRUNG: "Geschäftsführung", ADRESSE: "gleiche Adresse" };
@@ -281,6 +285,89 @@ function GesellschafterName({ g }: { g: Beteiligung }) {
   );
 }
 
+/** Eine Tochter: Stammdaten-Treffer verlinkt, Übernehmen wie im Kunden-Reiter. */
+function TochterAktion({ match }: { match: NonNullable<KonzernTochter["match"]> }) {
+  const uebernommen = useIstUebernommen(match.companyId);
+  return <FirmaUebernehmen name={match.name} ort={match.location} uebernommen={uebernommen} companyId={match.companyId} kompakt />;
+}
+
+const GF_STATUS: Record<string, string> = { amtierend: "amtierend", ausgeschieden: "ausgeschieden", bestellt: "bestellt" };
+
+function KonzernPanel({ id }: { id: string }) {
+  const q = useQuery<KonzernAngaben>({ queryKey: ["company", id, "konzern-angaben"], queryFn: () => gatewayFetch<KonzernAngaben>(`/v1/companies/${id}/konzern-angaben`), retry: false });
+  const d = q.data;
+  if (!d || !d.quelle) return null;
+  const jahr = d.jahr ? ` ${d.jahr}` : "";
+  return (
+    <article className="panel">
+      <h3 style={{ marginTop: 0 }}>Laut Konzernabschluss{jahr}</h3>
+      <p className="muted small" style={{ marginTop: 0 }}>
+        Angaben der Firma selbst aus „{d.quelle}“. Der Stammdaten-Treffer ist ein Vorschlag (nur bei eindeutigem Namen); „Übernehmen“ importiert die Tochter in „Meine Firmen“.
+      </p>
+      {d.konzernmutter && (
+        <p>
+          <strong>Konzernmutter:</strong> {d.konzernmutter.name}
+          {d.konzernmutter.sitz ? `, ${d.konzernmutter.sitz}` : ""}
+          <span className="muted small"> (dieser Abschluss wird dort einbezogen)</span>
+        </p>
+      )}
+      {d.toechter.length > 0 && (
+        <>
+          <h4>Tochtergesellschaften{jahr}</h4>
+          <table className="kunden-tabelle">
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Sitz</th>
+                <th>Anteil</th>
+                <th>Seit</th>
+                <th>Kerngeschäft</th>
+                <th>In den Stammdaten</th>
+                <th className="kunden-aktion" aria-label="Aktion" />
+              </tr>
+            </thead>
+            <tbody>
+              {d.toechter.map((t) => (
+                <tr key={t.id}>
+                  <td>{t.name}</td>
+                  <td>{[t.sitz, t.land].filter(Boolean).join(", ") || "–"}</td>
+                  <td>{t.anteilProzent != null ? `${t.anteilProzent.toLocaleString("de-DE", { maximumFractionDigits: 2 })} %` : "–"}</td>
+                  <td>{t.verbundenSeit ?? "–"}</td>
+                  <td>{t.kerngeschaeft ?? "–"}</td>
+                  <td>
+                    {t.match ? (
+                      <>
+                        <Link to={`/companies/${encodeURIComponent(t.match.companyId)}`}>{t.match.name}</Link>
+                        {t.match.location ? `, ${t.match.location}` : ""}
+                      </>
+                    ) : (
+                      <span className="muted">{t.land && !/deutschland|germany/i.test(t.land) ? "Ausland" : "nicht gefunden"}</span>
+                    )}
+                  </td>
+                  <td className="kunden-aktion">{t.match ? <TochterAktion match={t.match} /> : null}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </>
+      )}
+      {d.geschaeftsfuehrung.length > 0 && (
+        <>
+          <h4>Geschäftsführung{jahr}</h4>
+          <ul>
+            {d.geschaeftsfuehrung.map((g) => (
+              <li key={g.name}>
+                {g.name} <span className="muted small">({GF_STATUS[g.status] ?? g.status}{g.datum ? ` ${datum(g.datum)}` : ""})</span>
+              </li>
+            ))}
+          </ul>
+          <p className="muted small">Stand des Abschlussjahres, nicht des Registers. Abweichungen zum Handelsregister meldet der Statuswächter.</p>
+        </>
+      )}
+    </article>
+  );
+}
+
 export function VerflechtungenTab({ id, name }: { id: string; name: string | null }) {
   const qc = useQueryClient();
   const [tiefe, setTiefe] = useState(2);
@@ -404,6 +491,8 @@ export function VerflechtungenTab({ id, name }: { id: string; name: string | nul
           </>
         )}
       </article>
+
+      <KonzernPanel id={id} />
 
       <article className="panel">
         <h3 style={{ marginTop: 0 }}>Geflecht tiefer verfolgen</h3>
