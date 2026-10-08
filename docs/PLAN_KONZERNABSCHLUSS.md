@@ -24,22 +24,45 @@ Befreiungsmeldungen nach §§ 264 Abs. 3, 264b HGB. AVA zeigt Zahlen von 2006.
   neuesten Jahr), Alarm-Kandidaten (Beschäftigte), company-evaluation
   (Key-Figures).
 
-## 2. Zielbild
+## 2. Zielbild (Vorgaben Operator 2026-10-08)
 
-1. Konzernabschlüsse werden verarbeitet, aber als **Konzernzahlen**
-   gekennzeichnet und nie mit Einzelzahlen vermischt.
-2. Je Firma gibt es zwei Zeitreihen: Einzelgesellschaft und Konzern. Die App
-   zeigt die jeweils neueste beider Reihen; ist der Konzern neuer, steht er
-   oben mit dem Hinweis „Konzern (konsolidiert, inkl. Töchter)".
-3. Aus dem Konzernlagebericht werden zusätzlich die **Einzelergebnisse der
-   Muttergesellschaft** gezogen, wenn eine Tabelle sie nennt (Strama: 226,2
-   Mio. Umsatz, 783 Mitarbeiter in Straubing) — als Kennzahlen mit Kategorie
-   `sonstiges` und Präfix „Muttergesellschaft:".
-4. Befreiungsmeldungen (§ 264 Abs. 3 / 264b HGB) liefern den Hinweis „in den
-   Konzernabschluss von X einbezogen" (der Mutterkonzern steht im Anhang unter
-   „Konzernzugehörigkeit"); Zahlen enthalten sie nicht.
-5. Beteiligungstabellen (Name, Sitz, Anteil) aus dem Konzernanhang gehen als
-   eigene Stufe an die Verflechtungen (docs/PLAN_VERFLECHTUNGEN.md).
+1. **Kennzahlen bleiben Kennzahlen der Gesellschaft selbst.** Konsolidierte
+   Konzernzahlen (Umsatz 299,5 Mio., 1.759 Mitarbeiter) werden NICHT als
+   Umsatz/Mitarbeiter der Strama-MPS gespeichert. Aus dem Konzernabschluss
+   werden nur Angaben zur Muttergesellschaft übernommen: Tabelle
+   „Einzelergebnisse" (Umsatz 226,2 Mio., EBITDA, Jahresergebnis) und der Satz
+   „Bei der Strama-MPS … waren 783 Mitarbeiter … tätig". Quelle wird als
+   „aus Konzernabschluss 2023, Angaben zur Muttergesellschaft" ausgewiesen.
+   Konsolidierte Summen tauchen höchstens als Kontextsatz im Lagebericht-
+   Auszug auf („Konzern gesamt: 299,5 Mio. Umsatz, 1.759 Mitarbeiter"),
+   nie in den numerischen Feldern.
+2. **Tochtergesellschaften** (Name, Sitz, Land, Anteil, verbunden seit,
+   Kerngeschäft) aus den Beteiligungstabellen → Reiter Verflechtungen, mit
+   Stammdaten-Abgleich (Best Match) für deutsche Töchter. Dazu die
+   Konzernmutter aus „Konzernzugehörigkeit" (Rösner-Mautby Holding).
+3. **Geschäftsführung** aus dem Anhang („Geschäftsführer im Geschäftsjahr
+   waren …", „ist … als Geschäftsführer ausgeschieden") als Bestätigung der
+   Register-Daten: Ein-/Austritte mit Datum, Abgleich gegen die bekannten
+   GF-Fakten, Abweichung als Alarm-Kandidat.
+4. **Kosteneffizienz:** Keine Block-für-Block-Verarbeitung. Blöcke werden
+   nach Kapitel geroutet (Überschriften liegen im Modell: z_titel, l_titel,
+   b_teil, fette Absätze) und nur die Zielkapitel gehen an das Modell,
+   Tabellen werden zuerst deterministisch gelesen.
+
+## 2a. Block-Routing (gilt für Einzel- UND Konzernabschluss)
+
+| Ziel | Auswahl (Regex auf Überschriftenpfad) | Verarbeitung |
+|---|---|---|
+| Kennzahlen Mutter | Tabellen unter „Einzelergebnisse", „Entwicklung der einzelnen Konzerngesellschaften"; Absätze mit „bei der <Firmenname>" + Zahl + „Mitarbeiter" | Tabelle deterministisch (Zeile = Firmenname der Mutter); Satz per Regex, ein kleiner LLM-Aufruf nur bei Mehrdeutigkeit |
+| Töchter | Tabellen mit Spalten „Name und Sitz" + „Anteil" (Lagebericht 1.2, Anhang „Konsolidierungskreis"/„Anteilsbesitz") | Tabelle deterministisch, ein LLM-Aufruf je Tabelle zum Normalisieren (Land, Prozent, seit) |
+| Konzernmutter | Absatz unter „Konzernzugehörigkeit" oder Befreiungsmeldung | Regex „in den Konzernabschluss der … einbezogen" |
+| Geschäftsführung | Absätze unter „Geschäftsführung" / „Sonstige Angaben" | Regex-Liste + Sätze mit „ausgeschieden / bestellt / zum …"; ein LLM-Aufruf für die Datumszuordnung |
+| Lagebericht-Kernaussagen | nur Kapitel „Geschäftsverlauf", „Ertrags-, Vermögens- und Finanzlage", „Gesamtaussage", „Prognose" (Konzern: zusätzlich „Entwicklung der einzelnen Konzerngesellschaften"); ausgeschlossen: Konjunktur/Branchenumfeld, nichtfinanzielle Indikatoren, Risikobericht-Boilerplate, Bilanzierungsgrundsätze, Bestätigungsvermerk | gebündelt in wenige LLM-Aufrufe mit Zeichenbudget (z. B. 24.000 Zeichen), statt heute „erste N Blöcke" |
+| Bilanz/GuV-KPIs | Tabellen unter „Bilanz", „Gewinn- und Verlustrechnung" (Konzern: nur Kontext, nicht als Firmen-KPI) | Regex wie heute |
+
+Erwartung: beim Strama-Konzernabschluss statt ~1.300 Blöcken rund 25 bis 40
+ausgewählte Blöcke und 4 bis 6 Modellaufrufe. Dieselbe Routing-Logik senkt auch
+die Kosten der Einzelabschlüsse.
 
 ## 3. Umsetzung
 
@@ -52,13 +75,16 @@ Befreiungsmeldungen nach §§ 264 Abs. 3, 264b HGB. AVA zeigt Zahlen von 2006.
 - `art` je Publikation: `konzern`, wenn Titel oder Dokumentüberschrift
   „Konzern" enthält, sonst `einzel`. Wird im Persist-Event mitgeschickt
   (optionales Feld, alte Producer bleiben kompatibel).
-- Lagebericht-Extraktion (LLM): für das neueste Einzeljahr wie bisher UND für
-  das neueste Konzernjahr, falls es neuer ist als das Einzeljahr. Prompt
-  bekommt den Hinweis, dass Konzernzahlen konsolidiert sind und Einzelergebnisse
-  der Muttergesellschaft gesondert als KPIs mit Präfix „Muttergesellschaft:"
-  auszuweisen sind.
-- Mitarbeiter-Regex um „Mitarbeiter" / „Arbeitnehmer" in Tabellen mit
-  Jahresspalte erweitern (Konzernanhang Strama: Zeile „Mitarbeiter 1.596").
+- Block-Routing nach Abschnitt 2a (neues Modul `block-router.ts`, Tests mit
+  den Strama-Dokumenten 2006 und 2023 als Fixtures).
+- Konzernabschluss: Kennzahlen NUR aus den Mutter-Angaben; `employeeCount`
+  und Umsatz aus konsolidierten Tabellen werden verworfen. Fehlen Mutter-
+  Angaben, bleibt die Zeile ohne Zahlen (nur Lagebericht-Auszug + Töchter).
+- Lagebericht-Extraktion: für das neueste Einzeljahr und das neueste
+  Konzernjahr (falls neuer), aber nur über die gerouteten Kapitel.
+- Neue Ausgaben im Persist-Event (optional, abwärtskompatibel):
+  `toechter[]`, `konzernmutter`, `geschaeftsfuehrung[]` (Name, Rolle,
+  eintritt/austritt), `hinweise[]`.
 - Befreiungsmeldung: Titel und Datum ins Persist-Event als `hinweise`
   (Liste), damit das Gateway den Konzernbezug speichern kann.
 
@@ -88,13 +114,20 @@ Befreiungsmeldungen nach §§ 264 Abs. 3, 264b HGB. AVA zeigt Zahlen von 2006.
   bevorzugt aus dem neuesten Einzeljahr; Konzern nur als Rückfall mit
   Kennzeichnung.
 
-### K4 Beteiligungen (später, eigene Freigabe)
+### K4 Töchter, Konzernmutter, Geschäftsführung (Gateway + App)
 
-- Tabellen „Name und Sitz / Anteil am Kapital" aus Konzernlagebericht und
-  -anhang per LLM in `{name, sitz, land, anteilProzent, verbundenSeit}`;
-  Abgleich gegen Stammdaten (Best Match wie im Kunden-Reiter); Speicherung in
-  einer neuen Tabelle (Schemaänderung → Freigabe) und Anzeige im Reiter
-  Verflechtungen.
+- Neue Tabelle `CompanyBeteiligung` in ava_company_publication (lazy
+  CREATE TABLE IF NOT EXISTS wie PublicationBlock; Freigabe vor Deploy):
+  companyId, name, sitz, land, anteilProzent, verbundenSeit, kerngeschaeft,
+  quelle (Titel + Jahr), matchCompanyId/matchStufe (Best Match wie im
+  Kunden-Reiter, nur deutsche Töchter).
+- Konzernmutter als Firmen-Fakt (Name, Ort, Quelle) im Profil.
+- Geschäftsführung: Abgleich gegen GF-Fakten; neue Namen oder Austritte mit
+  Datum → ProfileChangeEvent „laut Konzernabschluss 2023" (Erst-Crawl-Regel
+  gilt, Zeitbezug 180 Tage).
+- Reiter Verflechtungen: Abschnitt „Tochtergesellschaften laut
+  Konzernabschluss <Jahr>" mit Übernehmen-Knopf; Chat `company_get`
+  bereich verflechtungen liefert sie mit.
 
 ## 4. Kosten und Risiken
 
@@ -106,9 +139,10 @@ Befreiungsmeldungen nach §§ 264 Abs. 3, 264b HGB. AVA zeigt Zahlen von 2006.
 - Rohblöcke der Konzernabschlüsse vergrößern den Suchkorpus (PublicationBlock);
   Disk des Clusters beobachten (10 GB).
 
-## 5. Rückfragen
+## 5. Reihenfolge
 
-1. Reihenfolge: K1–K3 in einem Release (Producer-Submodul + Gateway + App)?
-2. Befreiungsmeldung als Fakt `konzernmutter`: gewünscht oder vorerst nur
-   im Lagebericht-Text?
-3. K4 Beteiligungen: direkt mitplanen oder nach K1–K3?
+1. K1 Block-Router + Auswahl + Mutter-Kennzahlen (Producer, lokal testbar
+   mit den Strama-Fixtures) → Release.
+2. K2/K3 Art-Kennzeichnung, Anzeige, Tools → gleiches Release.
+3. K4 Töchter/Konzernmutter/GF mit neuer Tabelle → zweites Release nach
+   Freigabe der Schemaänderung.
