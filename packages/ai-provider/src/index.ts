@@ -4,8 +4,12 @@ import { createAnthropic } from "@ai-sdk/anthropic";
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { createMistral } from "@ai-sdk/mistral";
 import { createOllama } from "ollama-ai-provider-v2";
-import type { EmbeddingModel, LanguageModel } from "ai";
+import { generateObject, generateText, streamObject, streamText, type EmbeddingModel, type LanguageModel } from "ai";
 import { makeAnthropicOAuthFetch } from "./anthropic-oauth-fetch";
+import { OPENAI_PLAN_BASE_URL, makePlanFetch, planAktiv, planTokenQuelleAusUmgebung } from "./plan-fetch";
+
+export { planAktiv, planTokenQuelleAusUmgebung, makePlanFetch, bereinigeResponsesBody, planFehlerText, OPENAI_PLAN_BASE_URL } from "./plan-fetch";
+export type { PlanToken, PlanTokenQuelle } from "./plan-fetch";
 import { gatewayProxyBaseURL } from "./runtime";
 
 // Two distinct LLM call paths in AVA — keep them straight:
@@ -101,6 +105,21 @@ export function getLLM(): LanguageModel {
   switch (provider) {
     case "openai": {
       const px = proxyOpts("openai");
+      // ChatGPT-Abo (docs/PLAN_CHATGPT_ABO_UEBERALL.md): Token kommt je
+      // Anfrage vom Loopback-Endpunkt des Desktops, nie aus der Umgebung.
+      // Responses-Modell wie im Desktop-Chat; stream:true erzwingen die
+      // Helfer objektErzeugen/textErzeugen.
+      if (!px && planAktiv()) {
+        const quelle = planTokenQuelleAusUmgebung();
+        if (quelle) {
+          const client = createOpenAI({
+            apiKey: "oauth-placeholder",
+            baseURL: OPENAI_PLAN_BASE_URL,
+            fetch: makePlanFetch(globalThis.fetch, quelle),
+          });
+          return client.responses(model ?? process.env.OPENAI_PLAN_MODEL ?? "gpt-5.4-mini");
+        }
+      }
       const client = createOpenAI({
         apiKey: px?.apiKey ?? requireEnv("OPENAI_API_KEY"),
         project: process.env.OPENAI_PROJECT_KEY,
@@ -544,3 +563,101 @@ export function getDeepResearchClient(): DeepResearchClient | null {
 }
 
 export { gatewayProxyBaseURL } from "./runtime";
+
+// ---------------------------------------------------------------------------
+// ChatGPT-Abo in Producern (docs/PLAN_CHATGPT_ABO_UEBERALL.md, E3): Der Plan
+// verlangt stream:true. generateObject/generateText senden stream:false,
+// deshalb laufen alle Producer-Aufrufe ueber diese Helfer: bei aktivem Plan
+// streamObject/streamText und am Ende das fertige Ergebnis, sonst
+// unveraendert generateObject/generateText. Fuer Schluessel-Nutzer aendert
+// sich nichts.
+// ---------------------------------------------------------------------------
+
+type ObjektArgs = Parameters<typeof generateObject>[0];
+type TextArgs = Parameters<typeof generateText>[0];
+
+export interface ObjektErgebnis<T> {
+  object: T;
+  usage?: { inputTokens?: number; outputTokens?: number; totalTokens?: number };
+}
+
+export interface TextErgebnis {
+  text: string;
+  usage?: { inputTokens?: number; outputTokens?: number; totalTokens?: number };
+}
+
+/** Prueft, ob ein AI-SDK-Modell das Plan-Modell ist (Responses unter api.openai.com mit Plan-Fetch). */
+function istPlanModell(model: unknown): boolean {
+  if (!planAktiv()) return false;
+  const m = model as { provider?: string } | null | undefined;
+  return typeof m?.provider === "string" && m.provider.startsWith("openai");
+}
+
+export async function objektErzeugen<T = unknown>(args: ObjektArgs): Promise<ObjektErgebnis<T>> {
+  if (istPlanModell((args as { model?: unknown }).model)) {
+    const r = streamObject(args as never);
+    const object = (await r.object) as T;
+    const usage = await r.usage;
+    return { object, usage };
+  }
+  const r = await generateObject(args as never);
+  return { object: r.object as T, usage: r.usage };
+}
+
+export async function textErzeugen(args: TextArgs): Promise<TextErgebnis> {
+  if (istPlanModell((args as { model?: unknown }).model)) {
+    const r = streamText(args as never);
+    const text = await r.text;
+    const usage = await r.usage;
+    return { text, usage };
+  }
+  const r = await generateText(args as never);
+  return { text: r.text, usage: r.usage };
+}
+
+/**
+ * OpenAI-SDK-Client fuer die Recherche-Scouts ueber das Abo (Responses mit
+ * web_search). null, wenn der Plan nicht aktiv ist. Markiert, damit
+ * `responsesErzeugen` streamt.
+ */
+export function getOpenAIPlanSdkClient(): OpenAI | null {
+  const quelle = planAktiv() ? planTokenQuelleAusUmgebung() : null;
+  if (!quelle) return null;
+  const client = new OpenAI({ apiKey: "oauth-placeholder", baseURL: OPENAI_PLAN_BASE_URL, fetch: makePlanFetch(globalThis.fetch, quelle) as never });
+  (client as unknown as { __avaPlan: boolean }).__avaPlan = true;
+  return client;
+}
+
+/** Strukturell, damit Producer mit anderer openai-SDK-Version (v4/v5) den Helfer nutzen koennen. */
+export interface ResponsesClientLike {
+  responses: { create: (params: never) => Promise<unknown> };
+}
+
+export function istPlanSdkClient(client: unknown): boolean {
+  return Boolean(client && (client as { __avaPlan?: boolean }).__avaPlan);
+}
+
+/**
+ * `responses.create` fuer Schluessel-Clients; fuer den Plan-Client wird
+ * gestreamt und die fertige Antwort aus `response.completed` genommen
+ * (Plan-Pflicht stream:true). Parameter, die der Plan verbietet, entfernt
+ * der Fetch-Wrapper.
+ */
+export async function responsesErzeugen<R = OpenAI.Responses.Response>(client: ResponsesClientLike, params: Record<string, unknown>): Promise<R> {
+  if (!istPlanSdkClient(client)) {
+    return (await client.responses.create({ ...params, stream: false } as never)) as R;
+  }
+  const stream = (await client.responses.create({ ...params, stream: true } as never)) as unknown as AsyncIterable<{ type: string; response?: R; error?: unknown }>;
+  let fertig: R | null = null;
+  for await (const ev of stream) {
+    if (ev.type === "response.completed" && ev.response) fertig = ev.response;
+    else if (ev.type === "response.failed" || ev.type === "response.incomplete") {
+      const grund = (ev.response as { error?: { message?: string; code?: string } } | undefined)?.error;
+      throw new Error(`ChatGPT-Abo: Antwort ${ev.type === "response.failed" ? "fehlgeschlagen" : "unvollstaendig"}${grund?.message ? `: ${grund.message}` : ""}`);
+    } else if (ev.type === "error") {
+      throw new Error(`ChatGPT-Abo: ${JSON.stringify(ev.error ?? ev).slice(0, 300)}`);
+    }
+  }
+  if (!fertig) throw new Error("ChatGPT-Abo: Stream endete ohne response.completed.");
+  return fertig;
+}

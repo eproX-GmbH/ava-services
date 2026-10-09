@@ -494,8 +494,10 @@ W3 kann parallel starten, sobald die Typen aus W1 stehen.
    offenen Freigaben (Workflows-Seite, Chat-Tool `workflow_approvals`,
    Meldung/Telegram), die man akzeptieren oder ablehnen kann, bevor der
    Workflow weiterlaeuft. Umgesetzt in W1/W3.
-3. **KI-Node und ChatGPT-Abo.** → Bestaetigt 2026-09-09. Blockade wird in
-   der Liste als Grund angezeigt (`blocked`).
+3. **KI-Node und ChatGPT-Abo.** → Bestaetigt 2026-09-09 (Codex-Zeit: Abo
+   galt nicht). **Ueberholt 2026-10-09:** Mit dem Plan-Flow laeuft der
+   KI-Schritt ueber das Abo wie die Hintergrund-KI; die Blockade gilt nur
+   noch ohne jedes Modell (docs/PLAN_CHATGPT_ABO_UEBERALL.md).
 4. **Ausführung ohne laufende App.** → Entschieden 2026-09-09: KEIN
    Nachholen. Laeuft die App zur Trigger-Zeit nicht, faellt der Lauf aus
    und der naechste Zeit-Trigger zaehlt (Fenster 20 Minuten nach der

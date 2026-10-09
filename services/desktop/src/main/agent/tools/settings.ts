@@ -2,6 +2,7 @@ import * as yup from "yup";
 import { defineTool, userDeclined } from "../define-tool";
 import type { LlmProviderManager } from "../providers";
 import type { Tool } from "../types";
+import type { ChatgptPlanStand } from "../../../shared/types";
 import type {
   HostedProviderKind,
   LlmProviderKind,
@@ -366,33 +367,61 @@ export function buildSettingsTools(deps: SettingsToolDeps): Tool[] {
   // Erst-Consent und bleibt in den Einstellungen (Fenster von OpenAI).
   const chatgptPlan = defineTool({
     name: "settings_chatgpt_plan",
-    summary: "ChatGPT-Abo (Sign in with ChatGPT): Stand ansehen, freigegebene Modelle laden, Modell fuer den Chat waehlen.",
+    summary: "ChatGPT-Abo (Sign in with ChatGPT): Stand ansehen, freigegebene Modelle laden, Modell waehlen, Firmenverarbeitung ueber das Abo an/aus.",
     category: "einstellungen anbieter",
     description:
       "ChatGPT-Abo des Nutzers (Sign in with ChatGPT, Plan-Nutzung). `aktion` 'stand' liefert Verbindung, Konto, gewaehltes Modell " +
-      "und die fuer das Konto freigegebenen Modelle; 'modelle' laedt die Liste frisch von OpenAI; 'modell' setzt das Chat-Modell " +
-      "(`modell` = Slug aus der Liste, leer = Standard des Kontos). Die Anmeldung selbst macht der Nutzer in den Einstellungen " +
+      "und die fuer das Konto freigegebenen Modelle; 'modelle' laedt die Liste frisch von OpenAI; 'modell' setzt das Modell " +
+      "(`modell` = Slug aus der Liste, leer = Standard des Kontos; gilt fuer Chat, Hintergrund-KI und Firmenverarbeitung). " +
+      "'firmenverarbeitung' schaltet mit `an`, ob auch die Firmenverarbeitung (Profile, Jahresabschluesse, Kontakte, Bewertung, Recherche Standard) " +
+      "ueber das Abo laeuft; Sprachmodus und Deep Research brauchen immer einen Schluessel. Die Anmeldung selbst macht der Nutzer in den Einstellungen " +
       "(Knopf 'Continue with ChatGPT'); verweise dorthin, wenn keine Verbindung besteht. Nutzungslimits verwaltet der Nutzer unter " +
       "chatgpt.com/settings/usage.",
     parameters: {
       type: "object",
       properties: {
-        aktion: { type: "string", enum: ["stand", "modelle", "modell"] },
+        aktion: { type: "string", enum: ["stand", "modelle", "modell", "firmenverarbeitung"] },
         modell: { type: "string", description: "Modell-Slug fuer aktion 'modell'; leer = Standard" },
+        an: { type: "boolean", description: "Fuer aktion 'firmenverarbeitung': true = Producer ueber das Abo" },
       },
       required: ["aktion"],
     },
     schema: yup
       .object({
-        aktion: yup.string().oneOf(["stand", "modelle", "modell"]).required(),
+        aktion: yup.string().oneOf(["stand", "modelle", "modell", "firmenverarbeitung"]).required(),
         modell: yup.string().trim().max(120).optional(),
+        an: yup.boolean().optional(),
       })
       .noUnknown(true),
-    preview: (r: { verbunden?: boolean; modell?: string | null }) =>
-      r.verbunden ? `ChatGPT-Abo verbunden${r.modell ? ` · ${r.modell}` : ""}` : "ChatGPT-Abo nicht verbunden",
-    run: async (args) => {
+    preview: (r: ChatgptPlanStand | ReturnType<typeof userDeclined>) =>
+      "verbunden" in r
+        ? r.verbunden
+          ? `ChatGPT-Abo verbunden${r.modell ? ` · ${r.modell}` : ""}${r.firmenverarbeitung === false ? " · Firmenverarbeitung per Schluessel" : ""}`
+          : "ChatGPT-Abo nicht verbunden"
+        : "abgebrochen",
+    run: async (args, c): Promise<ChatgptPlanStand | ReturnType<typeof userDeclined>> => {
       if (args.aktion === "modell") return providers.setChatgptPlanModell(args.modell ?? null);
       if (args.aktion === "modelle") return providers.ladeChatgptPlanModelle();
+      if (args.aktion === "firmenverarbeitung") {
+        if (typeof args.an !== "boolean") throw new Error("aktion 'firmenverarbeitung' braucht `an` (true/false).");
+        const value = await c.ui.confirmAction(
+          {
+            kind: "mutating",
+            prompt: args.an
+              ? "Firmenverarbeitung (Profile, Jahresabschluesse, Kontakte, Bewertung, Recherche Standard) ueber dein ChatGPT-Abo laufen lassen? Das verbraucht dein Wochenkontingent."
+              : "Firmenverarbeitung nicht mehr ueber das ChatGPT-Abo laufen lassen? Dann braucht es einen Schluessel oder ein lokales Modell.",
+            confirmValue: "save",
+            options: [
+              { value: "save", label: "Umstellen" },
+              { value: "cancel", label: "Abbrechen" },
+            ],
+          },
+          c.signal,
+        );
+        if (value !== "save") return userDeclined();
+        providers.setChatgptPlanProducer(args.an);
+        return providers.chatgptPlanStand();
+      }
       return providers.chatgptPlanStand();
     },
   });

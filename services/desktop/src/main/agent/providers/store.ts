@@ -111,6 +111,7 @@ const DEFAULT_CONFIG: ProviderConfig = {
   openaiAuthMode: "api-key",
   dailyTokenLimit: null,
   producerModels: {},
+  chatgptPlanProducer: true,
 };
 
 export type { ProviderConfig };
@@ -268,6 +269,8 @@ export class ProviderConfigStore extends EventEmitter {
     producerModels?: Partial<Record<LlmProviderKind, string>>;
     /** O5 — Schluesselquelle je Anbieter (eigen | organisation). */
     keySource?: Partial<Record<LlmProviderKind, KeySource>>;
+    /** Firmenverarbeitung ueber das ChatGPT-Abo (docs/PLAN_CHATGPT_ABO_UEBERALL.md). */
+    chatgptPlanProducer?: boolean;
   }): ProviderConfig {
     const next: ProviderConfig = cloneConfig(this.cached);
     if (partial.kind) {
@@ -315,6 +318,9 @@ export class ProviderConfigStore extends EventEmitter {
     }
     if (partial.keySource) {
       next.keySource = { ...(next.keySource ?? {}), ...partial.keySource };
+    }
+    if (partial.chatgptPlanProducer !== undefined) {
+      next.chatgptPlanProducer = Boolean(partial.chatgptPlanProducer);
     }
     if (partial.dailyTokenLimit !== undefined) {
       next.dailyTokenLimit = normaliseDailyTokenLimit(partial.dailyTokenLimit);

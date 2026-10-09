@@ -53,7 +53,7 @@ Beschreibe Workflows als neue Funktion, nicht als „in Arbeit". Kernaussagen:
 Kostenlos: ein Workflow. Starter, Pro, Enterprise: unbegrenzt. Läufe
 verbrauchen die normalen Kontingente (Scans, Importe, Profile) und
 KI-Aufrufe über den eigenen Schlüssel, ein lokales Modell oder den
-Organisationsschlüssel. Ein ChatGPT-Abo gilt nicht für Workflows.
+Organisationsschlüssel. Ein verbundenes ChatGPT-Abo gilt auch für Workflows.
 
 ## Nicht schreiben
 

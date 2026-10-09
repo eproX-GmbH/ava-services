@@ -171,6 +171,12 @@ export interface OrgPolicy {
    * (docs/PLAN_SIGN_IN_WITH_CHATGPT.md).
    */
   chatgptPlanErlaubt?: boolean;
+  /**
+   * Unter Anbieter-Sperre: duerfen Mitglieder die Firmenverarbeitung
+   * (Producer) ueber ihr ChatGPT-Abo laufen lassen statt ueber den
+   * Organisationsschluessel? Standard false (docs/PLAN_CHATGPT_ABO_UEBERALL.md).
+   */
+  chatgptPlanProducer?: boolean;
   chatModel: string | null;
   producerModel: string | null;
   /** Deep-Research-Modell (OpenAI, fester Satz aus shared/research-models.ts); null = Standard. */
@@ -1014,6 +1020,10 @@ export interface ChatgptPlanStand {
   planScope: boolean;
   /** Organisationsvorgabe: darf das persoenliche Abo genutzt werden? */
   erlaubt: boolean;
+  /** Einstellung des Nutzers: Firmenverarbeitung (Producer) ueber das Abo? */
+  firmenverarbeitung: boolean;
+  /** Unter Anbieter-Sperre nur mit Freigabe der Organisation (chatgptPlanProducer). */
+  firmenverarbeitungMoeglich: boolean;
 }
 
 /**
@@ -1070,6 +1080,8 @@ export interface ProviderConfig {
    * es im Chat weiterhin die beste Wahl sein kann.
    */
   producerModels?: Partial<Record<LlmProviderKind, string>>;
+  /** docs/PLAN_CHATGPT_ABO_UEBERALL.md: Firmenverarbeitung (Producer) ueber das ChatGPT-Abo? Standard an. */
+  chatgptPlanProducer?: boolean;
   /**
    * v0.1.405 — Optionales tägliches Token-Limit (Kalendertag, UTC) für
    * Chat + Agent zusammen. `null`/`undefined` = KEIN Limit (Default).
@@ -1151,6 +1163,9 @@ export interface ProviderConfigBundle {
     modell: string | null;
     planScope: boolean;
     erlaubt: boolean;
+    /** docs/PLAN_CHATGPT_ABO_UEBERALL.md: Firmenverarbeitung ueber das Abo (Einstellung) und ob die Organisation es zulaesst. */
+    firmenverarbeitung?: boolean;
+    firmenverarbeitungMoeglich?: boolean;
     modelle: Array<{ id: string; label: string; istStandard: boolean }>;
   };
 }

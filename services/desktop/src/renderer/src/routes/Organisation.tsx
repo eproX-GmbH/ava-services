@@ -1293,6 +1293,34 @@ function ChatgptPlanSchalter({ st, admin, busy, aktion }: { st: OrgState; admin:
           </span>
         </span>
       </label>
+      {erlaubt && st.policy.providerLock && (
+        <label className="org-check">
+          <input
+            type="checkbox"
+            checked={st.policy.chatgptPlanProducer === true}
+            disabled={busy}
+            onChange={(e) =>
+              aktion(
+                async () => {
+                  await gatewayFetch("/v1/tenants/me/policy", { method: "PUT", body: { chatgptPlanProducer: e.target.checked } });
+                  await window.api.org.refreshPolicy();
+                },
+                e.target.checked
+                  ? "Die Firmenverarbeitung darf jetzt über persönliche ChatGPT-Abos laufen."
+                  : "Die Firmenverarbeitung läuft wieder ausschließlich über den Schlüssel der Organisation.",
+              )
+            }
+          />
+          <span>
+            Firmenverarbeitung über persönliche Abos erlauben
+            <span className="org-check__hint">
+              Unter Anbieter-Sperre laufen Profile, Jahresabschlüsse, Kontakte und Bewertung sonst über den Schlüssel der
+              Organisation; mit Haken darf jedes Mitglied sie über sein eigenes Abo-Kontingent laufen lassen (Einstellung
+              je Mitglied).
+            </span>
+          </span>
+        </label>
+      )}
     </div>
   );
 }

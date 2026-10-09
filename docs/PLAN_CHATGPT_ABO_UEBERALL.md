@@ -162,3 +162,41 @@ Teiltest (a) bis (f).
    hart beim Organisationsschlüssel? Vorschlag: Schalter, Standard aus.
 3. Research Standard über das Abo nur, wenn `web_search` im Test läuft;
    sonst weiter Schlüssel.
+
+## 8. Stand (2026-10-09, v0.1.779)
+
+Umgesetzt A1–A5 ohne vorherigen A0-Test (kein Plus/Pro-Konto in dieser
+Sitzung verfuegbar); A0 und A6 stehen aus und entscheiden, ob strukturierte
+Ausgaben und `web_search` ueber den Plan laufen.
+
+- **Paket `@ava/ai-provider`:** `plan-fetch.ts` (Token je Anfrage vom
+  Loopback-Dienst, 60 s Cache, 401 → einmal neu holen, `store:false`,
+  verbotene Felder entfernt, system → developer, 429/503 Kontingent →
+  Wartestufen 30 s bis 10 min mit Logzeile `[chatgpt-plan] limit`, danach
+  Fehler); `getLLM()` baut bei `OPENAI_PLAN_TOKEN_URL` das Responses-Modell
+  ueber den Plan; Helfer `objektErzeugen`/`textErzeugen` (streamObject/
+  streamText nur beim Plan-Modell), `getOpenAIPlanSdkClient`,
+  `responsesErzeugen` (streamt und nimmt `response.completed`). Vendor-Kopien
+  in allen Producern nachgezogen.
+- **Producer:** alle 36 Aufrufe in 16 Dateien auf die Helfer umgestellt;
+  website: Recherche-Scouts ueber `responsesErzeugen`, Stufe Standard ueber
+  den Plan (`RESEARCH_*_VIA_PLAN=1` oder Rueckfall ohne Schluessel), Deep
+  Research lehnt den Plan-Client ab.
+- **Desktop:** `auth/plan-token-server.ts` (127.0.0.1, zufaelliger Port,
+  Geheimnis je Start); Manager `producerUeberAbo()`, `planTokenFuerProducer()`,
+  `setChatgptPlanProducer()`, `getProducerLlmEnv` liefert `planToken` und das
+  Abo-Modell; Supervisor gibt URL und Geheimnis weiter, erkennt
+  `[chatgpt-plan] limit` (Ereignis `planLimit` → Audit) und
+  `subscription_sharing_invalid_user` als Auth-Fehler; Token-Refresh startet
+  Producer nicht mehr neu (nur Verbinden/Trennen); Einstellung
+  „Firmenverarbeitung ueber das ChatGPT-Abo" in der Abo-Karte, Chat-Werkzeug
+  `settings_chatgpt_plan` mit `aktion: firmenverarbeitung`, Statuszeile in
+  Einstellungen → Modelle; Organisation: Schalter „Firmenverarbeitung ueber
+  persoenliche Abos erlauben" (nur unter Anbieter-Sperre sichtbar).
+- **Gateway:** `TenantPolicy.chatgptPlanProducer` (Migration
+  `20261009_chatgpt_plan_producer`, Standard false), Route und Policy-Lesen.
+- **Texte:** Workflow-Runner/-Liste, PLAN_WORKFLOWS Entscheidung 3,
+  PLAN_SIGN_IN_WITH_CHATGPT Stand, Website-Vorlagen.
+- **Offen:** A0/A6 mit Plus/Pro-Konto (strukturierte Ausgaben, Bilder,
+  `web_search`, 1-h-Tokenwechsel im Lauf, 429-Pause); Verbrauchsanzeige
+  „ChatGPT-Abo" je Producer-Aufruf (S5) nicht gebaut.

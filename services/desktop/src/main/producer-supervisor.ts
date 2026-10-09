@@ -134,6 +134,8 @@ export interface ProducerSupervisorOptions {
     qwenApiKey?: string;
     ollamaUrl?: string;
     viaGateway?: boolean;
+    /** ChatGPT-Abo: Token ueber den Loopback-Dienst (docs/PLAN_CHATGPT_ABO_UEBERALL.md). */
+    planToken?: boolean;
   } | null>;
   /**
    * When `llmConfig()` returns null, this returns a German one-liner
@@ -173,6 +175,8 @@ export interface ProducerSupervisorOptions {
    *  AVA_TENANT_ID: Persist-Ereignisse tragen ihn, das Gateway setzt
    *  Organisationsvorgaben darueber durch. */
   getTenantId?: () => Promise<string | null>;
+  /** ChatGPT-Abo: Loopback-Token-Dienst des Mains (docs/PLAN_CHATGPT_ABO_UEBERALL.md). */
+  planTokenEndpunkt?: () => { url: string; secret: string } | null;
   /** Extra env merged in after the supervisor's defaults. */
   extraEnv?: Record<string, string>;
   /** v0.1.105 — dynamic extra env, evaluated at each spawn. Used for
@@ -248,6 +252,27 @@ export class ProducerSupervisor extends EventEmitter {
    * The payload must be a single line of JSON matching AuditEventInput
    * (see shared/types.ts). Malformed lines are silently dropped.
    */
+  /**
+   * ChatGPT-Abo (docs/PLAN_CHATGPT_ABO_UEBERALL.md, E5): Der Plan-Fetch im
+   * Producer wartet bei erschoepftem Kontingent und loggt
+   * "[chatgpt-plan] limit status=429 versuch=N warte=Ns". Wir melden das
+   * nach oben (Status, Audit), die Verarbeitung pausiert von selbst.
+   */
+  private lastPlanLimitAt = 0;
+  private detectPlanLimit(text: string): void {
+    if (!text.includes("[chatgpt-plan] limit")) return;
+    const m = /\[chatgpt-plan\] limit status=(\d+) versuch=(\d+) warte=(\d+)s/.exec(text);
+    const now = Date.now();
+    if (now - this.lastPlanLimitAt < 60_000) return;
+    this.lastPlanLimitAt = now;
+    this.emit("planLimit", {
+      producerName: this.opts.config.name,
+      status: m ? Number(m[1]) : null,
+      versuch: m ? Number(m[2]) : null,
+      warteSekunden: m ? Number(m[3]) : null,
+    });
+  }
+
   private detectAuditMarker(text: string): void {
     // Cheap pre-check before regex'ing the whole buffer
     if (!text.includes("__AVA_AUDIT__")) return;
@@ -296,7 +321,8 @@ export class ProducerSupervisor extends EventEmitter {
     if (
       !/invalid authentication credentials/i.test(text) &&
       !/authentication_error/i.test(text) &&
-      !/incorrect api key/i.test(text)
+      !/incorrect api key/i.test(text) &&
+      !/subscription_sharing_invalid_user/i.test(text)
     ) {
       return false;
     }
@@ -574,6 +600,7 @@ export class ProducerSupervisor extends EventEmitter {
       // didn't match, so a single line never fires both recovery paths.
       if (!this.detectAuthErrorPattern(text)) this.detectGatewayAuthError(text);
       this.detectAuditMarker(text);
+      this.detectPlanLimit(text);
     });
     this.child.stderr.on("data", (b: Buffer) => {
       const text = b.toString().trimEnd();
@@ -581,6 +608,7 @@ export class ProducerSupervisor extends EventEmitter {
       producerLogBuffer.push(this.opts.config.name, "stderr", text);
       if (!this.detectAuthErrorPattern(text)) this.detectGatewayAuthError(text);
       this.detectAuditMarker(text);
+      this.detectPlanLimit(text);
     });
     this.child.on("exit", (code, signal) => {
       const wasRunning = this.state === "ready" || this.state === "starting";
@@ -789,6 +817,10 @@ export class ProducerSupervisor extends EventEmitter {
       // O5 — Organisationsschluessel: LLM-Aufrufe ueber GATEWAY_URL/v1/llm/<anbieter>
       // mit PRODUCER_GATEWAY_TOKEN; kein Anbieterschluessel im Kindprozess.
       ...(llm.viaGateway ? { AVA_LLM_VIA_GATEWAY: "1" } : {}),
+      // ChatGPT-Abo: Token je Anfrage vom Loopback-Dienst, nie in der Umgebung.
+      ...(llm.planToken && this.opts.planTokenEndpunkt?.()
+        ? { OPENAI_PLAN_TOKEN_URL: this.opts.planTokenEndpunkt()!.url, OPENAI_PLAN_TOKEN_SECRET: this.opts.planTokenEndpunkt()!.secret }
+        : {}),
       // v0.1.184 — EMBED_PROVIDER / EMBED_MODEL are set per-producer
       // via the extraEnvAsync hook in index.ts (currently only
       // company-evaluation cares, hardcoded to ollama + embeddinggemma).

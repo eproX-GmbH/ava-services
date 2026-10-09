@@ -1082,7 +1082,7 @@ export class WorkflowRunner {
 
   private async executeAi(ctx: RunContext, node: WorkflowNode, items: WorkflowItem[]): Promise<WorkflowItem[]> {
     if (this.ohneEingabe(ctx, node, items)) return [];
-    if (!this.deps.providers.getStatus().ready) throw new Error("Kein Hintergrund-Modell bereit (API-Schluessel oder lokales Modell noetig; ein ChatGPT-Abo gilt nicht fuer Workflows).");
+    if (!this.deps.providers.getStatus().ready) throw new Error("Kein Hintergrund-Modell bereit (API-Schluessel, ChatGPT-Abo oder lokales Modell noetig).");
     const systemBasis = String(node.parameters.system ?? "Du bist ein praeziser Assistent fuer B2B-Vertrieb. Antworte NUR mit JSON nach dem vorgegebenen Schema.");
     const systemFuer = (k: CompanyContext | null): string =>
       systemBasis + (k ? `\n\nVollstaendiger Kontext der Firma, um die es in diesem Lauf geht (nur daraus schoepfen, nichts erfinden):\n${k.text.slice(0, 40_000)}` : "");

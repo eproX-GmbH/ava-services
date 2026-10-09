@@ -73,7 +73,14 @@ Jahresabschlüsse, Publikationen, Kontakte, Bewertung):
    EU), ohne den Schlüssel je zu sehen. Verbrauch und Limits werden je
    Mitglied gezählt.
 
-**ChatGPT-Abo ist kein vierter Weg.** Ein verbundenes ChatGPT-Plus-, Pro-
+**ChatGPT-Abo (überholt am 2026-10-09, siehe docs/PLAN_CHATGPT_ABO_UEBERALL.md):**
+Seit dem offiziellen „Sign in with ChatGPT“ mit Plan-Nutzung deckt ein
+verbundenes Plus- oder Pro-Abo Chat, Hintergrund-KI, Workflows UND die
+Firmenverarbeitung ab (abschaltbar je Nutzer; unter Anbieter-Sperre nur mit
+Freigabe der Organisation). Nicht über das Abo laufen Sprachmodus,
+Telegram-Sprachantwort, Embeddings (lokal) und Deep Research. Der folgende
+Absatz beschreibt den alten Codex-Stand und gilt nicht mehr:
+Ein verbundenes ChatGPT-Plus-, Pro-
 oder Team-Abo deckt ausschließlich den Chat mit AVA ab. Die Hintergrund-
 Verarbeitung braucht zusätzlich einen der drei Wege oben. Grund: Das Abo
 liefert keinen API-Zugang, sondern denselben Endpunkt wie OpenAIs Codex-

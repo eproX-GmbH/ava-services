@@ -123,9 +123,9 @@ Plan-Verbindung ohne Plan-Scope zaehlt nicht (Team/Business/Free).
 
 Offen: S5 Verbrauchsanzeige (Kennzeichnung „ChatGPT-Abo“ je Aufruf), S7
 manuelle Tests mit einem Plus/Pro-Konto (Erstanmeldung, Wiederanmeldung,
-429-Pfad, Trennen in ChatGPT). Producer (website, profile, contact …) laufen weiter ueber
-Schluessel oder lokale Modelle: Sie nutzen generateObject ohne Streaming,
-was der Plan nicht erlaubt.
+429-Pfad, Trennen in ChatGPT). **2026-10-09:** Producer, Recherche Standard
+und Workflows laufen ebenfalls ueber das Abo (Loopback-Token-Dienst,
+streamObject statt generateObject) — docs/PLAN_CHATGPT_ABO_UEBERALL.md.
 
 ## Umsetzung
 

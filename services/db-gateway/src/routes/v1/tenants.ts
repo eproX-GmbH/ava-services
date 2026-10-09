@@ -56,6 +56,8 @@ const PolicyShape = z.object({
   relevanzThemaSichtbar: z.boolean().optional(),
   /** Duerfen Mitglieder ihr persoenliches ChatGPT-Abo in AVA nutzen? */
   chatgptPlanErlaubt: z.boolean().optional(),
+  /** Unter Anbieter-Sperre: Firmenverarbeitung ueber persoenliche ChatGPT-Abos erlauben? */
+  chatgptPlanProducer: z.boolean().optional(),
 });
 
 tenantsRouter.openapi(

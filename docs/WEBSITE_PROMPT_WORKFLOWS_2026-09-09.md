@@ -150,7 +150,7 @@ Kein Vergleich mit anderen Werkzeugen.
 **Plan-Staffelung.** Kostenlos: ein Workflow. Starter, Pro, Enterprise:
 unbegrenzt. Läufe verbrauchen die normalen Kontingente (Scans, Importe,
 Profile) und KI-Aufrufe über den eigenen Schlüssel, ein lokales Modell oder
-den Schlüssel der Organisation. Ein ChatGPT-Abo gilt nicht für Workflows.
+den Schlüssel der Organisation. Ein verbundenes ChatGPT-Abo gilt auch für Workflows.
 
 **FAQ** (je zwei bis vier Sätze):
 - Muss ich programmieren? Nein. Der Chat baut den Workflow; die Ansicht ist
@@ -177,8 +177,8 @@ Footer entsprechend ergänzen. Sitemap aktualisieren.
 
 - Startseite: Block aus Abschnitt 3.
 - Seite „KI-Modelle" und FAQ „KI-Modellkosten": einen Satz ergänzen, dass
-  Workflows KI-Schritte über denselben Zugang ausführen und ein ChatGPT-Abo
-  dafür nicht gilt.
+  Workflows KI-Schritte über denselben Zugang ausführen; ein verbundenes
+  ChatGPT-Abo gilt dafür ebenfalls (Stand 2026-10-09).
 - Lösungen-Seiten für Vertriebsleitung und SDR/BDR-Teams: Workflows als
   Team-Funktion aufnehmen (Vorlagen, Teilen, Freigaben).
 - Datenschutz: ein Satz, dass Workflows dieselben Datenwege nutzen wie der

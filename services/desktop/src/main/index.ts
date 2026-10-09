@@ -1,3 +1,4 @@
+import { PlanTokenServer } from "./auth/plan-token-server";
 import { meldeAbgeleiteteAdressen } from "./contacts/email-muster/rueckmeldung";
 import { radarActivity } from "./discovery/activity";
 import { NutzerstandService } from "./suggestions/nutzerstand";
@@ -762,12 +763,19 @@ function buildProducer(
             const locked = providers.isProviderLocked();
             const pol = getOrgPolicy();
             if (pol.researchModel) env.RESEARCH_DEEP_MODEL = pol.researchModel;
+            // docs/PLAN_CHATGPT_ABO_UEBERALL.md: ohne Schluessel laeuft die
+            // Standard-Stufe ueber das ChatGPT-Abo (Deep braucht weiter einen Schluessel).
+            const ueberAbo = providers.producerUeberAbo();
+            const rcfg = store.getConfig();
             const expansion = await store.resolveFeature("expansionTenders", { providerLocked: locked });
             if (expansion) {
               env.RESEARCH_EXPANSION_TIER = expansion.tier;
               env.RESEARCH_EXPANSION_PROVIDER = expansion.provider;
               env.RESEARCH_EXPANSION_API_KEY = expansion.apiKey;
               if (expansion.viaGateway) env.RESEARCH_EXPANSION_VIA_GATEWAY = "1";
+            } else if (ueberAbo && rcfg.expansionTenders.tier === "standard") {
+              env.RESEARCH_EXPANSION_TIER = "standard";
+              env.RESEARCH_EXPANSION_VIA_PLAN = "1";
             } else {
               env.RESEARCH_EXPANSION_TIER = "off";
             }
@@ -777,6 +785,9 @@ function buildProducer(
               env.RESEARCH_JOBS_PROVIDER = jobs.provider;
               env.RESEARCH_JOBS_API_KEY = jobs.apiKey;
               if (jobs.viaGateway) env.RESEARCH_JOBS_VIA_GATEWAY = "1";
+            } else if (ueberAbo && rcfg.jobPostings.tier === "standard") {
+              env.RESEARCH_JOBS_TIER = "standard";
+              env.RESEARCH_JOBS_VIA_PLAN = "1";
             } else {
               env.RESEARCH_JOBS_TIER = "off";
             }
@@ -879,6 +890,8 @@ function buildProducer(
     amqpUrl: fetchAmqpUrl,
     jwksUri: `${APP_CONFIG.authIssuer}/protocol/openid-connect/certs`,
     llmConfig: () => providers.getProducerLlmEnv(),
+    // ChatGPT-Abo: Producer holen den Token vom Loopback-Dienst des Mains.
+    planTokenEndpunkt: () => planTokenServer.endpunkt(),
     // v0.1.144 — surface a precise reason (e.g. "Subscription-OAuth
     // wird vom lokalen Producer noch nicht unterstützt — wechsle …")
     // instead of the generic "nicht angemeldet"-Hinweis when llmConfig
@@ -1129,6 +1142,9 @@ externalServiceMonitor.on("status", (status: ExternalServicesStatus) => {
 // gateway client so the BYO-key callback (Option D) can read the
 // active provider's key on dispatch HTTP requests.
 const providers = new LlmProviderManager(ollama);
+// docs/PLAN_CHATGPT_ABO_UEBERALL.md (E1): Loopback-Token-Dienst fuer Producer.
+const planTokenServer = new PlanTokenServer(() => providers.planTokenFuerProducer());
+void planTokenServer.start().catch((err) => console.warn("[chatgpt-plan] Token-Dienst nicht gestartet:", err));
 
 // v0.1.466 — Plan-Tier-Cache (Radar-Staffelung). Synchron lesbar fuer
 // Alert-Politik + Automatik-Klammer; Refresh lazy alle 30 Minuten via
@@ -3252,7 +3268,8 @@ app.whenReady().then(async () => {
     // ueberschreiben darf, muss die Auswahl sofort neu berechnet werden.
     if (
       (neu.apifyEigenerErlaubt !== false) !== (alt.apifyEigenerErlaubt !== false) ||
-      (neu.chatgptPlanErlaubt !== false) !== (alt.chatgptPlanErlaubt !== false)
+      (neu.chatgptPlanErlaubt !== false) !== (alt.chatgptPlanErlaubt !== false) ||
+      (neu.chatgptPlanProducer === true) !== (alt.chatgptPlanProducer === true)
     ) {
       providers.setOrgContext({
         providers: providers.getOrgProviders(),
@@ -3260,6 +3277,7 @@ app.whenReady().then(async () => {
         getToken: () => auth.getAccessToken(),
         apifyEigenerErlaubt: neu.apifyEigenerErlaubt !== false,
         chatgptPlanErlaubt: neu.chatgptPlanErlaubt !== false,
+        chatgptPlanProducer: neu.chatgptPlanProducer === true,
       });
     }
     const an = (k: string) => neu.features[k] !== false;
@@ -3602,8 +3620,19 @@ app.whenReady().then(async () => {
   });
   // Claude-Abo-OAuth entfernt — kein anthropicSubscriptionTokenChanged-
   // Listener mehr. Nur noch das ChatGPT-Abo.
+  // docs/PLAN_CHATGPT_ABO_UEBERALL.md (E1): Der stuendliche Refresh des
+  // Plan-Tokens ist KEIN Grund, die Producer neu zu starten — sie holen den
+  // Token je Anfrage vom Loopback-Dienst. Neustart nur, wenn eine
+  // Verbindung entsteht oder verschwindet.
+  let planVerbunden = providerConfigStore.hasOpenAISubscriptionToken();
   providerConfigStore.on("openaiSubscriptionTokenChanged", () => {
-    scheduleCredentialCycle("openaiSubscriptionTokenChanged");
+    const jetzt = providerConfigStore.hasOpenAISubscriptionToken();
+    if (jetzt !== planVerbunden) {
+      planVerbunden = jetzt;
+      scheduleCredentialCycle("openaiSubscriptionTokenChanged");
+    } else {
+      console.info("[providers] ChatGPT-Plan-Token erneuert — Producer laufen weiter (Loopback-Dienst)");
+    }
     audit({
       actorType: "user",
       actorId: null,
@@ -3934,6 +3963,21 @@ app.whenReady().then(async () => {
     p.on("gatewayAuthError", (args: { producerName: string }) => {
       void handleProducerGatewayAuthError(args);
     });
+    // ChatGPT-Abo: Kontingent erschoepft → Producer wartet (E5); hier nur sichtbar machen.
+    p.on("planLimit", (args: { producerName: string; status: number | null; versuch: number | null; warteSekunden: number | null }) => {
+      console.warn(`[producer:${args.producerName}] ChatGPT-Abo: Kontingent erschoepft (HTTP ${args.status ?? "?"}), wartet ${args.warteSekunden ?? "?"} s (Versuch ${args.versuch ?? "?"})`);
+      audit({
+        actorType: "producer",
+        actorId: args.producerName,
+        category: "auth",
+        action: "chatgpt-plan.limit",
+        severity: "warning",
+        subjectType: null,
+        subjectId: null,
+        summary: `ChatGPT-Abo: Kontingent erschoepft, ${args.producerName} wartet ${args.warteSekunden ?? "?"} s (ChatGPT → Settings → Usage)`,
+        metadata: { status: args.status, versuch: args.versuch, warteSekunden: args.warteSekunden },
+      });
+    });
     // v0.1.201 — producer-emitted audit events arrive via the
     // stdout `__AVA_AUDIT__…` marker convention (see
     // producer-supervisor.ts → detectAuditMarker). The supervisor
@@ -4211,6 +4255,7 @@ app.whenReady().then(async () => {
         // Organisation ueberschreiben? Fehlt sie, gilt "ja" wie bisher.
         apifyEigenerErlaubt: getOrgPolicy().apifyEigenerErlaubt !== false,
         chatgptPlanErlaubt: getOrgPolicy().chatgptPlanErlaubt !== false,
+        chatgptPlanProducer: getOrgPolicy().chatgptPlanProducer === true,
       });
       // Deep Research ueber den OpenAI-Schluessel der Organisation.
       ResearchFeaturesStore.shared().setOrgOpenaiAvailable(Boolean(provs.openai));
@@ -6398,6 +6443,11 @@ app.whenReady().then(async () => {
     },
   );
   ipcMain.handle("agent:chatgptPlanStand", () => providers.chatgptPlanStand());
+  // docs/PLAN_CHATGPT_ABO_UEBERALL.md: Firmenverarbeitung ueber das Abo an/aus.
+  ipcMain.handle("agent:setChatgptPlanProducer", async (_e, an: boolean) => {
+    providers.setChatgptPlanProducer(Boolean(an));
+    return { ok: true as const, stand: await providers.chatgptPlanStand() };
+  });
   ipcMain.handle("agent:ladeChatgptPlanModelle", async () => {
     try {
       return { ok: true as const, stand: await providers.ladeChatgptPlanModelle() };

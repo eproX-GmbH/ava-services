@@ -171,7 +171,7 @@ export class WorkflowService {
         if (!this.toolExists(t)) return `Schritt „${n.name}“: Tool ${t} ist nicht verfuegbar (abgeschaltet oder unbekannt).`;
       }
       if (n.type === "ai" && !n.disabled && !this.deps.providers.getStatus().ready) {
-        return `Schritt „${n.name}“: kein Hintergrund-Modell bereit (API-Schluessel oder lokales Modell noetig).`;
+        return `Schritt „${n.name}“: kein Hintergrund-Modell bereit (API-Schluessel, ChatGPT-Abo oder lokales Modell noetig).`;
       }
     }
     return null;

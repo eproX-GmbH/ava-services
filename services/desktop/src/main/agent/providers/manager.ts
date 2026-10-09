@@ -87,6 +87,8 @@ export class LlmProviderManager extends EventEmitter {
     apifyEigenerErlaubt?: boolean;
     /** docs/PLAN_SIGN_IN_WITH_CHATGPT.md: persoenliches ChatGPT-Abo erlaubt? Fehlt sie, gilt "ja". */
     chatgptPlanErlaubt?: boolean;
+    /** docs/PLAN_CHATGPT_ABO_UEBERALL.md: unter Anbieter-Sperre Producer ueber das Abo erlaubt? Fehlt sie, gilt "nein". */
+    chatgptPlanProducer?: boolean;
   } = { providers: {}, gatewayUrl: "", getToken: async () => null };
 
   /** Letzte bekannte Kurzfassung der ChatGPT-Verbindung (sync fuer das Bundle). */
@@ -247,12 +249,13 @@ export class LlmProviderManager extends EventEmitter {
     getToken: () => Promise<string | null>;
     apifyEigenerErlaubt?: boolean;
     chatgptPlanErlaubt?: boolean;
+    chatgptPlanProducer?: boolean;
   }): void {
     // Die Apify-Vorgabe gehoert zum Vergleich: Wird sie umgestellt, muss die
     // Auswahl neu berechnet werden, auch wenn sich kein Schluessel geaendert hat.
-    const vorher = JSON.stringify([this.org.providers, this.org.apifyEigenerErlaubt !== false, this.org.chatgptPlanErlaubt !== false]);
+    const vorher = JSON.stringify([this.org.providers, this.org.apifyEigenerErlaubt !== false, this.org.chatgptPlanErlaubt !== false, this.org.chatgptPlanProducer === true]);
     this.org = ctx;
-    if (vorher !== JSON.stringify([ctx.providers, ctx.apifyEigenerErlaubt !== false, ctx.chatgptPlanErlaubt !== false])) {
+    if (vorher !== JSON.stringify([ctx.providers, ctx.apifyEigenerErlaubt !== false, ctx.chatgptPlanErlaubt !== false, ctx.chatgptPlanProducer === true])) {
       this.emit("configChanged");
       this.recompute();
     }
@@ -329,6 +332,7 @@ export class LlmProviderManager extends EventEmitter {
    */
   producerFaelltAufOrganisationZurueck(kind: LlmProviderKind): boolean {
     if (kind !== "openai") return false;
+    if (this.producerUeberAbo()) return false;
     if (this.keySource(kind) !== "eigen") return false;
     if ((this.store.getConfig().openaiAuthMode ?? "api-key") !== "subscription") return false;
     if (this.store.hasKey("openai")) return false;
@@ -403,6 +407,35 @@ export class LlmProviderManager extends EventEmitter {
   }
 
   /**
+   * docs/PLAN_CHATGPT_ABO_UEBERALL.md (E4): Laufen die Producer ueber das
+   * ChatGPT-Abo? Abo nutzbar, Anbieter OpenAI im Abo-Modus, Einstellung des
+   * Nutzers an, und unter Anbieter-Sperre nur mit Freigabe der Organisation.
+   */
+  producerUeberAbo(): boolean {
+    const cfg = this.store.getConfig();
+    if (cfg.kind !== "openai" || (cfg.openaiAuthMode ?? "api-key") !== "subscription") return false;
+    if (!this.aboNutzbar()) return false;
+    if (cfg.chatgptPlanProducer === false) return false;
+    if (this.isProviderLocked() && this.org.chatgptPlanProducer !== true) return false;
+    return true;
+  }
+
+  /** Token fuer den Loopback-Dienst der Producer; null, wenn kein nutzbares Abo. */
+  async planTokenFuerProducer(): Promise<{ accessToken: string; model?: string } | null> {
+    if (!this.producerUeberAbo()) return null;
+    const r = await this.store.getOpenAISubscriptionRecord().catch(() => null);
+    if (!r?.accessToken) return null;
+    const modelle = getCachedPlanModelle(r.accessToken);
+    const model = r.planModel ?? (modelle && modelle.length > 0 ? standardPlanModell(modelle) : undefined);
+    return { accessToken: r.accessToken, ...(model ? { model } : {}) };
+  }
+
+  setChatgptPlanProducer(an: boolean): void {
+    this.store.setConfig({ chatgptPlanProducer: an });
+    this.recompute();
+  }
+
+  /**
    * Abo-Verbindung vorhanden UND von der Organisation erlaubt. Die
    * Anbieter-Sperre schliesst das persoenliche Abo NICHT aus, wenn die
    * Organisation es ausdruecklich freigibt (Schalter „Persoenliches
@@ -444,6 +477,8 @@ export class LlmProviderManager extends EventEmitter {
       modelle,
       planScope: z?.planScope ?? false,
       erlaubt: this.chatgptPlanErlaubt(),
+      firmenverarbeitung: this.store.getConfig().chatgptPlanProducer !== false,
+      firmenverarbeitungMoeglich: !this.isProviderLocked() || this.org.chatgptPlanProducer === true,
     };
   }
 
@@ -551,7 +586,7 @@ export class LlmProviderManager extends EventEmitter {
     providerLock: boolean;
     policyModels: { chatModel: string | null; producerModel: string | null };
     /** docs/PLAN_SIGN_IN_WITH_CHATGPT.md — Kurzfassung der Verbindung (sync, letzter Stand). */
-    chatgptPlan: { flow: "plan" | null; email: string | null; modell: string | null; planScope: boolean; erlaubt: boolean; modelle: Array<{ id: string; label: string; istStandard: boolean }> };
+    chatgptPlan: { flow: "plan" | null; email: string | null; modell: string | null; planScope: boolean; erlaubt: boolean; firmenverarbeitung: boolean; firmenverarbeitungMoeglich: boolean; modelle: Array<{ id: string; label: string; istStandard: boolean }> };
   } {
     const pol = getOrgPolicy();
     return {
@@ -571,6 +606,8 @@ export class LlmProviderManager extends EventEmitter {
           modell: z?.modell ?? (modelle.length > 0 ? standardPlanModell(modelle) : null),
           planScope: z?.planScope ?? false,
           erlaubt: this.chatgptPlanErlaubt(),
+          firmenverarbeitung: this.store.getConfig().chatgptPlanProducer !== false,
+          firmenverarbeitungMoeglich: !this.isProviderLocked() || this.org.chatgptPlanProducer === true,
           modelle,
         };
       })(),
@@ -1029,6 +1066,8 @@ export class LlmProviderManager extends EventEmitter {
     ollamaUrl?: string;
     /** O5 — Aufrufe ueber den Stellvertreter-Proxy (Organisationsschluessel). */
     viaGateway?: boolean;
+    /** ChatGPT-Abo: Producer holen den Token vom Loopback-Dienst (docs/PLAN_CHATGPT_ABO_UEBERALL.md). */
+    planToken?: boolean;
   } | null> {
     const cfg = this.getConfig();
     const kind = cfg.kind;
@@ -1086,9 +1125,16 @@ export class LlmProviderManager extends EventEmitter {
       env.anthropicSubscriptionToken = token;
       return env;
     }
-    // v0.1.353 — OpenAI-Abo-Modus ist nicht über die env-Shape an
-    // Producer durchgeplumbt → wie "kein Key" behandeln (Producer
-    // nutzen ihren env-LLM). Der Chat-Agent nutzt den Token in-process.
+    // docs/PLAN_CHATGPT_ABO_UEBERALL.md: Producer ueber das Abo. Kein Token in
+    // der Umgebung; der Supervisor gibt den Loopback-Endpunkt mit. Modell =
+    // im Abo gewaehltes (oder Standard des Kontos), nicht LLM_MODEL.
+    if (kind === "openai" && this.producerUeberAbo()) {
+      const t = await this.planTokenFuerProducer();
+      if (!t) return null;
+      env.planToken = true;
+      env.model = t.model ?? undefined;
+      return env;
+    }
     if (
       kind === "openai" &&
       (cfg.openaiAuthMode ?? "api-key") === "subscription"

@@ -2070,7 +2070,7 @@ export function ProviderSection() {
     hasKey.anthropic || hasAnthropicSubscriptionToken;
   // v0.1.353 — analog: OpenAI hat eine Credential, wenn ein API-Key ODER
   // eine ChatGPT-Abo-Verbindung existiert.
-  const chatgptPlan = cfg.data.chatgptPlan ?? { flow: null, email: null, modell: null, planScope: false, erlaubt: true, modelle: [] };
+  const chatgptPlan = cfg.data.chatgptPlan ?? { flow: null, email: null, modell: null, planScope: false, erlaubt: true, firmenverarbeitung: true, firmenverarbeitungMoeglich: true, modelle: [] };
   // Vorgabe der Organisation: ohne Freigabe zaehlt eine gespeicherte Verbindung nicht.
   const hasOpenAISubscriptionToken = cfg.data.hasOpenAISubscriptionToken && chatgptPlan.erlaubt;
   const openaiHasAnyCredential = hasKey.openai || hasOpenAISubscriptionToken;
@@ -2116,11 +2116,16 @@ export function ProviderSection() {
   // Chat laeuft ueber das ChatGPT-Abo: das Modell kommt aus der Abo-Karte
   // (Kontoliste), die lokale Hauptmodell-Auswahl ist fuer den Chat wirkungslos.
   const chatUeberAbo = activeKind === "openai" && !viaOrgActive && hasOpenAISubscriptionToken;
+  // docs/PLAN_CHATGPT_ABO_UEBERALL.md: Firmenverarbeitung laeuft ueber das Abo,
+  // sofern die Einstellung an ist und die Organisation es (unter Sperre) erlaubt.
+  const aboFuerProducer = aboNurChat && chatgptPlan.firmenverarbeitung !== false && chatgptPlan.firmenverarbeitungMoeglich !== false;
   const producerChannel: string | null = !aboNurChat
     ? null
-    : orgProviders.openai
-      ? `Schlüssel der Organisation (…${orgProviders.openai}) — das ChatGPT-Abo gilt nur im Chat`
-      : "nicht möglich — das ChatGPT-Abo gilt nur im Chat; API-Schlüssel unten hinterlegen oder lokales Modell wählen";
+    : aboFuerProducer
+      ? "ChatGPT-Abo (Sprachmodus und Deep Research brauchen weiter einen Schlüssel)"
+      : orgProviders.openai
+        ? `Schlüssel der Organisation (…${orgProviders.openai}) — Firmenverarbeitung über das Abo ist ausgeschaltet`
+        : "nicht möglich — Firmenverarbeitung über das Abo ist ausgeschaltet; API-Schlüssel unten hinterlegen oder lokales Modell wählen";
   // v0.1.505 — nur noch ChatGPT: die Claude-Abo-Anmeldung gibt es nicht mehr.
   const channelIsSubscription =
     activeKind === "openai" && !viaOrgActive && hasOpenAISubscriptionToken;
@@ -2208,7 +2213,7 @@ export function ProviderSection() {
               {policyModels?.producerModel && <> Hintergrund: <code>{policyModels.producerModel}</code>.</>}{" "}
               Aufrufe laufen über den Schlüssel der Organisation.
               {hasOpenAISubscriptionToken && (
-                <> Dein persönliches ChatGPT-Abo ist freigegeben und hat im Chat und in der Hintergrund-KI Vorrang; die Verarbeitungs-Producer laufen über den Schlüssel der Organisation.</>
+                <> Dein persönliches ChatGPT-Abo ist freigegeben und hat im Chat und in der Hintergrund-KI Vorrang; die Firmenverarbeitung läuft {chatgptPlan.firmenverarbeitungMoeglich && chatgptPlan.firmenverarbeitung !== false ? "ebenfalls über dein Abo (von der Organisation freigegeben)" : "über den Schlüssel der Organisation"}.</>
               )}
             </span>
           </div>
@@ -2436,7 +2441,7 @@ interface OpenAISubscriptionCardProps {
   openaiAuthMode: "api-key" | "subscription";
   activeKind: LlmProviderKind;
   /** docs/PLAN_SIGN_IN_WITH_CHATGPT.md — Kurzfassung aus dem Bundle. */
-  plan: { flow: "plan" | null; email: string | null; modell: string | null; planScope: boolean; erlaubt: boolean; modelle: Array<{ id: string; label: string; istStandard: boolean }> };
+  plan: { flow: "plan" | null; email: string | null; modell: string | null; planScope: boolean; erlaubt: boolean; firmenverarbeitung?: boolean; firmenverarbeitungMoeglich?: boolean; modelle: Array<{ id: string; label: string; istStandard: boolean }> };
 }
 
 const CHATGPT_USAGE_URL = "https://chatgpt.com/settings/usage";
@@ -2525,8 +2530,27 @@ function OpenAISubscriptionContent({
     },
   });
 
+  const firmenverarbeitung = useMutation({
+    mutationFn: async (an: boolean) => {
+      const r = await window.api.agent.setChatgptPlanProducer(an);
+      return r.stand;
+    },
+    onSuccess: (st) => {
+      setStand(st);
+      setHint(st.firmenverarbeitung ? "Firmenverarbeitung läuft über dein ChatGPT-Abo. Producer starten neu." : "Firmenverarbeitung läuft nicht mehr über das Abo. Producer starten neu.");
+      setHintKind("ok");
+      qc.invalidateQueries({ queryKey: ["agent", "providerConfig"] });
+    },
+    onError: (err) => {
+      setHint(err instanceof Error ? err.message : String(err));
+      setHintKind("error");
+    },
+  });
+
   const isActiveSubscription = activeKind === "openai" && openaiAuthMode === "subscription";
   const modelle = stand?.modelle ?? plan.modelle;
+  const fvAn = (stand?.firmenverarbeitung ?? plan.firmenverarbeitung) !== false;
+  const fvMoeglich = (stand?.firmenverarbeitungMoeglich ?? plan.firmenverarbeitungMoeglich) !== false;
   const gewaehlt = stand?.modell ?? plan.modell ?? "";
 
   // `anmelden` = Anmeldefenster oeffnen; ohne Verbindung zeigt der erste
@@ -2595,7 +2619,25 @@ function OpenAISubscriptionContent({
                 ))}
               </select>
               <span className="muted small">
-                Für dein Konto freigegebene Modelle, in der Reihenfolge von OpenAI. Gilt für Chat und Hintergrund-KI.
+                Für dein Konto freigegebene Modelle, in der Reihenfolge von OpenAI. Gilt für Chat, Hintergrund-KI und Firmenverarbeitung.
+              </span>
+            </label>
+          )}
+          {istPlan && plan.planScope && (
+            <label className="org-check" style={{ maxWidth: 560 }}>
+              <input
+                type="checkbox"
+                checked={fvAn && fvMoeglich}
+                disabled={!fvMoeglich || firmenverarbeitung.isPending}
+                onChange={(e) => firmenverarbeitung.mutate(e.target.checked)}
+              />
+              <span>
+                Firmenverarbeitung über das ChatGPT-Abo
+                <span className="org-check__hint">
+                  {fvMoeglich
+                    ? "Profile, Jahresabschlüsse, Kontakte, Bewertung und Recherche (Standard) laufen über dein Abo-Kontingent. Ein großer Import kann das Wochenlimit aufbrauchen; setze in ChatGPT → Settings → Usage ein Limit für AVA. Sprachmodus, Telegram-Sprachantwort und Deep Research brauchen weiter einen Schlüssel."
+                    : "Deine Organisation gibt die Firmenverarbeitung über persönliche Abos nicht frei; sie läuft über den Schlüssel der Organisation."}
+                </span>
               </span>
             </label>
           )}
@@ -2611,7 +2653,7 @@ function OpenAISubscriptionContent({
         <div className="siwc-hinweis" role="note">
           <p style={{ marginTop: 0 }}>
             <strong>Bevor du dich anmeldest:</strong> AVA nutzt dein ChatGPT-Abo nicht nur im Chat, sondern auch für die
-            Hintergrund-KI (Meldungen, Vorschläge, Auffrischung). Das verbraucht dein wöchentliches Kontingent, das du
+            Hintergrund-KI (Meldungen, Vorschläge, Auffrischung) und die Firmenverarbeitung (abschaltbar). Das verbraucht dein wöchentliches Kontingent, das du
             mit allen verbundenen Apps teilst. Setze deshalb in{" "}
             <a href={CHATGPT_USAGE_URL} target="_blank" rel="noreferrer">ChatGPT → Settings → Usage</a> ein Limit für
             AVA, zum Beispiel 30 Prozent. Du kannst die Verbindung dort jederzeit trennen.

@@ -1057,6 +1057,9 @@ const api = {
       modell: string | null,
     ): Promise<{ ok: true; stand: import("../shared/types").ChatgptPlanStand } | { ok: false; error: string }> =>
       ipcRenderer.invoke("agent:setChatgptPlanModell", modell),
+    /** docs/PLAN_CHATGPT_ABO_UEBERALL.md: Firmenverarbeitung (Producer) ueber das Abo. */
+    setChatgptPlanProducer: (an: boolean): Promise<{ ok: true; stand: import("../shared/types").ChatgptPlanStand }> =>
+      ipcRenderer.invoke("agent:setChatgptPlanProducer", an),
 
     // Memory (Phase 8.d). The probe is the FirstRunWizard's signal that
     // transcripts will (or won't) survive a restart; `listConversations`
