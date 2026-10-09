@@ -188,6 +188,22 @@ die Kosten der Einzelabschlüsse.
   Toechter-Zeilen brauchen Sitz oder Anteil. Im Browser an einer
   Container-Struktur geprueft; die echte Seite steht hinter einer
   Sicherheitsabfrage, Nachpruefung per Neuverarbeitung.
+- **Live-Test Strama-MPS Nr. 2 (2026-10-09, v0.1.778):** Kennzahlen der
+  Muttergesellschaft (783 Mitarbeiter, 226 Mio. Umsatz), Lagebericht mit
+  Konzern-Praefix, Konzernmutter und die neun Toechter des Lageberichts mit
+  drei Stammdaten-Treffern kamen an. Drei Nachbesserungen (v0.1.782,
+  company-publication 3acc6d1): (1) Anhang-Tabelle „Name und Sitz der
+  Gesellschaft | Waehrung | Anteil | Festkapital in Landeswaehrung" lieferte
+  Dubletten mit Land in der Sitz-Zelle und Festkapital als Land → Land-Spalte
+  nur bei Kopf „Land/Sitzland/Staat", Laenderliste fuer die Sitz-Zelle,
+  Rechtsform mit Komma bleibt beim Namen, Zusammenfuehrung je Gesellschaft;
+  (2) Geschaeftsfuehrer standen als `list_table_ul` nach der Einleitung
+  „… waren:" → Walker trennt Listeneintraege mit „; ", Parser verbindet
+  Einleitung und Liste (vorher ein Name „Helmut Petzko Martin Ebner");
+  (3) Gateway: Frische-Gate verwarf Block-Batches 2 bis 9, weil jede Batch
+  eine Lauf-ID mit Suffix traegt → Vergleich ohne Suffix (nur 100 von 893
+  Bloecken waren gespeichert; betrifft den Suchkorpus aller Firmen mit mehr
+  als 100 Bloecken seit v0.1.426).
 - **Offen:** Live-Test mit
   Strama-MPS nach Release (Neuverarbeitung der Publikationen; Log-Zeilen
   "Semantische Nachsuche" und "Geroutete Analyse" pruefen, Schwelle 0,45 ggf.
