@@ -1,13 +1,14 @@
 # AVA headless auf Fly (docs/PLAN_AVA_CLOUD.md §12). Ein App = ein Konto.
-# Deploy aus der Repo-Wurzel (Build-Kontext), Token nur fuer das Vendoring:
-#   fly deploy -c services/desktop/fly.server.toml --build-secret npm_token="$NPM_TOKEN"
+# Deploy mit der Repo-Wurzel als Build-Kontext (erstes Argument), Token nur fuer
+# das Vendoring; der Dockerfile-Pfad gilt relativ zu dieser Datei:
+#   fly deploy "$(git rev-parse --show-toplevel)" -c services/desktop/fly.server.toml --build-secret npm_token="$NPM_TOKEN"
 # Erstes Mal: fly apps create headless-ava; das Volume legt der Deploy ueber [mounts] an.
 # Secrets einmalig: fly secrets set AVA_SECRETS_KEY=$(openssl rand -hex 32) AVA_SETUP_TOKEN=$(openssl rand -base64 18)
 app = "headless-ava"
 primary_region = "fra"
 
 [build]
-  dockerfile = "services/desktop/Dockerfile.server"
+  dockerfile = "Dockerfile.server"
 
 [env]
   AVA_SERVER_BIND = "0.0.0.0"
