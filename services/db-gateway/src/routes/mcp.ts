@@ -340,7 +340,7 @@ async function fuehreAus(app: OpenAPIHono, token: string, name: string, args: Re
       if (!zeile?.transactionId) return { text: "Die Firma steht nicht in „Meine Firmen“ oder wurde noch nie verarbeitet — zuerst import_anlegen.", isError: true };
       const r = await api(app, token, "POST", `/v1/transactions/${encodeURIComponent(zeile.transactionId)}/entities/${encodeURIComponent(id)}/retry`, { stage: stufe, ...(zeile.name ? { companyName: zeile.name } : {}) });
       if (!r.ok) return { text: fehlerText(r), isError: true };
-      return { text: kompakt({ transactionId: zeile.transactionId, stufe, hinweis: "Angestossen. Die Verarbeitung laeuft, sobald die AVA-App des Nutzers laeuft; Stand mit auftrag_status.", ...(r.json as object) }) };
+      return { text: kompakt({ transactionId: zeile.transactionId, stufe, hinweis: "Angestossen. Die Verarbeitung laeuft, sobald AVA beim Nutzer laeuft (Desktop-App oder Server); Stand mit auftrag_status.", ...(r.json as object) }) };
     }
     case "auftrag_status": {
       const id = String(args.transactionId ?? "").trim();
