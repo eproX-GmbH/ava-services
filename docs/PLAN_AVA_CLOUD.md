@@ -9,7 +9,7 @@ die Architektur umzuwerfen? Ergänzt und ersetzt in Teilen
 
 Status: Refactoring (§12) freigegeben 2026-10-09 mit den Vorschlägen aus §12.5
 (R1/R2 vor dem MCP-Relais, Wächter build-blockierend, `core/` als Verzeichnis).
-**R1 in v0.1.787**, **R2a (IPC nach Domänen) in v0.1.788**, **R2b (bootstrapCore) in v0.1.789**, **R3 (Server-Einstieg) in v0.1.790** (§12.6–§12.9).
+**R1 in v0.1.787**, **R2a (IPC nach Domänen) in v0.1.788**, **R2b (bootstrapCore) in v0.1.789**, **R3 (Server-Einstieg) in v0.1.790**, **R4 (Setup-Seite, fensterlose Ersatzwege) in v0.1.791** (§12.6–§12.10).
 
 ## 1. Kurzfassung
 
@@ -712,4 +712,37 @@ Docker-Build (fünf Anläufe, alle Lehren im Dockerfile kommentiert):
    („wartet, nicht angemeldet“), `/data` angelegt, Device-Flow-Schleife läuft bis
    zum Keycloak-Schalter. Verkleinern (Producer-Abhängigkeiten teilen,
    Multi-Stage je Producer) ist Feinarbeit für später.
+
+### 12.10 Stand R4: Setup-Seite und fensterlose Ersatzwege (v0.1.791, 2026-10-09)
+
+- **Setup-Seite `/setup`** im Server, geschützt durch ein Setup-Token
+  (`AVA_SETUP_TOKEN` oder beim Start erzeugt und ins Log geschrieben; Vergleich
+  zeitkonstant). Drei Abschnitte: Anmeldung (Device-Flow-Code), API-Schlüssel je
+  Anbieter (OpenAI, Google, Mistral, DeepSeek, xAI, Qwen; Anthropic gibt es nur
+  als Abo-Anmeldung im Fenster), ChatGPT-Abo verbinden. Speichern ist gesperrt,
+  solange `AVA_SECRETS_KEY` fehlt. `/status` zeigt den Modellzugang mit.
+- **ChatGPT-Abo ohne Fenster** (`auth/siwc-headless.ts`): derselbe Flow wie im
+  Fenster (PKCE, feste Weiterleitung 127.0.0.1:1456, dynamische Client-ID je
+  Installation, Prüfung von State und Client-ID), nur dass die Person die
+  Weiterleitungsadresse aus der Adresszeile auf `/setup` einfügt. Die
+  Übernahme ins Provider-Store (`auth/siwc-anwenden.ts`) teilen sich Fenster
+  (ipc/agent.ts) und Server, damit beide dieselbe Hülle schreiben. Link 15
+  Minuten gültig.
+- **Telegram-Sprachnachrichten** laufen ohne Fenster über ffmpeg
+  (`AVA_FFMPEG_BIN` oder PATH; im Image installiert); auf dem Desktop bleibt der
+  WebAudio-Weg, ffmpeg wird dort nicht vorausgesetzt.
+- **Link-Beobachter** ohne Fenster: statischer Abruf per fetch mit
+  Text-Extraktion aus dem HTML, ohne Scrollen, Pagination und Screenshot; steht
+  so in der Notiz des Laufs. JavaScript-gerenderte Seiten liefern nur ihr
+  Grundgerüst. **Discovery-Mini-Profile** nutzen ohne Fenster nur den
+  fetch-Weg.
+
+Geprüft: Typecheck, Build Desktop und Server, Wächter, Test-Skripte;
+Rauchtest der Setup-Seite (401 ohne Token, Schlüssel speichern, Anmeldelink
+erzeugen, falsche Callback-Adresse wird mit „Sicherheitsprüfung
+fehlgeschlagen“ abgewiesen). Der echte ChatGPT-Tausch und ffmpeg mit einer
+echten Telegram-Sprachnachricht sind im Container noch zu testen.
+
+Damit ist §12.3 R1–R4 umgesetzt. Offen bleiben Stufe 3 (Node-Modus: LinkedIn,
+Mikrofon, Anthropic-Abo-Anmeldung) und das MCP-Relais X1–X3 (§11.5).
 

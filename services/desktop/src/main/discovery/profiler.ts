@@ -18,6 +18,7 @@
 import { appWirdBeendet } from "../file-logger";
 import * as yup from "yup";
 import { BrowserWindow } from "electron";
+import { platform } from "../../core/platform";
 import type { GatewayClient } from "../agent/gateway-client";
 import { radarActivity } from "./activity";
 import { hardenBackgroundWindow } from "../download-guard";
@@ -227,6 +228,8 @@ async function fetchTextViaBrowser(url: string): Promise<string | null> {
   const run = async (): Promise<string | null> => {
     // Beim Beenden keine neuen Fenster mehr (Absturz beim Beenden, 2026-10-04).
     if (appWirdBeendet()) return null;
+    // Server: kein Fenster; der fetch-Weg davor ist das Ende der Fahnenstange.
+    if (platform().kind !== "electron") return null;
     let win: BrowserWindow | null = null;
     try {
       win = new BrowserWindow({

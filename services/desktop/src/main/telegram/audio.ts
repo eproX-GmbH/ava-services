@@ -14,6 +14,49 @@
 import { appWirdBeendet } from "../file-logger";
 import { hardenBackgroundWindow } from "../download-guard";
 import { BrowserWindow } from "electron";
+import { spawn } from "node:child_process";
+import { platform } from "../../core/platform";
+
+/**
+ * R4 (docs/PLAN_AVA_CLOUD.md §12): Ohne Fenster (Server) wandelt ffmpeg. Die
+ * Programmdatei kommt aus `AVA_FFMPEG_BIN` oder vom PATH; im Container ist sie
+ * installiert, auf dem Desktop wird sie nicht vorausgesetzt (Fenster-Weg).
+ */
+function ffmpegBin(): string {
+  return process.env.AVA_FFMPEG_BIN?.trim() || "ffmpeg";
+}
+
+async function decodeMitFfmpeg(input: Buffer): Promise<Buffer | null> {
+  return new Promise((resolve) => {
+    let child: ReturnType<typeof spawn>;
+    try {
+      child = spawn(ffmpegBin(), ["-hide_banner", "-loglevel", "error", "-i", "pipe:0", "-ar", "16000", "-ac", "1", "-f", "wav", "pipe:1"], {
+        stdio: ["pipe", "pipe", "pipe"],
+      });
+    } catch {
+      resolve(null);
+      return;
+    }
+    const out: Buffer[] = [];
+    let fehler = "";
+    child.stdout?.on("data", (d: Buffer) => out.push(d));
+    child.stderr?.on("data", (d: Buffer) => (fehler += d.toString("utf8")));
+    child.on("error", (err) => {
+      console.warn("[telegram] ffmpeg nicht startbar:", err instanceof Error ? err.message : String(err));
+      resolve(null);
+    });
+    child.on("close", (code) => {
+      if (code !== 0) {
+        console.warn("[telegram] ffmpeg fehlgeschlagen:", code, fehler.slice(0, 300));
+        resolve(null);
+        return;
+      }
+      resolve(Buffer.concat(out));
+    });
+    child.stdin?.on("error", () => {});
+    child.stdin?.end(input);
+  });
+}
 
 /** Obergrenze, damit eine Monster-Datei nicht den Speicher sprengt. */
 const MAX_INPUT_BYTES = 12 * 1024 * 1024;
@@ -26,6 +69,10 @@ const MAX_INPUT_BYTES = 12 * 1024 * 1024;
 export async function decodeToWav16k(input: Buffer): Promise<Buffer | null> {
   if (input.byteLength === 0 || input.byteLength > MAX_INPUT_BYTES) return null;
   if (appWirdBeendet()) return null;
+  // Server oder ausdrücklich gesetztes ffmpeg: ohne Fenster wandeln.
+  if (platform().kind !== "electron" || process.env.AVA_FFMPEG_BIN) {
+    return decodeMitFfmpeg(input);
+  }
 
   const win = new BrowserWindow({
     show: false,

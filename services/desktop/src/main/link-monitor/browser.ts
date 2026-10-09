@@ -19,6 +19,7 @@
 import { appWirdBeendet } from "../file-logger";
 import { hardenBackgroundWindow } from "../download-guard";
 import { BrowserWindow } from "electron";
+import { platform } from "../../core/platform";
 import type { LlmProviderManager } from "../agent/providers";
 import { checkTarget, clearInterstitials } from "./interstitial";
 import { LINK_MONITOR_RUN_TIMEOUT_MS } from "../../shared/types";
@@ -332,10 +333,94 @@ function createWindow(isLinkedIn: boolean): BrowserWindow {
  * Deadline gesammelte Teilergebnis mit `truncated`/`note` zurück. Echte
  * Abbrüche (signal.abort) werfen AbortError.
  */
+/**
+ * R4 (docs/PLAN_AVA_CLOUD.md §12): Ohne Fenster (Server) wird die Seite per
+ * fetch geladen und der sichtbare Text aus dem HTML geschält. Kein Scrollen,
+ * keine Pagination, kein Screenshot, keine Zwischenseiten-Steuerung; das steht
+ * in `note`, damit der Verlauf ehrlich bleibt. JavaScript-gerenderte Seiten
+ * liefern so nur ihr Grundgerüst.
+ */
+async function browseOhneFenster(url: string, opts: BrowseOptions): Promise<BrowseResult> {
+  const deadlineAt = opts.deadlineAt ?? Date.now() + LINK_MONITOR_RUN_TIMEOUT_MS;
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), Math.max(5_000, Math.min(60_000, deadlineAt - Date.now())));
+  opts.signal?.addEventListener("abort", () => ctrl.abort(), { once: true });
+  const leer = (note: string, finalUrl = url): BrowseResult => ({
+    finalUrl,
+    title: "",
+    text: "",
+    pages: [],
+    truncated: false,
+    pagesVisited: 0,
+    note,
+    screenshot: null,
+    onTarget: true,
+    targetNote: null,
+    interstitialActions: [],
+    botChallenge: false,
+  });
+  try {
+    const res = await fetch(url, {
+      signal: ctrl.signal,
+      redirect: "follow",
+      headers: {
+        "user-agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36",
+        accept: "text/html,application/xhtml+xml",
+        "accept-language": "de-DE,de;q=0.9,en;q=0.7",
+      },
+    });
+    const typ = res.headers.get("content-type") ?? "";
+    if (!res.ok) return leer(`Server (ohne Browser): HTTP ${res.status}`, res.url || url);
+    if (!/html|xml|text\/plain/i.test(typ)) return leer(`Server (ohne Browser): kein HTML (${typ.split(";")[0]})`, res.url || url);
+    const html = (await res.text()).slice(0, 3_000_000);
+    const title = (/<title[^>]*>([\s\S]*?)<\/title>/i.exec(html)?.[1] ?? "").replace(/\s+/g, " ").trim();
+    const text = html
+      .replace(/<script[\s\S]*?<\/script>/gi, " ")
+      .replace(/<style[\s\S]*?<\/style>/gi, " ")
+      .replace(/<noscript[\s\S]*?<\/noscript>/gi, " ")
+      .replace(/<!--[\s\S]*?-->/g, " ")
+      .replace(/<(br|p|div|li|tr|h[1-6]|section|article|header|footer|td|th)[^>]*>/gi, "\n")
+      .replace(/<[^>]+>/g, " ")
+      .replace(/&nbsp;/g, " ")
+      .replace(/&amp;/g, "&")
+      .replace(/&lt;/g, "<")
+      .replace(/&gt;/g, ">")
+      .replace(/&quot;/g, '"')
+      .replace(/&#39;/g, "'")
+      .replace(/[ \t]+/g, " ")
+      .replace(/\s*\n\s*/g, "\n")
+      .trim();
+    const truncated = text.length > MAX_TEXT_PER_PAGE;
+    const gekuerzt = truncated ? text.slice(0, MAX_TEXT_PER_PAGE) : text;
+    const zielHost = new URL(url).hostname.replace(/^www\./, "");
+    const istHost = new URL(res.url || url).hostname.replace(/^www\./, "");
+    const onTarget = istHost === zielHost || istHost.endsWith("." + zielHost);
+    return {
+      finalUrl: res.url || url,
+      title,
+      text: gekuerzt,
+      pages: [gekuerzt],
+      truncated,
+      pagesVisited: 1,
+      note: "Server (ohne Browser): statischer Seitentext, kein Screenshot, keine Pagination.",
+      screenshot: null,
+      onTarget,
+      targetNote: onTarget ? null : `Weiterleitung auf ${istHost}`,
+      interstitialActions: [],
+      botChallenge: /cf-chl|captcha|just a moment|checking your browser/i.test(html.slice(0, 20_000)),
+    };
+  } catch (err) {
+    return leer(`Server (ohne Browser): Abruf fehlgeschlagen (${err instanceof Error ? err.message : String(err)})`);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 export async function browseUrl(
   url: string,
   opts: BrowseOptions,
 ): Promise<BrowseResult> {
+  if (platform().kind !== "electron") return browseOhneFenster(url, opts);
   const deadlineAt = opts.deadlineAt ?? Date.now() + LINK_MONITOR_RUN_TIMEOUT_MS;
   const maxScrolls = opts.maxScrolls ?? 8;
   const maxPages = opts.maxPages ?? 5;

@@ -173,8 +173,8 @@ export function registerAgentIpc(deps: AgentIpcDeps): void {
         const { ladeOderErzeugeHostId } = await import("../auth/siwc-oauth");
         const { runSiwcOAuth } = await import("../auth/siwc-oauth-flow");
         const hostId = ladeOderErzeugeHostId(join(app.getPath("userData"), "siwc-host.json"));
-        const alt = await providerConfigStore.getOpenAISubscriptionRecord().catch(() => null);
-        const vorherige = alt && alt.flow === "plan" ? alt : null;
+        const { vorherigePlanHuelle, siwcErgebnisUebernehmen } = await import("../auth/siwc-anwenden");
+        const vorherige = await vorherigePlanHuelle(providerConfigStore);
         const ergebnis = await runSiwcOAuth({
           hostId,
           clientId: vorherige?.clientId ?? null,
@@ -182,27 +182,7 @@ export function registerAgentIpc(deps: AgentIpcDeps): void {
           loginHint: vorherige?.email ?? null,
           parent,
         });
-        providers.setOpenAISubscriptionRecord({
-          accessToken: ergebnis.accessToken,
-          refreshToken: ergebnis.refreshToken,
-          expiresIn: ergebnis.expiresIn,
-          flow: "plan",
-          clientId: ergebnis.clientId,
-          subject: ergebnis.subject,
-          email: ergebnis.email,
-          idToken: ergebnis.idToken,
-          scopes: (ergebnis.scope ?? "").split(/[\s+]+/).filter(Boolean),
-          // Gewaehltes Modell behalten, wenn dasselbe Konto neu verbunden wird.
-          planModel: vorherige && vorherige.subject === ergebnis.subject ? vorherige.planModel : undefined,
-        });
-        try {
-          providers.setProvider("openai");
-        } catch {
-          /* Token gespeichert, Modus auf subscription — reicht fuer die Karte */
-        }
-        // Modellliste gleich laden, damit die Auswahl sofort da ist (best-effort).
-        await providers.ladeChatgptPlanModelle().catch(() => undefined);
-        return { ok: true, email: ergebnis.email ?? null, planScope: ergebnis.planScope };
+        return await siwcErgebnisUebernehmen(providers, ergebnis, vorherige);
       } catch (err) {
         return { ok: false, error: err instanceof Error ? err.message : String(err) };
       }
