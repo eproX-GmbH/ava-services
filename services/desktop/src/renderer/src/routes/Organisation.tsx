@@ -853,7 +853,7 @@ function Vorgaben({ st, admin, busy, aktion }: { st: OrgState; admin: boolean; b
     }, "Vorgaben gespeichert. Mitglieder übernehmen sie beim nächsten Abgleich (spätestens in 10 Minuten).");
 
   if (!admin) {
-    const aus = ORG_FEATURES.filter((f) => p.features[f.key] === false).map((f) => f.label);
+    const aus = ORG_FEATURES.filter((f) => ("standardAus" in f && f.standardAus ? p.features[f.key] !== true : p.features[f.key] === false)).map((f) => f.label);
     return (
       <section className="provider-section">
         <h3>Vorgaben</h3>
@@ -901,7 +901,7 @@ function Vorgaben({ st, admin, busy, aktion }: { st: OrgState; admin: boolean; b
             <label key={f.key} className="org-check">
               <input
                 type="checkbox"
-                checked={entwurf.features[f.key] !== false}
+                checked={"standardAus" in f && f.standardAus ? entwurf.features[f.key] === true : entwurf.features[f.key] !== false}
                 disabled={busy}
                 onChange={(e) => setEntwurf({ ...entwurf, features: { ...entwurf.features, [f.key]: e.target.checked } })}
               />

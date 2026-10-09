@@ -258,3 +258,86 @@ export async function moveUserToTenantGroup(userId: string, tenantId: string, te
     if (!a.ok) throw new KeycloakAdminError(a.status, await a.text().catch(() => ""), "keycloak_error");
   }
 }
+
+// ---- MCP: Clients ueber die Admin-API anlegen (docs/PLAN_MCP_OEFFNUNG.md) ----
+//
+// Keycloak laesst anonyme Dynamic Client Registration nur mit Initial-Access-
+// Token zu. Das Gateway legt deshalb den Client selbst an: oeffentlich, nur
+// Authorization-Code mit PKCE, Redirect-URIs aus der Allowlist der Route,
+// Client-Scopes kopiert vom Desktop-Client (damit die Tokens company:read,
+// import:write usw. tragen) plus `offline_access` als optionaler Scope fuer
+// langlebige Refresh-Tokens. Braucht am Service-Account `ava-registrar` die
+// Realm-Rollen `manage-clients` und `view-clients`.
+
+export interface CreateMcpClientInput {
+  clientName: string;
+  redirectUris: string[];
+}
+
+interface ClientScopeRep {
+  id: string;
+  name: string;
+}
+
+async function clientScopesVon(clientUuid: string, art: "default" | "optional"): Promise<ClientScopeRep[]> {
+  const res = await adminFetch(`/clients/${encodeURIComponent(clientUuid)}/${art}-client-scopes`);
+  if (!res.ok) throw new KeycloakAdminError(res.status, await res.text(), "keycloak_error");
+  return (await res.json()) as ClientScopeRep[];
+}
+
+export async function createMcpClient(input: CreateMcpClientInput): Promise<{ clientId: string; uuid: string }> {
+  const env = loadEnv();
+  const vorlageId = env.KEYCLOAK_MCP_TEMPLATE_CLIENT_ID;
+  const clientId = `mcp-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+  const rep = {
+    clientId,
+    name: `MCP: ${input.clientName}`,
+    description: `Dynamisch registrierter MCP-Client (${new Date().toISOString().slice(0, 10)})`,
+    protocol: "openid-connect",
+    enabled: true,
+    publicClient: true,
+    standardFlowEnabled: true,
+    implicitFlowEnabled: false,
+    directAccessGrantsEnabled: false,
+    serviceAccountsEnabled: false,
+    redirectUris: input.redirectUris,
+    webOrigins: ["+"],
+    attributes: {
+      "pkce.code.challenge.method": "S256",
+      "post.logout.redirect.uris": "+",
+      "use.refresh.tokens": "true",
+    },
+  };
+  const res = await adminFetch("/clients", { method: "POST", body: JSON.stringify(rep) });
+  if (!res.ok) throw new KeycloakAdminError(res.status, await res.text(), "keycloak_error");
+  const location = res.headers.get("location") ?? "";
+  const uuid = location.split("/").pop() ?? "";
+  if (!uuid) throw new KeycloakAdminError(500, "Location-Header ohne Client-ID", "keycloak_error");
+
+  // Scopes der Vorlage (Desktop-Client) uebernehmen.
+  const vorlage = await adminFetch(`/clients?clientId=${encodeURIComponent(vorlageId)}`);
+  if (vorlage.ok) {
+    const liste = (await vorlage.json()) as Array<{ id: string }>;
+    const vorlageUuid = liste[0]?.id;
+    if (vorlageUuid) {
+      for (const art of ["default", "optional"] as const) {
+        const scopes = await clientScopesVon(vorlageUuid, art).catch(() => [] as ClientScopeRep[]);
+        for (const sc of scopes) {
+          await adminFetch(`/clients/${encodeURIComponent(uuid)}/${art}-client-scopes/${encodeURIComponent(sc.id)}`, { method: "PUT" }).catch(() => undefined);
+        }
+      }
+    } else {
+      logger.warn({ vorlageId }, "[mcp] Vorlage-Client nicht gefunden — Client ohne kopierte Scopes");
+    }
+  }
+  // offline_access als optionaler Scope (langlebige Refresh-Tokens fuer MCP-Clients).
+  const alle = await adminFetch("/client-scopes");
+  if (alle.ok) {
+    const scopes = (await alle.json()) as ClientScopeRep[];
+    const offline = scopes.find((s) => s.name === "offline_access");
+    if (offline) {
+      await adminFetch(`/clients/${encodeURIComponent(uuid)}/optional-client-scopes/${encodeURIComponent(offline.id)}`, { method: "PUT" }).catch(() => undefined);
+    }
+  }
+  return { clientId, uuid };
+}

@@ -151,6 +151,10 @@ const schema = z.object({
   // file:// renderer load. In dev (NODE_ENV !== "production") the
   // gateway mirrors the request Origin so any localhost port works.
   GATEWAY_ALLOWED_ORIGINS: z.string().optional(),
+  /** Oeffentliche Basis-URL des Gateways (MCP-OAuth-Metadata, docs/PLAN_MCP_OEFFNUNG.md). */
+  GATEWAY_PUBLIC_URL: z.string().url().default("https://ava-db-gateway.fly.dev"),
+  /** Keycloak-Client, dessen Client-Scopes neue MCP-Clients erben. */
+  KEYCLOAK_MCP_TEMPLATE_CLIENT_ID: z.string().default("ava-desktop"),
 
   // -------------------------------------------------------------------
   // In-App-Registration (POST /v1/auth/register). Adds two Keycloak

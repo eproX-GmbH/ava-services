@@ -26,6 +26,8 @@ import { startGfRollenNachtrag } from "./lib/gf-rollen-nachtrag";
 import { startVerflechtungenCron } from "./lib/verflechtungen";
 import { getGatewayPool } from "./lib/producer-pools";
 import { startRegisterJobCron } from "./lib/register-jobs";
+import { mcpOauthRouter } from "./routes/mcp-oauth";
+import { makeMcpRouter } from "./routes/mcp";
 
 const env = loadEnv();
 const app = new OpenAPIHono();
@@ -96,6 +98,10 @@ app.route("/internal", internalRegisterJobsRouter);
 
 // Versioned API.
 app.route("/v1", v1);
+// docs/PLAN_MCP_OEFFNUNG.md: OAuth-Discovery/Registrierung (oeffentlich) und
+// der MCP-Endpunkt (Bearer wie /v1); die Werkzeuge rufen /v1 im Prozess auf.
+app.route("/", mcpOauthRouter);
+app.route("/", makeMcpRouter(app));
 
 // OpenAPI spec + Swagger UI. Per D3 the REST + OpenAPI combo replaces tRPC.
 app.doc("/openapi.json", {

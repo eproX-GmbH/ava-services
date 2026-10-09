@@ -217,3 +217,54 @@ Freigabe vor dem Deploy.
 - **Radar aus MCP** (Scan anstoßen, Kandidaten lesen) und **Workflows aus MCP**
   (Workflow starten, Freigaben beantworten).
 
+## 9. Stand (2026-10-09, P0/P1/P3 gebaut)
+
+- **Gateway:** `routes/mcp-oauth.ts` (RFC 9728 Resource-Metadata, RFC 8414
+  AS-Metadata mit Issuer `<public>/mcp/oauth`, Endpunkte auf Keycloak,
+  Registrierung RFC 7591 ueber die Keycloak-Admin-API mit Redirect-Allowlist
+  und Rate-Limit), `routes/mcp.ts` (JSON-RPC ohne Sitzungen: initialize,
+  ping, tools/list, tools/call; Werkzeuge rufen /v1 im Prozess mit dem
+  Nutzer-Token), `lib/keycloak-admin.ts` `createMcpClient` (oeffentlicher
+  Client, PKCE S256, Client-Scopes vom Desktop-Client kopiert,
+  `offline_access` optional). Env `GATEWAY_PUBLIC_URL`,
+  `KEYCLOAK_MCP_TEMPLATE_CLIENT_ID` (Standard ava-desktop). Bei 401 am
+  `/mcp` steht `WWW-Authenticate: Bearer resource_metadata=…`.
+- **Werkzeuge:** firma_suchen, firma_lesen (Bereiche profil, register,
+  publikationen, kunden, konzern, gesellschafter, aenderungen),
+  firma_kontakte, meine_firmen, meldungen, import_anlegen (Liste oder
+  Base64-Datei), auftrag_status, auftraege.
+- **Org-Schalter** (`ORG_FEATURES` in der App): `mcp` (Standard aus),
+  `mcp.lesen`, `mcp.auftraege`, `mcp.kontakte` (Standard aus); die
+  Organisation-Seite kennt jetzt `standardAus`-Schalter (Haken nur bei
+  ausdruecklich true).
+- **Offen:** P2 Herkunft `quelle` an Transaktionen (heute Vorgangsname
+  „Import über MCP …“ und Gateway-Log), P4 `Auftrag`-Tabelle fuer
+  app-pflichtige Arten, P5 Seite „Verbundene Dienste“ und Nutzer-Doku,
+  Live-Test mit Claude Code und Claude.ai nach der Keycloak-Einrichtung.
+
+## 10. Einrichtung durch den Operator (Keycloak, einmalig)
+
+Die Registrierung legt Clients ueber den Service-Account `ava-registrar`
+an. Dafuer im Keycloak-Admin (Realm `ava`):
+
+1. Clients → `ava-registrar` → Service account roles → Assign role →
+   Filter „realm-management“ → `manage-clients` und `view-clients`
+   zuweisen.
+2. Clients → `ava-desktop` → Client scopes pruefen: die dort zugewiesenen
+   Scopes (company:read, import:write, transaction:read, …) erben die
+   MCP-Clients. `offline_access` muss als Client-Scope im Realm existieren
+   (Standard).
+3. Realm settings → Tokens: Offline Session Idle grosszuegig (z. B. 30 Tage),
+   damit Claude/ChatGPT die Verbindung halten.
+
+Test danach mit Claude Code:
+
+```bash
+claude mcp add --transport http ava https://ava-db-gateway.fly.dev/mcp
+```
+
+Claude Code holt die Metadata, registriert sich, oeffnet den Browser zur
+Keycloak-Anmeldung; danach `/mcp` im Chat und `firma_suchen` probieren.
+In Claude.ai: Einstellungen → Connectors → Custom connector mit derselben
+URL. Erscheinen keine Werkzeuge, fehlt der Org-Schalter `mcp`.
+

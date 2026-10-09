@@ -71,6 +71,13 @@ export const ORG_FEATURES = [
   { key: "relevanz", label: "Relevanz", hinweis: "Naehe-Wert je Firma und Person aus dem eigenen Verhalten des Mitglieds (Ansichten, Chat, Uebernahmen). Aus = keine Erfassung, keine Anzeige, keine Chat-Tools" },
   { key: "verflechtungen", label: "Firmen-Verflechtungen", hinweis: "Gesellschafterlisten aus dem Handelsregister laden und mit dem eigenen KI-Modell auswerten (Gesellschafter, Beteiligungen, Personen)" },
   { key: "sprachmodus", label: "Sprachmodus", hinweis: "Mit AVA sprechen (OpenAI Realtime, Speech-to-Speech). Braucht einen OpenAI-Schluessel; Gespraechsminuten kosten mehr als Chat. Aus = kein Knopf, keine Einstellung, kein Werkzeug" },
+  // docs/PLAN_MCP_OEFFNUNG.md — Zugang fuer Claude, ChatGPT und andere MCP-Clients.
+  // Hauptschalter ist bewusst AUS, bis die Organisation ihn setzt; die
+  // Unterschalter gelten nur mit Hauptschalter.
+  { key: "mcp", label: "MCP-Zugang (Claude, ChatGPT)", hinweis: "Mitglieder duerfen AVA mit Claude, ChatGPT oder anderen MCP-Clients verbinden (OAuth je Mitglied). Daten gehen dann an das Modell des jeweiligen Anbieters. Standard aus; jedes Mitglied sieht nur seine eigenen Daten", standardAus: true },
+  { key: "mcp.lesen", label: "MCP: Lesen", hinweis: "Firmen suchen und lesen, Meine Firmen, Meldungen, Vorgangsstatus" },
+  { key: "mcp.auftraege", label: "MCP: Auftraege", hinweis: "Importe und Verarbeitungen aus Claude/ChatGPT anlegen (zaehlen gegen das Kontingent wie in der App)" },
+  { key: "mcp.kontakte", label: "MCP: Kontakte", hinweis: "Ansprechpartner mit Personendaten ueber MCP lesen. Standard aus", standardAus: true },
 ] as const;
 
 // ---- Sprachmodus (docs/PLAN_SPRACHMODUS.md) ---------------------------------
