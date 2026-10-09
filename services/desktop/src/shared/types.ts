@@ -77,6 +77,7 @@ export const ORG_FEATURES = [
   { key: "mcp", label: "MCP-Zugang (Claude, ChatGPT)", hinweis: "Mitglieder duerfen AVA mit Claude, ChatGPT oder anderen MCP-Clients verbinden (OAuth je Mitglied). Daten gehen dann an das Modell des jeweiligen Anbieters. Standard aus; jedes Mitglied sieht nur seine eigenen Daten", standardAus: true },
   { key: "mcp.lesen", label: "MCP: Lesen", hinweis: "Firmen suchen und lesen, Meine Firmen, Meldungen, Vorgangsstatus" },
   { key: "mcp.auftraege", label: "MCP: Auftraege", hinweis: "Importe und Verarbeitungen aus Claude/ChatGPT anlegen (zaehlen gegen das Kontingent wie in der App)" },
+  { key: "mcp.kopf", label: "MCP: Werkzeuge der laufenden AVA", hinweis: "Claude/ChatGPT duerfen die Werkzeuge der laufenden AVA des Nutzers (Desktop-App oder Server) ueber das Relais aufrufen; Rueckfragen und Freigaben gehen an den Nutzer" },
   { key: "mcp.kontakte", label: "MCP: Kontakte", hinweis: "Ansprechpartner mit Personendaten ueber MCP lesen. Standard aus", standardAus: true },
 ] as const;
 

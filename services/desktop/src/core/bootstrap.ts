@@ -13,6 +13,7 @@
 //   await core.startBackground();                      // Ollama, Postgres, Producer, Herzschlag, Worker-Modus
 
 import { lifecycle, notifier, paths, platform, power, windows } from "./platform";
+import { KopfRelais } from "./relais/kopf-relais";
 import { PlanTokenServer } from "../main/auth/plan-token-server";
 import { meldeAbgeleiteteAdressen } from "../main/contacts/email-muster/rueckmeldung";
 import { radarActivity } from "../main/discovery/activity";
@@ -2024,6 +2025,22 @@ export async function bootstrapCore(hooks: BootstrapHooks = {}) {
 
   // v0.1.417 — Telegram-Eingang an den Orchestrator haengen (der existiert
   // erst ab hier) und gemaess gespeicherter Konfiguration starten.
+  // MCP-Relais (docs/PLAN_AVA_CLOUD.md §11): dieselben Werkzeuge wie im Chat
+  // fuer Claude/ChatGPT ueber mcp.ava.bi, solange dieser Kopf laeuft.
+  // AVA_MCP_RELAIS=0 schaltet es ab; Organisationsschalter mcp.kopf im Gateway.
+  const mcpRelais = new KopfRelais({
+    gatewayUrl: GATEWAY_URL,
+    getAccessToken: () => auth.getAccessToken(),
+    istAngemeldet: () => auth.getStatus().signedIn,
+    registry: agentRegistry,
+    version: paths().version(),
+    audit: (e) => audit({ actorType: "system", actorId: auth.getStatus().actorId ?? null, category: "agent", action: e.action, severity: "info", subjectType: null, subjectId: null, summary: e.summary, metadata: e.metadata }),
+  });
+  auth.on("status", (st: AuthStatus) => {
+    if (st.signedIn && process.env.AVA_MCP_RELAIS !== "0") mcpRelais.start();
+  });
+  lifecycle().onBeforeQuit(() => quitStep("mcpRelais.stop", () => mcpRelais.stop()));
+
   telegramInbound = new TelegramInbound({
     store: telegramStore,
     orchestrator: agent,
@@ -4292,7 +4309,9 @@ export async function bootstrapCore(hooks: BootstrapHooks = {}) {
     // Synchron schreiben: Blockiert ein Dienst die Ereignisschleife, waere eine
     // gepufferte Zeile verloren und man wuesste nicht, welcher es war.
     workerModus.protokoll((zeile) => writeLineSync("INFO ", `[worker-modus] ${zeile}`));
-    workerModus.anmelden({ name: "Herzschlag", anhalten: () => heartbeat.stop(), anlaufen: () => heartbeat.start() });
+    if (process.env.AVA_MCP_RELAIS !== "0") mcpRelais.start();
+  workerModus.anmelden({ name: "MCP-Relais", anhalten: () => mcpRelais.stop(), anlaufen: () => mcpRelais.start(), darfLaufen: () => process.env.AVA_MCP_RELAIS !== "0" });
+  workerModus.anmelden({ name: "Herzschlag", anhalten: () => heartbeat.stop(), anlaufen: () => heartbeat.start() });
     // 2026-09-18 — Nachgezogen, damit im Worker-Modus wirklich keine Kosten
     // entstehen koennen: Der LinkedIn-Zeitplan startet Feed-Scans von selbst, und
     // der Telegram-Eingang kann ueber eine eingehende Nachricht den Agenten
@@ -4465,6 +4484,7 @@ export async function bootstrapCore(hooks: BootstrapHooks = {}) {
     watchlistKeyStore: { get current() { return watchlistKeyStore; } },
     watchlistStore: { get current() { return watchlistStore; } },
     watchlistSupervisor: { get current() { return watchlistSupervisor; } },
+    mcpRelais,
     startBackground,
   };
 }

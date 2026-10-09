@@ -6,6 +6,8 @@
 // silently connect to the wrong DB (dotenv won't override exported vars).
 import "dotenv/config";
 import { serve } from "@hono/node-server";
+import { kopfRelais } from "./lib/kopf-relais";
+import { authMiddleware } from "./middleware/auth";
 import { swaggerUI } from "@hono/swagger-ui";
 import { OpenAPIHono } from "@hono/zod-openapi";
 import { cors } from "hono/cors";
@@ -110,8 +112,23 @@ app.doc("/openapi.json", {
 });
 app.get("/docs", swaggerUI({ url: "/openapi.json" }));
 
-serve({ fetch: app.fetch, port: env.PORT }, (info) => {
+// Kopf-Relais (docs/PLAN_AVA_CLOUD.md §11.2): die laufende AVA des Nutzers
+// verbindet sich ausgehend per WebSocket; die Token-Pruefung laeuft ueber die
+// normale Auth-Middleware auf dieser kleinen Route.
+app.get("/v1/kopf-relais/wer", authMiddleware, (c) => {
+  const auth = c.get("auth");
+  return c.json({ actorId: auth.actorId, tenantId: auth.tenantId });
+});
+
+const server = serve({ fetch: app.fetch, port: env.PORT }, (info) => {
   logger.info({ port: info.port }, "db-gateway listening");
+});
+kopfRelais.attach(server as import("node:http").Server, async (token) => {
+  if (!token) return null;
+  const res = await app.request(`/v1/kopf-relais/wer?access_token=${encodeURIComponent(token)}`);
+  if (!res.ok) return null;
+  const wer = (await res.json()) as { actorId?: string; tenantId?: string };
+  return wer.actorId && wer.tenantId ? { actorId: wer.actorId, tenantId: wer.tenantId } : null;
 });
 
 // §8.v3 — gateway is now the single persist service. Subscribe the
