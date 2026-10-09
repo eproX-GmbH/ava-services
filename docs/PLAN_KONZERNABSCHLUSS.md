@@ -176,6 +176,18 @@ die Kosten der Einzelabschlüsse.
   `konzern`; Heartbeat formuliert Abweichungen „laut Konzernabschluss …
   bitte im Register gegenpruefen". Abweichung vom Plan: Konzernmutter liegt
   in derselben Tabelle (richtung mutter) statt als Firmen-Fakt im Profil.
+- **Live-Test Strama-MPS (2026-10-09, v0.1.777):** drei Konzernabschluesse
+  und der Einzelabschluss 2006 kamen je als EINE Riesentabelle mit
+  tausenden leeren Zellen an, keine Prosa, keine Mutter-Kennzahlen, 165
+  falsche „Toechter" (Zeilen fremder Tabellen). Ursache: Die erste
+  `<table>` des Dokuments umschloss Ueberschriften, Prosa und weitere
+  Tabellen; der K1-Walker wandelte sie als Ganzes um. Fix v0.1.778
+  (company-publication 2b72943): Walker in `dom-walker.ts` ausgelagert,
+  Container-Tabellen werden durchlaufen, Markdown nur aus direkten Zeilen,
+  einspaltige Tabellen ohne Kopf als Prosa, Prosa-Rueckfall wie vor K1;
+  Toechter-Zeilen brauchen Sitz oder Anteil. Im Browser an einer
+  Container-Struktur geprueft; die echte Seite steht hinter einer
+  Sicherheitsabfrage, Nachpruefung per Neuverarbeitung.
 - **Offen:** Live-Test mit
   Strama-MPS nach Release (Neuverarbeitung der Publikationen; Log-Zeilen
   "Semantische Nachsuche" und "Geroutete Analyse" pruefen, Schwelle 0,45 ggf.
