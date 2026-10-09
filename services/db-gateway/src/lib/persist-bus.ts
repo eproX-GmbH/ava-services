@@ -369,6 +369,11 @@ const STAGE_IS_LLM: Record<ProducerName, boolean> = {
 
 /** Read the existing ContentFreshness row for (companyId, stage).
  *  Returns null when no row exists (treated as "fresh write" / age=Infinity). */
+/** Lauf-ID ohne Batch-Suffix (":blocks:N"). */
+function basisRunId(runId: string | null): string | null {
+  return runId ? runId.replace(/:blocks:\d+$/, "") : null;
+}
+
 async function readFreshness(
   companyId: string,
   stage: ProducerName,
@@ -465,7 +470,11 @@ function withTierGate(stage: ProducerName, inner: ApplyFn): ApplyFn {
     const companyId = data?.result?.companyId;
     const incomingTier = (data?.llmTier ?? null) as ModelTier | null;
     const incomingModel = (data?.llmModel ?? null) as string | null;
-    const incomingRunId = (data?.runId ?? null) as string | null;
+    // Block-Batches tragen die Lauf-ID mit Suffix ":blocks:N" (ein Ereignis je
+    // 100 Bloecke). Fuer das Gate zaehlt der Lauf, nicht die Batch — sonst
+    // sperrte Batch 1 alle weiteren aus (Befund Strama-MPS 2026-10-09: nur
+    // 100 von 893 Bloecken gespeichert).
+    const incomingRunId = basisRunId((data?.runId ?? null) as string | null);
     const transactionId = (event as { transaction?: string }).transaction ?? "";
 
     if (!companyId) {
@@ -593,7 +602,7 @@ async function gatePersist(
   // folgenden desselben Laufs aus ("same tier, fresh") — bei
   // company-contact (pro Seite + SERP + Cleanup je ein Event) kamen
   // dadurch nur die Personen des ersten Events an.
-  if (incomingRunId && existing?.runId && existing.runId === incomingRunId) {
+  if (incomingRunId && existing?.runId && basisRunId(existing.runId) === basisRunId(incomingRunId)) {
     return {
       apply: true,
       reason: "same run (runId match)",
