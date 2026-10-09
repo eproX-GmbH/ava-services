@@ -21,7 +21,8 @@
 //      relaxation).
 //   4. Prunes old captures on startup so disk usage stays bounded.
 
-import { app, protocol, net } from "electron";
+import { protocol, net } from "electron";
+import { paths } from "../core/platform";
 import { existsSync, promises as fs } from "node:fs";
 import { join, normalize, sep } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -45,7 +46,7 @@ export interface ScreenshotEntry {
 }
 
 function screenshotsRoot(): string {
-  return join(app.getPath("userData"), "screenshots");
+  return join(paths().get("userData"), "screenshots");
 }
 
 /** Returns the path the producer should write to. Caller passes it

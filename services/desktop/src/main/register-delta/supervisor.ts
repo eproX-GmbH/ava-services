@@ -13,11 +13,11 @@ import { spawn, type ChildProcess } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync, chmodSync } from "node:fs";
 import { hostname } from "node:os";
 import { delimiter as pathDelimiter, join } from "node:path";
-import { powerMonitor } from "electron";
 import type { MithelfenSettings, MithelfenStatus, MithelfenVerlauf, MithelfenVerlaufEintrag } from "../../shared/register-delta-types";
 import { producerLogBuffer } from "../producer-log-buffer";
 import { featureEnabled, onOrgPolicyChange } from "../org-policy";
 import { resolveProducerDirUnder } from "../producer-dirs";
+import { power, spawner } from "../../core/platform";
 
 const LOG_NAME = "register-delta";
 const STATUS_MARKER = "__AVA_RD_STATUS__";
@@ -99,8 +99,8 @@ export class MithelfenSupervisor extends EventEmitter {
     this.tokenFile = join(dir, "worker.token");
     this.verlaufFile = join(dir, "verlauf.json");
     onOrgPolicyChange(() => void this.abgleichen("policy"));
-    powerMonitor.on("on-battery", () => void this.abgleichen("akku"));
-    powerMonitor.on("on-ac", () => void this.abgleichen("netz"));
+    power().on("on-battery", () => void this.abgleichen("akku"));
+    power().on("on-ac", () => void this.abgleichen("netz"));
   }
 
   private log(line: string): void {
@@ -127,7 +127,7 @@ export class MithelfenSupervisor extends EventEmitter {
     if (!featureEnabled("stammdaten.mithelfen")) return "organisation";
     if (!this.signedIn) return "abgemeldet";
     if (!this.entry()) return "nicht_installiert";
-    if (s.nurNetzbetrieb && powerMonitor.isOnBatteryPower()) return "akku";
+    if (s.nurNetzbetrieb && power().isOnBatteryPower()) return "akku";
     if (this.zustand.gesperrtBis && Date.parse(this.zustand.gesperrtBis) > Date.now()) return "gesperrt";
     return null;
   }
@@ -245,11 +245,12 @@ export class MithelfenSupervisor extends EventEmitter {
     if (!entry || !workerId) return;
     if (!(await this.schreibeToken())) return;
     this.stopping = false;
-    const child = spawn(process.execPath, [entry], {
+    const nodeCmd = spawner().nodeCommand();
+    const child = spawn(nodeCmd.command, [entry], {
       cwd: join(entry, "..", ".."),
       env: {
         ...process.env,
-        ELECTRON_RUN_AS_NODE: "1",
+        ...nodeCmd.env,
         GATEWAY_URL: this.o.gatewayUrl,
         WORKER_ID: workerId,
         WORKER_ART: "desktop",

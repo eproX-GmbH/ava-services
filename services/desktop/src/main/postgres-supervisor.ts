@@ -2,7 +2,7 @@ import { createServer, type Server, type Socket } from "node:net";
 import { EventEmitter } from "node:events";
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
-import { app } from "electron";
+import { paths } from "../core/platform";
 import type {
   PostgresStatus,
   PostgresSupervisorState,
@@ -284,7 +284,7 @@ export class PostgresSupervisor extends EventEmitter {
    */
   private resolveDataRoot(): string {
     if (this.dataRootOverride) return this.dataRootOverride;
-    return join(app.getPath("userData"), "pglite");
+    return join(paths().get("userData"), "pglite");
   }
 }
 

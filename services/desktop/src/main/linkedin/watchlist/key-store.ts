@@ -6,7 +6,7 @@
 // mit (W7). Der Key wird NIE ueber die IPC-Grenze gespiegelt; der
 // Renderer sieht nur hasKey.
 
-import { app, safeStorage } from "electron";
+import { credentials, paths } from "../../../core/platform";
 import {
   existsSync,
   mkdirSync,
@@ -88,7 +88,7 @@ export class WatchlistKeyStore {
   private keyCache: string | null = null;
 
   constructor(dir?: string) {
-    this.dir = dir ?? join(app.getPath("userData"), "linkedin");
+    this.dir = dir ?? join(paths().get("userData"), "linkedin");
   }
 
   private configPath(): string {
@@ -219,7 +219,7 @@ export class WatchlistKeyStore {
   setKey(key: string): { ok: boolean; error?: string } {
     const trimmed = key.trim();
     if (trimmed.length < 10) return { ok: false, error: "Token zu kurz." };
-    if (!safeStorage.isEncryptionAvailable()) {
+    if (!credentials().isEncryptionAvailable()) {
       return {
         ok: false,
         error: "System-Schluesselbund nicht verfuegbar — Token kann nicht sicher gespeichert werden.",
@@ -227,7 +227,7 @@ export class WatchlistKeyStore {
     }
     try {
       mkdirSync(this.dir, { recursive: true });
-      writeFileSync(this.keyPath(), safeStorage.encryptString(trimmed), {
+      writeFileSync(this.keyPath(), credentials().encryptString(trimmed), {
         mode: 0o600,
       });
       this.keyCache = trimmed;
@@ -245,7 +245,7 @@ export class WatchlistKeyStore {
     if (this.keyCache) return this.keyCache;
     try {
       if (!existsSync(this.keyPath())) return null;
-      this.keyCache = safeStorage.decryptString(readFileSync(this.keyPath()));
+      this.keyCache = credentials().decryptString(readFileSync(this.keyPath()));
       return this.keyCache;
     } catch (err) {
       console.warn("[watchlist] key decrypt failed:", err);

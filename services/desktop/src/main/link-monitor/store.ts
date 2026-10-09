@@ -14,7 +14,7 @@ import { EventEmitter } from "node:events";
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
-import { app } from "electron";
+import { paths } from "../../core/platform";
 import {
   LINK_MONITOR_ACTIVE_CAP,
   LINK_MONITOR_DEFAULT_INTERVAL_MINUTES,
@@ -481,7 +481,7 @@ export class LinkMonitorStore extends EventEmitter {
 }
 
 function defaultDataRoot(): string {
-  return join(app.getPath("userData"), "pglite", "link-monitor");
+  return join(paths().get("userData"), "pglite", "link-monitor");
 }
 
 function toBool(v: boolean | string | number): boolean {

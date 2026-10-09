@@ -29,8 +29,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { dirname, join } from "node:path";
-import { app } from "electron";
-
+import { paths } from "../../core/platform";
 export interface TrustEntry {
   hash: string;
   trustedAt: number;
@@ -74,7 +73,7 @@ export class SkillsTrustStore extends EventEmitter {
   constructor(filePath?: string) {
     super();
     this.path =
-      filePath ?? join(app.getPath("userData"), "skills-trust.json");
+      filePath ?? join(paths().get("userData"), "skills-trust.json");
     this.dir = dirname(this.path);
   }
 

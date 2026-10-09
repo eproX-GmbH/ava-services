@@ -8,7 +8,7 @@
 // juengsten eigenen Vorgaenge im Minutentakt; gesehene Vorgaenge werden
 // unter <userData>/transaction-watcher.json gemerkt.
 
-import { app } from "electron";
+import { paths } from "../core/platform";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { Alert } from "../shared/types";
@@ -54,7 +54,7 @@ export class TransactionWatcher {
   private running = false;
 
   constructor(private readonly deps: TransactionWatcherDeps, dir?: string) {
-    this.path = join(dir ?? app.getPath("userData"), "transaction-watcher.json");
+    this.path = join(dir ?? paths().get("userData"), "transaction-watcher.json");
   }
 
   start(): void {

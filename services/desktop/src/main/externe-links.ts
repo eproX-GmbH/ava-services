@@ -14,8 +14,8 @@
 // Ankern: Sie gilt damit fuer jeden Link, auch fuer die, die spaeter dazu
 // kommen, und fuer Markdown-Inhalte, die der Agent erzeugt.
 
-import { shell, type BrowserWindow, type WebContents } from "electron";
-
+import type { BrowserWindow, WebContents } from "electron";
+import { opener } from "../core/platform";
 /** Schemata, die im Browser bzw. Mail-Programm des Nutzers landen duerfen.
  *  Alles andere (javascript:, file:, data:) wird verworfen — ein Link aus
  *  fremdem Inhalt darf nicht bestimmen, was das Betriebssystem oeffnet. */
@@ -26,7 +26,7 @@ export function extern(url: string): void {
     console.warn(`[links] nicht geoeffnet (Schema nicht erlaubt): ${url.slice(0, 120)}`);
     return;
   }
-  void shell.openExternal(url).catch((err) => {
+  void opener().openExternal(url).catch((err) => {
     console.warn("[links] konnte nicht geoeffnet werden:", err);
   });
 }

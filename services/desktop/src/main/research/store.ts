@@ -10,7 +10,7 @@ import {
   readdirSync,
 } from "node:fs";
 import { join } from "node:path";
-import { app, safeStorage } from "electron";
+import { credentials, paths } from "../../core/platform";
 import type {
   ResearchFeaturesConfig,
   ResearchFeature,
@@ -24,7 +24,7 @@ import { ProviderConfigStore } from "../agent/providers/store";
 /**
  * v0.1.172 Settings Phase A+E — research-features persistence.
  *
- * Files under `app.getPath("userData")/research/`:
+ * Files under `paths().get("userData")/research/`:
  *
  *   features.json
  *     {
@@ -34,7 +34,7 @@ import { ProviderConfigStore } from "../agent/providers/store";
  *     Plain JSON; atomic write.
  *
  *   keys/<uuid>.enc
- *     safeStorage.encryptString(plaintextKey) -- one per research-owned key.
+ *     credentials().encryptString(plaintextKey) -- one per research-owned key.
  *
  *   keys/<uuid>.meta.json
  *     {
@@ -110,7 +110,7 @@ export class ResearchFeaturesStore extends EventEmitter {
 
   private constructor() {
     super();
-    this.dir = join(app.getPath("userData"), "research");
+    this.dir = join(paths().get("userData"), "research");
     this.keysDir = join(this.dir, KEYS_DIRNAME);
     this.configPath = join(this.dir, FEATURES_FILENAME);
     if (!existsSync(this.dir)) mkdirSync(this.dir, { recursive: true });
@@ -358,11 +358,11 @@ export class ResearchFeaturesStore extends EventEmitter {
         "[research-store] Anthropic key doesn't start with 'sk-ant-api03-' -- only API keys allowed (OAuth subscription tokens are ToS-restricted to Claude Code).",
       );
     }
-    if (!safeStorage.isEncryptionAvailable()) {
+    if (!credentials().isEncryptionAvailable()) {
       console.warn("[research-store] safeStorage unavailable -- falling back to basic cipher");
     }
     const id = randomUUID();
-    const enc = safeStorage.encryptString(plaintext);
+    const enc = credentials().encryptString(plaintext);
     const tail = plaintext.slice(-4);
     const meta: ResearchKeyMeta = {
       id,
@@ -468,7 +468,7 @@ export class ResearchFeaturesStore extends EventEmitter {
       }
       try {
         const buf = readFileSync(path);
-        plaintext = safeStorage.decryptString(buf);
+        plaintext = credentials().decryptString(buf);
       } catch (err) {
         console.warn(`[research-store] decrypt failed for keyId=${cfg.keyId}:`, err);
         return null;
@@ -529,7 +529,7 @@ export class ResearchFeaturesStore extends EventEmitter {
     const path = join(this.keysDir, `${keyId}.enc`);
     if (!existsSync(path)) return null;
     try {
-      return safeStorage.decryptString(readFileSync(path));
+      return credentials().decryptString(readFileSync(path));
     } catch {
       return null;
     }

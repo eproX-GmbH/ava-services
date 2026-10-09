@@ -16,7 +16,8 @@
 // Selectors live as STRING constants below — they will break on the
 // next LinkedIn UI shift. Search for SELECTOR-FRAGILE before debugging.
 
-import { app, BrowserWindow, net } from "electron";
+import { BrowserWindow, net } from "electron";
+import { paths } from "../../core/platform";
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, writeFileSync, promises as fsPromises } from "node:fs";
 import { extname, join } from "node:path";
@@ -297,7 +298,7 @@ function isAbortError(err: unknown): boolean {
 }
 
 function mediaDir(): string {
-  return join(app.getPath("userData"), "linkedin", "media");
+  return join(paths().get("userData"), "linkedin", "media");
 }
 
 function ensureDir(p: string): void {

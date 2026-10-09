@@ -9,7 +9,7 @@
 // Was hier liegen bleibt, ist ausschliesslich das, was noch nicht
 // angekommen ist.
 
-import { app } from "electron";
+import { paths } from "../../core/platform";
 import { mkdirSync, readFileSync, writeFileSync, renameSync } from "node:fs";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
@@ -34,7 +34,7 @@ let geladen = false;
 let eintraege: AusgangSignal[] = [];
 
 function pfad(): string {
-  const dir = join(app.getPath("userData"), "relevanz");
+  const dir = join(paths().get("userData"), "relevanz");
   mkdirSync(dir, { recursive: true });
   return join(dir, "ausgang.json");
 }

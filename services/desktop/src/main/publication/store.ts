@@ -10,7 +10,7 @@
 // Schreiben, EventEmitter fuer den Producer-Neustart bei Aenderung.
 
 import { EventEmitter } from "node:events";
-import { app } from "electron";
+import { paths } from "../../core/platform";
 import {
   existsSync,
   mkdirSync,
@@ -46,7 +46,7 @@ export class PublicationStore extends EventEmitter {
   }
 
   private dir(): string {
-    return join(app.getPath("userData"), "publication");
+    return join(paths().get("userData"), "publication");
   }
 
   private filePath(): string {

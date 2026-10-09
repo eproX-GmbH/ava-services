@@ -7,10 +7,10 @@
 // directory recursively to honour the "one-click forget everything"
 // contract surfaced in the Settings UI.
 //
-// No secrets in here yet — that lands in L1 with safeStorage. Plain
+// No secrets in here yet — that lands in L1 with credentials(). Plain
 // JSON is fine for L0.
 
-import { app } from "electron";
+import { credentials, paths } from "../../core/platform";
 import { EventEmitter } from "node:events";
 import {
   existsSync,
@@ -41,7 +41,7 @@ export const DEFAULT_LINKEDIN_SETTINGS: LinkedInSettings = {
 };
 
 function dir(): string {
-  return join(app.getPath("userData"), "linkedin");
+  return join(paths().get("userData"), "linkedin");
 }
 
 function file(): string {

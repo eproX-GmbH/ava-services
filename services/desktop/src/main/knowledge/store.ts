@@ -27,7 +27,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
-import { app, safeStorage } from "electron";
+import { credentials, paths } from "../../core/platform";
 import type {
   KnowledgeProviderKind,
   KnowledgeProviderStatus,
@@ -79,7 +79,7 @@ export class KnowledgeProviderStore extends EventEmitter {
 
   private constructor() {
     super();
-    this.dir = join(app.getPath("userData"), "agent", "knowledge");
+    this.dir = join(paths().get("userData"), "agent", "knowledge");
     this.statusPath = join(this.dir, "status.json");
     if (!existsSync(this.dir)) {
       mkdirSync(this.dir, { recursive: true });
@@ -148,7 +148,7 @@ export class KnowledgeProviderStore extends EventEmitter {
 
   isEncryptionAvailable(): boolean {
     try {
-      return safeStorage.isEncryptionAvailable();
+      return credentials().isEncryptionAvailable();
     } catch {
       return false;
     }
@@ -171,7 +171,7 @@ export class KnowledgeProviderStore extends EventEmitter {
           `Einstellungen aktivieren.`,
       );
     }
-    const enc = safeStorage.encryptString(trimmed);
+    const enc = credentials().encryptString(trimmed);
     writeFileSync(this.tokenPath(kind), enc, { mode: 0o600 });
     this.emit("tokenChanged", kind);
   }
@@ -184,7 +184,7 @@ export class KnowledgeProviderStore extends EventEmitter {
     try {
       const buf = readFileSync(path);
       if (!this.isEncryptionAvailable()) return null;
-      return safeStorage.decryptString(buf);
+      return credentials().decryptString(buf);
     } catch (err) {
       console.warn(
         `[knowledge-store] decrypt failed for ${kind}:`,
@@ -231,7 +231,7 @@ export class KnowledgeProviderStore extends EventEmitter {
       apiKey: trimmedKey,
       baseUrl: trimmedUrl,
     });
-    const enc = safeStorage.encryptString(envelope);
+    const enc = credentials().encryptString(envelope);
     writeFileSync(this.tokenPath("obsidian"), enc, { mode: 0o600 });
     this.emit("tokenChanged", "obsidian");
   }
@@ -245,7 +245,7 @@ export class KnowledgeProviderStore extends EventEmitter {
     try {
       const buf = readFileSync(path);
       if (!this.isEncryptionAvailable()) return null;
-      const raw = safeStorage.decryptString(buf);
+      const raw = credentials().decryptString(buf);
       const parsed = JSON.parse(raw) as Partial<{
         apiKey: string;
         baseUrl: string;

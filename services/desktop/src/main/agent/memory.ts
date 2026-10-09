@@ -9,7 +9,7 @@ import {
   appendFileSync,
 } from "node:fs";
 import { join } from "node:path";
-import { app } from "electron";
+import { paths } from "../../core/platform";
 import type { AgentMessage, AgentMessageImage } from "../../shared/types";
 import { redactSensitiveTokens } from "../knowledge/redaction";
 
@@ -212,7 +212,7 @@ export class MemoryStore {
 
   constructor(dir?: string) {
     // Override hook for tests / dev — production always lands in userData.
-    this.dir = dir ?? join(app.getPath("userData"), "agent", "memory");
+    this.dir = dir ?? join(paths().get("userData"), "agent", "memory");
   }
 
   // ---- Probe ---------------------------------------------------------------

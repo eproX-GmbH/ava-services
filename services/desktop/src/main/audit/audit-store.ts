@@ -24,7 +24,7 @@ import { EventEmitter } from "node:events";
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
-import { app } from "electron";
+import { paths } from "../../core/platform";
 import type {
   AuditEvent,
   AuditEventInput,
@@ -338,10 +338,10 @@ export class AuditStore extends EventEmitter {
 }
 
 function defaultDataRoot(): string {
-  // app.getPath("userData") gives us the per-tenant Electron
+  // paths().get("userData") gives us the per-tenant Electron
   // userData dir. We carve out a `pglite/audit/` subdir; PGlite
   // mounts a SQLite-like WAL file there.
-  return join(app.getPath("userData"), "pglite", "audit");
+  return join(paths().get("userData"), "pglite", "audit");
 }
 
 function clamp(n: number, lo: number, hi: number): number {

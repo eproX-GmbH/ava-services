@@ -19,8 +19,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
-import { app } from "electron";
-
+import { paths } from "../../core/platform";
 /** Hard cap so the note can never bloat the scoring prompt. */
 export const CALIBRATION_NOTE_CAP = 800;
 
@@ -34,7 +33,7 @@ const EMPTY: CalibrationNote = { note: "", updatedAt: null };
 let cache: CalibrationNote | null = null;
 
 function dir(): string {
-  return join(app.getPath("userData"), "linkedin");
+  return join(paths().get("userData"), "linkedin");
 }
 function filePath(): string {
   return join(dir(), "calibration.json");

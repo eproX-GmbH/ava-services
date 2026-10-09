@@ -8,7 +8,7 @@ import {
 } from "node:fs";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
-import { app } from "electron";
+import { paths } from "../../core/platform";
 import type { Alert, AlertKind, AlertSeverity } from "../../shared/types";
 
 // AlertsStore (Phase 8.f1).
@@ -62,7 +62,7 @@ export class AlertsStore {
   private bySourceRef: Map<string, number> = new Map();
 
   constructor(dir?: string) {
-    this.dir = dir ?? join(app.getPath("userData"), "agent");
+    this.dir = dir ?? join(paths().get("userData"), "agent");
     this.path = join(this.dir, "alerts.jsonl");
   }
 

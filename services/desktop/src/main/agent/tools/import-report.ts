@@ -10,7 +10,7 @@
 
 import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { app } from "electron";
+import { paths } from "../../../core/platform";
 import * as XLSX from "xlsx";
 
 export interface ImportPreviewLike {
@@ -135,7 +135,7 @@ export async function writeImportReport(
     .replace(/^-|-$/g, "")
     .slice(0, 40);
   const filename = `AVA-${safeLabel || "Import"}-Report-${ts(opts.now)}.xlsx`;
-  const dir = app.getPath("downloads");
+  const dir = paths().get("downloads");
   const path = join(dir, filename);
   await writeFile(path, buf);
 

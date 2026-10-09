@@ -18,8 +18,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { dirname, join } from "node:path";
-import { app } from "electron";
-
+import { paths } from "../../core/platform";
 export interface SkillsPrefs {
   disabled: string[];
 }
@@ -49,7 +48,7 @@ export class SkillsPrefsStore extends EventEmitter {
   constructor(filePath?: string) {
     super();
     this.path =
-      filePath ?? join(app.getPath("userData"), "skills-prefs.json");
+      filePath ?? join(paths().get("userData"), "skills-prefs.json");
     this.dir = dirname(this.path);
   }
 

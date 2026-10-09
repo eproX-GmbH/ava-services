@@ -4,19 +4,18 @@ Auto-generiert von `services/desktop/scripts/generate-tools-md.mjs`.
 NICHT direkt bearbeiten — die Quelle der Wahrheit ist `services/desktop/src/main/agent/tools/*.ts`.
 Lauf via `pnpm -F @ava/desktop tools:doc` (oder automatisch via `build:typecheck`).
 
-Stand: 2026-09-22
-Anzahl Tools: 271
+Stand: 2026-10-09
+Anzahl Tools: 283
 
-## Firmen (22)
+## Firmen (24)
 
 ### `company_contacts`
 
 _Datei:_ `services/desktop/src/main/agent/tools/companies.ts`
 
-Get the contact aggregate for a company (board members, generic emails, phone numbers).
+Kontakte einer Firma, kompakt: Firmen-E-Mails/-Telefon/-Adresse und je Person Name, Rolle, Abteilung, E-Mail, Telefon, Profil-URLs, seit wann dabei, Kurzbeschreibung und Quelle (LinkedIn, Firmenwebsite, Websuche). Ausgeschiedene sind nicht enthalten. Belegketten (einzelne Beobachtungen mit Fundstelle) und den Verlauf (Signale, fruehere Stationen) NUR laden, wenn der Nutzer ausdruecklich nach Belegen, Herkunft oder Verlauf fragt: dann ansicht: 'voll'. Das ist bei grossen Firmen sehr umfangreich.
 
-_Parameter:_
-- `companyId: string` (required)
+_Parameter:_ keine.
 
 ### `company_crm_summary`
 
@@ -41,10 +40,9 @@ _Parameter:_
 
 _Datei:_ `services/desktop/src/main/agent/tools/companies.ts`
 
-Fetch the canonical company record (legal name, register, address, country) by its global companyId. Field `land` fasst Land und Register zusammen (z. B. "Österreich, Firmenbuch FN 56247t, Landesgericht Salzburg"); country DE | AT | CH, registerType HRB/HRA (DE) oder FN (AT), legalForm = amtliche Rechtsform, uid = Umsatzsteuer-Id. Bei oesterreichischen Firmen gibt es keinen kostenlosen Vollauszug (JustizOnline, kostenpflichtig).
+Stammdaten einer Firma (Name, Register, Anschrift, Land, Rechtsform, USt-Id; `statusWarnung` bei Insolvenz/Loeschung/Liquidation; `land` fasst Land und Register zusammen). Mit `bereiche` holst du in DEMSELBEN Aufruf weitere Abschnitte, statt einzelne company_*-Werkzeuge zu laden: profil (Kurzprofil, Branche), website (Website-Fakten), register (Registerinhalt: Geschaeftsfuehrer, Kapital, Gegenstand), stichworte, publikationen (Jahresabschluesse, kompakt), kontakte (Personen, kompakt), crm (HubSpot-Stand), datenqualitaet, technik (Tech-Stack), insolvenz, linkedin (Signale), gesellschafter (nur DE/HRB), kunden (Kunden/Partner laut Website mit Stammdaten-Treffer), konzern (Toechter, Konzernmutter, Geschaeftsfuehrung laut juengstem Konzernabschluss). Fuer eine Firmenfrage: EIN company_get mit den passenden Bereichen, nicht mehrere Einzelaufrufe. Bei oesterreichischen Firmen gibt es keinen kostenlosen Vollauszug.
 
-_Parameter:_
-- `companyId: string` (required)
+_Parameter:_ keine.
 
 ### `company_insolvency`
 
@@ -64,6 +62,16 @@ List extracted keywords/tags for a company (industries, products, themes).
 
 _Parameter:_
 - `companyId: string` (required)
+
+### `company_kunden`
+
+_Datei:_ `services/desktop/src/main/agent/tools/companies.ts`
+
+Kunden, Partner, Referenzprojekte, Technologiepartner (Herstellerprogramme wie SAP/Microsoft-Partner) und Zertifikate/Siegel (ISO, TUEV, Auszeichnungen), die eine Firma auf ihrer Website nennt (Referenzseiten, Logowaende, Fallstudien), je mit Stammdaten-Treffer (companyId, Name, Ort, stufe: sicher = eindeutiger Namenstreffer, unsicher = bester Treffer bei mehreren passenden Firmen wie Konzern und Toechter — vor dem Uebernehmen nennen). Ein Treffer laesst sich mit import_companies uebernehmen. Dazu fuer den Vertriebsblick: `gemeinsameKunden` (Kunden dieser Firma, die auch andere eigene Firmen nennen: Wettbewerber oder Partner bedienen denselben Kunden), `wirdGenanntVon` (eigene Firmen, die diese Firma als Kunden/Partner nennen) und `inMeinenFirmen` je Kunde. Hinweis fuer die Antwort: Das sind Selbstauskuenfte der Firma; konfidenz 'mittel' heisst nur ein Logo ohne Kontext.
+
+_Parameter:_
+- `companyId: string` (required)
+- `ansicht: string (enum: kompakt, voll)` — voll = mit Beleg und Quelle je Eintrag
 
 ### `company_linkedin_signals`
 
@@ -110,10 +118,11 @@ _Parameter:_
 
 _Datei:_ `services/desktop/src/main/agent/tools/companies.ts`
 
-List financial publications (annual reports etc.) for a company. Each item carries year, KPIs, and stateOfAffairs narrative.
+Jahresabschluesse und Konzernabschluesse einer Firma: je Jahr Name, art (einzel | konzern), Mitarbeiterzahl, Umsatz, Bilanzsumme, Kernaussagen des Lageberichts und Kennzahlen (kompakt, neueste 8 Jahre). WICHTIG bei art konzern: Mitarbeiter/Umsatz sind die Angaben zur Muttergesellschaft selbst (nicht konsolidiert); Konzernsummen stehen nur in Kernaussagen/Kennzahlen mit Vorsatz 'Konzern:' und gelten fuer den gesamten Konzern inkl. Toechter — in der Antwort immer so benennen. ansicht: 'voll' nur, wenn der Nutzer ausdruecklich nach Prognose, Chancen/Risiken, Zeitraeumen oder allen Jahren fragt.
 
 _Parameter:_
 - `companyId: string` (required)
+- `ansicht: string (enum: kompakt, voll)` — Standard kompakt.
 
 ### `company_search`
 
@@ -169,6 +178,16 @@ _Parameter:_
 - `fullName: string` (required) — Voller Personenname.
 - `companyName: string` — Firmenname fuer die Suche (empfohlen).
 - `chosenUrl: string` — Bereits geklaerte Profil-URL — ueberspringt die Suche und speichert direkt.
+
+### `kunden_umkehrsuche`
+
+_Datei:_ `services/desktop/src/main/agent/tools/companies.ts`
+
+Umkehrsuche ueber die Kunden-/Referenznennungen aller eigenen Firmen: Wer nennt X als Kunden, Partner oder Referenzprojekt? Suche per `name` (Teiltreffer auf den genannten Namen, z. B. 'Audi') oder per `companyId` der gesuchten Firma (trifft ueber den Stammdaten-Abgleich). Ergebnis je nennender Firma mit Art und Beleg. Vertrieblich: Wettbewerber oder Partner, die denselben Kunden bedienen; Referenzkunden einer Branche. Selbstauskuenfte der Websites, keine bestaetigten Geschaeftsbeziehungen.
+
+_Parameter:_
+- `name: string` — Firmenname oder Teil davon, wie er auf Websites stehen koennte
+- `companyId: string` — companyId der gesuchten Firma (Stammdaten-Treffer)
 
 ### `person_delete`
 
@@ -632,7 +651,7 @@ _Parameter:_
 - `content: string` (required) — The fact to remember, written as a self-contained sentence. Future-you will read this without conversation context, so don't say "the company we just discussed" — name it.
 - `tags: array` — Optional short tags for grouping (e.g. "preference", "company:acme"). Lowercase, no spaces.
 
-## Einstellungen (7)
+## Einstellungen (8)
 
 ### `publication_analysis_config`
 
@@ -642,6 +661,14 @@ Ohne Parameter: aktueller Publikations-Analysemodus. Mit `mode`: umstellen (muta
 
 _Parameter:_
 - `mode: string (enum: lazy, eager)`
+
+### `settings_chatgpt_plan`
+
+_Datei:_ `services/desktop/src/main/agent/tools/settings.ts`
+
+ChatGPT-Abo des Nutzers (Sign in with ChatGPT, Plan-Nutzung). `aktion` 'stand' liefert Verbindung, Konto, gewaehltes Modell und die fuer das Konto freigegebenen Modelle; 'modelle' laedt die Liste frisch von OpenAI; 'modell' setzt das Modell (`modell` = Slug aus der Liste, leer = Standard des Kontos; gilt fuer Chat, Hintergrund-KI und Firmenverarbeitung). 'firmenverarbeitung' schaltet mit `an`, ob auch die Firmenverarbeitung (Profile, Jahresabschluesse, Kontakte, Bewertung, Recherche Standard) ueber das Abo laeuft; Sprachmodus und Deep Research brauchen immer einen Schluessel. Die Anmeldung selbst macht der Nutzer in den Einstellungen (Knopf 'Continue with ChatGPT'); verweise dorthin, wenn keine Verbindung besteht. Nutzungslimits verwaltet der Nutzer unter chatgpt.com/settings/usage.
+
+_Parameter:_ keine.
 
 ### `settings_clear_api_key`
 
@@ -1079,6 +1106,27 @@ Liefert das angemeldete Konto (Name, E-Mail, Nutzer-ID), den Tenant (Name, Rolle
 
 _Parameter:_ keine.
 
+## aufgaben (2)
+
+### `aufgabe_beobachten`
+
+_Datei:_ `services/desktop/src/main/agent/tools/aufgaben.ts`
+
+Laesst AVA eine laufende Verarbeitung (Transaktion) im Hintergrund verfolgen: Die Leiste im Chat zeigt den Fortschritt, und sobald alle Firmen fertig sind, meldet sich AVA in DIESER Unterhaltung von selbst mit dem Ergebnis. Importe (import_excel, import_companies, import_companies_from_crm) werden automatisch beobachtet; nutze das Werkzeug fuer andere Vorgaenge mit transactionId oder wenn der Nutzer sagt „sag Bescheid, wenn es fertig ist“.
+
+_Parameter:_
+- `transactionId: string` (required)
+- `titel: string` — Kurzer Name fuer die Leiste, z. B. „Import Messekontakte“.
+
+### `aufgaben_liste`
+
+_Datei:_ `services/desktop/src/main/agent/tools/aufgaben.ts`
+
+Laufende und kuerzlich beendete Hintergrundaufgaben dieser Unterhaltung mit Fortschritt (Firmen gesamt, fertig, fehlgeschlagen, offen).
+
+_Parameter:_
+- `alle: boolean` — true = auch aus anderen Unterhaltungen
+
 ## buying-center (13)
 
 ### `buying_center_abschliessen`
@@ -1095,7 +1143,7 @@ _Parameter:_
 
 _Datei:_ `services/desktop/src/main/agent/tools/buying-center.ts`
 
-Legt fuer eine Firma ein Buying Center (Power Map nach Sieck) an und macht sie damit zum Fokuskunden des Nutzers. Zieht die bekannten Kontakte der Firma als Entwurf hinein, mit Vorschlaegen fuer Rolle und Einfluss aus dem Titel — als OFFENE Vorschlaege, nicht als Fakten. Nutze das, wenn der Nutzer sagt 'lass uns ein Buying Center machen', 'Power Map', 'wer entscheidet bei X'. Gibt es schon eines, wird es zurueckgegeben statt verdoppelt. Fragt vorher nach. Zeige danach die Karte (anzeigen-Feld) und nenne die offenen Punkte.
+Legt fuer eine Firma ein Buying Center (Power Map nach Sieck) an und macht sie damit zum Fokuskunden des Nutzers. Entwurf: zuerst die eingetragenen Geschaeftsfuehrer (Handelsregister) und Gesellschafter (Gesellschafterliste, falls vorhanden) mit Vorschlag Entscheider/Ratifizierer, dann die bekannten Kontakte der Firma nach Rang des Titels, mit Vorschlaegen fuer Rolle und Einfluss — als OFFENE Vorschlaege, nicht als Fakten. Wer in Register und Kontakten steht, ist EIN Mitglied. Nutze das, wenn der Nutzer sagt 'lass uns ein Buying Center machen', 'Power Map', 'wer entscheidet bei X'. Gibt es schon eines, wird es zurueckgegeben statt verdoppelt. Fragt vorher nach. Zeige danach die Karte (anzeigen-Feld) und nenne die offenen Punkte.
 
 _Parameter:_ keine.
 
@@ -1250,6 +1298,40 @@ Lädt das Transkript einer früheren Chat-Sitzung anhand ihrer ID. Liefert die N
 
 _Parameter:_ keine.
 
+## dateien (3)
+
+### `datei_info`
+
+_Datei:_ `services/desktop/src/main/agent/tools/dateien.ts`
+
+Metadaten und Kurzansicht einer im Chat hochgeladenen Datei (Handle att-…, Dateiname oder eindeutiger Namensteil). Ohne `datei` listet es alle Dateien dieser Unterhaltung. Lies eine Datei nur, wenn die Aufgabe ihren Inhalt braucht. Zum Weiterreichen (Mail-Anhang, Import) reicht das Handle.
+
+_Parameter:_
+- `datei: string` — Handle, Dateiname oder Namensteil; leer = alle Dateien.
+
+### `datei_lesen`
+
+_Datei:_ `services/desktop/src/main/agent/tools/dateien.ts`
+
+Liest einen Ausschnitt einer hochgeladenen Datei: Seitenbereich (`seiten: "3-5"` oder `"7"`) oder Zeichenbereich innerhalb des Gesamttexts (`von`/`bis`). Höchstens 12.000 Zeichen je Aufruf; die Antwort sagt, wo es weitergeht. Nutze vorher `datei_suchen`, um die richtige Stelle zu finden, statt eine ganze Datei seitenweise zu lesen.
+
+_Parameter:_
+- `datei: string` (required)
+- `seiten: string` — z. B. "1-3" oder "7" (1-basiert)
+- `von: integer` — Zeichenposition im Gesamttext (0-basiert)
+- `bis: integer`
+
+### `datei_suchen`
+
+_Datei:_ `services/desktop/src/main/agent/tools/dateien.ts`
+
+Sucht in einer hochgeladenen Datei nach einem Begriff oder regulären Ausdruck (ohne Groß-/Kleinschreibung) und liefert bis zu 20 Fundstellen mit Seite und Umfeld. Danach die Stelle mit `datei_lesen` lesen.
+
+_Parameter:_
+- `datei: string` (required)
+- `begriff: string` (required) — Suchbegriff oder Regex
+- `umfeld: integer` — Zeichen vor und nach dem Treffer (Standard 200)
+
 ## discovery (7)
 
 ### `discovery_candidates`
@@ -1315,16 +1397,28 @@ _Parameter:_
 - `profileSofort: boolean` — true = sofortige Mini-Profil-Verarbeitung
 - `maxOffeneKandidaten: number` — Deckel offene Kandidaten, 0 = unbegrenzt (Standard 300)
 
-## email-muster (5)
+## email-muster (6)
+
+### `email_adresse_pruefen`
+
+_Datei:_ `services/desktop/src/main/agent/tools/email-muster.ts`
+
+Prueft bis zu 10 Lokalteile (ohne @) an der Domain der Firma per SMTP-Anfrage, ohne eine Mail zu senden. Ergebnis je Adresse: existiert, existiert_nicht, unbekannt, catch_all (Server nimmt alles an, kein Beleg), gesperrt. Nutze es, wenn der Nutzer eine Adresse braucht, die nicht vorliegt (Rechnung, Buchhaltung, Bewerbung, Presse). Dauert einige Sekunden. Nichts wird gespeichert.
+
+_Parameter:_
+- `companyId: string` (required)
+- `lokalteile: array` (required) — z. B. ["rechnung", "buchhaltung", "invoice", "accounting"]
 
 ### `email_muster_config`
 
 _Datei:_ `services/desktop/src/main/agent/tools/email-muster.ts`
 
-Schaltet die lokale Hintergrund-Ableitung von E-Mail-Adressen ein oder aus. Fragt vor der Aenderung nach.
+Aendert Einstellungen der lokalen Hintergrund-Ableitung von E-Mail-Adressen: enabled (ein/aus), zuordnungAktiv (Firmenadressen mit Namen per Namensabgleich/KI-Urteil Personen zuordnen), ungeprueftAnzeigen (Adressen auch speichern, wenn die Mail-Pruefung nicht moeglich war oder ablehnte — klar als unverifiziert/abgelehnt gekennzeichnet). Mindestens ein Feld angeben. Fragt vor der Aenderung nach.
 
 _Parameter:_
-- `enabled: boolean` (required)
+- `enabled: boolean`
+- `zuordnungAktiv: boolean`
+- `ungeprueftAnzeigen: boolean`
 
 ### `email_muster_jetzt`
 
@@ -1338,7 +1432,7 @@ _Parameter:_ keine.
 
 _Datei:_ `services/desktop/src/main/agent/tools/email-muster.ts`
 
-Zeigt, ob die Hintergrund-Ableitung von E-Mail-Adressen aktiv ist, ob die Mail-Pruefung in diesem Netz moeglich ist (Port 25), wann zuletzt gelaufen und wie viele Adressen abgeleitet und verifiziert wurden. Die Ableitung laeuft lokal auf diesem Rechner, eine Firma je Durchgang, nur wenn kein Chat laeuft. Verifizierte Adressen werden als „abgeleitet · verifiziert“ gespeichert; bei Catch-all-Domains (Server nimmt jede Adresse an) nach Muster als „abgeleitet · unbestaetigt“ mit niedrigerer Zuverlaessigkeit — eine Antwort bestaetigt, ein Bounce entfernt sie.
+Zeigt, ob die Hintergrund-Ableitung von E-Mail-Adressen aktiv ist, ob die Mail-Pruefung in diesem Netz moeglich ist (Port 25), wann zuletzt gelaufen und wie viele Adressen abgeleitet und verifiziert wurden. Die Ableitung laeuft lokal auf diesem Rechner, eine Firma je Durchgang, nur wenn kein Chat laeuft. Verifizierte Adressen werden als „abgeleitet · verifiziert“ gespeichert; bei Catch-all-Domains (Server nimmt jede Adresse an) nach Muster als „abgeleitet · unbestaetigt“ mit niedrigerer Zuverlaessigkeit — eine Antwort bestaetigt, ein Bounce entfernt sie. Stufe 2: Firmenadressen mit Namen (pdettlev@…) werden Personen zugeordnet (zuordnungAktiv); ohne moegliche Pruefung (Port 25) bekommen trotzdem ALLE Personen eine Adresse, gekennzeichnet „abgeleitet · unverifiziert“ mit Baseline (ungeprueftAnzeigen), spaeter nachgeprueft.
 
 _Parameter:_ keine.
 
@@ -1346,10 +1440,10 @@ _Parameter:_ keine.
 
 _Datei:_ `services/desktop/src/main/agent/tools/email-muster.ts`
 
-Listet die einzelnen Adresspruefungen der lokalen E-Mail-Ableitung, juengste zuerst: Zeitpunkt, Firma, Person, Adresse, Muster, Ergebnis (verifiziert / abgelehnt / unklar / catch_all = unbestaetigt gespeichert / gesperrt) und ob die Adresse am Server gespeichert wurde. Optional filterbar nach Ergebnis (nur = verifiziert|abgelehnt|unklar|catch_all|gesperrt|gespeichert) oder Firma (companyId).
+Listet die einzelnen Adresspruefungen der lokalen E-Mail-Ableitung, juengste zuerst: Zeitpunkt, Firma, Person, Adresse, Muster, Ergebnis (verifiziert / zugeordnet = Firmenadresse der Person zugeordnet / abgelehnt / unklar = unverifiziert gespeichert / catch_all = unbestaetigt gespeichert / gesperrt), die Baseline-Adresse und ob die Adresse am Server gespeichert wurde. Optional filterbar nach Ergebnis (nur = verifiziert|zugeordnet|abgelehnt|unklar|catch_all|gesperrt|gespeichert) oder Firma (companyId).
 
 _Parameter:_
-- `nur: string (enum: verifiziert, abgelehnt, unklar, catch_all, gesperrt, gespeichert)`
+- `nur: string (enum: verifiziert, zugeordnet, abgelehnt, unklar, catch_all, gesperrt, gespeichert)`
 - `companyId: string`
 - `limit: number` — max. Eintraege (Standard 30)
 
@@ -1357,7 +1451,7 @@ _Parameter:_
 
 _Datei:_ `services/desktop/src/main/agent/tools/email-muster.ts`
 
-Trockenlauf ohne Netzverkehr: erkennt aus den bekannten Personen-E-Mails der Firma das Adressmuster und listet die Kandidaten-Adressen fuer Kontakte ohne E-Mail. Es wird nichts gespeichert; die echte Ableitung mit Mail-Pruefung uebernimmt der Hintergrund-Job (oder email_muster_jetzt).
+Trockenlauf ohne Netzverkehr: erkennt aus den bekannten Personen-E-Mails der Firma das Adressmuster (Baseline) und listet die Kandidaten-Adressen fuer Kontakte ohne E-Mail sowie Firmenadressen, die per Namensabgleich einer Person zugeordnet wuerden. Es wird nichts gespeichert; die echte Ableitung mit Mail-Pruefung uebernimmt der Hintergrund-Job (oder email_muster_jetzt).
 
 _Parameter:_
 - `companyId: string` (required)
@@ -1542,10 +1636,7 @@ _Datei:_ `services/desktop/src/main/agent/tools/mail.ts`
 
 Leitet eine Mail an einen anderen Empfänger weiter. Original-Mail wird als Quote im Body angehängt (englisch: 'Forwarded message'-Block). SICHERHEITSGATE: Wenn ALLE Empfänger in Allowlist sind, sendet AVA autonom; sonst Pflicht-Rückfrage via ask_user_choice. Beachtet outboundEnabled-Master-Schalter. Threading via References-Header.
 
-_Parameter:_
-- `messageId: string` (required) — ID der weiterzuleitenden Mail.
-- `to: array` (required) — Empfängerliste (mindestens einer).
-- `text: string` — Optionaler Begleittext, wird vor dem Forward-Quote eingefügt.
+_Parameter:_ keine.
 
 ### `mail_get_message`
 
@@ -1582,9 +1673,7 @@ _Datei:_ `services/desktop/src/main/agent/tools/mail.ts`
 
 Antwortet auf eine bestimmte Mail. SICHERHEITSGATE: Wenn die Quellmail trustLevel 'trusted' hat, sendet AVA autonom; bei 'known' oder 'unknown' Pflicht-Rückfrage per ask_user_choice. Hängt die korrekten Threading-Header (In-Reply-To, References) an. Adressiert die From-Adresse der Quellmail; Re:-Präfix wird auto-prepended, wenn der Betreff es noch nicht hat.
 
-_Parameter:_
-- `messageId: string` (required) — Die ID der Quellmail.
-- `text: string` (required) — Plain-Text-Antwort.
+_Parameter:_ keine.
 
 ### `mail_send`
 
@@ -1592,11 +1681,7 @@ _Datei:_ `services/desktop/src/main/agent/tools/mail.ts`
 
 Verschickt eine neue Mail von AVAs Konto. SICHERHEITSGATE: Wenn ALLE Empfänger in der Allowlist stehen, sendet AVA autonom. Wenn auch nur ein Empfänger nicht in der Allowlist ist, fragt das Tool den Nutzer per ask_user_choice. Outbound-Master-Schalter (`mail_account.outboundEnabled`) muss true sein, sonst lehnt das Tool ab. Threading via `inReplyTo` möglich, für Replies aber `mail_reply` bevorzugen.
 
-_Parameter:_
-- `to: array` (required) — Empfängerliste (mindestens einer).
-- `cc: array`
-- `subject: string` (required)
-- `text: string` (required) — Plain-Text-Body. Markdown wird NICHT konvertiert.
+_Parameter:_ keine.
 
 ### `mail_triage_config`
 
@@ -2194,6 +2279,20 @@ Listet die Firmen, die AVA im Hintergrund als naechstes beobachtet, nach Rang so
 _Parameter:_
 - `limit: integer`
 
+## research-lauf (1)
+
+### `research_run`
+
+_Datei:_ `services/desktop/src/main/agent/tools/research-lauf.ts`
+
+Startet fuer EINE Firma gezielt die Suche nach Stellenanzeigen (feature=jobs) oder nach Ausschreibungen/Expansion/Beschaffung (feature=expansion) — stufe=standard (guenstig, ca. 0,02–0,15 € je Firma) oder stufe=deep (Deep Research, gruendlicher, ca. 1–5 € je Firma, dauert Minuten). Laeuft unabhaengig von der globalen Einstellung, also auch wenn die Funktion dort auf 'Aus' steht. Braucht einen OpenAI-Schluessel (eigener oder der der Organisation). Fragt vorher nach. Ergebnisse erscheinen in der Firmenansicht (Stellenanzeigen bzw. Ereignisse & Signale); mit company_website spaeter nachsehen.
+
+_Parameter:_
+- `companyId: string` (required)
+- `name: string` — Firmenname fuer die Rueckfrage
+- `feature: string (enum: jobs, expansion)` (required)
+- `stufe: string (enum: standard, deep)` (required)
+
 ## scheduler (4)
 
 ### `schedule_cancel`
@@ -2316,7 +2415,31 @@ Substring-search across skill names + descriptions + bodies. Returns up to 10 hi
 _Parameter:_
 - `query: string` (required) — Search term (case-insensitive).
 
-## telegram (7)
+## sprachmodus (1)
+
+### `sprachmodus_konfigurieren`
+
+_Datei:_ `services/desktop/src/main/agent/tools/sprachmodus.ts`
+
+Sprachmodus (mit AVA sprechen, OpenAI Realtime) ein- oder ausschalten und einstellen: Stimme (marin, coral, sage, shimmer), Stille bis zum Ruhezustand in Sekunden, Signalton, Aktivierungswort 'Hey AVA'. Ohne Argumente: aktuelle Einstellungen zeigen. Braucht einen OpenAI-Schluessel (eigener oder Organisation). Fragt vor Aenderungen nach.
+
+_Parameter:_
+- `aktiv: boolean`
+- `stimme: string (enum: marin, coral, sage, shimmer)`
+- `ruheSekunden: integer`
+- `signalton: boolean`
+- `wachwort: boolean`
+
+## telegram (8)
+
+### `telegram_antwortmodus`
+
+_Datei:_ `services/desktop/src/main/agent/tools/telegram.ts`
+
+Stellt ein, ob AVA im Telegram-Chat standardmaessig per Textnachricht oder per Sprachnachricht (OpenAI-Stimme) antwortet. Der Nutzer kann das auch direkt in Telegram sagen ('gerne immer per Sprachnachricht'). Fragt vorher nach.
+
+_Parameter:_
+- `modus: string (enum: text, sprache)` (required)
 
 ### `telegram_connect_save_token`
 

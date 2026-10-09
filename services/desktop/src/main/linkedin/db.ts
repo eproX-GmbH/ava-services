@@ -12,7 +12,7 @@
 // L2 introduces every table; future phases can run their own ALTER
 // TABLE IF NOT EXISTS in init() when they need to extend.
 
-import { app } from "electron";
+import { paths } from "../../core/platform";
 import { mkdirSync } from "node:fs";
 import { join, sep } from "node:path";
 import type {
@@ -44,7 +44,7 @@ interface PGliteInstance {
 let pglitePromise: Promise<PGliteInstance> | null = null;
 
 function dbDir(): string {
-  return join(app.getPath("userData"), "linkedin", "db");
+  return join(paths().get("userData"), "linkedin", "db");
 }
 
 async function loadPGlite(): Promise<PGliteInstance> {
@@ -1619,7 +1619,7 @@ export interface SignalListRow {
 }
 
 function mediaRoot(): string {
-  return join(app.getPath("userData"), "linkedin", "media");
+  return join(paths().get("userData"), "linkedin", "media");
 }
 
 /** Convert an absolute media path back to a "<postDir>/<file>" relative

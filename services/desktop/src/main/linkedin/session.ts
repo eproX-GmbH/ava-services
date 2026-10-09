@@ -18,7 +18,7 @@
 // returns metadata only, and L2 will read them directly main-side
 // when constructing its Playwright context.
 
-import { app, safeStorage } from "electron";
+import { credentials, paths } from "../../core/platform";
 import {
   existsSync,
   mkdirSync,
@@ -30,7 +30,7 @@ import { join } from "node:path";
 import type { LinkedInSessionMeta } from "../../shared/types";
 
 function dir(): string {
-  return join(app.getPath("userData"), "linkedin");
+  return join(paths().get("userData"), "linkedin");
 }
 
 function blobPath(): string {
@@ -102,8 +102,8 @@ export function readStoredSession(): {
     if (!hasStoredSession()) return null;
     const blob = readFileSync(blobPath());
     let cookiesJson: string;
-    if (safeStorage.isEncryptionAvailable()) {
-      cookiesJson = safeStorage.decryptString(blob);
+    if (credentials().isEncryptionAvailable()) {
+      cookiesJson = credentials().decryptString(blob);
     } else {
       cookiesJson = blob.toString("utf8");
     }
@@ -140,8 +140,8 @@ export function writeStoredSession(
   ensureDir();
   const meta = deriveMeta(cookies);
   const json = JSON.stringify(cookies);
-  if (safeStorage.isEncryptionAvailable()) {
-    const enc = safeStorage.encryptString(json);
+  if (credentials().isEncryptionAvailable()) {
+    const enc = credentials().encryptString(json);
     writeFileSync(blobPath(), enc);
   } else {
     console.warn(

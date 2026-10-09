@@ -10,7 +10,7 @@ import { EventEmitter } from "node:events";
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
-import { app } from "electron";
+import { paths } from "../../core/platform";
 import type {
   ScheduledJob,
   ScheduledJobKind,
@@ -271,7 +271,7 @@ export class ScheduledJobsStore extends EventEmitter {
 }
 
 function defaultDataRoot(): string {
-  return join(app.getPath("userData"), "pglite", "scheduler");
+  return join(paths().get("userData"), "pglite", "scheduler");
 }
 
 function rowToJob(row: JobRow): ScheduledJob {

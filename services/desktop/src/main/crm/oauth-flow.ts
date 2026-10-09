@@ -18,7 +18,7 @@
 import { createHash, randomBytes } from "node:crypto";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
-import { shell, app, BrowserWindow } from "electron";
+import { opener, windows } from "../../core/platform";
 import type { CrmProvider, CrmTokens } from "./types";
 
 interface AuthorizeUrlPayload {
@@ -121,7 +121,7 @@ export async function runConnectFlow(opts: {
         );
       }
       const payload = (await res.json()) as AuthorizeUrlPayload;
-      void shell.openExternal(payload.authorizeUrl);
+      void opener().openExternal(payload.authorizeUrl);
     },
   );
 
@@ -225,18 +225,7 @@ const CALLBACK_HTML = `<!doctype html><meta charset="utf-8">
 <script>setTimeout(()=>window.close(),800)</script>`;
 
 function focusAppAfterCallback(): void {
-  try {
-    app.focus({ steal: true });
-    const wins = BrowserWindow.getAllWindows();
-    if (wins.length > 0) {
-      const w = wins[0]!;
-      if (w.isMinimized()) w.restore();
-      w.show();
-      w.focus();
-    }
-  } catch {
-    // Focus is cosmetic.
-  }
+  windows().focusMain();
 }
 
 function runLoopbackFlow(

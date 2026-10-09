@@ -13,7 +13,7 @@
 // Das Protokoll erwartet exakt drei Segmente — Producer, Run, Datei —
 // deshalb passt dieses Layout ohne Änderung am Protokoll-Handler.
 
-import { app } from "electron";
+import { paths } from "../../core/platform";
 import { existsSync, mkdirSync } from "node:fs";
 import { promises as fs } from "node:fs";
 import { join } from "node:path";
@@ -24,7 +24,7 @@ const KEEP_PER_MONITOR = 10;
 const PRODUCER_SEGMENT = "link-monitor";
 
 function rootDir(): string {
-  return join(app.getPath("userData"), "screenshots", PRODUCER_SEGMENT);
+  return join(paths().get("userData"), "screenshots", PRODUCER_SEGMENT);
 }
 
 /** Slashes/Dotdot entfernen — identisch zum Protokoll-Handler. */

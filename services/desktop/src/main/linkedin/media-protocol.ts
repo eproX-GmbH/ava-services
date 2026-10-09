@@ -13,12 +13,13 @@
 // already-encoded form and decodes it back to the on-disk name.
 
 import { app, net, protocol } from "electron";
+import { paths } from "../../core/platform";
 import { existsSync } from "node:fs";
 import { join, normalize, sep } from "node:path";
 import { pathToFileURL } from "node:url";
 
 function mediaRoot(): string {
-  return join(app.getPath("userData"), "linkedin", "media");
+  return join(paths().get("userData"), "linkedin", "media");
 }
 
 /** Drop slashes / drive separators / dotdot from a single segment so

@@ -24,7 +24,7 @@
 // between two ticks means we were asleep → we reset the grace window so
 // main gets a fresh chance to resume ticking after wake.
 
-import { app } from "electron";
+import { paths, spawner } from "../core/platform";
 import { spawn } from "node:child_process";
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -42,13 +42,13 @@ let started = false;
  * "AVA kann nicht geschlossen werden").
  */
 export function getUpdatingFlagPath(): string {
-  return join(app.getPath("userData"), "ava-updating.flag");
+  return join(paths().get("userData"), "ava-updating.flag");
 }
 
 /** Schreibt das Update-Flag synchron. Idempotent. */
 export function writeUpdatingFlag(): void {
   const p = getUpdatingFlagPath();
-  mkdirSync(app.getPath("userData"), { recursive: true });
+  mkdirSync(paths().get("userData"), { recursive: true });
   writeFileSync(p, String(Date.now()), "utf8");
 }
 
@@ -345,13 +345,13 @@ export function startWatchdog(): void {
   if (started) return;
   started = true;
 
-  if (!app.isPackaged && process.env.AVA_ENABLE_WATCHDOG !== "1") {
+  if (!paths().isPackaged && process.env.AVA_ENABLE_WATCHDOG !== "1") {
     console.log("[watchdog] skipped (dev mode; set AVA_ENABLE_WATCHDOG=1 to test)");
     return;
   }
 
   try {
-    const userData = app.getPath("userData");
+    const userData = paths().get("userData");
     mkdirSync(userData, { recursive: true });
     const scriptPath = join(userData, "ava-watchdog.cjs");
     writeFileSync(scriptPath, WATCHDOG_SOURCE, "utf8");
@@ -365,12 +365,13 @@ export function startWatchdog(): void {
       /* ignore */
     }
 
-    const child = spawn(process.execPath, [scriptPath], {
+    const nodeCmd = spawner().nodeCommand();
+    const child = spawn(nodeCmd.command, [scriptPath], {
       detached: true,
       stdio: "ignore",
       env: {
         ...process.env,
-        ELECTRON_RUN_AS_NODE: "1",
+        ...nodeCmd.env,
         AVA_WD_HEARTBEAT: getHeartbeatPath(),
         AVA_WD_MAIN_PID: String(process.pid),
         AVA_WD_APP_PATH: appBundlePath(),
@@ -395,7 +396,7 @@ export function startWatchdog(): void {
  * `open` re-launches a fresh instance), not the inner Mach-O binary.
  */
 function appBundlePath(): string {
-  const exe = app.getPath("exe");
+  const exe = paths().get("exe");
   if (process.platform === "darwin") {
     const idx = exe.indexOf(".app/");
     if (idx >= 0) return exe.slice(0, idx + 4); // keep through ".app"

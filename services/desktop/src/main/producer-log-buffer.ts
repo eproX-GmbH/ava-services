@@ -16,7 +16,7 @@
 // unbounded. 5000 lines/producer × 6 producers ≈ 3 MB peak.
 
 import { EventEmitter } from "node:events";
-import { app } from "electron";
+import { paths } from "../core/platform";
 import {
   createWriteStream,
   existsSync,
@@ -80,7 +80,7 @@ class ProducerLogBuffer extends EventEmitter {
   private fileLogDir(): string | null {
     if (this.fileLogDirCached) return this.fileLogDirCached;
     try {
-      const dir = join(app.getPath("userData"), "producer-logs");
+      const dir = join(paths().get("userData"), "producer-logs");
       if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
       this.fileLogDirCached = dir;
       return dir;

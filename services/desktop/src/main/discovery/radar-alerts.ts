@@ -12,7 +12,7 @@
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { app } from "electron";
+import { paths } from "../../core/platform";
 import type { Alert } from "../../shared/types";
 import type { AlertsStore } from "../agent/alerts-store";
 import type { MatchResultRow } from "./matcher";
@@ -77,7 +77,7 @@ export class RadarAlertEmitter {
 
   constructor(deps: RadarAlertEmitterDeps, dir?: string) {
     this.deps = deps;
-    this.dir = dir ?? join(app.getPath("userData"), "discovery");
+    this.dir = dir ?? join(paths().get("userData"), "discovery");
     // Gleicher Dateiname wie der fruehere Supervisor-interne Store —
     // bestehende Dedup-Historie bleibt gueltig.
     this.path = join(this.dir, "radar-alerted.json");

@@ -2,7 +2,7 @@
 // Lokal je Nutzer unter <userData>/workflows/ (Entscheidung 2026-09-09:
 // Workflows liegen auf dem Geraet; Teilen mit der Organisation kommt in W7).
 
-import { app } from "electron";
+import { paths } from "../../core/platform";
 import { existsSync, mkdirSync, readdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
@@ -263,7 +263,7 @@ export class WorkflowStore {
   private cache: Map<string, WorkflowDefinition> | null = null;
 
   constructor(dir?: string) {
-    this.dir = dir ?? join(app.getPath("userData"), "workflows");
+    this.dir = dir ?? join(paths().get("userData"), "workflows");
   }
 
   private ensureDirs(): void {

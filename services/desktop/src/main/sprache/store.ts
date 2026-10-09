@@ -6,7 +6,7 @@
 import { EventEmitter } from "node:events";
 import { existsSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { app } from "electron";
+import { paths } from "../../core/platform";
 import type { SpracheEinstellungen, SpracheStimme } from "../../shared/types";
 
 export const SPRACHE_STIMMEN: ReadonlyArray<{ id: SpracheStimme; label: string; hinweis: string }> = [
@@ -26,7 +26,7 @@ export class SpracheStore extends EventEmitter {
 
   private constructor() {
     super();
-    this.path = join(app.getPath("userData"), "sprache.json");
+    this.path = join(paths().get("userData"), "sprache.json");
     this.cached = this.lesen();
   }
 

@@ -26,6 +26,7 @@
 //     update-install / backstop case we care about).
 
 import { app } from "electron";
+import { lifecycle, paths } from "../core/platform";
 import {
   appendFileSync,
   createWriteStream,
@@ -169,9 +170,9 @@ export function initFileLogger(): void {
   try {
     // macOS → ~/Library/Logs/AVA ; Win → %APPDATA%/AVA/logs (userData
     // fallback if the "logs" path is unavailable pre-ready on some OSes).
-    logDir = app.getPath("logs");
+    logDir = paths().get("logs");
   } catch {
-    logDir = join(app.getPath("userData"), "logs");
+    logDir = join(paths().get("userData"), "logs");
   }
   try {
     mkdirSync(logDir, { recursive: true });
@@ -231,7 +232,7 @@ export function initFileLogger(): void {
 
   writeLine(
     "INFO ",
-    `=== file-logger started: AVA v${app.getVersion()} pid=${process.pid} platform=${process.platform} arch=${process.arch} ===`,
+    `=== file-logger started: AVA v${paths().version()} pid=${process.pid} platform=${process.platform} arch=${process.arch} ===`,
   );
 
   // Heartbeat. Read the PREVIOUS instance's last heartbeat first and log
@@ -267,7 +268,7 @@ export function initFileLogger(): void {
     try {
       writeFileSync(
         heartbeatPath,
-        `${ts()} pid=${process.pid} v${app.getVersion()}${quitting ? " quit" : ""}\n`,
+        `${ts()} pid=${process.pid} v${paths().version()}${quitting ? " quit" : ""}\n`,
       );
     } catch {
       /* best-effort — must never throw */
@@ -284,7 +285,7 @@ export function initFileLogger(): void {
   app.on("before-quit", () => {
     quitting = true;
     markHeartbeatQuit();
-    writeLineSync("INFO ", `[quit] before-quit begin (v${app.getVersion()} pid=${process.pid})`);
+    writeLineSync("INFO ", `[quit] before-quit begin (v${paths().version()} pid=${process.pid})`);
   });
   app.on("will-quit", () => writeLineSync("INFO ", "[quit] will-quit"));
   // v0.1.626 — Breadcrumbs zwischen "before-quit handlers done" und will-quit:
@@ -294,7 +295,7 @@ export function initFileLogger(): void {
     // 2026-10-04 (Absturzbericht beim Beenden): Hintergrund-Helfer (Radar-
     // Website-Lesen, Link-Monitor) oeffneten NACH dem Schliess-Durchgang
     // neue verborgene Fenster. Die hielten die App am Leben, bis der
-    // Notausgang nach 20 s app.exit(0) mitten im Seitenladen ausloeste →
+    // Notausgang nach 20 s lifecycle().exit(0) mitten im Seitenladen ausloeste →
     // SIGTRAP im V8-Abbau. Waehrend des Beendens entstehende Fenster werden
     // sofort zerstoert.
     if (quitting) {
@@ -412,7 +413,7 @@ function markHeartbeatQuit(): void {
   try {
     writeFileSync(
       heartbeatPath,
-      `${ts()} pid=${process.pid} v${app.getVersion()} quit\n`,
+      `${ts()} pid=${process.pid} v${paths().version()} quit\n`,
     );
   } catch {
     /* best-effort — must never throw */
@@ -424,7 +425,7 @@ export function markHeartbeatSuspend(): void {
   try {
     writeFileSync(
       heartbeatPath,
-      `${ts()} pid=${process.pid} v${app.getVersion()} suspend\n`,
+      `${ts()} pid=${process.pid} v${paths().version()} suspend\n`,
     );
   } catch {
     /* best-effort — must never throw */

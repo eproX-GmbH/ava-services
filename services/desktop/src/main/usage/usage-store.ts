@@ -17,7 +17,7 @@ import { EventEmitter } from "node:events";
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
-import { app } from "electron";
+import { paths } from "../../core/platform";
 import type {
   LlmProviderKind,
   UsageDailyBucket,
@@ -424,7 +424,7 @@ export class UsageStore extends EventEmitter {
 }
 
 function defaultDataRoot(): string {
-  return join(app.getPath("userData"), "pglite", "usage");
+  return join(paths().get("userData"), "pglite", "usage");
 }
 
 function clamp(n: number, lo: number, hi: number): number {

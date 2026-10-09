@@ -20,7 +20,7 @@
 // PGlite-/Datei-Handles komplett und garantiert, dass wirklich alles außer
 // der Keep-Liste weg ist.
 
-import { app } from "electron";
+import { lifecycle, paths } from "../core/platform";
 import { existsSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
@@ -36,10 +36,10 @@ function markerPath(userDataDir: string): string {
  * eigentliche Löschung passiert beim nächsten Boot (vor Store-Init).
  */
 export function requestResetExceptModels(): void {
-  const userDataDir = app.getPath("userData");
+  const userDataDir = paths().get("userData");
   writeFileSync(markerPath(userDataDir), new Date().toISOString(), "utf8");
-  app.relaunch();
-  app.exit(0);
+  lifecycle().relaunch();
+  lifecycle().exit(0);
 }
 
 /**
@@ -48,7 +48,7 @@ export function requestResetExceptModels(): void {
  * gelöscht. Gibt `true` zurück, wenn ein Reset durchgeführt wurde.
  */
 export function performBootResetIfRequested(): boolean {
-  const userDataDir = app.getPath("userData");
+  const userDataDir = paths().get("userData");
   const marker = markerPath(userDataDir);
   if (!existsSync(marker)) return false;
 

@@ -8,8 +8,7 @@ import {
 } from "node:fs";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
-import { app } from "electron";
-
+import { paths } from "../../core/platform";
 // GeneralMemoryStore (Phase 8.k10h).
 //
 // Long-lived bag of facts the agent should remember across conversations,
@@ -61,7 +60,7 @@ export class GeneralMemoryStore {
   private cache: GeneralMemoryEntry[] | null = null;
 
   constructor(dir?: string) {
-    this.dir = dir ?? join(app.getPath("userData"), "agent");
+    this.dir = dir ?? join(paths().get("userData"), "agent");
     this.path = join(this.dir, "general-memory.jsonl");
   }
 

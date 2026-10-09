@@ -35,7 +35,6 @@ import { join, dirname } from "node:path";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { spawn } from "node:child_process";
-import { app } from "electron";
 
 // v0.1.221 — Floor-Version statt fixer Pin.
 //

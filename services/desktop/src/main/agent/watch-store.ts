@@ -9,7 +9,7 @@ import {
 } from "node:fs";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
-import { app } from "electron";
+import { paths } from "../../core/platform";
 import type {
   Watch,
   WatchCadence,
@@ -56,7 +56,7 @@ export class WatchStore extends EventEmitter {
 
   constructor(dir?: string) {
     super();
-    this.dir = dir ?? join(app.getPath("userData"), "agent");
+    this.dir = dir ?? join(paths().get("userData"), "agent");
     this.path = join(this.dir, "watches.jsonl");
   }
 

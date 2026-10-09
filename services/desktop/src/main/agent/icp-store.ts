@@ -12,8 +12,7 @@
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { app } from "electron";
-
+import { paths } from "../../core/platform";
 export interface IcpKundenBeispiel {
   /** Normierte Kern-Domain des Bestandskunden. */
   domain: string;
@@ -116,7 +115,7 @@ export class IcpStore {
   private cache: IcpProfile | null = null;
 
   constructor(dir?: string) {
-    this.dir = dir ?? join(app.getPath("userData"), "agent");
+    this.dir = dir ?? join(paths().get("userData"), "agent");
     this.path = join(this.dir, "icp.json");
   }
 

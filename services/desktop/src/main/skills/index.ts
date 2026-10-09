@@ -1,6 +1,6 @@
 // S1 — Public surface of the skills module.
 //
-// `initSkills(app)` discovers + loads skills from:
+// `initSkills(paths)` discovers + loads skills from:
 //   - userData/skills/<name>/SKILL.md
 //   - <cwd>/.ava/skills/<name>/SKILL.md (workspace; only if dir exists)
 // It then starts a debounced fs.watch loop so edits hot-reload.
@@ -8,7 +8,7 @@
 // IPC + window.api surface is intentionally deferred — that ships
 // with S3 (Settings → Skills UI).
 
-import type { App } from "electron";
+import type { Paths } from "../../core/platform";
 import { createHash } from "node:crypto";
 import {
   copyFileSync,
@@ -74,7 +74,7 @@ export interface InitSkillsOptions {
   evaluateGate?: GateEvaluator;
   /** S6 — override the bundled-skills source directory. Used by tests
    *  to point at `resources/skills/` directly. In normal init this is
-   *  derived from `app.isPackaged` and skipped if `app` is null. */
+   *  derived from `paths.isPackaged` and skipped if `paths` is null. */
   bundledDir?: string | null;
   /** S4 — pre-built trust store (so the orchestrator + IPC layer
    *  share the same instance). When omitted, `initSkills` creates a
@@ -262,14 +262,14 @@ export function vendorBundledSkills(
 }
 
 export async function initSkills(
-  app: App | null,
+  pfade: Paths | null,
   opts: InitSkillsOptions = {},
 ): Promise<SkillStore> {
   let userDir: string | null;
   if (opts.userDir !== undefined) {
     userDir = opts.userDir;
-  } else if (app) {
-    userDir = join(app.getPath("userData"), "skills");
+  } else if (pfade) {
+    userDir = join(pfade.get("userData"), "skills");
     try {
       mkdirSync(userDir, { recursive: true });
     } catch {
@@ -288,26 +288,26 @@ export async function initSkills(
   let bundledDir: string | null = null;
   if (opts.bundledDir !== undefined) {
     bundledDir = opts.bundledDir;
-  } else if (app && opts.userDir === undefined) {
-    bundledDir = app.isPackaged
-      ? join(process.resourcesPath, "skills")
-      : join(app.getAppPath(), "resources", "skills");
+  } else if (pfade && opts.userDir === undefined) {
+    bundledDir = pfade.isPackaged
+      ? join(pfade.resources() ?? "", "skills")
+      : join(pfade.appPath(), "resources", "skills");
   }
   // S4 — trust store needs to exist before vendoring so the
   // bundled-starter auto-trust hook can write entries during the
   // copy. Callers can pass their own (so the IPC layer shares the
   // instance with the renderer); we fall back to a default-path one
-  // (which requires `app` to be present for `userData` resolution).
-  // Test scripts that pass `app: null` AND don't supply a trustStore
+  // (which requires `pfade` to be present for `userData` resolution).
+  // Test scripts that pass `pfade: null` AND don't supply a trustStore
   // get a tmp-path one rooted in userDir so the loader still has
   // something to consult.
   let trustStore: SkillsTrustStore | null;
   if (opts.trustStore !== undefined) {
     trustStore = opts.trustStore;
-  } else if (app) {
+  } else if (pfade) {
     trustStore = new SkillsTrustStore();
   } else {
-    // Test runs without `app` AND without an explicit trustStore
+    // Test runs without `pfade` AND without an explicit trustStore
     // fall back to a no-op evaluator (everything trusted). Matches
     // pre-S4 behaviour of the S1/S2/S3 loader/agent/bundled tests.
     trustStore = null;
@@ -341,7 +341,7 @@ export async function initSkills(
   // so the dialog can show a diff.
   const evaluateTrust: TrustEvaluator = (name, hash) => {
     if (!trustStore) {
-      // No trust store configured (caller ran with `app: null` and
+      // No trust store configured (caller ran with `pfade: null` and
       // no `trustStore` override) → fall back to "everything is
       // trusted", matching S1/S2/S3 behaviour for tests that pre-date
       // S4.

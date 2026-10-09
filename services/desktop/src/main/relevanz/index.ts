@@ -9,7 +9,7 @@
 // verbindlich, hat der Nutzer keinen Schalter. Ist sie aus, wird nichts
 // erfasst, nichts uebertragen und nichts angezeigt.
 
-import { app } from "electron";
+import { paths } from "../../core/platform";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { getOrgPolicy, featureEnabled } from "../org-policy";
@@ -54,7 +54,7 @@ const cache = new Map<string, { wert: RelevanzWert; bis: number }>();
 interface Einstellung { an: boolean }
 
 function pfad(): string {
-  const dir = join(app.getPath("userData"), "relevanz");
+  const dir = join(paths().get("userData"), "relevanz");
   mkdirSync(dir, { recursive: true });
   return join(dir, "einstellung.json");
 }

@@ -6,7 +6,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
-import { app } from "electron";
+import { paths } from "../../core/platform";
 import type { FreshnessStage } from "../../shared/types";
 
 // FreshnessCursorStore (Phase 8.r2).
@@ -56,7 +56,7 @@ export class FreshnessCursorStore {
   private cache: FreshnessCursor | null = null;
 
   constructor(dir?: string) {
-    this.dir = dir ?? join(app.getPath("userData"), "agent");
+    this.dir = dir ?? join(paths().get("userData"), "agent");
     this.path = join(this.dir, "freshness-cursor.json");
   }
 

@@ -8,7 +8,8 @@
 // device, encrypted via safeStorage, and L2's main-process scraper
 // will read them directly when constructing its Playwright context.
 
-import { app, BrowserWindow, ipcMain, shell } from "electron";
+import { app, BrowserWindow, ipcMain } from "electron";
+import { opener, paths } from "../../core/platform";
 import type {
   LinkedInAuthStatus,
   LinkedInFeedCounts,
@@ -230,12 +231,12 @@ export function initLinkedIn(opts?: {
       // the path lives inside our runs root to make sure no other
       // directory can be coaxed open via this handler.
       const { join } = await import("node:path");
-      const root = join(app.getPath("userData"), "linkedin", "runs");
+      const root = join(paths().get("userData"), "linkedin", "runs");
       const target = args?.dir ?? "";
       if (!target.startsWith(root)) {
         return { error: "invalid path" };
       }
-      const err = await shell.openPath(target);
+      const err = await opener().openPath(target);
       if (err) return { error: err };
       return { ok: true };
     },

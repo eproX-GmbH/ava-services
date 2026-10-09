@@ -15,7 +15,7 @@
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { app } from "electron";
+import { paths } from "../../core/platform";
 import type { GatewayClient } from "../agent/gateway-client";
 import type { LlmProviderManager } from "../agent/providers";
 import type { IcpStore } from "../agent/icp-store";
@@ -110,7 +110,7 @@ export class RadarSupervisor {
 
   constructor(deps: RadarSupervisorDeps, dir?: string) {
     this.deps = deps;
-    this.dir = dir ?? join(app.getPath("userData"), "discovery");
+    this.dir = dir ?? join(paths().get("userData"), "discovery");
     this.configPath = join(this.dir, "radar-config.json");
   }
 

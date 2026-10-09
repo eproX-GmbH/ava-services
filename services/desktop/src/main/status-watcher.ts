@@ -6,7 +6,7 @@
 // (sourceRef = status:<companyId>:<schluessel>). Beim Erstlauf werden
 // bestehende Warnungen einmalig gemeldet, damit nichts unbemerkt bleibt.
 
-import { app } from "electron";
+import { paths } from "../core/platform";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { Alert } from "../shared/types";
@@ -39,7 +39,7 @@ export class StatusWatcher {
   private running = false;
 
   constructor(private readonly deps: StatusWatcherDeps, dir?: string) {
-    this.path = join(dir ?? app.getPath("userData"), "status-watcher.json");
+    this.path = join(dir ?? paths().get("userData"), "status-watcher.json");
   }
 
   start(): void {

@@ -13,7 +13,7 @@ import type { Readable } from "node:stream";
 import { EventEmitter } from "node:events";
 import { existsSync } from "node:fs";
 import { delimiter, join } from "node:path";
-import { app } from "electron";
+import { paths, spawner } from "../core/platform";
 import type {
   ProducerStatus,
   ProducerSupervisorState,
@@ -566,9 +566,10 @@ export class ProducerSupervisor extends EventEmitter {
       this.opts.config.port + 101,
     ]);
     try {
-      this.child = spawn(process.execPath, [entryPath], {
+      const nodeCmd = spawner().nodeCommand();
+      this.child = spawn(nodeCmd.command, [entryPath], {
         cwd: producerDir,
-        env: { ...env, ELECTRON_RUN_AS_NODE: "1" },
+        env: { ...env, ...nodeCmd.env },
         stdio: ["ignore", "pipe", "pipe"],
       });
     } catch (err) {
@@ -783,7 +784,7 @@ export class ProducerSupervisor extends EventEmitter {
       PROBE_LIVENESS_PORT: String(this.opts.config.port + 100),
       PROBE_READINESS_PORT: String(this.opts.config.port + 101),
       LOGLEVEL: process.env.LOGLEVEL ?? "info",
-      NODE_ENV: app.isPackaged ? "production" : "development",
+      NODE_ENV: paths().isPackaged ? "production" : "development",
       // JWT verification — producer's HTTP API verifies inbound
       // tokens against the same Keycloak realm the desktop uses.
       JWKS_URI: this.opts.jwksUri,
@@ -920,9 +921,9 @@ export class ProducerSupervisor extends EventEmitter {
     // fix) with legacy `resources/producers/<name>/` fallback. See
     // producer-dirs.ts. Packaged root is process.resourcesPath; dev root
     // is <appPath>/resources (vendored locally by `pnpm fetch:producers`).
-    const resourcesRoot = app.isPackaged
-      ? process.resourcesPath
-      : join(app.getAppPath(), "resources");
+    const resourcesRoot = paths().isPackaged
+      ? (paths().resources() ?? "")
+      : join(paths().appPath(), "resources");
     return resolveProducerDirUnder(resourcesRoot, this.opts.config.name);
   }
 

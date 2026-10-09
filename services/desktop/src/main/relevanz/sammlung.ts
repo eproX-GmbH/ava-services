@@ -8,7 +8,7 @@
 // lauwarm hat, will nicht bei jedem Positionswechsel aufschrecken — aber
 // er will am Abend sehen, dass es ihn gab.
 
-import { app } from "electron";
+import { paths } from "../../core/platform";
 import { mkdirSync, readFileSync, writeFileSync, renameSync } from "node:fs";
 import { join } from "node:path";
 import type { AlertKind, AlertSeverity } from "../../shared/types";
@@ -38,7 +38,7 @@ interface Datei {
 let geladen: Datei | null = null;
 
 function pfad(): string {
-  const dir = join(app.getPath("userData"), "relevanz");
+  const dir = join(paths().get("userData"), "relevanz");
   mkdirSync(dir, { recursive: true });
   return join(dir, "sammlung.json");
 }

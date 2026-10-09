@@ -8,7 +8,7 @@ import {
   renameSync,
 } from "node:fs";
 import { join } from "node:path";
-import { app, safeStorage } from "electron";
+import { credentials, paths } from "../../../core/platform";
 import type {
   KeySource,
   AnthropicAuthMode,
@@ -31,13 +31,13 @@ const ANTHROPIC_SUBSCRIPTION_FILENAME = "anthropic-subscription.enc";
 /**
  * v0.1.353 — Filename für das ChatGPT-Abo-OAuth-Token („Sign in with
  * ChatGPT"). Analog zum Anthropic-Pendant: parallele Credential zum
- * `openai`-Provider, verschlüsselt via safeStorage.
+ * `openai`-Provider, verschlüsselt via credentials().
  */
 const OPENAI_SUBSCRIPTION_FILENAME = "openai-subscription.enc";
 
 // Provider config persistence (Phase 8.j, expanded in 8.k1).
 //
-// Files under `app.getPath("userData")/agent/`:
+// Files under `paths().get("userData")/agent/`:
 //
 //   provider.json
 //     {
@@ -56,10 +56,10 @@ const OPENAI_SUBSCRIPTION_FILENAME = "openai-subscription.enc";
 //     value is what the user picked in the picker.
 //
 //   <provider>.enc  (one each for openai, anthropic, google, mistral)
-//     Output of safeStorage.encryptString(apiKey). On macOS this is
+//     Output of credentials().encryptString(apiKey). On macOS this is
 //     Keychain-backed; Windows uses DPAPI; Linux falls back to
 //     libsecret/kwallet or a basic obfuscation if neither is available.
-//     `safeStorage.isEncryptionAvailable()` reports the strength —
+//     `credentials().isEncryptionAvailable()` reports the strength —
 //     callers should warn the user before storing on the basic path.
 //
 // Ollama is keyless (talks to localhost only) so it has no .enc file.
@@ -192,7 +192,7 @@ export class ProviderConfigStore extends EventEmitter {
 
   private constructor() {
     super();
-    this.dir = join(app.getPath("userData"), "agent");
+    this.dir = join(paths().get("userData"), "agent");
     this.configPath = join(this.dir, "provider.json");
     if (!existsSync(this.dir)) {
       mkdirSync(this.dir, { recursive: true });
@@ -357,7 +357,7 @@ export class ProviderConfigStore extends EventEmitter {
    */
   isEncryptionAvailable(): boolean {
     try {
-      return safeStorage.isEncryptionAvailable();
+      return credentials().isEncryptionAvailable();
     } catch {
       return false;
     }
@@ -403,7 +403,7 @@ export class ProviderConfigStore extends EventEmitter {
     if (!existsSync(path)) return null;
     try {
       const buf = readFileSync(path);
-      return safeStorage.decryptString(buf);
+      return credentials().decryptString(buf);
     } catch (err) {
       console.warn(
         `[provider-store] failed to decrypt ${kind} key — removing broken blob:`,
@@ -427,7 +427,7 @@ export class ProviderConfigStore extends EventEmitter {
   setKey(kind: HostedProviderKind, plaintext: string): void {
     const trimmed = plaintext.trim();
     if (!trimmed) throw new Error(`${kind} key is empty`);
-    if (!safeStorage.isEncryptionAvailable()) {
+    if (!credentials().isEncryptionAvailable()) {
       // Still proceed — Electron will use a basic cipher. We log so a
       // developer notices in the console; user-facing warning lives in
       // the Settings → Agent panel.
@@ -435,7 +435,7 @@ export class ProviderConfigStore extends EventEmitter {
         `[provider-store] safeStorage encryption not available — falling back to basic cipher (${kind})`,
       );
     }
-    const enc = safeStorage.encryptString(trimmed);
+    const enc = credentials().encryptString(trimmed);
     writeFileSync(this.keyPath(kind), enc, { mode: 0o600 });
     this.emit("keyChanged", kind);
   }
@@ -568,7 +568,7 @@ export class ProviderConfigStore extends EventEmitter {
     if (!existsSync(path)) return null;
     try {
       const buf = readFileSync(path);
-      const plaintext = safeStorage.decryptString(buf);
+      const plaintext = credentials().decryptString(buf);
       // Try JSON envelope first (v0.1.181+). Fall through to legacy
       // raw-string on parse failure.
       try {
@@ -633,7 +633,7 @@ export class ProviderConfigStore extends EventEmitter {
     if (!record.accessToken || record.accessToken.trim() === "") {
       throw new Error("anthropic subscription accessToken is empty");
     }
-    if (!safeStorage.isEncryptionAvailable()) {
+    if (!credentials().isEncryptionAvailable()) {
       console.warn(
         "[provider-store] safeStorage encryption not available — falling back to basic cipher (anthropic-subscription)",
       );
@@ -643,7 +643,7 @@ export class ProviderConfigStore extends EventEmitter {
       refreshToken: record.refreshToken,
       expiresAt: record.expiresAt,
     });
-    const enc = safeStorage.encryptString(envelope);
+    const enc = credentials().encryptString(envelope);
     writeFileSync(this.anthropicSubscriptionPath(), enc, { mode: 0o600 });
     this.emit("anthropicSubscriptionTokenChanged");
   }
@@ -688,7 +688,7 @@ export class ProviderConfigStore extends EventEmitter {
     if (!existsSync(path)) return null;
     try {
       const buf = readFileSync(path);
-      const plaintext = safeStorage.decryptString(buf);
+      const plaintext = credentials().decryptString(buf);
       try {
         const parsed = JSON.parse(plaintext) as Partial<OpenAISubscriptionRecord>;
         // 2026-10-06: Nur Plan-Verbindungen (Sign in with ChatGPT) gelten.
@@ -767,7 +767,7 @@ export class ProviderConfigStore extends EventEmitter {
     if (!record.accessToken || record.accessToken.trim() === "") {
       throw new Error("openai subscription accessToken is empty");
     }
-    if (!safeStorage.isEncryptionAvailable()) {
+    if (!credentials().isEncryptionAvailable()) {
       console.warn(
         "[provider-store] safeStorage encryption not available — falling back to basic cipher (openai-subscription)",
       );
@@ -790,7 +790,7 @@ export class ProviderConfigStore extends EventEmitter {
       scopes: record.scopes,
       planModel: record.planModel,
     });
-    const enc = safeStorage.encryptString(envelope);
+    const enc = credentials().encryptString(envelope);
     writeFileSync(this.openaiSubscriptionPath(), enc, { mode: 0o600 });
     this.emit("openaiSubscriptionTokenChanged");
   }

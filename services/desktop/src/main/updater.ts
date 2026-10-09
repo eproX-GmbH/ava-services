@@ -1,5 +1,6 @@
 import { autoUpdater, type UpdateInfo, type ProgressInfo } from "electron-updater";
-import { app, BrowserWindow, Notification, dialog } from "electron";
+import { BrowserWindow, Notification, dialog } from "electron";
+import { paths } from "../core/platform";
 import { EventEmitter } from "node:events";
 import { promises as fs } from "node:fs";
 import { existsSync, statSync } from "node:fs";
@@ -61,7 +62,7 @@ const CHECK_INTERVAL_MS = 15 * 60 * 1000;
  *  despite the install attempt). Path is under userData so it survives
  *  the .app swap and is per-installation. */
 function pendingInstallMarkerPath(): string {
-  return join(app.getPath("userData"), "pending-install.json");
+  return join(paths().get("userData"), "pending-install.json");
 }
 
 /** Squirrel.Mac log directory. ShipIt writes stderr/stdout logs here
@@ -78,7 +79,7 @@ function electronUpdaterLogPath(): string {
   // electron-updater pipes through electron-log; on macOS the file is
   // under <userData>/logs/. We surface this so the user can attach it
   // even when Squirrel itself didn't get far enough to log.
-  return join(app.getPath("userData"), "logs", "main.log");
+  return join(paths().get("userData"), "logs", "main.log");
 }
 
 export class Updater extends EventEmitter {
@@ -112,7 +113,7 @@ export class Updater extends EventEmitter {
     if (this.started) return;
     this.started = true;
 
-    if (!app.isPackaged) {
+    if (!paths().isPackaged) {
       // Dev mode: no updater, would point at GitHub Releases for
       // a tag that may not match the dev version anyway.
       console.log("[updater] skipped — not packaged");
@@ -149,7 +150,7 @@ export class Updater extends EventEmitter {
     });
     autoUpdater.on("update-available", (info: UpdateInfo) => {
       console.info(
-        `[updater] update-available: current=${app.getVersion()} → latest=${info.version}`,
+        `[updater] update-available: current=${paths().version()} → latest=${info.version}`,
       );
       this.latestVersion = info.version;
       this.setState("available");
@@ -177,7 +178,7 @@ export class Updater extends EventEmitter {
     });
     autoUpdater.on("update-not-available", (info: UpdateInfo) => {
       console.info(
-        `[updater] up-to-date: running v${app.getVersion()} (server reports latest=${info.version})`,
+        `[updater] up-to-date: running v${paths().version()} (server reports latest=${info.version})`,
       );
       this.latestVersion = info.version;
       this.setState("up-to-date");
@@ -256,9 +257,9 @@ export class Updater extends EventEmitter {
   }
 
   async check(): Promise<void> {
-    if (!app.isPackaged) {
+    if (!paths().isPackaged) {
       console.info(
-        "[updater] check() skipped — app.isPackaged is false (dev mode).",
+        "[updater] check() skipped — paths().isPackaged is false (dev mode).",
       );
       return;
     }
@@ -308,7 +309,7 @@ export class Updater extends EventEmitter {
     this.setState("installing");
     this.installing = true;
     // v0.1.155 — write the "intent to install" marker BEFORE handing
-    // off to Squirrel. On next boot we compare app.getVersion() to
+    // off to Squirrel. On next boot we compare paths().version() to
     // this marker; mismatch ⇒ Squirrel silently failed and the user
     // sees a "Update auf X.Y.Z konnte nicht installiert werden"
     // banner. Without this the failure is completely invisible.
@@ -479,7 +480,7 @@ export class Updater extends EventEmitter {
       version: targetVersion,
       at: new Date().toISOString(),
     };
-    await fs.mkdir(app.getPath("userData"), { recursive: true });
+    await fs.mkdir(paths().get("userData"), { recursive: true });
     await fs.writeFile(
       pendingInstallMarkerPath(),
       JSON.stringify(payload),
@@ -511,7 +512,7 @@ export class Updater extends EventEmitter {
   private async detectSilentInstallFailure(): Promise<void> {
     const marker = await this.readPendingInstallMarker();
     if (!marker) return;
-    const running = app.getVersion();
+    const running = paths().version();
     if (running === marker.version) {
       // The install succeeded — running version matches the intent.
       // Clear the marker so we don't fire on subsequent boots.
@@ -533,7 +534,7 @@ export class Updater extends EventEmitter {
   private snapshot(): UpdateStatus {
     return {
       state: this.state,
-      currentVersion: app.getVersion(),
+      currentVersion: paths().version(),
       latestVersion: this.latestVersion,
       progress: this.progress,
       errorMessage: this.errorMessage,

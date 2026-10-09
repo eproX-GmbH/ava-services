@@ -1,4 +1,4 @@
-import { BrowserWindow, Notification } from "electron";
+import { notifier, windows } from "../core/platform";
 import type { AlertPrefsStore } from "./agent/alert-prefs-store";
 import type {
   Alert,
@@ -81,7 +81,7 @@ export class NotificationManager {
    * this to render the Settings hint when push is technically blocked.
    */
   permissionStatus(): NotificationPermissionStatus {
-    if (!Notification.isSupported()) {
+    if (!notifier().isSupported()) {
       return {
         available: false,
         reason:
@@ -124,35 +124,24 @@ export class NotificationManager {
       console.log(`[notifications] skipped (${reason}) for ${alert.id}`);
       return false;
     }
-    try {
-      const n = new Notification({
-        title: titleFor(alert),
-        body: bodyFor(alert),
-        silent: alert.severity === "info",
-        // macOS only: 'critical' enables the "Important" presentation
-        // and bypasses Focus modes. Honour it for urgent alerts so the
-        // analyst can rely on never missing one.
-        urgency: alert.severity === "urgent" ? "critical" : "normal",
-      });
-      n.on("click", () => {
-        for (const win of BrowserWindow.getAllWindows()) {
-          if (win.isMinimized()) win.restore();
-          win.focus();
-          win.webContents.send("notifications:focusAlerts");
-        }
-      });
-      n.show();
-      return true;
-    } catch (err) {
-      console.warn("[notifications] show failed:", err);
-      return false;
-    }
+    // Dringend: darf Fokus-Modi durchbrechen (macOS "critical"), damit
+    // eine dringende Meldung nie untergeht.
+    return notifier().show({
+      title: titleFor(alert),
+      body: bodyFor(alert),
+      silent: alert.severity === "info",
+      urgent: alert.severity === "urgent",
+      onClick: () => {
+        windows().focusMain();
+        windows().broadcast("notifications:focusAlerts");
+      },
+    });
   }
 
   // ---- Internal -----------------------------------------------------------
 
   private shouldSuppress(alert: Alert): string | null {
-    if (!Notification.isSupported()) return "OS unsupported";
+    if (!notifier().isSupported()) return "OS unsupported";
     const prefs = this.prefs.get();
     if (!prefs.pushEnabled) return "push disabled";
     if (

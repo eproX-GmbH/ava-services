@@ -6,8 +6,7 @@
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { app } from "electron";
-
+import { paths } from "../../core/platform";
 export interface MatchEntry {
   score: number;
   begruendung: string;
@@ -22,7 +21,7 @@ export class MatchStore {
   private metaCache: { icpHash: string | null } | null = null;
 
   constructor(dir?: string) {
-    this.dir = dir ?? join(app.getPath("userData"), "discovery");
+    this.dir = dir ?? join(paths().get("userData"), "discovery");
     this.path = join(this.dir, "matches.json");
     this.metaPath = join(this.dir, "matches-meta.json");
   }

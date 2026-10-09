@@ -1,5 +1,6 @@
 import { guardSession } from "./download-guard";
-import { app, BrowserWindow, safeStorage, shell } from "electron";
+import { BrowserWindow } from "electron";
+import { credentials, opener, paths, windows } from "../core/platform";
 import { consumeForceLoginPrompt, readIdentity, getActiveSpaceId } from "./account-space";
 
 import { createServer, type Server } from "node:http";
@@ -367,7 +368,7 @@ export class Auth extends EventEmitter {
       if (idTokenHint) params.set("id_token_hint", idTokenHint);
       const url = `${endSessionEndpoint}?${params.toString()}`;
       try {
-        await shell.openExternal(url);
+        await opener().openExternal(url);
       } catch (err) {
         // openExternal failure is non-fatal: local state is already
         // wiped, so the worst case is a stale realm-side cookie that
@@ -494,7 +495,7 @@ export class Auth extends EventEmitter {
             void loginWin.loadURL(url);
           } catch (err) {
             console.warn("auth: Login-Fenster nicht verfuegbar, System-Browser:", (err as Error).message);
-            void shell.openExternal(url);
+            void opener().openExternal(url);
           }
         }),
         closedEarly,
@@ -508,22 +509,7 @@ export class Auth extends EventEmitter {
       // v0.1.558 — Windows gibt den Fokus nach dem Schliessen des Login-
       // Fensters nicht zuverlaessig an das Hauptfenster zurueck; der erste
       // Klick aktivierte dann nur das Fenster, Textfelder blieben ohne Fokus.
-      setTimeout(() => {
-        try {
-          const main = BrowserWindow.getAllWindows().find(
-            (x) => (x as unknown as { __avaMainWindow?: boolean }).__avaMainWindow && !x.isDestroyed(),
-          );
-          if (main) {
-            if (main.isMinimized()) main.restore();
-            main.show();
-            main.focus();
-            main.webContents.focus();
-          }
-          app.focus({ steal: true });
-        } catch {
-          /* kosmetisch */
-        }
-      }, 150);
+      setTimeout(() => windows().focusMain(), 150);
     }
   }
 
@@ -533,7 +519,7 @@ export class Auth extends EventEmitter {
     // v0.1.554 — Discovery-Dokument auf Platte cachen: Ist der Anmeldedienst
     // beim Start kurz nicht erreichbar, reicht der Cache fuer den Token-
     // Refresh (der Token-Endpunkt selbst muss natuerlich erreichbar sein).
-    const cachePfad = join(app.getPath("userData"), "oidc-discovery.json");
+    const cachePfad = join(paths().get("userData"), "oidc-discovery.json");
     try {
       const res = await fetchWithRetry(url, {}, { retries: 3, timeoutMs: 10_000 });
       if (!res.ok) throw new Error(`discovery failed: ${res.status} ${url}`);
@@ -780,10 +766,10 @@ export class Auth extends EventEmitter {
    * Neustart ist es sofort angemeldet statt erneut die Maske zu sehen.
    */
   async exportRefreshTokenTo(spaceDir: string): Promise<boolean> {
-    if (!this.lastRefreshToken || !safeStorage.isEncryptionAvailable()) return false;
+    if (!this.lastRefreshToken || !credentials().isEncryptionAvailable()) return false;
     try {
       await fs.mkdir(spaceDir, { recursive: true });
-      const enc = safeStorage.encryptString(this.lastRefreshToken);
+      const enc = credentials().encryptString(this.lastRefreshToken);
       await fs.writeFile(join(spaceDir, "auth.bin"), enc, { mode: 0o600 });
       console.log(`auth: refresh token exportiert sub=${subOf(this.lastRefreshToken)} → ${kurzPfad(join(spaceDir, "auth.bin"))}`);
       return true;
@@ -796,16 +782,16 @@ export class Auth extends EventEmitter {
   // ---- Refresh-token persistence (OS keychain via safeStorage) --------------
 
   private refreshTokenPath(): string {
-    return join(app.getPath("userData"), "auth.bin");
+    return join(paths().get("userData"), "auth.bin");
   }
 
   private async saveRefreshToken(token: string): Promise<void> {
-    if (!safeStorage.isEncryptionAvailable()) {
+    if (!credentials().isEncryptionAvailable()) {
       // No keychain available (rare; some Linux setups). Skip persistence —
       // the user signs in again next launch. Better than writing plaintext.
       return;
     }
-    const enc = safeStorage.encryptString(token);
+    const enc = credentials().encryptString(token);
     const p = this.refreshTokenPath();
     await fs.writeFile(p, enc, { mode: 0o600 });
     // v0.1.537 — Diagnose: WER schreibt WELCHES Konto WOHIN (Kontowechsel-
@@ -817,8 +803,8 @@ export class Auth extends EventEmitter {
     try {
       const p = this.refreshTokenPath();
       const buf = await fs.readFile(p);
-      if (!safeStorage.isEncryptionAvailable()) return null;
-      const token = safeStorage.decryptString(buf);
+      if (!credentials().isEncryptionAvailable()) return null;
+      const token = credentials().decryptString(buf);
       console.log(`auth: refresh token geladen sub=${subOf(token)} ← ${kurzPfad(p)}`);
       return token;
     } catch {
@@ -889,19 +875,8 @@ const CALLBACK_HTML = `<!doctype html><meta charset="utf-8">
  *  created yet (very unlikely on the auth path) we fall back to
  *  app-level focus only. */
 function focusAppAfterAuth(): void {
-  try {
-    app.focus({ steal: true });
-    const wins = BrowserWindow.getAllWindows();
-    if (wins.length > 0) {
-      const w = wins[0]!;
-      if (w.isMinimized()) w.restore();
-      w.show();
-      w.focus();
-    }
-  } catch (err) {
-    // Focus is purely cosmetic — never fail the auth flow over it.
-    console.warn("auth: focusAppAfterAuth failed:", (err as Error).message);
-  }
+  // Rein kosmetisch; der Login-Fluss haengt nie daran.
+  windows().focusMain();
 }
 
 function runLoopbackFlow(
@@ -1037,8 +1012,8 @@ export class AuthRejectedError extends Error {
  *  oder TLS-Inspektion). Rueckfall auf globales fetch ausserhalb Electron. */
 function proxyAwareFetch(): typeof fetch {
   try {
-    const { net } = require("electron") as { net?: { fetch?: typeof fetch } };
-    if (net && typeof net.fetch === "function" && app.isReady()) return net.fetch.bind(net) as typeof fetch;
+    const { net, app } = require("electron") as { net?: { fetch?: typeof fetch }; app?: { isReady(): boolean } };
+    if (net && typeof net.fetch === "function" && app?.isReady()) return net.fetch.bind(net) as typeof fetch;
   } catch {
     /* kein Electron (Tests) */
   }

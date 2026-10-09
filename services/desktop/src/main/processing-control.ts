@@ -15,10 +15,9 @@
 import { EventEmitter } from "node:events";
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { app } from "electron";
-
+import { paths } from "../core/platform";
 function statePath(): string {
-  return join(app.getPath("userData"), "processing-control.json");
+  return join(paths().get("userData"), "processing-control.json");
 }
 
 class ProcessingControl extends EventEmitter {

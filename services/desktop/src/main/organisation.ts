@@ -12,7 +12,7 @@
 //     neue Beitrittsanfragen offen sind (Meldungs-Feed ist firmengebunden
 //     und passt hier nicht).
 
-import { app, BrowserWindow, Notification } from "electron";
+import { lifecycle, notifier, paths, windows } from "../core/platform";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { readIdentity, updateIdentityTenant } from "./account-space";
@@ -49,7 +49,7 @@ const PRUEF_INTERVALL_MS = 10 * 60_000;
 const WECHSEL_SPERRE_MS = 30 * 60_000;
 
 function wechselMarkerPfad(): string {
-  return join(app.getPath("userData"), "tenant-switch.json");
+  return join(paths().get("userData"), "tenant-switch.json");
 }
 
 function letzterWechsel(): { from: string; to: string; at: number } | null {
@@ -63,27 +63,11 @@ function letzterWechsel(): { from: string; to: string; at: number } | null {
 }
 
 function broadcast(channel: string, payload: unknown): void {
-  for (const win of BrowserWindow.getAllWindows()) {
-    try {
-      win.webContents.send(channel, payload);
-    } catch {
-      /* zerstoertes Fenster */
-    }
-  }
+  windows().broadcast(channel, payload);
 }
 
 function focusApp(): void {
-  try {
-    app.focus({ steal: true });
-    const w = BrowserWindow.getAllWindows()[0];
-    if (w) {
-      if (w.isMinimized()) w.restore();
-      w.show();
-      w.focus();
-    }
-  } catch {
-    /* kosmetisch */
-  }
+  windows().focusMain();
 }
 
 /** Von billing.ts (Protokoll-Bruecke) aufgerufen: ava://join/<token>. */
@@ -95,7 +79,7 @@ export function handleJoinUrl(parsed: URL): void {
   }
   pendingJoinToken = token;
   focusApp();
-  if (BrowserWindow.getAllWindows().length > 0) broadcast("org:joinLink", { token });
+  if (windows().hasWindows()) broadcast("org:joinLink", { token });
 }
 
 /** Renderer holt einen gepufferten Link genau einmal ab (Kaltstart). */
@@ -158,15 +142,15 @@ export async function checkTenantChange(grund: string): Promise<boolean> {
   relaunchAngestossen = true;
   broadcast("org:tenantChanged", { tenantId: who.tenantId, tenantName: name, persoenlich });
   setTimeout(() => {
-    app.relaunch();
-    app.exit(0);
+    lifecycle().relaunch();
+    lifecycle().exit(0);
   }, 2500);
   return true;
 }
 
 // O9 — Radar-Freigaben: einmal je Freigabe melden (Merker in userData).
 function gemeldetPfad(): string {
-  return join(app.getPath("userData"), "org-shares-notified.json");
+  return join(paths().get("userData"), "org-shares-notified.json");
 }
 function gemeldeteIds(): Set<string> {
   try {
@@ -251,15 +235,14 @@ async function pruefeAnfragen(): Promise<void> {
       broadcast("org:requestsChanged", { offen: ids.size });
       try {
         const wer = neu.map((r) => r.name ?? r.email ?? r.actorId.slice(0, 8)).join(", ");
-        const n = new Notification({
+        notifier().show({
           title: neu.length === 1 ? "Neue Beitrittsanfrage" : `${neu.length} neue Beitrittsanfragen`,
           body: `${wer} möchte ${st.name ?? "deiner Organisation"} beitreten. Freigeben unter Organisation.`,
+          onClick: () => {
+            focusApp();
+            broadcast("org:openPage", {});
+          },
         });
-        n.on("click", () => {
-          focusApp();
-          broadcast("org:openPage", {});
-        });
-        n.show();
       } catch (err) {
         console.warn("[organisation] Benachrichtigung fehlgeschlagen:", err);
       }

@@ -36,7 +36,7 @@
 // signed binaries; quarantine alone removal is permitted.
 
 import { spawn } from "node:child_process";
-import { app } from "electron";
+import { paths } from "../core/platform";
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
@@ -58,7 +58,7 @@ function shipItCachePath(): string {
 /** electron-updater's generic staging dir. Some flows write the .zip
  *  here before handing it off to Squirrel.Mac. */
 function pendingUpdatePath(): string {
-  return join(app.getPath("userData"), "pending");
+  return join(paths().get("userData"), "pending");
 }
 
 /** Run `xattr -dr com.apple.quarantine <path>`. Returns when done.
@@ -105,7 +105,7 @@ async function scrubPath(path: string): Promise<void> {
  */
 export async function scrubQuarantine(): Promise<void> {
   if (process.platform !== "darwin") return;
-  if (!app.isPackaged) return;
+  if (!paths().isPackaged) return;
   await Promise.all([
     scrubPath(appBundlePath()),
     scrubPath(shipItCachePath()),
@@ -126,7 +126,7 @@ export async function scrubQuarantine(): Promise<void> {
  */
 export async function scrubPathExplicit(path: string): Promise<void> {
   if (process.platform !== "darwin") return;
-  if (!app.isPackaged) return;
+  if (!paths().isPackaged) return;
   await scrubPath(path);
 }
 
@@ -149,8 +149,8 @@ export async function scrubPathExplicit(path: string): Promise<void> {
  */
 export async function scrubWhisperBundle(): Promise<void> {
   if (process.platform !== "darwin") return;
-  if (!app.isPackaged) return;
+  if (!paths().isPackaged) return;
   // Packaged path: <bundle>/Contents/Resources/whisper/
-  const packaged = join(process.resourcesPath, "whisper");
+  const packaged = join(paths().resources() ?? "", "whisper");
   await scrubPath(packaged);
 }

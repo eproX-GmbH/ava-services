@@ -4,7 +4,7 @@ import type { Readable } from "node:stream";
 import { EventEmitter } from "node:events";
 import { existsSync, mkdirSync, readdirSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { app } from "electron";
+import { paths } from "../core/platform";
 import type {
   OllamaInstalledModel,
   OllamaPullProgress,
@@ -703,14 +703,14 @@ export class OllamaSupervisor extends EventEmitter {
     const exe = process.platform === "win32" ? "ollama.exe" : "ollama";
 
     // Packaged: <resourcesPath>/ollama/<platform>-<arch>/ollama
-    if (app.isPackaged) {
-      const packaged = join(process.resourcesPath, "ollama", platformDir, exe);
+    if (paths().isPackaged) {
+      const packaged = join(paths().resources() ?? "", "ollama", platformDir, exe);
       if (existsSync(packaged)) return packaged;
       return null; // packaged build MUST find the bundled binary
     }
 
     // Dev: alongside the repo's resources/ folder.
-    const devCandidate = join(app.getAppPath(), "resources", "ollama", platformDir, exe);
+    const devCandidate = join(paths().appPath(), "resources", "ollama", platformDir, exe);
     if (existsSync(devCandidate)) return devCandidate;
 
     // Last resort in dev: rely on a system-installed `ollama` on PATH.
@@ -765,26 +765,26 @@ export class OllamaSupervisor extends EventEmitter {
   private diagnoseMissingBinary(): string {
     const platformDir = `${process.platform}-${process.arch}`;
     const exe = process.platform === "win32" ? "ollama.exe" : "ollama";
-    const paths: { label: string; full: string }[] = [];
+    const kandidaten: { label: string; full: string }[] = [];
     if (process.env.OLLAMA_BIN) {
-      paths.push({ label: "OLLAMA_BIN env", full: process.env.OLLAMA_BIN });
+      kandidaten.push({ label: "OLLAMA_BIN env", full: process.env.OLLAMA_BIN });
     }
-    if (app.isPackaged && process.resourcesPath) {
-      paths.push({
+    if (paths().isPackaged && paths().resources()) {
+      kandidaten.push({
         label: "packaged",
-        full: join(process.resourcesPath, "ollama", platformDir, exe),
+        full: join(paths().resources() ?? "", "ollama", platformDir, exe),
       });
     }
-    paths.push({
+    kandidaten.push({
       label: "dev",
-      full: join(app.getAppPath(), "resources", "ollama", platformDir, exe),
+      full: join(paths().appPath(), "resources", "ollama", platformDir, exe),
     });
     const lines: string[] = [
       "Ollama binary not found. Reinstall the app or set OLLAMA_BIN.",
       "",
       "Geprüfte Pfade:",
     ];
-    for (const p of paths) {
+    for (const p of kandidaten) {
       const exists = existsSync(p.full);
       const parent = dirname(p.full);
       const parentExists = existsSync(parent);
@@ -855,7 +855,7 @@ export class OllamaSupervisor extends EventEmitter {
   private resolveModelsDir(): string {
     const fromEnv = process.env.OLLAMA_MODELS;
     if (fromEnv && fromEnv.length > 0) return fromEnv;
-    return join(app.getPath("home"), ".ollama", "models");
+    return join(paths().get("home"), ".ollama", "models");
   }
 }
 

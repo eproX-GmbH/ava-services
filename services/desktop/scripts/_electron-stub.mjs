@@ -11,6 +11,13 @@ import { Buffer } from "node:buffer";
 import { createRequire } from "node:module";
 
 const userDataDir = mkdtempSync(join(tmpdir(), "ava-electron-stub-"));
+// R1 (docs/PLAN_AVA_CLOUD.md §12): Module lesen Pfade und Geheimnisse über
+// src/core/platform.ts; ohne gesetzte Plattform gilt die Node-Fassung, die
+// AVA_DATA_DIR und AVA_SECRETS_KEY auswertet. Beides zeigt auf dasselbe
+// Temp-Verzeichnis bzw. einen festen Testschlüssel, damit Stores und
+// Schlüsselbund-Rückfälle im Test wie bisher laufen.
+process.env.AVA_DATA_DIR = userDataDir;
+process.env.AVA_SECRETS_KEY = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
 const stubApp = {
   getPath: () => userDataDir,
 };

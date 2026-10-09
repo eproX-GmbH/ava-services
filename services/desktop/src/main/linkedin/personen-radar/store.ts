@@ -9,7 +9,7 @@
 // "Ungeklaert" (kein belastbarer Firmen-Match) mit kurzer TTL
 // (14 Tage, §8.2 — DSGVO-Gewicht).
 
-import { app } from "electron";
+import { paths } from "../../../core/platform";
 import {
   existsSync,
   mkdirSync,
@@ -69,7 +69,7 @@ export class PersonenRadarStore {
   private schemaReady: Promise<void> | null = null;
 
   constructor(dir?: string) {
-    this.dir = dir ?? join(app.getPath("userData"), "linkedin");
+    this.dir = dir ?? join(paths().get("userData"), "linkedin");
   }
 
   private cfgPath(): string {

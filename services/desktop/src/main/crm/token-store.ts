@@ -14,7 +14,7 @@
 //     other two.
 //   - Easier to manually inspect/delete a single CRM during dev.
 
-import { app, safeStorage } from "electron";
+import { credentials, paths } from "../../core/platform";
 import { promises as fs } from "node:fs";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
@@ -22,7 +22,7 @@ import type { CrmProvider, CrmStoredRecord, CrmTokens } from "./types";
 import { CRM_PROVIDERS } from "./types";
 
 function dir(): string {
-  return join(app.getPath("userData"), "crm");
+  return join(paths().get("userData"), "crm");
 }
 
 function fileFor(provider: CrmProvider): string {
@@ -36,14 +36,14 @@ export async function saveTokens(
   account: string,
   tokens: CrmTokens,
 ): Promise<void> {
-  if (!safeStorage.isEncryptionAvailable()) {
+  if (!credentials().isEncryptionAvailable()) {
     // Rare on macOS / Windows; can happen on bare Linux without
     // libsecret. Skip persistence — the in-memory tokens still work
     // for this session, but a restart will require re-connect.
     return;
   }
   await fs.mkdir(dir(), { recursive: true });
-  const encryptedTokens = safeStorage
+  const encryptedTokens = credentials()
     .encryptString(JSON.stringify(tokens))
     .toString("base64");
   const record: CrmStoredRecord = {
@@ -62,13 +62,13 @@ export async function saveTokens(
 export async function loadTokens(
   provider: CrmProvider,
 ): Promise<{ account: string; tokens: CrmTokens; lastRefreshedAt: string } | null> {
-  if (!safeStorage.isEncryptionAvailable()) return null;
+  if (!credentials().isEncryptionAvailable()) return null;
   const path = fileFor(provider);
   if (!existsSync(path)) return null;
   try {
     const raw = await fs.readFile(path, "utf8");
     const record = JSON.parse(raw) as CrmStoredRecord;
-    const tokensRaw = safeStorage.decryptString(
+    const tokensRaw = credentials().decryptString(
       Buffer.from(record.encryptedTokens, "base64"),
     );
     const tokens = JSON.parse(tokensRaw) as CrmTokens;

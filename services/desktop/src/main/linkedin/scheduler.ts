@@ -20,11 +20,11 @@
 // Single-flight: the scraper itself rejects concurrent runs, but we
 // also guard here to avoid spamming the scraper with rejected calls.
 
-import { BrowserWindow } from "electron";
 import { isScanRunning, runScan } from "./scraper";
 import { linkedInSettingsEvents, read as readSettings } from "./store";
 import { prewarmScraperWindow } from "./scraper-window";
 import { featureEnabled } from "../org-policy";
+import { windows } from "../../core/platform";
 
 let timer: NodeJS.Timeout | null = null;
 let initialTickHandle: NodeJS.Timeout | null = null;
@@ -62,8 +62,7 @@ async function tick(reason: "initial" | "interval"): Promise<void> {
   }
   // v0.1.306 — Mindest-Voraussetzung: AVA hat überhaupt noch ein
   // lebendes Window (nicht alle zugemacht). „Focused" war zu streng.
-  const wins = BrowserWindow.getAllWindows().filter((w) => !w.isDestroyed());
-  if (wins.length === 0) {
+  if (!windows().hasWindows()) {
     console.log(
       `[linkedin/scheduler] tick (${reason}) skipped — no live BrowserWindow`,
     );

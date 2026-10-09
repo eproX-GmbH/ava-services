@@ -14,7 +14,7 @@
 // (siehe reset-store.ts → topLevelTargets).
 
 import { EventEmitter } from "node:events";
-import { app, safeStorage } from "electron";
+import { credentials, paths } from "../../core/platform";
 import {
   existsSync,
   mkdirSync,
@@ -65,7 +65,7 @@ export class TelegramStore extends EventEmitter {
   // ---- Verzeichnis / Pfade -------------------------------------------------
 
   private dir(): string {
-    return join(app.getPath("userData"), "telegram");
+    return join(paths().get("userData"), "telegram");
   }
 
   private configPath(): string {
@@ -181,7 +181,7 @@ export class TelegramStore extends EventEmitter {
 
   isEncryptionAvailable(): boolean {
     try {
-      return safeStorage.isEncryptionAvailable();
+      return credentials().isEncryptionAvailable();
     } catch {
       return false;
     }
@@ -200,7 +200,7 @@ export class TelegramStore extends EventEmitter {
       );
     }
     this.ensureDir();
-    const enc = safeStorage.encryptString(trimmed);
+    const enc = credentials().encryptString(trimmed);
     await fs.writeFile(this.tokenPath(), enc, { mode: 0o600 });
     this.tokenCache = trimmed;
   }
@@ -210,7 +210,7 @@ export class TelegramStore extends EventEmitter {
     try {
       const buf = await fs.readFile(this.tokenPath());
       if (!this.isEncryptionAvailable()) return null;
-      const token = safeStorage.decryptString(buf);
+      const token = credentials().decryptString(buf);
       this.tokenCache = token;
       return token;
     } catch {

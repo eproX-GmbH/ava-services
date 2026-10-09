@@ -15,7 +15,8 @@
 // swallow the error and log. Screenshot failures must NEVER break
 // the scrape itself.
 
-import { app, type BrowserWindow } from "electron";
+import type { BrowserWindow } from "electron";
+import { paths } from "../../core/platform";
 import {
   existsSync,
   mkdirSync,
@@ -65,7 +66,7 @@ export interface RunRecorder {
 }
 
 function runsRoot(): string {
-  return join(app.getPath("userData"), "linkedin", "runs");
+  return join(paths().get("userData"), "linkedin", "runs");
 }
 
 export function getRunsRoot(): string {

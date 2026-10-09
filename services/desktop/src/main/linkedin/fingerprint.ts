@@ -5,7 +5,7 @@
 // Playwright context will read this so we don't fluctuate the UA
 // every visit (which itself looks bot-y to LinkedIn's heuristics).
 
-import { app } from "electron";
+import { paths } from "../../core/platform";
 import type { LinkedInFingerprint } from "../../shared/types";
 
 // A recent Chrome on macOS UA. Stable across the install lifetime; the
@@ -26,7 +26,7 @@ export function generateFingerprint(): LinkedInFingerprint {
   }
   let locale = "de-DE";
   try {
-    const l = app.getLocale();
+    const l = paths().locale();
     if (l && l.includes("-")) locale = l;
     else if (l) locale = `${l}-${l.toUpperCase()}`;
   } catch {

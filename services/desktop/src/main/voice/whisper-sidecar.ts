@@ -12,7 +12,7 @@ import { dirname, join } from "node:path";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { spawn, spawnSync } from "node:child_process";
-import { app } from "electron";
+import { paths } from "../../core/platform";
 import type {
   VoiceModelDownloadProgress,
   VoiceModelInfo,
@@ -825,19 +825,20 @@ export class WhisperSidecar extends EventEmitter {
     if (existsSync(userDataPath)) return userDataPath;
 
     // 3. + 4. — same logic resolveBundledBinary() used to do.
-    const isPackaged = !process.defaultApp;
-    const prodPath = process.resourcesPath
-      ? join(process.resourcesPath, "whisper", platformId, binName)
+    const isPackaged = paths().isPackaged;
+    const resourcesDir = paths().resources();
+    const prodPath = resourcesDir
+      ? join(resourcesDir, "whisper", platformId, binName)
       : null;
     const repoPath = join(
-      app.getAppPath(),
+      paths().appPath(),
       "resources",
       "whisper",
       platformId,
       binName,
     );
     const repoParentPath = join(
-      dirname(app.getAppPath()),
+      dirname(paths().appPath()),
       "resources",
       "whisper",
       platformId,

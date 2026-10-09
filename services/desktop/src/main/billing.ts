@@ -20,7 +20,8 @@
 // The gateway URL + auth handle are passed in by main/index.ts at
 // boot to keep this module decoupled from APP_CONFIG.
 
-import { app, BrowserWindow, ipcMain, shell } from "electron";
+import { app, ipcMain } from "electron";
+import { opener, windows } from "../core/platform";
 import { handleJoinUrl } from "./organisation";
 
 interface BillingDeps {
@@ -46,20 +47,18 @@ export function initBilling(d: BillingDeps): void {
         // the renderer just needs to re-pull /v1/usage. Reuse the
         // same channel the protocol callback uses so PlanSection
         // refreshes immediately without polling.
-        for (const win of BrowserWindow.getAllWindows()) {
-          win.webContents.send("billing:success");
-        }
+        windows().broadcast("billing:success");
         return;
       }
       if (!result.url) throw new Error("gateway response missing url");
-      await shell.openExternal(result.url);
+      await opener().openExternal(result.url);
     },
   );
 
   ipcMain.handle("billing:openPortal", async () => {
     const result = await fetchBilling("/v1/billing/portal", {});
     if (!result.url) throw new Error("gateway response missing url");
-    await shell.openExternal(result.url);
+    await opener().openExternal(result.url);
   });
 
   // ---- Custom protocol ----------------------------------------------------
@@ -150,9 +149,7 @@ function handleAvaUrl(raw: string): void {
     // Bring the app forward and notify the renderer. The success page
     // lands here; cancel needs no renderer action (modal stays as-is).
     focusApp();
-    for (const win of BrowserWindow.getAllWindows()) {
-      win.webContents.send("billing:success");
-    }
+    windows().broadcast("billing:success");
   } else if (path === "cancel") {
     focusApp();
   } else if (path === "upgrade") {
@@ -165,16 +162,5 @@ function handleAvaUrl(raw: string): void {
 }
 
 function focusApp(): void {
-  try {
-    app.focus({ steal: true });
-    const wins = BrowserWindow.getAllWindows();
-    if (wins.length > 0) {
-      const w = wins[0]!;
-      if (w.isMinimized()) w.restore();
-      w.show();
-      w.focus();
-    }
-  } catch {
-    // cosmetic only
-  }
+  windows().focusMain();
 }

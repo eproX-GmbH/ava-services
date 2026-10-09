@@ -6,7 +6,7 @@
 // Scheduler starten VOR dem ersten whoami). Persoenliche Tenants haben
 // keine Vorgaben → alles erlaubt.
 
-import { app, BrowserWindow } from "electron";
+import { paths, windows } from "../core/platform";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { OrgPolicy, OrgFeatureKey } from "../shared/types";
@@ -30,7 +30,7 @@ let geladen = false;
 const listeners = new Set<Listener>();
 
 function pfad(): string {
-  return join(app.getPath("userData"), "org-policy.json");
+  return join(paths().get("userData"), "org-policy.json");
 }
 
 function lade(): void {
@@ -99,13 +99,7 @@ export function applyOrgPolicy(raw: Partial<OrgPolicy> | null | undefined): bool
       console.warn("[org-policy] Listener-Fehler:", err);
     }
   }
-  for (const win of BrowserWindow.getAllWindows()) {
-    try {
-      win.webContents.send("org:policyChanged", neu);
-    } catch {
-      /* zerstoertes Fenster */
-    }
-  }
+  windows().broadcast("org:policyChanged", neu);
   return true;
 }
 

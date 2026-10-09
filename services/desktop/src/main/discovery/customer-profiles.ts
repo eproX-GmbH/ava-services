@@ -10,8 +10,7 @@
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { app } from "electron";
-
+import { paths } from "../../core/platform";
 export interface CustomerProfile {
   profileText: string;
   embedding: number[] | null;
@@ -24,7 +23,7 @@ export class CustomerProfileStore {
   private cache: Record<string, CustomerProfile> | null = null;
 
   constructor(dir?: string) {
-    this.dir = dir ?? join(app.getPath("userData"), "discovery");
+    this.dir = dir ?? join(paths().get("userData"), "discovery");
     this.path = join(this.dir, "customer-profiles.json");
   }
 

@@ -1,3 +1,6 @@
+// Plattform-Schicht zuerst: Stores lesen ihre Pfade schon beim Laden (docs/PLAN_AVA_CLOUD.md §12).
+import "./platform-electron";
+import { paths } from "../core/platform";
 import { PlanTokenServer } from "./auth/plan-token-server";
 import { meldeAbgeleiteteAdressen } from "./contacts/email-muster/rueckmeldung";
 import { radarActivity } from "./discovery/activity";
@@ -4380,7 +4383,7 @@ app.whenReady().then(async () => {
   // hook can auto-trust on first install.
   const skillsTrust = new SkillsTrustStore();
   _skillsTrustRef = skillsTrust;
-  const skillStore = await initSkills(app, {
+  const skillStore = await initSkills(paths(), {
     // (skillStoreRef wird direkt nach der Initialisierung gesetzt, s. u.)
     evaluateGate: skillGate,
     trustStore: skillsTrust,

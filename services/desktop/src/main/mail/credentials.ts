@@ -10,7 +10,7 @@
 // machen als Bookmarks oder ähnliches; ohne Keychain muss der User
 // die Creds jeden Start neu eingeben oder das Konto deaktiviert lassen.
 
-import { app, safeStorage } from "electron";
+import { credentials, paths } from "../../core/platform";
 import { promises as fs } from "node:fs";
 import { join } from "node:path";
 import type { MailCredentialsPayload } from "../../shared/types";
@@ -19,22 +19,22 @@ export class MailCredentialsManager {
   private cached: MailCredentialsPayload | null = null;
 
   private filePath(): string {
-    return join(app.getPath("userData"), "mail-creds.bin");
+    return join(paths().get("userData"), "mail-creds.bin");
   }
 
   isEncryptionAvailable(): boolean {
-    return safeStorage.isEncryptionAvailable();
+    return credentials().isEncryptionAvailable();
   }
 
   /** Beide Passwörter setzen. Wirft, wenn safeStorage nicht verfügbar. */
   async save(creds: MailCredentialsPayload): Promise<void> {
-    if (!safeStorage.isEncryptionAvailable()) {
+    if (!credentials().isEncryptionAvailable()) {
       throw new Error(
         "OS-Keychain nicht verfügbar — Mail-Credentials können nicht sicher gespeichert werden.",
       );
     }
     const json = JSON.stringify(creds);
-    const enc = safeStorage.encryptString(json);
+    const enc = credentials().encryptString(json);
     await fs.writeFile(this.filePath(), enc, { mode: 0o600 });
     this.cached = creds;
   }
@@ -44,8 +44,8 @@ export class MailCredentialsManager {
     if (this.cached) return this.cached;
     try {
       const buf = await fs.readFile(this.filePath());
-      if (!safeStorage.isEncryptionAvailable()) return null;
-      const json = safeStorage.decryptString(buf);
+      if (!credentials().isEncryptionAvailable()) return null;
+      const json = credentials().decryptString(buf);
       const parsed = JSON.parse(json) as MailCredentialsPayload;
       this.cached = parsed;
       return parsed;

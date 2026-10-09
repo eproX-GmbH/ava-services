@@ -12,7 +12,7 @@
 import { getSharedDir } from "./account-space";
 import { existsSync, readdirSync, rmSync, statSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
-import { app } from "electron";
+import { paths } from "../core/platform";
 import { REQUIRED_MODELS } from "./ollama-models";
 import { handelsregisterTempDir } from "./temp-sweep";
 import type {
@@ -42,7 +42,7 @@ export interface StorageDeps {
 function ollamaModelsDir(): string {
   const fromEnv = process.env.OLLAMA_MODELS;
   if (fromEnv && fromEnv.length > 0) return fromEnv;
-  return join(app.getPath("home"), ".ollama", "models");
+  return join(paths().get("home"), ".ollama", "models");
 }
 function whisperDir(): string {
   return getSharedDir("whisper");
@@ -51,7 +51,7 @@ function ollamaManagedDir(): string {
   return getSharedDir("ollama-managed");
 }
 function userDataDir(): string {
-  return app.getPath("userData");
+  return paths().get("userData");
 }
 
 /** Gefahrlos leerbare Cache-/Temp-Ordner (Logs/Screenshots unter userData +

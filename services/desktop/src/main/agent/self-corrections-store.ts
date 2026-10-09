@@ -13,7 +13,7 @@ import { EventEmitter } from "node:events";
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
-import { app } from "electron";
+import { paths } from "../../core/platform";
 import type {
   SelfCorrectionEvent,
   SelfCorrectionEventInput,
@@ -215,7 +215,7 @@ export class SelfCorrectionsStore extends EventEmitter {
 }
 
 function defaultDataRoot(): string {
-  return join(app.getPath("userData"), "pglite", "self-corrections");
+  return join(paths().get("userData"), "pglite", "self-corrections");
 }
 
 function rowToEvent(row: Row): SelfCorrectionEvent {

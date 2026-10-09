@@ -1,4 +1,3 @@
-import { Notification } from "electron";
 import { randomUUID } from "node:crypto";
 import type {
   AgentChoiceOption,
@@ -6,6 +5,7 @@ import type {
   AgentStreamFrame,
   AutonomyLevel,
 } from "../../shared/types";
+import { notifier } from "../../core/platform";
 
 // UiBridge — the seam between tools and the renderer.
 //
@@ -402,14 +402,12 @@ export class UiBridge {
   }
 
   notify(title: string, body: string): void {
-    // `Notification.isSupported()` is false on Linux without libnotify; we
+    // Ohne Desktop (Linux ohne libnotify, Server) zeigt die Plattform nichts; we
     // still try, and let the catch swallow the failure rather than crash
     // the tool. The user just doesn't get a popup — the chat message still
     // shows the same content.
     try {
-      if (Notification.isSupported()) {
-        new Notification({ title, body }).show();
-      }
+      notifier().show({ title, body });
     } catch (err) {
       console.warn("[agent] notify failed:", err);
     }

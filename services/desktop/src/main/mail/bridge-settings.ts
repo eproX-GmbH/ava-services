@@ -6,7 +6,7 @@
 // mail_triage_config aenderbar. Werte werden beim Lesen UND Schreiben
 // geklemmt, damit eine von Hand editierte Datei den Prompt nie flutet.
 
-import { app } from "electron";
+import { paths } from "../../core/platform";
 import { mkdirSync, readFileSync, renameSync, writeFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 
@@ -36,7 +36,7 @@ function clamp(s: Partial<MailBridgeSettings>): MailBridgeSettings {
 }
 
 function settingsPath(): string {
-  return join(app.getPath("userData"), "mail", "bridge-settings.json");
+  return join(paths().get("userData"), "mail", "bridge-settings.json");
 }
 
 let cache: MailBridgeSettings | null = null;
@@ -62,7 +62,7 @@ export function setMailBridgeSettings(
 ): MailBridgeSettings {
   const next = clamp({ ...getMailBridgeSettings(), ...patch });
   try {
-    mkdirSync(join(app.getPath("userData"), "mail"), { recursive: true });
+    mkdirSync(join(paths().get("userData"), "mail"), { recursive: true });
     const tmp = `${settingsPath()}.tmp`;
     writeFileSync(tmp, JSON.stringify(next, null, 2), "utf8");
     renameSync(tmp, settingsPath());

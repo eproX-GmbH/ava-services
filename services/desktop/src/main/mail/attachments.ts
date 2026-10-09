@@ -21,7 +21,7 @@
 import { promises as fs } from "node:fs";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
-import { app } from "electron";
+import { paths } from "../../core/platform";
 import type { Attachment as ParsedAttachment } from "mailparser";
 import type { MailAttachment } from "../../shared/types";
 
@@ -202,7 +202,7 @@ async function persistToCache(
   filename: string,
   content: Buffer,
 ): Promise<string> {
-  const dir = join(app.getPath("userData"), "mail-cache");
+  const dir = join(paths().get("userData"), "mail-cache");
   await fs.mkdir(dir, { recursive: true });
   // Filename behalten (für Render im Triage), aber UUID-prefixen damit
   // Kollisionen ausgeschlossen sind.
