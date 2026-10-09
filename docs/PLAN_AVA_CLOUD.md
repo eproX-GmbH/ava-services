@@ -789,3 +789,38 @@ ohne Folgen für das Ergebnis.
 Betriebskosten bei Dauerbetrieb rund 35 bis 40 $ im Monat (Kopf 21 bis 22,
 Sidecar 10 bis 11, Volumes rund 4, Traffic wenige Dollar) plus Modellkosten.
 
+### 11.7 Stand X1–X3: Kopf-Relais gebaut (2026-10-09)
+
+Umgesetzt wie in §11.2 Weg B, ohne eigene Adresse je Kopf:
+
+- **Gateway** (`lib/kopf-relais.ts`): WebSocket-Upgrade auf `/kopf-relais`
+  mit `access_token` (dieselbe Prüfung wie `/v1`, über die kleine Route
+  `/v1/kopf-relais/wer`); ein Kopf je Konto, ein zweiter löst den ersten ab
+  (Code 4001); Ping/Pong alle 30 s; Aufrufe mit 120 s Frist. `routes/mcp.ts`
+  blendet die Werkzeuge des verbundenen Kopfs in `tools/list` ein (ohne
+  Namenskollisionen mit den Gateway-Werkzeugen), reicht `tools/call` durch und
+  sagt in `instructions`, ob die AVA des Nutzers gerade verbunden ist.
+  Org-Schalter `mcp.kopf` (Standard an). Abhängigkeit `ws` neu.
+- **Kopf** (`core/relais/kopf-relais.ts`): globales WebSocket aus Node,
+  Verbindung nach Anmeldung, Reconnect mit Backoff. Gemeldet werden eine
+  Kernmenge aus der ToolRegistry (sofern vorhanden: company_*, alerts_*,
+  memory_*, profile_get, workflow_*, transaction_*, skill_*, …) und zwei
+  Meta-Werkzeuge: `werkzeug_suchen` (Stichwortsuche über alle rund 280
+  Werkzeuge, liefert Schema) und `werkzeug_ausfuehren` (führt jedes aus).
+- **Rückfragen und Freigaben:** Vollmacht-Stufe des Kanals ist „none“, also
+  geht jede Freigabe (`confirmAction`) und jede Rückfrage (`askChoice`,
+  `askText`) an den Nutzer: Das Werkzeug bricht mit `rueckfrage` und einem
+  Token ab, der Agent fragt den Menschen und wiederholt denselben Aufruf mit
+  `_antworten: { "<token>": "<wert>" }`. Der zweite Lauf startet von vorn und
+  findet die Antwort vor. Destruktives kommt so nie ohne Mensch durch
+  (Entscheidung §11.6 Nr. 2, strengste Lesart). Jeder Aufruf landet im Audit
+  (`mcp.relais.call`), der Gateway protokolliert nur Werkzeugname und Dauer
+  (§11.6 Nr. 3).
+- Verdrahtung in `bootstrapCore`: Start nach Anmeldung, im Worker-Modus
+  angehalten, `AVA_MCP_RELAIS=0` schaltet ab. Gilt für Desktop-App und Server
+  gleichermaßen; läuft der Desktop parallel zum Server, gewinnt der zuletzt
+  verbundene Kopf.
+
+Offen: Live-Test über mcp.ava.bi mit dem Fly-Kopf (nach den Deploys),
+`ava_fragen` (Agent als Werkzeug, §11.3 Nr. 3) und MCP Apps für Ansichten.
+
