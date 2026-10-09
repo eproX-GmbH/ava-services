@@ -127,6 +127,35 @@ const TOOLS: ToolDef[] = [
     },
   },
   {
+    name: "recherche_anstossen",
+    schalter: "auftraege",
+    description:
+      "Recherche zu einer bereits verarbeiteten Firma anstossen: Stellenanzeigen (jobs) oder Ausschreibungen/Expansion (expansion), Stufe standard (Web-Recherche) oder deep (Deep Research, braucht OpenAI-Schluessel des Nutzers). Laeuft auf dem Rechner des Nutzers, sobald die AVA-App laeuft. Antwort: angestossen oder Grund; Ergebnisse spaeter ueber firma_lesen.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        companyId: { type: "string" },
+        feature: { type: "string", enum: ["jobs", "expansion"] },
+        stufe: { type: "string", enum: ["standard", "deep"], description: "Standard: standard" },
+      },
+      required: ["companyId", "feature"],
+    },
+  },
+  {
+    name: "neu_verarbeiten",
+    schalter: "auftraege",
+    description:
+      "Eine Stufe der Verarbeitung fuer eine Firma erneut anstossen: structuredContent (Register), companyPublication (Jahres-/Konzernabschluesse), website, companyProfile, companyContact (Kontakte), companyEvaluation (Bewertung). Laeuft auf dem Rechner des Nutzers, sobald die AVA-App laeuft, und zaehlt wie in der App.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        companyId: { type: "string" },
+        stufe: { type: "string", enum: ["structuredContent", "companyPublication", "website", "companyProfile", "companyContact", "companyEvaluation"] },
+      },
+      required: ["companyId", "stufe"],
+    },
+  },
+  {
     name: "auftrag_status",
     schalter: "lesen",
     description: "Stand eines Vorgangs (transactionId aus import_anlegen oder auftraege): Firmen gesamt/fertig/mit Fehler, offene Schritte, letztes Lebenszeichen, Fehlerbeispiele.",
@@ -268,6 +297,30 @@ async function fuehreAus(app: OpenAPIHono, token: string, name: string, args: Re
         ergebnisse.push({ land, ...(r.json as object) });
       }
       return { text: kompakt({ hinweis: "Vorgang angelegt. Die Verarbeitung laeuft, sobald die AVA-App des Nutzers laeuft; Stand mit auftrag_status.", vorgaenge: ergebnisse }) };
+    }
+    case "recherche_anstossen": {
+      const id = String(args.companyId ?? "").trim();
+      const feature = String(args.feature ?? "");
+      const stufe = args.stufe === "deep" ? "deep" : "standard";
+      if (!id || !["jobs", "expansion"].includes(feature)) return { text: "companyId und feature (jobs | expansion) angeben.", isError: true };
+      const r = await api(app, token, "POST", `/v1/companies/${encodeURIComponent(id)}/research`, { feature, stufe });
+      if (!r.ok) return { text: fehlerText(r), isError: true };
+      const j = r.json as { angestossen?: boolean; grund?: string; transactionId?: string | null };
+      return { text: kompakt({ ...j, hinweis: j.angestossen ? "Die Recherche laeuft, sobald die AVA-App des Nutzers laeuft; Ergebnis spaeter ueber firma_lesen." : undefined }) };
+    }
+    case "neu_verarbeiten": {
+      const id = String(args.companyId ?? "").trim();
+      const stufe = String(args.stufe ?? "");
+      if (!id || !["structuredContent", "companyPublication", "website", "companyProfile", "companyContact", "companyEvaluation"].includes(stufe)) {
+        return { text: "companyId und stufe angeben.", isError: true };
+      }
+      // Die Verarbeitung haengt an der juengsten Transaktion der Firma.
+      const m = await api(app, token, "GET", `/v1/companies/matrix${qs({ pageNumber: 1, pageSize: 1, companyId: id })}`);
+      const zeile = ((m.json as { items?: Array<{ transactionId?: string | null; name?: string }> } | null)?.items ?? [])[0];
+      if (!zeile?.transactionId) return { text: "Die Firma steht nicht in „Meine Firmen“ oder wurde noch nie verarbeitet — zuerst import_anlegen.", isError: true };
+      const r = await api(app, token, "POST", `/v1/transactions/${encodeURIComponent(zeile.transactionId)}/entities/${encodeURIComponent(id)}/retry`, { stage: stufe, ...(zeile.name ? { companyName: zeile.name } : {}) });
+      if (!r.ok) return { text: fehlerText(r), isError: true };
+      return { text: kompakt({ transactionId: zeile.transactionId, stufe, hinweis: "Angestossen. Die Verarbeitung laeuft, sobald die AVA-App des Nutzers laeuft; Stand mit auftrag_status.", ...(r.json as object) }) };
     }
     case "auftrag_status": {
       const id = String(args.transactionId ?? "").trim();

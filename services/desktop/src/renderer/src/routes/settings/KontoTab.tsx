@@ -5,6 +5,7 @@ import {
   GeneralMemorySection,
 } from "../Settings";
 import { useFeature } from "../../store/policy";
+import { VerbindungenSection } from "./VerbindungenSection";
 
 // Konto-Tab — "wer du bist" + Abrechnung + (zukünftig) Erscheinung.
 //
@@ -19,6 +20,7 @@ export function KontoTab() {
       <ProfileSection />
       {beobachterErlaubt && <LinkedInCalibrationNote />}
       <GeneralMemorySection />
+      <VerbindungenSection />
       <section
         id="erscheinung"
         className="provider-section"

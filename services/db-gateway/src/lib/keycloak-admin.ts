@@ -341,3 +341,75 @@ export async function createMcpClient(input: CreateMcpClientInput): Promise<{ cl
   }
   return { clientId, uuid };
 }
+
+// ---- Verbundene Dienste: Einwilligungen des Nutzers (docs/PLAN_MCP_OEFFNUNG.md, P5) ----
+
+export interface Einwilligung {
+  clientId: string;
+  name: string | null;
+  mcp: boolean;
+  erteiltAt: string | null;
+  zuletztAt: string | null;
+  scopes: string[];
+}
+
+interface ConsentRep {
+  clientId?: string;
+  grantedClientScopes?: string[];
+  createdDate?: number;
+  lastUpdatedDate?: number;
+}
+
+async function clientUuidVon(clientId: string): Promise<{ id: string; name: string | null } | null> {
+  const res = await adminFetch(`/clients?clientId=${encodeURIComponent(clientId)}`);
+  if (!res.ok) return null;
+  const liste = (await res.json()) as Array<{ id: string; name?: string }>;
+  return liste[0] ? { id: liste[0].id, name: liste[0].name ?? null } : null;
+}
+
+/** Einwilligungen (consents) eines Nutzers; MCP-Clients zuerst. */
+export async function listeEinwilligungen(userId: string): Promise<Einwilligung[]> {
+  const res = await adminFetch(`/users/${encodeURIComponent(userId)}/consents`);
+  if (!res.ok) throw new KeycloakAdminError(res.status, await res.text(), "keycloak_error");
+  const rows = (await res.json()) as ConsentRep[];
+  const out: Einwilligung[] = [];
+  for (const r of rows) {
+    if (!r.clientId) continue;
+    const client = await clientUuidVon(r.clientId).catch(() => null);
+    out.push({
+      clientId: r.clientId,
+      name: client?.name ?? null,
+      mcp: r.clientId.startsWith("mcp-"),
+      erteiltAt: r.createdDate ? new Date(r.createdDate).toISOString() : null,
+      zuletztAt: r.lastUpdatedDate ? new Date(r.lastUpdatedDate).toISOString() : null,
+      scopes: r.grantedClientScopes ?? [],
+    });
+  }
+  return out.sort((a, b) => Number(b.mcp) - Number(a.mcp) || (b.zuletztAt ?? "").localeCompare(a.zuletztAt ?? ""));
+}
+
+/**
+ * Einwilligung widerrufen (Tokens des Clients fuer diesen Nutzer werden
+ * ungueltig). Dynamische MCP-Clients ohne weitere Nutzer werden geloescht:
+ * Keycloak kennt keine Zaehlung je Client, deshalb nur, wenn der Client
+ * `mcp-` heisst und die Widerrufende die einzige bekannte Sitzung hatte.
+ */
+export async function widerrufeEinwilligung(userId: string, clientId: string): Promise<{ gefunden: boolean; entfernt: boolean }> {
+  const res = await adminFetch(`/users/${encodeURIComponent(userId)}/consents/${encodeURIComponent(clientId)}`, { method: "DELETE" });
+  if (res.status === 404) return { gefunden: false, entfernt: false };
+  if (!res.ok) throw new KeycloakAdminError(res.status, await res.text(), "keycloak_error");
+  let entfernt = false;
+  if (clientId.startsWith("mcp-")) {
+    const client = await clientUuidVon(clientId).catch(() => null);
+    if (client) {
+      const sessions = await adminFetch(`/clients/${encodeURIComponent(client.id)}/session-count`).catch(() => null);
+      const n = sessions && sessions.ok ? ((await sessions.json()) as { count?: number }).count ?? 0 : 0;
+      if (n === 0) {
+        const del = await adminFetch(`/clients/${encodeURIComponent(client.id)}`, { method: "DELETE" });
+        entfernt = del.ok;
+      }
+    }
+  }
+  return { gefunden: true, entfernt };
+}
+

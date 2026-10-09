@@ -237,10 +237,24 @@ Freigabe vor dem Deploy.
   `mcp.lesen`, `mcp.auftraege`, `mcp.kontakte` (Standard aus); die
   Organisation-Seite kennt jetzt `standardAus`-Schalter (Haken nur bei
   ausdruecklich true).
+- **P4 ohne eigene Tabelle (2026-10-09):** Recherche je Firma
+  (`POST /v1/companies/{id}/research`) und Neuverarbeitung einer Stufe
+  (`POST /v1/transactions/{tx}/entities/{id}/retry`) veroeffentlichen die
+  AMQP-Ereignisse in die dauerhafte Warteschlange des Nutzers; die App
+  arbeitet sie ab, sobald sie laeuft. Zwei Werkzeuge `recherche_anstossen`
+  und `neu_verarbeiten` genuegen. Die `Auftrag`-Tabelle bleibt in §8 fuer
+  Arten ohne vorhandenen Ereignispfad (Kontakt-Recherche, Gesellschafterlisten).
+- **P5 Verbundene Dienste:** Gateway `GET/DELETE /v1/auth/verbindungen`
+  (Keycloak-Einwilligungen des Nutzers ueber die Admin-API, Widerruf loescht
+  die Einwilligung und entfernt verwaiste `mcp-`-Clients), Desktop-Abschnitt
+  im Konto-Reiter mit Adresse, Liste und „Trennen“.
+- **Live-Test 2026-10-09:** Keycloak eingerichtet, Claude Code hat sich
+  registriert (Client `mcp-…`, Redirect localhost) und angemeldet. Die
+  Werkzeuge erscheinen erst, wenn der Org-Schalter `mcp` gesetzt ist
+  (App ab v0.1.785/786).
 - **Offen:** P2 Herkunft `quelle` an Transaktionen (heute Vorgangsname
-  „Import über MCP …“ und Gateway-Log), P4 `Auftrag`-Tabelle fuer
-  app-pflichtige Arten, P5 Seite „Verbundene Dienste“ und Nutzer-Doku,
-  Live-Test mit Claude Code und Claude.ai nach der Keycloak-Einrichtung.
+  „Import über MCP …“ und Gateway-Log), Nutzer-Doku/Website-Text,
+  Werkzeugtest in Claude.ai und ChatGPT.
 
 ## 10. Einrichtung durch den Operator (Keycloak, einmalig)
 
