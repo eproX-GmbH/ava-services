@@ -746,3 +746,44 @@ echten Telegram-Sprachnachricht sind im Container noch zu testen.
 Damit ist §12.3 R1–R4 umgesetzt. Offen bleiben Stufe 3 (Node-Modus: LinkedIn,
 Mikrofon, Anthropic-Abo-Anmeldung) und das MCP-Relais X1–X3 (§11.5).
 
+### 12.11 Erste Instanz auf Fly (2026-10-09)
+
+Zwei Apps in der persönlichen Fly-Organisation, Region Frankfurt:
+
+| App | Konfiguration | Zweck |
+|---|---|---|
+| `headless-ava` | shared-cpu-2x, 4 GB, Volume `ava_data` 10 GB, `services/desktop/fly.server.toml` | der Kopf, ein Konto |
+| `ava-ollama` | shared-cpu-2x, 2 GB, Volume `ollama_models` 15 GB, `infra/fly-ollama/fly.toml`, nur im 6PN-Netz | Embeddings (embeddinggemma) |
+
+Deploy aus der Repo-Wurzel (Kontext), Dockerfile-Pfad gilt relativ zur
+Konfigurationsdatei: `fly deploy "$(git rev-parse --show-toplevel)" -c
+services/desktop/fly.server.toml --build-secret npm_token="$NPM_TOKEN"`.
+Ein Durchlauf dauert etwa 15 Minuten (511 MB Kontext, Producer-Vendoring im
+Builder, 2,8 GB Image). Secrets: `AVA_SECRETS_KEY`, `AVA_SETUP_TOKEN`.
+
+Was der erste Tag gezeigt hat (alle Punkte behoben und im Code kommentiert):
+
+1. Keycloak erzwingt am Client PKCE auch für den Device Flow; der Device-
+   Request trägt jetzt `code_challenge`, der Token-Abruf `code_verifier`.
+2. Die Erreichbarkeitsprobe des Ollama-Supervisors (500 ms) war für den
+   Sidecar im Privatnetz zu knapp; externe Hosts bekommen 5 s.
+3. Ein gespeicherter Schlüssel schaltet den aktiven Anbieter nicht um; ohne
+   Oberfläche blieb Ollama aktiv und der Website-Producer kam nicht ans Modell.
+   Der Server wechselt beim Speichern und beim Start auf den Anbieter mit
+   Schlüssel, Ollama bleibt für Embeddings.
+4. Die Producer lesen `OLLAMA_URL`; der Manager setzte sie nur lokal. Mit
+   `AVA_OLLAMA_HOST/PORT` zeigt sie auf den Sidecar.
+5. `fly deploy` löst `[build].dockerfile` relativ zur Konfiguration auf; der
+   Kontext kommt aus dem ersten Argument.
+
+Erster Durchlauf mit einer echten Firma (Strategic IT GmbH, Herford, über
+`/v1/imports/from-list` mit Device-Flow-Token): Register, Website, Kontakte
+und Kundenseiten liefen auf dem Server durch (1 Firma fertig, 4 Schritte, 2
+übersprungen); Chromium 154 passt zum chromedriver des Images. Offen nach
+dem vierten Deploy zu prüfen: Embeddings gegen den Sidecar, die Meldungen
+„Couldn't find token“ und „deep research … url is a required field“ des
+Website-Producers (Research-Einstellungen ohne Schlüssel).
+
+Betriebskosten bei Dauerbetrieb rund 35 bis 40 $ im Monat (Kopf 21 bis 22,
+Sidecar 10 bis 11, Volumes rund 4, Traffic wenige Dollar) plus Modellkosten.
+
