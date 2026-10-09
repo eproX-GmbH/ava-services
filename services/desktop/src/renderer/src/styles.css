@@ -8822,3 +8822,179 @@ body.sprachmodus .upstream-banner, body.sprachmodus .tier-banner, body.sprachmod
 .siwc-button:where(:hover:not(:disabled)) { background: #262626; border-color: #262626; color: #ffffff; }
 .siwc-button img { display: block; }
 .siwc-hinweis { border: 1px solid var(--border); border-radius: var(--ctrl-radius); padding: 0.8rem 1rem; margin: 0.4rem 0; }
+
+/* ---- Firmensuche (2026-10-09): Suchpanel, Leerzustand, Trefferliste ----- */
+.firmensuche__panel {
+  border: 1px solid var(--color-border);
+  border-radius: 16px;
+  background: var(--color-bg-1);
+  box-shadow: var(--shadow-soft);
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 1.25rem;
+}
+.firmensuche__eingabe {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0;
+}
+.firmensuche__eingabe input[type="search"] {
+  flex: 1;
+  min-width: 0;
+  font-size: 17px;
+  padding: 12px 44px 12px 44px;
+  border-radius: 12px;
+}
+.firmensuche__icon {
+  position: absolute;
+  left: 14px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: inline-flex;
+  color: var(--color-fg-muted);
+  pointer-events: none;
+}
+.firmensuche__spinner {
+  position: absolute;
+  right: 14px;
+  top: 50%;
+  width: 16px;
+  height: 16px;
+  margin-top: -8px;
+  border: 2px solid var(--color-border);
+  border-top-color: var(--color-indigo-600);
+  border-radius: 50%;
+  animation: ava-spin 0.8s linear infinite;
+}
+.firmensuche__filter {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 16px;
+}
+.firmensuche__hinweis {
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--color-fg-muted);
+}
+
+.firmensuche__leer {
+  border: 1px dashed var(--color-border);
+  border-radius: 16px;
+  padding: 2rem 1.5rem;
+  text-align: center;
+  max-width: 640px;
+  margin: 2rem auto 0;
+}
+.firmensuche__leer-titel {
+  margin: 0 0 0.4rem;
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--color-fg);
+}
+.firmensuche__leer .muted { margin: 0 auto; max-width: 520px; }
+.firmensuche__beispiele {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 1.1rem;
+}
+.firmensuche__beispiel {
+  padding: 6px 14px;
+  border-radius: 999px;
+  border: 1px solid var(--color-border);
+  background: var(--color-bg-1);
+  color: var(--color-fg);
+  font-size: 13px;
+  box-shadow: none;
+}
+.firmensuche__beispiel:hover {
+  border-color: var(--color-indigo-600);
+  color: var(--color-indigo-700);
+  background: var(--color-indigo-50);
+  transform: none;
+  box-shadow: none;
+}
+
+.firmensuche__zaehler {
+  margin: 0 0 0.6rem 4px;
+  font-size: 13px;
+  color: var(--color-fg-muted);
+}
+.firmensuche__zaehler strong { color: var(--color-fg); font-weight: 600; }
+
+.firmen-liste {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--color-border);
+  border-radius: 14px;
+  background: var(--color-bg-1);
+  overflow: hidden;
+}
+.firmen-treffer + .firmen-treffer { border-top: 1px solid var(--color-border); }
+.firmen-treffer__link {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  color: inherit;
+  text-decoration: none;
+  transition: background 120ms ease;
+}
+.firmen-treffer__link:hover {
+  background: var(--color-indigo-50);
+  text-decoration: none;
+}
+.firmen-treffer__text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.firmen-treffer__name {
+  font-weight: 600;
+  font-size: 15px;
+  color: var(--color-fg);
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 2px 0;
+}
+.firmen-treffer__meta {
+  font-size: 13px;
+  color: var(--color-fg-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.firmen-treffer__pfeil {
+  display: inline-flex;
+  color: var(--color-fg-faint);
+  flex-shrink: 0;
+}
+.firmen-treffer__link:hover .firmen-treffer__pfeil { color: var(--color-indigo-600); }
+
+.firmen-treffer--skelett {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px 16px;
+}
+.firmen-treffer__skelett-zeile {
+  display: block;
+  height: 14px;
+  border-radius: 6px;
+  /* Explizite Toene: --color-bg-2/-3 sind im hellen Thema weiss. */
+  background: linear-gradient(90deg, #f1f5f9 25%, #e2e8f0 50%, #f1f5f9 75%);
+  background-size: 200% 100%;
+  animation: firmensuche-schimmer 1.2s ease-in-out infinite;
+}
+.firmen-treffer__skelett-zeile--klein { height: 11px; }
+@keyframes firmensuche-schimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+:root.dark .firmen-treffer__link:hover { background: var(--color-bg-3); }
+:root.dark .firmen-treffer__skelett-zeile { background: linear-gradient(90deg, #334155 25%, #475569 50%, #334155 75%); background-size: 200% 100%; }
+:root.dark .firmensuche__beispiel:hover { background: var(--color-bg-3); color: var(--color-indigo-600); }
