@@ -274,11 +274,27 @@ an. Dafuer im Keycloak-Admin (Realm `ava`):
 Test danach mit Claude Code:
 
 ```bash
-claude mcp add --transport http ava https://ava-db-gateway.fly.dev/mcp
+claude mcp add --transport http ava https://mcp.ava.bi
 ```
 
 Claude Code holt die Metadata, registriert sich, oeffnet den Browser zur
 Keycloak-Anmeldung; danach `/mcp` im Chat und `firma_suchen` probieren.
 In Claude.ai: Einstellungen → Connectors → Custom connector mit derselben
 URL. Erscheinen keine Werkzeuge, fehlt der Org-Schalter `mcp`.
+
+## 11. Eigener Host mcp.ava.bi (2026-10-09)
+
+Der Endpunkt ist unter zwei Adressen erreichbar, die Metadata richtet sich
+nach dem Host-Header (`mcpBasis` in `routes/mcp-oauth.ts`):
+
+| Host | MCP-Endpunkt | OAuth-Issuer | Registrierung |
+|---|---|---|---|
+| `ava-db-gateway.fly.dev` | `/mcp` | `/mcp/oauth` | `/mcp/oauth/register` |
+| `mcp.ava.bi` (`MCP_PUBLIC_HOST`) | `/` | `/oauth` | `/oauth/register` |
+
+Fly: `fly certs add mcp.ava.bi -a ava-db-gateway`; DNS beim Registrar:
+CNAME `mcp.ava.bi` → `ava-db-gateway.fly.dev` (oder A 66.241.124.69 und
+AAAA 2a09:8280:1::10e:68dc:0; fuer die Zertifikatspruefung zusaetzlich den
+von Fly genannten `_acme-challenge`-CNAME). `api.ava.bi` ist angelegt, aber
+noch nicht verdrahtet (spaeter: Alias fuer `/v1`).
 

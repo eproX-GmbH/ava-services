@@ -153,6 +153,8 @@ const schema = z.object({
   GATEWAY_ALLOWED_ORIGINS: z.string().optional(),
   /** Oeffentliche Basis-URL des Gateways (MCP-OAuth-Metadata, docs/PLAN_MCP_OEFFNUNG.md). */
   GATEWAY_PUBLIC_URL: z.string().url().default("https://ava-db-gateway.fly.dev"),
+  /** Eigener Host fuer den MCP-Endpunkt (Endpunkt an der Wurzel, OAuth unter /oauth). */
+  MCP_PUBLIC_HOST: z.string().default("mcp.ava.bi"),
   /** Keycloak-Client, dessen Client-Scopes neue MCP-Clients erben. */
   KEYCLOAK_MCP_TEMPLATE_CLIENT_ID: z.string().default("ava-desktop"),
 

@@ -17,6 +17,7 @@
 // Redirect-Hosts, Rate-Limit je Adresse, Namenspraefix `mcp-`.
 
 import { Hono } from "hono";
+import type { Context } from "hono";
 import { loadEnv } from "../lib/env";
 import { logger } from "../lib/logger";
 import { createMcpClient, RegistrationDisabledError } from "../lib/keycloak-admin";
@@ -38,8 +39,31 @@ const REDIRECT_ERLAUBT: RegExp[] = [
   /^https:\/\/localhost(:\d+)?\//,
 ];
 
-function publicUrl(): string {
-  return loadEnv().GATEWAY_PUBLIC_URL.replace(/\/+$/, "");
+/**
+ * Zwei Adressen fuer denselben Endpunkt (docs/PLAN_MCP_OEFFNUNG.md):
+ *   https://<gateway>/mcp  mit OAuth unter /mcp/oauth   (Fly-Hostname)
+ *   https://mcp.ava.bi     mit OAuth unter /oauth        (eigener Host)
+ * Die Metadata muss zur aufgerufenen Adresse passen, sonst lehnen Clients
+ * den Issuer ab. Deshalb haengt alles am Host-Header.
+ */
+export interface McpBasis {
+  base: string;
+  mcpPfad: string;
+  oauthPfad: string;
+  eigenerHost: boolean;
+}
+
+export function mcpBasis(hostHeader: string | undefined): McpBasis {
+  const env = loadEnv();
+  const host = (hostHeader ?? "").toLowerCase().split(":")[0];
+  if (host && host === env.MCP_PUBLIC_HOST.toLowerCase()) {
+    return { base: `https://${host}`, mcpPfad: "", oauthPfad: "/oauth", eigenerHost: true };
+  }
+  return { base: env.GATEWAY_PUBLIC_URL.replace(/\/+$/, ""), mcpPfad: "/mcp", oauthPfad: "/mcp/oauth", eigenerHost: false };
+}
+
+export function istMcpHost(hostHeader: string | undefined): boolean {
+  return mcpBasis(hostHeader).eigenerHost;
 }
 
 function realmUrl(): string | null {
@@ -47,10 +71,10 @@ function realmUrl(): string | null {
   return u ? u.replace(/\/+$/, "") : null;
 }
 
-function resourceMetadata() {
+function resourceMetadata(b: McpBasis) {
   return {
-    resource: `${publicUrl()}/mcp`,
-    authorization_servers: [`${publicUrl()}/mcp/oauth`],
+    resource: `${b.base}${b.mcpPfad}`,
+    authorization_servers: [`${b.base}${b.oauthPfad}`],
     scopes_supported: SCOPES_SUPPORTED,
     bearer_methods_supported: ["header"],
     resource_name: "AVA",
@@ -58,16 +82,16 @@ function resourceMetadata() {
   };
 }
 
-function authorizationServerMetadata() {
+function authorizationServerMetadata(b: McpBasis) {
   const realm = realmUrl();
   if (!realm) return null;
   return {
-    issuer: `${publicUrl()}/mcp/oauth`,
+    issuer: `${b.base}${b.oauthPfad}`,
     authorization_endpoint: `${realm}/protocol/openid-connect/auth`,
     token_endpoint: `${realm}/protocol/openid-connect/token`,
     revocation_endpoint: `${realm}/protocol/openid-connect/revoke`,
     jwks_uri: `${realm}/protocol/openid-connect/certs`,
-    registration_endpoint: `${publicUrl()}/mcp/oauth/register`,
+    registration_endpoint: `${b.base}${b.oauthPfad}/register`,
     scopes_supported: SCOPES_SUPPORTED,
     response_types_supported: ["code"],
     response_modes_supported: ["query"],
@@ -79,19 +103,23 @@ function authorizationServerMetadata() {
 }
 
 // RFC 9728: Metadata der geschuetzten Ressource (mit und ohne Pfad-Suffix).
-mcpOauthRouter.get("/.well-known/oauth-protected-resource", (c) => c.json(resourceMetadata()));
-mcpOauthRouter.get("/.well-known/oauth-protected-resource/mcp", (c) => c.json(resourceMetadata()));
+mcpOauthRouter.get("/.well-known/oauth-protected-resource", (c) => c.json(resourceMetadata(mcpBasis(c.req.header("host")))));
+mcpOauthRouter.get("/.well-known/oauth-protected-resource/mcp", (c) => c.json(resourceMetadata(mcpBasis(c.req.header("host")))));
 
-// RFC 8414: Metadata des Autorisierungsservers fuer den Issuer <public>/mcp/oauth,
+// RFC 8414: Metadata des Autorisierungsservers fuer den Issuer <base><oauthPfad>,
 // sowohl am Pfad-Suffix-Ort als auch unter dem Issuer selbst.
-const asMetadata = (c: { json: (b: unknown, s?: 200 | 503) => Response }) => {
-  const m = authorizationServerMetadata();
+const asMetadata = (c: { req: { header: (n: string) => string | undefined }; json: (b: unknown, s?: 200 | 503) => Response }) => {
+  const m = authorizationServerMetadata(mcpBasis(c.req.header("host")));
   if (!m) return c.json({ error: "keycloak_not_configured" }, 503);
   return c.json(m);
 };
 mcpOauthRouter.get("/.well-known/oauth-authorization-server/mcp/oauth", asMetadata);
 mcpOauthRouter.get("/mcp/oauth/.well-known/oauth-authorization-server", asMetadata);
 mcpOauthRouter.get("/mcp/oauth/.well-known/openid-configuration", asMetadata);
+// Eigener Host (mcp.ava.bi): OAuth unter /oauth.
+mcpOauthRouter.get("/.well-known/oauth-authorization-server/oauth", asMetadata);
+mcpOauthRouter.get("/oauth/.well-known/oauth-authorization-server", asMetadata);
+mcpOauthRouter.get("/oauth/.well-known/openid-configuration", asMetadata);
 
 // ---- Dynamic Client Registration (RFC 7591) --------------------------------
 
@@ -107,7 +135,7 @@ function rateLimitOk(key: string): boolean {
   return true;
 }
 
-mcpOauthRouter.post("/mcp/oauth/register", async (c) => {
+async function registriere(c: Context) {
   const ip = c.req.header("fly-client-ip") ?? c.req.header("x-forwarded-for") ?? "unbekannt";
   if (!rateLimitOk(ip)) {
     return c.json({ error: "invalid_client_metadata", error_description: "Zu viele Registrierungen, spaeter erneut versuchen." }, 429);
@@ -155,4 +183,7 @@ mcpOauthRouter.post("/mcp/oauth/register", async (c) => {
     logger.error({ err: err instanceof Error ? err.message : String(err) }, "[mcp-oauth] Registrierung fehlgeschlagen");
     return c.json({ error: "server_error", error_description: "Registrierung fehlgeschlagen." }, 500);
   }
-});
+}
+
+mcpOauthRouter.post("/mcp/oauth/register", registriere);
+mcpOauthRouter.post("/oauth/register", registriere);

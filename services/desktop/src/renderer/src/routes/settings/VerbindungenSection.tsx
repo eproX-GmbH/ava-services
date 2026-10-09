@@ -40,7 +40,7 @@ export function VerbindungenSection() {
       <p className="muted">
         Claude, ChatGPT oder Claude Code können AVA über MCP nutzen: Firmen lesen, Meldungen abrufen, Importe und
         Recherchen anstoßen. Du verbindest sie dort mit der Adresse{" "}
-        <code>https://ava-db-gateway.fly.dev/mcp</code> und meldest dich mit deinem AVA-Konto an. Jeder Dienst sieht nur
+        <code>https://mcp.ava.bi</code> und meldest dich mit deinem AVA-Konto an. Jeder Dienst sieht nur
         deine eigenen Daten; die Verarbeitung läuft weiter auf diesem Rechner.
       </p>
       {!mcpErlaubt && (

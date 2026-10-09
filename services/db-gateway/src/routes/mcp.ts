@@ -17,6 +17,7 @@
 // (Standard an), `mcp.kontakte` (Standard aus).
 
 import { Hono } from "hono";
+import type { Context } from "hono";
 import type { OpenAPIHono } from "@hono/zod-openapi";
 import { createMiddleware } from "hono/factory";
 import { authMiddleware } from "../middleware/auth";
@@ -24,6 +25,7 @@ import { loadEnv } from "../lib/env";
 import { logger } from "../lib/logger";
 import { getGatewayPool } from "../lib/producer-pools";
 import { loadFeatures } from "../lib/policy-guard";
+import { istMcpHost, mcpBasis } from "./mcp-oauth";
 
 const PROTOKOLL_VERSIONEN = ["2025-06-18", "2025-03-26", "2024-11-05"];
 const SERVER_INFO = { name: "ava", version: "1.0.0" };
@@ -369,7 +371,8 @@ const mcpAuth = createMiddleware(async (c, next) => {
   const direkt = await authMiddleware(c, next);
   const res = direkt ?? c.res;
   if (res && res.status === 401) {
-    const meta = `${loadEnv().GATEWAY_PUBLIC_URL.replace(/\/+$/, "")}/.well-known/oauth-protected-resource/mcp`;
+    const b = mcpBasis(c.req.header("host"));
+    const meta = `${b.base}/.well-known/oauth-protected-resource${b.mcpPfad}`;
     const neu = new Response(res.body, res);
     neu.headers.set("WWW-Authenticate", `Bearer resource_metadata="${meta}"`);
     return neu;
@@ -379,12 +382,26 @@ const mcpAuth = createMiddleware(async (c, next) => {
 
 export function makeMcpRouter(app: OpenAPIHono): Hono {
   const r = new Hono();
+  // Zwei Adressen, ein Handler: /mcp auf dem Fly-Host, / auf mcp.ava.bi.
+  // Auf dem Fly-Host bleibt / unangetastet (naechste Middleware).
+  const nurEigenerHost = createMiddleware(async (c, next) => {
+    if (!istMcpHost(c.req.header("host"))) return next();
+    return mcpAuth(c, next);
+  });
   r.use("/mcp", mcpAuth);
+  r.use("/", nurEigenerHost);
 
-  r.get("/mcp", (c) => c.json({ error: "method_not_allowed", message: "Dieser MCP-Endpunkt arbeitet ohne Server-Stream; bitte POST." }, 405));
+  const methodeNichtErlaubt = (c: Context) =>
+    c.json({ error: "method_not_allowed", message: "Dieser MCP-Endpunkt arbeitet ohne Server-Stream; bitte POST." }, 405);
+  r.get("/mcp", methodeNichtErlaubt);
   r.delete("/mcp", (c) => c.body(null, 200));
+  r.get("/", (c, next) => (istMcpHost(c.req.header("host")) ? methodeNichtErlaubt(c) : next()));
+  r.delete("/", (c, next) => (istMcpHost(c.req.header("host")) ? c.body(null, 200) : next()));
+  r.post("/", (c, next) => (istMcpHost(c.req.header("host")) ? bearbeite(c) : next()));
 
-  r.post("/mcp", async (c) => {
+  r.post("/mcp", (c) => bearbeite(c));
+
+  async function bearbeite(c: Context) {
     const auth = c.get("auth");
     const token = (c.req.header("authorization") ?? "").replace(/^Bearer\s+/i, "");
     let payload: unknown;
@@ -443,6 +460,6 @@ export function makeMcpRouter(app: OpenAPIHono): Hono {
     }
     if (antworten.length === 0) return c.body(null, 202);
     return c.json(stapel ? antworten : antworten[0]);
-  });
+  }
   return r;
 }
