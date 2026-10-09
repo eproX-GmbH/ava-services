@@ -126,6 +126,9 @@ const config = {
     webOrigins: [],
     attributes: {
       "pkce.code.challenge.method": "S256",
+      // R3 (docs/PLAN_AVA_CLOUD.md §12): Anmeldung ohne Fenster fuer den
+      // headless Server ueber den OAuth 2.0 Device Authorization Grant.
+      "oauth2.device.authorization.grant.enabled": "true",
     },
   },
 };

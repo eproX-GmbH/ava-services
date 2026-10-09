@@ -12,7 +12,7 @@
 //   ... Hülle registriert IPC / Fenster ...
 //   await core.startBackground();                      // Ollama, Postgres, Producer, Herzschlag, Worker-Modus
 
-import { lifecycle, notifier, paths, power, windows } from "./platform";
+import { lifecycle, notifier, paths, platform, power, windows } from "./platform";
 import { PlanTokenServer } from "../main/auth/plan-token-server";
 import { meldeAbgeleiteteAdressen } from "../main/contacts/email-muster/rueckmeldung";
 import { radarActivity } from "../main/discovery/activity";
@@ -385,7 +385,12 @@ export async function bootstrapCore(hooks: BootstrapHooks = {}) {
   // Ollama supervisor (D7). Started on app.whenReady, stopped on before-quit.
   // Disabled by setting AVA_DISABLE_OLLAMA=1 — used in CI / mock-gateway dev
   // where there's nothing to run locally.
-  const ollama = new OllamaSupervisor();
+  // Server: ein Ollama-Sidecar unter AVA_OLLAMA_HOST/AVA_OLLAMA_PORT wird übernommen
+  // statt eine gebündelte Fassung zu starten (docs/PLAN_AVA_CLOUD.md §4.1).
+  const ollama = new OllamaSupervisor({
+    ...(process.env.AVA_OLLAMA_HOST ? { host: process.env.AVA_OLLAMA_HOST } : {}),
+    ...(process.env.AVA_OLLAMA_PORT ? { port: Number(process.env.AVA_OLLAMA_PORT) } : {}),
+  });
   // v0.1.220 — Runtime-Self-Update für die Ollama-Binary. Trennt das
   // Lifecycle des Supervisors (Subprozess hochfahren / Modelle pullen)
   // vom Binary-Update (Download neuer Ollama-Version in <userData>/
@@ -1514,7 +1519,9 @@ export async function bootstrapCore(hooks: BootstrapHooks = {}) {
       // O2 — Tenant-Wechsel seit dem letzten Lauf erkennen (Beitritt
       // freigegeben / entfernt), Anfragen-Waechter fuer Admins anwerfen.
       organisationSignedIn();
-      const ergebnis = accountSpaceSignedIn(
+      // Konto-Spaces (ein Verzeichnis je Konto, Wechsel per Neustart) gibt es
+      // nur in der Desktop-App; der Server hat genau ein Konto in AVA_DATA_DIR.
+      const ergebnis = platform().kind !== "electron" ? "ok" : accountSpaceSignedIn(
         {
           sub: status.actorId,
           email: status.email ?? null,

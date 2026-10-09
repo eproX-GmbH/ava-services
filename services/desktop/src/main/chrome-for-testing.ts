@@ -73,6 +73,20 @@ function treiberPfadIn(wurzel: string, p: Plattform): string {
   return join(wurzel, ordner, p === "win64" ? "chromedriver.exe" : "chromedriver");
 }
 
+/**
+ * Fest vorgegebener Browser (Server/Container): `AVA_CHROME_BIN` zeigt auf die
+ * Programmdatei, optional `AVA_CHROMEDRIVER_DIR` auf das Treiberverzeichnis.
+ * Dann wird nichts geladen; die Producer bekommen genau diese Pfade.
+ */
+function festerBrowser(): BrowserStand | null {
+  const bin = process.env.AVA_CHROME_BIN?.trim();
+  if (!bin) return null;
+  if (!existsSync(bin)) return { zustand: "fehler", meldung: `AVA_CHROME_BIN zeigt auf keine Datei: ${bin}` };
+  const treiberDir = process.env.AVA_CHROMEDRIVER_DIR?.trim();
+  const treiber = treiberDir ? join(treiberDir, process.platform === "win32" ? "chromedriver.exe" : "chromedriver") : null;
+  return { zustand: "bereit", version: "system", pfad: bin, treiber: treiber && existsSync(treiber) ? treiber : null };
+}
+
 export class ChromeForTesting {
   private stand: BrowserStand = { zustand: "fehlt" };
   private laufend: Promise<BrowserStand> | null = null;
@@ -103,6 +117,8 @@ export class ChromeForTesting {
    * Start aufgerufen, damit AVA sofort weiß, ob sie ihren eigenen Browser hat.
    */
   async sucheVorhandene(): Promise<BrowserStand> {
+    const fest = festerBrowser();
+    if (fest) return this.setze(fest);
     const p = plattform();
     if (!p) return this.setze({ zustand: "aus" });
     let eintraege: string[] = [];
@@ -128,6 +144,8 @@ export class ChromeForTesting {
    * Beinbruch — der Aufrufer weicht dann auf den Browser der Person aus.
    */
   async stelleSicher(): Promise<BrowserStand> {
+    const fest = festerBrowser();
+    if (fest) return this.setze(fest);
     if (this.laufend) return this.laufend;
     if (this.stand.zustand === "bereit") return this.stand;
     this.laufend = this.laden().finally(() => {

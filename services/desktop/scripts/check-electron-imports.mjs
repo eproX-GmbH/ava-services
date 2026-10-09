@@ -70,6 +70,12 @@ for (const f of walk(coreDir)) {
   if (importiertElectron(f)) fehler.push(`${relative(ROOT, f)}: importiert electron; unter src/core ist das nie erlaubt`);
 }
 
+// src/server: nur die Attrappen unter stubs/ duerfen electron nachbilden (sie importieren es nicht).
+const serverDir = join(ROOT, "src", "server");
+for (const f of walk(serverDir)) {
+  if (importiertElectron(f)) fehler.push(`${relative(ROOT, f)}: importiert electron; der Server-Einstieg laeuft ohne Electron`);
+}
+
 const mainDir = join(ROOT, "src", "main");
 const gesehen = new Set();
 for (const f of walk(mainDir)) {
@@ -92,4 +98,4 @@ if (fehler.length > 0) {
   for (const z of fehler) console.error("  " + z);
   process.exit(1);
 }
-console.log(`[check-electron-imports] ok: ${AUSNAHMEN.size} Ausnahmen unter src/main, keine unter src/core`);
+console.log(`[check-electron-imports] ok: ${AUSNAHMEN.size} Ausnahmen unter src/main, keine unter src/core und src/server`);

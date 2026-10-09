@@ -1,0 +1,19 @@
+# Build-Kontext für services/desktop/Dockerfile.server (Repo-Wurzel).
+.git
+.claude
+**/node_modules
+**/out
+**/dist
+**/.turbo
+services/desktop/resources/ollama
+services/desktop/resources/whisper
+services/desktop/resources/p
+services/desktop/release
+**/*.dmg
+**/*.exe
+**/*.AppImage
+**/*.log
+**/.env
+**/.env.*
+!**/.env.example
+!**/.env.*.example

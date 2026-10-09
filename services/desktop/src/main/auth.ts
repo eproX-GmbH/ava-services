@@ -45,6 +45,16 @@ interface DiscoveryDoc {
   authorization_endpoint: string;
   token_endpoint: string;
   end_session_endpoint?: string;
+  /** OAuth 2.0 Device Authorization Grant (RFC 8628); Keycloak liefert ihn, wenn er am Client aktiviert ist. */
+  device_authorization_endpoint?: string;
+}
+
+/** Was der Nutzer beim Device Flow sieht: Adresse und Code zum Bestätigen im Browser. */
+export interface DeviceFlowCode {
+  verificationUri: string;
+  verificationUriComplete: string | null;
+  userCode: string;
+  expiresAt: number;
 }
 
 
@@ -206,6 +216,87 @@ export class Auth extends EventEmitter {
     const ok = await this.tryRestoreSession();
     if (ok) this.restoreRetryAttempt = 0;
     return ok;
+  }
+
+  /**
+   * Anmeldung ohne Fenster (docs/PLAN_AVA_CLOUD.md §12, R3): OAuth 2.0 Device
+   * Authorization Grant. Der Server holt einen Code, meldet Adresse und Code
+   * über `onCode` (Log, Setup-Seite), und fragt den Token-Endpunkt im vom
+   * Anmeldedienst vorgegebenen Takt ab, bis die Person im Browser bestätigt
+   * hat. Danach läuft alles wie bei der interaktiven Anmeldung über
+   * `applyTokens`. Voraussetzung: am Keycloak-Client ist der Device Flow
+   * eingeschaltet (`oauth2.device.authorization.grant.enabled`).
+   */
+  async deviceFlowSignIn(onCode: (code: DeviceFlowCode) => void): Promise<void> {
+    if (this.inFlight) return this.inFlight;
+    this.inFlight = this.runDeviceFlow(onCode).finally(() => {
+      this.inFlight = null;
+    });
+    return this.inFlight;
+  }
+
+  private async runDeviceFlow(onCode: (code: DeviceFlowCode) => void): Promise<void> {
+    const disc = await this.ensureDiscovery();
+    const endpoint = disc.device_authorization_endpoint;
+    if (!endpoint) {
+      throw new Error(
+        "Der Anmeldedienst bietet keinen Device Flow an (device_authorization_endpoint fehlt). Am Keycloak-Client den OAuth 2.0 Device Authorization Grant einschalten.",
+      );
+    }
+    const start = await fetchWithRetry(
+      endpoint,
+      {
+        method: "POST",
+        headers: { "content-type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({ client_id: this.clientId, scope: "openid profile email offline_access" }).toString(),
+      },
+      { retries: 3, timeoutMs: 10_000 },
+    );
+    if (!start.ok) {
+      const text = await start.text().catch(() => "");
+      throw new Error(`device authorization failed: ${start.status} ${text.slice(0, 200)}`);
+    }
+    const dev = (await start.json()) as {
+      device_code: string;
+      user_code: string;
+      verification_uri: string;
+      verification_uri_complete?: string;
+      expires_in: number;
+      interval?: number;
+    };
+    const expiresAt = Date.now() + dev.expires_in * 1000;
+    onCode({
+      verificationUri: dev.verification_uri,
+      verificationUriComplete: dev.verification_uri_complete ?? null,
+      userCode: dev.user_code,
+      expiresAt,
+    });
+    let intervalMs = Math.max(1, dev.interval ?? 5) * 1000;
+    while (Date.now() < expiresAt) {
+      await new Promise((r) => setTimeout(r, intervalMs));
+      const res = await fetch(disc.token_endpoint, {
+        method: "POST",
+        headers: { "content-type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({
+          grant_type: "urn:ietf:params:oauth:grant-type:device_code",
+          client_id: this.clientId,
+          device_code: dev.device_code,
+        }).toString(),
+      });
+      if (res.ok) {
+        const tokens = (await res.json()) as TokenResponse;
+        await this.applyTokens(tokens, "interactive");
+        return;
+      }
+      const fehler = (await res.json().catch(() => ({}))) as { error?: string };
+      if (fehler.error === "authorization_pending") continue;
+      if (fehler.error === "slow_down") {
+        intervalMs += 5000;
+        continue;
+      }
+      throw new Error(`device flow abgebrochen: ${fehler.error ?? res.status}`);
+    }
+    throw new Error("device flow: Code abgelaufen, bevor die Anmeldung bestätigt wurde");
   }
 
   async signIn(): Promise<void> {

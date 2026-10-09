@@ -1,0 +1,57 @@
+# syntax=docker/dockerfile:1.7
+# AVA headless (docs/PLAN_AVA_CLOUD.md §12, R3): dieselbe AVA wie die Desktop-App,
+# ohne Fenster. Build-Kontext ist die Repo-Wurzel:
+#
+#   docker build -f services/desktop/Dockerfile.server \
+#     --secret id=npm_token,env=NPM_TOKEN -t ava-server .
+#
+# Der npm-Token wird nur für das Vendoring der Producer gebraucht (@ava/event,
+# @ava/auth aus der GitLab-Registry) und landet nicht im Image.
+
+# ---- Build -------------------------------------------------------------------
+FROM node:22-bookworm-slim AS build
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      python3 make g++ git ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+RUN corepack enable && corepack prepare pnpm@9.0.0 --activate
+# Electron-Binary wird im Server nicht gebraucht (spart ~200 MB und Zeit).
+ENV ELECTRON_SKIP_BINARY_DOWNLOAD=1 CI=1
+WORKDIR /src
+COPY . .
+RUN pnpm install --frozen-lockfile
+# Producer bauen und als Node-Pakete unter services/desktop/resources/p/ ablegen.
+RUN --mount=type=secret,id=npm_token \
+    sh -c 'export NPM_TOKEN="$(cat /run/secrets/npm_token 2>/dev/null || true)"; pnpm -F @ava/desktop fetch:producers'
+RUN pnpm -F @ava/desktop build:server
+# Nur Laufzeit-Abhängigkeiten des Desktop-Pakets (ohne electron, vite, builder).
+RUN pnpm --filter @ava/desktop deploy --prod /deploy
+
+# ---- Laufzeit ----------------------------------------------------------------
+FROM node:22-bookworm-slim
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      chromium chromium-driver ffmpeg tini ca-certificates \
+      fonts-liberation fonts-noto-core fonts-noto-color-emoji \
+    && rm -rf /var/lib/apt/lists/*
+RUN useradd --create-home --uid 10001 ava && mkdir -p /data /app && chown -R ava:ava /data /app
+WORKDIR /app
+COPY --from=build --chown=ava:ava /deploy/node_modules ./node_modules
+COPY --from=build --chown=ava:ava /deploy/package.json ./package.json
+COPY --from=build --chown=ava:ava /src/services/desktop/out/server ./server
+COPY --from=build --chown=ava:ava /src/services/desktop/resources/p ./resources/p
+COPY --from=build --chown=ava:ava /src/services/desktop/resources/skills ./resources/skills
+
+ENV NODE_ENV=production \
+    AVA_DATA_DIR=/data \
+    AVA_RESOURCES_DIR=/app/resources \
+    AVA_CHROME_BIN=/usr/bin/chromium \
+    AVA_CHROMEDRIVER_DIR=/usr/bin \
+    AVA_SERVER_BIND=0.0.0.0 \
+    AVA_SERVER_PORT=8080 \
+    AVA_DISABLE_OLLAMA=1
+VOLUME ["/data"]
+EXPOSE 8080
+USER ava
+HEALTHCHECK --interval=30s --timeout=5s --start-period=60s \
+  CMD node -e "fetch('http://127.0.0.1:'+(process.env.AVA_SERVER_PORT||8080)+'/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+ENTRYPOINT ["tini", "--"]
+CMD ["node", "server/main.cjs"]

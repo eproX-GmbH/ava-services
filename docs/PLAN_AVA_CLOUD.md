@@ -9,7 +9,7 @@ die Architektur umzuwerfen? Ergänzt und ersetzt in Teilen
 
 Status: Refactoring (§12) freigegeben 2026-10-09 mit den Vorschlägen aus §12.5
 (R1/R2 vor dem MCP-Relais, Wächter build-blockierend, `core/` als Verzeichnis).
-**R1 in v0.1.787**, **R2a (IPC nach Domänen) in v0.1.788**, **R2b (bootstrapCore) in v0.1.789** (§12.6–§12.8).
+**R1 in v0.1.787**, **R2a (IPC nach Domänen) in v0.1.788**, **R2b (bootstrapCore) in v0.1.789**, **R3 (Server-Einstieg) in v0.1.790** (§12.6–§12.9).
 
 ## 1. Kurzfassung
 
@@ -631,4 +631,63 @@ Damit steht die Voraussetzung für R3: `src/server/main.ts` ruft dieselbe
 `bootstrapCore()` mit der Node-Plattform auf, registriert statt IPC den
 Telegram-Eingang (läuft bereits im Kopf) und später den MCP-Relais-Client,
 und ruft `startBackground()`.
+
+### 12.9 Stand R3: Server-Einstieg (v0.1.790, 2026-10-09)
+
+Dieselbe Komposition läuft unter Node. Rauchtest auf dem Mac mit leerem
+Datenverzeichnis: Postgres (PGlite) bereit, sechs Producer registriert,
+Telegram-Eingang und Hintergrunddienste gestartet, Health-Endpunkte antworten,
+SIGTERM beendet sauber über dieselben Stopp-Schritte wie die App. Die
+Anmeldung bricht noch mit `unauthorized_client` ab, weil der Device Flow am
+Keycloak-Client nicht eingeschaltet ist (siehe „Einrichtung“).
+
+Neu:
+
+- `src/server/main.ts`: Node-Einstieg. `bootstrapCore({})`, `startBackground()`,
+  Anmeldung per OAuth 2.0 Device Flow in Schleife (Code im Log und auf
+  `GET /setup`), `GET /healthz` (Prozess lebt), `GET /readyz` (angemeldet und
+  gestartet), `GET /status` (Kurzlage), SIGTERM/SIGINT mit Stopp-Kette.
+- `src/server/stubs/electron.ts` und `electron-updater.ts`: Attrappen, auf die
+  der Bundler (`scripts/build-server.mjs`, esbuild, `pnpm build:server`) die
+  Importe umlenkt. Module unter src/main, die noch `electron` importieren,
+  laden damit; was ein Fenster bräuchte, wirft mit klarer Meldung.
+- `Auth.deviceFlowSignIn()` in `auth.ts`; `DiscoveryDoc` kennt
+  `device_authorization_endpoint`.
+- `ChromeForTesting` nimmt `AVA_CHROME_BIN` (+ `AVA_CHROMEDRIVER_DIR`) als festen
+  Browser statt zu laden; `OllamaSupervisor` nimmt `AVA_OLLAMA_HOST/PORT` und
+  übernimmt den Sidecar. Konto-Spaces (Wechsel per Neustart) nur unter Electron;
+  `getSharedDir` nutzt die Plattform-Pfade.
+- `Dockerfile.server` (Debian slim, Chromium, chromedriver, ffmpeg, tini, nicht
+  root, Volume `/data`, Healthcheck), `.dockerignore`,
+  `infra/docker-compose.server.yml` (AVA + Ollama-Sidecar, `shm_size` 1 GB,
+  Port nur lokal), `infra/.env.server.example`.
+- Wächter prüft auch `src/server/` (kein `electron`).
+
+Einrichtung durch den Operator (einmalig):
+
+1. Keycloak: am Client `ava-desktop` den OAuth 2.0 Device Authorization Grant
+   einschalten. `infra/scripts/keycloak-config.mjs` setzt das Attribut
+   `oauth2.device.authorization.grant.enabled` jetzt mit; alternativ im
+   Admin-Portal unter Clients → ava-desktop → Capability config.
+2. Image bauen: `docker build -f services/desktop/Dockerfile.server
+   --secret id=npm_token,env=NPM_TOKEN -t ava-server .` (Token nur fürs
+   Vendoring der Producer).
+3. `infra/.env.server` aus dem Beispiel anlegen (`AVA_SECRETS_KEY` mit
+   `openssl rand -hex 32`), `docker compose -f infra/docker-compose.server.yml up -d`,
+   Anmelde-Code aus `logs -f ava` oder `http://127.0.0.1:8080/setup`.
+
+Offen nach R3 (= R4 und Live-Test):
+
+- Telegram-Sprachnachrichten: OGG→WAV läuft noch über das WebAudio-Fenster
+  (`telegram/audio.ts`) und wirft im Server; ffmpeg ist im Image, der Umbau
+  steht aus. Link-Monitor und Discovery-Rückfall (verstecktes Fenster)
+  ebenso.
+- Lokale Modelle: ohne GPU-Host bleibt Ollama im Container den Embeddings
+  vorbehalten; Chat und Producer brauchen Schlüssel oder Abo.
+- Erst-Einrichtung von Schlüsseln ohne Oberfläche: heute nur über Telegram
+  (Chat-Werkzeuge) oder Umgebungsvariablen; eine kleine `/setup`-Maske für
+  Schlüssel fehlt.
+- `MaxListenersExceededWarning` für `keyChanged` am ProviderConfigStore
+  (11 Listener) im Server-Log; prüfen, ob die App dasselbe meldet.
+- Docker-Build: Ergebnis des ersten Baus siehe unten.
 

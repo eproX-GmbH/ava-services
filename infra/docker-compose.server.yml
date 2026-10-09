@@ -1,0 +1,46 @@
+# AVA headless je Nutzer (docs/PLAN_AVA_CLOUD.md §12, R3).
+#
+#   cp infra/.env.server.example infra/.env.server   # Werte eintragen
+#   NPM_TOKEN=… docker compose -f infra/docker-compose.server.yml up -d --build
+#   docker compose -f infra/docker-compose.server.yml logs -f ava   # Anmelde-Code
+#
+# Ein Container = ein Konto = eine Vertrauensgrenze. Der Ollama-Sidecar dient
+# den Embeddings (embeddinggemma); Chat- und Producer-Modelle laufen über den
+# eigenen Schlüssel oder das ChatGPT-Abo, solange kein GPU-Host dahintersteht.
+
+services:
+  ava:
+    build:
+      context: ..
+      dockerfile: services/desktop/Dockerfile.server
+      secrets:
+        - npm_token
+    env_file: .env.server
+    environment:
+      AVA_OLLAMA_HOST: ollama
+      AVA_OLLAMA_PORT: "11434"
+      AVA_DISABLE_OLLAMA: "0"
+    ports:
+      # Nur lokal; davor gehört ein Reverse-Proxy mit TLS (Caddy, Traefik).
+      - "127.0.0.1:8080:8080"
+    volumes:
+      - ava-data:/data
+    # Chromium braucht mehr gemeinsamen Speicher als die Docker-Vorgabe (64 MB).
+    shm_size: "1gb"
+    depends_on:
+      - ollama
+    restart: unless-stopped
+
+  ollama:
+    image: ollama/ollama:latest
+    volumes:
+      - ollama-models:/root/.ollama
+    restart: unless-stopped
+
+secrets:
+  npm_token:
+    environment: NPM_TOKEN
+
+volumes:
+  ava-data:
+  ollama-models:

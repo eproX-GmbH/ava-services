@@ -29,6 +29,7 @@
 // fremde Space bleibt unangetastet, wird aber nie sichtbar).
 
 import { app } from "electron";
+import { paths } from "../core/platform";
 import {
   existsSync,
   mkdirSync,
@@ -207,7 +208,8 @@ export function spaceDirFor(sub: string): string {
 
 /** Basis-userData (Electron-Default), unabhaengig vom aktiven Space. */
 function getBaseUserData(): string {
-  return baseDir || app.getPath("userData");
+  // Server (Node-Plattform): kein Space-Wechsel, Basis ist AVA_DATA_DIR.
+  return baseDir || paths().get("userData");
 }
 
 /** Geraeteweites Verzeichnis (ollama-managed, whisper). */

@@ -59,7 +59,6 @@ export function createNodePlatform(): Platform {
     temp: () => tmpdir(),
   };
   const beforeQuit: Array<() => void> = [];
-  let beendenVerdrahtet = false;
   const beenden = (): void => {
     for (const h of beforeQuit.splice(0)) {
       try {
@@ -114,17 +113,10 @@ export function createNodePlatform(): Platform {
         beenden();
         process.exit(code);
       },
+      // Signale (SIGTERM/SIGINT) behandelt der Server-Einstieg selbst und ruft
+      // am Ende exit(); so laufen erst die Stopp-Schritte, dann die Handler.
       onBeforeQuit: (handler) => {
         beforeQuit.push(handler);
-        if (!beendenVerdrahtet) {
-          beendenVerdrahtet = true;
-          for (const sig of ["SIGINT", "SIGTERM"] as const) {
-            process.once(sig, () => {
-              beenden();
-              process.exit(0);
-            });
-          }
-        }
       },
     },
   };
