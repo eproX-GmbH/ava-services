@@ -197,3 +197,23 @@ Freigabe vor dem Deploy.
    Entwicklermodus (eigene MCP-Connectors), Business/Enterprise über
    Admin-Connectors; keine Verzeichnis-Veröffentlichung nötig. Vor P0 die
    aktuellen ChatGPT-Bedingungen noch einmal gegen die OpenAI-Doku prüfen.
+
+## 8. Später (bewusst zurückgestellt, 2026-10-09)
+
+- App-pflichtige Auftragsarten **Kontakt-Recherche** und **Gesellschafterlisten**
+  (nach Recherche und Publikationen).
+- **A2A-Fassade** (M6): Agent Card, Tasks aus `Auftrag`, Push an Webhook;
+  erst mit konkretem Partner-Agenten.
+- **Dateien über 5 MB** aus Claude/ChatGPT (heute Base64-Grenze; Alternative
+  signierter Upload-Link des Gateways).
+- **Anonymisierte Kontakte** als Mittelweg zwischen „Kontakte aus" und
+  „Kontakte an" (heute nur Org-Schalter `mcp.kontakte`).
+- **Werkzeuge zum Schreiben in die App** (Notizen, Aufgaben, CRM-Verknüpfung)
+  über MCP; Start ist Lesen plus Aufträge.
+- **Eigener Dienst** statt Route im Gateway, falls langlebige Streams oder
+  Last den Gateway-Prozess stören.
+- **ChatGPT-Verzeichnis** (Apps SDK) für Nicht-Entwickler, falls der
+  Entwicklermodus für Plus/Pro nicht reicht.
+- **Radar aus MCP** (Scan anstoßen, Kandidaten lesen) und **Workflows aus MCP**
+  (Workflow starten, Freigaben beantworten).
+
