@@ -1083,6 +1083,12 @@ export class LlmProviderManager extends EventEmitter {
       provider: kind,
       model: model || undefined,
     };
+    // Server mit Ollama-Sidecar (docs/PLAN_AVA_CLOUD.md §12): Embeddings und ein
+    // lokales Chat-Modell laufen gegen den externen Ollama; die Producer lesen
+    // OLLAMA_URL (mit /api). Ohne die Variable gilt weiter localhost:11434.
+    if (process.env.AVA_OLLAMA_HOST) {
+      env.ollamaUrl = `http://${process.env.AVA_OLLAMA_HOST}:${process.env.AVA_OLLAMA_PORT ?? "11434"}/api`;
+    }
     if (kind !== "ollama" && this.keySource(kind) === "organisation") {
       env.viaGateway = true;
       return env;
