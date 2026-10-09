@@ -2,8 +2,11 @@
 .git
 .claude
 **/node_modules
-**/out
-**/dist
+# Bauartefakte des Desktop-Pakets; die Vendor-Kopien der Producer (vendor/ai-provider/dist)
+# sind eingecheckt und werden gebraucht, darum kein pauschales **/dist.
+services/desktop/out
+services/desktop/dist
+packages/*/dist
 **/.turbo
 services/desktop/resources/ollama
 services/desktop/resources/whisper

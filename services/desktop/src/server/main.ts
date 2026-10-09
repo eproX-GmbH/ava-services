@@ -66,7 +66,7 @@ function statusJson(): Record<string, unknown> {
     seit: lage.seit,
     angemeldet: st?.signedIn ?? false,
     konto: st?.email ?? st?.actorId ?? null,
-    producer: core ? core.producers.map((p) => ({ name: p.getStatus().name, state: p.getStatus().state })) : [],
+    producer: core ? core.producers.map((p) => ({ name: p.getStatus().name, state: p.getStatus().state, meldung: p.getStatus().errorMessage ?? null })) : [],
     ollama: core?.ollama.getStatus().state ?? null,
     postgres: core?.postgres.getStatus().state ?? null,
   };
@@ -134,6 +134,7 @@ async function beenden(signal: string): Promise<void> {
   if (beendenLaeuft) return;
   beendenLaeuft = true;
   lage.phase = "beenden";
+  console.log(`[quit] ${signal} empfangen, Dienste werden gestoppt`);
   writeLineSync("INFO ", `[quit] ${signal} empfangen`);
   const c = core;
   if (c) {
@@ -155,6 +156,7 @@ async function beenden(signal: string): Promise<void> {
     quitStep("producerLogBuffer.closeRunFiles", () => producerLogBuffer.closeRunFiles());
   }
   writeLineSync("INFO ", "[quit] Stopp-Schritte fertig");
+  console.log("[quit] Stopp-Schritte fertig");
   // Lässt die onBeforeQuit-Handler der Module laufen und beendet den Prozess.
   lifecycle().exit(0);
 }

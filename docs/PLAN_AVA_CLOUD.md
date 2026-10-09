@@ -689,5 +689,27 @@ Offen nach R3 (= R4 und Live-Test):
   Schlüssel fehlt.
 - `MaxListenersExceededWarning` für `keyChanged` am ProviderConfigStore
   (11 Listener) im Server-Log; prüfen, ob die App dasselbe meldet.
-- Docker-Build: Ergebnis des ersten Baus siehe unten.
+
+Docker-Build (fünf Anläufe, alle Lehren im Dockerfile kommentiert):
+
+1. `pnpm install` über den ganzen Workspace scheitert, weil
+   `packages/queue-client` beim `prepare` `@ava/event` aus der privaten
+   Registry braucht. Lösung wie in der Release-Pipeline: nur
+   `--filter "@ava/desktop..."`.
+2. pnpm führt die `prepare`-Skripte trotz Filter für alle Workspace-Pakete aus.
+   Lösung: `--ignore-scripts` und `@ava/ai-provider` gezielt bauen.
+3. `.dockerignore` mit `**/dist` warf die eingecheckten Vendor-Kopien
+   `vendor/ai-provider/dist` der Producer aus dem Kontext; ihr Build scheiterte.
+   Lösung: nur `services/desktop/out|dist` und `packages/*/dist` ausschließen.
+4. `pnpm deploy --prod` legte nur den virtuellen Store an, keine flachen
+   Modulverweise (`Cannot find module 'yup'`). Lösung: nach dem Build
+   `pnpm install --prod --ignore-scripts` (entfernt Dev-Abhängigkeiten) und den
+   flachen Baum (`node-linker=hoisted`) direkt kopieren, dazu
+   `packages/ai-provider` als Ziel des Workspace-Links.
+5. Grün. Image 2,76 GB: 799 MB `node_modules`, 959 MB Producer unter
+   `resources/p`, Rest Debian mit Chromium, chromedriver und ffmpeg. Container-
+   Test: Start bis Phase „anmeldung“, PGlite bereit, sechs Producer registriert
+   („wartet, nicht angemeldet“), `/data` angelegt, Device-Flow-Schleife läuft bis
+   zum Keycloak-Schalter. Verkleinern (Producer-Abhängigkeiten teilen,
+   Multi-Stage je Producer) ist Feinarbeit für später.
 
