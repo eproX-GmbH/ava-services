@@ -133,7 +133,7 @@ Freigabe vor dem Deploy.
    Regeln.
 4. Schweiz bleibt außen vor, bis Firmen in master-data liegen (CH on hold).
 
-## 7. Stand (2026-10-09, v0.1.781)
+## 7. Stand (2026-10-09, v0.1.781; Gateway und master-data deployt)
 
 Umgesetzt R-L0 bis R-L5 mit den Vorschlaegen aus §6 (UK per `LIKE ANY`
 mit 8 s Zeitgrenze, Agenten-Schwelle 500 je Adresse, gleiche Radius-Regeln).
@@ -162,5 +162,8 @@ mit 8 s Zeitgrenze, Agenten-Schwelle 500 je Adresse, gleiche Radius-Regeln).
   (Hinweis) und Radar-Scan (`land` oder Kuerzel); Formular-Platzhalter.
 - **R-L5 Radar-Tabelle:** Landeschip neben dem Ort fuer AT/UK; Import je
   Land in eigener Transaktion mit `country`.
-- **Offen:** R-L6 Live-Test je Land (Wien, Manchester), Website-Text,
+- **Deploys 2026-10-09:** Gateway (Spalten und GeoPlace-Neuseed entstehen
+  beim ersten Geo-Aufruf) und master-data (Abgleich mit Land).
+- **Offen:** R-L6 Live-Test je Land (Wien, Manchester), Website-Text
+  (`docs/WEBSITE_INFO_RADAR_PLAENE.md` nennt nur „deine Region"),
   Alert-Texte mit Land, Filter nach Land in der Tabelle.

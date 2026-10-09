@@ -31,7 +31,7 @@ Bedient wird AVA über einen Chat-Agenten mit rund 250 Werkzeugen, über die Fir
 | Producer | Quelle | Ergebnis |
 |---|---|---|
 | `structured-content` | Handelsregister (Registerportal), Firmenbuch (AT) und Companies House (UK) über master-data | Stammdaten, Sitz, Geschäftsführung bzw. Officers; für deutsche HRB-Firmen zusätzlich die Gesellschafterliste (siehe Verflechtungen) |
-| `company-publication` | Unternehmensregister / Bundesanzeiger | Jahresabschlüsse, Lagebericht, Bekanntmachungen; Kennzahlen per Lazy-RAG auf Abruf statt Voranalyse |
+| `company-publication` | Unternehmensregister / Bundesanzeiger | Jahresabschlüsse und Konzernabschlüsse (Kennzahlen nur der Muttergesellschaft, Töchter und Geschäftsführung in den Verflechtungen), Lagebericht, Bekanntmachungen; Kennzahlen per Lazy-RAG auf Abruf statt Voranalyse |
 | `website` | Websuche + Firmenwebsite | Beste Treffer-Website, Inhalte, Stellenanzeigen, eingesetzte Systeme aus der Datenschutzerklärung |
 | `company-profile` | Website | Firmenprofil (Angebot, Branche, Größe, Standorte) |
 | `company-contact` | Website, Impressum | Ansprechpartner und Kontaktwege mit Beleg, Herkunftsnachweis und Art.-14-Hinweis |
@@ -41,7 +41,7 @@ Bedient wird AVA über einen Chat-Agenten mit rund 250 Werkzeugen, über die Fir
 - **Stammdaten aktuell halten (Register-Delta):** Neueintragungen, Änderungen und Löschungen kommen täglich aus den Registern. Die Arbeit teilen sich Betreiber-Worker in der Cloud und Nutzer, die „Stammdaten mitpflegen“ einschalten (Opt-in, höchstens 60 Abfragen je Stunde). Geänderte Registerblätter markieren die betroffene Firma als veraltet.
 - **Insolvenzen und Firmenstatus:** gezielte Prüfung je Pool-Firma alle 30 Tage; Insolvenz, Löschung, Löschungsankündigung und Liquidation erscheinen als Chip in den Tabellen, als Warnung in jedem Chat-Werkzeug und als Meldung des Firmenstatus-Wächters.
 - **Firmen-Verflechtungen (Deutschland):** Gesellschafterlisten werden über den Registerordner geladen, mit dem KI-Modell des Nutzers gelesen (zwei unabhängige Lesungen, harter Qualitätsfilter, Bild-Modell ab Stufe A Pflicht) und zu Beteiligungen, Personen und gemeinsamen Adressen verdichtet. Firmen-Gesellschafter werden rekursiv nachgezogen (Besuchsliste, Notbremse Tiefe 6 / 200 Firmen, abschaltbar). Reiter „Verflechtungen“ mit Netzgrafik, Gesellschaftertabelle und Personenseite; Meldung „Gesellschafterwechsel“. Als Org-Feature abschaltbar. Stand: umgesetzt, Ende-zu-Ende-Erprobung läuft.
-- **Neue Firmen finden (Firmen-Radar):** Scan in einer Region aus öffentlichen Firmeneinträgen, KI-geplanter Web-Recherche und unverarbeitetem Registerbestand; Mini-Profile, Score gegen das Idealkundenprofil, Import erst nach Entscheidung des Nutzers. Automatik täglich oder wöchentlich als Opt-in.
+- **Neue Firmen finden (Firmen-Radar):** Scan in einer Region in Deutschland, Österreich oder dem Vereinigten Königreich aus öffentlichen Firmeneinträgen, KI-geplanter Web-Recherche und unverarbeitetem Registerbestand; Mini-Profile, Score gegen das Idealkundenprofil, Import erst nach Entscheidung des Nutzers. Automatik täglich oder wöchentlich als Opt-in.
 - **Idealkundenprofil (ICP):** aus der eigenen Website und bis zu fünf Kunden-Websites abgeleitet oder als Fragebogen; bleibt lokal.
 
 ### Beobachten und melden
@@ -65,7 +65,7 @@ Bedient wird AVA über einen Chat-Agenten mit rund 250 Werkzeugen, über die Fir
 - **Workflows:** Abläufe aus dem Gespräch speichern, als Diagramm kontrollieren, per Zeitplan oder Ereignis ausführen (neuer Radar-Treffer, eingehende Mail, Import fertig). Schreibende Schritte nur nach Freigabe; Freigaben in App, Meldungen oder Telegram; Laufhistorie und Audit.
 - **Skills:** wiederverwendbare Routinen per Slash-Befehl, mit Trust-Modell.
 - **Integrationen:** HubSpot (lesen, anlegen, verknüpfen), Notion, Obsidian. Teilen von Recherchen, Radar-Firmen und Workflows mit der Organisation.
-- **KI-Modelle:** lokal (Ollama, kuratierte Modelle mit Hardware-Prüfung) oder mit eigenem Schlüssel bei OpenAI, Anthropic, Google, Mistral, DeepSeek, xAI, Qwen; ChatGPT-Abo und Anthropic-Abo per OAuth nutzbar. Jedes Modell hat eine Qualitätsstufe (S/A/B/C, `docs/MODEL_TIERS.md`), die entscheidet, ob ein Ergebnis bestehende Daten überschreiben darf und welche Funktionen es freischaltet. Getrenntes, günstigeres Modell für die Hintergrundverarbeitung, Token-Limit je Tag, Verbrauchsübersicht.
+- **KI-Modelle:** lokal (Ollama, kuratierte Modelle mit Hardware-Prüfung) oder mit eigenem Schlüssel bei OpenAI, Anthropic, Google, Mistral, DeepSeek, xAI, Qwen; ChatGPT-Abo (Plus/Pro) per „Sign in with ChatGPT“ für Chat, Hintergrund-KI, Workflows und Firmenverarbeitung nutzbar (nicht für Sprachmodus und Deep Research). Jedes Modell hat eine Qualitätsstufe (S/A/B/C, `docs/MODEL_TIERS.md`), die entscheidet, ob ein Ergebnis bestehende Daten überschreiben darf und welche Funktionen es freischaltet. Getrenntes, günstigeres Modell für die Hintergrundverarbeitung, Token-Limit je Tag, Verbrauchsübersicht.
 
 ### Organisationen
 

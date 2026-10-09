@@ -163,7 +163,12 @@ Teiltest (a) bis (f).
 3. Research Standard über das Abo nur, wenn `web_search` im Test läuft;
    sonst weiter Schlüssel.
 
-## 8. Stand (2026-10-09, v0.1.779)
+## 8. Stand (2026-10-09, v0.1.780; Gateway deployt)
+
+v0.1.779 scheiterte im CI: company-publication bringt eine eigene Kopie des
+AI SDK mit, deren `jsonSchema()`-Typ nicht zur Helfer-Signatur passte; seit
+v0.1.780 tragen `objektErzeugen`/`textErzeugen` keine Typen aus "ai" mehr.
+Gateway mit `TenantPolicy.chatgptPlanProducer` am 2026-10-09 deployt.
 
 Umgesetzt A1–A5 ohne vorherigen A0-Test (kein Plus/Pro-Konto in dieser
 Sitzung verfuegbar); A0 und A6 stehen aus und entscheiden, ob strukturierte

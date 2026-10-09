@@ -7,7 +7,8 @@ versprechen, was hier nicht steht.
 
 ## Das Feature in einem Satz
 
-Der Firmen-Radar findet laufend Firmen in deiner Region, die noch nicht
+Der Firmen-Radar findet laufend Firmen in deiner Region (Deutschland,
+Österreich oder Vereinigtes Königreich, seit v0.1.781), die noch nicht
 in deinem CRM stehen, gleicht sie mit deinem Idealkundenprofil ab und
 meldet dir die Treffer, die wirklich passen. Importiert wird nur, was du
 ausdruecklich freigibst.

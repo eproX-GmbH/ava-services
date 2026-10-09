@@ -157,7 +157,7 @@ die Kosten der Einzelabschlüsse.
   Mindestaehnlichkeit 0,45) ergaenzt die Ueberschriften-Treffer unter dem
   gleichen Budget; das Log nennt die Anteile beider Quellen. Ohne Embedder
   bleibt es beim Ueberschriften-Routing.
-- **K4 umgesetzt (2026-10-08, v0.1.777):** Producer `konzern-angaben.ts`
+- **K4 umgesetzt (2026-10-08, v0.1.777; Gateway mit beiden Tabellen am 2026-10-09 deployt):** Producer `konzern-angaben.ts`
   (deterministisch, kein Modellaufruf): Toechter aus Beteiligungstabellen
   (Name/Sitz/Land/Anteil/seit/Kerngeschaeft, Mutterzeile faellt weg),
   Konzernmutter aus dem Satz „in den Konzernabschluss der … einbezogen",
