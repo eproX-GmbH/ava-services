@@ -59,7 +59,7 @@ je Werkzeug.
 Claude / ChatGPT / Claude Code          andere Agenten (A2A, später)
         │ OAuth 2.1 (Keycloak)                  │
         ▼                                       ▼
-   ava-mcp (Fly, Streamable HTTP) ───▶ db-gateway /v1 (bestehende Routen)
+   db-gateway /mcp (Streamable HTTP) ──▶ db-gateway /v1 (bestehende Routen)
         │ Tools: lesen, Auftrag anlegen,        │
         │ Status, Meldungen                     ▼
         │                              Transaktion + AMQP je Nutzer
@@ -71,7 +71,7 @@ Claude / ChatGPT / Claude Code          andere Agenten (A2A, später)
 
 ## 4. Bausteine
 
-### M1 MCP-Server `ava-mcp` (Fly, neben dem Gateway)
+### M1 MCP-Endpunkt `/mcp` im Gateway (Entscheidung 2026-10-09: Route, kein eigener Dienst)
 
 - Transport Streamable HTTP, Autorisierung nach MCP-Spezifikation:
   Protected-Resource-Metadata zeigt auf Keycloak, Clients registrieren sich
@@ -130,7 +130,8 @@ Werkzeug nimmt deshalb Base64 (xlsx/csv bis 5 MB) oder die Liste als JSON.
 
 ### M5 Org-Schalter und Sicherheit
 
-- `TenantPolicy.features`: `mcp` (Hauptschalter, Standard aus),
+- `TenantPolicy.features`: `mcp` (Hauptschalter, Standard aus; Opt-in der
+  Organisation; der Nutzer verbindet zusätzlich selbst per OAuth),
   `mcp.lesen`, `mcp.kontakte`, `mcp.auftraege`; Oberfläche in Organisation
   → Vorgaben mit Hinweis, dass Daten an das Modell des jeweiligen Anbieters
   gehen. Abgeschaltete Werkzeuge erscheinen nicht in `tools/list`.
@@ -155,15 +156,14 @@ Werkzeug nimmt deshalb Base64 (xlsx/csv bis 5 MB) oder die Liste als JSON.
 | Schritt | Inhalt | Aufwand |
 |---|---|---|
 | P0 | Keycloak: Client-Scopes `mcp:read`/`mcp:write`, DCR-Policy, Resource-Metadata; Test mit Claude Code (`claude mcp add --transport http`) | 1 Tag |
-| P1 | `ava-mcp` Grundgerüst (Node, MCP SDK, Streamable HTTP, Token-Weitergabe), Tools lesen (`firma_suchen`, `firma_lesen`, `meine_firmen`, `meldungen`, `auftrag_status`, `auftraege`) | 2 Tage |
+| P1 | Router `/mcp` im Gateway (MCP SDK, Streamable HTTP, Token-Weitergabe), Tools lesen (`firma_suchen`, `firma_lesen`, `meine_firmen`, `meldungen`, `auftrag_status`, `auftraege`) | 2 Tage |
 | P2 | Gateway: Herkunft `quelle` an Transaktionen und Audit, `/v1/transactions?quelle=`, Org-Schalter `mcp.*` in Policy und Organisation-Seite | 1 Tag |
 | P3 | `import_anlegen` (Base64/Liste → `/v1/imports/*`), Rückmeldung über Hintergrundaufgaben mit Quelle „Claude" | 1 Tag |
 | P4 | `Auftrag`-Tabelle, `/v1/auftraege`, App-Poller mit Lease für app-pflichtige Arten (Recherche, Publikationen, Kontakte), Verfall, Meldung | 2 Tage |
 | P5 | Verbundene Dienste in den Einstellungen (Token widerrufen), Doku für Nutzer („AVA mit Claude verbinden"), Website-Text | 1 Tag |
 | P6 | A2A-Fassade | 2 Tage, nur bei Bedarf |
 
-Gesamt für MCP (P0–P5) etwa 8 Tage, zwei Releases plus Gateway- und
-MCP-Deploys. Schemaänderungen: `Auftrag`-Tabelle und `quelle`-Spalte,
+Gesamt für MCP (P0–P5) etwa 8 Tage, zwei Releases plus Gateway-Deploys. Schemaänderungen: `Auftrag`-Tabelle und `quelle`-Spalte,
 Freigabe vor dem Deploy.
 
 ## 6. Risiken
@@ -177,17 +177,23 @@ Freigabe vor dem Deploy.
   in der App; der Tool-Text nennt vorab Anzahl und Plan-Rest.
 - **Dateien über Claude.ai.** Base64-Grenze 5 MB; größere Listen über die
   App.
-- **Betrieb.** Ein weiterer Fly-Dienst mit eigenem Health und Logs;
-  Rate-Limit je Token im Gateway (vorhandene Limiter).
+- **Betrieb.** Langlebige MCP-Sitzungen im Gateway-Prozess; Rate-Limit je
+  Token (vorhandene Limiter), eigener Router, bei Bedarf später herauslösbar.
 
-## 7. Offene Entscheidungen
+## 7. Entscheidungen (2026-10-09, zweite Runde)
 
-1. Eigener Fly-Dienst `ava-mcp` oder Route `/mcp` im Gateway? Vorschlag:
-   eigener Dienst (anderer Lebenszyklus, MCP-SDK-Abhängigkeiten, getrennt
-   skalierbar), Gateway bleibt reine API.
-2. Standard des Hauptschalters `mcp` je Organisation: aus (Vorschlag) oder an?
-3. Welche App-pflichtigen Auftragsarten in P4 zuerst: Recherche je Firma
-   und Publikationen neu verarbeiten (Vorschlag), Kontakt-Recherche später.
-4. ChatGPT-Connectors verlangen aktuell eine Veröffentlichung im
-   Connector-Verzeichnis für Nicht-Entwickler; Claude.ai erlaubt eigene
-   Server je Konto. Start mit Claude.ai und Claude Code, ChatGPT danach.
+1. **Route `/mcp` im Gateway**, kein eigener Dienst. Eigener Router mit
+   Streamable-HTTP-Transport des MCP-SDK, dieselbe Auth-Middleware;
+   herauslösbar, falls langlebige Streams oder Last stören.
+2. **Opt-in auf zwei Ebenen:** Org-Hauptschalter `mcp` (Standard aus) und
+   die OAuth-Verbindung des Nutzers selbst. Datenumfang = Token-Tenant und
+   -Actor, also exakt das, was der Nutzer in der App sieht; keine
+   Sonderregel nötig. Seite „Verbundene Dienste" zum Einsehen und Widerrufen.
+3. **App-pflichtige Auftragsarten zuerst:** Recherche je Firma und
+   Publikationen neu verarbeiten; Kontakt-Recherche und Gesellschafterlisten
+   danach. Importe laufen ohnehin über Transaktionen.
+4. **Claude und ChatGPT von Anfang an.** Claude.ai, Claude Desktop und
+   Claude Code nehmen eigene Server je Konto. ChatGPT: Plus/Pro über den
+   Entwicklermodus (eigene MCP-Connectors), Business/Enterprise über
+   Admin-Connectors; keine Verzeichnis-Veröffentlichung nötig. Vor P0 die
+   aktuellen ChatGPT-Bedingungen noch einmal gegen die OpenAI-Doku prüfen.
