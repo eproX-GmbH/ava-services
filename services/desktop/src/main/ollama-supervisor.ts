@@ -367,7 +367,9 @@ export class OllamaSupervisor extends EventEmitter {
   private async probeReachable(): Promise<boolean> {
     try {
       const ctrl = new AbortController();
-      const timer = setTimeout(() => ctrl.abort(), 500);
+      // Loopback antwortet in Millisekunden; ein externer Sidecar (Server, Fly-
+      // Privatnetz) braucht fuer DNS und Kaltstart deutlich laenger.
+      const timer = setTimeout(() => ctrl.abort(), this.host === DEFAULT_HOST ? 500 : 5_000);
       try {
         const res = await fetch(`${this.baseUrl()}/api/tags`, {
           method: "GET",

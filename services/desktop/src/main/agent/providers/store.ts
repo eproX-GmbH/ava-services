@@ -192,6 +192,8 @@ export class ProviderConfigStore extends EventEmitter {
 
   private constructor() {
     super();
+    // Sechs Producer, Orchestrator, Workflows, Server-Setup: mehr als zehn Zuhoerer sind normal.
+    this.setMaxListeners(40);
     this.dir = join(paths().get("userData"), "agent");
     this.configPath = join(this.dir, "provider.json");
     if (!existsSync(this.dir)) {
