@@ -37,32 +37,59 @@ export interface KopfRelaisDeps {
   log?: (zeile: string) => void;
 }
 
-/** Werkzeuge, die direkt in der MCP-Liste stehen (sofern in der Registry vorhanden). */
+/**
+ * Werkzeuge, die direkt in der MCP-Liste stehen. Ausgewählt nach dem, was der
+ * Gateway NICHT schon selbst anbietet: Firmen suchen/lesen, Kontakte, Import,
+ * Vorgänge und Neuigkeiten laufen über die firma_* / auftrag_* / meldungen-
+ * Werkzeuge des Gateways (die auch ohne laufende AVA antworten). Doppelte
+ * Namen (company_search neben firma_suchen) würden den Agenten nur verwirren.
+ * Alles Übrige erreicht der Agent über werkzeug_suchen / werkzeug_ausfuehren.
+ */
 const KERNMENGE = [
-  "company_search",
-  "company_get",
-  "company_contacts",
-  "company_list",
-  "companies_list",
-  "alerts_list",
-  "alerts_mark_seen",
-  "memory_recall",
-  "memory_remember",
-  "memory_search",
+  // Gedächtnis und Nutzerbild
+  "recall_memory",
+  "remember",
   "profile_get",
+  // Meldungs-Postfach der App (Alarme, Radar, Status), getrennt von meldungen (Neuigkeiten je Firma)
+  "alerts_list",
+  // Workflows: ansehen, starten, Freigaben
   "workflow_list",
-  "workflow_run",
   "workflow_get",
-  "transaction_status",
-  "transaction_list",
-  "import_companies",
+  "workflow_run",
+  "workflow_approvals",
+  "workflow_approve",
+  // Vertiefung über die Gateway-Lesewerkzeuge hinaus
+  "publication_search",
+  "kunden_umkehrsuche",
+  "company_network",
+  "buying_center_anzeigen",
+  "evaluation_start_best_match",
+  "evaluation_best_match_get",
+  "discovery_candidates",
+  // Postfach und CRM
+  "mail_list_inbox",
+  "mail_get_message",
+  "crm_status",
+  "crm_search_hubspot_companies",
+  // Skills und Hintergrundaufgaben
   "skill_search",
   "skill_get",
-  "mail_search",
-  "mail_read",
-  "crm_search",
-  "buying_center_get",
+  "aufgaben_liste",
 ];
+
+/** Werkzeuge, die nur im AVA-Chat Sinn ergeben und über das Relais nie laufen. */
+const NUR_CHAT = new Set(["ask_user_choice", "ask_user_text", "navigate", "notify", "tool_search", "tool_load", "report_self_correction"]);
+
+/** Gateway-Werkzeuge, die dasselbe leisten; werkzeug_suchen weist auf sie hin statt sie zu doppeln. */
+const GATEWAY_STATT: Record<string, string> = {
+  company_search: "firma_suchen",
+  company_get: "firma_lesen",
+  company_contacts: "firma_kontakte",
+  import_companies: "import_anlegen",
+  transactions_list: "auftraege",
+  transaction_get: "auftrag_status",
+};
+
 
 const MAX_ERGEBNIS_ZEICHEN = 30_000;
 const AUFRUF_TIMEOUT_MS = 110_000;
@@ -256,7 +283,7 @@ export class KopfRelais {
       {
         name: "werkzeug_suchen",
         description:
-          "Werkzeuge der laufenden AVA des Nutzers finden (Stichwortsuche über rund 280 Werkzeuge: Firmen, Kontakte, Workflows, Mail, CRM, Notion, Gedächtnis, Einstellungen …). Liefert Name, Kurzbeschreibung und Parameter-Schema; danach mit werkzeug_ausfuehren aufrufen.",
+          `Werkzeuge der laufenden AVA des Nutzers finden: Stichwortsuche über alle ${this.werkzeuge().length} Werkzeuge (Workflows, Mail, CRM, Notion, Obsidian, Gedächtnis, Buying Center, Radar, Einstellungen …). Liefert Name, Kurzbeschreibung und Parameter-Schema; danach mit werkzeug_ausfuehren aufrufen. q: '*' liefert den Überblick mit Anzahl je Bereich.`,
         inputSchema: {
           type: "object",
           properties: {
@@ -298,10 +325,29 @@ export class KopfRelais {
     return { ...schema, type: "object", properties: { ...props, _antworten: { type: "object", description: "Antworten auf Rückfragen (Token → Wert), siehe rueckfrage im Ergebnis" } } };
   }
 
+  private werkzeuge(): Tool[] {
+    return this.deps.registry.list().filter((t) => !NUR_CHAT.has(t.name));
+  }
+
+  /** Überblick: Anzahl je Bereich, damit der Agent weiß, was es gibt. */
+  private katalog(): string {
+    const je = new Map<string, number>();
+    for (const t of this.werkzeuge()) {
+      const k = t.category ?? t.name.split("_")[0] ?? "sonstige";
+      je.set(k, (je.get(k) ?? 0) + 1);
+    }
+    return kompakt({
+      gesamt: this.werkzeuge().length,
+      bereiche: [...je.entries()].sort((a, b) => b[1] - a[1]).map(([bereich, anzahl]) => ({ bereich, anzahl })),
+      hinweis: "Mit werkzeug_suchen { q: '<Stichwort oder Bereich>' } die Werkzeuge eines Bereichs mit Schema holen.",
+    });
+  }
+
   private suchen(q: string, limit: number): string {
+    if (q === "*" || q.toLowerCase() === "katalog") return this.katalog();
     const woerter = q.toLowerCase().split(/\s+/).filter(Boolean);
-    const treffer = this.deps.registry
-      .list()
+    const alle = this.werkzeuge();
+    const treffer = alle
       .map((t) => {
         const name = t.name.toLowerCase();
         const zsf = zusammenfassung(t).toLowerCase();
@@ -320,8 +366,15 @@ export class KopfRelais {
       .sort((a, b) => b.score - a.score || a.t.name.localeCompare(b.t.name))
       .slice(0, Math.max(1, Math.min(20, limit)));
     return kompakt({
-      treffer: treffer.map(({ t }) => ({ name: t.name, kategorie: t.category ?? null, kurz: zusammenfassung(t), schema: t.parameters })),
-      hinweis: treffer.length === 0 ? "Nichts gefunden; andere Stichwörter versuchen (deutsch oder englisch)." : "Mit werkzeug_ausfuehren { name, args } aufrufen.",
+      gesamt: alle.length,
+      treffer: treffer.map(({ t }) => ({
+        name: t.name,
+        kategorie: t.category ?? null,
+        kurz: zusammenfassung(t),
+        ...(GATEWAY_STATT[t.name] ? { lieber: `${GATEWAY_STATT[t.name]} (Gateway, antwortet auch ohne laufende AVA)` } : {}),
+        schema: t.parameters,
+      })),
+      hinweis: treffer.length === 0 ? "Nichts gefunden; andere Stichwörter versuchen (deutsch oder englisch) oder q: '*' für den Überblick." : "Mit werkzeug_ausfuehren { name, args } aufrufen.",
     });
   }
 
@@ -340,8 +393,8 @@ export class KopfRelais {
     }
     const tool = this.deps.registry.get(zielName);
     if (!tool) return { text: `Unbekanntes Werkzeug: ${zielName}. Mit werkzeug_suchen nach dem richtigen Namen suchen.`, isError: true };
-    if (zielName === "ask_user_choice" || zielName === "ask_user_text" || zielName === "tool_load") {
-      return { text: `${zielName} ist nur im AVA-Chat sinnvoll.`, isError: true };
+    if (NUR_CHAT.has(zielName)) {
+      return { text: `${zielName} ist nur im AVA-Chat sinnvoll; Rückfragen an den Nutzer stellst du selbst.`, isError: true };
     }
     const antwortenRoh = args._antworten;
     const antworten: Record<string, string> = {};

@@ -829,6 +829,16 @@ Live-Test über mcp.ava.bi mit dem Fly-Kopf (2026-10-09): `tools/list` liefert
 Rückfrage-Schleife (`vorschlaege_config` → `rueckfrage` mit Token → zweiter
 Aufruf mit `_antworten` „nein“ → abgebrochen) funktioniert.
 
-Offen: `ava_fragen` (Agent als Werkzeug, §11.3 Nr. 3), MCP Apps für Ansichten,
-Kernmenge nachschärfen (heute 11 von 23 Wunschnamen in der Registry).
+Kernmenge nachgeschärft (v0.1.793): Erster Test in Claude zeigte Dopplungen
+(firma_suchen neben company_search, firma_lesen neben company_get …) und eine
+behauptete Zahl („rund 280“). Jetzt meldet der Kopf nur, was der Gateway nicht
+selbst kann (23 Werkzeuge, alle in der Registry geprüft): Gedächtnis, Profil,
+Meldungs-Postfach, Workflows samt Freigaben, Publikationssuche,
+Kunden-Umkehrsuche, Verflechtungen, Buying Center, Best Match, Radar-Kandidaten,
+Postfach, CRM, Skills, Hintergrundaufgaben. `werkzeug_suchen` nennt die echte
+Zahl, liefert mit `q: '*'` einen Überblick je Bereich, filtert Chat-only-
+Werkzeuge heraus und verweist bei Dopplungen auf das Gateway-Werkzeug
+(`lieber`).
+
+Offen: `ava_fragen` (Agent als Werkzeug, §11.3 Nr. 3), MCP Apps für Ansichten.
 
