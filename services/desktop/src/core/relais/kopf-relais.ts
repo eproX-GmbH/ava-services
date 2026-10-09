@@ -168,7 +168,8 @@ export class KopfRelais {
     if (this.timer) clearTimeout(this.timer);
     this.timer = setTimeout(() => void this.verbinden(), this.reconnectMs);
     this.timer.unref?.();
-    this.reconnectMs = Math.min(RECONNECT_MAX_MS, Math.round(this.reconnectMs * 1.7));
+    // Normaler Backoff bis 60 s; nach einer Abweisung (4002) bleibt es bei 5 Minuten.
+    if (this.reconnectMs < RECONNECT_MAX_MS) this.reconnectMs = Math.min(RECONNECT_MAX_MS, Math.round(this.reconnectMs * 1.7));
   }
 
   private wsUrl(tokenWert: string): string {
@@ -216,8 +217,9 @@ export class KopfRelais {
     ws.addEventListener("close", (ev) => {
       if (this.ws === ws) this.ws = null;
       this.log(`getrennt (${ev.code}${ev.reason ? ` ${ev.reason}` : ""})`);
-      // 4001: ein anderer Kopf desselben Kontos ist aktiv; nicht sofort zurückdrängeln.
-      if (ev.code === 4001) this.reconnectMs = RECONNECT_MAX_MS;
+      // 4002: ein anderer Kopf desselben Kontos ist schon verbunden (z. B. der
+      // Server, während die Desktop-App läuft); nur selten erneut versuchen.
+      if (ev.code === 4002 || ev.code === 4001) this.reconnectMs = 5 * RECONNECT_MAX_MS;
       this.spaeter();
     });
     ws.addEventListener("error", () => {

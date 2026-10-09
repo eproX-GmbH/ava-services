@@ -7,8 +7,8 @@
 // Verbindung: `GET /kopf-relais?access_token=<Keycloak-JWT>` mit Upgrade. Die
 // Prüfung des Tokens läuft über die normale Auth-Middleware (app.request auf
 // /v1/kopf-relais/wer), damit Aussteller, Audience und Scopes gelten wie überall.
-// Ein Konto hat höchstens einen Kopf: Verbindet sich ein zweiter, wird der erste
-// mit Code 4001 abgelöst (Desktop und Server sollen nicht gleichzeitig antworten).
+// Ein Konto hat höchstens einen Kopf: Wer zuerst verbunden ist, bleibt; ein
+// zweiter wird mit Code 4002 abgewiesen und versucht es selten wieder.
 //
 // Nachrichten (JSON):
 //   Kopf → Gateway:  { typ: "hallo", version, werkzeuge: [{ name, description, inputSchema }] }
@@ -96,16 +96,21 @@ export class KopfRelais {
   }
 
   private annehmen(ws: WebSocket, wer: KopfIdentitaet): void {
+    // Wer zuerst verbunden ist, bleibt (Desktop-App und Server desselben Kontos
+    // sollen sich nicht im Minutentakt verdraengen). Der zweite Kopf wird mit
+    // 4002 abgewiesen und versucht es selten wieder; faellt der erste weg,
+    // kommt er beim naechsten Versuch zum Zug.
     const alt = this.koepfe.get(wer.actorId);
-    if (alt) {
-      logger.info({ actorId: wer.actorId }, "[kopf-relais] zweiter Kopf, alter wird abgeloest");
+    if (alt && alt.ws.readyState === alt.ws.OPEN) {
+      logger.info({ actorId: wer.actorId }, "[kopf-relais] zweiter Kopf abgewiesen, erster bleibt");
       try {
-        alt.ws.close(4001, "Ein anderer AVA-Kopf hat sich verbunden");
+        ws.close(4002, "Ein anderer AVA-Kopf dieses Kontos ist bereits verbunden");
       } catch {
         /* egal */
       }
-      this.aufraeumen(alt, "abgeloest");
+      return;
     }
+    if (alt) this.aufraeumen(alt, "ersetzt");
     const k: KopfVerbindung = { ws, actorId: wer.actorId, tenantId: wer.tenantId, version: "?", werkzeuge: [], seit: Date.now(), lebt: true, offen: new Map() };
     this.koepfe.set(wer.actorId, k);
     ws.on("pong", () => {

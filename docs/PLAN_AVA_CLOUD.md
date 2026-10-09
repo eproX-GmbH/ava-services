@@ -818,9 +818,17 @@ Umgesetzt wie in §11.2 Weg B, ohne eigene Adresse je Kopf:
   (§11.6 Nr. 3).
 - Verdrahtung in `bootstrapCore`: Start nach Anmeldung, im Worker-Modus
   angehalten, `AVA_MCP_RELAIS=0` schaltet ab. Gilt für Desktop-App und Server
-  gleichermaßen; läuft der Desktop parallel zum Server, gewinnt der zuletzt
-  verbundene Kopf.
+  gleichermaßen. Läuft der Desktop parallel zum Server, bleibt der zuerst
+  verbundene Kopf; der zweite wird mit 4002 abgewiesen und versucht es alle
+  fünf Minuten wieder (kein gegenseitiges Verdrängen).
 
-Offen: Live-Test über mcp.ava.bi mit dem Fly-Kopf (nach den Deploys),
-`ava_fragen` (Agent als Werkzeug, §11.3 Nr. 3) und MCP Apps für Ansichten.
+Live-Test über mcp.ava.bi mit dem Fly-Kopf (2026-10-09): `tools/list` liefert
+23 Werkzeuge (10 Gateway, 13 Kopf), `instructions` meldet „verbunden“,
+`werkzeug_suchen` findet über die ganze Registry, `company_get` und
+`werkzeug_ausfuehren(workflow_list)` laufen über den Kopf, und die
+Rückfrage-Schleife (`vorschlaege_config` → `rueckfrage` mit Token → zweiter
+Aufruf mit `_antworten` „nein“ → abgebrochen) funktioniert.
+
+Offen: `ava_fragen` (Agent als Werkzeug, §11.3 Nr. 3), MCP Apps für Ansichten,
+Kernmenge nachschärfen (heute 11 von 23 Wunschnamen in der Registry).
 
