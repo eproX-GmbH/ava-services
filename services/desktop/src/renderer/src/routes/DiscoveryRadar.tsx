@@ -14,6 +14,8 @@ import { RadarActivityIndicator } from "../components/RadarActivityIndicator";
 interface RadarRow {
   discoveryId: string;
   name: string;
+  /** DE | AT | UK (docs/PLAN_RADAR_LAENDER.md). */
+  land?: string;
   ort: string | null;
   plz: string | null;
   website: string;
@@ -600,6 +602,7 @@ export function DiscoveryRadar(): JSX.Element {
                     </td>
                     <td className={locked ? "radar-blur" : undefined}>
                       {[r.plz, r.ort].filter(Boolean).join(" ") || "—"}
+                      {r.land && r.land !== "DE" && <span className="pill" style={{ marginLeft: 6 }}>{r.land}</span>}
                     </td>
                     <td className={locked ? "radar-blur" : undefined}>{r.kategorie ?? "—"}</td>
                     <td>

@@ -64,6 +64,8 @@ const startScanRoute = createRoute({
           schema: z.object({
             ort: z.string().min(2).max(120),
             radiusKm: z.number().int().min(1).max(250),
+            /** docs/PLAN_RADAR_LAENDER.md: Land des Suchgebiets, Standard DE. */
+            country: z.enum(["DE", "AT", "UK"]).default("DE"),
           }),
         },
       },
@@ -94,12 +96,13 @@ discoveryRouter.openapi(startScanRoute, async (c) => {
   if (!auth?.tenantId) {
     throw new HTTPException(401, { message: "auth_context_missing" });
   }
-  const { ort, radiusKm } = c.req.valid("json");
+  const { ort, radiusKm, country } = c.req.valid("json");
   const result = await startScan(getGatewayPool(), {
     tenantId: auth.tenantId,
     actorId: auth.actorId,
     ort,
     radiusKm,
+    country,
   });
   if (!result.ok) {
     const l = result.limits;
@@ -435,6 +438,8 @@ const CandidateRowShape = z
   .object({
     discoveryId: z.string(),
     name: z.string(),
+    /** docs/PLAN_RADAR_LAENDER.md: DE | AT | UK. */
+    country: z.string(),
     city: z.string().nullable(),
     plz: z.string().nullable(),
     lat: z.number().nullable(),
@@ -490,6 +495,8 @@ const listRoute = createRoute({
        *  verdraengen frisch profilierte (updatedAt) die offenen aus dem
        *  LIMIT-Fenster und der Backlog bleibt fuer immer liegen. */
       withoutProfiles: z.coerce.boolean().default(false),
+      /** docs/PLAN_RADAR_LAENDER.md: nur Kandidaten dieses Landes. */
+      country: z.enum(["DE", "AT", "UK"]).optional(),
     }),
   },
   responses: {
@@ -513,7 +520,7 @@ discoveryRouter.openapi(listRoute, async (c) => {
   if (!auth?.tenantId) {
     throw new HTTPException(401, { message: "auth_context_missing" });
   }
-  const { lat, lon, radiusKm, limit, includeDecided, withProfiles, withoutProfiles } =
+  const { lat, lon, radiusKm, limit, includeDecided, withProfiles, withoutProfiles, country } =
     c.req.valid("query");
   const candidates = await listCandidates(getGatewayPool(), {
     userId: auth.actorId,
@@ -524,6 +531,7 @@ discoveryRouter.openapi(listRoute, async (c) => {
     includeDecided,
     withProfiles,
     withoutProfiles,
+    country,
   });
   return c.json({ candidates }, 200);
 });
@@ -547,6 +555,7 @@ const registerCandidatesRoute = createRoute({
       near: z.string().min(2).max(80),
       radiusKm: z.coerce.number().min(1).max(200).default(30),
       limit: z.coerce.number().int().min(1).max(50).default(15),
+      country: z.enum(["DE", "AT", "UK"]).default("DE"),
     }),
   },
   responses: {
@@ -584,9 +593,9 @@ discoveryRouter.openapi(registerCandidatesRoute, async (c) => {
   if (!auth?.tenantId) {
     throw new HTTPException(401, { message: "auth_context_missing" });
   }
-  const { near, radiusKm, limit } = c.req.valid("query");
+  const { near, radiusKm, limit, country } = c.req.valid("query");
   const pool = getGatewayPool();
-  const geo = await findPlacesNearby(pool, near, radiusKm);
+  const geo = await findPlacesNearby(pool, near, radiusKm, country);
   if (!geo) {
     throw new HTTPException(404, { message: `Ort "${near}" nicht gefunden` });
   }
@@ -594,6 +603,7 @@ discoveryRouter.openapi(registerCandidatesRoute, async (c) => {
     pool,
     geo.places.map((p) => p.name),
     limit,
+    { country, outwardCodes: country === "UK" ? geo.places.flatMap((p) => p.plz) : undefined },
   );
   return c.json({ candidates }, 200);
 });

@@ -23,6 +23,7 @@ import type { MatchStore } from "./match-store";
 import type { CustomerProfileStore } from "./customer-profiles";
 import type { RadarAlertEmitter } from "./radar-alerts";
 import { runDiscoveryScan } from "./scan";
+import { ortMitLand } from "./land";
 import { runMatch } from "./matcher";
 import type { ProfileWorker } from "./profile-worker";
 import { radarActivity } from "./activity";
@@ -277,13 +278,17 @@ export class RadarSupervisor {
         this.finishRun(startedAt, msg, trigger, "warning");
         return msg;
       }
-      const ort = icp.orte[0]!;
+      // docs/PLAN_RADAR_LAENDER.md: Land haengt am Ort ("Wien (AT)"); Gebiete
+      // rotieren ueber die Laeufe, damit mehrere Standorte drankommen.
+      const gebiete = icp.orte.map(ortMitLand);
+      const { ort, land } = gebiete[this.getConfig().runCount % gebiete.length]!;
 
       const cfgVorLauf = this.getConfig();
       radarActivity.scanStart();
       radarActivity.schritt(`Ort auflösen: ${ort}`);
       const scan = await runDiscoveryScan(this.deps.gateway, this.deps.providers, {
         ort,
+        land,
         radiusKm: icp.radiusKm,
         branchen: icp.branchen,
         icpText: this.deps.icp.renderText(),

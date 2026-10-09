@@ -740,6 +740,8 @@ export const FromListIngestBody = z
     isFuzzy: z.boolean().optional().default(false),
     /** v0.1.57 — dry-run preview. Returns ImportPreview JSON instead of
      *  starting a transaction. */
+    /** docs/PLAN_RADAR_LAENDER.md: Land der Firmen fuer den Abgleich (DE | AT | UK), Standard DE. */
+    country: z.enum(["DE", "AT", "UK"]).optional(),
     dryRun: z.boolean().optional().default(false),
   })
   .openapi("FromListIngest");

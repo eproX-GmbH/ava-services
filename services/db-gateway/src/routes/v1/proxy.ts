@@ -432,9 +432,13 @@ proxyRouter.post(
     params.set("engine", "google");
     params.set("location_auto", "false");
 
+    // docs/PLAN_RADAR_LAENDER.md (L4): der Radar lokalisiert je Suchgebiet;
+    // google_domain nur aus der Allowlist der abgedeckten Laender.
+    const ERLAUBTE_DOMAINS = new Set(["google.de", "google.at", "google.co.uk", "google.com"]);
     for (const [k, v] of Object.entries(body)) {
       if (v == null) continue;
       if (!ALLOWED_PARAMS.has(k as keyof ValueserpRequest)) continue;
+      if (k === "google_domain" && !ERLAUBTE_DOMAINS.has(String(v))) continue;
       params.set(k, String(v));
     }
 

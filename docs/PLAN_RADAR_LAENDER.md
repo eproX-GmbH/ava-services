@@ -132,3 +132,35 @@ Freigabe vor dem Deploy.
    Radius anpassen (UK-Ballungsräume dichter)? Vorschlag: nein, gleiche
    Regeln.
 4. Schweiz bleibt außen vor, bis Firmen in master-data liegen (CH on hold).
+
+## 7. Stand (2026-10-09, v0.1.781)
+
+Umgesetzt R-L0 bis R-L5 mit den Vorschlaegen aus §6 (UK per `LIKE ANY`
+mit 8 s Zeitgrenze, Agenten-Schwelle 500 je Adresse, gleiche Radius-Regeln).
+
+- **R-L0 Ortsgraph:** `scripts/build-geo-dataset.mjs` laedt DE, AT und GB
+  (Outward-Codes) und schreibt `[country, name, plz, bundesland, kreis,
+  agsKreis, lat, lon]`; 61.725 Zeilen (DE 15.050, AT 19.225, UK 27.450).
+  `GeoPlace` bekommt `country` (lazy ALTER, Neuseed ueber die Zeilenzahl),
+  `GET /v1/geo/places?country=` loest je Land auf und liefert `country`.
+- **R-L1 Gateway:** `DiscoveryScan.country`, `DiscoveredCompany.country`
+  (lazy ALTER, Standard DE); Gebiete-Gate zaehlt Ort+Land; Kandidaten
+  erben das Land des Scans; `listCandidates` filtert optional nach Land;
+  `findRegisterCandidates` je Land (AT ueber Sitzort, UK ueber Outward-Codes
+  des Radius, Agenten-Adressen ab 500 Firmen ausgeschlossen, DE-Gerichts-
+  Rueckfall nur fuer DE).
+- **R-L2 Proxy/Import:** `google_domain` nur aus der Allowlist google.de/
+  .at/.co.uk/.com; `/v1/imports/from-list` mit `country` → data-care
+  `country` → master-data exakter Abgleich (`country`) und Elastic-Fuzzy
+  (`filter: match country`), Standard DE.
+- **R-L3 Desktop-Scan:** `discovery/land.ts` (Profile je Land: Domain, gl,
+  hl, location, Sprache; `ortMitLand`, `parseAdresse` fuer DE/AT/UK-PLZ);
+  Scan, Planner (englische Anfragen fuer UK), Places-, Register-Kanal und
+  Website-Lookup je Land.
+- **R-L4 ICP:** Land am Ort per Kuerzel („Wien (AT)", „Manchester (UK)");
+  Supervisor rotiert ueber die Gebiete je Lauf; Chat-Werkzeuge `icp_set`
+  (Hinweis) und Radar-Scan (`land` oder Kuerzel); Formular-Platzhalter.
+- **R-L5 Radar-Tabelle:** Landeschip neben dem Ort fuer AT/UK; Import je
+  Land in eigener Transaktion mit `country`.
+- **Offen:** R-L6 Live-Test je Land (Wien, Manchester), Website-Text,
+  Alert-Texte mit Land, Filter nach Land in der Tabelle.

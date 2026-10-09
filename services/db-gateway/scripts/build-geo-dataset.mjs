@@ -1,6 +1,6 @@
 // Phase 0 Firmen-Discovery — Generator fuer src/data/geo-places.json.
 //
-// Laedt den GeoNames-PLZ-Datensatz fuer Deutschland (CC-BY 4.0,
+// Laedt die GeoNames-PLZ-Datensaetze fuer DE, AT und GB (CC-BY 4.0,
 // https://download.geonames.org/export/zip/) und destilliert ihn zu einem
 // kompakten, eingecheckten Seed fuer die GeoPlace-Tabelle im Gateway.
 //
@@ -13,7 +13,7 @@
 //   node scripts/build-geo-dataset.mjs
 //
 // Schreibt src/data/geo-places.json als { meta, rows } mit
-// rows: [name, plz, bundesland, kreis, agsKreis, lat, lon][].
+// rows: [country, name, plz, bundesland, kreis, agsKreis, lat, lon][].
 
 import { writeFileSync, mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -26,10 +26,6 @@ const OUT = join(
   "data",
   "geo-places.json",
 );
-
-const res = await fetch("https://download.geonames.org/export/zip/DE.zip");
-if (!res.ok) throw new Error(`GeoNames-Download fehlgeschlagen: ${res.status}`);
-const zipBuf = Buffer.from(await res.arrayBuffer());
 
 // DE.zip entpacken ohne Fremd-Dependency: DE.txt ist "stored" oder
 // "deflated" — wir nutzen das zentrale Verzeichnis nicht, sondern den
@@ -68,42 +64,64 @@ function extractEntry(buf, wantedName) {
   throw new Error(`${wantedName} nicht im Zip gefunden`);
 }
 
-const txt = extractEntry(zipBuf, "DE.txt").toString("utf8");
+// docs/PLAN_RADAR_LAENDER.md (R-L0): drei Laender in einem Seed. GeoNames
+// fuehrt UK als "GB"; AVA nennt das Land "UK" (master-data country).
+// Fuer GB nimmt GeoNames GB.zip = Outward-Codes (~27k Zeilen), nicht
+// GB_full (1,7 Mio.). Der accuracy-Filter gilt nur fuer DE (Grosskunden-PLZ).
+const LAENDER = [
+  { ava: "DE", geonames: "DE", accuracyPflicht: true },
+  { ava: "AT", geonames: "AT", accuracyPflicht: false },
+  { ava: "UK", geonames: "GB", accuracyPflicht: false },
+];
 const rows = [];
 let dropped = 0;
-for (const line of txt.split("\n")) {
-  if (!line.trim()) continue;
-  const f = line.split("\t");
-  // f: [0]=DE [1]=plz [2]=ort [3]=bundesland [4]=code1 [5]=regbez
-  //    [6]=code2 [7]=kreis [8]=agsKreis [9]=lat [10]=lon [11]=accuracy
-  const accuracy = (f[11] ?? "").trim();
-  if (!accuracy) {
-    dropped++; // Grosskunden-PLZ (Firmenname statt Ort)
-    continue;
+for (const land of LAENDER) {
+  const res = await fetch(`https://download.geonames.org/export/zip/${land.geonames}.zip`);
+  if (!res.ok) throw new Error(`GeoNames-Download ${land.geonames} fehlgeschlagen: ${res.status}`);
+  const zipBuf = Buffer.from(await res.arrayBuffer());
+  const txt = extractEntry(zipBuf, `${land.geonames}.txt`).toString("utf8");
+  let n = 0;
+  for (const line of txt.split("\n")) {
+    if (!line.trim()) continue;
+    const f = line.split("\t");
+    // f: [0]=land [1]=plz [2]=ort [3]=admin1 [4]=code1 [5]=admin2 [6]=code2
+    //    [7]=admin3 [8]=code3 [9]=lat [10]=lon [11]=accuracy
+    // DE: admin1=Bundesland, admin3=Kreis, code3=AGS-Kreis.
+    // AT: admin1=Bundesland, admin2=Bezirk. UK: admin1=Landesteil, admin2=County/Region.
+    const accuracy = (f[11] ?? "").trim();
+    if (land.accuracyPflicht && !accuracy) {
+      dropped++;
+      continue;
+    }
+    const lat = Number(f[9]);
+    const lon = Number(f[10]);
+    if (!f[1] || !f[2] || !Number.isFinite(lat) || !Number.isFinite(lon)) {
+      dropped++;
+      continue;
+    }
+    const kreis = land.ava === "DE" ? (f[7] ?? "").trim() : ((f[5] ?? "").trim() || (f[7] ?? "").trim());
+    const kreisCode = land.ava === "DE" ? (f[8] ?? "").trim() : ((f[6] ?? "").trim() || (f[8] ?? "").trim());
+    rows.push([
+      land.ava,
+      f[2].trim(),
+      f[1].trim(),
+      (f[3] ?? "").trim(),
+      kreis,
+      kreisCode,
+      Math.round(lat * 10000) / 10000,
+      Math.round(lon * 10000) / 10000,
+    ]);
+    n++;
   }
-  const lat = Number(f[9]);
-  const lon = Number(f[10]);
-  if (!f[1] || !f[2] || !Number.isFinite(lat) || !Number.isFinite(lon)) {
-    dropped++;
-    continue;
-  }
-  rows.push([
-    f[2].trim(),
-    f[1].trim(),
-    (f[3] ?? "").trim(),
-    (f[7] ?? "").trim(),
-    (f[8] ?? "").trim(),
-    Math.round(lat * 10000) / 10000,
-    Math.round(lon * 10000) / 10000,
-  ]);
+  console.log(`${land.ava}: ${n} Zeilen`);
 }
 
 const out = {
   meta: {
-    source: "GeoNames postal codes DE (https://download.geonames.org/export/zip/)",
+    source: "GeoNames postal codes DE, AT, GB (https://download.geonames.org/export/zip/)",
     license: "CC-BY 4.0 — Attribution: GeoNames (geonames.org)",
     generatedAt: new Date().toISOString().slice(0, 10),
-    columns: ["name", "plz", "bundesland", "kreis", "agsKreis", "lat", "lon"],
+    columns: ["country", "name", "plz", "bundesland", "kreis", "agsKreis", "lat", "lon"],
     rowCount: rows.length,
   },
   rows,

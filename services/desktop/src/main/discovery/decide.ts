@@ -35,6 +35,7 @@ interface CandidateLookupRow {
   discoveryId: string;
   name: string;
   city: string | null;
+  country?: string;
 }
 
 export async function decideCandidates(
@@ -88,21 +89,31 @@ export async function decideCandidates(
   let transactionId: string | null = null;
   if (importable.length > 0) {
     try {
-      const r = await gateway.request<{ transactionId: string }>(
-        "/v1/imports/from-list",
-        {
-          method: "POST",
-          body: {
-            companies: importable.map((d) => {
-              const c = byId.get(d.discoveryId)!;
-              return { name: c.name, city: (c.city ?? "").trim() };
-            }),
-            transactionName: `Discovery-Import: ${importable.length} Firmen`,
-            isFuzzy: true,
+      // docs/PLAN_RADAR_LAENDER.md (L6): Abgleich je Land, also eine
+      // Transaktion je Land (fast immer genau eine).
+      const nachLand = new Map<string, typeof importable>();
+      for (const d of importable) {
+        const land = byId.get(d.discoveryId)!.country ?? "DE";
+        nachLand.set(land, [...(nachLand.get(land) ?? []), d]);
+      }
+      for (const [land, teil] of nachLand) {
+        const r = await gateway.request<{ transactionId: string }>(
+          "/v1/imports/from-list",
+          {
+            method: "POST",
+            body: {
+              companies: teil.map((d) => {
+                const c = byId.get(d.discoveryId)!;
+                return { name: c.name, city: (c.city ?? "").trim() };
+              }),
+              transactionName: `Discovery-Import: ${teil.length} Firmen${land !== "DE" ? ` (${land})` : ""}`,
+              isFuzzy: true,
+              country: land,
+            },
           },
-        },
-      );
-      transactionId = r.transactionId;
+        );
+        transactionId = transactionId ?? r.transactionId;
+      }
     } catch (err) {
       return {
         error: `Import fehlgeschlagen — Entscheidungen NICHT gespeichert: ${err instanceof Error ? err.message : String(err)}`,

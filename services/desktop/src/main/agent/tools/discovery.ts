@@ -11,6 +11,7 @@ import type { GatewayClient } from "../gateway-client";
 import type { LlmProviderManager } from "../providers";
 import type { Tool } from "../types";
 import { runDiscoveryScan } from "../../discovery/scan";
+import { ortMitLand, type RadarLand } from "../../discovery/land";
 import { runProfiler } from "../../discovery/profiler";
 import { runMatch } from "../../discovery/matcher";
 import { radarActivity } from "../../discovery/activity";
@@ -116,8 +117,9 @@ export function buildDiscoveryTools(deps: DiscoveryToolDeps): Tool[] {
       properties: {
         ort: {
           type: "string",
-          description: "Ortsname als Zentrum, z. B. 'Hannover'.",
+          description: "Ortsname als Zentrum, z. B. 'Hannover'. Ausserhalb Deutschlands mit Landkuerzel: 'Wien (AT)', 'Manchester (UK)'.",
         },
+        land: { type: "string", enum: ["DE", "AT", "UK"], description: "Land des Suchgebiets; Standard aus dem Kuerzel im Ort, sonst DE." },
         radiusKm: {
           type: "integer",
           description: "Umkreis in km (Default 30, max 100).",
@@ -132,6 +134,7 @@ export function buildDiscoveryTools(deps: DiscoveryToolDeps): Tool[] {
     },
     schema: yup.object({
       ort: yup.string().trim().min(2).max(80).required(),
+      land: yup.string().oneOf(["DE", "AT", "UK"]).optional(),
       radiusKm: yup.number().integer().min(1).max(100).optional(),
       branchen: yup
         .array()
@@ -170,8 +173,10 @@ export function buildDiscoveryTools(deps: DiscoveryToolDeps): Tool[] {
           : deps.icp.get().branchen.length > 0
             ? deps.icp.get().branchen
             : deps.getDefaultIndustries();
+      const gebiet = ortMitLand(args.ort);
       const result = await runDiscoveryScan(deps.gateway, deps.providers, {
-        ort: args.ort,
+        ort: gebiet.ort,
+        land: (args.land as RadarLand | undefined) ?? gebiet.land,
         radiusKm: args.radiusKm ?? 30,
         branchen,
         icpText: deps.icp.renderText(),

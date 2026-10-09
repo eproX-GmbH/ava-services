@@ -11,6 +11,8 @@ import { sanitizeCategory } from "./category";
 export interface CandidateListRow {
   discoveryId: string;
   name: string;
+  /** docs/PLAN_RADAR_LAENDER.md: DE | AT | UK. */
+  land: string;
   ort: string | null;
   plz: string | null;
   website: string;
@@ -32,6 +34,7 @@ export async function listCandidatesWithMatches(
     candidates: Array<{
       discoveryId: string;
       name: string;
+      country?: string;
       city: string | null;
       plz: string | null;
       domain: string;
@@ -48,6 +51,7 @@ export async function listCandidatesWithMatches(
     return {
       discoveryId: c.discoveryId,
       name: c.name,
+      land: c.country ?? "DE",
       ort: c.city,
       plz: c.plz,
       website: c.domain,

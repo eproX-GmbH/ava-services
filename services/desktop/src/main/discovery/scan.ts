@@ -21,6 +21,7 @@ import type { GatewayClient } from "../agent/gateway-client";
 import { radarActivity } from "./activity";
 import type { LlmProviderManager } from "../agent/providers";
 import { sanitizeCategory } from "./category";
+import { LAND_PROFILE, parseAdresse, type RadarLand } from "./land";
 import {
   buildMessages,
   parseJsonObject,
@@ -53,6 +54,8 @@ const BATCH_SIZE = 100;
 
 export interface ScanArgs {
   ort: string;
+  /** docs/PLAN_RADAR_LAENDER.md: Land des Suchgebiets (Standard DE). */
+  land?: RadarLand;
   radiusKm: number;
   /** Branchenbegriffe — Fallback fuer den SERP-Kanal, wenn der
    *  LLM-Query-Planner nicht verfuegbar ist. Leer + kein icpText →
@@ -104,6 +107,7 @@ interface Candidate {
 }
 
 interface GeoResponse {
+  country?: RadarLand;
   origin: { name: string; kreis: string; lat: number; lon: number };
   /** plz-Anzahl dient als Groessen-Proxy des Orts (Query-Planner). */
   places: Array<{ name: string; plz?: string[] }>;
@@ -324,6 +328,7 @@ async function planSerpQueries(
   hinweise: string[],
   maxQueries: number = MAX_PLANNED_QUERIES,
   rotation: { recentQueries: string[]; runIndex: number } = { recentQueries: [], runIndex: 0 },
+  land: RadarLand = "DE",
 ): Promise<string[] | null> {
   if (!providers.getStatus().ready) return null;
   // Groessere Orte zuerst (plz-Anzahl als Proxy). v0.1.582 — Orts-
@@ -357,6 +362,9 @@ async function planSerpQueries(
     "- Die Suchen ueber mehrere der genannten Orte verteilen (groessere " +
     "Orte bevorzugen), nicht alles auf den Zentrums-Ort.\n" +
     "- Ausschluesse im ICP respektieren: danach gar nicht erst suchen.\n" +
+    (LAND_PROFILE[land].sprache === "en"
+      ? `- Das Suchgebiet liegt in ${LAND_PROFILE[land].name}: Suchanfragen auf ENGLISCH formulieren (Kategoriebegriffe, wie ein Brite googelt).\n`
+      : `- Das Suchgebiet liegt in ${LAND_PROFILE[land].name}: Suchanfragen auf Deutsch, landesuebliche Begriffe.\n`) +
     'Antworte NUR als JSON: {"queries": ["...", "..."]}';
   const zuletzt = rotation.recentQueries.slice(-40);
   const user =
@@ -391,15 +399,6 @@ async function planSerpQueries(
   }
 }
 
-/** Adresse "Musterstr. 1, 30159 Hannover" → {plz, city}. */
-function parseAddress(address: string | undefined): { plz: string | null; city: string | null } {
-  if (!address) return { plz: null, city: null };
-  const m = /(\b\d{5}\b)\s+([^,]+)/.exec(address);
-  if (m?.[1] && m[2]) return { plz: m[1], city: m[2].trim() };
-  const parts = address.split(",");
-  const last = parts[parts.length - 1]?.trim();
-  return { plz: null, city: last && last.length <= 60 ? last : null };
-}
 
 /** Kanal b: valueserp places ueber den Gateway-Proxy — mit fertiger
  *  Query-Liste (vom LLM-Planner oder dem Branche-Ort-Fallback). */
@@ -419,6 +418,7 @@ async function fetchSerpCandidates(
   gateway: GatewayClient,
   queries: string[],
   hinweise: string[],
+  land: RadarLand = "DE",
 ): Promise<{
   candidates: Candidate[];
   queries: string[];
@@ -446,13 +446,14 @@ async function fetchSerpCandidates(
         }>;
       }>("/v1/proxy/valueserp", {
         method: "POST",
-        body: { q, search_type: "places", num: 20 },
+        // Lokalisierung je Suchgebiet (docs/PLAN_RADAR_LAENDER.md L4).
+        body: { q, search_type: "places", num: 20, ...LAND_PROFILE[land].serp },
       });
       for (const p of body.places_results ?? []) {
         const name = p.title?.trim();
         if (!name) continue;
         const domain = domainFromUrl(p.website ?? p.link);
-        const { plz, city } = parseAddress(p.address);
+        const { plz, city } = parseAdresse(p.address, land);
         const meta: Record<string, unknown> = {};
         if (p.rating !== undefined) meta.rating = p.rating;
         if (p.reviews !== undefined) meta.reviews = p.reviews;
@@ -579,6 +580,7 @@ async function fetchRegisterCandidates(
   radiusKm: number,
   hinweise: string[],
   maxLookups: number = MAX_REGISTER_LOOKUPS,
+  land: RadarLand = "DE",
 ): Promise<{ candidates: Candidate[]; lookups: number }> {
   let regs: Array<{ companyId: string; name: string; location: string }>;
   try {
@@ -586,6 +588,7 @@ async function fetchRegisterCandidates(
       near: ort,
       radiusKm: String(radiusKm),
       limit: String(Math.min(maxLookups, MAX_REGISTER_LOOKUPS)),
+      country: land,
     });
     const r = await gateway.request<{
       candidates: Array<{ companyId: string; name: string; location: string }>;
@@ -607,7 +610,7 @@ async function fetchRegisterCandidates(
         organic_results?: Array<{ link?: string; domain?: string }>;
       }>("/v1/proxy/valueserp", {
         method: "POST",
-        body: { q: `${reg.name} ${reg.location}`, num: 5 },
+        body: { q: `${reg.name} ${reg.location}`, num: 5, google_domain: LAND_PROFILE[land].serp.google_domain, gl: LAND_PROFILE[land].serp.gl, hl: LAND_PROFILE[land].serp.hl },
       });
       const hit = (body.organic_results ?? [])
         .map((o) => domainFromUrl(o.link ?? o.domain))
@@ -645,19 +648,21 @@ export async function runDiscoveryScan(
   args: ScanArgs,
 ): Promise<ScanSummary | { error: string }> {
   const hinweise: string[] = [];
+  const land: RadarLand = args.land ?? "DE";
 
-  // 1. Ortsgraph.
+  // 1. Ortsgraph (je Land, docs/PLAN_RADAR_LAENDER.md).
   let geo: GeoResponse;
   try {
     const qs = new URLSearchParams({
       near: args.ort,
       radiusKm: String(args.radiusKm),
+      country: land,
     });
     geo = await gateway.request<GeoResponse>(`/v1/geo/places?${qs.toString()}`);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     if (msg.includes("404")) {
-      return { error: `Ort "${args.ort}" nicht gefunden — Schreibweise pruefen.` };
+      return { error: `Ort "${args.ort}" in ${LAND_PROFILE[land].name} nicht gefunden — Schreibweise pruefen (Land per Kuerzel, z. B. "Wien (AT)").` };
     }
     return { error: `Ortsaufloesung fehlgeschlagen: ${msg}` };
   }
@@ -681,7 +686,7 @@ export async function runDiscoveryScan(
       isInitial?: boolean;
     }>(
       "/v1/discovery/scans",
-      { method: "POST", body: { ort: args.ort, radiusKm: args.radiusKm } },
+      { method: "POST", body: { ort: args.ort, radiusKm: args.radiusKm, country: land } },
     );
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
@@ -729,6 +734,7 @@ export async function runDiscoveryScan(
       hinweise,
       split.planner,
       { recentQueries: args.recentQueries ?? [], runIndex: args.runIndex ?? 0 },
+      land,
     );
     if (planned) {
       queries = planned;
@@ -760,13 +766,13 @@ export async function runDiscoveryScan(
       return r;
     }),
     queries.length > 0
-      ? fetchSerpCandidates(gateway, queries, hinweise)
+      ? fetchSerpCandidates(gateway, queries, hinweise, land)
       : Promise.resolve({
           candidates: [] as Candidate[],
           queries: [] as string[],
           ohneWebsite: [] as PlacesHitOhneWebsite[],
         }),
-    fetchRegisterCandidates(gateway, args.ort, args.radiusKm, hinweise, split.register).then((r) => {
+    fetchRegisterCandidates(gateway, args.ort, args.radiusKm, hinweise, split.register, land).then((r) => {
       radarActivity.scanQuelle("register", r.candidates.length);
       return r;
     }),

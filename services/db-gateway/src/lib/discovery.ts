@@ -82,6 +82,11 @@ async function ensureSchema(pool: Pool): Promise<void> {
     -- aus dem Engagement-Trichter (kein Orts-Scan, eigener Deckel).
     ALTER TABLE "DiscoveryScan"
       ADD COLUMN IF NOT EXISTS kind TEXT NOT NULL DEFAULT 'scan';
+    -- docs/PLAN_RADAR_LAENDER.md (R-L1): Land je Scan und je Kandidat (DE | AT | UK).
+    ALTER TABLE "DiscoveryScan"
+      ADD COLUMN IF NOT EXISTS country TEXT NOT NULL DEFAULT 'DE';
+    ALTER TABLE "DiscoveredCompany"
+      ADD COLUMN IF NOT EXISTS country TEXT NOT NULL DEFAULT 'DE';
   `);
   schemaReady = true;
 }
@@ -262,9 +267,11 @@ export type StartScanResult =
       scansUsedInWindow: number;
     };
 
+export type RadarLand = "DE" | "AT" | "UK";
+
 export async function startScan(
   pool: Pool,
-  args: { tenantId: string; actorId: string; ort: string; radiusKm: number },
+  args: { tenantId: string; actorId: string; ort: string; radiusKm: number; country?: RadarLand },
 ): Promise<StartScanResult> {
   await ensureSchema(pool);
   const limits = await effectiveLimits(pool, args.tenantId, args.actorId);
@@ -300,8 +307,9 @@ export async function startScan(
     }
     // Gebiete-Gate: verschiedene Orte im 7-Tage-Fenster (Erst-Scan
     // ausgenommen). Ein bereits bescannter Ort ist immer erlaubt.
+    // Gebiet = Ort + Land (Neustadt in DE und AT sind zwei Gebiete).
     const orte = await pool.query<{ ort: string }>(
-      `SELECT DISTINCT lower(trim(ort)) AS ort FROM "DiscoveryScan"
+      `SELECT DISTINCT country || '|' || lower(trim(ort)) AS ort FROM "DiscoveryScan"
         WHERE "tenantId" = $1
           AND "isInitial" = FALSE
           AND kind = 'scan'
@@ -309,7 +317,7 @@ export async function startScan(
       [args.tenantId],
     );
     const known = new Set(orte.rows.map((r) => r.ort));
-    const requested = args.ort.trim().toLowerCase();
+    const requested = `${args.country ?? "DE"}|${args.ort.trim().toLowerCase()}`;
     if (!known.has(requested) && known.size >= limits.maxGebiete) {
       return { ok: false, reason: "gebiete", limits, scansUsedInWindow };
     }
@@ -321,8 +329,8 @@ export async function startScan(
     .digest("hex")
     .slice(0, 24);
   await pool.query(
-    `INSERT INTO "DiscoveryScan" ("scanId", "tenantId", "actorId", ort, "radiusKm", "isInitial")
-     VALUES ($1, $2, $3, $4, $5, $6)`,
+    `INSERT INTO "DiscoveryScan" ("scanId", "tenantId", "actorId", ort, "radiusKm", "isInitial", country)
+     VALUES ($1, $2, $3, $4, $5, $6, $7)`,
     [
       scanId,
       args.tenantId,
@@ -330,6 +338,7 @@ export async function startScan(
       args.ort.slice(0, 120),
       args.radiusKm,
       isInitial,
+      args.country ?? "DE",
     ],
   );
   return {
@@ -394,8 +403,9 @@ export async function addCandidates(
     tenantId: string;
     candidatesAdded: number;
     isInitial: boolean;
+    country: string;
   }>(
-    `SELECT "tenantId", "candidatesAdded", "isInitial"
+    `SELECT "tenantId", "candidatesAdded", "isInitial", country
        FROM "DiscoveryScan" WHERE "scanId" = $1`,
     [args.scanId],
   );
@@ -446,8 +456,8 @@ export async function addCandidates(
     if (masterId) known[r.discoveryId] = masterId;
     const res = await pool.query<{ inserted: boolean }>(
       `INSERT INTO "DiscoveredCompany"
-         ("discoveryId", name, "nameNormalized", city, plz, lat, lon, domain, category, "metaJson", source, "masterCompanyId")
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+         ("discoveryId", name, "nameNormalized", city, plz, lat, lon, domain, category, "metaJson", source, "masterCompanyId", country)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
        ON CONFLICT ("discoveryId") DO UPDATE SET
          city = COALESCE("DiscoveredCompany".city, EXCLUDED.city),
          plz = COALESCE("DiscoveredCompany".plz, EXCLUDED.plz),
@@ -471,6 +481,7 @@ export async function addCandidates(
         r.meta ? JSON.stringify(r.meta).slice(0, 4000) : null,
         r.source.slice(0, 20),
         masterId,
+        scan.rows[0].country ?? "DE",
       ],
     );
     if (res.rows[0]?.inserted) added++;
@@ -523,26 +534,67 @@ export interface RegisterCandidate {
  * ermittelt anschliessend die Website — ohne Website kein Kandidat
  * (A8).
  */
+/** Registered-Office-Agenten (UK): ab so vielen Firmen je Adresse ist es ein Scheinsitz. */
+const UK_AGENTEN_SCHWELLE = envInt("DISCOVERY_UK_AGENT_THRESHOLD", 500);
+
 export async function findRegisterCandidates(
   gatewayPool: Pool,
   placeNames: string[],
   limit: number,
+  opts: { country?: RadarLand; outwardCodes?: string[] } = {},
 ): Promise<RegisterCandidate[]> {
   await ensureSchema(gatewayPool);
+  const country = opts.country ?? "DE";
   const places = [...new Set(placeNames.map((p) => p.trim()).filter(Boolean))];
-  if (places.length === 0) return [];
+  if (places.length === 0 && (opts.outwardCodes ?? []).length === 0) return [];
   let rows: Array<RegisterCandidate & { districtCourt?: string }>;
   try {
-    const r = await getMasterDataPool().query<
-      RegisterCandidate & { districtCourt: string }
-    >(
-      `SELECT "companyId", name, location, "districtCourt" FROM "GermanCompany"
-        WHERE location = ANY($1::text[])
-        ORDER BY "companyId"
-        LIMIT $2`,
-      [places, Math.min(500, limit * 10)],
-    );
-    rows = r.rows;
+    if (country === "UK") {
+      // docs/PLAN_RADAR_LAENDER.md (L3): PostTown ist zu grob (London ~1 Mio.),
+      // deshalb Outward-Code der Postleitzahl; kein neuer Index auf dem
+      // Cluster, dafuer harte Zeitgrenze. Registered-Office-Agenten
+      // (Hunderttausende Briefkaesten) werden ueber die Adresshaeufigkeit
+      // ausgeschlossen.
+      const codes = [...new Set((opts.outwardCodes ?? []).map((c) => c.trim().toUpperCase()).filter(Boolean))].slice(0, 400);
+      if (codes.length === 0) return [];
+      const client = await getMasterDataPool().connect();
+      try {
+        await client.query("SET LOCAL statement_timeout = '8s'");
+        const r = await client.query<RegisterCandidate & { districtCourt: string }>(
+          `WITH kandidaten AS (
+             SELECT "companyId", name, location, "districtCourt", "zipCode"
+               FROM "GermanCompany"
+              WHERE country = 'UK' AND "registerStatus" = 'ACTIVE'
+                AND "zipCode" LIKE ANY($1::text[])
+              LIMIT $2
+           ),
+           adressen AS (
+             SELECT location, "zipCode", COUNT(*) AS n FROM "GermanCompany"
+              WHERE country = 'UK' AND ("zipCode", location) IN (SELECT "zipCode", location FROM kandidaten)
+              GROUP BY 1, 2
+           )
+           SELECT k."companyId", k.name, k.location, k."districtCourt"
+             FROM kandidaten k JOIN adressen a ON a.location = k.location AND a."zipCode" = k."zipCode"
+            WHERE a.n < $3
+            ORDER BY k."companyId"`,
+          [codes.map((c) => `${c} %`), Math.min(2000, limit * 40), UK_AGENTEN_SCHWELLE],
+        );
+        rows = r.rows;
+      } finally {
+        client.release();
+      }
+    } else {
+      const r = await getMasterDataPool().query<
+        RegisterCandidate & { districtCourt: string }
+      >(
+        `SELECT "companyId", name, location, "districtCourt" FROM "GermanCompany"
+          WHERE country = $3 AND location = ANY($1::text[])
+          ORDER BY "companyId"
+          LIMIT $2`,
+        [places, Math.min(500, limit * 10), country],
+      );
+      rows = r.rows;
+    }
   } catch (err) {
     console.warn("[discovery] register query failed:", err);
     return [];
@@ -557,7 +609,8 @@ export async function findRegisterCandidates(
   // dem Limit bleibt, fuellen Firmen derselben Bezirke mit fremdem
   // location-Text auf — bewusst unscharf (Bezirk ~ Kreis-Skala),
   // deshalb nachrangig und klein gedeckelt.
-  if (rows.length > 0 && rows.length < limit * 2) {
+  // Gerichtsbezirks-Rueckfall nur fuer DE (AT hat 16 Gerichte, UK drei Registerstellen).
+  if (country === "DE" && rows.length > 0 && rows.length < limit * 2) {
     const courtCount = new Map<string, number>();
     for (const r of rows) {
       const c = r.districtCourt?.trim();
@@ -571,7 +624,7 @@ export async function findRegisterCandidates(
       try {
         const fb = await getMasterDataPool().query<RegisterCandidate>(
           `SELECT "companyId", name, location FROM "GermanCompany"
-            WHERE "districtCourt" = ANY($1::text[])
+            WHERE country = 'DE' AND "districtCourt" = ANY($1::text[])
               AND NOT (location = ANY($2::text[]))
             ORDER BY "companyId"
             LIMIT $3`,
@@ -760,6 +813,8 @@ export async function saveProfile(
 export interface CandidateRow {
   discoveryId: string;
   name: string;
+  /** Land des Kandidaten (DE | AT | UK). */
+  country: string;
   city: string | null;
   plz: string | null;
   lat: number | null;
@@ -836,11 +891,17 @@ export async function listCandidates(
     withProfiles?: boolean;
     /** v0.1.636 — nur unprofilierte Kandidaten (Profil-Worker-Backlog). */
     withoutProfiles?: boolean;
+    /** docs/PLAN_RADAR_LAENDER.md: nur Kandidaten dieses Landes. */
+    country?: RadarLand;
   },
 ): Promise<CandidateRow[]> {
   await ensureSchema(pool);
   const params: unknown[] = [args.userId];
   const conditions: string[] = [];
+  if (args.country) {
+    params.push(args.country);
+    conditions.push(`dc.country = $${params.length}`);
+  }
   if (!args.includeDecided) {
     conditions.push("dd.decision IS NULL");
   }
@@ -879,7 +940,7 @@ export async function listCandidates(
     ? `, dc."profileJson", dc."profileText", dc.embedding`
     : "";
   const r = await pool.query(
-    `SELECT dc."discoveryId", dc.name, dc.city, dc.plz, dc.lat, dc.lon,
+    `SELECT dc."discoveryId", dc.name, dc.country, dc.city, dc.plz, dc.lat, dc.lon,
             dc.domain, dc.category, dc.source, dc."masterCompanyId",
             dc."profiledAt", dd.decision${profileCols}
        FROM "DiscoveredCompany" dc
@@ -893,6 +954,7 @@ export async function listCandidates(
   return r.rows.map((row) => ({
     discoveryId: row.discoveryId,
     name: row.name,
+    country: row.country ?? "DE",
     city: row.city,
     plz: row.plz,
     lat: row.lat,

@@ -501,7 +501,7 @@ const fromListIngestRoute = createRoute({
 });
 
 importsRouter.openapi(fromListIngestRoute, async (c) => {
-  const { companies, transactionName, isFuzzy, dryRun } = c.req.valid("json");
+  const { companies, transactionName, isFuzzy, dryRun, country } = c.req.valid("json");
 
   // Q-track v0.1.137 — From-list ingest accepts unconditionally too.
   // Over-quota rows park in master-data's per-company publish step.
@@ -529,6 +529,7 @@ importsRouter.openapi(fromListIngestRoute, async (c) => {
           name: effectiveTxName,
           isFuzzy: String(isFuzzy ?? false),
           dryRun: "true",
+          ...(country ? { country } : {}),
         },
       },
     );
@@ -564,6 +565,7 @@ importsRouter.openapi(fromListIngestRoute, async (c) => {
         city: CITY_HEADER,
         name: effectiveTxName,
         isFuzzy: String(isFuzzy ?? false),
+        ...(country ? { country } : {}),
       },
     },
   );

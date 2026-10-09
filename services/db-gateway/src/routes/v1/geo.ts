@@ -34,6 +34,7 @@ const PlaceShape = z
 
 const NearbyResponseShape = z
   .object({
+    country: z.enum(["DE", "AT", "UK"]),
     origin: PlaceShape.omit({ distanceKm: true }),
     /** Gleichnamige (Ort, Kreis)-Gruppen, die NICHT als Origin gewaehlt
      *  wurden (es gibt z. B. zwei "Minden"). */
@@ -61,6 +62,8 @@ const nearbyRoute = createRoute({
     query: z.object({
       near: z.string().min(2).max(80),
       radiusKm: z.coerce.number().min(1).max(200).default(50),
+      /** docs/PLAN_RADAR_LAENDER.md: Land des Suchgebiets, Standard DE. */
+      country: z.enum(["DE", "AT", "UK"]).default("DE"),
     }),
   },
   responses: {
@@ -84,8 +87,8 @@ geoRouter.openapi(nearbyRoute, async (c) => {
   if (!auth?.tenantId) {
     throw new HTTPException(401, { message: "auth_context_missing" });
   }
-  const { near, radiusKm } = c.req.valid("query");
-  const result = await findPlacesNearby(getGatewayPool(), near, radiusKm);
+  const { near, radiusKm, country } = c.req.valid("query");
+  const result = await findPlacesNearby(getGatewayPool(), near, radiusKm, country);
   if (!result) {
     throw new HTTPException(404, {
       message: `Ort "${near}" nicht gefunden`,
