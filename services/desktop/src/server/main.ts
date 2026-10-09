@@ -64,6 +64,30 @@ let siwcLink: string | null = null;
 /** Letzte Rückmeldung der Setup-Seite (einmal angezeigt). */
 let setupMeldung: { art: "ok" | "fehler"; text: string } | null = null;
 
+/**
+ * Ohne Fenster gibt es keine Modell-Auswahl: Steht der aktive Anbieter auf Ollama
+ * (Vorgabe der App) und ein Schlüssel ist da, wechselt der Server auf diesen
+ * Anbieter. Ollama im Container dient nur den Embeddings. Liefert true bei Wechsel.
+ */
+function anbieterAktivieren(c: Core, kind: HostedProviderKind): boolean {
+  if (c.providers.getConfig().kind !== "ollama") return false;
+  try {
+    c.providers.setProvider(kind);
+    console.log(`[server] aktiver Anbieter auf ${kind} gesetzt (Ollama bleibt für Embeddings)`);
+    return true;
+  } catch (err) {
+    console.warn("[server] Anbieterwechsel fehlgeschlagen:", err instanceof Error ? err.message : String(err));
+    return false;
+  }
+}
+
+/** Beim Start: vorhandenen Schlüssel als aktiven Anbieter nehmen, falls noch Ollama eingestellt ist. */
+function anbieterBeimStartPruefen(c: Core): void {
+  if (c.providers.getConfig().kind !== "ollama") return;
+  const mitSchluessel = ANBIETER.find((a) => c.providers.hasKey(a.kind));
+  if (mitSchluessel) anbieterAktivieren(c, mitSchluessel.kind);
+}
+
 // ---- HTML ---------------------------------------------------------------------
 
 function esc(s: string): string {
@@ -102,7 +126,8 @@ function modellAbschnitt(t: string): string {
   ).join("");
   const optionen = ANBIETER.map((a) => `<option value="${a.kind}">${esc(a.name)}</option>`).join("");
   const verschluesselt = platform().credentials.isEncryptionAvailable();
-  return `<table>${zeilen}</table>
+  const aktiv = c.providers.getConfig().kind;
+  return `<p><small>Aktiver Anbieter: ${esc(aktiv)}${aktiv === "ollama" ? " (ohne lokales Chat-Modell; wechselt beim Speichern eines Schlüssels)" : ""}</small></p><table>${zeilen}</table>
 ${verschluesselt ? "" : '<p class="fehler">AVA_SECRETS_KEY fehlt: Schlüssel würden unverschlüsselt liegen; Speichern ist deshalb gesperrt.</p>'}
 <form method="post" action="/setup/key?t=${esc(t)}">
   <label>Anbieter <select name="anbieter">${optionen}</select></label>
@@ -200,8 +225,9 @@ async function setupPost(url: URL, req: IncomingMessage, res: ServerResponse): P
       if (!schluessel) throw new Error("Kein Schlüssel eingegeben.");
       if (!platform().credentials.isEncryptionAvailable()) throw new Error("AVA_SECRETS_KEY fehlt; Schlüssel werden nicht unverschlüsselt gespeichert.");
       await c.providers.setApiKey(anbieter.kind, schluessel);
-      setupMeldung = { art: "ok", text: `Schlüssel für ${anbieter.name} gespeichert.` };
-      writeLineSync("INFO ", `[setup] API-Schlüssel für ${anbieter.kind} über die Setup-Seite gesetzt`);
+      const gewechselt = anbieterAktivieren(c, anbieter.kind);
+      setupMeldung = { art: "ok", text: `Schlüssel für ${anbieter.name} gespeichert${gewechselt ? ` und ${anbieter.name} als aktiven Anbieter gesetzt` : ""}.` };
+      writeLineSync("INFO ", `[setup] API-Schlüssel für ${anbieter.kind} über die Setup-Seite gesetzt${gewechselt ? ", Anbieter gewechselt" : ""}`);
     } else if (url.pathname === "/setup/chatgpt/start") {
       const vorherige = await vorherigePlanHuelle(c.providerConfigStore);
       const hostId = ladeOderErzeugeHostId(join(paths().get("userData"), "siwc-host.json"));
@@ -360,6 +386,7 @@ async function main(): Promise<void> {
   lage.phase = "komposition";
   const c = await bootstrapCore({});
   core = c;
+  anbieterBeimStartPruefen(c);
   // Hintergrunddienste wie in der App; Producer laufen an, sobald die Anmeldung steht.
   await c.startBackground();
   lage.phase = "laeuft";
