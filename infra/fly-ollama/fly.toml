@@ -1,0 +1,25 @@
+# Ollama-Sidecar fuer den headless AVA-Kopf auf Fly (docs/PLAN_AVA_CLOUD.md §12).
+# Kein oeffentlicher Dienst: erreichbar nur im privaten Fly-Netz als
+# ava-ollama.internal:11434. Dient den Embeddings (embeddinggemma); der Kopf
+# laedt seine Pflichtmodelle beim Start selbst nach.
+#   fly deploy -c infra/fly-ollama/fly.toml
+app = "ava-ollama"
+primary_region = "fra"
+
+[build]
+  image = "ollama/ollama:latest"
+
+[env]
+  # Doppelstack-Bind, damit die IPv6-Adresse im 6PN-Netz antwortet.
+  OLLAMA_HOST = "[::]:11434"
+  OLLAMA_KEEP_ALIVE = "30m"
+
+[mounts]
+  source = "ollama_models"
+  destination = "/root/.ollama"
+  initial_size = "15gb"
+
+[[vm]]
+  memory = "2gb"
+  cpu_kind = "shared"
+  cpus = 2

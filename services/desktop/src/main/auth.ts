@@ -243,12 +243,22 @@ export class Auth extends EventEmitter {
         "Der Anmeldedienst bietet keinen Device Flow an (device_authorization_endpoint fehlt). Am Keycloak-Client den OAuth 2.0 Device Authorization Grant einschalten.",
       );
     }
+    // PKCE auch hier: Der Client erzwingt S256 (pkce.code.challenge.method),
+    // Keycloak verlangt die Challenge deshalb schon beim Device-Request und
+    // den Verifier beim Token-Abruf.
+    const verifier = randomBytes(32).toString("base64url");
+    const challenge = createHash("sha256").update(verifier).digest("base64url");
     const start = await fetchWithRetry(
       endpoint,
       {
         method: "POST",
         headers: { "content-type": "application/x-www-form-urlencoded" },
-        body: new URLSearchParams({ client_id: this.clientId, scope: "openid profile email offline_access" }).toString(),
+        body: new URLSearchParams({
+          client_id: this.clientId,
+          scope: "openid profile email offline_access",
+          code_challenge: challenge,
+          code_challenge_method: "S256",
+        }).toString(),
       },
       { retries: 3, timeoutMs: 10_000 },
     );
@@ -281,6 +291,7 @@ export class Auth extends EventEmitter {
           grant_type: "urn:ietf:params:oauth:grant-type:device_code",
           client_id: this.clientId,
           device_code: dev.device_code,
+          code_verifier: verifier,
         }).toString(),
       });
       if (res.ok) {
