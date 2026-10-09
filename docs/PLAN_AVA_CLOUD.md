@@ -779,10 +779,12 @@ Was der erste Tag gezeigt hat (alle Punkte behoben und im Code kommentiert):
 Erster Durchlauf mit einer echten Firma (Strategic IT GmbH, Herford, über
 `/v1/imports/from-list` mit Device-Flow-Token): Register, Website, Kontakte
 und Kundenseiten liefen auf dem Server durch (1 Firma fertig, 4 Schritte, 2
-übersprungen); Chromium 154 passt zum chromedriver des Images. Offen nach
-dem vierten Deploy zu prüfen: Embeddings gegen den Sidecar, die Meldungen
-„Couldn't find token“ und „deep research … url is a required field“ des
-Website-Producers (Research-Einstellungen ohne Schlüssel).
+übersprungen); Chromium 154 passt zum chromedriver des Images. Nach dem
+vierten Deploy bettet der Publikations-Producer gegen den Sidecar ein
+(„10/10 Blöcke lokal eingebettet“, 4 s; „26/26“, 2 s). Noch anzusehen: die
+Meldungen „Couldn't find token“ und „deep research … url is a required
+field“ des Website-Producers (Research-Einstellungen ohne Schlüssel), beide
+ohne Folgen für das Ergebnis.
 
 Betriebskosten bei Dauerbetrieb rund 35 bis 40 $ im Monat (Kopf 21 bis 22,
 Sidecar 10 bis 11, Volumes rund 4, Traffic wenige Dollar) plus Modellkosten.
