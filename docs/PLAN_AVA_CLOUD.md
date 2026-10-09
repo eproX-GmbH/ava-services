@@ -9,7 +9,7 @@ die Architektur umzuwerfen? Ergänzt und ersetzt in Teilen
 
 Status: Refactoring (§12) freigegeben 2026-10-09 mit den Vorschlägen aus §12.5
 (R1/R2 vor dem MCP-Relais, Wächter build-blockierend, `core/` als Verzeichnis).
-**R1 umgesetzt in v0.1.787** (§12.6).
+**R1 umgesetzt in v0.1.787**, **R2a (IPC nach Domänen) in v0.1.788** (§12.6, §12.7).
 
 ## 1. Kurzfassung
 
@@ -558,4 +558,33 @@ file-logger, billing, producer-screenshots), R4 (auth-Fenster, Link-Monitor,
 Discovery-Rückfall, telegram/audio), Stufe 3 (LinkedIn-Modul, siwc-oauth,
 agent/tools/linkedin), dauerhaft Electron (platform-electron, updater,
 download-guard, externe-links).
+
+### 12.7 Stand R2a: IPC-Handler nach Domänen (v0.1.788, 2026-10-09)
+
+Alle 287 `ipcMain.handle`/`ipcMain.on`-Blöcke aus `index.ts` liegen jetzt in
+20 Dateien unter `src/main/ipc/`, je Domäne eine Funktion
+`register<Domäne>Ipc(deps)` mit explizitem Deps-Interface. Die Handler-Bodies
+sind unverändert; `index.ts` ruft die Register-Funktionen an der Stelle des
+jeweils letzten ehemaligen Handlers auf (alle vor `createMainWindow()`), so
+dass jede Abhängigkeit dort schon existiert. `index.ts` schrumpft von 7.962
+auf 5.113 Zeilen.
+
+Muster für spät gesetzte Dienste (vormals `let` in index.ts): statt Getter ein
+Halter `{ readonly current: T | null }`, in index.ts als
+`{ get current() { return x; } }` übergeben. Grund: TypeScript verengt
+`x.current` nach einem Null-Check weiter, einen Getter-Aufruf `x()` nicht.
+Schreibende Fälle (`icpAnalysisRunning`) bekommen zusätzlich einen Setter.
+
+`src/main/ipc/` ist die Electron-Adapter-Schicht und darf `electron`
+importieren; der Wächter nimmt das Verzeichnis pauschal aus. Geprüft:
+Typecheck, Build, 17 Test-Skripte, Abgleich aller Preload-Kanäle gegen die
+Handler (316 Kanäle, 287 Handler hier, Rest in billing.ts und linkedin/).
+
+Dateien: agent, skills, recherche, sprache, discovery, personen, system,
+laufzeit, konto, vorschlaege, stammdaten, crm, meldungen, verlauf,
+kommunikation, beobachtung, stimme, wissen, ablaeufe, relevanz.
+
+Noch in index.ts: die Komposition (Stores, Supervisoren, Orchestrator) auf
+Modulebene und in `app.whenReady`, die `broadcast*`-Helfer, Auth-/Updater-/
+Producer-Verdrahtung, Beenden-Kette. Das ist R2b (`bootstrapCore`).
 

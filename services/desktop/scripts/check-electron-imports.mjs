@@ -76,6 +76,8 @@ for (const f of walk(mainDir)) {
   const rel = relative(mainDir, f).split("\\").join("/");
   if (importiertElectron(f)) {
     gesehen.add(rel);
+    // src/main/ipc/ ist die Electron-Adapter-Schicht (ipcMain) und darf electron immer.
+    if (rel.startsWith("ipc/")) continue;
     if (!AUSNAHMEN.has(rel)) {
       fehler.push(`src/main/${rel}: importiert electron ohne Eintrag in scripts/check-electron-imports.mjs; bitte über src/core/platform.ts gehen oder Ausnahme mit Grund eintragen`);
     }
