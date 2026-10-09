@@ -1,6 +1,6 @@
 {
   "name": "@ava/desktop",
-  "version": "0.1.786",
+  "version": "0.1.787",
   "private": true,
   "license": "SEE LICENSE IN LICENSE",
   "description": "AVA Electron desktop app",
@@ -26,7 +26,8 @@
     "build": "electron-vite build",
     "tools:doc": "node scripts/generate-tools-md.mjs",
     "_build:typecheck_note": "tools:doc runs first so TOOLS.md stays in sync. If TOOLS.md changes after running `pnpm -F @ava/desktop tools:doc`, commit it — a CI drift-check can land later.",
-    "build:typecheck": "node scripts/generate-tools-md.mjs && tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json && node scripts/check-german.mjs",
+    "build:typecheck": "node scripts/generate-tools-md.mjs && node scripts/check-electron-imports.mjs && tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json && node scripts/check-german.mjs",
+    "lint:electron": "node scripts/check-electron-imports.mjs",
     "lint:german": "node scripts/check-german.mjs",
     "test:buying-center": "node scripts/test-buying-center.mjs",
     "test:telegram-text": "node scripts/test-telegram-text.mjs",
