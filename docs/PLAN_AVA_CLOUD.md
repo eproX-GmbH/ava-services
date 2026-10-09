@@ -9,7 +9,7 @@ die Architektur umzuwerfen? Ergänzt und ersetzt in Teilen
 
 Status: Refactoring (§12) freigegeben 2026-10-09 mit den Vorschlägen aus §12.5
 (R1/R2 vor dem MCP-Relais, Wächter build-blockierend, `core/` als Verzeichnis).
-**R1 umgesetzt in v0.1.787**, **R2a (IPC nach Domänen) in v0.1.788** (§12.6, §12.7).
+**R1 in v0.1.787**, **R2a (IPC nach Domänen) in v0.1.788**, **R2b (bootstrapCore) in v0.1.789** (§12.6–§12.8).
 
 ## 1. Kurzfassung
 
@@ -587,4 +587,48 @@ kommunikation, beobachtung, stimme, wissen, ablaeufe, relevanz.
 Noch in index.ts: die Komposition (Stores, Supervisoren, Orchestrator) auf
 Modulebene und in `app.whenReady`, die `broadcast*`-Helfer, Auth-/Updater-/
 Producer-Verdrahtung, Beenden-Kette. Das ist R2b (`bootstrapCore`).
+
+### 12.8 Stand R2b: `bootstrapCore` (v0.1.789, 2026-10-09)
+
+Die Komposition liegt jetzt in `src/core/bootstrap.ts`:
+`bootstrapCore(hooks)` baut alles (Stores, Supervisoren, Orchestrator,
+Workflows, Telegram, Mail, Producer-Registry), verdrahtet es in der bisherigen
+Reihenfolge, versucht die stille Anmeldung und liefert ein `Core`-Objekt mit
+69 Konstanten und 18 Haltern (spät gesetzte Dienste) plus
+`startBackground()` (Ollama, Postgres, Producer, Herzschlag, Frische,
+Whisper, Worker-Modus). Der Typ `Core` ist `Awaited<ReturnType<typeof
+bootstrapCore>>`, kein handgeschriebenes Interface. Die Datei importiert kein
+Electron; der Wächter prüft das.
+
+`src/main/index.ts` ist die Hülle (rund 560 Zeilen statt 7.962 zu Beginn
+des Tages): Plattform setzen, Beenden-Anzeige, privilegierte Schemata,
+Fenster, `bootstrapCore({ onResume })`, Protokoll-Handler, Sitzungs-
+Berechtigungen und Download-Sperre, Billing-Protokoll, LinkedIn-Modul,
+Wachhund, IPC-Registrierung, `createMainWindow()`, `startBackground()`,
+Updater, Dock-Aktivierung, Beenden-Kette.
+
+Was sich an der Reihenfolge geändert hat, bewusst und geprüft:
+
+- Die Modulebene (vormals beim Laden von index.ts) läuft jetzt innerhalb von
+  `app.whenReady`. Der Boot-Reset bleibt die erste Anweisung vor allen
+  Stores.
+- Sitzungs-Berechtigungen, Billing und LinkedIn-Init laufen nach der
+  Komposition statt mittendrin; alles davon liegt weiter vor dem ersten
+  Fenster. Die Protokoll-Handler ebenfalls.
+- Die IPC-Registrierung liegt nach der stillen Anmeldung statt davor; der
+  Renderer existiert zu beiden Zeitpunkten noch nicht.
+- Der Fenster-Weckruf nach dem Aufwachen (Invalidate, `power:resumed`,
+  Force-Reload ohne Ack) ist der Hook `onResume`, den die Hülle stellt; der
+  Kopf ruft ihn an derselben Stelle wie bisher, nach dem Wiederanlauf der
+  Dienste.
+
+Geprüft: Typecheck, Build, Wächter, 17 Test-Skripte. Kein Live-Start in
+dieser Session (siehe 12.6). Was beim ersten Start von v0.1.789 zu beachten
+ist: Startsequenz bis zum Fenster, Dock-Klick, Schlafen/Aufwachen,
+Beenden-Kette (Breadcrumbs im Log tragen jetzt dieselben Namen wie zuvor).
+
+Damit steht die Voraussetzung für R3: `src/server/main.ts` ruft dieselbe
+`bootstrapCore()` mit der Node-Plattform auf, registriert statt IPC den
+Telegram-Eingang (läuft bereits im Kopf) und später den MCP-Relais-Client,
+und ruft `startBackground()`.
 
