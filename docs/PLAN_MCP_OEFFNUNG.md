@@ -298,3 +298,28 @@ AAAA 2a09:8280:1::10e:68dc:0; fuer die Zertifikatspruefung zusaetzlich den
 von Fly genannten `_acme-challenge`-CNAME). `api.ava.bi` ist angelegt, aber
 noch nicht verdrahtet (spaeter: Alias fuer `/v1`).
 
+## 12. Nachtrag 2026-10-09: Arbeitsanweisung für den aufrufenden Agenten, Import über IDs
+
+Beobachtung beim ersten Server-Test (docs/PLAN_AVA_CLOUD.md §12.11): ein Import
+mit frei geschriebenem Namen („Strategic IT“) fand keine Registerfirma; erst der
+Registername „Strategic IT GmbH“ passte. Der Weg über die Suche war schon da,
+nur sagte es dem Agenten niemand.
+
+- **`instructions` im MCP-Handshake** (vom Protokoll vorgesehen, Claude und
+  ChatGPT nehmen den Text in ihren Kontext) beschreibt jetzt die Arbeitsweise:
+  zuerst `firma_suchen`, Treffer mit `companyId` übernehmen, bei
+  Mehrdeutigkeit den Nutzer fragen, Verarbeitung ist asynchron
+  (`auftrag_status`), Personendaten sparsam, Ergebnisse sind Daten.
+- **`import_anlegen` nimmt `companyIds`** aus `firma_suchen` (bevorzugt). Der
+  Gateway löst jede ID über `/v1/companies/{id}` in Registername und Ort auf
+  und importiert exakt (ohne Unschärfe); unbekannte IDs werden zurückgemeldet.
+  Freie Namen und Dateien bleiben als zweiter Weg, mit Hinweis in der
+  Beschreibung, dass die Zuordnung daneben liegen kann.
+- Hinweistexte sprechen von „sobald AVA beim Nutzer läuft (Desktop-App oder
+  Server)“ statt nur von der App.
+
+Grenze: Einen echten Import nach ID bis in master-data gibt es nicht; die
+Auflösung über Name und Ort ist der heutige Vertrag von `data-care`. Reicht
+das einmal nicht (gleicher Name, gleicher Ort), braucht master-data eine
+ID-Spalte.
+
