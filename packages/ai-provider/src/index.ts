@@ -573,8 +573,12 @@ export { gatewayProxyBaseURL } from "./runtime";
 // sich nichts.
 // ---------------------------------------------------------------------------
 
-type ObjektArgs = Parameters<typeof generateObject>[0];
-type TextArgs = Parameters<typeof generateText>[0];
+// Bewusst KEIN Typ aus "ai" in der Signatur: Producer bringen teils eine
+// eigene Kopie des AI SDK mit (CI-Staging), und `jsonSchema()` daraus ist
+// fuer TypeScript ein anderer Typ als der des Pakets (Befund v0.1.779:
+// "Schema<unknown> is not assignable to FlexibleSchema<unknown>").
+type ObjektArgs = { model: unknown; schema?: unknown; [k: string]: unknown };
+type TextArgs = { model: unknown; [k: string]: unknown };
 
 export interface ObjektErgebnis<T> {
   object: T;
