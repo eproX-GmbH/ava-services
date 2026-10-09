@@ -8148,10 +8148,16 @@ tr.held-row td:first-child::after {
   background: transparent;
   color: inherit;
   border-radius: 999px;
-  padding: 4px 10px;
+  padding: 0 10px;
   font-size: 12px;
+  line-height: 24px;
+  height: 26px;
   cursor: pointer;
-  align-self: center;
+  /* Unten ausgerichtet wie die 36-px-Knoepfe daneben (Befund 2026-10-09:
+   * bei mehrzeiligem Eingabefeld hing der Schalter in der Mitte). Die
+   * 5 px heben die 26-px-Pille auf die Mittellinie der Knoepfe. */
+  align-self: flex-end;
+  margin-bottom: 5px;
   max-width: 110px;
 }
 .chat-composer__mode:hover {
