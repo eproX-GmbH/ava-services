@@ -1,6 +1,6 @@
 // Plattform-Schicht zuerst: Stores lesen ihre Pfade schon beim Laden (docs/PLAN_AVA_CLOUD.md §12).
 import "./platform-electron";
-import { paths } from "../core/platform";
+import { lifecycle, notifier, paths, power, windows } from "../core/platform";
 import { registerPersonenIpc } from "./ipc/personen";
 import { registerDiscoveryIpc } from "./ipc/discovery";
 import { registerSpracheIpc } from "./ipc/sprache";
@@ -59,18 +59,7 @@ import { pruefeModellstufe } from "./workflows/modellstufe";
 import { guardAllKnownSessions, setDownloadBlockedListener } from "./download-guard";
 import { EmailMusterSupervisor } from "./contacts/email-muster/supervisor";
 import { streamToText as hintergrundUrteil } from "./link-monitor/llm";
-import {
-  app,
-  BrowserWindow,
-  dialog,
-  ipcMain,
-  powerMonitor,
-  protocol,
-  session,
-  shell,
-  systemPreferences,
-  Notification,
-} from "electron";
+import { app, BrowserWindow, protocol, session } from "electron";
 // Side-effect import — MUST be first. Installs the persistent file logger
 // (mirrors every main-process console.* + uncaught errors into a rotated
 // file under ~/Library/Logs/AVA/) before any other module loads or logs.
@@ -393,8 +382,8 @@ app.on("before-quit", (e) => {
 });
 
 const APP_CONFIG = resolveConfig({
-  appVersion: app.getVersion(),
-  isPackaged: app.isPackaged,
+  appVersion: paths().version(),
+  isPackaged: paths().isPackaged,
 });
 const GATEWAY_URL = APP_CONFIG.gatewayUrl;
 const AUTH_ISSUER = APP_CONFIG.authIssuer;
@@ -406,7 +395,7 @@ const AUTH_CLIENT_ID = APP_CONFIG.authClientId;
 // in app.whenReady(), würde er die von den Stores bereits (beim Import)
 // angelegten Verzeichnisse — v. a. agent/memory — wieder löschen, ohne dass
 // sie in derselben Session neu entstehen → jeder Chat-Schreibvorgang würde
-// mit ENOENT scheitern. `app.getPath("userData")` ist hier bereits gültig.
+// mit ENOENT scheitern. `paths().get("userData")` ist hier bereits gültig.
 try {
   performBootResetIfRequested();
 } catch (err) {
@@ -489,7 +478,7 @@ const PERIODIC_RESUME_INTERVAL_MS = 15 * 60 * 1000;
 // Begrenzung automatischer Neuanstoesse je Schritt (docs/PLAN_HINTERGRUNDAUFGABEN.md, Stufe 2).
 let neustartZaehlerInstanz: NeustartZaehler | null = null;
 function neustartZaehler(): NeustartZaehler {
-  neustartZaehlerInstanz ??= new NeustartZaehler(join(app.getPath("userData"), "auto-neustarts.json"));
+  neustartZaehlerInstanz ??= new NeustartZaehler(join(paths().get("userData"), "auto-neustarts.json"));
   return neustartZaehlerInstanz;
 }
 let periodicResumeTimer: NodeJS.Timeout | null = null;
@@ -526,9 +515,7 @@ function stopPeriodicResumeSweep(): void {
 }
 
 function broadcastAuthStatus(status: AuthStatus): void {
-  for (const win of BrowserWindow.getAllWindows()) {
-    win.webContents.send("auth-status:changed", status);
-  }
+  windows().broadcast("auth-status:changed", status);
   // 8.v1.3 — auth lifecycle drives producer lifecycle.
   // Sign-in: invalidate any cached "no-amqp" error state and start
   // every producer that's idle/error. Sign-out: stop every producer
@@ -596,9 +583,7 @@ auth.on("status", broadcastAuthStatus);
 // reguläre Sign-in-Start-Logik erneut anstoßen (Producer laufen wieder an,
 // Reachability-Gating greift weiterhin). Renderer wird benachrichtigt.
 processingControl.on("changed", (paused: boolean) => {
-  for (const win of BrowserWindow.getAllWindows()) {
-    win.webContents.send("processing-control:changed", { paused });
-  }
+  windows().broadcast("processing-control:changed", { paused });
   if (paused) {
     console.log("[processing-control] pausiert — stoppe alle Producer");
     for (const p of producers) void p.stop();
@@ -620,24 +605,14 @@ const ollama = new OllamaSupervisor();
 // starten — App-Restart nicht nötig.
 const ollamaUpdater = new OllamaBinaryUpdater();
 ollamaUpdater.on("state", (s) => {
-  for (const win of BrowserWindow.getAllWindows()) {
-    try {
-      win.webContents.send("ollama-updater:state", s);
-    } catch {
-      /* destroyed window */
-    }
-  }
+  windows().broadcast("ollama-updater:state", s);
 });
 
 function broadcastOllamaStatus(status: OllamaStatus): void {
-  for (const win of BrowserWindow.getAllWindows()) {
-    win.webContents.send("ollama-status:changed", status);
-  }
+  windows().broadcast("ollama-status:changed", status);
 }
 function broadcastOllamaPullProgress(progress: OllamaPullProgress): void {
-  for (const win of BrowserWindow.getAllWindows()) {
-    win.webContents.send("ollama-pull:progress", progress);
-  }
+  windows().broadcast("ollama-pull:progress", progress);
 }
 ollama.on("status", broadcastOllamaStatus);
 ollama.on("progress", broadcastOllamaPullProgress);
@@ -654,9 +629,7 @@ ollama.on("progress", broadcastOllamaPullProgress);
 const postgres = new PostgresSupervisor();
 
 function broadcastPostgresStatus(status: PostgresStatus): void {
-  for (const win of BrowserWindow.getAllWindows()) {
-    win.webContents.send("postgres-status:changed", status);
-  }
+  windows().broadcast("postgres-status:changed", status);
 }
 postgres.on("status", broadcastPostgresStatus);
 
@@ -1013,9 +986,9 @@ function buildProducer(
     // v0.1.363 — short-dir layout `resources/p/<code>/` (Windows MAX_PATH
     // fix) with legacy `resources/producers/<name>/` fallback. See
     // producer-dirs.ts (same resolver the supervisor uses).
-    const resourcesRoot = app.isPackaged
-      ? (process.resourcesPath ?? "")
-      : join(app.getAppPath(), "resources");
+    const resourcesRoot = paths().isPackaged
+      ? (paths().resources() ?? "")
+      : join(paths().appPath(), "resources");
     const vendored = resolveProducerDirUnder(resourcesRoot, entry.name);
     if (vendored) {
       producers.push(
@@ -1056,9 +1029,7 @@ async function registerQueueStatus(): Promise<Record<string, unknown> | null> {
 }
 
 function broadcastProducerStatus(status: ProducerStatus): void {
-  for (const win of BrowserWindow.getAllWindows()) {
-    win.webContents.send("producer-status:changed", status);
-  }
+  windows().broadcast("producer-status:changed", status);
 }
 for (const p of producers) {
   p.on("status", broadcastProducerStatus);
@@ -1092,9 +1063,7 @@ app.on("browser-window-created", () => broadcastMissingProducers());
 function broadcastExternalServiceStatus(
   status: ExternalServicesStatus,
 ): void {
-  for (const win of BrowserWindow.getAllWindows()) {
-    win.webContents.send("external-service-status:changed", status);
-  }
+  windows().broadcast("external-service-status:changed", status);
 }
 externalServiceMonitor.on("status", (status: ExternalServicesStatus) => {
   broadcastExternalServiceStatus(status);
@@ -1224,7 +1193,7 @@ if (!generalMemoryProbe.writable) {
 // can re-upload them to the gateway. In-memory only, TTL'd inside the
 // store itself.
 // 2026-09-30: Ablage auf Platte, Handles ueberleben Neustarts (D1).
-const attachments = new AttachmentStore(join(app.getPath("userData"), "anhaenge"));
+const attachments = new AttachmentStore(join(paths().get("userData"), "anhaenge"));
 
 // Heartbeat alerts (Phase 8.f1 → 8.f5).
 //
@@ -1280,9 +1249,9 @@ telegramStore.on("changed", () => {
   telegramInbound?.sync();
 });
 // Beim Beenden die Zustell-Timer stoppen, damit kein Retry mehr feuert.
-app.on("before-quit", () => quitStep("telegramChannel.stop", () => telegramChannel.stop()));
+lifecycle().onBeforeQuit(() => quitStep("telegramChannel.stop", () => telegramChannel.stop()));
 // Relevanz: was noch in der Warteschlange liegt, beim Beenden rausschicken.
-app.on("before-quit", () => quitStep("relevanz.beende", () => { void relevanz.beendeRelevanz(); }));
+lifecycle().onBeforeQuit(() => quitStep("relevanz.beende", () => { void relevanz.beendeRelevanz(); }));
 // v0.1.417 — Gegenrichtung: Nachrichten aus dem Telegram-Chat lesen und
 // beantworten. Wird erst nach der Orchestrator-Konstruktion gesetzt
 // (siehe unten) und folgt danach der Konfiguration.
@@ -1294,13 +1263,7 @@ function broadcastTelegramChanged(): void {
     encryptionAvailable: telegramStore.isEncryptionAvailable(),
     pendingCount: telegramChannel.pendingCount(),
   };
-  for (const win of BrowserWindow.getAllWindows()) {
-    try {
-      win.webContents.send("telegram:changed", snapshot);
-    } catch {
-      /* zerstörtes Fenster */
-    }
-  }
+  windows().broadcast("telegram:changed", snapshot);
 }
 // 8.f4 — real candidate source backed by existing gateway endpoints
 // (transactions → entities → publications). Falls back to the in-process
@@ -1506,9 +1469,7 @@ const watchExecutor = new WatchExecutor({
 
 function broadcastWatchesChanged(): void {
   const snapshot = watchStore.list();
-  for (const win of BrowserWindow.getAllWindows()) {
-    win.webContents.send("watches:changed", snapshot);
-  }
+  windows().broadcast("watches:changed", snapshot);
 }
 watchStore.on("changed", () => broadcastWatchesChanged());
 
@@ -1581,9 +1542,7 @@ function apifyZugangInfo(): { apifyQuelle: "eigen" | "organisation" | null; apif
 let recycleCompanyContactRef: (() => void) | null = null;
 
 function broadcastMailSnapshot(snapshot: MailSnapshot): void {
-  for (const win of BrowserWindow.getAllWindows()) {
-    win.webContents.send("mail:snapshot", snapshot);
-  }
+  windows().broadcast("mail:snapshot", snapshot);
 }
 
 /** L6 — after each heartbeat tick, mark every LinkedIn candidate that
@@ -1706,13 +1665,7 @@ auditStore.on("inserted", (event) => {
   // Live-broadcast to every open BrowserWindow so the Verlauf-Tab's
   // SSE-equivalent (IPC live stream) can prepend new events without
   // re-querying. The renderer filters client-side.
-  for (const win of BrowserWindow.getAllWindows()) {
-    try {
-      win.webContents.send("audit:inserted", event);
-    } catch {
-      /* destroyed window — ignore */
-    }
-  }
+  windows().broadcast("audit:inserted", event);
 });
 // Heartbeat → audit. The tick itself is a routine event; we log
 // only at info severity so a year of ticks fits comfortably under
@@ -1790,13 +1743,7 @@ auth.on("status", (status: AuthStatus) => {
         console.log(`[account-space] Refresh-Token in Ziel-Space uebernommen: ${ok}`);
       });
       console.log("[account-space] lokale Daten werden diesem Konto zugeordnet — AVA startet neu");
-      for (const win of BrowserWindow.getAllWindows()) {
-        try {
-          win.webContents.send("accounts:relaunching", { sub: status.actorId });
-        } catch {
-          /* zerstoertes Fenster */
-        }
-      }
+      windows().broadcast("accounts:relaunching", { sub: status.actorId });
     }
   }
   if (!status.signedIn) lastSpaceSub = null;
@@ -1878,9 +1825,7 @@ const retryTicker = new RetryTicker({
 });
 
 function broadcastAlertsChanged(): void {
-  for (const win of BrowserWindow.getAllWindows()) {
-    win.webContents.send("alerts:changed");
-  }
+  windows().broadcast("alerts:changed");
 }
 
 // Freshness scheduler (Phase 8.r1 — dry-run).
@@ -1910,9 +1855,7 @@ const interest = new InterestStore();
 const userProfile = new UserProfileStore();
 function broadcastProfileChanged(): void {
   const next = userProfile.get();
-  for (const win of BrowserWindow.getAllWindows()) {
-    win.webContents.send("profile:changed", next);
-  }
+  windows().broadcast("profile:changed", next);
 }
 userProfile.on("changed", () => broadcastProfileChanged());
 const freshness = new FreshnessScheduler({
@@ -1928,9 +1871,7 @@ const freshness = new FreshnessScheduler({
 });
 function broadcastFreshnessPrefsChanged(): void {
   const next = freshnessPrefs.get();
-  for (const win of BrowserWindow.getAllWindows()) {
-    win.webContents.send("freshness:prefs-changed", next);
-  }
+  windows().broadcast("freshness:prefs-changed", next);
 }
 freshnessPrefs.on("changed", (next) => {
   // Toggle off → cancel any timer; toggle on → restart at the default
@@ -1953,14 +1894,10 @@ freshnessPrefs.on("changed", (next) => {
 // stubbed in 8.n1; renderer can already exercise the IPC roundtrip.
 const whisper = new WhisperSidecar();
 function broadcastVoiceStatus(status: VoiceStatus): void {
-  for (const win of BrowserWindow.getAllWindows()) {
-    win.webContents.send("voice:status:changed", status);
-  }
+  windows().broadcast("voice:status:changed", status);
 }
 function broadcastVoiceProgress(p: VoiceModelDownloadProgress): void {
-  for (const win of BrowserWindow.getAllWindows()) {
-    win.webContents.send("voice:download:progress", p);
-  }
+  windows().broadcast("voice:download:progress", p);
 }
 whisper.on("status", broadcastVoiceStatus);
 whisper.on("progress", broadcastVoiceProgress);
@@ -1968,9 +1905,7 @@ whisper.on("progress", broadcastVoiceProgress);
 // renderer can show "Brewing whisper-cpp …" in the Settings panel
 // while the install is in flight.
 whisper.on("installLog", (line: string) => {
-  for (const win of BrowserWindow.getAllWindows()) {
-    win.webContents.send("voice:install:log", line);
-  }
+  windows().broadcast("voice:install:log", line);
 });
 
 // Memory store (Phase 8.d). Probed once at boot — if the userData/agent/memory
@@ -2000,7 +1935,7 @@ const knowledgeManager = KnowledgeManager.shared();
 // aktuelle Instanz auflösen.
 let _skillStoreRef: import("./skills").SkillStore | null = null;
 let _skillsTrustRef: SkillsTrustStore | null = null;
-const skillsUserDir = join(app.getPath("userData"), "skills");
+const skillsUserDir = join(paths().get("userData"), "skills");
 
 // v0.1.284 — Self-Correction-Feedback-Store. Lokal, kein Cloud-Upload.
 // Wird unten im Boot via .start() initialisiert.
@@ -2166,13 +2101,7 @@ async function computeDailyLimitStatus(): Promise<
 async function broadcastDailyLimitStatus(): Promise<void> {
   try {
     const status = await computeDailyLimitStatus();
-    for (const win of BrowserWindow.getAllWindows()) {
-      try {
-        win.webContents.send("usage:dailyLimitStatus", status);
-      } catch {
-        /* zerstörtes Fenster — ignorieren */
-      }
-    }
+    windows().broadcast("usage:dailyLimitStatus", status);
   } catch (err) {
     console.warn("[usage] broadcast daily-limit status failed:", err);
   }
@@ -2338,16 +2267,14 @@ telegramInbound = new TelegramInbound({
 });
 if (featureEnabled("telegram")) telegramInbound.sync();
 else console.log("[telegram] nicht gestartet — Organisationsvorgabe: Telegram aus");
-app.on("before-quit", () => quitStep("telegramInbound.stop", () => telegramInbound?.stop()));
+lifecycle().onBeforeQuit(() => quitStep("telegramInbound.stop", () => telegramInbound?.stop()));
 
 alertPrefs.on("changed", (next: AlertPrefs) => {
   // Apply the new cadence immediately. push / quiet-hours / threshold
   // changes don't need a reschedule — `NotificationManager` re-reads
   // prefs on every send.
   heartbeat.setIntervalMs(next.cadenceMinutes * 60_000);
-  for (const win of BrowserWindow.getAllWindows()) {
-    win.webContents.send("alert-prefs:changed", next);
-  }
+  windows().broadcast("alert-prefs:changed", next);
 });
 
 heartbeat.on("alerts", (created: Alert[]) => {
@@ -2361,14 +2288,10 @@ heartbeat.on("alerts", (created: Alert[]) => {
 });
 
 function broadcastAgentStream(frame: AgentStreamFrame): void {
-  for (const win of BrowserWindow.getAllWindows()) {
-    win.webContents.send("agent:stream", frame);
-  }
+  windows().broadcast("agent:stream", frame);
 }
 function broadcastAgentStatus(status: AgentStatus): void {
-  for (const win of BrowserWindow.getAllWindows()) {
-    win.webContents.send("agent-status:changed", status);
-  }
+  windows().broadcast("agent-status:changed", status);
 }
 agent.on("stream", broadcastAgentStream);
 agent.on("status", broadcastAgentStatus);
@@ -2377,7 +2300,7 @@ agent.on("status", broadcastAgentStatus);
 // Verarbeitungen im Chat verfolgen und bei Abschluss von selbst melden.
 const hintergrundAufgaben = new HintergrundAufgaben({
   gateway: gatewayClient,
-  datei: join(app.getPath("userData"), "hintergrund-aufgaben.json"),
+  datei: join(paths().get("userData"), "hintergrund-aufgaben.json"),
   melden: (conversationId, text) => {
     try {
       // Ueber Telegram gestartet → Ergebnis aufs Handy (Stufe 2).
@@ -2391,12 +2314,9 @@ const hintergrundAufgaben = new HintergrundAufgaben({
     }
   },
   benachrichtigen: (titel, text) => {
-    if (BrowserWindow.getFocusedWindow()) return;
-    try {
-      if (Notification.isSupported()) new Notification({ title: titel, body: text }).show();
-    } catch {
-      /* Systembenachrichtigung ist ein Zusatz */
-    }
+    if (windows().isAnyFocused()) return;
+    // Systembenachrichtigung ist ein Zusatz; ohne Desktop zeigt die Plattform nichts.
+    notifier().show({ title: titel, body: text });
   },
   aktiv: () => auth.getStatus().signedIn && !workerModus.aktiv(),
   log: (m) => console.log(m),
@@ -2423,7 +2343,7 @@ agent.on("werkzeug-ergebnis", (e) => {
   }
 });
 hintergrundAufgaben.on("aenderung", (liste) => {
-  for (const win of BrowserWindow.getAllWindows()) win.webContents.send("aufgaben:aenderung", liste);
+  windows().broadcast("aufgaben:aenderung", liste);
 });
 hintergrundAufgaben.start();
 
@@ -2555,10 +2475,10 @@ app.whenReady().then(async () => {
   // da ist; das ist billig und sagt sofort Bescheid. Das Laden selbst laeuft
   // danach im Hintergrund weiter, damit der Start nie darauf wartet.
   eigenerBrowser = new ChromeForTesting(
-    join(app.getPath("userData"), "chrome-for-testing"),
+    join(paths().get("userData"), "chrome-for-testing"),
     (zeile) => writeLineSync("INFO ", zeile),
     (stand) => {
-      for (const win of BrowserWindow.getAllWindows()) win.webContents.send("browser:stand", stand);
+      windows().broadcast("browser:stand", stand);
     },
   );
   void eigenerBrowser
@@ -2624,7 +2544,7 @@ app.whenReady().then(async () => {
   const providerConfigStore = ProviderConfigStore.shared();
   const openaiTokenRefresher = new OpenAITokenRefresher(providerConfigStore);
   openaiTokenRefresher.start();
-  app.on("before-quit", () => quitStep("openaiTokenRefresher.stop", () => openaiTokenRefresher.stop()));
+  lifecycle().onBeforeQuit(() => quitStep("openaiTokenRefresher.stop", () => openaiTokenRefresher.stop()));
 
   // v0.1.257 — Mail-Supervisor (Phase 9.m). Braucht providers + Provider-
   // Config-Store, beide jetzt verfügbar. start() lädt das Konto aus dem
@@ -2697,7 +2617,7 @@ app.whenReady().then(async () => {
       err instanceof Error ? err.message : String(err),
     );
   }
-  app.on("before-quit", () => {
+  lifecycle().onBeforeQuit(() => {
     // 2026-09-18 — Beim Beenden NICHT den eingebetteten Speicher schliessen.
     // PGlite laeuft als WebAssembly im Hauptprozess; sein close() blockiert die
     // Ereignisschleife. Genau daran hing das Beenden bisher JEDES Mal, der
@@ -2738,7 +2658,7 @@ app.whenReady().then(async () => {
   // Lösung: ALLE proaktiv pausieren auf suspend, mit 3s Grace nach
   // resume neu starten. Jeder Aufruf separat best-effort, damit ein
   // hängender stop() nicht die anderen blockiert.
-  powerMonitor.on("suspend", () => {
+  power().on("suspend", () => {
     // v0.1.485 — SYNCHRON als allererstes: Schlaf-Marker in die
     // Heartbeat-Datei, damit der Watchdog-Sidecar den Einschlaf-
     // Uebergang nicht als Main-Wedge fehlinterpretiert (er tickt
@@ -2793,7 +2713,7 @@ app.whenReady().then(async () => {
       telegramInbound?.stop();
     }));
   });
-  powerMonitor.on("resume", () => {
+  power().on("resume", () => {
     // v0.1.554 — Netz nach dem Aufwachen oft erst spaeter da: stille
     // Anmeldung erneut versuchen, statt den Nutzer zur Maske zu schicken.
     setTimeout(() => void auth.retryRestore("resume").catch(() => undefined), 8_000);
@@ -2940,7 +2860,7 @@ app.whenReady().then(async () => {
       err instanceof Error ? err.message : String(err),
     );
   }
-  app.on("before-quit", () => {
+  lifecycle().onBeforeQuit(() => {
     quitStep("selfCorrectionsStore.stop", () => selfCorrectionsStore.stop());
   });
 
@@ -3021,7 +2941,7 @@ app.whenReady().then(async () => {
       err instanceof Error ? err.message : String(err),
     );
   }
-  app.on("before-quit", () => {
+  lifecycle().onBeforeQuit(() => {
     quitStep("scheduledJobsSupervisor.suspendTimers", () => scheduledJobsSupervisor?.suspendTimers());
   });
 
@@ -3029,9 +2949,7 @@ app.whenReady().then(async () => {
     if (!scheduledJobsSupervisor) return;
     try {
       const jobs = await scheduledJobsSupervisor.store.list();
-      for (const win of BrowserWindow.getAllWindows()) {
-        win.webContents.send("scheduler:jobs-changed", jobs);
-      }
+      windows().broadcast("scheduler:jobs-changed", jobs);
     } catch {
       /* store nicht ready */
     }
@@ -3366,13 +3284,7 @@ app.whenReady().then(async () => {
     isSignedIn: () => auth.getStatus().signedIn,
     featureEnabled: () => featureEnabled("workflows"),
     emit: (frame: WorkflowProgressFrame) => {
-      for (const win of BrowserWindow.getAllWindows()) {
-        try {
-          win.webContents.send("workflows:progress", frame);
-        } catch {
-          /* zerstoertes Fenster */
-        }
-      }
+      windows().broadcast("workflows:progress", frame);
     },
     audit: (entry) =>
       audit({
@@ -3402,11 +3314,7 @@ app.whenReady().then(async () => {
         broadcastAlertsChanged();
         notifications.notifyForAlert(alert);
       } else {
-        try {
-          if (Notification.isSupported()) new Notification({ title: m.title, body: m.body.slice(0, 200) }).show();
-        } catch {
-          /* keine Notifications */
-        }
+        notifier().show({ title: m.title, body: m.body.slice(0, 200) });
       }
     },
     gatewayRequest: (path, opts) => gatewayClient.request(path, opts ? { method: opts.method as "GET" | "POST" | "PUT" | "DELETE" | undefined, body: opts.body } : undefined),
@@ -3443,7 +3351,7 @@ app.whenReady().then(async () => {
       isLlmBusy: () => agent.getStatus().inFlightRequestId !== null,
       isOnBattery: () => {
         try {
-          return powerMonitor.isOnBatteryPower();
+          return power().isOnBatteryPower();
         } catch {
           return false;
         }
@@ -3452,7 +3360,7 @@ app.whenReady().then(async () => {
         audit({ actorType: "system", actorId: null, category: "import", action: "email-muster.run", severity, subjectType: null, subjectId: (metadata.companyId as string) ?? null, summary, metadata }),
       log: (m) => console.log(m),
       onChanged: (cfg) => {
-        for (const win of BrowserWindow.getAllWindows()) win.webContents.send("emailMuster:changed", cfg);
+        windows().broadcast("emailMuster:changed", cfg);
       },
       // Stufe 2 (docs/PLAN_EMAIL_MUSTER_2.md): KI-Urteil fuer Zuordnung und Muster,
       // Hintergrund-Kanal (Budget der Organisation, zentrale KI-Sperre greift).
@@ -3473,11 +3381,11 @@ app.whenReady().then(async () => {
         }
       },
     },
-    app.getPath("userData"),
+    paths().get("userData"),
   );
   emailMuster.start();
   workerModus.anmelden({ name: "E-Mail-Muster", anhalten: () => emailMuster?.stop(), anlaufen: () => emailMuster?.start() });
-  app.on("before-quit", () => quitStep("emailMuster.stop", () => emailMuster?.stop()));
+  lifecycle().onBeforeQuit(() => quitStep("emailMuster.stop", () => emailMuster?.stop()));
   // W4 — Workflow-Trigger alert.created.
   alerts.onCreated = (a) => {
     void workflowService?.emitEvent("alert.created", { alertId: a.id, kind: a.kind, severity: a.severity, headline: a.headline, companyId: a.companyId, companyName: a.companyName });
@@ -3501,10 +3409,10 @@ app.whenReady().then(async () => {
   });
   statusWatcher.start();
   workerModus.anmelden({ name: "Statuswaechter", anhalten: () => statusWatcher.stop(), anlaufen: () => statusWatcher.start() });
-  app.on("before-quit", () => quitStep("statusWatcher.stop", () => statusWatcher.stop()));
-  app.on("before-quit", () => quitStep("radarSupervisor.stop", () => radarSupervisor?.stop()));
+  lifecycle().onBeforeQuit(() => quitStep("statusWatcher.stop", () => statusWatcher.stop()));
+  lifecycle().onBeforeQuit(() => quitStep("radarSupervisor.stop", () => radarSupervisor?.stop()));
 
-  app.on("before-quit", () => {
+  lifecycle().onBeforeQuit(() => {
     quitStep("linkMonitorSupervisor.suspendTimers", () => linkMonitorSupervisor?.suspendTimers());
   });
 
@@ -3518,9 +3426,7 @@ app.whenReady().then(async () => {
         cap: LINK_MONITOR_ACTIVE_CAP,
         runningIds: linkMonitorSupervisor.runningIds(),
       };
-      for (const win of BrowserWindow.getAllWindows()) {
-        win.webContents.send("link-monitor:changed", snapshot);
-      }
+      windows().broadcast("link-monitor:changed", snapshot);
     } catch {
       /* store nicht ready */
     }
@@ -3918,28 +3824,12 @@ app.whenReady().then(async () => {
       provider === "anthropic"
         ? `${label}-Anmeldung abgelaufen. In den Einstellungen → Modelle → ${label} bitte neu verbinden.`
         : `${label}-API-Key wird nicht mehr akzeptiert. In den Einstellungen → Modelle → ${label} bitte neuen Key eintragen.`;
-    try {
-      const { Notification } = require("electron") as typeof import("electron");
-      if (Notification.isSupported()) {
-        new Notification({
-          title: "AVA: Anmeldung erforderlich",
-          body,
-        }).show();
-      }
-    } catch (err) {
-      console.warn("[providers] failed to show auth-expired notification:", err);
-    }
+    notifier().show({ title: "AVA: Anmeldung erforderlich", body });
     // Also broadcast to any open windows so the renderer can show an
     // in-app banner / Settings nudge. Renderer-side handler is best-
     // effort; falling back to the OS notification covers the
     // app-in-background case.
-    for (const win of BrowserWindow.getAllWindows()) {
-      try {
-        win.webContents.send("providers:authExpired", { provider });
-      } catch {
-        /* window may already be destroyed; ignore */
-      }
-    }
+    windows().broadcast("providers:authExpired", { provider });
   }
 
   for (const p of producers) {
@@ -4065,9 +3955,7 @@ app.whenReady().then(async () => {
   // provider.
   const lastCrmConnected = new Map<string, boolean>();
   crmManager.on("status", (status: CrmStatus) => {
-    for (const win of BrowserWindow.getAllWindows()) {
-      win.webContents.send("crm-status:changed", status);
-    }
+    windows().broadcast("crm-status:changed", status);
     try {
       const prev = lastCrmConnected.get(status.provider) ?? false;
       if (status.connected !== prev) {
@@ -4167,13 +4055,7 @@ app.whenReady().then(async () => {
   });
   // O6 — Limit der Organisation erreicht → Banner im Renderer.
   setOrgQuotaExceededHandler((info) => {
-    for (const win of BrowserWindow.getAllWindows()) {
-      try {
-        win.webContents.send("org:quotaExceeded", info);
-      } catch {
-        /* zerstoertes Fenster */
-      }
-    }
+    windows().broadcast("org:quotaExceeded", info);
   });
   // O2 — Organisationen: Einladungslink, Tenant-Wechsel, Anfragen-Waechter.
   initOrganisation({
@@ -4324,9 +4206,7 @@ app.whenReady().then(async () => {
   }
 
   function broadcastSkillsChanged(): void {
-    for (const win of BrowserWindow.getAllWindows()) {
-      win.webContents.send("skills:changed");
-    }
+    windows().broadcast("skills:changed");
   }
   if (skillStore) {
     skillStore.on("changed", broadcastSkillsChanged);
@@ -4408,9 +4288,7 @@ app.whenReady().then(async () => {
 
 
   producerLogBuffer.on("line", (event: ProducerLogEvent) => {
-    for (const win of BrowserWindow.getAllWindows()) {
-      win.webContents.send("producer-log:line", event);
-    }
+    windows().broadcast("producer-log:line", event);
     // v0.1.56 — fast-path "upstream is down" detection. The scheduled
     // 15-min HEAD probe is a slow recovery signal; producers that
     // actually hit unternehmensregister.de during a scrape see
@@ -4476,8 +4354,8 @@ app.whenReady().then(async () => {
   const spracheStore = SpracheStore.shared();
   const spracheRelay = new SpracheRelay(
     agent,
-    (e) => { for (const win of BrowserWindow.getAllWindows()) win.webContents.send("sprache:ergebnis", e); },
-    (f) => { for (const win of BrowserWindow.getAllWindows()) win.webContents.send("sprache:fortschritt", f); },
+    (e) => windows().broadcast("sprache:ergebnis", e),
+    (f) => windows().broadcast("sprache:fortschritt", f),
     (name) => agentRegistry.get(name)?.summary ?? name,
   );
   const spracheStand = () => {
@@ -4489,7 +4367,7 @@ app.whenReady().then(async () => {
     return { einstellungen: spracheStore.get(), verfuegbar, quelle, whisperBereit: whisper.getStatus().state === "ready" };
   };
   spracheStore.on("changed", () => {
-    for (const win of BrowserWindow.getAllWindows()) win.webContents.send("sprache:standChanged", spracheStand());
+    windows().broadcast("sprache:standChanged", spracheStand());
   });
   registerSpracheIpc({ auth, gatewayClient, providers, spracheRelay, spracheStand, spracheStore, userProfile });
 
@@ -4508,9 +4386,7 @@ app.whenReady().then(async () => {
   // mutates it.
   const broadcastResearchBundle = () => {
     const bundle = researchBundle();
-    for (const win of BrowserWindow.getAllWindows()) {
-      win.webContents.send("research:bundleChanged", bundle);
-    }
+    windows().broadcast("research:bundleChanged", bundle);
   };
   researchStore.on("configChanged", broadcastResearchBundle);
   researchStore.on("keysChanged", broadcastResearchBundle);
@@ -4593,33 +4469,33 @@ app.whenReady().then(async () => {
     providers,
     nutzerstand: () => nutzerstand!.get(),
     toolNamen: () => agentRegistry.list().map((t) => t.name),
-    dir: join(app.getPath("userData"), "suggestions"),
+    dir: join(paths().get("userData"), "suggestions"),
     log: (m) => console.log(m),
   });
-  vorschlaegeSettings = new VorschlaegeSettingsStore(join(app.getPath("userData"), "suggestions"));
+  vorschlaegeSettings = new VorschlaegeSettingsStore(join(paths().get("userData"), "suggestions"));
   // Register-Delta S6 — Mithelfen: Kindprozess mit @ava/register-delta, Opt-in.
   mithelfen = new MithelfenSupervisor({
-    userDataDir: app.getPath("userData"),
-    resourcesRoot: app.isPackaged ? (process.resourcesPath ?? "") : join(app.getAppPath(), "resources"),
+    userDataDir: paths().get("userData"),
+    resourcesRoot: paths().isPackaged ? (paths().resources() ?? "") : join(paths().appPath(), "resources"),
     gatewayUrl: APP_CONFIG.gatewayUrl,
     getAccessToken: () => auth.getAccessToken(),
     getActorId: () => auth.getStatus().actorId ?? null,
-    settings: new MithelfenSettingsStore(join(app.getPath("userData"), "register-delta")),
+    settings: new MithelfenSettingsStore(join(paths().get("userData"), "register-delta")),
     browserPfad: () => eigenerBrowser?.browserPfad() ?? null,
     treiberVerzeichnis: () => eigenerBrowser?.treiberVerzeichnis() ?? null,
   });
   mithelfen.on("status", (st) => {
-    for (const win of BrowserWindow.getAllWindows()) win.webContents.send("register-delta:status:changed", st);
+    windows().broadcast("register-delta:status:changed", st);
   });
   auth.on("status", (st: AuthStatus) => mithelfen?.setSignedIn(Boolean(st.signedIn)));
   mithelfen.setSignedIn(Boolean(auth.getStatus().signedIn));
   registerStammdatenIpc({ mithelfen: { get current() { return mithelfen; } }, registerQueueStatus, workerModusMerkerLoeschen, workerModusMerkerSetzen });
   mithelfen.on("verlauf", (v) => {
-    for (const win of BrowserWindow.getAllWindows()) win.webContents.send("register-delta:verlauf:changed", v);
+    windows().broadcast("register-delta:verlauf:changed", v);
   });
   registerVorschlaegeIpc({ agentRegistry, chipErzeugung: { get current() { return chipErzeugung; } }, hintergrundAufgaben, nutzerstand: { get current() { return nutzerstand; } }, vorschlaegeSettings: { get current() { return vorschlaegeSettings; } } });
   radarActivity.on("changed", (state) => {
-    for (const win of BrowserWindow.getAllWindows()) win.webContents.send("discovery:activity:changed", state);
+    windows().broadcast("discovery:activity:changed", state);
   });
   // §8b — Token-Aenderung muss den company-contact-Producer recyceln,
   // damit extraEnvAsync das frische APIFY_TOKEN-env injiziert (gleiches
@@ -4785,13 +4661,7 @@ app.whenReady().then(async () => {
   // Singleton — `knowledgeManager` wurde oben bereits angelegt.
   const knowledge = knowledgeManager;
   knowledgeStore.on("statusChanged", () => {
-    for (const win of BrowserWindow.getAllWindows()) {
-      try {
-        win.webContents.send("knowledge:snapshotChanged", knowledgeStore.snapshot());
-      } catch {
-        /* destroyed window */
-      }
-    }
+    windows().broadcast("knowledge:snapshotChanged", knowledgeStore.snapshot());
   });
   registerWissenIpc({ knowledge, knowledgeStore });
 
@@ -4958,7 +4828,7 @@ app.whenReady().then(async () => {
   // Merker: "Es wird gerade versucht, den Worker-Modus anzuwenden." Bleibt er
   // liegen, hat die App den Versuch nicht ueberlebt. Wird beim Start UND beim
   // Einschalten gesetzt, damit ein Absturz in beiden Faellen erkannt wird.
-  workerModusMerkerPfad = join(app.getPath("userData"), "worker-modus-start.flag");
+  workerModusMerkerPfad = join(paths().get("userData"), "worker-modus-start.flag");
   const workerModusMerker = workerModusMerkerPfad;
   if (mithelfen?.status().nurRegister === true) {
     let letzterStartGescheitert = false;
@@ -4975,7 +4845,7 @@ app.whenReady().then(async () => {
         /* egal */
       }
       mithelfen?.setSettings({ nurRegister: false });
-      for (const win of BrowserWindow.getAllWindows()) win.webContents.send("register-delta:status:changed", mithelfen?.status());
+      windows().broadcast("register-delta:status:changed", mithelfen?.status());
     } else {
       setTimeout(() => {
         workerModusMerkerSetzen();
