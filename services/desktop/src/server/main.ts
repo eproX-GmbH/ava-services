@@ -12,7 +12,7 @@
 //     adresse einfügen). Geschützt durch ein Setup-Token aus `AVA_SETUP_TOKEN`
 //     oder, wenn es fehlt, ein beim Start erzeugtes, das im Log steht.
 //   - GET /healthz (Prozess lebt), GET /readyz (angemeldet und gestartet),
-//     GET /status (Kurzlage als JSON).
+//     GET /status (Kurzlage als JSON, nur mit Setup-Token).
 //   - SIGTERM/SIGINT: dieselben Stopp-Schritte wie die Beenden-Kette der App.
 //
 // Umgebung (siehe infra/.env.server.example): AVA_DATA_DIR, AVA_RESOURCES_DIR,
@@ -251,6 +251,12 @@ function starteHttp(): void {
       return;
     }
     if (pfad === "/status") {
+      // Nennt Konto und Modellzugang: nur mit Setup-Token, nicht öffentlich.
+      if (!tokenOk(url)) {
+        res.writeHead(401, { "content-type": "application/json" });
+        res.end(JSON.stringify({ fehler: "Setup-Token nötig (?t=…)" }));
+        return;
+      }
       void statusJson().then((j) => {
         res.writeHead(200, { "content-type": "application/json" });
         res.end(JSON.stringify(j));
