@@ -84,6 +84,56 @@ async function konto(auth: AuthContext): Promise<{ organisation: string | null; 
   }
 }
 
+function json(text: string): Record<string, unknown> | null {
+  try {
+    const v = JSON.parse(text) as unknown;
+    if (!v || typeof v !== "object") return null;
+    // Das Relais verpackt Werkzeugergebnisse als { werkzeug, vorschau, ergebnis }.
+    const e = (v as { ergebnis?: unknown }).ergebnis;
+    return (e && typeof e === "object" ? e : v) as Record<string, unknown>;
+  } catch {
+    return null;
+  }
+}
+
+const liste = (v: unknown): string[] => (Array.isArray(v) ? v.filter((x): x is string => typeof x === "string" && x.trim() !== "") : []);
+const text = (v: unknown): string => (typeof v === "string" ? v.trim() : "");
+
+/** Rueckfall fuer AVA-Versionen ohne ava_kontext: icp_get, profile_get, recall_memory. */
+async function ersatzKontext(actorId: string, wartezeitMs: number): Promise<string | null> {
+  const [icpRoh, profilRoh, gedRoh] = await Promise.all([
+    kopfRelais.aufrufen(actorId, "icp_get", {}, wartezeitMs),
+    kopfRelais.aufrufen(actorId, "profile_get", {}, wartezeitMs),
+    kopfRelais.aufrufen(actorId, "recall_memory", { query: "", limit: 40 }, wartezeitMs),
+  ]);
+  const teile: string[] = [];
+  const profil = profilRoh.isError ? null : json(profilRoh.text);
+  if (profil) {
+    const z = [text(profil.bio)].filter(Boolean);
+    if (text(profil.role)) z.push(`- Rolle: ${text(profil.role)}`);
+    if (liste(profil.industries).length) z.push(`- Branchen: ${liste(profil.industries).join(", ")}`);
+    if (liste(profil.geographies).length) z.push(`- Regionen: ${liste(profil.geographies).join(", ")}`);
+    if (liste(profil.topics).length) z.push(`- Schwerpunkte: ${liste(profil.topics).join(", ")}`);
+    if (z.length) teile.push("## Über den Nutzer", z.join("\n"));
+  }
+  const icp = icpRoh.isError ? null : json(icpRoh.text);
+  if (icp && icp.gesetzt !== false) {
+    const z = [text(icp.beschreibung)].filter(Boolean);
+    if (text(icp.angebot)) z.push(`- Eigenes Angebot: ${text(icp.angebot)}`);
+    if (text(icp.nutzen)) z.push(`- Nutzenversprechen: ${text(icp.nutzen)}`);
+    if (liste(icp.branchen).length) z.push(`- Zielbranchen: ${liste(icp.branchen).join(", ")}`);
+    if (text(icp.groesse)) z.push(`- Größe: ${text(icp.groesse)}`);
+    if (liste(icp.merkmale).length) z.push(`- Merkmale: ${liste(icp.merkmale).join("; ")}`);
+    if (liste(icp.orte).length) z.push(`- Region: ${liste(icp.orte).join(", ")}${typeof icp.radiusKm === "number" ? ` (Umkreis ${icp.radiusKm} km)` : ""}`);
+    if (text(icp.ausschluesse)) z.push(`- Ausschlüsse: ${text(icp.ausschluesse)}`);
+    if (z.length) teile.push("## Idealkundenprofil (ICP)", `${z.join("\n")}\n\nNutze das ICP als Maßstab: Firmen danach einordnen und priorisieren, Abweichungen und Ausschlüsse offen benennen.`);
+  }
+  const ged = gedRoh.isError ? null : json(gedRoh.text);
+  const eintraege = Array.isArray(ged?.entries) ? (ged!.entries as Array<{ content?: unknown }>).map((e) => text(e.content)).filter(Boolean) : [];
+  if (eintraege.length) teile.push("## Was AVA sich über den Nutzer gemerkt hat", eintraege.slice(0, 40).map((e) => `- ${e.length > 300 ? `${e.slice(0, 299)}…` : e}`).join("\n"));
+  return teile.length ? teile.join("\n\n") : null;
+}
+
 /**
  * Vollständiger Kontext. `wartezeitMs` begrenzt die Anfrage an die laufende
  * AVA (beim Verbindungsaufbau kurz, damit der Client nicht hängt).
@@ -107,7 +157,15 @@ export async function avaKontext(auth: AuthContext, s: KontextSchalter, wartezei
   if (verbunden) {
     const erg = await kopfRelais.aufrufen(auth.actorId, KONTEXT_WERKZEUG, {}, wartezeitMs);
     if (!erg.isError && erg.text.trim()) teile.push(erg.text.trim());
-    else teile.push("## Persönlicher Kontext", "Die AVA des Nutzers hat ihren persönlichen Kontext (Profil, ICP, Gemerktes) gerade nicht geliefert; bei Bedarf ava_kontext später erneut laden.");
+    else {
+      // AVA vor v0.1.800 kennt ava_kontext nicht: Profil, ICP und Gemerktes ueber
+      // Werkzeuge holen, die jede Version hat.
+      const ersatz = await ersatzKontext(auth.actorId, wartezeitMs);
+      teile.push(
+        ersatz ??
+          "## Persönlicher Kontext\n\nDie AVA des Nutzers hat ihren persönlichen Kontext (Profil, ICP, Gemerktes) gerade nicht geliefert; bei Bedarf ava_kontext später erneut laden.",
+      );
+    }
   } else {
     teile.push(
       "## Persönlicher Kontext",
