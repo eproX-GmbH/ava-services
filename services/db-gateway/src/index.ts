@@ -33,9 +33,12 @@ import { getGatewayPool } from "./lib/producer-pools";
 import { startRegisterJobCron } from "./lib/register-jobs";
 import { mcpOauthRouter } from "./routes/mcp-oauth";
 import { makeMcpRouter } from "./routes/mcp";
+import { instanzRouter } from "./lib/instanz-router";
 
 const env = loadEnv();
 const app = new OpenAPIHono();
+// Kunden-Instanzen <slug>.ava.bi per fly-replay, vor allem anderen (kein CORS, keine Anmeldung).
+app.use("*", instanzRouter);
 
 // CORS.
 //

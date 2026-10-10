@@ -44,6 +44,10 @@ primary_region = "fra"
   # the packaged Electron renderer's file:// load. Add explicit https
   # origins here when the gateway is also accessed from a web UI.
   GATEWAY_ALLOWED_ORIGINS = "electron"
+  # Kunden-Instanzen <slug>.ava.bi per fly-replay (src/lib/instanz-router.ts,
+  # ersetzt die App ava-router). Ausnahmen von der Regel Subdomain → ava-i-<slug>:
+  ROUTER_DOMAIN = "ava.bi"
+  ROUTER_ZUORDNUNG = "headless-ava=headless-ava"
   # Upstream service base URLs. Other services beyond master-data are
   # currently suspended; the gateway will return 502 for routes
   # fanning out to them until they're resumed. That's intentional for
